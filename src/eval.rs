@@ -232,7 +232,7 @@ impl Session {
     }
 
     fn array_result(&mut self, nodes: &[Node], output: &mut Vec<String>) -> Result<Array, Error> {
-        match self.bind(nodes, output)?.value { Value::Array(a) => Ok(a), _ => Err(nodes[0].span.error(ErrorKind::Unsupported, "dfn results must be arrays")) }
+        match self.bind(nodes, output)?.value { Value::Array(a) => Ok(a), _ => Err(nodes[0].span.error(ErrorKind::Syntax, "dfn results must be arrays")) }
     }
 
     fn run_definition(&mut self, definition: &Definition, output: &mut Vec<String>) -> Result<Array, Error> {
@@ -245,7 +245,6 @@ impl Session {
             for statement in &definition.body.statements {
                 let nodes = &statement.nodes;
                 if let Some((i, error_guard)) = statement.guard {
-                    let checkpoint = error_guard.then(|| self.frames[frame].names.clone());
                     let condition = self.array_result(&nodes[..i], output)?;
                     let condition = condition
                         .as_number()
@@ -253,7 +252,7 @@ impl Session {
                     let condition = condition.nonnegative_integer().map_err(|k| nodes[i].span.error(k, "invalid guard condition"))?;
                     if error_guard {
                         if condition != 0 { return Err(nodes[i].span.error(ErrorKind::Unsupported, "only catch-all 0:: error guards are implemented yet")); }
-                        handlers.push((&nodes[i + 1..], checkpoint.unwrap()));
+                        handlers.push((&nodes[i + 1..], self.frames[frame].names.clone()));
                     } else {
                         if condition > 1 { return Err(nodes[i].span.error(ErrorKind::Domain, "guard requires 0 or 1")); }
                         if condition == 1 { return self.array_result(&nodes[i + 1..], output); }
@@ -261,10 +260,7 @@ impl Session {
                 } else {
                     let bound = self.bind(nodes, output)?;
                     if !bound.shy {
-                        return match bound.value {
-                            Value::Array(a) => Ok(a),
-                            _ => Err(nodes[0].span.error(ErrorKind::Unsupported, "dfn results must be arrays")),
-                        };
+                        return match bound.value { Value::Array(a) => Ok(a), _ => Err(nodes[0].span.error(ErrorKind::Syntax, "dfn results must be arrays")) };
                     }
                 }
             }

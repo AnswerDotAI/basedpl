@@ -532,18 +532,19 @@ fn diagnostic_width_and_call_context() {
 
 #[test]
 fn lexical_frames_recursion_and_guard_rollback() {
-    // Adapted from Dyalog 20 lexical-name-scope and error-guards documentation.
+    // Executed in Dyalog 20.0.53963.0, ⎕IO=1, ⎕CT=1E¯14, ⎕DIV=0.
     // Numeric labels avoid depending on the as-yet unimplemented character syntax.
     let mut s = Session::new();
     for (code, expected) in [
         ("outer←{x←10 ⋄ read←{x} ⋄ caller←{x←99 ⋄ read ⍵} ⋄ caller 0} ⋄ outer 0", 10.0),
-        ("outer←{x←1 ⋄ add←{x+⍵} ⋄ x←2 ⋄ apply←{⍺⍺ ⍵} ⋄ (add apply)3} ⋄ outer 0", 5.0),
+        ("outer←{x←2 ⋄ f←{x+⍵} ⋄ apply←{⍺⍺ ⍵} ⋄ g←f apply ⋄ x←3 ⋄ g 4} ⋄ outer 0", 7.0),
         ("outer←{offset←{⍺⍺+⍵} ⋄ (2 offset)3} ⋄ outer 0", 5.0),
+        ("offset←{⍺⍺+⍵} ⋄ a←2 ⋄ kept←a offset ⋄ a←9 ⋄ kept 3", 5.0),
         ("fact←{⍵=0:1 ⋄ ⍵×∇⍵-1} ⋄ fact 6", 720.0),
         ("outer←{even←{⍵=0:1 ⋄ odd ⍵-1} ⋄ odd←{⍵=0:0 ⋄ even ⍵-1} ⋄ even ⍵} ⋄ outer 8", 1.0),
         ("bad←{1÷⍵} ⋄ guarded←{x←10 ⋄ 0::x ⋄ x←20 ⋄ bad ⍵} ⋄ guarded 0", 10.0),
         ("temp←9 ⋄ guarded←{0::temp ⋄ temp←20 ⋄ 1÷⍵} ⋄ guarded 0", 9.0),
-        ("guarded←{x←10 ⋄ (0×(x←20))::x ⋄ 1÷⍵} ⋄ guarded 0", 10.0),
+        ("guarded←{x←10 ⋄ (0×(x←20))::x ⋄ x←30 ⋄ 1÷⍵} ⋄ guarded 0", 20.0),
         ("guarded←{0::7 ⋄ 0::1÷0 ⋄ 1÷⍵} ⋄ guarded 0", 7.0),
     ] {
         let r = s.eval(code);
@@ -557,7 +558,8 @@ fn lexical_frames_recursion_and_guard_rollback() {
         ("{0::fresh ⋄ fresh←1 ⋄ 1÷⍵}0", Value),
         ("{2:1 ⋄ 0}0", Domain),
         ("{11::1 ⋄ 1÷⍵}0", Unsupported),
-        ("{x←2 ⋄ {x+⍵}}0", Unsupported),
+        ("{x←2 ⋄ {x+⍵}}0", Syntax),
+        ("{1:+ ⋄ 0}0", Syntax),
     ] { assert_eq!(s.eval(code).error.unwrap().kind, kind, "{code}"); }
     assert!(matches!(parse(Source::new("guard", "f←{0::⎕←1}")), ParseStatus::Complete(_)));
     assert_eq!(s.eval("2+2").value.unwrap(), Array::scalar(4.0).unwrap());
