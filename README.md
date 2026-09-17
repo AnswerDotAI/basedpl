@@ -1,15 +1,15 @@
 # miniapl
 
-A small modern APL calculator in Rust, aimed at teaching mathematics. The persistent calculator, JSON-lines interface, Python API, and category-based function/operator binding are working. Nested lexical functions and a small guard/unwinding slice are also implemented. This is a documented subset, not a complete APL implementation.
+A small modern APL calculator in Rust, aimed at teaching mathematics. Nested lexical functions and a small guard/unwinding slice are also implemented. This is a documented subset, not a complete APL implementation.
 
 ## Run
 
 ```bash
-miniapl -e 'v←⍳10 ⋄ sum←+/ ⋄ sum v'   # 55
-miniapl -e 'avg←+/÷≢ ⋄ avg 2 4 9'    # 5
+miniapl -e 'v←⍳10 ⋄ sum←+/ ⋄ sum v' # 55
+miniapl -e 'avg←+/÷≢ ⋄ avg 2 4 9'   # 5
 miniapl -e 'add←{⍺+⍵} ⋄ add/1 2 3'  # 6
-miniapl lesson.apl                   # UTF-8 source file
-miniapl                             # persistent REPL; Ctrl-D exits
+miniapl lesson.apl                  # source file
+miniapl                             # persistent REPL
 ```
 
 The installed command follows exhash: a maturin console script delegates to the Rust CLI. For a Python-independent executable, use `cargo build --release` or `cargo run -- -e '+/⍳10'`. Build profiles and workspace integration follow fastship/fastws; no separate launcher or binary-in-wheel machinery is needed.
@@ -30,7 +30,7 @@ In the interactive terminal, type a **backtick followed by a symbol name** (or a
 
 Names are case-insensitive. Exact names win over longer names (`scan` versus `scanfirst`); ambiguous/unknown prefixes are never guessed. Matching names appear as you type; press Tab twice to list ambiguous choices, or backtick then Tab twice to browse the catalogue. Enter also accepts a unique name and submits the line, showing the accepted glyph after an arrow.
 
-Arrow keys edit and recall this session's history. Ctrl-C cancels the current input, including unfinished multiline expressions; Ctrl-D exits on a fresh line. Backslash remains ordinary APL scan. Expansion is disabled in strings/comments and for bracketed pastes. This is an input method, not APL syntax: files, pipes, `-e`, Python and JSON use actual glyphs. The catalogue includes planned primitives as well as those implemented below.
+Arrow keys edit and recall this session's history. Ctrl-C cancels the current input, including unfinished multiline expressions; Ctrl-D exits on a fresh line. Expansion is disabled in strings/comments and for bracketed pastes. This is an input method, not APL syntax: files, pipes, `-e`, Python and JSON use actual glyphs. The catalogue includes planned primitives as well as those implemented below.
 
 ```text
 $ miniapl -e '¯2+1÷0'
@@ -61,14 +61,14 @@ A final assignment returns its array without printing it. A final function/opera
 
 ## JSON-lines process interface
 
-Run `miniapl --json` and send one JSON object per line:
+Run `miniapl --json` and send one JSON string per line:
 
 ```json
-{"code":"v←⍳10"}
-{"code":"+/v"}
+"v←⍳10"
+"+/v"
 ```
 
-Each request receives a flushed response before the next request is read. The second response is equivalent to:
+Encode requests with `json.dumps(code)` in Python or `JSON.stringify(code)` in JavaScript, followed by a newline. The surrounding quotes are required; there is no request object. Each request receives a flushed response before the next request is read. The second response is equivalent to:
 
 ```json
 {"value":{"shape":[],"data":[55.0],"prototype":0.0},"output":["55"],"error":null}

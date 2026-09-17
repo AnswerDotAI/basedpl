@@ -52,18 +52,18 @@ fn json_session_flushes_before_eof_and_recovers() {
     let (send, recv) = mpsc::channel();
     let reader = thread::spawn(move || { for line in BufReader::new(output).lines() { if send.send(line.unwrap()).is_err() { break; } } });
     for (request, expected, error_kind, printed) in [
-        (json!({"code":"v←⍳10"}).to_string(), Some(json!((1..=10).collect::<Vec<_>>())), None, vec![]),
-        (json!({"code":"+/v"}).to_string(), Some(json!([55])), None, vec!["55"]),
+        (json!("v←⍳10").to_string(), Some(json!((1..=10).collect::<Vec<_>>())), None, vec![]),
+        (json!("+/v").to_string(), Some(json!([55])), None, vec!["55"]),
         ("{".into(), None, Some("REQUEST ERROR"), vec![]),
-        (json!({"code": 3}).to_string(), None, Some("REQUEST ERROR"), vec![]),
+        (json!(3).to_string(), None, Some("REQUEST ERROR"), vec![]),
         (json!(["1+2"]).to_string(), None, Some("REQUEST ERROR"), vec![]),
-        (json!({}).to_string(), None, Some("REQUEST ERROR"), vec![]),
-        (json!({"code":"⎕←7 ⋄ 1÷0"}).to_string(), None, Some("DOMAIN ERROR"), vec!["7"]),
-        (json!({"code":"(2+"}).to_string(), None, Some("SYNTAX ERROR"), vec![]),
-        (json!({"code":"⍝ \"quoted\"\n+/v"}).to_string(), Some(json!([55])), None, vec!["55"]),
-        (json!({"code":"f←+"}).to_string(), None, None, vec![]),
-        (json!({"code":""}).to_string(), None, None, vec![]),
-        (json!({"code":"⍳0"}).to_string(), Some(json!([])), None, vec!["⍬"]),
+        (json!({"code":"1+2"}).to_string(), None, Some("REQUEST ERROR"), vec![]),
+        (json!("⎕←7 ⋄ 1÷0").to_string(), None, Some("DOMAIN ERROR"), vec!["7"]),
+        (json!("(2+").to_string(), None, Some("SYNTAX ERROR"), vec![]),
+        (json!("⍝ \"quoted\"\n+/v").to_string(), Some(json!([55])), None, vec!["55"]),
+        (json!("f←+").to_string(), None, None, vec![]),
+        (json!("").to_string(), None, None, vec![]),
+        (json!("⍳0").to_string(), Some(json!([])), None, vec!["⍬"]),
     ] {
         writeln!(input, "{request}").unwrap();
         input.flush().unwrap();

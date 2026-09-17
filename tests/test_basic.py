@@ -55,7 +55,7 @@ def test_installed_command():
     assert 'DOMAIN ERROR' in res.stderr
 
 def test_installed_json_command():
-    requests = '\n'.join(json.dumps({'code': c}) for c in ['v←⍳10', '+/v', '1÷0', '2+2']) + '\n'
+    requests = '\n'.join(json.dumps(c) for c in ['v←⍳10', '+/v', '1÷0', '2+2']) + '\n'
     res = subprocess.run(['miniapl', '--json'], input=requests, capture_output=True, text=True, timeout=10)
     assert res.returncode == 0 and not res.stderr
     replies = [json.loads(line) for line in res.stdout.splitlines()]
@@ -104,7 +104,7 @@ def test_exact_values_and_recovery():
 def test_exact_installed_command_and_json():
     res = subprocess.run(['miniapl', '-e', '1x÷3x ⋄ 6x÷3x ⋄ 1x÷3'], capture_output=True, text=True, timeout=10)
     assert (res.returncode, res.stdout, res.stderr) == (0, '1r3\n2x\n0.3333333333333333\n', '')
-    requests = '\n'.join(json.dumps({'code': c}) for c in ['v←9007199254740993x 0.5 1r3', 'v', '0/1r3', '1r0', '1r3+1r6']) + '\n'
+    requests = '\n'.join(json.dumps(c) for c in ['v←9007199254740993x 0.5 1r3', 'v', '0/1r3', '1r0', '1r3+1r6']) + '\n'
     res = subprocess.run(['miniapl', '--json'], input=requests, capture_output=True, text=True, timeout=10)
     assert res.returncode == 0 and not res.stderr
     replies = [json.loads(line) for line in res.stdout.splitlines()]
