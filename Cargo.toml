@@ -2,12 +2,19 @@
 name = "miniapl"
 version = "0.1.2"
 edition = "2021"
+rust-version = "1.98"
 license = "Apache-2.0"
 description = "A small modern APL calculator in Rust, with a native CLI and Python API."
 
 [lib]
 name = "miniapl"
 crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[[bin]]
+name = "miniapl"
+path = "src/main.rs"
+test = false
 
 [profile.release]
 lto = false
@@ -35,6 +42,8 @@ num-rational = "0.4.2"
 num-complex = "0.4.6"
 num-bigint = "0.4.6"
 num-traits = "0.2.19"
+libm = "0.2"
+rand = "0.9"
 
 [features]
 python = ["dep:pyo3"]

@@ -18,7 +18,7 @@ fn array(py: Python<'_>, a: &Array) -> PyResult<Py<PyDict>> {
     }
     let result = PyDict::new(py);
     let data = PyList::empty(py);
-    for e in a.data() { data.append(element(py, e)?)?; }
+    for e in a.elements() { data.append(element(py, &e)?)?; }
     result.set_item("shape", a.shape())?;
     result.set_item("data", data)?;
     result.set_item("prototype", element(py, a.prototype())?)?;

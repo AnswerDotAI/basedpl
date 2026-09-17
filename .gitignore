@@ -1,3 +1,5 @@
+links/
+meta/
 *.tgz
 __pycache__/
 *.py[cod]
@@ -13,4 +15,3 @@ venv/
 .DS_Store
 .ipynb_checkpoints/
 Cargo.lock
-meta/

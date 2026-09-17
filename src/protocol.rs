@@ -12,7 +12,7 @@ fn element(e: &Element) -> Value {
     }
 }
 
-fn array(a: &Array) -> Value { json!({"shape": a.shape(), "data": a.data().iter().map(element).collect::<Vec<_>>(), "prototype": element(a.prototype())}) }
+fn array(a: &Array) -> Value { json!({"shape": a.shape(), "data": a.elements().map(|e| element(&e)).collect::<Vec<_>>(), "prototype": element(a.prototype())}) }
 
 fn error(e: &Error) -> Value {
     json!({"kind": e.kind.to_string(), "message": e.message,

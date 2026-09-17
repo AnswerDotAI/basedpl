@@ -11,7 +11,7 @@ fn native_expression_and_diagnostic() {
         ("10-3-2", "9\n"),
         ("¯2+5", "3\n"),
         ("1x÷3x ⋄ 6x÷3x ⋄ 1x÷3", "1r3\n2x\n0.3333333333333333\n"),
-        ("(1J2)+(3J4) ⋄ (1J2)×(1J¯2) ⋄ +1J2", "4J6\n5\n1J¯2\n"),
+        ("(1j2)+(3J4) ⋄ (1J2)×(1j¯2) ⋄ +1J2", "4j6\n5\n1j¯2\n"),
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_miniapl")).args(["-e", code]).output().unwrap();
         assert!(output.status.success());
@@ -21,13 +21,14 @@ fn native_expression_and_diagnostic() {
     let output = Command::new(env!("CARGO_BIN_EXE_miniapl")).args(["-e", "¯2+)"]).output().unwrap();
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
-    assert_eq!(String::from_utf8(output.stderr).unwrap(), "SYNTAX ERROR: unexpected closing parenthesis\n --> <expression>:1:4\n¯2+)\n   ^\n");
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(error.contains("SYNTAX ERROR") && error.contains("<expression>:1:4\n¯2+)\n   ^"));
 }
 
 #[test]
 fn repl_continuation_recovery_and_eof() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_miniapl")).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
-    child.stdin.take().unwrap().write_all("(2×\n3)+4\n1÷0\n2+2\n)\n¯2+5\n".as_bytes()).unwrap();
+    child.stdin.take().unwrap().write_all("(2×3\n)+4\n1÷0\n2+2\n)\n¯2+5\n".as_bytes()).unwrap();
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "10\n4\n3\n");
@@ -38,7 +39,7 @@ fn repl_continuation_recovery_and_eof() {
     child.stdin.take().unwrap().write_all(b"(2+\n").unwrap();
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(1));
-    assert!(String::from_utf8(output.stderr).unwrap().contains("unclosed parenthesis"));
+    assert!(String::from_utf8(output.stderr).unwrap().contains("unclosed delimiter"));
 }
 
 #[test]

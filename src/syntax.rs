@@ -1,16 +1,22 @@
-use crate::{primitive::Primitive, Error, ErrorKind, Number, Source, Span};
+use crate::{
+    primitive::{Hybrid, OperatorKind, Primitive},
+    Array, Element, Error, ErrorKind, Number, Source, Span,
+};
 use std::{iter::Peekable, rc::Rc, str::CharIndices};
 
 #[derive(Clone, Debug)]
 pub(crate) enum NodeKind {
-    Number(Number),
+    Literal(Array),
     Function(Primitive),
+    Operator(OperatorKind),
     Name(String),
     Assign,
     Output,
     Guard(bool),
-    Hybrid,
+    Hybrid(Hybrid),
     Group(Vec<Node>),
+    ArrayLiteral { cells: Vec<Vec<Node>>, block: bool },
+    Selection(Vec<Vec<Node>>),
     Dfn(Rc<Definition>),
 }
 
@@ -27,6 +33,8 @@ fn definition_kind(nodes: &[Node]) -> DefinitionKind {
             NodeKind::Name(name) if name == "⍵⍵" => DefinitionKind::DyadicOperator,
             NodeKind::Name(name) if name == "⍺⍺" => DefinitionKind::MonadicOperator,
             NodeKind::Group(nodes) => definition_kind(nodes),
+            NodeKind::ArrayLiteral { cells, .. } => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
+            NodeKind::Selection(cells) => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
             _ => DefinitionKind::Function, // Nested definitions classify their own bodies.
         })
         .max()
@@ -48,9 +56,7 @@ fn statement(nodes: Vec<Node>) -> Result<Statement, ParseFailure> {
     for (i, node) in nodes.iter().enumerate() {
         if let NodeKind::Guard(error) = node.kind {
             if i == 0 || i + 1 == nodes.len() { return Err(ParseFailure::Invalid(node.span.error(ErrorKind::Syntax, "guard needs a condition and result"))); }
-            if guard.is_some() {
-                return Err(ParseFailure::Invalid(node.span.error(ErrorKind::Unsupported, "chained guards on one statement are not implemented yet")));
-            }
+            if guard.is_some() { return Err(ParseFailure::Invalid(node.span.error(ErrorKind::Syntax, "a statement can contain only one guard"))); }
             guard = Some((i, error));
         }
     }
@@ -64,17 +70,21 @@ pub enum ParseStatus { Complete(Parsed), Incomplete(Error), Invalid(Error) }
 enum TokenKind {
     BraceOpen,
     BraceClose,
-    Number(Number),
+    Literal(Array),
     Function(Primitive),
+    Operator(OperatorKind),
     Open,
     Close,
+    BracketOpen,
+    BracketClose,
+    Semicolon,
     Newline,
     Separator,
     Name(String),
     Assign,
     Output,
     Guard(bool),
-    Hybrid,
+    Hybrid(Hybrid),
 }
 
 struct Token { kind: TokenKind, span: Span }
@@ -109,7 +119,7 @@ fn lex(source: &Rc<Source>) -> Result<Vec<Token>, Error> {
     let mut tokens = Vec::new();
     while let Some(&(start, c)) = chars.peek() {
         let span = |end| Span { source: source.clone(), range: start..end };
-        let kind = if c.is_ascii_digit() || c == '¯' || c == '.' {
+        let kind = if c.is_ascii_digit() || c == '¯' || (c == '.' && chars.clone().nth(1).is_some_and(|(_, c)| c.is_ascii_digit())) {
             real_literal(&mut chars).map_err(|message| span(chars.peek().map_or(source.text.len(), |(i, _)| *i)).error(ErrorKind::Syntax, message))?;
             if chars.peek().is_some_and(|(_, c)| matches!(c, 'J' | 'j')) {
                 chars.next();
@@ -135,7 +145,7 @@ fn lex(source: &Rc<Source>) -> Result<Vec<Token>, Error> {
             let end = chars.peek().map_or(source.text.len(), |(i, _)| *i);
             let n = Number::parse(&source.text[start..end])
                 .map_err(|k| span(end).error(k, "invalid numeric literal (finite real/complex values or integer x/r components required)"))?;
-            TokenKind::Number(n)
+            TokenKind::Literal(Array::scalar(n).unwrap())
         } else if c.is_alphabetic() || matches!(c, '_' | '∆' | '⍙') {
             chars.next();
             while chars.peek().is_some_and(|(_, c)| c.is_alphanumeric() || matches!(c, '_' | '∆' | '⍙')) { chars.next(); }
@@ -144,8 +154,39 @@ fn lex(source: &Rc<Source>) -> Result<Vec<Token>, Error> {
         } else {
             chars.next();
             match c {
+                '\'' => {
+                    let mut data = Vec::new();
+                    loop {
+                        match chars.next() {
+                            Some((_, '\'')) if chars.peek().is_some_and(|(_, c)| *c == '\'') => {
+                                chars.next();
+                                data.push(Element::Character('\''));
+                            }
+                            Some((_, '\'')) => break,
+                            Some((_, '\n')) | None => {
+                                return Err(span(chars.peek().map_or(source.text.len(), |(i, _)| *i)).error(ErrorKind::Syntax, "unclosed character literal"))
+                            }
+                            Some((_, c)) => data.push(Element::Character(c)),
+                        }
+                    }
+                    let shape = if data.len() == 1 { vec![] } else { vec![data.len()] };
+                    TokenKind::Literal(Array::from_parts(shape, data, Element::Character(' ')).unwrap())
+                }
+                '⍬' => TokenKind::Literal(Array::empty(vec![0], Element::Number(Number::try_from(0.0).unwrap())).unwrap()),
+                '¨' => TokenKind::Operator(OperatorKind::Each),
+                '⍨' => TokenKind::Operator(OperatorKind::Commute),
+                '∘' => TokenKind::Operator(OperatorKind::Compose),
+                '⍤' => TokenKind::Operator(OperatorKind::Rank),
+                '⍥' => TokenKind::Operator(OperatorKind::Over),
+                '⍛' => TokenKind::Operator(OperatorKind::Behind),
+                '.' => TokenKind::Operator(OperatorKind::Product),
+                '⌸' => TokenKind::Operator(OperatorKind::Key),
+                '⍣' => TokenKind::Operator(OperatorKind::Power),
                 '(' => TokenKind::Open,
                 ')' => TokenKind::Close,
+                '[' => TokenKind::BracketOpen,
+                ']' => TokenKind::BracketClose,
+                ';' => TokenKind::Semicolon,
                 '\n' => TokenKind::Newline,
                 '⋄' => TokenKind::Separator,
                 '←' => TokenKind::Assign,
@@ -155,7 +196,7 @@ fn lex(source: &Rc<Source>) -> Result<Vec<Token>, Error> {
                     if error { chars.next(); }
                     TokenKind::Guard(error)
                 }
-                '/' => TokenKind::Hybrid,
+                '/' | '⌿' | '\\' | '⍀' => TokenKind::Hybrid(Hybrid { scan: matches!(c, '\\' | '⍀'), first: matches!(c, '⌿' | '⍀'), axis: None }),
                 '{' => TokenKind::BraceOpen,
                 '}' => TokenKind::BraceClose,
                 '⍺' | '⍵' | '∇' => {
@@ -185,87 +226,86 @@ fn lex(source: &Rc<Source>) -> Result<Vec<Token>, Error> {
 
 enum ParseFailure { Incomplete(Error), Invalid(Error) }
 
-fn sequence(tokens: &[Token], pos: &mut usize, open: Option<&Span>, depth: usize, in_dfn: bool) -> Result<Vec<Node>, ParseFailure> {
-    let mut nodes = Vec::new();
-    while let Some(token) = tokens.get(*pos) {
-        *pos += 1;
-        let kind = match &token.kind {
-            TokenKind::Number(n) => NodeKind::Number(n.clone()),
-            TokenKind::Function(f) => NodeKind::Function(*f),
-            TokenKind::Name(name) => NodeKind::Name(name.clone()),
-            TokenKind::Assign => NodeKind::Assign,
-            TokenKind::Output => NodeKind::Output,
-            TokenKind::Guard(error) => {
-                if !in_dfn || open.is_some() { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "guards belong to dfn statements"))); }
-                NodeKind::Guard(*error)
-            }
-            TokenKind::Hybrid => NodeKind::Hybrid,
-            TokenKind::BraceOpen => {
-                if depth == 128 { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Limit, "definitions nested too deeply"))); }
-                let body = dfn_body(tokens, pos, &token.span, depth + 1)?;
-                let span = Span { source: token.span.source.clone(), range: token.span.range.start..tokens[*pos - 1].span.range.end };
-                let kind = body.statements.iter().map(|s| definition_kind(&s.nodes)).max().unwrap_or(DefinitionKind::Function);
-                nodes.push(Node { kind: NodeKind::Dfn(Rc::new(Definition { body, span: span.clone(), kind })), span });
-                continue;
-            }
-            TokenKind::BraceClose if in_dfn && open.is_none() => {
-                *pos -= 1;
-                return Ok(nodes);
-            }
-            TokenKind::BraceClose => return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "unexpected closing brace"))),
-            TokenKind::Newline if open.is_some() || nodes.is_empty() => continue,
-            TokenKind::Newline | TokenKind::Separator if open.is_none() => return Ok(nodes),
-            TokenKind::Separator => {
-                return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Unsupported, "array-literal separators are not implemented yet")))
-            }
-            TokenKind::Newline => unreachable!(),
-            TokenKind::Open => {
-                if depth == 128 { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Limit, "parentheses nested too deeply"))); }
-                let group = sequence(tokens, pos, Some(&token.span), depth + 1, in_dfn)?;
-                let span = Span { source: token.span.source.clone(), range: token.span.range.start..tokens[*pos - 1].span.range.end };
-                nodes.push(Node { kind: NodeKind::Group(group), span });
-                continue;
-            }
-            TokenKind::Close => {
-                if open.is_none() { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "unexpected closing parenthesis"))); }
-                if nodes.is_empty() {
-                    return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Unsupported, "empty parentheses are not an array literal")));
+struct Parser<'a> { tokens: &'a [Token], pos: usize }
+impl Parser<'_> {
+    fn expressions(&mut self, open: Option<&Token>, depth: usize) -> Result<(Vec<Vec<Node>>, bool), ParseFailure> {
+        let (mut pieces, mut nodes, mut separated, mut indexed) = (Vec::new(), Vec::new(), false, false);
+        while let Some(token) = self.tokens.get(self.pos) {
+            self.pos += 1;
+            let kind = match &token.kind {
+                TokenKind::Newline | TokenKind::Separator => {
+                    if indexed { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "cannot mix index and literal separators"))); }
+                    separated = true;
+                    if !nodes.is_empty() { pieces.push(std::mem::take(&mut nodes)); }
+                    continue;
                 }
-                return Ok(nodes);
-            }
-        };
-        nodes.push(Node { kind, span: token.span.clone() });
-    }
-    if let Some(span) = open { return Err(ParseFailure::Incomplete(span.error(ErrorKind::Syntax, "unclosed parenthesis"))); }
-    Ok(nodes)
-}
-
-fn dfn_body(tokens: &[Token], pos: &mut usize, span: &Span, depth: usize) -> Result<Parsed, ParseFailure> {
-    let mut statements = Vec::new();
-    while let Some(token) = tokens.get(*pos) {
-        if matches!(token.kind, TokenKind::BraceClose) {
-            *pos += 1;
-            return Ok(Parsed { statements });
+                TokenKind::Semicolon => {
+                    if separated || !open.is_some_and(|o| matches!(o.kind, TokenKind::BracketOpen)) {
+                        return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "semicolon belongs to index brackets")));
+                    }
+                    indexed = true;
+                    pieces.push(std::mem::take(&mut nodes));
+                    continue;
+                }
+                TokenKind::Close | TokenKind::BracketClose | TokenKind::BraceClose => {
+                    let matched = open.is_some_and(|o| {
+                        matches!(
+                            (&o.kind, &token.kind),
+                            (TokenKind::Open, TokenKind::Close)
+                                | (TokenKind::BracketOpen, TokenKind::BracketClose)
+                                | (TokenKind::BraceOpen, TokenKind::BraceClose)
+                        )
+                    });
+                    if !matched { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "mismatched closing delimiter"))); }
+                    if indexed || !nodes.is_empty() { pieces.push(nodes); }
+                    return Ok((pieces, separated));
+                }
+                TokenKind::Open | TokenKind::BracketOpen | TokenKind::BraceOpen => {
+                    if depth == 128 { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Limit, "delimiters nested too deeply"))); }
+                    let (mut cells, separated) = self.expressions(Some(token), depth + 1)?;
+                    let span = Span { source: token.span.source.clone(), range: token.span.range.start..self.tokens[self.pos - 1].span.range.end };
+                    let kind = if matches!(token.kind, TokenKind::BraceOpen) {
+                        let statements = cells.into_iter().map(statement).collect::<Result<Vec<_>, _>>()?;
+                        let kind = statements.iter().map(|s| definition_kind(&s.nodes)).max().unwrap_or(DefinitionKind::Function);
+                        NodeKind::Dfn(Rc::new(Definition { body: Parsed { statements }, span: span.clone(), kind }))
+                    } else if !separated && matches!(token.kind, TokenKind::BracketOpen) { NodeKind::Selection(cells) } else if cells.is_empty() {
+                        return Err(ParseFailure::Invalid(
+                            span.error(ErrorKind::Unsupported, "empty delimiters are not an array literal; namespaces are unsupported"),
+                        ));
+                    } else if separated {
+                        NodeKind::ArrayLiteral { cells, block: matches!(token.kind, TokenKind::BracketOpen) }
+                    } else if matches!(token.kind, TokenKind::Open) { NodeKind::Group(cells.pop().unwrap()) } else { unreachable!() };
+                    nodes.push(Node { kind, span });
+                    continue;
+                }
+                TokenKind::Literal(a) => NodeKind::Literal(a.clone()),
+                TokenKind::Function(f) => NodeKind::Function(*f),
+                TokenKind::Operator(op) => NodeKind::Operator(*op),
+                TokenKind::Name(name) => NodeKind::Name(name.clone()),
+                TokenKind::Assign => NodeKind::Assign,
+                TokenKind::Output => NodeKind::Output,
+                TokenKind::Guard(error) => {
+                    if !open.is_some_and(|o| matches!(o.kind, TokenKind::BraceOpen)) {
+                        return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "guards belong to dfn statements; namespaces are unsupported")));
+                    }
+                    NodeKind::Guard(*error)
+                }
+                TokenKind::Hybrid(h) => NodeKind::Hybrid(*h),
+            };
+            nodes.push(Node { kind, span: token.span.clone() });
         }
-        let nodes = sequence(tokens, pos, None, depth, true)?;
-        if !nodes.is_empty() { statements.push(statement(nodes)?); }
+        if let Some(open) = open { return Err(ParseFailure::Incomplete(open.span.error(ErrorKind::Syntax, "unclosed delimiter"))); }
+        if !nodes.is_empty() { pieces.push(nodes); }
+        Ok((pieces, separated))
     }
-    Err(ParseFailure::Incomplete(span.error(ErrorKind::Syntax, "unclosed definition")))
 }
 
 /// Check structure without evaluation. A complete input can still have a binding or domain error.
 pub fn parse(source: Rc<Source>) -> ParseStatus {
     let tokens = match lex(&source) { Ok(tokens) => tokens, Err(e) => return ParseStatus::Invalid(e) };
-    let mut pos = 0;
-    let mut statements = Vec::new();
-    while pos < tokens.len() {
-        match sequence(&tokens, &mut pos, None, 0, false) {
-            Ok(nodes) => {
-                if !nodes.is_empty() { statements.push(Statement { nodes, guard: None }); }
-            }
-            Err(ParseFailure::Incomplete(e)) => return ParseStatus::Incomplete(e),
-            Err(ParseFailure::Invalid(e)) => return ParseStatus::Invalid(e),
-        }
+    match (Parser { tokens: &tokens, pos: 0 }).expressions(None, 0) {
+        Ok((pieces, _)) => ParseStatus::Complete(Parsed { statements: pieces.into_iter().map(|nodes| Statement { nodes, guard: None }).collect() }),
+        Err(ParseFailure::Incomplete(e)) => ParseStatus::Incomplete(e),
+        Err(ParseFailure::Invalid(e)) => ParseStatus::Invalid(e),
     }
-    ParseStatus::Complete(Parsed { statements })
 }

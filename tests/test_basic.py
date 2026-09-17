@@ -16,6 +16,10 @@ def test_session_results_and_recovery():
         assert r.value.shape == () and r.value.to_python() == 15 and r.output == ['15']
         assert s.eval('3 ⋄ f←+').value is None
         assert s.eval('').value is None
+        r = s.eval('silent←{a←7} ⋄ silent 0')
+        assert r.value.to_python() == 7 and r.output == []
+        assert s.eval('{}0').value is None
+        assert s.eval('(silent 0)').output == ['7']
         empty = s.eval('⍳0').value
         assert empty.shape == (0,) and empty.to_python() == [] and empty.prototype == 0
         with pytest.raises(AplError) as caught: s.eval('⎕←7 ⋄ 1÷0')
@@ -33,6 +37,18 @@ def test_session_thread_affinity_and_copied_arrays():
         with pytest.raises(RuntimeError, match='creating thread'): pool.submit(s.close).result()
         assert pool.submit(saved.to_python).result() == [1, 2, 3]
         assert s.eval('2').value.to_python() == 2
+
+def test_nested_character_and_empty_results():
+    with Session() as s:
+        a = s.eval("(1 2)'ab'").value
+        assert a.shape == (2,) and a.to_python() == [[1, 2], ['a', 'b']]
+        empty = s.eval("0 3⍴''").value
+        assert empty.shape == (0, 3) and empty.data == () and empty.prototype == ' '
+        nested = s.eval('0⍴(1 2)(3 4 5)').value
+        matrix = s.eval('[1 2 ⋄ 3]').value
+        assert matrix.shape == (2, 2) and matrix.to_python() == [[1, 2], [3, 0]]
+    assert nested.shape == (0,) and nested.prototype.shape == (2,) and nested.prototype.to_python() == [0, 0]
+    assert a.to_python() == [[1, 2], ['a', 'b']]
 
 def test_unsupported_wrong_thread_destruction(monkeypatch):
     # PyO3 deliberately skips native destruction here; keep the documented restriction visible.

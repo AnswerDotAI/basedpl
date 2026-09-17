@@ -18,8 +18,24 @@ pub enum ErrorKind {
     Length,
     Limit,
     Rank,
+    Index,
     Value,
     Unsupported,
+}
+
+impl ErrorKind {
+    pub(crate) fn number(self) -> Option<usize> {
+        Some(match self {
+            Self::Syntax => 2,
+            Self::Index => 3,
+            Self::Rank => 4,
+            Self::Length => 5,
+            Self::Value => 6,
+            Self::Limit => 10,
+            Self::Domain => 11,
+            Self::Unsupported => return None,
+        })
+    }
 }
 
 impl fmt::Display for ErrorKind {
@@ -30,6 +46,7 @@ impl fmt::Display for ErrorKind {
             Self::Length => "LENGTH ERROR",
             Self::Limit => "LIMIT ERROR",
             Self::Rank => "RANK ERROR",
+            Self::Index => "INDEX ERROR",
             Self::Value => "VALUE ERROR",
             Self::Unsupported => "UNSUPPORTED",
         })
