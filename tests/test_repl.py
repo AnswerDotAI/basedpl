@@ -35,6 +35,8 @@ def test_terminal_symbol_entry_and_exit():
 
     try:
         read_until(b'\x1b[?2004h')
+        enter('1 2\r', '│1 2│\r\n└~──┘\r\n')
+        enter(']box off\r', 'OFF -style=max -trains=tree -fns=on\r\n')
         enter('界`assign `io\t4\r', '\r\n')  # space, Tab, Unicode byte offsets
         enter('+/界\r', '\r\n10\r\n')
         enter('2`times3+4\r', '\r\n14\r\n')  # delimiter is retained

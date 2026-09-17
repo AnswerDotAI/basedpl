@@ -10,7 +10,12 @@ use std::{cmp::Ordering, fmt};
 #[derive(Clone, Debug, PartialEq)]
 pub struct Number(Repr);
 #[derive(Clone, Debug, PartialEq)]
-enum Repr { Float(f64), Exact(BigRational), Complex(Complex64) }
+enum Repr {
+    Integer(i64),
+    Float(f64),
+    Exact(BigRational),
+    Complex(Complex64),
+}
 use Repr::*;
 
 const COMPARISON_TOLERANCE: f64 = 1e-14;
@@ -87,7 +92,7 @@ impl TryFrom<BigRational> for Number {
     fn try_from(n: BigRational) -> Result<Self, ErrorKind> {
         let (n, d) = n.into_raw();
         if d.is_zero() { return Err(ErrorKind::Domain); }
-        Ok(Self(Exact(BigRational::new(n, d))))
+        Ok(Self::exact(BigRational::new(n, d)))
     }
 }
 
@@ -122,8 +127,33 @@ fn complex_divide(x: Complex64, y: Complex64) -> Result<Complex64, &'static str>
 }
 
 impl Number {
+    pub(crate) fn checked_integer(op: Arithmetic, left: Option<i64>, y: i64) -> Option<i64> {
+        use Arithmetic::*;
+        match (op, left) {
+            (Plus, None) => Some(y),
+            (Minus, None) => y.checked_neg(),
+            (Times, None) => Some(y.signum()),
+            (Plus, Some(x)) => x.checked_add(y),
+            (Minus, Some(x)) => x.checked_sub(y),
+            (Times, Some(x)) => x.checked_mul(y),
+            (Divide, Some(0)) if y == 0 => Some(1),
+            (Divide, x) => {
+                let x = x.unwrap_or(1);
+                if x.checked_rem(y) == Some(0) { x.checked_div(y) } else { None }
+            }
+        }
+    }
+    pub fn from_integer(n: i64) -> Self { Self(Integer(n)) }
+    pub fn as_integer(&self) -> Option<i64> { match self.0 { Integer(n) => Some(n), _ => None } }
+    pub fn is_exact(&self) -> bool { matches!(self.0, Integer(_) | Exact(_)) }
+    fn exact(n: BigRational) -> Self {
+        if n.is_integer() { if let Some(i) = n.numer().to_i64() { return Self(Integer(i)); } }
+        Self(Exact(n))
+    }
     pub fn as_float(&self) -> Option<f64> { match self.0 { Float(n) => Some(n), _ => None } }
-    pub fn as_exact(&self) -> Option<&BigRational> { match &self.0 { Exact(n) => Some(n), _ => None } }
+    pub fn as_exact(&self) -> Option<BigRational> {
+        match &self.0 { Integer(n) => Some(BigRational::from_integer((*n).into())), Exact(n) => Some(n.clone()), _ => None }
+    }
     pub fn as_complex(&self) -> Option<Complex64> { match self.0 { Complex(n) => Some(n), _ => None } }
 
     pub(crate) fn parse(text: &str) -> Result<Self, ErrorKind> {
@@ -133,27 +163,31 @@ impl Number {
             let float = |s: &str| s.parse::<f64>().map_err(|_| ErrorKind::Syntax);
             return Self::try_from(Complex64::new(float(re)?, float(im)?));
         }
-        if let Some(n) = text.strip_suffix('x') { return Ok(Self(Exact(BigRational::from_integer(integer(n)?)))); }
+        if let Some(n) = text.strip_suffix('x') { return Ok(Self::exact(BigRational::from_integer(integer(n)?))); }
         if let Some((n, d)) = text.split_once('r') { return Self::try_from(BigRational::new_raw(integer(n)?, integer(d)?)); }
         Self::try_from(text.parse::<f64>().map_err(|_| ErrorKind::Syntax)?)
     }
 
-    pub(crate) fn unit(&self, n: i32) -> Self { match self.0 { Exact(_) => Self(Exact(BigRational::from_integer(n.into()))), _ => Self(Float(n as f64)) } }
+    pub(crate) fn unit(&self, n: i32) -> Self { if self.is_exact() { Self(Integer(n as i64)) } else { Self(Float(n as f64)) } }
 
     fn to_float(&self) -> Result<f64, &'static str> {
         let n = match &self.0 {
             Float(n) => *n,
+            Integer(n) => *n as f64,
             Exact(n) => n.to_f64().ok_or("value is outside floating-point range")?,
             Complex(_) => return Err("expected a real number"),
         };
         if n.is_finite() { Ok(n) } else { Err("value is outside floating-point range") }
     }
 
-    fn to_complex(&self) -> Result<Complex64, &'static str> { match self.0 { Complex(n) => Ok(n), _ => Ok(Complex64::new(self.to_float()?, 0.0)) } }
+    pub(crate) fn to_complex(&self) -> Result<Complex64, &'static str> { match self.0 { Complex(n) => Ok(n), _ => Ok(Complex64::new(self.to_float()?, 0.0)) } }
 
     /// Structural conversion only; allocation limits belong to the consuming operation.
     pub(crate) fn nonnegative_integer(&self) -> Result<usize, ErrorKind> {
         match &self.0 {
+            Integer(n) => {
+                if *n < 0 { Err(ErrorKind::Domain) } else { usize::try_from(*n).map_err(|_| ErrorKind::Limit) }
+            }
             Float(n) => {
                 if *n < 0.0 || n.fract() != 0.0 { return Err(ErrorKind::Domain); }
                 n.to_usize().ok_or(ErrorKind::Limit)
@@ -168,6 +202,7 @@ impl Number {
 
     pub(crate) fn integer(&self) -> Result<isize, ErrorKind> {
         match &self.0 {
+            Integer(n) => isize::try_from(*n).map_err(|_| ErrorKind::Limit),
             Float(n) if n.fract() == 0.0 => n.to_isize().ok_or(ErrorKind::Limit),
             Exact(n) if n.is_integer() => n.numer().to_isize().ok_or(ErrorKind::Limit),
             _ => Err(ErrorKind::Domain),
@@ -188,14 +223,23 @@ impl Number {
 
     pub(crate) fn math_monad(&self, op: Math) -> Result<Self, &'static str> {
         use Math::*;
-        if matches!(op, Not) { return Ok(self.unit(i32::from(!self.boolean()?))); }
+        if matches!(op, Not) { return Ok(Self::from_integer(i64::from(!self.boolean()?))); }
         if matches!(op, Gcd | Lcm | Nand | Nor) { return Err("this function needs a left argument"); }
         if matches!(op, Factorial) { return self.factorial(); }
-        if let Exact(y) = &self.0 {
+        if let Integer(y) = self.0 {
             match op {
-                Magnitude => return Ok(Self(Exact(y.abs()))),
-                Floor => return Ok(Self(Exact(y.floor()))),
-                Ceiling => return Ok(Self(Exact(y.ceil()))),
+                Floor | Ceiling => return Ok(self.clone()),
+                Magnitude => {
+                    if let Some(n) = y.checked_abs() { return Ok(Self(Integer(n))); }
+                }
+                _ => (),
+            }
+        }
+        if let Some(y) = self.as_exact() {
+            match op {
+                Magnitude => return Ok(Self::exact(y.abs())),
+                Floor => return Ok(Self::exact(y.floor())),
+                Ceiling => return Ok(Self::exact(y.ceil())),
                 _ => (),
             }
         }
@@ -228,7 +272,7 @@ impl Number {
             Log => Self::try_from(complex_divide(right.to_complex()?.ln(), self.to_complex()?.ln())?).map_err(|_| "result is not finite"),
             Nand | Nor => {
                 let (x, y) = (self.boolean()?, right.boolean()?);
-                Ok(right.result_zero(Some(self)).unit(i32::from(if matches!(op, Nand) { !(x && y) } else { !(x || y) })))
+                Ok(Self::from_integer(i64::from(if matches!(op, Nand) { !(x && y) } else { !(x || y) })))
             }
             Not => Err("without operates on arrays"),
         }
@@ -237,11 +281,11 @@ impl Number {
     fn minimum(&self, right: &Self, maximum: bool) -> Result<Self, &'static str> {
         let order = self.order(right)?;
         let selected = if maximum == order.is_lt() { right } else { self };
-        if matches!((&self.0, &right.0), (Exact(_), Exact(_))) { Ok(selected.clone()) } else { Self::try_from(selected.to_float()?).map_err(|_| "result is not finite") }
+        if self.is_exact() && right.is_exact() { Ok(selected.clone()) } else { Self::try_from(selected.to_float()?).map_err(|_| "result is not finite") }
     }
 
     fn residue(&self, right: &Self) -> Result<Self, &'static str> {
-        if let (Exact(x), Exact(y)) = (&self.0, &right.0) { return Ok(Self(Exact(if x.is_zero() { y.clone() } else { y - x * (y / x).floor() }))); }
+        if let (Some(x), Some(y)) = (self.as_exact(), right.as_exact()) { return Ok(Self::exact(if x.is_zero() { y } else { &y - &x * (&y / &x).floor() })); }
         let (x, y) = (self.to_complex()?, right.to_complex()?);
         if x.is_zero() { return Self::try_from(y).map_err(|_| "result is not finite"); }
         let q = complex_divide(y, x)?;
@@ -251,12 +295,12 @@ impl Number {
     }
 
     fn power(&self, right: &Self) -> Result<Self, &'static str> {
-        if let (Exact(x), Exact(y)) = (&self.0, &right.0) {
+        if let (Some(x), Some(y)) = (self.as_exact(), right.as_exact()) {
             if y.is_integer() {
                 let n = y.to_i32().ok_or("exact exponent is too large")?;
                 if x.is_zero() && n < 0 { return Err("zero to a negative power"); }
                 if n.unsigned_abs() > 1_000_000 { return Err("exact exponent is too large"); }
-                return Ok(Self(Exact(x.pow(n))));
+                return Ok(Self::exact(x.pow(n)));
             }
         }
         let (x, y) = (self.to_complex()?, right.to_complex()?);
@@ -274,15 +318,18 @@ impl Number {
         if let Some(mut z) = x.as_complex() {
             while z.re <= 0.0 || z.im < 0.0 { z *= Complex64::i(); }
             Self::try_from(z).map_err(|_| "result is not finite")
-        } else { x.math_monad(Math::Magnitude) }
+        } else {
+            let result = x.math_monad(Math::Magnitude)?;
+            if self.is_exact() && right.is_exact() { Ok(result) } else { Self::try_from(result.to_float()?).map_err(|_| "result is not finite") }
+        }
     }
 
     fn factorial(&self) -> Result<Self, &'static str> {
-        if let Exact(y) = &self.0 {
+        if let Some(y) = self.as_exact() {
             if y.is_integer() && !y.is_negative() {
                 let n = self.nonnegative_integer().map_err(|_| "factorial argument is too large")?;
                 if n > 100_000 { return Err("exact factorial argument is too large"); }
-                return Ok(Self(Exact(BigRational::from_integer((1..=n).map(BigInt::from).product()))));
+                return Ok(Self::exact(BigRational::from_integer((1..=n).map(BigInt::from).product())));
             }
         }
         if self.as_complex().is_some() { Self::try_from(log_gamma(self.to_complex()? + 1.0).exp()) } else { Self::try_from(libm::tgamma(self.to_float()? + 1.0)) }
@@ -291,8 +338,31 @@ impl Number {
 
     fn circle(&self, right: &Self) -> Result<Self, &'static str> {
         let y = right.to_complex()?;
+        let code = self.integer().map_err(|_| "circle selector must be an integer")?;
+        if y.im == 0.0 {
+            let x = y.re;
+            let real = match code {
+                0 if x.abs() <= 1.0 => Some((1.0 - x * x).sqrt()),
+                1 => Some(x.sin()),
+                2 => Some(x.cos()),
+                3 => Some(x.tan()),
+                4 => Some(x.hypot(1.0)),
+                5 => Some(x.sinh()),
+                6 => Some(x.cosh()),
+                7 => Some(x.tanh()),
+                -1 if x.abs() <= 1.0 => Some(x.asin()),
+                -2 if x.abs() <= 1.0 => Some(x.acos()),
+                -3 => Some(x.atan()),
+                -4 if x.abs() >= 1.0 => Some(x * (1.0 - (1.0 / x).powi(2)).sqrt()),
+                -5 => Some(x.asinh()),
+                -6 if x >= 1.0 => Some(x.acosh()),
+                -7 if x.abs() < 1.0 => Some(x.atanh()),
+                _ => None,
+            };
+            if let Some(real) = real { return Self::try_from(real).map_err(|_| "result is not finite"); }
+        }
         let one = Complex64::new(1.0, 0.0);
-        let result = match self.integer().map_err(|_| "circle selector must be an integer")? {
+        let result = match code {
             0 => (one - y * y).sqrt(),
             1 => y.sin(),
             2 => y.cos(),
@@ -325,10 +395,15 @@ impl Number {
     }
 
     pub(crate) fn order(&self, right: &Self) -> Result<Ordering, &'static str> {
-        match (&self.0, &right.0) { (Exact(x), Exact(y)) => Ok(x.cmp(y)), _ => Ok(self.to_float()?.partial_cmp(&right.to_float()?).unwrap()) }
+        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { return Ok(x.cmp(y)); }
+        if let (Some(x), Some(y)) = (self.as_exact(), right.as_exact()) { return Ok(x.cmp(&y)); }
+        Ok(self.to_float()?.partial_cmp(&right.to_float()?).unwrap())
     }
 
     pub(crate) fn grade_order(&self, right: &Self) -> Ordering {
+        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { return x.cmp(y); }
+        if let Integer(x) = self.0 { return Self(Exact(BigRational::from_integer(x.into()))).grade_order(right); }
+        if matches!(right.0, Integer(_)) { return right.grade_order(self).reverse(); }
         match (&self.0, &right.0) {
             (Complex(x), Complex(y)) => x.re.partial_cmp(&y.re).unwrap().then(x.im.partial_cmp(&y.im).unwrap()),
             (Complex(x), _) => Self(Float(x.re)).grade_order(right).then(x.im.partial_cmp(&0.0).unwrap()),
@@ -337,6 +412,7 @@ impl Number {
             (Exact(x), Float(y)) => x.cmp(&BigRational::from_float(*y).unwrap()),
             (Float(_), Exact(_)) => right.grade_order(self).reverse(),
             (Float(x), Float(y)) => x.partial_cmp(y).unwrap(),
+            _ => unreachable!(),
         }
     }
 
@@ -352,8 +428,8 @@ impl Number {
                 if n >= 0 || k > n { return Ok(one.unit(0)); }
                 let count = n.checked_sub(k).ok_or("binomial argument is too large")?;
                 let upper = k.checked_neg().and_then(|v| v.checked_sub(1)).ok_or("binomial argument is too large")?;
-                let a = Self(Exact(BigRational::from_integer(count.into())));
-                let b = Self(Exact(BigRational::from_integer(upper.into())));
+                let a = Self::exact(BigRational::from_integer(count.into()));
+                let b = Self::exact(BigRational::from_integer(upper.into()));
                 let value = a.binomial(&b)?.dyad(Arithmetic::Times, &one.unit(if count % 2 == 0 { 1 } else { -1 }))?;
                 return Ok(value);
             }
@@ -364,7 +440,7 @@ impl Number {
             if k > 100_000 { return Err("binomial argument is too large"); }
             let mut value = one.clone();
             for i in 0..k {
-                let i = Self(Exact(BigRational::from_integer(i.into()))).dyad(Arithmetic::Times, &one)?;
+                let i = Self::exact(BigRational::from_integer(i.into())).dyad(Arithmetic::Times, &one)?;
                 value = value.dyad(Arithmetic::Times, &right.dyad(Arithmetic::Minus, &i)?)?.dyad(Arithmetic::Divide, &i.dyad(Arithmetic::Plus, &one)?)?;
             }
             return Ok(value);
@@ -377,26 +453,28 @@ impl Number {
 
     /// APL comparison is deliberately not Eq/Ord: approximate equality is non-transitive.
     pub(crate) fn compare(&self, right: &Self) -> Result<Ordering, &'static str> {
-        match (&self.0, &right.0) {
-            (Exact(x), Exact(y)) => Ok(x.cmp(y)),
-            _ => {
-                let (x, y) = (self.to_float()?, right.to_float()?);
-                // Dyalog 20 relative ⎕CT=1E¯14; no absolute tolerance near zero.
-                Ok(if float_equal(x, y) { Ordering::Equal } else { x.partial_cmp(&y).unwrap() })
-            }
-        }
+        if self.is_exact() && right.is_exact() { return self.order(right); }
+        let (x, y) = (self.to_float()?, right.to_float()?);
+        // Dyalog 20 relative ⎕CT=1E¯14; no absolute tolerance near zero.
+        Ok(if float_equal(x, y) { Ordering::Equal } else { x.partial_cmp(&y).unwrap() })
     }
 
     pub(crate) fn monad(&self, op: Arithmetic) -> Result<Self, &'static str> {
         use Arithmetic::*;
-        match &self.0 {
-            Exact(y) => Ok(Self(Exact(match op {
-                Plus => y.clone(),
+        if let Integer(y) = self.0 {
+            let result = Self::checked_integer(op, None, y);
+            if let Some(n) = result { return Ok(Self(Integer(n))); }
+        }
+        if let Some(y) = self.as_exact() {
+            return Ok(Self::exact(match op {
+                Plus => y,
                 Minus => -y,
                 Times => y.signum(),
                 Divide if y.is_zero() => return Err("division by zero"),
                 Divide => y.recip(),
-            }))),
+            }));
+        }
+        match &self.0 {
             Float(y) => Self::try_from(match op {
                 Plus => *y,
                 Minus => -y,
@@ -417,11 +495,29 @@ impl Number {
                 Divide => complex_divide(Complex64::new(1.0, 0.0), *y)?,
             })
             .map_err(|_| "result is not finite"),
+            _ => unreachable!(),
         }
     }
 
     pub(crate) fn dyad(&self, op: Arithmetic, right: &Self) -> Result<Self, &'static str> {
         use Arithmetic::*;
+        if let (Integer(x), Integer(y)) = (&self.0, &right.0) {
+            let result = Self::checked_integer(op, Some(*x), *y);
+            if let Some(n) = result { return Ok(Self(Integer(n))); }
+        }
+        if self.is_exact() && right.is_exact() {
+            let (x, y) = (self.as_exact().unwrap(), right.as_exact().unwrap());
+            return Ok(Self::exact(match op {
+                Plus => x + y,
+                Minus => x - y,
+                Times => x * y,
+                Divide if y.is_zero() => {
+                    if !x.is_zero() { return Err("division by zero"); }
+                    BigRational::from_integer(1.into())
+                }
+                Divide => x / y,
+            }));
+        }
         match (&self.0, &right.0) {
             (Complex(_), _) | (_, Complex(_)) => {
                 let (x, y) = (self.to_complex()?, right.to_complex()?);
@@ -433,16 +529,6 @@ impl Number {
                 })
                 .map_err(|_| "result is not finite")
             }
-            (Exact(x), Exact(y)) => Ok(Self(Exact(match op {
-                Plus => x + y,
-                Minus => x - y,
-                Times => x * y,
-                Divide if y.is_zero() => {
-                    if !x.is_zero() { return Err("division by zero"); }
-                    BigRational::from_integer(1.into())
-                }
-                Divide => x / y,
-            }))),
             _ => {
                 let (x, y) = (self.to_float()?, right.to_float()?);
                 Self::try_from(match op {
@@ -464,6 +550,7 @@ impl Number {
 impl fmt::Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let text = match &self.0 {
+            Integer(n) => format!("{n}x"),
             Float(n) => n.to_string(),
             Exact(n) if n.is_integer() => format!("{}x", n.numer()),
             Exact(n) => format!("{}r{}", n.numer(), n.denom()),

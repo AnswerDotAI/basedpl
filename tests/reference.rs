@@ -31,13 +31,12 @@ fn expected_array(value: &Value) -> Array {
 fn same_element(x: &Element, y: &Element, tolerance: f64) -> bool {
     match (x, y) {
         (Element::Nested(x), Element::Nested(y)) => same_array(x, y, tolerance),
+        (Element::Number(x), Element::Number(y)) if x.is_exact() && y.as_float().is_some() => {
+            x.as_exact() == num_rational::BigRational::from_float(y.as_float().unwrap())
+        }
         (Element::Number(x), Element::Number(y)) if tolerance != 0.0 => {
-            let real = |a: f64, b: f64| a == b || (a - b).abs() <= tolerance * a.abs().max(b.abs());
-            match (x.as_float(), y.as_float(), x.as_complex(), y.as_complex()) {
-                (Some(a), Some(b), _, _) => real(a, b),
-                (_, _, Some(a), Some(b)) => real(a.re, b.re) && real(a.im, b.im),
-                _ => x == y,
-            }
+            let complex = |n: &miniapl::Number| n.as_complex().or_else(|| n.as_float().map(|x| num_complex::Complex64::new(x, 0.)));
+            match (complex(x), complex(y)) { (Some(a), Some(b)) => a == b || (a - b).norm() <= tolerance * a.norm().max(b.norm()), _ => x == y }
         }
         _ => x == y,
     }

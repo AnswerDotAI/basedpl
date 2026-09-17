@@ -34,16 +34,17 @@ strip = true
 incremental = false
 
 [dependencies]
-serde_json = "1"
-unicode-width = { version = "0.2.2", default-features = false }
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+unicode-width = { version = ">=0.2.2, <1", default-features = false }
 rustyline = { version = "18.0.1", default-features = false, features = ["custom-bindings"] }
-pyo3 = { version = "0.29.2", optional = true, features = ["num-bigint"] }
-num-rational = "0.4.2"
-num-complex = "0.4.6"
-num-bigint = "0.4.6"
-num-traits = "0.2.19"
-libm = "0.2"
-rand = "0.9"
+pyo3 = { version = ">=0.29.2, <1", optional = true, features = ["num-bigint"] }
+num-rational = ">=0.4.2, <1"
+num-complex = ">=0.4.6, <1"
+num-bigint = ">=0.4.6, <1"
+num-traits = ">=0.2.19, <1"
+libm = ">=0.2, <1"
+rand = ">=0.9, <1"
+faer = { version = ">=0.24.4, <1", default-features = false, features = ["std", "linalg"] }
 
 [features]
 python = ["dep:pyo3"]

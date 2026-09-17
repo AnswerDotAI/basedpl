@@ -21,6 +21,7 @@ fn expression(code: &str, name: &str, out: &mut impl Write, err: &mut impl Write
 fn repl(out: &mut impl Write, err: &mut impl Write, interactive: bool) -> io::Result<i32> {
     let mut editor = if interactive { Some(crate::editor::LineEditor::new().map_err(io::Error::other)?) } else { None };
     let mut session = Session::new();
+    if interactive { session.display = crate::display::Settings::interactive(); }
     let mut code = String::new();
     let mut incomplete = None;
     let mut failed = false;
@@ -48,6 +49,12 @@ fn repl(out: &mut impl Write, err: &mut impl Write, interactive: bool) -> io::Re
                 return Ok(1);
             }
             return Ok(i32::from(failed && !interactive));
+        }
+        if code.trim_start().starts_with(']') {
+            failed |= !show(session.eval(&code), out, err)?;
+            code.clear();
+            out.flush()?;
+            continue;
         }
         match parse(Source::new("<repl>", code.as_str())) {
             ParseStatus::Incomplete(e) => {

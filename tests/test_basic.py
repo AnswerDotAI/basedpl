@@ -5,7 +5,44 @@ import pytest
 from fractions import Fraction
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
-from miniapl import Session, AplError
+from miniapl import Session, AplError, Array
+
+def test_numpy_import_and_binding():
+    np = pytest.importorskip('numpy')
+    original = np.arange(12, dtype=np.int64).reshape(3, 4)[:, ::2]
+    copied = Array.from_numpy(original)
+    original[:] = 99
+    with Session() as s:
+        s.set('m', copied)
+        assert s.eval('+/m').value.to_python() == [2., 10., 18.]
+        for a in [np.array(True), np.array(3, dtype=np.float32), np.array([1, 2j]), np.empty((0, 3))]:
+            s.set('a', Array.from_numpy(a))
+            np.testing.assert_array_equal(s.eval('a').value.to_numpy(), a)
+        for code in ['1r3', "(1 2)'ab'", '0⍴⊂1 2']:
+            a = s.eval(code).value
+            s.set('a', a)
+            assert s.eval('a').value == a
+        with pytest.raises(TypeError): s.set('m', original)
+        with pytest.raises(ValueError): s.set('m←99', copied)
+        assert s.eval('+/m').value.to_python() == [2., 10., 18.]
+    with pytest.raises(RuntimeError, match='closed'): s.set('m', copied)
+    for a in [np.array([2**53+1]), np.array([np.inf]), np.array([complex(0, np.nan)])]:
+        with pytest.raises(ValueError): Array.from_numpy(a)
+    for a in [np.array(['a']), np.array([1], dtype=object)]:
+        with pytest.raises(TypeError): Array.from_numpy(a)
+
+def test_numpy_copy():
+    np = pytest.importorskip('numpy')
+    with Session() as s:
+        arrays = [s.eval(code).value for code in ['2 2⍴⍳4', '3', '1 2j3', '0 3⍴0']]
+        for code in ['1x', '1r3', '1 2x', '(1 2)(3 4)', "'ab'", '0⍴1x', '0⍴⊂1 2']:
+            with pytest.raises(TypeError, match='float/complex'): s.eval(code).value.to_numpy()
+    for a, dtype in zip(arrays, [np.float64, np.float64, np.complex128, np.float64]):
+        result = a.to_numpy()
+        assert result.shape == a.shape and result.dtype == dtype
+        np.testing.assert_array_equal(result.ravel(), a.data)
+    arrays[0].to_numpy()[0, 0] = 99
+    assert arrays[0].data == (1., 2., 3., 4.)
 
 def test_session_results_and_recovery():
     with Session() as s:
@@ -120,15 +157,17 @@ def test_exact_values_and_recovery():
 def test_exact_installed_command_and_json():
     res = subprocess.run(['miniapl', '-e', '1x÷3x ⋄ 6x÷3x ⋄ 1x÷3'], capture_output=True, text=True, timeout=10)
     assert (res.returncode, res.stdout, res.stderr) == (0, '1r3\n2x\n0.3333333333333333\n', '')
-    requests = '\n'.join(json.dumps(c) for c in ['v←9007199254740993x 0.5 1r3', 'v', '0/1r3', '1r0', '1r3+1r6']) + '\n'
+    requests = '\n'.join(json.dumps(c) for c in ['v←9007199254740993x 0.5 1r3', 'v', '0/1r3', '1r0', '1r3+1r6', '2x*100x', '2<3']) + '\n'
     res = subprocess.run(['miniapl', '--json'], input=requests, capture_output=True, text=True, timeout=10)
     assert res.returncode == 0 and not res.stderr
     replies = [json.loads(line) for line in res.stdout.splitlines()]
-    assert replies[1]['value'] == {'shape': [3], 'data': [{'rational': ['9007199254740993', '1']}, 0.5, {'rational': ['1', '3']}],
-                                  'prototype': {'rational': ['0', '1']}}
-    assert replies[2]['value'] == {'shape': [0], 'data': [], 'prototype': {'rational': ['0', '1']}}
+    assert replies[1]['value'] == {'shape': [3], 'data': [9007199254740993, 0.5, {'rational': ['1', '3']}], 'prototype': 0}
+    assert replies[2]['value'] == {'shape': [0], 'data': [], 'prototype': 0}
     assert replies[3]['error']['kind'] == 'DOMAIN ERROR'
     assert replies[4]['value']['data'] == [{'rational': ['1', '2']}]
+    assert replies[5]['value']['data'] == [2**100]
+    assert type(replies[5]['value']['data'][0]) is int
+    assert replies[6]['value']['data'] == [1] and replies[6]['output'] == ['1x']
 
 def test_complex_python_and_json():
     with Session() as s:

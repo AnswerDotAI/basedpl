@@ -182,6 +182,8 @@ fn lex(source: &Rc<Source>) -> Result<Vec<Token>, Error> {
                 '.' => TokenKind::Operator(OperatorKind::Product),
                 '⌸' => TokenKind::Operator(OperatorKind::Key),
                 '⍣' => TokenKind::Operator(OperatorKind::Power),
+                '@' => TokenKind::Operator(OperatorKind::At),
+                '⌺' => TokenKind::Operator(OperatorKind::Stencil),
                 '(' => TokenKind::Open,
                 ')' => TokenKind::Close,
                 '[' => TokenKind::BracketOpen,

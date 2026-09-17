@@ -1,11 +1,14 @@
+mod agreement;
 mod array;
 pub mod cli;
+mod display;
 mod editor;
 mod error;
 mod eval;
 mod number;
 mod primitive;
 mod protocol;
+mod selection;
 mod syntax;
 
 pub use array::{Array, Element};

@@ -14,10 +14,35 @@ struct ArrayData {
     data: Storage,
     prototype: Element,
     depth: usize,
+    exact: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-enum Storage { Float(Vec<f64>), Mixed(Vec<Element>) }
+enum Storage { Integer(Vec<i64>), Float(Vec<f64>), Mixed(Vec<Element>) }
+
+impl Storage {
+    fn compact(data: Vec<Element>) -> Self {
+        if !data.is_empty() && data.iter().all(|e| matches!(e, Element::Number(n) if n.as_integer().is_some())) {
+            Self::Integer(
+                data.into_iter()
+                    .map(|e| {
+                        let Element::Number(n) = e else { unreachable!() };
+                        n.as_integer().unwrap()
+                    })
+                    .collect(),
+            )
+        } else if !data.is_empty() && data.iter().all(|e| matches!(e, Element::Number(n) if n.as_float().is_some())) {
+            Self::Float(
+                data.into_iter()
+                    .map(|e| {
+                        let Element::Number(n) = e else { unreachable!() };
+                        n.as_float().unwrap()
+                    })
+                    .collect(),
+            )
+        } else { Self::Mixed(data) }
+    }
+}
 
 const MAX_NESTING: usize = 128;
 pub(crate) const MAX_GENERATED_ELEMENTS: usize = 1_000_000;
@@ -44,6 +69,7 @@ pub(crate) fn element_count(shape: &[usize]) -> Result<usize, ErrorKind> {
 }
 
 impl Element {
+    fn exact_domain(&self) -> Option<bool> { match self { Self::Number(n) => Some(n.is_exact()), Self::Character(_) => None, Self::Nested(a) => a.0.exact } }
     fn normalized(self) -> Self { match self { Self::Nested(a) if a.is_scalar() && !matches!(a.at(0), Self::Nested(_)) => a.at(0), _ => self } }
 
     pub fn prototype(&self) -> Self { self.prototype_with(&mut HashMap::new()) }
@@ -56,6 +82,7 @@ impl Element {
 }
 
 impl Array {
+    pub(crate) fn storage_id(&self) -> usize { Rc::as_ptr(&self.0) as usize }
     pub fn from_parts(shape: Vec<usize>, data: Vec<Element>, empty_prototype: Element) -> Result<Self, ErrorKind> {
         if data.is_empty() { Self::empty(shape, empty_prototype) } else { Self::new(shape, data) }
     }
@@ -67,25 +94,23 @@ impl Array {
         let depth = data.iter().map(Element::depth).max().unwrap();
         if depth > MAX_NESTING { return Err(ErrorKind::Limit); }
         let prototype = data[0].prototype();
-        let data = if data.iter().all(|e| matches!(e, Element::Number(n) if n.as_float().is_some())) {
-            Storage::Float(
-                data.into_iter()
-                    .map(|e| {
-                        let Element::Number(n) = e else { unreachable!() };
-                        n.as_float().unwrap()
-                    })
-                    .collect(),
-            )
-        } else { Storage::Mixed(data) };
-        Ok(Self(Rc::new(ArrayData { shape, data, prototype, depth })))
+        let exact = data.iter().filter_map(Element::exact_domain).reduce(|a, b| a && b);
+        let data = Storage::compact(data);
+        Ok(Self(Rc::new(ArrayData { shape, data, prototype, depth, exact })))
     }
 
     pub fn floats(shape: Vec<usize>, mut data: Vec<f64>) -> Result<Self, ErrorKind> {
         if element_count(&shape)? != data.len() { return Err(ErrorKind::Length); }
         if data.iter().any(|n| !n.is_finite()) { return Err(ErrorKind::Domain); }
         for n in &mut data { if *n == 0.0 { *n = 0.0; } }
-        Ok(Self(Rc::new(ArrayData { shape, data: Storage::Float(data), prototype: Element::Number(0.0.try_into().unwrap()), depth: 0 })))
+        Ok(Self(Rc::new(ArrayData { shape, data: Storage::Float(data), prototype: Element::Number(0.0.try_into().unwrap()), depth: 0, exact: Some(false) })))
     }
+
+    pub fn integers(shape: Vec<usize>, data: Vec<i64>) -> Result<Self, ErrorKind> {
+        if element_count(&shape)? != data.len() { return Err(ErrorKind::Length); }
+        Ok(Self(Rc::new(ArrayData { shape, data: Storage::Integer(data), prototype: Element::Number(Number::from_integer(0)), depth: 0, exact: Some(true) })))
+    }
+    pub fn is_exact(&self) -> bool { self.0.exact == Some(true) }
 
     /// Empty arrays require a prototype item; their shape is never inferred from the buffer.
     pub fn empty(shape: Vec<usize>, prototype: Element) -> Result<Self, ErrorKind> {
@@ -94,19 +119,29 @@ impl Array {
         let depth = prototype.depth();
         if depth > MAX_NESTING { return Err(ErrorKind::Limit); }
         let prototype = prototype.prototype();
-        let data = if matches!(&prototype, Element::Number(n) if n.as_float().is_some()) { Storage::Float(Vec::new()) } else { Storage::Mixed(Vec::new()) };
-        Ok(Self(Rc::new(ArrayData { shape, data, prototype, depth })))
+        let exact = prototype.exact_domain();
+        let data = match &prototype {
+            Element::Number(n) if n.as_integer().is_some() => Storage::Integer(Vec::new()),
+            Element::Number(n) if n.as_float().is_some() => Storage::Float(Vec::new()),
+            _ => Storage::Mixed(Vec::new()),
+        };
+        Ok(Self(Rc::new(ArrayData { shape, data, prototype, depth, exact })))
     }
 
     pub fn scalar(n: impl TryInto<Number>) -> Result<Self, ErrorKind> { Self::new(vec![], vec![Element::Number(n.try_into().map_err(|_| ErrorKind::Domain)?)]) }
     pub fn is_scalar(&self) -> bool { self.shape().is_empty() }
     pub fn is_singleton(&self) -> bool { self.len() == 1 }
     pub fn shape(&self) -> &[usize] { &self.0.shape }
-    pub fn len(&self) -> usize { match &self.0.data { Storage::Float(v) => v.len(), Storage::Mixed(v) => v.len() } }
+    pub fn len(&self) -> usize { match &self.0.data { Storage::Integer(v) => v.len(), Storage::Float(v) => v.len(), Storage::Mixed(v) => v.len() } }
     pub fn is_empty(&self) -> bool { self.len() == 0 }
     pub fn as_floats(&self) -> Option<&[f64]> { match &self.0.data { Storage::Float(v) => Some(v), _ => None } }
+    pub fn as_integers(&self) -> Option<&[i64]> { match &self.0.data { Storage::Integer(v) => Some(v), _ => None } }
     pub fn at(&self, i: usize) -> Element {
-        match &self.0.data { Storage::Float(v) => Element::Number(v[i].try_into().unwrap()), Storage::Mixed(v) => v[i].clone() }
+        match &self.0.data {
+            Storage::Integer(v) => Element::Number(Number::from_integer(v[i])),
+            Storage::Float(v) => Element::Number(v[i].try_into().unwrap()),
+            Storage::Mixed(v) => v[i].clone(),
+        }
     }
     pub fn elements(&self) -> impl DoubleEndedIterator<Item = Element> + ExactSizeIterator + Clone + '_ { (0..self.len()).map(|i| self.at(i)) }
     pub(crate) fn items(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = Element> + '_ { range.map(|i| self.at(i)) }
@@ -114,7 +149,7 @@ impl Array {
 
     pub(crate) fn with_shape(&self, shape: Vec<usize>) -> Result<Self, ErrorKind> {
         if element_count(&shape)? != self.len() { return Err(ErrorKind::Length); }
-        Ok(Self(Rc::new(ArrayData { shape, data: self.0.data.clone(), prototype: self.prototype().clone(), depth: self.0.depth })))
+        Ok(Self(Rc::new(ArrayData { shape, data: self.0.data.clone(), prototype: self.prototype().clone(), depth: self.0.depth, exact: self.0.exact })))
     }
 
     pub(crate) fn cells(&self, rank: usize) -> Result<Vec<Self>, ErrorKind> {
@@ -123,9 +158,10 @@ impl Array {
         let shape = &self.shape()[split..];
         let size = element_count(shape)?;
         (0..count)
-            .map(|i| match self.as_floats() {
-                Some(data) => Self::floats(shape.to_vec(), data[i * size..(i + 1) * size].to_vec()),
-                None => Self::from_parts(shape.to_vec(), self.items(i * size..(i + 1) * size).collect(), self.prototype().clone()),
+            .map(|i| match &self.0.data {
+                Storage::Float(data) => Self::floats(shape.to_vec(), data[i * size..(i + 1) * size].to_vec()),
+                Storage::Integer(data) => Self::integers(shape.to_vec(), data[i * size..(i + 1) * size].to_vec()),
+                Storage::Mixed(_) => Self::from_parts(shape.to_vec(), self.items(i * size..(i + 1) * size).collect(), self.prototype().clone()),
             })
             .collect()
     }
@@ -133,6 +169,56 @@ impl Array {
     pub fn as_number(&self) -> Option<Number> {
         if !self.is_scalar() { return None; }
         match self.at(0) { Element::Number(n) => Some(n), _ => None }
+    }
+
+    pub(crate) fn formatted(&self) -> Result<Self, ErrorKind> {
+        if matches!(self.prototype(), Element::Character(_)) && self.elements().all(|e| matches!(e, Element::Character(_))) { return Ok(self.clone()); }
+        let numeric = matches!(self.prototype(), Element::Number(_)) && self.elements().all(|e| matches!(e, Element::Number(_)));
+        let (shape, text) = if numeric && self.shape().len() > 1 {
+            let columns = *self.shape().last().unwrap();
+            let text: Vec<_> = self
+                .elements()
+                .map(|e| {
+                    let Element::Number(n) = e else { unreachable!() };
+                    n.to_string()
+                })
+                .collect();
+            let parts = |s: &str| {
+                let l = s.split('.').next().unwrap().chars().count();
+                (l, s.chars().count() - l)
+            };
+            let mut widths = vec![(1usize, 0usize); columns];
+            for (i, s) in text.iter().enumerate() {
+                let (l, r) = parts(s);
+                let w = &mut widths[i % columns];
+                w.0 = w.0.max(l);
+                w.1 = w.1.max(r);
+            }
+            let width = widths.iter().map(|(l, r)| l + r).sum::<usize>() + columns.saturating_sub(1);
+            let mut shape = self.shape().to_vec();
+            *shape.last_mut().unwrap() = width;
+            generated_len(&shape)?;
+            let mut result = String::new();
+            for (i, s) in text.iter().enumerate() {
+                if i % columns != 0 { result.push(' '); }
+                let (l, r) = parts(s);
+                let w = widths[i % columns];
+                result.push_str(&" ".repeat(w.0 - l));
+                result.push_str(s);
+                result.push_str(&" ".repeat(w.1 - r));
+            }
+            (shape, result)
+        } else {
+            let text = if self.is_empty() { String::new() } else { self.to_string() };
+            let lines: Vec<_> = text.split('\n').collect();
+            if lines.len() == 1 { (vec![text.chars().count()], text) } else {
+                let width = lines.iter().map(|s| s.chars().count()).max().unwrap();
+                let joined = lines.iter().map(|s| format!("{s}{}", " ".repeat(width - s.chars().count()))).collect();
+                (vec![lines.len(), width], joined)
+            }
+        };
+        generated_len(&shape)?;
+        Self::from_parts(shape, text.chars().map(Element::Character).collect(), Element::Character(' '))
     }
 
     pub(crate) fn disclose(&self) -> Self {
@@ -183,11 +269,13 @@ impl Array {
         let result = Self(Rc::new(ArrayData {
             shape: self.shape().to_vec(),
             data: match &self.0.data {
+                Storage::Integer(v) => Storage::Integer(vec![0; v.len()]),
                 Storage::Float(v) => Storage::Float(vec![0.0; v.len()]),
-                Storage::Mixed(v) => Storage::Mixed(v.iter().map(|e| e.prototype_with(filled)).collect()),
+                Storage::Mixed(v) => Storage::compact(v.iter().map(|e| e.prototype_with(filled)).collect()),
             },
             prototype: self.prototype().clone(),
             depth: self.0.depth,
+            exact: self.0.exact,
         }));
         filled.insert(key, result.clone());
         result
@@ -205,6 +293,9 @@ impl fmt::Display for Array {
                 if let Element::Character(c) = item { write!(f, "{c}")?; }
             }
             return Ok(());
+        }
+        if self.shape().len() > 1 && self.elements().all(|e| matches!(e, Element::Number(_))) {
+            if let Ok(formatted) = self.formatted() { return formatted.fmt(f); }
         }
         if self.shape().len() > 1 {
             let columns = *self.shape().last().unwrap();
