@@ -1,10 +1,8 @@
 # Reference acceptance cases
 
-These files retain all 734 assertions and 8 example programs from ngn, all 1,138 April core assertions/demos and 675 library/demo assertions/setup entries, and all 5,747 APLcart main/tacit catalogue rows. Entries are not removed because miniapl cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
+These files retain ngn assertions/example programs, April core and library assertions/demos/setup, APLcart main/tacit catalogue rows, and selected Dyalog documentation examples. Entries are not removed because miniapl cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
 
-The initial import had 538 active cases: 140 ngn, 324 April and 74 APLcart. It had 5,143 pending entries, 2,154 scope questions and 467 explicit exclusions. These are source entries, not a claim that 8,302 executable conformance tests exist. In particular, many APLcart entries are recipes with unbound arguments and no expected result. They still need concrete examples. Library cases need their definitions and setup.
-
-After Dyalog examples and the September 18 sweep: 1,583 active (460 ngn, 897 April, 98 APLcart, 128 Dyalog), 4,226 pending, 2,154 questions and 469 exclusions. The sweep enabled 917 cases with independent expectations. It also exposed and helped fix a nonterminating complex GCD. Current counts and failure details come from the scan below; old fixture reasons describe their last review, not necessarily today's implementation.
+Source entries are not necessarily executable tests. Many APLcart recipes have unbound arguments and no expected result. They need concrete examples. Library cases need their definitions and setup. Use the scanner below for current counts and failures; fixture reasons describe their last review, not necessarily today's implementation. Progress notes belong in `meta/`, not this README.
 
 Run the active cases with:
 
@@ -24,7 +22,7 @@ Each JSONL row has a stable `id`, `code`, `status`, and `reason`. Its original s
 To enable a case:
 
 1. Find its `id` in the source JSONL file. Check its recipe, prerequisites and original expectation. Do not treat another dialect as the specification.
-2. Supply concrete `code` and `expected` or `expected_error` if missing. `expected` contains `shape`, flat `data`, and `prototype`. Nested arrays use the same structure. Complex elements use `{"complex":[real,imag]}`. Derive expectations independently of miniapl.
+2. Supply concrete `code` and `expected` or `expected_error` if missing. Array expectations contain `shape`, flat `data`, and `prototype`. Nested arrays use the same structure. Complex elements use `{"complex":[real,imag]}`. `expected: null` explicitly expects no result; an absent expectation remains invalid. Derive expectations independently of miniapl.
 3. Run the selected case, including while it is pending:
 
    ```bash
@@ -36,6 +34,19 @@ To enable a case:
 Pending cases do not catch arbitrary failures or count as passing. A case without an expectation fails explicitly when selected. New failures in active cases fail the suite. Tests compare shape, nesting, data and prototype. Comparisons are exact unless the case has an explicit `relative_tolerance` for reference rounding differences. Display expectations remain separate from array expectations.
 
 ## Find cases ready to enable
+
+Use the Python API in a kernel to inspect and edit fixtures without dumping JSONL records:
+
+```python
+from miniapl.reference import Corpus
+corpus = Corpus()  # tests/reference, relative to the repo cwd
+corpus.find('format:', status='pending')
+corpus.get('ngn:391', 'code', 'expected', 'oracle')
+corpus.update('ngn:391', reason='nested formatting: ready to check')
+corpus.update_many({'ngn:391': {'reason': 'reviewed'}, 'ngn:392': {'reason': 'reviewed'}})
+```
+
+`find` searches ID/code/reason and returns concise entries keyed by ID. Filter with `source` or `status`; `limit=None` returns all matches. `get` defaults to code/status/reason; `get_many` reads a batch. Request `'*'` explicitly for full records. Updates read fresh files, preserve unrelated fields, and report changed field names. Use `remove=['expected_error']` when replacing an error expectation with a value; `None` means JSON null, not deletion. Unknown IDs write nothing. Use these methods rather than reading and patching whole JSONL lines in the conversation.
 
 Rebuild the installed command after Rust changes, then scan:
 
@@ -51,7 +62,7 @@ python scripts/reference.py activate --source april --match 'april:590\b'
 
 Rust's `reference::check` owns comparison for the test runner, worker and private Python `_check_reference(json_case, timeout)` API. Each case receives a fresh session inside a persistent worker. The scanner uses a 0.25-second cooperative deadline per case, adjustable with `--timeout`. An unresponsive process is killed after the client's grace period and replaced for the next case. The failed case is not retried. Random cases, missing expectations and scope questions are counted separately, not treated as execution failures.
 
-The report defaults to `meta/reference-scan.json`. It contains each original fixture and its result, including actual structured values on mismatches. Numerical rounding allowances must be explicit per case: two Gaussian GCD/LCM cases use `1e-14`, as do the initial arithmetic cases. Semantic differences do not get a tolerance. CI runs ordinary offline Rust tests; it does not need the scanner or a worker process.
+The report defaults to `meta/reference-scan.json`. It contains each original fixture and its result, including actual structured values on mismatches. Numerical rounding allowances must be explicit per case. Semantic differences do not get a tolerance. CI runs ordinary offline Rust tests; it does not need the scanner or a worker process.
 
 ## Sources and adaptations
 
@@ -68,7 +79,7 @@ For each new glyph, read its documented valences and select examples that establ
 
 Dyalog's two fixed-order float reduction examples are retained as explicit exclusions. miniapl permits reassociation of primitive float sums/products. Generic-function reduction and primitive scan order remain tested; do not replace excluded expectations with one compiler's chosen answer.
 
-ngn uses origin 0 and has different prototype/dialect rules. Its original expressions and expectations are retained. The first pass activated origin-independent cases. Later activation also reviews expressions where the changed origin cancels, such as sorting through the array's own grade indices. The `origin: 0` field describes upstream, not miniapl's execution settings. Closed literal right-hand expectations were evaluated independently in Dyalog, not with miniapl.
+ngn uses origin 0 and has different prototype/dialect rules. Its original expressions and expectations are retained. Adapt index/axis operands to origin 1 and capture values and prototypes independently in Dyalog. Changed code is retained in `original_code`; changed origin is recorded in `original_origin`. Unadapted `origin: 0` describes upstream, not miniapl's execution settings. Closed literal right-hand expectations were evaluated independently in Dyalog, not with miniapl.
 
 April's literal Common Lisp expectations were converted to structured values. Ordinary rational expectations represent approximate results under miniapl's numeric policy, not opt-in exact `r` literals. The power alias `⋆` is written as standard `*` outside quoted text. Printed-format expectations, host wrappers, and library dependencies remain visible for review.
 

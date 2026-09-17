@@ -860,7 +860,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array
                     .elements()
                     .map(|e| {
                         let code = numeric(&e, span)?.integer().map_err(|k| span.error(k, "circle inverse needs integer codes"))?;
-                        if !(-7..=7).contains(&code) { return Err(span.error(ErrorKind::Domain, "circle code has no supported inverse")); }
+                        if !(-7..=12).contains(&code) { return Err(span.error(ErrorKind::Domain, "circle code has no supported inverse")); }
                         Ok(integer(-code as i64))
                     })
                     .collect::<Result<Vec<_>, Error>>()?;
@@ -887,6 +887,13 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array
         Math(crate::number::Math::Circle) => Arithmetic(Divide).call(Some(right), &Array::scalar(std::f64::consts::PI).unwrap(), span),
         Enclose => Disclose.call(None, right, span),
         Disclose => Enclose.call(None, right, span),
+        Nest => Ok(if right.is_scalar() { right.disclose() } else { right.clone() }),
+        Iota => {
+            let counter = if right.shape().len() == 1 && matches!(right.prototype(), Element::Number(_)) { Tally } else { Shape };
+            let candidate = counter.call(None, right, span)?;
+            if !array_match(&iota(&candidate, span)?, right, span)? { return Err(span.error(ErrorKind::Domain, "argument is not an index generator result")); }
+            Ravel.call(None, &candidate, span)
+        }
         Take => split(right, axis, span),
         Drop => Take.call(None, right, span),
         Where => inverse_where(right, span),
@@ -974,7 +981,7 @@ fn matrix_divide(left: Option<&Array>, right: &Array, span: &Context<'_>) -> Res
         }
         None => m,
     };
-    if m < n { return Err(span.error(ErrorKind::Domain, "matrix is underdetermined")); }
+    if m < n { return Err(span.error(ErrorKind::Length, "matrix is underdetermined")); }
     let mut shape = right.shape().get(1..).unwrap_or(&[]).to_vec();
     if let Some(x) = left { shape.extend_from_slice(x.shape().get(1..).unwrap_or(&[])); }
     else { shape = right.shape().iter().rev().copied().collect(); }
@@ -1353,7 +1360,7 @@ fn take_drop(take: bool, counts: &Array, right: &Array, axes: Option<&[usize]>, 
     let old = if right.is_scalar() { vec![1; counts.len()] } else { right.shape().to_vec() };
     let mut shape = old.clone();
     let mut starts = vec![0i128; shape.len()];
-    if counts.len() > shape.len() { return Err(span.error(ErrorKind::Length, "counts do not agree with axes")); }
+    if counts.len() > shape.len() { return Err(span.error(ErrorKind::Rank, "counts exceed argument rank")); }
     for (i, item) in counts.elements().enumerate() {
         let axis = axes.map_or(i, |a| a[i]);
         if axis >= shape.len() { return Err(span.error(ErrorKind::Domain, "axis is outside array rank")); }
@@ -1491,13 +1498,20 @@ fn transpose(axes: Option<&Array>, right: &Array, span: &Context<'_>) -> Result<
     let axes = match axes {
         None => (0..rank).rev().collect::<Vec<_>>(),
         Some(a) => {
-            if a.shape().len() > 1 || a.len() != rank { return Err(span.error(ErrorKind::Length, "transpose needs one axis per dimension")); }
-            a.elements().map(|e| index(numeric(&e, span)?, rank, span)).collect::<Result<_, _>>()?
+            if a.len() != rank { return Err(span.error(ErrorKind::Length, "transpose needs one axis per dimension")); }
+            a.elements()
+                .map(|e| {
+                    let n = numeric(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "invalid transpose axis"))?;
+                    if n == 0 { return Err(span.error(ErrorKind::Domain, "transpose axes start at one")); }
+                    if n > rank { return Err(span.error(ErrorKind::Rank, "transpose axis exceeds argument rank")); }
+                    Ok(n - 1)
+                })
+                .collect::<Result<_, _>>()?
         }
     };
     let mut shape = vec![usize::MAX; axes.iter().max().map_or(0, |n| n + 1)];
     for (i, &axis) in axes.iter().enumerate() { shape[axis] = shape[axis].min(right.shape()[i]); }
-    if shape.contains(&usize::MAX) { return Err(span.error(ErrorKind::Domain, "transpose axes must be consecutive from 1")); }
+    if shape.contains(&usize::MAX) { return Err(span.error(ErrorKind::Rank, "transpose axes must be consecutive from 1")); }
     remap(
         right,
         shape.clone(),
@@ -1607,7 +1621,8 @@ fn squad(left: &Array, right: &Array, axes: Option<&[usize]>, span: &Context<'_>
 
 fn coordinate_offset(coords: &Array, right: &Array, span: &Context<'_>) -> Result<usize, Error> {
     if coords.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "a coordinate must be a scalar or vector")); }
-    if coords.len() != right.shape().len() { return Err(span.error(ErrorKind::Length, "a coordinate needs one index per axis")); }
+    if coords.elements().any(|e| !matches!(e, Element::Number(_))) { return Err(span.error(ErrorKind::Domain, "a coordinate must contain numbers")); }
+    if coords.len() != right.shape().len() { return Err(span.error(ErrorKind::Rank, "a coordinate needs one index per axis")); }
     let mut offset = 0;
     for (n, &size) in coords.elements().zip(right.shape()) { offset = offset * size + index(numeric(&n, span)?, size, span)?; }
     Ok(offset)
@@ -1672,7 +1687,7 @@ pub(crate) fn choose(right: &Array, indices: &Array, span: &Context<'_>) -> Resu
     let mut paths = Vec::with_capacity(indices.len());
     for item in indices.elements() {
         let coordinates = item.as_array();
-        let reach = coordinates.elements().any(|e| matches!(e, Element::Nested(_)));
+        let reach = coordinates.elements().any(|e| matches!(e, Element::Nested(_))) || (right.shape().len() == 1 && coordinates.len() > 1);
         let steps = if reach { coordinates.elements().map(|e| e.as_array()).collect() } else { vec![coordinates] };
         let mut current = right.clone();
         let mut path = Vec::new();

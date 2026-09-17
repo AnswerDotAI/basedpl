@@ -12,6 +12,7 @@ import argparse
 from collections import Counter
 from pathlib import Path
 from fractions import Fraction
+from miniapl.reference import Corpus
 
 
 def lisp_tokens(text):
@@ -343,17 +344,15 @@ def review(report, source='', match='', status='pass', limit=20, details=False):
 def activate(report, source='', match=''):
     "Activate reviewed passing selections only if their saved fixture records are unchanged."
     rows = selected(report, source, match)
+    if not rows:
+        print('Activated 0 reviewed cases')
+        return
     updates = {r['case']['id']: r['case'] for r in rows}
-    files = {}
-    for path in {Path(r['file']) for r in rows}:
-        cases = [json.loads(line) for line in path.read_text().splitlines()]
-        for case in cases:
-            if case['id'] not in updates: continue
-            if case != updates[case['id']]: raise ValueError(f'{case["id"]}: fixture changed since scan; rescan before activation')
-            case.update(status='active', reason='reviewed independent upstream expectation; shared Rust reference checker passes')
-        files[path] = cases
-    for path, cases in files.items():
-        path.write_text(''.join(json.dumps(c, ensure_ascii=False, separators=(',', ':'))+'\n' for c in cases))
+    corpus = Corpus(Path(rows[0]['file']).parent)
+    current = corpus.get_many(updates, '*')
+    for id, case in updates.items():
+        if current[id] != case: raise ValueError(f'{id}: fixture changed since scan; rescan before activation')
+    corpus.update(updates, status='active', reason='reviewed independent reference expectation; shared Rust reference checker passes')
     print(f'Activated {len(updates)} reviewed cases')
 
 

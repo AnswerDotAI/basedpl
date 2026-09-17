@@ -45,20 +45,23 @@ impl Labels {
         seen.insert(a.storage_id(), result.clone());
         Ok(Element::Nested(result))
     }
-    pub fn replacements(&self, selected: &Array, right: &Array, span: &Span) -> Result<(Selection, Array), Error> {
+    pub fn replacements(&self, selected: &Array, right: &Array, whole_item: bool, span: &Span) -> Result<(Selection, Array), Error> {
         let mut paths = Vec::new();
         let mut values = Vec::new();
-        self.collect(selected, right, span, &mut paths, &mut values)?;
+        if whole_item {
+            let path = if let Some(n) = selected.as_number() {
+                let id = n.nonnegative_integer().map_err(|k| span.error(k, "invalid selection label"))?;
+                id.checked_sub(1).and_then(|i| self.paths.get(i))
+            } else { self.nested.get(&selected.storage_id()).map(|(_, path)| path) };
+            paths.push(path.ok_or_else(|| span.error(ErrorKind::Index, "cannot assign to a missing item"))?.clone());
+            values.push(Element::Nested(right.clone()));
+        }
+        else { self.collect(selected, right, span, &mut paths, &mut values)?; }
         let shape = vec![paths.len()];
         let values = Array::from_parts(shape.clone(), values, right.prototype().clone()).map_err(|k| span.error(k, "invalid replacement"))?;
         Ok((Selection { shape, paths }, values))
     }
     fn collect(&self, selected: &Array, right: &Array, span: &Span, paths: &mut Vec<Vec<usize>>, values: &mut Vec<Element>) -> Result<(), Error> {
-        if let Some((_, path)) = self.nested.get(&selected.storage_id()) {
-            paths.push(path.clone());
-            values.push(Element::Nested(right.clone()));
-            return Ok(());
-        }
         if !right.is_singleton() && right.shape() != selected.shape() {
             return Err(span.error(ErrorKind::Length, "replacement shape does not match selection"));
         }

@@ -47,8 +47,9 @@ pub fn check(case: &Value, options: EvalOptions) -> Value {
     let Some(code) = case["code"].as_str().filter(|s| !s.is_empty()) else { return json!({"status":"invalid", "message":"missing code"}); };
     let error_kind = case["expected_error"].as_str().filter(|s| !s.is_empty());
     let expected = expected_array(&case["expected"]);
+    let no_result = case.get("expected") == Some(&Value::Null);
     let tolerance = case["relative_tolerance"].as_f64().unwrap_or(0.0);
-    if (!tolerance.is_finite() || tolerance < 0.0) || (error_kind.is_none() && expected.is_none()) {
+    if (!tolerance.is_finite() || tolerance < 0.0) || (error_kind.is_none() && expected.is_none() && !no_result) {
         return json!({"status":"invalid", "message":"invalid or missing independent expectation"});
     }
     let result = Session::new().eval_with(code, options);
@@ -62,7 +63,9 @@ pub fn check(case: &Value, options: EvalOptions) -> Value {
     }
     let mismatch = match (error_kind, &result.value, expected) {
         (Some(kind), _, _) => Some(format!("expected {kind}")),
+        (_, None, _) if no_result => None,
         (_, None, _) => Some("no result".into()),
+        (_, Some(_), _) if no_result => Some("expected no result".into()),
         (_, Some(actual), Some(expected)) => difference(actual, &expected, tolerance),
         _ => unreachable!(),
     };

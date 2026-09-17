@@ -76,7 +76,7 @@ fn real_floor(y: f64) -> f64 {
 fn complex_floor(y: Complex64) -> Complex64 {
     let (a, b) = (real_floor(y.re), real_floor(y.im));
     let (x, z) = (y.re - a, y.im - b);
-    if x + z < 1.0 - COMPARISON_TOLERANCE { Complex64::new(a, b) } else if x < z { Complex64::new(a, b + 1.0) } else { Complex64::new(a + 1.0, b) }
+    if x + z < 1.0 - COMPARISON_TOLERANCE { Complex64::new(a, b) } else if x <= z { Complex64::new(a, b + 1.0) } else { Complex64::new(a + 1.0, b) }
 }
 
 impl TryFrom<f64> for Number {
@@ -380,6 +380,8 @@ impl Number {
         }
         let one = Complex64::new(1.0, 0.0);
         let result = match code {
+            8 | -8 if y.im == 0.0 => Complex64::new(0.0, if code == 8 { y.re.hypot(1.0) } else { -y.re.hypot(1.0) }),
+            -7 if y.im == 0.0 && y.re.abs() > 1.0 => Complex64::new((1.0 / y.re).atanh(), std::f64::consts::FRAC_PI_2.copysign(y.re)),
             0 => (one - y * y).sqrt(),
             1 => y.sin(),
             2 => y.cos(),

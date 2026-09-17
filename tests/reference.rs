@@ -10,7 +10,7 @@ const SOURCES: [&str; 4] = [
 
 fn check(case: &Value) {
     let result = reference::check(case, EvalOptions { timeout: Some(std::time::Duration::from_secs(2)), ..EvalOptions::default() });
-    assert_eq!(result["status"], "pass", "{}: {}: {result}", case["id"], case["code"]);
+    assert_eq!(result["status"], "pass", "{}: {}: {} {}", case["id"], case["code"], result["kind"], result["message"]);
 }
 
 #[test]

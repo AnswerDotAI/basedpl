@@ -174,6 +174,7 @@ impl Array {
     pub(crate) fn formatted(&self) -> Result<Self, ErrorKind> {
         if matches!(self.prototype(), Element::Character(_)) && self.elements().all(|e| matches!(e, Element::Character(_))) { return Ok(self.clone()); }
         let numeric = matches!(self.prototype(), Element::Number(_)) && self.elements().all(|e| matches!(e, Element::Number(_)));
+        if !numeric { return self.formatted_cells(); }
         let (shape, text) = if numeric && self.shape().len() > 1 {
             let columns = *self.shape().last().unwrap();
             let text: Vec<_> = self
@@ -219,6 +220,75 @@ impl Array {
         };
         generated_len(&shape)?;
         Self::from_parts(shape, text.chars().map(Element::Character).collect(), Element::Character(' '))
+    }
+
+    fn formatted_cells(&self) -> Result<Self, ErrorKind> {
+        if self.is_empty() { return Self::empty(vec![0], Element::Character(' ')); }
+        let columns = self.shape().last().copied().unwrap_or(1);
+        let mut widths = vec![0; columns];
+        let mut padded = vec![false; columns];
+        let mut cells = Vec::new();
+        let mut matrix = self.shape().len() > 1;
+        let mut size = 0;
+        for (i, item) in self.elements().enumerate() {
+            let text = item.as_array().formatted()?;
+            size += text.len();
+            generated_len(&[size])?;
+            matrix |= text.shape().len() > 1;
+            let width = text.shape().last().copied().unwrap_or(1);
+            widths[i % columns] = widths[i % columns].max(width);
+            padded[i % columns] |= matches!(item, Element::Nested(_));
+            cells.push((text.formatted_rows()?, width, matches!(item, Element::Number(_))));
+        }
+        let width = widths.iter().sum::<usize>() + 2 * padded.iter().filter(|&&p| p).count() + padded.windows(2).filter(|p| !(p[0] && p[1])).count();
+        let mut lines = Vec::new();
+        for (row, chunk) in cells.chunks(columns).enumerate() {
+            for _ in 0..self.page_breaks(row) { lines.push(vec![' '; width]); }
+            let height = chunk.iter().map(|(rows, _, _)| rows.len()).max().unwrap().max(1);
+            generated_len(&[lines.len() + height, width])?;
+            for y in 0..height {
+                let mut line = Vec::new();
+                for (x, (rows, cell_width, numeric)) in chunk.iter().enumerate() {
+                    if x > 0 && !(padded[x - 1] && padded[x]) { line.push(' '); }
+                    if padded[x] { line.push(' '); }
+                    let extra = widths[x] - cell_width;
+                    if *numeric { line.extend(std::iter::repeat_n(' ', extra)); }
+                    if let Some(row) = rows.get(y) { line.extend(row); }
+                    else { line.extend(std::iter::repeat_n(' ', *cell_width)); }
+                    if !numeric { line.extend(std::iter::repeat_n(' ', extra)); }
+                    if padded[x] { line.push(' '); }
+                }
+                lines.push(line);
+            }
+        }
+        let shape = if matrix { vec![lines.len(), width] } else { vec![width] };
+        Self::from_parts(shape, lines.into_iter().flatten().map(Element::Character).collect(), Element::Character(' '))
+    }
+
+    fn page_breaks(&self, row: usize) -> usize {
+        if row == 0 { return 0; }
+        let (mut period, mut count) = (1, 0);
+        for &dim in self.shape().iter().rev().skip(1).take(self.shape().len().saturating_sub(2)) {
+            period *= dim;
+            count += usize::from(row.is_multiple_of(period));
+        }
+        count
+    }
+
+    fn formatted_rows(&self) -> Result<Vec<Vec<char>>, ErrorKind> {
+        let columns = self.shape().last().copied().unwrap_or(1);
+        let rows = self.shape().iter().rev().skip(1).product();
+        generated_len(&[rows, columns.max(1)])?;
+        let mut lines = Vec::new();
+        for row in 0..rows {
+            for _ in 0..self.page_breaks(row) { lines.push(vec![' '; columns]); }
+            lines.push(
+                (0..columns)
+                    .map(|i| match self.at(row * columns + i) { Element::Character(c) => c, _ => unreachable!() })
+                    .collect(),
+            );
+        }
+        Ok(lines)
     }
 
     pub(crate) fn disclose(&self) -> Self {

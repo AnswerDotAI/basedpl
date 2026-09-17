@@ -13,6 +13,8 @@ struct Function { node: Rc<FunctionNode>, depth: usize, environment: Option<usiz
 const MAX_DEPTH: usize = 128;
 const MAX_CALL_DEPTH: usize = 64;
 
+fn implicit_name(name: &str) -> bool { matches!(name, "⍺" | "⍵" | "⍺⍺" | "⍵⍵" | "∇" | "∇∇") }
+
 #[derive(Debug)]
 enum FunctionNode {
     Primitive(Primitive),
@@ -349,6 +351,10 @@ fn inverse(f: &Function, left: Option<&Array>, right: &Array, span: &Span, sessi
         Primitive(p) => crate::primitive::inverse(*p, left.map(|a| (a, true)), right, None, &session.execution.at(span)),
         Inverse(g) => return g.call(left, right, span, session, output),
         Modified(Each, Operand::Function(g)) => return each(&g.inverse(span)?, left, right, span, session, output),
+        Modified(Outer, Operand::Function(g)) => {
+            let bound = left.ok_or_else(|| span.error(ErrorKind::Domain, "outer-product inverse needs a bound argument"))?;
+            inverse_outer(g, bound, true, right, span, session, output)
+        }
         Modified(Commute, Operand::Function(g)) => {
             let Primitive(p) = g.node.as_ref() else { return Err(span.error(ErrorKind::Domain, "this commute has no known inverse")); };
             if let Some(x) = left { crate::primitive::inverse(*p, Some((x, false)), right, None, &session.execution.at(span)) } else {
@@ -362,15 +368,17 @@ fn inverse(f: &Function, left: Option<&Array>, right: &Array, span: &Span, sessi
                     crate::primitive::Primitive::Arithmetic(Arithmetic::Times) => {
                         crate::primitive::Primitive::Math(Math::Power).call(Some(right), &Array::scalar(0.5).unwrap(), &session.execution.at(span))
                     }
+                    crate::primitive::Primitive::Math(Math::Floor | Math::Ceiling) => Ok(right.clone()),
                     _ => Err(span.error(ErrorKind::Domain, "this commute has no known inverse")),
                 }
             }
         }
         Composed(Compose, [Operand::Array(a), Operand::Function(g)]) => return g.inverse(span)?.call(Some(a), right, span, session, output),
-        Composed(Compose, [Operand::Function(g), Operand::Array(a)]) => {
-            let Primitive(p) = g.node.as_ref() else { return Err(span.error(ErrorKind::Domain, "this right-bound function has no known inverse")); };
-            crate::primitive::inverse(*p, Some((a, false)), right, None, &session.execution.at(span))
-        }
+        Composed(Compose, [Operand::Function(g), Operand::Array(a)]) => match g.node.as_ref() {
+            Primitive(p) => crate::primitive::inverse(*p, Some((a, false)), right, None, &session.execution.at(span)),
+            Modified(Outer, Operand::Function(h)) => inverse_outer(h, a, false, right, span, session, output),
+            _ => Err(span.error(ErrorKind::Domain, "this right-bound function has no known inverse")),
+        },
         Composed(op @ (Compose | Rank | Over), [Operand::Function(g), Operand::Function(h)]) => {
             let transformed = if matches!(op, Over) { left.map(|x| h.call_array(None, x, span, session, output)).transpose()? } else { left.cloned() };
             let y = g.inverse(span)?.call_array(if matches!(op, Rank) { None } else { transformed.as_ref() }, right, span, session, output)?;
@@ -394,6 +402,44 @@ fn inverse(f: &Function, left: Option<&Array>, right: &Array, span: &Span, sessi
         _ => Err(span.error(ErrorKind::Domain, "this function has no known inverse")),
     }?;
     Ok(Bound::new(Value::Array(array)))
+}
+
+fn inverse_outer(
+    f: &Function,
+    bound: &Array,
+    first: bool,
+    right: &Array,
+    span: &Span,
+    session: &mut Session,
+    output: &mut Vec<String>,
+) -> Result<Array, Error> {
+    let rank = bound.shape().len();
+    if bound.is_empty() || right.shape().len() < rank {
+        return Err(span.error(ErrorKind::Domain, "outer-product inverse needs a nonempty matching bound frame"));
+    }
+    let split = if first { rank } else { right.shape().len() - rank };
+    let (prefix, suffix) = right.shape().split_at(split);
+    let (frame, shape) = if first { (prefix, suffix) } else { (suffix, prefix) };
+    if frame != bound.shape() || shape.len() > 1 {
+        return Err(span.error(ErrorKind::Domain, "outer-product inverse needs a scalar/vector result and matching bound frame"));
+    }
+    let count = crate::array::element_count(shape).map_err(|k| span.error(k, "invalid inverse result shape"))?;
+    let mut result: Vec<Array> = Vec::with_capacity(count.max(1));
+    for j in 0..if count == 0 { 1 } else { bound.len() } {
+        let a = Operand::Array(bound.at(j).as_array());
+        let f = Operand::Function(f.clone());
+        let operands = if first { [a, f] } else { [f, a] };
+        let inverse = Function::new(FunctionNode::Composed(OperatorKind::Compose, operands), span)?.inverse(span)?;
+        for i in 0..count.max(1) {
+            let value = if count == 0 { right.prototype().clone() } else { right.at(if first { j * count + i } else { i * bound.len() + j }) };
+            let candidate = inverse.call_array(None, &value.as_array(), span, session, output)?;
+            if j == 0 { result.push(candidate); } else if !crate::primitive::array_match(&result[i], &candidate, &session.execution.at(span))? {
+                return Err(span.error(ErrorKind::Domain, "outer-product cells do not have a consistent inverse"));
+            }
+        }
+    }
+    if count == 0 { Array::empty(shape.to_vec(), Element::Nested(result[0].clone()).prototype()) } else { Array::new(shape.to_vec(), result.into_iter().map(Element::Nested).collect()) }
+    .map_err(|k| span.error(k, "invalid outer-product inverse"))
 }
 
 fn inverse_scan(f: &Function, h: Hybrid, right: &Array, span: &crate::execution::Context<'_>) -> Result<Array, Error> {
@@ -513,7 +559,7 @@ fn inner(
         for column in columns {
             let paired = if n == 0 { Array::empty(vec![0], column[0].prototype()) } else { Array::new(vec![n], column) }
                 .map_err(|k| span.error(k, "invalid product cell"))?;
-            results.push(Element::Nested(fold(f, Hybrid { scan: false, first: false, axis: None }, None, &paired, span, session, output)?));
+            results.push(fold(f, Hybrid { scan: false, first: false, axis: None }, None, &paired, span, session, output)?.at(0));
         }
     }
     let result = if size == 0 { Array::empty(shape, results[0].prototype()) } else { Array::new(shape, results) };
@@ -602,7 +648,11 @@ fn identity(operand: &Function, prototype: &Element, span: &crate::execution::Co
     }
     let n = match operand.node.as_ref() {
         FunctionNode::Primitive(
-            Primitive::Arithmetic(Plus | Minus) | Primitive::Math(Magnitude | Gcd) | Primitive::Compare(Less | Greater | NotEqual) | Primitive::Reverse(_),
+            Primitive::Arithmetic(Plus | Minus)
+            | Primitive::Math(Magnitude | Gcd)
+            | Primitive::Compare(Less | Greater | NotEqual)
+            | Primitive::Reverse(_)
+            | Primitive::Encode,
         ) => 0.0,
         FunctionNode::Primitive(
             Primitive::Arithmetic(Times | Divide)
@@ -929,7 +979,7 @@ impl Session {
         let ParseStatus::Complete(parsed) = crate::parse(Source::new("<binding>", name)) else { return Err(ErrorKind::Syntax); };
         if parsed.statements.len() != 1 || parsed.statements[0].nodes.len() != 1 { return Err(ErrorKind::Syntax); }
         let NodeKind::Name(parsed_name) = &parsed.statements[0].nodes[0].kind else { return Err(ErrorKind::Syntax); };
-        if parsed_name != name || matches!(name, "⍺" | "⍵" | "⍺⍺" | "⍵⍵" | "∇" | "∇∇") { return Err(ErrorKind::Syntax); }
+        if parsed_name != name || implicit_name(name) { return Err(ErrorKind::Syntax); }
         self.names.insert(name.to_owned(), Value::Array(value));
         Ok(())
     }
@@ -1062,7 +1112,8 @@ impl Session {
         !nodes.is_empty()
             && nodes.iter().all(|n| match &n.kind {
                 NodeKind::Name(name) => {
-                    self.current.is_some() || !matches!(self.lookup(name), Some(Value::Function(_) | Value::Hybrid(_) | Value::Operator(_)))
+                    (self.current.is_some() && !implicit_name(name))
+                        || !matches!(self.lookup(name), Some(Value::Function(_) | Value::Hybrid(_) | Value::Operator(_)))
                 }
                 NodeKind::Group(inner) => self.assignment_names(inner),
                 _ => false,
@@ -1141,9 +1192,7 @@ impl Session {
     }
 
     fn store(&mut self, name: &str, value: Value, span: &Span) -> Result<(), Error> {
-        if matches!(name, "⍺" | "⍵" | "⍺⍺" | "⍵⍵" | "∇" | "∇∇") {
-            return Err(span.error(ErrorKind::Syntax, "arguments and operands cannot be assigned here"));
-        }
+        if implicit_name(name) { return Err(span.error(ErrorKind::Syntax, "arguments and operands cannot be assigned here")); }
         let names = match self.current { Some(i) => &mut self.frames[i].names, None => &mut self.names };
         names.insert(name.to_owned(), value);
         Ok(())
@@ -1258,9 +1307,9 @@ impl Session {
 
     fn assign_selected(&mut self, nodes: &[Node], modifier: Option<Function>, value: &Value, output: &mut Vec<String>) -> Result<(), Error> {
         let Value::Array(right) = value else { return Err(nodes[0].span.error(ErrorKind::Domain, "selective assignment needs an array")); };
-        let (name, original, labels, selected) = self.selection_expression(nodes, output)?;
+        let (name, original, labels, selected, whole_item) = self.selection_expression(nodes, output)?;
         let span = &nodes[0].span;
-        let (selection, values) = labels.replacements(&selected, right, span)?;
+        let (selection, values) = labels.replacements(&selected, right, whole_item, span)?;
         let updated = match modifier {
             Some(f) => self.modify_selection(&original, &selection, &f, &values, span, output)?,
             None => selection.write(&original, &values, &self.execution.at(span))?,
@@ -1268,25 +1317,25 @@ impl Session {
         self.store(&name, Value::Array(updated), span)
     }
 
-    fn selection_expression(&mut self, nodes: &[Node], output: &mut Vec<String>) -> Result<(String, Array, crate::selection::Labels, Array), Error> {
+    fn selection_expression(&mut self, nodes: &[Node], output: &mut Vec<String>) -> Result<(String, Array, crate::selection::Labels, Array, bool), Error> {
         let root = nodes
             .iter()
             .rposition(|n| !matches!(n.kind, NodeKind::Selection(_)))
             .ok_or_else(|| nodes[0].span.error(ErrorKind::Syntax, "selection needs a name"))?;
         let span = &nodes[root].span;
-        let (name, original, labels, selected) = match &nodes[root].kind {
+        let (name, original, labels, selected, whole_item) = match &nodes[root].kind {
             NodeKind::Name(name) => {
                 let Some(Value::Array(original)) = self.lookup(name).cloned() else {
                     return Err(span.error(ErrorKind::Value, "selection needs an array name"));
                 };
                 let (labels, selected) = crate::selection::Labels::new(&original, span)?;
-                (name.clone(), original, labels, selected)
+                (name.clone(), original, labels, selected, false)
             }
             NodeKind::Group(inner) => self.selection_expression(inner, output)?,
             _ => return Err(span.error(ErrorKind::Syntax, "selection must end in an array name")),
         };
-        let Step::Done(result) = Binder::evaluate_marked(nodes, self, output, false, Some((root, selected)))? else { unreachable!() };
-        Ok((name, original, labels, result.array(span)?))
+        let (Step::Done(result), whole_item) = Binder::evaluate_marked(nodes, self, output, false, Some((root, selected, whole_item)))? else { unreachable!() };
+        Ok((name, original, labels, result.array(span)?, whole_item))
     }
 
     fn modify_selection(
@@ -1515,6 +1564,7 @@ struct Entity {
     span: Span,
     shy: bool,
     selected: bool,
+    whole_item: bool,
     assignment: bool,
 }
 
@@ -1574,9 +1624,15 @@ fn strength(left: &Entity, right: &Entity) -> u8 {
 struct Binder { stack: Vec<Entity> }
 impl Binder {
     fn evaluate(nodes: &[Node], session: &mut Session, output: &mut Vec<String>, tail: bool) -> Result<Step, Error> {
-        Self::evaluate_marked(nodes, session, output, tail, None)
+        Self::evaluate_marked(nodes, session, output, tail, None).map(|(step, _)| step)
     }
-    fn evaluate_marked(nodes: &[Node], session: &mut Session, output: &mut Vec<String>, tail: bool, marked: Option<(usize, Array)>) -> Result<Step, Error> {
+    fn evaluate_marked(
+        nodes: &[Node],
+        session: &mut Session,
+        output: &mut Vec<String>,
+        tail: bool,
+        marked: Option<(usize, Array, bool)>,
+    ) -> Result<(Step, bool), Error> {
         let mut binder = Self { stack: Vec::new() };
         let mut cursor = nodes.len();
         let mut assignment = None;
@@ -1591,16 +1647,21 @@ impl Binder {
                     assignment = Some(i);
                     None
                 } else {
-                    let selected = marked.as_ref().is_some_and(|(index, _)| *index == i);
+                    let selected = marked.as_ref().is_some_and(|(index, ..)| *index == i);
                     let term = if selected {
                         Term::Value(Value::Array(marked.as_ref().unwrap().1.clone()))
                     } else if let NodeKind::Selection(parts) = &node.kind { Term::Selection(session.indices(parts, output)?) } else { Term::Value(session.resolve(node, output)?) };
-                    Some(Entity { term, span: node.span.clone(), shy: false, selected, assignment: false })
+                    let whole_item = selected && marked.as_ref().unwrap().2;
+                    Some(Entity { term, span: node.span.clone(), shy: false, selected, whole_item, assignment: false })
                 }
             } else { None };
             let n = binder.stack.len();
             if let Some(left) = next {
-                if n < 2 || strength(&left, &binder.stack[n - 1]) >= strength(&binder.stack[n - 1], &binder.stack[n - 2]) {
+                // Postfix brackets wait for their left operand before later indexing can consume the strand.
+                if matches!(left.term, Term::Selection(_))
+                    || n < 2
+                    || strength(&left, &binder.stack[n - 1]) >= strength(&binder.stack[n - 1], &binder.stack[n - 2])
+                {
                     binder.stack.push(left);
                     continue;
                 }
@@ -1615,7 +1676,14 @@ impl Binder {
                     if matches!(value, Value::NoResult) { return Err(nodes[i].span.error(ErrorKind::Value, "assignment requires a value")); }
                     cursor = begin + session.assignment_start(&nodes[begin..i])?;
                     session.assign(&nodes[cursor..i], &value, output)?;
-                    pending.push(Entity { term: Term::Value(value), span: nodes[i].span.clone(), shy: true, selected: false, assignment: true });
+                    pending.push(Entity {
+                        term: Term::Value(value),
+                        span: nodes[i].span.clone(),
+                        shy: true,
+                        selected: false,
+                        whole_item: false,
+                        assignment: true,
+                    });
                     continue;
                 }
                 break;
@@ -1627,12 +1695,22 @@ impl Binder {
                     && pending.is_empty()
                     && binder.stack.is_empty()
                     && matches!(call.function.node.as_ref(), FunctionNode::Defined(_) | FunctionNode::Derived(..))
-                { return Ok(Step::Tail(call)); }
+                { return Ok((Step::Tail(call), false)); }
                 if call.selected && !call.function.selects(call.left.is_some()) {
                     return Err(call.span.error(ErrorKind::Domain, "function is not valid for selective assignment"));
                 }
                 let bound = call.function.call(call.left.as_ref(), &call.right, &call.span, session, output)?;
-                binder.stack.push(Entity { term: Term::Value(bound.value), span: call.span, shy: bound.shy, selected: call.selected, assignment: false });
+                let whole_item = call.selected
+                    && matches!(call.function.node.as_ref(), FunctionNode::Primitive(Primitive::Disclose))
+                    && call.left.as_ref().is_none_or(|a| !a.is_empty());
+                binder.stack.push(Entity {
+                    term: Term::Value(bound.value),
+                    span: call.span,
+                    shy: bound.shy,
+                    selected: call.selected,
+                    whole_item,
+                    assignment: false,
+                });
             }
             // Category changes must rebind against the remaining right context.
             pending.push(binder.stack.pop().unwrap());
@@ -1640,7 +1718,8 @@ impl Binder {
         let entity = binder.stack.pop().expect("nonempty expression");
         let shy = entity.shy;
         let assignment = entity.assignment;
-        Ok(Step::Done(Bound { value: entity.value()?, shy, assignment }))
+        let whole_item = entity.whole_item;
+        Ok((Step::Done(Bound { value: entity.value()?, shy, assignment }), whole_item))
     }
 
     fn reduce(&mut self, execution: &crate::execution::Execution) -> Result<Option<Application>, Error> {
@@ -1708,19 +1787,21 @@ impl Binder {
             }
             (Function | Hybrid, Function) => {
                 let mut fs = match left.term { Term::Train(fs) => fs, _ => vec![left.function()?] };
-                fs.push(right.function()?);
+                match right.term { Term::Train(rest) => fs.extend(rest), _ => fs.push(right.function()?) }
                 Term::Train(fs)
             }
             (Left, Function) => {
                 let Term::Left(a, f) = left.term else { unreachable!() };
                 let constant = self::Function::new(FunctionNode::Modified(OperatorKind::Commute, Operand::Array(a)), &span)?;
-                Term::Train(vec![constant, f, right.function()?])
+                let mut fs = vec![constant, f];
+                match right.term { Term::Train(rest) => fs.extend(rest), _ => fs.push(right.function()?) }
+                Term::Train(fs)
             }
             _ => return Err(span.error(ErrorKind::Syntax, "these grammatical categories do not bind")),
         };
         // Function/operator location, rather than an attached left argument, owns a call.
         let span = if matches!(term, Term::Left(..)) { right_span } else { span };
-        self.stack.push(Entity { term, span, shy: false, selected, assignment: false });
+        self.stack.push(Entity { term, span, shy: false, selected, whole_item: false, assignment: false });
         Ok(None)
     }
 }
