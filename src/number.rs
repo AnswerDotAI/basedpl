@@ -566,14 +566,16 @@ impl Number {
     }
 }
 
+fn format_float(n: f64) -> String { if n != 0.0 && !(1e-6..1e17).contains(&n.abs()) { format!("{n:E}") } else { n.to_string() } }
+
 impl fmt::Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let text = match &self.0 {
             Integer(n) => format!("{n}x"),
-            Float(n) => n.to_string(),
+            Float(n) => format_float(*n),
             Exact(n) if n.is_integer() => format!("{}x", n.numer()),
             Exact(n) => format!("{}r{}", n.numer(), n.denom()),
-            Complex(n) => format!("{}j{}", n.re, n.im),
+            Complex(n) => format!("{}j{}", format_float(n.re), format_float(n.im)),
         };
         f.write_str(&text.replace('-', "¯"))
     }

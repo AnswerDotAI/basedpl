@@ -16,3 +16,5 @@ def test_corpus_review_and_updates(tmp_path):
     assert corpus.update('ngn:1', expected=None) == {}
     with pytest.raises(KeyError): corpus.update_many({'ngn:0': dict(status='active'), 'missing': dict(status='active')})
     assert corpus.get('ngn:0')['status'] == 'pending'
+    with pytest.raises(ValueError): corpus.update('ngn:0', expected=float('inf'))
+    assert 'expected' not in corpus.get('ngn:0', '*')

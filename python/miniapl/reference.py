@@ -59,5 +59,5 @@ class Corpus:
                 if keys:
                     result[row['id']] = keys
                     changed = True
-            if changed: path.write_text(''.join(json.dumps(row, ensure_ascii=False, separators=(',', ':'))+'\n' for row in rows))
+            if changed: path.write_text(''.join(json.dumps(row, ensure_ascii=False, allow_nan=False, separators=(',', ':'))+'\n' for row in rows))
         return result

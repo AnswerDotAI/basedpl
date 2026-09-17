@@ -940,6 +940,7 @@ struct Application {
     span: Span,
     unshy: bool,
     selected: bool,
+    whole_item: bool,
 }
 enum Step { Done(Bound), Tail(Application) }
 
@@ -1329,7 +1330,7 @@ impl Session {
                     return Err(span.error(ErrorKind::Value, "selection needs an array name"));
                 };
                 let (labels, selected) = crate::selection::Labels::new(&original, span)?;
-                (name.clone(), original, labels, selected, false)
+                (name.clone(), original, labels, selected, true)
             }
             NodeKind::Group(inner) => self.selection_expression(inner, output)?,
             _ => return Err(span.error(ErrorKind::Syntax, "selection must end in an array name")),
@@ -1702,7 +1703,7 @@ impl Binder {
                 let bound = call.function.call(call.left.as_ref(), &call.right, &call.span, session, output)?;
                 let whole_item = call.selected
                     && matches!(call.function.node.as_ref(), FunctionNode::Primitive(Primitive::Disclose))
-                    && call.left.as_ref().is_none_or(|a| !a.is_empty());
+                    && (call.left.as_ref().is_none_or(|a| !a.is_empty()) || call.whole_item);
                 binder.stack.push(Entity {
                     term: Term::Value(bound.value),
                     span: call.span,
@@ -1782,8 +1783,9 @@ impl Binder {
             (Array, Function | Hybrid) => Term::Left(left.array()?, right.function()?),
             (Function | Left, Array) => {
                 let (x, f) = if let Term::Left(x, f) = left.term { (Some(x), f) } else { (None, left.function()?) };
+                let whole_item = right.whole_item;
                 let y = right.array()?;
-                return Ok(Some(Application { function: f, left: x, right: y, span, unshy: false, selected }));
+                return Ok(Some(Application { function: f, left: x, right: y, span, unshy: false, selected, whole_item }));
             }
             (Function | Hybrid, Function) => {
                 let mut fs = match left.term { Term::Train(fs) => fs, _ => vec![left.function()?] };

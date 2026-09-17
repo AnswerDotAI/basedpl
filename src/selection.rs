@@ -8,6 +8,7 @@ impl Labels {
     pub fn new(original: &Array, span: &Span) -> Result<(Self, Array), Error> {
         let mut labels = Self { paths: vec![], nested: HashMap::new() };
         let array = labels.build(original, &mut Vec::new(), span)?;
+        labels.nested.insert(array.storage_id(), (array.clone(), vec![]));
         Ok((labels, array))
     }
     fn build(&mut self, a: &Array, path: &mut Vec<usize>, span: &Span) -> Result<Array, Error> {
@@ -49,10 +50,10 @@ impl Labels {
         let mut paths = Vec::new();
         let mut values = Vec::new();
         if whole_item {
-            let path = if let Some(n) = selected.as_number() {
+            let path = if let Some((_, path)) = self.nested.get(&selected.storage_id()) { Some(path) } else if let Some(n) = selected.as_number() {
                 let id = n.nonnegative_integer().map_err(|k| span.error(k, "invalid selection label"))?;
                 id.checked_sub(1).and_then(|i| self.paths.get(i))
-            } else { self.nested.get(&selected.storage_id()).map(|(_, path)| path) };
+            } else { None };
             paths.push(path.ok_or_else(|| span.error(ErrorKind::Index, "cannot assign to a missing item"))?.clone());
             values.push(Element::Nested(right.clone()));
         }

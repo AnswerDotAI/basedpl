@@ -1663,18 +1663,18 @@ impl Selection {
     pub(crate) fn write(&self, array: &Array, values: &Array, span: &Context<'_>) -> Result<Array, Error> {
         if !values.is_singleton() && values.shape() != self.shape { return Err(span.error(ErrorKind::Length, "replacement shape does not match selection")); }
         fn replace(array: &Array, updates: &[(&[usize], Element)], span: &Context<'_>) -> Result<Array, Error> {
+            let replacement;
+            let (array, updates) = if let Some(last) = updates.iter().rposition(|(p, _)| p.is_empty()) {
+                replacement = updates[last].1.as_array();
+                (&replacement, &updates[last + 1..])
+            } else { (array, updates) };
+            if updates.is_empty() { return Ok(array.clone()); }
             let mut data: Vec<_> = array.elements().collect();
             let mut groups: HashMap<usize, Vec<(&[usize], Element)>> = HashMap::new();
             for (path, value) in updates { groups.entry(path[0]).or_default().push((&path[1..], value.clone())); }
             for (i, edits) in groups {
                 if i >= data.len() { return Err(span.error(ErrorKind::Index, "replacement changed a selected path")); }
-                let mut item = data[i].clone();
-                let start = if let Some(last) = edits.iter().rposition(|(p, _)| p.is_empty()) {
-                    item = edits[last].1.clone();
-                    last + 1
-                } else { 0 };
-                if start < edits.len() { item = Element::Nested(replace(&item.as_array(), &edits[start..], span)?); }
-                data[i] = item;
+                data[i] = Element::Nested(replace(&data[i].as_array(), &edits, span)?);
             }
             Array::from_parts(array.shape().to_vec(), data, array.prototype().clone()).map_err(|k| span.error(k, "invalid amended array"))
         }
