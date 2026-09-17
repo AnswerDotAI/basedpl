@@ -2,7 +2,9 @@
 
 These files retain all 734 assertions and 8 example programs from ngn, all 1,138 April core assertions/demos and 675 library/demo assertions/setup entries, and all 5,747 APLcart main/tacit catalogue rows. Entries are not removed because miniapl cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
 
-The initial import has 538 active cases: 140 ngn, 324 April and 74 APLcart. There are 5,143 pending entries, 2,154 scope questions and 467 explicit exclusions. These are source entries, not a claim that 8,302 executable conformance tests exist. In particular, many APLcart entries are recipes with unbound arguments and no expected result. They still need concrete examples. Library cases need their definitions and setup.
+The initial import had 538 active cases: 140 ngn, 324 April and 74 APLcart. It had 5,143 pending entries, 2,154 scope questions and 467 explicit exclusions. These are source entries, not a claim that 8,302 executable conformance tests exist. In particular, many APLcart entries are recipes with unbound arguments and no expected result. They still need concrete examples. Library cases need their definitions and setup.
+
+After Dyalog examples and the September 18 sweep: 1,583 active (460 ngn, 897 April, 98 APLcart, 128 Dyalog), 4,226 pending, 2,154 questions and 469 exclusions. The sweep enabled 917 cases with independent expectations. It also exposed and helped fix a nonterminating complex GCD. Current counts and failure details come from the scan below; old fixture reasons describe their last review, not necessarily today's implementation.
 
 Run the active cases with:
 
@@ -31,7 +33,25 @@ To enable a case:
 
 4. Change its status to `active` and update its reason when the assertion passes and the semantic adaptation is reviewed. Run the normal suite.
 
-Pending cases do not catch arbitrary failures or count as passing. A case without an expectation fails explicitly when selected. New failures in active cases fail the suite. Tests compare shape, nesting, data and prototype. Two initial floating-arithmetic cases have explicit `relative_tolerance: 1e-14` for reference rounding differences. Other comparisons are exact. Display expectations remain separate from array expectations.
+Pending cases do not catch arbitrary failures or count as passing. A case without an expectation fails explicitly when selected. New failures in active cases fail the suite. Tests compare shape, nesting, data and prototype. Comparisons are exact unless the case has an explicit `relative_tolerance` for reference rounding differences. Display expectations remain separate from array expectations.
+
+## Find cases ready to enable
+
+Rebuild the installed command after Rust changes, then scan:
+
+```bash
+maturin develop --release
+python scripts/reference.py scan
+python scripts/reference.py show --source april
+python scripts/reference.py show --status mismatch --match '∧|∨' --details
+python scripts/reference.py activate --source april --match 'april:590\b'
+```
+
+`scan` checks pending cases with independent expectations and collects every outcome. It never edits fixtures. `show` defaults to passes; filter by source, result status or regex over ID/code/message. Use `--limit` to change the display count. `activate` changes the reviewed passing selection to active. It refuses fixture records changed since the scan. Review dialect, origin and prerequisites before activation; a passing result alone is not that review.
+
+Rust's `reference::check` owns comparison for the test runner, worker and private Python `_check_reference(json_case, timeout)` API. Each case receives a fresh session inside a persistent worker. The scanner uses a 0.25-second cooperative deadline per case, adjustable with `--timeout`. An unresponsive process is killed after the client's grace period and replaced for the next case. The failed case is not retried. Random cases, missing expectations and scope questions are counted separately, not treated as execution failures.
+
+The report defaults to `meta/reference-scan.json`. It contains each original fixture and its result, including actual structured values on mismatches. Numerical rounding allowances must be explicit per case: two Gaussian GCD/LCM cases use `1e-14`, as do the initial arithmetic cases. Semantic differences do not get a tolerance. CI runs ordinary offline Rust tests; it does not need the scanner or a worker process.
 
 ## Sources and adaptations
 
@@ -48,7 +68,7 @@ For each new glyph, read its documented valences and select examples that establ
 
 Dyalog's two fixed-order float reduction examples are retained as explicit exclusions. miniapl permits reassociation of primitive float sums/products. Generic-function reduction and primitive scan order remain tested; do not replace excluded expectations with one compiler's chosen answer.
 
-ngn uses origin 0 and has different prototype/dialect rules. Its original expressions and expectations are retained. Only origin-independent cases are active from the automatic first pass. The `origin: 0` field describes upstream, not miniapl's execution settings. Closed literal right-hand expectations were evaluated independently in Dyalog, not with miniapl.
+ngn uses origin 0 and has different prototype/dialect rules. Its original expressions and expectations are retained. The first pass activated origin-independent cases. Later activation also reviews expressions where the changed origin cancels, such as sorting through the array's own grade indices. The `origin: 0` field describes upstream, not miniapl's execution settings. Closed literal right-hand expectations were evaluated independently in Dyalog, not with miniapl.
 
 April's literal Common Lisp expectations were converted to structured values. Ordinary rational expectations represent approximate results under miniapl's numeric policy, not opt-in exact `r` literals. The power alias `⋆` is written as standard `*` outside quoted text. Printed-format expectations, host wrappers, and library dependencies remain visible for review.
 

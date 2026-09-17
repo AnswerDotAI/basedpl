@@ -100,11 +100,11 @@ with Worker() as w:
     assert r['value']['data'] == [55]
 ```
 
-Call `w.interrupt()` from another thread to interrupt its current evaluation. Ctrl-C while waiting sends the same request. Cooperative cancellation returns `INTERRUPT` or `TIMEOUT` and leaves the session usable. Completed assignments and captured output survive; cancellation is not a transaction. APL error guards cannot catch cancellation.
+Call `w.interrupt()` from another thread to interrupt its current evaluation. Cooperative cancellation returns `INTERRUPT` or `TIMEOUT`, retains captured output and leaves the session usable. Completed assignments survive; cancellation is not a transaction. APL error guards cannot catch cancellation. Ctrl-C sends the interrupt request, consumes its response within the grace period, then raises `KeyboardInterrupt`. The worker runs in a separate process session so the terminal does not kill it directly.
 
-Evaluation checks cancellation in the binder, function calls and potentially long primitive loops. Individual native-library or big-integer operations are not preemptible. If a deadline exceeds its grace period (default 1 second), the client kills the worker and raises `TimeoutError`; that session is lost. The client never retries an evaluation automatically. `w.diagnostics` retains recent process stderr.
+Evaluation checks cancellation in the binder, function calls and potentially long primitive loops. Individual native-library or big-integer operations are not preemptible. If a deadline exceeds its grace period (default 1 second), the client kills the worker and raises `TimeoutError`; that session is lost. Ctrl-C also kills the worker if its grace period expires. The client never retries an evaluation automatically. `w.diagnostics` retains recent process stderr.
 
-The underlying `--worker` protocol uses JSON objects, one per line. Send `{"id":1,"code":"+/⍳10","timeout_ms":2000}` and receive `{"id":1,"result":...}`. Send `{"interrupt":1}` to cancel that request; interrupt messages have no reply. Use one outstanding evaluation per client. Stdout contains responses only. Invalid control messages terminate the worker. The simpler `--json` mode remains unchanged.
+The underlying `--worker` protocol uses JSON objects, one per line. Send `{"id":1,"code":"+/⍳10","timeout_ms":2000}` and receive `{"id":1,"result":...}`. Send `{"interrupt":1}` to cancel that request; interrupt messages have no reply. Use one outstanding evaluation per client. Stdout contains responses only. Malformed JSON or invalid IDs/timeouts terminate the worker. The simpler `--json` mode remains unchanged.
 
 In-process Python sessions accept `s.eval(code, timeout=seconds)` but remain thread-affine. Rust callers use `Session::eval_with(code, EvalOptions { interrupt, timeout })`; clone its `InterruptHandle` to cancel from another thread. No Jupyter or MCP dependency enters the interpreter.
 

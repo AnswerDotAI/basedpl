@@ -1,4 +1,4 @@
-import json, threading
+import json, os, signal, threading
 import pytest
 from miniapl import Session, AplError
 from miniapl._core import _check_reference
@@ -16,6 +16,11 @@ def test_worker_cancellation_and_reference_sessions():
         try: result = w.eval('{∇⍵}0', timeout=2)
         finally: timer.join()
         assert result['error']['kind'] == 'INTERRUPT'
+        timer = threading.Timer(.05, lambda: os.kill(os.getpid(), signal.SIGINT))
+        timer.start()
+        try:
+            with pytest.raises(KeyboardInterrupt): w.eval('{∇⍵}0', timeout=2)
+        finally: timer.join()
         assert w.eval('keep+1')['value']['data'] == [43]
         assert w.request(dict(case=case), timeout=1)['status'] == 'pass'
         assert w.request(dict(case=dict(code='a', expected_error='VALUE ERROR')), timeout=1)['status'] == 'pass'

@@ -5,7 +5,7 @@ from collections import deque
 class Worker:
     "One request at a time. Interrupt from another thread; never retry a request automatically."
     def __init__(self, command=('miniapl', '--worker')):
-        self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', bufsize=1)
+        self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', bufsize=1, start_new_session=True)
         self._replies, self._stderr = queue.Queue(), deque(maxlen=30)
         self._write_lock, self._request_lock = threading.Lock(), threading.Lock()
         self._id, self._active = 0, None
@@ -54,7 +54,9 @@ class Worker:
                 except queue.Empty:
                     self.close()
                     raise TimeoutError('worker did not stop before the deadline; its session is lost') from None
-                if isinstance(reply, Exception): raise reply
+                if isinstance(reply, Exception):
+                    self.close()
+                    raise reply
                 if reply.get('id') != self._id:
                     self.close()
                     raise RuntimeError('worker response id mismatch')
