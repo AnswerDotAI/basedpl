@@ -18,6 +18,9 @@ classifiers = [
 [project.optional-dependencies]
 dev = ["fastship>=0.0.11", "maturin>=1.0,<2.0", "pytest"]
 
+[project.scripts]
+miniapl = "miniapl._cli:main"
+
 [project.urls]
 Homepage = "https://github.com/AnswerDotAI/miniapl"
 Repository = "https://github.com/AnswerDotAI/miniapl"

@@ -1,13 +1,18 @@
-pub fn hello(name: &str) -> String { format!("Hello, {name}!") }
+mod array;
+pub mod cli;
+mod editor;
+mod error;
+mod eval;
+mod number;
+mod primitive;
+mod protocol;
+mod syntax;
 
-use pyo3::prelude::*;
+pub use array::{Array, Element};
+pub use error::{Error, ErrorKind, Source, Span};
+pub use eval::{Evaluation, Session};
+pub use number::Number;
+pub use syntax::{parse, ParseStatus, Parsed};
 
-#[pyfunction(name = "hello")]
-fn py_hello(name: &str) -> String { hello(name) }
-
-#[pymodule]
-fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(py_hello, m)?)?;
-    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    Ok(())
-}
+#[cfg(feature = "python")]
+mod python;
