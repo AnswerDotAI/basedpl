@@ -8,6 +8,8 @@ import csv
 import json
 import re
 import zlib
+import argparse
+from collections import Counter
 from pathlib import Path
 from fractions import Fraction
 
@@ -212,39 +214,6 @@ def import_sources(links):
     return dict(ngn=ngn_cases(links/'ngn'), april=april_cases(links/'april'), aplcart=aplcart_cases(links/'aplcart'))
 
 
-def copied_array(value):
-    """Encode miniapl's copied result for comparison, never as a test expectation."""
-    def element(x):
-        if hasattr(x, 'shape'): return copied_array(x)
-        if isinstance(x, complex): return {'complex': [x.real, x.imag]}
-        if isinstance(x, Fraction): return {'rational': [str(x.numerator), str(x.denominator)]}
-        return x
-    return dict(shape=list(value.shape), data=[element(x) for x in value.data], prototype=element(value.prototype))
-
-
-def probe_cases(cases):
-    """Enable finite, non-recursive cases only when their upstream expectations pass."""
-    from miniapl import Session, AplError
-    counts = dict(active=0, failed=0, deferred=0)
-    for case in cases:
-        code = case['code']
-        if case['status'] != 'pending' or 'expected' not in case or any(c in code for c in '{?∇⍣⍎'):
-            counts['deferred'] += 1
-            continue
-        with Session() as session:
-            try: result = session.eval(code)
-            except AplError as e:
-                case['reason'] = f'current {e.kind}: {e.message}'
-                counts['failed'] += 1
-                continue
-        actual = copied_array(result.value) if result.value is not None else None
-        if actual == case['expected']:
-            case.update(status='active', reason='independent upstream expectation passes')
-            counts['active'] += 1
-        else:
-            case['reason'] = 'result differs from upstream expectation; review semantics before enabling'
-            counts['failed'] += 1
-    return counts
 
 
 REFERENCE_ENCODER = r'''
@@ -314,3 +283,95 @@ def write_cases(directory, sources, replace=False):
         with (directory/f'{source}.jsonl').open('w' if replace else 'x') as f:
             for case in cases: f.write(json.dumps(case, ensure_ascii=False, separators=(',', ':'))+'\n')
     return {source: len(cases) for source, cases in sources.items()}
+
+
+def scan(directory='tests/reference', source='', match='', timeout=.25, report='meta/reference-scan.json'):
+    "Check pending cases with independent expectations; never change fixture metadata."
+    from miniapl.worker import Worker
+    rows, inventory = [], Counter()
+    worker = Worker()
+    try:
+        for path in sorted(Path(directory).glob('*.jsonl')):
+            if source and path.stem != source: continue
+            for line in path.read_text().splitlines():
+                case = json.loads(line)
+                if match and not re.search(match, case['id']+' '+case['code']): continue
+                if case['status'] != 'pending':
+                    inventory[case['status']] += 1
+                    continue
+                if 'expected' not in case and not case.get('expected_error'):
+                    inventory['needs expectation'] += 1
+                    continue
+                clean = re.sub(r"'(?:''|[^'])*'|⍝[^\n]*", '', case['code'])
+                if '?' in clean:
+                    inventory['random: review separately'] += 1
+                    continue
+                try: result = worker.request(dict(case=case), timeout=timeout)
+                except (TimeoutError, EOFError, BrokenPipeError) as e:
+                    result = dict(status='worker failure', message=str(e), diagnostics=worker.diagnostics)
+                    worker.close()
+                    worker = Worker()
+                rows.append(dict(file=str(path), case=case, **result))
+    finally: worker.close()
+    result = dict(inventory=dict(inventory), results=rows)
+    path = Path(report)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n')
+    print(f'{len(rows)} checked: {dict(Counter(r["status"] for r in rows))}')
+    print(f'Not scanned: {dict(inventory)}')
+    print(f'Review: {report}')
+    return result
+
+
+def selected(report, source='', match='', status='pass'):
+    rows = json.loads(Path(report).read_text())['results']
+    return [r for r in rows if (not source or Path(r['file']).stem == source)
+            and (not status or r['status'] == status)
+            and (not match or re.search(match, r['case']['id']+' '+r['case']['code']+' '+r.get('message', '')))]
+
+
+def review(report, source='', match='', status='pass', limit=20, details=False):
+    rows = selected(report, source, match, status)
+    for row in rows[:limit or None]:
+        case = row['case']
+        print(f'{case["id"]} [{row["status"]}] {row.get("kind", "")} {row.get("message", "")}')
+        print('  '+case['code'].replace('\n', ' ⋄ '))
+        if details: print(json.dumps(row, ensure_ascii=False, indent=2))
+    print(f'{len(rows)} matching; {min(limit or len(rows), len(rows))} shown')
+
+
+def activate(report, source='', match=''):
+    "Activate reviewed passing selections only if their saved fixture records are unchanged."
+    rows = selected(report, source, match)
+    updates = {r['case']['id']: r['case'] for r in rows}
+    files = {}
+    for path in {Path(r['file']) for r in rows}:
+        cases = [json.loads(line) for line in path.read_text().splitlines()]
+        for case in cases:
+            if case['id'] not in updates: continue
+            if case != updates[case['id']]: raise ValueError(f'{case["id"]}: fixture changed since scan; rescan before activation')
+            case.update(status='active', reason='reviewed independent upstream expectation; shared Rust reference checker passes')
+        files[path] = cases
+    for path, cases in files.items():
+        path.write_text(''.join(json.dumps(c, ensure_ascii=False, separators=(',', ':'))+'\n' for c in cases))
+    print(f'Activated {len(updates)} reviewed cases')
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Scan, review and activate reference cases without regenerating the corpus.')
+    parser.add_argument('action', choices=['scan', 'show', 'activate'])
+    parser.add_argument('--report', default='meta/reference-scan.json')
+    parser.add_argument('--source', default='')
+    parser.add_argument('--match', default='')
+    parser.add_argument('--timeout', type=float, default=.25)
+    parser.add_argument('--status', default='pass', help='show: empty string selects every outcome')
+    parser.add_argument('--limit', type=int, default=20, help='show: 0 displays all matches')
+    parser.add_argument('--details', action='store_true')
+    args = parser.parse_args()
+    common = dict(report=args.report, source=args.source, match=args.match)
+    if args.action == 'scan': scan(timeout=args.timeout, **common)
+    elif args.action == 'show': review(status=args.status, limit=args.limit, details=args.details, **common)
+    else: activate(**common)
+
+
+if __name__ == '__main__': main()

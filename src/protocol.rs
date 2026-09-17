@@ -22,7 +22,7 @@ fn error(e: &Error) -> Value {
         "calls": e.calls.iter().map(|s| json!({"source": {"name": s.source.name, "text": s.source.text}, "span": [s.range.start, s.range.end]})).collect::<Vec<_>>()})
 }
 
-fn response(result: Evaluation) -> Value {
+pub(crate) fn response(result: Evaluation) -> Value {
     json!({"value": result.value.as_ref().map(array), "output": result.output, "error": result.error.as_ref().map(error)})
 }
 

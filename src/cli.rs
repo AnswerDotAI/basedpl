@@ -2,7 +2,7 @@ use crate::{parse, Evaluation, ParseStatus, Session, Source};
 use rustyline::error::ReadlineError;
 use std::io::{self, IsTerminal, Read, Write};
 
-const USAGE: &str = "Usage: miniapl [-e EXPR | FILE | - | --json]\n\nNo arguments: persistent APL REPL (Ctrl-D to exit, Ctrl-C to cancel input).\nType `name then Tab or a non-letter to enter a symbol, e.g. `iota5 becomes ⍳5.\nUse - to execute all of stdin as one source; --json for a JSON-lines session.\n";
+const USAGE: &str = "Usage: miniapl [-e EXPR | FILE | - | --json | --worker]\n\nNo arguments: persistent APL REPL (Ctrl-D to exit, Ctrl-C to cancel input).\nType `name then Tab or a non-letter to enter a symbol, e.g. `iota5 becomes ⍳5.\nUse - to execute all of stdin as one source; --json for a JSON-lines session.\nUse --worker for structured requests with deadlines and interruption.\n";
 
 fn show(result: Evaluation, out: &mut impl Write, err: &mut impl Write) -> io::Result<bool> {
     for line in result.output { writeln!(out, "{line}")?; }
@@ -85,6 +85,7 @@ pub fn run(args: &[String]) -> i32 {
     let result = match args {
         [] => repl(&mut out, &mut err, stdin.is_terminal() && stdout.is_terminal()),
         [flag] if flag == "--json" => crate::protocol::run(&mut stdin.lock(), &mut out).map(|_| 0),
+        [flag] if flag == "--worker" => crate::worker::run(&mut out).map(|_| 0),
         [flag, code] if flag == "-e" => expression(code, "<expression>", &mut out, &mut err),
         [flag] if flag == "--help" || flag == "-h" => write!(out, "{USAGE}").map(|_| 0),
         [flag] if flag == "--version" => writeln!(out, "miniapl {}", env!("CARGO_PKG_VERSION")).map(|_| 0),

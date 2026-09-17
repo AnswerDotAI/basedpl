@@ -21,6 +21,8 @@ pub enum ErrorKind {
     Index,
     Value,
     Unsupported,
+    Interrupt,
+    Timeout,
 }
 
 impl ErrorKind {
@@ -33,7 +35,7 @@ impl ErrorKind {
             Self::Value => 6,
             Self::Limit => 10,
             Self::Domain => 11,
-            Self::Unsupported => return None,
+            Self::Unsupported | Self::Interrupt | Self::Timeout => return None,
         })
     }
 }
@@ -49,6 +51,8 @@ impl fmt::Display for ErrorKind {
             Self::Index => "INDEX ERROR",
             Self::Value => "VALUE ERROR",
             Self::Unsupported => "UNSUPPORTED",
+            Self::Interrupt => "INTERRUPT",
+            Self::Timeout => "TIMEOUT",
         })
     }
 }

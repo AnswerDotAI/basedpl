@@ -309,19 +309,36 @@ impl Number {
     }
 
     fn gcd(&self, right: &Self) -> Result<Self, &'static str> {
+        if !self.is_exact() || !right.is_exact() {
+            let (mut x, mut y) = (self.to_complex()?, right.to_complex()?);
+            let original = if x.norm() >= y.norm() { x } else { y };
+            let scale = x.norm().max(y.norm());
+            if !scale.is_finite() { return Err("gcd magnitude is too large"); }
+            let tolerance = COMPARISON_TOLERANCE * scale;
+            while y.norm() > tolerance {
+                let q = complex_divide(x, y)?;
+                let r = x - y * Complex64::new(q.re.round(), q.im.round());
+                if r.norm() >= y.norm() { return Err("gcd did not converge"); }
+                x = y;
+                y = r;
+            }
+            if x.re.abs() <= tolerance { x.re = 0.0; }
+            if x.im.abs() <= tolerance { x.im = 0.0; }
+            if x.is_zero() { return Self::try_from(0.0).map_err(|_| "result is not finite"); }
+            while x.re <= 0.0 || x.im < 0.0 { x *= Complex64::i(); }
+            let q = complex_divide(original, x)?;
+            x = complex_divide(original, Complex64::new(q.re.round(), q.im.round()))?;
+            if x.re.abs() <= tolerance { x.re = 0.0; }
+            if x.im.abs() <= tolerance { x.im = 0.0; }
+            return Self::try_from(x).map_err(|_| "result is not finite");
+        }
         let (mut x, mut y) = (self.clone(), right.clone());
         while !y.equal(&y.unit(0))? {
             let r = y.residue(&x)?;
             x = y;
             y = r;
         }
-        if let Some(mut z) = x.as_complex() {
-            while z.re <= 0.0 || z.im < 0.0 { z *= Complex64::i(); }
-            Self::try_from(z).map_err(|_| "result is not finite")
-        } else {
-            let result = x.math_monad(Math::Magnitude)?;
-            if self.is_exact() && right.is_exact() { Ok(result) } else { Self::try_from(result.to_float()?).map_err(|_| "result is not finite") }
-        }
+        x.math_monad(Math::Magnitude)
     }
 
     fn factorial(&self) -> Result<Self, &'static str> {

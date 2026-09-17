@@ -79,10 +79,10 @@ class Session:
     def _check_thread(self):
         if current_thread() is not self._thread: raise RuntimeError('session belongs to its creating thread')
 
-    def eval(self, source):
+    def eval(self, source, timeout=None):
         self._check_thread()
         if self._native is None: raise RuntimeError('session is closed')
-        result = self._native.eval(source)
+        result = self._native.eval(source, timeout)
         if result['error'] is not None: raise AplError(result['error'], result['output'])
         return Result(None if result['value'] is None else _array(result['value']), result['output'])
 

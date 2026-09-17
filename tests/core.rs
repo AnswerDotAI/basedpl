@@ -34,6 +34,28 @@ fn chars(text: &str) -> Array {
 }
 
 #[test]
+fn cancellation_preserves_session_and_unwinds_calls() {
+    use std::time::Duration;
+    let mut s = Session::new();
+    let r = s.eval_timeout("keep←42 ⋄ ⎕←7 ⋄ {0::99 ⋄ (+⍣{0})⍵}0", Duration::from_millis(10));
+    assert_eq!(r.error.unwrap().kind, Timeout);
+    assert_eq!(r.output, ["7"]);
+    check_in(&mut s, "keep+1", scalar(43.));
+    s.set("u", Array::floats(vec![20000], (0..20000).map(f64::from).collect()).unwrap()).unwrap();
+    assert_eq!(s.eval_timeout("∪u", Duration::from_millis(2)).error.unwrap().kind, Timeout);
+    let interrupt = miniapl::InterruptHandle::default();
+    let handle = interrupt.clone();
+    let cancel = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(10));
+        handle.interrupt();
+    });
+    let r = s.eval_with("{∇⍵}0", miniapl::EvalOptions { interrupt, timeout: Some(Duration::from_secs(2)) });
+    cancel.join().unwrap();
+    assert_eq!(r.error.unwrap().kind, Interrupt);
+    check_in(&mut s, "keep", scalar(42.));
+}
+
+#[test]
 fn leading_unit_axis_broadcasting() {
     let matrix = |shape: Vec<usize>, values: &[f64]| Array::new(shape, values.iter().copied().map(number).collect()).unwrap();
     for op in ["+", "+¨", "(+⍤0)"] {
@@ -103,6 +125,27 @@ fn selective_assignment() {
 
 #[test]
 fn indexed_modified_and_strand_assignment() {
+    check("1+a←3", scalar(4.));
+    check("{1+a←3 ⋄ 9}0", scalar(4.));
+    check("{a←1 ⋄ +a+←3 ⋄ 9}0", scalar(3.));
+    check("a←1+b←2 ⋄ a b", vector(&[3., 2.]));
+    check("a←1 2 3 ⋄ 2×a[2]+←10", scalar(20.));
+    check("a←1 2 3 ⋄ 1+(⌽a)←4 5 6", vector(&[5., 6., 7.]));
+    check("(a b)c←(3 4)5 ⋄ a b c", vector(&[3., 4., 5.]));
+    check("a←1 2 3 ⋄ rev←⌽ ⋄ (rev a)←4 5 6 ⋄ a", vector(&[6., 5., 4.]));
+    check("a←1 ⋄ f←+ ⋄ 2×a f←3", scalar(6.));
+    check("{a←1 ⋄ f←+ ⋄ a f←3 ⋄ a f}0", vector(&[3., 3.]));
+    check("{a←1 ⋄ f←+ ⋄ a f∘⊢←3 ⋄ a}0", scalar(4.));
+    check("a←1 2 ⋄ r←0 ⋄ 1+a +⍤r←3 4", vector(&[4., 5.]));
+    check("a←1 ⋄ b←2 ⋄ a b+←3 4 ⋄ a b", vector(&[4., 6.]));
+    check("a←1 ⋄ b←2 ⋄ (a b)+←3 ⋄ a b", vector(&[4., 5.]));
+    check("a←1 ⋄ a a+←3 4 ⋄ a", scalar(8.));
+    let r = Session::new().eval("a←1 ⋄ b←2 ⋄ a b{⎕←⍺ ⋄ ⍺+⍵}←3 4");
+    assert!(r.error.is_none(), "{:?}", r.error);
+    assert_eq!(r.output, ["1", "2"]);
+    let r = Session::new().eval("a←0 ⋄ (⎕←a)+a←⎕←3");
+    assert!(r.error.is_none(), "{:?}", r.error);
+    assert_eq!(r.output, ["3", "3", "6"]);
     check("a←1 2 3 ⋄ a[2]←9 ⋄ a", vector(&[1., 9., 3.]));
     check("a←1 2 3 ⋄ r←a[2 2]+←10 20 ⋄ a", vector(&[1., 32., 3.]));
     check("a←1 2 3 ⋄ r←a[2 2]+←10 20 ⋄ r", vector(&[10., 20.]));
@@ -599,6 +642,8 @@ fn exact(n: i64, d: i64) -> Array { Array::scalar(num_rational::BigRational::new
 
 #[test]
 fn scalar_math() {
+    check("0.2=3.8j7.6∨5.2j6.8", exact(1, 1));
+    check("⌈1000×3.8j7.6∧5.2j6.8", scalar(num_complex::Complex64::new(-159600., 326800.)));
     for (code, values) in [
         ("|3 ¯3 3J4", vec![3., 3., 5.]),
         ("2 10 ¯2.5|7 ¯13 8", vec![1., 7., -2.]),

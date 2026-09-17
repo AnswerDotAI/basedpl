@@ -67,7 +67,7 @@ Use `s.set('data', Array.from_numpy(ndarray))` to import a numeric ndarray. Bool
 
 A final assignment returns its array without printing it. A final function/operator definition or empty input returns no array, not the preceding statement's value. Evaluations are not transactions: assignments completed before a runtime error remain in the session.
 
-Parenthesize an assignment used inside a larger expression, for example `+(a[2]+←1)`. Modified assignment passes through its right argument.
+Assignments bind inside expressions: `1+a←3` returns 4 and stores 3. Modified assignment passes through its right argument. `a b+←3 4` updates the targets from left to right.
 
 **Sessions are thread-affine:** create, use, and close them on the same thread. Prefer `with Session()` or explicit `close()`. Cross-thread calls are rejected. Do not transfer an open session to another thread for destruction: PyO3's `unsendable` safeguard reports an unraisable error and skips native destruction in that unsupported case. Closing on the owner thread releases the native session first. This binding restriction does not change Rust ownership or add workers/locks to the interpreter.
 
@@ -87,6 +87,26 @@ Encode requests with `json.dumps(code)` in Python or `JSON.stringify(code)` in J
 ```
 
 State persists. JSON/APL errors return structured errors and do not terminate the process. Stdout contains only protocol lines. Newlines in APL source must be escaped inside the JSON string. EOF ends the process normally. Values preserve shape, flat data, and prototype. Exact integers are arbitrary-sized JSON integers. Floats retain a decimal point or exponent. Fractions use `{"rational":["numerator","denominator"]}` with decimal integer strings. Non-real complex values use `{"complex":[real,imaginary]}`, characters are strings, and nested elements use the same array object form. JavaScript clients need a parser that preserves large integers; ordinary `JSON.parse` can round them. Error spans are byte ranges into their accompanying source text; `calls` lists enclosing defined-function call sites without replacing the originating span. There is no streaming, multiplexing, Jupyter dependency, or Python round-trip.
+
+### Interruptible worker
+
+Use `miniapl.worker.Worker` for a persistent subprocess with deadlines and interruption:
+
+```python
+from miniapl.worker import Worker
+with Worker() as w:
+    w.eval('v←⍳10')
+    r = w.eval('+/v', timeout=2)  # seconds; returns the JSON response as a dict
+    assert r['value']['data'] == [55]
+```
+
+Call `w.interrupt()` from another thread to interrupt its current evaluation. Ctrl-C while waiting sends the same request. Cooperative cancellation returns `INTERRUPT` or `TIMEOUT` and leaves the session usable. Completed assignments and captured output survive; cancellation is not a transaction. APL error guards cannot catch cancellation.
+
+Evaluation checks cancellation in the binder, function calls and potentially long primitive loops. Individual native-library or big-integer operations are not preemptible. If a deadline exceeds its grace period (default 1 second), the client kills the worker and raises `TimeoutError`; that session is lost. The client never retries an evaluation automatically. `w.diagnostics` retains recent process stderr.
+
+The underlying `--worker` protocol uses JSON objects, one per line. Send `{"id":1,"code":"+/⍳10","timeout_ms":2000}` and receive `{"id":1,"result":...}`. Send `{"interrupt":1}` to cancel that request; interrupt messages have no reply. Use one outstanding evaluation per client. Stdout contains responses only. Invalid control messages terminate the worker. The simpler `--json` mode remains unchanged.
+
+In-process Python sessions accept `s.eval(code, timeout=seconds)` but remain thread-affine. Rust callers use `Session::eval_with(code, EvalOptions { interrupt, timeout })`; clone its `InterruptHandle` to cancel from another thread. No Jupyter or MCP dependency enters the interpreter.
 
 ## Explicit exact arithmetic
 
@@ -172,9 +192,9 @@ Character literals use single quotes, with doubled quotes inside (`'can''t'`). O
 - Encode/decode `⊤ ⊥` support numeric arrays, mixed bases, exact arithmetic and complex values. At `@` accepts replacement arrays or functions, indices or masks, and nested paths. Stencil `⌺` supports window sizes, movements, signed padding arguments and shared result assembly.
 - Matrix inverse/divide `⌹` uses rational elimination for all-exact inputs and faer thin SVD otherwise. Rectangular full-column-rank inputs support least squares. Singular and underdetermined systems error. Numerical rank uses machine epsilon × max dimension × largest singular value, not comparison tolerance.
 - Names follow lexical nesting, not the dynamic caller. Recursive and mutually referring definitions work. Boolean guards allow `fact←{⍵=0:1 ⋄ ⍵×∇⍵-1}`; `fact 6` gives 720.
-- Catch-all `0::` and numbered error guards (`11::`, `6 11::`) restore bindings to when the guard was installed, after evaluating its condition. Later assignments are undone, including newly introduced locals. The selected guard is inactive in its handler; earlier guards can catch handler failures. Output is not rolled back. Interrupt handling is not implemented. Unsupported features are deliberately not caught by guards.
+- Catch-all `0::` and numbered error guards (`11::`, `6 11::`) restore bindings to when the guard was installed, after evaluating its condition. Later assignments are undone, including newly introduced locals. The selected guard is inactive in its handler; earlier guards can catch handler failures. Output is not rolled back. Cancellation and unsupported features are not caught by guards.
 - Functions share immutable nodes rather than copying their trees. Lexical links refer to active stack-owned frames; functions cannot escape via array results, local assignment, or the public API. This is not a claim about future namespace/export features. Definitions retain full source spans; errors retain their origin and defined-function call sites.
-- Direct dfn/dop tail calls run in a loop, including mutual recursion, selected guards and parenthesized returns. Needed lexical frames are retained. Installed error guards disable tail-frame reuse. Calls embedded in further computation remain depth-limited. Function-valued dfn results are syntax errors, as in Dyalog. Mutable namespaces and function exports are outside the current calculator scope. Inverses and formatting remain planned.
+- Direct dfn/dop tail calls run in a loop, including mutual recursion, selected guards and parenthesized returns. Needed lexical frames are retained. Installed error guards disable tail-frame reuse. Calls embedded in further computation remain depth-limited. Function-valued dfn results are syntax errors, as in Dyalog. Mutable namespaces and function exports are outside the current calculator scope.
 - Fixed 1-based iota. Counts must be integral and nonnegative; generated arrays are capped at 1,000,000 elements. Array nesting, syntax nesting and function-graph depth have a 128-level limit. Combined non-tail evaluation/call nesting and retained lexical frames are limited to 64. Flat binding, assignment chains and supported tail recursion are iterative. Diagnostic carets use Unicode display width; tabs render at four-column stops.
 - Ordinary finite real `f64` numbers: `42`, `1.5`, `.5`, `¯2`, `1E¯3` (`e` also works). `-` is a function; use `¯` inside literals. Integers through ±2⁵³ are representable exactly; larger ordinary literals can round. Decimal arithmetic is not generally exact. Underflow rounds, potentially to zero; overflow/non-finite literals are domain errors. Negative zero is normalized. Opt into arbitrary-precision exact reals with `x`/`r` as above.
 - Division follows Dyalog's default `⎕DIV=0`: `0÷0` is 1; other zero divisors and `÷0` error. See [Dyalog's division contract](https://docs.dyalog.com/20.0/language-reference-guide/system-functions/div/). No configurable system variable is added.

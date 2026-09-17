@@ -64,8 +64,15 @@ impl PySession {
     fn set(&mut self, name: &str, value: &Bound<'_, PyDict>) -> PyResult<()> {
         self.inner.set(name, import_array(value, 0)?).map_err(|_| PyValueError::new_err("binding requires an ordinary APL name"))
     }
-    fn eval(&mut self, py: Python<'_>, code: &str) -> PyResult<Py<PyDict>> {
-        let result = self.inner.eval(code);
+    #[pyo3(signature = (code, timeout=None))]
+    fn eval(&mut self, py: Python<'_>, code: &str, timeout: Option<f64>) -> PyResult<Py<PyDict>> {
+        let result = match timeout {
+            Some(seconds) => self.inner.eval_timeout(
+                code,
+                std::time::Duration::try_from_secs_f64(seconds).map_err(|_| PyValueError::new_err("timeout must be finite and nonnegative"))?,
+            ),
+            None => self.inner.eval(code),
+        };
         let value = result.value.as_ref().map(|a| array(py, a)).transpose()?;
         let error = result
             .error
@@ -101,10 +108,18 @@ impl PySession {
 #[pyfunction]
 fn run_cli(args: Vec<String>) -> i32 { crate::cli::run(&args) }
 
+#[pyfunction]
+fn _check_reference(case: &str, timeout: f64) -> PyResult<String> {
+    let case = serde_json::from_str(case).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let timeout = std::time::Duration::try_from_secs_f64(timeout).map_err(|_| PyValueError::new_err("invalid timeout"))?;
+    Ok(crate::reference::check(&case, crate::EvalOptions { timeout: Some(timeout), ..crate::EvalOptions::default() }).to_string())
+}
+
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySession>()?;
     m.add_function(wrap_pyfunction!(run_cli, m)?)?;
+    m.add_function(wrap_pyfunction!(_check_reference, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
