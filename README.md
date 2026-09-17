@@ -74,7 +74,7 @@ Encode requests with `json.dumps(code)` in Python or `JSON.stringify(code)` in J
 {"value":{"shape":[],"data":[55.0],"prototype":0.0},"output":["55"],"error":null}
 ```
 
-State persists. JSON/APL errors return structured errors and do not terminate the process. Stdout contains only protocol lines. Newlines in APL source must be escaped inside the JSON string. EOF ends the process normally. Values preserve shape, flat data, and prototype; ordinary floats are JSON numbers, exact values are `{"rational":["numerator","denominator"]}` with decimal integer strings (including denominator `"1"`), characters are strings, and nested elements use the same array object form. Error spans are byte ranges into their accompanying source text; `calls` lists enclosing defined-function call sites without replacing the originating span. There is no streaming, multiplexing, Jupyter dependency, or Python round-trip.
+State persists. JSON/APL errors return structured errors and do not terminate the process. Stdout contains only protocol lines. Newlines in APL source must be escaped inside the JSON string. EOF ends the process normally. Values preserve shape, flat data, and prototype; ordinary floats are JSON numbers, exact values are `{"rational":["numerator","denominator"]}` with decimal integer strings (including denominator `"1"`), non-real complex values are `{"complex":[real,imaginary]}` with numeric components, characters are strings, and nested elements use the same array object form. Error spans are byte ranges into their accompanying source text; `calls` lists enclosing defined-function call sites without replacing the originating span. There is no streaming, multiplexing, Jupyter dependency, or Python round-trip.
 
 ## Explicit exact arithmetic
 
@@ -92,7 +92,25 @@ Ordinary literals and arithmetic stay floating-point. Use `x` for an exact integ
 
 Exact fractions are reduced, denominators positive, and integer results display with `x`. Only integer components are accepted in `x`/`r` literals; use `¯` for signs. An exact value too large for a required float conversion gives a domain error. Merely placing exact and approximate values in one array does not convert them. Empty prototypes and reduction identities retain the numeric domain. Iota, shape, tally, and Boolean results are ordinary floats; passing an exact count does not make generated values exact.
 
-Python receives independent `int` values for exact integers, `fractions.Fraction` for non-integer exact values, and `float` for ordinary numbers. JSON uses the rational representation above to avoid client-side rounding. Complex arithmetic is part of the endpoint but is not implemented yet.
+Python receives independent `int` values for exact integers, `fractions.Fraction` for non-integer exact values, and `float` for ordinary real numbers. JSON uses the rational representation above to avoid client-side rounding.
+
+## Complex arithmetic
+
+Use `aJb` (or `ajb`) for a complex number with real part `a` and imaginary part `b`. Both components accept the ordinary decimal/exponent notation and must be finite.
+
+```apl
+(1J2)+(3J4)          ⍝ 4J6
+(1J2)×(1J¯2)         ⍝ 5
++1J2                 ⍝ 1J¯2: monadic + is conjugation
+÷1J2                 ⍝ 0.2J¯0.4
+×3J4                 ⍝ 0.6J0.8: direction, with magnitude 1
+1r2+1J2              ⍝ 1.5J2: complex arithmetic is approximate
+sum←+/ ⋄ sum 1J2 3J4 ⍝ 4J6
+```
+
+Complex values use two `f64` components through `num-complex`. Promotion is exact → float → complex; array construction alone never promotes adjacent elements. An exactly zero imaginary component normalizes to an ordinary float, not an exact rational; a small nonzero component is not rounded away. Complex-derived numeric fill and empty-reduction identities are therefore ordinary floats.
+
+Python receives copied native `complex` values; JSON uses the tagged pair above. Real-normalized results such as the conjugate product return a Python float/JSON number. Equality and inequality use the same fixed `1e-14` tolerance with complex magnitudes, following [Dyalog's equality rule](https://docs.dyalog.com/20.0/language-reference-guide/primitive-functions/equal-to/), rather than testing components separately. Ordering and structural counts require real values; tolerant coercion of near-real complex values is not implemented. Complex powers, roots and transcendental functions remain later slices.
 
 ## Implemented subset and limits
 

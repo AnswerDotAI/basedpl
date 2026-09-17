@@ -5,9 +5,14 @@ use std::{
 
 #[test]
 fn native_expression_and_diagnostic() {
-    for (code, expected) in
-        [("2×3+4", "14\n"), ("(2×3)+4", "10\n"), ("10-3-2", "9\n"), ("¯2+5", "3\n"), ("1x÷3x ⋄ 6x÷3x ⋄ 1x÷3", "1r3\n2x\n0.3333333333333333\n")]
-    {
+    for (code, expected) in [
+        ("2×3+4", "14\n"),
+        ("(2×3)+4", "10\n"),
+        ("10-3-2", "9\n"),
+        ("¯2+5", "3\n"),
+        ("1x÷3x ⋄ 6x÷3x ⋄ 1x÷3", "1r3\n2x\n0.3333333333333333\n"),
+        ("(1J2)+(3J4) ⋄ (1J2)×(1J¯2) ⋄ +1J2", "4J6\n5\n1J¯2\n"),
+    ] {
         let output = Command::new(env!("CARGO_BIN_EXE_miniapl")).args(["-e", code]).output().unwrap();
         assert!(output.status.success());
         assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);

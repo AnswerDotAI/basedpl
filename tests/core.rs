@@ -18,6 +18,84 @@ fn vector(values: &[f64]) -> Array { Array::from_parts(vec![values.len()], value
 fn exact(n: i64, d: i64) -> Array { Array::scalar(num_rational::BigRational::new(n.into(), d.into())).unwrap() }
 
 #[test]
+fn complex_arithmetic_and_roundtrips() {
+    // Basic arithmetic expectations calculated independently. APL notation/conjugation:
+    // https://docs.dyalog.com/20.0/programming-reference-guide/introduction/complex-numbers/
+    for (code, re, im) in [
+        ("1J2", 1.0, 2.0),
+        ("¯.5j2E¯1", -0.5, 0.2),
+        ("1E2J¯4E¯1", 100.0, -0.4),
+        ("1J¯0", 1.0, 0.0),
+        ("¯0J2", 0.0, 2.0),
+        ("1J2+3J4", 4.0, 6.0),
+        ("1J2-3J4", -2.0, -2.0),
+        ("1J2×3J4", -5.0, 10.0),
+        ("1J2×1J¯2", 5.0, 0.0),
+        ("1J2÷3J4", 0.44, 0.08),
+        ("+1J2", 1.0, -2.0),
+        ("-1J2", -1.0, -2.0),
+        ("×3J4", 0.6, 0.8),
+        ("÷1J2", 0.2, -0.4),
+        ("1r2+1J2", 1.5, 2.0),
+        ("1J2-1r2", 0.5, 2.0),
+        ("2x÷0J1", 0.0, -2.0),
+        ("1J2÷2x", 0.5, 1.0),
+        ("sum←+/ ⋄ sum 1J2 3J4", 4.0, 6.0),
+        ("-/1J2 3J4 5J6", 3.0, 4.0),
+        ("f←{⍵×+⍵} ⋄ f 3J4", 25.0, 0.0),
+        ("0J0÷0J0", 1.0, 0.0),
+        ("1E300J1E300÷1E300J1E300", 1.0, 0.0),
+        ("1E¯320J1E¯320÷1E¯320J1E¯320", 1.0, 0.0),
+        ("1E308J1E308÷1J1", 1e308, 0.0),
+        ("1.7E308÷0.5J0.5", 1.7e308, -1.7e308),
+    ] {
+        let a = run(code).unwrap().unwrap();
+        let expected = if im == 0.0 { Array::scalar(re).unwrap() } else { Array::scalar(num_complex::Complex64::new(re, im)).unwrap() };
+        assert_eq!(a, expected, "{code}");
+        assert_eq!(run(&a.to_string()).unwrap().unwrap(), a, "display round-trip: {code}");
+    }
+    assert_eq!(run("1J2×1J¯2").unwrap().unwrap().to_string(), "5");
+    assert_eq!(run("¯0J2").unwrap().unwrap().to_string(), "0J2");
+    let a = run("1x 0.5 1J2").unwrap().unwrap();
+    assert_eq!(a.data(), &[exact(1, 1).data()[0].clone(), number(0.5), Element::Number(num_complex::Complex64::new(1.0, 2.0).try_into().unwrap())]);
+    for code in ["0/1J2", "1J2+0/1x", "+/0/1J2"] { assert_eq!(run(code).unwrap().unwrap().prototype(), &number(0.0)); }
+    assert_eq!(run("×/0/1J2").unwrap().unwrap(), Array::scalar(1.0).unwrap());
+    assert_eq!(run("⍳3J0").unwrap().unwrap(), vector(&[1.0, 2.0, 3.0]));
+}
+
+#[test]
+fn complex_comparison_errors_and_recovery() {
+    // Documentation-derived magnitude tolerance, not separate component comparisons:
+    // https://docs.dyalog.com/20.0/language-reference-guide/primitive-functions/equal-to/
+    for (x, y, equal) in [
+        ("1J1", "1J1.000000000000012", true),
+        ("1J1", "1J1.00000000000002", false),
+        ("1x", "1J5E¯15", true),
+        ("1", "1J5E¯14", false),
+        ("0", "0J1E¯100", false),
+        ("1.7E308J1.7E308", "1.7E308J1.7E308", true),
+        ("1.7E308J1.7E308", "¯1.7E308J¯1.7E308", false),
+    ] {
+        for (op, expected) in [("=", equal), ("≠", !equal)] {
+            for code in [format!("{x}{op}{y}"), format!("{y}{op}{x}")] {
+                assert_eq!(run(&code).unwrap().unwrap(), Array::scalar(u8::from(expected) as f64).unwrap(), "{code}");
+            }
+        }
+    }
+    for code in ["1J", "1J¯", "1J2E¯", "1J2x", "1xJ2", "1r2J3", "1J2J3"] { assert_eq!(run(code).unwrap_err().kind, Syntax, "{code}"); }
+    for code in ["1J1E309", "1E309J1", "1E308J1E308+1E308J1E308", "1J2÷0", "÷0J0", "⍳1J1E¯15", "1J2/3", "1J2<1J2", "1J2≤2", "2>1J2", "2≥1J2"] {
+        assert_eq!(run(code).unwrap_err().kind, Domain, "{code}");
+    }
+    assert_eq!(run(&format!("1{}x+0J1", "0".repeat(400))).unwrap_err().kind, Domain);
+    assert_eq!(Array::scalar(num_complex::Complex64::new(0.0, f64::INFINITY)), Err(Domain));
+    let mut s = Session::new();
+    let failed = s.eval("⎕←1J2 ⋄ 1J2÷0");
+    assert_eq!(failed.output, ["1J2"]);
+    assert_eq!(failed.error.unwrap().kind, Domain);
+    assert_eq!(s.eval("1J2+3J4").output, ["4J6"]);
+}
+
+#[test]
 fn exact_literals_arithmetic_and_roundtrips() {
     // miniapl's explicit exact-number extension, not Dyalog reference cases.
     for (code, n, d) in [

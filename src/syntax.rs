@@ -88,28 +88,37 @@ fn digits(chars: &mut Peekable<CharIndices<'_>>) -> usize {
     count
 }
 
+fn real_literal(chars: &mut Peekable<CharIndices<'_>>) -> Result<(), &'static str> {
+    if chars.peek().is_some_and(|(_, c)| *c == '¯') { chars.next(); }
+    let mut count = digits(chars);
+    if chars.peek().is_some_and(|(_, c)| *c == '.') {
+        chars.next();
+        count += digits(chars);
+    }
+    if count == 0 { return Err("expected digits in numeric literal"); }
+    if chars.peek().is_some_and(|(_, c)| matches!(c, 'e' | 'E')) {
+        chars.next();
+        if chars.peek().is_some_and(|(_, c)| *c == '¯') { chars.next(); }
+        if digits(chars) == 0 { return Err("expected exponent digits (use ¯ for a negative exponent)"); }
+    }
+    Ok(())
+}
+
 fn lex(source: &Rc<Source>) -> Result<Vec<Token>, Error> {
     let mut chars = source.text.char_indices().peekable();
     let mut tokens = Vec::new();
     while let Some(&(start, c)) = chars.peek() {
         let span = |end| Span { source: source.clone(), range: start..end };
         let kind = if c.is_ascii_digit() || c == '¯' || c == '.' {
-            if c == '¯' { chars.next(); }
-            let mut count = digits(&mut chars);
-            if chars.peek().is_some_and(|(_, c)| *c == '.') {
+            real_literal(&mut chars).map_err(|message| span(chars.peek().map_or(source.text.len(), |(i, _)| *i)).error(ErrorKind::Syntax, message))?;
+            if chars.peek().is_some_and(|(_, c)| matches!(c, 'J' | 'j')) {
                 chars.next();
-                count += digits(&mut chars);
-            }
-            if count == 0 { return Err(span(start + c.len_utf8()).error(ErrorKind::Syntax, "expected digits in numeric literal")); }
-            if chars.peek().is_some_and(|(_, c)| matches!(c, 'e' | 'E')) {
-                chars.next();
-                if chars.peek().is_some_and(|(_, c)| *c == '¯') { chars.next(); }
-                if digits(&mut chars) == 0 {
-                    let end = chars.peek().map_or(source.text.len(), |(i, _)| *i);
-                    return Err(span(end).error(ErrorKind::Syntax, "expected exponent digits (use ¯ for a negative exponent)"));
+                real_literal(&mut chars).map_err(|message| span(chars.peek().map_or(source.text.len(), |(i, _)| *i)).error(ErrorKind::Syntax, message))?;
+                if chars.peek().is_some_and(|(_, c)| matches!(c, '.' | 'e' | 'E' | 'x' | 'r' | 'J' | 'j')) {
+                    return Err(span(chars.peek().unwrap().0 + 1).error(ErrorKind::Syntax, "invalid complex numeric literal"));
                 }
             }
-            if let Some(&(_, suffix @ ('x' | 'r'))) = chars.peek() {
+            else if let Some(&(_, suffix @ ('x' | 'r'))) = chars.peek() {
                 chars.next();
                 if suffix == 'r' {
                     if chars.peek().is_some_and(|(_, c)| *c == '¯') { chars.next(); }
@@ -118,14 +127,14 @@ fn lex(source: &Rc<Source>) -> Result<Vec<Token>, Error> {
                         return Err(span(end).error(ErrorKind::Syntax, "expected integer denominator"));
                     }
                 }
-                if chars.peek().is_some_and(|(_, c)| c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | 'x' | 'r')) {
+                if chars.peek().is_some_and(|(_, c)| c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | 'x' | 'r' | 'J' | 'j')) {
                     let end = chars.peek().unwrap().0 + 1;
                     return Err(span(end).error(ErrorKind::Syntax, "invalid exact numeric literal"));
                 }
             }
             let end = chars.peek().map_or(source.text.len(), |(i, _)| *i);
             let n = Number::parse(&source.text[start..end])
-                .map_err(|k| span(end).error(k, "invalid numeric literal (finite floats or integer x/r components required)"))?;
+                .map_err(|k| span(end).error(k, "invalid numeric literal (finite real/complex values or integer x/r components required)"))?;
             TokenKind::Number(n)
         } else if c.is_alphabetic() || matches!(c, '_' | '∆' | '⍙') {
             chars.next();

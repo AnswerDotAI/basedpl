@@ -4,10 +4,9 @@ use std::io::{self, BufRead, Write};
 
 fn element(e: &Element) -> Value {
     match e {
-        Element::Number(n) => match n.as_exact() {
-            Some(n) => json!({"rational": [n.numer().to_string(), n.denom().to_string()]}),
-            None => json!(n.as_float().unwrap()),
-        },
+        Element::Number(n) => {
+            if let Some(n) = n.as_exact() { json!({"rational": [n.numer().to_string(), n.denom().to_string()]}) } else if let Some(n) = n.as_complex() { json!({"complex": [n.re, n.im]}) } else { json!(n.as_float().unwrap()) }
+        }
         Element::Character(c) => json!(c.to_string()),
         Element::Nested(a) => array(a),
     }

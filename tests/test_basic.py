@@ -113,3 +113,23 @@ def test_exact_installed_command_and_json():
     assert replies[2]['value'] == {'shape': [0], 'data': [], 'prototype': {'rational': ['0', '1']}}
     assert replies[3]['error']['kind'] == 'DOMAIN ERROR'
     assert replies[4]['value']['data'] == [{'rational': ['1', '2']}]
+
+def test_complex_python_and_json():
+    with Session() as s:
+        a = s.eval('1x 0.5 1J2').value
+        assert a.to_python() == [1, 0.5, 1+2j] and [type(o) for o in a.data] == [int, float, complex]
+        assert s.eval('+1J2').value.to_python() == 1-2j
+        real = s.eval('1J2×1J¯2').value.to_python()
+        assert type(real) is float and real == 5
+        empty = s.eval('0/1J2').value
+        assert empty.shape == (0,) and empty.data == () and type(empty.prototype) is float
+        with pytest.raises(AplError): s.eval('1J2÷0')
+        assert s.eval('1J2+3J4').value.to_python() == 4+6j
+    assert a.to_python() == [1, 0.5, 1+2j]  # copied complex values survive closing the session
+    requests = '\n'.join(json.dumps(c) for c in ['1J2 3J4', '0/1J2', '1J2×1J¯2']) + '\n'
+    res = subprocess.run(['miniapl', '--json'], input=requests, capture_output=True, text=True, timeout=10)
+    assert res.returncode == 0 and not res.stderr
+    replies = [json.loads(line) for line in res.stdout.splitlines()]
+    assert replies[0]['value'] == {'shape': [2], 'data': [{'complex': [1, 2]}, {'complex': [3, 4]}], 'prototype': 0}
+    assert replies[1]['value'] == {'shape': [0], 'data': [], 'prototype': 0}
+    assert replies[2]['value']['data'] == [5] and replies[2]['output'] == ['5']

@@ -1,17 +1,17 @@
 use crate::{Array, Element, Session};
 use pyo3::{
     prelude::*,
-    types::{PyDict, PyFloat, PyList, PyString},
+    types::{PyComplex, PyDict, PyFloat, PyList, PyString},
 };
 
 fn array(py: Python<'_>, a: &Array) -> PyResult<Py<PyDict>> {
     fn element(py: Python<'_>, e: &Element) -> PyResult<Py<PyAny>> {
         Ok(match e {
-            Element::Number(n) => match n.as_exact() {
-                Some(n) if n.is_integer() => n.numer().into_pyobject(py)?.into_any().unbind(),
-                Some(n) => (n.numer(), n.denom()).into_pyobject(py)?.into_any().unbind(),
-                None => PyFloat::new(py, n.as_float().unwrap()).into_any().unbind(),
-            },
+            Element::Number(n) => {
+                if let Some(n) = n.as_exact() {
+                    if n.is_integer() { n.numer().into_pyobject(py)?.into_any().unbind() } else { (n.numer(), n.denom()).into_pyobject(py)?.into_any().unbind() }
+                } else if let Some(n) = n.as_complex() { PyComplex::from_doubles(py, n.re, n.im).into_any().unbind() } else { PyFloat::new(py, n.as_float().unwrap()).into_any().unbind() }
+            }
             Element::Character(c) => PyString::new(py, &c.to_string()).into_any().unbind(),
             Element::Nested(a) => array(py, a)?.into_any(),
         })

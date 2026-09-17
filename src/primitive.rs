@@ -100,19 +100,20 @@ impl Primitive {
             let n = match self {
                 Self::Arithmetic(op) => match x { Some(x) => x.dyad(op, y), None => y.monad(op) },
                 Self::Compare(op) => {
-                    let order = x.unwrap().compare(y);
-                    order.map(|order| {
-                        use Comparison::*;
-                        let b = match op {
-                            Equal => order.is_eq(),
-                            NotEqual => !order.is_eq(),
+                    use Comparison::*;
+                    let x = x.unwrap();
+                    let result = match op {
+                        Equal => x.equal(y),
+                        NotEqual => x.equal(y).map(|b| !b),
+                        _ => x.compare(y).map(|order| match op {
                             Less => order.is_lt(),
                             LessEqual => !order.is_gt(),
                             Greater => order.is_gt(),
                             GreaterEqual => !order.is_lt(),
-                        };
-                        Number::try_from(u8::from(b) as f64).unwrap()
-                    })
+                            _ => unreachable!(),
+                        }),
+                    };
+                    result.map(|b| Number::try_from(u8::from(b) as f64).unwrap())
                 }
                 _ => unreachable!(),
             }
