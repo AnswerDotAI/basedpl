@@ -1,0 +1,19 @@
+# `!` — Factorial / Binomial
+
+`!Y`: Y!. Pervasive.
+
+```apl
+!5                ⍝ 120
+!5x               ⍝ 120x
+```
+
+`X!Y`: binomial coefficient, Y choose X. Pervasive.
+
+```apl
+2!5               ⍝ 10
+2x!5x             ⍝ 10x
+```
+
+Extends through Gamma to non-integral and complex arguments.
+
+DOMAIN: factorial poles.

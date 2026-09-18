@@ -1,9 +1,17 @@
 import operator
 from fractions import Fraction
+from pathlib import Path
 import numpy as np
 import pytest
 from miniapl import (Array, Session, AplError, plus, times, subtract, divide, power, sign, tally, iota,
                      reshape, shape, floor, logarithm, reverse, transpose, fork, atop)
+
+
+def test_documentation_examples():
+    for path in (Path(__file__).resolve().parents[1]/'docs').glob('*.md'):
+        namespace = {}
+        for block in path.read_text().split('```python\n')[1:]:
+            exec(compile(block.split('```', 1)[0], str(path), 'exec'), namespace)
 
 
 def test_array_surface():

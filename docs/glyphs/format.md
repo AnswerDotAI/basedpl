@@ -1,0 +1,21 @@
+# `⍕` — Format
+
+`⍕Y` returns character text. Matrix rows remain rows.
+
+```apl
+⍕1 2 3             ⍝ '1 2 3'
+```
+
+`D⍕Y` gives `D` decimal places. Negative `D` selects exponent notation.
+
+```apl
+2⍕3.125            ⍝ ' 3.13'
+```
+
+`W D⍕Y` supplies field width too; pairs can be supplied per column. Width 0 chooses a width. Overflowing fields become `*`.
+
+```apl
+6 2⍕3.125          ⍝ '  3.13'
+```
+
+Formatting is independent of REPL boxing.

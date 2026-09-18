@@ -1,0 +1,22 @@
+# `∘` — Compose / Bind
+
+`f∘g Y` is `f(g Y)`.
+
+```apl
+-∘× ¯3             ⍝ 1
+```
+
+`X f∘g Y` is `X f(g Y)`.
+
+```apl
+10+∘-3             ⍝ 7
+```
+
+`A∘f` binds the left argument; `f∘A` binds the right. Bound functions are monadic.
+
+```apl
+(10∘-)3            ⍝ 7
+(-∘10)3            ⍝ ¯7
+```
+
+See [Atop / Rank](rank.md) and [Over](over.md).

@@ -1,0 +1,15 @@
+# `⌸` — Key
+
+`K f⌸Y` groups major cells of `Y` by corresponding keys in `K`. Calls `key f group`; groups appear in first-occurrence order.
+
+```apl
+1 1 2{+/⍵}⌸10 20 30 ⍝ 30 30
+```
+
+`f⌸Y` uses `Y` as keys and their positions as values.
+
+```apl
+{≢⍵}⌸'banana'       ⍝ 1x 3x 2x
+```
+
+Keys use tolerant matching against first representatives. Results assemble with fill. Empty input calls `f` once for its prototype.

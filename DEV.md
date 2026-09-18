@@ -1,5 +1,17 @@
 # Development
 
+## Install from source
+
+Requires Python ≥3.10 and Rust ≥1.98. In your Python environment:
+
+```bash
+git clone https://github.com/AnswerDotAI/miniapl.git
+cd miniapl
+pip install .
+```
+
+For a standalone executable without Python, run `cargo install --path .`. Cargo installs it in its `bin` directory, normally `~/.cargo/bin`; put that directory on your PATH.
+
 ## Commands
 
 ```bash

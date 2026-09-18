@@ -1,0 +1,22 @@
+# `-` — Negate / Subtract
+
+`-Y` negates. Pervasive.
+
+```apl
+-3                ⍝ ¯3
+```
+
+`X-Y` subtracts. Pervasive.
+
+```apl
+10-1 2 3          ⍝ 9 8 7
+```
+
+Characters shift by code point. Character differences are exact integers.
+
+```apl
+'d'-3             ⍝ 'a'
+'d'-'a'           ⍝ 3x
+```
+
+[`¯`](overbar.md) marks negative literals.

@@ -33,6 +33,38 @@ fn equiv_in(session: &mut Session, code: &str, expected: &str) { check_in(sessio
 #[track_caller]
 fn equiv(code: &str, expected: &str) { equiv_in(&mut Session::new(), code, expected); }
 
+#[test]
+fn language_examples() {
+    let mut failures = Vec::new();
+    for dir in ["docs", "docs/glyphs"] {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|ext| ext != "md") { continue; }
+            let text = std::fs::read_to_string(&path).unwrap();
+            for link in text.split("](").skip(1) {
+                let target = link.split(')').next().unwrap().split('#').next().unwrap();
+                if !target.is_empty() && !target.contains("://") {
+                    assert!(path.parent().unwrap().join(target).exists(), "{}: missing {target}", path.display());
+                }
+            }
+            let mut apl = false;
+            for (line, text) in text.lines().enumerate() {
+                if text.starts_with("```") {
+                    apl = text == "```apl";
+                    continue;
+                }
+                if !apl || text.trim().is_empty() { continue; }
+                let (code, expected) = text.split_once(" ⍝ ").expect("APL example needs an expectation");
+                match (run(code), run(expected)) {
+                    (Ok(Some(actual)), Ok(Some(expected))) if actual == expected => (),
+                    pair => failures.push(format!("{}:{}: {code}\n{pair:?}", path.display(), line + 1)),
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 macro_rules! equiv {
     ($($code:expr => $expected:expr),* $(,)?) => {
         $(equiv($code, $expected);)*
