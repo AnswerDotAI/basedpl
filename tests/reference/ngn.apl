@@ -2862,3 +2862,7 @@ queens←{ search←{ (⊂⍬)∊⍵:0⍴⊂⍬ ⋄ 0=⍴⍵:rmdups ⍺ ⋄ (hd 
 ' #'[1+9>|⊃{⍺+⍵*2}/9⍴⊂¯3×.7J.5-⍉a∘.+0J1×a←(¯1+⍳n+1)÷n←12]
 13 13⍴'                                  #            #          ####       #######   #########       #######        ####           #            #                              '
 
+⍝ ngn:501 — ngn accepts count/function operands to power in either order (apl.js, voc[⍣]); port to function⍣count; Explicit modified assignment updates the outer counter under miniapl scope rules; Original expected 5 retained and checked in Dyalog 20.0.53963.0
+c←0 ⋄ ({c+←1}⍣5)0 ⋄ c
+5
+

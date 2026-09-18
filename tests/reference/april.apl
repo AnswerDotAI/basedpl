@@ -24815,3 +24815,122 @@ tview ← {
 ⍝ =>
 ('┌─────────────┬─────────────────────────────────────┐') ('│0 1 2 2 1 2 2│┌─────┬───┬───┬──────┬────┬────┬────┐│') ('│             ││drink│hot│tea│coffee│cold│milk│beer││') ('│             │└─────┴───┴───┴──────┴────┴────┴────┘│') ('└─────────────┴─────────────────────────────────────┘')
 
+⍝ april/libraries/dfns/tree/demo.lisp:896 — Origin-one splay definitions and preceding state included; Random 256-node workloads assert validity, keys and search/removal results rather than a seeded shape
+splay ← { 
+  wise←{(2×⍺⍺)↑3⍴⍵}
+  put←{
+    ⍺≡0:⍵(0 0)
+    ((nxt _)subs)(key _)←⍺ ⍵
+    nxt≡key:⍵ subs
+    ⍺ ∇ search ⍵
+  }
+  rem←{
+    ⍺≡0:0
+    ((nxt _)subs)(key _)←⍺ ⍵
+    ~nxt≡key:⍺ ∇ search ⍵
+    0 0≡subs:0
+    0∊subs:(subs⍳0)⊃⌽subs
+    (⍺ rot 1)∇ ⍵
+  }
+  search←{
+    inf(lft rgt)←⍺
+    dir←1-2×>/⍋↑⊃¨inf ⍵
+    _ nxt←dir wise lft rgt
+    sub←nxt ⍺⍺ ⍵
+    inf(dir wise lft sub rgt)
+  }
+  get←{
+    ⍺≡0:0 0 0
+    (key val)(lft rgt)←⍺
+    key≡⍵:val ⍺ ⍬
+    dir←1-2×>/⍋↑key ⍵
+    _ nxt←dir wise lft rgt
+    rslt sub path←nxt ∇ ⍵
+    ∆path←dir,path
+    cand←(key val)(lft sub rgt)
+    tree←(dir wise\cand)bal ∆path
+    rslt tree ∆path
+  }
+  bal←{
+    2≠⍴⍵:⍺
+    pos neg←1 ¯1×⊃⍵
+    =/⍵:(⍺ rot neg)rot neg
+    C(BpA s)←neg wise\⍺
+    ∆C←neg wise\C((BpA rot pos)s)
+    ∆C rot neg
+  }
+  rot←{
+    B(Apq r)←⍵ wise\⍺
+    A(p q)←⍵ wise\Apq
+    Bqr←⍵ wise\B(q r)
+    ⍵ wise\A(p Bqr)
+  }
+  vec←{
+    ⍵≡0:⍬
+    key_val(lft rgt)←⍵
+    (∇ lft),(⊂key_val),∇ rgt
+  }
+  lift←{
+    val root path←⍵
+    0∊path:
+    1≠⍴path:val root
+    val(root rot-⊃path)
+  }
+  fmt←{
+    null←0 0⍴''
+    ⍵≡0:null
+    (key val)subs←⍵
+    key_val←↑,/⍕¨key'='val
+    fmts←{⊖⍵}\'┌└'{
+      0 0≡⍴⍵:⍵
+      mask←∧\' '=⊃↓⌽⍉⍵
+      ⍉⌽↑(⊂⌽⍺,mask/'│'),↓⌽⍉⍵
+    }¨{⊖⍵}\∇¨subs
+    case←~null null≡¨fmts
+    join←(1+2⊥case)⊃'∘┐┘┤'
+    join≡'∘':↑,↓key_val
+    dent←' '⊣¨key_val
+    pads←{↓↑,/dent,⊂⍵}¨fmts
+    ↑↑{⍺,(↓key_val,join),⍵}/pads
+  }
+  dep←{
+    ⍺≡0:0
+    (key val)subs←⍺
+    key≡⍵:1
+    dir←1-2×>/⍋↑key ⍵
+    _ sub←dir wise subs
+    {⍵+×⍵}sub ∇ ⍵
+  }
+  chk←{
+    0=≡⍵:(0≡⍵)0 0 0 ⍬
+    (key _)subs←⍵
+    stats←(⍺+1)∇¨subs
+    oks szs dps hts krs←↓⍉↑stats
+    keys←↑key{⍺,(⊂⍺⍺),⍵}/krs
+    okkey←{⍵≡⍳⍴⍵}⍋↑keys
+    okstr←2 2≡(⍴⍵),⍴⊃⌽⍵
+    ok←okkey∧okstr∧∧/oks
+    sz←1++/szs
+    dp←⍺++/dps
+    ht←1+⌈/hts
+    kr←⌽2⍴¯1⌽keys
+    ⍺>0:ok sz dp ht kr
+    ok sz(⌊0.5+dp÷sz)ht
+  }
+  op←⍺⍺
+  '∪'≡op:⍺ put ⍵
+  '⍎'≡op:lift ⍵ get ⍺
+  '~'≡op:⍺ rem ⍵ 0
+  '?'≡op:4↑0 chk ⍵
+  '⍕'≡op:fmt ⍵
+  '∊'≡op:vec ⍵
+  '≡'≡op:⍵ dep ⍺
+}
+foldl ← { ↑⍺⍺⍨/(⌽⍵),⊂⍺ }
+put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ fmt←'⍕' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay ⋄ tree←0∘(put foldl)
+check←{s←chk ⍵ ⋄ (1 256≡2↑s)∧(⍳256)≡⊃¨vec ⍵}
+tt←tree 256?256 ⋄ revt←{⊃⌽⍵ get ⍺}
+check tt
+⍝ =>
+1
+

@@ -1828,7 +1828,10 @@ impl Entity {
     fn value(self) -> Result<Value, Error> {
         Ok(match self.term {
             Term::Value(v) => v,
-            Term::Strand(items) => Value::Array(Array::new(vec![items.len()], items).map_err(|k| self.span.error(k, "invalid strand"))?),
+            Term::Strand(items) => Value::Array(
+                Array::new(vec![items.len()], items)
+                    .map_err(|k| self.span.error(k, if k == ErrorKind::Limit { "array nesting limit exceeded" } else { "invalid strand" }))?,
+            ),
             Term::Train(fs) => Value::Function(self::Function::train(fs, &self.span)?),
             Term::Left(..) => return Err(self.span.error(ErrorKind::Syntax, "a function needs a right argument")),
             Term::Selection(_) => return Err(self.span.error(ErrorKind::Syntax, "index/axis brackets need an array or function to their left")),

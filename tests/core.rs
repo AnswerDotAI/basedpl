@@ -1334,6 +1334,9 @@ fn structural_completeness_and_source_lifetime() {
     fails(Limit, &[&deep]);
     // Flat evaluation is iterative, not one Rust stack frame per function application.
     equiv(&format!("{}1", "1+".repeat(10_000)), "10001");
+    let e = run("{⍵ ⍵}⍣129⊢1 2").unwrap_err();
+    assert_eq!(e.kind, Limit);
+    assert!(e.message.contains("array nesting"));
 }
 
 #[test]
