@@ -50,6 +50,17 @@ DOMAIN ERROR: division by zero
     ^
 ```
 
+### Vim
+
+The `editors/vim` package highlights APL comments, quoted strings and glyphs using the current color scheme. It detects `.apl` files. Install it from the repository root:
+
+```bash
+mkdir -p ~/.vim/pack/dev/start
+ln -s "$PWD/editors/vim" ~/.vim/pack/dev/start/miniapl
+```
+
+New Vim sessions load it automatically. In an existing session, run `:packadd miniapl`, then `:setfiletype apl` in an APL buffer. Run the syntax checks with `vim -Nu NONE -n -i NONE -es -V1 -S editors/vim/test.vim`.
+
 ## Python
 
 ```python
@@ -145,16 +156,20 @@ Prefer `with Session()` or explicit `.close()`. Closing rejects new requests and
 
 ## Rust embedding
 
+Run interpreter workloads inside `miniapl::with_stack(|| { ... })` to use a 256 MiB execution stack. Wrap the session workflow, not each individual call. Direct `Session` methods use the caller's stack. CLI and Python workers configure their stacks automatically. Evaluation nesting is limited to 1,024 steps.
+
 `Session::eval_with` and `Session::call_with` accept `EvalOptions`. Set `echo: false` to suppress implicit expression display while retaining explicit `⎕←` output, including output before an error. This also suppresses intermediate implicit output inside `⍎`. Explicit display commands such as `]Display` still produce output. Echo defaults to true and is selected separately for each evaluation.
 
 ```rust
-use miniapl::{Array, EvalOptions, Session};
+use miniapl::{with_stack, Array, EvalOptions, Session};
 
-let mut s = Session::new();
-let r = s.call_with("{(+/⍵)÷≢⍵}", &[Array::integers(vec![3], vec![1, 2, 3]).unwrap()],
-    EvalOptions { echo: false, ..EvalOptions::default() });
-assert!(r.error.is_none() && r.output.is_empty());
-assert_eq!(r.value, Some(Array::integers(vec![], vec![2]).unwrap()));
+with_stack(|| {
+    let mut s = Session::new();
+    let r = s.call_with("{(+/⍵)÷≢⍵}", &[Array::integers(vec![3], vec![1, 2, 3]).unwrap()],
+        EvalOptions { echo: false, ..EvalOptions::default() });
+    assert!(r.error.is_none() && r.output.is_empty());
+    assert_eq!(r.value, Some(Array::integers(vec![], vec![2]).unwrap()));
+});
 ```
 
 `call` / `call_with` resolve one function expression in the current session, then pass one array as `⍵` or two arrays as `⍺, ⍵`. Arguments are not serialized into APL source and no temporary names are assigned. Function names, dfns, trains and derived functions are accepted. `Evaluation.function` holds an unshy, exportable function result. `set_function` binds a retained function; `call_function_with` calls it without reparsing. `Function::late_bound` parses an expression for resolution on each call. Rust callers supply the session for global lookup. All function exports reject active lexical-frame references. Calls use the same deadlines and interruption support as evaluation.
@@ -283,7 +298,7 @@ Character literals use single quotes, with doubled quotes inside (`'can''t'`). O
 - Last/first-axis reduction and scan (`/ ⌿ \ ⍀`) support primitive and user-defined operands. Generic reduction is right-associated: `-/1 2 3` is 2. Primitive float `+/` and `×/` permit compiler reassociation for speed; their grouping is unspecified, including with axes. Cancellation, rounding and overflow can differ from Dyalog or across builds. For example, `+/1E100 ¯1E100 1` has no promised fixed-order answer. Exact arithmetic remains exact. Generic scan reduces successive prefixes; direct numeric primitive sum/product scans accumulate left-to-right. N-wise reduction accepts zero and negative widths. Empty reductions use known primitive identities; unknown identities give domain errors. Empty min/max use `∞`/`¯∞`, including exact empties. Replication/expansion support matrix axes and signed counts for fill.
 - Bracket indexing uses origin 1: `m[2;1]`, `m[;2]`, `v[3 1]`. Coordinate arrays and nested paths are supported. Indexed, modified, strand and selective assignment work, including Each selectors and repeated updates. Axis qualifiers support folds, replication/expansion, reverse/rotate, catenate, take/drop, scalar functions, ravel, mix and enclosure. Fractional axes insert dimensions for ravel, mix and laminate; multi-axis selectors support take/drop, enclosure and squad.
 - `/` retains its hybrid role when named or parenthesized: `r←/ ⋄ +r 1 2 3` gives 6, while `1 0 1 r 2 4 6` gives `2 6`. Replication extends singleton vectors as well as scalars: `(,2)/3 4` gives `3 3 4 4`, and `1 0 1/,3` gives `3 3`. Scalar arithmetic also supports singleton extension.
-- Dfns with local assignments, nested lexical definitions, lazy default arguments (`⍺←2`), and silent/no-result behavior. Monadic/dyadic dops accept function, array or hybrid operands. For example, `apply←{⍺⍺ ⍵} ⋄ (-apply)3` gives ¯3, and `op←{⍺⍺+⍵⍵×⍵} ⋄ (2 op 3)4` gives 14.
+- Dfns with nested lexical definitions, lazy default arguments (`⍺←2`), and silent/no-result behavior. Plain name assignment is local; modified, indexed and selective array updates target the nearest existing lexical binding. Execute-created definitions use ordinary lexical capture too. Monadic/dyadic dops accept function, array or hybrid operands. For example, `apply←{⍺⍺ ⍵} ⋄ (-apply)3` gives ¯3, and `op←{⍺⍺+⍵⍵×⍵} ⋄ (2 op 3)4` gives 14.
 - Atops, forks, constant arms and longer trains; `⊣ ⊢`; composition/binding `∘`, rank/atop `⍤`, over `⍥`, behind `⍛`, Each `¨` and commute/constant `⍨`. `3∘<⍛/2 7 1 8` gives `7 8`. Rank uses shared padded cell assembly and the frame agreement above. Empty Each/rank invokes the operand to obtain a prototype, including its output/errors.
 - Inner and outer products use shared operand calls: `1 2 3+.×10 12 14` gives 76; `(⍳3)∘.=⍳3` is an identity matrix. Singleton contraction extension, nested results and empty products are supported.
 - Key `⌸` groups by the first matching representative. Counted, predicate and inverse power `⍣` use shared function calls. Known inverses cover arithmetic bindings, powers/logs, circle codes ¯7 through 7, permutations/rotations, encode/decode, where, supported scans and compositions/Each/rank. `×∘*⍨⍣¯1` computes the principal Lambert W branch. Real arguments must be at least `¯1÷*1`; complex arguments use the principal complex branch. Results are approximate. Unknown inverses give DOMAIN ERROR; arbitrary dfn inversion is deferred.
@@ -293,7 +308,7 @@ Character literals use single quotes, with doubled quotes inside (`'can''t'`). O
 - Encode/decode `⊤ ⊥` support numeric arrays, mixed bases, exact arithmetic and complex values. At `@` accepts replacement arrays or functions, indices or masks, and nested paths. Stencil `⌺` supports window sizes, movements, signed padding arguments and shared result assembly.
 - Matrix inverse/divide `⌹` uses rational elimination for all-exact inputs and faer thin SVD otherwise. Rectangular full-column-rank inputs support least squares. Singular and underdetermined systems error. Numerical rank uses machine epsilon × max dimension × largest singular value, not comparison tolerance.
 - Names follow lexical nesting, not the dynamic caller. Recursive and mutually referring definitions work. Boolean guards allow `fact←{⍵=0:1 ⋄ ⍵×∇⍵-1}`; `fact 6` gives 720.
-- Catch-all `0::` and numbered error guards (`11::`, `6 11::`) restore bindings to when the guard was installed, after evaluating its condition. Later assignments are undone, including newly introduced locals. The selected guard is inactive in its handler; earlier guards can catch handler failures. Output is not rolled back. Cancellation and unsupported features are not caught by guards.
+- Catch-all `0::` and numbered error guards (`11::`, `6 11::`) restore the installing function's local bindings to their state after evaluating the guard condition. Later local assignments are undone, including modified assignments and newly introduced names. Outer/global writes and output are not rolled back. The selected guard is inactive in its handler; earlier guards can catch handler failures. Empty ordinary/error guard results return no value. Cancellation and unsupported features are not caught by guards.
 - Functions share immutable nodes rather than copying their trees. Lexical links refer to active stack-owned frames; public exports reject these links throughout the function graph. Definitions retain full source spans; errors retain their origin and defined-function call sites.
 - Direct dfn/dop tail calls run in a loop, including mutual recursion, selected guards and parenthesized returns. Needed lexical frames are retained. Installed error guards disable tail-frame reuse. Calls embedded in further computation remain depth-limited. Function-valued dfn results are syntax errors, as in Dyalog. Mutable namespaces and escaping lexical closures are outside the current calculator scope.
 - Fixed 1-based iota. Counts must be integral and nonnegative; generated arrays are capped at 1,000,000 elements. Array nesting, syntax nesting and function-graph depth have a 128-level limit. Combined non-tail evaluation/call nesting and retained lexical frames are limited to 64. Flat binding, assignment chains and supported tail recursion are iterative. Diagnostic carets use Unicode display width; tabs render at four-column stops.
@@ -314,4 +329,4 @@ pytest -q
 
 Maturin enables the optional PyO3 adapter. Rebuild it after Rust changes before checking the installed command or Python API. See [DEV.md](DEV.md) for architecture, build, and release conventions.
 
-The [reference acceptance corpus](tests/reference/README.md) retains ngn, April and APLcart examples for gradual activation. Dyalog documentation examples are added with independently captured structured expectations as glyphs are implemented. Supported cases run in ordinary Rust tests. Pending and scope-question entries remain visible rather than being discarded. The initial character-conjugation, nested-scalar-split and strand/index binding defects are fixed.
+The [reference acceptance corpus](tests/reference/README.md) covers ngn, April, APLcart and Dyalog documentation examples. Active cases live in `tests/reference/*.apl` and run in ordinary Rust tests. The tracked `tests/reference/inventory/*.jsonl` files retain original records, independent expectations, adaptations and candidates for activation, including pending, scope-question and excluded entries. Activation checks reviewed cases, appends them to `.apl`, and marks their inventory records active. Edit active tests directly in `.apl`; the linked guide documents the record format, `Corpus` API and activation commands. The initial character-conjugation, nested-scalar-split and strand/index binding defects are fixed.

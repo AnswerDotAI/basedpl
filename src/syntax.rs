@@ -55,7 +55,7 @@ fn statement(nodes: Vec<Node>) -> Result<Statement, ParseFailure> {
     let mut guard = None;
     for (i, node) in nodes.iter().enumerate() {
         if let NodeKind::Guard(error) = node.kind {
-            if i == 0 || i + 1 == nodes.len() { return Err(ParseFailure::Invalid(node.span.error(ErrorKind::Syntax, "guard needs a condition and result"))); }
+            if i == 0 { return Err(ParseFailure::Invalid(node.span.error(ErrorKind::Syntax, "guard needs a condition"))); }
             if guard.is_some() { return Err(ParseFailure::Invalid(node.span.error(ErrorKind::Syntax, "a statement can contain only one guard"))); }
             guard = Some((i, error));
         }

@@ -19,7 +19,7 @@ pub struct Function {
 }
 
 const MAX_DEPTH: usize = 128;
-const MAX_CALL_DEPTH: usize = 64;
+const MAX_CALL_DEPTH: usize = 1024;
 
 fn implicit_name(name: &str) -> bool { matches!(name, "⍺" | "⍵" | "⍺⍺" | "⍵⍵" | "∇" | "∇∇") }
 
@@ -52,6 +52,7 @@ impl Function {
         use Primitive::*;
         let dyadic = left.is_some();
         match self.node.as_ref() {
+            FunctionNode::Primitive(Identity(_)) if !dyadic => Some(whole_item),
             FunctionNode::Primitive(p)
                 if match p {
                     Ravel | CatenateFirst => !dyadic,
@@ -138,7 +139,7 @@ impl Function {
     }
     fn call(&self, left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
         session.execution.check(span)?;
-        if session.depth == MAX_CALL_DEPTH { return Err(span.error(ErrorKind::Limit, "evaluation depth exceeds 64")); }
+        if session.depth == MAX_CALL_DEPTH { return Err(span.error(ErrorKind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}"))); }
         session.depth += 1;
         let result = if self.late { self.resolve(session, output, &mut HashMap::new(), 0).and_then(|f| f.apply(left, right, span, session, output)) } else { self.apply(left, right, span, session, output) };
         session.depth -= 1;
@@ -199,6 +200,9 @@ impl Function {
             FunctionNode::Modified(OperatorKind::Commute, Operand::Function(f)) => return f.call(Some(right), left.unwrap_or(right), span, session, output),
             FunctionNode::Modified(OperatorKind::Commute, Operand::Array(a)) => Ok(a.clone()),
             FunctionNode::Modified(..) => unreachable!(),
+            FunctionNode::Primitive(Primitive::Disclose) if session.prototype && left.is_some() => {
+                crate::primitive::pick(left.unwrap(), right, true, &session.execution.at(span))
+            }
             FunctionNode::Primitive(p) => p.call(left, right, &session.execution.at(span)),
             Defined(_) | Derived(..) => {
                 return session.call_defined(self, left, right, output).map_err(|mut e| {
@@ -787,13 +791,17 @@ fn rank(
 fn each(operand: &Function, left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
     let agreement = Agreement::new(left.map_or(&[], Array::shape), right.shape()).map_err(|k| span.error(k, "Each frames do not agree"))?;
     let empty = agreement.len == 0;
-    let item = |a: &Array, i: usize| if empty { a.prototype().clone() } else { a.at(i) }.as_array();
+    let item = |a: &Array, i: usize| if a.is_empty() { a.prototype().clone() } else { a.at(i) }.as_array();
     let mut data = Vec::with_capacity(agreement.len.max(1));
     let mut missing = false;
     for i in 0..agreement.len.max(1) {
         let x = left.map(|a| item(a, agreement.left.index(i)));
         let y = item(right, agreement.right.index(i));
-        match operand.call(x.as_ref(), &y, span, session, output)?.value {
+        let prototype = session.prototype;
+        session.prototype |= empty;
+        let result = operand.call(x.as_ref(), &y, span, session, output);
+        session.prototype = prototype;
+        match result?.value {
             Value::Array(a) => data.push(Element::Nested(a)),
             Value::NoResult => missing = true,
             _ => return Err(span.error(ErrorKind::Syntax, "Each operand must return an array or no result")),
@@ -1141,6 +1149,7 @@ pub struct Session {
     frames: Vec<Frame>,
     current: Option<usize>,
     depth: usize,
+    prototype: bool,
     #[cfg(test)]
     peak_frames: usize,
 }
@@ -1288,7 +1297,7 @@ impl Session {
     }
     fn bind(&mut self, nodes: &[Node], output: &mut Vec<String>) -> Result<Bound, Error> {
         self.execution.check(&nodes[0].span)?;
-        if self.depth == MAX_CALL_DEPTH { return Err(nodes[0].span.error(ErrorKind::Limit, "evaluation depth exceeds 64")); }
+        if self.depth == MAX_CALL_DEPTH { return Err(nodes[0].span.error(ErrorKind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}"))); }
         self.depth += 1;
         let result = self.bind_expression(nodes, output);
         self.depth -= 1;
@@ -1400,6 +1409,7 @@ impl Session {
     }
 
     fn assignment_start(&self, nodes: &[Node]) -> Result<usize, Error> {
+        if self.assignment_names(nodes) { return Ok(0); }
         let end = nodes.len();
         let (operand, category) = self.assignment_operand(nodes, end, 0)?;
         let names = self.assignment_names(&nodes[operand..]);
@@ -1414,6 +1424,14 @@ impl Session {
         if implicit_name(name) { return Err(span.error(ErrorKind::Syntax, "arguments and operands cannot be assigned here")); }
         let names = match self.current { Some(i) => &mut self.frames[i].names, None => &mut self.names };
         names.insert(name.to_owned(), value);
+        Ok(())
+    }
+
+    fn update_array(&mut self, name: &str, value: Array, span: &Span) -> Result<(), Error> {
+        if implicit_name(name) { return Err(span.error(ErrorKind::Syntax, "arguments and operands cannot be assigned here")); }
+        let Some((scope, _)) = self.binding(name) else { return Err(span.error(ErrorKind::Value, "assignment target must already exist")); };
+        let names = match scope { Some(i) => &mut self.frames[i].names, None => &mut self.names };
+        names.insert(name.to_owned(), Value::Array(value));
         Ok(())
     }
 
@@ -1489,7 +1507,7 @@ impl Session {
             let selection = selection.unwrap();
             if let Some(f) = modifier { self.modify_selection(&original, &selection, &f, right, span, output)? } else { selection.write(&original, right, &self.execution.at(span))? }
         };
-        self.store(name, Value::Array(updated), span)
+        self.update_array(name, updated, span)
     }
 
     fn modify_names(&mut self, nodes: &[Node], right: &Array, modifier: &Function, output: &mut Vec<String>) -> Result<(), Error> {
@@ -1501,7 +1519,7 @@ impl Session {
                         return Err(node.span.error(ErrorKind::Value, "assignment target must be an existing array"));
                     };
                     let updated = modifier.call_array(Some(&left), right, &node.span, self, output)?;
-                    self.store(name, Value::Array(updated), &node.span)
+                    self.update_array(name, updated, &node.span)
                 }
                 _ => unreachable!(),
             };
@@ -1533,7 +1551,7 @@ impl Session {
             Some(f) => self.modify_selection(&original, &selection, &f, &values, span, output)?,
             None => selection.write(&original, &values, &self.execution.at(span))?,
         };
-        self.store(&name, Value::Array(updated), span)
+        self.update_array(&name, updated, span)
     }
 
     fn selection_expression(&mut self, nodes: &[Node], output: &mut Vec<String>) -> Result<(String, Array, crate::selection::Labels, Array, bool), Error> {
@@ -1620,17 +1638,20 @@ impl Session {
         })
     }
 
-    fn lookup(&self, name: &str) -> Option<&Value> {
-        if name == "⍺" { return self.current.and_then(|i| self.frames[i].names.get(name)); }
+    fn lookup(&self, name: &str) -> Option<&Value> { self.binding(name).map(|(_, value)| value) }
+
+    fn binding(&self, name: &str) -> Option<(Option<usize>, &Value)> {
+        if name == "⍺" { return self.current.and_then(|i| self.frames[i].names.get(name).map(|value| (Some(i), value))); }
         let mut scope = self.current;
         while let Some(i) = scope {
-            if let Some(value) = self.frames[i].names.get(name) { return Some(value); }
+            if let Some(value) = self.frames[i].names.get(name) { return Some((scope, value)); }
             scope = self.frames[i].parent;
         }
-        self.names.get(name)
+        self.names.get(name).map(|value| (None, value))
     }
 
     fn call_defined(&mut self, function: &Function, left: Option<&Array>, right: &Array, output: &mut Vec<String>) -> Result<Bound, Error> {
+        let prototype = std::mem::replace(&mut self.prototype, false);
         let caller = self.current;
         let base = self.frames.len();
         let (mut function, mut left, mut right) = (function.clone(), left.cloned(), right.clone());
@@ -1642,7 +1663,9 @@ impl Session {
                 FunctionNode::Derived(c, operand, right) => (c, Some(operand), right.as_ref()),
                 _ => unreachable!(),
             };
-            if self.frames.len() == MAX_CALL_DEPTH { break Err(closure.definition.span.error(ErrorKind::Limit, "lexical frame depth exceeds 64")); }
+            if self.frames.len() == MAX_CALL_DEPTH {
+                break Err(closure.definition.span.error(ErrorKind::Limit, format!("lexical frame depth exceeds {MAX_CALL_DEPTH}")));
+            }
             let mut names = HashMap::from([("⍵".into(), Value::Array(right)), ("∇".into(), Value::Function(function.clone()))]);
             if let Some(a) = left { names.insert("⍺".into(), Value::Array(a)); }
             if let Some(f) = operand {
@@ -1673,12 +1696,14 @@ impl Session {
         if let Ok(bound) = &mut result { if unshy { bound.shy = false; } }
         self.frames.truncate(base);
         self.current = caller;
+        self.prototype = prototype;
         result
     }
 
     fn array_result(&mut self, nodes: &[Node], output: &mut Vec<String>) -> Result<Array, Error> { self.bind(nodes, output)?.array(&nodes[0].span) }
 
     fn return_expression(&mut self, mut nodes: &[Node], output: &mut Vec<String>, tail: bool) -> Result<Step, Error> {
+        if nodes.is_empty() { return Ok(Step::Done(Bound::new(Value::NoResult))); }
         let mut unshy = false;
         while let [Node { kind: NodeKind::Group(inner), .. }] = nodes {
             nodes = inner;
@@ -1871,6 +1896,8 @@ impl Binder {
                 // Postfix brackets wait for their left operand before later indexing can consume the strand.
                 if matches!(left.term, Term::Selection(_))
                     || n < 2
+                    // An operator still awaiting its operand cannot reduce with its right neighbour.
+                    || matches!(binder.stack[n - 1].category(), Category::Operator)
                     || strength(&left, &binder.stack[n - 1]) >= strength(&binder.stack[n - 1], &binder.stack[n - 2])
                 {
                     binder.stack.push(left);
@@ -2084,7 +2111,8 @@ mod tests {
         }
         let mut s = Session::new();
         assert_eq!(s.eval("f←{11::7 ⋄ ⍵=0:1÷0 ⋄ ∇⍵-1} ⋄ f 5").value.unwrap(), Array::scalar(7.).unwrap());
-        assert_eq!(s.eval("f 500").error.unwrap().kind, ErrorKind::Limit);
+        assert_eq!(s.eval("f 500").value.unwrap(), Array::scalar(7.).unwrap());
+        assert_eq!(s.eval("f 2000").error.unwrap().kind, ErrorKind::Limit);
         assert!(s.frames.is_empty() && s.current.is_none());
     }
 }

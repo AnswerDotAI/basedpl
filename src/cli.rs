@@ -76,7 +76,9 @@ fn repl(out: &mut impl Write, err: &mut impl Write, interactive: bool) -> io::Re
 }
 
 /// Both the native executable and the installed console script call this runner.
-pub fn run(args: &[String]) -> i32 {
+pub fn run(args: &[String]) -> i32 { crate::with_stack(|| run_inner(args)) }
+
+fn run_inner(args: &[String]) -> i32 {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let stderr = io::stderr();

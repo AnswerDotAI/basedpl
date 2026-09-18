@@ -47,12 +47,18 @@ fn difference(x: &Array, y: &Array, relative: f64, absolute: f64) -> Option<Stri
     x.elements().zip(y.elements()).position(|(a, b)| !same_element(&a, &b, relative, absolute)).map(|i| format!("data[{i}]"))
 }
 
-/// Evaluate one independent reference case in a fresh session. Never derive an expectation from miniapl.
+/// Check an independent captured value or APL expectation. Each side receives a fresh session.
 pub fn check(case: &Value, options: EvalOptions) -> Value {
-    let Some(code) = case["code"].as_str().filter(|s| !s.is_empty()) else { return json!({"status":"invalid", "message":"missing code"}); };
+    let Some(code) = case["code"].as_str() else { return json!({"status":"invalid", "message":"missing code"}); };
     let error_kind = case["expected_error"].as_str().filter(|s| !s.is_empty());
-    let expected = expected_array(&case["expected"]);
-    let no_result = case.get("expected") == Some(&Value::Null);
+    let (expected, no_result) = if let Some(source) = case["expected_code"].as_str() {
+        let expected = Session::new().eval_with(source, EvalOptions { timeout: options.timeout, interrupt: options.interrupt.clone(), echo: false });
+        if expected.error.is_some() || expected.function.is_some() {
+            return json!({"status":"invalid", "message":"expectation must produce a value or no result", "actual":crate::protocol::response(expected)});
+        }
+        let no_result = expected.value.is_none();
+        (expected.value, no_result)
+    } else { (expected_array(&case["expected"]), case.get("expected") == Some(&Value::Null)) };
     let relative = case["relative_tolerance"].as_f64().unwrap_or(0.0);
     let absolute = case["absolute_tolerance"].as_f64().unwrap_or(0.0);
     if [relative, absolute].iter().any(|t| !t.is_finite() || *t < 0.0) || (error_kind.is_none() && expected.is_none() && !no_result) {

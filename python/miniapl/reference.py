@@ -1,4 +1,4 @@
-"""Search and edit the repository's JSONL acceptance corpus without displaying full fixtures."""
+"""Search and edit the reference inventory without displaying full fixtures."""
 import json, re
 from pathlib import Path
 
@@ -26,14 +26,14 @@ def library_dependencies(definitions, code):
 
 
 class Corpus:
-    def __init__(self, directory='tests/reference'):
+    def __init__(self, directory='tests/reference/inventory'):
         self.directory = Path(directory)
 
     def _read(self):
         return {p: [json.loads(line) for line in p.read_text().splitlines()] for p in sorted(self.directory.glob('*.jsonl'))}
 
     def find(self, pattern='', status='', source='', limit=20):
-        """Regex-search IDs, code and reasons; return concise entries keyed by ID. None means no limit."""
+        """Search full IDs/code/reasons; return 180-character previews. Index by ID for full fields; limit=None returns all matches."""
         result = {}
         for path, rows in self._read().items():
             if source and path.stem != source: continue
@@ -43,15 +43,17 @@ class Corpus:
                 if reason := row.get('reason'): text += f' ⍝ {reason}'
                 if not re.search(pattern, row['id']+' '+text): continue
                 if limit is not None and len(result) >= limit: return result
-                result[row['id']] = text
+                preview = text.replace('\n', ' ¶ ')
+                result[row['id']] = preview if len(preview) <= 180 else preview[:179]+'…'
         return result
 
-    def get(self, id, *fields):
-        """Read selected fields; default to code/status/reason. '*' reads the full record; missing fields are omitted."""
+    def __getitem__(self, key):
+        """Read corpus[id, *fields]; default to code/status/reason. '*' reads the full record; missing fields are omitted."""
+        id, *fields = (key,) if isinstance(key, str) else key
         return self.get_many([id], *fields)[id]
 
     def get_many(self, ids, *fields):
-        """Read a batch with get's field selection, keyed by ID."""
+        """Read a batch with the same field selection as indexing, keyed by ID."""
         ids, result = set(ids), {}
         for rows in self._read().values():
             for row in rows:

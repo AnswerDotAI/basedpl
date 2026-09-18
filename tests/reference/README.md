@@ -1,6 +1,6 @@
 # Reference acceptance cases
 
-These files retain ngn assertions/example programs, April core and library assertions/demos/setup, APLcart main/tacit catalogue rows, and selected Dyalog documentation examples. Entries are not removed because miniapl cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
+The `.apl` files are the executable reference tests. They cover ngn assertions/example programs, April core and library assertions/demos/setup, APLcart main/tacit catalogue rows, and selected Dyalog documentation examples. The tracked `inventory/*.jsonl` files retain original records, independent expectations, adaptations and candidates for activation. Entries are not removed because miniapl cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
 
 Source entries are not necessarily executable tests. Many APLcart recipes have unbound arguments and no expected result. They need concrete examples. Library cases need their definitions and setup. Use the scanner below for current counts and failures; fixture reasons describe their last review, not necessarily today's implementation. Progress notes belong in `meta/`, not this README.
 
@@ -10,28 +10,36 @@ Run the active cases with:
 cargo test --test reference -- --nocapture
 ```
 
-Each JSONL row has a stable `id`, `code`, and `status`. A `reason` records adaptations or remaining work. Its original source, expectation or recipe is retained. `status` is the equivalent of commenting a test out:
+To run one active case, set `MINIAPL_CASE` to its exact ID:
+
+```bash
+MINIAPL_CASE=ngn:177 cargo test --test reference enabled_reference_cases -- --nocapture
+```
+
+Every case in `.apl` runs regardless of inventory status. Edit these files directly once cases are active. Each JSONL inventory row has a stable `id`, `code`, and `status`. A `reason` records adaptations or remaining work. Its original source, expectation or recipe is retained.
 
 | Status | Meaning |
 |---|---|
-| `active` | Execute in normal Rust tests. An independent structured value or error kind is required. |
+| `active` | Exported to the `.apl` corpus. |
 | `pending` | Intended coverage that still needs implementation, an origin/dialect adaptation, concrete inputs, or an expectation. |
 | `question` | Retain until the scope/semantic decision is resolved. The question list is in `meta/reference-questions.md`. |
 | `excluded` | Conflicts with an explicit calculator exclusion. Do not execute. Keep the source and rationale. |
 
 To enable a case:
 
-1. Find its `id` in the source JSONL file. Check its recipe, prerequisites and original expectation. Do not treat another dialect as the specification.
+1. Find its `id` in the inventory. Check its recipe, prerequisites and original expectation. Do not treat another dialect as the specification.
 2. Supply concrete `code` and `expected` or `expected_error` if missing. Array expectations contain `shape`, flat `data`, and `prototype`. Nested arrays use the same structure. Complex elements use `{"complex":[real,imag]}`. Real infinities use `{"infinity":1}` or `{"infinity":-1}`. `expected: null` explicitly expects no result; an absent expectation remains invalid. Derive expectations independently of miniapl.
-3. Run the selected case, including while it is pending:
+3. Activate the reviewed case:
 
    ```bash
-   MINIAPL_CASE=april:1684 cargo test --test reference pending_reference_case -- --ignored
+   python -m miniapl.apltests add april:1684
    ```
 
-4. Change its status to `active` and update its reason when the assertion passes and the semantic adaptation is reviewed. Run the normal suite.
+   This checks the program against its independent expectation and checks the converted expectation against the captured value. It appends to the source's `.apl` file and marks the inventory record active. Excluded cases, missing expectations, failed checks and duplicate IDs are rejected before writing.
 
-Pending cases do not catch arbitrary failures or count as passing. A case without an expectation fails explicitly when selected. New failures in active cases fail the suite. Tests compare shape, nesting, data and prototype. Numeric comparisons are exact unless a case specifies `relative_tolerance` or `absolute_tolerance`. The bound is `max(absolute, relative × max(|actual|, |expected|))`. Absolute tolerance covers numerical solver roundoff near zero. Shape and nesting remain exact. Display expectations remain separate from array expectations.
+4. Run the normal suite. To check candidates without activating them, use the scanner below.
+
+Pending cases do not count as passing tests. New failures in active cases fail the suite. Code and expectation execute in separate fresh sessions. Tests compare shape, nesting, data and prototype. Numeric comparisons are exact unless a case specifies `rtol` or `atol` (`relative_tolerance` or `absolute_tolerance` in the inventory). The bound is `max(absolute, relative × max(|actual|, |expected|))`. Absolute tolerance covers numerical solver roundoff near zero. Shape and nesting remain exact. Display expectations remain separate from array expectations.
 
 ## Find cases ready to enable
 
@@ -39,14 +47,14 @@ Use the Python API in a kernel to inspect and edit fixtures without dumping JSON
 
 ```python
 from miniapl.reference import Corpus
-corpus = Corpus()  # tests/reference, relative to the repo cwd
+corpus = Corpus()  # tests/reference/inventory, relative to the repo cwd
 corpus.find('format:', status='pending')
-corpus.get('ngn:391', 'code', 'expected', 'oracle')
+corpus['ngn:391', 'code', 'expected', 'oracle']
 corpus.update('ngn:391', reason='nested formatting: ready to check')
 corpus.update_many({'ngn:391': {'reason': 'reviewed'}, 'ngn:392': {'reason': 'reviewed'}})
 ```
 
-`find` searches ID/code/reason and returns concise entries keyed by ID. Filter with `source` or `status`; `limit=None` returns all matches. `get` defaults to code/status/reason; `get_many` reads a batch. Request `'*'` explicitly for full records. Updates read fresh files, preserve unrelated fields, and report changed field names. Use `remove=['expected_error']` when replacing an error expectation with a value; `None` means JSON null, not deletion. Unknown IDs write nothing. Use these methods rather than reading and patching whole JSONL lines in the conversation.
+`find` searches full ID/code/reason text and returns single-line previews of at most 180 characters, keyed by ID. Filter with `source` or `status`; `limit=None` returns all matches. `corpus[id]` returns code/status/reason. Use `corpus[id, 'code', 'expected']` for selected fields or `corpus[id, '*']` for the full record. Unknown IDs raise `KeyError`. Use `get_many(ids, *fields)` for bulk reads. Updates read fresh files, preserve unrelated fields, and report changed field names. Use `remove=['expected_error']` when replacing an error expectation with a value; `None` means JSON null, not deletion. Unknown IDs write nothing. Use these methods rather than reading and patching whole JSONL lines in the conversation.
 
 For library recipes, `library_definitions(path)` extracts column-zero named definitions. `library_dependencies(definitions, code)` selects transitive references for review. It ignores strings/comments but does not resolve lexical shadowing. Supply the relevant module and imports, then remove false dependencies on local names. Embed the reviewed definitions and preceding setup in the case. Retain `original_code`, `library_source` and `library_definitions`; do not require the library checkout at test time.
 
@@ -60,11 +68,39 @@ python scripts/reference.py show --status mismatch --match '∧|∨'
 python scripts/reference.py activate --source april --match 'april:590\b'
 ```
 
-`scan` checks pending cases with independent expectations and collects every outcome. It never edits fixtures. `show` defaults to passes; filter by source, result status or regex over ID/code/message. Use `--limit` to change the display count. `--details` dumps complete records and arrays; use it only for a narrow selection. `activate` changes the reviewed passing selection to active. It refuses fixture records changed since the scan. Review dialect, origin and prerequisites before activation; a passing result alone is not that review.
+`scan` checks pending cases with independent expectations and collects every outcome. It never edits fixtures. `show` defaults to passes; filter by source, result status or regex over ID/code/message. Use `--limit` to change the display count. `--details` dumps complete records and arrays; use it only for a narrow selection. `activate` appends the reviewed passing selection to `.apl` and marks its inventory records active. It refuses fixture records changed since the scan and rechecks the selected cases before writing. Review dialect, origin and prerequisites before activation; a passing result alone is not that review.
 
-Rust's `reference::check` owns comparison for the test runner, worker and private Python `_check_reference(json_case, timeout)` API. Each case receives a fresh session inside a persistent worker. The scanner uses a 0.25-second cooperative deadline per case, adjustable with `--timeout`. An unresponsive process is killed after the client's grace period and replaced for the next case. The failed case is not retried. Random cases, missing expectations and scope questions are counted separately, not treated as execution failures.
+Rust's `reference::check` owns comparison for the test runner, worker and private Python `_check_reference(json_case, timeout)` API. It accepts captured `expected` arrays, `expected_error` kinds, or an `expected_code` expression. Each case receives a fresh session inside a persistent worker. The scanner uses a 0.25-second cooperative deadline per case, adjustable with `--timeout`. An unresponsive process is killed after the client's grace period and replaced for the next case. The failed case is not retried. Random cases, missing expectations and scope questions are counted separately, not treated as execution failures.
 
 The report defaults to `meta/reference-scan.json`. It contains each original fixture and its result, including actual structured values on mismatches. Numerical rounding allowances must be explicit per case. Semantic differences do not get a tolerance. CI runs ordinary offline Rust tests; it does not need the scanner or a worker process.
+
+## APL record format
+
+```apl
+⍝ ngn:177 — sin(pi/6) = .5
+1e¯10>|.5-1○○÷6
+1
+
+```
+
+Each record starts with `⍝ ID — description`. Both ID and description can be empty; the dash is required. The header pattern is `^⍝ (\S*) —(?: (.*))?$`. Two single-line expressions follow, then an empty separator line. If either expression is multiline, an exact `⍝ =>` line separates code from expectation. A record ends at the next header or EOF. The final empty separator line is required; other blank lines belong to the expressions. Header and separator lines are reserved and cannot appear inside either expression.
+
+Errors use `⍝ error: DOMAIN ERROR` on the expectation line. A no-result expectation is the APL expression `{}0`. Numerical tolerances use an optional suffix on the header, such as `[rtol=1e-14 atol=1e-15]`. These are comparison tolerances, not APL `⎕CT`. Library definitions and setup stay in the code. There is no file-level header.
+
+During conversion, comments are extracted from descriptions, unchanged ngn assertions, or leading comments in example programs. Known import/review boilerplate is removed from reasons and adaptations. Other clauses are retained on the same header line. Comments are not paraphrased or corrected. Converted comments can therefore contain inaccurate source wording or lack a description where none can be extracted.
+
+Use `miniapl.apltests.parse(text)` to read records as `Case` objects with `id`, `comment`, `code`, `expect`, `rtol`, `atol` and the header's `line`. `render(cases)` writes them back. The conversion checks preserve source text and reproduce captured values, shapes and recursive prototypes; they do not infer new expectations from the program under test.
+
+Use `add(['ngn:177'])` from `miniapl.apltests` to activate selected inventory IDs from a kernel. It is the equivalent of the `add` command above.
+
+The converter remains available for inspecting a fresh conversion without overwriting edited tests:
+
+```bash
+python -m miniapl.apltests preview --replace
+pytest -q tests/test_apltests.py
+```
+
+The output is `meta/apl-preview/{ngn,april,aplcart,dyalog,core}.apl`. The reference files contain records marked active in the inventory. The native preview contains fully literal `equiv!` tables and `fails` lists. Native tests still run from Rust. Preview generation does not change the inventory or executable corpus. Do not regenerate the executable corpus from the inventory after editing `.apl` tests.
 
 ## Sources and adaptations
 
@@ -73,7 +109,7 @@ The report defaults to `meta/reference-scan.json`. It contains each original fix
 | [ngn/apl](https://github.com/abrudz/ngn-apl/tree/d156d4e2b33c178e82dac55a19244014700d4cfa) | `d156d4e2b33c178e82dac55a19244014700d4cfa` | `t.apl`, `examples/*.apl` and matching `.out` |
 | [April](https://github.com/phantomics/april/tree/0001af6d518d0e8fdf6a7d1688dd92a2fd9b29df) | `0001af6d518d0e8fdf6a7d1688dd92a2fd9b29df` | `spec.lisp`, every `**/demo.lisp` assertion and provision |
 | [APLcart](https://github.com/abrudz/aplcart/tree/f01e91e1b08a7ca611c6c93328831425426ef8de) | `f01e91e1b08a7ca611c6c93328831425426ef8de` | `table.tsv` and `tt.tsv`, including duplicate recipes with separate provenance |
-| [Dyalog documentation](https://github.com/Dyalog/documentation/tree/6ccc87c6cedb0229f2c9747037ebce8da6387df1) | `6ccc87c6cedb0229f2c9747037ebce8da6387df1` | Selected primitive-function examples in `dyalog.jsonl` |
+| [Dyalog documentation](https://github.com/Dyalog/documentation/tree/6ccc87c6cedb0229f2c9747037ebce8da6387df1) | `6ccc87c6cedb0229f2c9747037ebce8da6387df1` | Selected primitive-function examples in `inventory/dyalog.jsonl` |
 
 Dyalog cases use `dyalog:page:example` IDs. Source pages default to `language-reference-guide/docs/primitive-functions/{page}.md`; an explicit `source` is relative to `language-reference-guide/docs/`. Cases cover scalar maths, complex numbers, search/sets, folds, composition, rank, trains and products. The checkout is v21 documentation; expectations were captured independently in Dyalog 20.0.53963.0 with the settings below, not inferred from rounded display text. Adaptations remove prompts/comments and normalise spacing and `J` case. Per-case adaptations record changed arguments or origin. Explicit relative tolerances allow floating-point library rounding, not semantic differences.
 
@@ -87,7 +123,7 @@ April's literal Common Lisp expectations were converted to structured values. Or
 
 APLcart's TIO links were decoded offline. All 972 available decoded programs are retained. No TIO service was contacted. Small closed calculator examples were checked in Dyalog 20.0.53963.0 with `⎕IO=1`, `⎕CT=1E¯14`, `⎕DIV=0`, `⎕ML=1`, and `⎕PP=17`. Multi-output examples collect their values in an array literal. The original program remains in `example`. The import does not execute arbitrary catalogue programs.
 
-`scripts/reference.py` contains the import and developer-only reference capture functions. CI reads the checked-in JSONL files. It needs neither the sibling clones nor Dyalog, Common Lisp, Node, Python or network access. Import a new upstream snapshot into a new directory and review it against these files rather than replacing reviewed statuses.
+`scripts/reference.py` contains the import and developer-only reference capture functions. Rust tests read the checked-in `.apl` files. They need neither the JSONL inventory, sibling clones, Dyalog, Common Lisp, Node, Python nor network access. Python converter tests also check serialization against the tracked inventory. Import a new upstream snapshot into a new directory and review it against the inventory rather than replacing reviewed statuses.
 
 For live reference work, use `aplnb.dyalog.Apl`, not `aplnb.core` (which uses miniapl):
 

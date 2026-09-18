@@ -149,8 +149,7 @@ impl PySession {
     #[new]
     fn new() -> PyResult<Self> {
         let (sender, receiver) = mpsc::channel::<Request>();
-        std::thread::Builder::new()
-            .name("miniapl".into())
+        crate::execution::thread()
             .spawn(move || {
                 let mut session = Session::new();
                 for mut request in receiver {
@@ -277,7 +276,7 @@ fn run_cli(args: Vec<String>) -> i32 { crate::cli::run(&args) }
 fn _check_reference(case: &str, timeout: f64) -> PyResult<String> {
     let case = serde_json::from_str(case).map_err(|e| PyValueError::new_err(e.to_string()))?;
     let timeout = std::time::Duration::try_from_secs_f64(timeout).map_err(|_| PyValueError::new_err("invalid timeout"))?;
-    Ok(crate::reference::check(&case, crate::EvalOptions { timeout: Some(timeout), ..crate::EvalOptions::default() }).to_string())
+    Ok(crate::with_stack(|| crate::reference::check(&case, crate::EvalOptions { timeout: Some(timeout), ..crate::EvalOptions::default() })).to_string())
 }
 
 #[pymodule]

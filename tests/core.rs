@@ -189,6 +189,8 @@ fn leading_unit_axis_broadcasting() {
 #[test]
 fn selective_assignment() {
     equiv! {
+        "a←(1 2)(3 4) ⋄ (⊢⊃a)←7 8 9 ⋄ a" => "(7 8 9)(3 4)",
+        "a←1 2 ⋄ (⊣a)←3 4 5 ⋄ a" => "3 4 5",
         "a←1 ⋄ (⍬⊃a)←3 4 ⋄ a" => "3 4",
         "a←⍬ ⋄ (⍬⊃a)←3 4 ⋄ a" => "3 4",
         "a←1 2 ⋄ (⍬⊃a),←3 4 ⋄ a" => "1 2 3 4",
@@ -232,6 +234,16 @@ fn selective_assignment() {
 #[test]
 fn indexed_modified_and_strand_assignment() {
     equiv! {
+        "a←10 ⋄ f←{a+←⍵ ⋄ a} ⋄ z←f 3 ⋄ z,a" => "13 13",
+        "o←¨ ⋄ {o←3 ⋄ o}0" => "3",
+        "o←¨ ⋄ {a o←3 4 ⋄ a o}0" => "3 4",
+        "o←¨ ⋄ {o←{⍵} ⋄ o 3}0" => "3",
+        "a←10 ⋄ f←{a←2 ⋄ g←{a+←⍵ ⋄ a} ⋄ z←g ⍵ ⋄ z,a} ⋄ z←f 3 ⋄ z,a" => "5 5 10",
+        "a←10 ⋄ g←{a+←⍵ ⋄ a} ⋄ f←{a←2 ⋄ z←g ⍵ ⋄ z,a} ⋄ z←f 3 ⋄ z,a" => "13 2 13",
+        "a←1 2 ⋄ b←a ⋄ f←{a[1]←⍵ ⋄ a} ⋄ z←f 3 ⋄ z,a,b" => "3 2 3 2 1 2",
+        "a←1 2 ⋄ f←{(⌽a)+←⍵ ⋄ a} ⋄ z←f 3 ⋄ z,a" => "4 5 4 5",
+        "a←10 ⋄ f←{0::a ⋄ a+←⍵ ⋄ 1÷0} ⋄ z←f 3 ⋄ z,a" => "13 13",
+        "{a←2 ⋄ 0::a ⋄ a+←3 ⋄ 1÷0}0" => "2",
         "a←9 10 11 ⋄ 1 2 a[2] 3 4 5 6[3]" => "4",
         "'a' 2[1] 2[1] 2[1]" => "'a'",
         "1+a←3" => "4",
@@ -953,6 +965,12 @@ fn search_depth_and_random() {
 #[test]
 fn each_commute_and_reduction() {
     equiv! {
+        "⍬⊃¨⊂1 2 3" => "⍬",
+        "⍬(⊃∘⊢)¨⊂'abc'" => "''",
+        "(⊂1 2 3)⊃⍨¨⍬" => "⍬",
+        "⍬⊃¨⊂(1 2)(3 4 5)" => "0⍴⊂0 0",
+        "(0⍴⊂⍬)⊃¨⊂1 2 3" => "0⍴⊂0 0 0",
+        "2⊃¨0⍴⊂(1 2)(3 4 5)" => "0⍴⊂0 0 0",
         "e←¨ ⋄ sum←+/ ⋄ sum e (1 2)(3 4 5)" => "3 12",
         "+/¨¨(1 2)(3 4)" => "(1 2)(3 4)",
         "2⍨3" => "2",
@@ -969,9 +987,13 @@ fn each_commute_and_reduction() {
     assert!(result.error.is_none());
     assert_eq!(result.output, ["7"]);
     assert_eq!(result.value.unwrap(), vector(&[]));
+    let result = session.eval("1{⎕←⍺ ⍵ ⋄ 0}¨⍬");
+    assert!(result.error.is_none());
+    assert_eq!(result.output, ["1 0", "⍬"]);
     assert!(session.eval("{⍵=2:{}⍵ ⋄ ⍵}¨1 2 3").value.is_none());
-    fails(Domain, &["÷¨⍬", "2¨3"]);
-    fails(Rank, &["0+/5"]);
+    fails(Domain, &["÷¨⍬", "1÷¨⍬", "2¨3"]);
+    fails(Index, &["⍬{⍺⊃⍵}¨⊂1 2 3", "¯1⊃¨0⍴⊂1 2 3"]);
+    fails(Rank, &["0+/5", "⍬⊃¨⊂2 3⍴⍳6"]);
     fails(Length, &["4+/1 2", "3+/⍬"]);
     fails(Syntax, &["2+\\1 2"]);
 }
@@ -1466,6 +1488,13 @@ fn definitions_retain_only_needed_sources() {
 
 #[test]
 fn hybrid_categories_and_singleton_replicate() {
+    // Dyalog 20: operators acquire their function operand before binding the next operator.
+    equiv! {
+        "+⍨¨/1 2 3" => "6",
+        "-⍨\\1 2 3" => "1 1 0",
+        "each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3" => "6",
+        "↑⍴⍨¨/3/⊂⍳4" => "(,1)(2 2⍴2)(3 3 3⍴3)(4 4 4 4⍴4)",
+    }
     // Dyalog 20 binding-strength and replicate documentation; not reference executions.
     let mut s = Session::new();
     for code in ["r←/ ⋄ +r 1 2 3", "+(/)1 2 3", "r←(/) ⋄ sum←+r ⋄ sum 1 2 3", "r←/ ⋄ alias←r ⋄ +(alias)1 2 3"] {
@@ -1509,7 +1538,7 @@ fn binder_limits_and_single_execution() {
     assert_eq!(s.eval("offset←{+/⍺⍺+⍵} ⋄ (1 2 offset)3").value.unwrap(), scalar(9.0));
     assert_eq!(s.eval(&format!("{}7", "a←".repeat(10_000))).value.unwrap(), scalar(7.0));
     fails_in(&mut s, Limit, &[&format!("+{}1", "/".repeat(10_000))]);
-    fails_in(&mut s, Limit, &[&format!("f←+ ⋄ {} f 0", "f←f+f ⋄ ".repeat(127))]);
+    fails_in(&mut s, Limit, &[&format!("f←+ ⋄ {}", "f←f+f ⋄ ".repeat(128))]);
     assert_eq!(s.eval("2+2").value.unwrap(), scalar(4.0));
 }
 
@@ -1564,6 +1593,12 @@ fn lexical_frames_recursion_and_guard_rollback() {
     // Executed in Dyalog 20.0.53963.0, ⎕IO=1, ⎕CT=1E¯14, ⎕DIV=0.
     // Numeric labels avoid depending on the as-yet unimplemented character syntax.
     let mut s = Session::new();
+    for code in ["{⍵=0: ⋄ 3}0", "{0:: ⋄ 1÷0}0", "{⍵=0:}0"] {
+        let r = s.eval(code);
+        assert!(r.error.is_none() && r.value.is_none(), "{code}: {:?}", r.error);
+    }
+    equiv("{⍵=0: ⋄ 3}1", "3");
+    fails(Value, &["1+{⍵=0: ⋄ 3}0"]);
     for (code, expected) in [
         ("outer←{x←10 ⋄ read←{x} ⋄ caller←{x←99 ⋄ read ⍵} ⋄ caller 0} ⋄ outer 0", 10.0),
         ("outer←{x←2 ⋄ f←{x+⍵} ⋄ apply←{⍺⍺ ⍵} ⋄ g←f apply ⋄ x←3 ⋄ g 4} ⋄ outer 0", 7.0),

@@ -439,7 +439,7 @@ impl Primitive {
             }
             Self::Shape if left.is_some() => return reshape(left.unwrap(), right, span),
             Self::Disclose => {
-                return match left { Some(x) => pick(x, right, span), None => Ok(right.disclose()) }
+                return match left { Some(x) => pick(x, right, false, span), None => Ok(right.disclose()) }
             }
             Self::Enclose | Self::Nest => {
                 if let Some(x) = left { return partition(x, right, axis, matches!(self, Self::Nest), span); }
@@ -1744,21 +1744,26 @@ fn squad(left: &Array, right: &Array, axes: Option<&[usize]>, span: &Context<'_>
     select(right, &parts, span)
 }
 
-fn coordinate_offset(coords: &Array, right: &Array, span: &Context<'_>) -> Result<usize, Error> {
+fn coordinate_offset(coords: &Array, right: &Array, prototype: bool, span: &Context<'_>) -> Result<Option<usize>, Error> {
     if coords.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "a coordinate must be a scalar or vector")); }
     if coords.elements().any(|e| !matches!(e, Element::Number(_))) { return Err(span.error(ErrorKind::Domain, "a coordinate must contain numbers")); }
     if coords.len() != right.shape().len() { return Err(span.error(ErrorKind::Rank, "a coordinate needs one index per axis")); }
-    let mut offset = 0;
-    for (n, &size) in coords.elements().zip(right.shape()) { offset = offset * size + index(numeric(&n, span)?, size, span)?; }
+    let mut offset = Some(0);
+    for (n, &size) in coords.elements().zip(right.shape()) {
+        let n = numeric(&n, span)?.integer().map_err(|k| span.error(k, "index must be an integer"))?;
+        let outside = n <= 0 || n as usize > size;
+        if n < 0 || (outside && !prototype) { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
+        offset = if outside { None } else { offset.map(|offset| offset * size + n as usize - 1) };
+    }
     Ok(offset)
 }
 
-fn pick(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+pub(crate) fn pick(left: &Array, right: &Array, prototype: bool, span: &Context<'_>) -> Result<Array, Error> {
     if left.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "a pick path must be a scalar or vector")); }
     let mut result = right.clone();
     for item in left.elements() {
-        let offset = coordinate_offset(&item.as_array(), &result, span)?;
-        result = result.at(offset).as_array();
+        let offset = coordinate_offset(&item.as_array(), &result, prototype, span)?;
+        result = offset.map_or_else(|| result.prototype().clone(), |offset| result.at(offset)).as_array();
     }
     Ok(result)
 }
@@ -1817,7 +1822,7 @@ pub(crate) fn choose(right: &Array, indices: &Array, span: &Context<'_>) -> Resu
         let mut current = right.clone();
         let mut path = Vec::new();
         for coords in steps {
-            let offset = coordinate_offset(&coords, &current, span)?;
+            let offset = coordinate_offset(&coords, &current, false, span)?.unwrap();
             path.push(offset);
             current = current.at(offset).as_array();
         }

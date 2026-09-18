@@ -81,6 +81,7 @@ def test_retained_and_late_bound_functions(capsys):
         a(loop=a.fn('loop'))
         with pytest.raises(AplError, match='LIMIT'): a('loop 1')
         assert a('1+1').py == 2
+        assert a('count←{⍵=0:0 ⋄ 1+∇⍵-1} ⋄ count 500').py == 500
         a('g←-')
         assert composed(3).py == 3
         saved = a('g')

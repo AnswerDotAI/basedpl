@@ -19,13 +19,19 @@ def test_corpus_review_and_updates(tmp_path):
     path.write_text(''.join(json.dumps(r)+'\n' for r in rows))
     corpus = Corpus(tmp_path)
     assert list(corpus.find('⍕', status='pending')) == ['ngn:0']
-    assert 'expected_error' not in corpus.get('ngn:0')
+    assert 'expected_error' not in corpus['ngn:0']
+    assert corpus['ngn:0', '*'] == rows[0]
+    with pytest.raises(KeyError): corpus['missing']
     assert corpus.update('ngn:1', remove=['expected_error'], expected=None) == {'ngn:1': ['expected', 'expected_error']}
-    assert corpus.get('ngn:1', 'expected', 'upstream') == dict(expected=None, upstream='retained')
+    assert corpus['ngn:1', 'expected', 'upstream'] == dict(expected=None, upstream='retained')
     assert corpus.update('ngn:1', expected=None) == {}
     with pytest.raises(KeyError): corpus.update_many({'ngn:0': dict(status='active'), 'missing': dict(status='active')})
-    assert corpus.get('ngn:0')['status'] == 'pending'
+    assert corpus['ngn:0']['status'] == 'pending'
     with pytest.raises(ValueError): corpus.update('ngn:0', expected=float('inf'))
-    assert 'expected' not in corpus.get('ngn:0', '*')
+    assert 'expected' not in corpus['ngn:0', '*']
     corpus.update('ngn:1', remove=['reason'], status='active')
     assert list(corpus.find(status='active')) == ['ngn:1']
+    corpus.update('ngn:1', code='definition\n'+('x'*200)+' needle')
+    preview = corpus.find('needle')['ngn:1']
+    assert len(preview) == 180 and '\n' not in preview and preview.endswith('…')
+    assert corpus['ngn:1', 'code']['code'].endswith('needle')

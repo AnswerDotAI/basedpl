@@ -18,7 +18,7 @@ mod worker;
 pub use array::{Array, Element};
 pub use error::{Error, ErrorKind, Source, Span};
 pub use eval::{Evaluation, Function, Session};
-pub use execution::{EvalOptions, InterruptHandle};
+pub use execution::{with_stack, EvalOptions, InterruptHandle};
 pub use number::Number;
 pub use syntax::{parse, ParseStatus, Parsed};
 

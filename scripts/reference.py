@@ -286,7 +286,7 @@ def write_cases(directory, sources, replace=False):
     return {source: len(cases) for source, cases in sources.items()}
 
 
-def scan(directory='tests/reference', source='', match='', timeout=.25, report='meta/reference-scan.json'):
+def scan(directory='tests/reference/inventory', source='', match='', timeout=.25, report='meta/reference-scan.json'):
     "Check pending cases with independent expectations; never change fixture metadata."
     from miniapl.worker import Worker
     rows, inventory = [], Counter()
@@ -341,8 +341,9 @@ def review(report, source='', match='', status='pass', limit=20, details=False):
     print(f'{len(rows)} matching; {min(limit or len(rows), len(rows))} shown')
 
 
-def activate(report, source='', match=''):
+def activate(report, source='', match='', output='tests/reference'):
     "Activate reviewed passing selections only if their saved fixture records are unchanged."
+    from miniapl.apltests import add
     rows = selected(report, source, match)
     if not rows:
         print('Activated 0 reviewed cases')
@@ -352,7 +353,7 @@ def activate(report, source='', match=''):
     current = corpus.get_many(updates, '*')
     for id, case in updates.items():
         if current[id] != case: raise ValueError(f'{id}: fixture changed since scan; rescan before activation')
-    corpus.update(updates, status='active', reason='reviewed independent reference expectation; shared Rust reference checker passes')
+    add(list(updates), output, corpus.directory)
     print(f'Activated {len(updates)} reviewed cases')
 
 
