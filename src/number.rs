@@ -221,6 +221,22 @@ impl Number {
         Ok((x - y).norm() <= (x * COMPARISON_TOLERANCE).norm().max((y * COMPARISON_TOLERANCE).norm()))
     }
 
+    pub(crate) fn lambert_w(&self) -> Result<Self, &'static str> {
+        let Some(z) = self.as_complex() else {
+            let z = self.to_float()?;
+            let w = lambert_w::lambert_w0(z);
+            // W = z exp(-W) restores relative accuracy near zero.
+            let w = if z.abs() < 0.1 { z * (-w).exp() } else { w };
+            return Self::try_from(w).map_err(|_| "Lambert W requires a real argument >= -1/e");
+        };
+        let (re, im) = lambert_w::lambert_w(0, z.re, z.im);
+        let w = Complex64::new(re, im);
+        let scale = z.re.abs().max(z.im.abs());
+        let residual = (w * w.exp() / scale - z / scale).norm();
+        if !residual.is_finite() || residual > 1e-12 { return Err("Lambert W did not converge"); }
+        Self::try_from(w).map_err(|_| "Lambert W result is not finite")
+    }
+
     pub(crate) fn math_monad(&self, op: Math) -> Result<Self, &'static str> {
         use Math::*;
         if matches!(op, Not) { return Ok(Self::from_integer(i64::from(!self.boolean()?))); }

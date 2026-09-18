@@ -15,11 +15,11 @@ use std::{
 
 // One row per glyph: ambiguity is between glyphs, not between aliases for the same glyph.
 // This is an input catalogue, not a claim that every primitive is implemented yet.
-const SYMBOLS: &[(&str, &str)] = &[
-    ("←", "assign leftarrow"),
-    ("⍳", "iota indexof"),
+pub(crate) const SYMBOLS: &[(&str, &str)] = &[
+    ("←", "assign left-arrow"),
+    ("⍳", "iota index-of"),
     ("⍴", "rho shape reshape"),
-    ("≢", "tally notmatch"),
+    ("≢", "tally not-match"),
     ("≡", "match depth"),
     ("+", "plus conjugate"),
     ("-", "minus negate"),
@@ -38,56 +38,56 @@ const SYMBOLS: &[(&str, &str)] = &[
     ("⍱", "nor"),
     ("~", "not without"),
     ("=", "equal"),
-    ("≠", "notequal"),
+    ("≠", "not-equal"),
     ("<", "less"),
-    ("≤", "lessequal"),
+    ("≤", "less-equal"),
     (">", "greater"),
-    ("≥", "greaterequal"),
+    ("≥", "greater-equal"),
     ("⎕", "quad"),
-    ("⍞", "quotequad"),
+    ("⍞", "quote-quad"),
     ("⍺", "alpha"),
     ("⍵", "omega"),
-    ("⍺⍺", "alphaalpha leftoperand"),
-    ("⍵⍵", "omegaomega rightoperand"),
+    ("⍺⍺", "alpha-alpha left-operand"),
+    ("⍵⍵", "omega-omega right-operand"),
     ("∇", "del recursion"),
-    ("∇∇", "operatorrecursion"),
+    ("∇∇", "operator-recursion"),
     ("⍝", "comment"),
     ("⋄", "diamond"),
     ("¯", "overbar"),
     ("⍬", "zilde empty"),
     (",", "ravel catenate"),
-    ("⍪", "table catenatefirst"),
+    ("⍪", "table catenate-first"),
     ("⊂", "enclose"),
     ("⊃", "disclose pick"),
     ("⊆", "nest partition"),
     ("∊", "epsilon enlist member"),
     ("∪", "unique union"),
     ("∩", "intersection"),
-    ("⍋", "gradeup"),
-    ("⍒", "gradedown"),
+    ("⍋", "grade-up"),
+    ("⍒", "grade-down"),
     ("↑", "take mix"),
     ("↓", "drop split"),
     ("⌽", "reverse rotate"),
-    ("⊖", "reversefirst rotatefirst"),
+    ("⊖", "reverse-first rotate-first"),
     ("⍉", "transpose"),
     ("⊤", "encode"),
     ("⊥", "decode"),
     ("⍎", "execute"),
     ("⍕", "format"),
     ("⌷", "index squad"),
-    ("⌹", "domino matrixdivide"),
+    ("⌹", "domino matrix-divide"),
     ("¨", "each dieresis"),
     ("/", "reduce replicate slash"),
-    ("⌿", "reducefirst replicatefirst"),
+    ("⌿", "reduce-first replicate-first"),
     ("\\", "scan backslash"),
-    ("⍀", "scanfirst"),
+    ("⍀", "scan-first"),
     ("⍤", "rank atop"),
     ("∘", "jot compose bind"),
     ("⍨", "commute selfie"),
     ("⍥", "over"),
     ("⍛", "behind"),
     ("⍣", "repeat iterate"),
-    ("⍸", "where intervalindex"),
+    ("⍸", "where interval-index"),
     ("⍷", "find"),
     ("⊢", "right same"),
     ("⊣", "left"),
@@ -98,12 +98,30 @@ const SYMBOLS: &[(&str, &str)] = &[
     ("?", "roll deal"),
 ];
 
-fn matches(prefix: &str) -> Vec<(&'static str, &'static str)> {
-    let prefix = prefix.to_ascii_lowercase();
+fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
+    let query = query.to_ascii_lowercase();
     let mut found = Vec::new();
+    let mut best = 3;
     for &(glyph, names) in SYMBOLS {
-        if names.split_whitespace().any(|name| name == prefix) { return vec![(glyph, names.split_whitespace().find(|name| *name == prefix).unwrap())]; }
-        if let Some(name) = names.split_whitespace().find(|name| name.starts_with(&prefix)) { found.push((glyph, name)); }
+        let candidate = names
+            .split_whitespace()
+            .filter_map(|name| {
+                let letters = name.replace('-', "");
+                let rank = if letters == query { 0 } else if letters.starts_with(&query) { 1 } else {
+                    let mut chars = letters.bytes();
+                    if chars.next() != query.bytes().next() || !query.bytes().skip(1).all(|c| chars.any(|n| n == c)) { return None; }
+                    2
+                };
+                Some((rank, name))
+            })
+            .min_by_key(|&(rank, _)| rank);
+        if let Some((rank, name)) = candidate {
+            if rank < best {
+                found.clear();
+                best = rank;
+            }
+            if rank == best { found.push((glyph, name)); }
+        }
     }
     found
 }
@@ -191,7 +209,7 @@ impl Completer for Symbols {
         }
         let Some((start, prefix)) = entry(line, pos) else { return Ok((pos, vec![])); };
         // List ambiguous names without extending their common prefix: `sca must not
-        // silently become the exact name `scan just because scanfirst shares that prefix.
+        // silently become the exact name `scan just because scan-first shares that prefix.
         let choices =
             matches(prefix).into_iter().map(|(glyph, name)| Pair { display: format!("{glyph} {name}"), replacement: line[start..pos].into() }).collect();
         Ok((start, choices))
@@ -255,10 +273,12 @@ mod tests {
         for (name, glyph) in [("io", "⍳"), ("RHO", "⍴"), ("scan", "\\"), ("scanfirst", "⍀"), ("alpha", "⍺"), ("alphaalpha", "⍺⍺"), ("replicate", "/")]
         { assert_eq!(matches(name).iter().map(|(g, _)| *g).collect::<Vec<_>>(), [glyph]); }
         assert!(matches("sca").len() > 1);
+        for name in ["lar", "larr", "leftar"] { assert_eq!(matches(name), [("←", "left-arrow")]); }
+        assert_eq!(matches("grup"), [("⍋", "grade-up")]);
         assert!(matches("nosuchsymbol").is_empty());
         for text in ["'`io", "'can''t `io", "\"`io", "⍝ `io"] { assert!(entry(text, text.len()).is_none()); }
         for text in ["界+`io", "'text' `io", "⍝ comment\n`io"] { assert_eq!(entry(text, text.len()).unwrap().1, "io"); }
-        for &(glyph, names) in SYMBOLS { for name in names.split_whitespace() { assert_eq!(matches(name), [(glyph, name)]); } }
+        for &(glyph, names) in SYMBOLS { for name in names.split_whitespace() { assert_eq!(matches(&name.replace('-', "")), [(glyph, name)]); } }
     }
 
     #[test]
@@ -281,6 +301,12 @@ mod tests {
         }
         input.active = true;
         assert_eq!(input.key(KeyEvent::from(' '), "`sca", 4), None);
+        input.active = true;
+        assert_eq!(input.key(KeyEvent::from('-'), "x`lar", 5), Some(Cmd::Complete));
+        assert_eq!(input.pending.take(), Some((1..5, "←-".into())));
+        input.active = true;
+        assert_eq!(input.key(KeyEvent::from('-'), "`sca", 4), None);
+        assert!(input.pending.is_none());
         assert_eq!(input.key(KeyEvent::from('\\'), "1", 1), None);
     }
 }

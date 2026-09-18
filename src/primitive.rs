@@ -89,6 +89,8 @@ pub(crate) enum Primitive {
     MatrixDivide,
     Execute,
     Format,
+    Case,
+    Unicode,
     Shape,
     Tally,
     Ravel,
@@ -194,73 +196,75 @@ fn float_apply(op: Primitive, left: Option<&[f64]>, right: &[f64], agreement: &A
 
 /// Singleton extension is shared selection, not a universal broadcasting policy.
 impl Primitive {
-    pub(crate) fn glyph(self) -> char {
+    pub(crate) fn glyph(self) -> &'static str {
         use Arithmetic::*;
         use Comparison::*;
         use Math::*;
         match self {
             Self::Arithmetic(p) => match p {
-                Plus => '+',
-                Minus => '-',
-                Times => '×',
-                Divide => '÷',
+                Plus => "+",
+                Minus => "-",
+                Times => "×",
+                Divide => "÷",
             },
             Self::Math(p) => match p {
-                Magnitude => '|',
-                Floor => '⌊',
-                Ceiling => '⌈',
-                Power => '*',
-                Log => '⍟',
-                Circle => '○',
-                Factorial => '!',
-                Gcd => '∨',
-                Lcm => '∧',
-                Nand => '⍲',
-                Nor => '⍱',
-                Not => '~',
+                Magnitude => "|",
+                Floor => "⌊",
+                Ceiling => "⌈",
+                Power => "*",
+                Log => "⍟",
+                Circle => "○",
+                Factorial => "!",
+                Gcd => "∨",
+                Lcm => "∧",
+                Nand => "⍲",
+                Nor => "⍱",
+                Not => "~",
             },
             Self::Compare(p) => match p {
-                Equal => '=',
-                NotEqual => '≠',
-                Less => '<',
-                LessEqual => '≤',
-                Greater => '>',
-                GreaterEqual => '≥',
+                Equal => "=",
+                NotEqual => "≠",
+                Less => "<",
+                LessEqual => "≤",
+                Greater => ">",
+                GreaterEqual => "≥",
             },
-            Self::Random => '?',
-            Self::Identity(true) => '⊣',
-            Self::Identity(false) => '⊢',
-            Self::Iota => '⍳',
-            Self::Depth => '≡',
-            Self::Where => '⍸',
-            Self::Member => '∊',
-            Self::Union => '∪',
-            Self::Intersection => '∩',
-            Self::Find => '⍷',
-            Self::Grade(false) => '⍋',
-            Self::Grade(true) => '⍒',
-            Self::Index => '⌷',
-            Self::Encode => '⊤',
-            Self::Decode => '⊥',
-            Self::MatrixDivide => '⌹',
-            Self::Execute => '⍎',
-            Self::Format => '⍕',
-            Self::Shape => '⍴',
-            Self::Tally => '≢',
-            Self::Ravel => ',',
-            Self::Enclose => '⊂',
-            Self::Nest => '⊆',
-            Self::Disclose => '⊃',
-            Self::Take => '↑',
-            Self::Drop => '↓',
-            Self::Replicate(false) => '/',
-            Self::Replicate(true) => '⌿',
-            Self::Expand(false) => '\\',
-            Self::Expand(true) => '⍀',
-            Self::CatenateFirst => '⍪',
-            Self::Reverse(false) => '⌽',
-            Self::Reverse(true) => '⊖',
-            Self::Transpose => '⍉',
+            Self::Random => "?",
+            Self::Identity(true) => "⊣",
+            Self::Identity(false) => "⊢",
+            Self::Iota => "⍳",
+            Self::Depth => "≡",
+            Self::Where => "⍸",
+            Self::Member => "∊",
+            Self::Union => "∪",
+            Self::Intersection => "∩",
+            Self::Find => "⍷",
+            Self::Grade(false) => "⍋",
+            Self::Grade(true) => "⍒",
+            Self::Index => "⌷",
+            Self::Encode => "⊤",
+            Self::Decode => "⊥",
+            Self::MatrixDivide => "⌹",
+            Self::Execute => "⍎",
+            Self::Format => "⍕",
+            Self::Case => "⎕C",
+            Self::Unicode => "⎕UCS",
+            Self::Shape => "⍴",
+            Self::Tally => "≢",
+            Self::Ravel => ",",
+            Self::Enclose => "⊂",
+            Self::Nest => "⊆",
+            Self::Disclose => "⊃",
+            Self::Take => "↑",
+            Self::Drop => "↓",
+            Self::Replicate(false) => "/",
+            Self::Replicate(true) => "⌿",
+            Self::Expand(false) => "\\",
+            Self::Expand(true) => "⍀",
+            Self::CatenateFirst => "⍪",
+            Self::Reverse(false) => "⌽",
+            Self::Reverse(true) => "⊖",
+            Self::Transpose => "⍉",
         }
     }
     pub(crate) fn from_glyph(c: char) -> Option<Self> {
@@ -386,6 +390,8 @@ impl Primitive {
             Self::Grade(down) => return grade(left, right, down, span),
             Self::MatrixDivide => return matrix_divide(left, right, span),
             Self::Format => return format_array(left, right, span),
+            Self::Case => return case_convert(left, right, span),
+            Self::Unicode => return unicode_convert(left, right, span),
             Self::Encode | Self::Decode => {
                 return radix(
                     left.ok_or_else(|| span.error(ErrorKind::Syntax, "encode/decode needs a left argument"))?,
@@ -756,6 +762,95 @@ fn index_of(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Er
     Array::from_parts(shape, data, integer(0)).map_err(|k| span.error(k, "invalid index-of result"))
 }
 
+fn case_convert(left: Option<&Array>, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+    let mode = match left {
+        None => -3,
+        Some(a) if a.is_singleton() => numeric(&a.at(0), span)?.integer().map_err(|k| span.error(k, "⎕C mode must be 1, ¯1 or ¯3"))?,
+        _ => return Err(span.error(ErrorKind::Domain, "⎕C needs one case mode")),
+    };
+    if !matches!(mode, -3 | -1 | 1) { return Err(span.error(ErrorKind::Domain, "⎕C mode must be 1, ¯1 or ¯3")); }
+    fn map(a: &Array, mode: isize, span: &Context<'_>) -> Result<Array, Error> {
+        let mapper = icu_casemap::CaseMapper::new();
+        let item = |e: Element| {
+            span.check()?;
+            Ok(match e {
+                Element::Character(c) => Element::Character(match mode {
+                    1 => mapper.simple_uppercase(c),
+                    -1 => mapper.simple_lowercase(c),
+                    _ => mapper.simple_fold(c),
+                }),
+                Element::Nested(a) => Element::Nested(map(&a, mode, span)?),
+                e => e,
+            })
+        };
+        let data = a.elements().map(item).collect::<Result<_, Error>>()?;
+        Array::from_parts(a.shape().to_vec(), data, item(a.prototype().clone())?).map_err(|k| span.error(k, "invalid case conversion"))
+    }
+    map(right, mode, span)
+}
+
+fn unicode_convert(left: Option<&Array>, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+    let invalid = || span.error(ErrorKind::Domain, "invalid Unicode conversion");
+    let encoding = if let Some(spec) = left {
+        let name = if matches!(spec.elements().next(), Some(Element::Nested(_))) {
+            if spec.shape().len() > 1 || !(1..=2).contains(&spec.len()) { return Err(invalid()); }
+            if spec.len() == 2 {
+                let mode = numeric(&spec.at(1), span)?.integer().map_err(|_| invalid())?;
+                if mode == 83 { return Err(span.error(ErrorKind::Unsupported, "⎕UCS signed bytes are out of scope")); }
+                if mode != 0 { return Err(invalid()); }
+            }
+            spec.at(0).as_array()
+        } else { spec.clone() };
+        if name.shape().len() != 1 { return Err(invalid()); }
+        let name: String = name
+            .elements()
+            .map(|e| match e { Element::Character(c) => Ok(c), _ => Err(invalid()) })
+            .collect::<Result<_, _>>()?;
+        if !matches!(name.as_str(), "UTF-8" | "UTF-16" | "UTF-32") { return Err(invalid()); }
+        if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "encoded ⎕UCS needs a vector")); }
+        Some(name)
+    } else { None };
+    let characters = matches!(right.prototype(), Element::Character(_));
+    let data = if characters {
+        let mut data = Vec::new();
+        for e in right.elements() {
+            span.check()?;
+            let Element::Character(c) = e else { return Err(invalid()); };
+            match encoding.as_deref() {
+                Some("UTF-8") => data.extend(c.encode_utf8(&mut [0; 4]).bytes().map(|b| integer(b as i64))),
+                Some("UTF-16") => data.extend(c.encode_utf16(&mut [0; 2]).iter().map(|&u| integer(u as i64))),
+                _ => data.push(integer(c as i64)),
+            }
+        }
+        data
+    } else {
+        if !matches!(right.prototype(), Element::Number(_)) { return Err(invalid()); }
+        let codes: Vec<u32> = right
+            .elements()
+            .map(|e| {
+                span.check()?;
+                let n = numeric(&e, span)?.nonnegative_integer().map_err(|_| invalid())?;
+                u32::try_from(n).map_err(|_| invalid())
+            })
+            .collect::<Result<_, Error>>()?;
+        let chars: Vec<char> = match encoding.as_deref() {
+            Some("UTF-8") => {
+                let bytes: Vec<_> = codes.into_iter().map(u8::try_from).collect::<Result<_, _>>().map_err(|_| invalid())?;
+                std::str::from_utf8(&bytes).map_err(|_| invalid())?.chars().collect()
+            }
+            Some("UTF-16") => {
+                let units: Vec<_> = codes.into_iter().map(u16::try_from).collect::<Result<_, _>>().map_err(|_| invalid())?;
+                char::decode_utf16(units).collect::<Result<_, _>>().map_err(|_| invalid())?
+            }
+            _ => codes.into_iter().map(char::from_u32).collect::<Option<_>>().ok_or_else(invalid)?,
+        };
+        chars.into_iter().map(Element::Character).collect()
+    };
+    let shape = if encoding.is_some() { vec![data.len()] } else { right.shape().to_vec() };
+    generated_len(&shape).map_err(|k| span.error(k, "Unicode result exceeds element limit"))?;
+    Array::from_parts(shape, data, if characters { integer(0) } else { Element::Character(' ') }).map_err(|k| span.error(k, "invalid Unicode result"))
+}
+
 fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<String, Error> {
     use num_traits::Signed;
     if n.as_complex().is_some() { return Err(span.error(ErrorKind::Domain, "specified format requires real numbers")); }
@@ -771,7 +866,12 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
         s
     } else {
         let y = n.to_complex().map_err(|m| span.error(ErrorKind::Domain, m))?.re;
-        if precision >= 0 { format!("{y:.digits$}") } else {
+        let exponent = if y == 0.0 { 0 } else { y.abs().log10().floor() as i32 };
+        let places = if precision >= 0 { digits as i32 } else { digits as i32 - 1 - exponent };
+        let scale = 10_f64.powi(places);
+        let scaled = y * scale;
+        let y = if scale.is_finite() && scale != 0.0 && scaled.abs() < 1e16 { scaled.round() / scale } else { y };
+        if precision >= 0 { if y == 0.0 && y.is_sign_negative() { format!(" {:.*}", digits, 0.0) } else { format!("{y:.digits$}") } } else {
             let s = format!("{:.*e}", digits - 1, y);
             let (mantissa, exponent) = s.split_once('e').unwrap();
             format!("{mantissa}E{}", exponent.parse::<i32>().unwrap())
@@ -831,10 +931,29 @@ fn format_array(left: Option<&Array>, right: &Array, span: &Context<'_>) -> Resu
     for (i, s) in text.iter().enumerate() {
         let width = widths[i % columns];
         let len = s.chars().count();
-        let s = if len > width { "*".repeat(width) } else if specs[i % columns].1 < 0 { format!("{s}{}", " ".repeat(width - len)) } else { format!("{}{s}", " ".repeat(width - len)) };
+        let s = if len > width { "*".repeat(width) } else if specs[i % columns].1 < 0 {
+            let leading = usize::from(specs[i % columns].0 == 0);
+            format!("{}{s}{}", " ".repeat(leading), " ".repeat(width - len - leading))
+        } else { format!("{}{s}", " ".repeat(width - len)) };
         data.extend(s.chars().map(Element::Character));
     }
     Array::from_parts(shape, data, Element::Character(' ')).map_err(|k| span.error(k, "invalid formatted result"))
+}
+
+pub(crate) fn lambert_w(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+    fn map(a: &Array, fill: bool, span: &Context<'_>) -> Result<Array, Error> {
+        let item = |e: Element, fill| {
+            span.check()?;
+            match e {
+                Element::Nested(a) => map(&a, fill, span).map(Element::Nested),
+                _ if fill => Ok(float(0.0)),
+                _ => numeric(&e, span)?.lambert_w().map(Element::Number).map_err(|message| span.error(ErrorKind::Domain, message)),
+            }
+        };
+        let result = if a.is_empty() { Array::empty(a.shape().to_vec(), item(a.prototype().clone(), true)?) } else { Array::new(a.shape().to_vec(), a.elements().map(|e| item(e, fill)).collect::<Result<_, _>>()?) };
+        result.map_err(|k| span.error(k, "invalid Lambert W result"))
+    }
+    map(right, false, span)
 }
 
 pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array, axis: Option<usize>, span: &Context<'_>) -> Result<Array, Error> {

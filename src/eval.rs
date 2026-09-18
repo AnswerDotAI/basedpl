@@ -29,18 +29,35 @@ enum FunctionNode {
 }
 
 impl Function {
-    fn selects(&self, dyadic: bool) -> bool {
+    fn from_value(value: Value, span: &Span) -> Result<Self, Error> {
+        match value {
+            Value::Function(f) => Ok(f),
+            Value::Hybrid(h) => {
+                let f = Self::primitive(h.primitive());
+                match h.axis { Some(axis) => Self::new(FunctionNode::Axis(f, crate::primitive::axis_value(axis)), span), None => Ok(f) }
+            }
+            _ => Err(span.error(ErrorKind::Syntax, "call requires a function expression")),
+        }
+    }
+    fn selection_whole_item(&self, left: Option<&Array>, whole_item: bool) -> Option<bool> {
         use Primitive::*;
+        let dyadic = left.is_some();
         match self.node.as_ref() {
-            FunctionNode::Primitive(p) => match p {
-                Ravel | CatenateFirst => !dyadic,
-                Take | Drop | Shape | Replicate(_) | Expand(_) => dyadic,
-                Member => !dyadic,
-                Reverse(_) | Transpose | Disclose | Index => true,
-                _ => false,
-            },
-            FunctionNode::Axis(f, _) | FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => f.selects(dyadic),
-            _ => false,
+            FunctionNode::Primitive(p)
+                if match p {
+                    Ravel | CatenateFirst => !dyadic,
+                    Take | Drop | Shape | Replicate(_) | Expand(_) => dyadic,
+                    Member => !dyadic,
+                    Reverse(_) | Transpose | Disclose | Index => true,
+                    _ => false,
+                } =>
+            {
+                Some(matches!(p, Disclose) && (left.is_none_or(|a| !a.is_empty()) || whole_item))
+            }
+            FunctionNode::Axis(f, _) => f.selection_whole_item(left, whole_item),
+            FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => f.selection_whole_item(left, false).map(|_| false),
+            FunctionNode::Composed(OperatorKind::Compose, [Operand::Array(a), Operand::Function(f)]) if !dyadic => f.selection_whole_item(Some(a), whole_item),
+            _ => None,
         }
     }
     fn tree(&self, budget: &mut usize) -> crate::display::Tree {
@@ -356,6 +373,17 @@ fn inverse(f: &Function, left: Option<&Array>, right: &Array, span: &Span, sessi
             inverse_outer(g, bound, true, right, span, session, output)
         }
         Modified(Commute, Operand::Function(g)) => {
+            if left.is_none() {
+                if let Composed(Compose, [Operand::Function(a), Operand::Function(b)]) = g.node.as_ref() {
+                    use crate::{
+                        number::{Arithmetic, Math},
+                        primitive::Primitive as P,
+                    };
+                    if matches!(a.node.as_ref(), Primitive(P::Arithmetic(Arithmetic::Times))) && matches!(b.node.as_ref(), Primitive(P::Math(Math::Power))) {
+                        return crate::primitive::lambert_w(right, &session.execution.at(span)).map(|a| Bound::new(Value::Array(a)));
+                    }
+                }
+            }
             let Primitive(p) = g.node.as_ref() else { return Err(span.error(ErrorKind::Domain, "this commute has no known inverse")); };
             if let Some(x) = left { crate::primitive::inverse(*p, Some((x, false)), right, None, &session.execution.at(span)) } else {
                 use crate::number::{Arithmetic, Math};
@@ -420,9 +448,7 @@ fn inverse_outer(
     let split = if first { rank } else { right.shape().len() - rank };
     let (prefix, suffix) = right.shape().split_at(split);
     let (frame, shape) = if first { (prefix, suffix) } else { (suffix, prefix) };
-    if frame != bound.shape() || shape.len() > 1 {
-        return Err(span.error(ErrorKind::Domain, "outer-product inverse needs a scalar/vector result and matching bound frame"));
-    }
+    if frame != bound.shape() { return Err(span.error(ErrorKind::Domain, "outer-product inverse needs a matching bound frame")); }
     let count = crate::array::element_count(shape).map_err(|k| span.error(k, "invalid inverse result shape"))?;
     let mut result: Vec<Array> = Vec::with_capacity(count.max(1));
     for j in 0..if count == 0 { 1 } else { bound.len() } {
@@ -992,6 +1018,38 @@ impl Session {
     pub fn eval_timeout(&mut self, code: &str, timeout: std::time::Duration) -> Evaluation {
         self.eval_with(code, crate::EvalOptions { timeout: Some(timeout), ..crate::EvalOptions::default() })
     }
+    /// Resolve a function expression in this session and call it with one (right) or two (left, right) arrays.
+    /// No function or lexical-frame handle escapes the call, and no temporary names are bound.
+    pub fn call(&mut self, function: &str, args: &[Array]) -> Evaluation { self.call_with(function, args, crate::EvalOptions::default()) }
+    pub fn call_with(&mut self, function: &str, args: &[Array], options: crate::EvalOptions) -> Evaluation {
+        self.execution.begin(options);
+        let source = Source::new("<call>", function);
+        let span = Span { range: 0..source.text.len(), source: source.clone() };
+        let mut result = Evaluation::default();
+        let called = (|| {
+            let (left, right) = match args {
+                [right] => (None, right),
+                [left, right] => (Some(left), right),
+                _ => return Err(span.error(ErrorKind::Length, "call requires one or two arguments")),
+            };
+            let parsed = match crate::parse(source) {
+                ParseStatus::Complete(parsed) => parsed,
+                ParseStatus::Incomplete(e) | ParseStatus::Invalid(e) => return Err(e),
+            };
+            if parsed.statements.len() != 1 { return Err(span.error(ErrorKind::Syntax, "call requires one function expression")); }
+            let bound = self.bind(&parsed.statements[0].nodes, &mut result.output)?;
+            Function::from_value(bound.value, &span)?.call(left, right, &span, self, &mut result.output)?.result(&span)
+        })();
+        match called {
+            Ok(Bound { value: Value::Array(a), shy, .. }) => {
+                if self.execution.echo && !shy { result.output.push(self.display.array(&a, false)); }
+                result.value = Some(a);
+            }
+            Ok(_) => (),
+            Err(e) => result.error = Some(e),
+        }
+        result
+    }
     pub fn eval_source(&mut self, source: std::rc::Rc<Source>) -> Evaluation {
         self.execution.begin(crate::EvalOptions::default());
         self.evaluate_source(source)
@@ -1016,17 +1074,21 @@ impl Session {
                     result.value = match bound.value {
                         Value::NoResult => None,
                         Value::Array(a) => {
-                            if diagram && i + 1 == parsed.statements.len() { result.output.push(crate::display::diagram(&a)); }
-                            else if !bound.shy { result.output.push(self.display.array(&a, false)); }
+                            if diagram && i + 1 == parsed.statements.len() {
+                                result.output.push(crate::display::diagram(&a));
+                            }
+                            else if self.execution.echo && !bound.shy { result.output.push(self.display.array(&a, false)); }
                             Some(a)
                         }
                         _ if bound.shy => None,
                         Value::Function(f) => {
-                            result.output.push(if self.display.enabled && self.display.trees { f.tree(&mut 1000).render() } else { f.text(&mut 1000) });
+                            if self.execution.echo {
+                                result.output.push(if self.display.enabled && self.display.trees { f.tree(&mut 1000).render() } else { f.text(&mut 1000) });
+                            }
                             None
                         }
                         Value::Hybrid(h) => {
-                            result.output.push(h.text());
+                            if self.execution.echo { result.output.push(h.text()); }
                             None
                         }
                         _ => {
@@ -1091,7 +1153,7 @@ impl Session {
         };
         let mut result = Bound::new(Value::NoResult);
         for statement in &parsed.statements {
-            if let Value::Array(a) = &result.value { if !result.shy { output.push(self.display.array(a, self.current.is_some())); } }
+            if let Value::Array(a) = &result.value { if self.execution.echo && !result.shy { output.push(self.display.array(a, self.current.is_some())); } }
             result = self.bind(&statement.nodes, output).map_err(|mut e| {
                 e.calls.push(span.clone());
                 e
@@ -1594,14 +1656,7 @@ impl Entity {
     }
     fn function(self) -> Result<Function, Error> {
         let span = self.span.clone();
-        match self.value()? {
-            Value::Function(f) => Ok(f),
-            Value::Hybrid(h) => {
-                let f = Function::primitive(h.primitive());
-                match h.axis { Some(axis) => Function::new(FunctionNode::Axis(f, crate::primitive::axis_value(axis)), &span), None => Ok(f) }
-            }
-            _ => unreachable!(),
-        }
+        Function::from_value(self.value()?, &span)
     }
     fn array(self) -> Result<Array, Error> { match self.value()? { Value::Array(a) => Ok(a), _ => unreachable!() } }
 }
@@ -1697,13 +1752,12 @@ impl Binder {
                     && binder.stack.is_empty()
                     && matches!(call.function.node.as_ref(), FunctionNode::Defined(_) | FunctionNode::Derived(..))
                 { return Ok((Step::Tail(call), false)); }
-                if call.selected && !call.function.selects(call.left.is_some()) {
-                    return Err(call.span.error(ErrorKind::Domain, "function is not valid for selective assignment"));
-                }
+                let whole_item = if call.selected {
+                    call.function
+                        .selection_whole_item(call.left.as_ref(), call.whole_item)
+                        .ok_or_else(|| call.span.error(ErrorKind::Domain, "function is not valid for selective assignment"))?
+                } else { false };
                 let bound = call.function.call(call.left.as_ref(), &call.right, &call.span, session, output)?;
-                let whole_item = call.selected
-                    && matches!(call.function.node.as_ref(), FunctionNode::Primitive(Primitive::Disclose))
-                    && (call.left.as_ref().is_none_or(|a| !a.is_empty()) || call.whole_item);
                 binder.stack.push(Entity {
                     term: Term::Value(bound.value),
                     span: call.span,
@@ -1713,8 +1767,8 @@ impl Binder {
                     assignment: false,
                 });
             }
-            // Category changes must rebind against the remaining right context.
-            pending.push(binder.stack.pop().unwrap());
+            // Bound operators still need their left operand before rebinding on the right.
+            if !matches!(binder.stack.last().unwrap().category(), Category::Operator) { pending.push(binder.stack.pop().unwrap()); }
         }
         let entity = binder.stack.pop().expect("nonempty expression");
         let shy = entity.shy;

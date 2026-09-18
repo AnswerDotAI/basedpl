@@ -1,104 +1,148 @@
-"A thin, copying Python boundary around the Rust APL interpreter."
+"Python values and NumPy arrays in an interruptible APL session."
+import math, weakref
 from dataclasses import dataclass
+from decimal import Decimal
 from fractions import Fraction
-from threading import current_thread
-from ._core import __version__, _Session
+import numpy as np
+from ._core import __version__, symbols
+from .worker import Worker
 
-__all__ = ['__version__', 'Array', 'Result', 'AplError', 'Session']
+__all__ = ['__version__', 'symbols', 'Result', 'AplError', 'Session']
 
-@dataclass(frozen=True)
-class Array:
-    "Copied APL shape, flat data, and prototype; no native ownership."
-    shape:tuple
-    data:tuple
-    prototype:object
+def _dtype(items):
+    types = {type(o) for o in items}
+    if types == {int} and all(-(1<<63) <= o < 1<<63 for o in items): return np.int64
+    if types <= {float, complex}: return np.complex128 if complex in types else np.float64
+    if types == {str}: return 'U1'
+    return object
 
-    @classmethod
-    def from_numpy(cls, array):
-        "Copy a numeric ndarray; integers must be exactly representable as APL floats."
-        import numpy as np
-        if type(array) is not np.ndarray: raise TypeError('from_numpy requires an ndarray')
-        kind, size = array.dtype.kind, array.dtype.itemsize
-        if kind not in 'biufc' or kind == 'f' and size > 8 or kind == 'c' and size > 16:
+def _value(raw):
+    def item(o):
+        if not isinstance(o, dict): return o
+        if 'rational' in o: return Fraction(*(int(Decimal(n)) for n in o['rational']))
+        if 'complex' in o: return complex(*o['complex'])
+        return _value(o)
+    shape, data = tuple(raw['shape']), [item(o) for o in raw['data']]
+    items = raw['data'] or [raw['prototype']]
+    nested = any(isinstance(o, dict) and 'shape' in o for o in items)
+    if not shape and not nested: return data[0]
+    dtype = object if nested else _dtype(data or [item(raw['prototype'])])
+    if len(shape) == 1 and dtype == 'U1': return ''.join(data)
+    if dtype is not object: return np.array(data, dtype=dtype).reshape(shape)
+    result = np.empty(len(data), dtype=object)
+    for i,o in enumerate(data): result[i] = o
+    return result.reshape(shape)
+
+def _element(value):
+    if isinstance(value, np.generic): value = value.item()
+    if isinstance(value, bool): return int(value)
+    if isinstance(value, Fraction) or type(value) is int and not -(1<<63) <= value < 1<<63:
+        value = Fraction(value)
+        return dict(rational=[str(Decimal(value.numerator)), str(Decimal(value.denominator))])
+    if type(value) is int: return value
+    if type(value) in (float, complex):
+        if not np.isfinite(value): raise ValueError('APL numbers must be finite')
+        return dict(complex=[value.real, value.imag]) if type(value) is complex else value
+    if isinstance(value, str) and len(value) == 1: return value
+    if isinstance(value, (str, list, tuple, np.ndarray)): return _array(value)
+    raise TypeError(f'cannot convert {type(value).__name__} to APL')
+
+def _rectangular(value):
+    if not isinstance(value, (list, tuple)): return (), [value]
+    if not value: return (0,), []
+    parts = [_rectangular(o) for o in value]
+    if any(shape != parts[0][0] for shape,_ in parts): return (len(value),), list(value)
+    return (len(value),)+parts[0][0], [o for _,data in parts for o in data]
+
+def _array(value):
+    prototype = 0.
+    if isinstance(value, str): return dict(shape=[len(value)], data=list(value), prototype=' ')
+    if isinstance(value, np.ndarray):
+        kind, size = value.dtype.kind, value.dtype.itemsize
+        if kind not in 'biufcUO' or kind == 'f' and size > 8 or kind == 'c' and size > 16:
             raise TypeError('unsupported NumPy dtype')
-        if not np.isfinite(array).all(): raise ValueError('APL numbers must be finite')
-        source = array.ravel().tolist()
-        data = tuple(complex(o) if kind == 'c' else float(o) for o in source)
-        if kind in 'iu' and any(a != b for a,b in zip(source, data)):
-            raise ValueError('integer cannot be represented exactly as an APL float')
-        if kind == 'c': data = tuple(o.real if o.imag == 0 else o for o in data)
-        return cls(array.shape, data, 0.)
-
-    def to_python(self):
-        "Return ordinary scalars/lists; this convenience loses empty-array prototype distinctions."
-        items = iter(o.to_python() if isinstance(o, Array) else o for o in self.data)
-        def build(shape): return [build(shape[1:]) for _ in range(shape[0])] if shape else next(items)
-        return build(self.shape)
-
-    def to_numpy(self):
-        "Copy float/complex data into an ndarray, preserving shape but not the APL prototype."
-        import numpy as np
-        items = self.data or (self.prototype,)
-        if any(type(o) not in (float, complex) for o in items):
-            raise TypeError('to_numpy supports only float/complex arrays, not exact, character or nested values')
-        dtype = np.complex128 if any(type(o) is complex for o in items) else np.float64
-        return np.array(self.data, dtype=dtype).reshape(self.shape)
-
-
-def _array(raw):
-    def item(o):
-        if isinstance(o, dict): return _array(o)
-        return Fraction(*o) if isinstance(o, tuple) else o
-    return Array(tuple(raw['shape']), tuple(item(o) for o in raw['data']), item(raw['prototype']))
-
-def _raw(array):
-    def item(o):
-        if isinstance(o, Array): return _raw(o)
-        return (o.numerator, o.denominator) if isinstance(o, Fraction) else o
-    return dict(shape=array.shape, data=tuple(item(o) for o in array.data), prototype=item(array.prototype))
+        shape, data = value.shape, value.ravel().tolist()
+        if kind in 'biu': prototype = 0
+        elif kind == 'U': prototype = ' '
+    else: shape, data = _rectangular(value)
+    return dict(shape=list(shape), data=[_element(o) for o in data], prototype=prototype)
 
 @dataclass(frozen=True)
 class Result:
-    value:Array | None
+    value:object
     output:list[str]
 
 class AplError(RuntimeError):
-    "A located APL error, including output produced before the failure."
+    "An APL diagnostic, with retained source, UTF-8 byte spans, calls and captured output."
     def __init__(self, error, output):
         super().__init__(error['display'])
         self.kind, self.message = error['kind'], error['message']
-        self.source_name, self.source, self.span = error['source_name'], error['source'], error['span']
+        self.source_name, self.source, self.span = error['source']['name'], error['source']['text'], tuple(error['span'])
         self.output, self.calls = output, error['calls']
 
+def _print(output):
+    for text in output: print(text)
+
 class Session:
-    "Thread-affine session. Use, close, and destroy it on its creating thread."
-    __slots__ = ('_native', '_thread')
+    "Persistent APL worker. Calls return Python values; eval captures explicit output."
+    def __init__(self, timeout=None):
+        if timeout is not None and (not math.isfinite(timeout) or timeout < 0): raise ValueError('timeout must be finite and nonnegative')
+        self.timeout, self._worker = timeout, Worker()
+        self._finalizer = weakref.finalize(self, self._worker.close)
 
-    def __init__(self): self._native, self._thread = _Session(), current_thread()
+    def _request(self, payload, display, echo=False):
+        if not self._finalizer.alive: raise RuntimeError('session is closed')
+        try: raw = self._worker.request(dict(payload, echo=echo), timeout=self.timeout)
+        except KeyboardInterrupt as e:
+            if display: _print(getattr(e, 'output', []))
+            raise
+        if display: _print(raw['output'])
+        if error := raw['error']:
+            if error['kind'] == 'REQUEST ERROR': raise ValueError(error['message'])
+            raise AplError(error, raw['output'])
+        return Result(None if raw['value'] is None else _value(raw['value']), raw['output'])
 
-    def _check_thread(self):
-        if current_thread() is not self._thread: raise RuntimeError('session belongs to its creating thread')
+    def _eval(self, source, bindings, display, echo=False):
+        payload = dict(bindings={k:_array(v) for k,v in bindings.items()})
+        if source is not None:
+            if not isinstance(source, str): raise TypeError('APL source must be a string')
+            payload['code'] = source
+        return self._request(payload, display, echo)
 
-    def eval(self, source, timeout=None):
-        self._check_thread()
-        if self._native is None: raise RuntimeError('session is closed')
-        result = self._native.eval(source, timeout)
-        if result['error'] is not None: raise AplError(result['error'], result['output'])
-        return Result(None if result['value'] is None else _array(result['value']), result['output'])
+    def __call__(self, source=None, /, **bindings):
+        "Bind keyword arguments, then evaluate source. Print explicit output and return the value."
+        return self._eval(source, bindings, True).value
 
-    def set(self, name, value):
-        "Bind a copied Array to an ordinary APL name."
-        self._check_thread()
-        if self._native is None: raise RuntimeError('session is closed')
-        if not isinstance(value, Array): raise TypeError('set requires an Array')
-        self._native.set(name, _raw(value))
+    def eval(self, source=None, /, **bindings):
+        "Bind keyword arguments, then return Result(value, output) without printing."
+        return self._eval(source, bindings, False)
 
-    def close(self):
-        self._check_thread()
-        self._native = None
+    def run(self, source, /, **bindings):
+        "Capture APL session display, including implicit output, in Result(value, output)."
+        return self._eval(source, bindings, display=False, echo=True)
+
+    def __getitem__(self, source): return self(source)
+
+    def __setitem__(self, name, value):
+        if not isinstance(name, str): raise TypeError('binding name must be a string')
+        self(**{name:value})
+
+    def fn(self, source):
+        "A late-bound Python callable: one argument is omega; two are alpha, omega."
+        if not isinstance(source, str): raise TypeError('function expression must be a string')
+        def f(*args):
+            if len(args) not in (1, 2): raise TypeError('APL functions take one or two arguments')
+            return self._request(dict(call=source, args=[_array(o) for o in args]), True).value
+        return f
+
+    def interrupt(self):
+        "Interrupt an evaluation from another thread."
+        self._worker.interrupt()
+
+    def close(self): self._finalizer()
 
     def __enter__(self):
-        self._check_thread()
+        if not self._finalizer.alive: raise RuntimeError('session is closed')
         return self
 
     def __exit__(self, *args): self.close()

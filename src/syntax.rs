@@ -192,6 +192,20 @@ fn lex(source: &Rc<Source>) -> Result<Vec<Token>, Error> {
                 '\n' => TokenKind::Newline,
                 '⋄' => TokenKind::Separator,
                 '←' => TokenKind::Assign,
+                '⎕' if chars.peek().is_some_and(|(_, c)| c.is_alphabetic()) => {
+                    while chars.peek().is_some_and(|(_, c)| c.is_alphanumeric() || matches!(c, '_' | '∆' | '⍙')) { chars.next(); }
+                    let end = chars.peek().map_or(source.text.len(), |(i, _)| *i);
+                    let name = &source.text[start..end];
+                    match name.to_ascii_uppercase().as_str() {
+                        "⎕A" | "⎕D" => {
+                            let text = if name.eq_ignore_ascii_case("⎕A") { "ABCDEFGHIJKLMNOPQRSTUVWXYZ" } else { "0123456789" };
+                            TokenKind::Literal(Array::new(vec![text.len()], text.chars().map(Element::Character).collect()).unwrap())
+                        }
+                        "⎕C" => TokenKind::Function(Primitive::Case),
+                        "⎕UCS" => TokenKind::Function(Primitive::Unicode),
+                        _ => return Err(span(end).error(ErrorKind::Unsupported, format!("{name} is not supported yet"))),
+                    }
+                }
                 '⎕' => TokenKind::Output,
                 ':' => {
                     let error = chars.peek().is_some_and(|(_, c)| *c == ':');

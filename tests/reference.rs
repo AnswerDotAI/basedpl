@@ -14,6 +14,16 @@ fn check(case: &Value) {
 }
 
 #[test]
+fn numerical_reference_tolerance() {
+    let mut case = serde_json::json!({"code":"1E¯16", "expected":{"shape":[], "data":[0], "prototype":0}, "relative_tolerance":1e-14});
+    assert_eq!(reference::check(&case, EvalOptions::default())["status"], "mismatch");
+    case["absolute_tolerance"] = serde_json::json!(1e-15);
+    assert_eq!(reference::check(&case, EvalOptions::default())["status"], "pass");
+    case["code"] = serde_json::json!("1E¯10");
+    assert_eq!(reference::check(&case, EvalOptions::default())["status"], "mismatch");
+}
+
+#[test]
 fn enabled_reference_cases() {
     let mut ids = std::collections::HashSet::new();
     let mut active = 0;

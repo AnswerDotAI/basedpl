@@ -67,6 +67,68 @@ fn chars(text: &str) -> Array {
 }
 
 #[test]
+fn explicit_output_without_echo() {
+    let mut s = Session::new();
+    let quiet = || miniapl::EvalOptions { echo: false, ..miniapl::EvalOptions::default() };
+    let code = "1 ⋄ ⎕←2 ⋄ ⍎'3 ⋄ ⎕←4 ⋄ 5' ⋄ 6";
+    let r = s.eval_with(code, quiet());
+    assert!(r.error.is_none());
+    assert_eq!(r.value, Some(scalar(6.0)));
+    assert_eq!(r.output, ["2", "4"]);
+    assert_eq!(s.eval(code).output, ["1", "2", "3", "4", "5", "6"]);
+    for code in ["x←7", "+", "/", "f←{⎕←⍵ ⋄ ⍵+1} ⋄ f 8"] {
+        let r = s.eval_with(code, quiet());
+        assert!(r.error.is_none(), "{code}: {:?}", r.error);
+        assert_eq!(r.output, if code.starts_with("f←") { vec!["8"] } else { vec![] });
+    }
+    let r = s.eval_with("⎕←9 ⋄ 1÷0", quiet());
+    assert_eq!(r.error.unwrap().kind, Domain);
+    assert_eq!(r.output, ["9"]);
+    for code in ["]Display 1 2", "]box ?"] { assert!(!s.eval_with(code, quiet()).output.is_empty()); }
+    equiv_in(&mut s, "x", "7");
+}
+
+#[test]
+fn calls_with_array_arguments() {
+    let mut s = Session::new();
+    s.eval("x←42 ⋄ mean←+/÷≢ ⋄ bad←{⎕←⍵ ⋄ 1÷⍵}");
+    for (function, codes, expected) in [
+        ("mean", vec!["1 2 3"], "2"),
+        ("-", vec!["10x", "1x 2x"], "9x 8x"),
+        ("/[1]", vec!["1 0", "2 2⍴⍳4"], "1 2⍴1 2"),
+        ("⊢", vec!["(1r3 2x)'ab'(0 3⍴0x)"], "(1r3 2x)'ab'(0 3⍴0x)"),
+        ("{k←⍵ ⋄ {k+⍵}⍵}", vec!["3x"], "6x"),
+        ("{x←⍵}", vec!["7"], "7"),
+    ] {
+        let args: Vec<_> = codes.iter().map(|c| run(c).unwrap().unwrap()).collect();
+        let r = s.call_with(function, &args, miniapl::EvalOptions { echo: false, ..miniapl::EvalOptions::default() });
+        assert!(r.error.is_none(), "{function}: {:?}", r.error);
+        assert_eq!(r.value, run(expected).unwrap());
+        assert!(r.output.is_empty());
+    }
+    assert_eq!(s.call("+", &[scalar(3.0)]).output, ["3"]);
+    let r = s.call("{}", &[scalar(3.0)]);
+    assert!(r.value.is_none() && r.error.is_none() && r.output.is_empty());
+    for (function, args, kind) in [
+        ("+", vec![], Length),
+        ("+", vec![scalar(1.0); 3], Length),
+        ("", vec![scalar(1.0)], Syntax),
+        ("1", vec![scalar(1.0)], Syntax),
+        ("¨", vec![scalar(1.0)], Syntax),
+        ("+ ⋄ -", vec![scalar(1.0)], Syntax),
+    ] { assert_eq!(s.call(function, &args).error.unwrap().kind, kind); }
+    let r = s.call("bad", &[scalar(0.0)]);
+    assert_eq!(r.output, ["0"]);
+    let e = r.error.unwrap();
+    assert_eq!(e.kind, Domain);
+    assert_eq!(e.calls.last().unwrap().source.text, "bad");
+    assert!(e.span.source.text.contains("bad←"));
+    let r = s.call_with("{∇⍵}", &[scalar(0.0)], miniapl::EvalOptions { timeout: Some(std::time::Duration::ZERO), ..miniapl::EvalOptions::default() });
+    assert_eq!(r.error.unwrap().kind, Timeout);
+    equiv_in(&mut s, "x", "42");
+}
+
+#[test]
 fn cancellation_preserves_session_and_unwinds_calls() {
     use std::time::Duration;
     let mut s = Session::new();
@@ -82,7 +144,7 @@ fn cancellation_preserves_session_and_unwinds_calls() {
         std::thread::sleep(Duration::from_millis(10));
         handle.interrupt();
     });
-    let r = s.eval_with("{∇⍵}0", miniapl::EvalOptions { interrupt, timeout: Some(Duration::from_secs(2)) });
+    let r = s.eval_with("{∇⍵}0", miniapl::EvalOptions { interrupt, timeout: Some(Duration::from_secs(2)), ..miniapl::EvalOptions::default() });
     cancel.join().unwrap();
     assert_eq!(r.error.unwrap().kind, Interrupt);
     equiv_in(&mut s, "keep", "42");
@@ -154,6 +216,10 @@ fn selective_assignment() {
     equiv! {
         "a←1 ⋄ (⊃a)←3 4 ⋄ a" => "⊂3 4",
         "a←(1 2)(3 4) ⋄ (⊃¨a)←(5 6)(7 8) ⋄ a" => "((5 6)2)((7 8)4)",
+        "a←1 2 3 ⋄ ((1∘↑)a)←9 ⋄ a" => "9 2 3",
+        "a←1 2 ⋄ ((1∘⊃)a)←3 4 ⋄ a" => "(3 4)2",
+        "a←1 2 ⋄ ((⍬∘⊃)a)←3 4 5 ⋄ a" => "3 4 5",
+        "a←(1 2)(3 4) ⋄ ((1∘⊃)¨a)←(5 6)(7 8) ⋄ a" => "((5 6)2)((7 8)4)",
     }
     for select in [",⊃a", "⍬⌷⊃a", "1⌷a", "⊃¨a"] { fails(Length, &[&format!("a←1 2 ⋄ ({select})←2 2⍴3 4")]); }
     fails(Index, &["a←⍬ ⋄ (⊃a)←3 4"]);
@@ -267,6 +333,11 @@ fn boxed_display_and_function_trees() {
 #[test]
 fn format_and_execute() {
     equiv! {
+        "2⍕3.125 ¯3.125 2.675 ¯2.675" => "' 3.13 ¯3.13 2.68 ¯2.68'",
+        "0⍕2.5 ¯2.5 1.5 ¯1.5" => "' 3 ¯3 2 ¯2'",
+        "2⍕¯0.001 0.001" => "'  0.00 0.00'",
+        "¯2⍕3.25 ¯3.25 325 0.0325" => "' 3.3E0 ¯3.3E0 3.3E2 3.3E¯2'",
+        "¯2⍕2 2⍴3.125 0.002 1000 20" => "↑' 3.1E0 2.0E¯3' ' 1.0E3 2.0E1 '",
         "⍕¯1E¯100j¯2E¯99" => "'¯1E¯100j¯2E¯99'",
         "⍕1E¯6 1E¯7 1E16 1E17" => "'0.000001 1E¯7 10000000000000000 1E17'",
         "⍎⍕5E¯324 ¯1.2345678901234567E200 1E¯100j2E100" => "5E¯324 ¯1.2345678901234567E200 1E¯100j2E100",
@@ -315,7 +386,7 @@ fn inverse_power() {
         "W←×∘*⍨⍣¯1 ⋄ ⌊1E12×W 0 1 (*1) ¯0.1 1j1" => "0 567143290409 1000000000000 ¯111832559159 656966069230j325450339413",
         "W←×∘*⍨⍣¯1 ⋄ W ¯1÷*1" => "¯1",
         "W←×∘*⍨⍣¯1 ⋄ W (0x 0x)(0⍴0x)" => "(0 0)⍬",
-        "W←×∘*⍨⍣¯1 ⋄ x←1E¯100 1E300 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x" => "1x",
+        "W←×∘*⍨⍣¯1 ⋄ x←1E¯100 ¯1E¯100 1E¯12 ¯1E¯12 0.099 ¯0.099 1E300 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x" => "1x",
         "W←×∘*⍨⍣¯1 ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x" => "1x",
     }
     fails(Domain, &["(×∘*⍨⍣¯1)¯1", "(×∘*⍨⍣¯1)'a'"]);
@@ -327,6 +398,8 @@ fn inverse_power() {
         "(4∘(∘.×))⍣¯1⊢4 8" => "1 2",
         "(∘.×∘4 5)⍣¯1⊢4 5" => "1",
         "(∘.+∘4 5)⍣¯1⊢0 2⍴0" => "⍬",
+        "(4 5∘(∘.-))⍣¯1⊢2 2 2⍴3 2 1 0 4 3 2 1" => "2 2⍴1 2 3 4",
+        "(∘.+∘4 5)⍣¯1⊢3 0 2⍴0" => "3 0⍴0",
     }
     fails(Domain, &["(∘.×∘4 5)⍣¯1⊢2 2⍴4 5 8 11", "(∘.×∘4 5)⍣¯1⊢2 3⍴⍳6", "(∘.×∘⍬)⍣¯1⊢2 0⍴0", "(∘.×∘0 0)⍣¯1⊢2 2⍴0"]);
     equiv! {
@@ -577,7 +650,55 @@ fn float_storage_and_kernels() {
 }
 
 #[test]
+fn unicode_conversion() {
+    equiv! {
+        "⎕C 42 'Pete' 'Πέτρος'" => "42 'pete' 'πέτροσ'",
+        "1⎕C 2 3⍴'aBcΣςß'" => "2 3⍴'ABCΣΣß'",
+        "¯1⎕C 'İẞᾈΣ'" => "'ißᾀσ'",
+        "⎕C 'ẞİﬀᾀ'" => "'ßİﬀᾀ'",
+        "(1 1⍴¯3)⎕C 'ίσως'" => "'ίσωσ'",
+        "⎕C 2 0⍴⊂'Ab'" => "2 0⍴⊂'  '",
+        "u←⎕ucs ⋄ u 2 2⍴'A⍳λ😀'" => "2 2⍴65x 9075x 955x 128512x",
+        "⎕UCS 2 2⍴65x 9075x 955x 128512x" => "2 2⍴'A⍳λ😀'",
+        "⎕UCS 2 0⍴''" => "2 0⍴0x",
+        "⎕UCS 0 3⍴0" => "0 3⍴''",
+        "'UTF-8'⎕UCS 'Æ😀'" => "195x 134x 240x 159x 152x 128x",
+        "('UTF-8' 0)⎕UCS 195 134 240 159 152 128" => "'Æ😀'",
+        "'UTF-16'⎕UCS 'A😀'" => "65x 55357x 56832x",
+        "'UTF-16'⎕UCS 65 55357 56832" => "'A😀'",
+        "(⊂'UTF-32')⎕UCS 'A😀'" => "65x 128512x",
+        "'UTF-32'⎕UCS 65 128512" => "'A😀'",
+        "'UTF-8'⎕UCS 'A'" => ",65x",
+        "'UTF-8'⎕UCS 65" => ",'A'",
+        "'UTF-16'⎕UCS ⍬" => "''",
+    }
+    fails(
+        Domain,
+        &[
+            "0⎕C 'a'",
+            "1 2⎕C 'a'",
+            "⎕UCS ¯1",
+            "⎕UCS 55296",
+            "⎕UCS 1114112",
+            "⎕UCS 1.5",
+            "⎕UCS 65 'B'",
+            "⎕UCS 0⍴⊂'ab'",
+            "'utf-8'⎕UCS 'a'",
+            "'UTF-8'⎕UCS 192 128",
+            "'UTF-8'⎕UCS 256",
+            "'UTF-16'⎕UCS 55357",
+            "'UTF-16'⎕UCS 65536",
+        ],
+    );
+    fails(Rank, &["'UTF-8'⎕UCS 2 2⍴'a'"]);
+    fails(Unsupported, &["('UTF-8' 83)⎕UCS 'abc'"]);
+}
+
+#[test]
 fn characters_nesting_and_empty_fill() {
+    equiv! { "⎕A" => "'ABCDEFGHIJKLMNOPQRSTUVWXYZ'", "⎕d" => "'0123456789'", "3↑⎕a" => "'ABC'" }
+    fails(Syntax, &["⎕A←'abc'"]);
+    fails(Unsupported, &["⎕IO←0"]);
     // Dyalog 20.0.53963.0, ⎕IO=1, ⎕CT=1E¯14. Expected structures are independent.
     for (code, expected) in [
         ("'a'", chars("a")),
@@ -849,6 +970,9 @@ fn composition_rank_and_dyadic_operators() {
     equiv! {
         "c←∘ ⋄ sum←+/c⍳ ⋄ sum¨2 4 6" => "3 10 21",
         "'abc'⍴⍛⍴'z'" => "'zzz'",
+        "¯11∘○⍛+⌿2 3⍴1 2 3 4 5 6" => "4j1 5j2 6j3",
+        "c←∘ ⋄ b←⍛ ⋄ r←⌿ ⋄ ¯11 c ○ b + r 2 3⍴1 2 3 4 5 6" => "4j1 5j2 6j3",
+        "-∘+∘×/1 2 3" => "0",
         "⍳⍤0⊢1 3 2" => "3 3⍴1 0 0 1 2 3 1 2 0",
         "({⍳3}⍤1)0 2⍴0" => "0 3⍴0",
         "op←{⍺⍺+⍵⍵×⍵} ⋄ (2 op 3)4" => "14",

@@ -22,24 +22,24 @@ fn expected_array(value: &Value) -> Option<Array> {
     (result.prototype() == &prototype).then_some(result)
 }
 
-fn same_element(x: &Element, y: &Element, tolerance: f64) -> bool {
+fn same_element(x: &Element, y: &Element, relative: f64, absolute: f64) -> bool {
     match (x, y) {
-        (Element::Nested(x), Element::Nested(y)) => difference(x, y, tolerance).is_none(),
+        (Element::Nested(x), Element::Nested(y)) => difference(x, y, relative, absolute).is_none(),
         (Element::Number(x), Element::Number(y)) if x.is_exact() && y.as_float().is_some() => {
             x.as_exact() == num_rational::BigRational::from_float(y.as_float().unwrap())
         }
-        (Element::Number(x), Element::Number(y)) if tolerance != 0.0 => {
+        (Element::Number(x), Element::Number(y)) if relative != 0.0 || absolute != 0.0 => {
             let complex = |n: &crate::Number| n.as_complex().or_else(|| n.as_float().map(|x| num_complex::Complex64::new(x, 0.)));
-            match (complex(x), complex(y)) { (Some(a), Some(b)) => a == b || (a - b).norm() <= tolerance * a.norm().max(b.norm()), _ => x == y }
+            match (complex(x), complex(y)) { (Some(a), Some(b)) => a == b || (a - b).norm() <= absolute.max(relative * a.norm().max(b.norm())), _ => x == y }
         }
         _ => x == y,
     }
 }
 
-fn difference(x: &Array, y: &Array, tolerance: f64) -> Option<String> {
+fn difference(x: &Array, y: &Array, relative: f64, absolute: f64) -> Option<String> {
     if x.shape() != y.shape() { return Some(format!("shape: {:?} != {:?}", x.shape(), y.shape())); }
-    if !same_element(x.prototype(), y.prototype(), tolerance) { return Some("prototype".into()); }
-    x.elements().zip(y.elements()).position(|(a, b)| !same_element(&a, &b, tolerance)).map(|i| format!("data[{i}]"))
+    if !same_element(x.prototype(), y.prototype(), relative, absolute) { return Some("prototype".into()); }
+    x.elements().zip(y.elements()).position(|(a, b)| !same_element(&a, &b, relative, absolute)).map(|i| format!("data[{i}]"))
 }
 
 /// Evaluate one independent reference case in a fresh session. Never derive an expectation from miniapl.
@@ -48,8 +48,9 @@ pub fn check(case: &Value, options: EvalOptions) -> Value {
     let error_kind = case["expected_error"].as_str().filter(|s| !s.is_empty());
     let expected = expected_array(&case["expected"]);
     let no_result = case.get("expected") == Some(&Value::Null);
-    let tolerance = case["relative_tolerance"].as_f64().unwrap_or(0.0);
-    if (!tolerance.is_finite() || tolerance < 0.0) || (error_kind.is_none() && expected.is_none() && !no_result) {
+    let relative = case["relative_tolerance"].as_f64().unwrap_or(0.0);
+    let absolute = case["absolute_tolerance"].as_f64().unwrap_or(0.0);
+    if [relative, absolute].iter().any(|t| !t.is_finite() || *t < 0.0) || (error_kind.is_none() && expected.is_none() && !no_result) {
         return json!({"status":"invalid", "message":"invalid or missing independent expectation"});
     }
     let result = Session::new().eval_with(code, options);
@@ -66,7 +67,7 @@ pub fn check(case: &Value, options: EvalOptions) -> Value {
         (_, None, _) if no_result => None,
         (_, None, _) => Some("no result".into()),
         (_, Some(_), _) if no_result => Some("expected no result".into()),
-        (_, Some(actual), Some(expected)) => difference(actual, &expected, tolerance),
+        (_, Some(actual), Some(expected)) => difference(actual, &expected, relative, absolute),
         _ => unreachable!(),
     };
     match mismatch {

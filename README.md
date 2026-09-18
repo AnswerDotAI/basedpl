@@ -24,7 +24,7 @@ Use `]box off` for plain output, `-trains=def` for function expressions, and `-f
 
 ### Typing APL symbols
 
-In the interactive terminal, type a **backtick followed by a symbol name** (or a unique prefix). Tab replaces it; a non-letter replaces it and also enters that character. For example:
+In the interactive terminal, type a **backtick followed by a symbol name** or abbreviation. Tab replaces it; a non-letter replaces it and also enters that character. For example:
 
 | Type | Becomes |
 | --- | --- |
@@ -34,7 +34,11 @@ In the interactive terminal, type a **backtick followed by a symbol name** (or a
 | `` v`assign `` then Space | `v← ` |
 | `` `scan `` then Tab | `\` |
 
-Names are case-insensitive. Exact names win over longer names (`scan` versus `scanfirst`); ambiguous/unknown prefixes are never guessed. Matching names appear as you type; press Tab twice to list ambiguous choices, or backtick then Tab twice to browse the catalogue. Enter also accepts a unique name and submits the line, showing the accepted glyph after an arrow.
+Names are case-insensitive. Multi-part names display with hyphens, such as `left-arrow`; type letters only. Exact names win, then prefixes, then abbreviations that retain the first letter and any later letters in order: `lar` selects `left-arrow`, and `grup` selects `grade-up`. Ambiguous matches are never guessed. Minus remains a terminator: typing `` `lar- `` inserts `←-`.
+
+Python frontends can use `miniapl.symbols`, the REPL's catalogue of `(glyph, space-separated aliases)` pairs.
+
+Matching names appear as you type; press Tab twice to list ambiguous choices, or backtick then Tab twice to browse the catalogue. Enter also accepts a unique name and submits the line, showing the accepted glyph after an arrow.
 
 Arrow keys edit and recall this session's history. Ctrl-C cancels the current input, including unfinished multiline expressions; Ctrl-D exits on a fresh line. Expansion is disabled in strings/comments and for bracketed pastes. This is an input method, not APL syntax: files, pipes, `-e`, Python and JSON use actual glyphs. The catalogue includes planned primitives as well as those implemented below.
 
@@ -49,27 +53,77 @@ DOMAIN ERROR: division by zero
 ## Python
 
 ```python
+import numpy as np
+from fractions import Fraction
 from miniapl import Session, AplError
 
-with Session() as s:
-    s.eval('v←⍳5')
-    r = s.eval('+/v')
-    assert r.value.shape == ()
-    assert r.value.to_python() == 15
-    assert r.output == ['15']
+with Session() as apl:
+    apl(x=np.arange(1, 6))       # bind variables; returns None
+    assert apl('+/x') == 15
+    assert apl('+/x', x=[1, 2, 3]) == 6  # bind, then evaluate
+    apl['x'] = [[1, 2], [3, 4]]
+    assert apl['x'].shape == (2, 2)
+
+    mean = apl.fn('{(+/⍵)÷≢⍵}')
+    assert mean([1, 2, 3]) == 2
+    assert mean([1, 2, 4]) == Fraction(7, 3)
+    np.testing.assert_array_equal(apl.fn('+')([1, 2, 3], 10), [11, 12, 13])
+
+    r = apl.eval('⎕←x ⋄ x+1x', x=3)
+    assert r.value == 4 and r.output == ['3x']  # captured, not printed
 ```
 
-`Result.value` is a copied `Array` (shape, flat data, prototype), or `None`. `to_python()` returns ordinary numbers/lists and intentionally loses prototype information. Values survive session closure and can be used on other threads. NumPy is neither required nor returned automatically. `AplError` exposes kind, message, retained source, UTF-8 byte span, call-site context (`calls`), and output produced before failure.
+`apl(...)` returns a Python value and prints only explicit output (`⎕←` and display commands). `apl.eval(...)` returns `Result(value, output)` without printing. Both suppress implicit display, including intermediate expressions inside `⍎`. Output is captured during execution, not streamed. In notebooks, a trailing Python `;` suppresses automatic display of the return value when explicit output is sufficient.
 
-`value.to_numpy()` copies float arrays to `float64` ndarrays and float/complex mixtures to `complex128`. Shape is preserved, including scalars and empty dimensions. Exact numbers, characters and nested arrays raise `TypeError`, including typed empties. NumPy is imported only when this method is called; install it separately. The ndarray does not preserve the APL prototype or share storage with the APL value.
+`apl.run(...)` captures APL session display in `Result(value, output)`. It includes implicit expression output and explicit output. Assignments remain silent. Notebook frontends use this method to render cells as APL sessions.
 
-Use `s.set('data', Array.from_numpy(ndarray))` to import a numeric ndarray. Boolean and integer values become APL floats; integers that cannot be represented exactly are rejected. Float16/32/64 and complex64/128 are accepted. Shapes, including scalar/empty dimensions, are preserved; non-contiguous inputs are copied in logical row-major order. Non-finite values, wider floating types, strings, structured and object dtypes are rejected. `set()` accepts only `Array` values, including copied exact/nested APL results, and validates the binding name without executing source.
+Keyword arguments are persistent APL bindings; the optional source argument is positional-only, so `apl(source=3, timeout=4)` binds those names too. Indexing evaluates an expression, and indexed assignment binds an ordinary name without executing generated source. `.fn(expression)` returns a monadic/dyadic Python callable: one argument is `⍵`, two are `⍺, ⍵`. It is **late-bound**: `f = apl.fn('foo')` follows later redefinitions of `foo`. No function handles or temporary globals are created.
+
+### Python values
+
+NumPy is required. There is no public `Array` wrapper or conversion step:
+
+| APL result | Python value |
+| --- | --- |
+| Numeric scalar | `int`, `float`, `complex` or `Fraction` |
+| Exact integer array fitting signed 64 bits | `int64` ndarray |
+| Floating-point array | `float64` ndarray |
+| Float/complex array | `complex128` ndarray |
+| Large integers, fractions, mixed exact/approximate values, or nested arrays | `object` ndarray |
+| Character scalar/vector | Python string |
+| Higher-rank character array | `U1` ndarray |
+
+Python integers (including NumPy integers) and booleans enter APL as exact numbers; floats remain approximate. `Fraction` and complex values retain their numeric meaning. Rectangular lists/tuples become ordinary arrays; ragged ones become nested arrays. Explicit object ndarrays retain their shape and nesting. Strings become character vectors. Arrays are copied in both directions, including non-contiguous inputs; modifying a Python array never changes session state. Non-finite numbers, wider-than-64-bit floats, wider-than-128-bit complex values, bytes, datetime and structured dtypes are rejected.
+
+This is a Pythonic value boundary, not lossless APL serialization. Numeric dtypes select domains, not original storage widths. Boxed scalars become zero-dimensional object ndarrays. Custom empty-array prototypes are not retained. Empty lists and empty object ndarrays use a floating zero prototype on input; numeric/character ndarray dtypes supply their corresponding prototype. Use the low-level worker's encoded arrays when exact APL structure is needed. Even integers beyond Python's decimal-string digit limit transfer without changing that process-wide setting.
 
 A final assignment returns its array without printing it. A final function/operator definition or empty input returns no array, not the preceding statement's value. Evaluations are not transactions: assignments completed before a runtime error remain in the session.
 
 Assignments bind inside expressions: `1+a←3` returns 4 and stores 3. Modified assignment passes through its right argument. `a b+←3 4` updates the targets from left to right.
 
-**Sessions are thread-affine:** create, use, and close them on the same thread. Prefer `with Session()` or explicit `close()`. Cross-thread calls are rejected. Do not transfer an open session to another thread for destruction: PyO3's `unsendable` safeguard reports an unraisable error and skips native destruction in that unsupported case. Closing on the owner thread releases the native session first. This binding restriction does not change Rust ownership or add workers/locks to the interpreter.
+### Errors, interruption and lifetime
+
+`AplError` carries the Rust-rendered diagnostic, kind, message, retained source, UTF-8 byte span, call-site context (`calls`) and output produced before failure. `apl(...)` and `.fn()` print that output before raising; `.eval()` retains it on the exception without printing.
+
+`Session` uses one persistent worker process, serializing evaluations. Calls may come from different Python threads. Ctrl-C interrupts the current evaluation; `apl.interrupt()` does the same from another thread. Cooperative interruption preserves the session and completed assignments. Use `Session(timeout=2)` for a per-evaluation deadline in seconds; change `apl.timeout` to adjust it, or set it to `None` for no deadline. Unresponsive workers are killed after the one-second grace period, losing their state. Evaluations are never retried automatically.
+
+Prefer `with Session()` or explicit `.close()` to release the process promptly. Otherwise it closes when the session is collected or Python exits. Returned Python values are independent of the session.
+
+## Rust embedding
+
+`Session::eval_with` and `Session::call_with` accept `EvalOptions`. Set `echo: false` to suppress implicit expression display while retaining explicit `⎕←` output, including output before an error. This also suppresses intermediate implicit output inside `⍎`. Explicit display commands such as `]Display` still produce output. Echo defaults to true and is selected separately for each evaluation.
+
+```rust
+use miniapl::{Array, EvalOptions, Session};
+
+let mut s = Session::new();
+let r = s.call_with("{(+/⍵)÷≢⍵}", &[Array::integers(vec![3], vec![1, 2, 3]).unwrap()],
+    EvalOptions { echo: false, ..EvalOptions::default() });
+assert!(r.error.is_none() && r.output.is_empty());
+assert_eq!(r.value, Some(Array::integers(vec![], vec![2]).unwrap()));
+```
+
+`call` / `call_with` resolve one function expression in the current session, then pass one array as `⍵` or two arrays as `⍺, ⍵`. Arguments are not serialized into APL source and no temporary names are assigned. Function names, dfns, trains and derived functions are accepted. Resolution happens on each call; no function handles escape the session. Calls return the same `Evaluation` (value, output, error) as evaluation, with the same deadlines and interruption support.
 
 ## JSON-lines process interface
 
@@ -104,9 +158,18 @@ Call `w.interrupt()` from another thread to interrupt its current evaluation. Co
 
 Evaluation checks cancellation in the binder, function calls and potentially long primitive loops. Individual native-library or big-integer operations are not preemptible. If a deadline exceeds its grace period (default 1 second), the client kills the worker and raises `TimeoutError`; that session is lost. Ctrl-C also kills the worker if its grace period expires. The client never retries an evaluation automatically. `w.diagnostics` retains recent process stderr.
 
-The underlying `--worker` protocol uses JSON objects, one per line. Send `{"id":1,"code":"+/⍳10","timeout_ms":2000}` and receive `{"id":1,"result":...}`. Send `{"interrupt":1}` to cancel that request; interrupt messages have no reply. Use one outstanding evaluation per client. Stdout contains responses only. Malformed JSON or invalid IDs/timeouts terminate the worker. The simpler `--json` mode remains unchanged.
+The underlying `--worker` protocol uses JSON objects, one per line. Send `{"id":1,"code":"+/⍳10","timeout_ms":2000}` and receive `{"id":1,"result":...}`. Send `{"interrupt":1}` to cancel that request; interrupt messages have no reply. Use one outstanding evaluation per client. Stdout contains responses only. Malformed JSON or invalid IDs/timeouts/echo types terminate the worker. The simpler `--json` mode remains unchanged.
 
-In-process Python sessions accept `s.eval(code, timeout=seconds)` but remain thread-affine. Rust callers use `Session::eval_with(code, EvalOptions { interrupt, timeout })`; clone its `InterruptHandle` to cancel from another thread. No Jupyter or MCP dependency enters the interpreter.
+Worker requests also accept `bindings`, mapping names to arrays in the response encoding, and `echo` (default true). Bindings are installed before evaluation and persist even if APL execution fails. A bindings-only request returns a null value and no output. Use `call` instead of `code`, plus `args` containing one or two encoded arrays, to invoke a function directly:
+
+```json
+{"id":1,"bindings":{"x":{"shape":[3],"data":[1,2,3],"prototype":0}},"code":"+/x","echo":false}
+{"id":2,"call":"+","args":[{"shape":[],"data":[2],"prototype":0},{"shape":[],"data":[3],"prototype":0}],"echo":false}
+```
+
+JSON integer inputs are exact; decimal/exponent inputs are floating-point. Fractions, complex numbers, nested arrays and empty prototypes use the same encodings in both directions. Invalid operations or array payloads return `REQUEST ERROR` without terminating the worker. Binding batches are not transactions. `Worker.request(payload, timeout=...)` exposes these operations without constructing the outer request ID.
+
+The private in-process `_core._Session` remains thread-affine. Public Python sessions use the worker above. Rust callers use `Session::eval_with` or `call_with` with `EvalOptions`; clone its `InterruptHandle` to cancel from another thread. No Jupyter or MCP dependency enters the interpreter.
 
 ## Explicit exact arithmetic
 
@@ -174,6 +237,10 @@ m←[1 2 3 ⋄ 4 5 6]      ⍝ a matrix; 2 3⍴⍳6 is equivalent
 
 Character literals use single quotes, with doubled quotes inside (`'can''t'`). One character is a scalar; comma makes it a singleton vector. `⊂` encloses and `⊃` discloses. `⍬` is the numeric empty vector. Arithmetic extends recursively through nested arrays. Parenthesized literals preserve nesting; bracket literals assemble rows/cells with fill. Literal elements evaluate left-to-right.
 
+`⎕A` is `'ABCDEFGHIJKLMNOPQRSTUVWXYZ'`; `⎕D` is `'0123456789'`. Their names are case-insensitive and cannot be assigned. `⎕C` folds case; `1⎕C` uppercases and `¯1⎕C` lowercases. Unicode simple mappings preserve shape and nesting, without expanding characters such as `ß` into `SS`.
+
+`⎕UCS` converts characters to exact integer code points and back, preserving shape. A left argument of `'UTF-8'`, `'UTF-16'` or `'UTF-32'` encodes or decodes a vector. Scalar input becomes a singleton vector. Malformed encodings and surrogate code points error. The optional encoding flag `0` is accepted; signed-byte flag `83` is out of scope. Other system names are rejected as unsupported.
+
 - Right-to-left evaluation; numeric vectors/stranding; names and assignment; `⋄`/newline statements; parentheses; `⍝` comments; explicit `⎕←` output.
 - Monadic/dyadic `+ - × ÷`, scalar extension and shape agreement; monadic `⍳ ⍴ ≢ ,`; general reshape, take/drop, enclosure/disclosure, Mix/Split, catenate/table, reverse/rotate, and transpose (including diagonal axes).
 - Numeric dyadic `= ≠ < ≤ > ≥`: exact/exact comparisons are exact; comparisons involving floats use fixed Dyalog-style relative tolerance `1e-14`. No configurable `⎕CT`.
@@ -185,7 +252,7 @@ Character literals use single quotes, with doubled quotes inside (`'can''t'`). O
 - Dfns with local assignments, nested lexical definitions, lazy default arguments (`⍺←2`), and silent/no-result behavior. Monadic/dyadic dops accept function, array or hybrid operands. For example, `apply←{⍺⍺ ⍵} ⋄ (-apply)3` gives ¯3, and `op←{⍺⍺+⍵⍵×⍵} ⋄ (2 op 3)4` gives 14.
 - Atops, forks, constant arms and longer trains; `⊣ ⊢`; composition/binding `∘`, rank/atop `⍤`, over `⍥`, behind `⍛`, Each `¨` and commute/constant `⍨`. `3∘<⍛/2 7 1 8` gives `7 8`. Rank uses shared padded cell assembly and the frame agreement above. Empty Each/rank invokes the operand to obtain a prototype, including its output/errors.
 - Inner and outer products use shared operand calls: `1 2 3+.×10 12 14` gives 76; `(⍳3)∘.=⍳3` is an identity matrix. Singleton contraction extension, nested results and empty products are supported.
-- Key `⌸` groups by the first matching representative. Counted, predicate and inverse power `⍣` use shared function calls. Known inverses cover arithmetic bindings, powers/logs, circle codes ¯7 through 7, permutations/rotations, encode/decode, where, supported scans and compositions/Each/rank. Unknown inverses give DOMAIN ERROR; arbitrary dfn inversion is deferred.
+- Key `⌸` groups by the first matching representative. Counted, predicate and inverse power `⍣` use shared function calls. Known inverses cover arithmetic bindings, powers/logs, circle codes ¯7 through 7, permutations/rotations, encode/decode, where, supported scans and compositions/Each/rank. `×∘*⍨⍣¯1` computes the principal Lambert W branch. Real arguments must be at least `¯1÷*1`; complex arguments use the principal complex branch. Results are approximate. Unknown inverses give DOMAIN ERROR; arbitrary dfn inversion is deferred.
 - `⍎` executes character code in the current lexical scope, retaining output and defining source. `⍕` supports monadic text and dyadic numeric field specifications, including exact fixed-point formatting. Neither operation depends on REPL boxing settings.
 - Grade `⍋ ⍒` is stable, with untoleranced numeric ordering, complex and nested values, and dyadic character collation. Pick `⊃` follows nested coordinate paths. Nest `⊆`, partition `⊆` and partitioned enclosure `⊂` support typed empties; both partitions accept axis qualifiers.
 - Squad `⌷` uses the bracket-selection path, including shaped indices, missing trailing axes and a single-axis qualifier. Monadic `⌷` returns its array unchanged.

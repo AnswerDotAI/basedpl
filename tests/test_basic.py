@@ -1,164 +1,179 @@
-import subprocess
-import json
-import sys
-import pytest
+import subprocess, json, sys, os, signal, threading, weakref, gc
 from fractions import Fraction
 from concurrent.futures import ThreadPoolExecutor
-from threading import Thread
-from miniapl import Session, AplError, Array
+import numpy as np
+import pytest
+from miniapl import Session, AplError
 
-def test_numpy_import_and_binding():
-    np = pytest.importorskip('numpy')
-    original = np.arange(12, dtype=np.int64).reshape(3, 4)[:, ::2]
-    copied = Array.from_numpy(original)
-    original[:] = 99
-    with Session() as s:
-        s.set('m', copied)
-        assert s.eval('+/m').value.to_python() == [2., 10., 18.]
-        for a in [np.array(True), np.array(3, dtype=np.float32), np.array([1, 2j]), np.empty((0, 3))]:
-            s.set('a', Array.from_numpy(a))
-            np.testing.assert_array_equal(s.eval('a').value.to_numpy(), a)
-        for code in ['1r3', "(1 2)'ab'", '0⍴⊂1 2']:
-            a = s.eval(code).value
-            s.set('a', a)
-            assert s.eval('a').value == a
-        with pytest.raises(TypeError): s.set('m', original)
-        with pytest.raises(ValueError): s.set('m←99', copied)
-        assert s.eval('+/m').value.to_python() == [2., 10., 18.]
-    with pytest.raises(RuntimeError, match='closed'): s.set('m', copied)
-    for a in [np.array([2**53+1]), np.array([np.inf]), np.array([complex(0, np.nan)])]:
-        with pytest.raises(ValueError): Array.from_numpy(a)
-    for a in [np.array(['a']), np.array([1], dtype=object)]:
-        with pytest.raises(TypeError): Array.from_numpy(a)
 
-def test_numpy_copy():
-    np = pytest.importorskip('numpy')
-    with Session() as s:
-        arrays = [s.eval(code).value for code in ['2 2⍴⍳4', '3', '1 2j3', '0 3⍴0']]
-        for code in ['1x', '1r3', '1 2x', '(1 2)(3 4)', "'ab'", '0⍴1x', '0⍴⊂1 2']:
-            with pytest.raises(TypeError, match='float/complex'): s.eval(code).value.to_numpy()
-    for a, dtype in zip(arrays, [np.float64, np.float64, np.complex128, np.float64]):
-        result = a.to_numpy()
-        assert result.shape == a.shape and result.dtype == dtype
-        np.testing.assert_array_equal(result.ravel(), a.data)
-    arrays[0].to_numpy()[0, 0] = 99
-    assert arrays[0].data == (1., 2., 3., 4.)
+def test_native_calls_and_explicit_output():
+    from miniapl._core import _Session
+    s = _Session()
+    a = s.eval('1r3 2x')['value']
+    s.set('x', a)
+    r = s.call('{⎕←⍵ ⋄ ⍵}', [a], echo=False)
+    assert r['value'] == a and r['output'] == ['1r3 2x'] and r['error'] is None
+    assert s.call('-', [a, a], echo=False)['value']['data'] == [0, 0]
+    assert s.eval('1 ⋄ ⎕←2 ⋄ 3', echo=False)['output'] == ['2']
+    assert s.call('{∇⍵}', [a], timeout=0)['error']['kind'] == 'TIMEOUT'
+    assert s.call('+', [])['error']['kind'] == 'LENGTH ERROR'
+    with pytest.raises(ValueError): s.call('+', [a], timeout=-1)
+    assert s.eval('x')['value'] == a
 
-def test_session_results_and_recovery():
-    with Session() as s:
-        r = s.eval('v←⍳5')
-        assert r.value.shape == (5,) and r.value.to_python() == [1, 2, 3, 4, 5] and r.output == []
-        saved = r.value
-        r = s.eval('+/v')
-        assert r.value.shape == () and r.value.to_python() == 15 and r.output == ['15']
-        assert s.eval('3 ⋄ f←+').value is None
-        assert s.eval('').value is None
-        r = s.eval('silent←{a←7} ⋄ silent 0')
-        assert r.value.to_python() == 7 and r.output == []
-        assert s.eval('{}0').value is None
-        assert s.eval('(silent 0)').output == ['7']
-        empty = s.eval('⍳0').value
-        assert empty.shape == (0,) and empty.to_python() == [] and empty.prototype == 0
-        with pytest.raises(AplError) as caught: s.eval('⎕←7 ⋄ 1÷0')
-        assert caught.value.kind == 'DOMAIN ERROR' and caught.value.output == ['7']
-        assert '÷' in caught.value.source and len(caught.value.span) == 2
-        assert s.eval('2+2').value.to_python() == 4
-    with pytest.raises(RuntimeError, match='closed'): s.eval('1')
-    del s
-    assert saved.to_python() == [1, 2, 3, 4, 5]
 
-def test_session_thread_affinity_and_copied_arrays():
-    with Session() as s, ThreadPoolExecutor(max_workers=1) as pool:
-        saved = s.eval('⍳3').value
-        with pytest.raises(RuntimeError, match='creating thread'): pool.submit(s.eval, '1').result()
-        with pytest.raises(RuntimeError, match='creating thread'): pool.submit(s.close).result()
-        assert pool.submit(saved.to_python).result() == [1, 2, 3]
-        assert s.eval('2').value.to_python() == 2
+def test_bindings_functions_and_output(capsys):
+    with Session() as apl:
+        assert apl(x=np.arange(1, 6), source=9, timeout=8) is None
+        assert apl('source+timeout') == 17
+        assert apl('+/x') == 15 and type(apl('+/x')) is int
+        mean = apl.fn('{(+/⍵)÷≢⍵}')
+        assert mean([1, 2, 3]) == 2 and type(mean([1, 2, 3])) is int
+        assert mean([1, 2, 4]) == Fraction(7, 3)
+        added = apl.fn('+')([1, 2, 3], 10)
+        np.testing.assert_array_equal(added, [11, 12, 13])
+        assert added.dtype == np.int64
+        f = apl.fn('foo')
+        apl('foo←+')
+        assert f(3) == 3
+        apl('foo←-')
+        assert f(3) == -3
+        apl['x'] = [[1, 2], [3, 4]]
+        np.testing.assert_array_equal(apl['x'], [[1, 2], [3, 4]])
+        assert apl('x←7') == 7 and apl('3 ⋄ f←+') is None and apl('') is None
+        assert apl('silent←{a←7} ⋄ silent 0') == 7 and apl('{}0') is None
+        assert capsys.readouterr().out == ''
+        assert apl('1 ⋄ ⎕←2 ⋄ ⍎\'3 ⋄ ⎕←4 ⋄ 5\'') == 5
+        assert capsys.readouterr().out == '2\n4\n'
+        r = apl.eval('⎕←x ⋄ x+1x', x=9)
+        assert r.value == 10 and r.output == ['9x'] and capsys.readouterr().out == ''
+        assert apl.fn('{⎕←⍵}')(3) == 3 and capsys.readouterr().out == '3x\n'
+        assert apl.eval(']Display 1 2').output and capsys.readouterr().out == ''
+        with pytest.raises(TypeError): f()
+        with pytest.raises(TypeError): f(1, 2, 3)
+        with pytest.raises(ValueError): apl['x←99'] = 1
+        assert apl['x'] == 9
+        r = apl.run('1 ⋄ ⎕←2 ⋄ x←3')
+        assert r.value == 3 and r.output == ['1', '2'] and capsys.readouterr().out == ''
+    with pytest.raises(RuntimeError, match='closed'): apl('1')
+    apl.close()
 
-def test_nested_character_and_empty_results():
-    with Session() as s:
-        a = s.eval("(1 2)'ab'").value
-        assert a.shape == (2,) and a.to_python() == [[1, 2], ['a', 'b']]
-        empty = s.eval("0 3⍴''").value
-        assert empty.shape == (0, 3) and empty.data == () and empty.prototype == ' '
-        nested = s.eval('0⍴(1 2)(3 4 5)').value
-        matrix = s.eval('[1 2 ⋄ 3]').value
-        assert matrix.shape == (2, 2) and matrix.to_python() == [[1, 2], [3, 0]]
-    assert nested.shape == (0,) and nested.prototype.shape == (2,) and nested.prototype.to_python() == [0, 0]
-    assert a.to_python() == [[1, 2], ['a', 'b']]
 
-def test_unsupported_wrong_thread_destruction(monkeypatch):
-    # PyO3 deliberately skips native destruction here; keep the documented restriction visible.
-    errors, held = [], [Session()]
+def test_numpy_inputs_and_copies():
+    with Session() as apl:
+        original = np.arange(12).reshape(3, 4)[:, ::2]
+        apl(m=original)
+        original[:] = 99
+        np.testing.assert_array_equal(apl('+/m'), [2, 10, 18])
+        saved = apl['m']
+        saved[:] = 77
+        np.testing.assert_array_equal(apl('+/m'), [2, 10, 18])
+        for a in [np.array(True), np.array(3, dtype=np.float32), np.array([1., 2j]), np.array([2**64-1], dtype=np.uint64),
+                  np.empty((0, 3), dtype=int), np.empty((2, 0)), np.array([['a', 'b'], ['c', 'd']]), np.array([[1, Fraction(2, 3)]], dtype=object)]:
+            result = apl('x', x=a)
+            np.testing.assert_array_equal(result, a)
+            assert np.shape(result) == a.shape
+        assert apl('x', x=np.float32(1.5)) == 1.5
+        assert apl('x', x=np.int64(3)) == 3
+        for a in [np.array([np.inf]), complex(0, np.nan), [float('nan')]]:
+            with pytest.raises(ValueError): apl(x=a)
+        for a in [np.array([b'a']), np.array(['2020'], dtype='datetime64[Y]'), object()]:
+            with pytest.raises(TypeError): apl(x=a)
+    np.testing.assert_array_equal(saved, np.full((3, 2), 77))
+
+
+def test_exact_nested_and_character_values():
+    with Session() as apl:
+        for value in [42, 2**100, 0.5, Fraction(1, 3), 1+2j, 'hello', 'a', '']:
+            result = apl('x', x=value)
+            assert result == value and type(result) is type(value)
+        mixed = apl('x', x=[2**100, 0.5, Fraction(1, 3), 1+2j])
+        assert mixed.dtype == object and [type(o) for o in mixed] == [int, float, Fraction, complex]
+        huge = 10**4500
+        assert apl('x', x=huge) == huge and apl('10x*4500x') == huge
+        assert apl('x', x=Fraction(huge, 3)) == Fraction(huge, 3)
+        assert apl('x', x=['a', 'b']) == 'ab'
+        strings = apl('x', x=['ab', 'cd'])
+        assert strings.dtype == object and strings.tolist() == ['ab', 'cd']
+        ragged = apl('x', x=[[1, 2], [3]])
+        assert ragged.shape == (2,) and ragged.dtype == object
+        np.testing.assert_array_equal(ragged[0], [1, 2])
+        np.testing.assert_array_equal(ragged[1], [3])
+        nested = apl('(1 2)(3 4)')
+        assert nested.shape == (2,) and nested.dtype == object
+        np.testing.assert_array_equal(apl('x', x=nested)[1], [3, 4])
+        boxed = apl('⊂1 2')
+        assert boxed.shape == () and boxed.dtype == object and apl('≡x', x=boxed) == 2
+        np.testing.assert_array_equal(boxed.item(), [1, 2])
+        assert apl("0 3⍴''").shape == (0, 3) and apl('0⍴⊂1 2').dtype == object
+        assert apl('x', x=[[], []]).shape == (2, 0)
+        assert type(apl('1J2×1J¯2')) is float and apl('+1J2') == 1-2j
+        assert apl('0/1J2').dtype == np.float64
+
+
+def test_errors_capture_output_and_recover(capsys):
+    with Session() as apl:
+        for call in [apl, apl.eval]:
+            with pytest.raises(AplError) as caught: call('x←7 ⋄ ⎕←1x ⋄ 1÷0')
+            e = caught.value
+            assert e.kind == 'DOMAIN ERROR' and e.output == ['1x'] and '÷' in e.source and len(e.span) == 2
+            assert ' --> <input>:1:' in str(e)
+            assert capsys.readouterr().out == ('1x\n' if call is apl else '')
+            assert apl('x+1') == 8
+        definition = 'bad←{1÷⍵}'
+        apl(definition)
+        with pytest.raises(AplError) as caught: apl.fn('bad')(0)
+        assert caught.value.source == definition and caught.value.calls[-1]['source']['text'] == 'bad'
+        apl.timeout = .01
+        with pytest.raises(AplError) as caught: apl.eval('{∇⍵}0')
+        assert caught.value.kind == 'TIMEOUT' and capsys.readouterr().out == ''
+        assert apl('x') == 7
+
+
+def test_interrupts_threads_and_cleanup(capsys):
+    with Session() as apl, ThreadPoolExecutor(max_workers=1) as pool:
+        apl(x=42)
+        assert pool.submit(apl, 'x').result() == 42
+        ctrl_c = lambda: os.kill(os.getpid(), signal.SIGINT)
+        for call, interrupt, error in [(apl, apl.interrupt, AplError), (apl, ctrl_c, KeyboardInterrupt), (apl.eval, ctrl_c, KeyboardInterrupt)]:
+            timer = threading.Timer(.05, interrupt)
+            timer.start()
+            try:
+                with pytest.raises(error) as caught: call('⎕←7 ⋄ {∇⍵}0')
+            finally: timer.join()
+            assert caught.value.output == ['7'] and capsys.readouterr().out == ('7\n' if call is apl else '')
+            assert apl('x') == 42
+    apl = Session()
+    process, ref = apl._worker.process, weakref.ref(apl)
+    del apl
+    gc.collect()
+    assert ref() is None and process.poll() is not None
+
+
+def test_native_wrong_thread_destruction(monkeypatch):
+    from miniapl._core import _Session
+    errors, held = [], [_Session()]
     monkeypatch.setattr(sys, 'unraisablehook', errors.append)
-    worker = Thread(target=lambda: held.pop())
+    worker = threading.Thread(target=lambda: held.pop())
     worker.start()
     worker.join()
-    assert len(errors) == 1 and isinstance(errors[0].exc_value, RuntimeError)
-    assert 'unsendable' in str(errors[0].exc_value)
+    assert len(errors) == 1 and 'unsendable' in str(errors[0].exc_value)
 
-def test_installed_command():
+
+def test_installed_command(tmp_path):
     for code, status, output in [('2×3+4', 0, '14\n'), ('¯2+1÷0', 1, '')]:
         res = subprocess.run(['miniapl', '-e', code], capture_output=True, text=True, timeout=10)
         assert (res.returncode, res.stdout) == (status, output)
         if status: assert 'DOMAIN ERROR' in res.stderr and '<expression>:1:5' in res.stderr
         else: assert not res.stderr
-    res = subprocess.run(['miniapl'], input='1÷0\n2+2\n', capture_output=True, text=True, timeout=10)
-    assert (res.returncode, res.stdout) == (1, '4\n')
-    assert 'DOMAIN ERROR' in res.stderr
-
-def test_installed_json_command():
-    requests = '\n'.join(json.dumps(c) for c in ['v←⍳10', '+/v', '1÷0', '2+2']) + '\n'
-    res = subprocess.run(['miniapl', '--json'], input=requests, capture_output=True, text=True, timeout=10)
-    assert res.returncode == 0 and not res.stderr
-    replies = [json.loads(line) for line in res.stdout.splitlines()]
-    assert replies[1]['value'] == {'shape': [], 'data': [55], 'prototype': 0}
-    assert replies[2]['error']['kind'] == 'DOMAIN ERROR'
-    assert replies[3]['value']['data'] == [4]
-
-def test_retained_definitions_and_source():
-    with Session() as s:
-        s.eval('add←{⍺+⍵} ⋄ avg←+/÷≢')
-        assert s.eval('add/1 2 3').value.to_python() == 6
-        assert s.eval('avg 2 4 9').value.to_python() == 5
-        definition = 'bad←{1÷⍵}'
-        s.eval(definition)
-        with pytest.raises(AplError) as caught: s.eval('bad 0')
-        assert caught.value.source == definition
-        assert caught.value.calls == [{'source_name': '<input>', 'source': 'bad 0', 'span': (0, 3)}]
-        assert s.eval('2+2').value.to_python() == 4
-
-def test_source_file(tmp_path):
     path = tmp_path/'lesson.apl'
     path.write_text('v←⍳10\nsum←+/\nsum v\n', encoding='utf-8')
     res = subprocess.run(['miniapl', str(path)], capture_output=True, text=True, timeout=10)
     assert (res.returncode, res.stdout, res.stderr) == (0, '55\n', '')
 
-def test_exact_values_and_recovery():
-    with Session() as s:
-        a = s.eval('9007199254740993x 0.5 1r3').value
-        assert a.to_python() == [9007199254740993, 0.5, Fraction(1, 3)]
-        assert [type(o) for o in a.data] == [int, float, Fraction] and type(a.prototype) is int
-        r = s.eval('1r3+1r6')
-        assert r.output == ['1r2'] and r.value.to_python() == Fraction(1, 2)
-        assert type(s.eval('1x÷2').value.to_python()) is float
-        assert s.eval('6x÷3x').output == ['2x']
-        assert s.eval('(1x 1r3)(0.5 2x)').value.to_python() == [[1, Fraction(1, 3)], [0.5, 2]]
-        empty = s.eval('0/1r3').value
-        assert empty.shape == (0,) and type(empty.prototype) is int
-        with pytest.raises(AplError) as caught: s.eval('⎕←1x ⋄ 1x÷0x')
-        assert caught.value.output == ['1x'] and caught.value.kind == 'DOMAIN ERROR'
-        assert s.eval('0.3=0.1+0.2').value.to_python() == 1
-        # Native big-int transfer must not depend on Python's decimal-string conversion limit.
-        huge = s.eval('1' + '0'*4500 + 'x').value
-    assert huge.to_python() == 10**4500
-    assert a.to_python() == [9007199254740993, 0.5, Fraction(1, 3)]
 
-def test_exact_installed_command_and_json():
-    res = subprocess.run(['miniapl', '-e', '1x÷3x ⋄ 6x÷3x ⋄ 1x÷3'], capture_output=True, text=True, timeout=10)
-    assert (res.returncode, res.stdout, res.stderr) == (0, '1r3\n2x\n0.3333333333333333\n', '')
-    requests = '\n'.join(json.dumps(c) for c in ['v←9007199254740993x 0.5 1r3', 'v', '0/1r3', '1r0', '1r3+1r6', '2x*100x', '2<3']) + '\n'
-    res = subprocess.run(['miniapl', '--json'], input=requests, capture_output=True, text=True, timeout=10)
+def test_installed_json_command():
+    codes = ['v←9007199254740993x 0.5 1r3', 'v', '0/1r3', '1r0', '1r3+1r6', '2x*100x', '1J2 3J4']
+    res = subprocess.run(['miniapl', '--json'], input='\n'.join(json.dumps(c) for c in codes)+'\n', capture_output=True, text=True, timeout=10)
     assert res.returncode == 0 and not res.stderr
     replies = [json.loads(line) for line in res.stdout.splitlines()]
     assert replies[1]['value'] == {'shape': [3], 'data': [9007199254740993, 0.5, {'rational': ['1', '3']}], 'prototype': 0}
@@ -166,25 +181,4 @@ def test_exact_installed_command_and_json():
     assert replies[3]['error']['kind'] == 'DOMAIN ERROR'
     assert replies[4]['value']['data'] == [{'rational': ['1', '2']}]
     assert replies[5]['value']['data'] == [2**100]
-    assert type(replies[5]['value']['data'][0]) is int
-    assert replies[6]['value']['data'] == [1] and replies[6]['output'] == ['1x']
-
-def test_complex_python_and_json():
-    with Session() as s:
-        a = s.eval('1x 0.5 1J2').value
-        assert a.to_python() == [1, 0.5, 1+2j] and [type(o) for o in a.data] == [int, float, complex]
-        assert s.eval('+1J2').value.to_python() == 1-2j
-        real = s.eval('1J2×1J¯2').value.to_python()
-        assert type(real) is float and real == 5
-        empty = s.eval('0/1J2').value
-        assert empty.shape == (0,) and empty.data == () and type(empty.prototype) is float
-        with pytest.raises(AplError): s.eval('1J2÷0')
-        assert s.eval('1J2+3J4').value.to_python() == 4+6j
-    assert a.to_python() == [1, 0.5, 1+2j]  # copied complex values survive closing the session
-    requests = '\n'.join(json.dumps(c) for c in ['1J2 3J4', '0/1J2', '1J2×1J¯2']) + '\n'
-    res = subprocess.run(['miniapl', '--json'], input=requests, capture_output=True, text=True, timeout=10)
-    assert res.returncode == 0 and not res.stderr
-    replies = [json.loads(line) for line in res.stdout.splitlines()]
-    assert replies[0]['value'] == {'shape': [2], 'data': [{'complex': [1, 2]}, {'complex': [3, 4]}], 'prototype': 0}
-    assert replies[1]['value'] == {'shape': [0], 'data': [], 'prototype': 0}
-    assert replies[2]['value']['data'] == [5] and replies[2]['output'] == ['5']
+    assert replies[6]['value']['data'] == [{'complex': [1, 2]}, {'complex': [3, 4]}]

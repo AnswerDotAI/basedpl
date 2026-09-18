@@ -64,45 +64,54 @@ impl PySession {
     fn set(&mut self, name: &str, value: &Bound<'_, PyDict>) -> PyResult<()> {
         self.inner.set(name, import_array(value, 0)?).map_err(|_| PyValueError::new_err("binding requires an ordinary APL name"))
     }
-    #[pyo3(signature = (code, timeout=None))]
-    fn eval(&mut self, py: Python<'_>, code: &str, timeout: Option<f64>) -> PyResult<Py<PyDict>> {
-        let result = match timeout {
-            Some(seconds) => self.inner.eval_timeout(
-                code,
-                std::time::Duration::try_from_secs_f64(seconds).map_err(|_| PyValueError::new_err("timeout must be finite and nonnegative"))?,
-            ),
-            None => self.inner.eval(code),
-        };
-        let value = result.value.as_ref().map(|a| array(py, a)).transpose()?;
-        let error = result
-            .error
-            .as_ref()
-            .map(|e| -> PyResult<Py<PyDict>> {
-                let d = PyDict::new(py);
-                d.set_item("kind", e.kind.to_string())?;
-                d.set_item("message", &e.message)?;
-                d.set_item("source_name", &e.span.source.name)?;
-                d.set_item("source", &e.span.source.text)?;
-                d.set_item("span", (e.span.range.start, e.span.range.end))?;
-                d.set_item("display", e.to_string())?;
-                let calls = PyList::empty(py);
-                for span in &e.calls {
-                    let call = PyDict::new(py);
-                    call.set_item("source_name", &span.source.name)?;
-                    call.set_item("source", &span.source.text)?;
-                    call.set_item("span", (span.range.start, span.range.end))?;
-                    calls.append(call)?;
-                }
-                d.set_item("calls", calls)?;
-                Ok(d.unbind())
-            })
-            .transpose()?;
-        let d = PyDict::new(py);
-        d.set_item("value", value)?;
-        d.set_item("output", result.output)?;
-        d.set_item("error", error)?;
-        Ok(d.unbind())
+    #[pyo3(signature = (code, timeout=None, *, echo=true))]
+    fn eval(&mut self, py: Python<'_>, code: &str, timeout: Option<f64>, echo: bool) -> PyResult<Py<PyDict>> {
+        response(py, self.inner.eval_with(code, options(timeout, echo)?))
     }
+    #[pyo3(signature = (function, args, timeout=None, *, echo=true))]
+    fn call(&mut self, py: Python<'_>, function: &str, args: Vec<Bound<'_, PyDict>>, timeout: Option<f64>, echo: bool) -> PyResult<Py<PyDict>> {
+        let args = args.iter().map(|a| import_array(a, 0)).collect::<PyResult<Vec<_>>>()?;
+        response(py, self.inner.call_with(function, &args, options(timeout, echo)?))
+    }
+}
+
+fn options(timeout: Option<f64>, echo: bool) -> PyResult<crate::EvalOptions> {
+    let timeout = timeout
+        .map(|seconds| std::time::Duration::try_from_secs_f64(seconds).map_err(|_| PyValueError::new_err("timeout must be finite and nonnegative")))
+        .transpose()?;
+    Ok(crate::EvalOptions { timeout, echo, ..crate::EvalOptions::default() })
+}
+
+fn response(py: Python<'_>, result: crate::Evaluation) -> PyResult<Py<PyDict>> {
+    let value = result.value.as_ref().map(|a| array(py, a)).transpose()?;
+    let error = result
+        .error
+        .as_ref()
+        .map(|e| -> PyResult<Py<PyDict>> {
+            let d = PyDict::new(py);
+            d.set_item("kind", e.kind.to_string())?;
+            d.set_item("message", &e.message)?;
+            d.set_item("source_name", &e.span.source.name)?;
+            d.set_item("source", &e.span.source.text)?;
+            d.set_item("span", (e.span.range.start, e.span.range.end))?;
+            d.set_item("display", e.to_string())?;
+            let calls = PyList::empty(py);
+            for span in &e.calls {
+                let call = PyDict::new(py);
+                call.set_item("source_name", &span.source.name)?;
+                call.set_item("source", &span.source.text)?;
+                call.set_item("span", (span.range.start, span.range.end))?;
+                calls.append(call)?;
+            }
+            d.set_item("calls", calls)?;
+            Ok(d.unbind())
+        })
+        .transpose()?;
+    let d = PyDict::new(py);
+    d.set_item("value", value)?;
+    d.set_item("output", result.output)?;
+    d.set_item("error", error)?;
+    Ok(d.unbind())
 }
 
 #[pyfunction]
@@ -121,5 +130,6 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(run_cli, m)?)?;
     m.add_function(wrap_pyfunction!(_check_reference, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    m.add("symbols", crate::editor::SYMBOLS.to_vec())?;
     Ok(())
 }

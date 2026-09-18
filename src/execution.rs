@@ -13,15 +13,21 @@ use std::{
 pub struct InterruptHandle(Arc<AtomicBool>);
 impl InterruptHandle { pub fn interrupt(&self) { self.0.store(true, Ordering::Relaxed); } }
 
-#[derive(Default)]
-pub struct EvalOptions { pub interrupt: InterruptHandle, pub timeout: Option<Duration> }
+pub struct EvalOptions {
+    pub interrupt: InterruptHandle,
+    pub timeout: Option<Duration>,
+    /// Include implicit expression display; explicit output is always retained.
+    pub echo: bool,
+}
+impl Default for EvalOptions { fn default() -> Self { Self { interrupt: InterruptHandle::default(), timeout: None, echo: true } } }
 
 #[derive(Default)]
-pub(crate) struct Execution { interrupt: InterruptHandle, timeout: Option<(Instant, Duration)> }
+pub(crate) struct Execution { interrupt: InterruptHandle, timeout: Option<(Instant, Duration)>, pub echo: bool }
 impl Execution {
     pub(crate) fn begin(&mut self, options: EvalOptions) {
         self.interrupt = options.interrupt;
         self.timeout = options.timeout.map(|d| (Instant::now(), d));
+        self.echo = options.echo;
     }
     pub(crate) fn check(&self, span: &Span) -> Result<(), Error> {
         if self.interrupt.0.load(Ordering::Relaxed) { return Err(span.error(ErrorKind::Interrupt, "evaluation interrupted")); }

@@ -31,7 +31,7 @@ To enable a case:
 
 4. Change its status to `active` and update its reason when the assertion passes and the semantic adaptation is reviewed. Run the normal suite.
 
-Pending cases do not catch arbitrary failures or count as passing. A case without an expectation fails explicitly when selected. New failures in active cases fail the suite. Tests compare shape, nesting, data and prototype. Comparisons are exact unless the case has an explicit `relative_tolerance` for reference rounding differences. Display expectations remain separate from array expectations.
+Pending cases do not catch arbitrary failures or count as passing. A case without an expectation fails explicitly when selected. New failures in active cases fail the suite. Tests compare shape, nesting, data and prototype. Numeric comparisons are exact unless a case specifies `relative_tolerance` or `absolute_tolerance`. The bound is `max(absolute, relative × max(|actual|, |expected|))`. Absolute tolerance covers numerical solver roundoff near zero. Shape and nesting remain exact. Display expectations remain separate from array expectations.
 
 ## Find cases ready to enable
 
@@ -54,11 +54,11 @@ Rebuild the installed command after Rust changes, then scan:
 maturin develop --release
 python scripts/reference.py scan
 python scripts/reference.py show --source april
-python scripts/reference.py show --status mismatch --match '∧|∨' --details
+python scripts/reference.py show --status mismatch --match '∧|∨'
 python scripts/reference.py activate --source april --match 'april:590\b'
 ```
 
-`scan` checks pending cases with independent expectations and collects every outcome. It never edits fixtures. `show` defaults to passes; filter by source, result status or regex over ID/code/message. Use `--limit` to change the display count. `activate` changes the reviewed passing selection to active. It refuses fixture records changed since the scan. Review dialect, origin and prerequisites before activation; a passing result alone is not that review.
+`scan` checks pending cases with independent expectations and collects every outcome. It never edits fixtures. `show` defaults to passes; filter by source, result status or regex over ID/code/message. Use `--limit` to change the display count. `--details` dumps complete records and arrays; use it only for a narrow selection. `activate` changes the reviewed passing selection to active. It refuses fixture records changed since the scan. Review dialect, origin and prerequisites before activation; a passing result alone is not that review.
 
 Rust's `reference::check` owns comparison for the test runner, worker and private Python `_check_reference(json_case, timeout)` API. Each case receives a fresh session inside a persistent worker. The scanner uses a 0.25-second cooperative deadline per case, adjustable with `--timeout`. An unresponsive process is killed after the client's grace period and replaced for the next case. The failed case is not retried. Random cases, missing expectations and scope questions are counted separately, not treated as execution failures.
 

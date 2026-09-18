@@ -36,6 +36,7 @@ incremental = false
 [dependencies]
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 unicode-width = { version = ">=0.2.2, <1", default-features = false }
+icu_casemap = ">=2, <3"
 rustyline = { version = "18.0.1", default-features = false, features = ["custom-bindings"] }
 pyo3 = { version = ">=0.29.2, <1", optional = true, features = ["num-bigint"] }
 num-rational = ">=0.4.2, <1"
@@ -43,6 +44,7 @@ num-complex = ">=0.4.6, <1"
 num-bigint = ">=0.4.6, <1"
 num-traits = ">=0.2.19, <1"
 libm = ">=0.2, <1"
+lambert_w = ">=1.2.34, <2"
 rand = ">=0.9, <1"
 faer = { version = ">=0.24.4, <1", default-features = false, features = ["std", "linalg"] }
 

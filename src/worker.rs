@@ -34,8 +34,14 @@ pub(crate) fn run(output: &mut impl Write) -> io::Result<()> {
             Some(value) => Some(Duration::from_millis(value.as_u64().ok_or_else(|| io::Error::other("timeout_ms must be a nonnegative integer"))?)),
             None => None,
         };
-        let options = EvalOptions { interrupt, timeout };
-        let result = if let Some(case) = request.get("case") { crate::reference::check(case, options) } else if let Some(code) = request["code"].as_str() { crate::protocol::response(session.eval_with(code, options)) } else { json!({"status":"invalid", "message":"expected code or case"}) };
+        let echo = match request.get("echo") { Some(value) => value.as_bool().ok_or_else(|| io::Error::other("echo must be a boolean"))?, None => true };
+        let options = EvalOptions { interrupt, timeout, echo };
+        let result = if let Some(case) = request.get("case") { crate::reference::check(case, options) } else {
+            match crate::protocol::request(&mut session, &request, options) {
+                Ok(result) => crate::protocol::response(result),
+                Err(message) => json!({"value":null, "output":[], "error":{"kind":"REQUEST ERROR", "message":message}}),
+            }
+        };
         active.lock().unwrap().remove(&id);
         serde_json::to_writer(&mut *output, &json!({"id":id, "result":result}))?;
         writeln!(output)?;
