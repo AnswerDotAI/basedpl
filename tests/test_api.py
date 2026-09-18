@@ -44,6 +44,10 @@ def test_words_binding_and_operators():
     assert (plus.reduce() + 2)([1, 2]).py == 5
     assert (2 - plus.reduce())([1, 2]).py == -1
     np.testing.assert_array_equal(plus.scan()([1, 2, 3]), [1, 3, 6])
+    np.testing.assert_array_equal(subtract.scan()([1, 2, 3]), [1, -1, -4])
+    np.testing.assert_array_equal(plus.scan()(10, [1, 2, 3]), [11, 13, 16])
+    assert type(tally('abc').py) is int and shape(Array([1., 2.])).apl == '2x'
+    assert (Array('abc') + 1).py == 'bcd'
     np.testing.assert_array_equal(plus.reduce()[1](Array([[1, 2], [3, 4]])), [4, 6])
     np.testing.assert_array_equal(times.outer()([1, 2], [3, 4]), [[3, 4], [6, 8]])
     assert (plus @ times)([1, 2], [3, 4]).py == 11
@@ -56,6 +60,8 @@ def test_words_binding_and_operators():
     np.testing.assert_array_equal(reverse.rank(1)(Array([[1, 2], [3, 4]])), [[2, 1], [4, 3]])
     np.testing.assert_array_equal(times(2).at([2, 4])([1, 2, 3, 4]), [1, 4, 3, 8])
     with pytest.raises(TypeError): plus @ Array(2)
+    with pytest.raises(ValueError, match='DOMAIN'): plus.over(3)
+    with pytest.raises(ValueError, match='DOMAIN'): plus.stencil(times)
 
 
 def test_retained_and_late_bound_functions(capsys):

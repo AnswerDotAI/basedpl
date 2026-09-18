@@ -2402,9 +2402,9 @@ g←÷ ⋄ g/⍬
 +\[1]3 4⍴⍳12
 3 4⍴1 2 3 4 6 8 10 12 15 18 21 24
 
-⍝ april:1558 —
+⍝ april:1558 — miniapl left-accumulating scan
 -\2 3 4⍴⍳24
-2 3 4⍴1 ¯1 2 ¯2 5 ¯1 6 ¯2 9 ¯1 10 ¯2 13 ¯1 14 ¯2 17 ¯1 18 ¯2 21 ¯1 22 ¯2
+2 3 4⍴1 ¯1 ¯4 ¯8 5 ¯1 ¯8 ¯16 9 ¯1 ¯12 ¯24 13 ¯1 ¯16 ¯32 17 ¯1 ¯20 ¯40 21 ¯1 ¯24 ¯48
 
 ⍝ april:1566 —
 +⍀1 2 3 4 5
@@ -2414,9 +2414,9 @@ g←÷ ⋄ g/⍬
 +⍀3 4⍴⍳12
 3 4⍴1 2 3 4 6 8 10 12 15 18 21 24
 
-⍝ april:1568 —
+⍝ april:1568 — miniapl left-accumulating scan
 {⍺×⍵+3}⍀3 4⍴⍳12
-3 4⍴1 2 3 4 8 18 30 44 63 162 303 492
+3 4⍴1 2 3 4 8 18 30 44 96 234 420 660
 
 ⍝ april:1569 —
 +⍀[2]3 4⍴⍳12
@@ -3970,9 +3970,9 @@ format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
 +\⍣¯1⊢+\⍳5
 1 2 3 4 5
 
-⍝ april:2287 — Inversion of composed addition applied over each
+⍝ april:2287 — Inversion of composed addition applied over each; miniapl left scan
 +∘5¨⍣¯1⊢-\⍳5
-¯4 ¯6 ¯3 ¯7 ¯2
+¯4 ¯6 ¯9 ¯13 ¯18
 
 ⍝ april:2288 — Inversion of composed division applied over each
 ÷∘5¨⍣¯1⊢+\⍳5
@@ -5071,7 +5071,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
 ⍝ =>
 ('┌→────────────┐') ('│ ┌→────────┐ │') ('│ │     ┌→┐ │ │') ('│ │ a b │c│ │ │') ('│ │ - - └─┘ │ │') ('│ └∊────────┘ │') ('└∊────────────┘')
 
-⍝ april/libraries/dfns/array/demo.lisp:80 — Upstream boxed-display helper ported to origin 1; glyph-only rank-2 format and standard operand names; original expected text
+⍝ april/libraries/dfns/array/demo.lisp:80 — Upstream boxed-display helper ported to origin 1; glyph-only rank-2 format and standard operand names; original expected text; Format exact counts as ordinary numbers
 displays ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
   box←{
     shp w←open\⍵
@@ -5091,7 +5091,7 @@ displays ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
   trim←{(1⊃⍵)((~1 1⍷∧⌿(2⊃⍵)=' ')/(2⊃⍵))}
   char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
-  qfmt←{(⍕⍴⍺)(format open ⍵)}
+  qfmt←{(⍕0+⍴⍺)(format open ⍵)}
   {
     0=≡⍵:' '⍪(format ⍵)⍪(1+' '≡⊃0⍴⍵)⊃' -'
     1 ⍬≡(≡⍵)(⍴⍵):'∇' 0 0 box(,'─')(format ⍵)
@@ -5103,7 +5103,7 @@ displays ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
 ⍝ =>
 ('┌→─4────────────────┐') ('│     ┌→─3┐ ┌→─2 3┐ │') ('│ 1 a │abc│ ↓1 2 3│ │') ('│   - └───┘ │4 5 6│ │') ('│           └~────┘ │') ('└∊──────────────────┘')
 
-⍝ april/libraries/dfns/array/demo.lisp:86 — Upstream boxed-display helper ported to origin 1; glyph-only rank-2 format and standard operand names; original expected text
+⍝ april/libraries/dfns/array/demo.lisp:86 — Upstream boxed-display helper ported to origin 1; glyph-only rank-2 format and standard operand names; original expected text; Format exact counts as ordinary numbers
 displayr ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
   box←{
     vrt hrz←(¯1+⍴⍵)⍴¨'│─'
@@ -5115,7 +5115,7 @@ displayr ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
     lft←⍉'┌',(↑lax),'└'
     lft,(top⍪⍵⍪bot),rgt
   }
-  deco←{⍺←type open ⍵ ⋄ (⍴⍴⍵),(⊂⍴⍵),⍺,axes ⍵}
+  deco←{⍺←type open ⍵ ⋄ (⍴⍴⍵),(⊂0+⍴⍵),⍺,axes ⍵}
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
@@ -8366,14 +8366,14 @@ subs ← {
 ⍝ =>
 0 2 3 2 3 0
 
-⍝ april/libraries/dfns/graph/demo.lisp:14 —
+⍝ april/libraries/dfns/graph/demo.lisp:14 — First-true masks use cumulative counts under miniapl left scan
 assign ← {
   step0←{step1(⌽⌈\⌽⍴⍵)↑⍵}
   step1←{step2↑(↓⍵)-⌊/⍵}
   step2←{
     stars←{
       ~1∊⍵:⍺
-      next←<\<⍀⍵
+      next←{⍵∧1=+\⍵}{⍵∧1=+⍀⍵}⍵
       mask←(rows next)∨cols next
       (⍺∨next)∇ ⍵>mask
     }
@@ -8415,7 +8415,7 @@ assign ← {
   }
   rows←{(⍴⍵)⍴(⊃⌽⍴⍵)/∨/⍵}
   cols←{(⍴⍵)⍴∨⌿⍵}
-  first←{(⍴⍵)⍴<\,⍵}
+  first←{(⍴⍵)⍴{⍵∧1=+\⍵},⍵}
   (⍴⍵)↑step0 ⍵
 }
 costs1 ← ↑(72 99 88)(23 30 35)(51 59 84)
@@ -8423,14 +8423,14 @@ assign costs1
 ⍝ =>
 3 3⍴1 0 0 0 0 1 0 1 0
 
-⍝ april/libraries/dfns/graph/demo.lisp:15 —
+⍝ april/libraries/dfns/graph/demo.lisp:15 — First-true masks use cumulative counts under miniapl left scan
 assign ← {
   step0←{step1(⌽⌈\⌽⍴⍵)↑⍵}
   step1←{step2↑(↓⍵)-⌊/⍵}
   step2←{
     stars←{
       ~1∊⍵:⍺
-      next←<\<⍀⍵
+      next←{⍵∧1=+\⍵}{⍵∧1=+⍀⍵}⍵
       mask←(rows next)∨cols next
       (⍺∨next)∇ ⍵>mask
     }
@@ -8472,7 +8472,7 @@ assign ← {
   }
   rows←{(⍴⍵)⍴(⊃⌽⍴⍵)/∨/⍵}
   cols←{(⍴⍵)⍴∨⌿⍵}
-  first←{(⍴⍵)⍴<\,⍵}
+  first←{(⍴⍵)⍴{⍵∧1=+\⍵},⍵}
   (⍴⍵)↑step0 ⍵
 }
 costs1 ← ↑(72 99 88)(23 30 35)(51 59 84)
@@ -8480,14 +8480,14 @@ assign -costs1
 ⍝ =>
 3 3⍴0 1 0 1 0 0 0 0 1
 
-⍝ april/libraries/dfns/graph/demo.lisp:16 —
+⍝ april/libraries/dfns/graph/demo.lisp:16 — First-true masks use cumulative counts under miniapl left scan
 assign ← {
   step0←{step1(⌽⌈\⌽⍴⍵)↑⍵}
   step1←{step2↑(↓⍵)-⌊/⍵}
   step2←{
     stars←{
       ~1∊⍵:⍺
-      next←<\<⍀⍵
+      next←{⍵∧1=+\⍵}{⍵∧1=+⍀⍵}⍵
       mask←(rows next)∨cols next
       (⍺∨next)∇ ⍵>mask
     }
@@ -8529,7 +8529,7 @@ assign ← {
   }
   rows←{(⍴⍵)⍴(⊃⌽⍴⍵)/∨/⍵}
   cols←{(⍴⍵)⍴∨⌿⍵}
-  first←{(⍴⍵)⍴<\,⍵}
+  first←{(⍴⍵)⍴{⍵∧1=+\⍵},⍵}
   (⍴⍵)↑step0 ⍵
 }
 costs1 ← ↑(72 99 88)(23 30 35)(51 59 84)
@@ -8537,14 +8537,14 @@ costs1 ← ↑(72 99 88)(23 30 35)(51 59 84)
 ⍝ =>
 166
 
-⍝ april/libraries/dfns/graph/demo.lisp:18 —
+⍝ april/libraries/dfns/graph/demo.lisp:18 — First-true masks use cumulative counts under miniapl left scan
 assign ← {
   step0←{step1(⌽⌈\⌽⍴⍵)↑⍵}
   step1←{step2↑(↓⍵)-⌊/⍵}
   step2←{
     stars←{
       ~1∊⍵:⍺
-      next←<\<⍀⍵
+      next←{⍵∧1=+\⍵}{⍵∧1=+⍀⍵}⍵
       mask←(rows next)∨cols next
       (⍺∨next)∇ ⍵>mask
     }
@@ -8586,7 +8586,7 @@ assign ← {
   }
   rows←{(⍴⍵)⍴(⊃⌽⍴⍵)/∨/⍵}
   cols←{(⍴⍵)⍴∨⌿⍵}
-  first←{(⍴⍵)⍴<\,⍵}
+  first←{(⍴⍵)⍴{⍵∧1=+\⍵},⍵}
   (⍴⍵)↑step0 ⍵
 }
 costs2 ← ↑(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 43 27 5 33 21 36 46)(39 14 3 37 17 32 38 50 19 13)(50 37 38 33 4 32 45 14 22 39)(24 12 14 18 9 25 45 46 4 46)
@@ -8594,14 +8594,14 @@ assign costs2
 ⍝ =>
 6 10⍴1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0
 
-⍝ april/libraries/dfns/graph/demo.lisp:20 —
+⍝ april/libraries/dfns/graph/demo.lisp:20 — First-true masks use cumulative counts under miniapl left scan
 assign ← {
   step0←{step1(⌽⌈\⌽⍴⍵)↑⍵}
   step1←{step2↑(↓⍵)-⌊/⍵}
   step2←{
     stars←{
       ~1∊⍵:⍺
-      next←<\<⍀⍵
+      next←{⍵∧1=+\⍵}{⍵∧1=+⍀⍵}⍵
       mask←(rows next)∨cols next
       (⍺∨next)∇ ⍵>mask
     }
@@ -8643,7 +8643,7 @@ assign ← {
   }
   rows←{(⍴⍵)⍴(⊃⌽⍴⍵)/∨/⍵}
   cols←{(⍴⍵)⍴∨⌿⍵}
-  first←{(⍴⍵)⍴<\,⍵}
+  first←{(⍴⍵)⍴{⍵∧1=+\⍵},⍵}
   (⍴⍵)↑step0 ⍵
 }
 costs2 ← ↑(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 43 27 5 33 21 36 46)(39 14 3 37 17 32 38 50 19 13)(50 37 38 33 4 32 45 14 22 39)(24 12 14 18 9 25 45 46 4 46)
@@ -8651,14 +8651,14 @@ costs2 ← ↑(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 
 ⍝ =>
 6 10⍴7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 5 0 0 0 0 0 0 3 0 0 0 0 0 0 0 0 0 0 0 4 0 0 0 0 0 0 0 0 0 0 0 0 0 4 0
 
-⍝ april/libraries/dfns/graph/demo.lisp:22 —
+⍝ april/libraries/dfns/graph/demo.lisp:22 — First-true masks use cumulative counts under miniapl left scan
 assign ← {
   step0←{step1(⌽⌈\⌽⍴⍵)↑⍵}
   step1←{step2↑(↓⍵)-⌊/⍵}
   step2←{
     stars←{
       ~1∊⍵:⍺
-      next←<\<⍀⍵
+      next←{⍵∧1=+\⍵}{⍵∧1=+⍀⍵}⍵
       mask←(rows next)∨cols next
       (⍺∨next)∇ ⍵>mask
     }
@@ -8700,7 +8700,7 @@ assign ← {
   }
   rows←{(⍴⍵)⍴(⊃⌽⍴⍵)/∨/⍵}
   cols←{(⍴⍵)⍴∨⌿⍵}
-  first←{(⍴⍵)⍴<\,⍵}
+  first←{(⍴⍵)⍴{⍵∧1=+\⍵},⍵}
   (⍴⍵)↑step0 ⍵
 }
 costs2 ← ↑(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 43 27 5 33 21 36 46)(39 14 3 37 17 32 38 50 19 13)(50 37 38 33 4 32 45 14 22 39)(24 12 14 18 9 25 45 46 4 46)
@@ -8708,14 +8708,14 @@ costs2 ← ↑(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 
 ⍝ =>
 24
 
-⍝ april/libraries/dfns/graph/demo.lisp:23 —
+⍝ april/libraries/dfns/graph/demo.lisp:23 — First-true masks use cumulative counts under miniapl left scan
 assign ← {
   step0←{step1(⌽⌈\⌽⍴⍵)↑⍵}
   step1←{step2↑(↓⍵)-⌊/⍵}
   step2←{
     stars←{
       ~1∊⍵:⍺
-      next←<\<⍀⍵
+      next←{⍵∧1=+\⍵}{⍵∧1=+⍀⍵}⍵
       mask←(rows next)∨cols next
       (⍺∨next)∇ ⍵>mask
     }
@@ -8757,7 +8757,7 @@ assign ← {
   }
   rows←{(⍴⍵)⍴(⊃⌽⍴⍵)/∨/⍵}
   cols←{(⍴⍵)⍴∨⌿⍵}
-  first←{(⍴⍵)⍴<\,⍵}
+  first←{(⍴⍵)⍴{⍵∧1=+\⍵},⍵}
   (⍴⍵)↑step0 ⍵
 }
 costs2 ← ↑(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 43 27 5 33 21 36 46)(39 14 3 37 17 32 38 50 19 13)(50 37 38 33 4 32 45 14 22 39)(24 12 14 18 9 25 45 46 4 46)
@@ -8765,14 +8765,14 @@ assign -costs2
 ⍝ =>
 6 10⍴0 0 0 0 0 0 0 0 1 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1
 
-⍝ april/libraries/dfns/graph/demo.lisp:25 —
+⍝ april/libraries/dfns/graph/demo.lisp:25 — First-true masks use cumulative counts under miniapl left scan
 assign ← {
   step0←{step1(⌽⌈\⌽⍴⍵)↑⍵}
   step1←{step2↑(↓⍵)-⌊/⍵}
   step2←{
     stars←{
       ~1∊⍵:⍺
-      next←<\<⍀⍵
+      next←{⍵∧1=+\⍵}{⍵∧1=+⍀⍵}⍵
       mask←(rows next)∨cols next
       (⍺∨next)∇ ⍵>mask
     }
@@ -8814,7 +8814,7 @@ assign ← {
   }
   rows←{(⍴⍵)⍴(⊃⌽⍴⍵)/∨/⍵}
   cols←{(⍴⍵)⍴∨⌿⍵}
-  first←{(⍴⍵)⍴<\,⍵}
+  first←{(⍴⍵)⍴{⍵∧1=+\⍵},⍵}
   (⍴⍵)↑step0 ⍵
 }
 costs2 ← ↑(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 43 27 5 33 21 36 46)(39 14 3 37 17 32 38 50 19 13)(50 37 38 33 4 32 45 14 22 39)(24 12 14 18 9 25 45 46 4 46)
@@ -8822,14 +8822,14 @@ costs2 ← ↑(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 
 ⍝ =>
 6 10⍴0 0 0 0 0 0 0 0 47 0 0 42 0 0 0 0 0 0 0 0 0 0 47 0 0 0 0 0 0 0 0 0 0 0 0 0 0 50 0 0 50 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 46
 
-⍝ april/libraries/dfns/graph/demo.lisp:27 —
+⍝ april/libraries/dfns/graph/demo.lisp:27 — First-true masks use cumulative counts under miniapl left scan
 assign ← {
   step0←{step1(⌽⌈\⌽⍴⍵)↑⍵}
   step1←{step2↑(↓⍵)-⌊/⍵}
   step2←{
     stars←{
       ~1∊⍵:⍺
-      next←<\<⍀⍵
+      next←{⍵∧1=+\⍵}{⍵∧1=+⍀⍵}⍵
       mask←(rows next)∨cols next
       (⍺∨next)∇ ⍵>mask
     }
@@ -8871,7 +8871,7 @@ assign ← {
   }
   rows←{(⍴⍵)⍴(⊃⌽⍴⍵)/∨/⍵}
   cols←{(⍴⍵)⍴∨⌿⍵}
-  first←{(⍴⍵)⍴<\,⍵}
+  first←{(⍴⍵)⍴{⍵∧1=+\⍵},⍵}
   (⍴⍵)↑step0 ⍵
 }
 costs2 ← ↑(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 43 27 5 33 21 36 46)(39 14 3 37 17 32 38 50 19 13)(50 37 38 33 4 32 45 14 22 39)(24 12 14 18 9 25 45 46 4 46)
@@ -8879,14 +8879,14 @@ costs2 ← ↑(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 
 ⍝ =>
 282
 
-⍝ april/libraries/dfns/graph/demo.lisp:29 —
+⍝ april/libraries/dfns/graph/demo.lisp:29 — First-true masks use cumulative counts under miniapl left scan
 assign ← {
   step0←{step1(⌽⌈\⌽⍴⍵)↑⍵}
   step1←{step2↑(↓⍵)-⌊/⍵}
   step2←{
     stars←{
       ~1∊⍵:⍺
-      next←<\<⍀⍵
+      next←{⍵∧1=+\⍵}{⍵∧1=+⍀⍵}⍵
       mask←(rows next)∨cols next
       (⍺∨next)∇ ⍵>mask
     }
@@ -8928,7 +8928,7 @@ assign ← {
   }
   rows←{(⍴⍵)⍴(⊃⌽⍴⍵)/∨/⍵}
   cols←{(⍴⍵)⍴∨⌿⍵}
-  first←{(⍴⍵)⍴<\,⍵}
+  first←{(⍴⍵)⍴{⍵∧1=+\⍵},⍵}
   (⍴⍵)↑step0 ⍵
 }
 costs3 ← ↑(14 1 21 2 36 47)(12 10 16 45 33 8)(35 20 20 25 8 30)(43 30 48 28 8 50)(21 8 29 13 25 24)(49 7 10 16 32 7)(33 32 41 13 24 20)(11 2 46 22 8 48)(21 7 45 5 9 4)(19 13 7 40 23 18)
@@ -9174,21 +9174,21 @@ g dfspan 3
 ⍝ =>
 4 3 ¯1 3 4
 
-⍝ april/libraries/dfns/graph/demo.lisp:56 —
-show ← {↑(⍕¨⍳⍴⍵),¨' → '∘,¨⍕¨⍵}
+⍝ april/libraries/dfns/graph/demo.lisp:56 — Format exact counts as ordinary numbers
+show ← {↑(⍕¨⍳0+⍴⍵),¨' → '∘,¨⍕¨⍵}
 scg1 ← ,¨1(2 4 5)(3 6)(2 7)(0 5)6 5(3 6)
 ↓show scg1
 ⍝ =>
 ('1 → 1    ') ('2 → 2 4 5') ('3 → 3 6  ') ('4 → 2 7  ') ('5 → 0 5  ') ('6 → 6    ') ('7 → 5    ') ('8 → 3 6  ')
 
-⍝ april/libraries/dfns/graph/demo.lisp:59 —
-show ← {↑(⍕¨⍳⍴⍵),¨' → '∘,¨⍕¨⍵}
+⍝ april/libraries/dfns/graph/demo.lisp:59 — Format exact counts as ordinary numbers
+show ← {↑(⍕¨⍳0+⍴⍵),¨' → '∘,¨⍕¨⍵}
 scg2 ← ,¨4 0(1 3)2 1(1 4 6)(2 5)(3 6 7)
 ↓show scg2
 ⍝ =>
 ('1 → 4    ') ('2 → 0    ') ('3 → 1 3  ') ('4 → 2    ') ('5 → 1    ') ('6 → 1 4 6') ('7 → 2 5  ') ('8 → 3 6 7')
 
-⍝ april/libraries/dfns/graph/demo.lisp:64 —
+⍝ april/libraries/dfns/graph/demo.lisp:64 — First-true masks use cumulative counts under miniapl left scan
 scc ← {
   TT←(3/⊂0⊣¨G←⍵),1 ⍬
   C L X x S←⍳⍴TT
@@ -9228,10 +9228,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -9247,7 +9247,7 @@ scc scg1+1
 ⍝ =>
 1 1 2 2 1 3 3 2
 
-⍝ april/libraries/dfns/graph/demo.lisp:65 —
+⍝ april/libraries/dfns/graph/demo.lisp:65 — First-true masks use cumulative counts under miniapl left scan
 scc ← {
   TT←(3/⊂0⊣¨G←⍵),1 ⍬
   C L X x S←⍳⍴TT
@@ -9287,10 +9287,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -9306,7 +9306,7 @@ scc scg2+1
 ⍝ =>
 1 1 2 2 1 3 3 4
 
-⍝ april/libraries/dfns/graph/demo.lisp:66 —
+⍝ april/libraries/dfns/graph/demo.lisp:66 — First-true masks use cumulative counts under miniapl left scan
 scc ← {
   TT←(3/⊂0⊣¨G←⍵),1 ⍬
   C L X x S←⍳⍴TT
@@ -9346,10 +9346,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -9364,7 +9364,7 @@ scc 1⌽⍳10
 ⍝ =>
 1 1 1 1 1 1 1 1 1 1
 
-⍝ april/libraries/dfns/graph/demo.lisp:67 —
+⍝ april/libraries/dfns/graph/demo.lisp:67 — First-true masks use cumulative counts under miniapl left scan
 scc ← {
   TT←(3/⊂0⊣¨G←⍵),1 ⍬
   C L X x S←⍳⍴TT
@@ -9404,10 +9404,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -9422,7 +9422,7 @@ scc ⍳10
 ⍝ =>
 1 2 3 4 5 6 7 8 9 10
 
-⍝ april/libraries/dfns/graph/demo.lisp:68 —
+⍝ april/libraries/dfns/graph/demo.lisp:68 — First-true masks use cumulative counts under miniapl left scan
 scc ← {
   TT←(3/⊂0⊣¨G←⍵),1 ⍬
   C L X x S←⍳⍴TT
@@ -9462,10 +9462,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -9480,7 +9480,7 @@ scc 2⌽⍳10
 ⍝ =>
 1 2 1 2 1 2 1 2 1 2
 
-⍝ april/libraries/dfns/graph/demo.lisp:69 —
+⍝ april/libraries/dfns/graph/demo.lisp:69 — First-true masks use cumulative counts under miniapl left scan
 scc ← {
   TT←(3/⊂0⊣¨G←⍵),1 ⍬
   C L X x S←⍳⍴TT
@@ -9529,10 +9529,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -9549,7 +9549,7 @@ cond scg1+1
 ⍝ =>
 ((2 3) (1⍴3) (⍬)) ((1 2 5) (3 4 8) (6 7))
 
-⍝ april/libraries/dfns/graph/demo.lisp:70 —
+⍝ april/libraries/dfns/graph/demo.lisp:70 — First-true masks use cumulative counts under miniapl left scan
 scc ← {
   TT←(3/⊂0⊣¨G←⍵),1 ⍬
   C L X x S←⍳⍴TT
@@ -9589,10 +9589,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -9608,7 +9608,7 @@ scg1 ← ,¨1(2 4 5)(3 6)(2 7)(0 5)6 5(3 6)
 ⍝ =>
 0
 
-⍝ april/libraries/dfns/graph/demo.lisp:71 —
+⍝ april/libraries/dfns/graph/demo.lisp:71 — First-true masks use cumulative counts under miniapl left scan
 scc ← {
   TT←(3/⊂0⊣¨G←⍵),1 ⍬
   C L X x S←⍳⍴TT
@@ -9648,10 +9648,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -9767,7 +9767,7 @@ stpaths¨g∘span¨⍳⍴g
 ⍝ =>
 ((1⍴1) (1 2) (1 3) (1 3 4) (1 3 4 5)) ((2 3 4 1) (1⍴2) (2 3) (2 3 4) (2 3 4 5)) ((3 4 1) (3 2) (1⍴3) (3 4) (3 4 5)) ((4 1) (4 1 2) (4 5 3) (1⍴4) (4 5)) ((5 3 4 1) (5 3 2) (5 3) (5 3 4) (1⍴5))
 
-⍝ april/libraries/dfns/graph/demo.lisp:83 —
+⍝ april/libraries/dfns/graph/demo.lisp:83 — First-true masks use cumulative counts under miniapl left scan
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
@@ -9776,10 +9776,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -9795,7 +9795,7 @@ X M
 ⍝ =>
 0 1 0 1 0 1
 
-⍝ april/libraries/dfns/graph/demo.lisp:84 —
+⍝ april/libraries/dfns/graph/demo.lisp:84 — First-true masks use cumulative counts under miniapl left scan
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
@@ -9804,10 +9804,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -9823,7 +9823,7 @@ M←6 7⍴1 0 0 1 0 0 1 1 0 0 1 0 0 0 0 0 0 1 1 0 1 0 0 1 0 1 1 0 0 1 1 0 0 1 1 
 ⍝ =>
 3 7⍴1 0 0 1 0 0 0 0 0 1 0 1 1 0 0 1 0 0 0 0 1
 
-⍝ april/libraries/dfns/graph/demo.lisp:85 —
+⍝ april/libraries/dfns/graph/demo.lisp:85 — First-true masks use cumulative counts under miniapl left scan
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
@@ -9832,10 +9832,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -9850,7 +9850,7 @@ X 3 4↑=/¨⍳3 3
 ⍝ =>
 0
 
-⍝ april/libraries/dfns/graph/demo.lisp:86 —
+⍝ april/libraries/dfns/graph/demo.lisp:86 — First-true masks use cumulative counts under miniapl left scan
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
@@ -9859,10 +9859,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -9877,7 +9877,7 @@ X 4 3↑=/¨⍳3 3
 ⍝ =>
 1 1 1 0
 
-⍝ april/libraries/dfns/graph/demo.lisp:87 —
+⍝ april/libraries/dfns/graph/demo.lisp:87 — First-true masks use cumulative counts under miniapl left scan
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
@@ -9886,10 +9886,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -9904,7 +9904,7 @@ X =/¨⍳3 3
 ⍝ =>
 1 1 1
 
-⍝ april/libraries/dfns/graph/demo.lisp:88 —
+⍝ april/libraries/dfns/graph/demo.lisp:88 — First-true masks use cumulative counts under miniapl left scan
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
@@ -9913,10 +9913,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -9948,7 +9948,7 @@ sudokuX 4 4⍴ 0 0 0 0,0 0 2 1,3 0 0 4,0 0 0 0
 ⍝ =>
 4 4⍴2 1 4 3 4 3 2 1 3 2 1 4 1 4 3 2
 
-⍝ april/libraries/dfns/graph/demo.lisp:89 —
+⍝ april/libraries/dfns/graph/demo.lisp:89 — First-true masks use cumulative counts under miniapl left scan
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
@@ -9957,10 +9957,10 @@ X ← {
     r c←⍴⍵
     c=0:r⍴0
     n←+⌿⍵
-    f←(<\n=⌊/n)/⍵
+    f←({⍵∧1=+\⍵}n=⌊/n)/⍵
     ⍵ ∇{
       ~1∊⍵:0
-      f←<\⍵
+      f←{⍵∧1=+\⍵}⍵
       c←,f⌿⍺
       r←∨/c/⍺
       s←⍺⍺(~c)/(~r)⌿⍺
@@ -12778,7 +12778,7 @@ convolve ← { +⌿(1-⍳⍴⍺)⌽⍺∘.×⍵,0×1↓⍺ }
 ⍝ =>
 54 36 63 130 94 73 109 49 19 35 20
 
-⍝ april/libraries/dfns/numeric/demo.lisp:315 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result
+⍝ april/libraries/dfns/numeric/demo.lisp:315 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in miniapl left scan
 xtimes ← { m←0
   xroots    ← {×\1,1↓(⍵÷2)⍴¯1*2÷⍵}
   cube      ← {⍵⍴⍨2⍴⍨⌊2⍟⍴⍵}
@@ -12792,13 +12792,13 @@ xtimes ← { m←0
 }
 xpower ← {
   xt←{(0,⍺)xtimes 0,⍵} ⋄ b←⌽2⊥⍣¯1+10⊥⍵
-  ↑,/xt/b/{xt⍨⍵}\(⊂,10⊥⍣¯1+⍺)⍴⍨⍴b
+  ↑,/xt/b/{xt⍨⍺}\(⊂,10⊥⍣¯1+⍺)⍴⍨⍴b
 }
 9 3 5 8 1 0 5 xtimes 6 2 3 7 4
 ⍝ =>
 5 8 3 7 0 2 4 4 1 2 7 0
 
-⍝ april/libraries/dfns/numeric/demo.lisp:316 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result
+⍝ april/libraries/dfns/numeric/demo.lisp:316 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in miniapl left scan
 xtimes ← { m←0
   xroots    ← {×\1,1↓(⍵÷2)⍴¯1*2÷⍵}
   cube      ← {⍵⍴⍨2⍴⍨⌊2⍟⍴⍵}
@@ -12812,13 +12812,13 @@ xtimes ← { m←0
 }
 xpower ← {
   xt←{(0,⍺)xtimes 0,⍵} ⋄ b←⌽2⊥⍣¯1+10⊥⍵
-  ↑,/xt/b/{xt⍨⍵}\(⊂,10⊥⍣¯1+⍺)⍴⍨⍴b
+  ↑,/xt/b/{xt⍨⍺}\(⊂,10⊥⍣¯1+⍺)⍴⍨⍴b
 }
 ' '~⍨⍕9 3 5 8 1 0 5 xtimes 6 2 3 7 4
 ⍝ =>
 '583702441270'
 
-⍝ april/libraries/dfns/numeric/demo.lisp:317 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result
+⍝ april/libraries/dfns/numeric/demo.lisp:317 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in miniapl left scan
 xtimes ← { m←0
   xroots    ← {×\1,1↓(⍵÷2)⍴¯1*2÷⍵}
   cube      ← {⍵⍴⍨2⍴⍨⌊2⍟⍴⍵}
@@ -12832,13 +12832,13 @@ xtimes ← { m←0
 }
 xpower ← {
   xt←{(0,⍺)xtimes 0,⍵} ⋄ b←⌽2⊥⍣¯1+10⊥⍵
-  ↑,/xt/b/{xt⍨⍵}\(⊂,10⊥⍣¯1+⍺)⍴⍨⍴b
+  ↑,/xt/b/{xt⍨⍺}\(⊂,10⊥⍣¯1+⍺)⍴⍨⍴b
 }
 2 xpower 16
 ⍝ =>
 6 5 5 3 6
 
-⍝ april/libraries/dfns/numeric/demo.lisp:318 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result
+⍝ april/libraries/dfns/numeric/demo.lisp:318 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in miniapl left scan
 xtimes ← { m←0
   xroots    ← {×\1,1↓(⍵÷2)⍴¯1*2÷⍵}
   cube      ← {⍵⍴⍨2⍴⍨⌊2⍟⍴⍵}
@@ -12852,13 +12852,13 @@ xtimes ← { m←0
 }
 xpower ← {
   xt←{(0,⍺)xtimes 0,⍵} ⋄ b←⌽2⊥⍣¯1+10⊥⍵
-  ↑,/xt/b/{xt⍨⍵}\(⊂,10⊥⍣¯1+⍺)⍴⍨⍴b
+  ↑,/xt/b/{xt⍨⍺}\(⊂,10⊥⍣¯1+⍺)⍴⍨⍴b
 }
 10⊤⍣¯1⊢16 xpower 4
 ⍝ =>
 65536
 
-⍝ april/libraries/dfns/numeric/demo.lisp:319 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result
+⍝ april/libraries/dfns/numeric/demo.lisp:319 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in miniapl left scan
 xtimes ← { m←0
   xroots    ← {×\1,1↓(⍵÷2)⍴¯1*2÷⍵}
   cube      ← {⍵⍴⍨2⍴⍨⌊2⍟⍴⍵}
@@ -12872,7 +12872,7 @@ xtimes ← { m←0
 }
 xpower ← {
   xt←{(0,⍺)xtimes 0,⍵} ⋄ b←⌽2⊥⍣¯1+10⊥⍵
-  ↑,/xt/b/{xt⍨⍵}\(⊂,10⊥⍣¯1+⍺)⍴⍨⍴b
+  ↑,/xt/b/{xt⍨⍺}\(⊂,10⊥⍣¯1+⍺)⍴⍨⍴b
 }
 2 xpower 64
 ⍝ =>

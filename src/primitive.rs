@@ -463,13 +463,9 @@ impl Primitive {
             }
             Self::Shape | Self::Tally | Self::Ravel => {
                 return match self {
-                    Self::Shape => Array::from_parts(
-                        vec![right.shape().len()],
-                        right.shape().iter().map(|&n| generated(n, right.is_exact())).collect(),
-                        generated(0, right.is_exact()),
-                    )
-                    .map_err(|k| span.error(k, "invalid shape")),
-                    Self::Tally => construct(vec![], vec![generated(right.shape().first().copied().unwrap_or(1), right.is_exact())]),
+                    Self::Shape => Array::from_parts(vec![right.shape().len()], right.shape().iter().map(|&n| generated(n, true)).collect(), integer(0))
+                        .map_err(|k| span.error(k, "invalid shape")),
+                    Self::Tally => construct(vec![], vec![generated(right.shape().first().copied().unwrap_or(1), true)]),
                     Self::Ravel => {
                         if let Some(axis) = axis { return self.call_axes(None, right, &axis_value(axis), span); }
                         right.with_shape(vec![right.len()]).map_err(|k| span.error(k, "invalid ravel"))
@@ -523,6 +519,11 @@ impl Primitive {
         if matches!(right, Element::Nested(_)) || matches!(left, Some(Element::Nested(_))) {
             return self.scalar_apply(left.map(|e| e.as_array()).as_ref(), &right.as_array(), span, fill).map(Element::Nested);
         }
+        if let (Self::Arithmetic(op @ (Arithmetic::Plus | Arithmetic::Minus)), Some(left)) = (self, left) {
+            if matches!(right, Element::Character(_)) || matches!(left, Element::Character(_)) {
+                return character_arithmetic(op, left, right, fill).map_err(|m| span.error(ErrorKind::Domain, m));
+            }
+        }
         if fill {
             return Ok(match (self, left, right) {
                 (Self::Compare(_) | Self::Math(Math::Not | Math::Nand | Math::Nor), _, _) => integer(0),
@@ -564,6 +565,22 @@ impl Primitive {
             }
             _ => unreachable!(),
         }
+    }
+}
+
+fn character_arithmetic(op: Arithmetic, left: &Element, right: &Element, fill: bool) -> Result<Element, &'static str> {
+    use Element::{Character, Number};
+    let shift = |c: char, n: &crate::Number, subtract: bool| {
+        let offset = n.integer().map_err(|_| "character offset must be a finite real integer")? as i128;
+        let value = if subtract { c as i128 - offset } else { c as i128 + offset };
+        let result = u32::try_from(value).ok().and_then(char::from_u32).ok_or("character result is not a Unicode scalar value")?;
+        Ok(Character(if fill { ' ' } else { result }))
+    };
+    match (op, left, right) {
+        (Arithmetic::Plus, Character(c), Number(n)) | (Arithmetic::Plus, Number(n), Character(c)) => shift(*c, n, false),
+        (Arithmetic::Minus, Character(c), Number(n)) => shift(*c, n, true),
+        (Arithmetic::Minus, Character(x), Character(y)) => Ok(integer(if fill { 0 } else { *x as i64 - *y as i64 })),
+        _ => Err("unsupported character arithmetic"),
     }
 }
 
@@ -674,7 +691,7 @@ fn find(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error>
 }
 
 fn unique_mask(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
-    let cells = right.cells(right.shape().len().saturating_sub(1)).map_err(|k| span.error(k, "invalid major cells"))?;
+    let cells = right.cells(right.shape().len().saturating_sub(1)).and_then(|c| c.collect()).map_err(|k| span.error(k, "invalid major cells"))?;
     let mut data = Vec::with_capacity(cells.len());
     let mut representatives = Vec::new();
     for cell in &cells {
@@ -739,8 +756,8 @@ fn search_cells(left: &Array, right: &Array, span: &Context<'_>) -> Result<Searc
     let split = right.shape().len().checked_sub(rank).ok_or_else(|| span.error(ErrorKind::Rank, "right argument has insufficient rank"))?;
     if left.shape()[1..] != right.shape()[split..] { return Err(span.error(ErrorKind::Length, "search cell shapes do not agree")); }
     Ok(SearchCells {
-        left: left.cells(rank).map_err(|k| span.error(k, "invalid search cells"))?,
-        right: right.cells(rank).map_err(|k| span.error(k, "invalid search cells"))?,
+        left: left.cells(rank).and_then(|c| c.collect()).map_err(|k| span.error(k, "invalid search cells"))?,
+        right: right.cells(rank).and_then(|c| c.collect()).map_err(|k| span.error(k, "invalid search cells"))?,
         shape: right.shape()[..split].to_vec(),
     })
 }
@@ -956,24 +973,50 @@ pub(crate) fn lambert_w(right: &Array, span: &Context<'_>) -> Result<Array, Erro
     map(right, false, span)
 }
 
-pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array, axis: Option<usize>, span: &Context<'_>) -> Result<Array, Error> {
+pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array, axis: Option<&Array>, span: &Context<'_>) -> Result<Array, Error> {
     use crate::number::Arithmetic::*;
     use Primitive::*;
+    if let Some(axis) = axis {
+        if axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be scalar or vector")); }
+        if bound.is_none() {
+            return match p {
+                Reverse(_) => p.call_axes(None, right, axis, span),
+                Enclose => mix_axes(right, axis, span),
+                Drop => mix_axes(right, &axis_value(single_axis(axis, span)?), span),
+                Take => {
+                    let axes = if axis.is_singleton() {
+                        vec![match fractional_axis(axis, right.shape().len().saturating_sub(1), span)? {
+                            Some(a) => a,
+                            None => single_axis(axis, span)?,
+                        }]
+                    } else { axes(axis, right.shape().len(), span)? };
+                    if axes.iter().any(|&a| a >= right.shape().len()) { return Err(span.error(ErrorKind::Index, "inverse mix axis is outside result rank")); }
+                    enclose_axes(right, &axes, span)
+                }
+                _ => Err(span.error(ErrorKind::Domain, "this axis-qualified primitive has no known inverse")),
+            };
+        }
+        if !matches!(p, Arithmetic(_) | Math(_) | Compare(_) | Reverse(_)) {
+            return Err(span.error(ErrorKind::Domain, "this axis-qualified primitive has no known inverse"));
+        }
+    }
+    let call = |p: Primitive, x: Option<&Array>, y: &Array| match axis { Some(axis) => p.call_axes(x, y, axis, span), None => p.call(x, y, span) };
     if let Some((a, first)) = bound {
         if matches!(p, Arithmetic(Times | Divide)) && a.elements().any(|e| matches!(e, Element::Number(n) if n.equal(&n.unit(0)).unwrap_or(false))) {
             return Err(span.error(ErrorKind::Domain, "zero multiplier/divisor has no inverse"));
         }
         return match p {
-            Arithmetic(Plus) => Arithmetic(Minus).call(Some(right), a, span),
-            Arithmetic(Minus) if first => p.call(Some(a), right, span),
-            Arithmetic(Minus) => Arithmetic(Plus).call(Some(right), a, span),
-            Arithmetic(Times) => Arithmetic(Divide).call(Some(right), a, span),
-            Arithmetic(Divide) if first => p.call(Some(a), right, span),
-            Arithmetic(Divide) => Arithmetic(Times).call(Some(right), a, span),
-            Math(crate::number::Math::Power) if first => Math(crate::number::Math::Log).call(Some(a), right, span),
-            Math(crate::number::Math::Power) => p.call(Some(right), &Arithmetic(Divide).call(None, a, span)?, span),
-            Math(crate::number::Math::Log) if first => Math(crate::number::Math::Power).call(Some(a), right, span),
-            Math(crate::number::Math::Log) => Math(crate::number::Math::Power).call(Some(a), &Arithmetic(Divide).call(None, right, span)?, span),
+            Arithmetic(Plus) => call(Arithmetic(Minus), Some(right), a),
+            Arithmetic(Minus) if first => call(p, Some(a), right),
+            Arithmetic(Minus) => call(Arithmetic(Plus), Some(right), a),
+            Arithmetic(Times) => call(Arithmetic(Divide), Some(right), a),
+            Arithmetic(Divide) if first => call(p, Some(a), right),
+            Arithmetic(Divide) => call(Arithmetic(Times), Some(right), a),
+            Compare(Comparison::NotEqual) if boolean_array(a) && boolean_array(right) => call(p, Some(a), right),
+            Math(crate::number::Math::Power) if first => call(Math(crate::number::Math::Log), Some(a), right),
+            Math(crate::number::Math::Power) => call(p, Some(right), &Arithmetic(Divide).call(None, a, span)?),
+            Math(crate::number::Math::Log) if first => call(Math(crate::number::Math::Power), Some(a), right),
+            Math(crate::number::Math::Log) => call(Math(crate::number::Math::Power), Some(a), &Arithmetic(Divide).call(None, right, span)?),
             Math(crate::number::Math::Circle) if first => {
                 let codes = a
                     .elements()
@@ -984,9 +1027,9 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array
                     })
                     .collect::<Result<Vec<_>, Error>>()?;
                 let codes = Array::from_parts(a.shape().to_vec(), codes, integer(0)).map_err(|k| span.error(k, "invalid circle codes"))?;
-                p.call(Some(&codes), right, span)
+                call(p, Some(&codes), right)
             }
-            Reverse(_) if first => p.call_axis(Some(&Arithmetic(Minus).call(None, a, span)?), right, axis, span),
+            Reverse(_) if first => call(p, Some(&Arithmetic(Minus).call(None, a, span)?), right),
             Transpose if first => {
                 let perm = axes(a, right.shape().len(), span)?;
                 if perm.len() != right.shape().len() { return Err(span.error(ErrorKind::Length, "inverse transpose needs an axis permutation")); }
@@ -1000,7 +1043,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array
         };
     }
     match p {
-        Arithmetic(Plus | Minus | Divide) | Reverse(_) | Transpose | Identity(_) | Index | MatrixDivide => p.call_axis(None, right, axis, span),
+        Arithmetic(Plus | Minus | Divide) | Reverse(_) | Transpose | Identity(_) | Index | MatrixDivide => p.call(None, right, span),
         Math(crate::number::Math::Power) => Math(crate::number::Math::Log).call(None, right, span),
         Math(crate::number::Math::Log) => Math(crate::number::Math::Power).call(None, right, span),
         Math(crate::number::Math::Circle) => Arithmetic(Divide).call(Some(right), &Array::scalar(std::f64::consts::PI).unwrap(), span),
@@ -1013,11 +1056,15 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array
             if !array_match(&iota(&candidate, span)?, right, span)? { return Err(span.error(ErrorKind::Domain, "argument is not an index generator result")); }
             Ravel.call(None, &candidate, span)
         }
-        Take => split(right, axis, span),
+        Take => split(right, None, span),
         Drop => Take.call(None, right, span),
         Where => inverse_where(right, span),
         _ => Err(span.error(ErrorKind::Domain, "this primitive has no known inverse")),
     }
+}
+
+fn boolean_array(a: &Array) -> bool {
+    a.elements().all(|e| match e { Element::Number(n) => n.boolean().is_ok(), Element::Nested(a) => boolean_array(&a), _ => false })
 }
 
 fn inverse_decode(base: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
@@ -1239,42 +1286,26 @@ fn radix(left: &Array, right: &Array, encode: bool, span: &Context<'_>) -> Resul
     Array::from_parts(shape, data, Element::Number(zero)).map_err(|k| span.error(k, "invalid decode result"))
 }
 
-fn grade_item(left: &Element, right: &Element) -> Ordering {
+fn element_order(left: &Element, right: &Element) -> Ordering {
     match (left, right) {
         (Element::Number(x), Element::Number(y)) => x.grade_order(y),
         (Element::Character(x), Element::Character(y)) => x.cmp(y),
         (Element::Number(_), Element::Character(_)) => Ordering::Less,
         (Element::Character(_), Element::Number(_)) => Ordering::Greater,
-        _ => grade_cell(&left.as_array(), &right.as_array()),
+        (Element::Nested(x), Element::Nested(y)) => array_order(x, y),
+        (Element::Nested(_), _) => Ordering::Greater,
+        (_, Element::Nested(_)) => Ordering::Less,
     }
 }
 
-fn grade_cell(left: &Array, right: &Array) -> Ordering {
-    if left.is_empty() && right.is_empty() {
-        return grade_item(left.prototype(), right.prototype()).then_with(|| left.shape().iter().rev().cmp(right.shape().iter().rev()));
-    }
-    if left.is_empty() || right.is_empty() { return left.len().cmp(&right.len()); }
+fn array_order(left: &Array, right: &Array) -> Ordering {
     let rank_order = left.shape().len().cmp(&right.shape().len());
-    let rank = left.shape().len().max(right.shape().len());
-    let dimension = |a: &Array, axis: usize| { if axis < rank - a.shape().len() { 1 } else { a.shape()[axis - (rank - a.shape().len())] } };
-    let mut count = left.len();
-    let mut end_order = rank_order;
-    let mut suffix = 1;
-    for axis in (0..rank).rev() {
-        let (x, y) = (dimension(left, axis), dimension(right, axis));
-        if x != y {
-            // The first padding item ends comparison; no padded array is allocated.
-            count = x.min(y) * suffix;
-            end_order = x.cmp(&y);
-            break;
-        }
-        suffix *= x;
-    }
-    for (x, y) in left.elements().zip(right.elements()).take(count) {
-        let order = grade_item(&x, &y);
+    if !rank_order.is_eq() { return rank_order; }
+    for (x, y) in left.elements().zip(right.elements()) {
+        let order = element_order(&x, &y);
         if !order.is_eq() { return order; }
     }
-    end_order
+    left.len().cmp(&right.len()).then_with(|| left.shape().cmp(right.shape()))
 }
 
 fn grade(left: Option<&Array>, right: &Array, down: bool, span: &Context<'_>) -> Result<Array, Error> {
@@ -1315,37 +1346,25 @@ fn grade(left: Option<&Array>, right: &Array, down: bool, span: &Context<'_>) ->
         });
     }
     else {
-        let cells = right.cells(right.shape().len() - 1).map_err(|k| span.error(k, "invalid grade cells"))?;
-        indices.sort_by(|&a, &b| direction(grade_cell(&cells[a], &cells[b])));
+        let cells = right.cells(right.shape().len() - 1).and_then(|c| c.collect()).map_err(|k| span.error(k, "invalid grade cells"))?;
+        indices.sort_by(|&a, &b| direction(array_order(&cells[a], &cells[b])));
     }
     Array::integers(vec![indices.len()], indices.into_iter().map(|i| (i + 1) as i64).collect()).map_err(|k| span.error(k, "invalid grade result"))
-}
-
-fn cell_order(left: &Array, right: &Array, span: &Context<'_>) -> Result<std::cmp::Ordering, Error> {
-    span.check()?;
-    for (x, y) in left.elements().zip(right.elements()) {
-        let order = match (x, y) {
-            (Element::Number(x), Element::Number(y)) => x.order(&y).map_err(|m| span.error(ErrorKind::Domain, m))?,
-            (Element::Character(x), Element::Character(y)) => x.cmp(&y),
-            (Element::Nested(x), Element::Nested(y)) => cell_order(&x, &y, span)?,
-            _ => return Err(span.error(ErrorKind::Domain, "interval boundaries and values must have the same type")),
-        };
-        if !order.is_eq() { return Ok(order); }
-    }
-    Ok(left.len().cmp(&right.len()).then(left.shape().cmp(right.shape())))
 }
 
 fn interval_index(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
     let SearchCells { left: boundaries, right: values, shape } = search_cells(left, right, span)?;
     for pair in boundaries.windows(2) {
-        if cell_order(&pair[0], &pair[1], span)?.is_gt() { return Err(span.error(ErrorKind::Domain, "interval boundaries must be sorted")); }
+        span.check()?;
+        if array_order(&pair[0], &pair[1]).is_gt() { return Err(span.error(ErrorKind::Domain, "interval boundaries must be sorted")); }
     }
     let mut data = Vec::with_capacity(values.len());
     for value in &values {
         let (mut lo, mut hi) = (0, boundaries.len());
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
-            if cell_order(&boundaries[mid], value, span)?.is_gt() { hi = mid; } else { lo = mid + 1; }
+            span.check()?;
+            if array_order(&boundaries[mid], value).is_gt() { hi = mid; } else { lo = mid + 1; }
         }
         data.push(generated(lo, true));
     }
@@ -1399,19 +1418,13 @@ fn reorder(right: &Array, order: &[usize], span: &Context<'_>) -> Result<Array, 
 
 fn enclose_axes(right: &Array, axes: &[usize], span: &Context<'_>) -> Result<Array, Error> {
     let mut order: Vec<_> = (0..right.shape().len()).filter(|a| !axes.contains(a)).collect();
-    let frame: Vec<_> = order.iter().map(|&a| right.shape()[a]).collect();
-    let cell_shape: Vec<_> = axes.iter().map(|&a| right.shape()[a]).collect();
     order.extend(axes);
     let permuted = reorder(right, &order, span)?;
-    let data = permuted.cells(axes.len()).map_err(|k| span.error(k, "invalid enclosed cells"))?.into_iter().map(Element::Nested).collect::<Vec<_>>();
-    let prototype = if data.is_empty() {
-        let len = generated_len(&cell_shape).map_err(|k| span.error(k, "enclosed prototype is too large"))?;
-        Element::Nested(
-            Array::from_parts(cell_shape, vec![right.prototype().clone(); len], right.prototype().clone())
-                .map_err(|k| span.error(k, "invalid enclosed prototype"))?,
-        )
-    } else { data[0].prototype() };
-    Array::from_parts(frame, data, prototype).map_err(|k| span.error(k, "invalid enclosed array"))
+    let cells = permuted.cells(axes.len()).map_err(|k| span.error(k, "invalid enclosed cells"))?;
+    let data: Vec<_> = cells.collect().map_err(|k| span.error(k, "invalid enclosed cells"))?.into_iter().map(Element::Nested).collect();
+    let prototype =
+        if data.is_empty() { Element::Nested(cells.prototype().map_err(|k| span.error(k, "invalid enclosed prototype"))?) } else { data[0].prototype() };
+    Array::from_parts(cells.frame().to_vec(), data, prototype).map_err(|k| span.error(k, "invalid enclosed array"))
 }
 
 fn mix_axes(right: &Array, spec: &Array, span: &Context<'_>) -> Result<Array, Error> {

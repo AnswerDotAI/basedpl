@@ -49,7 +49,10 @@ pub(crate) struct Node { pub kind: NodeKind, pub span: Span }
 pub struct Parsed { pub(crate) statements: Vec<Statement> }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Statement { pub nodes: Vec<Node>, pub guard: Option<(usize, bool)> }
+pub(crate) struct Statement { pub nodes: Vec<Node>, pub kind: StatementKind }
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum StatementKind { Expression, DefaultArgument, Guard { index: usize, error: bool } }
 
 fn statement(nodes: Vec<Node>) -> Result<Statement, ParseFailure> {
     let mut guard = None;
@@ -60,7 +63,12 @@ fn statement(nodes: Vec<Node>) -> Result<Statement, ParseFailure> {
             guard = Some((i, error));
         }
     }
-    Ok(Statement { nodes, guard })
+    let kind = if let Some((index, error)) = guard {
+        StatementKind::Guard { index, error }
+    } else if matches!(&nodes[0].kind, NodeKind::Name(name) if name == "⍺") && matches!(nodes.get(1).map(|n| &n.kind), Some(NodeKind::Assign)) {
+        StatementKind::DefaultArgument
+    } else { StatementKind::Expression };
+    Ok(Statement { nodes, kind })
 }
 
 #[derive(Debug)]
@@ -324,7 +332,9 @@ impl Parser<'_> {
 pub fn parse(source: Arc<Source>) -> ParseStatus {
     let tokens = match lex(&source) { Ok(tokens) => tokens, Err(e) => return ParseStatus::Invalid(e) };
     match (Parser { tokens: &tokens, pos: 0 }).expressions(None, 0) {
-        Ok((pieces, _)) => ParseStatus::Complete(Parsed { statements: pieces.into_iter().map(|nodes| Statement { nodes, guard: None }).collect() }),
+        Ok((pieces, _)) => {
+            ParseStatus::Complete(Parsed { statements: pieces.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression }).collect() })
+        }
         Err(ParseFailure::Incomplete(e)) => ParseStatus::Incomplete(e),
         Err(ParseFailure::Invalid(e)) => ParseStatus::Invalid(e),
     }

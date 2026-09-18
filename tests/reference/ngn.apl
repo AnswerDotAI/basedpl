@@ -554,9 +554,9 @@ a←' this is a test '⋄(a≠' ')⊂a
 ∧\1 1 1 0 1 1
 1 1 1 0 0 0
 
-⍝ ngn:141 —
+⍝ ngn:141 — miniapl left-accumulating scan
 -\1 2 3 4
-1 ¯1 2 ¯2
+1 ¯1 ¯4 ¯8
 
 ⍝ ngn:142 —
 ∨\0 0 1 0 0 1 0
@@ -2854,8 +2854,8 @@ c←(3 3⍴⍳9)∊2 3 4 5 8 ⋄ c←(3 3⍴⍳9)∊2 4 7 8 9 ⋄ b←¯1⊖¯2�
 r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ ' #'[1+↑⌽{⍵,⍨⊂t[1+2⊥¨3,/0,0,⍨⊃⍵]}⍣n⊂z,1,z←n⍴0]
 9 17⍴'        #               ###             ##  #           ## ####         ##  #   #       ## #### ###     ##  #    #  #   ## ####  ###### ##  #   ###     #'
 
-⍝ ngn/examples/6-queens:1 —
-queens←{ search←{ (⊂⍬)∊⍵:0⍴⊂⍬ ⋄ 0=⍴⍵:rmdups ⍺ ⋄ (hd tl)←(⊃⍵)(1↓⍵) ⋄ next←⍺∘,¨hd ⋄ rems←hd free¨⊂tl ⋄ ↑,/next ∇¨rems } ⋄ cvex←(⍳⍵)×⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍵}\4/⊂⍵} ⋄ refs←{{⍋⍵}\2/⊂⍵} ⋄ best←{(⊃⍋↑⍵)⊃⍵} ⋄ all8←,↑refs¨rots ⍵ ⋄ (1+⍵≡best all8)⊃⍬(,⊂⍵) } ⋄ fmt←{ chars←'·⍟'[1+(↑⍵)∘.=⍳⍺] ⋄ expd←1↓,↑⍺⍴⊂0 1 ⋄ ↑¨↓↓expd\chars } ⋄ squares←(⊂⍳⌈⍵÷2),1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares } ⋄ queens 5
+⍝ ngn/examples/6-queens:1 — Rotate and reflect the accumulator in miniapl's left scan
+queens←{ search←{ (⊂⍬)∊⍵:0⍴⊂⍬ ⋄ 0=⍴⍵:rmdups ⍺ ⋄ (hd tl)←(⊃⍵)(1↓⍵) ⋄ next←⍺∘,¨hd ⋄ rems←hd free¨⊂tl ⋄ ↑,/next ∇¨rems } ⋄ cvex←(⍳⍵)×⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4/⊂⍵} ⋄ refs←{{⍋⍺}\2/⊂⍵} ⋄ best←{(⊃⍋↑⍵)⊃⍵} ⋄ all8←,↑refs¨rots ⍵ ⋄ (1+⍵≡best all8)⊃⍬(,⊂⍵) } ⋄ fmt←{ chars←'·⍟'[1+(↑⍵)∘.=⍳⍺] ⋄ expd←1↓,↑⍺⍴⊂0 1 ⋄ ↑¨↓↓expd\chars } ⋄ squares←(⊂⍳⌈⍵÷2),1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares } ⋄ queens 5
 (5 9⍴'⍟ · · · ·· · ⍟ · ·· · · · ⍟· ⍟ · · ·· · · ⍟ ·') (5 9⍴'· ⍟ · · ·· · · · ⍟· · ⍟ · ·⍟ · · · ·· · · ⍟ ·')
 
 ⍝ ngn/examples/7-mandelbrot:1 — Use a 13 by 13 grid

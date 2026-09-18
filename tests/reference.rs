@@ -85,6 +85,7 @@ fn reference_format_and_comparison() {
 fn enabled_reference_cases() {
     let mut ids = std::collections::HashSet::new();
     let mut count = 0;
+    let mut failures = Vec::new();
     let selected = std::env::var("MINIAPL_CASE").ok();
     for (name, source) in SOURCES {
         for case in cases(source) {
@@ -92,10 +93,13 @@ fn enabled_reference_cases() {
             assert!(id.is_empty() || ids.insert(id.to_owned()), "duplicate source id: {id}");
             if selected.as_deref().is_some_and(|s| s != id) { continue; }
             let result = reference::check(&case, EvalOptions { timeout: Some(std::time::Duration::from_secs(2)), echo: false, ..EvalOptions::default() });
-            assert_eq!(result["status"], "pass", "{name}.apl:{} {id}: {}: {}", case["line"], case["code"], result);
+            if result["status"] != "pass" {
+                failures.push(format!("{name}.apl:{} {id}: {} ({})", case["line"], result["message"], result["actual"]["error"]["kind"]));
+            }
             count += 1;
         }
     }
     assert!(count > 0, "no reference cases selected");
+    assert!(failures.is_empty(), "{} of {count} reference cases failed:\n{}", failures.len(), failures.join("\n"));
     eprintln!("{count} reference cases passed");
 }

@@ -76,7 +76,11 @@ impl PyArray {
     }
     fn cells(&self) -> PyResult<Vec<Self>> {
         let rank = self.inner.shape().len().checked_sub(1).ok_or_else(|| PyTypeError::new_err("a scalar has no major cells"))?;
-        self.inner.cells(rank).map(|a| a.into_iter().map(|inner| Self { inner }).collect()).map_err(|e| PyValueError::new_err(e.to_string()))
+        self.inner
+            .cells(rank)
+            .and_then(|c| c.collect())
+            .map(|a| a.into_iter().map(|inner| Self { inner }).collect())
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
     fn select(&self, py: Python<'_>, parts: Vec<Option<PyRef<'_, PyArray>>>) -> PyResult<Py<PyDict>> {
         let span = Span { source: Source::new("<index>", "[]"), range: 0..2 };

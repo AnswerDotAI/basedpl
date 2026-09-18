@@ -1,6 +1,9 @@
 use crate::{primitive::Selection, Array, Element, Error, ErrorKind, Number, Span};
 use std::collections::HashMap;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SelectionKind { Item, Elements }
+
 // Labels exist only in a selective-assignment expression, never in name bindings.
 // Zero is fill, skipped on assignment. Nested items retain whole-item paths.
 pub(crate) struct Labels { paths: Vec<Vec<usize>>, nested: HashMap<usize, (Array, Vec<usize>)> }
@@ -46,10 +49,10 @@ impl Labels {
         seen.insert(a.storage_id(), result.clone());
         Ok(Element::Nested(result))
     }
-    pub fn replacements(&self, selected: &Array, right: &Array, whole_item: bool, span: &Span) -> Result<(Selection, Array), Error> {
+    pub fn replacements(&self, selected: &Array, right: &Array, kind: SelectionKind, span: &Span) -> Result<(Selection, Array), Error> {
         let mut paths = Vec::new();
         let mut values = Vec::new();
-        if whole_item {
+        if kind == SelectionKind::Item {
             let path = if let Some((_, path)) = self.nested.get(&selected.storage_id()) { Some(path) } else if let Some(n) = selected.as_number() {
                 let id = n.nonnegative_integer().map_err(|k| span.error(k, "invalid selection label"))?;
                 id.checked_sub(1).and_then(|i| self.paths.get(i))

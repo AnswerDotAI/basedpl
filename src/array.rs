@@ -8,6 +8,33 @@ pub enum Element { Number(Number), Character(char), Nested(Array) }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Array(Arc<ArrayData>);
 
+// Retains cell metadata even when the frame has no cells.
+pub(crate) struct Cells<'a> {
+    array: &'a Array,
+    split: usize,
+    count: usize,
+    size: usize,
+}
+impl Cells<'_> {
+    pub fn frame(&self) -> &[usize] { &self.array.shape()[..self.split] }
+    pub fn shape(&self) -> &[usize] { &self.array.shape()[self.split..] }
+    pub fn len(&self) -> usize { self.count }
+    pub fn get(&self, i: usize) -> Result<Array, ErrorKind> {
+        let range = i * self.size..(i + 1) * self.size;
+        let shape = self.shape().to_vec();
+        match &self.array.0.data {
+            Storage::Float(data) => Array::floats(shape, data[range].to_vec()),
+            Storage::Integer(data) => Array::integers(shape, data[range].to_vec()),
+            Storage::Mixed(_) => Array::from_parts(shape, self.array.items(range).collect(), self.array.prototype().clone()),
+        }
+    }
+    pub fn prototype(&self) -> Result<Array, ErrorKind> {
+        let len = generated_len(self.shape())?;
+        Array::from_parts(self.shape().to_vec(), vec![self.array.prototype().clone(); len], self.array.prototype().clone())
+    }
+    pub fn collect(&self) -> Result<Vec<Array>, ErrorKind> { (0..self.len()).map(|i| self.get(i)).collect() }
+}
+
 #[derive(Debug, PartialEq)]
 struct ArrayData {
     shape: Vec<usize>,
@@ -152,18 +179,11 @@ impl Array {
         Ok(Self(Arc::new(ArrayData { shape, data: self.0.data.clone(), prototype: self.prototype().clone(), depth: self.0.depth, exact: self.0.exact })))
     }
 
-    pub(crate) fn cells(&self, rank: usize) -> Result<Vec<Self>, ErrorKind> {
+    pub(crate) fn cells(&self, rank: usize) -> Result<Cells<'_>, ErrorKind> {
         let split = self.shape().len().checked_sub(rank).ok_or(ErrorKind::Rank)?;
         let count = generated_len(&self.shape()[..split])?;
-        let shape = &self.shape()[split..];
-        let size = element_count(shape)?;
-        (0..count)
-            .map(|i| match &self.0.data {
-                Storage::Float(data) => Self::floats(shape.to_vec(), data[i * size..(i + 1) * size].to_vec()),
-                Storage::Integer(data) => Self::integers(shape.to_vec(), data[i * size..(i + 1) * size].to_vec()),
-                Storage::Mixed(_) => Self::from_parts(shape.to_vec(), self.items(i * size..(i + 1) * size).collect(), self.prototype().clone()),
-            })
-            .collect()
+        let size = element_count(&self.shape()[split..])?;
+        Ok(Cells { array: self, split, count, size })
     }
 
     pub fn as_number(&self) -> Option<Number> {
