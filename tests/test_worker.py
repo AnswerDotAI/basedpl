@@ -56,4 +56,4 @@ def test_worker_cancellation_and_reference_sessions():
     with Session(timeout=.01) as s:
         with pytest.raises(AplError) as e: s.eval('x←7 ⋄ {∇⍵}0')
         assert e.value.kind == 'TIMEOUT'
-        assert s('x') == 7
+        assert s('x').py == 7

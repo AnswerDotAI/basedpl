@@ -1,71 +1,92 @@
-"Python values and NumPy arrays in an interruptible APL session."
-import math, weakref
+"Native APL arrays in an interruptible, thread-backed session."
+import math, sys, weakref
 from dataclasses import dataclass
-from decimal import Decimal
 from fractions import Fraction
-import numpy as np
-from ._core import __version__, symbols
-from .worker import Worker
+from ._core import __version__, symbols, _Array, _Session
 
-__all__ = ['__version__', 'symbols', 'Result', 'AplError', 'Session']
+__all__ = ['__version__', 'symbols', 'Array', 'Result', 'AplError', 'Session']
 
 def _dtype(items):
+    import numpy as np
     types = {type(o) for o in items}
     if types == {int} and all(-(1<<63) <= o < 1<<63 for o in items): return np.int64
     if types <= {float, complex}: return np.complex128 if complex in types else np.float64
     if types == {str}: return 'U1'
     return object
 
-def _value(raw):
+def _value(raw, as_array=False):
     def item(o):
-        if not isinstance(o, dict): return o
-        if 'rational' in o: return Fraction(*(int(Decimal(n)) for n in o['rational']))
-        if 'complex' in o: return complex(*o['complex'])
-        return _value(o)
+        if isinstance(o, tuple): return Fraction(*o)
+        return _value(o) if isinstance(o, dict) else o
     shape, data = tuple(raw['shape']), [item(o) for o in raw['data']]
     items = raw['data'] or [raw['prototype']]
     nested = any(isinstance(o, dict) and 'shape' in o for o in items)
-    if not shape and not nested: return data[0]
+    if not as_array:
+        if not shape and not nested: return data[0]
+        if len(shape) == 1 and all(isinstance(o, str) for o in items): return ''.join(data)
+    import numpy as np
     dtype = object if nested else _dtype(data or [item(raw['prototype'])])
-    if len(shape) == 1 and dtype == 'U1': return ''.join(data)
     if dtype is not object: return np.array(data, dtype=dtype).reshape(shape)
     result = np.empty(len(data), dtype=object)
     for i,o in enumerate(data): result[i] = o
     return result.reshape(shape)
 
-def _element(value):
-    if isinstance(value, np.generic): value = value.item()
+def _element(value, seen):
+    np = sys.modules.get('numpy')
+    if np is not None and isinstance(value, np.generic): value = value.item()
     if isinstance(value, bool): return int(value)
-    if isinstance(value, Fraction) or type(value) is int and not -(1<<63) <= value < 1<<63:
-        value = Fraction(value)
-        return dict(rational=[str(Decimal(value.numerator)), str(Decimal(value.denominator))])
-    if type(value) is int: return value
-    if type(value) in (float, complex):
-        if not np.isfinite(value): raise ValueError('APL numbers must be finite')
-        return dict(complex=[value.real, value.imag]) if type(value) is complex else value
+    if isinstance(value, Fraction): return value.numerator, value.denominator
+    if type(value) in (int, float, complex): return value
     if isinstance(value, str) and len(value) == 1: return value
-    if isinstance(value, (str, list, tuple, np.ndarray)): return _array(value)
+    if isinstance(value, (Array, str, list, tuple)) or np is not None and isinstance(value, np.ndarray): return _array(value, seen)
     raise TypeError(f'cannot convert {type(value).__name__} to APL')
 
-def _rectangular(value):
+def _rectangular(value, seen):
     if not isinstance(value, (list, tuple)): return (), [value]
     if not value: return (0,), []
-    parts = [_rectangular(o) for o in value]
+    if id(value) in seen: raise ValueError('cyclic Python container')
+    seen.add(id(value))
+    try: parts = [_rectangular(o, seen) for o in value]
+    finally: seen.remove(id(value))
     if any(shape != parts[0][0] for shape,_ in parts): return (len(value),), list(value)
     return (len(value),)+parts[0][0], [o for _,data in parts for o in data]
 
-def _array(value):
+def _array(value, seen=None):
+    if isinstance(value, Array): return value._inner
+    if isinstance(value, _Array): return value
+    if seen is None: seen = set()
+    if id(value) in seen: raise ValueError('cyclic Python container')
+    if len(seen) > 128: raise ValueError('array nesting exceeds 128 levels')
+    np = sys.modules.get('numpy')
     prototype = 0.
-    if isinstance(value, str): return dict(shape=[len(value)], data=list(value), prototype=' ')
-    if isinstance(value, np.ndarray):
+    if isinstance(value, str): return _Array(dict(shape=[len(value)], data=list(value), prototype=' '))
+    if np is not None and isinstance(value, np.ndarray):
         kind, size = value.dtype.kind, value.dtype.itemsize
         if kind not in 'biufcUO' or kind == 'f' and size > 8 or kind == 'c' and size > 16:
             raise TypeError('unsupported NumPy dtype')
         shape, data = value.shape, value.ravel().tolist()
         if kind in 'biu': prototype = 0
         elif kind == 'U': prototype = ' '
-    else: shape, data = _rectangular(value)
-    return dict(shape=list(shape), data=[_element(o) for o in data], prototype=prototype)
+    else: shape, data = _rectangular(value, seen)
+    seen.add(id(value))
+    try: return _Array(dict(shape=list(shape), data=[_element(o, seen) for o in data], prototype=prototype))
+    finally: seen.remove(id(value))
+
+class Array:
+    "An immutable native APL value. Conversion to Python or NumPy makes a copy."
+    __slots__ = ('_inner',)
+    def __init__(self, value): self._inner = _array(value)
+    @property
+    def shape(self): return tuple(self._inner.shape)
+    @property
+    def py(self): return _value(self._inner.parts())
+    @property
+    def np(self): return _value(self._inner.parts(), as_array=True)
+    def __array__(self, dtype=None, copy=None):
+        if copy is False: raise ValueError('miniapl conversion requires a copy')
+        result = self.np
+        return result if dtype is None else result.astype(dtype, copy=False)
+    def __repr__(self): return repr(self._inner)
 
 @dataclass(frozen=True)
 class Result:
@@ -84,26 +105,25 @@ def _print(output):
     for text in output: print(text)
 
 class Session:
-    "Persistent APL worker. Calls return Python values; eval captures explicit output."
+    "Persistent APL worker thread. Calls return Array; eval captures explicit output."
     def __init__(self, timeout=None):
         if timeout is not None and (not math.isfinite(timeout) or timeout < 0): raise ValueError('timeout must be finite and nonnegative')
-        self.timeout, self._worker = timeout, Worker()
+        self.timeout, self._worker = timeout, _Session()
         self._finalizer = weakref.finalize(self, self._worker.close)
 
     def _request(self, payload, display, echo=False):
         if not self._finalizer.alive: raise RuntimeError('session is closed')
-        try: raw = self._worker.request(dict(payload, echo=echo), timeout=self.timeout)
+        try: raw = self._worker.request(**payload, echo=echo, timeout=self.timeout)
         except KeyboardInterrupt as e:
             if display: _print(getattr(e, 'output', []))
             raise
         if display: _print(raw['output'])
         if error := raw['error']:
-            if error['kind'] == 'REQUEST ERROR': raise ValueError(error['message'])
             raise AplError(error, raw['output'])
-        return Result(None if raw['value'] is None else _value(raw['value']), raw['output'])
+        return Result(None if raw['value'] is None else Array(raw['value']), raw['output'])
 
     def _eval(self, source, bindings, display, echo=False):
-        payload = dict(bindings={k:_array(v) for k,v in bindings.items()})
+        payload = dict(bindings=[(k, _array(v)) for k,v in bindings.items()])
         if source is not None:
             if not isinstance(source, str): raise TypeError('APL source must be a string')
             payload['code'] = source
@@ -132,7 +152,7 @@ class Session:
         if not isinstance(source, str): raise TypeError('function expression must be a string')
         def f(*args):
             if len(args) not in (1, 2): raise TypeError('APL functions take one or two arguments')
-            return self._request(dict(call=source, args=[_array(o) for o in args]), True).value
+            return self._request(dict(function=source, args=[_array(o) for o in args]), True).value
         return f
 
     def interrupt(self):

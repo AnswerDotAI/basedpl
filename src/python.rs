@@ -1,15 +1,21 @@
-use crate::{Array, Element, Number, Session};
+use crate::{Array, Element, EvalOptions, Evaluation, InterruptHandle, Number, Session, Span};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use pyo3::{
-    exceptions::{PyTypeError, PyValueError},
+    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
+    sync::MutexExt,
     types::{PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple},
+};
+use std::{
+    sync::{mpsc, Mutex},
+    time::Duration,
 };
 
 fn import_array(raw: &Bound<'_, PyDict>, depth: usize) -> PyResult<Array> {
     if depth > 128 { return Err(PyValueError::new_err("array nesting exceeds 128 levels")); }
     let element = |o: Bound<'_, PyAny>| -> PyResult<Element> {
+        if let Ok(a) = o.extract::<PyRef<'_, PyArray>>() { return Ok(Element::Nested(a.inner.clone())); }
         if let Ok(d) = o.cast::<PyDict>() { return Ok(Element::Nested(import_array(d, depth + 1)?)); }
         if let Ok(s) = o.cast::<PyString>() {
             let s = s.to_str()?;
@@ -52,28 +58,154 @@ fn array(py: Python<'_>, a: &Array) -> PyResult<Py<PyDict>> {
     Ok(result.unbind())
 }
 
-// Access AND destruction are confined to the creating thread. Python's wrapper
-// checks public calls; PyO3 also guards the private native object. No unsafe Send.
-#[pyclass(unsendable, name = "_Session")]
-struct PySession { inner: Session }
+#[pyclass(frozen, name = "_Array")]
+struct PyArray { inner: Array }
+
+#[pymethods]
+impl PyArray {
+    #[new]
+    fn new(raw: &Bound<'_, PyDict>) -> PyResult<Self> { Ok(Self { inner: import_array(raw, 0)? }) }
+    #[getter]
+    fn shape(&self) -> Vec<usize> { self.inner.shape().to_vec() }
+    fn parts(&self, py: Python<'_>) -> PyResult<Py<PyDict>> { array(py, &self.inner) }
+    fn __repr__(&self) -> String { self.inner.to_string() }
+}
+
+struct Location { name: String, text: String, range: (usize, usize) }
+impl From<&Span> for Location {
+    fn from(s: &Span) -> Self { Self { name: s.source.name.clone(), text: s.source.text.clone(), range: (s.range.start, s.range.end) } }
+}
+struct Diagnostic {
+    kind: String,
+    message: String,
+    display: String,
+    location: Location,
+    calls: Vec<Location>,
+}
+struct Reply { value: Option<Array>, output: Vec<String>, error: Option<Diagnostic> }
+impl From<Evaluation> for Reply {
+    fn from(e: Evaluation) -> Self {
+        let error = e.error.map(|e| Diagnostic {
+            kind: e.kind.to_string(),
+            display: e.to_string(),
+            location: (&e.span).into(),
+            calls: e.calls.iter().map(Location::from).collect(),
+            message: e.message,
+        });
+        Self { value: e.value, output: e.output, error }
+    }
+}
+struct Request {
+    code: Option<String>,
+    function: Option<String>,
+    args: Vec<Array>,
+    bindings: Vec<(String, Array)>,
+    options: EvalOptions,
+    reply: mpsc::Sender<Result<Reply, &'static str>>,
+}
+impl Request {
+    fn run(&mut self, session: &mut Session) -> Result<Reply, &'static str> {
+        for (name, value) in self.bindings.drain(..) { session.set(&name, value).map_err(|_| "binding requires an ordinary APL name")?; }
+        let options = std::mem::take(&mut self.options);
+        Ok(match (&self.code, &self.function) {
+            (Some(code), _) => session.eval_with(code, options),
+            (_, Some(function)) => session.call_with(function, &self.args, options),
+            _ => Evaluation::default(),
+        }
+        .into())
+    }
+}
+struct WorkerState { sender: Option<mpsc::Sender<Request>>, active: Option<InterruptHandle> }
+
+#[pyclass(frozen, name = "_Session")]
+struct PySession { state: Mutex<WorkerState>, serial: Mutex<()> }
 
 #[pymethods]
 impl PySession {
     #[new]
-    fn new() -> Self { Self { inner: Session::new() } }
-    fn set(&mut self, name: &str, value: &Bound<'_, PyDict>) -> PyResult<()> {
-        self.inner.set(name, import_array(value, 0)?).map_err(|_| PyValueError::new_err("binding requires an ordinary APL name"))
+    fn new() -> PyResult<Self> {
+        let (sender, receiver) = mpsc::channel::<Request>();
+        std::thread::Builder::new()
+            .name("miniapl".into())
+            .spawn(move || {
+                let mut session = Session::new();
+                for mut request in receiver {
+                    let result = request.run(&mut session);
+                    let _ = request.reply.send(result);
+                }
+            })
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(Self { state: Mutex::new(WorkerState { sender: Some(sender), active: None }), serial: Mutex::new(()) })
     }
-    #[pyo3(signature = (code, timeout=None, *, echo=true))]
-    fn eval(&mut self, py: Python<'_>, code: &str, timeout: Option<f64>, echo: bool) -> PyResult<Py<PyDict>> {
-        response(py, self.inner.eval_with(code, options(timeout, echo)?))
+    #[pyo3(signature = (*, code=None, function=None, args=Vec::new(), bindings=Vec::new(), timeout=None, echo=false))]
+    #[allow(clippy::too_many_arguments)]
+    fn request(
+        &self,
+        py: Python<'_>,
+        code: Option<String>,
+        function: Option<String>,
+        args: Vec<PyRef<'_, PyArray>>,
+        bindings: Vec<(String, PyRef<'_, PyArray>)>,
+        timeout: Option<f64>,
+        echo: bool,
+    ) -> PyResult<Py<PyDict>> {
+        if code.is_some() && function.is_some() { return Err(PyValueError::new_err("choose code or function, not both")); }
+        let options = options(timeout, echo)?;
+        let interrupt = options.interrupt.clone();
+        let (reply, mut receiver) = mpsc::channel();
+        let request = Request {
+            code,
+            function,
+            args: args.iter().map(|a| a.inner.clone()).collect(),
+            bindings: bindings.into_iter().map(|(n, a)| (n, a.inner.clone())).collect(),
+            options,
+            reply,
+        };
+        let _serial = self.serial.lock_py_attached(py).unwrap();
+        py.check_signals()?;
+        {
+            let mut state = self.state.lock().unwrap();
+            state
+                .sender
+                .as_ref()
+                .ok_or_else(|| PyRuntimeError::new_err("session is closed"))?
+                .send(request)
+                .map_err(|_| PyRuntimeError::new_err("session worker stopped"))?;
+            state.active = Some(interrupt.clone());
+        }
+        let mut signal = None;
+        let result = loop {
+            let received = {
+                let receiver = &mut receiver;
+                py.detach(move || receiver.recv_timeout(Duration::from_millis(10)))
+            };
+            if signal.is_none() {
+                if let Err(e) = py.check_signals() {
+                    interrupt.interrupt();
+                    signal = Some(e);
+                }
+            }
+            match received {
+                Ok(result) => break result.map_err(PyValueError::new_err),
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break Err(PyRuntimeError::new_err("session worker stopped")),
+            }
+        };
+        self.state.lock().unwrap().active = None;
+        if let Some(e) = signal {
+            if let Ok(result) = &result { e.value(py).setattr("output", &result.output)?; }
+            return Err(e);
+        }
+        response(py, result?)
     }
-    #[pyo3(signature = (function, args, timeout=None, *, echo=true))]
-    fn call(&mut self, py: Python<'_>, function: &str, args: Vec<Bound<'_, PyDict>>, timeout: Option<f64>, echo: bool) -> PyResult<Py<PyDict>> {
-        let args = args.iter().map(|a| import_array(a, 0)).collect::<PyResult<Vec<_>>>()?;
-        response(py, self.inner.call_with(function, &args, options(timeout, echo)?))
+    fn interrupt(&self) { if let Some(active) = &self.state.lock().unwrap().active { active.interrupt(); } }
+    fn close(&self) {
+        let mut state = self.state.lock().unwrap();
+        if let Some(active) = &state.active { active.interrupt(); }
+        state.sender = None;
     }
 }
+impl Drop for PySession { fn drop(&mut self) { self.close(); } }
 
 fn options(timeout: Option<f64>, echo: bool) -> PyResult<crate::EvalOptions> {
     let timeout = timeout
@@ -82,27 +214,27 @@ fn options(timeout: Option<f64>, echo: bool) -> PyResult<crate::EvalOptions> {
     Ok(crate::EvalOptions { timeout, echo, ..crate::EvalOptions::default() })
 }
 
-fn response(py: Python<'_>, result: crate::Evaluation) -> PyResult<Py<PyDict>> {
-    let value = result.value.as_ref().map(|a| array(py, a)).transpose()?;
+fn response(py: Python<'_>, result: Reply) -> PyResult<Py<PyDict>> {
+    fn location(py: Python<'_>, location: &Location) -> PyResult<Py<PyDict>> {
+        let source = PyDict::new(py);
+        source.set_item("name", &location.name)?;
+        source.set_item("text", &location.text)?;
+        let d = PyDict::new(py);
+        d.set_item("source", source)?;
+        d.set_item("span", location.range)?;
+        Ok(d.unbind())
+    }
+    let value = result.value.map(|inner| Py::new(py, PyArray { inner })).transpose()?;
     let error = result
         .error
         .as_ref()
         .map(|e| -> PyResult<Py<PyDict>> {
-            let d = PyDict::new(py);
-            d.set_item("kind", e.kind.to_string())?;
+            let d = location(py, &e.location)?.into_bound(py);
+            d.set_item("kind", &e.kind)?;
             d.set_item("message", &e.message)?;
-            d.set_item("source_name", &e.span.source.name)?;
-            d.set_item("source", &e.span.source.text)?;
-            d.set_item("span", (e.span.range.start, e.span.range.end))?;
-            d.set_item("display", e.to_string())?;
+            d.set_item("display", &e.display)?;
             let calls = PyList::empty(py);
-            for span in &e.calls {
-                let call = PyDict::new(py);
-                call.set_item("source_name", &span.source.name)?;
-                call.set_item("source", &span.source.text)?;
-                call.set_item("span", (span.range.start, span.range.end))?;
-                calls.append(call)?;
-            }
+            for span in &e.calls { calls.append(location(py, span)?)?; }
             d.set_item("calls", calls)?;
             Ok(d.unbind())
         })
@@ -127,6 +259,7 @@ fn _check_reference(case: &str, timeout: f64) -> PyResult<String> {
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySession>()?;
+    m.add_class::<PyArray>()?;
     m.add_function(wrap_pyfunction!(run_cli, m)?)?;
     m.add_function(wrap_pyfunction!(_check_reference, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;

@@ -55,25 +55,25 @@ DOMAIN ERROR: division by zero
 ```python
 import numpy as np
 from fractions import Fraction
-from miniapl import Session, AplError
+from miniapl import Session, Array, AplError
 
 with Session() as apl:
     apl(x=np.arange(1, 6))       # bind variables; returns None
-    assert apl('+/x') == 15
-    assert apl('+/x', x=[1, 2, 3]) == 6  # bind, then evaluate
+    assert apl('+/x').py == 15
+    assert apl('+/x', x=[1, 2, 3]).py == 6  # bind, then evaluate
     apl['x'] = [[1, 2], [3, 4]]
     assert apl['x'].shape == (2, 2)
 
     mean = apl.fn('{(+/⍵)÷≢⍵}')
-    assert mean([1, 2, 3]) == 2
-    assert mean([1, 2, 4]) == Fraction(7, 3)
+    assert mean([1, 2, 3]).py == 2
+    assert mean([1, 2, 4]).py == Fraction(7, 3)
     np.testing.assert_array_equal(apl.fn('+')([1, 2, 3], 10), [11, 12, 13])
 
     r = apl.eval('⎕←x ⋄ x+1x', x=3)
-    assert r.value == 4 and r.output == ['3x']  # captured, not printed
+    assert r.value.py == 4 and r.output == ['3x']  # captured, not printed
 ```
 
-`apl(...)` returns a Python value and prints only explicit output (`⎕←` and display commands). `apl.eval(...)` returns `Result(value, output)` without printing. Both suppress implicit display, including intermediate expressions inside `⍎`. Output is captured during execution, not streamed. In notebooks, a trailing Python `;` suppresses automatic display of the return value when explicit output is sufficient.
+`apl(...)` returns an immutable `Array` and prints only explicit output (`⎕←` and display commands). `apl.eval(...)` returns `Result(value, output)` without printing. Both suppress implicit display, including intermediate expressions inside `⍎`. Output is captured during execution, not streamed. In notebooks, a trailing Python `;` suppresses automatic display of the return value when explicit output is sufficient.
 
 `apl.run(...)` captures APL session display in `Result(value, output)`. It includes implicit expression output and explicit output. Assignments remain silent. Notebook frontends use this method to render cells as APL sessions.
 
@@ -81,9 +81,11 @@ Keyword arguments are persistent APL bindings; the optional source argument is p
 
 ### Python values
 
-NumPy is required. There is no public `Array` wrapper or conversion step:
+`Array` retains the native Rust value, including nesting, exact numbers and empty prototypes. Passing it back to a session shares that immutable value without serialization or copying. Arrays can outlive their session and move between Python threads or sessions. `Array(value)` also accepts the Python inputs below. `repr(a)` uses APL display, and `a.shape` is a tuple.
 
-| APL result | Python value |
+Use `a.py` for Python values according to this table. Use `a.np` or `np.asarray(a)` for an ndarray, including for scalars and strings. Conversions copy; `copy=False` is rejected. NumPy is optional and imported only when a conversion produces an ndarray. Scalar and string `.py` conversions do not require it. Python arithmetic, array indexing and word-named functions are not implemented yet; use APL expressions or convert explicitly.
+
+| APL result | `.py` value |
 | --- | --- |
 | Numeric scalar | `int`, `float`, `complex` or `Fraction` |
 | Exact integer array fitting signed 64 bits | `int64` ndarray |
@@ -93,9 +95,9 @@ NumPy is required. There is no public `Array` wrapper or conversion step:
 | Character scalar/vector | Python string |
 | Higher-rank character array | `U1` ndarray |
 
-Python integers (including NumPy integers) and booleans enter APL as exact numbers; floats remain approximate. `Fraction` and complex values retain their numeric meaning. Rectangular lists/tuples become ordinary arrays; ragged ones become nested arrays. Explicit object ndarrays retain their shape and nesting. Strings become character vectors. Arrays are copied in both directions, including non-contiguous inputs; modifying a Python array never changes session state. Non-finite numbers, wider-than-64-bit floats, wider-than-128-bit complex values, bytes, datetime and structured dtypes are rejected.
+Python integers (including NumPy integers) and booleans enter APL as exact numbers; floats remain approximate. `Fraction` and complex values retain their numeric meaning. Rectangular lists/tuples become ordinary arrays; ragged ones become nested arrays. Explicit object ndarrays retain their shape and nesting. Strings become character vectors. Python/NumPy inputs are copied, including non-contiguous arrays; modifying them or a converted ndarray never changes session state. Cyclic containers, non-finite numbers, wider-than-64-bit floats, wider-than-128-bit complex values, bytes, datetime and structured dtypes are rejected.
 
-This is a Pythonic value boundary, not lossless APL serialization. Numeric dtypes select domains, not original storage widths. Boxed scalars become zero-dimensional object ndarrays. Custom empty-array prototypes are not retained. Empty lists and empty object ndarrays use a floating zero prototype on input; numeric/character ndarray dtypes supply their corresponding prototype. Use the low-level worker's encoded arrays when exact APL structure is needed. Even integers beyond Python's decimal-string digit limit transfer without changing that process-wide setting.
+The native `Array` boundary is lossless. Explicit `.py`/`.np` conversions are Pythonic rather than lossless APL serialization: numeric dtypes select domains, boxed scalars become zero-dimensional object ndarrays, and custom empty prototypes are not retained. Empty lists and empty object ndarrays use a floating zero prototype on input; numeric/character ndarray dtypes supply their corresponding prototype. Integers beyond Python's decimal-string digit limit transfer without changing that process-wide setting.
 
 A final assignment returns its array without printing it. A final function/operator definition or empty input returns no array, not the preceding statement's value. Evaluations are not transactions: assignments completed before a runtime error remain in the session.
 
@@ -105,9 +107,9 @@ Assignments bind inside expressions: `1+a←3` returns 4 and stores 3. Modified 
 
 `AplError` carries the Rust-rendered diagnostic, kind, message, retained source, UTF-8 byte span, call-site context (`calls`) and output produced before failure. `apl(...)` and `.fn()` print that output before raising; `.eval()` retains it on the exception without printing.
 
-`Session` uses one persistent worker process, serializing evaluations. Calls may come from different Python threads. Ctrl-C interrupts the current evaluation; `apl.interrupt()` does the same from another thread. Cooperative interruption preserves the session and completed assignments. Use `Session(timeout=2)` for a per-evaluation deadline in seconds; change `apl.timeout` to adjust it, or set it to `None` for no deadline. Unresponsive workers are killed after the one-second grace period, losing their state. Evaluations are never retried automatically.
+`Session` uses one persistent Rust worker thread, serializing evaluations. Calls may come from different Python threads. Ctrl-C interrupts the current evaluation; `apl.interrupt()` does the same from another thread. Cooperative interruption preserves the session and completed assignments. Use `Session(timeout=2)` for a per-evaluation deadline in seconds; change `apl.timeout` to adjust it, or set it to `None` for no deadline. Waiting releases the GIL and checks Python signals. Native-library calls and individual BigInt operations can delay cancellation. The thread is never forcibly killed, and requests are never replayed. Use the separate process `Worker` below when execution needs a hard-kill fallback.
 
-Prefer `with Session()` or explicit `.close()` to release the process promptly. Otherwise it closes when the session is collected or Python exits. Returned Python values are independent of the session.
+Prefer `with Session()` or explicit `.close()`. Closing rejects new requests and interrupts active work. The worker destroys its Rust session on its owning thread after that work unwinds. Closing does not wait for an uninterruptible native operation. Abandoned sessions close when collected or Python exits. Returned arrays remain usable.
 
 ## Rust embedding
 
@@ -169,7 +171,7 @@ Worker requests also accept `bindings`, mapping names to arrays in the response 
 
 JSON integer inputs are exact; decimal/exponent inputs are floating-point. Fractions, complex numbers, nested arrays and empty prototypes use the same encodings in both directions. Invalid operations or array payloads return `REQUEST ERROR` without terminating the worker. Binding batches are not transactions. `Worker.request(payload, timeout=...)` exposes these operations without constructing the outer request ID.
 
-The private in-process `_core._Session` remains thread-affine. Public Python sessions use the worker above. Rust callers use `Session::eval_with` or `call_with` with `EvalOptions`; clone its `InterruptHandle` to cancel from another thread. No Jupyter or MCP dependency enters the interpreter.
+The process worker remains separate from the default thread-backed Python `Session`. Rust callers use `Session::eval_with` or `call_with` with `EvalOptions`; clone its `InterruptHandle` to cancel from another thread. No Jupyter or MCP dependency enters the interpreter.
 
 ## Explicit exact arithmetic
 
@@ -188,7 +190,7 @@ avg←+/÷≢ ⋄ avg 1x 2x 4x ⍝ 7r3
 
 Exact fractions are reduced, denominators positive, and exact integer results display with `x`. Only integer components are accepted in `x`/`r` literals; use `¯` for signs. An exact value too large for a required float conversion gives a domain error. Merely placing exact and approximate values in one array does not convert them. Empty prototypes and reduction identities retain the numeric domain. Predicates and positions produce exact integers. Iota, roll/deal, shape and tally preserve exactness when all numeric leaves of their arguments are exact; characters contribute no numeric domain, nested arrays contribute their leaves, and empties contribute their prototype. Character-only arrays have approximate shape/tally results. `?0` remains approximate.
 
-Python receives independent `int` values for exact integers, `fractions.Fraction` for non-integer exact values, and `float` for ordinary real numbers. JSON uses the numeric encodings above.
+Python `.py` conversion produces `int` for exact integers, `fractions.Fraction` for non-integer exact values, and `float` for ordinary real numbers. JSON uses the numeric encodings above.
 
 ## Complex arithmetic
 
@@ -206,7 +208,7 @@ sum←+/ ⋄ sum 1j2 3j4 ⍝ 4j6
 
 Complex values use two `f64` components through `num-complex`. Promotion is exact → float → complex; array construction alone never promotes adjacent elements. An exactly zero imaginary component normalizes to an ordinary float, not an exact rational; a small nonzero component is not rounded away. Complex-derived numeric fill and empty-reduction identities are therefore ordinary floats.
 
-Python receives copied native `complex` values; JSON uses the tagged pair above. Real-normalized results such as the conjugate product return a Python float/JSON number. Equality and inequality use the same fixed `1e-14` tolerance with complex magnitudes, following [Dyalog's equality rule](https://docs.dyalog.com/20.0/language-reference-guide/primitive-functions/equal-to/), rather than testing components separately. Ordering and structural counts require real values; tolerant coercion of near-real complex values is not implemented. Powers, roots, logarithms and circle functions support complex arguments. For example, `¯1*0.5` gives `0j1` and `1+*○0j1` gives `0`.
+Python `.py` conversion produces native `complex` values; JSON uses the tagged pair above. Real-normalized results such as the conjugate product convert to a Python float/JSON number. Equality and inequality use the same fixed `1e-14` tolerance with complex magnitudes, following [Dyalog's equality rule](https://docs.dyalog.com/20.0/language-reference-guide/primitive-functions/equal-to/), rather than testing components separately. Ordering and structural counts require real values; tolerant coercion of near-real complex values is not implemented. Powers, roots, logarithms and circle functions support complex arguments. For example, `¯1*0.5` gives `0j1` and `1+*○0j1` gives `0`.
 
 ## Implemented subset and limits
 

@@ -1,12 +1,12 @@
 use crate::{ErrorKind, Number};
-use std::{collections::HashMap, fmt, rc::Rc};
+use std::{collections::HashMap, fmt, sync::Arc};
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Element { Number(Number), Character(char), Nested(Array) }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Array(Rc<ArrayData>);
+pub struct Array(Arc<ArrayData>);
 
 #[derive(Debug, PartialEq)]
 struct ArrayData {
@@ -82,7 +82,7 @@ impl Element {
 }
 
 impl Array {
-    pub(crate) fn storage_id(&self) -> usize { Rc::as_ptr(&self.0) as usize }
+    pub(crate) fn storage_id(&self) -> usize { Arc::as_ptr(&self.0) as usize }
     pub fn from_parts(shape: Vec<usize>, data: Vec<Element>, empty_prototype: Element) -> Result<Self, ErrorKind> {
         if data.is_empty() { Self::empty(shape, empty_prototype) } else { Self::new(shape, data) }
     }
@@ -96,19 +96,19 @@ impl Array {
         let prototype = data[0].prototype();
         let exact = data.iter().filter_map(Element::exact_domain).reduce(|a, b| a && b);
         let data = Storage::compact(data);
-        Ok(Self(Rc::new(ArrayData { shape, data, prototype, depth, exact })))
+        Ok(Self(Arc::new(ArrayData { shape, data, prototype, depth, exact })))
     }
 
     pub fn floats(shape: Vec<usize>, mut data: Vec<f64>) -> Result<Self, ErrorKind> {
         if element_count(&shape)? != data.len() { return Err(ErrorKind::Length); }
         if data.iter().any(|n| !n.is_finite()) { return Err(ErrorKind::Domain); }
         for n in &mut data { if *n == 0.0 { *n = 0.0; } }
-        Ok(Self(Rc::new(ArrayData { shape, data: Storage::Float(data), prototype: Element::Number(0.0.try_into().unwrap()), depth: 0, exact: Some(false) })))
+        Ok(Self(Arc::new(ArrayData { shape, data: Storage::Float(data), prototype: Element::Number(0.0.try_into().unwrap()), depth: 0, exact: Some(false) })))
     }
 
     pub fn integers(shape: Vec<usize>, data: Vec<i64>) -> Result<Self, ErrorKind> {
         if element_count(&shape)? != data.len() { return Err(ErrorKind::Length); }
-        Ok(Self(Rc::new(ArrayData { shape, data: Storage::Integer(data), prototype: Element::Number(Number::from_integer(0)), depth: 0, exact: Some(true) })))
+        Ok(Self(Arc::new(ArrayData { shape, data: Storage::Integer(data), prototype: Element::Number(Number::from_integer(0)), depth: 0, exact: Some(true) })))
     }
     pub fn is_exact(&self) -> bool { self.0.exact == Some(true) }
 
@@ -125,7 +125,7 @@ impl Array {
             Element::Number(n) if n.as_float().is_some() => Storage::Float(Vec::new()),
             _ => Storage::Mixed(Vec::new()),
         };
-        Ok(Self(Rc::new(ArrayData { shape, data, prototype, depth, exact })))
+        Ok(Self(Arc::new(ArrayData { shape, data, prototype, depth, exact })))
     }
 
     pub fn scalar(n: impl TryInto<Number>) -> Result<Self, ErrorKind> { Self::new(vec![], vec![Element::Number(n.try_into().map_err(|_| ErrorKind::Domain)?)]) }
@@ -149,7 +149,7 @@ impl Array {
 
     pub(crate) fn with_shape(&self, shape: Vec<usize>) -> Result<Self, ErrorKind> {
         if element_count(&shape)? != self.len() { return Err(ErrorKind::Length); }
-        Ok(Self(Rc::new(ArrayData { shape, data: self.0.data.clone(), prototype: self.prototype().clone(), depth: self.0.depth, exact: self.0.exact })))
+        Ok(Self(Arc::new(ArrayData { shape, data: self.0.data.clone(), prototype: self.prototype().clone(), depth: self.0.depth, exact: self.0.exact })))
     }
 
     pub(crate) fn cells(&self, rank: usize) -> Result<Vec<Self>, ErrorKind> {
@@ -360,9 +360,9 @@ impl Array {
     fn fill(&self, filled: &mut HashMap<*const ArrayData, Array>) -> Self {
         // A shared nested array stays shared in its fill. Without this local memo,
         // repeated `a←a a` duplicates the entire prototype tree before any display.
-        let key = Rc::as_ptr(&self.0);
+        let key = Arc::as_ptr(&self.0);
         if let Some(a) = filled.get(&key) { return a.clone(); }
-        let result = Self(Rc::new(ArrayData {
+        let result = Self(Arc::new(ArrayData {
             shape: self.shape().to_vec(),
             data: match &self.0.data {
                 Storage::Integer(v) => Storage::Integer(vec![0; v.len()]),
@@ -430,7 +430,7 @@ mod tests {
         for _ in 0..MAX_NESTING { a = Array::new(vec![2], vec![Element::Nested(a.clone()), Element::Nested(a)]).unwrap(); }
         let Element::Nested(fill) = a.prototype() else { unreachable!() };
         let (Element::Nested(x), Element::Nested(y)) = (fill.at(0), fill.at(1)) else { unreachable!() };
-        assert!(Rc::ptr_eq(&x.0, &y.0));
+        assert!(Arc::ptr_eq(&x.0, &y.0));
         assert_eq!(Array::new(vec![1], vec![Element::Nested(a)]).unwrap_err(), ErrorKind::Limit);
     }
 }
