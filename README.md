@@ -73,17 +73,17 @@ with Session() as apl:
     assert r.value.py == 4 and r.output == ['3x']  # captured, not printed
 ```
 
-`apl(...)` returns an immutable `Array` and prints only explicit output (`⎕←` and display commands). `apl.eval(...)` returns `Result(value, output)` without printing. Both suppress implicit display, including intermediate expressions inside `⍎`. Output is captured during execution, not streamed. In notebooks, a trailing Python `;` suppresses automatic display of the return value when explicit output is sufficient.
+`apl(...)` returns an immutable `Array` or `Function` and prints only explicit output (`⎕←` and display commands). `apl.eval(...)` returns `Result(value, output)` without printing. Both suppress implicit display, including intermediate expressions inside `⍎`. Output is captured during execution, not streamed. In notebooks, a trailing Python `;` suppresses automatic display of the return value when explicit output is sufficient.
 
 `apl.run(...)` captures APL session display in `Result(value, output)`. It includes implicit expression output and explicit output. Assignments remain silent. Notebook frontends use this method to render cells as APL sessions.
 
-Keyword arguments are persistent APL bindings; the optional source argument is positional-only, so `apl(source=3, timeout=4)` binds those names too. Indexing evaluates an expression, and indexed assignment binds an ordinary name without executing generated source. `.fn(expression)` returns a monadic/dyadic Python callable: one argument is `⍵`, two are `⍺, ⍵`. It is **late-bound**: `f = apl.fn('foo')` follows later redefinitions of `foo`. No function handles or temporary globals are created.
+Keyword arguments are persistent APL bindings; the optional source argument is positional-only, so `apl(source=3, timeout=4)` binds those names too. Indexing evaluates an expression, and indexed assignment binds an ordinary name without executing generated source. Native arrays and functions pass directly as values, without temporary globals.
 
 ### Python values
 
-`Array` retains the native Rust value, including nesting, exact numbers and empty prototypes. Passing it back to a session shares that immutable value without serialization or copying. Arrays can outlive their session and move between Python threads or sessions. `Array(value)` also accepts the Python inputs below. `repr(a)` uses APL display, and `a.shape` is a tuple.
+`Array` retains the native Rust value, including nesting, exact numbers and empty prototypes. Passing it back to a session shares that immutable value without serialization or copying. Arrays can outlive their session and move between Python threads or sessions. `Array(value)` also accepts the Python inputs below. `repr(a)` uses Python numbers: exact `2`, approximate `2.`. `a.apl` uses APL display: `2x`, `2`. `a.shape` is a tuple.
 
-Use `a.py` for Python values according to this table. Use `a.np` or `np.asarray(a)` for an ndarray, including for scalars and strings. Conversions copy; `copy=False` is rejected. NumPy is optional and imported only when a conversion produces an ndarray. Scalar and string `.py` conversions do not require it. Python arithmetic, array indexing and word-named functions are not implemented yet; use APL expressions or convert explicitly.
+Use `a.py` for Python values according to this table. Use `a.np` or `np.asarray(a)` for an ndarray, including for scalars and strings. Conversions copy; `copy=False` is rejected. NumPy is optional and imported only when a conversion produces an ndarray. Scalar and string `.py` conversions do not require it.
 
 | APL result | `.py` value |
 | --- | --- |
@@ -99,9 +99,41 @@ Python integers (including NumPy integers) and booleans enter APL as exact numbe
 
 The native `Array` boundary is lossless. Explicit `.py`/`.np` conversions are Pythonic rather than lossless APL serialization: numeric dtypes select domains, boxed scalars become zero-dimensional object ndarrays, and custom empty prototypes are not retained. Empty lists and empty object ndarrays use a floating zero prototype on input; numeric/character ndarray dtypes supply their corresponding prototype. Integers beyond Python's decimal-string digit limit transfer without changing that process-wide setting.
 
-A final assignment returns its array without printing it. A final function/operator definition or empty input returns no array, not the preceding statement's value. Evaluations are not transactions: assignments completed before a runtime error remain in the session.
+A final array assignment returns its array without printing it. An unassigned function expression returns a `Function`. Function/operator assignments and empty input return `None`, not the preceding statement's value. Evaluations are not transactions: assignments completed before a runtime error remain in the session.
 
 Assignments bind inside expressions: `1+a←3` returns 4 and stores 3. Modified assignment passes through its right argument. `a b+←3 4` updates the targets from left to right.
+
+### Array operations and word functions
+
+```python
+from miniapl import Array, plus, times, subtract, divide, tally, floor
+
+a = Array([[1, 2, 3], [4, 5, 6]])
+a + [10, 20]                 # leading-axis agreement: [[11, 12, 13], [24, 25, 26]]
+a[2, :]                      # origin one: [4, 5, 6]
+a[:, [1, 3]]                 # [[1, 3], [4, 6]]
+mean = plus.reduce() / tally  # +/÷≢
+assert mean([1, 2, 4]).py == Fraction(7, 3)
+assert times(2)(3).py == 6     # exact right argument: ×∘2x
+assert times(2.)(3).py == 6.   # approximate right argument: ×∘2
+assert subtract.left(2)(5).py == -3
+assert (plus @ times)([1, 2], [3, 4]).py == 11
+assert (floor << times(10.))(1.25).py == 12
+```
+
+Array arithmetic and comparisons use miniapl semantics. `%` swaps the arguments of APL residue; `//` floors division; `@` is matrix/inner product; `&` and `|` are LCM/GCD (and/or on Booleans). Comparisons return arrays. `len` and iteration use major cells. `int`, `float`, `bool` and integer indexing conversion require simple singletons; arrays are unhashable. Use `member(x, y)` instead of Python `in`. Array indexing uses origin-one APL brackets, index arrays and full `:` axes; bounded slices are not supported.
+
+Word primitives have separate monadic and dyadic names: `sign`/`times`, `shape`/`reshape`, `iota`/`index_of`, `mix`/`take`. Calling a dyadic name with one argument binds the right argument; `.left(x)` binds the left. Calling it with two arguments applies it. Operator operands use the underlying APL function: `plus.reduce()` is reduction with dyadic `+`, not conjugation. The word table is in `python/miniapl/functions.py`.
+
+Monadic operators are methods: `.reduce()`, `.scan()`, `.each()`, `.commute()`, `.outer()`, `.key()`. Dyadic operators are `.inner(g)`, `.rank(r)`, `.beside(g)`, `.atop(g)`, `.over(g)`, `.behind(g)`, `.power(n)`, `.at(indices)` and `.stencil(spec)`. `.under(g)` composes the existing inverse of `g` with `f` over `g`; it is computational under, without structural replacement of untouched data. `f[axis]` qualifies an axis. `fork(f, g, h)` and `atop(f, g)` construct trains.
+
+Arithmetic between functions constructs a fork, including constant arms. `f @ g` is inner product; mixing a function and an array with `@` raises. `f << g` is `f∘g`; `f >> g` reverses that composition. `f ** n` is power, with `-1` requesting an inverse. Python determines grouping: `**` binds more tightly than arithmetic, shifts less tightly, and `@` groups left at multiplication precedence. Once built, a function executes through the APL evaluator, including right-before-left fork evaluation. `repr(f)` shows APL syntax.
+
+### Retained and late-bound functions
+
+`f = apl('g')` retains the current function node. `f = apl.fn('g')` resolves `g` on each call and follows redefinitions. Both are composable `Function` objects; one argument supplies `⍵`, two supply `⍺, ⍵`. Late-bound operands resolve once per function call, including inside operators and trains. `apl('{⍵×2}')` exports a dfn directly. No argument is converted to APL source.
+
+Primitive-built functions are session-independent. Exported dfns and `.fn()` retain their originating Python session for global lookup. Composing a free function with a session-bound function uses that session; combining different sessions raises. A session-bound function cannot be assigned to a different session. Closing its session prevents further calls. Free functions remain usable. Export rejects active lexical-frame references anywhere in the function graph; functions still cannot be array elements or dfn results. Python callbacks are not operands.
 
 ### Errors, interruption and lifetime
 
@@ -125,7 +157,7 @@ assert!(r.error.is_none() && r.output.is_empty());
 assert_eq!(r.value, Some(Array::integers(vec![], vec![2]).unwrap()));
 ```
 
-`call` / `call_with` resolve one function expression in the current session, then pass one array as `⍵` or two arrays as `⍺, ⍵`. Arguments are not serialized into APL source and no temporary names are assigned. Function names, dfns, trains and derived functions are accepted. Resolution happens on each call; no function handles escape the session. Calls return the same `Evaluation` (value, output, error) as evaluation, with the same deadlines and interruption support.
+`call` / `call_with` resolve one function expression in the current session, then pass one array as `⍵` or two arrays as `⍺, ⍵`. Arguments are not serialized into APL source and no temporary names are assigned. Function names, dfns, trains and derived functions are accepted. `Evaluation.function` holds an unshy, exportable function result. `set_function` binds a retained function; `call_function_with` calls it without reparsing. `Function::late_bound` parses an expression for resolution on each call. Rust callers supply the session for global lookup. All function exports reject active lexical-frame references. Calls use the same deadlines and interruption support as evaluation.
 
 ## JSON-lines process interface
 
@@ -262,8 +294,8 @@ Character literals use single quotes, with doubled quotes inside (`'can''t'`). O
 - Matrix inverse/divide `⌹` uses rational elimination for all-exact inputs and faer thin SVD otherwise. Rectangular full-column-rank inputs support least squares. Singular and underdetermined systems error. Numerical rank uses machine epsilon × max dimension × largest singular value, not comparison tolerance.
 - Names follow lexical nesting, not the dynamic caller. Recursive and mutually referring definitions work. Boolean guards allow `fact←{⍵=0:1 ⋄ ⍵×∇⍵-1}`; `fact 6` gives 720.
 - Catch-all `0::` and numbered error guards (`11::`, `6 11::`) restore bindings to when the guard was installed, after evaluating its condition. Later assignments are undone, including newly introduced locals. The selected guard is inactive in its handler; earlier guards can catch handler failures. Output is not rolled back. Cancellation and unsupported features are not caught by guards.
-- Functions share immutable nodes rather than copying their trees. Lexical links refer to active stack-owned frames; functions cannot escape via array results, local assignment, or the public API. This is not a claim about future namespace/export features. Definitions retain full source spans; errors retain their origin and defined-function call sites.
-- Direct dfn/dop tail calls run in a loop, including mutual recursion, selected guards and parenthesized returns. Needed lexical frames are retained. Installed error guards disable tail-frame reuse. Calls embedded in further computation remain depth-limited. Function-valued dfn results are syntax errors, as in Dyalog. Mutable namespaces and function exports are outside the current calculator scope.
+- Functions share immutable nodes rather than copying their trees. Lexical links refer to active stack-owned frames; public exports reject these links throughout the function graph. Definitions retain full source spans; errors retain their origin and defined-function call sites.
+- Direct dfn/dop tail calls run in a loop, including mutual recursion, selected guards and parenthesized returns. Needed lexical frames are retained. Installed error guards disable tail-frame reuse. Calls embedded in further computation remain depth-limited. Function-valued dfn results are syntax errors, as in Dyalog. Mutable namespaces and escaping lexical closures are outside the current calculator scope.
 - Fixed 1-based iota. Counts must be integral and nonnegative; generated arrays are capped at 1,000,000 elements. Array nesting, syntax nesting and function-graph depth have a 128-level limit. Combined non-tail evaluation/call nesting and retained lexical frames are limited to 64. Flat binding, assignment chains and supported tail recursion are iterative. Diagnostic carets use Unicode display width; tabs render at four-column stops.
 - Ordinary finite real `f64` numbers: `42`, `1.5`, `.5`, `¯2`, `1E¯3` (`e` also works). `-` is a function; use `¯` inside literals. Integers through ±2⁵³ are representable exactly; larger ordinary literals can round. Decimal arithmetic is not generally exact. Underflow rounds, potentially to zero; overflow/non-finite literals are domain errors. Negative zero is normalized. Opt into arbitrary-precision exact reals with `x`/`r` as above.
 - Division follows Dyalog's default `⎕DIV=0`: `0÷0` is 1; other zero divisors and `÷0` error. See [Dyalog's division contract](https://docs.dyalog.com/20.0/language-reference-guide/system-functions/div/). No configurable system variable is added.

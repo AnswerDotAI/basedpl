@@ -5,7 +5,7 @@ use miniapl::{
     ErrorKind::*,
     ParseStatus, Session, Source,
 };
-use std::rc::Rc;
+use std::sync::Arc;
 
 fn run(code: &str) -> Result<Option<Array>, Error> {
     let result = Session::new().eval_source(Source::new("test", code));
@@ -1298,7 +1298,7 @@ fn structural_completeness_and_source_lifetime() {
     assert!(matches!(parse(Source::new("test", "(2+))")), ParseStatus::Invalid(_)));
     assert!(matches!(parse(Source::new("test", "('")), ParseStatus::Invalid(_)));
     let source = Source::new("old input", "(1÷0)");
-    let weak = Rc::downgrade(&source);
+    let weak = Arc::downgrade(&source);
     // Parsing a domain error is non-executing; the same retained syntax can be evaluated later.
     let ParseStatus::Complete(parsed) = parse(source.clone()) else { panic!("expected complete input") };
     drop(source);
@@ -1448,7 +1448,7 @@ fn executing_binding_gate() {
 #[test]
 fn definitions_retain_only_needed_sources() {
     let source = Source::new("definition.apl", "bad←{1÷⍵}");
-    let weak = Rc::downgrade(&source);
+    let weak = Arc::downgrade(&source);
     let mut s = Session::new();
     assert!(s.eval_source(source).error.is_none());
     assert!(weak.upgrade().is_some());
@@ -1524,7 +1524,7 @@ fn diagnostic_width_and_call_context() {
     assert_eq!(e.calls.iter().map(|s| &s.source.text[s.range.clone()]).collect::<Vec<_>>(), ["bad", "outer"]);
     assert!(e.to_string().contains("called from old.apl:"));
     let empty = Source::new("empty.apl", "f←{}");
-    let weak = Rc::downgrade(&empty);
+    let weak = Arc::downgrade(&empty);
     s.eval_source(empty);
     assert!(weak.upgrade().is_some());
     let result = s.eval("f 0");

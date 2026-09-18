@@ -5,10 +5,18 @@ use crate::{
     syntax::{Definition, DefinitionKind, Node, NodeKind},
     Array, Element, Error, ErrorKind, ParseStatus, Parsed, Source, Span,
 };
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 #[derive(Clone, Debug)]
-struct Function { node: Rc<FunctionNode>, depth: usize, environment: Option<usize> }
+pub struct Function {
+    node: Arc<FunctionNode>,
+    depth: usize,
+    environment: Option<usize>,
+    late: bool,
+}
 
 const MAX_DEPTH: usize = 128;
 const MAX_CALL_DEPTH: usize = 64;
@@ -18,6 +26,7 @@ fn implicit_name(name: &str) -> bool { matches!(name, "⍺" | "⍵" | "⍺⍺" |
 #[derive(Debug)]
 enum FunctionNode {
     Primitive(Primitive),
+    LateBound(Arc<Parsed>, Span),
     Fold(Function, Hybrid),
     Inverse(Function),
     Axis(Function, Array),
@@ -66,6 +75,7 @@ impl Function {
         *budget -= 1;
         let (label, children) = match self.node.as_ref() {
             FunctionNode::Primitive(p) => return Tree::leaf(p.glyph().to_string()),
+            FunctionNode::LateBound(_, span) => return Tree::leaf(span.source.text.clone()),
             FunctionNode::Defined(c) => return Tree::leaf(c.text()),
             FunctionNode::Fold(f, h) => (h.text(), vec![f.tree(budget)]),
             FunctionNode::Inverse(f) => ("⍣¯1".into(), vec![f.tree(budget)]),
@@ -82,6 +92,7 @@ impl Function {
         *budget -= 1;
         match self.node.as_ref() {
             FunctionNode::Primitive(p) => p.glyph().to_string(),
+            FunctionNode::LateBound(_, span) => span.source.text.clone(),
             FunctionNode::Defined(c) => c.text().into(),
             FunctionNode::Fold(f, h) => format!("({}){}", f.text(budget), h.text()),
             FunctionNode::Inverse(f) => format!("({})⍣¯1", f.text(budget)),
@@ -105,30 +116,31 @@ impl Function {
         }
         Ok(result)
     }
-    fn primitive(p: Primitive) -> Self { Self { node: Rc::new(FunctionNode::Primitive(p)), depth: 1, environment: None } }
+    fn primitive(p: Primitive) -> Self { Self { node: Arc::new(FunctionNode::Primitive(p)), depth: 1, environment: None, late: false } }
     fn new(node: FunctionNode, span: &Span) -> Result<Self, Error> {
-        let (depth, environment) = match &node {
-            FunctionNode::Primitive(_) => (0, None),
-            FunctionNode::Fold(f, _) | FunctionNode::Axis(f, _) | FunctionNode::Inverse(f) => (f.depth, f.environment),
-            FunctionNode::Defined(c) => (0, c.environment),
+        let (depth, environment, late) = match &node {
+            FunctionNode::Primitive(_) => (0, None, false),
+            FunctionNode::LateBound(..) => (0, None, true),
+            FunctionNode::Fold(f, _) | FunctionNode::Axis(f, _) | FunctionNode::Inverse(f) => (f.depth, f.environment, f.late),
+            FunctionNode::Defined(c) => (0, c.environment, false),
             FunctionNode::Derived(c, a, b) => {
-                let (depth, environment) = operand_dependencies(std::iter::once(a).chain(b.iter()));
-                (depth, c.environment.max(environment))
+                let (depth, environment, late) = operand_dependencies(std::iter::once(a).chain(b.iter()));
+                (depth, c.environment.max(environment), late)
             }
             FunctionNode::Composed(_, operands) => operand_dependencies(operands.iter()),
-            FunctionNode::Modified(_, Operand::Function(f)) => (f.depth, f.environment),
-            FunctionNode::Modified(_, _) => (0, None),
-            FunctionNode::Fork(fs) => (fs.iter().map(|f| f.depth).max().unwrap(), fs.iter().filter_map(|f| f.environment).max()),
+            FunctionNode::Modified(_, Operand::Function(f)) => (f.depth, f.environment, f.late),
+            FunctionNode::Modified(_, _) => (0, None, false),
+            FunctionNode::Fork(fs) => (fs.iter().map(|f| f.depth).max().unwrap(), fs.iter().filter_map(|f| f.environment).max(), fs.iter().any(|f| f.late)),
         };
         let depth = depth + 1;
         if depth > MAX_DEPTH { return Err(span.error(ErrorKind::Limit, "function structure exceeds 128 levels")); }
-        Ok(Self { node: Rc::new(node), depth, environment })
+        Ok(Self { node: Arc::new(node), depth, environment, late })
     }
     fn call(&self, left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
         session.execution.check(span)?;
         if session.depth == MAX_CALL_DEPTH { return Err(span.error(ErrorKind::Limit, "evaluation depth exceeds 64")); }
         session.depth += 1;
-        let result = self.apply(left, right, span, session, output);
+        let result = if self.late { self.resolve(session, output, &mut HashMap::new(), 0).and_then(|f| f.apply(left, right, span, session, output)) } else { self.apply(left, right, span, session, output) };
         session.depth -= 1;
         session.execution.check(span)?;
         result
@@ -139,9 +151,45 @@ impl Function {
     fn inverse(&self, span: &Span) -> Result<Self, Error> {
         if let FunctionNode::Inverse(f) = self.node.as_ref() { Ok(f.clone()) } else { Self::new(FunctionNode::Inverse(self.clone()), span) }
     }
+    fn resolve(&self, session: &mut Session, output: &mut Vec<String>, resolved: &mut HashMap<usize, (Self, Self)>, depth: usize) -> Result<Self, Error> {
+        if !self.late { return Ok(self.clone()); }
+        let id = Arc::as_ptr(&self.node) as usize;
+        if let Some((_, f)) = resolved.get(&id) { return Ok(f.clone()); }
+        let result = if let FunctionNode::LateBound(parsed, origin) = self.node.as_ref() {
+            session.execution.check(origin)?;
+            if depth >= MAX_DEPTH { return Err(origin.error(ErrorKind::Limit, "late-bound function resolution exceeds 128 levels")); }
+            let caller = session.current.take();
+            let bound = session.bind(&parsed.statements[0].nodes, output);
+            session.current = caller;
+            Self::from_value(bound?.value, origin)?.resolve(session, output, resolved, depth + 1)?
+        } else {
+            let mut fun = |f: &Self| f.resolve(session, output, resolved, depth + 1);
+            fn operand(a: &Operand, fun: &mut impl FnMut(&Function) -> Result<Function, Error>) -> Result<Operand, Error> {
+                Ok(match a { Operand::Function(f) => Operand::Function(fun(f)?), _ => a.clone() })
+            }
+            let node = match self.node.as_ref() {
+                FunctionNode::Fold(f, h) => FunctionNode::Fold(fun(f)?, *h),
+                FunctionNode::Inverse(f) => FunctionNode::Inverse(fun(f)?),
+                FunctionNode::Axis(f, a) => FunctionNode::Axis(fun(f)?, a.clone()),
+                FunctionNode::Derived(c, a, b) => {
+                    FunctionNode::Derived(c.clone(), operand(a, &mut fun)?, b.as_ref().map(|b| operand(b, &mut fun)).transpose()?)
+                }
+                FunctionNode::Modified(op, a) => FunctionNode::Modified(*op, operand(a, &mut fun)?),
+                FunctionNode::Composed(op, [a, b]) => FunctionNode::Composed(*op, [operand(a, &mut fun)?, operand(b, &mut fun)?]),
+                FunctionNode::Fork([a, b, c]) => FunctionNode::Fork([fun(a)?, fun(b)?, fun(c)?]),
+                _ => unreachable!(),
+            };
+            let source = Source::new("<call>", self.apl());
+            Self::new(node, &Span { range: 0..source.text.len(), source })?
+        };
+        // Keep the source node alive so its address cannot be reused during resolution.
+        resolved.insert(id, (self.clone(), result.clone()));
+        Ok(result)
+    }
     fn apply(&self, left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
         use FunctionNode::{Defined, Derived, Fold, Fork};
         let array = match self.node.as_ref() {
+            FunctionNode::LateBound(..) => unreachable!(),
             FunctionNode::Primitive(Primitive::Execute) => return session.execute(left, right, span, output),
             FunctionNode::Inverse(f) => return inverse(f, left, right, span, session, output),
             FunctionNode::Composed(op, operands) => return composition(*op, operands, left, right, span, session, output),
@@ -177,6 +225,106 @@ impl Function {
             }
         }?;
         Ok(Bound::new(Value::Array(array)))
+    }
+}
+
+impl Function {
+    pub fn late_bound(expression: &str) -> Result<Self, Error> {
+        let source = Source::new("<call>", expression);
+        let span = Span { range: 0..source.text.len(), source: source.clone() };
+        let parsed = match crate::parse(source) {
+            ParseStatus::Complete(parsed) => parsed,
+            ParseStatus::Incomplete(e) | ParseStatus::Invalid(e) => return Err(e),
+        };
+        if parsed.statements.len() != 1 { return Err(span.error(ErrorKind::Syntax, "call requires one function expression")); }
+        Self::new(FunctionNode::LateBound(Arc::new(parsed), span.clone()), &span)
+    }
+
+    /// Reject stack-frame references; report whether the graph needs session lookup.
+    pub fn export_context(&self) -> Result<bool, ErrorKind> {
+        fn function(a: &Operand) -> Option<&Function> { if let Operand::Function(f) = a { Some(f) } else { None } }
+        let (mut pending, mut seen, mut context) = (vec![self], HashSet::new(), false);
+        while let Some(f) = pending.pop() {
+            if !seen.insert(Arc::as_ptr(&f.node)) { continue; }
+            if f.environment.is_some() { return Err(ErrorKind::Domain); }
+            match f.node.as_ref() {
+                FunctionNode::Primitive(Primitive::Execute) | FunctionNode::LateBound(..) => context = true,
+                FunctionNode::Primitive(_) => (),
+                FunctionNode::Defined(c) => {
+                    if c.environment.is_some() { return Err(ErrorKind::Domain); }
+                    context = true;
+                }
+                FunctionNode::Derived(c, a, b) => {
+                    if c.environment.is_some() { return Err(ErrorKind::Domain); }
+                    context = true;
+                    pending.extend(std::iter::once(a).chain(b.iter()).filter_map(function));
+                }
+                FunctionNode::Fold(f, _) | FunctionNode::Inverse(f) | FunctionNode::Axis(f, _) => pending.push(f),
+                FunctionNode::Modified(_, a) => pending.extend(function(a)),
+                FunctionNode::Composed(_, operands) => pending.extend(operands.iter().filter_map(function)),
+                FunctionNode::Fork(fs) => pending.extend(fs),
+            }
+        }
+        Ok(context)
+    }
+
+    pub fn apl(&self) -> String { self.text(&mut 1000) }
+
+    #[cfg(feature = "python")]
+    pub(crate) fn glyph(glyph: &str) -> Option<Self> {
+        let p = match glyph {
+            "/" => Primitive::Replicate(false),
+            "⌿" => Primitive::Replicate(true),
+            "\\" => Primitive::Expand(false),
+            "⍀" => Primitive::Expand(true),
+            "⎕C" => Primitive::Case,
+            "⎕UCS" => Primitive::Unicode,
+            _ => Primitive::from_glyph(glyph.chars().next()?)?,
+        };
+        Some(Self::primitive(p))
+    }
+
+    #[cfg(feature = "python")]
+    pub(crate) fn build(kind: &str, operands: Vec<Operand>) -> Result<Self, Error> {
+        let source = Source::new("<function>", kind);
+        let span = Span { range: 0..source.text.len(), source };
+        let fun = |a: &Operand| Self::from_value(a.value(), &span);
+        let constant = |a: &Operand| match a { Operand::Array(_) => Self::new(FunctionNode::Modified(OperatorKind::Commute, a.clone()), &span), _ => fun(a) };
+        let node = match (kind, operands.as_slice()) {
+            ("fork", [a, b, c]) => FunctionNode::Fork([constant(a)?, fun(b)?, constant(c)?]),
+            ("axis", [f, Operand::Array(axis)]) => FunctionNode::Axis(fun(f)?, axis.clone()),
+            ("/" | "⌿" | "\\" | "⍀", [f]) => {
+                FunctionNode::Fold(fun(f)?, Hybrid { scan: matches!(kind, "\\" | "⍀"), first: matches!(kind, "⌿" | "⍀"), axis: None })
+            }
+            ("¨" | "⍨" | "∘." | "⌸", [f]) => {
+                let op = match kind {
+                    "¨" => OperatorKind::Each,
+                    "⍨" => OperatorKind::Commute,
+                    "∘." => OperatorKind::Outer,
+                    _ => OperatorKind::Key,
+                };
+                FunctionNode::Modified(op, f.clone())
+            }
+            ("under", [f, g]) => {
+                let over = Self::new(FunctionNode::Composed(OperatorKind::Over, [f.clone(), g.clone()]), &span)?;
+                FunctionNode::Composed(OperatorKind::Rank, [Operand::Function(fun(g)?.inverse(&span)?), Operand::Function(over)])
+            }
+            ("∘" | "⍤" | "⍥" | "⍛" | "." | "⍣" | "@" | "⌺", [a, b]) => {
+                let op = match kind {
+                    "∘" => OperatorKind::Compose,
+                    "⍤" => OperatorKind::Rank,
+                    "⍥" => OperatorKind::Over,
+                    "⍛" => OperatorKind::Behind,
+                    "." => OperatorKind::Product,
+                    "⍣" => OperatorKind::Power,
+                    "@" => OperatorKind::At,
+                    _ => OperatorKind::Stencil,
+                };
+                FunctionNode::Composed(op, [a.clone(), b.clone()])
+            }
+            _ => return Err(span.error(ErrorKind::Syntax, "invalid function construction")),
+        };
+        Self::new(node, &span)
     }
 }
 
@@ -862,10 +1010,10 @@ fn nwise(
 }
 
 // A lexical link is an index into active frames, never an owning reference.
-// Functions cannot escape: results/array elements are arrays, assignments are local,
-// and the public API exports no functions. Revisit this proof before adding an outlet.
+// APL results/array elements are arrays and assignments are local. Public function
+// export rejects frame references throughout the function graph.
 #[derive(Clone, Debug)]
-struct Closure { definition: Rc<Definition>, environment: Option<usize> }
+struct Closure { definition: Arc<Definition>, environment: Option<usize> }
 
 impl Closure {
     fn text(&self) -> &str {
@@ -877,15 +1025,15 @@ impl Hybrid { fn text(self) -> String { format!("{}{}", self.primitive().glyph()
 struct Frame { names: HashMap<String, Value>, parent: Option<usize> }
 
 #[derive(Clone, Debug)]
-enum Operand { Array(Array), Function(Function), Hybrid(Hybrid) }
+pub(crate) enum Operand { Array(Array), Function(Function), Hybrid(Hybrid) }
 
 #[derive(Clone, Debug)]
 enum Operator { Defined(Closure), Primitive(OperatorKind), Bound(Box<Operator>, Operand) }
 
-fn operand_dependencies<'a>(operands: impl Iterator<Item = &'a Operand>) -> (usize, Option<usize>) {
-    operands.fold((0, None), |(depth, environment), op| match op {
-        Operand::Function(f) => (depth.max(f.depth), environment.max(f.environment)),
-        _ => (depth, environment),
+fn operand_dependencies<'a>(operands: impl Iterator<Item = &'a Operand>) -> (usize, Option<usize>, bool) {
+    operands.fold((0, None, false), |(depth, environment, late), op| match op {
+        Operand::Function(f) => (depth.max(f.depth), environment.max(f.environment), late || f.late),
+        _ => (depth, environment, late),
     })
 }
 
@@ -981,7 +1129,12 @@ impl Bound {
 
 /// Final value and ordered output are independent. Errors retain already-produced output.
 #[derive(Debug, Default)]
-pub struct Evaluation { pub value: Option<Array>, pub output: Vec<String>, pub error: Option<Error> }
+pub struct Evaluation {
+    pub value: Option<Array>,
+    pub function: Option<Function>,
+    pub output: Vec<String>,
+    pub error: Option<Error>,
+}
 
 #[derive(Default)]
 pub struct Session {
@@ -997,12 +1150,17 @@ pub struct Session {
 
 impl Session {
     pub fn new() -> Self { Self::default() }
-    pub fn set(&mut self, name: &str, value: Array) -> Result<(), ErrorKind> {
+    pub fn set(&mut self, name: &str, value: Array) -> Result<(), ErrorKind> { self.set_value(name, Value::Array(value)) }
+    pub fn set_function(&mut self, name: &str, value: Function) -> Result<(), ErrorKind> {
+        value.export_context()?;
+        self.set_value(name, Value::Function(value))
+    }
+    fn set_value(&mut self, name: &str, value: Value) -> Result<(), ErrorKind> {
         let ParseStatus::Complete(parsed) = crate::parse(Source::new("<binding>", name)) else { return Err(ErrorKind::Syntax); };
         if parsed.statements.len() != 1 || parsed.statements[0].nodes.len() != 1 { return Err(ErrorKind::Syntax); }
         let NodeKind::Name(parsed_name) = &parsed.statements[0].nodes[0].kind else { return Err(ErrorKind::Syntax); };
         if parsed_name != name || implicit_name(name) { return Err(ErrorKind::Syntax); }
-        self.names.insert(name.to_owned(), Value::Array(value));
+        self.names.insert(name.to_owned(), value);
         Ok(())
     }
     pub fn eval(&mut self, code: &str) -> Evaluation { self.eval_source(Source::new("<input>", code)) }
@@ -1017,23 +1175,24 @@ impl Session {
     /// No function or lexical-frame handle escapes the call, and no temporary names are bound.
     pub fn call(&mut self, function: &str, args: &[Array]) -> Evaluation { self.call_with(function, args, crate::EvalOptions::default()) }
     pub fn call_with(&mut self, function: &str, args: &[Array], options: crate::EvalOptions) -> Evaluation {
+        match Function::late_bound(function) {
+            Ok(f) => self.call_function_with(&f, args, options),
+            Err(error) => Evaluation { error: Some(error), ..Evaluation::default() },
+        }
+    }
+    pub fn call_function_with(&mut self, function: &Function, args: &[Array], options: crate::EvalOptions) -> Evaluation {
         self.execution.begin(options);
-        let source = Source::new("<call>", function);
+        let source = Source::new("<call>", function.apl());
         let span = Span { range: 0..source.text.len(), source: source.clone() };
         let mut result = Evaluation::default();
         let called = (|| {
+            function.export_context().map_err(|k| span.error(k, "function retains an active lexical frame"))?;
             let (left, right) = match args {
                 [right] => (None, right),
                 [left, right] => (Some(left), right),
                 _ => return Err(span.error(ErrorKind::Length, "call requires one or two arguments")),
             };
-            let parsed = match crate::parse(source) {
-                ParseStatus::Complete(parsed) => parsed,
-                ParseStatus::Incomplete(e) | ParseStatus::Invalid(e) => return Err(e),
-            };
-            if parsed.statements.len() != 1 { return Err(span.error(ErrorKind::Syntax, "call requires one function expression")); }
-            let bound = self.bind(&parsed.statements[0].nodes, &mut result.output)?;
-            Function::from_value(bound.value, &span)?.call(left, right, &span, self, &mut result.output)?.result(&span)
+            function.call(left, right, &span, self, &mut result.output)?.result(&span)
         })();
         match called {
             Ok(Bound { value: Value::Array(a), shy, .. }) => {
@@ -1045,11 +1204,11 @@ impl Session {
         }
         result
     }
-    pub fn eval_source(&mut self, source: std::rc::Rc<Source>) -> Evaluation {
+    pub fn eval_source(&mut self, source: Arc<Source>) -> Evaluation {
         self.execution.begin(crate::EvalOptions::default());
         self.evaluate_source(source)
     }
-    fn evaluate_source(&mut self, source: std::rc::Rc<Source>) -> Evaluation {
+    fn evaluate_source(&mut self, source: Arc<Source>) -> Evaluation {
         if source.text.trim_start().starts_with(']') { return self.command(source); }
         match crate::parse(source) {
             ParseStatus::Complete(parsed) => self.eval_display(&parsed, false),
@@ -1063,6 +1222,7 @@ impl Session {
     fn eval_display(&mut self, parsed: &Parsed, diagram: bool) -> Evaluation {
         let mut result = Evaluation::default();
         for (i, statement) in parsed.statements.iter().enumerate() {
+            result.function = None;
             let nodes = &statement.nodes;
             match self.bind(nodes, &mut result.output) {
                 Ok(bound) => {
@@ -1079,6 +1239,14 @@ impl Session {
                         Value::Function(f) => {
                             if self.execution.echo {
                                 result.output.push(if self.display.enabled && self.display.trees { f.tree(&mut 1000).render() } else { f.text(&mut 1000) });
+                            }
+                            if i + 1 == parsed.statements.len() {
+                                if let Err(k) = f.export_context() {
+                                    result.value = None;
+                                    result.error = Some(nodes[0].span.error(k, "function retains an active lexical frame"));
+                                    return result;
+                                }
+                                result.function = Some(f);
                             }
                             None
                         }
@@ -1102,7 +1270,7 @@ impl Session {
         }
         result
     }
-    fn command(&mut self, source: Rc<Source>) -> Evaluation {
+    fn command(&mut self, source: Arc<Source>) -> Evaluation {
         let code = source.text.trim();
         let (command, args) = code.split_once(char::is_whitespace).unwrap_or((code, ""));
         if matches!(command.to_ascii_lowercase().as_str(), "]box" | "]boxing") {
@@ -1857,6 +2025,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn function_export_rejects_frame_dependencies() {
+        fn shared<T: Send + Sync>() {}
+        shared::<Function>();
+        shared::<Evaluation>();
+        let mut s = Session::new();
+        let f = s.eval("{⍵}").function.unwrap();
+        assert_eq!(f.export_context(), Ok(true));
+        let FunctionNode::Defined(c) = f.node.as_ref() else { unreachable!() };
+        let span = &c.definition.span;
+        let scoped = Function::new(FunctionNode::Defined(Closure { environment: Some(0), ..c.clone() }), span).unwrap();
+        let train = Function::new(FunctionNode::Fork([f.clone(), f.clone(), scoped]), span).unwrap();
+        assert_eq!(train.export_context(), Err(ErrorKind::Domain));
+        assert_eq!(s.set_function("f", train), Err(ErrorKind::Domain));
+    }
+
+    #[test]
     fn function_construction_shares_both_arms() {
         let mut s = Session::new();
         assert!(s.eval("f←+").error.is_none());
@@ -1865,8 +2049,8 @@ mod tests {
             assert!(s.eval("f←f+f").error.is_none());
             let Value::Function(f) = &s.names["f"] else { unreachable!() };
             let FunctionNode::Fork(arms) = f.node.as_ref() else { unreachable!() };
-            assert!(Rc::ptr_eq(&arms[0].node, &previous.node));
-            assert!(Rc::ptr_eq(&arms[2].node, &previous.node));
+            assert!(Arc::ptr_eq(&arms[0].node, &previous.node));
+            assert!(Arc::ptr_eq(&arms[2].node, &previous.node));
         }
     }
     #[test]
@@ -1875,7 +2059,7 @@ mod tests {
         let body = format!("outer←{{x←2 ⋄ add←{{x+⍵}} ⋄ {} add 3}}", "r←add 3 ⋄ ".repeat(1_000));
         assert!(s.eval(&body).error.is_none());
         let source = Source::new("calls", "outer 0 ⋄ outer 0");
-        let weak = Rc::downgrade(&source);
+        let weak = Arc::downgrade(&source);
         let result = s.eval_source(source);
         assert!(result.error.is_none());
         assert_eq!(result.value.unwrap(), Array::scalar(5.0).unwrap());

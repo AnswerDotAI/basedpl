@@ -1,4 +1,4 @@
-use crate::{Array, Element, EvalOptions, Evaluation, InterruptHandle, Number, Session, Span};
+use crate::{eval::Operand, Array, Element, EvalOptions, Evaluation, Function, InterruptHandle, Number, Session, Source, Span};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use pyo3::{
@@ -69,50 +69,74 @@ impl PyArray {
     fn shape(&self) -> Vec<usize> { self.inner.shape().to_vec() }
     fn parts(&self, py: Python<'_>) -> PyResult<Py<PyDict>> { array(py, &self.inner) }
     fn __repr__(&self) -> String { self.inner.to_string() }
+    fn scalar(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        if !self.inner.is_singleton() { return Err(PyValueError::new_err("conversion requires a singleton array")); }
+        if matches!(self.inner.at(0), Element::Nested(_)) { return Err(PyTypeError::new_err("conversion requires a simple scalar")); }
+        array(py, &Array::new(vec![], vec![self.inner.at(0)]).unwrap())
+    }
+    fn cells(&self) -> PyResult<Vec<Self>> {
+        let rank = self.inner.shape().len().checked_sub(1).ok_or_else(|| PyTypeError::new_err("a scalar has no major cells"))?;
+        self.inner.cells(rank).map(|a| a.into_iter().map(|inner| Self { inner }).collect()).map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+    fn select(&self, py: Python<'_>, parts: Vec<Option<PyRef<'_, PyArray>>>) -> PyResult<Py<PyDict>> {
+        let span = Span { source: Source::new("<index>", "[]"), range: 0..2 };
+        let execution = crate::execution::Execution::default();
+        let parts = parts.into_iter().map(|a| a.map(|a| a.inner.clone())).collect::<Vec<_>>();
+        let mut result = Evaluation::default();
+        match crate::primitive::select(&self.inner, &parts, &execution.at(&span)) { Ok(a) => result.value = Some(a), Err(e) => result.error = Some(e) }
+        response(py, result)
+    }
 }
 
-struct Location { name: String, text: String, range: (usize, usize) }
-impl From<&Span> for Location {
-    fn from(s: &Span) -> Self { Self { name: s.source.name.clone(), text: s.source.text.clone(), range: (s.range.start, s.range.end) } }
+#[pyclass(frozen, name = "_Function")]
+struct PyFunction { inner: Function }
+
+fn operand(value: &Bound<'_, PyAny>) -> PyResult<Operand> {
+    if let Ok(f) = value.extract::<PyRef<'_, PyFunction>>() { return Ok(Operand::Function(f.inner.clone())); }
+    Ok(Operand::Array(value.extract::<PyRef<'_, PyArray>>()?.inner.clone()))
 }
-struct Diagnostic {
-    kind: String,
-    message: String,
-    display: String,
-    location: Location,
-    calls: Vec<Location>,
-}
-struct Reply { value: Option<Array>, output: Vec<String>, error: Option<Diagnostic> }
-impl From<Evaluation> for Reply {
-    fn from(e: Evaluation) -> Self {
-        let error = e.error.map(|e| Diagnostic {
-            kind: e.kind.to_string(),
-            display: e.to_string(),
-            location: (&e.span).into(),
-            calls: e.calls.iter().map(Location::from).collect(),
-            message: e.message,
-        });
-        Self { value: e.value, output: e.output, error }
+
+#[pymethods]
+impl PyFunction {
+    #[staticmethod]
+    fn primitive(glyph: &str) -> PyResult<Self> { Function::glyph(glyph).map(|inner| Self { inner }).ok_or_else(|| PyValueError::new_err("unknown primitive")) }
+    #[staticmethod]
+    fn late_bound(py: Python<'_>, expression: &str) -> PyResult<Py<PyDict>> {
+        let result = match Function::late_bound(expression) {
+            Ok(function) => Evaluation { function: Some(function), ..Evaluation::default() },
+            Err(error) => Evaluation { error: Some(error), ..Evaluation::default() },
+        };
+        response(py, result)
     }
+    #[staticmethod]
+    fn build(kind: &str, values: Vec<Bound<'_, PyAny>>) -> PyResult<Self> {
+        let operands = values.iter().map(operand).collect::<PyResult<Vec<_>>>()?;
+        Function::build(kind, operands).map(|inner| Self { inner }).map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+    #[getter]
+    fn needs_session(&self) -> PyResult<bool> { self.inner.export_context().map_err(|e| PyValueError::new_err(e.to_string())) }
+    fn __repr__(&self) -> String { self.inner.apl() }
 }
 struct Request {
     code: Option<String>,
-    function: Option<String>,
+    function: Option<Function>,
     args: Vec<Array>,
-    bindings: Vec<(String, Array)>,
+    bindings: Vec<(String, Operand)>,
     options: EvalOptions,
-    reply: mpsc::Sender<Result<Reply, &'static str>>,
+    reply: mpsc::Sender<Result<Evaluation, &'static str>>,
 }
 impl Request {
-    fn run(&mut self, session: &mut Session) -> Result<Reply, &'static str> {
-        for (name, value) in self.bindings.drain(..) { session.set(&name, value).map_err(|_| "binding requires an ordinary APL name")?; }
+    fn run(&mut self, session: &mut Session) -> Result<Evaluation, &'static str> {
+        for (name, value) in self.bindings.drain(..) {
+            match value { Operand::Array(a) => session.set(&name, a), Operand::Function(f) => session.set_function(&name, f), _ => unreachable!() }
+            .map_err(|_| "binding requires an ordinary APL name and an exportable value")?;
+        }
         let options = std::mem::take(&mut self.options);
         Ok(match (&self.code, &self.function) {
             (Some(code), _) => session.eval_with(code, options),
-            (_, Some(function)) => session.call_with(function, &self.args, options),
+            (_, Some(function)) => session.call_function_with(function, &self.args, options),
             _ => Evaluation::default(),
-        }
-        .into())
+        })
     }
 }
 struct WorkerState { sender: Option<mpsc::Sender<Request>>, active: Option<InterruptHandle> }
@@ -143,9 +167,9 @@ impl PySession {
         &self,
         py: Python<'_>,
         code: Option<String>,
-        function: Option<String>,
+        function: Option<PyRef<'_, PyFunction>>,
         args: Vec<PyRef<'_, PyArray>>,
-        bindings: Vec<(String, PyRef<'_, PyArray>)>,
+        bindings: Vec<(String, Bound<'_, PyAny>)>,
         timeout: Option<f64>,
         echo: bool,
     ) -> PyResult<Py<PyDict>> {
@@ -155,9 +179,9 @@ impl PySession {
         let (reply, mut receiver) = mpsc::channel();
         let request = Request {
             code,
-            function,
+            function: function.map(|f| f.inner.clone()),
             args: args.iter().map(|a| a.inner.clone()).collect(),
-            bindings: bindings.into_iter().map(|(n, a)| (n, a.inner.clone())).collect(),
+            bindings: bindings.into_iter().map(|(n, a)| Ok((n, operand(&a)?))).collect::<PyResult<_>>()?,
             options,
             reply,
         };
@@ -214,25 +238,25 @@ fn options(timeout: Option<f64>, echo: bool) -> PyResult<crate::EvalOptions> {
     Ok(crate::EvalOptions { timeout, echo, ..crate::EvalOptions::default() })
 }
 
-fn response(py: Python<'_>, result: Reply) -> PyResult<Py<PyDict>> {
-    fn location(py: Python<'_>, location: &Location) -> PyResult<Py<PyDict>> {
+fn response(py: Python<'_>, result: Evaluation) -> PyResult<Py<PyDict>> {
+    fn location(py: Python<'_>, span: &Span) -> PyResult<Py<PyDict>> {
         let source = PyDict::new(py);
-        source.set_item("name", &location.name)?;
-        source.set_item("text", &location.text)?;
+        source.set_item("name", &span.source.name)?;
+        source.set_item("text", &span.source.text)?;
         let d = PyDict::new(py);
         d.set_item("source", source)?;
-        d.set_item("span", location.range)?;
+        d.set_item("span", (span.range.start, span.range.end))?;
         Ok(d.unbind())
     }
-    let value = result.value.map(|inner| Py::new(py, PyArray { inner })).transpose()?;
+    let value = if let Some(inner) = result.value { Some(Py::new(py, PyArray { inner })?.into_any()) } else if let Some(inner) = result.function { Some(Py::new(py, PyFunction { inner })?.into_any()) } else { None };
     let error = result
         .error
         .as_ref()
         .map(|e| -> PyResult<Py<PyDict>> {
-            let d = location(py, &e.location)?.into_bound(py);
-            d.set_item("kind", &e.kind)?;
+            let d = location(py, &e.span)?.into_bound(py);
+            d.set_item("kind", e.kind.to_string())?;
             d.set_item("message", &e.message)?;
-            d.set_item("display", &e.display)?;
+            d.set_item("display", e.to_string())?;
             let calls = PyList::empty(py);
             for span in &e.calls { calls.append(location(py, span)?)?; }
             d.set_item("calls", calls)?;
@@ -260,6 +284,7 @@ fn _check_reference(case: &str, timeout: f64) -> PyResult<String> {
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySession>()?;
     m.add_class::<PyArray>()?;
+    m.add_class::<PyFunction>()?;
     m.add_function(wrap_pyfunction!(run_cli, m)?)?;
     m.add_function(wrap_pyfunction!(_check_reference, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;

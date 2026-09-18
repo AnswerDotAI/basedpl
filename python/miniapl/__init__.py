@@ -1,8 +1,8 @@
 "Native APL arrays in an interruptible, thread-backed session."
-import math, sys, weakref
+import math, operator, sys, weakref
 from dataclasses import dataclass
 from fractions import Fraction
-from ._core import __version__, symbols, _Array, _Session
+from ._core import __version__, symbols, _Array, _Function, _Session
 
 __all__ = ['__version__', 'symbols', 'Array', 'Result', 'AplError', 'Session']
 
@@ -72,7 +72,51 @@ def _array(value, seen=None):
     try: return _Array(dict(shape=list(shape), data=[_element(o, seen) for o in data], prototype=prototype))
     finally: seen.remove(id(value))
 
-class Array:
+class _Operators:
+    __hash__ = None
+    __array_priority__ = 1000
+    def __add__(self, other): return _binary('+', self, other)
+    def __radd__(self, other): return _binary('+', other, self)
+    def __sub__(self, other): return _binary('-', self, other)
+    def __rsub__(self, other): return _binary('-', other, self)
+    def __mul__(self, other): return _binary('×', self, other)
+    def __rmul__(self, other): return _binary('×', other, self)
+    def __truediv__(self, other): return _binary('÷', self, other)
+    def __rtruediv__(self, other): return _binary('÷', other, self)
+    def __floordiv__(self, other): return _unary('⌊', _binary('÷', self, other))
+    def __rfloordiv__(self, other): return _unary('⌊', _binary('÷', other, self))
+    def __mod__(self, other): return _binary('|', other, self)
+    def __rmod__(self, other): return _binary('|', self, other)
+    def __pow__(self, other): return _binary('*', self, other)
+    def __rpow__(self, other): return _binary('*', other, self)
+    def __and__(self, other): return _binary('∧', self, other)
+    def __rand__(self, other): return _binary('∧', other, self)
+    def __or__(self, other): return _binary('∨', self, other)
+    def __ror__(self, other): return _binary('∨', other, self)
+    def __eq__(self, other): return _binary('=', self, other)
+    def __ne__(self, other): return _binary('≠', self, other)
+    def __lt__(self, other): return _binary('<', self, other)
+    def __le__(self, other): return _binary('≤', self, other)
+    def __gt__(self, other): return _binary('>', self, other)
+    def __ge__(self, other): return _binary('≥', self, other)
+    def __neg__(self): return _unary('-', self)
+    def __pos__(self): return _unary('+', self)
+    def __invert__(self): return _unary('~', self)
+
+def _array_repr(raw):
+    def item(o):
+        if isinstance(o, dict): return f'Array({_array_repr(o)})'
+        if isinstance(o, tuple): return repr(Fraction(*o))
+        text = repr(o)
+        return text[:-1] if isinstance(o, float) and text.endswith('.0') else text
+    shape, data = raw['shape'], iter(raw['data'])
+    def cells(dims):
+        if not dims: return item(next(data))
+        return '[' + ', '.join(cells(dims[1:]) for _ in range(dims[0])) + ']'
+    if math.prod(shape) == 0: return f'Array([], shape={tuple(shape)})'
+    return cells(shape)
+
+class Array(_Operators):
     "An immutable native APL value. Conversion to Python or NumPy makes a copy."
     __slots__ = ('_inner',)
     def __init__(self, value): self._inner = _array(value)
@@ -82,11 +126,34 @@ class Array:
     def py(self): return _value(self._inner.parts())
     @property
     def np(self): return _value(self._inner.parts(), as_array=True)
+    @property
+    def apl(self): return repr(self._inner)
+    def _scalar(self): return _value(self._inner.scalar())
+    def __float__(self): return float(self._scalar())
+    def __int__(self): return int(self._scalar())
+    def __index__(self): return operator.index(self._scalar())
+    def __bool__(self): return bool(self._scalar())
+    def __len__(self):
+        if not self.shape: raise TypeError('a scalar has no length')
+        return self.shape[0]
+    def __iter__(self): return (Array(a) for a in self._inner.cells())
+    def __contains__(self, item): raise TypeError('use member for APL membership')
+    def __getitem__(self, index):
+        parts = index if isinstance(index, tuple) else (index,)
+        def part(o):
+            if not isinstance(o, slice): return _array(o)
+            if o.start is not None or o.stop is not None or o.step is not None: raise TypeError('only a full : slice is supported; use APL index arrays')
+            return None
+        return _result(self._inner.select([part(o) for o in parts])).value
+    def __matmul__(self, other):
+        if isinstance(other, Function): raise TypeError('inner product requires two arrays or two functions')
+        return plus.inner(times)(self, other)
+    def __rmatmul__(self, other): return plus.inner(times)(other, self)
     def __array__(self, dtype=None, copy=None):
         if copy is False: raise ValueError('miniapl conversion requires a copy')
         result = self.np
         return result if dtype is None else result.astype(dtype, copy=False)
-    def __repr__(self): return repr(self._inner)
+    def __repr__(self): return _array_repr(self._inner.parts())
 
 @dataclass(frozen=True)
 class Result:
@@ -104,8 +171,16 @@ class AplError(RuntimeError):
 def _print(output):
     for text in output: print(text)
 
+def _result(raw, session=None, display=False):
+    if display: _print(raw['output'])
+    if error := raw['error']: raise AplError(error, raw['output'])
+    value = raw['value']
+    if isinstance(value, _Function): value = Function(value, session=session if value.needs_session else None)
+    elif value is not None: value = Array(value)
+    return Result(value, raw['output'])
+
 class Session:
-    "Persistent APL worker thread. Calls return Array; eval captures explicit output."
+    "Persistent APL worker thread. Calls return native values; eval captures explicit output."
     def __init__(self, timeout=None):
         if timeout is not None and (not math.isfinite(timeout) or timeout < 0): raise ValueError('timeout must be finite and nonnegative')
         self.timeout, self._worker = timeout, _Session()
@@ -117,13 +192,14 @@ class Session:
         except KeyboardInterrupt as e:
             if display: _print(getattr(e, 'output', []))
             raise
-        if display: _print(raw['output'])
-        if error := raw['error']:
-            raise AplError(error, raw['output'])
-        return Result(None if raw['value'] is None else Array(raw['value']), raw['output'])
+        return _result(raw, self, display)
 
     def _eval(self, source, bindings, display, echo=False):
-        payload = dict(bindings=[(k, _array(v)) for k,v in bindings.items()])
+        def binding(v):
+            if not isinstance(v, Function): return _array(v)
+            if v._session is not None and v._session is not self: raise ValueError('function belongs to a different session')
+            return v._inner
+        payload = dict(bindings=[(k, binding(v)) for k,v in bindings.items()])
         if source is not None:
             if not isinstance(source, str): raise TypeError('APL source must be a string')
             payload['code'] = source
@@ -148,12 +224,9 @@ class Session:
         self(**{name:value})
 
     def fn(self, source):
-        "A late-bound Python callable: one argument is omega; two are alpha, omega."
+        "A composable late-bound Function: one argument is omega; two are alpha, omega."
         if not isinstance(source, str): raise TypeError('function expression must be a string')
-        def f(*args):
-            if len(args) not in (1, 2): raise TypeError('APL functions take one or two arguments')
-            return self._request(dict(function=source, args=[_array(o) for o in args]), True).value
-        return f
+        return _result(_Function.late_bound(source), self).value
 
     def interrupt(self):
         "Interrupt an evaluation from another thread."
@@ -166,3 +239,7 @@ class Session:
         return self
 
     def __exit__(self, *args): self.close()
+
+from .functions import *
+from .functions import __all__ as _function_names, _binary, _unary
+__all__ += _function_names

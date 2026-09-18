@@ -2,7 +2,7 @@ use crate::{
     primitive::{Hybrid, OperatorKind, Primitive},
     Array, Element, Error, ErrorKind, Number, Source, Span,
 };
-use std::{iter::Peekable, rc::Rc, str::CharIndices};
+use std::{iter::Peekable, str::CharIndices, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub(crate) enum NodeKind {
@@ -17,7 +17,7 @@ pub(crate) enum NodeKind {
     Group(Vec<Node>),
     ArrayLiteral { cells: Vec<Vec<Node>>, block: bool },
     Selection(Vec<Vec<Node>>),
-    Dfn(Rc<Definition>),
+    Dfn(Arc<Definition>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -114,7 +114,7 @@ fn real_literal(chars: &mut Peekable<CharIndices<'_>>) -> Result<(), &'static st
     Ok(())
 }
 
-fn lex(source: &Rc<Source>) -> Result<Vec<Token>, Error> {
+fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
     let mut chars = source.text.char_indices().peekable();
     let mut tokens = Vec::new();
     while let Some(&(start, c)) = chars.peek() {
@@ -283,7 +283,7 @@ impl Parser<'_> {
                     let kind = if matches!(token.kind, TokenKind::BraceOpen) {
                         let statements = cells.into_iter().map(statement).collect::<Result<Vec<_>, _>>()?;
                         let kind = statements.iter().map(|s| definition_kind(&s.nodes)).max().unwrap_or(DefinitionKind::Function);
-                        NodeKind::Dfn(Rc::new(Definition { body: Parsed { statements }, span: span.clone(), kind }))
+                        NodeKind::Dfn(Arc::new(Definition { body: Parsed { statements }, span: span.clone(), kind }))
                     } else if !separated && matches!(token.kind, TokenKind::BracketOpen) { NodeKind::Selection(cells) } else if cells.is_empty() {
                         return Err(ParseFailure::Invalid(
                             span.error(ErrorKind::Unsupported, "empty delimiters are not an array literal; namespaces are unsupported"),
@@ -317,7 +317,7 @@ impl Parser<'_> {
 }
 
 /// Check structure without evaluation. A complete input can still have a binding or domain error.
-pub fn parse(source: Rc<Source>) -> ParseStatus {
+pub fn parse(source: Arc<Source>) -> ParseStatus {
     let tokens = match lex(&source) { Ok(tokens) => tokens, Err(e) => return ParseStatus::Invalid(e) };
     match (Parser { tokens: &tokens, pos: 0 }).expressions(None, 0) {
         Ok((pieces, _)) => ParseStatus::Complete(Parsed { statements: pieces.into_iter().map(|nodes| Statement { nodes, guard: None }).collect() }),

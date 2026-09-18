@@ -1,15 +1,15 @@
-use std::{fmt, ops::Range, rc::Rc};
+use std::{fmt, ops::Range, sync::Arc};
 use unicode_width::UnicodeWidthStr;
 
 /// Shared source identity and text. Syntax and errors retain only the sources they use.
 #[derive(Debug)]
 pub struct Source { pub name: String, pub text: String }
 
-impl Source { pub fn new(name: impl Into<String>, text: impl Into<String>) -> Rc<Self> { Rc::new(Self { name: name.into(), text: text.into() }) } }
+impl Source { pub fn new(name: impl Into<String>, text: impl Into<String>) -> Arc<Self> { Arc::new(Self { name: name.into(), text: text.into() }) } }
 
 /// A UTF-8 byte range within an owned source, never an offset into a later input.
 #[derive(Clone, Debug)]
-pub struct Span { pub source: Rc<Source>, pub range: Range<usize> }
+pub struct Span { pub source: Arc<Source>, pub range: Range<usize> }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
