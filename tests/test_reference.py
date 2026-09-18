@@ -1,6 +1,15 @@
 import json
 import pytest
-from miniapl.reference import Corpus
+from miniapl.reference import Corpus, library_definitions, library_dependencies
+
+
+def test_library_definitions(tmp_path):
+    path = tmp_path/'library.apl'
+    path.write_text("⍝ heading\nf ← { ⍝ comment\n  inner←{'⍝'}\n  inner ⍵\n}\ng←f ⍝ alias\n")
+    defs = library_definitions(path)
+    assert defs == {'f': "f ← {\n  inner←{'⍝'}\n  inner ⍵\n}", 'g': 'g←f'}
+    assert library_dependencies(defs, "g 1 'f' ⍝ ignored") == defs
+    assert library_dependencies(defs, "'g' ⍝ f") == {}
 
 
 def test_corpus_review_and_updates(tmp_path):
@@ -18,3 +27,5 @@ def test_corpus_review_and_updates(tmp_path):
     assert corpus.get('ngn:0')['status'] == 'pending'
     with pytest.raises(ValueError): corpus.update('ngn:0', expected=float('inf'))
     assert 'expected' not in corpus.get('ngn:0', '*')
+    corpus.update('ngn:1', remove=['reason'], status='active')
+    assert list(corpus.find(status='active')) == ['ngn:1']

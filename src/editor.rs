@@ -54,6 +54,7 @@ pub(crate) const SYMBOLS: &[(&str, &str)] = &[
     ("⍝", "comment"),
     ("⋄", "diamond"),
     ("¯", "overbar"),
+    ("∞", "infinity"),
     ("⍬", "zilde empty"),
     (",", "ravel catenate"),
     ("⍪", "table catenate-first"),

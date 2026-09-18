@@ -832,7 +832,7 @@ fn identity(operand: &Function, prototype: &Element, span: &crate::execution::Co
         ) => 1.0,
         FunctionNode::Primitive(Primitive::Math(Floor | Ceiling)) => {
             let maximum = matches!(operand.node.as_ref(), FunctionNode::Primitive(Primitive::Math(Floor)));
-            if maximum { f64::MAX } else { -f64::MAX }
+            if maximum { f64::INFINITY } else { f64::NEG_INFINITY }
         }
         _ => return Err(span.error(ErrorKind::Domain, "this function has no reduction identity")),
     };
@@ -841,10 +841,7 @@ fn identity(operand: &Function, prototype: &Element, span: &crate::execution::Co
             Ok(Element::Number(crate::Number::from_integer(n as i64)))
         }
         Element::Number(value) => {
-            if n.abs() == f64::MAX {
-                if value.is_exact() { return Err(span.error(ErrorKind::Domain, "exact min/max has no finite reduction identity")); }
-                Ok(Element::Number(n.try_into().unwrap()))
-            } else { Ok(Element::Number(value.unit(n as i32))) }
+            if n.is_infinite() { Ok(Element::Number(n.try_into().unwrap())) } else { Ok(Element::Number(value.unit(n as i32))) }
         }
         Element::Character(_) => Ok(Element::Number(n.try_into().unwrap())),
         Element::Nested(a) => {
@@ -925,7 +922,7 @@ fn float_fold(values: &[f64], axis: &Axis, shape: Vec<usize>, scan: bool, unit: 
             } else { data[i * axis.inner + k] = (0..axis.len).map(|j| values[axis.offset(i, j, k)]).fold(unit, &op); }
         }
     }
-    Array::floats(shape, data).map_err(|k| span.error(k, "fold result is not finite"))
+    Array::floats(shape, data).map_err(|k| span.error(k, "undefined fold result"))
 }
 
 fn numeric_fold(

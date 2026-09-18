@@ -66,13 +66,14 @@ def test_numpy_inputs_and_copies():
         saved[:] = 77
         np.testing.assert_array_equal(apl('+/m'), [2, 10, 18])
         for a in [np.array(True), np.array(3, dtype=np.float32), np.array([1., 2j]), np.array([2**64-1], dtype=np.uint64),
-                  np.empty((0, 3), dtype=int), np.empty((2, 0)), np.array([['a', 'b'], ['c', 'd']]), np.array([[1, Fraction(2, 3)]], dtype=object)]:
+                  np.empty((0, 3), dtype=int), np.empty((2, 0)), np.array([np.inf, -np.inf]), np.array([['a', 'b'], ['c', 'd']]), np.array([[1, Fraction(2, 3)]], dtype=object)]:
             result = apl('x', x=a)
             np.testing.assert_array_equal(result, a)
             assert np.shape(result) == a.shape
         assert apl('x', x=np.float32(1.5)).py == 1.5
         assert apl('x', x=np.int64(3)).py == 3
-        for a in [np.array([np.inf]), complex(0, np.nan), [float('nan')]]:
+        assert apl('x+1', x=float('inf')).py == float('inf')
+        for a in [complex(np.inf, 0), complex(0, np.nan), [float('nan')]]:
             with pytest.raises(ValueError): apl(x=a)
         for a in [np.array([b'a']), np.array(['2020'], dtype='datetime64[Y]'), object()]:
             with pytest.raises(TypeError): apl(x=a)

@@ -238,7 +238,7 @@ def dyalog_expected(apl, expression):
 
 def capture_ngn_expectations(apl, cases):
     """Evaluate only ngn's closed literal expectations, never arbitrary upstream code."""
-    from aplnb.core import AplError
+    from aplnb.dyalog import AplError
     captured = 0
     for case in cases:
         expression = case.get('expected_apl', '')
@@ -255,7 +255,7 @@ def capture_ngn_expectations(apl, cases):
 
 def capture_aplcart_examples(apl, cases):
     """Capture closed, small calculator examples; leave other recipes pending for review."""
-    from aplnb.core import AplError
+    from aplnb.dyalog import AplError
     captured = 0
     for case in cases:
         if case['status'] != 'pending' or not case.get('example'): continue

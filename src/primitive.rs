@@ -160,6 +160,9 @@ fn float_apply(op: Primitive, left: Option<&[f64]>, right: &[f64], agreement: &A
     use crate::number::float_equal;
     use Arithmetic::*;
     use Comparison::*;
+    if matches!(op, Primitive::Arithmetic(Divide))
+        && (0..agreement.len).any(|i| right[agreement.right.index(i)] == 0.0 && left.is_none_or(|x| x[agreement.left.index(i)] != 0.0))
+    { return Err(span.error(ErrorKind::Domain, "division by zero")); }
     let data = match (op, left) {
         (Primitive::Arithmetic(op), Some(x)) => match op {
             Plus => float_binary(x, right, agreement, |a, b| a + b),
@@ -187,11 +190,7 @@ fn float_apply(op: Primitive, left: Option<&[f64]>, right: &[f64], agreement: &A
         }
         _ => unreachable!(),
     };
-    Array::floats(agreement.shape.clone(), data).map_err(|k| {
-        let zero_divisor = matches!(op, Primitive::Arithmetic(Divide))
-            && (0..agreement.len).any(|i| right[agreement.right.index(i)] == 0.0 && left.is_none_or(|x| x[agreement.left.index(i)] != 0.0));
-        span.error(k, if zero_divisor { "division by zero" } else { "result is not finite" })
-    })
+    Array::floats(agreement.shape.clone(), data).map_err(|k| span.error(k, "undefined real result"))
 }
 
 /// Singleton extension is shared selection, not a universal broadcasting policy.
@@ -854,6 +853,7 @@ fn unicode_convert(left: Option<&Array>, right: &Array, span: &Context<'_>) -> R
 fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<String, Error> {
     use num_traits::Signed;
     if n.as_complex().is_some() { return Err(span.error(ErrorKind::Domain, "specified format requires real numbers")); }
+    if n.is_infinite() { return Ok(n.to_string()); }
     let digits = precision.unsigned_abs();
     let mut text = if precision >= 0 && n.is_exact() {
         let scaled = (n.as_exact().unwrap() * num_bigint::BigInt::from(10).pow(digits as u32)).round().to_integer();
@@ -1107,7 +1107,13 @@ fn matrix_divide(left: Option<&Array>, right: &Array, span: &Context<'_>) -> Res
     generated_len(&[n, k]).map_err(|e| span.error(e, "matrix result is too large"))?;
     let numbers = |a: &Array| -> Result<Vec<Number>, Error> {
         numeric(a.prototype(), span)?;
-        a.elements().map(|e| numeric(&e, span).cloned()).collect()
+        a.elements()
+            .map(|e| {
+                let n = numeric(&e, span)?;
+                if n.is_infinite() { return Err(span.error(ErrorKind::Domain, "matrix divide requires finite entries")); }
+                Ok(n.clone())
+            })
+            .collect()
     };
     let a = numbers(right)?;
     let b = left.map(numbers).transpose()?;

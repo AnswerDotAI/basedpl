@@ -3,6 +3,28 @@ import json, re
 from pathlib import Path
 
 
+def library_definitions(path):
+    "Read column-zero named definitions from an APL library, preserving strings and nested definitions."
+    text = re.sub(r"'(?:''|[^'])*'|⍝[^\n]*", lambda m: '' if m[0].startswith('⍝') else m[0], Path(path).read_text())
+    starts = list(re.finditer(r'^(\w+)\s*←', text, re.M))
+    result = {}
+    for i, start in enumerate(starts):
+        end = starts[i+1].start() if i+1 < len(starts) else len(text)
+        result[start[1]] = '\n'.join(line.rstrip() for line in text[start.start():end].strip().splitlines() if line.strip())
+    return result
+
+
+def library_dependencies(definitions, code):
+    "Select transitive name references for review, ignoring strings/comments but not resolving lexical shadowing."
+    selected, pending = set(), [code]
+    while pending:
+        clean = re.sub(r"'(?:''|[^'])*'|⍝[^\n]*", '', pending.pop())
+        names = set(re.findall(r'\b[^\W\d]\w*\b', clean)) & definitions.keys() - selected
+        selected.update(names)
+        pending.extend(definitions[name] for name in names)
+    return {name: code for name,code in definitions.items() if name in selected}
+
+
 class Corpus:
     def __init__(self, directory='tests/reference'):
         self.directory = Path(directory)
@@ -17,7 +39,8 @@ class Corpus:
             if source and path.stem != source: continue
             for row in rows:
                 if status and row['status'] != status: continue
-                text = f"{row['status']}: {row['code']} ⍝ {row['reason']}"
+                text = f"{row['status']}: {row['code']}"
+                if reason := row.get('reason'): text += f' ⍝ {reason}'
                 if not re.search(pattern, row['id']+' '+text): continue
                 if limit is not None and len(result) >= limit: return result
                 result[row['id']] = text

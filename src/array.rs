@@ -101,7 +101,7 @@ impl Array {
 
     pub fn floats(shape: Vec<usize>, mut data: Vec<f64>) -> Result<Self, ErrorKind> {
         if element_count(&shape)? != data.len() { return Err(ErrorKind::Length); }
-        if data.iter().any(|n| !n.is_finite()) { return Err(ErrorKind::Domain); }
+        if data.iter().any(|n| n.is_nan()) { return Err(ErrorKind::Domain); }
         for n in &mut data { if *n == 0.0 { *n = 0.0; } }
         Ok(Self(Arc::new(ArrayData { shape, data: Storage::Float(data), prototype: Element::Number(0.0.try_into().unwrap()), depth: 0, exact: Some(false) })))
     }

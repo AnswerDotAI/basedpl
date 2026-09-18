@@ -8,6 +8,8 @@ fn element(value: &Value) -> Option<Element> {
         let c = chars.next()?;
         if chars.next().is_some() { return None; }
         Some(Element::Character(c))
+    } else if let Some(sign) = value.get("infinity").and_then(Value::as_i64).filter(|n| matches!(n, -1 | 1)) {
+        Some(Element::Number((sign as f64 * f64::INFINITY).try_into().ok()?))
     } else if let Some(z) = value.get("complex").and_then(Value::as_array) {
         if z.len() != 2 { return None; }
         Some(Element::Number(num_complex::Complex64::new(z[0].as_f64()?, z[1].as_f64()?).try_into().ok()?))
@@ -30,7 +32,10 @@ fn same_element(x: &Element, y: &Element, relative: f64, absolute: f64) -> bool 
         }
         (Element::Number(x), Element::Number(y)) if relative != 0.0 || absolute != 0.0 => {
             let complex = |n: &crate::Number| n.as_complex().or_else(|| n.as_float().map(|x| num_complex::Complex64::new(x, 0.)));
-            match (complex(x), complex(y)) { (Some(a), Some(b)) => a == b || (a - b).norm() <= absolute.max(relative * a.norm().max(b.norm())), _ => x == y }
+            match (complex(x), complex(y)) {
+                (Some(a), Some(b)) => a == b || (a.is_finite() && b.is_finite() && (a - b).norm() <= absolute.max(relative * a.norm().max(b.norm()))),
+                _ => x == y,
+            }
         }
         _ => x == y,
     }

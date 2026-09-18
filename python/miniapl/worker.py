@@ -43,7 +43,7 @@ class Worker:
             self._id += 1
             message = dict(payload, id=self._id)
             if timeout is not None: message['timeout_ms'] = math.ceil(timeout*1000)
-            message = json.dumps(message, ensure_ascii=False)+'\n'
+            message = json.dumps(message, ensure_ascii=False, allow_nan=False)+'\n'
             try:
                 try:
                     with self._write_lock:

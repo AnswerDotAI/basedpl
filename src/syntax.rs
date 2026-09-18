@@ -100,6 +100,10 @@ fn digits(chars: &mut Peekable<CharIndices<'_>>) -> usize {
 
 fn real_literal(chars: &mut Peekable<CharIndices<'_>>) -> Result<(), &'static str> {
     if chars.peek().is_some_and(|(_, c)| *c == '¯') { chars.next(); }
+    if chars.peek().is_some_and(|(_, c)| *c == '∞') {
+        chars.next();
+        return Ok(());
+    }
     let mut count = digits(chars);
     if chars.peek().is_some_and(|(_, c)| *c == '.') {
         chars.next();
@@ -119,7 +123,7 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
     let mut tokens = Vec::new();
     while let Some(&(start, c)) = chars.peek() {
         let span = |end| Span { source: source.clone(), range: start..end };
-        let kind = if c.is_ascii_digit() || c == '¯' || (c == '.' && chars.clone().nth(1).is_some_and(|(_, c)| c.is_ascii_digit())) {
+        let kind = if c.is_ascii_digit() || matches!(c, '¯' | '∞') || (c == '.' && chars.clone().nth(1).is_some_and(|(_, c)| c.is_ascii_digit())) {
             real_literal(&mut chars).map_err(|message| span(chars.peek().map_or(source.text.len(), |(i, _)| *i)).error(ErrorKind::Syntax, message))?;
             if chars.peek().is_some_and(|(_, c)| matches!(c, 'J' | 'j')) {
                 chars.next();
@@ -144,7 +148,7 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
             }
             let end = chars.peek().map_or(source.text.len(), |(i, _)| *i);
             let n = Number::parse(&source.text[start..end])
-                .map_err(|k| span(end).error(k, "invalid numeric literal (finite real/complex values or integer x/r components required)"))?;
+                .map_err(|k| span(end).error(k, "invalid numeric literal (real values, finite complex components or integer x/r components required)"))?;
             TokenKind::Literal(Array::scalar(n).unwrap())
         } else if c.is_alphabetic() || matches!(c, '_' | '∆' | '⍙') {
             chars.next();

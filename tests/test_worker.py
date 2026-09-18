@@ -12,23 +12,27 @@ def test_worker_bindings_calls_and_echo():
         assert r['output'] == ['6x'] and r['value']['data'] == [2, 3, 4] and r['error'] is None
         r = w.request(dict(call='-', args=[a, a], echo=False), timeout=2)
         assert r['output'] == [] and r['value']['data'] == [0, 0, 0]
-        for code in ["(2x*100x)0.5 1r3 1j2 'a'", "(1 2)'ab'(0 3⍴0x)", '0⍴⊂1 2', "0 2⍴''"]:
+        for code in ["(2x*100x)0.5 1r3 1j2 'a'", "(1 2)'ab'(0 3⍴0x)", '0⍴⊂1 2', "0 2⍴''", '∞ ¯∞']:
             original = w.eval(code, timeout=2)
             r = w.request(dict(bindings=dict(v=original['value']), call='⊢', args=[original['value']]), timeout=2)
             assert r == original
             assert w.eval('v', timeout=2) == original
+        assert w.eval('∞ ¯∞')['value']['data'] == [{'infinity': 1}, {'infinity': -1}]
         for payload in [
             dict(bindings={'x←99': a}), dict(bindings=dict(x=dict(shape=[1], data=[1, 2], prototype=0))),
             dict(bindings=dict(x=dict(shape=[], data=[{'rational':['1', '0']}], prototype=0))),
             dict(bindings=dict(x=dict(shape=[], data=['ab'], prototype=' '))), dict(bindings=[]),
             dict(call='+', args=[dict(shape=[], data=[True], prototype=0)]), dict(call='+'), dict(args=[a]),
             dict(code='1', call='+', args=[a]),
+            dict(bindings=dict(x=dict(shape=[], data=[{'infinity': 0}], prototype=0))),
         ]:
             assert w.request(payload, timeout=2)['error']['kind'] == 'REQUEST ERROR'
         r = w.request(dict(call='{⎕←⍵ ⋄ 1÷0}', args=[a], echo=False), timeout=2)
         assert r['output'] == ['1x 2x 3x'] and r['error']['kind'] == 'DOMAIN ERROR'
         assert r['error']['calls'][-1]['source']['text'] == '{⎕←⍵ ⋄ 1÷0}'
         assert w.request(dict(call='{∇⍵}', args=[a]), timeout=.01)['error']['kind'] == 'TIMEOUT'
+        for value in [float('inf'), float('-inf'), float('nan')]:
+            with pytest.raises(ValueError): w.request(dict(bindings=dict(x=dict(shape=[], data=[value], prototype=0))))
         assert w.eval('x', timeout=2)['value'] == a
 
 def test_worker_cancellation_and_reference_sessions():
@@ -53,6 +57,9 @@ def test_worker_cancellation_and_reference_sessions():
         assert w.request(dict(case=dict(code='a', expected_error='VALUE ERROR')), timeout=1)['status'] == 'pass'
         assert w.request(dict(case=dict(code='1', expected=dict(shape=[1], data=[1], prototype=0))))['message'].startswith('shape:')
         assert w.request(dict(case=dict(code='1', expected={})))['status'] == 'invalid'
+        case = dict(code='∞', expected=dict(shape=[], data=[{'infinity': 1}], prototype=0), relative_tolerance=1e-14)
+        assert w.request(dict(case=case))['status'] == 'pass'
+        assert w.request(dict(case=dict(case, code='1e308')))['status'] == 'mismatch'
     with Session(timeout=.01) as s:
         with pytest.raises(AplError) as e: s.eval('x←7 ⋄ {∇⍵}0')
         assert e.value.kind == 'TIMEOUT'

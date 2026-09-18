@@ -9,7 +9,10 @@ fn element(e: &Element) -> Value {
         Element::Number(n) => {
             if let Some(n) = n.as_integer() { json!(n) } else if let Some(n) = n.as_exact() {
                 if n.is_integer() { Value::Number(n.numer().to_string().parse().expect("decimal integer")) } else { json!({"rational": [n.numer().to_string(), n.denom().to_string()]}) }
-            } else if let Some(n) = n.as_complex() { json!({"complex": [n.re, n.im]}) } else { json!(n.as_float().unwrap()) }
+            } else if let Some(n) = n.as_complex() { json!({"complex": [n.re, n.im]}) } else {
+                let n = n.as_float().unwrap();
+                if n.is_infinite() { json!({"infinity": if n.is_sign_positive() { 1 } else { -1 }}) } else { json!(n) }
+            }
         }
         Element::Character(c) => json!(c.to_string()),
         Element::Nested(a) => array(a),
@@ -29,6 +32,10 @@ fn import_element(value: &Value, depth: usize) -> Result<Element, String> {
             let c = chars.next().ok_or("expected one character")?;
             if chars.next().is_some() { return Err("expected one character".into()); }
             return Ok(Element::Character(c));
+        }
+        Value::Object(o) if o.contains_key("infinity") => {
+            let sign = o["infinity"].as_i64().filter(|n| matches!(n, -1 | 1)).ok_or("infinity sign must be 1 or -1")?;
+            Number::try_from(sign as f64 * f64::INFINITY)
         }
         Value::Object(o) if o.contains_key("rational") => {
             let parts = o["rational"].as_array().filter(|a| a.len() == 2).ok_or("expected rational numerator and denominator")?;

@@ -10,7 +10,7 @@ Run the active cases with:
 cargo test --test reference -- --nocapture
 ```
 
-Each JSONL row has a stable `id`, `code`, `status`, and `reason`. Its original source, expectation or recipe is retained. `status` is the equivalent of commenting a test out:
+Each JSONL row has a stable `id`, `code`, and `status`. A `reason` records adaptations or remaining work. Its original source, expectation or recipe is retained. `status` is the equivalent of commenting a test out:
 
 | Status | Meaning |
 |---|---|
@@ -22,7 +22,7 @@ Each JSONL row has a stable `id`, `code`, `status`, and `reason`. Its original s
 To enable a case:
 
 1. Find its `id` in the source JSONL file. Check its recipe, prerequisites and original expectation. Do not treat another dialect as the specification.
-2. Supply concrete `code` and `expected` or `expected_error` if missing. Array expectations contain `shape`, flat `data`, and `prototype`. Nested arrays use the same structure. Complex elements use `{"complex":[real,imag]}`. `expected: null` explicitly expects no result; an absent expectation remains invalid. Derive expectations independently of miniapl.
+2. Supply concrete `code` and `expected` or `expected_error` if missing. Array expectations contain `shape`, flat `data`, and `prototype`. Nested arrays use the same structure. Complex elements use `{"complex":[real,imag]}`. Real infinities use `{"infinity":1}` or `{"infinity":-1}`. `expected: null` explicitly expects no result; an absent expectation remains invalid. Derive expectations independently of miniapl.
 3. Run the selected case, including while it is pending:
 
    ```bash
@@ -47,6 +47,8 @@ corpus.update_many({'ngn:391': {'reason': 'reviewed'}, 'ngn:392': {'reason': 're
 ```
 
 `find` searches ID/code/reason and returns concise entries keyed by ID. Filter with `source` or `status`; `limit=None` returns all matches. `get` defaults to code/status/reason; `get_many` reads a batch. Request `'*'` explicitly for full records. Updates read fresh files, preserve unrelated fields, and report changed field names. Use `remove=['expected_error']` when replacing an error expectation with a value; `None` means JSON null, not deletion. Unknown IDs write nothing. Use these methods rather than reading and patching whole JSONL lines in the conversation.
+
+For library recipes, `library_definitions(path)` extracts column-zero named definitions. `library_dependencies(definitions, code)` selects transitive references for review. It ignores strings/comments but does not resolve lexical shadowing. Supply the relevant module and imports, then remove false dependencies on local names. Embed the reviewed definitions and preceding setup in the case. Retain `original_code`, `library_source` and `library_definitions`; do not require the library checkout at test time.
 
 Rebuild the installed command after Rust changes, then scan:
 
@@ -86,6 +88,17 @@ April's literal Common Lisp expectations were converted to structured values. Or
 APLcart's TIO links were decoded offline. All 972 available decoded programs are retained. No TIO service was contacted. Small closed calculator examples were checked in Dyalog 20.0.53963.0 with `⎕IO=1`, `⎕CT=1E¯14`, `⎕DIV=0`, `⎕ML=1`, and `⎕PP=17`. Multi-output examples collect their values in an array literal. The original program remains in `example`. The import does not execute arbitrary catalogue programs.
 
 `scripts/reference.py` contains the import and developer-only reference capture functions. CI reads the checked-in JSONL files. It needs neither the sibling clones nor Dyalog, Common Lisp, Node, Python or network access. Import a new upstream snapshot into a new directory and review it against these files rather than replacing reviewed statuses.
+
+For live reference work, use `aplnb.dyalog.Apl`, not `aplnb.core` (which uses miniapl):
+
+```python
+from aplnb.dyalog import Apl
+from scripts.reference import REFERENCE_ENCODER, dyalog_expected
+with Apl() as apl:
+    apl('⎕IO←1 ⋄ ⎕CT←1E¯14 ⋄ ⎕DIV←0 ⋄ ⎕ML←1 ⋄ ⎕PP←17')
+    apl(REFERENCE_ENCODER)
+    expected = dyalog_expected(apl, '2 3⍴⍳6')
+```
 
 Non-language repository material is not an acceptance case: ngn's browser assets, April's bundled Common Lisp parser implementation tests, and APLcart's website/quiz implementation and publication bibliography. The bibliography is `pub/pub.tsv`, not another recipe table. No algorithm or mathematical recipe was discarded for being difficult, unimplemented, or beyond the current lesson set.
 

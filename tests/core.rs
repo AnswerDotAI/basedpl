@@ -648,7 +648,7 @@ fn float_storage_and_kernels() {
     }
     for code in ["⍳3", "⌽⍳3", "2 3⍴⍳6", "⍬", "0 3⍴0"] { assert!(run(code).unwrap().unwrap().as_floats().is_some(), "{code}"); }
     for code in ["1x 2", "1j2 3", "'abc'", "(1 2)(3 4)", "0⍴1x"] { assert!(run(code).unwrap().unwrap().as_floats().is_none(), "{code}"); }
-    fails(Domain, &["+/1E308 1E308", "×/1E308 1E308", "1÷0 1", "1E308×2 3"]);
+    fails(Domain, &["1÷0 1"]);
     assert_eq!(Array::floats(vec![1], vec![f64::NAN]), Err(Domain));
     assert_eq!(Array::floats(vec![2], vec![1.]), Err(Length));
     assert_eq!(Array::floats(vec![1], vec![-0.]).unwrap().as_floats().unwrap()[0].to_bits(), 0);
@@ -962,8 +962,8 @@ fn each_commute_and_reduction() {
         "-/⍬" => "0",
         "÷/⍬" => "1",
     }
-    check("⌊/⍬", scalar(f64::MAX));
-    check("⌈/⍬", scalar(-f64::MAX));
+    check("⌊/⍬", scalar(f64::INFINITY));
+    check("⌈/⍬", scalar(f64::NEG_INFINITY));
     let mut session = Session::new();
     let result = session.eval("r←{⎕←7 ⋄ ⍵}¨⍬");
     assert!(result.error.is_none());
@@ -1277,12 +1277,12 @@ fn scalar_apl() {
 
 #[test]
 fn errors_and_evaluation_order() {
-    fails(Domain, &["1÷0", "÷0", "1e309", "1e308×2"]);
+    fails(Domain, &["1÷0", "÷0"]);
     fails(Syntax, &["1e", "1e-2", "¯", ".", "2+", ")", "(2+3"]);
     fails(Length, &["1 2+3 4 5"]);
     fails(Domain, &["⍳¯1"]);
     // The right argument fails before the parenthesized left argument is evaluated.
-    let e = run("(1÷0)+(2×1e308)").unwrap_err();
+    let e = run("(1÷0)+(0×∞)").unwrap_err();
     assert_eq!(&e.span.source.text[e.span.range], "×");
     let e = run("¯2+1÷0").unwrap_err();
     assert_eq!(e.span.range, 5..7); // UTF-8 bytes, not glyph indices.
@@ -1324,7 +1324,7 @@ fn array_invariants() {
     assert_eq!(Array::new(vec![2, 2], vec![number(1.0); 3]), Err(Length));
     assert_eq!(Array::new(vec![], vec![]), Err(Length));
     assert_eq!(Array::new(vec![usize::MAX, 2], vec![number(1.0)]), Err(Limit));
-    for n in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] { assert_eq!(Array::scalar(n), Err(Domain)); }
+    assert_eq!(Array::scalar(f64::NAN), Err(Domain));
     let rows = Array::empty(vec![0, 3], number(0.0)).unwrap();
     let cols = Array::empty(vec![3, 0], number(0.0)).unwrap();
     assert_ne!(rows, cols);
@@ -1511,6 +1511,32 @@ fn binder_limits_and_single_execution() {
     fails_in(&mut s, Limit, &[&format!("+{}1", "/".repeat(10_000))]);
     fails_in(&mut s, Limit, &[&format!("f←+ ⋄ {} f 0", "f←f+f ⋄ ".repeat(127))]);
     assert_eq!(s.eval("2+2").value.unwrap(), scalar(4.0));
+}
+
+#[test]
+fn real_infinities() {
+    check("∞", scalar(f64::INFINITY));
+    check("¯∞", scalar(f64::NEG_INFINITY));
+    equiv! {
+        "∞+3" => "∞", "3÷∞" => "0", "÷¯∞" => "0", "×∞ ¯∞" => "1 ¯1",
+        "+/1E308 1E308" => "∞", "×/1E308 1E308" => "∞", "1E308×2 3" => "∞ ∞",
+        "1E999" => "∞", "*1000" => "∞", "⍟∞" => "∞", "*¯∞" => "0", "2*∞" => "∞", "!171" => "∞",
+        "⌊∞ ¯∞" => "∞ ¯∞", "|¯∞" => "∞", "⌊/0⍴0x" => "∞", "⌈/0⍴0x" => "¯∞",
+        "∞⌊10x*1000x" => "10x*1000x", "¯∞⌈1r3" => "1r3",
+        "∞=∞ ¯∞ 1" => "1x 0x 0x", "∞>10x*1000x" => "1x", "(10x*1000x)<∞" => "1x",
+        "∞=1j2" => "0x", "∞∊1 2 ∞" => "1x", "∞ ¯∞⍳¯∞ ∞ 0" => "2x 1x 3x",
+        "⍋∞ (10x*1000x) ¯∞" => "3x 2x 1x", "∪∞ ∞ ¯∞" => "∞ ¯∞",
+        "⍕∞ ¯∞" => "'∞ ¯∞'", "⍎⍕∞ ¯∞" => "∞ ¯∞",
+        "3 ¯2⍕∞" => "'∞  '", "3 2⍕¯∞" => "' ¯∞'",
+        "(10x*1000x)+∞" => "∞", "(10x*1000x)÷∞" => "0",
+        "∞-(10x*1000x)" => "∞", "∞÷(¯10x*1001x)" => "¯∞",
+        "7○∞" => "1", "9 10 11○¯∞" => "¯∞ ∞ 0", "×∘*⍨⍣¯1⊢∞" => "∞",
+        "0÷0" => "1"
+    }
+    fails(
+        Domain,
+        &["∞-∞", "0×∞", "∞×0x", "∞÷∞", "1÷0", "÷0", "∞+1j2", "1j∞", "∞j0", "⍳∞", "∞⍴1", "∞/1", "?∞", "1○∞", "⌹1 1⍴∞", "+/∞ ¯∞", "×/0 ∞", "∞∧2", "!¯1", "!¯2x"],
+    );
 }
 
 #[test]
