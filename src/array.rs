@@ -171,6 +171,11 @@ impl Array {
         match self.at(0) { Element::Number(n) => Some(n), _ => None }
     }
 
+    pub(crate) fn boolean(&self) -> Result<bool, ErrorKind> {
+        if !self.is_singleton() { return Err(ErrorKind::Length); }
+        match self.at(0) { Element::Number(n) => n.boolean().map_err(|_| ErrorKind::Domain), _ => Err(ErrorKind::Domain) }
+    }
+
     pub(crate) fn formatted(&self) -> Result<Self, ErrorKind> {
         if matches!(self.prototype(), Element::Character(_)) && self.elements().all(|e| matches!(e, Element::Character(_))) { return Ok(self.clone()); }
         let numeric = matches!(self.prototype(), Element::Number(_)) && self.elements().all(|e| matches!(e, Element::Number(_)));
@@ -226,6 +231,7 @@ impl Array {
         if self.is_empty() { return Self::empty(vec![0], Element::Character(' ')); }
         let columns = self.shape().last().copied().unwrap_or(1);
         let mut widths = vec![0; columns];
+        let mut numeric_widths = vec![(0usize, 0usize); columns];
         let mut padded = vec![false; columns];
         let mut cells = Vec::new();
         let mut matrix = self.shape().len() > 1;
@@ -236,11 +242,31 @@ impl Array {
             generated_len(&[size])?;
             matrix |= text.shape().len() > 1;
             let width = text.shape().last().copied().unwrap_or(1);
-            widths[i % columns] = widths[i % columns].max(width);
             padded[i % columns] |= matches!(item, Element::Nested(_));
-            cells.push((text.formatted_rows()?, width, matches!(item, Element::Number(_))));
+            let rows = text.formatted_rows()?;
+            let parts = if matches!(item, Element::Number(_)) {
+                let left = rows[0].iter().position(|&c| c == '.').unwrap_or(width);
+                let right = width - left;
+                let w = &mut numeric_widths[i % columns];
+                w.0 = w.0.max(left);
+                w.1 = w.1.max(right);
+                Some((left, right))
+            } else { None };
+            cells.push((rows, width, parts));
         }
-        let width = widths.iter().sum::<usize>() + 2 * padded.iter().filter(|&&p| p).count() + padded.windows(2).filter(|p| !(p[0] && p[1])).count();
+        for (i, (rows, width, parts)) in cells.iter_mut().enumerate() {
+            if padded[i % columns] && parts.is_none() {
+                for row in rows { row.insert(0, ' '); }
+                *width += 1;
+            }
+            widths[i % columns] = widths[i % columns].max(*width);
+        }
+        for (width, (left, right)) in widths.iter_mut().zip(&numeric_widths) { *width = (*width).max(left + right); }
+        let numeric: Vec<_> = numeric_widths.iter().map(|&(left, _)| left > 0).collect();
+        let separated: Vec<_> = (0..columns)
+            .map(|x| x > 0 && ((numeric[x - 1] && !padded[x - 1]) || (numeric[x] && widths[x] == numeric_widths[x].0 + numeric_widths[x].1)))
+            .collect();
+        let width = widths.iter().sum::<usize>() + padded.iter().filter(|&&p| p).count() + separated.iter().filter(|&&s| s).count();
         let mut lines = Vec::new();
         for (row, chunk) in cells.chunks(columns).enumerate() {
             for _ in 0..self.page_breaks(row) { lines.push(vec![' '; width]); }
@@ -248,14 +274,14 @@ impl Array {
             generated_len(&[lines.len() + height, width])?;
             for y in 0..height {
                 let mut line = Vec::new();
-                for (x, (rows, cell_width, numeric)) in chunk.iter().enumerate() {
-                    if x > 0 && !(padded[x - 1] && padded[x]) { line.push(' '); }
-                    if padded[x] { line.push(' '); }
+                for (x, (rows, cell_width, parts)) in chunk.iter().enumerate() {
+                    if separated[x] { line.push(' '); }
                     let extra = widths[x] - cell_width;
-                    if *numeric { line.extend(std::iter::repeat_n(' ', extra)); }
+                    let after = parts.map_or(if numeric[x] { 0 } else { extra }, |(_, right)| numeric_widths[x].1 - right);
+                    line.extend(std::iter::repeat_n(' ', extra - after));
                     if let Some(row) = rows.get(y) { line.extend(row); }
                     else { line.extend(std::iter::repeat_n(' ', *cell_width)); }
-                    if !numeric { line.extend(std::iter::repeat_n(' ', extra)); }
+                    line.extend(std::iter::repeat_n(' ', after));
                     if padded[x] { line.push(' '); }
                 }
                 lines.push(line);

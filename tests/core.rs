@@ -371,6 +371,10 @@ fn format_and_execute() {
         "f←{a←10 ⋄ ⍎'a+⍵'} ⋄ f 3" => "13",
         "a" => "4",
         "''⍎'a+1'" => "5",
+        "g←⍎'+' ⋄ 2 g 3" => "5",
+        "g←⍎'h←+' ⋄ 2 g 3" => "5",
+        "r←⍎'/' ⋄ +r 1 2 3" => "6",
+        "op←⍎'{⍺⍺ ⍵}' ⋄ -op 3" => "¯3",
     }
     assert!(s.eval("⍎''").value.is_none());
     fails_in(&mut s, Value, &["a←⍎''"]);
@@ -378,6 +382,7 @@ fn format_and_execute() {
     assert_eq!(failed.output, ["7"]);
     assert_eq!(failed.error.unwrap().span.source.text, "⎕←7 ⋄ 1÷0");
     fails(Domain, &["1⍕1j2", "¯1 2⍕1", "⍎1", "0.5⍕1"]);
+    fails(Syntax, &["{⍎'+'}0"]);
 }
 
 #[test]
@@ -845,6 +850,10 @@ fn dfn_defaults_shy_results_and_numbered_guards() {
         ("10{g←{⍺←2 ⋄ ⍺+⍵} ⋄ g ⍵}3", Some(5.), vec!["5"]),
         ("{f←{a←1} ⋄ (+f+)3}0", Some(1.), vec![]),
         ("(/ {+⍺⍺ ⍵})1 2 3", Some(6.), vec!["6"]),
+        ("{⍵:7 ⋄ 9},1", Some(7.), vec!["7"]),
+        ("{⍵:7 ⋄ 9}1 1⍴0", Some(9.), vec!["9"]),
+        ("{⍵:7 ⋄ 9}1 1 1⍴1", Some(7.), vec!["7"]),
+        ("{⍵:7 ⋄ 9}1.000000000000001", Some(7.), vec!["7"]),
     ] {
         let r = s.eval(code);
         assert!(r.error.is_none(), "{code}: {:?}", r.error);
@@ -854,6 +863,8 @@ fn dfn_defaults_shy_results_and_numbered_guards() {
     fails_in(&mut s, Value, &["x←{}0", "1+{}0"]);
     fails_in(&mut s, Domain, &["{6::7 ⋄ 1÷⍵}0"]);
     fails_in(&mut s, Syntax, &["{1:1:2}0"]);
+    fails_in(&mut s, Length, &["{⍵:7 ⋄ 9}1 1", "{⍵:7 ⋄ 9}⍬"]);
+    fails_in(&mut s, Domain, &["{⍵:7 ⋄ 9}⊂,1", "{⍵:7 ⋄ 9}'a'", "{⍵:7 ⋄ 9}2"]);
     fails_in(&mut s, Value, &["10{g←{⍺+⍵} ⋄ g ⍵}3"]);
 }
 
@@ -995,6 +1006,8 @@ fn key_and_power() {
         "1 1 2{+/⍵}⌸10 20 30" => "30 30",
         "{⍳3}⌸⍬" => "0 3⍴0",
         "1(+⍣{⍺>4})0" => "5",
+        "(+∘1)⍣{,⍺=3}0" => "3",
+        "(+∘1)⍣{1 1⍴⍺=3}0" => "3",
         "(2∘×⍣0)3" => "3",
         "{≢⍵}⌸1 (1+8E¯15)(1+16E¯15)" => "2x 1x",
     }
@@ -1006,6 +1019,7 @@ fn key_and_power() {
     assert!(s.eval("({}⍣1)3").value.is_none());
     fails(Rank, &["{⍺ ⍵}⌸7"]);
     fails(Length, &["1 2{⍵}⌸3 4 5"]);
+    fails(Length, &["(+∘1)⍣{1 1}0", "(+∘1)⍣{⍬}0"]);
     fails(Domain, &["(+⍣0.5)1"]);
     fails(Rank, &["(+⍣(,1))2"]);
 }

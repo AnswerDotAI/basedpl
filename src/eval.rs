@@ -347,12 +347,7 @@ fn power(
         Operand::Function(test) => loop {
             let next = f.call_array(left, &value, span, session, output)?;
             let done = test.call_array(Some(&next), &value, span, session, output)?;
-            if !done.is_scalar() { return Err(span.error(ErrorKind::Rank, "power predicate must return a scalar")); }
-            let done = done
-                .as_number()
-                .ok_or_else(|| span.error(ErrorKind::Domain, "power predicate must return a Boolean"))?
-                .boolean()
-                .map_err(|message| span.error(ErrorKind::Domain, message))?;
+            let done = done.boolean().map_err(|k| span.error(k, "power predicate must return a Boolean singleton"))?;
             value = next;
             if done { break; }
         },
@@ -1158,10 +1153,6 @@ impl Session {
                 e.calls.push(span.clone());
                 e
             })?;
-            if !matches!(result.value, Value::Array(_) | Value::NoResult) {
-                if !result.shy { return Err(span.error(ErrorKind::Syntax, "execute cannot return a function")); }
-                result.value = Value::NoResult;
-            }
         }
         Ok(result)
     }
@@ -1291,7 +1282,7 @@ impl Session {
                 _ => (),
             }
         }
-        let Value::Array(right) = value else { return Err(span.error(ErrorKind::Domain, "multiple or modified assignment needs an array")); };
+        let Value::Array(right) = value else { return Err(span.error(ErrorKind::Syntax, "multiple or modified assignment needs an array")); };
         if self.assignment_names(target) {
             if !right.is_singleton() && (right.shape().len() != 1 || right.len() != target.len()) {
                 return Err(span.error(ErrorKind::Length, "strand assignment needs one item per target"));
@@ -1575,10 +1566,9 @@ impl Session {
                             .collect::<Result<Vec<_>, _>>()?;
                         handlers.push((&nodes[i + 1..], numbers, self.frames[frame].names.clone()));
                     } else {
-                        let condition = condition.as_number().ok_or_else(|| nodes[i].span.error(ErrorKind::Domain, "guard requires a Boolean scalar"))?;
-                        let condition = condition.nonnegative_integer().map_err(|k| nodes[i].span.error(k, "invalid guard condition"))?;
-                        if condition > 1 { return Err(nodes[i].span.error(ErrorKind::Domain, "guard requires 0 or 1")); }
-                        if condition == 1 { return self.return_expression(&nodes[i + 1..], output, handlers.is_empty()); }
+                        if condition.boolean().map_err(|k| nodes[i].span.error(k, "guard requires a Boolean singleton"))? {
+                            return self.return_expression(&nodes[i + 1..], output, handlers.is_empty());
+                        }
                     }
                 } else {
                     let assignment = nodes.iter().any(|n| matches!(n.kind, NodeKind::Assign));
