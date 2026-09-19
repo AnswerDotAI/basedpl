@@ -1,4 +1,4 @@
-//! Terminal-only symbol entry. Neither the parser nor noninteractive input uses this module.
+//! Glyph completion and terminal input. Source execution never rewrites aliases.
 use rustyline::{
     completion::{Completer, Pair},
     highlight::Highlighter,
@@ -111,7 +111,7 @@ pub(crate) const SYMBOLS: &[(&str, &str)] = &[
     ("?", "roll deal"),
 ];
 
-fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
+pub(crate) fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
     let query = query.to_ascii_lowercase();
     let mut found = Vec::new();
     let mut best = 3;
@@ -140,7 +140,7 @@ fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
 }
 
 // Strings and comments are literal even before their language implementation is complete.
-fn in_code(text: &str) -> bool {
+pub(crate) fn in_code(text: &str) -> bool {
     let mut quote = None;
     let mut comment = false;
     for c in text.chars() {
@@ -149,7 +149,7 @@ fn in_code(text: &str) -> bool {
     quote.is_none() && !comment
 }
 
-fn entry(line: &str, pos: usize) -> Option<(usize, &str)> {
+pub(crate) fn entry(line: &str, pos: usize) -> Option<(usize, &str)> {
     let start = line[..pos].rfind('`')?;
     let prefix = &line[start + 1..pos];
     (prefix.bytes().all(|c| c.is_ascii_alphabetic()) && in_code(&line[..start])).then_some((start, prefix))

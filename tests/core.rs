@@ -111,6 +111,14 @@ fn explicit_output_without_echo() {
     assert_eq!(r.error.unwrap().kind, Domain);
     assert_eq!(r.output, ["9"]);
     for code in ["]Display 1 2", "]box ?"] { assert!(!s.eval_with(code, quiet()).output.is_empty()); }
+    let streamed = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let events = streamed.clone();
+    let output = Arc::new(move |kind, text: &str| events.lock().unwrap().push((matches!(kind, miniapl::OutputKind::Explicit), text.to_owned())));
+    let r = s.eval_with("1 ⋄ ⎕←2 ⋄ 1÷0", miniapl::EvalOptions { output: Some(output), ..miniapl::EvalOptions::default() });
+    assert_eq!(r.error.unwrap().kind, Domain);
+    assert!(r.output.is_empty());
+    assert_eq!(*streamed.lock().unwrap(), [(false, "1".into()), (true, "2".into())]);
+    assert_eq!(s.eval("3").output, ["3"]);
     equiv_in(&mut s, "x", "7");
 }
 

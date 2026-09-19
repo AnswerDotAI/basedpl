@@ -35,7 +35,7 @@ pub(crate) fn run(output: &mut impl Write) -> io::Result<()> {
             None => None,
         };
         let echo = match request.get("echo") { Some(value) => value.as_bool().ok_or_else(|| io::Error::other("echo must be a boolean"))?, None => true };
-        let options = EvalOptions { interrupt, timeout, echo };
+        let options = EvalOptions { interrupt, timeout, echo, ..EvalOptions::default() };
         let result = if let Some(case) = request.get("case") { crate::reference::check(case, options) } else {
             match crate::protocol::request(&mut session, &request, options) {
                 Ok(result) => crate::protocol::response(result),

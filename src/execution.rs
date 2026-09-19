@@ -25,16 +25,31 @@ pub struct EvalOptions {
     pub timeout: Option<Duration>,
     /// Include implicit expression display; explicit output is always retained.
     pub echo: bool,
+    /// Stream output instead of collecting it in Evaluation.output.
+    pub output: Option<OutputSink>,
 }
-impl Default for EvalOptions { fn default() -> Self { Self { interrupt: InterruptHandle::default(), timeout: None, echo: true } } }
+#[derive(Clone, Copy)]
+pub enum OutputKind { Explicit, Display }
+pub type OutputSink = Arc<dyn Fn(OutputKind, &str) + Send + Sync>;
+
+impl Default for EvalOptions { fn default() -> Self { Self { interrupt: InterruptHandle::default(), timeout: None, echo: true, output: None } } }
 
 #[derive(Default)]
-pub(crate) struct Execution { interrupt: InterruptHandle, timeout: Option<(Instant, Duration)>, pub echo: bool }
+pub(crate) struct Execution {
+    interrupt: InterruptHandle,
+    timeout: Option<(Instant, Duration)>,
+    pub echo: bool,
+    output: Option<OutputSink>,
+}
 impl Execution {
     pub(crate) fn begin(&mut self, options: EvalOptions) {
         self.interrupt = options.interrupt;
         self.timeout = options.timeout.map(|d| (Instant::now(), d));
         self.echo = options.echo;
+        self.output = options.output;
+    }
+    pub(crate) fn output(&self, captured: &mut Vec<String>, kind: OutputKind, text: String) {
+        if let Some(sink) = &self.output { sink(kind, &text); } else { captured.push(text); }
     }
     pub(crate) fn check(&self, span: &Span) -> Result<(), Error> {
         if self.interrupt.0.load(Ordering::Relaxed) { return Err(span.error(ErrorKind::Interrupt, "evaluation interrupted")); }

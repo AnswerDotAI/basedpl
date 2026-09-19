@@ -26,6 +26,12 @@ with Session() as apl:
     print(mean([1, 2, 3]).py)    # 2
 ```
 
+## Jupyter
+
+The Python package installs the **APL (miniapl)** kernel. Select it in Jupyter to run APL cells with persistent names, glyph/name completion and interruption. Explicit `⎕←` output streams during execution; ordinary results follow the REPL's display rules.
+
+The same native executable runs the kernel with `miniapl --kernel -f CONNECTION_FILE`, using kernmini for the Jupyter protocol. No Python interpreter is needed when launching the native binary directly.
+
 ## Documentation
 
 - [Getting started](docs/getting-started.md)

@@ -57,7 +57,8 @@ pub fn check(case: &Value, options: EvalOptions) -> Value {
         _ => return json!({"status":"invalid", "message":"output expectation must be text"}),
     };
     let (expected, no_result) = if let Some(source) = case["expected_code"].as_str() {
-        let expected = Session::new().eval_with(source, EvalOptions { timeout: options.timeout, interrupt: options.interrupt.clone(), echo: false });
+        let expected = Session::new()
+            .eval_with(source, EvalOptions { timeout: options.timeout, interrupt: options.interrupt.clone(), echo: false, ..EvalOptions::default() });
         if expected.error.is_some() || expected.function.is_some() {
             return json!({"status":"invalid", "message":"expectation must produce a value or no result", "actual":crate::protocol::response(expected)});
         }

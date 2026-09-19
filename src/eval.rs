@@ -1394,6 +1394,7 @@ pub struct Session {
 
 impl Session {
     pub fn new() -> Self { Self::default() }
+    pub(crate) fn names(&self) -> impl Iterator<Item = &str> { self.names.keys().map(String::as_str) }
     pub fn set(&mut self, name: &str, value: Array) -> Result<(), ErrorKind> {
         value.export_context()?;
         self.set_value(name, Value::Array(value))
@@ -1443,12 +1444,12 @@ impl Session {
         })();
         match called {
             Ok(Bound { value: Value::Array(a), shy, .. }) => {
-                if self.execution.echo && !shy { result.output.push(self.display.array(&a, false)); }
+                if self.execution.echo && !shy { self.execution.output(&mut result.output, crate::OutputKind::Display, self.display.array(&a, false)); }
                 result.value = Some(a);
             }
             Ok(Bound { value: Value::Function(f), shy, .. }) => {
                 if let Err(k) = f.export_context() { result.error = Some(span.error(k, "function retains an active lexical frame")); } else {
-                    if self.execution.echo && !shy { result.output.push(f.text(&mut 1000)); }
+                    if self.execution.echo && !shy { self.execution.output(&mut result.output, crate::OutputKind::Display, f.text(&mut 1000)); }
                     result.function = Some(f);
                 }
             }
@@ -1483,15 +1484,21 @@ impl Session {
                         Value::NoResult => None,
                         Value::Array(a) => {
                             if diagram && i + 1 == parsed.statements.len() {
-                                result.output.push(crate::display::diagram(&a));
+                                self.execution.output(&mut result.output, crate::OutputKind::Display, crate::display::diagram(&a));
                             }
-                            else if self.execution.echo && !bound.shy { result.output.push(self.display.array(&a, false)); }
+                            else if self.execution.echo && !bound.shy {
+                                self.execution.output(&mut result.output, crate::OutputKind::Display, self.display.array(&a, false));
+                            }
                             Some(a)
                         }
                         _ if bound.shy => None,
                         Value::Function(f) => {
                             if self.execution.echo {
-                                result.output.push(if self.display.enabled && self.display.trees { f.tree(&mut 1000).render() } else { f.text(&mut 1000) });
+                                self.execution.output(
+                                    &mut result.output,
+                                    crate::OutputKind::Display,
+                                    if self.display.enabled && self.display.trees { f.tree(&mut 1000).render() } else { f.text(&mut 1000) },
+                                );
                             }
                             if i + 1 == parsed.statements.len() {
                                 if let Err(k) = f.export_context() {
@@ -1504,7 +1511,7 @@ impl Session {
                             None
                         }
                         Value::Hybrid(h) => {
-                            if self.execution.echo { result.output.push(h.text()); }
+                            if self.execution.echo { self.execution.output(&mut result.output, crate::OutputKind::Display, h.text()); }
                             None
                         }
                         _ => {
@@ -1528,7 +1535,11 @@ impl Session {
         let (command, args) = code.split_once(char::is_whitespace).unwrap_or((code, ""));
         if matches!(command.to_ascii_lowercase().as_str(), "]box" | "]boxing") {
             return match self.display.configure(args) {
-                Ok(text) => Evaluation { output: vec![text], ..Evaluation::default() },
+                Ok(text) => {
+                    let mut result = Evaluation::default();
+                    self.execution.output(&mut result.output, crate::OutputKind::Display, text);
+                    result
+                }
                 Err(message) => {
                     Evaluation { error: Some(Span { range: 0..source.text.len(), source }.error(ErrorKind::Domain, message)), ..Evaluation::default() }
                 }
@@ -1569,7 +1580,11 @@ impl Session {
         };
         let mut result = Bound::new(Value::NoResult);
         for statement in &parsed.statements {
-            if let Value::Array(a) = &result.value { if self.execution.echo && !result.shy { output.push(self.display.array(a, self.current.is_some())); } }
+            if let Value::Array(a) = &result.value {
+                if self.execution.echo && !result.shy {
+                    self.execution.output(output, crate::OutputKind::Display, self.display.array(a, self.current.is_some()));
+                }
+            }
             result = self.bind(&statement.nodes, output).map_err(|mut e| {
                 e.calls.push(span.clone());
                 e
@@ -1704,7 +1719,7 @@ impl Session {
                 NodeKind::Output => {
                     return match value {
                         Value::Array(a) => {
-                            output.push(self.display.array(a, self.current.is_some()));
+                            self.execution.output(output, crate::OutputKind::Explicit, self.display.array(a, self.current.is_some()));
                             Ok(())
                         }
                         _ => return Err(target.span.error(ErrorKind::Domain, "output requires an array")),
