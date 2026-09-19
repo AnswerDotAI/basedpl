@@ -33,6 +33,59 @@ fn equiv_in(session: &mut Session, code: &str, expected: &str) { check_in(sessio
 #[track_caller]
 fn equiv(code: &str, expected: &str) { equiv_in(&mut Session::new(), code, expected); }
 
+macro_rules! equiv {
+    ($($code:expr => $expected:expr),* $(,)?) => {
+        $(equiv($code, $expected);)*
+    };
+}
+
+#[test]
+fn function_arrays() {
+    equiv! {
+        "fs←+⊙×⊙÷ ⋄ mul←2⊃fs ⋄ 2 mul 3" => "6",
+        "fs←+/⊙{⍵×⍵}⊙(3∘+) ⋄ square←2⊃fs ⋄ square 4" => "16",
+        "fs←+⊙×⊙÷ ⋄ div←⊃⌽fs ⋄ 6 div 3" => "2",
+        "fs←+⊙× ⋄ gs←fs⊙÷ ⋄ ≢gs⊙fs" => "5x",
+        "fs←+⊙× ⋄ f←1⊃3↑fs ⋄ 2 f 3" => "5",
+        "fs←+⊙× ⋄ f←3⊃3↑fs ⋄ 2 f 3" => "5",
+        "fs←+⊙× ⋄ f←⊃(0↑fs)⊙(0↑fs)⊙÷ ⋄ 6 f 3" => "2",
+        "fs←+⊙× ⋄ result←(⊂1 2 3),fs[2] ⋄ back←2⊃result ⋄ 2 back 3" => "6",
+        "x←(+⊙×)(-⊙÷) ⋄ f←1 2⊃x ⋄ 2 f 3" => "6",
+        "fs←+⊙× ⋄ f←{2⊃⍵}fs ⋄ 2 f 3" => "6",
+        "fs←+⊙× ⋄ f←⊂⍣¯1⊢fs[2] ⋄ 2 f 3" => "6",
+        "fs←+⊙× ⋄ f←⊃⊃¨fs ⋄ 2 f 3" => "5",
+        "fs←+⊙× ⋄ f←⊃⊃⍤0⊢fs ⋄ 2 f 3" => "5",
+        "fs←+⊙× ⋄ fs[2]≡⍬⊃fs[2]" => "1x",
+        "fs←+⊙× ⋄ fs≡fs" => "1x",
+        "{a←⍵ ⋄ fs←{a+⍵}⊙× ⋄ f←⊃fs ⋄ f 3}4" => "7",
+        "use←{f←⊃⍵ ⋄ f 3} ⋄ {a←⍵ ⋄ use {a+⍵}⊙+}4" => "7",
+        "id←{⊃⍵} ⋄ {a←⍵ ⋄ f←id {a+⍵}⊙+ ⋄ f 3}4" => "7",
+        "fs←{⍵×⍵}⊙+ ⋄ f←{⊃⍵}fs ⋄ f 3" => "9",
+        "fs←+⊙× ⋄ ⍴⍕fs" => ",6x",
+    }
+    fails(
+        Domain,
+        &["1⊙+", "⍋+⊙×", "(+⊙×)⍸+⊙×", "{x←⍵ ⋄ {x+⍵}⊙+}2", "fs←+⊙× ⋄ {fs[1]←({⍵}⊙+)[1] ⋄ 0}2", "{0↑{⍵}⊙+}2", "{x←⍵ ⋄ ⊃{x+⍵}⊙+}2", "{x←⍵ ⋄ {x+⍵}}2", "1 1⊃+⊙×"],
+    );
+}
+
+#[test]
+fn agenda() {
+    equiv! {
+        "cases←-⊙⊢ ⋄ abs←{1+⍵≥0}◶cases ⋄ abs ¯3" => "3",
+        "cases←-⊙⊢ ⋄ abs←{1+⍵≥0}◶cases ⋄ abs 3" => "3",
+        "mul←2◶(+⊙×) ⋄ 2 mul 3" => "6",
+        "choose←{1+⍺>⍵}◶(-⊙÷) ⋄ 12 choose 3" => "4",
+        "choose←1◶({⊃⍵}⊙⊢) ⋄ f←choose (+⊙×) ⋄ 2 f 3" => "5",
+    }
+    let r = Session::new().eval("choose←{⎕←9 ⋄ 2}◶({⎕←1 ⋄ 1÷0}⊙{⎕←2 ⋄ ⍺-⍵}) ⋄ 10 choose 3");
+    assert!(r.error.is_none(), "{:?}", r.error);
+    assert_eq!(r.output, ["9", "2", "7"]);
+    fails(Rank, &["(,1)◶(+⊙×)", "1◶((+⊙×)[1])", "{1 2}◶(+⊙×)⊢3"]);
+    fails(Domain, &["1.5◶(+⊙×)", "1◶(0↑+⊙×)", "1◶1 2", "{'a'}◶(+⊙×)⊢3"]);
+    fails(Index, &["0◶(+⊙×)", "3◶(+⊙×)", "{3}◶(+⊙×)⊢3"]);
+}
+
 #[test]
 fn language_examples() {
     let mut failures = Vec::new();
@@ -63,12 +116,6 @@ fn language_examples() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-}
-
-macro_rules! equiv {
-    ($($code:expr => $expected:expr),* $(,)?) => {
-        $(equiv($code, $expected);)*
-    };
 }
 
 macro_rules! equiv_in {
@@ -170,6 +217,7 @@ fn cancellation_preserves_session_and_unwinds_calls() {
     equiv_in(&mut s, "keep+1", "43");
     s.set("u", Array::floats(vec![20000], (0..20000).map(f64::from).collect()).unwrap()).unwrap();
     assert_eq!(s.eval_timeout("∪u", Duration::from_millis(2)).error.unwrap().kind, Timeout);
+    assert_eq!(s.eval_timeout("ℙ1000000000000x", Duration::from_millis(2)).error.unwrap().kind, Timeout);
     let interrupt = miniapl::InterruptHandle::default();
     let handle = interrupt.clone();
     let cancel = std::thread::spawn(move || {
@@ -417,6 +465,7 @@ fn format_and_execute() {
         "''⍎'a+1'" => "5",
         "g←⍎'+' ⋄ 2 g 3" => "5",
         "g←⍎'h←+' ⋄ 2 g 3" => "5",
+        "g←{⍎'+'}0 ⋄ 2 g 3" => "5",
         "r←⍎'/' ⋄ +r 1 2 3" => "6",
         "op←⍎'{⍺⍺ ⍵}' ⋄ -op 3" => "¯3",
     }
@@ -426,7 +475,126 @@ fn format_and_execute() {
     assert_eq!(failed.output, ["7"]);
     assert_eq!(failed.error.unwrap().span.source.text, "⎕←7 ⋄ 1÷0");
     fails(Domain, &["1⍕1j2", "¯1 2⍕1", "⍎1", "0.5⍕1"]);
-    fails(Syntax, &["{⍎'+'}0"]);
+}
+
+#[test]
+fn polynomial_representations_and_derivatives() {
+    equiv! {
+        "1x 2x 3x𝒫0x 1x 2x" => "1x 6x 17x",
+        "1x 2x 3x𝒫2 2⍴0x 1x 2x 3x" => "2 2⍴1x 6x 17x 34x",
+        "(2x (1x 3x))𝒫0x 1x 2x 3x" => "6x 0x ¯2x 0x",
+        "𝒫2x (1x 3x)" => "6x ¯8x 2x",
+        "𝒫⊂1x 3x" => "3x ¯4x 1x",
+        "𝒫⊂2 2⍴1x 5x ¯1x 0x" => "¯1x 0x 0x 0x 0x 1x",
+        "(⊂2 2⍴2x 1r2 3x 1r4)𝒫16x" => "14",
+        "(⊂4 3⍴¯1 2 1 1 1 1 2 1 2 3 0 2)𝒫⊂2.5 ¯1" => "11.75",
+        "1x 2x𝒫0⍴0x" => "0⍴0x",
+        "(2 3⍴1x 2x 3x 4x 5x 6x)𝒫1x 2x" => "6x 38x",
+        "5x𝒫2x" => "5x",
+        "0x 0x𝒫2x" => "0x",
+        "𝒫2x (0⍴0x)" => ",2x",
+        "f←1x 2x 3x∘𝒫 ⋄ f∂2x" => "14x",
+        "f←1x 2x 3x∘𝒫 ⋄ f∂∂2x" => "6x",
+        "f←1x 2x 3x∘𝒫 ⋄ f∂∂∂2x" => "0x",
+        "f←1x 2x 3x∘𝒫 ⋄ 10x 20x(f∂)1x 2x" => "80x 280x",
+        "f←(2x (1x 3x))∘𝒫 ⋄ f∂2x" => "0x",
+        "f←(⊂2 3⍴1x 2x 0x 1x 0x 2x)∘𝒫 ⋄ f∂⊂3x 4x" => "⊂6x 8x",
+        "f←(⊂2 3⍴1x 2x 0x 1x 0x 2x)∘𝒫 ⋄ 2x(f∂)⊂3x 4x" => "⊂12x 16x",
+        "f←(⊂2 3⍴1x 2x 0x 1x 0x 2x)∘𝒫 ⋄ f∂3x" => "12x",
+        "f←(2 2⍴1x 2x 3x 4x)∘𝒫 ⋄ 10x 20x(f∂)3x" => "100x",
+    }
+    for (code, expected) in [("𝒫𝒫0 16 ¯12 2", vec![0., 16., -12., 2.]), ("𝒫𝒫1 0 1", vec![1., 0., 1.]), ("𝒫𝒫1 ¯2 1", vec![1., -2., 1.])] {
+        let value = run(code).unwrap().unwrap();
+        assert_eq!(value.shape(), &[expected.len()]);
+        for (e, expected) in value.elements().zip(expected) {
+            let Element::Number(n) = e else { panic!("nonnumeric polynomial coefficient"); };
+            let z = n.as_complex().unwrap_or_else(|| num_complex::Complex64::new(n.as_float().unwrap(), 0.));
+            assert!((z - expected).norm() < 1e-10, "{code}: {z}");
+        }
+    }
+    fails(Domain, &["(+∂)2", "1 2∘𝒫∂1j2", "𝒫⊂1 2⍴1 ¯1", "(⊂1 2)(1 2∘𝒫∂)3", "𝒫1 ∞"]);
+    fails(Rank, &["1 2∘𝒫∂1 2"]);
+    fails(Length, &["1(1 2∘𝒫∂)1 2", "(⊂1 3⍴1 2 3)𝒫⊂1 2 3"]);
+}
+
+#[test]
+fn prime_and_factor_families() {
+    equiv! {
+        "ℙ⍳8" => "2x 3x 5x 7x 11x 13x 17x 19x",
+        "ℙ2 2⍴10000 1 10000 2" => "2 2⍴104729x 2x 104729x 3x",
+        "n←5 ⋄ ℙn" => "11x",
+        "¯4ℙ3 4 5 6" => "2x 3x 3x 5x",
+        "¯1ℙ1 2 3 4 5 6" => "0x 0x 1x 2x 2x 3x",
+        "0ℙ¯1 0 1 2 3 4" => "1x 1x 1x 0x 0x 1x",
+        "1ℙ¯1 0 1 2 3 4" => "0x 0x 0x 1x 1x 0x",
+        "2ℙ700" => "2 3⍴2x 5x 7x 2x 2x 1x",
+        "3ℙ700" => "2x 2x 5x 5x 7x",
+        "4ℙ1 2 3 4 5" => "2x 3x 5x 5x 7x",
+        "5ℙ1 2 3 4 5 6 10" => "1x 1x 2x 2x 4x 2x 4x",
+        "𝒬700" => "2x 2x 5x 5x 7x",
+        "𝒬1" => "0⍴0x",
+        "2𝒬700" => "2x 0x",
+        "10𝒬700" => "2x 0x 2x 1x 0x 0x 0x 0x 0x 0x",
+        "∞𝒬700" => "2x 0x 2x 1x",
+        "¯2𝒬700" => "2 2⍴5x 7x 2x 1x",
+        "¯∞𝒬700" => "2 3⍴2x 5x 7x 2x 2x 1x",
+        "0𝒬700" => "0⍴0x",
+        "¯∞𝒬1" => "2 0⍴0x",
+        "ℙ⍣¯1⊢ℙ⍳10" => "⍳10x",
+        "𝒬⍣¯1⊢𝒬700" => "700x",
+        "1ℙ18446744073709551557x 18446744073709551615x 170141183460469231731687303715884105727x" => "1x 0x 1x",
+        "1ℙ341550071728321x 3825123056546413051x" => "0x 0x",
+        "𝒬1000000016000000063x" => "1000000007x 1000000009x",
+        "ℙ0 2⍴0" => "0 2⍴0x",
+        "𝒬2 12" => "2 3⍴2x 0x 0x 2x 2x 3x",
+    }
+    fails(Domain, &["ℙ0", "ℙ1.000000000000001", "1ℙ2.5", "𝒬0", "𝒬¯1", "𝒬2j1", "6ℙ7", "¯4ℙ2"]);
+}
+
+#[test]
+fn full_windows() {
+    equiv! {
+        "3↕⍳5" => "3 3⍴1 2 3 2 3 4 3 4 5",
+        "2 2↕2 3⍴⍳6" => "1 2 2 2⍴1 2 4 5 2 3 5 6",
+        "2↕3 2⍴⍳6" => "2 2 2⍴1 2 3 4 3 4 5 6",
+        "4↕'ab'" => "0 4⍴' '",
+        "0↕'ab'" => "3 0⍴' '",
+        "⍬↕2 3⍴⍳6" => "2 3⍴⍳6",
+        "0 2↕2 3⍴⍳6" => "3 2 0 2⍴0",
+    }
+    fails(Domain, &["¯1↕⍳3", "0.5↕⍳3"]);
+    fails(Rank, &["2↕3", "1 2↕⍳3", "(1 1⍴2)↕⍳3"]);
+}
+
+#[test]
+fn paired_inverse_under_and_trajectories() {
+    equiv! {
+        "f←{⍵+1}⇄{⍵-1} ⋄ f⍣¯2⊢5" => "3",
+        "f←{⍺+⍵}⇄{⍵-⍺} ⋄ 3(f⍣¯1)8" => "5",
+        "f←{⍺+⍵}⇄{⍵-⍺} ⋄ (3∘f)⍣¯1⊢8" => "5",
+        "f←{⍵+1}⇄{⍵-1} ⋄ (f⍣¯1)⍣¯1⊢5" => "6",
+        "3 (+⌾(2∘×))4" => "7",
+        "(⌽⌾(1∘+))1 2 3" => "3 2 1",
+        "(1∘+)⍣(2 2⍴3 ¯2 0 3)⊢10" => "2 2⍴13 8 10 13",
+        "(+⍣(,1))2" => ",2",
+        "{⍵,1}⍣0 1 2⊢,2" => "3 3⍴2 0 0 2 1 0 2 1 1",
+        "{1÷0}⍣(0 2⍴0)⊢'ab'" => "0 2 2⍴' '",
+        "(1∘+)⍣\\3⊢5" => "5 6 7 8",
+        "(1∘+)⍣ \\ ¯2⊢5" => "5 4 3",
+        "{⍵,1}⍣\\2⊢,2" => "3 3⍴2 0 0 2 1 0 2 1 1",
+        "1 +⍣\\{⍺=3}0" => "0 1 2 3",
+        "⊢⍣\\≡⊢4" => "4 4",
+        "{1÷0}⍣\\0⊢'ab'" => "1 2⍴'ab'",
+        "(+⍣1)\\1 2 3" => "1 3 6",
+    }
+    let mut s = Session::new();
+    let r = s.eval("f←{⎕←⍵+1}⇄{⎕←⍵-1} ⋄ f⍣3 ¯2 3 0⊢0");
+    assert!(r.error.is_none(), "{:?}", r.error);
+    assert_eq!(&r.output[..5], ["1", "2", "3", "¯1", "¯2"]);
+    let r = s.eval("g←{⎕←⍵ ⋄ 2×⍵}⇄{⎕←⍵ ⋄ ⍵÷2} ⋄ 3(+⌾g)4");
+    assert_eq!(r.output, ["4", "3", "14", "7"]);
+    fails(Domain, &["((+⇄-)∘3)⍣¯1⊢8", "+⍣0 0.5⊢1"]);
+    fails(Rank, &["+⍣\\1 2⊢3"]);
 }
 
 #[test]
@@ -1150,7 +1318,6 @@ fn key_and_power() {
     fails(Length, &["1 2{⍵}⌸3 4 5"]);
     fails(Length, &["(+∘1)⍣{1 1}0", "(+∘1)⍣{⍬}0"]);
     fails(Domain, &["(+⍣0.5)1"]);
-    fails(Rank, &["(+⍣(,1))2"]);
 }
 
 #[test]
@@ -1741,7 +1908,8 @@ fn lexical_frames_recursion_and_guard_rollback() {
     fails_in(&mut s, Domain, &["{0::1÷0 ⋄ 1÷⍵}0"]);
     fails_in(&mut s, Value, &["{0::fresh ⋄ fresh←1 ⋄ 1÷⍵}0"]);
     fails_in(&mut s, Domain, &["{2:1 ⋄ 0}0"]);
-    fails_in(&mut s, Syntax, &["{x←2 ⋄ {x+⍵}}0", "{1:+ ⋄ 0}0"]);
+    fails_in(&mut s, Domain, &["{x←2 ⋄ {x+⍵}}0"]);
+    equiv_in(&mut s, "f←{1:+ ⋄ 0}0 ⋄ 2 f 3", "5");
     assert!(matches!(parse(Source::new("guard", "f←{0::⎕←1}")), ParseStatus::Complete(_)));
     assert_eq!(s.eval("2+2").value.unwrap(), scalar(4.0));
 }

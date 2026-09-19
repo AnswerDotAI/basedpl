@@ -16,6 +16,7 @@ fn import_array(raw: &Bound<'_, PyDict>, depth: usize) -> PyResult<Array> {
     if depth > 128 { return Err(PyValueError::new_err("array nesting exceeds 128 levels")); }
     let element = |o: Bound<'_, PyAny>| -> PyResult<Element> {
         if let Ok(a) = o.extract::<PyRef<'_, PyArray>>() { return Ok(Element::Nested(a.inner.clone())); }
+        if let Ok(f) = o.extract::<PyRef<'_, PyFunction>>() { return Ok(Element::Function(f.inner.clone())); }
         if let Ok(d) = o.cast::<PyDict>() { return Ok(Element::Nested(import_array(d, depth + 1)?)); }
         if let Ok(s) = o.cast::<PyString>() {
             let s = s.to_str()?;
@@ -47,6 +48,7 @@ fn array(py: Python<'_>, a: &Array) -> PyResult<Py<PyDict>> {
             }
             Element::Character(c) => PyString::new(py, &c.to_string()).into_any().unbind(),
             Element::Nested(a) => array(py, a)?.into_any(),
+            Element::Function(f) => Py::new(py, PyFunction { inner: f.clone() })?.into_any(),
         })
     }
     let result = PyDict::new(py);
@@ -67,6 +69,8 @@ impl PyArray {
     fn new(raw: &Bound<'_, PyDict>) -> PyResult<Self> { Ok(Self { inner: import_array(raw, 0)? }) }
     #[getter]
     fn shape(&self) -> Vec<usize> { self.inner.shape().to_vec() }
+    #[getter]
+    fn needs_session(&self) -> PyResult<bool> { self.inner.export_context().map_err(|k| PyValueError::new_err(k.to_string())) }
     fn parts(&self, py: Python<'_>) -> PyResult<Py<PyDict>> { array(py, &self.inner) }
     fn __repr__(&self) -> String { self.inner.to_string() }
     fn scalar(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {

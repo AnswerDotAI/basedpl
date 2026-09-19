@@ -69,6 +69,8 @@ fn json_session_flushes_before_eof_and_recovers() {
         (json!("(2+").to_string(), None, Some("SYNTAX ERROR"), vec![]),
         (json!("⍝ \"quoted\"\n+/v").to_string(), Some(json!([55])), None, vec!["55"]),
         (json!("f←+").to_string(), None, None, vec![]),
+        (json!("fs←+⊙×").to_string(), None, Some("DOMAIN ERROR"), vec![]),
+        (json!("f←2⊃fs ⋄ 2 f 3").to_string(), Some(json!([6])), None, vec!["6"]),
         (json!("").to_string(), None, None, vec![]),
         (json!("⍳0").to_string(), Some(json!([])), None, vec!["⍬"]),
     ] {

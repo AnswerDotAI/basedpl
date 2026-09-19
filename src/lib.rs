@@ -7,6 +7,8 @@ mod error;
 mod eval;
 mod execution;
 mod number;
+mod number_theory;
+mod polynomial;
 mod primitive;
 mod protocol;
 #[doc(hidden)]

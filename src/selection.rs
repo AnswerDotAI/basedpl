@@ -88,7 +88,7 @@ impl Labels {
                         values.push(value);
                     } else { self.collect(&a, &value.as_array(), span, paths, values)?; }
                 }
-                Element::Character(_) => return Err(span.error(ErrorKind::Domain, "invalid selection")),
+                Element::Character(_) | Element::Function(_) => return Err(span.error(ErrorKind::Domain, "invalid selection")),
             }
         }
         Ok(())

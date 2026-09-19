@@ -5,7 +5,7 @@ use crate::{
     number::{Arithmetic, Math},
     Array, Element, Error, ErrorKind, Number, Span,
 };
-use rand::Rng;
+use rand::RngExt;
 use std::{cmp::Ordering, collections::HashMap};
 
 #[derive(Clone, Copy, Debug)]
@@ -22,6 +22,12 @@ pub(crate) enum OperatorKind {
     Outer,
     Key,
     Power,
+    History,
+    PairInverse,
+    Under,
+    Differentiate,
+    Tie,
+    Agenda,
     At,
     Stencil,
 }
@@ -41,6 +47,12 @@ impl OperatorKind {
             Outer => "∘.",
             Key => "⌸",
             Power => "⍣",
+            History => "⍣\\",
+            PairInverse => "⇄",
+            Under => "⌾",
+            Differentiate => "∂",
+            Tie => "⊙",
+            Agenda => "◶",
             At => "@",
             Stencil => "⌺",
         }
@@ -104,6 +116,10 @@ pub(crate) enum Primitive {
     CatenateFirst,
     Reverse(bool),
     Transpose,
+    Windows,
+    Prime,
+    Factor,
+    Polynomial,
 }
 
 fn numeric<'a>(e: &'a Element, span: &Span) -> Result<&'a Number, Error> {
@@ -116,6 +132,46 @@ fn generated(n: usize, exact: bool) -> Element {
     match i64::try_from(n) { Ok(n) => integer(n), Err(_) => Element::Number(Number::try_from(num_rational::BigRational::from_integer(n.into())).unwrap()) }
 }
 fn selected(a: &Array, i: usize) -> Element { a.at(if a.is_singleton() { 0 } else { i }) }
+
+fn windows(sizes: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+    if sizes.shape().len() > 1 || sizes.len() > right.shape().len() {
+        return Err(span.error(ErrorKind::Rank, "window sizes must be a scalar or vector within the argument rank"));
+    }
+    if sizes.is_empty() { return Ok(right.clone()); }
+    let sizes = sizes
+        .elements()
+        .map(|e| numeric(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "window sizes must be nonnegative integers")))
+        .collect::<Result<Vec<_>, _>>()?;
+    let frame = sizes
+        .iter()
+        .zip(right.shape())
+        .map(|(&w, &n)| n.checked_add(1).map(|n| n.saturating_sub(w)).ok_or_else(|| span.error(ErrorKind::Limit, "window frame is too large")))
+        .collect::<Result<Vec<_>, _>>()?;
+    let cell = [&sizes, &right.shape()[sizes.len()..]].concat();
+    let shape = [frame.as_slice(), cell.as_slice()].concat();
+    let len = generated_len(&shape).map_err(|k| span.error(k, "windows exceed array limits"))?;
+    if len == 0 { return Array::empty(shape, right.prototype().clone()).map_err(|k| span.error(k, "invalid empty windows")); }
+    let width = generated_len(&cell).map_err(|k| span.error(k, "window is too large"))?;
+    let mut data = Vec::with_capacity(len);
+    for i in 0..len / width {
+        span.check()?;
+        let (mut rest, mut starts) = (i, vec![0; frame.len()]);
+        for a in (0..frame.len()).rev() {
+            starts[a] = rest % frame[a];
+            rest /= frame[a];
+        }
+        for mut j in 0..width {
+            let (mut offset, mut stride) = (0, 1);
+            for a in (0..cell.len()).rev() {
+                offset += (j % cell[a] + starts.get(a).copied().unwrap_or(0)) * stride;
+                j /= cell[a];
+                stride *= right.shape()[a];
+            }
+            data.push(right.at(offset));
+        }
+    }
+    Array::from_parts(shape, data, right.prototype().clone()).map_err(|k| span.error(k, "invalid windows"))
+}
 
 pub(crate) fn axis_value(axis: usize) -> Array { Array::scalar(Number::from_integer((axis + 1) as i64)).unwrap() }
 pub(crate) fn single_axis(axis: &Array, span: &Span) -> Result<usize, Error> {
@@ -264,6 +320,10 @@ impl Primitive {
             Self::Reverse(false) => "⌽",
             Self::Reverse(true) => "⊖",
             Self::Transpose => "⍉",
+            Self::Windows => "↕",
+            Self::Prime => "ℙ",
+            Self::Factor => "𝒬",
+            Self::Polynomial => "𝒫",
         }
     }
     pub(crate) fn from_glyph(c: char) -> Option<Self> {
@@ -322,6 +382,10 @@ impl Primitive {
             '⌽' => Self::Reverse(false),
             '⊖' => Self::Reverse(true),
             '⍉' => Self::Transpose,
+            '↕' => Self::Windows,
+            'ℙ' => Self::Prime,
+            '𝒬' => Self::Factor,
+            '𝒫' => Self::Polynomial,
             _ => return None,
         })
     }
@@ -378,6 +442,8 @@ impl Primitive {
         { return Err(span.error(ErrorKind::Syntax, "axis is not supported by this primitive")); }
         match self {
             Self::Identity(first) => return Ok(if first { left.unwrap_or(right) } else { right }.clone()),
+            Self::Prime | Self::Factor => return crate::number_theory::call(matches!(self, Self::Factor), left, right, span),
+            Self::Polynomial => return crate::polynomial::call(left, right, span),
             Self::Member => {
                 return match left { Some(x) => membership(x, right, span), None => enlist(right, span) }
             }
@@ -430,6 +496,7 @@ impl Primitive {
             }
             Self::Reverse(first) => return rotate(left, right, axis.unwrap_or(if first { 0 } else { right.shape().len().saturating_sub(1) }), span),
             Self::Transpose => return transpose(left, right, span),
+            Self::Windows => return windows(left.ok_or_else(|| span.error(ErrorKind::Syntax, "windows needs sizes on the left"))?, right, span),
             Self::Ravel | Self::CatenateFirst if left.is_some() => return catenate(left.unwrap(), right, axis, matches!(self, Self::CatenateFirst), span),
             Self::CatenateFirst => {
                 if axis.is_some() { return Err(span.error(ErrorKind::Syntax, "table does not take an axis")); }
@@ -440,6 +507,7 @@ impl Primitive {
             Self::Shape if left.is_some() => return reshape(left.unwrap(), right, span),
             Self::Disclose => {
                 return match left { Some(x) => pick(x, right, false, span), None => Ok(right.disclose()) }
+                .map(|e| e.as_array())
             }
             Self::Enclose | Self::Nest => {
                 if let Some(x) = left { return partition(x, right, axis, matches!(self, Self::Nest), span); }
@@ -555,6 +623,7 @@ impl Primitive {
                         let equal = match (x, right) {
                             (Element::Number(x), Element::Number(y)) => x.equal(y),
                             (Element::Character(x), Element::Character(y)) => Ok(x == y),
+                            (Element::Function(x), Element::Function(y)) => Ok(x == y),
                             _ => Ok(false),
                         };
                         equal.map(|equal| if matches!(op, Equal) { equal } else { !equal })
@@ -597,6 +666,7 @@ fn element_match(left: &Element, right: &Element, span: &Context<'_>) -> Result<
     match (left, right) {
         (Element::Number(x), Element::Number(y)) => x.equal(y).map_err(|m| span.error(ErrorKind::Domain, m)),
         (Element::Character(x), Element::Character(y)) => Ok(x == y),
+        (Element::Function(x), Element::Function(y)) => Ok(x == y),
         (Element::Nested(x), Element::Nested(y)) => array_match(x, y, span),
         _ => Ok(false),
     }
@@ -1043,13 +1113,19 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array
         };
     }
     match p {
+        Prime => {
+            let below = p.call(Some(&Array::scalar(Number::from_integer(-1)).unwrap()), right, span)?;
+            Arithmetic(Plus).call(Some(&Array::scalar(Number::from_integer(1)).unwrap()), &below, span)
+        }
+        Factor => crate::number_theory::product(right, span),
+        Polynomial => p.call(None, right, span),
         Arithmetic(Plus | Minus | Divide) | Reverse(_) | Transpose | Identity(_) | Index | MatrixDivide => p.call(None, right, span),
         Math(crate::number::Math::Power) => Math(crate::number::Math::Log).call(None, right, span),
         Math(crate::number::Math::Log) => Math(crate::number::Math::Power).call(None, right, span),
         Math(crate::number::Math::Circle) => Arithmetic(Divide).call(Some(right), &Array::scalar(std::f64::consts::PI).unwrap(), span),
         Enclose => Disclose.call(None, right, span),
         Disclose => Enclose.call(None, right, span),
-        Nest => Ok(if right.is_scalar() { right.disclose() } else { right.clone() }),
+        Nest => Ok(if right.is_scalar() { right.disclose().as_array() } else { right.clone() }),
         Iota => {
             let counter = if right.shape().len() == 1 && matches!(right.prototype(), Element::Number(_)) { Tally } else { Shape };
             let candidate = counter.call(None, right, span)?;
@@ -1288,6 +1364,7 @@ fn radix(left: &Array, right: &Array, encode: bool, span: &Context<'_>) -> Resul
 
 fn element_order(left: &Element, right: &Element) -> Ordering {
     match (left, right) {
+        (Element::Function(_), _) | (_, Element::Function(_)) => unreachable!("ordering rejects function arrays"),
         (Element::Number(x), Element::Number(y)) => x.grade_order(y),
         (Element::Character(x), Element::Character(y)) => x.cmp(y),
         (Element::Number(_), Element::Character(_)) => Ordering::Less,
@@ -1309,6 +1386,7 @@ fn array_order(left: &Array, right: &Array) -> Ordering {
 }
 
 fn grade(left: Option<&Array>, right: &Array, down: bool, span: &Context<'_>) -> Result<Array, Error> {
+    if right.has_functions() || left.is_some_and(Array::has_functions) { return Err(span.error(ErrorKind::Domain, "functions have no ordering")); }
     if right.is_scalar() || left.is_some_and(Array::is_scalar) { return Err(span.error(ErrorKind::Rank, "grade needs arrays of rank at least one")); }
     let count = generated_len(&right.shape()[..1]).map_err(|k| span.error(k, "grade result is too large"))?;
     let mut indices: Vec<usize> = (0..count).collect();
@@ -1353,6 +1431,7 @@ fn grade(left: Option<&Array>, right: &Array, down: bool, span: &Context<'_>) ->
 }
 
 fn interval_index(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+    if left.has_functions() || right.has_functions() { return Err(span.error(ErrorKind::Domain, "functions have no ordering")); }
     let SearchCells { left: boundaries, right: values, shape } = search_cells(left, right, span)?;
     for pair in boundaries.windows(2) {
         span.check()?;
@@ -1771,17 +1850,19 @@ fn coordinate_offset(coords: &Array, right: &Array, prototype: bool, span: &Cont
     Ok(offset)
 }
 
-pub(crate) fn pick(left: &Array, right: &Array, prototype: bool, span: &Context<'_>) -> Result<Array, Error> {
+pub(crate) fn pick(left: &Array, right: &Array, prototype: bool, span: &Context<'_>) -> Result<Element, Error> {
     if left.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "a pick path must be a scalar or vector")); }
-    let mut result = right.clone();
+    let mut result = Element::Nested(right.clone());
     for item in left.elements() {
-        let offset = coordinate_offset(&item.as_array(), &result, prototype, span)?;
-        result = offset.map_or_else(|| result.prototype().clone(), |offset| result.at(offset)).as_array();
+        if matches!(result, Element::Function(_)) { return Err(span.error(ErrorKind::Domain, "pick path cannot traverse a function")); }
+        let array = result.as_array();
+        let offset = coordinate_offset(&item.as_array(), &array, prototype, span)?;
+        result = offset.map_or_else(|| array.prototype().clone(), |offset| array.at(offset));
     }
     Ok(result)
 }
 
-fn index(n: &Number, limit: usize, span: &Context<'_>) -> Result<usize, Error> {
+pub(crate) fn index(n: &Number, limit: usize, span: &Span) -> Result<usize, Error> {
     let n = n.integer().map_err(|k| span.error(k, "index must be a positive integer"))?;
     if n <= 0 || n as usize > limit { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
     Ok(n as usize - 1)

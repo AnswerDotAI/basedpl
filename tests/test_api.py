@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from miniapl import (Array, Session, AplError, plus, times, subtract, divide, power, sign, tally, iota,
-                     reshape, shape, floor, logarithm, reverse, transpose, fork, atop)
+                     reshape, shape, floor, logarithm, reverse, transpose, fork, atop, first, pick)
 
 
 def test_documentation_examples():
@@ -70,6 +70,37 @@ def test_words_binding_and_operators():
     with pytest.raises(TypeError): plus @ Array(2)
     with pytest.raises(ValueError, match='DOMAIN'): plus.over(3)
     with pytest.raises(ValueError, match='DOMAIN'): plus.stencil(times)
+
+
+def test_math_construction():
+    from miniapl import prime, prime_mode, factors, factor_spec, polynomial, polyval, windows
+    f = plus.left(1).with_inverse(subtract(1))
+    np.testing.assert_array_equal(f.power([2, -1, 0])(10), [12, 9, 10])
+    np.testing.assert_array_equal(f.history(-2)(10), [10, 9, 8])
+    np.testing.assert_array_equal(windows(2, [1, 2, 3]), [[1, 2], [2, 3]])
+    assert prime(10).py == 29 and prime_mode(1, 29).py == 1
+    np.testing.assert_array_equal(factors(700), [2, 2, 5, 5, 7])
+    np.testing.assert_array_equal(factor_spec(float('inf'), 700), [2, 0, 2, 1])
+    np.testing.assert_array_equal(polynomial([2, [1, 3]]), [6, -8, 2])
+    p = polyval.left([1, 2, 3])
+    assert p.derivative()(2).py == 14 and p.derivative().derivative()(2).py == 6
+    np.testing.assert_array_equal(p.derivative()([10, 20], [1, 2]), [80, 280])
+
+
+def test_function_arrays():
+    fs = Array([plus, times])
+    assert pick(2, fs)(2, 3).py == 6
+    assert fs.py[0](2, 3).py == 5
+    with Session() as a, Session() as b:
+        fs = a('offset←10 ⋄ {offset+⍵}⊙+')
+        a(offset=20)
+        for f in [first(fs), first(list(fs)[0]), fs.py[0], first(Array(fs.np)[1]), a.fn('{⊃⍵}')(fs)]:
+            assert f(3).py == 23
+        assert pick(2, reverse(fs))(3).py == 23
+        a(fs=fs)
+        assert a('f←1⊃fs ⋄ f 3').py == 23
+        with pytest.raises(ValueError): b(fs=fs)
+        with pytest.raises(ValueError): Array([fs[1], b.fn('+')])
 
 
 def test_retained_and_late_bound_functions(capsys):

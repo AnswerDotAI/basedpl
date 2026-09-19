@@ -96,6 +96,17 @@ np.testing.assert_array_equal(add([1, 2, 3], 10), [11, 12, 13])
 
 `.fn('g')` follows later redefinitions of `g`; `apl('g')` retains its current function. Dfns and late-bound functions keep their originating session for name lookup. Close that session only after their last use.
 
+[Function arrays](glyphs/function-arrays.md) retain callable handles, including their session for name lookup. `first` and `pick` return the selected function:
+
+```python
+from miniapl import first, pick
+fs = apl('+⊙×⊙÷')
+assert pick(2, fs)(2, 3).py == 6
+assert first(fs)(2, 3).py == 5
+```
+
+`Array([f, g])` also constructs a function vector; `.py` and object-dtype `.np` export Python callables. Functions from different sessions cannot be combined.
+
 ## Word functions
 
 Primitives also have Python names. Dyadic names bind the right argument when called with one argument; `.left(x)` binds the left.
@@ -122,9 +133,26 @@ Names distinguish valences: `sign`/`times`, `shape`/`reshape`, `iota`/`index_of`
 | `f.rank(r)`, `f.atop(g)` | `f⍤r`, `f⍤g` |
 | `f.beside(g)`, `f.over(g)`, `f.behind(g)` | `f∘g`, `f⍥g`, `f⍛g` |
 | `f.power(n)`, `f.at(i)` | `f⍣n`, `f@i` |
+| `f.history(n)` | `f⍣\n` (count or predicate) |
+| `f.with_inverse(g)`, `f.under(g)` | `f⇄g`, `f⌾g` |
+| `f.derivative()` | `f∂` |
 | `f[k]` | `f[k]` axis qualifier |
 
-Arithmetic between functions makes forks: `f+g` is `(f+g)`. `f @ g` is inner product; `f << g` is compose; `f >> g` reverses composition; `f ** n` is power. Python's precedence applies when building these expressions. `f.under(g)` computes inverse-`g` after `f` after `g`.
+Arithmetic between functions makes forks: `f+g` is `(f+g)`. `f @ g` is inner product; `f << g` is compose; `f >> g` reverses composition; `f ** n` is power. Python's precedence applies when building these expressions.
+
+Math families: `prime`/`prime_mode` (`ℙ`), `factors`/`factor_spec` (`𝒬`), `polynomial`/`polyval` (`𝒫`). `windows` is dyadic `↕`.
+
+```python
+from miniapl import prime, factors, polyval
+
+assert prime(10).py == 29
+np.testing.assert_array_equal(factors(700), [2, 2, 5, 5, 7])
+p = polyval.left([1, 2, 3])
+assert p(2).py == 17
+assert p.derivative()(2).py == 14
+np.testing.assert_array_equal(p.derivative()([10, 20], [1, 2]), [80, 280])
+np.testing.assert_array_equal(plus.left(1).history(3)(0), [0, 1, 2, 3])
+```
 
 ## Errors and interruption
 

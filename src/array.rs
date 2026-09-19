@@ -3,7 +3,12 @@ use std::{collections::HashMap, fmt, sync::Arc};
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Element { Number(Number), Character(char), Nested(Array) }
+pub enum Element {
+    Number(Number),
+    Character(char),
+    Nested(Array),
+    Function(crate::Function),
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Array(Arc<ArrayData>);
@@ -42,6 +47,8 @@ struct ArrayData {
     prototype: Element,
     depth: usize,
     exact: Option<bool>,
+    functions: bool,
+    environment: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -96,20 +103,36 @@ pub(crate) fn element_count(shape: &[usize]) -> Result<usize, ErrorKind> {
 }
 
 impl Element {
-    fn exact_domain(&self) -> Option<bool> { match self { Self::Number(n) => Some(n.is_exact()), Self::Character(_) => None, Self::Nested(a) => a.0.exact } }
+    fn exact_domain(&self) -> Option<bool> {
+        match self { Self::Number(n) => Some(n.is_exact()), Self::Character(_) | Self::Function(_) => None, Self::Nested(a) => a.0.exact }
+    }
     fn normalized(self) -> Self { match self { Self::Nested(a) if a.is_scalar() && !matches!(a.at(0), Self::Nested(_)) => a.at(0), _ => self } }
 
     pub fn prototype(&self) -> Self { self.prototype_with(&mut HashMap::new()) }
     fn prototype_with(&self, filled: &mut HashMap<*const ArrayData, Array>) -> Self {
-        match self { Self::Number(n) => Self::Number(n.unit(0)), Self::Character(_) => Self::Character(' '), Self::Nested(a) => Self::Nested(a.fill(filled)) }
+        match self {
+            Self::Number(n) => Self::Number(n.unit(0)),
+            Self::Character(_) => Self::Character(' '),
+            Self::Nested(a) => Self::Nested(a.fill(filled)),
+            Self::Function(_) => self.clone(),
+        }
     }
-    fn depth(&self) -> usize { match self { Self::Nested(a) => a.0.depth + 1, _ => 0 } }
+    fn depth(&self) -> usize { match self { Self::Nested(a) => a.0.depth + 1, Self::Function(f) => f.depth(), _ => 0 } }
+    fn has_functions(&self) -> bool { match self { Self::Function(_) => true, Self::Nested(a) => a.has_functions(), _ => false } }
+    fn environment(&self) -> Option<usize> { match self { Self::Function(f) => f.environment(), Self::Nested(a) => a.environment(), _ => None } }
 
     pub(crate) fn as_array(&self) -> Array { match self { Self::Nested(a) => a.clone(), _ => Array::new(vec![], vec![self.clone()]).unwrap() } }
 }
 
 impl Array {
     pub(crate) fn storage_id(&self) -> usize { Arc::as_ptr(&self.0) as usize }
+    pub(crate) fn graph_depth(&self) -> usize { self.0.depth }
+    pub(crate) fn environment(&self) -> Option<usize> { self.0.environment }
+    pub fn has_functions(&self) -> bool { self.0.functions }
+    pub fn export_context(&self) -> Result<bool, ErrorKind> {
+        if !self.has_functions() { return Ok(false); }
+        crate::eval::export_context(crate::eval::Operand::Array(self.clone()))
+    }
     pub fn from_parts(shape: Vec<usize>, data: Vec<Element>, empty_prototype: Element) -> Result<Self, ErrorKind> {
         if data.is_empty() { Self::empty(shape, empty_prototype) } else { Self::new(shape, data) }
     }
@@ -122,20 +145,38 @@ impl Array {
         if depth > MAX_NESTING { return Err(ErrorKind::Limit); }
         let prototype = data[0].prototype();
         let exact = data.iter().filter_map(Element::exact_domain).reduce(|a, b| a && b);
+        let functions = data.iter().any(Element::has_functions);
+        let environment = data.iter().filter_map(Element::environment).max();
         let data = Storage::compact(data);
-        Ok(Self(Arc::new(ArrayData { shape, data, prototype, depth, exact })))
+        Ok(Self(Arc::new(ArrayData { shape, data, prototype, depth, exact, functions, environment })))
     }
 
     pub fn floats(shape: Vec<usize>, mut data: Vec<f64>) -> Result<Self, ErrorKind> {
         if element_count(&shape)? != data.len() { return Err(ErrorKind::Length); }
         if data.iter().any(|n| n.is_nan()) { return Err(ErrorKind::Domain); }
         for n in &mut data { if *n == 0.0 { *n = 0.0; } }
-        Ok(Self(Arc::new(ArrayData { shape, data: Storage::Float(data), prototype: Element::Number(0.0.try_into().unwrap()), depth: 0, exact: Some(false) })))
+        Ok(Self(Arc::new(ArrayData {
+            shape,
+            data: Storage::Float(data),
+            prototype: Element::Number(0.0.try_into().unwrap()),
+            depth: 0,
+            exact: Some(false),
+            functions: false,
+            environment: None,
+        })))
     }
 
     pub fn integers(shape: Vec<usize>, data: Vec<i64>) -> Result<Self, ErrorKind> {
         if element_count(&shape)? != data.len() { return Err(ErrorKind::Length); }
-        Ok(Self(Arc::new(ArrayData { shape, data: Storage::Integer(data), prototype: Element::Number(Number::from_integer(0)), depth: 0, exact: Some(true) })))
+        Ok(Self(Arc::new(ArrayData {
+            shape,
+            data: Storage::Integer(data),
+            prototype: Element::Number(Number::from_integer(0)),
+            depth: 0,
+            exact: Some(true),
+            functions: false,
+            environment: None,
+        })))
     }
     pub fn is_exact(&self) -> bool { self.0.exact == Some(true) }
 
@@ -147,12 +188,14 @@ impl Array {
         if depth > MAX_NESTING { return Err(ErrorKind::Limit); }
         let prototype = prototype.prototype();
         let exact = prototype.exact_domain();
+        let functions = prototype.has_functions();
+        let environment = prototype.environment();
         let data = match &prototype {
             Element::Number(n) if n.as_integer().is_some() => Storage::Integer(Vec::new()),
             Element::Number(n) if n.as_float().is_some() => Storage::Float(Vec::new()),
             _ => Storage::Mixed(Vec::new()),
         };
-        Ok(Self(Arc::new(ArrayData { shape, data, prototype, depth, exact })))
+        Ok(Self(Arc::new(ArrayData { shape, data, prototype, depth, exact, functions, environment })))
     }
 
     pub fn scalar(n: impl TryInto<Number>) -> Result<Self, ErrorKind> { Self::new(vec![], vec![Element::Number(n.try_into().map_err(|_| ErrorKind::Domain)?)]) }
@@ -176,7 +219,15 @@ impl Array {
 
     pub(crate) fn with_shape(&self, shape: Vec<usize>) -> Result<Self, ErrorKind> {
         if element_count(&shape)? != self.len() { return Err(ErrorKind::Length); }
-        Ok(Self(Arc::new(ArrayData { shape, data: self.0.data.clone(), prototype: self.prototype().clone(), depth: self.0.depth, exact: self.0.exact })))
+        Ok(Self(Arc::new(ArrayData {
+            shape,
+            data: self.0.data.clone(),
+            prototype: self.prototype().clone(),
+            depth: self.0.depth,
+            exact: self.0.exact,
+            functions: self.0.functions,
+            environment: self.0.environment,
+        })))
     }
 
     pub(crate) fn cells(&self, rank: usize) -> Result<Cells<'_>, ErrorKind> {
@@ -197,6 +248,12 @@ impl Array {
     }
 
     pub(crate) fn formatted(&self) -> Result<Self, ErrorKind> {
+        if self.is_scalar() {
+            if let Element::Function(f) = self.at(0) {
+                let text = format!("⟨{}⟩", f.apl());
+                return Self::new(vec![text.chars().count()], text.chars().map(Element::Character).collect());
+            }
+        }
         if matches!(self.prototype(), Element::Character(_)) && self.elements().all(|e| matches!(e, Element::Character(_))) { return Ok(self.clone()); }
         let numeric = matches!(self.prototype(), Element::Number(_)) && self.elements().all(|e| matches!(e, Element::Number(_)));
         if !numeric { return self.formatted_cells(); }
@@ -337,10 +394,7 @@ impl Array {
         Ok(lines)
     }
 
-    pub(crate) fn disclose(&self) -> Self {
-        let item = self.elements().next().unwrap_or_else(|| self.prototype().clone());
-        item.as_array()
-    }
+    pub(crate) fn disclose(&self) -> Element { self.elements().next().unwrap_or_else(|| self.prototype().clone()) }
 
     /// Assemble cells by trailing-axis agreement, padding each with its own fill.
     pub(crate) fn assemble(frame: &[usize], cells: &[Self], empty_cell: &Self) -> Result<Self, ErrorKind> {
@@ -392,6 +446,8 @@ impl Array {
             prototype: self.prototype().clone(),
             depth: self.0.depth,
             exact: self.0.exact,
+            functions: self.0.functions,
+            environment: self.0.environment,
         }));
         filled.insert(key, result.clone());
         result
@@ -417,7 +473,12 @@ impl fmt::Display for Array {
             let columns = *self.shape().last().unwrap();
             let text: Vec<_> = self
                 .elements()
-                .map(|e| match e { Element::Number(n) => n.to_string(), Element::Character(c) => c.to_string(), Element::Nested(a) => format!("({a})") })
+                .map(|e| match e {
+                    Element::Number(n) => n.to_string(),
+                    Element::Character(c) => c.to_string(),
+                    Element::Nested(a) => format!("({a})"),
+                    Element::Function(f) => format!("⟨{}⟩", f.apl()),
+                })
                 .collect();
             let mut widths = vec![0; columns];
             for (i, s) in text.iter().enumerate() { widths[i % columns] = widths[i % columns].max(s.width()); }
@@ -434,7 +495,12 @@ impl fmt::Display for Array {
         }
         for (i, item) in self.elements().enumerate() {
             if i > 0 { f.write_str(" ")?; }
-            match item { Element::Number(n) => write!(f, "{n}")?, Element::Character(c) => write!(f, "'{c}'")?, Element::Nested(a) => write!(f, "({a})")? }
+            match item {
+                Element::Number(n) => write!(f, "{n}")?,
+                Element::Character(c) => write!(f, "'{c}'")?,
+                Element::Nested(a) => write!(f, "({a})")?,
+                Element::Function(fun) => write!(f, "⟨{}⟩", fun.apl())?,
+            }
         }
         Ok(())
     }

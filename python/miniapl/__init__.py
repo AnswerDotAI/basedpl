@@ -14,10 +14,11 @@ def _dtype(items):
     if types == {str}: return 'U1'
     return object
 
-def _value(raw, as_array=False):
+def _value(raw, as_array=False, session=None):
     def item(o):
         if isinstance(o, tuple): return Fraction(*o)
-        return _value(o) if isinstance(o, dict) else o
+        if isinstance(o, _Function): return Function(o, session=session if o.needs_session else None)
+        return _value(o, session=session) if isinstance(o, dict) else o
     shape, data = tuple(raw['shape']), [item(o) for o in raw['data']]
     items = raw['data'] or [raw['prototype']]
     nested = any(isinstance(o, dict) and 'shape' in o for o in items)
@@ -36,6 +37,7 @@ def _element(value, seen):
     if np is not None and isinstance(value, np.generic): value = value.item()
     if isinstance(value, bool): return int(value)
     if isinstance(value, Fraction): return value.numerator, value.denominator
+    if isinstance(value, Function): return value._inner
     if type(value) in (int, float, complex): return value
     if isinstance(value, str) and len(value) == 1: return value
     if isinstance(value, (Array, str, list, tuple)) or np is not None and isinstance(value, np.ndarray): return _array(value, seen)
@@ -116,19 +118,42 @@ def _array_repr(raw):
     if math.prod(shape) == 0: return f'Array([], shape={tuple(shape)})'
     return cells(shape)
 
+def _context(*values):
+    session, pending, seen = None, list(values), set()
+    while pending:
+        value = pending.pop()
+        if isinstance(value, (Array, Function)):
+            owner = value._session
+            if owner is not None:
+                if session is not None and session is not owner: raise ValueError('cannot combine functions from different sessions')
+                session = owner
+        elif isinstance(value, (list, tuple)):
+            if id(value) in seen: continue
+            seen.add(id(value))
+            pending.extend(value)
+        else:
+            np = sys.modules.get('numpy')
+            if np is not None and isinstance(value, np.ndarray) and value.dtype.kind == 'O':
+                if id(value) in seen: continue
+                seen.add(id(value))
+                pending.extend(value.flat)
+    return session
+
 class Array(_Operators):
     "An immutable native APL value. Conversion to Python or NumPy makes a copy."
-    __slots__ = ('_inner',)
-    def __init__(self, value): self._inner = _array(value)
+    __slots__ = ('_inner', '_session')
+    def __init__(self, value):
+        self._inner = _array(value)
+        self._session = _context(value) if self._inner.needs_session else None
     @property
     def shape(self): return tuple(self._inner.shape)
     @property
-    def py(self): return _value(self._inner.parts())
+    def py(self): return _value(self._inner.parts(), session=self._session)
     @property
-    def np(self): return _value(self._inner.parts(), as_array=True)
+    def np(self): return _value(self._inner.parts(), as_array=True, session=self._session)
     @property
     def apl(self): return repr(self._inner)
-    def _scalar(self): return _value(self._inner.scalar())
+    def _scalar(self): return _value(self._inner.scalar(), session=self._session)
     def __float__(self): return float(self._scalar())
     def __int__(self): return int(self._scalar())
     def __index__(self): return operator.index(self._scalar())
@@ -136,7 +161,7 @@ class Array(_Operators):
     def __len__(self):
         if not self.shape: raise TypeError('a scalar has no length')
         return self.shape[0]
-    def __iter__(self): return (Array(a) for a in self._inner.cells())
+    def __iter__(self): return (_wrap_array(a, self._session) for a in self._inner.cells())
     def __contains__(self, item): raise TypeError('use member for APL membership')
     def __getitem__(self, index):
         parts = index if isinstance(index, tuple) else (index,)
@@ -144,7 +169,7 @@ class Array(_Operators):
             if not isinstance(o, slice): return _array(o)
             if o.start is not None or o.stop is not None or o.step is not None: raise TypeError('only a full : slice is supported; use APL index arrays')
             return None
-        return _result(self._inner.select([part(o) for o in parts])).value
+        return _result(self._inner.select([part(o) for o in parts]), self._session).value
     def __matmul__(self, other):
         if isinstance(other, Function): raise TypeError('inner product requires two arrays or two functions')
         return plus.inner(times)(self, other)
@@ -171,12 +196,17 @@ class AplError(RuntimeError):
 def _print(output):
     for text in output: print(text)
 
+def _wrap_array(value, session=None):
+    value = Array(value)
+    if value._inner.needs_session: value._session = session
+    return value
+
 def _result(raw, session=None, display=False):
     if display: _print(raw['output'])
     if error := raw['error']: raise AplError(error, raw['output'])
     value = raw['value']
     if isinstance(value, _Function): value = Function(value, session=session if value.needs_session else None)
-    elif value is not None: value = Array(value)
+    elif value is not None: value = _wrap_array(value, session)
     return Result(value, raw['output'])
 
 class Session:
@@ -196,8 +226,9 @@ class Session:
 
     def _eval(self, source, bindings, display, echo=False):
         def binding(v):
+            owner = _context(v)
+            if owner is not None and owner is not self: raise ValueError('function belongs to a different session')
             if not isinstance(v, Function): return _array(v)
-            if v._session is not None and v._session is not self: raise ValueError('function belongs to a different session')
             return v._inner
         payload = dict(bindings=[(k, binding(v)) for k,v in bindings.items()])
         if source is not None:

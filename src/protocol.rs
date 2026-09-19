@@ -16,6 +16,7 @@ fn element(e: &Element) -> Value {
         }
         Element::Character(c) => json!(c.to_string()),
         Element::Nested(a) => array(a),
+        Element::Function(_) => unreachable!("JSON response rejects function arrays"),
     }
 }
 
@@ -100,7 +101,12 @@ fn error(e: &Error) -> Value {
         "calls": e.calls.iter().map(|s| json!({"source": {"name": s.source.name, "text": s.source.text}, "span": [s.range.start, s.range.end]})).collect::<Vec<_>>()})
 }
 
-pub(crate) fn response(result: Evaluation) -> Value {
+pub(crate) fn response(mut result: Evaluation) -> Value {
+    if result.function.is_some() || result.value.as_ref().is_some_and(Array::has_functions) {
+        let span = crate::Span { source: crate::Source::new("<json>", ""), range: 0..0 };
+        result.value = None;
+        if result.error.is_none() { result.error = Some(span.error(crate::ErrorKind::Domain, "functions cannot be exported through JSON")); }
+    }
     json!({"value": result.value.as_ref().map(array), "output": result.output, "error": result.error.as_ref().map(error)})
 }
 

@@ -2,7 +2,7 @@ use crate::ErrorKind;
 use num_bigint::BigInt;
 use num_complex::Complex64;
 use num_rational::BigRational;
-use num_traits::{Signed, ToPrimitive, Zero};
+use num_traits::{FromPrimitive, Signed, ToPrimitive, Zero};
 use std::{cmp::Ordering, fmt};
 
 /// Canonical numbers, including real infinities but never NaN or complex infinities.
@@ -206,6 +206,15 @@ impl Number {
             Integer(n) => isize::try_from(*n).map_err(|_| ErrorKind::Limit),
             Float(n) if n.fract() == 0.0 => n.to_isize().ok_or(ErrorKind::Limit),
             Exact(n) if n.is_integer() => n.numer().to_isize().ok_or(ErrorKind::Limit),
+            _ => Err(ErrorKind::Domain),
+        }
+    }
+
+    pub(crate) fn big_integer(&self) -> Result<BigInt, ErrorKind> {
+        match &self.0 {
+            Integer(n) => Ok((*n).into()),
+            Float(n) if n.fract() == 0.0 => BigInt::from_f64(*n).ok_or(ErrorKind::Domain),
+            Exact(n) if n.is_integer() => Ok(n.to_integer()),
             _ => Err(ErrorKind::Domain),
         }
     }

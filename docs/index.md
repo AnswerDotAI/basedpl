@@ -36,6 +36,9 @@ Each name below links to its definitions and examples. Examples show an equivale
 | `⍟` [Log](glyphs/log.md) | Natural log | Logarithm |
 | `○` [Circle](glyphs/circle.md) | Pi times | Circular functions |
 | `!` [Factorial](glyphs/factorial.md) | Factorial | Binomial |
+| `ℙ` [Prime](glyphs/prime.md) | Nth prime (one-based) | Prime operations |
+| `𝒬` [Factor](glyphs/factor.md) | Prime factors | Exponents / factor table |
+| `𝒫` [Polynomial](glyphs/polynomial.md) | Roots / coefficients | Evaluate |
 | `?` [Question](glyphs/question.md) | Roll | Deal |
 | `∨` [Or](glyphs/or.md) | — | OR / GCD |
 | `∧` [And](glyphs/and.md) | — | AND / LCM |
@@ -58,6 +61,7 @@ Each name below links to its definitions and examples. Examples show an equivale
 | `⍉` [Transpose](glyphs/transpose.md) | Transpose | Reorder / diagonal axes |
 | `↑` [Take](glyphs/take.md) | Mix | Take |
 | `↓` [Drop](glyphs/drop.md) | Split | Drop |
+| `↕` [Windows](glyphs/windows.md) | — | Full leading-axis windows |
 | `⊂` [Enclose](glyphs/enclose.md) | Enclose | Partitioned enclose |
 | `⊆` [Nest](glyphs/nest.md) | Nest | Partition |
 | `⊃` [Disclose](glyphs/disclose.md) | First / disclose | Pick |
@@ -102,6 +106,12 @@ Each name below links to its definitions and examples. Examples show an equivale
 | `∘.` [Outer](glyphs/outer.md) | `∘.g` | Outer product |
 | `⌸` [Key](glyphs/key.md) | `f⌸` | Key |
 | `⍣` [Power](glyphs/power.md) | `f⍣n`, `f⍣g` | Iterate / invert / repeat until |
+| `⍣\` [History](glyphs/history.md) | `f⍣\n`, `f⍣\g` | Iteration states, including initial state |
+| `⇄` [Inverse pair](glyphs/inverse-pair.md) | `f⇄g` | Attach an explicit inverse |
+| `⌾` [Under](glyphs/under.md) | `f⌾g` | Transform, apply, inverse-transform |
+| `∂` [Derivative](glyphs/derivative.md) | `f∂` | Gradient / vector–Jacobian product |
+| `⊙` [Function arrays](glyphs/function-arrays.md) | `f⊙g`, `2⊃fs` | Tie functions as data; disclose a callable |
+| `◶` [Agenda](glyphs/function-arrays.md#--agenda) | `selector◶cases` | Select and call one function |
 | `@` [At](glyphs/at.md) | `f@a`, `a@g` | Functional amend |
 | `⌺` [Stencil](glyphs/stencil.md) | `f⌺a` | Stencil |
 

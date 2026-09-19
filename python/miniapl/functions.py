@@ -1,5 +1,5 @@
 "Word names and composition over the interpreter's immutable function nodes."
-from . import _Operators, _Function, _array, Session
+from . import _Operators, _Function, _array, _context, Session
 
 _default_session = None
 
@@ -9,12 +9,9 @@ def _default():
     return _default_session
 
 def _build(kind, *operands, valence=0):
-    session, values = None, []
+    session, values = _context(*operands), []
     for o in operands:
         if isinstance(o, Function):
-            if o._session is not None:
-                if session is not None and session is not o._session: raise ValueError('cannot combine functions from different sessions')
-                session = o._session
             values.append(o._inner)
         else: values.append(_array(o))
     return Function(_Function.build(kind, values), valence=valence, session=session)
@@ -27,7 +24,8 @@ class Function(_Operators):
     def __call__(self, *args):
         if len(args) == 1 and self._valence == 2: return _build('∘', self, args[0], valence=1)
         if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this APL function')
-        session = self._session if self._session is not None else _default()
+        owner = _context(self, *args)
+        session = owner if owner is not None else _default()
         return session._request(dict(function=self._inner, args=[_array(o) for o in args]), True).value
     def left(self, x): return _build('∘', x, self, valence=1)
     def reduce(self): return _build('/', self)
@@ -42,8 +40,11 @@ class Function(_Operators):
     def atop(self, g): return _build('⍤', self, g)
     def over(self, g): return _build('⍥', self, g)
     def behind(self, g): return _build('⍛', self, g)
-    def under(self, g): return _build('under', self, g)
+    def under(self, g): return _build('⌾', self, g)
+    def with_inverse(self, g): return _build('⇄', self, g)
     def power(self, counts): return _build('⍣', self, counts)
+    def history(self, count_or_predicate): return _build('⍣\\', self, count_or_predicate)
+    def derivative(self): return _build('∂', self)
     def at(self, indices): return _build('@', self, indices)
     def stencil(self, spec): return _build('⌺', self, spec)
     def __pow__(self, counts): return self.power(counts)
@@ -75,6 +76,7 @@ _vocabulary = [
     ('⊖', 'reverse_first', 'rotate_first'), ('⍉', 'transpose', 'reorder_axes'), ('?', 'roll', 'deal'),
     ('/', None, 'replicate'), ('⌿', None, 'replicate_first'), ('\\', None, 'expand'), ('⍀', None, 'expand_first'),
     ('⊣', 'same_left', 'left'), ('⊢', 'same', 'right'), ('⎕C', 'case_fold', 'case_convert'), ('⎕UCS', 'unicode', 'unicode_convert'),
+    ('↕', None, 'windows'), ('ℙ', 'prime', 'prime_mode'), ('𝒬', 'factors', 'factor_spec'), ('𝒫', 'polynomial', 'polyval'),
 ]
 
 __all__ = ['Function', 'fork', 'atop']

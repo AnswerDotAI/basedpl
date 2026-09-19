@@ -158,9 +158,11 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
             let n = Number::parse(&source.text[start..end])
                 .map_err(|k| span(end).error(k, "invalid numeric literal (real values, finite complex components or integer x/r components required)"))?;
             TokenKind::Literal(Array::scalar(n).unwrap())
-        } else if c.is_alphabetic() || matches!(c, '_' | '∆' | '⍙') {
+        } else if (c.is_alphabetic() || matches!(c, '_' | '∆' | '⍙')) && Primitive::from_glyph(c).is_none() {
             chars.next();
-            while chars.peek().is_some_and(|(_, c)| c.is_alphanumeric() || matches!(c, '_' | '∆' | '⍙')) { chars.next(); }
+            while chars.peek().is_some_and(|(_, c)| (c.is_alphanumeric() || matches!(c, '_' | '∆' | '⍙')) && Primitive::from_glyph(*c).is_none()) {
+                chars.next();
+            }
             let end = chars.peek().map_or(source.text.len(), |(i, _)| *i);
             TokenKind::Name(source.text[start..end].to_owned())
         } else {
@@ -194,6 +196,11 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                 '.' => TokenKind::Operator(OperatorKind::Product),
                 '⌸' => TokenKind::Operator(OperatorKind::Key),
                 '⍣' => TokenKind::Operator(OperatorKind::Power),
+                '⇄' => TokenKind::Operator(OperatorKind::PairInverse),
+                '⌾' => TokenKind::Operator(OperatorKind::Under),
+                '∂' => TokenKind::Operator(OperatorKind::Differentiate),
+                '⊙' => TokenKind::Operator(OperatorKind::Tie),
+                '◶' => TokenKind::Operator(OperatorKind::Agenda),
                 '@' => TokenKind::Operator(OperatorKind::At),
                 '⌺' => TokenKind::Operator(OperatorKind::Stencil),
                 '(' => TokenKind::Open,
@@ -308,6 +315,17 @@ impl Parser<'_> {
                 }
                 TokenKind::Literal(a) => NodeKind::Literal(a.clone()),
                 TokenKind::Function(f) => NodeKind::Function(*f),
+                TokenKind::Operator(OperatorKind::Power)
+                    if self.tokens.get(self.pos).is_some_and(|t| matches!(t.kind, TokenKind::Hybrid(Hybrid { scan: true, first: false, axis: None }))) =>
+                {
+                    let end = self.tokens[self.pos].span.range.end;
+                    self.pos += 1;
+                    nodes.push(Node {
+                        kind: NodeKind::Operator(OperatorKind::History),
+                        span: Span { source: token.span.source.clone(), range: token.span.range.start..end },
+                    });
+                    continue;
+                }
                 TokenKind::Operator(op) => NodeKind::Operator(*op),
                 TokenKind::Name(name) => NodeKind::Name(name.clone()),
                 TokenKind::Assign => NodeKind::Assign,

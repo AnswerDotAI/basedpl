@@ -76,6 +76,7 @@ fn array(a: &Array, budget: &mut usize) -> Block {
             Element::Number(n) => Block::new(n.to_string()),
             Element::Character(c) => Block::new(if c.is_control() { c.escape_default().to_string() } else { c.to_string() }),
             Element::Nested(a) => array(a, budget),
+            Element::Function(f) => Block::new(format!("⟨{}⟩", f.apl())),
         })
         .collect();
     let columns = shape.last().copied().unwrap_or(1);

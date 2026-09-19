@@ -22,4 +22,15 @@ Inverses propagate through composition, binding, Each, rank, dyadic commute/Behi
 1(+⍣{⍺>4})0        ⍝ 5
 ```
 
-RANK: non-scalar count. DOMAIN: non-integral count, non-Boolean predicate, unknown inverse.
+Array counts give that frame of result cells, assembled with fill.
+
+```apl
+(1∘+)⍣3 ¯2 0 3⊢10     ⍝ 13 8 10 13
+⍴({1÷0}⍣(0 2⍴0))'ab'  ⍝ 0x 2x 2x
+```
+
+Positive steps run first, then inverse steps from `Y`; repeated counts reuse states. Empty counts use `Y`'s cell shape/fill directly.
+
+See [History](history.md) and [Inverse pair](inverse-pair.md). Convergence: `f⍣≡`.
+
+DOMAIN: non-integral count, non-Boolean predicate, unknown inverse.

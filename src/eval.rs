@@ -19,6 +19,8 @@ pub struct Function {
     late: bool,
 }
 
+impl PartialEq for Function { fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&self.node, &other.node) } }
+
 const MAX_DEPTH: usize = 128;
 const MAX_CALL_DEPTH: usize = 1024;
 
@@ -39,6 +41,8 @@ enum FunctionNode {
 }
 
 impl Function {
+    pub(crate) fn depth(&self) -> usize { self.depth }
+    pub(crate) fn environment(&self) -> Option<usize> { self.environment }
     fn from_value(value: Value, span: &Span) -> Result<Self, Error> {
         match value {
             Value::Function(f) => Ok(f),
@@ -126,7 +130,7 @@ impl Function {
         let node = match node {
             FunctionNode::Modified(op, a) => {
                 let a = a.normalize(span)?;
-                if !match op { Commute => true, Each | Outer | Key => matches!(a, Operand::Function(_)), _ => false } { return Err(span.error(ErrorKind::Domain, "operator needs a function operand")); }
+                if !match op { Commute => true, Each | Outer | Key | Differentiate => matches!(a, Operand::Function(_)), _ => false } { return Err(span.error(ErrorKind::Domain, "operator needs a function operand")); }
                 FunctionNode::Modified(op, a)
             }
             FunctionNode::Composed(op, [a, b]) => {
@@ -134,12 +138,21 @@ impl Function {
                 let (af, bf) = (matches!(a, Operand::Function(_)), matches!(b, Operand::Function(_)));
                 if !match op {
                     Compose => af || bf,
-                    Rank | Power => af,
-                    Over | Behind | Product => af && bf,
+                    Rank | Power | History => af,
+                    Over | Behind | Product | PairInverse | Under => af && bf,
                     At => true,
                     Stencil => af && !bf,
+                    Agenda => !bf,
                     _ => false,
                 } { return Err(span.error(ErrorKind::Domain, "invalid operator operands")); }
+                if matches!(op, Agenda) {
+                    let Operand::Array(fs) = &b else { unreachable!() };
+                    if fs.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "agenda needs a vector of functions")); }
+                    if fs.is_empty() || !fs.elements().all(|e| matches!(e, Element::Function(_))) {
+                        return Err(span.error(ErrorKind::Domain, "agenda needs a nonempty vector of functions"));
+                    }
+                    if let Operand::Array(index) = &a { agenda_index(index, fs.len(), span)?; }
+                }
                 FunctionNode::Composed(op, [a, b])
             }
             node => node,
@@ -147,7 +160,8 @@ impl Function {
         let (depth, environment, late) = match &node {
             FunctionNode::Primitive(_) => (0, None, false),
             FunctionNode::LateBound(..) => (0, None, true),
-            FunctionNode::Fold(f, _) | FunctionNode::Axis(f, _) | FunctionNode::Inverse(f) => (f.depth, f.environment, f.late),
+            FunctionNode::Fold(f, _) | FunctionNode::Inverse(f) => (f.depth, f.environment, f.late),
+            FunctionNode::Axis(f, a) => (f.depth.max(a.graph_depth()), f.environment.max(a.environment()), f.late),
             FunctionNode::Defined(c) => (0, c.environment, false),
             FunctionNode::Derived(c, a, b) => {
                 let (depth, environment, late) = operand_dependencies(std::iter::once(a).chain(b.iter()));
@@ -155,7 +169,7 @@ impl Function {
             }
             FunctionNode::Composed(_, operands) => operand_dependencies(operands.iter()),
             FunctionNode::Modified(_, Operand::Function(f)) => (f.depth, f.environment, f.late),
-            FunctionNode::Modified(_, _) => (0, None, false),
+            FunctionNode::Modified(_, a) => operand_dependencies(std::iter::once(a)),
             FunctionNode::Fork(fs) => (fs.iter().map(|f| f.depth).max().unwrap(), fs.iter().filter_map(|f| f.environment).max(), fs.iter().any(|f| f.late)),
         };
         let depth = depth + 1;
@@ -181,7 +195,13 @@ impl Function {
         result
     }
     fn inverse(&self, span: &Span) -> Result<Self, Error> {
-        if let FunctionNode::Inverse(f) = self.node.as_ref() { Ok(f.clone()) } else { Self::new(FunctionNode::Inverse(self.clone()), span) }
+        match self.node.as_ref() {
+            FunctionNode::Inverse(f) => Ok(f.clone()),
+            FunctionNode::Composed(OperatorKind::PairInverse, [f, g]) => {
+                Self::new(FunctionNode::Composed(OperatorKind::PairInverse, [g.clone(), f.clone()]), span)
+            }
+            _ => Self::new(FunctionNode::Inverse(self.clone()), span),
+        }
     }
     fn resolve(&self, session: &mut Session, output: &mut Vec<String>, resolved: &mut HashMap<usize, (Self, Self)>, depth: usize) -> Result<Self, Error> {
         if !self.late { return Ok(self.clone()); }
@@ -228,11 +248,29 @@ impl Function {
             FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => return each(f, left, right, span, session, output),
             FunctionNode::Modified(OperatorKind::Outer, Operand::Function(f)) => return outer(f, left, right, span, session, output),
             FunctionNode::Modified(OperatorKind::Key, Operand::Function(f)) => return key(f, left, right, span, session, output),
+            FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(f)) => {
+                let (mut f, mut order) = (f, 1);
+                while let FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(inner)) = f.node.as_ref() {
+                    f = inner;
+                    order += 1;
+                }
+                let FunctionNode::Composed(OperatorKind::Compose, [Operand::Array(a), Operand::Function(p)]) = f.node.as_ref() else {
+                    return Err(span.error(ErrorKind::Domain, "differentiation currently requires a bound polynomial evaluator"));
+                };
+                if !matches!(p.node.as_ref(), FunctionNode::Primitive(Primitive::Polynomial)) {
+                    return Err(span.error(ErrorKind::Domain, "differentiation currently requires a bound polynomial evaluator"));
+                }
+                crate::polynomial::derivative(a, order, left, right, &session.execution.at(span))
+            }
             FunctionNode::Modified(OperatorKind::Commute, Operand::Function(f)) => return f.call(Some(right), left.unwrap_or(right), span, session, output),
             FunctionNode::Modified(OperatorKind::Commute, Operand::Array(a)) => Ok(a.clone()),
             FunctionNode::Modified(..) => unreachable!(),
-            FunctionNode::Primitive(Primitive::Disclose) if session.prototype && left.is_some() => {
-                crate::primitive::pick(left.unwrap(), right, true, &session.execution.at(span))
+            FunctionNode::Primitive(Primitive::Disclose) => {
+                let item = match left {
+                    Some(x) => crate::primitive::pick(x, right, session.prototype, &session.execution.at(span))?,
+                    None => right.disclose(),
+                };
+                return Ok(Bound::new(Value::from_element(item)));
             }
             FunctionNode::Primitive(p) => p.call(left, right, &session.execution.at(span)),
             Defined(_) | Derived(..) => {
@@ -276,32 +314,7 @@ impl Function {
     }
 
     /// Reject stack-frame references; report whether the graph needs session lookup.
-    pub fn export_context(&self) -> Result<bool, ErrorKind> {
-        fn function(a: &Operand) -> Option<&Function> { if let Operand::Function(f) = a { Some(f) } else { None } }
-        let (mut pending, mut seen, mut context) = (vec![self], HashSet::new(), false);
-        while let Some(f) = pending.pop() {
-            if !seen.insert(Arc::as_ptr(&f.node)) { continue; }
-            if f.environment.is_some() { return Err(ErrorKind::Domain); }
-            match f.node.as_ref() {
-                FunctionNode::Primitive(Primitive::Execute) | FunctionNode::LateBound(..) => context = true,
-                FunctionNode::Primitive(_) => (),
-                FunctionNode::Defined(c) => {
-                    if c.environment.is_some() { return Err(ErrorKind::Domain); }
-                    context = true;
-                }
-                FunctionNode::Derived(c, a, b) => {
-                    if c.environment.is_some() { return Err(ErrorKind::Domain); }
-                    context = true;
-                    pending.extend(std::iter::once(a).chain(b.iter()).filter_map(function));
-                }
-                FunctionNode::Fold(f, _) | FunctionNode::Inverse(f) | FunctionNode::Axis(f, _) => pending.push(f),
-                FunctionNode::Modified(_, a) => pending.extend(function(a)),
-                FunctionNode::Composed(_, operands) => pending.extend(operands.iter().filter_map(function)),
-                FunctionNode::Fork(fs) => pending.extend(fs),
-            }
-        }
-        Ok(context)
-    }
+    pub fn export_context(&self) -> Result<bool, ErrorKind> { export_context(Operand::Function(self.clone())) }
 
     pub fn apl(&self) -> String { self.text(&mut 1000) }
 
@@ -331,20 +344,17 @@ impl Function {
             ("/" | "⌿" | "\\" | "⍀", [f]) => {
                 FunctionNode::Fold(fun(f)?, Hybrid { scan: matches!(kind, "\\" | "⍀"), first: matches!(kind, "⌿" | "⍀"), axis: None })
             }
-            ("¨" | "⍨" | "∘." | "⌸", [f]) => {
+            ("¨" | "⍨" | "∘." | "⌸" | "∂", [f]) => {
                 let op = match kind {
                     "¨" => OperatorKind::Each,
                     "⍨" => OperatorKind::Commute,
                     "∘." => OperatorKind::Outer,
+                    "∂" => OperatorKind::Differentiate,
                     _ => OperatorKind::Key,
                 };
                 FunctionNode::Modified(op, f.clone())
             }
-            ("under", [f, g]) => {
-                let over = Self::new(FunctionNode::Composed(OperatorKind::Over, [f.clone(), g.clone()]), &span)?;
-                FunctionNode::Composed(OperatorKind::Rank, [Operand::Function(fun(g)?.inverse(&span)?), Operand::Function(over)])
-            }
-            ("∘" | "⍤" | "⍥" | "⍛" | "." | "⍣" | "@" | "⌺", [a, b]) => {
+            ("∘" | "⍤" | "⍥" | "⍛" | "." | "⍣" | "⍣\\" | "⇄" | "⌾" | "@" | "⌺", [a, b]) => {
                 let op = match kind {
                     "∘" => OperatorKind::Compose,
                     "⍤" => OperatorKind::Rank,
@@ -352,6 +362,9 @@ impl Function {
                     "⍛" => OperatorKind::Behind,
                     "." => OperatorKind::Product,
                     "⍣" => OperatorKind::Power,
+                    "⍣\\" => OperatorKind::History,
+                    "⇄" => OperatorKind::PairInverse,
+                    "⌾" => OperatorKind::Under,
                     "@" => OperatorKind::At,
                     _ => OperatorKind::Stencil,
                 };
@@ -374,6 +387,7 @@ fn composition(
 ) -> Result<Bound, Error> {
     use OperatorKind::*;
     if matches!(op, At) { return at(operands, left, right, span, session, output); }
+    if matches!(op, Agenda) { return agenda(operands, left, right, span, session, output); }
     if matches!(op, Stencil) {
         let [Operand::Function(f), Operand::Array(spec)] = operands else {
             return Err(span.error(ErrorKind::Domain, "stencil needs a function and window specification"));
@@ -381,10 +395,7 @@ fn composition(
         if left.is_some() { return Err(span.error(ErrorKind::Syntax, "stencil is monadic")); }
         return stencil(f, spec, right, span, session, output);
     }
-    if matches!(op, Power) {
-        let Operand::Function(f) = &operands[0] else { return Err(span.error(ErrorKind::Domain, "power needs a function left operand")); };
-        return power(f, &operands[1], left, right, span, session, output);
-    }
+    if matches!(op, Power | History) { return power(op, operands, left, right, span, session, output); }
     match (&operands[0], &operands[1]) {
         (Operand::Array(a), Operand::Function(f)) if matches!(op, Compose) => {
             if left.is_some() { return Err(span.error(ErrorKind::Syntax, "bound functions are monadic")); }
@@ -396,6 +407,7 @@ fn composition(
         }
         (Operand::Function(f), Operand::Array(ranks)) if matches!(op, Rank) => rank(f, ranks, left, right, span, session, output),
         (Operand::Function(f), Operand::Function(g)) => match op {
+            PairInverse => f.call(left, right, span, session, output),
             Product => inner(f, g, left, right, span, session, output),
             Compose => {
                 let y = g.call_array(None, right, span, session, output)?;
@@ -405,10 +417,11 @@ fn composition(
                 let y = g.call_array(left, right, span, session, output)?;
                 f.call(None, &y, span, session, output)
             }
-            Over => {
+            Over | Under => {
                 let y = g.call_array(None, right, span, session, output)?;
                 let x = left.map(|x| g.call_array(None, x, span, session, output)).transpose()?;
-                f.call(x.as_ref(), &y, span, session, output)
+                let result = f.call(x.as_ref(), &y, span, session, output)?;
+                if matches!(op, Under) { g.inverse(span)?.call(None, &result.array(span)?, span, session, output) } else { Ok(result) }
             }
             Behind => {
                 let x = f.call_array(None, left.unwrap_or(right), span, session, output)?;
@@ -418,6 +431,23 @@ fn composition(
         },
         _ => Err(span.error(ErrorKind::Domain, "invalid operator operands")),
     }
+}
+
+fn agenda_index(index: &Array, len: usize, span: &Span) -> Result<usize, Error> {
+    if !index.is_scalar() { return Err(span.error(ErrorKind::Rank, "agenda index must be scalar")); }
+    let n = index.as_number().ok_or_else(|| span.error(ErrorKind::Domain, "agenda index must be numeric"))?;
+    crate::primitive::index(&n, len, span)
+}
+
+fn agenda(operands: &[Operand; 2], left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+    let [selector, Operand::Array(fs)] = operands else { unreachable!() };
+    let index = match selector {
+        Operand::Array(a) => a.clone(),
+        Operand::Function(f) => f.call_array(left, right, span, session, output)?,
+        Operand::Hybrid(_) => unreachable!(),
+    };
+    let Element::Function(f) = fs.at(agenda_index(&index, fs.len(), span)?) else { unreachable!() };
+    f.call(left, right, span, session, output)
 }
 
 fn at(operands: &[Operand; 2], left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
@@ -498,42 +528,83 @@ fn stencil(f: &Function, spec: &Array, right: &Array, span: &Span, session: &mut
 }
 
 fn power(
-    f: &Function,
-    operand: &Operand,
+    op: OperatorKind,
+    operands: &[Operand; 2],
     left: Option<&Array>,
     right: &Array,
     span: &Span,
     session: &mut Session,
     output: &mut Vec<String>,
 ) -> Result<Bound, Error> {
+    let [Operand::Function(f), operand] = operands else { unreachable!() };
+    let history = matches!(op, OperatorKind::History);
     let mut value = right.clone();
     match operand {
         Operand::Array(count) => {
-            if !count.is_scalar() { return Err(span.error(ErrorKind::Rank, "power count must be scalar")); }
-            let n = count
-                .as_number()
-                .ok_or_else(|| span.error(ErrorKind::Domain, "power count must be numeric"))?
-                .integer()
-                .map_err(|k| span.error(k, "power count must be integral"))?;
-            let inverse;
-            let f = if n < 0 {
-                inverse = f.inverse(span)?;
-                &inverse
-            } else { f };
-            let n = n.unsigned_abs();
-            for i in 0..n {
-                let result = f.call(left, &value, span, session, output)?;
-                if i == n - 1 { return Ok(result); }
-                value = result.array(span)?;
+            if history && !count.is_scalar() { return Err(span.error(ErrorKind::Rank, "history count must be scalar")); }
+            let mut indices = count
+                .elements()
+                .map(|e| {
+                    let Element::Number(n) = e else { return Err(span.error(ErrorKind::Domain, "power counts must be numeric")); };
+                    n.integer().map_err(|k| span.error(k, "power counts must be integral"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if count.is_scalar() && !history {
+                let n = indices[0];
+                let inverse;
+                let f = if n < 0 {
+                    inverse = f.inverse(span)?;
+                    &inverse
+                } else { f };
+                for i in 0..n.unsigned_abs() {
+                    let result = f.call(left, &value, span, session, output)?;
+                    if i + 1 == n.unsigned_abs() { return Ok(result); }
+                    value = result.array(span)?;
+                }
+            } else {
+                let shape = if history {
+                    let n = indices[0];
+                    let len = n.unsigned_abs().checked_add(1).ok_or_else(|| span.error(ErrorKind::Limit, "history is too long"))?;
+                    generated_len(&[len]).map_err(|k| span.error(k, "history is too long"))?;
+                    indices = (0..len).map(|i| i as isize * n.signum()).collect();
+                    vec![len]
+                } else { count.shape().to_vec() };
+                let mut wanted = indices.clone();
+                wanted.sort_unstable_by_key(|&n| (n < 0, n.unsigned_abs()));
+                wanted.dedup();
+                let mut states = HashMap::new();
+                let mut previous: isize = 0;
+                let mut inverse = None;
+                for n in wanted {
+                    if n < 0 && previous >= 0 {
+                        value = right.clone();
+                        previous = 0;
+                        inverse = Some(f.inverse(span)?);
+                    }
+                    let step = inverse.as_ref().unwrap_or(f);
+                    for _ in previous.unsigned_abs()..n.unsigned_abs() { value = step.call_array(left, &value, span, session, output)?; }
+                    states.insert(n, value.clone());
+                    previous = n;
+                }
+                let cells: Vec<_> = indices.iter().map(|n| states[n].clone()).collect();
+                value = Array::assemble(&shape, &cells, right).map_err(|k| span.error(k, "power result is too large"))?;
             }
         }
-        Operand::Function(test) => loop {
-            let next = f.call_array(left, &value, span, session, output)?;
-            let done = test.call_array(Some(&next), &value, span, session, output)?;
-            let done = done.boolean().map_err(|k| span.error(k, "power predicate must return a Boolean singleton"))?;
-            value = next;
-            if done { break; }
-        },
+        Operand::Function(test) => {
+            let mut states = if history { vec![value.clone()] } else { Vec::new() };
+            loop {
+                let next = f.call_array(left, &value, span, session, output)?;
+                let done = test.call_array(Some(&next), &value, span, session, output)?;
+                let done = done.boolean().map_err(|k| span.error(k, "power predicate must return a Boolean singleton"))?;
+                value = next;
+                if history {
+                    generated_len(&[states.len() + 1]).map_err(|k| span.error(k, "history is too long"))?;
+                    states.push(value.clone());
+                }
+                if done { break; }
+            }
+            if history { value = Array::assemble(&[states.len()], &states, right).map_err(|k| span.error(k, "history result is too large"))?; }
+        }
         Operand::Hybrid(_) => unreachable!(),
     }
     Ok(Bound::new(Value::Array(value)))
@@ -549,7 +620,14 @@ fn inverse(f: &Function, bound: Option<(&Array, bool)>, right: &Array, span: &Sp
         g.inverse(span)
     };
     let array = match f.node.as_ref() {
+        Primitive(crate::primitive::Primitive::Enclose) if bound.is_none() => {
+            return Function::primitive(crate::primitive::Primitive::Disclose).call(None, right, span, session, output);
+        }
         Primitive(p) => crate::primitive::inverse(*p, bound, right, None, &session.execution.at(span)),
+        Composed(PairInverse, [_, Operand::Function(g)]) if first => return g.call(left, right, span, session, output),
+        Composed(Under, [Operand::Function(g), h]) => {
+            return composition(Under, &[Operand::Function(operand_inverse(g)?), h.clone()], left, right, span, session, output)
+        }
         Inverse(g) if first => return g.call(left, right, span, session, output),
         Modified(Each, Operand::Function(g)) => return each(&operand_inverse(g)?, left, right, span, session, output),
         Modified(Outer, Operand::Function(g)) => {
@@ -608,9 +686,9 @@ fn inverse(f: &Function, bound: Option<(&Array, bool)>, right: &Array, span: &Sp
             let y = inverse(h, bound, right, span, session, output)?.array(span)?;
             return g.inverse(span)?.call(None, &y, span, session, output);
         }
-        Composed(Power, [Operand::Function(g), Operand::Array(count)]) if first => {
+        Composed(Power, [Operand::Function(g), Operand::Array(count)]) if first && count.is_scalar() => {
             let count = crate::primitive::Primitive::Arithmetic(crate::number::Arithmetic::Minus).call(None, count, &session.execution.at(span))?;
-            return power(g, &Operand::Array(count), left, right, span, session, output);
+            return power(Power, &[Operand::Function(g.clone()), Operand::Array(count)], left, right, span, session, output);
         }
         Composed(Rank, [Operand::Function(g), Operand::Array(ranks)]) => {
             let mut ranks = ranks.clone();
@@ -748,8 +826,9 @@ fn outer(operand: &Function, left: Option<&Array>, right: &Array, span: &Span, s
         } else { (left.at(i / right.len()), right.at(i % right.len())) };
         match operand.call(Some(&x.as_array()), &y.as_array(), span, session, output)?.value {
             Value::Array(a) => data.push(Element::Nested(a)),
+            Value::Function(f) => data.push(Element::Function(f)),
             Value::NoResult => missing = true,
-            _ => return Err(span.error(ErrorKind::Syntax, "outer product operand must return an array or no result")),
+            _ => return Err(span.error(ErrorKind::Syntax, "outer product operand must return an array, function or no result")),
         }
     }
     let value = if missing { Value::NoResult } else {
@@ -854,8 +933,9 @@ fn each(operand: &Function, left: Option<&Array>, right: &Array, span: &Span, se
         let result = if empty { operand.call_prototype(x.as_ref(), &y, span, session, output) } else { operand.call(x.as_ref(), &y, span, session, output) };
         match result?.value {
             Value::Array(a) => data.push(Element::Nested(a)),
+            Value::Function(f) => data.push(Element::Function(f)),
             Value::NoResult => missing = true,
-            _ => return Err(span.error(ErrorKind::Syntax, "Each operand must return an array or no result")),
+            _ => return Err(span.error(ErrorKind::Syntax, "Each operand must return an array, function or no result")),
         }
     }
     let value = if missing { Value::NoResult } else {
@@ -903,6 +983,7 @@ fn identity(operand: &Function, prototype: &Element, span: &crate::execution::Co
             if n.is_infinite() { Ok(Element::Number(n.try_into().unwrap())) } else { Ok(Element::Number(value.unit(n as i32))) }
         }
         Element::Character(_) => Ok(Element::Number(n.try_into().unwrap())),
+        Element::Function(_) => Err(span.error(ErrorKind::Domain, "function elements have no numeric reduction identity")),
         Element::Nested(a) => {
             let data = a.elements().map(|e| identity(operand, &e, span)).collect::<Result<_, _>>()?;
             let fill = identity(operand, a.prototype(), span)?;
@@ -1135,12 +1216,54 @@ struct ArrayBinding { name: String, owner: Option<usize>, value: Array }
 #[derive(Clone, Debug)]
 pub(crate) enum Operand { Array(Array), Function(Function), Hybrid(Hybrid) }
 
+pub(crate) fn export_context(root: Operand) -> Result<bool, ErrorKind> {
+    let (mut pending, mut functions, mut arrays, mut context) = (vec![root], HashSet::new(), HashSet::new(), false);
+    while let Some(value) = pending.pop() {
+        let f = match value {
+            Operand::Array(a) => {
+                if a.environment().is_some() { return Err(ErrorKind::Domain); }
+                if !a.has_functions() || !arrays.insert(a.storage_id()) { continue; }
+                for e in a.elements().chain(std::iter::once(a.prototype().clone())) {
+                    match e {
+                        Element::Function(f) => pending.push(Operand::Function(f)),
+                        Element::Nested(a) if a.has_functions() => pending.push(Operand::Array(a)),
+                        _ => (),
+                    }
+                }
+                continue;
+            }
+            Operand::Function(f) => f,
+            Operand::Hybrid(_) => continue,
+        };
+        if f.environment.is_some() { return Err(ErrorKind::Domain); }
+        if !functions.insert(Arc::as_ptr(&f.node)) { continue; }
+        match f.node.as_ref() {
+            FunctionNode::Primitive(Primitive::Execute) | FunctionNode::LateBound(..) | FunctionNode::Defined(_) => context = true,
+            FunctionNode::Primitive(_) => (),
+            FunctionNode::Derived(_, a, b) => {
+                context = true;
+                pending.extend(std::iter::once(a).chain(b.iter()).cloned());
+            }
+            FunctionNode::Fold(f, _) | FunctionNode::Inverse(f) => pending.push(Operand::Function(f.clone())),
+            FunctionNode::Axis(f, a) => {
+                pending.push(Operand::Function(f.clone()));
+                pending.push(Operand::Array(a.clone()));
+            }
+            FunctionNode::Modified(_, a) => pending.push(a.clone()),
+            FunctionNode::Composed(_, operands) => pending.extend(operands.iter().cloned()),
+            FunctionNode::Fork(fs) => pending.extend(fs.iter().cloned().map(Operand::Function)),
+        }
+    }
+    Ok(context)
+}
+
 #[derive(Clone, Debug)]
 enum Operator { Defined(Closure), Primitive(OperatorKind), Bound(Box<Operator>, Operand) }
 
 fn operand_dependencies<'a>(operands: impl Iterator<Item = &'a Operand>) -> (usize, Option<usize>, bool) {
     operands.fold((0, None, false), |(depth, environment, late), op| match op {
         Operand::Function(f) => (depth.max(f.depth), environment.max(f.environment), late || f.late),
+        Operand::Array(a) => (depth.max(a.graph_depth()), environment.max(a.environment()), late),
         _ => (depth, environment, late),
     })
 }
@@ -1149,12 +1272,35 @@ impl Operator {
     fn is_dyadic(&self) -> bool {
         match self {
             Self::Defined(c) => c.definition.kind == DefinitionKind::DyadicOperator,
-            Self::Primitive(op) => !matches!(op, OperatorKind::Each | OperatorKind::Commute | OperatorKind::Outer | OperatorKind::Key),
+            Self::Primitive(op) => {
+                !matches!(op, OperatorKind::Each | OperatorKind::Commute | OperatorKind::Outer | OperatorKind::Key | OperatorKind::Differentiate)
+            }
             Self::Bound(..) => false,
         }
     }
 
-    fn derive(self, operand: Operand, span: &Span) -> Result<Function, Error> {
+    fn derive(self, operand: Operand, span: &Span) -> Result<Value, Error> {
+        if let Self::Bound(ref op, ref right) = self {
+            if matches!(**op, Self::Primitive(OperatorKind::Tie)) {
+                fn items(a: Operand, span: &Span) -> Result<Vec<Element>, Error> {
+                    match a.normalize(span)? {
+                        Operand::Function(f) => Ok(vec![Element::Function(f)]),
+                        Operand::Array(a)
+                            if a.shape().len() <= 1
+                                && a.elements().chain(std::iter::once(a.prototype().clone())).all(|e| matches!(e, Element::Function(_))) =>
+                        {
+                            Ok(a.elements().collect())
+                        }
+                        _ => Err(span.error(ErrorKind::Domain, "tie needs functions or function vectors")),
+                    }
+                }
+                let mut data = items(operand, span)?;
+                let prototype = match right { Operand::Array(a) => a.prototype().clone(), _ => items(right.clone(), span)?[0].clone() };
+                data.extend(items(right.clone(), span)?);
+                generated_len(&[data.len()]).map_err(|k| span.error(k, "function vector is too large"))?;
+                return Array::from_parts(vec![data.len()], data, prototype).map(Value::Array).map_err(|k| span.error(k, "invalid function vector"));
+            }
+        }
         let node = match self {
             Self::Defined(c) => FunctionNode::Derived(c, operand, None),
             Self::Primitive(op) => FunctionNode::Modified(op, operand),
@@ -1164,7 +1310,7 @@ impl Operator {
                 Self::Bound(..) => unreachable!(),
             },
         };
-        Function::new(node, span)
+        Function::new(node, span).map(Value::Function)
     }
 }
 
@@ -1203,6 +1349,10 @@ enum Value {
     Operator(Operator),
     Hybrid(Hybrid),
 }
+impl Value {
+    fn from_element(element: Element) -> Self { match element { Element::Function(f) => Self::Function(f), _ => Self::Array(element.as_array()) } }
+    fn environment(&self) -> Option<usize> { match self { Self::Array(a) => a.environment(), Self::Function(f) => f.environment, _ => None } }
+}
 struct Bound { value: Value, shy: bool, assignment: bool }
 struct Application {
     function: Function,
@@ -1219,12 +1369,16 @@ impl Bound {
     fn array(self, span: &Span) -> Result<Array, Error> {
         match self.value {
             Value::Array(a) => Ok(a),
+            Value::Function(f) => Ok(Element::Function(f).as_array()),
             Value::NoResult => Err(span.error(ErrorKind::Value, "expression produced no value")),
             _ => Err(span.error(ErrorKind::Syntax, "expression must produce an array")),
         }
     }
     fn result(self, span: &Span) -> Result<Self, Error> {
-        match self.value { Value::Array(_) | Value::NoResult => Ok(self), _ => Err(span.error(ErrorKind::Syntax, "dfn results must be arrays")) }
+        match self.value {
+            Value::Array(_) | Value::Function(_) | Value::NoResult => Ok(self),
+            _ => Err(span.error(ErrorKind::Syntax, "dfn results must be arrays or functions")),
+        }
     }
 }
 
@@ -1252,7 +1406,10 @@ pub struct Session {
 
 impl Session {
     pub fn new() -> Self { Self::default() }
-    pub fn set(&mut self, name: &str, value: Array) -> Result<(), ErrorKind> { self.set_value(name, Value::Array(value)) }
+    pub fn set(&mut self, name: &str, value: Array) -> Result<(), ErrorKind> {
+        value.export_context()?;
+        self.set_value(name, Value::Array(value))
+    }
     pub fn set_function(&mut self, name: &str, value: Function) -> Result<(), ErrorKind> {
         value.export_context()?;
         self.set_value(name, Value::Function(value))
@@ -1300,6 +1457,12 @@ impl Session {
             Ok(Bound { value: Value::Array(a), shy, .. }) => {
                 if self.execution.echo && !shy { result.output.push(self.display.array(&a, false)); }
                 result.value = Some(a);
+            }
+            Ok(Bound { value: Value::Function(f), shy, .. }) => {
+                if let Err(k) = f.export_context() { result.error = Some(span.error(k, "function retains an active lexical frame")); } else {
+                    if self.execution.echo && !shy { result.output.push(f.text(&mut 1000)); }
+                    result.function = Some(f);
+                }
             }
             Ok(_) => (),
             Err(e) => result.error = Some(e),
@@ -1524,9 +1687,11 @@ impl Session {
         Ok(ArrayBinding { name: name.to_owned(), owner, value: value.clone() })
     }
 
-    fn update_array(&mut self, binding: &ArrayBinding, value: Array) {
+    fn update_array(&mut self, binding: &ArrayBinding, value: Array, span: &Span) -> Result<(), Error> {
+        if value.environment() > binding.owner { return Err(span.error(ErrorKind::Domain, "array would export a local closure")); }
         let names = match binding.owner { Some(i) => &mut self.frames[i].names, None => &mut self.names };
         names.insert(binding.name.clone(), Value::Array(value));
+        Ok(())
     }
 
     fn indices(&mut self, parts: &[Vec<Node>], output: &mut Vec<String>) -> Result<Vec<Option<Array>>, Error> {
@@ -1600,7 +1765,7 @@ impl Session {
             let selection = selection.unwrap();
             if let Some(f) = modifier { self.modify_selection(original, &selection, &f, right, span, output)? } else { selection.write(original, right, &self.execution.at(span))? }
         };
-        self.update_array(&binding, updated);
+        self.update_array(&binding, updated, span)?;
         Ok(())
     }
 
@@ -1611,7 +1776,7 @@ impl Session {
                 NodeKind::Name(name) => {
                     let binding = self.array_binding(name, &node.span)?;
                     let updated = modifier.call_array(Some(&binding.value), right, &node.span, self, output)?;
-                    self.update_array(&binding, updated);
+                    self.update_array(&binding, updated, &node.span)?;
                     Ok(())
                 }
                 _ => unreachable!(),
@@ -1644,7 +1809,7 @@ impl Session {
             Some(f) => self.modify_selection(&binding.value, &selection, &f, &values, span, output)?,
             None => selection.write(&binding.value, &values, &self.execution.at(span))?,
         };
-        self.update_array(&binding, updated);
+        self.update_array(&binding, updated, &nodes[0].span)?;
         Ok(())
     }
 
@@ -1695,7 +1860,7 @@ impl Session {
         let mut updated = original.clone();
         for (i, path) in selection.paths.iter().enumerate() {
             let one = crate::primitive::Selection { shape: vec![], paths: vec![path.clone()] };
-            let left = one.read(&updated, &self.execution.at(span))?.disclose();
+            let left = one.read(&updated, &self.execution.at(span))?.disclose().as_array();
             let r = right.at(if right.is_singleton() { 0 } else { i }).as_array();
             let result = f.call_array(Some(&left), &r, span, self, output)?;
             let boxed = Array::new(vec![], vec![Element::Nested(result)]).map_err(|k| span.error(k, "invalid modified result"))?;
@@ -1747,6 +1912,10 @@ impl Session {
     }
 
     fn call_defined(&mut self, function: &Function, left: Option<&Array>, right: &Array, output: &mut Vec<String>) -> Result<Bound, Error> {
+        let return_span = match function.node.as_ref() {
+            FunctionNode::Defined(c) | FunctionNode::Derived(c, ..) => c.definition.span.clone(),
+            _ => unreachable!(),
+        };
         let caller = self.current;
         let base = self.frames.len();
         let (mut function, mut left, mut right) = (function.clone(), left.cloned(), right.clone());
@@ -1777,7 +1946,8 @@ impl Session {
                 Err(error) => break Err(error),
                 Ok(Step::Tail(call)) => {
                     // Keep lexical dependencies, not the tail caller's execution frame.
-                    let keep = base.max(call.function.environment.map_or(0, |i| i + 1));
+                    let environment = call.function.environment.max(call.right.environment()).max(call.left.as_ref().and_then(Array::environment));
+                    let keep = base.max(environment.map_or(0, |i| i + 1));
                     self.frames.truncate(keep);
                     function = call.function;
                     left = call.left;
@@ -1789,6 +1959,11 @@ impl Session {
         };
         if let (Err(error), Some(span)) = (&mut result, tail_span) { error.calls.push(span); }
         if let Ok(bound) = &mut result { if unshy { bound.shy = false; } }
+        if let Ok(bound) = &result {
+            if bound.value.environment().is_some_and(|i| i >= base) {
+                result = Err(return_span.error(ErrorKind::Domain, "result would return a local closure"));
+            }
+        }
         self.frames.truncate(base);
         self.current = caller;
         result
@@ -2125,7 +2300,7 @@ impl Binder {
             Rule::Derive => {
                 let operand = Operand::from_value(left.value()?);
                 let Value::Operator(operator) = right.value()? else { unreachable!() };
-                Term::Value(Value::Function(operator.derive(operand, &span)?))
+                Term::Value(operator.derive(operand, &span)?)
             }
             Rule::BindRight => {
                 let Value::Operator(operator) = left.value()? else { unreachable!() };
