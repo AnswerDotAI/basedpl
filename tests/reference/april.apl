@@ -7437,3 +7437,13 @@ r←9 13 wrapnote note
 ⍝ april:2817 — Destructure four arguments; Pack n-ary arguments in a vector
 {a b c d←⍵ ⋄ d↑c⍴a+b}3 5 6 10   ⍝ 8 8 8 8 8 8 0 0 0 0
 
+⍝ april:2775 — Explicit output and returned value
+a←1 2 3 ⋄ ⎕←a+5 ⋄ ⎕←3 4 5 ⋄ 3+a
+4 5 6
+⍝ ⎕: 6 7 8\n3 4 5
+
+⍝ april:2788 — Explicit output and returned value
+⎕←x←1 2 3
+1 2 3
+⍝ ⎕: 1 2 3
+

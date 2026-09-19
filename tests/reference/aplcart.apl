@@ -14537,3 +14537,25 @@ phinary 2 3 4 5
 ⍝ aplcart/tt.tsv:1796 — Sum of positive divisors of Js (fast +/∘∪⊢∨⍳); dfns.pco uses ℙ/Ⓠ
 (×/({(¯1+⍺*⍵+1)÷⍺-1}⌿2∘ℙ))60   ⍝ 168
 
+⍝ aplcart/table.tsv:1913 — Inverted Table Nubsieve (≠Y where Y is unverted Yv); convert columns to rows for ordinary search and grouping
+Xv←(1 2 1 3)'abab' ⋄ ≠↓⍉⊃Xv   ⍝ 1 1 0 1
+
+⍝ aplcart/table.tsv:1948 — Inverted Table Member of (X∊⍥↓Y where X and Y are unverted Xv and Yv); convert columns to rows for ordinary search and grouping
+Xv←(1 2 1 3)'abab' ⋄ Yv←(1 3 4)'abc' ⋄ (↓⍉⊃Xv)∊↓⍉⊃Yv
+1 0 1 1
+
+⍝ aplcart/table.tsv:2015 — Inverted Table Unique (∪Y where Y is unverted Yv); convert columns to rows for ordinary search and grouping
+Xv←(1 2 1 3)'abab' ⋄ {⍵⌿¨⍨⊂≠↓⍉⊃⍵}Xv   ⍝ (1 2 3) ('abb')
+
+⍝ aplcart/table.tsv:2033 — Inverted Table Without (↑X~⍥↓Y where X and Y are unverted Xv and Yv); convert columns to rows for ordinary search and grouping
+Xv←(1 2 1 3)'abab' ⋄ Yv←(1 3 4)'abc' ⋄ Xv{⍺⌿¨⍨⊂~(↓⍉⊃⍺)∊↓⍉⊃⍵}Yv
+(1⍴2) (1⍴'b')
+
+⍝ aplcart/table.tsv:2267 — Inverted Table Dyadic Key (Xf⌸Y where X and Y are unverted Xv and Yv); convert columns to rows for ordinary search and grouping
+Xv←(1 2 1 3)'abab' ⋄ Zv←(10 20 30 40)(1 2 3 4) ⋄ {(↓⍉⊃Xv){+/⍵}⌸⍵}¨Zv
+(40 20 40) (4 2 4)
+
+⍝ aplcart/table.tsv:2713 — Inverted Table Index-of (X⍳Y where X and Y are unverted Xv and Yv); convert columns to rows for ordinary search and grouping
+Xv←(1 2 1 3)'abab' ⋄ Yv←(1 3 4)'abc' ⋄ (↓⍉⊃Xv)⍳↓⍉⊃Yv
+1 4 5
+
