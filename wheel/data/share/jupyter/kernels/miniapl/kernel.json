@@ -1,6 +1,0 @@
-{
-  "argv": ["miniapl", "--kernel", "-f", "{connection_file}"],
-  "display_name": "APL (miniapl)",
-  "language": "apl",
-  "interrupt_mode": "message"
-}

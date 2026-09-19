@@ -4,13 +4,13 @@ from conkernelclient import run_kernel
 
 def displayed(messages):
     return [(m['msg_type'], m['content']['text'] if m['msg_type']=='stream' else m['content']['data']['text/plain'])
-            for m in messages if m['msg_type'] in ('stream', 'execute_result')]
+        for m in messages if m['msg_type'] in ('stream', 'execute_result')]
 
 
 async def kernel_story():
-    async with run_kernel('miniapl') as (_, kc):
+    async with run_kernel('basedpl') as (_, kc):
         info = await kc.shell_request('kernel_info_request')
-        assert info['content']['implementation'] == 'miniapl' and info['content']['language_info']['name'] == 'apl'
+        assert info['content']['implementation'] == 'basedpl' and info['content']['language_info']['name'] == 'apl'
         await kc.exec_ok(']box off', silent=True)
         for code, expected in [
             ('v←⍳3 ⋄ mean←+/÷≢', []),

@@ -1,17 +1,11 @@
-import os
-import json
+import os, json
 from importlib.resources import files
-import pty
-import re
-import select
-import subprocess
-import termios
-import time
+import pty, re, select, subprocess, termios, time
 
 def test_terminal_symbol_entry_and_exit():
     master, slave = pty.openpty()
     termios.tcsetwinsize(slave, (24, 100))
-    child = subprocess.Popen(['miniapl'], stdin=slave, stdout=slave, stderr=slave, env={**os.environ, 'TERM': 'xterm-256color'})
+    child = subprocess.Popen(['basedpl'], stdin=slave, stdout=slave, stderr=slave, env={**os.environ, 'TERM': 'xterm-256color'})
     os.close(slave)
     pending = b''
 
@@ -39,7 +33,7 @@ def test_terminal_symbol_entry_and_exit():
         read_until(b'\x1b[?2004h')
         enter('1 2\r', '│1 2│\r\n└~──┘\r\n')
         enter(']box off\r', 'OFF -style=max -trains=tree -fns=on\r\n')
-        keys = json.loads(files('miniapl').joinpath('keyboard.json').read_text())
+        keys = json.loads(files('basedpl').joinpath('keyboard.json').read_text())
         enter("'" + ''.join('\x1b'+k for k in keys) + "'\r", '\r\n' + ''.join(keys.values()) + '\r\n')
         enter('r\x1bh1+2\x1bl2\x1bu×\r', '\r\n')  # r←1+2→2∘×
         enter('\x1b]\x1bhr\r', '\r\n6\r\n')  # explicit output via Alt-]

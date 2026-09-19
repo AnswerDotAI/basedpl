@@ -1,4 +1,4 @@
-use miniapl::{reference, EvalOptions};
+use basedpl::{reference, EvalOptions};
 use serde_json::{json, Value};
 
 const SOURCES: [(&str, &str); 5] = [
@@ -136,7 +136,7 @@ fn enabled_reference_cases() {
     let mut ids = std::collections::HashSet::new();
     let mut count = 0;
     let mut failures = Vec::new();
-    let selected = std::env::var("MINIAPL_CASE").ok();
+    let selected = std::env::var("BASEDPL_CASE").ok();
     for (name, source) in SOURCES {
         for mut case in cases(source) {
             if name == "core" { case["exact_representation"] = json!(true); }

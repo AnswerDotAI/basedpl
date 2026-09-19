@@ -1,6 +1,8 @@
-# miniapl
+# BasedPL
 
-miniapl is an APL calculator for mathematics, with an interactive terminal and a Python API. Work with whole arrays, define functions, and combine them with operators. Numbers include approximate reals, complex numbers and exact rationals.
+BasedPL is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation.
+
+Work with whole arrays, define functions, and combine them with operators, through an interactive terminal or Python API. Numbers include approximate reals, complex numbers and exact rationals.
 
 ```apl
 +/⍳10                  ⍝ 55
@@ -8,9 +10,9 @@ avg←+/÷≢ ⋄ avg 2 4 9   ⍝ 5
 1r3+1r6                ⍝ 1r2
 ```
 
-miniapl uses based arrays, named in a [1981 paper](https://dl.acm.org/doi/abs/10.1145/586656.586663) and popularized by [BQN](https://mlochbaum.github.io/BQN/doc/based.html). Numbers, characters and functions are atoms. Arrays are shaped collections of values: the atom `3` is distinct from the scalar (rank-0 array) `⊂3`. miniapl distinguishes two application rules. Structural mapping (arithmetic, Each and indexing) preserves the mapped container, including scalars. Cell application (Rank and search) consumes complete cells, returning one result directly or assembling results over surrounding batch axes. See the [language rules](rules.md#arrays-nesting-and-fill) for the value model and examples.
+BasedPL uses based arrays, named in a [1981 paper](https://dl.acm.org/doi/abs/10.1145/586656.586663) and popularized by [BQN](https://mlochbaum.github.io/BQN/doc/based.html). Numbers, characters and functions are atoms. Arrays are shaped collections of values: the atom `3` is distinct from the scalar (rank-0 array) `⊂3`. BasedPL distinguishes two application rules. Structural mapping (arithmetic, Each and indexing) preserves the mapped container, including scalars. Cell application (Rank and search) consumes complete cells, returning one result directly or assembling results over surrounding batch axes. See the [language rules](rules.md#arrays-nesting-and-fill) for the value model and examples.
 
-## Using miniapl
+## Using BasedPL
 
 - [Getting started](getting-started.md): install and try a calculation.
 - [REPL](repl.md): type glyphs, edit input and display arrays/functions.

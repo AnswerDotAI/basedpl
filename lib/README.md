@@ -1,6 +1,6 @@
 # APL libraries
 
-Dyalog dfns adapted from [April's ports](https://github.com/phantomics/april/tree/master/libraries/dfns) for miniapl. Load a file from the repository root:
+Dyalog dfns adapted from [April's ports](https://github.com/phantomics/april/tree/master/libraries/dfns) for BasedPL. Load a file from the repository root:
 
 ```apl
 •LOAD 'lib/numeric.apl'
@@ -19,7 +19,7 @@ The same call works from Python: `apl("•LOAD 'lib/numeric.apl'")`. Definitions
 | `power.apl` | Iteration, trajectories, numerical inversion | `array.apl` |
 | `tree.apl` | AVL, red-black, splay and binary search trees | `power.apl` |
 
-Source comments link to the original [Dyalog dfns](https://dfns.dyalog.com/n_contents.htm) explanations. April's Apache-2.0 license is retained in [LICENSE-april](LICENSE-april). Each file is marked as modified for miniapl.
+Source comments link to the original [Dyalog dfns](https://dfns.dyalog.com/n_contents.htm) explanations. April's Apache-2.0 license is retained in [LICENSE-april](LICENSE-april). Each file is marked as modified for BasedPL.
 
 The ports use origin one, based arrays, `↑` for First, `⊃` for Mix, `⍶`/`⍹` operands, and seeded reductions. The teaching algorithms remain explicit. Phinary uses ordinary comparison tolerance, as in Dyalog's original implementation.
 

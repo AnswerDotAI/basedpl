@@ -147,8 +147,9 @@ def literal(array):
     return dims+'⍴'+values
 
 
-_BOILERPLATE = {
-    'reviewed independent reference expectation', 'reviewed independent upstream expectation',
+# Keep related corpus phrases together rather than packing lines by width.
+# chkstyle: ignore-node
+_BOILERPLATE = {'reviewed independent reference expectation', 'reviewed independent upstream expectation',
     'shared Rust reference checker passes', 'independent upstream expectation passes',
     'Reviewed concrete example checked in Dyalog and through the Rust reference worker',
     'Alternate recipe independently checked in Dyalog and through the Rust reference worker',
@@ -172,14 +173,12 @@ _BOILERPLATE = {
     'self-contained April library with cross-library dependencies and demo setup',
     'original independent expectation', 'original independent result preserved',
     'operand aliases standardised', 'fixed origin one and standard operand aliases',
-    'fixed origin one, standard ∧ and operand aliases', 'origin one', 'no library definitions required',
-}
+    'fixed origin one, standard ∧ and operand aliases', 'origin one', 'no library definitions required'}
 _BOILERPLATE = {s.casefold() for s in _BOILERPLATE}
 _APL_PARTS = re.compile(r"'(?:''|[^'])*'|⍝[^\n]*|\s+|[^'⍝\s]+")
 
 
-def _compact(code):
-    return ''.join(m[0] for m in _APL_PARTS.finditer(code) if not m[0].isspace() and not m[0].startswith('⍝'))
+def _compact(code): return ''.join(m[0] for m in _APL_PARTS.finditer(code) if not m[0].isspace() and not m[0].startswith('⍝'))
 
 
 def description(row):
@@ -265,8 +264,7 @@ def native_cases(path):
     return result
 
 
-def _load(path):
-    return parse(path.read_text())
+def _load(path): return parse(path.read_text())
 
 
 def add(ids, output='tests/reference', directory='tests/reference/inventory'):
@@ -315,7 +313,7 @@ def preview(directory='tests/reference/inventory', output='meta/apl-preview', na
     for name,text in texts.items():
         with (output/f'{name}.apl').open('w' if replace else 'x') as f: f.write(text)
     return dict(inventory=dict(inventory), files={name: dict(cases=len(cases), described=sum(bool(c.comment) for c in cases),
-                multiline=sum('\n' in c.code or '\n' in c.expect for c in cases)) for name,cases in batches.items()})
+        multiline=sum('\n' in c.code or '\n' in c.expect for c in cases)) for name,cases in batches.items()})
 
 
 def main():

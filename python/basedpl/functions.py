@@ -11,8 +11,7 @@ def _default():
 def _build(kind, *operands, valence=0):
     session, values = _context(*operands), []
     for o in operands:
-        if isinstance(o, Function):
-            values.append(o._inner)
+        if isinstance(o, Function): values.append(o._inner)
         else: values.append(_array(o))
     return Function(_Function.build(kind, values), valence=valence, session=session)
 
@@ -60,25 +59,21 @@ def fork(f, g, h): return _build('fork', f, g, h)
 def atop(f, g): return _build('⍤', f, g)
 
 # Each row names the monadic and dyadic valences of one primitive.
-_vocabulary = [
-    ('+', 'conjugate', 'plus'), ('-', 'negate', 'subtract'), ('×', 'sign', 'times'), ('÷', 'reciprocal', 'divide'),
-    ('*', 'exponential', 'power'), ('⍟', 'logarithm', 'log'), ('○', 'cis', 'circle'), ('π', 'pi_times', 'pi_ratio'),
-    ('√', 'sqrt', 'root'), ('!', 'factorial', 'binomial'),
-    ('|', 'magnitude', 'residue'), ('⌊', 'floor', 'min'), ('⌈', 'ceiling', 'max'),
-    ('∧', 'polar', 'lcm'), ('∨', 'real_imag', 'gcd'), ('⍲', 'square', 'nand'), ('⍱', 'double', 'nor'), ('~', 'not_', 'without'),
-    ('=', 'classify', 'equal'), ('≠', 'unique_mask', 'not_equal'), ('<', None, 'less'), ('≤', 'decrement', 'less_equal'),
-    ('>', None, 'greater'), ('≥', 'increment', 'greater_equal'), ('≡', 'depth', 'match'), ('≢', 'tally', 'not_match'),
-    ('⍳', 'iota', 'index_of'), ('⍸', 'where', 'interval_index'), ('∊', 'enlist', 'member'), ('∪', 'unique', 'union'),
-    ('∩', None, 'intersection'), ('⍷', None, 'find'), ('⍋', 'grade_up', 'grade_up_by'), ('⍒', 'grade_down', 'grade_down_by'),
-    ('⌷', 'materialise', 'index'), ('⊤', 'binary_encode', 'encode'), ('⊥', 'binary_decode', 'decode'), ('⌹', 'inverse', 'matrix_divide'),
-    ('⍎', 'execute', None), ('⍕', 'format', 'format_spec'), ('⍴', 'shape', 'reshape'), (',', 'ravel', 'catenate'),
-    ('⍪', 'table', 'catenate_first'), ('⊂', 'enclose', 'partitioned_enclose'), ('⊆', 'nest', 'partition'),
-    ('⊃', 'mix', 'pick'), ('↑', 'first', 'take'), ('↓', 'split', 'drop'), ('⌽', 'reverse', 'rotate'),
-    ('⊖', 'reverse_first', 'rotate_first'), ('⍉', 'transpose', 'reorder_axes'), ('?', 'roll', 'deal'),
-    ('/', None, 'replicate'), ('⌿', None, 'replicate_first'), ('\\', None, 'expand'), ('⍀', None, 'expand_first'),
-    ('⊣', 'same_left', 'left'), ('⊢', 'same', 'right'), ('•C', 'case_fold', 'case_convert'), ('•UCS', 'unicode', 'unicode_convert'),
-    ('↕', None, 'windows'), ('ℙ', 'prime', 'prime_mode'), ('Ⓠ', 'factors', 'factor_spec'), ('Ⓟ', 'polynomial', 'polyval'),
-]
+_vocabulary = [('+', 'conjugate', 'plus'), ('-', 'negate', 'subtract'), ('×', 'sign', 'times'), ('÷', 'reciprocal', 'divide'),
+    ('*', 'exponential', 'power'), ('⍟', 'logarithm', 'log'), ('○', 'cis', 'circle'), ('π', 'pi_times', 'pi_ratio'), ('√', 'sqrt', 'root'),
+    ('!', 'factorial', 'binomial'), ('|', 'magnitude', 'residue'), ('⌊', 'floor', 'min'), ('⌈', 'ceiling', 'max'), ('∧', 'polar', 'lcm'),
+    ('∨', 'real_imag', 'gcd'), ('⍲', 'square', 'nand'), ('⍱', 'double', 'nor'), ('~', 'not_', 'without'), ('=', 'classify', 'equal'),
+    ('≠', 'unique_mask', 'not_equal'), ('<', None, 'less'), ('≤', 'decrement', 'less_equal'), ('>', None, 'greater'),
+    ('≥', 'increment', 'greater_equal'), ('≡', 'depth', 'match'), ('≢', 'tally', 'not_match'), ('⍳', 'iota', 'index_of'),
+    ('⍸', 'where', 'interval_index'), ('∊', 'enlist', 'member'), ('∪', 'unique', 'union'), ('∩', None, 'intersection'), ('⍷', None, 'find'),
+    ('⍋', 'grade_up', 'grade_up_by'), ('⍒', 'grade_down', 'grade_down_by'), ('⌷', 'materialise', 'index'), ('⊤', 'binary_encode', 'encode'),
+    ('⊥', 'binary_decode', 'decode'), ('⌹', 'inverse', 'matrix_divide'), ('⍎', 'execute', None), ('⍕', 'format', 'format_spec'),
+    ('⍴', 'shape', 'reshape'), (',', 'ravel', 'catenate'), ('⍪', 'table', 'catenate_first'), ('⊂', 'enclose', 'partitioned_enclose'),
+    ('⊆', 'nest', 'partition'), ('⊃', 'mix', 'pick'), ('↑', 'first', 'take'), ('↓', 'split', 'drop'), ('⌽', 'reverse', 'rotate'),
+    ('⊖', 'reverse_first', 'rotate_first'), ('⍉', 'transpose', 'reorder_axes'), ('?', 'roll', 'deal'), ('/', None, 'replicate'),
+    ('⌿', None, 'replicate_first'), ('\\', None, 'expand'), ('⍀', None, 'expand_first'), ('⊣', 'same_left', 'left'), ('⊢', 'same', 'right'),
+    ('•C', 'case_fold', 'case_convert'), ('•UCS', 'unicode', 'unicode_convert'), ('↕', None, 'windows'), ('ℙ', 'prime', 'prime_mode'),
+    ('Ⓠ', 'factors', 'factor_spec'), ('Ⓟ', 'polynomial', 'polyval')]
 
 __all__ = ['Function', 'fork', 'atop']
 _primitives = {}

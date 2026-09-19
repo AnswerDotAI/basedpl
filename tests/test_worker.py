@@ -1,8 +1,8 @@
 import json, os, signal, threading
 import pytest
-from miniapl import Session, AplError
-from miniapl._core import _check_reference
-from miniapl.worker import Worker
+from basedpl import Session, AplError
+from basedpl._core import _check_reference
+from basedpl.worker import Worker
 
 def test_worker_bindings_calls_and_echo():
     with Worker() as w:
@@ -18,15 +18,13 @@ def test_worker_bindings_calls_and_echo():
             assert r == original
             assert w.eval('v', timeout=2) == original
         assert w.eval('∞ ¯∞')['value']['data'] == [{'infinity': 1}, {'infinity': -1}]
-        for payload in [
-            dict(bindings={'x←99': a}), dict(bindings=dict(x=dict(shape=[1], data=[1, 2], prototype=0))),
+        for payload in [dict(bindings={'x←99': a}), dict(bindings=dict(x=dict(shape=[1], data=[1, 2], prototype=0))),
             dict(bindings=dict(x=dict(shape=[], data=[{'rational':['1', '0']}], prototype=0))),
             dict(bindings=dict(x=dict(shape=[], data=['ab'], prototype=' '))), dict(bindings=[]),
             dict(call='+', args=[dict(shape=[], data=[True], prototype=0)]), dict(call='+'), dict(args=[a]),
             dict(code='1', call='+', args=[a]),
             dict(bindings=dict(x=dict(shape=[], data=[{'infinity': 0}], prototype=0))),
-        ]:
-            assert w.request(payload, timeout=2)['error']['kind'] == 'REQUEST ERROR'
+        ]: assert w.request(payload, timeout=2)['error']['kind'] == 'REQUEST ERROR'
         r = w.request(dict(call='{⎕←⍵ ⋄ 1÷0}', args=[a], echo=False), timeout=2)
         assert r['output'] == ['1x 2x 3x'] and r['error']['kind'] == 'DOMAIN ERROR'
         assert r['error']['calls'][-1]['source']['text'] == '{⎕←⍵ ⋄ 1÷0}'

@@ -1,6 +1,6 @@
-"""Scan, review and activate reference cases without regenerating the corpus."""
+'Scan, review and activate reference cases without regenerating the corpus.'
 import argparse
-from miniapl.reference import scan, review, activate
+from basedpl.reference import scan, review, activate
 
 
 def main():

@@ -4,7 +4,7 @@
 
 ## JSON lines
 
-Run `miniapl --json`. Send one JSON-encoded APL string per line; each receives one flushed JSON response. Names persist.
+Run `basedpl --json`. Send one JSON-encoded APL string per line; each receives one flushed JSON response. Names persist.
 
 ```json
 "v←⍳10"
@@ -37,7 +37,7 @@ Ordinary JavaScript `JSON.parse` can round large integers; use an integer-preser
 Python's `Worker` manages a persistent subprocess with deadlines and a hard-kill fallback.
 
 ```python
-from miniapl.worker import Worker
+from basedpl.worker import Worker
 
 with Worker() as w:
     w.eval('v←⍳10')
@@ -49,7 +49,7 @@ with Worker() as w:
 
 ## Worker protocol
 
-`miniapl --worker` accepts JSON objects with request IDs. Keep one evaluation outstanding.
+`basedpl --worker` accepts JSON objects with request IDs. Keep one evaluation outstanding.
 
 ```json
 {"id":1,"code":"+/⍳10","timeout_ms":2000,"echo":false}

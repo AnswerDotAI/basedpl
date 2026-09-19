@@ -1,4 +1,4 @@
-"""Import, capture, review and activate reference cases; search and edit their inventory."""
+'Import, capture, review and activate reference cases; search and edit their inventory.'
 import base64, csv, json, re, zlib
 from collections import Counter
 from fractions import Fraction
@@ -38,14 +38,12 @@ def library_dependencies(definitions, code):
 
 
 class Corpus:
-    def __init__(self, directory='tests/reference/inventory'):
-        self.directory = Path(directory)
+    def __init__(self, directory='tests/reference/inventory'): self.directory = Path(directory)
 
-    def _read(self):
-        return {p: [json.loads(line) for line in p.read_text().splitlines()] for p in sorted(self.directory.glob('*.jsonl'))}
+    def _read(self): return {p: [json.loads(line) for line in p.read_text().splitlines()] for p in sorted(self.directory.glob('*.jsonl'))}
 
     def find(self, pattern='', status='', source='', limit=20):
-        """Search full IDs/code/reasons; return 180-character previews. Index by ID for full fields; limit=None returns all matches."""
+        'Search full IDs/code/reasons; return 180-character previews. Index by ID for full fields; limit=None returns all matches.'
         result = {}
         for path, rows in self._read().items():
             if source and path.stem != source: continue
@@ -60,12 +58,12 @@ class Corpus:
         return result
 
     def __getitem__(self, key):
-        """Read corpus[id, *fields]; default to code/status/reason. '*' reads the full record; missing fields are omitted."""
+        "Read corpus[id, *fields]; default to code/status/reason. '*' reads the full record; missing fields are omitted."
         id, *fields = (key,) if isinstance(key, str) else key
         return self.get_many([id], *fields)[id]
 
     def get_many(self, ids, *fields):
-        """Read a batch with the same field selection as indexing, keyed by ID."""
+        'Read a batch with the same field selection as indexing, keyed by ID.'
         ids, result = set(ids), {}
         for rows in self._read().values():
             for row in rows:
@@ -75,11 +73,11 @@ class Corpus:
         return result
 
     def update(self, ids, remove=(), **fields):
-        """Patch one ID or an iterable of IDs. None is a JSON value; use remove to delete fields."""
+        'Patch one ID or an iterable of IDs. None is a JSON value; use remove to delete fields.'
         return self.update_many({id: fields for id in ([ids] if isinstance(ids, str) else ids)}, remove=remove)
 
     def update_many(self, changes, remove=()):
-        """Patch {ID: fields} against fresh files; return changed field names. Unknown IDs write nothing."""
+        'Patch {ID: fields} against fresh files; return changed field names. Unknown IDs write nothing.'
         files = self._read()
         known = {row['id'] for rows in files.values() for row in rows}
         if missing := changes.keys() - known: raise KeyError(sorted(missing))
@@ -101,13 +99,12 @@ class Corpus:
 
 
 def lisp_tokens(text):
-    """Token positions, including strings and character literals; omit Lisp comments."""
+    'Token positions, including strings and character literals; omit Lisp comments.'
     pattern = r'#\|[\s\S]*?\|#|;[^\n]*|"(?:\\[\s\S]|[^"\\])*"|#\\(?:[()\s]|[^\s()]+)|#\d+[aA]|#(?=\()|[()]|[^\s()";]+'
     return [m for m in re.finditer(pattern, text) if not m[0].startswith((';', '#|'))]
 
 
-def lisp_string(token):
-    return re.sub(r'\\([\s\S])', r'\1', token[1:-1])
+def lisp_string(token): return re.sub(r'\\([\s\S])', r'\1', token[1:-1])
 
 
 def array(shape, data, prototype=None):
@@ -128,7 +125,7 @@ def item(value):
 
 
 def lisp_expected(text):
-    """Read April's literal expectations, not arbitrary Common Lisp expressions."""
+    "Read April's literal expectations, not arbitrary Common Lisp expressions."
     tokens = iter(m[0] for m in lisp_tokens(text))
     def read(token=None):
         token = next(tokens) if token is None else token
@@ -138,8 +135,7 @@ def lisp_expected(text):
                 if token == ')': return values
                 values.append(read(token))
             raise ValueError('unclosed Lisp list')
-        if token.startswith('"'):
-            return array([len(s := lisp_string(token))], list(s), ' ')
+        if token.startswith('"'): return array([len(s := lisp_string(token))], list(s), ' ')
         if token == '#':
             values = read()
             return array([len(values)], [item(x) for x in values])
@@ -159,10 +155,9 @@ def lisp_expected(text):
         if token.startswith('#*'): return array([len(token) - 2], [int(c) for c in token[2:]])
         if token.startswith('#\\'):
             name = token[2:]
-            return {'Space': ' ', 'Newline': '\n', 'Return': '\r', 'Tab': '\t'}.get(name, name) if len(name) > 1 else name
+            return dict(Space=' ', Newline='\n', Return='\r', Tab='\t').get(name, name) if len(name) > 1 else name
         if re.fullmatch(r'[+-]?\d+/\d+', token): return float(Fraction(token))
-        if re.fullmatch(r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eEdDfF][+-]?\d+)?', token):
-            return float(re.sub('[dDfF]', 'e', token))
+        if re.fullmatch(r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eEdDfF][+-]?\d+)?', token): return float(re.sub('[dDfF]', 'e', token))
         raise ValueError(f'nonliteral Lisp expectation: {token}')
     value = read()
     if next(tokens, None) is not None: raise ValueError('additional Lisp expectation forms')
@@ -170,7 +165,7 @@ def lisp_expected(text):
 
 
 def scope(code):
-    """Only explicit exclusions; uncertain language features remain review questions."""
+    'Only explicit exclusions; uncertain language features remain review questions.'
     clean = re.sub(r"'(?:''|[^'])*'|⍝[^\n]*", '', code)
     if '«' in clean or '»' in clean: return 'excluded', 'host-language escapes are arbitrary FFI (§5.3)'
     files = 'NGET|NPUT|NREAD|NAPPEND|NREPLACE|NINFO|NTIE|NUNTIE|NCREATE|NDELETE|NCOPY|NMOVE|NEXISTS|NPARTS|NRESIZE|NLOCK|NERASE|NRENAME|NNAMES|NNUMS|NSIZE|NXLATE|MKDIR'
@@ -267,11 +262,10 @@ def april_cases(root):
 
 
 def tio_program(url):
-    """Decode TIO's offline permalink payload; do not contact or execute TIO."""
+    "Decode TIO's offline permalink payload; do not contact or execute TIO."
     if not url.startswith('https://tio.run/##'): return None
     payload = url.split('##', 1)[1].split('#', 1)[0].replace('@', '+')
-    try:
-        parts = zlib.decompress(base64.b64decode(payload + '=' * (-len(payload) % 4)), -15).split(b'\xff')
+    try: parts = zlib.decompress(base64.b64decode(payload + '=' * (-len(payload) % 4)), -15).split(b'\xff')
     except (ValueError, zlib.error, UnicodeError): return None
     return '\n'.join(p.decode() for p in parts[1:4] if p) if len(parts) > 1 and parts[0].startswith(b'apl-dyalog') else None
 
@@ -298,7 +292,7 @@ def aplcart_cases(root):
 
 
 def import_sources(links):
-    """Return every core assertion/demo and catalogue row in the three local snapshots."""
+    'Return every core assertion/demo and catalogue row in the three local snapshots.'
     links = Path(links)
     return dict(ngn=ngn_cases(links/'ngn'), april=april_cases(links/'april'), aplcart=aplcart_cases(links/'aplcart'))
 
@@ -312,7 +306,7 @@ RefArray←{(⍴⍵)(RefElement¨,⍵)(RefElement⊃0⍴⍵)}
 
 
 def dyalog_expected(apl, expression):
-    """Capture a reviewed expression through REFERENCE_ENCODER installed in Dyalog."""
+    'Capture a reviewed expression through REFERENCE_ENCODER installed in Dyalog.'
     def element(tagged):
         tag, value = tagged
         if tag == 'array': return decode(value)
@@ -325,7 +319,7 @@ def dyalog_expected(apl, expression):
 
 
 def capture_ngn_expectations(apl, cases):
-    """Evaluate only ngn's closed literal expectations, never arbitrary upstream code."""
+    "Evaluate only ngn's closed literal expectations, never arbitrary upstream code."
     from aplnb.dyalog import AplError
     captured = 0
     for case in cases:
@@ -342,7 +336,7 @@ def capture_ngn_expectations(apl, cases):
 
 
 def capture_aplcart_examples(apl, cases):
-    """Capture closed, small calculator examples; leave other recipes pending for review."""
+    'Capture closed, small calculator examples; leave other recipes pending for review.'
     from aplnb.dyalog import AplError
     captured = 0
     for case in cases:
@@ -359,13 +353,13 @@ def capture_aplcart_examples(apl, cases):
             case['expectation_note'] = 'Dyalog rejected the concrete example: '+str(e)
             continue
         case.update(code=code, expected=expected, adaptation='TIO output expressions collected as one value; original recipe and example retained',
-                    oracle='concrete TIO example executed in Dyalog 20.0.53963.0; IO=1 CT=1E-14 DIV=0 ML=1')
+            oracle='concrete TIO example executed in Dyalog 20.0.53963.0; IO=1 CT=1E-14 DIV=0 ML=1')
         captured += 1
     return captured
 
 
 def write_cases(directory, sources, replace=False):
-    """Write data artifacts; replacing reviewed records requires an explicit flag."""
+    'Write data artifacts; replacing reviewed records requires an explicit flag.'
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     for source, cases in sources.items():
@@ -376,7 +370,7 @@ def write_cases(directory, sources, replace=False):
 
 def scan(directory='tests/reference/inventory', source='', match='', timeout=.25, report='meta/reference-scan.json'):
     "Check pending cases with independent expectations; never change fixture metadata."
-    from miniapl.worker import Worker
+    from basedpl.worker import Worker
     rows, inventory = [], Counter()
     worker = Worker()
     try:
@@ -414,9 +408,8 @@ def scan(directory='tests/reference/inventory', source='', match='', timeout=.25
 
 def selected(report, source='', match='', status='pass'):
     rows = json.loads(Path(report).read_text())['results']
-    return [r for r in rows if (not source or Path(r['file']).stem == source)
-            and (not status or r['status'] == status)
-            and (not match or re.search(match, r['case']['id']+' '+r['case']['code']+' '+r.get('message', '')))]
+    return [r for r in rows if (not source or Path(r['file']).stem == source) and (not status or r['status'] == status)
+        and (not match or re.search(match, r['case']['id']+' '+r['case']['code']+' '+r.get('message', '')))]
 
 
 def review(report, source='', match='', status='pass', limit=20, details=False):
@@ -431,7 +424,7 @@ def review(report, source='', match='', status='pass', limit=20, details=False):
 
 def activate(report, source='', match='', output='tests/reference'):
     "Activate reviewed passing selections only if their saved fixture records are unchanged."
-    from miniapl.apltests import add
+    from basedpl.apltests import add
     rows = selected(report, source, match)
     if not rows:
         print('Activated 0 reviewed cases')

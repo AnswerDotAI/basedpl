@@ -15,12 +15,12 @@ fn native_expression_and_diagnostic() {
         ("1x÷3x ⋄ 6x÷3x ⋄ 1x÷3", "1r3\n2x\n0.3333333333333333\n"),
         ("(1j2)+(3J4) ⋄ (1J2)×(1j¯2) ⋄ +1J2", "4j6\n5\n1j¯2\n"),
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_miniapl")).args(["-e", code]).output().unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_basedpl")).args(["-e", code]).output().unwrap();
         assert!(output.status.success());
         assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
         assert!(output.stderr.is_empty());
     }
-    let output = Command::new(env!("CARGO_BIN_EXE_miniapl")).args(["-e", "¯2+)"]).output().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_basedpl")).args(["-e", "¯2+)"]).output().unwrap();
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     let error = String::from_utf8(output.stderr).unwrap();
@@ -29,7 +29,7 @@ fn native_expression_and_diagnostic() {
 
 #[test]
 fn repl_continuation_recovery_and_eof() {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_miniapl")).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_basedpl")).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     child.stdin.take().unwrap().write_all("(2×3\n)+4\n1÷0\n2+2\n)\n¯2+5\n".as_bytes()).unwrap();
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(1));
@@ -37,7 +37,7 @@ fn repl_continuation_recovery_and_eof() {
     let errors = String::from_utf8(output.stderr).unwrap();
     assert_eq!(errors.matches("DOMAIN ERROR").count(), 1);
     assert_eq!(errors.matches("SYNTAX ERROR").count(), 1);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_miniapl")).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_basedpl")).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     child.stdin.take().unwrap().write_all(b"(2+\n").unwrap();
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(1));
@@ -54,7 +54,7 @@ fn json_session_flushes_before_eof_and_recovers() {
         time::Duration,
     };
     let mut child =
-        Command::new(env!("CARGO_BIN_EXE_miniapl")).arg("--json").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        Command::new(env!("CARGO_BIN_EXE_basedpl")).arg("--json").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     let mut input = child.stdin.take().unwrap();
     let output = child.stdout.take().unwrap();
     let (send, recv) = mpsc::channel();
@@ -100,7 +100,7 @@ fn json_session_flushes_before_eof_and_recovers() {
 fn batch_stdin_and_persistent_repl() {
     for args in [vec!["-"], vec![]] {
         let mut child =
-            Command::new(env!("CARGO_BIN_EXE_miniapl")).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+            Command::new(env!("CARGO_BIN_EXE_basedpl")).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
         child.stdin.take().unwrap().write_all("v←⍳10\n+/v\n".as_bytes()).unwrap();
         let result = child.wait_with_output().unwrap();
         assert!(result.status.success());

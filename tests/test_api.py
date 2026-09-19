@@ -1,17 +1,15 @@
 import operator
 from fractions import Fraction
 from pathlib import Path
-import numpy as np
-import pytest
-from miniapl import (Array, Session, AplError, plus, times, subtract, divide, power, sign, tally, iota,
-                     reshape, shape, floor, logarithm, reverse, transpose, fork, atop, first, pick)
+import numpy as np, pytest
+from basedpl import (Array, Session, AplError, plus, times, subtract, divide, power, sign, tally, iota,
+    reshape, shape, floor, logarithm, reverse, transpose, fork, atop, first, pick)
 
 
 def test_documentation_examples():
     for path in (Path(__file__).resolve().parents[1]/'docs').glob('*.md'):
         namespace = {}
-        for block in path.read_text().split('```python\n')[1:]:
-            exec(compile(block.split('```', 1)[0], str(path), 'exec'), namespace)
+        for block in path.read_text().split('```python\n')[1:]: exec(compile(block.split('```', 1)[0], str(path), 'exec'), namespace)
 
 
 def test_load(tmp_path, monkeypatch):
@@ -110,7 +108,7 @@ def test_words_binding_and_operators():
 
 
 def test_math_construction():
-    from miniapl import prime, prime_mode, factors, factor_spec, polynomial, polyval, windows
+    from basedpl import prime, prime_mode, factors, factor_spec, polynomial, polyval, windows
     f = plus.left(1).with_inverse(subtract(1))
     np.testing.assert_array_equal(f.power([2, -1, 0])(10), [12, 9, 10])
     np.testing.assert_array_equal(f.history(-2)(10), [10, 9, 8])
@@ -125,7 +123,7 @@ def test_math_construction():
 
 
 def test_mathematical_monads():
-    from miniapl import sqrt, root, square, double, decrement, increment, pi_ratio, cis, real_imag, polar, classify, binary_encode, binary_decode
+    from basedpl import sqrt, root, square, double, decrement, increment, pi_ratio, cis, real_imag, polar, classify, binary_encode, binary_decode
     assert sqrt(Fraction(1, 9)).py == Fraction(1, 3) and root(3, -8).py == -2
     assert square(3).py == 9 and double(3).py == 6 and decrement(increment(3)).py == 3
     assert complex(cis(pi_ratio(1, 2)).py) == pytest.approx(1j)
@@ -142,8 +140,7 @@ def test_function_arrays():
     with Session() as a, Session() as b:
         fs = a('offset←10 ⋄ {offset+⍵}˘+')
         a(offset=20)
-        for f in [first(fs), first(list(fs)[0]), fs.py[0], first(Array(fs.np)[1]), a.fn('{↑⍵}')(fs)]:
-            assert f(3).py == 23
+        for f in [first(fs), first(list(fs)[0]), fs.py[0], first(Array(fs.np)[1]), a.fn('{↑⍵}')(fs)]: assert f(3).py == 23
         assert pick(2, reverse(fs))(3).py == 23
         a(fs=fs)
         assert a('f←1⊃fs ⋄ f 3').py == 23

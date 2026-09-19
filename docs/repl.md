@@ -2,7 +2,7 @@
 
 [Home](index.md) · [Command line](cli.md)
 
-Run `miniapl`. Expressions display their results; assignments retain names for later lines. An error shows its source location and returns to the prompt.
+Run `basedpl`. Expressions display their results; assignments retain names for later lines. An error shows its source location and returns to the prompt.
 
 ```text
       v←⍳5

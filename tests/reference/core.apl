@@ -1899,7 +1899,7 @@ u←•ucs ⋄ u 2 2⍴'A⍳λ😀'   ⍝ 2 2⍴65x 9075x 955x 128512x
 'UTF-8'•UCS 2 2⍴'a'
 ⍝ error: RANK ERROR
 
-⍝ — Signed-byte mode is explicitly outside miniapl's Unicode interface
+⍝ — Signed-byte mode is explicitly outside basedpl's Unicode interface
 ('UTF-8' 83)•UCS 'abc'
 ⍝ error: UNSUPPORTED
 
@@ -2007,7 +2007,7 @@ fs←•UCS˘•C ⋄ (↑fs)'A'   ⍝ 65x
 •A←'abc'
 ⍝ error: SYNTAX ERROR
 
-⍝ — miniapl has fixed origin one, not a mutable index-origin variable
+⍝ — basedpl has fixed origin one, not a mutable index-origin variable
 •IO←0
 ⍝ error: UNSUPPORTED
 

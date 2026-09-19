@@ -7,7 +7,7 @@
 A `Session` retains APL names. Calls return an `Array`; `.py` converts to Python values.
 
 ```python
-from miniapl import Session
+from basedpl import Session
 
 apl = Session()
 apl('v←⍳5')
@@ -40,7 +40,7 @@ Use `with Session() as apl:` or call `apl.close()` when finished. Returned array
 
 ```python
 from fractions import Fraction
-from miniapl import Array
+from basedpl import Array
 
 assert Array(2).apl == '2x'
 assert Array(2.).apl == '2'
@@ -67,7 +67,7 @@ a = Array([[1, 2, 3], [4, 5, 6]])
 np.testing.assert_array_equal(a.np, [[1, 2, 3], [4, 5, 6]])
 ```
 
-Python/NumPy conversions copy. Passing an `Array` back to miniapl shares its immutable value. Keep `Array` to preserve empty prototypes and exact nesting. NumPy is needed only for ndarray conversion.
+Python/NumPy conversions copy. Passing an `Array` back to BasedPL shares its immutable value. Keep `Array` to preserve empty prototypes and exact nesting. NumPy is needed only for ndarray conversion.
 
 ## Array operations
 
@@ -99,7 +99,7 @@ np.testing.assert_array_equal(add([1, 2, 3], 10), [11, 12, 13])
 [Function arrays](glyphs/strand.md#function-arrays) retain callable handles, including their session for name lookup. `first` and `pick` return the selected function:
 
 ```python
-from miniapl import first, pick
+from basedpl import first, pick
 fs = apl('+˘×˘÷')
 assert pick(2, fs)(2, 3).py == 6
 assert first(fs)(2, 3).py == 5
@@ -112,7 +112,7 @@ assert first(fs)(2, 3).py == 5
 Primitives also have Python names. Dyadic names bind the right argument when called with one argument; `.left(x)` binds the left.
 
 ```python
-from miniapl import plus, times, subtract, tally
+from basedpl import plus, times, subtract, tally
 
 assert times(2)(3).py == 6
 assert subtract(2)(5).py == 3       # 5−2
@@ -145,7 +145,7 @@ Math families: `prime`/`prime_mode` (`ℙ`), `factors`/`factor_spec` (`Ⓠ`), `p
 Roots: `sqrt`/`root` (`√`). Complex coordinates: `real_imag` (`∨`), `polar` (`∧`), `cis` (`○`). `pi_times`/`pi_ratio` (`π`) give π multiples/fractions. Also `square`, `double`, `decrement`, `increment`, `classify`, `binary_encode` and `binary_decode`.
 
 ```python
-from miniapl import prime, factors, polyval
+from basedpl import prime, factors, polyval
 
 assert prime(10).py == 29
 np.testing.assert_array_equal(factors(700), [2, 2, 5, 5, 7])

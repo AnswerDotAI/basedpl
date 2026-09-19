@@ -1,4 +1,4 @@
-⍝ Tree dfns — adapted for miniapl from April
+⍝ Tree dfns — adapted for BasedPL from April
 ⍝ Source: https://dfns.dyalog.com/n_contents.htm (individual sources below)
 ⍝ April: libraries/dfns/tree/tree.apl; Apache-2.0, see LICENSE-april
 •LOAD 'lib/power.apl'

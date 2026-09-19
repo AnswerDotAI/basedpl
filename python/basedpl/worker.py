@@ -6,8 +6,9 @@ from decimal import Decimal
 class Worker:
     "One request at a time. Interrupt from another thread; never retry a request automatically."
     def __init__(self, command=None):
-        if command is None: command = (sys.executable, '-m', 'miniapl._cli', '--worker')
-        self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', bufsize=1, start_new_session=True)
+        if command is None: command = (sys.executable, '-m', 'basedpl._cli', '--worker')
+        self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            encoding='utf-8', bufsize=1, start_new_session=True)
         self._replies, self._stderr = queue.Queue(), deque(maxlen=30)
         self._write_lock, self._request_lock = threading.Lock(), threading.Lock()
         self._id, self._active = 0, None

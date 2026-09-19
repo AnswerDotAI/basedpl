@@ -1,25 +1,27 @@
-# miniapl
+# BasedPL
 
-A modern APL calculator for teaching mathematics, written in Rust, with an interactive terminal and Python API.
+BasedPL is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation.
+
+Written in Rust, with an interactive terminal and Python API.
 
 ## Install
 
 ```bash
-pip install miniapl
+pip install basedpl
 ```
 
 ## Command line
 
 ```bash
-miniapl -e '+/⍳10'       # 55
+basedpl -e '+/⍳10'       # 55
 ```
 
-Run `miniapl` to open the [REPL](docs/repl.md).
+Run `basedpl` to open the [REPL](docs/repl.md).
 
 ## Python
 
 ```python
-from miniapl import Session
+from basedpl import Session
 
 with Session() as apl:
     mean = apl.fn('{(+/⍵)÷≢⍵}')
@@ -28,9 +30,9 @@ with Session() as apl:
 
 ## Jupyter
 
-The Python package installs the **APL (miniapl)** kernel. Select it in Jupyter to run APL cells with persistent names, glyph/name completion and interruption. Explicit `⎕←` output streams during execution; ordinary results follow the REPL's display rules.
+The Python package installs the **BasedPL** kernel. Select it in Jupyter to run APL cells with persistent names, glyph/name completion and interruption. Explicit `⎕←` output streams during execution; ordinary results follow the REPL's display rules.
 
-The same native executable runs the kernel with `miniapl --kernel -f CONNECTION_FILE`, using kernmini for the Jupyter protocol. No Python interpreter is needed when launching the native binary directly.
+The same native executable runs the kernel with `basedpl --kernel -f CONNECTION_FILE`, using kernmini for the Jupyter protocol. No Python interpreter is needed when launching the native binary directly.
 
 ## Documentation
 

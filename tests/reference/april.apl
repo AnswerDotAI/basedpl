@@ -267,7 +267,7 @@
 ⍝ april:638 —
 (3 3⍴'CATRATDOG')⍳4 3⍴'RATDOGPIG'   ⍝ 2 3 4 2
 
-⍝ april:639 — Replace index-origin lookup with miniapl fixed origin one
+⍝ april:639 — Replace index-origin lookup with basedpl fixed origin one
 2÷⍨1-⍨¯10+⍳21
 ¯5 ¯4.5 ¯4 ¯3.5 ¯3 ¯2.5 ¯2 ¯1.5 ¯1 ¯0.5 0 0.5 1 1.5 2 2.5 3 3.5 4 4.5 5
 
@@ -1918,7 +1918,7 @@ g←÷ ⋄ g/⍬   ⍝ 1
 ⍝ april:1557 —
 +\[1]3 4⍴⍳12   ⍝ 3 4⍴1 2 3 4 6 8 10 12 15 18 21 24
 
-⍝ april:1558 — miniapl left-accumulating scan
+⍝ april:1558 — basedpl left-accumulating scan
 -\2 3 4⍴⍳24
 2 3 4⍴1 ¯1 ¯4 ¯8 5 ¯1 ¯8 ¯16 9 ¯1 ¯12 ¯24 13 ¯1 ¯16 ¯32 17 ¯1 ¯20 ¯40 21 ¯1 ¯24 ¯48
 
@@ -1928,7 +1928,7 @@ g←÷ ⋄ g/⍬   ⍝ 1
 ⍝ april:1567 —
 +⍀3 4⍴⍳12   ⍝ 3 4⍴1 2 3 4 6 8 10 12 15 18 21 24
 
-⍝ april:1568 — miniapl left-accumulating scan
+⍝ april:1568 — basedpl left-accumulating scan
 {⍺×⍵+3}⍀3 4⍴⍳12   ⍝ 3 4⍴1 2 3 4 8 18 30 44 96 234 420 660
 
 ⍝ april:1569 —
@@ -2861,7 +2861,7 @@ of←{⍵+1} ⋄ ef←{⍵+2} ⋄ (of , ef) 5   ⍝ 6 7
 ⍝ april:2110 — Five-element dyadic fork function train
 ' ' (∊{⍺,⍵[,⍺],⍵}≠⊆⊢) ' one two  three'   ⍝ 1 ('one') ('one') ('two') ('three')
 
-⍝ april:2112 — Five-element monadic fork function train including lateral and pivotal function compositions; Replace index-origin lookup with miniapl fixed origin one
+⍝ april:2112 — Five-element monadic fork function train including lateral and pivotal function compositions; Replace index-origin lookup with basedpl fixed origin one
 (⊢⌽⍨(-1)+⍳∘≢)5 5⍴⍳25
 5 5⍴1 2 3 4 5 7 8 9 10 6 13 14 15 11 12 19 20 16 17 18 25 21 22 23 24
 
@@ -3087,7 +3087,7 @@ key←⌸ ⋄ {(2|⍳≢⍵)⊢key ⍵}10 2⍴⍳20
 {s←⌺ ⋄ ⊢∘⊂ s 2⊢⍵} ⍳8
 (1 2) (2 3) (3 4) (4 5) (5 6) (6 7) (7 8)
 
-⍝ april:2224 — Conditional aliasing of pivotal operator; Conditional named-operator aliasing uses Execute of the selected operator, which miniapl supports; Avoids April nonlocal operator rebinding and its statement-return difference; original independent expected values retained
+⍝ april:2224 — Conditional aliasing of pivotal operator; Conditional named-operator aliasing uses Execute of the selected operator, which basedpl supports; Avoids April nonlocal operator rebinding and its statement-return difference; original independent expected values retained
 0 1 {o←⍎(1+⍺)⊃'⍤' '⍥' ⋄ 1 +o- ⍵}¨2   ⍝ ¯1 ¯3
 
 ⍝ april:2225 — Glider 1
@@ -3210,7 +3210,7 @@ format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
 ⍝ april:2286 — Inversion of scanning addition
 +\⍣¯1⊢+\⍳5   ⍝ 1 2 3 4 5
 
-⍝ april:2287 — Inversion of composed addition applied over each; miniapl left scan
+⍝ april:2287 — Inversion of composed addition applied over each; basedpl left scan
 +∘5¨⍣¯1⊢-\⍳5   ⍝ ¯4 ¯6 ¯9 ¯13 ¯18
 
 ⍝ april:2288 — Inversion of composed division applied over each
@@ -4478,70 +4478,70 @@ dscan ⍳10
 ⍝ =>
 0 2 3 2 3 0
 
-⍝ april/libraries/dfns/graph/demo.lisp:14 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:14 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 costs1 ← ⊃(72 99 88)(23 30 35)(51 59 84)
 assign costs1
 ⍝ =>
 3 3⍴1 0 0 0 0 1 0 1 0
 
-⍝ april/libraries/dfns/graph/demo.lisp:15 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:15 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 costs1 ← ⊃(72 99 88)(23 30 35)(51 59 84)
 assign -costs1
 ⍝ =>
 3 3⍴0 1 0 1 0 0 0 0 1
 
-⍝ april/libraries/dfns/graph/demo.lisp:16 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:16 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 costs1 ← ⊃(72 99 88)(23 30 35)(51 59 84)
 +/+/×∘assign⍨costs1
 ⍝ =>
 166
 
-⍝ april/libraries/dfns/graph/demo.lisp:18 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:18 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 costs2 ← ⊃(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 43 27 5 33 21 36 46)(39 14 3 37 17 32 38 50 19 13)(50 37 38 33 4 32 45 14 22 39)(24 12 14 18 9 25 45 46 4 46)
 assign costs2
 ⍝ =>
 6 10⍴1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0
 
-⍝ april/libraries/dfns/graph/demo.lisp:20 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:20 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 costs2 ← ⊃(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 43 27 5 33 21 36 46)(39 14 3 37 17 32 38 50 19 13)(50 37 38 33 4 32 45 14 22 39)(24 12 14 18 9 25 45 46 4 46)
 {⍵×assign ⍵} costs2
 ⍝ =>
 6 10⍴7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 5 0 0 0 0 0 0 3 0 0 0 0 0 0 0 0 0 0 0 4 0 0 0 0 0 0 0 0 0 0 0 0 0 4 0
 
-⍝ april/libraries/dfns/graph/demo.lisp:22 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:22 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 costs2 ← ⊃(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 43 27 5 33 21 36 46)(39 14 3 37 17 32 38 50 19 13)(50 37 38 33 4 32 45 14 22 39)(24 12 14 18 9 25 45 46 4 46)
 {+/+/⍵×assign ⍵} costs2
 ⍝ =>
 24
 
-⍝ april/libraries/dfns/graph/demo.lisp:23 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:23 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 costs2 ← ⊃(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 43 27 5 33 21 36 46)(39 14 3 37 17 32 38 50 19 13)(50 37 38 33 4 32 45 14 22 39)(24 12 14 18 9 25 45 46 4 46)
 assign -costs2
 ⍝ =>
 6 10⍴0 0 0 0 0 0 0 0 1 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1
 
-⍝ april/libraries/dfns/graph/demo.lisp:25 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:25 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 costs2 ← ⊃(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 43 27 5 33 21 36 46)(39 14 3 37 17 32 38 50 19 13)(50 37 38 33 4 32 45 14 22 39)(24 12 14 18 9 25 45 46 4 46)
 {-⍵×assign ⍵} -costs2
 ⍝ =>
 6 10⍴0 0 0 0 0 0 0 0 47 0 0 42 0 0 0 0 0 0 0 0 0 0 47 0 0 0 0 0 0 0 0 0 0 0 0 0 0 50 0 0 50 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 46
 
-⍝ april/libraries/dfns/graph/demo.lisp:27 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:27 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 costs2 ← ⊃(7 38 23 27 11 3 34 34 47 20)(26 42 2 3 27 34 1 20 4 21)(35 30 47 43 27 5 33 21 36 46)(39 14 3 37 17 32 38 50 19 13)(50 37 38 33 4 32 45 14 22 39)(24 12 14 18 9 25 45 46 4 46)
 {+/+/-⍵×assign ⍵} -costs2
 ⍝ =>
 282
 
-⍝ april/libraries/dfns/graph/demo.lisp:29 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:29 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 costs3 ← ⊃(14 1 21 2 36 47)(12 10 16 45 33 8)(35 20 20 25 8 30)(43 30 48 28 8 50)(21 8 29 13 25 24)(49 7 10 16 32 7)(33 32 41 13 24 20)(11 2 46 22 8 48)(21 7 45 5 9 4)(19 13 7 40 23 18)
 assign costs3
@@ -4688,39 +4688,39 @@ scg2 ← ,¨4 0(1 3)2 1(1 4 6)(2 5)(3 6 7)
 ⍝ =>
 ('1 → 4    ') ('2 → 0    ') ('3 → 1 3  ') ('4 → 2    ') ('5 → 1    ') ('6 → 1 4 6') ('7 → 2 5  ') ('8 → 3 6 7')
 
-⍝ april/libraries/dfns/graph/demo.lisp:64 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:64 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 scg1 ← ,¨1(2 4 5)(3 6)(2 7)(0 5)6 5(3 6)
 scc scg1+1
 ⍝ =>
 1 1 2 2 1 3 3 2
 
-⍝ april/libraries/dfns/graph/demo.lisp:65 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:65 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 scg2 ← ,¨4 0(1 3)2 1(1 4 6)(2 5)(3 6 7)
 scc scg2+1
 ⍝ =>
 1 1 2 2 1 3 3 4
 
-⍝ april/libraries/dfns/graph/demo.lisp:66 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:66 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 scc 1⌽⍳10
 ⍝ =>
 1 1 1 1 1 1 1 1 1 1
 
-⍝ april/libraries/dfns/graph/demo.lisp:67 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:67 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 scc ⍳10
 ⍝ =>
 1 2 3 4 5 6 7 8 9 10
 
-⍝ april/libraries/dfns/graph/demo.lisp:68 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:68 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 scc 2⌽⍳10
 ⍝ =>
 1 2 1 2 1 2 1 2 1 2
 
-⍝ april/libraries/dfns/graph/demo.lisp:69 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:69 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 g ← (2 3) (3) (2 4) (1 5) (3)
 scg1 ← ,¨1(2 4 5)(3 6)(2 7)(0 5)6 5(3 6)
@@ -4728,14 +4728,14 @@ cond scg1+1
 ⍝ =>
 ((2 3) (1⍴3) (⍬)) ((1 2 5) (3 4 8) (6 7))
 
-⍝ april/libraries/dfns/graph/demo.lisp:70 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:70 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 scg1 ← ,¨1(2 4 5)(3 6)(2 7)(0 5)6 5(3 6)
 (scc≡⍳∘≢) scg1+1
 ⍝ =>
 0
 
-⍝ april/libraries/dfns/graph/demo.lisp:71 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:71 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 (scc≡⍳∘≢) (⍳10),⊂⍬
 ⍝ =>
@@ -4769,45 +4769,45 @@ stpaths¨g∘span¨⍳⍴g
 ⍝ =>
 ((1⍴1) (1 2) (1 3) (1 3 4) (1 3 4 5)) ((2 3 4 1) (1⍴2) (2 3) (2 3 4) (2 3 4 5)) ((3 4 1) (3 2) (1⍴3) (3 4) (3 4 5)) ((4 1) (4 1 2) (4 5 3) (1⍴4) (4 5)) ((5 3 4 1) (5 3 2) (5 3) (5 3 4) (1⍴5))
 
-⍝ april/libraries/dfns/graph/demo.lisp:83 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:83 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 M←6 7⍴1 0 0 1 0 0 1 1 0 0 1 0 0 0 0 0 0 1 1 0 1 0 0 1 0 1 1 0 0 1 1 0 0 1 1 0 1 0 0 0 0 1
 X M
 ⍝ =>
 0 1 0 1 0 1
 
-⍝ april/libraries/dfns/graph/demo.lisp:84 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:84 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 M←6 7⍴1 0 0 1 0 0 1 1 0 0 1 0 0 0 0 0 0 1 1 0 1 0 0 1 0 1 1 0 0 1 1 0 0 1 1 0 1 0 0 0 0 1
 (X M)⌿M
 ⍝ =>
 3 7⍴1 0 0 1 0 0 0 0 0 1 0 1 1 0 0 1 0 0 0 0 1
 
-⍝ april/libraries/dfns/graph/demo.lisp:85 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:85 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 X 3 4↑=/¨⍳3 3
 ⍝ =>
 0
 
-⍝ april/libraries/dfns/graph/demo.lisp:86 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:86 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 X 4 3↑=/¨⍳3 3
 ⍝ =>
 1 1 1 0
 
-⍝ april/libraries/dfns/graph/demo.lisp:87 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:87 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 X =/¨⍳3 3
 ⍝ =>
 1 1 1
 
-⍝ april/libraries/dfns/graph/demo.lisp:88 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:88 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 sudokuX 4 4⍴ 0 0 0 0,0 0 2 1,3 0 0 4,0 0 0 0
 ⍝ =>
 4 4⍴2 1 4 3 4 3 2 1 3 2 1 4 1 4 3 2
 
-⍝ april/libraries/dfns/graph/demo.lisp:89 — First-true masks use cumulative counts under miniapl left scan
+⍝ april/libraries/dfns/graph/demo.lisp:89 — First-true masks use cumulative counts under basedpl left scan
 •LOAD 'lib/graph.apl'
 queensX¨⍳7
 ⍝ =>
@@ -4821,21 +4821,21 @@ w←(1 3) 1 (4 1) (1 1) 1
 ⍝ =>
 3 1 1 1 4 1 4
 
-⍝ april/libraries/dfns/graph/demo.lisp:101 — Initialize unreachable costs with empty-min identity and set the source cost to zero with @; avoids undefined infinity times zero under miniapl infinity policy
+⍝ april/libraries/dfns/graph/demo.lisp:101 — Initialize unreachable costs with empty-min identity and set the source cost to zero with @; avoids undefined infinity times zero under basedpl infinity policy
 •LOAD 'lib/graph.apl'
 md1←,¨⊃((2 3) 4 4 ⍬) ((2 3) 1 2 ⍬)
 md1 wpath 1 4
 ⍝ =>
 1 2 4
 
-⍝ april/libraries/dfns/graph/demo.lisp:102 — Initialize unreachable costs with empty-min identity and set the source cost to zero with @; avoids undefined infinity times zero under miniapl infinity policy
+⍝ april/libraries/dfns/graph/demo.lisp:102 — Initialize unreachable costs with empty-min identity and set the source cost to zero with @; avoids undefined infinity times zero under basedpl infinity policy
 •LOAD 'lib/graph.apl'
 md2←,¨⊃((2 3 4) 5 5 5 ⍬) ((2 2 2) 2 1 2 ⍬)
 md2 wpath 1 5
 ⍝ =>
 1 3 5
 
-⍝ april/libraries/dfns/graph/demo.lisp:103 — Initialize unreachable costs with empty-min identity and set the source cost to zero with @; avoids undefined infinity times zero under miniapl infinity policy
+⍝ april/libraries/dfns/graph/demo.lisp:103 — Initialize unreachable costs with empty-min identity and set the source cost to zero with @; avoids undefined infinity times zero under basedpl infinity policy
 •LOAD 'lib/graph.apl'
 g ← (2 3) (3) (2 4) (1 5) (3)
 w←(1 3) 1 (4 1) (1 1) 1
@@ -4843,7 +4843,7 @@ w←(1 3) 1 (4 1) (1 1) 1
 ⍝ =>
 ¯1 1 2 3 4
 
-⍝ april/libraries/dfns/graph/demo.lisp:104 — Initialize unreachable costs with empty-min identity and set the source cost to zero with @; avoids undefined infinity times zero under miniapl infinity policy
+⍝ april/libraries/dfns/graph/demo.lisp:104 — Initialize unreachable costs with empty-min identity and set the source cost to zero with @; avoids undefined infinity times zero under basedpl infinity policy
 •LOAD 'lib/graph.apl'
 aa←⊃((2 3 4)(1 3)(1 2 4 5)(1 3 5)(3 4))((1 3 1)(1 2)(3 2 1 1)(1 1 1)(1 1))
 aa wspan 2
@@ -4971,7 +4971,7 @@ fibonacci¨⍳10
 ⍝ =>
 1 1 2 3 5 8 13 21 34 55
 
-⍝ april/libraries/dfns/numeric/demo.lisp:41 — Replace index-origin lookup with miniapl fixed origin one
+⍝ april/libraries/dfns/numeric/demo.lisp:41 — Replace index-origin lookup with basedpl fixed origin one
 •LOAD 'lib/numeric.apl'
 {+/{⍵!⌽⍵}(⍳⍵)-1}¨⍳10
 ⍝ =>
@@ -5997,31 +5997,31 @@ realroots 2 1 ¯3
 ⍝ =>
 54 36 63 130 94 73 109 49 19 35 20
 
-⍝ april/libraries/dfns/numeric/demo.lisp:315 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in miniapl left scan
+⍝ april/libraries/dfns/numeric/demo.lisp:315 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in basedpl left scan
 •LOAD 'lib/numeric.apl'
 9 3 5 8 1 0 5 xtimes 6 2 3 7 4
 ⍝ =>
 5 8 3 7 0 2 4 4 1 2 7 0
 
-⍝ april/libraries/dfns/numeric/demo.lisp:316 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in miniapl left scan
+⍝ april/libraries/dfns/numeric/demo.lisp:316 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in basedpl left scan
 •LOAD 'lib/numeric.apl'
 ' '~⍨⍕9 3 5 8 1 0 5 xtimes 6 2 3 7 4
 ⍝ =>
 '583702441270'
 
-⍝ april/libraries/dfns/numeric/demo.lisp:317 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in miniapl left scan
+⍝ april/libraries/dfns/numeric/demo.lisp:317 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in basedpl left scan
 •LOAD 'lib/numeric.apl'
 2 xpower 16
 ⍝ =>
 6 5 5 3 6
 
-⍝ april/libraries/dfns/numeric/demo.lisp:318 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in miniapl left scan
+⍝ april/libraries/dfns/numeric/demo.lisp:318 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in basedpl left scan
 •LOAD 'lib/numeric.apl'
 10⊤⍣¯1⊢16 xpower 4
 ⍝ =>
 65536
 
-⍝ april/libraries/dfns/numeric/demo.lisp:319 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in miniapl left scan
+⍝ april/libraries/dfns/numeric/demo.lisp:319 — Upstream FFT-based digit arithmetic; origin-1 laminate axis; original expected result; Square the accumulator in basedpl left scan
 •LOAD 'lib/numeric.apl'
 2 xpower 64
 ⍝ =>

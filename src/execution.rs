@@ -8,11 +8,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(crate) fn thread() -> std::thread::Builder { std::thread::Builder::new().name("miniapl".into()).stack_size(256 * 1024 * 1024) }
+pub(crate) fn thread() -> std::thread::Builder { std::thread::Builder::new().name("basedpl".into()).stack_size(256 * 1024 * 1024) }
 
 /// Run a Rust interpreter workload on the same 256 MiB stack as the CLI and Python workers.
 pub fn with_stack<T: Send>(f: impl FnOnce() -> T + Send) -> T {
-    std::thread::scope(|scope| thread().spawn_scoped(scope, f).expect("start miniapl execution thread").join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
+    std::thread::scope(|scope| thread().spawn_scoped(scope, f).expect("start basedpl execution thread").join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
 }
 
 /// Cancellation for one evaluation; may be sent to another thread.

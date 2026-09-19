@@ -1,18 +1,18 @@
 [package]
-name = "miniapl"
+name = "basedpl"
 version = "0.1.5"
 edition = "2021"
 rust-version = "1.98"
 license = "Apache-2.0"
-description = "A small modern APL calculator in Rust, with a native CLI and Python API."
+description = "BasedPL is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation."
 
 [lib]
-name = "miniapl"
+name = "basedpl"
 crate-type = ["cdylib", "rlib"]
 doctest = false
 
 [[bin]]
-name = "miniapl"
+name = "basedpl"
 path = "src/main.rs"
 test = false
 
@@ -20,7 +20,7 @@ test = false
 lto = false
 codegen-units = 16
 
-[profile.release.package.miniapl]
+[profile.release.package.basedpl]
 incremental = true
 
 [profile.dist]
@@ -30,7 +30,7 @@ incremental = false
 codegen-units = 1
 strip = true
 
-[profile.dist.package.miniapl]
+[profile.dist.package.basedpl]
 incremental = false
 
 [dependencies]

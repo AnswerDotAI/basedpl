@@ -17,7 +17,7 @@ use std::{
 // Keys are US characters after Shift but before Alt. Browser adapters share this resource.
 fn alt_keys() -> &'static HashMap<char, char> {
     static KEYS: OnceLock<HashMap<char, char>> = OnceLock::new();
-    KEYS.get_or_init(|| serde_json::from_str(include_str!("../python/miniapl/keyboard.json")).expect("valid glyph keyboard"))
+    KEYS.get_or_init(|| serde_json::from_str(include_str!("../python/basedpl/keyboard.json")).expect("valid glyph keyboard"))
 }
 
 // One row per glyph: ambiguity is between glyphs, not between aliases for the same glyph.

@@ -1,17 +1,17 @@
 import json
 from pathlib import Path
 import pytest
-from miniapl._core import _check_reference
-from miniapl.reference import Corpus
-from miniapl.apltests import Case, parse, render, convert, native_cases, add, description
+from basedpl._core import _check_reference
+from basedpl.reference import Corpus
+from basedpl.apltests import Case, parse, render, convert, native_cases, add, description
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_records_and_boundaries():
     cases = [Case('1+2', '3', 'ngn:1', 'addition'),
-             Case("f←{\n\n⍵+1\n}\nf 2\n", '(\n3\n)', comment='multiline', rtol=1e-14, atol=1e-15),
-             Case("'unfinished", '⍝ error: SYNTAX ERROR'), Case('', '⍝ error: SYNTAX ERROR')]
+        Case("f←{\n\n⍵+1\n}\nf 2\n", '(\n3\n)', comment='multiline', rtol=1e-14, atol=1e-15),
+        Case("'unfinished", '⍝ error: SYNTAX ERROR'), Case('', '⍝ error: SYNTAX ERROR')]
     text = render(cases)
     for ending in ['', '\n', '\n\n']: assert parse(text.rstrip('\n')+ending) == cases
     assert text.count('\n⍝ =>\n') == 1
@@ -29,7 +29,7 @@ def test_records_and_boundaries():
     with pytest.raises(ValueError, match='reserved'): render([Case('1\n⍝ =>\n2', '2')])
     with pytest.raises(ValueError, match='tolerance'): parse('⍝  — [rtol=-1]\n1\n1\n\n')
     cases = [Case('⎕←9 ⋄ ⎕←2 ⋄ 7', '7', section='Agenda', output='9\n2'),
-             Case('1', '1', section='Silence', output=''), Case("⎕←'\\'", "'\\'", section='Silence', output='\\')]
+        Case('1', '1', section='Silence', output=''), Case("⎕←'\\'", "'\\'", section='Silence', output='\\')]
     for ending in ['', '\n', '\n\n']: assert parse(render(cases).rstrip('\n')+ending) == cases
     assert parse('⍝ —\n{\n⍵\n}1\n⍝ =>\n1') == [Case('{\n⍵\n}1', '1')]
     assert r'⍝ ⎕: 9\n2' in render(cases)

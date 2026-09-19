@@ -2,7 +2,7 @@ use crate::{parse, Evaluation, ParseStatus, Session, Source};
 use rustyline::error::ReadlineError;
 use std::io::{self, IsTerminal, Read, Write};
 
-const USAGE: &str = "Usage: miniapl [-e EXPR | FILE | - | --json | --worker | --kernel -f CONNECTION_FILE]\n\nNo arguments: persistent APL REPL (Ctrl-D to exit, Ctrl-C to cancel input).\nType `name then Tab or a non-letter to enter a symbol, e.g. `iota5 becomes ⍳5.\nUse - to execute all of stdin as one source; --json for a JSON-lines session.\nUse --worker for structured requests with deadlines and interruption.\nUse --kernel -f CONNECTION_FILE to run a Jupyter kernel.\n";
+const USAGE: &str = "Usage: basedpl [-e EXPR | FILE | - | --json | --worker | --kernel -f CONNECTION_FILE]\n\nNo arguments: persistent APL REPL (Ctrl-D to exit, Ctrl-C to cancel input).\nType `name then Tab or a non-letter to enter a symbol, e.g. `iota5 becomes ⍳5.\nUse - to execute all of stdin as one source; --json for a JSON-lines session.\nUse --worker for structured requests with deadlines and interruption.\nUse --kernel -f CONNECTION_FILE to run a Jupyter kernel.\n";
 
 fn show(result: Evaluation, out: &mut impl Write, err: &mut impl Write) -> io::Result<bool> {
     for line in result.output { writeln!(out, "{line}")?; }
@@ -101,7 +101,7 @@ fn run_inner(args: &[String]) -> i32 {
         [flag] if flag == "--worker" => crate::worker::run(&mut out).map(|_| 0),
         [flag, code] if flag == "-e" => expression(code, "<expression>", &mut out, &mut err),
         [flag] if flag == "--help" || flag == "-h" => write!(out, "{USAGE}").map(|_| 0),
-        [flag] if flag == "--version" => writeln!(out, "miniapl {}", env!("CARGO_PKG_VERSION")).map(|_| 0),
+        [flag] if flag == "--version" => writeln!(out, "basedpl {}", env!("CARGO_PKG_VERSION")).map(|_| 0),
         [file] if file == "-" => {
             let mut code = String::new();
             stdin.lock().read_to_string(&mut code).and_then(|_| expression(&code, "<stdin>", &mut out, &mut err))

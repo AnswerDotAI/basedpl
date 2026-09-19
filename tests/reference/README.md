@@ -1,10 +1,10 @@
 # Reference acceptance cases
 
-The `.apl` files are the executable language tests. `core.apl` holds miniapl's own semantic cases. The other files cover ngn assertions/example programs, April core and library assertions/demos/setup, APLcart main/tacit catalogue rows, and selected Dyalog documentation examples. The tracked `inventory/*.jsonl` files retain original records, independent expectations, adaptations and candidates for activation. Entries are not removed because miniapl cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
+The `.apl` files are the executable language tests. `core.apl` holds BasedPL's own semantic cases. The other files cover ngn assertions/example programs, April core and library assertions/demos/setup, APLcart main/tacit catalogue rows, and selected Dyalog documentation examples. The tracked `inventory/*.jsonl` files retain original records, independent expectations, adaptations and candidates for activation. Entries are not removed because BasedPL cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
 
 Source entries are not necessarily executable tests. Many APLcart recipes have unbound arguments and no expected result. They need concrete examples. Library cases need their definitions and setup. Use the scanner below for current counts and failures; fixture reasons describe their last review, not necessarily today's implementation. Progress notes belong in `meta/`, not this README.
 
-Active cases use miniapl spellings: `π` for APL's monadic `○`, `g⌝` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, and `•Name` for system names. Original inventory sources retain their dialect's notation.
+Active cases use BasedPL spellings: `π` for APL's monadic `○`, `g⌝` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, and `•Name` for system names. Original inventory sources retain their dialect's notation.
 
 Run the active cases with:
 
@@ -12,10 +12,10 @@ Run the active cases with:
 cargo test --test reference -- --nocapture
 ```
 
-To run one active case, set `MINIAPL_CASE` to its exact ID:
+To run one active case, set `BASEDPL_CASE` to its exact ID:
 
 ```bash
-MINIAPL_CASE=ngn:177 cargo test --test reference enabled_reference_cases -- --nocapture
+BASEDPL_CASE=ngn:177 cargo test --test reference enabled_reference_cases -- --nocapture
 ```
 
 Every case in `.apl` runs regardless of inventory status. Edit these files directly once cases are active. Each JSONL inventory row has a stable `id`, `code`, and `status`. A `reason` records adaptations or remaining work. Its original source, expectation or recipe is retained.
@@ -31,11 +31,11 @@ Every case in `.apl` runs regardless of inventory status. Edit these files direc
 To enable a case:
 
 1. Find its `id` in the inventory. Check its recipe, prerequisites and original expectation. Do not treat another dialect as the specification.
-2. Supply concrete `code` and `expected` or `expected_error` if missing. Array expectations contain `shape`, flat `data`, and `prototype`. Nested arrays use the same structure. Complex elements use `{"complex":[real,imag]}`. Real infinities use `{"infinity":1}` or `{"infinity":-1}`. `expected: null` explicitly expects no result; an absent expectation remains invalid. Derive expectations independently of miniapl.
+2. Supply concrete `code` and `expected` or `expected_error` if missing. Array expectations contain `shape`, flat `data`, and `prototype`. Nested arrays use the same structure. Complex elements use `{"complex":[real,imag]}`. Real infinities use `{"infinity":1}` or `{"infinity":-1}`. `expected: null` explicitly expects no result; an absent expectation remains invalid. Derive expectations independently of BasedPL.
 3. Activate the reviewed case:
 
    ```bash
-   python -m miniapl.apltests add april:1684
+   python -m basedpl.apltests add april:1684
    ```
 
    This checks the program against its independent expectation and checks the converted expectation against the captured value. It appends to the source's `.apl` file and marks the inventory record active. Excluded cases, missing expectations, failed checks and duplicate IDs are rejected before writing.
@@ -53,7 +53,7 @@ Keep unresolved original workloads and inputs pending with their failure details
 Use the Python API in a kernel to inspect and edit fixtures without dumping JSONL records:
 
 ```python
-from miniapl.reference import Corpus
+from basedpl.reference import Corpus
 corpus = Corpus()  # tests/reference/inventory, relative to the repo cwd
 corpus.find('format:', status='pending')
 corpus['ngn:391', 'code', 'expected', 'oracle']
@@ -113,14 +113,14 @@ An optional final `⍝ ⎕: text` checks explicit output. Write `\n` for a newli
 
 During conversion, comments are extracted from descriptions, unchanged ngn assertions, or leading comments in example programs. Known import/review boilerplate is removed from reasons and adaptations. Other clauses are retained on the same header line. Comments are not paraphrased or corrected. Converted comments can therefore contain inaccurate source wording or lack a description where none can be extracted.
 
-Use `miniapl.apltests.parse(text)` to read records as `Case` objects with `id`, `comment`, `code`, `expect`, `rtol`, `atol`, `section`, optional `output` text and the header's `line`. `render(cases)` writes them back. The conversion checks preserve source text and reproduce captured values, shapes and recursive prototypes; they do not infer new expectations from the program under test.
+Use `basedpl.apltests.parse(text)` to read records as `Case` objects with `id`, `comment`, `code`, `expect`, `rtol`, `atol`, `section`, optional `output` text and the header's `line`. `render(cases)` writes them back. The conversion checks preserve source text and reproduce captured values, shapes and recursive prototypes; they do not infer new expectations from the program under test.
 
-Use `add(['ngn:177'])` from `miniapl.apltests` to activate selected inventory IDs from a kernel. It is the equivalent of the `add` command above.
+Use `add(['ngn:177'])` from `basedpl.apltests` to activate selected inventory IDs from a kernel. It is the equivalent of the `add` command above.
 
 The converter remains available for inspecting a fresh conversion without overwriting edited tests:
 
 ```bash
-python -m miniapl.apltests preview --replace
+python -m basedpl.apltests preview --replace
 pytest -q tests/test_apltests.py
 ```
 
@@ -128,7 +128,7 @@ The output is `meta/apl-preview/{ngn,april,aplcart,dyalog,core}.apl`. The refere
 
 ## Sources and adaptations
 
-Active cases use miniapl's postfix `g⌝` for outer product. The inventory retains upstream `∘.g` spellings.
+Active cases use BasedPL's postfix `g⌝` for outer product. The inventory retains upstream `∘.g` spellings.
 
 System names use `•` in active cases (`•C`, `•UCS`, etc.). The inventory retains upstream `⎕` spellings. `⎕←` is output in both.
 
@@ -143,21 +143,21 @@ Dyalog cases use `dyalog:page:example` IDs. Source pages default to `language-re
 
 For each new glyph, read its documented valences and select examples that establish distinct semantics. Add structured expectations, run them, and fix failures as part of that glyph's implementation rather than deferring discovered gaps.
 
-Dyalog's two fixed-order float reduction examples are retained as explicit exclusions. miniapl permits reassociation of primitive float sums/products. Generic-function reduction and primitive scan order remain tested; do not replace excluded expectations with one compiler's chosen answer.
+Dyalog's two fixed-order float reduction examples are retained as explicit exclusions. BasedPL permits reassociation of primitive float sums/products. Generic-function reduction and primitive scan order remain tested; do not replace excluded expectations with one compiler's chosen answer.
 
-ngn uses origin 0 and has different prototype/dialect rules. Its original expressions and expectations are retained. Adapt index/axis operands to origin 1 and capture values and prototypes independently in Dyalog. Changed code is retained in `original_code`; changed origin is recorded in `original_origin`. Unadapted `origin: 0` describes upstream, not miniapl's execution settings. Closed literal right-hand expectations were evaluated independently in Dyalog, not with miniapl.
+ngn uses origin 0 and has different prototype/dialect rules. Its original expressions and expectations are retained. Adapt index/axis operands to origin 1 and capture values and prototypes independently in Dyalog. Changed code is retained in `original_code`; changed origin is recorded in `original_origin`. Unadapted `origin: 0` describes upstream, not BasedPL's execution settings. Closed literal right-hand expectations were evaluated independently in Dyalog, not with BasedPL.
 
-April's literal Common Lisp expectations were converted to structured values. Ordinary rational expectations represent approximate results under miniapl's numeric policy, not opt-in exact `r` literals. The power alias `⋆` is written as standard `*` outside quoted text. Printed-format expectations, host wrappers, and library dependencies remain visible for review.
+April's literal Common Lisp expectations were converted to structured values. Ordinary rational expectations represent approximate results under BasedPL's numeric policy, not opt-in exact `r` literals. The power alias `⋆` is written as standard `*` outside quoted text. Printed-format expectations, host wrappers, and library dependencies remain visible for review.
 
 APLcart's TIO links were decoded offline. All 972 available decoded programs are retained. No TIO service was contacted. Small closed calculator examples were checked in Dyalog 20.0.53963.0 with `⎕IO=1`, `⎕CT=1E¯14`, `⎕DIV=0`, `⎕ML=1`, and `⎕PP=17`. Multi-output examples collect their values in an array literal. The original program remains in `example`. The import does not execute arbitrary catalogue programs.
 
-`miniapl.reference` contains the import, reference capture, scan, review and activation functions. `scripts/reference.py` is their CLI. Rust tests read the checked-in `.apl` files. They need neither the JSONL inventory, sibling clones, Dyalog, Common Lisp, Node, Python nor network access. Python converter tests also check serialization against the tracked inventory. Import a new upstream snapshot into a new directory and review it against the inventory rather than replacing reviewed statuses.
+`basedpl.reference` contains the import, reference capture, scan, review and activation functions. `scripts/reference.py` is their CLI. Rust tests read the checked-in `.apl` files. They need neither the JSONL inventory, sibling clones, Dyalog, Common Lisp, Node, Python nor network access. Python converter tests also check serialization against the tracked inventory. Import a new upstream snapshot into a new directory and review it against the inventory rather than replacing reviewed statuses.
 
-For live reference work, use `aplnb.dyalog.Apl`, not `aplnb.core` (which uses miniapl):
+For live reference work, use `aplnb.dyalog.Apl`, not `aplnb.core` (which uses BasedPL):
 
 ```python
 from aplnb.dyalog import Apl
-from miniapl.reference import REFERENCE_ENCODER, dyalog_expected
+from basedpl.reference import REFERENCE_ENCODER, dyalog_expected
 with Apl() as apl:
     apl('⎕IO←1 ⋄ ⎕CT←1E¯14 ⋄ ⎕DIV←0 ⋄ ⎕ML←1 ⋄ ⎕PP←17')
     apl(REFERENCE_ENCODER)
@@ -168,6 +168,6 @@ Non-language repository material is not an acceptance case: ngn's browser assets
 
 ## Attribution
 
-Adapted ngn tests are copyright 2011–2018 Nikolay G. Nikolov under the included `LICENSE-ngn` (MIT). Adapted April tests are copyright 2017 Andrew Sengul under the included `LICENSE-april` (Apache-2.0). APLcart is copyright 2019 Adám Brudzewsky under the included `LICENSE-aplcart` (MIT, with its stated exception for table/website content). The extraction, structured expectations, status annotations and documented dialect adaptations are miniapl modifications. These data and tools are test-only, not interpreter dependencies.
+Adapted ngn tests are copyright 2011–2018 Nikolay G. Nikolov under the included `LICENSE-ngn` (MIT). Adapted April tests are copyright 2017 Andrew Sengul under the included `LICENSE-april` (Apache-2.0). APLcart is copyright 2019 Adám Brudzewsky under the included `LICENSE-aplcart` (MIT, with its stated exception for table/website content). The extraction, structured expectations, status annotations and documented dialect adaptations are basedpl modifications. These data and tools are test-only, not interpreter dependencies.
 
 Dyalog documentation examples are copyright © 1982–2025 Dyalog Limited, licensed under [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/), reproduced in `LICENSE-dyalog` including its warranty disclaimer. Source links and adaptations are recorded above. These fixtures retain that licence; they do not change the interpreter's Apache-2.0 licence or imply Dyalog endorsement.

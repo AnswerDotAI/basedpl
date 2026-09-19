@@ -7,14 +7,14 @@
 Requires Python ≥3.10.
 
 ```bash
-pip install miniapl
+pip install basedpl
 ```
 
-This installs the `miniapl` command and Python package.
+This installs the `basedpl` command and Python package.
 
 ## First calculations
 
-Run `miniapl` to open the [REPL](repl.md). Type an expression and press Enter. `⍝` introduces a comment; examples here use it to show the result.
+Run `basedpl` to open the [REPL](repl.md). Type an expression and press Enter. `⍝` introduces a comment; examples here use it to show the result.
 
 APL evaluates right-to-left. Parentheses change grouping.
 

@@ -1,4 +1,4 @@
-use miniapl::{
+use basedpl::{
     parse, Error, ErrorKind,
     ErrorKind::*,
     ParseStatus, Session, Source, Value as AplValue,
@@ -12,7 +12,7 @@ fn run(code: &str) -> Result<Option<AplValue>, Error> {
 }
 
 fn number(n: f64) -> AplValue { AplValue::Number(n.try_into().unwrap()) }
-fn scalar(n: impl TryInto<miniapl::Number>) -> AplValue { AplValue::scalar(n).unwrap() }
+fn scalar(n: impl TryInto<basedpl::Number>) -> AplValue { AplValue::scalar(n).unwrap() }
 fn vector(values: &[f64]) -> AplValue { AplValue::from_parts(vec![values.len()], values.iter().copied().map(number).collect(), number(0.0)).unwrap() }
 fn ints(values: &[i64]) -> AplValue { AplValue::integers(vec![values.len()], values.to_vec()).unwrap() }
 
@@ -108,7 +108,7 @@ fn fails(kind: ErrorKind, codes: &[&str]) { for code in codes { fails_in(&mut Se
 #[test]
 fn explicit_output_without_echo() {
     let mut s = Session::new();
-    let quiet = || miniapl::EvalOptions { echo: false, ..miniapl::EvalOptions::default() };
+    let quiet = || basedpl::EvalOptions { echo: false, ..basedpl::EvalOptions::default() };
     let code = "1 ⋄ ⎕←2 ⋄ ⍎'3 ⋄ ⎕←4 ⋄ 5' ⋄ 6";
     let r = s.eval_with(code, quiet());
     assert!(r.error.is_none());
@@ -126,8 +126,8 @@ fn explicit_output_without_echo() {
     for code in ["]Display 1 2", "]box ?"] { assert!(!s.eval_with(code, quiet()).output.is_empty()); }
     let streamed = Arc::new(std::sync::Mutex::new(Vec::new()));
     let events = streamed.clone();
-    let output = Arc::new(move |kind, text: &str| events.lock().unwrap().push((matches!(kind, miniapl::OutputKind::Explicit), text.to_owned())));
-    let r = s.eval_with("1 ⋄ ⎕←2 ⋄ 1÷0", miniapl::EvalOptions { output: Some(output), ..miniapl::EvalOptions::default() });
+    let output = Arc::new(move |kind, text: &str| events.lock().unwrap().push((matches!(kind, basedpl::OutputKind::Explicit), text.to_owned())));
+    let r = s.eval_with("1 ⋄ ⎕←2 ⋄ 1÷0", basedpl::EvalOptions { output: Some(output), ..basedpl::EvalOptions::default() });
     assert_eq!(r.error.unwrap().kind, Domain);
     assert!(r.output.is_empty());
     assert_eq!(*streamed.lock().unwrap(), [(false, "1".into()), (true, "2".into())]);
@@ -148,7 +148,7 @@ fn calls_with_array_arguments() {
         ("{x←⍵}", vec!["7"], "7"),
     ] {
         let args: Vec<_> = codes.iter().map(|c| run(c).unwrap().unwrap()).collect();
-        let r = s.call_with(function, &args, miniapl::EvalOptions { echo: false, ..miniapl::EvalOptions::default() });
+        let r = s.call_with(function, &args, basedpl::EvalOptions { echo: false, ..basedpl::EvalOptions::default() });
         assert!(r.error.is_none(), "{function}: {:?}", r.error);
         assert_eq!(r.value, run(expected).unwrap());
         assert!(r.output.is_empty());
@@ -170,7 +170,7 @@ fn calls_with_array_arguments() {
     assert_eq!(e.kind, Domain);
     assert_eq!(e.calls.last().unwrap().source.text, "bad");
     assert!(e.span.source.text.contains("bad←"));
-    let r = s.call_with("{∇⍵}", &[scalar(0.0)], miniapl::EvalOptions { timeout: Some(std::time::Duration::ZERO), ..miniapl::EvalOptions::default() });
+    let r = s.call_with("{∇⍵}", &[scalar(0.0)], basedpl::EvalOptions { timeout: Some(std::time::Duration::ZERO), ..basedpl::EvalOptions::default() });
     assert_eq!(r.error.unwrap().kind, Timeout);
     equiv_in(&mut s, "x", "42");
 }
@@ -186,13 +186,13 @@ fn cancellation_preserves_session_and_unwinds_calls() {
     s.set("u", AplValue::floats(vec![20000], (0..20000).map(f64::from).collect()).unwrap()).unwrap();
     assert_eq!(s.eval_timeout("∪u", Duration::from_millis(2)).error.unwrap().kind, Timeout);
     assert_eq!(s.eval_timeout("ℙ1000000000000x", Duration::from_millis(2)).error.unwrap().kind, Timeout);
-    let interrupt = miniapl::InterruptHandle::default();
+    let interrupt = basedpl::InterruptHandle::default();
     let handle = interrupt.clone();
     let cancel = std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(10));
         handle.interrupt();
     });
-    let r = s.eval_with("{∇⍵}0", miniapl::EvalOptions { interrupt, timeout: Some(Duration::from_secs(2)), ..miniapl::EvalOptions::default() });
+    let r = s.eval_with("{∇⍵}0", basedpl::EvalOptions { interrupt, timeout: Some(Duration::from_secs(2)), ..basedpl::EvalOptions::default() });
     cancel.join().unwrap();
     assert_eq!(r.error.unwrap().kind, Interrupt);
     equiv_in(&mut s, "keep", "42");
@@ -544,7 +544,7 @@ fn complex_comparison_errors_and_recovery() {
 
 #[test]
 fn exact_literals_arithmetic_and_roundtrips() {
-    // miniapl's explicit exact-number extension, not Dyalog reference cases.
+    // basedpl's explicit exact-number extension, not Dyalog reference cases.
     for (code, n, d) in [
         ("42x", 42, 1),
         ("42r1", 42, 1),
@@ -620,7 +620,7 @@ fn exact_arrays_prototypes_and_counts() {
 fn exact_and_tolerant_comparisons() {
     // Approximate cases follow Dyalog 20 ⎕CT=1E¯14 (documentation-derived):
     // https://docs.dyalog.com/20.0/language-reference-guide/system-functions/ct/
-    // Exact/exact and mixed promotion are miniapl's explicit extension.
+    // Exact/exact and mixed promotion are basedpl's explicit extension.
     for (x, y, equal, less) in [
         ("0.3", "(0.1+0.2)", true, false),
         ("(0.1+0.2)", "0.3", true, false),

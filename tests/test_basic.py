@@ -1,9 +1,8 @@
 import subprocess, json, sys, os, signal, threading, weakref, gc
 from fractions import Fraction
 from concurrent.futures import ThreadPoolExecutor
-import numpy as np
-import pytest
-from miniapl import Session, AplError, Array
+import numpy as np, pytest
+from basedpl import Session, AplError, Array
 
 
 def test_native_calls_and_explicit_output():
@@ -15,8 +14,7 @@ def test_native_calls_and_explicit_output():
         assert r.output == ['1r3 2x']
         assert s('1 ⋄ ⎕←2 ⋄ 3').py == 3
         assert s.eval('1 ⋄ ⎕←2 ⋄ 3').output == ['2']
-    with Session() as s:
-        assert s('+/x', x=a).py == Fraction(7, 3)
+    with Session() as s: assert s('+/x', x=a).py == Fraction(7, 3)
 
 
 def test_bindings_functions_and_output(capsys):
@@ -66,7 +64,7 @@ def test_numpy_inputs_and_copies():
         saved[:] = 77
         np.testing.assert_array_equal(apl('+/m'), [2, 10, 18])
         for a in [np.array(True), np.array(3, dtype=np.float32), np.array([1., 2j]), np.array([2**64-1], dtype=np.uint64),
-                  np.empty((0, 3), dtype=int), np.empty((2, 0)), np.array([np.inf, -np.inf]), np.array([['a', 'b'], ['c', 'd']]), np.array([[1, Fraction(2, 3)]], dtype=object)]:
+            np.empty((0, 3), dtype=int), np.empty((2, 0)), np.array([np.inf, -np.inf]), np.array([['a', 'b'], ['c', 'd']]), np.array([[1, Fraction(2, 3)]], dtype=object)]:
             result = apl('x', x=a)
             np.testing.assert_array_equal(result, a)
             assert np.shape(result) == a.shape
@@ -176,29 +174,29 @@ def test_cross_thread_array_lifetime():
 
 
 def test_without_numpy():
-    code = "from miniapl import Session; import sys; s=Session(); assert s('1+2').py == 3.; s.close(); assert 'numpy' not in sys.modules"
+    code = "from basedpl import Session; import sys; s=Session(); assert s('1+2').py == 3.; s.close(); assert 'numpy' not in sys.modules"
     subprocess.run([sys.executable, '-c', code], check=True, timeout=10)
 
 
 def test_installed_command(tmp_path):
     for code, status, output in [('2×3+4', 0, '14\n'), ('¯2+1÷0', 1, '')]:
-        res = subprocess.run(['miniapl', '-e', code], capture_output=True, text=True, timeout=10)
+        res = subprocess.run(['basedpl', '-e', code], capture_output=True, text=True, timeout=10)
         assert (res.returncode, res.stdout) == (status, output)
         if status: assert 'DOMAIN ERROR' in res.stderr and '<expression>:1:5' in res.stderr
         else: assert not res.stderr
     path = tmp_path/'lesson.apl'
     path.write_text('v←⍳10\nsum←+/\nsum v\n', encoding='utf-8')
-    res = subprocess.run(['miniapl', str(path)], capture_output=True, text=True, timeout=10)
+    res = subprocess.run(['basedpl', str(path)], capture_output=True, text=True, timeout=10)
     assert (res.returncode, res.stdout, res.stderr) == (0, '55\n', '')
 
 
 def test_installed_json_command():
     codes = ['v←9007199254740993x 0.5 1r3', 'v', '0/1r3', '1r0', '1r3+1r6', '2x*100x', '1J2 3J4']
-    res = subprocess.run(['miniapl', '--json'], input='\n'.join(json.dumps(c) for c in codes)+'\n', capture_output=True, text=True, timeout=10)
+    res = subprocess.run(['basedpl', '--json'], input='\n'.join(json.dumps(c) for c in codes)+'\n', capture_output=True, text=True, timeout=10)
     assert res.returncode == 0 and not res.stderr
     replies = [json.loads(line) for line in res.stdout.splitlines()]
-    assert replies[1]['value'] == {'shape': [3], 'data': [9007199254740993, 0.5, {'rational': ['1', '3']}], 'prototype': 0}
-    assert replies[2]['value'] == {'shape': [0], 'data': [], 'prototype': 0}
+    assert replies[1]['value'] == dict(shape=[3], data=[9007199254740993, 0.5, {'rational': ['1', '3']}], prototype=0)
+    assert replies[2]['value'] == dict(shape=[0], data=[], prototype=0)
     assert replies[3]['error']['kind'] == 'DOMAIN ERROR'
     assert replies[4]['value'] == {'rational': ['1', '2']}
     assert replies[5]['value'] == 2**100

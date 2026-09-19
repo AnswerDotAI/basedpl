@@ -1063,10 +1063,10 @@ f←⌊ ⋄ Y←¯1.2 0 3.9 ⋄ f⍣≡Y   ⍝ ¯2 0 3
 ⍝ aplcart/table.tsv:628 — Progressive minima (row-wise)
 ⌊\ 20 11 47 2 5 300 99   ⍝ 20 11 11 2 2 2 2
 
-⍝ aplcart/table.tsv:629 — Turn off all 1s after first 1 (indicate only the first 1); First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/table.tsv:629 — Turn off all 1s after first 1 (indicate only the first 1); First-true masks use cumulative counts under basedpl left scan
 {⍵∧1=+\⍵} 0 1 0 1 0 1   ⍝ 0 1 0 0 0 0
 
-⍝ aplcart/table.tsv:630 — Turn on all 0s after first 0 (indicate all elements except the first 0); First-zero mask uses cumulative counts under miniapl left scan
+⍝ aplcart/table.tsv:630 — Turn on all 0s after first 0 (indicate all elements except the first 0); First-zero mask uses cumulative counts under basedpl left scan
 {⍵∨1≠+\~⍵} 1 0 1 0 1 0   ⍝ 1 0 1 1 1 1
 
 ⍝ aplcart/table.tsv:631 — Convert reflected Gray code to binary
@@ -3188,7 +3188,7 @@ J←55 65 75 85 95 ⋄ (0 60 70 80 90∘⍸⊂⍛⌷'FDCBA'⍨)J
 ⍝ aplcart/table.tsv:1343 — Remove multiple blanks
 Dv← '  a   b  '  ⋄ ('  '∘⍷~⍛/⊢)Dv   ⍝ ' a b '
 
-⍝ aplcart/table.tsv:1344 — Boolean one at first occurrence of X in Y; First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/table.tsv:1344 — Boolean one at first occurrence of X in Y; First-true masks use cumulative counts under basedpl left scan
 'fab' ({⍵∧1=+\⍵}@(=⍨)⍷) 3 5⍴'abcdef'   ⍝ 3 5⍴0 0 0 0 0 1 0 0 0 0 0 0 0 0 0
 
 ⍝ aplcart/table.tsv:1345 — Locate leading blank columns
@@ -3749,7 +3749,7 @@ Dv← 'a(b(c)d)e'  ⋄ (+\'('∘=-¯1↓0,')'∘=)Dv
 Is←220 ⋄ Js←284 ⋄ Is(∧/+=∘(+/∘∪⍳⍛∨)¨,)Js
 1
 
-⍝ aplcart/table.tsv:1525 — Bubble sort; First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/table.tsv:1525 — Bubble sort; First-true masks use cumulative counts under basedpl left scan
 ⌽@(({⍵∧1=+\⍵}∨1⌽{⍵∧1=+\⍵})0,(>/∘(2∘↕)))⍣≡ 3 1 4 1 5
 1 1 3 4 5
 
@@ -3892,7 +3892,7 @@ Nv←1 ¯5 6 ⋄ (↑÷¯2÷2∘⊃-¯1 1×2*∘÷⍨(×⍨2∘⊃)-(×/4@2))Nv
 Is←2 ⋄ Js←4 ⋄ Is({⍵/⍨∧⌿(</[2]∘(2∘↕))⍵}1+-⍛↑∘⍳⊤∘⍳!×∘!⊣)Js
 2 6⍴1 1 1 2 2 3 2 3 4 3 4 4
 
-⍝ aplcart/table.tsv:1573 — Value of saddle point; First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/table.tsv:1573 — Value of saddle point; First-true masks use cumulative counts under basedpl left scan
 Nm←2 2⍴3 4 1 2 ⋄ (,⊢⍤/⍨(⊢=⍴⍴⌈⌿){⍵∧1=+\⍵}⍤,⍤∧⊢=∘⍉⌽∘⍴⍴⌊/)Nm
 1⍴3
 
@@ -4059,7 +4059,7 @@ result←pmat 3
 ⍝ =>
 6 3⍴1 2 3 1 3 2 2 1 3 2 3 1 3 1 2 3 2 1
 
-⍝ aplcart/table.tsv:1603 — Hungarian method cost assignment; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:14. Local definitions replace the dfns namespace; no namespace feature implied; First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/table.tsv:1603 — Hungarian method cost assignment; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:14. Local definitions replace the dfns namespace; no namespace feature implied; First-true masks use cumulative counts under basedpl left scan
 assign ← {
   step0←{step1(⌽⌈\⌽⍴⍵)↑⍵}
   step1←{step2⊃(↓⍵)-⌊/⍵}
@@ -4380,7 +4380,7 @@ result←•A adic 703
 ⍝ =>
 'AAA'
 
-⍝ aplcart/table.tsv:1629 — Fast multi-digit power using FFT; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:317. Local definitions replace the dfns namespace; no namespace feature implied; Square the accumulator in miniapl left scan
+⍝ aplcart/table.tsv:1629 — Fast multi-digit power using FFT; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:317. Local definitions replace the dfns namespace; no namespace feature implied; Square the accumulator in basedpl left scan
 xtimes ← { m←0
   xroots    ← {×\1,1↓(⍵÷2)⍴¯1*2÷⍵}
   cube      ← {⍵⍴⍨2⍴⍨⌊2⍟⍴⍵}
@@ -4781,7 +4781,7 @@ result←'abba' subvec 'babba'
 ⍝ =>
 1
 
-⍝ aplcart/table.tsv:1676 — Fast multi-digit product using FFT; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:315. Local definitions replace the dfns namespace; no namespace feature implied; Square the accumulator in miniapl left scan
+⍝ aplcart/table.tsv:1676 — Fast multi-digit product using FFT; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:315. Local definitions replace the dfns namespace; no namespace feature implied; Square the accumulator in basedpl left scan
 xtimes ← { m←0
   xroots    ← {×\1,1↓(⍵÷2)⍴¯1*2÷⍵}
   cube      ← {⍵⍴⍨2⍴⍨⌊2⍟⍴⍵}
@@ -5417,7 +5417,7 @@ X←3 1 2 1 ⋄ Y←3 1 3 2 ⋄ X{⍺⍵}Y   ⍝ (3 1 2 1) (3 1 3 2)
 ⍝ aplcart/table.tsv:1731 — Fast: Y sorted into descending order
 Y←3 1 3 2 ⋄ ⊂⍤⍒⍛⌷Y   ⍝ 3 3 2 1
 
-⍝ aplcart/table.tsv:1733 — Strongly connected components of directed graph ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:64. Local definitions replace the dfns namespace; no namespace feature implied; First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/table.tsv:1733 — Strongly connected components of directed graph ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:64. Local definitions replace the dfns namespace; no namespace feature implied; First-true masks use cumulative counts under basedpl left scan
 scc ← {
   TT←(3/⊂0⊣¨G←⍵),1 ⍬
   C L X x S←⍳⍴TT
@@ -5722,7 +5722,7 @@ J←1 2 3 ⋄ {⍵+1-1}J   ⍝ 1 2 3
 ⍝ aplcart/table.tsv:1790 — Changing an index origin dependent result to be as ⎕IO=1; Pure glyph recipe; quoted quad is data or origin lookup is replaced with fixed one; Supply small operands and use fixed origin one where the recipe reads index origin; Quoted quad remains character data
 J←1 2 3 ⋄ {⍵+~1}J   ⍝ 1 2 3
 
-⍝ aplcart/table.tsv:1792 — Exact cover: Knuth's Algorithm X; Concrete APLcart recipe; local definitions from april/libraries/dfns/graph/demo.lisp:83 replace the dfns namespace; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1; First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/table.tsv:1792 — Exact cover: Knuth's Algorithm X; Concrete APLcart recipe; local definitions from april/libraries/dfns/graph/demo.lisp:83 replace the dfns namespace; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1; First-true masks use cumulative counts under basedpl left scan
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
@@ -7769,7 +7769,7 @@ f←⌽ ⋄ Y←2 3⍴⍳6 ⋄ f{⍉⍶⍉⍵}Y   ⍝ 2 3⍴4 5 6 1 2 3
 mat ← 6 6⍴⍳36 ⋄ (1 1 0 1 0 0 {⊃(⊂⊢/⊆⍺)⊂¨(↑⊆⍺)⊂[1]⍵} mat ⋄ (1 1 0 1 0 0)(1 0 1 0 1 0) {⊃(⊂⊢/⊆⍺)⊂¨(↑⊆⍺)⊂[1]⍵} mat)
 (3 3⍴(1 1⍴1) (1 2⍴2 3) (1 3⍴4 5 6) (2 1⍴7 13) (2 2⍴8 9 14 15) (2 3⍴10 11 12 16 17 18) (3 1⍴19 25 31) (3 2⍴20 21 26 27 32 33) (3 3⍴22 23 24 28 29 30 34 35 36)) (3 3⍴(1 2⍴1 2) (1 2⍴3 4) (1 2⍴5 6) (2 2⍴7 8 13 14) (2 2⍴9 10 15 16) (2 2⍴11 12 17 18) (3 2⍴19 20 25 26 31 32) (3 2⍴21 22 27 28 33 34) (3 2⍴23 24 29 30 35 36))
 
-⍝ aplcart/table.tsv:2210 — Scan from end with f; miniapl left scan
+⍝ aplcart/table.tsv:2210 — Scan from end with f; basedpl left scan
 f←- ⋄ Y←1 2 3 ⋄ f{⌽⍶\⌽⍵}Y   ⍝ 0 1 3
 
 ⍝ aplcart/table.tsv:2211 — Plot of scalaroid function f for data Nv
@@ -7893,7 +7893,7 @@ X←1 ⋄ Y←0 ⋄ X(⊣{⍵(⍶ ⍹ ⊣)⍺}⊢)Y   ⍝ 0
 Av←1 0 1 0 0 ⋄ f←+ ⋄ Yv←1 2 3 4 5 ⋄ Av f{,/⍶/¨⍺⊂⍵}Yv
 3 12
 
-⍝ aplcart/table.tsv:2251 — Segmented scan: like f\ but starting over whenever indicated by Av; miniapl left scan
+⍝ aplcart/table.tsv:2251 — Segmented scan: like f\ but starting over whenever indicated by Av; basedpl left scan
 Av←1 0 1 0 0 ⋄ f←- ⋄ Yv←1 2 3 4 5 ⋄ Av f{,/⍶\¨⍺⊂⍵}Yv
 1 ¯1 3 ¯1 ¯6
 
@@ -8066,7 +8066,7 @@ X←2 3⍴⍳6 ⋄ f←+ ⋄ ax←1 ⋄ Y←10 20 ⋄ X(f{⊃[⍹](⊂[⍹]⍺)�
 X←2 ⋄ f←÷ ⋄ g←+ ⋄ Y←0 ⋄ X(f{⍺←⊢ ⋄ 0::⍺ ⍹ ⍵ ⋄ ⍺ ⍶ ⍵}g)Y
 2
 
-⍝ aplcart/table.tsv:2299 — Stable bubble sort using custom comparison function f (true:left precedes right); First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/table.tsv:2299 — Stable bubble sort using custom comparison function f (true:left precedes right); First-true masks use cumulative counts under basedpl left scan
 f←< ⋄ Y←3 1 4 2 ⋄ f{⌽@(1(⌽∨⊢)0{⍵∧1=+\⍵}⍤,(⍶/∘⌽∘(2∘↕)))⍣≡⍵}Y
 1 2 3 4
 
@@ -9147,10 +9147,10 @@ Nm←3 3⍴3 1 2 4 2 3 5 3 4 ⋄ (⌊/ =⌝ ⌈⌿)Nm   ⍝ 3 3⍴0 0 0 0 0 0 0 
 ⍝ aplcart/tt.tsv:194 — Boolean matrix indicating saddle points
 Nm←3 3⍴3 1 2 4 2 3 5 3 4 ⋄ (⌊/ =⌝ ⌈⌿)Nm   ⍝ 3 3⍴0 0 0 0 0 0 0 1 0
 
-⍝ aplcart/tt.tsv:195 — Boolean one at first occurrence of X in Y; First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/tt.tsv:195 — Boolean one at first occurrence of X in Y; First-true masks use cumulative counts under basedpl left scan
 'fab' ({⍵∧1=+\⍵}@(=⍨)⍷) 3 5⍴'abcdef'   ⍝ 3 5⍴0 0 0 0 0 1 0 0 0 0 0 0 0 0 0
 
-⍝ aplcart/tt.tsv:196 — Boolean one at first occurrence of X in Y; First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/tt.tsv:196 — Boolean one at first occurrence of X in Y; First-true masks use cumulative counts under basedpl left scan
 X←1 2 ⋄ Y←0 1 2 1 2 ⋄ X({⍵∧1=+\⍵}@(=⍨)⍷)Y
 0 1 0 0 0
 
@@ -9168,11 +9168,11 @@ Xv←1 2 ⋄ Ym←2 3⍴1 2 3 2 1 3 ⋄ Xv(⊣/⍷)Ym   ⍝ 1 0
 ⍝ aplcart/tt.tsv:200 — Boolean rows of Ym starting with X; optional {X} instantiated as dyadic use
 Xv←1 2 ⋄ Ym←2 3⍴1 2 3 2 1 3 ⋄ Xv(⊣/⍷)Ym   ⍝ 1 0
 
-⍝ aplcart/tt.tsv:201 — Bubble sort; First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/tt.tsv:201 — Bubble sort; First-true masks use cumulative counts under basedpl left scan
 ⌽@(({⍵∧1=+\⍵}∨1⌽{⍵∧1=+\⍵})0,(>/∘(2∘↕)))⍣≡ 3 1 4 1 5
 1 1 3 4 5
 
-⍝ aplcart/tt.tsv:202 — Bubble sort; First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/tt.tsv:202 — Bubble sort; First-true masks use cumulative counts under basedpl left scan
 Nv←3 1 4 1 2 ⋄ ⌽@(1(⌽∨⊢)0{⍵∧1=+\⍵}⍤,(>/∘(2∘↕)))⍣≡Nv
 1 1 2 3 4
 
@@ -14145,10 +14145,10 @@ Ds←'∧' ⋄ 0 1∘{(⍵,⍺)⍪⍺, (⍎⍵)⌝ ⍨⍺}Ds   ⍝ 3 3⍴'∧' 0
 ⍝ aplcart/tt.tsv:1860 — Turn off all 1s after first 0 (indicate all elements until the first 0)
 B←1 1 0 1 0 1 0 ⋄ ∧\B   ⍝ 1 1 0 0 0 0 0
 
-⍝ aplcart/tt.tsv:1861 — Turn off all 1s after first 1 (indicate only the first 1); First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/tt.tsv:1861 — Turn off all 1s after first 1 (indicate only the first 1); First-true masks use cumulative counts under basedpl left scan
 {⍵∧1=+\⍵} 0 1 0 1 0 1   ⍝ 0 1 0 0 0 0
 
-⍝ aplcart/tt.tsv:1862 — Turn off all 1s after first 1 (indicate only the first 1); First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/tt.tsv:1862 — Turn off all 1s after first 1 (indicate only the first 1); First-true masks use cumulative counts under basedpl left scan
 B←1 1 0 1 0 1 0 ⋄ {⍵∧1=+\⍵}B   ⍝ 1 0 0 0 0 0 0
 
 ⍝ aplcart/tt.tsv:1863 — Turn off all 1s before first 0 (remove leading 1s)
@@ -14157,10 +14157,10 @@ B←1 1 0 1 0 1 0 ⋄ {⍵∧1=+\⍵}B   ⍝ 1 0 0 0 0 0 0
 ⍝ aplcart/tt.tsv:1864 — Turn off all 1s before first 0 (remove leading 1s); Reuse concrete inputs from aplcart/table.tsv:754; execute this alternate recipe independently
 B←1 1 0 1 0 1 0 ⋄ (∧\<⊢)B   ⍝ 0 0 0 1 0 1 0
 
-⍝ aplcart/tt.tsv:1865 — Turn on all 0s after first 0 (indicate all elements except the first 0); First-zero mask uses cumulative counts under miniapl left scan
+⍝ aplcart/tt.tsv:1865 — Turn on all 0s after first 0 (indicate all elements except the first 0); First-zero mask uses cumulative counts under basedpl left scan
 {⍵∨1≠+\~⍵} 1 0 1 0 1 0   ⍝ 1 0 1 1 1 1
 
-⍝ aplcart/tt.tsv:1866 — Turn on all 0s after first 0 (indicate all elements except the first 0); First-zero mask uses cumulative counts under miniapl left scan
+⍝ aplcart/tt.tsv:1866 — Turn on all 0s after first 0 (indicate all elements except the first 0); First-zero mask uses cumulative counts under basedpl left scan
 B←1 1 0 1 0 1 0 ⋄ {⍵∨1≠+\~⍵}B   ⍝ 1 1 0 1 1 1 1
 
 ⍝ aplcart/tt.tsv:1867 — Turn on all 0s after first 1 (indicate all elements except leading 0s)
@@ -14245,11 +14245,11 @@ Jv←4 5 3 9 1 4 8 8 0 3 4 3 6 4 6 7 ⋄ (0=10|1⊥∘,0 10⊤⊢×∘⌽1 2⍴�
 Jv←4 5 3 9 1 4 8 8 0 3 4 3 6 4 6 7 ⋄ (0=10|1⊥∘,0 10⊤⊢×∘⌽1 2⍴⍨≢)Jv
 1
 
-⍝ aplcart/tt.tsv:1897 — Value of saddle point; First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/tt.tsv:1897 — Value of saddle point; First-true masks use cumulative counts under basedpl left scan
 Nm←2 2⍴3 4 1 2 ⋄ (,⊢⍤/⍨(⊢=⍴⍴⌈⌿){⍵∧1=+\⍵}⍤,⍤∧⊢=∘⍉⌽∘⍴⍴⌊/)Nm
 1⍴3
 
-⍝ aplcart/tt.tsv:1898 — Value of saddle point; First-true masks use cumulative counts under miniapl left scan
+⍝ aplcart/tt.tsv:1898 — Value of saddle point; First-true masks use cumulative counts under basedpl left scan
 Nm←2 2⍴3 4 1 2 ⋄ (,⊢⍤/⍨(⊢=⍴⍴⌈⌿){⍵∧1=+\⍵}⍤,⍤∧⊢=∘⍉⌽∘⍴⍴⌊/)Nm
 1⍴3
 

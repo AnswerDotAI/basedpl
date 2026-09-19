@@ -1,0 +1,6 @@
+{
+  "argv": ["basedpl", "--kernel", "-f", "{connection_file}"],
+  "display_name": "BasedPL",
+  "language": "apl",
+  "interrupt_mode": "message"
+}

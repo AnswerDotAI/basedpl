@@ -435,7 +435,7 @@ a←' this is a test '⋄(a≠' ')⊂a
 ⍝ ngn:140 —
 ∧\1 1 1 0 1 1   ⍝ 1 1 1 0 0 0
 
-⍝ ngn:141 — miniapl left-accumulating scan
+⍝ ngn:141 — basedpl left-accumulating scan
 -\1 2 3 4   ⍝ 1 ¯1 ¯4 ¯8
 
 ⍝ ngn:142 —
@@ -1268,16 +1268,16 @@ a←1⋄b←¯22⋄c←85⋄sqrt←{⍵*.5}⋄((-b)(+,-)sqrt(b*2)-4×a×c)÷2×a
 ⍝ ngn:400 —
 ⍕1 ⍬ 2 '' 3   ⍝ '1    2    3'
 
-⍝ ngn:401 — Infinity formatting; miniapl scalar format is a character vector, not the ngn matrix
+⍝ ngn:401 — Infinity formatting; basedpl scalar format is a character vector, not the ngn matrix
 ⍕∞   ⍝ 1⍴'∞'
 
-⍝ ngn:402 — Infinity formatting; miniapl scalar format is a character vector, not the ngn matrix
+⍝ ngn:402 — Infinity formatting; basedpl scalar format is a character vector, not the ngn matrix
 ⍕¯∞   ⍝ '¯∞'
 
 ⍝ ngn:403 —
 ⍕¯1   ⍝ '¯1'
 
-⍝ ngn:404 — Dyalog monadic-format result with miniapl lowercase j; original expectation retained
+⍝ ngn:404 — Dyalog monadic-format result with basedpl lowercase j; original expectation retained
 ⍕¯1e¯100J¯2e¯99   ⍝ '¯1E¯100j¯2E¯99'
 
 ⍝ ngn:405 —
@@ -2263,7 +2263,7 @@ c←(3 3⍴⍳9)∊2 3 4 5 8 ⋄ c←(3 3⍴⍳9)∊2 4 7 8 9 ⋄ b←¯1⊖¯2�
 r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ ' #'[1+⊃⌽{⍵,⍨⊂t[1+2⊥¨(,/∘(3∘↕))0,0,⍨↑⍵]}⍣n⊂z,1,z←n⍴0]
 9 17⍴'        #               ###             ##  #           ## ####         ##  #   #       ## #### ###     ##  #    #  #   ## ####  ###### ##  #   ###     #'
 
-⍝ ngn/examples/6-queens:1 — Rotate and reflect the accumulator in miniapl's left scan
+⍝ ngn/examples/6-queens:1 — Rotate and reflect the accumulator in basedpl's left scan
 queens←{ search←{ (⊂⍬)∊⍵:0⍴⊂⍬ ⋄ 0=⍴⍵:rmdups ⍺ ⋄ (hd tl)←(↑⍵)(1↓⍵) ⋄ next←⍺∘,¨hd ⋄ rems←hd free¨⊂tl ⋄ ,/next ∇¨rems } ⋄ cvex←(⍳⍵)×⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4/⊂⍵} ⋄ refs←{{⍋⍺}\2/⊂⍵} ⋄ best←{(↑⍋⊃⍵)⊃⍵} ⋄ all8←,⊃refs¨rots ⍵ ⋄ (1+⍵≡best all8)⊃⍬(,⊂⍵) } ⋄ fmt←{ chars←'·⍟'[1+(⊃⍵) =⌝ ⍳⍺] ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd\chars } ⋄ squares←(⊂⍳⌈⍵÷2),1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares } ⋄ queens 5
 (5 9⍴'⍟ · · · ·· · ⍟ · ·· · · · ⍟· ⍟ · · ·· · · ⍟ ·') (5 9⍴'· ⍟ · · ·· · · · ⍟· · ⍟ · ·⍟ · · · ·· · · ⍟ ·')
 
@@ -2271,6 +2271,6 @@ queens←{ search←{ (⊂⍬)∊⍵:0⍴⊂⍬ ⋄ 0=⍴⍵:rmdups ⍺ ⋄ (hd 
 ' #'[1+9>|{⍺+⍵*2}/9⍴⊂¯3×.7J.5-⍉a +⌝ 0J1×a←(¯1+⍳n+1)÷n←12]
 13 13⍴'                                  #            #          ####       #######   #########       #######        ####           #            #                              '
 
-⍝ ngn:501 — ngn accepts count/function operands to power in either order (apl.js, voc[⍣]); port to function⍣count; Explicit modified assignment updates the outer counter under miniapl scope rules; Original expected 5 retained and checked in Dyalog 20.0.53963.0
+⍝ ngn:501 — ngn accepts count/function operands to power in either order (apl.js, voc[⍣]); port to function⍣count; Explicit modified assignment updates the outer counter under basedpl scope rules; Original expected 5 retained and checked in Dyalog 20.0.53963.0
 c←0 ⋄ ({c+←1}⍣5)0 ⋄ c   ⍝ 5
 

@@ -68,8 +68,7 @@ def _array(value, seen=None):
     if isinstance(value, str): return _Array(dict(shape=[len(value)], data=list(value), prototype=' '))
     if np is not None and isinstance(value, np.ndarray):
         kind, size = value.dtype.kind, value.dtype.itemsize
-        if kind not in 'biufcUO' or kind == 'f' and size > 8 or kind == 'c' and size > 16:
-            raise TypeError('unsupported NumPy dtype')
+        if kind not in 'biufcUO' or kind == 'f' and size > 8 or kind == 'c' and size > 16: raise TypeError('unsupported NumPy dtype')
         shape, data = value.shape, value.ravel().tolist()
         if kind in 'biu': prototype = 0
         elif kind == 'U': prototype = ' '
@@ -184,7 +183,7 @@ class Array(_Operators):
         return plus.inner(times)(self, other)
     def __rmatmul__(self, other): return plus.inner(times)(other, self)
     def __array__(self, dtype=None, copy=None):
-        if copy is False: raise ValueError('miniapl conversion requires a copy')
+        if copy is False: raise ValueError('basedpl conversion requires a copy')
         result = self.np
         return result if dtype is None else result.astype(dtype, copy=False)
     def __repr__(self): return _array_repr(self._inner.parts())

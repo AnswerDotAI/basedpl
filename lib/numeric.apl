@@ -1,4 +1,4 @@
-⍝ Numeric dfns — adapted for miniapl from April
+⍝ Numeric dfns — adapted for BasedPL from April
 ⍝ Source: https://dfns.dyalog.com/n_contents.htm (individual sources below)
 ⍝ April: libraries/dfns/numeric/numeric.apl; Apache-2.0, see LICENSE-april
 •LOAD 'lib/graph.apl'

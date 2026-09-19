@@ -23,9 +23,9 @@ fn language_error(error: crate::Error) -> LanguageError {
 impl LanguageSession for AplSession {
     fn kernel_info(&self) -> anyhow::Result<KernelInfo> {
         Ok(KernelInfo {
-            implementation: "miniapl".into(),
+            implementation: "basedpl".into(),
             implementation_version: env!("CARGO_PKG_VERSION").into(),
-            banner: "miniapl — APL for mathematics".into(),
+            banner: "BasedPL — an APL-derived array language".into(),
             language_info: json!({"name": "apl", "version": env!("CARGO_PKG_VERSION"), "mimetype": "text/apl", "file_extension": ".apl", "codemirror_mode": "apl"}),
         })
     }
@@ -132,7 +132,7 @@ struct AplLanguage(AplSession);
 impl Language for AplLanguage {
     type Session = AplSession;
     fn parent(&self) -> Self::Session { self.0.clone() }
-    async fn create_child(&self) -> anyhow::Result<Self::Session> { anyhow::bail!("miniapl subshells are not supported") }
+    async fn create_child(&self) -> anyhow::Result<Self::Session> { anyhow::bail!("basedpl subshells are not supported") }
 }
 
 pub(crate) fn run(file: &str) -> anyhow::Result<()> {

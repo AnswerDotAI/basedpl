@@ -1,7 +1,6 @@
-import json
-import pytest
-from miniapl.reference import Corpus, source_definitions, library_definitions, library_dependencies, lisp_expected, write_cases, scan, selected, activate
-from miniapl.reference import april_file
+import json, pytest
+from basedpl.reference import Corpus, source_definitions, library_definitions, library_dependencies, lisp_expected, write_cases, scan, selected, activate
+from basedpl.reference import april_file
 
 
 def test_library_definitions(tmp_path):
@@ -33,7 +32,7 @@ def test_scan_and_activate(tmp_path):
 def test_corpus_review_and_updates(tmp_path):
     path = tmp_path/'ngn.jsonl'
     rows = [dict(id=f'ngn:{i}', code=code, status='pending', reason='review', expected_error='DOMAIN ERROR', upstream='retained')
-            for i, code in enumerate(['⍕1', '{}0'])]
+        for i, code in enumerate(['⍕1', '{}0'])]
     path.write_text(''.join(json.dumps(r)+'\n' for r in rows))
     corpus = Corpus(tmp_path)
     assert list(corpus.find('⍕', status='pending')) == ['ngn:0']
