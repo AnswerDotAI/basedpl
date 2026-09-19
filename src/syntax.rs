@@ -10,11 +10,13 @@ pub(crate) enum NodeKind {
     Function(Primitive),
     Operator(OperatorKind),
     Name(String),
+    System(String),
     Assign,
     Output,
     Guard(bool),
     Hybrid(Hybrid),
     Group(Vec<Node>),
+    Strand(Vec<Node>),
     ArrayLiteral { cells: Vec<Vec<Node>>, block: bool },
     Selection(Vec<Vec<Node>>),
     Dfn(Arc<Definition>),
@@ -32,7 +34,7 @@ fn definition_kind(nodes: &[Node]) -> DefinitionKind {
         .map(|n| match &n.kind {
             NodeKind::Name(name) if name == "⍵⍵" => DefinitionKind::DyadicOperator,
             NodeKind::Name(name) if name == "⍺⍺" => DefinitionKind::MonadicOperator,
-            NodeKind::Group(nodes) => definition_kind(nodes),
+            NodeKind::Group(nodes) | NodeKind::Strand(nodes) => definition_kind(nodes),
             NodeKind::ArrayLiteral { cells, .. } => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
             NodeKind::Selection(cells) => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
             _ => DefinitionKind::Function, // Nested definitions classify their own bodies.
@@ -76,6 +78,7 @@ pub enum ParseStatus { Complete(Parsed), Incomplete(Error), Invalid(Error) }
 
 #[derive(Debug)]
 enum TokenKind {
+    Tie,
     BraceOpen,
     BraceClose,
     Literal(Array),
@@ -89,6 +92,7 @@ enum TokenKind {
     Newline,
     Separator,
     Name(String),
+    System(String),
     Assign,
     Output,
     Guard(bool),
@@ -194,12 +198,13 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                 '⍥' => TokenKind::Operator(OperatorKind::Over),
                 '⍛' => TokenKind::Operator(OperatorKind::Behind),
                 '.' => TokenKind::Operator(OperatorKind::Product),
+                '⌝' => TokenKind::Operator(OperatorKind::Outer),
                 '⌸' => TokenKind::Operator(OperatorKind::Key),
                 '⍣' => TokenKind::Operator(OperatorKind::Power),
                 '⇄' => TokenKind::Operator(OperatorKind::PairInverse),
                 '⌾' => TokenKind::Operator(OperatorKind::Under),
                 '∂' => TokenKind::Operator(OperatorKind::Differentiate),
-                '⊙' => TokenKind::Operator(OperatorKind::Tie),
+                '‿' => TokenKind::Tie,
                 '◶' => TokenKind::Operator(OperatorKind::Agenda),
                 '@' => TokenKind::Operator(OperatorKind::At),
                 '⌺' => TokenKind::Operator(OperatorKind::Stencil),
@@ -211,19 +216,11 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                 '\n' => TokenKind::Newline,
                 '⋄' => TokenKind::Separator,
                 '←' => TokenKind::Assign,
-                '⎕' if chars.peek().is_some_and(|(_, c)| c.is_alphabetic()) => {
+                '•' if chars.peek().is_some_and(|(_, c)| c.is_alphanumeric() || *c == '_') => {
                     while chars.peek().is_some_and(|(_, c)| c.is_alphanumeric() || matches!(c, '_' | '∆' | '⍙')) { chars.next(); }
                     let end = chars.peek().map_or(source.text.len(), |(i, _)| *i);
                     let name = &source.text[start..end];
-                    match name.to_ascii_uppercase().as_str() {
-                        "⎕A" | "⎕D" => {
-                            let text = if name.eq_ignore_ascii_case("⎕A") { "ABCDEFGHIJKLMNOPQRSTUVWXYZ" } else { "0123456789" };
-                            TokenKind::Literal(Array::new(vec![text.len()], text.chars().map(Element::Character).collect()).unwrap())
-                        }
-                        "⎕C" => TokenKind::Function(Primitive::Case),
-                        "⎕UCS" => TokenKind::Function(Primitive::Unicode),
-                        _ => return Err(span(end).error(ErrorKind::Unsupported, format!("{name} is not supported yet"))),
-                    }
+                    TokenKind::System(name.to_owned())
                 }
                 '⎕' => TokenKind::Output,
                 ':' => {
@@ -264,10 +261,31 @@ enum ParseFailure { Incomplete(Error), Invalid(Error) }
 struct Parser<'a> { tokens: &'a [Token], pos: usize }
 impl Parser<'_> {
     fn expressions(&mut self, open: Option<&Token>, depth: usize) -> Result<(Vec<Vec<Node>>, bool), ParseFailure> {
-        let (mut pieces, mut nodes, mut separated, mut indexed) = (Vec::new(), Vec::new(), false, false);
+        let (mut pieces, mut nodes, mut separated, mut indexed) = (Vec::new(), Vec::<Node>::new(), false, false);
+        let mut tied = false;
         while let Some(token) = self.tokens.get(self.pos) {
             self.pos += 1;
+            let mut span = token.span.clone();
+            if tied
+                && matches!(
+                    token.kind,
+                    TokenKind::Tie
+                        | TokenKind::Newline
+                        | TokenKind::Separator
+                        | TokenKind::Semicolon
+                        | TokenKind::Close
+                        | TokenKind::BracketClose
+                        | TokenKind::BraceClose
+                )
+            { return Err(ParseFailure::Invalid(span.error(ErrorKind::Syntax, "‿ needs a value on each side"))); }
             let kind = match &token.kind {
+                TokenKind::Tie => {
+                    if !nodes.last().is_some_and(|n| strand_item(&n.kind)) {
+                        return Err(ParseFailure::Invalid(span.error(ErrorKind::Syntax, "‿ needs a value on each side")));
+                    }
+                    tied = true;
+                    continue;
+                }
                 TokenKind::Newline | TokenKind::Separator => {
                     if indexed { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "cannot mix index and literal separators"))); }
                     separated = true;
@@ -298,7 +316,7 @@ impl Parser<'_> {
                 TokenKind::Open | TokenKind::BracketOpen | TokenKind::BraceOpen => {
                     if depth == 128 { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Limit, "delimiters nested too deeply"))); }
                     let (mut cells, separated) = self.expressions(Some(token), depth + 1)?;
-                    let span = Span { source: token.span.source.clone(), range: token.span.range.start..self.tokens[self.pos - 1].span.range.end };
+                    span.range.end = self.tokens[self.pos - 1].span.range.end;
                     let kind = if matches!(token.kind, TokenKind::BraceOpen) {
                         let statements = cells.into_iter().map(statement).collect::<Result<Vec<_>, _>>()?;
                         let kind = statements.iter().map(|s| definition_kind(&s.nodes)).max().unwrap_or(DefinitionKind::Function);
@@ -310,24 +328,20 @@ impl Parser<'_> {
                     } else if separated {
                         NodeKind::ArrayLiteral { cells, block: matches!(token.kind, TokenKind::BracketOpen) }
                     } else if matches!(token.kind, TokenKind::Open) { NodeKind::Group(cells.pop().unwrap()) } else { unreachable!() };
-                    nodes.push(Node { kind, span });
-                    continue;
+                    kind
                 }
                 TokenKind::Literal(a) => NodeKind::Literal(a.clone()),
                 TokenKind::Function(f) => NodeKind::Function(*f),
                 TokenKind::Operator(OperatorKind::Power)
                     if self.tokens.get(self.pos).is_some_and(|t| matches!(t.kind, TokenKind::Hybrid(Hybrid { scan: true, first: false, axis: None }))) =>
                 {
-                    let end = self.tokens[self.pos].span.range.end;
+                    span.range.end = self.tokens[self.pos].span.range.end;
                     self.pos += 1;
-                    nodes.push(Node {
-                        kind: NodeKind::Operator(OperatorKind::History),
-                        span: Span { source: token.span.source.clone(), range: token.span.range.start..end },
-                    });
-                    continue;
+                    NodeKind::Operator(OperatorKind::History)
                 }
                 TokenKind::Operator(op) => NodeKind::Operator(*op),
                 TokenKind::Name(name) => NodeKind::Name(name.clone()),
+                TokenKind::System(name) => NodeKind::System(name.clone()),
                 TokenKind::Assign => NodeKind::Assign,
                 TokenKind::Output => NodeKind::Output,
                 TokenKind::Guard(error) => {
@@ -338,12 +352,38 @@ impl Parser<'_> {
                 }
                 TokenKind::Hybrid(h) => NodeKind::Hybrid(*h),
             };
-            nodes.push(Node { kind, span: token.span.clone() });
+            let mut node = Node { kind, span };
+            if tied {
+                if !strand_item(&node.kind) { return Err(ParseFailure::Invalid(node.span.error(ErrorKind::Syntax, "‿ needs a value on each side"))); }
+                let left = nodes.pop().unwrap();
+                let span = Span { source: node.span.source.clone(), range: left.span.range.start..node.span.range.end };
+                let mut items = match left { Node { kind: NodeKind::Strand(items), .. } => items, _ => vec![left] };
+                items.push(node);
+                node = Node { kind: NodeKind::Strand(items), span };
+                tied = false;
+            }
+            nodes.push(node);
         }
+        if tied { return Err(ParseFailure::Incomplete(self.tokens[self.pos - 1].span.error(ErrorKind::Syntax, "‿ needs a value on each side"))); }
         if let Some(open) = open { return Err(ParseFailure::Incomplete(open.span.error(ErrorKind::Syntax, "unclosed delimiter"))); }
         if !nodes.is_empty() { pieces.push(nodes); }
         Ok((pieces, separated))
     }
+}
+
+fn strand_item(kind: &NodeKind) -> bool {
+    matches!(
+        kind,
+        NodeKind::Literal(_)
+            | NodeKind::Function(_)
+            | NodeKind::Name(_)
+            | NodeKind::System(_)
+            | NodeKind::Hybrid(_)
+            | NodeKind::Group(_)
+            | NodeKind::Strand(_)
+            | NodeKind::ArrayLiteral { .. }
+            | NodeKind::Dfn(_)
+    )
 }
 
 /// Check structure without evaluation. A complete input can still have a binding or domain error.

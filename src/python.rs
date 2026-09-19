@@ -107,7 +107,9 @@ fn operand(value: &Bound<'_, PyAny>) -> PyResult<Operand> {
 #[pymethods]
 impl PyFunction {
     #[staticmethod]
-    fn primitive(glyph: &str) -> PyResult<Self> { Function::glyph(glyph).map(|inner| Self { inner }).ok_or_else(|| PyValueError::new_err("unknown primitive")) }
+    fn builtin(name: &str) -> PyResult<Self> {
+        Function::builtin(name).map(|inner| Self { inner }).ok_or_else(|| PyValueError::new_err("unknown builtin function"))
+    }
     #[staticmethod]
     fn late_bound(py: Python<'_>, expression: &str) -> PyResult<Py<PyDict>> {
         let result = match Function::late_bound(expression) {

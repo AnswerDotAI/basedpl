@@ -5,8 +5,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from .reference import Corpus
 
-HEADER = re.compile(r'^⍝ (\S*) —(?: (.*))?$')
+HEADER = re.compile(r'^⍝ (?:(\S*) )?—(?: (.*))?$')
 SEPARATOR = '⍝ =>'
+OUTPUT = '⍝ ⎕:'
 OPTIONS = re.compile(r'(?:^| )\[((?:r|a)tol=.*)\]$')
 
 
@@ -19,6 +20,13 @@ class Case:
     rtol: float = 0
     atol: float = 0
     line: int = field(default=0, compare=False, repr=False)
+    section: str = ''
+    output: str | None = None
+
+
+def _output(text):
+    try: return re.sub(r'\\(.)?', lambda m: {'n': '\n', '\\': '\\'}[m[1]], text)
+    except KeyError as e: raise ValueError(r'output escapes are \n and \\') from e
 
 
 def parse(text):
@@ -26,11 +34,16 @@ def parse(text):
     if not text: return []
     lines = text.split('\n')
     if lines[-1]=='': lines.pop()
-    starts = [i for i,line in enumerate(lines) if HEADER.fullmatch(line)]
-    if not starts or starts[0]!=0: raise ValueError('expected a case header on line 1')
-    result, ids = [], set()
+    starts = [i for i,line in enumerate(lines) if HEADER.fullmatch(line) or line.startswith('⍝⍝ ')]
+    if not starts or starts[0]!=0: raise ValueError('expected a case or section header on line 1')
+    result, ids, section = [], set(), ''
     for start,end in zip(starts, starts[1:]+[len(lines)]):
+        if lines[start].startswith('⍝⍝ '):
+            if any(lines[start+1:end]): raise ValueError(f'line {start+1}: expected a case after section heading')
+            section = lines[start][3:]
+            continue
         id, comment = HEADER.fullmatch(lines[start]).groups()
+        id = id or ''
         if id and id in ids: raise ValueError(f'line {start+1}: duplicate ID {id}')
         ids.add(id)
         comment, options = comment or '', {}
@@ -45,6 +58,9 @@ def parse(text):
         body = lines[start+1:end]
         if not body or body[-1]!='': raise ValueError(f'line {start+1}: missing blank record separator')
         body.pop()
+        output = None
+        if body and body[-1].startswith(OUTPUT): output = _output(body.pop()[len(OUTPUT):].removeprefix(' '))
+        if any(line.startswith(OUTPUT) for line in body): raise ValueError(f'line {start+1}: output expectation must be last')
         count = body.count(SEPARATOR)
         if count==1:
             split = body.index(SEPARATOR)
@@ -52,23 +68,29 @@ def parse(text):
         elif count==0 and len(body)==2: code,expect = body
         else: raise ValueError(f'line {start+1}: use one {SEPARATOR!r} between multiline expressions')
         if not expect: raise ValueError(f'line {start+1}: missing expectation')
-        result.append(Case(code, expect, id, comment, line=start+1, **options))
+        result.append(Case(code, expect, id, comment, line=start+1, section=section, output=output, **options))
     return result
 
 
 def render(cases):
     "Write compact pairs or explicitly separated multiline expressions."
-    result = []
+    result, section = [], ''
     for case in cases:
+        if '\n' in case.section: raise ValueError('section must fit one line')
+        if case.section != section:
+            if not case.section: raise ValueError('a section needs a name')
+            result.append(f'⍝⍝ {case.section}\n\n')
+            section = case.section
         if re.search(r'\s', case.id) or '\n' in case.comment: raise ValueError('ID and comment must fit the header')
         for source in (case.code, case.expect):
-            if any(HEADER.fullmatch(line) or line==SEPARATOR for line in source.split('\n')):
+            if any(HEADER.fullmatch(line) or line==SEPARATOR or line.startswith(('⍝⍝ ', OUTPUT)) for line in source.split('\n')):
                 raise ValueError(f'{case.id}: source contains a reserved fixture marker')
         options = ' '.join(f'{key}={getattr(case, key)}' for key in ('rtol', 'atol') if getattr(case, key))
         comment = case.comment + (f' [{options}]' if options else '')
-        header = f'⍝ {case.id} —' + (f' {comment.lstrip()}' if comment else '')
+        header = '⍝ ' + (case.id+' ' if case.id else '') + '—' + (f' {comment.lstrip()}' if comment else '')
         separator = f'\n{SEPARATOR}\n' if '\n' in case.code or '\n' in case.expect else '\n'
-        result.append(header+'\n'+case.code+separator+case.expect+'\n\n')
+        output = '' if case.output is None else '\n'+OUTPUT+(' '+case.output.replace('\\', '\\\\').replace('\n', '\\n') if case.output else '')
+        result.append(header+'\n'+case.code+separator+case.expect+output+'\n\n')
     return ''.join(result)
 
 
@@ -81,7 +103,7 @@ def _number(value):
 def _chars(text):
     if all(c.isprintable() for c in text): return "'"+text.replace("'", "''")+"'"
     codes = ' '.join(str(ord(c)) for c in text)
-    return '⎕UCS '+codes
+    return '•UCS '+codes
 
 
 def _element(value):
@@ -107,7 +129,7 @@ def literal(array):
         def item(x):
             if isinstance(x, dict) and 'shape' in x: return '('+literal(x)+')'
             text = _element(x)
-            return '('+text+')' if text.startswith('⎕UCS ') else text
+            return '('+text+')' if text.startswith('•UCS ') else text
         values = ' '.join(item(x) for x in data)
     if shape==[len(data)] and len(data)>1: return values
     if len(data)==1: values = _element(data[0])

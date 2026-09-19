@@ -29,6 +29,7 @@ fn implicit_name(name: &str) -> bool { matches!(name, "⍺" | "⍵" | "⍺⍺" |
 #[derive(Debug)]
 enum FunctionNode {
     Primitive(Primitive),
+    System(crate::system::SystemFunction),
     LateBound(Arc<Parsed>, Span),
     Fold(Function, Hybrid),
     Inverse(Function),
@@ -83,6 +84,7 @@ impl Function {
         *budget -= 1;
         let (label, children) = match self.node.as_ref() {
             FunctionNode::Primitive(p) => return Tree::leaf(p.glyph().to_string()),
+            FunctionNode::System(f) => return Tree::leaf(f.name),
             FunctionNode::LateBound(_, span) => return Tree::leaf(span.source.text.clone()),
             FunctionNode::Defined(c) => return Tree::leaf(c.text()),
             FunctionNode::Fold(f, h) => (h.text(), vec![f.tree(budget)]),
@@ -100,6 +102,7 @@ impl Function {
         *budget -= 1;
         match self.node.as_ref() {
             FunctionNode::Primitive(p) => p.glyph().to_string(),
+            FunctionNode::System(f) => f.name.into(),
             FunctionNode::LateBound(_, span) => span.source.text.clone(),
             FunctionNode::Defined(c) => c.text().into(),
             FunctionNode::Fold(f, h) => format!("({}){}", f.text(budget), h.text()),
@@ -125,6 +128,9 @@ impl Function {
         Ok(result)
     }
     fn primitive(p: Primitive) -> Self { Self { node: Arc::new(FunctionNode::Primitive(p)), depth: 1, environment: None, late: false } }
+    pub(crate) fn system(f: crate::system::SystemFunction) -> Self {
+        Self { node: Arc::new(FunctionNode::System(f)), depth: 1, environment: None, late: false }
+    }
     fn new(node: FunctionNode, span: &Span) -> Result<Self, Error> {
         use OperatorKind::*;
         let node = match node {
@@ -158,7 +164,7 @@ impl Function {
             node => node,
         };
         let (depth, environment, late) = match &node {
-            FunctionNode::Primitive(_) => (0, None, false),
+            FunctionNode::Primitive(_) | FunctionNode::System(_) => (0, None, false),
             FunctionNode::LateBound(..) => (0, None, true),
             FunctionNode::Fold(f, _) | FunctionNode::Inverse(f) => (f.depth, f.environment, f.late),
             FunctionNode::Axis(f, a) => (f.depth.max(a.graph_depth()), f.environment.max(a.environment()), f.late),
@@ -273,6 +279,7 @@ impl Function {
                 return Ok(Bound::new(Value::from_element(item)));
             }
             FunctionNode::Primitive(p) => p.call(left, right, &session.execution.at(span)),
+            FunctionNode::System(f) => (f.call)(left, right, &session.execution.at(span)),
             Defined(_) | Derived(..) => {
                 return session.call_defined(self, left, right, output).map_err(|mut e| {
                     e.calls.push(span.clone());
@@ -319,15 +326,17 @@ impl Function {
     pub fn apl(&self) -> String { self.text(&mut 1000) }
 
     #[cfg(feature = "python")]
-    pub(crate) fn glyph(glyph: &str) -> Option<Self> {
+    pub(crate) fn builtin(name: &str) -> Option<Self> {
+        if name.starts_with('•') { return match crate::system::lookup(name)? { Operand::Function(f) => Some(f), _ => None }; }
+        let mut chars = name.chars();
+        let glyph = chars.next()?;
+        if chars.next().is_some() { return None; }
         let p = match glyph {
-            "/" => Primitive::Replicate(false),
-            "⌿" => Primitive::Replicate(true),
-            "\\" => Primitive::Expand(false),
-            "⍀" => Primitive::Expand(true),
-            "⎕C" => Primitive::Case,
-            "⎕UCS" => Primitive::Unicode,
-            _ => Primitive::from_glyph(glyph.chars().next()?)?,
+            '/' => Primitive::Replicate(false),
+            '⌿' => Primitive::Replicate(true),
+            '\\' => Primitive::Expand(false),
+            '⍀' => Primitive::Expand(true),
+            _ => Primitive::from_glyph(glyph)?,
         };
         Some(Self::primitive(p))
     }
@@ -344,11 +353,11 @@ impl Function {
             ("/" | "⌿" | "\\" | "⍀", [f]) => {
                 FunctionNode::Fold(fun(f)?, Hybrid { scan: matches!(kind, "\\" | "⍀"), first: matches!(kind, "⌿" | "⍀"), axis: None })
             }
-            ("¨" | "⍨" | "∘." | "⌸" | "∂", [f]) => {
+            ("¨" | "⍨" | "⌝" | "⌸" | "∂", [f]) => {
                 let op = match kind {
                     "¨" => OperatorKind::Each,
                     "⍨" => OperatorKind::Commute,
-                    "∘." => OperatorKind::Outer,
+                    "⌝" => OperatorKind::Outer,
                     "∂" => OperatorKind::Differentiate,
                     _ => OperatorKind::Key,
                 };
@@ -1239,7 +1248,7 @@ pub(crate) fn export_context(root: Operand) -> Result<bool, ErrorKind> {
         if !functions.insert(Arc::as_ptr(&f.node)) { continue; }
         match f.node.as_ref() {
             FunctionNode::Primitive(Primitive::Execute) | FunctionNode::LateBound(..) | FunctionNode::Defined(_) => context = true,
-            FunctionNode::Primitive(_) => (),
+            FunctionNode::Primitive(_) | FunctionNode::System(_) => (),
             FunctionNode::Derived(_, a, b) => {
                 context = true;
                 pending.extend(std::iter::once(a).chain(b.iter()).cloned());
@@ -1280,27 +1289,6 @@ impl Operator {
     }
 
     fn derive(self, operand: Operand, span: &Span) -> Result<Value, Error> {
-        if let Self::Bound(ref op, ref right) = self {
-            if matches!(**op, Self::Primitive(OperatorKind::Tie)) {
-                fn items(a: Operand, span: &Span) -> Result<Vec<Element>, Error> {
-                    match a.normalize(span)? {
-                        Operand::Function(f) => Ok(vec![Element::Function(f)]),
-                        Operand::Array(a)
-                            if a.shape().len() <= 1
-                                && a.elements().chain(std::iter::once(a.prototype().clone())).all(|e| matches!(e, Element::Function(_))) =>
-                        {
-                            Ok(a.elements().collect())
-                        }
-                        _ => Err(span.error(ErrorKind::Domain, "tie needs functions or function vectors")),
-                    }
-                }
-                let mut data = items(operand, span)?;
-                let prototype = match right { Operand::Array(a) => a.prototype().clone(), _ => items(right.clone(), span)?[0].clone() };
-                data.extend(items(right.clone(), span)?);
-                generated_len(&[data.len()]).map_err(|k| span.error(k, "function vector is too large"))?;
-                return Array::from_parts(vec![data.len()], data, prototype).map(Value::Array).map_err(|k| span.error(k, "invalid function vector"));
-            }
-        }
         let node = match self {
             Self::Defined(c) => FunctionNode::Derived(c, operand, None),
             Self::Primitive(op) => FunctionNode::Modified(op, operand),
@@ -1369,7 +1357,7 @@ impl Bound {
     fn array(self, span: &Span) -> Result<Array, Error> {
         match self.value {
             Value::Array(a) => Ok(a),
-            Value::Function(f) => Ok(Element::Function(f).as_array()),
+            v @ (Value::Function(_) | Value::Hybrid(_)) => Ok(Element::Function(Function::from_value(v, span)?).as_array()),
             Value::NoResult => Err(span.error(ErrorKind::Value, "expression produced no value")),
             _ => Err(span.error(ErrorKind::Syntax, "expression must produce an array")),
         }
@@ -1602,7 +1590,7 @@ impl Session {
                     (self.current.is_some() && !implicit_name(name))
                         || !matches!(self.lookup(name), Some(Value::Function(_) | Value::Hybrid(_) | Value::Operator(_)))
                 }
-                NodeKind::Group(inner) => self.assignment_names(inner),
+                NodeKind::Group(inner) | NodeKind::Strand(inner) => self.assignment_names(inner),
                 _ => false,
             })
     }
@@ -1616,6 +1604,7 @@ impl Session {
                 if self::Operator::Primitive(*op).is_dyadic() { DyadicOperator } else { Operator }
             }
             NodeKind::Name(name) => self.lookup(name).map_or(Array, Category::of),
+            NodeKind::System(name) => crate::system::lookup(name).map_or(Array, |v| Category::of(&v.value())),
             NodeKind::Dfn(d) => match d.kind {
                 DefinitionKind::Function => Function,
                 DefinitionKind::MonadicOperator => Operator,
@@ -1708,6 +1697,10 @@ impl Session {
                 NodeKind::Name(name) => {
                     return self.store(name, value.clone(), span);
                 }
+                NodeKind::System(_) => {
+                    self.resolve(target, output)?;
+                    return Err(span.error(ErrorKind::Syntax, "system names are read-only"));
+                }
                 NodeKind::Output => {
                     return match value {
                         Value::Array(a) => {
@@ -1717,7 +1710,7 @@ impl Session {
                         _ => return Err(target.span.error(ErrorKind::Domain, "output requires an array")),
                     }
                 }
-                NodeKind::Group(nodes) => {
+                NodeKind::Group(nodes) | NodeKind::Strand(nodes) => {
                     if self.assignment_names(nodes) { return self.assign(nodes, value, output); }
                     return self.assign_selected(nodes, None, value, output);
                 }
@@ -1772,7 +1765,7 @@ impl Session {
     fn modify_names(&mut self, nodes: &[Node], right: &Array, modifier: &Function, output: &mut Vec<String>) -> Result<(), Error> {
         if let [node] = nodes {
             return match &node.kind {
-                NodeKind::Group(inner) => self.modify_names(inner, right, modifier, output),
+                NodeKind::Group(inner) | NodeKind::Strand(inner) => self.modify_names(inner, right, modifier, output),
                 NodeKind::Name(name) => {
                     let binding = self.array_binding(name, &node.span)?;
                     let updated = modifier.call_array(Some(&binding.value), right, &node.span, self, output)?;
@@ -1878,7 +1871,17 @@ impl Session {
             NodeKind::Operator(op) => Value::Operator(Operator::Primitive(*op)),
             NodeKind::Hybrid(h) => Value::Hybrid(*h),
             NodeKind::Name(name) => self.lookup(name).cloned().ok_or_else(|| node.span.error(ErrorKind::Value, format!("undefined name: {name}")))?,
+            NodeKind::System(name) => {
+                crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?.value()
+            }
             NodeKind::Group(nodes) => self.bind(nodes, output)?.value,
+            NodeKind::Strand(nodes) => {
+                generated_len(&[nodes.len()]).map_err(|k| node.span.error(k, "strand is too large"))?;
+                let mut data =
+                    nodes.iter().rev().map(|n| self.array_result(std::slice::from_ref(n), output).map(Element::Nested)).collect::<Result<Vec<_>, _>>()?;
+                data.reverse();
+                Value::Array(Array::new(vec![data.len()], data).map_err(|k| node.span.error(k, "invalid strand"))?)
+            }
             NodeKind::ArrayLiteral { cells, block } => {
                 let arrays = cells.iter().map(|nodes| self.array_result(nodes, output)).collect::<Result<Vec<_>, _>>()?;
                 let result = if *block {
@@ -2128,7 +2131,6 @@ enum Rule {
     Fold,
     Derive,
     BindRight,
-    Outer,
     Attach,
     Call,
     Train,
@@ -2147,7 +2149,6 @@ impl Rule {
             (Function | Hybrid, Hybrid) => Self::Fold,
             (Array | Function | Hybrid, Operator) => Self::Derive,
             (DyadicOperator, Array | Function | Hybrid) => Self::BindRight,
-            (DyadicOperator, Operator) => Self::Outer,
             (Array, Function | Hybrid) => Self::Attach,
             (Function | Left, Array) => Self::Call,
             (Function | Hybrid, Function) => Self::Train,
@@ -2162,7 +2163,7 @@ impl Rule {
         match self {
             Self::Strand => 6,
             Self::BindRight => 5,
-            Self::Bracket | Self::Fold | Self::Derive | Self::Outer => 4,
+            Self::Bracket | Self::Fold | Self::Derive => 4,
             Self::Attach => 3,
             Self::Call => 2,
             Self::Train | Self::LeftTrain => 1,
@@ -2305,18 +2306,6 @@ impl Binder {
             Rule::BindRight => {
                 let Value::Operator(operator) = left.value()? else { unreachable!() };
                 Term::Value(Value::Operator(self::Operator::Bound(Box::new(operator), Operand::from_value(right.value()?))))
-            }
-            Rule::Outer => {
-                let Value::Operator(self::Operator::Primitive(OperatorKind::Compose)) = left.value()? else {
-                    return Err(span.error(ErrorKind::Syntax, "only jot can be an operator operand"));
-                };
-                let Value::Operator(self::Operator::Bound(op, operand)) = right.value()? else {
-                    return Err(span.error(ErrorKind::Syntax, "jot needs a product operator"));
-                };
-                if !matches!(*op, self::Operator::Primitive(OperatorKind::Product)) {
-                    return Err(span.error(ErrorKind::Syntax, "jot needs a product operator"));
-                }
-                Term::Value(Value::Function(self::Function::new(FunctionNode::Modified(OperatorKind::Outer, operand), &span)?))
             }
             Rule::Attach => Term::Left(left.array()?, right.function()?),
             Rule::Call => {

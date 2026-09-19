@@ -21,6 +21,11 @@ def test_records_and_boundaries():
     with pytest.raises(ValueError, match='duplicate'): parse(render([cases[0], cases[0]]))
     with pytest.raises(ValueError, match='reserved'): render([Case('1\n⍝ =>\n2', '2')])
     with pytest.raises(ValueError, match='tolerance'): parse('⍝  — [rtol=-1]\n1\n1\n\n')
+    cases = [Case('⎕←9 ⋄ ⎕←2 ⋄ 7', '7', section='Agenda', output='9\n2'),
+             Case('1', '1', section='Silence', output=''), Case("⎕←'\\'", "'\\'", section='Silence', output='\\')]
+    assert parse(render(cases)) == cases
+    assert r'⍝ ⎕: 9\n2' in render(cases)
+    with pytest.raises(ValueError, match='escapes'): parse('⍝ —\n1\n1\n⍝ ⎕: \\t\n\n')
 
 
 def test_reference_roundtrip():
@@ -54,7 +59,9 @@ def test_comment_extraction():
 
 
 def test_native_and_incremental_export(tmp_path):
-    cases = native_cases(ROOT/'tests/core.rs')
+    native = tmp_path/'core.rs'
+    native.write_text('fn sums() { equiv! { "+/2 3⍴⍳6" => "6 15" } fails(Syntax, &["(\\n"]); }')
+    cases = native_cases(native)
     assert cases and all(not case.id for case in cases)
     assert parse(render(cases)) == cases
     assert any(case.expect=='⍝ error: SYNTAX ERROR' and '\n' in case.code for case in cases)

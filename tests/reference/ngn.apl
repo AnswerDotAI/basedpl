@@ -155,15 +155,15 @@ a←' this is a test '⋄(a≠' ')⊂a
 ''
 
 ⍝ ngn:40 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-0 ¯2↓3 3⍴⎕a
+0 ¯2↓3 3⍴•a
 3 1⍴'ADG'
 
 ⍝ ngn:41 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-¯2 ¯1↓3 3⍴⎕a
+¯2 ¯1↓3 3⍴•a
 1 2⍴'AB'
 
 ⍝ ngn:42 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-1↓3 3⍴⎕a
+1↓3 3⍴•a
 2 3⍴'DEFGHI'
 
 ⍝ ngn:43 —
@@ -171,11 +171,11 @@ a←' this is a test '⋄(a≠' ')⊂a
 3 3⍴1 2 3 4 5 6 7 8 9
 
 ⍝ ngn:44 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-1 1↓2 3 4⍴⎕a
+1 1↓2 3 4⍴•a
 1 2 4⍴'QRSTUVWX'
 
 ⍝ ngn:45 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-¯1 ¯1↓2 3 4⍴⎕a
+¯1 ¯1↓2 3 4⍴•a
 1 2 4⍴'ABCDEFGH'
 
 ⍝ ngn:46 —
@@ -259,7 +259,7 @@ a←' this is a test '⋄(a≠' ')⊂a
 0
 
 ⍝ ngn:66 — Ravel alphabet matrix; use the supported uppercase spelling of the read-only alphabet constant; independent Dyalog expectation
-,2 13⍴⎕A
+,2 13⍴•A
 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 ⍝ ngn:67 —
@@ -507,11 +507,11 @@ a←' this is a test '⋄(a≠' ')⊂a
 ¯1j1
 
 ⍝ ngn:129 —
-7 ¯7∘.|31 28 ¯30
+7 ¯7 |⌝ 31 28 ¯30
 2 3⍴3 0 5 ¯4 0 ¯2
 
 ⍝ ngn:130 — [rtol=1e-14]
-¯0.2 0 0.2∘.|¯0.3 0 0.3
+¯0.2 0 0.2 |⌝ ¯0.3 0 0.3
 3 3⍴¯0.09999999999999998 0 ¯0.1 ¯0.3 0 0.3 0.1 0 0.09999999999999998
 
 ⍝ ngn:131 —
@@ -803,7 +803,7 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T
 2 4⍴1 2 3 9 4 5 6 9
 
 ⍝ ngn:203 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-(2 3 4⍴⎕a),'*'
+(2 3 4⍴•a),'*'
 2 3 5⍴'ABCD*EFGH*IJKL*MNOP*QRST*UVWX*'
 
 ⍝ ngn:204 —
@@ -1135,43 +1135,43 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T
 2 8⍴0 1 2 3 4 5 6 7 0 1 10 11 100 101 110 111
 
 ⍝ ngn:286 —
-2 3 4∘.×1 2 3 4
+2 3 4 ×⌝ 1 2 3 4
 3 4⍴2 4 6 8 3 6 9 12 4 8 12 16
 
 ⍝ ngn:287 —
-0 1 2 3 4∘.!0 1 2 3 4
+0 1 2 3 4 !⌝ 0 1 2 3 4
 5 5⍴1 1 1 1 1 0 1 2 3 4 0 0 1 3 6 0 0 0 1 4 0 0 0 0 1
 
 ⍝ ngn:288 —
-1 2∘.,1+⍳3
+1 2 ,⌝ 1+⍳3
 2 3⍴(1 2) (1 3) (1 4) (2 2) (2 3) (2 4)
 
 ⍝ ngn:289 —
-2 3∘.↑1 2
+2 3 ↑⌝ 1 2
 2 2⍴(1 0) (2 0) (1 0 0) (2 0 0)
 
 ⍝ ngn:290 —
-⍴1 2∘.,1+⍳3
+⍴1 2 ,⌝ 1+⍳3
 2 3
 
 ⍝ ngn:291 —
-⍴2 3∘.↑1 2
+⍴2 3 ↑⌝ 1 2
 2 2
 
 ⍝ ngn:292 —
-⍴((4 3⍴0)∘.+5 2⍴0)
+⍴((4 3⍴0) +⌝ 5 2⍴0)
 4 3 5 2
 
 ⍝ ngn:293 —
-2 3∘.×4 5
+2 3 ×⌝ 4 5
 2 2⍴8 10 12 15
 
 ⍝ ngn:294 —
-2 3∘ . ×4 5
+2 3 × ⌝ 4 5
 2 2⍴8 10 12 15
 
 ⍝ ngn:295 —
-2 3∘.{⍺×⍵}4 5
+2 3 {⍺×⍵}⌝ 4 5
 2 2⍴8 10 12 15
 
 ⍝ ngn:296 —
@@ -1651,7 +1651,7 @@ a←3 2 5⍴'joe  doe  bob  jonesbob  zwart'⋄a[⍋a;;]
 1 3 5 4 2 6
 
 ⍝ ngn:415 — Fixed origin/constants; omit irrelevant PP assignment and constant rebinding; glyph-only formatting where needed
-(⌽⎕A)⍋3 3⍴'BOBALFZAK' 
+(⌽•A)⍋3 3⍴'BOBALFZAK'
 3 1 2
 
 ⍝ ngn:416 —
@@ -1687,7 +1687,7 @@ f←{⍺+2×⍵}⋄f/⍬
 4
 
 ⍝ ngn:429 — Fixed-origin-1 index-of port; ⎕A is implemented
-⎕a⍳'NGN/'
+•a⍳'NGN/'
 14 7 14 27
 
 ⍝ ngn:430 —
@@ -1975,15 +1975,15 @@ f←{⍺+2×⍵}⋄f/⍬
 1.618033988749897
 
 ⍝ ngn:507 —
-⎕UCS'a'
+•UCS'a'
 97
 
 ⍝ ngn:508 —
-⎕UCS'ab'
+•UCS'ab'
 97 98
 
 ⍝ ngn:509 — Offset adjusted for fixed origin 1; retain upstream character expectation
-⎕UCS 2 2⍴96+⍳4
+•UCS 2 2⍴96+⍳4
 2 2⍴'abcd'
 
 ⍝ ngn:510 —
@@ -2503,11 +2503,11 @@ a←1 2 3⋄a[]←4 5 6⋄a
 4 5 6
 
 ⍝ ngn:640 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-2↑⎕a
+2↑•a
 'AB'
 
 ⍝ ngn:641 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-¯3↑⎕a
+¯3↑•a
 'XYZ'
 
 ⍝ ngn:642 —
@@ -2631,7 +2631,7 @@ a←1 2 3⋄a[]←4 5 6⋄a
 ⍝ error: RANK ERROR
 
 ⍝ ngn:672 — Fixed origin/constants; omit irrelevant PP assignment and constant rebinding; glyph-only formatting where needed
-3 1 2⍉2 3 4⍴⎕a
+3 1 2⍉2 3 4⍴•a
 3 4 2⍴'AMBNCODPEQFRGSHTIUJVKWLX'
 
 ⍝ ngn:673 —
@@ -2651,7 +2651,7 @@ a←1 2 3⋄a[]←4 5 6⋄a
 1 14 27
 
 ⍝ ngn:677 — Fixed origin/constants; omit irrelevant PP assignment and constant rebinding; glyph-only formatting where needed
-1 2 1⍉3 3 3⍴⎕a
+1 2 1⍉3 3 3⍴•a
 3 3⍴'ADGKNQUXA'
 
 ⍝ ngn:678 —
@@ -2671,7 +2671,7 @@ a←1 2 3⋄a[]←4 5 6⋄a
 3 2⍴1 4 2 5 3 6
 
 ⍝ ngn:682 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-⍉2 3 4⍴⎕a
+⍉2 3 4⍴•a
 4 3 2⍴'AMEQIUBNFRJVCOGSKWDPHTLX'
 
 ⍝ ngn:685 —
@@ -2835,7 +2835,7 @@ tw←{⍺⍺⍺⍺⍵}⋄*tw 2
 5 5⍴0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24
 
 ⍝ ngn/examples/1-mult:1 — Multiplication table a × b scalar multiplication, "a times b" ∘. is the "outer product" operator A ∘.× B every item in A times every item in B
-(¯1+⍳10)∘.×¯1+⍳10
+(¯1+⍳10) ×⌝ ¯1+⍳10
 10 10⍴0 0 0 0 0 0 0 0 0 0 0 1 2 3 4 5 6 7 8 9 0 2 4 6 8 10 12 14 16 18 0 3 6 9 12 15 18 21 24 27 0 4 8 12 16 20 24 28 32 36 0 5 10 15 20 25 30 35 40 45 0 6 12 18 24 30 36 42 48 54 0 7 14 21 28 35 42 49 56 63 0 8 16 24 32 40 48 56 64 72 0 9 18 27 36 45 54 63 72 81
 
 ⍝ ngn/examples/2-sierpinski:1 — Sierpinski's triangle; Pure glyph program with explicit-output wrapper removed; Dyalog and Rust agree; Remove shebang/comments and return the final value; Translate character subscripts and Life seed positions to origin one; Insert spaces before negative vector items
@@ -2843,11 +2843,11 @@ f←{(⍵,(⍴⍵)⍴0)⍪⍵,⍵} ⋄ S←{' #'[1+(f⍣⍵)1 1⍴1]} ⋄ S 5
 32 32⍴'#                               ##                              # #                             ####                            #   #                           ##  ##                          # # # #                         ########                        #       #                       ##      ##                      # #     # #                     ####    ####                    #   #   #   #                   ##  ##  ##  ##                  # # # # # # # #                 ################                #               #               ##              ##              # #             # #             ####            ####            #   #           #   #           ##  ##          ##  ##          # # # #         # # # #         ########        ########        #       #       #       #       ##      ##      ##      ##      # #     # #     # #     # #     ####    ####    ####    ####    #   #   #   #   #   #   #   #   ##  ##  ##  ##  ##  ##  ##  ##  # # # # # # # # # # # # # # # # ################################'
 
 ⍝ ngn/examples/3-primes:1 —
-(1=+⌿0=a∘.|a)/a←1↓⍳99
+(1=+⌿0=a |⌝ a)/a←1↓⍳99
 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97
 
 ⍝ ngn/examples/4-life:1 — Conway's game of life This example was inspired by the impressive demo at https://www.youtube.com/watch?v=a9xAKttWgP4 0 1 1 1 1 0 0 1 0; Pure glyph program with explicit-output wrapper removed; Dyalog and Rust agree; Remove shebang/comments and return the final value; Translate character subscripts and Life seed positions to origin one; Insert spaces before negative vector items
-c←(3 3⍴⍳9)∊2 3 4 5 8 ⋄ c←(3 3⍴⍳9)∊2 4 7 8 9 ⋄ b←¯1⊖¯2⌽5 7↑c ⋄ life←{⊃1⍵∨.∧3 4=+/+⌿1 0 ¯1∘.⊖1 0 ¯1⌽¨⊂⍵} ⋄ gen←{' #'[1+(life⍣⍵)b]} ⋄ gen¨⍳3
+c←(3 3⍴⍳9)∊2 3 4 5 8 ⋄ c←(3 3⍴⍳9)∊2 4 7 8 9 ⋄ b←¯1⊖¯2⌽5 7↑c ⋄ life←{⊃1⍵∨.∧3 4=+/+⌿1 0 ¯1 ⊖⌝ 1 0 ¯1⌽¨⊂⍵} ⋄ gen←{' #'[1+(life⍣⍵)b]} ⋄ gen¨⍳3
 (5 7⍴'                # #    ##      #   ') (5 7⍴'                #      # #    ##   ') (5 7⍴'                 #    ##      ##   ')
 
 ⍝ ngn/examples/5-rule30:1 — See https://en.wikipedia.org/wiki/Rule_30; Use eight generations
@@ -2855,11 +2855,11 @@ r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ ' #'[1+↑⌽{⍵,⍨⊂t[1+2⊥¨3
 9 17⍴'        #               ###             ##  #           ## ####         ##  #   #       ## #### ###     ##  #    #  #   ## ####  ###### ##  #   ###     #'
 
 ⍝ ngn/examples/6-queens:1 — Rotate and reflect the accumulator in miniapl's left scan
-queens←{ search←{ (⊂⍬)∊⍵:0⍴⊂⍬ ⋄ 0=⍴⍵:rmdups ⍺ ⋄ (hd tl)←(⊃⍵)(1↓⍵) ⋄ next←⍺∘,¨hd ⋄ rems←hd free¨⊂tl ⋄ ↑,/next ∇¨rems } ⋄ cvex←(⍳⍵)×⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4/⊂⍵} ⋄ refs←{{⍋⍺}\2/⊂⍵} ⋄ best←{(⊃⍋↑⍵)⊃⍵} ⋄ all8←,↑refs¨rots ⍵ ⋄ (1+⍵≡best all8)⊃⍬(,⊂⍵) } ⋄ fmt←{ chars←'·⍟'[1+(↑⍵)∘.=⍳⍺] ⋄ expd←1↓,↑⍺⍴⊂0 1 ⋄ ↑¨↓↓expd\chars } ⋄ squares←(⊂⍳⌈⍵÷2),1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares } ⋄ queens 5
+queens←{ search←{ (⊂⍬)∊⍵:0⍴⊂⍬ ⋄ 0=⍴⍵:rmdups ⍺ ⋄ (hd tl)←(⊃⍵)(1↓⍵) ⋄ next←⍺∘,¨hd ⋄ rems←hd free¨⊂tl ⋄ ↑,/next ∇¨rems } ⋄ cvex←(⍳⍵)×⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4/⊂⍵} ⋄ refs←{{⍋⍺}\2/⊂⍵} ⋄ best←{(⊃⍋↑⍵)⊃⍵} ⋄ all8←,↑refs¨rots ⍵ ⋄ (1+⍵≡best all8)⊃⍬(,⊂⍵) } ⋄ fmt←{ chars←'·⍟'[1+(↑⍵) =⌝ ⍳⍺] ⋄ expd←1↓,↑⍺⍴⊂0 1 ⋄ ↑¨↓↓expd\chars } ⋄ squares←(⊂⍳⌈⍵÷2),1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares } ⋄ queens 5
 (5 9⍴'⍟ · · · ·· · ⍟ · ·· · · · ⍟· ⍟ · · ·· · · ⍟ ·') (5 9⍴'· ⍟ · · ·· · · · ⍟· · ⍟ · ·⍟ · · · ·· · · ⍟ ·')
 
 ⍝ ngn/examples/7-mandelbrot:1 — Use a 13 by 13 grid
-' #'[1+9>|⊃{⍺+⍵*2}/9⍴⊂¯3×.7J.5-⍉a∘.+0J1×a←(¯1+⍳n+1)÷n←12]
+' #'[1+9>|⊃{⍺+⍵*2}/9⍴⊂¯3×.7J.5-⍉a +⌝ 0J1×a←(¯1+⍳n+1)÷n←12]
 13 13⍴'                                  #            #          ####       #######   #########       #######        ####           #            #                              '
 
 ⍝ ngn:501 — ngn accepts count/function operands to power in either order (apl.js, voc[⍣]); port to function⍣count; Explicit modified assignment updates the outer counter under miniapl scope rules; Original expected 5 retained and checked in Dyalog 20.0.53963.0

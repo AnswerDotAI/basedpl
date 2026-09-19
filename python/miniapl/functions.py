@@ -32,7 +32,7 @@ class Function(_Operators):
     def scan(self): return _build('\\', self)
     def each(self): return _build('¨', self)
     def commute(self): return _build('⍨', self)
-    def outer(self): return _build('∘.', self)
+    def outer(self): return _build('⌝', self)
     def key(self): return _build('⌸', self)
     def inner(self, g): return _build('.', self, g)
     def rank(self, ranks): return _build('⍤', self, ranks)
@@ -75,14 +75,14 @@ _vocabulary = [
     ('⊃', 'first', 'pick'), ('↑', 'mix', 'take'), ('↓', 'split', 'drop'), ('⌽', 'reverse', 'rotate'),
     ('⊖', 'reverse_first', 'rotate_first'), ('⍉', 'transpose', 'reorder_axes'), ('?', 'roll', 'deal'),
     ('/', None, 'replicate'), ('⌿', None, 'replicate_first'), ('\\', None, 'expand'), ('⍀', None, 'expand_first'),
-    ('⊣', 'same_left', 'left'), ('⊢', 'same', 'right'), ('⎕C', 'case_fold', 'case_convert'), ('⎕UCS', 'unicode', 'unicode_convert'),
-    ('↕', None, 'windows'), ('ℙ', 'prime', 'prime_mode'), ('𝒬', 'factors', 'factor_spec'), ('𝒫', 'polynomial', 'polyval'),
+    ('⊣', 'same_left', 'left'), ('⊢', 'same', 'right'), ('•C', 'case_fold', 'case_convert'), ('•UCS', 'unicode', 'unicode_convert'),
+    ('↕', None, 'windows'), ('ℙ', 'prime', 'prime_mode'), ('Ⓠ', 'factors', 'factor_spec'), ('Ⓟ', 'polynomial', 'polyval'),
 ]
 
 __all__ = ['Function', 'fork', 'atop']
 _primitives = {}
 for _glyph, _monad, _dyad in _vocabulary:
-    _inner = _Function.primitive(_glyph)
+    _inner = _Function.builtin(_glyph)
     _primitives[_glyph] = Function(_inner)
     for _valence, _name in enumerate((_monad, _dyad), 1):
         if _name is not None:

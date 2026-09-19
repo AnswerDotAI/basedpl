@@ -37,8 +37,8 @@ Each name below links to its definitions and examples. Examples show an equivale
 | `○` [Circle](glyphs/circle.md) | Pi times | Circular functions |
 | `!` [Factorial](glyphs/factorial.md) | Factorial | Binomial |
 | `ℙ` [Prime](glyphs/prime.md) | Nth prime (one-based) | Prime operations |
-| `𝒬` [Factor](glyphs/factor.md) | Prime factors | Exponents / factor table |
-| `𝒫` [Polynomial](glyphs/polynomial.md) | Roots / coefficients | Evaluate |
+| `Ⓠ` [Factor](glyphs/factor.md) | Prime factors | Exponents / factor table |
+| `Ⓟ` [Polynomial](glyphs/polynomial.md) | Roots / coefficients | Evaluate |
 | `?` [Question](glyphs/question.md) | Roll | Deal |
 | `∨` [Or](glyphs/or.md) | — | OR / GCD |
 | `∧` [And](glyphs/and.md) | — | AND / LCM |
@@ -103,15 +103,14 @@ Each name below links to its definitions and examples. Examples show an equivale
 | `⍥` [Over](glyphs/over.md) | `f⍥g` | Over |
 | `⍛` [Behind](glyphs/behind.md) | `f⍛g` | Behind |
 | `.` [Dot](glyphs/dot.md) | `f.g` | Inner product |
-| `∘.` [Outer](glyphs/outer.md) | `∘.g` | Outer product |
+| `⌝` [Outer](glyphs/outer.md) | `g⌝` | Outer product |
 | `⌸` [Key](glyphs/key.md) | `f⌸` | Key |
 | `⍣` [Power](glyphs/power.md) | `f⍣n`, `f⍣g` | Iterate / invert / repeat until |
 | `⍣\` [History](glyphs/history.md) | `f⍣\n`, `f⍣\g` | Iteration states, including initial state |
 | `⇄` [Inverse pair](glyphs/inverse-pair.md) | `f⇄g` | Attach an explicit inverse |
 | `⌾` [Under](glyphs/under.md) | `f⌾g` | Transform, apply, inverse-transform |
 | `∂` [Derivative](glyphs/derivative.md) | `f∂` | Gradient / vector–Jacobian product |
-| `⊙` [Function arrays](glyphs/function-arrays.md) | `f⊙g`, `2⊃fs` | Tie functions as data; disclose a callable |
-| `◶` [Agenda](glyphs/function-arrays.md#--agenda) | `selector◶cases` | Select and call one function |
+| `◶` [Agenda](glyphs/strand.md#--agenda) | `selector◶cases` | Select and call one function |
 | `@` [At](glyphs/at.md) | `f@a`, `a@g` | Functional amend |
 | `⌺` [Stencil](glyphs/stencil.md) | `f⌺a` | Stencil |
 
@@ -119,6 +118,7 @@ Each name below links to its definitions and examples. Examples show an equivale
 
 | Form | Meaning |
 |---|---|
+| `‿` [Strand](glyphs/strand.md) | Form a vector of values: `1‿+‿'abc'` |
 | `←` [Assign](glyphs/assign.md) | Assignment, including modified/indexed/selective forms |
 | `(…)` [Parentheses](glyphs/parentheses.md) | Grouping / nested array literals / trains |
 | `[…]` [Brackets](glyphs/brackets.md) | Array literals, indexing and axes |
@@ -140,11 +140,13 @@ Numeric notation `x`, `r`, `j`, `E`: see [numbers](rules.md#numbers).
 
 ## System names
 
+Names are case-insensitive. `•A` and `•D` are constant arrays; `•C` and `•UCS` are functions, usable with operators and composition.
+
 | Name | Meaning |
 |---|---|
-| `⎕A` [Alphabet](glyphs/quad-a.md) | Uppercase Latin alphabet |
-| `⎕D` [Digits](glyphs/quad-d.md) | Decimal digits |
-| `⎕C` [Case](glyphs/quad-c.md) | Unicode case conversion |
-| `⎕UCS` [Unicode](glyphs/quad-ucs.md) | Unicode code points / encodings |
+| `•A` [Alphabet](glyphs/quad-a.md) | Uppercase Latin alphabet |
+| `•D` [Digits](glyphs/quad-d.md) | Decimal digits |
+| `•C` [Case](glyphs/quad-c.md) | Unicode case conversion |
+| `•UCS` [Unicode](glyphs/quad-ucs.md) | Unicode code points / encodings |
 
 Index origin: 1. Comparison tolerance: `1E¯14`.

@@ -51,6 +51,11 @@ fn difference(x: &Array, y: &Array, relative: f64, absolute: f64) -> Option<Stri
 pub fn check(case: &Value, options: EvalOptions) -> Value {
     let Some(code) = case["code"].as_str() else { return json!({"status":"invalid", "message":"missing code"}); };
     let error_kind = case["expected_error"].as_str().filter(|s| !s.is_empty());
+    let output = match case.get("expected_output") {
+        None => None,
+        Some(Value::String(s)) => Some(s.as_str()),
+        _ => return json!({"status":"invalid", "message":"output expectation must be text"}),
+    };
     let (expected, no_result) = if let Some(source) = case["expected_code"].as_str() {
         let expected = Session::new().eval_with(source, EvalOptions { timeout: options.timeout, interrupt: options.interrupt.clone(), echo: false });
         if expected.error.is_some() || expected.function.is_some() {
@@ -64,23 +69,35 @@ pub fn check(case: &Value, options: EvalOptions) -> Value {
     if [relative, absolute].iter().any(|t| !t.is_finite() || *t < 0.0) || (error_kind.is_none() && expected.is_none() && !no_result) {
         return json!({"status":"invalid", "message":"invalid or missing independent expectation"});
     }
-    let result = Session::new().eval_with(code, options);
+    let result = Session::new().eval_with(code, EvalOptions { echo: false, ..options });
     if let Some(error) = &result.error {
         let kind = error.kind.to_string();
         if matches!(error.kind, crate::ErrorKind::Timeout | crate::ErrorKind::Interrupt) {
             return json!({"status": kind.to_lowercase(), "message":error.message});
         }
-        if error_kind == Some(kind.as_str()) { return json!({"status":"pass"}); }
-        return json!({"status":"error", "kind":kind, "message":error.message, "actual":crate::protocol::response(result)});
+        if error_kind != Some(kind.as_str()) {
+            return json!({"status":"error", "kind":kind, "message":error.message, "actual":crate::protocol::response(result)});
+        }
     }
-    let mismatch = match (error_kind, &result.value, expected) {
-        (Some(kind), _, _) => Some(format!("expected {kind}")),
-        (_, None, _) if no_result => None,
-        (_, None, _) => Some("no result".into()),
-        (_, Some(_), _) if no_result => Some("expected no result".into()),
-        (_, Some(actual), Some(expected)) => difference(actual, &expected, relative, absolute),
-        _ => unreachable!(),
+    let mismatch = if result.error.is_some() { None } else if result.function.is_some() { Some("unexpected function result".into()) } else {
+        match (error_kind, &result.value, expected) {
+            (Some(kind), _, _) => Some(format!("expected {kind}")),
+            (_, None, _) if no_result => None,
+            (_, None, _) => Some("no result".into()),
+            (_, Some(_), _) if no_result => Some("expected no result".into()),
+            (_, Some(actual), Some(expected)) if case["exact_representation"] == true => {
+                (actual != &expected).then(|| format!("representation: {actual:?} != {expected:?}"))
+            }
+            (_, Some(actual), Some(expected)) => difference(actual, &expected, relative, absolute),
+            _ => unreachable!(),
+        }
     };
+    let mismatch = mismatch.or_else(|| {
+        output.and_then(|expected| {
+            let actual = result.output.join("\n");
+            (actual != expected).then(|| format!("output: {actual:?} != {expected:?}"))
+        })
+    });
     match mismatch {
         Some(message) => json!({"status":"mismatch", "message":message, "actual":crate::protocol::response(result)}),
         None => json!({"status":"pass"}),

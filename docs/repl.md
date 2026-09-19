@@ -14,6 +14,8 @@ Run `miniapl`. Expressions display their results; assignments retain names for l
 
 Type a backtick followed by a name. Tab replaces it with the glyph. A non-letter accepts the glyph and enters that character too.
 
+Use `` `bullet`` then Tab for the system prefix `•`; `` `quad`` gives the output glyph `⎕`.
+
 | Input | Result |
 |---|---|
 | `` `io `` then Tab | `⍳` |

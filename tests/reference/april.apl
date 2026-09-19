@@ -95,7 +95,7 @@
 792
 
 ⍝ april:451 —
-∘.!⍨¯3+⍳7
+ !⌝ ⍨¯3+⍳7
 7 7⍴1 ¯1 0 0 0 0 0 0 1 0 0 0 0 0 1 1 1 1 1 1 1 ¯2 ¯1 0 1 2 3 4 3 1 0 0 1 3 6 ¯4 ¯1 0 0 0 1 4 5 1 0 0 0 0 1
 
 ⍝ april:460 —
@@ -163,7 +163,7 @@
 0j1 1 1 1 1 0
 
 ⍝ april:505 —
-⌊1000×⊃,/9 11○⊂(¯1 ¯7~⍨¯8+⍳16) ∘.○ 0 ¯2 2 ¯2J2 2J3.5
+⌊1000×⊃,/9 11○⊂(¯1 ¯7~⍨¯8+⍳16)  ○⌝  0 ¯2 2 ¯2J2 2J3.5
 14 10⍴0 1316 1316 1734 2095 1570 3141 0 2325 1064 0 ¯1444 1443 ¯1735 2079 0 0 0 754 1038 0 ¯1733 1732 ¯1880 1940 1000 0 0 2128 3607 0 ¯1108 1107 ¯1312 1442 0 0 0 238 215 1570 3141 0 2325 1064 0 ¯1317 1316 ¯1735 ¯2096 1000 0 0 2128 3607 0 1732 1732 1879 ¯1941 0 ¯910 909 ¯3421 15069 0 0 0 ¯1510 ¯6885 1000 ¯417 ¯417 ¯1566 ¯6897 0 0 0 3297 ¯15043 0 2185 ¯2186 28 ¯2 0 0 0 1023 1001 1000 2236 2236 2128 2063 0 0 0 ¯1880 3392 0 ¯3627 3626 1509 ¯3397 0 0 0 3420 ¯1320 1000 3762 3762 ¯1566 ¯3524 0 0 0 ¯3298 ¯1273 0 ¯965 964 ¯1024 972 0 0 0 ¯29 23 0 0 0 1879 3392 1000 2236 2236 2128 ¯2064
 
 ⍝ april:524 —
@@ -2339,7 +2339,7 @@ g←÷ ⋄ g/⍬
 ('abc') 'd' 'e' 'f' 'g' 'h' 'i'
 
 ⍝ april:1531 —
-(×⌿,+⌿)+⌿(⍳2)∘.×⍬∘.×⍳4
+(×⌿,+⌿)+⌿(⍳2) ×⌝ ⍬ ×⌝ ⍳4
 1 1 1 1 0 0 0 0
 
 ⍝ april:1532 —
@@ -2593,75 +2593,75 @@ fruit←'Apple' 'Orange' 'Apple' 'Pear' 'Orange' 'Peach' ⋄ {⍴⍵}⌸ fruit
 3
 
 ⍝ april:1652 —
-5∘.+5
+5 +⌝ 5
 10
 
 ⍝ april:1653 —
-16∘.*⍳3
+16 *⌝ ⍳3
 16 256 4096
 
 ⍝ april:1654 —
-∘.{⍺×⍵}⍨⍳5
+ {⍺×⍵}⌝ ⍨⍳5
 5 5⍴1 2 3 4 5 2 4 6 8 10 3 6 9 12 15 4 8 12 16 20 5 10 15 20 25
 
 ⍝ april:1655 —
-4 5 6∘.+20 30 40 50
+4 5 6 +⌝ 20 30 40 50
 3 4⍴24 34 44 54 25 35 45 55 26 36 46 56
 
 ⍝ april:1656 —
-1 2 3∘.-1 2 3
+1 2 3 -⌝ 1 2 3
 3 3⍴0 ¯1 ¯2 1 0 ¯1 2 1 0
 
 ⍝ april:1657 —
-1 2 3∘.⍴1 2 3
+1 2 3 ⍴⌝ 1 2 3
 3 3⍴(1⍴1) (1⍴2) (1⍴3) (1 1) (2 2) (3 3) (1 1 1) (2 2 2) (3 3 3)
 
 ⍝ april:1659 —
-↑0 1 2∘.⌽↓3 3 ⍴⍳3
+↑0 1 2 ⌽⌝ ↓3 3 ⍴⍳3
 3 3 3⍴1 2 3 1 2 3 1 2 3 2 3 1 2 3 1 2 3 1 3 1 2 3 1 2 3 1 2
 
 ⍝ april:1661 —
-1 2 3∘.⍴⊂1 2 3
+1 2 3 ⍴⌝ ⊂1 2 3
 (1⍴1) (1 2) (1 2 3)
 
 ⍝ april:1662 —
-1 2 3∘.⌽⊂1 2 3
+1 2 3 ⌽⌝ ⊂1 2 3
 (2 3 1) (3 1 2) (1 2 3)
 
 ⍝ april:1663 —
-1 2 3∘.⌽⊂4 5 6 7
+1 2 3 ⌽⌝ ⊂4 5 6 7
 (5 6 7 4) (6 7 4 5) (7 4 5 6)
 
 ⍝ april:1664 — group axis-qualified function before composition/outer product
-1 2 3∘.(⌽[1])⊂2 3 4⍴⍳9
+1 2 3 (⌽[1])⌝ ⊂2 3 4⍴⍳9
 (2 3 4⍴4 5 6 7 8 9 1 2 3 4 5 6 1 2 3 4 5 6 7 8 9 1 2 3) (2 3 4⍴1 2 3 4 5 6 7 8 9 1 2 3 4 5 6 7 8 9 1 2 3 4 5 6) (2 3 4⍴4 5 6 7 8 9 1 2 3 4 5 6 1 2 3 4 5 6 7 8 9 1 2 3)
 
 ⍝ april:1667 — group axis-qualified function before outer product
-1 2 3∘.(⌽[2])⊂2 3 4⍴⍳9
+1 2 3 (⌽[2])⌝ ⊂2 3 4⍴⍳9
 (2 3 4⍴5 6 7 8 9 1 2 3 1 2 3 4 8 9 1 2 3 4 5 6 4 5 6 7) (2 3 4⍴9 1 2 3 1 2 3 4 5 6 7 8 3 4 5 6 4 5 6 7 8 9 1 2) (2 3 4⍴1 2 3 4 5 6 7 8 9 1 2 3 4 5 6 7 8 9 1 2 3 4 5 6)
 
 ⍝ april:1670 — group axis-qualified function before outer product
-1 2 3∘.(⌽[3])⊂2 3 4⍴⍳9
+1 2 3 (⌽[3])⌝ ⊂2 3 4⍴⍳9
 (2 3 4⍴2 3 4 1 6 7 8 5 1 2 3 9 5 6 7 4 9 1 2 8 4 5 6 3) (2 3 4⍴3 4 1 2 7 8 5 6 2 3 9 1 6 7 4 5 1 2 8 9 5 6 3 4) (2 3 4⍴4 1 2 3 8 5 6 7 3 9 1 2 7 4 5 6 2 8 9 1 6 3 4 5)
 
 ⍝ april:1673 — group axis-qualified function before composition/outer product
-(1 2 3) (2 3 4)∘.(⌽[1])⊂3 3⍴⍳9
+(1 2 3) (2 3 4) (⌽[1])⌝ ⊂3 3⍴⍳9
 (3 3⍴4 8 3 7 2 6 1 5 9) (3 3⍴7 2 6 1 5 9 4 8 3)
 
 ⍝ april:1675 —
-⍬∘.=⍬
+⍬ =⌝ ⍬
 0 0⍴0
 
 ⍝ april:1676 —
-''∘.=''
+'' =⌝ ''
 0 0⍴0
 
 ⍝ april:1677 —
-fn←{⍺×⍵+1} ⋄ 1 2 3∘.fn 4 5 6
+fn←{⍺×⍵+1} ⋄ 1 2 3 fn⌝  4 5 6
 3 3⍴5 6 7 10 12 14 15 18 21
 
 ⍝ april:1678 —
-' ' { A W←{(⍵≠(≢⍵)⍴' ')/⍵}¨⍺ ⍵ ⋄ ((⍴A)=⍴W)∧∧/(+/A∘.=W)=+/A∘.=A } 'dog'
+' ' { A W←{(⍵≠(≢⍵)⍴' ')/⍵}¨⍺ ⍵ ⋄ ((⍴A)=⍴W)∧∧/(+/A =⌝ W)=+/A =⌝ A } 'dog'
 1⍴0
 
 ⍝ april:1679 —
@@ -3441,7 +3441,7 @@ y[⍋y←1 8 4 2]
 2 4⍴(1 5 9) (2 6 1) (3 7 2) (4 8 3) (4 8 3) (5 9 4) (6 1 5) (7 2 6)
 
 ⍝ april:2062 — Inline pivotal operation-derived function expression
-1 2 3 (∘.+) 4 5 6
+1 2 3 ( +⌝ ) 4 5 6
 3 3⍴5 6 7 6 7 8 7 8 9
 
 ⍝ april:2064 — Composed pivotal operation-derived function expression
@@ -3449,7 +3449,7 @@ y[⍋y←1 8 4 2]
 315
 
 ⍝ april:2066 — Multiple composed pivotal operations called in sequence
-(4 5 6∘(∘.×)) (1 2 3∘(∘.+)) 10 20 30
+(4 5 6∘( ×⌝ )) (1 2 3∘( +⌝ )) 10 20 30
 3 3 3⍴44 84 124 48 88 128 52 92 132 55 105 155 60 110 160 65 115 165 66 126 186 72 132 192 78 138 198
 
 ⍝ april:2071 — Pivotal composition of overloaded function, further composed laterally
@@ -3553,7 +3553,7 @@ of←{⍵+1} ⋄ ef←{⍵+2} ⋄ (of , ef) 5
 1 2 3 4
 
 ⍝ april:2117 — More complex three-element train with sub-compositions
-(⍳∘≢(∘.⌷)⊂) 2 3 3⍴⍳18
+(⍳∘≢( ⌷⌝ )⊂) 2 3 3⍴⍳18
 (3 3⍴1 2 3 4 5 6 7 8 9) (3 3⍴10 11 12 13 14 15 16 17 18)
 
 ⍝ april:2119 — Function train including ⍥-composition
@@ -3625,7 +3625,7 @@ rlop←{⍵<2000:⍵,⍺⍺ ∇∇ 3 ⍺⍺ 2×2+⊃⍵ ⋄ ⍵} ⋄ × rlop 5
 12
 
 ⍝ april:2143 — Function applied to result of pivotal operator
-∊∘.+⍨10 2
+∊ +⌝ ⍨10 2
 20 12 12 4
 
 ⍝ april:2144 — Function applied to invocation of train composition including operator
@@ -3833,24 +3833,24 @@ key←⌸ ⋄ {(2|⍳≢⍵)⊢key ⍵}10 2⍴⍳20
 '1⌽,⍨9⍴''''''1⌽,⍨9⍴'''''''
 
 ⍝ april:2237 — Alphabetical and numeric vectors; Fixed origin/constants; omit irrelevant PP assignment and constant rebinding; glyph-only formatting where needed
-⎕a,⎕d
+•a,•d
 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 
 ⍝ april:2239 — Character to Unicode index; Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-⎕ucs 'z'
+•ucs 'z'
 122
 
 ⍝ april:2240 — Unicode index to character; Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-⎕ucs 101
+•ucs 101
 'e'
 
 ⍝ april:2241 — Characters to Unicode indices; Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-⎕ucs 'abcd'
+•ucs 'abcd'
 97 98 99 100
 
 ⍝ april:2242 — Unicode indices to characters; Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-⎕ucs 13 10
-⎕UCS 13 10
+•ucs 13 10
+•UCS 13 10
 
 ⍝ april:2243 — 3D array formatted as matrix; Fixed origin/constants; omit irrelevant PP assignment and constant rebinding; glyph-only formatting where needed
 format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
@@ -3995,15 +3995,15 @@ format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
 64 64
 
 ⍝ april:2293 — Inversion of commuted outer product
-(∘.×∘4 5 6)⍣¯1⊢1 2 3∘.×4 5 6
+( ×⌝ ∘4 5 6)⍣¯1⊢1 2 3 ×⌝ 4 5 6
 1 2 3
 
 ⍝ april:2294 — Inversion of commuted outer product, other side
-(1 2 3∘(∘.×))⍣¯1⊢1 2 3∘.×4 5 6
+(1 2 3∘( ×⌝ ))⍣¯1⊢1 2 3 ×⌝ 4 5 6
 4 5 6
 
 ⍝ april:2295 — More complex outer product inversion
-(∘.×∘4 5 6)⍣¯1⊢(∘.×∘4 5 6) (1 2 3∘(∘.+)) 10 20 30
+( ×⌝ ∘4 5 6)⍣¯1⊢( ×⌝ ∘4 5 6) (1 2 3∘( +⌝ )) 10 20 30
 3 3⍴11 21 31 12 22 32 13 23 33
 
 ⍝ april:2297 — Power set
@@ -4378,7 +4378,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -4433,7 +4433,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -4472,7 +4472,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -4527,7 +4527,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -4566,7 +4566,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -4621,7 +4621,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -4661,7 +4661,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -4716,7 +4716,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -4756,7 +4756,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -4811,7 +4811,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -4846,7 +4846,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -4875,7 +4875,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -4930,7 +4930,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -4970,7 +4970,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -4999,7 +4999,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -5028,7 +5028,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -5057,7 +5057,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -5089,7 +5089,7 @@ displays ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(1⊃⍵)((~1 1⍷∧⌿(2⊃⍵)=' ')/(2⊃⍵))}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   qfmt←{(⍕0+⍴⍺)(format open ⍵)}
   {
@@ -5119,7 +5119,7 @@ displayr ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   {
     0=≡⍵:' '⍪(open format ⍵)⍪(1+' '=⊃0⍴⍵)⊃' -'
@@ -5173,7 +5173,7 @@ dist ← {
   ⊃⌽z
 }
 months ← 'January' 'February' 'March' 'April' 'May' 'June' 'July' 'August' 'September' 'October' 'November' 'December'
-∘.dist⍨months
+ dist⌝ ⍨months
 ⍝ =>
 12 12⍴0 4 6 7 5 5 4 6 9 7 8 8 4 0 7 7 6 7 6 7 8 7 8 7 6 7 0 4 3 5 5 6 9 7 8 8 7 7 4 0 5 5 5 5 8 7 8 8 5 6 3 5 0 4 3 6 9 7 8 8 5 7 5 5 4 0 2 5 8 6 7 7 4 6 5 5 3 2 0 5 9 7 8 8 6 7 6 5 6 5 5 0 9 7 8 8 9 8 9 8 9 8 9 9 0 5 4 3 7 7 7 7 7 6 7 7 5 0 5 4 8 8 8 8 8 7 8 8 4 5 0 3 8 7 8 8 8 7 8 8 3 4 3 0
 
@@ -5206,7 +5206,7 @@ dsp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
   }1 ∇¨⍵
   subs←⍺ ∇¨⍵
   rs cs←+/¨1⊂↑⍴¨subs
-  dims←(mrs←⌈/rs)∘.,mcs←⌈/⍪⍉cs
+  dims←(mrs←⌈/rs) ,⌝ mcs←⌈/⍪⍉cs
   join←{↑⍺{⍺,⍺⍺,⍵}/⍵}
   rows←(mrs/¨'│')join¨↓dims↑¨subs
   hzs←'┼'join mcs/¨'─'
@@ -5230,7 +5230,7 @@ dsp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
   }1 ∇¨⍵
   subs←⍺ ∇¨⍵
   rs cs←+/¨1⊂↑⍴¨subs
-  dims←(mrs←⌈/rs)∘.,mcs←⌈/⍪⍉cs
+  dims←(mrs←⌈/rs) ,⌝ mcs←⌈/⍪⍉cs
   join←{↑⍺{⍺,⍺⍺,⍵}/⍵}
   rows←(mrs/¨'│')join¨↓dims↑¨subs
   hzs←'┼'join mcs/¨'─'
@@ -5241,7 +5241,7 @@ dsp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
 }
 Tape ← { '∘',(⍺↑⍵),{⍺ ⍵}/⍺↓⍵,'∘' }
 Rgt ← { (⊂2↑⍵),(2↓¯1↓⍵),⊃⌽⍵ }
-↓0 dsp Rgt⍣5 ⊢2 Tape 2/¨12↑⎕A
+↓0 dsp Rgt⍣5 ⊢2 Tape 2/¨12↑•A
 ⍝ =>
 ('────────────────│FF│GG│────────────────') ('─────────────│EE       HH│─────────────') ('──────────│DD             II│──────────') ('───────│CC                   JJ│───────') ('────│BB                         KK│────') ('∘│AA                               LL│∘')
 
@@ -5256,7 +5256,7 @@ dsp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
   }1 ∇¨⍵
   subs←⍺ ∇¨⍵
   rs cs←+/¨1⊂↑⍴¨subs
-  dims←(mrs←⌈/rs)∘.,mcs←⌈/⍪⍉cs
+  dims←(mrs←⌈/rs) ,⌝ mcs←⌈/⍪⍉cs
   join←{↑⍺{⍺,⍺⍺,⍵}/⍵}
   rows←(mrs/¨'│')join¨↓dims↑¨subs
   hzs←'┼'join mcs/¨'─'
@@ -6041,7 +6041,7 @@ ltrav ← {
   (⍺ ⍺⍺ head)∇ tail
 }
 listLength ← 0∘({⍺+1} ltrav)
-listLength list ⎕A
+listLength list •A
 ⍝ =>
 26
 
@@ -6191,7 +6191,7 @@ match ← {
   }/↓⍉↑⊂⍤¯1¨h m
 }
 showmatch ← {,[⍳⍴⍴⍵]⍵,[¯0.5+⍴⍴⍵](' ¯'[1+⍺ match ⍵])}
-↓'12*56*9' showmatch ⎕D
+↓'12*56*9' showmatch •D
 ⍝ =>
 ('0123456789') (' ¯        ')
 
@@ -6215,7 +6215,7 @@ match ← {
   }/↓⍉↑⊂⍤¯1¨h m
 }
 showmatch ← {,[⍳⍴⍴⍵]⍵,[¯0.5+⍴⍴⍵](' ¯'[1+⍺ match ⍵])}
-↓⍕(2⍴¨¨'12*56*9' '*') showmatch 2⍴¨⎕D
+↓⍕(2⍴¨¨'12*56*9' '*') showmatch 2⍴¨•D
 ⍝ =>
 (' 00  11  22  33  44  55  66  77  88  99 ') ('     ¯                                  ')
 
@@ -6353,7 +6353,7 @@ pmat ← {
     1≥⍴⍵:↑,↓⍵ ⋄ ↑⍪/⍵,∘∇¨⍵∘~¨⍵
   }⍳⍵
 }
-{⍵⍳⍵∘.{⍺⊃¨⊂⍵}⍵}↓pmat 3
+{⍵⍳⍵ {⍺⊃¨⊂⍵}⌝ ⍵}↓pmat 3
 ⍝ =>
 6 6⍴1 2 3 4 5 6 2 1 4 3 6 5 3 5 1 6 2 4 4 6 2 5 1 3 5 3 6 1 4 2 6 4 5 2 3 1
 
@@ -6419,7 +6419,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -6474,7 +6474,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -6525,7 +6525,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -6580,7 +6580,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -6631,7 +6631,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -6686,7 +6686,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -6737,7 +6737,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -6792,7 +6792,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -6843,7 +6843,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -6898,7 +6898,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -6949,7 +6949,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -7004,7 +7004,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -7055,7 +7055,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -7110,7 +7110,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -7161,7 +7161,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -7216,7 +7216,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -7267,7 +7267,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -7322,7 +7322,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -7373,7 +7373,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -7428,7 +7428,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -7479,7 +7479,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -7534,7 +7534,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -7585,7 +7585,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -7640,7 +7640,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -7691,7 +7691,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -7746,7 +7746,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -7797,7 +7797,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -7852,7 +7852,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -7903,7 +7903,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -7958,7 +7958,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -8122,7 +8122,7 @@ select ← { ⍺⊃¨↑,¨/⊂¨¨⍵ }
 
 ⍝ april/libraries/dfns/array/demo.lisp:342 —
 shannon ← { -+/(2∘⍟×⊣)¨({≢⍵}⌸÷≢)⍵ }
-⌊(1000,10⍴1)×⍤1⊢(shannon⍤1 , ⊣) 1+~(⍳10) ∘.> ⍳10
+⌊(1000,10⍴1)×⍤1⊢(shannon⍤1 , ⊣) 1+~(⍳10)  >⌝  ⍳10
 ⍝ =>
 10 11⍴0 2 2 2 2 2 2 2 2 2 2 468 1 2 2 2 2 2 2 2 2 2 721 1 1 2 2 2 2 2 2 2 2 881 1 1 1 2 2 2 2 2 2 2 970 1 1 1 1 2 2 2 2 2 2 1000 1 1 1 1 1 2 2 2 2 2 970 1 1 1 1 1 1 2 2 2 2 881 1 1 1 1 1 1 1 2 2 2 721 1 1 1 1 1 1 1 1 2 2 468 1 1 1 1 1 1 1 1 1 2
 
@@ -8134,7 +8134,7 @@ shannon ← { -+/(2∘⍟×⊣)¨({≢⍵}⌸÷≢)⍵ }
 
 ⍝ april/libraries/dfns/array/demo.lisp:353 — Upstream library dependencies included; origin fixed at 1
 shannon ← { -+/(2∘⍟×⊣)¨({≢⍵}⌸÷≢)⍵ }
-⌊10000×shannon ⎕A
+⌊10000×shannon •A
 ⍝ =>
 47004
 
@@ -8409,7 +8409,7 @@ assign ← {
     (⍺∨pnext∨star)∇ costs zeros pnext
   }
   step6←{costs zeros covers←⍵
-    cnext←costs+⍺×¯1 1+.×0 3∘.=covers
+    cnext←costs+⍺×¯1 1+.×0 3 =⌝ covers
     znext←zeros+(×costs)-×cnext
     step4 cnext znext covers
   }
@@ -8466,7 +8466,7 @@ assign ← {
     (⍺∨pnext∨star)∇ costs zeros pnext
   }
   step6←{costs zeros covers←⍵
-    cnext←costs+⍺×¯1 1+.×0 3∘.=covers
+    cnext←costs+⍺×¯1 1+.×0 3 =⌝ covers
     znext←zeros+(×costs)-×cnext
     step4 cnext znext covers
   }
@@ -8523,7 +8523,7 @@ assign ← {
     (⍺∨pnext∨star)∇ costs zeros pnext
   }
   step6←{costs zeros covers←⍵
-    cnext←costs+⍺×¯1 1+.×0 3∘.=covers
+    cnext←costs+⍺×¯1 1+.×0 3 =⌝ covers
     znext←zeros+(×costs)-×cnext
     step4 cnext znext covers
   }
@@ -8580,7 +8580,7 @@ assign ← {
     (⍺∨pnext∨star)∇ costs zeros pnext
   }
   step6←{costs zeros covers←⍵
-    cnext←costs+⍺×¯1 1+.×0 3∘.=covers
+    cnext←costs+⍺×¯1 1+.×0 3 =⌝ covers
     znext←zeros+(×costs)-×cnext
     step4 cnext znext covers
   }
@@ -8637,7 +8637,7 @@ assign ← {
     (⍺∨pnext∨star)∇ costs zeros pnext
   }
   step6←{costs zeros covers←⍵
-    cnext←costs+⍺×¯1 1+.×0 3∘.=covers
+    cnext←costs+⍺×¯1 1+.×0 3 =⌝ covers
     znext←zeros+(×costs)-×cnext
     step4 cnext znext covers
   }
@@ -8694,7 +8694,7 @@ assign ← {
     (⍺∨pnext∨star)∇ costs zeros pnext
   }
   step6←{costs zeros covers←⍵
-    cnext←costs+⍺×¯1 1+.×0 3∘.=covers
+    cnext←costs+⍺×¯1 1+.×0 3 =⌝ covers
     znext←zeros+(×costs)-×cnext
     step4 cnext znext covers
   }
@@ -8751,7 +8751,7 @@ assign ← {
     (⍺∨pnext∨star)∇ costs zeros pnext
   }
   step6←{costs zeros covers←⍵
-    cnext←costs+⍺×¯1 1+.×0 3∘.=covers
+    cnext←costs+⍺×¯1 1+.×0 3 =⌝ covers
     znext←zeros+(×costs)-×cnext
     step4 cnext znext covers
   }
@@ -8808,7 +8808,7 @@ assign ← {
     (⍺∨pnext∨star)∇ costs zeros pnext
   }
   step6←{costs zeros covers←⍵
-    cnext←costs+⍺×¯1 1+.×0 3∘.=covers
+    cnext←costs+⍺×¯1 1+.×0 3 =⌝ covers
     znext←zeros+(×costs)-×cnext
     step4 cnext znext covers
   }
@@ -8865,7 +8865,7 @@ assign ← {
     (⍺∨pnext∨star)∇ costs zeros pnext
   }
   step6←{costs zeros covers←⍵
-    cnext←costs+⍺×¯1 1+.×0 3∘.=covers
+    cnext←costs+⍺×¯1 1+.×0 3 =⌝ covers
     znext←zeros+(×costs)-×cnext
     step4 cnext znext covers
   }
@@ -8922,7 +8922,7 @@ assign ← {
     (⍺∨pnext∨star)∇ costs zeros pnext
   }
   step6←{costs zeros covers←⍵
-    cnext←costs+⍺×¯1 1+.×0 3∘.=covers
+    cnext←costs+⍺×¯1 1+.×0 3 =⌝ covers
     znext←zeros+(×costs)-×cnext
     step4 cnext znext covers
   }
@@ -9223,7 +9223,7 @@ scc ← {
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9282,7 +9282,7 @@ scc ← {
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9341,7 +9341,7 @@ scc ← {
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9399,7 +9399,7 @@ scc ← {
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9457,7 +9457,7 @@ scc ← {
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9517,14 +9517,14 @@ cond ← {
   v←{⊂⍵}⌸c
   e←c{⊂⍵}⌸⍵
   x←∪¨(∊¨e)~¨v
-  m←↓∨/¨x∘.∊v
+  m←↓∨/¨x ∊⌝ v
   g←m/¨⊂⍳⍴v
   g v
 }
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9584,7 +9584,7 @@ scc ← {
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9643,7 +9643,7 @@ scc ← {
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9734,7 +9734,7 @@ stpath ← {
   }⍵
 }
 g ← (2 3) (3) (2 4) (1 5) (3)
-(g∘span¨⍳⍴g)∘.stpath⍳⍴g
+(g∘span¨⍳⍴g) stpath⌝ ⍳⍴g
 ⍝ =>
 5 5⍴(1⍴1) (1 2) (1 3) (1 3 4) (1 3 4 5) (2 3 4 1) (1⍴2) (2 3) (2 3 4) (2 3 4 5) (3 4 1) (3 2) (1⍴3) (3 4) (3 4 5) (4 1) (4 1 2) (4 5 3) (1⍴4) (4 5) (5 3 4 1) (5 3 2) (5 3) (5 3 4) (1⍴5)
 
@@ -9771,7 +9771,7 @@ stpaths¨g∘span¨⍳⍴g
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9799,7 +9799,7 @@ X M
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9827,7 +9827,7 @@ M←6 7⍴1 0 0 1 0 0 1 1 0 0 1 0 0 0 0 0 0 1 1 0 1 0 0 1 0 1 1 0 0 1 1 0 0 1 1 
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9854,7 +9854,7 @@ X 3 4↑=/¨⍳3 3
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9881,7 +9881,7 @@ X 4 3↑=/¨⍳3 3
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9908,7 +9908,7 @@ X =/¨⍳3 3
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9952,7 +9952,7 @@ sudokuX 4 4⍴ 0 0 0 0,0 0 2 1,3 0 0 4,0 0 0 0
 X ← {
   ⍺←1∨.∨⍵
   x←⍳⍴⍺
-  d←(x~⍺/x)∘.=x
+  d←(x~⍺/x) =⌝ x
   z←{
     r c←⍴⍵
     c=0:r⍴0
@@ -9977,8 +9977,8 @@ queensX ← {
   f←=/¨0 1 1∘/¨m
   dm←-/¨⍳2/⍵
   du←{⍵[⍋⍵]}∪,dm
-  x←dm∘.=du
-  y←(⊖dm)∘.=du
+  x←dm =⌝ du
+  y←(⊖dm) =⌝ du
   m←,[⍳2]x,y,r,f
   d←~(⍳1↓⍴m)∊⍳2×⍴du
   ⍵ ⍵⍴d X m
@@ -10314,7 +10314,7 @@ efract ← {
     (⍺,s+1)∇(p-r)(q×s+1)
   }⍺ ⍵
 }
-2 3 5 7 ∘.efract 11 13 17 19
+2 3 5 7  efract⌝  11 13 17 19
 ⍝ =>
 4 4⍴(6 66) (7 91) (9 153) (10 190) (4 44) (5 33 2145) (6 102) (7 67 8911) (3 9 99) (3 20 780) (4 23 1564) (4 76) (2 8 88) (2 26) (3 13 663) (3 29 1653)
 
@@ -10350,7 +10350,7 @@ sulFib ← {
 1 1 2 3 5 8 13 21 34 55
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:43 —
-⌊(0.5×1+1 ¯1×5*0.5)∘{(-⌿⍺∘.*⍵)÷-/⍺} ⍳10
+⌊(0.5×1+1 ¯1×5*0.5)∘{(-⌿⍺ *⌝ ⍵)÷-/⍺} ⍳10
 1 1 2 3 5 8 13 21 34 55
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:44 — [rtol=1e-14]
@@ -10455,14 +10455,14 @@ factors (3×5×7) lcm 5×7×11
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:59 —
 gcd ← { ⍵=0 : |⍺ ⋄ ⍵∇⍵|⍺ }
-¯1 0 1∘.gcd ¯1 0 1
+¯1 0 1 gcd⌝  ¯1 0 1
 ⍝ =>
 3 3⍴1 1 1 1 0 1 1 1 1
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:60 —
 gcd ← { ⍵=0 : |⍺ ⋄ ⍵∇⍵|⍺ }
 lcm ← { ⍺×⍵÷⍺ gcd ⍵ }
-¯1 0 1∘.lcm ¯1 0 1
+¯1 0 1 lcm⌝  ¯1 0 1
 ⍝ =>
 3 3⍴1 0 ¯1 0 0 0 ¯1 0 1
 
@@ -10479,7 +10479,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10507,7 +10507,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10535,7 +10535,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10563,7 +10563,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10591,7 +10591,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10619,7 +10619,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10647,7 +10647,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10658,7 +10658,7 @@ to ← {
   from step←1 ¯1×-\2↑⍺,⍺+×⍵-⍺
   from+step×¯1+⍳0⌈1+⌊(⍵-from)÷step+step=0
 }
-↓⍕↑{⍵,hex ⍵}¨¯1 1∘.×,⍉¯1 0∘.+2*0 8 16 32
+↓⍕↑{⍵,hex ⍵}¨¯1 1 ×⌝ ,⍉¯1 0 +⌝ 2*0 8 16 32
 ⍝ =>
 ('          0  00               ') ('         ¯1  ff               ') ('       ¯255  01               ') ('       ¯256  ff00             ') ('     ¯65535  0001             ') ('     ¯65536  ffff0000         ') ('¯4294967295  00000001         ') ('¯4294967296  ffffffff00000000 ') ('                              ') ('          0  00               ') ('          1  01               ') ('        255  ff               ') ('        256  0100             ') ('      65535  ffff             ') ('      65536  00010000         ') (' 4294967295  ffffffff         ') (' 4294967296  0000000100000000 ')
 
@@ -10675,7 +10675,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10703,7 +10703,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10731,7 +10731,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10759,7 +10759,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10787,7 +10787,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10815,7 +10815,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10843,7 +10843,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10871,7 +10871,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10899,7 +10899,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10927,7 +10927,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10948,7 +10948,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10965,7 +10965,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10982,7 +10982,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -10999,7 +10999,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -11023,7 +11023,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -11051,7 +11051,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -11079,7 +11079,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -11107,7 +11107,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -11135,7 +11135,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -11146,7 +11146,7 @@ to ← {
   from step←1 ¯1×-\2↑⍺,⍺+×⍵-⍺
   from+step×¯1+⍳0⌈1+⌊(⍵-from)÷step+step=0
 }
-{ws←{(⎕UCS ⍺),⍵} ⋄ hex dec'aa',32 ws'bb',9 ws'cc',160 ws'dd',10 ws'ee',13 ws ⍵} 'ff'
+{ws←{(•UCS ⍺),⍵} ⋄ hex dec'aa',32 ws'bb',9 ws'cc',160 ws'dd',10 ws'ee',13 ws ⍵} 'ff'
 ⍝ =>
 ('aa') ('bb') ('cc') ('dd') ('ee') ('ff')
 
@@ -11156,7 +11156,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -11173,7 +11173,7 @@ dec ← {
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵
   0≡≢⍵:0
   1≠≡,⍵:⍺ ∇¨⍵
-  ws←∊∘(⎕UCS 9 10 13 32 133 160)
+  ws←∊∘(•UCS 9 10 13 32 133 160)
   ws⊃⍵:⍺ ∇ 1↓⍵
   ws⊃⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵
@@ -11239,7 +11239,7 @@ nicediv ← {
   i←2</0,⌊0.5+d
   q+i
 }
-{∧/⍵∧.=⍵∘.{+/⍺ nicediv ⍵}⍵} ⍳50
+{∧/⍵∧.=⍵ {+/⍺ nicediv ⍵}⌝ ⍵} ⍳50
 ⍝ =>
 1
 
@@ -11282,7 +11282,7 @@ rational 0.75
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:137 — Origin-1 Roman conversion; default-left assignment moved to its own statement; Original April expectation retained
 roman ← {
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5∘.×10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5 ×⌝ 10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
   fmt←{~∘' ',2 1 1⍉(' '⍪3 4⍴'MCXI DLV ')[1+(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)[;1+⍵⊤⍨4⍴10];]}
   depth←{⍵⍵≥|≡⍵ : ⍺⍺ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1
@@ -11296,7 +11296,7 @@ roman ← {
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:138 — Origin-1 Roman conversion; default-left assignment moved to its own statement; Original April expectation retained
 roman ← {
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5∘.×10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5 ×⌝ 10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
   fmt←{~∘' ',2 1 1⍉(' '⍪3 4⍴'MCXI DLV ')[1+(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)[;1+⍵⊤⍨4⍴10];]}
   depth←{⍵⍵≥|≡⍵ : ⍺⍺ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1
@@ -11310,7 +11310,7 @@ roman ← {
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:139 — Origin-1 Roman conversion; default-left assignment moved to its own statement; Original April expectation retained
 roman ← {
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5∘.×10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5 ×⌝ 10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
   fmt←{~∘' ',2 1 1⍉(' '⍪3 4⍴'MCXI DLV ')[1+(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)[;1+⍵⊤⍨4⍴10];]}
   depth←{⍵⍵≥|≡⍵ : ⍺⍺ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1
@@ -11324,7 +11324,7 @@ roman ← {
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:140 — Origin-1 Roman conversion; default-left assignment moved to its own statement; Original April expectation retained
 roman ← {
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5∘.×10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5 ×⌝ 10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
   fmt←{~∘' ',2 1 1⍉(' '⍪3 4⍴'MCXI DLV ')[1+(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)[;1+⍵⊤⍨4⍴10];]}
   depth←{⍵⍵≥|≡⍵ : ⍺⍺ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1
@@ -11342,7 +11342,7 @@ to ← {
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:141 — Origin-1 Roman conversion; default-left assignment moved to its own statement; Original April expectation retained
 roman ← {
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5∘.×10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5 ×⌝ 10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
   fmt←{~∘' ',2 1 1⍉(' '⍪3 4⍴'MCXI DLV ')[1+(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)[;1+⍵⊤⍨4⍴10];]}
   depth←{⍵⍵≥|≡⍵ : ⍺⍺ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1
@@ -11356,7 +11356,7 @@ roman ← {
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:144 — Origin-1 Roman conversion; default-left assignment moved to its own statement; Original April expectation retained
 roman ← {
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5∘.×10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5 ×⌝ 10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
   fmt←{~∘' ',2 1 1⍉(' '⍪3 4⍴'MCXI DLV ')[1+(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)[;1+⍵⊤⍨4⍴10];]}
   depth←{⍵⍵≥|≡⍵ : ⍺⍺ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1
@@ -11370,7 +11370,7 @@ roman ← {
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:145 — Origin-1 Roman conversion; default-left assignment moved to its own statement; Original April expectation retained
 roman ← {
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5∘.×10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5 ×⌝ 10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
   fmt←{~∘' ',2 1 1⍉(' '⍪3 4⍴'MCXI DLV ')[1+(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)[;1+⍵⊤⍨4⍴10];]}
   depth←{⍵⍵≥|≡⍵ : ⍺⍺ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1
@@ -11384,7 +11384,7 @@ roman ← {
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:146 — Origin-1 Roman conversion; default-left assignment moved to its own statement; Original April expectation retained
 roman ← {
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5∘.×10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5 ×⌝ 10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
   fmt←{~∘' ',2 1 1⍉(' '⍪3 4⍴'MCXI DLV ')[1+(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)[;1+⍵⊤⍨4⍴10];]}
   depth←{⍵⍵≥|≡⍵ : ⍺⍺ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1
@@ -11398,7 +11398,7 @@ roman ← {
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:147 — Origin-1 Roman operator with standalone default-left assignment; Dyalog formatting includes the trailing padding column
 roman ← {
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5∘.×10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5 ×⌝ 10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
   fmt←{~∘' ',2 1 1⍉(' '⍪3 4⍴'MCXI DLV ')[1+(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)[;1+⍵⊤⍨4⍴10];]}
   depth←{⍵⍵≥|≡⍵ : ⍺⍺ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1
@@ -11406,13 +11406,13 @@ roman ← {
   ⍺←⍬ ⋄ ⍬≡⍺:fmts ⍺⍺ ⌊nums ⍵
   fmts(⌊nums ⍺)⍺⍺ ⌊nums ⍵
 }
-↓⍕∘.×⍨∘{⍳⍵}roman 'X'
+↓⍕ ×⌝ ⍨∘{⍳⍵}roman 'X'
 ⍝ =>
 (' I     II     III    IV      V     VI      VII     VIII    IX     X    ') (' II    IV     VI     VIII    X     XII     XIV     XVI     XVIII  XX   ') (' III   VI     IX     XII     XV    XVIII   XXI     XXIV    XXVII  XXX  ') (' IV    VIII   XII    XVI     XX    XXIV    XXVIII  XXXII   XXXVI  XL   ') (' V     X      XV     XX      XXV   XXX     XXXV    XL      XLV    L    ') (' VI    XII    XVIII  XXIV    XXX   XXXVI   XLII    XLVIII  LIV    LX   ') (' VII   XIV    XXI    XXVIII  XXXV  XLII    XLIX    LVI     LXIII  LXX  ') (' VIII  XVI    XXIV   XXXII   XL    XLVIII  LVI     LXIV    LXXII  LXXX ') (' IX    XVIII  XXVII  XXXVI   XLV   LIV     LXIII   LXXII   LXXXI  XC   ') (' X     XX     XXX    XL      L     LX      LXX     LXXX    XC     C    ')
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:158 — Origin-1 Roman conversion; default-left assignment moved to its own statement; Original April expectation retained
 roman ← {
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5∘.×10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5 ×⌝ 10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
   fmt←{~∘' ',2 1 1⍉(' '⍪3 4⍴'MCXI DLV ')[1+(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)[;1+⍵⊤⍨4⍴10];]}
   depth←{⍵⍵≥|≡⍵ : ⍺⍺ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1
@@ -11426,7 +11426,7 @@ roman ← {
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:159 — Origin-1 Roman conversion; default-left assignment moved to its own statement; Original April expectation retained
 roman ← {
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5∘.×10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5 ×⌝ 10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
   fmt←{~∘' ',2 1 1⍉(' '⍪3 4⍴'MCXI DLV ')[1+(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)[;1+⍵⊤⍨4⍴10];]}
   depth←{⍵⍵≥|≡⍵ : ⍺⍺ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1
@@ -11440,7 +11440,7 @@ roman ← {
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:160 — Origin-1 Roman conversion; default-left assignment moved to its own statement; Original April expectation retained
 roman ← {
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5∘.×10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5 ×⌝ 10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
   fmt←{~∘' ',2 1 1⍉(' '⍪3 4⍴'MCXI DLV ')[1+(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)[;1+⍵⊤⍨4⍴10];]}
   depth←{⍵⍵≥|≡⍵ : ⍺⍺ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1
@@ -11469,7 +11469,7 @@ to ← {
 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:162 — Self-contained sieve; original April expectation passes without library setup
-{(~v∊v∘.×v)/v←1↓⍳⍵} 100
+{(~v∊v ×⌝ v)/v←1↓⍳⍵} 100
 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:164 — Upstream shortest-path and stamps setup; fixed origin 1
@@ -11744,7 +11744,7 @@ to ← {
   from step←1 ¯1×-\2↑⍺,⍺+×⍵-⍺
   from+step×¯1+⍳0⌈1+⌊(⍵-from)÷step+step=0
 }
-xp ← {×/×⍵∘.-⍺}
+xp ← {×/×⍵ -⌝ ⍺}
 1 3 xp 0 to 4
 ⍝ =>
 1 0 ¯1 0 1
@@ -11754,7 +11754,7 @@ to ← {
   from step←1 ¯1×-\2↑⍺,⍺+×⍵-⍺
   from+step×¯1+⍳0⌈1+⌊(⍵-from)÷step+step=0
 }
-xs ← {+/×⍵∘.-⍺}
+xs ← {+/×⍵ -⌝ ⍺}
 1 3 xs 0 to 4
 ⍝ =>
 ¯2 ¯1 0 1 2
@@ -11827,7 +11827,7 @@ alt ← {
   M←~⍤1 0⍨⍳r
   ⍵[;1]⍺⍺.⍵⍵(∇⍤2)⍵[M;1↓⍳c]
 }
--alt× {÷1+∘.+⍨(⍳⍵)-1} 5
+-alt× {÷1+ +⌝ ⍨(⍳⍵)-1} 5
 ⍝ =>
 3.749295132150452e¯12
 
@@ -11851,7 +11851,7 @@ alt ← {
   M←~⍤1 0⍨⍳r
   ⍵[;1]⍺⍺.⍵⍵(∇⍤2)⍵[M;1↓⍳c]
 }
-,alt,3 3⍴⎕A
+,alt,3 3⍴•A
 ⍝ =>
 ⊂('AEIHFDBIHCGBFEC')
 
@@ -12001,7 +12001,7 @@ det ← {
   0=n←≢⍵:⍺
   i j←1+(⍴⍵)⊤¯1+{⍵⍳⌈/⍵}|,⍵
   k←⍳n
-  (⍺×⍵[i;j]×¯1*i+j)∇ ⍵[k~i;k~j]-⍵[k~i;j]∘.×⍵[i;k~j]÷⍵[i;j]
+  (⍺×⍵[i;j]×¯1*i+j)∇ ⍵[k~i;k~j]-⍵[k~i;j] ×⌝ ⍵[i;k~j]÷⍵[i;j]
 }
 det 2 2⍴2 3 4 5
 ⍝ =>
@@ -12013,7 +12013,7 @@ det ← {
   0=n←≢⍵:⍺
   i j←1+(⍴⍵)⊤¯1+{⍵⍳⌈/⍵}|,⍵
   k←⍳n
-  (⍺×⍵[i;j]×¯1*i+j)∇ ⍵[k~i;k~j]-⍵[k~i;j]∘.×⍵[i;k~j]÷⍵[i;j]
+  (⍺×⍵[i;j]×¯1*i+j)∇ ⍵[k~i;k~j]-⍵[k~i;j] ×⌝ ⍵[i;k~j]÷⍵[i;j]
 }
 det 1 1⍴3
 ⍝ =>
@@ -12025,7 +12025,7 @@ det ← {
   0=n←≢⍵:⍺
   i j←1+(⍴⍵)⊤¯1+{⍵⍳⌈/⍵}|,⍵
   k←⍳n
-  (⍺×⍵[i;j]×¯1*i+j)∇ ⍵[k~i;k~j]-⍵[k~i;j]∘.×⍵[i;k~j]÷⍵[i;j]
+  (⍺×⍵[i;j]×¯1*i+j)∇ ⍵[k~i;k~j]-⍵[k~i;j] ×⌝ ⍵[i;k~j]÷⍵[i;j]
 }
 det 0 0⍴7
 ⍝ =>
@@ -12037,9 +12037,9 @@ det ← {
   0=n←≢⍵:⍺
   i j←1+(⍴⍵)⊤¯1+{⍵⍳⌈/⍵}|,⍵
   k←⍳n
-  (⍺×⍵[i;j]×¯1*i+j)∇ ⍵[k~i;k~j]-⍵[k~i;j]∘.×⍵[i;k~j]÷⍵[i;j]
+  (⍺×⍵[i;j]×¯1*i+j)∇ ⍵[k~i;k~j]-⍵[k~i;j] ×⌝ ⍵[i;k~j]÷⍵[i;j]
 }
-det {÷1+∘.+⍨(⍳⍵)-1} 5
+det {÷1+ +⌝ ⍨(⍳⍵)-1} 5
 ⍝ =>
 3.749295132515087e¯12
 
@@ -12049,7 +12049,7 @@ det ← {
   0=n←≢⍵:⍺
   i j←1+(⍴⍵)⊤¯1+{⍵⍳⌈/⍵}|,⍵
   k←⍳n
-  (⍺×⍵[i;j]×¯1*i+j)∇ ⍵[k~i;k~j]-⍵[k~i;j]∘.×⍵[i;k~j]÷⍵[i;j]
+  (⍺×⍵[i;j]×¯1*i+j)∇ ⍵[k~i;k~j]-⍵[k~i;j] ×⌝ ⍵[i;k~j]÷⍵[i;j]
 }
 det 2 2⍴ 0 1, 1 0
 ⍝ =>
@@ -12061,7 +12061,7 @@ gauss_jordan ← {
     p←(⍺-1)+{⍵⍳⌈/⍵}|(⍺-1)↓⍵[;⍺]
     swap←⊖@⍺ p⊢⍵
     mat←swap[⍺;⍺]÷⍨@⍺⊢swap
-    mat-(mat[;⍺]×⍺≠⍳≢⍵)∘.×mat[⍺;]
+    mat-(mat[;⍺]×⍺≠⍳≢⍵) ×⌝ mat[⍺;]
   }
   ⍺←=/↑⍳⍴⍵
   (⍴⍺)⍴(0 1×⍴⍵)↓↑elim/(⌽⍳⌊/⍴⍵),⊂⍵,⍺
@@ -12077,7 +12077,7 @@ gauss_jordan ← {
     p←(⍺-1)+{⍵⍳⌈/⍵}|(⍺-1)↓⍵[;⍺]
     swap←⊖@⍺ p⊢⍵
     mat←swap[⍺;⍺]÷⍨@⍺⊢swap
-    mat-(mat[;⍺]×⍺≠⍳≢⍵)∘.×mat[⍺;]
+    mat-(mat[;⍺]×⍺≠⍳≢⍵) ×⌝ mat[⍺;]
   }
   ⍺←=/↑⍳⍴⍵
   (⍴⍺)⍴(0 1×⍴⍵)↓↑elim/(⌽⍳⌊/⍴⍵),⊂⍵,⍺
@@ -12093,7 +12093,7 @@ gauss_jordan ← {
     p←(⍺-1)+{⍵⍳⌈/⍵}|(⍺-1)↓⍵[;⍺]
     swap←⊖@⍺ p⊢⍵
     mat←swap[⍺;⍺]÷⍨@⍺⊢swap
-    mat-(mat[;⍺]×⍺≠⍳≢⍵)∘.×mat[⍺;]
+    mat-(mat[;⍺]×⍺≠⍳≢⍵) ×⌝ mat[⍺;]
   }
   ⍺←=/↑⍳⍴⍵
   (⍴⍺)⍴(0 1×⍴⍵)↓↑elim/(⌽⍳⌊/⍴⍵),⊂⍵,⍺
@@ -12109,7 +12109,7 @@ gauss_jordan ← {
     p←(⍺-1)+{⍵⍳⌈/⍵}|(⍺-1)↓⍵[;⍺]
     swap←⊖@⍺ p⊢⍵
     mat←swap[⍺;⍺]÷⍨@⍺⊢swap
-    mat-(mat[;⍺]×⍺≠⍳≢⍵)∘.×mat[⍺;]
+    mat-(mat[;⍺]×⍺≠⍳≢⍵) ×⌝ mat[⍺;]
   }
   ⍺←=/↑⍳⍴⍵
   (⍴⍺)⍴(0 1×⍴⍵)↓↑elim/(⌽⍳⌊/⍴⍵),⊂⍵,⍺
@@ -12125,7 +12125,7 @@ gauss_jordan ← {
     p←(⍺-1)+{⍵⍳⌈/⍵}|(⍺-1)↓⍵[;⍺]
     swap←⊖@⍺ p⊢⍵
     mat←swap[⍺;⍺]÷⍨@⍺⊢swap
-    mat-(mat[;⍺]×⍺≠⍳≢⍵)∘.×mat[⍺;]
+    mat-(mat[;⍺]×⍺≠⍳≢⍵) ×⌝ mat[⍺;]
   }
   ⍺←=/↑⍳⍴⍵
   (⍴⍺)⍴(0 1×⍴⍵)↓↑elim/(⌽⍳⌊/⍴⍵),⊂⍵,⍺
@@ -12141,7 +12141,7 @@ gauss_jordan ← {
     p←(⍺-1)+{⍵⍳⌈/⍵}|(⍺-1)↓⍵[;⍺]
     swap←⊖@⍺ p⊢⍵
     mat←swap[⍺;⍺]÷⍨@⍺⊢swap
-    mat-(mat[;⍺]×⍺≠⍳≢⍵)∘.×mat[⍺;]
+    mat-(mat[;⍺]×⍺≠⍳≢⍵) ×⌝ mat[⍺;]
   }
   ⍺←=/↑⍳⍴⍵
   (⍴⍺)⍴(0 1×⍴⍵)↓↑elim/(⌽⍳⌊/⍴⍵),⊂⍵,⍺
@@ -12157,12 +12157,12 @@ gauss_jordan ← {
     p←(⍺-1)+{⍵⍳⌈/⍵}|(⍺-1)↓⍵[;⍺]
     swap←⊖@⍺ p⊢⍵
     mat←swap[⍺;⍺]÷⍨@⍺⊢swap
-    mat-(mat[;⍺]×⍺≠⍳≢⍵)∘.×mat[⍺;]
+    mat-(mat[;⍺]×⍺≠⍳≢⍵) ×⌝ mat[⍺;]
   }
   ⍺←=/↑⍳⍴⍵
   (⍴⍺)⍴(0 1×⍴⍵)↓↑elim/(⌽⍳⌊/⍴⍵),⊂⍵,⍺
 }
-hil ← {÷1+∘.+⍨(⍳⍵)-1}
+hil ← {÷1+ +⌝ ⍨(⍳⍵)-1}
 to ← { 
   from step←1 ¯1×-\2↑⍺,⍺+×⍵-⍺
   from+step×¯1+⍳0⌈1+⌊(⍵-from)÷step+step=0
@@ -12618,7 +12618,7 @@ polar ← {
   ⍺=+1:pol_car ⍵
   ⍺=-1:car_pol ⍵
 }
-⌊10000×polar⍉↑ ¯1 0 1∘.,1 0 ¯1
+⌊10000×polar⍉↑ ¯1 0 1 ,⌝ 1 0 ¯1
 ⍝ =>
 2 3 3⍴14142 10000 14142 10000 0 10000 14142 10000 14142 23561 15707 7853 31415 31415 0 39269 47123 54977
 
@@ -12647,7 +12647,7 @@ polar ← {
   ⍺=-1:car_pol ⍵
 }
 rnd ← { (10*-⍺)×⌊0.5+⍵×10*⍺ }
-4 rnd polar⍉↑ ¯1 0 1∘.,1 0 ¯1
+4 rnd polar⍉↑ ¯1 0 1 ,⌝ 1 0 ¯1
 ⍝ =>
 2 3 3⍴1.4142 1 1.4142 1 0 1 1.4142 1 1.4142 2.3562 1.5708 0.7854 3.1416 3.1416 0 3.927 4.7124 5.4978
 
@@ -12709,7 +12709,7 @@ polar ← {
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:310 —
 rnd ← { (10*-⍺)×⌊0.5+⍵×10*⍺ }
-poly ← { 2 1∘.○(○2÷⍵)×(⍳⍵)-⍳1 }
+poly ← { 2 1 ○⌝ (○2÷⍵)×(⍳⍵)-⍳1 }
 3 rnd poly 12
 ⍝ =>
 2 12⍴1 0.866 0.5 0 ¯0.5 ¯0.866 ¯1 ¯0.866 ¯0.5 0 0.5 0.866 0 0.5 0.866 1 0.866 0.5 0 ¯0.5 ¯0.866 ¯1 ¯0.866 ¯0.5
@@ -12738,7 +12738,7 @@ polar ← {
   ⍺=+1:pol_car ⍵
   ⍺=-1:car_pol ⍵
 }
-poly ← { 2 1∘.○(○2÷⍵)×(⍳⍵)-⍳1 }
+poly ← { 2 1 ○⌝ (○2÷⍵)×(⍳⍵)-⍳1 }
 ⌈(1,12÷○2) ×[1] polar poly 12
 ⍝ =>
 2 12⍴1 1 1 1 1 1 1 1 1 1 1 1 0 1 2 3 4 5 6 7 8 9 10 11
@@ -12768,12 +12768,12 @@ polar ← {
   ⍺=-1:car_pol ⍵
 }
 rnd ← { (10*-⍺)×⌊0.5+⍵×10*⍺ }
-{⍵ ≡ 6 rnd ¯1 polar polar ⍵}⍉↑ ¯1 0 1∘.,1 0 ¯1
+{⍵ ≡ 6 rnd ¯1 polar polar ⍵}⍉↑ ¯1 0 1 ,⌝ 1 0 ¯1
 ⍝ =>
 1
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:314 — Origin-1 adic/dec/convolve helpers; factorial uses ordinary dfn guards instead of April $. Original April expectation retained
-convolve ← { +⌿(1-⍳⍴⍺)⌽⍺∘.×⍵,0×1↓⍺ }
+convolve ← { +⌿(1-⍳⍴⍺)⌽⍺ ×⌝ ⍵,0×1↓⍺ }
 9 3 5 8 1 0 5 convolve 6 2 3 7 4
 ⍝ =>
 54 36 63 130 94 73 109 49 19 35 20
@@ -13243,7 +13243,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -13298,7 +13298,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -13361,7 +13361,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -13416,7 +13416,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -13513,7 +13513,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -13548,7 +13548,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -13578,7 +13578,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -13614,7 +13614,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -13650,7 +13650,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -13686,7 +13686,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -13722,7 +13722,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -13783,7 +13783,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -13813,7 +13813,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -13890,7 +13890,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -13945,7 +13945,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -14055,14 +14055,14 @@ htx ← {
   seg←{(1=2|⍳⍴⍵)/⍵}
   sep←{((fm⍷⍵)∨to⍷⍵)⊂⍵}
   cmb←{(~'  '⍷⍵)/⍵}
-  vec←{(~⍵∊⎕UCS 8 10 13){⍺\⍺/⍵}⍵}
+  vec←{(~⍵∊•UCS 8 10 13){⍺\⍺/⍵}⍵}
   rlt←{(1++/∧\'>'≠⍵)↓⍵}
   att←{⍵,to,'>'}
   fm to←'<' '</',¨⊂⍺~'<>'
   '<'=⊃⍺:att¨xtags,⍵
          rlt¨xtags,⍵
 }
-newl←⎕ucs 13
+newl←•ucs 13
     htm←,'<html>                                                    ',newl
     htm,←'  <body>                                                  ',newl
     htm,←'    <table>                                               ',newl
@@ -14083,14 +14083,14 @@ htx ← {
   seg←{(1=2|⍳⍴⍵)/⍵}
   sep←{((fm⍷⍵)∨to⍷⍵)⊂⍵}
   cmb←{(~'  '⍷⍵)/⍵}
-  vec←{(~⍵∊⎕UCS 8 10 13){⍺\⍺/⍵}⍵}
+  vec←{(~⍵∊•UCS 8 10 13){⍺\⍺/⍵}⍵}
   rlt←{(1++/∧\'>'≠⍵)↓⍵}
   att←{⍵,to,'>'}
   fm to←'<' '</',¨⊂⍺~'<>'
   '<'=⊃⍺:att¨xtags,⍵
          rlt¨xtags,⍵
 }
-newl←⎕ucs 13
+newl←•ucs 13
     htm←,'<html>                                                    ',newl
     htm,←'  <body>                                                  ',newl
     htm,←'    <table>                                               ',newl
@@ -14111,14 +14111,14 @@ htx ← {
   seg←{(1=2|⍳⍴⍵)/⍵}
   sep←{((fm⍷⍵)∨to⍷⍵)⊂⍵}
   cmb←{(~'  '⍷⍵)/⍵}
-  vec←{(~⍵∊⎕UCS 8 10 13){⍺\⍺/⍵}⍵}
+  vec←{(~⍵∊•UCS 8 10 13){⍺\⍺/⍵}⍵}
   rlt←{(1++/∧\'>'≠⍵)↓⍵}
   att←{⍵,to,'>'}
   fm to←'<' '</',¨⊂⍺~'<>'
   '<'=⊃⍺:att¨xtags,⍵
          rlt¨xtags,⍵
 }
-newl←⎕ucs 13
+newl←•ucs 13
     htm←,'<html>                                                    ',newl
     htm,←'  <body>                                                  ',newl
     htm,←'    <table>                                               ',newl
@@ -14139,14 +14139,14 @@ htx ← {
   seg←{(1=2|⍳⍴⍵)/⍵}
   sep←{((fm⍷⍵)∨to⍷⍵)⊂⍵}
   cmb←{(~'  '⍷⍵)/⍵}
-  vec←{(~⍵∊⎕UCS 8 10 13){⍺\⍺/⍵}⍵}
+  vec←{(~⍵∊•UCS 8 10 13){⍺\⍺/⍵}⍵}
   rlt←{(1++/∧\'>'≠⍵)↓⍵}
   att←{⍵,to,'>'}
   fm to←'<' '</',¨⊂⍺~'<>'
   '<'=⊃⍺:att¨xtags,⍵
          rlt¨xtags,⍵
 }
-newl←⎕ucs 13
+newl←•ucs 13
     htm←,'<html>                                                    ',newl
     htm,←'  <body>                                                  ',newl
     htm,←'    <table>                                               ',newl
@@ -14167,14 +14167,14 @@ htx ← {
   seg←{(1=2|⍳⍴⍵)/⍵}
   sep←{((fm⍷⍵)∨to⍷⍵)⊂⍵}
   cmb←{(~'  '⍷⍵)/⍵}
-  vec←{(~⍵∊⎕UCS 8 10 13){⍺\⍺/⍵}⍵}
+  vec←{(~⍵∊•UCS 8 10 13){⍺\⍺/⍵}⍵}
   rlt←{(1++/∧\'>'≠⍵)↓⍵}
   att←{⍵,to,'>'}
   fm to←'<' '</',¨⊂⍺~'<>'
   '<'=⊃⍺:att¨xtags,⍵
          rlt¨xtags,⍵
 }
-newl←⎕ucs 13
+newl←•ucs 13
     htm←,'<html>                                                    ',newl
     htm,←'  <body>                                                  ',newl
     htm,←'    <table>                                               ',newl
@@ -14195,14 +14195,14 @@ htx ← {
   seg←{(1=2|⍳⍴⍵)/⍵}
   sep←{((fm⍷⍵)∨to⍷⍵)⊂⍵}
   cmb←{(~'  '⍷⍵)/⍵}
-  vec←{(~⍵∊⎕UCS 8 10 13){⍺\⍺/⍵}⍵}
+  vec←{(~⍵∊•UCS 8 10 13){⍺\⍺/⍵}⍵}
   rlt←{(1++/∧\'>'≠⍵)↓⍵}
   att←{⍵,to,'>'}
   fm to←'<' '</',¨⊂⍺~'<>'
   '<'=⊃⍺:att¨xtags,⍵
          rlt¨xtags,⍵
 }
-newl←⎕ucs 13
+newl←•ucs 13
     htm←,'<html>                                                    ',newl
     htm,←'  <body>                                                  ',newl
     htm,←'    <table>                                               ',newl
@@ -14223,14 +14223,14 @@ htx ← {
   seg←{(1=2|⍳⍴⍵)/⍵}
   sep←{((fm⍷⍵)∨to⍷⍵)⊂⍵}
   cmb←{(~'  '⍷⍵)/⍵}
-  vec←{(~⍵∊⎕UCS 8 10 13){⍺\⍺/⍵}⍵}
+  vec←{(~⍵∊•UCS 8 10 13){⍺\⍺/⍵}⍵}
   rlt←{(1++/∧\'>'≠⍵)↓⍵}
   att←{⍵,to,'>'}
   fm to←'<' '</',¨⊂⍺~'<>'
   '<'=⊃⍺:att¨xtags,⍵
          rlt¨xtags,⍵
 }
-newl←⎕ucs 13
+newl←•ucs 13
     htm←,'<html>                                                    ',newl
     htm,←'  <body>                                                  ',newl
     htm,←'    <table>                                               ',newl
@@ -14251,7 +14251,7 @@ htx ← {
   seg←{(1=2|⍳⍴⍵)/⍵}
   sep←{((fm⍷⍵)∨to⍷⍵)⊂⍵}
   cmb←{(~'  '⍷⍵)/⍵}
-  vec←{(~⍵∊⎕UCS 8 10 13){⍺\⍺/⍵}⍵}
+  vec←{(~⍵∊•UCS 8 10 13){⍺\⍺/⍵}⍵}
   rlt←{(1++/∧\'>'≠⍵)↓⍵}
   att←{⍵,to,'>'}
   fm to←'<' '</',¨⊂⍺~'<>'
@@ -14259,12 +14259,12 @@ htx ← {
          rlt¨xtags,⍵
 }
 ltov ← {
-  ⍺←⎕UCS 10 13 133
+  ⍺←•UCS 10 13 133
   1↓¨⍺{
     (⍵∊⍺)⊂⍵
   }¯1⌽⍵,(~(¯1↑⍵)∊⍺)/1↑⍺
 }
-newl←⎕ucs 13
+newl←•ucs 13
     htm←,'<html>                                                    ',newl
     htm,←'  <body>                                                  ',newl
     htm,←'    <table>                                               ',newl
@@ -14285,14 +14285,14 @@ htx ← {
   seg←{(1=2|⍳⍴⍵)/⍵}
   sep←{((fm⍷⍵)∨to⍷⍵)⊂⍵}
   cmb←{(~'  '⍷⍵)/⍵}
-  vec←{(~⍵∊⎕UCS 8 10 13){⍺\⍺/⍵}⍵}
+  vec←{(~⍵∊•UCS 8 10 13){⍺\⍺/⍵}⍵}
   rlt←{(1++/∧\'>'≠⍵)↓⍵}
   att←{⍵,to,'>'}
   fm to←'<' '</',¨⊂⍺~'<>'
   '<'=⊃⍺:att¨xtags,⍵
          rlt¨xtags,⍵
 }
-newl←⎕ucs 13
+newl←•ucs 13
     htm←,'<html>                                                    ',newl
     htm,←'  <body>                                                  ',newl
     htm,←'    <table>                                               ',newl
@@ -14313,7 +14313,7 @@ htx ← {
   seg←{(1=2|⍳⍴⍵)/⍵}
   sep←{((fm⍷⍵)∨to⍷⍵)⊂⍵}
   cmb←{(~'  '⍷⍵)/⍵}
-  vec←{(~⍵∊⎕UCS 8 10 13){⍺\⍺/⍵}⍵}
+  vec←{(~⍵∊•UCS 8 10 13){⍺\⍺/⍵}⍵}
   rlt←{(1++/∧\'>'≠⍵)↓⍵}
   att←{⍵,to,'>'}
   fm to←'<' '</',¨⊂⍺~'<>'
@@ -14331,7 +14331,7 @@ htx ← {
   seg←{(1=2|⍳⍴⍵)/⍵}
   sep←{((fm⍷⍵)∨to⍷⍵)⊂⍵}
   cmb←{(~'  '⍷⍵)/⍵}
-  vec←{(~⍵∊⎕UCS 8 10 13){⍺\⍺/⍵}⍵}
+  vec←{(~⍵∊•UCS 8 10 13){⍺\⍺/⍵}⍵}
   rlt←{(1++/∧\'>'≠⍵)↓⍵}
   att←{⍵,to,'>'}
   fm to←'<' '</',¨⊂⍺~'<>'
@@ -14344,59 +14344,59 @@ htx ← {
 
 ⍝ april/libraries/dfns/string/demo.lisp:204 —
 ltov ← {
-  ⍺←⎕UCS 10 13 133
+  ⍺←•UCS 10 13 133
   1↓¨⍺{
     (⍵∊⍺)⊂⍵
   }¯1⌽⍵,(~(¯1↑⍵)∊⍺)/1↑⍺
 }
-lvec←{'fooling around', ⍵, 'with barrels', ⍵, 'in alleys'} ⎕ucs 10
+lvec←{'fooling around', ⍵, 'with barrels', ⍵, 'in alleys'} •ucs 10
 ⍕¨ltov lvec
 ⍝ =>
 ('fooling around') ('with barrels') ('in alleys')
 
 ⍝ april/libraries/dfns/string/demo.lisp:205 —
 ltov ← {
-  ⍺←⎕UCS 10 13 133
+  ⍺←•UCS 10 13 133
   1↓¨⍺{
     (⍵∊⍺)⊂⍵
   }¯1⌽⍵,(~(¯1↑⍵)∊⍺)/1↑⍺
 }
-lvec←{'fooling around', ⍵, 'with barrels', ⍵, 'in alleys'} ⎕ucs 10
-(ltov lvec)≡ltov lvec,⎕ucs 10
+lvec←{'fooling around', ⍵, 'with barrels', ⍵, 'in alleys'} •ucs 10
+(ltov lvec)≡ltov lvec,•ucs 10
 ⍝ =>
 1
 
 ⍝ april/libraries/dfns/string/demo.lisp:206 —
 ltov ← {
-  ⍺←⎕UCS 10 13 133
+  ⍺←•UCS 10 13 133
   1↓¨⍺{
     (⍵∊⍺)⊂⍵
   }¯1⌽⍵,(~(¯1↑⍵)∊⍺)/1↑⍺
 }
 vtol ← {
-  ⍺←⎕UCS 10
+  ⍺←•UCS 10
   ↑,/⍵,¨⊂⍺
 }
-lvec←{'fooling around', ⍵, 'with barrels', ⍵, 'in alleys'} ⎕ucs 10
-⍸(⎕UCS 10)=vtol∘ltov⍣≡ lvec
+lvec←{'fooling around', ⍵, 'with barrels', ⍵, 'in alleys'} •ucs 10
+⍸(•UCS 10)=vtol∘ltov⍣≡ lvec
 ⍝ =>
 15 28 38
 
 ⍝ april/libraries/dfns/string/demo.lisp:207 —
 ltov ← {
-  ⍺←⎕UCS 10 13 133
+  ⍺←•UCS 10 13 133
   1↓¨⍺{
     (⍵∊⍺)⊂⍵
   }¯1⌽⍵,(~(¯1↑⍵)∊⍺)/1↑⍺
 }
-lvec←{'fooling around', ⍵, 'with barrels', ⍵, 'in alleys'} ⎕ucs 10
-(' ',⍨⎕UCS 10)ltov lvec
+lvec←{'fooling around', ⍵, 'with barrels', ⍵, 'in alleys'} •ucs 10
+(' ',⍨•UCS 10)ltov lvec
 ⍝ =>
 ('fooling') ('around') ('with') ('barrels') ('in') ('alleys')
 
 ⍝ april/libraries/dfns/string/demo.lisp:208 —
 ltov ← {
-  ⍺←⎕UCS 10 13 133
+  ⍺←•UCS 10 13 133
   1↓¨⍺{
     (⍵∊⍺)⊂⍵
   }¯1⌽⍵,(~(¯1↑⍵)∊⍺)/1↑⍺
@@ -14407,13 +14407,13 @@ ltov ← {
 
 ⍝ april/libraries/dfns/string/demo.lisp:209 —
 ltov ← {
-  ⍺←⎕UCS 10 13 133
+  ⍺←•UCS 10 13 133
   1↓¨⍺{
     (⍵∊⍺)⊂⍵
   }¯1⌽⍵,(~(¯1↑⍵)∊⍺)/1↑⍺
 }
 vtol ← {
-  ⍺←⎕UCS 10
+  ⍺←•UCS 10
   ↑,/⍵,¨⊂⍺
 }
 0 vtol 0 ltov 1 2 3 0 4 5 6 0 7 8 9
@@ -14422,7 +14422,7 @@ vtol ← {
 
 ⍝ april/libraries/dfns/string/demo.lisp:210 —
 ltov ← {
-  ⍺←⎕UCS 10 13 133
+  ⍺←•UCS 10 13 133
   1↓¨⍺{
     (⍵∊⍺)⊂⍵
   }¯1⌽⍵,(~(¯1↑⍵)∊⍺)/1↑⍺
@@ -14433,13 +14433,13 @@ ltov ← {
 
 ⍝ april/libraries/dfns/string/demo.lisp:212 —
 ltov ← {
-  ⍺←⎕UCS 10 13 133
+  ⍺←•UCS 10 13 133
   1↓¨⍺{
     (⍵∊⍺)⊂⍵
   }¯1⌽⍵,(~(¯1↑⍵)∊⍺)/1↑⍺
 }
 vtol ← {
-  ⍺←⎕UCS 10
+  ⍺←•UCS 10
   ↑,/⍵,¨⊂⍺
 }
 (⊂'and')vtol (⊂'and')ltov 'red' 'and' 'yellow' ',' 'pink' 'and' 'green'
@@ -14448,7 +14448,7 @@ vtol ← {
 
 ⍝ april/libraries/dfns/string/demo.lisp:214 —
 ltov ← {
-  ⍺←⎕UCS 10 13 133
+  ⍺←•UCS 10 13 133
   1↓¨⍺{
     (⍵∊⍺)⊂⍵
   }¯1⌽⍵,(~(¯1↑⍵)∊⍺)/1↑⍺
@@ -14459,19 +14459,19 @@ ltov ← {
 
 ⍝ april/libraries/dfns/string/demo.lisp:216 —
 vtol ← {
-  ⍺←⎕UCS 10
+  ⍺←•UCS 10
   ↑,/⍵,¨⊂⍺
 }
 vtol 'fooling around' 'with barrels' 'in alleys'
 ⍝ =>
-⎕UCS 102 111 111 108 105 110 103 32 97 114 111 117 110 100 10 119 105 116 104 32 98 97 114 114 101 108 115 10 105 110 32 97 108 108 101 121 115 10
+•UCS 102 111 111 108 105 110 103 32 97 114 111 117 110 100 10 119 105 116 104 32 98 97 114 114 101 108 115 10 105 110 32 97 108 108 101 121 115 10
 
 ⍝ april/libraries/dfns/string/demo.lisp:220 —
 vtol ← {
-  ⍺←⎕UCS 10
+  ⍺←•UCS 10
   ↑,/⍵,¨⊂⍺
 }
-⍸(⎕ucs 10)=vtol 'fooling around' 'with barrels' 'in alleys'
+⍸(•ucs 10)=vtol 'fooling around' 'with barrels' 'in alleys'
 ⍝ =>
 15 28 38
 
@@ -14489,7 +14489,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -14544,7 +14544,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -14566,7 +14566,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   box ⍵
 }
 ltov ← {
-  ⍺←⎕UCS 10 13 133
+  ⍺←•UCS 10 13 133
   1↓¨⍺{
     (⍵∊⍺)⊂⍵
   }¯1⌽⍵,(~(¯1↑⍵)∊⍺)/1↑⍺
@@ -14582,10 +14582,10 @@ wrap ← {
   gaps←¯1+⍸' '=(⍺+1)↑⍵
   take←¯1↑⍺,(⍺≥gaps)/gaps
   drop←take+' '=(take+1)⊃⍵
-  head←(take↑⍵),⎕UCS 10
+  head←(take↑⍵),•UCS 10
   head,⍺∇drop↓⍵
 }
-26 wrap ⎕a
+26 wrap •a
 ⍝ =>
 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
@@ -14596,7 +14596,7 @@ wrap ← {
   gaps←¯1+⍸' '=(⍺+1)↑⍵
   take←¯1↑⍺,(⍺≥gaps)/gaps
   drop←take+' '=(take+1)⊃⍵
-  head←(take↑⍵),⎕UCS 10
+  head←(take↑⍵),•UCS 10
   head,⍺∇drop↓⍵
 }
 tabText←'whistles        far     and wee' 
@@ -14611,7 +14611,7 @@ wrap ← {
   gaps←¯1+⍸' '=(⍺+1)↑⍵
   take←¯1↑⍺,(⍺≥gaps)/gaps
   drop←take+' '=(take+1)⊃⍵
-  head←(take↑⍵),⎕UCS 10
+  head←(take↑⍵),•UCS 10
   head,⍺∇drop↓⍵
 }
 subs ← {
@@ -14635,7 +14635,7 @@ wrap ← {
   gaps←¯1+⍸' '=(⍺+1)↑⍵
   take←¯1↑⍺,(⍺≥gaps)/gaps
   drop←take+' '=(take+1)⊃⍵
-  head←(take↑⍵),⎕UCS 10
+  head←(take↑⍵),•UCS 10
   head,⍺∇drop↓⍵
 }
 subs ← {
@@ -14650,7 +14650,7 @@ subs ← {
 }
 ⍕' ·'subs 19 wrap 20⍴'tock '
 ⍝ =>
-⎕UCS 116 111 99 107 183 116 111 99 107 183 116 111 99 107 183 116 111 99 107 10
+•UCS 116 111 99 107 183 116 111 99 107 183 116 111 99 107 183 116 111 99 107 10
 
 ⍝ april/libraries/dfns/string/demo.lisp:229 — Origin-1 wrap/xtabs offsets; original April expectation retained
 wrap ← { 
@@ -14659,7 +14659,7 @@ wrap ← {
   gaps←¯1+⍸' '=(⍺+1)↑⍵
   take←¯1↑⍺,(⍺≥gaps)/gaps
   drop←take+' '=(take+1)⊃⍵
-  head←(take↑⍵),⎕UCS 10
+  head←(take↑⍵),•UCS 10
   head,⍺∇drop↓⍵
 }
 subs ← {
@@ -14674,7 +14674,7 @@ subs ← {
 }
 ⍕' ·'subs 18 wrap 20⍴'tuck '
 ⍝ =>
-⎕UCS 116 117 99 107 183 116 117 99 107 183 116 117 99 107 10 116 117 99 107 183
+•UCS 116 117 99 107 183 116 117 99 107 183 116 117 99 107 10 116 117 99 107 183
 
 ⍝ april/libraries/dfns/string/demo.lisp:231 — Origin-1 wrap/xtabs offsets; original April expectation retained
 wrap ← { 
@@ -14683,7 +14683,7 @@ wrap ← {
   gaps←¯1+⍸' '=(⍺+1)↑⍵
   take←¯1↑⍺,(⍺≥gaps)/gaps
   drop←take+' '=(take+1)⊃⍵
-  head←(take↑⍵),⎕UCS 10
+  head←(take↑⍵),•UCS 10
   head,⍺∇drop↓⍵
 }
 subs ← {
@@ -14696,9 +14696,9 @@ subs ← {
     ts↓↑,/{to,fs↓⍵}¨(lead,⍺)⊂fm,⍵
   }⍤1⊢⍵
 }
-⍕' ·'subs 10 wrap ⎕a
+⍕' ·'subs 10 wrap •a
 ⍝ =>
-⎕UCS 65 66 67 68 69 70 71 72 73 74 10 75 76 77 78 79 80 81 82 83 84 10 85 86 87 88 89 90
+•UCS 65 66 67 68 69 70 71 72 73 74 10 75 76 77 78 79 80 81 82 83 84 10 85 86 87 88 89 90
 
 ⍝ april/libraries/dfns/string/demo.lisp:234 — Origin-1 wrap/xtabs offsets; original April expectation retained
 wrap ← { 
@@ -14707,12 +14707,12 @@ wrap ← {
   gaps←¯1+⍸' '=(⍺+1)↑⍵
   take←¯1↑⍺,(⍺≥gaps)/gaps
   drop←take+' '=(take+1)⊃⍵
-  head←(take↑⍵),⎕UCS 10
+  head←(take↑⍵),•UCS 10
   head,⍺∇drop↓⍵
 }
 ⍕10 wrap 10 ¯1 10\'AB'
 ⍝ =>
-⎕UCS 65 65 65 65 65 65 65 65 65 65 10 66 66 66 66 66 66 66 66 66 66
+•UCS 65 65 65 65 65 65 65 65 65 65 10 66 66 66 66 66 66 66 66 66 66
 
 ⍝ april/libraries/dfns/string/demo.lisp:236 — Origin-1 wrap/xtabs offsets; original April expectation retained
 wrap ← { 
@@ -14721,12 +14721,12 @@ wrap ← {
   gaps←¯1+⍸' '=(⍺+1)↑⍵
   take←¯1↑⍺,(⍺≥gaps)/gaps
   drop←take+' '=(take+1)⊃⍵
-  head←(take↑⍵),⎕UCS 10
+  head←(take↑⍵),•UCS 10
   head,⍺∇drop↓⍵
 }
 ⍕10 wrap 10 ¯5 5\'AB'
 ⍝ =>
-⎕UCS 65 65 65 65 65 65 65 65 65 65 10 32 32 32 32 66 66 66 66 66
+•UCS 65 65 65 65 65 65 65 65 65 65 10 32 32 32 32 66 66 66 66 66
 
 ⍝ april/libraries/dfns/string/demo.lisp:238 — Upstream string library dependencies and demo setup; origin-1 positions
 wrap ← { 
@@ -14735,7 +14735,7 @@ wrap ← {
   gaps←¯1+⍸' '=(⍺+1)↑⍵
   take←¯1↑⍺,(⍺≥gaps)/gaps
   drop←take+' '=(take+1)⊃⍵
-  head←(take↑⍵),⎕UCS 10
+  head←(take↑⍵),•UCS 10
   head,⍺∇drop↓⍵
 }
 subs ← {
@@ -14749,9 +14749,9 @@ subs ← {
   }⍤1⊢⍵
 }
 tabText←'whistles        far     and wee' 
-⍕' ·'subs 20 wrap(1↓,⍉↑⍬(⍳26))\⎕a
+⍕' ·'subs 20 wrap(1↓,⍉↑⍬(⍳26))\•a
 ⍝ =>
-⎕UCS 65 183 66 66 183 67 67 67 183 68 68 68 68 183 69 69 69 69 69 10 70 70 70 70 70 70 183 71 71 71 71 71 71 71 10 72 72 72 72 72 72 72 72 183 73 73 73 73 73 73 73 73 73 10 74 74 74 74 74 74 74 74 74 74 10 75 75 75 75 75 75 75 75 75 75 75 10 76 76 76 76 76 76 76 76 76 76 76 76 10 77 77 77 77 77 77 77 77 77 77 77 77 77 10 78 78 78 78 78 78 78 78 78 78 78 78 78 78 10 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 10 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 10 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 10 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 10 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 10 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 10 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 10 85 10 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 10 86 86 10 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 10 87 87 87 10 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 10 88 88 88 88 10 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 10 89 89 89 89 89 10 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 10 90 90 90 90 90 90
+•UCS 65 183 66 66 183 67 67 67 183 68 68 68 68 183 69 69 69 69 69 10 70 70 70 70 70 70 183 71 71 71 71 71 71 71 10 72 72 72 72 72 72 72 72 183 73 73 73 73 73 73 73 73 73 10 74 74 74 74 74 74 74 74 74 74 10 75 75 75 75 75 75 75 75 75 75 75 10 76 76 76 76 76 76 76 76 76 76 76 76 10 77 77 77 77 77 77 77 77 77 77 77 77 77 10 78 78 78 78 78 78 78 78 78 78 78 78 78 78 10 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 10 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 10 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 10 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 10 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 10 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 10 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 10 85 10 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 10 86 86 10 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 10 87 87 87 10 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 10 88 88 88 88 10 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 10 89 89 89 89 89 10 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 10 90 90 90 90 90 90
 
 ⍝ april/libraries/dfns/string/demo.lisp:264 — Exact identity matrix keeps inverse-derived replication counts integral; original April expectation retained
 subs ← {
@@ -14767,17 +14767,17 @@ subs ← {
 wrap2 ← { ⍺←102
   v←' ',⍵,' '
   j←(v=' ')/⍳⍴v
-  p←(j+⍺+1)∘.<j
+  p←(j+⍺+1) <⌝ j
   m←p<1⌽p
   i←(⍴m)⍴1x,(1↓⍴m)⍴0x
   c←⌹i-m
-  v[c[1;]/j]←⎕UCS 10
+  v[c[1;]/j]←•UCS 10
   1↓¯1↓v
 }
 ⍕' ·'subs 24 wrap2 'Say can I have some of your purple berries? Yes, I''ve been eating them for six or seven weeks now; haven''t got sick once. Prob''ly keep us both alive.'
 
 ⍝ =>
-⎕UCS 83 97 121 183 99 97 110 183 73 183 104 97 118 101 183 115 111 109 101 183 111 102 10 121 111 117 114 183 112 117 114 112 108 101 183 98 101 114 114 105 101 115 63 10 89 101 115 44 183 73 39 118 101 183 98 101 101 110 183 101 97 116 105 110 103 10 116 104 101 109 183 102 111 114 183 115 105 120 183 111 114 183 115 101 118 101 110 10 119 101 101 107 115 183 110 111 119 59 183 104 97 118 101 110 39 116 183 103 111 116 10 115 105 99 107 183 111 110 99 101 46 183 80 114 111 98 39 108 121 183 107 101 101 112 10 117 115 183 98 111 116 104 183 97 108 105 118 101 46
+•UCS 83 97 121 183 99 97 110 183 73 183 104 97 118 101 183 115 111 109 101 183 111 102 10 121 111 117 114 183 112 117 114 112 108 101 183 98 101 114 114 105 101 115 63 10 89 101 115 44 183 73 39 118 101 183 98 101 101 110 183 101 97 116 105 110 103 10 116 104 101 109 183 102 111 114 183 115 105 120 183 111 114 183 115 101 118 101 110 10 119 101 101 107 115 183 110 111 119 59 183 104 97 118 101 110 39 116 183 103 111 116 10 115 105 99 107 183 111 110 99 101 46 183 80 114 111 98 39 108 121 183 107 101 101 112 10 117 115 183 98 111 116 104 183 97 108 105 118 101 46
 
 ⍝ april/libraries/dfns/string/demo.lisp:273 — Embedded display helper uses existing glyphs: origin-one offsets, character-prototype test instead of April ⎕TY, matrix ⍕ instead of ⎕FMT. Full example/setup retained
 subs ← {
@@ -14803,7 +14803,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -14858,7 +14858,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -14894,7 +14894,7 @@ wrap3 ← { ⍺←102
 justify ← { 
   segs←{¯1+⍵{(⍵,⍴⍺)-¯1,⍵}¯1+⍸⍵}
   split←{((⍵|⍺)>¯1+⍳⍵)+⌊⍺÷1⌈⍵}
-  lf sp←(⎕UCS 10 32)=⊂⍵
+  lf sp←(•UCS 10 32)=⊂⍵
   sizes←segs lf
   ⍺←⌈/sizes
   blanks←segs~(lf∨sp)/sp
@@ -14914,13 +14914,13 @@ subs ← {
     ts↓↑,/{to,fs↓⍵}¨(lead,⍺)⊂fm,⍵
   }⍤1⊢⍵
 }
-⍕justify (⊃'\ ')(⎕ucs 10)∘subs⊢'We''re all going on a\summer holiday;\no more working for a\week or two.'
+⍕justify (⊃'\ ')(•ucs 10)∘subs⊢'We''re all going on a\summer holiday;\no more working for a\week or two.'
 ⍝ =>
-⎕UCS 87 101 39 114 101 32 32 97 108 108 32 103 111 105 110 103 32 111 110 32 97 10 115 117 109 109 101 114 32 32 32 32 32 32 32 104 111 108 105 100 97 121 59 10 110 111 32 109 111 114 101 32 119 111 114 107 105 110 103 32 102 111 114 32 97 10 119 101 101 107 32 111 114 32 116 119 111 46
+•UCS 87 101 39 114 101 32 32 97 108 108 32 103 111 105 110 103 32 111 110 32 97 10 115 117 109 109 101 114 32 32 32 32 32 32 32 104 111 108 105 100 97 121 59 10 110 111 32 109 111 114 101 32 119 111 114 107 105 110 103 32 102 111 114 32 97 10 119 101 101 107 32 111 114 32 116 119 111 46
 
 ⍝ april/libraries/dfns/string/demo.lisp:290 — Fixed CT=1E¯14 and origin-1 port; original April expectation retained
 vtrim ← { 
-  lf sp←⎕UCS 10 32
+  lf sp←•UCS 10 32
   1↓¯1↓{
     types←¯1+lf sp⍳⍵
     mask←~1 1⍷types
@@ -14942,15 +14942,15 @@ subs ← {
     ts↓↑,/{to,fs↓⍵}¨(lead,⍺)⊂fm,⍵
   }⍤1⊢⍵
 }
-text←(⎕ucs 10) {↑⍺⍺{⍺,⍺⍺,⍵}/⍵} 'Where Alph, the sacred river, ran  ' 'Through caverns measureless to man    ' '  Down to a sunless sea.           '
+text←(•ucs 10) {↑⍺⍺{⍺,⍺⍺,⍵}/⍵} 'Where Alph, the sacred river, ran  ' 'Through caverns measureless to man    ' '  Down to a sunless sea.           '
 show←' ·'∘subs
-⍕(show text,⎕UCS 10),show vtrim text
+⍕(show text,•UCS 10),show vtrim text
 ⍝ =>
-⎕UCS 87 104 101 114 101 183 65 108 112 104 44 183 116 104 101 183 115 97 99 114 101 100 183 114 105 118 101 114 44 183 114 97 110 183 183 10 84 104 114 111 117 103 104 183 99 97 118 101 114 110 115 183 109 101 97 115 117 114 101 108 101 115 115 183 116 111 183 109 97 110 183 183 183 183 10 183 183 68 111 119 110 183 116 111 183 97 183 115 117 110 108 101 115 115 183 115 101 97 46 183 183 183 183 183 183 183 183 183 183 183 10 87 104 101 114 101 183 65 108 112 104 44 183 116 104 101 183 115 97 99 114 101 100 183 114 105 118 101 114 44 183 114 97 110 10 84 104 114 111 117 103 104 183 99 97 118 101 114 110 115 183 109 101 97 115 117 114 101 108 101 115 115 183 116 111 183 109 97 110 10 183 183 68 111 119 110 183 116 111 183 97 183 115 117 110 108 101 115 115 183 115 101 97 46
+•UCS 87 104 101 114 101 183 65 108 112 104 44 183 116 104 101 183 115 97 99 114 101 100 183 114 105 118 101 114 44 183 114 97 110 183 183 10 84 104 114 111 117 103 104 183 99 97 118 101 114 110 115 183 109 101 97 115 117 114 101 108 101 115 115 183 116 111 183 109 97 110 183 183 183 183 10 183 183 68 111 119 110 183 116 111 183 97 183 115 117 110 108 101 115 115 183 115 101 97 46 183 183 183 183 183 183 183 183 183 183 183 10 87 104 101 114 101 183 65 108 112 104 44 183 116 104 101 183 115 97 99 114 101 100 183 114 105 118 101 114 44 183 114 97 110 10 84 104 114 111 117 103 104 183 99 97 118 101 114 110 115 183 109 101 97 115 117 114 101 108 101 115 115 183 116 111 183 109 97 110 10 183 183 68 111 119 110 183 116 111 183 97 183 115 117 110 108 101 115 115 183 115 101 97 46
 
 ⍝ april/libraries/dfns/string/demo.lisp:297 — Fixed CT=1E¯14 and origin-1 port; original April expectation retained
 vtrim ← { 
-  lf sp←⎕UCS 10 32
+  lf sp←•UCS 10 32
   1↓¯1↓{
     types←¯1+lf sp⍳⍵
     mask←~1 1⍷types
@@ -14973,13 +14973,13 @@ subs ← {
   }⍤1⊢⍵
 }
 show←' ·'∘subs
-⍕{(show ⍵),(⎕UCS 10),show vtrim ⍵} (⎕UCS 10) {↑⍺⍺{⍺,⍺⍺,⍵}/⍵} ' ' 'ok'
+⍕{(show ⍵),(•UCS 10),show vtrim ⍵} (•UCS 10) {↑⍺⍺{⍺,⍺⍺,⍵}/⍵} ' ' 'ok'
 ⍝ =>
-⎕UCS 183 10 111 107 10 10 111 107
+•UCS 183 10 111 107 10 10 111 107
 
 ⍝ april/libraries/dfns/string/demo.lisp:302 — Fixed CT=1E¯14 and origin-1 port; original April expectation retained
 vtrim ← { 
-  lf sp←⎕UCS 10 32
+  lf sp←•UCS 10 32
   1↓¯1↓{
     types←¯1+lf sp⍳⍵
     mask←~1 1⍷types
@@ -14997,7 +14997,7 @@ vtrim ← {
 
 ⍝ april/libraries/dfns/string/demo.lisp:303 — Fixed CT=1E¯14 and origin-1 port; original April expectation retained
 vtrim ← { 
-  lf sp←⎕UCS 10 32
+  lf sp←•UCS 10 32
   1↓¯1↓{
     types←¯1+lf sp⍳⍵
     mask←~1 1⍷types
@@ -15009,7 +15009,7 @@ vtrim ← {
     (~¯1⌽≠\from∨upto)/⍵
   }lf,⍵,lf
 }
-(⎕UCS 10)=vtrim 0 1 0 1 1 0 0 1 0 0\⎕UCS 10
+(•UCS 10)=vtrim 0 1 0 1 1 0 0 1 0 0\•UCS 10
 ⍝ =>
 1 1 1 1
 
@@ -15017,9 +15017,9 @@ vtrim ← {
 xtabs ← { 
   ⍺←8
   ⍺=0:⍵
-  chs←~⍵∊⎕UCS 10 13 133
+  chs←~⍵∊•UCS 10 13 133
   ⍺>0:⍺{
-    tabs nabs←1 0=⊂⍵∊⎕UCS 9
+    tabs nabs←1 0=⊂⍵∊•UCS 9
     sync←tabs≥chs
     segs←¯1+{⍵-¯1,¯1↓⍵}¯1+⍸sync
     pads←0⌈⍺-⍺|(sync/tabs)/segs
@@ -15031,7 +15031,7 @@ xtabs ← {
     tabs←bks∧chs∧0=⍺|runs chs
     onoff←{(⍺≠⍵){≠\⍺\2≠/¯1,⍺/⍵}⍺-⍵}
     pretab←⌽(⌽tabs)onoff⌽nks
-    (pretab≤tabs)/(⎕UCS 9)@{tabs}⍵
+    (pretab≤tabs)/(•UCS 9)@{tabs}⍵
   }⍵
 }
 subs ← {
@@ -15045,7 +15045,7 @@ subs ← {
   }⍤1⊢⍵
 }
 tabText←'whistles        far     and wee'
-⍕((⎕UCS 9)'→'∘subs) ¯8 xtabs tabText
+⍕((•UCS 9)'→'∘subs) ¯8 xtabs tabText
 ⍝ =>
 'whistles→far→and wee'
 
@@ -15053,9 +15053,9 @@ tabText←'whistles        far     and wee'
 xtabs ← { 
   ⍺←8
   ⍺=0:⍵
-  chs←~⍵∊⎕UCS 10 13 133
+  chs←~⍵∊•UCS 10 13 133
   ⍺>0:⍺{
-    tabs nabs←1 0=⊂⍵∊⎕UCS 9
+    tabs nabs←1 0=⊂⍵∊•UCS 9
     sync←tabs≥chs
     segs←¯1+{⍵-¯1,¯1↓⍵}¯1+⍸sync
     pads←0⌈⍺-⍺|(sync/tabs)/segs
@@ -15067,7 +15067,7 @@ xtabs ← {
     tabs←bks∧chs∧0=⍺|runs chs
     onoff←{(⍺≠⍵){≠\⍺\2≠/¯1,⍺/⍵}⍺-⍵}
     pretab←⌽(⌽tabs)onoff⌽nks
-    (pretab≤tabs)/(⎕UCS 9)@{tabs}⍵
+    (pretab≤tabs)/(•UCS 9)@{tabs}⍵
   }⍵
 }
 subs ← {
@@ -15081,7 +15081,7 @@ subs ← {
   }⍤1⊢⍵
 }
 tabText←'whistles        far     and wee'
-⍕((⎕UCS 9)'→'∘subs) ¯4 xtabs tabText
+⍕((•UCS 9)'→'∘subs) ¯4 xtabs tabText
 ⍝ =>
 'whistles→→far→→and→wee'
 
@@ -15089,9 +15089,9 @@ tabText←'whistles        far     and wee'
 xtabs ← { 
   ⍺←8
   ⍺=0:⍵
-  chs←~⍵∊⎕UCS 10 13 133
+  chs←~⍵∊•UCS 10 13 133
   ⍺>0:⍺{
-    tabs nabs←1 0=⊂⍵∊⎕UCS 9
+    tabs nabs←1 0=⊂⍵∊•UCS 9
     sync←tabs≥chs
     segs←¯1+{⍵-¯1,¯1↓⍵}¯1+⍸sync
     pads←0⌈⍺-⍺|(sync/tabs)/segs
@@ -15103,7 +15103,7 @@ xtabs ← {
     tabs←bks∧chs∧0=⍺|runs chs
     onoff←{(⍺≠⍵){≠\⍺\2≠/¯1,⍺/⍵}⍺-⍵}
     pretab←⌽(⌽tabs)onoff⌽nks
-    (pretab≤tabs)/(⎕UCS 9)@{tabs}⍵
+    (pretab≤tabs)/(•UCS 9)@{tabs}⍵
   }⍵
 }
 tabTrip ← {⍵≡⍕⍺ xtabs ⍕(-⍺)xtabs ⍵}
@@ -15118,9 +15118,9 @@ tabTrips tabText
 xtabs ← { 
   ⍺←8
   ⍺=0:⍵
-  chs←~⍵∊⎕UCS 10 13 133
+  chs←~⍵∊•UCS 10 13 133
   ⍺>0:⍺{
-    tabs nabs←1 0=⊂⍵∊⎕UCS 9
+    tabs nabs←1 0=⊂⍵∊•UCS 9
     sync←tabs≥chs
     segs←¯1+{⍵-¯1,¯1↓⍵}¯1+⍸sync
     pads←0⌈⍺-⍺|(sync/tabs)/segs
@@ -15132,13 +15132,13 @@ xtabs ← {
     tabs←bks∧chs∧0=⍺|runs chs
     onoff←{(⍺≠⍵){≠\⍺\2≠/¯1,⍺/⍵}⍺-⍵}
     pretab←⌽(⌽tabs)onoff⌽nks
-    (pretab≤tabs)/(⎕UCS 9)@{tabs}⍵
+    (pretab≤tabs)/(•UCS 9)@{tabs}⍵
   }⍵
 }
 tabTrip ← {⍵≡⍕⍺ xtabs ⍕(-⍺)xtabs ⍵}
 tabTrips ← {∧/(∪0 1 2 4 8 16 35,¯1 0 1+⍴⍵)tabTrip¨⊂⍵}
 tabText←'whistles        far     and wee' 
-tabTrips ,(6 35⍴↑,/(⍳20)↑¨'⎕'),⊃⌽⎕UCS 10
+tabTrips ,(6 35⍴↑,/(⍳20)↑¨'⎕'),⊃⌽•UCS 10
 ⍝ =>
 1
 
@@ -15146,9 +15146,9 @@ tabTrips ,(6 35⍴↑,/(⍳20)↑¨'⎕'),⊃⌽⎕UCS 10
 xtabs ← { 
   ⍺←8
   ⍺=0:⍵
-  chs←~⍵∊⎕UCS 10 13 133
+  chs←~⍵∊•UCS 10 13 133
   ⍺>0:⍺{
-    tabs nabs←1 0=⊂⍵∊⎕UCS 9
+    tabs nabs←1 0=⊂⍵∊•UCS 9
     sync←tabs≥chs
     segs←¯1+{⍵-¯1,¯1↓⍵}¯1+⍸sync
     pads←0⌈⍺-⍺|(sync/tabs)/segs
@@ -15160,10 +15160,10 @@ xtabs ← {
     tabs←bks∧chs∧0=⍺|runs chs
     onoff←{(⍺≠⍵){≠\⍺\2≠/¯1,⍺/⍵}⍺-⍵}
     pretab←⌽(⌽tabs)onoff⌽nks
-    (pretab≤tabs)/(⎕UCS 9)@{tabs}⍵
+    (pretab≤tabs)/(•UCS 9)@{tabs}⍵
   }⍵
 }
-(2/(⎕UCS 9) ' ')≡¯4 xtabs 10↑''
+(2/(•UCS 9) ' ')≡¯4 xtabs 10↑''
 ⍝ =>
 1
 
@@ -15171,9 +15171,9 @@ xtabs ← {
 xtabs ← { 
   ⍺←8
   ⍺=0:⍵
-  chs←~⍵∊⎕UCS 10 13 133
+  chs←~⍵∊•UCS 10 13 133
   ⍺>0:⍺{
-    tabs nabs←1 0=⊂⍵∊⎕UCS 9
+    tabs nabs←1 0=⊂⍵∊•UCS 9
     sync←tabs≥chs
     segs←¯1+{⍵-¯1,¯1↓⍵}¯1+⍸sync
     pads←0⌈⍺-⍺|(sync/tabs)/segs
@@ -15185,7 +15185,7 @@ xtabs ← {
     tabs←bks∧chs∧0=⍺|runs chs
     onoff←{(⍺≠⍵){≠\⍺\2≠/¯1,⍺/⍵}⍺-⍵}
     pretab←⌽(⌽tabs)onoff⌽nks
-    (pretab≤tabs)/(⎕UCS 9)@{tabs}⍵
+    (pretab≤tabs)/(•UCS 9)@{tabs}⍵
   }⍵
 }
 tabTrip ← {⍵≡⍕⍺ xtabs ⍕(-⍺)xtabs ⍵}
@@ -15547,7 +15547,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -15602,7 +15602,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -15748,7 +15748,7 @@ avl ← {
 }
 foldl ← { ↑⍺⍺⍨/(⌽⍵),⊂⍺ }
 put←'∪' avl ⋄ get←'⍎' avl ⋄ rem←'~' avl ⋄ fmt←'⍕' avl ⋄ chk←'?' avl ⋄ vec←'∊' avl ⋄ tree←0∘(put foldl)
-kseq←1↓¨,\' ',12↑⎕A
+kseq←1↓¨,\' ',12↑•A
 tt←0 put foldl ('one'1)('two'2)('three'3)('four'4)('five'5)('six'6)('seven'7)
 ↓disp tree ⍳7
 ⍝ =>
@@ -15898,7 +15898,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -15953,7 +15953,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -16099,7 +16099,7 @@ avl ← {
 }
 foldl ← { ↑⍺⍺⍨/(⌽⍵),⊂⍺ }
 put←'∪' avl ⋄ get←'⍎' avl ⋄ rem←'~' avl ⋄ fmt←'⍕' avl ⋄ chk←'?' avl ⋄ vec←'∊' avl ⋄ tree←0∘(put foldl)
-kseq←1↓¨,\' ',12↑⎕A
+kseq←1↓¨,\' ',12↑•A
 tt←0 put foldl ('one'1)('two'2)('three'3)('four'4)('five'5)('six'6)('seven'7)
 ↓disp kseq
 ⍝ =>
@@ -16119,7 +16119,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -16174,7 +16174,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -16320,7 +16320,7 @@ avl ← {
 }
 foldl ← { ↑⍺⍺⍨/(⌽⍵),⊂⍺ }
 put←'∪' avl ⋄ get←'⍎' avl ⋄ rem←'~' avl ⋄ fmt←'⍕' avl ⋄ chk←'?' avl ⋄ vec←'∊' avl ⋄ tree←0∘(put foldl)
-kseq←1↓¨,\' ',12↑⎕A
+kseq←1↓¨,\' ',12↑•A
 tt←0 put foldl ('one'1)('two'2)('three'3)('four'4)('five'5)('six'6)('seven'7)
 ↓disp 4 3⍴1↓fmt∘tree¨kseq
 ⍝ =>
@@ -16340,7 +16340,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -16395,7 +16395,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -16541,9 +16541,9 @@ avl ← {
 }
 foldl ← { ↑⍺⍺⍨/(⌽⍵),⊂⍺ }
 put←'∪' avl ⋄ get←'⍎' avl ⋄ rem←'~' avl ⋄ fmt←'⍕' avl ⋄ chk←'?' avl ⋄ vec←'∊' avl ⋄ tree←0∘(put foldl)
-kseq←1↓¨,\' ',12↑⎕A
+kseq←1↓¨,\' ',12↑•A
 tt←0 put foldl ('one'1)('two'2)('three'3)('four'4)('five'5)('six'6)('seven'7)
-↓disp 4 3⍴(tree 12↑⎕a){fmt ⍺⍺ rem foldl ⍵}¨kseq
+↓disp 4 3⍴(tree 12↑•a){fmt ⍺⍺ rem foldl ⍵}¨kseq
 ⍝ =>
 ('┌──────────────────┬──────────────────┬──────────────────┐') ('│             ┌─A=A│        ┌─B=B┐    │        ┌<C=C     │') ('│        ┌─B=B┤    │        │    └>C=C│   ┌─D=D┤         │') ('│        │    └─C=C│   ┌─D=D┤         │   │    │    ┌─E=E│') ('│   ┌─D=D┤         │   │    │    ┌─E=E│   │    └>F=F┤    │') ('│   │    │    ┌─E=E│   │    └─F=F┤    │   │         └─G=G│') ('│   │    └─F=F┤    │   │         └─G=G│H=H┤              │') ('│   │         └─G=G│H=H┤              │   │    ┌<I=I     │') ('│H=H┤              │   │    ┌<I=I     │   └─J=J┤         │') ('│   │    ┌<I=I     │   └─J=J┤         │        └>K=K┐    │') ('│   └─J=J┤         │        └>K=K┐    │             └>L=L│') ('│        └>K=K┐    │             └>L=L│                  │') ('│             └>L=L│                  │                  │') ('├──────────────────┼──────────────────┼──────────────────┤') ('│        ┌>D=D┐    │        ┌─E=E     │   ┌<F=F┐         │') ('│        │    └>E=E│   ┌<F=F┤         │   │    └>G=G     │') ('│   ┌─F=F┤         │   │    └─G=G     │H=H┤              │') ('│   │    └<G=G     │H=H┤              │   │    ┌<I=I     │') ('│H=H┤              │   │    ┌<I=I     │   └>J=J┤         │') ('│   │    ┌<I=I     │   └>J=J┤         │        └>K=K┐    │') ('│   └─J=J┤         │        └>K=K┐    │             └>L=L│') ('│        └>K=K┐    │             └>L=L│                  │') ('│             └>L=L│                  │                  │') ('├──────────────────┼──────────────────┼──────────────────┤') ('│        ┌─G=G     │   ┌─H=H┐         │   ┌<I=I          │') ('│   ┌─H=H┤         │   │    └>I=I     │J=J┤              │') ('│   │    └─I=I     │J=J┤              │   └>K=K┐         │') ('│J=J┤              │   └─K=K┐         │        └>L=L     │') ('│   └─K=K┐         │        └>L=L     │                  │') ('│        └>L=L     │                  │                  │') ('├──────────────────┼──────────────────┼──────────────────┤') ('│   ┌─J=J          │K=K┐              │L=L               │') ('│K=K┤              │   └>L=L          │                  │') ('│   └─L=L          │                  │                  │') ('└──────────────────┴──────────────────┴──────────────────┘')
 
@@ -16561,7 +16561,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -16616,7 +16616,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -16762,9 +16762,9 @@ avl ← {
 }
 foldl ← { ↑⍺⍺⍨/(⌽⍵),⊂⍺ }
 put←'∪' avl ⋄ get←'⍎' avl ⋄ rem←'~' avl ⋄ fmt←'⍕' avl ⋄ chk←'?' avl ⋄ vec←'∊' avl ⋄ tree←0∘(put foldl)
-kseq←1↓¨,\' ',12↑⎕A
+kseq←1↓¨,\' ',12↑•A
 tt←0 put foldl ('one'1)('two'2)('three'3)('four'4)('five'5)('six'6)('seven'7)
-↓disp 4 3⍴(tree 12↑⎕a){fmt ⍺⍺ rem foldl ⍵}¨,\' HIJDEFGKBCLA'
+↓disp 4 3⍴(tree 12↑•a){fmt ⍺⍺ rem foldl ⍵}¨,\' HIJDEFGKBCLA'
 ⍝ =>
 ('┌──────────────────┬──────────────────┬──────────────────┐') ('│             ┌─A=A│             ┌─A=A│             ┌─A=A│') ('│        ┌─B=B┤    │        ┌─B=B┤    │        ┌─B=B┤    │') ('│        │    └─C=C│        │    └─C=C│        │    └─C=C│') ('│   ┌─D=D┤         │   ┌>D=D┤         │   ┌>D=D┤         │') ('│   │    │    ┌─E=E│   │    │    ┌─E=E│   │    │    ┌─E=E│') ('│   │    └─F=F┤    │   │    └─F=F┤    │   │    └─F=F┤    │') ('│   │         └─G=G│   │         └─G=G│   │         └─G=G│') ('│H=H┤              │I=I┤              │J=J┤              │') ('│   │    ┌<I=I     │   │    ┌─J=J     │   └<K=K┐         │') ('│   └─J=J┤         │   └<K=K┤         │        └>L=L     │') ('│        └>K=K┐    │        └─L=L     │                  │') ('│             └>L=L│                  │                  │') ('├──────────────────┼──────────────────┼──────────────────┤') ('│        ┌─A=A     │        ┌─A=A     │        ┌─A=A     │') ('│   ┌<B=B┤         │   ┌<B=B┤         │   ┌─B=B┤         │') ('│   │    └─C=C     │   │    └─C=C     │   │    └─C=C     │') ('│D=D┤              │E=E┤              │F=F┤              │') ('│   │         ┌─E=E│   │    ┌>F=F┐    │   │    ┌─G=G     │') ('│   │    ┌>F=F┤    │   │    │    └>G=G│   └─K=K┤         │') ('│   │    │    └─G=G│   └>K=K┤         │        └─L=L     │') ('│   └>K=K┤         │        └<L=L     │                  │') ('│        └<L=L     │                  │                  │') ('├──────────────────┼──────────────────┼──────────────────┤') ('│        ┌─A=A     │        ┌─A=A     │   ┌<A=A          │') ('│   ┌─B=B┤         │   ┌>B=B┤         │B=B┤              │') ('│   │    └─C=C     │   │    └─C=C     │   │    ┌>C=C     │') ('│G=G┤              │K=K┤              │   └>L=L┘         │') ('│   └─K=K┐         │   └<L=L          │                  │') ('│        └>L=L     │                  │                  │') ('├──────────────────┼──────────────────┼──────────────────┤') ('│   ┌─A=A          │   ┌>A=A          │A=A               │') ('│C=C┤              │L=L┘              │                  │') ('│   └─L=L          │                  │                  │') ('└──────────────────┴──────────────────┴──────────────────┘')
 
@@ -16783,7 +16783,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -16918,9 +16918,9 @@ avl ← {
 }
 foldl ← { ↑⍺⍺⍨/(⌽⍵),⊂⍺ }
 put←'∪' avl ⋄ get←'⍎' avl ⋄ rem←'~' avl ⋄ fmt←'⍕' avl ⋄ chk←'?' avl ⋄ vec←'∊' avl ⋄ tree←0∘(put foldl)
-kseq←1↓¨,\' ',12↑⎕A
+kseq←1↓¨,\' ',12↑•A
 tt←0 put foldl ('one'1)('two'2)('three'3)('four'4)('five'5)('six'6)('seven'7)
-↓display fmt tree ⎕a
+↓display fmt tree •a
 ⍝ =>
 ('┌→──────────────────────┐') ('↓                  ┌─A=A│') ('│             ┌─B=B┤    │') ('│             │    └─C=C│') ('│        ┌─D=D┤         │') ('│        │    │    ┌─E=E│') ('│        │    └─F=F┤    │') ('│        │         └─G=G│') ('│   ┌─H=H┤              │') ('│   │    │         ┌─I=I│') ('│   │    │    ┌─J=J┤    │') ('│   │    │    │    └─K=K│') ('│   │    └─L=L┤         │') ('│   │         │    ┌─M=M│') ('│   │         └─N=N┤    │') ('│   │              └─O=O│') ('│P=P┤                   │') ('│   │         ┌─Q=Q     │') ('│   │    ┌<R=R┤         │') ('│   │    │    └─S=S     │') ('│   └─T=T┤              │') ('│        │         ┌─U=U│') ('│        │    ┌─V=V┤    │') ('│        │    │    └─W=W│') ('│        └>X=X┤         │') ('│             └─Y=Y┐    │') ('│                  └>Z=Z│') ('└───────────────────────┘')
 
@@ -16938,7 +16938,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -16993,7 +16993,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -17163,7 +17163,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -17298,7 +17298,7 @@ avl ← {
 }
 foldl ← { ↑⍺⍺⍨/(⌽⍵),⊂⍺ }
 put←'∪' avl ⋄ get←'⍎' avl ⋄ rem←'~' avl ⋄ fmt←'⍕' avl ⋄ chk←'?' avl ⋄ vec←'∊' avl ⋄ tree←0∘(put foldl)
-kseq←1↓¨,\' ',12↑⎕A
+kseq←1↓¨,\' ',12↑•A
 tt←0 put foldl ('one'1)('two'2)('three'3)('four'4)('five'5)('six'6)('seven'7)
 ↓display fmt tt
 ⍝ =>
@@ -17318,7 +17318,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -17373,7 +17373,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -17519,7 +17519,7 @@ avl ← {
 }
 foldl ← { ↑⍺⍺⍨/(⌽⍵),⊂⍺ }
 put←'∪' avl ⋄ get←'⍎' avl ⋄ rem←'~' avl ⋄ fmt←'⍕' avl ⋄ chk←'?' avl ⋄ vec←'∊' avl ⋄ tree←0∘(put foldl)
-kseq←1↓¨,\' ',12↑⎕A
+kseq←1↓¨,\' ',12↑•A
 tt←0 put foldl ('one'1)('two'2)('three'3)('four'4)('five'5)('six'6)('seven'7)
 ↓disp vec tt
 ⍝ =>
@@ -17540,7 +17540,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -17675,7 +17675,7 @@ avl ← {
 }
 foldl ← { ↑⍺⍺⍨/(⌽⍵),⊂⍺ }
 put←'∪' avl ⋄ get←'⍎' avl ⋄ rem←'~' avl ⋄ fmt←'⍕' avl ⋄ chk←'?' avl ⋄ vec←'∊' avl ⋄ tree←0∘(put foldl)
-kseq←1↓¨,\' ',12↑⎕A
+kseq←1↓¨,\' ',12↑•A
 tt←0 put foldl ('one'1)('two'2)('three'3)('four'4)('five'5)('six'6)('seven'7) ⋄ tt←tt put foldl ('one'11)('two'22)('three'33)
 ↓display fmt tt
 ⍝ =>
@@ -18220,7 +18220,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -18383,7 +18383,7 @@ display ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
   open←{(1⌈⍴⍵)⍴⍵}
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',⎕D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+⊃⍵∊'¯',•D)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   { 
@@ -18977,7 +18977,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -19032,7 +19032,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -19156,7 +19156,7 @@ sbst ← {
 }
 foldl ← { ↑⍺⍺⍨/(⌽⍵),⊂⍺ }
 put←'∪' sbst ⋄ get←'⍎' sbst ⋄ rem←'~' sbst ⋄ fmt←'⍕' sbst ⋄ chk←'?' sbst ⋄ vec←'∊' sbst ⋄ bal←'=' sbst ⋄ tree←0∘(put foldl)
-↓disp 7 4⍴{fmt bal 0 put foldl ⍵}¨ 1↓¨,\' ',⎕a
+↓disp 7 4⍴{fmt bal 0 put foldl ⍵}¨ 1↓¨,\' ',•a
 ⍝ =>
 ('┌───────────────────┬───────────────────┬───────────────────┬───────────────────┐') ('│                   │A=A                │A=A┐               │   ┌A=A            │') ('│                   │                   │   └B=B            │B=B┤               │') ('│                   │                   │                   │   └C=C            │') ('├───────────────────┼───────────────────┼───────────────────┼───────────────────┤') ('│   ┌A=A            │   ┌A=A            │   ┌A=A┐           │       ┌A=A        │') ('│B=B┤               │B=B┤               │   │   └B=B        │   ┌B=B┤           │') ('│   └C=C┐           │   │   ┌C=C        │C=C┤               │   │   └C=C        │') ('│       └D=D        │   └D=D┤           │   │   ┌D=D        │D=D┤               │') ('│                   │       └E=E        │   └E=E┤           │   │   ┌E=E        │') ('│                   │                   │       └F=F        │   └F=F┤           │') ('│                   │                   │                   │       └G=G        │') ('├───────────────────┼───────────────────┼───────────────────┼───────────────────┤') ('│       ┌A=A        │       ┌A=A        │       ┌A=A        │       ┌A=A        │') ('│   ┌B=B┤           │   ┌B=B┤           │   ┌B=B┤           │   ┌B=B┤           │') ('│   │   └C=C        │   │   └C=C        │   │   └C=C        │   │   └C=C        │') ('│D=D┤               │D=D┤               │D=D┤               │D=D┤               │') ('│   │   ┌E=E        │   │   ┌E=E        │   │   ┌E=E┐       │   │       ┌E=E    │') ('│   └F=F┤           │   └F=F┤           │   │   │   └F=F    │   │   ┌F=F┤       │') ('│       └G=G┐       │       │   ┌G=G    │   └G=G┤           │   │   │   └G=G    │') ('│           └H=H    │       └H=H┤       │       │   ┌H=H    │   └H=H┤           │') ('│                   │           └I=I    │       └I=I┤       │       │   ┌I=I    │') ('│                   │                   │           └J=J    │       └J=J┤       │') ('│                   │                   │                   │           └K=K    │') ('├───────────────────┼───────────────────┼───────────────────┼───────────────────┤') ('│       ┌A=A        │       ┌A=A        │       ┌A=A┐       │           ┌A=A    │') ('│   ┌B=B┤           │   ┌B=B┤           │       │   └B=B    │       ┌B=B┤       │') ('│   │   └C=C┐       │   │   │   ┌C=C    │   ┌C=C┤           │       │   └C=C    │') ('│   │       └D=D    │   │   └D=D┤       │   │   │   ┌D=D    │   ┌D=D┤           │') ('│E=E┤               │   │       └E=E    │   │   └E=E┤       │   │   │   ┌E=E    │') ('│   │       ┌F=F    │F=F┤               │   │       └F=F    │   │   └F=F┤       │') ('│   │   ┌G=G┤       │   │       ┌G=G    │G=G┤               │   │       └G=G    │') ('│   │   │   └H=H    │   │   ┌H=H┤       │   │       ┌H=H    │H=H┤               │') ('│   └I=I┤           │   │   │   └I=I    │   │   ┌I=I┤       │   │       ┌I=I    │') ('│       │   ┌J=J    │   └J=J┤           │   │   │   └J=J    │   │   ┌J=J┤       │') ('│       └K=K┤       │       │   ┌K=K    │   └K=K┤           │   │   │   └K=K    │') ('│           └L=L    │       └L=L┤       │       │   ┌L=L    │   └L=L┤           │') ('│                   │           └M=M    │       └M=M┤       │       │   ┌M=M    │') ('│                   │                   │           └N=N    │       └N=N┤       │') ('│                   │                   │                   │           └O=O    │') ('├───────────────────┼───────────────────┼───────────────────┼───────────────────┤') ('│           ┌A=A    │           ┌A=A    │           ┌A=A    │           ┌A=A    │') ('│       ┌B=B┤       │       ┌B=B┤       │       ┌B=B┤       │       ┌B=B┤       │') ('│       │   └C=C    │       │   └C=C    │       │   └C=C    │       │   └C=C    │') ('│   ┌D=D┤           │   ┌D=D┤           │   ┌D=D┤           │   ┌D=D┤           │') ('│   │   │   ┌E=E    │   │   │   ┌E=E    │   │   │   ┌E=E    │   │   │   ┌E=E    │') ('│   │   └F=F┤       │   │   └F=F┤       │   │   └F=F┤       │   │   └F=F┤       │') ('│   │       └G=G    │   │       └G=G    │   │       └G=G    │   │       └G=G    │') ('│H=H┤               │H=H┤               │H=H┤               │H=H┤               │') ('│   │       ┌I=I    │   │       ┌I=I    │   │       ┌I=I    │   │       ┌I=I    │') ('│   │   ┌J=J┤       │   │   ┌J=J┤       │   │   ┌J=J┤       │   │   ┌J=J┤       │') ('│   │   │   └K=K    │   │   │   └K=K    │   │   │   └K=K    │   │   │   └K=K    │') ('│   └L=L┤           │   └L=L┤           │   └L=L┤           │   └L=L┤           │') ('│       │   ┌M=M    │       │   ┌M=M    │       │   ┌M=M┐   │       │       ┌M=M│') ('│       └N=N┤       │       └N=N┤       │       │   │   └N=N│       │   ┌N=N┤   │') ('│           └O=O┐   │           │   ┌O=O│       └O=O┤       │       │   │   └O=O│') ('│               └P=P│           └P=P┤   │           │   ┌P=P│       └P=P┤       │') ('│                   │               └Q=Q│           └Q=Q┤   │           │   ┌Q=Q│') ('│                   │                   │               └R=R│           └R=R┤   │') ('│                   │                   │                   │               └S=S│') ('├───────────────────┼───────────────────┼───────────────────┼───────────────────┤') ('│           ┌A=A    │           ┌A=A    │           ┌A=A    │           ┌A=A    │') ('│       ┌B=B┤       │       ┌B=B┤       │       ┌B=B┤       │       ┌B=B┤       │') ('│       │   └C=C    │       │   └C=C    │       │   └C=C    │       │   └C=C    │') ('│   ┌D=D┤           │   ┌D=D┤           │   ┌D=D┤           │   ┌D=D┤           │') ('│   │   │   ┌E=E    │   │   │   ┌E=E    │   │   │   ┌E=E    │   │   │   ┌E=E    │') ('│   │   └F=F┤       │   │   └F=F┤       │   │   └F=F┤       │   │   └F=F┤       │') ('│   │       └G=G    │   │       └G=G    │   │       └G=G    │   │       └G=G    │') ('│H=H┤               │H=H┤               │H=H┤               │H=H┤               │') ('│   │       ┌I=I    │   │       ┌I=I    │   │       ┌I=I┐   │   │           ┌I=I│') ('│   │   ┌J=J┤       │   │   ┌J=J┤       │   │       │   └J=J│   │       ┌J=J┤   │') ('│   │   │   └K=K┐   │   │   │   │   ┌K=K│   │   ┌K=K┤       │   │       │   └K=K│') ('│   │   │       └L=L│   │   │   └L=L┤   │   │   │   │   ┌L=L│   │   ┌L=L┤       │') ('│   └M=M┤           │   │   │       └M=M│   │   │   └M=M┤   │   │   │   │   ┌M=M│') ('│       │       ┌N=N│   └N=N┤           │   │   │       └N=N│   │   │   └N=N┤   │') ('│       │   ┌O=O┤   │       │       ┌O=O│   └O=O┤           │   │   │       └O=O│') ('│       │   │   └P=P│       │   ┌P=P┤   │       │       ┌P=P│   └P=P┤           │') ('│       └Q=Q┤       │       │   │   └Q=Q│       │   ┌Q=Q┤   │       │       ┌Q=Q│') ('│           │   ┌R=R│       └R=R┤       │       │   │   └R=R│       │   ┌R=R┤   │') ('│           └S=S┤   │           │   ┌S=S│       └S=S┤       │       │   │   └S=S│') ('│               └T=T│           └T=T┤   │           │   ┌T=T│       └T=T┤       │') ('│                   │               └U=U│           └U=U┤   │           │   ┌U=U│') ('│                   │                   │               └V=V│           └V=V┤   │') ('│                   │                   │                   │               └W=W│') ('├───────────────────┼───────────────────┼───────────────────┼───────────────────┤') ('│           ┌A=A    │           ┌A=A    │           ┌A=A    │                   │') ('│       ┌B=B┤       │       ┌B=B┤       │       ┌B=B┤       │                   │') ('│       │   └C=C    │       │   └C=C    │       │   └C=C    │                   │') ('│   ┌D=D┤           │   ┌D=D┤           │   ┌D=D┤           │                   │') ('│   │   │   ┌E=E    │   │   │   ┌E=E    │   │   │   ┌E=E┐   │                   │') ('│   │   └F=F┤       │   │   └F=F┤       │   │   │   │   └F=F│                   │') ('│   │       └G=G┐   │   │       │   ┌G=G│   │   └G=G┤       │                   │') ('│   │           └H=H│   │       └H=H┤   │   │       │   ┌H=H│                   │') ('│I=I┤               │   │           └I=I│   │       └I=I┤   │                   │') ('│   │           ┌J=J│J=J┤               │   │           └J=J│                   │') ('│   │       ┌K=K┤   │   │           ┌K=K│K=K┤               │                   │') ('│   │       │   └L=L│   │       ┌L=L┤   │   │           ┌L=L│                   │') ('│   │   ┌M=M┤       │   │       │   └M=M│   │       ┌M=M┤   │                   │') ('│   │   │   │   ┌N=N│   │   ┌N=N┤       │   │       │   └N=N│                   │') ('│   │   │   └O=O┤   │   │   │   │   ┌O=O│   │   ┌O=O┤       │                   │') ('│   │   │       └P=P│   │   │   └P=P┤   │   │   │   │   ┌P=P│                   │') ('│   └Q=Q┤           │   │   │       └Q=Q│   │   │   └Q=Q┤   │                   │') ('│       │       ┌R=R│   └R=R┤           │   │   │       └R=R│                   │') ('│       │   ┌S=S┤   │       │       ┌S=S│   └S=S┤           │                   │') ('│       │   │   └T=T│       │   ┌T=T┤   │       │       ┌T=T│                   │') ('│       └U=U┤       │       │   │   └U=U│       │   ┌U=U┤   │                   │') ('│           │   ┌V=V│       └V=V┤       │       │   │   └V=V│                   │') ('│           └W=W┤   │           │   ┌W=W│       └W=W┤       │                   │') ('│               └X=X│           └X=X┤   │           │   ┌X=X│                   │') ('│                   │               └Y=Y│           └Y=Y┤   │                   │') ('│                   │                   │               └Z=Z│                   │') ('└───────────────────┴───────────────────┴───────────────────┴───────────────────┘')
 
@@ -19610,7 +19610,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -19665,7 +19665,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -20476,7 +20476,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -20531,7 +20531,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -20733,7 +20733,7 @@ redblack ← {
 foldl ← { ↑⍺⍺⍨/(⌽⍵),⊂⍺ }
 put←'∪' redblack ⋄ get←'⍎' redblack ⋄ rem←'~' redblack ⋄ fmt←'⍕' redblack ⋄ chk←'?' redblack ⋄ vec←'∊' redblack ⋄ tree←0∘(put foldl)
 pairs←('one'1)('two'2)('three'3)('four'4)('five'5)('six'6)('seven'7) ⋄ tt←tree pairs
-kseq←1↓¨,\' ',12↑⎕A
+kseq←1↓¨,\' ',12↑•A
 ↓disp vec tt
 ⍝ =>
 ('┌────────┬────────┬───────┬─────────┬───────┬─────────┬───────┐') ('│┌────┬─┐│┌────┬─┐│┌───┬─┐│┌─────┬─┐│┌───┬─┐│┌─────┬─┐│┌───┬─┐│') ('││five│5│││four│4│││one│1│││seven│7│││six│6│││three│3│││two│2││') ('│└────┴─┘│└────┴─┘│└───┴─┘│└─────┴─┘│└───┴─┘│└─────┴─┘│└───┴─┘│') ('└────────┴────────┴───────┴─────────┴───────┴─────────┴───────┘')
@@ -21681,7 +21681,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -21736,7 +21736,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -21938,7 +21938,7 @@ redblack ← {
 foldl ← { ↑⍺⍺⍨/(⌽⍵),⊂⍺ }
 put←'∪' redblack ⋄ get←'⍎' redblack ⋄ rem←'~' redblack ⋄ fmt←'⍕' redblack ⋄ chk←'?' redblack ⋄ vec←'∊' redblack ⋄ tree←0∘(put foldl)
 pairs←('one'1)('two'2)('three'3)('four'4)('five'5)('six'6)('seven'7) ⋄ tt←tree pairs
-kseq←1↓¨,\' ',12↑⎕A
+kseq←1↓¨,\' ',12↑•A
 ↓disp 4 3⍴fmt∘tree¨kseq
 ⍝ =>
 ('┌───────────────────────────┬─────────────────────────────────┬─────────────────────────────────┐') ('│[∘]                        │     ┌[∘]                        │     ┌[∘]                        │') ('│                           │[A=A]┤                           │[A=A]┤                           │') ('│                           │     └[∘]                        │     │     ┌[∘]                  │') ('│                           │                                 │     └<B=B>┤                     │') ('│                           │                                 │           └[∘]                  │') ('├───────────────────────────┼─────────────────────────────────┼─────────────────────────────────┤') ('│           ┌[∘]            │           ┌[∘]                  │           ┌[∘]                  │') ('│     ┌<A=A>┤               │     ┌[A=A]┤                     │     ┌[A=A]┤                     │') ('│     │     └[∘]            │     │     └[∘]                  │     │     └[∘]                  │') ('│[B=B]┤                     │[B=B]┤                           │[B=B]┤                           │') ('│     │     ┌[∘]            │     │     ┌[∘]                  │     │           ┌[∘]            │') ('│     └<C=C>┤               │     └[C=C]┤                     │     │     ┌<C=C>┤               │') ('│           └[∘]            │           │     ┌[∘]            │     │     │     └[∘]            │') ('│                           │           └<D=D>┤               │     └[D=D]┤                     │') ('│                           │                 └[∘]            │           │     ┌[∘]            │') ('│                           │                                 │           └<E=E>┤               │') ('│                           │                                 │                 └[∘]            │') ('├───────────────────────────┼─────────────────────────────────┼─────────────────────────────────┤') ('│           ┌[∘]            │           ┌[∘]                  │                 ┌[∘]            │') ('│     ┌[A=A]┤               │     ┌[A=A]┤                     │           ┌[A=A]┤               │') ('│     │     └[∘]            │     │     └[∘]                  │           │     └[∘]            │') ('│[B=B]┤                     │[B=B]┤                           │     ┌<B=B>┤                     │') ('│     │           ┌[∘]      │     │           ┌[∘]            │     │     │     ┌[∘]            │') ('│     │     ┌[C=C]┤         │     │     ┌[C=C]┤               │     │     └[C=C]┤               │') ('│     │     │     └[∘]      │     │     │     └[∘]            │     │           └[∘]            │') ('│     └<D=D>┤               │     └<D=D>┤                     │[D=D]┤                           │') ('│           │     ┌[∘]      │           │           ┌[∘]      │     │           ┌[∘]            │') ('│           └[E=E]┤         │           │     ┌<E=E>┤         │     │     ┌[E=E]┤               │') ('│                 │     ┌[∘]│           │     │     └[∘]      │     │     │     └[∘]            │') ('│                 └<F=F>┤   │           └[F=F]┤               │     └<F=F>┤                     │') ('│                       └[∘]│                 │     ┌[∘]      │           │     ┌[∘]            │') ('│                           │                 └<G=G>┤         │           └[G=G]┤               │') ('│                           │                       └[∘]      │                 │     ┌[∘]      │') ('│                           │                                 │                 └<H=H>┤         │') ('│                           │                                 │                       └[∘]      │') ('├───────────────────────────┼─────────────────────────────────┼─────────────────────────────────┤') ('│                 ┌[∘]      │                 ┌[∘]            │                 ┌[∘]            │') ('│           ┌[A=A]┤         │           ┌[A=A]┤               │           ┌[A=A]┤               │') ('│           │     └[∘]      │           │     └[∘]            │           │     └[∘]            │') ('│     ┌<B=B>┤               │     ┌[B=B]┤                     │     ┌[B=B]┤                     │') ('│     │     │     ┌[∘]      │     │     │     ┌[∘]            │     │     │     ┌[∘]            │') ('│     │     └[C=C]┤         │     │     └[C=C]┤               │     │     └[C=C]┤               │') ('│     │           └[∘]      │     │           └[∘]            │     │           └[∘]            │') ('│[D=D]┤                     │[D=D]┤                           │[D=D]┤                           │') ('│     │           ┌[∘]      │     │           ┌[∘]            │     │           ┌[∘]            │') ('│     │     ┌[E=E]┤         │     │     ┌[E=E]┤               │     │     ┌[E=E]┤               │') ('│     │     │     └[∘]      │     │     │     └[∘]            │     │     │     └[∘]            │') ('│     └<F=F>┤               │     └[F=F]┤                     │     └[F=F]┤                     │') ('│           │           ┌[∘]│           │           ┌[∘]      │           │           ┌[∘]      │') ('│           │     ┌<G=G>┤   │           │     ┌[G=G]┤         │           │     ┌[G=G]┤         │') ('│           │     │     └[∘]│           │     │     └[∘]      │           │     │     └[∘]      │') ('│           └[H=H]┤         │           └<H=H>┤               │           └<H=H>┤               │') ('│                 │     ┌[∘]│                 │     ┌[∘]      │                 │           ┌[∘]│') ('│                 └<I=I>┤   │                 └[I=I]┤         │                 │     ┌<I=I>┤   │') ('│                       └[∘]│                       │     ┌[∘]│                 │     │     └[∘]│') ('│                           │                       └<J=J>┤   │                 └[J=J]┤         │') ('│                           │                             └[∘]│                       │     ┌[∘]│') ('│                           │                                 │                       └<K=K>┤   │') ('│                           │                                 │                             └[∘]│') ('└───────────────────────────┴─────────────────────────────────┴─────────────────────────────────┘')
@@ -21957,7 +21957,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -22012,7 +22012,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -22214,8 +22214,8 @@ redblack ← {
 foldl ← { ↑⍺⍺⍨/(⌽⍵),⊂⍺ }
 put←'∪' redblack ⋄ get←'⍎' redblack ⋄ rem←'~' redblack ⋄ fmt←'⍕' redblack ⋄ chk←'?' redblack ⋄ vec←'∊' redblack ⋄ tree←0∘(put foldl)
 pairs←('one'1)('two'2)('three'3)('four'4)('five'5)('six'6)('seven'7) ⋄ tt←tree pairs
-kseq←1↓¨,\' ',12↑⎕A
-↓disp 4 3⍴fmt¨(tree 12↑⎕a)∘(rem foldl)¨kseq
+kseq←1↓¨,\' ',12↑•A
+↓disp 4 3⍴fmt¨(tree 12↑•a)∘(rem foldl)¨kseq
 ⍝ =>
 ('┌─────────────────────────────────┬───────────────────────────┬───────────────────────────┐') ('│                 ┌[∘]            │                 ┌[∘]      │                 ┌[∘]      │') ('│           ┌[A=A]┤               │           ┌[B=B]┤         │           ┌[C=C]┤         │') ('│           │     └[∘]            │           │     │     ┌[∘]│           │     └[∘]      │') ('│     ┌[B=B]┤                     │           │     └<C=C>┤   │     ┌[D=D]┤               │') ('│     │     │     ┌[∘]            │           │           └[∘]│     │     │           ┌[∘]│') ('│     │     └[C=C]┤               │     ┌[D=D]┤               │     │     │     ┌[E=E]┤   │') ('│     │           └[∘]            │     │     │           ┌[∘]│     │     │     │     └[∘]│') ('│[D=D]┤                           │     │     │     ┌[E=E]┤   │     │     └<F=F>┤         │') ('│     │                 ┌[∘]      │     │     │     │     └[∘]│     │           │     ┌[∘]│') ('│     │           ┌[E=E]┤         │     │     └<F=F>┤         │     │           └[G=G]┤   │') ('│     │           │     └[∘]      │     │           │     ┌[∘]│     │                 └[∘]│') ('│     │     ┌<F=F>┤               │     │           └[G=G]┤   │[H=H]┤                     │') ('│     │     │     │     ┌[∘]      │     │                 └[∘]│     │           ┌[∘]      │') ('│     │     │     └[G=G]┤         │[H=H]┤                     │     │     ┌[I=I]┤         │') ('│     │     │           └[∘]      │     │           ┌[∘]      │     │     │     └[∘]      │') ('│     └[H=H]┤                     │     │     ┌[I=I]┤         │     └[J=J]┤               │') ('│           │           ┌[∘]      │     │     │     └[∘]      │           │     ┌[∘]      │') ('│           │     ┌[I=I]┤         │     └[J=J]┤               │           └[K=K]┤         │') ('│           │     │     └[∘]      │           │     ┌[∘]      │                 │     ┌[∘]│') ('│           └<J=J>┤               │           └[K=K]┤         │                 └<L=L>┤   │') ('│                 │     ┌[∘]      │                 │     ┌[∘]│                       └[∘]│') ('│                 └[K=K]┤         │                 └<L=L>┤   │                           │') ('│                       │     ┌[∘]│                       └[∘]│                           │') ('│                       └<L=L>┤   │                           │                           │') ('│                             └[∘]│                           │                           │') ('├─────────────────────────────────┼───────────────────────────┼───────────────────────────┤') ('│                 ┌[∘]            │                 ┌[∘]      │           ┌[∘]            │') ('│           ┌[D=D]┤               │           ┌[E=E]┤         │     ┌[F=F]┤               │') ('│           │     │     ┌[∘]      │           │     └[∘]      │     │     │     ┌[∘]      │') ('│           │     └<E=E>┤         │     ┌[F=F]┤               │     │     └<G=G>┤         │') ('│           │           └[∘]      │     │     │     ┌[∘]      │     │           └[∘]      │') ('│     ┌[F=F]┤                     │     │     └[G=G]┤         │[H=H]┤                     │') ('│     │     │     ┌[∘]            │     │           └[∘]      │     │           ┌[∘]      │') ('│     │     └[G=G]┤               │[H=H]┤                     │     │     ┌[I=I]┤         │') ('│     │           └[∘]            │     │           ┌[∘]      │     │     │     └[∘]      │') ('│[H=H]┤                           │     │     ┌[I=I]┤         │     └<J=J>┤               │') ('│     │           ┌[∘]            │     │     │     └[∘]      │           │     ┌[∘]      │') ('│     │     ┌[I=I]┤               │     └[J=J]┤               │           └[K=K]┤         │') ('│     │     │     └[∘]            │           │     ┌[∘]      │                 │     ┌[∘]│') ('│     └[J=J]┤                     │           └[K=K]┤         │                 └<L=L>┤   │') ('│           │     ┌[∘]            │                 │     ┌[∘]│                       └[∘]│') ('│           └[K=K]┤               │                 └<L=L>┤   │                           │') ('│                 │     ┌[∘]      │                       └[∘]│                           │') ('│                 └<L=L>┤         │                           │                           │') ('│                       └[∘]      │                           │                           │') ('├─────────────────────────────────┼───────────────────────────┼───────────────────────────┤') ('│           ┌[∘]                  │           ┌[∘]            │           ┌[∘]            │') ('│     ┌[G=G]┤                     │     ┌[H=H]┤               │     ┌[I=I]┤               │') ('│     │     └[∘]                  │     │     │     ┌[∘]      │     │     └[∘]            │') ('│[H=H]┤                           │     │     └<I=I>┤         │[J=J]┤                     │') ('│     │           ┌[∘]            │     │           └[∘]      │     │     ┌[∘]            │') ('│     │     ┌[I=I]┤               │[J=J]┤                     │     └[K=K]┤               │') ('│     │     │     └[∘]            │     │     ┌[∘]            │           │     ┌[∘]      │') ('│     └<J=J>┤                     │     └[K=K]┤               │           └<L=L>┤         │') ('│           │     ┌[∘]            │           │     ┌[∘]      │                 └[∘]      │') ('│           └[K=K]┤               │           └<L=L>┤         │                           │') ('│                 │     ┌[∘]      │                 └[∘]      │                           │') ('│                 └<L=L>┤         │                           │                           │') ('│                       └[∘]      │                           │                           │') ('├─────────────────────────────────┼───────────────────────────┼───────────────────────────┤') ('│           ┌[∘]                  │     ┌[∘]                  │     ┌[∘]                  │') ('│     ┌[J=J]┤                     │[K=K]┤                     │[L=L]┤                     │') ('│     │     └[∘]                  │     │     ┌[∘]            │     └[∘]                  │') ('│[K=K]┤                           │     └<L=L>┤               │                           │') ('│     │     ┌[∘]                  │           └[∘]            │                           │') ('│     └[L=L]┤                     │                           │                           │') ('│           └[∘]                  │                           │                           │') ('└─────────────────────────────────┴───────────────────────────┴───────────────────────────┘')
 
@@ -22705,7 +22705,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -22760,7 +22760,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -22917,7 +22917,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -22972,7 +22972,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -23129,7 +23129,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -23184,7 +23184,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -23341,7 +23341,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -23396,7 +23396,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -23718,7 +23718,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -23773,7 +23773,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -23819,7 +23819,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -23874,7 +23874,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -23920,7 +23920,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -23975,7 +23975,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -24003,7 +24003,7 @@ tnest ← {
   dsub isub←(1=dvec)∘⊂¨⍵
   node,∇¨↓⍉↑(dsub-1)isub
 }
-↓disp tnest(0 1 1 1 1 1 1 1)(↓8 3⍴⎕a)
+↓disp tnest(0 1 1 1 1 1 1 1)(↓8 3⍴•a)
 ⍝ =>
 ('┌───┬───┬───┬───┬───┬───┬───┬───┐') ('│ABC│DEF│GHI│JKL│MNO│PQR│STU│VWX│') ('└───┴───┴───┴───┴───┴───┴───┴───┘')
 
@@ -24021,7 +24021,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -24076,7 +24076,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -24104,7 +24104,7 @@ tnest ← {
   dsub isub←(1=dvec)∘⊂¨⍵
   node,∇¨↓⍉↑(dsub-1)isub
 }
-↓disp tnest(0 1 2 1 1 1 1 1)(↓8 3⍴⎕a)
+↓disp tnest(0 1 2 1 1 1 1 1)(↓8 3⍴•a)
 ⍝ =>
 ('┌───┬─────────┬───┬───┬───┬───┬───┐') ('│ABC│┌───┬───┐│JKL│MNO│PQR│STU│VWX│') ('│   ││DEF│GHI││   │   │   │   │   │') ('│   │└───┴───┘│   │   │   │   │   │') ('└───┴─────────┴───┴───┴───┴───┴───┘')
 
@@ -24122,7 +24122,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -24177,7 +24177,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -24205,7 +24205,7 @@ tnest ← {
   dsub isub←(1=dvec)∘⊂¨⍵
   node,∇¨↓⍉↑(dsub-1)isub
 }
-↓disp tnest(0 1 2 1 2 1 1 1)(↓8 3⍴⎕a)
+↓disp tnest(0 1 2 1 2 1 1 1)(↓8 3⍴•a)
 ⍝ =>
 ('┌───┬─────────┬─────────┬───┬───┬───┐') ('│ABC│┌───┬───┐│┌───┬───┐│PQR│STU│VWX│') ('│   ││DEF│GHI│││JKL│MNO││   │   │   │') ('│   │└───┴───┘│└───┴───┘│   │   │   │') ('└───┴─────────┴─────────┴───┴───┴───┘')
 
@@ -24223,7 +24223,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -24278,7 +24278,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -24306,7 +24306,7 @@ tnest ← {
   dsub isub←(1=dvec)∘⊂¨⍵
   node,∇¨↓⍉↑(dsub-1)isub
 }
-↓disp tnest(0 1 2 2 2 1 1 1)(↓8 3⍴⎕a)
+↓disp tnest(0 1 2 2 2 1 1 1)(↓8 3⍴•a)
 ⍝ =>
 ('┌───┬─────────────────┬───┬───┬───┐') ('│ABC│┌───┬───┬───┬───┐│PQR│STU│VWX│') ('│   ││DEF│GHI│JKL│MNO││   │   │   │') ('│   │└───┴───┴───┴───┘│   │   │   │') ('└───┴─────────────────┴───┴───┴───┘')
 
@@ -24324,7 +24324,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -24379,7 +24379,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -24407,7 +24407,7 @@ tnest ← {
   dsub isub←(1=dvec)∘⊂¨⍵
   node,∇¨↓⍉↑(dsub-1)isub
 }
-↓disp tnest(0 1 1 2 2 1 2 1)(↓8 3⍴⎕a)
+↓disp tnest(0 1 1 2 2 1 2 1)(↓8 3⍴•a)
 ⍝ =>
 ('┌───┬───┬─────────────┬─────────┬───┐') ('│ABC│DEF│┌───┬───┬───┐│┌───┬───┐│VWX│') ('│   │   ││GHI│JKL│MNO│││PQR│STU││   │') ('│   │   │└───┴───┴───┘│└───┴───┘│   │') ('└───┴───┴─────────────┴─────────┴───┘')
 
@@ -24425,7 +24425,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -24480,7 +24480,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -24508,7 +24508,7 @@ tnest ← {
   dsub isub←(1=dvec)∘⊂¨⍵
   node,∇¨↓⍉↑(dsub-1)isub
 }
-↓disp tnest(0 1 2 3 1 2 3 1)(↓8 3⍴⎕a)
+↓disp tnest(0 1 2 3 1 2 3 1)(↓8 3⍴•a)
 ⍝ =>
 ('┌───┬───────────────┬───────────────┬───┐') ('│ABC│┌───┬─────────┐│┌───┬─────────┐│VWX│') ('│   ││DEF│┌───┬───┐│││MNO│┌───┬───┐││   │') ('│   ││   ││GHI│JKL││││   ││PQR│STU│││   │') ('│   ││   │└───┴───┘│││   │└───┴───┘││   │') ('│   │└───┴─────────┘│└───┴─────────┘│   │') ('└───┴───────────────┴───────────────┴───┘')
 
@@ -24526,7 +24526,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -24581,7 +24581,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -24627,7 +24627,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -24682,7 +24682,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -24728,7 +24728,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
   }
   aligned←{
     rows cols←sepr⍴¨⍵
-    sizes←(⌈/rows)∘.,⌈⌿cols
+    sizes←(⌈/rows) ,⌝ ⌈⌿cols
     ctd=0:sizes↑¨⍵
     v h←sepr⌈0.5×↑(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵
@@ -24783,7 +24783,7 @@ disp ← { format←{t←↑,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⋄ ⍺←
     isor ⍵:'∇'
     sst←{
       0=dec×⍴⍴⍵:'─'
-      (1+⊃⍵∊'¯',⎕D)⊃'#~'
+      (1+⊃⍵∊'¯',•D)⊃'#~'
     }∘⍕
     0=≡⍵:sst ⍵
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵

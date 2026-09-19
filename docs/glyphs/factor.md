@@ -1,14 +1,14 @@
-# `𝒬` — Factor
+# `Ⓠ` — Factor
 
-`𝒬N`: sorted prime factors, with multiplicity. J's `q:` family. Positive integral input; exact integer results.
+`ⓆN`: sorted prime factors, with multiplicity. J's `q:` family. Positive integral input; exact integer results.
 
 ```apl
-𝒬700                 ⍝ 2x 2x 5x 5x 7x
-𝒬1                   ⍝ 0⍴0x
-𝒬⍣¯1⊢𝒬700           ⍝ 700x
+Ⓠ700                 ⍝ 2x 2x 5x 5x 7x
+Ⓠ1                   ⍝ 0⍴0x
+Ⓠ⍣¯1⊢Ⓠ700           ⍝ 700x
 ```
 
-Inverse: product. `K𝒬N` selects exponents or a factor table.
+Inverse: product. `KⓆN` selects exponents or a factor table.
 
 | K | Result |
 |---|---|
@@ -18,12 +18,12 @@ Inverse: product. `K𝒬N` selects exponents or a factor table.
 | `¯∞` | Complete two-row factor/exponent table |
 
 ```apl
-2𝒬700                ⍝ 2x 0x
-∞𝒬700                ⍝ 2x 0x 2x 1x
-¯2𝒬700               ⍝ 2 2⍴5x 7x 2x 1x
-¯∞𝒬700               ⍝ 2 3⍴2x 5x 7x 2x 2x 1x
-0𝒬700                ⍝ 0⍴0x
-¯∞𝒬1                 ⍝ 2 0⍴0x
+2Ⓠ700                ⍝ 2x 0x
+∞Ⓠ700                ⍝ 2x 0x 2x 1x
+¯2Ⓠ700               ⍝ 2 2⍴5x 7x 2x 1x
+¯∞Ⓠ700               ⍝ 2 3⍴2x 5x 7x 2x 2x 1x
+0Ⓠ700                ⍝ 0⍴0x
+¯∞Ⓠ1                 ⍝ 2 0⍴0x
 ```
 
 Scalar cells; results assemble with fill. Large factors follow [Prime's](prime.md) probable-prime policy.

@@ -1,6 +1,6 @@
 # Reference acceptance cases
 
-The `.apl` files are the executable reference tests. They cover ngn assertions/example programs, April core and library assertions/demos/setup, APLcart main/tacit catalogue rows, and selected Dyalog documentation examples. The tracked `inventory/*.jsonl` files retain original records, independent expectations, adaptations and candidates for activation. Entries are not removed because miniapl cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
+The `.apl` files are the executable language tests. `core.apl` holds miniapl's own semantic cases. The other files cover ngn assertions/example programs, April core and library assertions/demos/setup, APLcart main/tacit catalogue rows, and selected Dyalog documentation examples. The tracked `inventory/*.jsonl` files retain original records, independent expectations, adaptations and candidates for activation. Entries are not removed because miniapl cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
 
 Source entries are not necessarily executable tests. Many APLcart recipes have unbound arguments and no expected result. They need concrete examples. Library cases need their definitions and setup. Use the scanner below for current counts and failures; fixture reasons describe their last review, not necessarily today's implementation. Progress notes belong in `meta/`, not this README.
 
@@ -40,6 +40,8 @@ To enable a case:
 4. Run the normal suite. To check candidates without activating them, use the scanner below.
 
 Pending cases do not count as passing tests. New failures in active cases fail the suite. Code and expectation execute in separate fresh sessions. Tests compare shape, nesting, data and prototype. Numeric comparisons are exact unless a case specifies `rtol` or `atol` (`relative_tolerance` or `absolute_tolerance` in the inventory). The bound is `max(absolute, relative × max(|actual|, |expected|))`. Absolute tolerance covers numerical solver roundoff near zero. Shape and nesting remain exact. Display expectations remain separate from array expectations.
+
+Implementation gaps stay in the JSONL inventory with `status: pending` and a `Not implemented:` reason. Record the intended result when settled. Do not turn the current failure into an active error expectation. Active error cases assert invalid language operations or explicit scope exclusions.
 
 ## Find cases ready to enable
 
@@ -83,13 +85,27 @@ The report defaults to `meta/reference-scan.json`. It contains each original fix
 
 ```
 
-Each record starts with `⍝ ID — description`. Both ID and description can be empty; the dash is required. The header pattern is `^⍝ (\S*) —(?: (.*))?$`. Two single-line expressions follow, then an empty separator line. If either expression is multiline, an exact `⍝ =>` line separates code from expectation. A record ends at the next header or EOF. The final empty separator line is required; other blank lines belong to the expressions. Header and separator lines are reserved and cannot appear inside either expression.
+Each record starts with `⍝ ID — description`, or `⍝ — description` without an ID. The description is optional. Add a short description when the purpose would not be obvious to a quick reader. Two single-line expressions follow, then an empty separator line. If either expression is multiline, an exact `⍝ =>` line separates code from expectation. A record ends at the next case header, section heading or EOF. The final empty separator line is required; other blank lines belong to the expressions.
 
-Errors use `⍝ error: DOMAIN ERROR` on the expectation line. A no-result expectation is the APL expression `{}0`. Numerical tolerances use an optional suffix on the header, such as `[rtol=1e-14 atol=1e-15]`. These are comparison tolerances, not APL `⎕CT`. Library definitions and setup stay in the code. There is no file-level header.
+Errors use `⍝ error: DOMAIN ERROR` on the expectation line. A no-result expectation is the APL expression `{}0`. Numerical tolerances use an optional suffix on the header, such as `[rtol=1e-14 atol=1e-15]`. These are comparison tolerances, not APL `⎕CT`. `core.apl` instead uses exact Rust array equality, including numeric domains and prototypes, as its original Rust assertions did.
+
+Group cases with `⍝⍝ Section name`. Sections are labels, not shared sessions. Each case must supply its own definitions and setup.
+
+```apl
+⍝⍝ Evaluation order
+
+⍝ — The right argument prints before the left
+(⎕←1)+(⎕←2)
+3
+⍝ ⎕: 2\n1
+
+```
+
+An optional final `⍝ ⎕: text` checks explicit output. Write `\n` for a newline and `\\` for a literal backslash. Output events are joined with newlines; implicit display is disabled. The marker also checks output preceding an expected error. An empty `⍝ ⎕:` asserts silence. Omit it when output is not the subject of the test. Case headers, section headings, `⍝ =>` and `⍝ ⎕:` lines are reserved fixture syntax.
 
 During conversion, comments are extracted from descriptions, unchanged ngn assertions, or leading comments in example programs. Known import/review boilerplate is removed from reasons and adaptations. Other clauses are retained on the same header line. Comments are not paraphrased or corrected. Converted comments can therefore contain inaccurate source wording or lack a description where none can be extracted.
 
-Use `miniapl.apltests.parse(text)` to read records as `Case` objects with `id`, `comment`, `code`, `expect`, `rtol`, `atol` and the header's `line`. `render(cases)` writes them back. The conversion checks preserve source text and reproduce captured values, shapes and recursive prototypes; they do not infer new expectations from the program under test.
+Use `miniapl.apltests.parse(text)` to read records as `Case` objects with `id`, `comment`, `code`, `expect`, `rtol`, `atol`, `section`, optional `output` text and the header's `line`. `render(cases)` writes them back. The conversion checks preserve source text and reproduce captured values, shapes and recursive prototypes; they do not infer new expectations from the program under test.
 
 Use `add(['ngn:177'])` from `miniapl.apltests` to activate selected inventory IDs from a kernel. It is the equivalent of the `add` command above.
 
@@ -100,9 +116,13 @@ python -m miniapl.apltests preview --replace
 pytest -q tests/test_apltests.py
 ```
 
-The output is `meta/apl-preview/{ngn,april,aplcart,dyalog,core}.apl`. The reference files contain records marked active in the inventory. The native preview contains fully literal `equiv!` tables and `fails` lists. Native tests still run from Rust. Preview generation does not change the inventory or executable corpus. Do not regenerate the executable corpus from the inventory after editing `.apl` tests.
+The output is `meta/apl-preview/{ngn,april,aplcart,dyalog,core}.apl`. The reference previews contain records marked active in the inventory. The core preview extracts any remaining fully literal `equiv!` tables and `fails` lists from Rust; it does not reproduce the curated `core.apl`. Storage, ownership, parser diagnostics, API behaviour and cross-call recovery checks remain in Rust. Preview generation does not change the inventory or executable corpus. Do not regenerate the executable corpus from the inventory after editing `.apl` tests.
 
 ## Sources and adaptations
+
+Active cases use miniapl's postfix `g⌝` for outer product. The inventory retains upstream `∘.g` spellings.
+
+System names use `•` in active cases (`•C`, `•UCS`, etc.). The inventory retains upstream `⎕` spellings. `⎕←` is output in both.
 
 | Source | Snapshot | Files |
 |---|---|---|

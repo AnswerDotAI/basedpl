@@ -419,15 +419,15 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N
 76
 
 ⍝ dyalog:outer-product:1 —
-1 2 3∘.×10 20 30 40
+1 2 3 ×⌝ 10 20 30 40
 3 4⍴10 20 30 40 20 40 60 80 30 60 90 120
 
 ⍝ dyalog:outer-product:2 —
-1 2∘.,1 2 3
+1 2 ,⌝ 1 2 3
 2 3⍴(1 1) (1 2) (1 3) (2 1) (2 2) (2 3)
 
 ⍝ dyalog:outer-product:3 —
-(⍳3)∘.=⍳3
+(⍳3) =⌝ ⍳3
 3 3⍴1 0 0 0 1 0 0 0 1
 
 ⍝ dyalog:key:1 — Inline letters definition

@@ -92,7 +92,7 @@ def test_function_arrays():
     assert pick(2, fs)(2, 3).py == 6
     assert fs.py[0](2, 3).py == 5
     with Session() as a, Session() as b:
-        fs = a('offset←10 ⋄ {offset+⍵}⊙+')
+        fs = a('offset←10 ⋄ {offset+⍵}‿+')
         a(offset=20)
         for f in [first(fs), first(list(fs)[0]), fs.py[0], first(Array(fs.np)[1]), a.fn('{⊃⍵}')(fs)]:
             assert f(3).py == 23

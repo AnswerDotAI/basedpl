@@ -26,7 +26,6 @@ pub(crate) enum OperatorKind {
     PairInverse,
     Under,
     Differentiate,
-    Tie,
     Agenda,
     At,
     Stencil,
@@ -44,14 +43,13 @@ impl OperatorKind {
             Over => "⍥",
             Behind => "⍛",
             Product => ".",
-            Outer => "∘.",
+            Outer => "⌝",
             Key => "⌸",
             Power => "⍣",
             History => "⍣\\",
             PairInverse => "⇄",
             Under => "⌾",
             Differentiate => "∂",
-            Tie => "⊙",
             Agenda => "◶",
             At => "@",
             Stencil => "⌺",
@@ -101,8 +99,6 @@ pub(crate) enum Primitive {
     MatrixDivide,
     Execute,
     Format,
-    Case,
-    Unicode,
     Shape,
     Tally,
     Ravel,
@@ -122,11 +118,11 @@ pub(crate) enum Primitive {
     Polynomial,
 }
 
-fn numeric<'a>(e: &'a Element, span: &Span) -> Result<&'a Number, Error> {
+pub(crate) fn numeric<'a>(e: &'a Element, span: &Span) -> Result<&'a Number, Error> {
     match e { Element::Number(n) => Ok(n), _ => Err(span.error(ErrorKind::Domain, "expected numeric elements")) }
 }
 fn float(n: f64) -> Element { Element::Number(Number::try_from(n).expect("finite generated number")) }
-fn integer(n: i64) -> Element { Element::Number(Number::from_integer(n)) }
+pub(crate) fn integer(n: i64) -> Element { Element::Number(Number::from_integer(n)) }
 fn generated(n: usize, exact: bool) -> Element {
     if !exact { return float(n as f64); }
     match i64::try_from(n) { Ok(n) => integer(n), Err(_) => Element::Number(Number::try_from(num_rational::BigRational::from_integer(n.into())).unwrap()) }
@@ -302,8 +298,6 @@ impl Primitive {
             Self::MatrixDivide => "⌹",
             Self::Execute => "⍎",
             Self::Format => "⍕",
-            Self::Case => "⎕C",
-            Self::Unicode => "⎕UCS",
             Self::Shape => "⍴",
             Self::Tally => "≢",
             Self::Ravel => ",",
@@ -322,8 +316,8 @@ impl Primitive {
             Self::Transpose => "⍉",
             Self::Windows => "↕",
             Self::Prime => "ℙ",
-            Self::Factor => "𝒬",
-            Self::Polynomial => "𝒫",
+            Self::Factor => "Ⓠ",
+            Self::Polynomial => "Ⓟ",
         }
     }
     pub(crate) fn from_glyph(c: char) -> Option<Self> {
@@ -384,8 +378,8 @@ impl Primitive {
             '⍉' => Self::Transpose,
             '↕' => Self::Windows,
             'ℙ' => Self::Prime,
-            '𝒬' => Self::Factor,
-            '𝒫' => Self::Polynomial,
+            'Ⓠ' => Self::Factor,
+            'Ⓟ' => Self::Polynomial,
             _ => return None,
         })
     }
@@ -455,8 +449,6 @@ impl Primitive {
             Self::Grade(down) => return grade(left, right, down, span),
             Self::MatrixDivide => return matrix_divide(left, right, span),
             Self::Format => return format_array(left, right, span),
-            Self::Case => return case_convert(left, right, span),
-            Self::Unicode => return unicode_convert(left, right, span),
             Self::Encode | Self::Decode => {
                 return radix(
                     left.ok_or_else(|| span.error(ErrorKind::Syntax, "encode/decode needs a left argument"))?,
@@ -846,95 +838,6 @@ fn index_of(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Er
         data.push(generated(found + 1, true));
     }
     Array::from_parts(shape, data, integer(0)).map_err(|k| span.error(k, "invalid index-of result"))
-}
-
-fn case_convert(left: Option<&Array>, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
-    let mode = match left {
-        None => -3,
-        Some(a) if a.is_singleton() => numeric(&a.at(0), span)?.integer().map_err(|k| span.error(k, "⎕C mode must be 1, ¯1 or ¯3"))?,
-        _ => return Err(span.error(ErrorKind::Domain, "⎕C needs one case mode")),
-    };
-    if !matches!(mode, -3 | -1 | 1) { return Err(span.error(ErrorKind::Domain, "⎕C mode must be 1, ¯1 or ¯3")); }
-    fn map(a: &Array, mode: isize, span: &Context<'_>) -> Result<Array, Error> {
-        let mapper = icu_casemap::CaseMapper::new();
-        let item = |e: Element| {
-            span.check()?;
-            Ok(match e {
-                Element::Character(c) => Element::Character(match mode {
-                    1 => mapper.simple_uppercase(c),
-                    -1 => mapper.simple_lowercase(c),
-                    _ => mapper.simple_fold(c),
-                }),
-                Element::Nested(a) => Element::Nested(map(&a, mode, span)?),
-                e => e,
-            })
-        };
-        let data = a.elements().map(item).collect::<Result<_, Error>>()?;
-        Array::from_parts(a.shape().to_vec(), data, item(a.prototype().clone())?).map_err(|k| span.error(k, "invalid case conversion"))
-    }
-    map(right, mode, span)
-}
-
-fn unicode_convert(left: Option<&Array>, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
-    let invalid = || span.error(ErrorKind::Domain, "invalid Unicode conversion");
-    let encoding = if let Some(spec) = left {
-        let name = if matches!(spec.elements().next(), Some(Element::Nested(_))) {
-            if spec.shape().len() > 1 || !(1..=2).contains(&spec.len()) { return Err(invalid()); }
-            if spec.len() == 2 {
-                let mode = numeric(&spec.at(1), span)?.integer().map_err(|_| invalid())?;
-                if mode == 83 { return Err(span.error(ErrorKind::Unsupported, "⎕UCS signed bytes are out of scope")); }
-                if mode != 0 { return Err(invalid()); }
-            }
-            spec.at(0).as_array()
-        } else { spec.clone() };
-        if name.shape().len() != 1 { return Err(invalid()); }
-        let name: String = name
-            .elements()
-            .map(|e| match e { Element::Character(c) => Ok(c), _ => Err(invalid()) })
-            .collect::<Result<_, _>>()?;
-        if !matches!(name.as_str(), "UTF-8" | "UTF-16" | "UTF-32") { return Err(invalid()); }
-        if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "encoded ⎕UCS needs a vector")); }
-        Some(name)
-    } else { None };
-    let characters = matches!(right.prototype(), Element::Character(_));
-    let data = if characters {
-        let mut data = Vec::new();
-        for e in right.elements() {
-            span.check()?;
-            let Element::Character(c) = e else { return Err(invalid()); };
-            match encoding.as_deref() {
-                Some("UTF-8") => data.extend(c.encode_utf8(&mut [0; 4]).bytes().map(|b| integer(b as i64))),
-                Some("UTF-16") => data.extend(c.encode_utf16(&mut [0; 2]).iter().map(|&u| integer(u as i64))),
-                _ => data.push(integer(c as i64)),
-            }
-        }
-        data
-    } else {
-        if !matches!(right.prototype(), Element::Number(_)) { return Err(invalid()); }
-        let codes: Vec<u32> = right
-            .elements()
-            .map(|e| {
-                span.check()?;
-                let n = numeric(&e, span)?.nonnegative_integer().map_err(|_| invalid())?;
-                u32::try_from(n).map_err(|_| invalid())
-            })
-            .collect::<Result<_, Error>>()?;
-        let chars: Vec<char> = match encoding.as_deref() {
-            Some("UTF-8") => {
-                let bytes: Vec<_> = codes.into_iter().map(u8::try_from).collect::<Result<_, _>>().map_err(|_| invalid())?;
-                std::str::from_utf8(&bytes).map_err(|_| invalid())?.chars().collect()
-            }
-            Some("UTF-16") => {
-                let units: Vec<_> = codes.into_iter().map(u16::try_from).collect::<Result<_, _>>().map_err(|_| invalid())?;
-                char::decode_utf16(units).collect::<Result<_, _>>().map_err(|_| invalid())?
-            }
-            _ => codes.into_iter().map(char::from_u32).collect::<Option<_>>().ok_or_else(invalid)?,
-        };
-        chars.into_iter().map(Element::Character).collect()
-    };
-    let shape = if encoding.is_some() { vec![data.len()] } else { right.shape().to_vec() };
-    generated_len(&shape).map_err(|k| span.error(k, "Unicode result exceeds element limit"))?;
-    Array::from_parts(shape, data, if characters { integer(0) } else { Element::Character(' ') }).map_err(|k| span.error(k, "invalid Unicode result"))
 }
 
 fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<String, Error> {

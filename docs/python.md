@@ -96,11 +96,11 @@ np.testing.assert_array_equal(add([1, 2, 3], 10), [11, 12, 13])
 
 `.fn('g')` follows later redefinitions of `g`; `apl('g')` retains its current function. Dfns and late-bound functions keep their originating session for name lookup. Close that session only after their last use.
 
-[Function arrays](glyphs/function-arrays.md) retain callable handles, including their session for name lookup. `first` and `pick` return the selected function:
+[Function arrays](glyphs/strand.md#function-arrays) retain callable handles, including their session for name lookup. `first` and `pick` return the selected function:
 
 ```python
 from miniapl import first, pick
-fs = apl('+⊙×⊙÷')
+fs = apl('+‿×‿÷')
 assert pick(2, fs)(2, 3).py == 6
 assert first(fs)(2, 3).py == 5
 ```
@@ -128,7 +128,7 @@ Names distinguish valences: `sign`/`times`, `shape`/`reshape`, `iota`/`index_of`
 |---|---|
 | `f.reduce()`, `f.scan()` | `f/`, `f\` |
 | `f.each()`, `f.commute()` | `f¨`, `f⍨` |
-| `f.outer()`, `f.inner(g)` | `∘.f`, `f.g` |
+| `f.outer()`, `f.inner(g)` | `f⌝`, `f.g` |
 | `f.key()`, `f.stencil(s)` | `f⌸`, `f⌺s` |
 | `f.rank(r)`, `f.atop(g)` | `f⍤r`, `f⍤g` |
 | `f.beside(g)`, `f.over(g)`, `f.behind(g)` | `f∘g`, `f⍥g`, `f⍛g` |
@@ -140,7 +140,7 @@ Names distinguish valences: `sign`/`times`, `shape`/`reshape`, `iota`/`index_of`
 
 Arithmetic between functions makes forks: `f+g` is `(f+g)`. `f @ g` is inner product; `f << g` is compose; `f >> g` reverses composition; `f ** n` is power. Python's precedence applies when building these expressions.
 
-Math families: `prime`/`prime_mode` (`ℙ`), `factors`/`factor_spec` (`𝒬`), `polynomial`/`polyval` (`𝒫`). `windows` is dyadic `↕`.
+Math families: `prime`/`prime_mode` (`ℙ`), `factors`/`factor_spec` (`Ⓠ`), `polynomial`/`polyval` (`Ⓟ`). `windows` is dyadic `↕`.
 
 ```python
 from miniapl import prime, factors, polyval
