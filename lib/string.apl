@@ -218,7 +218,7 @@ xtabs ← {  ⍝ Expand/compress HT chars.
 
 tabTrip ← {⍵≡⍕⍺ xtabs ⍕(-⍺)xtabs ⍵}  ⍝ TODO: should the ⍕ be needed?
 
-tabTrips ← {∧/(∪0 1 2 4 8 16 35,¯1 0 1+⍴⍵)tabTrip¨⊂⍵}
+tabTrips ← {∧/(0,⍳1+⍴⍵)tabTrip¨⊂⍵}
 
 
 ⍝⍝ Blank removal

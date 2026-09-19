@@ -14559,3 +14559,30 @@ Xv←(1 2 1 3)'abab' ⋄ Zv←(10 20 30 40)(1 2 3 4) ⋄ {(↓⍉⊃Xv){+/⍵}�
 Xv←(1 2 1 3)'abab' ⋄ Yv←(1 3 4)'abc' ⋄ (↓⍉⊃Xv)⍳↓⍉⊃Yv
 1 4 5
 
+⍝ aplcart/table.tsv:2150 — Pick'th fn applied to arg; Native agenda
+(2◶(-˘÷˘×))4   ⍝ 0.25
+
+⍝ aplcart/table.tsv:2165 — Sequential test; Short-circuit with a guard
+{⍵≤0:0 ⋄ 2>⍟⍵}¨¯1 0 5 12   ⍝ 0 0 1 0
+
+⍝ aplcart/table.tsv:2166 — Sequential test; Short-circuit with a guard
+{⍵≤0:1 ⋄ 2>⍟⍵}¨¯1 0 5 12   ⍝ 1 1 1 0
+
+⍝ aplcart/table.tsv:2174 — Proposition:consequence:alternative; Conditional with a guard
+{⍵<0:-⍵ ⋄ ⍵}¨¯3 0 4   ⍝ 3 0 4
+
+⍝ aplcart/table.tsv:2177 — Simulation of “fork” syntax; Native fork
+(+/÷≢)1 2 3 4   ⍝ 2.5
+
+⍝ aplcart/table.tsv:2178 — Slower but elegant simulation of “fork” syntax; Native fork
+(+/÷≢)1 2 3 4   ⍝ 2.5
+
+⍝ aplcart/table.tsv:2196 — Fast each for pure operand function; Native Each
++/¨(1 2)(3 4 5)   ⍝ 3 12
+
+⍝ aplcart/table.tsv:2652 — Dfn/dop Error Guard (result upon listed error); Concrete error guard
+{11::42 ⋄ ÷⍵}0   ⍝ 42
+
+⍝ aplcart/table.tsv:3732 — Load other source files prior to this one; Load shared library
+•LOAD 'lib/numeric.apl' ⋄ phinary 2   ⍝ '10.01'
+

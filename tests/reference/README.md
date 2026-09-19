@@ -46,6 +46,8 @@ Pending cases do not count as passing tests. New failures in active cases fail t
 
 Implementation gaps stay in the JSONL inventory with `status: pending` and a `Not implemented:` reason. Record the intended result when settled. Do not turn the current failure into an active error expectation. Active error cases assert invalid language operations or explicit scope exclusions.
 
+Keep unresolved original workloads and inputs pending with their failure details. Useful smaller-workload or exact-arithmetic variants are separate cases; passing them does not resolve the originals.
+
 ## Find cases ready to enable
 
 Use the Python API in a kernel to inspect and edit fixtures without dumping JSONL records:

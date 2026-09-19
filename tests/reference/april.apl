@@ -5139,7 +5139,7 @@ hex ¯3 to 3
 ⍝ =>
 ('fd') ('fe') ('ff') ('00') ('01') ('02') ('03')
 
-⍝ april/libraries/dfns/numeric/demo.lisp:101 — Largest exactly representable binary64 integer formatted through explicit exact input and radix, avoiding approximate encode tolerance; original expected hex digits
+⍝ — Hex of 2*53-1 with exact arithmetic (April numeric demo:101)
 •LOAD 'lib/numeric.apl'
 hex ¯1x+2x*53x
 ⍝ =>
@@ -6684,7 +6684,7 @@ tabText←'whistles        far     and wee'
 ⍝ =>
 •UCS 65 183 66 66 183 67 67 67 183 68 68 68 68 183 69 69 69 69 69 10 70 70 70 70 70 70 183 71 71 71 71 71 71 71 10 72 72 72 72 72 72 72 72 183 73 73 73 73 73 73 73 73 73 10 74 74 74 74 74 74 74 74 74 74 10 75 75 75 75 75 75 75 75 75 75 75 10 76 76 76 76 76 76 76 76 76 76 76 76 10 77 77 77 77 77 77 77 77 77 77 77 77 77 10 78 78 78 78 78 78 78 78 78 78 78 78 78 78 10 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 10 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 10 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 10 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 10 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 10 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 10 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 10 85 10 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 10 86 86 10 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 10 87 87 87 10 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 10 88 88 88 88 10 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 10 89 89 89 89 89 10 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 10 90 90 90 90 90 90
 
-⍝ april/libraries/dfns/string/demo.lisp:264 — Exact identity matrix keeps inverse-derived replication counts integral; original April expectation retained
+⍝ — Wrap with an exact identity matrix (April string demo:264)
 •LOAD 'lib/string.apl'
 ⍕' ·'subs 24 wrap2 'Say can I have some of your purple berries? Yes, I''ve been eating them for six or seven weeks now; haven''t got sick once. Prob''ly keep us both alive.'
 ⍝ =>
@@ -6743,16 +6743,18 @@ tabText←'whistles        far     and wee'
 ⍝ =>
 'whistles→→far→→and→wee'
 
-⍝ april/libraries/dfns/string/demo.lisp:308 — Upstream tab round-trip and text retained; sample widths 0/1/2/4/8/16/35 and text-length boundaries instead of every width, bounding debug-test work
+⍝ — Tab round-trips at selected widths (April string demo:308)
 •LOAD 'lib/string.apl'
+tabTrips←{∧/(∪0 1 2 4 8 16 35,¯1 0 1+⍴⍵)tabTrip¨⊂⍵}
 tabText←'whistles        far     and wee'
 tabText←'whistles        far     and wee' 
 tabTrips tabText
 ⍝ =>
 1
 
-⍝ april/libraries/dfns/string/demo.lisp:309 — Upstream tab round-trip and text retained; sample widths 0/1/2/4/8/16/35 and text-length boundaries instead of every width, bounding debug-test work
+⍝ — Tab round-trips at selected widths (April string demo:309)
 •LOAD 'lib/string.apl'
+tabTrips←{∧/(∪0 1 2 4 8 16 35,¯1 0 1+⍴⍵)tabTrip¨⊂⍵}
 tabText←'whistles        far     and wee' 
 tabTrips ,(6 35⍴↑,/(⍳20)↑¨'⎕'),⊃⌽•UCS 10
 ⍝ =>
@@ -6764,8 +6766,9 @@ tabTrips ,(6 35⍴↑,/(⍳20)↑¨'⎕'),⊃⌽•UCS 10
 ⍝ =>
 1
 
-⍝ april/libraries/dfns/string/demo.lisp:311 — Upstream tab round-trip and text retained; sample widths 0/1/2/4/8/16/35 and text-length boundaries instead of every width, bounding debug-test work
+⍝ — Tab round-trips at selected widths (April string demo:311)
 •LOAD 'lib/string.apl'
+tabTrips←{∧/(∪0 1 2 4 8 16 35,¯1 0 1+⍴⍵)tabTrip¨⊂⍵}
 tabText←'whistles        far     and wee' 
 ∧/tabTrips¨1↓,\10↑''
 ⍝ =>
@@ -7446,4 +7449,70 @@ a←1 2 3 ⋄ ⎕←a+5 ⋄ ⎕←3 4 5 ⋄ 3+a
 ⎕←x←1 2 3
 1 2 3
 ⍝ ⎕: 1 2 3
+
+⍝ april/libraries/dfns/numeric/demo.lisp:136 — Load shared library; allow floating-point roundoff [rtol=1e-14]
+•LOAD 'lib/numeric.apl'
+rational (+∘÷)/¨1<⍳¨⍳10
+⍝ =>
+2 10⍴0 1 1 2 3 5 8 13 21 34 1 1 2 3 5 8 13 21 34 55
+
+⍝ — Splay tree validity after searches (32 nodes; April tree demo:899)
+•LOAD 'lib/tree.apl'
+put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
+check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec ⍵}
+tt←0 put foldl 32?32 ⋄ revt←{↑⌽⍵ get ⍺}
+tt←tt revt foldl 32?32
+check tt
+⍝ =>
+1
+
+⍝ — Splay tree search depths and retrieved keys (32 nodes; April tree demo:901)
+•LOAD 'lib/tree.apl'
+put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
+check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec ⍵}
+tt←0 put foldl 32?32 ⋄ revt←{↑⌽⍵ get ⍺}
+tt←tt revt foldl 32?32
+keys←8?32 ⋄ d←keys dep¨⊂tt
+(check tt)∧(∧/d≥1)∧(∧/d≤32)∧keys≡↑¨keys get¨⊂tt
+⍝ =>
+1
+
+⍝ — Splay tree repeated searches (32 nodes; April tree demo:903)
+•LOAD 'lib/tree.apl'
+put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
+check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec ⍵}
+tt←0 put foldl 32?32 ⋄ revt←{↑⌽⍵ get ⍺}
+tt←tt revt foldl 32?32
+keys←8?32 ⋄ tt←tt revt foldl 8/keys ⋄ d←keys dep¨⊂tt
+(check tt)∧(∧/d≥1)∧(∧/d≤32)∧keys≡↑¨keys get¨⊂tt
+⍝ =>
+1
+
+⍝ — Splay tree validity after repeated searches (32 nodes; April tree demo:904)
+•LOAD 'lib/tree.apl'
+put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
+check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec ⍵}
+tt←0 put foldl 32?32 ⋄ revt←{↑⌽⍵ get ⍺}
+tt←tt revt foldl 32?32
+keys←8?32 ⋄ tt←tt revt foldl 8/keys
+check tt
+⍝ =>
+1
+
+⍝ — Splay tree remove all keys (32 nodes; April tree demo:905)
+•LOAD 'lib/tree.apl'
+put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
+check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec ⍵}
+tt←0 put foldl 32?32 ⋄ revt←{↑⌽⍵ get ⍺}
+tt←tt revt foldl 32?32
+keys←8?32 ⋄ tt←tt revt foldl 8/keys
+tt rem foldl 32?32
+⍝ =>
+0
+
+⍝ april:1901 — Definition and use of n-argument function; Pack n-ary arguments in a vector
+fn←{x y z←⍵ ⋄ x+y×z} ⋄ fn 4 5 6   ⍝ 34
+
+⍝ april:1903 — Inline n-argument function; Pack n-ary arguments in a vector
+{a b c d←⍵ ⋄ (a-c)×b/d}7 4 2(⍳3)   ⍝ 5 5 5 5 10 10 10 10 15 15 15 15
 
