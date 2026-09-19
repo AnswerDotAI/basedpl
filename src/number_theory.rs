@@ -1,16 +1,16 @@
-use crate::{agreement::Agreement, array::generated_len, execution::Context, Array, Element, Error, ErrorKind, Number};
+use crate::{agreement::Agreement, array::generated_len, execution::Context, Error, ErrorKind, Number, Value};
 use num_bigint::{BigInt, BigUint};
 use num_rational::BigRational;
 use num_traits::{One, ToPrimitive, Zero};
 use rand::RngExt;
 
-fn number(e: &Element, span: &Context<'_>) -> Result<Number, Error> {
-    match e { Element::Number(n) => Ok(n.clone()), _ => Err(span.error(ErrorKind::Domain, "number theory requires numeric arguments")) }
+fn number(e: &Value, span: &Context<'_>) -> Result<Number, Error> {
+    match e { Value::Number(n) => Ok(n.clone()), _ => Err(span.error(ErrorKind::Domain, "number theory requires numeric arguments")) }
 }
-fn exact(n: impl Into<BigInt>) -> Element { Element::Number(Number::try_from(BigRational::from_integer(n.into())).unwrap()) }
-fn scalar(n: impl Into<BigInt>) -> Array { Array::new(vec![], vec![exact(n)]).unwrap() }
-fn array(shape: Vec<usize>, data: Vec<Element>, span: &Context<'_>) -> Result<Array, Error> {
-    Array::from_parts(shape, data, exact(0)).map_err(|k| span.error(k, "number theory result exceeds array limits"))
+fn exact(n: impl Into<BigInt>) -> Value { Value::Number(Number::try_from(BigRational::from_integer(n.into())).unwrap()) }
+fn scalar(n: impl Into<BigInt>) -> Value { exact(n) }
+fn array(shape: Vec<usize>, data: Vec<Value>, span: &Context<'_>) -> Result<Value, Error> {
+    Value::from_parts(shape, data, exact(0)).map_err(|k| span.error(k, "number theory result exceeds array limits"))
 }
 fn random_below(n: &BigUint) -> BigUint {
     let mut bytes = n.to_bytes_le();
@@ -171,7 +171,7 @@ impl Primes {
     }
 }
 
-fn factor_result(selector: Option<&Number>, n: BigUint, span: &Context<'_>) -> Result<Array, Error> {
+fn factor_result(selector: Option<&Number>, n: BigUint, span: &Context<'_>) -> Result<Value, Error> {
     let factors = factors(n, span)?;
     let Some(x) = selector else {
         let data: Vec<_> = factors.iter().flat_map(|(p, n)| std::iter::repeat_n(exact(p.clone()), *n)).collect();
@@ -199,7 +199,7 @@ fn factor_result(selector: Option<&Number>, n: BigUint, span: &Context<'_>) -> R
     array(vec![data.len()], data, span)
 }
 
-fn nth_primes(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn nth_primes(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     generated_len(right.shape()).map_err(|k| span.error(k, "prime result exceeds array limits"))?;
     let mut requests = right
         .elements()
@@ -220,10 +220,11 @@ fn nth_primes(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
         }
         result[i] = exact(p);
     }
+    if right.is_atom() { return Ok(result.remove(0)); }
     array(right.shape().to_vec(), result, span)
 }
 
-fn prime(selector: &Number, n: BigInt, span: &Context<'_>) -> Result<Array, Error> {
+fn prime(selector: &Number, n: BigInt, span: &Context<'_>) -> Result<Value, Error> {
     let op = selector.integer().map_err(|k| span.error(k, "prime selector must be integral"))?;
     if matches!(op, 0 | 1) {
         let yes = match n.to_biguint() { Some(n) => is_prime(&n, span)?, None => false };
@@ -263,9 +264,9 @@ fn prime(selector: &Number, n: BigInt, span: &Context<'_>) -> Result<Array, Erro
     }
 }
 
-pub(crate) fn call(factor: bool, left: Option<&Array>, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+pub(crate) fn call(factor: bool, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if !factor && left.is_none() { return nth_primes(right, span); }
-    let agreement = Agreement::new(left.map_or(&[], Array::shape), right.shape()).map_err(|k| span.error(k, "number theory frames must agree"))?;
+    let agreement = Agreement::new(left.map_or(&[], Value::shape), right.shape()).map_err(|k| span.error(k, "number theory frames must agree"))?;
     let mut cells = Vec::with_capacity(agreement.len.max(1));
     for i in 0..agreement.len.max(1) {
         span.check()?;
@@ -275,10 +276,11 @@ pub(crate) fn call(factor: bool, left: Option<&Array>, right: &Array, span: &Con
             factor_result(x.as_ref(), n.to_biguint().ok_or_else(|| span.error(ErrorKind::Domain, "factorisation requires positive integers"))?, span)?
         } else { prime(x.as_ref().unwrap(), n, span)? });
     }
-    Array::assemble(&agreement.shape, &cells[..agreement.len], &cells[0]).map_err(|k| span.error(k, "number theory result exceeds array limits"))
+    if right.is_atom() && left.is_none_or(Value::is_atom) { return Ok(cells.remove(0)); }
+    Value::assemble(&agreement.shape, &cells[..agreement.len], &cells[0]).map_err(|k| span.error(k, "number theory result exceeds array limits"))
 }
 
-pub(crate) fn product(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+pub(crate) fn product(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let cells = right.cells(right.shape().len().min(1)).map_err(|k| span.error(k, "invalid factor cells"))?;
     let mut data = Vec::with_capacity(cells.len());
     for i in 0..cells.len() {
@@ -288,5 +290,6 @@ pub(crate) fn product(right: &Array, span: &Context<'_>) -> Result<Array, Error>
         for e in cell.elements() { product *= number(&e, span)?.big_integer().map_err(|k| span.error(k, "factors must be integral"))?; }
         data.push(exact(product));
     }
+    if cells.frame().is_empty() { return Ok(data.remove(0)); }
     array(cells.frame().to_vec(), data, span)
 }

@@ -10,9 +10,15 @@
 After an array, brackets index from 1. Semicolons separate axes; an empty field selects the whole axis.
 
 ```apl
-v←10 20 30 ⋄ v[3 1] ⍝ 30 10
+v←10 20 30
+v[3 1]              ⍝ 30 10
+v[2]                ⍝ 20
+v[⊂2]               ⍝ ⊂20
+v[,2]               ⍝ ,20
 m←2 3⍴⍳6 ⋄ m[;2]  ⍝ 2 5
 ```
+
+Complete atomic indices retrieve the stored value. Array indices supply a result frame; omitted axes retain the remaining cell axes.
 
 After a function, brackets qualify axes.
 

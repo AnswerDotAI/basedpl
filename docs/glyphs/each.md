@@ -1,6 +1,6 @@
 # `¨` — Each
 
-`f¨Y` applies `f` to each item, enclosing each result.
+`f¨Y` applies `f` to each item and collects the returned values in `Y`'s shape. On atoms it calls `f` directly.
 
 ```apl
 ≢¨(1 2)(3 4 5)     ⍝ 2x 3x

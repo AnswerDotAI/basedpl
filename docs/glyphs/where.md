@@ -10,4 +10,9 @@
 
 ```apl
 10 20 30⍸5 10 25 40 ⍝ 0x 1x 2x 3x
+1 3⍸2              ⍝ 1x
+1 3⍸⊂2             ⍝ 1x
+1 3⍸,2             ⍝ ,1x
 ```
+
+Query cells and batch axes follow [Index Of](iota.md).

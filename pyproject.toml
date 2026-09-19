@@ -34,7 +34,7 @@ python-source = "python"
 module-name = "miniapl._core"
 
 [tool.uv]
-cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.rs" }, { file = "Cargo.toml" }, { file = ".git/fastws-cargo-key" }]
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.rs" }, { file = "python/miniapl/keyboard.json" }, { file = "Cargo.toml" }, { file = ".git/fastws-cargo-key" }]
 
 [tool.fastship]
 branch = "main"

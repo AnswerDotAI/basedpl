@@ -1,10 +1,10 @@
 # `⊆` — Nest / Partition
 
-`⊆Y` encloses a simple non-scalar array; scalars and already-nested arrays stay unchanged.
+`⊆Y` encloses atoms and simple arrays. Already-nested arrays stay unchanged.
 
 ```apl
 ⊆1 2               ⍝ ⊂1 2
-⊆1                 ⍝ 1
+⊆1                 ⍝ ⊂1
 ```
 
 `N⊆Y` partitions along the last axis: zero omits, a rise in the mark starts a partition.

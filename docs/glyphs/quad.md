@@ -8,4 +8,4 @@
 
 The example prints `2` before returning `3`. Explicit output is separate from implicit result display and is captured by the evaluation API.
 
-System names: [•A](quad-a.md), [•D](quad-d.md), [•C](quad-c.md), [•UCS](quad-ucs.md).
+System names: [•A](alphabet.md), [•D](digits.md), [•C](case.md), [•UCS](unicode.md).

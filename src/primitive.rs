@@ -1,9 +1,9 @@
 use crate::{
     agreement::{Agreement, Mapping},
-    array::{generated_len, Axis, MAX_GENERATED_ELEMENTS},
+    array::{generated_len, Axis, Frame, MAX_GENERATED_ELEMENTS},
     execution::Context,
     number::{Arithmetic, Math},
-    Array, Element, Error, ErrorKind, Number, Span,
+    Error, ErrorKind, Number, Span, Value,
 };
 use rand::RngExt;
 use std::{cmp::Ordering, collections::HashMap};
@@ -104,7 +104,7 @@ pub(crate) enum Primitive {
     Ravel,
     Enclose,
     Nest,
-    Disclose,
+    Mix,
     Take,
     Drop,
     Replicate(bool),
@@ -118,18 +118,18 @@ pub(crate) enum Primitive {
     Polynomial,
 }
 
-pub(crate) fn numeric<'a>(e: &'a Element, span: &Span) -> Result<&'a Number, Error> {
-    match e { Element::Number(n) => Ok(n), _ => Err(span.error(ErrorKind::Domain, "expected numeric elements")) }
+pub(crate) fn numeric<'a>(e: &'a Value, span: &Span) -> Result<&'a Number, Error> {
+    match e { Value::Number(n) => Ok(n), _ => Err(span.error(ErrorKind::Domain, "expected numeric elements")) }
 }
-fn float(n: f64) -> Element { Element::Number(Number::try_from(n).expect("finite generated number")) }
-pub(crate) fn integer(n: i64) -> Element { Element::Number(Number::from_integer(n)) }
-fn generated(n: usize, exact: bool) -> Element {
+fn float(n: f64) -> Value { Value::Number(Number::try_from(n).expect("finite generated number")) }
+pub(crate) fn integer(n: i64) -> Value { Value::Number(Number::from_integer(n)) }
+fn generated(n: usize, exact: bool) -> Value {
     if !exact { return float(n as f64); }
-    match i64::try_from(n) { Ok(n) => integer(n), Err(_) => Element::Number(Number::try_from(num_rational::BigRational::from_integer(n.into())).unwrap()) }
+    match i64::try_from(n) { Ok(n) => integer(n), Err(_) => Value::Number(Number::try_from(num_rational::BigRational::from_integer(n.into())).unwrap()) }
 }
-fn selected(a: &Array, i: usize) -> Element { a.at(if a.is_singleton() { 0 } else { i }) }
+fn selected(a: &Value, i: usize) -> Value { a.at(if a.is_singleton() { 0 } else { i }) }
 
-fn windows(sizes: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn windows(sizes: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if sizes.shape().len() > 1 || sizes.len() > right.shape().len() {
         return Err(span.error(ErrorKind::Rank, "window sizes must be a scalar or vector within the argument rank"));
     }
@@ -146,7 +146,7 @@ fn windows(sizes: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Er
     let cell = [&sizes, &right.shape()[sizes.len()..]].concat();
     let shape = [frame.as_slice(), cell.as_slice()].concat();
     let len = generated_len(&shape).map_err(|k| span.error(k, "windows exceed array limits"))?;
-    if len == 0 { return Array::empty(shape, right.prototype().clone()).map_err(|k| span.error(k, "invalid empty windows")); }
+    if len == 0 { return Value::empty(shape, right.prototype().clone()).map_err(|k| span.error(k, "invalid empty windows")); }
     let width = generated_len(&cell).map_err(|k| span.error(k, "window is too large"))?;
     let mut data = Vec::with_capacity(len);
     for i in 0..len / width {
@@ -166,11 +166,11 @@ fn windows(sizes: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Er
             data.push(right.at(offset));
         }
     }
-    Array::from_parts(shape, data, right.prototype().clone()).map_err(|k| span.error(k, "invalid windows"))
+    Value::from_parts(shape, data, right.prototype().clone()).map_err(|k| span.error(k, "invalid windows"))
 }
 
-pub(crate) fn axis_value(axis: usize) -> Array { Array::scalar(Number::from_integer((axis + 1) as i64)).unwrap() }
-pub(crate) fn single_axis(axis: &Array, span: &Span) -> Result<usize, Error> {
+pub(crate) fn axis_value(axis: usize) -> Value { Value::scalar(Number::from_integer((axis + 1) as i64)).unwrap() }
+pub(crate) fn single_axis(axis: &Value, span: &Span) -> Result<usize, Error> {
     if !axis.is_singleton() || axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "one axis is required")); }
     numeric(&axis.at(0), span)?
         .nonnegative_integer()
@@ -179,7 +179,7 @@ pub(crate) fn single_axis(axis: &Array, span: &Span) -> Result<usize, Error> {
         .ok_or_else(|| span.error(ErrorKind::Domain, "axes start at one"))
 }
 
-fn axes(axis: &Array, rank: usize, span: &Context<'_>) -> Result<Vec<usize>, Error> {
+fn axes(axis: &Value, rank: usize, span: &Context<'_>) -> Result<Vec<usize>, Error> {
     if axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be scalar or vector")); }
     let mut result = Vec::new();
     for e in axis.elements() {
@@ -190,7 +190,7 @@ fn axes(axis: &Array, rank: usize, span: &Context<'_>) -> Result<Vec<usize>, Err
     Ok(result)
 }
 
-fn fractional_axis(axis: &Array, rank: usize, span: &Context<'_>) -> Result<Option<usize>, Error> {
+fn fractional_axis(axis: &Value, rank: usize, span: &Context<'_>) -> Result<Option<usize>, Error> {
     if axis.shape().len() > 1 || !axis.is_singleton() { return Ok(None); }
     let n = numeric(&axis.at(0), span)?.clone();
     if n.integer().is_ok() { return Ok(None); }
@@ -208,7 +208,7 @@ fn float_binary<T>(x: &[f64], y: &[f64], agreement: &Agreement, f: impl Fn(f64, 
     }
 }
 
-fn float_apply(op: Primitive, left: Option<&[f64]>, right: &[f64], agreement: &Agreement, span: &Context<'_>) -> Result<Array, Error> {
+fn float_apply(op: Primitive, left: Option<&[f64]>, right: &[f64], agreement: &Agreement, span: &Context<'_>) -> Result<Value, Error> {
     use crate::number::float_equal;
     use Arithmetic::*;
     use Comparison::*;
@@ -238,11 +238,11 @@ fn float_apply(op: Primitive, left: Option<&[f64]>, right: &[f64], agreement: &A
                 LessEqual => float_binary(x, right, agreement, |a, b| boolean(a < b || float_equal(a, b))),
                 GreaterEqual => float_binary(x, right, agreement, |a, b| boolean(a > b || float_equal(a, b))),
             };
-            return Array::integers(agreement.shape.clone(), data).map_err(|k| span.error(k, "invalid comparison result"));
+            return Value::integers(agreement.shape.clone(), data).map_err(|k| span.error(k, "invalid comparison result"));
         }
         _ => unreachable!(),
     };
-    Array::floats(agreement.shape.clone(), data).map_err(|k| span.error(k, "undefined real result"))
+    Value::floats(agreement.shape.clone(), data).map_err(|k| span.error(k, "undefined real result"))
 }
 
 /// Singleton extension is shared selection, not a universal broadcasting policy.
@@ -265,6 +265,8 @@ impl Primitive {
                 Power => "*",
                 Log => "⍟",
                 Circle => "○",
+                Pi => "π",
+                Root => "√",
                 Factorial => "!",
                 Gcd => "∨",
                 Lcm => "∧",
@@ -303,7 +305,7 @@ impl Primitive {
             Self::Ravel => ",",
             Self::Enclose => "⊂",
             Self::Nest => "⊆",
-            Self::Disclose => "⊃",
+            Self::Mix => "⊃",
             Self::Take => "↑",
             Self::Drop => "↓",
             Self::Replicate(false) => "/",
@@ -333,6 +335,8 @@ impl Primitive {
             '*' => Self::Math(Math::Power),
             '⍟' => Self::Math(Math::Log),
             '○' => Self::Math(Math::Circle),
+            'π' => Self::Math(Math::Pi),
+            '√' => Self::Math(Math::Root),
             '!' => Self::Math(Math::Factorial),
             '∨' => Self::Math(Math::Gcd),
             '∧' => Self::Math(Math::Lcm),
@@ -369,7 +373,7 @@ impl Primitive {
             ',' => Self::Ravel,
             '⊂' => Self::Enclose,
             '⊆' => Self::Nest,
-            '⊃' => Self::Disclose,
+            '⊃' => Self::Mix,
             '↑' => Self::Take,
             '↓' => Self::Drop,
             '⍪' => Self::CatenateFirst,
@@ -383,8 +387,8 @@ impl Primitive {
             _ => return None,
         })
     }
-    pub(crate) fn call(self, left: Option<&Array>, right: &Array, span: &Context<'_>) -> Result<Array, Error> { self.call_axis(left, right, None, span) }
-    pub(crate) fn call_axes(self, left: Option<&Array>, right: &Array, spec: &Array, span: &Context<'_>) -> Result<Array, Error> {
+    pub(crate) fn call(self, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> { self.call_axis(left, right, None, span) }
+    pub(crate) fn call_axes(self, left: Option<&Value>, right: &Value, spec: &Value, span: &Context<'_>) -> Result<Value, Error> {
         if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be scalar or vector")); }
         if let Some(left) = left {
             if matches!(self, Self::Arithmetic(_) | Self::Math(_) | Self::Compare(_)) && !matches!(self, Self::Math(Math::Not)) {
@@ -409,16 +413,15 @@ impl Primitive {
                 right.with_shape(shape).map_err(|k| span.error(k, "invalid ravel shape"))
             }
             (Self::Enclose, None) => enclose_axes(right, &axes(spec, right.shape().len(), span)?, span),
-            (Self::Take, None) => mix_axes(right, spec, span),
+            (Self::Mix, None) => mix_axes(right, spec, span),
             (Self::Take | Self::Drop, Some(x)) => take_drop(matches!(self, Self::Take), x, right, Some(&axes(spec, right.shape().len(), span)?), span),
             (Self::Index, Some(x)) => squad(x, right, Some(&axes(spec, right.shape().len(), span)?), span),
             (Self::CatenateFirst, None) => Err(span.error(ErrorKind::Syntax, "table does not accept an axis")),
             _ => self.call_axis(left, right, Some(single_axis(spec, span)?), span),
         }
     }
-    pub(crate) fn call_axis(self, left: Option<&Array>, right: &Array, axis: Option<usize>, span: &Context<'_>) -> Result<Array, Error> {
+    pub(crate) fn call_axis(self, left: Option<&Value>, right: &Value, axis: Option<usize>, span: &Context<'_>) -> Result<Value, Error> {
         span.check()?;
-        let construct = |shape, data| Array::from_parts(shape, data, float(0.0)).map_err(|k| span.error(k, "invalid array result"));
         if axis.is_some()
             && !matches!(
                 self,
@@ -429,6 +432,7 @@ impl Primitive {
                     | Self::CatenateFirst
                     | Self::Drop
                     | Self::Take
+                    | Self::Mix
                     | Self::Index
                     | Self::Enclose
                     | Self::Nest
@@ -436,6 +440,10 @@ impl Primitive {
         { return Err(span.error(ErrorKind::Syntax, "axis is not supported by this primitive")); }
         match self {
             Self::Identity(first) => return Ok(if first { left.unwrap_or(right) } else { right }.clone()),
+            Self::Math(Math::Nand | Math::Nor) if left.is_none() => {
+                let op = if matches!(self, Self::Math(Math::Nand)) { Arithmetic::Times } else { Arithmetic::Plus };
+                return Self::Arithmetic(op).call(Some(right), right, span);
+            }
             Self::Prime | Self::Factor => return crate::number_theory::call(matches!(self, Self::Factor), left, right, span),
             Self::Polynomial => return crate::polynomial::call(left, right, span),
             Self::Member => {
@@ -450,24 +458,26 @@ impl Primitive {
             Self::MatrixDivide => return matrix_divide(left, right, span),
             Self::Format => return format_array(left, right, span),
             Self::Encode | Self::Decode => {
-                return radix(
-                    left.ok_or_else(|| span.error(ErrorKind::Syntax, "encode/decode needs a left argument"))?,
-                    right,
-                    matches!(self, Self::Encode),
-                    span,
-                )
+                return match left {
+                    Some(x) => radix(x, right, matches!(self, Self::Encode), span),
+                    None if matches!(self, Self::Encode) => binary_encode(right, span),
+                    None => radix(&integer(2), right, false, span),
+                };
+            }
+            Self::Math(Math::Gcd | Math::Lcm) if left.is_none() => return complex_parts(right, matches!(self, Self::Math(Math::Lcm)), span),
+            Self::Compare(Comparison::Equal) if left.is_none() => return self_classify(right, span),
+            Self::Compare(Comparison::LessEqual | Comparison::GreaterEqual) if left.is_none() => {
+                let op = if matches!(self, Self::Compare(Comparison::LessEqual)) { Arithmetic::Minus } else { Arithmetic::Plus };
+                return Self::Arithmetic(op).call(Some(right), &integer(1), span);
             }
             Self::Index => {
                 return match left { Some(x) => squad(x, right, axis.map(|a| vec![a]).as_deref(), span), None => Ok(right.clone()) }
             }
             Self::Math(Math::Not) if left.is_some() => return without(left.unwrap(), right, span),
             Self::Depth => {
-                return match left {
-                    Some(x) => construct(vec![], vec![integer(i64::from(array_match(x, right, span)?))]),
-                    None => construct(vec![], vec![float(depth(right) as f64)]),
-                }
+                return match left { Some(x) => Ok(integer(i64::from(array_match(x, right, span)?))), None => Ok(integer(depth(right) as i64)) }
             }
-            Self::Tally if left.is_some() => return construct(vec![], vec![integer(i64::from(!array_match(left.unwrap(), right, span)?))]),
+            Self::Tally if left.is_some() => return Ok(integer(i64::from(!array_match(left.unwrap(), right, span)?))),
             Self::Compare(Comparison::NotEqual) if left.is_none() => return unique_mask(right, span),
             Self::Iota => {
                 return match left { Some(x) => index_of(x, right, span), None => iota(right, span) }
@@ -497,9 +507,11 @@ impl Primitive {
                 return right.with_shape(vec![rows, columns]).map_err(|k| span.error(k, "invalid table"));
             }
             Self::Shape if left.is_some() => return reshape(left.unwrap(), right, span),
-            Self::Disclose => {
-                return match left { Some(x) => pick(x, right, false, span), None => Ok(right.disclose()) }
-                .map(|e| e.as_array())
+            Self::Mix => {
+                if let Some(x) = left { return pick(x, right, false, span); }
+                if let Some(axis) = axis { return mix_axes(right, &axis_value(axis), span); }
+                let cells: Vec<_> = right.elements().collect();
+                return Value::assemble(right.shape(), &cells, &right.prototype()).map_err(|k| span.error(k, "cannot assemble cells"));
             }
             Self::Enclose | Self::Nest => {
                 if let Some(x) = left { return partition(x, right, axis, matches!(self, Self::Nest), span); }
@@ -507,25 +519,21 @@ impl Primitive {
                     if matches!(self, Self::Nest) { return Err(span.error(ErrorKind::Syntax, "nest does not take an axis")); }
                     return self.call_axes(None, right, &axis_value(axis), span);
                 }
-                if matches!(self, Self::Nest) && right.elements().chain(std::iter::once(right.prototype().clone())).any(|e| matches!(e, Element::Nested(_))) {
+                if matches!(self, Self::Nest) && right.elements().chain(std::iter::once(right.prototype().clone())).any(|e| matches!(e, Value::Array(_))) {
                     return Ok(right.clone());
                 }
-                return Array::new(vec![], vec![Element::Nested(right.clone())]).map_err(|k| span.error(k, "invalid enclosure"));
+                return Value::new(vec![], vec![right.clone()]).map_err(|k| span.error(k, "invalid enclosure"));
             }
             Self::Take | Self::Drop => {
-                if left.is_none() && matches!(self, Self::Take) {
-                    if let Some(axis) = axis { return mix_axes(right, &axis_value(axis), span); }
-                    let cells: Vec<_> = right.elements().map(|e| e.as_array()).collect();
-                    return Array::assemble(right.shape(), &cells, &right.prototype().as_array()).map_err(|k| span.error(k, "cannot assemble cells"));
-                }
+                if left.is_none() && matches!(self, Self::Take) { return pick(&integer(1), right, false, span); }
                 if left.is_none() { return split(right, axis, span); }
                 return take_drop(matches!(self, Self::Take), left.unwrap(), right, axis.map(|a| vec![a]).as_deref(), span);
             }
             Self::Shape | Self::Tally | Self::Ravel => {
                 return match self {
-                    Self::Shape => Array::from_parts(vec![right.shape().len()], right.shape().iter().map(|&n| generated(n, true)).collect(), integer(0))
+                    Self::Shape => Value::from_parts(vec![right.shape().len()], right.shape().iter().map(|&n| generated(n, true)).collect(), integer(0))
                         .map_err(|k| span.error(k, "invalid shape")),
-                    Self::Tally => construct(vec![], vec![generated(right.shape().first().copied().unwrap_or(1), true)]),
+                    Self::Tally => Ok(generated(right.shape().first().copied().unwrap_or(1), true)),
                     Self::Ravel => {
                         if let Some(axis) = axis { return self.call_axes(None, right, &axis_value(axis), span); }
                         right.with_shape(vec![right.len()]).map_err(|k| span.error(k, "invalid ravel"))
@@ -539,22 +547,23 @@ impl Primitive {
         self.scalar_apply(left, right, span, false)
     }
 
-    fn scalar_apply(self, left: Option<&Array>, right: &Array, span: &Context<'_>, fill: bool) -> Result<Array, Error> {
+    fn scalar_apply(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
         if matches!(self, Self::Random) && !fill { return roll(right, right.is_exact(), span, false); }
-        let agreement = Agreement::new(left.map_or(&[], Array::shape), right.shape()).map_err(|k| span.error(k, "array shapes do not agree"))?;
+        if right.is_atom() && left.is_none_or(Value::is_atom) { return self.scalar_item(left, right, span, fill); }
+        let agreement = Agreement::new(left.map_or(&[], Value::shape), right.shape()).map_err(|k| span.error(k, "array shapes do not agree"))?;
         self.scalar_mapped(left, right, span, fill, &agreement)
     }
-    fn scalar_mapped(self, left: Option<&Array>, right: &Array, span: &Context<'_>, fill: bool, agreement: &Agreement) -> Result<Array, Error> {
+    fn scalar_mapped(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool, agreement: &Agreement) -> Result<Value, Error> {
         if agreement.len == 0 {
-            let prototype = self.scalar_item(left.map(Array::prototype), right.prototype(), span, true)?;
-            return Array::empty(agreement.shape.clone(), prototype).map_err(|k| span.error(k, "invalid empty result"));
+            let prototype = self.scalar_item(left.map(Value::prototype).as_ref(), &right.prototype(), span, true)?;
+            return Value::empty(agreement.shape.clone(), prototype).map_err(|k| span.error(k, "invalid empty result"));
         }
         if matches!(self, Self::Arithmetic(_) | Self::Compare(_)) && right.as_floats().is_some() && left.is_none_or(|a| a.as_floats().is_some()) {
             return float_apply(self, left.map(|a| a.as_floats().unwrap()), right.as_floats().unwrap(), agreement, span);
         }
-        if let (Self::Compare(op), Some(x), Some(y)) = (self, left.and_then(Array::as_integers), right.as_integers()) {
+        if let (Self::Compare(op), Some(x), Some(y)) = (self, left.and_then(Value::as_integers), right.as_integers()) {
             let data = (0..agreement.len).map(|i| i64::from(op.ordered(x[agreement.left.index(i)].cmp(&y[agreement.right.index(i)])))).collect();
-            return Array::integers(agreement.shape.clone(), data).map_err(|k| span.error(k, "invalid comparison result"));
+            return Value::integers(agreement.shape.clone(), data).map_err(|k| span.error(k, "invalid comparison result"));
         }
         if let Self::Arithmetic(op) = self {
             if let Some(y) = right.as_integers() {
@@ -563,36 +572,34 @@ impl Primitive {
                     let data = (0..agreement.len)
                         .map(|i| Number::checked_integer(op, x.map(|v| v[agreement.left.index(i)]), y[agreement.right.index(i)]))
                         .collect::<Option<Vec<_>>>();
-                    if let Some(data) = data { return Array::integers(agreement.shape.clone(), data).map_err(|k| span.error(k, "invalid integer result")); }
+                    if let Some(data) = data { return Value::integers(agreement.shape.clone(), data).map_err(|k| span.error(k, "invalid integer result")); }
                 }
             }
         }
         let data = (0..agreement.len)
             .map(|i| self.scalar_item(left.map(|a| a.at(agreement.left.index(i))).as_ref(), &right.at(agreement.right.index(i)), span, fill))
             .collect::<Result<_, _>>()?;
-        Array::new(agreement.shape.clone(), data).map_err(|k| span.error(k, "invalid scalar result"))
+        Value::new(agreement.shape.clone(), data).map_err(|k| span.error(k, "invalid scalar result"))
     }
 
-    fn scalar_item(self, left: Option<&Element>, right: &Element, span: &Context<'_>, fill: bool) -> Result<Element, Error> {
+    fn scalar_item(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
         span.check()?;
-        if matches!((self, left, right), (Self::Arithmetic(Arithmetic::Plus), None, Element::Character(_))) { return Ok(right.clone()); }
-        if matches!(right, Element::Nested(_)) || matches!(left, Some(Element::Nested(_))) {
-            return self.scalar_apply(left.map(|e| e.as_array()).as_ref(), &right.as_array(), span, fill).map(Element::Nested);
-        }
+        if matches!((self, left, right), (Self::Arithmetic(Arithmetic::Plus), None, Value::Character(_))) { return Ok(right.clone()); }
+        if matches!(right, Value::Array(_)) || matches!(left, Some(Value::Array(_))) { return self.scalar_apply(left, right, span, fill); }
         if let (Self::Arithmetic(op @ (Arithmetic::Plus | Arithmetic::Minus)), Some(left)) = (self, left) {
-            if matches!(right, Element::Character(_)) || matches!(left, Element::Character(_)) {
+            if matches!(right, Value::Character(_)) || matches!(left, Value::Character(_)) {
                 return character_arithmetic(op, left, right, fill).map_err(|m| span.error(ErrorKind::Domain, m));
             }
         }
         if fill {
             return Ok(match (self, left, right) {
-                (Self::Compare(_) | Self::Math(Math::Not | Math::Nand | Math::Nor), _, _) => integer(0),
-                (Self::Random, _, Element::Number(y)) => Element::Number(y.unit(0)),
-                (Self::Math(Math::Circle | Math::Log), _, _) | (Self::Math(Math::Power), None, _) => float(0.0),
-                (Self::Math(_), None, Element::Number(y)) => Element::Number(y.result_zero(None)),
-                (Self::Math(_), Some(Element::Number(x)), Element::Number(y)) => Element::Number(y.result_zero(Some(x))),
-                (Self::Arithmetic(_), None, Element::Number(y)) => Element::Number(y.result_zero(None)),
-                (Self::Arithmetic(_), Some(Element::Number(x)), Element::Number(y)) => Element::Number(y.result_zero(Some(x))),
+                (Self::Compare(_) | Self::Math(Math::Not), _, _) | (Self::Math(Math::Nand | Math::Nor), Some(_), _) => integer(0),
+                (Self::Random, _, Value::Number(y)) => Value::Number(y.unit(0)),
+                (Self::Math(Math::Circle | Math::Pi | Math::Log), _, _) | (Self::Math(Math::Power), None, _) => float(0.0),
+                (Self::Math(_), None, Value::Number(y)) => Value::Number(y.result_zero(None)),
+                (Self::Math(_), Some(Value::Number(x)), Value::Number(y)) => Value::Number(y.result_zero(Some(x))),
+                (Self::Arithmetic(_), None, Value::Number(y)) => Value::Number(y.result_zero(None)),
+                (Self::Arithmetic(_), Some(Value::Number(x)), Value::Number(y)) => Value::Number(y.result_zero(Some(x))),
                 _ => float(0.0),
             });
         }
@@ -600,12 +607,12 @@ impl Primitive {
             Self::Math(op) => {
                 let y = numeric(right, span)?;
                 let n = match left { Some(x) => numeric(x, span)?.math_dyad(op, y), None => y.math_monad(op) };
-                n.map(Element::Number).map_err(|message| span.error(ErrorKind::Domain, message))
+                n.map(Value::Number).map_err(|message| span.error(ErrorKind::Domain, message))
             }
             Self::Arithmetic(op) => {
                 let y = numeric(right, span)?;
                 let n = match left { Some(x) => numeric(x, span)?.dyad(op, y), None => y.monad(op) };
-                n.map(Element::Number).map_err(|message| span.error(ErrorKind::Domain, message))
+                n.map(Value::Number).map_err(|message| span.error(ErrorKind::Domain, message))
             }
             Self::Compare(op) => {
                 use Comparison::*;
@@ -613,9 +620,9 @@ impl Primitive {
                 let result = match op {
                     Equal | NotEqual => {
                         let equal = match (x, right) {
-                            (Element::Number(x), Element::Number(y)) => x.equal(y),
-                            (Element::Character(x), Element::Character(y)) => Ok(x == y),
-                            (Element::Function(x), Element::Function(y)) => Ok(x == y),
+                            (Value::Number(x), Value::Number(y)) => x.equal(y),
+                            (Value::Character(x), Value::Character(y)) => Ok(x == y),
+                            (Value::Function(x), Value::Function(y)) => Ok(x == y),
                             _ => Ok(false),
                         };
                         equal.map(|equal| if matches!(op, Equal) { equal } else { !equal })
@@ -629,8 +636,8 @@ impl Primitive {
     }
 }
 
-fn character_arithmetic(op: Arithmetic, left: &Element, right: &Element, fill: bool) -> Result<Element, &'static str> {
-    use Element::{Character, Number};
+fn character_arithmetic(op: Arithmetic, left: &Value, right: &Value, fill: bool) -> Result<Value, &'static str> {
+    use Value::{Character, Number};
     let shift = |c: char, n: &crate::Number, subtract: bool| {
         let offset = n.integer().map_err(|_| "character offset must be a finite real integer")? as i128;
         let value = if subtract { c as i128 - offset } else { c as i128 + offset };
@@ -645,56 +652,59 @@ fn character_arithmetic(op: Arithmetic, left: &Element, right: &Element, fill: b
     }
 }
 
-pub(crate) fn array_match(left: &Array, right: &Array, span: &Context<'_>) -> Result<bool, Error> {
+pub(crate) fn array_match(left: &Value, right: &Value, span: &Context<'_>) -> Result<bool, Error> {
+    if left.is_atom() || right.is_atom() { return element_match(left, right, span); }
     span.check()?;
     if left.shape() != right.shape() { return Ok(false); }
-    if left.is_empty() { return element_match(left.prototype(), right.prototype(), span); }
+    if left.is_empty() { return element_match(&left.prototype(), &right.prototype(), span); }
     for (x, y) in left.elements().zip(right.elements()) { if !element_match(&x, &y, span)? { return Ok(false); } }
     Ok(true)
 }
 
-fn element_match(left: &Element, right: &Element, span: &Context<'_>) -> Result<bool, Error> {
+fn element_match(left: &Value, right: &Value, span: &Context<'_>) -> Result<bool, Error> {
     span.check()?;
     match (left, right) {
-        (Element::Number(x), Element::Number(y)) => x.equal(y).map_err(|m| span.error(ErrorKind::Domain, m)),
-        (Element::Character(x), Element::Character(y)) => Ok(x == y),
-        (Element::Function(x), Element::Function(y)) => Ok(x == y),
-        (Element::Nested(x), Element::Nested(y)) => array_match(x, y, span),
+        (Value::Number(x), Value::Number(y)) => x.equal(y).map_err(|m| span.error(ErrorKind::Domain, m)),
+        (Value::Character(x), Value::Character(y)) => Ok(x == y),
+        (Value::Function(x), Value::Function(y)) => Ok(x == y),
+        (x @ Value::Array(_), y @ Value::Array(_)) => array_match(x, y, span),
         _ => Ok(false),
     }
 }
 
-fn depth(right: &Array) -> isize {
+fn depth(right: &Value) -> isize {
+    if right.is_atom() { return 0; }
     let items = right.elements().chain(right.is_empty().then(|| right.prototype().clone()));
-    if items.clone().all(|e| !matches!(e, Element::Nested(_))) { return isize::from(!right.is_scalar()); }
+    if items.clone().all(|e| !matches!(e, Value::Array(_))) { return 1; }
     let ds: Vec<_> = items
-        .map(|e| match e { Element::Nested(a) => depth(&a), _ => 0 })
+        .map(|e| match e { a @ Value::Array(_) => depth(&a), _ => 0 })
         .collect();
     let n = 1 + ds.iter().map(|d| d.abs()).max().unwrap();
     if ds.iter().all(|&d| d >= 0 && d == ds[0]) { n } else { -n }
 }
 
-fn without(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn without(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if left.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "without needs a scalar or vector left argument")); }
     let mut data = Vec::new();
     for x in left.elements() { if !contains(right, &x, span)? { data.push(x); } }
-    Array::from_parts(vec![data.len()], data, left.prototype().clone()).map_err(|k| span.error(k, "invalid without result"))
+    Value::from_parts(vec![data.len()], data, left.prototype().clone()).map_err(|k| span.error(k, "invalid without result"))
 }
 
-fn contains(array: &Array, element: &Element, span: &Context<'_>) -> Result<bool, Error> {
+fn contains(array: &Value, element: &Value, span: &Context<'_>) -> Result<bool, Error> {
     for item in array.elements() { if element_match(&item, element, span)? { return Ok(true); } }
     Ok(false)
 }
 
-fn membership(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
-    let data = left.elements().map(|e| contains(right, &e, span).map(i64::from)).collect::<Result<_, _>>()?;
-    Array::integers(left.shape().to_vec(), data).map_err(|k| span.error(k, "invalid membership result"))
+fn membership(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let data = left.elements().map(|e| contains(right, &e, span).map(|v| integer(i64::from(v)))).collect::<Result<_, _>>()?;
+    let frame = if left.shape().is_empty() { Frame::Direct } else { Frame::Array(left.shape().to_vec()) };
+    frame.collect(data, integer(0)).map_err(|k| span.error(k, "invalid membership result"))
 }
 
-fn enlist(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
-    fn append(array: &Array, data: &mut Vec<Element>, span: &Context<'_>) -> Result<(), Error> {
+fn enlist(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    fn append(array: &Value, data: &mut Vec<Value>, span: &Context<'_>) -> Result<(), Error> {
         for item in array.elements() {
-            if let Element::Nested(a) = item { append(&a, data, span)?; } else {
+            if let a @ Value::Array(_) = item { append(&a, data, span)?; } else {
                 if data.len() == MAX_GENERATED_ELEMENTS { return Err(span.error(ErrorKind::Limit, "enlist exceeds array limits")); }
                 data.push(item);
             }
@@ -704,23 +714,23 @@ fn enlist(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
     let mut data = Vec::new();
     append(right, &mut data, span)?;
     let mut prototype = right.prototype();
-    while let Element::Nested(a) = prototype { prototype = a.prototype(); }
-    Array::from_parts(vec![data.len()], data, prototype.clone()).map_err(|k| span.error(k, "invalid enlist result"))
+    while let a @ Value::Array(_) = prototype { prototype = a.prototype(); }
+    Value::from_parts(vec![data.len()], data, prototype.clone()).map_err(|k| span.error(k, "invalid enlist result"))
 }
 
-fn unique(right: &Array, span: &Context<'_>) -> Result<Array, Error> { replicate(&unique_mask(right, span)?, right, true, None, false, span) }
+fn unique(right: &Value, span: &Context<'_>) -> Result<Value, Error> { replicate(&unique_mask(right, span)?, right, true, None, false, span) }
 
-fn union(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn union(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if left.shape().len() > 1 || right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "union needs scalars or vectors")); }
     catenate(left, &without(right, left, span)?, None, false, span)
 }
 
-fn intersection(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn intersection(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if left.shape().len() > 1 || right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "intersection needs scalars or vectors")); }
     replicate(&membership(left, right, span)?, left, true, None, false, span)
 }
 
-fn find(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn find(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let mut pattern_shape = vec![1; right.shape().len().saturating_sub(left.shape().len())];
     pattern_shape.extend_from_slice(left.shape());
     let mut data = vec![integer(0); right.len()];
@@ -749,10 +759,32 @@ fn find(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error>
             *result = integer(i64::from(matched));
         }
     }
-    Array::from_parts(right.shape().to_vec(), data, integer(0)).map_err(|k| span.error(k, "invalid find result"))
+    Frame::of(right).collect(data, integer(0)).map_err(|k| span.error(k, "invalid find result"))
 }
 
-fn unique_mask(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn self_classify(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let rank = right.shape().len().saturating_sub(1);
+    let cells = right.cells(rank).and_then(|c| c.collect()).map_err(|k| span.error(k, "invalid major cells"))?;
+    let distinct = unique(right, span)?;
+    let classes = distinct.cells(rank).and_then(|c| c.collect()).map_err(|k| span.error(k, "invalid classes"))?;
+    let shape = vec![classes.len(), cells.len()];
+    let mut data = Vec::with_capacity(generated_len(&shape).map_err(|k| span.error(k, "classification is too large"))?);
+    for class in &classes { for cell in &cells { data.push(integer(i64::from(array_match(class, cell, span)?))); } }
+    Value::from_parts(shape, data, integer(0)).map_err(|k| span.error(k, "invalid classification"))
+}
+
+fn complex_parts(right: &Value, polar: bool, span: &Context<'_>) -> Result<Value, Error> {
+    let shape = [right.shape(), &[2]].concat();
+    let mut data = Vec::with_capacity(generated_len(&shape).map_err(|k| span.error(k, "decomposition is too large"))?);
+    for item in right.elements() {
+        span.check()?;
+        data.extend(numeric(&item, span)?.parts(polar).map_err(|m| span.error(ErrorKind::Domain, m))?.map(Value::Number));
+    }
+    let prototype = Value::Number(numeric(&right.prototype(), span)?.unit(0));
+    Value::from_parts(shape, data, prototype).map_err(|k| span.error(k, "invalid decomposition"))
+}
+
+fn unique_mask(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let cells = right.cells(right.shape().len().saturating_sub(1)).and_then(|c| c.collect()).map_err(|k| span.error(k, "invalid major cells"))?;
     let mut data = Vec::with_capacity(cells.len());
     let mut representatives = Vec::new();
@@ -767,19 +799,19 @@ fn unique_mask(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
         if unique { representatives.push(cell.clone()); }
         data.push(integer(i64::from(unique)));
     }
-    Array::from_parts(vec![data.len()], data, integer(0)).map_err(|k| span.error(k, "invalid unique mask"))
+    Value::from_parts(vec![data.len()], data, integer(0)).map_err(|k| span.error(k, "invalid unique mask"))
 }
 
-fn coordinates(shape: &[usize], mut flat: usize, exact: bool) -> Array {
+fn coordinates(shape: &[usize], mut flat: usize, exact: bool) -> Value {
     let mut data = vec![generated(0, exact); shape.len()];
     for axis in (0..shape.len()).rev() {
         data[axis] = generated(flat % shape[axis] + 1, exact);
         flat /= shape[axis];
     }
-    Array::from_parts(vec![data.len()], data, generated(0, exact)).unwrap()
+    Value::from_parts(vec![data.len()], data, generated(0, exact)).unwrap()
 }
 
-fn iota(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn iota(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "iota needs a scalar or vector shape")); }
     let shape = right
         .elements()
@@ -788,31 +820,30 @@ fn iota(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
     let len = generated_len(&shape).map_err(|k| span.error(k, "iota exceeds array limits"))?;
     let exact = right.is_exact();
     if right.is_singleton() {
-        return if exact { Array::integers(shape, (1..=len).map(|i| i as i64).collect()) } else { Array::floats(shape, (1..=len).map(|i| i as f64).collect()) }
+        return if exact { Value::integers(shape, (1..=len).map(|i| i as i64).collect()) } else { Value::floats(shape, (1..=len).map(|i| i as f64).collect()) }
             .map_err(|k| span.error(k, "invalid iota"));
     }
     let zero = generated(0, exact);
-    let prototype = Element::Nested(Array::from_parts(vec![shape.len()], vec![zero.clone(); shape.len()], zero).unwrap());
-    let data = (0..len).map(|i| Element::Nested(coordinates(&shape, i, exact))).collect();
-    Array::from_parts(shape, data, prototype).map_err(|k| span.error(k, "invalid coordinate array"))
+    let prototype = Value::from_parts(vec![shape.len()], vec![zero.clone(); shape.len()], zero).unwrap();
+    let data = (0..len).map(|i| coordinates(&shape, i, exact)).collect();
+    Value::from_parts(shape, data, prototype).map_err(|k| span.error(k, "invalid coordinate array"))
 }
 
-fn where_indices(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let mut data = Vec::new();
     for (i, e) in right.elements().enumerate() {
         let n = numeric(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "where needs nonnegative integer counts"))?;
         if n > MAX_GENERATED_ELEMENTS - data.len() { return Err(span.error(ErrorKind::Limit, "where exceeds array limits")); }
-        let index = if right.shape().len() == 1 { generated(i + 1, true) } else { Element::Nested(coordinates(right.shape(), i, true)) };
+        let index = if right.shape().len() == 1 { generated(i + 1, true) } else { coordinates(right.shape(), i, true) };
         data.extend(std::iter::repeat_n(index, n));
     }
-    let prototype =
-        if right.shape().len() == 1 { integer(0) } else { Element::Nested(Array::integers(vec![right.shape().len()], vec![0; right.shape().len()]).unwrap()) };
-    Array::from_parts(vec![data.len()], data, prototype).map_err(|k| span.error(k, "invalid where result"))
+    let prototype = if right.shape().len() == 1 { integer(0) } else { Value::integers(vec![right.shape().len()], vec![0; right.shape().len()]).unwrap() };
+    Value::from_parts(vec![data.len()], data, prototype).map_err(|k| span.error(k, "invalid where result"))
 }
 
-struct SearchCells { left: Vec<Array>, right: Vec<Array>, shape: Vec<usize> }
+struct SearchCells { left: Vec<Value>, right: Vec<Value>, frame: Frame }
 
-fn search_cells(left: &Array, right: &Array, span: &Context<'_>) -> Result<SearchCells, Error> {
+fn search_cells(left: &Value, right: &Value, span: &Context<'_>) -> Result<SearchCells, Error> {
     if left.is_scalar() { return Err(span.error(ErrorKind::Rank, "search needs a non-scalar left argument")); }
     let rank = left.shape().len() - 1;
     let split = right.shape().len().checked_sub(rank).ok_or_else(|| span.error(ErrorKind::Rank, "right argument has insufficient rank"))?;
@@ -820,12 +851,12 @@ fn search_cells(left: &Array, right: &Array, span: &Context<'_>) -> Result<Searc
     Ok(SearchCells {
         left: left.cells(rank).and_then(|c| c.collect()).map_err(|k| span.error(k, "invalid search cells"))?,
         right: right.cells(rank).and_then(|c| c.collect()).map_err(|k| span.error(k, "invalid search cells"))?,
-        shape: right.shape()[..split].to_vec(),
+        frame: if split == 0 { Frame::Direct } else { Frame::Array(right.shape()[..split].to_vec()) },
     })
 }
 
-fn index_of(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
-    let SearchCells { left: haystack, right: needles, shape } = search_cells(left, right, span)?;
+fn index_of(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let SearchCells { left: haystack, right: needles, frame } = search_cells(left, right, span)?;
     let mut data = Vec::with_capacity(needles.len());
     for y in &needles {
         let mut found = haystack.len();
@@ -837,7 +868,7 @@ fn index_of(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Er
         }
         data.push(generated(found + 1, true));
     }
-    Array::from_parts(shape, data, integer(0)).map_err(|k| span.error(k, "invalid index-of result"))
+    frame.collect(data, integer(0)).map_err(|k| span.error(k, "invalid index-of result"))
 }
 
 fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<String, Error> {
@@ -882,7 +913,7 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
     Ok(text.replace('-', "¯"))
 }
 
-fn format_array(left: Option<&Array>, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn format_array(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let Some(spec) = left else { return right.formatted().map_err(|k| span.error(k, "formatted array is too large")); };
     if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "format specification must be scalar or vector")); }
     let spec = spec
@@ -893,7 +924,7 @@ fn format_array(left: Option<&Array>, right: &Array, span: &Context<'_>) -> Resu
     if !matches!(spec.len(), 1 | 2) && spec.len() != 2 * columns {
         return Err(span.error(ErrorKind::Length, "format needs precision, a width/precision pair, or pairs per column"));
     }
-    numeric(right.prototype(), span)?;
+    numeric(&right.prototype(), span)?;
     let specs: Vec<_> = (0..columns)
         .map(|i| match spec.len() { 1 => (0, spec[0]), 2 => (spec[0], spec[1]), _ => (spec[2 * i], spec[2 * i + 1]) })
         .collect();
@@ -925,28 +956,29 @@ fn format_array(left: Option<&Array>, right: &Array, span: &Context<'_>) -> Resu
             let leading = usize::from(specs[i % columns].0 == 0);
             format!("{}{s}{}", " ".repeat(leading), " ".repeat(width - len - leading))
         } else { format!("{}{s}", " ".repeat(width - len)) };
-        data.extend(s.chars().map(Element::Character));
+        data.extend(s.chars().map(Value::Character));
     }
-    Array::from_parts(shape, data, Element::Character(' ')).map_err(|k| span.error(k, "invalid formatted result"))
+    Value::from_parts(shape, data, Value::Character(' ')).map_err(|k| span.error(k, "invalid formatted result"))
 }
 
-pub(crate) fn lambert_w(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
-    fn map(a: &Array, fill: bool, span: &Context<'_>) -> Result<Array, Error> {
-        let item = |e: Element, fill| {
+pub(crate) fn lambert_w(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    fn map(a: &Value, fill: bool, span: &Context<'_>) -> Result<Value, Error> {
+        let item = |e: Value, fill| {
             span.check()?;
             match e {
-                Element::Nested(a) => map(&a, fill, span).map(Element::Nested),
+                a @ Value::Array(_) => map(&a, fill, span),
                 _ if fill => Ok(float(0.0)),
-                _ => numeric(&e, span)?.lambert_w().map(Element::Number).map_err(|message| span.error(ErrorKind::Domain, message)),
+                _ => numeric(&e, span)?.lambert_w().map(Value::Number).map_err(|message| span.error(ErrorKind::Domain, message)),
             }
         };
-        let result = if a.is_empty() { Array::empty(a.shape().to_vec(), item(a.prototype().clone(), true)?) } else { Array::new(a.shape().to_vec(), a.elements().map(|e| item(e, fill)).collect::<Result<_, _>>()?) };
+        if a.is_atom() { return item(a.clone(), fill); }
+        let result = if a.is_empty() { Value::empty(a.shape().to_vec(), item(a.prototype().clone(), true)?) } else { Value::new(a.shape().to_vec(), a.elements().map(|e| item(e, fill)).collect::<Result<_, _>>()?) };
         result.map_err(|k| span.error(k, "invalid Lambert W result"))
     }
     map(right, false, span)
 }
 
-pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array, axis: Option<&Array>, span: &Context<'_>) -> Result<Array, Error> {
+pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value, axis: Option<&Value>, span: &Context<'_>) -> Result<Value, Error> {
     use crate::number::Arithmetic::*;
     use Primitive::*;
     if let Some(axis) = axis {
@@ -956,7 +988,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array
                 Reverse(_) => p.call_axes(None, right, axis, span),
                 Enclose => mix_axes(right, axis, span),
                 Drop => mix_axes(right, &axis_value(single_axis(axis, span)?), span),
-                Take => {
+                Mix => {
                     let axes = if axis.is_singleton() {
                         vec![match fractional_axis(axis, right.shape().len().saturating_sub(1), span)? {
                             Some(a) => a,
@@ -973,9 +1005,9 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array
             return Err(span.error(ErrorKind::Domain, "this axis-qualified primitive has no known inverse"));
         }
     }
-    let call = |p: Primitive, x: Option<&Array>, y: &Array| match axis { Some(axis) => p.call_axes(x, y, axis, span), None => p.call(x, y, span) };
+    let call = |p: Primitive, x: Option<&Value>, y: &Value| match axis { Some(axis) => p.call_axes(x, y, axis, span), None => p.call(x, y, span) };
     if let Some((a, first)) = bound {
-        if matches!(p, Arithmetic(Times | Divide)) && a.elements().any(|e| matches!(e, Element::Number(n) if n.equal(&n.unit(0)).unwrap_or(false))) {
+        if matches!(p, Arithmetic(Times | Divide)) && a.elements().any(|e| matches!(e, Value::Number(n) if n.equal(&n.unit(0)).unwrap_or(false))) {
             return Err(span.error(ErrorKind::Domain, "zero multiplier/divisor has no inverse"));
         }
         return match p {
@@ -988,18 +1020,21 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array
             Compare(Comparison::NotEqual) if boolean_array(a) && boolean_array(right) => call(p, Some(a), right),
             Math(crate::number::Math::Power) if first => call(Math(crate::number::Math::Log), Some(a), right),
             Math(crate::number::Math::Power) => call(p, Some(right), &Arithmetic(Divide).call(None, a, span)?),
+            Math(crate::number::Math::Root) if first => call(Math(crate::number::Math::Power), Some(right), a),
+            Math(crate::number::Math::Root) => call(Math(crate::number::Math::Log), Some(right), a),
+            Math(crate::number::Math::Pi) if first => call(p, Some(a), right),
+            Math(crate::number::Math::Pi) => {
+                let product = call(Arithmetic(Times), Some(right), a)?;
+                call(Arithmetic(Divide), Some(&product), &Value::scalar(std::f64::consts::PI).unwrap())
+            }
             Math(crate::number::Math::Log) if first => call(Math(crate::number::Math::Power), Some(a), right),
             Math(crate::number::Math::Log) => call(Math(crate::number::Math::Power), Some(a), &Arithmetic(Divide).call(None, right, span)?),
             Math(crate::number::Math::Circle) if first => {
-                let codes = a
-                    .elements()
-                    .map(|e| {
-                        let code = numeric(&e, span)?.integer().map_err(|k| span.error(k, "circle inverse needs integer codes"))?;
-                        if !(-7..=12).contains(&code) { return Err(span.error(ErrorKind::Domain, "circle code has no supported inverse")); }
-                        Ok(integer(-code as i64))
-                    })
-                    .collect::<Result<Vec<_>, Error>>()?;
-                let codes = Array::from_parts(a.shape().to_vec(), codes, integer(0)).map_err(|k| span.error(k, "invalid circle codes"))?;
+                for e in a.elements() {
+                    let code = numeric(&e, span)?.integer().map_err(|k| span.error(k, "circle inverse needs integer codes"))?;
+                    if !(-7..=12).contains(&code) { return Err(span.error(ErrorKind::Domain, "circle code has no supported inverse")); }
+                }
+                let codes = Arithmetic(Minus).call(None, a, span)?;
                 call(p, Some(&codes), right)
             }
             Reverse(_) if first => call(p, Some(&Arithmetic(Minus).call(None, a, span)?), right),
@@ -1008,7 +1043,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array
                 if perm.len() != right.shape().len() { return Err(span.error(ErrorKind::Length, "inverse transpose needs an axis permutation")); }
                 let mut inverse = vec![0; perm.len()];
                 for (i, &axis) in perm.iter().enumerate() { inverse[axis] = i as i64 + 1; }
-                p.call(Some(&Array::integers(vec![inverse.len()], inverse).unwrap()), right, span)
+                p.call(Some(&Value::integers(vec![inverse.len()], inverse).unwrap()), right, span)
             }
             Decode if first => inverse_decode(a, right, span),
             Encode if first => Decode.call(Some(a), right, span),
@@ -1017,36 +1052,47 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Array, bool)>, right: &Array
     }
     match p {
         Prime => {
-            let below = p.call(Some(&Array::scalar(Number::from_integer(-1)).unwrap()), right, span)?;
-            Arithmetic(Plus).call(Some(&Array::scalar(Number::from_integer(1)).unwrap()), &below, span)
+            let below = p.call(Some(&Value::scalar(Number::from_integer(-1)).unwrap()), right, span)?;
+            Arithmetic(Plus).call(Some(&Value::scalar(Number::from_integer(1)).unwrap()), &below, span)
         }
         Factor => crate::number_theory::product(right, span),
         Polynomial => p.call(None, right, span),
         Arithmetic(Plus | Minus | Divide) | Reverse(_) | Transpose | Identity(_) | Index | MatrixDivide => p.call(None, right, span),
         Math(crate::number::Math::Power) => Math(crate::number::Math::Log).call(None, right, span),
         Math(crate::number::Math::Log) => Math(crate::number::Math::Power).call(None, right, span),
-        Math(crate::number::Math::Circle) => Arithmetic(Divide).call(Some(right), &Array::scalar(std::f64::consts::PI).unwrap(), span),
-        Enclose => Disclose.call(None, right, span),
-        Disclose => Enclose.call(None, right, span),
-        Nest => Ok(if right.is_scalar() { right.disclose().as_array() } else { right.clone() }),
+        Math(crate::number::Math::Pi) => Arithmetic(Divide).call(Some(right), &Value::scalar(std::f64::consts::PI).unwrap(), span),
+        Math(crate::number::Math::Circle) => {
+            let log = Math(crate::number::Math::Log).call(None, right, span)?;
+            Arithmetic(Times).call(Some(&Value::scalar(num_complex::Complex64::new(0., -1.)).unwrap()), &log, span)
+        }
+        Math(crate::number::Math::Root) => Math(crate::number::Math::Nand).call(None, right, span),
+        Math(crate::number::Math::Nand) => Math(crate::number::Math::Root).call(None, right, span),
+        Math(crate::number::Math::Nor) => Arithmetic(Divide).call(Some(right), &integer(2), span),
+        Compare(Comparison::LessEqual) => Arithmetic(Plus).call(Some(right), &integer(1), span),
+        Compare(Comparison::GreaterEqual) => Arithmetic(Minus).call(Some(right), &integer(1), span),
+        Encode => Decode.call(None, right, span),
+        Decode => Encode.call(None, right, span),
+        Enclose => Take.call(None, right, span),
+        Take => Enclose.call(None, right, span),
+        Nest => Ok(if right.is_scalar() { right.disclose().clone() } else { right.clone() }),
         Iota => {
-            let counter = if right.shape().len() == 1 && matches!(right.prototype(), Element::Number(_)) { Tally } else { Shape };
+            let counter = if right.shape().len() == 1 && matches!(right.prototype(), Value::Number(_)) { Tally } else { Shape };
             let candidate = counter.call(None, right, span)?;
             if !array_match(&iota(&candidate, span)?, right, span)? { return Err(span.error(ErrorKind::Domain, "argument is not an index generator result")); }
             Ravel.call(None, &candidate, span)
         }
-        Take => split(right, None, span),
-        Drop => Take.call(None, right, span),
+        Mix => split(right, None, span),
+        Drop => Mix.call(None, right, span),
         Where => inverse_where(right, span),
         _ => Err(span.error(ErrorKind::Domain, "this primitive has no known inverse")),
     }
 }
 
-fn boolean_array(a: &Array) -> bool {
-    a.elements().all(|e| match e { Element::Number(n) => n.boolean().is_ok(), Element::Nested(a) => boolean_array(&a), _ => false })
+fn boolean_array(a: &Value) -> bool {
+    a.elements().all(|e| match e { Value::Number(n) => n.boolean().is_ok(), a @ Value::Array(_) => boolean_array(&a), _ => false })
 }
 
-fn inverse_decode(base: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn inverse_decode(base: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if !base.is_scalar() {
         if base.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "inverse decode needs a scalar or vector base")); }
         let result = radix(base, right, true, span)?;
@@ -1077,17 +1123,17 @@ fn inverse_decode(base: &Array, right: &Array, span: &Context<'_>) -> Result<Arr
         }
         digits = digits.max(count);
     }
-    let bases = Array::from_parts(vec![digits], vec![Element::Number(b); digits], base.prototype().clone())
-        .map_err(|k| span.error(k, "invalid inverse decode base"))?;
+    let bases =
+        Value::from_parts(vec![digits], vec![Value::Number(b); digits], base.prototype().clone()).map_err(|k| span.error(k, "invalid inverse decode base"))?;
     radix(&bases, right, true, span)
 }
 
-fn inverse_where(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn inverse_where(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "inverse where needs a vector")); }
     let mut coordinates = Vec::new();
     let mut shape = Vec::new();
     for e in right.elements() {
-        let a = e.as_array();
+        let a = e.clone();
         if a.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "inverse where coordinates must be vectors")); }
         let coordinate =
             a.elements().map(|e| numeric(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "invalid position"))).collect::<Result<Vec<_>, _>>()?;
@@ -1106,12 +1152,12 @@ fn inverse_where(right: &Array, span: &Context<'_>) -> Result<Array, Error> {
         let index = coordinate.iter().zip(&shape).fold(0, |i, (&c, &d)| i * d + c - 1);
         data[index] += 1;
     }
-    Array::integers(shape, data).map_err(|k| span.error(k, "invalid inverse where"))
+    Value::integers(shape, data).map_err(|k| span.error(k, "invalid inverse where"))
 }
 
-fn matrix_divide(left: Option<&Array>, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     use faer::{linalg::solvers::SolveLstsq, Mat};
-    let dimensions = |a: &Array| match a.shape() {
+    let dimensions = |a: &Value| match a.shape() {
         [] => Ok((1, 1)),
         &[m] => Ok((m, 1)),
         &[m, n] => Ok((m, n)),
@@ -1131,8 +1177,8 @@ fn matrix_divide(left: Option<&Array>, right: &Array, span: &Context<'_>) -> Res
     if let Some(x) = left { shape.extend_from_slice(x.shape().get(1..).unwrap_or(&[])); }
     else { shape = right.shape().iter().rev().copied().collect(); }
     generated_len(&[n, k]).map_err(|e| span.error(e, "matrix result is too large"))?;
-    let numbers = |a: &Array| -> Result<Vec<Number>, Error> {
-        numeric(a.prototype(), span)?;
+    let numbers = |a: &Value| -> Result<Vec<Number>, Error> {
+        numeric(&a.prototype(), span)?;
         a.elements()
             .map(|e| {
                 let n = numeric(&e, span)?;
@@ -1143,9 +1189,9 @@ fn matrix_divide(left: Option<&Array>, right: &Array, span: &Context<'_>) -> Res
     };
     let a = numbers(right)?;
     let b = left.map(numbers).transpose()?;
-    let exact = right.is_exact() && left.is_none_or(Array::is_exact);
+    let exact = right.is_exact() && left.is_none_or(Value::is_exact);
     let prototype = if exact { right.prototype().clone() } else { float(0.) };
-    if n == 0 { return Array::empty(shape, prototype).map_err(|e| span.error(e, "invalid matrix shape")); }
+    if n == 0 { return Value::empty(shape, prototype).map_err(|e| span.error(e, "invalid matrix shape")); }
     let values = if exact { exact_solve(&a, b.as_deref(), m, n, k, span)? } else {
         let convert = |v: &[Number]| v.iter().map(|x| x.to_complex().map_err(|e| span.error(ErrorKind::Domain, e))).collect::<Result<Vec<_>, _>>();
         let a = convert(&a)?;
@@ -1165,7 +1211,10 @@ fn matrix_divide(left: Option<&Array>, right: &Array, span: &Context<'_>) -> Res
             .map(|(i, j)| Number::try_from(result[(i, j)]).map_err(|e| span.error(e, "matrix result is not finite")))
             .collect::<Result<Vec<_>, _>>()?
     };
-    Array::from_parts(shape, values.into_iter().map(Element::Number).collect(), prototype).map_err(|e| span.error(e, "invalid matrix result"))
+    if shape.is_empty() && (right.is_atom() || !right.is_scalar()) && left.is_none_or(|x| x.is_atom() || !x.is_scalar()) {
+        return Ok(Value::Number(values[0].clone()));
+    }
+    Value::from_parts(shape, values.into_iter().map(Value::Number).collect(), prototype).map_err(|e| span.error(e, "invalid matrix result"))
 }
 
 // Normal equations are exact here; the approximate path never forms AᵀA.
@@ -1212,17 +1261,47 @@ fn exact_solve(a: &[Number], b: Option<&[Number]>, m: usize, n: usize, k: usize,
     Ok(rhs.into_iter().map(|x| Number::try_from(x).expect("canonical rational solution")).collect())
 }
 
-fn radix(left: &Array, right: &Array, encode: bool, span: &Context<'_>) -> Result<Array, Error> {
-    let numbers = |a: &Array| a.elements().map(|e| numeric(&e, span).cloned()).collect::<Result<Vec<_>, _>>();
+fn binary_encode(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    use num_bigint::BigInt;
+    use num_traits::{FromPrimitive, Signed};
+    let invalid = || span.error(ErrorKind::Domain, "binary encoding needs nonnegative integers");
+    let mut numbers = Vec::with_capacity(right.len());
+    let mut width = 0;
+    for item in right.elements() {
+        span.check()?;
+        let n = numeric(&item, span)?;
+        let value = if let Some(q) = n.as_exact() {
+            if !q.is_integer() || q.is_negative() { return Err(invalid()); }
+            q.to_integer()
+        } else {
+            let z = n.to_complex().map_err(|_| invalid())?;
+            if z.im != 0.0 || z.re < 0.0 || z.re.fract() != 0.0 { return Err(invalid()); }
+            BigInt::from_f64(z.re).ok_or_else(invalid)?
+        };
+        width = width.max(value.bits() as usize);
+        numbers.push((value, n.clone()));
+    }
+    let shape = [&[width], right.shape()].concat();
+    let mut data = Vec::with_capacity(generated_len(&shape).map_err(|k| span.error(k, "binary encoding is too large"))?);
+    for bit in (0..width).rev() {
+        span.check()?;
+        data.extend(numbers.iter().map(|(n, domain)| Value::Number(domain.unit(i32::from(n.bit(bit as u64))))));
+    }
+    let prototype = Value::Number(numeric(&right.prototype(), span)?.unit(0));
+    Value::from_parts(shape, data, prototype).map_err(|k| span.error(k, "invalid binary encoding"))
+}
+
+fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_>) -> Result<Value, Error> {
+    let numbers = |a: &Value| a.elements().map(|e| numeric(&e, span).cloned()).collect::<Result<Vec<_>, _>>();
     let (xs, ys) = (numbers(left)?, numbers(right)?);
-    let zero = numeric(right.prototype(), span)?.result_zero(Some(numeric(left.prototype(), span)?));
+    let zero = numeric(&right.prototype(), span)?.result_zero(Some(numeric(&left.prototype(), span)?));
     let error = |m| span.error(ErrorKind::Domain, m);
     if encode {
         let shape = [left.shape(), right.shape()].concat();
         let count = generated_len(&shape).map_err(|k| span.error(k, "encode result is too large"))?;
         let rows = left.shape().first().copied().unwrap_or(1);
         let columns = crate::array::element_count(left.shape().get(1..).unwrap_or(&[])).map_err(|k| span.error(k, "invalid radix shape"))?;
-        let mut result = vec![Element::Number(zero.clone()); count];
+        let mut result = vec![Value::Number(zero.clone()); count];
         if count != 0 {
             for column in 0..columns {
                 for (j, y) in ys.iter().enumerate() {
@@ -1233,12 +1312,13 @@ fn radix(left: &Array, right: &Array, encode: bool, span: &Context<'_>) -> Resul
                         if row != 0 {
                             value = if base.grade_order(&base.unit(0)).is_eq() { zero.clone() } else { value.dyad(Arithmetic::Minus, &digit).and_then(|v| v.dyad(Arithmetic::Divide, base)).map_err(error)? };
                         }
-                        result[(row * columns + column) * ys.len() + j] = Element::Number(digit);
+                        result[(row * columns + column) * ys.len() + j] = Value::Number(digit);
                     }
                 }
             }
         }
-        return Array::from_parts(shape, result, Element::Number(zero)).map_err(|k| span.error(k, "invalid encode result"));
+        let frame = if left.is_atom() && right.is_atom() { Frame::Direct } else { Frame::Array(shape) };
+        return frame.collect(result, Value::Number(zero)).map_err(|k| span.error(k, "invalid encode result"));
     }
     let xlen = left.shape().last().copied().unwrap_or(1);
     let ylen = right.shape().first().copied().unwrap_or(1);
@@ -1260,25 +1340,26 @@ fn radix(left: &Array, right: &Array, encode: bool, span: &Context<'_>) -> Resul
                 value.dyad(Arithmetic::Times, x).and_then(|v| v.dyad(Arithmetic::Plus, y)).map_err(error)?
             };
         }
-        data.push(Element::Number(value));
+        data.push(Value::Number(value));
     }
-    Array::from_parts(shape, data, Element::Number(zero)).map_err(|k| span.error(k, "invalid decode result"))
+    if shape.is_empty() { return Ok(data.remove(0)); }
+    Value::from_parts(shape, data, Value::Number(zero)).map_err(|k| span.error(k, "invalid decode result"))
 }
 
-fn element_order(left: &Element, right: &Element) -> Ordering {
+fn element_order(left: &Value, right: &Value) -> Ordering {
     match (left, right) {
-        (Element::Function(_), _) | (_, Element::Function(_)) => unreachable!("ordering rejects function arrays"),
-        (Element::Number(x), Element::Number(y)) => x.grade_order(y),
-        (Element::Character(x), Element::Character(y)) => x.cmp(y),
-        (Element::Number(_), Element::Character(_)) => Ordering::Less,
-        (Element::Character(_), Element::Number(_)) => Ordering::Greater,
-        (Element::Nested(x), Element::Nested(y)) => array_order(x, y),
-        (Element::Nested(_), _) => Ordering::Greater,
-        (_, Element::Nested(_)) => Ordering::Less,
+        (Value::Function(_), _) | (_, Value::Function(_)) => unreachable!("ordering rejects function arrays"),
+        (Value::Number(x), Value::Number(y)) => x.grade_order(y),
+        (Value::Character(x), Value::Character(y)) => x.cmp(y),
+        (Value::Number(_), Value::Character(_)) => Ordering::Less,
+        (Value::Character(_), Value::Number(_)) => Ordering::Greater,
+        (x @ Value::Array(_), y @ Value::Array(_)) => array_order(x, y),
+        (Value::Array(_), _) => Ordering::Greater,
+        (_, Value::Array(_)) => Ordering::Less,
     }
 }
 
-fn array_order(left: &Array, right: &Array) -> Ordering {
+fn array_order(left: &Value, right: &Value) -> Ordering {
     let rank_order = left.shape().len().cmp(&right.shape().len());
     if !rank_order.is_eq() { return rank_order; }
     for (x, y) in left.elements().zip(right.elements()) {
@@ -1288,19 +1369,19 @@ fn array_order(left: &Array, right: &Array) -> Ordering {
     left.len().cmp(&right.len()).then_with(|| left.shape().cmp(right.shape()))
 }
 
-fn grade(left: Option<&Array>, right: &Array, down: bool, span: &Context<'_>) -> Result<Array, Error> {
-    if right.has_functions() || left.is_some_and(Array::has_functions) { return Err(span.error(ErrorKind::Domain, "functions have no ordering")); }
-    if right.is_scalar() || left.is_some_and(Array::is_scalar) { return Err(span.error(ErrorKind::Rank, "grade needs arrays of rank at least one")); }
+fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Context<'_>) -> Result<Value, Error> {
+    if right.has_functions() || left.is_some_and(Value::has_functions) { return Err(span.error(ErrorKind::Domain, "functions have no ordering")); }
+    if right.is_scalar() || left.is_some_and(Value::is_scalar) { return Err(span.error(ErrorKind::Rank, "grade needs arrays of rank at least one")); }
     let count = generated_len(&right.shape()[..1]).map_err(|k| span.error(k, "grade result is too large"))?;
     let mut indices: Vec<usize> = (0..count).collect();
     let direction = |order: Ordering| if down { order.reverse() } else { order };
     if let Some(collation) = left {
-        let characters = |a: &Array| -> Result<Vec<char>, Error> {
-            if !matches!(a.prototype(), Element::Character(_)) || a.elements().any(|e| !matches!(e, Element::Character(_))) {
+        let characters = |a: &Value| -> Result<Vec<char>, Error> {
+            if !matches!(a.prototype(), Value::Character(_)) || a.elements().any(|e| !matches!(e, Value::Character(_))) {
                 return Err(span.error(ErrorKind::Domain, "dyadic grade needs simple character arrays"));
             }
             Ok(a.elements()
-                .map(|e| match e { Element::Character(c) => c, _ => unreachable!() })
+                .map(|e| match e { Value::Character(c) => c, _ => unreachable!() })
                 .collect())
         };
         let (alphabet, text) = (characters(collation)?, characters(right)?);
@@ -1330,12 +1411,12 @@ fn grade(left: Option<&Array>, right: &Array, down: bool, span: &Context<'_>) ->
         let cells = right.cells(right.shape().len() - 1).and_then(|c| c.collect()).map_err(|k| span.error(k, "invalid grade cells"))?;
         indices.sort_by(|&a, &b| direction(array_order(&cells[a], &cells[b])));
     }
-    Array::integers(vec![indices.len()], indices.into_iter().map(|i| (i + 1) as i64).collect()).map_err(|k| span.error(k, "invalid grade result"))
+    Value::integers(vec![indices.len()], indices.into_iter().map(|i| (i + 1) as i64).collect()).map_err(|k| span.error(k, "invalid grade result"))
 }
 
-fn interval_index(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn interval_index(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if left.has_functions() || right.has_functions() { return Err(span.error(ErrorKind::Domain, "functions have no ordering")); }
-    let SearchCells { left: boundaries, right: values, shape } = search_cells(left, right, span)?;
+    let SearchCells { left: boundaries, right: values, frame } = search_cells(left, right, span)?;
     for pair in boundaries.windows(2) {
         span.check()?;
         if array_order(&pair[0], &pair[1]).is_gt() { return Err(span.error(ErrorKind::Domain, "interval boundaries must be sorted")); }
@@ -1350,14 +1431,14 @@ fn interval_index(left: &Array, right: &Array, span: &Context<'_>) -> Result<Arr
         }
         data.push(generated(lo, true));
     }
-    Array::from_parts(shape, data, integer(0)).map_err(|k| span.error(k, "invalid interval index"))
+    frame.collect(data, integer(0)).map_err(|k| span.error(k, "invalid interval index"))
 }
 
-fn roll(right: &Array, exact: bool, span: &Context<'_>, fill: bool) -> Result<Array, Error> {
+fn roll(right: &Value, exact: bool, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
     let fill = fill || right.is_empty();
     let mut rng = rand::rng();
     let mut item = |e| {
-        if let Element::Nested(a) = e { return roll(&a, exact, span, fill).map(Element::Nested); }
+        if let a @ Value::Array(_) = e { return roll(&a, exact, span, fill); }
         if fill { return Ok(generated(0, exact)); }
         let n = numeric(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "roll needs a nonnegative integer"))?;
         if !exact && n > (1usize << 53) { return Err(span.error(ErrorKind::Limit, "roll bound exceeds exact floating-point integers")); }
@@ -1365,11 +1446,11 @@ fn roll(right: &Array, exact: bool, span: &Context<'_>, fill: bool) -> Result<Ar
     };
     let data = right.elements().map(&mut item).collect::<Result<Vec<_>, _>>()?;
     let prototype = if right.is_empty() { item(right.prototype().clone())? } else { generated(0, exact) };
-    Array::from_parts(right.shape().to_vec(), data, prototype).map_err(|k| span.error(k, "invalid roll result"))
+    Frame::of(right).collect(data, prototype).map_err(|k| span.error(k, "invalid roll result"))
 }
 
-fn deal(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
-    let count = |a: &Array| {
+fn deal(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let count = |a: &Value| {
         if a.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "deal needs scalars or singleton vectors")); }
         if !a.is_singleton() { return Err(span.error(ErrorKind::Length, "deal needs one count per argument")); }
         numeric(&a.at(0), span)?.nonnegative_integer().map_err(|k| span.error(k, "deal needs nonnegative integer counts"))
@@ -1380,10 +1461,10 @@ fn deal(left: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error>
     let exact = left.is_exact() && right.is_exact();
     if !exact && total > (1usize << 53) { return Err(span.error(ErrorKind::Limit, "deal population exceeds exact floating-point integers")); }
     let data = rand::seq::index::sample(&mut rand::rng(), total, n).into_iter().map(|i| generated(i + 1, exact)).collect();
-    Array::from_parts(vec![n], data, generated(0, exact)).map_err(|k| span.error(k, "invalid deal result"))
+    Value::from_parts(vec![n], data, generated(0, exact)).map_err(|k| span.error(k, "invalid deal result"))
 }
 
-fn scalar_axes(p: Primitive, left: &Array, right: &Array, spec: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn scalar_axes(p: Primitive, left: &Value, right: &Value, spec: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let left_small = left.shape().len() < right.shape().len();
     let (small, large) = if left_small { (left, right) } else { (right, left) };
     let axes = axes(spec, large.shape().len(), span)?;
@@ -1392,25 +1473,24 @@ fn scalar_axes(p: Primitive, left: &Array, right: &Array, spec: &Array, span: &C
     p.scalar_mapped(Some(left), right, span, false, &agreement)
 }
 
-fn reorder(right: &Array, order: &[usize], span: &Context<'_>) -> Result<Array, Error> {
+fn reorder(right: &Value, order: &[usize], span: &Context<'_>) -> Result<Value, Error> {
     let mut labels = vec![0; order.len()];
     for (i, &axis) in order.iter().enumerate() { labels[axis] = (i + 1) as i64; }
-    transpose(Some(&Array::integers(vec![labels.len()], labels).unwrap()), right, span)
+    transpose(Some(&Value::integers(vec![labels.len()], labels).unwrap()), right, span)
 }
 
-fn enclose_axes(right: &Array, axes: &[usize], span: &Context<'_>) -> Result<Array, Error> {
+fn enclose_axes(right: &Value, axes: &[usize], span: &Context<'_>) -> Result<Value, Error> {
     let mut order: Vec<_> = (0..right.shape().len()).filter(|a| !axes.contains(a)).collect();
     order.extend(axes);
     let permuted = reorder(right, &order, span)?;
     let cells = permuted.cells(axes.len()).map_err(|k| span.error(k, "invalid enclosed cells"))?;
-    let data: Vec<_> = cells.collect().map_err(|k| span.error(k, "invalid enclosed cells"))?.into_iter().map(Element::Nested).collect();
-    let prototype =
-        if data.is_empty() { Element::Nested(cells.prototype().map_err(|k| span.error(k, "invalid enclosed prototype"))?) } else { data[0].prototype() };
-    Array::from_parts(cells.frame().to_vec(), data, prototype).map_err(|k| span.error(k, "invalid enclosed array"))
+    let data: Vec<_> = cells.collect().map_err(|k| span.error(k, "invalid enclosed cells"))?.into_iter().collect();
+    let prototype = if data.is_empty() { cells.prototype().map_err(|k| span.error(k, "invalid enclosed prototype"))? } else { data[0].prototype() };
+    Value::from_parts(cells.frame().to_vec(), data, prototype).map_err(|k| span.error(k, "invalid enclosed array"))
 }
 
-fn mix_axes(right: &Array, spec: &Array, span: &Context<'_>) -> Result<Array, Error> {
-    let mixed = Primitive::Take.call(None, right, span)?;
+fn mix_axes(right: &Value, spec: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let mixed = Primitive::Mix.call(None, right, span)?;
     let frame = right.shape().len();
     let rank = mixed.shape().len();
     let cell_rank = rank - frame;
@@ -1427,13 +1507,13 @@ fn mix_axes(right: &Array, spec: &Array, span: &Context<'_>) -> Result<Array, Er
     reorder(&mixed, &order, span)
 }
 
-fn laminate(left: &Array, right: &Array, axis: usize, span: &Context<'_>) -> Result<Array, Error> {
+fn laminate(left: &Value, right: &Value, axis: usize, span: &Context<'_>) -> Result<Value, Error> {
     let shape = if left.is_scalar() { right.shape() } else { left.shape() };
     if !left.is_scalar() && !right.is_scalar() && left.shape() != right.shape() {
         return Err(span.error(ErrorKind::Length, "laminate argument shapes differ"));
     }
-    let dimensions = Array::integers(vec![shape.len()], shape.iter().map(|&n| n as i64).collect()).unwrap();
-    let extend = |a: &Array| {
+    let dimensions = Value::integers(vec![shape.len()], shape.iter().map(|&n| n as i64).collect()).unwrap();
+    let extend = |a: &Value| {
         let mut extended = shape.to_vec();
         extended.insert(axis, 1);
         let a = if a.is_scalar() { reshape(&dimensions, a, span)? } else { a.clone() };
@@ -1442,7 +1522,7 @@ fn laminate(left: &Array, right: &Array, axis: usize, span: &Context<'_>) -> Res
     catenate(&extend(left)?, &extend(right)?, Some(axis), false, span)
 }
 
-fn reshape(dimensions: &Array, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn reshape(dimensions: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if dimensions.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "shape must be a scalar or vector")); }
     let shape = dimensions
         .elements()
@@ -1451,29 +1531,30 @@ fn reshape(dimensions: &Array, right: &Array, span: &Context<'_>) -> Result<Arra
     let len = generated_len(&shape).map_err(|k| span.error(k, "shape exceeds array limits"))?;
     if let Some(values) = right.as_floats() {
         let data = if values.is_empty() { vec![0.0; len] } else { values.iter().copied().cycle().take(len).collect() };
-        return Array::floats(shape, data).map_err(|k| span.error(k, "invalid reshape"));
+        return Value::floats(shape, data).map_err(|k| span.error(k, "invalid reshape"));
     }
     if let Some(values) = right.as_integers() {
         let data = if values.is_empty() { vec![0; len] } else { values.iter().copied().cycle().take(len).collect() };
-        return Array::integers(shape, data).map_err(|k| span.error(k, "invalid reshape"));
+        return Value::integers(shape, data).map_err(|k| span.error(k, "invalid reshape"));
     }
     let data = if right.is_empty() { vec![right.prototype().clone(); len] } else { right.elements().cycle().take(len).collect() };
-    Array::from_parts(shape, data, right.prototype().clone()).map_err(|k| span.error(k, "invalid reshape"))
+    Value::from_parts(shape, data, right.prototype().clone()).map_err(|k| span.error(k, "invalid reshape"))
 }
 
-fn remap(right: &Array, shape: Vec<usize>, source: impl Fn(usize) -> Option<usize>, span: &Context<'_>) -> Result<Array, Error> {
+fn remap(right: &Value, shape: Vec<usize>, source: impl Fn(usize) -> Option<usize>, span: &Context<'_>) -> Result<Value, Error> {
     let len = generated_len(&shape).map_err(|k| span.error(k, "result exceeds array limits"))?;
+    if right.is_atom() && shape.is_empty() { return Ok(source(0).map_or_else(|| right.prototype(), |i| right.at(i))); }
     if let Some(values) = right.as_floats() {
-        return Array::floats(shape, (0..len).map(|i| source(i).map_or(0.0, |j| values[j])).collect()).map_err(|k| span.error(k, "invalid structural result"));
+        return Value::floats(shape, (0..len).map(|i| source(i).map_or(0.0, |j| values[j])).collect()).map_err(|k| span.error(k, "invalid structural result"));
     }
     if let Some(values) = right.as_integers() {
-        return Array::integers(shape, (0..len).map(|i| source(i).map_or(0, |j| values[j])).collect()).map_err(|k| span.error(k, "invalid structural result"));
+        return Value::integers(shape, (0..len).map(|i| source(i).map_or(0, |j| values[j])).collect()).map_err(|k| span.error(k, "invalid structural result"));
     }
     let data = (0..len).map(|i| source(i).map_or_else(|| right.prototype().clone(), |j| right.at(j))).collect();
-    Array::from_parts(shape, data, right.prototype().clone()).map_err(|k| span.error(k, "invalid structural result"))
+    Value::from_parts(shape, data, right.prototype().clone()).map_err(|k| span.error(k, "invalid structural result"))
 }
 
-fn take_drop(take: bool, counts: &Array, right: &Array, axes: Option<&[usize]>, span: &Context<'_>) -> Result<Array, Error> {
+fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>, span: &Context<'_>) -> Result<Value, Error> {
     if counts.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "take/drop counts must be a scalar or vector")); }
     if axes.is_some_and(|a| a.len() != counts.len()) { return Err(span.error(ErrorKind::Length, "counts do not agree with axes")); }
     if counts.is_empty() { return Ok(right.clone()); }
@@ -1507,7 +1588,7 @@ fn take_drop(take: bool, counts: &Array, right: &Array, axes: Option<&[usize]>, 
     )
 }
 
-fn replicate(counts: &Array, right: &Array, first: bool, axis: Option<usize>, expand: bool, span: &Context<'_>) -> Result<Array, Error> {
+fn replicate(counts: &Value, right: &Value, first: bool, axis: Option<usize>, expand: bool, span: &Context<'_>) -> Result<Value, Error> {
     if counts.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "replication counts must be a scalar or vector")); }
     let mut shape = if right.is_scalar() { vec![1] } else { right.shape().to_vec() };
     let axis = axis.unwrap_or(if first { 0 } else { shape.len() - 1 });
@@ -1547,10 +1628,10 @@ fn replicate(counts: &Array, right: &Array, first: bool, axis: Option<usize>, ex
             }
         }
     }
-    Array::from_parts(shape, data, right.prototype().clone()).map_err(|k| span.error(k, "invalid replication result"))
+    Value::from_parts(shape, data, right.prototype().clone()).map_err(|k| span.error(k, "invalid replication result"))
 }
 
-fn rotate(counts: Option<&Array>, right: &Array, axis: usize, span: &Context<'_>) -> Result<Array, Error> {
+fn rotate(counts: Option<&Value>, right: &Value, axis: usize, span: &Context<'_>) -> Result<Value, Error> {
     let shape = if right.is_scalar() { vec![1] } else { right.shape().to_vec() };
     let traversal = Axis::new(&shape, axis).map_err(|_| span.error(ErrorKind::Domain, "axis is outside array rank"))?;
     let mut frame = shape.clone();
@@ -1580,11 +1661,11 @@ fn rotate(counts: Option<&Array>, right: &Array, axis: usize, span: &Context<'_>
     )
 }
 
-fn catenate(left: &Array, right: &Array, axis: Option<usize>, first: bool, span: &Context<'_>) -> Result<Array, Error> {
+fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: bool, span: &Context<'_>) -> Result<Value, Error> {
     let rank = left.shape().len().max(right.shape().len()).max(1);
     let axis = axis.unwrap_or(if first { 0 } else { rank - 1 });
     if axis >= rank { return Err(span.error(ErrorKind::Domain, "catenate axis is outside result rank")); }
-    let promote = |a: &Array, other: &Array| -> Result<Vec<usize>, Error> {
+    let promote = |a: &Value, other: &Value| -> Result<Vec<usize>, Error> {
         let mut shape = a.shape().to_vec();
         if a.is_scalar() {
             shape = if other.is_scalar() { vec![1] } else { other.shape().to_vec() };
@@ -1610,10 +1691,10 @@ fn catenate(left: &Array, right: &Array, axis: Option<usize>, first: bool, span:
             }
         }
     }
-    Array::from_parts(shape, data, left.prototype().clone()).map_err(|k| span.error(k, "invalid catenate result"))
+    Value::from_parts(shape, data, left.prototype().clone()).map_err(|k| span.error(k, "invalid catenate result"))
 }
 
-fn transpose(axes: Option<&Array>, right: &Array, span: &Context<'_>) -> Result<Array, Error> {
+fn transpose(axes: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let rank = right.shape().len();
     let axes = match axes {
         None => (0..rank).rev().collect::<Vec<_>>(),
@@ -1647,26 +1728,26 @@ fn transpose(axes: Option<&Array>, right: &Array, span: &Context<'_>) -> Result<
     )
 }
 
-fn split(right: &Array, axis: Option<usize>, span: &Context<'_>) -> Result<Array, Error> {
-    if right.is_scalar() { return Array::new(vec![], vec![Element::Nested(right.clone())]).map_err(|k| span.error(k, "invalid split result")); }
+fn split(right: &Value, axis: Option<usize>, span: &Context<'_>) -> Result<Value, Error> {
+    if right.is_scalar() { return Value::new(vec![], vec![right.clone()]).map_err(|k| span.error(k, "invalid split result")); }
     let axis = axis.unwrap_or(right.shape().len() - 1);
     let traversal = Axis::new(right.shape(), axis).map_err(|_| span.error(ErrorKind::Domain, "split axis is outside array rank"))?;
     let mut frame = right.shape().to_vec();
     frame.remove(axis);
     let size = generated_len(&frame).map_err(|k| span.error(k, "split exceeds array limits"))?;
     generated_len(&[traversal.len]).map_err(|k| span.error(k, "split cell exceeds array limits"))?;
-    let prototype = Array::from_parts(vec![traversal.len], vec![right.prototype().clone(); traversal.len], right.prototype().clone()).unwrap();
+    let prototype = Value::from_parts(vec![traversal.len], vec![right.prototype().clone(); traversal.len], right.prototype().clone()).unwrap();
     let mut data = Vec::with_capacity(size);
     for i in 0..if size == 0 { 0 } else { traversal.outer } {
         for k in 0..traversal.inner {
             let cell = (0..traversal.len).map(|j| right.at(traversal.offset(i, j, k))).collect();
-            data.push(Element::Nested(Array::from_parts(vec![traversal.len], cell, right.prototype().clone()).unwrap()));
+            data.push(Value::from_parts(vec![traversal.len], cell, right.prototype().clone()).unwrap());
         }
     }
-    Array::from_parts(frame, data, Element::Nested(prototype)).map_err(|k| span.error(k, "invalid split result"))
+    Value::from_parts(frame, data, prototype).map_err(|k| span.error(k, "invalid split result"))
 }
 
-fn partition(left: &Array, right: &Array, axis: Option<usize>, runs: bool, span: &Context<'_>) -> Result<Array, Error> {
+fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: bool, span: &Context<'_>) -> Result<Value, Error> {
     if left.shape().len() > 1 || runs && right.is_scalar() {
         return Err(span.error(ErrorKind::Rank, "partition needs a scalar/vector left argument and a non-scalar right argument"));
     }
@@ -1696,42 +1777,42 @@ fn partition(left: &Array, right: &Array, axis: Option<usize>, runs: bool, span:
         if let Some(last) = ranges.last_mut() { last.end = traversal.len; }
         let mut shape = right.shape().to_vec();
         shape[axis] = 0;
-        let prototype = Array::empty(shape, right.prototype().clone()).map_err(|k| span.error(k, "invalid partition prototype"))?;
+        let prototype = Value::empty(shape, right.prototype().clone()).map_err(|k| span.error(k, "invalid partition prototype"))?;
         let mut data = Vec::with_capacity(ranges.len());
         for range in ranges {
             let mut shape = right.shape().to_vec();
             shape[axis] = range.len();
             let width = range.len() * traversal.inner;
             let cell = remap(&right, shape, |i| Some(i / width * traversal.len * traversal.inner + range.start * traversal.inner + i % width), span)?;
-            data.push(Element::Nested(cell));
+            data.push(cell);
         }
-        return Array::from_parts(vec![data.len()], data, Element::Nested(prototype)).map_err(|k| span.error(k, "invalid partition result"));
+        return Value::from_parts(vec![data.len()], data, prototype).map_err(|k| span.error(k, "invalid partition result"));
     }
     let mut shape = right.shape().to_vec();
     shape[axis] = ranges.len();
     let size = generated_len(&shape).map_err(|k| span.error(k, "partition result is too large"))?;
-    let prototype = Array::empty(vec![0], right.prototype().clone()).unwrap();
+    let prototype = Value::empty(vec![0], right.prototype().clone()).unwrap();
     let mut data = Vec::with_capacity(size);
     for i in 0..if size == 0 { 0 } else { traversal.outer } {
         for range in &ranges {
             for k in 0..traversal.inner {
                 let items = range.clone().map(|j| right.at(traversal.offset(i, j, k))).collect();
-                let cell = Array::from_parts(vec![range.len()], items, right.prototype().clone()).map_err(|e| span.error(e, "invalid partition cell"))?;
-                data.push(Element::Nested(cell));
+                let cell = Value::from_parts(vec![range.len()], items, right.prototype().clone()).map_err(|e| span.error(e, "invalid partition cell"))?;
+                data.push(cell);
             }
         }
     }
-    Array::from_parts(shape, data, Element::Nested(prototype)).map_err(|k| span.error(k, "invalid partition result"))
+    Value::from_parts(shape, data, prototype).map_err(|k| span.error(k, "invalid partition result"))
 }
 
-fn squad(left: &Array, right: &Array, axes: Option<&[usize]>, span: &Context<'_>) -> Result<Array, Error> {
+fn squad(left: &Value, right: &Value, axes: Option<&[usize]>, span: &Context<'_>) -> Result<Value, Error> {
     if left.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "squad indices must be a scalar or vector")); }
     if left.len() > right.shape().len() || axes.is_some_and(|a| a.len() != left.len()) {
         return Err(span.error(ErrorKind::Length, "squad needs one index item per selected axis"));
     }
     let mut parts = vec![None; right.shape().len()];
     for (i, item) in left.elements().enumerate() {
-        let coords = item.as_array();
+        let coords = item.clone();
         for n in coords.elements() { numeric(&n, span)?; }
         let part = parts.get_mut(axes.map_or(i, |a| a[i])).ok_or_else(|| span.error(ErrorKind::Rank, "squad axis is outside array rank"))?;
         *part = Some(coords);
@@ -1739,9 +1820,9 @@ fn squad(left: &Array, right: &Array, axes: Option<&[usize]>, span: &Context<'_>
     select(right, &parts, span)
 }
 
-fn coordinate_offset(coords: &Array, right: &Array, prototype: bool, span: &Context<'_>) -> Result<Option<usize>, Error> {
+fn coordinate_offset(coords: &Value, right: &Value, prototype: bool, span: &Context<'_>) -> Result<Option<usize>, Error> {
     if coords.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "a coordinate must be a scalar or vector")); }
-    if coords.elements().any(|e| !matches!(e, Element::Number(_))) { return Err(span.error(ErrorKind::Domain, "a coordinate must contain numbers")); }
+    if coords.elements().any(|e| !matches!(e, Value::Number(_))) { return Err(span.error(ErrorKind::Domain, "a coordinate must contain numbers")); }
     if coords.len() != right.shape().len() { return Err(span.error(ErrorKind::Rank, "a coordinate needs one index per axis")); }
     let mut offset = Some(0);
     for (n, &size) in coords.elements().zip(right.shape()) {
@@ -1753,16 +1834,34 @@ fn coordinate_offset(coords: &Array, right: &Array, prototype: bool, span: &Cont
     Ok(offset)
 }
 
-pub(crate) fn pick(left: &Array, right: &Array, prototype: bool, span: &Context<'_>) -> Result<Element, Error> {
-    if left.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "a pick path must be a scalar or vector")); }
-    let mut result = Element::Nested(right.clone());
-    for item in left.elements() {
-        if matches!(result, Element::Function(_)) { return Err(span.error(ErrorKind::Domain, "pick path cannot traverse a function")); }
-        let array = result.as_array();
-        let offset = coordinate_offset(&item.as_array(), &array, prototype, span)?;
-        result = offset.map_or_else(|| array.prototype().clone(), |offset| array.at(offset));
+pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, span: &Context<'_>) -> Result<Value, Error> {
+    if left.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "Pick needs one coordinate field per axis")); }
+    if left.is_empty() { return Ok(right.clone()); }
+    let source = if right.is_scalar() { &[1][..] } else { right.shape() };
+    let fields: Vec<_> = left.elements().collect();
+    if fields.len() > source.len() { return Err(span.error(ErrorKind::Rank, "too many Pick coordinates")); }
+    let mut frame = Vec::new();
+    for field in &fields { frame = Agreement::new(&frame, field.shape()).map_err(|k| span.error(k, "Pick coordinate fields do not agree"))?.shape; }
+    let maps = fields.iter().map(|f| Agreement::new(f.shape(), &frame).unwrap().left).collect::<Vec<_>>();
+    let trailing = &source[fields.len()..];
+    let cell_len = crate::array::element_count(trailing).map_err(|k| span.error(k, "invalid Pick cell"))?;
+    let shape = [&frame, trailing].concat();
+    let len = generated_len(&shape).map_err(|k| span.error(k, "Pick result is too large"))?;
+    let mut values = Vec::with_capacity(len);
+    for i in 0..crate::array::element_count(&frame).unwrap() {
+        let mut offset = Some(0);
+        for (axis, (field, map)) in fields.iter().zip(&maps).enumerate() {
+            let n = numeric(&field.at(map.index(i)), span)?.integer().map_err(|k| span.error(k, "Pick coordinates must be integers"))?;
+            let size = source[axis];
+            if n <= 0 || n as usize > size {
+                if n < 0 || !(prototype || size == 0 && n == 1) { return Err(span.error(ErrorKind::Index, "Pick coordinate is outside the array")); }
+                offset = None;
+            } else { offset = offset.map(|o| o * size + n as usize - 1); }
+        }
+        for j in 0..cell_len { values.push(offset.map_or_else(|| right.prototype(), |o| right.at(o * cell_len + j))); }
     }
-    Ok(result)
+    let frame = if trailing.is_empty() && fields.iter().all(Value::is_atom) { Frame::Direct } else { Frame::Array(shape) };
+    frame.collect(values, right.prototype()).map_err(|k| span.error(k, "invalid Pick result"))
 }
 
 pub(crate) fn index(n: &Number, limit: usize, span: &Span) -> Result<usize, Error> {
@@ -1771,65 +1870,72 @@ pub(crate) fn index(n: &Number, limit: usize, span: &Span) -> Result<usize, Erro
     Ok(n as usize - 1)
 }
 
-pub(crate) struct Selection { pub shape: Vec<usize>, pub paths: Vec<Vec<usize>> }
+pub(crate) struct Selection { pub frame: Frame, pub paths: Vec<Vec<usize>> }
 
 impl Selection {
-    pub(crate) fn read(&self, array: &Array, span: &Context<'_>) -> Result<Array, Error> {
+    pub(crate) fn values<'a>(&'a self, values: &'a Value, span: &Context<'_>) -> Result<impl Iterator<Item = Value> + 'a, Error> {
+        if matches!(self.frame, Frame::Array(_)) && !values.is_singleton() && values.shape() != self.frame.shape() {
+            return Err(span.error(ErrorKind::Length, "replacement shape does not match selection"));
+        }
+        Ok((0..self.paths.len()).map(|i| if matches!(self.frame, Frame::Direct) { values.clone() } else { selected(values, i) }))
+    }
+
+    pub(crate) fn read(&self, array: &Value, span: &Context<'_>) -> Result<Value, Error> {
         let data = self
             .paths
             .iter()
             .map(|path| {
-                let mut item = Element::Nested(array.clone());
-                for &i in path { item = item.as_array().at(i); }
+                let mut item = array.clone();
+                for &i in path { item = item.clone().at(i); }
                 item
             })
             .collect();
-        Array::from_parts(self.shape.clone(), data, array.prototype().clone()).map_err(|k| span.error(k, "invalid selection"))
+        self.frame.clone().collect(data, array.prototype()).map_err(|k| span.error(k, "invalid selection"))
     }
 
-    pub(crate) fn write(&self, array: &Array, values: &Array, span: &Context<'_>) -> Result<Array, Error> {
-        if !values.is_singleton() && values.shape() != self.shape { return Err(span.error(ErrorKind::Length, "replacement shape does not match selection")); }
-        fn replace(array: &Array, updates: &[(&[usize], Element)], span: &Context<'_>) -> Result<Array, Error> {
+    pub(crate) fn write(&self, array: &Value, values: &Value, span: &Context<'_>) -> Result<Value, Error> {
+        fn replace(array: &Value, updates: &[(&[usize], Value)], span: &Context<'_>) -> Result<Value, Error> {
             let replacement;
             let (array, updates) = if let Some(last) = updates.iter().rposition(|(p, _)| p.is_empty()) {
-                replacement = updates[last].1.as_array();
+                replacement = updates[last].1.clone();
                 (&replacement, &updates[last + 1..])
             } else { (array, updates) };
             if updates.is_empty() { return Ok(array.clone()); }
             let mut data: Vec<_> = array.elements().collect();
-            let mut groups: HashMap<usize, Vec<(&[usize], Element)>> = HashMap::new();
+            let mut groups: HashMap<usize, Vec<(&[usize], Value)>> = HashMap::new();
             for (path, value) in updates { groups.entry(path[0]).or_default().push((&path[1..], value.clone())); }
             for (i, edits) in groups {
                 if i >= data.len() { return Err(span.error(ErrorKind::Index, "replacement changed a selected path")); }
-                data[i] = Element::Nested(replace(&data[i].as_array(), &edits, span)?);
+                data[i] = replace(&data[i].clone(), &edits, span)?;
             }
-            Array::from_parts(array.shape().to_vec(), data, array.prototype().clone()).map_err(|k| span.error(k, "invalid amended array"))
+            if array.is_atom() { return Ok(data.remove(0)); }
+            Value::from_parts(array.shape().to_vec(), data, array.prototype().clone()).map_err(|k| span.error(k, "invalid amended array"))
         }
-        let updates: Vec<_> = self.paths.iter().enumerate().map(|(i, p)| (p.as_slice(), selected(values, i))).collect();
+        let updates: Vec<_> = self.paths.iter().map(Vec::as_slice).zip(self.values(values, span)?).collect();
         replace(array, &updates, span)
     }
 }
 
-pub(crate) fn choose(right: &Array, indices: &Array, span: &Context<'_>) -> Result<Selection, Error> {
+pub(crate) fn choose(right: &Value, indices: &Value, span: &Context<'_>) -> Result<Selection, Error> {
     let mut paths = Vec::with_capacity(indices.len());
     for item in indices.elements() {
-        let coordinates = item.as_array();
-        let reach = coordinates.elements().any(|e| matches!(e, Element::Nested(_))) || (right.shape().len() == 1 && coordinates.len() > 1);
-        let steps = if reach { coordinates.elements().map(|e| e.as_array()).collect() } else { vec![coordinates] };
+        let coordinates = item.clone();
+        let reach = coordinates.elements().any(|e| matches!(e, Value::Array(_))) || (right.shape().len() == 1 && coordinates.len() > 1);
+        let steps = if reach { coordinates.elements().collect() } else { vec![coordinates] };
         let mut current = right.clone();
         let mut path = Vec::new();
         for coords in steps {
             let offset = coordinate_offset(&coords, &current, false, span)?.unwrap();
             path.push(offset);
-            current = current.at(offset).as_array();
+            current = current.at(offset).clone();
         }
         paths.push(path);
     }
-    Ok(Selection { shape: indices.shape().to_vec(), paths })
+    Ok(Selection { frame: Frame::of(indices), paths })
 }
 
-pub(crate) fn at_indices(right: &Array, indices: &Array, span: &Context<'_>) -> Result<Selection, Error> {
-    if matches!(indices.elements().next().unwrap_or_else(|| indices.prototype().clone()), Element::Nested(_)) { return choose(right, indices, span); }
+pub(crate) fn at_indices(right: &Value, indices: &Value, span: &Context<'_>) -> Result<Selection, Error> {
+    if matches!(indices.elements().next().unwrap_or_else(|| indices.prototype().clone()), Value::Array(_)) { return choose(right, indices, span); }
     if indices.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "at needs scalar/vector major-cell indices")); }
     if right.is_scalar() { return Err(span.error(ErrorKind::Length, "a scalar has no major-cell axis")); }
     let shape = [indices.shape(), &right.shape()[1..]].concat();
@@ -1840,18 +1946,19 @@ pub(crate) fn at_indices(right: &Array, indices: &Array, span: &Context<'_>) -> 
         let row = index(numeric(&n, span)?, right.shape()[0], span)?;
         paths.extend((0..size).map(|j| vec![row * size + j]));
     }
-    Ok(Selection { shape, paths })
+    let frame = if indices.is_atom() && right.shape().len() == 1 { Frame::Direct } else { Frame::Array(shape) };
+    Ok(Selection { frame, paths })
 }
 
-pub(crate) fn select(right: &Array, parts: &[Option<Array>], span: &Context<'_>) -> Result<Array, Error> {
+pub(crate) fn select(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> Result<Value, Error> {
     if parts.is_empty() { return Ok(right.clone()); }
     selection(right, parts, span)?.read(right, span)
 }
 
-pub(crate) fn selection(right: &Array, parts: &[Option<Array>], span: &Context<'_>) -> Result<Selection, Error> {
-    if parts.is_empty() { return Ok(Selection { shape: right.shape().to_vec(), paths: (0..right.len()).map(|i| vec![i]).collect() }); }
+pub(crate) fn selection(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> Result<Selection, Error> {
+    if parts.is_empty() { return Ok(Selection { frame: Frame::Direct, paths: vec![vec![]] }); }
     if let [Some(indices)] = parts {
-        if matches!(indices.elements().next().unwrap_or_else(|| indices.prototype().clone()), Element::Nested(_)) { return choose(right, indices, span); }
+        if matches!(indices.elements().next().unwrap_or_else(|| indices.prototype().clone()), Value::Array(_)) { return choose(right, indices, span); }
     }
     if parts.len() != right.shape().len() { return Err(span.error(ErrorKind::Rank, "one index expression is required per axis")); }
     let (mut shape, mut indices) = (Vec::new(), Vec::new());
@@ -1878,5 +1985,6 @@ pub(crate) fn selection(right: &Array, parts: &[Option<Array>], span: &Context<'
             vec![source]
         })
         .collect();
-    Ok(Selection { shape, paths })
+    let frame = if parts.iter().all(|a| a.as_ref().is_some_and(Value::is_atom)) { Frame::Direct } else { Frame::Array(shape) };
+    Ok(Selection { frame, paths })
 }

@@ -13,8 +13,8 @@
 3⍴''               ⍝ '   '
 ```
 
-An empty shape makes a scalar.
+An empty shape makes a rank-zero array.
 
 ```apl
-⍬⍴1 2              ⍝ 1
+⍬⍴1 2              ⍝ ⊂1
 ```

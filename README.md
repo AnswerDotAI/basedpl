@@ -38,5 +38,6 @@ The same native executable runs the kernel with `miniapl --kernel -f CONNECTION_
 - [REPL: glyph entry and display](docs/repl.md)
 - [Python: arrays and functions](docs/python.md)
 - [Glyph reference](docs/index.md#glyph-reference)
+- [APL libraries: numeric, array, graph, string, power and tree dfns](lib/README.md)
 
 For source installation and contributing, see [DEV.md](DEV.md).

@@ -19,7 +19,7 @@ mod syntax;
 mod system;
 mod worker;
 
-pub use array::{Array, Element};
+pub use array::Value;
 pub use error::{Error, ErrorKind, Source, Span};
 pub use eval::{Evaluation, Function, Session};
 pub use execution::{with_stack, EvalOptions, InterruptHandle, OutputKind, OutputSink};

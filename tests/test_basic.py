@@ -200,6 +200,6 @@ def test_installed_json_command():
     assert replies[1]['value'] == {'shape': [3], 'data': [9007199254740993, 0.5, {'rational': ['1', '3']}], 'prototype': 0}
     assert replies[2]['value'] == {'shape': [0], 'data': [], 'prototype': 0}
     assert replies[3]['error']['kind'] == 'DOMAIN ERROR'
-    assert replies[4]['value']['data'] == [{'rational': ['1', '2']}]
-    assert replies[5]['value']['data'] == [2**100]
+    assert replies[4]['value'] == {'rational': ['1', '2']}
+    assert replies[5]['value'] == 2**100
     assert replies[6]['value']['data'] == [{'complex': [1, 2]}, {'complex': [3, 4]}]

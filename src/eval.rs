@@ -1,10 +1,10 @@
 use crate::{
     agreement::Agreement,
-    array::{generated_len, Axis},
+    array::{generated_len, Axis, Frame as ResultFrame},
     primitive::{Hybrid, OperatorKind, Primitive},
     selection::SelectionKind,
     syntax::{Definition, DefinitionKind, Node, NodeKind, StatementKind},
-    Array, Element, Error, ErrorKind, ParseStatus, Parsed, Source, Span,
+    Error, ErrorKind, ParseStatus, Parsed, Source, Span, Value,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -24,7 +24,7 @@ impl PartialEq for Function { fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&
 const MAX_DEPTH: usize = 128;
 const MAX_CALL_DEPTH: usize = 1024;
 
-fn implicit_name(name: &str) -> bool { matches!(name, "⍺" | "⍵" | "⍺⍺" | "⍵⍵" | "∇" | "∇∇") }
+fn implicit_name(name: &str) -> bool { matches!(name, "⍺" | "⍵" | "⍶" | "⍹" | "∇" | "∇∇") }
 
 #[derive(Debug)]
 enum FunctionNode {
@@ -33,7 +33,7 @@ enum FunctionNode {
     LateBound(Arc<Parsed>, Span),
     Fold(Function, Hybrid),
     Inverse(Function),
-    Axis(Function, Array),
+    Axis(Function, Value),
     Defined(Closure),
     Derived(Closure, Operand, Option<Operand>),
     Modified(OperatorKind, Operand),
@@ -44,17 +44,17 @@ enum FunctionNode {
 impl Function {
     pub(crate) fn depth(&self) -> usize { self.depth }
     pub(crate) fn environment(&self) -> Option<usize> { self.environment }
-    fn from_value(value: Value, span: &Span) -> Result<Self, Error> {
+    fn from_value(value: Binding, span: &Span) -> Result<Self, Error> {
         match value {
-            Value::Function(f) => Ok(f),
-            Value::Hybrid(h) => {
+            Binding::Function(f) => Ok(f),
+            Binding::Hybrid(h) => {
                 let f = Self::primitive(h.primitive());
                 match h.axis { Some(axis) => Self::new(FunctionNode::Axis(f, crate::primitive::axis_value(axis)), span), None => Ok(f) }
             }
             _ => Err(span.error(ErrorKind::Syntax, "call requires a function expression")),
         }
     }
-    fn selection_kind(&self, left: Option<&Array>, kind: SelectionKind) -> Option<SelectionKind> {
+    fn selection_kind(&self, left: Option<&Value>, right: &Value, kind: SelectionKind) -> Option<SelectionKind> {
         use Primitive::*;
         let dyadic = left.is_some();
         match self.node.as_ref() {
@@ -62,19 +62,28 @@ impl Function {
             FunctionNode::Primitive(p)
                 if match p {
                     Ravel | CatenateFirst => !dyadic,
-                    Take | Drop | Shape | Replicate(_) | Expand(_) => dyadic,
+                    Take => true,
+                    Drop | Shape | Replicate(_) | Expand(_) => dyadic,
                     Member => !dyadic,
-                    Reverse(_) | Transpose | Disclose | Index => true,
+                    Mix => dyadic,
+                    Reverse(_) | Transpose | Index => true,
                     _ => false,
                 } =>
             {
-                Some(if matches!(p, Disclose) && (left.is_none_or(|a| !a.is_empty()) || kind == SelectionKind::Item) { SelectionKind::Item } else { SelectionKind::Elements })
+                Some(match (p, left) {
+                    (Take, None) if right.shape().len() <= 1 => SelectionKind::Item,
+                    (Mix, Some(x)) if x.is_empty() => kind,
+                    (Mix, Some(x)) if x.len() == right.shape().len().max(1) && x.elements().all(|e| e.is_atom()) => SelectionKind::Item,
+                    (Index, None) => kind,
+                    (Index, Some(x)) if x.len() == right.shape().len() && x.elements().all(|e| e.is_atom()) => SelectionKind::Item,
+                    _ => SelectionKind::Elements,
+                })
             }
-            FunctionNode::Axis(f, _) => f.selection_kind(left, kind),
+            FunctionNode::Axis(f, _) => f.selection_kind(left, right, kind),
             FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => {
-                f.selection_kind(left, SelectionKind::Elements).map(|_| SelectionKind::Elements)
+                f.selection_kind(left, right, SelectionKind::Elements).map(|_| SelectionKind::Elements)
             }
-            FunctionNode::Composed(OperatorKind::Compose, [Operand::Array(a), Operand::Function(f)]) if !dyadic => f.selection_kind(Some(a), kind),
+            FunctionNode::Composed(OperatorKind::Compose, [Operand::Value(a), Operand::Function(f)]) if !dyadic => f.selection_kind(Some(a), right, kind),
             _ => None,
         }
     }
@@ -152,12 +161,12 @@ impl Function {
                     _ => false,
                 } { return Err(span.error(ErrorKind::Domain, "invalid operator operands")); }
                 if matches!(op, Agenda) {
-                    let Operand::Array(fs) = &b else { unreachable!() };
+                    let Operand::Value(fs) = &b else { unreachable!() };
                     if fs.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "agenda needs a vector of functions")); }
-                    if fs.is_empty() || !fs.elements().all(|e| matches!(e, Element::Function(_))) {
+                    if fs.is_empty() || !fs.elements().all(|e| matches!(e, Value::Function(_))) {
                         return Err(span.error(ErrorKind::Domain, "agenda needs a nonempty vector of functions"));
                     }
-                    if let Operand::Array(index) = &a { agenda_index(index, fs.len(), span)?; }
+                    if let Operand::Value(index) = &a { agenda_index(index, fs.len(), span)?; }
                 }
                 FunctionNode::Composed(op, [a, b])
             }
@@ -182,7 +191,7 @@ impl Function {
         if depth > MAX_DEPTH { return Err(span.error(ErrorKind::Limit, "function structure exceeds 128 levels")); }
         Ok(Self { node: Arc::new(node), depth, environment, late })
     }
-    fn call(&self, left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+    fn call(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
         session.execution.check(span)?;
         if session.depth == MAX_CALL_DEPTH { return Err(span.error(ErrorKind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}"))); }
         session.depth += 1;
@@ -191,10 +200,10 @@ impl Function {
         session.execution.check(span)?;
         result
     }
-    fn call_array(&self, left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Array, Error> {
+    fn call_array(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Value, Error> {
         self.call(left, right, span, session, output)?.array(span)
     }
-    fn call_prototype(&self, left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+    fn call_prototype(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
         let previous = std::mem::replace(&mut session.prototype, true);
         let result = self.call(left, right, span, session, output);
         session.prototype = previous;
@@ -244,7 +253,7 @@ impl Function {
         resolved.insert(id, (self.clone(), result.clone()));
         Ok(result)
     }
-    fn apply(&self, left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+    fn apply(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
         use FunctionNode::{Defined, Derived, Fold, Fork};
         let array = match self.node.as_ref() {
             FunctionNode::LateBound(..) => unreachable!(),
@@ -260,7 +269,7 @@ impl Function {
                     f = inner;
                     order += 1;
                 }
-                let FunctionNode::Composed(OperatorKind::Compose, [Operand::Array(a), Operand::Function(p)]) = f.node.as_ref() else {
+                let FunctionNode::Composed(OperatorKind::Compose, [Operand::Value(a), Operand::Function(p)]) = f.node.as_ref() else {
                     return Err(span.error(ErrorKind::Domain, "differentiation currently requires a bound polynomial evaluator"));
                 };
                 if !matches!(p.node.as_ref(), FunctionNode::Primitive(Primitive::Polynomial)) {
@@ -269,17 +278,17 @@ impl Function {
                 crate::polynomial::derivative(a, order, left, right, &session.execution.at(span))
             }
             FunctionNode::Modified(OperatorKind::Commute, Operand::Function(f)) => return f.call(Some(right), left.unwrap_or(right), span, session, output),
-            FunctionNode::Modified(OperatorKind::Commute, Operand::Array(a)) => Ok(a.clone()),
+            FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)) => Ok(a.clone()),
             FunctionNode::Modified(..) => unreachable!(),
-            FunctionNode::Primitive(Primitive::Disclose) => {
-                let item = match left {
-                    Some(x) => crate::primitive::pick(x, right, session.prototype, &session.execution.at(span))?,
-                    None => right.disclose(),
-                };
-                return Ok(Bound::new(Value::from_element(item)));
+            FunctionNode::Primitive(p) if matches!((p, left), (Primitive::Mix, Some(_)) | (Primitive::Take, None)) => {
+                let item = crate::primitive::pick(left.unwrap_or(&crate::primitive::integer(1)), right, session.prototype, &session.execution.at(span))?;
+                return Ok(Bound::new(Binding::from_element(item)));
             }
             FunctionNode::Primitive(p) => p.call(left, right, &session.execution.at(span)),
-            FunctionNode::System(f) => (f.call)(left, right, &session.execution.at(span)),
+            FunctionNode::System(f) => match f.call {
+                crate::system::Call::Value(call) => call(left, right, &session.execution.at(span)),
+                crate::system::Call::Load => return session.load(left, right, span, output),
+            },
             Defined(_) | Derived(..) => {
                 return session.call_defined(self, left, right, output).map_err(|mut e| {
                     e.calls.push(span.clone());
@@ -304,7 +313,7 @@ impl Function {
                 }
             }
         }?;
-        Ok(Bound::new(Value::Array(array)))
+        Ok(Bound::new(Binding::from_element(array)))
     }
 }
 
@@ -346,10 +355,10 @@ impl Function {
         let source = Source::new("<function>", kind);
         let span = Span { range: 0..source.text.len(), source };
         let fun = |a: &Operand| Self::from_value(a.value(), &span);
-        let constant = |a: &Operand| match a { Operand::Array(_) => Self::new(FunctionNode::Modified(OperatorKind::Commute, a.clone()), &span), _ => fun(a) };
+        let constant = |a: &Operand| match a { Operand::Value(_) => Self::new(FunctionNode::Modified(OperatorKind::Commute, a.clone()), &span), _ => fun(a) };
         let node = match (kind, operands.as_slice()) {
             ("fork", [a, b, c]) => FunctionNode::Fork([constant(a)?, fun(b)?, constant(c)?]),
-            ("axis", [f, Operand::Array(axis)]) => FunctionNode::Axis(fun(f)?, axis.clone()),
+            ("axis", [f, Operand::Value(axis)]) => FunctionNode::Axis(fun(f)?, axis.clone()),
             ("/" | "⌿" | "\\" | "⍀", [f]) => {
                 FunctionNode::Fold(fun(f)?, Hybrid { scan: matches!(kind, "\\" | "⍀"), first: matches!(kind, "⌿" | "⍀"), axis: None })
             }
@@ -388,8 +397,8 @@ impl Function {
 fn composition(
     op: OperatorKind,
     operands: &[Operand; 2],
-    left: Option<&Array>,
-    right: &Array,
+    left: Option<&Value>,
+    right: &Value,
     span: &Span,
     session: &mut Session,
     output: &mut Vec<String>,
@@ -398,7 +407,7 @@ fn composition(
     if matches!(op, At) { return at(operands, left, right, span, session, output); }
     if matches!(op, Agenda) { return agenda(operands, left, right, span, session, output); }
     if matches!(op, Stencil) {
-        let [Operand::Function(f), Operand::Array(spec)] = operands else {
+        let [Operand::Function(f), Operand::Value(spec)] = operands else {
             return Err(span.error(ErrorKind::Domain, "stencil needs a function and window specification"));
         };
         if left.is_some() { return Err(span.error(ErrorKind::Syntax, "stencil is monadic")); }
@@ -406,15 +415,15 @@ fn composition(
     }
     if matches!(op, Power | History) { return power(op, operands, left, right, span, session, output); }
     match (&operands[0], &operands[1]) {
-        (Operand::Array(a), Operand::Function(f)) if matches!(op, Compose) => {
+        (Operand::Value(a), Operand::Function(f)) if matches!(op, Compose) => {
             if left.is_some() { return Err(span.error(ErrorKind::Syntax, "bound functions are monadic")); }
             f.call(Some(a), right, span, session, output)
         }
-        (Operand::Function(f), Operand::Array(a)) if matches!(op, Compose) => {
+        (Operand::Function(f), Operand::Value(a)) if matches!(op, Compose) => {
             if left.is_some() { return Err(span.error(ErrorKind::Syntax, "bound functions are monadic")); }
             f.call(Some(right), a, span, session, output)
         }
-        (Operand::Function(f), Operand::Array(ranks)) if matches!(op, Rank) => rank(f, ranks, left, right, span, session, output),
+        (Operand::Function(f), Operand::Value(ranks)) if matches!(op, Rank) => rank(f, ranks, left, right, span, session, output),
         (Operand::Function(f), Operand::Function(g)) => match op {
             PairInverse => f.call(left, right, span, session, output),
             Product => inner(f, g, left, right, span, session, output),
@@ -442,48 +451,48 @@ fn composition(
     }
 }
 
-fn agenda_index(index: &Array, len: usize, span: &Span) -> Result<usize, Error> {
+fn agenda_index(index: &Value, len: usize, span: &Span) -> Result<usize, Error> {
     if !index.is_scalar() { return Err(span.error(ErrorKind::Rank, "agenda index must be scalar")); }
     let n = index.as_number().ok_or_else(|| span.error(ErrorKind::Domain, "agenda index must be numeric"))?;
     crate::primitive::index(&n, len, span)
 }
 
-fn agenda(operands: &[Operand; 2], left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
-    let [selector, Operand::Array(fs)] = operands else { unreachable!() };
+fn agenda(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+    let [selector, Operand::Value(fs)] = operands else { unreachable!() };
     let index = match selector {
-        Operand::Array(a) => a.clone(),
+        Operand::Value(a) => a.clone(),
         Operand::Function(f) => f.call_array(left, right, span, session, output)?,
         Operand::Hybrid(_) => unreachable!(),
     };
-    let Element::Function(f) = fs.at(agenda_index(&index, fs.len(), span)?) else { unreachable!() };
+    let Value::Function(f) = fs.at(agenda_index(&index, fs.len(), span)?) else { unreachable!() };
     f.call(left, right, span, session, output)
 }
 
-fn at(operands: &[Operand; 2], left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+fn at(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
     let selection = match &operands[1] {
-        Operand::Array(indices) => crate::primitive::at_indices(right, indices, &session.execution.at(span))?,
+        Operand::Value(indices) => crate::primitive::at_indices(right, indices, &session.execution.at(span))?,
         Operand::Function(f) => {
             let mask = f.call_array(None, right, span, session, output)?;
             if mask.shape() != right.shape() { return Err(span.error(ErrorKind::Length, "at mask must match argument shape")); }
             let mut paths = Vec::new();
             for (i, e) in mask.elements().enumerate() {
-                let Element::Number(n) = e else { return Err(span.error(ErrorKind::Domain, "at mask must be Boolean")); };
+                let Value::Number(n) = e else { return Err(span.error(ErrorKind::Domain, "at mask must be Boolean")); };
                 if n.boolean().map_err(|m| span.error(ErrorKind::Domain, m))? { paths.push(vec![i]); }
             }
-            crate::primitive::Selection { shape: vec![paths.len()], paths }
+            crate::primitive::Selection { frame: ResultFrame::Array(vec![paths.len()]), paths }
         }
         _ => unreachable!(),
     };
     let values = match &operands[0] {
-        Operand::Array(a) => a.clone(),
+        Operand::Value(a) => a.clone(),
         Operand::Function(f) => f.call_array(left, &selection.read(right, &session.execution.at(span))?, span, session, output)?,
         _ => unreachable!(),
     };
     let array = selection.write(right, &values, &session.execution.at(span))?;
-    Ok(Bound::new(Value::Array(array)))
+    Ok(Bound::new(Binding::from_element(array)))
 }
 
-fn stencil(f: &Function, spec: &Array, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+fn stencil(f: &Function, spec: &Value, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
     if spec.shape().len() > 2 { return Err(span.error(ErrorKind::Rank, "stencil specification must be a scalar, vector or two-row matrix")); }
     let axes = if spec.shape().len() == 2 {
         if spec.shape()[0] != 2 { return Err(span.error(ErrorKind::Length, "stencil matrix needs two rows")); }
@@ -492,7 +501,7 @@ fn stencil(f: &Function, spec: &Array, right: &Array, span: &Span, session: &mut
     if axes == 0 || axes > right.shape().len() { return Err(span.error(ErrorKind::Domain, "stencil needs at least one axis, within the argument rank")); }
     let mut sizes = Vec::new();
     for e in spec.elements() {
-        let Element::Number(n) = e else { return Err(span.error(ErrorKind::Domain, "stencil sizes must be numeric")); };
+        let Value::Number(n) = e else { return Err(span.error(ErrorKind::Domain, "stencil sizes must be numeric")); };
         let n = n.nonnegative_integer().map_err(|k| span.error(k, "stencil sizes must be positive integers"))?;
         if n == 0 { return Err(span.error(ErrorKind::Domain, "stencil sizes must be positive")); }
         sizes.push(n);
@@ -528,19 +537,19 @@ fn stencil(f: &Function, spec: &Array, right: &Array, span: &Span, session: &mut
             }
             data.push(if valid { right.at(offset) } else { right.prototype().clone() });
         }
-        let window = Array::from_parts(shape.clone(), data, right.prototype().clone()).map_err(|k| span.error(k, "invalid stencil window"))?;
-        let border = Array::floats(vec![axes], padding).unwrap();
+        let window = Value::from_parts(shape.clone(), data, right.prototype().clone()).map_err(|k| span.error(k, "invalid stencil window"))?;
+        let border = Value::floats(vec![axes], padding).unwrap();
         results.push(f.call_array(Some(&border), &window, span, session, output)?);
     }
-    let result = Array::assemble(&frame, &results, &Array::scalar(0.).unwrap()).map_err(|k| span.error(k, "invalid stencil result"))?;
-    Ok(Bound::new(Value::Array(result)))
+    let result = Value::assemble(&frame, &results, &Value::scalar(0.).unwrap()).map_err(|k| span.error(k, "invalid stencil result"))?;
+    Ok(Bound::new(Binding::from_element(result)))
 }
 
 fn power(
     op: OperatorKind,
     operands: &[Operand; 2],
-    left: Option<&Array>,
-    right: &Array,
+    left: Option<&Value>,
+    right: &Value,
     span: &Span,
     session: &mut Session,
     output: &mut Vec<String>,
@@ -549,12 +558,12 @@ fn power(
     let history = matches!(op, OperatorKind::History);
     let mut value = right.clone();
     match operand {
-        Operand::Array(count) => {
+        Operand::Value(count) => {
             if history && !count.is_scalar() { return Err(span.error(ErrorKind::Rank, "history count must be scalar")); }
             let mut indices = count
                 .elements()
                 .map(|e| {
-                    let Element::Number(n) = e else { return Err(span.error(ErrorKind::Domain, "power counts must be numeric")); };
+                    let Value::Number(n) = e else { return Err(span.error(ErrorKind::Domain, "power counts must be numeric")); };
                     n.integer().map_err(|k| span.error(k, "power counts must be integral"))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -596,7 +605,7 @@ fn power(
                     previous = n;
                 }
                 let cells: Vec<_> = indices.iter().map(|n| states[n].clone()).collect();
-                value = Array::assemble(&shape, &cells, right).map_err(|k| span.error(k, "power result is too large"))?;
+                value = Value::assemble(&shape, &cells, right).map_err(|k| span.error(k, "power result is too large"))?;
             }
         }
         Operand::Function(test) => {
@@ -612,14 +621,14 @@ fn power(
                 }
                 if done { break; }
             }
-            if history { value = Array::assemble(&[states.len()], &states, right).map_err(|k| span.error(k, "history result is too large"))?; }
+            if history { value = Value::assemble(&[states.len()], &states, right).map_err(|k| span.error(k, "history result is too large"))?; }
         }
         Operand::Hybrid(_) => unreachable!(),
     }
-    Ok(Bound::new(Value::Array(value)))
+    Ok(Bound::new(Binding::from_element(value)))
 }
 
-fn inverse(f: &Function, bound: Option<(&Array, bool)>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
     use FunctionNode::*;
     use OperatorKind::*;
     let left = bound.map(|(a, _)| a);
@@ -629,9 +638,6 @@ fn inverse(f: &Function, bound: Option<(&Array, bool)>, right: &Array, span: &Sp
         g.inverse(span)
     };
     let array = match f.node.as_ref() {
-        Primitive(crate::primitive::Primitive::Enclose) if bound.is_none() => {
-            return Function::primitive(crate::primitive::Primitive::Disclose).call(None, right, span, session, output);
-        }
         Primitive(p) => crate::primitive::inverse(*p, bound, right, None, &session.execution.at(span)),
         Composed(PairInverse, [_, Operand::Function(g)]) if first => return g.call(left, right, span, session, output),
         Composed(Under, [Operand::Function(g), h]) => {
@@ -651,23 +657,23 @@ fn inverse(f: &Function, bound: Option<(&Array, bool)>, right: &Array, span: &Sp
             };
             if let Composed(Compose, [Operand::Function(a), Operand::Function(b)]) = g.node.as_ref() {
                 if matches!(a.node.as_ref(), Primitive(P::Arithmetic(Arithmetic::Times))) && matches!(b.node.as_ref(), Primitive(P::Math(Math::Power))) {
-                    return crate::primitive::lambert_w(right, &session.execution.at(span)).map(|a| Bound::new(Value::Array(a)));
+                    return crate::primitive::lambert_w(right, &session.execution.at(span)).map(|a| Bound::new(Binding::Value(a)));
                 }
             }
             let Primitive(p) = g.node.as_ref() else { return Err(span.error(ErrorKind::Domain, "this commute has no known inverse")); };
             match p {
                 P::Arithmetic(Arithmetic::Plus) => {
-                    P::Arithmetic(Arithmetic::Divide).call(Some(right), &Array::scalar(crate::Number::from_integer(2)).unwrap(), &session.execution.at(span))
+                    P::Arithmetic(Arithmetic::Divide).call(Some(right), &Value::scalar(crate::Number::from_integer(2)).unwrap(), &session.execution.at(span))
                 }
-                P::Arithmetic(Arithmetic::Times) => P::Math(Math::Power).call(Some(right), &Array::scalar(0.5).unwrap(), &session.execution.at(span)),
+                P::Arithmetic(Arithmetic::Times) => P::Math(Math::Power).call(Some(right), &Value::scalar(0.5).unwrap(), &session.execution.at(span)),
                 P::Math(Math::Floor | Math::Ceiling) => Ok(right.clone()),
                 _ => Err(span.error(ErrorKind::Domain, "this commute has no known inverse")),
             }
         }
-        Composed(Compose, [Operand::Array(a), Operand::Function(g)]) if bound.is_none() => {
+        Composed(Compose, [Operand::Value(a), Operand::Function(g)]) if bound.is_none() => {
             return inverse(g, Some((a, true)), right, span, session, output);
         }
-        Composed(Compose, [Operand::Function(g), Operand::Array(a)]) if bound.is_none() => {
+        Composed(Compose, [Operand::Function(g), Operand::Value(a)]) if bound.is_none() => {
             return inverse(g, Some((a, false)), right, span, session, output);
         }
         Composed(Compose, [Operand::Function(g), Operand::Function(h)]) => {
@@ -695,17 +701,17 @@ fn inverse(f: &Function, bound: Option<(&Array, bool)>, right: &Array, span: &Sp
             let y = inverse(h, bound, right, span, session, output)?.array(span)?;
             return g.inverse(span)?.call(None, &y, span, session, output);
         }
-        Composed(Power, [Operand::Function(g), Operand::Array(count)]) if first && count.is_scalar() => {
+        Composed(Power, [Operand::Function(g), Operand::Value(count)]) if first && count.is_scalar() => {
             let count = crate::primitive::Primitive::Arithmetic(crate::number::Arithmetic::Minus).call(None, count, &session.execution.at(span))?;
-            return power(Power, &[Operand::Function(g.clone()), Operand::Array(count)], left, right, span, session, output);
+            return power(Power, &[Operand::Function(g.clone()), Operand::Value(count)], left, right, span, session, output);
         }
-        Composed(Rank, [Operand::Function(g), Operand::Array(ranks)]) => {
+        Composed(Rank, [Operand::Function(g), Operand::Value(ranks)]) => {
             let mut ranks = ranks.clone();
             if !first && (2..=3).contains(&ranks.len()) {
                 let mut items: Vec<_> = ranks.elements().collect();
                 let n = items.len();
                 items.swap(n - 2, n - 1);
-                ranks = Array::new(ranks.shape().to_vec(), items).map_err(|k| span.error(k, "invalid inverse ranks"))?;
+                ranks = Value::new(ranks.shape().to_vec(), items).map_err(|k| span.error(k, "invalid inverse ranks"))?;
             }
             return rank(&operand_inverse(g)?, &ranks, left, right, span, session, output);
         }
@@ -723,18 +729,18 @@ fn inverse(f: &Function, bound: Option<(&Array, bool)>, right: &Array, span: &Sp
         }
         _ => Err(span.error(ErrorKind::Domain, "this function has no known inverse")),
     }?;
-    Ok(Bound::new(Value::Array(array)))
+    Ok(Bound::new(Binding::from_element(array)))
 }
 
 fn inverse_outer(
     f: &Function,
-    bound: &Array,
+    bound: &Value,
     first: bool,
-    right: &Array,
+    right: &Value,
     span: &Span,
     session: &mut Session,
     output: &mut Vec<String>,
-) -> Result<Array, Error> {
+) -> Result<Value, Error> {
     let rank = bound.shape().len();
     if bound.is_empty() || right.shape().len() < rank {
         return Err(span.error(ErrorKind::Domain, "outer-product inverse needs a nonempty matching bound frame"));
@@ -744,56 +750,56 @@ fn inverse_outer(
     let (frame, shape) = if first { (prefix, suffix) } else { (suffix, prefix) };
     if frame != bound.shape() { return Err(span.error(ErrorKind::Domain, "outer-product inverse needs a matching bound frame")); }
     let count = crate::array::element_count(shape).map_err(|k| span.error(k, "invalid inverse result shape"))?;
-    let mut result: Vec<Array> = Vec::with_capacity(count.max(1));
+    let mut result: Vec<Value> = Vec::with_capacity(count.max(1));
     for j in 0..if count == 0 { 1 } else { bound.len() } {
-        let a = Operand::Array(bound.at(j).as_array());
+        let a = Operand::Value(bound.at(j).clone());
         let f = Operand::Function(f.clone());
         let operands = if first { [a, f] } else { [f, a] };
         let inverse = Function::new(FunctionNode::Composed(OperatorKind::Compose, operands), span)?.inverse(span)?;
         for i in 0..count.max(1) {
             let value = if count == 0 { right.prototype().clone() } else { right.at(if first { j * count + i } else { i * bound.len() + j }) };
-            let candidate = inverse.call_array(None, &value.as_array(), span, session, output)?;
+            let candidate = inverse.call_array(None, &value.clone(), span, session, output)?;
             if j == 0 { result.push(candidate); } else if !crate::primitive::array_match(&result[i], &candidate, &session.execution.at(span))? {
                 return Err(span.error(ErrorKind::Domain, "outer-product cells do not have a consistent inverse"));
             }
         }
     }
-    if count == 0 { Array::empty(shape.to_vec(), Element::Nested(result[0].clone()).prototype()) } else { Array::new(shape.to_vec(), result.into_iter().map(Element::Nested).collect()) }
-    .map_err(|k| span.error(k, "invalid outer-product inverse"))
+    if count == 0 { Value::empty(shape.to_vec(), result[0].clone().prototype()) } else { Value::new(shape.to_vec(), result.into_iter().collect()) }
+        .map_err(|k| span.error(k, "invalid outer-product inverse"))
 }
 
 fn inverse_scan(
     f: &Function,
     h: Hybrid,
-    seed: Option<&Array>,
-    right: &Array,
+    seed: Option<&Value>,
+    right: &Value,
     span: &Span,
     session: &mut Session,
     output: &mut Vec<String>,
-) -> Result<Array, Error> {
-    let axis = scan_axis(h, seed, right, span)?;
+) -> Result<Value, Error> {
+    let axis = scan_axis(h, right, span)?;
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
     let inverse = f.inverse(span)?;
+    if right.is_atom() { return inverse.call_array(seed, right, span, session, output); }
     let mut data: Vec<_> = right.elements().collect();
     for i in 0..axis.outer {
         for j in usize::from(seed.is_none())..axis.len {
             for k in 0..axis.inner {
                 let offset = axis.offset(i, j, k);
-                let previous =
-                    if j == 0 { seed.unwrap().at(if seed.unwrap().is_scalar() { 0 } else { i * axis.inner + k }) } else { right.at(axis.offset(i, j - 1, k)) };
-                data[offset] = Element::Nested(inverse.call_array(Some(&previous.as_array()), &right.at(offset).as_array(), span, session, output)?);
+                let previous = if j == 0 { seed.unwrap().clone() } else { right.at(axis.offset(i, j - 1, k)) };
+                data[offset] = inverse.call_array(Some(&previous.clone()), &right.at(offset).clone(), span, session, output)?;
             }
         }
     }
-    Array::from_parts(right.shape().to_vec(), data, right.prototype().clone()).map_err(|k| span.error(k, "invalid inverse scan"))
+    Value::from_parts(right.shape().to_vec(), data, right.prototype().clone()).map_err(|k| span.error(k, "invalid inverse scan"))
 }
 
-fn key(f: &Function, left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+fn key(f: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
     let keys = left.unwrap_or(right);
     if keys.is_scalar() || right.is_scalar() { return Err(span.error(ErrorKind::Rank, "key arguments must have major cells")); }
     if keys.shape()[0] != right.shape()[0] { return Err(span.error(ErrorKind::Length, "key arguments must have equal tallies")); }
     let values = if left.is_none() {
-        Primitive::Iota.call(None, &Array::scalar(crate::Number::from_integer(right.shape()[0] as i64)).unwrap(), &session.execution.at(span))?
+        Primitive::Iota.call(None, &Value::scalar(crate::Number::from_integer(right.shape()[0] as i64)).unwrap(), &session.execution.at(span))?
     } else { right.clone() };
     let cells = keys.cells(keys.shape().len() - 1).map_err(|k| span.error(k, "invalid key cells"))?;
     let key_cells = cells.collect().map_err(|k| span.error(k, "invalid key cells"))?;
@@ -814,17 +820,19 @@ fn key(f: &Function, left: Option<&Array>, right: &Array, span: &Span, session: 
     let mut results = Vec::with_capacity(groups.len());
     for (representative, indices) in groups {
         let x = if count == 0 { cells.prototype().map_err(|k| span.error(k, "invalid key prototype"))? } else { key_cells[representative].clone() };
+        let x = if cells.shape().is_empty() { x.at(0) } else { x };
         let shape = [&[indices.len()], &values.shape()[1..]].concat();
         let data = indices.into_iter().flat_map(|i| values.items(i * width..(i + 1) * width)).collect();
-        let y = Array::from_parts(shape, data, values.prototype().clone()).map_err(|k| span.error(k, "invalid key group"))?;
-        results.push(f.call_array(Some(&x), &y, span, session, output)?);
+        let y = Value::from_parts(shape, data, values.prototype().clone()).map_err(|k| span.error(k, "invalid key group"))?;
+        results.push(if count == 0 { f.call_prototype(Some(&x), &y, span, session, output)?.array(span)? } else { f.call_array(Some(&x), &y, span, session, output)? });
     }
-    let result = Array::assemble(&[count], if count == 0 { &[] } else { &results }, &results[0]).map_err(|k| span.error(k, "invalid key result"))?;
-    Ok(Bound::new(Value::Array(result)))
+    let result = Value::assemble(&[count], if count == 0 { &[] } else { &results }, &results[0]).map_err(|k| span.error(k, "invalid key result"))?;
+    Ok(Bound::new(Binding::from_element(result)))
 }
 
-fn outer(operand: &Function, left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+fn outer(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
     let left = left.ok_or_else(|| span.error(ErrorKind::Syntax, "outer product needs a left argument"))?;
+    if left.is_atom() && right.is_atom() { return operand.call(Some(left), right, span, session, output); }
     let shape = [left.shape(), right.shape()].concat();
     let count = generated_len(&shape).map_err(|k| span.error(k, "outer product is too large"))?;
     let mut data = Vec::with_capacity(count.max(1));
@@ -833,16 +841,16 @@ fn outer(operand: &Function, left: Option<&Array>, right: &Array, span: &Span, s
         let (x, y) = if count == 0 {
             (left.elements().next().unwrap_or_else(|| left.prototype().clone()), right.elements().next().unwrap_or_else(|| right.prototype().clone()))
         } else { (left.at(i / right.len()), right.at(i % right.len())) };
-        match operand.call(Some(&x.as_array()), &y.as_array(), span, session, output)?.value {
-            Value::Array(a) => data.push(Element::Nested(a)),
-            Value::Function(f) => data.push(Element::Function(f)),
-            Value::NoResult => missing = true,
+        match operand.call(Some(&x.clone()), &y.clone(), span, session, output)?.value {
+            Binding::Value(a) => data.push(a),
+            Binding::Function(f) => data.push(Value::Function(f)),
+            Binding::NoResult => missing = true,
             _ => return Err(span.error(ErrorKind::Syntax, "outer product operand must return an array, function or no result")),
         }
     }
-    let value = if missing { Value::NoResult } else {
-        let result = if count == 0 { Array::empty(shape, data[0].prototype()) } else { Array::new(shape, data) };
-        Value::Array(result.map_err(|k| span.error(k, "invalid outer product result"))?)
+    let value = if missing { Binding::NoResult } else {
+        let result = if count == 0 { Value::empty(shape, data[0].fill()) } else { Value::new(shape, data) };
+        Binding::Value(result.map_err(|k| span.error(k, "invalid outer product result"))?)
     };
     Ok(Bound::new(value))
 }
@@ -850,8 +858,8 @@ fn outer(operand: &Function, left: Option<&Array>, right: &Array, span: &Span, s
 fn inner(
     f: &Function,
     g: &Function,
-    left: Option<&Array>,
-    right: &Array,
+    left: Option<&Value>,
+    right: &Value,
     span: &Span,
     session: &mut Session,
     output: &mut Vec<String>,
@@ -869,29 +877,30 @@ fn inner(
     let cols = generated_len(yf).map_err(|k| span.error(k, "invalid product frame"))?;
     generated_len(&[n.max(1), cols.max(1)]).map_err(|k| span.error(k, "product contraction is too large"))?;
     let mut results = Vec::with_capacity(size.max(1));
-    let item = |a: &Array, offset| if n == 0 || a.is_empty() { a.prototype().clone() } else { a.at(if a.is_singleton() { 0 } else { offset }) }.as_array();
+    let item = |a: &Value, offset| if n == 0 || a.is_empty() { a.prototype().clone() } else { a.at(if a.is_singleton() { 0 } else { offset }) }.clone();
     for i in 0..rows.max(1) {
         let mut columns = vec![Vec::with_capacity(n.max(1)); cols.max(1)];
         for k in 0..n.max(1) {
             for (j, column) in columns.iter_mut().enumerate() {
-                column.push(Element::Nested(g.call_array(Some(&item(left, i * nx + k)), &item(right, k * cols + j), span, session, output)?));
+                column.push(g.call_array(Some(&item(left, i * nx + k)), &item(right, k * cols + j), span, session, output)?);
             }
         }
         for column in columns {
-            let paired = if n == 0 { Array::empty(vec![0], column[0].prototype()) } else { Array::new(vec![n], column) }
+            let paired = if n == 0 { Value::empty(vec![0], column[0].prototype()) } else { Value::new(vec![n], column) }
                 .map_err(|k| span.error(k, "invalid product cell"))?;
-            results.push(fold(f, Hybrid { scan: false, first: false, axis: None }, None, &paired, span, session, output)?.at(0));
+            results.push(fold(f, Hybrid { scan: false, first: false, axis: None }, None, &paired, span, session, output)?);
         }
     }
-    let result = if size == 0 { Array::empty(shape, results[0].prototype()) } else { Array::new(shape, results) };
-    Ok(Bound::new(Value::Array(result.map_err(|k| span.error(k, "invalid inner product result"))?)))
+    if shape.is_empty() { return Ok(Bound::new(Binding::from_element(results.remove(0)))); }
+    let result = if size == 0 { Value::empty(shape, results[0].fill()) } else { Value::new(shape, results) };
+    Ok(Bound::new(Binding::Value(result.map_err(|k| span.error(k, "invalid inner product result"))?)))
 }
 
 fn rank(
     operand: &Function,
-    ranks: &Array,
-    left: Option<&Array>,
-    right: &Array,
+    ranks: &Value,
+    left: Option<&Value>,
+    right: &Value,
     span: &Span,
     session: &mut Session,
     output: &mut Vec<String>,
@@ -901,7 +910,7 @@ fn rank(
     let ranks = ranks
         .elements()
         .map(|e| match e {
-            Element::Number(n) => n.integer().map_err(|k| span.error(k, "cell ranks must be integers")),
+            Value::Number(n) => n.integer().map_err(|k| span.error(k, "cell ranks must be integers")),
             _ => Err(span.error(ErrorKind::Domain, "cell ranks must be numeric")),
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -911,7 +920,7 @@ fn rank(
         [p, q, r] => (*p, *q, *r),
         _ => unreachable!(),
     };
-    let cell_rank = |a: &Array, k: isize| if k < 0 { a.shape().len().saturating_sub(k.unsigned_abs()) } else { a.shape().len().min(k as usize) };
+    let cell_rank = |a: &Value, k: isize| if k < 0 { a.shape().len().saturating_sub(k.unsigned_abs()) } else { a.shape().len().min(k as usize) };
     let yr = cell_rank(right, if left.is_some() { r } else { p });
     let xr = left.map(|a| cell_rank(a, q)).unwrap_or(0);
     let ys = right.cells(yr).map_err(|k| span.error(k, "invalid rank cells"))?;
@@ -919,21 +928,28 @@ fn rank(
     let agreement = Agreement::new(xs.as_ref().map_or(&[], |c| c.frame()), ys.frame()).map_err(|k| span.error(k, "rank frames do not agree"))?;
     let frame = &agreement.shape;
     let count = agreement.len;
-    let cell =
-        |cells: &crate::array::Cells<'_>, index| if count == 0 { cells.prototype() } else { cells.get(index) }.map_err(|k| span.error(k, "invalid rank cell"));
+    let cell = |cells: &crate::array::Cells<'_>, index| {
+        let value = if count == 0 { cells.prototype() } else { cells.get(index) }.map_err(|k| span.error(k, "invalid rank cell"))?;
+        Ok::<_, Error>(if cells.shape().is_empty() { value.at(0) } else { value })
+    };
     let mut results = Vec::with_capacity(count.max(1));
     for i in 0..count.max(1) {
         let x = xs.as_ref().map(|v| cell(v, agreement.left.index(i))).transpose()?;
-        results.push(operand.call_array(x.as_ref(), &cell(&ys, agreement.right.index(i))?, span, session, output)?);
+        let y = cell(&ys, agreement.right.index(i))?;
+        let value =
+            if count == 0 { operand.call_prototype(x.as_ref(), &y, span, session, output)? } else { operand.call(x.as_ref(), &y, span, session, output)? };
+        results.push(value.array(span)?);
     }
-    let result = Array::assemble(frame, if count == 0 { &[] } else { &results }, &results[0]).map_err(|k| span.error(k, "invalid rank result"))?;
-    Ok(Bound::new(Value::Array(result)))
+    if frame.is_empty() { return Ok(Bound::new(Binding::from_element(results.remove(0)))); }
+    let result = Value::assemble(frame, if count == 0 { &[] } else { &results }, &results[0]).map_err(|k| span.error(k, "invalid rank result"))?;
+    Ok(Bound::new(Binding::from_element(result)))
 }
 
-fn each(operand: &Function, left: Option<&Array>, right: &Array, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
-    let agreement = Agreement::new(left.map_or(&[], Array::shape), right.shape()).map_err(|k| span.error(k, "Each frames do not agree"))?;
+fn each(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+    if right.is_atom() && left.is_none_or(Value::is_atom) { return operand.call(left, right, span, session, output); }
+    let agreement = Agreement::new(left.map_or(&[], Value::shape), right.shape()).map_err(|k| span.error(k, "Each frames do not agree"))?;
     let empty = agreement.len == 0;
-    let item = |a: &Array, i: usize| if a.is_empty() { a.prototype().clone() } else { a.at(i) }.as_array();
+    let item = |a: &Value, i: usize| if a.is_empty() { a.prototype().clone() } else { a.at(i) }.clone();
     let mut data = Vec::with_capacity(agreement.len.max(1));
     let mut missing = false;
     for i in 0..agreement.len.max(1) {
@@ -941,27 +957,27 @@ fn each(operand: &Function, left: Option<&Array>, right: &Array, span: &Span, se
         let y = item(right, agreement.right.index(i));
         let result = if empty { operand.call_prototype(x.as_ref(), &y, span, session, output) } else { operand.call(x.as_ref(), &y, span, session, output) };
         match result?.value {
-            Value::Array(a) => data.push(Element::Nested(a)),
-            Value::Function(f) => data.push(Element::Function(f)),
-            Value::NoResult => missing = true,
+            Binding::Value(a) => data.push(a),
+            Binding::Function(f) => data.push(Value::Function(f)),
+            Binding::NoResult => missing = true,
             _ => return Err(span.error(ErrorKind::Syntax, "Each operand must return an array, function or no result")),
         }
     }
-    let value = if missing { Value::NoResult } else {
-        let result = if empty { Array::empty(agreement.shape, data[0].prototype()) } else { Array::new(agreement.shape, data) };
-        Value::Array(result.map_err(|k| span.error(k, "invalid Each result"))?)
+    let value = if missing { Binding::NoResult } else {
+        let result = if empty { Value::empty(agreement.shape, data[0].fill()) } else { Value::new(agreement.shape, data) };
+        Binding::Value(result.map_err(|k| span.error(k, "invalid Each result"))?)
     };
     Ok(Bound::new(value))
 }
 
-fn identity(operand: &Function, prototype: &Element, span: &crate::execution::Context<'_>) -> Result<Element, Error> {
+fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Context<'_>) -> Result<Value, Error> {
     use crate::{
         number::{Arithmetic::*, Math::*},
         primitive::Comparison::*,
     };
     if let FunctionNode::Primitive(p @ (Primitive::Ravel | Primitive::CatenateFirst | Primitive::Union)) = operand.node.as_ref() {
         let p = if matches!(p, Primitive::CatenateFirst) { Primitive::Replicate(true) } else { Primitive::Replicate(false) };
-        return p.call(Some(&Array::scalar(0.).unwrap()), &prototype.as_array(), span).map(Element::Nested);
+        return p.call(Some(&Value::scalar(0.).unwrap()), &prototype.clone(), span);
     }
     let n = match operand.node.as_ref() {
         FunctionNode::Primitive(
@@ -985,18 +1001,18 @@ fn identity(operand: &Function, prototype: &Element, span: &crate::execution::Co
         _ => return Err(span.error(ErrorKind::Domain, "this function has no reduction identity")),
     };
     match prototype {
-        Element::Number(_) | Element::Character(_) if matches!(operand.node.as_ref(), FunctionNode::Primitive(Primitive::Compare(_))) => {
-            Ok(Element::Number(crate::Number::from_integer(n as i64)))
+        Value::Number(_) | Value::Character(_) if matches!(operand.node.as_ref(), FunctionNode::Primitive(Primitive::Compare(_))) => {
+            Ok(Value::Number(crate::Number::from_integer(n as i64)))
         }
-        Element::Number(value) => {
-            if n.is_infinite() { Ok(Element::Number(n.try_into().unwrap())) } else { Ok(Element::Number(value.unit(n as i32))) }
+        Value::Number(value) => {
+            if n.is_infinite() { Ok(Value::Number(n.try_into().unwrap())) } else { Ok(Value::Number(value.unit(n as i32))) }
         }
-        Element::Character(_) => Ok(Element::Number(n.try_into().unwrap())),
-        Element::Function(_) => Err(span.error(ErrorKind::Domain, "function elements have no numeric reduction identity")),
-        Element::Nested(a) => {
+        Value::Character(_) => Ok(Value::Number(n.try_into().unwrap())),
+        Value::Function(_) => Err(span.error(ErrorKind::Domain, "function elements have no numeric reduction identity")),
+        a @ Value::Array(_) => {
             let data = a.elements().map(|e| identity(operand, &e, span)).collect::<Result<_, _>>()?;
-            let fill = identity(operand, a.prototype(), span)?;
-            Array::from_parts(a.shape().to_vec(), data, fill).map(Element::Nested).map_err(|k| span.error(k, "invalid identity"))
+            let fill = identity(operand, &a.prototype(), span)?;
+            Value::from_parts(a.shape().to_vec(), data, fill).map_err(|k| span.error(k, "invalid identity"))
         }
     }
 }
@@ -1004,27 +1020,41 @@ fn identity(operand: &Function, prototype: &Element, span: &crate::execution::Co
 fn fold(
     operand: &Function,
     hybrid: Hybrid,
-    left: Option<&Array>,
-    right: &Array,
+    left: Option<&Value>,
+    right: &Value,
     span: &Span,
     session: &mut Session,
     output: &mut Vec<String>,
-) -> Result<Array, Error> {
+) -> Result<Value, Error> {
+    let result = fold_array(operand, hybrid, left, right, span, session, output)?;
+    if !hybrid.scan && right.shape().len() == 1 { Ok(result.at(0)) } else { Ok(result) }
+}
+
+fn fold_array(
+    operand: &Function,
+    hybrid: Hybrid,
+    left: Option<&Value>,
+    right: &Value,
+    span: &Span,
+    session: &mut Session,
+    output: &mut Vec<String>,
+) -> Result<Value, Error> {
     if hybrid.scan { return scan(operand, hybrid, left, right, span, session, output); }
-    if let Some(width) = left { return nwise(operand, hybrid, width, right, span, session, output); }
-    if right.is_scalar() && hybrid.axis.is_none() { return Ok(right.clone()); }
+    if right.is_scalar() && hybrid.axis.is_none() {
+        return match left { Some(seed) => operand.call_array(Some(&right.at(0)), seed, span, session, output), None => Ok(right.at(0)) };
+    }
     let axis = hybrid.axis.unwrap_or(if hybrid.first { 0 } else { right.shape().len().saturating_sub(1) });
     if axis >= right.shape().len() { return Err(span.error(ErrorKind::Domain, "axis is outside array rank")); }
     let traversal = Axis::new(right.shape(), axis).map_err(|k| span.error(k, "invalid fold axis"))?;
     let mut shape = right.shape().to_vec();
     shape.remove(axis);
     let size = generated_len(&shape).map_err(|k| span.error(k, "fold result exceeds array limits"))?;
-    if size == 0 { return Array::empty(shape, right.prototype().clone()).map_err(|k| span.error(k, "invalid empty fold")); }
+    if size == 0 { return Value::empty(shape, right.prototype().clone()).map_err(|k| span.error(k, "invalid empty fold")); }
     if traversal.len == 0 {
-        let item = identity(operand, right.prototype(), &session.execution.at(span))?;
-        return Array::new(shape, vec![item; size]).map_err(|k| span.error(k, "invalid identity result"));
+        let item = match left { Some(seed) => seed.clone(), None => identity(operand, &right.prototype(), &session.execution.at(span))? };
+        return Value::new(shape, vec![item; size]).map_err(|k| span.error(k, "invalid identity result"));
     }
-    if let FunctionNode::Primitive(Primitive::Arithmetic(op)) = operand.node.as_ref() {
+    if let (None, FunctionNode::Primitive(Primitive::Arithmetic(op))) = (left, operand.node.as_ref()) {
         if let Some(data) = right.as_floats() {
             use crate::number::Arithmetic::{Plus, Times};
             match op {
@@ -1033,32 +1063,32 @@ fn fold(
                 _ => (),
             }
         }
-        if right.elements().all(|e| matches!(e, Element::Number(_))) { return numeric_fold(*op, right, &traversal, shape, &session.execution.at(span)); }
+        if right.elements().all(|e| matches!(e, Value::Number(_))) { return numeric_fold(*op, right, &traversal, shape, &session.execution.at(span)); }
     }
     let mut data = vec![right.prototype().clone(); size];
     for i in 0..traversal.outer {
         for k in 0..traversal.inner {
-            let item = |j| right.at(traversal.offset(i, j, k)).as_array();
-            let mut result = item(traversal.len - 1);
-            for j in (0..traversal.len - 1).rev() { result = operand.call_array(Some(&item(j)), &result, span, session, output)?; }
-            data[i * traversal.inner + k] = Element::Nested(result);
+            let item = |j| right.at(traversal.offset(i, j, k)).clone();
+            let (mut result, end) = match left { Some(seed) => (seed.clone(), traversal.len), None => (item(traversal.len - 1), traversal.len - 1) };
+            for j in (0..end).rev() { result = operand.call_array(Some(&item(j)), &result, span, session, output)?; }
+            data[i * traversal.inner + k] = result;
         }
     }
-    Array::new(shape, data).map_err(|k| span.error(k, "invalid fold result"))
+    Value::new(shape, data).map_err(|k| span.error(k, "invalid fold result"))
 }
 
-fn float_fold(values: &[f64], axis: &Axis, shape: Vec<usize>, unit: f64, op: impl Fn(f64, f64) -> f64, span: &Span) -> Result<Array, Error> {
+fn float_fold(values: &[f64], axis: &Axis, shape: Vec<usize>, unit: f64, op: impl Fn(f64, f64) -> f64, span: &Span) -> Result<Value, Error> {
     let mut data = vec![unit; generated_len(&shape).map_err(|k| span.error(k, "fold is too large"))?];
     for i in 0..axis.outer { for k in 0..axis.inner { data[i * axis.inner + k] = (0..axis.len).map(|j| values[axis.offset(i, j, k)]).fold(unit, &op); } }
-    Array::floats(shape, data).map_err(|k| span.error(k, "undefined fold result"))
+    Value::floats(shape, data).map_err(|k| span.error(k, "undefined fold result"))
 }
 
-fn numeric_fold(op: crate::number::Arithmetic, right: &Array, axis: &Axis, shape: Vec<usize>, span: &crate::execution::Context<'_>) -> Result<Array, Error> {
+fn numeric_fold(op: crate::number::Arithmetic, right: &Value, axis: &Axis, shape: Vec<usize>, span: &crate::execution::Context<'_>) -> Result<Value, Error> {
     let mut data = vec![right.prototype().clone(); generated_len(&shape).map_err(|k| span.error(k, "fold is too large"))?];
     for i in 0..axis.outer {
         for k in 0..axis.inner {
             let item = |j| {
-                let Element::Number(n) = right.at(axis.offset(i, j, k)) else { unreachable!() };
+                let Value::Number(n) = right.at(axis.offset(i, j, k)) else { unreachable!() };
                 n
             };
             let apply = |x: &crate::Number, y: &crate::Number| {
@@ -1067,23 +1097,18 @@ fn numeric_fold(op: crate::number::Arithmetic, right: &Array, axis: &Axis, shape
             };
             let mut result = item(axis.len - 1);
             for j in (0..axis.len - 1).rev() { result = apply(&item(j), &result)?; }
-            data[i * axis.inner + k] = Element::Number(result);
+            data[i * axis.inner + k] = Value::Number(result);
         }
     }
-    Array::new(shape, data).map_err(|k| span.error(k, "invalid numeric fold"))
+    Value::new(shape, data).map_err(|k| span.error(k, "invalid numeric fold"))
 }
 
-fn scan_items<T: Clone>(
-    axis: &Axis,
-    seed: impl Fn(usize) -> Option<T>,
-    item: impl Fn(usize) -> T,
-    mut apply: impl FnMut(&T, &T) -> Result<T, Error>,
-) -> Result<Vec<T>, Error> {
+fn scan_items<T: Clone>(axis: &Axis, seed: Option<T>, item: impl Fn(usize) -> T, mut apply: impl FnMut(&T, &T) -> Result<T, Error>) -> Result<Vec<T>, Error> {
     let mut data = vec![item(0); axis.outer * axis.len * axis.inner];
     for i in 0..axis.outer {
         for k in 0..axis.inner {
             let first = axis.offset(i, 0, k);
-            let (mut value, start) = match seed(i * axis.inner + k) {
+            let (mut value, start) = match seed.clone() {
                 Some(value) => (value, 0),
                 None => {
                     let value = item(first);
@@ -1101,40 +1126,32 @@ fn scan_items<T: Clone>(
     Ok(data)
 }
 
-fn float_scan(values: &[f64], seed: Option<&[f64]>, axis: &Axis, shape: &[usize], op: impl Fn(f64, f64) -> f64, span: &Span) -> Result<Array, Error> {
-    let data = scan_items(axis, |i| seed.map(|a| a[if a.len() == 1 { 0 } else { i }]), |i| values[i], |x, y| Ok(op(*x, *y)))?;
-    Array::floats(shape.to_vec(), data).map_err(|k| span.error(k, "undefined scan result"))
+fn float_scan(values: &[f64], seed: Option<f64>, axis: &Axis, shape: &[usize], op: impl Fn(f64, f64) -> f64, span: &Span) -> Result<Value, Error> {
+    let data = scan_items(axis, seed, |i| values[i], |x, y| Ok(op(*x, *y)))?;
+    Value::floats(shape.to_vec(), data).map_err(|k| span.error(k, "undefined scan result"))
 }
 
-fn scan_axis(hybrid: Hybrid, seed: Option<&Array>, right: &Array, span: &Span) -> Result<Axis, Error> {
-    let mut frame = right.shape().to_vec();
-    let axis = if right.is_scalar() && hybrid.axis.is_none() { Axis { outer: 1, len: 1, inner: 1 } } else {
-        let index = hybrid.axis.unwrap_or(if hybrid.first { 0 } else { right.shape().len().saturating_sub(1) });
-        let axis = Axis::new(right.shape(), index).map_err(|k| span.error(k, "invalid scan axis"))?;
-        frame.remove(index);
-        axis
-    };
-    if seed.is_some_and(|a| !a.is_scalar() && a.shape() != frame) {
-        return Err(span.error(ErrorKind::Length, "scan seed must be scalar or match the unscanned axes"));
-    }
-    Ok(axis)
+fn scan_axis(hybrid: Hybrid, right: &Value, span: &Span) -> Result<Axis, Error> {
+    if right.is_scalar() && hybrid.axis.is_none() { return Ok(Axis { outer: 1, len: 1, inner: 1 }); }
+    let index = hybrid.axis.unwrap_or(if hybrid.first { 0 } else { right.shape().len().saturating_sub(1) });
+    Axis::new(right.shape(), index).map_err(|k| span.error(k, "invalid scan axis"))
 }
 
 fn scan(
     operand: &Function,
     hybrid: Hybrid,
-    seed: Option<&Array>,
-    right: &Array,
+    seed: Option<&Value>,
+    right: &Value,
     span: &Span,
     session: &mut Session,
     output: &mut Vec<String>,
-) -> Result<Array, Error> {
-    let axis = scan_axis(hybrid, seed, right, span)?;
+) -> Result<Value, Error> {
+    let axis = scan_axis(hybrid, right, span)?;
+    if right.is_atom() { return match seed { Some(seed) => operand.call_array(Some(seed), right, span, session, output), None => Ok(right.clone()) }; }
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
-    let initial = |i| seed.map(|a| a.at(if a.is_scalar() { 0 } else { i }));
     if let FunctionNode::Primitive(Primitive::Arithmetic(op)) = operand.node.as_ref() {
-        if let Some(values) = right.as_floats().filter(|_| seed.is_none_or(|a| a.as_floats().is_some())) {
-            let seed = seed.and_then(Array::as_floats);
+        if let Some(values) = right.as_floats().filter(|_| seed.is_none_or(|a| a.is_atom() && a.as_floats().is_some())) {
+            let seed = seed.and_then(Value::as_floats).map(|a| a[0]);
             use crate::number::Arithmetic::{Plus, Times};
             match op {
                 Plus => return float_scan(values, seed, &axis, right.shape(), |x, y| x + y, span),
@@ -1142,68 +1159,26 @@ fn scan(
                 _ => (),
             }
         }
-        let numeric = |a: &Array| a.elements().all(|e| matches!(e, Element::Number(_)));
-        if numeric(right) && seed.is_none_or(numeric) {
+        let numeric = |a: &Value| a.elements().all(|e| matches!(e, Value::Number(_)));
+        if numeric(right) && seed.is_none_or(|a| matches!(a, Value::Number(_))) {
             let number = |e| {
-                let Element::Number(n) = e else { unreachable!() };
+                let Value::Number(n) = e else { unreachable!() };
                 n
             };
             let data = scan_items(
                 &axis,
-                |i| initial(i).map(number),
+                seed.cloned().map(number),
                 |i| number(right.at(i)),
                 |x, y| {
                     session.execution.check(span)?;
                     x.dyad(*op, y).map_err(|m| span.error(ErrorKind::Domain, m))
                 },
             )?;
-            return Array::new(right.shape().to_vec(), data.into_iter().map(Element::Number).collect()).map_err(|k| span.error(k, "invalid numeric scan"));
+            return Value::new(right.shape().to_vec(), data.into_iter().map(Value::Number).collect()).map_err(|k| span.error(k, "invalid numeric scan"));
         }
     }
-    let data =
-        scan_items(&axis, |i| initial(i).map(|e| e.as_array()), |i| right.at(i).as_array(), |x, y| operand.call_array(Some(x), y, span, session, output))?;
-    Array::new(right.shape().to_vec(), data.into_iter().map(Element::Nested).collect()).map_err(|k| span.error(k, "invalid scan result"))
-}
-
-fn nwise(
-    operand: &Function,
-    hybrid: Hybrid,
-    width: &Array,
-    right: &Array,
-    span: &Span,
-    session: &mut Session,
-    output: &mut Vec<String>,
-) -> Result<Array, Error> {
-    if !width.is_singleton() { return Err(span.error(ErrorKind::Length, "n-wise reduction needs one width")); }
-    let Element::Number(n) = &width.at(0) else { return Err(span.error(ErrorKind::Domain, "reduction width must be an integer")); };
-    let n = n.integer().map_err(|k| span.error(k, "reduction width must be an integer"))?;
-    if right.is_scalar() { return Err(span.error(ErrorKind::Rank, "n-wise reduction needs a non-scalar array")); }
-    let axis = hybrid.axis.unwrap_or(if hybrid.first { 0 } else { right.shape().len() - 1 });
-    let source = Axis::new(right.shape(), axis).map_err(|k| span.error(k, "invalid reduction axis"))?;
-    let width = n.unsigned_abs();
-    let len =
-        source.len.checked_add(1).and_then(|v| v.checked_sub(width)).ok_or_else(|| span.error(ErrorKind::Length, "reduction width exceeds axis length + 1"))?;
-    let mut shape = right.shape().to_vec();
-    shape[axis] = len;
-    let size = generated_len(&shape).map_err(|k| span.error(k, "n-wise reduction exceeds array limits"))?;
-    if size == 0 { return Array::empty(shape, right.prototype().clone()).map_err(|k| span.error(k, "invalid empty reduction")); }
-    if width == 0 {
-        let item = identity(operand, right.prototype(), &session.execution.at(span))?;
-        return Array::new(shape, vec![item; size]).map_err(|k| span.error(k, "invalid identity array"));
-    }
-    let target = Axis::new(&shape, axis).unwrap();
-    let mut data = vec![right.prototype().clone(); size];
-    for i in 0..source.outer {
-        for k in 0..source.inner {
-            for start in 0..len {
-                let item = |j| right.at(source.offset(i, start + if n < 0 { width - 1 - j } else { j }, k)).as_array();
-                let mut result = item(width - 1);
-                for j in (0..width - 1).rev() { result = operand.call_array(Some(&item(j)), &result, span, session, output)?; }
-                data[target.offset(i, start, k)] = Element::Nested(result);
-            }
-        }
-    }
-    Array::new(shape, data).map_err(|k| span.error(k, "invalid n-wise reduction result"))
+    let data = scan_items(&axis, seed.cloned(), |i| right.at(i), |x, y| operand.call_array(Some(x), y, span, session, output))?;
+    Value::new(right.shape().to_vec(), data).map_err(|k| span.error(k, "invalid scan result"))
 }
 
 // A lexical link is an index into active frames, never an owning reference.
@@ -1219,23 +1194,23 @@ impl Closure {
     }
 }
 impl Hybrid { fn text(self) -> String { format!("{}{}", self.primitive().glyph(), self.axis.map_or(String::new(), |a| format!("[{}]", a + 1))) } }
-struct Frame { names: HashMap<String, Value>, parent: Option<usize> }
-struct ArrayBinding { name: String, owner: Option<usize>, value: Array }
+struct Frame { names: HashMap<String, Binding>, parent: Option<usize> }
+struct ArrayBinding { name: String, owner: Option<usize>, value: Value }
 
 #[derive(Clone, Debug)]
-pub(crate) enum Operand { Array(Array), Function(Function), Hybrid(Hybrid) }
+pub(crate) enum Operand { Value(Value), Function(Function), Hybrid(Hybrid) }
 
 pub(crate) fn export_context(root: Operand) -> Result<bool, ErrorKind> {
     let (mut pending, mut functions, mut arrays, mut context) = (vec![root], HashSet::new(), HashSet::new(), false);
     while let Some(value) = pending.pop() {
         let f = match value {
-            Operand::Array(a) => {
+            Operand::Value(a) => {
                 if a.environment().is_some() { return Err(ErrorKind::Domain); }
                 if !a.has_functions() || !arrays.insert(a.storage_id()) { continue; }
                 for e in a.elements().chain(std::iter::once(a.prototype().clone())) {
                     match e {
-                        Element::Function(f) => pending.push(Operand::Function(f)),
-                        Element::Nested(a) if a.has_functions() => pending.push(Operand::Array(a)),
+                        Value::Function(f) => pending.push(Operand::Function(f)),
+                        a @ Value::Array(_) if a.has_functions() => pending.push(Operand::Value(a)),
                         _ => (),
                     }
                 }
@@ -1256,7 +1231,7 @@ pub(crate) fn export_context(root: Operand) -> Result<bool, ErrorKind> {
             FunctionNode::Fold(f, _) | FunctionNode::Inverse(f) => pending.push(Operand::Function(f.clone())),
             FunctionNode::Axis(f, a) => {
                 pending.push(Operand::Function(f.clone()));
-                pending.push(Operand::Array(a.clone()));
+                pending.push(Operand::Value(a.clone()));
             }
             FunctionNode::Modified(_, a) => pending.push(a.clone()),
             FunctionNode::Composed(_, operands) => pending.extend(operands.iter().cloned()),
@@ -1272,7 +1247,7 @@ enum Operator { Defined(Closure), Primitive(OperatorKind), Bound(Box<Operator>, 
 fn operand_dependencies<'a>(operands: impl Iterator<Item = &'a Operand>) -> (usize, Option<usize>, bool) {
     operands.fold((0, None, false), |(depth, environment, late), op| match op {
         Operand::Function(f) => (depth.max(f.depth), environment.max(f.environment), late || f.late),
-        Operand::Array(a) => (depth.max(a.graph_depth()), environment.max(a.environment()), late),
+        Operand::Value(a) => (depth.max(a.graph_depth()), environment.max(a.environment()), late),
         _ => (depth, environment, late),
     })
 }
@@ -1288,7 +1263,7 @@ impl Operator {
         }
     }
 
-    fn derive(self, operand: Operand, span: &Span) -> Result<Value, Error> {
+    fn derive(self, operand: Operand, span: &Span) -> Result<Binding, Error> {
         let node = match self {
             Self::Defined(c) => FunctionNode::Derived(c, operand, None),
             Self::Primitive(op) => FunctionNode::Modified(op, operand),
@@ -1298,13 +1273,13 @@ impl Operator {
                 Self::Bound(..) => unreachable!(),
             },
         };
-        Function::new(node, span).map(Value::Function)
+        Function::new(node, span).map(Binding::Function)
     }
 }
 
 impl Operand {
     fn text(&self, budget: &mut usize) -> String {
-        match self { Self::Array(a) => a.to_string(), Self::Function(f) => f.text(budget), Self::Hybrid(h) => h.text() }
+        match self { Self::Value(a) => a.to_string(), Self::Function(f) => f.text(budget), Self::Hybrid(h) => h.text() }
     }
     fn tree(&self, budget: &mut usize) -> crate::display::Tree {
         match self { Self::Function(f) => f.tree(budget), _ => crate::display::Tree::leaf(self.text(budget)) }
@@ -1316,36 +1291,44 @@ impl Operand {
         } else { Ok(self) }
     }
 
-    fn from_value(value: Value) -> Self {
+    fn from_value(value: Binding) -> Self {
         match value {
-            Value::Array(a) => Self::Array(a),
-            Value::Function(f) => Self::Function(f),
-            Value::Hybrid(h) => Self::Hybrid(h),
+            Binding::Value(a) => Self::Value(a),
+            Binding::Function(f) => Self::Function(f),
+            Binding::Hybrid(h) => Self::Hybrid(h),
             _ => unreachable!(),
         }
     }
-    fn value(&self) -> Value {
-        match self { Self::Array(a) => Value::Array(a.clone()), Self::Function(f) => Value::Function(f.clone()), Self::Hybrid(h) => Value::Hybrid(*h) }
+    fn value(&self) -> Binding {
+        match self { Self::Value(a) => Binding::Value(a.clone()), Self::Function(f) => Binding::Function(f.clone()), Self::Hybrid(h) => Binding::Hybrid(*h) }
     }
 }
 
 #[derive(Clone, Debug)]
-enum Value {
+enum Binding {
     NoResult,
-    Array(Array),
+    Value(Value),
     Function(Function),
     Operator(Operator),
     Hybrid(Hybrid),
 }
-impl Value {
-    fn from_element(element: Element) -> Self { match element { Element::Function(f) => Self::Function(f), _ => Self::Array(element.as_array()) } }
-    fn environment(&self) -> Option<usize> { match self { Self::Array(a) => a.environment(), Self::Function(f) => f.environment, _ => None } }
+impl Binding {
+    fn from_element(element: Value) -> Self { match element { Value::Function(f) => Self::Function(f), _ => Self::Value(element) } }
+    fn environment(&self) -> Option<usize> { match self { Self::Value(a) => a.environment(), Self::Function(f) => f.environment, _ => None } }
+    fn into_value(self, span: &Span) -> Result<Value, Error> {
+        match self {
+            Self::Value(a) => Ok(a),
+            v @ (Self::Function(_) | Self::Hybrid(_)) => Ok(Value::Function(Function::from_value(v, span)?)),
+            Self::NoResult => Err(span.error(ErrorKind::Value, "expression produced no value")),
+            _ => Err(span.error(ErrorKind::Syntax, "expression must produce a value")),
+        }
+    }
 }
-struct Bound { value: Value, shy: bool, assignment: bool }
+struct Bound { value: Binding, shy: bool, assignment: bool }
 struct Application {
     function: Function,
-    left: Option<Array>,
-    right: Array,
+    left: Option<Value>,
+    right: Value,
     span: Span,
     unshy: bool,
     selection: Option<SelectionKind>,
@@ -1353,18 +1336,11 @@ struct Application {
 enum Step { Done(Bound), Tail(Application) }
 
 impl Bound {
-    fn new(value: Value) -> Self { Self { value, shy: false, assignment: false } }
-    fn array(self, span: &Span) -> Result<Array, Error> {
-        match self.value {
-            Value::Array(a) => Ok(a),
-            v @ (Value::Function(_) | Value::Hybrid(_)) => Ok(Element::Function(Function::from_value(v, span)?).as_array()),
-            Value::NoResult => Err(span.error(ErrorKind::Value, "expression produced no value")),
-            _ => Err(span.error(ErrorKind::Syntax, "expression must produce an array")),
-        }
-    }
+    fn new(value: Binding) -> Self { Self { value, shy: false, assignment: false } }
+    fn array(self, span: &Span) -> Result<Value, Error> { self.value.into_value(span) }
     fn result(self, span: &Span) -> Result<Self, Error> {
         match self.value {
-            Value::Array(_) | Value::Function(_) | Value::NoResult => Ok(self),
+            Binding::Value(_) | Binding::Function(_) | Binding::NoResult => Ok(self),
             _ => Err(span.error(ErrorKind::Syntax, "dfn results must be arrays or functions")),
         }
     }
@@ -1373,7 +1349,7 @@ impl Bound {
 /// Final value and ordered output are independent. Errors retain already-produced output.
 #[derive(Debug, Default)]
 pub struct Evaluation {
-    pub value: Option<Array>,
+    pub value: Option<Value>,
     pub function: Option<Function>,
     pub output: Vec<String>,
     pub error: Option<Error>,
@@ -1383,7 +1359,7 @@ pub struct Evaluation {
 pub struct Session {
     execution: crate::execution::Execution,
     pub(crate) display: crate::display::Settings,
-    names: HashMap<String, Value>,
+    names: HashMap<String, Binding>,
     frames: Vec<Frame>,
     current: Option<usize>,
     depth: usize,
@@ -1395,15 +1371,15 @@ pub struct Session {
 impl Session {
     pub fn new() -> Self { Self::default() }
     pub(crate) fn names(&self) -> impl Iterator<Item = &str> { self.names.keys().map(String::as_str) }
-    pub fn set(&mut self, name: &str, value: Array) -> Result<(), ErrorKind> {
+    pub fn set(&mut self, name: &str, value: Value) -> Result<(), ErrorKind> {
         value.export_context()?;
-        self.set_value(name, Value::Array(value))
+        self.set_value(name, Binding::from_element(value))
     }
     pub fn set_function(&mut self, name: &str, value: Function) -> Result<(), ErrorKind> {
         value.export_context()?;
-        self.set_value(name, Value::Function(value))
+        self.set_value(name, Binding::Function(value))
     }
-    fn set_value(&mut self, name: &str, value: Value) -> Result<(), ErrorKind> {
+    fn set_value(&mut self, name: &str, value: Binding) -> Result<(), ErrorKind> {
         let ParseStatus::Complete(parsed) = crate::parse(Source::new("<binding>", name)) else { return Err(ErrorKind::Syntax); };
         if parsed.statements.len() != 1 || parsed.statements[0].nodes.len() != 1 { return Err(ErrorKind::Syntax); }
         let NodeKind::Name(parsed_name) = &parsed.statements[0].nodes[0].kind else { return Err(ErrorKind::Syntax); };
@@ -1421,14 +1397,14 @@ impl Session {
     }
     /// Resolve a function expression in this session and call it with one (right) or two (left, right) arrays.
     /// No function or lexical-frame handle escapes the call, and no temporary names are bound.
-    pub fn call(&mut self, function: &str, args: &[Array]) -> Evaluation { self.call_with(function, args, crate::EvalOptions::default()) }
-    pub fn call_with(&mut self, function: &str, args: &[Array], options: crate::EvalOptions) -> Evaluation {
+    pub fn call(&mut self, function: &str, args: &[Value]) -> Evaluation { self.call_with(function, args, crate::EvalOptions::default()) }
+    pub fn call_with(&mut self, function: &str, args: &[Value], options: crate::EvalOptions) -> Evaluation {
         match Function::late_bound(function) {
             Ok(f) => self.call_function_with(&f, args, options),
             Err(error) => Evaluation { error: Some(error), ..Evaluation::default() },
         }
     }
-    pub fn call_function_with(&mut self, function: &Function, args: &[Array], options: crate::EvalOptions) -> Evaluation {
+    pub fn call_function_with(&mut self, function: &Function, args: &[Value], options: crate::EvalOptions) -> Evaluation {
         self.execution.begin(options);
         let source = Source::new("<call>", function.apl());
         let span = Span { range: 0..source.text.len(), source: source.clone() };
@@ -1443,11 +1419,11 @@ impl Session {
             function.call(left, right, &span, self, &mut result.output)?.result(&span)
         })();
         match called {
-            Ok(Bound { value: Value::Array(a), shy, .. }) => {
+            Ok(Bound { value: Binding::Value(a), shy, .. }) => {
                 if self.execution.echo && !shy { self.execution.output(&mut result.output, crate::OutputKind::Display, self.display.array(&a, false)); }
                 result.value = Some(a);
             }
-            Ok(Bound { value: Value::Function(f), shy, .. }) => {
+            Ok(Bound { value: Binding::Function(f), shy, .. }) => {
                 if let Err(k) = f.export_context() { result.error = Some(span.error(k, "function retains an active lexical frame")); } else {
                     if self.execution.echo && !shy { self.execution.output(&mut result.output, crate::OutputKind::Display, f.text(&mut 1000)); }
                     result.function = Some(f);
@@ -1481,8 +1457,8 @@ impl Session {
             match self.bind(nodes, &mut result.output) {
                 Ok(bound) => {
                     result.value = match bound.value {
-                        Value::NoResult => None,
-                        Value::Array(a) => {
+                        Binding::NoResult => None,
+                        Binding::Value(a) => {
                             if diagram && i + 1 == parsed.statements.len() {
                                 self.execution.output(&mut result.output, crate::OutputKind::Display, crate::display::diagram(&a));
                             }
@@ -1492,7 +1468,7 @@ impl Session {
                             Some(a)
                         }
                         _ if bound.shy => None,
-                        Value::Function(f) => {
+                        Binding::Function(f) => {
                             if self.execution.echo {
                                 self.execution.output(
                                     &mut result.output,
@@ -1510,7 +1486,7 @@ impl Session {
                             }
                             None
                         }
-                        Value::Hybrid(h) => {
+                        Binding::Hybrid(h) => {
                             if self.execution.echo { self.execution.output(&mut result.output, crate::OutputKind::Display, h.text()); }
                             None
                         }
@@ -1562,25 +1538,36 @@ impl Session {
         result
     }
 
-    fn execute(&mut self, left: Option<&Array>, right: &Array, span: &Span, output: &mut Vec<String>) -> Result<Bound, Error> {
+    fn execute(&mut self, left: Option<&Value>, right: &Value, span: &Span, output: &mut Vec<String>) -> Result<Bound, Error> {
         if let Some(x) = left {
-            if !x.is_empty() || x.shape().len() != 1 || !matches!(x.prototype(), Element::Character(_)) {
+            if !x.is_empty() || x.shape().len() != 1 || !matches!(x.prototype(), Value::Character(_)) {
                 return Err(span.error(ErrorKind::Unsupported, "execute supports only the current namespace (empty character left argument)"));
             }
         }
-        if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "execute needs a character scalar or vector")); }
-        if !matches!(right.prototype(), Element::Character(_)) { return Err(span.error(ErrorKind::Domain, "execute needs characters")); }
-        let code = right
+        self.execute_source(Source::new("<execute>", Self::source_text(right, span)?), span, output)
+    }
+
+    fn source_text(right: &Value, span: &Span) -> Result<String, Error> {
+        if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "expected a character scalar or vector")); }
+        if !matches!(right.prototype(), Value::Character(_)) { return Err(span.error(ErrorKind::Domain, "expected characters")); }
+        right
             .elements()
-            .map(|e| match e { Element::Character(c) => Ok(c), _ => Err(span.error(ErrorKind::Domain, "execute needs characters")) })
-            .collect::<Result<String, _>>()?;
-        let parsed = match crate::parse(Source::new("<execute>", code)) {
-            ParseStatus::Complete(p) => p,
-            ParseStatus::Incomplete(e) | ParseStatus::Invalid(e) => return Err(e),
-        };
-        let mut result = Bound::new(Value::NoResult);
+            .map(|e| match e { Value::Character(c) => Ok(c), _ => Err(span.error(ErrorKind::Domain, "expected characters")) })
+            .collect()
+    }
+
+    fn load(&mut self, left: Option<&Value>, right: &Value, span: &Span, output: &mut Vec<String>) -> Result<Bound, Error> {
+        if left.is_some() { return Err(span.error(ErrorKind::Syntax, "•LOAD is monadic")); }
+        let path = Self::source_text(right, span)?;
+        let code = std::fs::read_to_string(&path).map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))?;
+        self.execute_source(Source::new(path, code), span, output)
+    }
+
+    fn execute_source(&mut self, source: Arc<Source>, span: &Span, output: &mut Vec<String>) -> Result<Bound, Error> {
+        let parsed = match crate::parse(source) { ParseStatus::Complete(p) => p, ParseStatus::Incomplete(e) | ParseStatus::Invalid(e) => return Err(e) };
+        let mut result = Bound::new(Binding::NoResult);
         for statement in &parsed.statements {
-            if let Value::Array(a) = &result.value {
+            if let Binding::Value(a) = &result.value {
                 if self.execution.echo && !result.shy {
                     self.execution.output(output, crate::OutputKind::Display, self.display.array(a, self.current.is_some()));
                 }
@@ -1603,7 +1590,7 @@ impl Session {
             && nodes.iter().all(|n| match &n.kind {
                 NodeKind::Name(name) => {
                     (self.current.is_some() && !implicit_name(name))
-                        || !matches!(self.lookup(name), Some(Value::Function(_) | Value::Hybrid(_) | Value::Operator(_)))
+                        || !matches!(self.lookup(name), Some(Binding::Function(_) | Binding::Hybrid(_) | Binding::Operator(_)))
                 }
                 NodeKind::Group(inner) | NodeKind::Strand(inner) => self.assignment_names(inner),
                 _ => false,
@@ -1618,14 +1605,14 @@ impl Session {
             NodeKind::Operator(op) => {
                 if self::Operator::Primitive(*op).is_dyadic() { DyadicOperator } else { Operator }
             }
-            NodeKind::Name(name) => self.lookup(name).map_or(Array, Category::of),
-            NodeKind::System(name) => crate::system::lookup(name).map_or(Array, |v| Category::of(&v.value())),
+            NodeKind::Name(name) => self.lookup(name).map_or(Value, Category::of),
+            NodeKind::System(name) => crate::system::lookup(name).map_or(Value, |v| Category::of(&v.value())),
             NodeKind::Dfn(d) => match d.kind {
                 DefinitionKind::Function => Function,
                 DefinitionKind::MonadicOperator => Operator,
                 DefinitionKind::DyadicOperator => DyadicOperator,
             },
-            _ => Array,
+            _ => Value,
         }
     }
 
@@ -1646,7 +1633,7 @@ impl Session {
             }
             _ => self.node_category(&nodes[start]),
         };
-        if matches!(category, Operator) {
+        if matches!(category, Operator) && start > 0 {
             start = self.assignment_operand(nodes, start, depth + 1)?.0;
             category = Function;
         }
@@ -1676,7 +1663,7 @@ impl Session {
         Ok(start)
     }
 
-    fn store(&mut self, name: &str, value: Value, span: &Span) -> Result<(), Error> {
+    fn store(&mut self, name: &str, value: Binding, span: &Span) -> Result<(), Error> {
         if implicit_name(name) { return Err(span.error(ErrorKind::Syntax, "arguments and operands cannot be assigned here")); }
         let names = match self.current { Some(i) => &mut self.frames[i].names, None => &mut self.names };
         names.insert(name.to_owned(), value);
@@ -1685,27 +1672,27 @@ impl Session {
 
     fn array_binding(&self, name: &str, span: &Span) -> Result<ArrayBinding, Error> {
         if implicit_name(name) { return Err(span.error(ErrorKind::Syntax, "arguments and operands cannot be assigned here")); }
-        let Some((owner, Value::Array(value))) = self.binding(name) else {
+        let Some((owner, Binding::Value(value))) = self.binding(name) else {
             return Err(span.error(ErrorKind::Value, "assignment target must be an existing array"));
         };
         Ok(ArrayBinding { name: name.to_owned(), owner, value: value.clone() })
     }
 
-    fn update_array(&mut self, binding: &ArrayBinding, value: Array, span: &Span) -> Result<(), Error> {
+    fn update_array(&mut self, binding: &ArrayBinding, value: Value, span: &Span) -> Result<(), Error> {
         if value.environment() > binding.owner { return Err(span.error(ErrorKind::Domain, "array would export a local closure")); }
         let names = match binding.owner { Some(i) => &mut self.frames[i].names, None => &mut self.names };
-        names.insert(binding.name.clone(), Value::Array(value));
+        names.insert(binding.name.clone(), Binding::from_element(value));
         Ok(())
     }
 
-    fn indices(&mut self, parts: &[Vec<Node>], output: &mut Vec<String>) -> Result<Vec<Option<Array>>, Error> {
+    fn indices(&mut self, parts: &[Vec<Node>], output: &mut Vec<String>) -> Result<Vec<Option<Value>>, Error> {
         let mut values = Vec::new();
         for nodes in parts.iter().rev() { values.push(if nodes.is_empty() { None } else { Some(self.array_result(nodes, output)?) }); }
         values.reverse();
         Ok(values)
     }
 
-    fn assign(&mut self, target: &[Node], value: &Value, output: &mut Vec<String>) -> Result<(), Error> {
+    fn assign(&mut self, target: &[Node], value: &Binding, output: &mut Vec<String>) -> Result<(), Error> {
         let span = &target[0].span;
         if let [target] = target {
             match &target.kind {
@@ -1718,7 +1705,7 @@ impl Session {
                 }
                 NodeKind::Output => {
                     return match value {
-                        Value::Array(a) => {
+                        Binding::Value(a) => {
                             self.execution.output(output, crate::OutputKind::Explicit, self.display.array(a, self.current.is_some()));
                             Ok(())
                         }
@@ -1732,13 +1719,13 @@ impl Session {
                 _ => (),
             }
         }
-        let Value::Array(right) = value else { return Err(span.error(ErrorKind::Syntax, "multiple or modified assignment needs an array")); };
+        let right = &value.clone().into_value(span)?;
         if self.assignment_names(target) {
             if !right.is_singleton() && (right.shape().len() != 1 || right.len() != target.len()) {
                 return Err(span.error(ErrorKind::Length, "strand assignment needs one item per target"));
             }
             for (i, node) in target.iter().enumerate().rev() {
-                self.assign(std::slice::from_ref(node), &Value::Array(right.at(if right.is_singleton() { 0 } else { i }).as_array()), output)?;
+                self.assign(std::slice::from_ref(node), &Binding::from_element(right.at(if right.is_singleton() { 0 } else { i })), output)?;
             }
             return Ok(());
         }
@@ -1767,7 +1754,11 @@ impl Session {
             for parts in parts.iter().rev() {
                 let mut next = crate::primitive::selection(&current, parts, &self.execution.at(span))?;
                 current = next.read(&current, &self.execution.at(span))?;
-                if let Some(previous) = selection { for path in &mut next.paths { *path = [previous.paths[path[0]].as_slice(), &path[1..]].concat(); } }
+                if let Some(previous) = selection {
+                    for path in &mut next.paths {
+                        *path = if matches!(previous.frame, ResultFrame::Direct) { [previous.paths[0].as_slice(), path].concat() } else { [previous.paths[path[0]].as_slice(), &path[1..]].concat() };
+                    }
+                }
                 selection = Some(next);
             }
             let selection = selection.unwrap();
@@ -1777,7 +1768,7 @@ impl Session {
         Ok(())
     }
 
-    fn modify_names(&mut self, nodes: &[Node], right: &Array, modifier: &Function, output: &mut Vec<String>) -> Result<(), Error> {
+    fn modify_names(&mut self, nodes: &[Node], right: &Value, modifier: &Function, output: &mut Vec<String>) -> Result<(), Error> {
         if let [node] = nodes {
             return match &node.kind {
                 NodeKind::Group(inner) | NodeKind::Strand(inner) => self.modify_names(inner, right, modifier, output),
@@ -1794,7 +1785,7 @@ impl Session {
             return Err(nodes[0].span.error(ErrorKind::Length, "strand assignment needs one item per target"));
         }
         for (i, node) in nodes.iter().enumerate() {
-            self.modify_names(std::slice::from_ref(node), &right.at(if right.is_singleton() { 0 } else { i }).as_array(), modifier, output)?;
+            self.modify_names(std::slice::from_ref(node), &right.at(if right.is_singleton() { 0 } else { i }).clone(), modifier, output)?;
         }
         Ok(())
     }
@@ -1802,14 +1793,14 @@ impl Session {
     fn modifier(&mut self, nodes: &[Node], output: &mut Vec<String>) -> Result<Option<Function>, Error> {
         if nodes.is_empty() { return Ok(None); }
         match self.bind(nodes, output)?.value {
-            Value::Function(f) => Ok(Some(f)),
-            Value::Hybrid(h) => Ok(Some(Function::primitive(h.primitive()))),
+            Binding::Function(f) => Ok(Some(f)),
+            Binding::Hybrid(h) => Ok(Some(Function::primitive(h.primitive()))),
             _ => Err(nodes[0].span.error(ErrorKind::Syntax, "modified assignment needs a function")),
         }
     }
 
-    fn assign_selected(&mut self, nodes: &[Node], modifier: Option<Function>, value: &Value, output: &mut Vec<String>) -> Result<(), Error> {
-        let Value::Array(right) = value else { return Err(nodes[0].span.error(ErrorKind::Domain, "selective assignment needs an array")); };
+    fn assign_selected(&mut self, nodes: &[Node], modifier: Option<Function>, value: &Binding, output: &mut Vec<String>) -> Result<(), Error> {
+        let right = &value.clone().into_value(&nodes[0].span)?;
         let (binding, labels, selected, kind) = self.selection_expression(nodes, output)?;
         let span = &nodes[0].span;
         let (selection, values) = labels.replacements(&selected, right, kind, span)?;
@@ -1825,7 +1816,7 @@ impl Session {
         &mut self,
         nodes: &[Node],
         output: &mut Vec<String>,
-    ) -> Result<(ArrayBinding, crate::selection::Labels, Array, SelectionKind), Error> {
+    ) -> Result<(ArrayBinding, crate::selection::Labels, Value, SelectionKind), Error> {
         let root = nodes
             .iter()
             .rposition(|n| !matches!(n.kind, NodeKind::Selection(_)))
@@ -1846,80 +1837,83 @@ impl Session {
 
     fn modify_selection(
         &mut self,
-        original: &Array,
+        original: &Value,
         selection: &crate::primitive::Selection,
         f: &Function,
-        right: &Array,
+        right: &Value,
         span: &Span,
         output: &mut Vec<String>,
-    ) -> Result<Array, Error> {
-        if !right.is_singleton() && right.shape() != selection.shape {
-            return Err(span.error(ErrorKind::Length, "replacement shape does not match selection"));
-        }
+    ) -> Result<Value, Error> {
+        let values = selection.values(right, &self.execution.at(span))?;
         if selection.paths.iter().all(|p| p.len() == 1) {
             let mut data: Vec<_> = original.elements().collect();
-            for (i, path) in selection.paths.iter().enumerate() {
-                let r = right.at(if right.is_singleton() { 0 } else { i }).as_array();
-                let result = f.call_array(Some(&data[path[0]].as_array()), &r, span, self, output)?;
-                data[path[0]] = Element::Nested(result);
+            for (path, r) in selection.paths.iter().zip(values) {
+                let result = f.call_array(Some(&data[path[0]].clone()), &r, span, self, output)?;
+                data[path[0]] = result;
             }
-            return Array::from_parts(original.shape().to_vec(), data, original.prototype().clone()).map_err(|k| span.error(k, "invalid modified selection"));
+            return ResultFrame::of(original).collect(data, original.prototype()).map_err(|k| span.error(k, "invalid modified selection"));
         }
         let mut updated = original.clone();
-        for (i, path) in selection.paths.iter().enumerate() {
-            let one = crate::primitive::Selection { shape: vec![], paths: vec![path.clone()] };
-            let left = one.read(&updated, &self.execution.at(span))?.disclose().as_array();
-            let r = right.at(if right.is_singleton() { 0 } else { i }).as_array();
+        for (path, r) in selection.paths.iter().zip(values) {
+            let one = crate::primitive::Selection { frame: ResultFrame::Direct, paths: vec![path.clone()] };
+            let left = one.read(&updated, &self.execution.at(span))?;
             let result = f.call_array(Some(&left), &r, span, self, output)?;
-            let boxed = Array::new(vec![], vec![Element::Nested(result)]).map_err(|k| span.error(k, "invalid modified result"))?;
-            updated = one.write(&updated, &boxed, &self.execution.at(span))?;
+            updated = one.write(&updated, &result, &self.execution.at(span))?;
         }
         Ok(updated)
     }
 
     // Resolving one structural item may execute a group, but never derives an operator
     // or consumes a neighbouring item. The binder alone chooses grammatical reductions.
-    fn resolve(&mut self, node: &Node, output: &mut Vec<String>) -> Result<Value, Error> {
+    fn resolve(&mut self, node: &Node, output: &mut Vec<String>) -> Result<Binding, Error> {
         Ok(match &node.kind {
-            NodeKind::Literal(a) => Value::Array(a.clone()),
-            NodeKind::Function(p) => Value::Function(Function::primitive(*p)),
-            NodeKind::Operator(op) => Value::Operator(Operator::Primitive(*op)),
-            NodeKind::Hybrid(h) => Value::Hybrid(*h),
+            NodeKind::Literal(a) => Binding::Value(a.clone()),
+            NodeKind::Function(p) => Binding::Function(Function::primitive(*p)),
+            NodeKind::Operator(op) => Binding::Operator(Operator::Primitive(*op)),
+            NodeKind::Hybrid(h) => Binding::Hybrid(*h),
             NodeKind::Name(name) => self.lookup(name).cloned().ok_or_else(|| node.span.error(ErrorKind::Value, format!("undefined name: {name}")))?,
             NodeKind::System(name) => {
                 crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?.value()
             }
             NodeKind::Group(nodes) => self.bind(nodes, output)?.value,
+            NodeKind::Pipeline(stages) => {
+                let mut result = self.bind(&stages[0], output)?;
+                for stage in &stages[1..] {
+                    let right = result.array(&node.span)?;
+                    let function = Function::from_value(self.bind(stage, output)?.value, &stage[0].span)?;
+                    result = function.call(None, &right, &stage[0].span, self, output)?;
+                }
+                result.value
+            }
             NodeKind::Strand(nodes) => {
                 generated_len(&[nodes.len()]).map_err(|k| node.span.error(k, "strand is too large"))?;
-                let mut data =
-                    nodes.iter().rev().map(|n| self.array_result(std::slice::from_ref(n), output).map(Element::Nested)).collect::<Result<Vec<_>, _>>()?;
+                let mut data = nodes.iter().rev().map(|n| self.array_result(std::slice::from_ref(n), output)).collect::<Result<Vec<_>, _>>()?;
                 data.reverse();
-                Value::Array(Array::new(vec![data.len()], data).map_err(|k| node.span.error(k, "invalid strand"))?)
+                Binding::Value(Value::new(vec![data.len()], data).map_err(|k| node.span.error(k, "invalid strand"))?)
             }
             NodeKind::ArrayLiteral { cells, block } => {
                 let arrays = cells.iter().map(|nodes| self.array_result(nodes, output)).collect::<Result<Vec<_>, _>>()?;
                 let result = if *block {
                     let arrays =
-                        arrays.into_iter().map(|a| if a.is_scalar() { Array::new(vec![1], a.elements().collect()).unwrap() } else { a }).collect::<Vec<_>>();
-                    Array::assemble(&[arrays.len()], &arrays, &arrays[0])
-                } else { Array::new(vec![arrays.len()], arrays.into_iter().map(Element::Nested).collect()) };
-                Value::Array(result.map_err(|k| node.span.error(k, "invalid array literal"))?)
+                        arrays.into_iter().map(|a| if a.is_scalar() { Value::new(vec![1], a.elements().collect()).unwrap() } else { a }).collect::<Vec<_>>();
+                    Value::assemble(&[arrays.len()], &arrays, &arrays[0])
+                } else { Value::new(vec![arrays.len()], arrays.into_iter().collect()) };
+                Binding::Value(result.map_err(|k| node.span.error(k, "invalid array literal"))?)
             }
             NodeKind::Dfn(definition) => {
                 let closure = Closure { definition: definition.clone(), environment: self.current };
                 match definition.kind {
-                    DefinitionKind::Function => Value::Function(self::Function::new(FunctionNode::Defined(closure), &node.span)?),
-                    DefinitionKind::MonadicOperator | DefinitionKind::DyadicOperator => Value::Operator(Operator::Defined(closure)),
+                    DefinitionKind::Function => Binding::Function(self::Function::new(FunctionNode::Defined(closure), &node.span)?),
+                    DefinitionKind::MonadicOperator | DefinitionKind::DyadicOperator => Binding::Operator(Operator::Defined(closure)),
                 }
             }
             _ => return Err(node.span.error(ErrorKind::Syntax, "unexpected assignment or output symbol")),
         })
     }
 
-    fn lookup(&self, name: &str) -> Option<&Value> { self.binding(name).map(|(_, value)| value) }
+    fn lookup(&self, name: &str) -> Option<&Binding> { self.binding(name).map(|(_, value)| value) }
 
-    fn binding(&self, name: &str) -> Option<(Option<usize>, &Value)> {
+    fn binding(&self, name: &str) -> Option<(Option<usize>, &Binding)> {
         if name == "⍺" { return self.current.and_then(|i| self.frames[i].names.get(name).map(|value| (Some(i), value))); }
         let mut scope = self.current;
         while let Some(i) = scope {
@@ -1929,7 +1923,7 @@ impl Session {
         self.names.get(name).map(|value| (None, value))
     }
 
-    fn call_defined(&mut self, function: &Function, left: Option<&Array>, right: &Array, output: &mut Vec<String>) -> Result<Bound, Error> {
+    fn call_defined(&mut self, function: &Function, left: Option<&Value>, right: &Value, output: &mut Vec<String>) -> Result<Bound, Error> {
         let return_span = match function.node.as_ref() {
             FunctionNode::Defined(c) | FunctionNode::Derived(c, ..) => c.definition.span.clone(),
             _ => unreachable!(),
@@ -1948,13 +1942,13 @@ impl Session {
             if self.frames.len() == MAX_CALL_DEPTH {
                 break Err(closure.definition.span.error(ErrorKind::Limit, format!("lexical frame depth exceeds {MAX_CALL_DEPTH}")));
             }
-            let mut names = HashMap::from([("⍵".into(), Value::Array(right)), ("∇".into(), Value::Function(function.clone()))]);
-            if let Some(a) = left { names.insert("⍺".into(), Value::Array(a)); }
+            let mut names = HashMap::from([("⍵".into(), Binding::Value(right)), ("∇".into(), Binding::Function(function.clone()))]);
+            if let Some(a) = left { names.insert("⍺".into(), Binding::Value(a)); }
             if let Some(f) = operand {
-                names.insert("⍺⍺".into(), f.value());
-                names.insert("∇∇".into(), Value::Operator(Operator::Defined(closure.clone())));
+                names.insert("⍶".into(), f.value());
+                names.insert("∇∇".into(), Binding::Operator(Operator::Defined(closure.clone())));
             }
-            if let Some(f) = right_operand { names.insert("⍵⍵".into(), f.value()); }
+            if let Some(f) = right_operand { names.insert("⍹".into(), f.value()); }
             self.current = Some(self.frames.len());
             self.frames.push(Frame { names, parent: closure.environment });
             #[cfg(test)]
@@ -1964,7 +1958,7 @@ impl Session {
                 Err(error) => break Err(error),
                 Ok(Step::Tail(call)) => {
                     // Keep lexical dependencies, not the tail caller's execution frame.
-                    let environment = call.function.environment.max(call.right.environment()).max(call.left.as_ref().and_then(Array::environment));
+                    let environment = call.function.environment.max(call.right.environment()).max(call.left.as_ref().and_then(Value::environment));
                     let keep = base.max(environment.map_or(0, |i| i + 1));
                     self.frames.truncate(keep);
                     function = call.function;
@@ -1987,10 +1981,10 @@ impl Session {
         result
     }
 
-    fn array_result(&mut self, nodes: &[Node], output: &mut Vec<String>) -> Result<Array, Error> { self.bind(nodes, output)?.array(&nodes[0].span) }
+    fn array_result(&mut self, nodes: &[Node], output: &mut Vec<String>) -> Result<Value, Error> { self.bind(nodes, output)?.array(&nodes[0].span) }
 
     fn return_expression(&mut self, mut nodes: &[Node], output: &mut Vec<String>, tail: bool) -> Result<Step, Error> {
-        if nodes.is_empty() { return Ok(Step::Done(Bound::new(Value::NoResult))); }
+        if nodes.is_empty() { return Ok(Step::Done(Bound::new(Binding::NoResult))); }
         let mut unshy = false;
         while let [Node { kind: NodeKind::Group(inner), .. }] = nodes {
             nodes = inner;
@@ -2022,7 +2016,7 @@ impl Session {
                     if nodes.len() == 2 { return Err(nodes[1].span.error(ErrorKind::Syntax, "default argument needs a value")); }
                     if !self.frames[frame].names.contains_key("⍺") {
                         let value = self.bind(&nodes[2..], output)?.value;
-                        if matches!(value, Value::NoResult) { return Err(nodes[0].span.error(ErrorKind::Value, "default argument requires a value")); }
+                        if matches!(value, Binding::NoResult) { return Err(nodes[0].span.error(ErrorKind::Value, "default argument requires a value")); }
                         self.frames[frame].names.insert("⍺".into(), value);
                     }
                     continue;
@@ -2034,7 +2028,7 @@ impl Session {
                         let numbers = condition
                             .elements()
                             .map(|e| match e {
-                                Element::Number(n) => n.nonnegative_integer().map_err(|k| nodes[i].span.error(k, "invalid error number")),
+                                Value::Number(n) => n.nonnegative_integer().map_err(|k| nodes[i].span.error(k, "invalid error number")),
                                 _ => Err(nodes[i].span.error(ErrorKind::Domain, "error numbers must be numeric")),
                             })
                             .collect::<Result<Vec<_>, _>>()?;
@@ -2051,7 +2045,7 @@ impl Session {
                     if !bound.assignment { return bound.result(&nodes[0].span).map(Step::Done); }
                 }
             }
-            Ok(Step::Done(Bound::new(Value::NoResult)))
+            Ok(Step::Done(Bound::new(Binding::NoResult)))
         })();
         let mut result = result;
         while let Err(error) = &result {
@@ -2071,7 +2065,7 @@ impl Session {
 #[derive(Clone, Copy)]
 enum Category {
     NoResult,
-    Array,
+    Value,
     Function,
     Hybrid,
     Operator,
@@ -2080,11 +2074,11 @@ enum Category {
     Selection,
 }
 enum Term {
-    Value(Value),
-    Strand(Vec<Element>),
+    Binding(Binding),
+    Strand(Vec<Value>),
     Train(Vec<Function>),
-    Left(Array, Function),
-    Selection(Vec<Option<Array>>),
+    Left(Value, Function),
+    Selection(Vec<Option<Value>>),
 }
 struct Entity {
     term: Term,
@@ -2097,21 +2091,21 @@ struct Entity {
 impl Entity {
     fn category(&self) -> Category {
         match self.term {
-            Term::Value(ref value) => Category::of(value),
-            Term::Strand(_) => Category::Array,
+            Term::Binding(ref value) => Category::of(value),
+            Term::Strand(_) => Category::Value,
             Term::Train(_) => Category::Function,
             Term::Left(..) => Category::Left,
             Term::Selection(_) => Category::Selection,
         }
     }
-    fn value(self) -> Result<Value, Error> {
+    fn value(self) -> Result<Binding, Error> {
         Ok(match self.term {
-            Term::Value(v) => v,
-            Term::Strand(items) => Value::Array(
-                Array::new(vec![items.len()], items)
+            Term::Binding(v) => v,
+            Term::Strand(items) => Binding::Value(
+                Value::new(vec![items.len()], items)
                     .map_err(|k| self.span.error(k, if k == ErrorKind::Limit { "array nesting limit exceeded" } else { "invalid strand" }))?,
             ),
-            Term::Train(fs) => Value::Function(self::Function::train(fs, &self.span)?),
+            Term::Train(fs) => Binding::Function(self::Function::train(fs, &self.span)?),
             Term::Left(..) => return Err(self.span.error(ErrorKind::Syntax, "a function needs a right argument")),
             Term::Selection(_) => return Err(self.span.error(ErrorKind::Syntax, "index/axis brackets need an array or function to their left")),
         })
@@ -2120,17 +2114,17 @@ impl Entity {
         let span = self.span.clone();
         Function::from_value(self.value()?, &span)
     }
-    fn array(self) -> Result<Array, Error> { match self.value()? { Value::Array(a) => Ok(a), _ => unreachable!() } }
+    fn array(self) -> Result<Value, Error> { match self.value()? { Binding::Value(a) => Ok(a), _ => unreachable!() } }
 }
 
 impl Category {
-    fn of(value: &Value) -> Self {
+    fn of(value: &Binding) -> Self {
         match value {
-            Value::NoResult => Self::NoResult,
-            Value::Array(_) => Self::Array,
-            Value::Function(_) => Self::Function,
-            Value::Hybrid(_) => Self::Hybrid,
-            Value::Operator(op) => {
+            Binding::NoResult => Self::NoResult,
+            Binding::Value(_) => Self::Value,
+            Binding::Function(_) => Self::Function,
+            Binding::Hybrid(_) => Self::Hybrid,
+            Binding::Operator(op) => {
                 if op.is_dyadic() { Self::DyadicOperator } else { Self::Operator }
             }
         }
@@ -2159,17 +2153,17 @@ impl Rule {
         use Category::*;
         match (left, right) {
             (NoResult, _) | (_, NoResult) => Self::Missing,
-            (Array | Function | Hybrid, Selection) => Self::Bracket,
-            (Array, Array) => Self::Strand,
+            (Value | Function | Hybrid, Selection) => Self::Bracket,
+            (Value, Value) => Self::Strand,
             (Function | Hybrid, Hybrid) => Self::Fold,
-            (Array | Function | Hybrid, Operator) => Self::Derive,
-            (DyadicOperator, Array | Function | Hybrid) => Self::BindRight,
-            (Array, Function | Hybrid) => Self::Attach,
-            (Function | Left, Array) => Self::Call,
+            (Value | Function | Hybrid, Operator) => Self::Derive,
+            (DyadicOperator, Value | Function | Hybrid) => Self::BindRight,
+            (Value, Function | Hybrid) => Self::Attach,
+            (Function | Left, Value) => Self::Call,
             (Function | Hybrid, Function) => Self::Train,
             (Left, Function) => Self::LeftTrain,
             (Operator, Hybrid) => Self::Wait(4),
-            (Selection, Array | Function | Hybrid) => Self::Wait(3),
+            (Selection, Value | Function | Hybrid) => Self::Wait(3),
             (Operator | Selection, _) => Self::Wait(0),
             _ => Self::Invalid,
         }
@@ -2198,7 +2192,7 @@ impl Binder {
         session: &mut Session,
         output: &mut Vec<String>,
         tail: bool,
-        marked: Option<(usize, Array, SelectionKind)>,
+        marked: Option<(usize, Value, SelectionKind)>,
     ) -> Result<(Step, Option<SelectionKind>), Error> {
         let mut binder = Self { stack: Vec::new() };
         let mut cursor = nodes.len();
@@ -2216,8 +2210,8 @@ impl Binder {
                 } else {
                     let selected = marked.as_ref().filter(|(index, ..)| *index == i);
                     let term = if let Some((_, array, _)) = selected {
-                        Term::Value(Value::Array(array.clone()))
-                    } else if let NodeKind::Selection(parts) = &node.kind { Term::Selection(session.indices(parts, output)?) } else { Term::Value(session.resolve(node, output)?) };
+                        Term::Binding(Binding::Value(array.clone()))
+                    } else if let NodeKind::Selection(parts) = &node.kind { Term::Selection(session.indices(parts, output)?) } else { Term::Binding(session.resolve(node, output)?) };
                     Some(Entity { term, span: node.span.clone(), shy: false, selection: selected.map(|(_, _, kind)| *kind), assignment: false })
                 }
             } else { None };
@@ -2242,10 +2236,10 @@ impl Binder {
                     if begin == i || n == 0 { return Err(nodes[i].span.error(ErrorKind::Syntax, "assignment needs a target and value")); }
                     let entity = binder.stack.pop().unwrap();
                     let value = entity.value()?;
-                    if matches!(value, Value::NoResult) { return Err(nodes[i].span.error(ErrorKind::Value, "assignment requires a value")); }
+                    if matches!(value, Binding::NoResult) { return Err(nodes[i].span.error(ErrorKind::Value, "assignment requires a value")); }
                     cursor = begin + session.assignment_start(&nodes[begin..i])?;
                     session.assign(&nodes[cursor..i], &value, output)?;
-                    pending.push(Entity { term: Term::Value(value), span: nodes[i].span.clone(), shy: true, selection: None, assignment: true });
+                    pending.push(Entity { term: Term::Binding(value), span: nodes[i].span.clone(), shy: true, selection: None, assignment: true });
                     continue;
                 }
                 break;
@@ -2262,12 +2256,12 @@ impl Binder {
                     .selection
                     .map(|kind| {
                         call.function
-                            .selection_kind(call.left.as_ref(), kind)
+                            .selection_kind(call.left.as_ref(), &call.right, kind)
                             .ok_or_else(|| call.span.error(ErrorKind::Domain, "function is not valid for selective assignment"))
                     })
                     .transpose()?;
                 let bound = call.function.call(call.left.as_ref(), &call.right, &call.span, session, output)?;
-                binder.stack.push(Entity { term: Term::Value(bound.value), span: call.span, shy: bound.shy, selection, assignment: false });
+                binder.stack.push(Entity { term: Term::Binding(bound.value), span: call.span, shy: bound.shy, selection, assignment: false });
             }
             // Bound operators still need their left operand before rebinding on the right.
             if !matches!(binder.stack.last().unwrap().category(), Category::Operator) { pending.push(binder.stack.pop().unwrap()); }
@@ -2285,42 +2279,45 @@ impl Binder {
         let right = self.stack.pop().unwrap();
         let span = left.span.clone();
         let right_span = right.span.clone();
-        let selection = left.selection.or(right.selection);
-        if selection.is_some() && !matches!((left.category(), right.category()), (Array, Selection) | (Function | Left, Array)) {
+        let mut selection = left.selection.or(right.selection);
+        if selection.is_some() && !matches!((left.category(), right.category()), (Value, Selection) | (Function | Left, Value)) {
             return Err(span.error(ErrorKind::Syntax, "invalid selective-assignment expression"));
         }
         let term = match Rule::get(left.category(), right.category()) {
             Rule::Missing => return Err(span.error(ErrorKind::Value, "expression produced no value")),
             Rule::Bracket => {
                 let Term::Selection(parts) = right.term else { unreachable!() };
-                if matches!(left.category(), Array) {
-                    Term::Value(Value::Array(crate::primitive::select(&left.array()?, &parts, &execution.at(&right_span))?))
+                if matches!(left.category(), Value) {
+                    let array = left.array()?;
+                    let selected = crate::primitive::selection(&array, &parts, &execution.at(&right_span))?;
+                    selection = selection.map(|_| if matches!(selected.frame, ResultFrame::Direct) { SelectionKind::Item } else { SelectionKind::Elements });
+                    Term::Binding(Binding::from_element(selected.read(&array, &execution.at(&right_span))?))
                 } else {
                     let [Some(axis)] = parts.as_slice() else { return Err(right_span.error(ErrorKind::Syntax, "one axis expression is required")); };
                     if matches!(left.category(), Hybrid) {
                         let axis = crate::primitive::single_axis(axis, &right_span)?;
-                        let Value::Hybrid(h) = left.value()? else { unreachable!() };
-                        Term::Value(Value::Hybrid(crate::primitive::Hybrid { axis: Some(axis), ..h }))
-                    } else { Term::Value(Value::Function(self::Function::new(FunctionNode::Axis(left.function()?, axis.clone()), &right_span)?)) }
+                        let Binding::Hybrid(h) = left.value()? else { unreachable!() };
+                        Term::Binding(Binding::Hybrid(crate::primitive::Hybrid { axis: Some(axis), ..h }))
+                    } else { Term::Binding(Binding::Function(self::Function::new(FunctionNode::Axis(left.function()?, axis.clone()), &right_span)?)) }
                 }
             }
             Rule::Strand => {
-                let mut items = match left.term { Term::Strand(items) => items, _ => vec![Element::Nested(left.array()?)] };
-                match right.term { Term::Strand(rest) => items.extend(rest), _ => items.push(Element::Nested(right.array()?)) }
+                let mut items = match left.term { Term::Strand(items) => items, _ => vec![left.array()?] };
+                match right.term { Term::Strand(rest) => items.extend(rest), _ => items.push(right.array()?) }
                 Term::Strand(items)
             }
             Rule::Fold => {
-                let Value::Hybrid(h) = right.value()? else { unreachable!() };
-                Term::Value(Value::Function(self::Function::new(FunctionNode::Fold(left.function()?, h), &right_span)?))
+                let Binding::Hybrid(h) = right.value()? else { unreachable!() };
+                Term::Binding(Binding::Function(self::Function::new(FunctionNode::Fold(left.function()?, h), &right_span)?))
             }
             Rule::Derive => {
                 let operand = Operand::from_value(left.value()?);
-                let Value::Operator(operator) = right.value()? else { unreachable!() };
-                Term::Value(operator.derive(operand, &span)?)
+                let Binding::Operator(operator) = right.value()? else { unreachable!() };
+                Term::Binding(operator.derive(operand, &span)?)
             }
             Rule::BindRight => {
-                let Value::Operator(operator) = left.value()? else { unreachable!() };
-                Term::Value(Value::Operator(self::Operator::Bound(Box::new(operator), Operand::from_value(right.value()?))))
+                let Binding::Operator(operator) = left.value()? else { unreachable!() };
+                Term::Binding(Binding::Operator(self::Operator::Bound(Box::new(operator), Operand::from_value(right.value()?))))
             }
             Rule::Attach => Term::Left(left.array()?, right.function()?),
             Rule::Call => {
@@ -2335,7 +2332,7 @@ impl Binder {
             }
             Rule::LeftTrain => {
                 let Term::Left(a, f) = left.term else { unreachable!() };
-                let constant = self::Function::new(FunctionNode::Modified(OperatorKind::Commute, Operand::Array(a)), &span)?;
+                let constant = self::Function::new(FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)), &span)?;
                 let mut fs = vec![constant, f];
                 match right.term { Term::Train(rest) => fs.extend(rest), _ => fs.push(right.function()?) }
                 Term::Train(fs)
@@ -2344,7 +2341,7 @@ impl Binder {
         };
         // Function/operator location, rather than an attached left argument, owns a call.
         let span = if matches!(term, Term::Left(..)) { right_span } else { span };
-        self.stack.push(Entity { term, span, shy: false, selection: selection.map(|_| SelectionKind::Elements), assignment: false });
+        self.stack.push(Entity { term, span, shy: false, selection, assignment: false });
         Ok(None)
     }
 }
@@ -2374,9 +2371,9 @@ mod tests {
         let mut s = Session::new();
         assert!(s.eval("f←+").error.is_none());
         for _ in 0..64 {
-            let Value::Function(previous) = s.names["f"].clone() else { unreachable!() };
+            let Binding::Function(previous) = s.names["f"].clone() else { unreachable!() };
             assert!(s.eval("f←f+f").error.is_none());
-            let Value::Function(f) = &s.names["f"] else { unreachable!() };
+            let Binding::Function(f) = &s.names["f"] else { unreachable!() };
             let FunctionNode::Fork(arms) = f.node.as_ref() else { unreachable!() };
             assert!(Arc::ptr_eq(&arms[0].node, &previous.node));
             assert!(Arc::ptr_eq(&arms[2].node, &previous.node));
@@ -2391,7 +2388,7 @@ mod tests {
         let weak = Arc::downgrade(&source);
         let result = s.eval_source(source);
         assert!(result.error.is_none());
-        assert_eq!(result.value.unwrap(), Array::scalar(5.0).unwrap());
+        assert_eq!(result.value.unwrap(), Value::scalar(5.0).unwrap());
         assert_eq!(s.peak_frames, 2);
         assert!(s.frames.is_empty());
         assert!(s.current.is_none());
@@ -2404,19 +2401,19 @@ mod tests {
             ("count←{⍺←0 ⋄ ⍵=0:⍺ ⋄ (⍺+1)∇⍵-1} ⋄ count 10000", 10000., 1),
             ("even←{⍵=0:1 ⋄ odd ⍵-1} ⋄ odd←{⍵=0:0 ⋄ even ⍵-1} ⋄ even 10000", 1., 1),
             ("outer←{x←42 ⋄ loop←{⍵=0:x ⋄ ∇⍵-1} ⋄ loop ⍵} ⋄ outer 10000", 42., 2),
-            ("outer←{x←42 ⋄ op←{⍵=0:⍺⍺ ⍵ ⋄ ∇⍵-1} ⋄ ({x}op)⍵} ⋄ outer 10000", 42., 2),
+            ("outer←{x←42 ⋄ op←{⍵=0:⍶ ⍵ ⋄ ∇⍵-1} ⋄ ({x}op)⍵} ⋄ outer 10000", 42., 2),
             ("loop←{⍵=0:a←7 ⋄ (∇⍵-1)} ⋄ loop 10000", 7., 1),
         ] {
             let mut s = Session::new();
             let result = s.eval(code);
             assert!(result.error.is_none(), "{code}: {:?}", result.error);
-            assert_eq!(result.value.unwrap(), Array::scalar(expected).unwrap());
+            assert_eq!(result.value.unwrap(), Value::scalar(expected).unwrap());
             assert_eq!(s.peak_frames, frames);
             assert!(s.frames.is_empty() && s.current.is_none());
         }
         let mut s = Session::new();
-        assert_eq!(s.eval("f←{11::7 ⋄ ⍵=0:1÷0 ⋄ ∇⍵-1} ⋄ f 5").value.unwrap(), Array::scalar(7.).unwrap());
-        assert_eq!(s.eval("f 500").value.unwrap(), Array::scalar(7.).unwrap());
+        assert_eq!(s.eval("f←{11::7 ⋄ ⍵=0:1÷0 ⋄ ∇⍵-1} ⋄ f 5").value.unwrap(), Value::scalar(7.).unwrap());
+        assert_eq!(s.eval("f 500").value.unwrap(), Value::scalar(7.).unwrap());
         assert_eq!(s.eval("f 2000").error.unwrap().kind, ErrorKind::Limit);
         assert!(s.frames.is_empty() && s.current.is_none());
     }

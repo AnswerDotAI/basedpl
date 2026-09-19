@@ -1,17 +1,19 @@
 use crate::{
     primitive::{Hybrid, OperatorKind, Primitive},
-    Array, Element, Error, ErrorKind, Number, Source, Span,
+    Error, ErrorKind, Number, Source, Span, Value,
 };
 use std::{iter::Peekable, str::CharIndices, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub(crate) enum NodeKind {
-    Literal(Array),
+    Literal(Value),
     Function(Primitive),
     Operator(OperatorKind),
     Name(String),
     System(String),
     Assign,
+    Pipe,
+    Pipeline(Vec<Vec<Node>>),
     Output,
     Guard(bool),
     Hybrid(Hybrid),
@@ -32,11 +34,12 @@ fn definition_kind(nodes: &[Node]) -> DefinitionKind {
     nodes
         .iter()
         .map(|n| match &n.kind {
-            NodeKind::Name(name) if name == "⍵⍵" => DefinitionKind::DyadicOperator,
-            NodeKind::Name(name) if name == "⍺⍺" => DefinitionKind::MonadicOperator,
+            NodeKind::Name(name) if name == "⍹" => DefinitionKind::DyadicOperator,
+            NodeKind::Name(name) if name == "⍶" => DefinitionKind::MonadicOperator,
             NodeKind::Group(nodes) | NodeKind::Strand(nodes) => definition_kind(nodes),
             NodeKind::ArrayLiteral { cells, .. } => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
             NodeKind::Selection(cells) => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
+            NodeKind::Pipeline(stages) => stages.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
             _ => DefinitionKind::Function, // Nested definitions classify their own bodies.
         })
         .max()
@@ -78,10 +81,11 @@ pub enum ParseStatus { Complete(Parsed), Incomplete(Error), Invalid(Error) }
 
 #[derive(Debug)]
 enum TokenKind {
+    Pipe,
     Tie,
     BraceOpen,
     BraceClose,
-    Literal(Array),
+    Literal(Value),
     Function(Primitive),
     Operator(OperatorKind),
     Open,
@@ -161,7 +165,7 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
             let end = chars.peek().map_or(source.text.len(), |(i, _)| *i);
             let n = Number::parse(&source.text[start..end])
                 .map_err(|k| span(end).error(k, "invalid numeric literal (real values, finite complex components or integer x/r components required)"))?;
-            TokenKind::Literal(Array::scalar(n).unwrap())
+            TokenKind::Literal(Value::scalar(n).unwrap())
         } else if (c.is_alphabetic() || matches!(c, '_' | '∆' | '⍙')) && Primitive::from_glyph(c).is_none() {
             chars.next();
             while chars.peek().is_some_and(|(_, c)| (c.is_alphanumeric() || matches!(c, '_' | '∆' | '⍙')) && Primitive::from_glyph(*c).is_none()) {
@@ -178,19 +182,18 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                         match chars.next() {
                             Some((_, '\'')) if chars.peek().is_some_and(|(_, c)| *c == '\'') => {
                                 chars.next();
-                                data.push(Element::Character('\''));
+                                data.push(Value::Character('\''));
                             }
                             Some((_, '\'')) => break,
                             Some((_, '\n')) | None => {
                                 return Err(span(chars.peek().map_or(source.text.len(), |(i, _)| *i)).error(ErrorKind::Syntax, "unclosed character literal"))
                             }
-                            Some((_, c)) => data.push(Element::Character(c)),
+                            Some((_, c)) => data.push(Value::Character(c)),
                         }
                     }
-                    let shape = if data.len() == 1 { vec![] } else { vec![data.len()] };
-                    TokenKind::Literal(Array::from_parts(shape, data, Element::Character(' ')).unwrap())
+                    TokenKind::Literal(if data.len() == 1 { data.pop().unwrap() } else { Value::from_parts(vec![data.len()], data, Value::Character(' ')).unwrap() })
                 }
-                '⍬' => TokenKind::Literal(Array::empty(vec![0], Element::Number(Number::try_from(0.0).unwrap())).unwrap()),
+                '⍬' => TokenKind::Literal(Value::empty(vec![0], Value::Number(Number::try_from(0.0).unwrap())).unwrap()),
                 '¨' => TokenKind::Operator(OperatorKind::Each),
                 '⍨' => TokenKind::Operator(OperatorKind::Commute),
                 '∘' => TokenKind::Operator(OperatorKind::Compose),
@@ -204,7 +207,7 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                 '⇄' => TokenKind::Operator(OperatorKind::PairInverse),
                 '⌾' => TokenKind::Operator(OperatorKind::Under),
                 '∂' => TokenKind::Operator(OperatorKind::Differentiate),
-                '‿' => TokenKind::Tie,
+                '˘' => TokenKind::Tie,
                 '◶' => TokenKind::Operator(OperatorKind::Agenda),
                 '@' => TokenKind::Operator(OperatorKind::At),
                 '⌺' => TokenKind::Operator(OperatorKind::Stencil),
@@ -216,6 +219,7 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                 '\n' => TokenKind::Newline,
                 '⋄' => TokenKind::Separator,
                 '←' => TokenKind::Assign,
+                '→' => TokenKind::Pipe,
                 '•' if chars.peek().is_some_and(|(_, c)| c.is_alphanumeric() || *c == '_') => {
                     while chars.peek().is_some_and(|(_, c)| c.is_alphanumeric() || matches!(c, '_' | '∆' | '⍙')) { chars.next(); }
                     let end = chars.peek().map_or(source.text.len(), |(i, _)| *i);
@@ -231,7 +235,8 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                 '/' | '⌿' | '\\' | '⍀' => TokenKind::Hybrid(Hybrid { scan: matches!(c, '\\' | '⍀'), first: matches!(c, '⌿' | '⍀'), axis: None }),
                 '{' => TokenKind::BraceOpen,
                 '}' => TokenKind::BraceClose,
-                '⍺' | '⍵' | '∇' => {
+                '⍺' | '⍵' | '⍶' | '⍹' => TokenKind::Name(c.to_string()),
+                '∇' => {
                     let mut name = c.to_string();
                     if chars.peek().is_some_and(|(_, next)| *next == c) {
                         chars.next();
@@ -277,11 +282,11 @@ impl Parser<'_> {
                         | TokenKind::BracketClose
                         | TokenKind::BraceClose
                 )
-            { return Err(ParseFailure::Invalid(span.error(ErrorKind::Syntax, "‿ needs a value on each side"))); }
+            { return Err(ParseFailure::Invalid(span.error(ErrorKind::Syntax, "˘ needs a value on each side"))); }
             let kind = match &token.kind {
                 TokenKind::Tie => {
                     if !nodes.last().is_some_and(|n| strand_item(&n.kind)) {
-                        return Err(ParseFailure::Invalid(span.error(ErrorKind::Syntax, "‿ needs a value on each side")));
+                        return Err(ParseFailure::Invalid(span.error(ErrorKind::Syntax, "˘ needs a value on each side")));
                     }
                     tied = true;
                     continue;
@@ -311,7 +316,7 @@ impl Parser<'_> {
                     });
                     if !matched { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "mismatched closing delimiter"))); }
                     if indexed || !nodes.is_empty() { pieces.push(nodes); }
-                    return Ok((pieces, separated));
+                    return Ok((pieces.into_iter().map(pipelines).collect::<Result<_, _>>()?, separated));
                 }
                 TokenKind::Open | TokenKind::BracketOpen | TokenKind::BraceOpen => {
                     if depth == 128 { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Limit, "delimiters nested too deeply"))); }
@@ -343,6 +348,7 @@ impl Parser<'_> {
                 TokenKind::Name(name) => NodeKind::Name(name.clone()),
                 TokenKind::System(name) => NodeKind::System(name.clone()),
                 TokenKind::Assign => NodeKind::Assign,
+                TokenKind::Pipe => NodeKind::Pipe,
                 TokenKind::Output => NodeKind::Output,
                 TokenKind::Guard(error) => {
                     if !open.is_some_and(|o| matches!(o.kind, TokenKind::BraceOpen)) {
@@ -354,7 +360,7 @@ impl Parser<'_> {
             };
             let mut node = Node { kind, span };
             if tied {
-                if !strand_item(&node.kind) { return Err(ParseFailure::Invalid(node.span.error(ErrorKind::Syntax, "‿ needs a value on each side"))); }
+                if !strand_item(&node.kind) { return Err(ParseFailure::Invalid(node.span.error(ErrorKind::Syntax, "˘ needs a value on each side"))); }
                 let left = nodes.pop().unwrap();
                 let span = Span { source: node.span.source.clone(), range: left.span.range.start..node.span.range.end };
                 let mut items = match left { Node { kind: NodeKind::Strand(items), .. } => items, _ => vec![left] };
@@ -364,11 +370,38 @@ impl Parser<'_> {
             }
             nodes.push(node);
         }
-        if tied { return Err(ParseFailure::Incomplete(self.tokens[self.pos - 1].span.error(ErrorKind::Syntax, "‿ needs a value on each side"))); }
+        if tied { return Err(ParseFailure::Incomplete(self.tokens[self.pos - 1].span.error(ErrorKind::Syntax, "˘ needs a value on each side"))); }
         if let Some(open) = open { return Err(ParseFailure::Incomplete(open.span.error(ErrorKind::Syntax, "unclosed delimiter"))); }
         if !nodes.is_empty() { pieces.push(nodes); }
-        Ok((pieces, separated))
+        Ok((pieces.into_iter().map(pipelines).collect::<Result<_, _>>()?, separated))
     }
+}
+
+// Assignment encloses the pipeline; guards separate independent expressions.
+fn pipelines(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
+    if !nodes.iter().any(|n| matches!(n.kind, NodeKind::Pipe)) { return Ok(nodes); }
+    let mut result = Vec::new();
+    for part in nodes.split_inclusive(|n| matches!(n.kind, NodeKind::Guard(_))) {
+        let (expression, guard) =
+            if part.last().is_some_and(|n| matches!(n.kind, NodeKind::Guard(_))) { (&part[..part.len() - 1], part.last()) } else { (part, None) };
+        if let Some(pipe) = expression.iter().position(|n| matches!(n.kind, NodeKind::Pipe)) {
+            let start = expression[..pipe].iter().rposition(|n| matches!(n.kind, NodeKind::Assign)).map_or(0, |i| i + 1);
+            let stages: Vec<_> = expression[start..].split(|n| matches!(n.kind, NodeKind::Pipe)).map(<[Node]>::to_vec).collect();
+            if stages.iter().any(Vec::is_empty) {
+                return Err(ParseFailure::Invalid(expression[pipe].span.error(ErrorKind::Syntax, "pipe needs an expression on each side")));
+            }
+            if stages.iter().skip(1).flatten().any(|n| matches!(n.kind, NodeKind::Assign)) {
+                return Err(ParseFailure::Invalid(expression[pipe].span.error(ErrorKind::Syntax, "parenthesize assignment inside a pipe stage")));
+            }
+            let mut span = expression[start].span.clone();
+            span.range.end = expression.last().unwrap().span.range.end;
+            result.extend_from_slice(&expression[..start]);
+            result.push(Node { kind: NodeKind::Pipeline(stages), span });
+        }
+        else { result.extend_from_slice(expression); }
+        if let Some(guard) = guard { result.push(guard.clone()); }
+    }
+    Ok(result)
 }
 
 fn strand_item(kind: &NodeKind) -> bool {

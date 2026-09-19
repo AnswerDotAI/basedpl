@@ -12,10 +12,10 @@
 +⌿2 3⍴⍳6           ⍝ 5 7 9
 ```
 
-`N f⌿Y` performs n-wise reduction there.
+`S f⌿Y` starts each lane from the whole seed `S` on the right.
 
 ```apl
-2+⌿3 2⍴⍳6          ⍝ 2 2⍴4 6 8 10
+10+⌿3 2⍴⍳6         ⍝ 19 22
 ```
 
 Counts, identities and `[K]` follow [`/`](slash.md).

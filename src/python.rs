@@ -1,4 +1,4 @@
-use crate::{eval::Operand, Array, Element, EvalOptions, Evaluation, Function, InterruptHandle, Number, Session, Source, Span};
+use crate::{eval::Operand, EvalOptions, Evaluation, Function, InterruptHandle, Number, Session, Source, Span, Value};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use pyo3::{
@@ -12,56 +12,61 @@ use std::{
     time::Duration,
 };
 
-fn import_array(raw: &Bound<'_, PyDict>, depth: usize) -> PyResult<Array> {
+fn import_array(raw: &Bound<'_, PyDict>, depth: usize) -> PyResult<Value> {
     if depth > 128 { return Err(PyValueError::new_err("array nesting exceeds 128 levels")); }
-    let element = |o: Bound<'_, PyAny>| -> PyResult<Element> {
-        if let Ok(a) = o.extract::<PyRef<'_, PyArray>>() { return Ok(Element::Nested(a.inner.clone())); }
-        if let Ok(f) = o.extract::<PyRef<'_, PyFunction>>() { return Ok(Element::Function(f.inner.clone())); }
-        if let Ok(d) = o.cast::<PyDict>() { return Ok(Element::Nested(import_array(d, depth + 1)?)); }
+    let element = |o: Bound<'_, PyAny>| -> PyResult<Value> {
+        if let Ok(a) = o.extract::<PyRef<'_, PyArray>>() { return Ok(a.inner.clone()); }
+        if let Ok(f) = o.extract::<PyRef<'_, PyFunction>>() { return Ok(Value::Function(f.inner.clone())); }
+        if let Ok(d) = o.cast::<PyDict>() { return import_array(d, depth + 1); }
         if let Ok(s) = o.cast::<PyString>() {
             let s = s.to_str()?;
             let mut chars = s.chars();
             let c = chars.next().ok_or_else(|| PyValueError::new_err("expected one character"))?;
             if chars.next().is_some() { return Err(PyValueError::new_err("expected one character")); }
-            return Ok(Element::Character(c));
+            return Ok(Value::Character(c));
         }
         let number = if o.is_instance_of::<PyFloat>() { Number::try_from(o.extract::<f64>()?) } else if let Ok(z) = o.cast::<PyComplex>() { Number::try_from(num_complex::Complex64::new(z.real(), z.imag())) } else if o.is_instance_of::<PyInt>() { Number::try_from(BigRational::from_integer(o.extract::<BigInt>()?)) } else if o.is_instance_of::<PyTuple>() {
             let (n, d) = o.extract::<(BigInt, BigInt)>()?;
             Number::try_from(BigRational::new_raw(n, d))
         } else { return Err(PyTypeError::new_err("unsupported APL element")); };
-        number.map(Element::Number).map_err(|k| PyValueError::new_err(k.to_string()))
+        number.map(Value::Number).map_err(|k| PyValueError::new_err(k.to_string()))
     };
     let field = |key| raw.get_item(key)?.ok_or_else(|| PyValueError::new_err("missing array field"));
+    if let Some(atom) = raw.get_item("atom")? { return element(atom); }
     let shape = field("shape")?.extract::<Vec<usize>>()?;
     let data = field("data")?.try_iter()?.map(|o| element(o?)).collect::<PyResult<Vec<_>>>()?;
     let prototype = element(field("prototype")?)?;
-    Array::from_parts(shape, data, prototype).map_err(|k| PyValueError::new_err(k.to_string()))
+    Value::from_parts(shape, data, prototype).map_err(|k| PyValueError::new_err(k.to_string()))
 }
 
-fn array(py: Python<'_>, a: &Array) -> PyResult<Py<PyDict>> {
-    fn element(py: Python<'_>, e: &Element) -> PyResult<Py<PyAny>> {
+fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
+    fn element(py: Python<'_>, e: &Value) -> PyResult<Py<PyAny>> {
         Ok(match e {
-            Element::Number(n) => {
+            Value::Number(n) => {
                 if let Some(n) = n.as_integer() { n.into_pyobject(py)?.into_any().unbind() } else if let Some(n) = n.as_exact() {
                     if n.is_integer() { n.numer().into_pyobject(py)?.into_any().unbind() } else { (n.numer(), n.denom()).into_pyobject(py)?.into_any().unbind() }
                 } else if let Some(n) = n.as_complex() { PyComplex::from_doubles(py, n.re, n.im).into_any().unbind() } else { PyFloat::new(py, n.as_float().unwrap()).into_any().unbind() }
             }
-            Element::Character(c) => PyString::new(py, &c.to_string()).into_any().unbind(),
-            Element::Nested(a) => array(py, a)?.into_any(),
-            Element::Function(f) => Py::new(py, PyFunction { inner: f.clone() })?.into_any(),
+            Value::Character(c) => PyString::new(py, &c.to_string()).into_any().unbind(),
+            a @ Value::Array(_) => array(py, a)?.into_any(),
+            Value::Function(f) => Py::new(py, PyFunction { inner: f.clone() })?.into_any(),
         })
     }
     let result = PyDict::new(py);
+    if a.is_atom() {
+        result.set_item("atom", element(py, a)?)?;
+        return Ok(result.unbind());
+    }
     let data = PyList::empty(py);
     for e in a.elements() { data.append(element(py, &e)?)?; }
     result.set_item("shape", a.shape())?;
     result.set_item("data", data)?;
-    result.set_item("prototype", element(py, a.prototype())?)?;
+    result.set_item("prototype", element(py, &a.prototype())?)?;
     Ok(result.unbind())
 }
 
 #[pyclass(frozen, name = "_Array")]
-struct PyArray { inner: Array }
+struct PyArray { inner: Value }
 
 #[pymethods]
 impl PyArray {
@@ -70,13 +75,15 @@ impl PyArray {
     #[getter]
     fn shape(&self) -> Vec<usize> { self.inner.shape().to_vec() }
     #[getter]
+    fn is_atom(&self) -> bool { self.inner.is_atom() }
+    #[getter]
     fn needs_session(&self) -> PyResult<bool> { self.inner.export_context().map_err(|k| PyValueError::new_err(k.to_string())) }
     fn parts(&self, py: Python<'_>) -> PyResult<Py<PyDict>> { array(py, &self.inner) }
     fn __repr__(&self) -> String { self.inner.to_string() }
     fn scalar(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         if !self.inner.is_singleton() { return Err(PyValueError::new_err("conversion requires a singleton array")); }
-        if matches!(self.inner.at(0), Element::Nested(_)) { return Err(PyTypeError::new_err("conversion requires a simple scalar")); }
-        array(py, &Array::new(vec![], vec![self.inner.at(0)]).unwrap())
+        if matches!(self.inner.at(0), Value::Array(_)) { return Err(PyTypeError::new_err("conversion requires a simple scalar")); }
+        array(py, &self.inner.at(0))
     }
     fn cells(&self) -> PyResult<Vec<Self>> {
         let rank = self.inner.shape().len().checked_sub(1).ok_or_else(|| PyTypeError::new_err("a scalar has no major cells"))?;
@@ -91,7 +98,11 @@ impl PyArray {
         let execution = crate::execution::Execution::default();
         let parts = parts.into_iter().map(|a| a.map(|a| a.inner.clone())).collect::<Vec<_>>();
         let mut result = Evaluation::default();
-        match crate::primitive::select(&self.inner, &parts, &execution.at(&span)) { Ok(a) => result.value = Some(a), Err(e) => result.error = Some(e) }
+        match crate::primitive::select(&self.inner, &parts, &execution.at(&span)) {
+            Ok(Value::Function(f)) => result.function = Some(f),
+            Ok(a) => result.value = Some(a),
+            Err(e) => result.error = Some(e),
+        }
         response(py, result)
     }
 }
@@ -101,7 +112,7 @@ struct PyFunction { inner: Function }
 
 fn operand(value: &Bound<'_, PyAny>) -> PyResult<Operand> {
     if let Ok(f) = value.extract::<PyRef<'_, PyFunction>>() { return Ok(Operand::Function(f.inner.clone())); }
-    Ok(Operand::Array(value.extract::<PyRef<'_, PyArray>>()?.inner.clone()))
+    Ok(Operand::Value(value.extract::<PyRef<'_, PyArray>>()?.inner.clone()))
 }
 
 #[pymethods]
@@ -130,7 +141,7 @@ impl PyFunction {
 struct Request {
     code: Option<String>,
     function: Option<Function>,
-    args: Vec<Array>,
+    args: Vec<Value>,
     bindings: Vec<(String, Operand)>,
     options: EvalOptions,
     reply: mpsc::Sender<Result<Evaluation, &'static str>>,
@@ -138,7 +149,7 @@ struct Request {
 impl Request {
     fn run(&mut self, session: &mut Session) -> Result<Evaluation, &'static str> {
         for (name, value) in self.bindings.drain(..) {
-            match value { Operand::Array(a) => session.set(&name, a), Operand::Function(f) => session.set_function(&name, f), _ => unreachable!() }
+            match value { Operand::Value(a) => session.set(&name, a), Operand::Function(f) => session.set_function(&name, f), _ => unreachable!() }
             .map_err(|_| "binding requires an ordinary APL name and an exportable value")?;
         }
         let options = std::mem::take(&mut self.options);

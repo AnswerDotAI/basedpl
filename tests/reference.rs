@@ -16,6 +16,14 @@ fn header(line: &str) -> Option<(&str, &str)> {
     Some((id, if comment.is_empty() { "" } else { comment.strip_prefix(' ')? }))
 }
 
+fn inline(line: &str) -> Option<(&str, &str)> {
+    let mut quoted = false;
+    for (i, c) in line.char_indices() {
+        if c == '\'' { quoted = !quoted; } else if c == '⍝' && !quoted { return Some((line[..i].trim_end(), line[i + c.len_utf8()..].trim_start())); }
+    }
+    None
+}
+
 fn cases(text: &str) -> Vec<Value> {
     if text.is_empty() { return Vec::new(); }
     let lines: Vec<_> = text.split_terminator('\n').collect();
@@ -45,8 +53,9 @@ fn cases(text: &str) -> Vec<Value> {
                     case[key] = json!(value);
                 }
             }
-            assert!(end > start + 1 && lines[end - 1].is_empty(), "{location}: missing blank record separator");
-            let mut body = &lines[start + 1..end - 1];
+            let mut body = &lines[start + 1..end];
+            if body.last() == Some(&"") { body = &body[..body.len() - 1]; }
+            else { assert_eq!(end, lines.len(), "{location}: missing blank record separator"); }
             if let Some(text) = body.last().and_then(|s| s.strip_prefix("⍝ ⎕:")) {
                 let mut output = String::new();
                 let mut chars = text.strip_prefix(' ').unwrap_or(text).chars();
@@ -62,6 +71,10 @@ fn cases(text: &str) -> Vec<Value> {
             let splits: Vec<_> = body.iter().enumerate().filter_map(|(i, s)| (*s == "⍝ =>").then_some(i)).collect();
             let (code, expect) = match splits.as_slice() {
                 [] if body.len() == 2 => (body[0].to_owned(), body[1].to_owned()),
+                [] if body.len() == 1 => {
+                    let (code, expect) = inline(body[0]).expect("inline case needs ⍝ before its expectation");
+                    (code.to_owned(), expect.to_owned())
+                }
                 [i] => (body[..*i].join("\n"), body[i + 1..].join("\n")),
                 _ => panic!("{location}: use one ⍝ => between multiline expressions"),
             };
@@ -76,6 +89,12 @@ fn cases(text: &str) -> Vec<Value> {
 
 #[test]
 fn reference_format_and_comparison() {
+    let compact = cases("⍝ —\n'a''⍝b'   ⍝ 'a''⍝b'");
+    assert_eq!(compact[0]["code"], "'a''⍝b'");
+    assert_eq!(reference::check(&compact[0], EvalOptions::default())["status"], "pass");
+    for source in ["⍝ —\n1\n1", "⍝ —\n{\n⍵\n}1\n⍝ =>\n1", "⍝ —\n⎕←1\n1\n⍝ ⎕: 1"] {
+        for ending in ["", "\n", "\n\n"] { assert_eq!(cases(&format!("{source}{ending}")), cases(&format!("{source}\n\n"))); }
+    }
     let parsed_output = cases("⍝⍝ Output\n\n⍝ —\n⎕←9 ⋄ ⎕←2 ⋄ 7\n7\n⍝ ⎕: 9\\n2\n\n⍝ —\n3\n3\n⍝ ⎕:\n\n");
     assert_eq!(parsed_output[0]["section"], "Output");
     assert_eq!(parsed_output[0]["expected_output"], "9\n2");

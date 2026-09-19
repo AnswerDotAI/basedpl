@@ -28,10 +28,11 @@ J's `p.` family. Ranks: `1` monadic, `1 0` dyadic.
 
 ## Coefficient/exponent tables
 
-Enclosed matrix: one row per term, coefficient then exponents. Enclose multivariate coordinates; scalars extend.
+Enclosed matrix: one row per term, coefficient then exponents. Enclose one coordinate vector to evaluate one point. A single coordinate extends to all variables. Batch axes collect answers.
 
 ```apl
 (⊂2 3⍴1x 2x 0x 1x 0x 2x)Ⓟ⊂3x 4x  ⍝ 25x
+(⊂2 3⍴1x 2x 0x 1x 0x 2x)Ⓟ(3x 4x)(5x 12x)  ⍝ 25x 169x
 (⊂2 2⍴2x 1r2 3x 1r4)Ⓟ16x           ⍝ 14
 Ⓟ⊂2 2⍴1x 5x ¯1x 0x                 ⍝ ¯1x 0x 0x 0x 0x 1x
 ```

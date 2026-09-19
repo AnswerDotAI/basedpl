@@ -12,9 +12,23 @@ Run `miniapl`. Expressions display their results; assignments retain names for l
 
 ## Typing glyphs
 
+Hold Alt and press a key from the [keyboard layout](keyboard.md): **Alt-h/j/k/l** gives `← ↓ ↑ →`, **Alt--** gives `×`, **Alt-=** gives `÷`. Alt-Shift-a/w gives the operands `⍶ ⍹`. Chords insert literal characters, including inside strings and comments.
+
+On macOS, configure your terminal to send left Option as Alt. In Ghostty:
+
+```text
+macos-option-as-alt = left
+```
+
+Right Option keeps normal Mac character entry. iTerm2 offers **Left Option → Esc+**; Terminal.app calls its setting **Use Option as Meta key**. Glyph chords take precedence over Alt-based editing shortcuts; cursor keys and Ctrl shortcuts remain available.
+
+### Named entry
+
 Type a backtick followed by a name. Tab replaces it with the glyph. A non-letter accepts the glyph and enters that character too.
 
 Use `` `bullet`` then Tab for the system prefix `•`; `` `quad`` gives the output glyph `⎕`.
+
+Strand `˘` is Alt-t, or right Option–Shift–period on a US Mac keyboard, or `` `strand`` then Tab. Use `` `pi`` for `π` and `` `sqrt`` for `√`.
 
 | Input | Result |
 |---|---|
@@ -59,7 +73,7 @@ Interactive sessions start with:
 ]box on -style=max -trains=tree -fns=on
 ```
 
-Nested arrays have boxes, axis arrows and type markers. Enter a function name to see its tree.
+Arrays with axes have boxes, axis arrows and type markers. Enter a function name to see its tree.
 
 | Command | Effect |
 |---|---|
@@ -72,6 +86,8 @@ Nested arrays have boxes, axis arrows and type markers. Enter a function name to
 | `]Display (1 2)(3 4)` | Draw one array without changing settings |
 
 Boxing controls how results are drawn. Batch, Python and JSON sessions start with plain display.
+
+Both display modes show scalars as `⊂4x`, `⊂⊂4x` or `⊂(1 2)`.
 
 `⎕←` explicitly prints a value, including an assignment's result.
 

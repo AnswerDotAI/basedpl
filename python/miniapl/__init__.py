@@ -19,11 +19,15 @@ def _value(raw, as_array=False, session=None):
         if isinstance(o, tuple): return Fraction(*o)
         if isinstance(o, _Function): return Function(o, session=session if o.needs_session else None)
         return _value(o, session=session) if isinstance(o, dict) else o
+    if 'atom' in raw:
+        result = item(raw['atom'])
+        if not as_array: return result
+        import numpy as np
+        return np.array(result, dtype=_dtype([result]))
     shape, data = tuple(raw['shape']), [item(o) for o in raw['data']]
     items = raw['data'] or [raw['prototype']]
     nested = any(isinstance(o, dict) and 'shape' in o for o in items)
     if not as_array:
-        if not shape and not nested: return data[0]
         if len(shape) == 1 and all(isinstance(o, str) for o in items): return ''.join(data)
     import numpy as np
     dtype = object if nested else _dtype(data or [item(raw['prototype'])])
@@ -69,7 +73,9 @@ def _array(value, seen=None):
         shape, data = value.shape, value.ravel().tolist()
         if kind in 'biu': prototype = 0
         elif kind == 'U': prototype = ' '
-    else: shape, data = _rectangular(value, seen)
+    else:
+        shape, data = _rectangular(value, seen)
+        if not shape: return _Array(dict(atom=_element(value, seen)))
     seen.add(id(value))
     try: return _Array(dict(shape=list(shape), data=[_element(o, seen) for o in data], prototype=prototype))
     finally: seen.remove(id(value))
@@ -106,6 +112,7 @@ class _Operators:
     def __invert__(self): return _unary('~', self)
 
 def _array_repr(raw):
+    if 'atom' in raw: return f'Array({raw["atom"]!r})'
     def item(o):
         if isinstance(o, dict): return f'Array({_array_repr(o)})'
         if isinstance(o, tuple): return repr(Fraction(*o))
@@ -147,6 +154,8 @@ class Array(_Operators):
         self._session = _context(value) if self._inner.needs_session else None
     @property
     def shape(self): return tuple(self._inner.shape)
+    @property
+    def is_atom(self): return self._inner.is_atom
     @property
     def py(self): return _value(self._inner.parts(), session=self._session)
     @property

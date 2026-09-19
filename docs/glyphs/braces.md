@@ -14,10 +14,10 @@ The first result-producing non-assignment expression returns. Guards choose a re
 {x←⍵+1}3           ⍝ 4
 ```
 
-Using `⍺⍺` defines a monadic operator; `⍵⍵` makes it dyadic.
+Using `⍶` defines a monadic operator; `⍹` makes it dyadic.
 
 ```apl
-twice←{⍺⍺ ⍺⍺ ⍵} ⋄ (-twice)3 ⍝ 3
+twice←{⍶ ⍶ ⍵} ⋄ (-twice)3 ⍝ 3
 ```
 
 See [defaults](alpha.md), [recursion](nabla.md) and [error guards](error-guard.md).

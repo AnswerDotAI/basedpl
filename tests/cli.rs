@@ -10,6 +10,7 @@ fn native_expression_and_diagnostic() {
         ("(2×3)+4", "10\n"),
         ("10-3-2", "9\n"),
         ("¯2+5", "3\n"),
+        ("⊂4x ⋄ ⊂⊂4x ⋄ ⊂1 2", "⊂4x\n⊂⊂4x\n⊂(1 2)\n"),
         ("f←{⍵=0:0 ⋄ 1+∇⍵-1} ⋄ f 500", "500\n"),
         ("1x÷3x ⋄ 6x÷3x ⋄ 1x÷3", "1r3\n2x\n0.3333333333333333\n"),
         ("(1j2)+(3J4) ⋄ (1J2)×(1j¯2) ⋄ +1J2", "4j6\n5\n1j¯2\n"),
@@ -59,20 +60,20 @@ fn json_session_flushes_before_eof_and_recovers() {
     let (send, recv) = mpsc::channel();
     let reader = thread::spawn(move || { for line in BufReader::new(output).lines() { if send.send(line.unwrap()).is_err() { break; } } });
     for (request, expected, error_kind, printed) in [
-        (json!("v←⍳10").to_string(), Some(json!((1..=10).collect::<Vec<_>>())), None, vec![]),
-        (json!("+/v").to_string(), Some(json!([55])), None, vec!["55"]),
+        (json!("v←⍳10").to_string(), Some(json!({"shape":[10], "data":(1..=10).map(f64::from).collect::<Vec<_>>(), "prototype":0.0})), None, vec![]),
+        (json!("+/v").to_string(), Some(json!(55.0)), None, vec!["55"]),
         ("{".into(), None, Some("REQUEST ERROR"), vec![]),
         (json!(3).to_string(), None, Some("REQUEST ERROR"), vec![]),
         (json!(["1+2"]).to_string(), None, Some("REQUEST ERROR"), vec![]),
         (json!({"code":"1+2"}).to_string(), None, Some("REQUEST ERROR"), vec![]),
         (json!("⎕←7 ⋄ 1÷0").to_string(), None, Some("DOMAIN ERROR"), vec!["7"]),
         (json!("(2+").to_string(), None, Some("SYNTAX ERROR"), vec![]),
-        (json!("⍝ \"quoted\"\n+/v").to_string(), Some(json!([55])), None, vec!["55"]),
+        (json!("⍝ \"quoted\"\n+/v").to_string(), Some(json!(55.0)), None, vec!["55"]),
         (json!("f←+").to_string(), None, None, vec![]),
-        (json!("fs←+‿×").to_string(), None, Some("DOMAIN ERROR"), vec![]),
-        (json!("f←2⊃fs ⋄ 2 f 3").to_string(), Some(json!([6])), None, vec!["6"]),
+        (json!("fs←+˘×").to_string(), None, Some("DOMAIN ERROR"), vec![]),
+        (json!("f←2⊃fs ⋄ 2 f 3").to_string(), Some(json!(6.0)), None, vec!["6"]),
         (json!("").to_string(), None, None, vec![]),
-        (json!("⍳0").to_string(), Some(json!([])), None, vec!["⍬"]),
+        (json!("⍳0").to_string(), Some(json!({"shape":[0], "data":[], "prototype":0.0})), None, vec!["⍬"]),
     ] {
         writeln!(input, "{request}").unwrap();
         input.flush().unwrap();
@@ -86,15 +87,7 @@ fn json_session_flushes_before_eof_and_recovers() {
         let reply: Value = serde_json::from_str(&line).unwrap();
         assert_eq!(reply["output"], json!(printed));
         assert_eq!(reply["error"]["kind"].as_str(), error_kind);
-        match expected {
-            Some(data) => {
-                let actual: Vec<f64> = reply["value"]["data"].as_array().unwrap().iter().map(|n| n.as_f64().unwrap()).collect();
-                let expected: Vec<f64> = data.as_array().unwrap().iter().map(|n| n.as_f64().unwrap()).collect();
-                assert_eq!(actual, expected);
-                assert_eq!(reply["value"]["prototype"].as_f64(), Some(0.0));
-            }
-            None => assert!(reply["value"].is_null()),
-        }
+        assert_eq!(reply["value"], expected.unwrap_or(Value::Null));
     }
     drop(input);
     let result = child.wait_with_output().unwrap();

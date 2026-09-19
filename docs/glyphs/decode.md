@@ -1,5 +1,11 @@
 # `⊥` — Decode
 
+`⊥Y` decodes binary digits along the first axis.
+
+```apl
+⊥1 0 1 0          ⍝ 10
+```
+
 `B⊥Y` evaluates digits `Y` in base(s) `B`. Scalar base expands; the first mixed-base entry is unused.
 
 ```apl

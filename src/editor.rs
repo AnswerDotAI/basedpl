@@ -9,14 +9,22 @@ use rustyline::{
     RepeatCount,
 };
 use std::{
+    collections::HashMap,
     ops::Range,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
 };
+
+// Keys are US characters after Shift but before Alt. Browser adapters share this resource.
+fn alt_keys() -> &'static HashMap<char, char> {
+    static KEYS: OnceLock<HashMap<char, char>> = OnceLock::new();
+    KEYS.get_or_init(|| serde_json::from_str(include_str!("../python/miniapl/keyboard.json")).expect("valid glyph keyboard"))
+}
 
 // One row per glyph: ambiguity is between glyphs, not between aliases for the same glyph.
 // This is an input catalogue, not a claim that every primitive is implemented yet.
 pub(crate) const SYMBOLS: &[(&str, &str)] = &[
     ("←", "assign left-arrow"),
+    ("→", "pipe right-arrow"),
     ("⍳", "iota index-of"),
     ("⍴", "rho shape reshape"),
     ("≢", "tally not-match"),
@@ -30,7 +38,9 @@ pub(crate) const SYMBOLS: &[(&str, &str)] = &[
     ("|", "magnitude abs residue"),
     ("*", "power exp"),
     ("⍟", "log"),
-    ("○", "circle pi"),
+    ("○", "circle cis"),
+    ("π", "pi"),
+    ("√", "root sqrt"),
     ("!", "factorial binomial"),
     ("∧", "and lcm"),
     ("∨", "or gcd"),
@@ -48,8 +58,8 @@ pub(crate) const SYMBOLS: &[(&str, &str)] = &[
     ("⍞", "quote-quad"),
     ("⍺", "alpha"),
     ("⍵", "omega"),
-    ("⍺⍺", "alpha-alpha left-operand"),
-    ("⍵⍵", "omega-omega right-operand"),
+    ("⍶", "alpha-underbar left-operand"),
+    ("⍹", "omega-underbar right-operand"),
     ("∇", "del recursion"),
     ("∇∇", "operator-recursion"),
     ("⍝", "comment"),
@@ -60,14 +70,14 @@ pub(crate) const SYMBOLS: &[(&str, &str)] = &[
     (",", "ravel catenate"),
     ("⍪", "table catenate-first"),
     ("⊂", "enclose"),
-    ("⊃", "disclose pick"),
+    ("⊃", "mix pick"),
     ("⊆", "nest partition"),
     ("∊", "epsilon enlist member"),
     ("∪", "unique union"),
     ("∩", "intersection"),
     ("⍋", "grade-up"),
     ("⍒", "grade-down"),
-    ("↑", "take mix"),
+    ("↑", "take first disclose"),
     ("↓", "drop split"),
     ("⌽", "reverse rotate"),
     ("⊖", "reverse-first rotate-first"),
@@ -98,7 +108,7 @@ pub(crate) const SYMBOLS: &[(&str, &str)] = &[
     ("Ⓠ", "factor"),
     ("Ⓟ", "polynomial"),
     ("∂", "derivative"),
-    ("‿", "tie strand"),
+    ("˘", "breve tie strand"),
     ("◶", "agenda choose"),
     ("⍸", "where interval-index"),
     ("⍷", "find"),
@@ -164,6 +174,10 @@ struct Input {
 
 impl Input {
     fn key(&mut self, key: KeyEvent, line: &str, pos: usize) -> Option<Cmd> {
+        if let KeyEvent(KeyCode::Char(c), Modifiers::ALT) = key {
+            self.active = false;
+            if let Some(&glyph) = alt_keys().get(&c) { return Some(Cmd::Insert(1, glyph.to_string())); }
+        }
         let enter = key == KeyEvent::from('\r') || key == KeyEvent::from('\n');
         let tab = key == KeyEvent::from('\t');
         let plain = key.1.is_empty();
@@ -282,8 +296,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn alt_layout_covers_glyphs_and_inserts_literal_characters() {
+        let mut input = Input::default();
+        for (&key, &glyph) in alt_keys() {
+            assert!(key.is_ascii() && !glyph.is_ascii());
+            for line in ["", "'", "⍝ "] {
+                assert_eq!(input.key(KeyEvent::new(key, Modifiers::ALT), line, line.len()), Some(Cmd::Insert(1, glyph.to_string())));
+            }
+        }
+        for &(glyph, _) in SYMBOLS {
+            if glyph.chars().count() == 1 && !glyph.is_ascii() { assert!(alt_keys().values().any(|&c| glyph.starts_with(c)), "{glyph}"); }
+        }
+    }
+
+    #[test]
     fn names_prefixes_and_literal_context() {
-        for (name, glyph) in [("io", "⍳"), ("RHO", "⍴"), ("scan", "\\"), ("scanfirst", "⍀"), ("alpha", "⍺"), ("alphaalpha", "⍺⍺"), ("replicate", "/")]
+        for (name, glyph) in
+            [("io", "⍳"), ("RHO", "⍴"), ("scan", "\\"), ("scanfirst", "⍀"), ("alpha", "⍺"), ("alphaunderbar", "⍶"), ("omegaunderbar", "⍹"), ("replicate", "/")]
         { assert_eq!(matches(name).iter().map(|(g, _)| *g).collect::<Vec<_>>(), [glyph]); }
         assert!(matches("sca").len() > 1);
         for name in ["lar", "larr", "leftar"] { assert_eq!(matches(name), [("←", "left-arrow")]); }

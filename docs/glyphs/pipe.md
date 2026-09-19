@@ -1,0 +1,31 @@
+# `→` — Pipe
+
+`Y→f→g` passes Y through f, then g. Each stage uses ordinary APL binding.
+
+```apl
+1+2×3 → 2∘× → -∘1   ⍝ 13
+⍳4 → +/ → √          ⍝ √10
+```
+
+`←` assigns the final result. Parentheses set a pipeline's boundary.
+
+```apl
+total←⍳4 → +/ ⋄ total   ⍝ 10
+1+(⍳4 → +/)             ⍝ 11
+```
+
+Stages receive one right argument. Bind the other argument of a dyad with `∘`, or use a dfn.
+
+```apl
+3 → 10∘-      ⍝ 7
+3 → -∘10      ⍝ ¯7
+3 → {⍵×⍵}    ⍝ 9
+```
+
+Stages evaluate left-to-right, including effects and name lookup. Parenthesize assignments within a stage.
+
+```apl
+3 → (double←2∘×) → double   ⍝ 12
+```
+
+**SYNTAX:** empty stage, non-function stage, unparenthesized assignment after `→`.

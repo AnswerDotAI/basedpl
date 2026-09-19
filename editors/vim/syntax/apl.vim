@@ -2,7 +2,7 @@ if exists('b:current_syntax')
   finish
 endif
 
-syntax match aplGlyph #[←⍳⍴≢≡+×÷⌈⌊|*⍟○!∧∨⍲⍱~=≠<≤>≥⎕•⍞⍺⍵∇⋄¯∞⍬,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹¨/⌿\\⍀⍤∘⌝⍨⍥⍛⍣⍸⍷⊢⊣⌸@⌺⍠?⇄⌾↕ℙⓆⓅ∂‿◶-]#
+syntax match aplGlyph #[←→⍳⍴≢≡+×÷⌈⌊|*⍟○π√!∧∨⍲⍱~=≠<≤>≥⎕•⍞⍺⍵⍶⍹∇⋄¯∞⍬,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹¨/⌿\\⍀⍤∘⌝⍨⍥⍛⍣⍸⍷⊢⊣⌸@⌺⍠?⇄⌾↕ℙⓆⓅ∂˘◶-]#
 syntax region aplString oneline start=/'/ skip=/''/ end=/'/
 syntax match aplComment /⍝.*$/
 

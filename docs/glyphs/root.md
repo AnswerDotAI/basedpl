@@ -1,0 +1,18 @@
+# `√` — Root
+
+`√Y`: square root. Pervasive. Perfect roots of exact values stay exact.
+
+```apl
+√9 ¯4             ⍝ 3 0j2
+√1r9              ⍝ 1r3
+```
+
+`X√Y`: principal Xth root. Negative real Y with odd integral X uses the real root. Negative degrees reciprocate.
+
+```apl
+3√¯8              ⍝ ¯2
+¯3x√¯8x           ⍝ ¯1r2
+2√3j4             ⍝ 2j1
+```
+
+DOMAIN: zero or infinite degree; zero with a negative real degree.

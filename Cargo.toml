@@ -41,7 +41,8 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 unicode-width = { version = ">=0.2.2, <1", default-features = false }
 icu_casemap = ">=2, <3"
-rustyline = { version = "18.0.1", default-features = false, features = ["custom-bindings"] }
+# Custom bindings override Emacs Alt-digit prefixes in this fork.
+rustyline = { git = "https://github.com/AnswerDotAI/rustyline.git", branch = "master", default-features = false, features = ["custom-bindings"] }
 pyo3 = { version = ">=0.29.2, <1", optional = true, features = ["num-bigint"] }
 num-rational = ">=0.4.2, <1"
 num-complex = ">=0.4.6, <1"

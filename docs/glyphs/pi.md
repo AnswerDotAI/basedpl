@@ -1,0 +1,17 @@
+# `π` — Pi
+
+`πY`: πY. Pervasive.
+
+```apl
+π1                ⍝ 3.141592653589793
+π2                ⍝ 6.283185307179586
+```
+
+`XπY`: Xπ/Y. Angles in radians.
+
+```apl
+1π2               ⍝ 1.5707963267948966
+2π3               ⍝ 2.0943951023931953
+```
+
+Use [`○`](circle.md) to turn an angle into a unit-circle point.

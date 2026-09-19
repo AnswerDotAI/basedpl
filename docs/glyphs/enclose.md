@@ -1,10 +1,11 @@
 # `⊂` — Enclose / Partitioned enclose
 
-`⊂Y` makes a nested scalar.
+`⊂Y` makes a rank-zero array containing `Y`.
 
 ```apl
 ⍴⊂1 2 3            ⍝ 0⍴0x
-⊃⊂1 2 3            ⍝ 1 2 3
+↑⊂1 2 3            ⍝ 1 2 3
+(⊂3)≡3             ⍝ 0x
 ```
 
 `⊂[K]Y` encloses cells on axes `K`.

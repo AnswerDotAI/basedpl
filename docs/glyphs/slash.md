@@ -23,12 +23,36 @@ Negative counts insert fill. Singleton counts or a singleton axis extend.
 +/⍬                ⍝ 0
 ```
 
-`N f/Y` reduces overlapping windows of width `|N|`; negative `N` reverses each window. Width zero uses identities at the `1+≢Y` boundaries of a vector.
+Reduction returns the accumulator. An unseeded one-item reduction returns that item. Unreduced axes supply the result frame.
 
 ```apl
-2+/1 2 3 4         ⍝ 3 5 7
-¯2-/1 2 3          ⍝ 1 1
-0+/1 2             ⍝ 0 0 0
+,/⊂2 3            ⍝ 2 3
+,/,⊂2 3           ⍝ 2 3
++/⊂⊂3             ⍝ ⊂3
 ```
 
-`[K]` selects the axis. [`⌿`](slash-first.md) defaults to the first. Float sum/product reductions allow reassociation; generic reductions retain operand order.
+`S f/Y` starts from seed `S` on the right: `S f/a b c` is `a f b f c f S`. Empty reductions return the seed. Each lane uses the whole seed.
+
+```apl
+10 -/1 2 3         ⍝ ¯8
+10 +/2 3⍴⍳6        ⍝ 16 25
+(⊂10)+/1 2 3       ⍝ ⊂16
+10 20 (+/⍤0 1)2 3⍴⍳6 ⍝ 16 35
+```
+
+Nested paths use seeded Pick reduction.
+
+```apl
+tree←(10 20)(30 (40 50))
+tree⊃/⌽2 2 1       ⍝ 40
+```
+
+Use [full windows](windows.md) for moving reductions.
+
+```apl
++/2↕1 2 3 4        ⍝ 3 5 7
+-/⌽2↕1 2 3         ⍝ 1 1
++/0↕1 2            ⍝ 0 0 0
+```
+
+`[K]` selects the axis. [`⌿`](slash-bar.md) defaults to the first. Float sum/product reductions allow reassociation; generic reductions retain operand order.

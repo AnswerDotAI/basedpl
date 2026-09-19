@@ -1,5 +1,11 @@
 # `⍱` — NOR
 
+`⍱Y`: 2Y. Pervasive.
+
+```apl
+⍱1r3              ⍝ 2r3
+```
+
 `X⍱Y` is Boolean NOR. Pervasive.
 
 ```apl

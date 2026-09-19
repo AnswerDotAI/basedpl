@@ -14,12 +14,12 @@ Run `miniapl --json`. Send one JSON-encoded APL string per line; each receives o
 The second response is:
 
 ```json
-{"value":{"shape":[],"data":[55.0],"prototype":0.0},"output":["55"],"error":null}
+{"value":55.0,"output":["55"],"error":null}
 ```
 
 Use `json.dumps(code)` or `JSON.stringify(code)`, followed by a newline. Quotes are required; source newlines are escaped inside the string. Stdout contains only responses. The session remains usable after errors. EOF ends it.
 
-Arrays carry shape, row-major data and prototype. Nested elements use the same array structure.
+Atoms are encoded directly. Arrays carry shape, row-major data and prototype, including rank-zero arrays. Nested elements use the same encoding.
 
 | Element | JSON |
 |---|---|
@@ -42,7 +42,7 @@ from miniapl.worker import Worker
 with Worker() as w:
     w.eval('v←⍳10')
     r = w.eval('+/v', timeout=2)
-    assert r['value']['data'] == [55]
+    assert r['value'] == 55
 ```
 
 `w.interrupt()` cancels from another thread. Ctrl-C requests cancellation too. Cooperative cancellation preserves the session and completed assignments. After the grace period (default one second), an unresponsive process is killed and its session is lost. Requests are never replayed. `w.diagnostics` holds recent stderr.
@@ -57,10 +57,10 @@ with Worker() as w:
 
 Replies have `{"id":1,"result":...}`. `{"interrupt":1}` cancels that request without a separate reply. `echo:false` suppresses implicit display, not explicit output.
 
-`bindings` maps names to encoded arrays. Use `call` with one or two encoded `args` to apply a function without generating APL source.
+`bindings` maps names to encoded values. Use `call` with one or two encoded `args` to apply a function without generating APL source.
 
 ```json
-{"id":2,"call":"+","args":[{"shape":[],"data":[2],"prototype":0},{"shape":[],"data":[3],"prototype":0}],"echo":false}
+{"id":2,"call":"+","args":[2,3],"echo":false}
 ```
 
 `Worker.request(payload, timeout=...)` supplies the ID for Python callers. Integer inputs remain exact. Invalid operations/arrays return `REQUEST ERROR`; malformed JSON or invalid control fields terminate the worker. Use tagged infinities, never raw NaN/Infinity JSON tokens.

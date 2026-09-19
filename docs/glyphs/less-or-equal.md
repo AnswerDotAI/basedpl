@@ -1,5 +1,11 @@
 # `≤` — Less or equal
 
+`≤Y`: Y−1. Pervasive.
+
+```apl
+≤1x 2x 3x         ⍝ 0x 1x 2x
+```
+
 `X≤Y` tests X ≤ Y for reals. Pervasive; tolerant.
 
 ```apl

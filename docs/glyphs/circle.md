@@ -1,9 +1,10 @@
-# `○` — Pi times / Circular functions
+# `○` — Unit circle / Circular functions
 
-`○Y`: πY. Pervasive.
+`○Y`: e<sup>iY</sup> = cos Y + i sin Y. Real Y is an angle in radians. Pervasive.
 
 ```apl
-○0                ⍝ 0
+○0                ⍝ 1
+○0j1              ⍝ *¯1
 ```
 
 `K○Y` selects a circular function. Pervasive; angles in radians.

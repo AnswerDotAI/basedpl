@@ -4,7 +4,7 @@
 
 ## Reading expressions
 
-Functions take everything to their right as the right argument. Parentheses override grouping; arithmetic has no precedence. Monads take one argument, dyads two.
+Within an expression, functions take everything to their right as the right argument. Parentheses override grouping; arithmetic has no precedence. Monads take one argument, dyads two.
 
 ```apl
 2×3+4                ⍝ 14
@@ -12,7 +12,13 @@ Functions take everything to their right as the right argument. Parentheses over
 10-3-2               ⍝ 9
 ```
 
-Operators bind before function application. Names hold arrays, functions or operators, resolved at execution time. Arrays contain numbers, characters and nested arrays.
+Operators bind before function application. Names hold values or operators, resolved at execution time. Arrays contain numbers, characters, functions and arrays.
+
+`→` separates pipeline stages, evaluated left-to-right. Each stage uses ordinary APL binding; each function receives the previous result as its right argument. `←` encloses the whole pipeline.
+
+```apl
+total←1+2×3 → 2∘× ⋄ total   ⍝ 14
+```
 
 ## Numbers
 
@@ -39,7 +45,7 @@ Reals include `∞` and `¯∞`. DOMAIN: NaN, non-finite complex components, und
 
 ## Arrays, nesting and fill
 
-Shape lists axis lengths. Rank is shape's length. Scalars have empty shape; singleton vectors have shape `,1x`. Ravel order is row-major. Zero dimensions retain the other dimensions.
+Numbers, characters and functions are atoms. Arrays are rectangular collections of values. Shape lists axis lengths; rank is shape's length. Scalars, vectors and matrices are arrays of rank 0, 1 and 2. A scalar is distinct from an atom. Atoms have rank zero for shape operations. Constructors such as Enclose, Ravel and Reshape create arrays. Ravel order is row-major. Zero dimensions retain the other dimensions.
 
 ```apl
 ⍴3                   ⍝ 0⍴0x
@@ -48,10 +54,14 @@ Shape lists axis lengths. Rank is shape's length. Scalars have empty shape; sing
 ⍴0 3⍴0               ⍝ 0x 3x
 ```
 
-Adjacent values form a strand. Non-scalar items remain nested. `⊂` encloses; `⊃` discloses.
+Adjacent values form a strand, preserving every value. `⊂` encloses; `↑` retrieves the first item. Enclosure always adds an array layer.
 
 ```apl
-⊃(1 2)(3 4)          ⍝ 1 2
+↑(1 2)(3 4)          ⍝ 1 2
+(⊂3)≡3              ⍝ 0x
+(⊂3)=3              ⍝ ⊂1x
+(⊂3)+4              ⍝ ⊂7
+≢¨(1 2 3)(4 5)       ⍝ 3x 2x
 ```
 
 Fill follows the first item's prototype: zero, space, or recursively filled nesting. Empty arrays retain a prototype. Assembly pads unequal cells with fill.
@@ -59,7 +69,7 @@ Fill follows the first item's prototype: zero, space, or recursively filled nest
 ```apl
 5↑1 2                ⍝ 1 2 0 0 0
 3↑''                 ⍝ '   '
-⊃0⍴(1 2)(3 4 5)      ⍝ 0 0
+↑0⍴(1 2)(3 4 5)      ⍝ 0 0
 ```
 
 ## Agreement and pervasion

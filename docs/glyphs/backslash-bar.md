@@ -15,7 +15,7 @@
 `S f⍀Y` supplies a seed.
 
 ```apl
-10 20+⍀2 2⍴⍳4      ⍝ 2 2⍴11 22 14 26
+10+⍀2 2⍴⍳4         ⍝ 2 2⍴11 12 14 16
 ```
 
 Counts, seeds and `[K]` follow [`\`](backslash.md).

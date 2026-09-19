@@ -1,5 +1,11 @@
 # `=` — Equal
 
+`=Y` self-classifies major cells. Rows correspond to distinct cells in first-occurrence order; columns correspond to Y's cells. Entries are equality masks.
+
+```apl
+='aba'            ⍝ 2 3⍴1x 0x 1x 0x 1x 0x
+```
+
 `X=Y` tests equality, pervasively.
 
 ```apl

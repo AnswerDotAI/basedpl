@@ -36,7 +36,7 @@ Use `with Session() as apl:` or call `apl.close()` when finished. Returned array
 
 ## Values and conversion
 
-`Array` retains shape, nesting, numeric domain and empty prototypes. `.shape` is a tuple; `.apl` is APL display. `.py` converts scalars to Python numbers and character vectors to strings. Other arrays become NumPy arrays.
+`Array` retains atoms, shape, nesting, numeric domain and empty prototypes. `.is_atom` distinguishes an atom from a rank-zero array; both have `.shape == ()`. `.apl` is APL display. `.py` converts atoms to Python values and character vectors to strings. Other arrays become NumPy arrays, including rank-zero arrays. `.np` always returns an ndarray.
 
 ```python
 from fractions import Fraction
@@ -100,7 +100,7 @@ np.testing.assert_array_equal(add([1, 2, 3], 10), [11, 12, 13])
 
 ```python
 from miniapl import first, pick
-fs = apl('+‿×‿÷')
+fs = apl('+˘×˘÷')
 assert pick(2, fs)(2, 3).py == 6
 assert first(fs)(2, 3).py == 5
 ```
@@ -122,7 +122,7 @@ mean = plus.reduce() / tally
 assert mean([1, 2, 4]).py == Fraction(7, 3)
 ```
 
-Names distinguish valences: `sign`/`times`, `shape`/`reshape`, `iota`/`index_of`, `mix`/`take`. `times(2.)` binds an approximate number; `times(2)` an exact one. Operator methods use the underlying APL function.
+Names distinguish valences: `sign`/`times`, `shape`/`reshape`, `iota`/`index_of`, `first`/`take`, `mix`/`pick`. `times(2.)` binds an approximate number; `times(2)` an exact one. Operator methods use the underlying APL function.
 
 | Python | APL |
 |---|---|
@@ -141,6 +141,8 @@ Names distinguish valences: `sign`/`times`, `shape`/`reshape`, `iota`/`index_of`
 Arithmetic between functions makes forks: `f+g` is `(f+g)`. `f @ g` is inner product; `f << g` is compose; `f >> g` reverses composition; `f ** n` is power. Python's precedence applies when building these expressions.
 
 Math families: `prime`/`prime_mode` (`ℙ`), `factors`/`factor_spec` (`Ⓠ`), `polynomial`/`polyval` (`Ⓟ`). `windows` is dyadic `↕`.
+
+Roots: `sqrt`/`root` (`√`). Complex coordinates: `real_imag` (`∨`), `polar` (`∧`), `cis` (`○`). `pi_times`/`pi_ratio` (`π`) give π multiples/fractions. Also `square`, `double`, `decrement`, `increment`, `classify`, `binary_encode` and `binary_decode`.
 
 ```python
 from miniapl import prime, factors, polyval

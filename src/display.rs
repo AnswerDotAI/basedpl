@@ -1,4 +1,4 @@
-use crate::{Array, Element};
+use crate::Value;
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Copy, Default)]
@@ -30,7 +30,7 @@ impl Settings {
             if self.functions { "on" } else { "off" }
         ))
     }
-    pub fn array(self, a: &Array, inside: bool) -> String { if self.enabled && (!inside || self.functions) { diagram(a) } else { a.to_string() } }
+    pub fn array(self, a: &Value, inside: bool) -> String { if self.enabled && (!inside || self.functions) { diagram(a) } else { a.to_string() } }
 }
 
 struct Block { lines: Vec<String>, width: usize }
@@ -60,23 +60,24 @@ impl Block {
     }
 }
 
-fn array(a: &Array, budget: &mut usize) -> Block {
+fn array(a: &Value, budget: &mut usize) -> Block {
+    if a.is_scalar() { return Block::new(a.to_string()); }
     // Render prototypes for empty axes. Cap diagrams independently of array storage.
     let shape: Vec<_> = a.shape().iter().map(|&d| d.max(1)).collect();
     let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);
     if count > *budget { return Block::new(format!("… (shape {})", a.shape().iter().map(usize::to_string).collect::<Vec<_>>().join(" "))); }
     *budget -= count;
     let elements: Vec<_> = (0..count).map(|i| if a.is_empty() { a.prototype().clone() } else { a.at(i) }).collect();
-    let nested = elements.iter().any(|e| matches!(e, Element::Nested(_)));
-    let chars = elements.iter().all(|e| matches!(e, Element::Character(_)));
-    let kind = if nested { '∊' } else if chars { '─' } else if elements.iter().all(|e| matches!(e, Element::Number(_))) { '~' } else { '+' };
+    let nested = elements.iter().any(|e| matches!(e, Value::Array(_)));
+    let chars = elements.iter().all(|e| matches!(e, Value::Character(_)));
+    let kind = if nested { '∊' } else if chars { '─' } else if elements.iter().all(|e| matches!(e, Value::Number(_))) { '~' } else { '+' };
     let cells: Vec<_> = elements
         .iter()
         .map(|e| match e {
-            Element::Number(n) => Block::new(n.to_string()),
-            Element::Character(c) => Block::new(if c.is_control() { c.escape_default().to_string() } else { c.to_string() }),
-            Element::Nested(a) => array(a, budget),
-            Element::Function(f) => Block::new(format!("⟨{}⟩", f.apl())),
+            Value::Number(n) => Block::new(n.to_string()),
+            Value::Character(c) => Block::new(if c.is_control() { c.escape_default().to_string() } else { c.to_string() }),
+            a @ Value::Array(_) => array(a, budget),
+            Value::Function(f) => Block::new(format!("⟨{}⟩", f.apl())),
         })
         .collect();
     let columns = shape.last().copied().unwrap_or(1);
@@ -96,18 +97,18 @@ fn array(a: &Array, budget: &mut usize) -> Block {
             for (x, cell) in chunk.iter().enumerate() {
                 if x > 0 && !chars { line.push(' '); }
                 let pad = " ".repeat(widths[x] - cell.width);
-                if matches!(elements[row * columns + x], Element::Number(_)) { line.push_str(&pad); }
+                if matches!(elements[row * columns + x], Value::Number(_)) { line.push_str(&pad); }
                 line.push_str(&cell.line(y));
-                if !matches!(elements[row * columns + x], Element::Number(_)) { line.push_str(&pad); }
+                if !matches!(elements[row * columns + x], Value::Number(_)) { line.push_str(&pad); }
             }
             lines.push(line);
         }
     }
     let block = Block::new(lines.join("\n"));
-    if shape.is_empty() && !nested { block } else { block.framed(a.shape(), kind, nested) }
+    block.framed(a.shape(), kind, nested)
 }
 
-pub(crate) fn diagram(a: &Array) -> String { array(a, &mut 10_000).text() }
+pub(crate) fn diagram(a: &Value) -> String { array(a, &mut 10_000).text() }
 
 pub(crate) struct Tree { pub label: String, pub children: Vec<Tree> }
 impl Tree {

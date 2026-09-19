@@ -1,5 +1,11 @@
 # `⍲` — NAND
 
+`⍲Y`: Y<sup>2</sup>. Pervasive.
+
+```apl
+⍲2x 3x            ⍝ 4x 9x
+```
+
 `X⍲Y` is Boolean NAND. Pervasive.
 
 ```apl

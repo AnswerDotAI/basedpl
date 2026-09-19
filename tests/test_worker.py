@@ -12,7 +12,7 @@ def test_worker_bindings_calls_and_echo():
         assert r['output'] == ['6x'] and r['value']['data'] == [2, 3, 4] and r['error'] is None
         r = w.request(dict(call='-', args=[a, a], echo=False), timeout=2)
         assert r['output'] == [] and r['value']['data'] == [0, 0, 0]
-        for code in ["(2x*100x)0.5 1r3 1j2 'a'", "(1 2)'ab'(0 3⍴0x)", '0⍴⊂1 2', "0 2⍴''", '∞ ¯∞']:
+        for code in ['3x', '⊂3x', '⊂⊂3x', "(2x*100x)0.5 1r3 1j2 'a'", "(1 2)'ab'(0 3⍴0x)", '0⍴⊂1 2', "0 2⍴''", '∞ ¯∞']:
             original = w.eval(code, timeout=2)
             r = w.request(dict(bindings=dict(v=original['value']), call='⊢', args=[original['value']]), timeout=2)
             assert r == original
@@ -36,10 +36,10 @@ def test_worker_bindings_calls_and_echo():
         assert w.eval('x', timeout=2)['value'] == a
 
 def test_worker_cancellation_and_reference_sessions():
-    case = dict(code='a←3', expected=dict(shape=[], data=[3], prototype=0))
+    case = dict(code='a←3', expected_code='3')
     assert json.loads(_check_reference(json.dumps(case), 1))['status'] == 'pass'
     with Worker() as w:
-        assert w.eval('keep←42')['value']['data'] == [42]
+        assert w.eval('keep←42')['value'] == 42
         result = w.eval('(+⍣{0})1', timeout=.01)
         assert result['error']['kind'] == 'TIMEOUT'
         timer = threading.Timer(.05, w.interrupt)
@@ -52,12 +52,12 @@ def test_worker_cancellation_and_reference_sessions():
         try:
             with pytest.raises(KeyboardInterrupt): w.eval('{∇⍵}0', timeout=2)
         finally: timer.join()
-        assert w.eval('keep+1')['value']['data'] == [43]
+        assert w.eval('keep+1')['value'] == 43
         assert w.request(dict(case=case), timeout=1)['status'] == 'pass'
         assert w.request(dict(case=dict(code='a', expected_error='VALUE ERROR')), timeout=1)['status'] == 'pass'
-        assert w.request(dict(case=dict(code='1', expected=dict(shape=[1], data=[1], prototype=0))))['message'].startswith('shape:')
+        assert w.request(dict(case=dict(code='1', expected=dict(shape=[1], data=[1], prototype=0))))['message'] == 'atom versus array'
         assert w.request(dict(case=dict(code='1', expected={})))['status'] == 'invalid'
-        case = dict(code='∞', expected=dict(shape=[], data=[{'infinity': 1}], prototype=0), relative_tolerance=1e-14)
+        case = dict(code='∞', expected_code='∞', relative_tolerance=1e-14)
         assert w.request(dict(case=case))['status'] == 'pass'
         assert w.request(dict(case=dict(case, code='1e308')))['status'] == 'mismatch'
     with Session(timeout=.01) as s:

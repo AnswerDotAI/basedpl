@@ -38,6 +38,8 @@ pub(crate) enum Math {
     Power,
     Log,
     Circle,
+    Pi,
+    Root,
     Factorial,
     Gcd,
     Lcm,
@@ -145,12 +147,14 @@ impl Number {
     }
     pub fn from_integer(n: i64) -> Self { Self(Integer(n)) }
     pub fn as_integer(&self) -> Option<i64> { match self.0 { Integer(n) => Some(n), _ => None } }
+    pub(crate) fn integer_slice(&self) -> Option<&[i64]> { match &self.0 { Integer(n) => Some(std::slice::from_ref(n)), _ => None } }
     pub fn is_exact(&self) -> bool { matches!(self.0, Integer(_) | Exact(_)) }
     fn exact(n: BigRational) -> Self {
         if n.is_integer() { if let Some(i) = n.numer().to_i64() { return Self(Integer(i)); } }
         Self(Exact(n))
     }
     pub fn as_float(&self) -> Option<f64> { match self.0 { Float(n) => Some(n), _ => None } }
+    pub(crate) fn float_slice(&self) -> Option<&[f64]> { match &self.0 { Float(n) => Some(std::slice::from_ref(n)), _ => None } }
     pub(crate) fn is_infinite(&self) -> bool { self.as_float().is_some_and(f64::is_infinite) }
     pub fn as_exact(&self) -> Option<BigRational> {
         match &self.0 { Integer(n) => Some(BigRational::from_integer((*n).into())), Exact(n) => Some(n.clone()), _ => None }
@@ -252,7 +256,9 @@ impl Number {
     pub(crate) fn math_monad(&self, op: Math) -> Result<Self, &'static str> {
         use Math::*;
         if matches!(op, Not) { return Ok(Self::from_integer(i64::from(!self.boolean()?))); }
-        if matches!(op, Gcd | Lcm | Nand | Nor) { return Err("this function needs a left argument"); }
+        if matches!(op, Gcd | Lcm) { return Err("this function produces a pair"); }
+        if matches!(op, Nand | Nor) { return self.dyad(if matches!(op, Nand) { Arithmetic::Times } else { Arithmetic::Plus }, self); }
+        if matches!(op, Root) { return Self::from_integer(2).root(self); }
         if matches!(op, Factorial) { return self.factorial(); }
         if let Integer(y) = self.0 {
             match op {
@@ -280,7 +286,7 @@ impl Number {
                 Power => Some(y.exp()),
                 Log if y == 0.0 => return Err("logarithm of zero"),
                 Log if y > 0.0 => Some(y.ln()),
-                Circle => Some(y * std::f64::consts::PI),
+                Pi => Some(y * std::f64::consts::PI),
                 _ => None,
             };
             if let Some(n) = real { return Self::try_from(n).map_err(|_| "undefined real result"); }
@@ -292,7 +298,8 @@ impl Number {
             Ceiling => -complex_floor(-y),
             Power => complex_exp(y),
             Log => y.ln(),
-            Circle => y * std::f64::consts::PI,
+            Pi => y * std::f64::consts::PI,
+            Circle => complex_exp(Complex64::new(-y.im, y.re)),
             _ => unreachable!(),
         };
         Self::try_from(result).map_err(|_| "result is not finite")
@@ -305,6 +312,8 @@ impl Number {
             Magnitude => self.residue(right),
             Power => self.power(right),
             Circle => self.circle(right),
+            Pi => self.dyad(Arithmetic::Divide, right)?.math_monad(Pi),
+            Root => self.root(right),
             Gcd => self.gcd(right),
             Lcm => {
                 let gcd = self.gcd(right)?;
@@ -334,6 +343,44 @@ impl Number {
         let n = Complex64::new(q.re.round(), q.im.round());
         let result = if Self::try_from(x * n).is_ok_and(|v| v.equal(right).unwrap_or(false)) { Complex64::zero() } else { y - x * complex_floor(q) };
         Self::try_from(result).map_err(|_| "result is not finite")
+    }
+
+    pub(crate) fn parts(&self, polar: bool) -> Result<[Self; 2], &'static str> {
+        if polar { return Ok([self.math_monad(Math::Magnitude)?, Self::try_from(self.to_complex()?.arg()).map_err(|_| "undefined angle")?]); }
+        match self.as_complex() { Some(z) => Ok([Self(Float(z.re)), Self(Float(z.im))]), None => Ok([self.clone(), self.unit(0)]) }
+    }
+
+    fn root(&self, right: &Self) -> Result<Self, &'static str> {
+        if self.equal(&self.unit(0))? { return Err("root degree must be nonzero"); }
+        if let (Some(n), Some(y)) = (self.as_exact(), right.as_exact()) {
+            if n.is_integer() {
+                if let Some(n) = n.to_i32().filter(|n| n.unsigned_abs() <= 1_000_000) {
+                    if !y.is_negative() || n % 2 != 0 {
+                        let k = n.unsigned_abs();
+                        let a = y.numer().abs().nth_root(k);
+                        let b = y.denom().nth_root(k);
+                        if a.pow(k) == y.numer().abs() && b.pow(k) == *y.denom() {
+                            let a = if y.is_negative() { -a } else { a };
+                            let result = Self::exact(BigRational::new(a, b));
+                            return if n < 0 { result.monad(Arithmetic::Divide) } else { Ok(result) };
+                        }
+                    }
+                }
+            }
+        }
+        if self.as_complex().is_none() && right.as_complex().is_none() {
+            let (n, y) = (self.to_float()?, right.to_float()?);
+            if !n.is_finite() { return Err("root degree must be finite"); }
+            if y == 0.0 && n < 0.0 { return Err("zero to a negative power"); }
+            let odd = n.fract() == 0.0 && n % 2.0 != 0.0;
+            if y >= 0.0 || odd {
+                let k = n.abs();
+                let value = if k == 2.0 { y.sqrt() } else if k == 3.0 { y.cbrt() } else { y.abs().powf(1.0 / k).copysign(y) };
+                return Self::try_from(if n < 0.0 { 1.0 / value } else { value }).map_err(|_| "undefined root");
+            }
+        }
+        if self.grade_order(&Self::from_integer(2)).is_eq() { return Self::try_from(right.to_complex()?.sqrt()).map_err(|_| "undefined root"); }
+        right.power(&self.monad(Arithmetic::Divide)?)
     }
 
     fn power(&self, right: &Self) -> Result<Self, &'static str> {

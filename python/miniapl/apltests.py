@@ -29,6 +29,13 @@ def _output(text):
     except KeyError as e: raise ValueError(r'output escapes are \n and \\') from e
 
 
+def _comment(text):
+    quoted = False
+    for i,c in enumerate(text):
+        if c=="'": quoted = not quoted
+        elif c=='⍝' and not quoted: return text[:i].rstrip(), text[i+1:].lstrip()
+
+
 def parse(text):
     "Read header-delimited records. Blank lines inside either expression are preserved."
     if not text: return []
@@ -56,8 +63,8 @@ def parse(text):
                 options[key] = value
             comment = comment[:match.start()]
         body = lines[start+1:end]
-        if not body or body[-1]!='': raise ValueError(f'line {start+1}: missing blank record separator')
-        body.pop()
+        if body and body[-1]=='': body.pop()
+        elif end<len(lines): raise ValueError(f'line {start+1}: missing blank record separator')
         output = None
         if body and body[-1].startswith(OUTPUT): output = _output(body.pop()[len(OUTPUT):].removeprefix(' '))
         if any(line.startswith(OUTPUT) for line in body): raise ValueError(f'line {start+1}: output expectation must be last')
@@ -66,6 +73,7 @@ def parse(text):
             split = body.index(SEPARATOR)
             code, expect = '\n'.join(body[:split]), '\n'.join(body[split+1:])
         elif count==0 and len(body)==2: code,expect = body
+        elif count==0 and len(body)==1 and (pair := _comment(body[0])): code,expect = pair
         else: raise ValueError(f'line {start+1}: use one {SEPARATOR!r} between multiline expressions')
         if not expect: raise ValueError(f'line {start+1}: missing expectation')
         result.append(Case(code, expect, id, comment, line=start+1, section=section, output=output, **options))
@@ -89,6 +97,9 @@ def render(cases):
         comment = case.comment + (f' [{options}]' if options else '')
         header = '⍝ ' + (case.id+' ' if case.id else '') + '—' + (f' {comment.lstrip()}' if comment else '')
         separator = f'\n{SEPARATOR}\n' if '\n' in case.code or '\n' in case.expect else '\n'
+        if (separator=='\n' and len(case.code)<40 and len(case.expect)<40 and case.output is None
+            and case.code==case.code.rstrip() and case.expect==case.expect.lstrip()
+            and not case.expect.startswith('⍝') and _comment(case.code) is None): separator = '   ⍝ '
         output = '' if case.output is None else '\n'+OUTPUT+(' '+case.output.replace('\\', '\\\\').replace('\n', '\\n') if case.output else '')
         result.append(header+'\n'+case.code+separator+case.expect+output+'\n\n')
     return ''.join(result)
@@ -255,7 +266,7 @@ def native_cases(path):
 
 
 def _load(path):
-    with path.open(newline='') as f: return parse(f.read())
+    return parse(path.read_text())
 
 
 def add(ids, output='tests/reference', directory='tests/reference/inventory'):
@@ -279,7 +290,10 @@ def add(ids, output='tests/reference', directory='tests/reference/inventory'):
     texts = {source: render(cases) for source,cases in pending.items()}
     output.mkdir(parents=True, exist_ok=True)
     for source,text in texts.items():
-        with (output/f'{source}.apl').open('a', newline='') as f: f.write(text)
+        path = output/f'{source}.apl'
+        previous = path.read_text() if path.exists() else ''
+        if previous: text = previous.rstrip('\n')+'\n\n'+text
+        path.write_text(text)
     corpus.update(rows, status='active')
     return list(rows)
 
@@ -299,7 +313,7 @@ def preview(directory='tests/reference/inventory', output='meta/apl-preview', na
         if not replace and (output/f'{name}.apl').exists(): raise FileExistsError(output/f'{name}.apl')
     output.mkdir(parents=True, exist_ok=True)
     for name,text in texts.items():
-        with (output/f'{name}.apl').open('w' if replace else 'x', newline='') as f: f.write(text)
+        with (output/f'{name}.apl').open('w' if replace else 'x') as f: f.write(text)
     return dict(inventory=dict(inventory), files={name: dict(cases=len(cases), described=sum(bool(c.comment) for c in cases),
                 multiline=sum('\n' in c.code or '\n' in c.expect for c in cases)) for name,cases in batches.items()})
 

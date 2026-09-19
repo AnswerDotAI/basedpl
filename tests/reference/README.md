@@ -4,6 +4,8 @@ The `.apl` files are the executable language tests. `core.apl` holds miniapl's o
 
 Source entries are not necessarily executable tests. Many APLcart recipes have unbound arguments and no expected result. They need concrete examples. Library cases need their definitions and setup. Use the scanner below for current counts and failures; fixture reasons describe their last review, not necessarily today's implementation. Progress notes belong in `meta/`, not this README.
 
+Active cases use miniapl spellings: `π` for APL's monadic `○`, `g⌝` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, and `•Name` for system names. Original inventory sources retain their dialect's notation.
+
 Run the active cases with:
 
 ```bash
@@ -21,6 +23,7 @@ Every case in `.apl` runs regardless of inventory status. Edit these files direc
 | Status | Meaning |
 |---|---|
 | `active` | Exported to the `.apl` corpus. |
+| `setup` | Upstream initialization retained for self-contained cases; no standalone assertion. |
 | `pending` | Intended coverage that still needs implementation, an origin/dialect adaptation, concrete inputs, or an expectation. |
 | `question` | Retain until the scope/semantic decision is resolved. The question list is in `meta/reference-questions.md`. |
 | `excluded` | Conflicts with an explicit calculator exclusion. Do not execute. Keep the source and rationale. |
@@ -58,7 +61,7 @@ corpus.update_many({'ngn:391': {'reason': 'reviewed'}, 'ngn:392': {'reason': 're
 
 `find` searches full ID/code/reason text and returns single-line previews of at most 180 characters, keyed by ID. Filter with `source` or `status`; `limit=None` returns all matches. `corpus[id]` returns code/status/reason. Use `corpus[id, 'code', 'expected']` for selected fields or `corpus[id, '*']` for the full record. Unknown IDs raise `KeyError`. Use `get_many(ids, *fields)` for bulk reads. Updates read fresh files, preserve unrelated fields, and report changed field names. Use `remove=['expected_error']` when replacing an error expectation with a value; `None` means JSON null, not deletion. Unknown IDs write nothing. Use these methods rather than reading and patching whole JSONL lines in the conversation.
 
-For library recipes, `library_definitions(path)` extracts column-zero named definitions. `library_dependencies(definitions, code)` selects transitive references for review. It ignores strings/comments but does not resolve lexical shadowing. Supply the relevant module and imports, then remove false dependencies on local names. Embed the reviewed definitions and preceding setup in the case. Retain `original_code`, `library_source` and `library_definitions`; do not require the library checkout at test time.
+Library recipes use the shared ports in `lib/`: start a case with `•LOAD 'lib/numeric.apl'`, for example. Keep case-specific setup in the case. Combine related examples only when their combined expectation stays clear. `library_definitions(path)` reads top-level named assignments; `source_definitions(text)` does the same for a string. `library_dependencies(definitions, code)` selects transitive references for review, ignoring strings/comments but not resolving lexical shadowing. Retain original source and adaptation metadata in the inventory. The upstream checkout is only needed when reviewing new ports.
 
 Rebuild the installed command after Rust changes, then scan:
 
@@ -80,12 +83,15 @@ The report defaults to `meta/reference-scan.json`. It contains each original fix
 
 ```apl
 ⍝ ngn:177 — sin(pi/6) = .5
-1e¯10>|.5-1○○÷6
-1
+1e¯10>|.5-1○○÷6   ⍝ 1
 
 ```
 
-Each record starts with `⍝ ID — description`, or `⍝ — description` without an ID. The description is optional. Add a short description when the purpose would not be obvious to a quick reader. Two single-line expressions follow, then an empty separator line. If either expression is multiline, an exact `⍝ =>` line separates code from expectation. A record ends at the next case header, section heading or EOF. The final empty separator line is required; other blank lines belong to the expressions.
+Each record starts with `⍝ ID — description`, or `⍝ — description` without an ID. The description is optional. Add a short description when the purpose would not be obvious to a quick reader.
+
+Write `code   ⍝ expected` when both expressions fit one line and each has fewer than 40 characters. Readers accept inline records of any length. The first comment outside a quoted string separates code from expectation. Expressions with existing code comments or significant separator whitespace retain two lines. Errors and explicit-output assertions also retain two lines.
+
+Longer single-line expressions use one line each. If either expression is multiline, an exact `⍝ =>` line separates code from expectation. An empty line separates records. A record ends at the next case header, section heading or EOF. At EOF the separator and final newline are optional. Other blank lines belong to the expressions.
 
 Errors use `⍝ error: DOMAIN ERROR` on the expectation line. A no-result expectation is the APL expression `{}0`. Numerical tolerances use an optional suffix on the header, such as `[rtol=1e-14 atol=1e-15]`. These are comparison tolerances, not APL `⎕CT`. `core.apl` instead uses exact Rust array equality, including numeric domains and prototypes, as its original Rust assertions did.
 
@@ -143,13 +149,13 @@ April's literal Common Lisp expectations were converted to structured values. Or
 
 APLcart's TIO links were decoded offline. All 972 available decoded programs are retained. No TIO service was contacted. Small closed calculator examples were checked in Dyalog 20.0.53963.0 with `⎕IO=1`, `⎕CT=1E¯14`, `⎕DIV=0`, `⎕ML=1`, and `⎕PP=17`. Multi-output examples collect their values in an array literal. The original program remains in `example`. The import does not execute arbitrary catalogue programs.
 
-`scripts/reference.py` contains the import and developer-only reference capture functions. Rust tests read the checked-in `.apl` files. They need neither the JSONL inventory, sibling clones, Dyalog, Common Lisp, Node, Python nor network access. Python converter tests also check serialization against the tracked inventory. Import a new upstream snapshot into a new directory and review it against the inventory rather than replacing reviewed statuses.
+`miniapl.reference` contains the import, reference capture, scan, review and activation functions. `scripts/reference.py` is their CLI. Rust tests read the checked-in `.apl` files. They need neither the JSONL inventory, sibling clones, Dyalog, Common Lisp, Node, Python nor network access. Python converter tests also check serialization against the tracked inventory. Import a new upstream snapshot into a new directory and review it against the inventory rather than replacing reviewed statuses.
 
 For live reference work, use `aplnb.dyalog.Apl`, not `aplnb.core` (which uses miniapl):
 
 ```python
 from aplnb.dyalog import Apl
-from scripts.reference import REFERENCE_ENCODER, dyalog_expected
+from miniapl.reference import REFERENCE_ENCODER, dyalog_expected
 with Apl() as apl:
     apl('⎕IO←1 ⋄ ⎕CT←1E¯14 ⋄ ⎕DIV←0 ⋄ ⎕ML←1 ⋄ ⎕PP←17')
     apl(REFERENCE_ENCODER)
