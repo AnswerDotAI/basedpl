@@ -18,7 +18,7 @@ pip install basedpl
 basedpl -e '+/⍳10'       # 55
 ```
 
-Run `basedpl` to open the [REPL](docs/repl.md).
+Run `basedpl` to open the [REPL](https://answerdotai.github.io/basedpl/repl.html).
 
 ## Python
 
@@ -38,11 +38,11 @@ The same native executable runs the kernel with `basedpl --kernel -f CONNECTION_
 
 ## Documentation
 
-- [Docs home](docs/index.md)
-- [Getting started](docs/getting-started.md)
-- [REPL: glyph entry and display](docs/repl.md)
-- [Python: arrays and functions](docs/python.md)
-- [Glyph reference](docs/index.md#glyph-reference)
+- [Docs home](https://answerdotai.github.io/basedpl/)
+- [Getting started](https://answerdotai.github.io/basedpl/getting-started.html)
+- [REPL: glyph entry and display](https://answerdotai.github.io/basedpl/repl.html)
+- [Python: arrays and functions](https://answerdotai.github.io/basedpl/python.html)
+- [Glyph reference](https://answerdotai.github.io/basedpl/#glyph-reference)
 - [APL libraries: algorithms, codecs, interpreters and puzzles](lib/README.md)
 
 For source installation and contributing, see [DEV.md](DEV.md).
