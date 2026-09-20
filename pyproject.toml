@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "basedpl"
 dynamic = ["version"]
-description = "BasedPL is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation."
+description = "bAsedPL is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation."
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
 dependencies = []

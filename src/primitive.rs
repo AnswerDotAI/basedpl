@@ -22,7 +22,6 @@ pub(crate) enum OperatorKind {
     Outer,
     Key,
     Power,
-    History,
     PairInverse,
     Under,
     Differentiate,
@@ -46,7 +45,6 @@ impl OperatorKind {
             Outer => "⌝",
             Key => "⌸",
             Power => "⍣",
-            History => "⍣\\",
             PairInverse => "⇄",
             Under => "⌾",
             Differentiate => "∂",
@@ -1292,6 +1290,7 @@ fn binary_encode(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
 }
 
 fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_>) -> Result<Value, Error> {
+    use num_rational::BigRational;
     let numbers = |a: &Value| a.elements().map(|e| numeric(&e, span).cloned()).collect::<Result<Vec<_>, _>>();
     let (xs, ys) = (numbers(left)?, numbers(right)?);
     let zero = numeric(&right.prototype(), span)?.result_zero(Some(numeric(&left.prototype(), span)?));
@@ -1306,12 +1305,21 @@ fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_>) -> Resul
             for column in 0..columns {
                 for (j, y) in ys.iter().enumerate() {
                     let mut value = y.clone();
+                    let mut exact = y.is_exact();
                     for row in (0..rows).rev() {
                         let base = &xs[row * columns + column];
+                        exact &= base.is_exact();
+                        let integral;
+                        let base = if let (Ok(b), Ok(v)) = (base.big_integer(), value.big_integer()) {
+                            integral = Number::try_from(BigRational::from_integer(b)).unwrap();
+                            value = Number::try_from(BigRational::from_integer(v)).unwrap();
+                            &integral
+                        } else { base };
                         let digit = base.math_dyad(Math::Magnitude, &value).map_err(error)?;
                         if row != 0 {
                             value = if base.grade_order(&base.unit(0)).is_eq() { zero.clone() } else { value.dyad(Arithmetic::Minus, &digit).and_then(|v| v.dyad(Arithmetic::Divide, base)).map_err(error)? };
                         }
+                        let digit = if !exact && digit.is_exact() { Number::try_from(digit.to_complex().map_err(error)?).unwrap() } else { digit };
                         result[(row * columns + column) * ys.len() + j] = Value::Number(digit);
                     }
                 }
@@ -1936,7 +1944,6 @@ pub(crate) fn choose(right: &Value, indices: &Value, span: &Context<'_>) -> Resu
 
 pub(crate) fn at_indices(right: &Value, indices: &Value, span: &Context<'_>) -> Result<Selection, Error> {
     if matches!(indices.elements().next().unwrap_or_else(|| indices.prototype().clone()), Value::Array(_)) { return choose(right, indices, span); }
-    if indices.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "at needs scalar/vector major-cell indices")); }
     if right.is_scalar() { return Err(span.error(ErrorKind::Length, "a scalar has no major-cell axis")); }
     let shape = [indices.shape(), &right.shape()[1..]].concat();
     generated_len(&shape).map_err(|k| span.error(k, "selection is too large"))?;

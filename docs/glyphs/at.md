@@ -12,6 +12,13 @@
 ⌽@2 4⊢⍳5           ⍝ 1 4 3 2 5
 ```
 
+Numeric index arrays select leading-axis cells. Their shape precedes the remaining cell axes, as with bracket indexing.
+
+```apl
+v←10 20 30 40 ⋄ i←2 2⍴1 4 2 3
+{⍵+2 2⍴100 200 300 400}@i⊢v  ⍝ 110 320 430 240
+```
+
 A function right operand computes a Boolean selection mask.
 
 ```apl

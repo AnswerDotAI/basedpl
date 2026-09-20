@@ -6625,43 +6625,43 @@ Is←10 ⋄ Jm←2 3⍴9 9 9 0 0 1 ⋄ Is(⊣{⍬(⊢↓⍨0=⍴)+⌿1 0⌽0,0 �
 Is←2 ⋄ Js←4 ⋄ Is{⍺>⍵:0 ⋄ ↑⌽1(+\×)⍣(⍵-⍺)⍨⍳⍺}Js
 7
 
-⍝ aplcart/table.tsv:2070 — 2's-complement bit-wise OR; Positive operands; Dyalog 20 rejects negative operands at inverse decode in this upstream signed-bitwise recipe
+⍝ — 2's-complement bit-wise OR; positive operands (aplcart/table.tsv:2070)
 I←3 2 1 ⋄ J←2 5 2 ⋄ I{⍉2⊥(-∨/0>b)⍪∨/2⊥⍣¯1⊢b←⍉⍺,[0.5]⍵}J
 3 7 3
 
-⍝ aplcart/table.tsv:2071 — 2's-complement bit-wise AND; Positive operands; Dyalog 20 rejects negative operands at inverse decode in this upstream signed-bitwise recipe
+⍝ — 2's-complement bit-wise AND; positive operands (aplcart/table.tsv:2071)
 I←3 2 1 ⋄ J←2 5 2 ⋄ I{⍉2⊥(-∧/0>b)⍪∧/2⊥⍣¯1⊢b←⍉⍺,[0.5]⍵}J
 2 0 0
 
-⍝ aplcart/table.tsv:2072 — 2's-complement bit-wise converse nonimplication; Positive operands; Dyalog 20 rejects negative operands at inverse decode in this upstream signed-bitwise recipe
+⍝ — 2's-complement bit-wise converse nonimplication; positive operands (aplcart/table.tsv:2072)
 I←3 2 1 ⋄ J←2 5 2 ⋄ I{⍉2⊥(-</0>b)⍪</2⊥⍣¯1⊢b←⍉⍺,[0.5]⍵}J
 0 5 2
 
-⍝ aplcart/table.tsv:2073 — 2's-complement bit-wise implication; Positive operands; Dyalog 20 rejects negative operands at inverse decode in this upstream signed-bitwise recipe
+⍝ — 2's-complement bit-wise implication; positive operands (aplcart/table.tsv:2073)
 I←3 2 1 ⋄ J←2 5 2 ⋄ I{⍉2⊥(-≤/0>b)⍪≤/2⊥⍣¯1⊢b←⍉⍺,[0.5]⍵}J
 ¯2 ¯3 ¯2
 
-⍝ aplcart/table.tsv:2074 — 2's-complement bit-wise XNOR; Positive operands; Dyalog 20 rejects negative operands at inverse decode in this upstream signed-bitwise recipe
+⍝ — 2's-complement bit-wise XNOR; positive operands (aplcart/table.tsv:2074)
 I←3 2 1 ⋄ J←2 5 2 ⋄ I{⍉2⊥(-=/0>b)⍪=/2⊥⍣¯1⊢b←⍉⍺,[0.5]⍵}J
 ¯2 ¯8 ¯4
 
-⍝ aplcart/table.tsv:2075 — 2's-complement bit-wise converse implication; Positive operands; Dyalog 20 rejects negative operands at inverse decode in this upstream signed-bitwise recipe
+⍝ — 2's-complement bit-wise converse implication; positive operands (aplcart/table.tsv:2075)
 I←3 2 1 ⋄ J←2 5 2 ⋄ I{⍉2⊥(-≥/0>b)⍪≥/2⊥⍣¯1⊢b←⍉⍺,[0.5]⍵}J
 ¯1 ¯6 ¯3
 
-⍝ aplcart/table.tsv:2076 — 2's-complement bit-wise nonimplication; Positive operands; Dyalog 20 rejects negative operands at inverse decode in this upstream signed-bitwise recipe
+⍝ — 2's-complement bit-wise nonimplication; positive operands (aplcart/table.tsv:2076)
 I←3 2 1 ⋄ J←2 5 2 ⋄ I{⍉2⊥(->/0>b)⍪>/2⊥⍣¯1⊢b←⍉⍺,[0.5]⍵}J
 1 2 1
 
-⍝ aplcart/table.tsv:2077 — 2's-complement bit-wise XOR; Positive operands; Dyalog 20 rejects negative operands at inverse decode in this upstream signed-bitwise recipe
+⍝ — 2's-complement bit-wise XOR; positive operands (aplcart/table.tsv:2077)
 I←3 2 1 ⋄ J←2 5 2 ⋄ I{⍉2⊥(-≠/0>b)⍪≠/2⊥⍣¯1⊢b←⍉⍺,[0.5]⍵}J
 1 7 3
 
-⍝ aplcart/table.tsv:2078 — 2's-complement bit-wise NOR; Positive operands; Dyalog 20 rejects negative operands at inverse decode in this upstream signed-bitwise recipe
+⍝ — 2's-complement bit-wise NOR; positive operands (aplcart/table.tsv:2078)
 I←3 2 1 ⋄ J←2 5 2 ⋄ I{⍉2⊥(-⍱/0>b)⍪⍱/2⊥⍣¯1⊢b←⍉⍺,[0.5]⍵}J
 ¯4 ¯8 ¯4
 
-⍝ aplcart/table.tsv:2079 — 2's-complement bit-wise NAND; Positive operands; Dyalog 20 rejects negative operands at inverse decode in this upstream signed-bitwise recipe
+⍝ — 2's-complement bit-wise NAND; positive operands (aplcart/table.tsv:2079)
 I←3 2 1 ⋄ J←2 5 2 ⋄ I{⍉2⊥(-⍲/0>b)⍪⍲/2⊥⍣¯1⊢b←⍉⍺,[0.5]⍵}J
 ¯3 ¯1 ¯1
 
@@ -14585,4 +14585,718 @@ Xv←(1 2 1 3)'abab' ⋄ Yv←(1 3 4)'abc' ⋄ (↓⍉⊃Xv)⍳↓⍉⊃Yv
 
 ⍝ aplcart/table.tsv:3732 — Load other source files prior to this one; Load shared library
 •LOAD 'lib/numeric.apl' ⋄ phinary 2   ⍝ '10.01'
+
+⍝ aplcart/table.tsv:1786 — Continued fraction approximation of real ⍵; Concrete recipe with independent Dyalog expectation; Use fixed comparison tolerance and shared library
+•LOAD 'lib/numeric.apl'
+cfract 1.5
+⍝ =>
+1 2
+
+⍝ aplcart/table.tsv:1787 — Rational approximation to real ⍵; Concrete recipe with independent Dyalog expectation; Use fixed comparison tolerance and shared library
+•LOAD 'lib/numeric.apl'
+rational 1.5
+⍝ =>
+3 2
+
+⍝ aplcart/table.tsv:2175 — Array of functions; Concrete native equivalent; independent Dyalog dfns expectation; Store and retrieve native function values
+v←+˘× ⋄ (2(1⊃v)3),(2(2⊃v)3)   ⍝ 5 6
+
+⍝ aplcart/table.tsv:2208 — Apply arrayified function Xs on Y (optionally with left argument Y); Concrete native equivalent; independent Dyalog dfns expectation; Apply a native stored function
+f←1⊃(+˘×) ⋄ 2 f 3   ⍝ 5
+
+⍝ aplcart/table.tsv:2217 — Condition f else g …; Concrete native equivalent; independent Dyalog dfns expectation; Choose the branch with Agenda
+{((2-⍵)◶(+˘-))5}¨0 1   ⍝ ¯5 5
+
+⍝ aplcart/table.tsv:2223 — Prefix-friendly @; Concrete native equivalent; independent Dyalog dfns expectation; Use native At with vector indices
+10(+@2 4)1 2 3 4   ⍝ 1 12 3 14
+
+⍝ aplcart/table.tsv:2229 — List of functions; Concrete native equivalent; independent Dyalog dfns expectation; Apply a native function vector to one argument
+(+˘-){(↑⍺)⍵}¨3   ⍝ 3 ¯3
+
+⍝ aplcart/table.tsv:2239 — Vector of functions; Concrete native equivalent; independent Dyalog dfns expectation; Pair each native function with its argument
+(+˘-){(↑⍺)⍵}¨3 4   ⍝ 3 ¯4
+
+⍝ aplcart/table.tsv:2173 — Apply no-result function “en passant”; Concrete no-result side effect and pass-through result; independently checked in Dyalog; Retain Execute-based sequencing; name the operand in the operator body
+seen←0 ⋄ touch←{seen+←⍵ ⋄ 0:} ⋄ r←(touch {f←⍶ ⋄ ⍎'f ⍵ ⋄ ⍵'})3 ⋄ r,seen
+3 3
+
+⍝ aplcart/table.tsv:1591 — A hard, simple problem; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl; One-move sliding-tile puzzle; decimal move counts preserve the source text
+•LOAD 'lib/dyalog.apl'
+1 quzzle 2 2⍴'A   '
+⍝ =>
+3 1⍴('Top-right') ('in 1 moves') (2 2⍴'  A→')
+
+⍝ aplcart/table.tsv:1598 — ⍺-separated segments of vector ⍵; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+',' segs 'a,b,,c'
+⍝ =>
+(1⍴'a') (1⍴'b') (1⍴'c')
+
+⍝ aplcart/table.tsv:1599 — McCarthy's M91 function; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+m91 95
+⍝ =>
+91
+
+⍝ aplcart/table.tsv:1600 — ⍺-combination matrix of ⍳⍵; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+2 cmat 4
+⍝ =>
+6 2⍴1 2 1 3 1 4 2 3 2 4 3 4
+
+⍝ aplcart/table.tsv:1604 — John Conway's “Game of Life”; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+life 5 5⍴0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0
+⍝ =>
+5 5⍴0 0 0 0 0 0 0 0 0 0 0 1 1 1 0 0 0 0 0 0 0 0 0 0 0
+
+⍝ aplcart/table.tsv:1624 — Conversion to/from Morse code; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+morse 'SOS'
+⍝ =>
+('...') ('---') ('...')
+
+⍝ aplcart/table.tsv:1625 — Base64 encoding and decoding as used in MIME; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+base64 72 101 108 108 111
+⍝ =>
+'SGVsbG8='
+
+⍝ aplcart/table.tsv:1639 — APL source with comments removed; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+rmcm 'a←1 ⍝ note'
+⍝ =>
+'a←1       '
+
+⍝ aplcart/table.tsv:1646 — Perfect Ripple Shuffle; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+ripple ⍳8
+⍝ =>
+5 1 6 2 7 3 8 4
+
+⍝ aplcart/table.tsv:1654 — Probability of same birthday; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl [rtol=1e-14]
+•LOAD 'lib/dyalog.apl'
+365 birthday 23
+⍝ =>
+0.5072972343239857
+
+⍝ aplcart/table.tsv:1662 — Lindenmayer L-system expansion; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+('A' 'AB')('B' 'A') lsys 'AB'
+⍝ =>
+'ABA'
+
+⍝ aplcart/table.tsv:1667 — Round-robin tournament; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+rr 4
+⍝ =>
+3 2 2⍴1 2 4 3 1 3 2 4 1 4 3 2
+
+⍝ aplcart/table.tsv:1675 — Easter Sunday in year ⍵; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+easter 2025
+⍝ =>
+20250420
+
+⍝ aplcart/table.tsv:1681 — Interpret a throw of dice; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+dice 6 6
+⍝ =>
+'Box Cars'
+
+⍝ aplcart/table.tsv:1699 — Simple macro processor for bf; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl; Concrete macro definition and expansion
+•LOAD 'lib/dyalog.apl'
+mac 'A=++ AA'
+⍝ =>
+'++++'
+
+⍝ aplcart/table.tsv:1700 — Manchester Small Scale Experimental Machine; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl; Machine load/store/halt program; final memory word captured in a Dyalog dfn to avoid collecting setup results
+•LOAD 'lib/dyalog.apl'
+m←⌽⍉(32⍴2)⊤32↑0 16389 24582 57344 0 13 0 ⋄ 2⊥⌽(baby m)[7;]
+⍝ =>
+4294967283
+
+⍝ aplcart/table.tsv:1706 — ⍺-ary representation of rational ⍵; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl; The source reads the comparison tolerance; this port uses the fixed 1e-14
+•LOAD 'lib/dyalog.apl'
+2 ary÷3
+⍝ =>
+'0.0101...'
+
+⍝ aplcart/table.tsv:1740 — Box the simple text array ⍵; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+box 2 3⍴'abcdef'
+⍝ =>
+4 5⍴'┌───┐│abc││def│└───┘'
+
+⍝ aplcart/table.tsv:1743 — TeXt Packer; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+packX 'hello hello'
+⍝ =>
+('helo ') (1 11) (0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 1 0 0 0 1 0 0 0 0 0 0 0 1 0 0 1 0 1 1 0 1 0)
+
+⍝ aplcart/table.tsv:1744 — Null packing; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+packN 0 0 3 0 0 4
+⍝ =>
+(1⍴6) (0 0 1 0 0 1) (3 4)
+
+⍝ aplcart/table.tsv:1745 — Pack a simple array; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+packB 1 0 1 1 0
+⍝ =>
+(1 5 1 0) (1 1 1 0 1) (0 1 0 1)
+
+⍝ aplcart/table.tsv:1747 — Huffman packing; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+packH 'abbccc'
+⍝ =>
+(1⍴6) ('cab') (1 2 2) (1 0 1 1 1 1 0 0 0)
+
+⍝ aplcart/table.tsv:1748 — Assorted uniQues packer; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+packQ 2 1 2 1 2 1
+⍝ =>
+(2 1) (1 6) (1 0 1 0 0 1 0 1 0 0 1 0 1 0 0)
+
+⍝ aplcart/table.tsv:1749 — Run-Length Encoding (RLE packing); Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+packR 1 1 1 2 2 3
+⍝ =>
+(1⍴6) (3 2 1) (1 2 3)
+
+⍝ aplcart/table.tsv:1750 — Shannon-Fano packing; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+packS 'abbccc'
+⍝ =>
+(1⍴6) ('cba') (1 2 2) (0 1 0 1 1 1 1 1 0 1 0 0 0 0)
+
+⍝ aplcart/table.tsv:1752 — Unique packing; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+packU 'abbccc'
+⍝ =>
+(1⍴6) ('abc') (0 1 1 2 2 2)
+
+⍝ aplcart/table.tsv:1753 — Mayan numbers; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+mayan 42
+⍝ =>
+2 1⍴(2 5⍴'      ⍟ ⍟ ') (2 5⍴'      ⍟ ⍟ ')
+
+⍝ aplcart/table.tsv:1754 — Reformat dfn/op representation; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+refmt 2 7⍴'{  ⍵+1}'
+⍝ =>
+2 7⍴'{  ⍵+1}{  ⍵+1}'
+
+⍝ aplcart/table.tsv:1755 — ⎕TS format from day number; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+date 0
+⍝ =>
+1899 12 31 0 0 0 0
+
+⍝ aplcart/table.tsv:1756 — Day number from ⎕TS format; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+days 1899 12 31
+⍝ =>
+0
+
+⍝ aplcart/table.tsv:1762 — Quad-tree packing; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+pack4 2 2⍴1 0 0 1
+⍝ =>
+(1 0) (2 2) (¯2 0 1 ¯1 1 0)
+
+⍝ aplcart/table.tsv:1809 — Knight's Tour Chess Problem; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+kt 3 4
+⍝ =>
+1⍴⊂(3 4⍴1 4 7 10 12 9 2 5 3 6 11 8)
+
+⍝ aplcart/table.tsv:1824 — Draw over '*'s; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+draw 3 3⍴'**** ****'
+⍝ =>
+3 3⍴'┌─┐│ │└─┘'
+
+⍝ aplcart/table.tsv:1828 — Show dfn with “white dots”; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+dots 1 5⍴'{⍵+1}'
+⍝ =>
+1 5⍴'{⍵+1}'
+
+⍝ aplcart/table.tsv:1846 — Capitalise first letters of names; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl; Unicode lower/upper casing uses •C
+•LOAD 'lib/dyalog.apl'
+von 'ludwig van beethoven'
+⍝ =>
+'Ludwig van Beethoven'
+
+⍝ aplcart/table.tsv:1907 — Solution vector for Sudoku problem ⍵; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+sudoku 4 4⍴1 0 0 4 0 4 1 0 0 1 4 0 4 0 0 1
+⍝ =>
+(4 4⍴1 2 3 4 3 4 1 2 2 1 4 3 4 3 2 1) (4 4⍴1 3 2 4 2 4 1 3 3 1 4 2 4 2 3 1)
+
+⍝ aplcart/table.tsv:2162 — Logical function array; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+0 0 1 1 ({7}logic)0 1 0 1
+⍝ =>
+0 1 1 1
+
+⍝ aplcart/table.tsv:2179 — Apply fn at depths k; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+1 2(+Depth 0)3 4
+⍝ =>
+4 6
+
+⍝ aplcart/table.tsv:2218 — Select statement; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+0 1(+case -)5
+⍝ =>
+¯5
+
+⍝ aplcart/table.tsv:1622 — The N-Queens Problem; Ported in lib/dyalog.apl; checked against the independent Dyalog expectation; Concrete arguments; shared origin-one based-array port loaded from lib/dyalog.apl
+•LOAD 'lib/dyalog.apl'
+≢queens 4
+⍝ =>
+1
+
+⍝ aplcart/table.tsv:1702 — Source vector split into words; Ported in lib/dyalog.apl; checked against independent Dyalog expectation; Seeded Boolean scan tracks word state; use the original Dyalog name-start alphabet as fixed data
+•LOAD 'lib/dyalog.apl'
+words 'x←1+2'
+⍝ =>
+(1⍴'x') ('←1+2')
+
+⍝ aplcart/table.tsv:1714 — Enclose-if-simple / link; Ported in lib/dyalog.apl; checked against independent Dyalog expectation; Lazy default-left assignment distinguishes monadic enclosure from dyadic link; no name introspection
+•LOAD 'lib/dyalog.apl'
+eis 1 2 3
+⍝ =>
+⊂(1 2 3)
+
+⍝ aplcart/table.tsv:1717 — Generalized iota; Ported in lib/dyalog.apl; checked against independent Dyalog expectation; Origin-one interval/search results; type detection uses fill, and Dyalog character order is fixed library data
+•LOAD 'lib/dyalog.apl'
+2 iotag 6
+⍝ =>
+2 3 4 5 6
+
+⍝ aplcart/table.tsv:1739 — Lex of APL src line; Ported in lib/dyalog.apl; checked against independent Dyalog expectation; Dyalog APL token grammar and name-start alphabet retained; token accumulation uses direct reductions
+•LOAD 'lib/dyalog.apl'
+tokens 'x←1+2'
+⍝ =>
+(1⍴'x') (1⍴'←') (1⍴'1') (1⍴'+') (1⍴'2')
+
+⍝ aplcart/table.tsv:1746 — Pack character array to Boolean vector; Ported in lib/dyalog.apl; checked against independent Dyalog expectation; Dyalog alphabet retained as fixed data for the original wire format; bAsedPL partition and direct fold
+•LOAD 'lib/dyalog.apl'
+packD 'abc'
+⍝ =>
+0 0 0 1 0 0 0 1 0 1 1 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0 0 0 1 0 0 1 0 0 0 0 1 0 0 1 1 1 0 1 0 0 1 1 0
+
+⍝ aplcart/table.tsv:1751 — Simple text vector packager; Ported in lib/dyalog.apl; checked against independent Dyalog expectation; Dyalog alphabet retained as fixed data for the original wire format; windows express adjacent differences
+•LOAD 'lib/dyalog.apl'
+packT 'hello'
+⍝ =>
+•UCS 0 104 101 108 108 111
+
+⍝ aplcart/table.tsv:1764 — Evaluator for a subset of Scheme; Ported in lib/dyalog.apl; checked against independent Dyalog expectation; Origin-one environment and closure indexing; parser offsets remain zero-based; First is ↑ and explicit output is preserved
+•LOAD 'lib/dyalog.apl'
+lisp '(+ 2 3)'
+⍝ =>
+5
+
+⍝ aplcart/table.tsv:1768 — Bunda-Gerth parse of expression ⍵; Ported in lib/dyalog.apl; checked against independent Dyalog expectation; Concrete arithmetic grammar; origin-one binding/category indices, direct folds, First/Mix, and existing array-library display/substitution helpers
+•LOAD 'lib/dyalog.apl'
+g←'A 1 2 3' 'F + ×' 'B' '' 'F:A→B' 'A:B→A' ⋄ g parse '1+2×3'
+⍝ =>
+5 9⍴'    A     ┌──┴──┐ ┌┴─┐  ┌┴┐1 ┌┴┐ × 3  + 2    '
+
+⍝ aplcart/table.tsv:1794 — Approximate alternative to xutils ss; Ported in lib/dyalog.apl; checked against independent Dyalog expectation; Use the word-state splitter and original identifier alphabet for whole-word substitution
+•LOAD 'lib/dyalog.apl'
+ssword 'alpha + beta' 'alpha' 'gamma'
+⍝ =>
+'gamma + beta'
+
+⍝ aplcart/table.tsv:2195 — Cut operator; Ported in lib/dyalog.apl; checked against independent Dyalog expectation; Origin-one axes and bAsedPL operands; direct reductions and First/Mix replace nested-array idioms
+•LOAD 'lib/dyalog.apl'
+1 0 1 0(+/Cut 1)1 2 3 4
+⍝ =>
+3 7
+
+⍝ aplcart/table.tsv:2332 — Delta-underscore; Concrete identifier binding/readback; existing lexer already accepts delta-underscore
+⍙←42 ⋄ ⍙   ⍝ 42
+
+⍝ aplcart/table.tsv:2696 — Assign (in dfns/dops) to closest scope where localised or in global scope if not localised anyhere (proper replacement for name∘←Y); Existing nearest-owner assignment expresses the source scope-update operation without a namespace object; Use right-tack modified assignment to resolve the nearest existing binding
+name←1 ⋄ f←{name⊢←⍵} ⋄ f 42 ⋄ name   ⍝ 42
+
+⍝ aplcart/table.tsv:1827 — Avoiding division by zero error (gives zero); Pure guarded arithmetic/comparison expresses this recipe under completed BasedPL decisions; Use scalar guards with Each for zero denominators
+1 0 6{⍵=0:0 ⋄ ⍺÷⍵}¨0 0 2   ⍝ 0 0 3
+
+⍝ aplcart/table.tsv:2285 — Tolerant comparison: Do M and N match with an absolute tolerance of Ms?; Pure guarded arithmetic/comparison expresses this recipe under completed BasedPL decisions; Drop mutable tolerance settings; concrete comparisons use the fixed BasedPL comparison policy and retain the independent Dyalog result
+f←1e¯3{~0∊⍶≥|⍺-⍵} ⋄ (1 2 f 1.0005 2.0005)(1 2 f 1.002 2)
+1 0
+
+⍝ aplcart/table.tsv:2305 — Tolerant comparison: Do M and N match with a relative tolerance of Ms?; Pure guarded arithmetic/comparison expresses this recipe under completed BasedPL decisions; Drop mutable tolerance settings; concrete comparisons use the fixed BasedPL comparison policy and retain the independent Dyalog result
+f←1e¯3{~0∊⍶≥|⍺(-÷⌈⍥|)⍵} ⋄ (100 200 f 100.05 200.05)(100 200 f 100.2 200)
+1 0
+
+⍝ aplcart/table.tsv:2798 — Called Monadically? (dfns/dops only); Lazy default-left assignment detects call valence without introspection; Test both monadic and dyadic calls using a local default-assignment flag
+f←{m←0 ⋄ ⍺←m←1 ⋄ m} ⋄ (f 0)(0 f 0)   ⍝ 1 0
+
+⍝ aplcart/table.tsv:2799 — Called Dyadically? (dfns/dops only); Lazy default-left assignment detects call valence without introspection; Test both monadic and dyadic calls using a local default-assignment flag
+f←{d←1 ⋄ ⍺←d←0 ⋄ d} ⋄ (f 0)(0 f 0)   ⍝ 0 1
+
+⍝ aplcart/table.tsv:2902 — Number of arguments used in call (dfns/dops only); Lazy default-left assignment detects call valence without introspection; Test both monadic and dyadic calls using a local default-assignment flag
+f←{n←2 ⋄ ⍺←n←1 ⋄ n} ⋄ (f 0)(0 f 0)   ⍝ 1 2
+
+⍝ aplcart/table.tsv:2117 — Turn Y into a character vector that looks visually like ⎕FMT Y; Existing Format and Unicode functions express this text-rendering recipe; Use ⍕ for plain matrix formatting and •UCS for the line separator
+{¯1↓∊({(+/∨\' '≠⌽⍵)↑¨↓⍵}⍕⍵),¨•UCS 10}2 2⍴1 20 300 4
+•UCS 32 32 49 32 50 48 10 51 48 48 32 32 52
+
+⍝ aplcart/table.tsv:2228 — Arrayify: Convert f into an array for use in an array of functions; BasedPL function atoms already belong in ordinary arrays; no object-representation API is needed; Store functions with explicit stranding and retrieve one with First before application
+fs←+˘× ⋄ f←↑fs ⋄ 2 f 3   ⍝ 5
+
+⍝ aplcart/table.tsv:239 — Convert (⎕TS-style) date-times to Dyalog date numbers; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ days 2024 2 29   ⍝ 45350
+
+⍝ aplcart/table.tsv:250 — Convert (⎕TS-style or Dyalog date number) date-times to UNIX time numbers; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ 86400×(days 2024 2 29)-days 1970 1 1
+1709164800
+
+⍝ aplcart/table.tsv:645 — Convert UNIX times to ⎕TS-style timestamps; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ date(1709164800÷86400)+days 1970 1 1
+2024 2 29 0 0 0 0
+
+⍝ aplcart/table.tsv:646 — Convert (⎕TS-style or Dyalog date number) date-times to UNIX times; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ 86400×(days 2024 2 29)-days 1970 1 1
+1709164800
+
+⍝ aplcart/table.tsv:650 — Convert (Dyalog date number) date-times to ⎕TS-style time-stamps; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ date 45350   ⍝ 2024 2 29 0 0 0 0
+
+⍝ aplcart/table.tsv:994 — Day of week (Sunday:0); Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ 7|days 2024 2 29
+4
+
+⍝ aplcart/table.tsv:1082 — Number of days between (⎕TS-style or Dyalog date number) date-times I and J; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ 2024 3 1-⍥days 2024 2 28
+2
+
+⍝ aplcart/table.tsv:1083 — Day of week (Sunday:0) of first of January J; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ 7|days¨2023 2024,¨⊂1 1
+0 1
+
+⍝ aplcart/table.tsv:3771 — Number of days in month Js of year Is; Prepared independent calendar example using existing days/date library functions; Correct upstream next-month calculation: subtract one from the year before mixed-radix encoding; Original formula gives 29/28 for February 2023/2024; corrected Dyalog and BasedPL give 28/29
+•LOAD 'lib/dyalog.apl' ⋄ f←{3⊃date¯1+days(1+0 12⊤12⊥(⍺-1),⍵),1} ⋄ 2023 2024 f¨2 2
+28 29
+
+⍝ aplcart/tt.tsv:299 — Convert (Dyalog date number) date-times to ⎕TS-style time stamps; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ date 45350   ⍝ 2024 2 29 0 0 0 0
+
+⍝ aplcart/tt.tsv:300 — Convert (Dyalog date number) date-times to ⎕TS-style time stamps; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ date 45350   ⍝ 2024 2 29 0 0 0 0
+
+⍝ aplcart/tt.tsv:313 — Convert UNIX times to ⎕TS-style timestamps; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ date(1709164800÷86400)+days 1970 1 1
+2024 2 29 0 0 0 0
+
+⍝ aplcart/tt.tsv:314 — Convert UNIX times to ⎕TS-style timestamps; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ date(1709164800÷86400)+days 1970 1 1
+2024 2 29 0 0 0 0
+
+⍝ aplcart/tt.tsv:355 — Convert ⎕TS-style timestamps to UNIX times; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ 86400×(days 2024 2 29)-days 1970 1 1
+1709164800
+
+⍝ aplcart/tt.tsv:356 — Convert ⎕TS-style timestamps to UNIX times; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ 86400×(days 2024 2 29)-days 1970 1 1
+1709164800
+
+⍝ aplcart/tt.tsv:417 — Day of week (Sunday:0); Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ 7|days 2024 2 29
+4
+
+⍝ aplcart/tt.tsv:418 — Day of week (Sunday:0); Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ 7|days 2024 2 29
+4
+
+⍝ aplcart/tt.tsv:419 — Day of week (Sunday:0) of first of January J; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ 7|days¨2023 2024,¨⊂1 1
+0 1
+
+⍝ aplcart/tt.tsv:420 — Day of week (Sunday:0) of first of January J; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ 7|days¨2023 2024,¨⊂1 1
+0 1
+
+⍝ aplcart/tt.tsv:1287 — Number of days between ⎕TS-style timestamps I and J; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ 2024 3 1-⍥days 2024 2 28
+2
+
+⍝ aplcart/tt.tsv:1288 — Number of days between ⎕TS-style timestamps I and J; Prepared independent calendar example using existing days/date library functions; Concrete modern dates through dfns days/date and epoch arithmetic; calendar conversion policy outside these examples is unchanged
+•LOAD 'lib/dyalog.apl' ⋄ 2024 3 1-⍥days 2024 2 28
+2
+
+⍝ aplcart/table.tsv:241 — Convert (⎕TS-style or Dyalog date number) date-times to J nanosecond time numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 86400000000000x×(days 2024 2 29)-0 days 2000 1 1
+7.6248e17
+
+⍝ aplcart/table.tsv:243 — Convert (⎕TS-style or Dyalog date number) date-times to Shakti K7 time numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 86400000×(days 2024 2 29)-0 days 2024 1 1
+5097600000
+
+⍝ aplcart/table.tsv:245 — Convert (⎕TS-style or Dyalog date number) date-times to JavaScript/D/Q time numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 86400000×(days 2024 2 29)-0 days 1970 1 1
+1709164800000
+
+⍝ aplcart/table.tsv:246 — Convert (⎕TS-style or Dyalog date number) date-times to R chron format time numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 1×(days 2024 2 29)-0 days 1970 1 1
+19782
+
+⍝ aplcart/table.tsv:247 — Convert (⎕TS-style or Dyalog date number) date-times to Shakti K9 time numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 86400000×(days 2024 2 29)-0 days 2001 1 1
+730857600000
+
+⍝ aplcart/table.tsv:248 — Convert (⎕TS-style or Dyalog date number) date-times to Dyalog component file time numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 5184000×(days 2024 2 29)-0 days 1970 1 1
+102549888000
+
+⍝ aplcart/table.tsv:257 — Convert (⎕TS-style or Dyalog date number) date-times to Microsoft Win32 FILETIME numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 864000000000x×(days 2024 2 29)-0 days 1601 1 1
+1.33536384e17
+
+⍝ aplcart/table.tsv:259 — Convert (⎕TS-style or Dyalog date number) date-times to Microsoft CLR DateTime (.NET) ticks property numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 864000000000x×(days 2024 2 29)-0 days 1 1 1
+6.38447616e17
+
+⍝ aplcart/table.tsv:260 — Convert (⎕TS-style or Dyalog date number) date-times to Microsoft OLE Automation Date numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 1×(days 2024 2 29)-0 days 1899 12 30
+45351
+
+⍝ aplcart/table.tsv:264 — Convert (⎕TS-style or Dyalog date number) date-times to Excel (1904 Date System) time numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 1×(days 2024 2 29)-0 days 1904 1 1
+43889
+
+⍝ aplcart/table.tsv:266 — Convert (⎕TS-style or Dyalog date number) date-times to Stata statistics package time numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 86400000×(days 2024 2 29)-0 days 1960 1 1
+2024784000000
+
+⍝ aplcart/table.tsv:267 — Convert (⎕TS-style or Dyalog date number) date-times to SPSS statistics package time numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 86400×(days 2024 2 29)-0 days 1582 10 14
+13928544000
+
+⍝ aplcart/table.tsv:268 — Convert (⎕TS-style or Dyalog date number) date-times to SAS time numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 86400×(days 2024 2 29)-0 days 1960 1 1
+2024784000
+
+⍝ aplcart/table.tsv:272 — Convert (⎕TS-style or Dyalog date number) date-times to J daynos; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 1×(days 2024 2 29)-0 days 1800 1 1
+81873
+
+⍝ aplcart/table.tsv:274 — Convert (⎕TS-style or Dyalog date number) date-times to Reduced Julian Date numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 1×(days 2024 2 29)-0 days 1858 11 16 12
+60369.5
+
+⍝ aplcart/table.tsv:276 — Convert (⎕TS-style or Dyalog date number) date-times to Modified Julian Date numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 1×(days 2024 2 29)-0 days 1858 11 17
+60369
+
+⍝ aplcart/table.tsv:278 — Convert (⎕TS-style or Dyalog date number) date-times to Dublin Julian Date numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 1×(days 2024 2 29)-0 days 1899 12 31 12
+45349.5
+
+⍝ aplcart/table.tsv:280 — Convert (⎕TS-style or Dyalog date number) date-times to CNES Julian Date numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 1×(days 2024 2 29)-0 days 1950 1 1
+27087
+
+⍝ aplcart/table.tsv:281 — Convert (⎕TS-style or Dyalog date number) date-times to CCSDS Julian Date numbers; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 1×(days 2024 2 29)-0 days 1958 1 1
+24165
+
+⍝ aplcart/table.tsv:642 — Convert (⎕TS-style or Dyalog date number) date-times to Go UnixMicro times; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 86400000000x×(days 2024 2 29)-0 days 1970 1 1
+1709164800000000
+
+⍝ aplcart/table.tsv:643 — Convert (⎕TS-style or Dyalog date number) date-times to Go UnixNano times; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 86400000000000x×(days 2024 2 29)-0 days 1970 1 1
+1.7091648e18
+
+⍝ aplcart/table.tsv:644 — Convert (⎕TS-style or Dyalog date number) date-times to APL+Win/APL64 workspace times; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 86400000000x×(days 2024 2 29)-0 days 1900 1 1
+3918153600000000
+
+⍝ aplcart/table.tsv:647 — Convert (⎕TS-style or Dyalog date number) date-times to Apollo NCS UUID times; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 21600000000x×(days 2024 2 29)-0 days 1980 1 1
+348408000000000
+
+⍝ aplcart/table.tsv:648 — Convert (⎕TS-style or Dyalog date number) date-times to OSF DCE UUID times; Prepared independent epoch-arithmetic example using existing days; Concrete modern timestamp using documented epoch/tick scale and dfns days; The epoch uses proleptic Gregorian days (left argument 0); no system-format selector API is introduced
+•LOAD 'lib/dyalog.apl' ⋄ 86400000000000x×(days 2024 2 29)-0 days 1582 10 15
+1.39284576e19
+
+⍝ aplcart/table.tsv:2491 — Determine the prime factors of the argument; Prepared command-catalogue algorithm with concrete input and independent result; Use existing pure mathematical primitive/library function instead of the Dyalog user-command wrapper
+Ⓠ360   ⍝ 2 2 2 3 3 5
+
+⍝ aplcart/table.tsv:2492 — Convert a list of hexadecimal representations of integers to a numeric vector; Prepared command-catalogue algorithm with concrete input and independent result; Use existing pure mathematical primitive/library function instead of the Dyalog user-command wrapper
+•LOAD 'lib/numeric.apl' ⋄ dec 'ff' '100' 'abc'
+255 256 2748
+
+⍝ aplcart/table.tsv:2494 — Convert integer(s) to a vector of text vectors containing the hexadecimal representation of each number; Prepared command-catalogue algorithm with concrete input and independent result; Use existing pure mathematical primitive/library function instead of the Dyalog user-command wrapper
+•LOAD 'lib/numeric.apl' ⋄ hex 255 256 2748
+('00ff') ('0100') ('0abc')
+
+⍝ aplcart/table.tsv:255 — Convert (⎕TS-style or Dyalog date number) date-times to Microsoft DOS date/time numbers; Prepared independent date-component arithmetic example; Concrete timestamp using existing calendar library and numeric encoding; Excel example is after its fictitious 1900 leap day
+•LOAD 'lib/dyalog.apl' ⋄ {year month day hour minute second←⍵ ⋄ 128 16 32 32 64 32⊥(year-1980),month,day,hour,minute,⌊second÷2}2024 2 29 12 34 56
+1482515548
+
+⍝ aplcart/table.tsv:262 — Convert (⎕TS-style or Dyalog date number) date-times to Excel (1900 Date System)/Lotus 1-2-3 time numbers; Prepared independent date-component arithmetic example; Concrete timestamp using existing calendar library and numeric encoding; Excel example is after its fictitious 1900 leap day
+•LOAD 'lib/dyalog.apl' ⋄ 1+days 2024 2 29
+45351
+
+⍝ aplcart/table.tsv:270 — Convert (⎕TS-style or Dyalog date number) date-times to Julian date numbers; Prepared independent date-component arithmetic example; Concrete timestamp using existing calendar library and numeric encoding; Excel example is after its fictitious 1900 leap day
+•LOAD 'lib/dyalog.apl' ⋄ 2415019.5+days 2024 2 29
+2460369.5
+
+⍝ aplcart/table.tsv:283 — Convert (⎕TS-style or Dyalog date number) date-times to YYYYMMDD.hhmmss floating-point decimal encoded datetime format; Prepared independent date-component arithmetic example; Concrete timestamp using existing calendar library and numeric encoding; Excel example is after its fictitious 1900 leap day
+{(100⊥3↑⍵)+(100⊥3↓⍵)÷1000000}2024 2 29 12 34 56
+20240229.123456
+
+⍝ aplcart/table.tsv:285 — Convert (⎕TS-style or Dyalog date number) date-times to YYYYMMMDDhhmmss integer encoded datetime formatsJ digit time; Prepared independent date-component arithmetic example; Concrete timestamp using existing calendar library and numeric encoding; Excel example is after its fictitious 1900 leap day
+•LOAD 'lib/dyalog.apl' ⋄ 100⊥2024 2 29 12 34 56
+20240229123456
+
+⍝ aplcart/table.tsv:651 — Convert (⎕TS-style or Dyalog date number) date-times to ISO day-of-year components time-stamps; Prepared independent date-component arithmetic example; Concrete timestamp using existing calendar library and numeric encoding; Excel example is after its fictitious 1900 leap day
+•LOAD 'lib/dyalog.apl' ⋄ 2024,(1+(days 2024 2 29)-days 2024 1 1),12 34 56 123000
+2024 60 12 34 56 123000
+
+⍝ aplcart/table.tsv:654 — Convert (⎕TS-style or Dyalog date number) date-times to decimal encoded date and time-stamps; Prepared independent date-component arithmetic example; Concrete timestamp using existing calendar library and numeric encoding; Excel example is after its fictitious 1900 leap day
+•LOAD 'lib/dyalog.apl' ⋄ 100⊥¨(2024 2 29)(12 34 56)
+20240229 123456
+
+⍝ aplcart/table.tsv:656 — Convert (⎕TS-style or Dyalog date number) date-times to DateTimePicker format time-stamps; Prepared independent date-component arithmetic example; Concrete timestamp using existing calendar library and numeric encoding; Excel example is after its fictitious 1900 leap day
+•LOAD 'lib/dyalog.apl' ⋄ (days 2024 2 29),12 34 56
+45350 12 34 56
+
+⍝ aplcart/table.tsv:1783 — Time-stamped message; Prepared text helper with independent explicit-argument expectation; Supply the documented explicit time/width argument and concrete text; use the existing library port
+•LOAD 'lib/string.apl' ⋄ 2024 2 29 12 34 56 0 timestamp 'Ready'
+'2024-02-29 12:34:56 Ready'
+
+⍝ aplcart/table.tsv:1785 — Wrap word vector at ⍺ columns; Prepared text helper with independent explicit-argument expectation; Pass explicit width 10 to existing wrap; Normalize Dyalog CR line separators to the library port’s LF; preserve original capture
+•LOAD 'lib/string.apl' ⋄ 10 wrap 'one two three four five'
+•UCS 111 110 101 32 116 119 111 10 116 104 114 101 101 32 102 111 117 114 10 102 105 118 101
+
+⍝ aplcart/table.tsv:1868 — Wrap text paras in note vect; Prepared text helper with independent explicit-argument expectation; Supply the documented explicit time/width argument and concrete text; use the existing library port
+•LOAD 'lib/string.apl' ⋄ 12 18 wrapnote 'Title',(•UCS 13 13),'one two three four',(•UCS 13),'five six seven',(•UCS 13)
+•UCS 84 105 116 108 101 13 13 111 110 101 32 32 32 32 32 32 116 119 111 13 116 104 114 101 101 32 32 32 102 111 117 114 13 102 105 118 101 32 32 32 32 32 115 105 120 13 115 101 118 101 110 13
+
+⍝ aplcart/table.tsv:2070 — 2's-complement bit-wise OR; Prepared signed-bitwise algorithm using ordinary fixed-width encoding; Python integer truth-table expectations retained; Use an explicit sufficient two’s-complement width, ordinary Encode, and the existing int signed-decoding helper; This avoids undefined inverse Decode on negatives without changing language semantics or reducing the original mixed-sign inputs
+•LOAD 'lib/numeric.apl' ⋄ I←¯3 2 ¯1 0 ⋄ J←2 ¯5 ¯2 ¯1 ⋄ w←1+⌈2⍟1+⌈/|I,J ⋄ w int 2⊥∨/(w⍴2)⊤⍉I,[0.5]J
+¯1 ¯5 ¯1 ¯1
+
+⍝ aplcart/table.tsv:2071 — 2's-complement bit-wise AND; Prepared signed-bitwise algorithm using ordinary fixed-width encoding; Python integer truth-table expectations retained; Use an explicit sufficient two’s-complement width, ordinary Encode, and the existing int signed-decoding helper; This avoids undefined inverse Decode on negatives without changing language semantics or reducing the original mixed-sign inputs
+•LOAD 'lib/numeric.apl' ⋄ I←¯3 2 ¯1 0 ⋄ J←2 ¯5 ¯2 ¯1 ⋄ w←1+⌈2⍟1+⌈/|I,J ⋄ w int 2⊥∧/(w⍴2)⊤⍉I,[0.5]J
+0 2 ¯2 0
+
+⍝ aplcart/table.tsv:2072 — 2's-complement bit-wise converse nonimplication; Prepared signed-bitwise algorithm using ordinary fixed-width encoding; Python integer truth-table expectations retained; Use an explicit sufficient two’s-complement width, ordinary Encode, and the existing int signed-decoding helper; This avoids undefined inverse Decode on negatives without changing language semantics or reducing the original mixed-sign inputs
+•LOAD 'lib/numeric.apl' ⋄ I←¯3 2 ¯1 0 ⋄ J←2 ¯5 ¯2 ¯1 ⋄ w←1+⌈2⍟1+⌈/|I,J ⋄ w int 2⊥</(w⍴2)⊤⍉I,[0.5]J
+2 ¯7 0 ¯1
+
+⍝ aplcart/table.tsv:2073 — 2's-complement bit-wise implication; Prepared signed-bitwise algorithm using ordinary fixed-width encoding; Python integer truth-table expectations retained; Use an explicit sufficient two’s-complement width, ordinary Encode, and the existing int signed-decoding helper; This avoids undefined inverse Decode on negatives without changing language semantics or reducing the original mixed-sign inputs
+•LOAD 'lib/numeric.apl' ⋄ I←¯3 2 ¯1 0 ⋄ J←2 ¯5 ¯2 ¯1 ⋄ w←1+⌈2⍟1+⌈/|I,J ⋄ w int 2⊥≤/(w⍴2)⊤⍉I,[0.5]J
+2 ¯1 ¯2 ¯1
+
+⍝ aplcart/table.tsv:2074 — 2's-complement bit-wise XNOR; Prepared signed-bitwise algorithm using ordinary fixed-width encoding; Python integer truth-table expectations retained; Use an explicit sufficient two’s-complement width, ordinary Encode, and the existing int signed-decoding helper; This avoids undefined inverse Decode on negatives without changing language semantics or reducing the original mixed-sign inputs
+•LOAD 'lib/numeric.apl' ⋄ I←¯3 2 ¯1 0 ⋄ J←2 ¯5 ¯2 ¯1 ⋄ w←1+⌈2⍟1+⌈/|I,J ⋄ w int 2⊥=/(w⍴2)⊤⍉I,[0.5]J
+0 6 ¯2 0
+
+⍝ aplcart/table.tsv:2075 — 2's-complement bit-wise converse implication; Prepared signed-bitwise algorithm using ordinary fixed-width encoding; Python integer truth-table expectations retained; Use an explicit sufficient two’s-complement width, ordinary Encode, and the existing int signed-decoding helper; This avoids undefined inverse Decode on negatives without changing language semantics or reducing the original mixed-sign inputs
+•LOAD 'lib/numeric.apl' ⋄ I←¯3 2 ¯1 0 ⋄ J←2 ¯5 ¯2 ¯1 ⋄ w←1+⌈2⍟1+⌈/|I,J ⋄ w int 2⊥≥/(w⍴2)⊤⍉I,[0.5]J
+¯3 6 ¯1 0
+
+⍝ aplcart/table.tsv:2076 — 2's-complement bit-wise nonimplication; Prepared signed-bitwise algorithm using ordinary fixed-width encoding; Python integer truth-table expectations retained; Use an explicit sufficient two’s-complement width, ordinary Encode, and the existing int signed-decoding helper; This avoids undefined inverse Decode on negatives without changing language semantics or reducing the original mixed-sign inputs
+•LOAD 'lib/numeric.apl' ⋄ I←¯3 2 ¯1 0 ⋄ J←2 ¯5 ¯2 ¯1 ⋄ w←1+⌈2⍟1+⌈/|I,J ⋄ w int 2⊥>/(w⍴2)⊤⍉I,[0.5]J
+¯3 0 1 0
+
+⍝ aplcart/table.tsv:2077 — 2's-complement bit-wise XOR; Prepared signed-bitwise algorithm using ordinary fixed-width encoding; Python integer truth-table expectations retained; Use an explicit sufficient two’s-complement width, ordinary Encode, and the existing int signed-decoding helper; This avoids undefined inverse Decode on negatives without changing language semantics or reducing the original mixed-sign inputs
+•LOAD 'lib/numeric.apl' ⋄ I←¯3 2 ¯1 0 ⋄ J←2 ¯5 ¯2 ¯1 ⋄ w←1+⌈2⍟1+⌈/|I,J ⋄ w int 2⊥≠/(w⍴2)⊤⍉I,[0.5]J
+¯1 ¯7 1 ¯1
+
+⍝ aplcart/table.tsv:2078 — 2's-complement bit-wise NOR; Prepared signed-bitwise algorithm using ordinary fixed-width encoding; Python integer truth-table expectations retained; Use an explicit sufficient two’s-complement width, ordinary Encode, and the existing int signed-decoding helper; This avoids undefined inverse Decode on negatives without changing language semantics or reducing the original mixed-sign inputs
+•LOAD 'lib/numeric.apl' ⋄ I←¯3 2 ¯1 0 ⋄ J←2 ¯5 ¯2 ¯1 ⋄ w←1+⌈2⍟1+⌈/|I,J ⋄ w int 2⊥⍱/(w⍴2)⊤⍉I,[0.5]J
+0 4 0 0
+
+⍝ aplcart/table.tsv:2079 — 2's-complement bit-wise NAND; Prepared signed-bitwise algorithm using ordinary fixed-width encoding; Python integer truth-table expectations retained; Use an explicit sufficient two’s-complement width, ordinary Encode, and the existing int signed-decoding helper; This avoids undefined inverse Decode on negatives without changing language semantics or reducing the original mixed-sign inputs
+•LOAD 'lib/numeric.apl' ⋄ I←¯3 2 ¯1 0 ⋄ J←2 ¯5 ¯2 ¯1 ⋄ w←1+⌈2⍟1+⌈/|I,J ⋄ w int 2⊥⍲/(w⍴2)⊤⍉I,[0.5]J
+¯1 ¯3 1 ¯1
+
+⍝ aplcart/tt.tsv:301 — Convert (⎕TS-style or Dyalog date number) date-times to DateTimePicker format time stamps; Prepared duplicate calendar recipe with the same independently captured timestamp; Concrete timestamp using existing calendar library and numeric encoding; Excel example is after its fictitious 1900 leap day
+•LOAD 'lib/dyalog.apl' ⋄ (days 2024 2 29),12 34 56
+45350 12 34 56
+
+⍝ aplcart/tt.tsv:302 — Convert (⎕TS-style or Dyalog date number) date-times to DateTimePicker format time stamps; Prepared duplicate calendar recipe with the same independently captured timestamp; Concrete timestamp using existing calendar library and numeric encoding; Excel example is after its fictitious 1900 leap day
+•LOAD 'lib/dyalog.apl' ⋄ (days 2024 2 29),12 34 56
+45350 12 34 56
+
+⍝ aplcart/tt.tsv:305 — Convert (⎕TS-style or Dyalog date number) date-times to ISO day-of-year components time stamps; Prepared duplicate calendar recipe with the same independently captured timestamp; Concrete timestamp using existing calendar library and numeric encoding; Excel example is after its fictitious 1900 leap day
+•LOAD 'lib/dyalog.apl' ⋄ 2024,(1+(days 2024 2 29)-days 2024 1 1),12 34 56 123000
+2024 60 12 34 56 123000
+
+⍝ aplcart/tt.tsv:306 — Convert (⎕TS-style or Dyalog date number) date-times to ISO day-of-year components time stamps; Prepared duplicate calendar recipe with the same independently captured timestamp; Concrete timestamp using existing calendar library and numeric encoding; Excel example is after its fictitious 1900 leap day
+•LOAD 'lib/dyalog.apl' ⋄ 2024,(1+(days 2024 2 29)-days 2024 1 1),12 34 56 123000
+2024 60 12 34 56 123000
+
+⍝ aplcart/tt.tsv:307 — Convert (⎕TS-style or Dyalog date number) date-times to decimal encoded date and time stamps; Prepared duplicate calendar recipe with the same independently captured timestamp; Concrete timestamp using existing calendar library and numeric encoding; Excel example is after its fictitious 1900 leap day
+•LOAD 'lib/dyalog.apl' ⋄ 100⊥¨(2024 2 29)(12 34 56)
+20240229 123456
+
+⍝ aplcart/tt.tsv:308 — Convert (⎕TS-style or Dyalog date number) date-times to decimal encoded date and time stamps; Prepared duplicate calendar recipe with the same independently captured timestamp; Concrete timestamp using existing calendar library and numeric encoding; Excel example is after its fictitious 1900 leap day
+•LOAD 'lib/dyalog.apl' ⋄ 100⊥¨(2024 2 29)(12 34 56)
+20240229 123456
+
+⍝ aplcart/table.tsv:652 — Convert (⎕TS-style or Dyalog date number) date-times to ISO day-of-week components time-stamps; Prepared existing-array arithmetic with independently captured date components; Explicit timestamp: ISO week uses the year of its Thursday; subsecond components are rescaled arithmetically; No clock or general date-conversion API needed
+•LOAD 'lib/dyalog.apl' ⋄ f←{d←days 3↑⍵ ⋄ w←1+7|d-1 ⋄ th←d+4-w ⋄ y←↑date th ⋄ y,(1+⌊(th-days y 1 1)÷7),w,(3↑3↓⍵),(7⊃⍵)×1000} ⋄ f 2021 1 1 12 34 56 123
+2020 53 5 12 34 56 123000
+
+⍝ aplcart/table.tsv:653 — Convert (⎕TS-style or Dyalog date number) date-times to microsecond precision ⎕TS-style time-stamps; Prepared existing-array arithmetic with independently captured date components; Explicit timestamp: ISO week uses the year of its Thursday; subsecond components are rescaled arithmetically; No clock or general date-conversion API needed
+•LOAD 'lib/dyalog.apl' ⋄ (1000∘×)@7⊢2024 2 29 12 34 56 123
+2024 2 29 12 34 56 123000
+
+⍝ aplcart/table.tsv:655 — Convert (⎕TS-style or Dyalog date number) date-times to nanosecond precision ⎕TS-style time-stamps; Prepared existing-array arithmetic with independently captured date components; Explicit timestamp: ISO week uses the year of its Thursday; subsecond components are rescaled arithmetically; No clock or general date-conversion API needed
+•LOAD 'lib/dyalog.apl' ⋄ (1000000∘×)@7⊢2024 2 29 12 34 56 123
+2024 2 29 12 34 56 123000000
+
+⍝ aplcart/tt.tsv:303 — Convert (⎕TS-style or Dyalog date number) date-times to ISO day-of-week components time stamps; Prepared existing-array arithmetic with independently captured date components; Explicit timestamp: ISO week uses the year of its Thursday; subsecond components are rescaled arithmetically; No clock or general date-conversion API needed
+•LOAD 'lib/dyalog.apl' ⋄ f←{d←days 3↑⍵ ⋄ w←1+7|d-1 ⋄ th←d+4-w ⋄ y←↑date th ⋄ y,(1+⌊(th-days y 1 1)÷7),w,(3↑3↓⍵),(7⊃⍵)×1000} ⋄ f 2021 1 1 12 34 56 123
+2020 53 5 12 34 56 123000
+
+⍝ aplcart/tt.tsv:304 — Convert (⎕TS-style or Dyalog date number) date-times to ISO day-of-week components time stamps; Prepared existing-array arithmetic with independently captured date components; Explicit timestamp: ISO week uses the year of its Thursday; subsecond components are rescaled arithmetically; No clock or general date-conversion API needed
+•LOAD 'lib/dyalog.apl' ⋄ f←{d←days 3↑⍵ ⋄ w←1+7|d-1 ⋄ th←d+4-w ⋄ y←↑date th ⋄ y,(1+⌊(th-days y 1 1)÷7),w,(3↑3↓⍵),(7⊃⍵)×1000} ⋄ f 2021 1 1 12 34 56 123
+2020 53 5 12 34 56 123000
+
+⍝ aplcart/tt.tsv:309 — Convert (⎕TS-style or Dyalog date number) date-times to microsecond precision ⎕TS-style time stamps; Prepared existing-array arithmetic with independently captured date components; Explicit timestamp: ISO week uses the year of its Thursday; subsecond components are rescaled arithmetically; No clock or general date-conversion API needed
+•LOAD 'lib/dyalog.apl' ⋄ (1000∘×)@7⊢2024 2 29 12 34 56 123
+2024 2 29 12 34 56 123000
+
+⍝ aplcart/tt.tsv:310 — Convert (⎕TS-style or Dyalog date number) date-times to microsecond precision ⎕TS-style time stamps; Prepared existing-array arithmetic with independently captured date components; Explicit timestamp: ISO week uses the year of its Thursday; subsecond components are rescaled arithmetically; No clock or general date-conversion API needed
+•LOAD 'lib/dyalog.apl' ⋄ (1000∘×)@7⊢2024 2 29 12 34 56 123
+2024 2 29 12 34 56 123000
+
+⍝ aplcart/tt.tsv:311 — Convert (⎕TS-style or Dyalog date number) date-times to nanosecond precision ⎕TS-style time stamps; Prepared existing-array arithmetic with independently captured date components; Explicit timestamp: ISO week uses the year of its Thursday; subsecond components are rescaled arithmetically; No clock or general date-conversion API needed
+•LOAD 'lib/dyalog.apl' ⋄ (1000000∘×)@7⊢2024 2 29 12 34 56 123
+2024 2 29 12 34 56 123000000
+
+⍝ aplcart/tt.tsv:312 — Convert (⎕TS-style or Dyalog date number) date-times to nanosecond precision ⎕TS-style time stamps; Prepared existing-array arithmetic with independently captured date components; Explicit timestamp: ISO week uses the year of its Thursday; subsecond components are rescaled arithmetically; No clock or general date-conversion API needed
+•LOAD 'lib/dyalog.apl' ⋄ (1000000∘×)@7⊢2024 2 29 12 34 56 123
+2024 2 29 12 34 56 123000000
+
+⍝ aplcart/table.tsv:2188 — Trace of function application; Prepared tracing dop using first-class function values and explicit output; no function-source introspection required; Trace ordinary function values rather than reconstructing a function name through ⎕OR. Preserve monadic/dyadic calls and return the operand result
+•LOAD 'lib/dyalog.apl' ⋄ a←(-tc)3 ⋄ b←2(+tc)3 ⋄ a b
+¯3 5
+
+⍝ aplcart/table.tsv:1843 — Multi-column display; Prepared pure column layout using explicit width; no terminal state required; Use based Mix/direct reduction and the existing library width default 102; retain explicit gap/width argument
+•LOAD 'lib/dyalog.apl' ⋄ (1 14 cols 'one' 'two' 'three' 'four' 'five' ⋄ 1 4 cols 'abcdefgh' 'ijk' ⋄ 1 14 cols ⊃'one' 'two' 'three')
+(2 14⍴'one three fivetwo four      ') (2 4⍴'abcdijk ') (1 13⍴'one two three')
+
+⍝ aplcart/table.tsv:2493 — Create a pivot table from an appropriate matrix; Prepared independent concrete example of the command’s mathematical operation; Express the pure calculation with existing array operations/library functions, without the command wrapper or file/workspace facilities
+t←5 3⍴1 1 10 1 2 20 2 1 30 1 1 5 2 2 40 ⋄ r c v←↓⍉t ⋄ (∪r){+/v/⍨(r=⍺)∧c=⍵}⌝∪c
+2 2⍴15 20 30 40
+
+⍝ aplcart/table.tsv:2509 — Convert a component file timestamp (single float number) to ⎕TS format (vector of 7 numbers); Prepared independent concrete example of the command’s mathematical operation; Express the pure calculation with existing array operations/library functions, without the command wrapper or file/workspace facilities
+•LOAD 'lib/dyalog.apl' ⋄ date(days 1970 1 1)+102549888000÷5184000
+2024 2 29 0 0 0 0
 

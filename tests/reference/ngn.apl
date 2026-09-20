@@ -1856,7 +1856,7 @@ m←45 60 33 50 66 19⋄(m=50)/⍳≢m   ⍝ 1⍴4
 ⍝ error: INDEX ERROR
 
 ⍝ ngn:600 —
-(⊂2 3⍴3 1 4 1 2 3)⌷111 222 333 444   ⍝ 2 3⍴333 111 444 111 222 333
+[2 3⍴3 1 4 1 2 3]⌷111 222 333 444   ⍝ 2 3⍴333 111 444 111 222 333
 
 ⍝ ngn:601 —
 2 1   ⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34
@@ -1870,7 +1870,7 @@ m←45 60 33 50 66 19⋄(m=50)/⍳≢m   ⍝ 1⍴4
 21 22 23 24
 
 ⍝ ngn:604 —
-(⊂4 3)⌷111 222 333 444   ⍝ 444 333
+[4 3]⌷111 222 333 444   ⍝ 444 333
 
 ⍝ ngn:605 —
 3(2 1)⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34
@@ -2273,4 +2273,43 @@ queens←{ search←{ (⊂⍬)∊⍵:0⍴⊂⍬ ⋄ 0=⍴⍵:rmdups ⍺ ⋄ (hd 
 
 ⍝ ngn:501 — ngn accepts count/function operands to power in either order (apl.js, voc[⍣]); port to function⍣count; Explicit modified assignment updates the outer counter under basedpl scope rules; Original expected 5 retained and checked in Dyalog 20.0.53963.0
 c←0 ⋄ ({c+←1}⍣5)0 ⋄ c   ⍝ 5
+
+⍝ ngn:421 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Use an explicit whole seed; a seeded wrapper leaves the unseeded function unchanged
+f←{⍺+2×⍵} ⋄ 123 f/⍬   ⍝ 123
+
+⍝ ngn:422 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Use an explicit whole seed; a seeded wrapper leaves the unseeded function unchanged
+f←{⍺+2×⍵} ⋄ 456 f/⍬   ⍝ 456
+
+⍝ ngn:423 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Use an explicit whole seed; a seeded wrapper leaves the unseeded function unchanged
+f←{⍺+2×⍵} ⋄ g←{789 f/⍵} ⋄ f/⍬
+⍝ error: DOMAIN ERROR
+
+⍝ ngn:683 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Replace ngn ambivalent pairing with a dop using lazy default-left valence dispatch
+Amb←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍵ ⋄ ⍺ ⍹ ⍵} ⋄ ({1}Amb{2})0
+1
+
+⍝ ngn:684 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Replace ngn ambivalent pairing with a dop using lazy default-left valence dispatch
+Amb←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍵ ⋄ ⍺ ⍹ ⍵} ⋄ 0({1}Amb{2})0
+2
+
+⍝ ngn:690 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Call the circumference/area functions explicitly; π replaces the old circle monad; Both observe the updated radius
+r←3 ⋄ c←{2×πr} ⋄ S←{πr*2} ⋄ bef←.01×⌊100×r(c 0)(S 0) ⋄ r←r+1 ⋄ aft←.01×⌊100×r(c 0)(S 0) ⋄ bef aft
+(3 18.84 28.27) (4 25.13 50.26)
+
+⍝ ngn:705 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
+f←{⍺←¯1 ⋄ ⍺×⍵} ⋄ (f 5)(3 f 5)   ⍝ ¯5 15
+
+⍝ ngn:707 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
+Twice←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍶ ⍵ ⋄ ⍺ ⍶ ⍺ ⍶ ⍵} ⋄ *Twice 2
+1618.1779919126539
+
+⍝ ngn:708 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
+Twice←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍶ ⍵ ⋄ ⍺ ⍶ ⍺ ⍶ ⍵} ⋄ 3*Twice 2
+19683
+
+⍝ ngn:709 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
+H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ +H÷2   ⍝ 2.5
+
+⍝ ngn:710 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
+H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ 7+H÷2   ⍝ 7.5
 

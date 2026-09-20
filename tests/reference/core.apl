@@ -84,6 +84,9 @@ v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}
 ⍝ — Float binary encoding must not use tolerant floor
 ⊤9007199254740991   ⍝ 53⍴1
 
+⍝ — Float mixed-radix digits retain low bits
+(16⍴16)⊤¯1+2*53   ⍝ 0 0 1,13⍴15
+
 ⍝ — Binary digits require integral values
 ⊤1.5
 ⍝ error: DOMAIN ERROR
@@ -372,7 +375,7 @@ choose←{⎕←9 ⋄ 2}◶({⎕←1 ⋄ 1÷0}˘{⎕←2 ⋄ ⍺-⍵}) ⋄ 10 ch
 (2 1⍴10 20)+[2 1]3 1⍴1 2 3   ⍝ 2 3⍴11 12 13 21 22 23
 
 ⍝ — Broadcasting recurs inside nested arrays
-(⊂2 1⍴1 2)+⊂1 3⍴10 20 30   ⍝ ⊂2 3⍴11 21 31 12 22 32
+[2 1⍴1 2]+⊂1 3⍴10 20 30   ⍝ ⊂2 3⍴11 21 31 12 22 32
 
 ⍝ — Broadcast integer overflow promotes to exact big numbers
 (1 2⍴9223372036854775807x 1x)+1x 2x
@@ -805,10 +808,10 @@ a←⍎''
 Ⓟ⊂2 2⍴1x 5x ¯1x 0x   ⍝ ¯1x 0x 0x 0x 0x 1x
 
 ⍝ — Fractional exponents evaluate numerically even with exact input
-(⊂2 2⍴2x 1r2 3x 1r4)Ⓟ16x   ⍝ 14
+[2 2⍴2x 1r2 3x 1r4]Ⓟ16x   ⍝ 14
 
 ⍝ — Evaluate a two-variable exponent table at an enclosed coordinate vector
-(⊂4 3⍴¯1 2 1 1 1 1 2 1 2 3 0 2)Ⓟ⊂2.5 ¯1   ⍝ 11.75
+[4 3⍴¯1 2 1 1 1 1 2 1 2 3 0 2]Ⓟ⊂2.5 ¯1   ⍝ 11.75
 
 ⍝ — Empty exact evaluation points retain an exact prototype
 1x 2xⓅ0⍴0x   ⍝ 0⍴0x
@@ -841,14 +844,14 @@ f←1x 2x 3x∘Ⓟ ⋄ 10x 20x(f∂)1x 2x   ⍝ 80x 280x
 f←(2x (1x 3x))∘Ⓟ ⋄ f∂2x   ⍝ 0x
 
 ⍝ — A multivariate gradient retains the coordinate enclosure
-f←(⊂2 3⍴1x 2x 0x 1x 0x 2x)∘Ⓟ ⋄ f∂⊂3x 4x   ⍝ ⊂6x 8x
+f←[2 3⍴1x 2x 0x 1x 0x 2x]∘Ⓟ ⋄ f∂⊂3x 4x   ⍝ ⊂6x 8x
 
 ⍝ — A scalar cotangent scales the multivariate gradient
-f←(⊂2 3⍴1x 2x 0x 1x 0x 2x)∘Ⓟ ⋄ 2x(f∂)⊂3x 4x
+f←[2 3⍴1x 2x 0x 1x 0x 2x]∘Ⓟ ⋄ 2x(f∂)⊂3x 4x
 ⊂12x 16x
 
 ⍝ — A shared scalar coordinate sums the partial derivatives
-f←(⊂2 3⍴1x 2x 0x 1x 0x 2x)∘Ⓟ ⋄ f∂3x   ⍝ 12x
+f←[2 3⍴1x 2x 0x 1x 0x 2x]∘Ⓟ ⋄ f∂3x   ⍝ 12x
 
 ⍝ — Multiple polynomial outputs contribute to one scalar-input VJP
 f←(2 2⍴1x 2x 3x 4x)∘Ⓟ ⋄ 10x 20x(f∂)3x   ⍝ 100x
@@ -874,7 +877,7 @@ f←(2 2⍴1x 2x 3x 4x)∘Ⓟ ⋄ 10x 20x(f∂)3x   ⍝ 100x
 ⍝ error: LENGTH ERROR
 
 ⍝ — The coordinate count must match the exponent table's variables
-(⊂1 3⍴1 2 3)Ⓟ⊂1 2 3
+[1 3⍴1 2 3]Ⓟ⊂1 2 3
 ⍝ error: LENGTH ERROR
 
 ⍝⍝ Prime and factor families
@@ -1069,22 +1072,33 @@ f←{⍵+1}⇄{⍵-1} ⋄ (f⍣¯1)⍣¯1⊢5   ⍝ 6
 {1÷0}⍣(0 2⍴0)⊢'ab'   ⍝ 0 2 2⍴' '
 
 ⍝ — Iteration history includes the starting value
-(1∘+)⍣\3⊢5   ⍝ 5 6 7 8
+(1∘+)⍣[3]⊢5   ⍝ 5 6 7 8
 
 ⍝ — A negative history count follows the inverse
-(1∘+)⍣ \ ¯2⊢5   ⍝ 5 4 3
+(1∘+)⍣[¯2]⊢5   ⍝ 5 4 3
 
 ⍝ — History pads growing iterates into rows
-{⍵,1}⍣\2⊢,2   ⍝ 3 3⍴2 0 0 2 1 0 2 1 1
+{⍵,1}⍣[2]⊢,2   ⍝ 3 3⍴2 0 0 2 1 0 2 1 1
 
 ⍝ — Predicate history includes the iterate that satisfies the stopping test
-1 +⍣\{⍺=3}0   ⍝ 0 1 2 3
+1(+⍣[{⍺=3}])0   ⍝ 0 1 2 3
 
 ⍝ — Fixed-point history includes both the initial and unchanged next value
-⊢⍣\≡⊢4   ⍝ 4 4
+⊢⍣[≡]⊢4   ⍝ 4 4
 
 ⍝ — Zero-step history retains the initial value without calling the operand
-{1÷0}⍣\0⊢'ab'   ⍝ 1 2⍴'ab'
+{1÷0}⍣[0]⊢'ab'   ⍝ 1 2⍴'ab'
+
+⍝ — An enclosed named predicate uses ordinary function calls and global lookup
+limit←4 ⋄ stop←[{⍺≥limit}] ⋄ (1∘+)⍣stop⊢1   ⍝ 1 2 3 4
+
+⍝ — History counts still require integral values
++⍣[0.5]⊢1
+⍝ error: DOMAIN ERROR
+
+⍝ — A history is not inverted as if it were ordinary repeated application
+((1∘+)⍣[2])⍣¯1⊢1 2 3
+⍝ error: DOMAIN ERROR
 
 ⍝ — Parenthesizing power leaves the following backslash as ordinary scan
 (+⍣1)\1 2 3   ⍝ 1 3 6
@@ -1098,7 +1112,7 @@ f←{⍵+1}⇄{⍵-1} ⋄ (f⍣¯1)⍣¯1⊢5   ⍝ 6
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-+⍣\1 2⊢3
++⍣[1 2]⊢3
 ⍝ error: RANK ERROR
 
 ⍝ — Repeated power counts reuse iterates rather than calling the operand again
@@ -1524,6 +1538,15 @@ avg←+/÷≢ ⋄ avg 1x 2x 4x   ⍝ 7r3
 
 ⍝ — Repeated replacement indices use the last supplied value
 10 20@2 2⍳3   ⍝ 1 20 3
+
+⍝ — A matrix of indices gives the replacement function the same frame as brackets
+v←10 20 30 40 ⋄ i←2 2⍴1 4 2 3 ⋄ {⍵+2 2⍴100 200 300 400}@i⊢v   ⍝ 110 320 430 240
+
+⍝ — Major-cell selection retains trailing axes after the index array's frame
+{⍵+2 2 1⍴100 200 300 400}@(2 2⍴1 4 2 3)⊢4 2⍴⍳8   ⍝ 4 2⍴101 102 303 304 405 406 207 208
+
+⍝ — An empty multidimensional index array leaves the argument unchanged
+0@(0 2⍴0)⊢⍳4   ⍝ 1 2 3 4
 
 ⍝ — Functional update leaves the original array unchanged
 a←⍳3 ⋄ b←0@2⊢a ⋄ a   ⍝ 1 2 3
@@ -2234,6 +2257,33 @@ r←10 {⎕←⍺ ⍵ ⋄ ⍺-⍵}\1 2 3
 ⍝ ⎕: 10 1\n9 2\n7 3
 
 ⍝⍝ Structural slices and brackets
+
+⍝ — Standalone brackets enclose arrays; nested brackets retain both scalar layers
+[[1 2 3]]   ⍝ ⊂⊂1 2 3
+
+⍝ — A named operator accepts an enclosed operand through the ordinary binding rule
+p←⍣ ⋄ (1∘+)p[2]⊢0   ⍝ 0 1 2
+
+⍝ — Functions inside brackets are values, including trains
+fs←[+÷≢] ⋄ (↑fs)2 4 9   ⍝ (2 4 9)÷3
+
+⍝ — Bracket expressions use the enclosing function's arguments
+{[⍺+⍵]}⍨3   ⍝ ⊂6
+
+⍝ — Enclosure evaluates its contents once
+[⎕←3]   ⍝ ⊂3
+⍝ ⎕: 3
+
+⍝ — Indexing a disclosed enclosure still uses postfix brackets
+v←[1 2 3] ⋄ (↑v)[2]   ⍝ 2
+
+⍝ — Standalone empty brackets have no expression to enclose
+[]
+⍝ error: SYNTAX ERROR
+
+⍝ — Axis separators belong to postfix brackets
+[1;2]
+⍝ error: SYNTAX ERROR
 
 ⍝ —
 ⍉[1 2 3 ⋄ 4 5 6]   ⍝ 3 2⍴1 4 2 5 3 6
@@ -3586,7 +3636,7 @@ outer←{inner←{⍵} ⋄ inner ⍵} ⋄ outer 1   ⍝ 1
 ⍬⍉3   ⍝ 3
 
 ⍝ —
-(⊂3)+4   ⍝ ⊂7
+[3]+4   ⍝ ⊂7
 
 ⍝ —
 ≢1 2 3   ⍝ 3x
@@ -3695,7 +3745,7 @@ fs←+˘× ⋄ fs[2]←- ⋄ f←fs[2] ⋄ 3 f 2   ⍝ 1
 2∊1 2 3   ⍝ 1x
 
 ⍝ —
-(⊂2)∊1 2 3   ⍝ 1x
+[2]∊1 2 3   ⍝ 1x
 
 ⍝ —
 (1 3 (1=⍸) 0 ⋄ 1 3 (1=⍸) 1 ⋄ 1 3 (1=⍸) 2 ⋄ 1 3 (1=⍸) 3 ⋄ 1 3 (1=⍸) 4)
@@ -3734,7 +3784,7 @@ fs←+˘× ⋄ fs[2]←- ⋄ f←fs[2] ⋄ 3 f 2   ⍝ 1
 tree←(10 20)(30 (40 50)) ⋄ tree⊃/⌽2 2 1   ⍝ 40
 
 ⍝ — A scalar seed remains distinct from an atom
-(⊂10)+/1 2 3   ⍝ ⊂16
+[10]+/1 2 3   ⍝ ⊂16
 
 ⍝ — Whole-seed scan follows a path and retains its intermediate arrays
 ((10 20)(30 40)) ⊃⍨\1 2   ⍝ (10 20) 20

@@ -112,6 +112,9 @@ def test_math_construction():
     f = plus.left(1).with_inverse(subtract(1))
     np.testing.assert_array_equal(f.power([2, -1, 0])(10), [12, 9, 10])
     np.testing.assert_array_equal(f.history(-2)(10), [10, 9, 8])
+    with Session() as s:
+        stop = s('limit←13 ⋄ {⍺≥limit}')
+        np.testing.assert_array_equal(f.history(stop)(10), [10, 11, 12, 13])
     np.testing.assert_array_equal(windows(2, [1, 2, 3]), [[1, 2], [2, 3]])
     assert prime(10).py == 29 and prime_mode(1, 29).py == 1
     np.testing.assert_array_equal(factors(700), [2, 2, 5, 5, 7])

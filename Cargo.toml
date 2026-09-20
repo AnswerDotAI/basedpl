@@ -4,7 +4,7 @@ version = "0.1.6"
 edition = "2021"
 rust-version = "1.98"
 license = "Apache-2.0"
-description = "BasedPL is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation."
+description = "bAsedPL is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation."
 
 [lib]
 name = "basedpl"

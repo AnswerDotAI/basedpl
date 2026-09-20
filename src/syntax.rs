@@ -337,13 +337,6 @@ impl Parser<'_> {
                 }
                 TokenKind::Literal(a) => NodeKind::Literal(a.clone()),
                 TokenKind::Function(f) => NodeKind::Function(*f),
-                TokenKind::Operator(OperatorKind::Power)
-                    if self.tokens.get(self.pos).is_some_and(|t| matches!(t.kind, TokenKind::Hybrid(Hybrid { scan: true, first: false, axis: None }))) =>
-                {
-                    span.range.end = self.tokens[self.pos].span.range.end;
-                    self.pos += 1;
-                    NodeKind::Operator(OperatorKind::History)
-                }
                 TokenKind::Operator(op) => NodeKind::Operator(*op),
                 TokenKind::Name(name) => NodeKind::Name(name.clone()),
                 TokenKind::System(name) => NodeKind::System(name.clone()),

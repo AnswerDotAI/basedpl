@@ -1,4 +1,4 @@
-# `⍣` — Iterate / Invert
+# `⍣` — Iterate / Invert / History
 
 `f⍣N Y` applies `f` `N` times. `N=0` returns `Y`. In dyadic calls the left argument stays fixed.
 
@@ -31,6 +31,30 @@ Array counts give that frame of result cells, assembled with fill.
 
 Positive steps run first, then inverse steps from `Y`; repeated counts reuse states. Empty counts use `Y`'s cell shape/fill directly.
 
-See [History](history.md) and [Inverse pair](inverse-pair.md). Convergence: `f⍣≡`.
+## History
 
-DOMAIN: non-integral count, non-Boolean predicate, unknown inverse.
+Enclose the count to collect states `0…N`, including `Y`. Negative `N` steps through the inverse; dyadic calls hold `X` fixed.
+
+```apl
+(1∘+)⍣[3]⊢5      ⍝ 5 6 7 8
+(1∘+)⍣[¯2]⊢5     ⍝ 5 4 3
+{1÷0}⍣[0]⊢'ab'   ⍝ 1 2⍴'ab'
+```
+
+Enclose a predicate to collect states until `new g old` is true. Includes initial and terminating states; always takes at least one step.
+
+```apl
+1(+⍣[{⍺=3}])0     ⍝ 0 1 2 3
+⊢⍣[≡]⊢4          ⍝ 4 4
+```
+
+States assemble with fill.
+
+```apl
+{⍵,1}⍣[2]⊢,2     ⍝ 3 3⍴2 0 0 2 1 0 2 1 1
+n←{0.5×⍵+2÷⍵} ⋄ ≢n⍣[≡]⊢1  ⍝ 7x
+```
+
+See [Inverse pair](inverse-pair.md). Convergence: `f⍣≡`; convergence history: `f⍣[≡]`.
+
+RANK: history count is not an atom. DOMAIN: non-integral count, non-Boolean predicate, unknown inverse.

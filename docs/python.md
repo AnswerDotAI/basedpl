@@ -67,7 +67,7 @@ a = Array([[1, 2, 3], [4, 5, 6]])
 np.testing.assert_array_equal(a.np, [[1, 2, 3], [4, 5, 6]])
 ```
 
-Python/NumPy conversions copy. Passing an `Array` back to BasedPL shares its immutable value. Keep `Array` to preserve empty prototypes and exact nesting. NumPy is needed only for ndarray conversion.
+Python/NumPy conversions copy. Passing an `Array` back to bAsedPL shares its immutable value. Keep `Array` to preserve empty prototypes and exact nesting. NumPy is needed only for ndarray conversion.
 
 ## Array operations
 
@@ -133,7 +133,7 @@ Names distinguish valences: `sign`/`times`, `shape`/`reshape`, `iota`/`index_of`
 | `f.rank(r)`, `f.atop(g)` | `f⍤r`, `f⍤g` |
 | `f.beside(g)`, `f.over(g)`, `f.behind(g)` | `f∘g`, `f⍥g`, `f⍛g` |
 | `f.power(n)`, `f.at(i)` | `f⍣n`, `f@i` |
-| `f.history(n)` | `f⍣\n` (count or predicate) |
+| `f.history(n)` | `f⍣[n]` (count or predicate) |
 | `f.with_inverse(g)`, `f.under(g)` | `f⇄g`, `f⌾g` |
 | `f.derivative()` | `f∂` |
 | `f[k]` | `f[k]` axis qualifier |

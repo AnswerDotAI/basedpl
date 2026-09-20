@@ -1,4 +1,4 @@
-⍝ Numeric dfns — adapted for BasedPL from April
+⍝ Numeric dfns — adapted for bAsedPL from April
 ⍝ Source: https://dfns.dyalog.com/n_contents.htm (individual sources below)
 ⍝ April: libraries/dfns/numeric/numeric.apl; Apache-2.0, see LICENSE-april
 •LOAD 'lib/graph.apl'
@@ -122,7 +122,7 @@ hex ← {  ⍝ Hexadecimal from decimal.
   1≠≡,⍵:⍺ ∇¨⍵  ⍝ simple-array-wise:
   0∊⍵-1+⍵:'Too big'
   n←⍬⍴⍺,2*⌈2⍟2⌈16⍟1+⌈/|⍵  ⍝ default width.
-  ↓[1]'0123456789abcdef'[1+(n/16x)⊤⍵]
+  ↓[1]'0123456789abcdef'[1+(n/16)⊤⍵]
 }
 
 ⍝ From http://dfns.dyalog.com/c_dec.htm

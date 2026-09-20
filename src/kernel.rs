@@ -25,7 +25,7 @@ impl LanguageSession for AplSession {
         Ok(KernelInfo {
             implementation: "basedpl".into(),
             implementation_version: env!("CARGO_PKG_VERSION").into(),
-            banner: "BasedPL — an APL-derived array language".into(),
+            banner: "bAsedPL — an APL-derived array language".into(),
             language_info: json!({"name": "apl", "version": env!("CARGO_PKG_VERSION"), "mimetype": "text/apl", "file_extension": ".apl", "codemirror_mode": "apl"}),
         })
     }

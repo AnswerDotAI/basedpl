@@ -1,10 +1,10 @@
 # Reference acceptance cases
 
-The `.apl` files are the executable language tests. `core.apl` holds BasedPL's own semantic cases. The other files cover ngn assertions/example programs, April core and library assertions/demos/setup, APLcart main/tacit catalogue rows, and selected Dyalog documentation examples. The tracked `inventory/*.jsonl` files retain original records, independent expectations, adaptations and candidates for activation. Entries are not removed because BasedPL cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
+The `.apl` files are the executable language tests. `core.apl` holds bAsedPL's own semantic cases. The other files cover ngn assertions/example programs, April core and library assertions/demos/setup, APLcart main/tacit catalogue rows, and selected Dyalog documentation examples. The tracked `inventory/*.jsonl` files retain original records, independent expectations, adaptations and candidates for activation. Entries are not removed because bAsedPL cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
 
 Source entries are not necessarily executable tests. Many APLcart recipes have unbound arguments and no expected result. They need concrete examples. Library cases need their definitions and setup. Use the scanner below for current counts and failures; fixture reasons describe their last review, not necessarily today's implementation. Progress notes belong in `meta/`, not this README.
 
-Active cases use BasedPL spellings: `π` for APL's monadic `○`, `g⌝` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, and `•Name` for system names. Original inventory sources retain their dialect's notation.
+Active cases use bAsedPL spellings: `π` for APL's monadic `○`, `g⌝` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, and `•Name` for system names. Original inventory sources retain their dialect's notation.
 
 Run the active cases with:
 
@@ -31,7 +31,7 @@ Every case in `.apl` runs regardless of inventory status. Edit these files direc
 To enable a case:
 
 1. Find its `id` in the inventory. Check its recipe, prerequisites and original expectation. Do not treat another dialect as the specification.
-2. Supply concrete `code` and `expected` or `expected_error` if missing. Array expectations contain `shape`, flat `data`, and `prototype`. Nested arrays use the same structure. Complex elements use `{"complex":[real,imag]}`. Real infinities use `{"infinity":1}` or `{"infinity":-1}`. `expected: null` explicitly expects no result; an absent expectation remains invalid. Derive expectations independently of BasedPL.
+2. Supply concrete `code` and `expected` or `expected_error` if missing. Array expectations contain `shape`, flat `data`, and `prototype`. Nested arrays use the same structure. Complex elements use `{"complex":[real,imag]}`. Real infinities use `{"infinity":1}` or `{"infinity":-1}`. `expected: null` explicitly expects no result; an absent expectation remains invalid. Derive expectations independently of bAsedPL.
 3. Activate the reviewed case:
 
    ```bash
@@ -64,6 +64,8 @@ corpus.update_many({'ngn:391': {'reason': 'reviewed'}, 'ngn:392': {'reason': 're
 `find` searches full ID/code/reason text and returns single-line previews of at most 180 characters, keyed by ID. Filter with `source` or `status`; `limit=None` returns all matches. `corpus[id]` returns code/status/reason. Use `corpus[id, 'code', 'expected']` for selected fields or `corpus[id, '*']` for the full record. Unknown IDs raise `KeyError`. Use `get_many(ids, *fields)` for bulk reads. Updates read fresh files, preserve unrelated fields, and report changed field names. Use `remove=['expected_error']` when replacing an error expectation with a value; `None` means JSON null, not deletion. Unknown IDs write nothing. Use these methods rather than reading and patching whole JSONL lines in the conversation.
 
 Library recipes use the shared ports in `lib/`: start a case with `•LOAD 'lib/numeric.apl'`, for example. Keep case-specific setup in the case. Combine related examples only when their combined expectation stays clear. `library_definitions(path)` reads top-level named assignments; `source_definitions(text)` does the same for a string. `library_dependencies(definitions, code)` selects transitive references for review, ignoring strings/comments but not resolving lexical shadowing. Retain original source and adaptation metadata in the inventory. The upstream checkout is only needed when reviewing new ports.
+
+Additional Dyalog workspace ports live in `lib/dyalog.apl`. Their APLcart inventory entries retain `original_definition`, `definition_source` and `definition_version`. Unported definitions keep `pending` status and a reason naming the remaining work. Licence confirmation for these workspace sources is pending; the Dyalog documentation licence below covers documentation examples.
 
 Rebuild the installed command after Rust changes, then scan:
 
@@ -128,7 +130,7 @@ The output is `meta/apl-preview/{ngn,april,aplcart,dyalog,core}.apl`. The refere
 
 ## Sources and adaptations
 
-Active cases use BasedPL's postfix `g⌝` for outer product. The inventory retains upstream `∘.g` spellings.
+Active cases use bAsedPL's postfix `g⌝` for outer product. The inventory retains upstream `∘.g` spellings.
 
 System names use `•` in active cases (`•C`, `•UCS`, etc.). The inventory retains upstream `⎕` spellings. `⎕←` is output in both.
 
@@ -143,17 +145,17 @@ Dyalog cases use `dyalog:page:example` IDs. Source pages default to `language-re
 
 For each new glyph, read its documented valences and select examples that establish distinct semantics. Add structured expectations, run them, and fix failures as part of that glyph's implementation rather than deferring discovered gaps.
 
-Dyalog's two fixed-order float reduction examples are retained as explicit exclusions. BasedPL permits reassociation of primitive float sums/products. Generic-function reduction and primitive scan order remain tested; do not replace excluded expectations with one compiler's chosen answer.
+Dyalog's two fixed-order float reduction examples are retained as explicit exclusions. bAsedPL permits reassociation of primitive float sums/products. Generic-function reduction and primitive scan order remain tested; do not replace excluded expectations with one compiler's chosen answer.
 
-ngn uses origin 0 and has different prototype/dialect rules. Its original expressions and expectations are retained. Adapt index/axis operands to origin 1 and capture values and prototypes independently in Dyalog. Changed code is retained in `original_code`; changed origin is recorded in `original_origin`. Unadapted `origin: 0` describes upstream, not BasedPL's execution settings. Closed literal right-hand expectations were evaluated independently in Dyalog, not with BasedPL.
+ngn uses origin 0 and has different prototype/dialect rules. Its original expressions and expectations are retained. Adapt index/axis operands to origin 1 and capture values and prototypes independently in Dyalog. Changed code is retained in `original_code`; changed origin is recorded in `original_origin`. Unadapted `origin: 0` describes upstream, not bAsedPL's execution settings. Closed literal right-hand expectations were evaluated independently in Dyalog, not with bAsedPL.
 
-April's literal Common Lisp expectations were converted to structured values. Ordinary rational expectations represent approximate results under BasedPL's numeric policy, not opt-in exact `r` literals. The power alias `⋆` is written as standard `*` outside quoted text. Printed-format expectations, host wrappers, and library dependencies remain visible for review.
+April's literal Common Lisp expectations were converted to structured values. Ordinary rational expectations represent approximate results under bAsedPL's numeric policy, not opt-in exact `r` literals. The power alias `⋆` is written as standard `*` outside quoted text. Printed-format expectations, host wrappers, and library dependencies remain visible for review.
 
 APLcart's TIO links were decoded offline. All 972 available decoded programs are retained. No TIO service was contacted. Small closed calculator examples were checked in Dyalog 20.0.53963.0 with `⎕IO=1`, `⎕CT=1E¯14`, `⎕DIV=0`, `⎕ML=1`, and `⎕PP=17`. Multi-output examples collect their values in an array literal. The original program remains in `example`. The import does not execute arbitrary catalogue programs.
 
 `basedpl.reference` contains the import, reference capture, scan, review and activation functions. `scripts/reference.py` is their CLI. Rust tests read the checked-in `.apl` files. They need neither the JSONL inventory, sibling clones, Dyalog, Common Lisp, Node, Python nor network access. Python converter tests also check serialization against the tracked inventory. Import a new upstream snapshot into a new directory and review it against the inventory rather than replacing reviewed statuses.
 
-For live reference work, use `aplnb.dyalog.Apl`, not `aplnb.core` (which uses BasedPL):
+For live reference work, use `aplnb.dyalog.Apl`, not `aplnb.core` (which uses bAsedPL):
 
 ```python
 from aplnb.dyalog import Apl

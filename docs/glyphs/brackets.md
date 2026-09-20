@@ -1,4 +1,18 @@
-# `[ ]` — Literal / Index / Axis
+# `[ ]` — Enclose / Literal / Index / Axis
+
+Standalone `[Y]` encloses `Y`, including functions.
+
+```apl
+[1 2 3]            ⍝ ⊂1 2 3
+f←[+] ⋄ 2(↑f)3     ⍝ 5
+```
+
+After a dyadic operator, brackets supply an enclosed right operand.
+
+```apl
+(1∘+)⍣[3]⊢0        ⍝ 0 1 2 3
+⊢⍣[≡]⊢4            ⍝ 4 4
+```
 
 `[A ⋄ B]` assembles cells with fill. Newlines also separate cells.
 

@@ -1,4 +1,4 @@
-⍝ Array dfns — adapted for BasedPL from April
+⍝ Array dfns — adapted for bAsedPL from April
 ⍝ Source: https://dfns.dyalog.com/n_contents.htm (individual sources below)
 ⍝ April: libraries/dfns/array/array.apl; Apache-2.0, see LICENSE-april
 

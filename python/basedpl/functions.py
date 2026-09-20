@@ -42,7 +42,7 @@ class Function(_Operators):
     def under(self, g): return _build('⌾', self, g)
     def with_inverse(self, g): return _build('⇄', self, g)
     def power(self, counts): return _build('⍣', self, counts)
-    def history(self, count_or_predicate): return _build('⍣\\', self, count_or_predicate)
+    def history(self, count_or_predicate): return self.power(enclose(count_or_predicate))
     def derivative(self): return _build('∂', self)
     def at(self, indices): return _build('@', self, indices)
     def stencil(self, spec): return _build('⌺', self, spec)

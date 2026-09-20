@@ -1,4 +1,4 @@
-⍝ String dfns — adapted for BasedPL from April
+⍝ String dfns — adapted for bAsedPL from April
 ⍝ Source: https://dfns.dyalog.com/n_contents.htm (individual sources below)
 ⍝ April: libraries/dfns/string/string.apl; Apache-2.0, see LICENSE-april
 •LOAD 'lib/array.apl'

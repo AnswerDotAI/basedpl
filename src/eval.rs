@@ -153,7 +153,7 @@ impl Function {
                 let (af, bf) = (matches!(a, Operand::Function(_)), matches!(b, Operand::Function(_)));
                 if !match op {
                     Compose => af || bf,
-                    Rank | Power | History => af,
+                    Rank | Power => af,
                     Over | Behind | Product | PairInverse | Under => af && bf,
                     At => true,
                     Stencil => af && !bf,
@@ -372,7 +372,7 @@ impl Function {
                 };
                 FunctionNode::Modified(op, f.clone())
             }
-            ("∘" | "⍤" | "⍥" | "⍛" | "." | "⍣" | "⍣\\" | "⇄" | "⌾" | "@" | "⌺", [a, b]) => {
+            ("∘" | "⍤" | "⍥" | "⍛" | "." | "⍣" | "⇄" | "⌾" | "@" | "⌺", [a, b]) => {
                 let op = match kind {
                     "∘" => OperatorKind::Compose,
                     "⍤" => OperatorKind::Rank,
@@ -380,7 +380,6 @@ impl Function {
                     "⍛" => OperatorKind::Behind,
                     "." => OperatorKind::Product,
                     "⍣" => OperatorKind::Power,
-                    "⍣\\" => OperatorKind::History,
                     "⇄" => OperatorKind::PairInverse,
                     "⌾" => OperatorKind::Under,
                     "@" => OperatorKind::At,
@@ -413,7 +412,7 @@ fn composition(
         if left.is_some() { return Err(span.error(ErrorKind::Syntax, "stencil is monadic")); }
         return stencil(f, spec, right, span, session, output);
     }
-    if matches!(op, Power | History) { return power(op, operands, left, right, span, session, output); }
+    if matches!(op, Power) { return power(operands, left, right, span, session, output); }
     match (&operands[0], &operands[1]) {
         (Operand::Value(a), Operand::Function(f)) if matches!(op, Compose) => {
             if left.is_some() { return Err(span.error(ErrorKind::Syntax, "bound functions are monadic")); }
@@ -545,21 +544,15 @@ fn stencil(f: &Function, spec: &Value, right: &Value, span: &Span, session: &mut
     Ok(Bound::new(Binding::from_element(result)))
 }
 
-fn power(
-    op: OperatorKind,
-    operands: &[Operand; 2],
-    left: Option<&Value>,
-    right: &Value,
-    span: &Span,
-    session: &mut Session,
-    output: &mut Vec<String>,
-) -> Result<Bound, Error> {
+fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
     let [Operand::Function(f), operand] = operands else { unreachable!() };
-    let history = matches!(op, OperatorKind::History);
+    let enclosed = match operand { Operand::Value(a) if !a.is_atom() && a.is_scalar() => Some(Operand::from_value(Binding::from_element(a.at(0)))), _ => None };
+    let history = enclosed.is_some();
+    let operand = enclosed.as_ref().unwrap_or(operand);
     let mut value = right.clone();
     match operand {
         Operand::Value(count) => {
-            if history && !count.is_scalar() { return Err(span.error(ErrorKind::Rank, "history count must be scalar")); }
+            if history && !count.is_atom() { return Err(span.error(ErrorKind::Rank, "history needs an enclosed atomic count or function")); }
             let mut indices = count
                 .elements()
                 .map(|e| {
@@ -701,9 +694,9 @@ fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, span: &Sp
             let y = inverse(h, bound, right, span, session, output)?.array(span)?;
             return g.inverse(span)?.call(None, &y, span, session, output);
         }
-        Composed(Power, [Operand::Function(g), Operand::Value(count)]) if first && count.is_scalar() => {
+        Composed(Power, [Operand::Function(g), Operand::Value(count)]) if first && count.is_atom() => {
             let count = crate::primitive::Primitive::Arithmetic(crate::number::Arithmetic::Minus).call(None, count, &session.execution.at(span))?;
-            return power(Power, &[Operand::Function(g.clone()), Operand::Value(count)], left, right, span, session, output);
+            return power(&[Operand::Function(g.clone()), Operand::Value(count)], left, right, span, session, output);
         }
         Composed(Rank, [Operand::Function(g), Operand::Value(ranks)]) => {
             let mut ranks = ranks.clone();
@@ -2089,6 +2082,13 @@ struct Entity {
 }
 
 impl Entity {
+    fn enclosed(mut self) -> Result<Self, Error> {
+        let Term::Selection(mut parts) = self.term else { unreachable!() };
+        if parts.len() != 1 || parts[0].is_none() { return Err(self.span.error(ErrorKind::Syntax, "enclosure needs one expression")); }
+        let value = parts.pop().unwrap().unwrap().enclose().map_err(|k| self.span.error(k, "invalid enclosure"))?;
+        self.term = Term::Binding(Binding::Value(value));
+        Ok(self)
+    }
     fn category(&self) -> Category {
         match self.term {
             Term::Binding(ref value) => Category::of(value),
@@ -2215,6 +2215,15 @@ impl Binder {
                     Some(Entity { term, span: node.span.clone(), shy: false, selection: selected.map(|(_, _, kind)| *kind), assignment: false })
                 }
             } else { None };
+            // Without a postfix target, brackets construct an enclosed value.
+            // A dyadic operator awaiting its right operand is also such a boundary.
+            if binder.stack.last().is_some_and(|e| matches!(e.term, Term::Selection(_)))
+                && next.as_ref().is_none_or(|e| matches!(e.category(), Category::DyadicOperator))
+            {
+                if let Some(left) = next { pending.push(left); }
+                pending.push(binder.stack.pop().unwrap().enclosed()?);
+                continue;
+            }
             let n = binder.stack.len();
             if let Some(left) = next {
                 // Postfix brackets wait for their left operand before later indexing can consume the strand.

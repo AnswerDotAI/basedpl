@@ -54,9 +54,9 @@ Hold **Alt** for the middle column, **Alt-Shift** for the right. Keys refer to a
 | . | `⍀` | `⍙` |
 | / | `⌿` | `⍠` |
 
-`∆` and `⍙` are identifier characters. Repeat Alt-g for `∇∇`; type Alt-Shift-p then backslash for `⍣\`.
+`∆` and `⍙` are identifier characters. Repeat Alt-g for `∇∇`.
 
-The layout retains Dyalog positions where practical, with hjkl arrows and spare keys for BasedPL's additions. Alt-[ and Alt-Shift-o are left vacant because their terminal encodings start control sequences.
+The layout retains Dyalog positions where practical, with hjkl arrows and spare keys for bAsedPL's additions. Alt-[ and Alt-Shift-o are left vacant because their terminal encodings start control sequences.
 
 ## Editor integration
 

@@ -1,6 +1,8 @@
-# BasedPL
+# bAsedPL
 
-BasedPL is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation.
+bAsedPL is an APL-derived language that uses *based arrays*. It emphasizes simple, consistent notation, borrowing ideas from J and BQN.
+
+Based arrays, named in a [1981 paper](https://dl.acm.org/doi/abs/10.1145/586656.586663) and popularized by [BQN](https://mlochbaum.github.io/BQN/doc/based.html), treats numbers, characters and functions as *atoms*, which are collected and shaped in *arrays*. The atom `3` is distinct from the scalar (rank-0 array) `⊂3`.
 
 Work with whole arrays, define functions, and combine them with operators, through an interactive terminal or Python API. Numbers include approximate reals, complex numbers and exact rationals.
 
@@ -10,9 +12,9 @@ avg←+/÷≢ ⋄ avg 2 4 9   ⍝ 5
 1r3+1r6                ⍝ 1r2
 ```
 
-BasedPL uses based arrays, named in a [1981 paper](https://dl.acm.org/doi/abs/10.1145/586656.586663) and popularized by [BQN](https://mlochbaum.github.io/BQN/doc/based.html). Numbers, characters and functions are atoms. Arrays are shaped collections of values: the atom `3` is distinct from the scalar (rank-0 array) `⊂3`. BasedPL distinguishes two application rules. Structural mapping (arithmetic, Each and indexing) preserves the mapped container, including scalars. Cell application (Rank and search) consumes complete cells, returning one result directly or assembling results over surrounding batch axes. See the [language rules](rules.md#arrays-nesting-and-fill) for the value model and examples.
+bAsedPL uses based arrays, named in a [1981 paper](https://dl.acm.org/doi/abs/10.1145/586656.586663) and popularized by [BQN](https://mlochbaum.github.io/BQN/doc/based.html). Numbers, characters and functions are atoms. Arrays are shaped collections of values: the atom `3` is distinct from the scalar (rank-0 array) `⊂3`. bAsedPL distinguishes two application rules. Structural mapping (arithmetic, Each and indexing) preserves the mapped container, including scalars. Cell application (Rank and search) consumes complete cells, returning one result directly or assembling results over surrounding batch axes. See the [language rules](rules.md#arrays-nesting-and-fill) for the value model and examples.
 
-## Using BasedPL
+## Using bAsedPL
 
 - [Getting started](getting-started.md): install and try a calculation.
 - [REPL](repl.md): type glyphs, edit input and display arrays/functions.
@@ -111,8 +113,7 @@ Each name below links to its definitions and examples. Examples show an equivale
 | `.` [Dot](glyphs/dot.md) | `f.g` | Inner product |
 | `⌝` [Outer](glyphs/outer.md) | `g⌝` | Outer product |
 | `⌸` [Key](glyphs/key.md) | `f⌸` | Key |
-| `⍣` [Power](glyphs/power.md) | `f⍣n`, `f⍣g` | Iterate / invert / repeat until |
-| `⍣\` [History](glyphs/history.md) | `f⍣\n`, `f⍣\g` | Iteration states, including initial state |
+| `⍣` [Power](glyphs/power.md) | `f⍣n`, `f⍣g`, `f⍣[p]` | Iterate / invert / repeat until; enclose count or predicate for history |
 | `⇄` [Inverse pair](glyphs/inverse-pair.md) | `f⇄g` | Attach an explicit inverse |
 | `⌾` [Under](glyphs/under.md) | `f⌾g` | Transform, apply, inverse-transform |
 | `∂` [Derivative](glyphs/derivative.md) | `f∂` | Gradient / vector–Jacobian product |
@@ -128,7 +129,7 @@ Each name below links to its definitions and examples. Examples show an equivale
 | `←` [Assign](glyphs/assign.md) | Assignment, including modified/indexed/selective forms |
 | `→` [Pipe](glyphs/pipe.md) | Left-to-right function application |
 | `(…)` [Parentheses](glyphs/parentheses.md) | Grouping / nested array literals / trains |
-| `[…]` [Brackets](glyphs/brackets.md) | Array literals, indexing and axes |
+| `[…]` [Brackets](glyphs/brackets.md) | Enclosure, array literals, indexing and axes |
 | `;` [Semicolon](glyphs/semicolon.md) | Index-axis separator |
 | `{…}` [Braces](glyphs/braces.md) | Defined function or operator |
 | `⍺` [Alpha](glyphs/alpha.md), `⍵` [Omega](glyphs/omega.md) | Left / right argument |

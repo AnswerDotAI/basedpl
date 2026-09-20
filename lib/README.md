@@ -1,6 +1,6 @@
 # APL libraries
 
-Dyalog dfns adapted from [April's ports](https://github.com/phantomics/april/tree/master/libraries/dfns) for BasedPL. Load a file from the repository root:
+Dyalog dfns adapted for bAsedPL from [April's ports](https://github.com/phantomics/april/tree/master/libraries/dfns) and the Dyalog `dfns` workspace. Load a file from the repository root:
 
 ```apl
 •LOAD 'lib/numeric.apl'
@@ -18,9 +18,8 @@ The same call works from Python: `apl("•LOAD 'lib/numeric.apl'")`. Definitions
 | `string.apl` | Search/replace, wrapping, justification, whitespace | `array.apl` |
 | `power.apl` | Iteration, trajectories, numerical inversion | `array.apl` |
 | `tree.apl` | AVL, red-black, splay and binary search trees | `power.apl` |
+| `dyalog.apl` | Compression, dates, puzzles, Lisp, parsing, text and macro expansion | `array.apl` |
 
-Source comments link to the original [Dyalog dfns](https://dfns.dyalog.com/n_contents.htm) explanations. April's Apache-2.0 license is retained in [LICENSE-april](LICENSE-april). Each file is marked as modified for BasedPL.
+The ports use origin one, based arrays, `↑` for First, `⊃` for Mix, `⍶`/`⍹` operands, and seeded reductions.
 
-The ports use origin one, based arrays, `↑` for First, `⊃` for Mix, `⍶`/`⍹` operands, and seeded reductions. The teaching algorithms remain explicit. Phinary uses ordinary comparison tolerance, as in Dyalog's original implementation.
-
-Examples in `tests/reference/april.apl` load these files and retain independent upstream or Dyalog expectations. Case-specific setup stays in the tests.
+Examples in `tests/reference/{april,aplcart,dyalog}.apl` load these files and retain independent upstream or Dyalog expectations. Case-specific setup stays in the tests. Unported Dyalog definitions remain in the reference inventory with their outstanding dependencies.

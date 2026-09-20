@@ -341,7 +341,7 @@
 1⌷[2]3 3⍴⍳9   ⍝ 1 4 7
 
 ⍝ april:672 —
-(⊂4 5 2 6 3 7 1)⌷'MARANGA'   ⍝ 'ANAGRAM'
+[4 5 2 6 3 7 1]⌷'MARANGA'   ⍝ 'ANAGRAM'
 
 ⍝ april:673 —
 (⍬,5) 1⌷5 5⍴⍳25   ⍝ 1⍴21
@@ -1009,10 +1009,10 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 ⊂2   ⍝ ⊂2
 
 ⍝ april:1017 —
-(⊂2)=2   ⍝ ⊂1
+[2]=2   ⍝ ⊂1
 
 ⍝ april:1018 —
-(⊂'a')='a'   ⍝ ⊂1
+['a']='a'   ⍝ ⊂1
 
 ⍝ april:1019 —
 ⊂⍳5   ⍝ ⊂(1 2 3 4 5)
@@ -2340,15 +2340,15 @@ fn←{⍺+⍵×12} ⋄ test←{0=3|⍵} ⋄ 4 fn@test ⍳12
 4 4⍴1 2 3 4 14 15 16 17 18 19 20 21 13 14 15 16
 
 ⍝ april:1775 — Dyalog operand names (April aliases)
-{1 (3 {(⍹⊃⍵)@(⊂⍶ ⍺)⊢⍵} 4) ⍵} (0 0 0) (0 0 0) (0 0 0) 1 ⍬
+{1 (3 {(⍹⊃⍵)@[⍶ ⍺]⊢⍵} 4) ⍵} (0 0 0) (0 0 0) (0 0 0) 1 ⍬
 (0 0 0) (0 0 0) (1 0 0) 1 (⍬)
 
 ⍝ april:1777 —
-55@(⊂2 5)⊢4⍴⊂⍳9
+55@[2 5]⊢4⍴⊂⍳9
 (1 2 3 4 5 6 7 8 9) (1 2 3 4 55 6 7 8 9) (1 2 3 4 5 6 7 8 9) (1 2 3 4 5 6 7 8 9)
 
 ⍝ april:1779 —
-3⌈@(⊂1 3)⊢3⍴⊂5⍴1   ⍝ (1 1 3 1 1) (1 1 1 1 1) (1 1 1 1 1)
+3⌈@[1 3]⊢3⍴⊂5⍴1   ⍝ (1 1 3 1 1) (1 1 1 1 1) (1 1 1 1 1)
 
 ⍝ april:1780 —
 5@(3 3)(4 4)⊢6 6⍴0
@@ -5139,7 +5139,7 @@ hex ¯3 to 3
 ⍝ =>
 ('fd') ('fe') ('ff') ('00') ('01') ('02') ('03')
 
-⍝ — Hex of 2*53-1 with exact arithmetic (April numeric demo:101)
+⍝ — Hex of 2*53-1 with exact input (April numeric demo:101)
 •LOAD 'lib/numeric.apl'
 hex ¯1x+2x*53x
 ⍝ =>
@@ -5655,7 +5655,7 @@ det 0 0⍴7
 ⍝ =>
 1
 
-⍝ april/libraries/dfns/numeric/demo.lisp:222 — Upstream determinant with origin-1 pivot coordinates; explicit roundoff allowance for elimination [rtol=1e-10]
+⍝ — Hilbert determinant with relaxed roundoff (april/libraries/dfns/numeric/demo.lisp:222) [rtol=1e-10]
 •LOAD 'lib/numeric.apl'
 det {÷1+ +⌝ ⍨(⍳⍵)-1} 5
 ⍝ =>
@@ -6743,34 +6743,9 @@ tabText←'whistles        far     and wee'
 ⍝ =>
 'whistles→→far→→and→wee'
 
-⍝ — Tab round-trips at selected widths (April string demo:308)
-•LOAD 'lib/string.apl'
-tabTrips←{∧/(∪0 1 2 4 8 16 35,¯1 0 1+⍴⍵)tabTrip¨⊂⍵}
-tabText←'whistles        far     and wee'
-tabText←'whistles        far     and wee' 
-tabTrips tabText
-⍝ =>
-1
-
-⍝ — Tab round-trips at selected widths (April string demo:309)
-•LOAD 'lib/string.apl'
-tabTrips←{∧/(∪0 1 2 4 8 16 35,¯1 0 1+⍴⍵)tabTrip¨⊂⍵}
-tabText←'whistles        far     and wee' 
-tabTrips ,(6 35⍴↑,/(⍳20)↑¨'⎕'),⊃⌽•UCS 10
-⍝ =>
-1
-
 ⍝ april/libraries/dfns/string/demo.lisp:310 — Origin-1 wrap/xtabs offsets; original April expectation retained
 •LOAD 'lib/string.apl'
 (2/(•UCS 9) ' ')≡¯4 xtabs 10↑''
-⍝ =>
-1
-
-⍝ — Tab round-trips at selected widths (April string demo:311)
-•LOAD 'lib/string.apl'
-tabTrips←{∧/(∪0 1 2 4 8 16 35,¯1 0 1+⍴⍵)tabTrip¨⊂⍵}
-tabText←'whistles        far     and wee' 
-∧/tabTrips¨1↓,\10↑''
 ⍝ =>
 1
 
@@ -7515,4 +7490,65 @@ fn←{x y z←⍵ ⋄ x+y×z} ⋄ fn 4 5 6   ⍝ 34
 
 ⍝ april:1903 — Inline n-argument function; Pack n-ary arguments in a vector
 {a b c d←⍵ ⋄ (a-c)×b/d}7 4 2(⍳3)   ⍝ 5 5 5 5 10 10 10 10 15 15 15 15
+
+⍝ april/libraries/dfns/string/demo.lisp:308 — Original all-width workload passes the normal two-second debug deadline; Load shared library; original all-width workload
+•LOAD 'lib/string.apl'
+tabText←'whistles        far     and wee'
+tabText←'whistles        far     and wee' 
+tabTrips tabText
+⍝ =>
+1
+
+⍝ april/libraries/dfns/string/demo.lisp:309 — Original all-width workload passes the normal two-second debug deadline; Load shared library; original all-width workload
+•LOAD 'lib/string.apl'
+tabText←'whistles        far     and wee' 
+tabTrips ,(6 35⍴↑,/(⍳20)↑¨'⎕'),⊃⌽•UCS 10
+⍝ =>
+1
+
+⍝ april/libraries/dfns/string/demo.lisp:311 — Original all-width workload passes the normal two-second debug deadline; Load shared library; original all-width workload
+•LOAD 'lib/string.apl'
+tabText←'whistles        far     and wee' 
+∧/tabTrips¨1↓,\10↑''
+⍝ =>
+1
+
+⍝ april/libraries/dfns/numeric/demo.lisp:101 — Hex of 2*53-1 with approximate input and radix
+•LOAD 'lib/numeric.apl'
+hex ¯1+2*53
+⍝ =>
+⊂('001fffffffffffff')
+
+⍝ april:2362 — Imaginary number; Simple complex display uses the existing canonical lowercase j literal; Test Format text; use BasedPL’s lowercase j separator instead of April’s uppercase J
+⍕3J9   ⍝ '3j9'
+
+⍝ april:410 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Remove redundant dialect settings; based folds return the result directly
+÷⍨0   ⍝ 1
+
+⍝ april:1933 — Strand assignment of nested scalar variable; Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Remove redundant dialect settings; based folds return the result directly
+(a b c)←⊂3 3⍴1 ⋄ +/a b c   ⍝ 3 3⍴3 3 3 3 3 3 3 3 3
+
+⍝ april/libraries/dfns/graph/demo.lisp:58 — Strongly connected components ported to origin one using existing graph/array libraries; Shift source adjacency indices and component labels to one-based; Mix uses ⊃. The permutation test retains all 120 vertex permutations
+•LOAD 'lib/graph.apl'
+scg1 ← ,¨1(2 4 5)(3 6)(2 7)(0 5)6 5(3 6) ⋄ scc 1+scg1
+⍝ =>
+1 1 2 2 1 3 3 2
+
+⍝ april/libraries/dfns/graph/demo.lisp:61 — Strongly connected components ported to origin one using existing graph/array libraries; Shift source adjacency indices and component labels to one-based; Mix uses ⊃. The permutation test retains all 120 vertex permutations
+•LOAD 'lib/graph.apl'
+scg2 ← ,¨4 0(1 3)2 1(1 4 6)(2 5)(3 6 7) ⋄ scc 1+scg2
+⍝ =>
+1 1 2 2 1 3 3 4
+
+⍝ april/libraries/dfns/graph/demo.lisp:62 — Strongly connected components ported to origin one using existing graph/array libraries; Shift source adjacency indices and component labels to one-based; Mix uses ⊃. The permutation test retains all 120 vertex permutations
+•LOAD 'lib/graph.apl'
+scg3 ← (3)(4)(3 4)(0 2 4)(1 2 3) ⋄ scc 1+scg3
+⍝ =>
+1 1 1 1 1
+
+⍝ april/libraries/dfns/graph/demo.lisp:63 — Strongly connected components ported to origin one using existing graph/array libraries; Shift source adjacency indices and component labels to one-based; Mix uses ⊃. The permutation test retains all 120 vertex permutations
+•LOAD 'lib/graph.apl'
+scg3 ← (3)(4)(3 4)(0 2 4)(1 2 3) ⋄ g←1+scg3 ⋄ ⊃∪scc¨(⊂g)gperm¨↓pmat ≢g
+⍝ =>
+1 5⍴1 1 1 1 1
 
