@@ -27,6 +27,8 @@ Rebuild with `maturin develop` after Rust changes before checking the installed 
 
 The development profile uses optimization level 1 without LTO. Tests inherit these settings. Debug information, assertions, overflow checks and incremental compilation remain enabled.
 
+CI uses the development profile for Rust and Python tests. Distribution wheels use the `dist` profile: optimization level 2, no LTO, 16 codegen units, no incremental compilation and stripped symbols.
+
 ## Structure
 
 - `lib/*.apl`: Dyalog dfns adapted from April and the Dyalog dfns workspace. Reference cases load these shared definitions with `•LOAD`; case-specific setup stays in each test. See `lib/README.md` for usage and provenance.

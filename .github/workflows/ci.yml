@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - run: pip install -e '.[dev]'
+      - run: pip install -e '.[dev]' --config-settings 'maturin.build-args=--profile dev'
       - run: pytest -q
 
   build:
