@@ -4,7 +4,7 @@
 1+2×3 → 2∘× → -∘1   ⍝ 13
 
 ⍝ — Assignment encloses the whole pipeline
-r←s←⍳4 → +/ → √ ⋄ r s   ⍝ (√10)(√10)
+r←s←⍳4 → +/ → √ ⋄ r s   ⍝ (√10⋄ √10)
 
 ⍝ — Parentheses select pipeline boundaries
 1+(⍳4 → +/)   ⍝ 11
@@ -48,7 +48,7 @@ v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}
 ⍝ — Exact real parts stay exact
 ∨1r3   ⍝ 1r3 0x
 
-⍝ — Magnitude and phase, in radians [rtol=1e-14]
+⍝ — Magnitude and phase, in radians
 ∧3j4 0j1   ⍝ 2 2⍴5 0.9272952180016122 1 1.5707963267948966
 
 ⍝ — Empty decomposition retains frame and pair axis
@@ -108,8 +108,8 @@ v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}
 ⍱1r3   ⍝ 2r3
 
 ⍝ — Square and double preserve empty exact prototypes
-(⍲0⍴0x) (⍱0⍴0x)
-(0⍴0x)(0⍴0x)
+(⍲0⍴0x ⋄ ⍱0⍴0x)
+(0⍴0x⋄ 0⍴0x)
 
 ⍝ — Square root extends into complex numbers
 √0 9 ¯4 3j4   ⍝ 0 3 0j2 2j1
@@ -117,7 +117,7 @@ v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}
 ⍝ — Exact perfect rational roots
 √1r9 18446744073709551616x   ⍝ 1r3 4294967296x
 
-⍝ — Irrational roots become approximate [rtol=1e-14]
+⍝ — Irrational roots become approximate
 √2x   ⍝ 1.4142135623730951
 
 ⍝ — Odd integral roots of negative reals use the real branch
@@ -140,19 +140,19 @@ v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}
 ¯3√0
 ⍝ error: DOMAIN ERROR
 
-⍝ — Pi fractions and multiples [rtol=1e-14]
-(π2)(1π2)(2π3)   ⍝ 6.283185307179586 1.5707963267948966 2.0943951023931953
+⍝ — Pi fractions and multiples
+(π2⋄ 1π2⋄ 2π3)   ⍝ 6.283185307179586 1.5707963267948966 2.0943951023931953
 
-⍝ — Unit-circle points [atol=1e-14]
-○0 (1π2) (π1)   ⍝ 1 0j1 ¯1
+⍝ — Unit-circle points
+○(0⋄ 1π2⋄ π1)   ⍝ 1 0j1 ¯1
 
-⍝ — Complex angles use exp(i z) [rtol=1e-14]
+⍝ — Complex angles use exp(i z)
 ○0j1   ⍝ 0.36787944117144233
 
-⍝ — Principal inverses of root and circle [atol=1e-14]
-((√⍣¯1)3)((○⍣¯1)○0.5)   ⍝ 9 0.5
+⍝ — Principal inverses of root and circle
+((√⍣¯1)3⋄ (○⍣¯1)○0.5)   ⍝ 9 0.5
 
-⍝ — Bound pi fractions invert either argument [rtol=1e-14]
+⍝ — Bound pi fractions invert either argument
 ((1∘π)⍣¯1)1π4   ⍝ 4
 
 ⍝⍝ Function arrays
@@ -269,7 +269,7 @@ fs←+˘× ⋄ {fs[1]←({⍵}˘+)[1] ⋄ 0}2
 (1+2)˘(3+4)   ⍝ 3 7
 
 ⍝ — Named vectors remain nested rather than being catenated
-a←1 2 ⋄ b←3 4 ⋄ a˘b   ⍝ (1 2)(3 4)
+a←1 2 ⋄ b←3 4 ⋄ a˘b   ⍝ (1 2⋄ 3 4)
 
 ⍝ — A function strand can be one item within an implicit strand
 x←1 +˘× 4 ⋄ f←2⊃2⊃x ⋄ (1⊃x)f 3⊃x   ⍝ 4
@@ -390,7 +390,7 @@ choose←{⎕←9 ⋄ 2}◶({⎕←1 ⋄ 1÷0}˘{⎕←2 ⋄ ⍺-⍵}) ⋄ 10 ch
 ⍝⍝ Selective assignment
 
 ⍝ — Selection through identity and disclose replaces the whole nested item
-a←(1 2)(3 4) ⋄ (⊢↑a)←7 8 9 ⋄ a   ⍝ (7 8 9)(3 4)
+a←(1 2⋄ 3 4) ⋄ (⊢↑a)←7 8 9 ⋄ a   ⍝ (7 8 9⋄ 3 4)
 
 ⍝ — Identity selection may replace the whole array with a different shape
 a←1 2 ⋄ (⊣a)←3 4 5 ⋄ a   ⍝ 3 4 5
@@ -405,7 +405,7 @@ a←⍬ ⋄ (⍬⊃a)←3 4 ⋄ a   ⍝ 3 4
 a←1 2 ⋄ (⍬⊃a),←3 4 ⋄ a   ⍝ 1 2 3 4
 
 ⍝ — Whole-item replacement composes with a nested pick
-a←(1 2)(3 4) ⋄ (⍬⊃1⊃a)←5 6 7 ⋄ a   ⍝ (5 6 7)(3 4)
+a←(1 2⋄ 3 4) ⋄ (⍬⊃1⊃a)←5 6 7 ⋄ a   ⍝ (5 6 7⋄ 3 4)
 
 ⍝ — Assignment through reverse maps replacements back to original positions
 a←1 2 ⋄ (⍬⊃⌽a)←3 4 ⋄ a   ⍝ 4 3
@@ -439,7 +439,7 @@ a←'HELLO' 'WORLD' ⋄ ((a='O')/¨a)←'*' ⋄ a
 'HELL*' 'W*RLD'
 
 ⍝ — Replacing one nested item may change its length
-a←(1 2)(3 4) ⋄ (1↑a)←⊂8 9 10 ⋄ a   ⍝ (8 9 10)(3 4)
+a←(1 2⋄ 3 4) ⋄ (1↑a)←⊂8 9 10 ⋄ a   ⍝ (8 9 10⋄ 3 4)
 
 ⍝ — Repeated selection updates the same source element more than once
 a←3⍴0x ⋄ (5⍴a)+←1x ⋄ a   ⍝ 2x 2x 1x
@@ -457,13 +457,13 @@ a←0⍴⊂2 3⍴⍳6 ⋄ (⌽[2]¨a)←9 ⋄ ⍴↑a   ⍝ 2x 3x
 a←1 2 ⋄ (3↑a)←4 ⋄ a   ⍝ 4 4
 
 ⍝ —
-a←(1 2)(3 4) ⋄ (↑a)←7 8 9 ⋄ 1⊃a   ⍝ 7 8 9
+a←(1 2⋄ 3 4) ⋄ (↑a)←7 8 9 ⋄ 1⊃a   ⍝ 7 8 9
 
 ⍝ — First selection replaces an atom with a vector
 a←1 ⋄ (↑a)←3 4 ⋄ a   ⍝ 3 4
 
 ⍝ — Disclose-each selects the first element of each nested vector
-a←(1 2)(3 4) ⋄ (↑¨a)←(5 6)(7 8) ⋄ a   ⍝ ((5 6)2)((7 8)4)
+a←(1 2⋄ 3 4) ⋄ (↑¨a)←(5 6⋄ 7 8) ⋄ a   ⍝ ((5 6)2⋄ (7 8)4)
 
 ⍝ — A bound take function remains assignment-selective
 a←1 2 3 ⋄ ((1∘↑)a)←9 ⋄ a   ⍝ 9 2 3
@@ -475,7 +475,7 @@ a←1 2 ⋄ ((1∘⊃)a)←3 4 ⋄ a   ⍝ (3 4)2
 a←1 2 ⋄ ((⍬∘⊃)a)←3 4 5 ⋄ a   ⍝ 3 4 5
 
 ⍝ — Bound pick under each updates the selected nested elements
-a←(1 2)(3 4) ⋄ ((1∘⊃)¨a)←(5 6)(7 8) ⋄ a   ⍝ ((5 6)2)((7 8)4)
+a←(1 2⋄ 3 4) ⋄ ((1∘⊃)¨a)←(5 6⋄ 7 8) ⋄ a   ⍝ ((5 6)2⋄ (7 8)4)
 
 ⍝ — An empty array has no first item to replace
 a←⍬ ⋄ (↑a)←3 4
@@ -607,7 +607,7 @@ a b←1 ⋄ a b   ⍝ 1 1
 a←1 2 3 ⋄ a[3 1][2]←9 ⋄ a   ⍝ 9 2 3
 
 ⍝ — A nested bracket path updates an element inside the second item
-a←(1 2)(3 4) ⋄ a[⊂(,2)(,1)]←9 ⋄ ↑2⊃a   ⍝ 9
+a←(1 2⋄ 3 4) ⋄ a[⊂(,2⋄ ,1)]←9 ⋄ ↑2⊃a   ⍝ 9
 
 ⍝ — Strand modification calls the operand from left to right
 a←1 ⋄ b←2 ⋄ a b{⎕←⍺ ⋄ ⍺+⍵}←3 4 ⋄ a b
@@ -635,10 +635,10 @@ a←1 2 ⋄ f←{⎕←a ⋄ ⍺+⍵} ⋄ a[1 2]f←10 20 ⋄ a
 ⍴,[⍬]2 3⍴⍳6   ⍝ 2x 3x 1x
 
 ⍝ — Mix places item axes before the outer vector axis
-⊃[0.5](1 2)(3 4)   ⍝ 2 2⍴1 3 2 4
+⊃[0.5](1 2⋄ 3 4)   ⍝ 2 2⍴1 3 2 4
 
 ⍝ — Mix places the matrix-cell axes at positions one and three
-⊃[1 3](2 3⍴⍳6)(2 3⍴6+⍳6)   ⍝ 2 2 3⍴1 2 3 7 8 9 4 5 6 10 11 12
+⊃[1 3](2 3⍴⍳6⋄ 2 3⍴6+⍳6)   ⍝ 2 2 3⍴1 2 3 7 8 9 4 5 6 10 11 12
 
 ⍝ — Laminate inserts a leading axis
 1 2,[0.5]3 4   ⍝ 2 2⍴1 2 3 4
@@ -656,7 +656,7 @@ a←1 2 ⋄ f←{⎕←a ⋄ ⍺+⍵} ⋄ a[1 2]f←10 20 ⋄ a
 1 1↓[2 1]3 4⍴⍳12   ⍝ 2 3⍴6 7 8 10 11 12
 
 ⍝ — Squad's index vectors correspond to the listed axes
-(2 1)(1 2)⌷[2 1]2 3⍴⍳6   ⍝ 2 2⍴2 1 5 4
+(2 1⋄ 1 2)⌷[2 1]2 3⍴⍳6   ⍝ 2 2⍴2 1 5 4
 
 ⍝ — Enclosing all axes in reverse order transposes the enclosed cell
 ↑⊂[2 1]2 3⍴⍳6   ⍝ 3 2⍴1 4 2 5 3 6
@@ -1135,7 +1135,7 @@ W←×∘*⍨⍣¯1 ⋄ ⌊1E12×W 0 1 (*1) ¯0.1 1j1
 W←×∘*⍨⍣¯1 ⋄ W ¯1÷*1   ⍝ ¯1
 
 ⍝ — Lambert W pervades nested exact input and produces approximate values
-W←×∘*⍨⍣¯1 ⋄ W (0x 0x)(0⍴0x)   ⍝ (0 0)⍬
+W←×∘*⍨⍣¯1 ⋄ W (0x 0x⋄ 0⍴0x)   ⍝ (0 0)⍬
 
 ⍝ — Check W(x)exp(W(x))=x across tiny and large real inputs
 W←×∘*⍨⍣¯1 ⋄ x←1E¯100 ¯1E¯100 1E¯12 ¯1E¯12 0.099 ¯0.099 1E300 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x
@@ -1261,7 +1261,7 @@ W←×∘*⍨⍣¯1 ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x
 (⍸⍣¯1)1 3 3   ⍝ 1x 0x 2x
 
 ⍝ — Inverse where infers multidimensional shape from coordinate vectors
-(⍸⍣¯1)(1 2)(2 1)   ⍝ 2 2⍴0x 1x 1x 0x
+(⍸⍣¯1)(1 2⋄ 2 1)   ⍝ 2 2⍴0x 1x 1x 0x
 
 ⍝ — Inverse where of no indices returns an empty exact count vector
 (⍸⍣¯1)⍬   ⍝ 0⍴0x
@@ -1361,7 +1361,7 @@ W←×∘*⍨⍣¯1 ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x
 (↓[1]⍣¯1)↓[1]2 3⍴⍳6   ⍝ 2 3⍴⍳6
 
 ⍝ — Inverse fractional-axis mix recovers the original nested vectors
-(⊃[0.5]⍣¯1)3 2⍴1 4 2 5 3 6   ⍝ (1 2 3)(4 5 6)
+(⊃[0.5]⍣¯1)3 2⍴1 4 2 5 3 6   ⍝ (1 2 3⋄ 4 5 6)
 
 ⍝ — Axis-qualified scalar inversion aligns the fixed left vector with rows
 10 20 (+[1]⍣¯1)2 3⍴11 12 13 24 25 26   ⍝ 2 3⍴⍳6
@@ -1439,7 +1439,7 @@ avg←+/÷≢ ⋄ avg 1x 2x 4x   ⍝ 7r3
 2x⊥1x 0x 1x   ⍝ 5x
 
 ⍝ —
-≢(1x 2x)(1r3 'a')   ⍝ 2x
+≢(1x 2x⋄ 1r3 'a')   ⍝ 2x
 
 ⍝ —
 ≢0⍴1x   ⍝ 0x
@@ -1460,7 +1460,7 @@ avg←+/÷≢ ⋄ avg 1x 2x 4x   ⍝ 7r3
 1x+0.5   ⍝ 1.5
 
 ⍝ — Tally counts outer items regardless of nested numeric domains
-≢(1x 2x)(3 4)   ⍝ 2x
+≢(1x 2x⋄ 3 4)   ⍝ 2x
 
 ⍝ —
 ≢'abc'   ⍝ 3x
@@ -1490,6 +1490,13 @@ avg←+/÷≢ ⋄ avg 1x 2x 4x   ⍝ 7r3
 
 ⍝ — Exact matrix inversion handles a zero leading pivot
 ⌹2 2⍴0x 2x 1x 0x   ⍝ 2 2⍴0x 1x 1r2 0x
+
+⍝ — Triangular float inversion preserves integral path counts
+⌹3 3⍴1 ¯1 0 0 1 ¯1 0 0 1
+3 3⍴1 1 1 0 1 1 0 0 1
+
+⍝ — Square complex solve with row pivoting
+2j2 4⌹2 2⍴0 1j1 2 0   ⍝ 2 2
 
 ⍝ — Inverting a zero-column matrix exchanges its dimensions
 ⌹3 0⍴0x   ⍝ 0 3⍴0x
@@ -1577,11 +1584,11 @@ a←⍳3 ⋄ b←0@2⊢a ⋄ a   ⍝ 1 2 3
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Nested index paths select fields inside matrix items
-G←2 3⍴('ABC' 1)('DEF' 2)('GHI' 3)('JKL' 4)('MNO' 5)('PQR' 6) ⋄ G[((1 2)1)((2 3)2)]
+G←2 3⍴('ABC' 1⋄ 'DEF' 2⋄ 'GHI' 3⋄ 'JKL' 4⋄ 'MNO' 5⋄ 'PQR' 6) ⋄ G[((1 2)1⋄ (2 3)2)]
 'DEF' 6
 
 ⍝ — At replaces nested fields without replacing their containing items
-G←2 3⍴('ABC' 1)('DEF' 2)('GHI' 3)('JKL' 4)('MNO' 5)('PQR' 6) ⋄ H←('' '*' @((1 2)1)((2 3)2))G ⋄ (1⊃1 2⊃H)(2⊃2 3⊃H)
+G←2 3⍴('ABC' 1⋄ 'DEF' 2⋄ 'GHI' 3⋄ 'JKL' 4⋄ 'MNO' 5⋄ 'PQR' 6) ⋄ H←('' '*' @((1 2)1⋄ (2 3)2))G ⋄ (1⊃1 2⊃H⋄ 2⊃2 3⊃H)
 '' '*'
 
 ⍝ — At calls its operand once even for an empty selection
@@ -1622,7 +1629,7 @@ G←2 3⍴('ABC' 1)('DEF' 2)('GHI' 3)('JKL' 4)('MNO' 5)('PQR' 6) ⋄ H←('' '*'
 ⍝⍝ Pick and partition
 
 ⍝ — Pick descends through a matrix coordinate, a nested field, then a character index
-2⊃1⊃2 1⊃2 3⍴('ABC' 1)('DEF' 2)('GHI' 3)('JKL' 4)('MNO' 5)('PQR' 6)
+2⊃1⊃2 1⊃2 3⍴('ABC' 1⋄ 'DEF' 2⋄ 'GHI' 3⋄ 'JKL' 4⋄ 'MNO' 5⋄ 'PQR' 6)
 'K'
 
 ⍝ — Empty coordinates can repeatedly pick an atom without changing it
@@ -1653,13 +1660,13 @@ G←2 3⍴('ABC' 1)('DEF' 2)('GHI' 3)('JKL' 4)('MNO' 5)('PQR' 6) ⋄ H←('' '*'
 ⊆1   ⍝ ⊂1
 
 ⍝ — Nest leaves an already nested vector unchanged
-⊆(1 2)(3 4)   ⍝ (1 2)(3 4)
+⊆(1 2⋄ 3 4)   ⍝ (1 2⋄ 3 4)
 
 ⍝ — Partition starts on a positive rise, not every label change; zero omits an item
 3 2 2 1 0 1⊆'abcdef'   ⍝ 'abcd'(,'f')
 
 ⍝ — Axis-one partition groups column segments and omits the zero-marked row
-1 1 0 1⊆[1]4 2⍴⍳8   ⍝ 2 2⍴(1 3)(2 4)(,7)(,8)
+1 1 0 1⊆[1]4 2⍴⍳8   ⍝ 2 2⍴(1 3⋄ 2 4⋄ ,7⋄ ,8)
 
 ⍝ — No partition starts: retain a prototype with an empty selected axis
 0⊂2 3⍴0   ⍝ 0⍴⊂2 0⍴0
@@ -1720,16 +1727,16 @@ G←2 3⍴('ABC' 1)('DEF' 2)('GHI' 3)('JKL' 4)('MNO' 5)('PQR' 6) ⋄ H←('' '*'
 2x 3x 1x
 
 ⍝ — Equal-rank nested arrays compare ravelled contents before shape
-⍋(2 2⍴1 2 3 4)(1 4⍴1 2 0 0)   ⍝ 2x 1x
+⍋(2 2⍴1 2 3 4⋄ 1 4⍴1 2 0 0)   ⍝ 2x 1x
 
 ⍝ — Nested rank takes precedence over contents
-⍋(1 2⍴1 2)(1 2)   ⍝ 2x 1x
+⍋(1 2⍴1 2⋄ 1 2)   ⍝ 2x 1x
 
 ⍝ — Empty nested arrays sort by rank, then shape
 ⍋(0 5 2⍴0)(0 3 4⍴0)(0 1⍴'')⍬   ⍝ 4x 3x 2x 1x
 
 ⍝ — Empty-array prototypes do not break sorting ties
-⍋(0⍴⊂1 2)(0⍴0)(0⍴'')   ⍝ 1x 2x 3x
+⍋(0⍴⊂1 2⋄ 0⍴0⋄ 0⍴'')   ⍝ 1x 2x 3x
 
 ⍝ — Structural order puts numbers before characters before nested arrays
 ⍋'z' (0 0) 100 'a'   ⍝ 3x 4x 1x 2x
@@ -2082,7 +2089,7 @@ b'
 ↑⊂1 2   ⍝ 1.0 2.0
 
 ⍝ — An empty nested vector retains its first item's shape as prototype
-↑0⍴(1 2)(3 4 5)   ⍝ 0.0 0.0
+↑0⍴(1 2⋄ 3 4 5)   ⍝ 0.0 0.0
 
 ⍝ — Taking from empty text fills with spaces
 3↑''   ⍝ '   '
@@ -2133,13 +2140,13 @@ b'
 gg←2 3 4 5 ⋄ 9,gg[2],3 4   ⍝ 9 3 3 4
 
 ⍝ — Split into rows; each further split encloses the resulting vector or scalar
-↓↓↓2 2⍴⍳4   ⍝ ⊂⊂(1 2)(3 4)
+↓↓↓2 2⍴⍳4   ⍝ ⊂⊂(1 2⋄ 3 4)
 
 ⍝ — Reduction returns the accumulated vector
-+/(1 2)(3 4)   ⍝ 4 6
++/(1 2⋄ 3 4)   ⍝ 4 6
 
 ⍝ —
-(1 2)(3 4)+10   ⍝ (11 12)(13 14)
+(1 2⋄ 3 4)+10   ⍝ (11 12⋄ 13 14)
 
 ⍝ —
 0 3⍴⍬   ⍝ 0 3⍴0
@@ -2186,7 +2193,7 @@ gg←2 3 4 5 ⋄ 9,gg[2],3 4   ⍝ 9 3 3 4
 {⍺,⍵}\1 2 3   ⍝ 1 (1 2) (1 2 3)
 
 ⍝ — A seed participates in every growing accumulator
-0 {⍺,⍵}\1 2 3   ⍝ (0 1)(0 1 2)(0 1 2 3)
+0 {⍺,⍵}\1 2 3   ⍝ (0 1⋄ 0 1 2⋄ 0 1 2 3)
 
 ⍝ — An empty seeded scan makes no operand calls
 10 {1÷0}\⍬   ⍝ ⍬
@@ -2213,19 +2220,19 @@ gg←2 3 4 5 ⋄ 9,gg[2],3 4   ⍝ 9 3 3 4
 +\0 3⍴0   ⍝ 0 3⍴0
 
 ⍝ — Mix pads shorter cells to the longest cell
-⊃(1 2)(3 4 5)   ⍝ 2 3⍴1 2 0 3 4 5
+⊃(1 2⋄ 3 4 5)   ⍝ 2 3⍴1 2 0 3 4 5
 
 ⍝ — Mix pads an atomic cell rather than extending its value
 ⊃1 (2 3)   ⍝ 2 2⍴1 0 2 3
 
 ⍝ — Empty mix uses the retained cell prototype to determine its trailing shape
-⊃0⍴(1 2)(3 4 5)   ⍝ 0 2⍴0
+⊃0⍴(1 2⋄ 3 4 5)   ⍝ 0 2⍴0
 
 ⍝ —
 ⊃⊂1 2   ⍝ 1 2
 
 ⍝ — Empty nested reduction uses a conforming identity
-+/0⍴(1 2)(3 4)   ⍝ 0 0
++/0⍴(1 2⋄ 3 4)   ⍝ 0 0
 
 ⍝ — Empty character sum uses the numeric addition identity
 +/''   ⍝ 0
@@ -2234,11 +2241,11 @@ gg←2 3 4 5 ⋄ 9,gg[2],3 4   ⍝ 9 3 3 4
 1 0⌿2 3⍴⍳6   ⍝ 1 3⍴1 2 3
 
 ⍝ — Each accumulator retains the whole vector seed
-(,10)+\1 2 3   ⍝ (,11)(,13)(,16)
+(,10)+\1 2 3   ⍝ (,11⋄ ,13⋄ ,16)
 
 ⍝ — Each lane starts with the same whole seed
 10 20 30+\2 3⍴⍳6
-2 3⍴(11 21 31)(13 23 33)(16 26 36)(14 24 34)(19 29 39)(25 35 45)
+2 3⍴(11 21 31⋄ 13 23 33⋄ 16 26 36⋄ 14 24 34⋄ 19 29 39⋄ 25 35 45)
 
 ⍝ — An empty scan makes no calls with its array seed
 10 20 30+\2 0⍴0   ⍝ 2 0⍴0
@@ -2441,7 +2448,7 @@ s←+/ ⋄ s[1][1 2 3 ⋄ 4 5 6]   ⍝ 5 7 9
 x←1 ⋄ y←1+8E¯15 ⋄ z←1+16E¯15 ⋄ x y⍳z   ⍝ 2x
 
 ⍝ — Unique-mask compares against retained representatives, not every earlier item
-≠1 (1+8E¯15) (1+16E¯15)   ⍝ 1x 0x 1x
+≠(1⋄ 1+8E¯15⋄ 1+16E¯15)   ⍝ 1x 0x 1x
 
 ⍝ — Without uses tolerance when approximate values participate
 1 2~1+8E¯15   ⍝ ,2
@@ -2547,19 +2554,19 @@ op←{⍶ ⍵} ⋄ ({100⊃'abc'}op)¨⍬   ⍝ ''
 (⊂1 2 3)⊃⍨¨⍬   ⍝ ⍬
 
 ⍝ — Empty Pick-each retains the selected nested vector's shape
-⍬⊃¨⊂(1 2)(3 4 5)   ⍝ 0⍴⊂0 0
+⍬⊃¨⊂(1 2⋄ 3 4 5)   ⍝ 0⍴⊂0 0
 
 ⍝ — An empty-path prototype selects the whole right-hand vector
 (0⍴⊂⍬)⊃¨⊂1 2 3   ⍝ 0⍴⊂0 0 0
 
 ⍝ — The requested nested item, not always the first, determines result fill
-2⊃¨0⍴⊂(1 2)(3 4 5)   ⍝ 0⍴⊂0 0 0
+2⊃¨0⍴⊂(1 2⋄ 3 4 5)   ⍝ 0⍴⊂0 0 0
 
 ⍝ — Named functions and operators retain their grammatical roles
 e←¨ ⋄ sum←+/ ⋄ sum e (1 2)(3 4 5)   ⍝ 3 12
 
 ⍝ — Nested each applies singleton reduction to each numeric leaf
-+/¨¨(1 2)(3 4)   ⍝ (1 2)(3 4)
++/¨¨(1 2⋄ 3 4)   ⍝ (1 2⋄ 3 4)
 
 ⍝ — Selfie with an array operand creates a constant function
 2⍨3   ⍝ 2
@@ -2761,11 +2768,11 @@ r←⍬ {⎕←⍴⍵ ⋄ ⍳3}⌸0 2⍴0
 ⍝⍝ Products
 
 ⍝ — Inner product may use catenate rather than a scalar reduction
-1 2 3,.-3 3⍴4 5 6   ⍝ (¯3 ¯2 ¯1)(¯4 ¯3 ¯2)(¯5 ¯4 ¯3)
+1 2 3,.-3 3⍴4 5 6   ⍝ (¯3 ¯2 ¯1⋄ ¯4 ¯3 ¯2⋄ ¯5 ¯4 ¯3)
 
 ⍝ — This fork enumerates leading-axis indices and selects each major cell
 (⍳∘≢( ⌷⌝ )⊂)2 3 3⍴⍳18
-(3 3⍴1 2 3 4 5 6 7 8 9)(3 3⍴10 11 12 13 14 15 16 17 18)
+(3 3⍴1 2 3 4 5 6 7 8 9⋄ 3 3⍴10 11 12 13 14 15 16 17 18)
 
 ⍝ —
 (2 3⍴⍳6)+.×3 2⍴⍳6   ⍝ 2 2⍴22 28 49 64
@@ -2966,7 +2973,7 @@ r←(0 2⍴0)+.{⎕←⍺ ⍵ ⋄ ⍺×⍵}2 3⍴⍳6
 ≢0 3⍴0.5   ⍝ 0x
 
 ⍝ — Nested element shapes do not affect the outer shape
-⍴(1r3)(1.5 2)   ⍝ ,2x
+⍴(1r3⋄ 1.5 2)   ⍝ ,2x
 
 ⍝ — Iota follows an exact argument's numeric domain
 ⍳3x   ⍝ 1x 2x 3x
@@ -3000,7 +3007,7 @@ r←(0 2⍴0)+.{⎕←⍺ ⍵ ⋄ ⍺×⍵}2 3⍴⍳6
 1 2≤2 1   ⍝ 1x 0x
 
 ⍝ — Tolerant equality is not transitive: x=y and y=z need not imply x=z
-(1=1+8E¯15)((1+8E¯15)=1+16E¯15)(1=1+16E¯15)
+(1=1+8E¯15⋄ (1+8E¯15)=1+16E¯15⋄ 1=1+16E¯15)
 1x 1x 0x
 
 ⍝⍝ Errors and evaluation order
@@ -3096,7 +3103,7 @@ outer←{inner←{⍹ ⍵} ⋄ 1} ⋄ outer 0   ⍝ 1
 each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3   ⍝ 6
 
 ⍝ — Each and reduction bind to self-reshape, producing repeated-dimensional cells
-⍴⍨¨/3/⊂⍳4   ⍝ (,1)(2 2⍴2)(3 3 3⍴3)(4 4 4 4⍴4)
+⍴⍨¨/3/⊂⍳4   ⍝ (,1⋄ 2 2⍴2⋄ 3 3 3⍴3⋄ 4 4 4 4⍴4)
 
 ⍝⍝ Singleton agreement and empty counts
 
@@ -3642,7 +3649,7 @@ outer←{inner←{⍵} ⋄ inner ⍵} ⋄ outer 1   ⍝ 1
 ≢1 2 3   ⍝ 3x
 
 ⍝ —
-≢¨(1 2 3)(4 5)   ⍝ 3x 2x
+≢¨(1 2 3⋄ 4 5)   ⍝ 3x 2x
 
 ⍝ —
 +/1 2 3   ⍝ 6
@@ -3651,7 +3658,7 @@ outer←{inner←{⍵} ⋄ inner ⍵} ⋄ outer 1   ⍝ 1
 {⍺+⍵}/1 2 3   ⍝ 6
 
 ⍝ — A one-item reduction returns the item without calling its operand
-f←{1÷0} ⋄ (f/3)(f/⊂3)(f/,3)(f⌿⊂⊂3)(f/⊂2 3)
+f←{1÷0} ⋄ (f/3⋄ f/⊂3⋄ f/,3⋄ f⌿⊂⊂3⋄ f/⊂2 3)
 3 3 3 (⊂3) (2 3)
 
 ⍝ —
@@ -3664,7 +3671,7 @@ f←{1÷0} ⋄ (f/3)(f/⊂3)(f/,3)(f⌿⊂⊂3)(f/⊂2 3)
 +⌿2 3⍴⍳6   ⍝ 5 7 9
 
 ⍝ —
-+/0⍴(1 2)(3 4)   ⍝ 0 0
++/0⍴(1 2⋄ 3 4)   ⍝ 0 0
 
 ⍝ —
 ↑2 3⍴⍳6   ⍝ 1 2 3
@@ -3676,13 +3683,13 @@ f←{1÷0} ⋄ (f/3)(f/⊂3)(f/,3)(f⌿⊂⊂3)(f/⊂2 3)
 2 3⊃2 3⍴⍳6   ⍝ 6
 
 ⍝ —
-3⊃2⊃(10 20)(30 40 50)   ⍝ 50
+3⊃2⊃(10 20⋄ 30 40 50)   ⍝ 50
 
 ⍝ —
 (1 3)˘(2 4)⊃3 4⍴⍳12   ⍝ 2 12
 
 ⍝ —
-⊃(1 2)(3 4 5)   ⍝ 2 3⍴1 2 0 3 4 5
+⊃(1 2⋄ 3 4 5)   ⍝ 2 3⍴1 2 0 3 4 5
 
 ⍝ —
 ↑⍬   ⍝ 0
@@ -3700,7 +3707,7 @@ a←2 3⍴⍳6 ⋄ (2⊃a)←7 8 9 ⋄ a   ⍝ 2 3⍴1 2 3 7 8 9
 a←2 3⍴⍳6 ⋄ (2 3⊃a)←9 ⋄ a   ⍝ 2 3⍴1 2 3 4 5 9
 
 ⍝ —
-a←(1 2)(3 4) ⋄ (2⊃1⊃a)←9 ⋄ a   ⍝ (1 9)(3 4)
+a←(1 2⋄ 3 4) ⋄ (2⊃1⊃a)←9 ⋄ a   ⍝ (1 9⋄ 3 4)
 
 ⍝ —
 a←3 ⋄ a[]←4 ⋄ a   ⍝ 4
@@ -3709,22 +3716,22 @@ a←3 ⋄ a[]←4 ⋄ a   ⍝ 4
 v←3 4 ⋄ (v[1]*2)+v[2]*2   ⍝ 25
 
 ⍝ —
-(1 3)(2 4)⍳⊂1 3   ⍝ 1x
+(1 3⋄ 2 4)⍳⊂1 3   ⍝ 1x
 
 ⍝ —
-v←10 20 30 ⋄ v[2] (v[⊂2]) (v[,2])   ⍝ 20 (⊂20) (,20)
+v←10 20 30 ⋄ (v[2]⋄ v[⊂2]⋄ v[,2])   ⍝ (20⋄ ⊂20⋄ ,20)
 
 ⍝ —
-a←(1 2)(3 4) ⋄ a[2][1]←9 ⋄ a   ⍝ (1 2)(9 4)
+a←(1 2⋄ 3 4) ⋄ a[2][1]←9 ⋄ a   ⍝ (1 2⋄ 9 4)
 
 ⍝ —
-a←(1 2)(3 4) ⋄ a[2],←5 ⋄ a   ⍝ (1 2)(3 4 5)
+a←(1 2⋄ 3 4) ⋄ a[2],←5 ⋄ a   ⍝ (1 2⋄ 3 4 5)
 
 ⍝ —
-a←(1 2)(3 4) ⋄ (2⌷a)←5 6 7 ⋄ a   ⍝ (1 2)(5 6 7)
+a←(1 2⋄ 3 4) ⋄ (2⌷a)←5 6 7 ⋄ a   ⍝ (1 2⋄ 5 6 7)
 
 ⍝ —
-a←(1 2)(3 4) ⋄ (a[2])←5 6 7 ⋄ a   ⍝ (1 2)(5 6 7)
+a←(1 2⋄ 3 4) ⋄ (a[2])←5 6 7 ⋄ a   ⍝ (1 2⋄ 5 6 7)
 
 ⍝ —
 fs←+˘× ⋄ fs[2]←- ⋄ f←fs[2] ⋄ 3 f 2   ⍝ 1
@@ -3761,7 +3768,7 @@ fs←+˘× ⋄ fs[2]←- ⋄ f←fs[2] ⋄ 3 f 2   ⍝ 1
 1 3⍳⍬   ⍝ 0⍴0x
 
 ⍝ —
-(⌽2)(⍉⊂2)(⍬↑2)(⍬↓⊂2)   ⍝ 2 (⊂2) 2 (⊂2)
+(⌽2⋄ ⍉⊂2⋄ ⍬↑2⋄ ⍬↓⊂2)   ⍝ 2 (⊂2) 2 (⊂2)
 
 ⍝ —
 2⍷2   ⍝ 1x
@@ -3778,16 +3785,16 @@ fs←+˘× ⋄ fs[2]←- ⋄ f←fs[2] ⋄ 3 f 2   ⍝ 1
 10 20 (+/⍤0 1)2 3⍴⍳6   ⍝ 16 35
 
 ⍝ — Empty reduction returns the whole seed without calling the operand
-(1 2)(3 4) {1÷0}/⍬   ⍝ (1 2)(3 4)
+(1 2⋄ 3 4) {1÷0}/⍬   ⍝ (1 2⋄ 3 4)
 
 ⍝ — Seeded reduction follows a nested path
-tree←(10 20)(30 (40 50)) ⋄ tree⊃/⌽2 2 1   ⍝ 40
+tree←(10 20⋄ 30 (40 50)) ⋄ tree⊃/⌽2 2 1   ⍝ 40
 
 ⍝ — A scalar seed remains distinct from an atom
 [10]+/1 2 3   ⍝ ⊂16
 
 ⍝ — Whole-seed scan follows a path and retains its intermediate arrays
-((10 20)(30 40)) ⊃⍨\1 2   ⍝ (10 20) 20
+(10 20⋄ 30 40) ⊃⍨\1 2   ⍝ (10 20) 20
 
 ⍝⍝ Libraries
 

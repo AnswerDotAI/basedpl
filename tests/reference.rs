@@ -110,7 +110,9 @@ fn reference_format_and_comparison() {
     assert_eq!(parsed[1]["line"], 10);
     for case in parsed { assert_eq!(reference::check(&case, EvalOptions::default())["status"], "pass"); }
     for (code, expect, status) in [
-        ("1E¯16", "0", "mismatch"),
+        ("1E¯10", "0", "mismatch"),
+        ("1E¯16", "0", "pass"),
+        ("1+1E¯15", "1", "pass"),
         ("a←3", "a", "invalid"),
         ("1", "{}0", "mismatch"),
         ("{}0", "{}0", "pass"),
@@ -123,7 +125,7 @@ fn reference_format_and_comparison() {
         let case = json!({"code":code, "expected_code":expect});
         assert_eq!(reference::check(&case, EvalOptions::default())["status"], status, "{code} vs {expect}");
     }
-    let mut case = json!({"code":"1E¯16", "expected_code":"0", "relative_tolerance":1e-14});
+    let mut case = json!({"code":"1E¯16", "expected_code":"0", "relative_tolerance":1e-14, "absolute_tolerance":0.0});
     assert_eq!(reference::check(&case, EvalOptions::default())["status"], "mismatch");
     case["absolute_tolerance"] = json!(1e-15);
     assert_eq!(reference::check(&case, EvalOptions::default())["status"], "pass");
@@ -131,19 +133,18 @@ fn reference_format_and_comparison() {
     assert_eq!(reference::check(&case, EvalOptions::default())["status"], "mismatch");
 }
 
-#[test]
-fn enabled_reference_cases() {
+fn run_reference_cases(sources: &[(&str, &str)], timeout: u64) {
     let mut ids = std::collections::HashSet::new();
     let mut count = 0;
     let mut failures = Vec::new();
     let selected = std::env::var("BASEDPL_CASE").ok();
-    for (name, source) in SOURCES {
+    for &(name, source) in sources {
         for mut case in cases(source) {
             if name == "core" { case["exact_representation"] = json!(true); }
             let id = case["id"].as_str().unwrap();
             assert!(id.is_empty() || ids.insert(id.to_owned()), "duplicate source id: {id}");
             if selected.as_deref().is_some_and(|s| s != id) { continue; }
-            let result = reference::check(&case, EvalOptions { timeout: Some(std::time::Duration::from_secs(2)), echo: false, ..EvalOptions::default() });
+            let result = reference::check(&case, EvalOptions { timeout: Some(std::time::Duration::from_secs(timeout)), echo: false, ..EvalOptions::default() });
             if result["status"] != "pass" {
                 failures.push(format!(
                     "{name}.apl:{} [{}] {id}: {} ({})",
@@ -160,3 +161,10 @@ fn enabled_reference_cases() {
     assert!(failures.is_empty(), "{} of {count} reference cases failed:\n{}", failures.len(), failures.join("\n"));
     eprintln!("{count} reference cases passed");
 }
+
+#[test]
+fn enabled_reference_cases() { run_reference_cases(&SOURCES, 2); }
+
+#[test]
+#[ignore = "slow workloads"]
+fn slow_reference_cases() { run_reference_cases(&[("slow", include_str!("reference/slow.apl"))], 60); }

@@ -25,7 +25,7 @@ The whole seed starts each lane. Use Rank for separate seeds per cell.
 
 ```apl
 10 20 (+\⍤0 1)2 3⍴⍳6  ⍝ 2 3⍴11 13 16 24 29 35
-(,10)+\1 2 3           ⍝ (,11)(,13)(,16)
+(,10)+\1 2 3           ⍝ (,11⋄ ,13⋄ ,16)
 ```
 
 Empty scans and unseeded singletons make no calls. `[K]` selects the axis; [`⍀`](backslash-bar.md) defaults to the first.

@@ -17,3 +17,5 @@
 ```
 
 Includes rational and complex GCD. Inputs are finite. Empty reduction identity: zero.
+
+For approximate real inputs, GCD reconstructs the ratio of their magnitudes using continued fractions. It chooses the first convergent within relative error `1e-14` of that ratio. Integer convergents are computed exactly. The result is the larger magnitude divided by the convergent's numerator. Exact inputs use exact GCD. Complex inputs use Gaussian-integer Euclidean iteration.

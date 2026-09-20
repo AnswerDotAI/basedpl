@@ -105,7 +105,7 @@ wrap2 ← { ⍺←102  ⍝ ⍺-wrap (Bob Smith).
   j←(v=' ')/⍳⍴v  ⍝ indices of blanks
   p←(j+⍺+1) <⌝ j
   m←p<1⌽p  ⍝ mark last blank that fits on the line
-  i←(⍴m)⍴1x,(1↓⍴m)⍴0x
+  i←(⍴m)⍴1,(1↓⍴m)⍴0
   c←⌹i-m  ⍝ compute transitive closure of m
   v[c[1;]/j]←•UCS 10
   1↓¯1↓v  ⍝ drop the extra blanks

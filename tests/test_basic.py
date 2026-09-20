@@ -95,7 +95,7 @@ def test_exact_nested_and_character_values():
         assert ragged.shape == (2,) and ragged.dtype == object
         np.testing.assert_array_equal(ragged[0], [1, 2])
         np.testing.assert_array_equal(ragged[1], [3])
-        nested = apl('(1 2)(3 4)').np
+        nested = apl('(1 2⋄ 3 4)').np
         assert nested.shape == (2,) and nested.dtype == object
         np.testing.assert_array_equal(apl('x', x=nested).np[1], [3, 4])
         boxed = apl('⊂1 2')

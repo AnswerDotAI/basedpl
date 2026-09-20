@@ -323,7 +323,7 @@ fn compact_integers_and_promotion() {
         ("1x 2x∪2x 3x", vec![1, 2, 3]),
         ("1x 2x∩2x", vec![2]),
         ("2x~1x", vec![2]),
-        (",⊃(1x 2x)(3x)", vec![1, 2, 3, 0]),
+        (",⊃(1x 2x⋄ 3x)", vec![1, 2, 3, 0]),
         (",⍉2 2⍴⍳4x", vec![1, 3, 2, 4]),
         (",(⍳2x)×⌝⍳2x", vec![1, 2, 2, 4]),
         ("0x@2⍳3x", vec![1, 0, 3]),
@@ -357,7 +357,7 @@ fn compact_integers_and_promotion() {
 #[test]
 fn float_storage_and_kernels() {
     for code in ["⍳3", "⌽⍳3", "2 3⍴⍳6", "⍬", "0 3⍴0"] { assert!(run(code).unwrap().unwrap().as_floats().is_some(), "{code}"); }
-    for code in ["1x 2", "1j2 3", "'abc'", "(1 2)(3 4)", "0⍴1x"] { assert!(run(code).unwrap().unwrap().as_floats().is_none(), "{code}"); }
+    for code in ["1x 2", "1j2 3", "'abc'", "(1 2⋄ 3 4)", "0⍴1x"] { assert!(run(code).unwrap().unwrap().as_floats().is_none(), "{code}"); }
     assert_eq!(AplValue::floats(vec![1], vec![f64::NAN]), Err(Domain));
     assert_eq!(AplValue::floats(vec![2], vec![1.]), Err(Length));
     assert_eq!(AplValue::floats(vec![1], vec![-0.]).unwrap().as_floats().unwrap()[0].to_bits(), 0);
@@ -422,6 +422,17 @@ fn dfn_defaults_shy_results_and_numbered_guards() {
     fails_in(&mut s, Length, &["{⍵:7 ⋄ 9}1 1", "{⍵:7 ⋄ 9}⍬"]);
     fails_in(&mut s, Domain, &["{⍵:7 ⋄ 9}⊂,1", "{⍵:7 ⋄ 9}'a'", "{⍵:7 ⋄ 9}2"]);
     fails_in(&mut s, Value, &["10{g←{⍺+⍵} ⋄ g ⍵}3"]);
+    for (kind, number) in [(Syntax, 2), (Index, 3), (Rank, 4), (Length, 5), (Value, 6), (Limit, 10), (Domain, 11)] {
+        let error = run(&format!("•SIGNAL '{kind}'")).unwrap_err();
+        assert_eq!(error.kind, kind);
+        assert_eq!(error.message, "explicitly signalled");
+        equiv(&format!("{{{number}::7 ⋄ •SIGNAL '{kind}'}}0"), "7");
+    }
+    equiv("f←{•signal 'LENGTH ERROR'} ⋄ g←{⍵+1} ⋄ {0::g ⍵ ⋄ f ⍵}3", "4");
+    fails(Length, &["{11::7 ⋄ •SIGNAL 'LENGTH ERROR'}0", "{0::•SIGNAL 'LENGTH ERROR' ⋄ ÷0}0"]);
+    fails(Domain, &["•SIGNAL 11", "•SIGNAL 'unknown'", "•SIGNAL 'INTERRUPT'", "•SIGNAL 'TIMEOUT'", "•SIGNAL 'UNSUPPORTED'"]);
+    fails(Rank, &["•SIGNAL 1 12⍴'DOMAIN ERROR'"]);
+    fails(Syntax, &["0 •SIGNAL 'DOMAIN ERROR'"]);
 }
 
 fn exact(n: i64, d: i64) -> AplValue { AplValue::scalar(num_rational::BigRational::new(n.into(), d.into())).unwrap() }
@@ -646,6 +657,29 @@ fn exact_and_tolerant_comparisons() {
     }
 
     assert_eq!(run("1x=0/1x").unwrap().unwrap().prototype(), exact(0, 1).prototype());
+}
+
+#[test]
+fn real_gcd_reconstructs_rational_ratios() {
+    for (x, y, expected) in [
+        ("1", "(103993÷33102)", 1.0 / 33102.0),
+        ("1x", "(π1)", 1.0 / 1725033.0),
+        ("¯1", "(¯103993÷33102)", 1.0 / 33102.0),
+        ("0", "¯0.75", 0.75),
+        ("0", "0", 0.0),
+        ("1", "1.000000000000005", 1.0),
+        ("1E¯200", "3E¯200", 1e-200),
+        ("1E200", "3E200", 1e200),
+        ("1E¯200", "1E200", 1e-200),
+    ] {
+        for code in [format!("{x}∨{y}"), format!("{y}∨{x}")] {
+            let Number(actual) = run(&code).unwrap().unwrap() else { panic!("expected a number: {code}") };
+            let actual = actual.as_float().unwrap();
+            assert!((actual - expected).abs() <= 1e-14 * expected, "{code}: {actual} != {expected}");
+        }
+    }
+    let Number(outside) = run("1∨1.00000000000005").unwrap().unwrap() else { panic!("expected a number") };
+    assert!(outside.as_float().unwrap() < 1e-12);
 }
 
 #[test]

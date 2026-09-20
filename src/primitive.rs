@@ -1154,7 +1154,10 @@ fn inverse_where(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
 }
 
 fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    use faer::{linalg::solvers::SolveLstsq, Mat};
+    use faer::{
+        linalg::solvers::{DenseSolveCore, Solve, SolveLstsq},
+        Mat,
+    };
     let dimensions = |a: &Value| match a.shape() {
         [] => Ok((1, 1)),
         &[m] => Ok((m, 1)),
@@ -1194,15 +1197,17 @@ fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Res
         let convert = |v: &[Number]| v.iter().map(|x| x.to_complex().map_err(|e| span.error(ErrorKind::Domain, e))).collect::<Result<Vec<_>, _>>();
         let a = convert(&a)?;
         let matrix = Mat::from_fn(m, n, |i, j| a[i * n + j]);
-        let svd = matrix.thin_svd().map_err(|_| span.error(ErrorKind::Domain, "matrix factorization failed"))?;
-        let cutoff = f64::EPSILON * m.max(n) as f64 * svd.S()[0].re;
-        if svd.S()[n - 1].re <= cutoff { return Err(span.error(ErrorKind::Domain, "matrix is rank deficient")); }
-        let result = match b {
-            Some(b) => {
-                let b = convert(&b)?;
-                svd.solve_lstsq(Mat::from_fn(m, k, |i, j| b[i * k + j]))
-            }
-            None => svd.pseudoinverse(),
+        let rhs = b.as_ref().map(|b| convert(b).map(|b| Mat::from_fn(m, k, |i, j| b[i * k + j]))).transpose()?;
+        let result = if m == n {
+            let lu = matrix.partial_piv_lu();
+            let cutoff = f64::EPSILON * n as f64 * a.iter().map(|z| z.norm()).fold(0.0, f64::max);
+            if (0..n).any(|i| lu.U()[(i, i)].norm() <= cutoff) { return Err(span.error(ErrorKind::Domain, "matrix is rank deficient")); }
+            match rhs { Some(b) => lu.solve(b), None => lu.inverse() }
+        } else {
+            let svd = matrix.thin_svd().map_err(|_| span.error(ErrorKind::Domain, "matrix factorization failed"))?;
+            let cutoff = f64::EPSILON * m as f64 * svd.S()[0].re;
+            if svd.S()[n - 1].re <= cutoff { return Err(span.error(ErrorKind::Domain, "matrix is rank deficient")); }
+            match rhs { Some(b) => svd.solve_lstsq(b), None => svd.pseudoinverse() }
         };
         (0..n)
             .flat_map(|i| (0..k).map(move |j| (i, j)))

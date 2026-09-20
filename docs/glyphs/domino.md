@@ -13,6 +13,6 @@
 3x 5x 7x⌹3 2⍴1x 1x 1x 2x 1x 3x ⍝ 1x 2x
 ```
 
-All-exact inputs use rational elimination; approximate real/complex inputs use SVD.
+All-exact inputs use rational elimination. Approximate real/complex inputs use pivoted LU for square systems and SVD for rectangular least squares.
 
 DOMAIN: singular or underdetermined system, non-finite input.

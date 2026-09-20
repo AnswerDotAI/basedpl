@@ -3,7 +3,7 @@
 `∊Y` recursively ravels all nested leaves.
 
 ```apl
-∊(1 2)(3 (4 5))    ⍝ 1 2 3 4 5
+∊(1 2⋄ 3 (4 5))    ⍝ 1 2 3 4 5
 ```
 
 `X∊Y` marks items of `X` found among the elements of `Y`, using tolerant matching. A single query returns an atom. Batch axes follow `X`'s shape.

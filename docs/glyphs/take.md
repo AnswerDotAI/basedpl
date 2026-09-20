@@ -3,7 +3,7 @@
 `↑Y` returns the first major item, like `1⊃Y`. On an enclosure it returns the contained value. An empty leading axis gives a cell of fill.
 
 ```apl
-↑(1 2)(3 4 5)      ⍝ 1 2
+↑(1 2⋄ 3 4 5)      ⍝ 1 2
 ↑2 3⍴⍳6           ⍝ 1 2 3
 ↑⊂7               ⍝ 7
 ↑0 3⍴0            ⍝ 0 0 0

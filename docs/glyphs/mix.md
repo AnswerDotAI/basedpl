@@ -4,7 +4,7 @@
 
 ```apl
 ⊃1 2 3             ⍝ 1 2 3
-⊃(1 2)(3 4 5)      ⍝ 2 3⍴1 2 0 3 4 5
+⊃(1 2⋄ 3 4 5)      ⍝ 2 3⍴1 2 0 3 4 5
 ```
 
 `P⊃Y` selects leading-axis coordinates. Remaining axes form a cell; full coordinates return the stored value. Successive Picks traverse nesting. Empty coordinates return `Y`.
@@ -12,7 +12,7 @@
 ```apl
 2⊃2 3⍴⍳6           ⍝ 4 5 6
 2 1⊃2 3⍴⍳6         ⍝ 4
-1⊃2⊃(1 2)(3 4)     ⍝ 3
+1⊃2⊃(1 2⋄ 3 4)     ⍝ 3
 ⍬⊃1 2              ⍝ 1 2
 ```
 

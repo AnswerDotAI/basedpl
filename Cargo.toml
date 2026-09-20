@@ -16,6 +16,10 @@ name = "basedpl"
 path = "src/main.rs"
 test = false
 
+[profile.dev]
+opt-level = 1
+lto = "off"
+
 [profile.release]
 lto = false
 codegen-units = 16

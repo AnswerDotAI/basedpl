@@ -43,7 +43,7 @@ Reduction returns the accumulator. An unseeded one-item reduction returns that i
 Nested paths use seeded Pick reduction.
 
 ```apl
-tree←(10 20)(30 (40 50))
+tree←(10 20⋄ 30 (40 50))
 tree⊃/⌽2 2 1       ⍝ 40
 ```
 

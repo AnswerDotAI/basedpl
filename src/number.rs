@@ -75,6 +75,25 @@ fn real_floor(y: f64) -> f64 {
     if (y - n).abs() <= COMPARISON_TOLERANCE * y.abs().max(n.abs()) { n } else { y.floor() }
 }
 
+fn real_gcd(x: f64, y: f64) -> f64 {
+    let (x, y) = (x.abs().max(y.abs()), x.abs().min(y.abs()));
+    if y == 0.0 { return x; }
+    let scale = BigRational::from_float(x).unwrap();
+    let ratio = &scale / BigRational::from_float(y).unwrap();
+    let tolerance = BigRational::from_float(COMPARISON_TOLERANCE).unwrap() * &ratio;
+    let (mut n, mut d) = ratio.clone().into_raw();
+    let (mut p0, mut p1) = (BigInt::from(0), BigInt::from(1));
+    let (mut q0, mut q1) = (BigInt::from(1), BigInt::from(0));
+    loop {
+        let a = &n / &d;
+        (p0, p1) = (p1.clone(), &a * &p1 + p0);
+        (q0, q1) = (q1.clone(), &a * &q1 + q0);
+        let convergent = BigRational::new(p1.clone(), q1.clone());
+        if (convergent - &ratio).abs() <= tolerance { return (scale / BigRational::from_integer(p1)).to_f64().unwrap(); }
+        (n, d) = (d.clone(), n % d);
+    }
+}
+
 fn complex_floor(y: Complex64) -> Complex64 {
     let (a, b) = (real_floor(y.re), real_floor(y.im));
     let (x, z) = (y.re - a, y.im - b);
@@ -405,6 +424,7 @@ impl Number {
     fn gcd(&self, right: &Self) -> Result<Self, &'static str> {
         if self.is_infinite() || right.is_infinite() { return Err("gcd requires finite arguments"); }
         if !self.is_exact() || !right.is_exact() {
+            if self.as_complex().is_none() && right.as_complex().is_none() { return Ok(Self(Float(real_gcd(self.to_float()?, right.to_float()?)))); }
             let (mut x, mut y) = (self.to_complex()?, right.to_complex()?);
             let original = if x.norm() >= y.norm() { x } else { y };
             let scale = x.norm().max(y.norm());

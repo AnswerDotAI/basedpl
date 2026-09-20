@@ -14,3 +14,16 @@ The handler sees local bindings restored to guard installation. Outer writes and
 ```
 
 Cancellation and unsupported-feature errors bypass guards.
+
+## Signal
+
+`•SIGNAL 'DOMAIN ERROR'` raises an ordinary APL error. It is monadic and does not return a value. Existing `::` guards catch it in the same way as an error from a primitive.
+
+```apl
+positive←{⍵≤0:•SIGNAL 'DOMAIN ERROR' ⋄ ⍵}
+safe←{11::0 ⋄ positive ⍵}
+safe ¯3   ⍝ 0
+safe 4    ⍝ 4
+```
+
+The argument must be one of these uppercase names: `SYNTAX ERROR`, `INDEX ERROR`, `RANK ERROR`, `LENGTH ERROR`, `VALUE ERROR`, `LIMIT ERROR`, or `DOMAIN ERROR`. Their guard numbers are 2, 3, 4, 5, 6, 10 and 11 respectively. Numeric codes and other names are rejected with `DOMAIN ERROR`. Interrupts, timeouts and unsupported-feature errors cannot be signalled.

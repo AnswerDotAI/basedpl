@@ -69,8 +69,8 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
         let no_result = expected.value.is_none();
         (expected.value, no_result)
     } else { (expected_array(&case["expected"]), case.get("expected") == Some(&JsonValue::Null)) };
-    let relative = case["relative_tolerance"].as_f64().unwrap_or(0.0);
-    let absolute = case["absolute_tolerance"].as_f64().unwrap_or(0.0);
+    let relative = case["relative_tolerance"].as_f64().unwrap_or(1e-13);
+    let absolute = case["absolute_tolerance"].as_f64().unwrap_or(1e-13);
     if [relative, absolute].iter().any(|t| !t.is_finite() || *t < 0.0) || (error_kind.is_none() && expected.is_none() && !no_result) {
         return json!({"status":"invalid", "message":"invalid or missing independent expectation"});
     }

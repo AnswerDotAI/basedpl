@@ -14,7 +14,7 @@
 1 2,[0.5]3 4   ⍝ 2 2⍴1 2 3 4
 
 ⍝ dyalog:axes:mix —
-⊃[0.5](1 2)(3 4)   ⍝ 2 2⍴1 3 2 4
+⊃[0.5](1 2⋄ 3 4)   ⍝ 2 2⍴1 3 2 4
 
 ⍝ dyalog:assignment:indexed-modified —
 B←3 5⍴0 ⋄ B[1 1 3;1 3 3 5]+←1 ⋄ B   ⍝ 3 5⍴2 0 4 0 2 0 0 0 0 0 1 0 2 0 1
@@ -31,7 +31,7 @@ a←3⍴0 ⋄ (5⍴a)+←1 ⋄ a   ⍝ 2 2 1
 ⍝ dyalog:residue:1 —
 3 3 ¯3 ¯3|¯5 5 ¯4 4   ⍝ 1 2 ¯1 ¯2
 
-⍝ dyalog:residue:2 — [rtol=1e-14]
+⍝ dyalog:residue:2 —
 0.5|3.12 ¯1 ¯0.6   ⍝ 0.1200000000000001 0 0.4
 
 ⍝ dyalog:residue:3 —
@@ -55,10 +55,10 @@ a←3⍴0 ⋄ (5⍴a)+←1 ⋄ a   ⍝ 2 2 1
 ⍝ dyalog:maximum:1 —
 ¯2.01 0.1 15.3⌈¯3.2 ¯1.1 22.7   ⍝ ¯2.01 0.1 22.7
 
-⍝ dyalog:exponential:1 — [rtol=1e-14]
+⍝ dyalog:exponential:1 —
 *1 0   ⍝ 2.718281828459045 1
 
-⍝ dyalog:exponential:2 — [rtol=1e-14]
+⍝ dyalog:exponential:2 —
 *0J1 1J2
 0.5403023058681398j0.8414709848078965 ¯1.131204383756814j2.471726672004819
 
@@ -68,28 +68,28 @@ a←3⍴0 ⋄ (5⍴a)+←1 ⋄ a   ⍝ 2 2 1
 ⍝ dyalog:power:2 —
 9 64*0.5   ⍝ 3 8
 
-⍝ dyalog:natural-logarithm:1 — [rtol=1e-14]
+⍝ dyalog:natural-logarithm:1 —
 ⍟1 2   ⍝ 0 0.6931471805599453
 
-⍝ dyalog:natural-logarithm:2 — [rtol=1e-14]
+⍝ dyalog:natural-logarithm:2 —
 ⍟2 2⍴0J1 1J2 2J3 3J4
 2 2⍴0j1.570796326794897 0.8047189562170503j1.10714871779409 1.282474678730768j0.982793723247329 1.6094379124341j0.9272952180016122
 
-⍝ dyalog:logarithm:1 — [rtol=1e-14]
+⍝ dyalog:logarithm:1 —
 10⍟100 2   ⍝ 2 0.3010299956639811
 
-⍝ dyalog:logarithm:2 — [rtol=1e-14]
+⍝ dyalog:logarithm:2 —
 2 10⍟0J1 1J2
 0j2.266180070913597 0.3494850021680094j0.480828578784234
 
 ⍝ dyalog:logarithm:3 —
 1⍟1   ⍝ 1
 
-⍝ dyalog:pi-times:1 — [rtol=1e-14]
+⍝ dyalog:pi-times:1 —
 π0.5 1 2
 1.570796326794897 3.141592653589793 6.283185307179586
 
-⍝ dyalog:circular-functions:1 — [rtol=1e-14]
+⍝ dyalog:circular-functions:1 —
 0 ¯1○1   ⍝ 0 1.570796326794897
 
 ⍝ dyalog:circular-functions:2 —
@@ -101,15 +101,15 @@ a←3⍴0 ⋄ (5⍴a)+←1 ⋄ a   ⍝ 2 2 1
 ⍝ dyalog:factorial:1 —
 !1 2 3 4 5   ⍝ 1 2 6 24 120
 
-⍝ dyalog:factorial:2 — [rtol=1e-14]
+⍝ dyalog:factorial:2 —
 !¯1.5 0 1.5 3.3
 ¯3.544907701811032 1 1.329340388179137 8.855343360454034
 
-⍝ dyalog:factorial:3 — [rtol=1e-14]
+⍝ dyalog:factorial:3 —
 !0J1 1J2
 0.498015668118356j¯0.1549498283018108 0.1122942423463263j0.3236128855019272
 
-⍝ dyalog:binomial:1 — [rtol=1e-14]
+⍝ dyalog:binomial:1 —
 1 1.2 1.4 1.6 1.8 2!5
 5 6.105689247785079 7.21942468559846 8.281104786421748 9.227916704038812 10
 
@@ -132,7 +132,7 @@ a←3⍴0 ⋄ (5⍴a)+←1 ⋄ a   ⍝ 2 2 1
 ~0 1   ⍝ 1 0
 
 ⍝ dyalog:nand:1 —
-(0 1)(1 0)⍲(0 0)(1 1)   ⍝ (1 1) (0 1)
+(0 1⋄ 1 0)⍲(0 0⋄ 1 1)   ⍝ (1 1 ⋄ 0 1)
 
 ⍝ dyalog:nor:1 —
 0 0 1 1⍱0 1 0 1   ⍝ 1 0 0 0
@@ -142,7 +142,7 @@ a←3⍴0 ⋄ (5⍴a)+←1 ⋄ a   ⍝ 2 2 1
 
 ⍝ dyalog:without:2 —
 'MONDAY' 'TUESDAY' 'WEDNESDAY'~'TUESDAY' 'FRIDAY'
-('MONDAY') ('WEDNESDAY')
+('MONDAY' ⋄ 'WEDNESDAY')
 
 ⍝ dyalog:unique-mask:1 —
 ≠22 10 22 22 21 10 5 10   ⍝ 1 1 0 0 1 0 1 0
@@ -160,7 +160,7 @@ a←3⍴0 ⋄ (5⍴a)+←1 ⋄ a   ⍝ 2 2 1
 ≡1 'A'   ⍝ 1
 
 ⍝ dyalog:depth:2 —
-≡(1 2)(3 (4 5))   ⍝ ¯3
+≡(1 2⋄ 3 (4 5))   ⍝ ¯3
 
 ⍝ dyalog:index-of:1 —
 2 4 3 1 4⍳1 2 3 4 5   ⍝ 4 1 3 2 6
@@ -172,7 +172,7 @@ a←3⍴0 ⋄ (5⍴a)+←1 ⋄ a   ⍝ 2 2 1
 (3 4⍴⍳12)⍳2 4⍴1 2 3 4 9 10 11 12   ⍝ 1 3
 
 ⍝ dyalog:index-generator:1 —
-⍳2 3   ⍝ 2 3⍴(1 1) (1 2) (1 3) (2 1) (2 2) (2 3)
+⍳2 3   ⍝ 2 3⍴(1 1 ⋄ 1 2 ⋄ 1 3 ⋄ 2 1 ⋄ 2 2 ⋄ 2 3)
 
 ⍝ dyalog:index-generator:2 — Combined setup and indexed expression
 A←2 4⍴'MAINEXIT' ⋄ A[⍳⍴A]   ⍝ 2 4⍴'MAINEXIT'
@@ -180,7 +180,7 @@ A←2 4⍴'MAINEXIT' ⋄ A[⍳⍴A]   ⍝ 2 4⍴'MAINEXIT'
 ⍝ dyalog:exponential:3 —
 1+*π0j1   ⍝ 0
 
-⍝ dyalog:power:3 — [rtol=1e-14]
+⍝ dyalog:power:3 —
 ¯27*3 2 1.2 .5
 ¯19683 729 ¯42.22738244439835j¯30.67998919220237 0j5.196152422706632
 
@@ -228,14 +228,14 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 ⍴⍨3   ⍝ 3 3 3
 
 ⍝ dyalog:each-monadic:1 — Inlined G
-⍴¨('TOM' (⍳3))('DICK' (⍳4))('HARRY' (⍳5))
-(1⍴2) (1⍴2) (1⍴2)
+⍴¨('TOM' (⍳3)⋄ 'DICK' (⍳4)⋄ 'HARRY' (⍳5))
+(1⍴2 ⋄ 1⍴2 ⋄ 1⍴2)
 
 ⍝ dyalog:each-dyadic:1 —
-'ABC',¨'XYZ'   ⍝ ('AX') ('BY') ('CZ')
+'ABC',¨'XYZ'   ⍝ ('AX' ⋄ 'BY' ⋄ 'CZ')
 
 ⍝ dyalog:each-dyadic:2 — Inlined G
-1 2 3 4↑¨(1 (2 3))(4 (5 6))(8 9)10   ⍝ (1⍴1) (4 (5 6)) (8 9 0) (10 0 0 0)
+1 2 3 4↑¨(1 (2 3))(4 (5 6))(8 9)10   ⍝ (1⍴1 ⋄ 4 (5 6) ⋄ 8 9 0 ⋄ 10 0 0 0)
 
 ⍝ dyalog:reduce-n-wise:1 —
 +/3↕⍳4   ⍝ 6 9
@@ -253,10 +253,10 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 ×/0↕⍳4   ⍝ 1 1 1 1 1
 
 ⍝ dyalog:reduce-n-wise:6 —
-,/2↕⍳4   ⍝ (1 2) (2 3) (3 4)
+,/2↕⍳4   ⍝ (1 2 ⋄ 2 3 ⋄ 3 4)
 
 ⍝ dyalog:reduce-n-wise:7 —
-,/⌽2↕⍳4   ⍝ (2 1) (3 2) (4 3)
+,/⌽2↕⍳4   ⍝ (2 1 ⋄ 3 2 ⋄ 4 3)
 
 ⍝ dyalog:reduce:identity-catenate —
 ''≡,/0⍴'Hello' 'World'   ⍝ 1
@@ -268,7 +268,7 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 ⍸1 0 1 0 0 0 0 1 0   ⍝ 1 3 8
 
 ⍝ dyalog:where:2 —
-⍸2 2⍴0 1 2 3   ⍝ (1 2) (2 1) (2 1) (2 2) (2 2) (2 2)
+⍸2 2⍴0 1 2 3   ⍝ (1 2 ⋄ 2 1 ⋄ 2 1 ⋄ 2 2 ⋄ 2 2 ⋄ 2 2)
 
 ⍝ dyalog:interval-index:1 —
 10 20 30⍸11 1 31 21   ⍝ 1 0 3 2
@@ -287,7 +287,7 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 12 -⍤÷4   ⍝ ¯3
 
 ⍝ dyalog:over:1 —
-2 3 ,⍥⊂ 'text'   ⍝ (2 3) ('text')
+2 3 ,⍥⊂ 'text'   ⍝ (2 3 ⋄ 'text')
 
 ⍝ dyalog:behind:1 —
 3∘<⍛/2 7 1 8 2 8   ⍝ 7 8 8
@@ -299,7 +299,7 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 10 20 30 (+⍤0 1)3 4⍴⍳12   ⍝ 3 4⍴11 12 13 14 25 26 27 28 39 40 41 42
 
 ⍝ dyalog:rank:2 — Smaller iota array replaces the displayed Y
-⊂⍤1⊢2 2 3⍴⍳12   ⍝ 2 2⍴(1 2 3) (4 5 6) (7 8 9) (10 11 12)
+⊂⍤1⊢2 2 3⍴⍳12   ⍝ 2 2⍴(1 2 3 ⋄ 4 5 6 ⋄ 7 8 9 ⋄ 10 11 12)
 
 ⍝ dyalog:right:1 —
 (⊢÷+/)4 3 0 1   ⍝ 0.5 0.375 0 0.125
@@ -330,7 +330,7 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 3 4⍴10 20 30 40 20 40 60 80 30 60 90 120
 
 ⍝ dyalog:outer-product:2 —
-1 2 ,⌝ 1 2 3   ⍝ 2 3⍴(1 1) (1 2) (1 3) (2 1) (2 2) (2 3)
+1 2 ,⌝ 1 2 3   ⍝ 2 3⍴(1 1 ⋄ 1 2 ⋄ 1 3 ⋄ 2 1 ⋄ 2 2 ⋄ 2 3)
 
 ⍝ dyalog:outer-product:3 —
 (⍳3) =⌝ ⍳3   ⍝ 3 3⍴1 0 0 0 1 0 0 0 1
@@ -355,17 +355,17 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 (2 3⍴'abcABA')⍒4 2⍴'abacAaAc'   ⍝ 4 2 1 3
 
 ⍝ dyalog:partition:runs —
-1 1 1 2 2 3 3 3⊆'NOWISTHE'   ⍝ ('NOW') ('IS') ('THE')
+1 1 1 2 2 3 3 3⊆'NOWISTHE'   ⍝ ('NOW' ⋄ 'IS' ⋄ 'THE')
 
 ⍝ dyalog:partitioned-enclose:dividers —
 2 0 1 3 0 2 0 1⊂'abcdefg'
-('') ('ab') (1⍴'c') ('') ('') ('de') ('') ('fg') ('')
+('' ⋄ 'ab' ⋄ 1⍴'c' ⋄ '' ⋄ '' ⋄ 'de' ⋄ '' ⋄ 'fg' ⋄ '')
 
 ⍝ dyalog:partitioned-enclose:axis —
-1 0 1⊂[1]3 4⍴⍳12   ⍝ (2 4⍴1 2 3 4 5 6 7 8) (1 4⍴9 10 11 12)
+1 0 1⊂[1]3 4⍴⍳12   ⍝ (2 4⍴1 2 3 4 5 6 7 8 ⋄ 1 4⍴9 10 11 12)
 
 ⍝ dyalog:pick:path — Inline G definition
-2⊃1⊃2 1⊃2 3⍴('ABC' 1)('DEF' 2)('GHI' 3)('JKL' 4)('MNO' 5)('PQR' 6)
+2⊃1⊃2 1⊃2 3⍴('ABC' 1⋄ 'DEF' 2⋄ 'GHI' 3⋄ 'JKL' 4⋄ 'MNO' 5⋄ 'PQR' 6)
 'K'
 
 ⍝ dyalog:index:shape — Inline VEC definition
@@ -387,16 +387,16 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 {+/,⍵}⌺3 3⊢3 3⍴⍳12   ⍝ 3 3⍴12 21 16 27 45 33 24 39 28
 
 ⍝ dyalog:stencil:even — Shorter input
-{⊂⍵}⌺2⍳4   ⍝ (1 2) (2 3) (3 4)
+{⊂⍵}⌺2⍳4   ⍝ (1 2 ⋄ 2 3 ⋄ 3 4)
 
-⍝ dyalog:matrix-inverse:1 — [rtol=1e-14]
+⍝ dyalog:matrix-inverse:1 —
 ⌹2 2⍴2 ¯3 4 10   ⍝ 2 2⍴0.3125 0.09375 ¯0.125 0.0625
 
-⍝ dyalog:matrix-inverse:2 — [rtol=1e-14]
+⍝ dyalog:matrix-inverse:2 —
 ⌹1j1 2
 0.1666666666666667j¯0.1666666666666667 0.3333333333333333
 
-⍝ dyalog:matrix-divide:1 — [rtol=1e-14]
+⍝ dyalog:matrix-divide:1 —
 3 5 7⌹3 2⍴1 1 1 2 1 3   ⍝ 1 2
 
 ⍝ — Dyalog dfns: compression round trip
@@ -467,7 +467,7 @@ mac 'A=++ B=(2A) B'
 
 ⍝ — Dyalog dfns: internal box borders
 •LOAD 'lib/dyalog.apl'
-(1 2)(1 2)box 2 3⍴'abcdef'
+(1 2⋄ 1 2)box 2 3⍴'abcdef'
 ⍝ =>
 5 7⍴'┌─┬─┬─┐│a│b│c│├─┼─┼─┤│d│e│f│└─┴─┴─┘'
 
@@ -487,7 +487,7 @@ lisp '(cond ((= 2 3) 10) (else 20))'
 •LOAD 'lib/dyalog.apl'
 lisp '(quote (a (b c)))'
 ⍝ =>
-(1⍴'a') ((1⍴'b') (1⍴'c'))
+(1⍴'a' ⋄ (1⍴'b' ⋄ 1⍴'c'))
 
 ⍝ — Dyalog dfns: lisp
 •LOAD 'lib/dyalog.apl'
@@ -551,15 +551,15 @@ lisp '(+ 2'
 
 ⍝ — Dyalog dfns: eis
 •LOAD 'lib/dyalog.apl'
-(eis 1)(1 2 eis 3 4)(eis(1 2)(3 4))
+(eis 1⋄ 1 2 eis 3 4⋄ eis(1 2⋄ 3 4))
 ⍝ =>
-(⊂(1⍴1)) ((1 2) (3 4)) ((1 2) (3 4))
+(⊂(1⍴1) ⋄ (1 2 ⋄ 3 4) ⋄ (1 2 ⋄ 3 4))
 
 ⍝ — Dyalog dfns: iotag
 •LOAD 'lib/dyalog.apl'
 iotag 2 3
 ⍝ =>
-2 3⍴(1 1) (1 2) (1 3) (2 1) (2 2) (2 3)
+2 3⍴(1 1 ⋄ 1 2 ⋄ 1 3 ⋄ 2 1 ⋄ 2 2 ⋄ 2 3)
 
 ⍝ — Dyalog dfns: iotag
 •LOAD 'lib/dyalog.apl'
@@ -595,19 +595,19 @@ ssword 'alpha alphabet alpha12 alpha' 'alpha' 'X'
 •LOAD 'lib/dyalog.apl'
 1 tokens 'x←1 2 3 ⋄ ''abc'' ⍝ comment'
 ⍝ =>
-(1⍴'x') (1⍴'←') ('1 2 3') (1⍴' ') (1⍴'⋄') (1⍴' ') ('''abc''') (1⍴' ') ('⍝ comment')
+(1⍴'x' ⋄ 1⍴'←' ⋄ '1 2 3' ⋄ 1⍴' ' ⋄ 1⍴'⋄' ⋄ 1⍴' ' ⋄ '''abc''' ⋄ 1⍴' ' ⋄ '⍝ comment')
 
 ⍝ — Dyalog dfns: word boundaries
 •LOAD 'lib/dyalog.apl'
 words¨'' '123' 'abc12 + 34def' 'abc_def'
 ⍝ =>
-(0⍴⊂('')) (1⍴⊂('123')) (('abc12') (' + 34') ('def')) (1⍴⊂('abc_def'))
+(0⍴⊂('') ⋄ 1⍴⊂('123') ⋄ ('abc12' ⋄ ' + 34' ⋄ 'def') ⋄ 1⍴⊂('abc_def'))
 
 ⍝ — Dyalog dfns: word boundaries
 •LOAD 'lib/dyalog.apl'
 ('abc' '123')words 'a12+b3 cZ1a'
 ⍝ =>
-('a12') (1⍴'+') ('b3') (1⍴' ') (1⍴'c') ('Z1') (1⍴'a')
+('a12' ⋄ 1⍴'+' ⋄ 'b3' ⋄ 1⍴' ' ⋄ 1⍴'c' ⋄ 'Z1' ⋄ 1⍴'a')
 
 ⍝ — Dyalog dfns: compression round trip
 •LOAD 'lib/dyalog.apl'

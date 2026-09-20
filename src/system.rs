@@ -20,6 +20,7 @@ const BUILTINS: &[(&str, Builtin)] = &[
     ("•C", Builtin::Function(Call::Value(case_convert))),
     ("•UCS", Builtin::Function(Call::Value(unicode_convert))),
     ("•LOAD", Builtin::Function(Call::Load)),
+    ("•SIGNAL", Builtin::Function(Call::Value(signal))),
 ];
 
 pub(crate) fn lookup(name: &str) -> Option<Operand> {
@@ -28,6 +29,27 @@ pub(crate) fn lookup(name: &str) -> Option<Operand> {
         Builtin::Text(text) => Operand::Value(Value::new(vec![text.len()], text.chars().map(Value::Character).collect()).unwrap()),
         Builtin::Function(call) => Operand::Function(Function::system(SystemFunction { name, call: *call })),
     })
+}
+
+fn signal(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    if left.is_some() { return Err(span.error(ErrorKind::Syntax, "•SIGNAL is monadic")); }
+    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "•SIGNAL needs an error name vector")); }
+    let invalid = || span.error(ErrorKind::Domain, "•SIGNAL needs an ordinary error name such as 'DOMAIN ERROR'");
+    let name: String = right
+        .elements()
+        .map(|e| match e { Value::Character(c) => Ok(c), _ => Err(invalid()) })
+        .collect::<Result<_, _>>()?;
+    let kind = match name.as_str() {
+        "SYNTAX ERROR" => ErrorKind::Syntax,
+        "INDEX ERROR" => ErrorKind::Index,
+        "RANK ERROR" => ErrorKind::Rank,
+        "LENGTH ERROR" => ErrorKind::Length,
+        "VALUE ERROR" => ErrorKind::Value,
+        "LIMIT ERROR" => ErrorKind::Limit,
+        "DOMAIN ERROR" => ErrorKind::Domain,
+        _ => return Err(invalid()),
+    };
+    Err(span.error(kind, "explicitly signalled"))
 }
 
 fn case_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {

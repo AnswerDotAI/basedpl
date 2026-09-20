@@ -3,7 +3,7 @@
 `↓Y` nests vectors along the last axis.
 
 ```apl
-↓2 3⍴⍳6            ⍝ (1 2 3)(4 5 6)
+↓2 3⍴⍳6            ⍝ (1 2 3⋄ 4 5 6)
 ```
 
 `N↓Y` drops from the front; negative `N` drops from the end.
@@ -16,7 +16,7 @@
 `[K]` selects the split axis or drop axes.
 
 ```apl
-↓[1]2 3⍴⍳6         ⍝ (1 4)(2 5)(3 6)
+↓[1]2 3⍴⍳6         ⍝ (1 4⋄ 2 5⋄ 3 6)
 ```
 
 Vector counts apply to successive leading axes. Overdrop gives an empty axis.

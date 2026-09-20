@@ -11,7 +11,7 @@
 `⊂[K]Y` encloses cells on axes `K`.
 
 ```apl
-⊂[2]2 3⍴⍳6         ⍝ (1 2 3)(4 5 6)
+⊂[2]2 3⍴⍳6         ⍝ (1 2 3⋄ 4 5 6)
 ```
 
 `N⊂Y` starts partitions at positive marks along the last axis. Leading zero marks are ignored.

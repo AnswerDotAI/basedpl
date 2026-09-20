@@ -32,7 +32,7 @@ Enclosed matrix: one row per term, coefficient then exponents. Enclose one coord
 
 ```apl
 (⊂2 3⍴1x 2x 0x 1x 0x 2x)Ⓟ⊂3x 4x  ⍝ 25x
-(⊂2 3⍴1x 2x 0x 1x 0x 2x)Ⓟ(3x 4x)(5x 12x)  ⍝ 25x 169x
+(⊂2 3⍴1x 2x 0x 1x 0x 2x)Ⓟ(3x 4x⋄ 5x 12x)  ⍝ 25x 169x
 (⊂2 2⍴2x 1r2 3x 1r4)Ⓟ16x           ⍝ 14
 Ⓟ⊂2 2⍴1x 5x ¯1x 0x                 ⍝ ¯1x 0x 0x 0x 0x 1x
 ```

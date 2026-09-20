@@ -10,7 +10,7 @@
 A shape vector generates an array of coordinate vectors.
 
 ```apl
-⍳2 2               ⍝ 2 2⍴(1 1)(1 2)(2 1)(2 2)
+⍳2 2               ⍝ 2 2⍴(1 1⋄ 1 2⋄ 2 1⋄ 2 2)
 ```
 
 `X⍳Y` finds the first matching major cell in `X` for each cell of `Y`. Not found: `1+≢X`. Uses tolerant matching and returns exact positions.

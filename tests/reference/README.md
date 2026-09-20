@@ -12,17 +12,26 @@ Run the active cases with:
 cargo test --test reference -- --nocapture
 ```
 
+Put cases taking more than one second in the optimized development build in `slow.apl`. The larger splay workloads also belong there. Normal testing skips this file. Run it explicitly with:
+
+```bash
+cargo test --test reference slow_reference_cases -- --ignored --nocapture
+```
+
+Normal reference cases have a two-second deadline. Slow cases have a 60-second deadline. Keep small correctness cases in the normal suite.
+
 To run one active case, set `BASEDPL_CASE` to its exact ID:
 
 ```bash
 BASEDPL_CASE=ngn:177 cargo test --test reference enabled_reference_cases -- --nocapture
 ```
 
-Every case in `.apl` runs regardless of inventory status. Edit these files directly once cases are active. Each JSONL inventory row has a stable `id`, `code`, and `status`. A `reason` records adaptations or remaining work. Its original source, expectation or recipe is retained.
+The `.apl` file determines whether a case runs normally or only in the slow suite, regardless of inventory status. Edit these files directly once cases are active. Each JSONL inventory row has a stable `id`, `code`, and `status`. A `reason` records adaptations or remaining work. Its original source, expectation or recipe is retained.
 
 | Status | Meaning |
 |---|---|
 | `active` | Exported to the `.apl` corpus. |
+| `slow` | Exported to `slow.apl`; tested only on request. |
 | `setup` | Upstream initialization retained for self-contained cases; no standalone assertion. |
 | `pending` | Intended coverage that still needs implementation, an origin/dialect adaptation, concrete inputs, or an expectation. |
 | `question` | Retain until the scope/semantic decision is resolved. The question list is in `meta/reference-questions.md`. |
@@ -42,7 +51,7 @@ To enable a case:
 
 4. Run the normal suite. To check candidates without activating them, use the scanner below.
 
-Pending cases do not count as passing tests. New failures in active cases fail the suite. Code and expectation execute in separate fresh sessions. Tests compare shape, nesting, data and prototype. Numeric comparisons are exact unless a case specifies `rtol` or `atol` (`relative_tolerance` or `absolute_tolerance` in the inventory). The bound is `max(absolute, relative × max(|actual|, |expected|))`. Absolute tolerance covers numerical solver roundoff near zero. Shape and nesting remain exact. Display expectations remain separate from array expectations.
+Pending cases do not count as passing tests. New failures in active cases fail the suite. Code and expectation execute in separate fresh sessions. Tests compare shape, nesting, data and prototype. Numeric comparisons use `rtol=1e-13` and `atol=1e-13` unless a case specifies its own (`relative_tolerance` or `absolute_tolerance` in the inventory). The bound is `max(absolute, relative × max(|actual|, |expected|))`. The default absolute tolerance treats every value below `1e-13` as zero. Round such residues to zero in expectations. `core.apl` compares exactly and ignores tolerances. Shape and nesting remain exact. Display expectations remain separate from array expectations.
 
 Implementation gaps stay in the JSONL inventory with `status: pending` and a `Not implemented:` reason. Record the intended result when settled. Do not turn the current failure into an active error expectation. Active error cases assert invalid language operations or explicit scope exclusions.
 
@@ -81,7 +90,7 @@ python scripts/reference.py activate --source april --match 'april:590\b'
 
 Rust's `reference::check` owns comparison for the test runner, worker and private Python `_check_reference(json_case, timeout)` API. It accepts captured `expected` arrays, `expected_error` kinds, or an `expected_code` expression. Each case receives a fresh session inside a persistent worker. The scanner uses a 0.25-second cooperative deadline per case, adjustable with `--timeout`. An unresponsive process is killed after the client's grace period and replaced for the next case. The failed case is not retried. Random cases, missing expectations and scope questions are counted separately, not treated as execution failures.
 
-The report defaults to `meta/reference-scan.json`. It contains each original fixture and its result, including actual structured values on mismatches. Numerical rounding allowances must be explicit per case. Semantic differences do not get a tolerance. CI runs ordinary offline Rust tests; it does not need the scanner or a worker process.
+The report defaults to `meta/reference-scan.json`. It contains each original fixture and its result, including actual structured values on mismatches. A case needs an explicit tolerance only when the defaults are too tight. Semantic differences do not get a tolerance. CI runs ordinary offline Rust tests; it does not need the scanner or a worker process.
 
 ## APL record format
 
@@ -97,7 +106,7 @@ Write `code   ⍝ expected` when both expressions fit one line and each has fewe
 
 Longer single-line expressions use one line each. If either expression is multiline, an exact `⍝ =>` line separates code from expectation. An empty line separates records. A record ends at the next case header, section heading or EOF. At EOF the separator and final newline are optional. Other blank lines belong to the expressions.
 
-Errors use `⍝ error: DOMAIN ERROR` on the expectation line. A no-result expectation is the APL expression `{}0`. Numerical tolerances use an optional suffix on the header, such as `[rtol=1e-14 atol=1e-15]`. These are comparison tolerances, not APL `⎕CT`. `core.apl` instead uses exact Rust array equality, including numeric domains and prototypes, as its original Rust assertions did.
+Errors use `⍝ error: DOMAIN ERROR` on the expectation line. A no-result expectation is the APL expression `{}0`. A case overrides the default tolerances with an optional suffix on the header, such as `[rtol=1e-10]`. These are comparison tolerances, not APL `⎕CT`. `core.apl` instead uses exact Rust array equality, including numeric domains and prototypes, as its original Rust assertions did.
 
 Group cases with `⍝⍝ Section name`. Sections are labels, not shared sessions. Each case must supply its own definitions and setup.
 
