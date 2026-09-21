@@ -1,4 +1,4 @@
-use crate::{ErrorKind, Number};
+use crate::{keyed::Keys, ErrorKind, Number};
 use std::{collections::HashMap, fmt, sync::Arc};
 use unicode_width::UnicodeWidthStr;
 
@@ -52,7 +52,7 @@ impl Cells<'_> {
     pub fn collect(&self) -> Result<Vec<Value>, ErrorKind> { (0..self.len()).map(|i| self.get(i)).collect() }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ArrayData {
     shape: Vec<usize>,
     data: Storage,
@@ -61,6 +61,7 @@ pub struct ArrayData {
     exact: Option<bool>,
     functions: bool,
     environment: Option<usize>,
+    keys: Option<Arc<Keys>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -153,7 +154,7 @@ impl Value {
         let functions = data.iter().any(Value::has_functions);
         let environment = data.iter().filter_map(Value::environment).max();
         let data = Storage::compact(data);
-        Ok(Self::Array(Arc::new(ArrayData { shape, data, prototype, depth, exact, functions, environment })))
+        Ok(Self::Array(Arc::new(ArrayData { shape, data, prototype, depth, exact, functions, environment, keys: None })))
     }
 
     pub fn floats(shape: Vec<usize>, mut data: Vec<f64>) -> Result<Self, ErrorKind> {
@@ -168,6 +169,7 @@ impl Value {
             exact: Some(false),
             functions: false,
             environment: None,
+            keys: None,
         })))
     }
 
@@ -181,6 +183,7 @@ impl Value {
             exact: Some(true),
             functions: false,
             environment: None,
+            keys: None,
         })))
     }
     pub fn is_exact(&self) -> bool { self.exact_domain() == Some(true) }
@@ -199,7 +202,7 @@ impl Value {
             Value::Number(n) if n.as_float().is_some() => Storage::Float(Vec::new()),
             _ => Storage::Mixed(Vec::new()),
         };
-        Ok(Self::Array(Arc::new(ArrayData { shape, data, prototype, depth, exact, functions, environment })))
+        Ok(Self::Array(Arc::new(ArrayData { shape, data, prototype, depth, exact, functions, environment, keys: None })))
     }
 
     pub fn scalar(n: impl TryInto<Number>) -> Result<Self, ErrorKind> { Ok(Self::Number(n.try_into().map_err(|_| ErrorKind::Domain)?)) }
@@ -247,8 +250,27 @@ impl Value {
             exact: self.exact_domain(),
             functions: self.has_functions(),
             environment: self.environment(),
+            keys: self.keys().cloned(),
         })))
     }
+
+    pub fn keys(&self) -> Option<&Arc<Keys>> { match self { Self::Array(a) => a.keys.as_ref(), _ => None } }
+    /// Name every element. Atoms have no element positions to name.
+    pub(crate) fn keyed(self, keys: Arc<Keys>) -> Result<Self, ErrorKind> {
+        if keys.names().len() != self.len() { return Err(ErrorKind::Length); }
+        let Self::Array(a) = self else { return Err(ErrorKind::Domain); };
+        let mut a = Arc::unwrap_or_clone(a);
+        a.keys = Some(keys);
+        Ok(Self::Array(Arc::new(a)))
+    }
+    /// The ordinary array of values.
+    pub(crate) fn unkeyed(&self) -> Self {
+        let Self::Array(a) = self else { return self.clone(); };
+        if a.keys.is_none() { return self.clone(); }
+        Self::Array(Arc::new(ArrayData { keys: None, ..ArrayData::clone(a) }))
+    }
+    /// Keys carried from `source` when it has them.
+    pub(crate) fn keyed_like(self, source: &Self) -> Result<Self, ErrorKind> { match source.keys() { Some(k) => self.keyed(k.clone()), None => Ok(self) } }
 
     pub(crate) fn cells(&self, rank: usize) -> Result<Cells<'_>, ErrorKind> {
         let split = self.shape().len().checked_sub(rank).ok_or(ErrorKind::Rank)?;
@@ -274,10 +296,12 @@ impl Value {
                 return Self::new(vec![text.chars().count()], text.chars().map(Value::Character).collect());
             }
         }
-        if matches!(self.prototype(), Value::Character(_)) && self.elements().all(|e| matches!(e, Value::Character(_))) { return Ok(self.clone()); }
+        // A keyed array formats as its display text, so its keys stay visible.
+        let keyed = self.keys().is_some();
+        if !keyed && matches!(self.prototype(), Value::Character(_)) && self.elements().all(|e| matches!(e, Value::Character(_))) { return Ok(self.clone()); }
         let numeric = matches!(self.prototype(), Value::Number(_)) && self.elements().all(|e| matches!(e, Value::Number(_)));
-        if !numeric { return self.formatted_cells(); }
-        let (shape, text) = if numeric && self.shape().len() > 1 {
+        if !numeric && !keyed { return self.formatted_cells(); }
+        let (shape, text) = if !keyed && self.shape().len() > 1 {
             let columns = *self.shape().last().unwrap();
             let text: Vec<_> = self
                 .elements()
@@ -312,7 +336,7 @@ impl Value {
             }
             (shape, result)
         } else {
-            let text = if self.is_empty() { String::new() } else { self.to_string() };
+            let text = if self.is_empty() && !keyed { String::new() } else { self.to_string() };
             let lines: Vec<_> = text.split('\n').collect();
             if lines.len() == 1 { (vec![text.chars().count()], text) } else {
                 let width = lines.iter().map(|s| s.chars().count()).max().unwrap();
@@ -416,6 +440,15 @@ impl Value {
 
     pub(crate) fn disclose(&self) -> Value { self.elements().next().unwrap_or_else(|| self.prototype().clone()) }
 
+    /// Display text for one keyed value: strings are quoted so they read as values.
+    fn literal(&self) -> String {
+        let string = !self.is_empty()
+            && self.shape().len() == 1
+            && matches!(self.prototype(), Value::Character(_))
+            && self.elements().all(|e| matches!(e, Value::Character(_)));
+        if string { format!("'{}'", self.to_string().replace('\'', "''")) } else { self.to_string() }
+    }
+
     /// Assemble cells by trailing-axis agreement, padding each with its own fill.
     pub(crate) fn assemble(frame: &[usize], cells: &[Self], empty_cell: &Self) -> Result<Self, ErrorKind> {
         if element_count(frame)? != cells.len() { return Err(ErrorKind::Length); }
@@ -469,6 +502,7 @@ impl Value {
             exact: a.exact,
             functions: a.functions,
             environment: a.environment,
+            keys: a.keys.clone(),
         }));
         filled.insert(key, result.clone());
         result
@@ -483,33 +517,43 @@ impl fmt::Display for Value {
             Self::Function(fun) => return write!(f, "⟨{}⟩", fun.apl()),
             _ => (),
         }
+        // Keyed arrays print as their constructor: each key with its value.
+        let entries = self
+            .keys()
+            .map(|keys| keys.names().iter().zip(self.elements()).map(|(k, v)| format!("'{}':{}", k.replace('\'', "''"), v.literal())).collect::<Vec<_>>());
+        if let Some(entries) = &entries {
+            match self.shape().len() { 0 => return f.write_str(&entries[0]), 1 => return write!(f, "({})", entries.join(" ⋄ ")), _ => () }
+        }
         if self.is_scalar() {
             let item = self.at(0);
             return if item.is_scalar() { write!(f, "⊂{item}") } else { write!(f, "⊂({item})") };
         }
-        if self.is_empty() { return f.write_str(if matches!(self.prototype(), Value::Character(_)) { "''" } else { "⍬" }); }
-        if self.elements().all(|e| matches!(e, Value::Character(_))) {
-            let columns = self.shape().last().copied().unwrap_or(1);
-            for (i, item) in self.elements().enumerate() {
-                if i > 0 && self.shape().len() > 1 && i % columns == 0 { writeln!(f)?; }
-                if let Value::Character(c) = item { write!(f, "{c}")?; }
+        if entries.is_none() {
+            if self.is_empty() { return f.write_str(if matches!(self.prototype(), Value::Character(_)) { "''" } else { "⍬" }); }
+            if self.elements().all(|e| matches!(e, Value::Character(_))) {
+                let columns = self.shape().last().copied().unwrap_or(1);
+                for (i, item) in self.elements().enumerate() {
+                    if i > 0 && self.shape().len() > 1 && i % columns == 0 { writeln!(f)?; }
+                    if let Value::Character(c) = item { write!(f, "{c}")?; }
+                }
+                return Ok(());
             }
-            return Ok(());
-        }
-        if self.shape().len() > 1 && self.elements().all(|e| matches!(e, Value::Number(_))) {
-            if let Ok(formatted) = self.formatted() { return formatted.fmt(f); }
+            if self.shape().len() > 1 && self.elements().all(|e| matches!(e, Value::Number(_))) {
+                if let Ok(formatted) = self.formatted() { return formatted.fmt(f); }
+            }
         }
         if self.shape().len() > 1 {
             let columns = *self.shape().last().unwrap();
-            let text: Vec<_> = self
-                .elements()
-                .map(|e| match e {
-                    Value::Number(n) => n.to_string(),
-                    Value::Character(c) => c.to_string(),
-                    a @ Value::Array(_) => format!("({a})"),
-                    Value::Function(f) => format!("⟨{}⟩", f.apl()),
-                })
-                .collect();
+            let text = entries.unwrap_or_else(|| {
+                self.elements()
+                    .map(|e| match e {
+                        Value::Number(n) => n.to_string(),
+                        Value::Character(c) => c.to_string(),
+                        a @ Value::Array(_) => format!("({a})"),
+                        Value::Function(f) => format!("⟨{}⟩", f.apl()),
+                    })
+                    .collect()
+            });
             let mut widths = vec![0; columns];
             for (i, s) in text.iter().enumerate() { widths[i % columns] = widths[i % columns].max(s.width()); }
             for (i, s) in text.iter().enumerate() {

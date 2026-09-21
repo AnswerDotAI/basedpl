@@ -33,6 +33,21 @@ def test_worker_bindings_calls_and_echo():
             with pytest.raises(ValueError): w.request(dict(bindings=dict(x=dict(shape=[], data=[value], prototype=0))))
         assert w.eval('x', timeout=2)['value'] == a
 
+def test_worker_keyed_arrays():
+    with Worker() as w:
+        v = w.eval("('b':1 2 ⋄ 'a':('x':3))", timeout=2)['value']
+        assert v['shape'] == [2] and v['keys'] == ['b', 'a'] and v['data'][1] == dict(shape=[1], data=[3], prototype=0, keys=['x'])
+        m = w.eval("((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4)", timeout=2)['value']
+        assert m['shape'] == [2, 2] and m['keys'] == ['nw', 'ne', 'sw', 'se']
+        empty = w.eval('()', timeout=2)['value']
+        assert empty['shape'] == [0] and empty['keys'] == []
+        for value in (v, m, empty):
+            assert w.request(dict(bindings=dict(k=value), call='⊢', args=[value]), timeout=2)['value'] == value
+            assert w.eval('k', timeout=2)['value'] == value
+        for keys in (['a'], ['a', 'a'], [1, 2], 'ab'):
+            bad = dict(shape=[2], data=[1, 2], prototype=0, keys=keys)
+            assert w.request(dict(bindings=dict(k=bad)), timeout=2)['error']['kind'] == 'REQUEST ERROR'
+
 def test_worker_cancellation_and_reference_sessions():
     case = dict(code='a←3', expected_code='3')
     assert json.loads(_check_reference(json.dumps(case), 1))['status'] == 'pass'

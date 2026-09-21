@@ -57,6 +57,7 @@ assert Array(Fraction(1, 3)).py == Fraction(1, 3)
 | Rectangular list/tuple | Ordinary array |
 | Ragged list/tuple | Nested array |
 | NumPy ndarray | Array preserving shape and numeric domain |
+| `dict` with string keys | [Keyed vector](keyed.md), recursively. `.py` returns a `dict` |
 
 `.np` or `np.asarray(a)` always produces an ndarray. Simple numeric arrays use `int64`, `float64` or `complex128`; fractions, large integers, nesting and mixed exact/approximate values use `object`. Character arrays use `U1`.
 

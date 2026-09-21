@@ -27,6 +27,7 @@ def _value(raw, as_array=False, session=None):
     shape, data = tuple(raw['shape']), [item(o) for o in raw['data']]
     items = raw['data'] or [raw['prototype']]
     nested = any(isinstance(o, dict) and 'shape' in o for o in items)
+    if not as_array and 'keys' in raw: return dict(zip(raw['keys'], data))
     if not as_array:
         if len(shape) == 1 and all(isinstance(o, str) for o in items): return ''.join(data)
     import numpy as np
@@ -44,7 +45,7 @@ def _element(value, seen):
     if isinstance(value, Function): return value._inner
     if type(value) in (int, float, complex): return value
     if isinstance(value, str) and len(value) == 1: return value
-    if isinstance(value, (Array, str, list, tuple)) or np is not None and isinstance(value, np.ndarray): return _array(value, seen)
+    if isinstance(value, (Array, str, list, tuple, dict)) or np is not None and isinstance(value, np.ndarray): return _array(value, seen)
     raise TypeError(f'cannot convert {type(value).__name__} to APL')
 
 def _rectangular(value, seen):
@@ -65,6 +66,11 @@ def _array(value, seen=None):
     if len(seen) > 128: raise ValueError('array nesting exceeds 128 levels')
     np = sys.modules.get('numpy')
     prototype = 0.
+    if isinstance(value, dict):
+        if not all(isinstance(k, str) for k in value): raise TypeError('keyed arrays need string keys')
+        seen.add(id(value))
+        try: return _Array(dict(shape=[len(value)], data=[_element(o, seen) for o in value.values()], prototype=prototype, keys=list(value)))
+        finally: seen.remove(id(value))
     if isinstance(value, str): return _Array(dict(shape=[len(value)], data=list(value), prototype=' '))
     if np is not None and isinstance(value, np.ndarray):
         kind, size = value.dtype.kind, value.dtype.itemsize
@@ -121,6 +127,9 @@ def _array_repr(raw):
     def cells(dims):
         if not dims: return item(next(data))
         return '[' + ', '.join(cells(dims[1:]) for _ in range(dims[0])) + ']'
+    if 'keys' in raw:
+        entries = '{' + ', '.join(f'{k!r}: {item(o)}' for k,o in zip(raw['keys'], raw['data'])) + '}'
+        return entries if len(shape) == 1 else f'Array({entries}, shape={tuple(shape)})'
     if math.prod(shape) == 0: return f'Array([], shape={tuple(shape)})'
     return cells(shape)
 

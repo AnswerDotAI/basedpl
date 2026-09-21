@@ -249,8 +249,7 @@ impl Completer for Symbols {
         }
         let Some((start, prefix)) = entry(line, pos) else { return Ok((pos, vec![])); };
         // List ambiguous names without extending their common prefix: the typed text stays as it is.
-        let choices =
-            matches(prefix).into_iter().map(|found| Pair { display: label(&found), replacement: line[start..pos].into() }).collect();
+        let choices = matches(prefix).into_iter().map(|found| Pair { display: label(&found), replacement: line[start..pos].into() }).collect();
         Ok((start, choices))
     }
 }
@@ -338,9 +337,19 @@ mod tests {
 
     #[test]
     fn names_prefixes_and_literal_context() {
-        for (name, glyph) in
-            [("io", "⍳"), ("RHO", "⍴"), ("scan", "\\"), ("scanfirst", "⍀"), ("alpha", "⍺"), ("alphaunderbar", "⍶"), ("omegaunderbar", "⍹"), ("replicate", "/"), ("om", "⍵"), ("omu", "⍹"), ("sca", "\\")]
-        { assert_eq!(matches(name).iter().map(|(g, _)| *g).collect::<Vec<_>>(), [glyph]); }
+        for (name, glyph) in [
+            ("io", "⍳"),
+            ("RHO", "⍴"),
+            ("scan", "\\"),
+            ("scanfirst", "⍀"),
+            ("alpha", "⍺"),
+            ("alphaunderbar", "⍶"),
+            ("omegaunderbar", "⍹"),
+            ("replicate", "/"),
+            ("om", "⍵"),
+            ("omu", "⍹"),
+            ("sca", "\\"),
+        ] { assert_eq!(matches(name).iter().map(|(g, _)| *g).collect::<Vec<_>>(), [glyph]); }
         assert!(matches("de").len() > 1);
         for name in ["lar", "larr", "leftar"] { assert_eq!(matches(name), [("←", "assign")]); }
         assert_eq!(matches("grup"), [("⍋", "grade-up")]);

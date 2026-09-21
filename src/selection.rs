@@ -38,7 +38,7 @@ impl Labels {
         let prototype = if a.is_empty() {
             Self::prototype(&a.prototype(), &mut HashMap::new()).map_err(|k| span.error(k, "invalid selection prototype"))?
         } else { Value::Number(Number::from_integer(0)) };
-        Value::from_parts(a.shape().to_vec(), items, prototype).map_err(|k| span.error(k, "invalid selection labels"))
+        Value::from_parts(a.shape().to_vec(), items, prototype).and_then(|labels| labels.keyed_like(a)).map_err(|k| span.error(k, "invalid selection labels"))
     }
     fn prototype(e: &Value, seen: &mut HashMap<usize, Value>) -> Result<Value, ErrorKind> {
         let a @ Value::Array(_) = e else { return Ok(Value::Number(Number::from_integer(0))); };

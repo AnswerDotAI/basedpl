@@ -515,9 +515,6 @@ mat ← 2 2⍴⍳4 ⋄ mat ⌹ mat   ⍝ 2 2⍴1 0 0 1
 ⍝ aplcart/table.tsv:162 — Execute: Result of expression Dv; Reviewed Execute example checked through the Rust reference worker
 Dv←'2+3×4' ⋄ ⍎Dv   ⍝ 14
 
-⍝ aplcart/table.tsv:163 — Execute Dv within namespace X (name or reference); pure Execute recipe checked against Dyalog with fixed settings
-''⍎'1+2'   ⍝ 3
-
 ⍝ aplcart/table.tsv:164 — Format: Character representation of Y
 (⌽ 12 34 ⋄ ⌽ ⍕ 12 34)   ⍝ (34 12 ⋄ '43 21')
 
@@ -15299,3 +15296,18 @@ t←5 3⍴1 1 10 1 2 20 2 1 30 1 1 5 2 2 40 ⋄ r c v←↓⍉t ⋄ (∪r){+/v/�
 ⍝ aplcart/table.tsv:2509 — Convert a component file timestamp (single float number) to ⎕TS format (vector of 7 numbers); Prepared independent concrete example of the command’s mathematical operation; Express the pure calculation with existing array operations/library functions, without the command wrapper or file/workspace facilities
 •LOAD 'lib/dyalog.apl' ⋄ date(days 1970 1 1)+102549888000÷5184000
 2024 2 29 0 0 0 0
+
+⍝ aplcart/table.tsv:1895 — Convert namespace of column vectors into table (matrix with names in header row); Namespace used as a record of column vectors: adapted to a keyed vector built from the example's JSON object. `⎕VGET ¯2` name-value pairs become the key array `⍳⍵` and its values `(⍳⍵)⊃⍵`; Mix is `⊃` in bAsedPL
+T←('Age':'21' '32' ⋄ 'Name':'Bob' 'Sally' ⋄ 'Zipcode':'30102' '43001') ⋄ {(⍳⍵)⍪⍉⊃(⍳⍵)⊃⍵}T
+3 3⍴('Age') ('Name') ('Zipcode') ('21') ('Bob') ('30102') ('32') ('Sally') ('43001')
+
+⍝ aplcart/table.tsv:2340 — Namespace Member; Dyalog 20 namespace syntax used as a record; Adapted to keyed arrays: keys are quoted strings, and a keyed result is shown through ordinary arrays because the structured `expected` format cannot express keys
+ns←('name':42) ⋄ ns.name   ⍝ 42
+
+⍝ aplcart/table.tsv:2678 — New empty namespace; Dyalog 20 namespace syntax used as a record; Adapted to keyed arrays: keys are quoted strings, and a keyed result is shown through ordinary arrays because the structured `expected` format cannot express keys
+≢()   ⍝ 0
+
+⍝ aplcart/table.tsv:2948 — New namespace with members name1, name2, name3 and values X, Y, Z; Dyalog 20 namespace syntax used as a record; Adapted to keyed arrays: keys are quoted strings, and a keyed result is shown through ordinary arrays because the structured `expected` format cannot express keys
+R←('name1':1 ⋄ 'name2':'two' ⋄ 'name3':3 4) ⋄ K←⍳R ⋄ (K ⋄ K⊃R)
+(('name1') ('name2') ('name3')) (1 ('two') (3 4))
+

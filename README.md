@@ -32,7 +32,7 @@ with Session() as apl:
 
 ## Jupyter
 
-The Python package installs the **bAsedPL** kernel. Select it in Jupyter to run APL cells with persistent names, glyph/name completion and interruption. Explicit `⎕←` output streams during execution; ordinary results follow the REPL's display rules.
+The Python package installs the **bAsedPL** kernel as the `apl` kernelspec. Select it in Jupyter to run APL cells with persistent names, glyph/name completion and interruption. Explicit `⎕←` output streams during execution; ordinary results follow the REPL's display rules.
 
 The same native executable runs the kernel with `bapl --kernel -f CONNECTION_FILE`, using kernmini for the Jupyter protocol. No Python interpreter is needed when launching the native binary directly.
 

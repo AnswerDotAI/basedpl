@@ -36,7 +36,10 @@ fn import_array(raw: &Bound<'_, PyDict>, depth: usize) -> PyResult<Value> {
     let shape = field("shape")?.extract::<Vec<usize>>()?;
     let data = field("data")?.try_iter()?.map(|o| element(o?)).collect::<PyResult<Vec<_>>>()?;
     let prototype = element(field("prototype")?)?;
-    Value::from_parts(shape, data, prototype).map_err(|k| PyValueError::new_err(k.to_string()))
+    let result = Value::from_parts(shape, data, prototype).map_err(|k| PyValueError::new_err(k.to_string()))?;
+    let Some(keys) = raw.get_item("keys")? else { return Ok(result); };
+    let names = keys.extract::<Vec<String>>()?.into_iter().map(Into::into).collect();
+    crate::keyed::Keys::new(names).and_then(|k| result.keyed(k)).map_err(|k| PyValueError::new_err(k.to_string()))
 }
 
 fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
@@ -62,6 +65,7 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
     result.set_item("shape", a.shape())?;
     result.set_item("data", data)?;
     result.set_item("prototype", element(py, &a.prototype())?)?;
+    if let Some(keys) = a.keys() { result.set_item("keys", keys.names().iter().map(|k| k.to_string()).collect::<Vec<_>>())?; }
     Ok(result.unbind())
 }
 

@@ -53,8 +53,7 @@ fn json_session_flushes_before_eof_and_recovers() {
         thread,
         time::Duration,
     };
-    let mut child =
-        Command::new(env!("CARGO_BIN_EXE_bapl")).arg("--json").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_bapl")).arg("--json").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     let mut input = child.stdin.take().unwrap();
     let output = child.stdout.take().unwrap();
     let (send, recv) = mpsc::channel();

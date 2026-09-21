@@ -22,7 +22,9 @@ fn element(e: &Value) -> JsonValue {
 
 fn array(a: &Value) -> JsonValue {
     if a.is_atom() { return element(a); }
-    json!({"shape": a.shape(), "data": a.elements().map(|e| element(&e)).collect::<Vec<_>>(), "prototype": element(&a.prototype())})
+    let mut encoded = json!({"shape": a.shape(), "data": a.elements().map(|e| element(&e)).collect::<Vec<_>>(), "prototype": element(&a.prototype())});
+    if let Some(keys) = a.keys() { encoded["keys"] = json!(keys.names().iter().map(|k| k.as_ref()).collect::<Vec<&str>>()); }
+    encoded
 }
 
 fn import_element(value: &JsonValue, depth: usize) -> Result<Value, String> {
@@ -70,7 +72,15 @@ fn import_array(value: &JsonValue, depth: usize) -> Result<Value, String> {
         .collect::<Result<Vec<_>, _>>()?;
     let data = value["data"].as_array().ok_or("expected array data")?.iter().map(|v| import_element(v, depth)).collect::<Result<Vec<_>, _>>()?;
     let prototype = import_element(&value["prototype"], depth)?;
-    Value::from_parts(shape, data, prototype).map_err(|k| k.to_string())
+    let result = Value::from_parts(shape, data, prototype).map_err(|k| k.to_string())?;
+    let Some(keys) = value.get("keys") else { return Ok(result); };
+    let names = keys
+        .as_array()
+        .ok_or("expected an array of keys")?
+        .iter()
+        .map(|k| k.as_str().map(Into::into).ok_or("keys must be strings"))
+        .collect::<Result<_, _>>()?;
+    crate::keyed::Keys::new(names).and_then(|k| result.keyed(k)).map_err(|_| "keys must be unique, one per element".into())
 }
 
 /// Worker operations use the same array encoding in both directions.

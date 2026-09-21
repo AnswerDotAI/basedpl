@@ -8,3 +8,9 @@
 ```
 
 Condition: Boolean singleton. An empty selected result returns no value. See [error guards](error-guard.md).
+
+Inside parentheses, `key:value` names a value in a [keyed array](../keyed.md).
+
+```apl
+'b'⊃('a':1 ⋄ 'b':2)   ⍝ 2
+```

@@ -55,6 +55,25 @@ def test_array_surface():
     assert Array(2).apl == '2x' and Array(2.).apl == '2'
     assert repr(Array(2)) != repr(Array(2.))
 
+def test_keyed_arrays():
+    with Session() as apl:
+        t = apl("('b':1 2 ⋄ 'a':('x':'hi' ⋄ 'n':3))")
+        assert list(t.py) == ['b', 'a'] and t.py['a'] == dict(x='hi', n=3) and t.shape == (2,)
+        np.testing.assert_array_equal(t.py['b'], [1, 2])
+        assert repr(t).startswith("{'b': ")
+        m = apl("((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4)")
+        assert m.shape == (2, 2) and m.py == dict(nw=1, ne=2, sw=3, se=4)
+        np.testing.assert_array_equal(m.np, [[1, 2], [3, 4]])
+        d = dict(z=1, y=dict(k=[1, 2, 3]), e={})
+        assert list(apl('⍳t', t=d).py) == ['z', 'y', 'e'] and apl('(t.y.k[2])+t.e≡()', t=d).py == 3
+        assert (Array(dict(a=1, b=2)) + Array(dict(b=10))).py == dict(a=1, b=12)
+        with pytest.raises(TypeError): Array({1: 2})
+        k = Array(dict(qty=4, price=1, tax=2))
+        assert k['price'].py == dict(price=1) and k['price'].shape == () and k[2].py == dict(price=1)
+        assert list(k[['tax', 'qty']].py) == ['tax', 'qty']
+        with pytest.raises(AplError, match='INDEX'): k['missing']
+        with pytest.raises(AplError, match='DOMAIN'): k[['qty', 'qty']]
+
 def test_based_values():
     with Session() as apl:
         atom, unit, vector = [apl(code) for code in ('3', '⊂3', ',3')]

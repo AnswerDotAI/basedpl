@@ -762,8 +762,12 @@ a←1 2 ⋄ f←{⎕←a ⋄ ⍺+⍵} ⋄ a[1 2]f←10 20 ⋄ a
 ⍝ — Execute sees the active local binding without changing the global
 a←4 ⋄ f←{a←10 ⋄ ⍎'a+⍵'} ⋄ b←f 3 ⋄ b a   ⍝ 13 4
 
-⍝ — Dyadic execute with an empty left argument uses the current scope
-a←4 ⋄ ''⍎'a+1'   ⍝ 5
+⍝ — Dyadic execute looks a key up in a keyed array and runs no code
+T←('a':'1+2' ⋄ 'b':4) ⋄ (T⍎'a' ⋄ T⍎'b' ⋄ T⍎,¨'ba')   ⍝ ('1+2' ⋄ 4 ⋄ (4 ⋄ '1+2'))
+
+⍝ — Only a keyed array can be looked up
+''⍎'1+2'
+⍝ error: DOMAIN ERROR
 
 ⍝ — Execute can return a primitive function
 g←⍎'+' ⋄ 2 g 3   ⍝ 5
@@ -3795,6 +3799,339 @@ tree←(10 20⋄ 30 (40 50)) ⋄ tree⊃/⌽2 2 1   ⍝ 40
 
 ⍝ — Whole-seed scan follows a path and retains its intermediate arrays
 (10 20⋄ 30 40) ⊃⍨\1 2   ⍝ (10 20) 20
+
+⍝⍝ Keyed arrays
+
+⍝ — Construction names each element; coordinates and keys address the same values
+T←('price':1 2 3 ⋄ 'qty':4 5 6) ⋄ (≢T ⋄ ⍴T ⋄ 1⊃T ⋄ 'qty'⊃T ⋄ ⍳T)
+⍝ =>
+(2x ⋄ ,2x ⋄ 1 2 3 ⋄ 4 5 6 ⋄ 'price' 'qty')
+
+⍝ — Keys and values are ordinary expressions, evaluated left to right
+k←'a' ⋄ ((k,'b'):(⎕←1)+1 ⋄ (⎕←'c'):(⎕←2))
+('ab':2 ⋄ (,'c'):2)
+⍝ ⎕: 1\n'c'\n2
+
+⍝ — A colon inside a dfn body remains a guard
+('sign'⊃('sign':{⍵<0: ¯1 ⋄ 1}))¨¯2 3   ⍝ ¯1 1
+
+⍝ — One string names the whole right value in a one-entry vector
+A←('a':11 12 13) ⋄ (⍴A ⋄ ⍴A[1] ⋄ 'a'⊃A)   ⍝ (,1x ⋄ 0⍴0x ⋄ 11 12 13)
+
+⍝ — A character atom is a one-character key
+(⍳('a':1))≡,⊂,'a'   ⍝ 1x
+
+⍝ — An array of strings groups value cells by its own shape
+(('price' 'qty':2 3⍴1 2 3 4 5 6)≡('price':1 2 3 ⋄ 'qty':4 5 6) ⋄ ((,¨'ab'):1 2)≡('a':1 ⋄ 'b':2) ⋄ ⍳('a' 'b':1 2))
+⍝ =>
+(1x ⋄ 1x ⋄ ,⊂'ab')
+
+⍝ — A keyed matrix keeps its shape; coordinates and keys both pick values
+K←2 2⍴'nw' 'ne' 'sw' 'se' ⋄ M←(K:2 2⍴1 2 3 4) ⋄ (⍴M ⋄ 2 1⊃M ⋄ 'sw'⊃M ⋄ K≡⍳M ⋄ (⍳M)⊃M)
+⍝ =>
+(2x 2x ⋄ 3 ⋄ 3 ⋄ 1x ⋄ 2 2⍴1 2 3 4)
+
+⍝ — Vector construction is last-wins and keeps the first position
+⍳('a':1 ⋄ 'b':2 ⋄ 'a':3 ⋄ 'c':4)   ⍝ (,'a') (,'b') (,'c')
+
+⍝ —
+'a'⊃('a':1 ⋄ 'b':2 ⋄ 'a':3)   ⍝ 3
+
+⍝ — The empty keyed vector
+(≢() ⋄ ⍴⍳())   ⍝ (0x ⋄ ,0x)
+
+⍝ — Higher-rank construction rejects duplicate keys
+((2 2⍴'a' 'b' 'c' 'a'):2 2⍴⍳4)
+⍝ error: DOMAIN ERROR
+
+⍝ — The key shape must be a prefix of the value shape
+('a' 'bc' 'd':2 3⍴⍳6)
+⍝ error: LENGTH ERROR
+
+⍝ —
+((2 2⍴'a' 'b' 'c' 'd'):1 2)
+⍝ error: RANK ERROR
+
+⍝ — Keys are strings
+(1 2:3 4)
+⍝ error: DOMAIN ERROR
+
+⍝ — Pick takes one key or an array of keys, repeating values on request
+T←('price':1 2 3 ⋄ 'qty':4 5 6) ⋄ (('qty' 'price')⊃T ⋄ ('price' 'price')⊃T)
+⍝ =>
+((4 5 6 ⋄ 1 2 3) ⋄ (1 2 3 ⋄ 1 2 3))
+
+⍝ — Nested lookup chains
+T←('name':'Ann' ⋄ 'addr':('city':'Paris') ⋄ 'items':(('name':'pen') ('name':'ink'))) ⋄ ('city'⊃'addr'⊃T ⋄ 'name'⊃2⊃'items'⊃T)
+⍝ =>
+('Paris' ⋄ 'ink')
+
+⍝ — A missing key is an INDEX ERROR
+'z'⊃('a':1)
+⍝ error: INDEX ERROR
+
+⍝ — Brackets retain keys, requested order and selection shape
+T←('price':1 2 3 ⋄ 'qty':4 5 6) ⋄ (T['qty' 'price'] ⋄ T[2] ⋄ T['qty'] ⋄ ⍴T['qty'] ⋄ ⍴T[,⊂'qty'])
+⍝ =>
+(('qty':4 5 6 ⋄ 'price':1 2 3) ⋄ ((⊂'qty'):⊂4 5 6) ⋄ ((⊂'qty'):⊂4 5 6) ⋄ 0⍴0x ⋄ ,1x)
+
+⍝ — String brackets gather globally named elements with the selector's shape
+M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴1 2 3 4) ⋄ (M['se' 'nw'] ⋄ ⍳M[2;] ⋄ ⍳M[;1])
+⍝ =>
+(('se':4 ⋄ 'nw':1) ⋄ 'sw' 'se' ⋄ 'nw' 'sw')
+
+⍝ — Repeating a selected element needs an invented key
+('a':1 ⋄ 'b':2)[,¨'aa']
+⍝ error: DOMAIN ERROR
+
+⍝ —
+('a':1 ⋄ 'b':2)[1 1]
+⍝ error: DOMAIN ERROR
+
+⍝ —
+('a':1 ⋄ 'b':2)[⊂'z']
+⍝ error: INDEX ERROR
+
+⍝ — Dot access extracts values through literal keys
+T←('addr':('city':'Paris') ⋄ 'n':3) ⋄ (T.addr.city ⋄ T.n+1 ⋄ 1+T.n)   ⍝ ('Paris' ⋄ 4 ⋄ 4)
+
+⍝ — The dot between functions remains inner product
+f←+ ⋄ g←× ⋄ 1 2 3 f.g 4 5 6   ⍝ 32
+
+⍝ — A keyed replacement is looked up by key; its order and extra keys are ignored
+T←('price':1 2 3 ⋄ 'qty':4 5 6) ⋄ T['price' 'qty']←('qty':7 ⋄ 'x':9 ⋄ 'price':8) ⋄ T   ⍝ ('price':8 ⋄ 'qty':7)
+
+⍝ — An unkeyed replacement assigns by position
+T←('price':1 2 3 ⋄ 'qty':4 5 6) ⋄ T['qty' 'price']←(10 20 ⋄ 30) ⋄ T   ⍝ ('price':30 ⋄ 'qty':10 20)
+
+⍝ — One selected key takes its own value from a keyed replacement
+T←('a':1 ⋄ 'b':2) ⋄ T['a']←('b':8 ⋄ 'a':9) ⋄ T['b']+←10 ⋄ T   ⍝ ('a':9 ⋄ 'b':12)
+
+⍝ — A keyed replacement must hold every selected key
+T←('a':1 ⋄ 'b':2) ⋄ T['a' 'b']←('a':5)
+⍝ error: INDEX ERROR
+
+⍝ — Assignment cannot select a keyed element twice
+T←('a':1 ⋄ 'b':2) ⋄ T[1 1]←5 6
+⍝ error: DOMAIN ERROR
+
+⍝ — Pick and dot assignment replace whole values at any depth
+T←('n':1 ⋄ 'addr':('city':'Paris')) ⋄ ('n'⊃T)←5 ⋄ T.n+←1 ⋄ ('city'⊃'addr'⊃T)←'Rome' ⋄ U←T ⋄ U.addr.city←'Oslo' ⋄ (T ⋄ U.addr.city)
+⍝ =>
+(('n':6 ⋄ 'addr':('city':'Rome')) ⋄ 'Oslo')
+
+⍝ — Indexing a dotted value assigns inside it
+T←('v':1 2 3) ⋄ T.v[2]←9 ⋄ T.v[3]+←1 ⋄ T   ⍝ ('v':1 9 4)
+
+⍝ — A missing key is appended to a keyed vector, at any depth
+T←() ⋄ T.a←1 ⋄ ('b'⊃T)←('c':2) ⋄ T.b.d←3 ⋄ T   ⍝ ('a':1 ⋄ 'b':('c':2 ⋄ 'd':3))
+
+⍝ — Modified assignment needs an existing value
+T←('a':1) ⋄ T.b+←2
+⍝ error: INDEX ERROR
+
+⍝ — Nested writes need their intermediate keyed arrays
+T←('a':1) ⋄ T.x.y←2
+⍝ error: INDEX ERROR
+
+⍝ — Only a keyed vector can gain a key
+M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4) ⋄ M.x←1
+⍝ error: RANK ERROR
+
+⍝ — Plain bracket assignment replaces existing keys and appends missing ones in selector order
+T←('a':1) ⋄ T['b']←2 ⋄ T[,¨'cad']←30 10 40 ⋄ T   ⍝ ('a':10 ⋄ 'b':2 ⋄ 'c':30 ⋄ 'd':40)
+
+⍝ — An appended key still takes its own value from a keyed replacement
+T←() ⋄ T[,¨'xy']←('y':2 ⋄ 'x':1) ⋄ T   ⍝ ('x':1 ⋄ 'y':2)
+
+⍝ — Brackets after a dotted value append to that value
+T←('addr':('city':'Paris')) ⋄ T.addr['zip']←'75' ⋄ T   ⍝ ('addr':('city':'Paris' ⋄ 'zip':'75'))
+
+⍝ — Modified bracket assignment needs an existing key
+T←('a':1) ⋄ T['b']+←2
+⍝ error: INDEX ERROR
+
+⍝ — Only a keyed vector can gain a key through brackets
+M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4) ⋄ M['x']←1
+⍝ error: RANK ERROR
+
+⍝ — A coordinate names no key, so it cannot append
+T←('a':1) ⋄ T[2]←5
+⍝ error: INDEX ERROR
+
+⍝ — An appended key cannot be selected twice
+T←('a':1) ⋄ T[,¨'zz']←1 2
+⍝ error: DOMAIN ERROR
+
+⍝ — Keys are renamed by rebuilding from the edited key array
+T←('price':1 ⋄ 'qty':2) ⋄ K←⍳T ⋄ K[1]←'cost' ⋄ T←(K:(⍳T)⊃T) ⋄ T   ⍝ ('cost':1 ⋄ 'qty':2)
+
+⍝ — Two keyed vectors align by key: left keys first, then right-only keys
+('a':1 ⋄ 'b':2)+('c':5 ⋄ 'b':20 ⋄ 'a':10)   ⍝ ('a':11 ⋄ 'b':22 ⋄ 'c':5)
+
+⍝ — A missing counterpart is the present value's typed fill, whatever the function
+(('a':2)+('b':3) ⋄ ('a':2)×('b':3) ⋄ ('a':2)×('a':10 ⋄ 'b':20) ⋄ ('a':'x')=('b':' '))
+⍝ =>
+(('a':2 ⋄ 'b':3) ⋄ ('a':0 ⋄ 'b':0) ⋄ ('a':20 ⋄ 'b':0) ⋄ ('a':0x ⋄ 'b':1x))
+
+⍝ — Equality uses fill, so absence can equal an explicit zero
+(('a':0)=('b':0) ⋄ ('a':2)=('b':0))   ⍝ (('a':1x ⋄ 'b':1x) ⋄ ('a':0x ⋄ 'b':1x))
+
+⍝ — Aligned values use ordinary agreement, and keyed scalars combine into a vector
+T←('a':1 2 3 ⋄ 'b':5) ⋄ (('a':1 2 3)+('a':10) ⋄ T['b']+T['a'])   ⍝ (('a':11 12 13) ⋄ ('b':5 ⋄ 'a':1 2 3))
+
+⍝ — Nested keyed values align by their own keys
+('p':('x':1 ⋄ 'y':2))+('p':('y':10))   ⍝ ('p':('x':1 ⋄ 'y':12))
+
+⍝ — Higher-rank keyed arguments need equal shapes and key sets, aligned to the left layout
+M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴1 2 3 4) ⋄ N←((2 2⍴'se' 'sw' 'ne' 'nw'):2 2⍴40 30 20 10) ⋄ M+N
+⍝ =>
+((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴11 22 33 44)
+
+⍝ —
+M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4) ⋄ M+,M
+⍝ error: RANK ERROR
+
+⍝ —
+M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4) ⋄ M+((1 2⍴'nw' 'ne'):1 2⍴⍳2)
+⍝ error: LENGTH ERROR
+
+⍝ —
+M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4) ⋄ M+((2 2⍴'nw' 'ne' 'sw' 'x'):2 2⍴⍳4)
+⍝ error: DOMAIN ERROR
+
+⍝ — One keyed argument broadcasts by position and keeps its keys when its shape is the result shape
+K←2 3⍴,¨'abcdef' ⋄ M←(K:2 3⍴⍳6) ⋄ V←('x':1 ⋄ 'y':2) ⋄ (K≡⍳M×10 ⋄ K≡⍳10 20+M ⋄ V+2 3⍴0 ⋄ V+2 1⍴0 ⋄ -V ⋄ 2+V)
+⍝ =>
+(1x ⋄ 1x ⋄ 2 3⍴1 1 1 2 2 2 ⋄ 2 1⍴1 2 ⋄ ('x':¯1 ⋄ 'y':¯2) ⋄ ('x':3 ⋄ 'y':4))
+
+⍝ — A column table's outer elements are columns
+T←('price':1 2 3 ⋄ 'qty':4 5 6) ⋄ (T+⊂10 20 30 ⋄ 10×T)   ⍝ (('price':11 22 33 ⋄ 'qty':14 25 36) ⋄ ('price':10 20 30 ⋄ 'qty':40 50 60))
+
+⍝ —
+('price':1 2 3 ⋄ 'qty':4 5 6)+10 20 30
+⍝ error: LENGTH ERROR
+
+⍝ — Reordering and filtering carry each key with its value
+Q←('a':10 ⋄ 'b':20 ⋄ 'c':5) ⋄ (⌽Q ⋄ 1 0 1/Q ⋄ 1⌽Q ⋄ 1↓Q ⋄ ¯1↑Q ⋄ Q[⍋Q] ⋄ (⊂3 1)⌷Q)
+⍝ =>
+(('c':5 ⋄ 'b':20 ⋄ 'a':10) ⋄ ('a':10 ⋄ 'c':5) ⋄ ('b':20 ⋄ 'c':5 ⋄ 'a':10) ⋄ ('b':20 ⋄ 'c':5) ⋄ ('c':5) ⋄ ('c':5 ⋄ 'a':10 ⋄ 'b':20) ⋄ ('c':5 ⋄ 'a':10))
+
+⍝ — Keys name elements, so they survive reshaping, ravel and transpose
+M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4) ⋄ (⍳,M ⋄ ⍳⍉M ⋄ ⍳1 4⍴M ⋄ ⍳⊖M ⋄ ⍳3⍴M ⋄ ⍳⍪M ⋄ ⍳0⍴M)
+⍝ =>
+('nw' 'ne' 'sw' 'se' ⋄ 2 2⍴'nw' 'sw' 'ne' 'se' ⋄ 1 4⍴'nw' 'ne' 'sw' 'se' ⋄ 2 2⍴'sw' 'se' 'nw' 'ne' ⋄ 'nw' 'ne' 'sw' ⋄ 2 2⍴'nw' 'ne' 'sw' 'se' ⋄ 0⍴⊂'')
+
+⍝ — A cycling reshape repeats keys
+4⍴('a':1 ⋄ 'b':2)
+⍝ error: DOMAIN ERROR
+
+⍝ — A nonempty reshape of an empty keyed array needs invented keys
+2⍴()
+⍝ error: DOMAIN ERROR
+
+⍝ — Replicate cannot repeat a keyed element
+2/('a':1 ⋄ 'b':2)
+⍝ error: DOMAIN ERROR
+
+⍝ — Overtake and expand fill need invented keys
+3↑('a':1 ⋄ 'b':2)
+⍝ error: DOMAIN ERROR
+
+⍝ —
+1 0 1\('a':1 ⋄ 'b':2)
+⍝ error: DOMAIN ERROR
+
+⍝ — Windows repeat elements
+2↕('a':1 ⋄ 'b':2 ⋄ 'c':3)
+⍝ error: DOMAIN ERROR
+
+⍝ — Reduction consumes the outer keys; Each and scan keep them
+T←('price':1 2 3 ⋄ 'qty':4 5 6) ⋄ (+/T ⋄ +/¨T ⋄ ≢¨T ⋄ +\('a':1 ⋄ 'b':2 ⋄ 'c':3))
+⍝ =>
+(5 7 9 ⋄ ('price':6 ⋄ 'qty':15) ⋄ ('price':3x ⋄ 'qty':3x) ⋄ ('a':1 ⋄ 'b':3 ⋄ 'c':6))
+
+⍝ — Reducing a keyed matrix gives ordinary rows and columns; scan keeps every key
+M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴1 2 3 4) ⋄ (+/M ⋄ +⌿M ⋄ +\M)
+⍝ =>
+(3 7 ⋄ 4 6 ⋄ ((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴1 3 3 7))
+
+⍝ — Vector catenate merges keys, right wins, keeping the first position
+A←('a':1 ⋄ 'b':2) ⋄ (A,('b':20 ⋄ 'c':30) ⋄ A,A ⋄ A,())
+⍝ =>
+(('a':1 ⋄ 'b':20 ⋄ 'c':30) ⋄ ('a':1 ⋄ 'b':2) ⋄ ('a':1 ⋄ 'b':2))
+
+⍝ — Higher-rank catenate keeps its shape and needs distinct keys
+M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4) ⋄ N←((2 1⍴'e1' 'e2'):2 1⍴8 9) ⋄ ⍳M,N
+⍝ =>
+2 3⍴'nw' 'ne' 'e1' 'sw' 'se' 'e2'
+
+⍝ —
+M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4) ⋄ M⍪M
+⍝ error: DOMAIN ERROR
+
+⍝ — Unkeyed elements joining a keyed array would need invented keys
+('a':1 ⋄ 'b':2),5
+⍝ error: DOMAIN ERROR
+
+⍝ — Each receives values and keeps outer keys; dyadic Each agrees like a scalar function
+T←('price':1 2 3 ⋄ 'qty':4 5 6) ⋄ (2⌷¨T ⋄ ('a':1 ⋄ 'b':2){⍺ ⍵}¨('b':3) ⋄ 1 2{⍺ ⍵}¨T)
+⍝ =>
+(('price':2 ⋄ 'qty':5) ⋄ ('a':1 0 ⋄ 'b':2 3) ⋄ ('price':(1 ⋄ 1 2 3) ⋄ 'qty':(2 ⋄ 4 5 6)))
+
+⍝ — Rank keeps outer keys only for rank-0 cells with scalar results
+V←('x':1 ⋄ 'y':2) ⋄ M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴1 2 3 4) ⋄ ({⍵×2}⍤0⊢V ⋄ {⍵ ⍵}⍤0⊢V ⋄ +/⍤1⊢M ⋄ 10 20+⍤0⊢V)
+⍝ =>
+(('x':2 ⋄ 'y':4) ⋄ 2 2⍴1 1 2 2 ⋄ 3 7 ⋄ ('x':11 ⋄ 'y':22))
+
+⍝ — Outer product keeps keys only beside an unkeyed scalar
+V←('x':1 ⋄ 'y':2) ⋄ (V×⌝10 ⋄ 10×⌝V ⋄ V×⌝,10 ⋄ V×⌝V)
+⍝ =>
+(('x':10 ⋄ 'y':20) ⋄ ('x':10 ⋄ 'y':20) ⋄ 2 1⍴10 20 ⋄ 2 2⍴1 2 2 4)
+
+⍝ — Match needs the same shape, key set and values, whatever the arrangement
+M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4) ⋄ (('a':1 ⋄ 'b':2)≡('b':2 ⋄ 'a':1) ⋄ M≡⌽M ⋄ M≡,M ⋄ ('a':1)≡,1 ⋄ ('a':1)≡('b':1) ⋄ ('a':1)≢('a':2) ⋄ ()≡() ⋄ ()≡⍬)
+⍝ =>
+(1x ⋄ 1x ⋄ 0x ⋄ 0x ⋄ 0x ⋄ 1x ⋄ 1x ⋄ 0x)
+
+⍝ — Arrangement stays observable through coordinates
+A←('a':1 ⋄ 'b':2) ⋄ B←('b':2 ⋄ 'a':1) ⋄ (A≡B ⋄ (1⊃A)≡1⊃B)   ⍝ (1x ⋄ 0x)
+
+⍝ — Between keyed arrays, membership needs the key present with a matching value
+A←('a':1 ⋄ 'b':2) ⋄ B←('a':1 ⋄ 'b':9 ⋄ 'c':3) ⋄ (A∊B ⋄ ∧/A∊B ⋄ ('a':9)∊B ⋄ ('z':1)∊B ⋄ ('z':0)∊B)
+⍝ =>
+(('a':1x ⋄ 'b':0x) ⋄ 0x ⋄ ('a':0x) ⋄ ('z':0x) ⋄ ('z':0x))
+
+⍝ — Keyed set functions keep left order and surviving keys; union needs shared keys to agree
+A←('a':1 ⋄ 'b':2) ⋄ B←('a':1 ⋄ 'b':9 ⋄ 'c':3) ⋄ (A∩B ⋄ A~B ⋄ A∪('a':1 ⋄ 'c':3) ⋄ A,B)
+⍝ =>
+(('a':1) ⋄ ('b':2) ⋄ ('a':1 ⋄ 'b':2 ⋄ 'c':3) ⋄ ('a':1 ⋄ 'b':9 ⋄ 'c':3))
+
+⍝ —
+('a':1 ⋄ 'b':2)∪('a':1 ⋄ 'b':9)
+⍝ error: DOMAIN ERROR
+
+⍝ — Unique matches values and keeps the first representative with its keys
+(∪('a':1 ⋄ 'b':1 ⋄ 'c':2) ⋄ ⍳∪((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴1 2 1 2))   ⍝ (('a':1 ⋄ 'c':2) ⋄ 1 2⍴'nw' 'ne')
+
+⍝ — With one keyed argument, searches match values and keep the keyed query's keys
+Q←('a':10 ⋄ 'b':20 ⋄ 'c':10) ⋄ (Q∊10 ⋄ 20∊Q ⋄ Q∩,10 ⋄ Q~,10 ⋄ Q⍳20 ⋄ Q∪10 30 ⋄ 10 30∪Q ⋄ 10 20~Q)
+⍝ =>
+(('a':1x ⋄ 'b':0x ⋄ 'c':1x) ⋄ 1x ⋄ ('a':10 ⋄ 'c':10) ⋄ ('b':20) ⋄ 2x ⋄ 10 20 10 30 ⋄ 10 30 20 ⋄ 0⍴0)
+
+⍝ — Index-of compares keyed cells by key and value, whatever their arrangement
+Q←('a':10 ⋄ 'b':20 ⋄ 'c':10) ⋄ M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4) ⋄ (Q⍳('c':10 ⋄ 'a':10 ⋄ 'z':10) ⋄ M⍳M[2;] ⋄ M⍳⌽M[2;] ⋄ M⍳3 4 ⋄ M⍳(,¨'ab':3 4))
+⍝ =>
+(3x 1x 4x ⋄ 2x ⋄ 2x ⋄ 2x ⋄ 3x)
+
+⍝ — Set functions keep their rank limits
+M←((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4) ⋄ M∪M
+⍝ error: RANK ERROR
+
+⍝ — Format shows keys with their values, as display does
+(⍕('a':1 ⋄ 'b':'x y') ⋄ ⍕() ⋄ ⍕('a':1)['a'])
+⍝ =>
+('(''a'':1 ⋄ ''b'':''x y'')' ⋄ '()' ⋄ '''a'':1')
 
 ⍝⍝ Libraries
 

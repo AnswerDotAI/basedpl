@@ -22,6 +22,7 @@ bAsedPL distinguishes two application rules. Structural mapping (arithmetic, Eac
 - [Python](python.md): sessions, arrays, NumPy and callable APL functions.
 - [Process interfaces](processes.md): JSON lines and interruptible workers.
 - [Language rules](rules.md): evaluation, numbers, agreement, axes and fill.
+- [Keyed arrays](keyed.md): named elements, lookup, agreement, assignment and Python dicts.
 
 ## Glyph reference
 
@@ -72,9 +73,9 @@ Each name below links to its definitions and examples. Examples show an equivale
 | `↕` [Windows](glyphs/windows.md) | — | Full leading-axis windows | As BQN's `↕`. Replaces windowed reduce: `+/2↕1 2 3 4` is `3 5 7` |
 | `⊂` [Enclose](glyphs/enclose.md) | Enclose | Partitioned enclose | Encloses atoms too, as BQN: `(⊂3)≡3` is `0x` |
 | `⊆` [Nest](glyphs/nest.md) | Nest | Partition | |
-| `⊃` [Mix](glyphs/mix.md) | Mix | Pick | Monad as Dyalog `⎕ML≥2`. Pick takes cells: `2⊃2 3⍴⍳6` is `4 5 6` |
+| `⊃` [Mix](glyphs/mix.md) | Mix | Pick | Monad as Dyalog `⎕ML≥2`. Pick takes cells: `2⊃2 3⍴⍳6` is `4 5 6`. A string picks by [key](keyed.md) |
 | `⌷` [Squad](glyphs/squad.md) | Identity | Index | |
-| `⍳` [Iota](glyphs/iota.md) | Index generator | Index of | |
+| `⍳` [Iota](glyphs/iota.md) | Index generator | Index of | Monad on a [keyed array](keyed.md) returns its keys |
 | `⍸` [Where](glyphs/where.md) | Where | Interval index | |
 | `∊` [Member](glyphs/member.md) | Enlist | Membership | |
 | `∪` [Union](glyphs/union.md) | Unique | Union | |
@@ -91,7 +92,7 @@ Each name below links to its definitions and examples. Examples show an equivale
 | `⌹` [Domino](glyphs/domino.md) | Matrix inverse | Matrix divide | |
 | `⊣` [Left](glyphs/left.md) | Identity | Left | |
 | `⊢` [Right](glyphs/right.md) | Identity | Right | |
-| `⍎` [Execute](glyphs/execute.md) | Execute | Execute in current scope (`''⍎Y`) | |
+| `⍎` [Execute](glyphs/execute.md) | Execute | Keyed lookup: `X⍎Y` is `Y⊃X` | Dyad runs no code. Dyalog executes `Y` in namespace `X` |
 | `⍕` [Format](glyphs/format.md) | Format | Format by specification | |
 
 ## Operators
@@ -110,7 +111,7 @@ Each name below links to its definitions and examples. Examples show an equivale
 | `⍤` [Rank](glyphs/rank.md) | `f⍤g`, `f⍤r` | Atop / rank | |
 | `⍥` [Over](glyphs/over.md) | `f⍥g` | Over | |
 | `⍛` [Behind](glyphs/behind.md) | `f⍛g` | Behind | |
-| `.` [Dot](glyphs/dot.md) | `f.g` | Inner product | Outer product is `g⌝` |
+| `.` [Dot](glyphs/dot.md) | `f.g` | Inner product | Outer product is `g⌝`. After an array, `T.name` is `'name'⊃T` |
 | `⌝` [Outer product](glyphs/outer-product.md) | `g⌝` | Outer product | As BQN's `⌜`; `∘.g` is a SYNTAX ERROR |
 | `⌸` [Key](glyphs/key.md) | `f⌸` | Key | |
 | `⍣` [Power](glyphs/power.md) | `f⍣n`, `f⍣g`, `f⍣[p]` | Iterate / invert / repeat until; enclose count or predicate for history | Array counts as J's `^:`: `(1∘+)⍣3 ¯2 0 3⊢10` is `13 8 10 13` |
@@ -128,14 +129,14 @@ Each name below links to its definitions and examples. Examples show an equivale
 | `˘` [Strand](glyphs/strand.md) | Form a vector of values: `1˘+˘'abc'` |
 | `←` [Assign](glyphs/assign.md) | Assignment, including modified/indexed/selective forms |
 | `→` [Pipe](glyphs/pipe.md) | Left-to-right function application |
-| `(…)` [Parentheses](glyphs/parentheses.md) | Grouping / nested array literals / trains |
+| `(…)` [Parentheses](glyphs/parentheses.md) | Grouping / nested array literals / [keyed arrays](keyed.md) / trains |
 | `[…]` [Brackets](glyphs/brackets.md) | Enclosure, array literals, indexing and axes |
 | `;` [Semicolon](glyphs/semicolon.md) | Index-axis separator |
 | `{…}` [Braces](glyphs/braces.md) | Defined function or operator |
 | `⍺` [Alpha](glyphs/alpha.md), `⍵` [Omega](glyphs/omega.md) | Left / right argument |
 | `⍶` [Alpha underbar](glyphs/alpha-underbar.md), `⍹` [Omega underbar](glyphs/omega-underbar.md) | Left / right operand |
 | `∇` [Del](glyphs/del.md), `⍢` [Del diaeresis](glyphs/del-diaeresis.md) | Function / operator self-reference |
-| `:` [Colon](glyphs/colon.md), `::` [Error guard](glyphs/error-guard.md) | Boolean / error guard |
+| `:` [Colon](glyphs/colon.md), `::` [Error guard](glyphs/error-guard.md) | Boolean guard or [keyed](keyed.md) entry / error guard |
 | `⋄` [Diamond](glyphs/diamond.md) | Statement or literal separator |
 | `⍝` [Comment](glyphs/comment.md) | Comment |
 | `⎕←` [Quad](glyphs/quad.md) | Explicit output |
@@ -168,4 +169,4 @@ Index origin: 1. Comparison tolerance: `1E¯14`.
 - [Numbers](rules.md#numbers): bare numbers are approximate. `x` and `r` mark exact integers and rationals, as J: `1x÷3x` is `1r3`. Predicates, positions, tally and shape are exact.
 - [Agreement](rules.md#agreement-and-pervasion): scalar functions, Each and Rank align leading axes, and unit dimensions expand: `(2 3⍴⍳6)+10 20` is `2 3⍴11 12 13 24 25 26`.
 - [System names](#system-names): written `•NAME`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
-- Namespaces: none.
+- Namespaces: none. [Keyed arrays](keyed.md) hold named data instead. `('a':1 ⋄ 'b':2)` evaluates its keys, so they are quoted. `T.a` is `'a'⊃T`, and `X⍎Y` is `Y⊃X`.

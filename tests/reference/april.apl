@@ -7558,3 +7558,14 @@ rational(+∘÷)/¨,\0 cfract π1
 ⍝ =>
 2 11⍴3 22 333 355 103993 104348 208341 312689 833719 1146408 5419351 1 7 106 113 33102 33215 66317 99532 265381 364913 1725033
 
+⍝ april:2311 — Assignment of and operation on namespace values; Namespace used as a record: `⎕NS⍬` adapted to the empty keyed vector `()`. Dotted assignment inserts keys and dotted access reads them, so the data operation is unchanged
+myns←() ⋄ myns.aa←5 ⋄ myns.bb←⍳9 ⋄ myns.cc←3 3⍴⍳9 ⋄ myns.cc[2;],myns.aa×myns.bb
+4 5 6 5 10 15 20 25 30 35 40 45
+
+⍝ april:2314 — Assignment of values in nested namespaces; Namespace used as a record: `⎕NS⍬` adapted to the empty keyed vector `()`. Dotted assignment inserts keys and dotted access reads them, so the data operation is unchanged
+myns←() ⋄ myns.aa←3 ⋄ myns.bb←() ⋄ myns.cc←⍳3 ⋄ myns.bb.dd←() 
+    myns.bb.dd.ee←5 ⋄ myns.bb.ff←⍳4 ⋄ myns.bb.gg←2 2⍴⍳4 
+    myns.cc,({⍵.bb.ff} myns),,myns.bb.gg×myns.bb.dd.ee+myns.aa
+⍝ =>
+1 2 3 1 2 3 4 8 16 24 32
+

@@ -19,7 +19,7 @@ The second response is:
 
 Use `json.dumps(code)` or `JSON.stringify(code)`, followed by a newline. Quotes are required; source newlines are escaped inside the string. Stdout contains only responses. The session remains usable after errors. EOF ends it.
 
-Atoms are encoded directly. Arrays carry shape, row-major data and prototype, including rank-zero arrays. Nested elements use the same encoding.
+Atoms are encoded directly. Arrays carry shape, row-major data and prototype, including rank-zero arrays. Nested elements use the same encoding. A [keyed array](keyed.md) adds `keys`, a list of one string per element in row-major order.
 
 | Element | JSON |
 |---|---|

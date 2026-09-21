@@ -7,10 +7,11 @@
 x←7 ⋄ ⍎'x+1'       ⍝ 8
 ```
 
-`''⍎Y` also uses the current scope.
+`X⍎Y` runs no code. It looks up key `Y` in the keyed array `X`, exactly as `Y⊃X` does.
 
 ```apl
-''⍎'2+3'           ⍝ 5
+T←('a':10 ⋄ 'b':20)
+T⍎'b'              ⍝ 20
 ```
 
 Assignments and explicit output take effect in the current session.

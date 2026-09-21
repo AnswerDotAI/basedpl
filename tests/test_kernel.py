@@ -8,7 +8,7 @@ def displayed(messages):
 
 
 async def kernel_story():
-    async with run_kernel('basedpl') as (_, kc):
+    async with run_kernel('apl') as (_, kc):
         info = await kc.shell_request('kernel_info_request')
         assert info['content']['implementation'] == 'basedpl' and info['content']['language_info']['name'] == 'apl'
         await kc.exec_ok(']box off', silent=True)
