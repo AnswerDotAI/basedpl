@@ -36,7 +36,7 @@ Hold **Alt** for the middle column, **Alt-Shift** for the right. Keys refer to a
 | s | `⌈` | |
 | d | `⌊` | |
 | f | `∂` | `⍛` |
-| g | `∇` | |
+| g | `∇` | `⍢` |
 | h | `←` | `∆` |
 | j | `↓` | `⍤` |
 | k | `↑` | `⌸` |
@@ -54,7 +54,7 @@ Hold **Alt** for the middle column, **Alt-Shift** for the right. Keys refer to a
 | . | `⍀` | `⍙` |
 | / | `⌿` | `⍠` |
 
-`∆` and `⍙` are identifier characters. Repeat Alt-g for `∇∇`.
+`∆` and `⍙` are identifier characters.
 
 The layout retains Dyalog positions where practical, with hjkl arrows and spare keys for bAsedPL's additions. Alt-[ and Alt-Shift-o are left vacant because their terminal encodings start control sequences.
 

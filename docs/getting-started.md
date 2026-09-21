@@ -10,11 +10,11 @@ Requires Python ≥3.10.
 pip install basedpl
 ```
 
-This installs the `basedpl` command and Python package.
+This installs the `bapl` command and the `basedpl` Python package.
 
 ## First calculations
 
-Run `basedpl` to open the [REPL](repl.md). Type an expression and press Enter. `⍝` introduces a comment; examples here use it to show the result.
+Run `bapl` to open the [REPL](repl.md). Type an expression and press Enter. `⍝` introduces a comment; examples here use it to show the result.
 
 APL evaluates right-to-left. Parentheses change grouping.
 

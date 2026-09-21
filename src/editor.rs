@@ -9,6 +9,7 @@ use rustyline::{
     RepeatCount,
 };
 use std::{
+    borrow::Cow,
     collections::HashMap,
     ops::Range,
     sync::{Arc, Mutex, OnceLock},
@@ -20,124 +21,134 @@ fn alt_keys() -> &'static HashMap<char, char> {
     KEYS.get_or_init(|| serde_json::from_str(include_str!("../python/basedpl/keyboard.json")).expect("valid glyph keyboard"))
 }
 
-// One row per glyph: ambiguity is between glyphs, not between aliases for the same glyph.
-// This is an input catalogue, not a claim that every primitive is implemented yet.
-pub(crate) const SYMBOLS: &[(&str, &str)] = &[
-    ("←", "assign left-arrow"),
-    ("→", "pipe right-arrow"),
-    ("⍳", "iota index-of"),
-    ("⍴", "rho shape reshape"),
-    ("≢", "tally not-match"),
-    ("≡", "match depth"),
-    ("+", "plus conjugate"),
-    ("-", "minus negate"),
-    ("×", "times multiply sign direction"),
-    ("÷", "divide reciprocal"),
-    ("⌈", "ceiling max"),
-    ("⌊", "floor min"),
-    ("|", "magnitude abs residue"),
-    ("*", "power exp"),
-    ("⍟", "log"),
-    ("○", "circle cis"),
-    ("π", "pi"),
-    ("√", "root sqrt"),
-    ("!", "factorial binomial"),
-    ("∧", "and lcm"),
-    ("∨", "or gcd"),
-    ("⍲", "nand"),
-    ("⍱", "nor"),
-    ("~", "not without"),
-    ("=", "equal"),
-    ("≠", "not-equal"),
-    ("<", "less"),
-    ("≤", "less-equal"),
-    (">", "greater"),
-    ("≥", "greater-equal"),
-    ("⎕", "quad"),
-    ("•", "bullet system"),
-    ("⍞", "quote-quad"),
-    ("⍺", "alpha"),
-    ("⍵", "omega"),
-    ("⍶", "alpha-underbar left-operand"),
-    ("⍹", "omega-underbar right-operand"),
-    ("∇", "del recursion"),
-    ("∇∇", "operator-recursion"),
-    ("⍝", "comment"),
-    ("⋄", "diamond"),
-    ("¯", "overbar"),
-    ("∞", "infinity"),
-    ("⍬", "zilde empty"),
-    (",", "ravel catenate"),
-    ("⍪", "table catenate-first"),
-    ("⊂", "enclose"),
-    ("⊃", "mix pick"),
-    ("⊆", "nest partition"),
-    ("∊", "epsilon enlist member"),
-    ("∪", "unique union"),
-    ("∩", "intersection"),
-    ("⍋", "grade-up"),
-    ("⍒", "grade-down"),
-    ("↑", "take first disclose"),
-    ("↓", "drop split"),
-    ("⌽", "reverse rotate"),
-    ("⊖", "reverse-first rotate-first"),
-    ("⍉", "transpose"),
-    ("⊤", "encode"),
-    ("⊥", "decode"),
-    ("⍎", "execute"),
-    ("⍕", "format"),
-    ("⌷", "index squad"),
-    ("⌹", "domino matrix-divide"),
-    ("¨", "each dieresis"),
-    ("/", "reduce replicate slash"),
-    ("⌿", "reduce-first replicate-first"),
-    ("\\", "scan backslash"),
-    ("⍀", "scan-first"),
-    ("⍤", "rank atop"),
-    ("∘", "jot compose bind"),
-    ("⌝", "outer-product top-right-corner"),
-    ("⍨", "commute selfie"),
-    ("⍥", "over"),
-    ("⍛", "behind"),
-    ("⍣", "repeat iterate history trajectory"),
-    ("⇄", "inverse-pair"),
-    ("⌾", "under"),
-    ("↕", "windows"),
-    ("ℙ", "prime"),
-    ("Ⓠ", "factor"),
-    ("Ⓟ", "polynomial"),
-    ("∂", "derivative"),
-    ("˘", "breve tie strand"),
-    ("◶", "agenda choose"),
-    ("⍸", "where interval-index"),
-    ("⍷", "find"),
-    ("⊢", "right same"),
-    ("⊣", "left"),
-    ("⌸", "key"),
-    ("@", "at"),
-    ("⌺", "stencil"),
-    ("⍠", "variant"),
-    ("?", "roll deal"),
+// The Alt chord's key on a US layout, shown beside each listed name: ` a`, or ` Sa` with Shift.
+fn chord(glyph: &str) -> String {
+    const SHIFTED: &str = "~!@#$%^&*()_+{}|:\"<>?";
+    const PLAIN: &str = "`1234567890-=[]\\;',./";
+    let Some((&key, _)) = alt_keys().iter().find(|&(_, &g)| glyph.chars().eq([g])) else { return String::new() };
+    let base = SHIFTED.find(key).map_or(key.to_ascii_lowercase(), |i| PLAIN.as_bytes()[i] as char);
+    format!(" {}{base}", if base == key { "" } else { "S" })
+}
+
+fn label((glyph, name): &(&str, &str)) -> String { format!("{glyph} {name}{}", chord(glyph)) }
+
+// One row per glyph: its name, as in docs/index.md, then search words that are matched but never shown.
+pub(crate) const SYMBOLS: &[(&str, &str, &str)] = &[
+    ("←", "assign", "left-arrow"),
+    ("→", "pipe", "right-arrow"),
+    ("⍳", "iota", "index-of"),
+    ("⍴", "rho", "shape reshape"),
+    ("≢", "tally", "not-match"),
+    ("≡", "match", "depth"),
+    ("+", "plus", "conjugate"),
+    ("-", "minus", "negate"),
+    ("×", "times", "multiply sign direction"),
+    ("÷", "divide", "reciprocal"),
+    ("⌈", "ceiling", "max"),
+    ("⌊", "floor", "min"),
+    ("|", "stile", "magnitude abs residue"),
+    ("*", "star", "exp"),
+    ("⍟", "log", ""),
+    ("○", "circle", "cis"),
+    ("π", "pi", ""),
+    ("√", "root", "sqrt"),
+    ("!", "factorial", "binomial"),
+    ("∧", "and", "lcm"),
+    ("∨", "or", "gcd"),
+    ("⍲", "nand", ""),
+    ("⍱", "nor", ""),
+    ("~", "tilde", "not without"),
+    ("=", "equal", ""),
+    ("≠", "not-equal", ""),
+    ("<", "less", ""),
+    ("≤", "less-or-equal", "less-equal"),
+    (">", "greater", ""),
+    ("≥", "greater-or-equal", "greater-equal"),
+    ("⎕", "quad", ""),
+    ("•", "bullet", "system"),
+    ("⍺", "alpha", ""),
+    ("⍵", "omega", ""),
+    ("⍶", "alpha-underbar", "left-operand"),
+    ("⍹", "omega-underbar", "right-operand"),
+    ("∇", "del", "recursion"),
+    ("⍢", "del-diaeresis", "operator-recursion"),
+    ("⍝", "comment", ""),
+    ("⋄", "diamond", ""),
+    ("¯", "overbar", ""),
+    ("∞", "infinity", ""),
+    ("⍬", "zilde", "empty"),
+    (",", "comma", "ravel catenate"),
+    ("⍪", "table", "catenate-first"),
+    ("⊂", "enclose", ""),
+    ("⊃", "mix", "pick"),
+    ("⊆", "nest", "partition"),
+    ("∊", "member", "epsilon enlist"),
+    ("∪", "union", "unique"),
+    ("∩", "intersection", ""),
+    ("⍋", "grade-up", ""),
+    ("⍒", "grade-down", ""),
+    ("↑", "take", "first disclose"),
+    ("↓", "drop", "split"),
+    ("⌽", "reverse", "rotate"),
+    ("⊖", "reverse-first", "rotate-first"),
+    ("⍉", "transpose", ""),
+    ("⊤", "encode", ""),
+    ("⊥", "decode", ""),
+    ("⍎", "execute", ""),
+    ("⍕", "format", ""),
+    ("⌷", "squad", "index"),
+    ("⌹", "domino", "matrix-divide"),
+    ("¨", "each", "dieresis"),
+    ("/", "slash", "reduce replicate"),
+    ("⌿", "slash-bar", "reduce-first replicate-first"),
+    ("\\", "backslash", "scan"),
+    ("⍀", "backslash-bar", "scan-first"),
+    ("⍤", "rank", "atop"),
+    ("∘", "compose", "jot bind"),
+    ("⌝", "outer-product", ""),
+    ("⍨", "commute", ""),
+    ("⍥", "over", ""),
+    ("⍛", "behind", ""),
+    ("⍣", "power", "repeat iterate history"),
+    ("⇄", "inverse-pair", ""),
+    ("⌾", "under", ""),
+    ("↕", "windows", ""),
+    ("ℙ", "prime", ""),
+    ("Ⓠ", "factor", ""),
+    ("Ⓟ", "polynomial", ""),
+    ("∂", "derivative", ""),
+    ("˘", "strand", "breve"),
+    ("◶", "agenda", "choose"),
+    ("⍸", "where", "interval-index"),
+    ("⍷", "find", ""),
+    ("⊢", "right", "same"),
+    ("⊣", "left", ""),
+    ("⌸", "key", ""),
+    ("@", "at", ""),
+    ("⌺", "stencil", ""),
+    ("?", "question", "roll deal"),
 ];
 
+// At each level (exact, prefix, first letter then later letters in order) a name outranks a search word.
 pub(crate) fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
     let query = query.to_ascii_lowercase();
     let mut found = Vec::new();
-    let mut best = 3;
-    for &(glyph, names) in SYMBOLS {
-        let candidate = names
-            .split_whitespace()
-            .filter_map(|name| {
-                let letters = name.replace('-', "");
+    let mut best = usize::MAX;
+    for &(glyph, name, words) in SYMBOLS {
+        let rank = std::iter::once(name)
+            .chain(words.split_whitespace())
+            .enumerate()
+            .filter_map(|(i, word)| {
+                let letters = word.replace('-', "");
                 let rank = if letters == query { 0 } else if letters.starts_with(&query) { 1 } else {
                     let mut chars = letters.bytes();
                     if chars.next() != query.bytes().next() || !query.bytes().skip(1).all(|c| chars.any(|n| n == c)) { return None; }
                     2
                 };
-                Some((rank, name))
+                Some(2 * rank + usize::from(i > 0))
             })
-            .min_by_key(|&(rank, _)| rank);
-        if let Some((rank, name)) = candidate {
+            .min();
+        if let Some(rank) = rank {
             if rank < best {
                 found.clear();
                 best = rank;
@@ -145,7 +156,10 @@ pub(crate) fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
             if rank == best { found.push((glyph, name)); }
         }
     }
-    found
+    // A name that is a prefix of every other match wins: `om gives omega, `omu gives omega-underbar.
+    let letters = |name: &str| name.replace('-', "");
+    let shortest = found.iter().copied().find(|a| found.iter().all(|b| letters(b.1).starts_with(&letters(a.1))));
+    match shortest { Some(shortest) if found.len() > 1 => vec![shortest], _ => found }
 }
 
 // Strings and comments are literal even before their language implementation is complete.
@@ -234,10 +248,9 @@ impl Completer for Symbols {
             return Ok((range.start, vec![Pair { display: replacement.clone(), replacement }]));
         }
         let Some((start, prefix)) = entry(line, pos) else { return Ok((pos, vec![])); };
-        // List ambiguous names without extending their common prefix: `sca must not
-        // silently become the exact name `scan just because scan-first shares that prefix.
+        // List ambiguous names without extending their common prefix: the typed text stays as it is.
         let choices =
-            matches(prefix).into_iter().map(|(glyph, name)| Pair { display: format!("{glyph} {name}"), replacement: line[start..pos].into() }).collect();
+            matches(prefix).into_iter().map(|found| Pair { display: label(&found), replacement: line[start..pos].into() }).collect();
         Ok((start, choices))
     }
 }
@@ -254,7 +267,7 @@ impl Hinter for Symbols {
         let (_, prefix) = entry(line, pos)?;
         let found = matches(prefix);
         let message = if prefix.is_empty() { "Tab: symbol names".into() } else if found.is_empty() { "unknown symbol".into() } else {
-            let mut names = found.iter().take(6).map(|(glyph, name)| format!("{glyph} {name}")).collect::<Vec<_>>().join(", ");
+            let mut names = found.iter().take(6).map(label).collect::<Vec<_>>().join(", ");
             if found.len() > 6 { names.push_str(", … (Tab)"); }
             names
         };
@@ -268,7 +281,21 @@ impl Validator for Symbols {
         Ok(ValidationResult::Valid(input.pending.as_ref().map(|(_, glyph)| format!("  → {glyph}"))))
     }
 }
-impl Highlighter for Symbols {}
+// Bold cyan glyph and dim key, so each listed entry reads as glyph, name, key.
+fn styled(entry: &str) -> String {
+    let mut parts = entry.splitn(3, ' ');
+    let (glyph, name, key) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""), parts.next());
+    if name.is_empty() || !SYMBOLS.iter().any(|row| row.0 == glyph) { return entry.into(); }
+    format!("\x1b[1;36m{glyph}\x1b[0m {name}{}", key.map_or(String::new(), |key| format!(" \x1b[2m{key}\x1b[0m")))
+}
+
+impl Highlighter for Symbols {
+    fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
+        let Some(inner) = hint.strip_prefix("  [").and_then(|hint| hint.strip_suffix(']')) else { return hint.into() };
+        format!("  [{}]", inner.split(", ").map(styled).collect::<Vec<_>>().join(", ")).into()
+    }
+    fn highlight_candidate<'c>(&self, candidate: &'c str, _: CompletionType) -> Cow<'c, str> { styled(candidate).into() }
+}
 impl Helper for Symbols {}
 
 pub(crate) struct LineEditor(Editor<Symbols, DefaultHistory>);
@@ -303,23 +330,32 @@ mod tests {
                 assert_eq!(input.key(KeyEvent::new(key, Modifiers::ALT), line, line.len()), Some(Cmd::Insert(1, glyph.to_string())));
             }
         }
-        for &(glyph, _) in SYMBOLS {
+        for &(glyph, ..) in SYMBOLS {
             if glyph.chars().count() == 1 && !glyph.is_ascii() { assert!(alt_keys().values().any(|&c| glyph.starts_with(c)), "{glyph}"); }
         }
+        for (glyph, keys) in [("⍺", " a"), ("⍶", " Sa"), ("∞", " S-"), ("+", ""), ("⍢", " Sg")] { assert_eq!(chord(glyph), keys); }
     }
 
     #[test]
     fn names_prefixes_and_literal_context() {
         for (name, glyph) in
-            [("io", "⍳"), ("RHO", "⍴"), ("scan", "\\"), ("scanfirst", "⍀"), ("alpha", "⍺"), ("alphaunderbar", "⍶"), ("omegaunderbar", "⍹"), ("replicate", "/")]
+            [("io", "⍳"), ("RHO", "⍴"), ("scan", "\\"), ("scanfirst", "⍀"), ("alpha", "⍺"), ("alphaunderbar", "⍶"), ("omegaunderbar", "⍹"), ("replicate", "/"), ("om", "⍵"), ("omu", "⍹"), ("sca", "\\")]
         { assert_eq!(matches(name).iter().map(|(g, _)| *g).collect::<Vec<_>>(), [glyph]); }
-        assert!(matches("sca").len() > 1);
-        for name in ["lar", "larr", "leftar"] { assert_eq!(matches(name), [("←", "left-arrow")]); }
+        assert!(matches("de").len() > 1);
+        for name in ["lar", "larr", "leftar"] { assert_eq!(matches(name), [("←", "assign")]); }
         assert_eq!(matches("grup"), [("⍋", "grade-up")]);
         assert!(matches("nosuchsymbol").is_empty());
         for text in ["'`io", "'can''t `io", "\"`io", "⍝ `io"] { assert!(entry(text, text.len()).is_none()); }
         for text in ["界+`io", "'text' `io", "⍝ comment\n`io"] { assert_eq!(entry(text, text.len()).unwrap().1, "io"); }
-        for &(glyph, names) in SYMBOLS { for name in names.split_whitespace() { assert_eq!(matches(&name.replace('-', "")), [(glyph, name)]); } }
+        let index = include_str!("../docs/index.md");
+        for &(glyph, name, words) in SYMBOLS {
+            for word in std::iter::once(name).chain(words.split_whitespace()) { assert_eq!(matches(&word.replace('-', "")), [(glyph, name)], "{word}"); }
+            let mut title = name.replace('-', " ");
+            title[..1].make_ascii_uppercase();
+            let link = format!("` [{title}](glyphs/{name}.md)");
+            let cell = index[..index.find(&link).expect(name)].rsplit('`').next().unwrap();
+            assert!(cell.starts_with(glyph) || cell.strip_prefix('\\') == Some(glyph), "{glyph} {name}");
+        }
     }
 
     #[test]
@@ -341,12 +377,12 @@ mod tests {
             assert!(input.pending.is_none());
         }
         input.active = true;
-        assert_eq!(input.key(KeyEvent::from(' '), "`sca", 4), None);
+        assert_eq!(input.key(KeyEvent::from(' '), "`de", 3), None);
         input.active = true;
         assert_eq!(input.key(KeyEvent::from('-'), "x`lar", 5), Some(Cmd::Complete));
         assert_eq!(input.pending.take(), Some((1..5, "←-".into())));
         input.active = true;
-        assert_eq!(input.key(KeyEvent::from('-'), "`sca", 4), None);
+        assert_eq!(input.key(KeyEvent::from('-'), "`de", 3), None);
         assert!(input.pending.is_none());
         assert_eq!(input.key(KeyEvent::from('\\'), "1", 1), None);
     }

@@ -235,15 +235,7 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                 '/' | '⌿' | '\\' | '⍀' => TokenKind::Hybrid(Hybrid { scan: matches!(c, '\\' | '⍀'), first: matches!(c, '⌿' | '⍀'), axis: None }),
                 '{' => TokenKind::BraceOpen,
                 '}' => TokenKind::BraceClose,
-                '⍺' | '⍵' | '⍶' | '⍹' => TokenKind::Name(c.to_string()),
-                '∇' => {
-                    let mut name = c.to_string();
-                    if chars.peek().is_some_and(|(_, next)| *next == c) {
-                        chars.next();
-                        name.push(c);
-                    }
-                    TokenKind::Name(name)
-                }
+                '⍺' | '⍵' | '⍶' | '⍹' | '∇' | '⍢' => TokenKind::Name(c.to_string()),
                 '⍝' => {
                     while chars.peek().is_some_and(|(_, c)| *c != '\n') { chars.next(); }
                     continue;

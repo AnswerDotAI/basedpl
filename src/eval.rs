@@ -24,7 +24,7 @@ impl PartialEq for Function { fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&
 const MAX_DEPTH: usize = 128;
 const MAX_CALL_DEPTH: usize = 1024;
 
-fn implicit_name(name: &str) -> bool { matches!(name, "⍺" | "⍵" | "⍶" | "⍹" | "∇" | "∇∇") }
+fn implicit_name(name: &str) -> bool { matches!(name, "⍺" | "⍵" | "⍶" | "⍹" | "∇" | "⍢") }
 
 #[derive(Debug)]
 enum FunctionNode {
@@ -1939,7 +1939,7 @@ impl Session {
             if let Some(a) = left { names.insert("⍺".into(), Binding::Value(a)); }
             if let Some(f) = operand {
                 names.insert("⍶".into(), f.value());
-                names.insert("∇∇".into(), Binding::Operator(Operator::Defined(closure.clone())));
+                names.insert("⍢".into(), Binding::Operator(Operator::Defined(closure.clone())));
             }
             if let Some(f) = right_operand { names.insert("⍹".into(), f.value()); }
             self.current = Some(self.frames.len());

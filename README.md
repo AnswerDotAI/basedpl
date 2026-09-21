@@ -15,10 +15,10 @@ pip install basedpl
 ## Command line
 
 ```bash
-basedpl -e '+/⍳10'       # 55
+bapl -e '+/⍳10'       # 55
 ```
 
-Run `basedpl` to open the [REPL](https://answerdotai.github.io/basedpl/repl.html).
+Run `bapl` to open the [REPL](https://answerdotai.github.io/basedpl/repl.html).
 
 ## Python
 
@@ -34,7 +34,7 @@ with Session() as apl:
 
 The Python package installs the **bAsedPL** kernel. Select it in Jupyter to run APL cells with persistent names, glyph/name completion and interruption. Explicit `⎕←` output streams during execution; ordinary results follow the REPL's display rules.
 
-The same native executable runs the kernel with `basedpl --kernel -f CONNECTION_FILE`, using kernmini for the Jupyter protocol. No Python interpreter is needed when launching the native binary directly.
+The same native executable runs the kernel with `bapl --kernel -f CONNECTION_FILE`, using kernmini for the Jupyter protocol. No Python interpreter is needed when launching the native binary directly.
 
 ## Documentation
 

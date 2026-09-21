@@ -5,7 +5,7 @@ import pty, re, select, subprocess, termios, time
 def test_terminal_symbol_entry_and_exit():
     master, slave = pty.openpty()
     termios.tcsetwinsize(slave, (24, 100))
-    child = subprocess.Popen(['basedpl'], stdin=slave, stdout=slave, stderr=slave, env={**os.environ, 'TERM': 'xterm-256color'})
+    child = subprocess.Popen(['bapl'], stdin=slave, stdout=slave, stderr=slave, env={**os.environ, 'TERM': 'xterm-256color'})
     os.close(slave)
     pending = b''
 
@@ -44,8 +44,8 @@ def test_terminal_symbol_entry_and_exit():
         enter('sum`assign +`reduce\r', '\r\n')  # Enter accepts and submits
         enter('sum 界\r', '\r\n10\r\n')
         enter('`iotx\x7fa3\r', '\r\n1 2 3\r\n')  # backspace while entering a name
-        data = enter('`sca\t \r', 'UNSUPPORTED')  # ambiguous Tab must not choose scan
-        assert b'`sca ' in data
+        data = enter('`de\t \r', 'UNSUPPORTED')  # ambiguous Tab must not choose a glyph
+        assert b'`de ' in data
         enter('2+2\r', '\r\n4\r\n')
         data = enter('⍝ \\ `iota \r', '\r\n')
         assert b'\\ `iota ' in data  # comments and literal backslash are untouched

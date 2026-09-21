@@ -111,7 +111,7 @@ Each name below links to its definitions and examples. Examples show an equivale
 | `⍥` [Over](glyphs/over.md) | `f⍥g` | Over | |
 | `⍛` [Behind](glyphs/behind.md) | `f⍛g` | Behind | |
 | `.` [Dot](glyphs/dot.md) | `f.g` | Inner product | Outer product is `g⌝` |
-| `⌝` [Outer](glyphs/outer.md) | `g⌝` | Outer product | As BQN's `⌜`; `∘.g` is a SYNTAX ERROR |
+| `⌝` [Outer product](glyphs/outer-product.md) | `g⌝` | Outer product | As BQN's `⌜`; `∘.g` is a SYNTAX ERROR |
 | `⌸` [Key](glyphs/key.md) | `f⌸` | Key | |
 | `⍣` [Power](glyphs/power.md) | `f⍣n`, `f⍣g`, `f⍣[p]` | Iterate / invert / repeat until; enclose count or predicate for history | Array counts as J's `^:`: `(1∘+)⍣3 ¯2 0 3⊢10` is `13 8 10 13` |
 | `⇄` [Inverse pair](glyphs/inverse-pair.md) | `f⇄g` | Attach an explicit inverse | As J's `:.` |
@@ -134,11 +134,12 @@ Each name below links to its definitions and examples. Examples show an equivale
 | `{…}` [Braces](glyphs/braces.md) | Defined function or operator |
 | `⍺` [Alpha](glyphs/alpha.md), `⍵` [Omega](glyphs/omega.md) | Left / right argument |
 | `⍶` [Alpha underbar](glyphs/alpha-underbar.md), `⍹` [Omega underbar](glyphs/omega-underbar.md) | Left / right operand |
-| `∇` [Nabla](glyphs/nabla.md), `∇∇` [Nabla nabla](glyphs/nabla-nabla.md) | Function / operator self-reference |
+| `∇` [Del](glyphs/del.md), `⍢` [Del diaeresis](glyphs/del-diaeresis.md) | Function / operator self-reference |
 | `:` [Colon](glyphs/colon.md), `::` [Error guard](glyphs/error-guard.md) | Boolean / error guard |
 | `⋄` [Diamond](glyphs/diamond.md) | Statement or literal separator |
 | `⍝` [Comment](glyphs/comment.md) | Comment |
 | `⎕←` [Quad](glyphs/quad.md) | Explicit output |
+| `•` [Bullet](glyphs/bullet.md) | [System name](#system-names) prefix |
 | `⍬` [Zilde](glyphs/zilde.md) | Empty numeric vector |
 | `'…'` [Quote](glyphs/quote.md) | Character literal |
 | `¯` [Overbar](glyphs/overbar.md) | Negative literal sign |

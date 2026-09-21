@@ -142,8 +142,8 @@ dfspan ← {  ⍝ Depth-first spanning tree: graph ⍺ from vertex ⍵.
     ¯2≠⍺⊃⍵:⍵  ⍝ vertex visited: backtrack
     next←⌽⍺⊃graph  ⍝ edges from vertex ⍺
     tree←⍶@⍺⊢⍵  ⍝ ⍶ is ⍺'s parent
-    tree (⍺ ∇∇)/next
-  }  ⍝ :: tree ← vtx (vtx ∇∇) tree
+    tree (⍺ ⍢)/next
+  }  ⍝ :: tree ← vtx (vtx ⍢) tree
   ⍵(¯1 trav)¯2⊣¨⍺  ⍝ depth-first traversal of graph ⍵
 }
 

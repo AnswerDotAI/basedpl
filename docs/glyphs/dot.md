@@ -7,4 +7,4 @@
 (2 2⍴1 0 0 1)+.×2 2⍴⍳4 ⍝ 2 2⍴⍳4
 ```
 
-Singleton contraction axes extend. Empty contractions use the reduction identity. `g⌝` is [outer product](outer.md).
+Singleton contraction axes extend. Empty contractions use the reduction identity. `g⌝` is [outer product](outer-product.md).

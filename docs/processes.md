@@ -4,7 +4,7 @@
 
 ## JSON lines
 
-Run `basedpl --json`. Send one JSON-encoded APL string per line; each receives one flushed JSON response. Names persist.
+Run `bapl --json`. Send one JSON-encoded APL string per line; each receives one flushed JSON response. Names persist.
 
 ```json
 "v←⍳10"
@@ -49,7 +49,7 @@ with Worker() as w:
 
 ## Worker protocol
 
-`basedpl --worker` accepts JSON objects with request IDs. Keep one evaluation outstanding.
+`bapl --worker` accepts JSON objects with request IDs. Keep one evaluation outstanding.
 
 ```json
 {"id":1,"code":"+/⍳10","timeout_ms":2000,"echo":false}

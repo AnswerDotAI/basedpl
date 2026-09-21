@@ -2912,7 +2912,7 @@ rlop←{⍵<2000:⍵,∇ 3 ⍶ 2×2+⊃⍵ ⋄ ⍵} ⋄ × rlop 5
 5 42 264 1596 9588
 
 ⍝ april:2137 — Lateral recursive operator definition with self-reference; Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-rlop←{⍵<2000:⍵,⍶ ∇∇ 3 ⍶ 2×2+⊃⍵ ⋄ ⍵} ⋄ × rlop 5
+rlop←{⍵<2000:⍵,⍶ ⍢ 3 ⍶ 2×2+⊃⍵ ⋄ ⍵} ⋄ × rlop 5
 5 42 264 1596 9588
 
 ⍝ april:2139 — Inline lateral operator

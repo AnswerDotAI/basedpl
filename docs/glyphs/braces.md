@@ -20,4 +20,4 @@ Using `⍶` defines a monadic operator; `⍹` makes it dyadic.
 twice←{⍶ ⍶ ⍵} ⋄ (-twice)3 ⍝ 3
 ```
 
-See [defaults](alpha.md), [recursion](nabla.md) and [error guards](error-guard.md).
+See [defaults](alpha.md), [recursion](del.md) and [error guards](error-guard.md).

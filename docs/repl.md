@@ -2,7 +2,7 @@
 
 [Home](index.md) · [Command line](cli.md)
 
-Run `basedpl`. Expressions display their results; assignments retain names for later lines. An error shows its source location and returns to the prompt.
+Run `bapl`. Expressions display their results; assignments retain names for later lines. An error shows its source location and returns to the prompt.
 
 ```text
       v←⍳5
@@ -38,9 +38,11 @@ Strand `˘` is Alt-t, or right Option–Shift–period on a US Mac keyboard, or 
 | `` v`assign `` then Space | `v← ` |
 | `` `scan `` then Tab | `\` |
 
-Names are case-insensitive. Exact names win, then prefixes, then abbreviations retaining the first letter and later letters in order. `lar` matches `left-arrow`; `grup` matches `grade-up`. Type letters only: `` `lar- `` becomes `←-`.
+Each glyph has one name, the one the [glyph reference](index.md#glyph-reference) uses. The REPL also matches search words such as `reshape` for `⍴`. It always shows the name: `` `resh `` lists `⍴ rho r`.
 
-Matches appear as you type. Tab twice lists ambiguous choices; backtick then Tab twice lists the catalogue. Ambiguous input stays as typed. Enter accepts a unique match and submits the line.
+Names are case-insensitive. Exact matches win, then prefixes, then abbreviations retaining the first letter and later letters in order. At each level a name beats a search word. A name that is a prefix of every other match wins: `` `om `` gives `⍵`, and `` `omu `` gives `⍹`. `grup` matches `grade-up`. `lar` matches the search word `left-arrow` and lists `← assign h`. Type letters only: `` `lar- `` becomes `←-`.
+
+Matches appear as you type. Each listed name ends with its Alt key: `a` for Alt-a, `Sa` for Alt-Shift-a. Tab twice lists ambiguous choices; backtick then Tab twice lists the catalogue. Ambiguous input stays as typed. Enter accepts a unique match and submits the line.
 
 Expansion applies only to typed REPL input, outside strings and comments. Pasted APL, source files, Python and process requests use actual glyphs.
 

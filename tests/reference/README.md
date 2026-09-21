@@ -4,7 +4,7 @@ The `.apl` files are the executable language tests. `core.apl` holds bAsedPL's o
 
 Source entries are not necessarily executable tests. Many APLcart recipes have unbound arguments and no expected result. They need concrete examples. Library cases need their definitions and setup. Use the scanner below for current counts and failures; fixture reasons describe their last review, not necessarily today's implementation. Progress notes belong in `meta/`, not this README.
 
-Active cases use bAsedPL spellings: `π` for APL's monadic `○`, `g⌝` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, and `•Name` for system names. Original inventory sources retain their dialect's notation.
+Active cases use bAsedPL spellings: `π` for APL's monadic `○`, `g⌝` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, `⍢` for `∇∇`, and `•Name` for system names. Original inventory sources retain their dialect's notation.
 
 Run the active cases with:
 

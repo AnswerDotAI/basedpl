@@ -550,7 +550,7 @@ Fact←{⍵≤1: 1 ⋄ ⍵×∇ ⍵-1} ⋄ Fact 5   ⍝ 120
 var×⍳4 ⊣ var←10   ⍝ 10 20 30 40
 
 ⍝ aplcart/table.tsv:180 — Dop Self
-_Pow←{⍹=0:⍵ ⋄ ⍶ ∇∇(⍹-1)⍶ ⍵} ⋄ ({1+⍵} _Pow 3) 5
+_Pow←{⍹=0:⍵ ⋄ ⍶ ⍢(⍹-1)⍶ ⍵} ⋄ ({1+⍵} _Pow 3) 5
 8
 
 ⍝ aplcart/table.tsv:181 — N-row matrix from N vectors
@@ -4692,7 +4692,7 @@ dfspan ← {
     ¯2≠⍺⊃⍵:⍵
     next←⌽⍺⊃graph
     tree←⍶@⍺⊢⍵
-    ⍺ ∇∇/next,⊂tree
+    ⍺ ⍢/next,⊂tree
   }
   ⍵(¯1 trav)¯2⊣¨⍺
 }

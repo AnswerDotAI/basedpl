@@ -1,5 +1,5 @@
 {
-  "argv": ["basedpl", "--kernel", "-f", "{connection_file}"],
+  "argv": ["bapl", "--kernel", "-f", "{connection_file}"],
   "display_name": "bAsedPL",
   "language": "apl",
   "interrupt_mode": "message"

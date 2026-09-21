@@ -180,19 +180,19 @@ def test_without_numpy():
 
 def test_installed_command(tmp_path):
     for code, status, output in [('2×3+4', 0, '14\n'), ('¯2+1÷0', 1, '')]:
-        res = subprocess.run(['basedpl', '-e', code], capture_output=True, text=True, timeout=10)
+        res = subprocess.run(['bapl', '-e', code], capture_output=True, text=True, timeout=10)
         assert (res.returncode, res.stdout) == (status, output)
         if status: assert 'DOMAIN ERROR' in res.stderr and '<expression>:1:5' in res.stderr
         else: assert not res.stderr
     path = tmp_path/'lesson.apl'
     path.write_text('v←⍳10\nsum←+/\nsum v\n', encoding='utf-8')
-    res = subprocess.run(['basedpl', str(path)], capture_output=True, text=True, timeout=10)
+    res = subprocess.run(['bapl', str(path)], capture_output=True, text=True, timeout=10)
     assert (res.returncode, res.stdout, res.stderr) == (0, '55\n', '')
 
 
 def test_installed_json_command():
     codes = ['v←9007199254740993x 0.5 1r3', 'v', '0/1r3', '1r0', '1r3+1r6', '2x*100x', '1J2 3J4']
-    res = subprocess.run(['basedpl', '--json'], input='\n'.join(json.dumps(c) for c in codes)+'\n', capture_output=True, text=True, timeout=10)
+    res = subprocess.run(['bapl', '--json'], input='\n'.join(json.dumps(c) for c in codes)+'\n', capture_output=True, text=True, timeout=10)
     assert res.returncode == 0 and not res.stderr
     replies = [json.loads(line) for line in res.stdout.splitlines()]
     assert replies[1]['value'] == dict(shape=[3], data=[9007199254740993, 0.5, {'rational': ['1', '3']}], prototype=0)

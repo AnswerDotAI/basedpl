@@ -180,7 +180,7 @@ sbst ← {  ⍝ Simple Binary Search Trees.
     sub val←nxt ⍶ ⍵
     subs←dir wise lft sub rgt  ⍝ lft and rgth subtrees.
     (inf subs)val  ⍝ new node and value.
-  }  ⍝ :: t (t ∇ k v → t v) ∇∇ k v → t v
+  }  ⍝ :: t (t ∇ k v → t v) ⍢ k v → t v
   fmt←{  ⍝ formatted tree ⍵.
     null←0 0⍴''  ⍝ format of null tree.
     ⍵≡0:null  ⍝ null tree: null format.
@@ -397,7 +397,7 @@ redblack ← {  ⍝ Red-black trees.
     sub path←nxt ⍶ ⍵
     subs←dir wise lft sub rgt  ⍝ new subtrees.
     (inf red subs)(dir,path)  ⍝ new node and extended path.
-  }  ⍝ :: t (t ∇ k v → t p) ∇∇ k v → t p
+  }  ⍝ :: t (t ∇ k v → t p) ⍢ k v → t p
   rot←{                                      ⍝ ⍵-rotation of node ⍺.
     Ninf Nred Nsubs←⍺                        ⍝        N   →   L_
     (Linf Lred Lsubs)R←⍵ wise Nsubs          ⍝       ⌿ \     / \
@@ -454,7 +454,7 @@ splay ← {  ⍝ Splay trees.
     _ nxt←dir wise lft rgt  ⍝ nxt subtree to search.
     sub←nxt ⍶ ⍵
     inf(dir wise lft sub rgt)  ⍝ new node.
-  }  ⍝ :: t (t ∇ k _ → t) ∇∇ k _ → t
+  }  ⍝ :: t (t ∇ k _ → t) ⍢ k _ → t
   get←{  ⍝ value for key ⍵ from tree ⍺.
     ⍺≡0:0 0 0  ⍝ null: no value.
     (key val)(lft rgt)←⍺  ⍝ parts of node.
