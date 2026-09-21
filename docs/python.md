@@ -125,6 +125,10 @@ assert mean([1, 2, 4]).py == Fraction(7, 3)
 
 Names distinguish valences: `sign`/`times`, `shape`/`reshape`, `iota`/`index_of`, `first`/`take`, `mix`/`pick`. `times(2.)` binds an approximate number; `times(2)` an exact one. Operator methods use the underlying APL function.
 
+`exponential` and `exponent` name the monadic and dyadic forms of `*`. `power` names the operator `⍣`, exposed as `f.power(n)`. System names beginning with `•` have no Python word aliases; they remain available inside evaluated APL.
+
+`basedpl.symbols` is the shared naming table used by Python functions and REPL and notebook completion. Each row is `(glyph, name, monad, dyad, aliases)`: the canonical glyph name, monadic and dyadic function names (empty when absent), and space-separated extra completion aliases. It includes operators and syntax glyphs too, with empty function names. Python replaces hyphens with underscores and appends an underscore to keywords (`not` → `not_`). The table is directly JSON-serializable for JavaScript consumers.
+
 | Python | APL |
 |---|---|
 | `f.reduce()`, `f.scan()` | `f/`, `f\` |
@@ -141,7 +145,7 @@ Names distinguish valences: `sign`/`times`, `shape`/`reshape`, `iota`/`index_of`
 
 Arithmetic between functions makes forks: `f+g` is `(f+g)`. `f @ g` is inner product; `f << g` is compose; `f >> g` reverses composition; `f ** n` is power. Python's precedence applies when building these expressions.
 
-Math families: `prime`/`prime_mode` (`ℙ`), `factors`/`factor_spec` (`Ⓠ`), `polynomial`/`polyval` (`Ⓟ`). `windows` is dyadic `↕`.
+Math families: `prime`/`prime_mode` (`ℙ`), `factors`/`factor_spec` (`⨸`), `polynomial`/`polyval` (`⊛`). `windows` is dyadic `↕`.
 
 Roots: `sqrt`/`root` (`√`). Complex coordinates: `real_imag` (`∨`), `polar` (`∧`), `cis` (`○`). `pi_times`/`pi_ratio` (`π`) give π multiples/fractions. Also `square`, `double`, `decrement`, `increment`, `classify`, `binary_encode` and `binary_decode`.
 

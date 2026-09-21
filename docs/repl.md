@@ -40,7 +40,7 @@ Strand `˘` is Alt-t, or right Option–Shift–period on a US Mac keyboard, or 
 
 Each glyph has one name, the one the [glyph reference](index.md#glyph-reference) uses. The REPL also matches search words such as `reshape` for `⍴`. It always shows the name: `` `resh `` lists `⍴ rho r`.
 
-Names are case-insensitive. Exact matches win, then prefixes, then abbreviations retaining the first letter and later letters in order. At each level a name beats a search word. A name that is a prefix of every other match wins: `` `om `` gives `⍵`, and `` `omu `` gives `⍹`. `grup` matches `grade-up`. `lar` matches the search word `left-arrow` and lists `← assign h`. Type letters only: `` `lar- `` becomes `←-`.
+Names are case-insensitive. Exact matches win, then prefixes, then abbreviations formed from prefixes of successive hyphen-separated parts. At each level a name beats a search word. A name that is a prefix of every other match wins: `` `om `` gives `⍵`, and `` `omu `` gives `⍹`. `grup` matches `grade-up`. `lar` matches the search word `left-arrow`, not `logarithm`, and lists `← assign h`. Type letters only: `` `lar- `` becomes `←-`.
 
 Matches appear as you type. Each listed name ends with its Alt key: `a` for Alt-a, `Sa` for Alt-Shift-a. Tab twice lists ambiguous choices; backtick then Tab twice lists the catalogue. Ambiguous input stays as typed. Enter accepts a unique match and submits the line.
 

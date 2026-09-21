@@ -1,4 +1,4 @@
-# `*` — Exponential / Power
+# `*` — Exponential / Exponent
 
 `*Y`: e<sup>Y</sup>. Pervasive.
 

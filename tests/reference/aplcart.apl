@@ -14477,37 +14477,37 @@ N←4 9 16 ⋄ (¯1 1 ×⌝ ⊢)N   ⍝ 2 3⍴¯4 ¯9 ¯16 4 9 16
 ⍝ aplcart/tt.tsv:1970 — ∓N increasing rank
 N←4 9 16 ⋄ (¯1 1 ×⌝ ⊢)N   ⍝ 2 3⍴¯4 ¯9 ¯16 4 9 16
 
-⍝ aplcart/table.tsv:1394 — Euler's totient function (fastest above about 1000); dfns.pco uses ℙ/Ⓠ
+⍝ aplcart/table.tsv:1394 — Euler's totient function (fastest above about 1000); dfns.pco uses ℙ/⨸
 ((×/⊢-≠)3∘ℙ)60   ⍝ 16
 
-⍝ aplcart/table.tsv:1559 — Sum of positive divisors of Js (fast +/∘∪⊢∨⍳); dfns.pco uses ℙ/Ⓠ
+⍝ aplcart/table.tsv:1559 — Sum of positive divisors of Js (fast +/∘∪⊢∨⍳); dfns.pco uses ℙ/⨸
 (×/({(¯1+⍺*⍵+1)÷⍺-1}⌿2∘ℙ))60   ⍝ 168
 
-⍝ aplcart/table.tsv:1682 — prime factors and exponents; dfns.pco uses ℙ/Ⓠ
+⍝ aplcart/table.tsv:1682 — prime factors and exponents; dfns.pco uses ℙ/⨸
 2ℙ360   ⍝ 2 3⍴2 3 5 3 2 1
 
-⍝ aplcart/table.tsv:1683 — prime factorization of ⍵; dfns.pco uses ℙ/Ⓠ
-Ⓠ360   ⍝ 2 2 2 3 3 5
+⍝ aplcart/table.tsv:1683 — prime factorization of ⍵; dfns.pco uses ℙ/⨸
+⨸360   ⍝ 2 2 2 3 3 5
 
-⍝ aplcart/table.tsv:1684 — Is ⍵ a non-prime?; dfns.pco uses ℙ/Ⓠ
+⍝ aplcart/table.tsv:1684 — Is ⍵ a non-prime?; dfns.pco uses ℙ/⨸
 0ℙ1 2 9 17   ⍝ 1 0 1 0
 
-⍝ aplcart/table.tsv:1685 — Is ⍵ a prime?; dfns.pco uses ℙ/Ⓠ
+⍝ aplcart/table.tsv:1685 — Is ⍵ a prime?; dfns.pco uses ℙ/⨸
 1ℙ1 2 9 17   ⍝ 0 1 0 1
 
 ⍝ aplcart/table.tsv:1686 — m+b/⍳⍴b are all the primes between m and n, where ⍵≡m,n; prime mask over [10,20)
 1ℙ9+⍳10   ⍝ 0 1 0 1 0 0 0 1 0 1
 
-⍝ aplcart/table.tsv:1687 — number of primes less than ⍵; dfns.pco uses ℙ/Ⓠ
+⍝ aplcart/table.tsv:1687 — number of primes less than ⍵; dfns.pco uses ℙ/⨸
 ¯1ℙ2 3 10 20   ⍝ 0 1 4 8
 
-⍝ aplcart/table.tsv:1688 — next prime larger than ⍵; dfns.pco uses ℙ/Ⓠ
+⍝ aplcart/table.tsv:1688 — next prime larger than ⍵; dfns.pco uses ℙ/⨸
 4ℙ2 3 10 20   ⍝ 3 5 11 23
 
-⍝ aplcart/table.tsv:1689 — ⍵-th prime; dfns.pco uses ℙ/Ⓠ
+⍝ aplcart/table.tsv:1689 — ⍵-th prime; dfns.pco uses ℙ/⨸
 ℙ⍳8   ⍝ 2 3 5 7 11 13 17 19
 
-⍝ aplcart/table.tsv:1690 — next prime smaller than ⍵; dfns.pco uses ℙ/Ⓠ
+⍝ aplcart/table.tsv:1690 — next prime smaller than ⍵; dfns.pco uses ℙ/⨸
 ¯4ℙ3 5 10 20   ⍝ 2 3 7 19
 
 ⍝ aplcart/table.tsv:1779 — Random numbers with normal distribution
@@ -14522,16 +14522,16 @@ phinary 2 3 4 5
 ⍝ =>
 ('10.01' ⋄ '100.01' ⋄ '101.01' ⋄ '1000.1001')
 
-⍝ aplcart/tt.tsv:533 — Euler's totient function (fastest above about 1000); dfns.pco uses ℙ/Ⓠ
+⍝ aplcart/tt.tsv:533 — Euler's totient function (fastest above about 1000); dfns.pco uses ℙ/⨸
 ((×/⊢-≠)3∘ℙ)60   ⍝ 16
 
-⍝ aplcart/tt.tsv:534 — Euler's totient function (fastest above about 1000); dfns.pco uses ℙ/Ⓠ
+⍝ aplcart/tt.tsv:534 — Euler's totient function (fastest above about 1000); dfns.pco uses ℙ/⨸
 ((×/⊢-≠)3∘ℙ)60   ⍝ 16
 
-⍝ aplcart/tt.tsv:1795 — Sum of positive divisors of Js (fast +/∘∪⊢∨⍳); dfns.pco uses ℙ/Ⓠ
+⍝ aplcart/tt.tsv:1795 — Sum of positive divisors of Js (fast +/∘∪⊢∨⍳); dfns.pco uses ℙ/⨸
 (×/({(¯1+⍺*⍵+1)÷⍺-1}⌿2∘ℙ))60   ⍝ 168
 
-⍝ aplcart/tt.tsv:1796 — Sum of positive divisors of Js (fast +/∘∪⊢∨⍳); dfns.pco uses ℙ/Ⓠ
+⍝ aplcart/tt.tsv:1796 — Sum of positive divisors of Js (fast +/∘∪⊢∨⍳); dfns.pco uses ℙ/⨸
 (×/({(¯1+⍺*⍵+1)÷⍺-1}⌿2∘ℙ))60   ⍝ 168
 
 ⍝ aplcart/table.tsv:1913 — Inverted Table Nubsieve (≠Y where Y is unverted Yv); convert columns to rows for ordinary search and grouping
@@ -15127,7 +15127,7 @@ fs←+˘× ⋄ f←↑fs ⋄ 2 f 3   ⍝ 5
 1.39284576e19
 
 ⍝ aplcart/table.tsv:2491 — Determine the prime factors of the argument; Prepared command-catalogue algorithm with concrete input and independent result; Use existing pure mathematical primitive/library function instead of the Dyalog user-command wrapper
-Ⓠ360   ⍝ 2 2 2 3 3 5
+⨸360   ⍝ 2 2 2 3 3 5
 
 ⍝ aplcart/table.tsv:2492 — Convert a list of hexadecimal representations of integers to a numeric vector; Prepared command-catalogue algorithm with concrete input and independent result; Use existing pure mathematical primitive/library function instead of the Dyalog user-command wrapper
 •LOAD 'lib/numeric.apl' ⋄ dec 'ff' '100' 'abc'

@@ -39,15 +39,15 @@ Each name below links to its definitions and examples. Examples show an equivale
 | `⌊` [Floor](glyphs/floor.md) | Floor | Minimum | `⌊/⍬` is `∞` |
 | `⌈` [Ceiling](glyphs/ceiling.md) | Ceiling | Maximum | `⌈/⍬` is `¯∞` |
 | `\|` [Stile](glyphs/stile.md) | Magnitude | Residue | |
-| `*` [Star](glyphs/star.md) | Exponential | Power | |
+| `*` [Star](glyphs/star.md) | Exponential | Exponent | |
 | `⍟` [Log](glyphs/log.md) | Natural log | Logarithm | |
 | `○` [Circle](glyphs/circle.md) | Unit circle | Circular functions | Monad is `*0j1×Y`, a unit-circle point. Pi times is `π` |
 | `π` [Pi](glyphs/pi.md) | Pi times | Pi fraction | Monad takes over Pi times from `○`. `XπY` is Xπ÷Y |
 | `√` [Root](glyphs/root.md) | Square root | Nth root | As BQN's `√`, with complex results: `√¯4` is `0j2` |
 | `!` [Factorial](glyphs/factorial.md) | Factorial | Binomial | |
 | `ℙ` [Prime](glyphs/prime.md) | Nth prime (one-based) | Prime operations | As J's `p:` with the same codes, but one-based |
-| `Ⓠ` [Factor](glyphs/factor.md) | Prime factors | Exponents / factor table | As J's `q:`, with `∞` and `¯∞` for J's `_` and `__` |
-| `Ⓟ` [Polynomial](glyphs/polynomial.md) | Roots / coefficients | Evaluate | As J's `p.`: coefficients are constant-first |
+| `⨸` [Factor](glyphs/factor.md) | Prime factors | Exponents / factor table | As J's `q:`, with `∞` and `¯∞` for J's `_` and `__` |
+| `⊛` [Polynomial](glyphs/polynomial.md) | Roots / coefficients | Evaluate | As J's `p.`: coefficients are constant-first |
 | `?` [Question](glyphs/question.md) | Roll | Deal | |
 | `∨` [Or](glyphs/or.md) | Real / imaginary parts | OR / GCD | Monad as J's `+.` |
 | `∧` [And](glyphs/and.md) | Magnitude / angle | AND / LCM | Monad as J's `*.` |

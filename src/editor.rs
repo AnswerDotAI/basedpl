@@ -1,4 +1,5 @@
 //! Glyph completion and terminal input. Source execution never rewrites aliases.
+use crate::symbols::SYMBOLS;
 use rustyline::{
     completion::{Completer, Pair},
     highlight::Highlighter,
@@ -32,117 +33,28 @@ fn chord(glyph: &str) -> String {
 
 fn label((glyph, name): &(&str, &str)) -> String { format!("{glyph} {name}{}", chord(glyph)) }
 
-// One row per glyph: its name, as in docs/index.md, then search words that are matched but never shown.
-pub(crate) const SYMBOLS: &[(&str, &str, &str)] = &[
-    ("←", "assign", "left-arrow"),
-    ("→", "pipe", "right-arrow"),
-    ("⍳", "iota", "index-of"),
-    ("⍴", "rho", "shape reshape"),
-    ("≢", "tally", "not-match"),
-    ("≡", "match", "depth"),
-    ("+", "plus", "conjugate"),
-    ("-", "minus", "negate"),
-    ("×", "times", "multiply sign direction"),
-    ("÷", "divide", "reciprocal"),
-    ("⌈", "ceiling", "max"),
-    ("⌊", "floor", "min"),
-    ("|", "stile", "magnitude abs residue"),
-    ("*", "star", "exp"),
-    ("⍟", "log", ""),
-    ("○", "circle", "cis"),
-    ("π", "pi", ""),
-    ("√", "root", "sqrt"),
-    ("!", "factorial", "binomial"),
-    ("∧", "and", "lcm"),
-    ("∨", "or", "gcd"),
-    ("⍲", "nand", ""),
-    ("⍱", "nor", ""),
-    ("~", "tilde", "not without"),
-    ("=", "equal", ""),
-    ("≠", "not-equal", ""),
-    ("<", "less", ""),
-    ("≤", "less-or-equal", "less-equal"),
-    (">", "greater", ""),
-    ("≥", "greater-or-equal", "greater-equal"),
-    ("⎕", "quad", ""),
-    ("•", "bullet", "system"),
-    ("⍺", "alpha", ""),
-    ("⍵", "omega", ""),
-    ("⍶", "alpha-underbar", "left-operand"),
-    ("⍹", "omega-underbar", "right-operand"),
-    ("∇", "del", "recursion"),
-    ("⍢", "del-diaeresis", "operator-recursion"),
-    ("⍝", "comment", ""),
-    ("⋄", "diamond", ""),
-    ("¯", "overbar", ""),
-    ("∞", "infinity", ""),
-    ("⍬", "zilde", "empty"),
-    (",", "comma", "ravel catenate"),
-    ("⍪", "table", "catenate-first"),
-    ("⊂", "enclose", ""),
-    ("⊃", "mix", "pick"),
-    ("⊆", "nest", "partition"),
-    ("∊", "member", "epsilon enlist"),
-    ("∪", "union", "unique"),
-    ("∩", "intersection", ""),
-    ("⍋", "grade-up", ""),
-    ("⍒", "grade-down", ""),
-    ("↑", "take", "first disclose"),
-    ("↓", "drop", "split"),
-    ("⌽", "reverse", "rotate"),
-    ("⊖", "reverse-first", "rotate-first"),
-    ("⍉", "transpose", ""),
-    ("⊤", "encode", ""),
-    ("⊥", "decode", ""),
-    ("⍎", "execute", ""),
-    ("⍕", "format", ""),
-    ("⌷", "squad", "index"),
-    ("⌹", "domino", "matrix-divide"),
-    ("¨", "each", "dieresis"),
-    ("/", "slash", "reduce replicate"),
-    ("⌿", "slash-bar", "reduce-first replicate-first"),
-    ("\\", "backslash", "scan"),
-    ("⍀", "backslash-bar", "scan-first"),
-    ("⍤", "rank", "atop"),
-    ("∘", "compose", "jot bind"),
-    ("⌝", "outer-product", ""),
-    ("⍨", "commute", ""),
-    ("⍥", "over", ""),
-    ("⍛", "behind", ""),
-    ("⍣", "power", "repeat iterate history"),
-    ("⇄", "inverse-pair", ""),
-    ("⌾", "under", ""),
-    ("↕", "windows", ""),
-    ("ℙ", "prime", ""),
-    ("Ⓠ", "factor", ""),
-    ("Ⓟ", "polynomial", ""),
-    ("∂", "derivative", ""),
-    ("˘", "strand", "breve"),
-    ("◶", "agenda", "choose"),
-    ("⍸", "where", "interval-index"),
-    ("⍷", "find", ""),
-    ("⊢", "right", "same"),
-    ("⊣", "left", ""),
-    ("⌸", "key", ""),
-    ("@", "at", ""),
-    ("⌺", "stencil", ""),
-    ("?", "question", "roll deal"),
-];
-
-// At each level (exact, prefix, first letter then later letters in order) a name outranks a search word.
+// At each level (exact, prefix, prefixes of hyphen-separated parts) a name outranks a search word.
 pub(crate) fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
     let query = query.to_ascii_lowercase();
     let mut found = Vec::new();
     let mut best = usize::MAX;
-    for &(glyph, name, words) in SYMBOLS {
+    for &(glyph, name, monad, dyad, words) in SYMBOLS {
         let rank = std::iter::once(name)
+            .chain([monad, dyad])
             .chain(words.split_whitespace())
+            .filter(|word| !word.is_empty())
             .enumerate()
             .filter_map(|(i, word)| {
                 let letters = word.replace('-', "");
                 let rank = if letters == query { 0 } else if letters.starts_with(&query) { 1 } else {
-                    let mut chars = letters.bytes();
-                    if chars.next() != query.bytes().next() || !query.bytes().skip(1).all(|c| chars.any(|n| n == c)) { return None; }
+                    let mut rest = query.as_str();
+                    for part in word.split('-') {
+                        let n = part.bytes().zip(rest.bytes()).take_while(|(a, b)| a == b).count();
+                        if n == 0 { break; }
+                        rest = &rest[n..];
+                        if rest.is_empty() { break; }
+                    }
+                    if !rest.is_empty() { return None; }
                     2
                 };
                 Some(2 * rank + usize::from(i > 0))
@@ -340,6 +252,8 @@ mod tests {
         for (name, glyph) in [
             ("io", "⍳"),
             ("RHO", "⍴"),
+            ("exponent", "*"),
+            ("power", "⍣"),
             ("scan", "\\"),
             ("scanfirst", "⍀"),
             ("alpha", "⍺"),
@@ -353,12 +267,14 @@ mod tests {
         assert!(matches("de").len() > 1);
         for name in ["lar", "larr", "leftar"] { assert_eq!(matches(name), [("←", "assign")]); }
         assert_eq!(matches("grup"), [("⍋", "grade-up")]);
-        assert!(matches("nosuchsymbol").is_empty());
+        for name in ["nosuchsymbol", "lg", "lrr"] { assert!(matches(name).is_empty()); }
         for text in ["'`io", "'can''t `io", "\"`io", "⍝ `io"] { assert!(entry(text, text.len()).is_none()); }
         for text in ["界+`io", "'text' `io", "⍝ comment\n`io"] { assert_eq!(entry(text, text.len()).unwrap().1, "io"); }
         let index = include_str!("../docs/index.md");
-        for &(glyph, name, words) in SYMBOLS {
-            for word in std::iter::once(name).chain(words.split_whitespace()) { assert_eq!(matches(&word.replace('-', "")), [(glyph, name)], "{word}"); }
+        for &(glyph, name, monad, dyad, words) in SYMBOLS {
+            for word in [name, monad, dyad].into_iter().chain(words.split_whitespace()).filter(|word| !word.is_empty()) {
+                assert_eq!(matches(&word.replace('-', "")), [(glyph, name)], "{word}");
+            }
             let mut title = name.replace('-', " ");
             title[..1].make_ascii_uppercase();
             let link = format!("` [{title}](glyphs/{name}.md)");

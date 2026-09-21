@@ -794,94 +794,94 @@ a←⍎''
 ⍝⍝ Polynomial representations and derivatives
 
 ⍝ — Polynomial coefficients are constant-first
-1x 2x 3xⓅ0x 1x 2x   ⍝ 1x 6x 17x
+1x 2x 3x⊛0x 1x 2x   ⍝ 1x 6x 17x
 
 ⍝ — Evaluating at an array of points preserves its shape
-1x 2x 3xⓅ2 2⍴0x 1x 2x 3x   ⍝ 2 2⍴1x 6x 17x 34x
+1x 2x 3x⊛2 2⍴0x 1x 2x 3x   ⍝ 2 2⍴1x 6x 17x 34x
 
 ⍝ — Evaluate the factored form 2(x-1)(x-3)
-(2x (1x 3x))Ⓟ0x 1x 2x 3x   ⍝ 6x 0x ¯2x 0x
+(2x (1x 3x))⊛0x 1x 2x 3x   ⍝ 6x 0x ¯2x 0x
 
 ⍝ — Convert multiplier and roots to constant-first coefficients
-Ⓟ2x (1x 3x)   ⍝ 6x ¯8x 2x
+⊛2x (1x 3x)   ⍝ 6x ¯8x 2x
 
 ⍝ — Enclosed roots imply a leading coefficient of one
-Ⓟ⊂1x 3x   ⍝ 3x ¯4x 1x
+⊛⊂1x 3x   ⍝ 3x ¯4x 1x
 
 ⍝ — Convert an exponent table for x⁵-1, filling missing degrees with zero
-Ⓟ⊂2 2⍴1x 5x ¯1x 0x   ⍝ ¯1x 0x 0x 0x 0x 1x
+⊛⊂2 2⍴1x 5x ¯1x 0x   ⍝ ¯1x 0x 0x 0x 0x 1x
 
 ⍝ — Fractional exponents evaluate numerically even with exact input
-[2 2⍴2x 1r2 3x 1r4]Ⓟ16x   ⍝ 14
+[2 2⍴2x 1r2 3x 1r4]⊛16x   ⍝ 14
 
 ⍝ — Evaluate a two-variable exponent table at an enclosed coordinate vector
-[4 3⍴¯1 2 1 1 1 1 2 1 2 3 0 2]Ⓟ⊂2.5 ¯1   ⍝ 11.75
+[4 3⍴¯1 2 1 1 1 1 2 1 2 3 0 2]⊛⊂2.5 ¯1   ⍝ 11.75
 
 ⍝ — Empty exact evaluation points retain an exact prototype
-1x 2xⓅ0⍴0x   ⍝ 0⍴0x
+1x 2x⊛0⍴0x   ⍝ 0⍴0x
 
 ⍝ — Polynomial rows pair with scalar evaluation points by frame
-(2 3⍴1x 2x 3x 4x 5x 6x)Ⓟ1x 2x   ⍝ 6x 38x
+(2 3⍴1x 2x 3x 4x 5x 6x)⊛1x 2x   ⍝ 6x 38x
 
 ⍝ —
-5xⓅ2x   ⍝ 5x
+5x⊛2x   ⍝ 5x
 
 ⍝ —
-0x 0xⓅ2x   ⍝ 0x
+0x 0x⊛2x   ⍝ 0x
 
 ⍝ — A multiplier with no roots is a constant polynomial
-Ⓟ2x (0⍴0x)   ⍝ ,2x
+⊛2x (0⍴0x)   ⍝ ,2x
 
 ⍝ — Differentiate the bound polynomial evaluator
-f←1x 2x 3x∘Ⓟ ⋄ f∂2x   ⍝ 14x
+f←1x 2x 3x∘⊛ ⋄ f∂2x   ⍝ 14x
 
 ⍝ — Repeated differentiation gives the second derivative
-f←1x 2x 3x∘Ⓟ ⋄ f∂∂2x   ⍝ 6x
+f←1x 2x 3x∘⊛ ⋄ f∂∂2x   ⍝ 6x
 
 ⍝ — Differentiating beyond the polynomial's degree gives exact zero
-f←1x 2x 3x∘Ⓟ ⋄ f∂∂∂2x   ⍝ 0x
+f←1x 2x 3x∘⊛ ⋄ f∂∂∂2x   ⍝ 0x
 
 ⍝ — Dyadic derivative weights each output derivative by its cotangent
-f←1x 2x 3x∘Ⓟ ⋄ 10x 20x(f∂)1x 2x   ⍝ 80x 280x
+f←1x 2x 3x∘⊛ ⋄ 10x 20x(f∂)1x 2x   ⍝ 80x 280x
 
 ⍝ — Differentiate directly from the factored representation
-f←(2x (1x 3x))∘Ⓟ ⋄ f∂2x   ⍝ 0x
+f←(2x (1x 3x))∘⊛ ⋄ f∂2x   ⍝ 0x
 
 ⍝ — A multivariate gradient retains the coordinate enclosure
-f←[2 3⍴1x 2x 0x 1x 0x 2x]∘Ⓟ ⋄ f∂⊂3x 4x   ⍝ ⊂6x 8x
+f←[2 3⍴1x 2x 0x 1x 0x 2x]∘⊛ ⋄ f∂⊂3x 4x   ⍝ ⊂6x 8x
 
 ⍝ — A scalar cotangent scales the multivariate gradient
-f←[2 3⍴1x 2x 0x 1x 0x 2x]∘Ⓟ ⋄ 2x(f∂)⊂3x 4x
+f←[2 3⍴1x 2x 0x 1x 0x 2x]∘⊛ ⋄ 2x(f∂)⊂3x 4x
 ⊂12x 16x
 
 ⍝ — A shared scalar coordinate sums the partial derivatives
-f←[2 3⍴1x 2x 0x 1x 0x 2x]∘Ⓟ ⋄ f∂3x   ⍝ 12x
+f←[2 3⍴1x 2x 0x 1x 0x 2x]∘⊛ ⋄ f∂3x   ⍝ 12x
 
 ⍝ — Multiple polynomial outputs contribute to one scalar-input VJP
-f←(2 2⍴1x 2x 3x 4x)∘Ⓟ ⋄ 10x 20x(f∂)3x   ⍝ 100x
+f←(2 2⍴1x 2x 3x 4x)∘⊛ ⋄ 10x 20x(f∂)3x   ⍝ 100x
 
 ⍝ — Negative exponents cannot be converted to a coefficient vector
-Ⓟ⊂1 2⍴1 ¯1
+⊛⊂1 2⍴1 ¯1
 ⍝ error: DOMAIN ERROR
 
 ⍝ — The cotangent must match the scalar output's structure
-(⊂1 2)(1 2∘Ⓟ∂)3
+(⊂1 2)(1 2∘⊛∂)3
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-Ⓟ1 ∞
+⊛1 ∞
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Monadic derivative requires scalar output, not a vector of evaluations
-1 2∘Ⓟ∂1 2
+1 2∘⊛∂1 2
 ⍝ error: RANK ERROR
 
 ⍝ — VJP requires one cotangent for each output
-1(1 2∘Ⓟ∂)1 2
+1(1 2∘⊛∂)1 2
 ⍝ error: LENGTH ERROR
 
 ⍝ — The coordinate count must match the exponent table's variables
-[1 3⍴1 2 3]Ⓟ⊂1 2 3
+[1 3⍴1 2 3]⊛⊂1 2 3
 ⍝ error: LENGTH ERROR
 
 ⍝⍝ Prime and factor families
@@ -920,37 +920,37 @@ n←5 ⋄ ℙn   ⍝ 11x
 5ℙ1 2 3 4 5 6 10   ⍝ 1x 1x 2x 2x 4x 2x 4x
 
 ⍝ —
-Ⓠ700   ⍝ 2x 2x 5x 5x 7x
+⨸700   ⍝ 2x 2x 5x 5x 7x
 
 ⍝ — One has an empty exact factorization
-Ⓠ1   ⍝ 0⍴0x
+⨸1   ⍝ 0⍴0x
 
 ⍝ — Return exponents of only the first two primes
-2Ⓠ700   ⍝ 2x 0x
+2⨸700   ⍝ 2x 0x
 
 ⍝ — Requested primes beyond the largest factor receive zero exponents
-10Ⓠ700   ⍝ 2x 0x 2x 1x 0x 0x 0x 0x 0x 0x
+10⨸700   ⍝ 2x 0x 2x 1x 0x 0x 0x 0x 0x 0x
 
 ⍝ — Infinite count includes every prime through the largest factor
-∞Ⓠ700   ⍝ 2x 0x 2x 1x
+∞⨸700   ⍝ 2x 0x 2x 1x
 
 ⍝ — Negative count selects the last distinct factors and their exponents
-¯2Ⓠ700   ⍝ 2 2⍴5x 7x 2x 1x
+¯2⨸700   ⍝ 2 2⍴5x 7x 2x 1x
 
 ⍝ — Negative infinity requests the complete factor/exponent table
-¯∞Ⓠ700   ⍝ 2 3⍴2x 5x 7x 2x 2x 1x
+¯∞⨸700   ⍝ 2 3⍴2x 5x 7x 2x 2x 1x
 
 ⍝ —
-0Ⓠ700   ⍝ 0⍴0x
+0⨸700   ⍝ 0⍴0x
 
 ⍝ — Factoring one retains the table's two-row shape
-¯∞Ⓠ1   ⍝ 2 0⍴0x
+¯∞⨸1   ⍝ 2 0⍴0x
 
 ⍝ — Inverse prime lookup recovers one-based indices
 ℙ⍣¯1⊢ℙ⍳10   ⍝ ⍳10x
 
 ⍝ — Inverse factorization multiplies the factors
-Ⓠ⍣¯1⊢Ⓠ700   ⍝ 700x
+⨸⍣¯1⊢⨸700   ⍝ 700x
 
 ⍝ — Primality accepts exact integers at and beyond the unsigned 64-bit boundary
 1ℙ18446744073709551557x 18446744073709551615x 170141183460469231731687303715884105727x
@@ -960,13 +960,13 @@ n←5 ⋄ ℙn   ⍝ 11x
 1ℙ341550071728321x 3825123056546413051x   ⍝ 0x 0x
 
 ⍝ — Factor a semiprime whose two factors are both large
-Ⓠ1000000016000000063x   ⍝ 1000000007x 1000000009x
+⨸1000000016000000063x   ⍝ 1000000007x 1000000009x
 
 ⍝ — Empty prime lookup preserves shape with an exact prototype
 ℙ0 2⍴0   ⍝ 0 2⍴0x
 
 ⍝ — Factor lists of unequal lengths assemble with zero fill
-Ⓠ2 12   ⍝ 2 3⍴2x 0x 0x 2x 2x 3x
+⨸2 12   ⍝ 2 3⍴2x 0x 0x 2x 2x 3x
 
 ⍝ —
 ℙ0
@@ -981,15 +981,15 @@ n←5 ⋄ ℙn   ⍝ 11x
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-Ⓠ0
+⨸0
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-Ⓠ¯1
+⨸¯1
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-Ⓠ2j1
+⨸2j1
 ⍝ error: DOMAIN ERROR
 
 ⍝ —

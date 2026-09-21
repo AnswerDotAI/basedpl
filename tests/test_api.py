@@ -2,8 +2,8 @@ import operator
 from fractions import Fraction
 from pathlib import Path
 import numpy as np, pytest
-from basedpl import (Array, Session, AplError, plus, times, subtract, divide, power, sign, tally, iota,
-    reshape, shape, floor, logarithm, reverse, transpose, fork, atop, first, pick)
+from basedpl import (Array, Session, AplError, plus, times, subtract, divide, exponent, sign, tally, iota,
+    reshape, shape, floor, logarithm, reverse, transpose, fork, atop, first, pick, not_)
 
 
 def test_documentation_examples():
@@ -99,7 +99,8 @@ def test_words_binding_and_operators():
     assert times(2)(3).py == 6 and type(times(2)(3).py) is int
     assert subtract(2.)(5).py == 3 and subtract.left(2.)(5).py == -3
     assert divide.left(1)(3).py == Fraction(1, 3)
-    assert sign(-3).py == -1 and power(2)(3).py == 9
+    assert sign(-3).py == -1 and exponent(2)(3).py == 9
+    assert not_(0).py == 1
     mean = plus.reduce() / tally
     assert mean([1, 2, 4]).py == Fraction(7, 3)
     assert fork(plus.reduce(), divide, tally)([1, 2, 4]).py == Fraction(7, 3)

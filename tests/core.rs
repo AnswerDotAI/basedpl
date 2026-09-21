@@ -284,7 +284,7 @@ fn execute_source_and_session() {
 
 #[test]
 fn polynomial_representations_and_derivatives() {
-    for (code, expected) in [("ⓅⓅ0 16 ¯12 2", vec![0., 16., -12., 2.]), ("ⓅⓅ1 0 1", vec![1., 0., 1.]), ("ⓅⓅ1 ¯2 1", vec![1., -2., 1.])] {
+    for (code, expected) in [("⊛⊛0 16 ¯12 2", vec![0., 16., -12., 2.]), ("⊛⊛1 0 1", vec![1., 0., 1.]), ("⊛⊛1 ¯2 1", vec![1., -2., 1.])] {
         let value = run(code).unwrap().unwrap();
         assert_eq!(value.shape(), &[expected.len()]);
         for (e, expected) in value.elements().zip(expected) {

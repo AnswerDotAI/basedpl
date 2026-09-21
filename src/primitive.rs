@@ -318,8 +318,8 @@ impl Primitive {
             Self::Transpose => "⍉",
             Self::Windows => "↕",
             Self::Prime => "ℙ",
-            Self::Factor => "Ⓠ",
-            Self::Polynomial => "Ⓟ",
+            Self::Factor => "⨸",
+            Self::Polynomial => "⊛",
         }
     }
     pub(crate) fn from_glyph(c: char) -> Option<Self> {
@@ -382,8 +382,8 @@ impl Primitive {
             '⍉' => Self::Transpose,
             '↕' => Self::Windows,
             'ℙ' => Self::Prime,
-            'Ⓠ' => Self::Factor,
-            'Ⓟ' => Self::Polynomial,
+            '⨸' => Self::Factor,
+            '⊛' => Self::Polynomial,
             _ => return None,
         })
     }

@@ -16,6 +16,7 @@ mod protocol;
 #[doc(hidden)]
 pub mod reference;
 mod selection;
+mod symbols;
 mod syntax;
 mod system;
 mod worker;
