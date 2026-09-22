@@ -349,6 +349,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(run_cli, m)?)?;
     m.add_function(wrap_pyfunction!(_check_reference, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    m.add("symbols", crate::symbols::SYMBOLS.to_vec())?;
+    let symbols: Vec<_> = crate::symbols::SYMBOLS.iter().map(|&(g, n, m, d, a)| (g, n, m, d, a, crate::symbols::chord(g))).collect();
+    m.add("symbols", symbols)?;
     Ok(())
 }

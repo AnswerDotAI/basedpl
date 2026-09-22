@@ -1,4 +1,6 @@
 //! Shared names for Python functions and glyph completion.
+use std::{collections::HashMap, sync::OnceLock};
+
 // One row per glyph: glyph, canonical name (docs/index.md), monad, dyad, extra completion aliases.
 // Empty operation names mean that valence is not a primitive function; aliases are space-separated.
 pub(crate) const SYMBOLS: &[(&str, &str, &str, &str, &str)] = &[
@@ -97,3 +99,18 @@ pub(crate) const SYMBOLS: &[(&str, &str, &str, &str, &str)] = &[
     ("⌺", "stencil", "", "", ""),
     ("?", "question", "roll", "deal", ""),
 ];
+
+// Keys are US characters after Shift but before Alt. Browser adapters share this resource.
+pub(crate) fn alt_keys() -> &'static HashMap<char, char> {
+    static KEYS: OnceLock<HashMap<char, char>> = OnceLock::new();
+    KEYS.get_or_init(|| serde_json::from_str(include_str!("../python/basedpl/keyboard.json")).expect("valid glyph keyboard"))
+}
+
+// The Alt chord's key on a US layout, shown beside each listed name: ` a`, or ` Sa` with Shift.
+pub(crate) fn chord(glyph: &str) -> String {
+    const SHIFTED: &str = "~!@#$%^&*()_+{}|:\"<>?";
+    const PLAIN: &str = "`1234567890-=[]\\;',./";
+    let Some((&key, _)) = alt_keys().iter().find(|&(_, &g)| glyph.chars().eq([g])) else { return String::new() };
+    let base = SHIFTED.find(key).map_or(key.to_ascii_lowercase(), |i| PLAIN.as_bytes()[i] as char);
+    format!(" {}{base}", if base == key { "" } else { "S" })
+}

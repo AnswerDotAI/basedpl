@@ -101,7 +101,7 @@ def atop(f, g): return _build('⍤', f, g)
 
 __all__ = ['Function', 'fork', 'atop']
 _primitives = {}
-for _glyph, _glyph_name, _monad, _dyad, _aliases in symbols:
+for _glyph, _glyph_name, _monad, _dyad, _aliases, _shortcut in symbols:
     if not (_monad or _dyad): continue
     _inner = _Function.builtin(_glyph)
     _primitives[_glyph] = Function(_inner)

@@ -144,7 +144,7 @@ Names distinguish valences: `sign`/`times`, `shape`/`reshape`, `iota`/`index_of`
 
 `exponential` and `exponent` name the monadic and dyadic forms of `*`. `power` names the operator `⍣`, exposed as `f.power(n)`. System names beginning with `•` have no Python word aliases; they remain available inside evaluated APL.
 
-`basedpl.symbols` is the shared naming table used by Python functions and REPL and notebook completion. Each row is `(glyph, name, monad, dyad, aliases)`: the canonical glyph name, monadic and dyadic function names (empty when absent), and space-separated extra completion aliases. It includes operators and syntax glyphs too, with empty function names. Python replaces hyphens with underscores and appends an underscore to keywords (`not` → `not_`). The table is directly JSON-serializable for JavaScript consumers.
+`basedpl.symbols` is the shared naming table used by Python functions and REPL and notebook completion. Each row is `(glyph, name, monad, dyad, aliases, shortcut)`: the canonical glyph name, monadic and dyadic function names (empty when absent), and space-separated extra completion aliases. It includes operators and syntax glyphs too, with empty function names. Python replaces hyphens with underscores and appends an underscore to keywords (`not` → `not_`). `shortcut` is the REPL's formatted Alt-key suffix, derived from `keyboard.json`: `" h"` for Alt-h, `" Sa"` for Alt-Shift-a, or `""` when absent. The table is directly JSON-serializable for JavaScript consumers.
 
 | Python | APL |
 |---|---|

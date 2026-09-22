@@ -1,5 +1,5 @@
 //! Glyph completion and terminal input. Source execution never rewrites aliases.
-use crate::symbols::SYMBOLS;
+use crate::symbols::{alt_keys, chord, SYMBOLS};
 use rustyline::{
     completion::{Completer, Pair},
     highlight::Highlighter,
@@ -11,25 +11,9 @@ use rustyline::{
 };
 use std::{
     borrow::Cow,
-    collections::HashMap,
     ops::Range,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex},
 };
-
-// Keys are US characters after Shift but before Alt. Browser adapters share this resource.
-fn alt_keys() -> &'static HashMap<char, char> {
-    static KEYS: OnceLock<HashMap<char, char>> = OnceLock::new();
-    KEYS.get_or_init(|| serde_json::from_str(include_str!("../python/basedpl/keyboard.json")).expect("valid glyph keyboard"))
-}
-
-// The Alt chord's key on a US layout, shown beside each listed name: ` a`, or ` Sa` with Shift.
-fn chord(glyph: &str) -> String {
-    const SHIFTED: &str = "~!@#$%^&*()_+{}|:\"<>?";
-    const PLAIN: &str = "`1234567890-=[]\\;',./";
-    let Some((&key, _)) = alt_keys().iter().find(|&(_, &g)| glyph.chars().eq([g])) else { return String::new() };
-    let base = SHIFTED.find(key).map_or(key.to_ascii_lowercase(), |i| PLAIN.as_bytes()[i] as char);
-    format!(" {}{base}", if base == key { "" } else { "S" })
-}
 
 fn label((glyph, name): &(&str, &str)) -> String { format!("{glyph} {name}{}", chord(glyph)) }
 

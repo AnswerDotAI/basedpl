@@ -45,6 +45,13 @@ f←{⎕←⍺ ⋄ ⍺+⍵} ⋄ f/[2 3]0 2 2⍴0
 
 ⍝⍝ Axis keys
 
+⍝ axis-description-single — A one-position description labels the existing axis without enclosing its values
+('row':'only'):,7   ⍝ 'row':[0]'only':[1],7
+
+⍝ axis-description-collision — Axis descriptions cannot duplicate a surviving axis name
+('city':'Jan' 'Feb' 'Mar'):[2]('city' ⋄ 2):[0]2 3⍴0
+⍝ error: DOMAIN ERROR
+
 ⍝ axis-colon — Colon binds as a function; literal separators and dfn guards retain their meanings
 f←: ⋄ a←'n' f 5
 g←{⍵<0:-⍵ ⋄ +/(:('n':⍵))}
@@ -4286,4 +4293,3 @@ t←1(2(,4)(,5))(,3)
 ⍬{⍺,↑⍵}ravt{1↓⍵}t
 ⍝ =>
 4 5 2 3 1
-

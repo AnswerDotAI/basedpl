@@ -71,21 +71,27 @@ fn names(value: &Value) -> Result<Vec<Arc<str>>, ErrorKind> {
 }
 
 pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) -> Result<Value, ErrorKind> {
-    let lists = match names(keys) {
-        Ok(names) => vec![names],
-        Err(_) if !keys.is_atom() && keys.shape().len() == 1 => keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()?,
-        Err(k) => return Err(k),
+    if keys.has_keys() && keys.shape().len() != 1 { return Err(ErrorKind::Rank); }
+    let axis_names = keys.keys(0);
+    let lists = if axis_names.is_some() { keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()? } else {
+        match names(keys) {
+            Ok(names) => vec![names],
+            Err(_) if !keys.is_atom() && keys.shape().len() == 1 => keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()?,
+            Err(k) => return Err(k),
+        }
     };
-    if axes.is_none() && lists.len() == 1 && lists[0].len() == 1 { return vector(lists[0].clone(), vec![values.clone()]); }
+    if axis_names.is_none() && axes.is_none() && lists.len() == 1 && lists[0].len() == 1 { return vector(lists[0].clone(), vec![values.clone()]); }
     let default: Vec<_> = (0..lists.len()).collect();
     let axes = axes.unwrap_or(&default);
     if axes.len() != lists.len() { return Err(ErrorKind::Length); }
     let mut result = (0..values.shape().len()).map(|a| values.keys(a).cloned()).collect::<Vec<_>>();
-    for (&axis, names) in axes.iter().zip(lists) {
+    let mut result_names = (0..values.shape().len()).map(|a| values.axis_name(a).cloned()).collect::<Vec<_>>();
+    for (i, (&axis, names)) in axes.iter().zip(lists).enumerate() {
         let slot = result.get_mut(axis).ok_or(ErrorKind::Rank)?;
         *slot = Some(Keys::new(names)?);
+        if let Some(names) = axis_names { result_names[axis] = Some(names.names()[i].clone()); }
     }
-    values.clone().with_keys(result)
+    values.clone().with_keys(result)?.with_axis_names(result_names)
 }
 
 pub(crate) fn remove(value: &Value, axes: Option<&[usize]>) -> Result<Value, ErrorKind> {
