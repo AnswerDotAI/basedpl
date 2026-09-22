@@ -10,17 +10,56 @@ pub enum Value {
     Function(crate::Function),
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct Layout { shape: Vec<usize>, keys: Vec<Option<Arc<Keys>>> }
+impl From<Vec<usize>> for Layout { fn from(shape: Vec<usize>) -> Self { Self { shape, keys: vec![] } } }
+impl Layout {
+    pub fn shape(&self) -> &[usize] { &self.shape }
+    pub fn axis_keys(&self) -> &[Option<Arc<Keys>>] { &self.keys }
+    pub fn keys(&self, axis: usize) -> Option<&Arc<Keys>> { self.keys.get(axis).and_then(Option::as_ref) }
+    pub fn with_keys(mut self, keys: Vec<Option<Arc<Keys>>>) -> Result<Self, ErrorKind> {
+        if !keys.is_empty() && keys.len() != self.shape.len() { return Err(ErrorKind::Rank); }
+        if keys.iter().zip(&self.shape).any(|(k, &n)| k.as_ref().is_some_and(|k| k.names().len() != n)) { return Err(ErrorKind::Length); }
+        self.keys = if keys.iter().all(Option::is_none) { vec![] } else { keys };
+        Ok(self)
+    }
+    pub fn axes(&self, axes: impl IntoIterator<Item = usize>) -> Self {
+        let (shape, keys): (Vec<_>, Vec<_>) = axes.into_iter().map(|a| (self.shape[a], self.keys(a).cloned())).unzip();
+        Self::from(shape).with_keys(keys).unwrap()
+    }
+    pub fn concat(&self, other: &Self) -> Self {
+        let shape = [self.shape(), other.shape()].concat();
+        let keys = (0..self.shape.len()).map(|a| self.keys(a).cloned()).chain((0..other.shape.len()).map(|a| other.keys(a).cloned())).collect();
+        Self::from(shape).with_keys(keys).unwrap()
+    }
+    pub fn collect(&self, data: Vec<Value>, prototype: Value) -> Result<Value, ErrorKind> {
+        Value::from_parts(self.shape.clone(), data, prototype)?.with_layout(self.clone())
+    }
+    pub fn replace(&self, axes: std::ops::Range<usize>, other: &Self) -> Self {
+        self.axes(0..axes.start).concat(other).concat(&self.axes(axes.end..self.shape.len()))
+    }
+    pub fn select(&self, axis: usize, positions: impl ExactSizeIterator<Item = Option<usize>>) -> Result<Self, ErrorKind> {
+        let mut selected = Self::from(vec![positions.len()]);
+        if let Some(keys) = self.keys(axis) {
+            let indices = positions.collect::<Option<Vec<_>>>().ok_or(ErrorKind::Domain)?;
+            selected = selected.with_keys(vec![Some(keys.select(indices)?)])?;
+        }
+        Ok(self.replace(axis..axis + 1, &selected))
+    }
+    pub fn assemble(&self, cells: &[Value], empty_cell: &Value) -> Result<Value, ErrorKind> { Value::assemble_layout(self, cells, empty_cell) }
+}
+
 // A direct application returns its value; an array frame collects mapped values.
 #[derive(Clone, Debug)]
-pub(crate) enum Frame { Direct, Array(Vec<usize>) }
+pub(crate) enum Frame { Direct, Array(Layout) }
 impl Frame {
-    pub fn of(value: &Value) -> Self { if value.is_atom() { Self::Direct } else { Self::Array(value.shape().to_vec()) } }
-    pub fn shape(&self) -> &[usize] { match self { Self::Direct => &[], Self::Array(shape) => shape } }
+    pub fn of(value: &Value) -> Self { if value.is_atom() { Self::Direct } else { Self::Array(value.layout().clone()) } }
+    pub fn shape(&self) -> &[usize] { match self { Self::Direct => &[], Self::Array(layout) => layout.shape() } }
     pub fn collect(self, mut values: Vec<Value>, prototype: Value) -> Result<Value, ErrorKind> {
         match self {
             Self::Direct if values.len() == 1 => Ok(values.pop().unwrap()),
             Self::Direct => Err(ErrorKind::Length),
-            Self::Array(shape) => Value::from_parts(shape, values, prototype),
+            Self::Array(layout) => layout.collect(values, prototype),
         }
     }
 }
@@ -34,34 +73,41 @@ pub(crate) struct Cells<'a> {
 }
 impl Cells<'_> {
     pub fn frame(&self) -> &[usize] { &self.array.shape()[..self.split] }
+    pub fn frame_layout(&self) -> Layout { self.array.layout().axes(0..self.split) }
+    pub fn cell_layout(&self) -> Layout { self.array.layout().axes(self.split..self.array.shape().len()) }
     pub fn shape(&self) -> &[usize] { &self.array.shape()[self.split..] }
     pub fn len(&self) -> usize { self.count }
     pub fn get(&self, i: usize) -> Result<Value, ErrorKind> {
         let range = i * self.size..(i + 1) * self.size;
         let shape = self.shape().to_vec();
-        match self.array.storage() {
+        let result = match self.array.storage() {
             Some(Storage::Float(data)) => Value::floats(shape, data[range].to_vec()),
             Some(Storage::Integer(data)) => Value::integers(shape, data[range].to_vec()),
             _ => Value::from_parts(shape, self.array.items(range).collect(), self.array.prototype()),
-        }
+        }?;
+        result.with_layout(self.cell_layout())
     }
     pub fn prototype(&self) -> Result<Value, ErrorKind> {
         let len = generated_len(self.shape())?;
-        Value::from_parts(self.shape().to_vec(), vec![self.array.prototype().clone(); len], self.array.prototype().clone())
+        self.cell_layout().collect(vec![self.array.prototype(); len], self.array.prototype())
+    }
+    pub fn framed(&self) -> Result<Value, ErrorKind> {
+        let cell = |value: Value| if self.shape().is_empty() { value.at(0) } else { value };
+        let values = (0..self.len()).map(|i| self.get(i).map(cell)).collect::<Result<_, _>>()?;
+        self.frame_layout().collect(values, cell(self.prototype()?))
     }
     pub fn collect(&self) -> Result<Vec<Value>, ErrorKind> { (0..self.len()).map(|i| self.get(i)).collect() }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ArrayData {
-    shape: Vec<usize>,
+    layout: Layout,
     data: Storage,
     prototype: Value,
     depth: usize,
     exact: Option<bool>,
     functions: bool,
     environment: Option<usize>,
-    keys: Option<Arc<Keys>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -154,7 +200,7 @@ impl Value {
         let functions = data.iter().any(Value::has_functions);
         let environment = data.iter().filter_map(Value::environment).max();
         let data = Storage::compact(data);
-        Ok(Self::Array(Arc::new(ArrayData { shape, data, prototype, depth, exact, functions, environment, keys: None })))
+        Ok(Self::Array(Arc::new(ArrayData { layout: shape.into(), data, prototype, depth, exact, functions, environment })))
     }
 
     pub fn floats(shape: Vec<usize>, mut data: Vec<f64>) -> Result<Self, ErrorKind> {
@@ -162,28 +208,26 @@ impl Value {
         if data.iter().any(|n| n.is_nan()) { return Err(ErrorKind::Domain); }
         for n in &mut data { if *n == 0.0 { *n = 0.0; } }
         Ok(Self::Array(Arc::new(ArrayData {
-            shape,
+            layout: shape.into(),
             data: Storage::Float(data),
             prototype: Value::Number(0.0.try_into().unwrap()),
             depth: 0,
             exact: Some(false),
             functions: false,
             environment: None,
-            keys: None,
         })))
     }
 
     pub fn integers(shape: Vec<usize>, data: Vec<i64>) -> Result<Self, ErrorKind> {
         if element_count(&shape)? != data.len() { return Err(ErrorKind::Length); }
         Ok(Self::Array(Arc::new(ArrayData {
-            shape,
+            layout: shape.into(),
             data: Storage::Integer(data),
             prototype: Value::Number(Number::from_integer(0)),
             depth: 0,
             exact: Some(true),
             functions: false,
             environment: None,
-            keys: None,
         })))
     }
     pub fn is_exact(&self) -> bool { self.exact_domain() == Some(true) }
@@ -202,13 +246,13 @@ impl Value {
             Value::Number(n) if n.as_float().is_some() => Storage::Float(Vec::new()),
             _ => Storage::Mixed(Vec::new()),
         };
-        Ok(Self::Array(Arc::new(ArrayData { shape, data, prototype, depth, exact, functions, environment, keys: None })))
+        Ok(Self::Array(Arc::new(ArrayData { layout: shape.into(), data, prototype, depth, exact, functions, environment })))
     }
 
     pub fn scalar(n: impl TryInto<Number>) -> Result<Self, ErrorKind> { Ok(Self::Number(n.try_into().map_err(|_| ErrorKind::Domain)?)) }
     pub fn is_scalar(&self) -> bool { self.shape().is_empty() }
     pub fn is_singleton(&self) -> bool { self.len() == 1 }
-    pub fn shape(&self) -> &[usize] { match self { Self::Array(a) => &a.shape, _ => &[] } }
+    pub fn shape(&self) -> &[usize] { match self { Self::Array(a) => &a.layout.shape, _ => &[] } }
     pub fn len(&self) -> usize {
         match self.storage() {
             Some(Storage::Integer(v)) => v.len(),
@@ -241,36 +285,43 @@ impl Value {
 
     pub(crate) fn with_shape(&self, shape: Vec<usize>) -> Result<Self, ErrorKind> {
         if element_count(&shape)? != self.len() { return Err(ErrorKind::Length); }
+        if shape == self.shape() && !self.is_atom() { return Ok(self.clone()); }
         let Some(data) = self.storage() else { return Self::new(shape, vec![self.clone()]); };
         Ok(Self::Array(Arc::new(ArrayData {
-            shape,
+            layout: shape.into(),
             data: data.clone(),
             prototype: self.prototype().clone(),
             depth: self.depth() - 1,
             exact: self.exact_domain(),
             functions: self.has_functions(),
             environment: self.environment(),
-            keys: self.keys().cloned(),
         })))
     }
 
-    pub fn keys(&self) -> Option<&Arc<Keys>> { match self { Self::Array(a) => a.keys.as_ref(), _ => None } }
-    /// Name every element. Atoms have no element positions to name.
-    pub(crate) fn keyed(self, keys: Arc<Keys>) -> Result<Self, ErrorKind> {
-        if keys.names().len() != self.len() { return Err(ErrorKind::Length); }
-        let Self::Array(a) = self else { return Err(ErrorKind::Domain); };
-        let mut a = Arc::unwrap_or_clone(a);
-        a.keys = Some(keys);
-        Ok(Self::Array(Arc::new(a)))
+    pub fn axis_keys(&self) -> &[Option<Arc<Keys>>] { self.layout().axis_keys() }
+    pub fn keys(&self, axis: usize) -> Option<&Arc<Keys>> { self.layout().keys(axis) }
+    pub fn has_keys(&self) -> bool { !self.axis_keys().is_empty() }
+    pub(crate) fn layout(&self) -> &Layout {
+        static SCALAR: Layout = Layout { shape: vec![], keys: vec![] };
+        match self { Self::Array(a) => &a.layout, _ => &SCALAR }
+    }
+    pub(crate) fn with_layout(self, layout: Layout) -> Result<Self, ErrorKind> {
+        if layout.shape() != self.shape() { return Err(ErrorKind::Length); }
+        if &layout == self.layout() { return Ok(self); }
+        let Self::Array(mut a) = self else { return Err(ErrorKind::Domain); };
+        Arc::make_mut(&mut a).layout = layout;
+        Ok(Self::Array(a))
+    }
+    pub(crate) fn with_keys(self, keys: Vec<Option<Arc<Keys>>>) -> Result<Self, ErrorKind> {
+        let layout = self.layout().clone().with_keys(keys)?;
+        self.with_layout(layout)
     }
     /// The ordinary array of values.
     pub(crate) fn unkeyed(&self) -> Self {
         let Self::Array(a) = self else { return self.clone(); };
-        if a.keys.is_none() { return self.clone(); }
-        Self::Array(Arc::new(ArrayData { keys: None, ..ArrayData::clone(a) }))
+        if a.layout.keys.is_empty() { return self.clone(); }
+        Self::Array(Arc::new(ArrayData { layout: self.shape().to_vec().into(), ..ArrayData::clone(a) }))
     }
-    /// Keys carried from `source` when it has them.
-    pub(crate) fn keyed_like(self, source: &Self) -> Result<Self, ErrorKind> { match source.keys() { Some(k) => self.keyed(k.clone()), None => Ok(self) } }
 
     pub(crate) fn cells(&self, rank: usize) -> Result<Cells<'_>, ErrorKind> {
         let split = self.shape().len().checked_sub(rank).ok_or(ErrorKind::Rank)?;
@@ -297,7 +348,7 @@ impl Value {
             }
         }
         // A keyed array formats as its display text, so its keys stay visible.
-        let keyed = self.keys().is_some();
+        let keyed = self.has_keys();
         if !keyed && matches!(self.prototype(), Value::Character(_)) && self.elements().all(|e| matches!(e, Value::Character(_))) { return Ok(self.clone()); }
         let numeric = matches!(self.prototype(), Value::Number(_)) && self.elements().all(|e| matches!(e, Value::Number(_)));
         if !numeric && !keyed { return self.formatted_cells(); }
@@ -412,6 +463,57 @@ impl Value {
         Self::from_parts(shape, lines.into_iter().flatten().map(Value::Character).collect(), Value::Character(' '))
     }
 
+    fn fmt_labelled(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let rank = self.shape().len();
+        let (rows, cols) = (self.shape()[rank - 2], self.shape()[rank - 1]);
+        let pages: usize = self.shape()[..rank - 2].iter().product();
+        let label = |axis, i: usize| self.keys(axis).map_or_else(|| (i + 1).to_string(), |k| k.names()[i].to_string());
+        for page in 0..pages {
+            if page > 0 { writeln!(f, "\n")?; }
+            if rank > 2 {
+                let mut rest = page;
+                let mut coords = Vec::new();
+                for axis in (0..rank - 2).rev() {
+                    coords.push(label(axis, rest % self.shape()[axis]));
+                    rest /= self.shape()[axis];
+                }
+                coords.reverse();
+                writeln!(f, "[{};…]", coords.join(";"))?;
+            }
+            let mut grid = Vec::new();
+            if self.keys(rank - 1).is_some() {
+                let mut header = vec![String::new()];
+                header.extend((0..cols).map(|j| label(rank - 1, j)));
+                grid.push(header);
+            }
+            for i in 0..rows {
+                let mut row = vec![if self.keys(rank - 2).is_some() { label(rank - 2, i) } else { String::new() }];
+                row.extend((0..cols).map(|j| self.at((page * rows + i) * cols + j).to_string()));
+                grid.push(row);
+            }
+            let mut widths = vec![0; cols + 1];
+            for row in &grid {
+                for (j, text) in row.iter().enumerate() { widths[j] = widths[j].max(text.lines().map(UnicodeWidthStr::width).max().unwrap_or(0)); }
+            }
+            for (i, row) in grid.iter().enumerate() {
+                if i > 0 { writeln!(f)?; }
+                let height = row.iter().map(|s| s.lines().count()).max().unwrap_or(1).max(1);
+                for line in 0..height {
+                    if line > 0 { writeln!(f)?; }
+                    let mut first = true;
+                    for (j, text) in row.iter().enumerate() {
+                        if j == 0 && widths[0] == 0 { continue; }
+                        if !first { f.write_str(" ")?; }
+                        first = false;
+                        let text = text.lines().nth(line).unwrap_or("");
+                        write!(f, "{}{text}", " ".repeat(widths[j] - text.width()))?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn page_breaks(&self, row: usize) -> usize {
         if row == 0 { return 0; }
         let (mut period, mut count) = (1, 0);
@@ -451,18 +553,18 @@ impl Value {
 
     /// Assemble cells by trailing-axis agreement, padding each with its own fill.
     pub(crate) fn assemble(frame: &[usize], cells: &[Self], empty_cell: &Self) -> Result<Self, ErrorKind> {
-        if element_count(frame)? != cells.len() { return Err(ErrorKind::Length); }
-        if cells.is_empty() {
-            let shape = [frame, empty_cell.shape()].concat();
-            return Self::empty(shape, empty_cell.prototype().clone());
-        }
+        Layout::from(frame.to_vec()).assemble(cells, empty_cell)
+    }
+    fn assemble_layout(frame: &Layout, cells: &[Self], empty_cell: &Self) -> Result<Self, ErrorKind> {
+        if element_count(frame.shape())? != cells.len() { return Err(ErrorKind::Length); }
+        if cells.is_empty() { return frame.concat(empty_cell.layout()).collect(vec![], empty_cell.prototype()); }
         let rank = cells.iter().map(|a| a.shape().len()).max().unwrap();
         let mut cell_shape = vec![0; rank];
         for cell in cells {
             let pad = rank - cell.shape().len();
             for (axis, len) in cell_shape.iter_mut().enumerate() { *len = (*len).max(if axis < pad { 1 } else { cell.shape()[axis - pad] }); }
         }
-        let shape = [frame, &cell_shape].concat();
+        let shape = [frame.shape(), &cell_shape].concat();
         let len = generated_len(&shape)?;
         let cell_len = element_count(&cell_shape)?;
         let mut data = Vec::with_capacity(len);
@@ -481,7 +583,13 @@ impl Value {
                 data.push(if inside { cell.at(source) } else { cell.prototype().clone() });
             }
         }
-        Self::from_parts(shape, data, cells[0].prototype().clone())
+        let mut keys = (0..frame.shape.len()).map(|a| frame.keys(a).cloned()).collect::<Vec<_>>();
+        for axis in 0..rank {
+            let cell_keys = |cell: &Value| axis.checked_sub(rank - cell.shape().len()).and_then(|a| cell.keys(a)).cloned();
+            let first = cell_keys(&cells[0]);
+            keys.push(if cells.iter().all(|c| cell_keys(c) == first) { first } else { None });
+        }
+        Self::from_parts(shape, data, cells[0].prototype().clone())?.with_keys(keys)
     }
 
     fn fill_array(&self, filled: &mut HashMap<*const ArrayData, Value>) -> Self {
@@ -491,7 +599,7 @@ impl Value {
         let key = Arc::as_ptr(a);
         if let Some(a) = filled.get(&key) { return a.clone(); }
         let result = Self::Array(Arc::new(ArrayData {
-            shape: self.shape().to_vec(),
+            layout: a.layout.clone(),
             data: match &a.data {
                 Storage::Integer(v) => Storage::Integer(vec![0; v.len()]),
                 Storage::Float(v) => Storage::Float(vec![0.0; v.len()]),
@@ -502,7 +610,6 @@ impl Value {
             exact: a.exact,
             functions: a.functions,
             environment: a.environment,
-            keys: a.keys.clone(),
         }));
         filled.insert(key, result.clone());
         result
@@ -517,9 +624,9 @@ impl fmt::Display for Value {
             Self::Function(fun) => return write!(f, "⟨{}⟩", fun.apl()),
             _ => (),
         }
-        // Keyed arrays print as their constructor: each key with its value.
+        if self.has_keys() && self.shape().len() > 1 { return self.fmt_labelled(f); }
         let entries = self
-            .keys()
+            .keys(0)
             .map(|keys| keys.names().iter().zip(self.elements()).map(|(k, v)| format!("'{}':{}", k.replace('\'', "''"), v.literal())).collect::<Vec<_>>());
         if let Some(entries) = &entries {
             match self.shape().len() { 0 => return f.write_str(&entries[0]), 1 => return write!(f, "({})", entries.join(" ⋄ ")), _ => () }

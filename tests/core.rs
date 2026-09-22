@@ -46,10 +46,18 @@ fn language_examples() {
             let path = entry.unwrap().path();
             if path.extension().is_none_or(|ext| ext != "md") { continue; }
             let text = std::fs::read_to_string(&path).unwrap();
-            for link in text.split("](").skip(1) {
-                let target = link.split(')').next().unwrap().split('#').next().unwrap();
-                if !target.is_empty() && !target.contains("://") {
-                    assert!(path.parent().unwrap().join(target).exists(), "{}: missing {target}", path.display());
+            let mut fenced = false;
+            for line in text.lines() {
+                if line.starts_with("```") {
+                    fenced = !fenced;
+                    continue;
+                }
+                if fenced { continue; }
+                for link in line.split("](").skip(1) {
+                    let target = link.split(')').next().unwrap().split('#').next().unwrap();
+                    if !target.is_empty() && !target.contains("://") {
+                        assert!(path.parent().unwrap().join(target).exists(), "{}: missing {target}", path.display());
+                    }
                 }
             }
             let mut session = None;

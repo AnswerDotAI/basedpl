@@ -13,10 +13,11 @@ A shape vector generates an array of coordinate vectors.
 ⍳2 2               ⍝ 2 2⍴(1 1⋄ 1 2⋄ 2 1⋄ 2 2)
 ```
 
-On a [keyed array](../keyed.md), `⍳` returns the keys with the array's shape.
+`⍳[axis]Y` returns that axis's keys, or `1…length` on an unkeyed axis. Several axes return a vector of selector vectors.
 
 ```apl
-⍳('price':1 ⋄ 'qty':2) ⍝ 'price' 'qty'
+⍳[1]('price' 'qty':1 2) ⍝ 'price' 'qty'
+⍳[2]2 3⍴0          ⍝ 1x 2x 3x
 ```
 
 `X⍳Y` finds the first matching major cell in `X` for each cell of `Y`. Not found: `1+≢X`. Uses tolerant matching and returns exact positions.

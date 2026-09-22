@@ -75,7 +75,7 @@ fn case_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Resu
         };
         if a.is_atom() { return item(a.clone()); }
         let data = a.elements().map(item).collect::<Result<_, Error>>()?;
-        Value::from_parts(a.shape().to_vec(), data, item(a.prototype().clone())?).map_err(|k| span.error(k, "invalid case conversion"))
+        a.layout().collect(data, item(a.prototype())?).map_err(|k| span.error(k, "invalid case conversion"))
     }
     map(right, mode, span)
 }
@@ -140,5 +140,6 @@ fn unicode_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
     if encoding.is_none() && right.is_atom() { return Ok(data[0].clone()); }
     let shape = if encoding.is_some() { vec![data.len()] } else { right.shape().to_vec() };
     generated_len(&shape).map_err(|k| span.error(k, "Unicode result exceeds element limit"))?;
-    Value::from_parts(shape, data, if characters { integer(0) } else { Value::Character(' ') }).map_err(|k| span.error(k, "invalid Unicode result"))
+    let result = Value::from_parts(shape, data, if characters { integer(0) } else { Value::Character(' ') });
+    result.and_then(|a| if encoding.is_none() { a.with_layout(right.layout().clone()) } else { Ok(a) }).map_err(|k| span.error(k, "invalid Unicode result"))
 }

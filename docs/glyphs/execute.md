@@ -7,11 +7,12 @@
 x←7 ⋄ ⍎'x+1'       ⍝ 8
 ```
 
-`X⍎Y` runs no code. It looks up key `Y` in the keyed array `X`, exactly as `Y⊃X` does.
+`X⍎Y` selects `Y⊃X`, using numeric coordinates or axis keys.
 
 ```apl
-T←('a':10 ⋄ 'b':20)
-T⍎'b'              ⍝ 20
+T←'aa' 'bb':10 20
+T⍎'bb'             ⍝ 20
+10 20⍎2            ⍝ 20
 ```
 
 Assignments and explicit output take effect in the current session.

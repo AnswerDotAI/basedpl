@@ -20,7 +20,7 @@ cargo test --test reference slow_reference_cases -- --ignored --nocapture
 
 Normal reference cases have a two-second deadline. Slow cases have a 60-second deadline. Keep small correctness cases in the normal suite.
 
-To run one active case, set `BASEDPL_CASE` to its exact ID:
+To run active cases, set `BASEDPL_CASE` to an ID or ID prefix:
 
 ```bash
 BASEDPL_CASE=ngn:177 cargo test --test reference enabled_reference_cases -- --nocapture

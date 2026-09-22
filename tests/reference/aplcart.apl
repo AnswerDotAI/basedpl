@@ -15297,17 +15297,28 @@ t←5 3⍴1 1 10 1 2 20 2 1 30 1 1 5 2 2 40 ⋄ r c v←↓⍉t ⋄ (∪r){+/v/�
 •LOAD 'lib/dyalog.apl' ⋄ date(days 1970 1 1)+102549888000÷5184000
 2024 2 29 0 0 0 0
 
-⍝ aplcart/table.tsv:1895 — Convert namespace of column vectors into table (matrix with names in header row); Namespace used as a record of column vectors: adapted to a keyed vector built from the example's JSON object. `⎕VGET ¯2` name-value pairs become the key array `⍳⍵` and its values `(⍳⍵)⊃⍵`; Mix is `⊃` in bAsedPL
-T←('Age':'21' '32' ⋄ 'Name':'Bob' 'Sally' ⋄ 'Zipcode':'30102' '43001') ⋄ {(⍳⍵)⍪⍉⊃(⍳⍵)⊃⍵}T
+⍝ aplcart/table.tsv:1895 — Column record to header matrix: axis selectors replace namespace names; monadic colon extracts values
+T←'Age' 'Name' 'Zipcode':('21' '32' ⋄ 'Bob' 'Sally' ⋄ '30102' '43001') ⋄ {(⍳[1]⍵)⍪⍉⊃(:⍵)}T
 3 3⍴('Age') ('Name') ('Zipcode') ('21') ('Bob') ('30102') ('32') ('Sally') ('43001')
 
 ⍝ aplcart/table.tsv:2340 — Namespace Member; Dyalog 20 namespace syntax used as a record; Adapted to keyed arrays: keys are quoted strings, and a keyed result is shown through ordinary arrays because the structured `expected` format cannot express keys
 ns←('name':42) ⋄ ns.name   ⍝ 42
 
-⍝ aplcart/table.tsv:2678 — New empty namespace; Dyalog 20 namespace syntax used as a record; Adapted to keyed arrays: keys are quoted strings, and a keyed result is shown through ordinary arrays because the structured `expected` format cannot express keys
-≢()   ⍝ 0
+⍝ aplcart/table.tsv:2678 — Empty namespace-as-data becomes an empty keyed vector
+≢⍬:⍬   ⍝ 0
 
-⍝ aplcart/table.tsv:2948 — New namespace with members name1, name2, name3 and values X, Y, Z; Dyalog 20 namespace syntax used as a record; Adapted to keyed arrays: keys are quoted strings, and a keyed result is shown through ordinary arrays because the structured `expected` format cannot express keys
-R←('name1':1 ⋄ 'name2':'two' ⋄ 'name3':3 4) ⋄ K←⍳R ⋄ (K ⋄ K⊃R)
+⍝ aplcart/table.tsv:2948 — Namespace members as a keyed vector; inspect keys and values separately
+R←'name1' 'name2' 'name3':(1 ⋄ 'two' ⋄ 3 4) ⋄ (⍳[1]R ⋄ :R)
 (('name1') ('name2') ('name3')) (1 ('two') (3 4))
+
+⍝ aplcart/table.tsv:861 — Extract name-value pairs from namespaces Y; Namespace-as-data: axis selectors and values form ordinary name-value pairs; Independent concrete expectation
+R←'name' 'age':('Ann' ⋄ 20) ⋄ (⍳[1]R){⍺˘⍵}¨:R
+('name'˘'Ann' ⋄ 'age'˘20)
+
+⍝ aplcart/table.tsv:1527 — Convert vector of record namespaces into table (matrix with names in header row); Record vector to header matrix: explicit axis selectors and unkeying replace namespace introspection; Independent concrete expectation
+rows←(('age' 'name':(20 ⋄ 'Ann')) ⋄ ('age' 'name':(30 ⋄ 'Bob'))) ⋄ K←⍳[1]↑rows ⋄ K⍪⊃(:¨rows)
+3 2⍴('age' ⋄ 'name' ⋄ 20 ⋄ 'Ann' ⋄ 30 ⋄ 'Bob')
+
+⍝ aplcart/table.tsv:2249 — Apply f on each variable in each namespace in Y; Apply sum to every record value; monadic colon replaces namespace-value extraction; Independent concrete expectation
++/¨:('price' 'qty':(1 2 3 ⋄ 4 5 6))   ⍝ 6 15
 

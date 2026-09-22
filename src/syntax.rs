@@ -20,7 +20,6 @@ pub(crate) enum NodeKind {
     Group(Vec<Node>),
     Strand(Vec<Node>),
     ArrayLiteral { cells: Vec<Vec<Node>>, block: bool },
-    Keyed(Vec<(Vec<Node>, Vec<Node>)>),
     Selection(Vec<Vec<Node>>),
     Dfn(Arc<Definition>),
 }
@@ -39,7 +38,6 @@ fn definition_kind(nodes: &[Node]) -> DefinitionKind {
             NodeKind::Name(name) if name == "⍶" => DefinitionKind::MonadicOperator,
             NodeKind::Group(nodes) | NodeKind::Strand(nodes) => definition_kind(nodes),
             NodeKind::ArrayLiteral { cells, .. } => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
-            NodeKind::Keyed(entries) => entries.iter().flat_map(|(k, v)| [definition_kind(k), definition_kind(v)]).max().unwrap_or(DefinitionKind::Function),
             NodeKind::Selection(cells) => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
             NodeKind::Pipeline(stages) => stages.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
             _ => DefinitionKind::Function, // Nested definitions classify their own bodies.
@@ -321,11 +319,8 @@ impl Parser<'_> {
                         let kind = statements.iter().map(|s| definition_kind(&s.nodes)).max().unwrap_or(DefinitionKind::Function);
                         NodeKind::Dfn(Arc::new(Definition { body: Parsed { statements }, span: span.clone(), kind }))
                     } else if !separated && matches!(token.kind, TokenKind::BracketOpen) { NodeKind::Selection(cells) } else if cells.is_empty() {
-                        if !matches!(token.kind, TokenKind::Open) {
-                            return Err(ParseFailure::Invalid(span.error(ErrorKind::Unsupported, "empty brackets are not an array literal")));
-                        }
-                        NodeKind::Keyed(vec![])
-                    } else if let Some(entries) = entries(&mut cells)? { NodeKind::Keyed(entries) } else if separated {
+                        return Err(ParseFailure::Invalid(span.error(ErrorKind::Syntax, "empty grouping is not a value")));
+                    } else if separated {
                         NodeKind::ArrayLiteral { cells, block: matches!(token.kind, TokenKind::BracketOpen) }
                     } else if matches!(token.kind, TokenKind::Open) { NodeKind::Group(cells.pop().unwrap()) } else { unreachable!() };
                     kind
@@ -339,11 +334,7 @@ impl Parser<'_> {
                 TokenKind::Pipe => NodeKind::Pipe,
                 TokenKind::Output => NodeKind::Output,
                 TokenKind::Guard(error) => {
-                    let keyed = !*error && open.is_some_and(|o| matches!(o.kind, TokenKind::Open));
-                    if !keyed && !open.is_some_and(|o| matches!(o.kind, TokenKind::BraceOpen)) {
-                        return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "a colon belongs to a dfn guard or a parenthesised key")));
-                    }
-                    NodeKind::Guard(*error)
+                    if open.is_some_and(|o| matches!(o.kind, TokenKind::BraceOpen)) { NodeKind::Guard(*error) } else if !error { NodeKind::Function(Primitive::Keys) } else { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "error guards belong to dfns"))); }
                 }
                 TokenKind::Hybrid(h) => NodeKind::Hybrid(*h),
             };
@@ -364,22 +355,6 @@ impl Parser<'_> {
         if !nodes.is_empty() { pieces.push(nodes); }
         Ok((pieces.into_iter().map(pipelines).collect::<Result<_, _>>()?, separated))
     }
-}
-
-// Parenthesised `key:value` entries. Every cell has one colon, or none has.
-fn entries(cells: &mut Vec<Vec<Node>>) -> Result<Option<Vec<(Vec<Node>, Vec<Node>)>>, ParseFailure> {
-    let colon = |nodes: &[Node]| nodes.iter().position(|n| matches!(n.kind, NodeKind::Guard(_)));
-    if !cells.iter().any(|nodes| colon(nodes).is_some()) { return Ok(None); }
-    let mut entries = Vec::new();
-    for mut nodes in std::mem::take(cells) {
-        let invalid = |span: &Span| ParseFailure::Invalid(span.error(ErrorKind::Syntax, "each keyed entry needs key:value"));
-        let i = colon(&nodes).ok_or_else(|| invalid(&nodes[0].span))?;
-        let value = nodes.split_off(i + 1);
-        let guard = nodes.pop().unwrap();
-        if nodes.is_empty() || value.is_empty() || colon(&value).is_some() { return Err(invalid(&guard.span)); }
-        entries.push((nodes, value));
-    }
-    Ok(Some(entries))
 }
 
 // Assignment encloses the pipeline; guards separate independent expressions.
@@ -420,7 +395,6 @@ fn strand_item(kind: &NodeKind) -> bool {
             | NodeKind::Group(_)
             | NodeKind::Strand(_)
             | NodeKind::ArrayLiteral { .. }
-            | NodeKind::Keyed(_)
             | NodeKind::Dfn(_)
     )
 }

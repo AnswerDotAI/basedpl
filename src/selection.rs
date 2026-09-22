@@ -38,14 +38,14 @@ impl Labels {
         let prototype = if a.is_empty() {
             Self::prototype(&a.prototype(), &mut HashMap::new()).map_err(|k| span.error(k, "invalid selection prototype"))?
         } else { Value::Number(Number::from_integer(0)) };
-        Value::from_parts(a.shape().to_vec(), items, prototype).and_then(|labels| labels.keyed_like(a)).map_err(|k| span.error(k, "invalid selection labels"))
+        a.layout().collect(items, prototype).map_err(|k| span.error(k, "invalid selection labels"))
     }
     fn prototype(e: &Value, seen: &mut HashMap<usize, Value>) -> Result<Value, ErrorKind> {
         let a @ Value::Array(_) = e else { return Ok(Value::Number(Number::from_integer(0))); };
         if let Some(p) = seen.get(&a.storage_id()) { return Ok(p.clone()); }
         let items = a.elements().map(|e| Self::prototype(&e, seen)).collect::<Result<Vec<_>, _>>()?;
         let prototype = Self::prototype(&a.prototype(), seen)?;
-        let result = Value::from_parts(a.shape().to_vec(), items, prototype)?;
+        let result = a.layout().collect(items, prototype)?;
         seen.insert(a.storage_id(), result.clone());
         Ok(result)
     }
@@ -63,9 +63,14 @@ impl Labels {
         else { self.collect(selected, right, span, &mut paths, &mut values)?; }
         let shape = vec![paths.len()];
         let values = Value::from_parts(shape.clone(), values, right.prototype().clone()).map_err(|k| span.error(k, "invalid replacement"))?;
-        Ok((Selection { frame: Frame::Array(shape), paths }, values))
+        Ok((Selection { frame: Frame::Array(shape.into()), paths }, values))
     }
     fn collect(&self, selected: &Value, right: &Value, span: &Span, paths: &mut Vec<Vec<usize>>, values: &mut Vec<Value>) -> Result<(), Error> {
+        let aligned;
+        let right = if right.has_keys() && selected.has_keys() {
+            aligned = crate::keyed::reorder(right, selected.axis_keys(), true).map_err(|k| span.error(k, "replacement does not supply selected keys"))?;
+            &aligned
+        } else { right };
         if !right.is_singleton() && right.shape() != selected.shape() {
             return Err(span.error(ErrorKind::Length, "replacement shape does not match selection"));
         }

@@ -37,9 +37,15 @@ fn import_array(raw: &Bound<'_, PyDict>, depth: usize) -> PyResult<Value> {
     let data = field("data")?.try_iter()?.map(|o| element(o?)).collect::<PyResult<Vec<_>>>()?;
     let prototype = element(field("prototype")?)?;
     let result = Value::from_parts(shape, data, prototype).map_err(|k| PyValueError::new_err(k.to_string()))?;
-    let Some(keys) = raw.get_item("keys")? else { return Ok(result); };
-    let names = keys.extract::<Vec<String>>()?.into_iter().map(Into::into).collect();
-    crate::keyed::Keys::new(names).and_then(|k| result.keyed(k)).map_err(|k| PyValueError::new_err(k.to_string()))
+    let Some(keys) = raw.get_item("axis_keys")? else { return Ok(result); };
+    let keys = keys
+        .extract::<Vec<Option<Vec<String>>>>()?
+        .into_iter()
+        .map(|k| k.map(|names| crate::keyed::Keys::new(names.into_iter().map(Into::into).collect())).transpose())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|k| PyValueError::new_err(k.to_string()))?;
+    if keys.len() != result.shape().len() { return Err(PyValueError::new_err("axis_keys must have one entry per axis")); }
+    result.with_keys(keys).map_err(|k| PyValueError::new_err(k.to_string()))
 }
 
 fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
@@ -65,7 +71,12 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
     result.set_item("shape", a.shape())?;
     result.set_item("data", data)?;
     result.set_item("prototype", element(py, &a.prototype())?)?;
-    if let Some(keys) = a.keys() { result.set_item("keys", keys.names().iter().map(|k| k.to_string()).collect::<Vec<_>>())?; }
+    if a.has_keys() {
+        result.set_item(
+            "axis_keys",
+            a.axis_keys().iter().map(|k| k.as_ref().map(|k| k.names().iter().map(|k| k.to_string()).collect::<Vec<_>>())).collect::<Vec<_>>(),
+        )?;
+    }
     Ok(result.unbind())
 }
 
@@ -78,6 +89,19 @@ impl PyArray {
     fn new(raw: &Bound<'_, PyDict>) -> PyResult<Self> { Ok(Self { inner: import_array(raw, 0)? }) }
     #[getter]
     fn shape(&self) -> Vec<usize> { self.inner.shape().to_vec() }
+    #[getter]
+    fn axis_keys(&self) -> Vec<Option<Vec<String>>> {
+        (0..self.inner.shape().len()).map(|a| self.inner.keys(a).map(|k| k.names().iter().map(|s| s.to_string()).collect())).collect()
+    }
+    fn with_axis_keys(&self, keys: Vec<Option<Vec<String>>>) -> PyResult<Self> {
+        if keys.len() != self.inner.shape().len() { return Err(PyValueError::new_err("axis_keys must have one entry per axis")); }
+        let keys = keys
+            .into_iter()
+            .map(|k| k.map(|names| crate::keyed::Keys::new(names.into_iter().map(Into::into).collect())).transpose())
+            .collect::<Result<_, _>>()
+            .map_err(|k| PyValueError::new_err(k.to_string()))?;
+        Ok(Self { inner: self.inner.clone().with_keys(keys).map_err(|k| PyValueError::new_err(k.to_string()))? })
+    }
     #[getter]
     fn is_atom(&self) -> bool { self.inner.is_atom() }
     #[getter]

@@ -22,12 +22,12 @@ Array-valued coordinate fields pair using leading-axis agreement:
 (1 3)˘(2 4)⊃3 4⍴⍳12 ⍝ 2 12
 ```
 
-On a [keyed array](../keyed.md), a string picks the value stored under that key. An array of strings returns an ordinary array of values with the same shape.
+Coordinate fields may use strings on [keyed axes](../keyed.md).
 
 ```apl
-T←('price':1 2 3 ⋄ 'qty':4 5 6)
+T←'price' 'qty':(1 2 3 ⋄ 4 5 6)
 'qty'⊃T            ⍝ 4 5 6
-('qty' 'price')⊃T  ⍝ (4 5 6 ⋄ 1 2 3)
+(⊂'qty' 'price')⊃T ⍝ (4 5 6 ⋄ 1 2 3)
 ```
 
 On Mix, axes place cell dimensions among frame dimensions; fractional positions insert before an axis. INDEX: position outside the array. Index 1 on an empty axis gives fill, as does [First](take.md).

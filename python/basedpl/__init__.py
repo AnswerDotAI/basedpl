@@ -24,10 +24,11 @@ def _value(raw, as_array=False, session=None):
         if not as_array: return result
         import numpy as np
         return np.array(result, dtype=_dtype([result]))
+    if not as_array and 'axis_keys' in raw and len(raw['shape']) > 1: return _dataframe(raw, session)
     shape, data = tuple(raw['shape']), [item(o) for o in raw['data']]
     items = raw['data'] or [raw['prototype']]
     nested = any(isinstance(o, dict) and 'shape' in o for o in items)
-    if not as_array and 'keys' in raw: return dict(zip(raw['keys'], data))
+    if not as_array and 'axis_keys' in raw: return dict(zip(raw['axis_keys'][0], data))
     if not as_array:
         if len(shape) == 1 and all(isinstance(o, str) for o in items): return ''.join(data)
     import numpy as np
@@ -36,6 +37,17 @@ def _value(raw, as_array=False, session=None):
     result = np.empty(len(data), dtype=object)
     for i,o in enumerate(data): result[i] = o
     return result.reshape(shape)
+
+def _dataframe(raw, session=None):
+    try: import pandas as pd
+    except ImportError: raise ImportError('DataFrame conversion requires pandas: pip install "basedpl[pandas]"') from None
+    data = _value(raw, as_array=True, session=session)
+    shape = data.shape
+    keys = raw.get('axis_keys', [None] * len(shape))
+    labels = [list(range(1, n+1)) if k is None else k for n,k in zip(shape, keys)]
+    if len(shape) < 2: return pd.DataFrame(data.reshape(-1, 1), index=labels[0] if labels else [1], columns=[1])
+    index = labels[0] if len(shape) == 2 else pd.MultiIndex.from_product(labels[:-1])
+    return pd.DataFrame(data.reshape(math.prod(shape[:-1]), shape[-1]), index=index, columns=labels[-1])
 
 def _element(value, seen):
     np = sys.modules.get('numpy')
@@ -69,7 +81,7 @@ def _array(value, seen=None):
     if isinstance(value, dict):
         if not all(isinstance(k, str) for k in value): raise TypeError('keyed arrays need string keys')
         seen.add(id(value))
-        try: return _Array(dict(shape=[len(value)], data=[_element(o, seen) for o in value.values()], prototype=prototype, keys=list(value)))
+        try: return _Array(dict(shape=[len(value)], data=[_element(o, seen) for o in value.values()], prototype=prototype, axis_keys=[list(value)]))
         finally: seen.remove(id(value))
     if isinstance(value, str): return _Array(dict(shape=[len(value)], data=list(value), prototype=' '))
     if np is not None and isinstance(value, np.ndarray):
@@ -127,9 +139,9 @@ def _array_repr(raw):
     def cells(dims):
         if not dims: return item(next(data))
         return '[' + ', '.join(cells(dims[1:]) for _ in range(dims[0])) + ']'
-    if 'keys' in raw:
-        entries = '{' + ', '.join(f'{k!r}: {item(o)}' for k,o in zip(raw['keys'], raw['data'])) + '}'
-        return entries if len(shape) == 1 else f'Array({entries}, shape={tuple(shape)})'
+    if 'axis_keys' in raw:
+        if len(shape) == 1: return '{' + ', '.join(f'{k!r}: {item(o)}' for k,o in zip(raw['axis_keys'][0], raw['data'])) + '}'
+        return f'Array({cells(shape)}, axis_keys={raw["axis_keys"]!r})'
     if math.prod(shape) == 0: return f'Array([], shape={tuple(shape)})'
     return cells(shape)
 
@@ -157,17 +169,22 @@ def _context(*values):
 class Array(_Operators):
     "An immutable native APL value. Conversion to Python or NumPy makes a copy."
     __slots__ = ('_inner', '_session')
-    def __init__(self, value):
+    def __init__(self, value, *, axis_keys=None):
         self._inner = _array(value)
+        if axis_keys is not None: self._inner = self._inner.with_axis_keys(axis_keys)
         self._session = _context(value) if self._inner.needs_session else None
     @property
     def shape(self): return tuple(self._inner.shape)
+    @property
+    def axis_keys(self): return tuple(None if k is None else tuple(k) for k in self._inner.axis_keys)
     @property
     def is_atom(self): return self._inner.is_atom
     @property
     def py(self): return _value(self._inner.parts(), session=self._session)
     @property
     def np(self): return _value(self._inner.parts(), as_array=True, session=self._session)
+    @property
+    def df(self): return _dataframe(self._inner.parts(), self._session)
     @property
     def apl(self): return repr(self._inner)
     def _scalar(self): return _value(self._inner.scalar(), session=self._session)

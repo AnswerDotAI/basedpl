@@ -23,7 +23,10 @@ fn element(e: &Value) -> JsonValue {
 fn array(a: &Value) -> JsonValue {
     if a.is_atom() { return element(a); }
     let mut encoded = json!({"shape": a.shape(), "data": a.elements().map(|e| element(&e)).collect::<Vec<_>>(), "prototype": element(&a.prototype())});
-    if let Some(keys) = a.keys() { encoded["keys"] = json!(keys.names().iter().map(|k| k.as_ref()).collect::<Vec<&str>>()); }
+    if a.has_keys() {
+        encoded["axis_keys"] =
+            json!(a.axis_keys().iter().map(|k| k.as_ref().map(|k| k.names().iter().map(|k| k.as_ref()).collect::<Vec<_>>())).collect::<Vec<_>>());
+    }
     encoded
 }
 
@@ -73,14 +76,24 @@ fn import_array(value: &JsonValue, depth: usize) -> Result<Value, String> {
     let data = value["data"].as_array().ok_or("expected array data")?.iter().map(|v| import_element(v, depth)).collect::<Result<Vec<_>, _>>()?;
     let prototype = import_element(&value["prototype"], depth)?;
     let result = Value::from_parts(shape, data, prototype).map_err(|k| k.to_string())?;
-    let Some(keys) = value.get("keys") else { return Ok(result); };
-    let names = keys
+    let Some(keys) = value.get("axis_keys") else { return Ok(result); };
+    let keys = keys
         .as_array()
-        .ok_or("expected an array of keys")?
+        .ok_or("expected axis key lists")?
         .iter()
-        .map(|k| k.as_str().map(Into::into).ok_or("keys must be strings"))
-        .collect::<Result<_, _>>()?;
-    crate::keyed::Keys::new(names).and_then(|k| result.keyed(k)).map_err(|_| "keys must be unique, one per element".into())
+        .map(|k| {
+            if k.is_null() { return Ok(None); }
+            let names = k
+                .as_array()
+                .ok_or("expected axis key list or null")?
+                .iter()
+                .map(|k| k.as_str().map(Into::into).ok_or("keys must be strings"))
+                .collect::<Result<_, _>>()?;
+            crate::keyed::Keys::new(names).map(Some).map_err(|_| "axis keys must be unique")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if keys.len() != result.shape().len() { return Err("axis_keys must have one entry per axis".into()); }
+    result.with_keys(keys).map_err(|_| "key lists must match array axes".into())
 }
 
 /// Worker operations use the same array encoding in both directions.

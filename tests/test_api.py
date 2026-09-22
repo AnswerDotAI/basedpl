@@ -57,22 +57,37 @@ def test_array_surface():
 
 def test_keyed_arrays():
     with Session() as apl:
-        t = apl("('b':1 2 ⋄ 'a':('x':'hi' ⋄ 'n':3))")
+        t = apl("('b':1 2),('a':('x':'hi'),('n':3))")
         assert list(t.py) == ['b', 'a'] and t.py['a'] == dict(x='hi', n=3) and t.shape == (2,)
         np.testing.assert_array_equal(t.py['b'], [1, 2])
         assert repr(t).startswith("{'b': ")
-        m = apl("((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4)")
-        assert m.shape == (2, 2) and m.py == dict(nw=1, ne=2, sw=3, se=4)
-        np.testing.assert_array_equal(m.np, [[1, 2], [3, 4]])
         d = dict(z=1, y=dict(k=[1, 2, 3]), e={})
-        assert list(apl('⍳t', t=d).py) == ['z', 'y', 'e'] and apl('(t.y.k[2])+t.e≡()', t=d).py == 3
+        assert list(apl('⍳[1]t', t=d).py) == ['z', 'y', 'e'] and apl('(t.y.k[2])+t.e≡⍬:⍬', t=d).py == 3
         assert (Array(dict(a=1, b=2)) + Array(dict(b=10))).py == dict(a=1, b=12)
         with pytest.raises(TypeError): Array({1: 2})
         k = Array(dict(qty=4, price=1, tax=2))
-        assert k['price'].py == dict(price=1) and k['price'].shape == () and k[2].py == dict(price=1)
+        assert k['price'].py == 1 and k['price'].is_atom and k[2].py == 1
         assert list(k[['tax', 'qty']].py) == ['tax', 'qty']
+        assert k.axis_keys == (('qty', 'price', 'tax'),)
         with pytest.raises(AplError, match='INDEX'): k['missing']
         with pytest.raises(AplError, match='DOMAIN'): k[['qty', 'qty']]
+
+def test_axis_keys_dataframe():
+    import pandas as pd
+    m = Array([[10, 2], [20, 4]], axis_keys=[['alice', 'bob'], ['price', 'qty']])
+    assert m.axis_keys == (('alice', 'bob'), ('price', 'qty'))
+    assert m['alice'].py == dict(price=10, qty=2)
+    assert m[:, 'qty'].py == dict(alice=2, bob=4)
+    pd.testing.assert_frame_equal(m.py, pd.DataFrame([[10, 2], [20, 4]], index=['alice', 'bob'], columns=['price', 'qty']))
+    np.testing.assert_array_equal(m.np, [[10, 2], [20, 4]])
+    h = Array(np.arange(8).reshape(2, 2, 2), axis_keys=[['aa', 'bb'], None, ['xx', 'yy']])
+    pd.testing.assert_frame_equal(h.py, pd.DataFrame(np.arange(8).reshape(4, 2),
+        index=pd.MultiIndex.from_product([['aa', 'bb'], [1, 2]]), columns=['xx', 'yy']))
+    pd.testing.assert_frame_equal(Array(3).df, pd.DataFrame([[3]], index=[1], columns=[1]))
+    pd.testing.assert_frame_equal(Array([3, 4]).df, pd.DataFrame([3, 4], index=[1, 2], columns=[1]))
+    assert Array([[1, 2]]).axis_keys == (None, None)
+    for keys in ([None], [['a', 'a'], None], [None, ['a']]):
+        with pytest.raises(ValueError): Array([[1, 2], [3, 4]], axis_keys=keys)
 
 def test_based_values():
     with Session() as apl:

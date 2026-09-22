@@ -382,7 +382,7 @@ def scan(directory='tests/reference/inventory', source='', match='', timeout=.25
                 if case['status'] != 'pending':
                     inventory[case['status']] += 1
                     continue
-                if 'expected' not in case and not case.get('expected_error'):
+                if 'expected' not in case and not case.get('expected_code') and not case.get('expected_error'):
                     inventory['needs expectation'] += 1
                     continue
                 clean = re.sub(r"'(?:''|[^'])*'|⍝[^\n]*", '', case['code'])

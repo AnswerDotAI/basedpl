@@ -38,6 +38,10 @@ Use `with Session() as apl:` or call `apl.close()` when finished. Returned array
 
 `Array` retains atoms, shape, nesting, numeric domain and empty prototypes. `.is_atom` distinguishes an atom from a rank-zero array; both have `.shape == ()`. `.apl` is APL display. `.py` converts atoms to Python values and character vectors to strings. Other arrays become NumPy arrays, including rank-zero arrays. `.np` always returns an ndarray.
 
+For [axis-keyed arrays](keyed.md), `.py` returns a dict at rank 1 and a pandas DataFrame at higher ranks. `.np` copies the values. Attach labels with `Array(data, axis_keys=[rows, cols])`; use `None` for an unkeyed axis. `.axis_keys` returns a tuple of label tuples or `None`.
+
+`.df` converts any array to a DataFrame. The last axis supplies columns; earlier axes supply rows, using a MultiIndex above rank 2. Unkeyed axes have 1-origin labels. Install `basedpl[pandas]` for this conversion. Pandas is imported on demand.
+
 ```python
 from fractions import Fraction
 from basedpl import Array

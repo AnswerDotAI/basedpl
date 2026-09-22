@@ -14,13 +14,6 @@ Separators construct nested vectors. A trailing separator makes a singleton.
 (1 2 ⋄ 3 4)        ⍝ (1 2)(3 4)
 ```
 
-`key:value` entries construct a [keyed array](../keyed.md). `()` is the empty keyed vector.
-
-```apl
-≢('a':1 ⋄ 'b':2)   ⍝ 2x
-≢()                ⍝ 0x
-```
-
 Two functions form an atop: `(f g)Y` is `f(g Y)`.
 
 ```apl

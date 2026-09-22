@@ -221,7 +221,7 @@ fn nth_primes(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
         result[i] = exact(p);
     }
     if right.is_atom() { return Ok(result.remove(0)); }
-    array(right.shape().to_vec(), result, span)
+    right.layout().collect(result, exact(BigInt::zero())).map_err(|k| span.error(k, "invalid prime result"))
 }
 
 fn prime(selector: &Number, n: BigInt, span: &Context<'_>) -> Result<Value, Error> {
@@ -266,18 +266,20 @@ fn prime(selector: &Number, n: BigInt, span: &Context<'_>) -> Result<Value, Erro
 
 pub(crate) fn call(factor: bool, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if !factor && left.is_none() { return nth_primes(right, span); }
-    let agreement = Agreement::new(left.map_or(&[], Value::shape), right.shape()).map_err(|k| span.error(k, "number theory frames must agree"))?;
+    let agreement =
+        Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).map_err(|k| span.error(k, "number theory frames must agree"))?;
     let mut cells = Vec::with_capacity(agreement.len.max(1));
     for i in 0..agreement.len.max(1) {
         span.check()?;
-        let x = left.map(|a| number(&if a.is_empty() { a.prototype().clone() } else { a.at(agreement.left.index(i)) }, span)).transpose()?;
-        let n = if right.is_empty() { BigInt::one() } else { number(&right.at(agreement.right.index(i)), span)?.big_integer().map_err(|k| span.error(k, "number theory requires integers"))? };
+        let (x, y) = agreement.values(left, right, i);
+        let x = x.as_ref().map(|a| number(a, span)).transpose()?;
+        let n = if right.is_empty() { BigInt::one() } else { number(&y, span)?.big_integer().map_err(|k| span.error(k, "number theory requires integers"))? };
         cells.push(if factor {
             factor_result(x.as_ref(), n.to_biguint().ok_or_else(|| span.error(ErrorKind::Domain, "factorisation requires positive integers"))?, span)?
         } else { prime(x.as_ref().unwrap(), n, span)? });
     }
     if right.is_atom() && left.is_none_or(Value::is_atom) { return Ok(cells.remove(0)); }
-    Value::assemble(&agreement.shape, &cells[..agreement.len], &cells[0]).map_err(|k| span.error(k, "number theory result exceeds array limits"))
+    agreement.layout.assemble(&cells[..agreement.len], &cells[0]).map_err(|k| span.error(k, "number theory result exceeds array limits"))
 }
 
 pub(crate) fn product(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -291,5 +293,5 @@ pub(crate) fn product(right: &Value, span: &Context<'_>) -> Result<Value, Error>
         data.push(exact(product));
     }
     if cells.frame().is_empty() { return Ok(data.remove(0)); }
-    array(cells.frame().to_vec(), data, span)
+    cells.frame_layout().collect(data, exact(BigInt::zero())).map_err(|k| span.error(k, "invalid factor product"))
 }

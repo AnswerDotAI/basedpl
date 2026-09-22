@@ -1,5 +1,5 @@
 use crate::{
-    agreement::Agreement,
+    agreement::{Agreement, Mapping},
     array::{generated_len, Axis, Frame as ResultFrame},
     primitive::{Hybrid, OperatorKind, Primitive},
     selection::SelectionKind,
@@ -73,10 +73,15 @@ impl Function {
                 Some(match (p, left) {
                     (Take, None) if right.shape().len() <= 1 => SelectionKind::Item,
                     (Mix, Some(x)) if x.is_empty() => kind,
-                    (Mix, Some(x)) if right.keys().is_some() && crate::keyed::name(x).is_some() => SelectionKind::Item,
-                    (Mix, Some(x)) if x.len() == right.shape().len().max(1) && x.elements().all(|e| e.is_atom()) => SelectionKind::Item,
+                    (Mix | Index, Some(x))
+                        if {
+                            let fields = crate::primitive::coordinate_fields(x);
+                            fields.len() == right.shape().len().max(1) && fields.iter().all(|e| e.is_atom() || crate::keyed::name(e).is_some())
+                        } =>
+                    {
+                        SelectionKind::Item
+                    }
                     (Index, None) => kind,
-                    (Index, Some(x)) if x.len() == right.shape().len() && x.elements().all(|e| e.is_atom()) => SelectionKind::Item,
                     _ => SelectionKind::Elements,
                 })
             }
@@ -479,7 +484,7 @@ fn at(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span,
                 let Value::Number(n) = e else { return Err(span.error(ErrorKind::Domain, "at mask must be Boolean")); };
                 if n.boolean().map_err(|m| span.error(ErrorKind::Domain, m))? { paths.push(vec![i]); }
             }
-            crate::primitive::Selection { frame: ResultFrame::Array(vec![paths.len()]), paths }
+            crate::primitive::Selection { frame: ResultFrame::Array(vec![paths.len()].into()), paths }
         }
         _ => unreachable!(),
     };
@@ -537,11 +542,26 @@ fn stencil(f: &Function, spec: &Value, right: &Value, span: &Span, session: &mut
             }
             data.push(if valid { right.at(offset) } else { right.prototype().clone() });
         }
-        let window = Value::from_parts(shape.clone(), data, right.prototype().clone()).map_err(|k| span.error(k, "invalid stencil window"))?;
+        let keys = (0..shape.len())
+            .map(|a| {
+                if a >= axes { return Ok(right.keys(a).cloned()); }
+                if padding[a] != 0. { return Ok(None); }
+                right.keys(a).map(|k| k.select(starts[a] as usize..starts[a] as usize + windows[a])).transpose()
+            })
+            .collect::<Result<_, _>>()
+            .map_err(|k| span.error(k, "invalid stencil window keys"))?;
+        let window = Value::from_parts(shape.clone(), data, right.prototype().clone())
+            .and_then(|a| a.with_keys(keys))
+            .map_err(|k| span.error(k, "invalid stencil window"))?;
         let border = Value::floats(vec![axes], padding).unwrap();
         results.push(f.call_array(Some(&border), &window, span, session, output)?);
     }
-    let result = Value::assemble(&frame, &results, &Value::scalar(0.).unwrap()).map_err(|k| span.error(k, "invalid stencil result"))?;
+    let mut layout = right.layout().axes(0..axes);
+    for (a, &len) in frame.iter().enumerate() {
+        let positions = (0..len).map(|i| Some(i * movements.get(a).copied().unwrap_or(1)));
+        layout = layout.select(a, positions).map_err(|k| span.error(k, "invalid stencil frame keys"))?;
+    }
+    let result = layout.assemble(&results, &Value::scalar(0.).unwrap()).map_err(|k| span.error(k, "invalid stencil result"))?;
     Ok(Bound::new(Binding::from_element(result)))
 }
 
@@ -574,13 +594,13 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Sp
                     value = result.array(span)?;
                 }
             } else {
-                let shape = if history {
+                let layout = if history {
                     let n = indices[0];
                     let len = n.unsigned_abs().checked_add(1).ok_or_else(|| span.error(ErrorKind::Limit, "history is too long"))?;
                     generated_len(&[len]).map_err(|k| span.error(k, "history is too long"))?;
                     indices = (0..len).map(|i| i as isize * n.signum()).collect();
-                    vec![len]
-                } else { count.shape().to_vec() };
+                    vec![len].into()
+                } else { count.layout().clone() };
                 let mut wanted = indices.clone();
                 wanted.sort_unstable_by_key(|&n| (n < 0, n.unsigned_abs()));
                 wanted.dedup();
@@ -599,7 +619,7 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Sp
                     previous = n;
                 }
                 let cells: Vec<_> = indices.iter().map(|n| states[n].clone()).collect();
-                value = Value::assemble(&shape, &cells, right).map_err(|k| span.error(k, "power result is too large"))?;
+                value = layout.assemble(&cells, right).map_err(|k| span.error(k, "power result is too large"))?;
             }
         }
         Operand::Function(test) => {
@@ -744,6 +764,10 @@ fn inverse_outer(
     let (frame, shape) = if first { (prefix, suffix) } else { (suffix, prefix) };
     if frame != bound.shape() { return Err(span.error(ErrorKind::Domain, "outer-product inverse needs a matching bound frame")); }
     let count = crate::array::element_count(shape).map_err(|k| span.error(k, "invalid inverse result shape"))?;
+    let layout = right.layout().axes(if first { split..right.shape().len() } else { 0..split });
+    let mut keys = vec![None; right.shape().len()];
+    for axis in 0..rank { keys[if first { axis } else { split + axis }] = bound.keys(axis).cloned(); }
+    let right = crate::keyed::reorder(right, &keys, false).map_err(|k| span.error(k, "outer-product bound keys must agree"))?;
     let mut result: Vec<Value> = Vec::with_capacity(count.max(1));
     for j in 0..if count == 0 { 1 } else { bound.len() } {
         let a = Operand::Value(bound.at(j).clone());
@@ -758,8 +782,9 @@ fn inverse_outer(
             }
         }
     }
-    if count == 0 { Value::empty(shape.to_vec(), result[0].clone().prototype()) } else { Value::new(shape.to_vec(), result.into_iter().collect()) }
-        .map_err(|k| span.error(k, "invalid outer-product inverse"))
+    let prototype = result[0].prototype();
+    if count == 0 { result.clear(); }
+    layout.collect(result, prototype).map_err(|k| span.error(k, "invalid outer-product inverse"))
 }
 
 fn inverse_scan(
@@ -785,16 +810,14 @@ fn inverse_scan(
             }
         }
     }
-    Value::from_parts(right.shape().to_vec(), data, right.prototype().clone()).map_err(|k| span.error(k, "invalid inverse scan"))
+    right.layout().collect(data, right.prototype()).map_err(|k| span.error(k, "invalid inverse scan"))
 }
 
 fn key(f: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
     let keys = left.unwrap_or(right);
     if keys.is_scalar() || right.is_scalar() { return Err(span.error(ErrorKind::Rank, "key arguments must have major cells")); }
     if keys.shape()[0] != right.shape()[0] { return Err(span.error(ErrorKind::Length, "key arguments must have equal tallies")); }
-    let values = if left.is_none() {
-        Primitive::Iota.call(None, &Value::scalar(crate::Number::from_integer(right.shape()[0] as i64)).unwrap(), &session.execution.at(span))?
-    } else { right.clone() };
+    let values = if left.is_none() { crate::keyed::selectors(right, &[0]).map_err(|k| span.error(k, "invalid group indices"))? } else { right.clone() };
     let cells = keys.cells(keys.shape().len() - 1).map_err(|k| span.error(k, "invalid key cells"))?;
     let key_cells = cells.collect().map_err(|k| span.error(k, "invalid key cells"))?;
     let mut groups: Vec<(usize, Vec<usize>)> = Vec::new();
@@ -815,9 +838,9 @@ fn key(f: &Function, left: Option<&Value>, right: &Value, span: &Span, session: 
     for (representative, indices) in groups {
         let x = if count == 0 { cells.prototype().map_err(|k| span.error(k, "invalid key prototype"))? } else { key_cells[representative].clone() };
         let x = if cells.shape().is_empty() { x.at(0) } else { x };
-        let shape = [&[indices.len()], &values.shape()[1..]].concat();
+        let layout = values.layout().select(0, indices.iter().copied().map(Some)).map_err(|k| span.error(k, "invalid group keys"))?;
         let data = indices.into_iter().flat_map(|i| values.items(i * width..(i + 1) * width)).collect();
-        let y = Value::from_parts(shape, data, values.prototype().clone()).map_err(|k| span.error(k, "invalid key group"))?;
+        let y = layout.collect(data, values.prototype()).map_err(|k| span.error(k, "invalid key group"))?;
         results.push(if count == 0 { f.call_prototype(Some(&x), &y, span, session, output)?.array(span)? } else { f.call_array(Some(&x), &y, span, session, output)? });
     }
     let result = Value::assemble(&[count], if count == 0 { &[] } else { &results }, &results[0]).map_err(|k| span.error(k, "invalid key result"))?;
@@ -827,8 +850,8 @@ fn key(f: &Function, left: Option<&Value>, right: &Value, span: &Span, session: 
 fn outer(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
     let left = left.ok_or_else(|| span.error(ErrorKind::Syntax, "outer product needs a left argument"))?;
     if left.is_atom() && right.is_atom() { return operand.call(Some(left), right, span, session, output); }
-    let shape = [left.shape(), right.shape()].concat();
-    let count = generated_len(&shape).map_err(|k| span.error(k, "outer product is too large"))?;
+    let layout = left.layout().concat(right.layout());
+    let count = generated_len(layout.shape()).map_err(|k| span.error(k, "outer product is too large"))?;
     let mut data = Vec::with_capacity(count.max(1));
     let mut missing = false;
     for i in 0..count.max(1) {
@@ -843,18 +866,9 @@ fn outer(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, s
         }
     }
     let value = if missing { Binding::NoResult } else {
-        let result = if count == 0 { Value::empty(shape, data[0].fill()) } else { Value::new(shape, data) };
-        // Keys survive only beside an unkeyed scalar, where the result has the keyed argument's shape.
-        let keyed = match (left.keys().is_some(), right.keys().is_some()) {
-            (true, false) if right.is_scalar() => Some(left),
-            (false, true) if left.is_scalar() => Some(right),
-            _ => None,
-        };
-        Binding::Value(
-            result
-                .and_then(|a| match keyed { Some(k) => a.keyed_like(k), None => Ok(a) })
-                .map_err(|k| span.error(k, "invalid outer product result"))?,
-        )
+        let prototype = data[0].fill();
+        if count == 0 { data.clear(); }
+        Binding::Value(layout.collect(data, prototype).map_err(|k| span.error(k, "invalid outer product result"))?)
     };
     Ok(Bound::new(value))
 }
@@ -871,12 +885,14 @@ fn inner(
     let left = left.ok_or_else(|| span.error(ErrorKind::Syntax, "inner product needs a left argument"))?;
     let nx = left.shape().last().copied().unwrap_or(1);
     let ny = right.shape().first().copied().unwrap_or(1);
+    let positions = Mapping::contract(left.layout(), left.shape().len().saturating_sub(1), right.layout(), 0)
+        .map_err(|k| span.error(k, "product contraction keys must agree"))?;
     if nx != ny && !left.is_singleton() && !right.is_singleton() { return Err(span.error(ErrorKind::Length, "product contraction lengths must agree")); }
     let n = if left.is_singleton() { ny } else { nx };
     let xf = &left.shape()[..left.shape().len().saturating_sub(1)];
     let yf = &right.shape()[usize::from(!right.is_scalar())..];
-    let shape = [xf, yf].concat();
-    let size = generated_len(&shape).map_err(|k| span.error(k, "inner product is too large"))?;
+    let layout = left.layout().axes(0..xf.len()).concat(&right.layout().axes(1..right.shape().len()));
+    let size = generated_len(layout.shape()).map_err(|k| span.error(k, "inner product is too large"))?;
     let rows = generated_len(xf).map_err(|k| span.error(k, "invalid product frame"))?;
     let cols = generated_len(yf).map_err(|k| span.error(k, "invalid product frame"))?;
     generated_len(&[n.max(1), cols.max(1)]).map_err(|k| span.error(k, "product contraction is too large"))?;
@@ -886,7 +902,8 @@ fn inner(
         let mut columns = vec![Vec::with_capacity(n.max(1)); cols.max(1)];
         for k in 0..n.max(1) {
             for (j, column) in columns.iter_mut().enumerate() {
-                column.push(g.call_array(Some(&item(left, i * nx + k)), &item(right, k * cols + j), span, session, output)?);
+                let rk = if n == 0 { 0 } else { positions.index(k) };
+                column.push(g.call_array(Some(&item(left, i * nx + k)), &item(right, rk * cols + j), span, session, output)?);
             }
         }
         for column in columns {
@@ -895,8 +912,10 @@ fn inner(
             results.push(fold(f, Hybrid { scan: false, first: false, axis: None }, None, &paired, span, session, output)?);
         }
     }
-    if shape.is_empty() { return Ok(Bound::new(Binding::from_element(results.remove(0)))); }
-    let result = if size == 0 { Value::empty(shape, results[0].fill()) } else { Value::new(shape, results) };
+    if layout.shape().is_empty() { return Ok(Bound::new(Binding::from_element(results.remove(0)))); }
+    let prototype = results[0].fill();
+    if size == 0 { results.clear(); }
+    let result = layout.collect(results, prototype);
     Ok(Bound::new(Binding::Value(result.map_err(|k| span.error(k, "invalid inner product result"))?)))
 }
 
@@ -927,57 +946,43 @@ fn rank(
     let cell_rank = |a: &Value, k: isize| if k < 0 { a.shape().len().saturating_sub(k.unsigned_abs()) } else { a.shape().len().min(k as usize) };
     let yr = cell_rank(right, if left.is_some() { r } else { p });
     let xr = left.map(|a| cell_rank(a, q)).unwrap_or(0);
-    let zero = xr == 0 && yr == 0;
-    let aligned;
-    let (left, right) = match left {
-        Some(x) if zero && x.keys().is_some() && right.keys().is_some() => {
-            aligned = crate::keyed::align(x, right).map_err(|k| span.error(k, "keyed arguments do not agree"))?;
-            (Some(&aligned.0), &aligned.1)
-        }
-        _ => (left, right),
-    };
-    let ys = right.cells(yr).map_err(|k| span.error(k, "invalid rank cells"))?;
-    let xs = left.map(|a| a.cells(xr)).transpose().map_err(|k| span.error(k, "invalid rank cells"))?;
-    let agreement = Agreement::new(xs.as_ref().map_or(&[], |c| c.frame()), ys.frame()).map_err(|k| span.error(k, "rank frames do not agree"))?;
-    let frame = &agreement.shape;
+    let framed = |a: &Value, rank| a.cells(rank)?.framed();
+    let ys = framed(right, yr).map_err(|k| span.error(k, "invalid rank cells"))?;
+    let xs = left.map(|a| framed(a, xr)).transpose().map_err(|k| span.error(k, "invalid rank cells"))?;
+    let agreement =
+        Agreement::new(xs.as_ref().map_or(&Default::default(), Value::layout), ys.layout()).map_err(|k| span.error(k, "rank frames do not agree"))?;
+    let frame = &agreement.layout.shape();
     let count = agreement.len;
-    let cell = |cells: &crate::array::Cells<'_>, index| {
-        let value = if count == 0 { cells.prototype() } else { cells.get(index) }.map_err(|k| span.error(k, "invalid rank cell"))?;
-        Ok::<_, Error>(if cells.shape().is_empty() { value.at(0) } else { value })
+    let cell = |a: &Value, rank| {
+        let cells = a.cells(rank)?;
+        let p = cells.prototype()?;
+        Ok::<_, ErrorKind>(if rank == 0 { p.at(0) } else { p })
     };
     let mut results = Vec::with_capacity(count.max(1));
     for i in 0..count.max(1) {
-        let x = xs.as_ref().map(|v| cell(v, agreement.left.index(i))).transpose()?;
-        let y = cell(&ys, agreement.right.index(i))?;
+        let (x, y) = if count == 0 {
+            (
+                left.map(|a| cell(a, xr)).transpose().map_err(|k| span.error(k, "invalid rank cell"))?,
+                cell(right, yr).map_err(|k| span.error(k, "invalid rank cell"))?,
+            )
+        } else { agreement.values(xs.as_ref(), &ys, i) };
         let value =
             if count == 0 { operand.call_prototype(x.as_ref(), &y, span, session, output)? } else { operand.call(x.as_ref(), &y, span, session, output)? };
         results.push(value.array(span)?);
     }
     if frame.is_empty() { return Ok(Bound::new(Binding::from_element(results.remove(0)))); }
-    let result = Value::assemble(frame, if count == 0 { &[] } else { &results }, &results[0]).map_err(|k| span.error(k, "invalid rank result"))?;
-    // Rank-0 cells with scalar results leave every named position in place.
-    let result = if zero { crate::keyed::retain(result, left, right).map_err(|k| span.error(k, "invalid rank result"))? } else { result };
+    let result = agreement.layout.assemble(&results[..count], &results[0]).map_err(|k| span.error(k, "invalid rank result"))?;
     Ok(Bound::new(Binding::from_element(result)))
 }
 
 fn each(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
     if right.is_atom() && left.is_none_or(Value::is_atom) { return operand.call(left, right, span, session, output); }
-    let aligned;
-    let (left, right) = match left {
-        Some(x) if x.keys().is_some() && right.keys().is_some() => {
-            aligned = crate::keyed::align(x, right).map_err(|k| span.error(k, "keyed arguments do not agree"))?;
-            (Some(&aligned.0), &aligned.1)
-        }
-        _ => (left, right),
-    };
-    let agreement = Agreement::new(left.map_or(&[], Value::shape), right.shape()).map_err(|k| span.error(k, "Each frames do not agree"))?;
+    let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).map_err(|k| span.error(k, "Each frames do not agree"))?;
     let empty = agreement.len == 0;
-    let item = |a: &Value, i: usize| if a.is_empty() { a.prototype().clone() } else { a.at(i) }.clone();
     let mut data = Vec::with_capacity(agreement.len.max(1));
     let mut missing = false;
     for i in 0..agreement.len.max(1) {
-        let x = left.map(|a| item(a, agreement.left.index(i)));
-        let y = item(right, agreement.right.index(i));
+        let (x, y) = agreement.values(left, right, i);
         let result = if empty { operand.call_prototype(x.as_ref(), &y, span, session, output) } else { operand.call(x.as_ref(), &y, span, session, output) };
         match result?.value {
             Binding::Value(a) => data.push(a),
@@ -987,8 +992,9 @@ fn each(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, se
         }
     }
     let value = if missing { Binding::NoResult } else {
-        let result = if empty { Value::empty(agreement.shape, data[0].fill()) } else { Value::new(agreement.shape, data) };
-        Binding::Value(result.and_then(|a| crate::keyed::retain(a, left, right)).map_err(|k| span.error(k, "invalid Each result"))?)
+        let prototype = data[0].fill();
+        if empty { data.clear(); }
+        Binding::Value(agreement.layout.collect(data, prototype).map_err(|k| span.error(k, "invalid Each result"))?)
     };
     Ok(Bound::new(value))
 }
@@ -1035,7 +1041,7 @@ fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Cont
         a @ Value::Array(_) => {
             let data = a.elements().map(|e| identity(operand, &e, span)).collect::<Result<_, _>>()?;
             let fill = identity(operand, &a.prototype(), span)?;
-            Value::from_parts(a.shape().to_vec(), data, fill).map_err(|k| span.error(k, "invalid identity"))
+            a.layout().collect(data, fill).map_err(|k| span.error(k, "invalid identity"))
         }
     }
 }
@@ -1050,7 +1056,11 @@ fn fold(
     output: &mut Vec<String>,
 ) -> Result<Value, Error> {
     let result = fold_array(operand, hybrid, left, right, span, session, output)?;
-    if !hybrid.scan && right.shape().len() == 1 { Ok(result.at(0)) } else { Ok(result) }
+    if !hybrid.scan && right.shape().len() == 1 { return Ok(result.at(0)); }
+    if hybrid.scan || right.is_scalar() { return Ok(result); }
+    let axis = hybrid.axis.unwrap_or(if hybrid.first { 0 } else { right.shape().len() - 1 });
+    let layout = right.layout().axes((0..right.shape().len()).filter(|&a| a != axis));
+    result.with_layout(layout).map_err(|k| span.error(k, "invalid fold keys"))
 }
 
 fn fold_array(
@@ -1063,7 +1073,11 @@ fn fold_array(
     output: &mut Vec<String>,
 ) -> Result<Value, Error> {
     // Scan keeps every position, so it keeps every key.
-    if hybrid.scan { return scan(operand, hybrid, left, right, span, session, output)?.keyed_like(right).map_err(|k| span.error(k, "invalid scan result")); }
+    if hybrid.scan {
+        return scan(operand, hybrid, left, right, span, session, output)?
+            .with_layout(right.layout().clone())
+            .map_err(|k| span.error(k, "invalid scan result"));
+    }
     if right.is_scalar() && hybrid.axis.is_none() {
         return match left { Some(seed) => operand.call_array(Some(&right.at(0)), seed, span, session, output), None => Ok(right.at(0)) };
     }
@@ -1563,11 +1577,7 @@ impl Session {
     }
 
     fn execute(&mut self, left: Option<&Value>, right: &Value, span: &Span, output: &mut Vec<String>) -> Result<Bound, Error> {
-        // Dyadic execute is keyed lookup, `right⊃left`, and runs no code.
-        if let Some(x) = left {
-            if x.keys().is_none() { return Err(span.error(ErrorKind::Domain, "dyadic execute looks up a key in a keyed array")); }
-            return Ok(Bound::new(Binding::from_element(crate::primitive::pick(right, x, false, &self.execution.at(span))?)));
-        }
+        if let Some(x) = left { return Ok(Bound::new(Binding::from_element(crate::primitive::pick(right, x, false, &self.execution.at(span))?))); }
         self.execute_source(Source::new("<execute>", Self::source_text(right, span)?), span, output)
     }
 
@@ -1620,7 +1630,7 @@ impl Session {
         while i < nodes.len() {
             if let (NodeKind::Operator(OperatorKind::Product), Some(Node { kind: NodeKind::Name(name), span: end })) = (&nodes[i].kind, nodes.get(i + 1)) {
                 let root = out.iter().rposition(|n| !matches!(n.kind, NodeKind::Selection(_))).filter(|&r| match &out[r].kind {
-                    NodeKind::Name(_) | NodeKind::Keyed(_) => matches!(self.node_category(&out[r]), Category::Value),
+                    NodeKind::Name(_) => matches!(self.node_category(&out[r]), Category::Value),
                     NodeKind::Group(inner) => !inner.is_empty() && matches!(self.assignment_operand(inner, inner.len(), 0), Ok((_, Category::Value))),
                     _ => false,
                 });
@@ -1806,13 +1816,10 @@ impl Session {
             parts.push(self.indices(indices, output)?);
         }
         let binding = self.array_binding(name, span)?;
-        // Plain bracket assignment first appends the selector's missing keys to a keyed vector.
-        let selector = match (&modifier, parts.as_slice()) { (None, [level]) => match level.as_slice() { [Some(s)] => Some(s), _ => None }, _ => None };
-        let extended = selector
-            .map(|s| crate::keyed::extended(&binding.value, s))
-            .transpose()
-            .map_err(|k| span.error(k, "a new key can only be appended to a keyed vector"))?
-            .flatten();
+        let extended = match (&modifier, parts.as_slice()) {
+            (None, [level]) => crate::keyed::extended(&binding.value, level).map_err(|k| span.error(k, "invalid named axis extension"))?,
+            _ => None,
+        };
         let original = extended.as_ref().unwrap_or(&binding.value);
         let updated = if parts.is_empty() { modifier.unwrap().call_array(Some(original), right, span, self, output)? } else {
             let mut current = original.clone();
@@ -1868,46 +1875,38 @@ impl Session {
         }
     }
 
-    // Plain assignment through Pick appends a missing key to a keyed vector.
-    fn insert_key(&mut self, nodes: &[Node], right: &Value, output: &mut Vec<String>) -> Result<bool, Error> {
-        let [key @ Node { kind: NodeKind::Literal(_) | NodeKind::Name(_) | NodeKind::Group(_), .. }, Node { kind: NodeKind::Function(Primitive::Mix), .. }, container @ ..] =
-            nodes
-        else { return Ok(false); };
-        if container.is_empty() { return Ok(false); }
-        let Some(name) = crate::keyed::name(&self.array_result(std::slice::from_ref(key), output)?) else { return Ok(false) };
+    fn extend_selected(&mut self, nodes: &mut [Node], output: &mut Vec<String>) -> Result<(), Error> {
+        let (container, selectors, span) = match nodes {
+            [container @ .., Node { kind: NodeKind::Selection(parts), span }] if !container.is_empty() => {
+                let selectors = self.indices(parts, output)?;
+                for (part, value) in parts.iter_mut().zip(&selectors) {
+                    if let Some(value) = value { *part = vec![Node { kind: NodeKind::Literal(value.clone()), span: part[0].span.clone() }]; }
+                }
+                (container, selectors, span.clone())
+            }
+            [key @ Node { kind: NodeKind::Literal(_) | NodeKind::Name(_) | NodeKind::Group(_), .. }, Node { kind: NodeKind::Function(Primitive::Mix), .. }, container @ ..]
+                if !container.is_empty() =>
+            {
+                let value = self.array_result(std::slice::from_ref(key), output)?;
+                let selectors = crate::primitive::coordinate_fields(&value).into_iter().map(Some).collect();
+                key.kind = NodeKind::Literal(value);
+                (container, selectors, key.span.clone())
+            }
+            _ => return Ok(()),
+        };
+        if !selectors.iter().flatten().any(|s| matches!(crate::keyed::Selector::of(s), Ok(Some(_)))) { return Ok(()); }
         let target = self.array_result(container, output)?;
-        let Some(keys) = target.keys().filter(|keys| keys.position(&name).is_none()) else { return Ok(false) };
-        if target.shape().len() != 1 { return Err(key.span.error(ErrorKind::Rank, "a new key can only be appended to a keyed vector")); }
-        let names = keys.names().iter().cloned().chain([name]).collect();
-        let values = target.elements().chain([right.clone()]).collect();
-        let extended = crate::keyed::vector(names, values).map_err(|k| key.span.error(k, "invalid keyed insertion"))?;
-        self.assign_selected(container, None, &Binding::Value(extended), output)?;
-        Ok(true)
-    }
-
-    // Plain bracket assignment after a selection first appends the selector's missing keys to the selected keyed vector.
-    fn append_keys(&mut self, nodes: &[Node], output: &mut Vec<String>) -> Result<(), Error> {
-        let [container @ .., Node { kind: NodeKind::Selection(parts), span }] = nodes else { return Ok(()); };
-        let [index] = parts.as_slice() else { return Ok(()); };
-        if container.is_empty() || index.is_empty() { return Ok(()); }
-        let selector = self.array_result(index, output)?;
-        if !matches!(crate::keyed::Selector::of(&selector), Ok(Some(_))) { return Ok(()); }
-        let target = self.array_result(container, output)?;
-        let extended = crate::keyed::extended(&target, &selector).map_err(|k| span.error(k, "a new key can only be appended to a keyed vector"))?;
-        if let Some(extended) = extended { self.assign_selected(container, None, &Binding::Value(extended), output)?; }
+        if let Some(extended) = crate::keyed::extended(&target, &selectors).map_err(|k| span.error(k, "invalid named axis extension"))? {
+            self.assign_selected(container, None, &Binding::Value(extended), output)?;
+        }
         Ok(())
     }
 
     fn assign_selected(&mut self, nodes: &[Node], modifier: Option<Function>, value: &Binding, output: &mut Vec<String>) -> Result<(), Error> {
         let right = &value.clone().into_value(&nodes[0].span)?;
-        let members;
-        let nodes = if Self::has_members(nodes) {
-            members = self.members(nodes);
-            &members[..]
-        } else { nodes };
-        if modifier.is_none() && self.insert_key(nodes, right, output)? { return Ok(()); }
-        if modifier.is_none() { self.append_keys(nodes, output)?; }
-        let (binding, labels, selected, kind) = self.selection_expression(nodes, output)?;
+        let mut nodes = if Self::has_members(nodes) { self.members(nodes) } else { nodes.to_vec() };
+        if modifier.is_none() { self.extend_selected(&mut nodes, output)?; }
+        let (binding, labels, selected, kind) = self.selection_expression(&nodes, output)?;
         let span = &nodes[0].span;
         let (selection, values) = labels.replacements(&selected, right, kind, span)?;
         let updated = match modifier {
@@ -1964,7 +1963,7 @@ impl Session {
             }
             return ResultFrame::of(original)
                 .collect(data, original.prototype())
-                .and_then(|a| a.keyed_like(original))
+                .and_then(|a| a.with_layout(original.layout().clone()))
                 .map_err(|k| span.error(k, "invalid modified selection"));
         }
         let mut updated = original.clone();
@@ -2013,19 +2012,6 @@ impl Session {
                     Value::assemble(&[arrays.len()], &arrays, &arrays[0])
                 } else { Value::new(vec![arrays.len()], arrays.into_iter().collect()) };
                 Binding::Value(result.map_err(|k| node.span.error(k, "invalid array literal"))?)
-            }
-            NodeKind::Keyed(entries) => {
-                let mut merged = Vec::new();
-                for (key, value) in entries {
-                    let key = self.array_result(key, output)?;
-                    let value = self.array_result(value, output)?;
-                    let entry = crate::keyed::construct(&key, &value).map_err(|k| node.span.error(k, "invalid keyed entry"))?;
-                    if entries.len() == 1 { return Ok(Binding::Value(entry)); }
-                    if entry.shape().len() != 1 { return Err(node.span.error(ErrorKind::Rank, "combined keyed entries must be vectors")); }
-                    merged.extend(entry.keys().unwrap().names().iter().cloned().zip(entry.elements()));
-                }
-                let (names, values) = crate::keyed::merge(merged);
-                Binding::Value(crate::keyed::vector(names, values).map_err(|k| node.span.error(k, "invalid keyed array"))?)
             }
             NodeKind::Dfn(definition) => {
                 let closure = Closure { definition: definition.clone(), environment: self.current };

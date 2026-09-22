@@ -35,17 +35,18 @@ def test_worker_bindings_calls_and_echo():
 
 def test_worker_keyed_arrays():
     with Worker() as w:
-        v = w.eval("('b':1 2 ⋄ 'a':('x':3))", timeout=2)['value']
-        assert v['shape'] == [2] and v['keys'] == ['b', 'a'] and v['data'][1] == dict(shape=[1], data=[3], prototype=0, keys=['x'])
-        m = w.eval("((2 2⍴'nw' 'ne' 'sw' 'se'):2 2⍴⍳4)", timeout=2)['value']
-        assert m['shape'] == [2, 2] and m['keys'] == ['nw', 'ne', 'sw', 'se']
-        empty = w.eval('()', timeout=2)['value']
-        assert empty['shape'] == [0] and empty['keys'] == []
+        v = w.eval("('b':1 2),('a':'x':3)", timeout=2)['value']
+        assert v['shape'] == [2] and v['axis_keys'] == [['b', 'a']]
+        assert v['data'][1] == dict(shape=[1], data=[3], prototype=0, axis_keys=[['x']])
+        m = w.eval("('north' 'south' ⋄ 'west' 'east'):2 2⍴⍳4", timeout=2)['value']
+        assert m['shape'] == [2, 2] and m['axis_keys'] == [['north', 'south'], ['west', 'east']]
+        empty = w.eval('⍬:⍬', timeout=2)['value']
+        assert empty['shape'] == [0] and empty['axis_keys'] == [[]]
         for value in (v, m, empty):
             assert w.request(dict(bindings=dict(k=value), call='⊢', args=[value]), timeout=2)['value'] == value
             assert w.eval('k', timeout=2)['value'] == value
-        for keys in (['a'], ['a', 'a'], [1, 2], 'ab'):
-            bad = dict(shape=[2], data=[1, 2], prototype=0, keys=keys)
+        for keys in ([], [None, None], [['a']], [['a', 'a']], [[1, 2]], ['ab']):
+            bad = dict(shape=[2], data=[1, 2], prototype=0, axis_keys=keys)
             assert w.request(dict(bindings=dict(k=bad)), timeout=2)['error']['kind'] == 'REQUEST ERROR'
 
 def test_worker_cancellation_and_reference_sessions():

@@ -67,12 +67,13 @@ impl Block {
 }
 
 fn array(a: &Value, budget: &mut usize) -> Block {
-    if a.is_scalar() || (a.keys().is_some() && a.shape() == [0]) { return Block::new(a.to_string()); }
+    if a.is_scalar() || (a.has_keys() && a.shape() == [0]) { return Block::new(a.to_string()); }
     // Render prototypes for empty axes. Cap diagrams independently of array storage.
     let shape: Vec<_> = a.shape().iter().map(|&d| d.max(1)).collect();
     let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);
     if count > *budget { return Block::new(format!("… (shape {})", a.shape().iter().map(usize::to_string).collect::<Vec<_>>().join(" "))); }
     *budget -= count;
+    if a.has_keys() && a.shape().len() > 1 { return Block::new(a.to_string()).framed(a.shape(), '~', false); }
     let elements: Vec<_> = (0..count).map(|i| if a.is_empty() { a.prototype().clone() } else { a.at(i) }).collect();
     let nested = elements.iter().any(|e| matches!(e, Value::Array(_)));
     let chars = elements.iter().all(|e| matches!(e, Value::Character(_)));
@@ -86,7 +87,7 @@ fn array(a: &Value, budget: &mut usize) -> Block {
             Value::Function(f) => Block::new(format!("⟨{}⟩", f.apl())),
         })
         .enumerate()
-        .map(|(i, cell)| match a.keys() { Some(keys) if !a.is_empty() => cell.labelled(&keys.names()[i]), _ => cell })
+        .map(|(i, cell)| match a.keys(0) { Some(keys) if !a.is_empty() => cell.labelled(&keys.names()[i]), _ => cell })
         .collect();
     let columns = shape.last().copied().unwrap_or(1);
     let mut widths = vec![0; columns];
@@ -103,7 +104,7 @@ fn array(a: &Value, budget: &mut usize) -> Block {
         for y in 0..chunk.iter().map(|b| b.lines.len()).max().unwrap_or(1) {
             let mut line = String::new();
             for (x, cell) in chunk.iter().enumerate() {
-                if x > 0 && !(chars && a.keys().is_none()) { line.push(' '); }
+                if x > 0 && !(chars && !a.has_keys()) { line.push(' '); }
                 let pad = " ".repeat(widths[x] - cell.width);
                 if matches!(elements[row * columns + x], Value::Number(_)) { line.push_str(&pad); }
                 line.push_str(&cell.line(y));

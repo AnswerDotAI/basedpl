@@ -199,8 +199,8 @@ fn coordinates(a: &Value, span: &Context<'_>) -> Result<Vec<Number>, Error> {
 pub(crate) fn call(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let source = left.unwrap_or(right);
     let cells = source.cells(source.shape().len().min(1)).map_err(|k| span.error(k, "invalid polynomial cells"))?;
-    let agreement =
-        Agreement::new(cells.frame(), if left.is_some() { right.shape() } else { &[] }).map_err(|k| span.error(k, "polynomial frames must agree"))?;
+    let agreement = Agreement::new(&cells.frame_layout(), left.map_or(&Default::default(), |_| right.layout()))
+        .map_err(|k| span.error(k, "polynomial frames must agree"))?;
     let mut polynomials = Vec::with_capacity(cells.len().max(1));
     for i in 0..cells.len().max(1) {
         let a = if cells.len() == 0 { cells.prototype() } else { cells.get(i) }.map_err(|k| span.error(k, "invalid polynomial cell"))?;
@@ -209,26 +209,36 @@ pub(crate) fn call(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
     let mut results = Vec::with_capacity(agreement.len.max(1));
     for i in 0..agreement.len.max(1) {
         span.check()?;
-        let polynomial = &polynomials[agreement.left.index(i)];
+        let index = agreement.left.get(i);
+        let point_index = agreement.right.get(i);
+        let point = if left.is_none() || right.is_empty() { right.prototype() } else if let Some(j) = point_index { right.at(j) } else if let Some(j) = index { cells.get(j).map_err(|k| span.error(k, "invalid polynomial cell"))?.fill() } else { right.prototype() };
+        let missing;
+        let polynomial = if let Some(j) = index { &polynomials[j] } else {
+            missing = Polynomial::parse(&point.fill(), span)?;
+            &missing
+        };
         results.push(if left.is_some() {
-            let point = if right.is_empty() { right.prototype().clone() } else { right.at(agreement.right.index(i)) }.clone();
             Value::scalar(polynomial.evaluate(&coordinates(&point, span)?, span)?).unwrap()
         } else if matches!(polynomial, Polynomial::Coefficients(_)) { polynomial.roots(span)? } else { vector(polynomial.coefficients(span)?, span)? });
     }
-    if agreement.shape.is_empty() { return Ok(results.remove(0)); }
-    Value::assemble(&agreement.shape, &results[..agreement.len], &results[0]).map_err(|k| span.error(k, "polynomial result exceeds array limits"))
+    if agreement.layout.shape().is_empty() { return Ok(results.remove(0)); }
+    agreement.layout.assemble(&results[..agreement.len], &results[0]).map_err(|k| span.error(k, "polynomial result exceeds array limits"))
 }
 
 pub(crate) fn derivative(source: &Value, order: usize, cotangent: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let cells = source.cells(source.shape().len().min(1)).map_err(|k| span.error(k, "invalid polynomial cells"))?;
-    let agreement = Agreement::new(cells.frame(), right.shape()).map_err(|k| span.error(k, "polynomial frames must agree"))?;
+    let agreement = Agreement::new(&cells.frame_layout(), right.layout()).map_err(|k| span.error(k, "polynomial frames must agree"))?;
     if let Some(u) = cotangent {
-        if u.shape() != agreement.shape { return Err(span.error(ErrorKind::Length, "cotangent must have the output shape")); }
+        if u.shape() != agreement.layout.shape() { return Err(span.error(ErrorKind::Length, "cotangent must have the output shape")); }
     }
-    else if !agreement.shape.is_empty() {
+    else if !agreement.layout.shape().is_empty() {
         return Err(span.error(ErrorKind::Rank, "monadic differentiation requires a scalar output; supply a cotangent for a VJP"));
     }
-    if order > 1 && (!right.is_scalar() || !agreement.shape.is_empty()) {
+    let cotangent = cotangent
+        .map(|u| crate::keyed::reorder(u, agreement.layout.axis_keys(), false))
+        .transpose()
+        .map_err(|k| span.error(k, "cotangent keys must match the output"))?;
+    if order > 1 && (!right.is_scalar() || !agreement.layout.shape().is_empty()) {
         return Err(span.error(ErrorKind::Rank, "repeated differentiation currently requires scalar input and output"));
     }
     let mut partials = Vec::new();
@@ -249,14 +259,14 @@ pub(crate) fn derivative(source: &Value, order: usize, cotangent: Option<&Value>
     }
     for i in 0..agreement.len {
         span.check()?;
-        let j = agreement.right.index(i);
+        let (Some(j), Some(p)) = (agreement.right.get(i), agreement.left.get(i)) else { continue; };
         let coords = coordinates(&points[j], span)?;
-        let u = if let Some(u) = cotangent {
+        let u = if let Some(u) = &cotangent {
             let Value::Number(n) = u.at(i) else { return Err(span.error(ErrorKind::Domain, "cotangent must have numeric elements")); };
             n
         } else { int(1) };
         real(&u, span)?;
-        for (axis, partial) in partials[agreement.left.index(i)].iter().enumerate() {
+        for (axis, partial) in partials[p].iter().enumerate() {
             let d = partial.evaluate(&coords, span)?;
             real(&d, span)?;
             let k = if coords.len() == 1 { 0 } else { axis };
@@ -268,10 +278,10 @@ pub(crate) fn derivative(source: &Value, order: usize, cotangent: Option<&Value>
         .zip(gradients)
         .map(|(point, gradient)| {
             if point.is_atom() { return Ok(Value::Number(gradient[0].clone())); }
-            Value::from_parts(point.shape().to_vec(), gradient.into_iter().map(Value::Number).collect(), Value::Number(int(0)))
+            point.layout().collect(gradient.into_iter().map(Value::Number).collect(), Value::Number(int(0)))
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(|k| span.error(k, "invalid polynomial gradient"))?;
     if right.is_atom() { return Ok(data[0].clone()); }
-    Value::from_parts(right.shape().to_vec(), data, right.prototype().clone()).map_err(|k| span.error(k, "invalid polynomial gradient"))
+    right.layout().collect(data, right.prototype()).map_err(|k| span.error(k, "invalid polynomial gradient"))
 }

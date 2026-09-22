@@ -12,7 +12,7 @@ Singleton contraction axes extend. Empty contractions use the reduction identity
 After an array, `.name` reads a [keyed array](../keyed.md) value: `T.name` is `'name'⊃T`. It also works as an assignment target.
 
 ```apl
-T←('n':1 ⋄ 'addr':('city':'Paris'))
+T←('n':1),('addr':'city':'Paris')
 T.addr.city        ⍝ 'Paris'
 T.n+←1 ⋄ T.n       ⍝ 2
 ```

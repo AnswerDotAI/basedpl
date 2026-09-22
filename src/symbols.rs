@@ -5,6 +5,7 @@ pub(crate) const SYMBOLS: &[(&str, &str, &str, &str, &str)] = &[
     ("←", "assign", "", "", "left-arrow"),
     ("→", "pipe", "", "", "right-arrow"),
     ("⍳", "iota", "iota", "index-of", ""),
+    (":", "colon", "unkey", "keyed", ""),
     ("⍴", "rho", "shape", "reshape", ""),
     ("≢", "tally", "tally", "not-match", ""),
     ("≡", "match", "depth", "match", ""),

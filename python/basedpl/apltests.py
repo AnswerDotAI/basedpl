@@ -211,6 +211,7 @@ def description(row):
 def convert(row):
     "Convert a prepared reference record without evaluating its program or changing its status."
     if error := row.get('expected_error'): expect = '⍝ error: '+error
+    elif 'expected_code' in row: expect = row['expected_code']
     elif 'expected' in row: expect = literal(row['expected'])
     else: raise ValueError(f"{row['id']}: missing independent expectation")
     return Case(row['code'], expect, row['id'], description(row), row.get('relative_tolerance', 0), row.get('absolute_tolerance', 0))
@@ -281,7 +282,7 @@ def add(ids, output='tests/reference', directory='tests/reference/inventory'):
         case = convert(row)
         result = json.loads(_check_reference(json.dumps(row), 2))
         if result['status']!='pass': raise ValueError(f'{id}: {result}')
-        if not row.get('expected_error'):
+        if not row.get('expected_error') and 'expected' in row and 'expected_code' not in row:
             result = json.loads(_check_reference(json.dumps(dict(code=case.expect, expected=row['expected'])), 2))
             if result['status']!='pass': raise ValueError(f'{id}: converted expectation: {result}')
         pending[id.split(':')[0].split('/')[0]].append(case)

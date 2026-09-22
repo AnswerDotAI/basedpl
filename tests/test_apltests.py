@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_records_and_boundaries():
+    row = dict(id='curated:1', code='1+2', expected_code='3')
+    assert convert(row).expect == '3'
     cases = [Case('1+2', '3', 'ngn:1', 'addition'),
         Case("f←{\n\n⍵+1\n}\nf 2\n", '(\n3\n)', comment='multiline', rtol=1e-14, atol=1e-15),
         Case("'unfinished", '⍝ error: SYNTAX ERROR'), Case('', '⍝ error: SYNTAX ERROR')]
@@ -53,7 +55,9 @@ def test_reference_roundtrip():
             if row.get('expected_error'):
                 assert case.expect == '⍝ error: '+row['expected_error']
                 continue
-            check = dict(code=case.expect, expected=row['expected'])
+            check = dict(code=case.expect)
+            if 'expected_code' in row: check['expected_code'] = row['expected_code']
+            else: check['expected'] = row['expected']
             result = json.loads(_check_reference(json.dumps(check), 2))
             assert result['status']=='pass', (row['id'], case.expect, result)
 

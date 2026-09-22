@@ -143,7 +143,7 @@ fn run_reference_cases(sources: &[(&str, &str)], timeout: u64) {
             if name == "core" { case["exact_representation"] = json!(true); }
             let id = case["id"].as_str().unwrap();
             assert!(id.is_empty() || ids.insert(id.to_owned()), "duplicate source id: {id}");
-            if selected.as_deref().is_some_and(|s| s != id) { continue; }
+            if selected.as_deref().is_some_and(|s| !id.starts_with(s)) { continue; }
             let result = reference::check(&case, EvalOptions { timeout: Some(std::time::Duration::from_secs(timeout)), echo: false, ..EvalOptions::default() });
             if result["status"] != "pass" {
                 failures.push(format!(
