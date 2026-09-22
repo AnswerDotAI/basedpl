@@ -17,27 +17,27 @@ def test_load(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     source = tmp_path/'defs.apl'
     source.write_text('twice←{2×⍵}\nx←7\n')
-    (tmp_path/'main.apl').write_text("•LOAD 'defs.apl'\ntwice x")
+    (tmp_path/'main.apl').write_text("•load 'defs.apl'\ntwice x")
     with Session() as apl:
-        assert apl("•load 'main.apl'").py == 14
+        assert apl("•LOAD 'main.apl'").py == 14
         assert apl('twice x').py == 14
-        assert apl("{loaded←•LOAD 'defs.apl' ⋄ twice ⍵}3").py == 6
+        assert apl("{loaded←•load 'defs.apl' ⋄ twice ⍵}3").py == 6
         source.write_text('⎕←x\n1÷0')
-        with pytest.raises(AplError, match=r'defs.apl:2') as err: apl("•LOAD 'defs.apl'")
+        with pytest.raises(AplError, match=r'defs.apl:2') as err: apl("•load 'defs.apl'")
         assert err.value.output == ['7']
         source.write_text('⎕←9\n{∇⍵}0')
         apl.timeout = .001
-        with pytest.raises(AplError, match='TIMEOUT'): apl("•LOAD 'defs.apl'")
+        with pytest.raises(AplError, match='TIMEOUT'): apl("•load 'defs.apl'")
         apl.timeout = None
         assert apl('x').py == 7
-        with pytest.raises(AplError, match='VALUE'): apl("•LOAD 'missing.apl'")
+        with pytest.raises(AplError, match='VALUE'): apl("•load 'missing.apl'")
 
 
 def test_data_io(tmp_path):
     source, dest = tmp_path/'sales.json', tmp_path/'sales.csv'
     source.write_text('{"price":[10.5,20.0],"qty":[2,4]}', encoding='utf-8')
     with Session() as apl:
-        read, write, json, csv = (apl.fn(s) for s in ('•NGET', '•NPUT', '•JSON', '•CSV'))
+        read, write, json, csv = (apl.fn(s) for s in ('•nget', '•nput', '•json', '•csv'))
         table = json(read({'path': str(source), 'encoding': 'UTF-8'}))
         encoded = csv(table, '').py
         teq(write(encoded, str(dest)).py, len(encoded.encode('utf-8')))

@@ -1,7 +1,7 @@
 ⍝ String dfns — adapted for bAsedPL from April
 ⍝ Source: https://dfns.dyalog.com/n_contents.htm (individual sources below)
 ⍝ April: libraries/dfns/string/string.apl; Apache-2.0, see LICENSE-april
-•LOAD 'lib/array.apl'
+•load 'lib/array.apl'
 
 ⍝ Ported from Dyalog's dfns at http://dfns.dyalog.com/n_contents.htm into April APL
 
@@ -59,7 +59,7 @@ htx ← {  ⍝ Extract html segments.
   seg←{(1=2|⍳⍴⍵)/⍵}
   sep←{((fm⍷⍵)∨to⍷⍵)⊂⍵}  ⍝ html separated at tags.
   cmb←{(~'  '⍷⍵)/⍵}  ⍝ compressed multiple blanks.
-  vec←{(~⍵∊•UCS 8 10 13){⍺\⍺/⍵}⍵}
+  vec←{(~⍵∊•ucs 8 10 13){⍺\⍺/⍵}⍵}
   rlt←{(1++/∧\'>'≠⍵)↓⍵}  ⍝ remove leading tag.
   att←{⍵,to,'>'}  ⍝ append trailing tag.
   fm to←'<' '</',¨⊂⍺~'<>'  ⍝ opening and closing html tags.
@@ -73,7 +73,7 @@ htx ← {  ⍝ Extract html segments.
 ⍝ From http://dfns.dyalog.com/c_ltov.htm
 
 ltov ← {  ⍝ Lines to nested vector.
-  ⍺←•UCS 10 13 133
+  ⍺←•ucs 10 13 133
   1↓¨⍺{  ⍝ remove leading separators.
     (⍵∊⍺)⊂⍵  ⍝ split at separator.
   }¯1⌽⍵,(~(¯1↑⍵)∊⍺)/1↑⍺  ⍝ ensure trailing separator.
@@ -82,7 +82,7 @@ ltov ← {  ⍝ Lines to nested vector.
 ⍝ From http://dfns.dyalog.com/c_vtol.htm
 
 vtol ← {  ⍝ Nested vector to lines.
-  ⍺←•UCS 10
+  ⍺←•ucs 10
   ,/⍵,¨⊂⍺
 }
 
@@ -94,7 +94,7 @@ wrap ← {  ⍝ Wrap word vector at ⍺ cols.
   gaps←¯1+⍸' '=(⍺+1)↑⍵
   take←¯1↑⍺,(⍺≥gaps)/gaps  ⍝ chars to take.
   drop←take+' '=(take+1)⊃⍵
-  head←(take↑⍵),•UCS 10
+  head←(take↑⍵),•ucs 10
   head,⍺∇drop↓⍵  ⍝ wrapped following lines.
 }
 
@@ -107,7 +107,7 @@ wrap2 ← { ⍺←102  ⍝ ⍺-wrap (Bob Smith).
   m←p<1⌽p  ⍝ mark last blank that fits on the line
   i←(⍴m)⍴1,(1↓⍴m)⍴0
   c←⌹i-m  ⍝ compute transitive closure of m
-  v[c[1;]/j]←•UCS 10
+  v[c[1;]/j]←•ucs 10
   1↓¯1↓v  ⍝ drop the extra blanks
 }
 
@@ -123,14 +123,14 @@ wrap3 ← { ⍺←102  ⍝ ⍺-wrap (John Daintree).
 
 ⍝ From http://dfns.dyalog.com/c_unwrap.htm
 
-unwrap ← { (~⍵∊•UCS 10 13 133){⍺\⍺/⍵}⍵ }     ⍝ Replace <LF> with blanks.
+unwrap ← { (~⍵∊•ucs 10 13 133){⍺\⍺/⍵}⍵ }     ⍝ Replace <LF> with blanks.
 
 ⍝ From http://dfns.dyalog.com/c_justify.htm
 
 justify ← {  ⍝ Justify line-vector to width ⍺.
   segs←{¯1+⍵{(⍵,⍴⍺)-¯1,⍵}¯1+⍸⍵}
   split←{((⍵|⍺)>¯1+⍳⍵)+⌊⍺÷1⌈⍵}
-  lf sp←(•UCS 10 32)=⊂⍵
+  lf sp←(•ucs 10 32)=⊂⍵
   sizes←segs lf  ⍝ line sizes.
   ⍺←⌈/sizes  ⍝ default width is longest line.
   blanks←segs~(lf∨sp)/sp  ⍝ original number of blanks per line.
@@ -144,7 +144,7 @@ justify ← {  ⍝ Justify line-vector to width ⍺.
 ⍝ From http://dfns.dyalog.com/c_vtrim.htm
 
 vtrim ← {  ⍝ Trim trailing blanks from line-vector.
-  lf sp←•UCS 10 32
+  lf sp←•ucs 10 32
   1↓¯1↓{  ⍝ without linefeeds brackets,
     types←¯1+lf sp⍳⍵
     mask←~1 1⍷types  ⍝ mask of non-(duplicate blanks).
@@ -174,7 +174,7 @@ wrapnote ← {                                 ⍝ Wrap text paragraphs in note 
   fold←{split to wrap ⍵}                     ⍝ re-wrap paragraph.
   dehyph←{(~spill'- '⍷⍵)/⍵}                  ⍝ re-join hyphen-separated words.
 
-  nls←•UCS 10 13 133                         ⍝ version-proof newlines.
+  nls←•ucs 10 13 133                         ⍝ version-proof newlines.
   nl←↑nls∩⍵                                  ⍝ newline separator.
   to fm←2↑⍺,first 1↓split ⍵~'─'              ⍝ to and from notes width.
   vex←split ⍵                                ⍝ line_vector notes to vec-of-vecs.
@@ -196,9 +196,9 @@ wrapnote ← {                                 ⍝ Wrap text paragraphs in note 
 xtabs ← {  ⍝ Expand/compress HT chars.
   ⍺←8  ⍝ default: 8-col tab stops.
   ⍺=0:⍵  ⍝ ⍺=0: no-op.
-  chs←~⍵∊•UCS 10 13 133
+  chs←~⍵∊•ucs 10 13 133
   ⍺>0:⍺{  ⍝ +ive ⍺: expand tabs → blanks.
-    tabs nabs←1 0=⊂⍵∊•UCS 9
+    tabs nabs←1 0=⊂⍵∊•ucs 9
     sync←tabs≥chs  ⍝ sync at tab and end of line.
     segs←¯1+{⍵-¯1,¯1↓⍵}¯1+⍸sync
     pads←0⌈⍺-⍺|(sync/tabs)/segs  ⍝ padding lengths.
@@ -210,7 +210,7 @@ xtabs ← {  ⍝ Expand/compress HT chars.
     tabs←bks∧chs∧0=⍺|runs chs  ⍝ tab positions.
     onoff←{(⍺≠⍵){≠\⍺\(≠/∘(2∘↕))¯1,⍺/⍵}⍺-⍵}
     pretab←⌽(⌽tabs)onoff⌽nks  ⍝ blanks that precede tabs.
-    (pretab≤tabs)/(•UCS 9)@{tabs}⍵
+    (pretab≤tabs)/(•ucs 9)@{tabs}⍵
   }⍵
 }
 

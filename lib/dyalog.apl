@@ -3,7 +3,7 @@
 ⍝ Exported from Dyalog 20.0.53963.0; individual sources below.
 ⍝ Modified for origin one, based arrays and bAsedPL notation.
 
-•LOAD 'lib/array.apl'
+•load 'lib/array.apl'
 ⍝ From https://dfns.dyalog.com/c_segs.htm
 segs←{(~⍵∊⍺)⊆⍵}  ⍝ Separator-delimited segments.
 
@@ -16,7 +16,7 @@ life←{1 ⍵∨.∧3 4=¨⊂+/,¯1 0 1⊖⌝¯1 0 1⌽⌝⊂⍵}
 ⍝ From https://dfns.dyalog.com/c_rmcm.htm
 rmcm←{  ⍝ Replace comments with blanks.
   cm←∨\(⍵='⍝')>≠\⍵=''''
-  •UCS(cm×32)+(~cm)×•UCS ⍵
+  •ucs(cm×32)+(~cm)×•ucs ⍵
 }
 
 ⍝ From https://dfns.dyalog.com/c_ripple.htm
@@ -343,7 +343,7 @@ mac←{  ⍝ Macro expansion over linked token lists.
   body←{
     dd(a(b uu))←⍵
     a∊↑⍺:⍺ ∇ dref dd(a(b uu))
-    a∊' )',•UCS 13:dd(b uu)
+    a∊' )',•ucs 13:dd(b uu)
     a≡'\':⍺ ∇(dd b)uu
     a≡'(':⍺ ∇ ⍺ mexp dd(b uu)
     ⍺ ∇(dd a)(b uu)
@@ -357,9 +357,9 @@ mac←{  ⍝ Macro expansion over linked token lists.
   }
   number←{
     dd d←⍺
-    ~d∊•D:⍺ 0
+    ~d∊•d:⍺ 0
     ddd n←dd ∇ ⍵×10
-    ddd(n+⍵×¯1+•D⍳d)
+    ddd(n+⍵×¯1+•d⍳d)
   }
   copy←{
     ⍺≡'(':⍵
@@ -610,7 +610,7 @@ ary←{  ⍝ Radix representation, including recurring fractional digits.
   }
   ofmt←{
     sig exp fix rep rat←⍵
-    fmt←{(•D,•A)[1+⍵]}
+    fmt←{(•d,•a)[1+⍵]}
     lft pad←0⌈1 ¯1×exp
     zro←{⍵,(≢⍵)↓0}
     neg←(sig<0)/'¯'
@@ -668,7 +668,7 @@ pack4←{  ⍝ Quad-tree packing; ⍺=0 expands, ⍺>1 allows lossy packing.
 von←{  ⍝ Capitalise names, preserving prefixes and user-supplied exceptions.
   ⍺←''
   pre not←{0=≢⍵:'' '' ⋄ 3>≡⍵:⍵'' ⋄ ⍵}⍺
-  tx←¯1•C,⍵,' '
+  tx←¯1•c,⍵,' '
   q←'ab af al an and ap as av da de dei della der di'
   q,←' el ja la le och of the und van ver von zu y'
   q←{' ',¨((⍵≠' ')⊆⍵),¨' '}q
@@ -677,13 +677,13 @@ von←{  ⍝ Capitalise names, preserving prefixes and user-supplied exceptions.
   ∆not←{∨⌿⊃(-⍳¯1+≢⍺)⌽¨⊂⍺⍷⍵}
   ∆fix←{
     0=≢⍺:0
-    q←¯1•C{2>≡⍵:,⊂,⍵ ⋄ ⍵}⍺
+    q←¯1•c{2>≡⍵:,⊂,⍵ ⋄ ⍵}⍺
     1↓∊∨/q ⍶¨⊂' ',⍵
   }
   b←(¯1↓∊∨/q⍷¨⊂' ',tx)<1,>/⌽⍤1⊢2↕~tx∊' -:;.,!?''"/)('
   b∨←pre(∆pre ∆fix)tx
   b>←not(∆not ∆fix)tx
-  ¯1↓(1∘•C)@{b}tx
+  ¯1↓(1∘•c)@{b}tx
 }
 
 ⍝ From https://dfns.dyalog.com/c_packH.htm
@@ -766,7 +766,7 @@ packH←{                      ⍝ Huffman packing.
          ⍵≥≢⍺:1 ⍵'unexpected eof'
          ⍺[1+⍵]≡' ':⍺ ∇ ⍵+1
          ⍺[1+⍵]≡'(':⍺ parseList ⍵+1
-         ⍺[1+⍵]∊•D:⍺ parseNum ⍵
+         ⍺[1+⍵]∊•d:⍺ parseNum ⍵
          ⍺[1+⍵]≡'''':⍺ parseQuote ⍵
          ⍺ parseAtom ⍵
      }
@@ -783,14 +783,14 @@ packH←{                      ⍝ Huffman packing.
 
      parseNum←{
          l←20 ⍝ 1 + the maximum length of a numeric literal
-         n←+/∧\•D∊⍨l↑⍵↓⍺ ⍝ actual length of the literal
+         n←+/∧\•d∊⍨l↑⍵↓⍺ ⍝ actual length of the literal
          n≡l:1 ⍵'numeric literal too long'
          0(⍵+n)(⍎n↑⍵↓⍺)
      }
 
      parseAtom←{
          la←20 ⍝ 1 + the maximum length of an atom
-         na←•D,'() ''' ⍝ non-atom characters
+         na←•d,'() ''' ⍝ non-atom characters
          l←+/∧\~na∊⍨la↑⍵↓⍺
          l≡la:1 ⍵'atom too long'
          0(⍵+l)(l↑⍵↓⍺)
@@ -884,12 +884,12 @@ packH←{                      ⍝ Huffman packing.
  }
 
 ⍝ Dyalog 20.0.53963.0 ⎕AV and name-start alphabet; codecs retain their original wire format.
-dfnsAV←•UCS 0 8 10 13 32 12 6 7 27 9 9014 619 37 39 9082 9077 95 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 1 2 175 46 9068 48 49 50 51 52 53 54 55 56 57 3 8866 165 36 163 162 8710 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 4 5 253 183 127 9049 193 194 195 199 200 202 203 204 205 206 207 208 210 211 212 213 217 218 219 221 254 227 236 240 242 245 123 8364 125 8867 9015 168 192 196 197 198 9064 201 209 214 216 220 223 224 225 226 228 229 230 231 232 233 234 235 237 238 239 241 91 47 9023 92 9024 60 8804 61 8805 62 8800 8744 8743 45 43 247 215 63 8714 9076 126 8593 8595 9075 9675 42 8968 8970 8711 8728 40 8834 8835 8745 8746 8869 8868 124 59 44 9073 9074 9042 9035 9033 9021 8854 9055 9017 33 9045 9038 9067 9066 8801 8802 243 244 246 248 34 35 30 38 180 9496 9488 9484 9492 9532 9472 9500 9508 9524 9516 9474 64 249 250 251 94 252 96 8739 182 58 9079 191 161 8900 8592 8594 9053 41 93 31 160 167 9109 9054 9059
+dfnsAV←•ucs 0 8 10 13 32 12 6 7 27 9 9014 619 37 39 9082 9077 95 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 1 2 175 46 9068 48 49 50 51 52 53 54 55 56 57 3 8866 165 36 163 162 8710 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 4 5 253 183 127 9049 193 194 195 199 200 202 203 204 205 206 207 208 210 211 212 213 217 218 219 221 254 227 236 240 242 245 123 8364 125 8867 9015 168 192 196 197 198 9064 201 209 214 216 220 223 224 225 226 228 229 230 231 232 233 234 235 237 238 239 241 91 47 9023 92 9024 60 8804 61 8805 62 8800 8744 8743 45 43 247 215 63 8714 9076 126 8593 8595 9075 9675 42 8968 8970 8711 8728 40 8834 8835 8745 8746 8869 8868 124 59 44 9073 9074 9042 9035 9033 9021 8854 9055 9017 33 9045 9038 9067 9066 8801 8802 243 244 246 248 34 35 30 38 180 9496 9488 9484 9492 9532 9472 9500 9508 9524 9516 9474 64 249 250 251 94 252 96 8739 182 58 9079 191 161 8900 8592 8594 9053 41 93 31 160 167 9109 9054 9059
 dfnsLetters←'_abcdefghijklmnopqrstuvwxyz∆ABCDEFGHIJKLMNOPQRSTUVWXYZ⍙ÁÂÃÇÈÊËÌÍÎÏÐÒÓÔÕÙÚÛÝþãìðòõÀÄÅÆÉÑÖØÜßàáâäåæçèéêëíîïñóôöøùúûü'
 
 ⍝ From https://dfns.dyalog.com/c_words.htm
 words←{  ⍝ Split a string into words and intervening text.
-  ⍺←dfnsLetters •D
+  ⍺←dfnsLetters •d
   1=≡,⍺:⍺''∇ ⍵
   alph supp←⍺
   w←0{(⍵∊alph)∨⍺∧⍵∊supp}\⍵
@@ -943,7 +943,7 @@ words←{  ⍝ Split a string into words and intervening text.
              ⍺ acc size ⍵
          }⍵
          hd∊alph:⍺{                      ⍝ Name
-             size←⍵ all alph,•D
+             size←⍵ all alph,•d
              ⍺ acc size ⍵
          }⍵
          hd∊'⎕':⍺{                       ⍝ System Name
@@ -954,8 +954,8 @@ words←{  ⍝ Split a string into words and intervening text.
              size←+/∧\{⍵∨¯1⌽⍵}≠\hd=⍵
              ⍺ acc size ⍵
          }⍵
-         hd∊•D,'¯':⍺{                    ⍝ Numeric literal
-             max←⍵ all •D,'.¯EJ',nv/' '  ⍝ numbers with trailing blanks.
+         hd∊•d,'¯':⍺{                    ⍝ Numeric literal
+             max←⍵ all •d,'.¯EJ',nv/' '  ⍝ numbers with trailing blanks.
              size←max-+/∧\' '=⌽max↑⍵     ⍝  ..  without trailing blanks.
              ⍺ acc size ⍵
          }⍵
@@ -973,7 +973,7 @@ words←{  ⍝ Split a string into words and intervening text.
  ssword←{                   ⍝ Approx alternative to xutils' ss.
      srce find repl←,¨⍵          ⍝ source, find and replace vectors
      alph←dfnsLetters ⍝ primary alphabet: initial letters for names
-     supp←•D                     ⍝ supplementary: 0-9
+     supp←•d                     ⍝ supplementary: 0-9
      ⍺←alph supp                 ⍝ default left argument
      ∊(⊂repl)@{                  ⍝ replace find with repl
          ⍵∊⊂find                 ⍝ matches

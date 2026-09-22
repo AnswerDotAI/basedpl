@@ -18,7 +18,7 @@ fn ints(values: &[i64]) -> AplValue { AplValue::integers(vec![values.len()], val
 
 #[test]
 fn csv_column_storage() {
-    let table = run("nl←•UCS 10 ⋄ •CSV 'i,f,m',nl,'1,2.5,9007199254740993',nl,'2,3,1.5'").unwrap().unwrap();
+    let table = run("nl←•ucs 10 ⋄ •csv 'i,f,m',nl,'1,2.5,9007199254740993',nl,'2,3,1.5'").unwrap().unwrap();
     assert_eq!(table.at(0).as_integers(), Some([1, 2].as_slice()));
     assert_eq!(table.at(1).as_floats(), Some([2.5, 3.].as_slice()));
     assert_eq!(table.at(2), run("9007199254740993x 1.5").unwrap().unwrap());
@@ -440,16 +440,16 @@ fn dfn_defaults_shy_results_and_numbered_guards() {
     fails_in(&mut s, Domain, &["{⍵:7 ⋄ 9}⊂,1", "{⍵:7 ⋄ 9}'a'", "{⍵:7 ⋄ 9}2"]);
     fails_in(&mut s, Value, &["10{g←{⍺+⍵} ⋄ g ⍵}3"]);
     for (kind, number) in [(Syntax, 2), (Index, 3), (Rank, 4), (Length, 5), (Value, 6), (Limit, 10), (Domain, 11)] {
-        let error = run(&format!("•SIGNAL '{kind}'")).unwrap_err();
+        let error = run(&format!("•signal '{kind}'")).unwrap_err();
         assert_eq!(error.kind, kind);
         assert_eq!(error.message, "explicitly signalled");
-        equiv(&format!("{{{number}::7 ⋄ •SIGNAL '{kind}'}}0"), "7");
+        equiv(&format!("{{{number}::7 ⋄ •signal '{kind}'}}0"), "7");
     }
     equiv("f←{•signal 'LENGTH ERROR'} ⋄ g←{⍵+1} ⋄ {0::g ⍵ ⋄ f ⍵}3", "4");
-    fails(Length, &["{11::7 ⋄ •SIGNAL 'LENGTH ERROR'}0", "{0::•SIGNAL 'LENGTH ERROR' ⋄ ÷0}0"]);
-    fails(Domain, &["•SIGNAL 11", "•SIGNAL 'unknown'", "•SIGNAL 'INTERRUPT'", "•SIGNAL 'TIMEOUT'", "•SIGNAL 'UNSUPPORTED'"]);
-    fails(Rank, &["•SIGNAL ['DOMAIN ERROR' ⋄]"]);
-    fails(Syntax, &["0 •SIGNAL 'DOMAIN ERROR'"]);
+    fails(Length, &["{11::7 ⋄ •signal 'LENGTH ERROR'}0", "{0::•signal 'LENGTH ERROR' ⋄ ÷0}0"]);
+    fails(Domain, &["•signal 11", "•signal 'unknown'", "•signal 'INTERRUPT'", "•signal 'TIMEOUT'", "•signal 'UNSUPPORTED'"]);
+    fails(Rank, &["•signal ['DOMAIN ERROR' ⋄]"]);
+    fails(Syntax, &["0 •signal 'DOMAIN ERROR'"]);
 }
 
 fn exact(n: i64, d: i64) -> AplValue { AplValue::scalar(num_rational::BigRational::new(n.into(), d.into())).unwrap() }

@@ -9,7 +9,7 @@ use serde_json::Value as Json;
 
 pub(crate) fn call(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let allowed = if left.is_some() { &["fill"][..] } else { &["source", "fill"][..] };
-    let opts = Options::new("•JSON", right, left.is_none().then_some("source"), allowed, span)?;
+    let opts = Options::new("•json", right, left.is_none().then_some("source"), allowed, span)?;
     let fill = opts.fill(span)?;
     match left {
         None => {

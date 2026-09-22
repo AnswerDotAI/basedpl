@@ -17,10 +17,10 @@ Cancellation and unsupported-feature errors bypass guards.
 
 ## Signal
 
-`•SIGNAL 'DOMAIN ERROR'` raises an ordinary APL error. It is monadic and does not return a value. Existing `::` guards catch it in the same way as an error from a primitive.
+`•signal 'DOMAIN ERROR'` raises an ordinary APL error. It is monadic and does not return a value. Existing `::` guards catch it in the same way as an error from a primitive.
 
 ```apl
-positive←{⍵≤0:•SIGNAL 'DOMAIN ERROR' ⋄ ⍵}
+positive←{⍵≤0:•signal 'DOMAIN ERROR' ⋄ ⍵}
 safe←{11::0 ⋄ positive ⍵}
 safe ¯3   ⍝ 0
 safe 4    ⍝ 4

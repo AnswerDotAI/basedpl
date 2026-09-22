@@ -1624,7 +1624,7 @@ impl Session {
     }
 
     fn load(&mut self, left: Option<&Value>, right: &Value, span: &Span, output: &mut Vec<String>) -> Result<Bound, Error> {
-        if left.is_some() { return Err(span.error(ErrorKind::Syntax, "•LOAD is monadic")); }
+        if left.is_some() { return Err(span.error(ErrorKind::Syntax, "•load is monadic")); }
         let path = Self::source_text(right, span)?;
         let code = std::fs::read_to_string(&path).map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))?;
         self.execute_source(Source::new(path, code), span, output)

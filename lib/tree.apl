@@ -1,7 +1,7 @@
 ⍝ Tree dfns — adapted for bAsedPL from April
 ⍝ Source: https://dfns.dyalog.com/n_contents.htm (individual sources below)
 ⍝ April: libraries/dfns/tree/tree.apl; Apache-2.0, see LICENSE-april
-•LOAD 'lib/power.apl'
+•load 'lib/power.apl'
 
 ⍝⍝ Ported from Dyalog's dfns at http://dfns.dyalog.com/n_Trees.htm into April APL
 

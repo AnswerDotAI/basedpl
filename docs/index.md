@@ -151,20 +151,20 @@ Numeric notation `x`, `r`, `j`, `E`: see [numbers](rules.md#numbers).
 
 ## System names
 
-Names are case-insensitive. `•A` and `•D` are constant arrays; the other names are functions, usable with operators and composition.
+Names are case-insensitive. `•a` and `•d` are constant arrays; the other names are functions, usable with operators and composition.
 
 | Name | Meaning |
 |---|---|
-| `•A` [Alphabet](glyphs/alphabet.md) | Uppercase Latin alphabet |
-| `•D` [Digits](glyphs/digits.md) | Decimal digits |
-| `•C` [Case](glyphs/case.md) | Unicode case conversion |
-| `•CSV` [CSV](data.md#csv) | CSV text ↔ keyed column vectors |
-| `•JSON` [JSON](data.md#json) | JSON text ↔ arrays and keyed vectors |
-| `•NGET` [Read](data.md#files) | Read UTF-8 text |
-| `•NPUT` [Write](data.md#files) | Write UTF-8 text |
-| `•UCS` [Unicode](glyphs/unicode.md) | Unicode code points / encodings |
-| `•LOAD` [Load](glyphs/load.md) | Evaluate an APL source file |
-| `•SIGNAL` [Signal](glyphs/error-guard.md#signal) | Raise an ordinary APL error |
+| `•a` [Alphabet](glyphs/alphabet.md) | Uppercase Latin alphabet |
+| `•d` [Digits](glyphs/digits.md) | Decimal digits |
+| `•c` [Case](glyphs/case.md) | Unicode case conversion |
+| `•csv` [CSV](data.md#csv) | CSV text ↔ keyed column vectors |
+| `•json` [JSON](data.md#json) | JSON text ↔ arrays and keyed vectors |
+| `•nget` [Read](data.md#files) | Read UTF-8 text |
+| `•nput` [Write](data.md#files) | Write UTF-8 text |
+| `•ucs` [Unicode](glyphs/unicode.md) | Unicode code points / encodings |
+| `•load` [Load](glyphs/load.md) | Evaluate an APL source file |
+| `•signal` [Signal](glyphs/error-guard.md#signal) | Raise an ordinary APL error |
 
 Index origin: 1. Comparison tolerance: `1E¯14`.
 
@@ -173,5 +173,5 @@ Index origin: 1. Comparison tolerance: `1E¯14`.
 - [Atoms](rules.md#arrays-nesting-and-fill): numbers, characters and functions are atoms, distinct from scalars, as BQN. Enclosing always adds a layer: `(⊂3)≡3` is `0x`.
 - [Numbers](rules.md#numbers): bare numbers are approximate. `x` and `r` mark exact integers and rationals, as J: `1x÷3x` is `1r3`. Predicates, positions, tally and shape are exact.
 - [Agreement](rules.md#agreement-and-pervasion): scalar functions, Each and Rank align leading axes, and unit dimensions expand: `(2 3⍴⍳6)+10 20` is `2 3⍴11 12 13 24 25 26`.
-- [System names](#system-names): written `•NAME`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
+- [System names](#system-names): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
 - [Axis keys](keyed.md) name data. `K:Y` evaluates its keys. `T.a` is `'a'⊃T`, and `X⍎Y` is `Y⊃X`.

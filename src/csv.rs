@@ -19,7 +19,7 @@ impl Options {
     fn new(right: &Value, import: bool, span: &Context<'_>) -> Result<Self, Error> {
         let mut allowed = vec!["separator", "quotechar", "escapechar", "doublequote", "decimal", "thousands", "trim", "header", "fill"];
         allowed.extend(if import { &["source", "text_columns", "numeric_columns", "missing"][..] } else { &["forcequotes", "lineending"][..] });
-        let common = crate::data::Options::new("•CSV", right, import.then_some("source"), &allowed, span)?;
+        let common = crate::data::Options::new("•csv", right, import.then_some("source"), &allowed, span)?;
         let mut opts = Self { common, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.', thousands: None };
         let byte = |c: Option<char>| -> Result<Option<u8>, Error> {
             c.map(|c| {

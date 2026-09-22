@@ -1,7 +1,7 @@
 ⍝ Numeric dfns — adapted for bAsedPL from April
 ⍝ Source: https://dfns.dyalog.com/n_contents.htm (individual sources below)
 ⍝ April: libraries/dfns/numeric/numeric.apl; Apache-2.0, see LICENSE-april
-•LOAD 'lib/graph.apl'
+•load 'lib/graph.apl'
 
 ⍝⍝ Ported from http://dfns.dyalog.com/n_contents.htm into April APL
 
@@ -132,7 +132,7 @@ dec ← {  ⍝ Decimal from hexadecimal
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵  ⍝ vector-wise:
   0≡≢⍵:0  ⍝ dec'' → 0.
   1≠≡,⍵:⍺ ∇¨⍵  ⍝ simple-array-wise:
-  ws←∊∘(•UCS 9 10 13 32 133 160)
+  ws←∊∘(•ucs 9 10 13 32 133 160)
   ws↑⍵:⍺ ∇ 1↓⍵
   ws↑⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵  ⍝ white-space-separated:
@@ -351,7 +351,7 @@ phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
   ''≡0/∊⍵:{
     1<|≡⍵:∇¨⍵
     '¯'=↑⍵:-∇ 1↓⍵
-    a←Ø⊥¯1+•D⍳⍵~'.'
+    a←Ø⊥¯1+•d⍳⍵~'.'
     a÷Ø*(≢⍵∪'.')-(,⍵)⍳'.'
   }⍵
   0≠≡⍵:⍺ ∇¨⍵

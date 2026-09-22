@@ -114,7 +114,7 @@ def _number(value):
 def _chars(text):
     if all(c.isprintable() for c in text): return "'"+text.replace("'", "''")+"'"
     codes = ' '.join(str(ord(c)) for c in text)
-    return '•UCS '+codes
+    return '•ucs '+codes
 
 
 def _element(value):
@@ -140,7 +140,7 @@ def literal(array):
         def item(x):
             if isinstance(x, dict) and 'shape' in x: return '('+literal(x)+')'
             text = _element(x)
-            return '('+text+')' if text.startswith('•UCS ') else text
+            return '('+text+')' if text.startswith('•ucs ') else text
         values = ' '.join(item(x) for x in data)
     if shape==[len(data)] and len(data)>1: return values
     if len(data)==1: values = _element(data[0])

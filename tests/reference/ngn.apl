@@ -203,7 +203,7 @@ a←' this is a test '⋄(a≠' ')⊂a
 2≢2   ⍝ 0
 
 ⍝ ngn:66 — Ravel alphabet matrix; use the supported uppercase spelling of the read-only alphabet constant; independent Dyalog expectation
-,2 13⍴•A   ⍝ 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+,2 13⍴•a   ⍝ 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 ⍝ ngn:67 —
 ,1   ⍝ 1⍴1
@@ -1303,7 +1303,7 @@ a←3 2 5⍴'joe  doe  bob  jonesbob  zwart'⋄a[⍋a;;]
 'ZYXWVUTSRQPONMLKJIHGFEDCBA'⍋'ZAMBIA'   ⍝ 1 3 5 4 2 6
 
 ⍝ ngn:415 — Fixed origin/constants; omit irrelevant PP assignment and constant rebinding; glyph-only formatting where needed
-(⌽•A)⍋3 3⍴'BOBALFZAK'   ⍝ 3 1 2
+(⌽•a)⍋3 3⍴'BOBALFZAK'   ⍝ 3 1 2
 
 ⍝ ngn:416 —
 a←6 4⍴'ABLEaBLEACREABELaBELACES'⋄a[(2 26⍴'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz')⍋a;]
@@ -1563,13 +1563,13 @@ f←{⍺+2×⍵}⋄f/⍬
 1{⍺+÷⍵}⍣=1   ⍝ 1.618033988749897
 
 ⍝ ngn:507 —
-•UCS'a'   ⍝ 97
+•ucs'a'   ⍝ 97
 
 ⍝ ngn:508 —
-•UCS'ab'   ⍝ 97 98
+•ucs'ab'   ⍝ 97 98
 
 ⍝ ngn:509 — Offset adjusted for fixed origin 1; retain upstream character expectation
-•UCS 2 2⍴96+⍳4   ⍝ 2 2⍴'abcd'
+•ucs 2 2⍴96+⍳4   ⍝ 2 2⍴'abcd'
 
 ⍝ ngn:510 —
 n←6⋄r←?n⋄(1≤r)∧(r≤n)   ⍝ 1

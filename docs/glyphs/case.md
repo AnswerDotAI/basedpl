@@ -1,16 +1,16 @@
-# `•C` — Case conversion
+# `•c` — Case conversion
 
-`•C Y` folds case.
+`•c Y` folds case.
 
 ```apl
-•C 'AbC'           ⍝ 'abc'
+•c 'AbC'           ⍝ 'abc'
 ```
 
-`1•C Y` uppercases; `¯1•C Y` lowercases.
+`1•c Y` uppercases; `¯1•c Y` lowercases.
 
 ```apl
-1•C 'AbC'          ⍝ 'ABC'
-¯1•C 'AbC'         ⍝ 'abc'
+1•c 'AbC'          ⍝ 'ABC'
+¯1•c 'AbC'         ⍝ 'abc'
 ```
 
 Unicode simple mappings preserve shape and nesting; non-character leaves stay unchanged.

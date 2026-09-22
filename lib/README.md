@@ -3,12 +3,12 @@
 Dyalog dfns adapted for bAsedPL from [April's ports](https://github.com/phantomics/april/tree/master/libraries/dfns) and the Dyalog `dfns` workspace. Load a file from the repository root:
 
 ```apl
-•LOAD 'lib/numeric.apl'
+•load 'lib/numeric.apl'
 phinary 42                     ⍝ '10100010.00100001'
 84 gcd 30                      ⍝ 6
 ```
 
-The same call works from Python: `apl("•LOAD 'lib/numeric.apl'")`. Definitions enter the current scope. Paths are relative to the working directory.
+The same call works from Python: `apl("•load 'lib/numeric.apl'")`. Definitions enter the current scope. Paths are relative to the working directory.
 
 | File | Contents | Loads |
 |---|---|---|

@@ -54,8 +54,8 @@ fn file_options(name: &'static str, right: &Value, allowed: &[&str], span: &Cont
 }
 
 pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if left.is_some() { return Err(span.error(ErrorKind::Syntax, "•NGET is monadic")); }
-    let (_, path) = file_options("•NGET", right, &["path", "encoding"], span)?;
+    if left.is_some() { return Err(span.error(ErrorKind::Syntax, "•nget is monadic")); }
+    let (_, path) = file_options("•nget", right, &["path", "encoding"], span)?;
     span.check()?;
     let data = std::fs::read_to_string(&path).map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))?;
     span.check()?;
@@ -63,9 +63,9 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
 }
 
 pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let left = left.ok_or_else(|| span.error(ErrorKind::Syntax, "•NPUT needs text on the left"))?;
+    let left = left.ok_or_else(|| span.error(ErrorKind::Syntax, "•nput needs text on the left"))?;
     let data = text(left, span)?;
-    let (opts, path) = file_options("•NPUT", right, &["path", "encoding", "overwrite"], span)?;
+    let (opts, path) = file_options("•nput", right, &["path", "encoding", "overwrite"], span)?;
     let overwrite = opts.boolean("overwrite", false, span)?;
     span.check()?;
     let mut file = OpenOptions::new()

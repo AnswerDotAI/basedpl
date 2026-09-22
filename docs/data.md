@@ -1,64 +1,64 @@
 # Files, CSV and JSON
 
-Read text with `•NGET`, parse it with `•CSV` or `•JSON`, calculate, then serialize and write with `•NPUT`.
+Read text with `•nget`, parse it with `•csv` or `•json`, calculate, then serialize and write with `•nput`.
 
 ```text
-sales←•CSV •NGET 'sales.csv'
+sales←•csv •nget 'sales.csv'
 totals←+/¨sales
-(totals •JSON '') •NPUT 'totals.json'
+(totals •json '') •nput 'totals.json'
 ```
 
 All four functions accept keyed options. Option names are case-insensitive.
 
 ## Files
 
-`•NGET path` reads UTF-8 text, preserving newlines. `text •NPUT path` creates a UTF-8 file and returns the number of bytes written. Writing an existing path gives VALUE unless `overwrite` is `1`.
+`•nget path` reads UTF-8 text, preserving newlines. `text •nput path` creates a UTF-8 file and returns the number of bytes written. Writing an existing path gives VALUE unless `overwrite` is `1`.
 
 ```text
-text←•NGET 'sales.csv'
-text •NPUT 'copy.csv'
-text •NPUT ('path' 'overwrite':('copy.csv' ⋄ 1))
+text←•nget 'sales.csv'
+text •nput 'copy.csv'
+text •nput ('path' 'overwrite':('copy.csv' ⋄ 1))
 ```
 
 | Option | Default | Meaning |
 |---|---|---|
 | `path` | Required | Filename; a plain path is shorthand |
 | `encoding` | `'UTF-8'` | UTF-8 |
-| `overwrite` | `0` | `•NPUT`: replace an existing file |
+| `overwrite` | `0` | `•nput`: replace an existing file |
 
 Missing files, invalid UTF-8 and OS file errors give VALUE. Invalid options give DOMAIN. Directories must already exist.
 
 ## JSON
 
-`•JSON text` parses JSON. Objects become keyed vectors; arrays become vectors. Strings become character vectors. Nested structure is retained.
+`•json text` parses JSON. Objects become keyed vectors; arrays become vectors. Strings become character vectors. Nested structure is retained.
 
 ```apl
-person←•JSON '{"name":"Ann","scores":[10,20]}'
+person←•json '{"name":"Ann","scores":[10,20]}'
 'name'⊃person              ⍝ 'Ann'
 'scores'⊃person            ⍝ 10x 20x
 ```
 
-`Y •JSON ''` exports. Keyed axes form objects; unkeyed axes form arrays. Character vectors form strings, and scalar arrays export their contents. Axis names and empty-array prototypes are omitted.
+`Y •json ''` exports. Keyed axes form objects; unkeyed axes form arrays. Character vectors form strings, and scalar arrays export their contents. Axis names and empty-array prototypes are omitted.
 
 ```apl
-('name' 'scores':('Ann' ⋄ 10x 20x)) •JSON ''
-[1x 2x ⋄ 3x 4x] •JSON ''   ⍝ '[[1,2],[3,4]]'
-(•JSON '{}') •JSON ''      ⍝ '{}'
+('name' 'scores':('Ann' ⋄ 10x 20x)) •json ''
+[1x 2x ⋄ 3x 4x] •json ''   ⍝ '[[1,2],[3,4]]'
+(•json '{}') •json ''      ⍝ '{}'
 ```
 
 Integer tokens remain exact, including large integers. Decimal/exponent tokens become floats. `true` and `false` become `1x` and `0x`, which export as numbers.
 
 ```apl
-•JSON '[9223372036854775808,1.5,true,false]'
-(•JSON '[true,false]') •JSON ''   ⍝ '[1,0]'
+•json '[9223372036854775808,1.5,true,false]'
+(•json '[true,false]') •json ''   ⍝ '[1,0]'
 ```
 
 JSON `null` becomes `∞` by default. Set `fill` to choose another numeric sentinel. On export, an explicitly supplied `fill` becomes `null` wherever it occurs.
 
 ```apl
-•JSON '[1,null,3]'                         ⍝ 1x ∞ 3x
-•JSON 'source' 'fill':('[1,null,3]' ⋄ ¯1x)   ⍝ 1x ¯1x 3x
-(1x ∞ 3x) •JSON 'fill':∞                    ⍝ '[1,null,3]'
+•json '[1,null,3]'                         ⍝ 1x ∞ 3x
+•json 'source' 'fill':('[1,null,3]' ⋄ ¯1x)   ⍝ 1x ¯1x 3x
+(1x ∞ 3x) •json 'fill':∞                    ⍝ '[1,null,3]'
 ```
 
 | Option | Default | Meaning |
@@ -70,22 +70,22 @@ Malformed JSON gives DOMAIN with line/column details. Out-of-range floats, nonin
 
 ## CSV
 
-`•CSV text` reads CSV into a vector of column vectors. Headers become keys. Each numeric column uses compact integer or float storage where possible.
+`•csv text` reads CSV into a vector of column vectors. Headers become keys. Each numeric column uses compact integer or float storage where possible.
 
 ```apl
-nl←•UCS 10
+nl←•ucs 10
 text←'price,qty',nl,'10.5,2',nl,'20.0,4'
-T←•CSV text
+T←•csv text
 T                         ⍝ 'price' 'qty':(10.5 20 ⋄ 2x 4x)
 'qty'⊃T                   ⍝ 2x 4x
 +/¨T                      ⍝ 'price' 'qty':30.5 6x
 ```
 
-`T •CSV ''` writes CSV text. Column lengths must agree. Keys supply the header. Unkeyed input writes data alone.
+`T •csv ''` writes CSV text. Column lengths must agree. Keys supply the header. Unkeyed input writes data alone.
 
 ```apl
 T←'price' 'qty':(10.5 20 ⋄ 2x 4x)
-•CSV T •CSV ''            ⍝ 'price' 'qty':(10.5 20 ⋄ 2x 4x)
+•csv T •csv ''            ⍝ 'price' 'qty':(10.5 20 ⋄ 2x 4x)
 ```
 
 ### CSV options
@@ -93,19 +93,19 @@ T←'price' 'qty':(10.5 20 ⋄ 2x 4x)
 Pass a keyed vector. Import includes `source`; export takes the table on the left. Option names are case-insensitive.
 
 ```apl
-nl←•UCS 10
+nl←•ucs 10
 text←'price;qty',nl,'10,5;2',nl,'20,0;4'
-T←•CSV 'source' 'separator' 'decimal':(text ⋄ ';' ⋄ ',')
+T←•csv 'source' 'separator' 'decimal':(text ⋄ ';' ⋄ ',')
 T                         ⍝ 'price' 'qty':(10.5 20 ⋄ 2x 4x)
-csv←T •CSV 'separator' 'decimal':(';' ⋄ ',')
-•CSV 'source' 'separator' 'decimal':(csv ⋄ ';' ⋄ ',')
+csv←T •csv 'separator' 'decimal':(';' ⋄ ',')
+•csv 'source' 'separator' 'decimal':(csv ⋄ ';' ⋄ ',')
 ```
 
 | Option | Default | Meaning |
 |---|---|---|
 | `source` | Required for import | CSV text |
 | `header` | Import: `1`; export: has keys | Read/write column names |
-| `separator` | `','` | Field separator; use `•UCS 9` for TSV |
+| `separator` | `','` | Field separator; use `•ucs 9` for TSV |
 | `quotechar` | `'"'` | Quote character; `''` disables quoting |
 | `doublequote` | `1` | Represent a quote inside a quoted field by doubling it |
 | `escapechar` | `''` | Escape character inside quoted fields |
@@ -117,13 +117,13 @@ csv←T •CSV 'separator' 'decimal':(';' ⋄ ',')
 | `numeric_columns` | `⍬` | Import these columns as numbers; invalid nonmissing text errors |
 | `missing` | `⍬` | Additional missing-cell strings; empty cells are always missing |
 | `forcequotes` | `0` | Export: `0` as needed, `2` all fields |
-| `lineending` | `•UCS 10` | Export: LF or CRLF (`•UCS 13 10`) |
+| `lineending` | `•ucs 10` | Export: LF or CRLF (`•ucs 13 10`) |
 
 Column selectors are names or 1-origin positions. A character vector names one column. Use a vector for several selectors.
 
 ```apl
-text←'id,qty',(•UCS 10),'00123,5'
-T←•CSV 'source' 'text_columns':(text ⋄ 'id')
+text←'id,qty',(•ucs 10),'00123,5'
+T←•csv 'source' 'text_columns':(text ⋄ 'id')
 'id'⊃T                    ⍝ ,⊂'00123'
 ```
 
@@ -134,8 +134,8 @@ Separator, quote and escape must be distinct ASCII characters other than CR, LF 
 Inference examines a whole column, ignoring missing cells. Integer fields produce exact numbers. Decimal/scientific notation produces floats. A column containing other text stays text. Quoted numbers participate in inference too.
 
 ```apl
-nl←•UCS 10
-T←•CSV 'count,label',nl,'2,001',nl,'3,yes'
+nl←•ucs 10
+T←•csv 'count,label',nl,'2,001',nl,'3,yes'
 'count'⊃T                 ⍝ 2x 3x
 'label'⊃T                 ⍝ '001' 'yes'
 ```
@@ -145,8 +145,8 @@ Integer-only columns use `i64` storage when values fit. Decimal columns promote 
 Missing numeric cells become `∞`. Missing text cells become `''`. Entirely missing columns are text unless forced numeric.
 
 ```apl
-nl←•UCS 10
-T←•CSV 'price,qty',nl,'10.5,2',nl,',4'
+nl←•ucs 10
+T←•csv 'price,qty',nl,'10.5,2',nl,',4'
 'price'⊃T                 ⍝ 10.5 ∞
 'qty'⊃T                   ⍝ 2x 4x
 ```
@@ -154,8 +154,8 @@ T←•CSV 'price,qty',nl,'10.5,2',nl,',4'
 Configure extra missing markers and numeric fill explicitly.
 
 ```apl
-text←'qty',(•UCS 10),'NA',(•UCS 10),'4'
-•CSV 'source' 'missing' 'fill':(text ⋄ 'NA' ⋄ ¯1x)   ⍝ 'qty':¯1x 4x
+text←'qty',(•ucs 10),'NA',(•ucs 10),'4'
+•csv 'source' 'missing' 'fill':(text ⋄ 'NA' ⋄ ¯1x)   ⍝ 'qty':¯1x 4x
 ```
 
 Export uses `-` for negative numbers, decimal/scientific float spelling and plain exact integers. Infinity writes as `inf` or `-inf`. Set `fill` to export a chosen numeric sentinel as an empty field. Nonintegral rationals, complex numbers, functions and nested nonstring cells give DOMAIN.
@@ -168,15 +168,15 @@ Empty input returns an empty unkeyed vector. Header-only input returns keyed emp
 from basedpl import Session
 
 with Session() as apl:
-    csv = apl.fn('•CSV')
+    csv = apl.fn('•csv')
     table = csv('price,qty\n10.5,2\n20.0,4\n')
     assert table.py['qty'].tolist() == [2, 4]
     text = csv(table, {'separator': ';'}).py
     restored = csv({'source': text, 'separator': ';'})
     assert restored.py['price'].tolist() == [10.5, 20.0]
-    json = apl.fn('•JSON')
+    json = apl.fn('•json')
     encoded = json(table, '').py
     assert json(encoded).py['qty'].tolist() == [2, 4]
 ```
 
-Use `apl.fn('•NGET')` and `apl.fn('•NPUT')` for the same file operations from Python. Python's `pathlib.Path.read_text` and `write_text` work with the codec functions too.
+Use `apl.fn('•nget')` and `apl.fn('•nput')` for the same file operations from Python. Python's `pathlib.Path.read_text` and `write_text` work with the codec functions too.

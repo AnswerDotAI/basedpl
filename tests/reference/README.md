@@ -4,7 +4,7 @@ The `.apl` files are the executable language tests. `core.apl` holds bAsedPL's o
 
 Source entries are not necessarily executable tests. Many APLcart recipes have unbound arguments and no expected result. They need concrete examples. Library cases need their definitions and setup. Use the scanner below for current counts and failures; fixture reasons describe their last review, not necessarily today's implementation. Progress notes belong in `meta/`, not this README.
 
-Active cases use bAsedPL spellings: `π` for APL's monadic `○`, `g⌝` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, `⍢` for `∇∇`, and `•Name` for system names. Original inventory sources retain their dialect's notation.
+Active cases use bAsedPL spellings: `π` for APL's monadic `○`, `g⌝` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, `⍢` for `∇∇`, and `•name` for system names. Original inventory sources retain their dialect's notation.
 
 Run the active cases with:
 
@@ -72,7 +72,7 @@ corpus.update_many({'ngn:391': {'reason': 'reviewed'}, 'ngn:392': {'reason': 're
 
 `find` searches full ID/code/reason text and returns single-line previews of at most 180 characters, keyed by ID. Filter with `source` or `status`; `limit=None` returns all matches. `corpus[id]` returns code/status/reason. Use `corpus[id, 'code', 'expected']` for selected fields or `corpus[id, '*']` for the full record. Unknown IDs raise `KeyError`. Use `get_many(ids, *fields)` for bulk reads. Updates read fresh files, preserve unrelated fields, and report changed field names. Use `remove=['expected_error']` when replacing an error expectation with a value; `None` means JSON null, not deletion. Unknown IDs write nothing. Use these methods rather than reading and patching whole JSONL lines in the conversation.
 
-Library recipes use the shared ports in `lib/`: start a case with `•LOAD 'lib/numeric.apl'`, for example. Keep case-specific setup in the case. Combine related examples only when their combined expectation stays clear. `library_definitions(path)` reads top-level named assignments; `source_definitions(text)` does the same for a string. `library_dependencies(definitions, code)` selects transitive references for review, ignoring strings/comments but not resolving lexical shadowing. Retain original source and adaptation metadata in the inventory. The upstream checkout is only needed when reviewing new ports.
+Library recipes use the shared ports in `lib/`: start a case with `•load 'lib/numeric.apl'`, for example. Keep case-specific setup in the case. Combine related examples only when their combined expectation stays clear. `library_definitions(path)` reads top-level named assignments; `source_definitions(text)` does the same for a string. `library_dependencies(definitions, code)` selects transitive references for review, ignoring strings/comments but not resolving lexical shadowing. Retain original source and adaptation metadata in the inventory. The upstream checkout is only needed when reviewing new ports.
 
 Additional Dyalog workspace ports live in `lib/dyalog.apl`. Their APLcart inventory entries retain `original_definition`, `definition_source` and `definition_version`. Unported definitions keep `pending` status and a reason naming the remaining work. Licence confirmation for these workspace sources is pending; the Dyalog documentation licence below covers documentation examples.
 
@@ -141,7 +141,7 @@ The output is `meta/apl-preview/{ngn,april,aplcart,dyalog,core}.apl`. The refere
 
 Active cases use bAsedPL's postfix `g⌝` for outer product. The inventory retains upstream `∘.g` spellings.
 
-System names use `•` in active cases (`•C`, `•UCS`, etc.). The inventory retains upstream `⎕` spellings. `⎕←` is output in both.
+System names use `•` in active cases (`•c`, `•ucs`, etc.). The inventory retains upstream `⎕` spellings. `⎕←` is output in both.
 
 | Source | Snapshot | Files |
 |---|---|---|

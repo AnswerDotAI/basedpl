@@ -15,16 +15,16 @@ pub(crate) struct SystemFunction { pub name: &'static str, pub call: Call }
 enum Builtin { Text(&'static str), Function(Call) }
 
 const BUILTINS: &[(&str, Builtin)] = &[
-    ("•A", Builtin::Text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
-    ("•D", Builtin::Text("0123456789")),
-    ("•C", Builtin::Function(Call::Value(case_convert))),
-    ("•CSV", Builtin::Function(Call::Value(crate::csv::call))),
-    ("•JSON", Builtin::Function(Call::Value(crate::json::call))),
-    ("•NGET", Builtin::Function(Call::Value(crate::data::read))),
-    ("•NPUT", Builtin::Function(Call::Value(crate::data::write))),
-    ("•UCS", Builtin::Function(Call::Value(unicode_convert))),
-    ("•LOAD", Builtin::Function(Call::Load)),
-    ("•SIGNAL", Builtin::Function(Call::Value(signal))),
+    ("•a", Builtin::Text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
+    ("•d", Builtin::Text("0123456789")),
+    ("•c", Builtin::Function(Call::Value(case_convert))),
+    ("•csv", Builtin::Function(Call::Value(crate::csv::call))),
+    ("•json", Builtin::Function(Call::Value(crate::json::call))),
+    ("•nget", Builtin::Function(Call::Value(crate::data::read))),
+    ("•nput", Builtin::Function(Call::Value(crate::data::write))),
+    ("•ucs", Builtin::Function(Call::Value(unicode_convert))),
+    ("•load", Builtin::Function(Call::Load)),
+    ("•signal", Builtin::Function(Call::Value(signal))),
 ];
 
 pub(crate) fn lookup(name: &str) -> Option<Operand> {
@@ -36,9 +36,9 @@ pub(crate) fn lookup(name: &str) -> Option<Operand> {
 }
 
 fn signal(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if left.is_some() { return Err(span.error(ErrorKind::Syntax, "•SIGNAL is monadic")); }
-    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "•SIGNAL needs an error name vector")); }
-    let invalid = || span.error(ErrorKind::Domain, "•SIGNAL needs an ordinary error name such as 'DOMAIN ERROR'");
+    if left.is_some() { return Err(span.error(ErrorKind::Syntax, "•signal is monadic")); }
+    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "•signal needs an error name vector")); }
+    let invalid = || span.error(ErrorKind::Domain, "•signal needs an ordinary error name such as 'DOMAIN ERROR'");
     let name: String = right
         .elements()
         .map(|e| match e { Value::Character(c) => Ok(c), _ => Err(invalid()) })
@@ -59,10 +59,10 @@ fn signal(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Val
 fn case_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let mode = match left {
         None => -3,
-        Some(a) if a.is_singleton() => numeric(&a.at(0), span)?.integer().map_err(|k| span.error(k, "•C mode must be 1, ¯1 or ¯3"))?,
-        _ => return Err(span.error(ErrorKind::Domain, "•C needs one case mode")),
+        Some(a) if a.is_singleton() => numeric(&a.at(0), span)?.integer().map_err(|k| span.error(k, "•c mode must be 1, ¯1 or ¯3"))?,
+        _ => return Err(span.error(ErrorKind::Domain, "•c needs one case mode")),
     };
-    if !matches!(mode, -3 | -1 | 1) { return Err(span.error(ErrorKind::Domain, "•C mode must be 1, ¯1 or ¯3")); }
+    if !matches!(mode, -3 | -1 | 1) { return Err(span.error(ErrorKind::Domain, "•c mode must be 1, ¯1 or ¯3")); }
     fn map(a: &Value, mode: isize, span: &Context<'_>) -> Result<Value, Error> {
         let mapper = icu_casemap::CaseMapper::new();
         let item = |e: Value| {
@@ -91,7 +91,7 @@ fn unicode_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
             if spec.shape().len() > 1 || !(1..=2).contains(&spec.len()) { return Err(invalid()); }
             if spec.len() == 2 {
                 let mode = numeric(&spec.at(1), span)?.integer().map_err(|_| invalid())?;
-                if mode == 83 { return Err(span.error(ErrorKind::Unsupported, "•UCS signed bytes are out of scope")); }
+                if mode == 83 { return Err(span.error(ErrorKind::Unsupported, "•ucs signed bytes are out of scope")); }
                 if mode != 0 { return Err(invalid()); }
             }
             spec.at(0).clone()
@@ -102,7 +102,7 @@ fn unicode_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
             .map(|e| match e { Value::Character(c) => Ok(c), _ => Err(invalid()) })
             .collect::<Result<_, _>>()?;
         if !matches!(name.as_str(), "UTF-8" | "UTF-16" | "UTF-32") { return Err(invalid()); }
-        if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "encoded •UCS needs a vector")); }
+        if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "encoded •ucs needs a vector")); }
         Some(name)
     } else { None };
     let characters = matches!(right.prototype(), Value::Character(_));

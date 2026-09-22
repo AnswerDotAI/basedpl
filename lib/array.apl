@@ -104,7 +104,7 @@ disp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄ ⍺←⍬  
     isor ⍵:'∇'  ⍝ ⎕or:    '∇'
     sst←{  ⍝ simple scalar type.
       0=dec×⍴⍴⍵:'─'  ⍝ undecorated or scalar ⍕⍵: char,
-      (1+↑⍵∊'¯',•D)⊃'#~'
+      (1+↑⍵∊'¯',•d)⊃'#~'
     }∘⍕  ⍝ ⍕ distinguishes type of scalar.
     0=≡⍵:sst ⍵  ⍝ simple scalar: type.
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
@@ -142,7 +142,7 @@ display ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⍝ Box
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}  ⍝ array axis types
   open←{(1⌈⍴⍵)⍴⍵}  ⍝ exposure of null axes
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}  ⍝ removal of extra blank cols
-  char←{⍬≡⍴⍵:'─' ⋄ (1+↑⍵∊'¯',•D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+↑⍵∊'¯',•d)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   line←{(1+''≡0⍴⍵)⊃' -'}
   {
@@ -172,7 +172,7 @@ displays ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Boxed 
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}  ⍝ Array axis types.
   open←{(1⌈⍴⍵)⍴⍵}  ⍝ Expose null axes.
   trim←{(1⊃⍵)((~1 1⍷∧⌿(2⊃⍵)=' ')/(2⊃⍵))}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+↑⍵∊'¯',•D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+↑⍵∊'¯',•d)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   qfmt←{(⍕0+⍴⍺)(format open ⍵)}
   {  ⍝ Recursively box arrays:
@@ -200,7 +200,7 @@ displayr ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Boxed 
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}  ⍝ array axis types
   open←{(1⌈⍴⍵)⍴⍵}  ⍝ exposed null axes
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}  ⍝ removal of extra blank cols
-  char←{⍬≡⍴⍵:'─' ⋄ (1+↑⍵∊'¯',•D)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+↑⍵∊'¯',•d)⊃'#~'}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   {  ⍝ recursively boxed arrays:
     0=≡⍵:' '⍪(open format ⍵)⍪(1+' '=↑0⍴⍵)⊃' -'
