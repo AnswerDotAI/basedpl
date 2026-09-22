@@ -150,7 +150,7 @@ fn calls_with_array_arguments() {
     for (function, codes, expected) in [
         ("mean", vec!["1 2 3"], "2"),
         ("-", vec!["10x", "1x 2x"], "9x 8x"),
-        ("/[1]", vec!["1 0", "2 2⍴⍳4"], "1 2⍴1 2"),
+        ("/[1]", vec!["1 0", "2 2⍴⍳4"], "[1 2 ⋄]"),
         ("⊢", vec!["(1r3 2x)'ab'(0 3⍴0x)"], "(1r3 2x)'ab'(0 3⍴0x)"),
         ("{k←⍵ ⋄ {k+⍵}⍵}", vec!["3x"], "6x"),
         ("{x←⍵}", vec!["7"], "7"),
@@ -210,14 +210,14 @@ fn cancellation_preserves_session_and_unwinds_calls() {
 fn leading_unit_axis_broadcasting() {
     for op in ["+", "+¨", "(+⍤0)"] {
         equiv! {
-            &format!("(2 3⍴⍳6){op}10 20") => "2 3⍴11 12 13 24 25 26",
-            &format!("(2 1⍴10 20){op}1 3⍴1 2 3") => "2 3⍴11 12 13 21 22 23",
-            &format!("(1 1⍴10){op}1 2 3") => "3 1⍴11 12 13",
+            &format!("(2 3⍴⍳6){op}10 20") => "[11 12 13 ⋄ 24 25 26]",
+            &format!("[10 ⋄ 20]{op}[1 2 3 ⋄]") => "[11 12 13 ⋄ 21 22 23]",
+            &format!("[10 ⋄]{op}1 2 3") => "[11 ⋄ 12 ⋄ 13]",
             &format!("(1 0⍴0x){op}2 1⍴0x") => "2 0⍴0x",
         }
         fails(Length, &[&format!("(2 3⍴0){op}1 2 3"), &format!("(0 2⍴0){op}3 2⍴0")]);
     }
-    let result = run("(2 1⍴10x 20x)+1 3⍴1x 2x 3x").unwrap().unwrap();
+    let result = run("[10x ⋄ 20x]+[1x 2x 3x ⋄]").unwrap().unwrap();
     assert_eq!(result.shape(), [2, 3]);
     assert_eq!(result.as_integers(), Some([11, 12, 13, 21, 22, 23].as_slice()));
 
@@ -439,7 +439,7 @@ fn dfn_defaults_shy_results_and_numbered_guards() {
     equiv("f←{•signal 'LENGTH ERROR'} ⋄ g←{⍵+1} ⋄ {0::g ⍵ ⋄ f ⍵}3", "4");
     fails(Length, &["{11::7 ⋄ •SIGNAL 'LENGTH ERROR'}0", "{0::•SIGNAL 'LENGTH ERROR' ⋄ ÷0}0"]);
     fails(Domain, &["•SIGNAL 11", "•SIGNAL 'unknown'", "•SIGNAL 'INTERRUPT'", "•SIGNAL 'TIMEOUT'", "•SIGNAL 'UNSUPPORTED'"]);
-    fails(Rank, &["•SIGNAL 1 12⍴'DOMAIN ERROR'"]);
+    fails(Rank, &["•SIGNAL ['DOMAIN ERROR' ⋄]"]);
     fails(Syntax, &["0 •SIGNAL 'DOMAIN ERROR'"]);
 }
 
