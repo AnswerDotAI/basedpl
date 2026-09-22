@@ -2,7 +2,7 @@
 +5   ⍝ 5
 
 ⍝ april:379 —
-+5J2   ⍝ 5j¯2
++5j2   ⍝ 5j¯2
 
 ⍝ april:380 —
 1+1   ⍝ 2
@@ -44,7 +44,7 @@
 ⌊16*÷2   ⍝ 4
 
 ⍝ april:423 — April power alias ⋆ written with standard APL *
-⌊100000×*0J1   ⍝ 54030j84147
+⌊100000×*0j1   ⍝ 54030j84147
 
 ⍝ april:430 —
 ⌊1000×⍟5   ⍝ 1609
@@ -62,7 +62,7 @@
 8|39   ⍝ 7
 
 ⍝ april:441 — Dialect port checked against original independent expectation and Dyalog; Construct complex components arithmetically in the approximate complex domain; This tests the operation, not April exact-complex literal syntax
-(((3÷8)+0J1×12÷7)×⍳12)|((7÷2)+0J1×5÷9)×⍳12
+(((3÷8)+0j1×12÷7)×⍳12)|((7÷2)+0j1×5÷9)×⍳12
 0.07142857142857142j1.3055555555555556 0.14285714285714285j2.611111111111111 0.21428571428571427j3.9166666666666665 0.2857142857142857j5.222222222222222 0.35714285714285715j6.527777777777778 0.42857142857142855j7.833333333333333 0.5j9.13888888888889 0.5714285714285714j10.444444444444445 0.6428571428571429j11.75 0.7142857142857143j13.055555555555555 0.7857142857142857j14.36111111111111 0.8571428571428571j15.666666666666666
 
 ⍝ april:449 —
@@ -85,7 +85,7 @@
 3⌈0 1 2 3 4 5   ⍝ 3 3 3 3 4 5
 
 ⍝ april:463 — Dialect port checked against original independent expectation and Dyalog; Construct complex components arithmetically in the approximate complex domain; This tests the operation, not April exact-complex literal syntax
-⌈((21÷5)+0J1×3÷11)×⍳20
+⌈((21÷5)+0j1×3÷11)×⍳20
 4j1 8j1 13j1 17j1 21j2 25j2 30j2 34j2 38j3 42j3 47j3 51j3 55j4 59j4 63j5 67j5 72j5 76j5 80j5 84j6
 
 ⍝ april:473 —
@@ -98,10 +98,10 @@
 3⌊0 1 2 3 4 5   ⍝ 0 1 2 3 3 3
 
 ⍝ april:476 —
-⌊1.5J0.5   ⍝ 1j1
+⌊1.5j0.5   ⍝ 1j1
 
 ⍝ april:477 — Dialect port checked against original independent expectation and Dyalog; Construct complex components arithmetically in the approximate complex domain; This tests the operation, not April exact-complex literal syntax
-⌊((21÷5)+0J1×3÷11)×⍳20
+⌊((21÷5)+0j1×3÷11)×⍳20
 4 8 12j1 16j1 21j1 25j1 29j2 33j2 38j2 42j2 46j3 50j3 55j3 58j4 63j4 67j4 71j5 75j5 79j5 84j5
 
 ⍝ april:485 —
@@ -126,7 +126,7 @@
 ¯11 ¯10 ¯9 9 10 11○1   ⍝ 0j1 1 1 1 1 0
 
 ⍝ april:505 —
-⌊1000×,/9 11○⊂(¯1 ¯7~⍨¯8+⍳16)  ○⌝  0 ¯2 2 ¯2J2 2J3.5
+⌊1000×,/9 11○⊂(¯1 ¯7~⍨¯8+⍳16)  ○⌝  0 ¯2 2 ¯2j2 2j3.5
 14 10⍴0 1316 1316 1734 2095 1570 3141 0 2325 1064 0 ¯1444 1443 ¯1735 2079 0 0 0 754 1038 0 ¯1733 1732 ¯1880 1940 1000 0 0 2128 3607 0 ¯1108 1107 ¯1312 1442 0 0 0 238 215 1570 3141 0 2325 1064 0 ¯1317 1316 ¯1735 ¯2096 1000 0 0 2128 3607 0 1732 1732 1879 ¯1941 0 ¯910 909 ¯3421 15069 0 0 0 ¯1510 ¯6885 1000 ¯417 ¯417 ¯1566 ¯6897 0 0 0 3297 ¯15043 0 2185 ¯2186 28 ¯2 0 0 0 1023 1001 1000 2236 2236 2128 2063 0 0 0 ¯1880 3392 0 ¯3627 3626 1509 ¯3397 0 0 0 3420 ¯1320 1000 3762 3762 ¯1566 ¯3524 0 0 0 ¯3298 ¯1273 0 ¯965 964 ¯1024 972 0 0 0 ¯29 23 0 0 0 1879 3392 1000 2236 2236 2128 ¯2064
 
 ⍝ april:524 —
@@ -190,10 +190,10 @@
 6.3∧5.1   ⍝ 107.1
 
 ⍝ april:589 —
-⌈1000×1.3J2.6∧4.5J8.9   ⍝ ¯172900j232700
+⌈1000×1.3j2.6∧4.5j8.9   ⍝ ¯172900j232700
 
 ⍝ april:590 —
-⌈1000×3.8J7.6∧5.2J6.8   ⍝ ¯159600j326800
+⌈1000×3.8j7.6∧5.2j6.8   ⍝ ¯159600j326800
 
 ⍝ april:594 —
 0 1 0 1⍲0 0 1 1   ⍝ 1 1 1 0
@@ -208,10 +208,10 @@
 6.3∨5.1   ⍝ 0.3
 
 ⍝ april:602 —
-1.3J2.6∨4.5J8.9   ⍝ 0.1
+1.3j2.6∨4.5j8.9   ⍝ 0.1
 
 ⍝ april:603 —
-3.8J7.6∨5.2J6.8   ⍝ 0.2
+3.8j7.6∨5.2j6.8   ⍝ 0.2
 
 ⍝ april:607 —
 0 1 0 1⍱0 0 1 1   ⍝ 1 0 0 0
@@ -1661,7 +1661,7 @@ st←'aodjeignwug' ⋄ st[⍒st]   ⍝ 'wuonjiggeda'
 1760 3 12⊥2 2 5   ⍝ 101
 
 ⍝ april:1399 —
-1J1⊥⍳4   ⍝ 5j9
+1j1⊥⍳4   ⍝ 5j9
 
 ⍝ april:1400 —
 1760 3 12⊥3 3⍴1 2 1 5 0 2 2 3 7   ⍝ 98 75 67
@@ -7496,7 +7496,7 @@ hex ¯1+2*53
 ⊂('001fffffffffffff')
 
 ⍝ april:2362 — Imaginary number; Simple complex display uses the existing canonical lowercase j literal; Test Format text; use BasedPL’s lowercase j separator instead of April’s uppercase J
-⍕3J9   ⍝ '3j9'
+⍕3j9   ⍝ '3j9'
 
 ⍝ april:410 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Remove redundant dialect settings; based folds return the result directly
 ÷⍨0   ⍝ 1

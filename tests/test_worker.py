@@ -9,7 +9,7 @@ def test_worker_bindings_calls_and_echo():
         a = dict(shape=[3], data=[1, 2, 3], prototype=0)
         assert w.request(dict(bindings=dict(x=a)), timeout=2) == dict(value=None, output=[], error=None)
         r = w.request(dict(code='1 ⋄ ⎕←+/x ⋄ x+1x', echo=False), timeout=2)
-        assert r['output'] == ['6x'] and r['value']['data'] == [2, 3, 4] and r['error'] is None
+        assert r['output'] == ['6ₓ'] and r['value']['data'] == [2, 3, 4] and r['error'] is None
         r = w.request(dict(call='-', args=[a, a], echo=False), timeout=2)
         assert r['output'] == [] and r['value']['data'] == [0, 0, 0]
         for code in ['3x', '⊂3x', '⊂⊂3x', "(2x*100x)0.5 1r3 1j2 'a'", "(1 2)'ab'(0 3⍴0x)", '0⍴⊂1 2', "0 2⍴''", '∞ ¯∞']:
@@ -26,7 +26,7 @@ def test_worker_bindings_calls_and_echo():
             dict(bindings=dict(x=dict(shape=[], data=[{'infinity': 0}], prototype=0))),
         ]: assert w.request(payload, timeout=2)['error']['kind'] == 'REQUEST ERROR'
         r = w.request(dict(call='{⎕←⍵ ⋄ 1÷0}', args=[a], echo=False), timeout=2)
-        assert r['output'] == ['1x 2x 3x'] and r['error']['kind'] == 'DOMAIN ERROR'
+        assert r['output'] == ['1ₓ 2ₓ 3ₓ'] and r['error']['kind'] == 'DOMAIN ERROR'
         assert r['error']['calls'][-1]['source']['text'] == '{⎕←⍵ ⋄ 1÷0}'
         assert w.request(dict(call='{∇⍵}', args=[a]), timeout=.01)['error']['kind'] == 'TIMEOUT'
         for value in [float('inf'), float('-inf'), float('nan')]:

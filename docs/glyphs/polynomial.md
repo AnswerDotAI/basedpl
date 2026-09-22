@@ -7,13 +7,13 @@ J's `p.` family. Ranks: `1` monadic, `1 0` dyadic.
 `C⊛X`: evaluate **constant-first** coefficients at `X`. [Decode](decode.md) uses the opposite order.
 
 ```apl
-1x 2x 3x⊛0x 1x 2x   ⍝ 1x 6x 17x
+1x 2x 3x⊛0x 1x 2x   ⍝ 1ₓ 6ₓ 17ₓ
 ```
 
 `⊛C`: leading coefficient and numerical roots, as a nested pair. Ignores trailing zeros. Constants have no roots.
 
 ```apl
-≢2⊃⊛1 0 1           ⍝ 2x
+≢2⊃⊛1 0 1           ⍝ 2ₓ
 ```
 
 ## Multiplier and roots
@@ -21,9 +21,9 @@ J's `p.` family. Ranks: `1` monadic, `1 0` dyadic.
 `(M R)⊛X`: `M××/X-R`. `⊂R` assumes `M=1`; use `⊂,R` for one root. Monadic `⊛` gives coefficients.
 
 ```apl
-(2x (1x 3x))⊛0x 1x 2x 3x  ⍝ 6x 0x ¯2x 0x
-⊛2x (1x 3x)                ⍝ 6x ¯8x 2x
-⊛⊂1x 3x                    ⍝ 3x ¯4x 1x
+(2x (1x 3x))⊛0x 1x 2x 3x  ⍝ 6ₓ 0ₓ ¯2ₓ 0ₓ
+⊛2x (1x 3x)                ⍝ 6ₓ ¯8ₓ 2ₓ
+⊛⊂1x 3x                    ⍝ 3ₓ ¯4ₓ 1ₓ
 ```
 
 ## Coefficient/exponent tables
@@ -31,10 +31,10 @@ J's `p.` family. Ranks: `1` monadic, `1 0` dyadic.
 Enclosed matrix: one row per term, coefficient then exponents. Enclose one coordinate vector to evaluate one point. A single coordinate extends to all variables. Batch axes collect answers.
 
 ```apl
-(⊂2 3⍴1x 2x 0x 1x 0x 2x)⊛⊂3x 4x  ⍝ 25x
-(⊂2 3⍴1x 2x 0x 1x 0x 2x)⊛(3x 4x⋄ 5x 12x)  ⍝ 25x 169x
+(⊂2 3⍴1x 2x 0x 1x 0x 2x)⊛⊂3x 4x  ⍝ 25ₓ
+(⊂2 3⍴1x 2x 0x 1x 0x 2x)⊛(3x 4x⋄ 5x 12x)  ⍝ 25ₓ 169ₓ
 (⊂2 2⍴2x 1r2 3x 1r4)⊛16x           ⍝ 14
-⊛⊂2 2⍴1x 5x ¯1x 0x                 ⍝ ¯1x 0x 0x 0x 0x 1x
+⊛⊂2 2⍴1x 5x ¯1x 0x                 ⍝ ¯1ₓ 0ₓ 0ₓ 0ₓ 0ₓ 1ₓ
 ```
 
 Evaluation accepts fractional/negative exponents. Conversion to coefficients requires one variable and nonnegative integral exponents; repeated degrees add.

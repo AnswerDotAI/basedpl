@@ -3,13 +3,13 @@
 `≢Y` counts major cells: first-axis length, or 1 for a scalar.
 
 ```apl
-≢2 3⍴0             ⍝ 2x
-≢42                ⍝ 1x
-≢⍬                 ⍝ 0x
+≢2 3⍴0             ⍝ 2ₓ
+≢42                ⍝ 1ₓ
+≢⍬                 ⍝ 0ₓ
 ```
 
 `X≢Y` negates [match](match.md).
 
 ```apl
-1≢,1               ⍝ 1x
+1≢,1               ⍝ 1ₓ
 ```

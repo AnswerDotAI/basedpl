@@ -21,7 +21,7 @@ fn csv_column_storage() {
     let table = run("nl←•ucs 10 ⋄ •csv 'i,f,m',nl,'1,2.5,9007199254740993',nl,'2,3,1.5'").unwrap().unwrap();
     assert_eq!(table.at(0).as_integers(), Some([1, 2].as_slice()));
     assert_eq!(table.at(1).as_floats(), Some([2.5, 3.].as_slice()));
-    assert_eq!(table.at(2), run("9007199254740993x 1.5").unwrap().unwrap());
+    assert_eq!(table.at(2), run("9007199254740993ₓ 1.5").unwrap().unwrap());
     assert!(table.at(2).as_floats().is_none());
 }
 
@@ -158,10 +158,10 @@ fn calls_with_array_arguments() {
     s.eval("x←42 ⋄ mean←+/÷≢ ⋄ bad←{⎕←⍵ ⋄ 1÷⍵}");
     for (function, codes, expected) in [
         ("mean", vec!["1 2 3"], "2"),
-        ("-", vec!["10x", "1x 2x"], "9x 8x"),
+        ("-", vec!["10ₓ", "1ₓ 2ₓ"], "9ₓ 8ₓ"),
         ("/[1]", vec!["1 0", "2 2⍴⍳4"], "[1 2 ⋄]"),
-        ("⊢", vec!["(1r3 2x)'ab'(0 3⍴0x)"], "(1r3 2x)'ab'(0 3⍴0x)"),
-        ("{k←⍵ ⋄ {k+⍵}⍵}", vec!["3x"], "6x"),
+        ("⊢", vec!["(1r3 2ₓ)'ab'(0 3⍴0ₓ)"], "(1r3 2ₓ)'ab'(0 3⍴0ₓ)"),
+        ("{k←⍵ ⋄ {k+⍵}⍵}", vec!["3ₓ"], "6ₓ"),
         ("{x←⍵}", vec!["7"], "7"),
     ] {
         let args: Vec<_> = codes.iter().map(|c| run(c).unwrap().unwrap()).collect();
@@ -202,7 +202,7 @@ fn cancellation_preserves_session_and_unwinds_calls() {
     equiv_in(&mut s, "keep+1", "43");
     s.set("u", AplValue::floats(vec![20000], (0..20000).map(f64::from).collect()).unwrap()).unwrap();
     assert_eq!(s.eval_timeout("∪u", Duration::from_millis(2)).error.unwrap().kind, Timeout);
-    assert_eq!(s.eval_timeout("ℙ1000000000000x", Duration::from_millis(2)).error.unwrap().kind, Timeout);
+    assert_eq!(s.eval_timeout("ℙ1000000000000ₓ", Duration::from_millis(2)).error.unwrap().kind, Timeout);
     let interrupt = basedpl::InterruptHandle::default();
     let handle = interrupt.clone();
     let cancel = std::thread::spawn(move || {
@@ -222,11 +222,11 @@ fn leading_unit_axis_broadcasting() {
             &format!("(2 3⍴⍳6){op}10 20") => "[11 12 13 ⋄ 24 25 26]",
             &format!("[10 ⋄ 20]{op}[1 2 3 ⋄]") => "[11 12 13 ⋄ 21 22 23]",
             &format!("[10 ⋄]{op}1 2 3") => "[11 ⋄ 12 ⋄ 13]",
-            &format!("(1 0⍴0x){op}2 1⍴0x") => "2 0⍴0x",
+            &format!("(1 0⍴0ₓ){op}2 1⍴0ₓ") => "2 0⍴0ₓ",
         }
         fails(Length, &[&format!("(2 3⍴0){op}1 2 3"), &format!("(0 2⍴0){op}3 2⍴0")]);
     }
-    let result = run("[10x ⋄ 20x]+[1x 2x 3x ⋄]").unwrap().unwrap();
+    let result = run("[10ₓ ⋄ 20ₓ]+[1ₓ 2ₓ 3ₓ ⋄]").unwrap().unwrap();
     assert_eq!(result.shape(), [2, 3]);
     assert_eq!(result.as_integers(), Some([11, 12, 13, 21, 22, 23].as_slice()));
 
@@ -260,7 +260,7 @@ fn general_axis_forms() {
 fn boxed_display_and_function_trees() {
     let mut s = Session::new();
     assert!(s.eval("]box on -style=max -trains=tree -fns=on").error.is_none());
-    assert_eq!(s.eval("⊂4x ⋄ ⊂⊂4x ⋄ ⊂¨0x 1x").output, ["⊂4x", "⊂⊂4x", "┌→────────┐\n│ ⊂0x ⊂1x │\n└∊────────┘"]);
+    assert_eq!(s.eval("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂¨0ₓ 1ₓ").output, ["⊂4ₓ", "⊂⊂4ₓ", "┌→────────┐\n│ ⊂0ₓ ⊂1ₓ │\n└∊────────┘"]);
     let r = s.eval("A←2 3 4⍴'DUCKSWANBIRDWORMCAKESEED' ⋄ ⊂[3]A");
     assert!(r.error.is_none(), "{:?}", r.error);
     assert_eq!(r.output, ["┌→─────────────────────┐\n↓ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │DUCK│ │SWAN│ │BIRD│ │\n│ └────┘ └────┘ └────┘ │\n│ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │WORM│ │CAKE│ │SEED│ │\n│ └────┘ └────┘ └────┘ │\n└∊─────────────────────┘"]);
@@ -269,7 +269,7 @@ fn boxed_display_and_function_trees() {
     let f = s.eval("avg←+/÷≢ ⋄ avg");
     assert!(f.error.is_none() && f.value.is_none());
     assert_eq!(f.output, ["fork\n├─ /\n│  └─ +\n├─ ÷\n└─ ≢"]);
-    equiv_in(&mut s, "avg 1x 2x 4x", "7r3");
+    equiv_in(&mut s, "avg 1ₓ 2ₓ 4ₓ", "7r3");
     let r = s.eval("{⎕←⍵ ⋄ ⍵}1 2");
     assert_eq!(r.output.len(), 2);
     assert_eq!(r.output[0], r.output[1]);
@@ -315,40 +315,40 @@ fn polynomial_representations_and_derivatives() {
 #[test]
 fn compact_integers_and_promotion() {
     for (code, values) in [
-        ("1x 2r2 6r3", vec![1, 1, 2]),
+        ("1ₓ 2r2 6r3", vec![1, 1, 2]),
         ("⍳3r1", vec![1, 2, 3]),
-        ("1x+2x 3x", vec![3, 4]),
-        ("10x-2x 3x", vec![8, 7]),
-        ("2x 3x×4x", vec![8, 12]),
-        ("6x 8x÷2x", vec![3, 4]),
-        ("-1x ¯2x", vec![-1, 2]),
-        ("×¯2x 0x 2x", vec![-1, 0, 1]),
-        ("v←¯2x 0x 3x ⋄ (v>0)×v", vec![0, 0, 3]),
+        ("1ₓ+2ₓ 3ₓ", vec![3, 4]),
+        ("10ₓ-2ₓ 3ₓ", vec![8, 7]),
+        ("2ₓ 3ₓ×4ₓ", vec![8, 12]),
+        ("6ₓ 8ₓ÷2ₓ", vec![3, 4]),
+        ("-1ₓ ¯2ₓ", vec![-1, 2]),
+        ("×¯2ₓ 0ₓ 2ₓ", vec![-1, 0, 1]),
+        ("v←¯2ₓ 0ₓ 3ₓ ⋄ (v>0)×v", vec![0, 0, 3]),
         ("'ab'∊'b'", vec![0, 1]),
         ("~0 1", vec![1, 0]),
         ("0 1⍲1 1", vec![1, 0]),
         ("0 1⍱0 0", vec![1, 0]),
-        ("⌽⍳3x", vec![3, 2, 1]),
-        ("1⌽⍳3x", vec![2, 3, 1]),
-        ("5↑⍳3x", vec![1, 2, 3, 0, 0]),
-        ("1↓⍳3x", vec![2, 3]),
-        ("(⍳3x)[3 1]", vec![3, 1]),
-        ("1 0 1/⍳3x", vec![1, 3]),
-        ("1 0 1\\1x 2x", vec![1, 0, 2]),
-        ("+\\⍳3x", vec![1, 3, 6]),
-        ("-¨⍳3x", vec![-1, -2, -3]),
-        ("1x 2x∪2x 3x", vec![1, 2, 3]),
-        ("1x 2x∩2x", vec![2]),
-        ("2x~1x", vec![2]),
-        (",⊃(1x 2x⋄ 3x)", vec![1, 2, 3, 0]),
-        (",⍉2 2⍴⍳4x", vec![1, 3, 2, 4]),
-        (",(⍳2x)×⌝⍳2x", vec![1, 2, 2, 4]),
-        ("0x@2⍳3x", vec![1, 0, 3]),
-        ("{+/,⍵}⌺3⍳3x", vec![3, 6, 5]),
-        ("2x 2x⊤3x", vec![1, 1]),
-        ("⍴2 3⍴1x", vec![2, 3]),
-        ("⍳0x", vec![]),
-        ("⍴1x", vec![]),
+        ("⌽⍳3ₓ", vec![3, 2, 1]),
+        ("1⌽⍳3ₓ", vec![2, 3, 1]),
+        ("5↑⍳3ₓ", vec![1, 2, 3, 0, 0]),
+        ("1↓⍳3ₓ", vec![2, 3]),
+        ("(⍳3ₓ)[3 1]", vec![3, 1]),
+        ("1 0 1/⍳3ₓ", vec![1, 3]),
+        ("1 0 1\\1ₓ 2ₓ", vec![1, 0, 2]),
+        ("+\\⍳3ₓ", vec![1, 3, 6]),
+        ("-¨⍳3ₓ", vec![-1, -2, -3]),
+        ("1ₓ 2ₓ∪2ₓ 3ₓ", vec![1, 2, 3]),
+        ("1ₓ 2ₓ∩2ₓ", vec![2]),
+        ("2ₓ~1ₓ", vec![2]),
+        (",⊃(1ₓ 2ₓ⋄ 3ₓ)", vec![1, 2, 3, 0]),
+        (",⍉2 2⍴⍳4ₓ", vec![1, 3, 2, 4]),
+        (",(⍳2ₓ)×⌝⍳2ₓ", vec![1, 2, 2, 4]),
+        ("0ₓ@2⍳3ₓ", vec![1, 0, 3]),
+        ("{+/,⍵}⌺3⍳3ₓ", vec![3, 6, 5]),
+        ("2ₓ 2ₓ⊤3ₓ", vec![1, 1]),
+        ("⍴2 3⍴1ₓ", vec![2, 3]),
+        ("⍳0ₓ", vec![]),
+        ("⍴1ₓ", vec![]),
         ("↑0⍴⊂1r2 1r3", vec![0, 0]),
     ] {
         let actual = run(code).unwrap().unwrap();
@@ -356,25 +356,25 @@ fn compact_integers_and_promotion() {
         assert_eq!(actual.as_integers(), Some(values.as_slice()), "{code}");
     }
 
-    for code in ["9223372036854775807x+1x", "¯9223372036854775808x÷¯1x", "-¯9223372036854775808x", "|¯9223372036854775808x", "2x*63x"] {
-        equiv(code, "9223372036854775808x");
+    for code in ["9223372036854775807ₓ+1ₓ", "¯9223372036854775808ₓ÷¯1ₓ", "-¯9223372036854775808ₓ", "|¯9223372036854775808ₓ", "2ₓ*63ₓ"] {
+        equiv(code, "9223372036854775808ₓ");
     }
 
-    for code in ["(9223372036854775807x+1x 0x)-1x", "9223372036854775808r1-1x 2x"] {
+    for code in ["(9223372036854775807ₓ+1ₓ 0ₓ)-1ₓ", "9223372036854775808r1-1ₓ 2ₓ"] {
         assert_eq!(run(code).unwrap().unwrap().as_integers(), Some([i64::MAX, i64::MAX - 1].as_slice()));
     }
 
-    assert!(!run("?0x").unwrap().unwrap().is_exact());
-    assert!(!run("?3x 3").unwrap().unwrap().is_exact());
-    assert!(run("⍳2x 3x").unwrap().unwrap().is_exact());
-    assert!(!run("⍳2x 3").unwrap().unwrap().is_exact());
-    for code in ["0∨3x", "3x∨0", "1x×3", "3x+0"] { equiv(code, "3"); }
+    assert!(!run("?0ₓ").unwrap().unwrap().is_exact());
+    assert!(!run("?3ₓ 3").unwrap().unwrap().is_exact());
+    assert!(run("⍳2ₓ 3ₓ").unwrap().unwrap().is_exact());
+    assert!(!run("⍳2ₓ 3").unwrap().unwrap().is_exact());
+    for code in ["0∨3ₓ", "3ₓ∨0", "1ₓ×3", "3ₓ+0"] { equiv(code, "3"); }
 }
 
 #[test]
 fn float_storage_and_kernels() {
     for code in ["⍳3", "⌽⍳3", "2 3⍴⍳6", "⍬", "0 3⍴0"] { assert!(run(code).unwrap().unwrap().as_floats().is_some(), "{code}"); }
-    for code in ["1x 2", "1j2 3", "'abc'", "(1 2⋄ 3 4)", "0⍴1x"] { assert!(run(code).unwrap().unwrap().as_floats().is_none(), "{code}"); }
+    for code in ["1ₓ 2", "1j2 3", "'abc'", "(1 2⋄ 3 4)", "0⍴1ₓ"] { assert!(run(code).unwrap().unwrap().as_floats().is_none(), "{code}"); }
     assert_eq!(AplValue::floats(vec![1], vec![f64::NAN]), Err(Domain));
     assert_eq!(AplValue::floats(vec![2], vec![1.]), Err(Length));
     assert_eq!(AplValue::floats(vec![1], vec![-0.]).unwrap().as_floats().unwrap()[0].to_bits(), 0);
@@ -382,7 +382,7 @@ fn float_storage_and_kernels() {
 
 #[test]
 fn character_parser_and_exact_fill() {
-    assert_eq!(run("0↑1x").unwrap().unwrap().prototype(), exact(0, 1).prototype());
+    assert_eq!(run("0↑1ₓ").unwrap().unwrap().prototype(), exact(0, 1).prototype());
 
     assert!(matches!(parse(Source::new("quoted", "'({⍝⋄})'")), ParseStatus::Complete(_)));
 }
@@ -460,15 +460,15 @@ fn scalar_math() {
         let a = run(code).unwrap().unwrap();
         assert!((a.as_number().unwrap().as_float().unwrap() - value).abs() < 1e-14, "{code}");
     }
-    for code in ["1E¯13>|(¯4*0.5)-0J2", "(⌊3.3J2.5)=3J2", "(⌈3.3J2.5)=3J3", "0=0.1|0.3", "0=3|6.000000000000001", "0=1+*π0j1"] { equiv(code, "1x"); }
+    for code in ["1E¯13>|(¯4*0.5)-0j2", "(⌊3.3j2.5)=3j2", "(⌈3.3j2.5)=3j3", "0=0.1|0.3", "0=3|6.000000000000001", "0=1+*π0j1"] { equiv(code, "1ₓ"); }
 }
 
 #[test]
 fn search_depth_and_random() {
-    for code in ["⌊0⍴1x", "⌈0⍴1x", "|0⍴1x", "!0⍴1x", "2x*0⍴1x"] {
+    for code in ["⌊0⍴1ₓ", "⌈0⍴1ₓ", "|0⍴1ₓ", "!0⍴1ₓ", "2ₓ*0⍴1ₓ"] {
         assert_eq!(run(code).unwrap().unwrap().prototype(), exact(0, 1).prototype(), "{code}");
     }
-    for code in ["?100⍴9", "13?52", "?100⍴9x", "13x?52x"] {
+    for code in ["?100⍴9", "13?52", "?100⍴9ₓ", "13ₓ?52ₓ"] {
         let a = run(code).unwrap().unwrap();
         let values: Vec<_> = a
             .elements()
@@ -479,7 +479,7 @@ fn search_depth_and_random() {
             .collect();
         let (len, max) = if code.starts_with('?') { (100, 9) } else { (13, 52) };
         assert_eq!(a.shape(), &[len]);
-        assert_eq!(a.is_exact(), code.contains('x'));
+        assert_eq!(a.is_exact(), code.contains(['x', 'ₓ']));
         assert!(values.iter().all(|&n| n > 0 && n <= max));
         if len == 13 { assert_eq!(values.iter().collect::<std::collections::HashSet<_>>().len(), len); }
     }
@@ -501,46 +501,47 @@ fn complex_arithmetic_and_roundtrips() {
     // Basic arithmetic expectations calculated independently. APL notation/conjugation:
     // https://docs.dyalog.com/20.0/programming-reference-guide/introduction/complex-numbers/
     for (code, re, im) in [
-        ("1J2", 1.0, 2.0),
+        ("1j2", 1.0, 2.0),
+        ("1J2", 1.0, 2.0), // Uppercase input alias.
         ("¯.5j2E¯1", -0.5, 0.2),
-        ("1E2J¯4E¯1", 100.0, -0.4),
-        ("1J¯0", 1.0, 0.0),
-        ("¯0J2", 0.0, 2.0),
-        ("1J2+3J4", 4.0, 6.0),
-        ("1J2-3J4", -2.0, -2.0),
-        ("1J2×3J4", -5.0, 10.0),
-        ("1J2×1J¯2", 5.0, 0.0),
-        ("1J2÷3J4", 0.44, 0.08),
-        ("+1J2", 1.0, -2.0),
-        ("-1J2", -1.0, -2.0),
-        ("×3J4", 0.6, 0.8),
-        ("÷1J2", 0.2, -0.4),
-        ("1r2+1J2", 1.5, 2.0),
-        ("1J2-1r2", 0.5, 2.0),
-        ("2x÷0J1", 0.0, -2.0),
-        ("1J2÷2x", 0.5, 1.0),
-        ("sum←+/ ⋄ sum 1J2 3J4", 4.0, 6.0),
-        ("-/1J2 3J4 5J6", 3.0, 4.0),
-        ("f←{⍵×+⍵} ⋄ f 3J4", 25.0, 0.0),
-        ("0J0÷0J0", 1.0, 0.0),
-        ("1E300J1E300÷1E300J1E300", 1.0, 0.0),
-        ("1E¯320J1E¯320÷1E¯320J1E¯320", 1.0, 0.0),
-        ("1E308J1E308÷1J1", 1e308, 0.0),
-        ("1.7E308÷0.5J0.5", 1.7e308, -1.7e308),
+        ("1E2j¯4E¯1", 100.0, -0.4),
+        ("1j¯0", 1.0, 0.0),
+        ("¯0j2", 0.0, 2.0),
+        ("1j2+3j4", 4.0, 6.0),
+        ("1j2-3j4", -2.0, -2.0),
+        ("1j2×3j4", -5.0, 10.0),
+        ("1j2×1j¯2", 5.0, 0.0),
+        ("1j2÷3j4", 0.44, 0.08),
+        ("+1j2", 1.0, -2.0),
+        ("-1j2", -1.0, -2.0),
+        ("×3j4", 0.6, 0.8),
+        ("÷1j2", 0.2, -0.4),
+        ("1r2+1j2", 1.5, 2.0),
+        ("1j2-1r2", 0.5, 2.0),
+        ("2ₓ÷0j1", 0.0, -2.0),
+        ("1j2÷2ₓ", 0.5, 1.0),
+        ("sum←+/ ⋄ sum 1j2 3j4", 4.0, 6.0),
+        ("-/1j2 3j4 5j6", 3.0, 4.0),
+        ("f←{⍵×+⍵} ⋄ f 3j4", 25.0, 0.0),
+        ("0j0÷0j0", 1.0, 0.0),
+        ("1E300j1E300÷1E300j1E300", 1.0, 0.0),
+        ("1E¯320j1E¯320÷1E¯320j1E¯320", 1.0, 0.0),
+        ("1E308j1E308÷1j1", 1e308, 0.0),
+        ("1.7E308÷0.5j0.5", 1.7e308, -1.7e308),
     ] {
         let a = run(code).unwrap().unwrap();
         let expected = if im == 0.0 { scalar(re) } else { AplValue::scalar(num_complex::Complex64::new(re, im)).unwrap() };
         assert_eq!(a, expected, "{code}");
         assert_eq!(run(&a.to_string()).unwrap().unwrap(), a, "display round-trip: {code}");
     }
-    assert_eq!(run("1J2×1J¯2").unwrap().unwrap().to_string(), "5");
-    assert_eq!(run("¯0J2").unwrap().unwrap().to_string(), "0j2");
-    let a = run("1x 0.5 1J2").unwrap().unwrap();
+    assert_eq!(run("1j2×1j¯2").unwrap().unwrap().to_string(), "5");
+    assert_eq!(run("¯0j2").unwrap().unwrap().to_string(), "0j2");
+    let a = run("1ₓ 0.5 1j2").unwrap().unwrap();
     assert_eq!(
         a.elements().collect::<Vec<_>>(),
         &[exact(1, 1).at(0), number(0.5), AplValue::Number(num_complex::Complex64::new(1.0, 2.0).try_into().unwrap())]
     );
-    for code in ["0/1J2", "1J2+0/1x", "+/0/1J2"] { assert_eq!(run(code).unwrap().unwrap().prototype(), number(0.0)); }
+    for code in ["0/1j2", "1j2+0/1ₓ", "+/0/1j2"] { assert_eq!(run(code).unwrap().unwrap().prototype(), number(0.0)); }
 }
 
 #[test]
@@ -548,63 +549,63 @@ fn complex_comparison_errors_and_recovery() {
     // Documentation-derived magnitude tolerance, not separate component comparisons:
     // https://docs.dyalog.com/20.0/language-reference-guide/primitive-functions/equal-to/
     for (x, y, equal) in [
-        ("1J1", "1J1.000000000000012", true),
-        ("1J1", "1J1.00000000000002", false),
-        ("1x", "1J5E¯15", true),
-        ("1", "1J5E¯14", false),
-        ("0", "0J1E¯100", false),
-        ("1.7E308J1.7E308", "1.7E308J1.7E308", true),
-        ("1.7E308J1.7E308", "¯1.7E308J¯1.7E308", false),
+        ("1j1", "1j1.000000000000012", true),
+        ("1j1", "1j1.00000000000002", false),
+        ("1ₓ", "1j5E¯15", true),
+        ("1", "1j5E¯14", false),
+        ("0", "0j1E¯100", false),
+        ("1.7E308j1.7E308", "1.7E308j1.7E308", true),
+        ("1.7E308j1.7E308", "¯1.7E308j¯1.7E308", false),
     ] {
         for (op, expected) in [("=", equal), ("≠", !equal)] {
             for code in [format!("{x}{op}{y}"), format!("{y}{op}{x}")] { check(&code, exact(i64::from(expected), 1)); }
         }
     }
 
-    fails(Domain, &[&format!("1{}x+0J1", "0".repeat(400))]);
+    fails(Domain, &[&format!("1{}x+0j1", "0".repeat(400))]);
     assert_eq!(AplValue::scalar(num_complex::Complex64::new(0.0, f64::INFINITY)), Err(Domain));
     let mut s = Session::new();
-    let failed = s.eval("⎕←1J2 ⋄ 1J2÷0");
+    let failed = s.eval("⎕←1j2 ⋄ 1j2÷0");
     assert_eq!(failed.output, ["1j2"]);
     assert_eq!(failed.error.unwrap().kind, Domain);
-    assert_eq!(s.eval("1J2+3J4").output, ["4j6"]);
+    assert_eq!(s.eval("1j2+3j4").output, ["4j6"]);
 }
 
 #[test]
 fn exact_literals_arithmetic_and_roundtrips() {
     // basedpl's explicit exact-number extension, not Dyalog reference cases.
     for (code, n, d) in [
-        ("42x", 42, 1),
+        ("42ₓ", 42, 1),
         ("42r1", 42, 1),
         ("2r4", 1, 2),
         ("1r¯2", -1, 2),
         ("¯1r¯2", 1, 2),
-        ("¯0x", 0, 1),
-        ("1x÷3x", 1, 3),
+        ("¯0ₓ", 0, 1),
+        ("1ₓ÷3ₓ", 1, 3),
         ("1r3+1r6", 1, 2),
-        ("6x÷3x", 2, 1),
+        ("6ₓ÷3ₓ", 2, 1),
         ("1r3-1r6", 1, 6),
         ("2r3×3r4", 1, 2),
         ("+2r3", 2, 3),
         ("-2r3", -2, 3),
         ("×¯2r3", -1, 1),
-        ("×0x", 0, 1),
+        ("×0ₓ", 0, 1),
         ("÷2r3", 3, 2),
         ("÷¯2r3", -3, 2),
         ("2r3÷¯1r3", -2, 1),
-        ("0x÷0x", 1, 1),
+        ("0ₓ÷0ₓ", 1, 1),
         ("+/1r3 1r6", 1, 2),
         ("sum←+/ ⋄ sum 1r3 1r6", 1, 2),
         ("add←{⍺+⍵} ⋄ add/1r3 1r6", 1, 2),
-        ("-/1x 2x 3x", 2, 1),
-        ("9007199254740993x-9007199254740992x", 1, 1),
+        ("-/1ₓ 2ₓ 3ₓ", 2, 1),
+        ("9007199254740993ₓ-9007199254740992ₓ", 1, 1),
     ] {
         let a = run(code).unwrap().unwrap();
         assert_eq!(a, exact(n, d), "{code}");
         assert_eq!(run(&a.to_string()).unwrap().unwrap(), a, "display round-trip: {code}");
     }
-    assert_eq!(run("42r1").unwrap().unwrap().to_string(), "42x");
-    for code in ["(1÷3)+(1÷6)", "1r3+1÷6", "1÷6+0", "1x÷2", "1÷2x"] {
+    assert_eq!(run("42r1").unwrap().unwrap().to_string(), "42ₓ");
+    for code in ["(1÷3)+(1÷6)", "1r3+1÷6", "1÷6+0", "1ₓ÷2", "1÷2ₓ"] {
         let a = run(code).unwrap().unwrap();
         assert!(a.as_number().unwrap().as_float().is_some(), "{code}");
     }
@@ -620,23 +621,23 @@ fn exact_literals_arithmetic_and_roundtrips() {
 
 #[test]
 fn exact_arrays_prototypes_and_counts() {
-    let a = run("9007199254740993x 0.5 1r3").unwrap().unwrap();
+    let a = run("9007199254740993ₓ 0.5 1r3").unwrap().unwrap();
     assert_eq!(a.at(0), exact(9007199254740993, 1).at(0));
     assert_eq!(a.at(1), number(0.5));
     assert_eq!(a.at(2), exact(1, 3).at(0));
-    let empty = run("0x/1r3").unwrap().unwrap();
+    let empty = run("0ₓ/1r3").unwrap().unwrap();
     assert_eq!(empty.shape(), &[0]);
     assert_eq!(empty.prototype(), exact(0, 1).prototype());
 
-    check("1x+0/1r3", empty);
+    check("1ₓ+0/1r3", empty);
     let mut session = Session::new();
     session.set("a", AplValue::empty(vec![usize::MAX, 0], number(0.)).unwrap()).unwrap();
     let largest = format!("{}x", usize::MAX);
     equiv_in(&mut session, "≢a", &largest);
-    equiv_in(&mut session, "⍴a", &format!("{largest} 0x"));
+    equiv_in(&mut session, "⍴a", &format!("{largest} 0ₓ"));
     assert_eq!(run("1+0/1r3").unwrap().unwrap().prototype(), number(0.0));
 
-    assert_eq!(run("2x/1r3").unwrap().unwrap().elements().collect::<Vec<_>>(), vec![exact(1, 3).at(0); 2]);
+    assert_eq!(run("2ₓ/1r3").unwrap().unwrap().elements().collect::<Vec<_>>(), vec![exact(1, 3).at(0); 2]);
 
     let invalid = num_rational::BigRational::new_raw(1.into(), 0.into());
     assert_eq!(AplValue::scalar(invalid), Err(Domain));
@@ -662,8 +663,8 @@ fn exact_and_tolerant_comparisons() {
         ("1E308", "¯1E308", false, false),
         ("1r3", "2r6", true, false),
         ("1r3", "1r2", false, true),
-        ("9007199254740993x", "9007199254740992x", false, false),
-        ("1x", "1000000000000001r1000000000000000", false, true),
+        ("9007199254740993ₓ", "9007199254740992ₓ", false, false),
+        ("1ₓ", "1000000000000001r1000000000000000", false, true),
         ("1", "1000000000000001r1000000000000000", true, false),
         ("1r3", "(1÷3)", true, false),
     ] {
@@ -673,14 +674,14 @@ fn exact_and_tolerant_comparisons() {
         }
     }
 
-    assert_eq!(run("1x=0/1x").unwrap().unwrap().prototype(), exact(0, 1).prototype());
+    assert_eq!(run("1ₓ=0/1ₓ").unwrap().unwrap().prototype(), exact(0, 1).prototype());
 }
 
 #[test]
 fn real_gcd_reconstructs_rational_ratios() {
     for (x, y, expected) in [
         ("1", "(103993÷33102)", 1.0 / 33102.0),
-        ("1x", "(π1)", 1.0 / 1725033.0),
+        ("1ₓ", "(π1)", 1.0 / 1725033.0),
         ("¯1", "(¯103993÷33102)", 1.0 / 33102.0),
         ("0", "¯0.75", 0.75),
         ("0", "0", 0.0),
@@ -806,7 +807,7 @@ fn persistent_arrays_and_functions() {
         "f←+ ⋄ 2 f 3" => "5",
         "sum←+/ ⋄ sum 1 2 3" => "6",
         "f/1 2 3" => "6",
-        "⍴v" => ",10x",
+        "⍴v" => ",10ₓ",
         "a←v ⋄ v←0 ⋄ +/a" => "55",
     }
 }

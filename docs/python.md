@@ -27,7 +27,7 @@ Calls print only explicit output (`⎕←` and display commands). `.eval()` capt
 ```python
 r = apl.eval('⎕←x ⋄ x+1x', x=3)
 assert r.value.py == 4
-assert r.output == ['3x']
+assert r.output == ['3ₓ']
 ```
 
 `.run()` also captures implicit expression display, for an APL-style notebook frontend. In ordinary Python notebooks, append `;` to suppress display of a call's return value.
@@ -59,7 +59,7 @@ Axis names become pandas index/column names, including MultiIndex level names.
 from fractions import Fraction
 from basedpl import Array
 
-assert Array(2).apl == '2x'
+assert Array(2).apl == '2ₓ'
 assert Array(2.).apl == '2'
 assert Array(Fraction(1, 3)).py == Fraction(1, 3)
 ```

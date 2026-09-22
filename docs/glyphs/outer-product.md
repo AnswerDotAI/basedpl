@@ -7,7 +7,7 @@
 5+⌝⊂5              ⍝ ⊂10
 1,⌝2               ⍝ 1 2
 1 2+⌝10 20         ⍝ 2 2⍴11 21 12 22
-(⍳3)=⌝⍳3           ⍝ 3 3⍴1x 0x 0x 0x 1x 0x 0x 0x 1x
+(⍳3)=⌝⍳3           ⍝ 3 3⍴1ₓ 0ₓ 0ₓ 0ₓ 1ₓ 0ₓ 0ₓ 0ₓ 1ₓ
 ```
 
 Array frames collect pair results as items. See [inner product](dot.md).

@@ -22,14 +22,14 @@ total←1+2×3 → 2∘× ⋄ total   ⍝ 14
 
 ## Numbers
 
-Bare numbers are approximate (`f64`). `x` marks exact integers; `r` marks exact rationals. Exact arithmetic grows as needed. Mixing exact and approximate gives approximate.
+Bare numbers are approximate (`f64`). `x` or `ₓ` marks exact integers; `r` marks exact rationals. Exact integers display with `ₓ`. Examples use `x` for typed input. Exact arithmetic grows as needed. Mixing exact and approximate gives approximate.
 
 ```apl
 1÷3                  ⍝ 0.3333333333333333
 1x÷3x                ⍝ 1r3
 1r3+1r6              ⍝ 1r2
 1r2+0.5              ⍝ 1
-9223372036854775807x+1x ⍝ 9223372036854775808x
+9223372036854775807x+1x ⍝ 9223372036854775808ₓ
 ```
 
 `ajb`: a + bi, with approximate components. `J` also parses. `¯` marks negative literals and exponents.
@@ -48,20 +48,20 @@ Reals include `∞` and `¯∞`. DOMAIN: NaN, non-finite complex components, und
 Numbers, characters and functions are atoms. Arrays are rectangular collections of values. Shape lists axis lengths; rank is shape's length. Scalars, vectors and matrices are arrays of rank 0, 1 and 2. A scalar is distinct from an atom. Atoms have rank zero for shape operations. Constructors such as Enclose, Ravel and Reshape create arrays. Ravel order is row-major. Zero dimensions retain the other dimensions.
 
 ```apl
-⍴3                   ⍝ 0⍴0x
-⍴,3                  ⍝ ,1x
-⍴2 3⍴⍳6              ⍝ 2x 3x
-⍴0 3⍴0               ⍝ 0x 3x
+⍴3                   ⍝ 0⍴0ₓ
+⍴,3                  ⍝ ,1ₓ
+⍴2 3⍴⍳6              ⍝ 2ₓ 3ₓ
+⍴0 3⍴0               ⍝ 0ₓ 3ₓ
 ```
 
 Adjacent values form a strand, preserving every value. `⊂` encloses; `↑` retrieves the first item. Enclosure always adds an array layer.
 
 ```apl
 ↑(1 2)(3 4)          ⍝ 1 2
-(⊂3)≡3              ⍝ 0x
-(⊂3)=3              ⍝ ⊂1x
+(⊂3)≡3              ⍝ 0ₓ
+(⊂3)=3              ⍝ ⊂1ₓ
 (⊂3)+4              ⍝ ⊂7
-≢¨(1 2 3)(4 5)       ⍝ 3x 2x
+≢¨(1 2 3)(4 5)       ⍝ 3ₓ 2ₓ
 ```
 
 Fill follows the first item's prototype: zero, space, or recursively filled nesting. Empty arrays retain a prototype. Assembly pads unequal cells with fill.
@@ -79,7 +79,7 @@ Scalar functions align leading axes. Missing trailing dimensions count as 1. Equ
 ```apl
 (2 3⍴⍳6)+10 20       ⍝ 2 3⍴11 12 13 24 25 26
 (2 1⍴10 20)+1 3⍴1 2 3 ⍝ 2 3⍴11 12 13 21 22 23
-⍴(1 1⍴10)+1 2 3      ⍝ 3x 1x
+⍴(1 1⍴10)+1 2 3      ⍝ 3ₓ 1ₓ
 ```
 
 Pervasion repeats these rules inside nested items. Each and rank frames also use leading agreement. Products, replication, indexing and assignment have their own rules.
@@ -97,8 +97,8 @@ Axis qualifiers attach to functions: `+[2]`, `+/[1]`. `/ \ ⌽ ,` default to the
 Exact/exact comparison is exact. Approximate comparison uses relative tolerance `1E¯14`. Infinity equals itself, never a finite number.
 
 ```apl
-0.3=0.1+0.2          ⍝ 1x
-1r3=1x÷3x            ⍝ 1x
+0.3=0.1+0.2          ⍝ 1ₓ
+1r3=1x÷3x            ⍝ 1ₓ
 ```
 
 Search, membership, match and grouping use tolerant comparison. Tolerance is not transitive; search/grouping uses the first matching representative.

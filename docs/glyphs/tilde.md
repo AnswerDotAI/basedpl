@@ -3,7 +3,7 @@
 `~Y` negates Booleans, pervasively.
 
 ```apl
-~0 1               ⍝ 1x 0x
+~0 1               ⍝ 1ₓ 0ₓ
 ```
 
 `X~Y` removes items found in `Y`, retaining order and repetitions. Uses tolerant membership.

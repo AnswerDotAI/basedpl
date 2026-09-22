@@ -25,6 +25,8 @@ ship-rs-build
 
 Rebuild with `maturin develop` after Rust changes before checking the installed extension. Cargo tests alone do not update the editable Python installation. Use `cargo fastfmt`, not `cargo fmt`.
 
+Use lowercase `j` in complex literals throughout tests and examples, including adapted reference cases. Reserve uppercase `J` for explicit input-alias tests. Keep archived upstream source unchanged.
+
 The development profile uses optimization level 1 without LTO. Tests inherit these settings. Debug information, assertions, overflow checks and incremental compilation remain enabled.
 
 CI uses the development profile for Rust and Python tests. Distribution wheels use the `dist` profile: optimization level 2, no LTO, 16 codegen units, no incremental compilation and stripped symbols.

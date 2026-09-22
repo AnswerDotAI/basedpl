@@ -4,7 +4,7 @@
 
 ```apl
 ⍪1 2 3             ⍝ 3 1⍴1 2 3
-⍴⍪2 3 4⍴0          ⍝ 2x 12x
+⍴⍪2 3 4⍴0          ⍝ 2ₓ 12ₓ
 ```
 
 `X⍪Y` joins on the first axis. Axis qualifiers follow [catenate](comma.md).

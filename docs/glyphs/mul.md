@@ -10,5 +10,5 @@
 `X×Y` multiplies. Pervasive.
 
 ```apl
-2x×1x 2x 3x       ⍝ 2x 4x 6x
+2x×1x 2x 3x       ⍝ 2ₓ 4ₓ 6ₓ
 ```

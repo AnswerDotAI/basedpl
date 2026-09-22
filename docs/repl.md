@@ -91,7 +91,7 @@ Arrays with axes have boxes, axis arrows and type markers. Enter a function name
 
 Boxing controls how results are drawn. Batch, Python and JSON sessions start with plain display.
 
-Both display modes show scalars as `⊂4x`, `⊂⊂4x` or `⊂(1 2)`.
+Both display modes show scalars as `⊂4ₓ`, `⊂⊂4ₓ` or `⊂(1 2)`.
 
 `⎕←` explicitly prints a value, including an assignment's result.
 

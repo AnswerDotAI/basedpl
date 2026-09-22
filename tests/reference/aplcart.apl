@@ -26,7 +26,7 @@
 + 1.2 0j4 ¯5j¯6 'abc'   ⍝ 1.2 0j¯4 ¯5j6 ('abc')
 
 ⍝ aplcart/table.tsv:11 — Mirror complex N across x-axis
-+1J2 ¯1J¯2   ⍝ 1j¯2 ¯1j2
++1j2 ¯1j¯2   ⍝ 1j¯2 ¯1j2
 
 ⍝ aplcart/table.tsv:12 — Adding N to M
 (1 2 3 4 + 10 ⋄ 1 2 3 + 2 ¯4 1)   ⍝ (11 12 13 14 ⋄ 3 ¯2 4)
@@ -858,10 +858,10 @@ N←0.25 0.5 0.75 ⋄ ¯1∘○N
 ⍝ aplcart/table.tsv:572 — +N (complex conjugate)
 N←3j4 0j2 ⋄ ¯10∘○N   ⍝ 3j¯4 0j¯2
 
-⍝ aplcart/table.tsv:573 — N×0J1
+⍝ aplcart/table.tsv:573 — N×0j1
 N←3j4 0j2 ⋄ ¯11∘○N   ⍝ ¯4j3 ¯2
 
-⍝ aplcart/table.tsv:574 — *N×0J1
+⍝ aplcart/table.tsv:574 — *N×0j1
 N←0 0.5 1 ⋄ ¯12∘○N
 1 0.8775825618903728j0.479425538604203 0.5403023058681398j0.8414709848078965
 
@@ -1097,10 +1097,10 @@ C←'ABC'  ⋄ f←≡ ⋄ D←'Abc 19 Σς!'  ⋄ C f⍥•c D   ⍝ 0
 {0} (4 5 6) 'ABC'   ⍝ 0
 
 ⍝ aplcart/table.tsv:659 — Negate real part (“real conjugate”)
-+∘- ¯7J3   ⍝ 7j3
++∘- ¯7j3   ⍝ 7j3
 
 ⍝ aplcart/table.tsv:660 — Mirror complex N across y-axis
--∘+ ¯7J3   ⍝ 7j3
+-∘+ ¯7j3   ⍝ 7j3
 
 ⍝ aplcart/table.tsv:661 — Rotate 180°
 (3 3⍴⍳9 ⋄ '' ⋄ ⌽∘⊖  3 3⍴⍳9)
@@ -1698,7 +1698,7 @@ X←1 2 ⋄ Y←1 2 3 1 2 ⋄ X(↑⍷)Y   ⍝ 1
 X←1 2 ⋄ Y←1 2 3 1 2 ⋄ X(⍸⍷)Y   ⍝ 1 4
 
 ⍝ aplcart/table.tsv:852 — Parallel projection of 3D object in Nm
-Nm←2 3⍴⍳6 ⋄ (0J1⊥⊖)Nm   ⍝ 1j4 2j5 3j6
+Nm←2 3⍴⍳6 ⋄ (0j1⊥⊖)Nm   ⍝ 1j4 2j5 3j6
 
 ⍝ aplcart/table.tsv:853 — Number of columns in Y
 Y←3 1 3 2 ⋄ (0⊥⍴)Y   ⍝ 4
@@ -2400,7 +2400,7 @@ Nv←¯5 2 ¯2 4 ⋄ ↑∘⍒∘|⍛⊃Nv   ⍝ ¯5
 Y←3 1 3 2 ⋄ ⊂⍤⍒⍛⌷⍛⍳Y   ⍝ 1 4 1 3
 
 ⍝ aplcart/table.tsv:1098 — 2-argument arctangent (M:x, N:y)
-M←1 ¯1 ¯1 1 ⋄ N←1 1 ¯1 ¯1 ⋄ M(12○⊣+0J1×⊢)N
+M←1 ¯1 ¯1 1 ⋄ N←1 1 ¯1 ¯1 ⋄ M(12○⊣+0j1×⊢)N
 0.7853981633974483 2.356194490192345 ¯2.356194490192345 ¯0.7853981633974483
 
 ⍝ aplcart/table.tsv:1099 — Prefix Vector: length Is with Js ones on the left, the rest zeroes
@@ -3194,13 +3194,13 @@ X←1 2 3 4 ⋄ Y←2 3⍴⍳6 ⋄ X(⊃⊂⍤¯1⍤⊢,⊂⍤⊣)Y
 3 4⍴1 2 3 0 4 5 6 0 1 2 3 4
 
 ⍝ aplcart/table.tsv:1368 — Js spokes of unit wheel
-Js←4 ⋄ (*∘π0J2×⊢÷⍨1+⍳)Js   ⍝ ¯1 0j¯1 1 0j1
+Js←4 ⋄ (*∘π0j2×⊢÷⍨1+⍳)Js   ⍝ ¯1 0j¯1 1 0j1
 
 ⍝ aplcart/table.tsv:1369 — Last indices in X of major cells Y, 0 if not found
 X←1 2 3 2 ⋄ Y←2 4 ⋄ X(⊖⍛⍳-⍨1+∘≢⊣)Y   ⍝ 4 0
 
 ⍝ aplcart/table.tsv:1370 — Regular unit polygon of Js edges
-Js←4 ⋄ (*∘π0J2×⊢÷⍨0,⍳)Js   ⍝ 1 0j1 ¯1 0j¯1 1
+Js←4 ⋄ (*∘π0j2×⊢÷⍨0,⍳)Js   ⍝ 1 0j1 ¯1 0j¯1 1
 
 ⍝ aplcart/table.tsv:1371 — Attach column numbers to a matrix; Use shape rather than tally to obtain the column count; upstream ≢ fails on rectangular matrices; Concrete 2×3 matrix, independently checked in Dyalog
 Ym←2 3⍴⍳6 ⋄ (⍳∘↑∘⌽∘⍴⍪⊢)Ym   ⍝ 3 3⍴1 2 3 1 2 3 4 5 6
@@ -3609,7 +3609,7 @@ N←2 3 4 ⋄ ((×⌿∘!-∘1)÷∘!¯1++⌿)N   ⍝ 0.0002976190476190476
 Mv←0 2 2 0 ⋄ Nv←0 0 3 3 ⋄ Mv(|+.×∘(¯1∘⌽-1∘⌽)÷2⍨)Nv   ⍝ 6
 
 ⍝ aplcart/table.tsv:1507 — Perspective projection of Nm from distance Ms; Correct perspective projection to multiply x+iy by distance/(distance-z) per column; Upstream matrix division gives LENGTH ERROR; independently checked two points with different depths
-Ms←10 ⋄ Nm←3 2⍴1 2 3 4 5 6 ⋄ Ms((0J1⊥1↓⊢∘⊖)×⊣÷⊣-⊢⌿⍤⊢)Nm   ⍝ 2j6 5j10
+Ms←10 ⋄ Nm←3 2⍴1 2 3 4 5 6 ⋄ Ms((0j1⊥1↓⊢∘⊖)×⊣÷⊣-⊢⌿⍤⊢)Nm   ⍝ 2j6 5j10
 
 ⍝ aplcart/table.tsv:1508 — Rot-13; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1. Corrected ROT13 to 1+26|12+index so M does not select index zero; sample covers M/N and nonletters
 {•a[1+26|12+•a⍳⍵]}@(∊∘•a)'AMNZ 123 abc!'   ⍝ 'NZAM 123 abc!'
@@ -6165,7 +6165,7 @@ Av←1 0 1 0 0 ⋄ Y←3 1 5 2 4 ⋄ Av{g[⍋(+\⍺)[g←⍒⍵]]}Y   ⍝ 1 2 3 
 Nv←¯2 3 ¯1 4 ¯5 ⋄ {s←0 ⋄ ⌈/{s⊢←0⌈s+⍵}¨⍵}Nv   ⍝ 6
 
 ⍝ aplcart/table.tsv:1977 — Sign (side) of point Ns relative to bisections of complex plane by directed edges of Mv
-(0J¯1 0J1 {×11○(⍵-1↓⍺)×+(-/∘(2∘↕))⍺} 1J0 ⋄ 0J¯1 0J1 {×11○(⍵-1↓⍺)×+(-/∘(2∘↕))⍺} 0J0 ⋄ 0J1 0J¯1 {×11○(⍵-1↓⍺)×+(-/∘(2∘↕))⍺} 1J0)
+(0j¯1 0j1 {×11○(⍵-1↓⍺)×+(-/∘(2∘↕))⍺} 1j0 ⋄ 0j¯1 0j1 {×11○(⍵-1↓⍺)×+(-/∘(2∘↕))⍺} 0j0 ⋄ 0j1 0j¯1 {×11○(⍵-1↓⍺)×+(-/∘(2∘↕))⍺} 1j0)
 (1⍴1 ⋄ 1⍴0 ⋄ 1⍴¯1)
 
 ⍝ aplcart/table.tsv:1978 — Iv-shaped array of random numbers in range Jv[1]…Jv[2] (inclusively, with replacement); Reviewed deterministic random-operation invariant; independently checked in Dyalog and through the Rust reference worker; Assert shape, range, uniqueness, permutation preservation, rounding bounds or deterministic sorting; no sampled values or seed are compared
@@ -6394,7 +6394,7 @@ Av←1 0 1 0 0 ⋄ B←1 0 1 1 0 ⋄ Av{(b∧⍺)⍱c⍀(</[2]∘(2∘↕))0⍪(
 1 0 1 1 0
 
 ⍝ aplcart/table.tsv:2054 — Discrete Fourier Transformation
-{⍵+.×⍨*π0J¯2×n÷⍨ ×⌝ ⍨¯1+⍳n←≢⍵} 1 2j¯1 0j¯1 ¯1j2   ⍝ 2 ¯2j¯2 0j¯2 4j4
+{⍵+.×⍨*π0j¯2×n÷⍨ ×⌝ ⍨¯1+⍳n←≢⍵} 1 2j¯1 0j¯1 ¯1j2   ⍝ 2 ¯2j¯2 0j¯2 4j4
 
 ⍝ aplcart/table.tsv:2055 — Progressive index of (⍳) without replacement
 X←1 2 1 ⋄ Y←1 1 1 2 ⋄ X{⍺(R⍨⍳R←≢⍤⊢⍴∘⍋∘⍋⍺⍳⍪⍨)⍵}Y   ⍝ 1 3 4 2
@@ -6418,7 +6418,7 @@ Mv←0.5 2.5 ⋄ Y←1 2 3 ⋄ Mv{⍵⍀⍨~(⍳⍺+⍥≢⍵)∊⍺⌊⍛+⍳�
 Yv← (2 1 2⋄ 3 2⍴'bacadb')  ⋄ {{⍵[⍋⍺⌷⍨⊂⍵]}/⍵,⊂⍳≢↑⍵}Yv   ⍝ 2 1 3
 
 ⍝ aplcart/table.tsv:2065 — Inverse Discrete Fourier Transformation
-{n÷⍨⍵+.×⍨*π0J2×n÷⍨ ×⌝ ⍨¯1+⍳n←≢⍵} 2 ¯2J¯2 0J¯2 4J4
+{n÷⍨⍵+.×⍨*π0j2×n÷⍨ ×⌝ ⍨¯1+⍳n←≢⍵} 2 ¯2j¯2 0j¯2 4j4
 1 2j¯1 0j¯1 ¯1j2
 
 ⍝ aplcart/table.tsv:2066 — Changing connectivity list Jm to a connectivity matrix
@@ -7941,7 +7941,7 @@ f←{(↑⍺)-↑⍵} ⋄ Y←5 2⍴2 30 1 90 2 10 1 70 2 20 ⋄ r←f{1≥≢�
 (1000 = 1E3 ⋄ 10*23)   ⍝ 1 1e23
 
 ⍝ aplcart/table.tsv:2334 — Complex Notation
-(¯1 * 0.5 ⋄ 0J2 * 2)   ⍝ 0j1 ¯4
+(¯1 * 0.5 ⋄ 0j2 * 2)   ⍝ 0j1 ¯4
 
 ⍝ aplcart/table.tsv:2335 — Negative number indicator
 (¯1 + 3 ⋄ 1 - 3)   ⍝ 2 ¯2
@@ -8018,7 +8018,7 @@ Y←2 3⍴⍳6 ⋄ ≢⍴Y   ⍝ 2
 ⍝ aplcart/table.tsv:2473 — Fast: The rank of Y as a 1-element vector; assignment recipes also read the target, and definition recipes call the defined function/operator
 Y←2 3⍴⍳6 ⋄ ⍴⍴Y   ⍝ 1⍴2
 
-⍝ aplcart/table.tsv:2474 — Fast: Euler's idiom (accurate when N is a multiple of 0J0.5); assignment recipes also read the target, and definition recipes call the defined function/operator
+⍝ aplcart/table.tsv:2474 — Fast: Euler's idiom (accurate when N is a multiple of 0j0.5); assignment recipes also read the target, and definition recipes call the defined function/operator
 N←0j0.5 0j1 0j1.5 0j2 ⋄ *πN   ⍝ 0j1 ¯1 0j¯1 1
 
 ⍝ aplcart/table.tsv:2475 — Negative “infinity” (the smallest representable value); Agreed real infinity literal/empty-reduction identity
@@ -8262,11 +8262,11 @@ D←2 4⍴'  ab c d'  ⋄ +/∧\' '=D   ⍝ 2 1
 u←'-'@(4+5×⍳4)⊢(•d,•c•a)[4(9+|)@20⊢5@15?36⍴16] ⋄ (36=≢u)∧(∧/'-'=u[9 14 19 24])∧('4'=u[15])∧(u[20]∊'89ab')∧∧/(u~'-')∊•d,•c•a
 1
 
-⍝ aplcart/tt.tsv:1 — *N×0J1
+⍝ aplcart/tt.tsv:1 — *N×0j1
 N←0 0.5 1 ⋄ ¯12∘○N
 1 0.8775825618903728j0.479425538604203 0.5403023058681398j0.8414709848078965
 
-⍝ aplcart/tt.tsv:2 — *N×0J1; Reuse concrete inputs from aplcart/table.tsv:574; execute this alternate recipe independently
+⍝ aplcart/tt.tsv:2 — *N×0j1; Reuse concrete inputs from aplcart/table.tsv:574; execute this alternate recipe independently
 N←0 0.5 1 ⋄ {¯12○⍵}N
 1 0.8775825618903728j0.479425538604203 0.5403023058681398j0.8414709848078965
 
@@ -8283,11 +8283,11 @@ J←¯3 0 1 7 ⋄ ¯1∘-J   ⍝ 2 ¯1 ¯2 ¯8
 J←¯3 0 1 7 ⋄ {¯1-⍵}J   ⍝ 2 ¯1 ¯2 ¯8
 
 ⍝ aplcart/tt.tsv:7 — 2-argument arctangent (M:x, N:y)
-M←1 ¯1 ¯1 1 ⋄ N←1 1 ¯1 ¯1 ⋄ M(12○⊣+0J1×⊢)N
+M←1 ¯1 ¯1 1 ⋄ N←1 1 ¯1 ¯1 ⋄ M(12○⊣+0j1×⊢)N
 0.7853981633974483 2.356194490192345 ¯2.356194490192345 ¯0.7853981633974483
 
 ⍝ aplcart/tt.tsv:8 — 2-argument arctangent (M:x, N:y); Reuse concrete inputs from aplcart/table.tsv:1098; execute this alternate recipe independently
-M←1 ¯1 ¯1 1 ⋄ N←1 1 ¯1 ¯1 ⋄ M{12○⍺+0J1×⍵}N
+M←1 ¯1 ¯1 1 ⋄ N←1 1 ¯1 ¯1 ⋄ M{12○⍺+0j1×⍵}N
 0.7853981633974483 2.356194490192345 ¯2.356194490192345 ¯0.7853981633974483
 
 ⍝ aplcart/tt.tsv:9 — A magic square, odd side Js
@@ -11312,10 +11312,10 @@ Xs←9 ⋄ Yv←4 5 6 ⋄ Xs(1↓∘,,⍤0)Yv   ⍝ 4 9 5 9 6
 Jv←2026 9 18 ⋄ 100∘⊥Jv   ⍝ 20260918
 
 ⍝ aplcart/tt.tsv:1059 — Js spokes of unit wheel
-Js←4 ⋄ (*∘π0J2×⊢÷⍨1+⍳)Js   ⍝ ¯1 0j¯1 1 0j1
+Js←4 ⋄ (*∘π0j2×⊢÷⍨1+⍳)Js   ⍝ ¯1 0j¯1 1 0j1
 
 ⍝ aplcart/tt.tsv:1060 — Js spokes of unit wheel
-Js←4 ⋄ (*∘π0J2×⊢÷⍨1+⍳)Js   ⍝ ¯1 0j¯1 1 0j1
+Js←4 ⋄ (*∘π0j2×⊢÷⍨1+⍳)Js   ⍝ ¯1 0j¯1 1 0j1
 
 ⍝ aplcart/tt.tsv:1061 — Js-bit reflected Gray code
 Js←3 ⋄ (2∘*↑(⌽2*⍳)⊖∘⍉⍴∘2⊤2/∘⍳2∘*)Js
@@ -11777,10 +11777,10 @@ As←1 ⋄ N←1j2 3j¯4 ⋄ As○⍨∘(¯10+~)⍨N   ⍝ 1j¯2 3j4
 As←1 ⋄ N←1j2 3j¯4 ⋄ As○⍨∘(¯10+~)⍨N   ⍝ 1j¯2 3j4
 
 ⍝ aplcart/tt.tsv:1215 — Mirror complex N across y-axis
--∘+ ¯7J3   ⍝ 7j3
+-∘+ ¯7j3   ⍝ 7j3
 
 ⍝ aplcart/tt.tsv:1216 — Mirror complex N across y-axis
-N←1J2 ¯3J4 ⋄ -∘+N   ⍝ ¯1j2 3j4
+N←1j2 ¯3j4 ⋄ -∘+N   ⍝ ¯1j2 3j4
 
 ⍝ aplcart/tt.tsv:1217 — More accurately sum a vector of floating point numbers
 Nv←1 2 3 ⋄ (+/⍒∘|⊃¨⊂)Nv   ⍝ 6
@@ -11897,10 +11897,10 @@ Xv←1 2 3 ⋄ Yv←4 5 6 ⋄ ⍉∘⊃Xv Yv   ⍝ 3 2⍴1 4 2 5 3 6
 Xv←1 2 3 ⋄ Yv←4 5 6 ⋄ ⍉∘⊃Xv Yv   ⍝ 3 2⍴1 4 2 5 3 6
 
 ⍝ aplcart/tt.tsv:1255 — Negate real part (“real conjugate”)
-+∘- ¯7J3   ⍝ 7j3
++∘- ¯7j3   ⍝ 7j3
 
 ⍝ aplcart/tt.tsv:1256 — Negate real part (“real conjugate”)
-N←1J2 ¯3J4 ⋄ +∘-N   ⍝ ¯1j2 3j4
+N←1j2 ¯3j4 ⋄ +∘-N   ⍝ ¯1j2 3j4
 
 ⍝ aplcart/tt.tsv:1257 — Non-diagonal matrix of order Js
 Js←4 ⋄ (,⍨⍴0,⍴∘1)Js   ⍝ 4 4⍴0 1 1 1 1 0 1 1 1 1 0 1 1 1 1 0
@@ -12108,10 +12108,10 @@ Is←2 ⋄ Js←4 ⋄ Is({⍵/⍨∧⌿(</[2]∘(2∘↕))⍵}1+{(-⍺)↑⍳⍵
 Is←2 ⋄ Js←4 ⋄ Is({⍵/⍨∧⌿(</[2]∘(2∘↕))⍵}1+{(-⍺)↑⍳⍵}⊤∘⍳!×∘!⊣)Js
 2 6⍴1 1 1 2 2 3 2 3 4 3 4 4
 
-⍝ aplcart/tt.tsv:1325 — N×0J1
+⍝ aplcart/tt.tsv:1325 — N×0j1
 N←3j4 0j2 ⋄ ¯11∘○N   ⍝ ¯4j3 ¯2
 
-⍝ aplcart/tt.tsv:1326 — N×0J1
+⍝ aplcart/tt.tsv:1326 — N×0j1
 N←3j4 0j2 ⋄ ¯11∘○N   ⍝ ¯4j3 ¯2
 
 ⍝ aplcart/tt.tsv:1327 — Odd integers from 1 to 2×Js
@@ -12159,10 +12159,10 @@ Is←7 ⋄ Yv←1 2 3 ⋄ Is↑⍨∘-⍨Yv   ⍝ 0 0 0 0 1 2 3
 Is←7 ⋄ Yv←1 2 3 ⋄ Is↑⍨∘-⍨Yv   ⍝ 0 0 0 0 1 2 3
 
 ⍝ aplcart/tt.tsv:1341 — Parallel projection of 3D object in Nm
-Nm←2 3⍴⍳6 ⋄ (0J1⊥⊖)Nm   ⍝ 1j4 2j5 3j6
+Nm←2 3⍴⍳6 ⋄ (0j1⊥⊖)Nm   ⍝ 1j4 2j5 3j6
 
 ⍝ aplcart/tt.tsv:1342 — Parallel projection of 3D object in Nm
-Nm←2 3⍴⍳6 ⋄ (0J1⊥⊖)Nm   ⍝ 1j4 2j5 3j6
+Nm←2 3⍴⍳6 ⋄ (0j1⊥⊖)Nm   ⍝ 1j4 2j5 3j6
 
 ⍝ aplcart/tt.tsv:1343 — Parity of J (is J odd?); dfns display import/wrappers omitted to test underlying arrays
 (2∘| 1 2 3 4 5 6 ⋄ 2∘| (51 ¯25 ⋄ 103 3 ⋄ 4 5) ⋄ 2∘| 3 3⍴⍳9)
@@ -12202,10 +12202,10 @@ Iv←3 1 2 ⋄ Y←3 2⍴⍳6 ⋄ Iv⌷⍨∘⊂⍨Y   ⍝ 3 2⍴5 6 1 2 3 4
 Iv←3 1 2 ⋄ Y←3 2⍴⍳6 ⋄ Iv⌷⍨∘⊂⍨Y   ⍝ 3 2⍴5 6 1 2 3 4
 
 ⍝ aplcart/tt.tsv:1355 — Perspective projection of Nm from distance Ms; Correct perspective projection to multiply x+iy by distance/(distance-z) per column; Upstream matrix division gives LENGTH ERROR; independently checked two points with different depths
-Ms←10 ⋄ Nm←3 2⍴1 2 3 4 5 6 ⋄ Ms((0J1⊥1↓⊢∘⊖)×⊣÷⊣-⊢⌿⍤⊢)Nm   ⍝ 2j6 5j10
+Ms←10 ⋄ Nm←3 2⍴1 2 3 4 5 6 ⋄ Ms((0j1⊥1↓⊢∘⊖)×⊣÷⊣-⊢⌿⍤⊢)Nm   ⍝ 2j6 5j10
 
 ⍝ aplcart/tt.tsv:1356 — Perspective projection of Nm from distance Ms; Correct perspective projection to multiply x+iy by distance/(distance-z) per column; Upstream matrix division gives LENGTH ERROR; independently checked two points with different depths
-Ms←10 ⋄ Nm←3 2⍴1 2 3 4 5 6 ⋄ Ms((0J1⊥1↓⊢∘⊖)×⊣÷⊣-⊢⌿⍤⊢)Nm   ⍝ 2j6 5j10
+Ms←10 ⋄ Nm←3 2⍴1 2 3 4 5 6 ⋄ Ms((0j1⊥1↓⊢∘⊖)×⊣÷⊣-⊢⌿⍤⊢)Nm   ⍝ 2j6 5j10
 
 ⍝ aplcart/tt.tsv:1357 — Phase of N
 N←3j4 0j2 ⋄ 12∘○N   ⍝ 0.9272952180016122 1.570796326794897
@@ -12587,10 +12587,10 @@ Ym←2 3⍴⍳6 ⋄ ⌽∘⍉∘⌽Ym   ⍝ 3 2⍴6 3 5 2 4 1
 Ym←2 3⍴⍳6 ⋄ ⌽∘⍉∘⌽Ym   ⍝ 3 2⍴6 3 5 2 4 1
 
 ⍝ aplcart/tt.tsv:1491 — Regular unit polygon of Js edges
-Js←4 ⋄ (*∘π0J2×⊢÷⍨0,⍳)Js   ⍝ 1 0j1 ¯1 0j¯1 1
+Js←4 ⋄ (*∘π0j2×⊢÷⍨0,⍳)Js   ⍝ 1 0j1 ¯1 0j¯1 1
 
 ⍝ aplcart/tt.tsv:1492 — Regular unit polygon of Js edges
-Js←4 ⋄ (*∘π0J2×⊢÷⍨0,⍳)Js   ⍝ 1 0j1 ¯1 0j¯1 1
+Js←4 ⋄ (*∘π0j2×⊢÷⍨0,⍳)Js   ⍝ 1 0j1 ¯1 0j¯1 1
 
 ⍝ aplcart/tt.tsv:1493 — Remove blanks in each string; optional {X} instantiated as dyadic use
 D← ' a b' 'c  d ' ''  ⋄ ~∘' '¨D   ⍝ ('ab' ⋄ 'cd' ⋄ '')

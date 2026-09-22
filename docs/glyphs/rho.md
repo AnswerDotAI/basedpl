@@ -3,7 +3,7 @@
 `⍴Y` gives axis lengths.
 
 ```apl
-⍴2 3⍴0             ⍝ 2x 3x
+⍴2 3⍴0             ⍝ 2ₓ 3ₓ
 ```
 
 `S⍴Y` reshapes, cycling or truncating the ravel of `Y`. Dimensions are nonnegative integers. Empty `Y` supplies fill.

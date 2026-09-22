@@ -5,14 +5,14 @@
 ```apl
 ∨3j4              ⍝ 3 4
 ∨3j4 1j2          ⍝ 2 2⍴3 4 1 2
-∨1r3              ⍝ 1r3 0x
+∨1r3              ⍝ 1r3 0ₓ
 ```
 
 `X∨Y` gives GCD; on Booleans, OR. Pervasive.
 
 ```apl
 0 0 1 1∨0 1 0 1   ⍝ 0 1 1 1
-12x∨18x            ⍝ 6x
+12x∨18x            ⍝ 6ₓ
 ∨/0 0 1            ⍝ 1
 ```
 

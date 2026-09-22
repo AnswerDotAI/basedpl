@@ -4,7 +4,7 @@
 
 ```apl
 ⌈1.2 ¯1.2         ⍝ 2 ¯1
-⌈3r2              ⍝ 2x
+⌈3r2              ⍝ 2ₓ
 ```
 
 `X⌈Y` takes the real maximum. Pervasive. Empty reduction identity: `¯∞`.

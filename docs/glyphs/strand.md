@@ -6,7 +6,7 @@
 1˘2˘3                     ⍝ 1 2 3
 1 2˘3 4                   ⍝ 1 (2 3) 4
 (1+2)˘(3+4)               ⍝ 3 7
-≢1˘+˘'abc'                ⍝ 3x
+≢1˘+˘'abc'                ⍝ 3ₓ
 ```
 
 ## Function arrays
@@ -14,7 +14,7 @@
 ```apl
 fs←+˘×˘÷ ⋄ mul←2⊃fs ⋄ 2 mul 3                  ⍝ 6
 fs←(+/)˘{⍵×⍵}˘(3∘+) ⋄ square←2⊃fs ⋄ square 4   ⍝ 16
-fs←+˘× ⋄ ≢fs˘÷                                 ⍝ 2x
+fs←+˘× ⋄ ≢fs˘÷                                 ⍝ 2ₓ
 ```
 
 Pick `⊃` and First `↑` retrieve stored functions as callables. [Agenda](agenda.md) selects and calls a function. Successive Picks traverse nested arrays. Empty coordinates return the argument unchanged. Complete atomic bracket indices also retrieve callables.

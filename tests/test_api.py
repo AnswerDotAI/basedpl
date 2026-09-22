@@ -171,7 +171,7 @@ def test_array_surface():
     np.testing.assert_array_equal(a > 3, [[0, 0, 0], [1, 1, 1]])
     np.testing.assert_array_equal(~(a > 3), a <= 3)
     np.testing.assert_array_equal(a @ transpose(a), [[14, 32], [32, 77]])
-    assert Array(2).apl == '2x' and Array(2.).apl == '2'
+    assert Array(2).apl == '2ₓ' and Array(2.).apl == '2'
     assert repr(Array(2)) != repr(Array(2.))
 
 def test_keyed_arrays():
@@ -243,7 +243,7 @@ def test_words_binding_and_operators():
     np.testing.assert_array_equal(plus.scan([1, 2, 3]), [1, 3, 6])
     np.testing.assert_array_equal(subtract.scan([1, 2, 3]), [1, -1, -4])
     np.testing.assert_array_equal(plus.scan(10, [1, 2, 3]), [11, 13, 16])
-    assert type(tally('abc').py) is int and shape(Array([1., 2.])).apl == '2x'
+    assert type(tally('abc').py) is int and shape(Array([1., 2.])).apl == '2ₓ'
     assert (Array('abc') + 1).py == 'bcd'
     np.testing.assert_array_equal(plus.reduce[1](Array([[1, 2], [3, 4]])), [4, 6])
     np.testing.assert_array_equal(plus.reduce[2, 3](np.arange(1, 9).reshape(2, 2, 2)), [10, 26])
@@ -404,9 +404,9 @@ def test_retained_and_late_bound_functions(capsys):
         a('outer←{k←100 ⋄ ⍶ ⍵}', f=f)
         assert a('f outer 1').py == 11
         g = a('{⎕←⍵ ⋄ ⍵}')
-        assert (g + g)(2).py == 4 and capsys.readouterr().out == '2x\n2x\n'
+        assert (g + g)(2).py == 4 and capsys.readouterr().out == '2ₓ\n2ₓ\n'
         assert a.eval('g', g=g).value(2).py == 2
-        assert capsys.readouterr().out == '2x\n'
+        assert capsys.readouterr().out == '2ₓ\n'
     with pytest.raises(RuntimeError, match='closed'): f(3)
     assert saved(3).py == -3
 

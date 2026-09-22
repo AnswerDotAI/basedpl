@@ -4,7 +4,7 @@ Construct a distribution, then sample or evaluate it:
 
 ```apl
 n←•normal 0 1
-⍴n.sample 2 3             ⍝ 2x 3x
+⍴n.sample 2 3             ⍝ 2ₓ 3ₓ
 n.cdf 0                  ⍝ 0.5
 n.quantile 0.5           ⍝ 0
 n.density 0              ⍝ ÷√2×π1
@@ -25,7 +25,7 @@ Each constructor returns a keyed vector of functions. All four methods are monad
 b←•binomial 2 0.5
 b.density 0 1 2          ⍝ 0.25 0.5 0.25
 b.cdf 0.5 1.5           ⍝ 0.25 0.75
-b.quantile 0.25 0.5 1   ⍝ 0x 1x 2x
+b.quantile 0.25 0.5 1   ⍝ 0ₓ 1ₓ 2ₓ
 ```
 
 Evaluation pervades arrays, preserving shape, nesting, keys and axis names. Parameters belong to the constructed distribution.
@@ -64,7 +64,7 @@ Gamma takes **scale**, whereas exponential takes **rate**. These describe the sa
 ```apl
 g←•gamma 1 2
 e←•exponential 0.5
-(g.cdf 2) = e.cdf 2      ⍝ 1x
+(g.cdf 2) = e.cdf 2      ⍝ 1ₓ
 ```
 
 Quantile endpoints give the support bounds, including infinity. Discrete quantiles return the smallest supported integer whose CDF reaches p; p=0 gives the lower support bound. Certain events stay constant at both endpoints.
@@ -73,7 +73,7 @@ Quantile endpoints give the support bounds, including infinity. Discrete quantil
 n←•normal 0 1
 n.quantile 0 1           ⍝ ¯∞ ∞
 p←•poisson 0
-p.sample 3               ⍝ 0x 0x 0x
+p.sample 3               ⍝ 0ₓ 0ₓ 0ₓ
 ```
 
 ## Python

@@ -107,7 +107,7 @@ fn reference_format_and_comparison() {
     assert_eq!(reference::check(&output_error, EvalOptions::default())["status"], "pass");
     output_error["expected_output"] = json!("2");
     assert_eq!(reference::check(&output_error, EvalOptions::default())["status"], "mismatch");
-    let representation = json!({"code":"1", "expected_code":"1x", "exact_representation":true});
+    let representation = json!({"code":"1", "expected_code":"1ₓ", "exact_representation":true});
     assert_eq!(reference::check(&representation, EvalOptions::default())["status"], "mismatch");
     let parsed = cases("⍝  — [rtol=1e-14 atol=1e-15]\nf←{\n\n⍵+1\n}\nf 2\n⍝ =>\n3\n\n⍝  —\n'unfinished\n⍝ error: SYNTAX ERROR\n\n");
     assert_eq!(parsed[0]["code"], "f←{\n\n⍵+1\n}\nf 2");

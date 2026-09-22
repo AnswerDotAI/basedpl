@@ -3,8 +3,8 @@
 `ℙN`: Nth prime, one-based. J's `p:` family. Integral inputs; exact integer results.
 
 ```apl
-ℙ⍳8               ⍝ 2x 3x 5x 7x 11x 13x 17x 19x
-ℙ⍣¯1⊢ℙ⍳4         ⍝ 1x 2x 3x 4x
+ℙ⍳8               ⍝ 2ₓ 3ₓ 5ₓ 7ₓ 11ₓ 13ₓ 17ₓ 19ₓ
+ℙ⍣¯1⊢ℙ⍳4         ⍝ 1ₓ 2ₓ 3ₓ 4ₓ
 ```
 
 `KℙN` selects an operation; codes retain J's values.
@@ -21,11 +21,11 @@
 | `5` | Euler's totient |
 
 ```apl
-¯1ℙ1 2 3 4 5 6     ⍝ 0x 0x 1x 2x 2x 3x
-1ℙ¯1 0 1 2 3 4     ⍝ 0x 0x 0x 1x 1x 0x
-4ℙ1 2 3 4 5        ⍝ 2x 3x 5x 5x 7x
-5ℙ1 2 3 4 5 6      ⍝ 1x 1x 2x 2x 4x 2x
-2ℙ700               ⍝ 2 3⍴2x 5x 7x 2x 2x 1x
+¯1ℙ1 2 3 4 5 6     ⍝ 0ₓ 0ₓ 1ₓ 2ₓ 2ₓ 3ₓ
+1ℙ¯1 0 1 2 3 4     ⍝ 0ₓ 0ₓ 0ₓ 1ₓ 1ₓ 0ₓ
+4ℙ1 2 3 4 5        ⍝ 2ₓ 3ₓ 5ₓ 5ₓ 7ₓ
+5ℙ1 2 3 4 5 6      ⍝ 1ₓ 1ₓ 2ₓ 2ₓ 4ₓ 2ₓ
+2ℙ700               ⍝ 2 3⍴2ₓ 5ₓ 7ₓ 2ₓ 2ₓ 1ₓ
 ```
 
 Scalar cells; results assemble with fill. Inverse: count-below plus one. Primality testing is deterministic through 64 bits, probabilistic above that (false-positive bound `2⁻⁶⁴`).

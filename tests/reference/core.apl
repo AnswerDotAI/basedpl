@@ -57,7 +57,7 @@ f←: ⋄ a←'n' f 5
 g←{⍵<0:-⍵ ⋄ +/(:('n':⍵))}
 ((:a) ⋄ ≢('a':1 ⋄ 'b':2) ⋄ g ¯3 ⋄ g 3)
 ⍝ =>
-(,5 ⋄ 2x ⋄ 3 ⋄ 3)
+(,5 ⋄ 2ₓ ⋄ 3 ⋄ 3)
 
 ⍝ axis-colon-order — Construction uses ordinary right-to-left evaluation
 :((⎕←'a'):(⎕←7))
@@ -68,7 +68,7 @@ g←{⍵<0:-⍵ ⋄ +/(:('n':⍵))}
 M←('alice' 'bob' ⋄ 'price' 'qty'):[10 2 ⋄ 20 4]
 (⍴M ⋄ ⍳[1]M ⋄ ⍳[2]M ⋄ ⍳[1 2](:M) ⋄ :M)
 ⍝ =>
-(2x 2x ⋄ 'alice' 'bob' ⋄ 'price' 'qty' ⋄ (1x 2x ⋄ 1x 2x) ⋄ [10 2 ⋄ 20 4])
+(2ₓ 2ₓ ⋄ 'alice' 'bob' ⋄ 'price' 'qty' ⋄ (1ₓ 2ₓ ⋄ 1ₓ 2ₓ) ⋄ [10 2 ⋄ 20 4])
 
 ⍝ axis-selection — Atomic row selection retains column keys; one string is one selector
 M←('alice' 'bob' ⋄ 'price' 'qty'):[10 2 ⋄ 20 4]
@@ -117,19 +117,19 @@ M←('alice' 'bob' ⋄ 'price' 'qty'):[10 2 ⋄ 20 4]
 A←'left':7 ⋄ B←'right':7
 (A∊B ⋄ A⍳B ⋄ A∩B ⋄ A∪B ⋄ A,B)
 ⍝ =>
-(('left':1x) ⋄ ('right':'left') ⋄ ('left':7) ⋄ ('left':7) ⋄ ('left' 'right':7 7))
+(('left':1ₓ) ⋄ ('right':'left') ⋄ ('left':7) ⋄ ('left':7) ⋄ ('left' 'right':7 7))
 
 ⍝ axis-indices — Grade, interval index and index-of return keys, retaining numeric sentinels
 V←'low' 'mid' 'high':10 20 30
 (⍒V ⋄ V⍳20 99 ⋄ V⍸5 15 25 40 ⋄ V[⍒V])
 ⍝ =>
-('high' 'mid' 'low' ⋄ ('mid' ⋄ 4x) ⋄ (0x ⋄ 'low' ⋄ 'mid' ⋄ 'high') ⋄ ('high' 'mid' 'low':30 20 10))
+('high' 'mid' 'low' ⋄ ('mid' ⋄ 4ₓ) ⋄ (0ₓ ⋄ 'low' ⋄ 'mid' ⋄ 'high') ⋄ ('high' 'mid' 'low':30 20 10))
 
 ⍝ axis-match — Match aligns keys independently on both axes
 M←('alice' 'bob' ⋄ 'price' 'qty'):[10 2 ⋄ 20 4]
 M≡⌽⊖M
 ⍝ =>
-1x
+1ₓ
 
 ⍝ axis-outer — Outer product keeps each argument's labelled axes
 ('aa' 'bb':1 2)+⌝('xx' 'yy':10 20)
@@ -151,7 +151,7 @@ A(+⍤1)B
 V←'aa' 'bb' 'cc':1 2 3
 (2↕V ⋄ 3↕V ⋄ ({+/⍵}⌺3)V ⋄ ({(⍳[1]⍵)≡'aa' 'bb' 'cc'}⌺3)V)
 ⍝ =>
-(([1 2 ⋄ 2 3]) ⋄ ('aa' 'bb' 'cc':[2][1 2 3 ⋄]) ⋄ ('aa' 'bb' 'cc':3 6 5) ⋄ ('aa' 'bb' 'cc':0x 1x 0x))
+(([1 2 ⋄ 2 3]) ⋄ ('aa' 'bb' 'cc':[2][1 2 3 ⋄]) ⋄ ('aa' 'bb' 'cc':3 6 5) ⋄ ('aa' 'bb' 'cc':0ₓ 1ₓ 0ₓ))
 
 ⍝ axis-coordinates — Pick, Squad and coordinate indexing resolve each axis independently
 M←('alice' 'bob' ⋄ 'price' 'qty'):[10 2 ⋄ 20 4]
@@ -178,10 +178,10 @@ X←('xx' 'yy' 'zz' ⋄ 'aa' 'bb'):3 2⍴⍳6
 ('aa' 'bb' ⋄ 'xx' 'yy' 'zz'):[1 2]2 3 1⍴1 3 5 2 4 6
 
 ⍝ axis-compact-union — Compact integer and float paths use the same missing-position fill
-X←'aa' 'bb':2x 3x ⋄ Y←'bb' 'cc':5x 7x
+X←'aa' 'bb':2ₓ 3ₓ ⋄ Y←'bb' 'cc':5ₓ 7ₓ
 (X+Y ⋄ X×Y ⋄ X<Y ⋄ (X+0)+Y ⋄ X+¨Y)
 ⍝ =>
-(('aa' 'bb' 'cc':2x 8x 7x) ⋄ ('aa' 'bb' 'cc':0x 15x 0x) ⋄ ('aa' 'bb' 'cc':0x 1x 1x) ⋄ ('aa' 'bb' 'cc':2 8 7x) ⋄ ('aa' 'bb' 'cc':2x 8x 7x))
+(('aa' 'bb' 'cc':2ₓ 8ₓ 7ₓ) ⋄ ('aa' 'bb' 'cc':0ₓ 15ₓ 0ₓ) ⋄ ('aa' 'bb' 'cc':0ₓ 1ₓ 1ₓ) ⋄ ('aa' 'bb' 'cc':2 8 7ₓ) ⋄ ('aa' 'bb' 'cc':2ₓ 8ₓ 7ₓ))
 
 ⍝ axis-partition — Partition cells retain sliced labels; group axes are new and unkeyed
 M←('alice' 'bob' ⋄ 'xx' 'yy' 'zz'):2 3⍴⍳6
@@ -214,7 +214,7 @@ M←('xx' 'yy':[2]0 2⍴0)
 V←'aa' 'bb':1 2
 (ℙV ⋄ ⊤V ⋄ 2⊥⊤V ⋄ ('days' 'hours':0 24)⊤('aa' 'bb':25 50))
 ⍝ =>
-(('aa' 'bb':2x 3x) ⋄ ('aa' 'bb':[2][0 1 ⋄ 1 0]) ⋄ ('aa' 'bb':1 2) ⋄ (('days' 'hours' ⋄ 'aa' 'bb'):[1 2 ⋄ 1 2]))
+(('aa' 'bb':2ₓ 3ₓ) ⋄ ('aa' 'bb':[2][0 1 ⋄ 1 0]) ⋄ ('aa' 'bb':1 2) ⋄ (('days' 'hours' ⋄ 'aa' 'bb'):[1 2 ⋄ 1 2]))
 
 ⍝ axis-product-frame — Inner product retains uncontracted axes
 A←'aa' 'bb':[1 2 ⋄ 3 4] ⋄ B←'xx' 'yy':[2][5 6 ⋄ 7 8]
@@ -226,13 +226,13 @@ A+.×B
 P←'aa' 'bb':[1 2 ⋄ 10 3] ⋄ X←'bb' 'aa':4 5
 (P⊛X ⋄ ('aa' 'bb':5 5)ℙ('bb' 'aa':10 9))
 ⍝ =>
-(('aa' 'bb':11 22) ⋄ ('aa' 'bb':6x 4x))
+(('aa' 'bb':11 22) ⋄ ('aa' 'bb':6ₓ 4ₓ))
 
 ⍝ axis-matrix-layout — Inversion swaps axes; a solution retains the coefficient column axis
-M←('r1' 'r2' ⋄ 'xx' 'yy'):[2x 0x ⋄ 0x 4x]
-(⌹M ⋄ 4x 12x⌹M)
+M←('r1' 'r2' ⋄ 'xx' 'yy'):[2ₓ 0ₓ ⋄ 0ₓ 4ₓ]
+(⌹M ⋄ 4ₓ 12ₓ⌹M)
 ⍝ =>
-((('xx' 'yy' ⋄ 'r1' 'r2'):[1r2 0x ⋄ 0x 1r4]) ⋄ ('xx' 'yy':2x 3x))
+((('xx' 'yy' ⋄ 'r1' 'r2'):[1r2 0ₓ ⋄ 0ₓ 1r4]) ⋄ ('xx' 'yy':2ₓ 3ₓ))
 
 ⍝ axis-power-frame — Array-valued iteration counts supply the result frame
 N←'initial' 'once' 'twice':0 1 2
@@ -242,19 +242,19 @@ N←'initial' 'once' 'twice':0 1 2
 
 ⍝ axis-contract — Contracted axes pair names, retaining the left contraction order
 A←'hi' 'lo':1 2 ⋄ B←'lo' 'hi':10 20
-M←('r1' 'r2' ⋄ 'xx' 'yy'):[2x 0x ⋄ 0x 4x]
-(A+.×B ⋄ ('hi' 'lo':10 10)⊥('lo' 'hi':2 1) ⋄ ('r2' 'r1':12x 4x)⌹M)
+M←('r1' 'r2' ⋄ 'xx' 'yy'):[2ₓ 0ₓ ⋄ 0ₓ 4ₓ]
+(A+.×B ⋄ ('hi' 'lo':10 10)⊥('lo' 'hi':2 1) ⋄ ('r2' 'r1':12ₓ 4ₓ)⌹M)
 ⍝ =>
-(40 ⋄ 12 ⋄ ('xx' 'yy':2x 3x))
+(40 ⋄ 12 ⋄ ('xx' 'yy':2ₓ 3ₓ))
 
 ⍝ axis-complex-parts — Complex decomposition adds an unkeyed axis after the original axes
 ∨'first' 'second':3j4 5j12   ⍝ 'first' 'second':[3 4 ⋄ 5 12]
 
 ⍝ axis-gradient — VJP aligns output labels and preserves input coordinate labels
-f←1x 2x 3x∘⊛ ⋄ g←[[1x 2x 0x ⋄ 1x 0x 2x]]∘⊛
-(('bb' 'aa':20x 10x)(f∂)('aa' 'bb':1x 2x) ⋄ g∂⊂'xx' 'yy':3x 4x)
+f←1ₓ 2ₓ 3ₓ∘⊛ ⋄ g←[[1ₓ 2ₓ 0ₓ ⋄ 1ₓ 0ₓ 2ₓ]]∘⊛
+(('bb' 'aa':20ₓ 10ₓ)(f∂)('aa' 'bb':1ₓ 2ₓ) ⋄ g∂⊂'xx' 'yy':3ₓ 4ₓ)
 ⍝ =>
-(('aa' 'bb':80x 280x) ⋄ ⊂'xx' 'yy':6x 8x)
+(('aa' 'bb':80ₓ 280ₓ) ⋄ ⊂'xx' 'yy':6ₓ 8ₓ)
 
 ⍝ axis-contract-missing — Labelled contractions require the same key set, including singletons
 ('aa':1)+.×('bb':2)
@@ -338,40 +338,40 @@ v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}   ⍝ 15
 ∨3j4 5 0j¯2   ⍝ [3 4 ⋄ 5 0 ⋄ 0 ¯2]
 
 ⍝ — Exact real parts stay exact
-∨1r3   ⍝ 1r3 0x
+∨1r3   ⍝ 1r3 0ₓ
 
 ⍝ — Magnitude and phase, in radians
 ∧3j4 0j1   ⍝ [5 0.9272952180016122 ⋄ 1 1.5707963267948966]
 
 ⍝ — Empty decomposition retains frame and pair axis
-⍴∨2 0⍴0x   ⍝ 2x 0x 2x
+⍴∨2 0⍴0ₓ   ⍝ 2ₓ 0ₓ 2ₓ
 
 ⍝ — Self-classification keeps classes in first-occurrence order
-='aba'   ⍝ [1x 0x 1x ⋄ 0x 1x 0x]
+='aba'   ⍝ [1ₓ 0ₓ 1ₓ ⋄ 0ₓ 1ₓ 0ₓ]
 
 ⍝ — Self-classify major cells
-=[1 2 ⋄ 3 4 ⋄ 1 2]   ⍝ [1x 0x 1x ⋄ 0x 1x 0x]
+=[1 2 ⋄ 3 4 ⋄ 1 2]   ⍝ [1ₓ 0ₓ 1ₓ ⋄ 0ₓ 1ₓ 0ₓ]
 
 ⍝ — A scalar has one class and one item
-=7   ⍝ [1x ⋄]
+=7   ⍝ [1ₓ ⋄]
 
 ⍝ — No items, no classes
-=⍬   ⍝ 0 0⍴0x
+=⍬   ⍝ 0 0⍴0ₓ
 
 ⍝ — Zero-width rows are equal
-=3 0⍴0   ⍝ 1 3⍴1x
+=3 0⍴0   ⍝ 1 3⍴1ₓ
 
 ⍝ — Binary encode chooses enough first-axis digits
-⊤2x 5x   ⍝ [0x 1x ⋄ 1x 0x ⋄ 0x 1x]
+⊤2ₓ 5ₓ   ⍝ [0ₓ 1ₓ ⋄ 1ₓ 0ₓ ⋄ 0ₓ 1ₓ]
 
 ⍝ — Binary decode uses the existing first digit axis
-⊥[0x 1x ⋄ 1x 0x ⋄ 0x 1x]   ⍝ 2x 5x
+⊥[0ₓ 1ₓ ⋄ 1ₓ 0ₓ ⋄ 0ₓ 1ₓ]   ⍝ 2ₓ 5ₓ
 
 ⍝ — Binary zero needs no digits
-⊤0x   ⍝ 0⍴0x
+⊤0ₓ   ⍝ 0⍴0ₓ
 
 ⍝ — Binary encoding works above machine-integer range
-⊥⊤18446744073709551615x   ⍝ 18446744073709551615x
+⊥⊤18446744073709551615ₓ   ⍝ 18446744073709551615ₓ
 
 ⍝ — Float binary encoding must not use tolerant floor
 ⊤9007199254740991   ⍝ 53⍴1
@@ -388,40 +388,40 @@ v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}   ⍝ 15
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Increment/decrement pervade and preserve exactness
-≥≤1x (2x 3x)   ⍝ 1x (2x 3x)
+≥≤1ₓ (2ₓ 3ₓ)   ⍝ 1ₓ (2ₓ 3ₓ)
 
 ⍝ — Increment promotes on overflow
-≥9223372036854775807x   ⍝ 9223372036854775808x
+≥9223372036854775807ₓ   ⍝ 9223372036854775808ₓ
 
 ⍝ — Square promotes on overflow
-⍲3037000500x   ⍝ 9223372037000250000x
+⍲3037000500ₓ   ⍝ 9223372037000250000ₓ
 
 ⍝ — Doubling preserves rational values
 ⍱1r3   ⍝ 2r3
 
 ⍝ — Square and double preserve empty exact prototypes
-(⍲0⍴0x ⋄ ⍱0⍴0x)   ⍝ (0⍴0x⋄ 0⍴0x)
+(⍲0⍴0ₓ ⋄ ⍱0⍴0ₓ)   ⍝ (0⍴0ₓ⋄ 0⍴0ₓ)
 
 ⍝ — Square root extends into complex numbers
 √0 9 ¯4 3j4   ⍝ 0 3 0j2 2j1
 
 ⍝ — Exact perfect rational roots
-√1r9 18446744073709551616x   ⍝ 1r3 4294967296x
+√1r9 18446744073709551616ₓ   ⍝ 1r3 4294967296ₓ
 
 ⍝ — Irrational roots become approximate
-√2x   ⍝ 1.4142135623730951
+√2ₓ   ⍝ 1.4142135623730951
 
 ⍝ — Odd integral roots of negative reals use the real branch
 3 ¯3√¯8   ⍝ ¯2 ¯0.5
 
 ⍝ — Negative exact degrees reciprocate
-¯3x√¯8x   ⍝ ¯1r2
+¯3ₓ√¯8ₓ   ⍝ ¯1r2
 
 ⍝ — Non-integral degree uses principal power
 0.5√¯2   ⍝ 4
 
 ⍝ — Complex square root uses the principal branch
-1E¯14>|(√¯3j¯4)-1j¯2   ⍝ 1x
+1E¯14>|(√¯3j¯4)-1j¯2   ⍝ 1ₓ
 
 ⍝ — Zero degree is undefined
 0√2
@@ -489,10 +489,10 @@ fs←+˘× ⋄ f←↑↑¨fs ⋄ 2 f 3   ⍝ 5
 fs←+˘× ⋄ f←↑↑⍤0⊢fs ⋄ 2 f 3   ⍝ 5
 
 ⍝ — An empty pick path preserves the scalar array, without disclosing its function
-fs←+˘× ⋄ fs[⊂2]≡⍬⊃fs[⊂2]   ⍝ 1x
+fs←+˘× ⋄ fs[⊂2]≡⍬⊃fs[⊂2]   ⍝ 1ₓ
 
 ⍝ — A function vector matches itself by function identity
-fs←+˘× ⋄ fs≡fs   ⍝ 1x
+fs←+˘× ⋄ fs≡fs   ⍝ 1ₓ
 
 ⍝ — A selected function can use its still-active lexical binding
 {a←⍵ ⋄ fs←{a+⍵}˘× ⋄ f←↑fs ⋄ f 3}4   ⍝ 7
@@ -507,7 +507,7 @@ id←{↑⍵} ⋄ {a←⍵ ⋄ f←id {a+⍵}˘+ ⋄ f 3}4   ⍝ 7
 fs←{⍵×⍵}˘+ ⋄ f←{↑⍵}fs ⋄ f 3   ⍝ 9
 
 ⍝ — Formatting a function vector produces character text
-fs←+˘× ⋄ ⍴⍕fs   ⍝ ,6x
+fs←+˘× ⋄ ⍴⍕fs   ⍝ ,6ₓ
 
 ⍝ — One strand may contain numbers, callable functions and text
 x←1˘+˘'abc' ⋄ f←2⊃x ⋄ (1⊃x)f≢3⊃x   ⍝ 4
@@ -644,10 +644,10 @@ choose←{⎕←9 ⋄ 2}◶({⎕←1 ⋄ 1÷0}˘{⎕←2 ⋄ ⍺-⍵}) ⋄ 10 ch
 ⍝⍝ Leading unit axis broadcasting
 
 ⍝ — Unit axes broadcast a column against a row; predicates return exact Booleans
-[1 ⋄ 2]<[1 2 3 ⋄]   ⍝ [0x 1x 1x ⋄ 0x 0x 1x]
+[1 ⋄ 2]<[1 2 3 ⋄]   ⍝ [0ₓ 1ₓ 1ₓ ⋄ 0ₓ 0ₓ 1ₓ]
 
 ⍝ —
-[1x ⋄ 2x]<[1x 2x 3x ⋄]   ⍝ [0x 1x 1x ⋄ 0x 0x 1x]
+[1ₓ ⋄ 2ₓ]<[1ₓ 2ₓ 3ₓ ⋄]   ⍝ [0ₓ 1ₓ 1ₓ ⋄ 0ₓ 0ₓ 1ₓ]
 
 ⍝ — Rank pairs vector cells using broadcast frames
 (2 1 2⍴1 2 3 4)(+⍤1)1 3 2⍴10 20 30 40 50 60
@@ -667,8 +667,8 @@ choose←{⎕←9 ⋄ 2}◶({⎕←1 ⋄ 1÷0}˘{⎕←2 ⋄ ⍺-⍵}) ⋄ 10 ch
 [[1 ⋄ 2]]+⊂[10 20 30 ⋄]   ⍝ ⊂[11 21 31 ⋄ 12 22 32]
 
 ⍝ — Broadcast integer overflow promotes to exact big numbers
-[9223372036854775807x 1x ⋄]+1x 2x
-[9223372036854775808x 2x ⋄ 9223372036854775809x 3x]
+[9223372036854775807ₓ 1ₓ ⋄]+1ₓ 2ₓ
+[9223372036854775808ₓ 2ₓ ⋄ 9223372036854775809ₓ 3ₓ]
 
 ⍝ — Rank-zero application extends a singleton frame
 (⍳1)(+⍤0)⍳3   ⍝ 2 3 4
@@ -730,7 +730,7 @@ a←'HELLO' 'WORLD' ⋄ ((a='O')/¨a)←'*' ⋄ a   ⍝ 'HELL*' 'W*RLD'
 a←(1 2⋄ 3 4) ⋄ (1↑a)←⊂8 9 10 ⋄ a   ⍝ (8 9 10⋄ 3 4)
 
 ⍝ — Repeated selection updates the same source element more than once
-a←3⍴0x ⋄ (5⍴a)+←1x ⋄ a   ⍝ 2x 2x 1x
+a←3⍴0ₓ ⋄ (5⍴a)+←1ₓ ⋄ a   ⍝ 2ₓ 2ₓ 1ₓ
 
 ⍝ — Reverse composes with indexed selection
 a←1 2 3 ⋄ (⌽a[1 3])←8 9 ⋄ a   ⍝ 9 2 8
@@ -739,7 +739,7 @@ a←1 2 3 ⋄ (⌽a[1 3])←8 9 ⋄ a   ⍝ 9 2 8
 a←1 2 3 ⋄ (0↑a)←9 ⋄ a   ⍝ 1 2 3
 
 ⍝ — Empty each-selection preserves the nested prototype shape
-a←0⍴⊂2 3⍴⍳6 ⋄ (⌽[2]¨a)←9 ⋄ ⍴↑a   ⍝ 2x 3x
+a←0⍴⊂2 3⍴⍳6 ⋄ (⌽[2]¨a)←9 ⋄ ⍴↑a   ⍝ 2ₓ 3ₓ
 
 ⍝ — Overtake's fill positions do not create new source elements
 a←1 2 ⋄ (3↑a)←4 ⋄ a   ⍝ 4 4
@@ -873,10 +873,10 @@ a←3 5⍴0 ⋄ a[1 1 3;1 3 3 5]+←1 ⋄ ,a   ⍝ 2 0 4 0 2 0 0 0 0 0 1 0 2 0 1
 a←1 2 3 ⋄ b←a ⋄ a[1 3]←8 9 ⋄ b   ⍝ 1 2 3
 
 ⍝ —
-a←1x 2x ⋄ a×←2x ⋄ a   ⍝ 2x 4x
+a←1ₓ 2ₓ ⋄ a×←2ₓ ⋄ a   ⍝ 2ₓ 4ₓ
 
 ⍝ — Modified integer assignment promotes on overflow
-a←1x ⋄ a+←9223372036854775807x ⋄ a   ⍝ 9223372036854775808x
+a←1ₓ ⋄ a+←9223372036854775807ₓ ⋄ a   ⍝ 9223372036854775808ₓ
 
 ⍝ — Right-to-left evaluation reads the strand's a before the function updates it
 a←1 ⋄ f←{a+←1 ⋄ a} ⋄ (f 0) a   ⍝ 2 1
@@ -909,13 +909,13 @@ a←1 2 ⋄ f←{⎕←a ⋄ ⍺+⍵} ⋄ a[1 2]f←10 20 ⋄ a   ⍝ 11 22
 ⍝⍝ General axis forms
 
 ⍝ — Ravel merges adjacent selected axes. Dyalog 20.0.53963.0, IO=1, CT=1e-14, ML=1.
-⍴,[2 3]2 3 4⍴⍳24   ⍝ 2x 12x
+⍴,[2 3]2 3 4⍴⍳24   ⍝ 2ₓ 12ₓ
 
 ⍝ — Fractional-axis ravel inserts a unit axis between existing axes
-⍴,[1.5]2 3⍴⍳6   ⍝ 2x 1x 3x
+⍴,[1.5]2 3⍴⍳6   ⍝ 2ₓ 1ₓ 3ₓ
 
 ⍝ — Empty-axis ravel appends a unit axis
-⍴,[⍬]2 3⍴⍳6   ⍝ 2x 3x 1x
+⍴,[⍬]2 3⍴⍳6   ⍝ 2ₓ 3ₓ 1ₓ
 
 ⍝ — Mix places item axes before the outer vector axis
 ⊃[0.5](1 2⋄ 3 4)   ⍝ [1 3 ⋄ 2 4]
@@ -945,10 +945,10 @@ a←1 2 ⋄ f←{⎕←a ⋄ ⍺+⍵} ⋄ a[1 2]f←10 20 ⋄ a   ⍝ 11 22
 ↑⊂[2 1]2 3⍴⍳6   ⍝ [1 4 ⋄ 2 5 ⋄ 3 6]
 
 ⍝ — Axis enclosure leaves the unselected frame, including its zero dimension
-⍴⊂[3]2 0 4⍴0x   ⍝ 2x 0x
+⍴⊂[3]2 0 4⍴0ₓ   ⍝ 2ₓ 0ₓ
 
 ⍝ — Empty axis-enclosure retains the length-four cell prototype
-⍴↑↑⊂[3]2 0 4⍴0x   ⍝ ,4x
+⍴↑↑⊂[3]2 0 4⍴0ₓ   ⍝ ,4ₓ
 
 ⍝⍝ Format and execute
 
@@ -978,16 +978,16 @@ a←1 2 ⋄ f←{⎕←a ⋄ ⍺+⍵} ⋄ a[1 2]f←10 20 ⋄ a   ⍝ 11 22
 5E¯324 ¯1.2345678901234567E200 1E¯100j2E100
 
 ⍝ — Formatting a scalar produces a character vector
-⍴⍕1   ⍝ ,1x
+⍴⍕1   ⍝ ,1ₓ
 
 ⍝ — A zero-row matrix retains column widths and separators
-⍴⍕0 3⍴0   ⍝ 0x 5x
+⍴⍕0 3⍴0   ⍝ 0ₓ 5ₓ
 
 ⍝ — A matrix with no columns formats to zero-width rows
-⍴⍕3 0⍴0   ⍝ 3x 0x
+⍴⍕3 0⍴0   ⍝ 3ₓ 0ₓ
 
 ⍝ — Fixed-width formatting expands only the trailing dimension
-⍴5 2⍕2 3 4⍴⍳24   ⍝ 2x 3x 20x
+⍴5 2⍕2 3 4⍴⍳24   ⍝ 2ₓ 3ₓ 20ₓ
 
 ⍝ — Per-column formats replace overflowing fields with stars
 ,3 0 6 2⍕[10.1 15 ⋄ 1001 22.357 ⋄ 101 1110.1]
@@ -997,7 +997,7 @@ a←1 2 ⋄ f←{⎕←a ⋄ ⍺+⍵} ⋄ a[1 2]f←10 20 ⋄ a   ⍝ 11 22
 ,⍕[1 12.3 ⋄ 123 4]   ⍝ '  1 12.3123  4  '
 
 ⍝ — Format and execute preserve exact integer and rational domains
-⍎⍕1x 1r3   ⍝ 1x 1r3
+⍎⍕1ₓ 1r3   ⍝ 1ₓ 1r3
 
 ⍝ —
 1⍕1j2
@@ -1019,7 +1019,7 @@ a←1 2 ⋄ f←{⎕←a ⋄ ⍺+⍵} ⋄ a[1 2]f←10 20 ⋄ a   ⍝ 11 22
 ⍕12.34   ⍝ '12.34'
 
 ⍝ —
-⍕1x 1r3   ⍝ '1x 1r3'
+⍕1ₓ 1r3   ⍝ '1ₓ 1r3'
 
 ⍝ —
 ⍕⍬   ⍝ ''
@@ -1037,7 +1037,7 @@ a←1 2 ⋄ f←{⎕←a ⋄ ⍺+⍵} ⋄ a[1 2]f←10 20 ⋄ a   ⍝ 11 22
 0 2⍕1r3 2r3   ⍝ ' 0.33 0.67'
 
 ⍝ — Exact big integers format without conversion through float
-0 0⍕9223372036854775808x   ⍝ ' 9223372036854775808'
+0 0⍕9223372036854775808ₓ   ⍝ ' 9223372036854775808'
 
 ⍝ — Requested digits beyond float precision are marked with underscores
 0 20⍕÷3   ⍝ ' 0.3333333333333333____'
@@ -1078,70 +1078,70 @@ a←⍎''
 ⍝⍝ Polynomial representations and derivatives
 
 ⍝ — Polynomial coefficients are constant-first
-1x 2x 3x⊛0x 1x 2x   ⍝ 1x 6x 17x
+1ₓ 2ₓ 3ₓ⊛0ₓ 1ₓ 2ₓ   ⍝ 1ₓ 6ₓ 17ₓ
 
 ⍝ — Evaluating at an array of points preserves its shape
-1x 2x 3x⊛[0x 1x ⋄ 2x 3x]   ⍝ [1x 6x ⋄ 17x 34x]
+1ₓ 2ₓ 3ₓ⊛[0ₓ 1ₓ ⋄ 2ₓ 3ₓ]   ⍝ [1ₓ 6ₓ ⋄ 17ₓ 34ₓ]
 
 ⍝ — Evaluate the factored form 2(x-1)(x-3)
-(2x (1x 3x))⊛0x 1x 2x 3x   ⍝ 6x 0x ¯2x 0x
+(2ₓ (1ₓ 3ₓ))⊛0ₓ 1ₓ 2ₓ 3ₓ   ⍝ 6ₓ 0ₓ ¯2ₓ 0ₓ
 
 ⍝ — Convert multiplier and roots to constant-first coefficients
-⊛2x (1x 3x)   ⍝ 6x ¯8x 2x
+⊛2ₓ (1ₓ 3ₓ)   ⍝ 6ₓ ¯8ₓ 2ₓ
 
 ⍝ — Enclosed roots imply a leading coefficient of one
-⊛⊂1x 3x   ⍝ 3x ¯4x 1x
+⊛⊂1ₓ 3ₓ   ⍝ 3ₓ ¯4ₓ 1ₓ
 
 ⍝ — Convert an exponent table for x⁵-1, filling missing degrees with zero
-⊛⊂[1x 5x ⋄ ¯1x 0x]   ⍝ ¯1x 0x 0x 0x 0x 1x
+⊛⊂[1ₓ 5ₓ ⋄ ¯1ₓ 0ₓ]   ⍝ ¯1ₓ 0ₓ 0ₓ 0ₓ 0ₓ 1ₓ
 
 ⍝ — Fractional exponents evaluate numerically even with exact input
-[[2x 1r2 ⋄ 3x 1r4]]⊛16x   ⍝ 14
+[[2ₓ 1r2 ⋄ 3ₓ 1r4]]⊛16ₓ   ⍝ 14
 
 ⍝ — Evaluate a two-variable exponent table at an enclosed coordinate vector
 [[¯1 2 1 ⋄ 1 1 1 ⋄ 2 1 2 ⋄ 3 0 2]]⊛⊂2.5 ¯1   ⍝ 11.75
 
 ⍝ — Empty exact evaluation points retain an exact prototype
-1x 2x⊛0⍴0x   ⍝ 0⍴0x
+1ₓ 2ₓ⊛0⍴0ₓ   ⍝ 0⍴0ₓ
 
 ⍝ — Polynomial rows pair with scalar evaluation points by frame
-[1x 2x 3x ⋄ 4x 5x 6x]⊛1x 2x   ⍝ 6x 38x
+[1ₓ 2ₓ 3ₓ ⋄ 4ₓ 5ₓ 6ₓ]⊛1ₓ 2ₓ   ⍝ 6ₓ 38ₓ
 
 ⍝ —
-5x⊛2x   ⍝ 5x
+5ₓ⊛2ₓ   ⍝ 5ₓ
 
 ⍝ —
-0x 0x⊛2x   ⍝ 0x
+0ₓ 0ₓ⊛2ₓ   ⍝ 0ₓ
 
 ⍝ — A multiplier with no roots is a constant polynomial
-⊛2x (0⍴0x)   ⍝ ,2x
+⊛2ₓ (0⍴0ₓ)   ⍝ ,2ₓ
 
 ⍝ — Differentiate the bound polynomial evaluator
-f←1x 2x 3x∘⊛ ⋄ f∂2x   ⍝ 14x
+f←1ₓ 2ₓ 3ₓ∘⊛ ⋄ f∂2ₓ   ⍝ 14ₓ
 
 ⍝ — Repeated differentiation gives the second derivative
-f←1x 2x 3x∘⊛ ⋄ f∂∂2x   ⍝ 6x
+f←1ₓ 2ₓ 3ₓ∘⊛ ⋄ f∂∂2ₓ   ⍝ 6ₓ
 
 ⍝ — Differentiating beyond the polynomial's degree gives exact zero
-f←1x 2x 3x∘⊛ ⋄ f∂∂∂2x   ⍝ 0x
+f←1ₓ 2ₓ 3ₓ∘⊛ ⋄ f∂∂∂2ₓ   ⍝ 0ₓ
 
 ⍝ — Dyadic derivative weights each output derivative by its cotangent
-f←1x 2x 3x∘⊛ ⋄ 10x 20x(f∂)1x 2x   ⍝ 80x 280x
+f←1ₓ 2ₓ 3ₓ∘⊛ ⋄ 10ₓ 20ₓ(f∂)1ₓ 2ₓ   ⍝ 80ₓ 280ₓ
 
 ⍝ — Differentiate directly from the factored representation
-f←(2x (1x 3x))∘⊛ ⋄ f∂2x   ⍝ 0x
+f←(2ₓ (1ₓ 3ₓ))∘⊛ ⋄ f∂2ₓ   ⍝ 0ₓ
 
 ⍝ — A multivariate gradient retains the coordinate enclosure
-f←[[1x 2x 0x ⋄ 1x 0x 2x]]∘⊛ ⋄ f∂⊂3x 4x   ⍝ ⊂6x 8x
+f←[[1ₓ 2ₓ 0ₓ ⋄ 1ₓ 0ₓ 2ₓ]]∘⊛ ⋄ f∂⊂3ₓ 4ₓ   ⍝ ⊂6ₓ 8ₓ
 
 ⍝ — A scalar cotangent scales the multivariate gradient
-f←[[1x 2x 0x ⋄ 1x 0x 2x]]∘⊛ ⋄ 2x(f∂)⊂3x 4x   ⍝ ⊂12x 16x
+f←[[1ₓ 2ₓ 0ₓ ⋄ 1ₓ 0ₓ 2ₓ]]∘⊛ ⋄ 2ₓ(f∂)⊂3ₓ 4ₓ   ⍝ ⊂12ₓ 16ₓ
 
 ⍝ — A shared scalar coordinate sums the partial derivatives
-f←[[1x 2x 0x ⋄ 1x 0x 2x]]∘⊛ ⋄ f∂3x   ⍝ 12x
+f←[[1ₓ 2ₓ 0ₓ ⋄ 1ₓ 0ₓ 2ₓ]]∘⊛ ⋄ f∂3ₓ   ⍝ 12ₓ
 
 ⍝ — Multiple polynomial outputs contribute to one scalar-input VJP
-f←[1x 2x ⋄ 3x 4x]∘⊛ ⋄ 10x 20x(f∂)3x   ⍝ 100x
+f←[1ₓ 2ₓ ⋄ 3ₓ 4ₓ]∘⊛ ⋄ 10ₓ 20ₓ(f∂)3ₓ   ⍝ 100ₓ
 
 ⍝ — Negative exponents cannot be converted to a coefficient vector
 ⊛⊂[1 ¯1 ⋄]
@@ -1170,86 +1170,86 @@ f←[1x 2x ⋄ 3x 4x]∘⊛ ⋄ 10x 20x(f∂)3x   ⍝ 100x
 ⍝⍝ Prime and factor families
 
 ⍝ — Prime indexing is one-based and returns exact integers
-ℙ⍳8   ⍝ 2x 3x 5x 7x 11x 13x 17x 19x
+ℙ⍳8   ⍝ 2ₓ 3ₓ 5ₓ 7ₓ 11ₓ 13ₓ 17ₓ 19ₓ
 
 ⍝ — Prime lookup preserves shape and accepts repeated, unordered indices
-ℙ[10000 1 ⋄ 10000 2]   ⍝ [104729x 2x ⋄ 104729x 3x]
+ℙ[10000 1 ⋄ 10000 2]   ⍝ [104729ₓ 2ₓ ⋄ 104729ₓ 3ₓ]
 
 ⍝ —
-n←5 ⋄ ℙn   ⍝ 11x
+n←5 ⋄ ℙn   ⍝ 11ₓ
 
 ⍝ — Previous prime is strictly below the argument
-¯4ℙ3 4 5 6   ⍝ 2x 3x 3x 5x
+¯4ℙ3 4 5 6   ⍝ 2ₓ 3ₓ 3ₓ 5ₓ
 
 ⍝ — Count primes strictly below each argument
-¯1ℙ1 2 3 4 5 6   ⍝ 0x 0x 1x 2x 2x 3x
+¯1ℙ1 2 3 4 5 6   ⍝ 0ₓ 0ₓ 1ₓ 2ₓ 2ₓ 3ₓ
 
 ⍝ — Non-prime includes negative integers, zero and one
-0ℙ¯1 0 1 2 3 4   ⍝ 1x 1x 1x 0x 0x 1x
+0ℙ¯1 0 1 2 3 4   ⍝ 1ₓ 1ₓ 1ₓ 0ₓ 0ₓ 1ₓ
 
 ⍝ — Test primality rather than indexing the prime sequence
-1ℙ¯1 0 1 2 3 4   ⍝ 0x 0x 0x 1x 1x 0x
+1ℙ¯1 0 1 2 3 4   ⍝ 0ₓ 0ₓ 0ₓ 1ₓ 1ₓ 0ₓ
 
 ⍝ — Distinct factors occupy the first row, their exponents the second
-2ℙ700   ⍝ [2x 5x 7x ⋄ 2x 2x 1x]
+2ℙ700   ⍝ [2ₓ 5ₓ 7ₓ ⋄ 2ₓ 2ₓ 1ₓ]
 
 ⍝ — Factor-list mode includes repeated prime factors
-3ℙ700   ⍝ 2x 2x 5x 5x 7x
+3ℙ700   ⍝ 2ₓ 2ₓ 5ₓ 5ₓ 7ₓ
 
 ⍝ — Next prime is strictly above the argument
-4ℙ1 2 3 4 5   ⍝ 2x 3x 5x 5x 7x
+4ℙ1 2 3 4 5   ⍝ 2ₓ 3ₓ 5ₓ 5ₓ 7ₓ
 
 ⍝ — Euler's totient counts positive integers up to n coprime to n
-5ℙ1 2 3 4 5 6 10   ⍝ 1x 1x 2x 2x 4x 2x 4x
+5ℙ1 2 3 4 5 6 10   ⍝ 1ₓ 1ₓ 2ₓ 2ₓ 4ₓ 2ₓ 4ₓ
 
 ⍝ —
-⨸700   ⍝ 2x 2x 5x 5x 7x
+⨸700   ⍝ 2ₓ 2ₓ 5ₓ 5ₓ 7ₓ
 
 ⍝ — One has an empty exact factorization
-⨸1   ⍝ 0⍴0x
+⨸1   ⍝ 0⍴0ₓ
 
 ⍝ — Return exponents of only the first two primes
-2⨸700   ⍝ 2x 0x
+2⨸700   ⍝ 2ₓ 0ₓ
 
 ⍝ — Requested primes beyond the largest factor receive zero exponents
-10⨸700   ⍝ 2x 0x 2x 1x 0x 0x 0x 0x 0x 0x
+10⨸700   ⍝ 2ₓ 0ₓ 2ₓ 1ₓ 0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 0ₓ
 
 ⍝ — Infinite count includes every prime through the largest factor
-∞⨸700   ⍝ 2x 0x 2x 1x
+∞⨸700   ⍝ 2ₓ 0ₓ 2ₓ 1ₓ
 
 ⍝ — Negative count selects the last distinct factors and their exponents
-¯2⨸700   ⍝ [5x 7x ⋄ 2x 1x]
+¯2⨸700   ⍝ [5ₓ 7ₓ ⋄ 2ₓ 1ₓ]
 
 ⍝ — Negative infinity requests the complete factor/exponent table
-¯∞⨸700   ⍝ [2x 5x 7x ⋄ 2x 2x 1x]
+¯∞⨸700   ⍝ [2ₓ 5ₓ 7ₓ ⋄ 2ₓ 2ₓ 1ₓ]
 
 ⍝ —
-0⨸700   ⍝ 0⍴0x
+0⨸700   ⍝ 0⍴0ₓ
 
 ⍝ — Factoring one retains the table's two-row shape
-¯∞⨸1   ⍝ 2 0⍴0x
+¯∞⨸1   ⍝ 2 0⍴0ₓ
 
 ⍝ — Inverse prime lookup recovers one-based indices
-ℙ⍣¯1⊢ℙ⍳10   ⍝ ⍳10x
+ℙ⍣¯1⊢ℙ⍳10   ⍝ ⍳10ₓ
 
 ⍝ — Inverse factorization multiplies the factors
-⨸⍣¯1⊢⨸700   ⍝ 700x
+⨸⍣¯1⊢⨸700   ⍝ 700ₓ
 
 ⍝ — Primality accepts exact integers at and beyond the unsigned 64-bit boundary
-1ℙ18446744073709551557x 18446744073709551615x 170141183460469231731687303715884105727x
-1x 0x 1x
+1ℙ18446744073709551557ₓ 18446744073709551615ₓ 170141183460469231731687303715884105727ₓ
+1ₓ 0ₓ 1ₓ
 
 ⍝ — Strong pseudoprimes must not pass as primes
-1ℙ341550071728321x 3825123056546413051x   ⍝ 0x 0x
+1ℙ341550071728321ₓ 3825123056546413051ₓ   ⍝ 0ₓ 0ₓ
 
 ⍝ — Factor a semiprime whose two factors are both large
-⨸1000000016000000063x   ⍝ 1000000007x 1000000009x
+⨸1000000016000000063ₓ   ⍝ 1000000007ₓ 1000000009ₓ
 
 ⍝ — Empty prime lookup preserves shape with an exact prototype
-ℙ0 2⍴0   ⍝ 0 2⍴0x
+ℙ0 2⍴0   ⍝ 0 2⍴0ₓ
 
 ⍝ — Factor lists of unequal lengths assemble with zero fill
-⨸2 12   ⍝ 2 3⍴2x 0x 0x 2x 2x 3x
+⨸2 12   ⍝ 2 3⍴2ₓ 0ₓ 0ₓ 2ₓ 2ₓ 3ₓ
 
 ⍝ —
 ℙ0
@@ -1422,14 +1422,14 @@ W←×∘*⍨⍣¯1 ⋄ ⌊1E12×W 0 1 (*1) ¯0.1 1j1
 W←×∘*⍨⍣¯1 ⋄ W ¯1÷*1   ⍝ ¯1
 
 ⍝ — Lambert W pervades nested exact input and produces approximate values
-W←×∘*⍨⍣¯1 ⋄ W (0x 0x⋄ 0⍴0x)   ⍝ (0 0)⍬
+W←×∘*⍨⍣¯1 ⋄ W (0ₓ 0ₓ⋄ 0⍴0ₓ)   ⍝ (0 0)⍬
 
 ⍝ — Check W(x)exp(W(x))=x across tiny and large real inputs
 W←×∘*⍨⍣¯1 ⋄ x←1E¯100 ¯1E¯100 1E¯12 ¯1E¯12 0.099 ¯0.099 1E300 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x
-1x
+1ₓ
 
 ⍝ — Check the Lambert W inverse identity on complex inputs
-W←×∘*⍨⍣¯1 ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   ⍝ 1x
+W←×∘*⍨⍣¯1 ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   ⍝ 1ₓ
 
 ⍝ — A real Lambert W argument below -1/e is rejected
 (×∘*⍨⍣¯1)¯1
@@ -1446,7 +1446,7 @@ W←×∘*⍨⍣¯1 ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 (4 5∘( -⌝ ))⍣¯1⊢[3 2 ⋄ 4 3]   ⍝ 1 2
 
 ⍝ — Outer-product inversion preserves exact rational results
-( ×⌝ ∘4x 5x)⍣¯1⊢[2x 5r2 ⋄ 1x 5r4]   ⍝ 1r2 1r4
+( ×⌝ ∘4ₓ 5ₓ)⍣¯1⊢[2ₓ 5r2 ⋄ 1ₓ 5r4]   ⍝ 1r2 1r4
 
 ⍝ — A fixed matrix occupies the trailing axes of the outer-product result
 ( ×⌝ ∘([1 2 ⋄ 3 4]))⍣¯1⊢3 2 2⍴1 2 3 4 2 4 6 8 3 6 9 12   ⍝ 1 2 3
@@ -1483,13 +1483,13 @@ W←×∘*⍨⍣¯1 ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Inverse iota returns the generating shape as an exact vector
-⍳⍣¯1⊢1 2 3   ⍝ ,3x
+⍳⍣¯1⊢1 2 3   ⍝ ,3ₓ
 
 ⍝ — Inverse iota also recognizes multidimensional index arrays
-⍳⍣¯1⊢⍳2 3   ⍝ 2x 3x
+⍳⍣¯1⊢⍳2 3   ⍝ 2ₓ 3ₓ
 
 ⍝ — Each positive circle code's inverse agrees with its negative-code counterpart here
-{(5○⍨-⍵)=⍵∘○⍣¯1⊢5}⍳12   ⍝ 12⍴1x
+{(5○⍨-⍵)=⍵∘○⍣¯1⊢5}⍳12   ⍝ 12⍴1ₓ
 
 ⍝ —
 (1∘+⍣¯3)10   ⍝ 7
@@ -1501,22 +1501,22 @@ W←×∘*⍨⍣¯1 ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 (+\⍣¯1)1 3 6 10   ⍝ 1 2 3 4
 
 ⍝ — Inverse scan retains the exact numeric domain
-(+\⍣¯1)1x 3x 6x   ⍝ 1x 2x 3x
+(+\⍣¯1)1ₓ 3ₓ 6ₓ   ⍝ 1ₓ 2ₓ 3ₓ
 
 ⍝ — Inverse Boolean xor scan recovers changes between adjacent values
-(≠\⍣¯1)1x 1x 0x 0x   ⍝ 1x 0x 1x 0x
+(≠\⍣¯1)1ₓ 1ₓ 0ₓ 0ₓ   ⍝ 1ₓ 0ₓ 1ₓ 0ₓ
 
 ⍝ — Inverse base-two decode chooses the required number of digits
 (2∘⊥⍣¯1)9   ⍝ 1 0 0 1
 
 ⍝ — Exact base and value produce exact inverse-decode digits
-(2x∘⊥⍣¯1)9x   ⍝ 1x 0x 0x 1x
+(2ₓ∘⊥⍣¯1)9ₓ   ⍝ 1ₓ 0ₓ 0ₓ 1ₓ
 
 ⍝ — Invert mixed-radix time decoding into hours, minutes and seconds
-(0x 60x 60x∘⊥⍣¯1)3661x   ⍝ 1x 1x 1x
+(0ₓ 60ₓ 60ₓ∘⊥⍣¯1)3661ₓ   ⍝ 1ₓ 1ₓ 1ₓ
 
 ⍝ — Inverse encode decodes the supplied digits
-(2x∘⊤⍣¯1)1x 0x 1x   ⍝ 5x
+(2ₓ∘⊤⍣¯1)1ₓ 0ₓ 1ₓ   ⍝ 5ₓ
 
 ⍝ — Inverse decode permits a fractional least-significant digit
 (2∘⊥⍣¯1)2.5   ⍝ 1 0.5
@@ -1525,10 +1525,10 @@ W←×∘*⍨⍣¯1 ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 (2 1∘⍉⍣¯1)2 3⍴⍳6   ⍝ [1 4 ⋄ 2 5 ⋄ 3 6]
 
 ⍝ — Inverting self-addition halves the argument exactly
-(+⍨⍣¯1)3x   ⍝ 3r2
+(+⍨⍣¯1)3ₓ   ⍝ 3r2
 
 ⍝ — Inverse sine selects a branch which maps back to the input
-0.5=1∘○(1∘○⍣¯1)0.5   ⍝ 1x
+0.5=1∘○(1∘○⍣¯1)0.5   ⍝ 1ₓ
 
 ⍝ — Inverse sine within the real domain has no imaginary component
 11○(1∘○⍣¯1)0.5   ⍝ 0
@@ -1540,34 +1540,34 @@ W←×∘*⍨⍣¯1 ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ¯4○¯1E300   ⍝ ¯1E300
 
 ⍝ — Inversion preserves rank-zero application
-((2x∘+)⍤0⍣¯1)3x 4x   ⍝ 1x 2x
+((2ₓ∘+)⍤0⍣¯1)3ₓ 4ₓ   ⍝ 1ₓ 2ₓ
 
 ⍝ — Inverse where counts repeated indices
-(⍸⍣¯1)1 3 3   ⍝ 1x 0x 2x
+(⍸⍣¯1)1 3 3   ⍝ 1ₓ 0ₓ 2ₓ
 
 ⍝ — Inverse where infers multidimensional shape from coordinate vectors
-(⍸⍣¯1)(1 2⋄ 2 1)   ⍝ [0x 1x ⋄ 1x 0x]
+(⍸⍣¯1)(1 2⋄ 2 1)   ⍝ [0ₓ 1ₓ ⋄ 1ₓ 0ₓ]
 
 ⍝ — Inverse where of no indices returns an empty exact count vector
-(⍸⍣¯1)⍬   ⍝ 0⍴0x
+(⍸⍣¯1)⍬   ⍝ 0⍴0ₓ
 
 ⍝ — Zero needs no digits in minimal-width inverse decode
 (2∘⊥⍣¯1)0   ⍝ ⍬
 
 ⍝ —
-3x(+⍣¯1)5x   ⍝ 2x
+3ₓ(+⍣¯1)5ₓ   ⍝ 2ₓ
 
 ⍝ — Inversion distributes through each
-((2x∘+)¨⍣¯1)3x 4x   ⍝ 1x 2x
+((2ₓ∘+)¨⍣¯1)3ₓ 4ₓ   ⍝ 1ₓ 2ₓ
 
 ⍝ — Inverting self-multiplication selects the positive square root
 (×⍨⍣¯1)4   ⍝ 2
 
 ⍝ —
-(⌽⍣¯1)⍳3x   ⍝ 3x 2x 1x
+(⌽⍣¯1)⍳3ₓ   ⍝ 3ₓ 2ₓ 1ₓ
 
 ⍝ —
-(⊂⍣¯1)⊂1x 2x   ⍝ 1x 2x
+(⊂⍣¯1)⊂1ₓ 2ₓ   ⍝ 1ₓ 2ₓ
 
 ⍝ — Multiplication by zero has no inverse
 (0∘×⍣¯1)0
@@ -1628,7 +1628,7 @@ W←×∘*⍨⍣¯1 ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ((-∘-)\⍣¯1)1 3 6   ⍝ 1 2 3
 
 ⍝ — Inverting seeded division scan retains exact fractions
-2x (÷\⍣¯1)1x 1r3 1r12   ⍝ 2x 3x 4x
+2ₓ (÷\⍣¯1)1ₓ 1r3 1r12   ⍝ 2ₓ 3ₓ 4ₓ
 
 ⍝ — Axis-one scan inversion uses a separate seed for each column
 ⍉10 20 ((+\⍣¯1)⍤0 1)⍉[11 22 ⋄ 14 26]   ⍝ [1 2 ⋄ 3 4]
@@ -1673,108 +1673,108 @@ W←×∘*⍨⍣¯1 ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ⍝⍝ Compact integers and promotion
 
 ⍝ — Exact tally keeps the mean of exact values rational
-avg←+/÷≢ ⋄ avg 1x 2x 4x   ⍝ 7r3
+avg←+/÷≢ ⋄ avg 1ₓ 2ₓ 4ₓ   ⍝ 7r3
 
 ⍝ —
-+/⍳3x   ⍝ 6x
++/⍳3ₓ   ⍝ 6ₓ
 
 ⍝ —
-×/⍳4x   ⍝ 24x
+×/⍳4ₓ   ⍝ 24ₓ
 
 ⍝ —
-1x 2x+.×3x 4x   ⍝ 11x
+1ₓ 2ₓ+.×3ₓ 4ₓ   ⍝ 11ₓ
 
 ⍝ —
-⌊3r2   ⍝ 1x
+⌊3r2   ⍝ 1ₓ
 
 ⍝ —
-⌈3r2   ⍝ 2x
+⌈3r2   ⍝ 2ₓ
 
 ⍝ —
-|¯3x   ⍝ 3x
+|¯3ₓ   ⍝ 3ₓ
 
 ⍝ —
-3x⌊4x   ⍝ 3x
+3ₓ⌊4ₓ   ⍝ 3ₓ
 
 ⍝ —
-3x⌈4x   ⍝ 4x
+3ₓ⌈4ₓ   ⍝ 4ₓ
 
 ⍝ —
-¯3x|5x   ⍝ ¯1x
+¯3ₓ|5ₓ   ⍝ ¯1ₓ
 
 ⍝ —
-6x∨4x   ⍝ 2x
+6ₓ∨4ₓ   ⍝ 2ₓ
 
 ⍝ —
-6x∧4x   ⍝ 12x
+6ₓ∧4ₓ   ⍝ 12ₓ
 
 ⍝ —
-!20x   ⍝ 2432902008176640000x
+!20ₓ   ⍝ 2432902008176640000ₓ
 
 ⍝ —
-5x!10x   ⍝ 252x
+5ₓ!10ₓ   ⍝ 252ₓ
 
 ⍝ —
-2x*10x   ⍝ 1024x
+2ₓ*10ₓ   ⍝ 1024ₓ
 
 ⍝ —
-2x*¯1x   ⍝ 1r2
+2ₓ*¯1ₓ   ⍝ 1r2
 
 ⍝ —
-2x⊥1x 0x 1x   ⍝ 5x
+2ₓ⊥1ₓ 0ₓ 1ₓ   ⍝ 5ₓ
 
 ⍝ —
-≢(1x 2x⋄ 1r3 'a')   ⍝ 2x
+≢(1ₓ 2ₓ⋄ 1r3 'a')   ⍝ 2ₓ
 
 ⍝ —
-≢0⍴1x   ⍝ 0x
+≢0⍴1ₓ   ⍝ 0ₓ
 
 ⍝ — Subtraction below i64 minimum promotes without losing precision
-¯9223372036854775808x-1x   ⍝ ¯9223372036854775809x
+¯9223372036854775808ₓ-1ₓ   ⍝ ¯9223372036854775809ₓ
 
 ⍝ — Multiplication above i64 maximum promotes without losing precision
-9223372036854775807x×2x   ⍝ 18446744073709551614x
+9223372036854775807ₓ×2ₓ   ⍝ 18446744073709551614ₓ
 
 ⍝ — An exact sum remains exact at the i64 boundary
-+/9223372036854775807x 1x ¯1x   ⍝ 9223372036854775807x
++/9223372036854775807ₓ 1ₓ ¯1ₓ   ⍝ 9223372036854775807ₓ
 
 ⍝ — Ordinary division remains approximate, unlike explicit exact arithmetic
 (1÷3)+(1÷6)   ⍝ 0.5
 
 ⍝ —
-1x+0.5   ⍝ 1.5
+1ₓ+0.5   ⍝ 1.5
 
 ⍝ — Tally counts outer items regardless of nested numeric domains
-≢(1x 2x⋄ 3 4)   ⍝ 2x
+≢(1ₓ 2ₓ⋄ 3 4)   ⍝ 2ₓ
 
 ⍝ —
-≢'abc'   ⍝ 3x
+≢'abc'   ⍝ 3ₓ
 
 ⍝ —
-≢0⍴⊂1x 2   ⍝ 0x
+≢0⍴⊂1ₓ 2   ⍝ 0ₓ
 
 ⍝ —
-=/⍬   ⍝ 1x
+=/⍬   ⍝ 1ₓ
 
 ⍝ —
-≠/⍬   ⍝ 0x
+≠/⍬   ⍝ 0ₓ
 
 ⍝ — Empty nested roll retains an exact vector prototype
-↑?0⍴⊂1x 2x   ⍝ 0x 0x
+↑?0⍴⊂1ₓ 2ₓ   ⍝ 0ₓ 0ₓ
 
 ⍝⍝ Matrix division
 
 ⍝ —
-⌹2x   ⍝ 1r2
+⌹2ₓ   ⍝ 1r2
 
-⍝ — Exact overdetermined solve recovers the line y=1+2x
-3x 5x 7x⌹[1x 1x ⋄ 1x 2x ⋄ 1x 3x]   ⍝ 1x 2x
+⍝ — Exact overdetermined solve recovers the line y=1+2ₓ
+3ₓ 5ₓ 7ₓ⌹[1ₓ 1ₓ ⋄ 1ₓ 2ₓ ⋄ 1ₓ 3ₓ]   ⍝ 1ₓ 2ₓ
 
 ⍝ — A vector pseudoinverse divides by the squared norm
-⌹1x 2x   ⍝ 1r5 2r5
+⌹1ₓ 2ₓ   ⍝ 1r5 2r5
 
 ⍝ — Exact matrix inversion handles a zero leading pivot
-⌹[0x 2x ⋄ 1x 0x]   ⍝ [0x 1x ⋄ 1r2 0x]
+⌹[0ₓ 2ₓ ⋄ 1ₓ 0ₓ]   ⍝ [0ₓ 1ₓ ⋄ 1r2 0ₓ]
 
 ⍝ — Triangular float inversion preserves integral path counts
 ⌹[1 ¯1 0 ⋄ 0 1 ¯1 ⋄ 0 0 1]   ⍝ [1 1 1 ⋄ 0 1 1 ⋄ 0 0 1]
@@ -1783,7 +1783,7 @@ avg←+/÷≢ ⋄ avg 1x 2x 4x   ⍝ 7r3
 2j2 4⌹[0 1j1 ⋄ 2 0]   ⍝ 2 2
 
 ⍝ — Inverting a zero-column matrix exchanges its dimensions
-⌹3 0⍴0x   ⍝ 0 3⍴0x
+⌹3 0⍴0ₓ   ⍝ 0 3⍴0ₓ
 
 ⍝ — Solving for no unknowns preserves the number of right-hand sides
 (3 2⍴1)⌹3 0⍴0   ⍝ 0 2⍴0
@@ -1797,7 +1797,7 @@ avg←+/÷≢ ⋄ avg 1x 2x 4x   ⍝ 7r3
 ⍝ error: DOMAIN ERROR
 
 ⍝ — The exact solver also rejects singular matrices
-⌹2 2⍴1x
+⌹2 2⍴1ₓ
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
@@ -1851,7 +1851,7 @@ a←⍳3 ⋄ b←0@2⊢a ⋄ a   ⍝ 1 2 3
 {+/,⍵}⌺([3 ⋄ 2])⍳8   ⍝ 3 9 15 21
 
 ⍝ — A single stencil size varies the leading axis and retains whole rows
-{⍴⍵}⌺3⊢2 3⍴⍳6   ⍝ 2 2⍴3x
+{⍴⍵}⌺3⊢2 3⍴⍳6   ⍝ 2 2⍴3ₓ
 
 ⍝ —
 {⍵}⌺3⍳1
@@ -1888,10 +1888,10 @@ G←2 3⍴('ABC' 1⋄ 'DEF' 2⋄ 'GHI' 3⋄ 'JKL' 4⋄ 'MNO' 5⋄ 'PQR' 6) ⋄ H
 60⊥3 13   ⍝ 193
 
 ⍝ —
-2x⊥1x 0x 1x 0x   ⍝ 10x
+2ₓ⊥1ₓ 0ₓ 1ₓ 0ₓ   ⍝ 10ₓ
 
 ⍝ — A leading zero radix retains the remaining quotient
-0x 10x⊤125x   ⍝ 12x 5x
+0ₓ 10ₓ⊤125ₓ   ⍝ 12ₓ 5ₓ
 
 ⍝ — Empty digits decode to zero
 2⊥⍬   ⍝ 0
@@ -1903,7 +1903,7 @@ G←2 3⍴('ABC' 1⋄ 'DEF' 2⋄ 'GHI' 3⋄ 'JKL' 4⋄ 'MNO' 5⋄ 'PQR' 6) ⋄ H
 0 0 2⊤3   ⍝ 0 1 1
 
 ⍝ — Encode appends the value frame to the radix shape, including zero dimensions
-⍴(0 3⍴0)⊤2 2⍴1   ⍝ 0x 3x 2x 2x
+⍴(0 3⍴0)⊤2 2⍴1   ⍝ 0ₓ 3ₓ 2ₓ 2ₓ
 
 ⍝ — Decode the same digits in binary and decimal
 [2 ⋄ 10]⊥1 0 1   ⍝ 5 101
@@ -1931,7 +1931,7 @@ G←2 3⍴('ABC' 1⋄ 'DEF' 2⋄ 'GHI' 3⋄ 'JKL' 4⋄ 'MNO' 5⋄ 'PQR' 6) ⋄ H
 2⌷[2]3 4⍴⍳12   ⍝ 2 6 10
 
 ⍝ — Empty indices on both axes retain a rank-two empty result
-⍴⍬ ⍬⌷3 4⍴0   ⍝ 0x 0x
+⍴⍬ ⍬⌷3 4⍴0   ⍝ 0ₓ 0ₓ
 
 ⍝ —
 ⍬⌷1   ⍝ 1
@@ -2000,59 +2000,59 @@ G←2 3⍴('ABC' 1⋄ 'DEF' 2⋄ 'GHI' 3⋄ 'JKL' 4⋄ 'MNO' 5⋄ 'PQR' 6) ⋄ H
 ⍝⍝ Grading
 
 ⍝ — Descending grade preserves the original order of ties
-⍒2 1 2 1   ⍝ 1x 3x 2x 4x
+⍒2 1 2 1   ⍝ 1ₓ 3ₓ 2ₓ 4ₓ
 
 ⍝ — Grade ignores comparison tolerance
-⍋1 (1+8E¯15) 1   ⍝ 1x 3x 2x
+⍋1 (1+8E¯15) 1   ⍝ 1ₓ 3ₓ 2ₓ
 
 ⍝ — Numbers precede characters; complex numbers sort by real then imaginary part
-⍋1j2 1 1j¯2 'a' 0   ⍝ 5x 3x 2x 1x 4x
+⍋1j2 1 1j¯2 'a' 0   ⍝ 5ₓ 3ₓ 2ₓ 1ₓ 4ₓ
 
 ⍝ — Mixed-domain grade does not round large exact integers through float
-⍋9007199254740993x 9007199254740992 9007199254740992x   ⍝ 2x 3x 1x
+⍋9007199254740993ₓ 9007199254740992 9007199254740992ₓ   ⍝ 2ₓ 3ₓ 1ₓ
 
 ⍝ — Equal-rank nested arrays compare ravelled contents before shape
-⍋([1 2 ⋄ 3 4]⋄ [1 2 0 0 ⋄])   ⍝ 2x 1x
+⍋([1 2 ⋄ 3 4]⋄ [1 2 0 0 ⋄])   ⍝ 2ₓ 1ₓ
 
 ⍝ — Nested rank takes precedence over contents
-⍋([1 2 ⋄]⋄ 1 2)   ⍝ 2x 1x
+⍋([1 2 ⋄]⋄ 1 2)   ⍝ 2ₓ 1ₓ
 
 ⍝ — Empty nested arrays sort by rank, then shape
-⍋(0 5 2⍴0)(0 3 4⍴0)(0 1⍴'')⍬   ⍝ 4x 3x 2x 1x
+⍋(0 5 2⍴0)(0 3 4⍴0)(0 1⍴'')⍬   ⍝ 4ₓ 3ₓ 2ₓ 1ₓ
 
 ⍝ — Empty-array prototypes do not break sorting ties
-⍋(0⍴⊂1 2⋄ 0⍴0⋄ 0⍴'')   ⍝ 1x 2x 3x
+⍋(0⍴⊂1 2⋄ 0⍴0⋄ 0⍴'')   ⍝ 1ₓ 2ₓ 3ₓ
 
 ⍝ — Structural order puts numbers before characters before nested arrays
-⍋'z' (0 0) 100 'a'   ⍝ 3x 4x 1x 2x
+⍋'z' (0 0) 100 'a'   ⍝ 3ₓ 4ₓ 1ₓ 2ₓ
 
 ⍝ — Character vectors sort lexicographically, not by length first
-⍋'ba' 'aaa' 'ab'   ⍝ 2x 3x 1x
+⍋'ba' 'aaa' 'ab'   ⍝ 2ₓ 3ₓ 1ₓ
 
 ⍝ — Equal numbers retain their order across numeric representations
-⍋1x 1 1j0   ⍝ 1x 2x 3x
+⍋1ₓ 1 1j0   ⍝ 1ₓ 2ₓ 3ₓ
 
 ⍝ — Interval index shares grade's ordering across numbers, characters and nested arrays
-1 'a' (1 2)⍸0 'b' (2 3)   ⍝ 0x 2x 3x
+1 'a' (1 2)⍸0 'b' (2 3)   ⍝ 0ₓ 2ₓ 3ₓ
 
 ⍝ — Interval lookup preserves exact distinctions beyond float's integer range
-9007199254740992x 9007199254740993x⍸9007199254740992 9007199254740994
-1x 2x
+9007199254740992ₓ 9007199254740993ₓ⍸9007199254740992 9007199254740994
+1ₓ 2ₓ
 
 ⍝ — Complex interval lookup uses real-then-imaginary ordering
-1j¯1 1 1j1⍸1j¯2 1j0 1j2   ⍝ 0x 2x 3x
+1j¯1 1 1j1⍸1j¯2 1j0 1j2   ⍝ 0ₓ 2ₓ 3ₓ
 
 ⍝ — Zero-width rows are stable ties, not an empty collection of rows
-⍋3 0⍴0   ⍝ 1x 2x 3x
+⍋3 0⍴0   ⍝ 1ₓ 2ₓ 3ₓ
 
 ⍝ —
-⍋⍬   ⍝ 0⍴0x
+⍋⍬   ⍝ 0⍴0ₓ
 
 ⍝ — Custom collation puts unlisted characters last, retaining their order
-'cba'⍋'azb?c'   ⍝ 5x 3x 1x 2x 4x
+'cba'⍋'azb?c'   ⍝ 5ₓ 3ₓ 1ₓ 2ₓ 4ₓ
 
 ⍝ — A multidimensional collation array supplies successive collation keys
-['AB' ⋄ 'BA']⍋['BA' ⋄ 'AB' ⋄ 'BA']   ⍝ 1x 2x 3x
+['AB' ⋄ 'BA']⍋['BA' ⋄ 'AB' ⋄ 'BA']   ⍝ 1ₓ 2ₓ 3ₓ
 
 ⍝ —
 ⍋1
@@ -2094,7 +2094,7 @@ v←⍳1000 ⋄ +/v+v   ⍝ 1001000
 {⍺+⍵}/1E100 ¯1E100 1   ⍝ 0
 
 ⍝ —
-+/1x 2x 3x   ⍝ 6x
++/1ₓ 2ₓ 3ₓ   ⍝ 6ₓ
 
 ⍝ — Zero divided by zero is one, applied elementwise
 0 1÷0 2   ⍝ 1 0.5
@@ -2120,37 +2120,37 @@ v←⍳1000 ⋄ +/v+v   ⍝ 1001000
 •c 2 0⍴⊂'Ab'   ⍝ 2 0⍴⊂'  '
 
 ⍝ — System names are case-insensitive and may be bound to ordinary names
-u←•UcS ⋄ u ['A⍳' ⋄ 'λ😀']   ⍝ [65x 9075x ⋄ 955x 128512x]
+u←•UcS ⋄ u ['A⍳' ⋄ 'λ😀']   ⍝ [65ₓ 9075ₓ ⋄ 955ₓ 128512ₓ]
 
 ⍝ —
-•ucs [65x 9075x ⋄ 955x 128512x]   ⍝ ['A⍳' ⋄ 'λ😀']
+•ucs [65ₓ 9075ₓ ⋄ 955ₓ 128512ₓ]   ⍝ ['A⍳' ⋄ 'λ😀']
 
 ⍝ — Code-point conversion preserves an empty character array's shape
-•ucs 2 0⍴''   ⍝ 2 0⍴0x
+•ucs 2 0⍴''   ⍝ 2 0⍴0ₓ
 
 ⍝ — Empty numeric input converts to a character prototype
 •ucs 0 3⍴0   ⍝ 0 3⍴''
 
 ⍝ —
-'UTF-8'•ucs 'Æ😀'   ⍝ 195x 134x 240x 159x 152x 128x
+'UTF-8'•ucs 'Æ😀'   ⍝ 195ₓ 134ₓ 240ₓ 159ₓ 152ₓ 128ₓ
 
 ⍝ —
 ('UTF-8' 0)•ucs 195 134 240 159 152 128   ⍝ 'Æ😀'
 
 ⍝ — UTF-16 encodes an astral character as a surrogate pair
-'UTF-16'•ucs 'A😀'   ⍝ 65x 55357x 56832x
+'UTF-16'•ucs 'A😀'   ⍝ 65ₓ 55357ₓ 56832ₓ
 
 ⍝ — UTF-16 decodes a surrogate pair into one character
 'UTF-16'•ucs 65 55357 56832   ⍝ 'A😀'
 
 ⍝ — An enclosed encoding name is accepted; UTF-32 retains one unit per character
-(⊂'UTF-32')•ucs 'A😀'   ⍝ 65x 128512x
+(⊂'UTF-32')•ucs 'A😀'   ⍝ 65ₓ 128512ₓ
 
 ⍝ —
 'UTF-32'•ucs 65 128512   ⍝ 'A😀'
 
 ⍝ — Encoding a scalar character returns a byte vector
-'UTF-8'•ucs 'A'   ⍝ ,65x
+'UTF-8'•ucs 'A'   ⍝ ,65ₓ
 
 ⍝ — Decoding a scalar byte returns a character vector
 'UTF-8'•ucs 65   ⍝ ,'A'
@@ -2224,16 +2224,16 @@ u←•UcS ⋄ u ['A⍳' ⋄ 'λ😀']   ⍝ [65x 9075x ⋄ 955x 128512x]
 'a'+3   ⍝ 'd'
 
 ⍝ —
-3x+'a'   ⍝ 'd'
+3ₓ+'a'   ⍝ 'd'
 
 ⍝ —
 'd'-3r1   ⍝ 'a'
 
 ⍝ —
-'d'-'a'   ⍝ 3x
+'d'-'a'   ⍝ 3ₓ
 
 ⍝ —
-'012'-'0'   ⍝ 0x 1x 2x
+'012'-'0'   ⍝ 0ₓ 1ₓ 2ₓ
 
 ⍝ —
 ('ab' 'CD')+1   ⍝ 'bc' 'DE'
@@ -2245,7 +2245,7 @@ u←•UcS ⋄ u ['A⍳' ⋄ 'λ😀']   ⍝ [65x 9075x ⋄ 955x 128512x]
 ''+3   ⍝ ''
 
 ⍝ — Empty character subtraction has an exact numeric prototype
-''-'a'   ⍝ 0⍴0x
+''-'a'   ⍝ 0⍴0ₓ
 
 ⍝ — Character offsets operate on code points, including astral characters
 '😀'-1   ⍝ '🗿'
@@ -2293,7 +2293,7 @@ u←•UcS ⋄ u ['A⍳' ⋄ 'λ😀']   ⍝ [65x 9075x ⋄ 955x 128512x]
 ⍝⍝ Characters nesting and empty fill
 
 ⍝ — System functions use ordinary binding and composition
-upper←1∘•c ⋄ (•ucs∘upper)'aZ'   ⍝ 65x 90x
+upper←1∘•c ⋄ (•ucs∘upper)'aZ'   ⍝ 65ₓ 90ₓ
 
 ⍝ — System names resolve when executed
 f←{•missing ⍵} ⋄ 1   ⍝ 1
@@ -2307,7 +2307,7 @@ f←{•missing ⍵} ⋄ 1   ⍝ 1
 ⍝ error: SYNTAX ERROR
 
 ⍝ — Explicit strands can hold system functions
-fs←•ucs˘•c ⋄ (↑fs)'A'   ⍝ 65x
+fs←•ucs˘•c ⋄ (↑fs)'A'   ⍝ 65ₓ
 
 ⍝ —
 •a   ⍝ 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -2407,10 +2407,10 @@ b'
 1÷''   ⍝ ⍬
 
 ⍝ —
-'ab'=1 2   ⍝ 0x 0x
+'ab'=1 2   ⍝ 0ₓ 0ₓ
 
 ⍝ —
-'abc'='axc'   ⍝ 1x 0x 1x
+'abc'='axc'   ⍝ 1ₓ 0ₓ 1ₓ
 
 ⍝ —
 +'abc'   ⍝ 'abc'
@@ -2460,7 +2460,7 @@ gg←2 3 4 5 ⋄ 9,gg[2],3 4   ⍝ 9 3 3 4
 100 +\10 20   ⍝ 110 130
 
 ⍝ —
-10x -\1x 2x 3x   ⍝ 9x 7x 4x
+10ₓ -\1ₓ 2ₓ 3ₓ   ⍝ 9ₓ 7ₓ 4ₓ
 
 ⍝ — Seeded scalar scan still applies the operand once
 2 +\5   ⍝ 7
@@ -2667,13 +2667,13 @@ s←+/ ⋄ s[1][1 2 3 ⋄ 4 5 6]   ⍝ 5 7 9
 ⌊1.5j0.5   ⍝ 1j1
 
 ⍝ — Complex gcd uses Gaussian-integer arithmetic and tolerant comparison
-0.2=3.8j7.6∨5.2j6.8   ⍝ 1x
+0.2=3.8j7.6∨5.2j6.8   ⍝ 1ₓ
 
 ⍝ — Scale and ceil to expose the complex lcm despite floating-point roundoff
 ⌈1000×3.8j7.6∧5.2j6.8   ⍝ ¯159600j326800
 
 ⍝ —
-|3 ¯3 3J4   ⍝ 3 3 5
+|3 ¯3 3j4   ⍝ 3 3 5
 
 ⍝ — Residue follows the divisor's sign, including fractional divisors
 2 10 ¯2.5|7 ¯13 8   ⍝ 1 7 ¯2
@@ -2697,19 +2697,19 @@ s←+/ ⋄ s[1][1 2 3 ⋄ 4 5 6]   ⍝ 5 7 9
 2 ¯2 0*3 3 0   ⍝ 8 ¯8 1
 
 ⍝ — Circle selectors nine and eleven extract real and imaginary parts
-9 11○3J4   ⍝ 3 4
+9 11○3j4   ⍝ 3 4
 
 ⍝ —
-2x*¯3x   ⍝ 1r8
+2ₓ*¯3ₓ   ⍝ 1r8
 
 ⍝ —
 2r3|7r3   ⍝ 1r3
 
 ⍝ —
-⌊¯4r3   ⍝ ¯2x
+⌊¯4r3   ⍝ ¯2ₓ
 
 ⍝ —
-⌈¯4r3   ⍝ ¯1x
+⌈¯4r3   ⍝ ¯1ₓ
 
 ⍝ —
 ⍟0
@@ -2724,46 +2724,46 @@ s←+/ ⋄ s[1][1 2 3 ⋄ 4 5 6]   ⍝ 5 7 9
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-0J1⌊2
+0j1⌊2
 ⍝ error: DOMAIN ERROR
 
 ⍝⍝ Search depth and random
 
 ⍝ — Index-of compares each candidate directly; tolerance is not transitive
-x←1 ⋄ y←1+8E¯15 ⋄ z←1+16E¯15 ⋄ x y⍳z   ⍝ 2x
+x←1 ⋄ y←1+8E¯15 ⋄ z←1+16E¯15 ⋄ x y⍳z   ⍝ 2ₓ
 
 ⍝ — Unique-mask compares against retained representatives, not every earlier item
-≠(1⋄ 1+8E¯15⋄ 1+16E¯15)   ⍝ 1x 0x 1x
+≠(1⋄ 1+8E¯15⋄ 1+16E¯15)   ⍝ 1ₓ 0ₓ 1ₓ
 
 ⍝ — Without uses tolerance when approximate values participate
 1 2~1+8E¯15   ⍝ ,2
 
 ⍝ — Without does not apply tolerance to all-exact values
-1x 2x~1000000000000001r1000000000000000   ⍝ 1x 2x
+1ₓ 2ₓ~1000000000000001r1000000000000000   ⍝ 1ₓ 2ₓ
 
 ⍝ — Each empty row matches the first empty row
-(3 0⍴0)⍳2 0⍴0   ⍝ 1x 1x
+(3 0⍴0)⍳2 0⍴0   ⍝ 1ₓ 1ₓ
 
 ⍝ — A matrix of empty rows still has one unique major cell
-≠3 0⍴0   ⍝ 1x 0x 0x
+≠3 0⍴0   ⍝ 1ₓ 0ₓ 0ₓ
 
 ⍝ — Where repeats a position according to its count
-⍸0 1 0 2   ⍝ 2x 4x 4x
+⍸0 1 0 2   ⍝ 2ₓ 4ₓ 4ₓ
 
 ⍝ — Interval index ignores comparison tolerance at interval boundaries
-1 2⍸1-1E¯15   ⍝ 0x
+1 2⍸1-1E¯15   ⍝ 0ₓ
 
 ⍝ — Depth of an empty nested array comes from its prototype
-≡0⍴(1 2)3   ⍝ 2x
+≡0⍴(1 2)3   ⍝ 2ₓ
 
 ⍝ — Not-match distinguishes an atom from a singleton vector
-1≢,1   ⍝ 1x
+1≢,1   ⍝ 1ₓ
 
 ⍝ — Match compares numeric value across exact and approximate domains
-1x≡1   ⍝ 1x
+1ₓ≡1   ⍝ 1ₓ
 
 ⍝ — Empty numeric prototypes match across exact and approximate domains
-(0⍴1x)≡⍬   ⍝ 1x
+(0⍴1ₓ)≡⍬   ⍝ 1ₓ
 
 ⍝ —
 ⍳,3   ⍝ 1 2 3
@@ -2772,19 +2772,19 @@ x←1 ⋄ y←1+8E¯15 ⋄ z←1+16E¯15 ⋄ x y⍳z   ⍝ 2x
 1 1∪2 2   ⍝ 1 1 2 2
 
 ⍝ —
-1 2∊1+8E¯15   ⍝ 1x 0x
+1 2∊1+8E¯15   ⍝ 1ₓ 0ₓ
 
 ⍝ — A vector pattern does not fit a scalar search target
-(,1)⍷1   ⍝ 0x
+(,1)⍷1   ⍝ 0ₓ
 
 ⍝ — An empty pattern still cannot exceed the target on another axis
-(2 0⍴0)⍷1 3⍴1   ⍝ 1 3⍴0x
+(2 0⍴0)⍷1 3⍴1   ⍝ 1 3⍴0ₓ
 
 ⍝ — Rank-zero iota contains one enclosed empty coordinate
 ⍳⍬   ⍝ ⊂⍬
 
 ⍝ — Where on scalar zero retains an empty-coordinate prototype
-⍸0   ⍝ 0⍴⊂0⍴0x
+⍸0   ⍝ 0⍴⊂0⍴0ₓ
 
 ⍝ —
 3?2
@@ -3012,7 +3012,7 @@ f←{⎕←⍵ ⋄ ⍵} ⋄ 2 +⍥f 3
 (2∘×⍣0)3   ⍝ 3
 
 ⍝ — Tolerant Key groups by representatives, not transitive closure
-{≢⍵}⌸1 (1+8E¯15)(1+16E¯15)   ⍝ 2x 1x
+{≢⍵}⌸1 (1+8E¯15)(1+16E¯15)   ⍝ 2ₓ 1ₓ
 
 ⍝ —
 {⍺ ⍵}⌸7
@@ -3037,7 +3037,7 @@ f←{⎕←⍵ ⋄ ⍵} ⋄ 2 +⍥f 3
 ⍝ — Empty Key calls the operand with an empty group retaining the value-cell shape
 r←⍬ {⎕←⍴⍵ ⋄ ⍳3}⌸0 2⍴0
 0 3⍴0
-⍝ ⎕: 0x 2x
+⍝ ⎕: 0ₓ 2ₓ
 
 ⍝ — Zero iterations never call the operand
 ({⎕←7 ⋄ ⍵}⍣0)3
@@ -3097,89 +3097,89 @@ r←(0 2⍴0)+.{⎕←⍺ ⍵ ⋄ ⍺×⍵}2 3⍴⍳6
 ⍝⍝ Complex arithmetic and roundtrips
 
 ⍝ — Empty complex product has multiplicative identity one. https://docs.dyalog.com/20.0/programming-reference-guide/introduction/complex-numbers/
-×/0/1J2   ⍝ 1
+×/0/1j2   ⍝ 1
 
 ⍝ — Iota accepts a complex representation only when its imaginary part is zero
-⍳3J0   ⍝ 1 2 3
+⍳3j0   ⍝ 1 2 3
 
 ⍝⍝ Complex comparison errors and recovery
 
 ⍝ — A complex literal requires an imaginary component
-1J
+1j
 ⍝ error: SYNTAX ERROR
 
 ⍝ —
-1J¯
+1j¯
 ⍝ error: SYNTAX ERROR
 
 ⍝ —
-1J2E¯
+1j2E¯
 ⍝ error: SYNTAX ERROR
 
 ⍝ — Exact suffixes cannot be attached to a complex component
-1J2x
+1j2ₓ
 ⍝ error: SYNTAX ERROR
 
 ⍝ — Complex components use approximate literals, not exact integers
-1xJ2
+1xj2
 ⍝ error: SYNTAX ERROR
 
 ⍝ — Complex components cannot use rational-literal syntax
-1r2J3
+1r2j3
 ⍝ error: SYNTAX ERROR
 
 ⍝ —
-1J2J3
+1j2j3
 ⍝ error: SYNTAX ERROR
 
 ⍝ — Complex components must remain finite
-1J1E309
+1j1E309
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-1E309J1
+1E309j1
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Overflow to complex infinity is rejected
-1E308J1E308+1E308J1E308
+1E308j1E308+1E308j1E308
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-1J2÷0
+1j2÷0
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-÷0J0
+÷0j0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Counts require exactly zero imaginary part, without tolerance
-⍳1J1E¯15
+⍳1j1E¯15
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-1J2/3
+1j2/3
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Complex numbers have no scalar ordering, even against themselves
-1J2<1J2
+1j2<1j2
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-1J2≤2
+1j2≤2
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-2>1J2
+2>1j2
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-2≥1J2
+2≥1j2
 ⍝ error: DOMAIN ERROR
 
 ⍝⍝ Exact literals arithmetic and roundtrips
 
 ⍝ — One approximate operand makes division approximate, even when the other is exact
-1x÷2   ⍝ 0.5
+1ₓ÷2   ⍝ 0.5
 
 ⍝ —
 (1÷3)+(1÷6)   ⍝ 0.5
@@ -3196,11 +3196,11 @@ r←(0 2⍴0)+.{⎕←⍺ ⍵ ⋄ ⍺×⍵}2 3⍴⍳6
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-1x÷0x
+1ₓ÷0ₓ
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-÷0x
+÷0ₓ
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
@@ -3224,7 +3224,7 @@ r←(0 2⍴0)+.{⎕←⍺ ⍵ ⋄ ⍺×⍵}2 3⍴⍳6
 ⍝ error: SYNTAX ERROR
 
 ⍝ —
-1r2r3
+1r2ₓ
 ⍝ error: SYNTAX ERROR
 
 ⍝ —
@@ -3234,46 +3234,46 @@ r←(0 2⍴0)+.{⎕←⍺ ⍵ ⋄ ⍺×⍵}2 3⍴⍳6
 ⍝⍝ Exact arrays prototypes and counts
 
 ⍝ — Empty exact sum retains an exact additive identity
-+/0/1r3   ⍝ 0x
++/0/1r3   ⍝ 0ₓ
 
 ⍝ — Empty exact product retains an exact multiplicative identity
-×/0/1r3   ⍝ 1x
+×/0/1r3   ⍝ 1ₓ
 
 ⍝ — Shape returns exact dimensions even for approximate data
-⍴2 3⍴0.5   ⍝ 2x 3x
+⍴2 3⍴0.5   ⍝ 2ₓ 3ₓ
 
 ⍝ — Scalar shape is an empty exact vector
-⍴42   ⍝ 0⍴0x
+⍴42   ⍝ 0⍴0ₓ
 
 ⍝ —
-⍴''   ⍝ ,0x
+⍴''   ⍝ ,0ₓ
 
 ⍝ —
-≢'abc'   ⍝ 3x
+≢'abc'   ⍝ 3ₓ
 
 ⍝ — Tally counts rows, so a zero-row matrix has tally zero
-≢0 3⍴0.5   ⍝ 0x
+≢0 3⍴0.5   ⍝ 0ₓ
 
 ⍝ — Nested element shapes do not affect the outer shape
-⍴(1r3⋄ 1.5 2)   ⍝ ,2x
+⍴(1r3⋄ 1.5 2)   ⍝ ,2ₓ
 
 ⍝ — Iota follows an exact argument's numeric domain
-⍳3x   ⍝ 1x 2x 3x
+⍳3ₓ   ⍝ 1ₓ 2ₓ 3ₓ
 
 ⍝ —
 ⍳3r2
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-⍳¯1x
+⍳¯1ₓ
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-⍳1000001x
+⍳1000001ₓ
 ⍝ error: LIMIT ERROR
 
 ⍝ —
-⍳999999999999999999999x
+⍳999999999999999999999ₓ
 ⍝ error: LIMIT ERROR
 
 ⍝ —
@@ -3283,13 +3283,13 @@ r←(0 2⍴0)+.{⎕←⍺ ⍵ ⋄ ⍺×⍵}2 3⍴⍳6
 ⍝⍝ Exact and tolerant comparisons
 
 ⍝ — Approximate equality uses relative tolerance 1E¯14. https://docs.dyalog.com/20.0/language-reference-guide/system-functions/ct/
-0.3=0.3 (0.1+0.2) 0.4   ⍝ 1x 1x 0x
+0.3=0.3 (0.1+0.2) 0.4   ⍝ 1ₓ 1ₓ 0ₓ
 
 ⍝ —
-1 2≤2 1   ⍝ 1x 0x
+1 2≤2 1   ⍝ 1ₓ 0ₓ
 
 ⍝ — Tolerant equality is not transitive: x=y and y=z need not imply x=z
-(1=1+8E¯15⋄ (1+8E¯15)=1+16E¯15⋄ 1=1+16E¯15)   ⍝ 1x 1x 0x
+(1=1+8E¯15⋄ (1+8E¯15)=1+16E¯15⋄ 1=1+16E¯15)   ⍝ 1ₓ 1ₓ 0ₓ
 
 ⍝⍝ Errors and evaluation order
 
@@ -3422,7 +3422,7 @@ each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3   ⍝ 6
 ⍝ error: LIMIT ERROR
 
 ⍝ —
-99999999999999999999x/1
+99999999999999999999ₓ/1
 ⍝ error: LIMIT ERROR
 
 ⍝⍝ Real infinities
@@ -3476,37 +3476,37 @@ each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3   ⍝ 6
 |¯∞   ⍝ ∞
 
 ⍝ — Empty exact minimum still needs the non-rational identity infinity
-⌊/0⍴0x   ⍝ ∞
+⌊/0⍴0ₓ   ⍝ ∞
 
 ⍝ — Empty exact maximum uses negative infinity
-⌈/0⍴0x   ⍝ ¯∞
+⌈/0⍴0ₓ   ⍝ ¯∞
 
 ⍝ — Minimum retains a finite exact value even beyond float range
-∞⌊10x*1000x   ⍝ 10x*1000x
+∞⌊10ₓ*1000ₓ   ⍝ 10ₓ*1000ₓ
 
 ⍝ — Maximum against negative infinity preserves an exact fraction
 ¯∞⌈1r3   ⍝ 1r3
 
 ⍝ —
-∞=∞ ¯∞ 1   ⍝ 1x 0x 0x
+∞=∞ ¯∞ 1   ⍝ 1ₓ 0ₓ 0ₓ
 
 ⍝ — Infinity exceeds any finite exact integer without converting that integer to float
-∞>10x*1000x   ⍝ 1x
+∞>10ₓ*1000ₓ   ⍝ 1ₓ
 
 ⍝ — Reversing comparison arguments retains the finite-versus-infinite distinction
-(10x*1000x)<∞   ⍝ 1x
+(10ₓ*1000ₓ)<∞   ⍝ 1ₓ
 
 ⍝ —
-∞=1j2   ⍝ 0x
+∞=1j2   ⍝ 0ₓ
 
 ⍝ —
-∞∊1 2 ∞   ⍝ 1x
+∞∊1 2 ∞   ⍝ 1ₓ
 
 ⍝ —
-∞ ¯∞⍳¯∞ ∞ 0   ⍝ 2x 1x 3x
+∞ ¯∞⍳¯∞ ∞ 0   ⍝ 2ₓ 1ₓ 3ₓ
 
 ⍝ — Grade orders a huge finite integer between the two infinities
-⍋∞ (10x*1000x) ¯∞   ⍝ 3x 2x 1x
+⍋∞ (10ₓ*1000ₓ) ¯∞   ⍝ 3ₓ 2ₓ 1ₓ
 
 ⍝ —
 ∪∞ ∞ ¯∞   ⍝ ∞ ¯∞
@@ -3524,16 +3524,16 @@ each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3   ⍝ 6
 3 2⍕¯∞   ⍝ ' ¯∞'
 
 ⍝ —
-(10x*1000x)+∞   ⍝ ∞
+(10ₓ*1000ₓ)+∞   ⍝ ∞
 
 ⍝ — A huge exact numerator divided by infinity is still zero
-(10x*1000x)÷∞   ⍝ 0
+(10ₓ*1000ₓ)÷∞   ⍝ 0
 
 ⍝ — Subtracting a huge finite integer from infinity must not become infinity minus infinity
-∞-(10x*1000x)   ⍝ ∞
+∞-(10ₓ*1000ₓ)   ⍝ ∞
 
 ⍝ — Division by a huge negative finite integer retains negative infinity
-∞÷(¯10x*1001x)   ⍝ ¯∞
+∞÷(¯10ₓ*1001ₓ)   ⍝ ¯∞
 
 ⍝ — Hyperbolic tangent has limit one at positive infinity
 7○∞   ⍝ 1
@@ -3556,7 +3556,7 @@ each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3   ⍝ 6
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-∞×0x
+∞×0ₓ
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
@@ -3624,7 +3624,7 @@ each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3   ⍝ 6
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-!¯2x
+!¯2ₓ
 ⍝ error: DOMAIN ERROR
 
 ⍝⍝ Lexical frames recursion and guard rollback
@@ -3686,7 +3686,7 @@ guarded←{0::7 ⋄ ⎕←2 ⋄ 1÷⍵} ⋄ guarded 0
 ⍝⍝ Enclose
 
 ⍝ — Enclosing a vector produces rank zero
-≢⍴⊂1 2 3   ⍝ 0x
+≢⍴⊂1 2 3   ⍝ 0ₓ
 
 ⍝ — Disclosing recovers the vector
 ↑⊂1 2 3   ⍝ 1 2 3
@@ -3730,10 +3730,10 @@ offset←{+/⍶+⍵} ⋄ (1 2 offset)3   ⍝ 9
 1 2+3 4   ⍝ 4 6
 
 ⍝ — Tally of a singleton vector is exact
-≢,7   ⍝ 1x
+≢,7   ⍝ 1ₓ
 
 ⍝ — A scalar has an empty shape vector
-⍴7   ⍝ 0⍴0x
+⍴7   ⍝ 0⍴0ₓ
 
 ⍝ — Scalar extension over an empty vector remains empty
 2+⍳0   ⍝ ⍬
@@ -3920,10 +3920,10 @@ outer←{inner←{⍵} ⋄ inner ⍵} ⋄ outer 1   ⍝ 1
 [3]+4   ⍝ ⊂7
 
 ⍝ —
-≢1 2 3   ⍝ 3x
+≢1 2 3   ⍝ 3ₓ
 
 ⍝ —
-≢¨(1 2 3⋄ 4 5)   ⍝ 3x 2x
+≢¨(1 2 3⋄ 4 5)   ⍝ 3ₓ 2ₓ
 
 ⍝ —
 +/1 2 3   ⍝ 6
@@ -3989,7 +3989,7 @@ a←3 ⋄ a[]←4 ⋄ a   ⍝ 4
 v←3 4 ⋄ (v[1]*2)+v[2]*2   ⍝ 25
 
 ⍝ —
-(1 3⋄ 2 4)⍳⊂1 3   ⍝ 1x
+(1 3⋄ 2 4)⍳⊂1 3   ⍝ 1ₓ
 
 ⍝ —
 v←10 20 30 ⋄ (v[2]⋄ v[⊂2]⋄ v[,2])   ⍝ (20⋄ ⊂20⋄ ,20)
@@ -4010,41 +4010,41 @@ a←(1 2⋄ 3 4) ⋄ (a[2])←5 6 7 ⋄ a   ⍝ (1 2⋄ 5 6 7)
 fs←+˘× ⋄ fs[2]←- ⋄ f←fs[2] ⋄ 3 f 2   ⍝ 1
 
 ⍝ —
-1 3⍳2   ⍝ 3x
+1 3⍳2   ⍝ 3ₓ
 
 ⍝ —
-1 3⍳⊂2   ⍝ 3x
+1 3⍳⊂2   ⍝ 3ₓ
 
 ⍝ —
-1 3⍸2   ⍝ 1x
+1 3⍸2   ⍝ 1ₓ
 
 ⍝ —
-1 3⍸⊂2   ⍝ 1x
+1 3⍸⊂2   ⍝ 1ₓ
 
 ⍝ —
-2∊1 2 3   ⍝ 1x
+2∊1 2 3   ⍝ 1ₓ
 
 ⍝ —
-[2]∊1 2 3   ⍝ 1x
+[2]∊1 2 3   ⍝ 1ₓ
 
 ⍝ —
 (1 3 (1=⍸) 0 ⋄ 1 3 (1=⍸) 1 ⋄ 1 3 (1=⍸) 2 ⋄ 1 3 (1=⍸) 3 ⋄ 1 3 (1=⍸) 4)
-0x 1x 1x 0x 0x
+0ₓ 1ₓ 1ₓ 0ₓ 0ₓ
 
 ⍝ —
-{⍵∊1 3}¨⍳4   ⍝ 1x 0x 1x 0x
+{⍵∊1 3}¨⍳4   ⍝ 1ₓ 0ₓ 1ₓ 0ₓ
 
 ⍝ —
-(2 2⍴⍳4)⍳3 4   ⍝ 2x
+(2 2⍴⍳4)⍳3 4   ⍝ 2ₓ
 
 ⍝ —
-1 3⍳⍬   ⍝ 0⍴0x
+1 3⍳⍬   ⍝ 0⍴0ₓ
 
 ⍝ —
 (⌽2⋄ ⍉⊂2⋄ ⍬↑2⋄ ⍬↓⊂2)   ⍝ 2 (⊂2) 2 (⊂2)
 
 ⍝ —
-2⍷2   ⍝ 1x
+2⍷2   ⍝ 1ₓ
 
 ⍝⍝ Seeded reduction
 
@@ -4075,14 +4075,14 @@ tree←(10 20⋄ 30 (40 50)) ⋄ tree⊃/⌽2 2 1   ⍝ 40
 T←'price' 'qty':(1 2 3 ⋄ 4 5 6)
 (≢T ⋄ ⍴T ⋄ 1⊃T ⋄ T['qty'] ⋄ ⍴T['qty'] ⋄ ⍳[1]T)
 ⍝ =>
-(2x ⋄ ,2x ⋄ 1 2 3 ⋄ 4 5 6 ⋄ ,3x ⋄ 'price' 'qty')
+(2ₓ ⋄ ,2ₓ ⋄ 1 2 3 ⋄ 4 5 6 ⋄ ,3ₓ ⋄ 'price' 'qty')
 
 ⍝ axis-function-value — Stored functions retain ordinary dfn guards
 ('sign'⊃'sign':{⍵<0:¯1 ⋄ 1})¨¯2 3   ⍝ ¯1 1
 
 ⍝ axis-empty — Empty labelled axes retain their key lists
 T←⍬:⍬ ⋄ (≢T ⋄ ⍴⍳[1]T ⋄ T≡⍬ ⋄ T≡T ⋄ 2⍴T)
-(0x ⋄ ,0x ⋄ 0x ⋄ 1x ⋄ 0 0)
+(0ₓ ⋄ ,0ₓ ⋄ 0ₓ ⋄ 1ₓ ⋄ 0 0)
 
 ⍝ axis-duplicate — Labels are unique within an axis
 'aa' 'aa':1 2
@@ -4197,7 +4197,7 @@ T←'price' 'qty':1 2 ⋄ K←⍳[1]T ⋄ K[1]←'cost' ⋄ K:T
 T←'price' 'qty':(1 2 3 ⋄ 4 5 6)
 (T+⊂10 20 30 ⋄ 10×T ⋄ +/T ⋄ +/¨T ⋄ ≢¨T)
 ⍝ =>
-(('price' 'qty':(11 22 33 ⋄ 14 25 36)) ⋄ ('price' 'qty':(10 20 30 ⋄ 40 50 60)) ⋄ 5 7 9 ⋄ ('price' 'qty':6 15) ⋄ ('price' 'qty':3x 3x))
+(('price' 'qty':(11 22 33 ⋄ 14 25 36)) ⋄ ('price' 'qty':(10 20 30 ⋄ 40 50 60)) ⋄ 5 7 9 ⋄ ('price' 'qty':6 15) ⋄ ('price' 'qty':3ₓ 3ₓ))
 
 ⍝ axis-filter — Filtering and ordering retain the selected labels
 Q←'aa' 'bb' 'cc':10 20 5
@@ -4230,19 +4230,19 @@ T←'price' 'qty':(1 2 3 ⋄ 4 5 6)
 (('price' 'qty':2 5) ⋄ ('aa' 'bb':(1 0 ⋄ 2 3)))
 
 ⍝ axis-match-position — Match ignores labelled-axis order; positional access observes it
-A←'aa' 'bb':1 2 ⋄ B←'bb' 'aa':2 1 ⋄ (A≡B ⋄ (1⊃A)≡1⊃B)   ⍝ (1x ⋄ 0x)
+A←'aa' 'bb':1 2 ⋄ B←'bb' 'aa':2 1 ⋄ (A≡B ⋄ (1⊃A)≡1⊃B)   ⍝ (1ₓ ⋄ 0ₓ)
 
 ⍝ axis-sets — Set operations compare values, retaining selected labels
 A←'aa' 'bb':1 2 ⋄ B←'aa' 'bb' 'cc':1 9 3
 (A∊B ⋄ ('xx':9)∊B ⋄ A∩B ⋄ A~B ⋄ A∪('cc':3) ⋄ ∪'aa' 'bb' 'cc':1 1 2)
 ⍝ =>
-(('aa' 'bb':1x 0x) ⋄ ('xx':1x) ⋄ ('aa':1) ⋄ ('bb':2) ⋄ ('aa' 'bb' 'cc':1 2 3) ⋄ ('aa' 'cc':1 2))
+(('aa' 'bb':1ₓ 0ₓ) ⋄ ('xx':1ₓ) ⋄ ('aa':1) ⋄ ('bb':2) ⋄ ('aa' 'bb' 'cc':1 2 3) ⋄ ('aa' 'cc':1 2))
 
 ⍝ axis-search-cells — Frame names return positions; cell labels participate in Match
 M←('alice' 'bob' ⋄ 'price' 'qty'):[10 2 ⋄ 20 4]
 (M⍳M['bob'] ⋄ M⍳⌽M['bob'] ⋄ M⍳20 4)
 ⍝ =>
-('bob' ⋄ 'bob' ⋄ 3x)
+('bob' ⋄ 'bob' ⋄ 3ₓ)
 
 ⍝ axis-set-rank — Set functions retain their ordinary rank limits
 M←'aa' 'bb':2 2⍴⍳4 ⋄ M∪M
@@ -4260,13 +4260,13 @@ M←'aa' 'bb':2 2⍴⍳4 ⋄ M∪M
 •load 'lib/numeric.apl'
 ⍴NormRand 2 3
 ⍝ =>
-2x 3x
+2ₓ 3ₓ
 
 ⍝ — Phinary decoding
 •load 'lib/numeric.apl'
 1e¯12>|42-phinary '10100010.00100001'
 ⍝ =>
-1x
+1ₓ
 
 ⍝ — Associative scan along the last axis
 •load 'lib/array.apl'
@@ -4298,33 +4298,33 @@ t←1(2(,4)(,5))(,3)
 
 ⍝ — Headers key compact, independently inferred columns
 nl←•ucs 10 ⋄ •csv 'price,qty',nl,'10.5,2',nl,'20.0,4'
-'price' 'qty':(10.5 20 ⋄ 2x 4x)
+'price' 'qty':(10.5 20 ⋄ 2ₓ 4ₓ)
 
 ⍝ — Inference is per column; numeric-looking text stays text in a mixed column
 nl←•ucs 10 ⋄ •csv 'id,note',nl,'001,001',nl,'002,no'
-'id' 'note':(1x 2x ⋄ '001' 'no')
+'id' 'note':(1ₓ 2ₓ ⋄ '001' 'no')
 
 ⍝ — Forced text preserves identifiers, including quoted numeric fields
 src←'id,n', (•ucs 10), '"00123",5'
 •csv 'source' 'text_columns':(src ⋄ 'id')
 ⍝ =>
-'id' 'n':((,⊂'00123') ⋄ ,5x)
+'id' 'n':((,⊂'00123') ⋄ ,5ₓ)
 
 ⍝ — Empty numeric cells use infinity; entirely empty columns are text
 nl←•ucs 10 ⋄ •csv 'a,b,c',nl,'1,1.5,',nl,',,'
-(,¨'abc'):((1x ∞) ⋄ 1.5 ∞ ⋄ ('' ''))
+(,¨'abc'):((1ₓ ∞) ⋄ 1.5 ∞ ⋄ ('' ''))
 
 ⍝ — Custom markers and fill, with positional forced numeric selection
 nl←•ucs 10 ⋄ src←'a,b',nl,'NA,NA',nl,'3,yes'
-•csv 'source' 'missing' 'fill' 'numeric_columns':(src ⋄ 'NA' ⋄ ¯1x ⋄ 1)
+•csv 'source' 'missing' 'fill' 'numeric_columns':(src ⋄ 'NA' ⋄ ¯1ₓ ⋄ 1)
 ⍝ =>
-(,¨'ab'):(¯1x 3x ⋄ '' 'yes')
+(,¨'ab'):(¯1ₓ 3ₓ ⋄ '' 'yes')
 
 ⍝ — Headerless input and locale-specific numeric spelling
 nl←•ucs 10 ⋄ src←'1.234,5;2',nl,'2.000;3'
 •csv 'source' 'header' 'separator' 'decimal' 'thousands':(src ⋄ 0 ⋄ ';' ⋄ ',' ⋄ '.')
 ⍝ =>
-(1234.5 2000 ⋄ 2x 3x)
+(1234.5 2000 ⋄ 2ₓ 3ₓ)
 
 ⍝ — Quoting, doubled quotes, embedded newline and Unicode
 nl←•ucs 10 ⋄ •csv 'note',nl,'"a,b"',nl,'"say ""hi"""',nl,'"λ',nl,'😀"'
@@ -4334,7 +4334,7 @@ nl←•ucs 10 ⋄ •csv 'note',nl,'"a,b"',nl,'"say ""hi"""',nl,'"λ',nl,'😀"
 nl←•ucs 10 ⋄ src←'n',nl,' 2 '
 (•csv src) (•csv 'source' 'trim':(src ⋄ 1))
 ⍝ =>
-('n':,⊂' 2 ') ('n':,2x)
+('n':,⊂' 2 ') ('n':,2ₓ)
 
 ⍝ — Empty input
 •csv ''   ⍝ 0⍴⊂''
@@ -4344,23 +4344,23 @@ nl←•ucs 10 ⋄ src←'n',nl,' 2 '
 
 ⍝ — Integers beyond i64 remain exact
 •csv 'n',(•ucs 10),'9223372036854775808'
-'n':,9223372036854775808x
+'n':,9223372036854775808ₓ
 
 ⍝ — Float promotion must not round large exact integers
 •csv 'n',(•ucs 10),'9007199254740993',(•ucs 10),'1.5'
-'n':9007199254740993x 1.5
+'n':9007199254740993ₓ 1.5
 
 ⍝ — Export and import retain numeric domains, strings and headers
-T←'price' 'qty' 'note':(10.5 20 ⋄ 2x 4x ⋄ 'a,b' 'say "hi"')
+T←'price' 'qty' 'note':(10.5 20 ⋄ 2ₓ 4ₓ ⋄ 'a,b' 'say "hi"')
 •csv T •csv ''
 ⍝ =>
-'price' 'qty' 'note':(10.5 20 ⋄ 2x 4x ⋄ 'a,b' 'say "hi"')
+'price' 'qty' 'note':(10.5 20 ⋄ 2ₓ 4ₓ ⋄ 'a,b' 'say "hi"')
 
 ⍝ — Export uses CSV minus signs and no exact suffix
-('n':¯2x 3x) •csv ''   ⍝ 'n',(•ucs 10),'-2',(•ucs 10),'3',•ucs 10
+('n':¯2ₓ 3ₓ) •csv ''   ⍝ 'n',(•ucs 10),'-2',(•ucs 10),'3',•ucs 10
 
 ⍝ — Infinity remains a number unless fill is explicitly configured
-T←'n':1x ∞ ⋄ (T •csv '') (T •csv 'fill':∞)
+T←'n':1ₓ ∞ ⋄ (T •csv '') (T •csv 'fill':∞)
 ('n',(•ucs 10),'1',(•ucs 10),'inf',•ucs 10) ('n',(•ucs 10),'1',(•ucs 10),'""',•ucs 10)
 
 ⍝ — Export dialect and CRLF
@@ -4416,23 +4416,23 @@ csv←T •csv 'escapechar' 'doublequote':('\' ⋄ 0)
 
 ⍝ — JSON objects become keyed vectors; arrays retain nesting and integer exactness
 •json '{"name":"Ann","values":[1,2.5,[3,4]]}'
-'name' 'values':('Ann' ⋄ (1x ⋄ 2.5 ⋄ 3x 4x))
+'name' 'values':('Ann' ⋄ (1ₓ ⋄ 2.5 ⋄ 3ₓ 4ₓ))
 
 ⍝ — Booleans are exact numbers and null defaults to infinity
-•json '[true,false,null]'   ⍝ 1x 0x ∞
+•json '[true,false,null]'   ⍝ 1ₓ 0ₓ ∞
 
 ⍝ — Explicit null fill works recursively in both directions
-opts←'source' 'fill':('{"x":[null,2]}' ⋄ ¯1x)
-(•json opts) •json 'fill':¯1x
+opts←'source' 'fill':('{"x":[null,2]}' ⋄ ¯1ₓ)
+(•json opts) •json 'fill':¯1ₓ
 ⍝ =>
 '{"x":[null,2]}'
 
 ⍝ — Import keeps integers beyond i64 and float syntax distinct
 •json '[9223372036854775808,1.0,1e2]'
-9223372036854775808x 1 100
+9223372036854775808ₓ 1 100
 
 ⍝ — Large exact integers export without rounding
-9223372036854775808x •json ''   ⍝ '9223372036854775808'
+9223372036854775808ₓ •json ''   ⍝ '9223372036854775808'
 
 ⍝ — Booleans export as numbers
 (•json '[true,false]') •json ''   ⍝ '[1,0]'
@@ -4445,17 +4445,17 @@ opts←'source' 'fill':('{"x":[null,2]}' ⋄ ¯1x)
 '["a","",["b","c"]]'
 
 ⍝ — Ordinary matrices export as nested JSON arrays
-[1x 2x ⋄ 3x 4x] •json ''   ⍝ '[[1,2],[3,4]]'
+[1ₓ 2ₓ ⋄ 3ₓ 4ₓ] •json ''   ⍝ '[[1,2],[3,4]]'
 
 ⍝ — Keyed axes export as object levels
-('row':'col'  'val':(1x 2x)) •json ''
+('row':'col'  'val':(1ₓ 2ₓ)) •json ''
 '{"row":{"col":1,"val":2}}'
 
 ⍝ — Unkeyed scalar arrays export their contents
-(⊂2x) •json ''   ⍝ ,'2'
+(⊂2ₓ) •json ''   ⍝ ,'2'
 
 ⍝ — Duplicate object members follow the JSON library's last-value rule
-•json '{"name":1,"name":2}'   ⍝ 'name':2x
+•json '{"name":1,"name":2}'   ⍝ 'name':2ₓ
 
 ⍝ — Malformed JSON gives a located error
 •json '[1,]'
@@ -4495,7 +4495,7 @@ opts←'source' 'fill':('{"x":[null,2]}' ⋄ ¯1x)
 
 ⍝ — Absolute-year calendar layout
 •load 'lib/dyalog.apl' ⋄ ⍴cal 2025
-33x 66x
+33ₓ 66ₓ
 
 ⍝ — Unification substitutes repeated variables on either side
 •load 'lib/dyalog.apl' ⋄ 'xy'unify('f' 3 'y')('f' 'x' 'x')
@@ -4533,7 +4533,7 @@ rows←('aa':1)('bb':2) ⋄ rows[2].cc←3 ⋄ rows
 
 ⍝ — Name classes follow lexical bindings, including hybrids and operators
 x←7 ⋄ f←+ ⋄ op←¨ ⋄ hybrid←/ ⋄ •nc 'x' 'f' 'op' 'hybrid' 'absent' 'bad name'
-2x 3x 4x 3x 0x ¯1x
+2ₓ 3ₓ 4ₓ 3ₓ 0ₓ ¯1ₓ
 
 ⍝ — Name lists are sorted, filtered by prefix and class
 zeta←1 ⋄ mean←{+/⍵} ⋄ member←+ ⋄ 'me' •nl 3
@@ -4541,7 +4541,7 @@ zeta←1 ⋄ mean←{+/⍵} ⋄ member←+ ⋄ 'me' •nl 3
 
 ⍝ — The nearest binding determines the visible class
 x←1 ⋄ f←{x←+ ⋄ local←2 ⋄ (•nc 'x' ⋄ •nl 2)} ⋄ f 0
-(3x ⋄ ,⊂'local')
+(3ₓ ⋄ ,⊂'local')
 
 ⍝ — Expunging a local reveals its outer binding; handles retain definitions
 x←1 ⋄ f←{x←2 ⋄ erased←•ex 'x' ⋄ x} ⋄ kept←f ⋄ •ex 'f' ⋄ kept 0
@@ -4549,7 +4549,7 @@ x←1 ⋄ f←{x←2 ⋄ erased←•ex 'x' ⋄ x} ⋄ kept←f ⋄ •ex 'f' �
 
 ⍝ — Erasure is idempotent and protects implicit/system names
 x←1 ⋄ •ex 'x' 'x' 'bad name' '•a' '⍵'
-1x 1x 0x 0x 0x
+1ₓ 1ₓ 0ₓ 0ₓ 0ₓ
 
 ⍝ — Source retains the definition, while derived functions use APL display
 f←{⍵+1} ⋄ plus←+ ⋄ •src 'f' 'plus'
@@ -4557,7 +4557,7 @@ f←{⍵+1} ⋄ plus←+ ⋄ •src 'f' 'plus'
 
 ⍝ — Batch inspection retains its frame and empty result domain
 (⍴•nc [ 'aa' 'bb' ⋄ 'cc' 'dd'] ⋄ •nc 0⍴⊂'' ⋄ •src 0⍴⊂'')
-(2x 2x ⋄ (0⍴0x) ⋄ 0⍴⊂'')
+(2ₓ 2ₓ ⋄ (0⍴0ₓ) ⋄ 0⍴⊂'')
 
 ⍝ — Values have no function source
 x←1 ⋄ •src 'x'
@@ -4575,31 +4575,31 @@ x←1 ⋄ •src 'x'
 
 ⍝ — Validity and values; minus is accepted without evaluating expressions
 •vfi '12 nope -3 1.5 1+2'
-(1x 0x 1x 1x 0x ⋄ 12 0 ¯3 1.5 0)
+(1ₓ 0ₓ 1ₓ 1ₓ 0ₓ ⋄ 12 0 ¯3 1.5 0)
 
 ⍝ — Preserve numeric domains, signed exponents, fractions and complex components
 •vfi '+2 3x -4x 1r3 -2r-3 1e-2 1j-2 ∞ -∞'
-((9⍴1x) ⋄ 2 3x ¯4x 1r3 2r3 0.01 1j¯2 ∞ ¯∞)
+((9⍴1ₓ) ⋄ 2 3ₓ ¯4ₓ 1r3 2r3 0.01 1j¯2 ∞ ¯∞)
 
 ⍝ — Invalid fractions, malformed numbers and code remain invalid fields
 •vfi '1r0 1x2 . NaN ⎕←7'
-((5⍴0x) ⋄ 5⍴0)
+((5⍴0ₓ) ⋄ 5⍴0)
 
 ⍝ — Explicit separators retain empty fields as valid zero
 ',;' •vfi ',3.9;2.4,,76,'
-((6⍴1x) ⋄ 0 3.9 2.4 0 76 0)
+((6⍴1ₓ) ⋄ 0 3.9 2.4 0 76 0)
 
 ⍝ — Explicit separators trim whitespace but do not split on it
 '⋄' •vfi '1 ⋄ 2 3 ⋄ 4 '
-(1x 0x 1x ⋄ 1 0 4)
+(1ₓ 0ₓ 1ₓ ⋄ 1 0 4)
 
 ⍝ — Default whitespace splitting and empty result domains
 (•vfi ' ' ⋄ •vfi '' ⋄ •vfi '2',(•ucs 9 10),'3')
-(((0⍴0x) ⋄ 0⍴0) ⋄ ((0⍴0x) ⋄ 0⍴0) ⋄ (1x 1x ⋄ 2 3))
+(((0⍴0ₓ) ⋄ 0⍴0) ⋄ ((0⍴0ₓ) ⋄ 0⍴0) ⋄ (1ₓ 1ₓ ⋄ 2 3))
 
 ⍝ — Empty separator list treats its input as one field
 '' •vfi '1 2'
-((,0x) ⋄ ,0)
+((,0ₓ) ⋄ ,0)
 
 ⍝ — Numeric arrays are not text
 •vfi 1 2

@@ -9,7 +9,7 @@
 `f⌸Y` uses `Y` as keys and their positions as values.
 
 ```apl
-{≢⍵}⌸'banana'       ⍝ 1x 3x 2x
+{≢⍵}⌸'banana'       ⍝ 1ₓ 3ₓ 2ₓ
 ```
 
 Keys use tolerant matching against first representatives. Results assemble with fill. Empty input calls `f` once for its prototype.

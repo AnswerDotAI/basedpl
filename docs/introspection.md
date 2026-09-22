@@ -6,8 +6,8 @@
 
 ```apl
 v←1 2 3 ⋄ mean←{(+/⍵)÷≢⍵}
-•nc 'v'                   ⍝ 2x
-•nc 'mean' 'absent'        ⍝ 3x 0x
+•nc 'v'                   ⍝ 2ₓ
+•nc 'mean' 'absent'        ⍝ 3ₓ 0ₓ
 ```
 
 `P •nl C` lists visible user names of classes `C`, beginning with prefix `P` (default `''`). Results are sorted string vectors. Shadowed names appear once; implicit argument/operand names are omitted.
@@ -30,9 +30,9 @@ f←{⍵+1} ⋄ add←+
 
 ```apl
 v←1
-•ex 'v'                   ⍝ 1x
-•ex 'v'                   ⍝ 1x
-•ex '•a'                  ⍝ 0x
+•ex 'v'                   ⍝ 1ₓ
+•ex 'v'                   ⍝ 1ₓ
+•ex '•a'                  ⍝ 0ₓ
 ```
 
 Errors: `•src` undefined name → VALUE; array → DOMAIN. Non-string names or unsupported `•nl` classes → DOMAIN. Rank >1 class list → RANK. `•nc`, `•src`, `•ex` are monadic.

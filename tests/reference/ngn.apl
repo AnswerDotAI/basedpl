@@ -1268,7 +1268,7 @@ a←1⋄b←¯22⋄c←85⋄sqrt←{⍵*.5}⋄((-b)(+,-)sqrt(b*2)-4×a×c)÷2×a
 ⍕¯1   ⍝ '¯1'
 
 ⍝ ngn:404 — Dyalog monadic-format result with basedpl lowercase j; original expectation retained
-⍕¯1e¯100J¯2e¯99   ⍝ '¯1E¯100j¯2E¯99'
+⍕¯1e¯100j¯2e¯99   ⍝ '¯1E¯100j¯2E¯99'
 
 ⍝ ngn:405 —
 ⍋13 8 122 4   ⍝ 4 2 1 3
@@ -2255,7 +2255,7 @@ queens←{ search←{ (⊂⍬)∊⍵:0⍴⊂⍬ ⋄ 0=⍴⍵:rmdups ⍺ ⋄ (hd 
 (5 9⍴'⍟ · · · ·· · ⍟ · ·· · · · ⍟· ⍟ · · ·· · · ⍟ ·' ⋄ 5 9⍴'· ⍟ · · ·· · · · ⍟· · ⍟ · ·⍟ · · · ·· · · ⍟ ·')
 
 ⍝ ngn/examples/7-mandelbrot:1 — Use a 13 by 13 grid
-' #'[1+9>|{⍺+⍵*2}/9⍴⊂¯3×.7J.5-⍉a +⌝ 0J1×a←(¯1+⍳n+1)÷n←12]
+' #'[1+9>|{⍺+⍵*2}/9⍴⊂¯3×.7j.5-⍉a +⌝ 0j1×a←(¯1+⍳n+1)÷n←12]
 13 13⍴'                                  #            #          ####       #######   #########       #######        ####           #            #                              '
 
 ⍝ ngn:501 — ngn accepts count/function operands to power in either order (apl.js, voc[⍣]); port to function⍣count; Explicit modified assignment updates the outer counter under basedpl scope rules; Original expected 5 retained and checked in Dyalog 20.0.53963.0

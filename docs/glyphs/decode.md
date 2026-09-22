@@ -10,7 +10,7 @@
 
 ```apl
 2⊥1 0 1 0          ⍝ 10
-0x 60x 60x⊥1x 1x 1x ⍝ 3661x
+0x 60x 60x⊥1x 1x 1x ⍝ 3661ₓ
 ```
 
 For coefficient vector `C`, `X⊥C` evaluates the polynomial in descending powers.

@@ -10,10 +10,10 @@ One string names the whole right value. Several strings name its leading-axis ce
 
 ```apl
 T←'price' 'qty':(1 2 3 ⋄ 4 5 6)
-≢T                          ⍝ 2x
-⍴('ab':11 12 13)            ⍝ ,1x
+≢T                          ⍝ 2ₓ
+⍴('ab':11 12 13)            ⍝ ,1ₓ
 'price' 'qty':2 3⍴⍳6       ⍝ ('price' 'qty':[1]2 3⍴⍳6)
-≢⍬:⍬                        ⍝ 0x
+≢⍬:⍬                        ⍝ 0ₓ
 ```
 
 A character atom or vector is one string key. Use `,¨'ab'` for two one-character keys.
@@ -36,11 +36,11 @@ Several key vectors label successive axes. `[axes]` chooses their axes in the su
 
 ```apl
 M←('alice' 'bob' ⋄ 'price' 'qty'):2 2⍴10 2 20 4
-⍴M                          ⍝ 2x 2x
+⍴M                          ⍝ 2ₓ 2ₓ
 ⍳[1]M                       ⍝ 'alice' 'bob'
 ⍳[2]M                       ⍝ 'price' 'qty'
 ⍳[1 2]M                     ⍝ ('alice' 'bob' ⋄ 'price' 'qty')
-M≡('price' 'qty' ⋄ 'alice' 'bob'):[2 1]2 2⍴10 2 20 4 ⍝ 1x
+M≡('price' 'qty' ⋄ 'alice' 'bob'):[2 1]2 2⍴10 2 20 4 ⍝ 1ₓ
 ```
 
 Monadic `:` removes all keys; `:[axes]` removes only the selected axes' keys.
@@ -49,7 +49,7 @@ Monadic `:` removes all keys; `:[axes]` removes only the selected axes' keys.
 M←('alice' 'bob' ⋄ 'price' 'qty'):2 2⍴10 2 20 4
 :M                          ⍝ 2 2⍴10 2 20 4
 :[2]M                       ⍝ 'alice' 'bob':2 2⍴10 2 20 4
-⍳[1 2](:M)                  ⍝ (1x 2x ⋄ 1x 2x)
+⍳[1 2](:M)                  ⍝ (1ₓ 2ₓ ⋄ 1ₓ 2ₓ)
 ```
 
 Inside dfns, group functional colon: `(X:Y)` or `(:Y)`. A direct colon separates a guard.
@@ -136,7 +136,7 @@ Corresponding keyed axes align by union: left keys, then right-only keys. An abs
 ```apl
 ('aa':2)+('bb':3)            ⍝ 'aa' 'bb':2 3
 ('aa':2)×('bb':3)            ⍝ 'aa' 'bb':0 0
-('aa':0)=('bb':0)            ⍝ 'aa' 'bb':1x 1x
+('aa':0)=('bb':0)            ⍝ 'aa' 'bb':1ₓ 1ₓ
 ```
 
 Each keyed axis aligns independently, including reordered keys.
@@ -235,8 +235,8 @@ Inner product, Decode and matrix solve align contracted keys. Both keyed: equal 
 ('hi' 'lo':1 2)+.×('lo' 'hi':10 20) ⍝ 40
 ('hi' 'lo':10 10)⊥('lo' 'hi':2 1) ⍝ 12
 M←('r1' 'r2' ⋄ 'xx' 'yy'):2 2⍴2x 0x 0x 4x
-('r2' 'r1':12x 4x)⌹M        ⍝ 'xx' 'yy':2x 3x
-⌹M                          ⍝ ('xx' 'yy' ⋄ 'r1' 'r2'):2 2⍴1r2 0x 0x 1r4
+('r2' 'r1':12x 4x)⌹M        ⍝ 'xx' 'yy':2ₓ 3ₓ
+⌹M                          ⍝ ('xx' 'yy' ⋄ 'r1' 'r2'):2 2⍴1r2 0ₓ 0ₓ 1r4
 ```
 
 Catenate joins keys on its joined axis and aligns other keyed axes. An unkeyed joined axis makes the result axis unkeyed.
@@ -273,7 +273,7 @@ V←'aa' 'bb' 'cc':1 2 3
 2↕V                         ⍝ 2 2⍴1 2 2 3
 3↕V                         ⍝ 'aa' 'bb' 'cc':[2]1 3⍴1 2 3
 {+/⍵}⌺3⊢V                  ⍝ 'aa' 'bb' 'cc':3 6 5
-{(⍳[1]⍵)≡'aa' 'bb' 'cc'}⌺3⊢V ⍝ 'aa' 'bb' 'cc':0x 1x 0x
+{(⍳[1]⍵)≡'aa' 'bb' 'cc'}⌺3⊢V ⍝ 'aa' 'bb' 'cc':0ₓ 1ₓ 0ₓ
 ```
 
 ## Match and search
@@ -282,19 +282,19 @@ Match aligns keys independently on every keyed axis. Shapes and unkeyed axes mus
 
 ```apl
 V←'low' 'mid' 'high':10 20 30
-V≡⌽V                        ⍝ 1x
-V⍳20 99                     ⍝ ('mid' ⋄ 4x)
-V⍸5 15 25 40                ⍝ (0x ⋄ 'low' ⋄ 'mid' ⋄ 'high')
+V≡⌽V                        ⍝ 1ₓ
+V⍳20 99                     ⍝ ('mid' ⋄ 4ₓ)
+V⍸5 15 25 40                ⍝ (0ₓ ⋄ 'low' ⋄ 'mid' ⋄ 'high')
 ⍒V                          ⍝ 'high' 'mid' 'low'
 V[⍒V]                       ⍝ 'high' 'mid' 'low':30 20 10
-('aa':7)∊('bb':7)            ⍝ 'aa':1x
+('aa':7)∊('bb':7)            ⍝ 'aa':1ₓ
 ```
 
 Multidimensional positions mix keys and numeric coordinates. Bare Iota generates from values as usual.
 
 ```apl
 M←'price' 'qty':[2]2 2⍴10 2 20 4
-↑⍸M=20                      ⍝ (2x ⋄ 'price')
+↑⍸M=20                      ⍝ (2ₓ ⋄ 'price')
 ⍳('rows' 'cols':2 3)        ⍝ ⍳2 3
 ```
 
@@ -330,8 +330,8 @@ Axis `0` refers to the list of axes. `N:[0]M` supplies one name per axis; use an
 
 ```apl
 M←'city' 'month':[0]2 3⍴⍳6
-⍳[0]('city' ⋄ 2):[0]M         ⍝ ('city' ⋄ 2x)
-⍳[0](:[0]M)                  ⍝ 1x 2x
+⍳[0]('city' ⋄ 2):[0]M         ⍝ ('city' ⋄ 2ₓ)
+⍳[0](:[0]M)                  ⍝ 1ₓ 2ₓ
 (⍳[0]M):[0](:[0]M)           ⍝ 'city' 'month':[0]2 3⍴⍳6
 ```
 
@@ -349,7 +349,7 @@ Reuse descriptions, or attach them to selected axes. Other axes keep their names
 ```apl
 months←'month':'Jan' 'Feb' 'Mar'
 M←months:[2]2 3⍴⍳6
-⍳[0]M                        ⍝ (1x ⋄ 'month')
+⍳[0]M                        ⍝ (1ₓ ⋄ 'month')
 ⍳[2]M                        ⍝ 'Jan' 'Feb' 'Mar'
 ⍳[0]('city':'London' 'Paris'):M ⍝ 'city' 'month'
 ```
@@ -378,8 +378,8 @@ M←'city' 'month':[0]2 3⍴⍳6
 M+10 20                       ⍝ 'city' 'month':[0]2 3⍴11 12 13 24 25 26
 A←('city' ⋄ 2):[0]2 3⍴1
 B←('product' ⋄ 2):[0]4 3⍴2
-⍳[0]A+B                      ⍝ ('city' ⋄ 2x ⋄ 'product')
-⍴A+B                          ⍝ 2x 3x 4x
+⍳[0]A+B                      ⍝ ('city' ⋄ 2ₓ ⋄ 'product')
+⍴A+B                          ⍝ 2ₓ 3ₓ 4ₓ
 ```
 
 Function qualifiers select axes by name. Array brackets select positions on those axes.
@@ -387,7 +387,7 @@ Function qualifiers select axes by name. Array brackets select positions on thos
 ```apl
 M←'city' 'month':[0]('Paris' 'London' ⋄ 'Jan' 'Feb' 'Mar'):2 3⍴⍳6
 ⍳[1]'Paris'⌷['city']M        ⍝ 'Jan' 'Feb' 'Mar'
-M['Paris']≡'Paris'⌷['city']M  ⍝ 1x
+M['Paris']≡'Paris'⌷['city']M  ⍝ 1ₓ
 ⍳[0]⊂['month']M              ⍝ ,⊂'city'
 +/['city' 'month']M            ⍝ ⊂21
 ```
@@ -399,11 +399,11 @@ M←'city' 'month':[0]2 3⍴⍳6
 ⍳[0]⍉M                      ⍝ 'month' 'city'
 ⍳[0]M[1]                     ⍝ ,⊂'month'
 ⍳[0]2 3⍴M                   ⍝ 'city' 'month'
-⍳[0]3 2⍴M                   ⍝ 1x 2x
-⍳[0],M                       ⍝ ,1x
+⍳[0]3 2⍴M                   ⍝ 1ₓ 2ₓ
+⍳[0],M                       ⍝ ,1ₓ
 V←'city':[0]1 2
 ⍳[0]2/V                      ⍝ ,⊂'city'
-⍳[0]⍪V                      ⍝ ('city' ⋄ 2x)
+⍳[0]⍪V                      ⍝ ('city' ⋄ 2ₓ)
 ```
 
 Duplicating an axis name drops every occurrence of it. Position keys remain.
@@ -411,7 +411,7 @@ Duplicating an axis name drops every occurrence of it. Position keys remain.
 ```apl
 V←'city':[0]'Paris' 'London':1 2
 W←V×⌝V
-⍳[0]W                        ⍝ 1x 2x
+⍳[0]W                        ⍝ 1ₓ 2ₓ
 ⍳[1 2]W                      ⍝ ('Paris' 'London' ⋄ 'Paris' 'London')
 ```
 

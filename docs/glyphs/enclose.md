@@ -3,9 +3,9 @@
 `⊂Y` makes a rank-zero array containing `Y`.
 
 ```apl
-⍴⊂1 2 3            ⍝ 0⍴0x
+⍴⊂1 2 3            ⍝ 0⍴0ₓ
 ↑⊂1 2 3            ⍝ 1 2 3
-(⊂3)≡3             ⍝ 0x
+(⊂3)≡3             ⍝ 0ₓ
 ```
 
 `⊂[K]Y` encloses cells on axes `K`.

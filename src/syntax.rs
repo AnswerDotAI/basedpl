@@ -144,11 +144,12 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
             if chars.peek().is_some_and(|(_, c)| matches!(c, 'J' | 'j')) {
                 chars.next();
                 real_literal(&mut chars).map_err(|message| span(chars.peek().map_or(source.text.len(), |(i, _)| *i)).error(ErrorKind::Syntax, message))?;
-                if chars.peek().is_some_and(|(_, c)| matches!(c, '.' | 'e' | 'E' | 'x' | 'r' | 'J' | 'j')) {
-                    return Err(span(chars.peek().unwrap().0 + 1).error(ErrorKind::Syntax, "invalid complex numeric literal"));
+                if chars.peek().is_some_and(|(_, c)| matches!(c, '.' | 'e' | 'E' | 'x' | 'ₓ' | 'r' | 'J' | 'j')) {
+                    let &(i, c) = chars.peek().unwrap();
+                    return Err(span(i + c.len_utf8()).error(ErrorKind::Syntax, "invalid complex numeric literal"));
                 }
             }
-            else if let Some(&(_, suffix @ ('x' | 'r'))) = chars.peek() {
+            else if let Some(&(_, suffix @ ('x' | 'ₓ' | 'r'))) = chars.peek() {
                 chars.next();
                 if suffix == 'r' {
                     if chars.peek().is_some_and(|(_, c)| *c == '¯') { chars.next(); }
@@ -157,8 +158,9 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                         return Err(span(end).error(ErrorKind::Syntax, "expected integer denominator"));
                     }
                 }
-                if chars.peek().is_some_and(|(_, c)| c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | 'x' | 'r' | 'J' | 'j')) {
-                    let end = chars.peek().unwrap().0 + 1;
+                if chars.peek().is_some_and(|(_, c)| c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | 'x' | 'ₓ' | 'r' | 'J' | 'j')) {
+                    let &(i, c) = chars.peek().unwrap();
+                    let end = i + c.len_utf8();
                     return Err(span(end).error(ErrorKind::Syntax, "invalid exact numeric literal"));
                 }
             }

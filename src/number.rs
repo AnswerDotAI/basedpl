@@ -187,7 +187,7 @@ impl Number {
             let float = |s: &str| s.parse::<f64>().map_err(|_| ErrorKind::Syntax);
             return Self::try_from(Complex64::new(float(re)?, float(im)?));
         }
-        if let Some(n) = text.strip_suffix('x') { return Ok(Self::exact(BigRational::from_integer(integer(n)?))); }
+        if let Some(n) = text.strip_suffix(['x', 'ₓ']) { return Ok(Self::exact(BigRational::from_integer(integer(n)?))); }
         if let Some((n, d)) = text.split_once('r') { return Self::try_from(BigRational::new_raw(integer(n)?, integer(d)?)); }
         Self::try_from(text.parse::<f64>().map_err(|_| ErrorKind::Syntax)?)
     }
@@ -705,9 +705,9 @@ fn format_float(n: f64) -> String {
 impl fmt::Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let text = match &self.0 {
-            Integer(n) => format!("{n}x"),
+            Integer(n) => format!("{n}ₓ"),
             Float(n) => format_float(*n),
-            Exact(n) if n.is_integer() => format!("{}x", n.numer()),
+            Exact(n) if n.is_integer() => format!("{}ₓ", n.numer()),
             Exact(n) => format!("{}r{}", n.numer(), n.denom()),
             Complex(n) => format!("{}j{}", format_float(n.re), format_float(n.im)),
         };

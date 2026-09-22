@@ -12,11 +12,11 @@ a←•beta 1 1 ⋄ b←•beta 2 2 ⋄ (a.quantile 0.25 0.75 ⋄ b.density 0.5 
 
 ⍝ distribution:binomial — Mass at integers, floor for cdf
 d←•binomial 2 0.5 ⋄ (d.density ¯1 0 0.5 1 2 3 ⋄ d.cdf ¯1 0.5 1.5 2 ⋄ d.quantile 0 0.25 0.5 1)
-(0 0.25 0 0.5 0.25 0 ⋄ 0 0.25 0.75 1 ⋄ 0x 0x 1x 2x)
+(0 0.25 0 0.5 0.25 0 ⋄ 0 0.25 0.75 1 ⋄ 0ₓ 0ₓ 1ₓ 2ₓ)
 
 ⍝ distribution:degenerate — Certain events and zero-rate Poisson
 b←•binomial 3 1 ⋄ p←•poisson 0 ⋄ (b.quantile 0 0.5 1 ⋄ p.sample 3 ⋄ p.quantile 0 1)
-(3x 3x 3x ⋄ 0x 0x 0x ⋄ 0x 0x)
+(3ₓ 3ₓ 3ₓ ⋄ 0ₓ 0ₓ 0ₓ ⋄ 0ₓ 0ₓ)
 
 ⍝ distribution:poisson — Poisson mass and unbounded quantile
 d←•poisson 2 ⋄ (d.density 0 1 ⋄ d.quantile 0 1 ⋄ d.cdf 0)
@@ -60,11 +60,11 @@ d←•uniform 0 1 ⋄ (d.cdf ('a' 'b':0.25 0.5) ⋄ d.cdf (0.25 0.5 ⋄ 0⍴0))
 
 ⍝ distribution:shapes — Shape argument controls scalar and empty draws
 d←•normal 0 1 ⋄ (⍴d.sample ⍬ ⋄ ⍴d.sample 2 0 3 ⋄ ⍴d.sample 2 3)
-(⍬ ⋄ 2x 0x 3x ⋄ 2x 3x)
+(⍬ ⋄ 2ₓ 0ₓ 3ₓ ⋄ 2ₓ 3ₓ)
 
 ⍝ distribution:bernoulli — All four methods on a certain event
 d←•bernoulli 1 ⋄ (d.sample 3 ⋄ d.density 0 1 ⋄ d.cdf 0 1 ⋄ d.quantile 0 0.5 1)
-(1x 1x 1x ⋄ 0 1 ⋄ 0 1 ⋄ 1x 1x 1x)
+(1ₓ 1ₓ 1ₓ ⋄ 0 1 ⋄ 0 1 ⋄ 1ₓ 1ₓ 1ₓ)
 
 ⍝ distribution:bad-probability — Quantile validates before entering the library
 d←•normal 0 1 ⋄ d.quantile 1.01
@@ -99,5 +99,5 @@ d←•normal 0 1 ⋄ d.sample 1000001
 ⍝ error: LIMIT ERROR
 
 ⍝ distribution:integer-limit — Trial count is checked before floating-point rounding
-•binomial 9007199254740993x 1
+•binomial 9007199254740993ₓ 1
 ⍝ error: LIMIT ERROR

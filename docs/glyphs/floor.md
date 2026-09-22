@@ -4,7 +4,7 @@
 
 ```apl
 ⌊1.8 ¯1.8         ⍝ 1 ¯2
-⌊3r2              ⍝ 1x
+⌊3r2              ⍝ 1ₓ
 ```
 
 Complex floor uses APL's Gaussian-integer rule.

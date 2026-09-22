@@ -4,14 +4,14 @@
 
 ```apl
 ⊤5                ⍝ 1 0 1
-⊤2x 5x            ⍝ 3 2⍴0x 1x 1x 0x 0x 1x
+⊤2x 5x            ⍝ 3 2⍴0ₓ 1ₓ 1ₓ 0ₓ 0ₓ 1ₓ
 ```
 
 `B⊤Y` represents numbers in bases `B`. A zero base retains the remaining quotient.
 
 ```apl
 2 2 2 2⊤10         ⍝ 1 0 1 0
-0x 60x 60x⊤3661x   ⍝ 1x 1x 1x
+0x 60x 60x⊤3661x   ⍝ 1ₓ 1ₓ 1ₓ
 ```
 
 Atomic `B` gives residues. Arrays supply the result axes `(⍴B),⍴Y`. Exact operands retain exact arithmetic.

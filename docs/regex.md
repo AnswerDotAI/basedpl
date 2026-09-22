@@ -5,8 +5,8 @@
 ```apl
 p←•r '[0-9]+'
 p.match 'abc123def45'       ⍝ ('123' ⋄ '45')
-p.position 'abc123def45'    ⍝ 4x 10x
-p.length 'abc123def45'      ⍝ 3x 2x
+p.position 'abc123def45'    ⍝ 4ₓ 10ₓ
+p.length 'abc123def45'      ⍝ 3ₓ 2ₓ
 '#' p.replace 'abc123def45' ⍝ 'abc#def#'
 ```
 
@@ -14,8 +14,8 @@ Search returns a vector, including zero or one match. Matches are non-overlappin
 
 ```apl
 p←•r 'é|🐈+'
-p.position 'aé🐈🐈z'   ⍝ 2x 3x
-p.length 'aé🐈🐈z'     ⍝ 1x 2x
+p.position 'aé🐈🐈z'   ⍝ 2ₓ 3ₓ
+p.length 'aé🐈🐈z'     ⍝ 1ₓ 2ₓ
 p.match 'abc'         ⍝ 0⍴⊂''
 ```
 
@@ -37,14 +37,14 @@ Put flags in the pattern: `(?i)` ignores case, `(?m)` gives line anchors, `(?s)`
 
 ```apl
 p←•r '(?i)cat'
-(≢∘p.match)¨'Cat cat' 'dog'   ⍝ 2x 0x
+(≢∘p.match)¨'Cat cat' 'dog'   ⍝ 2ₓ 0ₓ
 ```
 
 Empty matches occur at character boundaries.
 
 ```apl
 p←•r ''
-p.position 'é🐈'     ⍝ 1x 2x 3x
+p.position 'é🐈'     ⍝ 1ₓ 2ₓ 3ₓ
 '-' p.replace 'é🐈'  ⍝ '-é-🐈-'
 ```
 

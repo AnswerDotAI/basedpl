@@ -11,7 +11,7 @@ def test_native_calls_and_explicit_output():
         s['x'] = a
         r = s.eval('⎕←x ⋄ x')
         np.testing.assert_array_equal(r.value, a)
-        assert r.output == ['1r3 2x']
+        assert r.output == ['1r3 2ₓ']
         assert s('1 ⋄ ⎕←2 ⋄ 3').py == 3
         assert s.eval('1 ⋄ ⎕←2 ⋄ 3').output == ['2']
     with Session() as s: assert s('+/x', x=a).py == Fraction(7, 3)
@@ -41,8 +41,8 @@ def test_bindings_functions_and_output(capsys):
         assert apl('1 ⋄ ⎕←2 ⋄ ⍎\'3 ⋄ ⎕←4 ⋄ 5\'').py == 5
         assert capsys.readouterr().out == '2\n4\n'
         r = apl.eval('⎕←x ⋄ x+1x', x=9)
-        assert r.value.py == 10 and r.output == ['9x'] and capsys.readouterr().out == ''
-        assert apl.fn('{⎕←⍵}')(3).py == 3 and capsys.readouterr().out == '3x\n'
+        assert r.value.py == 10 and r.output == ['9ₓ'] and capsys.readouterr().out == ''
+        assert apl.fn('{⎕←⍵}')(3).py == 3 and capsys.readouterr().out == '3ₓ\n'
         assert apl.eval(']Display 1 2').output and capsys.readouterr().out == ''
         with pytest.raises(TypeError): f()
         with pytest.raises(TypeError): f(1, 2, 3)
@@ -103,8 +103,8 @@ def test_exact_nested_and_character_values():
         np.testing.assert_array_equal(boxed.np.item(), [1, 2])
         assert apl("0 3⍴''").shape == (0, 3) and apl('0⍴⊂1 2').np.dtype == object
         assert apl('x', x=[[], []]).shape == (2, 0)
-        assert type(apl('1J2×1J¯2').py) is float and apl('+1J2').py == 1-2j
-        assert apl('0/1J2').np.dtype == np.float64
+        assert type(apl('1j2×1j¯2').py) is float and apl('+1j2').py == 1-2j
+        assert apl('0/1j2').np.dtype == np.float64
         empty = apl('0⍴⊂2 3⍴1x')
         assert apl('x≡0⍴⊂2 3⍴1x', x=empty).py == 1
         assert Array(a := [1, 2]).shape == (2,)
@@ -118,9 +118,9 @@ def test_errors_capture_output_and_recover(capsys):
         for call in [apl, apl.eval]:
             with pytest.raises(AplError) as caught: call('x←7 ⋄ ⎕←1x ⋄ 1÷0')
             e = caught.value
-            assert e.kind == 'DOMAIN ERROR' and e.output == ['1x'] and '÷' in e.source and len(e.span) == 2
+            assert e.kind == 'DOMAIN ERROR' and e.output == ['1ₓ'] and '÷' in e.source and len(e.span) == 2
             assert ' --> <input>:1:' in str(e)
-            assert capsys.readouterr().out == ('1x\n' if call is apl else '')
+            assert capsys.readouterr().out == ('1ₓ\n' if call is apl else '')
             assert apl('x+1').py == 8
         definition = 'bad←{1÷⍵}'
         apl(definition)
@@ -191,7 +191,7 @@ def test_installed_command(tmp_path):
 
 
 def test_installed_json_command():
-    codes = ['v←9007199254740993x 0.5 1r3', 'v', '0/1r3', '1r0', '1r3+1r6', '2x*100x', '1J2 3J4']
+    codes = ['v←9007199254740993x 0.5 1r3', 'v', '0/1r3', '1r0', '1r3+1r6', '2x*100x', '1j2 3j4']
     res = subprocess.run(['bapl', '--json'], input='\n'.join(json.dumps(c) for c in codes)+'\n', capture_output=True, text=True, timeout=10)
     assert res.returncode == 0 and not res.stderr
     replies = [json.loads(line) for line in res.stdout.splitlines()]

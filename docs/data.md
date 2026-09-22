@@ -46,7 +46,7 @@ Byte vectors use ordinary compact integer storage. RANK: output is not a vector.
 
 ```apl
 valid nums←•vfi '12 nope -3 1.5'
-valid                      ⍝ 1x 0x 1x 1x
+valid                      ⍝ 1ₓ 0ₓ 1ₓ 1ₓ
 nums                       ⍝ 12 0 ¯3 1.5
 valid/nums                 ⍝ 12 ¯3 1.5
 ```
@@ -54,14 +54,14 @@ valid/nums                 ⍝ 12 ¯3 1.5
 Numbers retain their literal domains: ordinary spelling is approximate; `x` and `r` are exact. Complex `j`/`J`, infinity, ASCII signs and signed exponents are accepted. `inf`/`infinity` also denote infinity. NaN and invalid numbers produce flag `0x`.
 
 ```apl
-2⊃•vfi '2 3x 1r4 1j-2 -1e-3 ∞'   ⍝ 2 3x 1r4 1j¯2 ¯0.001 ∞
+2⊃•vfi '2 3x 1r4 1j-2 -1e-3 ∞'   ⍝ 2 3ₓ 1r4 1j¯2 ¯0.001 ∞
 ```
 
 `separators •vfi text` splits on any supplied character and trims surrounding whitespace. Empty fields are valid zero. Internal whitespace remains part of the field.
 
 ```apl
-',' •vfi '3.9,2.4,,76,'   ⍝ ((5⍴1x) ⋄ 3.9 2.4 0 76 0)
-'⋄' •vfi '1 ⋄ 2 3 ⋄ 4'   ⍝ (1x 0x 1x ⋄ 1 0 4)
+',' •vfi '3.9,2.4,,76,'   ⍝ ((5⍴1ₓ) ⋄ 3.9 2.4 0 76 0)
+'⋄' •vfi '1 ⋄ 2 3 ⋄ 4'   ⍝ (1ₓ 0ₓ 1ₓ ⋄ 1 0 4)
 ```
 
 Empty input returns two empty vectors. With no separator characters (`''` on the left), nonempty input is one field. DOMAIN: either argument is not character text.
@@ -73,7 +73,7 @@ Empty input returns two empty vectors. With no separator characters (`''` on the
 ```apl
 person←•json '{"name":"Ann","scores":[10,20]}'
 'name'⊃person              ⍝ 'Ann'
-'scores'⊃person            ⍝ 10x 20x
+'scores'⊃person            ⍝ 10ₓ 20ₓ
 ```
 
 `Y •json ''` exports. Keyed axes form objects; unkeyed axes form arrays. Character vectors form strings, and scalar arrays export their contents. Axis names and empty-array prototypes are omitted.
@@ -94,8 +94,8 @@ Integer tokens remain exact, including large integers. Decimal/exponent tokens b
 JSON `null` becomes `∞` by default. Set `fill` to choose another numeric sentinel. On export, an explicitly supplied `fill` becomes `null` wherever it occurs.
 
 ```apl
-•json '[1,null,3]'                         ⍝ 1x ∞ 3x
-•json 'source' 'fill':('[1,null,3]' ⋄ ¯1x)   ⍝ 1x ¯1x 3x
+•json '[1,null,3]'                         ⍝ 1ₓ ∞ 3ₓ
+•json 'source' 'fill':('[1,null,3]' ⋄ ¯1x)   ⍝ 1ₓ ¯1ₓ 3ₓ
 (1x ∞ 3x) •json 'fill':∞                    ⍝ '[1,null,3]'
 ```
 
@@ -114,16 +114,16 @@ Malformed JSON gives DOMAIN with line/column details. Out-of-range floats, nonin
 nl←•ucs 10
 text←'price,qty',nl,'10.5,2',nl,'20.0,4'
 T←•csv text
-T                         ⍝ 'price' 'qty':(10.5 20 ⋄ 2x 4x)
-'qty'⊃T                   ⍝ 2x 4x
-+/¨T                      ⍝ 'price' 'qty':30.5 6x
+T                         ⍝ 'price' 'qty':(10.5 20 ⋄ 2ₓ 4ₓ)
+'qty'⊃T                   ⍝ 2ₓ 4ₓ
++/¨T                      ⍝ 'price' 'qty':30.5 6ₓ
 ```
 
 `T •csv ''` writes CSV text. Column lengths must agree. Keys supply the header. Unkeyed input writes data alone.
 
 ```apl
 T←'price' 'qty':(10.5 20 ⋄ 2x 4x)
-•csv T •csv ''            ⍝ 'price' 'qty':(10.5 20 ⋄ 2x 4x)
+•csv T •csv ''            ⍝ 'price' 'qty':(10.5 20 ⋄ 2ₓ 4ₓ)
 ```
 
 ### CSV options
@@ -134,7 +134,7 @@ Pass a keyed vector. Import includes `source`; export takes the table on the lef
 nl←•ucs 10
 text←'price;qty',nl,'10,5;2',nl,'20,0;4'
 T←•csv 'source' 'separator' 'decimal':(text ⋄ ';' ⋄ ',')
-T                         ⍝ 'price' 'qty':(10.5 20 ⋄ 2x 4x)
+T                         ⍝ 'price' 'qty':(10.5 20 ⋄ 2ₓ 4ₓ)
 csv←T •csv 'separator' 'decimal':(';' ⋄ ',')
 •csv 'source' 'separator' 'decimal':(csv ⋄ ';' ⋄ ',')
 ```
@@ -174,7 +174,7 @@ Inference examines a whole column, ignoring missing cells. Integer fields produc
 ```apl
 nl←•ucs 10
 T←•csv 'count,label',nl,'2,001',nl,'3,yes'
-'count'⊃T                 ⍝ 2x 3x
+'count'⊃T                 ⍝ 2ₓ 3ₓ
 'label'⊃T                 ⍝ '001' 'yes'
 ```
 
@@ -186,14 +186,14 @@ Missing numeric cells become `∞`. Missing text cells become `''`. Entirely mis
 nl←•ucs 10
 T←•csv 'price,qty',nl,'10.5,2',nl,',4'
 'price'⊃T                 ⍝ 10.5 ∞
-'qty'⊃T                   ⍝ 2x 4x
+'qty'⊃T                   ⍝ 2ₓ 4ₓ
 ```
 
 Configure extra missing markers and numeric fill explicitly.
 
 ```apl
 text←'qty',(•ucs 10),'NA',(•ucs 10),'4'
-•csv 'source' 'missing' 'fill':(text ⋄ 'NA' ⋄ ¯1x)   ⍝ 'qty':¯1x 4x
+•csv 'source' 'missing' 'fill':(text ⋄ 'NA' ⋄ ¯1x)   ⍝ 'qty':¯1ₓ 4ₓ
 ```
 
 Export uses `-` for negative numbers, decimal/scientific float spelling and plain exact integers. Infinity writes as `inf` or `-inf`. Set `fill` to export a chosen numeric sentinel as an empty field. Nonintegral rationals, complex numbers, functions and nested nonstring cells give DOMAIN.

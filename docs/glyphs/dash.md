@@ -16,7 +16,7 @@ Characters shift by code point. Character differences are exact integers.
 
 ```apl
 'd'-3             ⍝ 'a'
-'d'-'a'           ⍝ 3x
+'d'-'a'           ⍝ 3ₓ
 ```
 
 [`¯`](overbar.md) marks negative literals.

@@ -3,9 +3,9 @@
 `⨸N`: sorted prime factors, with multiplicity. J's `q:` family. Positive integral input; exact integer results.
 
 ```apl
-⨸700                 ⍝ 2x 2x 5x 5x 7x
-⨸1                   ⍝ 0⍴0x
-⨸⍣¯1⊢⨸700           ⍝ 700x
+⨸700                 ⍝ 2ₓ 2ₓ 5ₓ 5ₓ 7ₓ
+⨸1                   ⍝ 0⍴0ₓ
+⨸⍣¯1⊢⨸700           ⍝ 700ₓ
 ```
 
 Inverse: product. `K⨸N` selects exponents or a factor table.
@@ -18,12 +18,12 @@ Inverse: product. `K⨸N` selects exponents or a factor table.
 | `¯∞` | Complete two-row factor/exponent table |
 
 ```apl
-2⨸700                ⍝ 2x 0x
-∞⨸700                ⍝ 2x 0x 2x 1x
-¯2⨸700               ⍝ 2 2⍴5x 7x 2x 1x
-¯∞⨸700               ⍝ 2 3⍴2x 5x 7x 2x 2x 1x
-0⨸700                ⍝ 0⍴0x
-¯∞⨸1                 ⍝ 2 0⍴0x
+2⨸700                ⍝ 2ₓ 0ₓ
+∞⨸700                ⍝ 2ₓ 0ₓ 2ₓ 1ₓ
+¯2⨸700               ⍝ 2 2⍴5ₓ 7ₓ 2ₓ 1ₓ
+¯∞⨸700               ⍝ 2 3⍴2ₓ 5ₓ 7ₓ 2ₓ 2ₓ 1ₓ
+0⨸700                ⍝ 0⍴0ₓ
+¯∞⨸1                 ⍝ 2 0⍴0ₓ
 ```
 
 Scalar cells; results assemble with fill. Large factors follow [Prime's](prime.md) probable-prime policy.

@@ -12,8 +12,8 @@
 ```apl
 M←'city' 'month':[0]2 3⍴⍳6
 ⍳[0]M              ⍝ 'city' 'month'
-⍳[0]('city' ⋄ 2):[0]M ⍝ ('city' ⋄ 2x)
-⍳[0](:[0]M)        ⍝ 1x 2x
+⍳[0]('city' ⋄ 2):[0]M ⍝ ('city' ⋄ 2ₓ)
+⍳[0](:[0]M)        ⍝ 1ₓ 2ₓ
 ```
 
 A keyed `K` supplies axis names and position keys together.
