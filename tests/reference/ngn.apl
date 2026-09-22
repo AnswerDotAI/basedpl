@@ -377,8 +377,7 @@ a←' this is a test '⋄(a≠' ')⊂a
 ⍟123j456   ⍝ 6.157609243895447j1.307329785759979
 
 ⍝ ngn:122 —
-12⍟34 ¯34
-1.419111870829036 1.419111870829036j1.26426988871305
+12⍟34 ¯34   ⍝ 1.419111870829036 1.419111870829036j1.26426988871305
 
 ⍝ ngn:123 —
 ¯12⍟¯34   ⍝ 1.161297476399478j¯0.2039235425372641
@@ -463,8 +462,7 @@ M←2 3⍴1 2 3 4 5 6⋄+\[1]M   ⍝ 2 3⍴1 2 3 5 7 9
 T←'ONE(TWO) BOOK(S)'⋄≠\T∊'()'   ⍝ 0 0 0 1 1 1 1 0 0 0 0 0 0 1 1 0
 
 ⍝ ngn:150 —
-T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T
-'ONE BOOK'
+T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 
 ⍝ ngn:151 —
 1 0 1\'ab'   ⍝ 'a b'
@@ -524,8 +522,7 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T
 ¯9○2 2j3   ⍝ 2 2j3
 
 ⍝ ngn:168 —
-¯8○2 2j3
-0j¯2.23606797749979 ¯2.885230548905366j2.079556520111141
+¯8○2 2j3   ⍝ 0j¯2.23606797749979 ¯2.885230548905366j2.079556520111141
 
 ⍝ ngn:169 —
 ¯7○0.5 2 2j3
@@ -536,8 +533,7 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T
 0j1.047197551196598 1.316957896924817 1.983387029916535j1.000143542473797
 
 ⍝ ngn:171 —
-¯5○2 2j3
-1.44363547517881 1.968637925793096j0.9646585044076028
+¯5○2 2j3   ⍝ 1.44363547517881 1.968637925793096j0.9646585044076028
 
 ⍝ ngn:172 —
 ¯4○2 0 ¯2 2j3
@@ -563,36 +559,29 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T
 1e¯10>|.5-1○π÷6   ⍝ 1
 
 ⍝ ngn:178 —
-1○1 2j3
-0.8414709848078965 9.15449914691143j¯4.168906959966565
+1○1 2j3   ⍝ 0.8414709848078965 9.15449914691143j¯4.168906959966565
 
 ⍝ ngn:179 —
-2○1 2j3
-0.5403023058681398 ¯4.189625690968807j¯9.109227893755337
+2○1 2j3   ⍝ 0.5403023058681398 ¯4.189625690968807j¯9.109227893755337
 
 ⍝ ngn:180 —
-3○1 2j3
-1.557407724654902 ¯0.003764025641504152j1.00323862735361
+3○1 2j3   ⍝ 1.557407724654902 ¯0.003764025641504152j1.00323862735361
 
 ⍝ ngn:181 —
-4○2 2j3
-2.23606797749979 2.079556520111141j2.885230548905366
+4○2 2j3   ⍝ 2.23606797749979 2.079556520111141j2.885230548905366
 
 ⍝ ngn:182 —
-5○2 2j3
-3.626860407847019 ¯3.590564589985779j0.5309210862485197
+5○2 2j3   ⍝ 3.626860407847019 ¯3.590564589985779j0.5309210862485197
 
 ⍝ ngn:183 —
-6○2 2j3
-3.762195691083631 ¯3.724545504915322j0.5118225699873845
+6○2 2j3   ⍝ 3.762195691083631 ¯3.724545504915322j0.5118225699873845
 
 ⍝ ngn:184 —
 7○2 2j3
 0.9640275800758169 0.9653858790221331j¯0.009884375038322494
 
 ⍝ ngn:185 —
-8○2 2j3
-0j2.23606797749979 2.885230548905366j¯2.079556520111141
+8○2 2j3   ⍝ 0j2.23606797749979 2.885230548905366j¯2.079556520111141
 
 ⍝ ngn:186 —
 9○2 2j3   ⍝ 2 2
@@ -701,7 +690,8 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T
 3=2 3⍴1 2 3 4 5 6   ⍝ 2 3⍴0 0 1 0 0 0
 
 ⍝ ngn:220 —
-3=(2 3⍴1 2 3 4 5 6⋄ 2 3⍴3 3 3 5 5 5)   ⍝ (2 3⍴0 0 1 0 0 0 ⋄ 2 3⍴1 1 1 0 0 0)
+3=(2 3⍴1 2 3 4 5 6⋄ 2 3⍴3 3 3 5 5 5)
+(2 3⍴0 0 1 0 0 0 ⋄ 2 3⍴1 1 1 0 0 0)
 
 ⍝ ngn:221 —
 3≢5   ⍝ 1
@@ -1041,7 +1031,8 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T
 ⍴∊(1 2 3)'ab'(4 5 6)   ⍝ 1⍴8
 
 ⍝ ngn:330 —
-∊2 2⍴(1+2 2⍴⍳4)'ab'(1+2 3⍴⍳6)(7 8)   ⍝ 2 3 4 5 'a' 'b' 2 3 4 5 6 7 7 8
+∊2 2⍴(1+2 2⍴⍳4)'ab'(1+2 3⍴⍳6)(7 8)
+2 3 4 5 'a' 'b' 2 3 4 5 6 7 7 8
 
 ⍝ ngn:331 —
 !0 5 21   ⍝ 1 120 5.109094217170944e19
@@ -1228,8 +1219,7 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T
 1(+,-,×,÷)2   ⍝ 3 ¯1 2 0.5
 
 ⍝ ngn:388 — ordinary identifier for quadratic-root helper
-a←1⋄b←¯22⋄c←85⋄sqrt←{⍵*.5}⋄((-b)(+,-)sqrt(b*2)-4×a×c)÷2×a
-17 5
+a←1⋄b←¯22⋄c←85⋄sqrt←{⍵*.5}⋄((-b)(+,-)sqrt(b*2)-4×a×c)÷2×a   ⍝ 17 5
 
 ⍝ ngn:389 —
 ⍕123   ⍝ '123'
@@ -1324,7 +1314,8 @@ a←6 4⍴'ABLEaBLEACREABELaBELACES'⋄a[('AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrS
 6 4⍴'ABELABLEACESACREaBELaBLE'
 
 ⍝ ngn:418 —
-⍋0 1 2 3 4 3 6 6 4 9 1 11 12 13 14 15   ⍝ 1 2 11 3 4 6 5 9 7 8 10 12 13 14 15 16
+⍋0 1 2 3 4 3 6 6 4 9 1 11 12 13 14 15
+1 2 11 3 4 6 5 9 7 8 10 12 13 14 15 16
 
 ⍝ ngn:419 —
 ⍒3 1 8   ⍝ 3 1 2
@@ -1859,29 +1850,25 @@ m←45 60 33 50 66 19⋄(m=50)/⍳≢m   ⍝ 1⍴4
 [2 3⍴3 1 4 1 2 3]⌷111 222 333 444   ⍝ 2 3⍴333 111 444 111 222 333
 
 ⍝ ngn:601 —
-2 1   ⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34
-21
+2 1   ⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34   ⍝ 21
 
 ⍝ ngn:602 —
 3⌷111 222 333 444   ⍝ 333
 
 ⍝ ngn:603 —
-2     ⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34
-21 22 23 24
+2     ⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34   ⍝ 21 22 23 24
 
 ⍝ ngn:604 —
 [4 3]⌷111 222 333 444   ⍝ 444 333
 
 ⍝ ngn:605 —
-3(2 1)⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34
-32 31
+3(2 1)⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34   ⍝ 32 31
 
 ⍝ ngn:606 —
 a←2 2⍴0⋄a[;1]←1⋄a   ⍝ 2 2⍴1 0 1 0
 
 ⍝ ngn:607 —
-(2 3)1⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34
-21 31
+(2 3)1⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34   ⍝ 21 31
 
 ⍝ ngn:608 —
 a←2 3⍴0⋄a[2;1 3]←1⋄a   ⍝ 2 3⍴0 0 0 1 0 1
@@ -2285,12 +2272,10 @@ f←{⍺+2×⍵} ⋄ g←{789 f/⍵} ⋄ f/⍬
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:683 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Replace ngn ambivalent pairing with a dop using lazy default-left valence dispatch
-Amb←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍵ ⋄ ⍺ ⍹ ⍵} ⋄ ({1}Amb{2})0
-1
+Amb←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍵ ⋄ ⍺ ⍹ ⍵} ⋄ ({1}Amb{2})0   ⍝ 1
 
 ⍝ ngn:684 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Replace ngn ambivalent pairing with a dop using lazy default-left valence dispatch
-Amb←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍵ ⋄ ⍺ ⍹ ⍵} ⋄ 0({1}Amb{2})0
-2
+Amb←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍵ ⋄ ⍺ ⍹ ⍵} ⋄ 0({1}Amb{2})0   ⍝ 2
 
 ⍝ ngn:690 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Call the circumference/area functions explicitly; π replaces the old circle monad; Both observe the updated radius
 r←3 ⋄ c←{2×πr} ⋄ S←{πr*2} ⋄ bef←.01×⌊100×r(c 0)(S 0) ⋄ r←r+1 ⋄ aft←.01×⌊100×r(c 0)(S 0) ⋄ bef aft
@@ -2304,11 +2289,11 @@ Twice←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍶ ⍵ ⋄ ⍺ ⍶ ⍺ ⍶ ⍵} ⋄ *T
 1618.1779919126539
 
 ⍝ ngn:708 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
-Twice←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍶ ⍵ ⋄ ⍺ ⍶ ⍺ ⍶ ⍵} ⋄ 3*Twice 2
-19683
+Twice←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍶ ⍵ ⋄ ⍺ ⍶ ⍺ ⍶ ⍵} ⋄ 3*Twice 2   ⍝ 19683
 
 ⍝ ngn:709 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
 H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ +H÷2   ⍝ 2.5
 
 ⍝ ngn:710 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
 H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ 7+H÷2   ⍝ 7.5
+

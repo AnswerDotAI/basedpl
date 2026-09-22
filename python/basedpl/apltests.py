@@ -97,7 +97,7 @@ def render(cases):
         comment = case.comment + (f' [{options}]' if options else '')
         header = '⍝ ' + (case.id+' ' if case.id else '') + '—' + (f' {comment.lstrip()}' if comment else '')
         separator = f'\n{SEPARATOR}\n' if '\n' in case.code or '\n' in case.expect else '\n'
-        if (separator=='\n' and len(case.code)<40 and len(case.expect)<40 and case.output is None
+        if (separator=='\n' and len(case.code)+len(case.expect)+5<70 and case.output is None
             and case.code==case.code.rstrip() and case.expect==case.expect.lstrip()
             and not case.expect.startswith('⍝') and _comment(case.code) is None): separator = '   ⍝ '
         output = '' if case.output is None else '\n'+OUTPUT+(' '+case.output.replace('\\', '\\\\').replace('\n', '\\n') if case.output else '')

@@ -147,6 +147,32 @@ V←'aa' 'bb' 'cc':1 2 1
 {⊂⍵}⌸V                     ⍝ (('aa' 'cc') ⋄ ,⊂'bb')
 ```
 
+## Named axes
+
+An axis name identifies a dimension: `city`. Its keys identify positions: `Paris London`. Names are unique within an array.
+
+```apl
+M←'city' 'month':[0]2 3⍴⍳6
+⍳[0]M                         ⍝ 'city' 'month'
++/['month']M                   ⍝ 'city':[0]6 15
+```
+
+Axis `0` refers to the list of axes. `N:[0]M` supplies one name per axis; use an axis's own index to leave it unnamed. `:[0]M` removes names. These return new values sharing the element buffer. Assign with `M←…` to store the result.
+
+```apl
+M←'city' 'month':[0]2 3⍴⍳6
+⍳[0]('city' ⋄ 2):[0]M         ⍝ ('city' ⋄ 2x)
+⍳[0](:[0]M)                  ⍝ 1x 2x
+```
+
+Python's `Array(data, axis_names=('city', 'month'))` attaches names; `None` leaves an axis unnamed.
+
+Agreement first pairs equal names, wherever they occur. Remaining axes pair in leading-axis order. One named/one unnamed pair keeps the name. Two different names remain separate broadcast dimensions. Unpaired axes also broadcast. Result order is left axes, then right-only axes. Length agreement and position-key alignment follow as usual.
+
+Use names in function qualifiers: `+/['month']M`, `⊂['city']M`, `'Paris'⌷['city']M`. Array brackets still select positions: `M['Paris']` selects the Paris position on axis 1. Unknown axis: INDEX.
+
+Transpose moves names; reduction and scalar selection remove the affected axes. Repeating positions retains the axis name. Shape-changing reshape drops names. Merging/splitting axes drops names on replaced axes. When an operation duplicates a name, as in `V×⌝V`, every occurrence of that name becomes unnamed. Position keys remain.
+
 ## Python and JSON
 
 Python dicts become keyed vectors recursively. `Array(data, axis_keys=[rows, cols])` attaches labels to existing axes. Use `None` for an unkeyed axis.

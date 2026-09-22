@@ -336,7 +336,7 @@ impl Parser<'_> {
                 TokenKind::Guard(error) => {
                     if open.is_some_and(|o| matches!(o.kind, TokenKind::BraceOpen)) { NodeKind::Guard(*error) } else if !error { NodeKind::Function(Primitive::Keys) } else { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "error guards belong to dfns"))); }
                 }
-                TokenKind::Hybrid(h) => NodeKind::Hybrid(*h),
+                TokenKind::Hybrid(h) => NodeKind::Hybrid(h.clone()),
             };
             let mut node = Node { kind, span };
             if tied {

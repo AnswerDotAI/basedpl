@@ -17,7 +17,8 @@
 ⊃[0.5](1 2⋄ 3 4)   ⍝ 2 2⍴1 3 2 4
 
 ⍝ dyalog:assignment:indexed-modified —
-B←3 5⍴0 ⋄ B[1 1 3;1 3 3 5]+←1 ⋄ B   ⍝ 3 5⍴2 0 4 0 2 0 0 0 0 0 1 0 2 0 1
+B←3 5⍴0 ⋄ B[1 1 3;1 3 3 5]+←1 ⋄ B
+3 5⍴2 0 4 0 2 0 0 0 0 0 1 0 2 0 1
 
 ⍝ dyalog:assignment:selective —
 A←'HELLO' ⋄ ((A∊'AEIOU')/A)←'*' ⋄ A   ⍝ 'H*LL*'
@@ -86,8 +87,7 @@ a←3⍴0 ⋄ (5⍴a)+←1 ⋄ a   ⍝ 2 2 1
 1⍟1   ⍝ 1
 
 ⍝ dyalog:pi-times:1 —
-π0.5 1 2
-1.570796326794897 3.141592653589793 6.283185307179586
+π0.5 1 2   ⍝ 1.570796326794897 3.141592653589793 6.283185307179586
 
 ⍝ dyalog:circular-functions:1 —
 0 ¯1○1   ⍝ 0 1.570796326794897
@@ -209,8 +209,7 @@ A←2 4⍴'MAINEXIT' ⋄ A[⍳⍴A]   ⍝ 2 4⍴'MAINEXIT'
 'THIS NOUN'∊'THAT WORD'   ⍝ 1 1 0 0 1 0 1 0 0
 
 ⍝ dyalog:membership:2 —
-'CAT' 'DOG' 'MOUSE'∊'CAT' 'FOX' 'DOG' 'LLAMA'
-1 1 0
+'CAT' 'DOG' 'MOUSE'∊'CAT' 'FOX' 'DOG' 'LLAMA'   ⍝ 1 1 0
 
 ⍝ dyalog:find:1 —
 'AN'⍷'BANANA'   ⍝ 0 1 0 1 0 0
@@ -228,14 +227,14 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 ⍴⍨3   ⍝ 3 3 3
 
 ⍝ dyalog:each-monadic:1 — Inlined G
-⍴¨('TOM' (⍳3)⋄ 'DICK' (⍳4)⋄ 'HARRY' (⍳5))
-(1⍴2 ⋄ 1⍴2 ⋄ 1⍴2)
+⍴¨('TOM' (⍳3)⋄ 'DICK' (⍳4)⋄ 'HARRY' (⍳5))   ⍝ (1⍴2 ⋄ 1⍴2 ⋄ 1⍴2)
 
 ⍝ dyalog:each-dyadic:1 —
 'ABC',¨'XYZ'   ⍝ ('AX' ⋄ 'BY' ⋄ 'CZ')
 
 ⍝ dyalog:each-dyadic:2 — Inlined G
-1 2 3 4↑¨(1 (2 3))(4 (5 6))(8 9)10   ⍝ (1⍴1 ⋄ 4 (5 6) ⋄ 8 9 0 ⋄ 10 0 0 0)
+1 2 3 4↑¨(1 (2 3))(4 (5 6))(8 9)10
+(1⍴1 ⋄ 4 (5 6) ⋄ 8 9 0 ⋄ 10 0 0 0)
 
 ⍝ dyalog:reduce-n-wise:1 —
 +/3↕⍳4   ⍝ 6 9
@@ -326,8 +325,7 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 1 2 3+.×10 12 14   ⍝ 76
 
 ⍝ dyalog:outer-product:1 —
-1 2 3 ×⌝ 10 20 30 40
-3 4⍴10 20 30 40 20 40 60 80 30 60 90 120
+1 2 3 ×⌝ 10 20 30 40   ⍝ 3 4⍴10 20 30 40 20 40 60 80 30 60 90 120
 
 ⍝ dyalog:outer-product:2 —
 1 2 ,⌝ 1 2 3   ⍝ 2 3⍴(1 1 ⋄ 1 2 ⋄ 1 3 ⋄ 2 1 ⋄ 2 2 ⋄ 2 3)
@@ -348,8 +346,7 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 ⍒22.5 1 15 3 ¯4   ⍝ 1 3 4 2 5
 
 ⍝ dyalog:grade-up:matrix — Inline displayed M
-⍋3 2 3⍴2 3 5 1 4 7 2 3 4 5 2 4 2 3 5 1 2 6
-2 3 1
+⍋3 2 3⍴2 3 5 1 4 7 2 3 4 5 2 4 2 3 5 1 2 6   ⍝ 2 3 1
 
 ⍝ dyalog:grade-down:collation — Inline explanation's left and right matrices
 (2 3⍴'abcABA')⍒4 2⍴'abacAaAc'   ⍝ 4 2 1 3
@@ -393,8 +390,7 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 ⌹2 2⍴2 ¯3 4 10   ⍝ 2 2⍴0.3125 0.09375 ¯0.125 0.0625
 
 ⍝ dyalog:matrix-inverse:2 —
-⌹1j1 2
-0.1666666666666667j¯0.1666666666666667 0.3333333333333333
+⌹1j1 2   ⍝ 0.1666666666666667j¯0.1666666666666667 0.3333333333333333
 
 ⍝ dyalog:matrix-divide:1 —
 3 5 7⌹3 2⍴1 1 1 2 1 3   ⍝ 1 2

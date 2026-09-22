@@ -172,8 +172,7 @@
 ≠2 4 7 4 6 8 3 5 2 4 2 5 6 7   ⍝ 1 1 1 0 1 1 1 1 0 0 0 0 0 0
 
 ⍝ april:578 —
-≠'ONE' 'TWO' 'ONE' 'THREE' 'TWO' 'THREE'
-1 1 0 1 0 0
+≠'ONE' 'TWO' 'ONE' 'THREE' 'TWO' 'THREE'   ⍝ 1 1 0 1 0 0
 
 ⍝ april:580 —
 3≠1 2 3 4 5   ⍝ 1 1 0 1 1
@@ -296,8 +295,7 @@
 3⍴3   ⍝ 3 3 3
 
 ⍝ april:652 —
-4 5⍴⍳3
-4 5⍴1 2 3 1 2 3 1 2 3 1 2 3 1 2 3 1 2 3 1 2
+4 5⍴⍳3   ⍝ 4 5⍴1 2 3 1 2 3 1 2 3 1 2 3 1 2 3 1 2 3 1 2
 
 ⍝ april:653 —
 ⍬⍴5   ⍝ ⊂5
@@ -309,8 +307,7 @@
 ⍬⍴(4 5) 6   ⍝ ⊂(4 5)
 
 ⍝ april:656 —
-3⍴0⍴⊂2 2⍴5
-(2 2⍴0 0 0 0 ⋄ 2 2⍴0 0 0 0 ⋄ 2 2⍴0 0 0 0)
+3⍴0⍴⊂2 2⍴5   ⍝ (2 2⍴0 0 0 0 ⋄ 2 2⍴0 0 0 0 ⋄ 2 2⍴0 0 0 0)
 
 ⍝ april:657 —
 2 2⍴0⍴3⍴⊂2 3⍴5
@@ -465,8 +462,7 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 ⍸3=2 3 4⍴⍳9   ⍝ (1 1 3 ⋄ 1 3 4 ⋄ 2 3 1)
 
 ⍝ april:738 —
-⍸(2 3 4⍴⍳9)∊3 5
-(1 1 3 ⋄ 1 2 1 ⋄ 1 3 4 ⋄ 2 1 2 ⋄ 2 3 1 ⋄ 2 3 3)
+⍸(2 3 4⍴⍳9)∊3 5   ⍝ (1 1 3 ⋄ 1 2 1 ⋄ 1 3 4 ⋄ 2 1 2 ⋄ 2 3 1 ⋄ 2 3 3)
 
 ⍝ april:739 —
 ⍸1 2 3   ⍝ 1 2 2 3 3 3
@@ -511,12 +507,10 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 ,[2.5]3 4⍴⍳9   ⍝ 3 4 1⍴1 2 3 4 5 6 7 8 9 1 2 3
 
 ⍝ april:763 —
-,[1 2]2 3 3⍴⍳12
-6 3⍴1 2 3 4 5 6 7 8 9 10 11 12 1 2 3 4 5 6
+,[1 2]2 3 3⍴⍳12   ⍝ 6 3⍴1 2 3 4 5 6 7 8 9 10 11 12 1 2 3 4 5 6
 
 ⍝ april:764 —
-,[2 3]2 3 3⍴⍳12
-2 9⍴1 2 3 4 5 6 7 8 9 10 11 12 1 2 3 4 5 6
+,[2 3]2 3 3⍴⍳12   ⍝ 2 9⍴1 2 3 4 5 6 7 8 9 10 11 12 1 2 3 4 5 6
 
 ⍝ april:765 —
 ,[1 2 3]2 3 3⍴⍳12   ⍝ 1 2 3 4 5 6 7 8 9 10 11 12 1 2 3 4 5 6
@@ -855,8 +849,7 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 ⍴0 0↑3 4 5⍴5   ⍝ 0 0 5
 
 ⍝ april:940 —
-3↑0↑⊂2 3⍴5
-(2 3⍴0 0 0 0 0 0 ⋄ 2 3⍴0 0 0 0 0 0 ⋄ 2 3⍴0 0 0 0 0 0)
+3↑0↑⊂2 3⍴5   ⍝ (2 3⍴0 0 0 0 0 0 ⋄ 2 3⍴0 0 0 0 0 0 ⋄ 2 3⍴0 0 0 0 0 0)
 
 ⍝ april:941 —
 4↑0↑⊂2 2⍴(⊂2 2⍴⍳4) 2 3
@@ -879,8 +872,7 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 2 2 2↑1 0 2⍴⍳30   ⍝ 2 2 2⍴0 0 0 0 0 0 0 0
 
 ⍝ april:950 —
-5 5↑3 3⍴1
-5 5⍴1 1 1 0 0 1 1 1 0 0 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0
+5 5↑3 3⍴1   ⍝ 5 5⍴1 1 1 0 0 1 1 1 0 0 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0
 
 ⍝ april:951 —
 (¯5↑1),(,¯5)↑1   ⍝ 0 0 0 0 1 0 0 0 0 1
@@ -976,8 +968,7 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 2↓[3]2 3 4⍴⍳9   ⍝ 2 3 2⍴3 4 7 8 2 3 6 7 1 2 5 6
 
 ⍝ april:997 —
-2 2↓[2 3]3 4 5⍴⍳9
-3 2 3⍴4 5 6 9 1 2 6 7 8 2 3 4 8 9 1 4 5 6
+2 2↓[2 3]3 4 5⍴⍳9   ⍝ 3 2 3⍴4 5 6 9 1 2 6 7 8 2 3 4 8 9 1 4 5 6
 
 ⍝ april:998 —
 ¯2↓⍳9   ⍝ 1 2 3 4 5 6 7
@@ -1076,8 +1067,7 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 1⊂⍳5   ⍝ (1⍴1 ⋄ 1⍴2 ⋄ 1⍴3 ⋄ 1⍴4 ⋄ 1⍴5)
 
 ⍝ april:1048 —
-2⊂⍳5
-(⍬ ⋄ 1⍴1 ⋄ ⍬ ⋄ 1⍴2 ⋄ ⍬ ⋄ 1⍴3 ⋄ ⍬ ⋄ 1⍴4 ⋄ ⍬ ⋄ 1⍴5)
+2⊂⍳5   ⍝ (⍬ ⋄ 1⍴1 ⋄ ⍬ ⋄ 1⍴2 ⋄ ⍬ ⋄ 1⍴3 ⋄ ⍬ ⋄ 1⍴4 ⋄ ⍬ ⋄ 1⍴5)
 
 ⍝ april:1049 —
 0 1 0 0 1 1 0 0 0⊂⍳9   ⍝ (2 3 4 ⋄ 1⍴5 ⋄ 6 7 8 9)
@@ -1301,8 +1291,7 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 ⍉2   ⍝ 2
 
 ⍝ april:1189 —
-⍉2 3 4⍴⍳9
-4 3 2⍴1 4 5 8 9 3 2 5 6 9 1 4 3 6 7 1 2 5 4 7 8 2 3 6
+⍉2 3 4⍴⍳9   ⍝ 4 3 2⍴1 4 5 8 9 3 2 5 6 9 1 4 3 6 7 1 2 5 4 7 8 2 3 6
 
 ⍝ april:1192 —
 1⍉⍳3   ⍝ 1 2 3
@@ -1607,8 +1596,7 @@ st←'aodjeignwug' ⋄ st[⍒st]   ⍝ 'wuonjiggeda'
 2.144444444444446 8.211111111111114 5.088888888888887
 
 ⍝ april:1367 —
-(3 2⍴1 2 3 6 9 10)⌹3 3⍴1 0 0 1 1 0 1 1 1
-3 2⍴1 2 2 4 6 4
+(3 2⍴1 2 3 6 9 10)⌹3 3⍴1 0 0 1 1 0 1 1 1   ⍝ 3 2⍴1 2 2 4 6 4
 
 ⍝ april:1369 —
 5 1 4 2 8⌹1,⍪⍳5   ⍝ 1.9 0.7
@@ -1679,14 +1667,16 @@ st←'aodjeignwug' ⋄ st[⍒st]   ⍝ 'wuonjiggeda'
 1760 3 12⊥3 3⍴1 2 1 5 0 2 2 3 7   ⍝ 98 75 67
 
 ⍝ april:1401 —
-(3 3⍴1760 3 12)⊥3 3⍴2 2 5 1 4 9 6 6 7   ⍝ 3 3⍴90 126 295 90 126 295 90 126 295
+(3 3⍴1760 3 12)⊥3 3⍴2 2 5 1 4 9 6 6 7
+3 3⍴90 126 295 90 126 295 90 126 295
 
 ⍝ april:1402 —
 2⊥3 8⍴0 0 0 0 1 1 1 1 0 0 1 1 0 0 1 1 0 1 0 1 0 1 0 1
 0 1 2 3 4 5 6 7
 
 ⍝ april:1403 —
-(3/⍪5 8 12)⊥3 3⍴2 2 5 1 4 9 6 6 7   ⍝ 3 3⍴61 76 177 142 166 399 306 342 835
+(3/⍪5 8 12)⊥3 3⍴2 2 5 1 4 9 6 6 7
+3 3⍴61 76 177 142 166 399 306 342 835
 
 ⍝ april:1404 —
 (3/⍪⍳4)⊥3 8⍴0 0 0 0 1 1 1 1 0 0 1 1 0 0 1 1 0 1 0 1 0 1 0 1
@@ -1856,8 +1846,7 @@ g←÷ ⋄ g/⍬   ⍝ 1
 ∩/¨(1 0 0 ⋄ 1 1 0 1 0)⊂¨'abc' 'a|b|c'   ⍝ 'abc' ''
 
 ⍝ april:1525 —
-+/3↕⍳20
-6 9 12 15 18 21 24 27 30 33 36 39 42 45 48 51 54 57
++/3↕⍳20   ⍝ 6 9 12 15 18 21 24 27 30 33 36 39 42 45 48 51 54 57
 
 ⍝ april:1526 —
 ,/4↕⍳12
@@ -1994,7 +1983,8 @@ g←÷ ⋄ g/⍬   ⍝ 1
 (1 1 1⍴⊂1 1 1)↓¨⊂3 3 3⍴⍳27   ⍝ 1 1 1⍴⊂(2 2 2⍴14 15 17 18 23 24 26 27)
 
 ⍝ april:1606 —
-(1 0 0 ⋄ 1 1 0 1 0)⊂¨'abc' 'a|b|c'   ⍝ (1⍴⊂('abc') ⋄ (1⍴'a' ⋄ '|b' ⋄ '|c'))
+(1 0 0 ⋄ 1 1 0 1 0)⊂¨'abc' 'a|b|c'
+(1⍴⊂('abc') ⋄ (1⍴'a' ⋄ '|b' ⋄ '|c'))
 
 ⍝ april:1608 —
 ~∘3¨@2⊢(2 3 ⋄ 3 ⋄ 2 4 ⋄ 1 5 ⋄ 3)   ⍝ (2 3) (⍬) (2 4) (1 5) 3
@@ -2372,8 +2362,7 @@ fn←{⍺+⍵×12} ⋄ test←{0=3|⍵} ⋄ 4 fn@test ⍳12
 (0 0 1 2 3 ⋄ 1 2 3 4 5 ⋄ 3 4 5 6 7 ⋄ 5 6 7 8 9 ⋄ 7 8 9 0 0)
 
 ⍝ april:1792 —
-⊢∘⊂⌺2⍳8
-(1 2 ⋄ 2 3 ⋄ 3 4 ⋄ 4 5 ⋄ 5 6 ⋄ 6 7 ⋄ 7 8)
+⊢∘⊂⌺2⍳8   ⍝ (1 2 ⋄ 2 3 ⋄ 3 4 ⋄ 4 5 ⋄ 5 6 ⋄ 6 7 ⋄ 7 8)
 
 ⍝ april:1793 —
 ⊢∘⊂⌺4⍳8
@@ -2415,8 +2404,7 @@ fn←{⍺+⍵×12} ⋄ test←{0=3|⍵} ⋄ 4 fn@test ⍳12
 3 3 3⍴1 1 (3 3⍴0 0 0 0 1 2 0 4 5) 1 0 (3 3⍴0 0 0 1 2 3 4 5 6) 1 ¯1 (3 3⍴0 0 0 2 3 0 5 6 0) 0 1 (3 3⍴0 1 2 0 4 5 0 7 8) 0 0 (3 3⍴1 2 3 4 5 6 7 8 9) 0 ¯1 (3 3⍴2 3 0 5 6 0 8 9 0) ¯1 1 (3 3⍴0 4 5 0 7 8 0 0 0) ¯1 0 (3 3⍴4 5 6 7 8 9 0 0 0) ¯1 ¯1 (3 3⍴5 6 0 8 9 0 0 0 0)
 
 ⍝ april:1828 —
-+⌺(⍪6 2)⍳8
-4 6⍴2 2 3 4 5 6 1 2 3 4 5 6 3 4 5 6 7 8 3 4 5 6 ¯2 ¯2
++⌺(⍪6 2)⍳8   ⍝ 4 6⍴2 2 3 4 5 6 1 2 3 4 5 6 3 4 5 6 7 8 3 4 5 6 ¯2 ¯2
 
 ⍝ april:1829 —
 ,⌺5⊢⍳6
@@ -2571,7 +2559,8 @@ a←2 3⍴⍳9 ⋄ a[1;2]←20 ⋄ a   ⍝ 2 3⍴1 20 3 4 5 6
 a←⍳9 ⋄ a[3 6]←⊂9 8 ⋄ a   ⍝ 1 2 (9 8) 4 5 (9 8) 7 8 9
 
 ⍝ april:1929 — Assignment to copy of an array
-a←3 3⍴⍳9 ⋄ b←a ⋄ b[1;]←0 ⋄ a,b   ⍝ 3 6⍴1 2 3 0 0 0 4 5 6 4 5 6 7 8 9 7 8 9
+a←3 3⍴⍳9 ⋄ b←a ⋄ b[1;]←0 ⋄ a,b
+3 6⍴1 2 3 0 0 0 4 5 6 4 5 6 7 8 9 7 8 9
 
 ⍝ april:1935 — Strand assignment of variables without parentheses
 a b c←4 5 6 ⋄ a×b,c   ⍝ 20 24
@@ -2731,15 +2720,13 @@ x←6 8⍴⍳9 ⋄ ((30>+⌿x)/x)←6 4⍴10×⍳3 ⋄ x
 ('Kent' ⋄ 'Al*n' ⋄ 'Ry*n')
 
 ⍝ april:2029 — Selective assignment of string elements within string applied by [/ compress] function
-{A←'STELLAR' ⋄ ((A∊'AEIOU')/A)←⍵ ⋄ A} '*'
-'ST*LL*R'
+{A←'STELLAR' ⋄ ((A∊'AEIOU')/A)←⍵ ⋄ A} '*'   ⍝ 'ST*LL*R'
 
 ⍝ april:2031 — Multiple assignment with selective assignment in midstream
 a←⍳5 ⋄ b←(3⊃a)←30 ⋄ a b   ⍝ (1 2 30 4 5) 30
 
 ⍝ april:2033 — Selective assignment with [¨ each]-composed [↑ take] function
-{A←'RANDOM' 'CHANCE' ⋄ (2↑¨A)←⍵ ⋄ A} '*'
-('**NDOM' ⋄ '**ANCE')
+{A←'RANDOM' 'CHANCE' ⋄ (2↑¨A)←⍵ ⋄ A} '*'   ⍝ ('**NDOM' ⋄ '**ANCE')
 
 ⍝ april:2036 — Selective assignment with [¨ each]-composed [/ compress] function
 {A←'RANDOM' 'CHANCE' ⋄ ((A='A')/¨A)←⍵ ⋄ A} '*'
@@ -2769,7 +2756,8 @@ aa←3 ⋄ bob←{aa+←⍵ ⋄ aa} ⋄ bob 5   ⍝ 8
 y[⍋y←1 8 4 2]   ⍝ 1 2 4 8
 
 ⍝ april:2057 — Alias of [× multiply], [⍴ shape] and [⍳ index] functions
-,/{m←× ⋄ s←⍴ ⋄ i←⍳ ⋄ 5 m 2 3 s i ⍵}¨2 6   ⍝ 2 6⍴5 10 5 5 10 15 10 5 10 20 25 30
+,/{m←× ⋄ s←⍴ ⋄ i←⍳ ⋄ 5 m 2 3 s i ⍵}¨2 6
+2 6⍴5 10 5 5 10 15 10 5 10 20 25 30
 
 ⍝ april:2059 — Alias of [enclose ⊂] function with curried axes
 {ea←⊂[2] ⋄ ea ⍵} 2 3 4⍴⍳9
@@ -2795,19 +2783,16 @@ y[⍋y←1 8 4 2]   ⍝ 1 2 4 8
 {⊢⍤1(⊢⍤1)⍵}⍳3   ⍝ 1 2 3
 
 ⍝ april:2077 — Pivotal composition taking as right operand another pivotal composition with a value as right operand
-_if_ ← {(⍶⍣(⍹ ⍵))⍵} ⋄ ((+∘1) _if_ (>∘0))¨5 0 ¯5 9 ¯9
-6 0 ¯5 10 ¯9
+_if_ ← {(⍶⍣(⍹ ⍵))⍵} ⋄ ((+∘1) _if_ (>∘0))¨5 0 ¯5 9 ¯9   ⍝ 6 0 ¯5 10 ¯9
 
 ⍝ april:2079 — The above user-defined operator in a more compact expression; restore operator definition from preceding upstream example
-_if_←{(⍶⍣(⍹ ⍵))⍵} ⋄ (+∘1) _if_ (>∘0) 100
-101
+_if_←{(⍶⍣(⍹ ⍵))⍵} ⋄ (+∘1) _if_ (>∘0) 100   ⍝ 101
 
 ⍝ april:2081 — Multiple operator compositions in sequence
 1 0 {,¨+⌿×-⍵,.-⍺} 2 2⍴0 0 1 1   ⍝ (,1⋄ ,¯1)
 
 ⍝ april:2082 — Operator composition calling accumulating function
-{acm←⍬ ⋄ {acm,←↑,/⍵ ⋄ ⌽¯1↓⍵}⍣⍵⊢⍳⍵ ⋄ acm} 5
-⍬
+{acm←⍬ ⋄ {acm,←↑,/⍵ ⋄ ⌽¯1↓⍵}⍣⍵⊢⍳⍵ ⋄ acm} 5   ⍝ ⍬
 
 ⍝ april:2084 — Operator composition involving lexical variables within function
 {next←⊂2 4 7 9 ⋄ back←,/1+0×next ⋄ back@(,/next)⊢⍵} 1 0 0 1 0 2 0 1 2 0 2 3 1 2 0
@@ -2859,7 +2844,8 @@ of←{⍵+1} ⋄ ef←{⍵+2} ⋄ (of , ef) 5   ⍝ 6 7
 (1+-∘÷) 4   ⍝ 0.75
 
 ⍝ april:2110 — Five-element dyadic fork function train
-' ' (∊{⍺,⍵[,⍺],⍵}≠⊆⊢) ' one two  three'   ⍝ 1 ('one') ('one') ('two') ('three')
+' ' (∊{⍺,⍵[,⍺],⍵}≠⊆⊢) ' one two  three'
+1 ('one') ('one') ('two') ('three')
 
 ⍝ april:2112 — Five-element monadic fork function train including lateral and pivotal function compositions; Replace index-origin lookup with basedpl fixed origin one
 (⊢⌽⍨(-1)+⍳∘≢)5 5⍴⍳25
@@ -2889,8 +2875,7 @@ of←{⍵+1} ⋄ ef←{⍵+2} ⋄ (of , ef) 5   ⍝ 6 7
 3 3 7⍴4 5 5 5 5 5 5 4 5 5 5 5 5 5 4 5 5 5 5 5 5 4 5 5 5 5 5 5 4 5 5 5 5 5 5 4 5 5 5 5 5 5 4 5 5 5 5 5 5 4 5 5 5 5 5 5 4 5 5 5 5 5 5
 
 ⍝ april:2127 — Recursive function; Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-refn←{A←⍵-1 ⋄ A≥0:A,refn A ⋄ 0} ⋄ refn 5
-4 3 2 1 0 0
+refn←{A←⍵-1 ⋄ A≥0:A,refn A ⋄ 0} ⋄ refn 5   ⍝ 4 3 2 1 0 0
 
 ⍝ april:2128 — Lateral operator definition
 lop←{8 ⍶ 5×2+⍵} ⋄ × lop 5   ⍝ 280
@@ -2908,12 +2893,10 @@ pop←{(⍵ ⍹ ⍺) ⍶ (⍺ ⍹ ⍵)} ⋄ 2-pop≤⊢3   ⍝ ¯1
 pop←{(⍵ ⍹ ⍺) ⍶ (⍺ ⍹ ⍵)} ⋄ {2-pop≤⊢⍵} 3   ⍝ ¯1
 
 ⍝ april:2135 — Lateral recursive operator definition with reference to composed function; Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-rlop←{⍵<2000:⍵,∇ 3 ⍶ 2×2+⊃⍵ ⋄ ⍵} ⋄ × rlop 5
-5 42 264 1596 9588
+rlop←{⍵<2000:⍵,∇ 3 ⍶ 2×2+⊃⍵ ⋄ ⍵} ⋄ × rlop 5   ⍝ 5 42 264 1596 9588
 
 ⍝ april:2137 — Lateral recursive operator definition with self-reference; Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-rlop←{⍵<2000:⍵,⍶ ⍢ 3 ⍶ 2×2+⊃⍵ ⋄ ⍵} ⋄ × rlop 5
-5 42 264 1596 9588
+rlop←{⍵<2000:⍵,⍶ ⍢ 3 ⍶ 2×2+⊃⍵ ⋄ ⍵} ⋄ × rlop 5   ⍝ 5 42 264 1596 9588
 
 ⍝ april:2139 — Inline lateral operator
 × {8 ⍶ 5×2+⍵} 5   ⍝ 280
@@ -2979,8 +2962,7 @@ filter←{(⍶¨⍵)/⍵} ⋄ {2|⍵} filter ⍳20   ⍝ 1 3 5 7 9 11 13 15 17 1
 (⍳3) {q←{⍶+⍺×⍵} ⋄ ⍵(3 q)6⊣¨⍺} 5   ⍝ 33 33 33
 
 ⍝ april:2168 — More complex lateral operator use within function; Dyalog operand names (April aliases)
-{ ee←{⊃⍪/(⊂⍺),⍶,⊂⍵} ⋄ ⍵⊃↑{⊂⍺ ee⌿⍵}/9⍴⊂⍳9 } 22
-1
+{ ee←{⊃⍪/(⊂⍺),⍶,⊂⍵} ⋄ ⍵⊃↑{⊂⍺ ee⌿⍵}/9⍴⊂⍳9 } 22   ⍝ 1
 
 ⍝ april:2170 — Simplification of above lateral operator mechanic
 {,/⍵}/3⍴⊂⍳3   ⍝ 1 2 3
@@ -2990,33 +2972,30 @@ filter←{(⍶¨⍵)/⍵} ⋄ {2|⍵} filter ⍳20   ⍝ 1 3 5 7 9 11 13 15 17 1
 0.1111111111111111 0.125 0.14285714285714285 0.16666666666666666 0.2 0.25 0.3333333333333333 0.5 1
 
 ⍝ april:2174 — Pivotal inline operator containing variable function/value ⍺ assignment
-2 ↑{⍺←⊢ ⋄ b←⍵ ⋄ (⍺ ⍶ b)←⍹ ⍺ ⍶ b ⋄ b}⌽ ⍳3
-2 1 3
+2 ↑{⍺←⊢ ⋄ b←⍵ ⋄ (⍺ ⍶ b)←⍹ ⍺ ⍶ b ⋄ b}⌽ ⍳3   ⍝ 2 1 3
 
 ⍝ april:2176 — Lexically scoped function defined and used within defined lateral operator
 ,{op←⍶ ⋄ op{(⊂⍺ op↑⍬⍴⍵),⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵}⍳4
 (1 2 3 4) (2 3 4) (3 4) 4
 
 ⍝ april:2178 — As above with different left operand
-+{op←⍶ ⋄ op{(⊂⍺ op↑⍬⍴⍵),⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵}⍳4
-10 9 7 4
++{op←⍶ ⋄ op{(⊂⍺ op↑⍬⍴⍵),⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵}⍳4   ⍝ 10 9 7 4
 
 ⍝ april:2180 — Array processing function applied over nested array
 {((5=¯1↑⍵)+1)⊃¯1 (⊂⍵)}¨(⊂1 5),⍨3⍴⊂⍳4   ⍝ ¯1 ¯1 ¯1 (⊂(1 5))
 
 ⍝ april:2182 — Indexed element of above array
-{⍵,≡⍵}4⌷{((5=¯1↑⍵)+1)⊃¯1 (⊂⍵)}¨(⊂1 5),⍨3⍴⊂⍳4
-(1 5) 2
+{⍵,≡⍵}4⌷{((5=¯1↑⍵)+1)⊃¯1 (⊂⍵)}¨(⊂1 5),⍨3⍴⊂⍳4   ⍝ (1 5) 2
 
 ⍝ april:2184 — Basic guard
 {⍵=1:2⋄3}¨ 1 2 1 0 0 1 2 1   ⍝ 2 3 2 3 3 2 3 2
 
 ⍝ april:2185 — Guard with multiple successive clauses and clauses preceding guard
-{1+1 ⋄ 2+2 ⋄ ⍵=1:2⋄3⋄4⋄⍵=2:3⋄⍵=3:4⋄5}¨1 2 3
-2 2 2
+{1+1 ⋄ 2+2 ⋄ ⍵=1:2⋄3⋄4⋄⍵=2:3⋄⍵=3:4⋄5}¨1 2 3   ⍝ 2 2 2
 
 ⍝ april:2187 — Fibonacci sequence generated using [∇ self] within guard for self-reference within a function
-{(⍵=1)∨⍵=2 : 1 ⋄ (∇ ⍵-2)+∇ ⍵-1}¨⍳12   ⍝ 1 1 2 3 5 8 13 21 34 55 89 144
+{(⍵=1)∨⍵=2 : 1 ⋄ (∇ ⍵-2)+∇ ⍵-1}¨⍳12
+1 1 2 3 5 8 13 21 34 55 89 144
 
 ⍝ april:2189 — Locally-scoped function used with lateral operator within if-statement; Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
 (⍳3){g←{5+⍵} ⋄ b←-∘5 ⋄ h←{~2|⍺:12×b¨⍵ ⋄ 12×g ⍵} ⋄ ⍺ h¨⍵}(⍳3)+3⍴⊂⍳3
@@ -3034,8 +3013,7 @@ filter←{(⍶¨⍵)/⍵} ⋄ {2|⍵} filter ⍳20   ⍝ 1 3 5 7 9 11 13 15 17 1
 2{⍶⋄⍹}3⊢10   ⍝ 2
 
 ⍝ april:2200 — Function containing multiple nested locally-scoped functions
-{aa←{⍵+5} ⋄ bb←{cc←{⍺,aa ⍵} ⋄ ⍺ cc ⍵} ⋄ 9 bb ⍵} 100
-9 105
+{aa←{⍵+5} ⋄ bb←{cc←{⍺,aa ⍵} ⋄ ⍺ cc ⍵} ⋄ 9 bb ⍵} 100   ⍝ 9 105
 
 ⍝ april:2202 — Operator composition assigned as function with a right-value composition on the right
 fn←÷@(≤∘4) ⋄ fn ⍳9   ⍝ 1 0.5 0.3333333333333333 0.25 5 6 7 8 9
@@ -3084,8 +3062,7 @@ key←⌸ ⋄ {(2|⍳≢⍵)⊢key ⍵}10 2⍴⍳20
 {a←@ ⋄ 22 33 a 3 5⊢⍵} ⍳9   ⍝ 1 2 22 4 33 6 7 8 9
 
 ⍝ april:2222 — Aliasing of [⌺ stencil] operator
-{s←⌺ ⋄ ⊢∘⊂ s 2⊢⍵} ⍳8
-(1 2 ⋄ 2 3 ⋄ 3 4 ⋄ 4 5 ⋄ 5 6 ⋄ 6 7 ⋄ 7 8)
+{s←⌺ ⋄ ⊢∘⊂ s 2⊢⍵} ⍳8   ⍝ (1 2 ⋄ 2 3 ⋄ 3 4 ⋄ 4 5 ⋄ 5 6 ⋄ 6 7 ⋄ 7 8)
 
 ⍝ april:2224 — Conditional aliasing of pivotal operator; Conditional named-operator aliasing uses Execute of the selected operator, which basedpl supports; Avoids April nonlocal operator rebinding and its statement-return difference; original independent expected values retained
 0 1 {o←⍎(1+⍺)⊃'⍤' '⍥' ⋄ 1 +o- ⍵}¨2   ⍝ ¯1 ¯3
@@ -3134,12 +3111,10 @@ format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
 (3÷⍣¯1⊢8),(3∘÷⍣¯1⊢8),÷∘3⍣¯1⊢8   ⍝ 0.375 0.375 24
 
 ⍝ april:2260 — Inverse exponents; April power alias ⋆ written with standard APL *
-⌊100×.0000001+(3*⍣¯1⊢8),(3∘*⍣¯1⊢8),*∘3⍣¯1⊢8
-189 189 200
+⌊100×.0000001+(3*⍣¯1⊢8),(3∘*⍣¯1⊢8),*∘3⍣¯1⊢8   ⍝ 189 189 200
 
 ⍝ april:2261 — Inverse logarithms
-⌊100×.0000001+(3⍟⍣¯1⊢8),(3∘⍟⍣¯1⊢8),⍟∘3⍣¯1⊢8
-656100 656100 114
+⌊100×.0000001+(3⍟⍣¯1⊢8),(3∘⍟⍣¯1⊢8),⍟∘3⍣¯1⊢8   ⍝ 656100 656100 114
 
 ⍝ april:2262 — Inverse monadic scalar functions; April power alias ⋆ written with standard APL *
 ⌊1000×(+⍣¯1⊢5),(-⍣¯1⊢5),(÷⍣¯1⊢5),(*⍣¯1⊢5),⍟⍣¯1⊢5
@@ -3286,8 +3261,7 @@ vr←3∘× ⋄ vr⍣¯1⊢24   ⍝ 8
 ⍕3 4⍴⍳9   ⍝ 3 7⍴'1 2 3 45 6 7 89 1 2 3'
 
 ⍝ april:2375 — 3D numeric array; Monadic Format independently checked in Dyalog and through the Rust reference worker; Test monadic Format rather than April implicit display; capture shape and characters independently in Dyalog; Original April output is retained as provenance
-⍕2 3 4⍴⍳9
-2 3 7⍴'1 2 3 45 6 7 89 1 2 34 5 6 78 9 1 23 4 5 6'
+⍕2 3 4⍴⍳9   ⍝ 2 3 7⍴'1 2 3 45 6 7 89 1 2 34 5 6 78 9 1 23 4 5 6'
 
 ⍝ april:2383 — 4D numeric array; Monadic Format independently checked in Dyalog and through the Rust reference worker; Test monadic Format rather than April implicit display; capture shape and characters independently in Dyalog; Original April output is retained as provenance
 ⍕2 3 2 5⍴⍳9
@@ -3324,7 +3298,8 @@ vr←3∘× ⋄ vr⍣¯1⊢24   ⍝ 8
 ⍕2 5⍴'ABCDEFGHIJ'   ⍝ 2 5⍴'ABCDEFGHIJ'
 
 ⍝ april:2433 — 3D character array; Monadic Format independently checked in Dyalog and through the Rust reference worker; Test monadic Format rather than April implicit display; capture shape and characters independently in Dyalog; Original April output is retained as provenance
-⍕2 3 4⍴'GRAYGOLDBLUESILKWOOLYARN'   ⍝ 2 3 4⍴'GRAYGOLDBLUESILKWOOLYARN'
+⍕2 3 4⍴'GRAYGOLDBLUESILKWOOLYARN'
+2 3 4⍴'GRAYGOLDBLUESILKWOOLYARN'
 
 ⍝ april:2441 — Matrix of character strings; Monadic Format independently checked in Dyalog and through the Rust reference worker; Test monadic Format rather than April implicit display; capture shape and characters independently in Dyalog; Original April output is retained as provenance
 ⍕⊂[3]2 3 4⍴'GRAYGOLDBLUESILKWOOLYARN'
@@ -3343,7 +3318,8 @@ vr←3∘× ⋄ vr⍣¯1⊢24   ⍝ 8
 4 9⍴' A        Stack    Of       Strings '
 
 ⍝ april:2463 — Mixed strings; Monadic Format independently checked in Dyalog and through the Rust reference worker; Test monadic Format rather than April implicit display; capture shape and characters independently in Dyalog; Original April output is retained as provenance
-⍕⊃'These' 'Strings' 'Are' 'Mixed'   ⍝ 4 7⍴'These  StringsAre    Mixed  '
+⍕⊃'These' 'Strings' 'Are' 'Mixed'
+4 7⍴'These  StringsAre    Mixed  '
 
 ⍝ april:2469 — Enclosed vector; Monadic Format independently checked in Dyalog and through the Rust reference worker; Test monadic Format rather than April implicit display; capture shape and characters independently in Dyalog; Original April output is retained as provenance
 ⍕⊂1 2 3 4 5   ⍝ ' 1 2 3 4 5 '
@@ -7568,3 +7544,4 @@ myns←⍬:⍬ ⋄ myns.aa←3 ⋄ myns.bb←⍬:⍬ ⋄ myns.cc←⍳3 ⋄ myns
     myns.cc,({⍵.bb.ff} myns),,myns.bb.gg×myns.bb.dd.ee+myns.aa
 ⍝ =>
 1 2 3 1 2 3 4 8 16 24 32
+

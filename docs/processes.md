@@ -21,6 +21,8 @@ Use `json.dumps(code)` or `JSON.stringify(code)`, followed by a newline. Quotes 
 
 Atoms are encoded directly. Arrays carry shape, row-major data and prototype, including rank-zero arrays. Nested elements use the same encoding. A [keyed array](keyed.md) adds `axis_keys`: one string list or `null` per axis. All-unkeyed arrays omit it.
 
+Named dimensions add `axis_names`: one string or `null` per axis, e.g. `["city", "month"]`. Arrays with no named axes omit it. Both fields survive worker input and output.
+
 | Element | JSON |
 |---|---|
 | Exact integer | Integer, including arbitrary precision |

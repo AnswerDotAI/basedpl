@@ -102,7 +102,7 @@ The report defaults to `meta/reference-scan.json`. It contains each original fix
 
 Each record starts with `⍝ ID — description`, or `⍝ — description` without an ID. The description is optional. Add a short description when the purpose would not be obvious to a quick reader.
 
-Write `code   ⍝ expected` when both expressions fit one line and each has fewer than 40 characters. Readers accept inline records of any length. The first comment outside a quoted string separates code from expectation. Expressions with existing code comments or significant separator whitespace retain two lines. Errors and explicit-output assertions also retain two lines.
+Write `code   ⍝ expected` when the whole line is under 70 characters and reads clearly. Readers accept inline records of any length. The first comment outside a quoted string separates code from expectation. Expressions with existing code comments or significant separator whitespace retain two lines. Errors and explicit-output assertions also retain two lines.
 
 Longer single-line expressions use one line each. If either expression is multiline, an exact `⍝ =>` line separates code from expectation. An empty line separates records. A record ends at the next case header, section heading or EOF. At EOF the separator and final newline are optional. Other blank lines belong to the expressions.
 

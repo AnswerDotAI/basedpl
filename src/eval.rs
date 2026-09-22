@@ -49,7 +49,7 @@ impl Function {
             Binding::Function(f) => Ok(f),
             Binding::Hybrid(h) => {
                 let f = Self::primitive(h.primitive());
-                match h.axis { Some(axis) => Self::new(FunctionNode::Axis(f, crate::primitive::axis_value(axis)), span), None => Ok(f) }
+                match h.axis { Some(axis) => Self::new(FunctionNode::Axis(f, axis), span), None => Ok(f) }
             }
             _ => Err(span.error(ErrorKind::Syntax, "call requires a function expression")),
         }
@@ -181,7 +181,10 @@ impl Function {
         let (depth, environment, late) = match &node {
             FunctionNode::Primitive(_) | FunctionNode::System(_) => (0, None, false),
             FunctionNode::LateBound(..) => (0, None, true),
-            FunctionNode::Fold(f, _) | FunctionNode::Inverse(f) => (f.depth, f.environment, f.late),
+            FunctionNode::Fold(f, h) => {
+                (f.depth.max(h.axis.as_ref().map_or(0, Value::graph_depth)), f.environment.max(h.axis.as_ref().and_then(Value::environment)), f.late)
+            }
+            FunctionNode::Inverse(f) => (f.depth, f.environment, f.late),
             FunctionNode::Axis(f, a) => (f.depth.max(a.graph_depth()), f.environment.max(a.environment()), f.late),
             FunctionNode::Defined(c) => (0, c.environment, false),
             FunctionNode::Derived(c, a, b) => {
@@ -241,7 +244,7 @@ impl Function {
                 Ok(match a { Operand::Function(f) => Operand::Function(fun(f)?), _ => a.clone() })
             }
             let node = match self.node.as_ref() {
-                FunctionNode::Fold(f, h) => FunctionNode::Fold(fun(f)?, *h),
+                FunctionNode::Fold(f, h) => FunctionNode::Fold(fun(f)?, h.clone()),
                 FunctionNode::Inverse(f) => FunctionNode::Inverse(fun(f)?),
                 FunctionNode::Axis(f, a) => FunctionNode::Axis(fun(f)?, a.clone()),
                 FunctionNode::Derived(c, a, b) => {
@@ -306,15 +309,13 @@ impl Function {
                 let x = fns[0].call_array(left, right, span, session, output)?;
                 return fns[1].call(Some(&x), &y, span, session, output);
             }
-            Fold(operand, hybrid) => fold(operand, *hybrid, left, right, span, session, output),
+            Fold(operand, hybrid) => fold(operand, hybrid.clone(), left, right, span, session, output),
             FunctionNode::Axis(f, axis) => {
                 let mut f = f;
                 while let FunctionNode::Axis(inner, _) = f.node.as_ref() { f = inner; }
                 match f.node.as_ref() {
                     FunctionNode::Primitive(p) => p.call_axes(left, right, axis, &session.execution.at(span)),
-                    Fold(operand, h) => {
-                        fold(operand, Hybrid { axis: Some(crate::primitive::single_axis(axis, span)?), ..*h }, left, right, span, session, output)
-                    }
+                    Fold(operand, h) => fold(operand, Hybrid { axis: Some(axis.clone()), ..h.clone() }, left, right, span, session, output),
                     _ => Err(span.error(ErrorKind::Unsupported, "axes on this function are not supported")),
                 }
             }
@@ -552,6 +553,7 @@ fn stencil(f: &Function, spec: &Value, right: &Value, span: &Span, session: &mut
             .map_err(|k| span.error(k, "invalid stencil window keys"))?;
         let window = Value::from_parts(shape.clone(), data, right.prototype().clone())
             .and_then(|a| a.with_keys(keys))
+            .and_then(|a| a.with_axis_names(right.axis_names().to_vec()))
             .map_err(|k| span.error(k, "invalid stencil window"))?;
         let border = Value::floats(vec![axes], padding).unwrap();
         results.push(f.call_array(Some(&border), &window, span, session, output)?);
@@ -729,15 +731,13 @@ fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, span: &Sp
             }
             return rank(&operand_inverse(g)?, &ranks, left, right, span, session, output);
         }
-        Fold(g, h) if h.scan && first => inverse_scan(g, *h, left, right, span, session, output),
+        Fold(g, h) if h.scan && first => inverse_scan(g, h.clone(), left, right, span, session, output),
         Axis(g, axis) => {
             let mut g = g;
             while let Axis(inner, _) = g.node.as_ref() { g = inner; }
             match g.node.as_ref() {
                 Primitive(p) => crate::primitive::inverse(*p, bound, right, Some(axis), &session.execution.at(span)),
-                Fold(g, h) if h.scan && first => {
-                    inverse_scan(g, Hybrid { axis: Some(crate::primitive::single_axis(axis, span)?), ..*h }, left, right, span, session, output)
-                }
+                Fold(g, h) if h.scan && first => inverse_scan(g, Hybrid { axis: Some(axis.clone()), ..h.clone() }, left, right, span, session, output),
                 _ => Err(span.error(ErrorKind::Domain, "this axis-qualified function has no known inverse")),
             }
         }
@@ -1048,17 +1048,32 @@ fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Cont
 
 fn fold(
     operand: &Function,
-    hybrid: Hybrid,
+    mut hybrid: Hybrid,
     left: Option<&Value>,
     right: &Value,
     span: &Span,
     session: &mut Session,
     output: &mut Vec<String>,
 ) -> Result<Value, Error> {
-    let result = fold_array(operand, hybrid, left, right, span, session, output)?;
+    hybrid.axis = hybrid.axis.as_ref().map(|a| crate::primitive::resolve_axes(a, right, span)).transpose()?;
+    if !hybrid.scan {
+        if let Some(axes) = hybrid.axis.as_ref().filter(|a| !a.is_singleton()) {
+            let cells = Primitive::Enclose.call_axes(None, right, axes, &session.execution.at(span))?;
+            let mut reduction = Function::new(FunctionNode::Fold(operand.clone(), Hybrid { axis: None, ..hybrid.clone() }), span)?;
+            if let Some(seed) = left {
+                reduction = Function::new(FunctionNode::Composed(OperatorKind::Compose, [Operand::Value(seed.clone()), Operand::Function(reduction)]), span)?;
+            }
+            let ravelled = Function::new(
+                FunctionNode::Composed(OperatorKind::Compose, [Operand::Function(reduction), Operand::Function(Function::primitive(Primitive::Ravel))]),
+                span,
+            )?;
+            return each(&ravelled, None, &cells, span, session, output)?.array(span);
+        }
+    }
+    let result = fold_array(operand, hybrid.clone(), left, right, span, session, output)?;
     if !hybrid.scan && right.shape().len() == 1 { return Ok(result.at(0)); }
     if hybrid.scan || right.is_scalar() { return Ok(result); }
-    let axis = hybrid.axis.unwrap_or(if hybrid.first { 0 } else { right.shape().len() - 1 });
+    let axis = hybrid.single_axis(right, span)?.unwrap_or(if hybrid.first { 0 } else { right.shape().len() - 1 });
     let layout = right.layout().axes((0..right.shape().len()).filter(|&a| a != axis));
     result.with_layout(layout).map_err(|k| span.error(k, "invalid fold keys"))
 }
@@ -1081,7 +1096,7 @@ fn fold_array(
     if right.is_scalar() && hybrid.axis.is_none() {
         return match left { Some(seed) => operand.call_array(Some(&right.at(0)), seed, span, session, output), None => Ok(right.at(0)) };
     }
-    let axis = hybrid.axis.unwrap_or(if hybrid.first { 0 } else { right.shape().len().saturating_sub(1) });
+    let axis = hybrid.single_axis(right, span)?.unwrap_or(if hybrid.first { 0 } else { right.shape().len().saturating_sub(1) });
     if axis >= right.shape().len() { return Err(span.error(ErrorKind::Domain, "axis is outside array rank")); }
     let traversal = Axis::new(right.shape(), axis).map_err(|k| span.error(k, "invalid fold axis"))?;
     let mut shape = right.shape().to_vec();
@@ -1171,7 +1186,7 @@ fn float_scan(values: &[f64], seed: Option<f64>, axis: &Axis, shape: &[usize], o
 
 fn scan_axis(hybrid: Hybrid, right: &Value, span: &Span) -> Result<Axis, Error> {
     if right.is_scalar() && hybrid.axis.is_none() { return Ok(Axis { outer: 1, len: 1, inner: 1 }); }
-    let index = hybrid.axis.unwrap_or(if hybrid.first { 0 } else { right.shape().len().saturating_sub(1) });
+    let index = hybrid.single_axis(right, span)?.unwrap_or(if hybrid.first { 0 } else { right.shape().len().saturating_sub(1) });
     Axis::new(right.shape(), index).map_err(|k| span.error(k, "invalid scan axis"))
 }
 
@@ -1231,7 +1246,7 @@ impl Closure {
         &span.source.text[span.range.clone()]
     }
 }
-impl Hybrid { fn text(self) -> String { format!("{}{}", self.primitive().glyph(), self.axis.map_or(String::new(), |a| format!("[{}]", a + 1))) } }
+impl Hybrid { fn text(&self) -> String { format!("{}{}", self.primitive().glyph(), self.axis.as_ref().map_or(String::new(), |a| format!("[{a}]"))) } }
 struct Frame { names: HashMap<String, Binding>, parent: Option<usize> }
 struct ArrayBinding { name: String, owner: Option<usize>, value: Value }
 
@@ -1255,7 +1270,10 @@ pub(crate) fn export_context(root: Operand) -> Result<bool, ErrorKind> {
                 continue;
             }
             Operand::Function(f) => f,
-            Operand::Hybrid(_) => continue,
+            Operand::Hybrid(h) => {
+                if let Some(axis) = h.axis { pending.push(Operand::Value(axis)); }
+                continue;
+            }
         };
         if f.environment.is_some() { return Err(ErrorKind::Domain); }
         if !functions.insert(Arc::as_ptr(&f.node)) { continue; }
@@ -1266,7 +1284,11 @@ pub(crate) fn export_context(root: Operand) -> Result<bool, ErrorKind> {
                 context = true;
                 pending.extend(std::iter::once(a).chain(b.iter()).cloned());
             }
-            FunctionNode::Fold(f, _) | FunctionNode::Inverse(f) => pending.push(Operand::Function(f.clone())),
+            FunctionNode::Fold(f, h) => {
+                pending.push(Operand::Function(f.clone()));
+                if let Some(axis) = &h.axis { pending.push(Operand::Value(axis.clone())); }
+            }
+            FunctionNode::Inverse(f) => pending.push(Operand::Function(f.clone())),
             FunctionNode::Axis(f, a) => {
                 pending.push(Operand::Function(f.clone()));
                 pending.push(Operand::Value(a.clone()));
@@ -1286,7 +1308,7 @@ fn operand_dependencies<'a>(operands: impl Iterator<Item = &'a Operand>) -> (usi
     operands.fold((0, None, false), |(depth, environment, late), op| match op {
         Operand::Function(f) => (depth.max(f.depth), environment.max(f.environment), late || f.late),
         Operand::Value(a) => (depth.max(a.graph_depth()), environment.max(a.environment()), late),
-        _ => (depth, environment, late),
+        Operand::Hybrid(h) => (depth.max(h.axis.as_ref().map_or(0, Value::graph_depth)), environment.max(h.axis.as_ref().and_then(Value::environment)), late),
     })
 }
 
@@ -1325,7 +1347,7 @@ impl Operand {
     fn normalize(self, span: &Span) -> Result<Self, Error> {
         if let Self::Hybrid(h) = self {
             let f = Function::primitive(h.primitive());
-            Ok(Self::Function(match h.axis { Some(axis) => Function::new(FunctionNode::Axis(f, crate::primitive::axis_value(axis)), span)?, None => f }))
+            Ok(Self::Function(match h.axis { Some(axis) => Function::new(FunctionNode::Axis(f, axis), span)?, None => f }))
         } else { Ok(self) }
     }
 
@@ -1338,7 +1360,11 @@ impl Operand {
         }
     }
     fn value(&self) -> Binding {
-        match self { Self::Value(a) => Binding::Value(a.clone()), Self::Function(f) => Binding::Function(f.clone()), Self::Hybrid(h) => Binding::Hybrid(*h) }
+        match self {
+            Self::Value(a) => Binding::Value(a.clone()),
+            Self::Function(f) => Binding::Function(f.clone()),
+            Self::Hybrid(h) => Binding::Hybrid(h.clone()),
+        }
     }
 }
 
@@ -1352,7 +1378,14 @@ enum Binding {
 }
 impl Binding {
     fn from_element(element: Value) -> Self { match element { Value::Function(f) => Self::Function(f), _ => Self::Value(element) } }
-    fn environment(&self) -> Option<usize> { match self { Self::Value(a) => a.environment(), Self::Function(f) => f.environment, _ => None } }
+    fn environment(&self) -> Option<usize> {
+        match self {
+            Self::Value(a) => a.environment(),
+            Self::Function(f) => f.environment,
+            Self::Hybrid(h) => h.axis.as_ref().and_then(Value::environment),
+            _ => None,
+        }
+    }
     fn into_value(self, span: &Span) -> Result<Value, Error> {
         match self {
             Self::Value(a) => Ok(a),
@@ -1983,7 +2016,7 @@ impl Session {
             NodeKind::Literal(a) => Binding::Value(a.clone()),
             NodeKind::Function(p) => Binding::Function(Function::primitive(*p)),
             NodeKind::Operator(op) => Binding::Operator(Operator::Primitive(*op)),
-            NodeKind::Hybrid(h) => Binding::Hybrid(*h),
+            NodeKind::Hybrid(h) => Binding::Hybrid(h.clone()),
             NodeKind::Name(name) => self.lookup(name).cloned().ok_or_else(|| node.span.error(ErrorKind::Value, format!("undefined name: {name}")))?,
             NodeKind::System(name) => {
                 crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?.value()
@@ -2429,9 +2462,8 @@ impl Binder {
                 } else {
                     let [Some(axis)] = parts.as_slice() else { return Err(right_span.error(ErrorKind::Syntax, "one axis expression is required")); };
                     if matches!(left.category(), Hybrid) {
-                        let axis = crate::primitive::single_axis(axis, &right_span)?;
                         let Binding::Hybrid(h) = left.value()? else { unreachable!() };
-                        Term::Binding(Binding::Hybrid(crate::primitive::Hybrid { axis: Some(axis), ..h }))
+                        Term::Binding(Binding::Hybrid(crate::primitive::Hybrid { axis: Some(axis.clone()), ..h }))
                     } else { Term::Binding(Binding::Function(self::Function::new(FunctionNode::Axis(left.function()?, axis.clone()), &right_span)?)) }
                 }
             }

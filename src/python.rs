@@ -36,7 +36,11 @@ fn import_array(raw: &Bound<'_, PyDict>, depth: usize) -> PyResult<Value> {
     let shape = field("shape")?.extract::<Vec<usize>>()?;
     let data = field("data")?.try_iter()?.map(|o| element(o?)).collect::<PyResult<Vec<_>>>()?;
     let prototype = element(field("prototype")?)?;
-    let result = Value::from_parts(shape, data, prototype).map_err(|k| PyValueError::new_err(k.to_string()))?;
+    let mut result = Value::from_parts(shape, data, prototype).map_err(|k| PyValueError::new_err(k.to_string()))?;
+    if let Some(names) = raw.get_item("axis_names")? {
+        let names = names.extract::<Vec<Option<String>>>()?.into_iter().map(|n| n.map(Into::into)).collect();
+        result = result.with_axis_names(names).map_err(|k| PyValueError::new_err(k.to_string()))?;
+    }
     let Some(keys) = raw.get_item("axis_keys")? else { return Ok(result); };
     let keys = keys
         .extract::<Vec<Option<Vec<String>>>>()?
@@ -71,6 +75,7 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
     result.set_item("shape", a.shape())?;
     result.set_item("data", data)?;
     result.set_item("prototype", element(py, &a.prototype())?)?;
+    if !a.axis_names().is_empty() { result.set_item("axis_names", a.axis_names().iter().map(|n| n.as_deref()).collect::<Vec<_>>())?; }
     if a.has_keys() {
         result.set_item(
             "axis_keys",
@@ -89,6 +94,14 @@ impl PyArray {
     fn new(raw: &Bound<'_, PyDict>) -> PyResult<Self> { Ok(Self { inner: import_array(raw, 0)? }) }
     #[getter]
     fn shape(&self) -> Vec<usize> { self.inner.shape().to_vec() }
+    #[getter]
+    fn axis_names(&self) -> Vec<Option<String>> { (0..self.inner.shape().len()).map(|a| self.inner.axis_name(a).map(|n| n.to_string())).collect() }
+    fn with_axis_names(&self, names: Vec<Option<String>>) -> PyResult<Self> {
+        if names.len() != self.inner.shape().len() { return Err(PyValueError::new_err("axis_names must have one entry per axis")); }
+        let inner =
+            self.inner.clone().with_axis_names(names.into_iter().map(|n| n.map(Into::into)).collect()).map_err(|k| PyValueError::new_err(k.to_string()))?;
+        Ok(Self { inner })
+    }
     #[getter]
     fn axis_keys(&self) -> Vec<Option<Vec<String>>> {
         (0..self.inner.shape().len()).map(|a| self.inner.keys(a).map(|k| k.names().iter().map(|s| s.to_string()).collect())).collect()

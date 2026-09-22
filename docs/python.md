@@ -40,7 +40,20 @@ Use `with Session() as apl:` or call `apl.close()` when finished. Returned array
 
 For [axis-keyed arrays](keyed.md), `.py` returns a dict at rank 1 and a pandas DataFrame at higher ranks. `.np` copies the values. Attach labels with `Array(data, axis_keys=[rows, cols])`; use `None` for an unkeyed axis. `.axis_keys` returns a tuple of label tuples or `None`.
 
+`axis_names` names dimensions; `axis_keys` names positions within them. Matching axis names align before positional broadcasting. `.axis_names` returns one name or `None` per dimension.
+
+```python
+from basedpl import Array, plus
+m = Array([[1, 2, 3], [4, 5, 6]], axis_names=('city', 'month'))
+v = Array([10, 20, 30], axis_names=('month',))
+assert (m + v).np.tolist() == [[11, 22, 33], [14, 25, 36]]
+assert plus.reduce['month'](m).np.tolist() == [6, 15]
+assert plus.reduce['month'](m).axis_names == ('city',)
+```
+
 `.df` converts any array to a DataFrame. The last axis supplies columns; earlier axes supply rows, using a MultiIndex above rank 2. Unkeyed axes have 1-origin labels. Install `basedpl[pandas]` for this conversion. Pandas is imported on demand.
+
+Axis names become pandas index/column names, including MultiIndex level names.
 
 ```python
 from fractions import Fraction
@@ -123,11 +136,11 @@ assert times(2)(3).py == 6
 assert subtract(2)(5).py == 3       # 5−2
 assert subtract.left(2)(5).py == -3 # 2−5
 
-mean = plus.reduce() / tally
+mean = plus.reduce / tally
 assert mean([1, 2, 4]).py == Fraction(7, 3)
 ```
 
-Names distinguish valences: `sign`/`times`, `shape`/`reshape`, `iota`/`index_of`, `first`/`take`, `mix`/`pick`. `times(2.)` binds an approximate number; `times(2)` an exact one. Operator methods use the underlying APL function.
+Names distinguish valences: `sign`/`times`, `shape`/`reshape`, `iota`/`index_of`, `first`/`take`, `mix`/`pick`. `times(2.)` binds an approximate number; `times(2)` an exact one. Operators use the underlying APL function.
 
 `exponential` and `exponent` name the monadic and dyadic forms of `*`. `power` names the operator `⍣`, exposed as `f.power(n)`. System names beginning with `•` have no Python word aliases; they remain available inside evaluated APL.
 
@@ -135,17 +148,26 @@ Names distinguish valences: `sign`/`times`, `shape`/`reshape`, `iota`/`index_of`
 
 | Python | APL |
 |---|---|
-| `f.reduce()`, `f.scan()` | `f/`, `f\` |
-| `f.each()`, `f.commute()` | `f¨`, `f⍨` |
-| `f.outer()`, `f.inner(g)` | `f⌝`, `f.g` |
-| `f.key()`, `f.stencil(s)` | `f⌸`, `f⌺s` |
+| `f.reduce`, `f.scan` | `f/`, `f\` |
+| `f.each`, `f.commute` | `f¨`, `f⍨` |
+| `f.outer`, `f.inner(g)` | `f⌝`, `f.g` |
+| `f.key`, `f.stencil(s)` | `f⌸`, `f⌺s` |
 | `f.rank(r)`, `f.atop(g)` | `f⍤r`, `f⍤g` |
 | `f.beside(g)`, `f.over(g)`, `f.behind(g)` | `f∘g`, `f⍥g`, `f⍛g` |
 | `f.power(n)`, `f.at(i)` | `f⍣n`, `f@i` |
 | `f.history(n)` | `f⍣[n]` (count or predicate) |
 | `f.with_inverse(g)`, `f.under(g)` | `f⇄g`, `f⌾g` |
-| `f.derivative()` | `f∂` |
+| `f.derivative` | `f∂` |
 | `f[k]` | `f[k]` axis qualifier |
+
+Operator properties chain in APL order: `subtract.commute.reduce` is `-⍨/`. Operators needing another operand retain a hole until supplied:
+
+```python
+twice = times(2)
+assert twice.power.each(3)([1, 2]).py.tolist() == [8, 16]  # (twice⍣3)¨
+```
+
+`f.power.each(n)` constructs `(f⍣n)¨`, just like `f.power(n).each`. For multiple missing operands, successive calls fill the innermost construction first: `f.power.each.power(n)(m)` constructs `((f⍣n)¨)⍣m`. Complete the operands before passing evaluation arguments.
 
 Arithmetic between functions makes forks: `f+g` is `(f+g)`. `f @ g` is inner product; `f << g` is compose; `f >> g` reverses composition; `f ** n` is power. Python's precedence applies when building these expressions.
 
@@ -160,8 +182,8 @@ assert prime(10).py == 29
 np.testing.assert_array_equal(factors(700), [2, 2, 5, 5, 7])
 p = polyval.left([1, 2, 3])
 assert p(2).py == 17
-assert p.derivative()(2).py == 14
-np.testing.assert_array_equal(p.derivative()([10, 20], [1, 2]), [80, 280])
+assert p.derivative(2).py == 14
+np.testing.assert_array_equal(p.derivative([10, 20], [1, 2]), [80, 280])
 np.testing.assert_array_equal(plus.left(1).history(3)(0), [0, 1, 2, 3])
 ```
 

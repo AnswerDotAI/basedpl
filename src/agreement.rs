@@ -67,18 +67,38 @@ pub(crate) struct Agreement {
 }
 impl Agreement {
     pub fn new(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> {
-        Self::mapped(left, right, &(0..left.shape().len()).collect::<Vec<_>>(), &(0..right.shape().len()).collect::<Vec<_>>())
+        let (nx, ny) = (left.shape().len(), right.shape().len());
+        let xa: Vec<_> = (0..nx).collect();
+        if left.names().is_empty() && right.names().is_empty() { return Self::mapped(left, right, &xa, &(0..ny).collect::<Vec<_>>()); }
+        let mut ya: Vec<_> = (0..ny).map(|b| right.name(b).and_then(|n| (0..nx).find(|&a| left.name(a) == Some(n)))).collect();
+        let remaining_left: Vec<_> = (0..nx).filter(|a| !ya.contains(&Some(*a))).collect();
+        let remaining_right: Vec<_> = (0..ny).filter(|&b| ya[b].is_none()).collect();
+        for (a, b) in remaining_left.into_iter().zip(remaining_right) { if left.name(a).is_none() || right.name(b).is_none() { ya[b] = Some(a); } }
+        let mut next = nx;
+        let ya = ya
+            .into_iter()
+            .map(|a| {
+                a.unwrap_or_else(|| {
+                    let axis = next;
+                    next += 1;
+                    axis
+                })
+            })
+            .collect::<Vec<_>>();
+        Self::mapped(left, right, &xa, &ya)
     }
     pub fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind> {
         if left.shape().len() < right.shape().len() { Self::mapped(left, right, axes, &(0..right.shape().len()).collect::<Vec<_>>()) } else { Self::mapped(left, right, &(0..left.shape().len()).collect::<Vec<_>>(), axes) }
     }
     fn mapped(left: &Layout, right: &Layout, xa: &[usize], ya: &[usize]) -> Result<Self, ErrorKind> {
-        let mut shape = vec![1; left.shape().len().max(right.shape().len())];
+        let mut shape = vec![1; xa.iter().chain(ya).max().map_or(0, |a| a + 1)];
         let mut keys = vec![None; shape.len()];
+        let mut names = vec![None; shape.len()];
         for axis in 0..shape.len() {
             let (x, y) = (xa.iter().position(|&a| a == axis), ya.iter().position(|&a| a == axis));
             let (nx, ny) = (x.map_or(1, |a| left.shape()[a]), y.map_or(1, |a| right.shape()[a]));
             let (kx, ky) = (x.and_then(|a| left.keys(a)), y.and_then(|a| right.keys(a)));
+            names[axis] = x.and_then(|a| left.name(a)).or_else(|| y.and_then(|a| right.name(a))).cloned();
             if let (Some(x), Some(y)) = (kx, ky) {
                 let key = if x == y { x.clone() } else { Keys::new(x.names().iter().chain(y.names().iter().filter(|k| x.position(k).is_none())).cloned().collect())? };
                 shape[axis] = key.names().len();
@@ -90,7 +110,7 @@ impl Agreement {
             }
         }
         let len = generated_len(&shape)?;
-        let layout = Layout::from(shape).with_keys(keys)?;
+        let layout = Layout::from(shape).with_keys(keys)?.inherit_names(names);
         let x = Mapping::new(left, xa, &layout, len);
         let y = Mapping::new(right, ya, &layout, len);
         Ok(Self { layout, len, left: x, right: y })

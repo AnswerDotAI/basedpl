@@ -9,8 +9,8 @@ use crate::{
 use rand::RngExt;
 use std::{cmp::Ordering, collections::HashMap};
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Hybrid { pub scan: bool, pub first: bool, pub axis: Option<usize> }
+#[derive(Clone, Debug)]
+pub(crate) struct Hybrid { pub scan: bool, pub first: bool, pub axis: Option<Value> }
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum OperatorKind {
     Each,
@@ -30,7 +30,12 @@ pub(crate) enum OperatorKind {
     At,
     Stencil,
 }
-impl Hybrid { pub(crate) fn primitive(self) -> Primitive { if self.scan { Primitive::Expand(self.first) } else { Primitive::Replicate(self.first) } } }
+impl Hybrid {
+    pub(crate) fn primitive(&self) -> Primitive { if self.scan { Primitive::Expand(self.first) } else { Primitive::Replicate(self.first) } }
+    pub(crate) fn single_axis(&self, right: &Value, span: &Span) -> Result<Option<usize>, Error> {
+        self.axis.as_ref().map(|a| single_axis(&resolve_axes(a, right, span)?, span)).transpose()
+    }
+}
 
 impl OperatorKind {
     pub(crate) fn glyph(self) -> &'static str {
@@ -174,10 +179,29 @@ fn windows(sizes: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Er
         };
         keys.push(k);
     }
-    Value::from_parts(shape, data, right.prototype().clone()).and_then(|a| a.with_keys(keys)).map_err(|k| span.error(k, "invalid windows"))
+    let names = (0..frame.len()).chain(0..cell.len()).map(|a| right.axis_name(a).cloned()).collect();
+    Layout::from(shape)
+        .with_keys(keys)
+        .map(|l| l.inherit_names(names))
+        .and_then(|l| l.collect(data, right.prototype()))
+        .map_err(|k| span.error(k, "invalid windows"))
 }
 
 pub(crate) fn axis_value(axis: usize) -> Value { Value::scalar(Number::from_integer((axis + 1) as i64)).unwrap() }
+pub(crate) fn resolve_axes(spec: &Value, target: &Value, span: &Span) -> Result<Value, Error> {
+    let resolve = |value: Value| match crate::keyed::name(&value) {
+        None => Ok(value),
+        Some(name) => target
+            .axis_names()
+            .iter()
+            .position(|n| n.as_ref() == Some(&name))
+            .map(axis_value)
+            .ok_or_else(|| span.error(ErrorKind::Index, format!("unknown axis: {name}"))),
+    };
+    if crate::keyed::name(spec).is_some() { return resolve(spec.clone()); }
+    if !spec.elements().any(|e| crate::keyed::name(&e).is_some()) { return Ok(spec.clone()); }
+    Value::from_parts(spec.shape().to_vec(), spec.elements().map(resolve).collect::<Result<_, _>>()?, integer(0)).map_err(|k| span.error(k, "invalid axes"))
+}
 pub(crate) fn single_axis(axis: &Value, span: &Span) -> Result<usize, Error> {
     if !axis.is_singleton() || axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "one axis is required")); }
     numeric(&axis.at(0), span)?
@@ -399,7 +423,14 @@ impl Primitive {
     }
     pub(crate) fn call(self, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> { self.call_axis(left, right, None, span) }
     pub(crate) fn call_axes(self, left: Option<&Value>, right: &Value, spec: &Value, span: &Context<'_>) -> Result<Value, Error> {
+        let target = match left {
+            Some(x) if matches!(self, Self::Arithmetic(_) | Self::Math(_) | Self::Compare(_)) && x.shape().len() > right.shape().len() => x,
+            _ => right,
+        };
+        let resolved = resolve_axes(spec, target, span)?;
+        let spec = &resolved;
         if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be scalar or vector")); }
+        let names_axis = spec.is_singleton() && spec.at(0).as_number().is_some_and(|n| n.nonnegative_integer() == Ok(0));
         if let Some(left) = left {
             if matches!(self, Self::Arithmetic(_) | Self::Math(_) | Self::Compare(_)) && !matches!(self, Self::Math(Math::Not)) {
                 return scalar_axes(self, left, right, spec, span);
@@ -409,6 +440,8 @@ impl Primitive {
             }
         }
         match (self, left) {
+            (Self::Keys, left) if names_axis => crate::keyed::name_axes(left, right).map_err(|k| span.error(k, "invalid axis names")),
+            (Self::Iota, None) if names_axis => crate::keyed::axis_selectors(right).map_err(|k| span.error(k, "invalid axis selectors")),
             (Self::Keys, left) => {
                 let axes = axes(spec, right.shape().len(), span)?;
                 left.map_or_else(|| crate::keyed::remove(right, Some(&axes)), |x| crate::keyed::construct(x, right, Some(&axes)))
@@ -524,7 +557,9 @@ impl Primitive {
                 let rows = right.shape().first().copied().unwrap_or(1);
                 let columns = crate::array::element_count(right.shape().get(1..).unwrap_or(&[])).map_err(|k| span.error(k, "invalid table shape"))?;
                 let keys = vec![right.keys(0).cloned(), if right.shape().len() == 2 { right.keys(1).cloned() } else { None }];
-                return right.with_shape(vec![rows, columns]).and_then(|a| a.with_keys(keys)).map_err(|k| span.error(k, "invalid table"));
+                let names = vec![right.axis_name(0).cloned(), if right.shape().len() == 2 { right.axis_name(1).cloned() } else { None }];
+                let layout = Layout::from(vec![rows, columns]).with_keys(keys).map_err(|k| span.error(k, "invalid table"))?.inherit_names(names);
+                return right.with_shape(vec![rows, columns]).and_then(|a| a.with_layout(layout)).map_err(|k| span.error(k, "invalid table"));
             }
             Self::Shape if left.is_some() => return reshape(left.unwrap(), right, span),
             Self::Mix => {
@@ -1628,6 +1663,7 @@ fn reshape(dimensions: &Value, right: &Value, span: &Context<'_>) -> Result<Valu
 
 // Keys follow their elements through a structural index map. A fill or repeated source would need an invented key.
 fn carry_keys(result: Value, right: &Value, sources: impl Iterator<Item = Option<usize>>, span: &Context<'_>) -> Result<Value, Error> {
+    let result = result.with_axis_names(right.axis_names().to_vec()).map_err(|k| span.error(k, "invalid selected axes"))?;
     let Some(keys) = right.keys(0) else { return Ok(result); };
     let positions = sources.collect::<Option<Vec<_>>>().ok_or_else(|| span.error(ErrorKind::Domain, "fill elements would need invented keys"))?;
     keys.select(positions).and_then(|k| result.with_keys(vec![Some(k)])).map_err(|k| span.error(k, "repeated positions would need invented keys"))
@@ -1741,7 +1777,7 @@ fn replicate(counts: &Value, right: &Value, first: bool, axis: Option<usize>, ex
         }
     }
     let result = Value::from_parts(shape, data, right.prototype().clone()).map_err(|k| span.error(k, "invalid replication result"))?;
-    result.with_keys(keys).map_err(|k| span.error(k, "invalid replication keys"))
+    result.with_keys(keys).and_then(|a| a.with_axis_names(right.axis_names().to_vec())).map_err(|k| span.error(k, "invalid replication keys"))
 }
 
 fn rotate(counts: Option<&Value>, right: &Value, axis: usize, span: &Context<'_>) -> Result<Value, Error> {
@@ -1800,7 +1836,6 @@ fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: bool, span:
     let promote = |a: &Value, other: &Value| -> Result<Value, Error> {
         if a.shape().len() == rank { return Ok(a.clone()); }
         let mut shape = a.shape().to_vec();
-        let mut keys = (0..shape.len()).map(|aidx| a.keys(aidx).cloned()).collect::<Vec<_>>();
         if a.is_scalar() {
             shape = if other.is_scalar() { vec![1] } else { other.shape().to_vec() };
             shape[axis] = 1;
@@ -1809,8 +1844,8 @@ fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: bool, span:
         }
         if shape.len() + 1 != rank { return Err(span.error(ErrorKind::Rank, "catenate ranks differ by more than one")); }
         shape.insert(axis, 1);
-        keys.insert(axis, None);
-        a.with_shape(shape).and_then(|v| v.with_keys(keys)).map_err(|k| span.error(k, "invalid catenate shape"))
+        let layout = a.layout().replace(axis..axis, &vec![1].into());
+        a.with_shape(shape).and_then(|v| v.with_layout(layout)).map_err(|k| span.error(k, "invalid catenate shape"))
     };
     let left = promote(left, right)?;
     let right = promote(right, &left)?;
@@ -1839,7 +1874,14 @@ fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: bool, span:
             data.extend(a.items(i * len..(i + 1) * len));
         }
     }
-    Value::from_parts(shape, data, left.prototype()).and_then(|v| v.with_keys(wanted)).map_err(|k| span.error(k, "invalid catenate result"))
+    let names = (0..rank)
+        .map(|a| match (left.axis_name(a), right.axis_name(a)) { (Some(x), Some(y)) if x != y => None, (x, y) => x.or(y).cloned() })
+        .collect();
+    Layout::from(shape)
+        .with_keys(wanted)
+        .map(|l| l.inherit_names(names))
+        .and_then(|l| l.collect(data, left.prototype()))
+        .map_err(|k| span.error(k, "invalid catenate result"))
 }
 
 fn transpose(axes: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -1867,9 +1909,16 @@ fn transpose(axes: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<
             if sources.len() == 1 { right.keys(sources[0]).cloned() } else { None }
         })
         .collect();
+    let names = (0..shape.len())
+        .map(|a| {
+            let mut sources = axes.iter().enumerate().filter(|(_, dst)| **dst == a).map(|(src, _)| src);
+            let first = sources.next().and_then(|src| right.axis_name(src)).cloned();
+            if sources.next().is_none() { first } else { None }
+        })
+        .collect();
     remap(
         right,
-        Layout::from(shape.clone()).with_keys(keys).map_err(|k| span.error(k, "invalid transpose keys"))?,
+        Layout::from(shape.clone()).with_keys(keys).map_err(|k| span.error(k, "invalid transpose keys"))?.inherit_names(names),
         |mut i| {
             let mut coords = vec![0; shape.len()];
             for axis in (0..shape.len()).rev() {
@@ -2121,7 +2170,7 @@ pub(crate) fn selection(right: &Value, parts: &[Option<Value>], span: &Context<'
     if let [Some(indices)] = parts.as_slice() {
         if matches!(indices.elements().next().unwrap_or_else(|| indices.prototype()), Value::Array(_)) { return choose(right, indices, span); }
     }
-    let (mut shape, mut indices, mut keys) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut shape, mut indices, mut keys, mut names) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let mut direct = true;
     for (axis, &size) in right.shape().iter().enumerate() {
         if let Some(a) = parts.get(axis).and_then(Option::as_ref) {
@@ -2130,13 +2179,20 @@ pub(crate) fn selection(right: &Value, parts: &[Option<Value>], span: &Context<'
             let positions = a.elements().map(|e| index(numeric(&e, span)?, size, span)).collect::<Result<Vec<_>, _>>()?;
             let selected =
                 right.keys(axis).map(|k| k.select(positions.iter().copied())).transpose().map_err(|k| span.error(k, "selection repeats a keyed position"))?;
-            if a.shape().len() == 1 { keys.push(selected); }
-            else { keys.extend(std::iter::repeat_n(None, a.shape().len())); }
+            if a.shape().len() == 1 {
+                keys.push(selected);
+                names.push(right.axis_name(axis).cloned());
+            }
+            else {
+                keys.extend(std::iter::repeat_n(None, a.shape().len()));
+                names.extend(std::iter::repeat_n(None, a.shape().len()));
+            }
             indices.push(positions);
         } else {
             direct = false;
             shape.push(size);
             keys.push(right.keys(axis).cloned());
+            names.push(right.axis_name(axis).cloned());
             indices.push((0..size).collect());
         }
     }
@@ -2154,7 +2210,7 @@ pub(crate) fn selection(right: &Value, parts: &[Option<Value>], span: &Context<'
             vec![source]
         })
         .collect();
-    let layout = Layout::from(shape).with_keys(keys).map_err(|k| span.error(k, "invalid selection keys"))?;
+    let layout = Layout::from(shape).with_keys(keys).map_err(|k| span.error(k, "invalid selection keys"))?.inherit_names(names);
     Ok(Selection { frame: if direct { Frame::Direct } else { Frame::Array(layout) }, paths })
 }
 

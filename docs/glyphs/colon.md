@@ -7,6 +7,15 @@
 'bb'⊃'aa' 'bb':1 2 ⍝ 2
 ```
 
+`N:[0]Y` names axes. Each entry is a string, or the axis's own index for unnamed. `:[0]Y` removes axis names. Both retain position keys and share the element buffer.
+
+```apl
+M←'city' 'month':[0]2 3⍴⍳6
+⍳[0]M              ⍝ 'city' 'month'
+⍳[0]('city' ⋄ 2):[0]M ⍝ ('city' ⋄ 2x)
+⍳[0](:[0]M)        ⍝ 1x 2x
+```
+
 Inside a dfn, group functional uses: `(K:Y)` or `(:Y)`.
 
 `condition:result` returns `result` when the condition is true. Otherwise execution continues. Only the chosen result evaluates.

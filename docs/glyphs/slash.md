@@ -55,4 +55,28 @@ Use [full windows](windows.md) for moving reductions.
 +/0↕1 2            ⍝ 0 0 0
 ```
 
-`[K]` selects the axis. [`⌿`](slash-bar.md) defaults to the first. Float sum/product reductions allow reassociation; generic reductions retain operand order.
+`[K]` selects the axis. [`⌿`](slash-bar.md) defaults to the first.
+
+Several axes form one reduction cell. `f/[A]Y` ravels each selected cell before reducing, equivalent to `(f/∘,)¨⊂[A]Y`. A single axis retains ordinary reduction behavior.
+
+```apl
+n←2 2 3⍴⍳6
++/[2 3]n           ⍝ 21 21
++/[1 3]n           ⍝ 12 30
+```
+
+Axis order determines the ravel order. Unselected axes retain their order and keys. Selecting every axis gives a rank-0 array, as Each does.
+
+```apl
+-/[1 2]2 2⍴⍳4      ⍝ ⊂¯2
+-/[2 1]2 2⍴⍳4      ⍝ ⊂¯4
+```
+
+An empty axis vector makes singleton cells. A seed is passed whole to each cell. Axis vectors must have distinct, valid axes: DOMAIN. Higher-rank axis specifications: RANK.
+
+```apl
++/[⍬]1 2 3         ⍝ 1 2 3
+10+/[2 3]2 2 3⍴⍳6 ⍝ 31 31
+```
+
+Float sum/product reductions allow reassociation; generic reductions retain operand order.

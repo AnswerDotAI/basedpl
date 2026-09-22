@@ -107,6 +107,28 @@ pub(crate) fn selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKin
     if values.len() == 1 { Ok(values.pop().unwrap()) } else { Value::from_parts(vec![values.len()], values, Value::integers(vec![0], vec![])?) }
 }
 
+pub(crate) fn name_axes(spec: Option<&Value>, value: &Value) -> Result<Value, ErrorKind> {
+    let Some(spec) = spec else { return value.clone().with_axis_names(vec![]); };
+    let entries = if name(spec).is_some() { vec![spec.clone()] } else {
+        if spec.shape().len() > 1 { return Err(ErrorKind::Rank); }
+        spec.elements().collect()
+    };
+    if entries.len() != value.shape().len() { return Err(ErrorKind::Length); }
+    let names = entries
+        .iter()
+        .enumerate()
+        .map(|(i, entry)| {
+            if let Some(name) = name(entry) { Ok(Some(name)) } else if entry.as_number().is_some_and(|n| n.nonnegative_integer() == Ok(i + 1)) { Ok(None) } else { Err(ErrorKind::Domain) }
+        })
+        .collect::<Result<_, _>>()?;
+    value.clone().with_axis_names(names)
+}
+
+pub(crate) fn axis_selectors(value: &Value) -> Result<Value, ErrorKind> {
+    let data = (0..value.shape().len()).map(|i| value.axis_name(i).map_or_else(|| crate::primitive::axis_value(i), |n| text(n))).collect();
+    Value::from_parts(vec![value.shape().len()], data, Value::Number(crate::Number::from_integer(0)))
+}
+
 pub(crate) fn mapped_index(mut flat: usize, result: &[usize], source: &[usize], maps: &[Vec<Option<usize>>]) -> Option<usize> {
     let (mut offset, mut stride) = (0, 1);
     for axis in (0..result.len()).rev() {
@@ -143,7 +165,7 @@ pub(crate) fn extended(target: &Value, selectors: &[Option<Value>]) -> Result<Op
     let data = (0..crate::array::generated_len(&shape)?)
         .map(|i| mapped_index(i, &shape, target.shape(), &maps).map_or_else(|| target.prototype(), |i| target.at(i)))
         .collect();
-    Value::from_parts(shape, data, target.prototype())?.with_keys(keys).map(Some)
+    Value::from_parts(shape, data, target.prototype())?.with_keys(keys)?.with_axis_names(target.axis_names().to_vec()).map(Some)
 }
 
 pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool) -> Result<Value, ErrorKind> {
@@ -164,7 +186,7 @@ pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool)
     }
     if keys == value.axis_keys() { return Ok(value.clone()); }
     let data = (0..crate::array::generated_len(&shape)?).map(|i| value.at(mapped_index(i, &shape, value.shape(), &maps).unwrap())).collect();
-    Value::from_parts(shape, data, value.prototype())?.with_keys(keys)
+    Value::from_parts(shape, data, value.prototype())?.with_keys(keys)?.with_axis_names(value.axis_names().to_vec())
 }
 
 pub(crate) fn selected_keys(value: &Value, axis: usize, positions: impl IntoIterator<Item = Option<usize>>) -> Result<Option<Arc<Keys>>, ErrorKind> {

@@ -44,10 +44,13 @@ def _dataframe(raw, session=None):
     data = _value(raw, as_array=True, session=session)
     shape = data.shape
     keys = raw.get('axis_keys', [None] * len(shape))
+    names = raw.get('axis_names', [None] * len(shape))
     labels = [list(range(1, n+1)) if k is None else k for n,k in zip(shape, keys)]
-    if len(shape) < 2: return pd.DataFrame(data.reshape(-1, 1), index=labels[0] if labels else [1], columns=[1])
-    index = labels[0] if len(shape) == 2 else pd.MultiIndex.from_product(labels[:-1])
-    return pd.DataFrame(data.reshape(math.prod(shape[:-1]), shape[-1]), index=index, columns=labels[-1])
+    if len(shape) < 2:
+        index = pd.Index(labels[0], name=names[0]) if labels else [1]
+        return pd.DataFrame(data.reshape(-1, 1), index=index, columns=[1])
+    index = pd.Index(labels[0], name=names[0]) if len(shape) == 2 else pd.MultiIndex.from_product(labels[:-1], names=names[:-1])
+    return pd.DataFrame(data.reshape(math.prod(shape[:-1]), shape[-1]), index=index, columns=pd.Index(labels[-1], name=names[-1]))
 
 def _element(value, seen):
     np = sys.modules.get('numpy')
@@ -139,6 +142,9 @@ def _array_repr(raw):
     def cells(dims):
         if not dims: return item(next(data))
         return '[' + ', '.join(cells(dims[1:]) for _ in range(dims[0])) + ']'
+    if 'axis_names' in raw:
+        attrs = ', '.join(f'{k}={raw[k]!r}' for k in ('axis_keys', 'axis_names') if k in raw)
+        return f'Array({cells(shape)}, {attrs})'
     if 'axis_keys' in raw:
         if len(shape) == 1: return '{' + ', '.join(f'{k!r}: {item(o)}' for k,o in zip(raw['axis_keys'][0], raw['data'])) + '}'
         return f'Array({cells(shape)}, axis_keys={raw["axis_keys"]!r})'
@@ -169,14 +175,17 @@ def _context(*values):
 class Array(_Operators):
     "An immutable native APL value. Conversion to Python or NumPy makes a copy."
     __slots__ = ('_inner', '_session')
-    def __init__(self, value, *, axis_keys=None):
+    def __init__(self, value, *, axis_keys=None, axis_names=None):
         self._inner = _array(value)
         if axis_keys is not None: self._inner = self._inner.with_axis_keys(axis_keys)
+        if axis_names is not None: self._inner = self._inner.with_axis_names(axis_names)
         self._session = _context(value) if self._inner.needs_session else None
     @property
     def shape(self): return tuple(self._inner.shape)
     @property
     def axis_keys(self): return tuple(None if k is None else tuple(k) for k in self._inner.axis_keys)
+    @property
+    def axis_names(self): return tuple(self._inner.axis_names)
     @property
     def is_atom(self): return self._inner.is_atom
     @property

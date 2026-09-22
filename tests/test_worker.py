@@ -42,9 +42,11 @@ def test_worker_keyed_arrays():
         assert m['shape'] == [2, 2] and m['axis_keys'] == [['north', 'south'], ['west', 'east']]
         empty = w.eval('⍬:⍬', timeout=2)['value']
         assert empty['shape'] == [0] and empty['axis_keys'] == [[]]
+        m['axis_names'] = ['row', 'col']
         for value in (v, m, empty):
             assert w.request(dict(bindings=dict(k=value), call='⊢', args=[value]), timeout=2)['value'] == value
             assert w.eval('k', timeout=2)['value'] == value
+        assert w.request(dict(bindings=dict(m=m), code="+/['col']m"), timeout=2)['value']['axis_names'] == ['row']
         for keys in ([], [None, None], [['a']], [['a', 'a']], [[1, 2]], ['ab']):
             bad = dict(shape=[2], data=[1, 2], prototype=0, axis_keys=keys)
             assert w.request(dict(bindings=dict(k=bad)), timeout=2)['error']['kind'] == 'REQUEST ERROR'

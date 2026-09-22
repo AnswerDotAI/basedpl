@@ -23,6 +23,7 @@ fn element(e: &Value) -> JsonValue {
 fn array(a: &Value) -> JsonValue {
     if a.is_atom() { return element(a); }
     let mut encoded = json!({"shape": a.shape(), "data": a.elements().map(|e| element(&e)).collect::<Vec<_>>(), "prototype": element(&a.prototype())});
+    if !a.axis_names().is_empty() { encoded["axis_names"] = json!(a.axis_names().iter().map(|n| n.as_deref()).collect::<Vec<_>>()); }
     if a.has_keys() {
         encoded["axis_keys"] =
             json!(a.axis_keys().iter().map(|k| k.as_ref().map(|k| k.names().iter().map(|k| k.as_ref()).collect::<Vec<_>>())).collect::<Vec<_>>());
@@ -75,7 +76,12 @@ fn import_array(value: &JsonValue, depth: usize) -> Result<Value, String> {
         .collect::<Result<Vec<_>, _>>()?;
     let data = value["data"].as_array().ok_or("expected array data")?.iter().map(|v| import_element(v, depth)).collect::<Result<Vec<_>, _>>()?;
     let prototype = import_element(&value["prototype"], depth)?;
-    let result = Value::from_parts(shape, data, prototype).map_err(|k| k.to_string())?;
+    let mut result = Value::from_parts(shape, data, prototype).map_err(|k| k.to_string())?;
+    if let Some(names) = value.get("axis_names") {
+        let names: Vec<Option<String>> = serde_json::from_value(names.clone()).map_err(|e| e.to_string())?;
+        if names.len() != result.shape().len() { return Err("axis_names must have one entry per axis".into()); }
+        result = result.with_axis_names(names.into_iter().map(|n| n.map(Into::into)).collect()).map_err(|k| k.to_string())?;
+    }
     let Some(keys) = value.get("axis_keys") else { return Ok(result); };
     let keys = keys
         .as_array()

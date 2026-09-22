@@ -2,6 +2,7 @@ import operator
 from fractions import Fraction
 from pathlib import Path
 import numpy as np, pytest
+from fastcore.test import test_eq as teq
 from basedpl import (Array, Session, AplError, plus, times, subtract, divide, exponent, sign, tally, iota,
     reshape, shape, floor, logarithm, reverse, transpose, fork, atop, first, pick, not_)
 
@@ -116,18 +117,19 @@ def test_words_binding_and_operators():
     assert divide.left(1)(3).py == Fraction(1, 3)
     assert sign(-3).py == -1 and exponent(2)(3).py == 9
     assert not_(0).py == 1
-    mean = plus.reduce() / tally
+    mean = plus.reduce / tally
     assert mean([1, 2, 4]).py == Fraction(7, 3)
-    assert fork(plus.reduce(), divide, tally)([1, 2, 4]).py == Fraction(7, 3)
-    assert (plus.reduce() + 2)([1, 2]).py == 5
-    assert (2 - plus.reduce())([1, 2]).py == -1
-    np.testing.assert_array_equal(plus.scan()([1, 2, 3]), [1, 3, 6])
-    np.testing.assert_array_equal(subtract.scan()([1, 2, 3]), [1, -1, -4])
-    np.testing.assert_array_equal(plus.scan()(10, [1, 2, 3]), [11, 13, 16])
+    assert fork(plus.reduce, divide, tally)([1, 2, 4]).py == Fraction(7, 3)
+    assert (plus.reduce + 2)([1, 2]).py == 5
+    assert (2 - plus.reduce)([1, 2]).py == -1
+    np.testing.assert_array_equal(plus.scan([1, 2, 3]), [1, 3, 6])
+    np.testing.assert_array_equal(subtract.scan([1, 2, 3]), [1, -1, -4])
+    np.testing.assert_array_equal(plus.scan(10, [1, 2, 3]), [11, 13, 16])
     assert type(tally('abc').py) is int and shape(Array([1., 2.])).apl == '2x'
     assert (Array('abc') + 1).py == 'bcd'
-    np.testing.assert_array_equal(plus.reduce()[1](Array([[1, 2], [3, 4]])), [4, 6])
-    np.testing.assert_array_equal(times.outer()([1, 2], [3, 4]), [[3, 4], [6, 8]])
+    np.testing.assert_array_equal(plus.reduce[1](Array([[1, 2], [3, 4]])), [4, 6])
+    np.testing.assert_array_equal(plus.reduce[2, 3](np.arange(1, 9).reshape(2, 2, 2)), [10, 26])
+    np.testing.assert_array_equal(times.outer([1, 2], [3, 4]), [[3, 4], [6, 8]])
     assert (plus @ times)([1, 2], [3, 4]).py == 11
     assert (subtract(1) ** 3)(10).py == 7
     assert (times(2.) ** -1)(10).py == 5
@@ -140,6 +142,12 @@ def test_words_binding_and_operators():
     with pytest.raises(TypeError): plus @ Array(2)
     with pytest.raises(ValueError, match='DOMAIN'): plus.over(3)
     with pytest.raises(ValueError, match='DOMAIN'): plus.stencil(times)
+    assert subtract.commute.reduce([1, 2, 3]).py == 0
+    teq(times(2).power.each(3)([1, 2]).py, [8, 16])
+    teq(subtract.left.each(2)([1, 2, 3]).py, [1, 0, -1])
+    teq(plus.left(1).power.each.power(2)(3)([0, 10]).py, [6, 16])
+    teq(plus.power.reduce[1](1)([[1, 2], [3, 4]]).py, [4, 6])
+    teq((subtract.left.each + 10)(2)([3, 4]).py, [9, 8])
 
 
 def test_math_construction():
@@ -156,8 +164,65 @@ def test_math_construction():
     np.testing.assert_array_equal(factor_spec(float('inf'), 700), [2, 0, 2, 1])
     np.testing.assert_array_equal(polynomial([2, [1, 3]]), [6, -8, 2])
     p = polyval.left([1, 2, 3])
-    assert p.derivative()(2).py == 14 and p.derivative().derivative()(2).py == 6
-    np.testing.assert_array_equal(p.derivative()([10, 20], [1, 2]), [80, 280])
+    assert p.derivative(2).py == 14 and p.derivative.derivative(2).py == 6
+    np.testing.assert_array_equal(p.derivative([10, 20], [1, 2]), [80, 280])
+
+
+def test_axis_names():
+    data = np.arange(6).reshape(2, 3)
+    m = Array(data, axis_names=('city', 'month'))
+    month = Array([10, 20, 30], axis_names=('month',))
+    teq((m + month).np, data + [10, 20, 30])
+    teq((m + [10, 20]).np, data + np.array([[10], [20]]))
+    teq((month + m).axis_names, ('month', 'city'))
+    teq((month + m).np, (data + [10, 20, 30]).T)
+    teq((m + transpose(m)).np, data * 2)
+    a = Array(data, axis_names=('city', None))
+    b = Array(data.T, axis_names=(None, 'city'))
+    teq((a + b).np, data * 2)
+    product = Array(np.arange(12).reshape(4, 3), axis_names=('product', None))
+    teq((a + product).axis_names, ('city', None, 'product'))
+    teq((a + product).np, data[:, :, None] + product.np.T[None, :, :])
+    teq(plus.reduce['month'](m).axis_names, ('city',))
+    teq(plus.reduce['month'](m).np, [3, 12])
+    keyed = Array(m, axis_keys=(('Paris', 'London'), ('Jan', 'Feb', 'Mar')))
+    other = Array([30, 20, 10], axis_names=('month',), axis_keys=(('Mar', 'Feb', 'Jan'),))
+    teq((keyed + other).np, data + [10, 20, 30])
+    assert keyed.df.index.name == 'city' and keyed.df.columns.name == 'month'
+    with Session() as s:
+        s(M=keyed)
+        teq(s('⍳[0]M').py, ['city', 'month'])
+        renamed = s("('town' ⋄ 2):[0]M")
+        teq(renamed.axis_names, ('town', None))
+        teq(renamed.axis_keys, keyed.axis_keys)
+        teq(s('⍳[0]M').py, ['city', 'month'])
+        teq(s(':[0]M').axis_names, (None, None))
+        teq(s('(⍳[0]M):[0](:[0]M)').axis_names, keyed.axis_names)
+        teq(s("⍳[0]'items':[0]1 2").py, ['items'])
+        teq(s('⍳[0]7').py, [])
+        for code in ["'city' 'city':[0]M", '(1 1):[0]M']:
+            with pytest.raises(AplError, match='DOMAIN'): s(code)
+        with pytest.raises(AplError, match='LENGTH'): s("'city':[0]M")
+        teq(s("'Paris'⌷['city']M").np, data[0])
+        teq(s('M[2]').axis_names, ('month',))
+        teq(s("+/['city' 'month']M").np, 15)
+        teq(s('⍉M').axis_names, ('month', 'city'))
+        teq(s('2 3⍴M').axis_names, ('city', 'month'))
+        teq(s('3 2⍴M').axis_names, (None, None))
+        teq(s(':M').axis_names, ('city', 'month'))
+        teq(s('+/¨⊂[2]M').axis_names, ('city',))
+        teq(s('⌽⍤1⊢M').axis_names, ('city', 'month'))
+        with pytest.raises(AplError, match='INDEX'): s("+/['missing']M")
+    v = Array([1, 2], axis_names=('city',))
+    teq(times.outer(v, v).axis_names, (None, None))
+    teq(reshape([4], v).axis_names, (None,))
+    teq(plus.scan(v).axis_names, ('city',))
+    with Session() as s:
+        s(V=v)
+        for code, names in [('2/V', ('city',)), ('1↕V', (None, None)), ('{⍵}⌺1⊢V', (None, None)), ('V,V', ('city',))]:
+            teq(s(code).axis_names, names)
+    with pytest.raises(ValueError, match='DOMAIN'): Array(data, axis_names=('city', 'city'))
+    with pytest.raises(ValueError): Array(data, axis_names=('city',))
 
 
 def test_mathematical_monads():
@@ -199,12 +264,12 @@ def test_retained_and_late_bound_functions(capsys):
         a('g←+')
         composed = late + times(2)
         assert composed(3).py == 9
-        assert late.reduce()([]).py == 0
+        assert late.reduce([]).py == 0
         assert (a.fn('+') @ a.fn('×'))([], []).py == 0
         np.testing.assert_array_equal(a.fn('⌽')[1]([[1, 2], [3, 4]]), [[3, 4], [1, 2]])
         a('scale←2∘×')
         assert (a.fn('scale') ** -1)(6).py == 3
-        a(fold=late.reduce())
+        a(fold=late.reduce)
         assert a('fold ⍬').py == 0
         a(loop=a.fn('loop'))
         with pytest.raises(AplError, match='LIMIT'): a('loop 1')

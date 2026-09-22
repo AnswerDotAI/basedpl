@@ -11,10 +11,30 @@ pub enum Value {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct Layout { shape: Vec<usize>, keys: Vec<Option<Arc<Keys>>> }
-impl From<Vec<usize>> for Layout { fn from(shape: Vec<usize>) -> Self { Self { shape, keys: vec![] } } }
+pub(crate) struct Layout { shape: Vec<usize>, keys: Vec<Option<Arc<Keys>>>, names: Vec<Option<Arc<str>>> }
+impl From<Vec<usize>> for Layout { fn from(shape: Vec<usize>) -> Self { Self { shape, keys: vec![], names: vec![] } } }
 impl Layout {
     pub fn shape(&self) -> &[usize] { &self.shape }
+    pub fn names(&self) -> &[Option<Arc<str>>] { &self.names }
+    pub fn name(&self, axis: usize) -> Option<&Arc<str>> { self.names.get(axis).and_then(Option::as_ref) }
+    pub fn with_names(self, names: Vec<Option<Arc<str>>>) -> Result<Self, ErrorKind> {
+        if !names.is_empty() && names.len() != self.shape.len() { return Err(ErrorKind::Rank); }
+        let mut seen = std::collections::HashSet::new();
+        if names.iter().flatten().any(|n| !seen.insert(n)) { return Err(ErrorKind::Domain); }
+        Ok(self.inherit_names(names))
+    }
+    pub fn inherit_names(mut self, names: Vec<Option<Arc<str>>>) -> Self {
+        assert!(names.is_empty() || names.len() == self.shape.len());
+        self.names = if names.iter().all(Option::is_none) { vec![] } else { names };
+        self
+    }
+    fn unique_names(mut self) -> Self {
+        let mut counts = HashMap::new();
+        for name in self.names.iter().flatten() { *counts.entry(name.clone()).or_insert(0) += 1; }
+        for name in &mut self.names { if name.as_ref().is_some_and(|n| counts[n] > 1) { *name = None; } }
+        if self.names.iter().all(Option::is_none) { self.names.clear(); }
+        self
+    }
     pub fn axis_keys(&self) -> &[Option<Arc<Keys>>] { &self.keys }
     pub fn keys(&self, axis: usize) -> Option<&Arc<Keys>> { self.keys.get(axis).and_then(Option::as_ref) }
     pub fn with_keys(mut self, keys: Vec<Option<Arc<Keys>>>) -> Result<Self, ErrorKind> {
@@ -24,13 +44,17 @@ impl Layout {
         Ok(self)
     }
     pub fn axes(&self, axes: impl IntoIterator<Item = usize>) -> Self {
-        let (shape, keys): (Vec<_>, Vec<_>) = axes.into_iter().map(|a| (self.shape[a], self.keys(a).cloned())).unzip();
-        Self::from(shape).with_keys(keys).unwrap()
+        let axes: Vec<_> = axes.into_iter().collect();
+        let shape: Vec<_> = axes.iter().map(|&a| self.shape[a]).collect();
+        let keys = axes.iter().map(|&a| self.keys(a).cloned()).collect();
+        let names = axes.iter().map(|&a| self.name(a).cloned()).collect();
+        Self::from(shape).with_keys(keys).unwrap().inherit_names(names)
     }
     pub fn concat(&self, other: &Self) -> Self {
         let shape = [self.shape(), other.shape()].concat();
         let keys = (0..self.shape.len()).map(|a| self.keys(a).cloned()).chain((0..other.shape.len()).map(|a| other.keys(a).cloned())).collect();
-        Self::from(shape).with_keys(keys).unwrap()
+        let names = (0..self.shape.len()).map(|a| self.name(a).cloned()).chain((0..other.shape.len()).map(|a| other.name(a).cloned())).collect();
+        Self::from(shape).with_keys(keys).unwrap().inherit_names(names)
     }
     pub fn collect(&self, data: Vec<Value>, prototype: Value) -> Result<Value, ErrorKind> {
         Value::from_parts(self.shape.clone(), data, prototype)?.with_layout(self.clone())
@@ -39,7 +63,7 @@ impl Layout {
         self.axes(0..axes.start).concat(other).concat(&self.axes(axes.end..self.shape.len()))
     }
     pub fn select(&self, axis: usize, positions: impl ExactSizeIterator<Item = Option<usize>>) -> Result<Self, ErrorKind> {
-        let mut selected = Self::from(vec![positions.len()]);
+        let mut selected = Self::from(vec![positions.len()]).inherit_names(vec![self.name(axis).cloned()]);
         if let Some(keys) = self.keys(axis) {
             let indices = positions.collect::<Option<Vec<_>>>().ok_or(ErrorKind::Domain)?;
             selected = selected.with_keys(vec![Some(keys.select(indices)?)])?;
@@ -102,7 +126,7 @@ impl Cells<'_> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ArrayData {
     layout: Layout,
-    data: Storage,
+    data: Arc<Storage>,
     prototype: Value,
     depth: usize,
     exact: Option<bool>,
@@ -110,7 +134,7 @@ pub struct ArrayData {
     environment: Option<usize>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 enum Storage { Integer(Vec<i64>), Float(Vec<f64>), Mixed(Vec<Value>) }
 
 impl Storage {
@@ -199,7 +223,7 @@ impl Value {
         let exact = data.iter().filter_map(Value::exact_domain).reduce(|a, b| a && b);
         let functions = data.iter().any(Value::has_functions);
         let environment = data.iter().filter_map(Value::environment).max();
-        let data = Storage::compact(data);
+        let data = Arc::new(Storage::compact(data));
         Ok(Self::Array(Arc::new(ArrayData { layout: shape.into(), data, prototype, depth, exact, functions, environment })))
     }
 
@@ -209,7 +233,7 @@ impl Value {
         for n in &mut data { if *n == 0.0 { *n = 0.0; } }
         Ok(Self::Array(Arc::new(ArrayData {
             layout: shape.into(),
-            data: Storage::Float(data),
+            data: Arc::new(Storage::Float(data)),
             prototype: Value::Number(0.0.try_into().unwrap()),
             depth: 0,
             exact: Some(false),
@@ -222,7 +246,7 @@ impl Value {
         if element_count(&shape)? != data.len() { return Err(ErrorKind::Length); }
         Ok(Self::Array(Arc::new(ArrayData {
             layout: shape.into(),
-            data: Storage::Integer(data),
+            data: Arc::new(Storage::Integer(data)),
             prototype: Value::Number(Number::from_integer(0)),
             depth: 0,
             exact: Some(true),
@@ -241,11 +265,11 @@ impl Value {
         let exact = prototype.exact_domain();
         let functions = prototype.has_functions();
         let environment = prototype.environment();
-        let data = match &prototype {
+        let data = Arc::new(match &prototype {
             Value::Number(n) if n.as_integer().is_some() => Storage::Integer(Vec::new()),
             Value::Number(n) if n.as_float().is_some() => Storage::Float(Vec::new()),
             _ => Storage::Mixed(Vec::new()),
-        };
+        });
         Ok(Self::Array(Arc::new(ArrayData { layout: shape.into(), data, prototype, depth, exact, functions, environment })))
     }
 
@@ -263,10 +287,10 @@ impl Value {
     }
     pub fn is_empty(&self) -> bool { self.len() == 0 }
     pub fn as_floats(&self) -> Option<&[f64]> {
-        match self { Self::Number(n) => n.float_slice(), Self::Array(a) => match &a.data { Storage::Float(v) => Some(v), _ => None }, _ => None }
+        match self { Self::Number(n) => n.float_slice(), Self::Array(a) => match &*a.data { Storage::Float(v) => Some(v), _ => None }, _ => None }
     }
     pub fn as_integers(&self) -> Option<&[i64]> {
-        match self { Self::Number(n) => n.integer_slice(), Self::Array(a) => match &a.data { Storage::Integer(v) => Some(v), _ => None }, _ => None }
+        match self { Self::Number(n) => n.integer_slice(), Self::Array(a) => match &*a.data { Storage::Integer(v) => Some(v), _ => None }, _ => None }
     }
     pub fn at(&self, i: usize) -> Value {
         match self.storage() {
@@ -286,10 +310,10 @@ impl Value {
     pub(crate) fn with_shape(&self, shape: Vec<usize>) -> Result<Self, ErrorKind> {
         if element_count(&shape)? != self.len() { return Err(ErrorKind::Length); }
         if shape == self.shape() && !self.is_atom() { return Ok(self.clone()); }
-        let Some(data) = self.storage() else { return Self::new(shape, vec![self.clone()]); };
+        let Self::Array(a) = self else { return Self::new(shape, vec![self.clone()]); };
         Ok(Self::Array(Arc::new(ArrayData {
             layout: shape.into(),
-            data: data.clone(),
+            data: a.data.clone(),
             prototype: self.prototype().clone(),
             depth: self.depth() - 1,
             exact: self.exact_domain(),
@@ -299,13 +323,20 @@ impl Value {
     }
 
     pub fn axis_keys(&self) -> &[Option<Arc<Keys>>] { self.layout().axis_keys() }
+    pub fn axis_names(&self) -> &[Option<Arc<str>>] { self.layout().names() }
+    pub fn axis_name(&self, axis: usize) -> Option<&Arc<str>> { self.layout().name(axis) }
+    pub fn with_axis_names(self, names: Vec<Option<Arc<str>>>) -> Result<Self, ErrorKind> {
+        let layout = self.layout().clone().with_names(names)?;
+        self.with_layout(layout)
+    }
     pub fn keys(&self, axis: usize) -> Option<&Arc<Keys>> { self.layout().keys(axis) }
     pub fn has_keys(&self) -> bool { !self.axis_keys().is_empty() }
     pub(crate) fn layout(&self) -> &Layout {
-        static SCALAR: Layout = Layout { shape: vec![], keys: vec![] };
+        static SCALAR: Layout = Layout { shape: vec![], keys: vec![], names: vec![] };
         match self { Self::Array(a) => &a.layout, _ => &SCALAR }
     }
     pub(crate) fn with_layout(self, layout: Layout) -> Result<Self, ErrorKind> {
+        let layout = layout.unique_names();
         if layout.shape() != self.shape() { return Err(ErrorKind::Length); }
         if &layout == self.layout() { return Ok(self); }
         let Self::Array(mut a) = self else { return Err(ErrorKind::Domain); };
@@ -320,7 +351,7 @@ impl Value {
     pub(crate) fn unkeyed(&self) -> Self {
         let Self::Array(a) = self else { return self.clone(); };
         if a.layout.keys.is_empty() { return self.clone(); }
-        Self::Array(Arc::new(ArrayData { layout: self.shape().to_vec().into(), ..ArrayData::clone(a) }))
+        Self::Array(Arc::new(ArrayData { layout: a.layout.clone().with_keys(vec![]).unwrap(), ..ArrayData::clone(a) }))
     }
 
     pub(crate) fn cells(&self, rank: usize) -> Result<Cells<'_>, ErrorKind> {
@@ -584,12 +615,16 @@ impl Value {
             }
         }
         let mut keys = (0..frame.shape.len()).map(|a| frame.keys(a).cloned()).collect::<Vec<_>>();
+        let mut names = (0..frame.shape.len()).map(|a| frame.name(a).cloned()).collect::<Vec<_>>();
         for axis in 0..rank {
             let cell_keys = |cell: &Value| axis.checked_sub(rank - cell.shape().len()).and_then(|a| cell.keys(a)).cloned();
             let first = cell_keys(&cells[0]);
             keys.push(if cells.iter().all(|c| cell_keys(c) == first) { first } else { None });
+            let cell_name = |cell: &Value| axis.checked_sub(rank - cell.shape().len()).and_then(|a| cell.axis_name(a)).cloned();
+            let first = cell_name(&cells[0]);
+            names.push(if cells.iter().all(|c| cell_name(c) == first) { first } else { None });
         }
-        Self::from_parts(shape, data, cells[0].prototype().clone())?.with_keys(keys)
+        Layout::from(shape).with_keys(keys)?.inherit_names(names).collect(data, cells[0].prototype().clone())
     }
 
     fn fill_array(&self, filled: &mut HashMap<*const ArrayData, Value>) -> Self {
@@ -600,11 +635,11 @@ impl Value {
         if let Some(a) = filled.get(&key) { return a.clone(); }
         let result = Self::Array(Arc::new(ArrayData {
             layout: a.layout.clone(),
-            data: match &a.data {
+            data: Arc::new(match &*a.data {
                 Storage::Integer(v) => Storage::Integer(vec![0; v.len()]),
                 Storage::Float(v) => Storage::Float(vec![0.0; v.len()]),
                 Storage::Mixed(v) => Storage::compact(v.iter().map(|e| e.prototype_with(filled)).collect()),
-            },
+            }),
             prototype: self.prototype().clone(),
             depth: a.depth,
             exact: a.exact,
@@ -690,6 +725,16 @@ impl fmt::Display for Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn metadata_shares_storage() {
+        let original = Value::integers(vec![2], vec![1, 2]).unwrap();
+        let named = original.clone().with_axis_names(vec![Some("city".into())]).unwrap();
+        let (Value::Array(a), Value::Array(b)) = (&original, &named) else { unreachable!() };
+        assert!(std::ptr::eq(original.as_integers().unwrap().as_ptr(), named.as_integers().unwrap().as_ptr()));
+        assert!(a.layout.names().is_empty());
+        assert_eq!(b.layout.name(0).unwrap().as_ref(), "city");
+    }
 
     #[test]
     fn nested_fill_keeps_shared_children_and_limits_depth() {

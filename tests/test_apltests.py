@@ -22,7 +22,8 @@ def test_records_and_boundaries():
     quoted = Case("'a''⍝b'", "'a''⍝b'")
     assert parse(render([quoted])) == [quoted]
     assert parse('⍝ —\n'+'1'*40+' ⍝ 1') == [Case('1'*40, '1')]
-    assert '\n'+'1'*40+'\n1\n' in render([Case('1'*40, '1')])
+    assert '1'*63+'   ⍝ 1' in render([Case('1'*63, '1')])
+    assert '\n'+'1'*64+'\n1\n' in render([Case('1'*64, '1')])
     commented = Case('1 ⍝ note', '1')
     assert parse(render([commented])) == [commented]
     for bad in ['⍝  —\n1\n2\n3\n\n', '⍝  —\n1\n⍝ =>\n2\n⍝ =>\n3\n\n', '⍝ —\n1\n2\n⍝ —\n3\n3']:

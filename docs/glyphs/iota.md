@@ -20,6 +20,14 @@ A shape vector generates an array of coordinate vectors.
 ⍳[2]2 3⍴0          ⍝ 1x 2x 3x
 ```
 
+`⍳[0]Y` returns axis selectors: names where present, 1-origin indices elsewhere.
+
+```apl
+⍳[0]('city' ⋄ 2):[0]2 3⍴0 ⍝ ('city' ⋄ 2x)
+⍳[0]2 3⍴0          ⍝ 1x 2x
+⍳[0]7              ⍝ ⍳0x
+```
+
 `X⍳Y` finds the first matching major cell in `X` for each cell of `Y`. Not found: `1+≢X`. Uses tolerant matching and returns exact positions.
 
 ```apl
