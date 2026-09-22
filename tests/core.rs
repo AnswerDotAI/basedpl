@@ -16,6 +16,15 @@ fn scalar(n: impl TryInto<basedpl::Number>) -> AplValue { AplValue::scalar(n).un
 fn vector(values: &[f64]) -> AplValue { AplValue::from_parts(vec![values.len()], values.iter().copied().map(number).collect(), number(0.0)).unwrap() }
 fn ints(values: &[i64]) -> AplValue { AplValue::integers(vec![values.len()], values.to_vec()).unwrap() }
 
+#[test]
+fn csv_column_storage() {
+    let table = run("nl←•UCS 10 ⋄ •CSV 'i,f,m',nl,'1,2.5,9007199254740993',nl,'2,3,1.5'").unwrap().unwrap();
+    assert_eq!(table.at(0).as_integers(), Some([1, 2].as_slice()));
+    assert_eq!(table.at(1).as_floats(), Some([2.5, 3.].as_slice()));
+    assert_eq!(table.at(2), run("9007199254740993x 1.5").unwrap().unwrap());
+    assert!(table.at(2).as_floats().is_none());
+}
+
 #[track_caller]
 fn check_in(session: &mut Session, code: &str, expected: AplValue) {
     let result = session.eval(code);

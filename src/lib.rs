@@ -1,6 +1,7 @@
 mod agreement;
 mod array;
 pub mod cli;
+mod csv;
 mod display;
 mod editor;
 mod error;

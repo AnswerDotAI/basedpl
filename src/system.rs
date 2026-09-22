@@ -18,6 +18,7 @@ const BUILTINS: &[(&str, Builtin)] = &[
     ("•A", Builtin::Text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
     ("•D", Builtin::Text("0123456789")),
     ("•C", Builtin::Function(Call::Value(case_convert))),
+    ("•CSV", Builtin::Function(Call::Value(crate::csv::call))),
     ("•UCS", Builtin::Function(Call::Value(unicode_convert))),
     ("•LOAD", Builtin::Function(Call::Load)),
     ("•SIGNAL", Builtin::Function(Call::Value(signal))),

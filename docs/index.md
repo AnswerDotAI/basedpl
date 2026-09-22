@@ -157,6 +157,7 @@ Names are case-insensitive. `•A` and `•D` are constant arrays; the other nam
 | `•A` [Alphabet](glyphs/alphabet.md) | Uppercase Latin alphabet |
 | `•D` [Digits](glyphs/digits.md) | Decimal digits |
 | `•C` [Case](glyphs/case.md) | Unicode case conversion |
+| `•CSV` [CSV](csv.md) | CSV text ↔ keyed column vectors |
 | `•UCS` [Unicode](glyphs/unicode.md) | Unicode code points / encodings |
 | `•LOAD` [Load](glyphs/load.md) | Evaluate an APL source file |
 | `•SIGNAL` [Signal](glyphs/error-guard.md#signal) | Raise an ordinary APL error |

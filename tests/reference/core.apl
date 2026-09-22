@@ -4294,3 +4294,120 @@ t←1(2(,4)(,5))(,3)
 ⍝ =>
 4 5 2 3 1
 
+⍝⍝ CSV
+
+⍝ — Headers key compact, independently inferred columns
+nl←•UCS 10 ⋄ •CSV 'price,qty',nl,'10.5,2',nl,'20.0,4'
+'price' 'qty':(10.5 20 ⋄ 2x 4x)
+
+⍝ — Inference is per column; numeric-looking text stays text in a mixed column
+nl←•UCS 10 ⋄ •CSV 'id,note',nl,'001,001',nl,'002,no'
+'id' 'note':(1x 2x ⋄ '001' 'no')
+
+⍝ — Forced text preserves identifiers, including quoted numeric fields
+src←'id,n', (•UCS 10), '"00123",5'
+•CSV 'source' 'text_columns':(src ⋄ 'id')
+⍝ =>
+'id' 'n':((,⊂'00123') ⋄ ,5x)
+
+⍝ — Empty numeric cells use infinity; entirely empty columns are text
+nl←•UCS 10 ⋄ •CSV 'a,b,c',nl,'1,1.5,',nl,',,'
+(,¨'abc'):((1x ∞) ⋄ 1.5 ∞ ⋄ ('' ''))
+
+⍝ — Custom markers and fill, with positional forced numeric selection
+nl←•UCS 10 ⋄ src←'a,b',nl,'NA,NA',nl,'3,yes'
+•CSV 'source' 'missing' 'fill' 'numeric_columns':(src ⋄ 'NA' ⋄ ¯1x ⋄ 1)
+⍝ =>
+(,¨'ab'):(¯1x 3x ⋄ '' 'yes')
+
+⍝ — Headerless input and locale-specific numeric spelling
+nl←•UCS 10 ⋄ src←'1.234,5;2',nl,'2.000;3'
+•CSV 'source' 'header' 'separator' 'decimal' 'thousands':(src ⋄ 0 ⋄ ';' ⋄ ',' ⋄ '.')
+⍝ =>
+(1234.5 2000 ⋄ 2x 3x)
+
+⍝ — Quoting, doubled quotes, embedded newline and Unicode
+nl←•UCS 10 ⋄ •CSV 'note',nl,'"a,b"',nl,'"say ""hi"""',nl,'"λ',nl,'😀"'
+'note':('a,b' ⋄ 'say "hi"' ⋄ 'λ',(•UCS 10),'😀')
+
+⍝ — Whitespace is preserved unless trimming is requested
+nl←•UCS 10 ⋄ src←'n',nl,' 2 '
+(•CSV src) (•CSV 'source' 'trim':(src ⋄ 1))
+⍝ =>
+('n':,⊂' 2 ') ('n':,2x)
+
+⍝ — Empty input
+•CSV ''   ⍝ 0⍴⊂''
+
+⍝ — Header-only input retains empty columns
+•CSV 'a,b'   ⍝ (,¨'ab'):((0⍴⊂'') ⋄ 0⍴⊂'')
+
+⍝ — Integers beyond i64 remain exact
+•CSV 'n',(•UCS 10),'9223372036854775808'
+'n':,9223372036854775808x
+
+⍝ — Float promotion must not round large exact integers
+•CSV 'n',(•UCS 10),'9007199254740993',(•UCS 10),'1.5'
+'n':9007199254740993x 1.5
+
+⍝ — Export and import retain numeric domains, strings and headers
+T←'price' 'qty' 'note':(10.5 20 ⋄ 2x 4x ⋄ 'a,b' 'say "hi"')
+•CSV T •CSV ''
+⍝ =>
+'price' 'qty' 'note':(10.5 20 ⋄ 2x 4x ⋄ 'a,b' 'say "hi"')
+
+⍝ — Export uses CSV minus signs and no exact suffix
+('n':¯2x 3x) •CSV ''   ⍝ 'n',(•UCS 10),'-2',(•UCS 10),'3',•UCS 10
+
+⍝ — Infinity remains a number unless fill is explicitly configured
+T←'n':1x ∞ ⋄ (T •CSV '') (T •CSV 'fill':∞)
+('n',(•UCS 10),'1',(•UCS 10),'inf',•UCS 10) ('n',(•UCS 10),'1',(•UCS 10),'""',•UCS 10)
+
+⍝ — Export dialect and CRLF
+T←'n':,1234.5
+T •CSV 'separator' 'decimal' 'thousands' 'lineending':(';' ⋄ ',' ⋄ '.' ⋄ •UCS 13 10)
+⍝ =>
+'n',(•UCS 13 10),'1.234,5',•UCS 13 10
+
+⍝ — Duplicate headers
+•CSV 'a,a'
+⍝ error: DOMAIN ERROR
+
+⍝ — Inconsistent record width
+•CSV 'a,b',(•UCS 10),'1'
+⍝ error: LENGTH ERROR
+
+⍝ — Explicit numeric columns reject invalid nonmissing text
+•CSV 'source' 'numeric_columns':(('a',(•UCS 10),'no') ⋄ 'a')
+⍝ error: DOMAIN ERROR
+
+⍝ — Unknown column selector
+•CSV 'source' 'text_columns':('a,b' ⋄ 'c')
+⍝ error: INDEX ERROR
+
+⍝ — Conflicting column modes
+•CSV 'source' 'text_columns' 'numeric_columns':('a,b' ⋄ 1 ⋄ 1)
+⍝ error: DOMAIN ERROR
+
+⍝ — Unknown option
+•CSV 'source' 'seperator':('a,b' ⋄ ';')
+⍝ error: DOMAIN ERROR
+
+⍝ — Export requires equal-length column vectors
+((,¨'ab'):(1 2 ⋄ ,3)) •CSV ''
+⍝ error: LENGTH ERROR
+
+⍝ — Export rejects nested cells
+('a':,⊂1 2) •CSV ''
+⍝ error: DOMAIN ERROR
+
+⍝ — Quote-free export errors when a field needs quoting
+('a':,⊂'x,y') •CSV 'quotechar':''
+⍝ error: DOMAIN ERROR
+
+⍝ — Escape characters round-trip inside quoted text
+T←'note':,⊂'a\b"c'
+csv←T •CSV 'escapechar' 'doublequote':('\' ⋄ 0)
+•CSV 'source' 'escapechar' 'doublequote':(csv ⋄ '\' ⋄ 0)
+⍝ =>
+'note':,⊂'a\b"c'

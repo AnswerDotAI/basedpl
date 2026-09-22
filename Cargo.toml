@@ -39,6 +39,7 @@ strip = true
 incremental = false
 
 [dependencies]
+csv = "1"
 kernmini = ">=0.1.14, <1"
 anyhow = "1"
 async-trait = ">=0.1, <1"

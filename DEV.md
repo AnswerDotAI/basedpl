@@ -39,6 +39,7 @@ CI uses the development profile for Rust and Python tests. Distribution wheels u
 - `primitive.rs`: primitive identities/glyphs, valences and array-level implementations. Replicate, products and assignment retain their own agreement rules. Allocation caps are separate from numeric-to-integer conversion.
 - `number_theory.rs`: segmented prime enumeration, Miller–Rabin primality and Brent/Pollard–rho factorisation; exact integer results and scalar-cell assembly.
 - `system.rs`: case-insensitive `•Name` table for constant arrays and native functions. System functions use ordinary function nodes and application. `primitive.rs` contains single-character primitives.
+- `csv.rs`: `•CSV` text import/export, keyed options, per-column numeric inference and lossless compact storage. The `csv` crate handles records and quoting. File access remains outside the codec.
 - `polynomial.rs`: coefficient/factored/exponent-table forms, Horner evaluation, companion-matrix roots through faer, and analytic polynomial gradients/VJPs.
 - `selection.rs`: temporary labels for selective assignment. The binder marks their data flow and permits only selection functions; masks still read real user bindings. `Option<SelectionKind>` distinguishes ordinary evaluation, whole-item selection and element selection. Nested labels retain their storage and paths. Prototype labels preserve empty-cell structure.
 - `display.rs`: boxed-array diagrams, function trees and session display settings. Returned values and `⍕` remain independent of these settings.
