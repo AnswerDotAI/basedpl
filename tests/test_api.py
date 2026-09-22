@@ -33,6 +33,26 @@ def test_load(tmp_path, monkeypatch):
         with pytest.raises(AplError, match='VALUE'): apl("•LOAD 'missing.apl'")
 
 
+def test_data_io(tmp_path):
+    source, dest = tmp_path/'sales.json', tmp_path/'sales.csv'
+    source.write_text('{"price":[10.5,20.0],"qty":[2,4]}', encoding='utf-8')
+    with Session() as apl:
+        read, write, json, csv = (apl.fn(s) for s in ('•NGET', '•NPUT', '•JSON', '•CSV'))
+        table = json(read({'path': str(source), 'encoding': 'UTF-8'}))
+        encoded = csv(table, '').py
+        teq(write(encoded, str(dest)).py, len(encoded.encode('utf-8')))
+        teq(apl.fn('≡')(csv(read(str(dest))), table).py, 1)
+        with pytest.raises(AplError, match='VALUE'): write('replacement', str(dest))
+        teq(dest.read_text(), encoded)
+        teq(write('é\r\n', {'path': str(dest), 'overwrite': 1}).py, 4)
+        teq(read(str(dest)).py, 'é\r\n')
+        with pytest.raises(AplError, match='encoding'): write('bad', dict(path=str(dest), overwrite=1, encoding='UTF-16'))
+        teq(dest.read_bytes(), 'é\r\n'.encode())
+        dest.write_bytes(b'\xff')
+        with pytest.raises(AplError, match='VALUE'): read(str(dest))
+        with pytest.raises(AplError, match='VALUE'): read(str(tmp_path/'absent'))
+
+
 def test_array_surface():
     a = Array([[1, 2, 3], [4, 5, 6]])
     assert len(a) == 2

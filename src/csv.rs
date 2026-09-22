@@ -1,11 +1,11 @@
-use crate::{array::generated_len, execution::Context, keyed, Error, ErrorKind, Number, Value};
+use crate::{array::generated_len, data::text as string, execution::Context, keyed, Error, ErrorKind, Number, Value};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::ToPrimitive;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 struct Options {
-    values: HashMap<String, Value>,
+    common: crate::data::Options,
     separator: u8,
     quote: Option<u8>,
     escape: Option<u8>,
@@ -15,27 +15,12 @@ struct Options {
     thousands: Option<char>,
 }
 
-fn string(v: &Value, span: &Context<'_>) -> Result<String, Error> {
-    keyed::name(v).map(|s| s.to_string()).ok_or_else(|| span.error(ErrorKind::Domain, "CSV expects text"))
-}
-
 impl Options {
     fn new(right: &Value, import: bool, span: &Context<'_>) -> Result<Self, Error> {
-        let mut values = HashMap::new();
-        if let Some(keys) = right.keys(0) {
-            if right.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "CSV options must be a keyed vector")); }
-            for (k, v) in keys.names().iter().zip(right.elements()) {
-                let k = k.to_lowercase();
-                let common =
-                    matches!(k.as_str(), "separator" | "quotechar" | "escapechar" | "doublequote" | "decimal" | "thousands" | "trim" | "header" | "fill");
-                let specific = if import { matches!(k.as_str(), "source" | "text_columns" | "numeric_columns" | "missing") } else { matches!(k.as_str(), "forcequotes" | "lineending") };
-                if !common && !specific { return Err(span.error(ErrorKind::Domain, format!("unknown CSV option: {k}"))); }
-                if values.insert(k.clone(), v).is_some() { return Err(span.error(ErrorKind::Domain, format!("duplicate CSV option: {k}"))); }
-            }
-        }
-        else if import { values.insert("source".into(), right.clone()); }
-        else if !string(right, span)?.is_empty() { return Err(span.error(ErrorKind::Domain, "CSV export expects '' or keyed options")); }
-        let mut opts = Self { values, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.', thousands: None };
+        let mut allowed = vec!["separator", "quotechar", "escapechar", "doublequote", "decimal", "thousands", "trim", "header", "fill"];
+        allowed.extend(if import { &["source", "text_columns", "numeric_columns", "missing"][..] } else { &["forcequotes", "lineending"][..] });
+        let common = crate::data::Options::new("•CSV", right, import.then_some("source"), &allowed, span)?;
+        let mut opts = Self { common, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.', thousands: None };
         let byte = |c: Option<char>| -> Result<Option<u8>, Error> {
             c.map(|c| {
                 if c.is_ascii() && !matches!(c, '\r' | '\n' | '\0') { Ok(c as u8) } else { Err(span.error(ErrorKind::Domain, "CSV separator, quote and escape must be non-newline ASCII characters")) }
@@ -45,8 +30,8 @@ impl Options {
         opts.separator = byte(opts.character("separator", Some(','), span)?)?.ok_or_else(|| span.error(ErrorKind::Domain, "CSV needs a separator"))?;
         opts.quote = byte(opts.character("quotechar", Some('"'), span)?)?;
         opts.escape = byte(opts.character("escapechar", None, span)?)?;
-        opts.double_quote = opts.boolean("doublequote", true, span)?;
-        opts.trim = opts.boolean("trim", false, span)?;
+        opts.double_quote = opts.common.boolean("doublequote", true, span)?;
+        opts.trim = opts.common.boolean("trim", false, span)?;
         opts.decimal = opts
             .character("decimal", Some('.'), span)?
             .filter(|c| matches!(c, '.' | ','))
@@ -62,16 +47,8 @@ impl Options {
         Ok(opts)
     }
 
-    fn boolean(&self, key: &str, default: bool, span: &Context<'_>) -> Result<bool, Error> {
-        match self.values.get(key) {
-            None => Ok(default),
-            Some(Value::Number(n)) => n.boolean().map_err(|s| span.error(ErrorKind::Domain, s)),
-            _ => Err(span.error(ErrorKind::Domain, format!("CSV {key} must be Boolean"))),
-        }
-    }
-
     fn character(&self, key: &str, default: Option<char>, span: &Context<'_>) -> Result<Option<char>, Error> {
-        let Some(v) = self.values.get(key) else { return Ok(default); };
+        let Some(v) = self.common.values.get(key) else { return Ok(default); };
         let s = string(v, span)?;
         let mut chars = s.chars();
         let c = chars.next();
@@ -79,17 +56,9 @@ impl Options {
         Ok(c)
     }
 
-    fn fill(&self, span: &Context<'_>) -> Result<Number, Error> {
-        match self.values.get("fill") {
-            None => Ok(Number::try_from(f64::INFINITY).unwrap()),
-            Some(Value::Number(n)) if n.as_complex().is_none() => Ok(n.clone()),
-            _ => Err(span.error(ErrorKind::Domain, "CSV fill must be a real number")),
-        }
-    }
-
     fn columns(&self, key: &str, width: usize, headers: Option<&[Arc<str>]>, span: &Context<'_>) -> Result<Vec<bool>, Error> {
         let mut selected = vec![false; width];
-        if let Some(v) = self.values.get(key) {
+        if let Some(v) = self.common.values.get(key) {
             if v.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "CSV column selectors must be a vector")); }
             let selectors = if keyed::name(v).is_some() { vec![v.clone()] } else { v.elements().collect() };
             for v in selectors {
@@ -138,12 +107,11 @@ pub(crate) fn call(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
 }
 
 fn import(opts: &Options, span: &Context<'_>) -> Result<Value, Error> {
-    let source = opts.values.get("source").ok_or_else(|| span.error(ErrorKind::Domain, "CSV import needs source"))?;
-    let source = string(source, span)?;
-    let header = opts.boolean("header", true, span)?;
-    let fill = opts.fill(span)?;
+    let source = opts.common.text("source", span)?;
+    let header = opts.common.boolean("header", true, span)?;
+    let fill = opts.common.fill(span)?;
     let mut missing = vec![String::new()];
-    if let Some(v) = opts.values.get("missing") {
+    if let Some(v) = opts.common.values.get("missing") {
         if let Some(s) = keyed::name(v) { missing.push(s.to_string()); } else { for s in v.elements() { missing.push(string(&s, span)?); } }
     }
     let mut builder = csv::ReaderBuilder::new();
@@ -223,9 +191,9 @@ fn export(table: &Value, opts: &Options, span: &Context<'_>) -> Result<Value, Er
     if columns.iter().any(|c| c.shape().len() != 1) { return Err(span.error(ErrorKind::Rank, "CSV columns must be vectors")); }
     let rows = columns.first().map_or(0, Value::len);
     if columns.iter().any(|c| c.len() != rows) { return Err(span.error(ErrorKind::Length, "CSV columns must have equal lengths")); }
-    let header = opts.boolean("header", table.keys(0).is_some(), span)?;
-    let fill = opts.fill(span)?;
-    let force = match opts.values.get("forcequotes") {
+    let header = opts.common.boolean("header", table.keys(0).is_some(), span)?;
+    let fill = opts.common.fill(span)?;
+    let force = match opts.common.values.get("forcequotes") {
         None => false,
         Some(v) => match v.as_number().and_then(|n| n.integer().ok()) {
             Some(0) => false,
@@ -234,7 +202,7 @@ fn export(table: &Value, opts: &Options, span: &Context<'_>) -> Result<Value, Er
         },
     };
     if force && opts.quote.is_none() { return Err(span.error(ErrorKind::Domain, "CSV forcequotes needs quotechar")); }
-    let ending = opts.values.get("lineending").map(|v| string(v, span)).transpose()?.unwrap_or_else(|| "\n".into());
+    let ending = opts.common.values.get("lineending").map(|v| string(v, span)).transpose()?.unwrap_or_else(|| "\n".into());
     let terminator = match ending.as_str() {
         "\n" => csv::Terminator::Any(b'\n'),
         "\r\n" => csv::Terminator::CRLF,
@@ -282,7 +250,7 @@ fn export(table: &Value, opts: &Options, span: &Context<'_>) -> Result<Value, Er
 
 fn field(v: &Value, opts: &Options, fill: &Number, span: &Context<'_>) -> Result<String, Error> {
     let mut s = if let Some(s) = keyed::name(v) { if opts.trim { s.trim().to_owned() } else { s.to_string() } } else if let Value::Number(n) = v {
-        if opts.values.contains_key("fill") && n.grade_order(fill).is_eq() { return Ok(String::new()); }
+        if opts.common.values.contains_key("fill") && n.grade_order(fill).is_eq() { return Ok(String::new()); }
         if let Some(n) = n.as_integer() { n.to_string() } else if let Some(n) = n.as_float() {
             let s = n.to_string();
             if n.is_finite() && !s.contains(['.', 'e', 'E']) { format!("{s}.0") } else { s }

@@ -23,6 +23,7 @@ bAsedPL distinguishes two application rules. Structural mapping (arithmetic, Eac
 - [Process interfaces](processes.md): JSON lines and interruptible workers.
 - [Language rules](rules.md): evaluation, numbers, agreement, axes and fill.
 - [Axis keys](keyed.md): named rows and columns, lookup, agreement, assignment and Python conversion.
+- [Files, CSV and JSON](data.md): read, transform and write data.
 
 ## Glyph reference
 
@@ -157,7 +158,10 @@ Names are case-insensitive. `•A` and `•D` are constant arrays; the other nam
 | `•A` [Alphabet](glyphs/alphabet.md) | Uppercase Latin alphabet |
 | `•D` [Digits](glyphs/digits.md) | Decimal digits |
 | `•C` [Case](glyphs/case.md) | Unicode case conversion |
-| `•CSV` [CSV](csv.md) | CSV text ↔ keyed column vectors |
+| `•CSV` [CSV](data.md#csv) | CSV text ↔ keyed column vectors |
+| `•JSON` [JSON](data.md#json) | JSON text ↔ arrays and keyed vectors |
+| `•NGET` [Read](data.md#files) | Read UTF-8 text |
+| `•NPUT` [Write](data.md#files) | Write UTF-8 text |
 | `•UCS` [Unicode](glyphs/unicode.md) | Unicode code points / encodings |
 | `•LOAD` [Load](glyphs/load.md) | Evaluate an APL source file |
 | `•SIGNAL` [Signal](glyphs/error-guard.md#signal) | Raise an ordinary APL error |

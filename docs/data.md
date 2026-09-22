@@ -1,4 +1,74 @@
-# CSV
+# Files, CSV and JSON
+
+Read text with `•NGET`, parse it with `•CSV` or `•JSON`, calculate, then serialize and write with `•NPUT`.
+
+```text
+sales←•CSV •NGET 'sales.csv'
+totals←+/¨sales
+(totals •JSON '') •NPUT 'totals.json'
+```
+
+All four functions accept keyed options. Option names are case-insensitive.
+
+## Files
+
+`•NGET path` reads UTF-8 text, preserving newlines. `text •NPUT path` creates a UTF-8 file and returns the number of bytes written. Writing an existing path gives VALUE unless `overwrite` is `1`.
+
+```text
+text←•NGET 'sales.csv'
+text •NPUT 'copy.csv'
+text •NPUT ('path' 'overwrite':('copy.csv' ⋄ 1))
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | Required | Filename; a plain path is shorthand |
+| `encoding` | `'UTF-8'` | UTF-8 |
+| `overwrite` | `0` | `•NPUT`: replace an existing file |
+
+Missing files, invalid UTF-8 and OS file errors give VALUE. Invalid options give DOMAIN. Directories must already exist.
+
+## JSON
+
+`•JSON text` parses JSON. Objects become keyed vectors; arrays become vectors. Strings become character vectors. Nested structure is retained.
+
+```apl
+person←•JSON '{"name":"Ann","scores":[10,20]}'
+'name'⊃person              ⍝ 'Ann'
+'scores'⊃person            ⍝ 10x 20x
+```
+
+`Y •JSON ''` exports. Keyed axes form objects; unkeyed axes form arrays. Character vectors form strings, and scalar arrays export their contents. Axis names and empty-array prototypes are omitted.
+
+```apl
+('name' 'scores':('Ann' ⋄ 10x 20x)) •JSON ''
+[1x 2x ⋄ 3x 4x] •JSON ''   ⍝ '[[1,2],[3,4]]'
+(•JSON '{}') •JSON ''      ⍝ '{}'
+```
+
+Integer tokens remain exact, including large integers. Decimal/exponent tokens become floats. `true` and `false` become `1x` and `0x`, which export as numbers.
+
+```apl
+•JSON '[9223372036854775808,1.5,true,false]'
+(•JSON '[true,false]') •JSON ''   ⍝ '[1,0]'
+```
+
+JSON `null` becomes `∞` by default. Set `fill` to choose another numeric sentinel. On export, an explicitly supplied `fill` becomes `null` wherever it occurs.
+
+```apl
+•JSON '[1,null,3]'                         ⍝ 1x ∞ 3x
+•JSON 'source' 'fill':('[1,null,3]' ⋄ ¯1x)   ⍝ 1x ¯1x 3x
+(1x ∞ 3x) •JSON 'fill':∞                    ⍝ '[1,null,3]'
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `source` | Required for import | JSON text; plain text is shorthand |
+| `fill` | Import: `∞`; export: none | Numeric replacement for `null` |
+
+Malformed JSON gives DOMAIN with line/column details. Out-of-range floats, nonintegral rational exports, complex exports and functions give DOMAIN. Infinity requires explicit export fill. Duplicate object members retain the last value.
+
+## CSV
 
 `•CSV text` reads CSV into a vector of column vectors. Headers become keys. Each numeric column uses compact integer or float storage where possible.
 
@@ -18,7 +88,7 @@ T←'price' 'qty':(10.5 20 ⋄ 2x 4x)
 •CSV T •CSV ''            ⍝ 'price' 'qty':(10.5 20 ⋄ 2x 4x)
 ```
 
-## Options
+### CSV options
 
 Pass a keyed vector. Import includes `source`; export takes the table on the left. Option names are case-insensitive.
 
@@ -59,7 +129,7 @@ T←•CSV 'source' 'text_columns':(text ⋄ 'id')
 
 Separator, quote and escape must be distinct ASCII characters other than CR, LF or NUL. Fields support Unicode, doubled quotes and embedded newlines. Import accepts LF, CRLF and CR record endings. Export with `escapechar` quotes every field and doubles literal escape characters. With quoting disabled, export errors if a field requires quoting.
 
-## Numbers and missing cells
+### Numbers and missing cells
 
 Inference examines a whole column, ignoring missing cells. Integer fields produce exact numbers. Decimal/scientific notation produces floats. A column containing other text stays text. Quoted numbers participate in inference too.
 
@@ -104,6 +174,9 @@ with Session() as apl:
     text = csv(table, {'separator': ';'}).py
     restored = csv({'source': text, 'separator': ';'})
     assert restored.py['price'].tolist() == [10.5, 20.0]
+    json = apl.fn('•JSON')
+    encoded = json(table, '').py
+    assert json(encoded).py['qty'].tolist() == [2, 4]
 ```
 
-File access stays separate. With `pathlib.Path`, read using `csv(path.read_text(encoding='utf-8'))`. Write using `path.write_text(csv(table, '').py, encoding='utf-8')`.
+Use `apl.fn('•NGET')` and `apl.fn('•NPUT')` for the same file operations from Python. Python's `pathlib.Path.read_text` and `write_text` work with the codec functions too.

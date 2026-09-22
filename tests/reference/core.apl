@@ -4411,3 +4411,72 @@ csv←T •CSV 'escapechar' 'doublequote':('\' ⋄ 0)
 •CSV 'source' 'escapechar' 'doublequote':(csv ⋄ '\' ⋄ 0)
 ⍝ =>
 'note':,⊂'a\b"c'
+
+⍝⍝ JSON
+
+⍝ — JSON objects become keyed vectors; arrays retain nesting and integer exactness
+•JSON '{"name":"Ann","values":[1,2.5,[3,4]]}'
+'name' 'values':('Ann' ⋄ (1x ⋄ 2.5 ⋄ 3x 4x))
+
+⍝ — Booleans are exact numbers and null defaults to infinity
+•JSON '[true,false,null]'   ⍝ 1x 0x ∞
+
+⍝ — Explicit null fill works recursively in both directions
+opts←'source' 'fill':('{"x":[null,2]}' ⋄ ¯1x)
+(•JSON opts) •JSON 'fill':¯1x
+⍝ =>
+'{"x":[null,2]}'
+
+⍝ — Import keeps integers beyond i64 and float syntax distinct
+•JSON '[9223372036854775808,1.0,1e2]'
+9223372036854775808x 1 100
+
+⍝ — Large exact integers export without rounding
+9223372036854775808x •JSON ''   ⍝ '9223372036854775808'
+
+⍝ — Booleans export as numbers
+(•JSON '[true,false]') •JSON ''   ⍝ '[1,0]'
+
+⍝ — Empty objects, arrays and strings retain their distinct meanings
+(•JSON '[{},[],""]') •JSON ''   ⍝ '[{},[],""]'
+
+⍝ — Scalar strings remain strings, including one-character strings
+(•JSON '["a","",["b","c"]]') •JSON ''
+'["a","",["b","c"]]'
+
+⍝ — Ordinary matrices export as nested JSON arrays
+[1x 2x ⋄ 3x 4x] •JSON ''   ⍝ '[[1,2],[3,4]]'
+
+⍝ — Keyed axes export as object levels
+('row':'col'  'val':(1x 2x)) •JSON ''
+'{"row":{"col":1,"val":2}}'
+
+⍝ — Unkeyed scalar arrays export their contents
+(⊂2x) •JSON ''   ⍝ ,'2'
+
+⍝ — Duplicate object members follow the JSON library's last-value rule
+•JSON '{"name":1,"name":2}'   ⍝ 'name':2x
+
+⍝ — Malformed JSON gives a located error
+•JSON '[1,]'
+⍝ error: DOMAIN ERROR
+
+⍝ — Out-of-range float input cannot silently become a missing sentinel
+•JSON '1e999'
+⍝ error: DOMAIN ERROR
+
+⍝ — Infinity requires explicit fill on export
+∞ •JSON ''
+⍝ error: DOMAIN ERROR
+
+⍝ — Nonintegral rationals have no JSON number representation
+1r3 •JSON ''
+⍝ error: DOMAIN ERROR
+
+⍝ — Complex values have no JSON number representation
+1j2 •JSON ''
+⍝ error: DOMAIN ERROR
+
+⍝ — Functions have no JSON representation
+(,⊂+) •JSON ''
+⍝ error: DOMAIN ERROR

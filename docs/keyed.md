@@ -467,7 +467,7 @@ assert Array({'aa': 1, 'bb': 2}).df.loc['bb', 1] == 2
 assert Array(7).df.loc[1, 1] == 7
 ```
 
-The [process protocol](processes.md) carries `axis_keys` and `axis_names` beside shape, row-major data and prototype. For `sales` above:
+[`•JSON`](data.md#json) converts ordinary JSON objects to keyed vectors. The [process protocol](processes.md) carries `axis_keys` and `axis_names` beside shape, row-major data and prototype. For `sales` above:
 
 ```json
 {
