@@ -110,6 +110,8 @@ Errors use `⍝ error: DOMAIN ERROR` on the expectation line. A no-result expect
 
 Group cases with `⍝⍝ Section name`. Sections are labels, not shared sessions. Each case must supply its own definitions and setup.
 
+File cases can use `testpath`. When mentioned in the source, the runner binds it to a new path in a per-case temporary directory, removed after the check. The file does not yet exist. Write fixture contents before reading them. This works in scans, activation and the Rust suite.
+
 ```apl
 ⍝⍝ Evaluation order
 

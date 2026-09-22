@@ -215,8 +215,8 @@ class Array(_Operators):
         return _result(self._inner.select([part(o) for o in parts]), self._session).value
     def __matmul__(self, other):
         if isinstance(other, Function): raise TypeError('inner product requires two arrays or two functions')
-        return plus.inner(times)(self, other)
-    def __rmatmul__(self, other): return plus.inner(times)(other, self)
+        return _builtin('+').inner(_builtin('×'))(self, other)
+    def __rmatmul__(self, other): return _builtin('+').inner(_builtin('×'))(other, self)
     def __array__(self, dtype=None, copy=None):
         if copy is False: raise ValueError('basedpl conversion requires a copy')
         result = self.np
@@ -293,6 +293,12 @@ class Session:
 
     def __getitem__(self, source): return self(source)
 
+    def __getattr__(self, name):
+        "Look up a builtin function by glyph, registered name/alias, or system name."
+        return _builtin(name, self)
+
+    def __dir__(self): return sorted(set(super().__dir__()) | _builtins.keys())
+
     def __setitem__(self, name, value):
         if not isinstance(name, str): raise TypeError('binding name must be a string')
         self(**{name:value})
@@ -301,6 +307,18 @@ class Session:
         "A composable late-bound Function: one argument is omega; two are alpha, omega."
         if not isinstance(source, str): raise TypeError('function expression must be a string')
         return _result(_Function.late_bound(source), self).value
+
+    def names(self, prefix='', classes=(2,3,4)):
+        "Sorted visible names, filtered by prefix and name class."
+        return self._worker.names(prefix, classes)
+
+    def inspect(self, name):
+        "Inspect a name or glyph without evaluating it; return None when absent."
+        return self._worker.inspect(name=name)
+
+    def complete(self, prefix=''):
+        "Complete user and system names."
+        return self._worker.names(prefix, complete=True)
 
     def interrupt(self):
         "Interrupt an evaluation from another thread."
@@ -314,6 +332,14 @@ class Session:
 
     def __exit__(self, *args): self.close()
 
-from .functions import *
-from .functions import __all__ as _function_names, _binary, _unary
+from .functions import Function, fork, atop, __all__ as _function_names, _binary, _unary, _builtin, _builtins
+from .printing import to_python
+__all__ += ['to_python']
 __all__ += _function_names
+
+def __getattr__(name): return _builtin(name)
+def __dir__(): return sorted(set(globals()) | _builtins.keys())
+
+if 'IPython' in sys.modules:
+    from .ipython import load_ipython_extension
+    if (ip := sys.modules['IPython'].get_ipython()) is not None: load_ipython_extension(ip)

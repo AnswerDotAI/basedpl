@@ -7545,3 +7545,26 @@ myns←⍬:⍬ ⋄ myns.aa←3 ⋄ myns.bb←⍬:⍬ ⋄ myns.cc←⍳3 ⋄ myns
 ⍝ =>
 1 2 3 1 2 3 4 8 16 24 32
 
+⍝ april:2323 — Functions in nested keyed records
+myns←(⍬:⍬) ⋄ myns.f1←{⍵+3} ⋄ myns.a←(⍬:⍬) ⋄ myns.a.f2←{⍵×2} ⋄ myns.f1 myns.a.f2 6
+15
+
+⍝ april:2319 — Update fields in nested record vectors
+myns←(⍬:⍬) ⋄ myns.aa←(⍬:⍬) ⋄ myns.aa.bb←⍳9
+myns.aa.bb[2 4]←⊂(⍬:⍬) ⋄ myns.aa.bb[2].cc←3 ⋄ myns.aa.bb[4].cc←5
+myns.aa.bb[2 4]←{r←⍵ ⋄ r.cc+←3 ⋄ r}¨myns.aa.bb[2 4]
+(⊂myns),{⍵.cc}¨myns.aa.bb[2 4]
+⍝ =>
+(('aa':'bb':(1 ⋄ ('cc':6) ⋄ 3 ⋄ ('cc':8) ⋄ 5 ⋄ 6 ⋄ 7 ⋄ 8 ⋄ 9)) ⋄ 6 ⋄ 8)
+
+⍝ april:2335 — Map updates across nested records
+myns←(⍬:⍬) ⋄ myns.a←1 ⋄ myns.b←2
+myns.c←{n←(⍬:⍬) ⋄ n.a←⍵ ⋄ n.b←⍵×2 ⋄ n.d←⍳5 ⋄ n}¨⍳3
+myns.c←{n←⍵ ⋄ n.a+←2 ⋄ n.c←5 ⋄ n.d[3 5]←⊂('a':2) ⋄ n.e←{('a':3)}¨⍳3 ⋄ n}¨myns.c
+myns
+⍝ =>
+e←('a':3)('a':3)('a':3) ⋄ d←(1 ⋄ 2 ⋄ ('a':2) ⋄ 4 ⋄ ('a':2))
+r1←(,¨'abdce'):(3 ⋄ 2 ⋄ d ⋄ 5 ⋄ e)
+r2←(,¨'abdce'):(4 ⋄ 4 ⋄ d ⋄ 5 ⋄ e)
+r3←(,¨'abdce'):(5 ⋄ 6 ⋄ d ⋄ 5 ⋄ e)
+(,¨'abc'):(1 ⋄ 2 ⋄ r1 r2 r3)

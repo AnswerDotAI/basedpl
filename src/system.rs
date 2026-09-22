@@ -6,10 +6,16 @@ use crate::{
     Error, ErrorKind, Function, Value,
 };
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum Call { Value(fn(Option<&Value>, &Value, &Context<'_>) -> Result<Value, Error>), Load }
+#[derive(Clone, Debug)]
+pub(crate) enum Call {
+    Value(fn(Option<&Value>, &Value, &Context<'_>) -> Result<Value, Error>),
+    Session(fn(&mut crate::Session, Option<&Value>, &Value, &crate::Span) -> Result<Value, Error>),
+    Regex(std::sync::Arc<::regex::Regex>, crate::regex::Operation),
+    Distribution(std::sync::Arc<crate::distribution::Distribution>, crate::distribution::Operation),
+    Load,
+}
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct SystemFunction { pub name: &'static str, pub call: Call }
 
 enum Builtin { Text(&'static str), Function(Call) }
@@ -20,18 +26,43 @@ const BUILTINS: &[(&str, Builtin)] = &[
     ("•c", Builtin::Function(Call::Value(case_convert))),
     ("•csv", Builtin::Function(Call::Value(crate::csv::call))),
     ("•json", Builtin::Function(Call::Value(crate::json::call))),
+    ("•vfi", Builtin::Function(Call::Value(crate::data::vfi))),
+    ("•r", Builtin::Function(Call::Value(crate::regex::compile))),
+    ("•normal", Builtin::Function(Call::Value(crate::distribution::normal))),
+    ("•uniform", Builtin::Function(Call::Value(crate::distribution::uniform))),
+    ("•beta", Builtin::Function(Call::Value(crate::distribution::beta))),
+    ("•bernoulli", Builtin::Function(Call::Value(crate::distribution::bernoulli))),
+    ("•binomial", Builtin::Function(Call::Value(crate::distribution::binomial))),
+    ("•cauchy", Builtin::Function(Call::Value(crate::distribution::cauchy))),
+    ("•chisquared", Builtin::Function(Call::Value(crate::distribution::chisquared))),
+    ("•exponential", Builtin::Function(Call::Value(crate::distribution::exponential))),
+    ("•fisher", Builtin::Function(Call::Value(crate::distribution::fisher))),
+    ("•gamma", Builtin::Function(Call::Value(crate::distribution::gamma))),
+    ("•inversegamma", Builtin::Function(Call::Value(crate::distribution::inversegamma))),
+    ("•laplace", Builtin::Function(Call::Value(crate::distribution::laplace))),
+    ("•lognormal", Builtin::Function(Call::Value(crate::distribution::lognormal))),
+    ("•logistic", Builtin::Function(Call::Value(crate::distribution::logistic_distribution))),
+    ("•poisson", Builtin::Function(Call::Value(crate::distribution::poisson))),
+    ("•student", Builtin::Function(Call::Value(crate::distribution::student))),
+    ("•weibull", Builtin::Function(Call::Value(crate::distribution::weibull))),
     ("•nget", Builtin::Function(Call::Value(crate::data::read))),
     ("•nput", Builtin::Function(Call::Value(crate::data::write))),
     ("•ucs", Builtin::Function(Call::Value(unicode_convert))),
     ("•load", Builtin::Function(Call::Load)),
     ("•signal", Builtin::Function(Call::Value(signal))),
+    ("•nc", Builtin::Function(Call::Session(crate::Session::system_nc))),
+    ("•nl", Builtin::Function(Call::Session(crate::Session::system_nl))),
+    ("•src", Builtin::Function(Call::Session(crate::Session::system_src))),
+    ("•ex", Builtin::Function(Call::Session(crate::Session::system_ex))),
 ];
+
+pub(crate) fn names() -> impl Iterator<Item = &'static str> { BUILTINS.iter().map(|(name, _)| *name) }
 
 pub(crate) fn lookup(name: &str) -> Option<Operand> {
     let &(name, ref builtin) = BUILTINS.iter().find(|(key, _)| key.eq_ignore_ascii_case(name))?;
     Some(match builtin {
         Builtin::Text(text) => Operand::Value(Value::new(vec![text.len()], text.chars().map(Value::Character).collect()).unwrap()),
-        Builtin::Function(call) => Operand::Function(Function::system(SystemFunction { name, call: *call })),
+        Builtin::Function(call) => Operand::Function(Function::system(SystemFunction { name, call: call.clone() })),
     })
 }
 

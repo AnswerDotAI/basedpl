@@ -1240,3 +1240,201 @@ tc←{  ⍝ Trace function application.
      (maxcols ulim)reshape ⍵         ⍝ multi-column display.                   
  }                                                                             
 
+cal←{ ⍝ Calendar for absolute year or (year month).
+    ⍺←1
+    cntr←{(⌈0.5×+/∧\' '=⍵)⌽⍵}
+    1=≢,⍵:{
+        12≥|⍵:•signal 'DOMAIN ERROR'
+        year←4 3⍴0 cal¨⍵,¨⍳12
+        join←{⍉⊃(↓⍉⍺),'   ',↓⍉⍵}
+        head←cntr ¯66↑⍕0+⍵
+        head⍪,[⍳2]⊃join/year
+    }⍵
+    dys←'Su' 'Mo' 'Tu' 'We' 'Th' 'Fr' 'Sa'
+    months←'January' 'February' 'March' 'April' 'May' 'June'
+    months,←'July' 'August' 'September' 'October' 'November' 'December'
+    yyyy mm←⍵
+    day←days yyyy mm 1
+    mms dds←2↑1↓↓⍉date day+¯1+⍳31
+    fmts←2 0∘⍕¨(mm=mms)/dds
+    pad←(7|day)↑0↑fmts
+    dmat←⊃{⍺,' ',⍵}/dys⍪6 7⍴42↑pad,fmts
+    head←(mm⊃months),⍺/' ',⍕0+yyyy
+    ⊃(⊂cntr ¯20↑head),↓{(∨/⍵≠' ')⌿⍵}dmat
+}
+packZ←{ ⍝ LZW: positive bit limit compresses; zero expands; negative returns dictionary.
+    ⍺←12
+    ⍺=0:{
+        shape bits alph←⍵
+        codes←1+2⊥bits
+        expand←{
+            codes dict prev out←⍵
+            0=≢codes:out
+            n←↑codes
+            text←{⍵≤≢dict:⍵⊃dict ⋄ prev,↑prev}n
+            next←dict,(0<≢prev)/⊂prev,↑text
+            ∇(1↓codes)next text(out,text)
+        }
+        shape⍴expand codes(,¨alph)(0↑alph)(0↑alph)
+    }⍵
+    shape←⍴⍵ ⋄ src←,⍵ ⋄ alph←∪src
+    limit←2*|⍺
+    limit<≢alph:•signal 'DOMAIN ERROR'
+    compress←{
+        rest dict word codes←⍵
+        0=≢rest:(codes,(0<≢word)/¯1+dict⍳⊂word)dict
+        next←word,↑rest
+        (⊂next)∊dict:∇(1↓rest)dict next codes
+        extended←dict,(limit>≢dict)/⊂next
+        ∇(1↓rest)extended(1↑rest)(codes,¯1+dict⍳⊂word)
+    }
+    codes dict←compress src(,¨alph)(0↑alph)⍬
+    ⍺<0:⊃dict
+    width←⌈2⍟1+⌈/codes,1
+    shape((width⍴2)⊤codes)alph
+}
+
+unify←{ ⍝ Unify expressions; ⍺ lists variable symbols.
+    vars←,⍺
+    isvar←{∨/⍵∘≡¨vars}
+    disagree←{
+        ⍺≡⍵:⍬
+        isvar ⍺:⍺ ⍵
+        isvar ⍵:⍵ ⍺
+        0∊≡¨⍺ ⍵:•signal 'DOMAIN ERROR'
+        ~(⍴⍺)≡⍴⍵:•signal 'LENGTH ERROR'
+        i←(,⍺≡¨⍵)⍳0
+        (i⊃,⍺)∇(i⊃,⍵)
+    }
+    solve←{
+        x y←⍵
+        pair←x disagree y
+        0=≢pair:x
+        var val←pair
+        occurs←{⍵≡var:1 ⋄ 0=≡⍵:0 ⋄ ∨/,∇¨⍵}
+        occurs val:•signal 'DOMAIN ERROR'
+        subst←{⍵≡var:val ⋄ 0=≡⍵:⍵ ⋄ ∇¨⍵}
+        ∇(subst x)(subst y)
+    }
+    {solve ⍺ ⍵}/⍵
+}
+
+ratsum←{
+    sum←{lrus mans rrus←⍵
+        cr rru←⍺ rrusum rrus
+        cm man_←cr rsum mans
+        lru man←cm lrusum lrus man_
+        lru man rru
+    }
+    rrusum←{
+        co rru←⍺ rsum ⍵
+        co=⍺:co rru
+        co rsum ⍵
+    }
+    lrusum←{lrus man←⍵
+        co lru←⍺ rsum lrus
+        co=⍺:lru man
+        cc dd←⍺ rsum 2 ¯1↑lrus
+        cc ∇(¯1⌽lrus)(dd,man)
+    }
+    atab←{
+        min←¯1+⍵⍳'0'
+        vals←(⍳≢⍵)-1+min
+        ntab←vals+⌝vals
+        base←2/⍴⍵
+        vtab←-min-base⊤base⊥min+base⊤ntab
+        ptab←↓(1+min+(¯1⌽⍳3)⍉vtab)⊃¨⊂⍵
+        {(ptab,⍵)⍪⍵,⊂'0.'}⍵,¨'.'
+    }
+    rsum←(atab ⍶~'{}'){
+        cov itot←↓⍉⊃⍶[↓⍉digs⍳⍵]
+        '0'∧.=cov,⍺:'0'itot
+        co tot←'0'∇⊃(1↓cov,⍺)itot
+        (↑↑⌽'0'∇⊃co,⊂1↑cov)tot
+    }
+    compile←{
+        lmrs wids reps←↓⍉⊃trans¨⍺ ⍵
+        mpads←-wids-⊂⌈/wids
+        rpads←2/⊂∧¨/reps
+        ⊃¨↓⍉⊃pad¨↓⍉⊃lmrs mpads rpads
+    }
+    trans←{
+        ~∧/⍵∊digs,'<|.>':err'bad char'
+        ~'<>'≡ext ⍵:err'bad <>s'
+        ~'<>'≡⍵∩'<>':err'bad <>s'
+        ~'||'≡⍵∩'||':err'bad ||s'
+        lru man rru←'|'sepr ⍵~'<>'
+        1∊lru man rru∊⊂'':err'null field'
+        '.'∊lru,rru:err'bad number'
+        ml←¯1+man⍳'.'
+        mr←(⍴man)-ml+'.'∊man
+        (lru man rru)(ml,mr)(,⊃⍴¨lru rru)
+    }
+    pad←{
+        (l m r)(ml mr)(lr rr)←⍵
+        dot←'.'~m,mr↓'.'
+        man←(⌽ml⍴⌽l),m,dot,mr⍴r
+        rru←rr⍴mr⌽r
+        lru←⌽lr⍴⌽(-ml)⌽l
+        lru man rru
+    }
+    norm←{crru xabs icon clru ⍵}
+    clru←{lru man rru←⍵
+        ∨/∧/optl=⌝lru:⍵
+        lw rw←⌈\⍴¨lru rru
+        mw←⍴man~'.'
+        _lru←cdigs[digs⍳lru]
+        _man←'. 'repl(man≠'.')\mw⍴_lru
+        _rru←rw⍴mw⌽_lru
+        _lmr←_lru _man _rru
+        lmrr←lru man,⊂rw⍴rru
+        ∇'0'sum⊃¨↓⍉⊃_lmr lmrr
+    }
+    icon←{lru man rru←⍵
+        (⌽minrep⌽lru)man(minrep rru)
+    }
+    minrep←{
+        facs←{(0=⍵|⍴⍵)/⍵}⍳⍴⍵
+        reps←facs⍴¨⊂⍵
+        seqs←(⍴⍵)⍴¨reps
+        (seqs⍳⊂⍵)⊃reps
+    }
+    xabs←{lru man rru←⍵
+        1=⍴man:⍵
+        '.'=↑⌽man:∇ lru(¯1↓man)rru
+        ('.'∊man)∧(↑⌽man)=↑⌽rru:∇ ¯1 amd ⍵
+        (~'.'∊2↑man)∧(↑lru)≡↑man:∇ 1 amd ⍵
+        ⍵
+    }
+    amd←{lru man rru←⍵
+        lru←(⍺⌈0)⌽lru
+        rru←(⍺⌊0)⌽rru
+        lru(⍺↓man)rru
+    }
+    crru←{lru man rru←⍵
+        ~rru≡,comp'0':⍵
+        sig←×-/digs⍳rru,'0'
+        inc←(digs⍳'0')⊃sig⌽digs
+        zero←'0'⊣¨¨⍵
+        inc sum⊃¨↓⍉⊃⍵ zero
+    }
+    sepr←{⍺{(≢⍺)↓¨(⍺⍷⍵)⊂⍵}⍺,⍵}
+    join←{⊃⍺{⍺,⍶,⍵}/⍵}
+    repl←{⊃⍵{⍺ join ⍵ sepr ⍶}/⍺}
+    comp←{((⌽digs),⍵)[(digs,⍵)⍳⍵]}
+    fmt←{'|' '.|'repl('|'join ⍵)join'<>'}
+    ext←{⌽2↑¯1⌽⍵}
+    err←{•signal 'DOMAIN ERROR'}
+    digs←⊃↓/(1 ¯1×'{}'≡ext ⍶),⊂⍶
+    optl←'0',('0'∊ext digs)/comp'0'
+    cdigs←{
+        '0'∊ext ⍵:comp ⍵
+        (1-2×⍵⍳'0')⌽⌽⍵
+    }digs
+    xchars←' {}[]()<>\|/,:.'
+    1∊xchars∊digs:err'bad digit'
+    ~'0'∊digs:err'missing zero'
+    ~digs≡∪digs:err'duplicate digits'
+    dyad←1 ⋄ ⍺←0⊣dyad←0 ⋄ ~dyad:fmt norm↑trans comp ⍵
+    fmt norm'0'sum ⍺ compile ⍵
+}

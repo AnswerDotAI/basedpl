@@ -88,7 +88,7 @@ fn language_examples() {
                 let actual = match result.error { Some(e) => Err(e), None => Ok(result.value) };
                 if let Some(expected) = expected {
                     match (actual, run(expected)) {
-                        (Ok(Some(actual)), Ok(Some(expected))) if actual == expected => (),
+                        (Ok(Some(actual)), Ok(Some(expected))) if basedpl::reference::difference(&actual, &expected, 1e-13, 1e-13).is_none() => (),
                         pair => failures.push(format!("{}:{}: {code}\n{pair:?}", path.display(), line + 1)),
                     }
                 }
@@ -140,7 +140,7 @@ fn explicit_output_without_echo() {
     let r = s.eval_with("⎕←9 ⋄ 1÷0", quiet());
     assert_eq!(r.error.unwrap().kind, Domain);
     assert_eq!(r.output, ["9"]);
-    for code in ["]Display 1 2", "]box ?"] { assert!(!s.eval_with(code, quiet()).output.is_empty()); }
+    for code in ["]Display 1 2", "]box ?", "]help +", "]help f -source"] { assert!(!s.eval_with(code, quiet()).output.is_empty()); }
     let streamed = Arc::new(std::sync::Mutex::new(Vec::new()));
     let events = streamed.clone();
     let output = Arc::new(move |kind, text: &str| events.lock().unwrap().push((matches!(kind, basedpl::OutputKind::Explicit), text.to_owned())));

@@ -4480,3 +4480,127 @@ opts←'source' 'fill':('{"x":[null,2]}' ⋄ ¯1x)
 ⍝ — Functions have no JSON representation
 (,⊂+) •json ''
 ⍝ error: DOMAIN ERROR
+
+⍝ — LZW repeated-code expansion and capped dictionary
+•load 'lib/dyalog.apl' ⋄ (0 packZ packZ 'aaaaaa' ⋄ 0 packZ 1 packZ 'abababab')
+('aaaaaa' ⋄ 'abababab')
+
+⍝ — LZW dictionary
+•load 'lib/dyalog.apl' ⋄ ¯3 packZ 'aba'
+['a ' ⋄ 'b ' ⋄ 'ab' ⋄ 'ba']
+
+⍝ — LZW alphabet exceeds code width
+•load 'lib/dyalog.apl' ⋄ 1 packZ 'abc'
+⍝ error: DOMAIN ERROR
+
+⍝ — Absolute-year calendar layout
+•load 'lib/dyalog.apl' ⋄ ⍴cal 2025
+33x 66x
+
+⍝ — Unification substitutes repeated variables on either side
+•load 'lib/dyalog.apl' ⋄ 'xy'unify('f' 3 'y')('f' 'x' 'x')
+('f' ⋄ 3 ⋄ 3)
+
+⍝ — Unification rejects cyclic substitution
+•load 'lib/dyalog.apl' ⋄ 'x'unify('x' ⋄ 'f' 'x')
+⍝ error: DOMAIN ERROR
+
+⍝ — Unification rejects distinct constants
+•load 'lib/dyalog.apl' ⋄ 'x'unify('f' 1)('f' 2)
+⍝ error: DOMAIN ERROR
+
+⍝ — Unification rejects different term shapes
+•load 'lib/dyalog.apl' ⋄ 'x'unify('f' 1)('f' 1 2)
+⍝ error: LENGTH ERROR
+
+⍝ — Repeating rational carry and fractional normalization
+•load 'lib/dyalog.apl' ⋄ rs←'0123456789'ratsum ⋄ ('<0|0|3>'rs'<0|0|6>' ⋄ '<0|0.5|0>'rs'<0|0.5|0>')
+('<0|1|0>' ⋄ '<0|1|0>')
+
+⍝ — Repeating rational negation and binary carry
+•load 'lib/dyalog.apl' ⋄ (('0123456789'ratsum)'<0|1|0>' ⋄ '<0|1|0>'('01'ratsum)'<0|1|0>')
+('<9|9|0>' ⋄ '<0|10|0>')
+
+⍝ — Repeating rational invalid input
+•load 'lib/dyalog.apl' ⋄ '<0|1|0>'('0123456789'ratsum)'<0||0>'
+⍝ error: DOMAIN ERROR
+
+⍝ — Append a field through an indexed record
+rows←('aa':1)('bb':2) ⋄ rows[2].cc←3 ⋄ rows
+('aa':1)(('bb':2),('cc':3))
+
+⍝⍝ Name inspection
+
+⍝ — Name classes follow lexical bindings, including hybrids and operators
+x←7 ⋄ f←+ ⋄ op←¨ ⋄ hybrid←/ ⋄ •nc 'x' 'f' 'op' 'hybrid' 'absent' 'bad name'
+2x 3x 4x 3x 0x ¯1x
+
+⍝ — Name lists are sorted, filtered by prefix and class
+zeta←1 ⋄ mean←{+/⍵} ⋄ member←+ ⋄ 'me' •nl 3
+'mean' 'member'
+
+⍝ — The nearest binding determines the visible class
+x←1 ⋄ f←{x←+ ⋄ local←2 ⋄ (•nc 'x' ⋄ •nl 2)} ⋄ f 0
+(3x ⋄ ,⊂'local')
+
+⍝ — Expunging a local reveals its outer binding; handles retain definitions
+x←1 ⋄ f←{x←2 ⋄ erased←•ex 'x' ⋄ x} ⋄ kept←f ⋄ •ex 'f' ⋄ kept 0
+1
+
+⍝ — Erasure is idempotent and protects implicit/system names
+x←1 ⋄ •ex 'x' 'x' 'bad name' '•a' '⍵'
+1x 1x 0x 0x 0x
+
+⍝ — Source retains the definition, while derived functions use APL display
+f←{⍵+1} ⋄ plus←+ ⋄ •src 'f' 'plus'
+('{⍵+1}' ⋄ ,'+')
+
+⍝ — Batch inspection retains its frame and empty result domain
+(⍴•nc [ 'aa' 'bb' ⋄ 'cc' 'dd'] ⋄ •nc 0⍴⊂'' ⋄ •src 0⍴⊂'')
+(2x 2x ⋄ (0⍴0x) ⋄ 0⍴⊂'')
+
+⍝ — Values have no function source
+x←1 ⋄ •src 'x'
+⍝ error: DOMAIN ERROR
+
+⍝ — Undefined source is a value error
+•src 'absent'
+⍝ error: VALUE ERROR
+
+⍝ — Listing rejects unsupported classes
+•nl 9
+⍝ error: DOMAIN ERROR
+
+⍝⍝ Numeric text input
+
+⍝ — Validity and values; minus is accepted without evaluating expressions
+•vfi '12 nope -3 1.5 1+2'
+(1x 0x 1x 1x 0x ⋄ 12 0 ¯3 1.5 0)
+
+⍝ — Preserve numeric domains, signed exponents, fractions and complex components
+•vfi '+2 3x -4x 1r3 -2r-3 1e-2 1j-2 ∞ -∞'
+((9⍴1x) ⋄ 2 3x ¯4x 1r3 2r3 0.01 1j¯2 ∞ ¯∞)
+
+⍝ — Invalid fractions, malformed numbers and code remain invalid fields
+•vfi '1r0 1x2 . NaN ⎕←7'
+((5⍴0x) ⋄ 5⍴0)
+
+⍝ — Explicit separators retain empty fields as valid zero
+',;' •vfi ',3.9;2.4,,76,'
+((6⍴1x) ⋄ 0 3.9 2.4 0 76 0)
+
+⍝ — Explicit separators trim whitespace but do not split on it
+'⋄' •vfi '1 ⋄ 2 3 ⋄ 4 '
+(1x 0x 1x ⋄ 1 0 4)
+
+⍝ — Default whitespace splitting and empty result domains
+(•vfi ' ' ⋄ •vfi '' ⋄ •vfi '2',(•ucs 9 10),'3')
+(((0⍴0x) ⋄ 0⍴0) ⋄ ((0⍴0x) ⋄ 0⍴0) ⋄ (1x 1x ⋄ 2 3))
+
+⍝ — Empty separator list treats its input as one field
+'' •vfi '1 2'
+((,0x) ⋄ ,0)
+
+⍝ — Numeric arrays are not text
+•vfi 1 2
+⍝ error: DOMAIN ERROR

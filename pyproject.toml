@@ -18,6 +18,7 @@ classifiers = [
 
 [project.optional-dependencies]
 pandas = ["pandas"]
+docs = ["nbdev>=3.3.22"]
 dev = ["fastship>=0.0.11", "maturin>=1.0,<2.0", "pytest", "numpy", "pandas", "conkernelclient>=0.0.23"]
 
 [project.scripts]
@@ -35,10 +36,13 @@ python-source = "python"
 module-name = "basedpl._core"
 
 [tool.uv]
-cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.rs" }, { file = "python/basedpl/keyboard.json" }, { file = "Cargo.toml" }, { file = ".git/fastws-cargo-key" }]
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.rs" }, { file = "build.rs" }, { file = "docs/**/*.md" }, { file = "python/basedpl/keyboard.json" }, { file = "Cargo.toml" }, { file = ".git/fastws-cargo-key" }]
 
 [tool.fastship]
 branch = "main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.nbdev]
+lib_path = "python/basedpl"

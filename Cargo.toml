@@ -40,6 +40,8 @@ incremental = false
 
 [dependencies]
 csv = "1"
+regex = "1"
+tempfile = "3"
 kernmini = ">=0.1.14, <1"
 anyhow = "1"
 async-trait = ">=0.1, <1"
@@ -57,6 +59,7 @@ num-traits = ">=0.2.19, <1"
 libm = ">=0.2, <1"
 lambert_w = ">=1.2.34, <2"
 rand = ">=0.10.2, <1"
+statrs = { version = ">=0.19.1, <1", default-features = false, features = ["std", "rand"] }
 faer = { version = ">=0.24.4, <1", default-features = false, features = ["std", "linalg"] }
 
 [features]

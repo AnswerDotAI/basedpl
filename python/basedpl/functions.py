@@ -1,6 +1,8 @@
 "Word names and composition over the interpreter's immutable function nodes."
 from keyword import iskeyword
+from unicodedata import normalize
 from . import _Operators, _Function, _array, _context, Session, symbols
+from ._core import _system_functions
 
 _default_session = None
 _HOLE = object()
@@ -12,7 +14,7 @@ def _default():
 
 def _build(kind, *operands, valence=0):
     if any(o is _HOLE or isinstance(o, _Pending) for o in operands): return _Pending(kind, operands, valence)
-    if kind == 'history': return _build('⍣', operands[0], enclose(operands[1]))
+    if kind == 'history': return _build('⍣', operands[0], _builtin('⊂')(operands[1]))
     session, values = _context(*operands), []
     for o in operands:
         if isinstance(o, Function): values.append(o._inner)
@@ -89,6 +91,16 @@ class Function(_Combinators):
     "An APL function node, optionally associated with a session for name lookup."
     def __init__(self, inner, valence=0, session=None): self._inner, self._valence, self._session = inner, valence, session
     def __repr__(self): return repr(self._inner)
+    def inspect(self):
+        "APL source and help, without running the function."
+        info = (self._session or _default())._worker.inspect(function=self._inner)
+        calls = ('f(right) or f(left, right)', 'f(right)', 'f(left, right); f(right) binds the right argument')[self._valence]
+        info['help'] = f'Calls: {calls}\n\n' + info['help']
+        return info
+    @property
+    def source(self): return self.inspect()['source']
+    @property
+    def __doc__(self): return self.inspect()['help']
     def __call__(self, *args):
         if len(args) == 1 and self._valence == 2: return _build('∘', self, args[0], valence=1)
         if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this APL function')
@@ -99,23 +111,35 @@ class Function(_Combinators):
 def fork(f, g, h): return _build('fork', f, g, h)
 def atop(f, g): return _build('⍤', f, g)
 
-__all__ = ['Function', 'fork', 'atop']
-_primitives = {}
+def _python_name(name):
+    name = normalize('NFKC', name.replace('-', '_'))
+    return name+'_' if iskeyword(name) else name
+
+_builtins = {alias: (name, 0) for name in _system_functions for alias in (name, name[1:])}
 for _glyph, _glyph_name, _monad, _dyad, _aliases, _shortcut in symbols:
     if not (_monad or _dyad): continue
-    _inner = _Function.builtin(_glyph)
-    _primitives[_glyph] = Function(_inner)
+    for _name in (_glyph, _glyph_name, *_aliases.split()):
+        if not _name: continue
+        _builtins[_name] = _builtins[_python_name(_name)] = (_glyph, 0)
     for _valence, _name in enumerate((_monad, _dyad), 1):
-        if _name:
-            _name = _name.replace('-', '_')
-            if iskeyword(_name): _name += '_'
-            globals()[_name] = Function(_inner, _valence)
-            __all__.append(_name)
+        if _name: _builtins[_name] = _builtins[_python_name(_name)] = (_glyph, _valence)
+
+__all__ = ['Function', 'fork', 'atop', *(name for name in _builtins if name.isidentifier() and not iskeyword(name))]
+
+def _builtin(name, session=None):
+    "Resolve a builtin with operation-name valence, optionally in a session."
+    source, valence = _builtins.get(name, (name if name.startswith('•') else '•'+name, 0))
+    try: inner = _Function.builtin(source)
+    except ValueError: raise AttributeError(f'unknown builtin function: {name!r}') from None
+    return Function(inner, valence, session)
+
+def __getattr__(name): return _builtin(name)
+def __dir__(): return sorted(set(globals()) | _builtins.keys())
 
 def _binary(glyph, x, y):
-    f = _primitives[glyph]
+    f = _builtin(glyph)
     return fork(x, f, y) if isinstance(x, _Combinators) or isinstance(y, _Combinators) else f(x, y)
 
 def _unary(glyph, y):
-    f = _primitives[glyph]
+    f = _builtin(glyph)
     return atop(f, y) if isinstance(y, _Combinators) else f(y)

@@ -85,6 +85,8 @@ Arrays with axes have boxes, axis arrows and type markers. Enter a function name
 | `]box on -trains=tree` | Function trees |
 | `]box on -fns=off` | Leave output inside functions unboxed |
 | `]box ?` | Show settings |
+| `]help +` | Help for a name or glyph |
+| `]help mean -source` | Definition source |
 | `]Display (1 2⋄ 3 4)` | Draw one array without changing settings |
 
 Boxing controls how results are drawn. Batch, Python and JSON sessions start with plain display.

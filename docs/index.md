@@ -33,10 +33,10 @@ Each name below links to its definitions and examples. Examples show an equivale
 
 | Glyph | Monad | Dyad | Note |
 |---|---|---|---|
-| `+` [Plus](glyphs/plus.md) | Conjugate | Add | Character offsets as BQN: `'a'+3` is `'d'` |
-| `-` [Minus](glyphs/minus.md) | Negate | Subtract | Character difference as BQN: `'d'-'a'` is `3x` |
-| `×` [Times](glyphs/times.md) | Direction | Multiply | |
-| `÷` [Divide](glyphs/divide.md) | Reciprocal | Divide | Exact rationals as J: `1x÷3x` is `1r3` |
+| `+` [Add](glyphs/add.md) | Conjugate | Add | Character offsets as BQN: `'a'+3` is `'d'` |
+| `-` [Dash](glyphs/dash.md) | Negate | Subtract | Character difference as BQN: `'d'-'a'` is `3x` |
+| `×` [Mul](glyphs/mul.md) | Direction | Multiply | |
+| `÷` [Div](glyphs/div.md) | Reciprocal | Divide | Exact rationals as J: `1x÷3x` is `1r3` |
 | `⌊` [Floor](glyphs/floor.md) | Floor | Minimum | `⌊/⍬` is `∞` |
 | `⌈` [Ceiling](glyphs/ceiling.md) | Ceiling | Maximum | `⌈/⍬` is `¯∞` |
 | `\|` [Stile](glyphs/stile.md) | Magnitude | Residue | |
@@ -159,12 +159,19 @@ Names are case-insensitive. `•a` and `•d` are constant arrays; the other nam
 | `•d` [Digits](glyphs/digits.md) | Decimal digits |
 | `•c` [Case](glyphs/case.md) | Unicode case conversion |
 | `•csv` [CSV](data.md#csv) | CSV text ↔ keyed column vectors |
+| `•r` [Regex](regex.md) | Compiled search, captures and replacement |
+| `•normal`, `•binomial`, … [Distributions](distributions.md) | Sampling, density, CDF and quantiles; 17 families |
 | `•json` [JSON](data.md#json) | JSON text ↔ arrays and keyed vectors |
-| `•nget` [Read](data.md#files) | Read UTF-8 text |
-| `•nput` [Write](data.md#files) | Write UTF-8 text |
+| `•vfi` [Numeric input](data.md#numeric-input) | Parse numeric fields with a validity mask |
+| `•nget` [Read](data.md#files) | Read UTF-8 text or bytes |
+| `•nput` [Write](data.md#files) | Write UTF-8 text or bytes |
 | `•ucs` [Unicode](glyphs/unicode.md) | Unicode code points / encodings |
 | `•load` [Load](glyphs/load.md) | Evaluate an APL source file |
 | `•signal` [Signal](glyphs/error-guard.md#signal) | Raise an ordinary APL error |
+| `•nc` [Name class](introspection.md) | Classify visible names |
+| `•nl` [Name list](introspection.md) | List names by class and prefix |
+| `•src` [Source](introspection.md) | Function/operator source |
+| `•ex` [Expunge](introspection.md) | Erase bindings |
 
 Index origin: 1. Comparison tolerance: `1E¯14`.
 

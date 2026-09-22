@@ -36,6 +36,8 @@ The Python package installs the **bAsedPL** kernel as the `apl` kernelspec. Sele
 
 The same native executable runs the kernel with `bapl --kernel -f CONNECTION_FILE`, using kernmini for the Jupyter protocol. No Python interpreter is needed when launching the native binary directly.
 
+Use Shift-Tab or `]help name` for help, `]help name -source` for source. See [names and help](https://answerdotai.github.io/basedpl/introspection.html) for Python/IPython support and the name-inspection functions.
+
 ## Documentation
 
 - [Docs home](https://answerdotai.github.io/basedpl/)

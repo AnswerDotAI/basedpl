@@ -1,6 +1,7 @@
 use crate::{EvalOptions, InterruptHandle, OutputKind, ParseStatus, Session, Source};
 use kernmini::{
-    CompleteRequest, ExecuteOutcome, ExecuteRequest, ExecutionContext, KernelInfo, Language, LanguageError, LanguageEvent, LanguageSession, ThreadWorker,
+    CompleteRequest, ExecuteOutcome, ExecuteRequest, ExecutionContext, InspectRequest, KernelInfo, Language, LanguageError, LanguageEvent, LanguageSession,
+    ThreadWorker,
 };
 use serde_json::{json, Value};
 use std::sync::{
@@ -42,6 +43,19 @@ impl LanguageSession for AplSession {
         }))?;
         self.worker
             .call(move |session| {
+                if let Some((info, detail)) =
+                    crate::inspection::help_command(&request.code).and_then(|(name, detail)| session.inspect(name).map(|info| (info, detail)))
+                {
+                    let data = json!({"text/plain":info.text(detail), "text/markdown":info.markdown(detail)});
+                    return ExecuteOutcome {
+                        execution_count: count,
+                        result: (!request.silent).then_some(data),
+                        result_metadata: json!({}),
+                        error: None,
+                        user_expressions: json!({}),
+                        payload: json!([]),
+                    };
+                }
                 let cancel = interrupt.clone();
                 let output = Arc::new(move |kind, text: &str| {
                     let event = match kind {
@@ -106,12 +120,22 @@ impl LanguageSession for AplSession {
             let (start, mut matches) = if let Some((start, query)) = crate::editor::entry(before, end) {
                 (start, crate::editor::matches(query).into_iter().map(|(glyph, _)| glyph.to_owned()).collect::<Vec<_>>())
             } else if crate::editor::in_code(before) {
-                let start = before.char_indices().rev().find(|(_, c)| !c.is_alphanumeric() && *c != '_').map_or(0, |(i, c)| i + c.len_utf8());
-                (start, session.names().filter(|name| name.starts_with(&before[start..])).map(str::to_owned).collect())
+                let start = before.char_indices().rev().find(|(_, c)| !crate::inspection::word_char(*c)).map_or(0, |(i, c)| i + c.len_utf8());
+                (start, session.complete(&before[start..]))
             } else { (end, vec![]) };
             matches.sort();
             json!({"status": "ok", "matches": matches, "cursor_start": request.code[..start].chars().count(), "cursor_end": before.chars().count(), "metadata": {}})
         }).await
+    }
+
+    async fn inspect(&self, request: InspectRequest) -> anyhow::Result<Value> {
+        self.worker
+            .call(move |session| {
+                let info = crate::inspection::at_cursor(&request.code, request.cursor_pos as usize).and_then(|name| session.inspect(name));
+                let data = info.as_ref().map(|i| json!({"text/plain":i.text(request.detail_level>0), "text/markdown":i.markdown(request.detail_level>0)}));
+                json!({"status":"ok", "found":info.is_some(), "data":data.unwrap_or(json!({})), "metadata":{}})
+            })
+            .await
     }
 
     async fn is_complete(&self, code: String) -> anyhow::Result<Value> {

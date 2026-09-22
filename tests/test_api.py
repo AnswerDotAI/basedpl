@@ -2,6 +2,7 @@ import operator
 from fractions import Fraction
 from pathlib import Path
 import numpy as np, pytest
+import basedpl as bapl
 from fastcore.test import test_eq as teq
 from basedpl import (Array, Session, AplError, plus, times, subtract, divide, exponent, sign, tally, iota,
     reshape, shape, floor, logarithm, reverse, transpose, fork, atop, first, pick, not_)
@@ -11,6 +12,57 @@ def test_documentation_examples():
     for path in (Path(__file__).resolve().parents[1]/'docs').glob('*.md'):
         namespace = {}
         for block in path.read_text().split('```python\n')[1:]: exec(compile(block.split('```', 1)[0], str(path), 'exec'), namespace)
+
+
+def test_builtin_attributes():
+    with Session() as apl:
+        for api in (bapl, apl):
+            for name in ('+', 'add', 'plus'): teq(getattr(api, name)([1, 2], 10).py, [11, 12])
+            teq(api.add(1+2j).py, 1-2j)
+            teq((api.dash(2).py, api.mul(-2).py, api.div(2.).py), (-2, -1, 0.5))
+            teq((api.plus(2)(3).py, api.times(2)(3).py, api.divide(2)(3).py), (5, 6, Fraction(3, 2)))
+            teq(api.index_of([4, 2, 7], [7, 4]).py, [3, 1])
+            teq(api.binomial(4)(2).py, 6)
+            teq(api.exponential(0).py, 1)
+            teq(api.π(2).py, 2*np.pi)
+            teq(api.ℙ(3).py, 5)
+            teq(api.json('[1,2]').py, [1, 2])
+            teq(api.normal([0., 1.])['cdf'](0.).py, 0.5)
+            teq(getattr(api, '•binomial')([2, 0.5])['quantile'](1.).py, 2)
+            assert {'add', 'plus', 'normal', 'π'} <= set(dir(api))
+            for name in ('plu', 'userfn', 'nonexistent', 'minus'):
+                with pytest.raises(AttributeError): getattr(api, name)
+        apl('plus←99 ⋄ userfn←{⍵+1}')
+        teq(apl.plus(2, 3).py, 5)
+        teq(apl['plus'].py, 99)
+        teq(apl.execute('plus').py, 99)
+        teq(apl.not_(0).py, 1)
+        assert apl.names.__func__ is Session.names
+        with pytest.raises(AttributeError): apl.userfn
+    from basedpl import add, π
+    teq(add(2).py, 2)
+    teq(π(1).py, np.pi)
+    assert 'plus' not in vars(bapl)
+
+
+def test_python_printer():
+    from basedpl import to_python
+    with Session() as apl:
+        for code, expected in {
+            '×': 'sign', '×∘2': 'times(2.)', '2∘-': 'subtract.left(2.)',
+            '×∘2x': 'times(2)', '÷∘1r2': 'divide(Fraction(1, 2))',
+            '+/÷≢': 'plus.reduce / tally', '+.×': 'plus @ times', '×⌝': 'times.outer',
+            '+/[1]': 'plus.reduce[1.]', '+⌿': 'plus.reduce[1]', '-⍨': 'subtract.commute',
+            '+∘×': 'conjugate << sign', '+⍥×': 'conjugate.over(sign)',
+            '{⍵×2}': 'apl.fn("{⍵×2}")', '{⍵×2}¨': 'apl.fn("{⍵×2}").each',
+        }.items(): teq(to_python(apl(code)), expected)
+        teq(to_python(apl('×'), dyad=True), 'times')
+        teq(to_python(apl('+∘×'), dyad=True), 'plus << sign')
+        teq(to_python(times(2.) ** 3), 'times(2.) ** 3')
+        teq(to_python((plus.reduce / tally).each), '(plus.reduce / tally).each')
+        teq(to_python(apl.fn('{⎕←1 ⋄ ⍵}')), 'apl.fn("{⎕←1 ⋄ ⍵}")')
+        teq(to_python(apl.fn('unknown')), 'apl.fn("unknown")')
+        teq(to_python(apl.fn('(⎕←1)+')), 'apl.fn("(⎕←1)+")')
 
 
 def test_load(tmp_path, monkeypatch):
@@ -51,6 +103,52 @@ def test_data_io(tmp_path):
         dest.write_bytes(b'\xff')
         with pytest.raises(AplError, match='VALUE'): read(str(dest))
         with pytest.raises(AplError, match='VALUE'): read(str(tmp_path/'absent'))
+
+
+def test_binary_files(tmp_path):
+    path, dest = tmp_path/'bytes', tmp_path/'copy'
+    data = bytes(range(256))
+    path.write_bytes(data)
+    with Session() as apl:
+        read, write = apl.nget, apl.nput
+        values = read(dict(path=str(path), binary=1))
+        teq(values.np.dtype, np.dtype('int64'))
+        teq(values.py, list(data))
+        opts = dict(path=str(dest), binary=1)
+        teq(write(values, opts).py, 256)
+        teq(dest.read_bytes(), data)
+        with pytest.raises(AplError, match='VALUE'): write(values, opts)
+        opts['overwrite'] = 1
+        for bad in ([256], [-1], [0.5], [float('inf')], ['a']):
+            with pytest.raises(AplError, match='DOMAIN'): write(bad, opts)
+            teq(dest.read_bytes(), data)
+        with pytest.raises(AplError, match='encoding'): read(dict(path=str(path), binary=1, encoding='UTF-8'))
+        teq(write([], opts).py, 0)
+        teq(dest.read_bytes(), b'')
+        teq(read(dict(path=str(dest), binary=1)).shape, (0,))
+
+
+def test_regex_functions():
+    with Session() as apl:
+        p = apl.fn('•r')(r'([a-z]+)([0-9]+)')
+        match, replace = p['match'], p['replace']
+        teq(match('ab12 cd3').py, ['ab12', 'cd3'])
+        teq(replace('$2:$1', 'ab12 cd3').py, '12:ab 3:cd')
+        teq(apl('p.position s', p=p, s='é ab12').py, [3])
+    teq(match('x9').py, ['x9'])
+
+
+def test_distribution_functions():
+    with Session() as apl:
+        normal, binomial = apl.fn('•normal')([3., 2.]), apl.fn('•binomial')([10, 0.5])
+        sample = normal['sample']
+        x, y = sample(10000).np, binomial['sample'](10000).np
+        assert x.dtype == np.float64 and y.dtype == np.int64
+        assert abs(x.mean()-3) < 0.15 and abs(x.std()-2) < 0.15
+        assert np.all((0 <= y) & (y <= 10)) and abs(y.mean()-5) < 0.15
+        teq(binomial['quantile']([0., 1.]).np, [0, 10])
+        teq(normal['cdf'](dict(a=3., b=float('inf'))).py, dict(a=0.5, b=1.))
+    teq(sample([2, 3]).shape, (2, 3))
 
 
 def test_array_surface():
@@ -311,3 +409,26 @@ def test_retained_and_late_bound_functions(capsys):
         assert capsys.readouterr().out == '2x\n'
     with pytest.raises(RuntimeError, match='closed'): f(3)
     assert saved(3).py == -3
+
+
+def test_function_inspection():
+    with Session() as apl:
+        source = '{⍝ Mean of a vector\n(+/⍵)÷≢⍵}'
+        apl('mean←'+source)
+        mean = apl.fn('mean')
+        teq(mean.source, source)
+        assert 'Mean of a vector' in mean.__doc__
+        assert 'adds' in plus.__doc__
+        teq(apl.names(prefix='me'), ['mean'])
+        assert apl.inspect('mean')['kind'] == 'function'
+        assert apl.inspect('mean 1 2 3') is None
+        assert 'Mean of a vector' in '\n'.join(apl.eval(']help mean').output)
+        assert source in '\n'.join(apl.eval(']help mean -source').output)
+        for command in [']help', ']help mean -other', ']help mean -source extra']:
+            with pytest.raises(AplError, match='SYNTAX'): apl.eval(command)
+        with pytest.raises(AplError, match='VALUE'): apl.eval(']help absent')
+        apl('changed←0 ⋄ danger←{changed+←1 ⋄ ⍵}')
+        assert apl.inspect('danger')['source'].startswith('{')
+        teq(apl('changed').py, 0)
+        apl('mean←{42}')
+        teq(mean.source, '{42}')

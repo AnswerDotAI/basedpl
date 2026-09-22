@@ -294,8 +294,11 @@ impl Function {
                 return Ok(Bound::new(Binding::from_element(item)));
             }
             FunctionNode::Primitive(p) => p.call(left, right, &session.execution.at(span)),
-            FunctionNode::System(f) => match f.call {
+            FunctionNode::System(f) => match &f.call {
                 crate::system::Call::Value(call) => call(left, right, &session.execution.at(span)),
+                crate::system::Call::Session(call) => call(session, left, right, span),
+                crate::system::Call::Regex(regex, operation) => crate::regex::call(regex, *operation, left, right, &session.execution.at(span)),
+                crate::system::Call::Distribution(d, operation) => crate::distribution::call(d, *operation, left, right, &session.execution.at(span)),
                 crate::system::Call::Load => return session.load(left, right, span, output),
             },
             Defined(_) | Derived(..) => {
@@ -340,6 +343,36 @@ impl Function {
     pub fn export_context(&self) -> Result<bool, ErrorKind> { export_context(Operand::Function(self.clone())) }
 
     pub fn apl(&self) -> String { self.text(&mut 1000) }
+    #[cfg(feature = "python")]
+    pub(crate) fn parts(&self) -> Option<(String, Vec<Operand>)> {
+        use FunctionNode::*;
+        let fun = |f: &Function| Operand::Function(f.clone());
+        Some(match self.node.as_ref() {
+            Primitive(p) => (p.glyph().to_string(), vec![]),
+            System(f) => (f.name.into(), vec![]),
+            Fold(f, h) => {
+                let glyph = match (h.scan, h.first) {
+                    (false, false) => "/",
+                    (false, true) => "⌿",
+                    (true, false) => "\\",
+                    (true, true) => "⍀",
+                };
+                (glyph.into(), std::iter::once(fun(f)).chain(h.axis.iter().cloned().map(Operand::Value)).collect())
+            }
+            Inverse(f) => ("inverse".into(), vec![fun(f)]),
+            Axis(f, a) => ("axis".into(), vec![fun(f), Operand::Value(a.clone())]),
+            Modified(op, a) => (op.glyph().into(), vec![a.clone()]),
+            Composed(op, args) => (op.glyph().into(), args.to_vec()),
+            Fork(fs) => ("fork".into(), fs.iter().map(fun).collect()),
+            Defined(_) | Derived(..) | LateBound(..) => return None,
+        })
+    }
+    pub fn inspect(&self, session: &Session) -> crate::Inspection {
+        if let FunctionNode::LateBound(_, span) = self.node.as_ref() {
+            if let Some(Binding::Function(f)) = session.lookup(span.source.text.trim()) { return crate::Inspection::new("function", f.apl()); }
+        }
+        crate::Inspection::new("function", self.apl())
+    }
 
     #[cfg(feature = "python")]
     pub(crate) fn builtin(name: &str) -> Option<Self> {
@@ -1313,6 +1346,13 @@ fn operand_dependencies<'a>(operands: impl Iterator<Item = &'a Operand>) -> (usi
 }
 
 impl Operator {
+    fn text(&self) -> String {
+        match self {
+            Self::Defined(c) => c.text().into(),
+            Self::Primitive(op) => op.glyph().to_string(),
+            Self::Bound(op, right) => format!("{}({})", op.text(), right.text(&mut 1000)),
+        }
+    }
     fn is_dyadic(&self) -> bool {
         match self {
             Self::Defined(c) => c.definition.kind == DefinitionKind::DyadicOperator,
@@ -1377,6 +1417,16 @@ enum Binding {
     Hybrid(Hybrid),
 }
 impl Binding {
+    fn class(&self) -> i64 { match self { Self::NoResult => 0, Self::Value(_) => 2, Self::Function(_) | Self::Hybrid(_) => 3, Self::Operator(_) => 4 } }
+    fn inspection(&self, session: &Session) -> Option<crate::Inspection> {
+        Some(match self {
+            Self::Function(f) => f.inspect(session),
+            Self::Operator(op) => crate::Inspection::new("operator", op.text()),
+            Self::Hybrid(h) => crate::Inspection::new("function / operator", h.text()),
+            Self::Value(a) => crate::Inspection::new("array", a.to_string()),
+            Self::NoResult => return None,
+        })
+    }
     fn from_element(element: Value) -> Self { match element { Value::Function(f) => Self::Function(f), _ => Self::Value(element) } }
     fn environment(&self) -> Option<usize> {
         match self {
@@ -1441,7 +1491,100 @@ pub struct Session {
 
 impl Session {
     pub fn new() -> Self { Self::default() }
-    pub(crate) fn names(&self) -> impl Iterator<Item = &str> { self.names.keys().map(String::as_str) }
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        let mut names = HashSet::new();
+        let mut scope = self.current;
+        while let Some(i) = scope {
+            names.extend(self.frames[i].names.keys().map(String::as_str).filter(|name| !implicit_name(name)));
+            scope = self.frames[i].parent;
+        }
+        names.extend(self.names.keys().map(String::as_str));
+        let mut names: Vec<_> = names.into_iter().collect();
+        names.sort_unstable();
+        names.into_iter()
+    }
+    pub fn name_class(&self, name: &str) -> i64 {
+        match crate::inspection::item(name) {
+            Some(NodeKind::Name(_)) => self.lookup(name).map_or(0, Binding::class),
+            Some(NodeKind::System(_)) => crate::system::lookup(name).map_or(0, |v| v.value().class()),
+            _ => -1,
+        }
+    }
+    pub fn name_list(&self, classes: &[i64], prefix: &str) -> Vec<String> {
+        self.names().filter(|name| name.starts_with(prefix) && classes.contains(&self.name_class(name))).map(str::to_owned).collect()
+    }
+    pub fn inspect(&self, name: &str) -> Option<crate::Inspection> {
+        let info = match crate::inspection::item(name) {
+            Some(NodeKind::Name(_)) => self.lookup(name).and_then(|binding| binding.inspection(self)),
+            Some(NodeKind::System(_)) => {
+                let mut info = crate::system::lookup(name)?.value().inspection(self)?;
+                if let Some(help) = crate::inspection::documentation(name) { info.help = help.to_owned(); }
+                Some(info)
+            }
+            Some(NodeKind::Function(p)) => Some(crate::Inspection::new("function", p.glyph().to_string())),
+            Some(NodeKind::Operator(op)) => Some(crate::Inspection::new("operator", op.glyph().to_string())),
+            Some(NodeKind::Hybrid(h)) => Some(crate::Inspection::new("function / operator", h.text())),
+            _ => None,
+        };
+        info.or_else(|| crate::inspection::documentation(name).map(|_| crate::Inspection::new("syntax", name.into())))
+    }
+    pub fn name_source(&self, name: &str) -> Result<String, ErrorKind> {
+        match self.name_class(name) { 3 | 4 => Ok(self.inspect(name).unwrap().source), 2 => Err(ErrorKind::Domain), _ => Err(ErrorKind::Value) }
+    }
+    pub fn erase(&mut self, name: &str) -> bool {
+        if implicit_name(name) || !matches!(crate::inspection::item(name), Some(NodeKind::Name(_))) { return false; }
+        if let Some((owner, _)) = self.binding(name) { match owner { Some(i) => &mut self.frames[i].names, None => &mut self.names }.remove(name); }
+        true
+    }
+    pub fn complete(&self, prefix: &str) -> Vec<String> {
+        let mut names = self.name_list(&[2, 3, 4], prefix);
+        names.extend(crate::system::names().filter(|name| name.starts_with(&prefix.to_lowercase())).map(str::to_owned));
+        names.sort_unstable();
+        names
+    }
+    fn map_names(
+        &mut self,
+        left: Option<&Value>,
+        right: &Value,
+        span: &Span,
+        prototype: Value,
+        f: impl Fn(&mut Self, &str) -> Result<Value, ErrorKind>,
+    ) -> Result<Value, Error> {
+        if left.is_some() { return Err(span.error(ErrorKind::Syntax, "name inspection is monadic")); }
+        let apply = |session: &mut Self, value: &Value| {
+            let name = crate::keyed::name(value).ok_or_else(|| span.error(ErrorKind::Domain, "expected a name string"))?;
+            f(session, &name).map_err(|kind| span.error(kind, format!("cannot inspect name: {name}")))
+        };
+        if crate::keyed::name(right).is_some() { return apply(self, right); }
+        let values = right.elements().map(|a| apply(self, &a)).collect::<Result<Vec<_>, _>>()?;
+        right.layout().collect(values, prototype).map_err(|k| span.error(k, "invalid name results"))
+    }
+    pub(crate) fn system_nc(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+        self.map_names(left, right, span, crate::primitive::integer(0), |s, name| Ok(crate::primitive::integer(s.name_class(name))))
+    }
+    pub(crate) fn system_ex(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+        self.map_names(left, right, span, crate::primitive::integer(0), |s, name| Ok(crate::primitive::integer(s.erase(name) as i64)))
+    }
+    pub(crate) fn system_src(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+        self.map_names(left, right, span, crate::keyed::text(""), |s, name| s.name_source(name).map(|text| crate::keyed::text(&text)))
+    }
+    pub(crate) fn system_nl(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+        let prefix = match left {
+            Some(value) => crate::keyed::name(value).ok_or_else(|| span.error(ErrorKind::Domain, "•nl prefix must be a string"))?,
+            None => "".into(),
+        };
+        if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "•nl needs a class or class vector")); }
+        let classes: Vec<_> = right
+            .elements()
+            .map(|v| {
+                let n = crate::primitive::numeric(&v, &self.execution.at(span))?.integer().map_err(|k| span.error(k, "invalid name class"))?;
+                if !matches!(n, 2..=4) { return Err(span.error(ErrorKind::Domain, "name classes are 2, 3 and 4")); }
+                Ok(n as i64)
+            })
+            .collect::<Result<_, _>>()?;
+        let values = self.name_list(&classes, &prefix).iter().map(|n| crate::keyed::text(n)).collect::<Vec<_>>();
+        Value::from_parts(vec![values.len()], values, crate::keyed::text("")).map_err(|k| span.error(k, "invalid name list"))
+    }
     pub fn set(&mut self, name: &str, value: Value) -> Result<(), ErrorKind> {
         value.export_context()?;
         self.set_value(name, Binding::from_element(value))
@@ -1580,6 +1723,20 @@ impl Session {
     fn command(&mut self, source: Arc<Source>) -> Evaluation {
         let code = source.text.trim();
         let (command, args) = code.split_once(char::is_whitespace).unwrap_or((code, ""));
+        if command.eq_ignore_ascii_case("]help") {
+            let mut result = Evaluation::default();
+            match crate::inspection::help_command(code) {
+                Some((name, detail)) => match self.inspect(name) {
+                    Some(info) => self.execution.output(&mut result.output, crate::OutputKind::Display, info.text(detail)),
+                    None => {
+                        result.error =
+                            Some(Span { range: 0..source.text.len(), source: source.clone() }.error(ErrorKind::Value, format!("name not found: {name}")))
+                    }
+                },
+                None => result.error = Some(Span { range: 0..source.text.len(), source }.error(ErrorKind::Syntax, "usage: ]help name [-source]")),
+            }
+            return result;
+        }
         if matches!(command.to_ascii_lowercase().as_str(), "]box" | "]boxing") {
             return match self.display.configure(args) {
                 Ok(text) => {
@@ -1910,13 +2067,7 @@ impl Session {
 
     fn extend_selected(&mut self, nodes: &mut [Node], output: &mut Vec<String>) -> Result<(), Error> {
         let (container, selectors, span) = match nodes {
-            [container @ .., Node { kind: NodeKind::Selection(parts), span }] if !container.is_empty() => {
-                let selectors = self.indices(parts, output)?;
-                for (part, value) in parts.iter_mut().zip(&selectors) {
-                    if let Some(value) = value { *part = vec![Node { kind: NodeKind::Literal(value.clone()), span: part[0].span.clone() }]; }
-                }
-                (container, selectors, span.clone())
-            }
+            [Node { kind: NodeKind::Group(inner), .. }] => return self.extend_selected(inner, output),
             [key @ Node { kind: NodeKind::Literal(_) | NodeKind::Name(_) | NodeKind::Group(_), .. }, Node { kind: NodeKind::Function(Primitive::Mix), .. }, container @ ..]
                 if !container.is_empty() =>
             {
@@ -1924,6 +2075,13 @@ impl Session {
                 let selectors = crate::primitive::coordinate_fields(&value).into_iter().map(Some).collect();
                 key.kind = NodeKind::Literal(value);
                 (container, selectors, key.span.clone())
+            }
+            [container @ .., Node { kind: NodeKind::Selection(parts), span }] if !container.is_empty() => {
+                let selectors = self.indices(parts, output)?;
+                for (part, value) in parts.iter_mut().zip(&selectors) {
+                    if let Some(value) = value { *part = vec![Node { kind: NodeKind::Literal(value.clone()), span: part[0].span.clone() }]; }
+                }
+                (container, selectors, span.clone())
             }
             _ => return Ok(()),
         };

@@ -1,12 +1,14 @@
 use basedpl::{reference, EvalOptions};
 use serde_json::{json, Value};
 
-const SOURCES: [(&str, &str); 5] = [
+const SOURCES: [(&str, &str); 7] = [
     ("core", include_str!("reference/core.apl")),
     ("ngn", include_str!("reference/ngn.apl")),
     ("april", include_str!("reference/april.apl")),
     ("aplcart", include_str!("reference/aplcart.apl")),
     ("dyalog", include_str!("reference/dyalog.apl")),
+    ("regex", include_str!("reference/regex.apl")),
+    ("distributions", include_str!("reference/distributions.apl")),
 ];
 
 fn header(line: &str) -> Option<(&str, &str)> {
@@ -89,6 +91,8 @@ fn cases(text: &str) -> Vec<Value> {
 
 #[test]
 fn reference_format_and_comparison() {
+    let file = json!({"code":"'héllo' •nput testpath ⋄ •nget testpath", "expected_code":"'héllo'"});
+    for _ in 0..2 { assert_eq!(reference::check(&file, EvalOptions::default())["status"], "pass"); }
     let compact = cases("⍝ —\n'a''⍝b'   ⍝ 'a''⍝b'");
     assert_eq!(compact[0]["code"], "'a''⍝b'");
     assert_eq!(reference::check(&compact[0], EvalOptions::default())["status"], "pass");
@@ -120,6 +124,9 @@ fn reference_format_and_comparison() {
         ("⍬", "''", "mismatch"),
         (",1", "1", "mismatch"),
         ("0⍴⊂1 2", "0⍴⊂1", "mismatch"),
+        ("'aa':1", "'bb':1", "mismatch"),
+        ("'aa':1", ",1", "mismatch"),
+        ("'row':[0],1", "'col':[0],1", "mismatch"),
         ("3", "÷0", "invalid"),
     ] {
         let case = json!({"code":code, "expected_code":expect});

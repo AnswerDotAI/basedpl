@@ -35,6 +35,31 @@ async def kernel_story():
         for code, start, matches in [('⍳3 ⋄ `iot', 5, ['⍳']), ('mea', 0, ['mean']), ("'`iot", 5, [])]:
             result = (await kc.shell_request('complete_request', code=code, cursor_pos=len(code)))['content']
             assert (result['cursor_start'], result['cursor_end'], result['matches']) == (start, len(code), matches)
+        definition = '{⍝ Sum without running during inspection\n⎕←999 ⋄ +/⍵}'
+        await kc.exec_ok('inspectme←'+definition, silent=True)
+        for detail in (0,1):
+            result = (await kc.shell_request('inspect_request', code='inspectme 1 2', cursor_pos=5, detail_level=detail))['content']
+            assert result['found'] and ('+/⍵' if detail else 'Sum without running') in result['data']['text/plain']
+            _, messages = await kc.exec_ok(']help inspectme'+(' -source' if detail else ''))
+            assert not any(m['msg_type']=='stream' for m in messages)
+            assert ('+/⍵' if detail else 'Sum without running') in displayed(messages)[0][1]
+        result = (await kc.shell_request('inspect_request', code='+', cursor_pos=1, detail_level=0))['content']
+        assert result['found'] and 'adds' in result['data']['text/plain']
+        result = (await kc.shell_request('inspect_request', code='•A', cursor_pos=2, detail_level=0))['content']
+        assert result['found'] and 'Alphabet' in result['data']['text/plain']
+        result = (await kc.shell_request('inspect_request', code='⍵', cursor_pos=1, detail_level=0))['content']
+        assert result['found']
+        _, messages = await kc.exec_ok(']help ?')
+        assert 'Roll' in displayed(messages)[0][1]
+        _, messages = await kc.exec_ok('?1')
+        assert displayed(messages) == [('execute_result', '1')]
+        _, messages = await kc.exec_ok('??')
+        text = displayed(messages)[0][1]
+        assert '?' in text and 'Roll' not in text
+        result = (await kc.shell_request('inspect_request', code="'inspectme'", cursor_pos=5, detail_level=0))['content']
+        assert not result['found']
+        result = (await kc.shell_request('complete_request', code='•sr', cursor_pos=3))['content']
+        assert result['matches'] == ['•src']
         reply, messages = await kc.exec_drain('⎕←7 ⋄ 1÷0')
         assert reply['content']['ename'] == 'DOMAIN ERROR' and displayed(messages) == [('stream', '7\n')]
         assert '1÷0' in '\n'.join(reply['content']['traceback'])

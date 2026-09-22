@@ -1,6 +1,6 @@
 # `¯` — Negative literal sign
 
-`¯` belongs to the number, including exponents and complex components. [`-`](minus.md) is a function.
+`¯` belongs to the number, including exponents and complex components. [`-`](dash.md) is a function.
 
 ```apl
 ¯2+5               ⍝ 3

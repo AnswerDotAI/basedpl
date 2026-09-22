@@ -2297,3 +2297,15 @@ H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ +H÷2   ⍝ 2.5
 ⍝ ngn:710 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
 H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ 7+H÷2   ⍝ 7.5
 
+⍝ ngn:504 — Zero-origin offset, match and capture
+p←•r 'b(c+)d' ⋄ (¯1+↑p.position 'abcd'),(p.match 'abcd'),↑p.groups 'abcd'
+1 ('bcd') (1⍴'c')
+
+⍝ ngn:505 — No match
+p←•r 'B(c+)d' ⋄ p.position 'abcd'
+⍬
+
+⍝ ngn:506 — Malformed regex
+•r 'a(b'
+⍝ error: DOMAIN ERROR
+

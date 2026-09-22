@@ -114,6 +114,32 @@ np.testing.assert_array_equal(add([1, 2, 3], 10), [11, 12, 13])
 
 `.fn('g')` follows later redefinitions of `g`; `apl('g')` retains its current function. Dfns and late-bound functions keep their originating session for name lookup. Close that session only after their last use.
 
+Module and session attributes select builtin functions by glyph, glyph name, operation name or alias. Use underscores for hyphenated names and a trailing underscore for Python keywords. System functions also accept names without `•`.
+
+```python
+assert apl.multiply(2, 3).py == 6
+assert apl.index_of([4, 2, 7], [7, 4]).py.tolist() == [3, 1]
+assert getattr(apl, '+')(2, 3).py == 5
+assert apl.add(1+2j).py == 1-2j
+assert apl.plus(2)(3).py == 5
+assert apl.mul(-2).py == -1
+assert apl.times(2)(3).py == 6
+assert apl.normal([0., 1.])['cdf'](0.).py == 0.5
+```
+
+Glyphs and glyph names are ambivalent: one argument supplies `⍵`, two supply `⍺, ⍵`. Operation names select valence and curry, as imported word functions do. The glyph names `add`, `dash`, `mul`, `div` distinguish them from the dyadic operations `plus`, `subtract`, `times`, `divide`. Operation names win any remaining overlaps.
+
+```python
+import basedpl as b
+from basedpl import add, π
+
+assert add(2).py == 2
+assert b.divide(2)(3).py == Fraction(3, 2)
+assert π(1).py == np.pi
+```
+
+Legal Python identifiers such as `π` work directly; other glyphs use `getattr(b, '+')`. Existing Python attributes win; glyph/operation names precede unbulleted system names. Thus `apl.binomial` is `!`; use `apl.fn('•binomial')` for the distribution. Lookup uses exact registered names and aliases; unknown names raise `AttributeError`. `dir()` lists available builtins. Session variables remain accessible through `apl['name']`.
+
 [Function arrays](glyphs/strand.md#function-arrays) retain callable handles, including their session for name lookup. `first` and `pick` return the selected function:
 
 ```python
@@ -124,6 +150,8 @@ assert first(fs)(2, 3).py == 5
 ```
 
 `Array([f, g])` also constructs a function vector; `.py` and object-dtype `.np` export Python callables. Functions from different sessions cannot be combined.
+
+`f.source` returns APL source; `f.inspect()` returns source and help. `apl.names(prefix, classes)` lists visible bindings. `apl.inspect(name)` reads a name or glyph. IPython supports `f?`, `f??` and name completion in session strings. See [names and help](introspection.md).
 
 ## Word functions
 
@@ -186,6 +214,32 @@ assert p.derivative(2).py == 14
 np.testing.assert_array_equal(p.derivative([10, 20], [1, 2]), [80, 280])
 np.testing.assert_array_equal(plus.left(1).history(3)(0), [0, 1, 2, 3])
 ```
+
+## Printing functions
+
+`to_python(f)` shows a function using Python word names and combinators.
+
+```python
+from basedpl import to_python, plus, times, tally
+
+assert to_python(plus.reduce / tally) == 'plus.reduce / tally'
+assert to_python(times(2.)) == 'times(2.)'
+assert to_python((plus.reduce / tally).each) == '(plus.reduce / tally).each'
+```
+
+For an ambivalent function, `dyad=True` selects the dyadic spelling. Word functions already specify their valence.
+
+```python
+with Session() as apl:
+    assert to_python(apl('×')) == 'sign'
+    assert to_python(apl('×'), dyad=True) == 'times'
+    assert to_python(apl('2∘-')) == 'subtract.left(2.)'
+    assert to_python(apl('{⍵×2}¨')) == 'apl.fn("{⍵×2}").each'
+```
+
+Dfns and late-bound `.fn(...)` expressions retain their APL source. Use `apl('+/÷≢')` to evaluate a function expression and print its assembled structure. Printing itself never executes APL. Approximate `2` prints as `2.`, exact `2x` as `2`, and fractions as `Fraction(...)`. Complex array constants retain APL notation inside `apl(...)`.
+
+The output is explanatory Python spelling. Python argument evaluation order and session reconstruction remain the caller's responsibility.
 
 ## Errors and interruption
 

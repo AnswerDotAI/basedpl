@@ -8,7 +8,7 @@ totals←+/¨sales
 (totals •json '') •nput 'totals.json'
 ```
 
-All four functions accept keyed options. Option names are case-insensitive.
+CSV, JSON and file functions accept keyed options. Option names are case-insensitive.
 
 ## Files
 
@@ -24,9 +24,47 @@ text •nput ('path' 'overwrite':('copy.csv' ⋄ 1))
 |---|---|---|
 | `path` | Required | Filename; a plain path is shorthand |
 | `encoding` | `'UTF-8'` | UTF-8 |
+| `binary` | `0` | Read/write numeric byte vectors instead of text; omit `encoding` |
 | `overwrite` | `0` | `•nput`: replace an existing file |
 
 Missing files, invalid UTF-8 and OS file errors give VALUE. Invalid options give DOMAIN. Directories must already exist.
+
+Binary reads return exact integers in `0…255`. Binary writes accept a vector of integral numbers in that range. Validation precedes opening the output file. The result is the byte count.
+
+```text
+bytes←•nget 'path' 'binary':('image.bin' ⋄ 1)
+bytes •nput 'path' 'binary':('copy.bin' ⋄ 1)
+'UTF-8' •ucs bytes           ⍝ decode UTF-8 when appropriate
+bytes-256x×bytes≥128x         ⍝ signed-byte interpretation
+```
+
+Byte vectors use ordinary compact integer storage. RANK: output is not a vector. DOMAIN: invalid byte, or `binary:1` with `encoding`.
+
+## Numeric input
+
+`•vfi text` returns `(valid ⋄ numbers)`. Whitespace separates fields. Invalid fields have flag `0x` and value `0`; valid fields have flag `1x`. Input is parsed as numbers, never executed.
+
+```apl
+valid nums←•vfi '12 nope -3 1.5'
+valid                      ⍝ 1x 0x 1x 1x
+nums                       ⍝ 12 0 ¯3 1.5
+valid/nums                 ⍝ 12 ¯3 1.5
+```
+
+Numbers retain their literal domains: ordinary spelling is approximate; `x` and `r` are exact. Complex `j`/`J`, infinity, ASCII signs and signed exponents are accepted. `inf`/`infinity` also denote infinity. NaN and invalid numbers produce flag `0x`.
+
+```apl
+2⊃•vfi '2 3x 1r4 1j-2 -1e-3 ∞'   ⍝ 2 3x 1r4 1j¯2 ¯0.001 ∞
+```
+
+`separators •vfi text` splits on any supplied character and trims surrounding whitespace. Empty fields are valid zero. Internal whitespace remains part of the field.
+
+```apl
+',' •vfi '3.9,2.4,,76,'   ⍝ ((5⍴1x) ⋄ 3.9 2.4 0 76 0)
+'⋄' •vfi '1 ⋄ 2 3 ⋄ 4'   ⍝ (1x 0x 1x ⋄ 1 0 4)
+```
+
+Empty input returns two empty vectors. With no separator characters (`''` on the left), nonempty input is one field. DOMAIN: either argument is not character text.
 
 ## JSON
 

@@ -43,10 +43,12 @@ fn same_element(x: &Value, y: &Value, relative: f64, absolute: f64) -> bool {
     }
 }
 
-fn difference(x: &Value, y: &Value, relative: f64, absolute: f64) -> Option<String> {
+/// Locate a structural or numeric mismatch, allowing the supplied floating-point tolerances.
+pub fn difference(x: &Value, y: &Value, relative: f64, absolute: f64) -> Option<String> {
     if x.is_atom() != y.is_atom() { return Some("atom versus array".into()); }
     if x.is_atom() { return (!same_element(x, y, relative, absolute)).then(|| "atom".into()); }
     if x.shape() != y.shape() { return Some(format!("shape: {:?} != {:?}", x.shape(), y.shape())); }
+    if x.layout() != y.layout() { return Some("axis keys or names".into()); }
     if !same_element(&x.prototype(), &y.prototype(), relative, absolute) { return Some("prototype".into()); }
     x.elements().zip(y.elements()).position(|(a, b)| !same_element(&a, &b, relative, absolute)).map(|i| format!("data[{i}]"))
 }
@@ -74,7 +76,14 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
     if [relative, absolute].iter().any(|t| !t.is_finite() || *t < 0.0) || (error_kind.is_none() && expected.is_none() && !no_result) {
         return json!({"status":"invalid", "message":"invalid or missing independent expectation"});
     }
-    let result = Session::new().eval_with(code, EvalOptions { echo: false, ..options });
+    let mut session = Session::new();
+    let _files = if code.contains("testpath") {
+        let dir = match tempfile::tempdir() { Ok(dir) => dir, Err(e) => return json!({"status":"invalid", "message":format!("temporary fixture: {e}")}) };
+        let path = dir.path().join("data");
+        session.set("testpath", crate::keyed::text(&path.to_string_lossy())).expect("valid fixture name");
+        Some(dir)
+    } else { None };
+    let result = session.eval_with(code, EvalOptions { echo: false, ..options });
     if let Some(error) = &result.error {
         let kind = error.kind.to_string();
         if matches!(error.kind, crate::ErrorKind::Timeout | crate::ErrorKind::Interrupt) {
