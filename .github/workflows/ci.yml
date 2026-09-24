@@ -18,6 +18,8 @@ jobs:
           python-version: '3.12'
       - run: pip install -e '.[dev]' --config-settings 'maturin.build-args=--profile dev'
       - run: pytest -q
+      - run: bapl-nb nbs/
+      - run: nbdev-test nbs/
 
   build:
     needs: test

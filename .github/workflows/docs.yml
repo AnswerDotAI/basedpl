@@ -1,42 +1,17 @@
-name: Documentation
+name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
-  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
-permissions:
-  contents: read
+env:
+  OBJC_DISABLE_INITIALIZE_FORK_SAFETY: YES
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - uses: quarto-dev/quarto-actions/setup@v2
-      - run: pip install -e '.[dev]' --config-settings 'maturin.build-args=--profile dev'
-      - run: bapl-nb nbs/
-      - run: nbdev-test nbs/
-      - run: nbdev-docs
-      - uses: actions/upload-pages-artifact@v4
-        with:
-          path: _docs
-
   deploy:
-    if: github.event_name != 'pull_request'
-    needs: build
+    name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+    - uses: AnswerDotAI/workflows/quarto-ghp3@master
