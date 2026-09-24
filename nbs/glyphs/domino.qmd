@@ -15,4 +15,6 @@
 
 All-exact inputs use rational elimination. Approximate real/complex inputs use pivoted LU for square systems and SVD for rectangular least squares.
 
-DOMAIN: singular or underdetermined system, non-finite input.
+## Errors
+
+- `DOMAIN`: singular or underdetermined system, non-finite input

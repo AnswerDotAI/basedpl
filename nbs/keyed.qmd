@@ -67,12 +67,12 @@ Inside dfns, group functional colon: `(X:Y)` or `(:Y)`. A direct colon separates
 {('total':+/⍵)}1 2 3        ⍝ 'total':6
 ```
 
-Keys must be unique strings on each axis: DOMAIN. A key-list length must match its axis: LENGTH.
+Keys must be unique strings on each axis: `DOMAIN`. A key-list length must match its axis: `LENGTH`.
 
 | Expression | Error |
 |---|---|
-| `'aa' 'aa':1 2` | DOMAIN |
-| `'aa' 'bb':[1]1 2 3` | LENGTH |
+| `'aa' 'aa':1 2` | `DOMAIN` |
+| `'aa' 'bb':[1]1 2 3` | `LENGTH` |
 
 ## Selection and assignment
 
@@ -94,8 +94,8 @@ M⍎'bob'                    ⍝ 'price' 'qty':20 4
 Dot names are literal keys. `T.a.b` is `'b'⊃'a'⊃T`.
 
 ```apl
-T←('n':1 ⋄ 'addr':('city':'Paris'))
-T.addr.city                 ⍝ 'Paris'
+T←('n':1 ⋄ 'addr':('city':'LA'))
+T.addr.city                 ⍝ 'LA'
 T.n+←1 ⋄ T.n                ⍝ 2
 ```
 
@@ -126,16 +126,16 @@ M['cara']                   ⍝ 'price' 'qty' 'tax':0 0 3
 M[;'tax']                   ⍝ 'alice' 'bob' 'cara':0 0 3
 ```
 
-Missing keys on read or modified assignment: INDEX. Repeated selections on a keyed axis: DOMAIN. Numeric out-of-range assignment: INDEX.
+Missing keys on read or modified assignment: `INDEX`. Repeated selections on a keyed axis: `DOMAIN`. Numeric out-of-range assignment: `INDEX`.
 
 For `T←'aa' 'bb':1 2`:
 
 | Expression | Error |
 |---|---|
-| `T['cc']` | INDEX |
-| `T['cc']+←1` | INDEX |
-| `T[1 1]` | DOMAIN |
-| `T[3]←9` | INDEX |
+| `T['cc']` | `INDEX` |
+| `T['cc']+←1` | `INDEX` |
+| `T[1 1]` | `DOMAIN` |
+| `T[3]←9` | `INDEX` |
 
 Scalar selection stores the whole RHS. A vector selection aligns its retained axis.
 
@@ -176,7 +176,8 @@ Explicit axes choose the correspondence.
 
 ```apl
 M←('alice' 'bob' ⋄ 'price' 'qty'):[10 2 ⋄ 20 4]
-M+[2]('qty' 'tax':10 2)      ⍝ ('alice' 'bob' ⋄ 'price' 'qty' 'tax'):[10 12 2 ⋄ 20 14 2]
+taxed←M+[2]('qty' 'tax':10 2)
+taxed   ⍝ ('alice' 'bob' ⋄ 'price' 'qty' 'tax'):[10 12 2 ⋄ 20 14 2]
 ```
 
 ## Array operations
@@ -245,7 +246,7 @@ N←'initial' 'once' 'twice':0 1 2
 (2∘×)⍣N⊢3                  ⍝ 'initial' 'once' 'twice':3 6 12
 ```
 
-Inner product, Decode and matrix solve align contracted keys. Both keyed: equal key sets required (LENGTH otherwise). Either unkeyed: positional contraction.
+Inner product, Decode and matrix solve align contracted keys. Both keyed: equal key sets required (`LENGTH` otherwise). Either unkeyed: positional contraction.
 
 ```apl
 ('hi' 'lo':1 2)+.×('lo' 'hi':10 20) ⍝ 40
@@ -271,7 +272,7 @@ Replicate can repeat an unkeyed axis while retaining keys on other axes.
 2/'aa' 'bb':[1 2 ⋄ 3 4]     ⍝ 'aa' 'bb':[1 1 2 2 ⋄ 3 3 4 4]
 ```
 
-Repeated or invented positions on a keyed axis give DOMAIN. For `V←'aa' 'bb':1 2`:
+Repeated or invented positions on a keyed axis give `DOMAIN`. For `V←'aa' 'bb':1 2`:
 
 | Expression | Reason |
 |---|---|
@@ -335,7 +336,7 @@ V←'aa' 'bb' 'cc':1 2 1
 
 ## Named axes
 
-An axis name identifies a dimension: `city`. Its keys identify positions: `Paris London`. Names are unique within an array.
+An axis name identifies a dimension: `city`. Its keys identify positions: `LA NY`. Names are unique within an array.
 
 ```apl
 M←'city' 'month':[0]2 3⍴⍳6
@@ -355,10 +356,10 @@ M←'city' 'month':[0]2 3⍴⍳6
 A keyed vector on the left of `:` supplies both axis names and position keys. Its keys name axes; its values list their positions.
 
 ```apl
-sales←('city':'London' 'Paris' ⋄ 'month':'Jan' 'Feb' 'Mar'):[10 20 30 ⋄ 40 50 60]
+sales←('city':'NY' 'LA' ⋄ 'month':'Jan' 'Feb' 'Mar'):[10 20 30 ⋄ 40 50 60]
 ⍳[0]sales                     ⍝ 'city' 'month'
-⍳[1 2]sales                   ⍝ ('London' 'Paris' ⋄ 'Jan' 'Feb' 'Mar')
-sales['Paris';'Feb']           ⍝ 50
+⍳[1 2]sales                   ⍝ ('NY' 'LA' ⋄ 'Jan' 'Feb' 'Mar')
+sales['LA';'Feb']              ⍝ 50
 ```
 
 Reuse descriptions, or attach them to selected axes. Other axes keep their names and keys.
@@ -368,14 +369,14 @@ months←'month':'Jan' 'Feb' 'Mar'
 M←months:[2]2 3⍴⍳6
 ⍳[0]M                        ⍝ (1ₓ ⋄ 'month')
 ⍳[2]M                        ⍝ 'Jan' 'Feb' 'Mar'
-⍳[0]('city':'London' 'Paris'):M ⍝ 'city' 'month'
+⍳[0]('city':'NY' 'LA'):M        ⍝ 'city' 'month'
 ```
 
 ```apl
-axes←('month':'Jan' 'Feb' 'Mar' ⋄ 'city':'London' 'Paris')
+axes←('month':'Jan' 'Feb' 'Mar' ⋄ 'city':'NY' 'LA')
 M←axes:[2 1]2 3⍴⍳6
 ⍳[0]M                        ⍝ 'city' 'month'
-⍳[1 2]M                      ⍝ ('London' 'Paris' ⋄ 'Jan' 'Feb' 'Mar')
+⍳[1 2]M                      ⍝ ('NY' 'LA' ⋄ 'Jan' 'Feb' 'Mar')
 ```
 
 Agreement first pairs equal names, wherever they occur. Unpaired axes broadcast. Result order is left axes, then right-only axes.
@@ -402,9 +403,9 @@ B←('product' ⋄ 2):[0]4 3⍴2
 Function qualifiers select axes by name. Array brackets select positions on those axes.
 
 ```apl
-M←'city' 'month':[0]('Paris' 'London' ⋄ 'Jan' 'Feb' 'Mar'):2 3⍴⍳6
-⍳[1]'Paris'⌷['city']M        ⍝ 'Jan' 'Feb' 'Mar'
-M['Paris']≡'Paris'⌷['city']M  ⍝ 1ₓ
+M←'city' 'month':[0]('LA' 'NY' ⋄ 'Jan' 'Feb' 'Mar'):2 3⍴⍳6
+⍳[1]'LA'⌷['city']M           ⍝ 'Jan' 'Feb' 'Mar'
+M['LA']≡'LA'⌷['city']M        ⍝ 1ₓ
 ⍳[0]⊂['month']M              ⍝ ,⊂'city'
 +/['city' 'month']M            ⍝ ⊂21
 ```
@@ -426,17 +427,17 @@ V←'city':[0]1 2
 Duplicating an axis name drops every occurrence of it. Position keys remain.
 
 ```apl
-V←'city':[0]'Paris' 'London':1 2
+V←'city':[0]'LA' 'NY':1 2
 W←V×⌝V
 ⍳[0]W                        ⍝ 1ₓ 2ₓ
-⍳[1 2]W                      ⍝ ('Paris' 'London' ⋄ 'Paris' 'London')
+⍳[1 2]W                      ⍝ ('LA' 'NY' ⋄ 'LA' 'NY')
 ```
 
 | Expression | Error |
 |---|---|
-| `+/['missing']M` | INDEX |
-| `'city' 'city':[0]2 3⍴0` | DOMAIN |
-| `'city':[0]2 3⍴0` | LENGTH |
+| `+/['missing']M` | `INDEX` |
+| `'city' 'city':[0]2 3⍴0` | `DOMAIN` |
+| `'city':[0]2 3⍴0` | `LENGTH` |
 
 ## Python and JSON
 
@@ -446,20 +447,21 @@ Python dicts become keyed vectors recursively. `.py` converts them back to dicts
 from basedpl import Array
 import numpy as np
 
-record = Array({'price': 10, 'address': {'city': 'Paris'}})
-assert record.py == {'price': 10, 'address': {'city': 'Paris'}}
+record = Array({'price': 10, 'address': {'city': 'LA'}})
+assert record.py == {'price': 10, 'address': {'city': 'LA'}}
 assert record.axis_keys == (('price', 'address'),)
 ```
 
 Attach position keys with `axis_keys`, axis names with `axis_names`. `None` leaves an axis unkeyed/unnamed. The corresponding properties inspect them; `.np` copies the values to NumPy.
 
 ```python
-rows, cols = ['London', 'Paris'], ['Jan', 'Feb', 'Mar']
-sales = Array([[10, 20, 30], [40, 50, 60]], axis_keys=(rows, cols), axis_names=('city', 'month'))
+rows, cols = ['NY', 'LA'], ['Jan', 'Feb', 'Mar']
+data = [[10, 20, 30], [40, 50, 60]]
+sales = Array(data, axis_keys=(rows, cols), axis_names=('city', 'month'))
 assert sales.axis_keys == (tuple(rows), tuple(cols))
 assert sales.axis_names == ('city', 'month')
-assert sales.np.tolist() == [[10, 20, 30], [40, 50, 60]]
-columns_only = Array(sales.np, axis_keys=(None, cols), axis_names=(None, 'month'))
+assert sales.np.tolist() == data
+columns_only = Array(data, axis_keys=(None, cols), axis_names=(None, 'month'))
 assert columns_only.axis_keys == (None, tuple(cols))
 assert columns_only.axis_names == (None, 'month')
 ```
@@ -468,7 +470,7 @@ assert columns_only.axis_names == (None, 'month')
 
 ```python
 df = sales.df
-assert df.loc['Paris', 'Feb'] == 50
+assert df.loc['LA', 'Feb'] == 50
 assert (df.index.name, df.columns.name) == ('city', 'month')
 assert sales.py.equals(df)
 assert columns_only.df.index.tolist() == [1, 2]
@@ -477,9 +479,11 @@ assert columns_only.df.index.tolist() == [1, 2]
 Above rank 2, the last axis supplies columns; earlier axes form a row MultiIndex. Unkeyed axes use 1-origin labels. Scalars and vectors become one-column DataFrames.
 
 ```python
-cube = Array(np.arange(12).reshape(2, 2, 3), axis_keys=(None, rows, cols), axis_names=('year', 'city', 'month'))
+counts = np.arange(12).reshape(2, 2, 3)
+names = 'year', 'city', 'month'
+cube = Array(counts, axis_keys=(None, rows, cols), axis_names=names)
 assert cube.df.index.names == ['year', 'city']
-assert cube.df.loc[(2, 'Paris'), 'Mar'] == 11
+assert cube.df.loc[(2, 'LA'), 'Mar'] == 11
 assert Array({'aa': 1, 'bb': 2}).df.loc['bb', 1] == 2
 assert Array(7).df.loc[1, 1] == 7
 ```
@@ -491,7 +495,7 @@ assert Array(7).df.loc[1, 1] == 7
   "shape": [2, 3],
   "data": [10, 20, 30, 40, 50, 60],
   "prototype": 0,
-  "axis_keys": [["London", "Paris"], ["Jan", "Feb", "Mar"]],
+  "axis_keys": [["NY", "LA"], ["Jan", "Feb", "Mar"]],
   "axis_names": ["city", "month"]
 }
 ```

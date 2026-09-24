@@ -30,4 +30,8 @@
 
 Scalar cells; results assemble with fill. Inverse: count-below plus one. Primality testing is deterministic through 64 bits, probabilistic above that (false-positive bound `2⁻⁶⁴`).
 
-DOMAIN: invalid selector/input; previous prime at/below 2. See [Factor](factor.qmd).
+See [Factor](factor.qmd).
+
+## Errors
+
+- `DOMAIN`: invalid selector/input; previous prime at/below 2

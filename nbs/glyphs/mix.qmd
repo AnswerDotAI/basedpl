@@ -30,4 +30,11 @@ T←('price':1 2 3 ⋄ 'qty':4 5 6)
 (⊂'qty' 'price')⊃T ⍝ (4 5 6 ⋄ 1 2 3)
 ```
 
-On Mix, axes place cell dimensions among frame dimensions; fractional positions insert before an axis. INDEX: position outside the array. Index 1 on an empty axis gives fill, as does [First](take.qmd).
+On Mix, axes place cell dimensions among frame dimensions; fractional positions insert before an axis. On Pick, index 1 on an empty axis gives fill, as does [First](take.qmd).
+
+## Errors
+
+- `RANK`: Mix axes not a scalar or vector
+- `LENGTH`: Mix axis count not the cell rank
+- `INDEX`: position outside the array
+- `DOMAIN`: repeated, nonpositive or out-of-range Mix axes; fractional axes in a vector

@@ -117,15 +117,15 @@ See [array notation](https://answerdotai.github.io/basedpl/glyphs/brackets.html)
 Axes can have names, and positions along them can have string keys. Describe the axes once, then select by key or reduce by axis name:
 
 ``` apl
-axes←('city':'London' 'Paris' ⋄ 'month':'Jan' 'Feb' 'Mar')
+axes←('city':'NY' 'LA' ⋄ 'month':'Jan' 'Feb' 'Mar')
 sales←axes:[10 20 30 ⋄ 40 50 60]
-sales['Paris';'Feb']
+sales['LA';'Feb']
 +/['month']sales
 ```
 
     50
 
-    ('London':60 ⋄ 'Paris':150)
+    ('NY':60 ⋄ 'LA':150)
 
 Keys and names travel with axes through operations such as transpose. Arithmetic aligns matching names and keys. See [Axis keys](https://answerdotai.github.io/basedpl/keyed.html).
 
@@ -196,7 +196,7 @@ CSV headers likewise name column vectors. [Files, CSV and JSON](https://answerdo
 `•plot` draws charts from arrays. Keys label the axes and name the lines. See [Plots](https://answerdotai.github.io/basedpl/plot.html).
 
 ``` apl
-('legend':'end') •plot ('city':'London' 'Paris' ⋄ 'month':'Jan' 'Feb' 'Mar'):[10 20 30 ⋄ 40 50 60]
+('legend':'end') •plot sales
 ```
 
 ![](index_files/figure-commonmark/cell-17-output-1.svg)

@@ -13,4 +13,6 @@
 0÷0               ⍝ 1
 ```
 
-DOMAIN: zero divisor, except `0÷0=1`.
+## Errors
+
+- `DOMAIN`: zero divisor, except `0÷0=1`

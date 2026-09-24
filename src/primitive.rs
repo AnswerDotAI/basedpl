@@ -252,7 +252,7 @@ pub(crate) fn single_axis(axis: &Value, span: &Span) -> Result<usize, Error> {
     if !axis.is_singleton() || axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "one axis is required")); }
     numeric(&axis.at(0), span)?
         .nonnegative_integer()
-        .map_err(|k| span.error(k, "axis must be integral"))?
+        .map_err(|k| span.error(k, "axis must be a positive integer"))?
         .checked_sub(1)
         .ok_or_else(|| span.error(ErrorKind::Domain, "axes start at one"))
 }
@@ -261,7 +261,7 @@ fn axes(axis: &Value, rank: usize, span: &Context<'_>) -> Result<Vec<usize>, Err
     if axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be scalar or vector")); }
     let mut result = Vec::new();
     for e in axis.elements() {
-        let n = numeric(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "axis must be integral"))?;
+        let n = numeric(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "axis must be a positive integer"))?;
         if n == 0 || n > rank || result.contains(&(n - 1)) { return Err(span.error(ErrorKind::Domain, "axes must be distinct and within the array rank")); }
         result.push(n - 1);
     }
@@ -1662,7 +1662,7 @@ fn mix_axes(right: &Value, spec: &Value, span: &Context<'_>) -> Result<Value, Er
     let cell_rank = rank - frame;
     let positions = if spec.is_singleton() {
         let start = match fractional_axis(spec, frame, span)? { Some(a) => a, None => single_axis(spec, span)? };
-        if start > frame { return Err(span.error(ErrorKind::Index, "mix axes are outside result rank")); }
+        if start > frame { return Err(span.error(ErrorKind::Domain, "mix axes are outside result rank")); }
         (start..start + cell_rank).collect::<Vec<_>>()
     } else { axes(spec, rank, span)? };
     if positions.len() != cell_rank { return Err(span.error(ErrorKind::Length, "mix needs one axis per cell dimension")); }

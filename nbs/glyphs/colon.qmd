@@ -20,9 +20,9 @@ M←'city' 'month':[0]2 3⍴⍳6
 A keyed `K` supplies axis names and position keys together.
 
 ```apl
-axes←('city':'London' 'Paris' ⋄ 'month':'Jan' 'Feb' 'Mar')
+axes←('city':'NY' 'LA' ⋄ 'month':'Jan' 'Feb' 'Mar')
 M←axes:2 3⍴⍳6
-M['Paris';'Feb']    ⍝ 5
+M['LA';'Feb']       ⍝ 5
 ```
 
 Inside a dfn, group functional uses: `(K:Y)` or `(:Y)`.

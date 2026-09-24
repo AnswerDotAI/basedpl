@@ -14,4 +14,10 @@ Negative sizes in [Windows](windows.qmd) return the same windows as one array.
 {+/,⍵}⌺([3 ⋄ 2])⍳8  ⍝ 3 9 15 21
 ```
 
-Results assemble with fill. RANK: specification not a scalar, vector or two-row matrix, or more axes than `Y`. LENGTH: a matrix without two rows. DOMAIN: no axes, nonpositive sizes or movements, or a size of at least twice its axis length.
+Results assemble with fill.
+
+## Errors
+
+- `RANK`: specification not a scalar, vector or two-row matrix, or more axes than `Y`
+- `LENGTH`: a matrix without two rows
+- `DOMAIN`: no axes, nonpositive sizes or movements, or a size of at least twice its axis length

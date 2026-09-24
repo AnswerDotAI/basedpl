@@ -10,4 +10,8 @@
 
 Call order: `g Y`, `g X`, `f`, inverse `g`.
 
-DOMAIN: unknown inverse. See [Inverse pair](inverse-pair.qmd).
+See [Inverse pair](inverse-pair.qmd).
+
+## Errors
+
+- `DOMAIN`: unknown inverse

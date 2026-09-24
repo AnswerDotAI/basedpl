@@ -57,4 +57,7 @@ n←{0.5×⍵+2÷⍵} ⋄ ≢n⍣[≡]⊢1  ⍝ 7ₓ
 
 See [Inverse pair](inverse-pair.qmd). Convergence: `f⍣≡`; convergence history: `f⍣[≡]`.
 
-RANK: history count is not an atom. DOMAIN: non-integral count, non-Boolean predicate, unknown inverse.
+## Errors
+
+- `RANK`: history count is not an atom
+- `DOMAIN`: non-integral count, non-Boolean predicate, unknown inverse

@@ -41,4 +41,7 @@ Evaluation accepts fractional/negative exponents. Conversion to coefficients req
 
 Derivative coefficients: `(1↓C)×⍳¯1+≢C`. Integral: `K,C÷⍳≢C`. See [Derivative](derivative.qmd).
 
-LENGTH: wrong coordinate count. DOMAIN: nonnumeric data, invalid conversion exponents or failed root solve.
+## Errors
+
+- `LENGTH`: wrong coordinate count
+- `DOMAIN`: nonnumeric data, invalid conversion exponents or failed root solve

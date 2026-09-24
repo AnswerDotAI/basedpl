@@ -72,7 +72,7 @@ Axis order determines the ravel order. Unselected axes retain their order and ke
 -/[2 1]2 2⍴⍳4      ⍝ ⊂¯4
 ```
 
-An empty axis vector makes singleton cells. A seed is passed whole to each cell. Axis vectors must have distinct, valid axes: DOMAIN. Higher-rank axis specifications: RANK.
+An empty axis vector makes singleton cells. A seed is passed whole to each cell.
 
 ```apl
 +/[⍬]1 2 3         ⍝ 1 2 3
@@ -80,3 +80,8 @@ An empty axis vector makes singleton cells. A seed is passed whole to each cell.
 ```
 
 Float sum/product reductions allow reassociation; generic reductions retain operand order.
+
+## Errors
+
+- `RANK`: higher-rank axis specification
+- `DOMAIN`: axis vector with repeated or invalid axes

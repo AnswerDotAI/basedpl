@@ -930,6 +930,10 @@ a←1 2 ⋄ f←{⎕←a ⋄ ⍺+⍵} ⋄ a[1 2]f←10 20 ⋄ a   ⍝ 11 22
 ⍝ — Mix places the matrix-cell axes at positions one and three
 ⊃[1 3](2 3⍴⍳6⋄ 2 3⍴6+⍳6)   ⍝ 2 2 3⍴1 2 3 7 8 9 4 5 6 10 11 12
 
+⍝ — A single Mix axis outside the result rank is a domain error, as axis vectors are
+⊃[4](2 3⍴⍳6⋄ 2 3⍴6+⍳6)
+⍝ error: DOMAIN ERROR
+
 ⍝ — Laminate inserts a leading axis
 1 2,[0.5]3 4   ⍝ [1 2 ⋄ 3 4]
 

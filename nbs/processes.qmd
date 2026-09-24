@@ -17,7 +17,7 @@ The second response is:
 {"value":55.0,"output":[{"kind":"display","data":{"text/plain":"55"}}],"error":null}
 ```
 
-`output` contains ordered events: `kind` is `display` or `explicit`, and `data` is a MIME bundle with `text/plain`. SVG display adds `image/svg+xml`. Returned values carry contents and axis labels. Keyed entries that hold functions, such as `_mime_` renderers, are omitted. Other functions in a result give a DOMAIN ERROR.
+`output` contains ordered events: `kind` is `display` or `explicit`, and `data` is a MIME bundle with `text/plain`. SVG display adds `image/svg+xml`. Returned values carry contents and axis labels. Keyed entries that hold functions, such as `_mime_` renderers, are omitted. Other functions in a result give a `DOMAIN` error.
 
 Use `json.dumps(code)` or `JSON.stringify(code)`, followed by a newline. Quotes are required; source newlines are escaped inside the string. Stdout contains only responses. The session remains usable after errors. EOF ends it.
 

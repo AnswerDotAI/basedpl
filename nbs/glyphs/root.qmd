@@ -15,4 +15,6 @@
 2√3j4             ⍝ 2j1
 ```
 
-DOMAIN: zero or infinite degree; zero with a negative real degree.
+## Errors
+
+- `DOMAIN`: zero or infinite degree; zero with a negative real degree

@@ -28,4 +28,6 @@ Inverse: product. `K⨸N` selects exponents or a factor table.
 
 Scalar cells; results assemble with fill. Large factors follow [Prime's](prime.qmd) probable-prime policy.
 
-DOMAIN: nonpositive/non-integral `N`; non-integral finite `K`.
+## Errors
+
+- `DOMAIN`: nonpositive/non-integral `N`; non-integral finite `K`

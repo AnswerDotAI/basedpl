@@ -1,6 +1,6 @@
 @font-face {
-  font-family: SAX2;
-  src: local("SAX2"), url("https://cdn.jsdelivr.net/gh/abrudz/SAX2@master/SAX2.ttf") format("truetype");
+  font-family: BQN386;
+  src: local("BQN386"), url("https://cdn.jsdelivr.net/gh/dzaima/BQN386@master/BQN386.woff2") format("woff2");
 }
 
 pre.apl,
@@ -9,8 +9,15 @@ pre.apl,
 pre.apl ~ .cell-output pre,
 pre.apl ~ .cell-output code,
 .aplnb_out {
-  font-family: SAX2, monospace;
+  font-family: BQN386, monospace;
   line-height: 1.05;
+}
+
+pre.apl,
+.apl pre,
+pre.apl ~ .cell-output pre,
+.aplnb_out {
+  font-size: calc(0.875em + 1pt);
 }
 
 .cell {

@@ -14,4 +14,8 @@
 'UTF-8'•ucs 195 169 ⍝ ,'é'
 ```
 
-Encoding forms take vectors; scalars become singletons. DOMAIN: invalid code point or malformed encoding.
+Encoding forms take vectors; scalars become singletons.
+
+## Errors
+
+- `DOMAIN`: invalid code point or malformed encoding

@@ -17,4 +17,10 @@ f←(⊂[1x 2x 0x ⋄ 1x 0x 2x])∘⊛ ⋄ f∂⊂3x 4x  ⍝ ⊂6ₓ 8ₓ
 f←(⊂[1x 2x 0x ⋄ 1x 0x 2x])∘⊛ ⋄ f∂3x      ⍝ 12ₓ
 ```
 
-Repeated `∂` requires scalar input/output and one variable. DOMAIN: unsupported function or nonfinite/non-real data. RANK: monadic array output. LENGTH: wrong cotangent shape.
+Repeated `∂` requires scalar input/output and one variable.
+
+## Errors
+
+- `RANK`: monadic array output
+- `LENGTH`: wrong cotangent shape
+- `DOMAIN`: unsupported function or nonfinite/non-real data

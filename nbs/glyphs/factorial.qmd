@@ -16,4 +16,6 @@
 
 Extends through Gamma to non-integral and complex arguments.
 
-DOMAIN: factorial poles.
+## Errors
+
+- `DOMAIN`: factorial poles

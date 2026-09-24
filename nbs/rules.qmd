@@ -41,7 +41,7 @@ Bare numbers are approximate (`f64`). `x` or `ₓ` marks exact integers; `r` mar
 
 Predicates, positions, tally and shape return exact integers. Iota and random integer generation preserve exact arguments. Mixed arrays retain each element's domain.
 
-Reals include `∞` and `¯∞`. DOMAIN: NaN, non-finite complex components, undefined infinity arithmetic, `⍟0`, division by zero except `0÷0=1`.
+Reals include `∞` and `¯∞`. `DOMAIN`: NaN, non-finite complex components, undefined infinity arithmetic, `⍟0`, division by zero except `0÷0=1`.
 
 ## Arrays, nesting and fill
 
@@ -78,7 +78,7 @@ Fill follows the first item's prototype: zero, space, or recursively filled nest
 
 ## Agreement and pervasion
 
-Scalar functions align leading axes. Missing trailing dimensions count as 1. Equal dimensions agree; unit dimensions expand, including to zero. Unit axes remain. Other mismatches: LENGTH.
+Scalar functions align leading axes. Missing trailing dimensions count as 1. Equal dimensions agree; unit dimensions expand, including to zero. Unit axes remain. Other mismatches: `LENGTH`.
 
 ```apl
 (2 3⍴⍳6)+10 20       ⍝ [11 12 13 ⋄ 24 25 26]
@@ -127,10 +127,10 @@ Empty Each/rank calls the operand on prototypes. Empty scan makes no calls. Gene
 
 | Error | Meaning |
 |---|---|
-| DOMAIN | Invalid values or unknown inverse |
-| RANK / LENGTH | Invalid rank or shape/count agreement |
-| INDEX | Invalid position |
-| SYNTAX | Invalid syntax or call form |
-| VALUE | Undefined name or missing value |
+| `DOMAIN` | Invalid values or unknown inverse |
+| `RANK` / `LENGTH` | Invalid rank or shape/count agreement |
+| `INDEX` | Invalid position |
+| `SYNTAX` | Invalid syntax or call form |
+| `VALUE` | Undefined name or missing value |
 
 Errors retain source locations. Unsupported features and resource limits have separate errors.

@@ -15,4 +15,6 @@
 
 Uses complex logarithms where needed.
 
-DOMAIN: zero argument, base 1.
+## Errors
+
+- `DOMAIN`: zero argument, base 1
