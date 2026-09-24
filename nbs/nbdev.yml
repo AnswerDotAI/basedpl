@@ -2,8 +2,8 @@ project:
   output-dir: _docs
 
 website:
-  title: "basedpl"
-  site-url: "/"
+  title: "bAsedPL"
+  site-url: "https://answerdotai.github.io/basedpl"
   description: "bAsedPL is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation."
   repo-branch: main
   repo-url: "https://github.com/AnswerDotAI/basedpl"

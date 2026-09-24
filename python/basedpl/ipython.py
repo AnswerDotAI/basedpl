@@ -1,8 +1,7 @@
 "IPython help and completion for APL functions and sessions."
 import re
 from IPython.core.completer import context_matcher, SimpleCompletion
-from . import Function, Session
-from ._core import _help_command
+from . import Function, _Workspace
 
 
 def inspection_mime(info, detail=False):
@@ -10,12 +9,6 @@ def inspection_mime(info, detail=False):
     text = info['source' if detail else 'help']
     return {'text/plain':text, 'text/markdown':f'```apl\n{text}\n```' if detail else text}
 
-
-def command_help(session, code):
-    "Return inspection for a ]help command, or None for ordinary evaluation."
-    if (query := _help_command(code)) is None: return None
-    name, detail = query
-    if (info := session.inspect(name)) is not None: return inspection_mime(info, detail)
 
 
 def load_ipython_extension(ip):
@@ -32,7 +25,8 @@ def load_ipython_extension(ip):
     def complete(context):
         before = context.text_until_cursor
         match = re.search(r'''\b([a-zA-Z_]\w*)\s*(?:\.fn\s*\(|\[|\()\s*(['"])([^'"\n]*)$''', before)
-        if not match or not isinstance(session := ip.user_ns.get(match[1]), Session): return {'completions':[]}
+        obj = ip.user_ns.get(match[1]) if match else None
+        if not isinstance(session := getattr(obj, '__self__', obj), _Workspace): return {'completions':[]}
         prefix = re.search(r'[\w•∆⍙]*$', match[3])[0]
         return dict(completions=[SimpleCompletion(n, type='APL name') for n in session.complete(prefix)], matched_fragment=prefix, suppress=True)
 

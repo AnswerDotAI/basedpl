@@ -1,25 +1,16 @@
 "Word names and composition over the interpreter's immutable function nodes."
 from keyword import iskeyword
 from unicodedata import normalize
-from . import _Operators, _Function, _array, _context, Session, symbols
+from . import _Operators, _Function, _array, apl, symbols
 from ._core import _system_functions
 
-_default_session = None
 _HOLE = object()
-
-def _default():
-    global _default_session
-    if _default_session is None: _default_session = Session()
-    return _default_session
 
 def _build(kind, *operands, valence=0):
     if any(o is _HOLE or isinstance(o, _Pending) for o in operands): return _Pending(kind, operands, valence)
     if kind == 'history': return _build('⍣', operands[0], _builtin('⊂')(operands[1]))
-    session, values = _context(*operands), []
-    for o in operands:
-        if isinstance(o, Function): values.append(o._inner)
-        else: values.append(_array(o))
-    return Function(_Function.build(kind, values), valence=valence, session=session)
+    values = [o._inner if isinstance(o, Function) else _array(o) for o in operands]
+    return Function(_Function.build(kind, values), valence=valence)
 
 class _Combinators(_Operators):
     def __bool__(self): raise TypeError('an APL function has no truth value')
@@ -88,12 +79,12 @@ class _Pending(_Combinators):
         return _build(self.kind, *values, valence=self._valence)
 
 class Function(_Combinators):
-    "An APL function node, optionally associated with a session for name lookup."
-    def __init__(self, inner, valence=0, session=None): self._inner, self._valence, self._session = inner, valence, session
+    "An APL function node."
+    def __init__(self, inner, valence=0): self._inner, self._valence = inner, valence
     def __repr__(self): return repr(self._inner)
     def inspect(self):
         "APL source and help, without running the function."
-        info = (self._session or _default())._worker.inspect(function=self._inner)
+        info = apl._session.inspect(function=self._inner)
         calls = ('f(right) or f(left, right)', 'f(right)', 'f(left, right); f(right) binds the right argument')[self._valence]
         info['help'] = f'Calls: {calls}\n\n' + info['help']
         return info
@@ -101,12 +92,14 @@ class Function(_Combinators):
     def source(self): return self.inspect()['source']
     @property
     def __doc__(self): return self.inspect()['help']
-    def __call__(self, *args):
-        if len(args) == 1 and self._valence == 2: return _build('∘', self, args[0], valence=1)
+    def __call__(self, *args, **kwargs):
+        "Call with `⍵` or `⍺, ⍵`. Keyword arguments supply `⍺` as a keyed vector, and the positional arguments then form `⍵`."
+        if kwargs:
+            if self._valence == 1: raise TypeError('keyword arguments need a dyadic call')
+            args = (kwargs, args[0] if len(args) == 1 else list(args))
+        elif len(args) == 1 and self._valence == 2: return _build('∘', self, args[0], valence=1)
         if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this APL function')
-        owner = _context(self, *args)
-        session = owner if owner is not None else _default()
-        return session._request(dict(function=self._inner, args=[_array(o) for o in args]), True).value
+        return apl._request(dict(function=self._inner, args=[_array(o) for o in args]), True).value
 
 def fork(f, g, h): return _build('fork', f, g, h)
 def atop(f, g): return _build('⍤', f, g)
@@ -126,12 +119,12 @@ for _glyph, _glyph_name, _monad, _dyad, _aliases, _shortcut in symbols:
 
 __all__ = ['Function', 'fork', 'atop', *(name for name in _builtins if name.isidentifier() and not iskeyword(name))]
 
-def _builtin(name, session=None):
-    "Resolve a builtin with operation-name valence, optionally in a session."
+def _builtin(name):
+    "Resolve a builtin with operation-name valence."
     source, valence = _builtins.get(name, (name if name.startswith('•') else '•'+name, 0))
     try: inner = _Function.builtin(source)
     except ValueError: raise AttributeError(f'unknown builtin function: {name!r}') from None
-    return Function(inner, valence, session)
+    return Function(inner, valence)
 
 def __getattr__(name): return _builtin(name)
 def __dir__(): return sorted(set(globals()) | _builtins.keys())

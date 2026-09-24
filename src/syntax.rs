@@ -19,7 +19,8 @@ pub(crate) enum NodeKind {
     Hybrid(Hybrid),
     Group(Vec<Node>),
     Strand(Vec<Node>),
-    ArrayLiteral { cells: Vec<Vec<Node>>, block: bool },
+    /// `record`: parenthesised `key:value` items, which build one keyed vector.
+    ArrayLiteral { cells: Vec<Vec<Node>>, block: bool, record: bool },
     Selection(Vec<Vec<Node>>),
     Dfn(Arc<Definition>),
 }
@@ -323,7 +324,9 @@ impl Parser<'_> {
                     } else if !separated && matches!(token.kind, TokenKind::BracketOpen) { NodeKind::Selection(cells) } else if cells.is_empty() {
                         return Err(ParseFailure::Invalid(span.error(ErrorKind::Syntax, "empty grouping is not a value")));
                     } else if separated {
-                        NodeKind::ArrayLiteral { cells, block: matches!(token.kind, TokenKind::BracketOpen) }
+                        let record = matches!(token.kind, TokenKind::Open)
+                            && cells.iter().all(|c| c.iter().skip(1).any(|n| matches!(n.kind, NodeKind::Function(Primitive::Keys))));
+                        NodeKind::ArrayLiteral { cells, block: matches!(token.kind, TokenKind::BracketOpen), record }
                     } else if matches!(token.kind, TokenKind::Open) { NodeKind::Group(cells.pop().unwrap()) } else { unreachable!() };
                     kind
                 }

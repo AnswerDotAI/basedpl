@@ -108,7 +108,7 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
     };
     let mismatch = mismatch.or_else(|| {
         output.and_then(|expected| {
-            let actual = result.output.join("\n");
+            let actual = result.output.iter().map(crate::Output::text).collect::<Vec<_>>().join("\n");
             (actual != expected).then(|| format!("output: {actual:?} != {expected:?}"))
         })
     });

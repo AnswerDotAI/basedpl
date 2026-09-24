@@ -1,10 +1,10 @@
 use crate::{
     agreement::{Agreement, Mapping},
     array::{generated_len, Axis, Frame as ResultFrame},
-    primitive::{Hybrid, OperatorKind, Primitive},
+    primitive::{push_window, Hybrid, OperatorKind, Primitive, WindowAxis},
     selection::SelectionKind,
     syntax::{Definition, DefinitionKind, Node, NodeKind, StatementKind},
-    Error, ErrorKind, ParseStatus, Parsed, Source, Span, Value,
+    Error, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -23,6 +23,8 @@ impl PartialEq for Function { fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&
 
 const MAX_DEPTH: usize = 128;
 const MAX_CALL_DEPTH: usize = 1024;
+const STACK_RED_ZONE: usize = 1 << 20;
+const STACK_SEGMENT: usize = 16 << 20;
 
 fn implicit_name(name: &str) -> bool { matches!(name, "⍺" | "⍵" | "⍶" | "⍹" | "∇" | "⍢") }
 
@@ -200,19 +202,21 @@ impl Function {
         if depth > MAX_DEPTH { return Err(span.error(ErrorKind::Limit, "function structure exceeds 128 levels")); }
         Ok(Self { node: Arc::new(node), depth, environment, late })
     }
-    fn call(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+    fn call(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
         session.execution.check(span)?;
         if session.depth == MAX_CALL_DEPTH { return Err(span.error(ErrorKind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}"))); }
         session.depth += 1;
-        let result = if self.late { self.resolve(session, output, &mut HashMap::new(), 0).and_then(|f| f.apply(left, right, span, session, output)) } else { self.apply(left, right, span, session, output) };
+        let result = stacker::maybe_grow(STACK_RED_ZONE, STACK_SEGMENT, || {
+            if self.late { self.resolve(session, output, &mut HashMap::new(), 0).and_then(|f| f.apply(left, right, span, session, output)) } else { self.apply(left, right, span, session, output) }
+        });
         session.depth -= 1;
         session.execution.check(span)?;
         result
     }
-    fn call_array(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Value, Error> {
+    fn call_array(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Value, Error> {
         self.call(left, right, span, session, output)?.array(span)
     }
-    fn call_prototype(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+    fn call_prototype(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
         let previous = std::mem::replace(&mut session.prototype, true);
         let result = self.call(left, right, span, session, output);
         session.prototype = previous;
@@ -227,7 +231,7 @@ impl Function {
             _ => Self::new(FunctionNode::Inverse(self.clone()), span),
         }
     }
-    fn resolve(&self, session: &mut Session, output: &mut Vec<String>, resolved: &mut HashMap<usize, (Self, Self)>, depth: usize) -> Result<Self, Error> {
+    fn resolve(&self, session: &mut Session, output: &mut Vec<Output>, resolved: &mut HashMap<usize, (Self, Self)>, depth: usize) -> Result<Self, Error> {
         if !self.late { return Ok(self.clone()); }
         let id = Arc::as_ptr(&self.node) as usize;
         if let Some((_, f)) = resolved.get(&id) { return Ok(f.clone()); }
@@ -262,7 +266,7 @@ impl Function {
         resolved.insert(id, (self.clone(), result.clone()));
         Ok(result)
     }
-    fn apply(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+    fn apply(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
         use FunctionNode::{Defined, Derived, Fold, Fork};
         let array = match self.node.as_ref() {
             FunctionNode::LateBound(..) => unreachable!(),
@@ -296,6 +300,8 @@ impl Function {
             FunctionNode::Primitive(p) => p.call(left, right, &session.execution.at(span)),
             FunctionNode::System(f) => match &f.call {
                 crate::system::Call::Value(call) => call(left, right, &session.execution.at(span)),
+                crate::system::Call::Element(tag) => crate::xml::element(tag, left, right, &session.execution.at(span)),
+                crate::system::Call::Mime => session.mime_value(left, right, span, output),
                 crate::system::Call::Session(call) => call(session, left, right, span),
                 crate::system::Call::Regex(regex, operation) => crate::regex::call(regex, *operation, left, right, &session.execution.at(span)),
                 crate::system::Call::Distribution(d, operation) => crate::distribution::call(d, *operation, left, right, &session.execution.at(span)),
@@ -440,7 +446,7 @@ fn composition(
     right: &Value,
     span: &Span,
     session: &mut Session,
-    output: &mut Vec<String>,
+    output: &mut Vec<Output>,
 ) -> Result<Bound, Error> {
     use OperatorKind::*;
     if matches!(op, At) { return at(operands, left, right, span, session, output); }
@@ -496,7 +502,7 @@ fn agenda_index(index: &Value, len: usize, span: &Span) -> Result<usize, Error> 
     crate::primitive::index(&n, len, span)
 }
 
-fn agenda(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+fn agenda(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
     let [selector, Operand::Value(fs)] = operands else { unreachable!() };
     let index = match selector {
         Operand::Value(a) => a.clone(),
@@ -507,7 +513,7 @@ fn agenda(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &S
     f.call(left, right, span, session, output)
 }
 
-fn at(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+fn at(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
     let selection = match &operands[1] {
         Operand::Value(indices) => crate::primitive::at_indices(right, indices, &session.execution.at(span))?,
         Operand::Function(f) => {
@@ -531,13 +537,14 @@ fn at(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span,
     Ok(Bound::new(Binding::from_element(array)))
 }
 
-fn stencil(f: &Function, spec: &Value, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+fn stencil(f: &Function, spec: &Value, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
     if spec.shape().len() > 2 { return Err(span.error(ErrorKind::Rank, "stencil specification must be a scalar, vector or two-row matrix")); }
     let axes = if spec.shape().len() == 2 {
         if spec.shape()[0] != 2 { return Err(span.error(ErrorKind::Length, "stencil matrix needs two rows")); }
         spec.shape()[1]
     } else { spec.len() };
-    if axes == 0 || axes > right.shape().len() { return Err(span.error(ErrorKind::Domain, "stencil needs at least one axis, within the argument rank")); }
+    if axes == 0 { return Err(span.error(ErrorKind::Domain, "stencil needs at least one axis")); }
+    if axes > right.shape().len() { return Err(span.error(ErrorKind::Rank, "stencil has more axes than its argument")); }
     let mut sizes = Vec::new();
     for e in spec.elements() {
         let Value::Number(n) = e else { return Err(span.error(ErrorKind::Domain, "stencil sizes must be numeric")); };
@@ -545,14 +552,13 @@ fn stencil(f: &Function, spec: &Value, right: &Value, span: &Span, session: &mut
         if n == 0 { return Err(span.error(ErrorKind::Domain, "stencil sizes must be positive")); }
         sizes.push(n);
     }
-    let (windows, movements) = sizes.split_at(axes);
-    let mut frame = Vec::new();
-    for (axis, &window) in windows.iter().enumerate() {
-        let len = right.shape()[axis];
-        if window / 2 >= len { return Err(span.error(ErrorKind::Domain, "stencil window is too large for the argument")); }
-        frame.push((len - usize::from(window % 2 == 0)).div_ceil(movements.get(axis).copied().unwrap_or(1)));
+    let (sizes, movements) = sizes.split_at(axes);
+    let windows: Vec<_> = sizes.iter().enumerate().map(|(a, &size)| WindowAxis { size, step: movements.get(a).copied().unwrap_or(1), padded: true }).collect();
+    if windows.iter().zip(right.shape()).any(|(w, &len)| !w.fits(len)) {
+        return Err(span.error(ErrorKind::Domain, "stencil window is too large for the argument"));
     }
-    let shape = [windows, &right.shape()[axes..]].concat();
+    let frame: Vec<_> = windows.iter().zip(right.shape()).map(|(w, &len)| w.count(len)).collect();
+    let shape = [sizes, &right.shape()[axes..]].concat();
     let size = generated_len(&shape).map_err(|k| span.error(k, "stencil window is too large"))?;
     let count = generated_len(&frame).map_err(|k| span.error(k, "stencil result is too large"))?;
     let mut results = Vec::with_capacity(count);
@@ -560,27 +566,17 @@ fn stencil(f: &Function, spec: &Value, right: &Value, span: &Span, session: &mut
         let mut starts = vec![0isize; axes];
         let mut padding = vec![0.; axes];
         for a in (0..axes).rev() {
-            starts[a] = ((position % frame[a]) * movements.get(a).copied().unwrap_or(1)) as isize - ((windows[a] - 1) / 2) as isize;
+            starts[a] = windows[a].start(position % frame[a]);
             position /= frame[a];
-            padding[a] = if starts[a] < 0 { -starts[a] } else { (right.shape()[a] as isize - starts[a] - windows[a] as isize).min(0) } as f64;
+            padding[a] = if starts[a] < 0 { -starts[a] } else { (right.shape()[a] as isize - starts[a] - sizes[a] as isize).min(0) } as f64;
         }
         let mut data = Vec::with_capacity(size);
-        for mut flat in 0..size {
-            let (mut offset, mut stride, mut valid) = (0, 1, true);
-            for a in (0..shape.len()).rev() {
-                let coordinate = (flat % shape[a]) as isize + starts.get(a).copied().unwrap_or(0);
-                flat /= shape[a];
-                if coordinate < 0 || coordinate >= right.shape()[a] as isize { valid = false; }
-                else { offset += coordinate as usize * stride; }
-                stride *= right.shape()[a];
-            }
-            data.push(if valid { right.at(offset) } else { right.prototype().clone() });
-        }
+        push_window(right, &shape, &starts, &mut data);
         let keys = (0..shape.len())
             .map(|a| {
                 if a >= axes { return Ok(right.keys(a).cloned()); }
                 if padding[a] != 0. { return Ok(None); }
-                right.keys(a).map(|k| k.select(starts[a] as usize..starts[a] as usize + windows[a])).transpose()
+                right.keys(a).map(|k| k.select(starts[a] as usize..starts[a] as usize + sizes[a])).transpose()
             })
             .collect::<Result<_, _>>()
             .map_err(|k| span.error(k, "invalid stencil window keys"))?;
@@ -593,14 +589,14 @@ fn stencil(f: &Function, spec: &Value, right: &Value, span: &Span, session: &mut
     }
     let mut layout = right.layout().axes(0..axes);
     for (a, &len) in frame.iter().enumerate() {
-        let positions = (0..len).map(|i| Some(i * movements.get(a).copied().unwrap_or(1)));
+        let positions = (0..len).map(|i| Some(i * windows[a].step));
         layout = layout.select(a, positions).map_err(|k| span.error(k, "invalid stencil frame keys"))?;
     }
     let result = layout.assemble(&results, &Value::scalar(0.).unwrap()).map_err(|k| span.error(k, "invalid stencil result"))?;
     Ok(Bound::new(Binding::from_element(result)))
 }
 
-fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
     let [Operand::Function(f), operand] = operands else { unreachable!() };
     let enclosed = match operand { Operand::Value(a) if !a.is_atom() && a.is_scalar() => Some(Operand::from_value(Binding::from_element(a.at(0)))), _ => None };
     let history = enclosed.is_some();
@@ -677,7 +673,7 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Sp
     Ok(Bound::new(Binding::from_element(value)))
 }
 
-fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
     use FunctionNode::*;
     use OperatorKind::*;
     let left = bound.map(|(a, _)| a);
@@ -786,7 +782,7 @@ fn inverse_outer(
     right: &Value,
     span: &Span,
     session: &mut Session,
-    output: &mut Vec<String>,
+    output: &mut Vec<Output>,
 ) -> Result<Value, Error> {
     let rank = bound.shape().len();
     if bound.is_empty() || right.shape().len() < rank {
@@ -827,7 +823,7 @@ fn inverse_scan(
     right: &Value,
     span: &Span,
     session: &mut Session,
-    output: &mut Vec<String>,
+    output: &mut Vec<Output>,
 ) -> Result<Value, Error> {
     let axis = scan_axis(h, right, span)?;
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
@@ -846,7 +842,7 @@ fn inverse_scan(
     right.layout().collect(data, right.prototype()).map_err(|k| span.error(k, "invalid inverse scan"))
 }
 
-fn key(f: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+fn key(f: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
     let keys = left.unwrap_or(right);
     if keys.is_scalar() || right.is_scalar() { return Err(span.error(ErrorKind::Rank, "key arguments must have major cells")); }
     if keys.shape()[0] != right.shape()[0] { return Err(span.error(ErrorKind::Length, "key arguments must have equal tallies")); }
@@ -880,7 +876,7 @@ fn key(f: &Function, left: Option<&Value>, right: &Value, span: &Span, session: 
     Ok(Bound::new(Binding::from_element(result)))
 }
 
-fn outer(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+fn outer(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
     let left = left.ok_or_else(|| span.error(ErrorKind::Syntax, "outer product needs a left argument"))?;
     if left.is_atom() && right.is_atom() { return operand.call(Some(left), right, span, session, output); }
     let layout = left.layout().concat(right.layout());
@@ -913,7 +909,7 @@ fn inner(
     right: &Value,
     span: &Span,
     session: &mut Session,
-    output: &mut Vec<String>,
+    output: &mut Vec<Output>,
 ) -> Result<Bound, Error> {
     let left = left.ok_or_else(|| span.error(ErrorKind::Syntax, "inner product needs a left argument"))?;
     let nx = left.shape().last().copied().unwrap_or(1);
@@ -959,7 +955,7 @@ fn rank(
     right: &Value,
     span: &Span,
     session: &mut Session,
-    output: &mut Vec<String>,
+    output: &mut Vec<Output>,
 ) -> Result<Bound, Error> {
     if ranks.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "rank operand must be a scalar or vector")); }
     if !(1..=3).contains(&ranks.len()) { return Err(span.error(ErrorKind::Length, "rank operand needs one to three items")); }
@@ -1008,7 +1004,7 @@ fn rank(
     Ok(Bound::new(Binding::from_element(result)))
 }
 
-fn each(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<String>) -> Result<Bound, Error> {
+fn each(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
     if right.is_atom() && left.is_none_or(Value::is_atom) { return operand.call(left, right, span, session, output); }
     let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).map_err(|k| span.error(k, "Each frames do not agree"))?;
     let empty = agreement.len == 0;
@@ -1086,7 +1082,7 @@ fn fold(
     right: &Value,
     span: &Span,
     session: &mut Session,
-    output: &mut Vec<String>,
+    output: &mut Vec<Output>,
 ) -> Result<Value, Error> {
     hybrid.axis = hybrid.axis.as_ref().map(|a| crate::primitive::resolve_axes(a, right, span)).transpose()?;
     if !hybrid.scan {
@@ -1118,7 +1114,7 @@ fn fold_array(
     right: &Value,
     span: &Span,
     session: &mut Session,
-    output: &mut Vec<String>,
+    output: &mut Vec<Output>,
 ) -> Result<Value, Error> {
     // Scan keeps every position, so it keeps every key.
     if hybrid.scan {
@@ -1230,7 +1226,7 @@ fn scan(
     right: &Value,
     span: &Span,
     session: &mut Session,
-    output: &mut Vec<String>,
+    output: &mut Vec<Output>,
 ) -> Result<Value, Error> {
     let axis = scan_axis(hybrid, right, span)?;
     if right.is_atom() { return match seed { Some(seed) => operand.call_array(Some(seed), right, span, session, output), None => Ok(right.clone()) }; }
@@ -1472,14 +1468,16 @@ impl Bound {
 pub struct Evaluation {
     pub value: Option<Value>,
     pub function: Option<Function>,
-    pub output: Vec<String>,
+    pub output: Vec<Output>,
     pub error: Option<Error>,
 }
+impl Evaluation { pub fn output_text(&self) -> Vec<&str> { self.output.iter().map(Output::text).collect() } }
 
 #[derive(Default)]
 pub struct Session {
     execution: crate::execution::Execution,
     pub(crate) display: crate::display::Settings,
+    display_defaults: crate::display::Settings,
     names: HashMap<String, Binding>,
     frames: Vec<Frame>,
     current: Option<usize>,
@@ -1491,6 +1489,10 @@ pub struct Session {
 
 impl Session {
     pub fn new() -> Self { Self::default() }
+    pub(crate) fn interactive() -> Self {
+        let display = crate::display::Settings::interactive();
+        Self { display, display_defaults: display, ..Self::default() }
+    }
     pub fn names(&self) -> impl Iterator<Item = &str> {
         let mut names = HashSet::new();
         let mut scope = self.current;
@@ -1634,7 +1636,7 @@ impl Session {
         })();
         match called {
             Ok(Bound { value: Binding::Value(a), shy, .. }) => {
-                if self.execution.echo && !shy { self.execution.output(&mut result.output, crate::OutputKind::Display, self.display.array(&a, false)); }
+                if self.execution.echo && !shy { if let Err(e) = self.display_value(&a, &span, &mut result.output) { result.error = Some(e); } }
                 result.value = Some(a);
             }
             Ok(Bound { value: Binding::Function(f), shy, .. }) => {
@@ -1677,7 +1679,10 @@ impl Session {
                                 self.execution.output(&mut result.output, crate::OutputKind::Display, crate::display::diagram(&a));
                             }
                             else if self.execution.echo && !bound.shy {
-                                self.execution.output(&mut result.output, crate::OutputKind::Display, self.display.array(&a, false));
+                                if let Err(e) = self.display_value(&a, &nodes[0].span, &mut result.output) {
+                                    result.error = Some(e);
+                                    return result;
+                                }
                             }
                             Some(a)
                         }
@@ -1727,7 +1732,10 @@ impl Session {
             let mut result = Evaluation::default();
             match crate::inspection::help_command(code) {
                 Some((name, detail)) => match self.inspect(name) {
-                    Some(info) => self.execution.output(&mut result.output, crate::OutputKind::Display, info.text(detail)),
+                    Some(info) => {
+                        let data = [("text/plain".to_string(), info.text(detail)), ("text/markdown".to_string(), info.markdown(detail))].into_iter().collect();
+                        self.execution.emit(&mut result.output, crate::Output { kind: crate::OutputKind::Display, data })
+                    }
                     None => {
                         result.error =
                             Some(Span { range: 0..source.text.len(), source: source.clone() }.error(ErrorKind::Value, format!("name not found: {name}")))
@@ -1738,7 +1746,7 @@ impl Session {
             return result;
         }
         if matches!(command.to_ascii_lowercase().as_str(), "]box" | "]boxing") {
-            return match self.display.configure(args) {
+            return match self.display.configure(args, self.display_defaults) {
                 Ok(text) => {
                     let mut result = Evaluation::default();
                     self.execution.output(&mut result.output, crate::OutputKind::Display, text);
@@ -1749,6 +1757,17 @@ impl Session {
                 }
             };
         }
+        if command.eq_ignore_ascii_case("]clear") {
+            if !args.is_empty() {
+                return Evaluation {
+                    error: Some(Span { range: 0..source.text.len(), source }.error(ErrorKind::Syntax, "usage: ]clear")),
+                    ..Evaluation::default()
+                };
+            }
+            let display = self.display_defaults;
+            *self = Self { execution: std::mem::take(&mut self.execution), display, display_defaults: display, ..Self::default() };
+            return Evaluation::default();
+        }
         if command.eq_ignore_ascii_case("]display") {
             return match crate::parse(Source::new("<display>", args)) {
                 ParseStatus::Complete(parsed) => self.eval_display(&parsed, true),
@@ -1757,16 +1776,40 @@ impl Session {
         }
         Evaluation { error: Some(Span { range: 0..source.text.len(), source }.error(ErrorKind::Syntax, "unknown user command")), ..Evaluation::default() }
     }
-    fn bind(&mut self, nodes: &[Node], output: &mut Vec<String>) -> Result<Bound, Error> {
+    fn bind(&mut self, nodes: &[Node], output: &mut Vec<Output>) -> Result<Bound, Error> {
         self.execution.check(&nodes[0].span)?;
         if self.depth == MAX_CALL_DEPTH { return Err(nodes[0].span.error(ErrorKind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}"))); }
         self.depth += 1;
-        let result = self.bind_expression(nodes, output);
+        let result = stacker::maybe_grow(STACK_RED_ZONE, STACK_SEGMENT, || self.bind_expression(nodes, output));
         self.depth -= 1;
         result
     }
 
-    fn execute(&mut self, left: Option<&Value>, right: &Value, span: &Span, output: &mut Vec<String>) -> Result<Bound, Error> {
+    fn mime_value(&mut self, left: Option<&Value>, right: &Value, span: &Span, output: &mut Vec<Output>) -> Result<Value, Error> {
+        if left.is_some() { return Err(span.error(ErrorKind::Syntax, "•mime is monadic")); }
+        let fallback = crate::keyed::vector(vec!["text/plain".into()], vec![crate::keyed::text(&self.display.array(right, false))]).unwrap();
+        let Some(Value::Function(renderer)) = crate::keyed::field(right, "_mime_") else { return Ok(fallback); };
+        let echo = std::mem::replace(&mut self.execution.echo, false);
+        let rendered = renderer.call_array(None, right, span, self, output);
+        self.execution.echo = echo;
+        let bundle = crate::keyed::merge(&fallback, &rendered?).map_err(|k| span.error(k, "MIME renderer must return a keyed vector"))?;
+        crate::display::bundle(&bundle).map_err(|k| span.error(k, "MIME bundle must map MIME types to text"))?;
+        Ok(bundle)
+    }
+
+    fn display_value(&mut self, value: &Value, span: &Span, output: &mut Vec<Output>) -> Result<(), Error> {
+        match self.mime_value(None, value, span, output) {
+            Ok(bundle) => {
+                let data = crate::display::bundle(&bundle).expect("•mime checks its bundle");
+                self.execution.emit(output, Output { kind: crate::OutputKind::Display, data });
+            }
+            Err(e) if matches!(e.kind, ErrorKind::Interrupt | ErrorKind::Timeout) => return Err(e),
+            Err(_) => self.execution.output(output, crate::OutputKind::Display, self.display.array(value, false)),
+        }
+        Ok(())
+    }
+
+    fn execute(&mut self, left: Option<&Value>, right: &Value, span: &Span, output: &mut Vec<Output>) -> Result<Bound, Error> {
         if let Some(x) = left { return Ok(Bound::new(Binding::from_element(crate::primitive::pick(right, x, false, &self.execution.at(span))?))); }
         self.execute_source(Source::new("<execute>", Self::source_text(right, span)?), span, output)
     }
@@ -1780,22 +1823,18 @@ impl Session {
             .collect()
     }
 
-    fn load(&mut self, left: Option<&Value>, right: &Value, span: &Span, output: &mut Vec<String>) -> Result<Bound, Error> {
+    fn load(&mut self, left: Option<&Value>, right: &Value, span: &Span, output: &mut Vec<Output>) -> Result<Bound, Error> {
         if left.is_some() { return Err(span.error(ErrorKind::Syntax, "•load is monadic")); }
         let path = Self::source_text(right, span)?;
         let code = std::fs::read_to_string(&path).map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))?;
         self.execute_source(Source::new(path, code), span, output)
     }
 
-    fn execute_source(&mut self, source: Arc<Source>, span: &Span, output: &mut Vec<String>) -> Result<Bound, Error> {
+    fn execute_source(&mut self, source: Arc<Source>, span: &Span, output: &mut Vec<Output>) -> Result<Bound, Error> {
         let parsed = match crate::parse(source) { ParseStatus::Complete(p) => p, ParseStatus::Incomplete(e) | ParseStatus::Invalid(e) => return Err(e) };
         let mut result = Bound::new(Binding::NoResult);
         for statement in &parsed.statements {
-            if let Binding::Value(a) = &result.value {
-                if self.execution.echo && !result.shy {
-                    self.execution.output(output, crate::OutputKind::Display, self.display.array(a, self.current.is_some()));
-                }
-            }
+            if let Binding::Value(a) = &result.value { if self.execution.echo && !result.shy { self.display_value(a, span, output)?; } }
             result = self.bind(&statement.nodes, output).map_err(|mut e| {
                 e.calls.push(span.clone());
                 e
@@ -1804,7 +1843,7 @@ impl Session {
         Ok(result)
     }
 
-    fn bind_expression(&mut self, nodes: &[Node], output: &mut Vec<String>) -> Result<Bound, Error> {
+    fn bind_expression(&mut self, nodes: &[Node], output: &mut Vec<Output>) -> Result<Bound, Error> {
         let Step::Done(result) = Binder::evaluate(nodes, self, output, false)? else { unreachable!() };
         Ok(result)
     }
@@ -1943,14 +1982,14 @@ impl Session {
         Ok(())
     }
 
-    fn indices(&mut self, parts: &[Vec<Node>], output: &mut Vec<String>) -> Result<Vec<Option<Value>>, Error> {
+    fn indices(&mut self, parts: &[Vec<Node>], output: &mut Vec<Output>) -> Result<Vec<Option<Value>>, Error> {
         let mut values = Vec::new();
         for nodes in parts.iter().rev() { values.push(if nodes.is_empty() { None } else { Some(self.array_result(nodes, output)?) }); }
         values.reverse();
         Ok(values)
     }
 
-    fn assign(&mut self, target: &[Node], value: &Binding, output: &mut Vec<String>) -> Result<(), Error> {
+    fn assign(&mut self, target: &[Node], value: &Binding, output: &mut Vec<Output>) -> Result<(), Error> {
         let span = &target[0].span;
         if let [target] = target {
             match &target.kind {
@@ -2034,7 +2073,7 @@ impl Session {
         Ok(())
     }
 
-    fn modify_names(&mut self, nodes: &[Node], right: &Value, modifier: &Function, output: &mut Vec<String>) -> Result<(), Error> {
+    fn modify_names(&mut self, nodes: &[Node], right: &Value, modifier: &Function, output: &mut Vec<Output>) -> Result<(), Error> {
         if let [node] = nodes {
             return match &node.kind {
                 NodeKind::Group(inner) | NodeKind::Strand(inner) => self.modify_names(inner, right, modifier, output),
@@ -2056,7 +2095,7 @@ impl Session {
         Ok(())
     }
 
-    fn modifier(&mut self, nodes: &[Node], output: &mut Vec<String>) -> Result<Option<Function>, Error> {
+    fn modifier(&mut self, nodes: &[Node], output: &mut Vec<Output>) -> Result<Option<Function>, Error> {
         if nodes.is_empty() { return Ok(None); }
         match self.bind(nodes, output)?.value {
             Binding::Function(f) => Ok(Some(f)),
@@ -2065,7 +2104,7 @@ impl Session {
         }
     }
 
-    fn extend_selected(&mut self, nodes: &mut [Node], output: &mut Vec<String>) -> Result<(), Error> {
+    fn extend_selected(&mut self, nodes: &mut [Node], output: &mut Vec<Output>) -> Result<(), Error> {
         let (container, selectors, span) = match nodes {
             [Node { kind: NodeKind::Group(inner), .. }] => return self.extend_selected(inner, output),
             [key @ Node { kind: NodeKind::Literal(_) | NodeKind::Name(_) | NodeKind::Group(_), .. }, Node { kind: NodeKind::Function(Primitive::Mix), .. }, container @ ..]
@@ -2086,6 +2125,7 @@ impl Session {
             _ => return Ok(()),
         };
         if !selectors.iter().flatten().any(|s| matches!(crate::keyed::Selector::of(s), Ok(Some(_)))) { return Ok(()); }
+        self.extend_selected(container, output)?;
         let target = self.array_result(container, output)?;
         if let Some(extended) = crate::keyed::extended(&target, &selectors).map_err(|k| span.error(k, "invalid named axis extension"))? {
             self.assign_selected(container, None, &Binding::Value(extended), output)?;
@@ -2093,7 +2133,7 @@ impl Session {
         Ok(())
     }
 
-    fn assign_selected(&mut self, nodes: &[Node], modifier: Option<Function>, value: &Binding, output: &mut Vec<String>) -> Result<(), Error> {
+    fn assign_selected(&mut self, nodes: &[Node], modifier: Option<Function>, value: &Binding, output: &mut Vec<Output>) -> Result<(), Error> {
         let right = &value.clone().into_value(&nodes[0].span)?;
         let mut nodes = if Self::has_members(nodes) { self.members(nodes) } else { nodes.to_vec() };
         if modifier.is_none() { self.extend_selected(&mut nodes, output)?; }
@@ -2111,7 +2151,7 @@ impl Session {
     fn selection_expression(
         &mut self,
         nodes: &[Node],
-        output: &mut Vec<String>,
+        output: &mut Vec<Output>,
     ) -> Result<(ArrayBinding, crate::selection::Labels, Value, SelectionKind), Error> {
         let members;
         let nodes = if Self::has_members(nodes) {
@@ -2143,7 +2183,7 @@ impl Session {
         f: &Function,
         right: &Value,
         span: &Span,
-        output: &mut Vec<String>,
+        output: &mut Vec<Output>,
     ) -> Result<Value, Error> {
         let values = selection.values(right, &self.execution.at(span))?;
         if selection.paths.iter().all(|p| p.len() == 1) {
@@ -2169,7 +2209,7 @@ impl Session {
 
     // Resolving one structural item may execute a group, but never derives an operator
     // or consumes a neighbouring item. The binder alone chooses grammatical reductions.
-    fn resolve(&mut self, node: &Node, output: &mut Vec<String>) -> Result<Binding, Error> {
+    fn resolve(&mut self, node: &Node, output: &mut Vec<Output>) -> Result<Binding, Error> {
         Ok(match &node.kind {
             NodeKind::Literal(a) => Binding::Value(a.clone()),
             NodeKind::Function(p) => Binding::Function(Function::primitive(*p)),
@@ -2195,7 +2235,16 @@ impl Session {
                 data.reverse();
                 Binding::Value(Value::new(vec![data.len()], data).map_err(|k| node.span.error(k, "invalid strand"))?)
             }
-            NodeKind::ArrayLiteral { cells, block } => {
+            NodeKind::ArrayLiteral { cells, record: true, .. } => {
+                let mut entries = Vec::new();
+                for nodes in cells {
+                    let item = self.array_result(nodes, output)?;
+                    entries.extend(crate::keyed::pairs(&item).map_err(|k| node.span.error(k, "key:value items must give keyed vectors"))?);
+                }
+                let (names, values) = entries.into_iter().unzip();
+                Binding::Value(crate::keyed::vector(names, values).map_err(|k| node.span.error(k, "keys must be unique"))?)
+            }
+            NodeKind::ArrayLiteral { cells, block, .. } => {
                 let arrays = cells.iter().map(|nodes| self.array_result(nodes, output)).collect::<Result<Vec<_>, _>>()?;
                 let result = if *block {
                     let arrays =
@@ -2227,7 +2276,7 @@ impl Session {
         self.names.get(name).map(|value| (None, value))
     }
 
-    fn call_defined(&mut self, function: &Function, left: Option<&Value>, right: &Value, output: &mut Vec<String>) -> Result<Bound, Error> {
+    fn call_defined(&mut self, function: &Function, left: Option<&Value>, right: &Value, output: &mut Vec<Output>) -> Result<Bound, Error> {
         let return_span = match function.node.as_ref() {
             FunctionNode::Defined(c) | FunctionNode::Derived(c, ..) => c.definition.span.clone(),
             _ => unreachable!(),
@@ -2285,9 +2334,9 @@ impl Session {
         result
     }
 
-    fn array_result(&mut self, nodes: &[Node], output: &mut Vec<String>) -> Result<Value, Error> { self.bind(nodes, output)?.array(&nodes[0].span) }
+    fn array_result(&mut self, nodes: &[Node], output: &mut Vec<Output>) -> Result<Value, Error> { self.bind(nodes, output)?.array(&nodes[0].span) }
 
-    fn return_expression(&mut self, mut nodes: &[Node], output: &mut Vec<String>, tail: bool) -> Result<Step, Error> {
+    fn return_expression(&mut self, mut nodes: &[Node], output: &mut Vec<Output>, tail: bool) -> Result<Step, Error> {
         if nodes.is_empty() { return Ok(Step::Done(Bound::new(Binding::NoResult))); }
         let mut unshy = false;
         while let [Node { kind: NodeKind::Group(inner), .. }] = nodes {
@@ -2307,7 +2356,7 @@ impl Session {
         }
     }
 
-    fn run_definition(&mut self, definition: &Definition, output: &mut Vec<String>) -> Result<Step, Error> {
+    fn run_definition(&mut self, definition: &Definition, output: &mut Vec<Output>) -> Result<Step, Error> {
         // Guards are dynamic call state. A small binding-map checkpoint is sufficient
         // for this slice: values share storage, and restoration also removes new names.
         // This snapshots rollback state, NOT lexical captures (which use live frames).
@@ -2495,13 +2544,13 @@ impl Rule {
 
 struct Binder { stack: Vec<Entity> }
 impl Binder {
-    fn evaluate(nodes: &[Node], session: &mut Session, output: &mut Vec<String>, tail: bool) -> Result<Step, Error> {
+    fn evaluate(nodes: &[Node], session: &mut Session, output: &mut Vec<Output>, tail: bool) -> Result<Step, Error> {
         Self::evaluate_marked(nodes, session, output, tail, None).map(|(step, _)| step)
     }
     fn evaluate_marked(
         nodes: &[Node],
         session: &mut Session,
-        output: &mut Vec<String>,
+        output: &mut Vec<Output>,
         tail: bool,
         marked: Option<(usize, Value, SelectionKind)>,
     ) -> Result<(Step, Option<SelectionKind>), Error> {

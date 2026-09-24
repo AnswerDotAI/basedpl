@@ -85,7 +85,7 @@ fn json_session_flushes_before_eof_and_recovers() {
             }
         };
         let reply: Value = serde_json::from_str(&line).unwrap();
-        assert_eq!(reply["output"], json!(printed));
+        assert_eq!(reply["output"].as_array().unwrap().iter().map(|e| e["data"]["text/plain"].as_str().unwrap()).collect::<Vec<_>>(), printed);
         assert_eq!(reply["error"]["kind"].as_str(), error_kind);
         assert_eq!(reply["value"], expected.unwrap_or(Value::Null));
     }

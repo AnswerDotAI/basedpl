@@ -7,21 +7,31 @@ use num_bigint::BigInt;
 use num_rational::BigRational;
 use serde_json::Value as Json;
 
-pub(crate) fn call(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let allowed = if left.is_some() { &["fill"][..] } else { &["source", "fill"][..] };
-    let opts = Options::new("•json", right, left.is_none().then_some("source"), allowed, span)?;
+/// `•json`: parse JSON text. `fill` replaces `null`.
+pub(crate) fn parse(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let opts = Options::new("•json", left, None, &["fill"], span)?;
+    let json = serde_json::from_str(&text(right, span)?).map_err(|e| span.error(ErrorKind::Domain, format!("JSON {e}")))?;
+    import(&json, &opts.fill(span)?, span)
+}
+
+/// `•tojson`: JSON text for a value. With `fill`, that number exports as `null`.
+pub(crate) fn serialize(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let opts = Options::new("•tojson", left, None, &["fill"], span)?;
     let fill = opts.fill(span)?;
-    match left {
-        None => {
-            let source = opts.text("source", span)?;
-            let json = serde_json::from_str(&source).map_err(|e| span.error(ErrorKind::Domain, format!("JSON {e}")))?;
-            import(&json, &fill, span)
-        }
-        Some(value) => {
-            let json = export(value, opts.values.contains_key("fill").then_some(&fill), span)?;
-            Ok(keyed::text(&json.to_string()))
-        }
+    Ok(keyed::text(&export(&exportable(right), opts.values.contains_key("fill").then_some(&fill), span)?.to_string()))
+}
+
+/// A copy of `value` without keyed-vector entries that hold functions, at any depth.
+pub(crate) fn exportable(value: &Value) -> Value {
+    if value.is_atom() || !value.has_functions() { return value.clone(); }
+    let keys = value.keys(0).filter(|_| value.shape().len() == 1);
+    let (mut names, mut data) = (Vec::new(), Vec::new());
+    for (i, e) in value.elements().enumerate() {
+        if keys.is_some() && matches!(e, Value::Function(_)) { continue; }
+        names.extend(keys.map(|k| k.names()[i].clone()));
+        data.push(exportable(&e));
     }
+    if keys.is_some() { keyed::vector(names, data) } else { value.layout().collect(data, value.prototype()) }.expect("subset of a valid array")
 }
 
 fn import(value: &Json, fill: &Number, span: &Context<'_>) -> Result<Value, Error> {

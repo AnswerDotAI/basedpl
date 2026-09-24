@@ -18,16 +18,20 @@ classifiers = [
 
 [project.optional-dependencies]
 pandas = ["pandas"]
-docs = ["nbdev>=3.3.22"]
-dev = ["fastship>=0.0.11", "maturin>=1.0,<2.0", "pytest", "numpy", "pandas", "conkernelclient>=0.0.23"]
+notebooks = ["fastcore", "ipython>=9.17.1"]
+docs = ["nbdev>=3.3.22", "jlanguage"]
+dev = ["fastship>=0.0.11", "maturin>=1.0,<2.0", "pytest", "numpy", "pandas", "fastcore", "conkernelclient>=0.0.23", "jlanguage"]
 
 [project.scripts]
 bapl = "basedpl._cli:main"
+bapl-nb = "basedpl.notebook_runner:main"
+bapl-install-magic = "basedpl.notebooks:create_ipython_config"
 
 [project.urls]
 Homepage = "https://github.com/AnswerDotAI/basedpl"
 Repository = "https://github.com/AnswerDotAI/basedpl"
 Issues = "https://github.com/AnswerDotAI/basedpl/issues"
+Documentation = "https://answerdotai.github.io/basedpl"
 
 [tool.maturin]
 data = "wheel"
@@ -36,7 +40,7 @@ python-source = "python"
 module-name = "basedpl._core"
 
 [tool.uv]
-cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.rs" }, { file = "build.rs" }, { file = "docs/**/*.md" }, { file = "python/basedpl/keyboard.json" }, { file = "Cargo.toml" }, { file = ".git/fastws-cargo-key" }]
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.rs" }, { file = "build.rs" }, { file = "nbs/**/*.qmd" }, { file = "python/basedpl/keyboard.json" }, { file = "Cargo.toml" }, { file = ".git/fastws-cargo-key" }]
 
 [tool.fastship]
 branch = "main"
@@ -46,3 +50,7 @@ testpaths = ["tests"]
 
 [tool.nbdev]
 lib_path = "python/basedpl"
+custom_sidebar = true
+tst_flags = "dyalog"
+title = "bAsedPL"
+put_version_in_init = false

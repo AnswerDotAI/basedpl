@@ -1,7 +1,7 @@
 //! Shared names for Python functions and glyph completion.
 use std::{collections::HashMap, sync::OnceLock};
 
-// One row per glyph: glyph, canonical name (docs/index.md), monad, dyad, extra completion aliases.
+// One row per glyph: glyph, canonical name (nbs/glyphs.qmd), monad, dyad, extra completion aliases.
 // Empty operation names mean that valence is not a primitive function; aliases are space-separated.
 pub(crate) const SYMBOLS: &[(&str, &str, &str, &str, &str)] = &[
     ("←", "assign", "", "", "left-arrow"),

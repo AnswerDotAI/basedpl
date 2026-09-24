@@ -1,8 +1,9 @@
 use basedpl::{reference, EvalOptions};
 use serde_json::{json, Value};
 
-const SOURCES: [(&str, &str); 7] = [
+const SOURCES: [(&str, &str); 8] = [
     ("core", include_str!("reference/core.apl")),
+    ("graphics", include_str!("reference/graphics.apl")),
     ("ngn", include_str!("reference/ngn.apl")),
     ("april", include_str!("reference/april.apl")),
     ("aplcart", include_str!("reference/aplcart.apl")),
@@ -91,7 +92,7 @@ fn cases(text: &str) -> Vec<Value> {
 
 #[test]
 fn reference_format_and_comparison() {
-    let file = json!({"code":"'héllo' •nput testpath ⋄ •nget testpath", "expected_code":"'héllo'"});
+    let file = json!({"code":"testpath •nput 'héllo' ⋄ •nget testpath", "expected_code":"'héllo'"});
     for _ in 0..2 { assert_eq!(reference::check(&file, EvalOptions::default())["status"], "pass"); }
     let compact = cases("⍝ —\n'a''⍝b'   ⍝ 'a''⍝b'");
     assert_eq!(compact[0]["code"], "'a''⍝b'");

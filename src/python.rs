@@ -2,14 +2,15 @@ use crate::{eval::Operand, EvalOptions, Evaluation, Function, InterruptHandle, N
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use pyo3::{
-    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
+    buffer::PyBuffer,
+    exceptions::{PyTypeError, PyValueError},
     prelude::*,
     sync::MutexExt,
-    types::{PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple},
+    types::{PyByteArray, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple},
 };
 use std::{
-    sync::{mpsc, Mutex},
-    time::Duration,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 fn import_array(raw: &Bound<'_, PyDict>, depth: usize) -> PyResult<Value> {
@@ -92,6 +93,15 @@ struct PyArray { inner: Value }
 impl PyArray {
     #[new]
     fn new(raw: &Bound<'_, PyDict>) -> PyResult<Self> { Ok(Self { inner: import_array(raw, 0)? }) }
+    #[staticmethod]
+    fn numeric(shape: Vec<usize>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let py = data.py();
+        let inner = match PyBuffer::<i64>::get(data) {
+            Ok(b) => Value::integers(shape, b.to_vec(py)?),
+            Err(_) => Value::floats(shape, PyBuffer::<f64>::get(data)?.to_vec(py)?),
+        };
+        inner.map(|inner| Self { inner }).map_err(|k| PyValueError::new_err(k.to_string()))
+    }
     #[getter]
     fn shape(&self) -> Vec<usize> { self.inner.shape().to_vec() }
     #[getter]
@@ -117,9 +127,18 @@ impl PyArray {
     }
     #[getter]
     fn is_atom(&self) -> bool { self.inner.is_atom() }
-    #[getter]
-    fn needs_session(&self) -> PyResult<bool> { self.inner.export_context().map_err(|k| PyValueError::new_err(k.to_string())) }
     fn parts(&self, py: Python<'_>) -> PyResult<Py<PyDict>> { array(py, &self.inner) }
+    fn buffer<'py>(&self, py: Python<'py>) -> PyResult<Option<(&'static str, Bound<'py, PyByteArray>)>> {
+        fn bytes<'py, const N: usize>(py: Python<'py>, items: impl ExactSizeIterator<Item = [u8; N]>) -> PyResult<Bound<'py, PyByteArray>> {
+            PyByteArray::new_with(py, items.len() * N, |buf| {
+                for (chunk, item) in buf.chunks_exact_mut(N).zip(items) { chunk.copy_from_slice(&item); }
+                Ok(())
+            })
+        }
+        if let Some(v) = self.inner.as_integers() { return Ok(Some(("i8", bytes(py, v.iter().map(|n| n.to_ne_bytes()))?))); }
+        let Some(v) = self.inner.as_floats() else { return Ok(None) };
+        Ok(Some(("f8", bytes(py, v.iter().map(|n| n.to_ne_bytes()))?)))
+    }
     fn __repr__(&self) -> String { self.inner.to_string() }
     fn scalar(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         if !self.inner.is_singleton() { return Err(PyValueError::new_err("conversion requires a singleton array")); }
@@ -175,8 +194,6 @@ impl PyFunction {
         let operands = values.iter().map(operand).collect::<PyResult<Vec<_>>>()?;
         Function::build(kind, operands).map(|inner| Self { inner }).map_err(|e| PyValueError::new_err(e.to_string()))
     }
-    #[getter]
-    fn needs_session(&self) -> PyResult<bool> { self.inner.export_context().map_err(|e| PyValueError::new_err(e.to_string())) }
     fn __repr__(&self) -> String { self.inner.apl() }
     fn parts(&self, py: Python<'_>) -> PyResult<Option<(String, Vec<Py<PyAny>>)>> {
         let Some((kind, operands)) = self.inner.parts() else { return Ok(None); };
@@ -212,43 +229,14 @@ impl EvalRequest {
         })
     }
 }
-enum Action { Eval(EvalRequest), Inspect { name: Option<String>, function: Option<Function> }, Names { classes: Vec<i64>, prefix: String, complete: bool } }
-enum Reply { Eval(Evaluation), Inspect(Option<crate::Inspection>), Names(Vec<String>) }
-impl Action {
-    fn run(&mut self, session: &mut Session) -> Result<Reply, &'static str> {
-        Ok(match self {
-            Self::Eval(r) => Reply::Eval(r.run(session)?),
-            Self::Inspect { name, function } => Reply::Inspect(match (name, function) {
-                (Some(name), _) => session.inspect(name),
-                (_, Some(f)) => Some(f.inspect(session)),
-                _ => None,
-            }),
-            Self::Names { classes, prefix, complete } => Reply::Names(if *complete { session.complete(prefix) } else { session.name_list(classes, prefix) }),
-        })
-    }
-}
-struct Request { action: Action, reply: mpsc::Sender<Result<Reply, &'static str>> }
-struct WorkerState { sender: Option<mpsc::Sender<Request>>, active: Option<InterruptHandle> }
 
 #[pyclass(frozen, name = "_Session")]
-struct PySession { state: Mutex<WorkerState>, serial: Mutex<()> }
+struct PySession { session: Mutex<Session>, active: Mutex<Option<InterruptHandle>> }
 
 #[pymethods]
 impl PySession {
     #[new]
-    fn new() -> PyResult<Self> {
-        let (sender, receiver) = mpsc::channel::<Request>();
-        crate::execution::thread()
-            .spawn(move || {
-                let mut session = Session::new();
-                for mut request in receiver {
-                    let result = request.action.run(&mut session);
-                    let _ = request.reply.send(result);
-                }
-            })
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        Ok(Self { state: Mutex::new(WorkerState { sender: Some(sender), active: None }), serial: Mutex::new(()) })
-    }
+    fn new() -> Self { Self { session: Mutex::new(Session::new()), active: Mutex::new(None) } }
     #[pyo3(signature = (*, code=None, function=None, args=Vec::new(), bindings=Vec::new(), timeout=None, echo=false))]
     #[allow(clippy::too_many_arguments)]
     fn request(
@@ -262,20 +250,35 @@ impl PySession {
         echo: bool,
     ) -> PyResult<Py<PyDict>> {
         if code.is_some() && function.is_some() { return Err(PyValueError::new_err("choose code or function, not both")); }
-        let options = options(timeout, echo)?;
-        let action = Action::Eval(EvalRequest {
+        let signal = Arc::new(Mutex::new(None));
+        let mut request = EvalRequest {
             code,
             function: function.map(|f| f.inner.clone()),
             args: args.iter().map(|a| a.inner.clone()).collect(),
             bindings: bindings.into_iter().map(|(n, a)| Ok((n, operand(&a)?))).collect::<PyResult<_>>()?,
-            options,
-        });
-        let Reply::Eval(result) = self.send(py, action)? else { unreachable!() };
+            options: EvalOptions { poll: Some(ctrl_c(signal.clone())), ..options(timeout, echo)? },
+        };
+        let result = {
+            let mut guard = self.session.lock_py_attached(py).unwrap();
+            let session = &mut *guard;
+            *self.active.lock().unwrap() = Some(request.options.interrupt.clone());
+            let result = py.detach(move || request.run(session));
+            *self.active.lock().unwrap() = None;
+            result.map_err(PyValueError::new_err)?
+        };
+        if let Some(e) = signal.lock().unwrap().take() {
+            e.value(py).setattr("output", result.output_text())?;
+            e.value(py).setattr("events", output(py, &result.output)?)?;
+            return Err(e);
+        }
         response(py, result)
     }
     #[pyo3(signature = (*, name=None, function=None))]
     fn inspect(&self, py: Python<'_>, name: Option<String>, function: Option<PyRef<'_, PyFunction>>) -> PyResult<Option<Py<PyDict>>> {
-        let Reply::Inspect(info) = self.send(py, Action::Inspect { name, function: function.map(|f| f.inner.clone()) })? else { unreachable!() };
+        let info = {
+            let session = self.session.lock_py_attached(py).unwrap();
+            match (name, function) { (Some(name), _) => session.inspect(&name), (_, Some(f)) => Some(f.inner.inspect(&session)), _ => None }
+        };
         info.map(|i| {
             let d = PyDict::new(py);
             d.set_item("kind", i.kind)?;
@@ -286,61 +289,24 @@ impl PySession {
         .transpose()
     }
     #[pyo3(signature = (prefix="", classes=vec![2, 3, 4], complete=false))]
-    fn names(&self, py: Python<'_>, prefix: &str, classes: Vec<i64>, complete: bool) -> PyResult<Vec<String>> {
-        let Reply::Names(names) = self.send(py, Action::Names { classes, prefix: prefix.into(), complete })? else { unreachable!() };
-        Ok(names)
+    fn names(&self, py: Python<'_>, prefix: &str, classes: Vec<i64>, complete: bool) -> Vec<String> {
+        let session = self.session.lock_py_attached(py).unwrap();
+        if complete { session.complete(prefix) } else { session.name_list(&classes, prefix) }
     }
-    fn interrupt(&self) { if let Some(active) = &self.state.lock().unwrap().active { active.interrupt(); } }
-    fn close(&self) {
-        let mut state = self.state.lock().unwrap();
-        if let Some(active) = &state.active { active.interrupt(); }
-        state.sender = None;
-    }
+    fn interrupt(&self) { if let Some(active) = &*self.active.lock().unwrap() { active.interrupt(); } }
 }
-impl PySession {
-    fn send(&self, py: Python<'_>, action: Action) -> PyResult<Reply> {
-        let interrupt = match &action { Action::Eval(r) => r.options.interrupt.clone(), _ => InterruptHandle::default() };
-        let (reply, mut receiver) = mpsc::channel();
-        let request = Request { action, reply };
-        let _serial = self.serial.lock_py_attached(py).unwrap();
-        py.check_signals()?;
-        {
-            let mut state = self.state.lock().unwrap();
-            state
-                .sender
-                .as_ref()
-                .ok_or_else(|| PyRuntimeError::new_err("session is closed"))?
-                .send(request)
-                .map_err(|_| PyRuntimeError::new_err("session worker stopped"))?;
-            state.active = Some(interrupt.clone());
-        }
-        let mut signal = None;
-        let result = loop {
-            let received = {
-                let receiver = &mut receiver;
-                py.detach(move || receiver.recv_timeout(Duration::from_millis(10)))
-            };
-            if signal.is_none() {
-                if let Err(e) = py.check_signals() {
-                    interrupt.interrupt();
-                    signal = Some(e);
-                }
-            }
-            match received {
-                Ok(result) => break result.map_err(PyValueError::new_err),
-                Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                Err(mpsc::RecvTimeoutError::Disconnected) => break Err(PyRuntimeError::new_err("session worker stopped")),
-            }
-        };
-        self.state.lock().unwrap().active = None;
-        if let Some(e) = signal {
-            if let Ok(Reply::Eval(result)) = &result { e.value(py).setattr("output", &result.output)?; }
-            return Err(e);
-        }
-        result
-    }
+
+fn ctrl_c(caught: Arc<Mutex<Option<PyErr>>>) -> crate::Poll {
+    let last = Mutex::new(Instant::now());
+    Arc::new(move || {
+        let mut last = last.lock().unwrap();
+        if last.elapsed() < Duration::from_millis(10) { return false; }
+        *last = Instant::now();
+        let Err(e) = Python::attach(|py| py.check_signals()) else { return false };
+        *caught.lock().unwrap() = Some(e);
+        true
+    })
 }
-impl Drop for PySession { fn drop(&mut self) { self.close(); } }
 
 fn options(timeout: Option<f64>, echo: bool) -> PyResult<crate::EvalOptions> {
     let timeout = timeout
@@ -376,22 +342,68 @@ fn response(py: Python<'_>, result: Evaluation) -> PyResult<Py<PyDict>> {
         .transpose()?;
     let d = PyDict::new(py);
     d.set_item("value", value)?;
-    d.set_item("output", result.output)?;
+    d.set_item("output", output(py, &result.output)?)?;
     d.set_item("error", error)?;
     Ok(d.unbind())
+}
+
+fn output(py: Python<'_>, events: &[crate::Output]) -> PyResult<Py<PyList>> {
+    let events = events
+        .iter()
+        .map(|e| {
+            let d = PyDict::new(py);
+            d.set_item("kind", e.kind.name())?;
+            d.set_item("data", &e.data)?;
+            Ok(d)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    Ok(PyList::new(py, events)?.unbind())
 }
 
 #[pyfunction]
 fn run_cli(args: Vec<String>) -> i32 { crate::cli::run(&args) }
 
 #[pyfunction]
-fn _help_command(code: &str) -> Option<(&str, bool)> { crate::inspection::help_command(code) }
-
-#[pyfunction]
 fn _check_reference(case: &str, timeout: f64) -> PyResult<String> {
     let case = serde_json::from_str(case).map_err(|e| PyValueError::new_err(e.to_string()))?;
     let timeout = std::time::Duration::try_from_secs_f64(timeout).map_err(|_| PyValueError::new_err("invalid timeout"))?;
-    Ok(crate::with_stack(|| crate::reference::check(&case, crate::EvalOptions { timeout: Some(timeout), ..crate::EvalOptions::default() })).to_string())
+    Ok(crate::reference::check(&case, crate::EvalOptions { timeout: Some(timeout), ..crate::EvalOptions::default() }).to_string())
+}
+
+pyo3::create_exception!(_core, JError, pyo3::exceptions::PyException, "A J error, carrying the session's output, including the error display, as its message.");
+
+#[pyclass(frozen, name = "_J")]
+struct PyJ { engine: Mutex<crate::j::Engine>, interrupter: crate::j::Interrupter }
+
+#[pymethods]
+impl PyJ {
+    #[new]
+    fn new(lib: std::path::PathBuf) -> PyResult<Self> {
+        let engine = crate::j::Engine::new(&lib).map_err(JError::new_err)?;
+        Ok(Self { interrupter: engine.interrupter(), engine: Mutex::new(engine) })
+    }
+    fn run(&self, py: Python<'_>, code: &str) -> PyResult<String> { py.detach(|| self.engine.lock().unwrap().run(code)).map_err(JError::new_err) }
+    fn get(&self, name: &str) -> PyResult<(Vec<i64>, crate::j::Data)> { self.engine.lock().unwrap().get(name).map_err(JError::new_err) }
+    fn set(&self, name: &str, shape: Vec<i64>, data: crate::j::Data) -> PyResult<()> {
+        self.engine.lock().unwrap().set(name, &shape, &data).map_err(JError::new_err)
+    }
+    fn interrupt(&self) { self.interrupter.interrupt() }
+    #[getter]
+    fn exited(&self) -> Option<i64> { self.engine.lock().unwrap().exited }
+}
+
+#[pyfunction]
+fn _run_j_kernel(file: &str, lib: std::path::PathBuf, startup: Option<&str>) -> PyResult<()> {
+    crate::j::run_kernel(file, &lib, startup).map_err(|e| JError::new_err(e.to_string()))
+}
+
+/// Install a kernelspec for `argv` with message interrupts, under `prefix` or in the user Jupyter directory. Returns its directory.
+#[pyfunction]
+#[pyo3(signature = (name, argv, display_name, language, prefix=None))]
+fn _install_kernelspec(name: &str, argv: Vec<String>, display_name: &str, language: &str, prefix: Option<std::path::PathBuf>) -> PyResult<std::path::PathBuf> {
+    let extra = serde_json::Map::from_iter([("interrupt_mode".into(), "message".into())]);
+    kernmini::install_kernelspec(name, &argv, display_name, language, extra, prefix.as_deref())
+        .map_err(|e| pyo3::exceptions::PyOSError::new_err(format!("{e:#}")))
 }
 
 #[pymodule]
@@ -400,8 +412,11 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyArray>()?;
     m.add_class::<PyFunction>()?;
     m.add_function(wrap_pyfunction!(run_cli, m)?)?;
-    m.add_function(wrap_pyfunction!(_help_command, m)?)?;
     m.add_function(wrap_pyfunction!(_check_reference, m)?)?;
+    m.add_class::<PyJ>()?;
+    m.add("JError", m.py().get_type::<JError>())?;
+    m.add_function(wrap_pyfunction!(_run_j_kernel, m)?)?;
+    m.add_function(wrap_pyfunction!(_install_kernelspec, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     let symbols: Vec<_> = crate::symbols::SYMBOLS.iter().map(|&(g, n, m, d, a)| (g, n, m, d, a, crate::symbols::chord(g))).collect();
     m.add("symbols", symbols)?;

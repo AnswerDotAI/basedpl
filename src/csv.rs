@@ -16,10 +16,10 @@ struct Options {
 }
 
 impl Options {
-    fn new(right: &Value, import: bool, span: &Context<'_>) -> Result<Self, Error> {
+    fn new(left: Option<&Value>, import: bool, span: &Context<'_>) -> Result<Self, Error> {
         let mut allowed = vec!["separator", "quotechar", "escapechar", "doublequote", "decimal", "thousands", "trim", "header", "fill"];
-        allowed.extend(if import { &["source", "text_columns", "numeric_columns", "missing"][..] } else { &["forcequotes", "lineending"][..] });
-        let common = crate::data::Options::new("•csv", right, import.then_some("source"), &allowed, span)?;
+        allowed.extend(if import { &["text_columns", "numeric_columns", "missing"][..] } else { &["forcequotes", "lineending"][..] });
+        let common = crate::data::Options::new(if import { "•csv" } else { "•tocsv" }, left, None, &allowed, span)?;
         let mut opts = Self { common, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.', thousands: None };
         let byte = |c: Option<char>| -> Result<Option<u8>, Error> {
             c.map(|c| {
@@ -101,13 +101,17 @@ impl Options {
     }
 }
 
-pub(crate) fn call(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let opts = Options::new(right, left.is_none(), span)?;
-    match left { None => import(&opts, span), Some(table) => export(table, &opts, span) }
+/// `•csv`: parse CSV text into a keyed vector of columns.
+pub(crate) fn parse(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    import(&string(right, span)?, &Options::new(left, true, span)?, span)
 }
 
-fn import(opts: &Options, span: &Context<'_>) -> Result<Value, Error> {
-    let source = opts.common.text("source", span)?;
+/// `•tocsv`: CSV text for a vector of columns.
+pub(crate) fn serialize(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    export(right, &Options::new(left, false, span)?, span)
+}
+
+fn import(source: &str, opts: &Options, span: &Context<'_>) -> Result<Value, Error> {
     let header = opts.common.boolean("header", true, span)?;
     let fill = opts.common.fill(span)?;
     let mut missing = vec![String::new()];
@@ -202,7 +206,7 @@ fn export(table: &Value, opts: &Options, span: &Context<'_>) -> Result<Value, Er
         },
     };
     if force && opts.quote.is_none() { return Err(span.error(ErrorKind::Domain, "CSV forcequotes needs quotechar")); }
-    let ending = opts.common.values.get("lineending").map(|v| string(v, span)).transpose()?.unwrap_or_else(|| "\n".into());
+    let ending = opts.common.text("lineending", Some("\n"), span)?;
     let terminator = match ending.as_str() {
         "\n" => csv::Terminator::Any(b'\n'),
         "\r\n" => csv::Terminator::CRLF,
@@ -245,7 +249,7 @@ fn export(table: &Value, opts: &Options, span: &Context<'_>) -> Result<Value, Er
         write(&mut writer, fields)?;
     }
     let bytes = writer.into_inner().map_err(|e| span.error(ErrorKind::Domain, format!("CSV {e}")))?;
-    Ok(keyed::text(std::str::from_utf8(&bytes).unwrap()))
+    Ok(keyed::text(&String::from_utf8(bytes).unwrap()))
 }
 
 fn field(v: &Value, opts: &Options, fill: &Number, span: &Context<'_>) -> Result<String, Error> {

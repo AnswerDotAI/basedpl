@@ -14816,7 +14816,7 @@ t←5 3⍴1 1 10 1 2 20 2 1 30 1 1 5 2 2 40 ⋄ r c v←↓⍉t ⋄ (∪r){+/v/�
 2024 2 29 0 0 0 0
 
 ⍝ aplcart/table.tsv:1895 — Column record to header matrix: axis selectors replace namespace names; monadic colon extracts values
-T←'Age' 'Name' 'Zipcode':('21' '32' ⋄ 'Bob' 'Sally' ⋄ '30102' '43001') ⋄ {(⍳[1]⍵)⍪⍉⊃(:⍵)}T
+T←('Age':'21' '32' ⋄ 'Name':'Bob' 'Sally' ⋄ 'Zipcode':'30102' '43001') ⋄ {(⍳[1]⍵)⍪⍉⊃(:⍵)}T
 3 3⍴('Age') ('Name') ('Zipcode') ('21') ('Bob') ('30102') ('32') ('Sally') ('43001')
 
 ⍝ aplcart/table.tsv:2340 — Namespace Member; Dyalog 20 namespace syntax used as a record; Adapted to keyed arrays: keys are quoted strings, and a keyed result is shown through ordinary arrays because the structured `expected` format cannot express keys
@@ -14826,50 +14826,50 @@ ns←('name':42) ⋄ ns.name   ⍝ 42
 ≢⍬:⍬   ⍝ 0
 
 ⍝ aplcart/table.tsv:2948 — Namespace members as a keyed vector; inspect keys and values separately
-R←'name1' 'name2' 'name3':(1 ⋄ 'two' ⋄ 3 4) ⋄ (⍳[1]R ⋄ :R)
+R←('name1':1 ⋄ 'name2':'two' ⋄ 'name3':3 4) ⋄ (⍳[1]R ⋄ :R)
 (('name1') ('name2') ('name3')) (1 ('two') (3 4))
 
 ⍝ aplcart/table.tsv:861 — Extract name-value pairs from namespaces Y; Namespace-as-data: axis selectors and values form ordinary name-value pairs; Independent concrete expectation
-R←'name' 'age':('Ann' ⋄ 20) ⋄ (⍳[1]R){⍺˘⍵}¨:R
+R←('name':'Ann' ⋄ 'age':20) ⋄ (⍳[1]R){⍺˘⍵}¨:R
 ('name'˘'Ann' ⋄ 'age'˘20)
 
 ⍝ aplcart/table.tsv:1527 — Convert vector of record namespaces into table (matrix with names in header row); Record vector to header matrix: explicit axis selectors and unkeying replace namespace introspection; Independent concrete expectation
-rows←(('age' 'name':(20 ⋄ 'Ann')) ⋄ ('age' 'name':(30 ⋄ 'Bob'))) ⋄ K←⍳[1]↑rows ⋄ K⍪⊃(:¨rows)
+rows←(('age':20 ⋄ 'name':'Ann') ⋄ ('age':30 ⋄ 'name':'Bob')) ⋄ K←⍳[1]↑rows ⋄ K⍪⊃(:¨rows)
 3 2⍴('age' ⋄ 'name' ⋄ 20 ⋄ 'Ann' ⋄ 30 ⋄ 'Bob')
 
 ⍝ aplcart/table.tsv:2249 — Apply f on each variable in each namespace in Y; Apply sum to every record value; monadic colon replaces namespace-value extraction; Independent concrete expectation
-+/¨:('price' 'qty':(1 2 3 ⋄ 4 5 6))   ⍝ 6 15
++/¨:('price':1 2 3 ⋄ 'qty':4 5 6)   ⍝ 6 15
 
 ⍝ aplcart/table.tsv:220 — CSV export with a separator option
-(↓⍉['ab' ⋄ 'cd']) •csv 'separator':';'
+('separator':';') •tocsv ↓⍉['ab' ⋄ 'cd']
 •ucs 97 59 98 10 99 59 100 10
 
 ⍝ aplcart/table.tsv:221 — CSV import with a separator option
-⍉⊃•csv 'source' 'separator' 'header' 'text_columns':('a;1',(•ucs 10),'b;2' ⋄ ';' ⋄ 0 ⋄ 1 2)
+⍉⊃('separator':';' ⋄ 'header':0 ⋄ 'text_columns':1 2) •csv 'a;1',(•ucs 10),'b;2'
 2 2⍴(1⍴'a') (1⍴'1') (1⍴'b') (1⍴'2')
 
 ⍝ aplcart/table.tsv:322 — Convert CSV data to APL matrix
-⍉⊃•csv 'source' 'header' 'text_columns':('name,score',(•ucs 10),'Ada,12',(•ucs 10),'Ben,7' ⋄ 0 ⋄ 1 2)
+⍉⊃('header':0 ⋄ 'text_columns':1 2) •csv 'name,score',(•ucs 10),'Ada,12',(•ucs 10),'Ben,7'
 3 2⍴('name') ('score') ('Ada') ('12') ('Ben') (1⍴'7')
 
 ⍝ aplcart/table.tsv:388 — Convert CSV data from APL matrix
-(↓⍉['a' 'b,c' ⋄ 'd' 'e']) •csv ''
+•tocsv ↓⍉['a' 'b,c' ⋄ 'd' 'e']
 •ucs 97 44 34 98 44 99 34 10 100 44 101 10
 
 ⍝ aplcart/table.tsv:452 — Convert CSV data to APL inverted table (character data as matrices)
-⊃¨•csv 'source' 'header' 'text_columns':('a,12',(•ucs 10),'b,7' ⋄ 0 ⋄ 1 2)
+⊃¨('header':0 ⋄ 'text_columns':1 2) •csv 'a,12',(•ucs 10),'b,7'
 (2 1⍴'ab') (2 2⍴'127 ')
 
 ⍝ aplcart/table.tsv:453 — Convert CSV data to APL inverted table (character data as vectors of vectors)
-•csv 'source' 'header' 'text_columns':('a,12',(•ucs 10),'b,7' ⋄ 0 ⋄ 1 2)
+('header':0 ⋄ 'text_columns':1 2) •csv 'a,12',(•ucs 10),'b,7'
 ((1⍴'a') (1⍴'b')) (('12') (1⍴'7'))
 
 ⍝ aplcart/table.tsv:505 — Convert CSV data from APL inverted table (character data as matrices)
-(↓¨([,'a' ⋄ ,'b'] ⋄ [,'c' ⋄ ,'d'])) •csv ''
+•tocsv ↓¨([,'a' ⋄ ,'b'] ⋄ [,'c' ⋄ ,'d'])
 •ucs 97 44 99 10 98 44 100 10
 
 ⍝ aplcart/table.tsv:506 — Convert CSV data from APL inverted table (character data as vectors of vectors)
-('ab' 'cd' ⋄ 'ef' 'gh') •csv ''
+•tocsv ('ab' 'cd' ⋄ 'ef' 'gh')
 •ucs 97 98 44 101 102 10 99 100 44 103 104 10
 
 ⍝ aplcart/table.tsv:1729 — Data matrix and column titles as 2-element vector from CSV (file or vector of vectors), with apparent numbers as numbers
@@ -14877,38 +14877,38 @@ T←•csv 'name,score',(•ucs 10),'Ada,12',(•ucs 10),'Ben,7' ⋄ (⍉⊃:T �
 (2 2⍴('Ada') 12 ('Ben') 7) (('name') ('score'))
 
 ⍝ aplcart/table.tsv:1770 — Numeric vector from text file with one number on each line
-∊•csv 'source' 'header' 'numeric_columns':('12',(•ucs 10),'-3',(•ucs 10),'7' ⋄ 0 ⋄ 1)
+∊('header':0 ⋄ 'numeric_columns':1) •csv '12',(•ucs 10),'-3',(•ucs 10),'7'
 12 ¯3 7
 
 ⍝ aplcart/table.tsv:1837 — Validate inverted table (character data as matrices)
-{0::0 ⋄ 1⊣⍵ •csv ''}¨(1 2 3 ⋄ 4 5 6)(1 2 ⋄ 3 4 5)   ⍝ 1 0
+{0::0 ⋄ 1⊣•tocsv ⍵}¨(1 2 3 ⋄ 4 5 6)(1 2 ⋄ 3 4 5)   ⍝ 1 0
 
 ⍝ aplcart/table.tsv:328 — Convert JSON text to APL array
 •json '[1,2,"many"]'   ⍝ (1x ⋄ 2x ⋄ 'many')
 
 ⍝ aplcart/table.tsv:330 — Convert APL array to JSON text
-1x 2x 'many' •json ''   ⍝ '[1,2,"many"]'
+•tojson 1x 2x 'many'   ⍝ '[1,2,"many"]'
 
 ⍝ aplcart/table.tsv:492 — Convert JSON to high rank APL array
 (⊃⍣≡•json)'[[[1,2],[3,4]],[[5,6],[7,8]]]'
 2 2 2⍴1x 2x 3x 4x 5x 6x 7x 8x
 
 ⍝ aplcart/table.tsv:1533 — Convert any rank APL array to JSON
-(2 2 2⍴⍳8x) •json ''   ⍝ '[[[1,2],[3,4]],[[5,6],[7,8]]]'
+•tojson 2 2 2⍴⍳8x   ⍝ '[[[1,2],[3,4]],[[5,6],[7,8]]]'
 
 ⍝ aplcart/table.tsv:1867 — Convert JSON Lines text Dv to APL vector
 {•json¨⍵⊆⍨⍵≠•ucs 10}'{"a":1}',(•ucs 10 10),'{"a":2}'
 (('a':1x) ⋄ ('a':2x))
 
 ⍝ aplcart/table.tsv:1930 — Convert APL vector Y to JSON Lines text
-{∊(⍵ •json¨⊂''),¨•ucs 10}(('a':1x) ⋄ ('a':2x))
+{∊(•tojson¨⍵),¨•ucs 10}(('a':1x) ⋄ ('a':2x))
 '{"a":1}',(•ucs 10),'{"a":2}',•ucs 10
 
 ⍝ aplcart/tt.tsv:315 — Convert any rank APL array to JSON
-[1x 2x ⋄ 3x 4x] •json ''   ⍝ '[[1,2],[3,4]]'
+•tojson [1x 2x ⋄ 3x 4x]   ⍝ '[[1,2],[3,4]]'
 
 ⍝ aplcart/tt.tsv:316 — Convert any rank APL array to JSON
-(2 1 2⍴⍳4x) •json ''   ⍝ '[[[1,2]],[[3,4]]]'
+•tojson 2 1 2⍴⍳4x   ⍝ '[[[1,2]],[[3,4]]]'
 
 ⍝ aplcart/table.tsv:996 — Vector of empty keyed records
 {(⍬:⍬)}¨⍳3   ⍝ (⍬:⍬)(⍬:⍬)(⍬:⍬)
@@ -14919,11 +14919,11 @@ T←•csv 'name,score',(•ucs 10),'Ada,12',(•ucs 10),'Ben,7' ⋄ (⍉⊃:T �
 
 ⍝ aplcart/table.tsv:1891 — Name–value pairs to a keyed record
 {((↑¨⍵):(2⊃¨⍵))}(('name' ⋄ 'Ada') ⋄ ('age' ⋄ 36))
-'name' 'age':('Ada' ⋄ 36)
+('name':'Ada' ⋄ 'age':36)
 
 ⍝ aplcart/table.tsv:1915 — Merge record fields, replacing existing values
-('age' 'city':(37 ⋄ 'London')){r←⍵ ⋄ r[⍳[1]⍺]←(:⍺) ⋄ r}'name' 'age':('Ada' ⋄ 36)
-'name' 'age' 'city':('Ada' ⋄ 37 ⋄ 'London')
+('age':37 ⋄ 'city':'London'){r←⍵ ⋄ r[⍳[1]⍺]←(:⍺) ⋄ r}('name':'Ada' ⋄ 'age':36)
+('name':'Ada' ⋄ 'age':37 ⋄ 'city':'London')
 
 ⍝ aplcart/table.tsv:1996 — Merge records into a new keyed vector
 {r←⍺ ⋄ r[⍳[1]⍵]←(:⍵) ⋄ r}/(('aa':1) ⋄ ('bb':2) ⋄ ('aa':3))
@@ -14931,11 +14931,11 @@ T←•csv 'name,score',(•ucs 10),'Ada,12',(•ucs 10),'Ben,7' ⋄ (⍉⊃:T �
 
 ⍝ aplcart/table.tsv:1998 — Header-row matrix to named columns
 {((↑⍵):↓⍉1↓⍵)}['name' 'score' ⋄ 'Ada' 12 ⋄ 'Ben' 7]
-'name' 'score':('Ada' 'Ben' ⋄ 12 7)
+('name':'Ada' 'Ben' ⋄ 'score':12 7)
 
 ⍝ aplcart/table.tsv:2052 — Key and value vectors to a record
 {((↑⍵):(2⊃⍵))}('name' 'age' ⋄ ('Ada' ⋄ 36))
-'name' 'age':('Ada' ⋄ 36)
+('name':'Ada' ⋄ 'age':36)
 
 ⍝ aplcart/table.tsv:2418 — Empty keyed record
 ⍬:⍬   ⍝ (0⍴⊂''):⍬
@@ -14956,7 +14956,7 @@ b←42 ⋄ a←'b':b ⋄ a.b   ⍝ 42
 'aa' 'bb':3 2
 
 ⍝ aplcart/table.tsv:396 — Get values by name
-T←'name' 'age':('Ada' ⋄ 36) ⋄ ('age' 'name')⊃¨⊂T   ⍝ (36 ⋄ 'Ada')
+T←('name':'Ada' ⋄ 'age':36) ⋄ ('age' 'name')⊃¨⊂T   ⍝ (36 ⋄ 'Ada')
 
 ⍝ aplcart/table.tsv:397 — Get named values with a default
 T←'age':36 ⋄ 0 {3::⍺ ⋄ T[⍵]}¨'age' 'height'   ⍝ 36 0
@@ -14966,12 +14966,12 @@ T←'age':36 ⋄ {3::2⊃⍵ ⋄ T[↑⍵]}¨(('age' ⋄ 0) ⋄ ('height' ⋄ 17
 36 170
 
 ⍝ aplcart/table.tsv:413 — Update record fields from another record
-('age' 'city':(37 ⋄ 'London')){r←⍵ ⋄ r[⍳[1]⍺]←(:⍺) ⋄ r}'name' 'age':('Ada' ⋄ 36)
-'name' 'age' 'city':('Ada' ⋄ 37 ⋄ 'London')
+('age':37 ⋄ 'city':'London'){r←⍵ ⋄ r[⍳[1]⍺]←(:⍺) ⋄ r}('name':'Ada' ⋄ 'age':36)
+('name':'Ada' ⋄ 'age':37 ⋄ 'city':'London')
 
 ⍝ aplcart/table.tsv:478 — Assign a vector of named values
-T←'name' 'age':('Ada' ⋄ 36) ⋄ T['age' 'city']←37 'London' ⋄ T
-'name' 'age' 'city':('Ada' ⋄ 37 ⋄ 'London')
+T←('name':'Ada' ⋄ 'age':36) ⋄ T['age' 'city']←37 'London' ⋄ T
+('name':'Ada' ⋄ 'age':37 ⋄ 'city':'London')
 
 ⍝ aplcart/table.tsv:479 — Assign name–value pairs
 T←(⍬:⍬) ⋄ pairs←('aa' ⋄ 1)('bb' ⋄ 2) ⋄ T[↑¨pairs]←2⊃¨pairs ⋄ T
@@ -14979,7 +14979,7 @@ T←(⍬:⍬) ⋄ pairs←('aa' ⋄ 1)('bb' ⋄ 2) ⋄ T[↑¨pairs]←2⊃¨pai
 
 ⍝ aplcart/table.tsv:1663 — Association list to a keyed record
 {((↑¨⍵):(2⊃¨⍵))}(('name' ⋄ 'Ada') ⋄ ('age' ⋄ 36))
-'name' 'age':('Ada' ⋄ 36)
+('name':'Ada' ⋄ 'age':36)
 
 ⍝ aplcart/table.tsv:1775 — Default for a missing key
 T←'age':36 ⋄ 170 {3::⍺ ⋄ T[⍵]}'height'   ⍝ 170
@@ -14988,78 +14988,78 @@ T←'age':36 ⋄ 170 {3::⍺ ⋄ T[⍵]}'height'   ⍝ 170
 T←(⍬:⍬) ⋄ T['aa' 'bb']←1 2 ⋄ T   ⍝ 'aa' 'bb':1 2
 
 ⍝ aplcart/table.tsv:2167 — Apply a function to every record value
-(×∘2)¨'price' 'qty':(10 20 ⋄ 2 4)   ⍝ 'price' 'qty':(20 40 ⋄ 4 8)
+(×∘2)¨('price':10 20 ⋄ 'qty':2 4)   ⍝ ('price':20 40 ⋄ 'qty':4 8)
 
 ⍝ aplcart/table.tsv:2320 — Apply a function stored in a record
 T←'increment':{⍵+1} ⋄ ('increment'⊃T)5   ⍝ 6
 
 ⍝ aplcart/table.tsv:464 — Read UTF-8 text, preserving line endings
-('héllo',(•ucs 10),'世界') •nput testpath ⋄ •nget 'path' 'encoding':(testpath ⋄ 'UTF-8')
+testpath •nput 'héllo',(•ucs 10),'世界' ⋄ ('encoding':'UTF-8') •nget testpath
 'héllo',(•ucs 10),'世界'
 
 ⍝ aplcart/table.tsv:465 — Read lines, preserving empty lines
-('one',(•ucs 10 10),'two',•ucs 10) •nput testpath ⋄ {¯1↓¨(1,¯1↓⍵=•ucs 10)⊂⍵}•nget testpath
+testpath •nput 'one',(•ucs 10 10),'two',•ucs 10 ⋄ {¯1↓¨(1,¯1↓⍵=•ucs 10)⊂⍵}•nget testpath
 ('one' ⋄ '' ⋄ 'two')
 
 ⍝ aplcart/table.tsv:466 — Read lines into a padded character matrix
-('ab',(•ucs 10),'c',•ucs 10) •nput testpath ⋄ ⊃{¯1↓¨(1,¯1↓⍵=•ucs 10)⊂⍵}•nget testpath
+testpath •nput 'ab',(•ucs 10),'c',•ucs 10 ⋄ ⊃{¯1↓¨(1,¯1↓⍵=•ucs 10)⊂⍵}•nget testpath
 ['ab' ⋄ 'c ']
 
 ⍝ aplcart/table.tsv:524 — Overwrite a UTF-8 file; return byte count
-'old' •nput testpath ⋄ 'héllo' •nput 'path' 'overwrite':(testpath ⋄ 1)
+testpath •nput 'old' ⋄ ('path':testpath ⋄ 'overwrite':1) •nput 'héllo'
 6x
 
 ⍝ aplcart/table.tsv:723 — Write UTF-8 text; return byte count
-'héllo' •nput testpath   ⍝ 6x
+testpath •nput 'héllo'   ⍝ 6x
 
 ⍝ aplcart/table.tsv:862 — Read Unicode text file Dv content as simple vector
-'abc' •nput testpath ⋄ •nget testpath   ⍝ 'abc'
+testpath •nput 'abc' ⋄ •nget testpath   ⍝ 'abc'
 
 ⍝ aplcart/table.tsv:1222 — Read lines from a UTF-8 file
-('first',(•ucs 10),'last',•ucs 10) •nput testpath ⋄ {¯1↓¨(1,¯1↓⍵=•ucs 10)⊂⍵}•nget testpath
+testpath •nput 'first',(•ucs 10),'last',•ucs 10 ⋄ {¯1↓¨(1,¯1↓⍵=•ucs 10)⊂⍵}•nget testpath
 'first' 'last'
 
 ⍝ aplcart/table.tsv:1614 — Read multibyte UTF-8 text
-'κόσμος' •nput testpath ⋄ •nget testpath   ⍝ 'κόσμος'
+testpath •nput 'κόσμος' ⋄ •nget testpath   ⍝ 'κόσμος'
 
 ⍝ aplcart/table.tsv:1725 — Write multibyte UTF-8 text; return byte count
-'κόσμος' •nput testpath   ⍝ 12x
+testpath •nput 'κόσμος'   ⍝ 12x
 
 ⍝ aplcart/table.tsv:1826 — Read text lines, retaining tabs
-('a',(•ucs 9),'b',(•ucs 10),'c',•ucs 10) •nput testpath ⋄ {¯1↓¨(1,¯1↓⍵=•ucs 10)⊂⍵}•nget testpath
+testpath •nput 'a',(•ucs 9),'b',(•ucs 10),'c',•ucs 10 ⋄ {¯1↓¨(1,¯1↓⍵=•ucs 10)⊂⍵}•nget testpath
 (('a',(•ucs 9),'b') ⋄ ,'c')
 
 ⍝ aplcart/table.tsv:1842 — Convert APL vector X to JSON Lines file Dv
-X←(('a':1x) ⋄ ('a':2x)) ⋄ (∊(X •json¨⊂''),¨•ucs 10) •nput testpath ⋄ •nget testpath
+X←(('a':1x) ⋄ ('a':2x)) ⋄ testpath •nput ∊(•tojson¨X),¨•ucs 10 ⋄ •nget testpath
 '{"a":1}',(•ucs 10),'{"a":2}',•ucs 10
 
 ⍝ aplcart/table.tsv:1848 — Write rows with CRLF terminators
-(∊'ab' 'cd',¨⊂•ucs 13 10) •nput testpath ⋄ •nget testpath
+testpath •nput ∊'ab' 'cd',¨⊂•ucs 13 10 ⋄ •nget testpath
 'ab',(•ucs 13 10),'cd',•ucs 13 10
 
 ⍝ aplcart/table.tsv:1945 — Convert JSON Lines file Dv to APL vector
-('{"a":1}',(•ucs 10 10),'{"a":2}',•ucs 10) •nput testpath ⋄ {•json¨⍵⊆⍨⍵≠•ucs 10}•nget testpath
+testpath •nput '{"a":1}',(•ucs 10 10),'{"a":2}',•ucs 10 ⋄ {•json¨⍵⊆⍨⍵≠•ucs 10}•nget testpath
 (('a':1x) ⋄ ('a':2x))
 
 ⍝ aplcart/tt.tsv:1473 — Read Unicode text file Dv content as nested vector
-('first',(•ucs 10),'last',•ucs 10) •nput testpath ⋄ {¯1↓¨(1,¯1↓⍵=•ucs 10)⊂⍵}•nget testpath
+testpath •nput 'first',(•ucs 10),'last',•ucs 10 ⋄ {¯1↓¨(1,¯1↓⍵=•ucs 10)⊂⍵}•nget testpath
 'first' 'last'
 
 ⍝ aplcart/tt.tsv:1474 — Read Unicode text file Dv content as nested vector
-('first',(•ucs 10),'last',•ucs 10) •nput testpath ⋄ {¯1↓¨(1,¯1↓⍵=•ucs 10)⊂⍵}•nget testpath
+testpath •nput 'first',(•ucs 10),'last',•ucs 10 ⋄ {¯1↓¨(1,¯1↓⍵=•ucs 10)⊂⍵}•nget testpath
 'first' 'last'
 
 ⍝ aplcart/tt.tsv:1475 — Read Unicode text file Dv content as simple vector
-'abc' •nput testpath ⋄ •nget testpath   ⍝ 'abc'
+testpath •nput 'abc' ⋄ •nget testpath   ⍝ 'abc'
 
 ⍝ aplcart/tt.tsv:1476 — Read Unicode text file Dv content as simple vector
-'abc' •nput testpath ⋄ •nget testpath   ⍝ 'abc'
+testpath •nput 'abc' ⋄ •nget testpath   ⍝ 'abc'
 
 ⍝ aplcart/tt.tsv:1935 — Write text (vector or vector of vectors) Dv to Unicode file Cv
-'héllo' •nput testpath   ⍝ 6x
+testpath •nput 'héllo'   ⍝ 6x
 
 ⍝ aplcart/tt.tsv:1936 — Write text (vector or vector of vectors) Dv to Unicode file Cv
-'héllo' •nput testpath   ⍝ 6x
+testpath •nput 'héllo'   ⍝ 6x
 
 ⍝ aplcart/table.tsv:1609 — Calendar
 •load 'lib/dyalog.apl' ⋄ cal 2025 4
@@ -15092,14 +15092,14 @@ X←(('a':1x) ⋄ ('a':2x)) ⋄ (∊(X •json¨⊂''),¨•ucs 10) •nput test
 '<0|3|0>'
 
 ⍝ aplcart/table.tsv:2154 — Add natural numbers as decimal strings
-((•json '123')+•json '456') •json ''   ⍝ '579'
+•tojson (•json '123')+•json '456'   ⍝ '579'
 
 ⍝ aplcart/table.tsv:2176 — Multiset intersection
 inter←{0=≢⍺:⍺ ⋄ i←⍵⍳↑⍺ ⋄ i>≢⍵:(1↓⍺)∇⍵ ⋄ (1↑⍺),(1↓⍺)∇(i≠⍳≢⍵)/⍵} ⋄ 1 1 2 inter 1 2 2
 1 2
 
 ⍝ aplcart/table.tsv:2182 — Add large integers as decimal strings
-((•json '99999999999999999999')+•json '1') •json ''
+•tojson (•json '99999999999999999999')+•json '1'
 '100000000000000000000'
 
 ⍝ aplcart/table.tsv:2186 — Exact rational addition
@@ -15337,26 +15337,26 @@ value←1 ⋄ fn←+ ⋄ op←{⍶⍵} ⋄ •nl 2 3 4   ⍝ 'fn' 'op' 'value'
 +/((↑∘(2∘⊃)∘•vfi)⍤1)⊃'12' '5' '¯3'   ⍝ 14
 
 ⍝ aplcart/table.tsv:1441 — Read raw bytes of file Dv as 8-bit unsigned characters
-opts←'path' 'binary':(testpath ⋄ 1) ⋄ 0 65 127 128 255 •nput opts ⋄ b←•nget opts ⋄ •ucs b
+opts←('path':testpath ⋄ 'binary':1) ⋄ opts •nput 0 65 127 128 255 ⋄ b←('binary':1) •nget testpath ⋄ •ucs b
 (•ucs 0),'A',•ucs 127 128 255
 
 ⍝ aplcart/table.tsv:1442 — Read raw bytes of file Dv as 8-bit signed integers
-opts←'path' 'binary':(testpath ⋄ 1) ⋄ 0 65 127 128 255 •nput opts ⋄ b←•nget opts ⋄ b-256x×b≥128x
+opts←('path':testpath ⋄ 'binary':1) ⋄ opts •nput 0 65 127 128 255 ⋄ b←('binary':1) •nget testpath ⋄ b-256x×b≥128x
 0x 65x 127x ¯128x ¯1x
 
 ⍝ aplcart/tt.tsv:1479 — Read raw bytes of file Dv as 8-bit signed integers
-opts←'path' 'binary':(testpath ⋄ 1) ⋄ 0 65 127 128 255 •nput opts ⋄ b←•nget opts ⋄ b-256x×b≥128x
+opts←('path':testpath ⋄ 'binary':1) ⋄ opts •nput 0 65 127 128 255 ⋄ b←('binary':1) •nget testpath ⋄ b-256x×b≥128x
 0x 65x 127x ¯128x ¯1x
 
 ⍝ aplcart/tt.tsv:1480 — Read raw bytes of file Dv as 8-bit signed integers
-opts←'path' 'binary':(testpath ⋄ 1) ⋄ 0 65 127 128 255 •nput opts ⋄ b←•nget opts ⋄ b-256x×b≥128x
+opts←('path':testpath ⋄ 'binary':1) ⋄ opts •nput 0 65 127 128 255 ⋄ b←('binary':1) •nget testpath ⋄ b-256x×b≥128x
 0x 65x 127x ¯128x ¯1x
 
 ⍝ aplcart/tt.tsv:1481 — Read raw bytes of file Dv as 8-bit unsigned characters
-opts←'path' 'binary':(testpath ⋄ 1) ⋄ 0 65 127 128 255 •nput opts ⋄ b←•nget opts ⋄ •ucs b
+opts←('path':testpath ⋄ 'binary':1) ⋄ opts •nput 0 65 127 128 255 ⋄ b←('binary':1) •nget testpath ⋄ •ucs b
 (•ucs 0),'A',•ucs 127 128 255
 
 ⍝ aplcart/tt.tsv:1482 — Read raw bytes of file Dv as 8-bit unsigned characters
-opts←'path' 'binary':(testpath ⋄ 1) ⋄ 0 65 127 128 255 •nput opts ⋄ b←•nget opts ⋄ •ucs b
+opts←('path':testpath ⋄ 'binary':1) ⋄ opts •nput 0 65 127 128 255 ⋄ b←('binary':1) •nget testpath ⋄ •ucs b
 (•ucs 0),'A',•ucs 127 128 255
 

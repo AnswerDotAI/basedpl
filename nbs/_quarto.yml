@@ -6,7 +6,6 @@ format:
     theme: cosmo
     css: styles.css
     toc: true
-    keep-md: true
   commonmark: default
 
 website:
@@ -16,7 +15,20 @@ website:
   navbar:
     background: primary
     search: true
+    left:
+      - href: getting-started.ipynb
+        text: Get started
+      - href: glyphs.qmd
+        text: Glyph reference
+      - href: python.ipynb
+        text: Python
+    right:
+      - icon: github
+        href: https://github.com/AnswerDotAI/basedpl
   sidebar:
     style: floating
+
+execute:
+  enabled: false
 
 metadata-files: [nbdev.yml, sidebar.yml]

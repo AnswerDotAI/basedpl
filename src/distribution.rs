@@ -2,7 +2,7 @@ use crate::{
     array::generated_len,
     execution::Context,
     keyed,
-    primitive::{integer, numeric},
+    primitive::{integer, numeric, real},
     system::{Call, SystemFunction},
     Error, ErrorKind, Function, Number, Value,
 };
@@ -85,12 +85,6 @@ continuous! {
     LogNormal(lognormal, [location, scale] => LogNormal::new(location, scale)),
     StudentsT(student, [df] => StudentsT::new(0.0, 1.0, df)),
     Weibull(weibull, [shape, scale] => Weibull::new(shape, scale)),
-}
-
-fn real(value: &Value, span: &Context<'_>) -> Result<f64, Error> {
-    let n = numeric(value, span)?.to_complex().map_err(|e| span.error(ErrorKind::Domain, e))?;
-    if n.im != 0.0 { return Err(span.error(ErrorKind::Domain, "distribution arguments must be real")); }
-    Ok(n.re)
 }
 
 fn gamma_with_scale(shape: f64, scale: f64) -> Result<Gamma, GammaError> {

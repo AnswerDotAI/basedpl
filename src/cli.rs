@@ -5,7 +5,7 @@ use std::io::{self, IsTerminal, Read, Write};
 const USAGE: &str = "Usage: bapl [-e EXPR | FILE | - | --json | --worker | --kernel -f CONNECTION_FILE]\n\nNo arguments: persistent APL REPL (Ctrl-D to exit, Ctrl-C to cancel input).\nType `name then Tab or a non-letter to enter a symbol, e.g. `iota5 becomes ⍳5.\nUse - to execute all of stdin as one source; --json for a JSON-lines session.\nUse --worker for structured requests with deadlines and interruption.\nUse --kernel -f CONNECTION_FILE to run a Jupyter kernel.\n";
 
 fn show(result: Evaluation, out: &mut impl Write, err: &mut impl Write) -> io::Result<bool> {
-    for line in result.output { writeln!(out, "{line}")?; }
+    for line in result.output { writeln!(out, "{}", line.text())?; }
     if let Some(e) = result.error {
         writeln!(err, "{e}")?;
         return Ok(false);
@@ -20,8 +20,7 @@ fn expression(code: &str, name: &str, out: &mut impl Write, err: &mut impl Write
 
 fn repl(out: &mut impl Write, err: &mut impl Write, interactive: bool) -> io::Result<i32> {
     let mut editor = if interactive { Some(crate::editor::LineEditor::new().map_err(io::Error::other)?) } else { None };
-    let mut session = Session::new();
-    if interactive { session.display = crate::display::Settings::interactive(); }
+    let mut session = if interactive { Session::interactive() } else { Session::new() };
     let mut code = String::new();
     let mut incomplete = None;
     let mut failed = false;
@@ -76,9 +75,7 @@ fn repl(out: &mut impl Write, err: &mut impl Write, interactive: bool) -> io::Re
 }
 
 /// Both the native executable and the installed console script call this runner.
-pub fn run(args: &[String]) -> i32 { crate::with_stack(|| run_inner(args)) }
-
-fn run_inner(args: &[String]) -> i32 {
+pub fn run(args: &[String]) -> i32 {
     if let [mode, flag, file] = args {
         if mode == "--kernel" && flag == "-f" {
             return match crate::kernel::run(file) {

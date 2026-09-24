@@ -59,6 +59,13 @@ g←{⍵<0:-⍵ ⋄ +/(:('n':⍵))}
 ⍝ =>
 (,5 ⋄ 2ₓ ⋄ 3 ⋄ 3)
 
+⍝ axis-pair-literal — A literal whose items are all key:value pairs builds one keyed vector; display reads back
+x←3
+r←('one':1 2 ⋄ 'two':x)
+(r≡'one' 'two':(1 2 ⋄ 3) ⋄ r≡⍎⍕r ⋄ ('a':1 ⋄ 2)≡(⊂'a':1),2 ⋄ (('a':1) ⋄ ('b':2))≡(⊂'a':1),⊂'b':2)
+⍝ =>
+(1ₓ ⋄ 1ₓ ⋄ 1ₓ ⋄ 1ₓ)
+
 ⍝ axis-colon-order — Construction uses ordinary right-to-left evaluation
 :((⎕←'a'):(⎕←7))
 ,7
@@ -1283,7 +1290,7 @@ n←5 ⋄ ℙn   ⍝ 11ₓ
 ¯4ℙ2
 ⍝ error: DOMAIN ERROR
 
-⍝⍝ Full windows
+⍝⍝ Windows
 
 ⍝ — Full vector windows overlap without padding
 3↕⍳5   ⍝ [1 2 3 ⋄ 2 3 4 ⋄ 3 4 5]
@@ -1306,9 +1313,11 @@ n←5 ⋄ ℙn   ⍝ 11ₓ
 ⍝ — Zero-length and nonempty window axes combine without losing the frame
 0 2↕2 3⍴⍳6   ⍝ 3 2 0 2⍴0
 
-⍝ —
-¯1↕⍳3
-⍝ error: DOMAIN ERROR
+⍝ — Negative sizes give stencil windows, including even sizes
+(¯4↕⍳5)≡{⍵}⌺4⍳5   ⍝ 1ₓ
+
+⍝ — Padded matrix windows with movements match stencil windows
+([¯3 ¯2 ⋄ 2 1]↕4 5⍴⍳20)≡{⍵}⌺([3 2 ⋄ 2 1])⊢4 5⍴⍳20   ⍝ 1ₓ
 
 ⍝ —
 0.5↕⍳3
@@ -1324,7 +1333,19 @@ n←5 ⋄ ℙn   ⍝ 11ₓ
 
 ⍝ —
 [2 ⋄]↕⍳3
+⍝ error: LENGTH ERROR
+
+⍝ —
+(1 1 1⍴2)↕⍳3
 ⍝ error: RANK ERROR
+
+⍝ —
+[2 ⋄ 0]↕⍳3
+⍝ error: DOMAIN ERROR
+
+⍝ —
+¯4↕⍳2
+⍝ error: DOMAIN ERROR
 
 ⍝⍝ Paired inverse under and trajectories
 
@@ -1864,6 +1885,10 @@ a←⍳3 ⋄ b←0@2⊢a ⋄ a   ⍝ 1 2 3
 ⍝ —
 {⍵}⌺⍬⍳3
 ⍝ error: DOMAIN ERROR
+
+⍝ —
+{⍵}⌺1 1⍳3
+⍝ error: RANK ERROR
 
 ⍝ —
 0@{2 0 1}⍳3
@@ -4160,9 +4185,15 @@ T←⍬:⍬ ⋄ T.a←1 ⋄ ('b'⊃T)←'c':2 ⋄ T.b.d←3 ⋄ T
 T←'a':1 ⋄ T.b+←2
 ⍝ error: INDEX ERROR
 
-⍝ axis-path-missing — Intermediate containers must exist
-T←'a':1 ⋄ T.x.y←2
-⍝ error: INDEX ERROR
+⍝ axis-path-create — Plain assignment through a dot path creates missing records
+T←('n':1)
+T.style.color←'red' ⋄ T.style.width←2 ⋄ T.a.b.c←3 ⋄ T
+⍝ =>
+('n':1 ⋄ 'style':('color':'red' ⋄ 'width':2) ⋄ 'a':('b':('c':3)))
+
+⍝ axis-path-nonrecord — A path cannot descend into a value that is not a record
+T←'a':1 ⋄ T.a.y←2
+⍝ error: RANK ERROR
 
 ⍝ axis-bracket-insert — New names append in selector order, including keyed RHS alignment
 T←'aa':1 ⋄ T['bb']←2 ⋄ T['cc' 'aa' 'dd']←30 10 40
@@ -4298,17 +4329,17 @@ t←1(2(,4)(,5))(,3)
 
 ⍝ — Headers key compact, independently inferred columns
 nl←•ucs 10 ⋄ •csv 'price,qty',nl,'10.5,2',nl,'20.0,4'
-'price' 'qty':(10.5 20 ⋄ 2ₓ 4ₓ)
+('price':10.5 20 ⋄ 'qty':2ₓ 4ₓ)
 
 ⍝ — Inference is per column; numeric-looking text stays text in a mixed column
 nl←•ucs 10 ⋄ •csv 'id,note',nl,'001,001',nl,'002,no'
-'id' 'note':(1ₓ 2ₓ ⋄ '001' 'no')
+('id':1ₓ 2ₓ ⋄ 'note':'001' 'no')
 
 ⍝ — Forced text preserves identifiers, including quoted numeric fields
 src←'id,n', (•ucs 10), '"00123",5'
-•csv 'source' 'text_columns':(src ⋄ 'id')
+('text_columns':'id') •csv src
 ⍝ =>
-'id' 'n':((,⊂'00123') ⋄ ,5ₓ)
+('id':(,⊂'00123') ⋄ 'n':,5ₓ)
 
 ⍝ — Empty numeric cells use infinity; entirely empty columns are text
 nl←•ucs 10 ⋄ •csv 'a,b,c',nl,'1,1.5,',nl,',,'
@@ -4316,13 +4347,13 @@ nl←•ucs 10 ⋄ •csv 'a,b,c',nl,'1,1.5,',nl,',,'
 
 ⍝ — Custom markers and fill, with positional forced numeric selection
 nl←•ucs 10 ⋄ src←'a,b',nl,'NA,NA',nl,'3,yes'
-•csv 'source' 'missing' 'fill' 'numeric_columns':(src ⋄ 'NA' ⋄ ¯1ₓ ⋄ 1)
+('missing':'NA' ⋄ 'fill':¯1ₓ ⋄ 'numeric_columns':1) •csv src
 ⍝ =>
 (,¨'ab'):(¯1ₓ 3ₓ ⋄ '' 'yes')
 
 ⍝ — Headerless input and locale-specific numeric spelling
 nl←•ucs 10 ⋄ src←'1.234,5;2',nl,'2.000;3'
-•csv 'source' 'header' 'separator' 'decimal' 'thousands':(src ⋄ 0 ⋄ ';' ⋄ ',' ⋄ '.')
+('header':0 ⋄ 'separator':';' ⋄ 'decimal':',' ⋄ 'thousands':'.') •csv src
 ⍝ =>
 (1234.5 2000 ⋄ 2ₓ 3ₓ)
 
@@ -4332,7 +4363,7 @@ nl←•ucs 10 ⋄ •csv 'note',nl,'"a,b"',nl,'"say ""hi"""',nl,'"λ',nl,'😀"
 
 ⍝ — Whitespace is preserved unless trimming is requested
 nl←•ucs 10 ⋄ src←'n',nl,' 2 '
-(•csv src) (•csv 'source' 'trim':(src ⋄ 1))
+(•csv src) (('trim':1) •csv src)
 ⍝ =>
 ('n':,⊂' 2 ') ('n':,2ₓ)
 
@@ -4351,21 +4382,21 @@ nl←•ucs 10 ⋄ src←'n',nl,' 2 '
 'n':9007199254740993ₓ 1.5
 
 ⍝ — Export and import retain numeric domains, strings and headers
-T←'price' 'qty' 'note':(10.5 20 ⋄ 2ₓ 4ₓ ⋄ 'a,b' 'say "hi"')
-•csv T •csv ''
+T←('price':10.5 20 ⋄ 'qty':2ₓ 4ₓ ⋄ 'note':'a,b' 'say "hi"')
+•csv •tocsv T
 ⍝ =>
-'price' 'qty' 'note':(10.5 20 ⋄ 2ₓ 4ₓ ⋄ 'a,b' 'say "hi"')
+('price':10.5 20 ⋄ 'qty':2ₓ 4ₓ ⋄ 'note':'a,b' 'say "hi"')
 
 ⍝ — Export uses CSV minus signs and no exact suffix
-('n':¯2ₓ 3ₓ) •csv ''   ⍝ 'n',(•ucs 10),'-2',(•ucs 10),'3',•ucs 10
+•tocsv ('n':¯2ₓ 3ₓ)   ⍝ 'n',(•ucs 10),'-2',(•ucs 10),'3',•ucs 10
 
 ⍝ — Infinity remains a number unless fill is explicitly configured
-T←'n':1ₓ ∞ ⋄ (T •csv '') (T •csv 'fill':∞)
+T←'n':1ₓ ∞ ⋄ (•tocsv T) (('fill':∞) •tocsv T)
 ('n',(•ucs 10),'1',(•ucs 10),'inf',•ucs 10) ('n',(•ucs 10),'1',(•ucs 10),'""',•ucs 10)
 
 ⍝ — Export dialect and CRLF
 T←'n':,1234.5
-T •csv 'separator' 'decimal' 'thousands' 'lineending':(';' ⋄ ',' ⋄ '.' ⋄ •ucs 13 10)
+('separator':';' ⋄ 'decimal':',' ⋄ 'thousands':'.' ⋄ 'lineending':•ucs 13 10) •tocsv T
 ⍝ =>
 'n',(•ucs 13 10),'1.234,5',•ucs 13 10
 
@@ -4378,37 +4409,37 @@ T •csv 'separator' 'decimal' 'thousands' 'lineending':(';' ⋄ ',' ⋄ '.' ⋄
 ⍝ error: LENGTH ERROR
 
 ⍝ — Explicit numeric columns reject invalid nonmissing text
-•csv 'source' 'numeric_columns':(('a',(•ucs 10),'no') ⋄ 'a')
+('numeric_columns':'a') •csv 'a',(•ucs 10),'no'
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Unknown column selector
-•csv 'source' 'text_columns':('a,b' ⋄ 'c')
+('text_columns':'c') •csv 'a,b'
 ⍝ error: INDEX ERROR
 
 ⍝ — Conflicting column modes
-•csv 'source' 'text_columns' 'numeric_columns':('a,b' ⋄ 1 ⋄ 1)
+('text_columns':1 ⋄ 'numeric_columns':1) •csv 'a,b'
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Unknown option
-•csv 'source' 'seperator':('a,b' ⋄ ';')
+('seperator':';') •csv 'a,b'
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Export requires equal-length column vectors
-((,¨'ab'):(1 2 ⋄ ,3)) •csv ''
+•tocsv (,¨'ab'):(1 2 ⋄ ,3)
 ⍝ error: LENGTH ERROR
 
 ⍝ — Export rejects nested cells
-('a':,⊂1 2) •csv ''
+•tocsv ('a':,⊂1 2)
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Quote-free export errors when a field needs quoting
-('a':,⊂'x,y') •csv 'quotechar':''
+('quotechar':'') •tocsv ('a':,⊂'x,y')
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Escape characters round-trip inside quoted text
 T←'note':,⊂'a\b"c'
-csv←T •csv 'escapechar' 'doublequote':('\' ⋄ 0)
-•csv 'source' 'escapechar' 'doublequote':(csv ⋄ '\' ⋄ 0)
+opts←('escapechar':'\' ⋄ 'doublequote':0) ⋄ csv←opts •tocsv T
+opts •csv csv
 ⍝ =>
 'note':,⊂'a\b"c'
 
@@ -4416,14 +4447,14 @@ csv←T •csv 'escapechar' 'doublequote':('\' ⋄ 0)
 
 ⍝ — JSON objects become keyed vectors; arrays retain nesting and integer exactness
 •json '{"name":"Ann","values":[1,2.5,[3,4]]}'
-'name' 'values':('Ann' ⋄ (1ₓ ⋄ 2.5 ⋄ 3ₓ 4ₓ))
+('name':'Ann' ⋄ 'values':(1ₓ ⋄ 2.5 ⋄ 3ₓ 4ₓ))
 
 ⍝ — Booleans are exact numbers and null defaults to infinity
 •json '[true,false,null]'   ⍝ 1ₓ 0ₓ ∞
 
 ⍝ — Explicit null fill works recursively in both directions
-opts←'source' 'fill':('{"x":[null,2]}' ⋄ ¯1ₓ)
-(•json opts) •json 'fill':¯1ₓ
+fill←('fill':¯1ₓ)
+fill •tojson fill •json '{"x":[null,2]}'
 ⍝ =>
 '{"x":[null,2]}'
 
@@ -4432,27 +4463,27 @@ opts←'source' 'fill':('{"x":[null,2]}' ⋄ ¯1ₓ)
 9223372036854775808ₓ 1 100
 
 ⍝ — Large exact integers export without rounding
-9223372036854775808ₓ •json ''   ⍝ '9223372036854775808'
+•tojson 9223372036854775808ₓ   ⍝ '9223372036854775808'
 
 ⍝ — Booleans export as numbers
-(•json '[true,false]') •json ''   ⍝ '[1,0]'
+•tojson •json '[true,false]'   ⍝ '[1,0]'
 
 ⍝ — Empty objects, arrays and strings retain their distinct meanings
-(•json '[{},[],""]') •json ''   ⍝ '[{},[],""]'
+•tojson •json '[{},[],""]'   ⍝ '[{},[],""]'
 
 ⍝ — Scalar strings remain strings, including one-character strings
-(•json '["a","",["b","c"]]') •json ''
+•tojson •json '["a","",["b","c"]]'
 '["a","",["b","c"]]'
 
 ⍝ — Ordinary matrices export as nested JSON arrays
-[1ₓ 2ₓ ⋄ 3ₓ 4ₓ] •json ''   ⍝ '[[1,2],[3,4]]'
+•tojson [1ₓ 2ₓ ⋄ 3ₓ 4ₓ]   ⍝ '[[1,2],[3,4]]'
 
 ⍝ — Keyed axes export as object levels
-('row':'col'  'val':(1ₓ 2ₓ)) •json ''
+•tojson ('row':'col'  'val':(1ₓ 2ₓ))
 '{"row":{"col":1,"val":2}}'
 
 ⍝ — Unkeyed scalar arrays export their contents
-(⊂2ₓ) •json ''   ⍝ ,'2'
+•tojson ⊂2ₓ   ⍝ ,'2'
 
 ⍝ — Duplicate object members follow the JSON library's last-value rule
 •json '{"name":1,"name":2}'   ⍝ 'name':2ₓ
@@ -4466,19 +4497,19 @@ opts←'source' 'fill':('{"x":[null,2]}' ⋄ ¯1ₓ)
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Infinity requires explicit fill on export
-∞ •json ''
+•tojson ∞
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Nonintegral rationals have no JSON number representation
-1r3 •json ''
+•tojson 1r3
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Complex values have no JSON number representation
-1j2 •json ''
+•tojson 1j2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Functions have no JSON representation
-(,⊂+) •json ''
+•tojson +˘-
 ⍝ error: DOMAIN ERROR
 
 ⍝ — LZW repeated-code expansion and capped dictionary

@@ -76,6 +76,10 @@ async def kernel_story():
         assert reply['content']['ename'] == 'KeyboardInterrupt'
         _, messages = await kc.exec_ok('mean v')
         assert displayed(messages) == [('execute_result', '4.5')]
+        _, messages = await kc.exec_ok("⎕←'SVG' ⋄ •svg ⍬")
+        rich = [m['content']['data'] for m in messages if m['msg_type']=='execute_result']
+        assert 'http://www.w3.org/2000/svg' in rich[0]['image/svg+xml']
+        assert displayed(messages)[0] == ('stream', 'SVG\n')
 
 
 def test_jupyter_kernel(): asyncio.run(kernel_story())

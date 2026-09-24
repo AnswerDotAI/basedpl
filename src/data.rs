@@ -1,4 +1,4 @@
-use crate::{execution::Context, keyed, Error, ErrorKind, Number, Value};
+use crate::{execution::Context, keyed, primitive::real, Error, ErrorKind, Number, Value};
 use std::{collections::HashMap, fs::OpenOptions, io::Write};
 
 pub(crate) fn text(value: &Value, span: &Context<'_>) -> Result<String, Error> {
@@ -8,23 +8,35 @@ pub(crate) fn text(value: &Value, span: &Context<'_>) -> Result<String, Error> {
 pub(crate) struct Options { pub values: HashMap<String, Value>, name: &'static str }
 
 impl Options {
-    pub fn new(name: &'static str, right: &Value, shorthand: Option<&str>, allowed: &[&str], span: &Context<'_>) -> Result<Self, Error> {
+    /// Options from a keyed vector, or from plain text given to `shorthand`. `None`, or `''` without a shorthand, gives no options.
+    pub fn new(name: &'static str, value: Option<&Value>, shorthand: Option<&str>, allowed: &[&str], span: &Context<'_>) -> Result<Self, Error> {
         let mut values = HashMap::new();
-        if let Some(keys) = right.keys(0) {
-            if right.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, format!("{name} options must be a keyed vector"))); }
-            for (k, v) in keys.names().iter().zip(right.elements()) {
+        let Some(value) = value else { return Ok(Self { values, name }) };
+        if let Some(keys) = value.keys(0) {
+            if value.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, format!("{name} options must be a keyed vector"))); }
+            for (k, v) in keys.names().iter().zip(value.elements()) {
                 let k = k.to_lowercase();
                 if !allowed.contains(&k.as_str()) { return Err(span.error(ErrorKind::Domain, format!("unknown {name} option: {k}"))); }
                 if values.insert(k.clone(), v).is_some() { return Err(span.error(ErrorKind::Domain, format!("duplicate {name} option: {k}"))); }
             }
         }
-        else if let Some(key) = shorthand { values.insert(key.into(), right.clone()); }
-        else if !text(right, span)?.is_empty() { return Err(span.error(ErrorKind::Domain, format!("{name} expects '' or keyed options"))); }
+        else if let Some(key) = shorthand { values.insert(key.into(), value.clone()); }
+        else if !text(value, span)?.is_empty() { return Err(span.error(ErrorKind::Domain, format!("{name} expects '' or keyed options"))); }
         Ok(Self { values, name })
     }
 
-    pub fn text(&self, key: &str, span: &Context<'_>) -> Result<String, Error> {
-        text(self.values.get(key).ok_or_else(|| span.error(ErrorKind::Domain, format!("{} needs {key}", self.name)))?, span)
+    pub fn text(&self, key: &str, default: Option<&str>, span: &Context<'_>) -> Result<String, Error> {
+        match (self.values.get(key), default) {
+            (Some(v), _) => text(v, span),
+            (None, Some(d)) => Ok(d.into()),
+            (None, None) => Err(span.error(ErrorKind::Domain, format!("{} needs {key}", self.name))),
+        }
+    }
+
+    pub fn number(&self, key: &str, default: f64, span: &Context<'_>) -> Result<f64, Error> {
+        self.values
+            .get(key)
+            .map_or(Ok(default), |v| real(v, span).map_err(|_| span.error(ErrorKind::Domain, format!("{} {key} must be a real number", self.name))))
     }
 
     pub fn boolean(&self, key: &str, default: bool, span: &Context<'_>) -> Result<bool, Error> {
@@ -70,20 +82,18 @@ pub(crate) fn vfi(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Re
     result().map_err(|k| span.error(k, "invalid numeric input result"))
 }
 
-fn file_options(name: &'static str, right: &Value, allowed: &[&str], span: &Context<'_>) -> Result<(Options, String, bool), Error> {
-    let opts = Options::new(name, right, Some("path"), allowed, span)?;
+/// File options: `binary` excludes `encoding`, which must be UTF-8.
+fn file_options(name: &'static str, left: Option<&Value>, shorthand: Option<&str>, allowed: &[&str], span: &Context<'_>) -> Result<(Options, bool), Error> {
+    let opts = Options::new(name, left, shorthand, allowed, span)?;
     let binary = opts.boolean("binary", false, span)?;
-    if let Some(encoding) = opts.values.get("encoding") {
-        if binary { return Err(span.error(ErrorKind::Domain, "binary files do not take an encoding")); }
-        if !text(encoding, span)?.eq_ignore_ascii_case("UTF-8") { return Err(span.error(ErrorKind::Domain, "encoding must be UTF-8")); }
-    }
-    let path = opts.text("path", span)?;
-    Ok((opts, path, binary))
+    if binary && opts.values.contains_key("encoding") { return Err(span.error(ErrorKind::Domain, "binary files do not take an encoding")); }
+    if !opts.text("encoding", Some("UTF-8"), span)?.eq_ignore_ascii_case("UTF-8") { return Err(span.error(ErrorKind::Domain, "encoding must be UTF-8")); }
+    Ok((opts, binary))
 }
 
 pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if left.is_some() { return Err(span.error(ErrorKind::Syntax, "•nget is monadic")); }
-    let (_, path, binary) = file_options("•nget", right, &["path", "encoding", "binary"], span)?;
+    let (_, binary) = file_options("•nget", left, None, &["encoding", "binary"], span)?;
+    let path = text(right, span)?;
     span.check()?;
     let data = std::fs::read(&path).map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))?;
     span.check()?;
@@ -93,20 +103,21 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
 }
 
 pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let left = left.ok_or_else(|| span.error(ErrorKind::Syntax, "•nput needs data on the left"))?;
-    let (opts, path, binary) = file_options("•nput", right, &["path", "encoding", "binary", "overwrite"], span)?;
+    let (opts, binary) = file_options("•nput", left, Some("path"), &["path", "encoding", "binary", "overwrite"], span)?;
+    let path = opts.text("path", None, span)?;
     let data = if binary {
-        if left.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "binary output needs a vector")); }
+        if right.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "binary output needs a vector")); }
         let invalid = || span.error(ErrorKind::Domain, "bytes must be integral numbers in 0..255");
-        if left.prototype().as_number().is_none() { return Err(invalid()); }
-        left.elements()
+        if right.prototype().as_number().is_none() { return Err(invalid()); }
+        right
+            .elements()
             .map(|v| {
                 span.check()?;
                 let n = v.as_number().and_then(|n| n.nonnegative_integer().ok()).and_then(|n| u8::try_from(n).ok());
                 n.ok_or_else(invalid)
             })
             .collect::<Result<Vec<_>, _>>()?
-    } else { text(left, span)?.into_bytes() };
+    } else { text(right, span)?.into_bytes() };
     let overwrite = opts.boolean("overwrite", false, span)?;
     span.check()?;
     let mut file = OpenOptions::new()

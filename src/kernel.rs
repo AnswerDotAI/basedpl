@@ -4,6 +4,7 @@ use kernmini::{
     ThreadWorker,
 };
 use serde_json::{json, Value};
+use std::future::Future;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
@@ -34,7 +35,7 @@ impl LanguageSession for AplSession {
     fn execution_count(&self) -> u64 { self.count.load(Ordering::Acquire) }
 
     async fn execute(&self, request: ExecuteRequest, context: ExecutionContext) -> anyhow::Result<ExecuteOutcome> {
-        let count = if request.store_history && !request.silent { self.count.fetch_add(1, Ordering::AcqRel) + 1 } else { self.execution_count() };
+        let count = next_count(&self.count, &request);
         let interrupt = InterruptHandle::default();
         let cancel = interrupt.clone();
         context.set_interrupt_handler(Arc::new(move || {
@@ -43,26 +44,13 @@ impl LanguageSession for AplSession {
         }))?;
         self.worker
             .call(move |session| {
-                if let Some((info, detail)) =
-                    crate::inspection::help_command(&request.code).and_then(|(name, detail)| session.inspect(name).map(|info| (info, detail)))
-                {
-                    let data = json!({"text/plain":info.text(detail), "text/markdown":info.markdown(detail)});
-                    return ExecuteOutcome {
-                        execution_count: count,
-                        result: (!request.silent).then_some(data),
-                        result_metadata: json!({}),
-                        error: None,
-                        user_expressions: json!({}),
-                        payload: json!([]),
-                    };
-                }
                 let cancel = interrupt.clone();
-                let output = Arc::new(move |kind, text: &str| {
-                    let event = match kind {
-                        OutputKind::Explicit => LanguageEvent::Stream { name: "stdout".into(), text: format!("{text}\n") },
+                let output = Arc::new(move |output: &crate::Output| {
+                    let event = match output.kind {
+                        OutputKind::Explicit => LanguageEvent::Stream { name: "stdout".into(), text: format!("{}\n", output.text()) },
                         OutputKind::Display => LanguageEvent::Message {
                             msg_type: "execute_result".into(),
-                            content: json!({"execution_count": count, "data": {"text/plain": text}, "metadata": {}}),
+                            content: json!({"execution_count": count, "data": output.data, "metadata": {}}),
                             metadata: json!({}),
                             identity: None,
                             buffers: vec![],
@@ -82,7 +70,7 @@ impl LanguageSession for AplSession {
                             let Some(code) = code.as_str() else { continue; };
                             let result = session.eval_with(
                                 code,
-                                EvalOptions { interrupt: interrupt.clone(), echo: false, output: Some(Arc::new(|_, _| {})), ..EvalOptions::default() },
+                                EvalOptions { interrupt: interrupt.clone(), echo: false, output: Some(Arc::new(|_| {})), ..EvalOptions::default() },
                             );
                             let value = if let Some(e) = result.error {
                                 let cancelled = e.kind == crate::ErrorKind::Interrupt;
@@ -150,23 +138,29 @@ impl LanguageSession for AplSession {
     async fn shutdown(&self) -> anyhow::Result<()> { self.worker.shutdown().await }
 }
 
-struct AplLanguage(AplSession);
+/// A kernmini language with one session and no subshells.
+struct Solo<S>(S);
 
 #[async_trait::async_trait]
-impl Language for AplLanguage {
-    type Session = AplSession;
-    fn parent(&self) -> Self::Session { self.0.clone() }
-    async fn create_child(&self) -> anyhow::Result<Self::Session> { anyhow::bail!("basedpl subshells are not supported") }
+impl<S: LanguageSession> Language for Solo<S> {
+    type Session = S;
+    fn parent(&self) -> S { self.0.clone() }
+    async fn create_child(&self) -> anyhow::Result<S> { anyhow::bail!("subshells are not supported") }
+}
+
+/// Serve the session that `start` builds on the kernel connection in `file`.
+pub(crate) fn serve<S: LanguageSession>(file: &str, start: impl Future<Output = anyhow::Result<S>>) -> anyhow::Result<()> {
+    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(async { kernmini::run_kernel(file, Solo(start.await?)).await })
+}
+
+/// The execution count for `request`, counting it when it is stored in history.
+pub(crate) fn next_count(count: &AtomicU64, request: &ExecuteRequest) -> u64 {
+    if request.store_history && !request.silent { count.fetch_add(1, Ordering::AcqRel) + 1 } else { count.load(Ordering::Acquire) }
 }
 
 pub(crate) fn run(file: &str) -> anyhow::Result<()> {
-    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(async {
-        let worker = ThreadWorker::start(crate::execution::thread(), || {
-            let mut session = Session::new();
-            session.display = crate::display::Settings::interactive();
-            Ok(session)
-        })
-        .await?;
-        kernmini::run_kernel(file, AplLanguage(AplSession { worker, count: Arc::new(AtomicU64::new(0)) })).await
+    serve(file, async {
+        let worker = ThreadWorker::start(std::thread::Builder::new().name("basedpl".into()), || Ok(Session::interactive())).await?;
+        Ok(AplSession { worker, count: Arc::new(AtomicU64::new(0)) })
     })
 }

@@ -1,0 +1,37 @@
+# `↕` — Windows
+
+`S↕Y`: windows of sizes `S` on leading axes. Trailing axes stay inside each window.
+
+```apl
+3↕⍳5                ⍝ [1 2 3 ⋄ 2 3 4 ⋄ 3 4 5]
+2 2↕2 3⍴⍳6          ⍝ 1 2 2 2⍴1 2 4 5 2 3 5 6
+2↕3 2⍴⍳6            ⍝ 2 2 2⍴1 2 3 4 3 4 5 6
+```
+
+Shape: position frame, window sizes, trailing axes.
+
+```apl
+4↕'ab'               ⍝ 0 4⍴' '
+0↕'ab'               ⍝ 3 0⍴' '
+⍬↕2 3⍴⍳6            ⍝ 2 3⍴⍳6
+```
+
+Oversized full windows give empty frames. Zero sizes give `n+1` empty windows; `⍬` leaves `Y` unchanged.
+
+A two-row left argument gives sizes, then movements. A window starts every `M` positions.
+
+```apl
+[3 ⋄ 2]↕⍳8           ⍝ [1 2 3 ⋄ 3 4 5 ⋄ 5 6 7]
+```
+
+A negative size pads its axis. Each window is centred on a position, as in [Stencil](stencil.qmd), with prototype fill beyond the edges. Each axis follows the sign of its own size.
+
+```apl
+¯3↕⍳4                ⍝ [0 1 2 ⋄ 1 2 3 ⋄ 2 3 4 ⋄ 3 4 0]
+[¯3 ⋄ 2]↕⍳8          ⍝ [0 1 2 ⋄ 2 3 4 ⋄ 4 5 6 ⋄ 6 7 8]
+⍴¯3 2↕3 4⍴⍳12        ⍝ 3 3 3 2
+```
+
+An axis of length `n` has `0⌈1+⌊(n-S)÷M` full windows, or `⌈(n-0=2|S)÷M` padded windows. Movements default to 1.
+
+RANK: sizes not a scalar, vector or two-row matrix, or too many axes. LENGTH: a matrix without two rows. DOMAIN: non-integral size, nonpositive movement, or a padded size of at least twice its axis length.

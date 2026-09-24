@@ -166,10 +166,10 @@ APLcart's TIO links were decoded offline. All 972 available decoded programs are
 
 `basedpl.reference` contains the import, reference capture, scan, review and activation functions. `scripts/reference.py` is their CLI. Rust tests read the checked-in `.apl` files. They need neither the JSONL inventory, sibling clones, Dyalog, Common Lisp, Node, Python nor network access. Python converter tests also check serialization against the tracked inventory. Import a new upstream snapshot into a new directory and review it against the inventory rather than replacing reviewed statuses.
 
-For live reference work, use `aplnb.dyalog.Apl`, not `aplnb.core` (which uses bAsedPL):
+For live reference work, use `basedpl.dyalog.Apl`, which runs Dyalog, not `basedpl.Session`, which runs bAsedPL:
 
 ```python
-from aplnb.dyalog import Apl
+from basedpl.dyalog import Apl
 from basedpl.reference import REFERENCE_ENCODER, dyalog_expected
 with Apl() as apl:
     apl('⎕IO←1 ⋄ ⎕CT←1E¯14 ⋄ ⎕DIV←0 ⋄ ⎕ML←1 ⋄ ⎕PP←17')

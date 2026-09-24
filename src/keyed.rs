@@ -64,6 +64,27 @@ pub(crate) fn vector(names: Vec<Arc<str>>, values: Vec<Value>) -> Result<Value, 
     Value::from_parts(vec![names.len()], values, Value::scalar(0.)?)?.with_keys(vec![Some(Keys::new(names)?)])
 }
 
+/// The entries of a keyed vector, in order. An empty vector has none.
+pub(crate) fn pairs(value: &Value) -> Result<Vec<(Arc<str>, Value)>, ErrorKind> {
+    if value.shape().len() != 1 { return Err(ErrorKind::Rank); }
+    if value.is_empty() { return Ok(vec![]); }
+    let keys = value.keys(0).ok_or(ErrorKind::Domain)?;
+    Ok(keys.names().iter().cloned().zip(value.elements()).collect())
+}
+
+pub(crate) fn field(value: &Value, name: &str) -> Option<Value> {
+    if value.shape().len() != 1 { return None; }
+    value.keys(0)?.position(name).map(|i| value.at(i))
+}
+
+/// Entries in `new` replace `old` entries with the same name. Other `new` entries follow.
+pub(crate) fn merge(old: &Value, new: &Value) -> Result<Value, ErrorKind> {
+    let mut items = pairs(old)?;
+    for (name, value) in pairs(new)? { if let Some((_, v)) = items.iter_mut().find(|(k, _)| k == &name) { *v = value; } else { items.push((name, value)); } }
+    let (names, values) = items.into_iter().unzip();
+    vector(names, values)
+}
+
 fn names(value: &Value) -> Result<Vec<Arc<str>>, ErrorKind> {
     if let Some(k) = name(value) { return Ok(vec![k]); }
     if value.is_atom() || value.shape().len() > 1 { return Err(ErrorKind::Domain); }
@@ -168,8 +189,10 @@ pub(crate) fn extended(target: &Value, selectors: &[Option<Value>]) -> Result<Op
     }
     if !changed { return Ok(None); }
     let maps = shape.iter().zip(target.shape()).map(|(&n, &old)| (0..n).map(|i| (i < old).then_some(i)).collect()).collect::<Vec<_>>();
+    // A new vector entry is either written or descended into by a longer path, so it starts as a record.
+    let fill = if shape.len() == 1 { vector(vec![], vec![])? } else { target.prototype() };
     let data = (0..crate::array::generated_len(&shape)?)
-        .map(|i| mapped_index(i, &shape, target.shape(), &maps).map_or_else(|| target.prototype(), |i| target.at(i)))
+        .map(|i| mapped_index(i, &shape, target.shape(), &maps).map_or_else(|| fill.clone(), |i| target.at(i)))
         .collect();
     Value::from_parts(shape, data, target.prototype())?.with_keys(keys)?.with_axis_names(target.axis_names().to_vec()).map(Some)
 }

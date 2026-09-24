@@ -254,14 +254,14 @@ mod tests {
         for name in ["nosuchsymbol", "lg", "lrr"] { assert!(matches(name).is_empty()); }
         for text in ["'`io", "'can''t `io", "\"`io", "⍝ `io"] { assert!(entry(text, text.len()).is_none()); }
         for text in ["界+`io", "'text' `io", "⍝ comment\n`io"] { assert_eq!(entry(text, text.len()).unwrap().1, "io"); }
-        let index = include_str!("../docs/index.md");
+        let index = include_str!("../nbs/glyphs.qmd");
         for &(glyph, name, monad, dyad, words) in SYMBOLS {
             for word in [name, monad, dyad].into_iter().chain(words.split_whitespace()).filter(|word| !word.is_empty()) {
                 assert_eq!(matches(&word.replace('-', "")), [(glyph, name)], "{word}");
             }
             let mut title = name.replace('-', " ");
             title[..1].make_ascii_uppercase();
-            let link = format!("` [{title}](glyphs/{name}.md)");
+            let link = format!("` [{title}](glyphs/{name}.qmd)");
             let cell = index[..index.find(&link).expect(name)].rsplit('`').next().unwrap();
             assert!(cell.starts_with(glyph) || cell.strip_prefix('\\') == Some(glyph), "{glyph} {name}");
         }

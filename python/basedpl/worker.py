@@ -2,6 +2,7 @@
 import json, math, queue, subprocess, sys, threading
 from collections import deque
 from decimal import Decimal
+from . import _output_text
 
 class Worker:
     "One request at a time. Interrupt from another thread; never retry a request automatically."
@@ -53,11 +54,13 @@ class Worker:
                         self.process.stdin.flush()
                     reply = self._replies.get(timeout=None if timeout is None else timeout+grace)
                 except KeyboardInterrupt as e:
-                    e.output = []
+                    e.output, e.events = [], []
                     self.interrupt()
                     try:
                         reply = self._replies.get(timeout=grace)
-                        if isinstance(reply, dict): e.output = reply['result'].get('output', [])
+                        if isinstance(reply, dict):
+                            e.events = reply['result'].get('output', [])
+                            e.output = _output_text(e.events)
                     except queue.Empty: self.close()
                     raise
                 except queue.Empty:

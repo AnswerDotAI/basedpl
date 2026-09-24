@@ -6,14 +6,14 @@ pub(crate) struct Settings { pub enabled: bool, pub trees: bool, pub functions: 
 
 impl Settings {
     pub fn interactive() -> Self { Self { enabled: true, trees: true, functions: true } }
-    pub fn configure(&mut self, args: &str) -> Result<String, &'static str> {
+    pub fn configure(&mut self, args: &str, defaults: Self) -> Result<String, &'static str> {
         let mut next = *self;
         for arg in args.split_whitespace() {
             match arg.to_ascii_lowercase().as_str() {
                 "on" => next.enabled = true,
                 "off" => next.enabled = false,
                 "?" => (),
-                "reset" => next = Self::interactive(),
+                "reset" => next = defaults,
                 "-style=max" => (),
                 "-trains=tree" => next.trees = true,
                 "-trains=def" => next.trees = false,
@@ -136,3 +136,27 @@ impl Tree {
         out.join("\n")
     }
 }
+
+/// Convert a keyed vector from MIME types to text into the bundle sent to frontends.
+pub(crate) fn bundle(value: &Value) -> Result<crate::MimeBundle, crate::ErrorKind> {
+    crate::keyed::pairs(value)?
+        .into_iter()
+        .map(|(name, value)| match crate::keyed::name(&value) {
+            Some(text) if name.contains('/') && !name.contains(char::is_whitespace) => Ok((name.to_string(), text.to_string())),
+            _ => Err(crate::ErrorKind::Domain),
+        })
+        .collect()
+}
+
+/// `record` with a `_mime_` field holding the native renderer `render`.
+pub(crate) fn with_renderer(
+    record: &Value,
+    name: &'static str,
+    render: fn(Option<&Value>, &Value, &crate::execution::Context<'_>) -> Result<Value, crate::Error>,
+) -> Result<Value, crate::ErrorKind> {
+    let renderer = Value::Function(crate::Function::system(crate::system::SystemFunction { name, call: crate::system::Call::Value(render) }));
+    crate::keyed::merge(record, &crate::keyed::vector(vec!["_mime_".into()], vec![renderer])?)
+}
+
+/// A MIME bundle holding SVG text.
+pub(crate) fn svg(text: Value) -> Result<Value, crate::ErrorKind> { crate::keyed::vector(vec!["image/svg+xml".into()], vec![text]) }

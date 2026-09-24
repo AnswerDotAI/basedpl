@@ -1,6 +1,27 @@
 website:
   sidebar:
     contents:
-      - kernel-check.ipynb
-      - nbdev.yml
-      - sidebar.yml
+      - getting-started.ipynb
+      - python.ipynb
+      - notebooks.ipynb
+      - repl.qmd
+      - keyboard.qmd
+      - cli.qmd
+      - section: Language
+        contents:
+          - glyphs.qmd
+          - rules.qmd
+          - keyed.qmd
+      - section: Working with data
+        contents:
+          - data.ipynb
+          - regex.ipynb
+          - distributions.ipynb
+          - xml.ipynb
+          - plot.ipynb
+      - section: Tooling
+        contents:
+          - introspection.ipynb
+          - processes.qmd
+          - dyalog.ipynb
+          - j.ipynb

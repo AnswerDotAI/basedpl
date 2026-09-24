@@ -1,0 +1,14 @@
+# `≡` — Depth / Match
+
+`≡Y` gives nesting depth. Uneven nesting gives negative depth.
+
+```apl
+≡1 2 3             ⍝ 1ₓ
+```
+
+`X≡Y` tests equal shape and corresponding contents, using tolerant numeric equality. Returns one Boolean; [`=`](equal.qmd) pervades.
+
+```apl
+1 2≡1 2            ⍝ 1ₓ
+1≡,1               ⍝ 0ₓ
+```

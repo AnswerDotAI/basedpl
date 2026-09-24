@@ -135,12 +135,13 @@ fn error(e: &Error) -> JsonValue {
 }
 
 pub(crate) fn response(mut result: Evaluation) -> JsonValue {
+    result.value = result.value.as_ref().map(crate::json::exportable);
     if result.function.is_some() || result.value.as_ref().is_some_and(Value::has_functions) {
         let span = crate::Span { source: crate::Source::new("<json>", ""), range: 0..0 };
         result.value = None;
         if result.error.is_none() { result.error = Some(span.error(crate::ErrorKind::Domain, "functions cannot be exported through JSON")); }
     }
-    json!({"value": result.value.as_ref().map(array), "output": result.output, "error": result.error.as_ref().map(error)})
+    json!({"value": result.value.as_ref().map(array), "output": result.output.iter().map(crate::Output::json).collect::<Vec<_>>(), "error": result.error.as_ref().map(error)})
 }
 
 pub(crate) fn run(input: &mut impl BufRead, output: &mut impl Write) -> io::Result<()> {

@@ -194,7 +194,7 @@ impl Number {
 
     pub(crate) fn unit(&self, n: i32) -> Self { if self.is_exact() { Self(Integer(n as i64)) } else { Self(Float(n as f64)) } }
 
-    fn to_float(&self) -> Result<f64, &'static str> {
+    pub(crate) fn to_float(&self) -> Result<f64, &'static str> {
         let n = match &self.0 {
             Float(n) => return Ok(*n),
             Integer(n) => *n as f64,

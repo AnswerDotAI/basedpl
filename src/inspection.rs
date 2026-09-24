@@ -21,21 +21,15 @@ impl Inspection {
     }
     pub fn text(&self, detail: bool) -> String { format!("{}\n\n{}", self.kind, self.markdown(detail)) }
     pub fn markdown(&self, detail: bool) -> String {
-        if detail { format!("```apl\n{}\n```", self.source) } else if self.kind == "function" { format!("Calls: `f Y` or `X f Y`\n\n{}", self.help) } else { self.help.clone() }
+        if detail { format!("```apl\n{}\n```", self.source) } else if self.kind == "function" && documentation(&self.source).is_none() { format!("Calls: `f Y` or `X f Y`\n\n{}", self.help) } else { self.help.clone() }
     }
 }
 
+/// Help for a system name, syntax token or glyph.
 pub(crate) fn documentation(symbol: &str) -> Option<&'static str> {
-    let page = match symbol.to_lowercase().as_str() {
-        "•nc" | "•nl" | "•src" | "•ex" => "introspection",
-        "•csv" | "•json" | "•vfi" | "•nget" | "•nput" => "data",
-        "•c" => "case",
-        "•ucs" => "unicode",
-        "•load" => "load",
-        "•a" => "alphabet",
-        "•d" => "digits",
-        "•r" => "regex",
-        "•signal" | "::" => "error-guard",
+    if let Some(help) = crate::system::help(symbol) { return Some(help); }
+    page(match symbol {
+        "::" => "error-guard",
         "{" | "}" => "braces",
         "[" | "]" => "brackets",
         "(" | ")" => "parentheses",
@@ -43,9 +37,11 @@ pub(crate) fn documentation(symbol: &str) -> Option<&'static str> {
         "." => "dot",
         "'" => "quote",
         _ => crate::symbols::SYMBOLS.iter().find(|row| row.0 == symbol)?.1,
-    };
-    HELP.iter().find(|(name, _)| *name == page).map(|(_, text)| *text)
+    })
 }
+
+/// The glyph page `name` from `nbs/glyphs`.
+pub(crate) fn page(name: &str) -> Option<&'static str> { HELP.iter().find(|(page, _)| *page == name).map(|(_, text)| *text) }
 
 pub(crate) fn item(text: &str) -> Option<NodeKind> {
     let ParseStatus::Complete(parsed) = crate::parse(Source::new("<inspect>", text)) else { return None; };

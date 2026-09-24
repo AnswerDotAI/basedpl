@@ -9,7 +9,7 @@ _names = {g: (m, d) for g, _, m, d, *_ in symbols}
 _infix = {'+': ('+', 20), '-': ('-', 20), '×': ('*', 30), '÷': ('/', 30),
           '=': ('==', 10), '≠': ('!=', 10), '<': ('<', 10), '≤': ('<=', 10), '>': ('>', 10), '≥': ('>=', 10)}
 
-def _apl(f): return f'apl.fn({dumps(repr(f), ensure_ascii=False)})'
+def _apl(f): return f'fn({dumps(repr(f), ensure_ascii=False)})'
 
 def _atom(o):
     if isinstance(o, tuple): return repr(Fraction(*o))

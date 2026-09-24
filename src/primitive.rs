@@ -126,6 +126,12 @@ pub(crate) enum Primitive {
 pub(crate) fn numeric<'a>(e: &'a Value, span: &Span) -> Result<&'a Number, Error> {
     match e { Value::Number(n) => Ok(n), _ => Err(span.error(ErrorKind::Domain, "expected numeric elements")) }
 }
+/// A real number as `f64`. Complex values give DOMAIN.
+pub(crate) fn real(value: &Value, span: &Span) -> Result<f64, Error> {
+    let n = numeric(value, span)?.to_complex().map_err(|e| span.error(ErrorKind::Domain, e))?;
+    if n.im != 0.0 { return Err(span.error(ErrorKind::Domain, "expected real numbers")); }
+    Ok(n.re)
+}
 fn float(n: f64) -> Value { Value::Number(Number::try_from(n).expect("finite generated number")) }
 pub(crate) fn integer(n: i64) -> Value { Value::Number(Number::from_integer(n)) }
 fn generated(n: usize, exact: bool) -> Value {
@@ -134,51 +140,91 @@ fn generated(n: usize, exact: bool) -> Value {
 }
 fn selected(a: &Value, i: usize) -> Value { a.at(if a.is_singleton() { 0 } else { i }) }
 
-fn windows(sizes: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if sizes.shape().len() > 1 || sizes.len() > right.shape().len() {
-        return Err(span.error(ErrorKind::Rank, "window sizes must be a scalar or vector within the argument rank"));
+/// One leading axis of a window specification, shared by `↕` and `⌺`. Padded windows centre on every `step`th position and extend past the edges.
+pub(crate) struct WindowAxis { pub size: usize, pub step: usize, pub padded: bool }
+impl WindowAxis {
+    /// Whether an axis of length `len` can hold this window: padded sizes must be less than twice the length.
+    pub(crate) fn fits(&self, len: usize) -> bool { !self.padded || self.size / 2 < len }
+    /// Number of windows along an axis of length `len` that `fits`.
+    pub(crate) fn count(&self, len: usize) -> usize {
+        if self.padded { (len - usize::from(self.size % 2 == 0)).div_ceil(self.step) } else if len < self.size { 0 } else { (len - self.size) / self.step + 1 }
     }
-    if sizes.is_empty() { return Ok(right.clone()); }
-    let sizes = sizes
+    /// Axis offset of window `i`'s first element; negative when padding precedes the edge.
+    pub(crate) fn start(&self, i: usize) -> isize { (i * self.step) as isize - if self.padded { ((self.size - 1) / 2) as isize } else { 0 } }
+    /// The range every window covers identically, which keeps its keys: all of an empty window, or the only window when it needs no padding.
+    fn shared(&self, len: usize) -> Option<std::ops::Range<usize>> {
+        if self.size == 0 { return Some(0..0); }
+        let start = usize::try_from(self.start(0)).ok()?;
+        (self.count(len) == 1 && start + self.size <= len).then_some(start..start + self.size)
+    }
+}
+
+/// Appends the window with cell shape `cell` whose leading axes start at `starts`, filling positions outside `right` with its prototype.
+pub(crate) fn push_window(right: &Value, cell: &[usize], starts: &[isize], data: &mut Vec<Value>) {
+    let shape = right.shape();
+    for mut flat in 0..cell.iter().product() {
+        let (mut offset, mut stride, mut inside) = (0, 1, true);
+        for a in (0..cell.len()).rev() {
+            let coordinate = (flat % cell[a]) as isize + starts.get(a).copied().unwrap_or(0);
+            flat /= cell[a];
+            if coordinate < 0 || coordinate >= shape[a] as isize { inside = false; }
+            else { offset += coordinate as usize * stride; }
+            stride *= shape[a];
+        }
+        data.push(if inside { right.at(offset) } else { right.prototype().clone() });
+    }
+}
+
+fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let rows = spec.shape().len();
+    let count = if rows == 2 { spec.shape()[1] } else { spec.len() };
+    if rows > 2 || count > right.shape().len() {
+        return Err(span.error(ErrorKind::Rank, "window sizes must be a scalar, vector or two-row matrix within the argument rank"));
+    }
+    if rows == 2 && spec.shape()[0] != 2 { return Err(span.error(ErrorKind::Length, "window matrix needs two rows")); }
+    if count == 0 { return Ok(right.clone()); }
+    let spec = spec
         .elements()
-        .map(|e| numeric(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "window sizes must be nonnegative integers")))
+        .map(|e| numeric(&e, span)?.integer().map_err(|k| span.error(k, "window sizes and movements must be integers")))
         .collect::<Result<Vec<_>, _>>()?;
-    let frame = sizes
+    let (sizes, steps) = spec.split_at(count);
+    let axes = sizes
         .iter()
-        .zip(right.shape())
-        .map(|(&w, &n)| n.checked_add(1).map(|n| n.saturating_sub(w)).ok_or_else(|| span.error(ErrorKind::Limit, "window frame is too large")))
+        .enumerate()
+        .map(|(a, &size)| {
+            let step = match steps.get(a) {
+                None => 1,
+                Some(&m) if m > 0 => m as usize,
+                Some(_) => return Err(span.error(ErrorKind::Domain, "window movements must be positive")),
+            };
+            let axis = WindowAxis { size: size.unsigned_abs(), step, padded: size < 0 };
+            if axis.fits(right.shape()[a]) { Ok(axis) } else { Err(span.error(ErrorKind::Domain, "padded window is too large for the argument")) }
+        })
         .collect::<Result<Vec<_>, _>>()?;
-    let cell = [&sizes, &right.shape()[sizes.len()..]].concat();
+    let frame: Vec<_> = axes.iter().zip(right.shape()).map(|(w, &n)| w.count(n)).collect();
+    let cell: Vec<_> = axes.iter().map(|w| w.size).chain(right.shape()[count..].iter().copied()).collect();
     let shape = [frame.as_slice(), cell.as_slice()].concat();
     let len = generated_len(&shape).map_err(|k| span.error(k, "windows exceed array limits"))?;
     let width = generated_len(&cell).map_err(|k| span.error(k, "window is too large"))?;
     let mut data = Vec::with_capacity(len);
     for i in 0..if width == 0 { 0 } else { len / width } {
         span.check()?;
-        let (mut rest, mut starts) = (i, vec![0; frame.len()]);
-        for a in (0..frame.len()).rev() {
-            starts[a] = rest % frame[a];
+        let (mut rest, mut starts) = (i, vec![0; count]);
+        for a in (0..count).rev() {
+            starts[a] = axes[a].start(rest % frame[a]);
             rest /= frame[a];
         }
-        for mut j in 0..width {
-            let (mut offset, mut stride) = (0, 1);
-            for a in (0..cell.len()).rev() {
-                offset += (j % cell[a] + starts.get(a).copied().unwrap_or(0)) * stride;
-                j /= cell[a];
-                stride *= right.shape()[a];
-            }
-            data.push(right.at(offset));
-        }
+        push_window(right, &cell, &starts, &mut data);
     }
-    let mut keys = vec![None; frame.len()];
-    for (axis, &len) in cell.iter().enumerate() {
-        let k = match (right.keys(axis), frame.get(axis)) {
-            (Some(k), Some(&n)) if n == 1 || len == 0 => Some(k.select(0..len).map_err(|k| span.error(k, "invalid window keys"))?),
-            (_, Some(_)) => None,
-            (k, None) => k.cloned(),
-        };
-        keys.push(k);
-    }
+    let frame_keys = axes.iter().enumerate().map(|(a, w)| match right.keys(a) {
+        Some(k) if w.padded => k.select((0..frame[a]).map(|i| i * w.step)).map(Some),
+        _ => Ok(None),
+    });
+    let cell_keys = (0..cell.len()).map(|a| match axes.get(a) {
+        None => Ok(right.keys(a).cloned()),
+        Some(w) => right.keys(a).zip(w.shared(right.shape()[a])).map(|(k, r)| k.select(r)).transpose(),
+    });
+    let keys = frame_keys.chain(cell_keys).collect::<Result<Vec<_>, _>>().map_err(|k| span.error(k, "invalid window keys"))?;
     let names = (0..frame.len()).chain(0..cell.len()).map(|a| right.axis_name(a).cloned()).collect();
     Layout::from(shape)
         .with_keys(keys)
