@@ -46,7 +46,7 @@ def _value(raw, as_array=False):
 
 def _dataframe(raw):
     try: import pandas as pd
-    except ImportError: raise ImportError('DataFrame conversion requires pandas: pip install "basedpl[pandas]"') from None
+    except ImportError: raise ImportError('DataFrame conversion requires pandas: pip install pandas') from None
     data = _value(raw, as_array=True)
     shape = data.shape
     keys = raw.get('axis_keys', [None] * len(shape))

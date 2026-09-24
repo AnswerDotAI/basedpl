@@ -2,7 +2,7 @@
 
 `basedpl.j` runs the [J language](https://www.jsoftware.com/) inside the Python process. It loads libj, the engine library in every J installation, so no separate J process runs. The module provides the `J` session class, the `%%j` and `%j` magics, and a Jupyter kernel for J. Importing it does not start J.
 
-Install J with `pip install jlanguage`, or from [jsoftware.com](https://www.jsoftware.com/). The Python layer needs `pip install 'basedpl[notebooks]'`.
+Install J with `pip install jlanguage`, or from [jsoftware.com](https://www.jsoftware.com/). The Python layer also needs IPython.
 
 Docs: https://answerdotai.github.io/basedpl/j.html.md"""
 

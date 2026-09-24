@@ -53,7 +53,7 @@ cd _proc
 quarto preview
 ```
 
-Install documentation tools with `pip install -e '.[docs,notebooks,pandas]'`. Rendering uses saved outputs. `bapl-nb --save` updates output only; execution counts are unchanged. The Rust documentation tests run APL examples in `.qmd` files; pytest runs their Python examples. Use `nbdev-test` for Python notebook examples. Edit the homepage in `nbs/index.ipynb`, then regenerate the README.
+Install development and documentation tools with `pip install -e '.[dev]'`. Rendering uses saved outputs. `bapl-nb --save` updates output only; execution counts are unchanged. The Rust documentation tests run APL examples in `.qmd` files; pytest runs their Python examples. Use `nbdev-test` for Python notebook examples. Edit the homepage in `nbs/index.ipynb`, then regenerate the README.
 
 ## Structure
 

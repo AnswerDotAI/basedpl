@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "bAsedPL is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation."
 license = "Apache-2.0"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["fastcore"]
 readme = "README.md"
 authors = [{name = "Jeremy Howard", email = "github@jhoward.fastmail.fm"}]
 classifiers = [
@@ -17,10 +17,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-pandas = ["pandas"]
-notebooks = ["fastcore", "ipython>=9.17.1"]
-docs = ["nbdev>=3.3.22", "jlanguage"]
-dev = ["fastship>=0.0.11", "maturin>=1.0,<2.0", "pytest", "numpy", "pandas", "fastcore", "conkernelclient>=0.0.23", "jlanguage"]
+dev = ["fastship>=0.0.11", "maturin>=1.0,<2.0", "pytest", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.21", "conkernelclient>=0.0.23", "jlanguage"]
 
 [project.scripts]
 bapl = "basedpl._cli:main"

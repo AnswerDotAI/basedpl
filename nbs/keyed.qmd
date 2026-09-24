@@ -464,7 +464,7 @@ assert columns_only.axis_keys == (None, tuple(cols))
 assert columns_only.axis_names == (None, 'month')
 ```
 
-`.df` converts to pandas. For a matrix, keys label rows/columns and axis names name the index/columns. `.py` uses this conversion for keyed arrays of rank ≥2. Install pandas with `pip install 'basedpl[pandas]'`; it is imported on conversion.
+`.df` converts to pandas. For a matrix, keys label rows/columns and axis names name the index/columns. `.py` uses this conversion for keyed arrays of rank ≥2. Install pandas with `pip install pandas`; it is imported on conversion.
 
 ```python
 df = sales.df
