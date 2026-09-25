@@ -17,7 +17,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["fastship>=0.0.11", "maturin>=1.0,<2.0", "pytest", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.23", "conkernelclient>=0.0.23", "jlanguage"]
+dev = ["fastship>=0.0.11", "maturin>=1.0,<2.0", "pytest", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "jlanguage"]
 
 [project.scripts]
 bapl = "basedpl._cli:main"
