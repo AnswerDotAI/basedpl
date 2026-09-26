@@ -4,7 +4,7 @@ The `.apl` files are the executable language tests. `core.apl` holds bAsedPL's o
 
 Source entries are not necessarily executable tests. Many APLcart recipes have unbound arguments and no expected result. They need concrete examples. Library cases need their definitions and setup. Use the scanner below for current counts and failures; fixture reasons describe their last review, not necessarily today's implementation. Progress notes belong in `meta/`, not this README.
 
-Active cases use bAsedPL spellings: `π` for APL's monadic `○`, `g⌝` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, `⍢` for `∇∇`, `•name` for system names, `"…"` for multi-character strings written `'…'`, `I⌷Y` for bracket indexing `Y[I]`, and `f⍤[A]` for bracket axes `f[A]`. Original inventory sources retain their dialect's notation.
+Active cases use bAsedPL spellings: `π` for APL's monadic `○`, `g⌝` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, `⍢` for `∇∇`, `•name` for system names, `"…"` for multi-character strings written `'…'`, `Y[I]` for first-axis bracket indexing, `[I;J]⌷Y` for indexing several axes, and `f⍠A` for bracket axes `f[A]`. They follow the spacing rules in `meta/spacing.md`: lists that aren't literal runs use brackets, spaces separate units, and `⊸` and `⟜` replace `∘` and `⍛`. Positions and axes count from 0, so the positions in upstream code and in expectations captured with `⎕IO←1` are converted. Original inventory sources retain their dialect's notation.
 
 Run the active cases with:
 
@@ -164,7 +164,7 @@ For each new glyph, read its documented valences and select examples that establ
 
 Dyalog's two fixed-order float reduction examples are retained as explicit exclusions. bAsedPL permits reassociation of primitive float sums/products. Generic-function reduction and primitive scan order remain tested; do not replace excluded expectations with one compiler's chosen answer.
 
-ngn uses origin 0 and has different prototype/dialect rules. Its original expressions and expectations are retained. Adapt index/axis operands to origin 1 and capture values and prototypes independently in Dyalog. Changed code is retained in `original_code`; changed origin is recorded in `original_origin`. Unadapted `origin: 0` describes upstream, not bAsedPL's execution settings. Closed literal right-hand expectations were evaluated independently in Dyalog, not with bAsedPL.
+ngn uses origin 0 and has different prototype/dialect rules. Its original expressions and expectations are retained. bAsedPL also counts from 0, so index and axis operands can keep ngn's origin. Inventory records from bAsedPL's 1-origin period keep their adapted code, with the upstream code in `original_code` and the changed origin in `original_origin`. Closed literal right-hand expectations were evaluated independently in Dyalog, not with bAsedPL.
 
 April's literal Common Lisp expectations were converted to structured values. Ordinary rational expectations represent approximate results under bAsedPL's numeric policy, not opt-in exact `r` literals. The power alias `⋆` is written as standard `*` outside quoted text. Printed-format expectations, host wrappers, and library dependencies remain visible for review.
 

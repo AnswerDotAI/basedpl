@@ -23,9 +23,9 @@ Hold **Alt** for the middle column, **Alt-Shift** for the right. Keys refer to a
 | w | `⍵` | `⍹` |
 | e | `∊` | `⍷` |
 | r | `⍴` | `ℙ` |
-| t | `˘` | `⍨` |
+| t | `⟜` | `⍨` |
 | y | `◶` | |
-| u | `∘` | `↕` |
+| u | `⊸` | `↕` |
 | i | `⍳` | `⍸` |
 | o | `○` | |
 | p | `π` | `⍣` |
@@ -35,7 +35,7 @@ Hold **Alt** for the middle column, **Alt-Shift** for the right. Keys refer to a
 | a | `⍺` | `⍶` |
 | s | `⌈` | |
 | d | `⌊` | |
-| f | `∂` | `⍛` |
+| f | `∂` | |
 | g | `∇` | `⍢` |
 | h | `←` | `∆` |
 | j | `↓` | `⍤` |

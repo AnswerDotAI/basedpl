@@ -7,7 +7,7 @@
 `-e` evaluates one expression. Quote it to protect spaces and glyphs from the shell.
 
 ```bash
-bapl -e '+/⍳10'       # 55
+bapl -e '+/⍳10'       # 45
 ```
 
 Pass a UTF-8 APL file to run it as one source. Names persist throughout the file.

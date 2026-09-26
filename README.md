@@ -8,11 +8,12 @@ bAsedPL (“Based-array APL”) is an APL-derived array language, borrowing idea
 For APL users, the main choices are:
 
 - [Based arrays](rules.qmd#arrays-nesting-and-fill), as in BQN: numbers, characters and functions are atoms; enclosure always adds a layer.
+- **Brackets write lists**, and spaces group: `[a b c]` is a vector, and `a+b × c+d` is `(a+b)×(c+d)`. An array next to an argument selects from it: `v 0` is the first item.
 - **Leading-axis broadcasting**, including unit-axis expansion, plus string keys and names on axes.
 - **Exact integers and rationals** alongside approximate real and complex numbers.
 - Dfns, trains and operators, with additions such as Under, iteration histories, windows and function arrays.
 
-Indices start at 1; approximate comparisons use tolerance `1E¯14`. See the [glyph reference](glyphs.qmd) for Dyalog differences and the [language rules](rules.qmd) for the array model.
+Positions and axes count from 0, as in BQN and Python. Approximate comparisons use tolerance `1E¯14`. See the [glyph reference](glyphs.qmd) for Dyalog differences and the [language rules](rules.qmd) for the array model.
 
 ## Install and try it
 
@@ -42,7 +43,7 @@ In **Jupyter**, select the installed **bAsedPL** kernel. Cells share definitions
 
 APL is a language built around operations on whole arrays and notation for combining functions. Here is a taste of that style in bAsedPL.
 
-Spaces form a vector. Arithmetic applies to every element:
+Numbers separated by spaces form a vector. Arithmetic applies to every element:
 
 ``` apl
 10+1 2 3
@@ -50,13 +51,13 @@ Spaces form a vector. Arithmetic applies to every element:
 
     11 12 13
 
-Operators modify or combine functions. Reduce (`/`) turns addition into summation; `⍳10` generates 1…10:
+Operators modify or combine functions. Reduce (`/`) turns addition into summation. `⍳10` generates 0…9:
 
 ``` apl
 +/⍳10
 ```
 
-    55
+    45
 
 Functions can also be combined without naming their arguments. In `avg←+/÷≢`, sum (`+/`) divided by tally (`≢`) defines the mean:
 
@@ -66,13 +67,13 @@ avg 1 2 3 4
 
     2.5
 
-To see how these ideas express an algorithm, start from “a prime has exactly two positive divisors”. Form all remainders (`|⌝⍨`), count the zeros down each column (`+⌿0=`), and find the positions (`⍸`) whose count is two:
+To see how these ideas express an algorithm, start from “a prime has exactly two positive divisors”. Form all remainders of 1 to 50 (`|⌝⍨1+⍳50`), count the zeros down each column (`+⌿0=`), and find the positions (`⍸`) whose count is two. Positions count from 0, so `1+` turns them back into numbers:
 
 ``` apl
-⍸2=+⌿0=|⌝⍨⍳50
+1+⍸2=+⌿0=|⌝⍨1+⍳50
 ```
 
-    2ₓ 3ₓ 5ₓ 7ₓ 11ₓ 13ₓ 17ₓ 19ₓ 23ₓ 29ₓ 31ₓ 37ₓ 41ₓ 43ₓ 47ₓ
+    2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
 
 [Getting started](getting-started.ipynb#example-algorithms) builds this expression step by step, displaying the divisibility matrix along the way.
 
@@ -117,24 +118,24 @@ See [array notation](glyphs/brackets.qmd) and [broadcasting](rules.qmd#agreement
 Axes can have names, and positions along them can have string keys. Describe the axes once, then select by key or reduce by axis name:
 
 ``` apl
-axes←("city":"NY" "LA" ⋄ "month":"Jan" "Feb" "Mar")
+axes←["city":["NY" "LA"] "month":["Jan" "Feb" "Mar"]]
 sales←axes:[10 20 30 ⋄ 40 50 60]
 "LA" "Feb"⌷sales
-+/⍤["month"]sales
++/⍠"month" sales
 ```
 
     50
 
-    ("NY":60 ⋄ "LA":150)
+    ["city":2]⍴["NY":60 "LA":150]
 
 Keys and names travel with axes through operations such as transpose. Arithmetic aligns matching names and keys. See [Axis keys](keyed.qmd).
 
 ### Function operators
 
-Enclose an iteration count to keep the history, including the initial value. Here, double four times:
+A list of counts keeps the history: one state for each count, where count 0 is the initial value. Here, double up to four times:
 
 ``` apl
-2∘×⍣[4]1
+2×⍣(⍳5) 1
 ```
 
     1 2 4 8 16
@@ -142,7 +143,7 @@ Enclose an iteration count to keep the history, including the initial value. Her
 Under (`⌾`) transforms the argument, applies a function, then reverses the transformation. Scale by ten, floor, and scale back to round down to tenths:
 
 ``` apl
-⌊⌾(10∘×)⊢1.25 2.78
+⌊⌾(10×)1.25 2.78
 ```
 
     1.2 2.7
@@ -162,7 +163,7 @@ Explore [iteration and inverses](glyphs/power.qmd), [Under](glyphs/under.qmd), [
 [Polynomials](glyphs/polynomial.qmd) support coefficients, roots and evaluation. Polynomial functions can be [differentiated](glyphs/derivative.qmd): for f(x) = 1 + 2x + 3x², f′(2) = 14.
 
 ``` apl
-f←1x 2x 3x∘⊛ ⋄ f∂2x
+f←1x 2x 3x⊛ ⋄ f∂2x
 ```
 
     14ₓ
@@ -196,7 +197,7 @@ CSV headers likewise name column vectors. [Files, CSV and JSON](data.ipynb) cove
 `•plot` draws charts from arrays. Keys label the axes and name the lines. See [Plots](plot.ipynb).
 
 ``` apl
-("legend":"end") •plot sales
+["legend":"end"]•plot sales
 ```
 
 ![](index_files/figure-commonmark/cell-17-output-1.svg)
@@ -206,9 +207,9 @@ Build SVG from element functions and keyed attributes. Notebooks display the pic
 ``` apl
 circle←•element "circle"
 text←•element "text"
-c←("cx":50 ⋄ "cy":40 ⋄ "r":25 ⋄ "fill":"orange") circle ""
-t←("x":50 ⋄ "y":85 ⋄ "text-anchor":"middle") text "Hello, SVG"
-("width":240 ⋄ "height":240) •svg (c ⋄ t)
+c←["cx":50 "cy":40 "r":25 "fill":"orange"]circle ""
+t←["x":50 "y":85 "text-anchor":"middle"]text "Hello, SVG"
+["width":240 "height":240]•svg [c t]
 ```
 
 ![](index_files/figure-commonmark/cell-18-output-1.svg)

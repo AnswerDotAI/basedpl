@@ -2,7 +2,7 @@
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
 check←{(1 256≡2↑chk ⍵)∧(⍳256)≡↑¨vec ⍵}
-tt←0 put foldl 256?256 ⋄ revt←{↑⌽⍵ get ⍺}
+tt←0 put foldl 256?256 ⋄ revt←{↑⌽ ⍵ get ⍺}
 tt←tt revt foldl 256?256
 check tt
 ⍝ =>
@@ -12,10 +12,10 @@ check tt
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
 check←{(1 256≡2↑chk ⍵)∧(⍳256)≡↑¨vec ⍵}
-tt←0 put foldl 256?256 ⋄ revt←{↑⌽⍵ get ⍺}
+tt←0 put foldl 256?256 ⋄ revt←{↑⌽ ⍵ get ⍺}
 tt←tt revt foldl 256?256
-keys←16?256 ⋄ d←keys dep¨⊂tt
-(check tt)∧(∧/d≥1)∧(∧/d≤256)∧keys≡↑¨keys get¨⊂tt
+keys←16?256 ⋄ d←keys dep¨ ⊂tt
+(check tt)∧(∧/d≥1)∧(∧/d≤256)∧keys≡↑¨ keys get¨ ⊂tt
 ⍝ =>
 1
 
@@ -23,10 +23,10 @@ keys←16?256 ⋄ d←keys dep¨⊂tt
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
 check←{(1 256≡2↑chk ⍵)∧(⍳256)≡↑¨vec ⍵}
-tt←0 put foldl 256?256 ⋄ revt←{↑⌽⍵ get ⍺}
+tt←0 put foldl 256?256 ⋄ revt←{↑⌽ ⍵ get ⍺}
 tt←tt revt foldl 256?256
-keys←16?256 ⋄ tt←tt revt foldl 16/keys ⋄ d←keys dep¨⊂tt
-(check tt)∧(∧/d≥1)∧(∧/d≤256)∧keys≡↑¨keys get¨⊂tt
+keys←16?256 ⋄ tt←tt revt foldl 16/keys ⋄ d←keys dep¨ ⊂tt
+(check tt)∧(∧/d≥1)∧(∧/d≤256)∧keys≡↑¨ keys get¨ ⊂tt
 ⍝ =>
 1
 
@@ -34,7 +34,7 @@ keys←16?256 ⋄ tt←tt revt foldl 16/keys ⋄ d←keys dep¨⊂tt
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
 check←{(1 256≡2↑chk ⍵)∧(⍳256)≡↑¨vec ⍵}
-tt←0 put foldl 256?256 ⋄ revt←{↑⌽⍵ get ⍺}
+tt←0 put foldl 256?256 ⋄ revt←{↑⌽ ⍵ get ⍺}
 tt←tt revt foldl 256?256
 keys←16?256 ⋄ tt←tt revt foldl 16/keys
 check tt
@@ -45,7 +45,7 @@ check tt
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
 check←{(1 256≡2↑chk ⍵)∧(⍳256)≡↑¨vec ⍵}
-tt←0 put foldl 256?256 ⋄ revt←{↑⌽⍵ get ⍺}
+tt←0 put foldl 256?256 ⋄ revt←{↑⌽ ⍵ get ⍺}
 tt←tt revt foldl 256?256
 keys←16?256 ⋄ tt←tt revt foldl 16/keys
 tt rem foldl 256?256

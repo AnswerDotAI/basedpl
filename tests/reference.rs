@@ -135,7 +135,7 @@ fn reference_format_and_comparison() {
         ("0⍴⊂1 2", "0⍴⊂1", "mismatch"),
         (r#""aa":1"#, r#""bb":1"#, "mismatch"),
         (r#""aa":1"#, ",1", "mismatch"),
-        (r#"("row":1)⍴1"#, r#"("col":1)⍴1"#, "mismatch"),
+        (r#"["row":1]⍴1"#, r#"["col":1]⍴1"#, "mismatch"),
         ("3", "÷0", "invalid"),
     ] {
         let case = json!({"code":code, "expected_code":expect});

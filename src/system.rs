@@ -84,17 +84,17 @@ Errors: DOMAIN for nonintegral rationals, complex numbers, functions or nested c
 
 const JSON: &str = r#"`•json text` parses JSON. Objects become keyed vectors. Arrays become vectors. Strings become character vectors. Integers stay exact. `true` and `false` become `1x` and `0x`.
 
-`("fill":v) •json text` replaces `null` with `v`. The default is `∞`.
+`["fill":v] •json text` replaces `null` with `v`. The default is `∞`.
 
 Errors: DOMAIN for malformed JSON, with its line and column."#;
 
 const TOJSON: &str = r#"`•tojson Y` returns JSON text. Keyed axes become objects. Unkeyed axes become arrays. Character vectors become strings. Keyed entries that hold functions, such as `_mime_` renderers, are left out.
 
-`("fill":v) •tojson Y` writes `v` as `null`.
+`["fill":v] •tojson Y` writes `v` as `null`.
 
 Errors: DOMAIN for infinity without `fill`, out-of-range floats, nonintegral rationals, complex numbers and other functions."#;
 
-const VFI: &str = r"`•vfi text` returns `(valid ⋄ numbers)` for the whitespace-separated fields of `text`. An invalid field has flag `0x` and value `0`. Fields are parsed as numbers, never executed.
+const VFI: &str = r"`•vfi text` returns `[valid numbers]` for the whitespace-separated fields of `text`. An invalid field has flag `0x` and value `0`. Fields are parsed as numbers, never executed.
 
 `separators •vfi text` splits on each character in `separators` instead. It trims whitespace around fields. An empty field is a valid `0`.
 
@@ -112,7 +112,7 @@ const NPUT: &str = r#"`path •nput data` writes `data` to a new UTF-8 file. It 
 
 Errors: VALUE for an existing file without `overwrite`, and for other file errors; DOMAIN for invalid options or byte values, or `binary` with `encoding`; RANK for data that is not a vector."#;
 
-const ELEMENT: &str = r#"`•element tag` returns an element function for XML tag `tag`. Call it with attributes on the left and children on the right, as in `("r":10) circle ""`. An empty right argument, `""` or `⍬`, gives no children. It returns a keyed vector with `tag`, `attrs` and `children` entries.
+const ELEMENT: &str = r#"`•element tag` returns an element function for XML tag `tag`. Call it with attributes on the left and children on the right, as in `["r":10] circle ""`. An empty right argument, `""` or `⍬`, gives no children. It returns a keyed vector with `tag`, `attrs` and `children` entries.
 
 Errors: DOMAIN for invalid tag or attribute names."#;
 
@@ -151,7 +151,7 @@ The structure of `Y` chooses the series and axes:
 
 `•mime` reports these errors: DOMAIN for unknown settings or values; LENGTH when series, sizes or labels don't match the x values; RANK for data that isn't a vector, matrix or table."#;
 
-const REGEX: &str = r"`•r pattern` compiles a Rust regex. It returns a keyed vector of functions that share the pattern: `match`, `position`, `length`, `groups` and `replace`. Positions are 1-origin character indices.
+const REGEX: &str = r"`•r pattern` compiles a Rust regex. It returns a keyed vector of functions that share the pattern: `match`, `position`, `length`, `groups` and `replace`. Positions count characters from 0.
 
 `template p.replace text` expands `$0`, `$1`, `${name}` and `$$` in `template`. Flags go in the pattern, as in `(?i)`.
 

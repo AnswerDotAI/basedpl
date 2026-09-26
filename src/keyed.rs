@@ -114,16 +114,16 @@ pub(crate) fn merge(old: &Value, new: &Value) -> Result<Value, ErrorKind> {
     vector(names, values)
 }
 
-/// A 1-origin position, as the selector of a position with no name.
-fn position(i: usize) -> Value { Value::Number(crate::Number::from_integer(i as i64 + 1)) }
+/// A position, as the selector of a position with no name.
+fn position(i: usize) -> Value { Value::Number(crate::Number::from_integer(i as i64)) }
 
-/// Names for positions: one name, or a vector of names in which a position with no name gives its own 1-origin position.
+/// Names for positions: one name, or a vector of names in which a position with no name gives its own position.
 fn names(value: &Value) -> Result<Vec<Option<Arc<str>>>, ErrorKind> {
     if let Some(k) = name(value) { return Ok(vec![Some(k)]); }
     if value.is_atom() || value.shape().len() > 1 { return Err(ErrorKind::Domain); }
     let entry = |(i, v): (usize, Value)| match name(&v) {
         Some(k) => Ok(Some(k)),
-        None if v.as_number().is_some_and(|n| n.nonnegative_integer() == Ok(i + 1)) => Ok(None),
+        None if v.as_number().is_some_and(|n| n.nonnegative_integer() == Ok(i)) => Ok(None),
         None => Err(ErrorKind::Domain),
     };
     value.elements().enumerate().map(entry).collect()
@@ -172,7 +172,7 @@ pub(crate) fn selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKin
                 k.names().iter().enumerate().map(|(i, k)| k.as_ref().map_or_else(|| position(i), |k| text(k))).collect(),
                 text(""),
             )?,
-            None => Value::integers(vec![len], (1..=len).map(|n| n as i64).collect())?,
+            None => Value::integers(vec![len], (0..len).map(|n| n as i64).collect())?,
         });
     }
     if values.len() == 1 { Ok(values.pop().unwrap()) } else { Value::from_parts(vec![values.len()], values, Value::integers(vec![0], vec![])?) }

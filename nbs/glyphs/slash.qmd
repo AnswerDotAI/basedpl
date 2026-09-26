@@ -31,20 +31,20 @@ Reduction returns the accumulator. An unseeded one-item reduction returns that i
 +/⊂⊂3             ⍝ ⊂3
 ```
 
-`S f/Y` starts from seed `S` on the right: `S f/a b c` is `a f b f c f S`. Empty reductions return the seed. Each lane uses the whole seed.
+`S f/ Y` starts from seed `S` on the right. With `Y` holding `[a b c]`, it is `a f b f c f S`. Empty reductions return the seed. Each lane uses the whole seed. The seed can share a unit with the reduction, as in `10-/1 2 3`. In `10 -/1 2 3`, the unit `-/1 2 3` is a value, so `10` is applied to it as an array.
 
 ```apl
-10 -/1 2 3         ⍝ ¯8
-10 +/2 3⍴⍳6        ⍝ 16 25
-[10]+/1 2 3        ⍝ ⊂16
-10 20 (+/⍤0 1)2 3⍴⍳6 ⍝ 16 35
+10-/1 2 3          ⍝ ¯8
+10+/2 3⍴⍳6         ⍝ 13 22
+(⊂10)+/1 2 3       ⍝ ⊂16
+10 20(+/⍤0 1)2 3⍴⍳6 ⍝ 13 32
 ```
 
 Nested paths use seeded Pick reduction.
 
 ```apl
-tree←(10 20⋄ 30 (40 50))
-tree⊃/⌽2 2 1       ⍝ 40
+tree←[[10 20] [30 [40 50]]]
+tree⊃/⌽1 1 0       ⍝ 40
 ```
 
 Use [full windows](windows.qmd) for moving reductions.
@@ -55,28 +55,28 @@ Use [full windows](windows.qmd) for moving reductions.
 +/0↕1 2            ⍝ 0 0 0
 ```
 
-`f/⍤[K]` and `N/⍤[K]` select the axis. [`⌿`](slash-bar.qmd) defaults to the first.
+`f/⍠K` and `N/⍠K` select the axis. [`⌿`](slash-bar.qmd) defaults to the first.
 
-Several axes form one reduction cell. `f/⍤[A]Y` ravels each selected cell before reducing, equivalent to `(f/∘,)¨⊂⍤[A]Y`. This is an exception to the general rule in [Rank](rank.qmd). A single axis retains ordinary reduction behavior.
+Several axes form one reduction cell. `f/⍠A Y` ravels each selected cell before reducing, equivalent to `(f/⍤,)¨⊂⍠A Y`. This is an exception to the general rule in [Axis](axis.qmd). A single axis retains ordinary reduction behavior.
 
 ```apl
 n←2 2 3⍴⍳6
-+/⍤[2 3]n           ⍝ 21 21
-+/⍤[1 3]n           ⍝ 12 30
++/⍠1 2 n             ⍝ 15 15
++/⍠0 2 n             ⍝ 6 24
 ```
 
-Axis order determines the ravel order. Unselected axes retain their order and keys. Selecting every axis gives a rank-0 array, as Each does.
+Axis order determines the ravel order. Unselected axes retain their order and keys. Selecting every axis gives the reduced value itself, as a dfn along the same axes does.
 
 ```apl
--/⍤[1 2]2 2⍴⍳4      ⍝ ⊂¯2
--/⍤[2 1]2 2⍴⍳4      ⍝ ⊂¯4
+-/⍠0 1 (2 2⍴⍳4)      ⍝ ¯2
+-/⍠1 0 (2 2⍴⍳4)      ⍝ ¯4
 ```
 
 An empty axis vector makes singleton cells. A seed is passed whole to each cell.
 
 ```apl
-+/⍤[⍬]1 2 3         ⍝ 1 2 3
-10+/⍤[2 3]2 2 3⍴⍳6  ⍝ 31 31
++/⍠⍬ (1 2 3)          ⍝ 1 2 3
+10+/⍠1 2 (2 2 3⍴⍳6)   ⍝ 25 25
 ```
 
 Float sum/product reductions allow reassociation; generic reductions retain operand order.

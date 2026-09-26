@@ -58,6 +58,7 @@ def test_native_and_incremental_export(tmp_path):
     inventory.mkdir()
     rows = Corpus(ROOT/'tests/reference/inventory').get_many(['ngn:177', 'ngn:517', 'ngn:518'], '*')
     rows['ngn:177']['code'] = '1e¯10>|.5-1○π÷6'
+    rows['ngn:518']['code'] = 'n←100⋄A←(n÷2)?n⋄∧/(0≤A),A<n'
     for row in rows.values(): row['status'] = 'pending'
     (inventory/'ngn.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in rows.values()))
     assert add(['ngn:177', 'ngn:517'], tmp_path, inventory) == ['ngn:177', 'ngn:517']

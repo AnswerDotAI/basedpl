@@ -14,7 +14,7 @@ Run `bapl --json`. Send one JSON-encoded APL string per line; each receives one 
 The second response is:
 
 ```json
-{"value":55.0,"output":[{"kind":"display","data":{"text/plain":"55"}}],"error":null}
+{"value":45.0,"output":[{"kind":"display","data":{"text/plain":"45"}}],"error":null}
 ```
 
 `output` contains ordered events: `kind` is `display` or `explicit`, and `data` is a MIME bundle with `text/plain`. SVG display adds `image/svg+xml`. Returned values carry contents and axis labels. Keyed entries that hold functions, such as `_mime_` renderers, are omitted. Other functions in a result give a `DOMAIN` error.
@@ -46,7 +46,7 @@ from basedpl.worker import Worker
 with Worker() as w:
     w.eval('v←⍳10')
     r = w.eval('+/v', timeout=2)
-    assert r['value'] == 55
+    assert r['value'] == 45
 ```
 
 `w.interrupt()` cancels from another thread. Ctrl-C requests cancellation too. Cooperative cancellation preserves the session and completed assignments. After the grace period (default one second), an unresponsive process is killed and its session is lost. Requests are never replayed. `w.diagnostics` holds recent stderr.

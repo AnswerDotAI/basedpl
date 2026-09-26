@@ -3,26 +3,26 @@
 `A@I Y` replaces selected items with `A`, returning a new array.
 
 ```apl
-0@2 4⊢⍳5           ⍝ 1 0 3 0 5
+0@1 3 ⍳5           ⍝ 0 0 2 0 4
 ```
 
 `f@I Y` applies `f` to the selection, then puts it back.
 
 ```apl
-⌽@2 4⊢⍳5           ⍝ 1 4 3 2 5
+⌽@1 3 ⍳5           ⍝ 0 3 2 1 4
 ```
 
 Numeric index arrays select leading-axis cells. Their shape precedes the remaining cell axes, as with [Index](squad.qmd) `⌷`.
 
 ```apl
-v←10 20 30 40 ⋄ i←[1 4 ⋄ 2 3]
-{⍵+[100 200 ⋄ 300 400]}@i⊢v  ⍝ 110 320 430 240
+v←10 20 30 40 ⋄ i←[0 3 ⋄ 1 2]
+{⍵+[100 200 ⋄ 300 400]}@i v   ⍝ 110 320 430 240
 ```
 
 A function right operand computes a Boolean selection mask.
 
 ```apl
-0@(2∘|)⍳5          ⍝ 0 2 0 4 0
+0@(2|) ⍳5          ⍝ 0 0 2 0 4
 ```
 
 Indices include nested paths. Dyadic calls pass the left argument to the replacement function. Repeated indices are written in order; the last replacement wins.

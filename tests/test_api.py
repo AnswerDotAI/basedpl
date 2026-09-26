@@ -20,11 +20,11 @@ def test_builtin_attributes():
         teq(api.add(1+2j).py, 1-2j)
         teq((api.dash(2).py, api.mul(-2).py, api.div(2.).py), (-2, -1, 0.5))
         teq((api.plus(2)(3).py, api.times(2)(3).py, api.divide(2)(3).py), (5, 6, Fraction(3, 2)))
-        teq(api.index_of([4, 2, 7], [7, 4]).py, [3, 1])
+        teq(api.index_of([4, 2, 7], [7, 4]).py, [2, 0])
         teq(api.binomial(4)(2).py, 6)
         teq(api.exponential(0).py, 1)
         teq(api.π(2).py, 2*np.pi)
-        teq(api.ℙ(3).py, 5)
+        teq(api.ℙ(2).py, 5)
         teq(api.json('[1,2]').py, [1, 2])
         teq(api.normal([0., 1.])['cdf'](0.).py, 0.5)
         teq(getattr(api, '•binomial')([2, 0.5])['quantile'](1.).py, 2)
@@ -47,15 +47,15 @@ def test_builtin_attributes():
 def test_python_printer():
     from basedpl import to_python
     for code, expected in {
-        '×': 'sign', '×∘2': 'times(2.)', '2∘-': 'subtract.left(2.)',
-        '×∘2x': 'times(2)', '÷∘1r2': 'divide(Fraction(1, 2))',
+        '×': 'sign', '×⟜2': 'times(2.)', '2⊸-': 'subtract.left(2.)', '2-': 'subtract.left(2.)',
+        '×⟜2x': 'times(2)', '÷⟜1r2': 'divide(Fraction(1, 2))',
         '+/÷≢': 'plus.reduce / tally', '+.×': 'plus @ times', '×⌝': 'times.outer',
-        '+/⍤[1]': 'plus.reduce[1.]', '+⌿': 'plus.reduce[1]', '-⍨': 'subtract.commute',
-        '+∘×': 'conjugate << sign', '+⍥×': 'conjugate.over(sign)',
+        '+/⍠1': 'plus.reduce[1.]', '1⊸+⍣[≡;]': 'plus.left(1.).history(match)', '+⌿': 'plus.reduce[0]', '-⍨': 'subtract.commute',
+        '+⍤×': 'conjugate.atop(sign)', '+⍥×': 'conjugate.over(sign)', '-⊸+': 'negate.before(plus)', '+⟜-': 'plus.after(negate)',
         '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each',
     }.items(): teq(to_python(apl(code)), expected)
     teq(to_python(apl('×'), dyad=True), 'times')
-    teq(to_python(apl('+∘×'), dyad=True), 'plus << sign')
+    teq(to_python(apl('+⍤×'), dyad=True), 'conjugate.atop(times)')
     teq(to_python(times(2.) ** 3), 'times(2.) ** 3')
     teq(to_python((plus.reduce / tally).each), '(plus.reduce / tally).each')
     teq(to_python(apl.fn('{⎕←1 ⋄ ⍵}')), 'fn("{⎕←1 ⋄ ⍵}")')
@@ -128,7 +128,7 @@ def test_regex_functions():
     match, replace = p['match'], p['replace']
     teq(match('ab12 cd3').py, ['ab12', 'cd3'])
     teq(replace('$2:$1', 'ab12 cd3').py, '12:ab 3:cd')
-    teq(apl('p.position s', p=p, s='é ab12').py, [3])
+    teq(apl('p.position s', p=p, s='é ab12').py, [2])
     teq(match('x9').py, ['x9'])
 
 
@@ -149,10 +149,10 @@ def test_array_surface():
     assert len(a) == 2
     np.testing.assert_array_equal(a + [10, 20], [[11, 12, 13], [24, 25, 26]])
     np.testing.assert_array_equal(10 - a, [[9, 8, 7], [6, 5, 4]])
-    np.testing.assert_array_equal(a[2, :], [4, 5, 6])
-    np.testing.assert_array_equal(a[:, [1, 3]], [[1, 3], [4, 6]])
+    np.testing.assert_array_equal(a[1, :], [4, 5, 6])
+    np.testing.assert_array_equal(a[:, [0, 2]], [[1, 3], [4, 6]])
     np.testing.assert_array_equal(list(a)[0], [1, 2, 3])
-    with pytest.raises(AplError): a[0, 1]
+    with pytest.raises(AplError): a[2, 0]
     with pytest.raises(TypeError): a[1:2, :]
     assert (Array(7) % 3).py == 1 and (Array(7) // 3).py == 2
     assert (Array(2) ** 3).py == 8 and (Array(3) / 2).py == Fraction(3, 2)
@@ -169,17 +169,17 @@ def test_array_surface():
     assert [repr(Array(s)) for s in ('text', '', ['ab', 'cd'])] == ["'text'", "''", "['ab', 'cd']"]
 
 def test_keyed_arrays():
-    t = apl('("b":1 2),("a":("x":"hi"),("n":3))')
+    t = apl('["b":[1 2] "a":["x":"hi" "n":3]]')
     assert list(t.py) == ['b', 'a'] and t.py['a'] == dict(x='hi', n=3) and t.shape == (2,)
     np.testing.assert_array_equal(t.py['b'], [1, 2])
     assert repr(t).startswith("{'b': ")
     d = dict(z=1, y=dict(k=[1, 2, 3]), e={})
-    assert list(apl('⍳⍤[1] t', t=d).py) == ['z', 'y', 'e'] and apl('t.y.k.(2)+t.e≡⍬:⍬', t=d).py == 3
+    assert list(apl('⍳⍠0 t', t=d).py) == ['z', 'y', 'e'] and apl('t.y.k.(1)+t.e≡⍬:⍬', t=d).py == 3
     assert (Array(dict(a=1, b=2)) + Array(dict(b=10))).py == dict(a=1, b=12)
-    assert Array({'a': 1, 2: 5}).py == {'a': 1, 2: 5}
+    assert Array({'a': 1, 1: 5}).py == {'a': 1, 1: 5}
     with pytest.raises(TypeError): Array({2: 5})
     k = Array(dict(qty=4, price=1, tax=2))
-    assert k['price'].py == 1 and k['price'].is_atom and k[2].py == 1
+    assert k['price'].py == 1 and k['price'].is_atom and k[1].py == 1
     assert list(k[['tax', 'qty']].py) == ['tax', 'qty']
     assert k.axis_keys == (('qty', 'price', 'tax'),)
     with pytest.raises(AplError, match='INDEX'): k['missing']
@@ -195,9 +195,9 @@ def test_axis_keys_dataframe():
     np.testing.assert_array_equal(m.np, [[10, 2], [20, 4]])
     h = Array(np.arange(8).reshape(2, 2, 2), axis_keys=[['aa', 'bb'], None, ['xx', 'yy']])
     pd.testing.assert_frame_equal(h.py, pd.DataFrame(np.arange(8).reshape(4, 2),
-        index=pd.MultiIndex.from_product([['aa', 'bb'], [1, 2]]), columns=['xx', 'yy']))
-    pd.testing.assert_frame_equal(Array(3).df, pd.DataFrame([[3]], index=[1], columns=[1]))
-    pd.testing.assert_frame_equal(Array([3, 4]).df, pd.DataFrame([3, 4], index=[1, 2], columns=[1]))
+        index=pd.MultiIndex.from_product([['aa', 'bb'], [0, 1]]), columns=['xx', 'yy']))
+    pd.testing.assert_frame_equal(Array(3).df, pd.DataFrame([[3]], index=[0], columns=[0]))
+    pd.testing.assert_frame_equal(Array([3, 4]).df, pd.DataFrame([3, 4], index=[0, 1], columns=[0]))
     assert Array([[1, 2]]).axis_keys == (None, None)
     for keys in ([None], [['a', 'a'], None], [None, ['a']]):
         with pytest.raises(ValueError): Array([[1, 2], [3, 4]], axis_keys=keys)
@@ -213,14 +213,14 @@ def test_based_values():
         assert apl('value').shape == value.shape
     assert Array(3).is_atom and not Array(np.array(3)).is_atom
     assert apl('v←3 4 ⋄ 1⌷v').is_atom
-    assert not apl('[⊂1]⌷v').is_atom
+    assert not apl('[⊂1;]⌷v').is_atom
     assert apl('1⊃v').is_atom
     assert Array([3, 4])[1].is_atom and not Array([3, 4])[np.array(1)].is_atom
-    assert apl('fs←+˘×')[2](3, 4).py == 12
+    assert apl('fs←[+ ×]')[1](3, 4).py == 12
 
 
 def test_words_binding_and_operators():
-    np.testing.assert_array_equal(iota(3), [1, 2, 3])
+    np.testing.assert_array_equal(iota(3), [0, 1, 2])
     np.testing.assert_array_equal(shape(reshape([2, 3], iota(6))), [2, 3])
     assert times(2.)(3).py == 6. and type(times(2.)(3).py) is float
     assert times(2)(3).py == 6 and type(times(2)(3).py) is int
@@ -236,10 +236,10 @@ def test_words_binding_and_operators():
     np.testing.assert_array_equal(plus.scan([1, 2, 3]), [1, 3, 6])
     np.testing.assert_array_equal(subtract.scan([1, 2, 3]), [1, -1, -4])
     np.testing.assert_array_equal(plus.scan(10, [1, 2, 3]), [11, 13, 16])
-    assert type(tally('abc').py) is int and shape(Array([1., 2.])).apl == '2ₓ'
+    assert type(tally('abc').py) is int and shape(Array([1., 2.])).apl == '[2ₓ;]'
     assert (Array('abc') + 1).py == 'bcd'
-    np.testing.assert_array_equal(plus.reduce[1](Array([[1, 2], [3, 4]])), [4, 6])
-    np.testing.assert_array_equal(plus.reduce[2, 3](np.arange(1, 9).reshape(2, 2, 2)), [10, 26])
+    np.testing.assert_array_equal(plus.reduce[0](Array([[1, 2], [3, 4]])), [4, 6])
+    np.testing.assert_array_equal(plus.reduce[1, 2](np.arange(1, 9).reshape(2, 2, 2)), [10, 26])
     np.testing.assert_array_equal(times.outer([1, 2], [3, 4]), [[3, 4], [6, 8]])
     assert (plus @ times)([1, 2], [3, 4]).py == 11
     assert (subtract(1) ** 3)(10).py == 7
@@ -249,7 +249,7 @@ def test_words_binding_and_operators():
     assert atop(floor, times(10.))(1.25).py == 12
     assert plus.under(logarithm)(2., 3.).py == pytest.approx(6.)
     np.testing.assert_array_equal(reverse.rank(1)(Array([[1, 2], [3, 4]])), [[2, 1], [4, 3]])
-    np.testing.assert_array_equal(times(2).at([2, 4])([1, 2, 3, 4]), [1, 4, 3, 8])
+    np.testing.assert_array_equal(times(2).at([1, 3])([1, 2, 3, 4]), [1, 4, 3, 8])
     with pytest.raises(TypeError): plus @ Array(2)
     with pytest.raises(ValueError, match='DOMAIN'): plus.over(3)
     with pytest.raises(ValueError, match='DOMAIN'): plus.stencil(times)
@@ -257,7 +257,7 @@ def test_words_binding_and_operators():
     teq(times(2).power.each(3)([1, 2]).py, [8, 16])
     teq(subtract.left.each(2)([1, 2, 3]).py, [1, 0, -1])
     teq(plus.left(1).power.each.power(2)(3)([0, 10]).py, [6, 16])
-    teq(plus.power.reduce[1](1)([[1, 2], [3, 4]]).py, [4, 6])
+    teq(plus.power.reduce[0](1)([[1, 2], [3, 4]]).py, [4, 6])
     teq((subtract.left.each + 10)(2)([3, 4]).py, [9, 8])
 
 
@@ -269,7 +269,7 @@ def test_math_construction():
     stop = apl('limit←13 ⋄ {⍺≥limit}')
     np.testing.assert_array_equal(f.history(stop)(10), [10, 11, 12, 13])
     np.testing.assert_array_equal(windows(2, [1, 2, 3]), [[1, 2], [2, 3]])
-    assert prime(10).py == 29 and prime_mode(1, 29).py == 1
+    assert prime(9).py == 29 and prime_mode(1, 29).py == 1
     np.testing.assert_array_equal(factors(700), [2, 2, 5, 5, 7])
     np.testing.assert_array_equal(factor_spec(float('inf'), 700), [2, 0, 2, 1])
     np.testing.assert_array_equal(polynomial([2, [1, 3]]), [6, -8, 2])
@@ -301,31 +301,31 @@ def test_axis_names():
     assert keyed.df.index.name == 'city' and keyed.df.columns.name == 'month'
     apl(M=keyed)
     assert apl('⍴M').py == dict(city=2, month=3)
-    renamed = apl('("town" 2:⍴M)⍴M')
+    renamed = apl('("town" 1:⍴M)⍴M')
     teq(renamed.axis_names, ('town', None))
     teq(renamed.axis_keys, keyed.axis_keys)
-    assert apl('⍴("town" 2:⍴M)⍴M').py == {'town': 2, 2: 3}
+    assert apl('⍴("town" 1:⍴M)⍴M').py == {'town': 2, 1: 3}
     teq(apl('(:⍴M)⍴M').axis_names, (None, None))
     teq(apl('(⍴M)⍴(:⍴M)⍴M').axis_names, keyed.axis_names)
     assert apl('⍴("items":2)⍴1 2').py == dict(items=2)
-    for code in ['("city":2 ⋄ "city":3)⍴M', '("city" "city":⍴M)⍴M', '(1 1:⍴M)⍴M']:
+    for code in ['["city":2 "city":3]⍴M', '("city" "city":⍴M)⍴M', '(1 1:⍴M)⍴M']:
         with pytest.raises(AplError, match='DOMAIN'): apl(code)
-    teq(apl('"Paris"⌷⍤["city"] M').np, data[0])
-    teq(apl('2⌷M').axis_names, ('month',))
-    teq(apl('+/⍤["city" "month"] M').np, 15)
+    teq(apl('"Paris"⌷⍠"city" M').np, data[0])
+    teq(apl('1⌷M').axis_names, ('month',))
+    teq(apl('+/⍠"city" "month" M').np, 15)
     teq(apl('⍉M').axis_names, ('month', 'city'))
     teq(apl('2 3⍴M').axis_names, (None, None))
     teq(apl('(⍴M)⍴M').axis_names, ('city', 'month'))
     teq(apl(':M').axis_names, ('city', 'month'))
-    teq(apl('+/¨⊂⍤[2] M').axis_names, ('city',))
-    teq(apl('⌽⍤1⊢M').axis_names, ('city', 'month'))
-    with pytest.raises(AplError, match='INDEX'): apl('+/⍤["missing"] M')
+    teq(apl('+/¨⊂⍠1 M').axis_names, ('city',))
+    teq(apl('⌽⍤1 M').axis_names, ('city', 'month'))
+    with pytest.raises(AplError, match='INDEX'): apl('+/⍠"missing" M')
     v = Array([1, 2], axis_names=('city',))
     teq(times.outer(v, v).axis_names, (None, None))
     teq(reshape([4], v).axis_names, (None,))
     teq(plus.scan(v).axis_names, ('city',))
     apl(V=v)
-    for code, names in [('2/V', ('city',)), ('1↕V', (None, None)), ('{⍵}⌺1⊢V', (None, None)), ('V,V', ('city',))]:
+    for code, names in [('2/V', ('city',)), ('1↕V', (None, None)), ('{⍵}⌺1 V', (None, None)), ('V,V', ('city',))]:
         teq(apl(code).axis_names, names)
     with pytest.raises(ValueError, match='DOMAIN'): Array(data, axis_names=('city', 'city'))
     with pytest.raises(ValueError): Array(data, axis_names=('city',))
@@ -344,14 +344,14 @@ def test_mathematical_monads():
 
 def test_function_arrays():
     fs = Array([plus, times])
-    assert pick(2, fs)(2, 3).py == 6
+    assert pick(1, fs)(2, 3).py == 6
     assert fs.py[0](2, 3).py == 5
-    fs = apl('offset←10 ⋄ {offset+⍵}˘+')
+    fs = apl('offset←10 ⋄ [{offset+⍵} +]')
     apl(offset=20)
-    for f in [first(fs), first(list(fs)[0]), fs.py[0], first(Array(fs.np)[1]), apl.fn('{↑⍵}')(fs)]: assert f(3).py == 23
-    assert pick(2, reverse(fs))(3).py == 23
+    for f in [first(fs), first(list(fs)[0]), fs.py[0], first(Array(fs.np)[0]), apl.fn('{↑⍵}')(fs)]: assert f(3).py == 23
+    assert pick(1, reverse(fs))(3).py == 23
     apl(fs=fs)
-    assert apl('f←1⊃fs ⋄ f 3').py == 23
+    assert apl('f←0⊃fs ⋄ f 3').py == 23
 
 
 def test_retained_and_late_bound_functions(capsys):
@@ -368,8 +368,8 @@ def test_retained_and_late_bound_functions(capsys):
     assert composed(3).py == 9
     assert late.reduce([]).py == 0
     assert (apl.fn('+') @ apl.fn('×'))([], []).py == 0
-    np.testing.assert_array_equal(apl.fn('⌽')[1]([[1, 2], [3, 4]]), [[3, 4], [1, 2]])
-    apl('scale←2∘×')
+    np.testing.assert_array_equal(apl.fn('⌽')[0]([[1, 2], [3, 4]]), [[3, 4], [1, 2]])
+    apl('scale←2×')
     assert (apl.fn('scale') ** -1)(6).py == 3
     apl(fold=late.reduce)
     assert apl('fold ⍬').py == 0

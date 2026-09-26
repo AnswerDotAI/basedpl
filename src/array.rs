@@ -5,6 +5,31 @@ use unicode_width::UnicodeWidthStr;
 /// Text as a double-quoted string literal.
 fn quoted(text: &str) -> String { format!("\"{}\"", text.replace('"', "\"\"")) }
 
+/// Whether source text has a space or a `:` outside brackets, parentheses, braces and quotes.
+fn needs_group(text: &str) -> bool {
+    let (mut depth, mut chars) = (0, text.chars());
+    while let Some(c) = chars.next() {
+        match c {
+            '[' | '(' | '{' => depth += 1,
+            ']' | ')' | '}' => depth -= 1,
+            // A string ends at a quote that isn't doubled.
+            '"' => {
+                while let Some(c) = chars.next() {
+                    if c == '"' && chars.clone().next() != Some('"') { break; }
+                    if c == '"' { chars.next(); }
+                }
+            }
+            // A character literal is one character between quotes, which may itself be a quote or a space.
+            '\'' => {
+                chars.nth(1);
+            }
+            ' ' | ':' if depth == 0 => return true,
+            _ => (),
+        }
+    }
+    false
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Number(Number),
@@ -418,8 +443,12 @@ impl Value {
                 result.push_str(&" ".repeat(w.1 - r));
             }
             (shape, result)
+        } else if !keyed {
+            // Numbers join with spaces as APL writes them, whatever form the value displays in.
+            let text = self.elements().map(|e| e.to_string()).collect::<Vec<_>>().join(" ");
+            (vec![text.chars().count()], text)
         } else {
-            let text = if self.is_empty() && !keyed { String::new() } else { self.to_string() };
+            let text = self.to_string();
             let lines: Vec<_> = text.split('\n').collect();
             if lines.len() == 1 { (vec![text.chars().count()], text) } else {
                 let width = lines.iter().map(|s| s.chars().count()).max().unwrap();
@@ -499,7 +528,7 @@ impl Value {
         let rank = self.shape().len();
         let (rows, cols) = (self.shape()[rank - 2], self.shape()[rank - 1]);
         let pages: usize = self.shape()[..rank - 2].iter().product();
-        let label = |axis, i: usize| self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| (i + 1).to_string(), |k| k.to_string());
+        let label = |axis, i: usize| self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| i.to_string(), |k| k.to_string());
         for page in 0..pages {
             if page > 0 { writeln!(f, "\n")?; }
             if rank > 2 {
@@ -507,7 +536,7 @@ impl Value {
                 let mut coords = Vec::new();
                 for axis in (0..rank - 2).rev() {
                     let i = rest % self.shape()[axis];
-                    coords.push(self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| (i + 1).to_string(), |k| quoted(k)));
+                    coords.push(self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| i.to_string(), |k| quoted(k)));
                     rest /= self.shape()[axis];
                 }
                 coords.reverse();
@@ -575,8 +604,111 @@ impl Value {
 
     pub(crate) fn disclose(&self) -> Value { self.elements().next().unwrap_or_else(|| self.prototype().clone()) }
 
-    /// Display text for a value inside other text. Strings are quoted so that they read as values.
-    pub(crate) fn literal(&self) -> String { self.string_literal().unwrap_or_else(|| self.to_string()) }
+    /// Source text that reads back as the value. Strings are quoted, and arrays use bracket notation.
+    pub(crate) fn literal(&self) -> String {
+        match self {
+            Self::Number(n) => n.to_string(),
+            Self::Character(c) => format!("'{c}'"),
+            Self::Function(f) => {
+                let text = f.apl();
+                // A native function with no source spelling, such as a generator's `roll`, can't read back.
+                if f.system_call().is_some() && crate::system::lookup(&text).is_none() { return format!("⟨{text}⟩"); }
+                if text.contains(' ') { format!("({text})") } else { text }
+            }
+            Self::Array(_) => {
+                if self.axis_names().iter().any(Option::is_some) { return self.named_literal(); }
+                if let Some(s) = self.string_literal() { return s; }
+                if self.is_empty() && !self.has_keys() { return self.empty_literal(); }
+                match self.shape().len() {
+                    0 => format!("⊂{}", self.at(0).literal()),
+                    1 => self.vector_literal(),
+                    _ if self.has_keys() => self.keyed_literal(),
+                    _ => match self.cells(self.shape().len() - 1).and_then(|c| c.collect()) {
+                        // One major cell needs a trailing `⋄`, or it reads back as that cell alone.
+                        Ok(rows) if rows.len() == 1 => format!("[{} ⋄]", rows[0].row()),
+                        Ok(rows) => format!("[{}]", rows.iter().map(Self::row).collect::<Vec<_>>().join(" ⋄ ")),
+                        Err(_) => self.to_string(),
+                    },
+                }
+            }
+        }
+    }
+
+    /// The value as one item inside brackets. A literal run needs brackets of its own. Other text with a space between
+    /// its units, or with a `:` that would read as a key, needs parentheses.
+    pub(crate) fn item(&self) -> String {
+        let text = self.literal();
+        if self.is_run() { format!("[{text}]") } else if needs_group(&text) { format!("({text})") } else { text }
+    }
+
+    /// An array with named axes: its keyed shape reshapes the array without names. Reshape keeps position keys.
+    fn named_literal(&self) -> String {
+        let shape: Vec<_> =
+            self.axis_names().iter().zip(self.shape()).map(|(n, len)| n.as_ref().map_or_else(|| len.to_string(), |n| format!("{}:{len}", quoted(n)))).collect();
+        format!("[{}]⍴{}", shape.join(" "), self.clone().with_axis_names(vec![]).unwrap().literal())
+    }
+
+    /// An array of rank 2 or more with keys: a key list for each axis, applied to the array without keys. A position
+    /// stands for each missing key.
+    fn keyed_literal(&self) -> String {
+        let lists: Vec<_> = self
+            .shape()
+            .iter()
+            .enumerate()
+            .map(|(axis, &len)| {
+                let keys: Vec<_> = (0..len).map(|i| self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| i.to_string(), |k| quoted(k))).collect();
+                match keys.len() { 0 => "⍬".into(), 1 => format!("[{};]", keys[0]), _ => keys.join(" ") }
+            })
+            .collect();
+        format!("[{}]:{}", lists.join(";"), self.unkeyed().literal())
+    }
+
+    /// Whether the value prints as a run of literals: a vector of two or more numbers, characters or strings.
+    fn is_run(&self) -> bool {
+        matches!(self, Self::Array(_))
+            && self.shape().len() == 1
+            && self.len() >= 2
+            && !self.has_keys()
+            && self.axis_names().iter().all(Option::is_none)
+            && self.string_literal().is_none()
+            && self.elements().all(|e| matches!(e, Self::Number(_) | Self::Character(_)) || e.string_literal().is_some())
+    }
+
+    /// An empty array: `⍬` or `""` for a simple vector, and otherwise its shape reshaping its prototype.
+    fn empty_literal(&self) -> String {
+        let prototype = self.prototype();
+        match (self.shape(), &prototype) {
+            ([_], Self::Number(_)) => "⍬".into(),
+            ([_], Self::Character(_)) => "\"\"".into(),
+            (shape, _) => {
+                let shape: Vec<_> = shape.iter().map(ToString::to_string).collect();
+                let fill = if matches!(prototype, Self::Array(_)) { format!("⊂{}", prototype.literal()) } else { prototype.literal() };
+                format!("{}⍴{fill}", shape.join(" "))
+            }
+        }
+    }
+    fn vector_literal(&self) -> String {
+        let items: Vec<_> = match self.keys(0) {
+            // An empty record keeps its keyed axis, which `[]` would lose.
+            Some(_) if self.is_empty() => return "⍬:⍬".into(),
+            Some(keys) => {
+                keys.names().iter().zip(self.elements()).map(|(k, v)| k.as_ref().map_or_else(|| v.item(), |k| format!("{}:{}", quoted(k), v.item()))).collect()
+            }
+            None if self.len() == 1 => return format!("[{};]", self.at(0).literal()),
+            None if self.is_run() => return self.elements().map(|e| e.literal()).collect::<Vec<_>>().join(" "),
+            None => self.elements().map(|e| e.item()).collect(),
+        };
+        format!("[{}]", items.join(" "))
+    }
+
+    /// A major cell as one part of array notation: a vector's items side by side, or one item.
+    fn row(&self) -> String {
+        if self.shape().len() == 1 && !self.has_keys() && self.string_literal().is_none() {
+            // A row of one array item would read back as that array's items, so it needs a one-item list.
+            if let [item @ Self::Array(_)] = &self.elements().collect::<Vec<_>>()[..] { return format!("[{};]", item.literal()); }
+            self.elements().map(|e| e.item()).collect::<Vec<_>>().join(" ")
+        } else { self.item() }
+    }
 
     /// A character vector as a double-quoted literal.
     fn string_literal(&self) -> Option<String> { if let Self::Array(_) = self { crate::keyed::name(self).map(|s| quoted(&s)) } else { None } }
@@ -659,67 +791,40 @@ impl fmt::Display for Value {
             _ => (),
         }
         if self.has_keys() && self.shape().len() > 1 { return self.fmt_labelled(f); }
-        let entries = self.keys(0).map(|keys| {
-            keys.names()
-                .iter()
-                .zip(self.elements())
-                .map(|(k, v)| k.as_ref().map_or_else(|| v.literal(), |k| format!("{}:{}", quoted(k), v.literal())))
-                .collect::<Vec<_>>()
-        });
-        if let Some(entries) = &entries {
-            match self.shape().len() { 0 => return f.write_str(&entries[0]), 1 => return write!(f, "({})", entries.join(" ⋄ ")), _ => () }
+        if self.shape().len() <= 1 {
+            // A string prints as its characters. Other vectors and scalars print as source.
+            if self.shape().len() == 1
+                && !self.has_keys()
+                && self.axis_names().iter().all(Option::is_none)
+                && !self.is_empty()
+                && self.elements().all(|e| matches!(e, Value::Character(_)))
+            { return self.elements().try_for_each(|e| if let Value::Character(c) = e { write!(f, "{c}") } else { Ok(()) }); }
+            return f.write_str(&self.literal());
         }
-        if self.is_scalar() {
-            let item = self.at(0);
-            return if item.is_scalar() { write!(f, "⊂{item}") } else { write!(f, "⊂{}", item.string_literal().unwrap_or_else(|| format!("({item})"))) };
-        }
-        if entries.is_none() {
-            if self.is_empty() { return f.write_str(if matches!(self.prototype(), Value::Character(_)) { "\"\"" } else { "⍬" }); }
-            if self.elements().all(|e| matches!(e, Value::Character(_))) {
-                let columns = self.shape().last().copied().unwrap_or(1);
-                for (i, item) in self.elements().enumerate() {
-                    if i > 0 && self.shape().len() > 1 && i % columns == 0 { writeln!(f)?; }
-                    if let Value::Character(c) = item { write!(f, "{c}")?; }
-                }
-                return Ok(());
-            }
-            if self.shape().len() > 1 && self.elements().all(|e| matches!(e, Value::Number(_))) {
-                if let Ok(formatted) = self.formatted() { return formatted.fmt(f); }
-            }
-        }
-        if self.shape().len() > 1 {
-            let columns = *self.shape().last().unwrap();
-            let text = entries.unwrap_or_else(|| {
-                self.elements()
-                    .map(|e| match e {
-                        Value::Number(n) => n.to_string(),
-                        Value::Character(c) => c.to_string(),
-                        a @ Value::Array(_) => a.string_literal().unwrap_or_else(|| format!("({a})")),
-                        Value::Function(f) => format!("⟨{}⟩", f.apl()),
-                    })
-                    .collect()
-            });
-            let mut widths = vec![0; columns];
-            for (i, s) in text.iter().enumerate() { widths[i % columns] = widths[i % columns].max(s.width()); }
-            for (i, s) in text.iter().enumerate() {
-                if i > 0 {
-                    if i % columns == 0 {
-                        writeln!(f)?;
-                        if self.shape().len() > 2 && i % (columns * self.shape()[self.shape().len() - 2]) == 0 { writeln!(f)?; }
-                    } else { f.write_str(" ")?; }
-                }
-                write!(f, "{}{s}", " ".repeat(widths[i % columns] - s.width()))?;
+        if self.is_empty() { return f.write_str(&self.literal()); }
+        let columns = *self.shape().last().unwrap();
+        if self.elements().all(|e| matches!(e, Value::Character(_))) {
+            for (i, item) in self.elements().enumerate() {
+                if i > 0 && i % columns == 0 { writeln!(f)?; }
+                if let Value::Character(c) = item { write!(f, "{c}")?; }
             }
             return Ok(());
         }
-        for (i, item) in self.elements().enumerate() {
-            if i > 0 { f.write_str(" ")?; }
-            match item {
-                Value::Number(n) => write!(f, "{n}")?,
-                Value::Character(c) => write!(f, "'{c}'")?,
-                a @ Value::Array(_) => f.write_str(&a.string_literal().unwrap_or_else(|| format!("({a})")))?,
-                Value::Function(fun) => write!(f, "⟨{}⟩", fun.apl())?,
+        if self.elements().all(|e| matches!(e, Value::Number(_))) { if let Ok(formatted) = self.formatted() { return formatted.fmt(f); } }
+        let text: Vec<_> = self
+            .elements()
+            .map(|e| match e { Value::Character(c) => c.to_string(), Value::Function(f) => format!("⟨{}⟩", f.apl()), e => e.item() })
+            .collect();
+        let mut widths = vec![0; columns];
+        for (i, s) in text.iter().enumerate() { widths[i % columns] = widths[i % columns].max(s.width()); }
+        for (i, s) in text.iter().enumerate() {
+            if i > 0 {
+                if i % columns == 0 {
+                    writeln!(f)?;
+                    if self.shape().len() > 2 && i % (columns * self.shape()[self.shape().len() - 2]) == 0 { writeln!(f)?; }
+                } else { f.write_str(" ")?; }
             }
+            write!(f, "{}{s}", " ".repeat(widths[i % columns] - s.width()))?;
         }
         Ok(())
     }

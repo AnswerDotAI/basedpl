@@ -73,7 +73,7 @@ pub(crate) fn call(regex: &Regex, op: Operation, left: Option<&Value>, right: &V
         return vector(values, prototype, span);
     }
     let mut previous = 0;
-    let mut position = 1;
+    let mut position = 0;
     let values = regex
         .find_iter(&source)
         .map(|m| {

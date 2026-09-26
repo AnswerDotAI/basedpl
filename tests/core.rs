@@ -162,8 +162,8 @@ fn calls_with_array_arguments() {
     for (function, codes, expected) in [
         ("mean", vec!["1 2 3"], "2"),
         ("-", vec!["10ₓ", "1ₓ 2ₓ"], "9ₓ 8ₓ"),
-        ("/⍤[1]", vec!["1 0", "2 2⍴⍳4"], "[1 2 ⋄]"),
-        ("⊢", vec![r#"(1r3 2ₓ)"ab"(0 3⍴0ₓ)"#], r#"(1r3 2ₓ)"ab"(0 3⍴0ₓ)"#),
+        ("/⍠0", vec!["1 0", "2 2⍴⍳4"], "[0 1 ⋄]"),
+        ("⊢", vec![r#"[1r3 2ₓ;"ab";0 3⍴0ₓ]"#], r#"[1r3 2ₓ;"ab";0 3⍴0ₓ]"#),
         ("{k←⍵ ⋄ {k+⍵}⍵}", vec!["3ₓ"], "6ₓ"),
         ("{x←⍵}", vec!["7"], "7"),
     ] {
@@ -222,7 +222,7 @@ fn cancellation_preserves_session_and_unwinds_calls() {
 fn leading_unit_axis_broadcasting() {
     for op in ["+", "+¨", "(+⍤0)"] {
         equiv! {
-            &format!("(2 3⍴⍳6){op}10 20") => "[11 12 13 ⋄ 24 25 26]",
+            &format!("(2 3⍴⍳6){op}10 20") => "[10 11 12 ⋄ 23 24 25]",
             &format!("[10 ⋄ 20]{op}[1 2 3 ⋄]") => "[11 12 13 ⋄ 21 22 23]",
             &format!("[10 ⋄]{op}1 2 3") => "[11 ⋄ 12 ⋄ 13]",
             &format!("(1 0⍴0ₓ){op}2 1⍴0ₓ") => "2 0⍴0ₓ",
@@ -237,15 +237,15 @@ fn leading_unit_axis_broadcasting() {
     for op in ["¨", "⍤0"] {
         let r = s.eval(&format!("(1 0⍴0)({{⎕←9 ⋄ ⍺+⍵}}{op})2 1⍴0"));
         assert!(r.error.is_none(), "{:?}", r.error);
-        assert_eq!(r.output_text(), ["9", "⍬"]);
+        assert_eq!(r.output_text(), ["9", "2 0⍴0"]);
     }
 }
 
 #[test]
 fn selective_assignment() {
-    // Dyalog assignment-selective examples, checked in Dyalog 20 (IO=1, ML=1).
+    // Dyalog assignment-selective examples, checked in Dyalog 20 (IO=1, ML=1), with positions converted to count from 0.
 
-    for select in ["↑a", "1⊃a", "first a"] { equiv(&format!("first←↑ ⋄ a←1 2 ⋄ ({select})←3 4 ⋄ a"), "(3 4)2"); }
+    for select in ["↑a", "0⊃a", "first a"] { equiv(&format!("first←↑ ⋄ a←1 2 ⋄ ({select})←3 4 ⋄ a"), "[[3 4] 2]"); }
 
     for select in [",↑a", "↑¨a"] { fails(Length, &[&format!("a←1 2 ⋄ ({select})←2 2⍴3 4")]); }
 
@@ -254,9 +254,9 @@ fn selective_assignment() {
 
 #[test]
 fn general_axis_forms() {
-    // Captured from Dyalog 20.0.53963.0, IO=1, CT=1e-14, ML=1.
+    // Captured from Dyalog 20.0.53963.0, IO=1, CT=1e-14, ML=1, with axes converted to count from 0.
 
-    for code in [",⍤[1 3] 2 3 4⍴⍳24", "⊂⍤[1 1] 2 3⍴⍳6", "1+⍤[1] 2 3⍴⍳6", "2↑⍤[1 2] 3 4⍴⍳12"] {
+    for code in [",⍠0 2 (2 3 4⍴⍳24)", "⊂⍠0 0 (2 3⍴⍳6)", "1+⍠0 (2 3⍴⍳6)", "2↑⍠0 1 (3 4⍴⍳12)"] {
         assert!(run(code).is_err(), "{code}");
     }
 }
@@ -266,7 +266,7 @@ fn boxed_display_and_function_trees() {
     let mut s = Session::new();
     assert!(s.eval("]box on -style=max -trains=tree -fns=on").error.is_none());
     assert_eq!(s.eval("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂¨0ₓ 1ₓ").output_text(), ["⊂4ₓ", "⊂⊂4ₓ", "┌→────────┐\n│ ⊂0ₓ ⊂1ₓ │\n└∊────────┘"]);
-    let r = s.eval(r#"A←2 3 4⍴"DUCKSWANBIRDWORMCAKESEED" ⋄ ⊂⍤[3] A"#);
+    let r = s.eval(r#"A←2 3 4⍴"DUCKSWANBIRDWORMCAKESEED" ⋄ ⊂⍠2 A"#);
     assert!(r.error.is_none(), "{:?}", r.error);
     assert_eq!(r.output_text(), ["┌→─────────────────────┐\n↓ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │DUCK│ │SWAN│ │BIRD│ │\n│ └────┘ └────┘ └────┘ │\n│ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │WORM│ │CAKE│ │SEED│ │\n│ └────┘ └────┘ └────┘ │\n└∊─────────────────────┘"]);
     assert_eq!(s.eval("⍬").output_text(), ["┌⊖┐\n│0│\n└~┘"]);
@@ -321,7 +321,7 @@ fn polynomial_representations_and_derivatives() {
 fn compact_integers_and_promotion() {
     for (code, values) in [
         ("1ₓ 2r2 6r3", vec![1, 1, 2]),
-        ("⍳3r1", vec![1, 2, 3]),
+        ("⍳3r1", vec![0, 1, 2]),
         ("1ₓ+2ₓ 3ₓ", vec![3, 4]),
         ("10ₓ-2ₓ 3ₓ", vec![8, 7]),
         ("2ₓ 3ₓ×4ₓ", vec![8, 12]),
@@ -333,23 +333,23 @@ fn compact_integers_and_promotion() {
         ("~0 1", vec![1, 0]),
         ("0 1⍲1 1", vec![1, 0]),
         ("0 1⍱0 0", vec![1, 0]),
-        ("⌽⍳3ₓ", vec![3, 2, 1]),
-        ("1⌽⍳3ₓ", vec![2, 3, 1]),
-        ("5↑⍳3ₓ", vec![1, 2, 3, 0, 0]),
-        ("1↓⍳3ₓ", vec![2, 3]),
-        ("[3 1]⌷⍳3ₓ", vec![3, 1]),
-        ("1 0 1/⍳3ₓ", vec![1, 3]),
+        ("⌽⍳3ₓ", vec![2, 1, 0]),
+        ("1⌽⍳3ₓ", vec![1, 2, 0]),
+        ("5↑⍳3ₓ", vec![0, 1, 2, 0, 0]),
+        ("1↓⍳3ₓ", vec![1, 2]),
+        ("[2 0;]⌷⍳3ₓ", vec![2, 0]),
+        ("1 0 1/⍳3ₓ", vec![0, 2]),
         ("1 0 1\\1ₓ 2ₓ", vec![1, 0, 2]),
-        ("+\\⍳3ₓ", vec![1, 3, 6]),
-        ("-¨⍳3ₓ", vec![-1, -2, -3]),
+        ("+\\⍳3ₓ", vec![0, 1, 3]),
+        ("-¨⍳3ₓ", vec![0, -1, -2]),
         ("1ₓ 2ₓ∪2ₓ 3ₓ", vec![1, 2, 3]),
         ("1ₓ 2ₓ∩2ₓ", vec![2]),
         ("2ₓ~1ₓ", vec![2]),
-        (",⊃(1ₓ 2ₓ⋄ 3ₓ)", vec![1, 2, 3, 0]),
-        (",⍉2 2⍴⍳4ₓ", vec![1, 3, 2, 4]),
-        (",(⍳2ₓ)×⌝⍳2ₓ", vec![1, 2, 2, 4]),
-        ("0ₓ@2⍳3ₓ", vec![1, 0, 3]),
-        ("{+/,⍵}⌺3⍳3ₓ", vec![3, 6, 5]),
+        (",⊃[1ₓ 2ₓ;3ₓ]", vec![1, 2, 3, 0]),
+        (",⍉2 2⍴⍳4ₓ", vec![0, 2, 1, 3]),
+        (",(1ₓ+⍳2ₓ)×⌝1ₓ+⍳2ₓ", vec![1, 2, 2, 4]),
+        ("0ₓ@1⍳3ₓ", vec![0, 0, 2]),
+        ("{+/,⍵}⌺3⍳3ₓ", vec![1, 3, 3]),
         ("2ₓ 2ₓ⊤3ₓ", vec![1, 1]),
         ("⍴2 3⍴1ₓ", vec![2, 3]),
         ("⍳0ₓ", vec![]),
@@ -379,7 +379,7 @@ fn compact_integers_and_promotion() {
 #[test]
 fn float_storage_and_kernels() {
     for code in ["⍳3", "⌽⍳3", "2 3⍴⍳6", "⍬", "0 3⍴0"] { assert!(run(code).unwrap().unwrap().as_floats().is_some(), "{code}"); }
-    for code in ["1ₓ 2", "1j2 3", r#""abc""#, "(1 2⋄ 3 4)", "0⍴1ₓ"] { assert!(run(code).unwrap().unwrap().as_floats().is_none(), "{code}"); }
+    for code in ["1ₓ 2", "1j2 3", r#""abc""#, "[1 2;3 4]", "0⍴1ₓ"] { assert!(run(code).unwrap().unwrap().as_floats().is_none(), "{code}"); }
     assert_eq!(AplValue::floats(vec![1], vec![f64::NAN]), Err(Domain));
     assert_eq!(AplValue::floats(vec![2], vec![1.]), Err(Length));
     assert_eq!(AplValue::floats(vec![1], vec![-0.]).unwrap().as_floats().unwrap()[0].to_bits(), 0);
@@ -394,8 +394,10 @@ fn character_parser_and_exact_fill() {
 
 #[test]
 fn array_literal_completeness() {
-    for code in ["[1 2 ⋄", "(1 ⋄", "[({⍵}1 ⋄ 2) ⋄"] { assert!(matches!(parse(Source::new("partial", code)), ParseStatus::Incomplete(_))); }
-    for code in ["[1 ⋄ 2)", "(1 ⋄ 2]", "[⋄]"] { assert!(matches!(parse(Source::new("invalid", code)), ParseStatus::Invalid(_))); }
+    for code in ["[1 2 ⋄", "(1 +", "[[{⍵}1;2] ⋄"] { assert!(matches!(parse(Source::new("partial", code)), ParseStatus::Incomplete(_))); }
+    for code in ["[1 ⋄ 2)", "(1 ⋄ 2]", "[⋄]", "(1 ⋄ 2)", "[1;2 ⋄ 3]"] {
+        assert!(matches!(parse(Source::new("invalid", code)), ParseStatus::Invalid(_)));
+    }
 }
 
 #[test]
@@ -485,7 +487,7 @@ fn search_depth_and_random() {
         let (len, max) = if code.starts_with('?') { (100, 9) } else { (13, 52) };
         assert_eq!(a.shape(), &[len]);
         assert_eq!(a.is_exact(), code.contains(['x', 'ₓ']));
-        assert!(values.iter().all(|&n| n > 0 && n <= max));
+        assert!(values.iter().all(|&n| n < max));
         if len == 13 { assert_eq!(values.iter().collect::<std::collections::HashSet<_>>().len(), len); }
     }
     let rolls = run("?100⍴0").unwrap().unwrap();
@@ -737,9 +739,8 @@ fn structural_completeness_and_source_lifetime() {
     fails(Limit, &[&deep]);
     // Flat evaluation is iterative, not one Rust stack frame per function application.
     equiv(&format!("{}1", "1+".repeat(10_000)), "10001");
-    let e = run("{⍵ ⍵}⍣129⊢1 2").unwrap_err();
+    let e = run("{[⍵ ⍵]}⍣129⊢1 2").unwrap_err();
     assert_eq!(e.kind, Limit);
-    assert!(e.message.contains("array nesting"));
 }
 
 #[test]
@@ -808,12 +809,12 @@ fn persistent_arrays_and_functions() {
     assert!(r.output_text().is_empty());
     assert_eq!(r.value.unwrap().shape(), &[10]);
     equiv_in! { &mut s;
-        "+/v" => "55",
+        "+/v" => "45",
         "f←+ ⋄ 2 f 3" => "5",
         "sum←+/ ⋄ sum 1 2 3" => "6",
         "f/1 2 3" => "6",
         "⍴v" => ",10ₓ",
-        "a←v ⋄ v←0 ⋄ +/a" => "55",
+        "a←v ⋄ v←0 ⋄ +/a" => "45",
     }
 }
 

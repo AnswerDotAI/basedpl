@@ -14,7 +14,7 @@ async def kernel_story():
         await kc.exec_ok(']box off', silent=True)
         for code, expected in [
             ('v←⍳3 ⋄ mean←+/÷≢', []),
-            ('mean v', [('execute_result', '2')]),
+            ('mean v', [('execute_result', '1')]),
             ('1 ⋄ ⎕←2 ⋄ 3', [('execute_result', '1'), ('stream', '2\n'), ('execute_result', '3')]),
             ('silent←{a←7} ⋄ silent 0', []),
             ('⍎"1 ⋄ ⎕←2 ⋄ 3"', [('execute_result', '1'), ('stream', '2\n'), ('execute_result', '3')]),
@@ -52,7 +52,7 @@ async def kernel_story():
         _, messages = await kc.exec_ok(']help ?')
         assert 'Roll' in displayed(messages)[0][1]
         _, messages = await kc.exec_ok('?1')
-        assert displayed(messages) == [('execute_result', '1')]
+        assert displayed(messages) == [('execute_result', '0')]
         _, messages = await kc.exec_ok('??')
         text = displayed(messages)[0][1]
         assert '?' in text and 'Roll' not in text

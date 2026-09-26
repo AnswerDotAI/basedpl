@@ -352,11 +352,13 @@ def capture_aplcart_examples(apl, cases):
         lines = [line.strip() for line in case['example'].splitlines() if line.strip()]
         if not all(line.startswith('⎕←') for line in lines): continue
         expressions = [line[2:].strip() for line in lines]
-        code = expressions[0] if len(expressions) == 1 else '('+' ⋄ '.join(expressions)+')'
-        clean = re.sub(r"'(?:''|[^'])*'", '', code)
+        # Dyalog captures the expectation from its own array notation, but the case keeps a bAsedPL list.
+        dyalog_code = expressions[0] if len(expressions) == 1 else '('+' ⋄ '.join(expressions)+')'
+        code = expressions[0] if len(expressions) == 1 else '['+';'.join(expressions)+']'
+        clean = re.sub(r"'(?:''|[^'])*'", '', dyalog_code)
         if not re.fullmatch(r'[\d\s.EeJj¯+\-×÷⍴,⊂⊃↑↓⌽⊖⍉≢=≠<≤>≥⍳/⌿\\⍀()⍬⋄]*', clean): continue
         if any(float(n) > 1000 for n in re.findall(r'\d+(?:\.\d*)?(?:[eE][¯-]?\d+)?', clean.replace('¯', '-'))): continue
-        try: expected = dyalog_expected(apl, code)
+        try: expected = dyalog_expected(apl, dyalog_code)
         except AplError as e:
             case['expectation_note'] = 'Dyalog rejected the concrete example: '+str(e)
             continue

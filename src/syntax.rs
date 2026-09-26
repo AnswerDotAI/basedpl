@@ -18,11 +18,10 @@ pub(crate) enum NodeKind {
     Guard(bool),
     Hybrid(Hybrid),
     Group(Vec<Node>),
-    Strand(Vec<Node>),
-    /// `record`: parenthesised items, at least one of them `key:value`, which build one keyed vector.
+    /// A run of nodes with no spaces between them, evaluated before its neighbours.
+    Unit(Vec<Node>),
+    /// Items of a bracketed list, or with `block` the major cells of an array. `record`: at least one item is `key:value`, and the items build one keyed vector.
     ArrayLiteral { cells: Vec<Vec<Node>>, block: bool, record: bool },
-    /// Brackets without separators: one expression, enclosed.
-    Enclose(Vec<Node>),
     Dfn(Arc<Definition>),
 }
 
@@ -38,9 +37,8 @@ fn definition_kind(nodes: &[Node]) -> DefinitionKind {
         .map(|n| match &n.kind {
             NodeKind::Name(name) if name == "⍹" => DefinitionKind::DyadicOperator,
             NodeKind::Name(name) if name == "⍶" => DefinitionKind::MonadicOperator,
-            NodeKind::Group(nodes) | NodeKind::Strand(nodes) => definition_kind(nodes),
+            NodeKind::Group(nodes) | NodeKind::Unit(nodes) => definition_kind(nodes),
             NodeKind::ArrayLiteral { cells, .. } => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
-            NodeKind::Enclose(nodes) => definition_kind(nodes),
             NodeKind::Pipeline(stages) => stages.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
             _ => DefinitionKind::Function, // Nested definitions classify their own bodies.
         })
@@ -84,7 +82,6 @@ pub enum ParseStatus { Complete(Parsed), Incomplete(Error), Invalid(Error) }
 #[derive(Debug)]
 enum TokenKind {
     Pipe,
-    Tie,
     BraceOpen,
     BraceClose,
     Literal(Value),
@@ -96,6 +93,7 @@ enum TokenKind {
     BracketClose,
     Newline,
     Separator,
+    Semicolon,
     Name(String),
     System(String),
     Assign,
@@ -213,10 +211,14 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                 '⍬' => TokenKind::Literal(Value::empty(vec![0], Value::Number(Number::try_from(0.0).unwrap())).unwrap()),
                 '¨' => TokenKind::Operator(OperatorKind::Each),
                 '⍨' => TokenKind::Operator(OperatorKind::Commute),
-                '∘' => TokenKind::Operator(OperatorKind::Compose),
+                '⊸' => TokenKind::Operator(OperatorKind::Before),
                 '⍤' => TokenKind::Operator(OperatorKind::Rank),
+                '⍠' => TokenKind::Operator(OperatorKind::Axis),
                 '⍥' => TokenKind::Operator(OperatorKind::Over),
-                '⍛' => TokenKind::Operator(OperatorKind::Behind),
+                '⟜' => TokenKind::Operator(OperatorKind::After),
+                '∘' | '⍛' => {
+                    return Err(span(start + c.len_utf8()).error(ErrorKind::Syntax, format!("{c} is retired: use ⊸ or ⟜ to bind or preprocess, and ⍤ for Atop")))
+                }
                 '.' => TokenKind::Operator(OperatorKind::Product),
                 '⌝' => TokenKind::Operator(OperatorKind::Outer),
                 '⌸' => TokenKind::Operator(OperatorKind::Key),
@@ -224,7 +226,6 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                 '⇄' => TokenKind::Operator(OperatorKind::PairInverse),
                 '⌾' => TokenKind::Operator(OperatorKind::Under),
                 '∂' => TokenKind::Operator(OperatorKind::Differentiate),
-                '˘' => TokenKind::Tie,
                 '◶' => TokenKind::Operator(OperatorKind::Agenda),
                 '@' => TokenKind::Operator(OperatorKind::At),
                 '⌺' => TokenKind::Operator(OperatorKind::Stencil),
@@ -232,7 +233,7 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                 ')' => TokenKind::Close,
                 '[' => TokenKind::BracketOpen,
                 ']' => TokenKind::BracketClose,
-                ';' => return Err(span(start + 1).error(ErrorKind::Syntax, "semicolon is not bAsedPL syntax")),
+                ';' => TokenKind::Semicolon,
                 '\n' => TokenKind::Newline,
                 '⋄' => TokenKind::Separator,
                 '←' => TokenKind::Assign,
@@ -272,31 +273,36 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
 
 enum ParseFailure { Incomplete(Error), Invalid(Error) }
 
+fn invalid(span: &Span, message: &str) -> ParseFailure { ParseFailure::Invalid(span.error(ErrorKind::Syntax, message)) }
+
+fn cover(nodes: &[Node]) -> Span { Span { source: nodes[0].span.source.clone(), range: nodes[0].span.range.start..nodes[nodes.len() - 1].span.range.end } }
+
+/// Nodes and separators, before the enclosing delimiters give the separators their meaning.
+enum Piece {
+    Node(Node),
+    Newline,
+    Diamond(Span),
+    Semicolon(Span),
+}
+
 struct Parser<'a> { tokens: &'a [Token], pos: usize }
 impl Parser<'_> {
-    fn expressions(&mut self, open: Option<&Token>, depth: usize) -> Result<(Vec<Vec<Node>>, bool), ParseFailure> {
-        let (mut pieces, mut nodes, mut separated) = (Vec::new(), Vec::<Node>::new(), false);
-        let mut tied = false;
+    fn pieces(&mut self, open: Option<&Token>, depth: usize) -> Result<Vec<Piece>, ParseFailure> {
+        let mut pieces = Vec::new();
         while let Some(token) = self.tokens.get(self.pos) {
             self.pos += 1;
             let mut span = token.span.clone();
-            if tied
-                && matches!(
-                    token.kind,
-                    TokenKind::Tie | TokenKind::Newline | TokenKind::Separator | TokenKind::Close | TokenKind::BracketClose | TokenKind::BraceClose
-                )
-            { return Err(ParseFailure::Invalid(span.error(ErrorKind::Syntax, "˘ needs a value on each side"))); }
             let kind = match &token.kind {
-                TokenKind::Tie => {
-                    if !nodes.last().is_some_and(|n| strand_item(&n.kind)) {
-                        return Err(ParseFailure::Invalid(span.error(ErrorKind::Syntax, "˘ needs a value on each side")));
-                    }
-                    tied = true;
+                TokenKind::Newline => {
+                    pieces.push(Piece::Newline);
                     continue;
                 }
-                TokenKind::Newline | TokenKind::Separator => {
-                    separated = true;
-                    if !nodes.is_empty() { pieces.push(std::mem::take(&mut nodes)); }
+                TokenKind::Separator => {
+                    pieces.push(Piece::Diamond(span));
+                    continue;
+                }
+                TokenKind::Semicolon => {
+                    pieces.push(Piece::Semicolon(span));
                     continue;
                 }
                 TokenKind::Close | TokenKind::BracketClose | TokenKind::BraceClose => {
@@ -308,25 +314,22 @@ impl Parser<'_> {
                                 | (TokenKind::BraceOpen, TokenKind::BraceClose)
                         )
                     });
-                    if !matched { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "mismatched closing delimiter"))); }
-                    if !nodes.is_empty() { pieces.push(nodes); }
-                    return Ok((pieces.into_iter().map(pipelines).collect::<Result<_, _>>()?, separated));
+                    if !matched { return Err(invalid(&token.span, "mismatched closing delimiter")); }
+                    return Ok(pieces);
                 }
                 TokenKind::Open | TokenKind::BracketOpen | TokenKind::BraceOpen => {
                     if depth == 128 { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Limit, "delimiters nested too deeply"))); }
-                    let (mut cells, separated) = self.expressions(Some(token), depth + 1)?;
+                    let inner = self.pieces(Some(token), depth + 1)?;
                     span.range.end = self.tokens[self.pos - 1].span.range.end;
-                    let kind = if matches!(token.kind, TokenKind::BraceOpen) {
-                        let statements = cells.into_iter().map(statement).collect::<Result<Vec<_>, _>>()?;
-                        let kind = statements.iter().map(|s| definition_kind(&s.nodes)).max().unwrap_or(DefinitionKind::Function);
-                        NodeKind::Dfn(Arc::new(Definition { body: Parsed { statements }, span: span.clone(), kind }))
-                    } else if cells.is_empty() {
-                        return Err(ParseFailure::Invalid(span.error(ErrorKind::Syntax, "empty grouping is not a value")));
-                    } else if separated {
-                        let record = matches!(token.kind, TokenKind::Open) && cells.iter().any(|c| keyed_item(c));
-                        NodeKind::ArrayLiteral { cells, block: matches!(token.kind, TokenKind::BracketOpen), record }
-                    } else if matches!(token.kind, TokenKind::Open) { NodeKind::Group(cells.pop().unwrap()) } else { NodeKind::Enclose(cells.pop().unwrap()) };
-                    kind
+                    match token.kind {
+                        TokenKind::BraceOpen => {
+                            let statements = statements(inner)?.into_iter().map(statement).collect::<Result<Vec<_>, _>>()?;
+                            let kind = statements.iter().map(|s| definition_kind(&s.nodes)).max().unwrap_or(DefinitionKind::Function);
+                            NodeKind::Dfn(Arc::new(Definition { body: Parsed { statements }, span: span.clone(), kind }))
+                        }
+                        TokenKind::Open => NodeKind::Group(parenthesised(inner, &span)?),
+                        _ => brackets(inner, &span)?,
+                    }
                 }
                 TokenKind::Literal(a) => NodeKind::Literal(a.clone()),
                 TokenKind::Function(f) => NodeKind::Function(*f),
@@ -337,27 +340,215 @@ impl Parser<'_> {
                 TokenKind::Pipe => NodeKind::Pipe,
                 TokenKind::Output => NodeKind::Output,
                 TokenKind::Guard(error) => {
-                    if open.is_some_and(|o| matches!(o.kind, TokenKind::BraceOpen)) { NodeKind::Guard(*error) } else if !error { NodeKind::Function(Primitive::Keys) } else { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "error guards belong to dfns"))); }
+                    if open.is_some_and(|o| matches!(o.kind, TokenKind::BraceOpen)) { NodeKind::Guard(*error) } else if !error { NodeKind::Function(Primitive::Keys) } else { return Err(invalid(&token.span, "error guards belong to dfns")); }
                 }
                 TokenKind::Hybrid(h) => NodeKind::Hybrid(h.clone()),
             };
-            let mut node = Node { kind, span };
-            if tied {
-                if !strand_item(&node.kind) { return Err(ParseFailure::Invalid(node.span.error(ErrorKind::Syntax, "˘ needs a value on each side"))); }
-                let left = nodes.pop().unwrap();
-                let span = Span { source: node.span.source.clone(), range: left.span.range.start..node.span.range.end };
-                let mut items = match left { Node { kind: NodeKind::Strand(items), .. } => items, _ => vec![left] };
-                items.push(node);
-                node = Node { kind: NodeKind::Strand(items), span };
-                tied = false;
-            }
-            nodes.push(node);
+            pieces.push(Piece::Node(Node { kind, span }));
         }
-        if tied { return Err(ParseFailure::Incomplete(self.tokens[self.pos - 1].span.error(ErrorKind::Syntax, "˘ needs a value on each side"))); }
         if let Some(open) = open { return Err(ParseFailure::Incomplete(open.span.error(ErrorKind::Syntax, "unclosed delimiter"))); }
-        if !nodes.is_empty() { pieces.push(nodes); }
-        Ok((pieces.into_iter().map(pipelines).collect::<Result<_, _>>()?, separated))
+        Ok(pieces)
     }
+}
+
+/// Statements at the top level and in dfns: a line break or `⋄` ends one.
+fn statements(pieces: Vec<Piece>) -> Result<Vec<Vec<Node>>, ParseFailure> {
+    let (mut result, mut nodes) = (Vec::new(), Vec::new());
+    for piece in pieces {
+        match piece {
+            Piece::Node(n) => nodes.push(n),
+            Piece::Newline | Piece::Diamond(_) => {
+                if !nodes.is_empty() { result.push(expression(std::mem::take(&mut nodes))?); }
+            }
+            Piece::Semicolon(s) => return Err(invalid(&s, "; separates items only inside brackets")),
+        }
+    }
+    if !nodes.is_empty() { result.push(expression(nodes)?); }
+    Ok(result)
+}
+
+/// Parentheses only group. A line break inside them is a space.
+fn parenthesised(pieces: Vec<Piece>, span: &Span) -> Result<Vec<Node>, ParseFailure> {
+    let mut nodes = Vec::new();
+    for piece in pieces {
+        match piece {
+            Piece::Node(n) => nodes.push(n),
+            Piece::Newline => (),
+            Piece::Diamond(s) => return Err(invalid(&s, "⋄ cannot separate items in parentheses: brackets write lists")),
+            Piece::Semicolon(s) => return Err(invalid(&s, "; separates items only inside brackets")),
+        }
+    }
+    if nodes.is_empty() { return Err(invalid(span, "empty grouping is not a value")); }
+    expression(nodes)
+}
+
+/// Brackets build arrays. A space separates items, `;` separates items that contain spaces, and `⋄` separates major cells.
+/// A line break is a space. Brackets round one item without `;` only group it.
+fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
+    let semicolon = pieces.iter().any(|p| matches!(p, Piece::Semicolon(_)));
+    let diamond = pieces.iter().any(|p| matches!(p, Piece::Diamond(_)));
+    if semicolon && diamond { return Err(invalid(span, "; and ⋄ cannot both separate items in one pair of brackets")); }
+    let mut parts = vec![Vec::new()];
+    for piece in pieces {
+        match piece {
+            Piece::Node(n) => parts.last_mut().unwrap().push(n),
+            Piece::Newline => (),
+            Piece::Diamond(_) | Piece::Semicolon(_) => parts.push(Vec::new()),
+        }
+    }
+    // A trailing separator ends the last item or row.
+    if parts.len() > 1 && parts.last().is_some_and(Vec::is_empty) { parts.pop(); }
+    if (semicolon || diamond) && parts.iter().any(Vec::is_empty) {
+        return Err(invalid(span, if semicolon { "empty item between semicolons" } else { "empty row between diamonds" }));
+    }
+    let record = |cells: &[Vec<Node>]| cells.iter().any(|c| keyed_item(c));
+    if semicolon {
+        let cells = parts.into_iter().map(expression).collect::<Result<Vec<_>, _>>()?;
+        return Ok(NodeKind::ArrayLiteral { record: record(&cells), cells, block: false });
+    }
+    if diamond {
+        let cells = parts
+            .into_iter()
+            .map(|row| {
+                let span = cover(&row);
+                let mut items = items(row)?;
+                if items.len() == 1 { return Ok(items.pop().unwrap()); }
+                Ok(vec![Node { kind: NodeKind::ArrayLiteral { record: record(&items), cells: items, block: false }, span }])
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(NodeKind::ArrayLiteral { cells, block: true, record: false });
+    }
+    let mut cells = items(parts.pop().unwrap())?;
+    let record = record(&cells);
+    Ok(if cells.len() == 1 && !record { NodeKind::Group(cells.pop().unwrap()) } else { NodeKind::ArrayLiteral { cells, block: false, record } })
+}
+
+/// Items separated by spaces: each run of nodes with no space between them is one item.
+fn items(nodes: Vec<Node>) -> Result<Vec<Vec<Node>>, ParseFailure> {
+    let mut runs: Vec<Vec<Node>> = Vec::new();
+    for node in nodes {
+        match runs.last_mut() { Some(run) if run.last().unwrap().span.range.end == node.span.range.start => run.push(node), _ => runs.push(vec![node]) }
+    }
+    runs.into_iter().map(expression).collect()
+}
+
+/// An expression outside brackets, or one item between semicolons: literal runs, then units, then pipelines.
+fn expression(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> { pipelines(units(literal_runs(nodes)?)?) }
+
+/// Literals separated only by spaces form one vector literal.
+fn literal_runs(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
+    let (mut out, mut run) = (Vec::with_capacity(nodes.len()), Vec::new());
+    for node in nodes {
+        if matches!(node.kind, NodeKind::Literal(_)) {
+            run.push(node);
+            continue;
+        }
+        literal_run(&mut run, &mut out)?;
+        out.push(node);
+    }
+    literal_run(&mut run, &mut out)?;
+    Ok(out)
+}
+
+fn literal_run(run: &mut Vec<Node>, out: &mut Vec<Node>) -> Result<(), ParseFailure> {
+    if run.len() < 2 {
+        out.append(run);
+        return Ok(());
+    }
+    let span = cover(run);
+    let items: Vec<_> = run.drain(..).map(|n| if let NodeKind::Literal(v) = n.kind { v } else { unreachable!() }).collect();
+    let value = Value::new(vec![items.len()], items).map_err(|k| ParseFailure::Invalid(span.error(k, "invalid literal list")))?;
+    out.push(Node { kind: NodeKind::Literal(value), span });
+    Ok(())
+}
+
+/// Spaces separate units, and pipes and guards separate them too. The unit holding an assignment's target takes in the
+/// `←` and its value, which runs to the next guard. The target stays flat within that unit, because assignment chooses
+/// its own target. A unit alone between separators needs no wrapper.
+fn units(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
+    let (mut result, mut part) = (Vec::with_capacity(nodes.len()), Vec::new());
+    for node in nodes {
+        if matches!(node.kind, NodeKind::Guard(_)) {
+            result.extend(assignments(std::mem::take(&mut part))?);
+            result.push(node);
+        } else { part.push(node) }
+    }
+    result.extend(assignments(part)?);
+    Ok(result)
+}
+
+/// Assignments bind from the right, so this works back from the last `←`. A chain such as `a←b←0` stays flat.
+fn assignments(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
+    let mut segments = vec![Vec::new()];
+    for node in nodes {
+        let assign = matches!(node.kind, NodeKind::Assign);
+        segments.last_mut().unwrap().push(node);
+        if assign { segments.push(Vec::new()); }
+    }
+    let mut value: std::collections::VecDeque<Node> = pipelines(finish(spaced(segments.pop().unwrap())))?.into();
+    while let Some(mut segment) = segments.pop() {
+        let assign = segment.pop().unwrap();
+        let (mut out, mut target) = spaced(segment);
+        // A space before `←` leaves the target in the previous unit.
+        if target.is_empty() && out.last().is_some_and(|n| !matches!(n.kind, NodeKind::Pipe)) {
+            target = match out.pop() { Some(Node { kind: NodeKind::Unit(inner), .. }) => inner, Some(n) => vec![n], None => unreachable!() };
+        }
+        value.push_front(assign);
+        for node in target.into_iter().rev() { value.push_front(node); }
+        if out.is_empty() { continue; }
+        let mut nodes = Vec::from(value);
+        // Units before the target in its stage stay separate from it.
+        if out.iter().rposition(|n| matches!(n.kind, NodeKind::Pipe)).map_or(0, |i| i + 1) < out.len() {
+            let span = cover(&nodes);
+            nodes = vec![Node { kind: NodeKind::Unit(nodes), span }];
+        }
+        out.extend(nodes);
+        value = pipelines(out)?.into();
+    }
+    Ok(value.into())
+}
+
+/// Runs of nodes with no space between them become units, and pipes separate them. Returns the finished units and
+/// the last run, which is still open.
+fn spaced(nodes: Vec<Node>) -> (Vec<Node>, Vec<Node>) {
+    let (mut out, mut run): (Vec<Node>, Vec<Node>) = (Vec::with_capacity(nodes.len()), Vec::new());
+    for node in nodes {
+        if matches!(node.kind, NodeKind::Pipe) {
+            flush(&mut run, &mut out);
+            out.push(node);
+        } else {
+            if run.last().is_some_and(|last| last.span.range.end != node.span.range.start) { flush(&mut run, &mut out); }
+            run.push(node);
+        }
+    }
+    (out, run)
+}
+
+fn flush(run: &mut Vec<Node>, out: &mut Vec<Node>) {
+    if run.len() < 2 { out.append(run) } else {
+        let span = cover(run);
+        out.push(Node { kind: NodeKind::Unit(std::mem::take(run)), span });
+    }
+}
+
+/// Close the last run. A unit alone between pipes needs no wrapper.
+fn finish((mut out, mut run): (Vec<Node>, Vec<Node>)) -> Vec<Node> {
+    flush(&mut run, &mut out);
+    let (mut result, mut stage) = (Vec::with_capacity(out.len()), Vec::new());
+    let close = |stage: &mut Vec<Node>, result: &mut Vec<Node>| {
+        if let [Node { kind: NodeKind::Unit(inner), .. }] = stage.as_mut_slice() {
+            result.append(inner);
+            stage.clear();
+        } else { result.append(stage) }
+    };
+    for node in out {
+        if matches!(node.kind, NodeKind::Pipe) {
+            close(&mut stage, &mut result);
+            result.push(node);
+        } else { stage.push(node) }
+    }
+    close(&mut stage, &mut result);
+    result
 }
 
 // Assignment encloses the pipeline; guards separate independent expressions.
@@ -387,40 +578,19 @@ fn pipelines(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
     Ok(result)
 }
 
-/// Whether an item of a parenthesised literal is `key:value`: its first `:` follows keys, and no function comes before them.
+/// Whether a bracketed item is `key:value`: its first `:` follows keys, and no function comes before them.
 pub(crate) fn keyed_item(nodes: &[Node]) -> bool {
     let Some(i) = nodes.iter().position(|n| matches!(n.kind, NodeKind::Function(Primitive::Keys))) else { return false; };
-    let key = |n: &Node| {
-        matches!(
-            n.kind,
-            NodeKind::Literal(_) | NodeKind::Name(_) | NodeKind::Group(_) | NodeKind::Strand(_) | NodeKind::ArrayLiteral { .. } | NodeKind::Enclose(_)
-        )
-    };
+    let key = |n: &Node| matches!(n.kind, NodeKind::Literal(_) | NodeKind::Name(_) | NodeKind::Group(_) | NodeKind::ArrayLiteral { .. });
     i > 0 && nodes[..i].iter().all(key)
-}
-
-fn strand_item(kind: &NodeKind) -> bool {
-    matches!(
-        kind,
-        NodeKind::Literal(_)
-            | NodeKind::Function(_)
-            | NodeKind::Name(_)
-            | NodeKind::System(_)
-            | NodeKind::Hybrid(_)
-            | NodeKind::Group(_)
-            | NodeKind::Strand(_)
-            | NodeKind::ArrayLiteral { .. }
-            | NodeKind::Enclose(_)
-            | NodeKind::Dfn(_)
-    )
 }
 
 /// Check structure without evaluation. A complete input can still have a binding or domain error.
 pub fn parse(source: Arc<Source>) -> ParseStatus {
     let tokens = match lex(&source) { Ok(tokens) => tokens, Err(e) => return ParseStatus::Invalid(e) };
-    match (Parser { tokens: &tokens, pos: 0 }).expressions(None, 0) {
-        Ok((pieces, _)) => {
-            ParseStatus::Complete(Parsed { statements: pieces.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression }).collect() })
+    match (Parser { tokens: &tokens, pos: 0 }).pieces(None, 0).and_then(statements) {
+        Ok(statements) => {
+            ParseStatus::Complete(Parsed { statements: statements.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression }).collect() })
         }
         Err(ParseFailure::Incomplete(e)) => ParseStatus::Incomplete(e),
         Err(ParseFailure::Invalid(e)) => ParseStatus::Invalid(e),

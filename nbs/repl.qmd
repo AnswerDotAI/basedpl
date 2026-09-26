@@ -7,7 +7,7 @@ Run `bapl`. Expressions display their results; assignments retain names for late
 ```text
       v←⍳5
       +/v
-15
+10
 ```
 
 ## Typing glyphs
@@ -28,7 +28,7 @@ Type a backtick followed by a name. Tab replaces it with the glyph. A non-letter
 
 Use `` `bullet`` then Tab for the system prefix `•`; `` `quad`` gives the output glyph `⎕`.
 
-Strand `˘` is Alt-t, or right Option–Shift–period on a US Mac keyboard, or `` `strand`` then Tab. Use `` `pi`` for `π` and `` `sqrt`` for `√`.
+Before `⊸` is Alt-u, or `` `before`` then Tab. After `⟜` is Alt-t, or `` `after`` then Tab. Use `` `pi`` for `π` and `` `sqrt`` for `√`.
 
 | Input | Result |
 |---|---|
@@ -65,7 +65,7 @@ An unclosed delimiter gives a continuation prompt. Closing it evaluates the comp
 6
 ```
 
-Inside array literals, newlines separate items/rows, like `⋄`.
+Inside brackets and parentheses, a line break counts as a space. Rows of an array need `⋄`.
 
 ## Array and function display
 
@@ -88,16 +88,16 @@ Arrays with axes have boxes, axis arrows and type markers. Enter a function name
 | `]box reset` | Restore the starting display settings |
 | `]help +` | Help for a name or glyph |
 | `]help mean -source` | Definition source |
-| `]Display (1 2⋄ 3 4)` | Draw one array without changing settings |
+| `]Display [[1 2] [3 4]]` | Draw one array without changing settings |
 | `]clear` | Remove every name and restore the starting display settings |
 
 Boxing controls how results are drawn. Batch, Python and JSON sessions start with plain display.
 
-Both display modes show scalars as `⊂4ₓ`, `⊂⊂4ₓ` or `⊂(1 2)`.
+Both display modes show scalars as source: `⊂4ₓ`, `⊂⊂4ₓ` or `⊂1 2`.
 
 `⎕←` explicitly prints a value, including an assignment's result.
 
 ```text
       ⎕←v←⍳3
-1 2 3
+0 1 2
 ```

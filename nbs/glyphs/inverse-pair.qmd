@@ -11,9 +11,9 @@ Dyadic inversion holds `X` fixed: `X g (X f Y)` must recover `Y`.
 
 ```apl
 f←{⍺+⍵}⇄{⍵-⍺} ⋄ 3(f⍣¯1)8    ⍝ 5
-f←{⍺+⍵}⇄{⍵-⍺} ⋄ (3∘f)⍣¯1⊢8 ⍝ 5
+f←{⍺+⍵}⇄{⍵-⍺} ⋄ (3⊸f)⍣¯1⊢8 ⍝ 5
 ```
 
-Left binding preserves the pair. For right binding, pair the bound monad: `(f∘A)⇄undo`.
+Left binding preserves the pair. For right binding, pair the bound monad: `(f⟜A)⇄undo`.
 
 See [Power](power.qmd) and [Under](under.qmd).

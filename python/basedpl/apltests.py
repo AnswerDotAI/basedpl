@@ -143,7 +143,9 @@ def literal(array):
             if isinstance(x, dict) and 'shape' in x: return '('+literal(x)+')'
             text = _element(x)
             return '('+text+')' if text.startswith('•ucs ') else text
-        values = ' '.join(item(x) for x in data)
+        items = [item(x) for x in data]
+        # Only literals form a run, so a list with any other item needs brackets.
+        values = ('[{}]' if any(t.startswith('(') for t in items) else '{}').format(' '.join(items))
         if shape==[len(data)] and len(data)>1: return values
         if len(data)==1: values = _element(data[0])
     return dims+'⍴'+values

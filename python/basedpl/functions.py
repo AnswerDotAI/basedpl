@@ -8,14 +8,16 @@ _HOLE = object()
 
 def _build(kind, *operands, valence=0):
     if any(o is _HOLE or isinstance(o, _Pending) for o in operands): return _Pending(kind, operands, valence)
-    if kind == 'history': return _build('⍣', operands[0], _builtin('⊂')(operands[1]))
+    if kind == 'history':
+        f, p = operands
+        return _build('⍣', f, [p] if isinstance(p, Function) else apl('{(×⍵)×⍳1+|⍵}')(p))
     values = [o._inner if isinstance(o, Function) else _array(o) for o in operands]
     return Function(_Function.build(kind, values), valence=valence)
 
 class _Combinators(_Operators):
     def __bool__(self): raise TypeError('an APL function has no truth value')
     @property
-    def left(self): return _build('∘', _HOLE, self, valence=1)
+    def left(self): return _build('⊸', _HOLE, self, valence=1)
     @property
     def reduce(self): return _build('/', self)
     @property
@@ -33,13 +35,13 @@ class _Combinators(_Operators):
     @property
     def rank(self): return _build('⍤', self, _HOLE)
     @property
-    def beside(self): return _build('∘', self, _HOLE)
+    def after(self): return _build('⟜', self, _HOLE)
     @property
     def atop(self): return _build('⍤', self, _HOLE)
     @property
     def over(self): return _build('⍥', self, _HOLE)
     @property
-    def behind(self): return _build('⍛', self, _HOLE)
+    def before(self): return _build('⊸', self, _HOLE)
     @property
     def under(self): return _build('⌾', self, _HOLE)
     @property
@@ -56,8 +58,8 @@ class _Combinators(_Operators):
     def stencil(self): return _build('⌺', self, _HOLE)
     def __pow__(self, counts): return _build('⍣', self, counts)
     def __getitem__(self, axis): return _build('axis', self, axis, valence=self._valence)
-    def __lshift__(self, g): return _build('∘', self, g)
-    def __rshift__(self, g): return _build('∘', g, self)
+    def __lshift__(self, g): return _build('⍤', self, g)
+    def __rshift__(self, g): return _build('⍤', g, self)
     def __matmul__(self, g):
         if not isinstance(g, _Combinators): raise TypeError('inner product requires two functions')
         return _build('.', self, g)
@@ -97,7 +99,7 @@ class Function(_Combinators):
         if kwargs:
             if self._valence == 1: raise TypeError('keyword arguments need a dyadic call')
             args = (kwargs, args[0] if len(args) == 1 else list(args))
-        elif len(args) == 1 and self._valence == 2: return _build('∘', self, args[0], valence=1)
+        elif len(args) == 1 and self._valence == 2: return _build('⟜', self, args[0], valence=1)
         if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this APL function')
         return apl._request(dict(function=self._inner, args=[_array(o) for o in args]), True).value
 

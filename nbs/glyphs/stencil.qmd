@@ -11,7 +11,7 @@ Negative sizes in [Windows](windows.qmd) return the same windows as one array.
 `⍵` is the window. `⍺` gives signed padding counts per axis: positive at the start, negative at the end. Atop with `⊢`, as in `+/⍤⊢`, discards `⍺`. A two-row specification gives sizes then movements.
 
 ```apl
-+/⍤⊢⌺[3 ⋄ 2]⍳8      ⍝ 3 9 15 21
++/⍤⊢⌺[3 ⋄ 2]⍳8      ⍝ 1 6 12 18
 ```
 
 Results assemble with fill.

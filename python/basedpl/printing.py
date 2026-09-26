@@ -52,7 +52,7 @@ class _Printer:
         a = args[0]
         if kind in ('/', '⌿', '\\', '⍀'):
             method = 'scan' if kind in ('\\', '⍀') else 'reduce'
-            axis = f'[{r(args[1])}]' if len(args) == 2 else '[1]' if kind in ('⌿', '⍀') else ''
+            axis = f'[{r(args[1])}]' if len(args) == 2 else '[0]' if kind in ('⌿', '⍀') else ''
             return f'{r(a, True, 100)}.{method}{axis}', 100
         if kind == 'axis': return f'{r(a, dyad, 100)}[{r(args[1])}]', 100
         if kind == 'inverse': return f'{r(a, dyad, 41)} ** -1', 40
@@ -70,20 +70,20 @@ class _Printer:
         if len(args) != 2: return _apl(f), 100
         b = args[1]
         af, bf = isinstance(a, _Function), isinstance(b, _Function)
-        if kind == '∘':
-            if not af: return f'{r(b, True, 100)}.left({r(a)})', 100
-            if not bf:
-                operand = a.parts()
-                if operand and not operand[1] and _names.get(operand[0], ('', ''))[1]:
-                    return f'{r(a, True, 100)}({r(b)})', 100
-                return f'{r(a, True, 100)}.beside({r(b)})', 100
-            return f'{r(a, dyad, 6)} << {r(b, False, 6)}', 5
+        if kind == '⊸' and not af: return f'{r(b, True, 100)}.left({r(a)})', 100
+        if kind == '⟜' and not bf:
+            operand = a.parts()
+            if operand and not operand[1] and _names.get(operand[0], ('', ''))[1]:
+                return f'{r(a, True, 100)}({r(b)})', 100
+            return f'{r(a, True, 100)}.after({r(b)})', 100
         if kind == '.': return f'{r(a, True, 31)} @ {r(b, True, 31)}', 30
         if kind == '⍣':
             if bf: return f'{r(a, dyad, 100)}.power({r(b, True)})', 100
+            raw = b.parts()
+            if raw.get('shape') == [1] and isinstance(raw['data'][0], _Function): return f'{r(a, dyad, 100)}.history({r(raw["data"][0], True)})', 100
             return f'{r(a, dyad, 41)} ** {r(b)}', 40
         methods = {'⍤': ('atop' if bf else 'rank', False if bf else dyad, dyad),
-                   '⍥': ('over', dyad, False), '⍛': ('behind', False, True), '⌾': ('under', dyad, False),
+                   '⍥': ('over', dyad, False), '⊸': ('before', False, True), '⟜': ('after', True, False), '⌾': ('under', dyad, False),
                    '⇄': ('with_inverse', dyad, dyad), '@': ('at', dyad, False), '⌺': ('stencil', True, False)}
         if kind in methods and af:
             method, av, bv = methods[kind]

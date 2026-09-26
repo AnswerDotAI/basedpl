@@ -70,12 +70,12 @@ fn numbers(value: &Value, span: &Context<'_>) -> Result<Vec<f64>, Error> {
 }
 
 fn names(value: &Value, axis: usize) -> Vec<String> {
-    value.keys(axis).map_or(vec![], |k| k.names().iter().enumerate().map(|(i, n)| n.as_ref().map_or_else(|| (i + 1).to_string(), |n| n.to_string())).collect())
+    value.keys(axis).map_or(vec![], |k| k.names().iter().enumerate().map(|(i, n)| n.as_ref().map_or_else(|| i.to_string(), |n| n.to_string())).collect())
 }
 
 fn axis_name(value: &Value, axis: usize) -> String { value.axis_name(axis).map_or(String::new(), |n| n.to_string()) }
 
-fn positions(n: usize) -> Vec<f64> { (1..=n).map(|i| i as f64).collect() }
+fn positions(n: usize) -> Vec<f64> { (0..n).map(|i| i as f64).collect() }
 
 /// Tick label text: up to ten decimals, without trailing zeros.
 fn label(v: f64) -> String {
@@ -163,7 +163,7 @@ impl Axis {
                 .map(|(name, v)| Ok((self.map(real(&v, span)?, span)?, name.to_string())))
                 .collect::<Result<Vec<_>, Error>>()?,
             Some(t) if !t.is_atom() => numbers(t, span)?.into_iter().map(|v| Ok((self.map(v, span)?, label(v)))).collect::<Result<_, Error>>()?,
-            None if !self.categories.is_empty() => self.categories.iter().enumerate().map(|(i, c)| ((i + 1) as f64, c.clone())).collect(),
+            None if !self.categories.is_empty() => self.categories.iter().enumerate().map(|(i, c)| (i as f64, c.clone())).collect(),
             _ if self.log => {
                 // Short log ranges also tick at 2 and 5 times each power of 10.
                 let steps: &[f64] = if self.hi - self.lo < 3. { &[1., 2., 5.] } else { &[1.] };

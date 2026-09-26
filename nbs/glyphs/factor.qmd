@@ -5,7 +5,7 @@
 ```apl
 ⨸700                 ⍝ 2ₓ 2ₓ 5ₓ 5ₓ 7ₓ
 ⨸1                   ⍝ 0⍴0ₓ
-⨸⍣¯1⊢⨸700           ⍝ 700ₓ
+⨸⍣¯1 ⨸700            ⍝ 700ₓ
 ```
 
 Inverse: product. `K⨸N` selects exponents or a factor table.

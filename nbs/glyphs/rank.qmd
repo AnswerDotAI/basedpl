@@ -1,4 +1,4 @@
-# `⍤` — Atop / Rank / Axes
+# `⍤` — Atop / Rank
 
 With function operand `g`, `f⍤g Y` is `f(g Y)` and `X f⍤g Y` is `f(X g Y)`.
 
@@ -6,10 +6,11 @@ With function operand `g`, `f⍤g Y` is `f(g Y)` and `X f⍤g Y` is `f(X g Y)`.
 2 -⍤+ 3            ⍝ ¯5
 ```
 
-With numeric operand `R`, `f⍤R` applies to trailing cells of rank `R`. Frames use leading agreement. Results assemble with fill.
+With numeric operand `R`, `f⍤R` applies to trailing cells of rank `R`. Frames use leading agreement. Results assemble with fill. A space ends the operand, so the argument needs no separator.
 
 ```apl
-(+/⍤1)2 3⍴⍳6       ⍝ 6 15
+m←2 3⍴⍳6
++/⍤1 m             ⍝ 3 12
 ```
 
 | `R` | Monad rank | Dyad left/right ranks |
@@ -20,75 +21,18 @@ With numeric operand `R`, `f⍤R` applies to trailing cells of rank `R`. Frames 
 
 Negative ranks count back from argument rank. Excessive ranks clamp. Empty frames call the operand on prototype cells.
 
-`∞` is the whole argument, and `¯∞` is rank 0. So `⍤1 ∞` pairs each row on the left with the whole right argument. That gives the matrix-vector product, which also multiplies matrices.
+`∞` is the whole argument, and `¯∞` is rank 0. So `⍤1 ∞` pairs each row on the left with the whole right argument. That gives the matrix-vector product, which also multiplies matrices. A literal argument right after a literal operand needs brackets, because a list of literals would take it into the operand.
 
 ```apl
 m←[1 2 3 ⋄ 4 5 6]
-m +⌿⍤×⍤1 ∞⊢1 2 3                   ⍝ 14 32
-m +⌿⍤×⍤1 ∞⊢[1 10 ⋄ 2 20 ⋄ 3 30]    ⍝ [14 140 ⋄ 32 320]
+m +⌿⍤×⍤1 ∞ [1 2 3]                   ⍝ 14 32
+m +⌿⍤×⍤1 ∞ [1 10 ⋄ 2 20 ⋄ 3 30]      ⍝ [14 140 ⋄ 32 320]
 ```
 
-## Axes
-
-With an enclosed operand, `f⍤[A]` applies `f` to the cells made of axes `A`. The other axes form the frame. Brackets are the usual way to write the operand, and they need no separator before the argument. Any enclosed value works.
-
-```apl
-{+/⍵}⍤[1]2 3⍴⍳6           ⍝ 5 7 9
-ax←⊂1 ⋄ {+/⍵}⍤ax⊢2 3⍴⍳6   ⍝ 5 7 9
-```
-
-Rank is the case that selects the last `r` axes. The same digit points to opposite ends.
-
-```apl
-+/⍤1⊢2 3⍴⍳6              ⍝ 6 15
-+/⍤[1]2 3⍴⍳6             ⍝ 5 7 9
-```
-
-Result cells with the same rank as the selected cells return to the axes `A`. Other result cells start at the position of the first selected axis.
-
-```apl
-{⌽⍵}⍤[1]2 3⍴⍳6           ⍝ ⊖2 3⍴⍳6
-⍴{,⍵}⍤[1 2]2 3 4⍴⍳24     ⍝ 6 4
-```
-
-With two arguments, `A` applies to both, and leading frames agree as they do for rank. An argument without the selected axes is one whole cell, paired with every cell of the other argument.
-
-```apl
-1 0 1{⍺/⍵}⍤[2]2 3⍴⍳6      ⍝ [1 3 ⋄ 4 6]
-10 20{⍺+⍵}⍤[1]2 3⍴⍳6      ⍝ [11 12 13 ⋄ 24 25 26]
-```
-
-The operand can name axes.
-
-```apl
-m←("row":2 ⋄ "col":3)⍴⍳6
-{+/⍵}⍤["row"]m           ⍝ ("col":3)⍴5 7 9
-```
-
-### Exceptions
-
-A primitive with its own axis meaning keeps it:
-
-- Multi-axis reduce, including seeded reduce. `+/⍤[2 3]` flattens each cell before reducing.
-- Partitioned enclose. `1 0 1 0⊂⍤[2]` cuts the whole matrix into blocks. Nest `⊆⍤[K]` follows the general rule. Both match Dyalog.
-- Rotate with a count array. `1 2 3 4⌽⍤[1]` pairs one count with each column.
-- Catenate and ravel with fractional positions, including laminate.
-- Mix. `⊃⍤[A]` places the cell axes among the frame axes.
-- Axis selectors. `⍳⍤[A]` returns the keys or positions of the selected axes.
-
-```apl
-+/⍤[2 3]2 3 4⍴⍳24        ⍝ 78 222
-1 2,⍤[0.5]3 4            ⍝ [1 2 ⋄ 3 4]
-```
-
-A dfn has no axis meaning of its own, so wrapping a primitive in a dfn gives the general rule.
-
-```apl
-{+/⍵}⍤[2 3]2 3 4⍴⍳24     ⍝ [10 26 42 ⋄ 58 74 90]
-```
+To apply a function along chosen axes, see [Axis](axis.qmd).
 
 ## Errors
 
-- `RANK`: a rank or axis operand that is not a scalar or vector
+- `RANK`: a rank operand that is not a scalar or vector
 - `LENGTH`: a rank operand with more than three items
-- `DOMAIN`: non-integral ranks, repeated axes, axes outside the higher-rank argument
+- `DOMAIN`: non-integral ranks

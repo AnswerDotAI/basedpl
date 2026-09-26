@@ -21,8 +21,8 @@ The same call works from Python: `apl('•load "lib/numeric.apl"')`. Definitions
 | `dyalog.apl` | Compression, dates, puzzles, Lisp, parsing, text and macro expansion | `array.apl` |
 | `regex.apl` | `pattern (f regex_replace) text`: transform matched strings | |
 
-The ports use origin one, based arrays, `↑` for First, `⊃` for Mix, `⍶`/`⍹` operands, and seeded reductions.
+The ports count positions from 0, as the rest of bAsedPL does. They use based arrays, `↑` for First, `⊃` for Mix, `⍶`/`⍹` operands, and seeded reductions.
 
-`dyalog.apl` includes `cal (year month)` and `cal year` for calendars, `packZ` for LZW compression (`0 packZ` expands; a negative bit limit returns the dictionary), `variables unify expressions` for structural unification with an occurs check, and `digits ratsum` for repeating-unit rational addition/negation.
+`dyalog.apl` includes `cal [year month]` and `cal year` for calendars, `packZ` for LZW compression (`0 packZ` expands; a negative bit limit returns the dictionary), `variables unify expressions` for structural unification with an occurs check, and `digits ratsum` for repeating-unit rational addition/negation.
 
 Examples in `tests/reference/{april,aplcart,dyalog}.apl` load these files and retain independent upstream or Dyalog expectations. Case-specific setup stays in the tests. Unported Dyalog definitions remain in the reference inventory with their outstanding dependencies.

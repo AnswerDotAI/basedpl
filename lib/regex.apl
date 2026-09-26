@@ -4,7 +4,7 @@ regex_replace←{
     starts←p.position s
     0=≢starts:s
     ends←starts+p.length s
-    gaps←(1,ends){(⍵-⍺)↑(⍺-1)↓s}¨starts,1+≢s
+    gaps←(0,ends){(⍵-⍺)↑⍺↓s}¨starts,≢s
     replacements←⍶¨p.match s
     ∊gaps,¨replacements,⊂""
 }

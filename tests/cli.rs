@@ -11,7 +11,7 @@ fn native_expression_and_diagnostic() {
         ("10-3-2", "9\n"),
         ("¯2+5", "3\n"),
         ("1x 0ₓ ¯2x 9223372036854775808ₓ", "1ₓ 0ₓ ¯2ₓ 9223372036854775808ₓ\n"),
-        ("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂1 2", "⊂4ₓ\n⊂⊂4ₓ\n⊂(1 2)\n"),
+        ("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂1 2", "⊂4ₓ\n⊂⊂4ₓ\n⊂1 2\n"),
         ("f←{⍵=0:0 ⋄ 1+∇⍵-1} ⋄ f 500", "500\n"),
         ("1ₓ÷3ₓ ⋄ 6ₓ÷3ₓ ⋄ 1ₓ÷3", "1r3\n2ₓ\n0.3333333333333333\n"),
         ("(1j2)+(3j4) ⋄ (1j2)×(1j¯2) ⋄ +1j2", "4j6\n5\n1j¯2\n"),
@@ -60,18 +60,18 @@ fn json_session_flushes_before_eof_and_recovers() {
     let (send, recv) = mpsc::channel();
     let reader = thread::spawn(move || { for line in BufReader::new(output).lines() { if send.send(line.unwrap()).is_err() { break; } } });
     for (request, expected, error_kind, printed) in [
-        (json!("v←⍳10").to_string(), Some(json!({"shape":[10], "data":(1..=10).map(f64::from).collect::<Vec<_>>(), "prototype":0.0})), None, vec![]),
-        (json!("+/v").to_string(), Some(json!(55.0)), None, vec!["55"]),
+        (json!("v←⍳10").to_string(), Some(json!({"shape":[10], "data":(0..10).map(f64::from).collect::<Vec<_>>(), "prototype":0.0})), None, vec![]),
+        (json!("+/v").to_string(), Some(json!(45.0)), None, vec!["45"]),
         ("{".into(), None, Some("REQUEST ERROR"), vec![]),
         (json!(3).to_string(), None, Some("REQUEST ERROR"), vec![]),
         (json!(["1+2"]).to_string(), None, Some("REQUEST ERROR"), vec![]),
         (json!({"code":"1+2"}).to_string(), None, Some("REQUEST ERROR"), vec![]),
         (json!("⎕←7 ⋄ 1÷0").to_string(), None, Some("DOMAIN ERROR"), vec!["7"]),
         (json!("(2+").to_string(), None, Some("SYNTAX ERROR"), vec![]),
-        (json!("⍝ \"quoted\"\n+/v").to_string(), Some(json!(55.0)), None, vec!["55"]),
+        (json!("⍝ \"quoted\"\n+/v").to_string(), Some(json!(45.0)), None, vec!["45"]),
         (json!("f←+").to_string(), None, None, vec![]),
-        (json!("fs←+˘×").to_string(), None, Some("DOMAIN ERROR"), vec![]),
-        (json!("f←2⊃fs ⋄ 2 f 3").to_string(), Some(json!(6.0)), None, vec!["6"]),
+        (json!("fs←[+ ×]").to_string(), None, Some("DOMAIN ERROR"), vec![]),
+        (json!("f←1⊃fs ⋄ 2 f 3").to_string(), Some(json!(6.0)), None, vec!["6"]),
         (json!("").to_string(), None, None, vec![]),
         (json!("⍳0").to_string(), Some(json!({"shape":[0], "data":[], "prototype":0.0})), None, vec!["⍬"]),
     ] {
@@ -104,7 +104,7 @@ fn batch_stdin_and_persistent_repl() {
         child.stdin.take().unwrap().write_all("v←⍳10\n+/v\n".as_bytes()).unwrap();
         let result = child.wait_with_output().unwrap();
         assert!(result.status.success());
-        assert_eq!(String::from_utf8(result.stdout).unwrap(), "55\n");
+        assert_eq!(String::from_utf8(result.stdout).unwrap(), "45\n");
         assert!(result.stderr.is_empty());
     }
 }

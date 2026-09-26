@@ -35,15 +35,15 @@ def test_terminal_symbol_entry_and_exit():
         enter(']box off\r', 'OFF -style=max -trains=tree -fns=on\r\n')
         keys = json.loads(files('basedpl').joinpath('keyboard.json').read_text())
         enter('"' + ''.join('\x1b'+k for k in keys) + '"\r', '\r\n' + ''.join(keys.values()) + '\r\n')
-        enter('r\x1bh1+2\x1bl2\x1bu×\r', '\r\n')  # r←1+2→2∘×
+        enter('r\x1bh1+2\x1bl2\x1bu×\r', '\r\n')  # r←1+2→2⊸×
         enter('\x1b]\x1bhr\r', '\r\n6\r\n')  # explicit output via Alt-]
         enter('1 2 3\x1bl+/\r', '\r\n6\r\n')
         enter('界`assign `io\t4\r', '\r\n')  # space, Tab, Unicode byte offsets
-        enter('+/界\r', '\r\n10\r\n')
+        enter('+/界\r', '\r\n6\r\n')
         enter('2`times3+4\r', '\r\n14\r\n')  # delimiter is retained
         enter('sum`assign +`reduce\r', '\r\n')  # Enter accepts and submits
-        enter('sum 界\r', '\r\n10\r\n')
-        enter('`iotx\x7fa3\r', '\r\n1 2 3\r\n')  # backspace while entering a name
+        enter('sum 界\r', '\r\n6\r\n')
+        enter('`iotx\x7fa3\r', '\r\n0 1 2\r\n')  # backspace while entering a name
         data = enter('`de\t \r', 'UNSUPPORTED')  # ambiguous Tab must not choose a glyph
         assert b'`de ' in data
         enter('2+2\r', '\r\n4\r\n')

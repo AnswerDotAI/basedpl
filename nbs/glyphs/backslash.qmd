@@ -14,24 +14,25 @@
 -\1 2 3            ⍝ 1 ¯1 ¯4
 ```
 
-`S f\Y` starts with seed `S`, excluding the seed from the result.
+`S f\ Y` starts with seed `S`, excluding the seed from the result.
 
 ```apl
-10 -\1 2 3         ⍝ 9 7 4
-100 +\10 20        ⍝ 110 130
+10-\1 2 3          ⍝ 9 7 4
+100+\10 20         ⍝ 110 130
 ```
 
 The whole seed starts each lane. Use Rank for separate seeds per cell.
 
 ```apl
-10 20 (+\⍤0 1)2 3⍴⍳6  ⍝ [11 13 16 ⋄ 24 29 35]
-(,10)+\1 2 3           ⍝ (,11⋄ ,13⋄ ,16)
+M←[1 2 3 ⋄ 4 5 6]
+10 20+\⍤0 1 M      ⍝ [11 13 16 ⋄ 24 29 35]
+[10;]+\1 2 3       ⍝ [[11;] [13;] [16;]]
 ```
 
-Empty scans and unseeded singletons make no calls. `⍤[K]` selects the axis, and [`⍀`](backslash-bar.qmd) defaults to the first.
+Empty scans and unseeded singletons make no calls. [Axis](axis.qmd) `⍠K` selects the axis, and [`⍀`](backslash-bar.qmd) defaults to the first.
 
 ```apl
-+\⍤[1]2 3⍴⍳6       ⍝ [1 2 3 ⋄ 5 7 9]
++\⍠0 [1 2 3 ⋄ 4 5 6]  ⍝ [1 2 3 ⋄ 5 7 9]
 ```
 
 APL difference: every scan left-accumulates, including dfns.

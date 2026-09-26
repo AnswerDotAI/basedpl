@@ -13,4 +13,4 @@
 1 1 0 1 1⊆"abcde" ⍝ "ab" "de"
 ```
 
-Marks are nonnegative integers. Scalar/singleton marks extend. `⊆⍤[K]` selects the axis. Unlike [`⊂`](enclose.qmd), positive marks need not start a partition at every position.
+Marks are nonnegative integers. Scalar/singleton marks extend. `⊆⍠K` selects the axis. Unlike [`⊂`](enclose.qmd), positive marks need not start a partition at every position.

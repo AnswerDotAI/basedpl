@@ -22,8 +22,8 @@ def _dtype(items):
 
 
 def _labels(keys):
-    "Keys for Python, with its 1-origin position for each unnamed entry."
-    return [i if k is None else k for i,k in enumerate(keys, 1)]
+    "Keys for Python, with its position for each unnamed entry."
+    return [i if k is None else k for i,k in enumerate(keys)]
 
 
 def _value(raw, as_array=False):
@@ -57,10 +57,10 @@ def _dataframe(raw):
     shape = data.shape
     keys = raw.get('axis_keys', [None] * len(shape))
     names = raw.get('axis_names', [None] * len(shape))
-    labels = [list(range(1, n+1)) if k is None else _labels(k) for n,k in zip(shape, keys)]
+    labels = [list(range(n)) if k is None else _labels(k) for n,k in zip(shape, keys)]
     if len(shape) < 2:
-        index = pd.Index(labels[0], name=names[0]) if labels else [1]
-        return pd.DataFrame(data.reshape(-1, 1), index=index, columns=[1])
+        index = pd.Index(labels[0], name=names[0]) if labels else [0]
+        return pd.DataFrame(data.reshape(-1, 1), index=index, columns=[0])
     index = pd.Index(labels[0], name=names[0]) if len(shape) == 2 else pd.MultiIndex.from_product(labels[:-1], names=names[:-1])
     return pd.DataFrame(data.reshape(math.prod(shape[:-1]), shape[-1]), index=index, columns=pd.Index(labels[-1], name=names[-1]))
 
@@ -94,8 +94,8 @@ def _array(value, seen=None):
     np = sys.modules.get('numpy')
     prototype = 0.
     if isinstance(value, dict):
-        keys = [None if type(k) is int and k == i else k for i,k in enumerate(value, 1)]
-        if not all(k is None or isinstance(k, str) for k in keys): raise TypeError('keyed arrays need string keys, or an integer key equal to its 1-origin position')
+        keys = [None if type(k) is int and k == i else k for i,k in enumerate(value)]
+        if not all(k is None or isinstance(k, str) for k in keys): raise TypeError('keyed arrays need string keys, or an integer key equal to its position')
         seen.add(id(value))
         try: return _Array(dict(shape=[len(value)], data=[_element(o, seen) for o in value.values()], prototype=prototype, axis_keys=[keys]))
         finally: seen.remove(id(value))

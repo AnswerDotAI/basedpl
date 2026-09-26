@@ -17,11 +17,11 @@ for ← {  ⍝ Multiple selection of function list.
 invr ← {  ⍝ Approx inverse of real-valued function.
   ⍺←1+1e¯14+0×⍵
   ∆x←1e¯14*÷2
-  -∘⍵∘⍶{
+  -⟜⍵⍤⍶{
     ⍹ ⍵:⍵
-    y y∆←⍶¨0 ∆x+⊂⍵
+    [y y∆]←⍶¨[0 ∆x]+⊂⍵
     ∇ ⍵-y×∆x÷y∆-y  ⍝ refined estimate.
-  }(⍵∘≡∘⍶)⍺
+  }(⍵⊸≡⍤⍶)⍺
 }
 
 ⍝ From http://dfns.dyalog.com/c_limit.htm
@@ -30,7 +30,7 @@ limit ← {  ⍝ Function power limit (fixpoint).
   ⍵ ⍶{
     ⍺≡⍵:⍵  ⍝ old matches new: finished.
     ⍵ ∇ ⍶ ⍵
-  }⍶ ⍵
+  } ⍶⍵
 }
 
 ⍝ From http://dfns.dyalog.com/s_limit.htm
@@ -63,7 +63,7 @@ ArcTan ← {
     (AM ⍵),GM(AM ⍵),1↓⍵
   }
   start←(1+⍵*2)*-÷2
-  finish←↑next limit start,1
+  finish←↑ next limit start,1
   ⍵×start÷finish
 }
 
@@ -75,25 +75,25 @@ pow ← { (⍶⍣⍺)⍵ }  ⍝ Explicit function power.
 
 rl   ← {(¯1+2*31)|⍵×7*5}  ⍝ next random link  LCG(7*5, ¯1+2*31)
 
-roll ← {1+⌊⍵×⍺÷¯1+2*31}  ⍝ roll ⍵ with random link ⍺.
+roll ← {⌊⍵×⍺÷¯1+2*31}  ⍝ roll ⍵ with random link ⍺.
 
 ⍝ From http://dfns.dyalog.com/c_traj.htm
 
 traj ← {  ⍝ Function limit 'trajectory'.
   ⍺←⍬  ⍝ Initial null history.
-  [⍵]∊⍺:⍺  ⍝ Argument in history: finished.
-  (⍺,⊂⍵)∇ ⍶ ⍵
+  (⊂⍵)∊⍺:⍺  ⍝ Argument in history: finished.
+  (⍺,⊂⍵) ∇ ⍶ ⍵
 }
 
 ⍝ From http://dfns.dyalog.com/s_traj.htm
 
 nr ← {  ⍝ Newton-Raphson.
   ⍺←1e¯14
-  y ∆y←⍶¨⍵+0 ⍺
+  [y ∆y]←⍶¨⍵+[0 ⍺]
   ⍵+(⍺×y)÷y-∆y  ⍝ next estimate.
 }
 
-traj2 ← { ¯1∘↓∘(,∘⊂∘⍶∘↑∘⌽⍨⍣(∊⍨∘⊂∘↑∘⌽⍨)∘⊂)⍵ }
+traj2 ← { ¯1⊸↓⍤(,⟜⊂⟜⍶⟜↑⟜⌽⍨⍣(∊⍨⟜⊂⟜↑⟜⌽⍨)⍤⊂)⍵ }
 
 ⍝ From http://dfns.dyalog.com/c_while.htm
 

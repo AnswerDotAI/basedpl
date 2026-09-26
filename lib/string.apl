@@ -11,9 +11,9 @@
 
 just ← {  ⍝ Justify text array.
   ⍺←¯1  ⍝ left justify by default.
-  ⍺=¯1: ( +/∧\' '= ⍵)            ⌽⍵  ⍝ │left        │
-  ⍺= 1: (-+/∧\' '=⌽⍵)            ⌽⍵  ⍝ │       right│
-  (⌈0.5×( +/∧\' '= ⍵)-+/∧\' '=⌽⍵)⌽⍵  ⍝ │   centre   │
+  ⍺=¯1:(+/∧\' '=⍵)⌽⍵              ⍝ │left        │
+  ⍺=1:(-+/∧\' '=⌽⍵)⌽⍵              ⍝ │       right│
+  (⌈0.5×(+/∧\' '=⍵)-+/∧\' '=⌽⍵)⌽⍵  ⍝ │   centre   │
 }
 
 ⍝ From http://dfns.dyalog.com/n_mtrim.htm
@@ -23,7 +23,7 @@ mtrim ← { (⌽∨\⌽∨⌿⍵≠' ')/⍵ }  ⍝ Trim trailing blank cols from
 ⍝ From http://dfns.dyalog.com/c_ss.htm
 
 ss ← {  ⍝ Approx alternative to xutils' ss.
-  srce find repl←,¨⍵  ⍝ source, find and replace vectors.
+  [srce find repl]←,¨⍵  ⍝ source, find and replace vectors.
   mask←find⍷srce  ⍝ mask of matching strings.
   prem←(⍴find)↑1  ⍝ leading pre-mask.
   cvex←(prem,mask)⊂find,srce  ⍝ partitioned at find points.
@@ -33,8 +33,8 @@ ss ← {  ⍝ Approx alternative to xutils' ss.
 ⍝ From http://dfns.dyalog.com/s_ssmat.htm
 
 ssmat ← {  ⍝ Matrix search/replace.
-  cmat find repl←⍵  ⍝ Char matrix, find & replace vectors.
-  ⊃{ss ⍵ find repl}¨↓cmat
+  [cmat find repl]←⍵  ⍝ Char matrix, find & replace vectors.
+  ⊃{ss[⍵ find repl]}¨↓cmat
 }
 
 ⍝ From http://dfns.dyalog.com/c_squeeze.htm
@@ -48,21 +48,21 @@ timestamp ← {  ⍝ Time-stamped message.
   fmt←{(-2⌈⍴⍕⍵)↑'0',⍕⍵}¨  ⍝ format number with leading zeros.
   date←'-'join fmt 3↑⍺  ⍝ date: YYYY-MM-DD
   time←':'join fmt 3↑3↓⍺  ⍝ time: HH:MM:SS
-  ' 'join date time ⍵  ⍝ blank-separated date, time and message.
+  ' 'join[date time ⍵]  ⍝ blank-separated date, time and message.
 }
 
 ⍝ From http://dfns.dyalog.com/c_htx.htm
 
 htx ← {  ⍝ Extract html segments.
-  1≠≡,⍵:⍺ ∇{⍺,' ',⍵}/⍵
+  1≠≡,⍵:⍺∇{⍺,' ',⍵}/⍵
   xtags←{seg sep cmb vec ⍵}  ⍝ extract tags, where:
-  seg←{(1=2|⍳⍴⍵)/⍵}
+  seg←{(0=2|⍳⍴⍵)/⍵}
   sep←{((fm⍷⍵)∨to⍷⍵)⊂⍵}  ⍝ html separated at tags.
   cmb←{(~"  "⍷⍵)/⍵}  ⍝ compressed multiple blanks.
   vec←{(~⍵∊•ucs 8 10 13){⍺\⍺/⍵}⍵}
   rlt←{(1++/∧\'>'≠⍵)↓⍵}  ⍝ remove leading tag.
   att←{⍵,to,'>'}  ⍝ append trailing tag.
-  fm to←'<' "</",¨⊂⍺~"<>"  ⍝ opening and closing html tags.
+  [fm to]←'<' "</",¨⊂⍺~"<>"  ⍝ opening and closing html tags.
   '<'=↑⍺:att¨xtags,⍵
          rlt¨xtags,⍵  ⍝ untagged segments.
 }
@@ -91,9 +91,9 @@ vtol ← {  ⍝ Nested vector to lines.
 wrap ← {  ⍝ Wrap word vector at ⍺ cols.
   ⍺←102  ⍝ default 102-wrap.
   ⍺≥⍴⍵:⍵  ⍝ short enough vector: finished.
-  gaps←¯1+⍸' '=(⍺+1)↑⍵
+  gaps←⍸' '=(⍺+1)↑⍵
   take←¯1↑⍺,(⍺≥gaps)/gaps  ⍝ chars to take.
-  drop←take+' '=(take+1)⊃⍵
+  drop←take+' '=take⊃⍵
   head←(take↑⍵),•ucs 10
   head,⍺∇drop↓⍵  ⍝ wrapped following lines.
 }
@@ -103,11 +103,11 @@ wrap ← {  ⍝ Wrap word vector at ⍺ cols.
 wrap2 ← { ⍺←102  ⍝ ⍺-wrap (Bob Smith).
   v←' ',⍵,' '  ⍝ blanks required at start and end
   j←(v=' ')/⍳⍴v  ⍝ indices of blanks
-  p←(j+⍺+1) <⌝ j
+  p←(j+⍺+1)<⌝j
   m←p<1⌽p  ⍝ mark last blank that fits on the line
   i←(⍴m)⍴1,(1↓⍴m)⍴0
   c←⌹i-m  ⍝ compute transitive closure of m
-  v.[c.(1)/j]←•ucs 10
+  v.[c.(0)/j;]←•ucs 10
   1↓¯1↓v  ⍝ drop the extra blanks
 }
 
@@ -115,10 +115,10 @@ wrap2 ← { ⍺←102  ⍝ ⍺-wrap (Bob Smith).
 
 wrap3 ← { ⍺←102  ⍝ ⍺-wrap (John Daintree).
   ⍺≥⍴,⍵:,⊂⍵  ⍝ out if short enough
-  sze←(⍵∊"-?., ")/⍳⍴⍵  ⍝ length of each choice
+  sze←(⍵∊"-?., ")/1+⍳⍴⍵  ⍝ length of each choice
   len←↑⌽(⍺≥sze)/sze
-  len←↑(len∊sze)⌽⍺ len
-  [len↑⍵],⍺ ∇ len↓⍵  ⍝ at valid wrap point
+  len←↑(len∊sze)⌽[⍺ len]
+  (⊂len↑⍵),⍺∇len↓⍵  ⍝ at valid wrap point
 }
 
 ⍝ From http://dfns.dyalog.com/c_unwrap.htm
@@ -128,14 +128,14 @@ unwrap ← { (~⍵∊•ucs 10 13 133){⍺\⍺/⍵}⍵ }     ⍝ Replace <LF> wi
 ⍝ From http://dfns.dyalog.com/c_justify.htm
 
 justify ← {  ⍝ Justify line-vector to width ⍺.
-  segs←{¯1+⍵{(⍵,⍴⍺)-¯1,⍵}¯1+⍸⍵}
-  split←{((⍵|⍺)>¯1+⍳⍵)+⌊⍺÷1⌈⍵}
-  lf sp←(•ucs 10 32)=⊂⍵
+  segs←{¯1+⍵{(⍵,⍴⍺)-¯1,⍵}⍸⍵}
+  split←{((⍵|⍺)>⍳⍵)+⌊⍺÷1⌈⍵}
+  [lf sp]←(•ucs 10 32)=⊂⍵
   sizes←segs lf  ⍝ line sizes.
   ⍺←⌈/sizes  ⍝ default width is longest line.
   blanks←segs~(lf∨sp)/sp  ⍝ original number of blanks per line.
   required←blanks+⍺-sizes  ⍝ required      ..      ..      ..
-  breps←required split¨blanks  ⍝ blank replication vectors.
+  breps←required split¨ blanks  ⍝ blank replication vectors.
   last←1⌈¯1+⍴sizes  ⍝ last line split point.
   brep←∊(last↑breps),×last↓breps  ⍝ blank replication vector.
   ((~sp)+sp\∊brep)\⍵  ⍝ ⍺-justified line-vector.
@@ -144,9 +144,9 @@ justify ← {  ⍝ Justify line-vector to width ⍺.
 ⍝ From http://dfns.dyalog.com/c_vtrim.htm
 
 vtrim ← {  ⍝ Trim trailing blanks from line-vector.
-  lf sp←•ucs 10 32
+  [lf sp]←•ucs 10 32
   1↓¯1↓{  ⍝ without linefeeds brackets,
-    types←¯1+lf sp⍳⍵
+    types←[lf sp]⍳⍵
     mask←~1 1⍷types  ⍝ mask of non-(duplicate blanks).
     comp←mask/types  ⍝ ignoring duplicate blanks,
     csl←2 1 0⍷comp  ⍝ sequence: ch, sp, ··· sp, lf.
@@ -166,9 +166,9 @@ wrapnote ← {                                 ⍝ Wrap text paragraphs in note 
   jrgt←{fm=≢⍵}                               ⍝ line justified right?
   jlft←{' '≠↑⍵}                              ⍝ line justified left?
   pics←{1∊"┌┬┐├┼┤└┴┘│─"∊⍵}                   ⍝ line contains box-drawing chars?
-  and←{(⍶ ⍵)∧⍹ ⍵}                          ⍝ test combiner.
-  test←~∘pics and jlft and jrgt              ⍝ test for flowtext.
-  first←{(1+⍵⍳0)⊃⍵}∘(≢¨)                     ⍝ length of first non-blank line.
+  and←{(⍶⍵)∧⍹⍵}                              ⍝ test combiner.
+  test←~⍤pics and jlft and jrgt              ⍝ test for flowtext.
+  first←{(1+⍵⍳0)⊃⍵}⍤(≢¨)                     ⍝ length of first non-blank line.
   spill←{⍵∨¯1⌽⍵}                             ⍝ include next item to right.
   list←{squeeze dehyph' 'join ⍵}             ⍝ first enlist, then
   fold←{split to wrap ⍵}                     ⍝ re-wrap paragraph.
@@ -176,16 +176,16 @@ wrapnote ← {                                 ⍝ Wrap text paragraphs in note 
 
   nls←•ucs 10 13 133                         ⍝ version-proof newlines.
   nl←↑nls∩⍵                                  ⍝ newline separator.
-  to fm←2↑⍺,first 1↓split ⍵~'─'              ⍝ to and from notes width.
+  [to fm]←2↑⍺,first 1↓split ⍵~'─'            ⍝ to and from notes width.
   vex←split ⍵                                ⍝ line_vector notes to vec-of-vecs.
   text←0,1↓spill test¨vex                    ⍝ mask of lines of flowtext.
   segs←1,1↓¯1⌽0 1⍷text                       ⍝ partition at start of flowtext.
 
-  vtrim nl join,/(segs⊂text){               ⍝ re-collect lines of notes.
+  vtrim nl join ,/(segs⊂text){               ⍝ re-collect lines of notes.
     0=↑⍺:⍵                                   ⍝ no flowtext here: continue.
     flow←⍺/⍵ ⋄ rest←(~⍺)/⍵  ⍝ separate flowtext from the rest.
     vex←fold list flow                       ⍝ refold paragraph.
-    wrp←to wrap' 'join vex                   ⍝ re-re-wrap text.
+    wrp←to wrap ' 'join vex                  ⍝ re-re-wrap text.
     new←split to justify wrp                 ⍝ justify.
     new,rest                                 ⍝ re-collect segment.
   }¨segs⊂vex                                 ⍝ for each flowtext segment.
@@ -198,17 +198,17 @@ xtabs ← {  ⍝ Expand/compress HT chars.
   ⍺=0:⍵  ⍝ ⍺=0: no-op.
   chs←~⍵∊•ucs 10 13 133
   ⍺>0:⍺{  ⍝ +ive ⍺: expand tabs → blanks.
-    tabs nabs←1 0=⊂⍵∊•ucs 9
+    [tabs nabs]←1 0=⊂⍵∊•ucs 9
     sync←tabs≥chs  ⍝ sync at tab and end of line.
-    segs←¯1+{⍵-¯1,¯1↓⍵}¯1+⍸sync
+    segs←¯1+{⍵-¯1,¯1↓⍵}⍸sync
     pads←0⌈⍺-⍺|(sync/tabs)/segs  ⍝ padding lengths.
     (nabs+tabs\pads)/nabs\nabs/⍵  ⍝ padded char vector.
   }⍵
   ⍺<0:(-⍺){  ⍝ -ive ⍺: squeeze blanks → tabs.
-    bks nks←1 0=⊂⍵=' '  ⍝ blanks and non-blanks
+    [bks nks]←1 0=⊂⍵=' '  ⍝ blanks and non-blanks
     runs←{⍵{⍵-⌈\⍵×~⍺}+\⍵}  ⍝ runs of adjacent 1s.
     tabs←bks∧chs∧0=⍺|runs chs  ⍝ tab positions.
-    onoff←{(⍺≠⍵){≠\⍺\(≠/∘(2∘↕))¯1,⍺/⍵}⍺-⍵}
+    onoff←{(⍺≠⍵){≠\⍺\≠/2↕¯1,⍺/⍵}⍺-⍵}
     pretab←⌽(⌽tabs)onoff⌽nks  ⍝ blanks that precede tabs.
     (pretab≤tabs)/(•ucs 9)@{tabs}⍵
   }⍵
@@ -216,9 +216,9 @@ xtabs ← {  ⍝ Expand/compress HT chars.
 
 ⍝ From http://dfns.dyalog.com/s_xtabs.htm
 
-tabTrip ← {⍵≡⍕⍺ xtabs ⍕(-⍺)xtabs ⍵}  ⍝ TODO: should the ⍕ be needed?
+tabTrip ← {⍵≡⍕ ⍺ xtabs ⍕(-⍺)xtabs ⍵}  ⍝ TODO: should the ⍕ be needed?
 
-tabTrips ← {∧/(0,⍳1+⍴⍵)tabTrip¨⊂⍵}
+tabTrips ← {∧/(⍳2+⍴⍵)tabTrip¨⊂⍵}
 
 
 ⍝⍝ Blank removal
@@ -226,8 +226,8 @@ tabTrips ← {∧/(0,⍳1+⍴⍵)tabTrip¨⊂⍵}
 ⍝ From http://dfns.dyalog.com/c_dlb.htm
 
 dlb ← {  ⍝ Drop Leading Blanks.
-  ⍺←' ' ⋄ 1<|≡⍵:[⍺]∇¨⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺ ∇,⍤[¯1↓⍳⍴⍴⍵]⍵  ⍝ array
+  ⍺←' ' ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
+  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
   1≥⍴⍴⍵:(+/∧\⍵∊⍺)↓⍵  ⍝ vector
   (∨\∨⌿~⍵∊⍺)/⍵  ⍝ matrix
 }
@@ -235,8 +235,8 @@ dlb ← {  ⍝ Drop Leading Blanks.
 ⍝ From http://dfns.dyalog.com/c_dtb.htm
 
 dtb ← {  ⍝ Drop Trailing Blanks.
-  ⍺←' ' ⋄ 1<|≡⍵:[⍺]∇¨⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺ ∇,⍤[¯1↓⍳⍴⍴⍵]⍵  ⍝ array
+  ⍺←' ' ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
+  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
   1≥⍴⍴⍵:(-+/∧\⌽⍵∊⍺)↓⍵  ⍝ vector
   (~⌽∧\⌽∧⌿⍵∊⍺)/⍵  ⍝ matrix
 }
@@ -244,8 +244,8 @@ dtb ← {  ⍝ Drop Trailing Blanks.
 ⍝ From http://dfns.dyalog.com/c_deb.htm
 
 deb ← {  ⍝ Drop Ending Blanks.
-  ⍺←' ' ⋄ 1<|≡⍵:[⍺]∇¨⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺ ∇,⍤[¯1↓⍳⍴⍴⍵]⍵  ⍝ array
+  ⍺←' ' ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
+  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
   b←⍵∊⍺  ⍝ mask
   1≥⍴⍴⍵:((∧\b)⍱⌽∧\⌽b)/⍵  ⍝ vector
   b←∧⌿b ⋄ ((∧\b)⍱⌽∧\⌽b)/⍵  ⍝ matrix
@@ -254,17 +254,17 @@ deb ← {  ⍝ Drop Ending Blanks.
 ⍝ From http://dfns.dyalog.com/c_dmb.htm
 
 dmb ← {  ⍝ Drop Multiple Blanks.
-  ⍺←' ' ⋄ 1<|≡⍵:[⍺]∇¨⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺ ∇,⍤[¯1↓⍳⍴⍴⍵]⍵  ⍝ array
-  2>⍴⍴⍵:((∨/∘(2∘↕))(~⍵∊⍺),1)/⍵
-  ((∨/∘(2∘↕))(,∨⌿~⍵∊⍺),1)/⍵
+  ⍺←' ' ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
+  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
+  2>⍴⍴⍵:(∨/2↕(~⍵∊⍺),1)/⍵
+  (∨/2↕(,∨⌿~⍵∊⍺),1)/⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_dxb.htm
 
 dxb ← {  ⍝ Drop eXtraneous Blanks.
-  ⍺←' ' ⋄ 1<|≡⍵:[⍺]∇¨⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺ ∇,⍤[¯1↓⍳⍴⍴⍵]⍵  ⍝ array
+  ⍺←' ' ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
+  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
   b←⍵∊⍺  ⍝ mask
   1≥⍴⍴⍵:(1↑b)↓(b⍲1↓b,1)/⍵  ⍝ vector
   b←∧⌿b ⋄ (0,1↑b)↓(b⍲1↓b,1)/⍵  ⍝ matrix
@@ -273,8 +273,8 @@ dxb ← {  ⍝ Drop eXtraneous Blanks.
 ⍝ From http://dfns.dyalog.com/c_dab.htm
 
 dab←{  ⍝ Drop All Blanks.
-  ⍺←' ' ⋄ 1<≡⍵:[⍺]∇¨⍵  ⍝ nested?
+  ⍺←' ' ⋄ 1<≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
   1≥⍴⍴⍵:⍵~⍺  ⍝ vector
   2=⍴⍴⍵:⊃(↓⍵)~¨⊂⍺
-  (¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺ ∇,⍤[¯1↓⍳⍴⍴⍵]⍵  ⍝ array
+  (¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
 }

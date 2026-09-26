@@ -205,8 +205,8 @@ fn nth_primes(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
         .elements()
         .enumerate()
         .map(|(i, e)| {
-            let n = number(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "prime indices must be positive integers"))?;
-            if n == 0 { return Err(span.error(ErrorKind::Domain, "prime indices start at one")); }
+            // Prime indices count from 0: `ℙ 0` is 2.
+            let n = number(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "prime indices must be nonnegative integers"))?;
             Ok((n, i))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -214,7 +214,7 @@ fn nth_primes(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let (mut primes, mut index, mut p) = (Primes::default(), 0, 0);
     let mut result = vec![exact(0); right.len()];
     for (n, i) in requests {
-        while index < n {
+        while index <= n {
             p = primes.next(span)?;
             index += 1;
         }
