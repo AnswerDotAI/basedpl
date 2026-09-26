@@ -1,0 +1,19 @@
+
+
+# `•c` — Case conversion
+
+`•c Y` folds case.
+
+``` apl
+•c "AbC"           ⍝ "abc"
+```
+
+`1•c Y` uppercases; `¯1•c Y` lowercases.
+
+``` apl
+1•c "AbC"          ⍝ "ABC"
+¯1•c "AbC"         ⍝ "abc"
+```
+
+Unicode simple mappings preserve shape and nesting; non-character leaves
+stay unchanged.

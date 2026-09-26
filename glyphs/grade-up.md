@@ -1,0 +1,21 @@
+
+
+# `⍋` — Grade up
+
+`⍋Y` gives indices that sort major cells ascending. Stable; uses
+[structural ordering](../rules.qmd#equality-and-ordering), without
+tolerance.
+
+``` apl
+⍋30 10 20          ⍝ 1ₓ 2ₓ 0ₓ
+v←30 10 20 ⋄ v ⍋v  ⍝ 10 20 30
+⍋2 1 2 1           ⍝ 1ₓ 3ₓ 0ₓ 2ₓ
+```
+
+`C⍋Y` uses a character collation array `C`.
+
+``` apl
+"cba"⍋"abc"        ⍝ 2ₓ 1ₓ 0ₓ
+```
+
+See [`⍒`](grade-down.qmd).

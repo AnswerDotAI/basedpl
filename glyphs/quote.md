@@ -1,0 +1,38 @@
+
+
+# `'` `"` — Character and string literals
+
+Single quotes hold exactly one character, which is a scalar. Double
+quotes hold a string, which is a vector of any length.
+
+``` apl
+⍴'a'               ⍝ 0⍴0ₓ
+⍴"a"               ⍝ ,1ₓ
+⍴"abc"             ⍝ ,3ₓ
+⍴""                ⍝ ,0ₓ
+```
+
+The quote character is `'''`. An apostrophe needs no escaping inside a
+string. Double a double quote inside a string.
+
+``` apl
+•ucs '''           ⍝ 39ₓ
+≢"can't"           ⍝ 5ₓ
+≢"say ""hi"""      ⍝ 8ₓ
+```
+
+Literals separated by spaces form one vector literal. Characters side by
+side form a string. Strings side by side form a vector of strings. So
+`"x" "y"` is two keys, and `'x' 'y'` is the one key `"xy"`.
+
+``` apl
+'a' 'b'            ⍝ "ab"
+≢"aa" "bb"         ⍝ 2ₓ
+```
+
+Results show strings in double quotes and characters in single quotes.
+
+## Errors
+
+- `SYNTAX`: single quotes around more or fewer than one character, an
+  unclosed literal

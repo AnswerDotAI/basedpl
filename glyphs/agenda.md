@@ -1,0 +1,27 @@
+
+
+# `◶` — Agenda
+
+`selector◶cases` derives a function that selects a branch on each call.
+`cases` must be a nonempty vector of functions. The selector can be a
+scalar index or a function returning one. Indices are integral and start
+at 0, so a Boolean selects directly. Negative indices count from the
+end.
+
+``` apl
+cases←[- ⊢] ⋄ abs←{⍵≥0}◶cases ⋄ abs ¯3        ⍝ 3
+cases←[- ⊢] ⋄ abs←{⍵≥0}◶cases ⋄ abs 3         ⍝ 3
+mul←1◶[+ ×] ⋄ 2 mul 3                         ⍝ 6
+mul←¯1◶[+ ×] ⋄ 2 mul 3                        ⍝ 6
+choose←{⍺>⍵}◶[- ÷] ⋄ 12 choose 3              ⍝ 4
+```
+
+A function selector runs once with the original arguments. Only the
+selected branch runs, with those same arguments. Index arrays do not map
+over branches or construct trains.
+
+## Errors
+
+- `RANK`: non-scalar index
+- `INDEX`: out-of-range index
+- `DOMAIN`: nonnumeric or nonintegral index

@@ -1,0 +1,134 @@
+
+
+# `[ ]` — List / Array notation
+
+Brackets write lists. Inside brackets, a space separates items, and a
+run of tokens with no spaces between them is one item. Items can be
+arrays or functions. They are evaluated left to right.
+
+``` apl
+a←1 ⋄ b←2
+[a b]              ⍝ 1 2
+[a+b a×b]          ⍝ 3 2
+≢[+/ ÷ ≢]          ⍝ 3
+```
+
+A list of literals can leave the brackets out, so `1 2 3` is the same as
+`[1 2 3]`. An item that contains spaces needs
+[parentheses](parentheses.qmd): `[(a + b) c]` has two items.
+
+Brackets round one item only group it, as [parentheses](parentheses.qmd)
+do. This follows from the rule for literals: `[1 2 3]` is `1 2 3`, so
+`[1]` is `1`. A trailing `;` writes a one-item list, and
+[`⊂`](enclose.qmd) encloses. `[]` is an empty vector, the same as `⍬`.
+
+``` apl
+[5]                ⍝ 5
+[5;]               ⍝ [5;]
+≢[1 2 3;]          ⍝ 1
+f←[+/÷≢] ⋄ f 1 2 3 ⍝ 2
+[]≡⍬               ⍝ 1
+```
+
+## Semicolons
+
+With `;`, only `;` separates items. Inside each item, spaces separate
+units as they do outside brackets. A trailing `;` ends the last item, so
+`[x;]` is a one-item vector.
+
+``` apl
+[1 2;3 4]          ⍝ [[1 2] [3 4]]
+[5;]               ⍝ ,5
+x←2 4 9
+[+/x ; +/x ÷ ≢x]   ⍝ 15 5
+```
+
+## Array notation
+
+With `⋄`, brackets are array notation. `[A ⋄ B]` assembles the major
+cells `A` and `B` with fill. `[A ⋄]` builds an array from one cell. `;`
+and `⋄` cannot both separate items in one pair of brackets.
+
+``` apl
+[1 2 ⋄ 3 4]        ⍝ 2 2⍴1 2 3 4
+[1 2 ⋄ 3]          ⍝ [1 2 ⋄ 3 0]
+⍴[1 2 3 ⋄]         ⍝ 1 3
+```
+
+A line break inside brackets counts as a space. So a list can span
+lines, and a matrix written over several lines needs `⋄` at the end of
+each row.
+
+``` apl
+m←[1 2 3 ⋄
+   4 5 6]
+⍴m                 ⍝ 2 3
+```
+
+## Keyed items
+
+Brackets with any `key:value` item build one [keyed
+vector](../keyed.qmd). An item without a key is a position with no key.
+A value that contains spaces needs its own brackets.
+
+``` apl
+["aa":1 "bb":2]              ⍝ "aa" "bb":1 2
+["city":["NY" "LA"] "n":2]   ⍝ "city" "n":[["NY" "LA"] 2]
+```
+
+## Selecting
+
+Brackets do not index. An array next to an argument selects from it, and
+[Index](squad.qmd) `⌷` selects along several axes. [Axis](axis.qmd) `⍠`
+applies a function along axes.
+
+``` apl
+v←10 20 30
+v[2 0]             ⍝ 30 10
+m←2 3⍴⍳6
+∞ 1⌷m              ⍝ 1 4
+```
+
+## Function arrays
+
+Items in brackets can be functions: `[+/ ÷ ≢]` is a vector of three
+functions. Array application, Pick `⊃`, First `↑` and complete atomic
+[Index](squad.qmd) `⌷` positions return a stored function you can call.
+[Agenda](agenda.qmd) selects a function and calls it. Successive Picks
+go down into nested arrays. Empty coordinates return the argument
+unchanged.
+
+``` apl
+fs←[+ × ÷] ⋄ mul←fs 1 ⋄ 2 mul 3                  ⍝ 6
+fs←[+/ {⍵×⍵} 3⊸+] ⋄ square←fs 1 ⋄ square 4       ⍝ 16
+fs←[+ ×] ⋄ ≢[fs ÷]                                ⍝ 2ₓ
+fs←[+ × ÷] ⋄ div←↑⌽fs ⋄ 6 div 3                  ⍝ 2
+fs←[+ ×] ⋄ result←(⊂1 2 3),1↓fs ⋄ f←1⊃result ⋄ 2 f 3   ⍝ 6
+x←[[+ ×] [- ÷]] ⋄ f←1⊃0⊃x ⋄ 2 f 3                ⍝ 6
+fs←[+ ×] ⋄ f←{1⊃⍵}fs ⋄ 2 f 3                     ⍝ 6
+```
+
+Function elements are shared handles, not source strings. Reshape,
+selection, catenate and other structural operations move them without
+executing them. Display prints each function as source. A native
+function with no source spelling, such as a generator’s `roll`, prints
+in `⟨…⟩`. A function’s fill is that same function. Equality and match
+compare handle identity, not mathematical equivalence. Functions have no
+grade or interval ordering.
+
+Dfns can return functions. Captured local functions can be used while
+their defining call is active. Escaping closures are not supported.
+
+Python `Array` accepts bAsedPL functions as elements. An atomic index
+retrieves the stored value. The word functions `first` and `pick` return
+selected callables. `.py` and `.np` expose callable function elements.
+JSON export rejects functions and function arrays. It never reconstructs
+executable functions from source text.
+
+See also [assignment](assign.qmd), where brackets destructure:
+`[a b]←10 20`.
+
+## Errors
+
+- `DOMAIN`: returning or assigning a captured local function into a
+  longer-lived scope, including within an array or empty prototype

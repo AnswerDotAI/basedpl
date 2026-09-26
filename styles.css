@@ -1,0 +1,46 @@
+@font-face {
+  font-family: BQN386;
+  src: local("BQN386"), url("https://cdn.jsdelivr.net/gh/dzaima/BQN386@master/BQN386.woff2") format("woff2");
+}
+
+pre.apl,
+.apl pre,
+.apl code,
+pre.apl ~ .cell-output pre,
+pre.apl ~ .cell-output code,
+.aplnb_out {
+  font-family: BQN386, monospace;
+  line-height: 1.05;
+}
+
+pre.apl,
+.apl pre,
+pre.apl ~ .cell-output pre,
+.aplnb_out {
+  font-size: calc(0.875em + 1pt);
+}
+
+.cell {
+  margin-bottom: 1rem;
+}
+
+.cell > .sourceCode,
+.cell-output > pre {
+  margin-bottom: 0;
+}
+
+.cell-output > pre,
+.cell-output > .sourceCode > pre {
+  margin-left: 0.8rem;
+  margin-top: 0;
+  background: none;
+  border-left: 2px solid lightsalmon;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.cell-output > .sourceCode {
+  border: none;
+  background: none;
+  margin-top: 0;
+}

@@ -1,0 +1,10 @@
+
+
+# `•a` — Alphabet
+
+The uppercase Latin alphabet. Read-only; name is case-insensitive.
+
+``` apl
+3↑•a               ⍝ "ABC"
+•a⍳"CAB"           ⍝ 2ₓ 0ₓ 1ₓ
+```

@@ -1,0 +1,49 @@
+
+
+# `.` — Inner product
+
+`X f.g Y` pairs items with `g`, then reduces with `f`. It contracts the
+last axis of `X` with the first of `Y`.
+
+``` apl
+1 2 3+.×4 5 6      ⍝ 32
+[1 0 ⋄ 0 1]+.×2 2⍴⍳4 ⍝ 2 2⍴⍳4
+```
+
+Singleton contraction axes extend. Empty contractions use the reduction
+identity. `g⌝` is [outer product](outer-product.qmd).
+
+After an array, `.name` reads a [keyed array](../keyed.qmd) value:
+`T.name` is `"name"⊃T`. It also works as an assignment target. Plain
+assignment creates missing records along the path.
+
+``` apl
+T←["n":1 "addr":["city":"LA"]]
+T.addr.city        ⍝ "LA"
+T.n+←1 ⋄ T.n       ⍝ 2
+```
+
+After an array, `.` followed by parentheses or brackets indexes it
+through [Index](squad.qmd). `x.(I)` is `(I)⌷x`, and `x.[I]` is `[I]⌷x`.
+Dot indexing binds as tightly as `.name`. It needs no parentheses inside
+a larger expression. Paths chain from left to right. Inside the
+brackets, each unspaced expression is one index item, and `;` keeps a
+list as one axis’s positions. The array is evaluated before the index.
+
+``` apl
+m←3 4⍴⍳12
+m.(1 2)            ⍝ 6
+m.[2 0;]           ⍝ [8 9 10 11 ⋄ 0 1 2 3]
+m.[⍳2 ¯1]          ⍝ 3 7
+9,m.(0 1),3        ⍝ 9 1 3
+```
+
+A number cannot follow the dot directly, because `.2` is a number. Write
+`v.(2)` or `v.[2]`. A decimal point needs a digit after it, so a dot
+after a number is never part of the number. Assignment to a dot path
+goes through `⌷`, and adds missing keys.
+
+``` apl
+v←10 20 30
+v.[2 0;]←7 8 ⋄ v   ⍝ 8 20 7
+```

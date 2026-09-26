@@ -1,0 +1,17 @@
+
+
+# `⊣` — Left
+
+`⊣Y` returns `Y`.
+
+``` apl
+⊣1 2               ⍝ 1 2
+```
+
+`X⊣Y` returns `X`. Both arguments evaluate.
+
+``` apl
+1 2⊣3 4            ⍝ 1 2
+```
+
+See [trains](parentheses.qmd).

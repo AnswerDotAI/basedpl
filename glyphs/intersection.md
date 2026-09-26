@@ -1,0 +1,11 @@
+
+
+# `∩` — Intersection
+
+`X∩Y` keeps items of `X` found in `Y`. Order and repetitions are
+retained. Uses tolerant matching.
+
+``` apl
+1 2 1 3∩1 3        ⍝ 1 1 3
+"abcd"∩"bdf"        ⍝ "bd"
+```

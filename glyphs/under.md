@@ -1,0 +1,19 @@
+
+
+# `⌾` — Under
+
+`f⌾g Y` is `g⁻¹(f(g Y))`. `X f⌾g Y` is `g⁻¹((g X)f(g Y))`.
+
+``` apl
+3+⌾(2×)4           ⍝ 7
+⌽⌾(1+)1 2 3        ⍝ 3 2 1
+⌊⌾(10×)1.25        ⍝ 1.2
+```
+
+Call order: `g Y`, `g X`, `f`, inverse `g`.
+
+See [Inverse pair](inverse-pair.qmd).
+
+## Errors
+
+- `DOMAIN`: unknown inverse

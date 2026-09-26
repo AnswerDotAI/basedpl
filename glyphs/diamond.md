@@ -1,0 +1,21 @@
+
+
+# `⋄` — Separator
+
+At statement level, `⋄` separates expressions. A line break does the
+same.
+
+``` apl
+x←2 ⋄ y←3 ⋄ x+y    ⍝ 5
+```
+
+Inside [brackets](brackets.qmd), `⋄` separates major cells. A trailing
+`⋄` builds an array from one cell.
+
+``` apl
+[1 2 ⋄ 3 4]        ⍝ 2 2⍴1 2 3 4
+⍴[42 ⋄]            ⍝ 1 1
+```
+
+Inside parentheses, `⋄` is a `SYNTAX` error, because parentheses only
+group.

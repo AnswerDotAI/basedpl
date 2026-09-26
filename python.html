@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Native arrays, callable functions and Python conversions.">
+
+<title>Python – bAsedPL</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2" crossorigin="anonymous"></script><script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-f2788e636de456f6409e966386820849.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script src="https://cdn.jsdelivr.net/npm/requirejs@2.3.6/require.min.js" integrity="sha384-c9c+LnTbwQ3aujuU7ULEPVvgLs+Fn6fJUvIGTsuu1ZcCf11fiEubah0ttpca4ntM sha384-6V1/AdqZRWk1KAlWbKBlGhN7VG4iE/yAZcO6NZPMF8od0vukrvr0tg4qY6NSrItx" crossorigin="anonymous"></script>
+
+<script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="Python – bAsedPL">
+<meta property="og:description" content="Native arrays, callable functions and Python conversions.">
+<meta property="og:image" content="https://answerdotai.github.io/basedpl/python_files/figure-html/cell-19-output-1.svg">
+<meta property="og:site_name" content="bAsedPL">
+<meta name="twitter:title" content="Python – bAsedPL">
+<meta name="twitter:description" content="Native arrays, callable functions and Python conversions.">
+<meta name="twitter:image" content="https://answerdotai.github.io/basedpl/python_files/figure-html/cell-19-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">bAsedPL</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="./getting-started.html" aria-current="page"> 
+<span class="menu-text">Get started</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./glyphs.html"> 
+<span class="menu-text">Glyph reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./python.html"> 
+<span class="menu-text">Python</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/AnswerDotAI/basedpl"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./python.html">Python</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./python.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Python</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./notebooks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Using bAsedPL notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./repl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">REPL</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./keyboard.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glyph keyboard</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Command line</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Language</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./glyphs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glyph reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./rules.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Shared language rules</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./keyed.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Axis keys</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">Working with data</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Files, CSV and JSON</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./regex.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regex</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./distributions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Probability distributions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./xml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">XML and SVG</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./plot.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Plots</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">Tooling</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./introspection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Names and help</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./processes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Process interfaces</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dyalog.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dyalog sessions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./j.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">J</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#native-arrays" id="toc-native-arrays" class="nav-link active" data-scroll-target="#native-arrays">Native arrays</a></li>
+  <li><a href="#the-workspace" id="toc-the-workspace" class="nav-link" data-scroll-target="#the-workspace">The workspace</a>
+  <ul class="collapse">
+  <li><a href="#names-and-help" id="toc-names-and-help" class="nav-link" data-scroll-target="#names-and-help">Names and help</a></li>
+  </ul></li>
+  <li><a href="#labelled-arrays" id="toc-labelled-arrays" class="nav-link" data-scroll-target="#labelled-arrays">Labelled arrays</a></li>
+  <li><a href="#plots" id="toc-plots" class="nav-link" data-scroll-target="#plots">Plots</a></li>
+  <li><a href="#values-and-conversion" id="toc-values-and-conversion" class="nav-link" data-scroll-target="#values-and-conversion">Values and conversion</a></li>
+  <li><a href="#array-operations" id="toc-array-operations" class="nav-link" data-scroll-target="#array-operations">Array operations</a></li>
+  <li><a href="#callable-functions" id="toc-callable-functions" class="nav-link" data-scroll-target="#callable-functions">Callable functions</a></li>
+  <li><a href="#word-functions" id="toc-word-functions" class="nav-link" data-scroll-target="#word-functions">Word functions</a></li>
+  <li><a href="#printing-functions" id="toc-printing-functions" class="nav-link" data-scroll-target="#printing-functions">Printing functions</a></li>
+  <li><a href="#errors-and-interruption" id="toc-errors-and-interruption" class="nav-link" data-scroll-target="#errors-and-interruption">Errors and interruption</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="python.html.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Python</h1>
+</div>
+
+<div>
+  <div class="description">
+    Native arrays, callable functions and Python conversions.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<div id="7409339b" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.671778+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.675380+00:00&quot;,&quot;total&quot;:0.0034483750350773335}}" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> apl, fn, Array, plus, tally</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<section id="native-arrays" class="level2">
+<h2 class="anchored" data-anchor-id="native-arrays">Native arrays</h2>
+<p><code>apl</code> is the APL workspace. It keeps its names for the life of the Python process. Calling it returns a native <code>basedpl.Array</code>. Its immutable data retains nesting, exact numbers and empty-array prototypes. Use <code>.np</code> or <code>.py</code> to convert it.</p>
+<div id="16a65fc7" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.675396+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.676049+00:00&quot;,&quot;total&quot;:0.0006535419961437583}}" data-execution_count="2">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>v <span class="op">=</span> apl(<span class="st">'1 2 4'</span>)</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>v</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="2">
+<pre><code>1 2 4</code></pre>
+</div>
+</div>
+<p>Python operators use bAsedPL’s array semantics. Python determines precedence, so this multiplies before adding:</p>
+<div id="bd262623" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.676063+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.676403+00:00&quot;,&quot;total&quot;:0.00034041597973555326}}" data-execution_count="3">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>v <span class="op">*</span> <span class="dv">2</span> <span class="op">+</span> <span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="3">
+<pre><code>3 5 9</code></pre>
+</div>
+</div>
+<p>Indexing counts from 0, as in Python. Negative positions count from the end. A full <code>:</code> selects an axis. Iteration yields rows of a matrix rather than individual elements:</p>
+<div id="7189ad92" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.676413+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.676975+00:00&quot;,&quot;total&quot;:0.0005633329856209457}}" data-execution_count="4">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>a <span class="op">=</span> apl(<span class="st">'2 3⍴⍳6'</span>)</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>a.shape, a[<span class="dv">0</span>, :], a[:, <span class="dv">1</span>], a[:, <span class="op">-</span><span class="dv">1</span>], <span class="bu">list</span>(a)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="4">
+<pre><code>((2, 3), [0., 1., 2.], [1., 4.], [2., 5.], [[0., 1., 2.], [3., 4., 5.]])</code></pre>
+</div>
+</div>
+<p>bAsedPL also exposes functions by their word names. <code>plus.reduce</code> is <code>+/</code>; adding <code>.each</code> applies it to each nested element:</p>
+<div id="f5215624" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.676989+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.677311+00:00&quot;,&quot;total&quot;:0.00032225000904873013}}" data-execution_count="5">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>nested <span class="op">=</span> apl(<span class="st">'[[1 2] [3 4 5]]'</span>)</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>nested</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="5">
+<pre><code>[[1 2] [3 4 5]]</code></pre>
+</div>
+</div>
+<p>In Python, chain the corresponding word functions:</p>
+<div id="8573b3fe" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.677321+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.677594+00:00&quot;,&quot;total&quot;:0.0002734159934334457}}" data-execution_count="6">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>plus.<span class="bu">reduce</span>.each(nested)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="6">
+<pre><code>3 12</code></pre>
+</div>
+</div>
+<div id="ec57ffd7" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.677603+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.677868+00:00&quot;,&quot;total&quot;:0.00026529101887717843}}" data-execution_count="7">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>f <span class="op">=</span> plus.<span class="bu">reduce</span>.each</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>f(nested)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="7">
+<pre><code>3 12</code></pre>
+</div>
+</div>
+<p>Python integers become exact values. Functions compose too: <code>plus.reduce / tally</code> builds the mean function <code>+/÷≢</code>. Its result is still a native array, even when scalar:</p>
+<div id="53cb119d" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.677876+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.678175+00:00&quot;,&quot;total&quot;:0.00030033400980755687}}" data-execution_count="8">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>exact <span class="op">=</span> Array([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>])</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>mean_native <span class="op">=</span> plus.<span class="bu">reduce</span> <span class="op">/</span> tally</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>mean_native(exact)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="8">
+<pre><code>7r3</code></pre>
+</div>
+</div>
+<p>The native representation uses Python numeric notation: <code>2</code> is exact and <code>2.</code> is approximate. <code>.apl</code> returns the APL display as a string:</p>
+<div id="d77b9e00" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.678183+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.678502+00:00&quot;,&quot;total&quot;:0.00031924998620525}}" data-execution_count="9">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>v.apl, exact.apl</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="9">
+<pre><code>('1 2 4', '1ₓ 2ₓ 4ₓ')</code></pre>
+</div>
+</div>
+</section>
+<section id="the-workspace" class="level2">
+<h2 class="anchored" data-anchor-id="the-workspace">The workspace</h2>
+<p><code>apl</code> is shared by the whole Python process, including the <a href="./notebooks.html">notebook magics</a>. <code>apl(']clear')</code> removes every name and restores the starting display settings.</p>
+<p>Calling <code>apl</code> returns a native array or function and prints explicit APL output. It suppresses implicit APL display. Use <code>.np</code> or <code>.py</code> when you need a converted result:</p>
+<div id="00cb6751" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.678509+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.681207+00:00&quot;,&quot;total&quot;:0.0026987920282408595}}" data-execution_count="10">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>apl(<span class="st">'3 3⍴⍳9'</span>).np</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="10">
+<pre><code>array([[0., 1., 2.],
+       [3., 4., 5.],
+       [6., 7., 8.]])</code></pre>
+</div>
+</div>
+<p>Module and <code>apl</code> attributes expose the builtins. Glyph names (<code>add</code>, <code>dash</code>, <code>mul</code>, <code>div</code>) accept either valence; operation names (<code>plus</code>, <code>subtract</code>, <code>times</code>, <code>divide</code>) curry a dyadic call. Thus <code>add</code> with one argument conjugates, while <code>plus(2)</code> binds the right argument:</p>
+<div id="6d317506" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.681221+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.681762+00:00&quot;,&quot;total&quot;:0.0005418749642558396}}" data-execution_count="11">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>apl.add(<span class="dv">2</span><span class="op">+</span><span class="ot">3j</span>).py, apl.plus(<span class="dv">2</span>)(<span class="dv">3</span>).py, apl.times(<span class="dv">2</span>)([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>]).py</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="11">
+<pre><code>((2-3j), 5, array([2, 4, 6]))</code></pre>
+</div>
+</div>
+<p>Keyword arguments bind Python values in the workspace. Square brackets read an APL expression or assign a value:</p>
+<div id="09e234b8" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.681775+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.682248+00:00&quot;,&quot;total&quot;:0.00047316699055954814}}" data-execution_count="12">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>apl(x<span class="op">=</span>np.arange(<span class="dv">1</span>, <span class="dv">6</span>))</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>apl[<span class="st">'v'</span>] <span class="op">=</span> [<span class="dv">3</span>,<span class="dv">1</span>,<span class="dv">4</span>,<span class="dv">1</span>,<span class="dv">5</span>]</span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>apl[<span class="st">'{⍵ ⍋⍵}v'</span>].np</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="12">
+<pre><code>array([1, 1, 3, 4, 5])</code></pre>
+</div>
+</div>
+<p><code>fn</code> makes a composable <code>Function</code> from an APL function expression. It is the same as <code>apl.fn</code>. Pass one argument for a monadic call or two for a dyadic call. Python integers stay exact, so <code>.py</code> converts this mean to a <code>Fraction</code> rather than a float:</p>
+<div id="6535f50f" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.682258+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.682647+00:00&quot;,&quot;total&quot;:0.0003901669988408685}}" data-execution_count="13">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>apl(<span class="st">'mean←{⍝ Mean of a vector</span><span class="ch">\n</span><span class="st">(+/⍵)÷≢⍵}'</span>)</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>mean <span class="op">=</span> fn(<span class="st">'mean'</span>)</span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>mean([<span class="dv">1</span>,<span class="dv">2</span>,<span class="dv">4</span>]).py</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="13">
+<pre><code>Fraction(7, 3)</code></pre>
+</div>
+</div>
+<section id="names-and-help" class="level3">
+<h3 class="anchored" data-anchor-id="names-and-help">Names and help</h3>
+<p>Type <code>mean?</code> for its comment help and <code>mean??</code> for APL source. The same information is available programmatically:</p>
+<div id="2dbcbd69" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.682659+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.683044+00:00&quot;,&quot;total&quot;:0.0003862089943140745}}" data-execution_count="14">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>mean.source, apl.names(<span class="st">'me'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="14">
+<pre><code>('{⍝ Mean of a vector\n(+/⍵)÷≢⍵}', ['mean'])</code></pre>
+</div>
+</div>
+<p>See <a href="./introspection.html">names and help</a> for source lookup, erasure and inspection APIs.</p>
+<p><code>fn</code> is late-bound: <code>fn("foo")</code> follows later redefinitions of <code>foo</code>. Use <code>apl("foo")</code> to retain its current function.</p>
+<p>Calls print only explicit output (<code>⎕←</code> and display commands). A second argument of <code>'explicit'</code> captures it instead, returning a <code>Result</code> with the native <code>.value</code> and the captured <code>.output</code>:</p>
+<div id="844db975" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.683059+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.683353+00:00&quot;,&quot;total&quot;:0.00029512500623241067}}" data-execution_count="15">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>r <span class="op">=</span> apl(<span class="st">'⎕←x ⋄ x+1x'</span>, <span class="st">'explicit'</span>, x<span class="op">=</span><span class="dv">3</span>)</span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> r.value.py <span class="op">==</span> <span class="dv">4</span></span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> r.output <span class="op">==</span> [<span class="st">'3ₓ'</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>'repl'</code> also captures implicit expression display, as the APL prompt shows it. The <code>%%apl</code> cell magic uses it. In ordinary Python notebooks, append <code>;</code> to suppress display of a call’s return value.</p>
+</section>
+</section>
+<section id="labelled-arrays" class="level2">
+<h2 class="anchored" data-anchor-id="labelled-arrays">Labelled arrays</h2>
+<div id="86da077f" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.683362+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.683785+00:00&quot;,&quot;total&quot;:0.00042325002141296864}}" data-execution_count="16">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>data <span class="op">=</span> [[<span class="dv">10</span>, <span class="dv">20</span>, <span class="dv">30</span>], [<span class="dv">40</span>, <span class="dv">50</span>, <span class="dv">60</span>]]</span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>keys <span class="op">=</span> (<span class="st">'NY'</span>, <span class="st">'LA'</span>), (<span class="st">'Jan'</span>, <span class="st">'Feb'</span>, <span class="st">'Mar'</span>)</span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>sales <span class="op">=</span> Array(data, axis_keys<span class="op">=</span>keys, axis_names<span class="op">=</span>(<span class="st">'city'</span>, <span class="st">'month'</span>))</span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>sales.axis_names, sales.axis_keys</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="16">
+<pre><code>(('city', 'month'), (('NY', 'LA'), ('Jan', 'Feb', 'Mar')))</code></pre>
+</div>
+</div>
+<p>Arithmetic matches named axes and aligns their keys, rather than relying on order. This adjustment lists the months backwards but still adds 1 to January, 2 to February and 3 to March in each city. <code>.df</code> copies the result to pandas, preserving labels; install pandas to use it.</p>
+<div id="c377a39a" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.683795+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.832650+00:00&quot;,&quot;total&quot;:0.14885558397509158}}" data-execution_count="17">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a>months <span class="op">=</span> <span class="st">'Mar'</span>, <span class="st">'Feb'</span>, <span class="st">'Jan'</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>adjustment <span class="op">=</span> Array([<span class="dv">3</span>, <span class="dv">2</span>, <span class="dv">1</span>], axis_keys<span class="op">=</span>(months,), axis_names<span class="op">=</span>(<span class="st">'month'</span>,))</span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a>(sales <span class="op">+</span> adjustment).df</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="17">
+<div>
+
+
+<table class="dataframe caption-top table table-sm table-striped small" data-border="1">
+<thead>
+<tr class="header">
+<th data-quarto-table-cell-role="th">month</th>
+<th data-quarto-table-cell-role="th">Jan</th>
+<th data-quarto-table-cell-role="th">Feb</th>
+<th data-quarto-table-cell-role="th">Mar</th>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">city</th>
+<th data-quarto-table-cell-role="th"></th>
+<th data-quarto-table-cell-role="th"></th>
+<th data-quarto-table-cell-role="th"></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">NY</th>
+<td>11</td>
+<td>22</td>
+<td>33</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">LA</th>
+<td>41</td>
+<td>52</td>
+<td>63</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+</section>
+<section id="plots" class="level2">
+<h2 class="anchored" data-anchor-id="plots">Plots</h2>
+<p><code>plot</code> draws a chart from an array, and the result displays as that chart. Keys label the x axis and the legend, and axis names title them. Keyword arguments give its settings, with dictionaries for nested ones:</p>
+<div id="110a0118" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.832672+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.834380+00:00&quot;,&quot;total&quot;:0.0017090829787775874}}" data-execution_count="18">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>legend <span class="op">=</span> {<span class="st">'position'</span>: <span class="st">'top-left'</span>}</span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>apl.plot(sales, mark<span class="op">=</span><span class="st">'bar'</span>, title<span class="op">=</span><span class="st">'Sales by city'</span>, legend<span class="op">=</span>legend)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="18">
+<div>
+<figure class="figure">
+<p><img src="python_files/figure-html/cell-19-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>A dict of equal-length lists is a table. Its <code>x</code> column supplies the x values, and every other column is a series. <a href="./plot.html">Plots</a> lists all the settings.</p>
+<div id="7a987d8d" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.834392+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.836208+00:00&quot;,&quot;total&quot;:0.0018171669798903167}}" data-execution_count="19">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>threads <span class="op">=</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>, <span class="dv">8</span>, <span class="dv">16</span>, <span class="dv">32</span>]</span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a>seconds <span class="op">=</span> [<span class="fl">30.1</span>, <span class="fl">15.8</span>, <span class="fl">8.2</span>, <span class="fl">4.4</span>, <span class="fl">2.5</span>, <span class="fl">1.6</span>]</span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a>apl.plot({<span class="st">'x'</span>: threads, <span class="st">'seconds'</span>: seconds}, mark<span class="op">=</span><span class="st">'point'</span>, labels<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a>         x<span class="op">=</span>{<span class="st">'title'</span>: <span class="st">'threads'</span>, <span class="st">'scale'</span>: <span class="st">'log'</span>}, y<span class="op">=</span>{<span class="st">'scale'</span>: <span class="st">'log'</span>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="19">
+<div>
+<figure class="figure">
+<p><img src="python_files/figure-html/cell-20-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="values-and-conversion" class="level2">
+<h2 class="anchored" data-anchor-id="values-and-conversion">Values and conversion</h2>
+<p><code>Array</code> retains atoms, shape, nesting, numeric domain and empty prototypes. <code>.is_atom</code> distinguishes an atom from a rank-zero array; both have <code>.shape == ()</code>. <code>.apl</code> is APL display. <code>.py</code> converts atoms to Python values and character vectors to strings. Other arrays become NumPy arrays, including rank-zero arrays. <code>.np</code> always returns an ndarray.</p>
+<p>For <a href="./keyed.html">axis-keyed arrays</a>, <code>.py</code> returns a dict at rank 1 and a pandas DataFrame at higher ranks. <code>.np</code> copies the values. Attach labels with <code>Array(data, axis_keys=[rows, cols])</code>; use <code>None</code> for an unkeyed axis. <code>.axis_keys</code> returns a tuple of label tuples or <code>None</code>.</p>
+<p><code>axis_names</code> names dimensions; <code>axis_keys</code> names positions within them. Matching axis names align before positional broadcasting. <code>.axis_names</code> returns one name or <code>None</code> per dimension.</p>
+<div id="b088a19d" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.836221+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.836416+00:00&quot;,&quot;total&quot;:0.0001954169711098075}}" data-execution_count="20">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> Array, plus</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="7a2c6a26" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.836424+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.836784+00:00&quot;,&quot;total&quot;:0.0003606249811127782}}" data-execution_count="21">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a>m <span class="op">=</span> Array([[<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>], [<span class="dv">4</span>, <span class="dv">5</span>, <span class="dv">6</span>]], axis_names<span class="op">=</span>(<span class="st">'city'</span>, <span class="st">'month'</span>))</span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>v <span class="op">=</span> Array([<span class="dv">10</span>, <span class="dv">20</span>, <span class="dv">30</span>], axis_names<span class="op">=</span>(<span class="st">'month'</span>,))</span>
+<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> (m <span class="op">+</span> v).np.tolist() <span class="op">==</span> [[<span class="dv">11</span>, <span class="dv">22</span>, <span class="dv">33</span>], [<span class="dv">14</span>, <span class="dv">25</span>, <span class="dv">36</span>]]</span>
+<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> plus.<span class="bu">reduce</span>[<span class="st">'month'</span>](m).np.tolist() <span class="op">==</span> [<span class="dv">6</span>, <span class="dv">15</span>]</span>
+<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> plus.<span class="bu">reduce</span>[<span class="st">'month'</span>](m).axis_names <span class="op">==</span> (<span class="st">'city'</span>,)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>.df</code> converts any array to a DataFrame. The last axis supplies columns; earlier axes supply rows, using a MultiIndex above rank 2. Unkeyed axes are labelled from 0. Install pandas for this conversion. Pandas is imported on demand.</p>
+<p>Axis names become pandas index/column names, including MultiIndex level names.</p>
+<div id="3ff66506" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.836792+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.836941+00:00&quot;,&quot;total&quot;:0.0001499159843660891}}" data-execution_count="22">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> fractions <span class="im">import</span> Fraction</span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> Array</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="f1876f1c" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.836948+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.837147+00:00&quot;,&quot;total&quot;:0.00019941700156778097}}" data-execution_count="23">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> Array(<span class="dv">2</span>).apl <span class="op">==</span> <span class="st">'2ₓ'</span></span>
+<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> Array(<span class="fl">2.</span>).apl <span class="op">==</span> <span class="st">'2'</span></span>
+<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> Array(Fraction(<span class="dv">1</span>, <span class="dv">3</span>)).py <span class="op">==</span> Fraction(<span class="dv">1</span>, <span class="dv">3</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Python input</th>
+<th>APL value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>int</code>, <code>bool</code>, NumPy integers</td>
+<td>Exact number</td>
+</tr>
+<tr class="even">
+<td><code>float</code></td>
+<td>Approximate real</td>
+</tr>
+<tr class="odd">
+<td><code>Fraction</code></td>
+<td>Exact rational</td>
+</tr>
+<tr class="even">
+<td><code>complex</code></td>
+<td>Approximate complex</td>
+</tr>
+<tr class="odd">
+<td><code>str</code></td>
+<td>Character vector</td>
+</tr>
+<tr class="even">
+<td>Rectangular list/tuple</td>
+<td>Ordinary array</td>
+</tr>
+<tr class="odd">
+<td>Ragged list/tuple</td>
+<td>Nested array</td>
+</tr>
+<tr class="even">
+<td>NumPy ndarray</td>
+<td>Array preserving shape and numeric domain</td>
+</tr>
+<tr class="odd">
+<td><code>dict</code> with string keys</td>
+<td><a href="./keyed.html">Keyed vector</a>, recursively. <code>.py</code> returns a <code>dict</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>.np</code> or <code>np.asarray(a)</code> always produces an ndarray. Simple numeric arrays use <code>int64</code>, <code>float64</code> or <code>complex128</code>; fractions, large integers, nesting and mixed exact/approximate values use <code>object</code>. Character arrays use <code>U1</code>.</p>
+<div id="d5c951f0" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.837153+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.837293+00:00&quot;,&quot;total&quot;:0.00014083296991884708}}" data-execution_count="24">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="84110210" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.837300+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.838339+00:00&quot;,&quot;total&quot;:0.0010402079788036644}}" data-execution_count="25">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>a <span class="op">=</span> Array([[<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>], [<span class="dv">4</span>, <span class="dv">5</span>, <span class="dv">6</span>]])</span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(a.np, [[<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>], [<span class="dv">4</span>, <span class="dv">5</span>, <span class="dv">6</span>]])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Python/NumPy conversions copy. Passing an <code>Array</code> back to bAsedPL shares its immutable value. Keep <code>Array</code> to preserve empty prototypes and exact nesting. NumPy is needed only for ndarray conversion.</p>
+</section>
+<section id="array-operations" class="level2">
+<h2 class="anchored" data-anchor-id="array-operations">Array operations</h2>
+<p>Arithmetic uses APL agreement, aligning leading axes. Indexing starts at 0, and negative positions count from the end. <code>:</code> selects a whole axis.</p>
+<div id="4a76690c" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.838347+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.838719+00:00&quot;,&quot;total&quot;:0.0003720419481396675}}" data-execution_count="26">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(a <span class="op">+</span> [<span class="dv">10</span>, <span class="dv">20</span>], [[<span class="dv">11</span>, <span class="dv">12</span>, <span class="dv">13</span>], [<span class="dv">24</span>, <span class="dv">25</span>, <span class="dv">26</span>]])</span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(a[<span class="dv">1</span>, :], [<span class="dv">4</span>, <span class="dv">5</span>, <span class="dv">6</span>])</span>
+<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(a[:, [<span class="dv">0</span>, <span class="dv">2</span>]], [[<span class="dv">1</span>, <span class="dv">3</span>], [<span class="dv">4</span>, <span class="dv">6</span>]])</span>
+<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(a[:, <span class="op">-</span><span class="dv">1</span>], [<span class="dv">3</span>, <span class="dv">6</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Comparisons return arrays. <code>%</code> uses Python’s operand order for residue; <code>//</code> floors division; <code>@</code> is matrix product. <code>&amp;</code>/<code>|</code> give LCM/GCD, hence AND/OR on Booleans. <code>len</code> and iteration use major cells. Use <code>member(x, y)</code> for membership. Bounded slices are not supported.</p>
+</section>
+<section id="callable-functions" class="level2">
+<h2 class="anchored" data-anchor-id="callable-functions">Callable functions</h2>
+<p><code>.fn()</code> creates a callable APL function. One argument supplies <code>⍵</code>; two supply <code>⍺, ⍵</code>. Arguments pass directly as values.</p>
+<div id="34013958" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.838727+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.839049+00:00&quot;,&quot;total&quot;:0.00032308301888406277}}" data-execution_count="27">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a>mean <span class="op">=</span> apl.fn(<span class="st">'{(+/⍵)÷≢⍵}'</span>)</span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> mean([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>]).py <span class="op">==</span> Fraction(<span class="dv">7</span>, <span class="dv">3</span>)</span>
+<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> mean([<span class="fl">1.</span>, <span class="fl">2.</span>, <span class="fl">4.</span>]).py <span class="op">==</span> <span class="dv">7</span> <span class="op">/</span> <span class="dv">3</span></span>
+<span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-5"><a href="#cb41-5" aria-hidden="true" tabindex="-1"></a>add <span class="op">=</span> apl.fn(<span class="st">'+'</span>)</span>
+<span id="cb41-6"><a href="#cb41-6" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(add([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>], <span class="dv">10</span>), [<span class="dv">11</span>, <span class="dv">12</span>, <span class="dv">13</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>.fn('g')</code> follows later redefinitions of <code>g</code>; <code>apl('g')</code> retains its current function.</p>
+<p>Module and <code>apl</code> attributes select builtin functions by glyph, glyph name, operation name or alias. Use underscores for hyphenated names and a trailing underscore for Python keywords. System functions also accept names without <code>•</code>.</p>
+<div id="0b01a8bb" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.839057+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.839433+00:00&quot;,&quot;total&quot;:0.0003768329625017941}}" data-execution_count="28">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> apl.multiply(<span class="dv">2</span>, <span class="dv">3</span>).py <span class="op">==</span> <span class="dv">6</span></span>
+<span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> apl.index_of([<span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">7</span>], [<span class="dv">7</span>, <span class="dv">4</span>]).py.tolist() <span class="op">==</span> [<span class="dv">2</span>, <span class="dv">0</span>]</span>
+<span id="cb42-3"><a href="#cb42-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">getattr</span>(apl, <span class="st">'+'</span>)(<span class="dv">2</span>, <span class="dv">3</span>).py <span class="op">==</span> <span class="dv">5</span></span>
+<span id="cb42-4"><a href="#cb42-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> apl.add(<span class="dv">1</span><span class="op">+</span><span class="ot">2j</span>).py <span class="op">==</span> <span class="dv">1</span><span class="op">-</span><span class="ot">2j</span></span>
+<span id="cb42-5"><a href="#cb42-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> apl.plus(<span class="dv">2</span>)(<span class="dv">3</span>).py <span class="op">==</span> <span class="dv">5</span></span>
+<span id="cb42-6"><a href="#cb42-6" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> apl.mul(<span class="op">-</span><span class="dv">2</span>).py <span class="op">==</span> <span class="op">-</span><span class="dv">1</span></span>
+<span id="cb42-7"><a href="#cb42-7" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> apl.times(<span class="dv">2</span>)(<span class="dv">3</span>).py <span class="op">==</span> <span class="dv">6</span></span>
+<span id="cb42-8"><a href="#cb42-8" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> apl.normal([<span class="fl">0.</span>, <span class="fl">1.</span>])[<span class="st">'cdf'</span>](<span class="fl">0.</span>).py <span class="op">==</span> <span class="fl">0.5</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Glyphs and glyph names are ambivalent: one argument supplies <code>⍵</code>, two supply <code>⍺, ⍵</code>. Operation names select valence and curry, as imported word functions do. The glyph names <code>add</code>, <code>dash</code>, <code>mul</code>, <code>div</code> distinguish them from the dyadic operations <code>plus</code>, <code>subtract</code>, <code>times</code>, <code>divide</code>. Operation names win any remaining overlaps.</p>
+<div id="499d6825" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.839440+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.839592+00:00&quot;,&quot;total&quot;:0.00015270797302946448}}" data-execution_count="29">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb43"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> basedpl <span class="im">as</span> b</span>
+<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> add, π</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="fddcba92" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.839599+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.839794+00:00&quot;,&quot;total&quot;:0.00019645900465548038}}" data-execution_count="30">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> add(<span class="dv">2</span>).py <span class="op">==</span> <span class="dv">2</span></span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> b.divide(<span class="dv">2</span>)(<span class="dv">3</span>).py <span class="op">==</span> Fraction(<span class="dv">3</span>, <span class="dv">2</span>)</span>
+<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> π(<span class="dv">1</span>).py <span class="op">==</span> np.pi</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Keyword arguments supply <code>⍺</code> as a keyed vector, and the positional arguments form <code>⍵</code>. One positional argument supplies <code>⍵</code> directly, several form a vector, and none supplies <code>⍬</code>. System functions take their options on the left, so options become keyword arguments. Element functions take attributes the same way:</p>
+<div id="8c2a9d35" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.839801+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.840356+00:00&quot;,&quot;total&quot;:0.0005554160452447832}}" data-execution_count="31">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a>circle <span class="op">=</span> b.element(<span class="st">'circle'</span>)</span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a>orange <span class="op">=</span> circle(cx<span class="op">=</span><span class="dv">30</span>, cy<span class="op">=</span><span class="dv">50</span>, r<span class="op">=</span><span class="dv">20</span>, fill<span class="op">=</span><span class="st">'orange'</span>)</span>
+<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a>blue <span class="op">=</span> circle(cx<span class="op">=</span><span class="dv">70</span>, cy<span class="op">=</span><span class="dv">50</span>, r<span class="op">=</span><span class="dv">20</span>, fill<span class="op">=</span><span class="st">'steelblue'</span>)</span>
+<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a>pic <span class="op">=</span> b.svg(orange, blue, width<span class="op">=</span><span class="dv">200</span>)</span>
+<span id="cb45-5"><a href="#cb45-5" aria-hidden="true" tabindex="-1"></a>pic</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="31">
+<div>
+<figure class="figure">
+<p><img src="python_files/figure-html/cell-32-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The keyword arguments became attributes. System functions read keyword arguments as options:</p>
+<div id="6e66de56" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.840365+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.840701+00:00&quot;,&quot;total&quot;:0.00033654202707111835}}" data-execution_count="32">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb46"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a>b.xml(circle(r<span class="op">=</span><span class="dv">10</span>)), b.json(<span class="st">'{"a": null}'</span>, fill<span class="op">=</span><span class="dv">0</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="32">
+<pre><code>('&lt;circle r="10"/&gt;', {'a': 0})</code></pre>
+</div>
+</div>
+<p>CSV options work the same way. <code>nget</code> and <code>nput</code> read and write files, as in <code>b.nput(text, path='copy.csv')</code>:</p>
+<div id="b58ff71c" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.840710+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.841283+00:00&quot;,&quot;total&quot;:0.0005734169972129166}}" data-execution_count="33">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb48"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a>table <span class="op">=</span> b.csv(<span class="st">'price,qty</span><span class="ch">\n</span><span class="st">10.5,2</span><span class="ch">\n</span><span class="st">20.0,4</span><span class="ch">\n</span><span class="st">'</span>)</span>
+<span id="cb48-2"><a href="#cb48-2" aria-hidden="true" tabindex="-1"></a>text <span class="op">=</span> b.tocsv(table, separator<span class="op">=</span><span class="st">';'</span>).py</span>
+<span id="cb48-3"><a href="#cb48-3" aria-hidden="true" tabindex="-1"></a>b.csv(text, separator<span class="op">=</span><span class="st">';'</span>).py</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="33">
+<pre><code>{'price': array([10.5, 20. ]), 'qty': array([2, 4])}</code></pre>
+</div>
+</div>
+<p><code>r</code> compiles a regex into keyed functions, which Python indexes by name:</p>
+<div id="77c2882d" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.841292+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.841720+00:00&quot;,&quot;total&quot;:0.0004290830111131072}}" data-execution_count="34">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb50"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb50-1"><a href="#cb50-1" aria-hidden="true" tabindex="-1"></a>p <span class="op">=</span> b.r(<span class="vs">r'</span><span class="kw">(</span><span class="pp">[a-z]</span><span class="op">+</span><span class="kw">)(</span><span class="pp">[0-9]</span><span class="op">+</span><span class="kw">)</span><span class="vs">'</span>)</span>
+<span id="cb50-2"><a href="#cb50-2" aria-hidden="true" tabindex="-1"></a>p[<span class="st">'replace'</span>](<span class="st">'$2:$1'</span>, <span class="st">'ab12'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="34">
+<pre><code>12:ab</code></pre>
+</div>
+</div>
+<p>Legal Python identifiers such as <code>π</code> work directly; other glyphs use <code>getattr(b, '+')</code>. Existing Python attributes win; glyph/operation names precede unbulleted system names. Thus <code>apl.binomial</code> is <code>!</code>; use <code>apl.fn('•binomial')</code> for the distribution. Lookup uses exact registered names and aliases; unknown names raise <code>AttributeError</code>. <code>dir()</code> lists available builtins. Workspace variables remain accessible through <code>apl['name']</code>.</p>
+<p><a href="./glyphs/brackets.html">Function vectors</a>, such as <code>[+ × ÷]</code>, retain callable handles. <code>first</code> and <code>pick</code> return the selected function:</p>
+<div id="0cd02b19" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.841728+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.841901+00:00&quot;,&quot;total&quot;:0.00017320801271125674}}" data-execution_count="35">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb52"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> first, pick</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="2c091d39" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.841908+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.842149+00:00&quot;,&quot;total&quot;:0.0002423750120215118}}" data-execution_count="36">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb53"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a>fs <span class="op">=</span> apl(<span class="st">'[+ × ÷]'</span>)</span>
+<span id="cb53-2"><a href="#cb53-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> pick(<span class="dv">1</span>, fs)(<span class="dv">2</span>, <span class="dv">3</span>).py <span class="op">==</span> <span class="dv">6</span></span>
+<span id="cb53-3"><a href="#cb53-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> first(fs)(<span class="dv">2</span>, <span class="dv">3</span>).py <span class="op">==</span> <span class="dv">5</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>Array([f, g])</code> also constructs a function vector; <code>.py</code> and object-dtype <code>.np</code> export Python callables.</p>
+<p><code>f.source</code> returns APL source; <code>f.inspect()</code> returns source and help. <code>apl.names(prefix, classes)</code> lists visible bindings. <code>apl.inspect(name)</code> reads a name or glyph. IPython supports <code>f?</code>, <code>f??</code> and name completion in <code>apl</code> strings. See <a href="./introspection.html">names and help</a>.</p>
+</section>
+<section id="word-functions" class="level2">
+<h2 class="anchored" data-anchor-id="word-functions">Word functions</h2>
+<p>Primitives also have Python names. Dyadic names bind the right argument when called with one argument; <code>.left(x)</code> binds the left.</p>
+<div id="e6e40d75" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.842158+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.842328+00:00&quot;,&quot;total&quot;:0.0001705000177025795}}" data-execution_count="37">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb54"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb54-1"><a href="#cb54-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> plus, times, subtract, tally</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="b8736a3f" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.842335+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.842639+00:00&quot;,&quot;total&quot;:0.00030433404026553035}}" data-execution_count="38">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb55"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> times(<span class="dv">2</span>)(<span class="dv">3</span>).py <span class="op">==</span> <span class="dv">6</span></span>
+<span id="cb55-2"><a href="#cb55-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> subtract(<span class="dv">2</span>)(<span class="dv">5</span>).py <span class="op">==</span> <span class="dv">3</span>       <span class="co"># 5−2</span></span>
+<span id="cb55-3"><a href="#cb55-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> subtract.left(<span class="dv">2</span>)(<span class="dv">5</span>).py <span class="op">==</span> <span class="op">-</span><span class="dv">3</span> <span class="co"># 2−5</span></span>
+<span id="cb55-4"><a href="#cb55-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb55-5"><a href="#cb55-5" aria-hidden="true" tabindex="-1"></a>mean <span class="op">=</span> plus.<span class="bu">reduce</span> <span class="op">/</span> tally</span>
+<span id="cb55-6"><a href="#cb55-6" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> mean([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>]).py <span class="op">==</span> Fraction(<span class="dv">7</span>, <span class="dv">3</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Names distinguish valences: <code>sign</code>/<code>times</code>, <code>shape</code>/<code>reshape</code>, <code>iota</code>/<code>index_of</code>, <code>first</code>/<code>take</code>, <code>mix</code>/<code>pick</code>. <code>times(2.)</code> binds an approximate number; <code>times(2)</code> an exact one. Operators use the underlying APL function.</p>
+<p><code>exponential</code> and <code>exponent</code> name the monadic and dyadic forms of <code>*</code>. <code>power</code> names the operator <code>⍣</code>, exposed as <code>f.power(n)</code>. System functions are available by name on the module or <code>apl</code>, such as <code>apl.normal</code>.</p>
+<p><code>basedpl.symbols</code> is the shared naming table used by Python functions and REPL and notebook completion. Each row is <code>(glyph, name, monad, dyad, aliases, shortcut)</code>: the canonical glyph name, monadic and dyadic function names (empty when absent), and space-separated extra completion aliases. It includes operators and syntax glyphs too, with empty function names. Python replaces hyphens with underscores and appends an underscore to keywords (<code>not</code> → <code>not_</code>). <code>shortcut</code> is the REPL’s formatted Alt-key suffix, derived from <code>keyboard.json</code>: <code>" h"</code> for Alt-h, <code>" Sa"</code> for Alt-Shift-a, or <code>""</code> when absent. The table is directly JSON-serializable for JavaScript consumers.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Python</th>
+<th>APL</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>f.reduce</code>, <code>f.scan</code></td>
+<td><code>f/</code>, <code>f\</code></td>
+</tr>
+<tr class="even">
+<td><code>f.each</code>, <code>f.commute</code></td>
+<td><code>f¨</code>, <code>f⍨</code></td>
+</tr>
+<tr class="odd">
+<td><code>f.outer</code>, <code>f.inner(g)</code></td>
+<td><code>f⌝</code>, <code>f.g</code></td>
+</tr>
+<tr class="even">
+<td><code>f.key</code>, <code>f.stencil(s)</code></td>
+<td><code>f⌸</code>, <code>f⌺s</code></td>
+</tr>
+<tr class="odd">
+<td><code>f.rank(r)</code>, <code>f.atop(g)</code></td>
+<td><code>f⍤r</code>, <code>f⍤g</code></td>
+</tr>
+<tr class="even">
+<td><code>f.after(g)</code>, <code>f.over(g)</code>, <code>f.before(g)</code></td>
+<td><code>f⟜g</code>, <code>f⍥g</code>, <code>f⊸g</code></td>
+</tr>
+<tr class="odd">
+<td><code>f.power(n)</code>, <code>f.at(i)</code></td>
+<td><code>f⍣n</code>, <code>f@i</code>, with <code>n</code> a count, a list of counts, <code>∞</code> or a predicate</td>
+</tr>
+<tr class="even">
+<td><code>f.history(n)</code></td>
+<td><code>f⍣(⍳1+n)</code> for a count, <code>f⍣[g;]</code> for a predicate</td>
+</tr>
+<tr class="odd">
+<td><code>f.with_inverse(g)</code>, <code>f.under(g)</code></td>
+<td><code>f⇄g</code>, <code>f⌾g</code></td>
+</tr>
+<tr class="even">
+<td><code>f.derivative</code></td>
+<td><code>f∂</code></td>
+</tr>
+<tr class="odd">
+<td><code>f[k]</code></td>
+<td><code>f⍠k</code>, axes <code>k</code></td>
+</tr>
+</tbody>
+</table>
+<p>Operator properties chain in APL order: <code>subtract.commute.reduce</code> is <code>-⍨/</code>. Operators needing another operand retain a hole until supplied:</p>
+<div id="ef155e30" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.842646+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.842869+00:00&quot;,&quot;total&quot;:0.0002241659676656127}}" data-execution_count="39">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb56"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb56-1"><a href="#cb56-1" aria-hidden="true" tabindex="-1"></a>twice <span class="op">=</span> times(<span class="dv">2</span>)</span>
+<span id="cb56-2"><a href="#cb56-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> twice.power.each(<span class="dv">3</span>)([<span class="dv">1</span>, <span class="dv">2</span>]).py.tolist() <span class="op">==</span> [<span class="dv">8</span>, <span class="dv">16</span>]  <span class="co"># (twice⍣3)¨</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>f.power.each(n)</code> constructs <code>(f⍣n)¨</code>, just like <code>f.power(n).each</code>. For multiple missing operands, successive calls fill the innermost construction first: <code>f.power.each.power(n)(m)</code> constructs <code>((f⍣n)¨)⍣m</code>. Complete the operands before passing evaluation arguments.</p>
+<p>Arithmetic between functions makes forks: <code>f+g</code> is <code>(f+g)</code>. <code>f @ g</code> is inner product. <code>f &lt;&lt; g</code> is the Atop <code>f⍤g</code>, and <code>f &gt;&gt; g</code> is <code>g⍤f</code>. <code>f ** n</code> is power. Python’s precedence applies when building these expressions.</p>
+<p>Math families: <code>prime</code>/<code>prime_mode</code> (<code>ℙ</code>), <code>factors</code>/<code>factor_spec</code> (<code>⨸</code>), <code>polynomial</code>/<code>polyval</code> (<code>⊛</code>). <code>windows</code> is dyadic <code>↕</code>.</p>
+<p>Roots: <code>sqrt</code>/<code>root</code> (<code>√</code>). Complex coordinates: <code>real_imag</code> (<code>∨</code>), <code>polar</code> (<code>∧</code>), <code>cis</code> (<code>○</code>). <code>pi_times</code>/<code>pi_ratio</code> (<code>π</code>) give π multiples/fractions. Also <code>square</code>, <code>double</code>, <code>decrement</code>, <code>increment</code>, <code>classify</code>, <code>binary_encode</code> and <code>binary_decode</code>.</p>
+<div id="1dc620a5" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.842876+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.843028+00:00&quot;,&quot;total&quot;:0.00015229202108457685}}" data-execution_count="40">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb57"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> prime, factors, polyval</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="230c0c3a" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.843034+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.843567+00:00&quot;,&quot;total&quot;:0.0005334590096026659}}" data-execution_count="41">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb58"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> prime(<span class="dv">9</span>).py <span class="op">==</span> <span class="dv">29</span></span>
+<span id="cb58-2"><a href="#cb58-2" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(factors(<span class="dv">700</span>), [<span class="dv">2</span>, <span class="dv">2</span>, <span class="dv">5</span>, <span class="dv">5</span>, <span class="dv">7</span>])</span>
+<span id="cb58-3"><a href="#cb58-3" aria-hidden="true" tabindex="-1"></a>p <span class="op">=</span> polyval.left([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>])</span>
+<span id="cb58-4"><a href="#cb58-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> p(<span class="dv">2</span>).py <span class="op">==</span> <span class="dv">17</span></span>
+<span id="cb58-5"><a href="#cb58-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> p.derivative(<span class="dv">2</span>).py <span class="op">==</span> <span class="dv">14</span></span>
+<span id="cb58-6"><a href="#cb58-6" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(p.derivative([<span class="dv">10</span>, <span class="dv">20</span>], [<span class="dv">1</span>, <span class="dv">2</span>]), [<span class="dv">80</span>, <span class="dv">280</span>])</span>
+<span id="cb58-7"><a href="#cb58-7" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(plus.left(<span class="dv">1</span>).history(<span class="dv">3</span>)(<span class="dv">0</span>), [<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="printing-functions" class="level2">
+<h2 class="anchored" data-anchor-id="printing-functions">Printing functions</h2>
+<p><code>to_python(f)</code> shows a function using Python word names and combinators.</p>
+<div id="0b18b08c" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.843574+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.843719+00:00&quot;,&quot;total&quot;:0.00014616601401939988}}" data-execution_count="42">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb59"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb59-1"><a href="#cb59-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> to_python, plus, times, tally</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="25ee6cef" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.843725+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.843937+00:00&quot;,&quot;total&quot;:0.00021287496201694012}}" data-execution_count="43">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb60"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> to_python(plus.<span class="bu">reduce</span> <span class="op">/</span> tally) <span class="op">==</span> <span class="st">'plus.reduce / tally'</span></span>
+<span id="cb60-2"><a href="#cb60-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> to_python(times(<span class="fl">2.</span>)) <span class="op">==</span> <span class="st">'times(2.)'</span></span>
+<span id="cb60-3"><a href="#cb60-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> to_python((plus.<span class="bu">reduce</span> <span class="op">/</span> tally).each) <span class="op">==</span> <span class="st">'(plus.reduce / tally).each'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>For an ambivalent function, <code>dyad=True</code> selects the dyadic spelling. Word functions already specify their valence.</p>
+<div id="f826e103" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-26T08:56:37.843943+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-26T08:56:37.844169+00:00&quot;,&quot;total&quot;:0.00022670801263302565}}" data-execution_count="44">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb61"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb61-1"><a href="#cb61-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> to_python(apl(<span class="st">'×'</span>)) <span class="op">==</span> <span class="st">'sign'</span></span>
+<span id="cb61-2"><a href="#cb61-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> to_python(apl(<span class="st">'×'</span>), dyad<span class="op">=</span><span class="va">True</span>) <span class="op">==</span> <span class="st">'times'</span></span>
+<span id="cb61-3"><a href="#cb61-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> to_python(apl(<span class="st">'2-'</span>)) <span class="op">==</span> <span class="st">'subtract.left(2.)'</span></span>
+<span id="cb61-4"><a href="#cb61-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> to_python(apl(<span class="st">'{⍵×2}¨'</span>)) <span class="op">==</span> <span class="st">'fn("{⍵×2}").each'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Dfns and late-bound <code>.fn(...)</code> expressions retain their APL source. Use <code>apl('+/÷≢')</code> to evaluate a function expression and print its assembled structure. Printing itself never executes APL. Approximate <code>2</code> prints as <code>2.</code>, exact <code>2x</code> as <code>2</code>, and fractions as <code>Fraction(...)</code>. Complex array constants retain APL notation inside <code>apl(...)</code>.</p>
+<p>The output is explanatory Python spelling. Python argument evaluation order and workspace definitions remain the caller’s responsibility.</p>
+</section>
+<section id="errors-and-interruption" class="level2">
+<h2 class="anchored" data-anchor-id="errors-and-interruption">Errors and interruption</h2>
+<p><code>AplError</code> provides the diagnostic, <code>kind</code>, <code>message</code>, <code>source</code>, byte <code>span</code>, call context and prior <code>output</code>. Completed assignments survive errors. Capturing calls retain output on the exception; ordinary calls print it before raising.</p>
+<p>Ctrl-C interrupts evaluation. From another thread, call <code>apl.interrupt()</code>. <code>apl.timeout = 2</code> gives each evaluation a two-second deadline. <code>None</code>, the default, removes it.</p>
+<p>Evaluation runs on the calling thread with the GIL released, so other Python threads keep running. The workspace remains usable after interruption. Native-library calls can delay cancellation. For a hard-kill fallback, use a <a href="./processes.html#interruptible-worker">process worker</a>.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/answerdotai\.github\.io\/basedpl");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

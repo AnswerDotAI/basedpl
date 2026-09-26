@@ -1,0 +1,22 @@
+
+
+# `⍸` — Where / Interval index
+
+`⍸Y` lists exact positions, repeated according to their nonnegative
+integer counts. Higher-rank arguments give coordinate vectors.
+
+``` apl
+⍸0 2 0 1           ⍝ 1ₓ 1ₓ 3ₓ
+```
+
+`X⍸Y` counts sorted boundaries in `X` ≤ each query. Uses [structural
+ordering](../rules.qmd#equality-and-ordering), without tolerance.
+
+``` apl
+10 20 30⍸5 10 25 40 ⍝ 0ₓ 1ₓ 2ₓ 3ₓ
+1 3⍸2              ⍝ 1ₓ
+1 3⍸⊂2             ⍝ 1ₓ
+1 3⍸,2             ⍝ ,1ₓ
+```
+
+Query cells and batch axes follow [Index Of](iota.qmd).

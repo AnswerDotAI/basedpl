@@ -1,0 +1,19 @@
+
+
+# `⍬` — Empty vector
+
+`⍬` is an empty approximate numeric vector: `0⍴0`. Empty brackets, `[]`,
+give the same value.
+
+``` apl
+⍴⍬                 ⍝ ,0ₓ
+⍬,1 2              ⍝ 1 2
+[]≡⍬               ⍝ 1ₓ
+```
+
+Other empty types retain their prototypes.
+
+``` apl
+3↑0⍴0x             ⍝ 0ₓ 0ₓ 0ₓ
+3↑""               ⍝ "   "
+```

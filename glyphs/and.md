@@ -1,0 +1,22 @@
+
+
+# `∧` — AND / LCM
+
+`∧Y` gives magnitude/angle pairs along a new last axis. Y is a numeric
+array; angles are in radians.
+
+``` apl
+∧0j2              ⍝ [2 1π2]
+∧3j4              ⍝ 5 0.9272952180016122
+```
+
+`X∧Y` gives LCM; on Booleans, AND. Pervasive.
+
+``` apl
+0 0 1 1∧0 1 0 1   ⍝ 0 0 0 1
+4x∧6x              ⍝ 12ₓ
+∧/1 1 0            ⍝ 0
+```
+
+Includes rational and complex LCM. Inputs are finite. Empty reduction
+identity: one.

@@ -1,0 +1,23 @@
+
+
+# `⍉` — Transpose
+
+`⍉Y` reverses axis order.
+
+``` apl
+⍉2 3⍴⍳6            ⍝ [0 3 ⋄ 1 4 ⋄ 2 5]
+```
+
+In `A⍉Y`, each item of `A` names the result axis for the corresponding
+source axis. Labels start at 0 with no gaps.
+
+``` apl
+1 0⍉2 3⍴⍳6         ⍝ [0 3 ⋄ 1 4 ⋄ 2 5]
+```
+
+Repeated labels select diagonals, taking the smallest participating
+dimension.
+
+``` apl
+0 0⍉3 3⍴⍳9         ⍝ 0 4 8
+```

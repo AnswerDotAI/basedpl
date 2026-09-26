@@ -1,0 +1,22 @@
+
+
+# `⍟` — Natural log / Logarithm
+
+`⍟Y`: ln Y. Pervasive.
+
+``` apl
+⍟1                ⍝ 0
+```
+
+`X⍟Y`: log<sub>X</sub> Y. Pervasive.
+
+``` apl
+2⍟8               ⍝ 3
+10⍟100            ⍝ 2
+```
+
+Uses complex logarithms where needed.
+
+## Errors
+
+- `DOMAIN`: zero argument, base 1

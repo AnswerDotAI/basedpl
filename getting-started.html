@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Calculate with arrays, then build functions.">
+
+<title>Getting started – bAsedPL</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-f2788e636de456f6409e966386820849.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="Getting started – bAsedPL">
+<meta property="og:description" content="Calculate with arrays, then build functions.">
+<meta property="og:site_name" content="bAsedPL">
+<meta name="twitter:title" content="Getting started – bAsedPL">
+<meta name="twitter:description" content="Calculate with arrays, then build functions.">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">bAsedPL</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="./getting-started.html" aria-current="page"> 
+<span class="menu-text">Get started</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./glyphs.html"> 
+<span class="menu-text">Glyph reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./python.html"> 
+<span class="menu-text">Python</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/AnswerDotAI/basedpl"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./getting-started.html">Getting started</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./getting-started.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Getting started</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./python.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Python</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./notebooks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Using bAsedPL notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./repl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">REPL</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./keyboard.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glyph keyboard</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Command line</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Language</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./glyphs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glyph reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./rules.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Shared language rules</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./keyed.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Axis keys</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">Working with data</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Files, CSV and JSON</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./regex.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regex</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./distributions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Probability distributions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./xml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">XML and SVG</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./plot.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Plots</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">Tooling</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./introspection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Names and help</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./processes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Process interfaces</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dyalog.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dyalog sessions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./j.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">J</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#install" id="toc-install" class="nav-link active" data-scroll-target="#install">Install</a></li>
+  <li><a href="#first-calculations" id="toc-first-calculations" class="nav-link" data-scroll-target="#first-calculations">First calculations</a></li>
+  <li><a href="#numbers-and-arrays" id="toc-numbers-and-arrays" class="nav-link" data-scroll-target="#numbers-and-arrays">Numbers and arrays</a></li>
+  <li><a href="#nested-arrays" id="toc-nested-arrays" class="nav-link" data-scroll-target="#nested-arrays">Nested arrays</a></li>
+  <li><a href="#example-algorithms" id="toc-example-algorithms" class="nav-link" data-scroll-target="#example-algorithms">Example algorithms</a></li>
+  <li><a href="#labelled-arrays" id="toc-labelled-arrays" class="nav-link" data-scroll-target="#labelled-arrays">Labelled arrays</a></li>
+  <li><a href="#csv-and-json" id="toc-csv-and-json" class="nav-link" data-scroll-target="#csv-and-json">CSV and JSON</a></li>
+  <li><a href="#regex" id="toc-regex" class="nav-link" data-scroll-target="#regex">Regex</a></li>
+  <li><a href="#probability-distributions" id="toc-probability-distributions" class="nav-link" data-scroll-target="#probability-distributions">Probability distributions</a></li>
+  <li><a href="#learning-apl" id="toc-learning-apl" class="nav-link" data-scroll-target="#learning-apl">Learning APL</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="getting-started.html.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Getting started</h1>
+</div>
+
+<div>
+  <div class="description">
+    Calculate with arrays, then build functions.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<section id="install" class="level2">
+<h2 class="anchored" data-anchor-id="install">Install</h2>
+<p>Requires Python ≥3.10.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install basedpl</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>This installs the <code>bapl</code> command and the <code>basedpl</code> Python package.</p>
+</section>
+<section id="first-calculations" class="level2">
+<h2 class="anchored" data-anchor-id="first-calculations">First calculations</h2>
+<p>Run <code>bapl</code> to open the <a href="./repl.html">REPL</a>. Type an expression and press Enter. <code>⍝</code> introduces a comment; examples here use it to show the result.</p>
+<p>APL evaluates right-to-left. Parentheses change grouping, and so do spaces: each part between spaces is evaluated first.</p>
+<div id="df78eb0c" class="cell">
+<pre class="apl cell-code"><code>2×3+4                 ⍝ 14
+(2×3)+4               ⍝ 10
+2×3 + 4               ⍝ 10</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>14</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>10</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>10</code></pre>
+</div>
+</div>
+<p>Numbers separated by spaces form a vector. Functions work on every element.</p>
+<div id="ddc387d9" class="cell">
+<pre class="apl cell-code"><code>10+1 2 3              ⍝ 11 12 13</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>11 12 13</code></pre>
+</div>
+</div>
+<p><code>⍳</code> generates indices, <code>←</code> assigns a name, and <code>+/</code> sums.</p>
+<div id="057f0ad7" class="cell">
+<pre class="apl cell-code"><code>v←⍳5 ⋄ v              ⍝ 0 1 2 3 4
++/⍳5                  ⍝ 10</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>0 1 2 3 4</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>10</code></pre>
+</div>
+</div>
+<p>To enter <code>⍳5</code>, type backtick, <code>iota</code>, then <code>5</code>. The digit accepts the glyph and enters the argument. <a href="./repl.html#typing-glyphs">Symbol entry</a> also supports abbreviations and Tab completion.</p>
+</section>
+<section id="numbers-and-arrays" class="level2">
+<h2 class="anchored" data-anchor-id="numbers-and-arrays">Numbers and arrays</h2>
+<p>Bare numbers are approximate. Use <code>x</code> for exact integers and <code>r</code> for fractions.</p>
+<div id="36ba4c79" class="cell">
+<pre class="apl cell-code"><code>1÷3                   ⍝ 0.3333333333333333
+1x÷3x                 ⍝ 1r3</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>0.3333333333333333</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>1r3</code></pre>
+</div>
+</div>
+<p><code>j</code> separates real and imaginary parts.</p>
+<div id="f14ff9c2" class="cell">
+<pre class="apl cell-code"><code>1j2×1j¯2              ⍝ 5</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>5</code></pre>
+</div>
+</div>
+<p><code>⍴</code> reshapes a vector; <code>+/</code> sums each row.</p>
+<div id="acc5aabe" class="cell">
+<pre class="apl cell-code"><code>+/2 3⍴⍳6              ⍝ 3 12</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>3 12</code></pre>
+</div>
+</div>
+<p>Indices start at 0, and negative indices count from the end. Comparisons use tolerance <code>1E¯14</code>; <code>0.3=0.1+0.2</code> is true. See <a href="./rules.html">language rules</a> and the <a href="./glyphs.html">glyph index</a>.</p>
+</section>
+<section id="nested-arrays" class="level2">
+<h2 class="anchored" data-anchor-id="nested-arrays">Nested arrays</h2>
+<p>Brackets write a list, so a list of vectors is a nested vector. Each (<code>¨</code>) applies its operand to each element:</p>
+<div id="8077e87b" class="cell">
+<pre class="apl cell-code"><code>n←[[1 2] [3 4 5]]
++/¨n</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>3 12</code></pre>
+</div>
+</div>
+<p>The same Each/reduction pattern works with division:</p>
+<div id="9f9226f6" class="cell">
+<pre class="apl cell-code"><code>÷/¨n</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>0.5 3.75</code></pre>
+</div>
+</div>
+</section>
+<section id="example-algorithms" class="level2">
+<h2 class="anchored" data-anchor-id="example-algorithms">Example algorithms</h2>
+<p>Let’s create a function to list primes.</p>
+<p>A prime has exactly two positive divisors. <code>|⌝</code> forms an outer product of remainders; <code>⍨</code> supplies the same argument on both sides. Indices start at 0, so the candidates are <code>1+⍳10</code>. Each row below marks the multiples of one candidate:</p>
+<div id="37f5bafb" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-22T09:54:42.387061+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-22T09:54:42.387396+00:00&quot;,&quot;total&quot;:0.000336292025167495}}">
+<pre class="apl cell-code"><code>n←1+⍳10
+0=|⌝⍨n</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>1ₓ 1ₓ 1ₓ 1ₓ 1ₓ 1ₓ 1ₓ 1ₓ 1ₓ 1ₓ
+0ₓ 1ₓ 0ₓ 1ₓ 0ₓ 1ₓ 0ₓ 1ₓ 0ₓ 1ₓ
+0ₓ 0ₓ 1ₓ 0ₓ 0ₓ 1ₓ 0ₓ 0ₓ 1ₓ 0ₓ
+0ₓ 0ₓ 0ₓ 1ₓ 0ₓ 0ₓ 0ₓ 1ₓ 0ₓ 0ₓ
+0ₓ 0ₓ 0ₓ 0ₓ 1ₓ 0ₓ 0ₓ 0ₓ 0ₓ 1ₓ
+0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 1ₓ 0ₓ 0ₓ 0ₓ 0ₓ
+0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 1ₓ 0ₓ 0ₓ 0ₓ
+0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 1ₓ 0ₓ 0ₓ
+0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 1ₓ 0ₓ
+0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 0ₓ 1ₓ</code></pre>
+</div>
+</div>
+<p><code>+⌿</code> sums down the rows, counting each candidate’s divisors:</p>
+<div id="5a3c906a" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-22T09:54:42.387408+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-22T09:54:42.387654+00:00&quot;,&quot;total&quot;:0.00024708296405151486}}">
+<pre class="apl cell-code"><code>+⌿0=|⌝⍨n</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>1ₓ 2ₓ 2ₓ 3ₓ 2ₓ 4ₓ 2ₓ 4ₓ 3ₓ 4ₓ</code></pre>
+</div>
+</div>
+<p><code>2=</code> marks primes. Where (<code>⍸</code>) returns their positions. An array next to an argument selects from it, so <code>n</code> applied to the positions gives the primes:</p>
+<div id="5bd7e9ca" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-22T09:54:42.387662+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-22T09:54:42.388086+00:00&quot;,&quot;total&quot;:0.0004250829806551337}}">
+<pre class="apl cell-code"><code>n ⍸2=+⌿0=|⌝⍨n</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>2 3 5 7</code></pre>
+</div>
+</div>
+<p>A dfn names its argument <code>⍵</code>. Given the candidates <code>1+⍳50</code>, it lists the primes up to 50:</p>
+<div id="db7e8d68" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-22T09:54:42.388098+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-22T09:54:42.388581+00:00&quot;,&quot;total&quot;:0.0004835419822484255}}">
+<pre class="apl cell-code"><code>{⍵ ⍸2=+⌿0=|⌝⍨⍵}1+⍳50</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>2 3 5 7 11 13 17 19 23 29 31 37 41 43 47</code></pre>
+</div>
+</div>
+<p>Finally, name it. The trailing <code>1+⍳</code> generates the candidates:</p>
+<div id="c89a63d5" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-22T09:54:42.388590+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-22T09:54:42.389038+00:00&quot;,&quot;total&quot;:0.0004490420105867088}}">
+<pre class="apl cell-code"><code>primes ← {⍵ ⍸2=+⌿0=|⌝⍨⍵}1+⍳
+primes 50</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>2 3 5 7 11 13 17 19 23 29 31 37 41 43 47</code></pre>
+</div>
+</div>
+<p>The built-in prime glyph <code>ℙ</code> returns the prime at a position, counting from 0. Applied to <code>⍳15</code>, it produces the same list directly:</p>
+<div id="e29021da" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-22T09:54:42.389046+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-22T09:54:42.389812+00:00&quot;,&quot;total&quot;:0.0007674170192331076}}">
+<pre class="apl cell-code"><code>ℙ ⍳15</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>2ₓ 3ₓ 5ₓ 7ₓ 11ₓ 13ₓ 17ₓ 19ₓ 23ₓ 29ₓ 31ₓ 37ₓ 41ₓ 43ₓ 47ₓ</code></pre>
+</div>
+</div>
+<p>The fibonacci sequence:</p>
+<div id="16604edc" class="cell">
+<pre class="apl cell-code"><code>{⍵,+/¯2↑⍵}⍣15 [1 1]</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>1 1 2 3 5 8 13 21 34 55 89 144 233 377 610 987 1597</code></pre>
+</div>
+</div>
+<p>Explanation:</p>
+<ol type="1">
+<li><code>[1 1]</code>: Initial seed (first two Fibonacci numbers). Without the brackets, <code>15 1 1</code> would be one list.</li>
+<li><code>{⍵,+/¯2↑⍵}</code>: Function that appends the sum of the last two elements</li>
+<li><code>⍣15</code>: Apply the function 15 times</li>
+</ol>
+</section>
+<section id="labelled-arrays" class="level2">
+<h2 class="anchored" data-anchor-id="labelled-arrays">Labelled arrays</h2>
+<p>Arrays can carry <strong>keys for positions</strong> and <strong>names for axes</strong>, without becoming a separate table type. A keyed vector pairs each axis name with its position keys, in axis order. Here <code>axes:</code> labels the rows by city and the columns by month:</p>
+<div id="d0dd7b5e" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-22T09:54:42.390442+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-22T09:54:42.390932+00:00&quot;,&quot;total&quot;:0.0004911249852739275}}">
+<pre class="apl cell-code"><code>axes←["city":["NY" "LA"] "month":["Jan" "Feb" "Mar"]]
+sales←axes:[10 20 30 ⋄ 40 50 60]
+sales</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>   Jan Feb Mar
+NY  10  20  30
+LA  40  50  60</code></pre>
+</div>
+</div>
+<p><code>sales</code> applied to a key selects that row. <code>⌷</code> selects positions by key, with one key for each axis. <code>⍠</code> applies a function along the axes its operand names. Summing over <code>month</code> leaves a total for each city, and keeps its labels.</p>
+<div id="8eff32f8" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-22T09:54:42.390948+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-22T09:54:42.391398+00:00&quot;,&quot;total&quot;:0.0004509169957600534}}">
+<pre class="apl cell-code"><code>sales "LA"
+"LA" "Feb"⌷sales
++/⍠"month" sales</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>["month":3]⍴["Jan":40 "Feb":50 "Mar":60]</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>50</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>["city":2]⍴["NY":60 "LA":150]</code></pre>
+</div>
+</div>
+<p>Unlabelled arrays keep their usual positional behaviour. See <a href="./keyed.html">Axis keys</a> for construction, updates and alignment rules.</p>
+</section>
+<section id="csv-and-json" class="level2">
+<h2 class="anchored" data-anchor-id="csv-and-json">CSV and JSON</h2>
+<p>CSV headers become keys on a vector of columns. Numeric columns use compact storage. These two orders total 101:</p>
+<div id="1a88ac0f" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-22T09:54:42.512562+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-22T09:54:42.513135+00:00&quot;,&quot;total&quot;:0.000574083998799324}}">
+<pre class="apl cell-code"><code>nl←•ucs 10
+orders←•csv "price,qty",nl,"10.5,2",nl,"20,4"
++/orders.price×orders.qty</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>101</code></pre>
+</div>
+</div>
+<p>JSON objects use the same keyed arrays. Parse a record and select a field:</p>
+<div id="52452373" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-22T09:54:42.513150+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-22T09:54:42.513762+00:00&quot;,&quot;total&quot;:0.0006118330056779087}}">
+<pre class="apl cell-code"><code>record←•json "{""name"":""Ada"",""scores"":[8,9,10]}"
+record.name
++/record.scores</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>Ada</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>27ₓ</code></pre>
+</div>
+</div>
+<p><code>•tojson</code> converts back to JSON text. For files, compose with <code>•nget</code> and <code>•nput</code>, as in <code>•csv •nget "orders.csv"</code>. See <a href="./data.html">files, CSV and JSON</a> for dialect and file options.</p>
+<div id="b6a16688" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-22T09:54:42.513775+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-22T09:54:42.514253+00:00&quot;,&quot;total&quot;:0.0004795410204678774}}">
+<pre class="apl cell-code"><code>•tojson record</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>{"name":"Ada","scores":[8,9,10]}</code></pre>
+</div>
+</div>
+</section>
+<section id="regex" class="level2">
+<h2 class="anchored" data-anchor-id="regex">Regex</h2>
+<p><code>•r</code> compiles a Rust regex into functions for matching, positions, groups and replacement:</p>
+<div id="4d31bba9" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-22T09:54:42.519039+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-22T09:54:42.520670+00:00&quot;,&quot;total&quot;:0.0016309160273522139}}">
+<pre class="apl cell-code"><code>codes←•r "([A-Z]+)-([0-9]+)"
+codes.match "AB-12 CD-3"
+codes.position "AB-12 CD-3"
+"$2:$1" codes.replace "AB-12 CD-3"</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>"AB-12" "CD-3"</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>0ₓ 6ₓ</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>12:AB 3:CD</code></pre>
+</div>
+</div>
+</section>
+<section id="probability-distributions" class="level2">
+<h2 class="anchored" data-anchor-id="probability-distributions">Probability distributions</h2>
+<p>Construct a standard normal, then evaluate its CDF and quantiles. Distribution methods accept arrays:</p>
+<div id="6a332562" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-22T09:54:42.520679+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-22T09:54:42.521164+00:00&quot;,&quot;total&quot;:0.00048583303578197956}}">
+<pre class="apl cell-code"><code>normal←•normal 0 1
+normal.cdf ¯1 0 1
+normal.quantile 0.025 0.5 0.975</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>0.15865525394505725 0.5 0.8413447460549428</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>¯1.9599639845400545 0 1.9599639845400538</code></pre>
+</div>
+</div>
+<p>Sampling takes a shape. A generator from <code>•rand</code> on the left makes the draws repeatable:</p>
+<div id="4e2929e7" class="cell">
+<pre class="apl cell-code"><code>(•rand 1) normal.sample 2 3</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>0.8439986136221761   0.7155607127305931 ¯1.9158714436187585
+0.45249647038446317 ¯0.815791206711391   0.3583251371673788</code></pre>
+</div>
+</div>
+<p>For discrete distributions, <code>density</code> gives probability mass. A fair coin tossed twice has probabilities ¼, ½, ¼ for zero, one or two heads:</p>
+<div id="3181b992" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-09-22T09:54:42.521551+00:00&quot;,&quot;shell.execute_reply&quot;:&quot;2026-09-22T09:54:42.521772+00:00&quot;,&quot;total&quot;:0.00022216601064428687}}">
+<pre class="apl cell-code"><code>coin←•binomial 2 0.5
+coin.density 0 1 2</code></pre>
+<div class="cell-output cell-output-display">
+<pre><code>0.25 0.5 0.25</code></pre>
+</div>
+</div>
+<p>See <a href="./distributions.html">distributions</a> for the 17 families, and <a href="./regex.html">regex</a> for captures and replacement options.</p>
+</section>
+<section id="learning-apl" class="level2">
+<h2 class="anchored" data-anchor-id="learning-apl">Learning APL</h2>
+<p>To start learning APL, follow the <a href="https://forums.fast.ai/t/apl-array-programming/97188">17 video series</a> run by Jeremy Howard, and have a look at the <a href="https://fastai.github.io/apl-study/apl.html">study notes</a>. These use Dyalog APL. bAsedPL differs: indices count from 0, brackets write lists, and spaces group expressions. See the <a href="./rules.html">language rules</a>.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/answerdotai\.github\.io\/basedpl");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>
