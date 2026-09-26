@@ -16,7 +16,7 @@ alpop ← {  ⍝ Leftmost value for key ⍵ from list ⍺
   keys vals←⍺  ⍝ keys vector and corresponding values
   indx←keys⍳⊂⍵  ⍝ index of first key ⍵ in list ⍺
   val←indx⊃vals  ⍝ value for key ⍵
-  list←(⊂indx≠⍳⍴keys)/¨⍺  ⍝ reduced list
+  list←[indx≠⍳⍴keys]/¨⍺  ⍝ reduced list
   val list  ⍝ :: val list ← list ∇ key
 }
 
@@ -32,7 +32,7 @@ alset ← {  ⍝ Assoc list ⍺ with (key value) pair ⍵ replaced.
 
 ⍝ From http://dfns.dyalog.com/c_acc.htm
 
-acc ← { ⍶{(⊂⍺ ⍶↑⍬⍴⍵),⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵ }  ⍝ Accumulating reduction.
+acc ← { ⍶{[⍺ ⍶↑⍬⍴⍵],⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵ }  ⍝ Accumulating reduction.
 
 ⍝ From http://dfns.dyalog.com/c_disp.htm
 
@@ -69,14 +69,14 @@ disp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄ ⍺←⍬  
   }
   join←{  ⍝ Join of gap-separated sub-planes.
     sep←(≢⍵)÷1⌈≢⍺  ⍝ sub plane separation.
-    split←(0=sep|¯1+⍳≢⍵)⊂[1]⍵
+    split←(0=sep|¯1+⍳≢⍵)⊂⍤[1]⍵
     (⊂⍤¯1⊢⍺)plane¨split  ⍝ sub-plane join.
   }
   outer←{  ⍝ Outer decoration.
     sizes←1 0{↑↓(⍉⍣⍺)⍵}¨sepr⍴¨⍵
-    sides←sizes/¨¨'│─'  ⍝ vert and horiz cell sides.
-    bords←dec↓¨'├┬'glue¨sides  ⍝ joined up outer borders.
-    ,¨/('┌' '')⍺ bords'└┐'
+    sides←sizes/¨¨"│─"  ⍝ vert and horiz cell sides.
+    bords←dec↓¨"├┬"glue¨sides  ⍝ joined up outer borders.
+    ,¨/('┌' "")⍺ bords"└┐"
   }
   inner←{  ⍝ Inner subarray decorations.
     deco←{(type ⍵),1 shape ⍵}  ⍝ type and shape decorators.
@@ -90,7 +90,7 @@ disp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄ ⍺←⍬  
   }
   right←{  ⍝ Border right each subarray.
     types←2⊥¨(⍳⍴⍵)=⊂⍴⍵
-    chars←'┼┤┴┘'[1+types]
+    chars←[1+types]⌷"┼┤┴┘"
     rgt←{⍵,(-≢⍵)↑(≢⍵)1 1/'│',⍺}  ⍝ form right border.
     ((matr 1 open ⍺),¨chars)rgt¨⍵  ⍝ cells bordered right.
   }
@@ -104,15 +104,15 @@ disp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄ ⍺←⍬  
     isor ⍵:'∇'  ⍝ ⎕or:    '∇'
     sst←{  ⍝ simple scalar type.
       0=dec×⍴⍴⍵:'─'  ⍝ undecorated or scalar ⍕⍵: char,
-      (1+↑⍵∊'¯',•d)⊃'#~'
+      (1+↑⍵∊'¯',•d)⊃"#~"
     }∘⍕  ⍝ ⍕ distinguishes type of scalar.
     0=≡⍵:sst ⍵  ⍝ simple scalar: type.
     {(1+1=⍴⍵)⊃'+'⍵}∪,sst¨dec open ⍵
   }
   shape←{
-    dec≤0=⍴⍴⍵:⍺/¨'│─'  ⍝ no decoration or scalar.
-    cols←(1+×¯1↑⍴⍵)⊃'⊖→'
-    rsig←(1+××/¯1↓⍴⍵)⊃'⌽↓'
+    dec≤0=⍴⍴⍵:⍺/¨"│─"  ⍝ no decoration or scalar.
+    cols←(1+×¯1↑⍴⍵)⊃"⊖→"
+    rsig←(1+××/¯1↓⍴⍵)⊃"⌽↓"
     rows←(3⌊⍴⍴⍵)⊃'│'rsig'⍒'
     rows cols  ⍝ shape decorators.
   }
@@ -130,11 +130,11 @@ disp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄ ⍺←⍬  
 
 display ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⍝ Boxed display of array.
   box←{  ⍝ box with type and axes
-    vrt hrz←(¯1+⍴⍵)⍴¨'│─'  ⍝ vert. and horiz. lines
-    top←'─⊖→'[1+¯1↑⍺],hrz
+    vrt hrz←(¯1+⍴⍵)⍴¨"│─"  ⍝ vert. and horiz. lines
+    top←"─⊖→".[1+¯1↑⍺],hrz
     bot←(↑⍺),hrz
-    rgt←'┐│',vrt,'┘'  ⍝ right side with corners
-    lax←'│⌽↓'[1+¯1↓1↓⍺],¨⊂vrt
+    rgt←"┐│",vrt,'┘'  ⍝ right side with corners
+    lax←"│⌽↓".[1+¯1↓1↓⍺],¨⊂vrt
     lft←⍉'┌',(⊃lax),'└'
     lft,(top⍪⍵⍪bot),rgt  ⍝ fully boxed array
   }
@@ -142,9 +142,9 @@ display ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⍝ Box
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}  ⍝ array axis types
   open←{(1⌈⍴⍵)⍴⍵}  ⍝ exposure of null axes
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}  ⍝ removal of extra blank cols
-  char←{⍬≡⍴⍵:'─' ⋄ (1+↑⍵∊'¯',•d)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+↑⍵∊'¯',•d)⊃"#~"}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
-  line←{(1+''≡0⍴⍵)⊃' -'}
+  line←{(1+""≡0⍴⍵)⊃" -"}
   {
     0=≡⍵:' '⍪(open format ⍵)⍪line ⍵
     1 ⍬≡(≡⍵)(⍴⍵):'∇' 0 0 box format ⍵
@@ -158,13 +158,13 @@ display ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⍝ Box
 displays ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Boxed display of array.
   box←{  ⍝ Box with type and axes.
     shp w←open\⍵
-    vrt hrz←(¯1+⍴w)⍴¨'│─'  ⍝ Vert. and horiz. lines.
-    top←('─⊖→')[1+¯1↑⍺],hrz
+    vrt hrz←(¯1+⍴w)⍴¨"│─"  ⍝ Vert. and horiz. lines.
+    top←"─⊖→".[1+¯1↑⍺],hrz
     ok←(⍴shp)<⍴hrz
     top←(⍴top)↑(2↑top),(ok/shp),(2+ok×⍴shp)↓top
     bot←(↑⍺),hrz
-    rgt←'┐│',vrt,'┘'  ⍝ Right side with corners.
-    lax←('│⌽↓')[1+¯1↓1↓⍺],¨⊂vrt
+    rgt←"┐│",vrt,'┘'  ⍝ Right side with corners.
+    lax←"│⌽↓".[1+¯1↓1↓⍺],¨⊂vrt
     lft←⍉'┌',(⊃lax),'└'
     lft,(top⍪w⍪bot),rgt  ⍝ Fully boxed array.
   }
@@ -172,12 +172,12 @@ displays ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Boxed 
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}  ⍝ Array axis types.
   open←{(1⌈⍴⍵)⍴⍵}  ⍝ Expose null axes.
   trim←{(1⊃⍵)((~1 1⍷∧⌿(2⊃⍵)=' ')/(2⊃⍵))}
-  char←{⍬≡⍴⍵:'─' ⋄ (1+↑⍵∊'¯',•d)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+↑⍵∊'¯',•d)⊃"#~"}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   qfmt←{(⍕0+⍴⍺)(format open ⍵)}
   {  ⍝ Recursively box arrays:
-    0=≡⍵:' '⍪(format ⍵)⍪(1+' '≡↑0⍴⍵)⊃' -'
-    1 ⍬≡(≡⍵)(⍴⍵):'∇' 0 0 box(,'─')(format ⍵)
+    0=≡⍵:' '⍪(format ⍵)⍪(1+' '≡↑0⍴⍵)⊃" -"
+    1 ⍬≡(≡⍵)(⍴⍵):'∇' 0 0 box"─"(format ⍵)
     1=≡⍵:(deco ⍵)box open ⍵ qfmt ⍵  ⍝ Simple array.
     ('∊'deco ⍵)box trim ⍵ qfmt ∇¨open ⍵  ⍝ Nested array.
   }⍵
@@ -187,26 +187,26 @@ displays ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Boxed 
 
 displayr ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Boxed display of array
   box←{  ⍝ box with type and axes
-    vrt hrz←(¯1+⍴⍵)⍴¨'│─'  ⍝ vert. and horiz. lines
-    top←(1+⍴hrz)↑(↑(1+¯1↑⍺)⌷'─⊖',⊂⍕¯1↑2⊃⍺),hrz
+    vrt hrz←(¯1+⍴⍵)⍴¨"│─"  ⍝ vert. and horiz. lines
+    top←(1+⍴hrz)↑(↑(1+¯1↑⍺)⌷"─⊖",⊂⍕¯1↑2⊃⍺),hrz
     bot←(⍴top)↑(↑2↓⍺),hrz
-    rgt←'┐│',vrt,'┘'  ⍝ right side with corners
-    lax←(↑¨(1+¯1↓3↓⍺)⌷¨(-1⌈¯1+⍴2⊃⍺)↑(⊂'│⌽'),¨⊂∘⍕¨¯1↓0,2⊃⍺),¨⊂vrt
-    lax←(⊂1+⍴vrt)↑¨(lax~¨⊂' '),¨'│'  ⍝ pad and trim
+    rgt←"┐│",vrt,'┘'  ⍝ right side with corners
+    lax←(↑¨(1+¯1↓3↓⍺)⌷¨(-1⌈¯1+⍴2⊃⍺)↑["│⌽"],¨⊂∘⍕¨¯1↓0,2⊃⍺),¨⊂vrt
+    lax←[1+⍴vrt]↑¨(lax~¨⊂' '),¨'│'  ⍝ pad and trim
     lft←⍉'┌',(⊃lax),'└'
     lft,(top⍪⍵⍪bot),rgt  ⍝ fully boxed array
   }
-  deco←{⍺←type open ⍵ ⋄ (⍴⍴⍵),(⊂0+⍴⍵),⍺,axes ⍵}
+  deco←{⍺←type open ⍵ ⋄ (⍴⍴⍵),[0+⍴⍵],⍺,axes ⍵}
   axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}  ⍝ array axis types
   open←{(1⌈⍴⍵)⍴⍵}  ⍝ exposed null axes
   trim←{(~1 1⍷∧⌿⍵=' ')/⍵}  ⍝ removal of extra blank cols
-  char←{⍬≡⍴⍵:'─' ⋄ (1+↑⍵∊'¯',•d)⊃'#~'}∘⍕
+  char←{⍬≡⍴⍵:'─' ⋄ (1+↑⍵∊'¯',•d)⊃"#~"}∘⍕
   type←{{(1+1=⍴⍵)⊃'+'⍵}∪,char¨⍵}
   {  ⍝ recursively boxed arrays:
-    0=≡⍵:' '⍪(open format ⍵)⍪(1+' '=↑0⍴⍵)⊃' -'
-    1 ⍬≡(≡⍵)(⍴⍵):''(0 0)'∇' 0 0 box format ⍵
+    0=≡⍵:' '⍪(open format ⍵)⍪(1+' '=↑0⍴⍵)⊃" -"
+    1 ⍬≡(≡⍵)(⍴⍵):""(0 0)'∇' 0 0 box format ⍵
     1=≡⍵:(deco ⍵)box open' ',format open ⍵
-    ((⊂⍕0+≡⍵)deco ⍵)box trim' ',format ∇¨open ⍵
+    ([⍕0+≡⍵]deco ⍵)box trim' ',format ∇¨open ⍵
   }⍵
 }
 
@@ -236,40 +236,40 @@ dsp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Reduced ver
   dims←(mrs←⌈/rs) ,⌝ mcs←⌈/⍪⍉cs
   join←{⍺{⍺,⍶,⍵}/⍵}
   rows←(mrs/¨'│')join¨↓dims↑¨subs  ⍝ complete rows with '│'-separated items
-  hzs←'┼'join mcs/¨'─'  ⍝ inter-row horizontal '─┼─' separators
+  hzs←'┼'join mcs/¨'─'  ⍝ inter-row horizontal "─┼─" separators
   cells←{⍺⍪hzs⍪⍵}/rows  ⍝ joined rows: array of 2D planes
   gaps←(⌽⍳¯2+⍴⍴⍵)/¨' '  ⍝ increasing cell gaps for higher ranks
-  cjoin←{⍪/(⊂⍺),⍶,⊂⍵}
+  cjoin←{⍪/[⍺],⍶,⊂⍵}
   top{⍺ cjoin⌿⍵}/gaps,⊂cells
 }
 
 ⍝ From http://dfns.dyalog.com/s_dsp.htm
 
 Tape ← { '∘',(⍺↑⍵),⊂{⍺ ⍵}/⍺↓⍵,'∘' }  ⍝ ⍺-window tape
-Rgt ← { (⊂2↑⍵),(2↓¯1↓⍵),↑⌽⍵ }  ⍝ tape-head moves right 1 item
+Rgt ← { [2↑⍵],(2↓¯1↓⍵),↑⌽⍵ }  ⍝ tape-head moves right 1 item
 
 ⍝ From http://dfns.dyalog.com/c_enlist.htm
 
 enlist ← {  ⍝ List ⍺-leaves of nested array.
   ⍺←0  ⍝ default: list 0-leaves.
   ⍺≥¯1+|≡⍵:,⍵  ⍝ all shallow leaves: finished.
-  1↓,/(⊂⊂↑↑⍵),⍺ ∇¨,⍵
+  1↓,/[⊂↑↑⍵],⍺ ∇¨,⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_from.htm
 
 from ← {  ⍝ Select (1↓⍴⍵)-cells from array ⍵.
-  ~(≢⍺)≡≢⍴⍵:'error'  ⍝ check index length.
+  ~(≢⍺)≡≢⍴⍵:"error"  ⍝ check index length.
   indx←⍺
   axes←1++\0,¯1↓{↑⍴⍴⍵}¨⍺
   {
     indx axis←⍺  ⍝ index and axis for selection.
     indx≡,⊂⍬:⍵  ⍝ skip: select all items.
-    vec←⊂[(⍳⍴⍴⍵)~axis]⍵  ⍝ vector along given axis.
+    vec←⊂⍤[(⍳⍴⍴⍵)~axis]⍵  ⍝ vector along given axis.
     sel←⊃indx⊃¨⊂vec
     pos←(axis-1)+⍳⍴⍴indx
     (pos,(⍳⍴⍴sel)~pos)⍉sel  ⍝ simple selection.
-  }/⌽(⊂⍵),↓⍉⊃indx axes
+  }/⌽[⍵],↓⍉⊃indx axes
 }
 
 ⍝ From http://dfns.dyalog.com/n_foldl.htm
@@ -319,7 +319,7 @@ listRmDups ← {  ⍝ remove adjacent duplicates.
 
 match ← {  ⍝ Wildcard match.
   p x←{⍵'*'}⍣(1=≡,⍺),⍺  ⍝ pattern and wildcard.
-  v←1↓¨{(x∘≡¨⍵)⊂⍵}(⊂x),p
+  v←1↓¨{(x∘≡¨⍵)⊂⍵}[x],p
   h←⊃v⍷¨⊂⍵
   r←0,¯1↓,⊃⍴¨v
   sl←{  ⍝ array shifted left.
@@ -338,7 +338,7 @@ match ← {  ⍝ Wildcard match.
 
 ⍝ From http://dfns.dyalog.com/s_match.htm
 
-showmatch ← {,[⍳⍴⍴⍵]⍵,[¯0.5+⍴⍴⍵](' ¯'[1+⍺ match ⍵])}
+showmatch ← {,⍤[⍳⍴⍴⍵]⍵,⍤[¯0.5+⍴⍴⍵]" ¯".[1+⍺ match ⍵]}
 
 ⍝ From http://dfns.dyalog.com/n_nlines.htm
 
@@ -399,28 +399,28 @@ saw ← {  ⍝ Function operand applied Simple-Array-Wise.
 
 mscan ← {  ⍝ Minus scan.
   ⍺←≢⍴⍵  ⍝ ⍺ is axis (default last).
-  +\[⍺]⍵×[⍺](⍺⊃⍴⍵)⍴1,-1
+  +\⍤[⍺]⍵×⍤[⍺](⍺⊃⍴⍵)⍴1,-1
 }
 
 ⍝ From http://dfns.dyalog.com/c_dscan.htm
 
 dscan ← {  ⍝ Divide scan
   ⍺←≢⍴⍵  ⍝ ⍺ is axis (default last).
-  ×\[⍺]⍵*[⍺](⍺⊃⍴⍵)⍴1,-1
+  ×\⍤[⍺]⍵*⍤[⍺](⍺⊃⍴⍵)⍴1,-1
 }
 
 ⍝ From http://dfns.dyalog.com/c_ascan.htm
 
 ascan ← {  ⍝ Associative scan.
   2>0⊥⍴⍵:⍵  ⍝ few items: done.
-  ⌽⊃⍶{(⊂(↑⍵)⍶ ⍺),⍵}/⌽(⊂∘↑¨↓⍵),⊃1↓¨↓⍵
+  ⌽⊃⍶{[(↑⍵)⍶ ⍺],⍵}/⌽(⊂∘↑¨↓⍵),⊃1↓¨↓⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_ascana.htm
 
 ascana ← {                                   ⍝ Higher rank associative scan.
   ⍺←≢⍴⍵                                  ⍝ default last axis.
-  ⊃[⍺-0.1](⍶ ascan)¨↓[⍺]⍵
+  ⊃⍤[⍺-0.1](⍶ ascan)¨↓⍤[⍺]⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_select.htm
@@ -454,15 +454,15 @@ subs ← {  ⍝ Vector substitution.
 ⍝ From http://dfns.dyalog.com/c_lcase.htm
 
 lcase ← {  ⍝ Lower-casification,
-  lc←'abcdefghijklmnopqrstuvwxyzåäöàæéñøü'  ⍝ (lower case alphabet)
-  uc←'ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖÀÆÉÑØÜ'  ⍝ (upper case alphabet)
-  (⍴⍵)⍴(lc,,⍵)[(uc,,⍵)⍳⍵]  ⍝ ... of simple array.
+  lc←"abcdefghijklmnopqrstuvwxyzåäöàæéñøü"  ⍝ (lower case alphabet)
+  uc←"ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖÀÆÉÑØÜ"  ⍝ (upper case alphabet)
+  (⍴⍵)⍴[(uc,,⍵)⍳⍵]⌷lc,,⍵  ⍝ ... of simple array.
 }
 
 ⍝ From http://dfns.dyalog.com/c_ucase.htm
 
 ucase ← {  ⍝ Upper-casification,
-  lc←'abcdefghijklmnopqrstuvwxyzåäöàæéñøü'  ⍝ (lower case alphabet)
-  uc←'ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖÀÆÉÑØÜ'  ⍝ (upper case alphabet)
-  (⍴⍵)⍴(uc,,⍵)[(lc,,⍵)⍳⍵]  ⍝ ... of simple array.
+  lc←"abcdefghijklmnopqrstuvwxyzåäöàæéñøü"  ⍝ (lower case alphabet)
+  uc←"ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖÀÆÉÑØÜ"  ⍝ (upper case alphabet)
+  (⍴⍵)⍴[(lc,,⍵)⍳⍵]⌷uc,,⍵  ⍝ ... of simple array.
 }

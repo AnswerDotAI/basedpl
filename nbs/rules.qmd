@@ -58,7 +58,7 @@ Structural mapping (arithmetic, Each and indexing) preserves the mapped containe
 ⍴0 3⍴0               ⍝ 0ₓ 3ₓ
 ```
 
-Adjacent values form a strand, preserving every value. `⊂` encloses; `↑` retrieves the first item. Enclosure always adds an array layer.
+Adjacent values form a strand, preserving every value. [Bracketed](glyphs/brackets.qmd) values never strand. `⊂Y` and `[Y]` enclose, and `↑` retrieves the first item. Enclosure always adds an array layer.
 
 ```apl
 ↑(1 2)(3 4)          ⍝ 1 2
@@ -72,7 +72,7 @@ Fill follows the first item's prototype: zero, space, or recursively filled nest
 
 ```apl
 5↑1 2                ⍝ 1 2 0 0 0
-3↑''                 ⍝ '   '
+3↑""                 ⍝ "   "
 ↑0⍴(1 2⋄ 3 4 5)      ⍝ 0 0
 ```
 
@@ -92,9 +92,16 @@ This extends APL agreement. NumPy aligns trailing axes.
 
 ## Axes and indices
 
-Indices and axes start at 1. Counts and indices must be exactly integral, without tolerance. `m[;2]` selects column 2; `m[2;]` selects row 2.
+Indices and axes start at 1. Negative positions count from the end. Counts and indices must be exactly integral, without tolerance. [Index](glyphs/squad.qmd) `⌷` selects positions, and `∞` selects a whole axis. After an array, [dot indexing](glyphs/dot.qmd) writes the same selection: `m.(∞ 2)` is `∞ 2⌷m`.
 
-Axis qualifiers attach to functions: `+[2]`, `+/[1]`. `/ \ ⌽ ,` default to the last axis; `⌿ ⍀ ⊖ ⍪` to the first. Structural functions also accept axis lists or fractional insertion positions: `0.5` before axis 1, `1.5` between axes 1 and 2.
+[Rank](glyphs/rank.qmd) `⍤` with an enclosed operand selects axes, as in `+⍤[2]` and `+/⍤[1]`. `/ \ ⌽ ,` default to the last axis, and `⌿ ⍀ ⊖ ⍪` to the first. Structural functions also accept axis lists or fractional insertion positions: `0.5` before axis 1, `1.5` between axes 1 and 2.
+
+```apl
+m←2 3⍴⍳6
+∞ 2⌷m                ⍝ 2 5
+2⌷m                  ⍝ 4 5 6
++/⍤[1]m              ⍝ 5 7 9
+```
 
 ## Equality and ordering
 
@@ -111,10 +118,10 @@ Grade and interval index ignore tolerance. Order: numbers, characters, nested ar
 
 ## Functions and effects
 
-Dfns use lexical scope. Plain assignment is local. Modified/indexed/selective updates target the nearest binding. Arrays have value semantics: updating one name leaves other copies unchanged.
+Dfns use lexical scope. Plain assignment is local. Modified and selective updates target the nearest binding. Arrays have value semantics: updating one name leaves other copies unchanged.
 
 ```apl
-a←1 2 ⋄ b←a ⋄ a[1]←9 ⋄ b ⍝ 1 2
+a←1 2 ⋄ b←a ⋄ a.(1)←9 ⋄ b ⍝ 1 2
 ```
 
 A dfn returns its first result-producing non-assignment expression, or its final assignment silently. Top-level assignments also retain their value without display.

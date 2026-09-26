@@ -1,6 +1,5 @@
 use crate::{
     array::{generated_len, Layout},
-    keyed::Keys,
     ErrorKind, Value,
 };
 
@@ -35,12 +34,10 @@ impl Mapping {
             let mut source = 1;
             let mut map = Vec::new();
             for (a, (&len, &b)) in shape.iter().zip(axes).enumerate().rev() {
-                let positions = (0..output[b])
-                    .map(|i| match (input.keys(a), result.keys(b)) {
-                        (Some(src), Some(dst)) => src.position(&dst.names()[i]),
-                        _ => Some(if len == 1 { 0 } else { i }),
-                    })
-                    .collect();
+                let positions = match (input.keys(a), result.keys(b)) {
+                    (Some(src), Some(dst)) => src.align(dst),
+                    _ => (0..output[b]).map(|i| Some(if len == 1 { 0 } else { i })).collect(),
+                };
                 map.push((strides[b], source, positions));
                 source *= len;
             }
@@ -100,8 +97,8 @@ impl Agreement {
             let (kx, ky) = (x.and_then(|a| left.keys(a)), y.and_then(|a| right.keys(a)));
             names[axis] = x.and_then(|a| left.name(a)).or_else(|| y.and_then(|a| right.name(a))).cloned();
             if let (Some(x), Some(y)) = (kx, ky) {
-                let key = if x == y { x.clone() } else { Keys::new(x.names().iter().chain(y.names().iter().filter(|k| x.position(k).is_none())).cloned().collect())? };
-                shape[axis] = key.names().len();
+                let key = x.union(y)?;
+                shape[axis] = key.len();
                 keys[axis] = Some(key);
             } else {
                 let n = if nx == ny || ny == 1 { nx } else if nx == 1 { ny } else { return Err(ErrorKind::Length); };

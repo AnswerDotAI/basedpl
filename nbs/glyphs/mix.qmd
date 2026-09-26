@@ -25,12 +25,12 @@ Array-valued coordinate fields pair using leading-axis agreement:
 Coordinate fields may use strings on [keyed axes](../keyed.qmd).
 
 ```apl
-T←('price':1 2 3 ⋄ 'qty':4 5 6)
-'qty'⊃T            ⍝ 4 5 6
-(⊂'qty' 'price')⊃T ⍝ (4 5 6 ⋄ 1 2 3)
+T←("price":1 2 3 ⋄ "qty":4 5 6)
+"qty"⊃T            ⍝ 4 5 6
+["qty" "price"]⊃T  ⍝ (4 5 6 ⋄ 1 2 3)
 ```
 
-On Mix, axes place cell dimensions among frame dimensions; fractional positions insert before an axis. On Pick, index 1 on an empty axis gives fill, as does [First](take.qmd).
+With axes, `⊃⍤[A]Y` places the cell axes of Mix among the frame axes. Fractional positions insert before an axis. See [Rank](rank.qmd). On Pick, negative positions count from the end. Position 1 or ¯1 on an empty axis gives fill, as does [First](take.qmd).
 
 ## Errors
 

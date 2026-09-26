@@ -15,7 +15,7 @@
 On empty arguments, Each calls `f` once using prototypes. Prototype mode permits Pick to select fill.
 
 ```apl
-{100⊃'abc'}¨⍬      ⍝ ''
+{100⊃"abc"}¨⍬      ⍝ ""
 ```
 
 Other errors and explicit output remain observable in that call.

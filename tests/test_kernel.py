@@ -17,7 +17,7 @@ async def kernel_story():
             ('mean v', [('execute_result', '2')]),
             ('1 ⋄ ⎕←2 ⋄ 3', [('execute_result', '1'), ('stream', '2\n'), ('execute_result', '3')]),
             ('silent←{a←7} ⋄ silent 0', []),
-            ('⍎\'1 ⋄ ⎕←2 ⋄ 3\'', [('execute_result', '1'), ('stream', '2\n'), ('execute_result', '3')]),
+            ('⍎"1 ⋄ ⎕←2 ⋄ 3"', [('execute_result', '1'), ('stream', '2\n'), ('execute_result', '3')]),
         ]:
             _, messages = await kc.exec_ok(code)
             assert displayed(messages) == expected
@@ -32,7 +32,7 @@ async def kernel_story():
             assert (await kc.shell_request('is_complete_request', code=code))['content']['status'] == status
         _, messages = await kc.exec_ok('v')
         assert displayed(messages) == [('execute_result', '4 5')]
-        for code, start, matches in [('⍳3 ⋄ `iot', 5, ['⍳']), ('mea', 0, ['mean']), ("'`iot", 5, [])]:
+        for code, start, matches in [('⍳3 ⋄ `iot', 5, ['⍳']), ('mea', 0, ['mean']), ('"`iot', 5, [])]:
             result = (await kc.shell_request('complete_request', code=code, cursor_pos=len(code)))['content']
             assert (result['cursor_start'], result['cursor_end'], result['matches']) == (start, len(code), matches)
         definition = '{⍝ Sum without running during inspection\n⎕←999 ⋄ +/⍵}'
@@ -56,7 +56,7 @@ async def kernel_story():
         _, messages = await kc.exec_ok('??')
         text = displayed(messages)[0][1]
         assert '?' in text and 'Roll' not in text
-        result = (await kc.shell_request('inspect_request', code="'inspectme'", cursor_pos=5, detail_level=0))['content']
+        result = (await kc.shell_request('inspect_request', code='"inspectme"', cursor_pos=5, detail_level=0))['content']
         assert not result['found']
         result = (await kc.shell_request('complete_request', code='•sr', cursor_pos=3))['content']
         assert result['matches'] == ['•src']
@@ -76,7 +76,7 @@ async def kernel_story():
         assert reply['content']['ename'] == 'KeyboardInterrupt'
         _, messages = await kc.exec_ok('mean v')
         assert displayed(messages) == [('execute_result', '4.5')]
-        _, messages = await kc.exec_ok("⎕←'SVG' ⋄ •svg ⍬")
+        _, messages = await kc.exec_ok('⎕←"SVG" ⋄ •svg ⍬')
         rich = [m['content']['data'] for m in messages if m['msg_type']=='execute_result']
         assert 'http://www.w3.org/2000/svg' in rich[0]['image/svg+xml']
         assert displayed(messages)[0] == ('stream', 'SVG\n')

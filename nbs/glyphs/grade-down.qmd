@@ -10,5 +10,5 @@
 `C⍒Y` uses character collation `C`.
 
 ```apl
-'cba'⍒'abc'        ⍝ 1ₓ 2ₓ 3ₓ
+"cba"⍒"abc"        ⍝ 1ₓ 2ₓ 3ₓ
 ```

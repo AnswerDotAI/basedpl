@@ -19,9 +19,10 @@ pub(crate) enum NodeKind {
     Hybrid(Hybrid),
     Group(Vec<Node>),
     Strand(Vec<Node>),
-    /// `record`: parenthesised `key:value` items, which build one keyed vector.
+    /// `record`: parenthesised items, at least one of them `key:value`, which build one keyed vector.
     ArrayLiteral { cells: Vec<Vec<Node>>, block: bool, record: bool },
-    Selection(Vec<Vec<Node>>),
+    /// Brackets without separators: one expression, enclosed.
+    Enclose(Vec<Node>),
     Dfn(Arc<Definition>),
 }
 
@@ -39,7 +40,7 @@ fn definition_kind(nodes: &[Node]) -> DefinitionKind {
             NodeKind::Name(name) if name == "⍶" => DefinitionKind::MonadicOperator,
             NodeKind::Group(nodes) | NodeKind::Strand(nodes) => definition_kind(nodes),
             NodeKind::ArrayLiteral { cells, .. } => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
-            NodeKind::Selection(cells) => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
+            NodeKind::Enclose(nodes) => definition_kind(nodes),
             NodeKind::Pipeline(stages) => stages.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
             _ => DefinitionKind::Function, // Nested definitions classify their own bodies.
         })
@@ -93,7 +94,6 @@ enum TokenKind {
     Close,
     BracketOpen,
     BracketClose,
-    Semicolon,
     Newline,
     Separator,
     Name(String),
@@ -122,7 +122,7 @@ fn real_literal(chars: &mut Peekable<CharIndices<'_>>) -> Result<(), &'static st
         return Ok(());
     }
     let mut count = digits(chars);
-    if chars.peek().is_some_and(|(_, c)| *c == '.') {
+    if chars.peek().is_some_and(|(_, c)| *c == '.') && chars.clone().nth(1).is_some_and(|(_, c)| c.is_ascii_digit()) {
         chars.next();
         count += digits(chars);
     }
@@ -180,21 +180,35 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
             chars.next();
             match c {
                 '\'' => {
+                    let unclosed = |at| Err(span(at).error(ErrorKind::Syntax, "unclosed character literal"));
+                    let c = match chars.next() { Some((_, c)) if c != '\n' => c, next => return unclosed(next.map_or(source.text.len(), |(i, _)| i)) };
+                    match chars.peek() {
+                        Some((_, '\'')) => {
+                            chars.next();
+                        }
+                        None | Some((_, '\n')) => return unclosed(chars.peek().map_or(source.text.len(), |(i, _)| *i)),
+                        Some(&(i, c)) => {
+                            return Err(span(i + c.len_utf8()).error(ErrorKind::Syntax, "a character literal holds one character (strings use double quotes)"))
+                        }
+                    }
+                    TokenKind::Literal(Value::Character(c))
+                }
+                '"' => {
                     let mut data = Vec::new();
                     loop {
                         match chars.next() {
-                            Some((_, '\'')) if chars.peek().is_some_and(|(_, c)| *c == '\'') => {
+                            Some((_, '"')) if chars.peek().is_some_and(|(_, c)| *c == '"') => {
                                 chars.next();
-                                data.push(Value::Character('\''));
+                                data.push(Value::Character('"'));
                             }
-                            Some((_, '\'')) => break,
+                            Some((_, '"')) => break,
                             Some((_, '\n')) | None => {
-                                return Err(span(chars.peek().map_or(source.text.len(), |(i, _)| *i)).error(ErrorKind::Syntax, "unclosed character literal"))
+                                return Err(span(chars.peek().map_or(source.text.len(), |(i, _)| *i)).error(ErrorKind::Syntax, "unclosed string"))
                             }
                             Some((_, c)) => data.push(Value::Character(c)),
                         }
                     }
-                    TokenKind::Literal(if data.len() == 1 { data.pop().unwrap() } else { Value::from_parts(vec![data.len()], data, Value::Character(' ')).unwrap() })
+                    TokenKind::Literal(Value::from_parts(vec![data.len()], data, Value::Character(' ')).unwrap())
                 }
                 '⍬' => TokenKind::Literal(Value::empty(vec![0], Value::Number(Number::try_from(0.0).unwrap())).unwrap()),
                 '¨' => TokenKind::Operator(OperatorKind::Each),
@@ -218,7 +232,7 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                 ')' => TokenKind::Close,
                 '[' => TokenKind::BracketOpen,
                 ']' => TokenKind::BracketClose,
-                ';' => TokenKind::Semicolon,
+                ';' => return Err(span(start + 1).error(ErrorKind::Syntax, "semicolon is not bAsedPL syntax")),
                 '\n' => TokenKind::Newline,
                 '⋄' => TokenKind::Separator,
                 '←' => TokenKind::Assign,
@@ -235,7 +249,7 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                     if error { chars.next(); }
                     TokenKind::Guard(error)
                 }
-                '/' | '⌿' | '\\' | '⍀' => TokenKind::Hybrid(Hybrid { scan: matches!(c, '\\' | '⍀'), first: matches!(c, '⌿' | '⍀'), axis: None }),
+                '/' | '⌿' | '\\' | '⍀' => TokenKind::Hybrid(Hybrid { scan: matches!(c, '\\' | '⍀'), first: matches!(c, '⌿' | '⍀') }),
                 '{' => TokenKind::BraceOpen,
                 '}' => TokenKind::BraceClose,
                 '⍺' | '⍵' | '⍶' | '⍹' | '∇' | '⍢' => TokenKind::Name(c.to_string()),
@@ -261,7 +275,7 @@ enum ParseFailure { Incomplete(Error), Invalid(Error) }
 struct Parser<'a> { tokens: &'a [Token], pos: usize }
 impl Parser<'_> {
     fn expressions(&mut self, open: Option<&Token>, depth: usize) -> Result<(Vec<Vec<Node>>, bool), ParseFailure> {
-        let (mut pieces, mut nodes, mut separated, mut indexed) = (Vec::new(), Vec::<Node>::new(), false, false);
+        let (mut pieces, mut nodes, mut separated) = (Vec::new(), Vec::<Node>::new(), false);
         let mut tied = false;
         while let Some(token) = self.tokens.get(self.pos) {
             self.pos += 1;
@@ -269,13 +283,7 @@ impl Parser<'_> {
             if tied
                 && matches!(
                     token.kind,
-                    TokenKind::Tie
-                        | TokenKind::Newline
-                        | TokenKind::Separator
-                        | TokenKind::Semicolon
-                        | TokenKind::Close
-                        | TokenKind::BracketClose
-                        | TokenKind::BraceClose
+                    TokenKind::Tie | TokenKind::Newline | TokenKind::Separator | TokenKind::Close | TokenKind::BracketClose | TokenKind::BraceClose
                 )
             { return Err(ParseFailure::Invalid(span.error(ErrorKind::Syntax, "˘ needs a value on each side"))); }
             let kind = match &token.kind {
@@ -287,17 +295,8 @@ impl Parser<'_> {
                     continue;
                 }
                 TokenKind::Newline | TokenKind::Separator => {
-                    if indexed { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "cannot mix index and literal separators"))); }
                     separated = true;
                     if !nodes.is_empty() { pieces.push(std::mem::take(&mut nodes)); }
-                    continue;
-                }
-                TokenKind::Semicolon => {
-                    if separated || !open.is_some_and(|o| matches!(o.kind, TokenKind::BracketOpen)) {
-                        return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "semicolon belongs to index brackets")));
-                    }
-                    indexed = true;
-                    pieces.push(std::mem::take(&mut nodes));
                     continue;
                 }
                 TokenKind::Close | TokenKind::BracketClose | TokenKind::BraceClose => {
@@ -310,7 +309,7 @@ impl Parser<'_> {
                         )
                     });
                     if !matched { return Err(ParseFailure::Invalid(token.span.error(ErrorKind::Syntax, "mismatched closing delimiter"))); }
-                    if indexed || !nodes.is_empty() { pieces.push(nodes); }
+                    if !nodes.is_empty() { pieces.push(nodes); }
                     return Ok((pieces.into_iter().map(pipelines).collect::<Result<_, _>>()?, separated));
                 }
                 TokenKind::Open | TokenKind::BracketOpen | TokenKind::BraceOpen => {
@@ -321,13 +320,12 @@ impl Parser<'_> {
                         let statements = cells.into_iter().map(statement).collect::<Result<Vec<_>, _>>()?;
                         let kind = statements.iter().map(|s| definition_kind(&s.nodes)).max().unwrap_or(DefinitionKind::Function);
                         NodeKind::Dfn(Arc::new(Definition { body: Parsed { statements }, span: span.clone(), kind }))
-                    } else if !separated && matches!(token.kind, TokenKind::BracketOpen) { NodeKind::Selection(cells) } else if cells.is_empty() {
+                    } else if cells.is_empty() {
                         return Err(ParseFailure::Invalid(span.error(ErrorKind::Syntax, "empty grouping is not a value")));
                     } else if separated {
-                        let record = matches!(token.kind, TokenKind::Open)
-                            && cells.iter().all(|c| c.iter().skip(1).any(|n| matches!(n.kind, NodeKind::Function(Primitive::Keys))));
+                        let record = matches!(token.kind, TokenKind::Open) && cells.iter().any(|c| keyed_item(c));
                         NodeKind::ArrayLiteral { cells, block: matches!(token.kind, TokenKind::BracketOpen), record }
-                    } else if matches!(token.kind, TokenKind::Open) { NodeKind::Group(cells.pop().unwrap()) } else { unreachable!() };
+                    } else if matches!(token.kind, TokenKind::Open) { NodeKind::Group(cells.pop().unwrap()) } else { NodeKind::Enclose(cells.pop().unwrap()) };
                     kind
                 }
                 TokenKind::Literal(a) => NodeKind::Literal(a.clone()),
@@ -389,6 +387,18 @@ fn pipelines(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
     Ok(result)
 }
 
+/// Whether an item of a parenthesised literal is `key:value`: its first `:` follows keys, and no function comes before them.
+pub(crate) fn keyed_item(nodes: &[Node]) -> bool {
+    let Some(i) = nodes.iter().position(|n| matches!(n.kind, NodeKind::Function(Primitive::Keys))) else { return false; };
+    let key = |n: &Node| {
+        matches!(
+            n.kind,
+            NodeKind::Literal(_) | NodeKind::Name(_) | NodeKind::Group(_) | NodeKind::Strand(_) | NodeKind::ArrayLiteral { .. } | NodeKind::Enclose(_)
+        )
+    };
+    i > 0 && nodes[..i].iter().all(key)
+}
+
 fn strand_item(kind: &NodeKind) -> bool {
     matches!(
         kind,
@@ -400,6 +410,7 @@ fn strand_item(kind: &NodeKind) -> bool {
             | NodeKind::Group(_)
             | NodeKind::Strand(_)
             | NodeKind::ArrayLiteral { .. }
+            | NodeKind::Enclose(_)
             | NodeKind::Dfn(_)
     )
 }

@@ -1,7 +1,7 @@
 ⍝ Graph dfns — adapted for bAsedPL from April
 ⍝ Source: https://dfns.dyalog.com/n_contents.htm (individual sources below)
 ⍝ April: libraries/dfns/graph/graph.apl; Apache-2.0, see LICENSE-april
-•load 'lib/array.apl'
+•load "lib/array.apl"
 
 ⍝⍝ Ported from Dyalog's dfns at http://dfns.dyalog.com/n_Graphs.htm into April APL
 
@@ -63,7 +63,7 @@ assign ← {  ⍝ Hungarian method cost assignment.
 
 ⍝ From http://dfns.dyalog.com/n_alists.htm
 
-gperm ← { (⊂⍵)⍳¨⍺[⍵] }  ⍝ ⍵-permutation of vertices of graph ⍺.
+gperm ← { [⍵]⍳¨[⍵]⌷⍺ }  ⍝ ⍵-permutation of vertices of graph ⍺.
 
 ⍝ From http://dfns.dyalog.com/n_insnode.htm
 
@@ -114,7 +114,7 @@ path ← {  ⍝ Shortest path from/to ⍵ in graph ⍺.
       ⍵<0:⍺  ⍝ root: finished
       (⍵,⍺)∇ ⍶ ⍵
     }1↑⍺∩to  ⍝ found vertex ⍺
-    next←graph[,⍺]∩¨⊂⍸⍵=¯2
+    next←graph.[,⍺]∩¨⊂⍸⍵=¯2
     back←,/⍺+0×next
     wave←,/next
     (∪wave)∇ back@wave⊢⍵  ⍝ advanced wave front
@@ -127,7 +127,7 @@ span ← {  ⍝ Breadth-first spanning tree for graph ⍺.
   graph←⍺  ⍝ ⍺ is graph vector.
   (¯2+(⍳⍴⍺)∊⍵){  ⍝ ⍺: partial spanning tree.
     ⍵≡⍬:⍺  ⍝ no vertices: done.
-    next←graph[⍵]∩¨⊂⍸⍺=¯2  ⍝ untravelled edges
+    next←graph.[⍵]∩¨⊂⍸⍺=¯2  ⍝ untravelled edges
     back←⍵+0×next  ⍝ back link per edge
     tree←(∊back)@(∊next)⊢⍺  ⍝ partial spanning tree
     tree ∇∪∊next  ⍝ advanced wave front
@@ -149,7 +149,7 @@ dfspan ← {  ⍝ Depth-first spanning tree: graph ⍺ from vertex ⍵.
 
 ⍝ From http://dfns.dyalog.com/s_scc.htm
 
-show ← {⊃(⍕¨⍳0+⍴⍵),¨' → '∘,¨⍕¨⍵}
+show ← {⊃(⍕¨⍳0+⍴⍵),¨" → "∘,¨⍕¨⍵}
 
 ⍝ From http://dfns.dyalog.com/c_scc.htm
 
@@ -158,7 +158,7 @@ scc ← {  ⍝ Strongly connected components (Tarjan).
   ⍝ C: components; L: low-links; X: indices; x: next index; S: stack.
   TT←(3/⊂0⊣¨G←⍵),1 ⍬  ⍝ state tuple T :: C L X x S
   C L X x S←⍳⍴TT  ⍝ access names for items of tuple TT
-  put←{(⍹⊃⍵)@(⊂⍶ ⍺)⊢⍵}  ⍝ ⍹ at ⍺ in field ⍶ of ⍵
+  put←{(⍹⊃⍵)@[⍶ ⍺]⍵}  ⍝ ⍹ at ⍺ in field ⍶ of ⍵
   Lx←L put x  ⍝ ⍺ at x in lowlink vec :: T ← ⍺ ∇ T
   Xx←X put x  ⍝ ⍺ at x in indices vec :: T ← ⍺ ∇ T
   x1←{1+@x⊢⍵}  ⍝ successor of index x  :: T ←   ∇ T
@@ -173,7 +173,7 @@ scc ← {  ⍝ Strongly connected components (Tarjan).
     T0←v trace ⍵  ⍝ optional tracing
     T1←x1 v push v Lx v Xx T0  ⍝ successor state for x S L and X
     T2←T1 {w←⍺
-      min_L←{(w⊃⍺⊃⍵)⌊@(⊂L v)⊢⍵}
+      min_L←{(w⊃⍺⊃⍵)⌊@[L v]⍵}
       0=w⊃X⊃⍵:L min_L w conn ⍵
       X min_L⍣(w∊S⊃⍵)⊢⍵  ⍝ low-link if w on stack
     }/⌽v⊃G  ⍝ for each edge from vertex v
@@ -230,7 +230,7 @@ stpaths ← {  ⍝ Spanning tree paths.
   paths←(root=⍳⍴⍵)↑¨root  ⍝ initial path vector.
   paths{  ⍝ path to current vertices.
     next←(⍵=⊂tree)/¨⊂⍳⍴tree  ⍝ vertices at next tree level.
-    (⊂⍬)∧.≡next:⍺  ⍝ all null: finished.
+    [⍬]∧.≡next:⍺  ⍝ all null: finished.
     exts←(⊂¨⍵⊃¨⊂⍺),¨¨next  ⍝ paths to next tree level.
     indx←,/next
     paths←(,/exts)@indx⊢⍺
@@ -266,7 +266,7 @@ X ← {  ⍝ Exact cover: Knuth's Algorithm X.
 ⍝ From http://dfns.dyalog.com/s_X.htm
 
 sudokuMatrix ← {  ⍝ Matrix for ⍵ ⍵-Sudoku puzzle.
-  z←,[⍳6],[6+⍳4]⍳10⍴⌊⍵*÷2  ⍝ cell coordinate properties.
+  z←,⍤[⍳6] ,⍤[6+⍳4]⍳10⍴⌊⍵*÷2  ⍝ cell coordinate properties.
   row←↓1 1 0 0 1 1 1 1 1 1/⊃z
   col←↓0 0 1 1 1 1 1 1 1 1/⊃z
   box←↓1 0 1 0 1 1 1 1 1 1/⊃z
@@ -277,7 +277,7 @@ sudokuMatrix ← {  ⍝ Matrix for ⍵ ⍵-Sudoku puzzle.
 
 sudokuX ← { n n←⍴⍵  ⍝ Exact cover Sudoku solver.
   ⍺←sudokuMatrix n  ⍝ generic ⍵×⍵ constraint matrix.
-  r←∊(⍵≠0)>(⊂⍳n)∊¨⍵  ⍝ already placed rows.
+  r←∊(⍵≠0)>[⍳n]∊¨⍵  ⍝ already placed rows.
   m←(~r)⌿⍺  ⍝ reduced matrix.
   f←X m  ⍝ exact cover.
   z←(~r)\f  ⍝ merge of placements.
@@ -289,10 +289,10 @@ queensX ← {  ⍝ Exact cover N-Queens.
   r←=/¨1 0 1∘/¨m  ⍝ each rank must contain one queen.
   f←=/¨0 1 1∘/¨m  ⍝ ..  file  ..     ..      ..
   dm←-/¨⍳2/⍵  ⍝ diagonals.
-  du←{⍵[⍋⍵]}∪,dm  ⍝ unique diagnonals.
+  du←{[⍋⍵]⌷⍵}∪,dm  ⍝ unique diagnonals.
   x←dm =⌝ du
   y←(⊖dm) =⌝ du
-  m←,[⍳2]x,y,r,f  ⍝ constraints matrix.
+  m←,⍤[⍳2]x,y,r,f  ⍝ constraints matrix.
   d←~(⍳1↓⍴m)∊⍳2×⍴du  ⍝ mask of required cols.
   ⍵ ⍵⍴d X m  ⍝ exact cover - matrix of queens.
 }

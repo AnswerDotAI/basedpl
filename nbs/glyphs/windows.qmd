@@ -11,8 +11,8 @@
 Shape: position frame, window sizes, trailing axes.
 
 ```apl
-4↕'ab'               ⍝ 0 4⍴' '
-0↕'ab'               ⍝ 3 0⍴' '
+4↕"ab"               ⍝ 0 4⍴' '
+0↕"ab"               ⍝ 3 0⍴' '
 ⍬↕2 3⍴⍳6            ⍝ 2 3⍴⍳6
 ```
 

@@ -18,4 +18,4 @@
 10+⍀2 2⍴⍳4         ⍝ [11 12 ⋄ 14 16]
 ```
 
-Counts, seeds and `[K]` follow [`\`](backslash.qmd).
+Counts, seeds and `⍤[K]` follow [`\`](backslash.qmd).

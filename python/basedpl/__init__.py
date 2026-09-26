@@ -20,6 +20,12 @@ def _dtype(items):
     if types == {str}: return 'U1'
     return object
 
+
+def _labels(keys):
+    "Keys for Python, with its 1-origin position for each unnamed entry."
+    return [i if k is None else k for i,k in enumerate(keys, 1)]
+
+
 def _value(raw, as_array=False):
     def item(o):
         if isinstance(o, tuple): return Fraction(*o)
@@ -34,7 +40,7 @@ def _value(raw, as_array=False):
     shape, data = tuple(raw['shape']), [item(o) for o in raw['data']]
     items = raw['data'] or [raw['prototype']]
     nested = any(isinstance(o, dict) and 'shape' in o for o in items)
-    if not as_array and 'axis_keys' in raw: return dict(zip(raw['axis_keys'][0], data))
+    if not as_array and 'axis_keys' in raw: return dict(zip(_labels(raw['axis_keys'][0]), data))
     if not as_array:
         if len(shape) == 1 and all(isinstance(o, str) for o in items): return ''.join(data)
     import numpy as np
@@ -51,7 +57,7 @@ def _dataframe(raw):
     shape = data.shape
     keys = raw.get('axis_keys', [None] * len(shape))
     names = raw.get('axis_names', [None] * len(shape))
-    labels = [list(range(1, n+1)) if k is None else k for n,k in zip(shape, keys)]
+    labels = [list(range(1, n+1)) if k is None else _labels(k) for n,k in zip(shape, keys)]
     if len(shape) < 2:
         index = pd.Index(labels[0], name=names[0]) if labels else [1]
         return pd.DataFrame(data.reshape(-1, 1), index=index, columns=[1])
@@ -88,9 +94,10 @@ def _array(value, seen=None):
     np = sys.modules.get('numpy')
     prototype = 0.
     if isinstance(value, dict):
-        if not all(isinstance(k, str) for k in value): raise TypeError('keyed arrays need string keys')
+        keys = [None if type(k) is int and k == i else k for i,k in enumerate(value, 1)]
+        if not all(k is None or isinstance(k, str) for k in keys): raise TypeError('keyed arrays need string keys, or an integer key equal to its 1-origin position')
         seen.add(id(value))
-        try: return _Array(dict(shape=[len(value)], data=[_element(o, seen) for o in value.values()], prototype=prototype, axis_keys=[list(value)]))
+        try: return _Array(dict(shape=[len(value)], data=[_element(o, seen) for o in value.values()], prototype=prototype, axis_keys=[keys]))
         finally: seen.remove(id(value))
     if isinstance(value, str): return _Array(dict(shape=[len(value)], data=list(value), prototype=' '))
     if np is not None and isinstance(value, np.ndarray):
@@ -160,7 +167,7 @@ def _array_repr(raw):
         attrs = ', '.join(f'{k}={raw[k]!r}' for k in ('axis_keys', 'axis_names') if k in raw)
         return f'Array({cells(shape)}, {attrs})'
     if 'axis_keys' in raw:
-        if len(shape) == 1: return '{' + ', '.join(f'{k!r}: {item(o)}' for k,o in zip(raw['axis_keys'][0], raw['data'])) + '}'
+        if len(shape) == 1: return '{' + ', '.join(f'{k!r}: {item(o)}' for k,o in zip(_labels(raw['axis_keys'][0]), raw['data'])) + '}'
         return f'Array({cells(shape)}, axis_keys={raw["axis_keys"]!r})'
     if math.prod(shape) == 0: return f'Array([], shape={tuple(shape)})'
     return cells(shape)

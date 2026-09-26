@@ -43,6 +43,9 @@
             else if (quote) {
                 if (python && c === '\\') i++;
                 else if (text.startsWith(quote, i)) { i += quote.length - 1; quote = ''; }
+            } else if (c === "'" && !python) {
+                if (i + 2 >= text.length) return false;
+                i += 2;
             } else if (c === "'" || c === '"') {
                 quote = python && text.startsWith(c.repeat(3), i) ? c.repeat(3) : c;
                 i += quote.length - 1;

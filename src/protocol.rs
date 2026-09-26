@@ -26,7 +26,7 @@ fn array(a: &Value) -> JsonValue {
     if !a.axis_names().is_empty() { encoded["axis_names"] = json!(a.axis_names().iter().map(|n| n.as_deref()).collect::<Vec<_>>()); }
     if a.has_keys() {
         encoded["axis_keys"] =
-            json!(a.axis_keys().iter().map(|k| k.as_ref().map(|k| k.names().iter().map(|k| k.as_ref()).collect::<Vec<_>>())).collect::<Vec<_>>());
+            json!(a.axis_keys().iter().map(|k| k.as_ref().map(|k| k.names().iter().map(|k| k.as_deref()).collect::<Vec<_>>())).collect::<Vec<_>>());
     }
     encoded
 }
@@ -93,9 +93,9 @@ fn import_array(value: &JsonValue, depth: usize) -> Result<Value, String> {
                 .as_array()
                 .ok_or("expected axis key list or null")?
                 .iter()
-                .map(|k| k.as_str().map(Into::into).ok_or("keys must be strings"))
+                .map(|k| if k.is_null() { Ok(None) } else { k.as_str().map(|s| Some(s.into())).ok_or("keys must be strings or null") })
                 .collect::<Result<_, _>>()?;
-            crate::keyed::Keys::new(names).map(Some).map_err(|_| "axis keys must be unique")
+            crate::keyed::Keys::partial(names).map(Some).map_err(|_| "axis keys must be unique")
         })
         .collect::<Result<Vec<_>, _>>()?;
     if keys.len() != result.shape().len() { return Err("axis_keys must have one entry per axis".into()); }

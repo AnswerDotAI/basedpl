@@ -28,6 +28,10 @@ The whole seed starts each lane. Use Rank for separate seeds per cell.
 (,10)+\1 2 3           ⍝ (,11⋄ ,13⋄ ,16)
 ```
 
-Empty scans and unseeded singletons make no calls. `[K]` selects the axis; [`⍀`](backslash-bar.qmd) defaults to the first.
+Empty scans and unseeded singletons make no calls. `⍤[K]` selects the axis, and [`⍀`](backslash-bar.qmd) defaults to the first.
+
+```apl
++\⍤[1]2 3⍴⍳6       ⍝ [1 2 3 ⋄ 5 7 9]
+```
 
 APL difference: every scan left-accumulates, including dfns.

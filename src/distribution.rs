@@ -8,10 +8,11 @@ use crate::{
 };
 use rand::{
     distr::{Distribution as Sample, Open01},
-    rngs::ThreadRng,
+    rngs::Xoshiro256PlusPlus,
+    SeedableRng,
 };
 use statrs::distribution::*;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Operation {
@@ -34,15 +35,14 @@ macro_rules! continuous {
         })+
 
         impl Distribution {
-            fn samples(&self, shape: Vec<usize>, len: usize, span: &Context<'_>) -> Result<Value, Error> {
-                let mut rng = rand::rng();
+            fn samples<R: rand::Rng + ?Sized>(&self, shape: Vec<usize>, len: usize, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
                 match self {
-                    $(Self::$variant(d) => Value::floats(shape, draw(len, || d.sample(&mut rng), span)?),)+
+                    $(Self::$variant(d) => Value::floats(shape, draw(len, || d.sample(&mut *rng), span)?),)+
                     Self::Logistic(location, scale) => Value::floats(shape, draw(len, || {
-                        logistic(Operation::Quantile, *location, *scale, Open01.sample(&mut rng))
+                        logistic(Operation::Quantile, *location, *scale, Open01.sample(&mut *rng))
                     }, span)?),
-                    Self::Binomial(d) => return discrete_samples(d, shape, len, &mut rng, span),
-                    Self::Poisson(d) => return discrete_samples(d, shape, len, &mut rng, span),
+                    Self::Binomial(d) => return discrete_samples(d, shape, len, rng, span),
+                    Self::Poisson(d) => return discrete_samples(d, shape, len, rng, span),
                 }.map_err(|k| span.error(k, "invalid distribution sample"))
             }
 
@@ -158,9 +158,9 @@ fn exact(n: u64) -> Value {
     match i64::try_from(n) { Ok(n) => integer(n), Err(_) => Value::Number(Number::try_from(num_rational::BigRational::from_integer(n.into())).unwrap()) }
 }
 
-fn discrete_samples(d: &impl Sample<u64>, shape: Vec<usize>, len: usize, rng: &mut ThreadRng, span: &Context<'_>) -> Result<Value, Error> {
+fn discrete_samples<R: rand::Rng + ?Sized>(d: &impl Sample<u64>, shape: Vec<usize>, len: usize, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
     // Return through the checked constructor, which packs ordinary draws into i64 storage.
-    let values = draw(len, || exact(d.sample(rng)), span)?;
+    let values = draw(len, || exact(d.sample(&mut *rng)), span)?;
     Value::from_parts(shape, values, integer(0)).map_err(|k| span.error(k, "invalid distribution sample"))
 }
 
@@ -213,13 +213,54 @@ fn map(d: &Distribution, op: Operation, right: &Value, span: &Context<'_>) -> Re
 }
 
 pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if left.is_some() { return Err(span.error(ErrorKind::Syntax, "distribution methods are monadic")); }
-    if !matches!(op, Operation::Sample) { return map(d, op, right, span); }
+    if !matches!(op, Operation::Sample) {
+        if left.is_some() { return Err(span.error(ErrorKind::Syntax, "density, cdf and quantile are monadic")); }
+        return map(d, op, right, span);
+    }
     if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "sample shape must be a scalar or vector")); }
     let shape = right
         .elements()
         .map(|e| numeric(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "invalid sample dimension")))
         .collect::<Result<Vec<_>, _>>()?;
     let len = generated_len(&shape).map_err(|k| span.error(k, "sample shape exceeds array limits"))?;
-    d.samples(shape, len, span)
+    let Some(left) = left else { return d.samples(shape, len, &mut rand::rng(), span); };
+    let generator = generator_of(left).ok_or_else(|| span.error(ErrorKind::Domain, "sample takes a •rand generator on the left"))?;
+    let mut rng = generator.lock().unwrap_or_else(PoisonError::into_inner);
+    d.samples(shape, len, &mut *rng, span)
+}
+
+/// A seeded stream of random numbers. Every copy of its record draws from the same stream.
+pub(crate) type Generator = Arc<Mutex<Xoshiro256PlusPlus>>;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Draw { Roll, Deal }
+
+/// `•rand seed` returns a record of `roll` and `deal`, which draw from one stream seeded by `seed`.
+pub(crate) fn generator(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    if left.is_some() { return Err(span.error(ErrorKind::Syntax, "•rand is monadic")); }
+    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "•rand needs a scalar seed")); }
+    if !right.is_singleton() { return Err(span.error(ErrorKind::Length, "•rand needs one seed")); }
+    let seed = numeric(&right.at(0), span)?.nonnegative_integer().map_err(|k| span.error(k, "•rand needs a nonnegative integer seed"))?;
+    let rng: Generator = Arc::new(Mutex::new(Xoshiro256PlusPlus::seed_from_u64(seed as u64)));
+    let methods = [("roll", Draw::Roll), ("deal", Draw::Deal)];
+    let keys = methods.iter().map(|(name, _)| (*name).into()).collect();
+    let functions =
+        methods.into_iter().map(|(name, op)| Value::Function(Function::system(SystemFunction { name, call: Call::Generator(rng.clone(), op) }))).collect();
+    keyed::vector(keys, functions).map_err(|k| span.error(k, "invalid generator functions"))
+}
+
+pub(crate) fn generator_call(generator: &Generator, op: Draw, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let mut rng = generator.lock().unwrap_or_else(PoisonError::into_inner);
+    match (op, left) {
+        (Draw::Roll, None) => crate::primitive::roll_array(right, &mut *rng, span),
+        (Draw::Deal, Some(left)) => crate::primitive::deal(left, right, &mut *rng, span),
+        (Draw::Roll, Some(_)) => Err(span.error(ErrorKind::Syntax, "roll is monadic")),
+        (Draw::Deal, None) => Err(span.error(ErrorKind::Syntax, "deal needs a count on the left")),
+    }
+}
+
+/// The stream behind a record from `•rand`.
+fn generator_of(value: &Value) -> Option<Generator> {
+    let Value::Function(f) = keyed::field(value, "roll")? else { return None; };
+    match f.system_call()? { Call::Generator(generator, _) => Some(generator.clone()), _ => None }
 }

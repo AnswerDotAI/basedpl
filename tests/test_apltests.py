@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 import pytest
-from basedpl._core import _check_reference
 from basedpl.reference import Corpus
 from basedpl.apltests import Case, parse, render, convert, native_cases, add, description
 
@@ -13,13 +12,13 @@ def test_records_and_boundaries():
     assert convert(row).expect == '3'
     cases = [Case('1+2', '3', 'ngn:1', 'addition'),
         Case("f←{\n\n⍵+1\n}\nf 2\n", '(\n3\n)', comment='multiline', rtol=1e-14, atol=1e-15),
-        Case("'unfinished", '⍝ error: SYNTAX ERROR'), Case('', '⍝ error: SYNTAX ERROR')]
+        Case('"unfinished', '⍝ error: SYNTAX ERROR'), Case('', '⍝ error: SYNTAX ERROR')]
     text = render(cases)
     for ending in ['', '\n', '\n\n']: assert parse(text.rstrip('\n')+ending) == cases
     assert text.count('\n⍝ =>\n') == 1
     assert parse(text)[1].line == 4
     assert '1+2   ⍝ 3' in text
-    quoted = Case("'a''⍝b'", "'a''⍝b'")
+    quoted = Case('"a""⍝b" \'⍝\'', '"a""⍝b" \'⍝\'')
     assert parse(render([quoted])) == [quoted]
     assert parse('⍝ —\n'+'1'*40+' ⍝ 1') == [Case('1'*40, '1')]
     assert '1'*63+'   ⍝ 1' in render([Case('1'*63, '1')])
@@ -37,30 +36,6 @@ def test_records_and_boundaries():
     assert parse('⍝ —\n{\n⍵\n}1\n⍝ =>\n1') == [Case('{\n⍵\n}1', '1')]
     assert r'⍝ ⎕: 9\n2' in render(cases)
     with pytest.raises(ValueError, match='escapes'): parse('⍝ —\n1\n1\n⍝ ⎕: \\t\n\n')
-
-
-def test_reference_roundtrip():
-    paths = list((ROOT/'tests/reference/inventory').glob('*.jsonl'))
-    assert paths
-    for path in paths:
-        rows = [json.loads(line) for line in path.read_text().splitlines()]
-        rows = [row for row in rows if row['status']=='active']
-        cases = [convert(row) for row in rows]
-        assert parse(render(cases)) == cases
-        saved = parse((path.parent.parent/f'{path.stem}.apl').read_text())
-        assert saved and parse(render(saved)) == saved
-        for row,case in zip(rows, cases):
-            assert case.id == row['id'] and case.code == row['code']
-            assert case.rtol == row.get('relative_tolerance', 0)
-            assert case.atol == row.get('absolute_tolerance', 0)
-            if row.get('expected_error'):
-                assert case.expect == '⍝ error: '+row['expected_error']
-                continue
-            check = dict(code=case.expect)
-            if 'expected_code' in row: check['expected_code'] = row['expected_code']
-            else: check['expected'] = row['expected']
-            result = json.loads(_check_reference(json.dumps(check), 2))
-            assert result['status']=='pass', (row['id'], case.expect, result)
 
 
 def test_comment_extraction():

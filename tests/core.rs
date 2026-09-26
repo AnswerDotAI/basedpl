@@ -18,7 +18,7 @@ fn ints(values: &[i64]) -> AplValue { AplValue::integers(vec![values.len()], val
 
 #[test]
 fn csv_column_storage() {
-    let table = run("nl←•ucs 10 ⋄ •csv 'i,f,m',nl,'1,2.5,9007199254740993',nl,'2,3,1.5'").unwrap().unwrap();
+    let table = run(r#"nl←•ucs 10 ⋄ •csv "i,f,m",nl,"1,2.5,9007199254740993",nl,"2,3,1.5""#).unwrap().unwrap();
     assert_eq!(table.at(0).as_integers(), Some([1, 2].as_slice()));
     assert_eq!(table.at(1).as_floats(), Some([2.5, 3.].as_slice()));
     assert_eq!(table.at(2), run("9007199254740993ₓ 1.5").unwrap().unwrap());
@@ -50,10 +50,12 @@ macro_rules! equiv {
 #[test]
 fn language_examples() {
     let mut failures = Vec::new();
+    let page = std::env::var("BASEDPL_PAGE").ok();
     for dir in ["nbs", "nbs/glyphs"] {
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
             if path.extension().is_none_or(|ext| ext != "qmd") { continue; }
+            if page.as_deref().is_some_and(|p| !path.to_string_lossy().contains(p)) { continue; }
             let text = std::fs::read_to_string(&path).unwrap();
             let mut fenced = false;
             for line in text.lines() {
@@ -126,7 +128,7 @@ fn fails(kind: ErrorKind, codes: &[&str]) { for code in codes { fails_in(&mut Se
 fn explicit_output_without_echo() {
     let mut s = Session::new();
     let quiet = || basedpl::EvalOptions { echo: false, ..basedpl::EvalOptions::default() };
-    let code = "1 ⋄ ⎕←2 ⋄ ⍎'3 ⋄ ⎕←4 ⋄ 5' ⋄ 6";
+    let code = r#"1 ⋄ ⎕←2 ⋄ ⍎"3 ⋄ ⎕←4 ⋄ 5" ⋄ 6"#;
     let r = s.eval_with(code, quiet());
     assert!(r.error.is_none());
     assert_eq!(r.value, Some(scalar(6.0)));
@@ -160,8 +162,8 @@ fn calls_with_array_arguments() {
     for (function, codes, expected) in [
         ("mean", vec!["1 2 3"], "2"),
         ("-", vec!["10ₓ", "1ₓ 2ₓ"], "9ₓ 8ₓ"),
-        ("/[1]", vec!["1 0", "2 2⍴⍳4"], "[1 2 ⋄]"),
-        ("⊢", vec!["(1r3 2ₓ)'ab'(0 3⍴0ₓ)"], "(1r3 2ₓ)'ab'(0 3⍴0ₓ)"),
+        ("/⍤[1]", vec!["1 0", "2 2⍴⍳4"], "[1 2 ⋄]"),
+        ("⊢", vec![r#"(1r3 2ₓ)"ab"(0 3⍴0ₓ)"#], r#"(1r3 2ₓ)"ab"(0 3⍴0ₓ)"#),
         ("{k←⍵ ⋄ {k+⍵}⍵}", vec!["3ₓ"], "6ₓ"),
         ("{x←⍵}", vec!["7"], "7"),
     ] {
@@ -254,7 +256,9 @@ fn selective_assignment() {
 fn general_axis_forms() {
     // Captured from Dyalog 20.0.53963.0, IO=1, CT=1e-14, ML=1.
 
-    for code in [",[1 3]2 3 4⍴⍳24", "⊂[1 1]2 3⍴⍳6", "1+[1]2 3⍴⍳6", "2↑[1 2]3 4⍴⍳12"] { assert!(run(code).is_err(), "{code}"); }
+    for code in [",⍤[1 3] 2 3 4⍴⍳24", "⊂⍤[1 1] 2 3⍴⍳6", "1+⍤[1] 2 3⍴⍳6", "2↑⍤[1 2] 3 4⍴⍳12"] {
+        assert!(run(code).is_err(), "{code}");
+    }
 }
 
 #[test]
@@ -262,7 +266,7 @@ fn boxed_display_and_function_trees() {
     let mut s = Session::new();
     assert!(s.eval("]box on -style=max -trains=tree -fns=on").error.is_none());
     assert_eq!(s.eval("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂¨0ₓ 1ₓ").output_text(), ["⊂4ₓ", "⊂⊂4ₓ", "┌→────────┐\n│ ⊂0ₓ ⊂1ₓ │\n└∊────────┘"]);
-    let r = s.eval("A←2 3 4⍴'DUCKSWANBIRDWORMCAKESEED' ⋄ ⊂[3]A");
+    let r = s.eval(r#"A←2 3 4⍴"DUCKSWANBIRDWORMCAKESEED" ⋄ ⊂⍤[3] A"#);
     assert!(r.error.is_none(), "{:?}", r.error);
     assert_eq!(r.output_text(), ["┌→─────────────────────┐\n↓ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │DUCK│ │SWAN│ │BIRD│ │\n│ └────┘ └────┘ └────┘ │\n│ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │WORM│ │CAKE│ │SEED│ │\n│ └────┘ └────┘ └────┘ │\n└∊─────────────────────┘"]);
     assert_eq!(s.eval("⍬").output_text(), ["┌⊖┐\n│0│\n└~┘"]);
@@ -276,7 +280,7 @@ fn boxed_display_and_function_trees() {
     assert_eq!(r.output_text()[0], r.output_text()[1]);
     assert!(s.eval("]box -fns=off").error.is_none());
     assert_eq!(s.eval("{⎕←⍵ ⋄ ⍵}1 2").output_text()[0], "1 2");
-    equiv_in(&mut s, "⍕1 2", "'1 2'");
+    equiv_in(&mut s, "⍕1 2", r#""1 2""#);
     assert!(s.eval("]box off").error.is_none());
     assert_eq!(s.eval("1 2").output_text(), ["1 2"]);
     assert_eq!(s.eval("]Display ⎕←1 2").output_text(), ["1 2", "┌→──┐\n│1 2│\n└~──┘"]);
@@ -290,11 +294,11 @@ fn boxed_display_and_function_trees() {
 #[test]
 fn execute_source_and_session() {
     let mut s = Session::new();
-    let r = s.eval("a←⍎'1+1 ⋄ 2+2'");
+    let r = s.eval(r#"a←⍎"1+1 ⋄ 2+2""#);
     assert_eq!(r.value, Some(scalar(4.)));
     assert_eq!(r.output_text(), ["2"]);
     equiv_in(&mut s, "a", "4");
-    let failed = s.eval("⍎'⎕←7 ⋄ 1÷0'");
+    let failed = s.eval(r#"⍎"⎕←7 ⋄ 1÷0""#);
     assert!(failed.value.is_none());
     assert_eq!(failed.output_text(), ["7"]);
     assert_eq!(failed.error.unwrap().span.source.text, "⎕←7 ⋄ 1÷0");
@@ -325,7 +329,7 @@ fn compact_integers_and_promotion() {
         ("-1ₓ ¯2ₓ", vec![-1, 2]),
         ("×¯2ₓ 0ₓ 2ₓ", vec![-1, 0, 1]),
         ("v←¯2ₓ 0ₓ 3ₓ ⋄ (v>0)×v", vec![0, 0, 3]),
-        ("'ab'∊'b'", vec![0, 1]),
+        (r#""ab"∊'b'"#, vec![0, 1]),
         ("~0 1", vec![1, 0]),
         ("0 1⍲1 1", vec![1, 0]),
         ("0 1⍱0 0", vec![1, 0]),
@@ -333,7 +337,7 @@ fn compact_integers_and_promotion() {
         ("1⌽⍳3ₓ", vec![2, 3, 1]),
         ("5↑⍳3ₓ", vec![1, 2, 3, 0, 0]),
         ("1↓⍳3ₓ", vec![2, 3]),
-        ("(⍳3ₓ)[3 1]", vec![3, 1]),
+        ("[3 1]⌷⍳3ₓ", vec![3, 1]),
         ("1 0 1/⍳3ₓ", vec![1, 3]),
         ("1 0 1\\1ₓ 2ₓ", vec![1, 0, 2]),
         ("+\\⍳3ₓ", vec![1, 3, 6]),
@@ -375,7 +379,7 @@ fn compact_integers_and_promotion() {
 #[test]
 fn float_storage_and_kernels() {
     for code in ["⍳3", "⌽⍳3", "2 3⍴⍳6", "⍬", "0 3⍴0"] { assert!(run(code).unwrap().unwrap().as_floats().is_some(), "{code}"); }
-    for code in ["1ₓ 2", "1j2 3", "'abc'", "(1 2⋄ 3 4)", "0⍴1ₓ"] { assert!(run(code).unwrap().unwrap().as_floats().is_none(), "{code}"); }
+    for code in ["1ₓ 2", "1j2 3", r#""abc""#, "(1 2⋄ 3 4)", "0⍴1ₓ"] { assert!(run(code).unwrap().unwrap().as_floats().is_none(), "{code}"); }
     assert_eq!(AplValue::floats(vec![1], vec![f64::NAN]), Err(Domain));
     assert_eq!(AplValue::floats(vec![2], vec![1.]), Err(Length));
     assert_eq!(AplValue::floats(vec![1], vec![-0.]).unwrap().as_floats().unwrap()[0].to_bits(), 0);
@@ -385,7 +389,7 @@ fn float_storage_and_kernels() {
 fn character_parser_and_exact_fill() {
     assert_eq!(run("0↑1ₓ").unwrap().unwrap().prototype(), exact(0, 1).prototype());
 
-    assert!(matches!(parse(Source::new("quoted", "'({⍝⋄})'")), ParseStatus::Complete(_)));
+    assert!(matches!(parse(Source::new("quoted", r#""({⍝⋄})""#)), ParseStatus::Complete(_)));
 }
 
 #[test]
@@ -441,16 +445,16 @@ fn dfn_defaults_shy_results_and_numbered_guards() {
     fails_in(&mut s, Domain, &["{⍵:7 ⋄ 9}⊂,1", "{⍵:7 ⋄ 9}'a'", "{⍵:7 ⋄ 9}2"]);
     fails_in(&mut s, Value, &["10{g←{⍺+⍵} ⋄ g ⍵}3"]);
     for (kind, number) in [(Syntax, 2), (Index, 3), (Rank, 4), (Length, 5), (Value, 6), (Limit, 10), (Domain, 11)] {
-        let error = run(&format!("•signal '{kind}'")).unwrap_err();
+        let error = run(&format!(r#"•signal "{kind}""#)).unwrap_err();
         assert_eq!(error.kind, kind);
         assert_eq!(error.message, "explicitly signalled");
-        equiv(&format!("{{{number}::7 ⋄ •signal '{kind}'}}0"), "7");
+        equiv(&format!(r#"{{{number}::7 ⋄ •signal "{kind}"}}0"#), "7");
     }
-    equiv("f←{•signal 'LENGTH ERROR'} ⋄ g←{⍵+1} ⋄ {0::g ⍵ ⋄ f ⍵}3", "4");
-    fails(Length, &["{11::7 ⋄ •signal 'LENGTH ERROR'}0", "{0::•signal 'LENGTH ERROR' ⋄ ÷0}0"]);
-    fails(Domain, &["•signal 11", "•signal 'unknown'", "•signal 'INTERRUPT'", "•signal 'TIMEOUT'", "•signal 'UNSUPPORTED'"]);
-    fails(Rank, &["•signal ['DOMAIN ERROR' ⋄]"]);
-    fails(Syntax, &["0 •signal 'DOMAIN ERROR'"]);
+    equiv(r#"f←{•signal "LENGTH ERROR"} ⋄ g←{⍵+1} ⋄ {0::g ⍵ ⋄ f ⍵}3"#, "4");
+    fails(Length, &[r#"{11::7 ⋄ •signal "LENGTH ERROR"}0"#, r#"{0::•signal "LENGTH ERROR" ⋄ ÷0}0"#]);
+    fails(Domain, &["•signal 11", r#"•signal "unknown""#, r#"•signal "INTERRUPT""#, r#"•signal "TIMEOUT""#, r#"•signal "UNSUPPORTED""#]);
+    fails(Rank, &[r#"•signal ["DOMAIN ERROR" ⋄]"#]);
+    fails(Syntax, &[r#"0 •signal "DOMAIN ERROR""#]);
 }
 
 fn exact(n: i64, d: i64) -> AplValue { AplValue::scalar(num_rational::BigRational::new(n.into(), d.into())).unwrap() }
@@ -491,7 +495,7 @@ fn search_depth_and_random() {
 #[test]
 fn each_error_recovery() {
     let mut session = Session::new();
-    assert!(session.eval("f←{⎕←7 ⋄ 100⊃'abc'} ⋄ r←f¨⍬").error.is_none());
+    assert!(session.eval(r#"f←{⎕←7 ⋄ 100⊃"abc"} ⋄ r←f¨⍬"#).error.is_none());
     assert_eq!(session.eval("f 0").error.unwrap().kind, Index);
     assert_eq!(session.eval("{⎕←8 ⋄ 1÷0}¨⍬").output_text(), ["8"]);
     assert_eq!(session.eval("f 0").error.unwrap().kind, Index);

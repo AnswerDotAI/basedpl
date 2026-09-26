@@ -84,7 +84,7 @@ def complete(self:APLMagic, context):
     if m := re.match(r'%%apl[^\S\n]*\n', before): code = before[m.end():]
     elif m := re.match(r'\s*(?:\w+\s*=\s*)?%apl\s+', context.text_until_cursor): code = context.text_until_cursor[m.end():]
     else: return empty
-    if any(m.end() == len(code) for m in re.finditer(r"'(?:[^']|'')*(?:'|$)|⍝[^\n]*", code)): return empty
+    if any(m.end() == len(code) for m in re.finditer(r'''"(?:[^"]|"")*(?:"|$)|'(?:[^\n]'?|$)|⍝[^\n]*''', code)): return empty
     start = len(code)
     glyphs = {row[0] for row in symbols} - {'•'}
     while start and code[start-1] not in glyphs and (code[start-1].isalnum() or code[start-1] in '_∆⍙•'): start -= 1

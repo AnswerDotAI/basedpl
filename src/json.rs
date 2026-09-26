@@ -31,7 +31,7 @@ pub(crate) fn exportable(value: &Value) -> Value {
         names.extend(keys.map(|k| k.names()[i].clone()));
         data.push(exportable(&e));
     }
-    if keys.is_some() { keyed::vector(names, data) } else { value.layout().collect(data, value.prototype()) }.expect("subset of a valid array")
+    if keys.is_some() { keyed::partial_vector(names, data) } else { value.layout().collect(data, value.prototype()) }.expect("subset of a valid array")
 }
 
 fn import(value: &Json, fill: &Number, span: &Context<'_>) -> Result<Value, Error> {
@@ -79,7 +79,9 @@ fn export(value: &Value, fill: Option<&Number>, span: &Context<'_>) -> Result<Js
                     export(&cell, fill, span)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            if let Some(keys) = value.keys(0) { Ok(Json::Object(keys.names().iter().zip(values).map(|(k, v)| (k.to_string(), v)).collect())) } else { Ok(Json::Array(values)) }
+            let Some(keys) = value.keys(0) else { return Ok(Json::Array(values)) };
+            if !keys.complete() { return Err(span.error(ErrorKind::Domain, "JSON objects need a key for every entry")); }
+            Ok(Json::Object(keys.names().iter().flatten().zip(values).map(|(k, v)| (k.to_string(), v)).collect()))
         }
     }
 }

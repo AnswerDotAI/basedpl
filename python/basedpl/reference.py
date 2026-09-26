@@ -1,15 +1,17 @@
 'Import, capture, review and activate reference cases; search and edit their inventory.'
-import base64, csv, json, re, zlib
+import base64, csv, json, re, subprocess, zlib
 from collections import Counter
 from fractions import Fraction
 from pathlib import Path
 
+_literal = r'"(?:""|[^"])*"' r"|'.'"
+
 
 def source_definitions(text):
     "Read top-level named assignments from APL source, ignoring comments and preserving nested definitions."
-    text = re.sub(r"'(?:''|[^'])*'|⍝[^\n]*", lambda m: '' if m[0].startswith('⍝') else m[0], text)+'\n'
+    text = re.sub(_literal+r'|⍝[^\n]*', lambda m: '' if m[0].startswith('⍝') else m[0], text)+'\n'
     result, start, depth = {}, 0, 0
-    for token in re.finditer(r"'(?:''|[^'])*'|[(){}\[\]⋄\n]", text):
+    for token in re.finditer(_literal+r'|[(){}\[\]⋄\n]', text):
         c = token[0]
         if c in ('⋄', '\n') and depth==0:
             code = text[start:token.start()].strip()
@@ -30,7 +32,7 @@ def library_dependencies(definitions, code):
     "Select transitive name references for review, ignoring strings/comments but not resolving lexical shadowing."
     selected, pending = set(), [code]
     while pending:
-        clean = re.sub(r"'(?:''|[^'])*'|⍝[^\n]*", '', pending.pop())
+        clean = re.sub(_literal+r'|⍝[^\n]*', '', pending.pop())
         names = set(re.findall(r'\b[^\W\d]\w*\b', clean)) & definitions.keys() - selected
         selected.update(names)
         pending.extend(definitions[name] for name in names)
@@ -297,6 +299,12 @@ def import_sources(links):
     return dict(ngn=ngn_cases(links/'ngn'), april=april_cases(links/'april'), aplcart=aplcart_cases(links/'aplcart'))
 
 
+def bqn(src, links='links'):
+    "Run BQN `src` with the JavaScript implementation in the `BQN` checkout under `links`, returning what it prints."
+    res = subprocess.run(['node', Path(links)/'BQN'/'bqn.js', '-p', src], capture_output=True, text=True)
+    # bqn.js exits with 0 on a BQN error, and writes the error to stderr in colour.
+    if err := re.sub(r'\x1b\[[\d;]*m', '', res.stderr).strip(): raise ValueError(err)
+    return res.stdout.rstrip('\n')
 
 
 REFERENCE_ENCODER = r'''

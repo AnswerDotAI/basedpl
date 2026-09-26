@@ -15,7 +15,7 @@ impl Options {
         if let Some(keys) = value.keys(0) {
             if value.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, format!("{name} options must be a keyed vector"))); }
             for (k, v) in keys.names().iter().zip(value.elements()) {
-                let k = k.to_lowercase();
+                let k = k.as_ref().ok_or_else(|| span.error(ErrorKind::Domain, format!("{name} options need a key for every entry")))?.to_lowercase();
                 if !allowed.contains(&k.as_str()) { return Err(span.error(ErrorKind::Domain, format!("unknown {name} option: {k}"))); }
                 if values.insert(k.clone(), v).is_some() { return Err(span.error(ErrorKind::Domain, format!("duplicate {name} option: {k}"))); }
             }

@@ -48,7 +48,7 @@ def test_bindings_functions_and_output(capsys):
     assert apl('x←7').py == 7 and apl('3 ⋄ f←+') is None and apl('') is None
     assert apl('silent←{a←7} ⋄ silent 0').py == 7 and apl('{}0') is None
     assert capsys.readouterr().out == ''
-    assert apl('1 ⋄ ⎕←2 ⋄ ⍎\'3 ⋄ ⎕←4 ⋄ 5\'').py == 5
+    assert apl('1 ⋄ ⎕←2 ⋄ ⍎"3 ⋄ ⎕←4 ⋄ 5"').py == 5
     assert capsys.readouterr().out == '2\n4\n'
     r = apl('⎕←x ⋄ x+1x', 'explicit', x=9)
     assert r.value.py == 10 and r.output == ['9ₓ'] and capsys.readouterr().out == ''
@@ -109,7 +109,7 @@ def test_exact_nested_and_character_values():
     boxed = apl('⊂1 2')
     assert boxed.shape == () and boxed.np.dtype == object and apl('≡x', x=boxed).py == 2
     np.testing.assert_array_equal(boxed.np.item(), [1, 2])
-    assert apl("0 3⍴''").shape == (0, 3) and apl('0⍴⊂1 2').np.dtype == object
+    assert apl('0 3⍴""').shape == (0, 3) and apl('0⍴⊂1 2').np.dtype == object
     assert apl('x', x=[[], []]).shape == (2, 0)
     assert type(apl('1j2×1j¯2').py) is float and apl('+1j2').py == 1-2j
     assert apl('0/1j2').np.dtype == np.float64

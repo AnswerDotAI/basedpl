@@ -8,9 +8,9 @@ def test_library_definitions(tmp_path):
     path.write_text("⍝ heading\nf ← { ⍝ comment\n  inner←{'⍝'}\n  inner ⍵\n}\ng←f ⍝ alias\n")
     defs = library_definitions(path)
     assert defs == {'f': "f ← {\n  inner←{'⍝'}\n  inner ⍵\n}", 'g': 'g←f'}
-    assert library_dependencies(defs, "g 1 'f' ⍝ ignored") == defs
+    assert library_dependencies(defs, 'g 1 "f" ⍝ ignored') == defs
     assert library_dependencies(defs, "'g' ⍝ f") == {}
-    assert source_definitions("f←{'[⋄}'⍝ }\n ⍵}\nf 2\ng←f ⋄ g 3") == {'f': "f←{'[⋄}'\n ⍵}", 'g': 'g←f'}
+    assert source_definitions('f←{"[⋄}"⍝ }\n ⍵}\nf 2\ng←f ⋄ g 3') == {'f': 'f←{"[⋄}"\n ⍵}', 'g': 'g←f'}
     demo = tmp_path/'demo.lisp'
     demo.write_text('(provision "f←{⍵+1}") (is "f 4" 5)')
     assert [row['status'] for row in april_file(demo, 'april/demo')] == ['setup', 'pending']

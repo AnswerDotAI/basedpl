@@ -4,30 +4,51 @@ use std::{
     sync::Arc,
 };
 
-/// Unique names for the positions on one axis.
+/// Names for the positions on one axis. A position may have no name. The names that are present are unique.
 #[derive(Debug, Default)]
-pub struct Keys { names: Vec<Arc<str>>, index: HashMap<Arc<str>, usize> }
+pub struct Keys { names: Vec<Option<Arc<str>>>, index: HashMap<Arc<str>, usize> }
 
 // Arrangement is part of representation equality; Match compares key sets instead.
 impl PartialEq for Keys { fn eq(&self, other: &Self) -> bool { self.names == other.names } }
 impl Eq for Keys {}
 
 impl Keys {
-    /// Names must be unique: callers merge or reject duplicates before building.
-    pub(crate) fn new(names: Vec<Arc<str>>) -> Result<Arc<Self>, ErrorKind> {
-        let index: HashMap<_, _> = names.iter().enumerate().map(|(i, k)| (k.clone(), i)).collect();
-        if index.len() != names.len() { return Err(ErrorKind::Domain); }
+    /// `None` marks a position with no name. The names must be unique: callers merge or reject duplicates before building.
+    pub(crate) fn partial(names: Vec<Option<Arc<str>>>) -> Result<Arc<Self>, ErrorKind> {
+        let index: HashMap<_, _> = names.iter().enumerate().filter_map(|(i, k)| Some((k.clone()?, i))).collect();
+        if index.len() != names.iter().flatten().count() { return Err(ErrorKind::Domain); }
         Ok(Arc::new(Self { names, index }))
     }
-    pub fn names(&self) -> &[Arc<str>] { &self.names }
+    pub fn names(&self) -> &[Option<Arc<str>>] { &self.names }
+    pub fn len(&self) -> usize { self.names.len() }
+    /// Whether every position has a name.
+    pub fn complete(&self) -> bool { self.index.len() == self.names.len() }
+    /// Whether no position has a name. An axis like that carries no keys.
+    pub(crate) fn blank(&self) -> bool { self.index.is_empty() && !self.names.is_empty() }
     pub fn position(&self, name: &str) -> Option<usize> { self.index.get(name).copied() }
-    pub(crate) fn positions(&self, wanted: &Self, subset: bool) -> Result<Vec<usize>, ErrorKind> {
-        if !subset && self.names.len() != wanted.names.len() { return Err(ErrorKind::Length); }
-        wanted.names.iter().map(|k| self.position(k).ok_or(if subset { ErrorKind::Index } else { ErrorKind::Length })).collect()
+    /// For each position of `wanted`, the matching position here. Named positions match by name. Unnamed positions match in order.
+    pub(crate) fn align(&self, wanted: &Self) -> Vec<Option<usize>> {
+        let mut gaps = self.names.iter().enumerate().filter(|(_, n)| n.is_none()).map(|(i, _)| i);
+        wanted
+            .names
+            .iter()
+            .map(|n| match n { Some(n) => self.position(n), None => gaps.next() })
+            .collect()
     }
-    /// Keys at unique source positions, in the order given.
-    pub(crate) fn select(&self, positions: impl IntoIterator<Item = usize>) -> Result<Arc<Self>, ErrorKind> {
-        Self::new(positions.into_iter().map(|i| self.names[i].clone()).collect())
+    pub(crate) fn positions(&self, wanted: &Self, subset: bool) -> Result<Vec<usize>, ErrorKind> {
+        if !subset && self.len() != wanted.len() { return Err(ErrorKind::Length); }
+        self.align(wanted).into_iter().map(|p| p.ok_or(if subset { ErrorKind::Index } else { ErrorKind::Length })).collect()
+    }
+    /// Keys at source positions, in the order given. A position with no source has no name.
+    pub(crate) fn select(&self, positions: impl IntoIterator<Item = Option<usize>>) -> Result<Arc<Self>, ErrorKind> {
+        Self::partial(positions.into_iter().map(|i| i.and_then(|i| self.names[i].clone())).collect())
+    }
+    /// These positions, then the named positions of `other` that these lack. Unnamed positions pair in order. Both sides need the same number of them.
+    pub(crate) fn union(self: &Arc<Self>, other: &Arc<Self>) -> Result<Arc<Self>, ErrorKind> {
+        if self == other { return Ok(self.clone()); }
+        if self.len() - self.index.len() != other.len() - other.index.len() { return Err(ErrorKind::Length); }
+        let extra = other.names.iter().filter(|k| k.as_ref().is_some_and(|k| self.position(k).is_none()));
+        Self::partial(self.names.iter().chain(extra).cloned().collect())
     }
 }
 
@@ -60,12 +81,20 @@ impl Selector {
     }
 }
 
-pub(crate) fn vector(names: Vec<Arc<str>>, values: Vec<Value>) -> Result<Value, ErrorKind> {
-    Value::from_parts(vec![names.len()], values, Value::scalar(0.)?)?.with_keys(vec![Some(Keys::new(names)?)])
+pub(crate) fn vector(names: Vec<Arc<str>>, values: Vec<Value>) -> Result<Value, ErrorKind> { partial_vector(names.into_iter().map(Some).collect(), values) }
+
+/// A vector whose entries with a name are keyed by it.
+pub(crate) fn partial_vector(names: Vec<Option<Arc<str>>>, values: Vec<Value>) -> Result<Value, ErrorKind> {
+    Value::from_parts(vec![names.len()], values, Value::scalar(0.)?)?.with_keys(vec![Some(Keys::partial(names)?)])
 }
 
-/// The entries of a keyed vector, in order. An empty vector has none.
+/// The entries of a keyed vector, in order. An empty vector has none. Every entry needs a name.
 pub(crate) fn pairs(value: &Value) -> Result<Vec<(Arc<str>, Value)>, ErrorKind> {
+    entries(value)?.into_iter().map(|(k, v)| Some((k?, v))).collect::<Option<_>>().ok_or(ErrorKind::Domain)
+}
+
+/// The entries of a keyed vector, in order, with `None` for an entry that has no name.
+pub(crate) fn entries(value: &Value) -> Result<Vec<(Option<Arc<str>>, Value)>, ErrorKind> {
     if value.shape().len() != 1 { return Err(ErrorKind::Rank); }
     if value.is_empty() { return Ok(vec![]); }
     let keys = value.keys(0).ok_or(ErrorKind::Domain)?;
@@ -85,10 +114,19 @@ pub(crate) fn merge(old: &Value, new: &Value) -> Result<Value, ErrorKind> {
     vector(names, values)
 }
 
-fn names(value: &Value) -> Result<Vec<Arc<str>>, ErrorKind> {
-    if let Some(k) = name(value) { return Ok(vec![k]); }
+/// A 1-origin position, as the selector of a position with no name.
+fn position(i: usize) -> Value { Value::Number(crate::Number::from_integer(i as i64 + 1)) }
+
+/// Names for positions: one name, or a vector of names in which a position with no name gives its own 1-origin position.
+fn names(value: &Value) -> Result<Vec<Option<Arc<str>>>, ErrorKind> {
+    if let Some(k) = name(value) { return Ok(vec![Some(k)]); }
     if value.is_atom() || value.shape().len() > 1 { return Err(ErrorKind::Domain); }
-    value.elements().map(|v| name(&v).ok_or(ErrorKind::Domain)).collect()
+    let entry = |(i, v): (usize, Value)| match name(&v) {
+        Some(k) => Ok(Some(k)),
+        None if v.as_number().is_some_and(|n| n.nonnegative_integer() == Ok(i + 1)) => Ok(None),
+        None => Err(ErrorKind::Domain),
+    };
+    value.elements().enumerate().map(entry).collect()
 }
 
 pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) -> Result<Value, ErrorKind> {
@@ -101,7 +139,9 @@ pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) ->
             Err(k) => return Err(k),
         }
     };
-    if axis_names.is_none() && axes.is_none() && lists.len() == 1 && lists[0].len() == 1 { return vector(lists[0].clone(), vec![values.clone()]); }
+    if let (None, None, [list]) = (axis_names, axes, &lists[..]) {
+        if let [Some(name)] = &list[..] { return vector(vec![name.clone()], vec![values.clone()]); }
+    }
     let default: Vec<_> = (0..lists.len()).collect();
     let axes = axes.unwrap_or(&default);
     if axes.len() != lists.len() { return Err(ErrorKind::Length); }
@@ -109,8 +149,8 @@ pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) ->
     let mut result_names = (0..values.shape().len()).map(|a| values.axis_name(a).cloned()).collect::<Vec<_>>();
     for (i, (&axis, names)) in axes.iter().zip(lists).enumerate() {
         let slot = result.get_mut(axis).ok_or(ErrorKind::Rank)?;
-        *slot = Some(Keys::new(names)?);
-        if let Some(names) = axis_names { result_names[axis] = Some(names.names()[i].clone()); }
+        *slot = Some(Keys::partial(names)?);
+        if let Some(names) = axis_names { result_names[axis] = names.names()[i].clone(); }
     }
     values.clone().with_keys(result)?.with_axis_names(result_names)
 }
@@ -127,33 +167,15 @@ pub(crate) fn selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKin
     for &axis in axes {
         let &len = value.shape().get(axis).ok_or(ErrorKind::Rank)?;
         values.push(match value.keys(axis) {
-            Some(k) => Value::from_parts(vec![len], k.names().iter().map(|k| text(k)).collect(), text(""))?,
+            Some(k) => Value::from_parts(
+                vec![len],
+                k.names().iter().enumerate().map(|(i, k)| k.as_ref().map_or_else(|| position(i), |k| text(k))).collect(),
+                text(""),
+            )?,
             None => Value::integers(vec![len], (1..=len).map(|n| n as i64).collect())?,
         });
     }
     if values.len() == 1 { Ok(values.pop().unwrap()) } else { Value::from_parts(vec![values.len()], values, Value::integers(vec![0], vec![])?) }
-}
-
-pub(crate) fn name_axes(spec: Option<&Value>, value: &Value) -> Result<Value, ErrorKind> {
-    let Some(spec) = spec else { return value.clone().with_axis_names(vec![]); };
-    let entries = if name(spec).is_some() { vec![spec.clone()] } else {
-        if spec.shape().len() > 1 { return Err(ErrorKind::Rank); }
-        spec.elements().collect()
-    };
-    if entries.len() != value.shape().len() { return Err(ErrorKind::Length); }
-    let names = entries
-        .iter()
-        .enumerate()
-        .map(|(i, entry)| {
-            if let Some(name) = name(entry) { Ok(Some(name)) } else if entry.as_number().is_some_and(|n| n.nonnegative_integer() == Ok(i + 1)) { Ok(None) } else { Err(ErrorKind::Domain) }
-        })
-        .collect::<Result<_, _>>()?;
-    value.clone().with_axis_names(names)
-}
-
-pub(crate) fn axis_selectors(value: &Value) -> Result<Value, ErrorKind> {
-    let data = (0..value.shape().len()).map(|i| value.axis_name(i).map_or_else(|| crate::primitive::axis_value(i), |n| text(n))).collect();
-    Value::from_parts(vec![value.shape().len()], data, Value::Number(crate::Number::from_integer(0)))
 }
 
 pub(crate) fn mapped_index(mut flat: usize, result: &[usize], source: &[usize], maps: &[Vec<Option<usize>>]) -> Option<usize> {
@@ -176,15 +198,15 @@ pub(crate) fn extended(target: &Value, selectors: &[Option<Value>]) -> Result<Op
     for (axis, selector) in selectors.iter().enumerate() {
         let Some(selector) = selector else { continue; };
         let Some(selector) = Selector::of(selector)? else { continue; };
-        let k = keys.get_mut(axis).ok_or(ErrorKind::Rank)?.as_mut().ok_or(ErrorKind::Index)?;
+        let slot = keys.get_mut(axis).ok_or(ErrorKind::Rank)?;
         let wanted = match selector { Selector::One(k) => vec![k], Selector::Many(_, names) => names };
-        let mut names = k.names().to_vec();
+        let mut names = slot.as_ref().map_or_else(|| vec![None; shape[axis]], |k| k.names().to_vec());
         let mut added = HashSet::new();
-        for name in wanted { if k.position(&name).is_none() && added.insert(name.clone()) { names.push(name); } }
+        for name in wanted { if slot.as_ref().is_none_or(|k| k.position(&name).is_none()) && added.insert(name.clone()) { names.push(Some(name)); } }
         if names.len() != shape[axis] {
             changed = true;
             shape[axis] = names.len();
-            *k = Keys::new(names)?;
+            *slot = Some(Keys::partial(names)?);
         }
     }
     if !changed { return Ok(None); }
@@ -220,6 +242,5 @@ pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool)
 
 pub(crate) fn selected_keys(value: &Value, axis: usize, positions: impl IntoIterator<Item = Option<usize>>) -> Result<Option<Arc<Keys>>, ErrorKind> {
     let Some(keys) = value.keys(axis) else { return Ok(None); };
-    let positions = positions.into_iter().collect::<Option<Vec<_>>>().ok_or(ErrorKind::Domain)?;
     keys.select(positions).map(Some)
 }

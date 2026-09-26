@@ -6,15 +6,29 @@
 ⍴2 3⍴0             ⍝ 2ₓ 3ₓ
 ```
 
+The shape is keyed by the axis names. An unnamed axis gives an unkeyed entry. See [named axes](../keyed.qmd#named-axes).
+
+```apl
+M←("city":2 ⋄ "month":3)⍴⍳6
+⍴M                 ⍝ ("city":2ₓ ⋄ "month":3ₓ)
+"month"⌷⍴M         ⍝ 3ₓ
+```
+
 `S⍴Y` reshapes, cycling or truncating the ravel of `Y`. Dimensions are nonnegative integers. Empty `Y` supplies fill.
 
 ```apl
 2 3⍴1 2            ⍝ 2 3⍴1 2 1 2 1 2
-3⍴''               ⍝ '   '
+3⍴""               ⍝ "   "
 ```
 
 An empty shape makes a rank-zero array.
 
 ```apl
 ⍬⍴1 2              ⍝ ⊂1
+```
+
+A keyed `S` names the axes of the result. An unkeyed `S` gives no names. When `S` matches the shape of `Y`, the result keeps the position keys of `Y`.
+
+```apl
+⍴("city":2 ⋄ 3)⍴⍳6 ⍝ ("city":2ₓ ⋄ 3ₓ)
 ```

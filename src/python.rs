@@ -44,9 +44,9 @@ fn import_array(raw: &Bound<'_, PyDict>, depth: usize) -> PyResult<Value> {
     }
     let Some(keys) = raw.get_item("axis_keys")? else { return Ok(result); };
     let keys = keys
-        .extract::<Vec<Option<Vec<String>>>>()?
+        .extract::<Vec<Option<Vec<Option<String>>>>>()?
         .into_iter()
-        .map(|k| k.map(|names| crate::keyed::Keys::new(names.into_iter().map(Into::into).collect())).transpose())
+        .map(|k| k.map(|names| crate::keyed::Keys::partial(names.into_iter().map(|n| n.map(Into::into)).collect())).transpose())
         .collect::<Result<Vec<_>, _>>()
         .map_err(|k| PyValueError::new_err(k.to_string()))?;
     if keys.len() != result.shape().len() { return Err(PyValueError::new_err("axis_keys must have one entry per axis")); }
@@ -80,7 +80,7 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
     if a.has_keys() {
         result.set_item(
             "axis_keys",
-            a.axis_keys().iter().map(|k| k.as_ref().map(|k| k.names().iter().map(|k| k.to_string()).collect::<Vec<_>>())).collect::<Vec<_>>(),
+            a.axis_keys().iter().map(|k| k.as_ref().map(|k| k.names().iter().map(|k| k.as_deref().map(str::to_owned)).collect::<Vec<_>>())).collect::<Vec<_>>(),
         )?;
     }
     Ok(result.unbind())
@@ -113,14 +113,14 @@ impl PyArray {
         Ok(Self { inner })
     }
     #[getter]
-    fn axis_keys(&self) -> Vec<Option<Vec<String>>> {
-        (0..self.inner.shape().len()).map(|a| self.inner.keys(a).map(|k| k.names().iter().map(|s| s.to_string()).collect())).collect()
+    fn axis_keys(&self) -> Vec<Option<Vec<Option<String>>>> {
+        (0..self.inner.shape().len()).map(|a| self.inner.keys(a).map(|k| k.names().iter().map(|s| s.as_deref().map(str::to_owned)).collect())).collect()
     }
-    fn with_axis_keys(&self, keys: Vec<Option<Vec<String>>>) -> PyResult<Self> {
+    fn with_axis_keys(&self, keys: Vec<Option<Vec<Option<String>>>>) -> PyResult<Self> {
         if keys.len() != self.inner.shape().len() { return Err(PyValueError::new_err("axis_keys must have one entry per axis")); }
         let keys = keys
             .into_iter()
-            .map(|k| k.map(|names| crate::keyed::Keys::new(names.into_iter().map(Into::into).collect())).transpose())
+            .map(|k| k.map(|names| crate::keyed::Keys::partial(names.into_iter().map(|n| n.map(Into::into)).collect())).transpose())
             .collect::<Result<_, _>>()
             .map_err(|k| PyValueError::new_err(k.to_string()))?;
         Ok(Self { inner: self.inner.clone().with_keys(keys).map_err(|k| PyValueError::new_err(k.to_string()))? })

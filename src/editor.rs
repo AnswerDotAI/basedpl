@@ -60,12 +60,17 @@ pub(crate) fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
 
 // Strings and comments are literal even before their language implementation is complete.
 pub(crate) fn in_code(text: &str) -> bool {
-    let mut quote = None;
-    let mut comment = false;
-    for c in text.chars() {
-        if comment { if c == '\n' { comment = false; } } else if let Some(q) = quote { if c == q { quote = None; } } else if c == '\'' || c == '"' { quote = Some(c); } else if c == '⍝' { comment = true; }
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        let closed = match c {
+            '⍝' => chars.by_ref().any(|c| c == '\n'),
+            '"' => chars.by_ref().any(|c| c == '"'),
+            '\'' => chars.nth(1).is_some(),
+            _ => true,
+        };
+        if !closed { return false; }
     }
-    quote.is_none() && !comment
+    true
 }
 
 pub(crate) fn entry(line: &str, pos: usize) -> Option<(usize, &str)> {
@@ -252,8 +257,8 @@ mod tests {
         for name in ["lar", "larr", "leftar"] { assert_eq!(matches(name), [("←", "assign")]); }
         assert_eq!(matches("grup"), [("⍋", "grade-up")]);
         for name in ["nosuchsymbol", "lg", "lrr"] { assert!(matches(name).is_empty()); }
-        for text in ["'`io", "'can''t `io", "\"`io", "⍝ `io"] { assert!(entry(text, text.len()).is_none()); }
-        for text in ["界+`io", "'text' `io", "⍝ comment\n`io"] { assert_eq!(entry(text, text.len()).unwrap().1, "io"); }
+        for text in ["\"`io", "\"can't `io", "\"a\"\"`io", "⍝ `io"] { assert!(entry(text, text.len()).is_none()); }
+        for text in ["界+`io", "\"text\" `io", "''' `io", "'a' `io", "⍝ comment\n`io"] { assert_eq!(entry(text, text.len()).unwrap().1, "io"); }
         let index = include_str!("../nbs/glyphs.qmd");
         for &(glyph, name, monad, dyad, words) in SYMBOLS {
             for word in [name, monad, dyad].into_iter().chain(words.split_whitespace()).filter(|word| !word.is_empty()) {

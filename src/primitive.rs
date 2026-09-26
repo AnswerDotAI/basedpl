@@ -9,8 +9,8 @@ use crate::{
 use rand::RngExt;
 use std::{cmp::Ordering, collections::HashMap};
 
-#[derive(Clone, Debug)]
-pub(crate) struct Hybrid { pub scan: bool, pub first: bool, pub axis: Option<Value> }
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Hybrid { pub scan: bool, pub first: bool }
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum OperatorKind {
     Each,
@@ -32,8 +32,10 @@ pub(crate) enum OperatorKind {
 }
 impl Hybrid {
     pub(crate) fn primitive(&self) -> Primitive { if self.scan { Primitive::Expand(self.first) } else { Primitive::Replicate(self.first) } }
-    pub(crate) fn single_axis(&self, right: &Value, span: &Span) -> Result<Option<usize>, Error> {
-        self.axis.as_ref().map(|a| single_axis(&resolve_axes(a, right, span)?, span)).transpose()
+    /// The axis a fold runs along: the single axis in `axis`, or by default the first or last axis.
+    pub(crate) fn axis(self, axis: Option<&Value>, right: &Value, span: &Span) -> Result<usize, Error> {
+        let default = if self.first { 0 } else { right.shape().len().saturating_sub(1) };
+        Ok(axis.map(|a| single_axis(&resolve_axes(a, right, span)?, span)).transpose()?.unwrap_or(default))
     }
 }
 
@@ -217,12 +219,12 @@ fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Err
         push_window(right, &cell, &starts, &mut data);
     }
     let frame_keys = axes.iter().enumerate().map(|(a, w)| match right.keys(a) {
-        Some(k) if w.padded => k.select((0..frame[a]).map(|i| i * w.step)).map(Some),
+        Some(k) if w.padded => k.select((0..frame[a]).map(|i| Some(i * w.step))).map(Some),
         _ => Ok(None),
     });
     let cell_keys = (0..cell.len()).map(|a| match axes.get(a) {
         None => Ok(right.keys(a).cloned()),
-        Some(w) => right.keys(a).zip(w.shared(right.shape()[a])).map(|(k, r)| k.select(r)).transpose(),
+        Some(w) => right.keys(a).zip(w.shared(right.shape()[a])).map(|(k, r)| k.select(r.map(Some))).transpose(),
     });
     let keys = frame_keys.chain(cell_keys).collect::<Result<Vec<_>, _>>().map_err(|k| span.error(k, "invalid window keys"))?;
     let names = (0..frame.len()).chain(0..cell.len()).map(|a| right.axis_name(a).cloned()).collect();
@@ -257,7 +259,7 @@ pub(crate) fn single_axis(axis: &Value, span: &Span) -> Result<usize, Error> {
         .ok_or_else(|| span.error(ErrorKind::Domain, "axes start at one"))
 }
 
-fn axes(axis: &Value, rank: usize, span: &Context<'_>) -> Result<Vec<usize>, Error> {
+pub(crate) fn axes(axis: &Value, rank: usize, span: &Context<'_>) -> Result<Vec<usize>, Error> {
     if axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be scalar or vector")); }
     let mut result = Vec::new();
     for e in axis.elements() {
@@ -468,6 +470,26 @@ impl Primitive {
         })
     }
     pub(crate) fn call(self, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> { self.call_axis(left, right, None, span) }
+    /// Whether the primitive has its own axis meaning. Other functions take the general cell rule.
+    pub(crate) fn takes_axes(self, dyadic: bool) -> bool {
+        match self {
+            Self::Arithmetic(_) | Self::Compare(_) | Self::CatenateFirst => dyadic,
+            Self::Math(m) => dyadic && !matches!(m, Math::Not),
+            Self::Iota => !dyadic,
+            Self::Keys
+            | Self::Ravel
+            | Self::Enclose
+            | Self::Nest
+            | Self::Mix
+            | Self::Take
+            | Self::Drop
+            | Self::Index
+            | Self::Replicate(_)
+            | Self::Expand(_)
+            | Self::Reverse(_) => true,
+            _ => false,
+        }
+    }
     pub(crate) fn call_axes(self, left: Option<&Value>, right: &Value, spec: &Value, span: &Context<'_>) -> Result<Value, Error> {
         let target = match left {
             Some(x) if matches!(self, Self::Arithmetic(_) | Self::Math(_) | Self::Compare(_)) && x.shape().len() > right.shape().len() => x,
@@ -476,7 +498,6 @@ impl Primitive {
         let resolved = resolve_axes(spec, target, span)?;
         let spec = &resolved;
         if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be scalar or vector")); }
-        let names_axis = spec.is_singleton() && spec.at(0).as_number().is_some_and(|n| n.nonnegative_integer() == Ok(0));
         if let Some(left) = left {
             if matches!(self, Self::Arithmetic(_) | Self::Math(_) | Self::Compare(_)) && !matches!(self, Self::Math(Math::Not)) {
                 return scalar_axes(self, left, right, spec, span);
@@ -486,8 +507,6 @@ impl Primitive {
             }
         }
         match (self, left) {
-            (Self::Keys, left) if names_axis => crate::keyed::name_axes(left, right).map_err(|k| span.error(k, "invalid axis names")),
-            (Self::Iota, None) if names_axis => crate::keyed::axis_selectors(right).map_err(|k| span.error(k, "invalid axis selectors")),
             (Self::Keys, left) => {
                 let axes = axes(spec, right.shape().len(), span)?;
                 left.map_or_else(|| crate::keyed::remove(right, Some(&axes)), |x| crate::keyed::construct(x, right, Some(&axes)))
@@ -583,7 +602,7 @@ impl Primitive {
             Self::Where => {
                 return match left { Some(x) => interval_index(x, right, span), None => where_indices(right, span) }
             }
-            Self::Random if left.is_some() => return deal(left.unwrap(), right, span),
+            Self::Random if left.is_some() => return deal(left.unwrap(), right, &mut rand::rng(), span),
             Self::Replicate(first) | Self::Expand(first) => {
                 return replicate(
                     left.ok_or_else(|| span.error(ErrorKind::Syntax, "replicate/expand needs a left argument"))?,
@@ -632,8 +651,11 @@ impl Primitive {
             }
             Self::Shape | Self::Tally | Self::Ravel => {
                 return match self {
-                    Self::Shape => Value::from_parts(vec![right.shape().len()], right.shape().iter().map(|&n| generated(n, true)).collect(), integer(0))
-                        .map_err(|k| span.error(k, "invalid shape")),
+                    Self::Shape => {
+                        let dimensions = right.shape().iter().map(|&n| generated(n, true)).collect();
+                        let shape = if right.axis_names().is_empty() { Value::from_parts(vec![right.shape().len()], dimensions, integer(0)) } else { crate::keyed::partial_vector(right.axis_names().to_vec(), dimensions) };
+                        shape.map_err(|k| span.error(k, "invalid shape"))
+                    }
                     Self::Tally => Ok(generated(right.shape().first().copied().unwrap_or(1), true)),
                     Self::Ravel => {
                         if let Some(axis) = axis { return self.call_axes(None, right, &axis_value(axis), span); }
@@ -649,9 +671,7 @@ impl Primitive {
     }
 
     fn scalar_apply(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
-        if matches!(self, Self::Random) && !fill {
-            return roll(right, right.is_exact(), span, false)?.with_layout(right.layout().clone()).map_err(|k| span.error(k, "invalid roll result"));
-        }
+        if matches!(self, Self::Random) && !fill { return roll_array(right, &mut rand::rng(), span); }
         if right.is_atom() && left.is_none_or(Value::is_atom) { return self.scalar_item(left, right, span, fill); }
         let agreement =
             Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).map_err(|k| span.error(k, "array shapes do not agree"))?;
@@ -770,7 +790,7 @@ pub(crate) fn array_match(left: &Value, right: &Value, span: &Context<'_>) -> Re
     for axis in 0..left.shape().len() {
         let map = match (left.keys(axis), right.keys(axis)) {
             (None, None) => (0..left.shape()[axis]).map(Some).collect(),
-            (Some(x), Some(y)) => x.names().iter().map(|k| y.position(k)).collect::<Vec<_>>(),
+            (Some(x), Some(y)) => y.align(x),
             _ => return Ok(false),
         };
         if map.iter().any(Option::is_none) { return Ok(false); }
@@ -1011,7 +1031,7 @@ fn index_of(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Er
 }
 
 fn position_value(array: &Value, axis: usize, position: usize) -> Value {
-    if position > 0 { if let Some(key) = array.keys(axis).and_then(|k| k.names().get(position - 1)) { return crate::keyed::text(key); } }
+    if position > 0 { if let Some(key) = array.keys(axis).and_then(|k| k.names().get(position - 1)?.clone()) { return crate::keyed::text(&key); } }
     generated(position, true)
 }
 
@@ -1599,11 +1619,15 @@ fn interval_index(left: &Value, right: &Value, span: &Context<'_>) -> Result<Val
     frame.collect(data, integer(0)).map_err(|k| span.error(k, "invalid interval index"))
 }
 
-fn roll(right: &Value, exact: bool, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
+/// Roll every item of `right`, keeping its layout.
+pub(crate) fn roll_array<R: rand::Rng + ?Sized>(right: &Value, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
+    roll(right, right.is_exact(), span, false, rng)?.with_layout(right.layout().clone()).map_err(|k| span.error(k, "invalid roll result"))
+}
+
+fn roll<R: rand::Rng + ?Sized>(right: &Value, exact: bool, span: &Context<'_>, fill: bool, rng: &mut R) -> Result<Value, Error> {
     let fill = fill || right.is_empty();
-    let mut rng = rand::rng();
     let mut item = |e| {
-        if let a @ Value::Array(_) = e { return roll(&a, exact, span, fill); }
+        if let a @ Value::Array(_) = e { return roll(&a, exact, span, fill, &mut *rng); }
         if fill { return Ok(generated(0, exact)); }
         let n = numeric(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "roll needs a nonnegative integer"))?;
         if !exact && n > (1usize << 53) { return Err(span.error(ErrorKind::Limit, "roll bound exceeds exact floating-point integers")); }
@@ -1614,7 +1638,7 @@ fn roll(right: &Value, exact: bool, span: &Context<'_>, fill: bool) -> Result<Va
     Frame::of(right).collect(data, prototype).map_err(|k| span.error(k, "invalid roll result"))
 }
 
-fn deal(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(crate) fn deal<R: rand::Rng + ?Sized>(left: &Value, right: &Value, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
     let count = |a: &Value| {
         if a.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "deal needs scalars or singleton vectors")); }
         if !a.is_singleton() { return Err(span.error(ErrorKind::Length, "deal needs one count per argument")); }
@@ -1625,7 +1649,7 @@ fn deal(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error>
     generated_len(&[n]).map_err(|k| span.error(k, "deal exceeds array limits"))?;
     let exact = left.is_exact() && right.is_exact();
     if !exact && total > (1usize << 53) { return Err(span.error(ErrorKind::Limit, "deal population exceeds exact floating-point integers")); }
-    let data = rand::seq::index::sample(&mut rand::rng(), total, n).into_iter().map(|i| generated(i + 1, exact)).collect();
+    let data = rand::seq::index::sample(rng, total, n).into_iter().map(|i| generated(i + 1, exact)).collect();
     Value::from_parts(vec![n], data, generated(0, exact)).map_err(|k| span.error(k, "invalid deal result"))
 }
 
@@ -1694,25 +1718,26 @@ fn reshape(dimensions: &Value, right: &Value, span: &Context<'_>) -> Result<Valu
         .map(|e| numeric(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "invalid dimension")))
         .collect::<Result<Vec<_>, _>>()?;
     let len = generated_len(&shape).map_err(|k| span.error(k, "shape exceeds array limits"))?;
-    if right.shape() == shape && !right.is_atom() { return Ok(right.clone()); }
+    // A keyed shape names the axes. Its unkeyed entries leave theirs unnamed.
+    let names = dimensions.keys(0).map_or_else(Vec::new, |k| k.names().to_vec());
+    if right.shape() == shape && !right.is_atom() { return right.clone().with_axis_names(names).map_err(|k| span.error(k, "invalid axis names")); }
     if let Some(values) = right.as_floats() {
         let data = if values.is_empty() { vec![0.0; len] } else { values.iter().copied().cycle().take(len).collect() };
-        return Value::floats(shape, data).map_err(|k| span.error(k, "invalid reshape"));
+        return Value::floats(shape, data).and_then(|a| a.with_axis_names(names)).map_err(|k| span.error(k, "invalid reshape"));
     }
     if let Some(values) = right.as_integers() {
         let data = if values.is_empty() { vec![0; len] } else { values.iter().copied().cycle().take(len).collect() };
-        return Value::integers(shape, data).map_err(|k| span.error(k, "invalid reshape"));
+        return Value::integers(shape, data).and_then(|a| a.with_axis_names(names)).map_err(|k| span.error(k, "invalid reshape"));
     }
     let data = if right.is_empty() { vec![right.prototype().clone(); len] } else { right.elements().cycle().take(len).collect() };
-    Value::from_parts(shape, data, right.prototype().clone()).map_err(|k| span.error(k, "invalid reshape"))
+    Value::from_parts(shape, data, right.prototype().clone()).and_then(|a| a.with_axis_names(names)).map_err(|k| span.error(k, "invalid reshape"))
 }
 
-// Keys follow their elements through a structural index map. A fill or repeated source would need an invented key.
+// Keys follow their elements through a structural index map. A fill has no key. A repeated source would need an invented key.
 fn carry_keys(result: Value, right: &Value, sources: impl Iterator<Item = Option<usize>>, span: &Context<'_>) -> Result<Value, Error> {
     let result = result.with_axis_names(right.axis_names().to_vec()).map_err(|k| span.error(k, "invalid selected axes"))?;
     let Some(keys) = right.keys(0) else { return Ok(result); };
-    let positions = sources.collect::<Option<Vec<_>>>().ok_or_else(|| span.error(ErrorKind::Domain, "fill elements would need invented keys"))?;
-    keys.select(positions).and_then(|k| result.with_keys(vec![Some(k)])).map_err(|k| span.error(k, "repeated positions would need invented keys"))
+    keys.select(sources).and_then(|k| result.with_keys(vec![Some(k)])).map_err(|k| span.error(k, "repeated positions would need invented keys"))
 }
 
 fn remap(right: &Value, layout: Layout, source: impl Fn(usize) -> Option<usize>, span: &Context<'_>) -> Result<Value, Error> {
@@ -1901,11 +1926,12 @@ fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: bool, span:
     for a in 0..rank {
         wanted[a] = if a == axis {
             match (left.keys(a), right.keys(a)) {
-                (Some(x), Some(y)) => Some(
-                    crate::keyed::Keys::new(x.names().iter().chain(y.names()).cloned().collect())
-                        .map_err(|k| span.error(k, "catenate has duplicate axis keys"))?,
-                ),
-                _ => None,
+                (None, None) => None,
+                (x, y) => {
+                    let names = |k: Option<&std::sync::Arc<crate::keyed::Keys>>, n: usize| k.map_or_else(|| vec![None; n], |k| k.names().to_vec());
+                    let names = [names(x, left.shape()[a]), names(y, right.shape()[a])].concat();
+                    Some(crate::keyed::Keys::partial(names).map_err(|k| span.error(k, "catenate has duplicate axis keys"))?)
+                }
             }
         } else { left.keys(a).or_else(|| right.keys(a)).cloned() };
     }
@@ -2079,9 +2105,9 @@ fn coordinate_offset(coords: &Value, right: &Value, prototype: bool, span: &Cont
     for (axis, (n, &size)) in fields.iter().zip(right.shape()).enumerate() {
         let n = axis_selector(n, right, axis, span)?;
         let n = numeric(&n, span)?.integer().map_err(|k| span.error(k, "index must be an integer"))?;
-        let outside = n <= 0 || n as usize > size;
-        if n < 0 || (outside && !prototype) { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
-        offset = if outside { None } else { offset.map(|offset| offset * size + n as usize - 1) };
+        let i = signed(n, size);
+        if i.is_none() && !prototype { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
+        offset = offset.zip(i).map(|(o, i)| o * size + i);
     }
     Ok(offset)
 }
@@ -2108,10 +2134,13 @@ pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, span: &Context<
         for (axis, (field, map)) in fields.iter().zip(&maps).enumerate() {
             let n = numeric(&field.at(map.index(i)), span)?.integer().map_err(|k| span.error(k, "Pick coordinates must be integers"))?;
             let size = source[axis];
-            if n <= 0 || n as usize > size {
-                if n < 0 || !(prototype || size == 0 && n == 1) { return Err(span.error(ErrorKind::Index, "Pick coordinate is outside the array")); }
-                offset = None;
-            } else { offset = offset.map(|o| o * size + n as usize - 1); }
+            match signed(n, size) {
+                Some(i) => offset = offset.map(|o| o * size + i),
+                None => {
+                    if !(prototype || size == 0 && n.abs() == 1) { return Err(span.error(ErrorKind::Index, "Pick coordinate is outside the array")); }
+                    offset = None;
+                }
+            }
         }
         for j in 0..cell_len { values.push(offset.map_or_else(|| right.prototype(), |o| right.at(o * cell_len + j))); }
     }
@@ -2120,11 +2149,19 @@ pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, span: &Context<
     frame.collect(values, right.prototype()).map_err(|k| span.error(k, "invalid Pick result"))
 }
 
-pub(crate) fn index(n: &Number, limit: usize, span: &Span) -> Result<usize, Error> {
-    let n = n.integer().map_err(|k| span.error(k, "index must be a positive integer"))?;
-    if n <= 0 || n as usize > limit { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
-    Ok(n as usize - 1)
+/// The offset of a position in an axis of `size` items. Positive positions count from the start, and negative ones from the end.
+fn signed(n: isize, size: usize) -> Option<usize> {
+    let i = if n < 0 { size as isize + n } else { n - 1 };
+    (n != 0 && i >= 0 && (i as usize) < size).then_some(i as usize)
 }
+
+pub(crate) fn position(n: &Number, size: usize, span: &Span) -> Result<usize, Error> {
+    let n = n.integer().map_err(|k| span.error(k, "index must be an integer"))?;
+    signed(n, size).ok_or_else(|| span.error(ErrorKind::Index, "index is outside the array"))
+}
+
+/// An atomic `∞` selects a whole axis in order, and `¯∞` selects it in reverse. Returns whether it is reversed.
+fn whole_axis(part: &Value) -> Option<bool> { match part { Value::Number(n) if n.is_infinite() => n.as_float().map(|f| f < 0.), _ => None } }
 
 pub(crate) struct Selection { pub frame: Frame, pub paths: Vec<Vec<usize>> }
 
@@ -2134,14 +2171,6 @@ impl Selection {
             return Err(span.error(ErrorKind::Length, "replacement shape does not match selection"));
         }
         Ok((0..self.paths.len()).map(|i| if matches!(self.frame, Frame::Direct) { values.clone() } else { selected(values, i) }))
-    }
-
-    /// A keyed replacement supplies each selected key's value. Its order, shape and extra keys are ignored.
-    pub(crate) fn aligned(&self, target: &Value, values: &Value, span: &Context<'_>) -> Result<Option<Value>, Error> {
-        if !values.has_keys() { return Ok(None); }
-        let selected = self.read(target, span)?;
-        if !selected.has_keys() { return Ok(None); }
-        crate::keyed::reorder(values, selected.axis_keys(), true).map(Some).map_err(|k| span.error(k, "replacement does not supply selected keys"))
     }
 
     pub(crate) fn read(&self, array: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -2213,18 +2242,24 @@ pub(crate) fn selection(right: &Value, parts: &[Option<Value>], span: &Context<'
     if parts.is_empty() { return Ok(Selection { frame: Frame::Direct, paths: vec![vec![]] }); }
     if parts.len() > right.shape().len() { return Err(span.error(ErrorKind::Rank, "too many index axes")); }
     let parts = parts.iter().enumerate().map(|(axis, p)| p.as_ref().map(|p| axis_selector(p, right, axis, span)).transpose()).collect::<Result<Vec<_>, _>>()?;
-    if let [Some(indices)] = parts.as_slice() {
-        if matches!(indices.elements().next().unwrap_or_else(|| indices.prototype()), Value::Array(_)) { return choose(right, indices, span); }
+    if let [Some(indices), rest @ ..] = parts.as_slice() {
+        if rest.iter().all(Option::is_none) && matches!(indices.elements().next().unwrap_or_else(|| indices.prototype()), Value::Array(_)) {
+            return choose(right, indices, span);
+        }
     }
     let (mut shape, mut indices, mut keys, mut names) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let mut direct = true;
     for (axis, &size) in right.shape().iter().enumerate() {
-        if let Some(a) = parts.get(axis).and_then(Option::as_ref) {
+        let part = parts.get(axis).and_then(Option::as_ref);
+        if let Some(a) = part.filter(|a| whole_axis(a).is_none()) {
             direct &= a.is_atom();
             shape.extend_from_slice(a.shape());
-            let positions = a.elements().map(|e| index(numeric(&e, span)?, size, span)).collect::<Result<Vec<_>, _>>()?;
-            let selected =
-                right.keys(axis).map(|k| k.select(positions.iter().copied())).transpose().map_err(|k| span.error(k, "selection repeats a keyed position"))?;
+            let positions = a.elements().map(|e| position(numeric(&e, span)?, size, span)).collect::<Result<Vec<_>, _>>()?;
+            let selected = right
+                .keys(axis)
+                .map(|k| k.select(positions.iter().copied().map(Some)))
+                .transpose()
+                .map_err(|k| span.error(k, "selection repeats a keyed position"))?;
             if a.shape().len() == 1 {
                 keys.push(selected);
                 names.push(right.axis_name(axis).cloned());
@@ -2237,9 +2272,10 @@ pub(crate) fn selection(right: &Value, parts: &[Option<Value>], span: &Context<'
         } else {
             direct = false;
             shape.push(size);
-            keys.push(right.keys(axis).cloned());
+            let positions: Vec<_> = if part.and_then(whole_axis) == Some(true) { (0..size).rev().collect() } else { (0..size).collect() };
+            keys.push(right.keys(axis).map(|k| k.select(positions.iter().copied().map(Some))).transpose().map_err(|k| span.error(k, "invalid axis keys"))?);
             names.push(right.axis_name(axis).cloned());
-            indices.push((0..size).collect());
+            indices.push(positions);
         }
     }
     let count = generated_len(&shape).map_err(|k| span.error(k, "selection is too large"))?;

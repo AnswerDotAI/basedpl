@@ -1,28 +1,27 @@
 # `:` — Unkey / Key / Guard
 
-`:Y` removes axis keys. `K:Y` labels leading axes. `K:[axes]Y` labels selected axes. A parenthesised literal of `key:value` items builds one keyed vector. See [axis keys](../keyed.qmd).
+`:Y` removes axis keys. `K:Y` labels leading axes. `K:⍤[A]Y` labels the axes `A`. A parenthesised literal with `key:value` items builds one keyed vector. Its other items are entries without keys. See [axis keys](../keyed.qmd).
 
 ```apl
-:('aa' 'bb':1 2)    ⍝ 1 2
-'bb'⊃'aa' 'bb':1 2 ⍝ 2
-('aa':1 ⋄ 'bb':2)≡'aa' 'bb':1 2 ⍝ 1ₓ
+:("aa" "bb":1 2)    ⍝ 1 2
+"bb"⊃"aa" "bb":1 2 ⍝ 2
+("aa":1 ⋄ "bb":2)≡"aa" "bb":1 2 ⍝ 1ₓ
 ```
 
-`N:[0]Y` names axes. Each entry is a string, or the axis's own index for unnamed. `:[0]Y` removes axis names. Both retain position keys and share the element buffer.
+In `K`, a position's own 1-origin number leaves that position without a key. Axis names are the keys of the shape. `(N:⍴M)⍴M` renames the axes. See [shape](rho.qmd).
 
 ```apl
-M←'city' 'month':[0]2 3⍴⍳6
-⍳[0]M              ⍝ 'city' 'month'
-⍳[0]('city' ⋄ 2):[0]M ⍝ ('city' ⋄ 2ₓ)
-⍳[0](:[0]M)        ⍝ 1ₓ 2ₓ
+"aa" 2:10 20        ⍝ ("aa":10 ⋄ 20)
+M←("city":2 ⋄ "month":3)⍴⍳6
+⍴(:⍴M)⍴M            ⍝ 2ₓ 3ₓ
 ```
 
 A keyed `K` supplies axis names and position keys together.
 
 ```apl
-axes←('city':'NY' 'LA' ⋄ 'month':'Jan' 'Feb' 'Mar')
+axes←("city":"NY" "LA" ⋄ "month":"Jan" "Feb" "Mar")
 M←axes:2 3⍴⍳6
-M['LA';'Feb']       ⍝ 5
+"LA" "Feb"⌷M       ⍝ 5
 ```
 
 Inside a dfn, group functional uses: `(K:Y)` or `(:Y)`.

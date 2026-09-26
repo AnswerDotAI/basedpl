@@ -87,7 +87,7 @@ fn array(a: &Value, budget: &mut usize) -> Block {
             Value::Function(f) => Block::new(format!("⟨{}⟩", f.apl())),
         })
         .enumerate()
-        .map(|(i, cell)| match a.keys(0) { Some(keys) if !a.is_empty() => cell.labelled(&keys.names()[i]), _ => cell })
+        .map(|(i, cell)| match a.keys(0).and_then(|keys| keys.names().get(i)?.as_ref()) { Some(key) => cell.labelled(key), None => cell })
         .collect();
     let columns = shape.last().copied().unwrap_or(1);
     let mut widths = vec![0; columns];

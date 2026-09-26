@@ -12,7 +12,7 @@
 ⌽@2 4⊢⍳5           ⍝ 1 4 3 2 5
 ```
 
-Numeric index arrays select leading-axis cells. Their shape precedes the remaining cell axes, as with bracket indexing.
+Numeric index arrays select leading-axis cells. Their shape precedes the remaining cell axes, as with [Index](squad.qmd) `⌷`.
 
 ```apl
 v←10 20 30 40 ⋄ i←[1 4 ⋄ 2 3]

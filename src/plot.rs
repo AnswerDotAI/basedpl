@@ -69,7 +69,9 @@ fn numbers(value: &Value, span: &Context<'_>) -> Result<Vec<f64>, Error> {
     value.elements().map(|e| real(&e, span).and_then(|v| if v.is_finite() { Ok(v) } else { Err(invalid(span, "•plot values must be finite")) })).collect()
 }
 
-fn names(value: &Value, axis: usize) -> Vec<String> { value.keys(axis).map_or(vec![], |k| k.names().iter().map(|n| n.to_string()).collect()) }
+fn names(value: &Value, axis: usize) -> Vec<String> {
+    value.keys(axis).map_or(vec![], |k| k.names().iter().enumerate().map(|(i, n)| n.as_ref().map_or_else(|| (i + 1).to_string(), |n| n.to_string())).collect())
+}
 
 fn axis_name(value: &Value, axis: usize) -> String { value.axis_name(axis).map_or(String::new(), |n| n.to_string()) }
 

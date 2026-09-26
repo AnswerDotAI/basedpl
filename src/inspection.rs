@@ -33,9 +33,8 @@ pub(crate) fn documentation(symbol: &str) -> Option<&'static str> {
         "{" | "}" => "braces",
         "[" | "]" => "brackets",
         "(" | ")" => "parentheses",
-        ";" => "semicolon",
         "." => "dot",
-        "'" => "quote",
+        "'" | "\"" => "quote",
         _ => crate::symbols::SYMBOLS.iter().find(|row| row.0 == symbol)?.1,
     })
 }

@@ -6,5 +6,5 @@ regex_replace←{
     ends←starts+p.length s
     gaps←(1,ends){(⍵-⍺)↑(⍺-1)↓s}¨starts,1+≢s
     replacements←⍶¨p.match s
-    ∊gaps,¨replacements,⊂''
+    ∊gaps,¨replacements,⊂""
 }

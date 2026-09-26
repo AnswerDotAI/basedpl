@@ -1,7 +1,7 @@
 ⍝ Numeric dfns — adapted for bAsedPL from April
 ⍝ Source: https://dfns.dyalog.com/n_contents.htm (individual sources below)
 ⍝ April: libraries/dfns/numeric/numeric.apl; Apache-2.0, see LICENSE-april
-•load 'lib/graph.apl'
+•load "lib/graph.apl"
 
 ⍝⍝ Ported from http://dfns.dyalog.com/n_contents.htm into April APL
 
@@ -15,7 +15,7 @@ adic ← {  ⍝ Bijective base-⍺ numeration.
   1=b:⍵/⍺  ⍝ unary: special case
   n←⌊b⍟1+⍵×b-1  ⍝ number of digits
   z←(¯1+b*n)÷b-1  ⍝ smallest integer with length n
-  a[1+(n/b)⊤⍵-z]
+  [1+(n/b)⊤⍵-z]⌷a
 }
 
 ⍝ From http://dfns.dyalog.com/c_apportion.htm
@@ -107,10 +107,10 @@ lcm ← { ⍺×⍵÷⍺ gcd ⍵ }  ⍝ Least common multiple.
 k6174 ← {  ⍝ Kaprekar's operation.
   enco←(4/10)∘⊤  ⍝ 4-digit encode.
   deco←enco⍣¯1  ⍝ and decode.
-  1=⍴∪enco ⍵:'error'  ⍝ all digits the same: no go.
+  1=⍴∪enco ⍵:"error"  ⍝ all digits the same: no go.
   ⍬{  ⍝ starting with null sequence.
     ⍵=↑⌽⍺:⍺
-    v←{⍵[⍒⍵]}enco ⍵  ⍝ digits in descending order.
+    v←{[⍒⍵]⌷⍵}enco ⍵  ⍝ digits in descending order.
     (⍺,⍵)∇(deco v)-deco⌽v  ⍝ smaller to larger difference.
   }⍵  ⍝ :: [#] ∇ # → [#]
 }
@@ -120,9 +120,9 @@ k6174 ← {  ⍝ Kaprekar's operation.
 hex ← {  ⍝ Hexadecimal from decimal.
   ⍺←⊢  ⍝ no width specification.
   1≠≡,⍵:⍺ ∇¨⍵  ⍝ simple-array-wise:
-  0∊⍵-1+⍵:'Too big'
+  0∊⍵-1+⍵:"Too big"
   n←⍬⍴⍺,2*⌈2⍟2⌈16⍟1+⌈/|⍵  ⍝ default width.
-  ↓[1]'0123456789abcdef'[1+(n/16)⊤⍵]
+  ↓⍤[1]"0123456789abcdef".[1+(n/16)⊤⍵]
 }
 
 ⍝ From http://dfns.dyalog.com/c_dec.htm
@@ -130,13 +130,13 @@ hex ← {  ⍝ Hexadecimal from decimal.
 dec ← {  ⍝ Decimal from hexadecimal
   ⍺←0  ⍝ unsigned by default.
   1<⍴⍴⍵:⍺∘∇⍤1⊢⍵  ⍝ vector-wise:
-  0≡≢⍵:0  ⍝ dec'' → 0.
+  0≡≢⍵:0  ⍝ dec"" → 0.
   1≠≡,⍵:⍺ ∇¨⍵  ⍝ simple-array-wise:
   ws←∊∘(•ucs 9 10 13 32 133 160)
   ws↑⍵:⍺ ∇ 1↓⍵
   ws↑⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺ ∇¨(1+ws ⍵)⊆⍵  ⍝ white-space-separated:
-  v←16|¯1+'0123456789abcdef0123456789ABCDEF'⍳⍵
+  v←16|¯1+"0123456789abcdef0123456789ABCDEF"⍳⍵
   (16⊥v)-⍺×(8≤↑v)×16*≢v
 }
 
@@ -176,8 +176,8 @@ rational ← {  ⍝ Rational approximation to real ⍵.
 ⍝ From http://dfns.dyalog.com/c_roman.htm
 
 roman ← {  ⍝ Roman numeral arithmetic.
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5 ×⌝ 10*¯1+⍳4)[1+7|¯1+'IVXLCDMivxlcdm'⍳⍵]}
-  fmt←{~∘' ',2 1 1⍉(' '⍪3 4⍴'MCXI DLV ')[1+(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)[;1+⍵⊤⍨4⍴10];]}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}[1+7|¯1+"IVXLCDMivxlcdm"⍳⍵]⌷,⍉1 5 ×⌝ 10*¯1+⍳4}
+  fmt←{~∘' ',2 1 1⍉[1+(∞ ⋄ 1+⍵⊤⍨4⍴10)⌷0 4 2 2⊤0 16 20 22 24 32 36 38 39 28]⌷' '⍪3 4⍴"MCXI DLV "}
   depth←{⍹≥|≡⍵ : ⍶ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1  ⍝ arabic from roman.
   fmts←fmt depth 0  ⍝ roman from arabic.
@@ -230,7 +230,7 @@ xd ← {×⍺-⍵}  ⍝ Signum difference
 
 bd ← {(⍺>⍵)-(⍺<⍵)}  ⍝ Boolean difference
 
-rg ← {(⍺[1]⍶ ⍵)∧⍺[2]⍹ ⍵}  ⍝ Range operator
+rg ← {(⍺.(1)⍶ ⍵)∧⍺.(2)⍹ ⍵}  ⍝ Range operator
 
 xp ← {×/×⍵ -⌝ ⍺}  ⍝ Signum product
 
@@ -247,7 +247,7 @@ alt ← {  ⍝ Alternant.
   0=r:⍹⌿,⍵
   1≥c:⍶⌿,⍵
   M←~⍤1 0⍨⍳r  ⍝ minors
-  ⍵[;1]⍶.⍹∇¨⊂[2 3]⍵[M;1↓⍳c]
+  ⍵.(∞ 1)⍶.⍹∇¨⊂⍤[2 3]⍵.(M ⋄ 1↓⍳c)
 }
 
 bayes ← { ⍺(×÷+.×)⍵ }  ⍝ Bayes' formula. (implemented as a fork)
@@ -271,17 +271,17 @@ det ← {  ⍝ Determinant of square matrix.
   0=n←≢⍵:⍺  ⍝ result for 0-by-0
   i j←1+(⍴⍵)⊤¯1+{⍵⍳⌈/⍵}|,⍵
   k←⍳n
-  (⍺×⍵[i;j]×¯1*i+j)∇ ⍵[k~i;k~j]-⍵[k~i;j] ×⌝ ⍵[i;k~j]÷⍵[i;j]
+  (⍺×⍵.(i⋄j)×¯1*i+j)∇ ⍵.(k~i⋄k~j) - ⍵.(k~i⋄j) ×⌝ ⍵.(i⋄k~j) ÷ ⍵.(i⋄j)
 }
 
 ⍝ From http://dfns.dyalog.com/c_gauss_jordan.htm
 
 gauss_jordan ← {  ⍝ Gauss-Jordan elimination.
   elim←{  ⍝ elimination of row/col ⍺
-    p←(⍺-1)+{⍵⍳⌈/⍵}|(⍺-1)↓⍵[;⍺]
+    p←(⍺-1)+{⍵⍳⌈/⍵}|(⍺-1)↓⍵.(∞ ⍺)
     swap←⊖@⍺ p⊢⍵  ⍝ ⍺th and pth rows exchanged
-    mat←swap[⍺;⍺]÷⍨@⍺⊢swap  ⍝ col diagonal reduced to 1
-    mat-(mat[;⍺]×⍺≠⍳≢⍵) ×⌝ mat[⍺;]
+    mat←swap.(⍺ ⍺)÷⍨@⍺⊢swap  ⍝ col diagonal reduced to 1
+    mat-(mat.(∞ ⍺)×⍺≠⍳≢⍵) ×⌝ mat.(⍺)
   }
   ⍺←=/⊃⍳⍴⍵
   (⍴⍺)⍴(0 1×⍴⍵)↓(⍵,⍺)elim/⌽⍳⌊/⍴⍵
@@ -299,7 +299,7 @@ hil ← {÷1+ +⌝ ⍨(⍳⍵)-1}  ⍝ order ⍵ Hilbert matrix.
 
 kcell ← {  ⍝ Relationship between point and k-cell.
   ⍺←(≢⍵)/2 1⍴0 1  ⍝ Default is unit k-cell.
-  b←,[(2=⍴⍴⍺)/1]⍺
+  b←,⍤[(2=⍴⍴⍺)/1]⍺
   p←((2⌊⍴⍴⍺)↓1 1,⍴⍵)⍴⍵  ⍝ Points to evaluate.
   d←(,⍶⌿)⍤1⊢⍉×-b,.-p
   ⍶/⍬:⌈/d ⋄ 5⊥⍉d
@@ -310,7 +310,7 @@ kcell ← {  ⍝ Relationship between point and k-cell.
 kball ← { ⍺←1  ⍝ Relationship between point and k-ball.
   r←↑⍺ ⋄ p←1/⍵
   c←(≢p)↑1↓⍺  ⍝ Remaining coordinates are center.
-  ×-/(⍉p-[1]c)r+.*¨2
+  ×-/(⍉p-⍤[1]c)r+.*¨2
 }
 
 ⍝ ⍝ From http://dfns.dyalog.com/c_ksphere.htm
@@ -348,7 +348,7 @@ NormRand ← {                                 ⍝ Random numbers with a normal 
 phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
   ⍺←1
   Ø←(1+5*÷2)÷2
-  ''≡0/∊⍵:{
+  ""≡0/∊⍵:{
     1<|≡⍵:∇¨⍵
     '¯'=↑⍵:-∇ 1↓⍵
     a←Ø⊥¯1+•d⍳⍵~'.'
@@ -359,12 +359,12 @@ phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
   num←⍵
   ⍺{
     ⍺=0:⍵
-    ⍵≡⍬:,'0'
-    fmt←{'01'[1+⍵]}
+    ⍵≡⍬:"0"
+    fmt←{[1+⍵]⌷"01"}
     lft←(⌽¯1+⍳0⌈1+⌈/⍵)∊⍵
     rgt←(-⍳0⌈|⌊/⍵)∊⍵
     rgt∧.=0:fmt lft
-    lft∧.=0:'0.',fmt rgt
+    lft∧.=0:"0.",fmt rgt
     (fmt lft),'.',fmt rgt
   }⍬{
     num=Ø+.*⍺:⍺
@@ -424,7 +424,7 @@ polar ← {  ⍝ Polar from/to cartesian coordinates.
     r o←⊂⍤¯1⊢⍵  ⍝ radius and phase angle.
     (r×2○o)lam r×1○o  ⍝ r×cos(ø), r×sin(ø).
   }
-  lam←,[1-÷2]
+  lam←,⍤[1-÷2]
   ⍺←1  ⍝ default polar from cartesian.
   ⍺=+1:pol_car ⍵  ⍝ polar from cartesian.
   ⍺=-1:car_pol ⍵  ⍝ cartesian from polar.
@@ -442,7 +442,7 @@ xtimes ← { m←0  ⍝ Fast multi-digit product using FFT.
   xroots    ← {×\1,1↓(⍵÷2)⍴¯1*2÷⍵}
   cube      ← {⍵⍴⍨2⍴⍨⌊2⍟⍴⍵}
   extend    ← {(2*⌈2⍟¯1+(⍴⍺)+⍴⍵)↑¨⍺ ⍵}
-  floop     ← {(⊣/⍺)∇⍣(×m)⊢(+⌿⍵),[m+0.5]⍺×[⍳m←≢⍴⍺]-⌿⍵}
+  floop     ← {(⊣/⍺)∇⍣(×m)⊢(+⌿⍵),⍤[m+0.5]⍺×⍤[⍳m←≢⍴⍺]-⌿⍵}
   FFT       ← {,(cube xroots⍴⍵)floop cube ⍵}
   iFFT      ← {(⍴⍵)÷⍨,(cube+xroots⍴⍵)floop cube ⍵}
   rconvolve ← {(¯1+(⍴⍺)+⍴⍵)↑iFFT×/FFT¨⍺ extend ⍵}
@@ -456,5 +456,5 @@ convolve ← { +⌿(1-⍳⍴⍺)⌽⍺ ×⌝ ⍵,0×1↓⍺ }
 
 xpower ← {  ⍝ Fast multi-digit power using FFT.
   xt←{(0,⍺)xtimes 0,⍵} ⋄ b←⌽2⊥⍣¯1+10⊥⍵  ⍝ boolean showing which powers needed
-  ⊃,/xt/b/{xt⍨⍺}\(⊂,10⊥⍣¯1+⍺)⍴⍨⍴b
+  ⊃,/xt/b/{xt⍨⍺}\[,10⊥⍣¯1+⍺]⍴⍨⍴b
 }

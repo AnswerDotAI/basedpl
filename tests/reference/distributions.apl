@@ -55,8 +55,8 @@ d←•logistic 0 1 ⋄ (d.cdf ¯∞ ¯1000 1000 ∞ ⋄ d.density ¯∞ ∞ ⋄
 (0 0 1 1 ⋄ 0 0 ⋄ ¯∞ ∞)
 
 ⍝ distribution:layout — Nested, keyed and empty inputs
-d←•uniform 0 1 ⋄ (d.cdf ('a' 'b':0.25 0.5) ⋄ d.cdf (0.25 0.5 ⋄ 0⍴0))
-(('a' 'b':0.25 0.5) ⋄ (0.25 0.5 ⋄ 0⍴0))
+d←•uniform 0 1 ⋄ (d.cdf ("a" "b":0.25 0.5) ⋄ d.cdf (0.25 0.5 ⋄ 0⍴0))
+(("a" "b":0.25 0.5) ⋄ (0.25 0.5 ⋄ 0⍴0))
 
 ⍝ distribution:shapes — Shape argument controls scalar and empty draws
 d←•normal 0 1 ⋄ (⍴d.sample ⍬ ⋄ ⍴d.sample 2 0 3 ⋄ ⍴d.sample 2 3)
@@ -90,8 +90,12 @@ d←•normal 0 1 ⋄ d.sample 1.5
 •uniform ¯1E308 1E308
 ⍝ error: DOMAIN ERROR
 
-⍝ distribution:bad-valence — Methods are monadic
+⍝ distribution:bad-valence — Only sample takes a left argument, and it must be a generator
 d←•normal 0 1 ⋄ 2 d.sample 3
+⍝ error: DOMAIN ERROR
+
+⍝ —
+d←•normal 0 1 ⋄ 2 d.density 3
 ⍝ error: SYNTAX ERROR
 
 ⍝ distribution:sample-limit — Check allocations before drawing
@@ -101,3 +105,23 @@ d←•normal 0 1 ⋄ d.sample 1000001
 ⍝ distribution:integer-limit — Trial count is checked before floating-point rounding
 •binomial 9007199254740993ₓ 1
 ⍝ error: LIMIT ERROR
+
+⍝ distribution:generator — The same seed gives the same draws
+g←•rand 42 ⋄ h←•rand 42 ⋄ d←•normal 0 1
+((g.roll 6 6 6)≡h.roll 6 6 6 ⋄ (g d.sample 4)≡h d.sample 4 ⋄ (3 g.deal 10)≡3 h.deal 10)
+⍝ =>
+(1ₓ ⋄ 1ₓ ⋄ 1ₓ)
+
+⍝ distribution:generator-stream — Copies of a generator draw from one stream
+g←•rand 42 ⋄ h←g ⋄ a←g.roll 1000 1000 ⋄ b←h.roll 1000 1000 ⋄ k←•rand 42 ⋄ (a,b)≡k.roll 4⍴1000   ⍝ 1ₓ
+
+⍝ distribution:generator-values — A seed fixes the draws, which pins the generator algorithm
+(•rand 42).roll 6 6 6   ⍝ 5 2 6
+
+⍝ distribution:generator-seed — The seed is one nonnegative integer
+•rand ¯1
+⍝ error: DOMAIN ERROR
+
+⍝ —
+•rand 1 2
+⍝ error: LENGTH ERROR

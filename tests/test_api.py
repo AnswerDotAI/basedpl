@@ -50,7 +50,7 @@ def test_python_printer():
         '×': 'sign', '×∘2': 'times(2.)', '2∘-': 'subtract.left(2.)',
         '×∘2x': 'times(2)', '÷∘1r2': 'divide(Fraction(1, 2))',
         '+/÷≢': 'plus.reduce / tally', '+.×': 'plus @ times', '×⌝': 'times.outer',
-        '+/[1]': 'plus.reduce[1.]', '+⌿': 'plus.reduce[1]', '-⍨': 'subtract.commute',
+        '+/⍤[1]': 'plus.reduce[1.]', '+⌿': 'plus.reduce[1]', '-⍨': 'subtract.commute',
         '+∘×': 'conjugate << sign', '+⍥×': 'conjugate.over(sign)',
         '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each',
     }.items(): teq(to_python(apl(code)), expected)
@@ -67,19 +67,19 @@ def test_load(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     source = tmp_path/'defs.apl'
     source.write_text('twice←{2×⍵}\nx←7\n')
-    (tmp_path/'main.apl').write_text("•load 'defs.apl'\ntwice x")
-    assert apl("•LOAD 'main.apl'").py == 14
+    (tmp_path/'main.apl').write_text('•load "defs.apl"\ntwice x')
+    assert apl('•LOAD "main.apl"').py == 14
     assert apl('twice x').py == 14
-    assert apl("{loaded←•load 'defs.apl' ⋄ twice ⍵}3").py == 6
+    assert apl('{loaded←•load "defs.apl" ⋄ twice ⍵}3').py == 6
     source.write_text('⎕←x\n1÷0')
-    with pytest.raises(AplError, match=r'defs.apl:2') as err: apl("•load 'defs.apl'")
+    with pytest.raises(AplError, match=r'defs.apl:2') as err: apl('•load "defs.apl"')
     assert err.value.output == ['7']
     source.write_text('⎕←9\n{∇⍵}0')
     apl.timeout = .001
-    with pytest.raises(AplError, match='TIMEOUT'): apl("•load 'defs.apl'")
+    with pytest.raises(AplError, match='TIMEOUT'): apl('•load "defs.apl"')
     apl.timeout = None
     assert apl('x').py == 7
-    with pytest.raises(AplError, match='VALUE'): apl("•load 'missing.apl'")
+    with pytest.raises(AplError, match='VALUE'): apl('•load "missing.apl"')
 
 
 def test_data_io(tmp_path):
@@ -169,14 +169,15 @@ def test_array_surface():
     assert [repr(Array(s)) for s in ('text', '', ['ab', 'cd'])] == ["'text'", "''", "['ab', 'cd']"]
 
 def test_keyed_arrays():
-    t = apl("('b':1 2),('a':('x':'hi'),('n':3))")
+    t = apl('("b":1 2),("a":("x":"hi"),("n":3))')
     assert list(t.py) == ['b', 'a'] and t.py['a'] == dict(x='hi', n=3) and t.shape == (2,)
     np.testing.assert_array_equal(t.py['b'], [1, 2])
     assert repr(t).startswith("{'b': ")
     d = dict(z=1, y=dict(k=[1, 2, 3]), e={})
-    assert list(apl('⍳[1]t', t=d).py) == ['z', 'y', 'e'] and apl('(t.y.k[2])+t.e≡⍬:⍬', t=d).py == 3
+    assert list(apl('⍳⍤[1] t', t=d).py) == ['z', 'y', 'e'] and apl('t.y.k.(2)+t.e≡⍬:⍬', t=d).py == 3
     assert (Array(dict(a=1, b=2)) + Array(dict(b=10))).py == dict(a=1, b=12)
-    with pytest.raises(TypeError): Array({1: 2})
+    assert Array({'a': 1, 2: 5}).py == {'a': 1, 2: 5}
+    with pytest.raises(TypeError): Array({2: 5})
     k = Array(dict(qty=4, price=1, tax=2))
     assert k['price'].py == 1 and k['price'].is_atom and k[2].py == 1
     assert list(k[['tax', 'qty']].py) == ['tax', 'qty']
@@ -211,8 +212,8 @@ def test_based_values():
         assert apl('value').is_atom == value.is_atom
         assert apl('value').shape == value.shape
     assert Array(3).is_atom and not Array(np.array(3)).is_atom
-    assert apl('v←3 4 ⋄ v[1]').is_atom
-    assert not apl('v[⊂1]').is_atom
+    assert apl('v←3 4 ⋄ 1⌷v').is_atom
+    assert not apl('[⊂1]⌷v').is_atom
     assert apl('1⊃v').is_atom
     assert Array([3, 4])[1].is_atom and not Array([3, 4])[np.array(1)].is_atom
     assert apl('fs←+˘×')[2](3, 4).py == 12
@@ -299,28 +300,26 @@ def test_axis_names():
     teq((keyed + other).np, data + [10, 20, 30])
     assert keyed.df.index.name == 'city' and keyed.df.columns.name == 'month'
     apl(M=keyed)
-    teq(apl('⍳[0]M').py, ['city', 'month'])
-    renamed = apl("('town' ⋄ 2):[0]M")
+    assert apl('⍴M').py == dict(city=2, month=3)
+    renamed = apl('("town" 2:⍴M)⍴M')
     teq(renamed.axis_names, ('town', None))
     teq(renamed.axis_keys, keyed.axis_keys)
-    teq(apl('⍳[0]M').py, ['city', 'month'])
-    teq(apl(':[0]M').axis_names, (None, None))
-    teq(apl('(⍳[0]M):[0](:[0]M)').axis_names, keyed.axis_names)
-    teq(apl("⍳[0]'items':[0]1 2").py, ['items'])
-    teq(apl('⍳[0]7').py, [])
-    for code in ["'city' 'city':[0]M", '(1 1):[0]M']:
+    assert apl('⍴("town" 2:⍴M)⍴M').py == {'town': 2, 2: 3}
+    teq(apl('(:⍴M)⍴M').axis_names, (None, None))
+    teq(apl('(⍴M)⍴(:⍴M)⍴M').axis_names, keyed.axis_names)
+    assert apl('⍴("items":2)⍴1 2').py == dict(items=2)
+    for code in ['("city":2 ⋄ "city":3)⍴M', '("city" "city":⍴M)⍴M', '(1 1:⍴M)⍴M']:
         with pytest.raises(AplError, match='DOMAIN'): apl(code)
-    with pytest.raises(AplError, match='LENGTH'): apl("'city':[0]M")
-    teq(apl("'Paris'⌷['city']M").np, data[0])
-    teq(apl('M[2]').axis_names, ('month',))
-    teq(apl("+/['city' 'month']M").np, 15)
+    teq(apl('"Paris"⌷⍤["city"] M').np, data[0])
+    teq(apl('2⌷M').axis_names, ('month',))
+    teq(apl('+/⍤["city" "month"] M').np, 15)
     teq(apl('⍉M').axis_names, ('month', 'city'))
-    teq(apl('2 3⍴M').axis_names, ('city', 'month'))
-    teq(apl('3 2⍴M').axis_names, (None, None))
+    teq(apl('2 3⍴M').axis_names, (None, None))
+    teq(apl('(⍴M)⍴M').axis_names, ('city', 'month'))
     teq(apl(':M').axis_names, ('city', 'month'))
-    teq(apl('+/¨⊂[2]M').axis_names, ('city',))
+    teq(apl('+/¨⊂⍤[2] M').axis_names, ('city',))
     teq(apl('⌽⍤1⊢M').axis_names, ('city', 'month'))
-    with pytest.raises(AplError, match='INDEX'): apl("+/['missing']M")
+    with pytest.raises(AplError, match='INDEX'): apl('+/⍤["missing"] M')
     v = Array([1, 2], axis_names=('city',))
     teq(times.outer(v, v).axis_names, (None, None))
     teq(reshape([4], v).axis_names, (None,))

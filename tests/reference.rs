@@ -20,9 +20,17 @@ fn header(line: &str) -> Option<(&str, &str)> {
 }
 
 fn inline(line: &str) -> Option<(&str, &str)> {
-    let mut quoted = false;
-    for (i, c) in line.char_indices() {
-        if c == '\'' { quoted = !quoted; } else if c == '⍝' && !quoted { return Some((line[..i].trim_end(), line[i + c.len_utf8()..].trim_start())); }
+    let mut chars = line.char_indices();
+    let mut string = false;
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '"' => string = !string,
+            '\'' if !string => {
+                chars.nth(1);
+            }
+            '⍝' if !string => return Some((line[..i].trim_end(), line[i + c.len_utf8()..].trim_start())),
+            _ => (),
+        }
     }
     None
 }
@@ -92,10 +100,10 @@ fn cases(text: &str) -> Vec<Value> {
 
 #[test]
 fn reference_format_and_comparison() {
-    let file = json!({"code":"testpath •nput 'héllo' ⋄ •nget testpath", "expected_code":"'héllo'"});
+    let file = json!({"code":r#"testpath •nput "héllo" ⋄ •nget testpath"#, "expected_code":r#""héllo""#});
     for _ in 0..2 { assert_eq!(reference::check(&file, EvalOptions::default())["status"], "pass"); }
-    let compact = cases("⍝ —\n'a''⍝b'   ⍝ 'a''⍝b'");
-    assert_eq!(compact[0]["code"], "'a''⍝b'");
+    let compact = cases(&format!("⍝ —\n{}", r#""a""⍝b" '⍝'   ⍝ "a""⍝b" '⍝'"#));
+    assert_eq!(compact[0]["code"], r#""a""⍝b" '⍝'"#);
     assert_eq!(reference::check(&compact[0], EvalOptions::default())["status"], "pass");
     for source in ["⍝ —\n1\n1", "⍝ —\n{\n⍵\n}1\n⍝ =>\n1", "⍝ —\n⎕←1\n1\n⍝ ⎕: 1"] {
         for ending in ["", "\n", "\n\n"] { assert_eq!(cases(&format!("{source}{ending}")), cases(&format!("{source}\n\n"))); }
@@ -110,7 +118,7 @@ fn reference_format_and_comparison() {
     assert_eq!(reference::check(&output_error, EvalOptions::default())["status"], "mismatch");
     let representation = json!({"code":"1", "expected_code":"1ₓ", "exact_representation":true});
     assert_eq!(reference::check(&representation, EvalOptions::default())["status"], "mismatch");
-    let parsed = cases("⍝  — [rtol=1e-14 atol=1e-15]\nf←{\n\n⍵+1\n}\nf 2\n⍝ =>\n3\n\n⍝  —\n'unfinished\n⍝ error: SYNTAX ERROR\n\n");
+    let parsed = cases("⍝  — [rtol=1e-14 atol=1e-15]\nf←{\n\n⍵+1\n}\nf 2\n⍝ =>\n3\n\n⍝  —\n\"unfinished\n⍝ error: SYNTAX ERROR\n\n");
     assert_eq!(parsed[0]["code"], "f←{\n\n⍵+1\n}\nf 2");
     assert_eq!(parsed[1]["line"], 10);
     for case in parsed { assert_eq!(reference::check(&case, EvalOptions::default())["status"], "pass"); }
@@ -122,12 +130,12 @@ fn reference_format_and_comparison() {
         ("1", "{}0", "mismatch"),
         ("{}0", "{}0", "pass"),
         ("+", "{}0", "mismatch"),
-        ("⍬", "''", "mismatch"),
+        ("⍬", r#""""#, "mismatch"),
         (",1", "1", "mismatch"),
         ("0⍴⊂1 2", "0⍴⊂1", "mismatch"),
-        ("'aa':1", "'bb':1", "mismatch"),
-        ("'aa':1", ",1", "mismatch"),
-        ("'row':[0],1", "'col':[0],1", "mismatch"),
+        (r#""aa":1"#, r#""bb":1"#, "mismatch"),
+        (r#""aa":1"#, ",1", "mismatch"),
+        (r#"("row":1)⍴1"#, r#"("col":1)⍴1"#, "mismatch"),
         ("3", "÷0", "invalid"),
     ] {
         let case = json!({"code":code, "expected_code":expect});
@@ -146,7 +154,9 @@ fn run_reference_cases(sources: &[(&str, &str)], timeout: u64) {
     let mut count = 0;
     let mut failures = Vec::new();
     let selected = std::env::var("BASEDPL_CASE").ok();
+    let file = std::env::var("BASEDPL_SOURCE").ok();
     for &(name, source) in sources {
+        if file.as_deref().is_some_and(|f| f != name) { continue; }
         for mut case in cases(source) {
             if name == "core" { case["exact_representation"] = json!(true); }
             let id = case["id"].as_str().unwrap();

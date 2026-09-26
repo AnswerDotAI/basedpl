@@ -3,7 +3,7 @@
 `=Y` self-classifies major cells. Rows correspond to distinct cells in first-occurrence order; columns correspond to Y's cells. Entries are equality masks.
 
 ```apl
-='aba'            ⍝ [1ₓ 0ₓ 1ₓ ⋄ 0ₓ 1ₓ 0ₓ]
+="aba"            ⍝ [1ₓ 0ₓ 1ₓ ⋄ 0ₓ 1ₓ 0ₓ]
 ```
 
 `X=Y` tests equality, pervasively.
@@ -11,7 +11,7 @@
 ```apl
 1 2 3=2            ⍝ 0ₓ 1ₓ 0ₓ
 0.3=0.1+0.2        ⍝ 1ₓ
-'abc'='b'          ⍝ 0ₓ 1ₓ 0ₓ
+"abc"='b'          ⍝ 0ₓ 1ₓ 0ₓ
 ```
 
 See [tolerance](../rules.qmd#equality-and-ordering) and whole-array [match `≡`](match.qmd).

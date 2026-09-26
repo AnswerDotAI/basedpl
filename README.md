@@ -7,12 +7,12 @@ bAsedPL (“Based-array APL”) is an APL-derived array language, borrowing idea
 
 For APL users, the main choices are:
 
-- [Based arrays](https://answerdotai.github.io/basedpl/rules.html#arrays-nesting-and-fill), as in BQN: numbers, characters and functions are atoms; enclosure always adds a layer.
+- [Based arrays](rules.qmd#arrays-nesting-and-fill), as in BQN: numbers, characters and functions are atoms; enclosure always adds a layer.
 - **Leading-axis broadcasting**, including unit-axis expansion, plus string keys and names on axes.
 - **Exact integers and rationals** alongside approximate real and complex numbers.
 - Dfns, trains and operators, with additions such as Under, iteration histories, windows and function arrays.
 
-Indices start at 1; approximate comparisons use tolerance `1E¯14`. See the [glyph reference](https://answerdotai.github.io/basedpl/glyphs.html) for Dyalog differences and the [language rules](https://answerdotai.github.io/basedpl/rules.html) for the array model.
+Indices start at 1; approximate comparisons use tolerance `1E¯14`. See the [glyph reference](glyphs.qmd) for Dyalog differences and the [language rules](rules.qmd) for the array model.
 
 ## Install and try it
 
@@ -30,13 +30,13 @@ avg 2 4 9
 
     5
 
-Use `bapl -e 'avg←+/÷≢ ⋄ avg 2 4 9'` for a shell command. The [command-line guide](https://answerdotai.github.io/basedpl/cli.html) covers source files and pipes.
+Use `bapl -e 'avg←+/÷≢ ⋄ avg 2 4 9'` for a shell command. The [command-line guide](cli.qmd) covers source files and pipes.
 
 ## Interactive use
 
-In the **REPL**, type a backtick followed by a glyph name: `` `iota `` becomes `⍳` when you press Tab or type a non-letter. Abbreviations and Alt-key shortcuts are available. `]help +` shows help; `]box on -style=max -trains=tree -fns=on` enables boxed arrays and function trees. See [REPL](https://answerdotai.github.io/basedpl/repl.html) and [Keyboard](https://answerdotai.github.io/basedpl/keyboard.html).
+In the **REPL**, type a backtick followed by a glyph name: `` `iota `` becomes `⍳` when you press Tab or type a non-letter. Abbreviations and Alt-key shortcuts are available. `]help +` shows help; `]box on -style=max -trains=tree -fns=on` enables boxed arrays and function trees. See [REPL](repl.qmd) and [Keyboard](keyboard.qmd).
 
-In **Jupyter**, select the installed **bAsedPL** kernel. Cells share definitions and support completion, Shift-Tab help and interruption. You can also use `%%apl` cells in a Python notebook. See [Using bAsedPL notebooks](https://answerdotai.github.io/basedpl/notebooks.html).
+In **Jupyter**, select the installed **bAsedPL** kernel. Cells share definitions and support completion, Shift-Tab help and interruption. You can also use `%%apl` cells in a Python notebook. See [Using bAsedPL notebooks](notebooks.ipynb).
 
 ## New to APL?
 
@@ -74,7 +74,7 @@ To see how these ideas express an algorithm, start from “a prime has exactly t
 
     2ₓ 3ₓ 5ₓ 7ₓ 11ₓ 13ₓ 17ₓ 19ₓ 23ₓ 29ₓ 31ₓ 37ₓ 41ₓ 43ₓ 47ₓ
 
-[Getting started](https://answerdotai.github.io/basedpl/getting-started.html#example-algorithms) builds this expression step by step, displaying the divisibility matrix along the way.
+[Getting started](getting-started.ipynb#example-algorithms) builds this expression step by step, displaying the divisibility matrix along the way.
 
 ## What’s distinctive?
 
@@ -96,7 +96,7 @@ Complex numbers use `j` between real and imaginary parts. Functions such as squa
 
     0j2
 
-See [numbers](https://answerdotai.github.io/basedpl/rules.html#numbers) for conversion and mixed arithmetic.
+See [numbers](rules.qmd#numbers) for conversion and mixed arithmetic.
 
 ### Array literals and broadcasting
 
@@ -110,31 +110,31 @@ m+10 20
     11 12 13
     24 25 26
 
-See [array notation](https://answerdotai.github.io/basedpl/glyphs/brackets.html) and [broadcasting](https://answerdotai.github.io/basedpl/rules.html#agreement-and-pervasion).
+See [array notation](glyphs/brackets.qmd) and [broadcasting](rules.qmd#agreement-and-pervasion).
 
 ### Keys and named axes
 
 Axes can have names, and positions along them can have string keys. Describe the axes once, then select by key or reduce by axis name:
 
 ``` apl
-axes←('city':'NY' 'LA' ⋄ 'month':'Jan' 'Feb' 'Mar')
+axes←("city":"NY" "LA" ⋄ "month":"Jan" "Feb" "Mar")
 sales←axes:[10 20 30 ⋄ 40 50 60]
-sales['LA';'Feb']
-+/['month']sales
+"LA" "Feb"⌷sales
++/⍤["month"]sales
 ```
 
     50
 
-    ('NY':60 ⋄ 'LA':150)
+    ("NY":60 ⋄ "LA":150)
 
-Keys and names travel with axes through operations such as transpose. Arithmetic aligns matching names and keys. See [Axis keys](https://answerdotai.github.io/basedpl/keyed.html).
+Keys and names travel with axes through operations such as transpose. Arithmetic aligns matching names and keys. See [Axis keys](keyed.qmd).
 
 ### Function operators
 
 Enclose an iteration count to keep the history, including the initial value. Here, double four times:
 
 ``` apl
-(2∘×)⍣[4]⊢1
+2∘×⍣[4]1
 ```
 
     1 2 4 8 16
@@ -147,11 +147,11 @@ Under (`⌾`) transforms the argument, applies a function, then reverses the tra
 
     1.2 2.7
 
-Explore [iteration and inverses](https://answerdotai.github.io/basedpl/glyphs/power.html), [Under](https://answerdotai.github.io/basedpl/glyphs/under.html), [windows](https://answerdotai.github.io/basedpl/glyphs/windows.html) and [function selection](https://answerdotai.github.io/basedpl/glyphs/agenda.html).
+Explore [iteration and inverses](glyphs/power.qmd), [Under](glyphs/under.qmd), [windows](glyphs/windows.qmd) and [function selection](glyphs/agenda.qmd).
 
 ### Mathematical tools
 
-[Primes](https://answerdotai.github.io/basedpl/glyphs/prime.html) and [factorisation](https://answerdotai.github.io/basedpl/glyphs/factor.html) are built in:
+[Primes](glyphs/prime.qmd) and [factorisation](glyphs/factor.qmd) are built in:
 
 ``` apl
 ⨸360x
@@ -159,7 +159,7 @@ Explore [iteration and inverses](https://answerdotai.github.io/basedpl/glyphs/po
 
     2ₓ 2ₓ 2ₓ 3ₓ 3ₓ 5ₓ
 
-[Polynomials](https://answerdotai.github.io/basedpl/glyphs/polynomial.html) support coefficients, roots and evaluation. Polynomial functions can be [differentiated](https://answerdotai.github.io/basedpl/glyphs/derivative.html): for f(x) = 1 + 2x + 3x², f′(2) = 14.
+[Polynomials](glyphs/polynomial.qmd) support coefficients, roots and evaluation. Polynomial functions can be [differentiated](glyphs/derivative.qmd): for f(x) = 1 + 2x + 3x², f′(2) = 14.
 
 ``` apl
 f←1x 2x 3x∘⊛ ⋄ f∂2x
@@ -167,7 +167,7 @@ f←1x 2x 3x∘⊛ ⋄ f∂2x
 
     14ₓ
 
-[Probability distributions](https://answerdotai.github.io/basedpl/distributions.html) provide sampling, density, CDF and quantiles. Two fair coin tosses give these probabilities for 0, 1 and 2 heads:
+[Probability distributions](distributions.ipynb) provide sampling, density, CDF and quantiles. Two fair coin tosses give these probabilities for 0, 1 and 2 heads:
 
 ``` apl
 coin←•binomial 2 0.5
@@ -176,39 +176,39 @@ coin.density 0 1 2
 
     0.25 0.5 0.25
 
-[Matrix division](https://answerdotai.github.io/basedpl/glyphs/domino.html) handles linear systems and least squares.
+[Matrix division](glyphs/domino.qmd) handles linear systems and least squares.
 
 ### Data and text
 
 JSON objects become keyed arrays, with dot access to their fields:
 
 ``` apl
-order←•json '{"price":10.5,"qty":2}'
+order←•json "{""price"":10.5,""qty"":2}"
 order.price×order.qty
 ```
 
     21
 
-CSV headers likewise name column vectors. [Files, CSV and JSON](https://answerdotai.github.io/basedpl/data.html) covers reading, transforming and writing data. [Regex](https://answerdotai.github.io/basedpl/regex.html) supplies matching, captures and replacement through Rust’s regex engine.
+CSV headers likewise name column vectors. [Files, CSV and JSON](data.ipynb) covers reading, transforming and writing data. [Regex](regex.ipynb) supplies matching, captures and replacement through Rust’s regex engine.
 
 ### Drawing
 
-`•plot` draws charts from arrays. Keys label the axes and name the lines. See [Plots](https://answerdotai.github.io/basedpl/plot.html).
+`•plot` draws charts from arrays. Keys label the axes and name the lines. See [Plots](plot.ipynb).
 
 ``` apl
-('legend':'end') •plot sales
+("legend":"end") •plot sales
 ```
 
 ![](index_files/figure-commonmark/cell-17-output-1.svg)
 
-Build SVG from element functions and keyed attributes. Notebooks display the picture directly. The same element trees serialize to XML. See [XML and SVG](https://answerdotai.github.io/basedpl/xml.html).
+Build SVG from element functions and keyed attributes. Notebooks display the picture directly. The same element trees serialize to XML. See [XML and SVG](xml.ipynb).
 
 ``` apl
-circle←•element 'circle'
-text←•element 'text'
-c←('cx':50 ⋄ 'cy':40 ⋄ 'r':25 ⋄ 'fill':'orange') circle ''
-t←('x':50 ⋄ 'y':85 ⋄ 'text-anchor':'middle') text 'Hello, SVG'
-('width':240 ⋄ 'height':240) •svg (c ⋄ t)
+circle←•element "circle"
+text←•element "text"
+c←("cx":50 ⋄ "cy":40 ⋄ "r":25 ⋄ "fill":"orange") circle ""
+t←("x":50 ⋄ "y":85 ⋄ "text-anchor":"middle") text "Hello, SVG"
+("width":240 ⋄ "height":240) •svg (c ⋄ t)
 ```
 
 ![](index_files/figure-commonmark/cell-18-output-1.svg)
@@ -224,6 +224,6 @@ mean = fn('+/÷≢')
 mean([1, 2, 3])
 ```
 
-Arrays have `.py`, `.np` and `.df` conversions for Python values, NumPy and pandas. Functions also have Python names and composition operators. See the [Python tutorial](https://answerdotai.github.io/basedpl/python.html).
+Arrays have `.py`, `.np` and `.df` conversions for Python values, NumPy and pandas. Functions also have Python names and composition operators. See the [Python tutorial](python.ipynb).
 
-For other frontends, the [process interfaces](https://answerdotai.github.io/basedpl/processes.html) provide JSON messages and interruptible workers. The [APL library](https://github.com/AnswerDotAI/basedpl/tree/main/lib) contains more algorithms, codecs, interpreters and puzzles. See [DEV.md](https://github.com/AnswerDotAI/basedpl/blob/main/DEV.md) for source installation and contributing.
+For other frontends, the [process interfaces](processes.qmd) provide JSON messages and interruptible workers. The [APL library](https://github.com/AnswerDotAI/basedpl/tree/main/lib) contains more algorithms, codecs, interpreters and puzzles. See [DEV.md](https://github.com/AnswerDotAI/basedpl/blob/main/DEV.md) for source installation and contributing.

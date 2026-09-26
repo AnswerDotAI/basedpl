@@ -18,4 +18,4 @@
 10+⌿3 2⍴⍳6         ⍝ 19 22
 ```
 
-Counts, identities and `[K]` follow [`/`](slash.qmd).
+Counts, identities and `⍤[K]` follow [`/`](slash.qmd).

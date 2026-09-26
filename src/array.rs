@@ -2,6 +2,9 @@ use crate::{keyed::Keys, ErrorKind, Number};
 use std::{collections::HashMap, fmt, sync::Arc};
 use unicode_width::UnicodeWidthStr;
 
+/// Text as a double-quoted string literal.
+fn quoted(text: &str) -> String { format!("\"{}\"", text.replace('"', "\"\"")) }
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Number(Number),
@@ -39,7 +42,8 @@ impl Layout {
     pub fn keys(&self, axis: usize) -> Option<&Arc<Keys>> { self.keys.get(axis).and_then(Option::as_ref) }
     pub fn with_keys(mut self, keys: Vec<Option<Arc<Keys>>>) -> Result<Self, ErrorKind> {
         if !keys.is_empty() && keys.len() != self.shape.len() { return Err(ErrorKind::Rank); }
-        if keys.iter().zip(&self.shape).any(|(k, &n)| k.as_ref().is_some_and(|k| k.names().len() != n)) { return Err(ErrorKind::Length); }
+        if keys.iter().zip(&self.shape).any(|(k, &n)| k.as_ref().is_some_and(|k| k.len() != n)) { return Err(ErrorKind::Length); }
+        let keys: Vec<_> = keys.into_iter().map(|k| k.filter(|k| !k.blank())).collect();
         self.keys = if keys.iter().all(Option::is_none) { vec![] } else { keys };
         Ok(self)
     }
@@ -64,10 +68,7 @@ impl Layout {
     }
     pub fn select(&self, axis: usize, positions: impl ExactSizeIterator<Item = Option<usize>>) -> Result<Self, ErrorKind> {
         let mut selected = Self::from(vec![positions.len()]).inherit_names(vec![self.name(axis).cloned()]);
-        if let Some(keys) = self.keys(axis) {
-            let indices = positions.collect::<Option<Vec<_>>>().ok_or(ErrorKind::Domain)?;
-            selected = selected.with_keys(vec![Some(keys.select(indices)?)])?;
-        }
+        if let Some(keys) = self.keys(axis) { selected = selected.with_keys(vec![Some(keys.select(positions)?)])?; }
         Ok(self.replace(axis..axis + 1, &selected))
     }
     pub fn assemble(&self, cells: &[Value], empty_cell: &Value) -> Result<Value, ErrorKind> { Value::assemble_layout(self, cells, empty_cell) }
@@ -498,18 +499,19 @@ impl Value {
         let rank = self.shape().len();
         let (rows, cols) = (self.shape()[rank - 2], self.shape()[rank - 1]);
         let pages: usize = self.shape()[..rank - 2].iter().product();
-        let label = |axis, i: usize| self.keys(axis).map_or_else(|| (i + 1).to_string(), |k| k.names()[i].to_string());
+        let label = |axis, i: usize| self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| (i + 1).to_string(), |k| k.to_string());
         for page in 0..pages {
             if page > 0 { writeln!(f, "\n")?; }
             if rank > 2 {
                 let mut rest = page;
                 let mut coords = Vec::new();
                 for axis in (0..rank - 2).rev() {
-                    coords.push(label(axis, rest % self.shape()[axis]));
+                    let i = rest % self.shape()[axis];
+                    coords.push(self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| (i + 1).to_string(), |k| quoted(k)));
                     rest /= self.shape()[axis];
                 }
                 coords.reverse();
-                writeln!(f, "[{};…]", coords.join(";"))?;
+                writeln!(f, "{}⌷", coords.join(" "))?;
             }
             let mut grid = Vec::new();
             if self.keys(rank - 1).is_some() {
@@ -573,14 +575,11 @@ impl Value {
 
     pub(crate) fn disclose(&self) -> Value { self.elements().next().unwrap_or_else(|| self.prototype().clone()) }
 
-    /// Display text for one keyed value: strings are quoted so they read as values.
-    fn literal(&self) -> String {
-        let string = !self.is_empty()
-            && self.shape().len() == 1
-            && matches!(self.prototype(), Value::Character(_))
-            && self.elements().all(|e| matches!(e, Value::Character(_)));
-        if string { format!("'{}'", self.to_string().replace('\'', "''")) } else { self.to_string() }
-    }
+    /// Display text for a value inside other text. Strings are quoted so that they read as values.
+    pub(crate) fn literal(&self) -> String { self.string_literal().unwrap_or_else(|| self.to_string()) }
+
+    /// A character vector as a double-quoted literal.
+    fn string_literal(&self) -> Option<String> { if let Self::Array(_) = self { crate::keyed::name(self).map(|s| quoted(&s)) } else { None } }
 
     /// Assemble cells by trailing-axis agreement, padding each with its own fill.
     pub(crate) fn assemble(frame: &[usize], cells: &[Self], empty_cell: &Self) -> Result<Self, ErrorKind> {
@@ -655,23 +654,27 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Number(n) => return write!(f, "{n}"),
-            Self::Character(c) => return write!(f, "'{}'", c.to_string().replace('\'', "''")),
+            Self::Character(c) => return write!(f, "'{c}'"),
             Self::Function(fun) => return write!(f, "⟨{}⟩", fun.apl()),
             _ => (),
         }
         if self.has_keys() && self.shape().len() > 1 { return self.fmt_labelled(f); }
-        let entries = self
-            .keys(0)
-            .map(|keys| keys.names().iter().zip(self.elements()).map(|(k, v)| format!("'{}':{}", k.replace('\'', "''"), v.literal())).collect::<Vec<_>>());
+        let entries = self.keys(0).map(|keys| {
+            keys.names()
+                .iter()
+                .zip(self.elements())
+                .map(|(k, v)| k.as_ref().map_or_else(|| v.literal(), |k| format!("{}:{}", quoted(k), v.literal())))
+                .collect::<Vec<_>>()
+        });
         if let Some(entries) = &entries {
             match self.shape().len() { 0 => return f.write_str(&entries[0]), 1 => return write!(f, "({})", entries.join(" ⋄ ")), _ => () }
         }
         if self.is_scalar() {
             let item = self.at(0);
-            return if item.is_scalar() { write!(f, "⊂{item}") } else { write!(f, "⊂({item})") };
+            return if item.is_scalar() { write!(f, "⊂{item}") } else { write!(f, "⊂{}", item.string_literal().unwrap_or_else(|| format!("({item})"))) };
         }
         if entries.is_none() {
-            if self.is_empty() { return f.write_str(if matches!(self.prototype(), Value::Character(_)) { "''" } else { "⍬" }); }
+            if self.is_empty() { return f.write_str(if matches!(self.prototype(), Value::Character(_)) { "\"\"" } else { "⍬" }); }
             if self.elements().all(|e| matches!(e, Value::Character(_))) {
                 let columns = self.shape().last().copied().unwrap_or(1);
                 for (i, item) in self.elements().enumerate() {
@@ -691,7 +694,7 @@ impl fmt::Display for Value {
                     .map(|e| match e {
                         Value::Number(n) => n.to_string(),
                         Value::Character(c) => c.to_string(),
-                        a @ Value::Array(_) => format!("({a})"),
+                        a @ Value::Array(_) => a.string_literal().unwrap_or_else(|| format!("({a})")),
                         Value::Function(f) => format!("⟨{}⟩", f.apl()),
                     })
                     .collect()
@@ -714,7 +717,7 @@ impl fmt::Display for Value {
             match item {
                 Value::Number(n) => write!(f, "{n}")?,
                 Value::Character(c) => write!(f, "'{c}'")?,
-                a @ Value::Array(_) => write!(f, "({a})")?,
+                a @ Value::Array(_) => f.write_str(&a.string_literal().unwrap_or_else(|| format!("({a})")))?,
                 Value::Function(fun) => write!(f, "⟨{}⟩", fun.apl())?,
             }
         }

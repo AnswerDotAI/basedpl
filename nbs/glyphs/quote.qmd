@@ -1,15 +1,31 @@
-# `'` — Character literal
+# `'` `"` — Character and string literals
 
-Single quotes delimit characters. One character is scalar; longer or empty literals are vectors.
+Single quotes hold exactly one character, which is a scalar. Double quotes hold a string, which is a vector of any length.
 
 ```apl
 ⍴'a'               ⍝ 0⍴0ₓ
-⍴,'a'              ⍝ ,1ₓ
-⍴'abc'             ⍝ ,3ₓ
+⍴"a"               ⍝ ,1ₓ
+⍴"abc"             ⍝ ,3ₓ
+⍴""                ⍝ ,0ₓ
 ```
 
-Double an embedded quote.
+The quote character is `'''`. An apostrophe needs no escaping inside a string. Double a double quote inside a string.
 
 ```apl
-≢'can''t'          ⍝ 5ₓ
+•ucs '''           ⍝ 39ₓ
+≢"can't"           ⍝ 5ₓ
+≢"say ""hi"""      ⍝ 8ₓ
 ```
+
+Characters side by side strand into a string. Strings side by side strand into a vector of strings. So `"x" "y"` is two keys, and `'x' 'y'` is the one key `"xy"`.
+
+```apl
+'a' 'b'            ⍝ "ab"
+≢"aa" "bb"         ⍝ 2ₓ
+```
+
+Results show strings in double quotes and characters in single quotes.
+
+## Errors
+
+- `SYNTAX`: single quotes around more or fewer than one character, an unclosed literal

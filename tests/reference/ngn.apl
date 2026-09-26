@@ -5,22 +5,22 @@
 ⍴⍬   ⍝ 1⍴0
 
 ⍝ ngn:3 —
-'abcd'~'bde'   ⍝ 'ac'
+"abcd"~"bde"   ⍝ "ac"
 
 ⍝ ngn:4 —
 (⍳6)~0 2 4   ⍝ 1 3 5 6
 
 ⍝ ngn:5 —
-'ab' 'cd' 'ad'~'a'   ⍝ ('ab' ⋄ 'cd' ⋄ 'ad')
+"ab" "cd" "ad"~'a'   ⍝ ("ab" ⋄ "cd" ⋄ "ad")
 
 ⍝ ngn:6 —
-'ab' 'cd' 'ad'~'cd'   ⍝ ('ab' ⋄ 'cd' ⋄ 'ad')
+"ab" "cd" "ad"~"cd"   ⍝ ("ab" ⋄ "cd" ⋄ "ad")
 
 ⍝ ngn:7 —
-'ab' 'cd' 'ad'~⊂'cd'   ⍝ ('ab' ⋄ 'ad')
+"ab" "cd" "ad"~⊂"cd"   ⍝ ("ab" ⋄ "ad")
 
 ⍝ ngn:8 —
-'ab' 'cd' 'ad'~'a' 'cd'   ⍝ ('ab' ⋄ 'ad')
+"ab" "cd" "ad"~'a' "cd"   ⍝ ("ab" ⋄ "ad")
 
 ⍝ ngn:9 —
 (11+⍳6)~2 3⍴1 2 3 14 5 6   ⍝ 12 13 15 16 17
@@ -67,16 +67,16 @@
 ⍬⊃3   ⍝ 3
 
 ⍝ ngn:23 —
-3⊃'pick'   ⍝ 'c'
+3⊃"pick"   ⍝ 'c'
 
 ⍝ ngn:24 —
-(2 1)⊃2 2⍴'abcd'   ⍝ 'c'
+(2 1)⊃2 2⍴"abcd"   ⍝ 'c'
 
 ⍝ ngn:25 —
-2⊃'foo' 'bar'   ⍝ 'bar'
+2⊃"foo" "bar"   ⍝ "bar"
 
 ⍝ ngn:26 —
-3⊃2⊃'foo' 'bar'   ⍝ 'r'
+3⊃2⊃"foo" "bar"   ⍝ 'r'
 
 ⍝ ngn:27 —
 (2 2⍴0)⊃1 2
@@ -95,12 +95,12 @@
 ⍝ error: RANK ERROR
 
 ⍝ ngn:31 —
-(0 2)⊃2 2⍴'ABCD'
+(0 2)⊃2 2⍴"ABCD"
 ⍝ error: INDEX ERROR
 
 ⍝ ngn:32 —
-a←' this is a test '⋄(a≠' ')⊂a
-(1⍴'t' ⋄ 1⍴'h' ⋄ 1⍴'i' ⋄ 's ' ⋄ 1⍴'i' ⋄ 's ' ⋄ 'a ' ⋄ 1⍴'t' ⋄ 1⍴'e' ⋄ 1⍴'s' ⋄ 't ')
+a←" this is a test "⋄(a≠' ')⊂a
+("t" ⋄ "h" ⋄ "i" ⋄ "s " ⋄ "i" ⋄ "s " ⋄ "a " ⋄ "t" ⋄ "e" ⋄ "s" ⋄ "t ")
 
 ⍝ ngn:33 —
 ↓1 2 3   ⍝ ⊂(1 2 3)
@@ -116,31 +116,31 @@ a←' this is a test '⋄(a≠' ')⊂a
 2 3⍴(1 2 3 4 ⋄ 5 6 7 8 ⋄ 9 10 11 12 ⋄ 13 14 15 16 ⋄ 17 18 19 20 ⋄ 21 22 23 24)
 
 ⍝ ngn:37 —
-2↓'abc'   ⍝ 1⍴'c'
+2↓"abc"   ⍝ "c"
 
 ⍝ ngn:38 —
-¯1↓'abc'   ⍝ 'ab'
+¯1↓"abc"   ⍝ "ab"
 
 ⍝ ngn:39 —
-5↓'abc'   ⍝ ''
+5↓"abc"   ⍝ ""
 
 ⍝ ngn:40 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-0 ¯2↓3 3⍴•a   ⍝ 3 1⍴'ADG'
+0 ¯2↓3 3⍴•a   ⍝ 3 1⍴"ADG"
 
 ⍝ ngn:41 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-¯2 ¯1↓3 3⍴•a   ⍝ 1 2⍴'AB'
+¯2 ¯1↓3 3⍴•a   ⍝ 1 2⍴"AB"
 
 ⍝ ngn:42 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-1↓3 3⍴•a   ⍝ 2 3⍴'DEFGHI'
+1↓3 3⍴•a   ⍝ 2 3⍴"DEFGHI"
 
 ⍝ ngn:43 —
 ⍬↓3 3⍴⍳9   ⍝ 3 3⍴1 2 3 4 5 6 7 8 9
 
 ⍝ ngn:44 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-1 1↓2 3 4⍴•a   ⍝ 1 2 4⍴'QRSTUVWX'
+1 1↓2 3 4⍴•a   ⍝ 1 2 4⍴"QRSTUVWX"
 
 ⍝ ngn:45 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-¯1 ¯1↓2 3 4⍴•a   ⍝ 1 2 4⍴'ABCDEFGH'
+¯1 ¯1↓2 3 4⍴•a   ⍝ 1 2 4⍴"ABCDEFGH"
 
 ⍝ ngn:46 —
 1↓0   ⍝ ⍬
@@ -203,7 +203,7 @@ a←' this is a test '⋄(a≠' ')⊂a
 2≢2   ⍝ 0
 
 ⍝ ngn:66 — Ravel alphabet matrix; use the supported uppercase spelling of the read-only alphabet constant; independent Dyalog expectation
-,2 13⍴•a   ⍝ 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+,2 13⍴•a   ⍝ "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 ⍝ ngn:67 —
 ,1   ⍝ 1⍴1
@@ -255,7 +255,7 @@ a←' this is a test '⋄(a≠' ')⊂a
 9 4 0 ¯4 ¯9*.5   ⍝ 3 2 0 0j2 0j3
 
 ⍝ ngn:82 —
-'hello'}
+"hello"}
 ⍝ error: SYNTAX ERROR
 
 ⍝ ngn:83 —
@@ -426,7 +426,7 @@ a←' this is a test '⋄(a≠' ')⊂a
 +\20 10 ¯5 7   ⍝ 20 30 25 32
 
 ⍝ ngn:138 —
-,\'AB' 'CD' 'EF'   ⍝ ('AB' ⋄ 'ABCD' ⋄ 'ABCDEF')
+,\"AB" "CD" "EF"   ⍝ ("AB" ⋄ "ABCD" ⋄ "ABCDEF")
 
 ⍝ ngn:139 —
 ×\2 3⍴5 2 3 4 7 6   ⍝ 2 3⍴5 10 30 4 28 168
@@ -453,50 +453,50 @@ M←2 3⍴1 2 3 4 5 6⋄+\M   ⍝ 2 3⍴1 3 6 4 9 15
 M←2 3⍴1 2 3 4 5 6⋄+⍀M   ⍝ 2 3⍴1 2 3 5 7 9
 
 ⍝ ngn:147 —
-M←2 3⍴1 2 3 4 5 6⋄+\[1]M   ⍝ 2 3⍴1 2 3 5 7 9
+M←2 3⍴1 2 3 4 5 6⋄+\⍤[1]M   ⍝ 2 3⍴1 2 3 5 7 9
 
 ⍝ ngn:148 —
-,\'abc'   ⍝ 'a' ('ab') ('abc')
+,\"abc"   ⍝ 'a' "ab" "abc"
 
 ⍝ ngn:149 —
-T←'ONE(TWO) BOOK(S)'⋄≠\T∊'()'   ⍝ 0 0 0 1 1 1 1 0 0 0 0 0 0 1 1 0
+T←"ONE(TWO) BOOK(S)"⋄≠\T∊"()"   ⍝ 0 0 0 1 1 1 1 0 0 0 0 0 0 1 1 0
 
 ⍝ ngn:150 —
-T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
+T←"ONE(TWO) BOOK(S)"⋄((T∊"()")⍱≠\T∊"()")/T   ⍝ "ONE BOOK"
 
 ⍝ ngn:151 —
-1 0 1\'ab'   ⍝ 'a b'
+1 0 1\"ab"   ⍝ "a b"
 
 ⍝ ngn:152 —
 0 1 0 1 0\2 3   ⍝ 0 2 0 3 0
 
 ⍝ ngn:153 —
-(2 2⍴0)\'food'
+(2 2⍴0)\"food"
 ⍝ error: RANK ERROR
 
 ⍝ ngn:154 —
-'abc'\'def'
+"abc"\"def"
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:155 —
-1 0 1 1\'ab'
+1 0 1 1\"ab"
 ⍝ error: LENGTH ERROR
 
 ⍝ ngn:156 —
-1 0 1 1\'abcd'
+1 0 1 1\"abcd"
 ⍝ error: LENGTH ERROR
 
 ⍝ ngn:157 —
-1 0 1\2 2⍴'ABCD'   ⍝ 2 3⍴'A BC D'
+1 0 1\2 2⍴"ABCD"   ⍝ 2 3⍴"A BC D"
 
 ⍝ ngn:158 —
-1 0 1⍀2 2⍴'ABCD'   ⍝ 3 2⍴'AB  CD'
+1 0 1⍀2 2⍴"ABCD"   ⍝ 3 2⍴"AB  CD"
 
 ⍝ ngn:159 —
-1 0 1\[1]2 2⍴'ABCD'   ⍝ 3 2⍴'AB  CD'
+1 0 1\⍤[1]2 2⍴"ABCD"   ⍝ 3 2⍴"AB  CD"
 
 ⍝ ngn:160 —
-1 0 1\[2]2 2⍴'ABCD'   ⍝ 2 3⍴'A BC D'
+1 0 1\⍤[2]2 2⍴"ABCD"   ⍝ 2 3⍴"A BC D"
 
 ⍝ ngn:161 —
 π2   ⍝ 6.283185307179586
@@ -505,7 +505,7 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 π2j2   ⍝ 6.283185307179586j6.283185307179586
 
 ⍝ ngn:163 —
-π'ABC'
+π"ABC"
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:164 —
@@ -620,7 +620,7 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 1,⍬   ⍝ 1⍴1
 
 ⍝ ngn:197 —
-'ab','c','def'   ⍝ 'abcdef'
+"ab",'c',"def"   ⍝ "abcdef"
 
 ⍝ ngn:198 —
 (2 3⍴⍳6),2 2⍴⍳4   ⍝ 2 5⍴1 2 3 1 2 4 5 6 3 4
@@ -639,7 +639,7 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 (2 3⍴⍳6),9   ⍝ 2 4⍴1 2 3 9 4 5 6 9
 
 ⍝ ngn:203 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-(2 3 4⍴•a),'*'   ⍝ 2 3 5⍴'ABCD*EFGH*IJKL*MNOP*QRST*UVWX*'
+(2 3 4⍴•a),'*'   ⍝ 2 3 5⍴"ABCD*EFGH*IJKL*MNOP*QRST*UVWX*"
 
 ⍝ ngn:204 —
 12=12   ⍝ 1
@@ -681,7 +681,7 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 =/⍬   ⍝ 1
 
 ⍝ ngn:217 —
-'stoat'='toast'   ⍝ 0 0 0 0 1
+"stoat"="toast"   ⍝ 0 0 0 0 1
 
 ⍝ ngn:218 —
 (2 3⍴1 2 3 4 5 6)=2 3⍴3 3 3 5 5 5   ⍝ 2 3⍴0 0 1 0 1 0
@@ -730,7 +730,7 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 (3 4⍴⍳12)≡⊂3 4⍴⍳12   ⍝ 0
 
 ⍝ ngn:233 —
-('ab' 'c')≡'abc'   ⍝ 0
+("ab" 'c')≡"abc"   ⍝ 0
 
 ⍝ ngn:234 —
 (2 0⍴0)≡(0 2⍴0)   ⍝ 0
@@ -745,10 +745,10 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 ≡2 2⍴⍳4   ⍝ 1
 
 ⍝ ngn:238 —
-≡'abc'1 2 3(23 55)   ⍝ ¯2
+≡"abc"1 2 3(23 55)   ⍝ ¯2
 
 ⍝ ngn:239 —
-≡'abc'(2 4⍴'abc'2 3'k')   ⍝ ¯3
+≡"abc"(2 4⍴"abc"2 3'k')   ⍝ ¯3
 
 ⍝ ngn:240 —
 8(÷∘-)2   ⍝ ¯4
@@ -775,7 +775,7 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 1 2∪2 3   ⍝ 1 2 3
 
 ⍝ ngn:248 —
-'abc'∪'cad'   ⍝ 'abcd'
+"abc"∪"cad"   ⍝ "abcd"
 
 ⍝ ngn:249 —
 1∪1   ⍝ 1⍴1
@@ -810,7 +810,7 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 ⍝ error: RANK ERROR
 
 ⍝ ngn:259 —
-'ab' 'c'(0 1)∪'ab' 'de'   ⍝ ('ab') 'c' (0 1) ('de')
+"ab" 'c'(0 1)∪"ab" "de"   ⍝ "ab" 'c' (0 1) "de"
 
 ⍝ ngn:260 —
 ∪3 17   ⍝ 3 17
@@ -825,7 +825,7 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 ∪3 17 17 17 ¯3 17 0   ⍝ 3 17 ¯3 0
 
 ⍝ ngn:264 —
-'abca'∩'dac'   ⍝ 'aca'
+"abca"∩"dac"   ⍝ "aca"
 
 ⍝ ngn:265 —
 1'2'3∩⍳5   ⍝ 1 3
@@ -951,7 +951,7 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 ⍴¨(⍳4⋄ 0 0 0)   ⍝ (1⍴4 ⋄ 1⍴3)
 
 ⍝ ngn:304 —
-⍴¨'ab' 'cde' 'f'   ⍝ (1⍴2 ⋄ 1⍴3 ⋄ ⍬)
+⍴¨"ab" "cde" 'f'   ⍝ (1⍴2 ⋄ 1⍴3 ⋄ ⍬)
 
 ⍝ ngn:305 —
 ⍴   (2 2⍴⍳4)(⍳10)97.3(3 4⍴'K')   ⍝ 1⍴4
@@ -969,16 +969,16 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 1 2 3,¨4 5 6   ⍝ (1 4 ⋄ 2 5 ⋄ 3 6)
 
 ⍝ ngn:310 —
-2 3↑¨'monday' 'tuesday'   ⍝ ('mo' ⋄ 'tue')
+2 3↑¨"monday" "tuesday"   ⍝ ("mo" ⋄ "tue")
 
 ⍝ ngn:311 —
-2↑¨'monday' 'tuesday'   ⍝ ('mo' ⋄ 'tu')
+2↑¨"monday" "tuesday"   ⍝ ("mo" ⋄ "tu")
 
 ⍝ ngn:312 —
 2 3⍴¨1 2   ⍝ (1 1 ⋄ 2 2 2)
 
 ⍝ ngn:313 —
-4 5⍴¨'the' 'cat'   ⍝ ('thet' ⋄ 'catca')
+4 5⍴¨"the" "cat"   ⍝ ("thet" ⋄ "catca")
 
 ⍝ ngn:314 —
 {1+⍵*2}¨2 3⍴⍳6   ⍝ 2 3⍴2 5 10 17 26 37
@@ -1028,10 +1028,10 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 ∊17   ⍝ 1⍴17
 
 ⍝ ngn:329 —
-⍴∊(1 2 3)'ab'(4 5 6)   ⍝ 1⍴8
+⍴∊(1 2 3)"ab"(4 5 6)   ⍝ 1⍴8
 
 ⍝ ngn:330 —
-∊2 2⍴(1+2 2⍴⍳4)'ab'(1+2 3⍴⍳6)(7 8)
+∊2 2⍴(1+2 2⍴⍳4)"ab"(1+2 3⍴⍳6)(7 8)
 2 3 4 5 'a' 'b' 2 3 4 5 6 7 7 8
 
 ⍝ ngn:331 —
@@ -1102,40 +1102,40 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 ¯3!¯5   ⍝ 0
 
 ⍝ ngn:352 — Reviewed Execute example checked through the Rust reference worker
-⍎'+/2 2⍴1 2 3 4'   ⍝ 3 7
+⍎"+/2 2⍴1 2 3 4"   ⍝ 3 7
 
 ⍝ ngn:353 — Reviewed Execute example checked through the Rust reference worker
-⍴⍎'123 456'   ⍝ 1⍴2
+⍴⍎"123 456"   ⍝ 1⍴2
 
 ⍝ ngn:354 — Reviewed Execute example checked through the Rust reference worker; Subtract one from iota to preserve the zero-origin upstream values inside Execute
-⍎'{⍵*2}¯1+⍳5'   ⍝ 0 1 4 9 16
+⍎"{⍵*2}¯1+⍳5"   ⍝ 0 1 4 9 16
 
 ⍝ ngn:355 — Reviewed Execute example checked through the Rust reference worker
-⍎'let'
+⍎"let"
 ⍝ error: VALUE ERROR
 
 ⍝ ngn:356 — Reviewed Execute example checked through the Rust reference worker
-⍎'1 2 (3'
+⍎"1 2 (3"
 ⍝ error: SYNTAX ERROR
 
 ⍝ ngn:357 —
-'ab'⍷'bababc'   ⍝ 0 1 0 1 0 0
+"ab"⍷"bababc"   ⍝ 0 1 0 1 0 0
 
 ⍝ ngn:358 —
-'ab' 'cde'⍷'ab' 'cde' 'fg'   ⍝ 1 0 0
+"ab" "cde"⍷"ab" "cde" "fg"   ⍝ 1 0 0
 
 ⍝ ngn:359 —
-'cd'⍷'abcd efghi'   ⍝ 0 0 1 0 0 0 0 0 0 0
+"cd"⍷"abcd efghi"   ⍝ 0 0 1 0 0 0 0 0 0 0
 
 ⍝ ngn:360 —
-'day'⍷7 9⍴'sunday   monday   tuesday  wednesdaythursday friday   saturday '
+"day"⍷7 9⍴"sunday   monday   tuesday  wednesdaythursday friday   saturday "
 7 9⍴0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0
 
 ⍝ ngn:361 —
-(2 2⍴'abcd')⍷'abcd'   ⍝ 0 0 0 0
+(2 2⍴"abcd")⍷"abcd"   ⍝ 0 0 0 0
 
 ⍝ ngn:362 —
-(1 2⋄ 3 4)⍷'start'(1 2 3)(1 2)(3 4)   ⍝ 0 0 1 0
+(1 2⋄ 3 4)⍷"start"(1 2 3)(1 2)(3 4)   ⍝ 0 0 1 0
 
 ⍝ ngn:363 —
 (2 2⍴7 8 12 13)⍷1+4 5⍴⍳20
@@ -1222,96 +1222,96 @@ T←'ONE(TWO) BOOK(S)'⋄((T∊'()')⍱≠\T∊'()')/T   ⍝ 'ONE BOOK'
 a←1⋄b←¯22⋄c←85⋄sqrt←{⍵*.5}⋄((-b)(+,-)sqrt(b*2)-4×a×c)÷2×a   ⍝ 17 5
 
 ⍝ ngn:389 —
-⍕123   ⍝ '123'
+⍕123   ⍝ "123"
 
 ⍝ ngn:390 —
-⍕123 456   ⍝ '123 456'
+⍕123 456   ⍝ "123 456"
 
 ⍝ ngn:391 —
-⍕123 'a'   ⍝ '123 a'
+⍕123 'a'   ⍝ "123 a"
 
 ⍝ ngn:392 —
-⍕12 'ab'   ⍝ '12  ab '
+⍕12 "ab"   ⍝ "12  ab "
 
 ⍝ ngn:393 —
-⍕1 2⍴'a'   ⍝ 1 2⍴'aa'
+⍕1 2⍴'a'   ⍝ 1 2⍴"aa"
 
 ⍝ ngn:394 —
-⍕2 2⍴'a'   ⍝ 2 2⍴'aaaa'
+⍕2 2⍴'a'   ⍝ 2 2⍴"aaaa"
 
 ⍝ ngn:395 —
-⍕2 2⍴5   ⍝ 2 3⍴'5 55 5'
+⍕2 2⍴5   ⍝ 2 3⍴"5 55 5"
 
 ⍝ ngn:396 —
-⍕2 2⍴0 0 0 'a'   ⍝ 2 3⍴'0 00 a'
+⍕2 2⍴0 0 0 'a'   ⍝ 2 3⍴"0 00 a"
 
 ⍝ ngn:397 —
-⍕2 2⍴0 0 0 'ab'   ⍝ 2 6⍴'0   0 0  ab '
+⍕2 2⍴0 0 0 "ab"   ⍝ 2 6⍴"0   0 0  ab "
 
 ⍝ ngn:398 —
-⍕2 2⍴0 0 0 123   ⍝ 2 5⍴'0   00 123'
+⍕2 2⍴0 0 0 123   ⍝ 2 5⍴"0   00 123"
 
 ⍝ ngn:399 —
-⍕4 3⍴'---' '---' '---' 1 2 3 4 5 6 100 200 300
-4 15⍴' ---  ---  ---    1    2    3    4    5    6  100  200  300 '
+⍕4 3⍴"---" "---" "---" 1 2 3 4 5 6 100 200 300
+4 15⍴" ---  ---  ---    1    2    3    4    5    6  100  200  300 "
 
 ⍝ ngn:400 —
-⍕1 ⍬ 2 '' 3   ⍝ '1    2    3'
+⍕1 ⍬ 2 "" 3   ⍝ "1    2    3"
 
 ⍝ ngn:401 — Infinity formatting; basedpl scalar format is a character vector, not the ngn matrix
-⍕∞   ⍝ 1⍴'∞'
+⍕∞   ⍝ "∞"
 
 ⍝ ngn:402 — Infinity formatting; basedpl scalar format is a character vector, not the ngn matrix
-⍕¯∞   ⍝ '¯∞'
+⍕¯∞   ⍝ "¯∞"
 
 ⍝ ngn:403 —
-⍕¯1   ⍝ '¯1'
+⍕¯1   ⍝ "¯1"
 
 ⍝ ngn:404 — Dyalog monadic-format result with basedpl lowercase j; original expectation retained
-⍕¯1e¯100j¯2e¯99   ⍝ '¯1E¯100j¯2E¯99'
+⍕¯1e¯100j¯2e¯99   ⍝ "¯1E¯100j¯2E¯99"
 
 ⍝ ngn:405 —
 ⍋13 8 122 4   ⍝ 4 2 1 3
 
 ⍝ ngn:406 —
-a←13 8 122 4⋄a[⍋a]   ⍝ 4 8 13 122
+a←13 8 122 4⋄[⍋a]⌷a   ⍝ 4 8 13 122
 
 ⍝ ngn:407 —
-⍋'ZAMBIA'   ⍝ 2 6 4 5 3 1
+⍋"ZAMBIA"   ⍝ 2 6 4 5 3 1
 
 ⍝ ngn:408 —
-s←'ZAMBIA'⋄s[⍋s]   ⍝ 'AABIMZ'
+s←"ZAMBIA"⋄[⍋s]⌷s   ⍝ "AABIMZ"
 
 ⍝ ngn:409 —
-t←3 3⍴'BOBALFZAK'⋄⍋t   ⍝ 2 1 3
+t←3 3⍴"BOBALFZAK"⋄⍋t   ⍝ 2 1 3
 
 ⍝ ngn:410 —
 t←3 3⍴4 5 6 1 1 3 1 1 2⋄⍋t   ⍝ 3 2 1
 
 ⍝ ngn:411 —
-t←3 3⍴4 5 6 1 1 3 1 1 2⋄t[⍋t;]   ⍝ 3 3⍴1 1 2 1 1 3 4 5 6
+t←3 3⍴4 5 6 1 1 3 1 1 2⋄[⍋t]⌷t   ⍝ 3 3⍴1 1 2 1 1 3 4 5 6
 
 ⍝ ngn:412 —
-a←3 2 3⍴2 3 4 0 1 0 1 1 3 4 5 6 1 1 2 10 11 12⋄a[⍋a;;]
+a←3 2 3⍴2 3 4 0 1 0 1 1 3 4 5 6 1 1 2 10 11 12⋄[⍋a]⌷a
 3 2 3⍴1 1 2 10 11 12 1 1 3 4 5 6 2 3 4 0 1 0
 
 ⍝ ngn:413 —
-a←3 2 5⍴'joe  doe  bob  jonesbob  zwart'⋄a[⍋a;;]
-3 2 5⍴'bob  jonesbob  zwartjoe  doe  '
+a←3 2 5⍴"joe  doe  bob  jonesbob  zwart"⋄[⍋a]⌷a
+3 2 5⍴"bob  jonesbob  zwartjoe  doe  "
 
 ⍝ ngn:414 —
-'ZYXWVUTSRQPONMLKJIHGFEDCBA'⍋'ZAMBIA'   ⍝ 1 3 5 4 2 6
+"ZYXWVUTSRQPONMLKJIHGFEDCBA"⍋"ZAMBIA"   ⍝ 1 3 5 4 2 6
 
 ⍝ ngn:415 — Fixed origin/constants; omit irrelevant PP assignment and constant rebinding; glyph-only formatting where needed
-(⌽•a)⍋3 3⍴'BOBALFZAK'   ⍝ 3 1 2
+(⌽•a)⍋3 3⍴"BOBALFZAK"   ⍝ 3 1 2
 
 ⍝ ngn:416 —
-a←6 4⍴'ABLEaBLEACREABELaBELACES'⋄a[(2 26⍴'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz')⍋a;]
-6 4⍴'ABELaBELABLEaBLEACESACRE'
+a←6 4⍴"ABLEaBLEACREABELaBELACES"⋄[(2 26⍴"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")⍋a]⌷a
+6 4⍴"ABELaBELABLEaBLEACESACRE"
 
 ⍝ ngn:417 —
-a←6 4⍴'ABLEaBLEACREABELaBELACES'⋄a[('AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz')⍋a;]
-6 4⍴'ABELABLEACESACREaBELaBLE'
+a←6 4⍴"ABLEaBLEACREABELaBELACES"⋄["AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz"⍋a]⌷a
+6 4⍴"ABELABLEACESACREaBELaBLE"
 
 ⍝ ngn:418 —
 ⍋0 1 2 3 4 3 6 6 4 9 1 11 12 13 14 15
@@ -1331,19 +1331,19 @@ f←{⍺+2×⍵}⋄f/⍬
 2 5 9 14 20⍳6   ⍝ 6
 
 ⍝ ngn:428 —
-'abcde'⍳'d'   ⍝ 4
+"abcde"⍳'d'   ⍝ 4
 
 ⍝ ngn:429 — Fixed-origin-1 index-of port; ⎕A is implemented
-•a⍳'NGN/'   ⍝ 14 7 14 27
+•a⍳"NGN/"   ⍝ 14 7 14 27
 
 ⍝ ngn:430 —
-'ab' 'cd' 'efg'⍳'cd' 'efh'   ⍝ 2 4
+"ab" "cd" "efg"⍳"cd" "efh"   ⍝ 2 4
 
 ⍝ ngn:431 —
 1 3 2 0 3⍳⍳5   ⍝ 1 3 2 6 6
 
 ⍝ ngn:432 —
-'cat' 'dog' 'mouse'⍳'dog' 'bird'   ⍝ 2 4
+"cat" "dog" "mouse"⍳"dog" "bird"   ⍝ 2 4
 
 ⍝ ngn:433 —
 1⍳1
@@ -1392,22 +1392,22 @@ f←{⍺+2×⍵}⋄f/⍬
 ⍴⍴⊂2 3⍴⍳6   ⍝ 1⍴0
 
 ⍝ ngn:447 —
-⊂[1]2 3⍴⍳6   ⍝ (1 4 ⋄ 2 5 ⋄ 3 6)
+⊂⍤[1]2 3⍴⍳6   ⍝ (1 4 ⋄ 2 5 ⋄ 3 6)
 
 ⍝ ngn:448 —
-⍴⊂[1]2 3⍴⍳6   ⍝ 1⍴3
+⍴⊂⍤[1]2 3⍴⍳6   ⍝ 1⍴3
 
 ⍝ ngn:449 —
-⊂[2]2 3⍴⍳6   ⍝ (1 2 3 ⋄ 4 5 6)
+⊂⍤[2]2 3⍴⍳6   ⍝ (1 2 3 ⋄ 4 5 6)
 
 ⍝ ngn:450 —
-⍴⊂[2]2 3⍴⍳6   ⍝ 1⍴2
+⍴⊂⍤[2]2 3⍴⍳6   ⍝ 1⍴2
 
 ⍝ ngn:451 —
-↑⊂[2 1]2 3⍴⍳6   ⍝ 3 2⍴1 4 2 5 3 6
+↑⊂⍤[2 1]2 3⍴⍳6   ⍝ 3 2⍴1 4 2 5 3 6
 
 ⍝ ngn:452 —
-⍴⊂[2 1]2 3⍴⍳6   ⍝ ⍬
+⍴⊂⍤[2 1]2 3⍴⍳6   ⍝ ⍬
 
 ⍝ ngn:453 —
 ⍴↑⊂⊂1 2 3   ⍝ ⍬
@@ -1557,7 +1557,7 @@ f←{⍺+2×⍵}⋄f/⍬
 (⍴⍣3)2 2⍴⍳4   ⍝ 1⍴1
 
 ⍝ ngn:499 —
-'a'(,⍣3)'b'   ⍝ 'aaab'
+'a'(,⍣3)'b'   ⍝ "aaab"
 
 ⍝ ngn:500 —
 1{⍺+÷⍵}⍣=1   ⍝ 1.618033988749897
@@ -1566,10 +1566,10 @@ f←{⍺+2×⍵}⋄f/⍬
 •ucs'a'   ⍝ 97
 
 ⍝ ngn:508 —
-•ucs'ab'   ⍝ 97 98
+•ucs"ab"   ⍝ 97 98
 
 ⍝ ngn:509 — Offset adjusted for fixed origin 1; retain upstream character expectation
-•ucs 2 2⍴96+⍳4   ⍝ 2 2⍴'abcd'
+•ucs 2 2⍴96+⍳4   ⍝ 2 2⍴"abcd"
 
 ⍝ ngn:510 —
 n←6⋄r←?n⋄(1≤r)∧(r≤n)   ⍝ 1
@@ -1663,7 +1663,7 @@ n←100⋄A←(n÷2)?n⋄∧/(1≤A),A≤n   ⍝ 1
 ⍴'a'   ⍝ ⍬
 
 ⍝ ngn:539 —
-⍴'ab'   ⍝ 1⍴2
+⍴"ab"   ⍝ 1⍴2
 
 ⍝ ngn:540 —
 ⍴2 3 4⍴0   ⍝ 2 3 4
@@ -1672,13 +1672,13 @@ n←100⋄A←(n÷2)?n⋄∧/(1≤A),A≤n   ⍝ 1
 1⌽1 2 3 4 5 6   ⍝ 2 3 4 5 6 1
 
 ⍝ ngn:542 —
-3⌽'abcdefgh'   ⍝ 'defghabc'
+3⌽"abcdefgh"   ⍝ "defghabc"
 
 ⍝ ngn:543 —
 3⌽2 5⍴1 2 3 4 5 6 7 8 9 0   ⍝ 2 5⍴4 5 1 2 3 9 0 6 7 8
 
 ⍝ ngn:544 —
-¯2⌽'abcdefgh'   ⍝ 'ghabcdef'
+¯2⌽"abcdefgh"   ⍝ "ghabcdef"
 
 ⍝ ngn:545 —
 1⌽3 3⍴⍳9   ⍝ 3 3⍴2 3 1 5 6 4 8 9 7
@@ -1699,13 +1699,13 @@ n←100⋄A←(n÷2)?n⋄∧/(1≤A),A≤n   ⍝ 1
 ⌽(1 2⋄ 3 4⋄ 5 6)   ⍝ (5 6 ⋄ 3 4 ⋄ 1 2)
 
 ⍝ ngn:551 —
-⌽'bob won pots'   ⍝ 'stop now bob'
+⌽"bob won pots"   ⍝ "stop now bob"
 
 ⍝ ngn:552 —
 ⌽2 5⍴1 2 3 4 5 6 7 8 9 0   ⍝ 2 5⍴5 4 3 2 1 0 9 8 7 6
 
 ⍝ ngn:553 —
-⌽[1]2 5⍴1 2 3 4 5 6 7 8 9 0   ⍝ 2 5⍴6 7 8 9 0 1 2 3 4 5
+⌽⍤[1]2 5⍴1 2 3 4 5 6 7 8 9 0   ⍝ 2 5⍴6 7 8 9 0 1 2 3 4 5
 
 ⍝ ngn:554 —
 ⊖1 2 3 4 5 6   ⍝ 6 5 4 3 2 1
@@ -1714,13 +1714,13 @@ n←100⋄A←(n÷2)?n⋄∧/(1≤A),A≤n   ⍝ 1
 ⊖(1 2⋄ 3 4⋄ 5 6)   ⍝ (5 6 ⋄ 3 4 ⋄ 1 2)
 
 ⍝ ngn:556 —
-⊖'bob won pots'   ⍝ 'stop now bob'
+⊖"bob won pots"   ⍝ "stop now bob"
 
 ⍝ ngn:557 —
 ⊖2 5⍴1 2 3 4 5 6 7 8 9 0   ⍝ 2 5⍴6 7 8 9 0 1 2 3 4 5
 
 ⍝ ngn:558 —
-⊖[2]2 5⍴1 2 3 4 5 6 7 8 9 0   ⍝ 2 5⍴5 4 3 2 1 0 9 8 7 6
+⊖⍤[2]2 5⍴1 2 3 4 5 6 7 8 9 0   ⍝ 2 5⍴5 4 3 2 1 0 9 8 7 6
 
 ⍝ ngn:559 —
 1⊖3 3⍴⍳9   ⍝ 3 3⍴4 5 6 7 8 9 1 2 3
@@ -1741,10 +1741,10 @@ n←100⋄A←(n÷2)?n⋄∧/(1≤A),A≤n   ⍝ 1
 -/3 0⍴42   ⍝ 0 0 0
 
 ⍝ ngn:565 —
-,/2↕'ab' 'cd' 'ef' 'hi'   ⍝ ('abcd' ⋄ 'cdef' ⋄ 'efhi')
+,/2↕"ab" "cd" "ef" "hi"   ⍝ ("abcd" ⋄ "cdef" ⋄ "efhi")
 
 ⍝ ngn:566 —
-,/3↕'ab' 'cd' 'ef' 'hi'   ⍝ ('abcdef' ⋄ 'cdefhi')
+,/3↕"ab" "cd" "ef" "hi"   ⍝ ("abcdef" ⋄ "cdefhi")
 
 ⍝ ngn:567 —
 +/2↕1+⍳5   ⍝ 5 7 9 11
@@ -1768,13 +1768,13 @@ n←100⋄A←(n÷2)?n⋄∧/(1≤A),A≤n   ⍝ 1
 -/⌽2↕3 4 9 7   ⍝ 1 5 ¯2
 
 ⍝ ngn:574 —
-0 1 0 1/'abcd'   ⍝ 'bd'
+0 1 0 1/"abcd"   ⍝ "bd"
 
 ⍝ ngn:575 —
 m←45 60 33 50 66 19⋄(m≥50)/m   ⍝ 60 50 66
 
 ⍝ ngn:576 —
-1/'ab'   ⍝ 'ab'
+1/"ab"   ⍝ "ab"
 
 ⍝ ngn:577 —
 1 1 1 1 0/12 14 16 18 20   ⍝ 12 14 16 18
@@ -1783,13 +1783,13 @@ m←45 60 33 50 66 19⋄(m≥50)/m   ⍝ 60 50 66
 m←45 60 33 50 66 19⋄(m=50)/⍳≢m   ⍝ 1⍴4
 
 ⍝ ngn:579 —
-0/'ab'   ⍝ ''
+0/"ab"   ⍝ ""
 
 ⍝ ngn:580 —
 0 1 0/1+2 3⍴⍳6   ⍝ 2 1⍴3 6
 
 ⍝ ngn:581 —
-1 0/[1]1+2 3⍴⍳6   ⍝ 1 3⍴2 3 4
+1 0/⍤[1]1+2 3⍴⍳6   ⍝ 1 3⍴2 3 4
 
 ⍝ ngn:582 —
 1 0⌿1+2 3⍴⍳6   ⍝ 1 3⍴2 3 4
@@ -1804,10 +1804,10 @@ m←45 60 33 50 66 19⋄(m=50)/⍳≢m   ⍝ 1⍴4
 1 1 ¯2 1 1/1 2(2 2⍴⍳4)3 4   ⍝ 1 2 0 0 3 4
 
 ⍝ ngn:586 —
-2 3 2/'abc'   ⍝ 'aabbbcc'
+2 3 2/"abc"   ⍝ "aabbbcc"
 
 ⍝ ngn:587 —
-2/'def'   ⍝ 'ddeeff'
+2/"def"   ⍝ "ddeeff"
 
 ⍝ ngn:588 —
 5 0 5/1 2 3   ⍝ 1 1 1 1 1 3 3 3 3 3
@@ -1819,32 +1819,31 @@ m←45 60 33 50 66 19⋄(m=50)/⍳≢m   ⍝ 1⍴4
 2⌿1+2 3⍴⍳6   ⍝ 4 3⍴2 3 4 2 3 4 5 6 7 5 6 7
 
 ⍝ ngn:591 —
-2 ¯1 2/[2]3 1⍴7 8 9   ⍝ 3 5⍴7 7 0 7 7 8 8 0 8 8 9 9 0 9 9
+2 ¯1 2/⍤[2]3 1⍴7 8 9   ⍝ 3 5⍴7 7 0 7 7 8 8 0 8 8 9 9 0 9 9
 
 ⍝ ngn:592 —
-2 ¯1 2/[2]3 1⍴'abc'   ⍝ 3 5⍴'aa aabb bbcc cc'
+2 ¯1 2/⍤[2]3 1⍴"abc"   ⍝ 3 5⍴"aa aabb bbcc cc"
 
 ⍝ ngn:593 —
 2 ¯2 2/7   ⍝ 7 7 0 0 7 7
 
 ⍝ ngn:594 —
-2 3/3 1⍴'abc'   ⍝ 3 5⍴'aaaaabbbbbccccc'
+2 3/3 1⍴"abc"   ⍝ 3 5⍴"aaaaabbbbbccccc"
 
 ⍝ ngn:595 —
 2⌷3 5 8   ⍝ 5
 
 ⍝ ngn:596 —
-(3 5 8)[2]   ⍝ 5
+2⌷3 5 8   ⍝ 5
 
 ⍝ ngn:597 —
-(3 5 8)[⍬]   ⍝ ⍬
+[⍬]⌷3 5 8   ⍝ ⍬
 
 ⍝ ngn:598 —
 (3 3 1⋄ 2 3)⌷3 3⍴⍳9   ⍝ 3 2⍴8 9 8 9 2 3
 
-⍝ ngn:599 —
-¯1⌷3 5 8
-⍝ error: INDEX ERROR
+⍝ ngn:599 — bAsedPL counts negative positions from the end
+¯1⌷3 5 8   ⍝ 8
 
 ⍝ ngn:600 —
 [2 3⍴3 1 4 1 2 3]⌷111 222 333 444   ⍝ 2 3⍴333 111 444 111 222 333
@@ -1865,123 +1864,121 @@ m←45 60 33 50 66 19⋄(m=50)/⍳≢m   ⍝ 1⍴4
 3(2 1)⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34   ⍝ 32 31
 
 ⍝ ngn:606 —
-a←2 2⍴0⋄a[;1]←1⋄a   ⍝ 2 2⍴1 0 1 0
+a←2 2⍴0⋄a.(∞ 1)←1⋄a   ⍝ 2 2⍴1 0 1 0
 
 ⍝ ngn:607 —
 (2 3)1⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34   ⍝ 21 31
 
 ⍝ ngn:608 —
-a←2 3⍴0⋄a[2;1 3]←1⋄a   ⍝ 2 3⍴0 0 0 1 0 1
+a←2 3⍴0⋄a.(2 ⋄ 1 3)←1⋄a   ⍝ 2 3⍴0 0 0 1 0 1
 
 ⍝ ngn:609 —
-(23 54 38)[1]   ⍝ 23
+1⌷23 54 38   ⍝ 23
 
 ⍝ ngn:610 —
-(2 3⍴100 101 102 110 111 112)[2;3]   ⍝ 112
+2 3⌷2 3⍴100 101 102 110 111 112   ⍝ 112
 
 ⍝ ngn:611 —
-(23 54 38)[2]   ⍝ 54
+2⌷23 54 38   ⍝ 54
 
-⍝ ngn:612 —
-(2 3⍴100 101 102 110 111 112)[1;¯1]
-⍝ error: INDEX ERROR
+⍝ ngn:612 — bAsedPL counts negative positions from the end
+1 ¯1⌷2 3⍴100 101 102 110 111 112   ⍝ 102
 
 ⍝ ngn:613 —
-(23 54 38)[3]   ⍝ 38
+3⌷23 54 38   ⍝ 38
 
 ⍝ ngn:614 —
-(2 3⍴100 101 102 110 111 112)[10;1]
+10 1⌷2 3⍴100 101 102 110 111 112
 ⍝ error: INDEX ERROR
 
 ⍝ ngn:615 —
-(23 54 38)[4]
+4⌷23 54 38
 ⍝ error: INDEX ERROR
 
 ⍝ ngn:616 —
-(2 3⍴100 101 102 110 111 112)[2;]   ⍝ 110 111 112
+2⌷2 3⍴100 101 102 110 111 112   ⍝ 110 111 112
 
-⍝ ngn:617 —
-(23 54 38)[¯1]
-⍝ error: INDEX ERROR
+⍝ ngn:617 — bAsedPL counts negative positions from the end
+¯1⌷23 54 38   ⍝ 38
 
 ⍝ ngn:618 —
-(2 3⍴100 101 102 110 111 112)[;2]   ⍝ 101 111
+∞ 2⌷2 3⍴100 101 102 110 111 112   ⍝ 101 111
 
 ⍝ ngn:619 —
-(23 54 38)[1 3]   ⍝ 23 38
+[1 3]⌷23 54 38   ⍝ 23 38
 
 ⍝ ngn:620 —
-' X'[1+(3 3⍴⍳9)∊1 3 6 7 8]   ⍝ 3 3⍴'X X  XXX '
+[1+(3 3⍴⍳9)∊1 3 6 7 8]⌷" X"   ⍝ 3 3⍴"X X  XXX "
 
 ⍝ ngn:621 —
-'hello'[2]   ⍝ 'e'
+2⌷"hello"   ⍝ 'e'
 
 ⍝ ngn:622 —
-'ipodlover'[2 3 6 9 4 8 7 1 5]   ⍝ 'poordevil'
+[2 3 6 9 4 8 7 1 5]⌷"ipodlover"   ⍝ "poordevil"
 
 ⍝ ngn:623 —
-('axlrose'[5 4 1 3 6 7 2])[⍳4]   ⍝ 'oral'
+[⍳4]⌷[5 4 1 3 6 7 2]⌷"axlrose"   ⍝ "oral"
 
 ⍝ ngn:624 —
-(1 2 3)[⍬]   ⍝ ⍬
+[⍬]⌷1 2 3   ⍝ ⍬
 
 ⍝ ngn:625 —
-⍴(1 2 3)[1 2 3 0 5⍴0]   ⍝ 1 2 3 0 5
+⍴[1 2 3 0 5⍴0]⌷1 2 3   ⍝ 1 2 3 0 5
 
 ⍝ ngn:626 —
-(⍳3)[]   ⍝ 1 2 3
+⌷⍳3   ⍝ 1 2 3
 
 ⍝ ngn:627 —
-⍴(3 3⍴⍳9)[⍬;⍬]   ⍝ 0 0
+⍴⍬ ⍬⌷3 3⍴⍳9   ⍝ 0 0
 
 ⍝ ngn:628 —
-a←⍳5⋄a[2 4]←7 8⋄a   ⍝ 1 7 3 8 5
+a←⍳5⋄a.[2 4]←7 8⋄a   ⍝ 1 7 3 8 5
 
 ⍝ ngn:629 —
-a←1 2 3⋄a[2]←4⋄a   ⍝ 1 4 3
+a←1 2 3⋄a.[2]←4⋄a   ⍝ 1 4 3
 
 ⍝ ngn:630 —
-a←⍳5⋄a[2 4]←7⋄a   ⍝ 1 7 3 7 5
+a←⍳5⋄a.[2 4]←7⋄a   ⍝ 1 7 3 7 5
 
 ⍝ ngn:631 —
-a←2 2⍴⍳4⋄a[1;1]←4⋄a   ⍝ 2 2⍴4 2 3 4
+a←2 2⍴⍳4⋄a.(1 1)←4⋄a   ⍝ 2 2⍴4 2 3 4
 
 ⍝ ngn:632 —
-a←⍳5⋄a[2]←7 8⋄a   ⍝ 1 (7 8) 3 4 5
+a←⍳5⋄a.[2]←7 8⋄a   ⍝ 1 (7 8) 3 4 5
 
 ⍝ ngn:633 —
-a←3 4⍴⍳12⋄a[;2 3]←99   ⍝ 99
+a←3 4⍴⍳12⋄a.(∞ ⋄ 2 3)←99   ⍝ 99
 
 ⍝ ngn:634 —
-a←5 5⍴0⋄a[2 4;3 5]←2 2⍴1+⍳4⋄a
+a←5 5⍴0⋄a.(2 4 ⋄ 3 5)←2 2⍴1+⍳4⋄a
 5 5⍴0 0 0 0 0 0 0 2 0 3 0 0 0 0 0 0 0 4 0 5 0 0 0 0 0
 
 ⍝ ngn:635 —
-a←'this is a test'⋄a[1 6]←'TI'   ⍝ 'TI'
+a←"this is a test"⋄a.[1 6]←"TI"   ⍝ "TI"
 
 ⍝ ngn:636 —
-a←0 4 8⋄10+(a[1 3]←7 9)   ⍝ 17 19
+a←0 4 8⋄10+(a.[1 3]←7 9)   ⍝ 17 19
 
 ⍝ ngn:637 —
-a←1 2 3⋄a[⍬]←4⋄a   ⍝ 1 2 3
+a←1 2 3⋄a.[⍬]←4⋄a   ⍝ 1 2 3
 
 ⍝ ngn:638 —
-a←3 3⍴⍳9⋄a[⍬;1 2]←789⋄a   ⍝ 3 3⍴1 2 3 4 5 6 7 8 9
+a←3 3⍴⍳9⋄a.(⍬ ⋄ 1 2)←789⋄a   ⍝ 3 3⍴1 2 3 4 5 6 7 8 9
 
 ⍝ ngn:639 —
-a←1 2 3⋄a[]←4 5 6⋄a   ⍝ 4 5 6
+a←1 2 3⋄(⌷a)←4 5 6⋄a   ⍝ 4 5 6
 
 ⍝ ngn:640 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-2↑•a   ⍝ 'AB'
+2↑•a   ⍝ "AB"
 
 ⍝ ngn:641 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-¯3↑•a   ⍝ 'XYZ'
+¯3↑•a   ⍝ "XYZ"
 
 ⍝ ngn:642 —
-5↑'abc'   ⍝ 'abc  '
+5↑"abc"   ⍝ "abc  "
 
 ⍝ ngn:643 —
-¯5↑'abc'   ⍝ '  abc'
+¯5↑"abc"   ⍝ "  abc"
 
 ⍝ ngn:644 —
 3↑⍳2   ⍝ 1 2 0
@@ -1999,7 +1996,7 @@ a←1 2 3⋄a[]←4 5 6⋄a   ⍝ 4 5 6
 2 ¯2↑1 1⍴1   ⍝ 2 2⍴0 1 0 0
 
 ⍝ ngn:649 —
-3 3↑1 1⍴'a'   ⍝ 3 3⍴'a        '
+3 3↑1 1⍴'a'   ⍝ 3 3⍴"a        "
 
 ⍝ ngn:650 —
 2 3↑1+4 3⍴⍳12   ⍝ 2 3⍴2 3 4 5 6 7
@@ -2041,7 +2038,7 @@ a←1 2 3⋄a[]←4 5 6⋄a   ⍝ 4 5 6
 ↑(1 2⋄ 3 4 5)   ⍝ 1 2
 
 ⍝ ngn:663 —
-↑'ab'   ⍝ 'a'
+↑"ab"   ⍝ 'a'
 
 ⍝ ngn:664 —
 ↑123   ⍝ 123
@@ -2072,7 +2069,7 @@ a←1 2 3⋄a[]←4 5 6⋄a   ⍝ 4 5 6
 ⍝ error: RANK ERROR
 
 ⍝ ngn:672 — Fixed origin/constants; omit irrelevant PP assignment and constant rebinding; glyph-only formatting where needed
-3 1 2⍉2 3 4⍴•a   ⍝ 3 4 2⍴'AMBNCODPEQFRGSHTIUJVKWLX'
+3 1 2⍉2 3 4⍴•a   ⍝ 3 4 2⍴"AMBNCODPEQFRGSHTIUJVKWLX"
 
 ⍝ ngn:673 —
 1 1 3⍉2 3 4⍴⍳24
@@ -2088,13 +2085,13 @@ a←1 2 3⋄a[]←4 5 6⋄a   ⍝ 4 5 6
 1 1 1⍉3 3 3⍴⍳27   ⍝ 1 14 27
 
 ⍝ ngn:677 — Fixed origin/constants; omit irrelevant PP assignment and constant rebinding; glyph-only formatting where needed
-1 2 1⍉3 3 3⍴•a   ⍝ 3 3⍴'ADGKNQUXA'
+1 2 1⍉3 3 3⍴•a   ⍝ 3 3⍴"ADGKNQUXA"
 
 ⍝ ngn:678 —
 ⍉⍬   ⍝ ⍬
 
 ⍝ ngn:679 —
-⍉''   ⍝ ''
+⍉""   ⍝ ""
 
 ⍝ ngn:680 —
 ⍉⍳3   ⍝ 1 2 3
@@ -2103,7 +2100,7 @@ a←1 2 3⋄a[]←4 5 6⋄a   ⍝ 4 5 6
 ⍉2 3⍴⍳6   ⍝ 3 2⍴1 4 2 5 3 6
 
 ⍝ ngn:682 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-⍉2 3 4⍴•a   ⍝ 4 3 2⍴'AMEQIUBNFRJVCOGSKWDPHTLX'
+⍉2 3 4⍴•a   ⍝ 4 3 2⍴"AMEQIUBNFRJVCOGSKWDPHTLX"
 
 ⍝ ngn:685 —
 x⋄x←0
@@ -2139,16 +2136,16 @@ a×a←2 5   ⍝ 4 25
 {⍵<2:1⋄(∇⍵-1)+∇⍵-2}8   ⍝ 34
 
 ⍝ ngn:698 —
-⊂{⍶ ⍶ ⍵}'ab'   ⍝ ⊂(⊂('ab'))
+⊂{⍶ ⍶ ⍵}"ab"   ⍝ ⊂⊂"ab"
 
 ⍝ ngn:699 —
-⊂{⍶ ⍹ ⍵}⌽'ab'   ⍝ ⊂('ba')
+⊂{⍶ ⍹ ⍵}⌽"ab"   ⍝ ⊂"ba"
 
 ⍝ ngn:700 — Dyalog operand names
-⊂{⍶⍶⍵}'ab'   ⍝ ⊂(⊂('ab'))
+⊂{⍶⍶⍵}"ab"   ⍝ ⊂⊂"ab"
 
 ⍝ ngn:701 — Dyalog operand names
-⊂{⍶⍹⍵}⌽'ab'   ⍝ ⊂('ba')
+⊂{⍶⍹⍵}⌽"ab"   ⍝ ⊂"ba"
 
 ⍝ ngn:702 — Dyalog operand names
 +{⍵⍶⍵}1 2   ⍝ 2 4
@@ -2160,25 +2157,25 @@ f←{⍵⍶⍵}⋄+f 1 2   ⍝ 2 4
 tw←{⍶⍶⍵}⋄*tw 2   ⍝ 1618.177991912654
 
 ⍝ ngn:711 —
-⍴''   ⍝ 1⍴0
+⍴""   ⍝ 1⍴0
 
 ⍝ ngn:712 —
 ⍴'x'   ⍝ ⍬
 
 ⍝ ngn:713 —
-⍴'xx'   ⍝ 1⍴2
+⍴"xx"   ⍝ 1⍴2
 
 ⍝ ngn:714 —
-⍴'a''b'   ⍝ 1⍴3
+⍴"a'b"   ⍝ 1⍴3
 
 ⍝ ngn:715 —
-⍴'''a'   ⍝ 1⍴2
+⍴"'a"   ⍝ 1⍴2
 
 ⍝ ngn:716 —
-⍴'a'''   ⍝ 1⍴2
+⍴"a'"   ⍝ 1⍴2
 
 ⍝ ngn:717 —
-⍴''''   ⍝ ⍬
+⍴'''   ⍝ ⍬
 
 ⍝ ngn:718 — Agreed real infinity literal/empty-reduction identity
 ∞   ⍝ ∞
@@ -2193,7 +2190,7 @@ tw←{⍶⍶⍵}⋄*tw 2   ⍝ 1618.177991912654
 ∞ ∞   ⍝ ∞ ∞
 
 ⍝ ngn:724 —
-⍴x[⍋x←6?49]   ⍝ 1⍴6
+⍴[⍋x]⌷x←6?49   ⍝ 1⍴6
 
 ⍝ ngn:725 —
 (a b)←1 2⋄a   ⍝ 1
@@ -2235,28 +2232,28 @@ tw←{⍶⍶⍵}⋄*tw 2   ⍝ 1618.177991912654
 10 10⍴0 0 0 0 0 0 0 0 0 0 0 1 2 3 4 5 6 7 8 9 0 2 4 6 8 10 12 14 16 18 0 3 6 9 12 15 18 21 24 27 0 4 8 12 16 20 24 28 32 36 0 5 10 15 20 25 30 35 40 45 0 6 12 18 24 30 36 42 48 54 0 7 14 21 28 35 42 49 56 63 0 8 16 24 32 40 48 56 64 72 0 9 18 27 36 45 54 63 72 81
 
 ⍝ ngn/examples/2-sierpinski:1 — Sierpinski's triangle; Pure glyph program with explicit-output wrapper removed; Dyalog and Rust agree; Remove shebang/comments and return the final value; Translate character subscripts and Life seed positions to origin one; Insert spaces before negative vector items
-f←{(⍵,(⍴⍵)⍴0)⍪⍵,⍵} ⋄ S←{' #'[1+(f⍣⍵)1 1⍴1]} ⋄ S 5
-32 32⍴'#                               ##                              # #                             ####                            #   #                           ##  ##                          # # # #                         ########                        #       #                       ##      ##                      # #     # #                     ####    ####                    #   #   #   #                   ##  ##  ##  ##                  # # # # # # # #                 ################                #               #               ##              ##              # #             # #             ####            ####            #   #           #   #           ##  ##          ##  ##          # # # #         # # # #         ########        ########        #       #       #       #       ##      ##      ##      ##      # #     # #     # #     # #     ####    ####    ####    ####    #   #   #   #   #   #   #   #   ##  ##  ##  ##  ##  ##  ##  ##  # # # # # # # # # # # # # # # # ################################'
+f←{(⍵,(⍴⍵)⍴0)⍪⍵,⍵} ⋄ S←{[1+(f⍣⍵)1 1⍴1]⌷" #"} ⋄ S 5
+32 32⍴"#                               ##                              # #                             ####                            #   #                           ##  ##                          # # # #                         ########                        #       #                       ##      ##                      # #     # #                     ####    ####                    #   #   #   #                   ##  ##  ##  ##                  # # # # # # # #                 ################                #               #               ##              ##              # #             # #             ####            ####            #   #           #   #           ##  ##          ##  ##          # # # #         # # # #         ########        ########        #       #       #       #       ##      ##      ##      ##      # #     # #     # #     # #     ####    ####    ####    ####    #   #   #   #   #   #   #   #   ##  ##  ##  ##  ##  ##  ##  ##  # # # # # # # # # # # # # # # # ################################"
 
 ⍝ ngn/examples/3-primes:1 —
 (1=+⌿0=a |⌝ a)/a←1↓⍳99
 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97
 
 ⍝ ngn/examples/4-life:1 — Conway's game of life This example was inspired by the impressive demo at https://www.youtube.com/watch?v=a9xAKttWgP4 0 1 1 1 1 0 0 1 0; Pure glyph program with explicit-output wrapper removed; Dyalog and Rust agree; Remove shebang/comments and return the final value; Translate character subscripts and Life seed positions to origin one; Insert spaces before negative vector items
-c←(3 3⍴⍳9)∊2 3 4 5 8 ⋄ c←(3 3⍴⍳9)∊2 4 7 8 9 ⋄ b←¯1⊖¯2⌽5 7↑c ⋄ life←{1⍵∨.∧3 4=⊂+/+⌿1 0 ¯1 ⊖⌝ 1 0 ¯1⌽¨⊂⍵} ⋄ gen←{' #'[1+(life⍣⍵)b]} ⋄ gen¨⍳3
-(5 7⍴'                # #    ##      #   ' ⋄ 5 7⍴'                #      # #    ##   ' ⋄ 5 7⍴'                 #    ##      ##   ')
+c←(3 3⍴⍳9)∊2 3 4 5 8 ⋄ c←(3 3⍴⍳9)∊2 4 7 8 9 ⋄ b←¯1⊖¯2⌽5 7↑c ⋄ life←{1⍵∨.∧3 4=⊂+/+⌿1 0 ¯1 ⊖⌝ 1 0 ¯1⌽¨⊂⍵} ⋄ gen←{[1+(life⍣⍵)b]⌷" #"} ⋄ gen¨⍳3
+(5 7⍴"                # #    ##      #   " ⋄ 5 7⍴"                #      # #    ##   " ⋄ 5 7⍴"                 #    ##      ##   ")
 
 ⍝ ngn/examples/5-rule30:1 — See https://en.wikipedia.org/wiki/Rule_30; Use eight generations
-r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ ' #'[1+⊃⌽{⍵,⍨⊂t[1+2⊥¨(,/∘(3∘↕))0,0,⍨↑⍵]}⍣n⊂z,1,z←n⍴0]
-9 17⍴'        #               ###             ##  #           ## ####         ##  #   #       ## #### ###     ##  #    #  #   ## ####  ###### ##  #   ###     #'
+r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ [1+⊃⌽{⍵,⍨⊂t.[1+⊥⍉3↕0,0,⍨↑⍵]}⍣n⊂z,1,z←n⍴0]⌷" #"
+9 17⍴"        #               ###             ##  #           ## ####         ##  #   #       ## #### ###     ##  #    #  #   ## ####  ###### ##  #   ###     #"
 
 ⍝ ngn/examples/6-queens:1 — Rotate and reflect the accumulator in basedpl's left scan
-queens←{ search←{ (⊂⍬)∊⍵:0⍴⊂⍬ ⋄ 0=⍴⍵:rmdups ⍺ ⋄ (hd tl)←(↑⍵)(1↓⍵) ⋄ next←⍺∘,¨hd ⋄ rems←hd free¨⊂tl ⋄ ,/next ∇¨rems } ⋄ cvex←(⍳⍵)×⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4/⊂⍵} ⋄ refs←{{⍋⍺}\2/⊂⍵} ⋄ best←{(↑⍋⊃⍵)⊃⍵} ⋄ all8←,⊃refs¨rots ⍵ ⋄ (1+⍵≡best all8)⊃⍬(,⊂⍵) } ⋄ fmt←{ chars←'·⍟'[1+(⊃⍵) =⌝ ⍳⍺] ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd\chars } ⋄ squares←(⊂⍳⌈⍵÷2),1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares } ⋄ queens 5
-(5 9⍴'⍟ · · · ·· · ⍟ · ·· · · · ⍟· ⍟ · · ·· · · ⍟ ·' ⋄ 5 9⍴'· ⍟ · · ·· · · · ⍟· · ⍟ · ·⍟ · · · ·· · · ⍟ ·')
+queens←{ search←{ [⍬]∊⍵:0⍴⊂⍬ ⋄ 0=⍴⍵:rmdups ⍺ ⋄ (hd tl)←(↑⍵)(1↓⍵) ⋄ next←⍺∘,¨hd ⋄ rems←hd free¨⊂tl ⋄ ,/next ∇¨rems } ⋄ cvex←(⍳⍵)×⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4/⊂⍵} ⋄ refs←{{⍋⍺}\2/⊂⍵} ⋄ best←{(↑⍋⊃⍵)⊃⍵} ⋄ all8←,⊃refs¨rots ⍵ ⋄ (1+⍵≡best all8)⊃⍬(,⊂⍵) } ⋄ fmt←{ chars←[1+(⊃⍵) =⌝ ⍳⍺]⌷"·⍟" ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd\chars } ⋄ squares←(⊂⍳⌈⍵÷2),1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares } ⋄ queens 5
+(5 9⍴"⍟ · · · ·· · ⍟ · ·· · · · ⍟· ⍟ · · ·· · · ⍟ ·" ⋄ 5 9⍴"· ⍟ · · ·· · · · ⍟· · ⍟ · ·⍟ · · · ·· · · ⍟ ·")
 
 ⍝ ngn/examples/7-mandelbrot:1 — Use a 13 by 13 grid
-' #'[1+9>|{⍺+⍵*2}/9⍴⊂¯3×.7j.5-⍉a +⌝ 0j1×a←(¯1+⍳n+1)÷n←12]
-13 13⍴'                                  #            #          ####       #######   #########       #######        ####           #            #                              '
+[1+9>|{⍺+⍵*2}/9⍴⊂¯3×.7j.5-⍉a +⌝ 0j1×a←(¯1+⍳n+1)÷n←12]⌷" #"
+13 13⍴"                                  #            #          ####       #######   #########       #######        ####           #            #                              "
 
 ⍝ ngn:501 — ngn accepts count/function operands to power in either order (apl.js, voc[⍣]); port to function⍣count; Explicit modified assignment updates the outer counter under basedpl scope rules; Original expected 5 retained and checked in Dyalog 20.0.53963.0
 c←0 ⋄ ({c+←1}⍣5)0 ⋄ c   ⍝ 5
@@ -2298,14 +2295,14 @@ H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ +H÷2   ⍝ 2.5
 H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ 7+H÷2   ⍝ 7.5
 
 ⍝ ngn:504 — Zero-origin offset, match and capture
-p←•r 'b(c+)d' ⋄ (¯1+↑p.position 'abcd'),(p.match 'abcd'),↑p.groups 'abcd'
-1 ('bcd') (1⍴'c')
+p←•r "b(c+)d" ⋄ (¯1+↑p.position "abcd"),(p.match "abcd"),↑p.groups "abcd"
+1 "bcd" "c"
 
 ⍝ ngn:505 — No match
-p←•r 'B(c+)d' ⋄ p.position 'abcd'
+p←•r "B(c+)d" ⋄ p.position "abcd"
 ⍬
 
 ⍝ ngn:506 — Malformed regex
-•r 'a(b'
+•r "a(b"
 ⍝ error: DOMAIN ERROR
 

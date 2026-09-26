@@ -7,8 +7,8 @@ v←⍳10     ⍝ first ten integers
 +/v       ⍝ sum
 ```
 
-Inside character literals it is an ordinary character.
+Inside character and string literals it is an ordinary character.
 
 ```apl
-'a⍝b'             ⍝ 'a⍝b'
+≢"a⍝b"             ⍝ 3ₓ
 ```

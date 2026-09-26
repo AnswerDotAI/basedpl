@@ -11,5 +11,5 @@ Other empty types retain their prototypes.
 
 ```apl
 3↑0⍴0x             ⍝ 0ₓ 0ₓ 0ₓ
-3↑''               ⍝ '   '
+3↑""               ⍝ "   "
 ```

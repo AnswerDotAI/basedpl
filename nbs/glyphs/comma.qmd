@@ -1,20 +1,21 @@
 # `,` — Ravel / Catenate
 
-`,Y` makes a vector of the items. `,[K]Y` ravels consecutive axes; `,[]Y` appends a unit axis.
+`,Y` makes a vector of the items. With [axes](rank.qmd#axes), `,⍤[K]Y` ravels consecutive axes and `,⍤[⍬]Y` appends a unit axis.
 
 ```apl
 ,2 2⍴⍳4            ⍝ 1 2 3 4
 ⍴,7                ⍝ ,1ₓ
+⍴,⍤[2 3]2 3 4⍴⍳24  ⍝ 2ₓ 12ₓ
 ```
 
-`X,Y` joins on the last axis. `X,[K]Y` joins on axis `K`. Other axes agree, with scalar and adjacent-rank extension.
+`X,Y` joins on the last axis. `X,⍤[K]Y` joins on axis `K`. Other axes agree, with scalar and adjacent-rank extension.
 
 ```apl
 1 2,3 4            ⍝ 1 2 3 4
 ```
 
-Fractional axes laminate: insert a new axis.
+A fractional axis laminates. It inserts a new axis.
 
 ```apl
-⍴1 2,[0.5]3 4      ⍝ 2ₓ 2ₓ
+⍴1 2,⍤[0.5]3 4     ⍝ 2ₓ 2ₓ
 ```

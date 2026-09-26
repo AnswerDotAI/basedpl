@@ -34,7 +34,7 @@ def test_terminal_symbol_entry_and_exit():
         enter('1 2\r', '│1 2│\r\n└~──┘\r\n')
         enter(']box off\r', 'OFF -style=max -trains=tree -fns=on\r\n')
         keys = json.loads(files('basedpl').joinpath('keyboard.json').read_text())
-        enter("'" + ''.join('\x1b'+k for k in keys) + "'\r", '\r\n' + ''.join(keys.values()) + '\r\n')
+        enter('"' + ''.join('\x1b'+k for k in keys) + '"\r', '\r\n' + ''.join(keys.values()) + '\r\n')
         enter('r\x1bh1+2\x1bl2\x1bu×\r', '\r\n')  # r←1+2→2∘×
         enter('\x1b]\x1bhr\r', '\r\n6\r\n')  # explicit output via Alt-]
         enter('1 2 3\x1bl+/\r', '\r\n6\r\n')

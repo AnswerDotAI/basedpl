@@ -6,7 +6,7 @@
 1˘2˘3                     ⍝ 1 2 3
 1 2˘3 4                   ⍝ 1 (2 3) 4
 (1+2)˘(3+4)               ⍝ 3 7
-≢1˘+˘'abc'                ⍝ 3ₓ
+≢1˘+˘"abc"                ⍝ 3ₓ
 ```
 
 ## Function arrays
@@ -17,11 +17,11 @@ fs←(+/)˘{⍵×⍵}˘(3∘+) ⋄ square←2⊃fs ⋄ square 4   ⍝ 16
 fs←+˘× ⋄ ≢fs˘÷                                 ⍝ 2ₓ
 ```
 
-Pick `⊃` and First `↑` retrieve stored functions as callables. [Agenda](agenda.qmd) selects and calls a function. Successive Picks traverse nested arrays. Empty coordinates return the argument unchanged. Complete atomic bracket indices also retrieve callables.
+Pick `⊃` and First `↑` retrieve stored functions as callables. [Agenda](agenda.qmd) selects and calls a function. Successive Picks traverse nested arrays. Empty coordinates return the argument unchanged. Complete atomic [Index](squad.qmd) `⌷` positions also retrieve callables.
 
 ```apl
 fs←+˘×˘÷ ⋄ div←↑⌽fs ⋄ 6 div 3                 ⍝ 2
-fs←+˘× ⋄ result←(⊂1 2 3),fs[⊂2] ⋄ f←2⊃result ⋄ 2 f 3 ⍝ 6
+fs←+˘× ⋄ result←[1 2 3],1↓fs ⋄ f←2⊃result ⋄ 2 f 3 ⍝ 6
 x←(+˘×)(-˘÷) ⋄ f←2⊃1⊃x ⋄ 2 f 3               ⍝ 6
 fs←+˘× ⋄ f←{2⊃⍵}fs ⋄ 2 f 3                   ⍝ 6
 ```

@@ -9,10 +9,27 @@
 
 Singleton contraction axes extend. Empty contractions use the reduction identity. `g⌝` is [outer product](outer-product.qmd).
 
-After an array, `.name` reads a [keyed array](../keyed.qmd) value: `T.name` is `'name'⊃T`. It also works as an assignment target. Plain assignment creates missing records along the path.
+After an array, `.name` reads a [keyed array](../keyed.qmd) value: `T.name` is `"name"⊃T`. It also works as an assignment target. Plain assignment creates missing records along the path.
 
 ```apl
-T←('n':1 ⋄ 'addr':('city':'LA'))
-T.addr.city        ⍝ 'LA'
+T←("n":1 ⋄ "addr":("city":"LA"))
+T.addr.city        ⍝ "LA"
 T.n+←1 ⋄ T.n       ⍝ 2
+```
+
+After an array, `.` followed by parentheses or brackets indexes it through [Index](squad.qmd). `x.(I)` is `(I)⌷x`, and `x.[I]` is `[I]⌷x`. Dot indexing binds as tightly as `.name`. It needs no parentheses inside a larger expression. Paths chain from left to right. `⋄` separates index items that are expressions. The array is evaluated before the index.
+
+```apl
+m←3 4⍴⍳12
+m.(2 3)            ⍝ 7
+m.[3 1]            ⍝ [9 10 11 12 ⋄ 1 2 3 4]
+m.(⍳2 ⋄ ¯1)        ⍝ 4 8
+9,m.(1 2),3        ⍝ 9 2 3
+```
+
+A number cannot follow the dot directly, because `.2` is a number. Write `v.(2)` or `v.[2]`. A decimal point needs a digit after it, so a dot after a number is never part of the number. Assignment to a dot path goes through `⌷`, and adds missing keys.
+
+```apl
+v←10 20 30
+v.[3 1]←7 8 ⋄ v    ⍝ 8 20 7
 ```

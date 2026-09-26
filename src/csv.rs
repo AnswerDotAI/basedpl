@@ -236,8 +236,8 @@ fn export(table: &Value, opts: &Options, span: &Context<'_>) -> Result<Value, Er
         writer.write_record(fields).map_err(|e| span.error(ErrorKind::Domain, format!("CSV {e}")))
     };
     if header {
-        let keys = table.keys(0).ok_or_else(|| span.error(ErrorKind::Domain, "CSV headers require keyed columns"))?;
-        write(&mut writer, keys.names().iter().map(|s| s.to_string()).collect())?;
+        let keys = table.keys(0).filter(|k| k.complete()).ok_or_else(|| span.error(ErrorKind::Domain, "CSV headers require a key for every column"))?;
+        write(&mut writer, keys.names().iter().flatten().map(|s| s.to_string()).collect())?;
     }
     for i in 0..rows {
         span.check()?;

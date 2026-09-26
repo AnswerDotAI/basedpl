@@ -30,10 +30,11 @@ def _output(text):
 
 
 def _comment(text):
-    quoted = False
-    for i,c in enumerate(text):
-        if c=="'": quoted = not quoted
-        elif c=='⍝' and not quoted: return text[:i].rstrip(), text[i+1:].lstrip()
+    chars = iter(enumerate(text))
+    for i,c in chars:
+        if c=='"': next((j for j,d in chars if d=='"'), None)
+        elif c=="'": next(chars, None); next(chars, None)
+        elif c=='⍝': return text[:i].rstrip(), text[i+1:].lstrip()
 
 
 def parse(text):
@@ -111,14 +112,13 @@ def _number(value):
     return text.replace('-', '¯').replace('e+', 'e')
 
 
-def _chars(text):
-    if all(c.isprintable() for c in text): return "'"+text.replace("'", "''")+"'"
-    codes = ' '.join(str(ord(c)) for c in text)
-    return '•ucs '+codes
+def _string(text):
+    if all(c.isprintable() for c in text): return '"'+text.replace('"', '""')+'"'
+    return ',•ucs '+' '.join(str(ord(c)) for c in text)
 
 
 def _element(value):
-    if isinstance(value, str): return _chars(value)
+    if isinstance(value, str): return "'"+value+"'" if value.isprintable() else '•ucs '+str(ord(value))
     if not isinstance(value, dict): return _number(value)
     if 'complex' in value: return 'j'.join(_number(x) for x in value['complex'])
     if 'infinity' in value: return '¯∞' if value['infinity']<0 else '∞'
@@ -133,17 +133,19 @@ def literal(array):
     dims = ' '.join(map(str, shape))
     if not data:
         if shape==[0] and prototype==0: return '⍬'
-        if shape==[0] and prototype==' ': return "''"
+        if shape==[0] and prototype==' ': return '""'
         return dims+'⍴'+_element(prototype)
-    if all(isinstance(x, str) for x in data): values = _chars(''.join(data))
+    if all(isinstance(x, str) for x in data):
+        values = _string(''.join(data))
+        if len(shape)==1: return values
     else:
         def item(x):
             if isinstance(x, dict) and 'shape' in x: return '('+literal(x)+')'
             text = _element(x)
             return '('+text+')' if text.startswith('•ucs ') else text
         values = ' '.join(item(x) for x in data)
-    if shape==[len(data)] and len(data)>1: return values
-    if len(data)==1: values = _element(data[0])
+        if shape==[len(data)] and len(data)>1: return values
+        if len(data)==1: values = _element(data[0])
     return dims+'⍴'+values
 
 

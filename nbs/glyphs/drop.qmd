@@ -13,10 +13,10 @@
 ¯2↓1 2 3 4         ⍝ 1 2
 ```
 
-`[K]` selects the split axis or drop axes.
+With [axes](rank.qmd#axes), `⍤[K]` selects the split axis or the drop axes.
 
 ```apl
-↓[1]2 3⍴⍳6         ⍝ (1 4⋄ 2 5⋄ 3 6)
+↓⍤[1]2 3⍴⍳6        ⍝ (1 4⋄ 2 5⋄ 3 6)
 ```
 
 Vector counts apply to successive leading axes. Overdrop gives an empty axis.
