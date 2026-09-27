@@ -23,7 +23,7 @@ f←[+/÷≢] ⋄ f 1 2 3 ⍝ 2
 
 ## Semicolons
 
-With `;`, only `;` separates items. Inside each item, spaces separate units as they do outside brackets. A trailing `;` ends the last item, so `[x;]` is a one-item vector.
+With `;`, only `;` separates items. Inside each item, spaces separate runs as they do outside brackets. A trailing `;` ends the last item, so `[x;]` is a one-item vector.
 
 ```apl
 [1 2;3 4]          ⍝ [[1 2] [3 4]]

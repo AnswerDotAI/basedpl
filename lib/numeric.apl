@@ -107,7 +107,7 @@ lcm ← { ⍺×⍵÷(⍺ gcd ⍵) }  ⍝ Least common multiple.
 k6174 ← {  ⍝ Kaprekar's operation.
   enco←(4/10)⊤  ⍝ 4-digit encode.
   deco←enco⍣¯1  ⍝ and decode.
-  1=⍴∪enco ⍵:"error"  ⍝ all digits the same: no go.
+  1=⍴∪enco[⍵]:"error"  ⍝ all digits the same: no go.
   ⍬{  ⍝ starting with null sequence.
     ⍵=↑⌽⍺:⍺
     v←{⍵[⍒⍵]}enco ⍵  ⍝ digits in descending order.
@@ -444,7 +444,7 @@ xtimes ← { m←0  ⍝ Fast multi-digit product using FFT.
   extend    ← {(2*⌈2⍟¯1+(⍴⍺)+⍴⍵)↑¨[⍺ ⍵]}
   floop     ← {(⊣/⍺)∇⍣(×m) (+⌿⍵){⊃[⍺ ⍵]}⍤(¯1+(≢⍴⍵)-m) ⍺×⍠(⍳m←≢⍴⍺)-⌿⍵}
   FFT       ← {,(cube xroots⍴⍵)floop cube ⍵}
-  iFFT      ← {(⍴⍵)÷⍨,(cube+xroots⍴⍵)floop cube ⍵}
+  iFFT      ← {(⍴⍵)÷⍨, (cube+xroots⍴⍵)floop cube ⍵}
   rconvolve ← {(¯1+(⍴⍺)+⍴⍵)↑iFFT×/FFT¨(⍺ extend ⍵)}
   carry     ← {1↓+⌿1 0⌽0,0 10⊤⍵}
   (+/∧\0=t)↓t←carry⍣≡0,⌊0.5+9○(⍺ rconvolve ⍵)

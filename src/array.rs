@@ -634,11 +634,11 @@ impl Value {
         }
     }
 
-    /// The value as one item inside brackets. A literal run needs brackets of its own. Other text with a space between
-    /// its units, or with a `:` that would read as a key, needs parentheses.
+    /// The value as one item inside brackets. A strand needs brackets of its own. Other text with a space between its
+    /// runs, or with a `:` that would read as a key, needs parentheses.
     pub(crate) fn item(&self) -> String {
         let text = self.literal();
-        if self.is_run() { format!("[{text}]") } else if needs_group(&text) { format!("({text})") } else { text }
+        if self.is_strand() { format!("[{text}]") } else if needs_group(&text) { format!("({text})") } else { text }
     }
 
     /// An array with named axes: its keyed shape reshapes the array without names. Reshape keeps position keys.
@@ -663,8 +663,8 @@ impl Value {
         format!("[{}]:{}", lists.join(";"), self.unkeyed().literal())
     }
 
-    /// Whether the value prints as a run of literals: a vector of two or more numbers, characters or strings.
-    fn is_run(&self) -> bool {
+    /// Whether the value prints as a strand: a vector of two or more numbers, characters or strings.
+    fn is_strand(&self) -> bool {
         matches!(self, Self::Array(_))
             && self.shape().len() == 1
             && self.len() >= 2
@@ -695,7 +695,7 @@ impl Value {
                 keys.names().iter().zip(self.elements()).map(|(k, v)| k.as_ref().map_or_else(|| v.item(), |k| format!("{}:{}", quoted(k), v.item()))).collect()
             }
             None if self.len() == 1 => return format!("[{};]", self.at(0).literal()),
-            None if self.is_run() => return self.elements().map(|e| e.literal()).collect::<Vec<_>>().join(" "),
+            None if self.is_strand() => return self.elements().map(|e| e.literal()).collect::<Vec<_>>().join(" "),
             None => self.elements().map(|e| e.item()).collect(),
         };
         format!("[{}]", items.join(" "))
@@ -792,7 +792,7 @@ impl fmt::Display for Value {
         }
         if self.has_keys() && self.shape().len() > 1 { return self.fmt_labelled(f); }
         if self.shape().len() <= 1 {
-            // A string prints as its characters. Other vectors and scalars print as source.
+            // A string prints as its characters. Other vectors and units print as source.
             if self.shape().len() == 1
                 && !self.has_keys()
                 && self.axis_names().iter().all(Option::is_none)

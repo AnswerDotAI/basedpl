@@ -144,7 +144,7 @@ def literal(array):
             text = _element(x)
             return '('+text+')' if text.startswith('•ucs ') else text
         items = [item(x) for x in data]
-        # Only literals form a run, so a list with any other item needs brackets.
+        # Only literals form a strand, so a list with any other item needs brackets.
         values = ('[{}]' if any(t.startswith('(') for t in items) else '{}').format(' '.join(items))
         if shape==[len(data)] and len(data)>1: return values
         if len(data)==1: values = _element(data[0])

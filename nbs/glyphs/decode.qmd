@@ -6,7 +6,7 @@
 ⊥1 0 1 0          ⍝ 10
 ```
 
-`B⊥Y` evaluates digits `Y` in base(s) `B`. Scalar base expands; the first mixed-base entry is unused.
+`B⊥Y` evaluates digits `Y` in base(s) `B`. A unit base expands; the first mixed-base entry is unused.
 
 ```apl
 2⊥1 0 1 0          ⍝ 10

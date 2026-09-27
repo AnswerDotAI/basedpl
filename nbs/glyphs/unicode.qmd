@@ -14,7 +14,7 @@
 "UTF-8"•ucs 195 169 ⍝ "é"
 ```
 
-Encoding forms take vectors; scalars become singletons.
+Encoding forms take vectors; units become singletons.
 
 ## Errors
 

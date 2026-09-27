@@ -253,7 +253,7 @@ Rgt ← { (⊂2↑⍵),(2↓¯1↓⍵),↑⌽⍵ }  ⍝ tape-head moves right 1 
 enlist ← {  ⍝ List ⍺-leaves of nested array.
   ⍺←0  ⍝ default: list 0-leaves.
   ⍺≥¯1+|≡⍵:,⍵  ⍝ all shallow leaves: finished.
-  1↓,/(⊂⊂↑↑⍵), ⍺ ∇¨ ,⍵
+  1↓,/(⊂⊂↑↑⍵),⍺∇¨,⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_from.htm

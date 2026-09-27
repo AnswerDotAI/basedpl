@@ -22,4 +22,4 @@ With [axes](axis.qmd), `⊂⍠K Y` encloses cells on axes `K`.
 1 0 1 0⊂"abcd"     ⍝ "ab" "cd"
 ```
 
-A mark greater than 1 starts extra empty partitions. Scalar marks extend. `N⊂⍠K Y` partitions along axis `K`, cutting the whole array into blocks. See also [`⊆`](nest.qmd).
+A mark greater than 1 starts extra empty partitions. Unit marks extend. `N⊂⍠K Y` partitions along axis `K`, cutting the whole array into blocks. See also [`⊆`](nest.qmd).

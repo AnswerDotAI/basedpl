@@ -153,14 +153,20 @@ impl Function {
         };
         if token { text } else { format!("({text})") }
     }
-    fn train(mut functions: Vec<Self>, span: &Span) -> Result<Self, Error> {
-        let mut result = functions.pop().unwrap();
-        while functions.len() >= 2 {
-            let middle = functions.pop().unwrap();
-            result = Self::new(FunctionNode::Fork([functions.pop().unwrap(), middle, result]), span)?;
-        }
-        if let Some(first) = functions.pop() {
-            result = Self::new(FunctionNode::Composed(OperatorKind::Rank, [Operand::Function(first), Operand::Function(result)]), span)?;
+    /// A train, built from its last function leftwards. An array directly before what's built binds to it. A function
+    /// makes a fork with the item before it, which is a constant when it is an array. A function left over at the start
+    /// makes an Atop. So `32+1.8×` is `(32⊸+)⍤(1.8⊸×)`, and `2×-⌽` is `2⊸(×-⌽)`.
+    fn train(mut tines: Vec<Tine>, span: &Span) -> Result<Self, Error> {
+        let Some(Tine::Function(mut result)) = tines.pop() else { unreachable!("a train ends in a function") };
+        while let Some(tine) = tines.pop() {
+            result = match tine {
+                Tine::Array(a) => before(a, result, span)?,
+                Tine::Function(f) => match tines.pop() {
+                    None => atop(f, result, span)?,
+                    Some(Tine::Array(a)) => atop(before(a, f, span)?, result, span)?,
+                    Some(Tine::Function(g)) => Self::new(FunctionNode::Fork([g, f, result]), span)?,
+                },
+            };
         }
         Ok(result)
     }
@@ -514,7 +520,7 @@ fn composition(
 }
 
 fn agenda_index(index: &Value, len: usize, span: &Span) -> Result<usize, Error> {
-    if !index.is_scalar() { return Err(span.error(ErrorKind::Rank, "agenda index must be scalar")); }
+    if !index.is_scalar() { return Err(span.error(ErrorKind::Rank, "agenda index must be a unit")); }
     let n = index.as_number().ok_or_else(|| span.error(ErrorKind::Domain, "agenda index must be numeric"))?;
     crate::primitive::position(&n, len, span)
 }
@@ -555,7 +561,7 @@ fn at(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span,
 }
 
 fn stencil(f: &Function, spec: &Value, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
-    if spec.shape().len() > 2 { return Err(span.error(ErrorKind::Rank, "stencil specification must be a scalar, vector or two-row matrix")); }
+    if spec.shape().len() > 2 { return Err(span.error(ErrorKind::Rank, "stencil specification must be a unit, vector or two-row matrix")); }
     let axes = if spec.shape().len() == 2 {
         if spec.shape()[0] != 2 { return Err(span.error(ErrorKind::Length, "stencil matrix needs two rows")); }
         spec.shape()[1]
@@ -999,7 +1005,7 @@ fn rank(
     session: &mut Session,
     output: &mut Vec<Output>,
 ) -> Result<Bound, Error> {
-    if ranks.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "rank operand must be a scalar or vector")); }
+    if ranks.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "rank operand must be a unit or vector")); }
     if !(1..=3).contains(&ranks.len()) { return Err(span.error(ErrorKind::Length, "rank operand needs one to three items")); }
     let ranks = ranks
         .elements()
@@ -1927,7 +1933,7 @@ impl Session {
     }
 
     fn source_text(right: &Value, span: &Span) -> Result<String, Error> {
-        if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "expected a character scalar or vector")); }
+        if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "expected a unit or vector of characters")); }
         if !matches!(right.prototype(), Value::Character(_)) { return Err(span.error(ErrorKind::Domain, "expected characters")); }
         right
             .elements()
@@ -2075,7 +2081,7 @@ impl Session {
         Ok((start, category))
     }
 
-    /// The target of `←` is the unit before it: an array, or arrays applied to each other as in `v[2]`, followed by the
+    /// The target of `←` is the run before it: an array, or arrays applied to each other as in `v[2]`, followed by the
     /// function of a modified assignment such as `x+←1`.
     fn assignment_start(&self, nodes: &[Node]) -> Result<usize, Error> {
         let end = nodes.len();
@@ -2315,9 +2321,9 @@ impl Session {
                 crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?.value()
             }
             NodeKind::Group(nodes) => self.bind(nodes, output)?.value,
-            NodeKind::Unit(nodes) => match self.bind(nodes, output)?.value {
+            NodeKind::Run(nodes) => match self.bind(nodes, output)?.value {
                 Binding::Operator(_) => {
-                    return Err(node.span.error(ErrorKind::Syntax, "a unit must reduce to one value: an array, a function or an operator glyph"))
+                    return Err(node.span.error(ErrorKind::Syntax, "a run must reduce to one value: an array, a function or an operator glyph"))
                 }
                 value => value,
             },
@@ -2483,7 +2489,7 @@ impl Session {
                 if let StatementKind::Guard { index: i, error: error_guard } = statement.kind {
                     let condition = self.array_result(&nodes[..i], output)?;
                     if error_guard {
-                        if condition.shape().len() > 1 { return Err(nodes[i].span.error(ErrorKind::Rank, "error numbers must be a scalar or vector")); }
+                        if condition.shape().len() > 1 { return Err(nodes[i].span.error(ErrorKind::Rank, "error numbers must be a unit or vector")); }
                         let numbers = condition
                             .elements()
                             .map(|e| match e {
@@ -2519,8 +2525,8 @@ impl Session {
     }
 }
 
-// Only the binder has unfinished strands, trains, and bound left arguments.
-// Names and groups contain completed Values, so grouping never flattens a strand.
+// Only the binder has unfinished trains and bound left arguments.
+// Names and groups contain completed values.
 #[derive(Clone, Copy)]
 enum Category {
     NoResult,
@@ -2530,14 +2536,15 @@ enum Category {
     Operator,
     DyadicOperator,
     Left,
+    Train,
 }
 enum Term {
     Binding(Binding),
-    Train(Vec<Function>),
+    /// Functions and arrays side by side before a function with no argument.
+    Train(Vec<Tine>),
     Left(Value, Function),
-    /// A section's missing argument, with the functions already applied to it composed into one.
-    Hole(Function),
 }
+enum Tine { Array(Value), Function(Function) }
 struct Entity {
     term: Term,
     span: Span,
@@ -2548,20 +2555,13 @@ struct Entity {
 
 impl Entity {
     fn category(&self) -> Category {
-        match self.term {
-            Term::Binding(ref value) => Category::of(value),
-            Term::Train(_) => Category::Function,
-            Term::Left(..) => Category::Left,
-            Term::Hole(_) => Category::Value,
-        }
+        match self.term { Term::Binding(ref value) => Category::of(value), Term::Train(_) => Category::Train, Term::Left(..) => Category::Left }
     }
     fn value(self) -> Result<Binding, Error> {
         Ok(match self.term {
             Term::Binding(v) => v,
-            Term::Train(fs) => Binding::Function(self::Function::train(fs, &self.span)?),
-            // A left argument with no right argument is a left section.
+            Term::Train(tines) => Binding::Function(self::Function::train(tines, &self.span)?),
             Term::Left(a, f) => Binding::Function(before(a, f, &self.span)?),
-            Term::Hole(h) => Binding::Function(h),
         })
     }
     fn function(self) -> Result<Function, Error> {
@@ -2569,6 +2569,15 @@ impl Entity {
         Function::from_value(self.value()?, &span)
     }
     fn array(self) -> Result<Value, Error> { match self.value()? { Binding::Value(a) => Ok(a), _ => unreachable!() } }
+    /// The entity's items as parts of a train.
+    fn tines(self) -> Result<Vec<Tine>, Error> {
+        Ok(match self.term {
+            Term::Train(tines) => tines,
+            Term::Left(a, f) => vec![Tine::Array(a), Tine::Function(f)],
+            _ if matches!(self.category(), Category::Value) => vec![Tine::Array(self.array()?)],
+            _ => vec![Tine::Function(self.function()?)],
+        })
+    }
 }
 
 impl Category {
@@ -2589,7 +2598,7 @@ impl Category {
 // precedence without claiming that an operator has its left operand.
 // An array next to an argument selects from it. Application binds more loosely than a left argument,
 // so `v i+1` is `v (i+1)`, and more tightly than a call, so `f v i` is `f (v i)`.
-// A left argument with no right argument makes a section: see `Binder::sections`.
+// Everything else before a function with no argument joins its train, which `Function::train` builds.
 #[derive(Clone, Copy)]
 enum Rule {
     Fold,
@@ -2609,12 +2618,12 @@ impl Rule {
         match (left, right) {
             (NoResult, _) | (_, NoResult) => Self::Missing,
             (Value, Value) => Self::Apply,
-            (Function | Hybrid, Hybrid) => Self::Fold,
-            (Value | Function | Hybrid, Operator) => Self::Derive,
-            (DyadicOperator, Value | Function | Hybrid) => Self::BindRight,
+            (Function | Hybrid | Train, Hybrid) => Self::Fold,
+            (Value | Function | Hybrid | Train, Operator) => Self::Derive,
+            (DyadicOperator, Value | Function | Hybrid | Train) => Self::BindRight,
             (Value, Function | Hybrid) => Self::Attach,
-            (Function | Left, Value) => Self::Call,
-            (Function | Hybrid, Function) => Self::Train,
+            (Function | Train | Left, Value) => Self::Call,
+            (Value | Function | Hybrid | Train | Left, Function | Train | Left) => Self::Train,
             (Operator, Hybrid) => Self::Wait(5),
             (Operator, _) => Self::Wait(0),
             _ => Self::Invalid,
@@ -2670,7 +2679,6 @@ impl Binder {
                     Some(Entity { term, span: node.span.clone(), shy: false, selection: selected.map(|(_, _, kind)| *kind), assignment: false })
                 }
             } else { None };
-            binder.sections()?;
             let n = binder.stack.len();
             if let Some(left) = next {
                 let old = (n >= 2).then(|| Rule::get(binder.stack[n - 1].category(), binder.stack[n - 2].category()));
@@ -2731,25 +2739,6 @@ impl Binder {
         let selection = entity.selection;
         Ok((Step::Done(Bound { value: entity.value()?, shy, assignment }), selection))
     }
-
-    /// A left argument with no right argument makes the expression a section. Its missing argument sits at the right
-    /// end as a placeholder, and the rest composes onto it, so `1+2×-` is `{1+2×-⍵}`. A unit made only of functions
-    /// never gets here, so `+/÷≢` stays a train. With two arguments, the left one goes to the last function, as in
-    /// APL's fork: `X (1-×) Y` is `1-X×Y`.
-    fn sections(&mut self) -> Result<(), Error> {
-        let left_at_end = matches!(self.stack.first(), Some(Entity { term: Term::Left(..), .. }));
-        let left_on_function = self.stack.len() >= 2 && matches!(self.stack[1].term, Term::Left(..)) && matches!(self.stack[0].category(), Category::Function);
-        if !(left_at_end || left_on_function) { return Ok(()); }
-        let end = &mut self.stack[0];
-        let h = match std::mem::replace(&mut end.term, Term::Train(Vec::new())) {
-            Term::Left(a, f) => before(a, f, &end.span)?,
-            Term::Train(fs) => chain(fs, &end.span)?,
-            Term::Binding(Binding::Function(f)) => f,
-            _ => unreachable!(),
-        };
-        end.term = Term::Hole(h);
-        Ok(())
-    }
     fn reduce(&mut self) -> Result<Option<Application>, Error> {
         use Category::*;
         let left = self.stack.pop().unwrap();
@@ -2758,42 +2747,19 @@ impl Binder {
         let right_span = right.span.clone();
         let selection = left.selection.or(right.selection);
         let selectable = match (left.category(), right.category()) {
-            (Function | Left, Value) => true,
+            (Function | Train | Left, Value) => true,
             (Value, Value) => right.selection.is_none(),
             _ => false,
         };
         if selection.is_some() && !selectable { return Err(span.error(ErrorKind::Syntax, "invalid selective-assignment expression")); }
         let rule = Rule::get(left.category(), right.category());
-        // A section's missing argument: functions compose onto it instead of being called.
-        if matches!(right.term, Term::Hole(_)) {
-            let Term::Hole(h) = right.term else { unreachable!() };
-            let f = match rule {
-                Rule::Missing => return Err(span.error(ErrorKind::Value, "expression produced no value")),
-                // `v ⍵` is `(⊂⍵)⌷v`.
-                Rule::Apply => atop(
-                    self::Function::new(
-                        FunctionNode::Composed(
-                            OperatorKind::After,
-                            [Operand::Function(self::Function::primitive(Primitive::Index)), Operand::Value(left.array()?)],
-                        ),
-                        &span,
-                    )?,
-                    self::Function::primitive(Primitive::Enclose),
-                    &span,
-                )?,
-                Rule::Call => match left.term { Term::Left(a, f) => before(a, f, &span)?, _ => left.function()? },
-                _ => return Err(span.error(ErrorKind::Syntax, "a section's argument cannot be an operand")),
-            };
-            self.stack.push(Entity { term: Term::Hole(atop(f, h, &span)?), span, shy: false, selection: None, assignment: false });
-            return Ok(None);
-        }
         let term = match rule {
             Rule::Missing => return Err(span.error(ErrorKind::Value, "expression produced no value")),
             Rule::Apply => {
                 // `v i` is `(⊂i)⌷v`: positions along the leading axis, or coordinates when the positions are vectors.
                 let positions = right.array()?.enclose().map_err(|k| right_span.error(k, "invalid positions"))?;
                 let array = left.array()?;
-                if array.is_scalar() { return Err(span.error(ErrorKind::Index, "a scalar has no leading axis to select from")); }
+                if array.is_scalar() { return Err(span.error(ErrorKind::Index, "a unit has no leading axis to select from")); }
                 return Ok(Some(Application {
                     function: self::Function::primitive(Primitive::Index),
                     left: Some(positions),
@@ -2823,9 +2789,9 @@ impl Binder {
                 return Ok(Some(Application { function: f, left: x, right: y, span, unshy: false, selection }));
             }
             Rule::Train => {
-                let mut fs = match left.term { Term::Train(fs) => fs, _ => vec![left.function()?] };
-                match right.term { Term::Train(rest) => fs.extend(rest), _ => fs.push(right.function()?) }
-                Term::Train(fs)
+                let mut tines = left.tines()?;
+                tines.extend(right.tines()?);
+                Term::Train(tines)
             }
             _ => return Err(span.error(ErrorKind::Syntax, "these grammatical categories do not bind")),
         };
@@ -2842,14 +2808,6 @@ fn atop(f: Function, g: Function, span: &Span) -> Result<Function, Error> {
 
 fn before(a: Value, f: Function, span: &Span) -> Result<Function, Error> {
     Function::new(FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(f)]), span)
-}
-
-/// Functions side by side in a section compose, as they would with an argument: `f g h` is `f⍤g⍤h`.
-fn chain(fs: Vec<Function>, span: &Span) -> Result<Function, Error> {
-    let mut fs = fs.into_iter().rev();
-    let mut h = fs.next().expect("a train has functions");
-    for f in fs { h = atop(f, h, span)?; }
-    Ok(h)
 }
 
 #[cfg(test)]

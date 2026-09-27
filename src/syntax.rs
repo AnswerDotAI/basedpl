@@ -19,7 +19,7 @@ pub(crate) enum NodeKind {
     Hybrid(Hybrid),
     Group(Vec<Node>),
     /// A run of nodes with no spaces between them, evaluated before its neighbours.
-    Unit(Vec<Node>),
+    Run(Vec<Node>),
     /// Items of a bracketed list, or with `block` the major cells of an array. `record`: at least one item is `key:value`, and the items build one keyed vector.
     ArrayLiteral { cells: Vec<Vec<Node>>, block: bool, record: bool },
     Dfn(Arc<Definition>),
@@ -37,7 +37,7 @@ fn definition_kind(nodes: &[Node]) -> DefinitionKind {
         .map(|n| match &n.kind {
             NodeKind::Name(name) if name == "⍹" => DefinitionKind::DyadicOperator,
             NodeKind::Name(name) if name == "⍶" => DefinitionKind::MonadicOperator,
-            NodeKind::Group(nodes) | NodeKind::Unit(nodes) => definition_kind(nodes),
+            NodeKind::Group(nodes) | NodeKind::Run(nodes) => definition_kind(nodes),
             NodeKind::ArrayLiteral { cells, .. } => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
             NodeKind::Pipeline(stages) => stages.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
             _ => DefinitionKind::Function, // Nested definitions classify their own bodies.
@@ -432,40 +432,40 @@ fn items(nodes: Vec<Node>) -> Result<Vec<Vec<Node>>, ParseFailure> {
     runs.into_iter().map(expression).collect()
 }
 
-/// An expression outside brackets, or one item between semicolons: literal runs, then units, then pipelines.
-fn expression(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> { pipelines(units(literal_runs(nodes)?)?) }
+/// An expression outside brackets, or one item between semicolons: strands, then runs, then pipelines.
+fn expression(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> { pipelines(runs(strands(nodes)?)?) }
 
-/// Literals separated only by spaces form one vector literal.
-fn literal_runs(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
-    let (mut out, mut run) = (Vec::with_capacity(nodes.len()), Vec::new());
+/// Literals separated only by spaces form a strand, which becomes one vector literal.
+fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
+    let (mut out, mut strand) = (Vec::with_capacity(nodes.len()), Vec::new());
     for node in nodes {
         if matches!(node.kind, NodeKind::Literal(_)) {
-            run.push(node);
+            strand.push(node);
             continue;
         }
-        literal_run(&mut run, &mut out)?;
+        close_strand(&mut strand, &mut out)?;
         out.push(node);
     }
-    literal_run(&mut run, &mut out)?;
+    close_strand(&mut strand, &mut out)?;
     Ok(out)
 }
 
-fn literal_run(run: &mut Vec<Node>, out: &mut Vec<Node>) -> Result<(), ParseFailure> {
-    if run.len() < 2 {
-        out.append(run);
+fn close_strand(strand: &mut Vec<Node>, out: &mut Vec<Node>) -> Result<(), ParseFailure> {
+    if strand.len() < 2 {
+        out.append(strand);
         return Ok(());
     }
-    let span = cover(run);
-    let items: Vec<_> = run.drain(..).map(|n| if let NodeKind::Literal(v) = n.kind { v } else { unreachable!() }).collect();
+    let span = cover(strand);
+    let items: Vec<_> = strand.drain(..).map(|n| if let NodeKind::Literal(v) = n.kind { v } else { unreachable!() }).collect();
     let value = Value::new(vec![items.len()], items).map_err(|k| ParseFailure::Invalid(span.error(k, "invalid literal list")))?;
     out.push(Node { kind: NodeKind::Literal(value), span });
     Ok(())
 }
 
-/// Spaces separate units, and pipes and guards separate them too. The unit holding an assignment's target takes in the
-/// `←` and its value, which runs to the next guard. The target stays flat within that unit, because assignment chooses
-/// its own target. A unit alone between separators needs no wrapper.
-fn units(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
+/// Spaces separate runs, and pipes and guards separate them too. The run holding an assignment's target takes in the
+/// `←` and its value, which runs to the next guard. The target stays flat within that run, because assignment chooses
+/// its own target. A run alone between separators needs no wrapper.
+fn runs(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
     let (mut result, mut part) = (Vec::with_capacity(nodes.len()), Vec::new());
     for node in nodes {
         if matches!(node.kind, NodeKind::Guard(_)) {
@@ -489,18 +489,18 @@ fn assignments(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
     while let Some(mut segment) = segments.pop() {
         let assign = segment.pop().unwrap();
         let (mut out, mut target) = spaced(segment);
-        // A space before `←` leaves the target in the previous unit.
+        // A space before `←` leaves the target in the previous run.
         if target.is_empty() && out.last().is_some_and(|n| !matches!(n.kind, NodeKind::Pipe)) {
-            target = match out.pop() { Some(Node { kind: NodeKind::Unit(inner), .. }) => inner, Some(n) => vec![n], None => unreachable!() };
+            target = match out.pop() { Some(Node { kind: NodeKind::Run(inner), .. }) => inner, Some(n) => vec![n], None => unreachable!() };
         }
         value.push_front(assign);
         for node in target.into_iter().rev() { value.push_front(node); }
         if out.is_empty() { continue; }
         let mut nodes = Vec::from(value);
-        // Units before the target in its stage stay separate from it.
+        // Runs before the target in its stage stay separate from it.
         if out.iter().rposition(|n| matches!(n.kind, NodeKind::Pipe)).map_or(0, |i| i + 1) < out.len() {
             let span = cover(&nodes);
-            nodes = vec![Node { kind: NodeKind::Unit(nodes), span }];
+            nodes = vec![Node { kind: NodeKind::Run(nodes), span }];
         }
         out.extend(nodes);
         value = pipelines(out)?.into();
@@ -508,8 +508,8 @@ fn assignments(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
     Ok(value.into())
 }
 
-/// Runs of nodes with no space between them become units, and pipes separate them. Returns the finished units and
-/// the last run, which is still open.
+/// Nodes with no space between them form runs, and pipes separate them. Returns the finished runs and the last
+/// run, which is still open.
 fn spaced(nodes: Vec<Node>) -> (Vec<Node>, Vec<Node>) {
     let (mut out, mut run): (Vec<Node>, Vec<Node>) = (Vec::with_capacity(nodes.len()), Vec::new());
     for node in nodes {
@@ -527,16 +527,16 @@ fn spaced(nodes: Vec<Node>) -> (Vec<Node>, Vec<Node>) {
 fn flush(run: &mut Vec<Node>, out: &mut Vec<Node>) {
     if run.len() < 2 { out.append(run) } else {
         let span = cover(run);
-        out.push(Node { kind: NodeKind::Unit(std::mem::take(run)), span });
+        out.push(Node { kind: NodeKind::Run(std::mem::take(run)), span });
     }
 }
 
-/// Close the last run. A unit alone between pipes needs no wrapper.
+/// Close the last run. A run alone between pipes needs no wrapper.
 fn finish((mut out, mut run): (Vec<Node>, Vec<Node>)) -> Vec<Node> {
     flush(&mut run, &mut out);
     let (mut result, mut stage) = (Vec::with_capacity(out.len()), Vec::new());
     let close = |stage: &mut Vec<Node>, result: &mut Vec<Node>| {
-        if let [Node { kind: NodeKind::Unit(inner), .. }] = stage.as_mut_slice() {
+        if let [Node { kind: NodeKind::Run(inner), .. }] = stage.as_mut_slice() {
             result.append(inner);
             stage.clear();
         } else { result.append(stage) }

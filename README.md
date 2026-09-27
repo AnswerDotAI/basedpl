@@ -8,12 +8,12 @@ bAsedPL (“Based-array APL”) is an APL-derived array language, borrowing idea
 For APL users, the main choices are:
 
 - [Based arrays](rules.qmd#arrays-nesting-and-fill), as in BQN: numbers, characters and functions are atoms; enclosure always adds a layer.
-- **Brackets write lists**, and spaces group: `[a b c]` is a vector, and `a+b × c+d` is `(a+b)×(c+d)`. An array next to an argument selects from it: `v 0` is the first item.
-- **Leading-axis broadcasting**, including unit-axis expansion, plus string keys and names on axes.
+- **Brackets write lists**, and spaces group: `[a b c]` is a vector, and `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train, so `+/÷≢ x` is the mean of `x`, and `2×` binds 2. An array next to an argument selects from it: `v 0` is the first item.
+- **Leading-axis broadcasting**, including expansion of length-1 axes, plus string keys and names on axes.
 - **Exact integers and rationals** alongside approximate real and complex numbers.
 - Dfns, trains and operators, with additions such as Under, iteration histories, windows and function arrays.
 
-Positions and axes count from 0, as in BQN and Python. Approximate comparisons use tolerance `1E¯14`. See the [glyph reference](glyphs.qmd) for Dyalog differences and the [language rules](rules.qmd) for the array model.
+Positions and axes count from 0, as in BQN and Python. Approximate comparisons use tolerance `1E¯14`. See the [language principles](principles.qmd) for why bAsedPL works this way, the [glyph reference](glyphs.qmd) for Dyalog differences and the [language rules](rules.qmd) for the array model.
 
 ## Install and try it
 
@@ -35,7 +35,7 @@ Use `bapl -e 'avg←+/÷≢ ⋄ avg 2 4 9'` for a shell command. The [command-li
 
 ## Interactive use
 
-In the **REPL**, type a backtick followed by a glyph name: `` `iota `` becomes `⍳` when you press Tab or type a non-letter. Abbreviations and Alt-key shortcuts are available. `]help +` shows help; `]box on -style=max -trains=tree -fns=on` enables boxed arrays and function trees. See [REPL](repl.qmd) and [Keyboard](keyboard.qmd).
+In the **REPL**, type a backtick followed by a glyph name: `` `iota `` becomes `⍳` when you press Tab or type a non-letter. Abbreviations and Alt-key shortcuts are available. `]help +` shows help; `]box on -style=max -trains=tree -fns=on` enables boxed arrays and function trees. See [REPL](repl.qmd) and the [glyph reference](glyphs.qmd), which lists each glyph’s key.
 
 In **Jupyter**, select the installed **bAsedPL** kernel. Cells share definitions and support completion, Shift-Tab help and interruption. You can also use `%%apl` cells in a Python notebook. See [Using bAsedPL notebooks](notebooks.ipynb).
 

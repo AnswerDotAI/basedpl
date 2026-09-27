@@ -164,7 +164,7 @@ const DISTRIBUTION: &str = r"A distribution constructor, such as `•normal 0 1`
 - `cdf x` gives P(X ≤ x).
 - `quantile p` inverts the CDF.
 
-Parameters are finite real scalars or vectors. Scale, shape, rate and degrees of freedom are positive, except where stated.
+Parameters are finite real units or vectors. Scale, shape, rate and degrees of freedom are positive, except where stated.
 
 | Constructor | Parameters |
 |---|---|

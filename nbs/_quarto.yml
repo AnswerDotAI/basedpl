@@ -5,6 +5,7 @@ format:
   html:
     theme: cosmo
     css: styles.css
+    syntax-definitions: [apl.xml]
     toc: true
   commonmark: default
 

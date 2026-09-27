@@ -76,7 +76,7 @@ Keys must be unique strings on each axis: `DOMAIN`. A key-list length must match
 
 ## Selection and assignment
 
-[Index](glyphs/squad.qmd) `I⌷M` takes one selector for each leading axis. Dot indexing, `M.(I)`, writes the same selection after the array. An array applied to a selector selects on its leading axis, so `M "bob"` is `"bob"⌷M`. A selector is a key or a position. A scalar selector removes its axis. A vector selector retains it. A character vector selects one string key.
+[Index](glyphs/squad.qmd) `I⌷M` takes one selector for each leading axis. Dot indexing, `M.(I)`, writes the same selection after the array. An array applied to a selector selects on its leading axis, so `M "bob"` is `"bob"⌷M`. A selector is a key or a position. A unit selector removes its axis. A vector selector retains it. A character vector selects one string key.
 
 ```apl
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
@@ -137,7 +137,7 @@ For `T←"aa" "bb":1 2`:
 | `[0 0;]⌷T` | `DOMAIN` |
 | `T.(2)←9` | `INDEX` |
 
-Scalar selection stores the whole RHS. A vector selection aligns its retained axis.
+Selecting with a unit stores the whole RHS. A vector selection aligns its retained axis.
 
 ```apl
 T←"aa" "bb":1 2 ⋄ U←"bb" "aa":8 9
@@ -417,7 +417,7 @@ M←["city":["LA" "NY"] "month":["Jan" "Feb" "Mar"]]:2 3⍴⍳6
 +/⍠"city" "month" M          ⍝ 15
 ```
 
-Transpose moves names. Scalar selection removes the selected axis. Repeating positions retains names. Reshape takes its names from its left argument. Axis merging drops names on replaced axes. New axes start unnamed.
+Transpose moves names. Selecting with a unit removes the selected axis. Repeating positions retains names. Reshape takes its names from its left argument. Axis merging drops names on replaced axes. New axes start unnamed.
 
 ```apl
 M←["city":2 "month":3]⍴⍳6
@@ -481,7 +481,7 @@ assert sales.py.equals(df)
 assert columns_only.df.index.tolist() == [0, 1]
 ```
 
-Above rank 2, the last axis supplies columns; earlier axes form a row MultiIndex. Unkeyed axes use labels that count from 0. Scalars and vectors become one-column DataFrames.
+Above rank 2, the last axis supplies columns; earlier axes form a row MultiIndex. Unkeyed axes use labels that count from 0. Units and vectors become one-column DataFrames.
 
 ```python
 counts = np.arange(12).reshape(2, 2, 3)

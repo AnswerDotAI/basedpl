@@ -18,6 +18,6 @@ Results assemble with fill.
 
 ## Errors
 
-- `RANK`: specification not a scalar, vector or two-row matrix, or more axes than `Y`
+- `RANK`: specification not a unit, vector or two-row matrix, or more axes than `Y`
 - `LENGTH`: a matrix without two rows
 - `DOMAIN`: no axes, nonpositive sizes or movements, or a size of at least twice its axis length

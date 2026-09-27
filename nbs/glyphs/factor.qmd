@@ -26,7 +26,7 @@ Inverse: product. `K⨸N` selects exponents or a factor table.
 ¯∞⨸1                 ⍝ 2 0⍴0ₓ
 ```
 
-Scalar cells; results assemble with fill. Large factors follow [Prime's](prime.qmd) probable-prime policy.
+Unit cells; results assemble with fill. Large factors follow [Prime's](prime.qmd) probable-prime policy.
 
 ## Errors
 

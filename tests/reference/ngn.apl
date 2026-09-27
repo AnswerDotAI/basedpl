@@ -2295,7 +2295,7 @@ H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ +H÷2   ⍝ 2.5
 H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ 7+H÷2   ⍝ 7.5
 
 ⍝ ngn:504 — Zero-origin offset, match and capture
-p←•r "b(c+)d" ⋄ (↑p.position "abcd"),(p.match "abcd"),↑p.groups "abcd"
+p←•r "b(c+)d" ⋄ (↑p.position "abcd"),(p.match "abcd"),(↑p.groups "abcd")
 1 "bcd" "c"
 
 ⍝ ngn:505 — No match

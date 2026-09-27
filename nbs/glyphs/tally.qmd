@@ -1,6 +1,6 @@
 # `≢` — Tally / Not match
 
-`≢Y` counts major cells: first-axis length, or 1 for a scalar.
+`≢Y` counts major cells: first-axis length, or 1 for a unit.
 
 ```apl
 ≢2 3⍴0             ⍝ 2ₓ

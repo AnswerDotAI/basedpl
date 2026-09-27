@@ -14,7 +14,7 @@ Negative counts apply the known inverse.
 10(-\⍣¯1)9 7 4     ⍝ 1 2 3
 ```
 
-Inverses propagate through Atop, dyadic After and Before, bound arguments, left sections, Each, rank, dyadic Commute and scans. Primitive inverses include arithmetic bindings, exp/log, circle, axis permutations, encode/decode, enclosure/mix/split and Where. Square roots and logs select branches.
+Inverses propagate through Atop, dyadic After and Before, bound arguments, Each, rank, dyadic Commute and scans. Primitive inverses include arithmetic bindings, exp/log, circle, axis permutations, encode/decode, enclosure/mix/split and Where. Square roots and logs select branches.
 
 `f⍣g Y` iterates until `new g old` is true, returning `new`.
 
@@ -36,7 +36,7 @@ Positive steps run first, then inverse steps from `Y`; repeated counts reuse sta
 
 ## Fixed point
 
-A count of `∞` runs until the state stops changing, the same test as `⍣≡`. `¯∞` runs the inverse until it converges. `∞` can sit in a list of counts. A literal argument needs a group after `∞`, because the literal run would take it in.
+A count of `∞` runs until the state stops changing, the same test as `⍣≡`. `¯∞` runs the inverse until it converges. `∞` can sit in a list of counts. A literal argument needs a group after `∞`, because the strand would take it in.
 
 ```apl
 n←{0.5×⍵+2÷⍵}

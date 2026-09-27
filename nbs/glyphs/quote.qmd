@@ -1,6 +1,6 @@
 # `'` `"` — Character and string literals
 
-Single quotes hold exactly one character, which is a scalar. Double quotes hold a string, which is a vector of any length.
+Single quotes hold exactly one character. Double quotes hold a string, which is a vector of any length.
 
 ```apl
 ⍴'a'               ⍝ 0⍴0ₓ

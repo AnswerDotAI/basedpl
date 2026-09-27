@@ -34,7 +34,7 @@ With axes, `⊃⍠A Y` places the cell axes of Mix among the frame axes. See [Ax
 
 ## Errors
 
-- `RANK`: Mix axes not a scalar or vector
+- `RANK`: Mix axes not a unit or vector
 - `LENGTH`: Mix axis count not the cell rank
 - `INDEX`: position outside the array, or Mix axis outside the result
 - `DOMAIN`: repeated or fractional Mix axes

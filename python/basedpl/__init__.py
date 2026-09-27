@@ -210,7 +210,7 @@ class Array(_Operators):
     def __index__(self): return operator.index(self._scalar())
     def __bool__(self): return bool(self._scalar())
     def __len__(self):
-        if not self.shape: raise TypeError('a scalar has no length')
+        if not self.shape: raise TypeError('a unit has no length')
         return self.shape[0]
     def __iter__(self): return (Array(a) for a in self._inner.cells())
     def __contains__(self, item): raise TypeError('use member for APL membership')

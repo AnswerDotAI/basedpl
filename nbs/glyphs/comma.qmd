@@ -1,6 +1,6 @@
 # `,` — Ravel / Catenate
 
-`,Y` makes a vector of the items. With [axes](axis.qmd), `,⍠K Y` ravels consecutive axes and `,⍠⍬ Y` appends a unit axis.
+`,Y` makes a vector of the items. With [axes](axis.qmd), `,⍠K Y` ravels consecutive axes and `,⍠⍬ Y` appends an axis of length 1.
 
 ```apl
 ,[1 2 ⋄ 3 4]       ⍝ 1 2 3 4
@@ -8,7 +8,7 @@
 ⍴,⍠1 2 (2 3 4⍴⍳24) ⍝ 2ₓ 12ₓ
 ```
 
-`X,Y` joins on the last axis. `X,⍠K Y` joins on axis `K`. Other axes agree, with scalar and adjacent-rank extension.
+`X,Y` joins on the last axis. `X,⍠K Y` joins on axis `K`. Other axes agree, with unit and adjacent-rank extension.
 
 ```apl
 1 2,3 4            ⍝ 1 2 3 4

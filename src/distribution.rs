@@ -100,7 +100,7 @@ fn uniform_checked(min: f64, max: f64) -> Result<Uniform, String> {
 
 fn parameters<const N: usize>(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<[f64; N], Error> {
     if left.is_some() { return Err(span.error(ErrorKind::Syntax, "distribution constructors are monadic")); }
-    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "parameters must be a scalar or vector")); }
+    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "parameters must be a unit or vector")); }
     if right.len() != N { return Err(span.error(ErrorKind::Length, format!("expected {N} distribution parameters"))); }
     let mut result = [0.0; N];
     for (item, n) in right.elements().zip(&mut result) {
@@ -217,7 +217,7 @@ pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right:
         if left.is_some() { return Err(span.error(ErrorKind::Syntax, "density, cdf and quantile are monadic")); }
         return map(d, op, right, span);
     }
-    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "sample shape must be a scalar or vector")); }
+    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "sample shape must be a unit or vector")); }
     let shape = right
         .elements()
         .map(|e| numeric(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "invalid sample dimension")))
@@ -238,7 +238,7 @@ pub(crate) enum Draw { Roll, Deal }
 /// `•rand seed` returns a record of `roll` and `deal`, which draw from one stream seeded by `seed`.
 pub(crate) fn generator(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if left.is_some() { return Err(span.error(ErrorKind::Syntax, "•rand is monadic")); }
-    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "•rand needs a scalar seed")); }
+    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "•rand needs a unit or vector seed")); }
     if !right.is_singleton() { return Err(span.error(ErrorKind::Length, "•rand needs one seed")); }
     let seed = numeric(&right.at(0), span)?.nonnegative_integer().map_err(|k| span.error(k, "•rand needs a nonnegative integer seed"))?;
     let rng: Generator = Arc::new(Mutex::new(Xoshiro256PlusPlus::seed_from_u64(seed as u64)));

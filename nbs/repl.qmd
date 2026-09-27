@@ -12,7 +12,7 @@ Run `bapl`. Expressions display their results; assignments retain names for late
 
 ## Typing glyphs
 
-Hold Alt and press a key from the [keyboard layout](keyboard.qmd): **Alt-h/j/k/l** gives `← ↓ ↑ →`, **Alt--** gives `×`, **Alt-=** gives `÷`. Alt-Shift-a/w gives the operands `⍶ ⍹`. Chords insert literal characters, including inside strings and comments.
+Hold Alt and press the key the [glyph reference](glyphs.qmd#typing-glyphs) lists: **Alt-h/j/k/l** gives `← ↓ ↑ →`, **Alt-Minus** gives `×`, **Alt-=** gives `÷`. Alt-Shift-a/w gives the operands `⍶ ⍹`. Chords insert literal characters, including inside strings and comments.
 
 On macOS, configure your terminal to send left Option as Alt. In Ghostty:
 
@@ -38,13 +38,27 @@ Before `⊸` is Alt-u, or `` `before`` then Tab. After `⟜` is Alt-t, or `` `af
 | `` v`assign `` then Space | `v← ` |
 | `` `scan `` then Tab | `\` |
 
-Each glyph has one name, the one the [glyph reference](glyphs.qmd) uses. The REPL also matches search words such as `reshape` for `⍴`. It always shows the name: `` `resh `` lists `⍴ rho r`.
+Each glyph has one name, the one the [glyph reference](glyphs.qmd) links. The REPL also matches the monad and dyad names the reference lists, such as `reshape` for `⍴`, and a few other search words, such as `left-arrow` for `←`. It always shows the name: `` `resh `` lists `⍴ rho r`.
 
 Names are case-insensitive. Exact matches win, then prefixes, then abbreviations formed from prefixes of successive hyphen-separated parts. At each level a name beats a search word. A name that is a prefix of every other match wins: `` `om `` gives `⍵`, and `` `omu `` gives `⍹`. `grup` matches `grade-up`. `lar` matches the search word `left-arrow`, not `logarithm`, and lists `← assign h`. Type letters only: `` `lar- `` becomes `←-`.
 
 Matches appear as you type. Each listed name ends with its Alt key: `a` for Alt-a, `Sa` for Alt-Shift-a. Tab twice lists ambiguous choices; backtick then Tab twice lists the catalogue. Ambiguous input stays as typed. Enter accepts a unique match and submits the line.
 
 Expansion applies only to typed REPL input, outside strings and comments. Pasted APL, source files, Python and process requests use actual glyphs.
+
+### Other editors
+
+The shared table is `python/basedpl/keyboard.json`, shipped in the Python package and embedded in the Rust REPL. Each key is the US character **after Shift, before Alt**: `a` maps to `⍺`, `A` to `⍶`, `_` to `∞`.
+
+```python
+import json
+from importlib.resources import files
+
+keymap = json.loads(files('basedpl').joinpath('keyboard.json').read_text())
+assert keymap['h'] == '←' and keymap['A'] == '⍶'
+```
+
+Monaco/CodeMirror adapters can import the same JSON. Derive the US character from `KeyboardEvent.code` and Shift: macOS Option may already have changed `event.key`. Track `AltLeft`/`AltRight` keydown/up to select one Option key, and clear modifier state on blur. For a mapped chord, prevent the browser's default action and insert the glyph through the editor's normal edit transaction. Leave composition events to the input method.
 
 ## Editing and multiline input
 

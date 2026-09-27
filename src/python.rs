@@ -142,11 +142,11 @@ impl PyArray {
     fn __repr__(&self) -> String { self.inner.to_string() }
     fn scalar(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         if !self.inner.is_singleton() { return Err(PyValueError::new_err("conversion requires a singleton array")); }
-        if matches!(self.inner.at(0), Value::Array(_)) { return Err(PyTypeError::new_err("conversion requires a simple scalar")); }
+        if matches!(self.inner.at(0), Value::Array(_)) { return Err(PyTypeError::new_err("conversion requires an atom")); }
         array(py, &self.inner.at(0))
     }
     fn cells(&self) -> PyResult<Vec<Self>> {
-        let rank = self.inner.shape().len().checked_sub(1).ok_or_else(|| PyTypeError::new_err("a scalar has no major cells"))?;
+        let rank = self.inner.shape().len().checked_sub(1).ok_or_else(|| PyTypeError::new_err("a unit has no major cells"))?;
         self.inner
             .cells(rank)
             .and_then(|c| c.collect())

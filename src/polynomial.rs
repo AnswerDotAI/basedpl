@@ -48,7 +48,7 @@ impl Polynomial {
         let multiplier = a.at(0).clone();
         let roots = a.at(1).clone();
         if !multiplier.is_scalar() || roots.shape().len() > 1 {
-            return Err(span.error(ErrorKind::Rank, "factored polynomial needs a scalar multiplier and vector roots"));
+            return Err(span.error(ErrorKind::Rank, "factored polynomial needs a unit multiplier and vector roots"));
         }
         Ok(Self::Factored(numbers(&multiplier, span)?[0].clone(), numbers(&roots, span)?))
     }
@@ -192,7 +192,7 @@ fn real(n: &Number, span: &Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 fn coordinates(a: &Value, span: &Context<'_>) -> Result<Vec<Number>, Error> {
-    if a.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "coordinates must be a scalar or vector")); }
+    if a.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "coordinates must be a unit or vector")); }
     numbers(a, span)
 }
 
@@ -232,14 +232,14 @@ pub(crate) fn derivative(source: &Value, order: usize, cotangent: Option<&Value>
         if u.shape() != agreement.layout.shape() { return Err(span.error(ErrorKind::Length, "cotangent must have the output shape")); }
     }
     else if !agreement.layout.shape().is_empty() {
-        return Err(span.error(ErrorKind::Rank, "monadic differentiation requires a scalar output; supply a cotangent for a VJP"));
+        return Err(span.error(ErrorKind::Rank, "monadic differentiation requires a unit output; supply a cotangent for a VJP"));
     }
     let cotangent = cotangent
         .map(|u| crate::keyed::reorder(u, agreement.layout.axis_keys(), false))
         .transpose()
         .map_err(|k| span.error(k, "cotangent keys must match the output"))?;
     if order > 1 && (!right.is_scalar() || !agreement.layout.shape().is_empty()) {
-        return Err(span.error(ErrorKind::Rank, "repeated differentiation currently requires scalar input and output"));
+        return Err(span.error(ErrorKind::Rank, "repeated differentiation currently requires unit input and output"));
     }
     let mut partials = Vec::new();
     for i in 0..cells.len() {

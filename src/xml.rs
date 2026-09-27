@@ -26,7 +26,7 @@ pub(crate) fn element(tag: &str, attrs: Option<&Value>, children: &Value, span: 
 
 fn attribute(value: &Value, span: &Context<'_>) -> Result<String, Error> {
     if let Some(text) = keyed::name(value) { return Ok(text.to_string()); }
-    if value.shape().len() > 1 { return Err(invalid(span, "XML attributes must be text or numeric scalars/vectors")); }
+    if value.shape().len() > 1 { return Err(invalid(span, "XML attributes must be text or numeric units or vectors")); }
     value
         .elements()
         .map(|v| {

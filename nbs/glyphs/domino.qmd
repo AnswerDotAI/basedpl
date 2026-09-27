@@ -1,6 +1,6 @@
 # `⌹` — Matrix inverse / Matrix divide
 
-`⌹Y` gives an inverse, or a full-column-rank least-squares pseudoinverse. Scalars reciprocate.
+`⌹Y` gives an inverse, or a full-column-rank least-squares pseudoinverse. Units reciprocate.
 
 ```apl
 ⌹2x                ⍝ 1r2

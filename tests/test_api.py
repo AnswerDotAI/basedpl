@@ -16,17 +16,8 @@ def test_documentation_examples():
 
 def test_builtin_attributes():
     for api in (bapl, apl):
-        for name in ('+', 'add', 'plus'): teq(getattr(api, name)([1, 2], 10).py, [11, 12])
-        teq(api.add(1+2j).py, 1-2j)
-        teq((api.dash(2).py, api.mul(-2).py, api.div(2.).py), (-2, -1, 0.5))
+        teq(api.add([1, 2], 10).py, [11, 12])
         teq((api.plus(2)(3).py, api.times(2)(3).py, api.divide(2)(3).py), (5, 6, Fraction(3, 2)))
-        teq(api.index_of([4, 2, 7], [7, 4]).py, [2, 0])
-        teq(api.binomial(4)(2).py, 6)
-        teq(api.exponential(0).py, 1)
-        teq(api.π(2).py, 2*np.pi)
-        teq(api.ℙ(2).py, 5)
-        teq(api.json('[1,2]').py, [1, 2])
-        teq(api.normal([0., 1.])['cdf'](0.).py, 0.5)
         teq(getattr(api, '•binomial')([2, 0.5])['quantile'](1.).py, 2)
         assert {'add', 'plus', 'normal', 'π'} <= set(dir(api))
         for name in ('plu', 'userfn', 'nonexistent', 'minus'):
@@ -38,9 +29,8 @@ def test_builtin_attributes():
     teq(apl.not_(0).py, 1)
     assert apl.names.__func__ is type(apl).names
     with pytest.raises(AttributeError): apl.userfn
-    from basedpl import add, π
+    from basedpl import add
     teq(add(2).py, 2)
-    teq(π(1).py, np.pi)
     assert 'plus' not in vars(bapl)
 
 

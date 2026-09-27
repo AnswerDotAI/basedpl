@@ -69,7 +69,7 @@ With an axis, `⌷⍠K` applies the left argument's items to the axes `K`.
 
 ## Errors
 
-- `RANK`: left argument not a scalar or vector
+- `RANK`: left argument not a unit or vector
 - `LENGTH`: more items than axes
-- `INDEX`: position outside its axis, missing key, a scalar applied to an argument
+- `INDEX`: position outside its axis, missing key, a unit applied to an argument
 - `DOMAIN`: non-integral position, `∞` or `¯∞` inside an array of positions

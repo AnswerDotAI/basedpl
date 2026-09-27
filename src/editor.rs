@@ -264,9 +264,7 @@ mod tests {
             for word in [name, monad, dyad].into_iter().chain(words.split_whitespace()).filter(|word| !word.is_empty()) {
                 assert_eq!(matches(&word.replace('-', "")), [(glyph, name)], "{word}");
             }
-            let mut title = name.replace('-', " ");
-            title[..1].make_ascii_uppercase();
-            let link = format!("` [{title}](glyphs/{name}.qmd)");
+            let link = format!("` [{name}](glyphs/{name}.qmd)");
             let cell = index[..index.find(&link).expect(name)].rsplit('`').next().unwrap();
             assert!(cell.starts_with(glyph) || cell.strip_prefix('\\') == Some(glyph), "{glyph} {name}");
         }

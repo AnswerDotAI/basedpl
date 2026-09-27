@@ -204,7 +204,7 @@ fn color(value: &Value, span: &Context<'_>) -> Result<RGBColor, Error> {
     PALETTE.iter().find(|(n, _)| **n == *name).map(|(_, c)| *c).ok_or_else(|| invalid(span, format!("unknown colour: {name}")))
 }
 
-/// Point radii: a scalar is pixels; a vector is data scaled so that area follows value.
+/// Point radii: a unit is pixels; a vector is data scaled so that area follows value.
 fn radii(size: Option<&Value>, n: usize, span: &Context<'_>) -> Result<Vec<f64>, Error> {
     let Some(size) = size else { return Ok(vec![4.; n]) };
     if size.is_atom() { return Ok(vec![real(size, span)?; n]); }

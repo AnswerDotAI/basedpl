@@ -620,7 +620,7 @@ words¨"" "123" "abc12 + 34def" "abc_def"
 
 ⍝ — Dyalog dfns: Baby skips a store with a negative accumulator
 •load "lib/dyalog.apl"
-m←⌽⍉(32⍴2)⊤32↑0 16389 49152 24582 57344 13 0 ⋄ 2⊥⌽6⌷baby m
+m←⌽⍉(32⍴2)⊤32↑0 16389 49152 24582 57344 13 0 ⋄ 2⊥⌽6⌷baby[m]
 ⍝ =>
 0
 

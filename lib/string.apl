@@ -198,7 +198,7 @@ xtabs ← {  ⍝ Expand/compress HT chars.
   ⍺=0:⍵  ⍝ ⍺=0: no-op.
   chs←~⍵∊•ucs 10 13 133
   ⍺>0:⍺{  ⍝ +ive ⍺: expand tabs → blanks.
-    [tabs nabs]←1 0=⊂⍵∊•ucs 9
+    [tabs nabs]←1 0=⊂⍵∊•ucs[9]
     sync←tabs≥chs  ⍝ sync at tab and end of line.
     segs←¯1+{⍵-¯1,¯1↓⍵}⍸sync
     pads←0⌈⍺-⍺|(sync/tabs)/segs  ⍝ padding lengths.

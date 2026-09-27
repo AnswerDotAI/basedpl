@@ -20,6 +20,16 @@ pre.apl ~ .cell-output pre,
   font-size: calc(0.875em + 1pt);
 }
 
+pre.apl span.op,
+.apl code span.op {
+  color: #8B3FA0;
+}
+
+pre.apl span.va,
+.apl code span.va {
+  color: #8f5902;
+}
+
 .cell {
   margin-bottom: 1rem;
 }

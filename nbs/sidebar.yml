@@ -5,13 +5,14 @@ website:
       - python.ipynb
       - notebooks.ipynb
       - repl.qmd
-      - keyboard.qmd
       - cli.qmd
       - section: Language
         contents:
+          - principles.qmd
           - glyphs.qmd
           - rules.qmd
           - keyed.qmd
+          - comparison.qmd
       - section: Working with data
         contents:
           - data.ipynb

@@ -33,6 +33,6 @@ To apply a function along chosen axes, see [Axis](axis.qmd).
 
 ## Errors
 
-- `RANK`: a rank operand that is not a scalar or vector
+- `RANK`: a rank operand that is not a unit or vector
 - `LENGTH`: a rank operand with more than three items
 - `DOMAIN`: non-integral ranks

@@ -4,7 +4,13 @@
 
 ## Reading expressions
 
-Spaces separate units, and each unit is evaluated first. Literals separated by spaces stay together as one vector, so `1 2 3` is one value. Within a unit, functions take everything to their right as the right argument, and arithmetic has no precedence. Parentheses also group. Monads take one argument, dyads two.
+Five rules decide how code reads. [Language principles](principles.qmd) explains why the notation works this way.
+
+1. **Lists.** [Brackets](glyphs/brackets.qmd) write lists: `[a b c]`. A list of literals can leave them out: the *strand* `1 2 3` is one vector.
+2. **Runs.** A *run* is a sequence of tokens with no spaces between them. A bracketed, parenthesised or braced group counts as one token. Each run is evaluated first, and then the runs combine. Parentheses only group.
+3. **Application.** Right to left, with no precedence between functions. A function takes everything to its right as its right argument, and the array directly to its left as its left argument. An operator takes the function to its left and one item to its right. An array next to an argument selects from it: `v[⍋v]` sorts `v`.
+4. **Trains.** A run that ends in a function is a *train*, a function built from the right.
+5. **Assignment.** `←` assigns to the run before it, and its value is everything after it.
 
 ```apl
 2×3+4                ⍝ 14
@@ -13,19 +19,115 @@ Spaces separate units, and each unit is evaluated first. Literals separated by s
 10-3-2               ⍝ 9
 ```
 
-A unit that ends in a function is a left section. It is that unit's expression with its right argument missing.
+### Terms
+
+| Term | Meaning |
+|---|---|
+| literal | a number, character, string, `∞` or `⍬` |
+| strand | literals separated by spaces, read as a list without brackets: `1 2 3` is `[1 2 3]` |
+| list | a vector written in brackets: `[a b c]` |
+| scalar | an array of rank 0, holding one value: `⊂5` is a scalar holding the number 5, and `5` is a number |
+| unit | a rank-0 value: a number, character, function or scalar |
+| run | a sequence of tokens with no spaces between them |
+| argument | an array a function applies to |
+| operand | a function or array an operator applies to |
+| application | an array next to an argument, selecting from it: `v 0` |
+| expression | a run, group or statement that ends in an array |
+| train | a run, group or statement that ends in a function |
+| fork | three parts of a train, `f g h`, giving `(f ⍵) g (h ⍵)` |
+| constant | an array as the left part of a fork: `A g h` gives `A g (h ⍵)` |
+| Atop | two parts of a train, `f g`, giving `f (g ⍵)` |
+| bind | an array directly before a function in a train, fixing its left argument: `2×` is `2⊸×` |
+
+### Strands
+
+Numbers in every form, `∞`, `¯∞`, `⍬`, characters and strings are literals. Literals separated by spaces form a *strand*, which is one vector. Names never join a strand, including system constants such as `•a`. Strands form when the source is read, before runs form. Inside brackets without `;`, every space separates items, so strands don't form there.
+
+```apl
++/1 2 3              ⍝ 6
+≢"ab" "cd"           ⍝ 2
+a←1 ⋄ b←2 ⋄ [a b]    ⍝ 1 2
+```
+
+### Runs
+
+Spaces separate runs outside brackets. A line break inside parentheses or brackets counts as a space. Inside braces, a line break separates statements. Each run must reduce to one value: an array, a function, or a lone operator such as the `/` in `+ / x`. Otherwise it is a `SYNTAX` error.
+
+```apl
+a←1 ⋄ b←2 ⋄ c←3 ⋄ d←4 ⋄ a+b × c+d   ⍝ 21
+x←3 ⋄ x+1 ÷ 2                        ⍝ 2
++ / 1 2 3                            ⍝ 6
+```
+
+### Operators and operands
+
+Operators bind before function application. An operator's left operand is the whole function to its left. Its right operand is the one item to its right. A run ends at a space, so `f⍤1 M` applies `f` at rank 1 to `M`. A strand is one item, so `f⍤1 2 M` has rank `1 2`. A literal argument after a literal operand needs brackets or parentheses: `f⍤1 [2 3]`. A named operator's literal operand needs parentheses, as in `+Depth(0)`, because `Depth0` is one name.
+
+```apl
+m←2 3⍴⍳6 ⋄ +/⍤1 m               ⍝ 3 12
+x←5 ⋄ 1+⍣3 x                     ⍝ 8
+```
+
+Names hold arrays, functions or operators, resolved at execution time. Arrays contain numbers, characters, functions and arrays.
+
+### Application
+
+An array next to an argument selects along its leading axis, with positions as in [Index](glyphs/squad.qmd) `⌷`. Application groups from the right: `v w i` is `v (w i)`. Its argument is everything to its right, so `v[2]×3` is `v` applied to 6.
+
+```apl
+v←10 20 30 40 ⋄ v[2 0]          ⍝ 30 10
+v←10 20 30 40 ⋄ v ¯1            ⍝ 40
+```
+
+### Trains
+
+A train is built from its last function leftwards, as in APL. A function and the item before it make a *fork* with what is built so far: `f g h` gives `(f ⍵) g (h ⍵)`. When that item is an array, it is a *constant*: `A g h` gives `A g (h ⍵)`. An array directly before what is built *binds* to it, so `2×` is `2⊸×`. A function left over at the start makes an *Atop*: `f g` gives `f (g ⍵)`.
 
 ```apl
 f←32+1.8× ⋄ f 100    ⍝ 212
+(+/÷≢) 1 2 3 6       ⍝ 3
+(0.5×⊢+÷) 2          ⍝ 1.25
+2 (1-×) 5            ⍝ ¯9
 ```
 
-Operators bind before function application. Names hold values or operators, resolved at execution time. Arrays contain numbers, characters, functions and arrays.
+With two arguments, a fork `f g h` gives `(⍺ f ⍵) g (⍺ h ⍵)`. A constant fork `A g h` gives `A g (⍺ h ⍵)`, and an Atop `f g` gives `f (⍺ g ⍵)`. A bound function takes one argument, so `3 (2×) 4` is a `SYNTAX` error.
 
-`→` separates pipeline stages, evaluated left-to-right. Each stage uses ordinary APL binding. Each function receives the previous result as its right argument. `←` takes the whole pipeline as its value.
+A space before an argument decides the reading. `+/÷≢ x` is the mean of `x`, and `+/÷≢x` is `+/(÷(≢x))`. Where a train's arrays and functions alternate, as in `32+1.8×`, both readings give the same result. A name followed by a name needs a space, so an expression passes a name's argument in brackets: `1+⌽f[x]`. A run that starts with a function is a call, so `×2` is the sign of 2.
+
+### Assignment
+
+The target of `←` is the run before it: a name, a selection such as `v[2]` or `T.x`, a list of names such as `[a b]`, or one of these followed by a function for [modified assignment](glyphs/assign.qmd). The value is everything to the right of `←`, up to the end of the statement or group. `a←1 b←2` is not two assignments, because the first `←` takes `1 b←2` as its value. Independent assignments need `⋄`.
+
+```apl
+v←10 20 30 ⋄ v[1]←7 ⋄ v          ⍝ 10 7 30
+[a b]←3 4 ⋄ a×b                  ⍝ 12
+```
+
+### Precedence
+
+From tightest to loosest:
+
+1. within a run, right to left
+2. across runs, right to left
+3. the pipe `→`, whose stages run left to right
+4. assignment `←`
+5. the guards `:` and `::`
+6. the statement separator `⋄`
+
+Spaces change grouping only at the first two levels.
+
+`→` separates pipeline stages. Each function receives the previous result as its right argument. `←` takes the whole pipeline as its value.
 
 ```apl
 total←1+2×3 → 2× ⋄ total   ⍝ 14
 ```
+
+### Mixed spacing
+
+- `x ×2` is `x` applied to the sign of 2, so it selects item 1 of `x` with no error.
+- `10 -/1 2 3` applies `10` as an array to the reduction. With a vector on the left, it selects with no error. A seeded reduction needs the same spacing on both sides of the function: `10-/1 2 3`.
+- `x[2]+ 1` is a `SYNTAX` error. The run `x[2]+` is a train in which `2` and `x` both bind to `+`. The sum of item 2 and 1 is `(x[2])+1`.
+- `f⍤ 1 M` is a `SYNTAX` error, because the run `f⍤` does not reduce to one value.
 
 ## Numbers
 
@@ -85,7 +187,7 @@ Fill follows the first item's prototype: zero, space, or recursively filled nest
 
 ## Agreement and pervasion
 
-Scalar functions align leading axes. Missing trailing dimensions count as 1. Equal dimensions agree; unit dimensions expand, including to zero. Unit axes remain. Other mismatches: `LENGTH`.
+Scalar functions align leading axes. Missing trailing dimensions count as 1. Equal dimensions agree. A dimension of length 1 expands, including to zero. Axes of length 1 remain. Other mismatches: `LENGTH`.
 
 ```apl
 [1 2 3 ⋄ 4 5 6]+10 20 ⍝ [11 12 13 ⋄ 24 25 26]

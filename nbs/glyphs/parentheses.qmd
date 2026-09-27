@@ -8,7 +8,7 @@ x←2 4 9
 [(+/x) ≢x]         ⍝ 15 3
 ```
 
-A line break inside parentheses counts as a space. So an expression can continue across lines. Outside brackets, spaces separate units, and each unit is evaluated first. So this means `(1+2)×(3+4)`:
+A line break inside parentheses counts as a space. So an expression can continue across lines. Outside brackets, spaces separate runs, and each run is evaluated first. So this means `(1+2)×(3+4)`:
 
 ```apl
 total←(1+2

@@ -183,7 +183,7 @@ fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Err
     let rows = spec.shape().len();
     let count = if rows == 2 { spec.shape()[1] } else { spec.len() };
     if rows > 2 || count > right.shape().len() {
-        return Err(span.error(ErrorKind::Rank, "window sizes must be a scalar, vector or two-row matrix within the argument rank"));
+        return Err(span.error(ErrorKind::Rank, "window sizes must be a unit, vector or two-row matrix within the argument rank"));
     }
     if rows == 2 && spec.shape()[0] != 2 { return Err(span.error(ErrorKind::Length, "window matrix needs two rows")); }
     if count == 0 { return Ok(right.clone()); }
@@ -265,7 +265,7 @@ pub(crate) fn single_axis(axis: &Value, rank: usize, span: &Span) -> Result<usiz
 }
 
 pub(crate) fn axes(axis: &Value, rank: usize, span: &Context<'_>) -> Result<Vec<usize>, Error> {
-    if axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be scalar or vector")); }
+    if axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be a unit or vector")); }
     let mut result = Vec::new();
     for e in axis.elements() {
         let n = numeric(&e, span)?.integer().map_err(|k| span.error(k, "axis must be an integer"))?;
@@ -494,7 +494,7 @@ impl Primitive {
         };
         let resolved = resolve_axes(spec, target, span)?;
         let spec = &resolved;
-        if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be scalar or vector")); }
+        if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be a unit or vector")); }
         if let Some(left) = left {
             if matches!(self, Self::Arithmetic(_) | Self::Math(_) | Self::Compare(_)) && !matches!(self, Self::Math(Math::Not)) {
                 return scalar_axes(self, left, right, spec, span);
@@ -821,7 +821,7 @@ fn depth(right: &Value) -> isize {
 }
 
 fn without(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if left.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "without needs a scalar or vector left argument")); }
+    if left.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "without needs a unit or vector left argument")); }
     let found = members(left, right, span)?;
     let keep: Vec<_> = (0..left.len()).filter(|&i| !found[i]).collect();
     let data = keep.iter().map(|&i| left.at(i)).collect();
@@ -862,12 +862,12 @@ fn enlist(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
 fn unique(right: &Value, span: &Context<'_>) -> Result<Value, Error> { replicate(&unique_mask(right, span)?, right, true, None, false, span) }
 
 fn union(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if left.shape().len() > 1 || right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "union needs scalars or vectors")); }
+    if left.shape().len() > 1 || right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "union needs units or vectors")); }
     catenate(left, &without(right, left, span)?, None, false, span)
 }
 
 fn intersection(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if left.shape().len() > 1 || right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "intersection needs scalars or vectors")); }
+    if left.shape().len() > 1 || right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "intersection needs units or vectors")); }
     replicate(&membership(left, right, span)?, left, true, None, false, span)
 }
 
@@ -959,7 +959,7 @@ fn coordinates(lengths: &[isize], mut flat: usize, exact: bool) -> Value {
 
 /// A negative length counts down, as J's `i.` does: `⍳¯3` is `2 1 0`.
 fn iota(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "iota needs a scalar or vector shape")); }
+    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "iota needs a unit or vector shape")); }
     let lengths = right.elements().map(|e| numeric(&e, span)?.integer().map_err(|k| span.error(k, "invalid iota dimension"))).collect::<Result<Vec<_>, _>>()?;
     let shape: Vec<usize> = lengths.iter().map(|n| n.unsigned_abs()).collect();
     let len = generated_len(&shape).map_err(|k| span.error(k, "iota exceeds array limits"))?;
@@ -999,7 +999,7 @@ fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
 struct SearchCells { left: Vec<Value>, right: Vec<Value>, frame: Frame }
 
 fn search_cells(left: &Value, right: &Value, span: &Context<'_>) -> Result<SearchCells, Error> {
-    if left.is_scalar() { return Err(span.error(ErrorKind::Rank, "search needs a non-scalar left argument")); }
+    if left.is_scalar() { return Err(span.error(ErrorKind::Rank, "search needs a left argument that is not a unit")); }
     let rank = left.shape().len() - 1;
     let split = right.shape().len().checked_sub(rank).ok_or_else(|| span.error(ErrorKind::Rank, "right argument has insufficient rank"))?;
     if left.shape()[1..] != right.shape()[split..] { return Err(span.error(ErrorKind::Length, "search cell shapes do not agree")); }
@@ -1076,7 +1076,7 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
 
 fn format_array(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let Some(spec) = left else { return right.formatted().map_err(|k| span.error(k, "formatted array is too large")); };
-    if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "format specification must be scalar or vector")); }
+    if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "format specification must be a unit or vector")); }
     let spec = spec
         .elements()
         .map(|e| numeric(&e, span)?.integer().map_err(|k| span.error(k, "format specification must be integral")))
@@ -1143,7 +1143,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
     use crate::number::Arithmetic::*;
     use Primitive::*;
     if let Some(axis) = axis {
-        if axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be scalar or vector")); }
+        if axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be a unit or vector")); }
         if bound.is_none() {
             return match p {
                 Reverse(_) => p.call_axes(None, right, axis, span),
@@ -1247,7 +1247,7 @@ fn boolean_array(a: &Value) -> bool {
 
 fn inverse_decode(base: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if !base.is_scalar() {
-        if base.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "inverse decode needs a scalar or vector base")); }
+        if base.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "inverse decode needs a unit or vector base")); }
         let result = radix(base, right, true, span)?;
         if !array_match(&radix(base, &result, false, span)?, right, span)? {
             return Err(span.error(ErrorKind::Domain, "value cannot be represented in these bases"));
@@ -1630,7 +1630,7 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, exact: bool, span: &Context<'_>, f
 
 pub(crate) fn deal<R: rand::Rng + ?Sized>(left: &Value, right: &Value, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
     let count = |a: &Value| {
-        if a.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "deal needs scalars or singleton vectors")); }
+        if a.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "deal needs units or singleton vectors")); }
         if !a.is_singleton() { return Err(span.error(ErrorKind::Length, "deal needs one count per argument")); }
         numeric(&a.at(0), span)?.nonnegative_integer().map_err(|k| span.error(k, "deal needs nonnegative integer counts"))
     };
@@ -1687,7 +1687,7 @@ fn mix_axes(right: &Value, spec: &Value, span: &Context<'_>) -> Result<Value, Er
 }
 
 fn reshape(dimensions: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if dimensions.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "shape must be a scalar or vector")); }
+    if dimensions.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "shape must be a unit or vector")); }
     let shape = dimensions
         .elements()
         .map(|e| numeric(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "invalid dimension")))
@@ -1729,7 +1729,7 @@ fn remap(right: &Value, layout: Layout, source: impl Fn(usize) -> Option<usize>,
 }
 
 fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>, span: &Context<'_>) -> Result<Value, Error> {
-    if counts.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "take/drop counts must be a scalar or vector")); }
+    if counts.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "take/drop counts must be a unit or vector")); }
     if axes.is_some_and(|a| a.len() != counts.len()) { return Err(span.error(ErrorKind::Length, "counts do not agree with axes")); }
     if counts.is_empty() { return Ok(right.clone()); }
     let old = if right.is_scalar() { vec![1; counts.len()] } else { right.shape().to_vec() };
@@ -1769,7 +1769,7 @@ fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>, 
 }
 
 fn replicate(counts: &Value, right: &Value, first: bool, axis: Option<usize>, expand: bool, span: &Context<'_>) -> Result<Value, Error> {
-    if counts.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "replication counts must be a scalar or vector")); }
+    if counts.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "replication counts must be a unit or vector")); }
     let mut shape = if right.is_scalar() { vec![1] } else { right.shape().to_vec() };
     let axis = axis.unwrap_or(if first { 0 } else { shape.len() - 1 });
     let traversal = Axis::new(&shape, axis).map_err(|_| span.error(ErrorKind::Domain, "invalid replication axis"))?;
@@ -1998,7 +1998,7 @@ fn split(right: &Value, axis: Option<usize>, span: &Context<'_>) -> Result<Value
 
 fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: bool, span: &Context<'_>) -> Result<Value, Error> {
     if left.shape().len() > 1 || runs && right.is_scalar() {
-        return Err(span.error(ErrorKind::Rank, "partition needs a scalar/vector left argument and a non-scalar right argument"));
+        return Err(span.error(ErrorKind::Rank, "partition needs a unit or vector left argument and a right argument that is not a unit"));
     }
     let right = if right.is_scalar() { right.with_shape(vec![1]).unwrap() } else { right.clone() };
     let axis = axis.unwrap_or(right.shape().len() - 1);
@@ -2054,7 +2054,7 @@ fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: bool, span:
 }
 
 fn squad(left: &Value, right: &Value, axes: Option<&[usize]>, span: &Context<'_>) -> Result<Value, Error> {
-    if left.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "squad indices must be a scalar or vector")); }
+    if left.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "squad indices must be a unit or vector")); }
     let fields = coordinate_fields(left);
     if fields.len() > right.shape().len() || axes.is_some_and(|a| a.len() != fields.len()) {
         return Err(span.error(ErrorKind::Length, "squad needs one index item per selected axis"));
@@ -2072,7 +2072,7 @@ pub(crate) fn coordinate_fields(value: &Value) -> Vec<Value> {
 }
 
 fn coordinate_offset(coords: &Value, right: &Value, prototype: bool, span: &Context<'_>) -> Result<Option<usize>, Error> {
-    if coords.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "a coordinate must be a scalar or vector")); }
+    if coords.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "a coordinate must be a unit or vector")); }
     let fields = coordinate_fields(coords);
     if fields.len() != right.shape().len() { return Err(span.error(ErrorKind::Rank, "a coordinate needs one index per axis")); }
     let mut offset = Some(0);
@@ -2203,7 +2203,7 @@ pub(crate) fn choose(right: &Value, indices: &Value, span: &Context<'_>) -> Resu
 }
 
 pub(crate) fn at_indices(right: &Value, indices: &Value, span: &Context<'_>) -> Result<Selection, Error> {
-    if right.is_scalar() { return Err(span.error(ErrorKind::Length, "a scalar has no major-cell axis")); }
+    if right.is_scalar() { return Err(span.error(ErrorKind::Length, "a unit has no major-cell axis")); }
     selection(right, &[Some(indices.clone())], span)
 }
 

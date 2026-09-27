@@ -1061,13 +1061,13 @@ v←10 20 30 ⋄ v.x←9 ⋄ v   ⍝ [10 20 30 "x":9]
 ⍝ — A matrix with no row keys gains a named row
 M←[1 2 3 ⋄ 4 5 6] ⋄ ("r"⌷M)←7 8 9 ⋄ M   ⍝ 0 1 "r":[1 2 3 ⋄ 4 5 6 ⋄ 7 8 9]
 
-⍝ — A literal run of keys or a bracketed key array also adds missing keys
+⍝ — A strand of keys or a bracketed key array also adds missing keys
 M←["aa" "bb";"xx" "yy"]:[1 2 ⋄ 3 4] ⋄ ("cc" "zz"⌷M)←9 ⋄ "cc" "zz"⌷M   ⍝ 9
 
 ⍝ —
 T←"aa":1 ⋄ (["cc" "dd";]⌷T)←3 4 ⋄ T   ⍝ "aa" "cc" "dd":1 3 4
 
-⍝ — A unit's value applies to the next unit, and a scalar has no leading axis to select from
+⍝ — A run's value applies to the next run, and a unit has no leading axis to select from
 ≢[1 2] 3 4
 ⍝ error: INDEX ERROR
 
@@ -2033,7 +2033,7 @@ a←⍳3 ⋄ b←0@2⊢a ⋄ a   ⍝ 0 1 2
 {⍺}⌺3⊢2 0⍴0   ⍝ [1 ⋄ ¯1]
 
 ⍝ — A two-row stencil specification gives window size then movement
-{+/,⍵}⌺[3 ⋄ 2]1+⍳8   ⍝ 3 9 15 21
+{+/,⍵}⌺[3 ⋄ 2]⍳8   ⍝ 1 6 12 18
 
 ⍝ — A single stencil size varies the leading axis and retains whole rows
 {⍴⍵}⌺3⊢2 3⍴⍳6   ⍝ 2 2⍴3ₓ
@@ -2324,7 +2324,7 @@ x←10 20 30 ⋄ (¯1⌷x)←9 ⋄ x   ⍝ 10 20 9
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-v←1+⍳1000 ⋄ +/v+v   ⍝ 1001000
+v←⍳1000 ⋄ +/v+v   ⍝ 999000
 
 ⍝ —
 ×/1 2 3 4   ⍝ 24
@@ -2459,7 +2459,7 @@ u←•UcS ⋄ u ["A⍳" ⋄ "λ😀"]   ⍝ [65ₓ 9075ₓ ⋄ 955ₓ 128512ₓ
 
 ⍝⍝ Character and string literals
 
-⍝ — Single quotes hold exactly one character, a scalar
+⍝ — Single quotes hold exactly one character
 ⍴'a'   ⍝ 0⍴0ₓ
 
 ⍝ — Double quotes make a vector, even for one character
@@ -2477,10 +2477,10 @@ u←•UcS ⋄ u ["A⍳" ⋄ "λ😀"]   ⍝ [65ₓ 9075ₓ ⋄ 955ₓ 128512ₓ
 ⍝ — The empty string
 ⍴""   ⍝ ,0ₓ
 
-⍝ — A literal run of strings holds each string as one item, so each is one key
+⍝ — A strand of strings holds each string as one item, so each is one key
 ("x" "y":1 2).y   ⍝ 2
 
-⍝ — A literal run of characters is one string
+⍝ — A strand of characters is one string
 'x' 'y'   ⍝ "xy"
 
 ⍝ — A comment mark inside a string is an ordinary character
@@ -3667,7 +3667,7 @@ outer←{inner←{⍹ ⍵} ⋄ 1} ⋄ outer 0   ⍝ 1
 each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3   ⍝ 6
 
 ⍝ — Each and reduction bind to self-reshape, producing repeated-dimensional cells
-⍴⍨¨/3/⊂1+⍳4   ⍝ [,1;2 2⍴2;3 3 3⍴3;4 4 4 4⍴4]
+⍴⍨¨/3/⊂⍳4   ⍝ [⍬⍴0;,1;2 2⍴2;3 3 3⍴3]
 
 ⍝⍝ Singleton agreement and empty counts
 
@@ -3986,7 +3986,7 @@ apply←{⍶ ⍵} ⋄ f←{⎕←⍵ ⋄ ⍵} ⋄ (f apply)/1 2 3
 3
 ⍝ ⎕: 3\n3
 
-⍝ — A whole literal run binds as one array operand
+⍝ — A whole strand binds as one array operand
 offset←{+/⍶+⍵} ⋄ (1 2 offset)3   ⍝ 9
 
 ⍝⍝ Scalar apl
@@ -4186,7 +4186,7 @@ outer←{inner←{⍵} ⋄ inner ⍵} ⋄ outer 1   ⍝ 1
 ⍝ — List items evaluate left to right and may refer to earlier assignments
 [a←2 a+3]   ⍝ 2 5
 
-⍝ — Semicolon-separated items keep their literal runs whole
+⍝ — Semicolon-separated items keep their strands whole
 [1 2;3 4]   ⍝ [[1 2] [3 4]]
 
 ⍝ — Explicit output exposes list items' left-to-right evaluation order
@@ -4556,7 +4556,7 @@ M←"aa" "bb":2 2⍴⍳4 ⋄ M∪M
 
 ⍝ — Phinary decoding
 •load "lib/numeric.apl"
-1e¯12>|42-phinary "10100010.00100001"
+1e¯12>|42-phinary["10100010.00100001"]
 ⍝ =>
 1ₓ
 
