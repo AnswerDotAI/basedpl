@@ -14,7 +14,7 @@ assign ← {  ⍝ Hungarian method cost assignment.
   step1←{step2⊃(↓⍵)-⌊/⍵}
   step2←{  ⍝ 2: mark independent zeros.
     stars←{  ⍝ independent zeros.
-      ~1∊⍵:⍺  ⍝ no more zeros: done.
+      ~1∊,⍵:⍺  ⍝ no more zeros: done.
       next←{⍵∧1=+\⍵}{⍵∧1=+⍀⍵}⍵
       mask←(rows next)∨cols next  ⍝ mask of dependent rows and cols.
       (⍺∨next)∇ ⍵>mask  ⍝ ⍺-accumulated star matrix.
@@ -25,17 +25,17 @@ assign ← {  ⍝ Hungarian method cost assignment.
   step3←{[costs zeros]←⍵  ⍝ 3: cover cols with starred zeros.
     stars←zeros=2  ⍝ starred zeros.
     covers←2×cols stars  ⍝ covered cols.
-    ~0∊covers:stars  ⍝ all cols covered: solution.
+    ~0∊,covers:stars  ⍝ all cols covered: solution.
     step4 [costs zeros covers]  ⍝ next step: 4.
   }
   step4←{[costs zeros covers]←⍵  ⍝ 4: adjust covering lines.
     mask←covers=0  ⍝ mask of uncovered elements.
     open←1=mask×zeros  ⍝ uncovered zeros.
-    ~1∊open:(⌊/(,mask)/,costs)step6 ⍵  ⍝ no uncovered zeros, next step :6.
+    ~1∊,open:(⌊/(,mask)/,costs)step6 ⍵  ⍝ no uncovered zeros, next step :6.
     prime←first open  ⍝ choose first uncovered zero.
     prow←rows prime  ⍝ row containing prime.
     star←2=zeros×prow  ⍝ star in row containing prime.
-    ~1∊star:prime step5 {  ⍝ no star in row, next step :5,
+    ~1∊,star:prime step5 {  ⍝ no star in row, next step :5,
       [costs ⍵ prime]  ⍝ adjusted zeros matrix,
     }zeros+2×prime  ⍝ new primed zero (3).
     cnext←covers+prow-2×(cols star)  ⍝ adjusted covers.
@@ -44,7 +44,7 @@ assign ← {  ⍝ Hungarian method cost assignment.
   }
   step5←{[costs zeros prime]←⍵  ⍝ 5: exchange starred zeros.
     star←(cols prime)∧zeros=2  ⍝ next star.
-    ~1∊star:step3 ⍺{  ⍝ no stars: next step :3.
+    ~1∊,star:step3 ⍺{  ⍝ no stars: next step :3.
       {[costs ⍵]}{⍵-2×⍵=3}⍵-⍺∧⍵>1  ⍝ unstarred stars; starred primes.
     }zeros  ⍝ adjusted zero markers.
     pnext←(rows star)∧zeros=3  ⍝ next prime.
@@ -75,7 +75,7 @@ insnode ← {  ⍝ Insert vertex ⍵ in graph ⍺.
 ⍝ From http://dfns.dyalog.com/n_remnode.htm
 
 remnode ← {  ⍝ Remove vertex ⍵ from graph ⍺.
-  new←(⍵≠⍳⍴⍺)/⍺~¨⍵  ⍝ graph with vertex ⍵ removed,
+  new←(⍵≠⍳⍴⍺)/⍺~¨⊂[⍵]  ⍝ graph with vertex ⍵ removed,
   new-new>⍵  ⍝ and edges adjusted.
 }
 
@@ -83,21 +83,21 @@ remnode ← {  ⍝ Remove vertex ⍵ from graph ⍺.
 
 inslink ← {  ⍝ Graph ⍺ with new edge ⍵.
   [fm to]←⍵  ⍝ edge
-  ∪⟜to@fm ⍺  ⍝ graph with new edge ⍵.
+  ∪⟜to⍤,@fm ⍺  ⍝ graph with new edge ⍵.
 }
 
 ⍝ From http://dfns.dyalog.com/n_remlink.htm
 
 remlink ← {  ⍝ Graph ⍺ without edge ⍵.
   [fm to]←⍵  ⍝ edge
-  ~⟜to@fm ⍺  ⍝ graph without edge ⍵.
+  ~⟜[to]@fm ⍺  ⍝ graph without edge ⍵.
 }
 
 ⍝ From http://dfns.dyalog.com/n_search.htm
 
 search ← {  ⍝ Breadth-first search of graph ⍺.
   graph←⍺  ⍝ ⍺ is graph vector.
-  ⍵{  ⍝ from starting vertex.
+  (,⍵){  ⍝ from starting vertex.
     ⍵≡⍬:⍺  ⍝ no unvisited vertices: done.
     adjv←graph ⍵  ⍝ adjacent vertices.
     next←∪(,/adjv)~⍺
@@ -108,7 +108,7 @@ search ← {  ⍝ Breadth-first search of graph ⍺.
 ⍝ From http://dfns.dyalog.com/n_path.htm
 
 path ← {  ⍝ Shortest path from/to ⍵ in graph ⍺.
-  graph←⍺ ⋄ [fm to]←⍵  ⍝ graph and entry/exit vertex vectors
+  graph←⍺ ⋄ [fm to]←,¨⍵  ⍝ graph and entry/exit vertex vectors
   fm{  ⍝ fm is the starting-from vertex
     ⍺≡⍬:⍬  ⍝ no vertices left: no path
     ∨/to∊⍺:⍬(⊃⟜⍵){  ⍝ found target: path from tree:
@@ -126,7 +126,7 @@ path ← {  ⍝ Shortest path from/to ⍵ in graph ⍺.
 
 span ← {  ⍝ Breadth-first spanning tree for graph ⍺.
   graph←⍺  ⍝ ⍺ is graph vector.
-  (¯2+(⍳⍴⍺)∊⍵){  ⍝ ⍺: partial spanning tree.
+  (¯2+(⍳⍴⍺)∊,⍵){  ⍝ ⍺: partial spanning tree.
     ⍵≡⍬:⍺  ⍝ no vertices: done.
     next←(graph ⍵)∩¨⊂⍸⍺=¯2  ⍝ untravelled edges
     back←⍵+0×next  ⍝ back link per edge
@@ -208,7 +208,7 @@ stdists ← {  ⍝ Spanning-tree path lengths.
     [next dvec]←⍵  ⍝ chldren and distance vector
     next≡⍬:dvec  ⍝ no children: finished
     ∆dvec←⍺@next dvec  ⍝ extended distance vector
-    ∆next←⍸tree∊next  ⍝ grandchildren
+    ∆next←⍸tree∊,next  ⍝ grandchildren
     (⍺+1)∇ [∆next ∆dvec]  ⍝ examine rest of tree
   }[⍵⍳¯1 ⍵⊢¨¯1]  ⍝ starting vertex and initial distances
 }
@@ -278,7 +278,7 @@ sudokuMatrix ← {  ⍝ Matrix for ⍵ ⍵-Sudoku puzzle.
 
 sudokuX ← { [n n]←⍴⍵  ⍝ Exact cover Sudoku solver.
   ⍺←sudokuMatrix n  ⍝ generic ⍵×⍵ constraint matrix.
-  r←∊(⍵≠0)>(⊂1+⍳n)∊¨⍵  ⍝ already placed rows.
+  r←∊(⍵≠0)>(⊂1+⍳n)=¨⍵  ⍝ already placed rows.
   m←(~r)⌿⍺  ⍝ reduced matrix.
   f←X m  ⍝ exact cover.
   z←(~r)\f  ⍝ merge of placements.
@@ -368,7 +368,7 @@ wspan ← {  ⍝ Spanning tree for weighted graph ⍺ from ⍵.
 wmst ← {  ⍝ Minimum Spanning Tree for wu-graph ⍺.
   [graph costs]←↓⍺  ⍝ weighted, undirected graph
   xvec←⍳⍴graph  ⍝ index vector for graph
-  ⍵{  ⍝ vertices inside tree: T
+  (,⍵){  ⍝ vertices inside tree: T
     [tree todo]←⍵  ⍝ partial tree and unconnected vertices
     todo≡⍬:tree  ⍝ all vertices connected: finished
     edges←(graph∊¨⊂todo)∧xvec∊⍺  ⍝ edges from T to G~T
@@ -377,5 +377,5 @@ wmst ← {  ⍝ Minimum Spanning Tree for wu-graph ⍺.
     [fm to]←{⊃,/masks/¨⍵}¨[xvec graph]
     fm≡⍬:tree  ⍝ disjoint graph: quit
     (⍺,to)∇ [fm@to⊢tree todo~to]  ⍝ vertices from G~T to T
-  }[¯1⊣¨graph xvec~⍵]  ⍝ initial tree and unconnected vertices
+  }[¯1⊣¨graph xvec~,⍵]  ⍝ initial tree and unconnected vertices
 }

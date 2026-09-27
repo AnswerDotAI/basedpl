@@ -235,7 +235,7 @@ pub(crate) fn derivative(source: &Value, order: usize, cotangent: Option<&Value>
         return Err(span.error(ErrorKind::Rank, "monadic differentiation requires a unit output; supply a cotangent for a VJP"));
     }
     let cotangent = cotangent
-        .map(|u| crate::keyed::reorder(u, agreement.layout.axis_keys(), false))
+        .map(|u| crate::keyed::reorder(u, &(0..agreement.layout.shape().len()).map(|a| agreement.layout.keys(a).cloned()).collect::<Vec<_>>(), false))
         .transpose()
         .map_err(|k| span.error(k, "cotangent keys must match the output"))?;
     if order > 1 && (!right.is_unit() || !agreement.layout.shape().is_empty()) {
@@ -278,10 +278,10 @@ pub(crate) fn derivative(source: &Value, order: usize, cotangent: Option<&Value>
         .zip(gradients)
         .map(|(point, gradient)| {
             if point.is_atom() { return Ok(Value::Number(gradient[0].clone())); }
-            point.layout().collect(gradient.into_iter().map(Value::Number).collect(), Value::Number(int(0)))
+            point.layout().collect(gradient.into_iter().map(Value::Number), Value::Number(int(0)))
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(|k| span.error(k, "invalid polynomial gradient"))?;
     if right.is_atom() { return Ok(data[0].clone()); }
-    right.layout().collect(data, right.prototype()).map_err(|k| span.error(k, "invalid polynomial gradient"))
+    right.layout().collect(data, || right.prototype()).map_err(|k| span.error(k, "invalid polynomial gradient"))
 }

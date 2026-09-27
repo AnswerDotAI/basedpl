@@ -202,7 +202,7 @@ fn cancellation_preserves_session_and_unwinds_calls() {
     assert_eq!(r.error.as_ref().unwrap().kind, Timeout);
     assert_eq!(r.output_text(), ["7"]);
     equiv_in(&mut s, "keep+1", "43");
-    s.set("u", AplValue::floats(vec![20000], (0..20000).map(f64::from).collect()).unwrap()).unwrap();
+    s.set("u", AplValue::floats(vec![1_000_000], (0..1_000_000).map(f64::from).collect()).unwrap()).unwrap();
     assert_eq!(s.eval_timeout("∪u", Duration::from_millis(2)).error.unwrap().kind, Timeout);
     assert_eq!(s.eval_timeout("ℙ1000000000000ₓ", Duration::from_millis(2)).error.unwrap().kind, Timeout);
     let interrupt = basedpl::InterruptHandle::default();
@@ -328,7 +328,7 @@ fn compact_integers_and_promotion() {
         ("-1ₓ ¯2ₓ", vec![-1, 2]),
         ("×¯2ₓ 0ₓ 2ₓ", vec![-1, 0, 1]),
         ("v←¯2ₓ 0ₓ 3ₓ ⋄ (v>0)×v", vec![0, 0, 3]),
-        (r#""ab"∊'b'"#, vec![0, 1]),
+        (r#""ab"∊"b""#, vec![0, 1]),
         ("~0 1", vec![1, 0]),
         ("0 1⍲1 1", vec![1, 0]),
         ("0 1⍱0 0", vec![1, 0]),
@@ -342,8 +342,8 @@ fn compact_integers_and_promotion() {
         ("+\\⍳3ₓ", vec![0, 1, 3]),
         ("-¨⍳3ₓ", vec![0, -1, -2]),
         ("1ₓ 2ₓ∪2ₓ 3ₓ", vec![1, 2, 3]),
-        ("1ₓ 2ₓ∩2ₓ", vec![2]),
-        ("2ₓ~1ₓ", vec![2]),
+        ("1ₓ 2ₓ∩[2ₓ]", vec![2]),
+        ("2ₓ~[1ₓ]", vec![2]),
         (",⊃[1ₓ 2ₓ;3ₓ]", vec![1, 2, 3, 0]),
         (",⍉2 2⍴⍳4ₓ", vec![0, 2, 1, 3]),
         (",(1ₓ+⍳2ₓ)×⌝1ₓ+⍳2ₓ", vec![1, 2, 2, 4]),
@@ -394,7 +394,7 @@ fn character_parser_and_exact_fill() {
 #[test]
 fn array_literal_completeness() {
     for code in ["[1 2 ⋄", "(1 +", "[[{⍵}1;2] ⋄"] { assert!(matches!(parse(Source::new("partial", code)), ParseStatus::Incomplete(_))); }
-    for code in ["[1 ⋄ 2)", "(1 ⋄ 2]", "[⋄]", "(1 ⋄ 2)", "[1;2 ⋄ 3]"] {
+    for code in ["[1 ⋄ 2)", "(1 ⋄ 2]", "[⋄]", "(1 ⋄ ⋄ 2)", "[1;2 ⋄ 3]"] {
         assert!(matches!(parse(Source::new("invalid", code)), ParseStatus::Invalid(_)));
     }
 }

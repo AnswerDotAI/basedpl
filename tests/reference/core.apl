@@ -222,9 +222,9 @@ X←"aa" "bb":2ₓ 3ₓ ⋄ Y←"bb" "cc":5ₓ 7ₓ
 
 ⍝ axis-partition — Partition cells retain sliced labels; group axes are new and unkeyed
 M←["alice" "bob";"xx" "yy" "zz"]:2 3⍴⍳6
-[1 1 2⊆M;1 0 1⊂M]
+[1 2⊆M;1 0 1⊂⍠1 M]
 ⍝ =>
-[("alice" "bob":2 2⍴[["xx":0 "yy":1] ["zz":2] ["xx":3 "yy":4] ["zz":5]]) [(["alice" "bob";"xx" "yy"]:[0 1 ⋄ 3 4]) (["alice" "bob";["zz"]]:[[2] ⋄ [5]])]]
+(([["alice"];"xx" "yy" "zz"]:[0 1 2 ⋄]) ([["bob"];"xx" "yy" "zz"]:[3 4 5 ⋄]) ⋄ (["alice" "bob";"xx" "yy"]:[0 1 ⋄ 3 4]) (["alice" "bob";["zz"]]:[[2] ⋄ [5]]))
 
 ⍝ axis-selective-write — Keyed RHS follows selected labels; Pick of a row updates its elements
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
@@ -251,7 +251,7 @@ M←"xx" "yy":⍠1 (0 2⍴0)
 V←"aa" "bb":1 2
 [ℙV;⊤V;2⊥⊤V;("days" "hours":0 24)⊤("aa" "bb":25 50)]
 ⍝ =>
-[["aa":3ₓ "bb":5ₓ] ("aa" "bb":⍠1 [0 1 ⋄ 1 0]) ["aa":1 "bb":2] (["days" "hours";"aa" "bb"]:[1 2 ⋄ 1 2])]
+[["aa":3ₓ "bb":5ₓ] (["aa" "bb";0 1]:[0 1 ⋄ 1 0]) ["aa":1 "bb":2] (["aa" "bb";"days" "hours"]:[1 1 ⋄ 2 2])]
 
 ⍝ axis-product-frame — Inner product retains uncontracted axes
 A←"aa" "bb":[1 2 ⋄ 3 4] ⋄ B←"xx" "yy":⍠1 [5 6 ⋄ 7 8]
@@ -398,11 +398,11 @@ v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}   ⍝ 15
 ⍝ — Zero-width rows are equal
 =3 0⍴0   ⍝ 1 3⍴1ₓ
 
-⍝ — Binary encode chooses enough first-axis digits
-⊤2ₓ 5ₓ   ⍝ [0ₓ 1ₓ ⋄ 1ₓ 0ₓ ⋄ 0ₓ 1ₓ]
+⍝ — Binary encode chooses enough last-axis digits
+⊤2ₓ 5ₓ   ⍝ [0ₓ 1ₓ 0ₓ ⋄ 1ₓ 0ₓ 1ₓ]
 
-⍝ — Binary decode uses the existing first digit axis
-⊥[0ₓ 1ₓ ⋄ 1ₓ 0ₓ ⋄ 0ₓ 1ₓ]   ⍝ 2ₓ 5ₓ
+⍝ — Binary decode reads the last digit axis
+⊥[0ₓ 1ₓ 0ₓ ⋄ 1ₓ 0ₓ 1ₓ]   ⍝ 2ₓ 5ₓ
 
 ⍝ — Binary zero needs no digits
 ⊤0ₓ   ⍝ 0⍴0ₓ
@@ -981,6 +981,12 @@ a←1 2 ⋄ f←{⎕←a ⋄ ⍺+⍵} ⋄ a.[[0 1]]f←10 20 ⋄ a   ⍝ 11 22
 ⍝ — Drop counts follow the specified axis order
 1 1↓⍠1 0 (3 4⍴⍳12)   ⍝ [5 6 7 ⋄ 9 10 11]
 
+⍝ — Pick along an axis selects one position on that axis
+0⊃⍠1 (2 3⍴⍳6)   ⍝ 0 3
+
+⍝ — First along an axis takes position 0 on that axis
+↑⍠1 (2 3⍴⍳6)   ⍝ 0 3
+
 ⍝ — Squad's index vectors correspond to the listed axes
 [1 0;0 1]⌷⍠1 0 (2 3⍴⍳6)   ⍝ [1 0 ⋄ 4 3]
 
@@ -1092,7 +1098,7 @@ m←3 4⍴⍳12 ⋄ i←1 2 ⋄ m.(i)   ⍝ 6
 m←3 4⍴⍳12 ⋄ m.[[2 0]]   ⍝ [8 9 10 11 ⋄ 0 1 2 3]
 
 ⍝ — Each unspaced expression in brackets is one index item
-m←3 4⍴⍳12 ⋄ k←⍳3 ⋄ m.[k~1 3]   ⍝ 3 11
+m←3 4⍴⍳12 ⋄ k←⍳3 ⋄ m.[k~[1] 3]   ⍝ 3 11
 
 ⍝ — Dot indexing chains from left to right
 A←2 3 4⍴⍳24 ⋄ A.[1 ∞ 0].[¯1]   ⍝ 20
@@ -2097,8 +2103,8 @@ G←2 3⍴[["ABC" 1] ["DEF" 2] ["GHI" 3] ["JKL" 4] ["MNO" 5] ["PQR" 6]] ⋄ H←
 ⍝ — A zero radix consumes the remainder, leaving zero for earlier digits
 0 0 2⊤3   ⍝ 0 1 1
 
-⍝ — Encode appends the value frame to the radix shape, including zero dimensions
-⍴(0 3⍴0)⊤2 2⍴1   ⍝ 0ₓ 3ₓ 2ₓ 2ₓ
+⍝ — Encode puts the digit axis after the value frame, including a zero-length digit axis
+⍴(0⍴0)⊤2 2⍴1   ⍝ 2ₓ 2ₓ 0ₓ
 
 ⍝ — Decode the same digits in binary and decimal
 [[2] ⋄ [10]]⊥1 0 1   ⍝ 5 101
@@ -2196,14 +2202,14 @@ x←10 20 30 ⋄ (¯1⌷x)←9 ⋄ x   ⍝ 10 20 9
 ⍝ — Partition starts on a positive rise, not every label change; zero omits an item
 3 2 2 1 0 1⊆"abcdef"   ⍝ "abcd" "f"
 
-⍝ — Axis-zero partition groups column segments and omits the zero-marked row
-1 1 0 1⊆⍠0 (1+4 2⍴⍳8)   ⍝ 2 2⍴[1 3;2 4;,7;,8]
+⍝ — Axis-zero partition cuts blocks of rows and omits the zero-marked row
+1 1 0 1⊆⍠0 (1+4 2⍴⍳8)   ⍝ [[1 2 ⋄ 3 4] [7 8 ⋄]]
 
 ⍝ — No partition starts: retain a prototype with an empty selected axis
-0⊂2 3⍴0   ⍝ 0⍴⊂2 0⍴0
+0⊂2 3⍴0   ⍝ 0⍴⊂(0 3⍴0)
 
-⍝ — Partition counts remain visible even when the outer frame is empty
-1 0 1⊆0 3⍴0   ⍝ 0 2⍴⊂⍬
+⍝ — Partition counts remain visible even when the other axes are empty
+1 0 1⊆⍠1 (0 3⍴0)   ⍝ [(0 1⍴0) (0 1⍴0)]
 
 ⍝ —
 2⊃1 2
@@ -3020,11 +3026,29 @@ x←1 ⋄ y←1+8E¯15 ⋄ z←1+16E¯15 ⋄ [x y]⍳z   ⍝ 1ₓ
 ⍝ — Unique-mask compares against retained representatives, not every earlier item
 ≠[1 1+8E¯15 1+16E¯15]   ⍝ 1ₓ 0ₓ 1ₓ
 
+⍝ — A large index-of takes the first position within tolerance, not the nearest value
+((300⍴5),[1+16E¯15 1])⍳1+8E¯15   ⍝ 300ₓ
+
+⍝ — A large index-of finds nothing outside tolerance
+((300⍴5),1)⍳1+2E¯14   ⍝ 301ₓ
+
+⍝ — A large unique-mask compares against retained representatives
+¯3↑≠(20⍴5),[1 1+8E¯15 1+16E¯15]   ⍝ 1ₓ 0ₓ 1ₓ
+
+⍝ — A large Key groups by representatives, not transitive closure
+¯2↑{≢⍵}⌸(20⍴5),[1 1+8E¯15 1+16E¯15]   ⍝ 2ₓ 1ₓ
+
+⍝ — Large membership compares exact integers with floats within tolerance
+[1+8E¯15 1+2E¯14]∊⍳300ₓ   ⍝ 1ₓ 0ₓ
+
+⍝ — A large index-of of exact values applies no tolerance
+(⍳300ₓ)⍳1000000000000001r1000000000000000   ⍝ 300ₓ
+
 ⍝ — Without uses tolerance when approximate values participate
-1 2~1+8E¯15   ⍝ ,2
+1 2~[1+8E¯15]   ⍝ [2]
 
 ⍝ — Without does not apply tolerance to all-exact values
-1ₓ 2ₓ~1000000000000001r1000000000000000   ⍝ 1ₓ 2ₓ
+1ₓ 2ₓ~[1000000000000001r1000000000000000]   ⍝ 1ₓ 2ₓ
 
 ⍝ — Each empty row matches the first empty row
 (3 0⍴0)⍳2 0⍴0   ⍝ 0ₓ 0ₓ
@@ -3056,8 +3080,8 @@ x←1 ⋄ y←1+8E¯15 ⋄ z←1+16E¯15 ⋄ [x y]⍳z   ⍝ 1ₓ
 ⍝ — Union retains duplicates within either argument
 1 1∪2 2   ⍝ 1 1 2 2
 
-⍝ —
-1 2∊1+8E¯15   ⍝ 1ₓ 0ₓ
+⍝ — Membership uses tolerance when approximate values participate
+1 2∊[1+8E¯15]   ⍝ 1ₓ 0ₓ
 
 ⍝ — A vector pattern does not fit a scalar search target
 (,1)⍷1   ⍝ 0ₓ
@@ -3158,13 +3182,19 @@ e←¨ ⋄ sum←+/ ⋄ sum e [[1 2] [3 4 5]]   ⍝ 3 12
 ⍝ — Empty minimum reduction has positive infinity as identity
 ⌊/⍬   ⍝ ∞
 
-⍝ — Empty each invokes reciprocal on the zero prototype, which errors
-÷¨⍬
+⍝ — Empty Each calls a dfn operand on the zero prototype. Its reciprocal gives a DOMAIN error
+{÷⍵}¨⍬
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Dyadic empty each also evaluates its prototype call
-1÷¨⍬
+1{⍺÷⍵}¨⍬
 ⍝ error: DOMAIN ERROR
+
+⍝ — Each with a scalar function gives the same result as the function, here `÷⍬`
+÷¨⍬   ⍝ ⍬
+
+⍝ — Dyadic Each with a scalar function gives the same result as `1÷⍬`
+1÷¨⍬   ⍝ ⍬
 
 ⍝ —
 2¨3
@@ -3276,7 +3306,7 @@ m←[1 2 ⋄ 3 4] ⋄ [((⊂⍤∞⊢m)≡⊂m) ((⊂⍤¯∞⊢m)≡⊂⍤0⊢m
 ⍝ — Empty rank application exposes its single prototype call
 {⎕←⍵ ⋄ ⍳3}⍤0⊢⍬
 0 3⍴0
-⍝ ⎕: 0
+⍝ ⎕: (0)
 
 ⍝ — Over transforms the right argument before the left
 f←{⎕←⍵ ⋄ ⍵} ⋄ 2 +⍥f 3
@@ -4544,9 +4574,8 @@ M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
 ⍝ =>
 "bob" "bob" 2ₓ
 
-⍝ axis-set-rank — Set functions retain their ordinary rank limits
-M←"aa" "bb":2 2⍴⍳4 ⋄ M∪M
-⍝ error: RANK ERROR
+⍝ axis-set-rank — Set functions compare major cells at any rank, so a keyed matrix's union with itself is the matrix
+M←"aa" "bb":2 2⍴⍳4 ⋄ M∪M   ⍝ "aa" "bb":2 2⍴⍳4
 
 ⍝⍝ Libraries
 

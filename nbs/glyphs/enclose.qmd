@@ -17,10 +17,18 @@ With [axes](axis.qmd), `⊂⍠K Y` encloses cells on axes `K`.
 ⊂⍠1 (2 3⍴⍳6)       ⍝ [[0 1 2] [3 4 5]]
 ```
 
-`N⊂Y` starts partitions at positive marks along the last axis. Leading zero marks are ignored.
+`N⊂Y` starts partitions at positive marks along the leading axis. Each partition is a block of major cells. Leading zero marks are ignored.
 
 ```apl
 1 0 1 0⊂"abcd"     ⍝ "ab" "cd"
+1 0 1⊂3 2⍴⍳6       ⍝ [[0 1 ⋄ 2 3] [4 5 ⋄]]
 ```
 
-A mark greater than 1 starts extra empty partitions. Unit marks extend. `N⊂⍠K Y` partitions along axis `K`, cutting the whole array into blocks. See also [`⊆`](nest.qmd).
+A mark greater than 1 starts extra empty partitions. Unit marks extend. `N⊂⍠K Y` partitions along axis `K` instead. `N⊂⍤1 Y` partitions each row.
+
+```apl
+1 0 1⊂⍠1 (2 3⍴⍳6)  ⍝ [[0 1 ⋄ 3 4] [[2] ⋄ [5]]]
+1 0 1⊂⍤1 (2 3⍴⍳6)  ⍝ [[0 1] [2] ⋄ [3 4] [5]]
+```
+
+See also [`⊆`](nest.qmd).

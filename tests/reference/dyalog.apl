@@ -369,11 +369,11 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 ⍝ dyalog:index:shape — Inline VEC definition
 [[2 0 3 ⋄ 0 1 2]]⌷111 222 333 444   ⍝ [333 111 444 ⋄ 111 222 333]
 
-⍝ dyalog:encode:mixed-base —
-0 10⊤5 15 125   ⍝ [0 1 12 ⋄ 5 5 5]
+⍝ dyalog:encode:mixed-base — Digits on the last axis, as J's #:, so Dyalog's result transposed
+0 10⊤5 15 125   ⍝ [0 5 ⋄ 1 5 ⋄ 12 5]
 
-⍝ dyalog:encode:fraction —
-0 1⊤1.25 10.5   ⍝ [1 10 ⋄ 0.25 0.5]
+⍝ dyalog:encode:fraction — Digits on the last axis, as J's #:, so Dyalog's result transposed
+0 1⊤1.25 10.5   ⍝ [1 0.25 ⋄ 10 0.5]
 
 ⍝ dyalog:decode:complex —
 1j1⊥1 2 3 4   ⍝ 5j9
@@ -620,7 +620,7 @@ words¨"" "123" "abc12 + 34def" "abc_def"
 
 ⍝ — Dyalog dfns: Baby skips a store with a negative accumulator
 •load "lib/dyalog.apl"
-m←⌽⍉(32⍴2)⊤32↑0 16389 49152 24582 57344 13 0 ⋄ 2⊥⌽6⌷baby(m)
+m←⌽(32⍴2)⊤32↑0 16389 49152 24582 57344 13 0 ⋄ 2⊥⌽6⌷baby(m)
 ⍝ =>
 0
 

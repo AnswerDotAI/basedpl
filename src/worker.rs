@@ -1,7 +1,7 @@
 use crate::{EvalOptions, InterruptHandle, Session};
+use foldhash::{HashMap, HashMapExt};
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,
     io::{self, BufRead, Write},
     sync::{mpsc, Arc, Mutex},
     time::Duration,

@@ -6,7 +6,7 @@
 
 Five rules decide how code reads. [Language principles](principles.qmd) explains why the notation works this way.
 
-1. **Brackets and parentheses.** [Brackets](glyphs/brackets.qmd) write vectors: `[a b c]`, and `[x]` is a one-item vector. A strand of literals can leave them out: `1 2 3` is one vector. Parentheses round a literal or glyphs separated by spaces make a scalar: `(1 2)` is `⊂1 2`. Round anything else, including a name, they group.
+1. **Brackets and parentheses.** [Brackets](glyphs/brackets.qmd) write vectors: `[a b c]`, and `[x]` is a one-item vector. A strand of literals can leave them out: `1 2 3` is one vector. Parentheses round a literal or glyphs separated by spaces make a scalar: `(1 2)` is `⊂1 2`. Round anything else, including a name, they group. With `⋄`, they write a vector of rows: `(4 ⋄ 4 5)` is `[[4] [4 5]]`.
 2. **Runs.** A *run* is a sequence of tokens with no spaces between them. A bracketed, parenthesised or braced group counts as one token. Each run is evaluated first, and then the runs combine. Parentheses round an expression group it.
 3. **Application.** Right to left, with no precedence between functions. A function takes everything to its right as its right argument, and the array directly to its left as its left argument. An operator takes the function to its left and one item to its right. A run that ends in a dyadic operator takes the next run as that item. An array next to an argument selects from it: `v(⍋v)` sorts `v`.
 4. **Trains.** A run that ends in a function is a *train*, a function built from the right.
@@ -48,10 +48,13 @@ Numbers in every form, `∞`, `¯∞`, `⍬`, characters and strings are literal
 
 [Parentheses](glyphs/parentheses.qmd) round a literal, a strand, or glyphs separated by spaces make a scalar holding it: `(5)`, `(1 2)`, `(+)` and `(+ -)`, which holds the vector `[+ -]`. Glyphs that touch form a train, so `(-×)` groups. Parentheses round anything else group it, including a name, whatever the name holds. So a literal has a spelling at every rank: `(1 2)` is rank 0, `[1 2]` is rank 1, and `[1 2 ⋄ 3 4]` is rank 2.
 
+With `⋄`, parentheses write a vector of rows instead. Each row reads as brackets do, so every row is a vector, even a row with one item: `(4 ⋄ 4 5 ⋄ 4 5 6)` is `[[4] [4 5] [4 5 6]]`. A trailing `⋄` makes a one-item vector holding one row: `(1 2 ⋄)` is `[[1 2]]`. Brackets write flat arrays, and parentheses nest.
+
 ```apl
 ⍴[5]                 ⍝ [1]
 ⍴[[1] ⋄ [2]]         ⍝ 2 1
 (1 2)≡⊂1 2           ⍝ 1
+(4 ⋄ 4 5)≡[[4] [4 5]]  ⍝ 1
 (1+2)×3              ⍝ 9
 ```
 
@@ -218,7 +221,7 @@ This extends APL agreement. NumPy aligns trailing axes.
 
 Positions and axes count from 0. Negative positions and axes count from the end. Counts and positions must be exactly integral, without tolerance. An array next to an argument selects along its leading axis: `m 1` is row 1, the second row. [Index](glyphs/squad.qmd) `⌷` selects along several axes, and `∞` selects a whole axis. After an array, [dot indexing](glyphs/dot.qmd) writes the same selection: `m.[∞ 1]` is `∞ 1⌷m`.
 
-[Axis](glyphs/axis.qmd) `⍠` applies a function along axes given as numbers or names, as in `+/⍠0` and `+/⍠"month"`. [Rank](glyphs/rank.qmd) `⍤` applies it to trailing cells. `/ \ ⌽ ,` default to the last axis, and `⌿ ⍀ ⊖ ⍪` to the first. Structural functions also accept axis lists.
+[Axis](glyphs/axis.qmd) `⍠` applies a function along axes given as numbers or names, as in `+/⍠0` and `+/⍠"month"`. [Rank](glyphs/rank.qmd) `⍤` applies it to trailing cells, and `⍤0` passes each element as a unit. `/ \ ⌽ ,` default to the last axis, and `⌿ ⍀ ⊖ ⍪` to the first. Partition `N⊂Y` and `N⊆Y` splits along the first axis. Encode `⊤` puts its digits on the last axis, and Decode `⊥` reads them from it. Structural functions also accept axis lists.
 
 ```apl
 m←[1 2 3 ⋄ 4 5 6]
@@ -236,7 +239,9 @@ Exact/exact comparison is exact. Approximate comparison uses relative tolerance 
 1r3=1x÷3x            ⍝ 1ₓ
 ```
 
-Search, membership, match and grouping use tolerant comparison. Tolerance is not transitive; search/grouping uses the first matching representative.
+Search functions compare major cells. `⍳` and `⍸` search their left argument, and `∊ ~ ∩` search their right. The other argument's cells have the same rank as the searched argument's major cells. A unit has no major cells, so the searched argument must not be a unit: `s~" "` removes spaces, and `s~' '` is a `RANK` error.
+
+Search, membership, match and grouping use tolerant comparison. Tolerance is not transitive, so search and grouping use the first matching representative.
 
 Grade and interval index ignore tolerance. Order: numbers, characters, nested arrays. Numbers compare by value; complex numbers by real then imaginary part; characters by code point. Nested arrays compare rank, then ravel lexicographically, then shape, ignoring prototypes. Grade is stable. Scalar ordering (`< ≤ > ≥ ⌊ ⌈`) requires reals.
 

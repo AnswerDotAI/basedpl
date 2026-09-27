@@ -1,5 +1,5 @@
 //! Glyph completion and terminal input. Source execution never rewrites aliases.
-use crate::symbols::{alt_keys, chord, SYMBOLS};
+use crate::symbols::{alt_keys, chord, symbols};
 use rustyline::{
     completion::{Completer, Pair},
     highlight::Highlighter,
@@ -22,7 +22,7 @@ pub(crate) fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
     let query = query.to_ascii_lowercase();
     let mut found = Vec::new();
     let mut best = usize::MAX;
-    for &(glyph, name, monad, dyad, words) in SYMBOLS {
+    for &(glyph, name, monad, dyad, words) in symbols() {
         let rank = std::iter::once(name)
             .chain([monad, dyad])
             .chain(words.split_whitespace())
@@ -185,7 +185,7 @@ impl Validator for Symbols {
 fn styled(entry: &str) -> String {
     let mut parts = entry.splitn(3, ' ');
     let (glyph, name, key) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""), parts.next());
-    if name.is_empty() || !SYMBOLS.iter().any(|row| row.0 == glyph) { return entry.into(); }
+    if name.is_empty() || !symbols().iter().any(|row| row.0 == glyph) { return entry.into(); }
     format!("\x1b[1;36m{glyph}\x1b[0m {name}{}", key.map_or(String::new(), |key| format!(" \x1b[2m{key}\x1b[0m")))
 }
 
@@ -230,7 +230,7 @@ mod tests {
                 assert_eq!(input.key(KeyEvent::new(key, Modifiers::ALT), line, line.len()), Some(Cmd::Insert(1, glyph.to_string())));
             }
         }
-        for &(glyph, ..) in SYMBOLS {
+        for &(glyph, ..) in symbols() {
             if glyph.chars().count() == 1 && !glyph.is_ascii() { assert!(alt_keys().values().any(|&c| glyph.starts_with(c)), "{glyph}"); }
         }
         for (glyph, keys) in [("⍺", " a"), ("⍶", " Sa"), ("∞", " S-"), ("+", ""), ("⍢", " Sg")] { assert_eq!(chord(glyph), keys); }
@@ -260,7 +260,7 @@ mod tests {
         for text in ["\"`io", "\"can't `io", "\"a\"\"`io", "⍝ `io"] { assert!(entry(text, text.len()).is_none()); }
         for text in ["界+`io", "\"text\" `io", "''' `io", "'a' `io", "⍝ comment\n`io"] { assert_eq!(entry(text, text.len()).unwrap().1, "io"); }
         let index = include_str!("../nbs/glyphs.qmd");
-        for &(glyph, name, monad, dyad, words) in SYMBOLS {
+        for &(glyph, name, monad, dyad, words) in symbols() {
             for word in [name, monad, dyad].into_iter().chain(words.split_whitespace()).filter(|word| !word.is_empty()) {
                 assert_eq!(matches(&word.replace('-', "")), [(glyph, name)], "{word}");
             }

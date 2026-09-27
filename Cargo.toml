@@ -64,6 +64,7 @@ statrs = { version = ">=0.19.1, <1", default-features = false, features = ["std"
 faer = { version = ">=0.24.4, <1", default-features = false, features = ["std", "linalg"] }
 plotters = { version = ">=0.3.7, <1", default-features = false, features = ["svg_backend"] }
 stacker = ">=0.1.25, <1"
+foldhash = ">=0.2.0, <1"
 
 [features]
 python = ["dep:pyo3", "dep:libloading"]

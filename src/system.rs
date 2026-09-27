@@ -268,7 +268,7 @@ fn case_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Resu
             })
         };
         if a.is_atom() { return item(a.clone()); }
-        let data = a.elements().map(item).collect::<Result<_, Error>>()?;
+        let data = a.elements().map(item).collect::<Result<Vec<_>, Error>>()?;
         a.layout().collect(data, item(a.prototype())?).map_err(|k| span.error(k, "invalid case conversion"))
     }
     map(right, mode, span)

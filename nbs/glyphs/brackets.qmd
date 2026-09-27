@@ -42,6 +42,8 @@ With `⋄`, brackets are array notation. `[A ⋄ B]` assembles the major cells `
 ⍴[[1] ⋄ [2]]       ⍝ 2 1
 ```
 
+[Parentheses](parentheses.qmd) with `⋄` keep the rows apart. `(1 2 ⋄ 3)` is a vector of two vectors, `[[1 2] [3]]`.
+
 A line break inside brackets counts as a space. So a vector can span lines, and a matrix written over several lines needs `⋄` at the end of each row.
 
 ```apl

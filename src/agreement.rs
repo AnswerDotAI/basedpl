@@ -6,6 +6,8 @@ use crate::{
 pub(crate) enum Mapping {
     Scalar,
     Linear(usize),
+    /// The input fills the trailing result axes and repeats as one block.
+    Tiled(usize),
     Positions(Vec<usize>),
     Axes(Vec<(usize, usize, usize)>),
     Keyed(Vec<(usize, usize, Vec<Option<usize>>)>),
@@ -17,6 +19,7 @@ impl Mapping {
         Some(match self {
             Self::Scalar => 0,
             Self::Linear(repeat) => i / repeat,
+            Self::Tiled(size) => i % size,
             Self::Positions(positions) => positions[i],
             Self::Axes(axes) => axes.iter().map(|&(stride, len, source)| i / stride % len * source).sum(),
             Self::Keyed(axes) => axes.iter().try_fold(0, |n, (stride, source, map)| Some(n + map[i / stride % map.len()]? * source))?,
@@ -52,7 +55,9 @@ impl Mapping {
             source *= len;
         }
         let repeat = count / size;
-        if map.iter().all(|&(stride, _, source)| stride == source * repeat) { Self::Linear(repeat) } else { Self::Axes(map) }
+        if map.iter().all(|&(stride, _, source)| stride == source * repeat) {
+            Self::Linear(repeat)
+        } else if map.iter().all(|&(stride, _, source)| stride == source) { Self::Tiled(size) } else { Self::Axes(map) }
     }
 }
 
@@ -86,6 +91,11 @@ impl Agreement {
     }
     pub fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind> {
         if left.shape().len() < right.shape().len() { Self::mapped(left, right, axes, &(0..right.shape().len()).collect::<Vec<_>>()) } else { Self::mapped(left, right, &(0..left.shape().len()).collect::<Vec<_>>(), axes) }
+    }
+    /// Gives each argument its own result axes. The left argument's axes come first.
+    pub fn outer(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> {
+        let nx = left.shape().len();
+        Self::mapped(left, right, &(0..nx).collect::<Vec<_>>(), &(nx..nx + right.shape().len()).collect::<Vec<_>>())
     }
     fn mapped(left: &Layout, right: &Layout, xa: &[usize], ya: &[usize]) -> Result<Self, ErrorKind> {
         let mut shape = vec![1; xa.iter().chain(ya).max().map_or(0, |a| a + 1)];

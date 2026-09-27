@@ -1,25 +1,44 @@
-use crate::{array::Frame, primitive::Selection, Error, ErrorKind, Number, Span, Value};
-use std::collections::HashMap;
+use crate::{
+    array::{Frame, Gather, Items},
+    primitive::{Selection, Targets},
+    Error, ErrorKind, Number, Span, Value,
+};
+use foldhash::{HashMap, HashMapExt};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SelectionKind { Item, Elements }
 
 // Labels exist only in a selective-assignment expression, never in name bindings.
 // Zero is fill, skipped on assignment. Nested items retain whole-item paths.
-pub(crate) struct Labels { paths: Vec<Vec<usize>>, nested: HashMap<usize, (Value, Vec<usize>)> }
+pub(crate) struct Labels { places: Places, nested: HashMap<usize, (Value, Vec<usize>)> }
+
+/// Where each label leads. Label `k` is the `k`th place, counting from 1. An array with no nested items labels its items by their
+/// offsets, so it needs no paths.
+enum Places { Offsets(usize), Paths(Vec<Vec<usize>>) }
+
 impl Labels {
     pub fn new(original: &Value, span: &Span) -> Result<(Self, Value), Error> {
-        let mut labels = Self { paths: vec![], nested: HashMap::new() };
-        let array = labels.build(original, &mut Vec::new(), span)?;
+        let simple = match original.as_items() { Items::Values(items) => items.iter().all(Value::is_atom), _ => true };
+        let (mut labels, array) = if matches!(original, Value::Array(_)) && !original.is_empty() && simple {
+            let n = original.len();
+            if n >= crate::array::MAX_GENERATED_ELEMENTS { return Err(span.error(ErrorKind::Limit, "selection is too large")); }
+            let array = Value::integers(original.shape().to_vec(), (1..=n as i64).collect())
+                .and_then(|a| a.with_layout(original.layout().clone()))
+                .map_err(|k| span.error(k, "invalid selection labels"))?;
+            (Self { places: Places::Offsets(n), nested: HashMap::new() }, array)
+        } else {
+            let mut labels = Self { places: Places::Paths(vec![]), nested: HashMap::new() };
+            let array = labels.build(original, &mut Vec::new(), span)?;
+            (labels, array)
+        };
         labels.nested.insert(array.storage_id(), (array.clone(), vec![]));
         Ok((labels, array))
     }
+    fn len(&self) -> usize { match &self.places { Places::Offsets(n) => *n, Places::Paths(paths) => paths.len() } }
     fn build(&mut self, a: &Value, path: &mut Vec<usize>, span: &Span) -> Result<Value, Error> {
         let mut items = Vec::new();
         for (i, e) in a.elements().enumerate() {
-            if self.paths.len() + self.nested.len() >= crate::array::MAX_GENERATED_ELEMENTS {
-                return Err(span.error(ErrorKind::Limit, "selection is too large"));
-            }
+            if self.len() + self.nested.len() >= crate::array::MAX_GENERATED_ELEMENTS { return Err(span.error(ErrorKind::Limit, "selection is too large")); }
             path.push(i);
             items.push(match e {
                 a @ Value::Array(_) => {
@@ -29,8 +48,9 @@ impl Labels {
                     child
                 }
                 _ => {
-                    self.paths.push(path.clone());
-                    Value::Number(Number::from_integer(self.paths.len() as i64))
+                    let Places::Paths(paths) = &mut self.places else { unreachable!() };
+                    paths.push(path.clone());
+                    Value::Number(Number::from_integer(paths.len() as i64))
                 }
             });
             path.pop();
@@ -49,50 +69,67 @@ impl Labels {
         seen.insert(a.storage_id(), result.clone());
         Ok(result)
     }
-    pub fn replacements(&self, selected: &Value, right: &Value, kind: SelectionKind, span: &Span) -> Result<(Selection, Value), Error> {
-        let mut paths = Vec::new();
-        let mut values = Vec::new();
-        if kind == SelectionKind::Item {
-            let path = if let Some((_, path)) = self.nested.get(&selected.storage_id()) { Some(path) } else if let Some(n) = selected.as_number() {
-                let id = n.nonnegative_integer().map_err(|k| span.error(k, "invalid selection label"))?;
-                id.checked_sub(1).and_then(|i| self.paths.get(i))
-            } else { None };
-            paths.push(path.ok_or_else(|| span.error(ErrorKind::Index, "cannot assign to a missing item"))?.clone());
-            values.push(right.clone());
+    /// Adds the place of label `id`, and reports whether it has one. Label 0 is fill, which has no place.
+    fn place(&self, id: usize, targets: &mut Targets) -> bool {
+        let Some(i) = id.checked_sub(1) else { return false };
+        match &self.places {
+            Places::Offsets(n) if i < *n => targets.push(&[i]),
+            Places::Paths(paths) if i < paths.len() => targets.push(&paths[i]),
+            _ => return false,
         }
-        else { self.collect(selected, right, span, &mut paths, &mut values)?; }
-        let shape = vec![paths.len()];
-        let values = Value::from_parts(shape.clone(), values, right.prototype().clone()).map_err(|k| span.error(k, "invalid replacement"))?;
-        Ok((Selection { frame: Frame::Array(shape.into()), paths }, values))
+        true
     }
-    fn collect(&self, selected: &Value, right: &Value, span: &Span, paths: &mut Vec<Vec<usize>>, values: &mut Vec<Value>) -> Result<(), Error> {
+    pub fn replacements(&self, selected: &Value, right: &Value, kind: SelectionKind, span: &Span) -> Result<(Selection, Value), Error> {
+        let mut targets = Targets::Offsets(Vec::with_capacity(selected.len()));
+        let mut values = Gather::new(&[right], selected.len());
+        if kind == SelectionKind::Item {
+            let found = if let Some((_, path)) = self.nested.get(&selected.storage_id()) {
+                targets.push(path);
+                true
+            } else if let Some(n) = selected.as_number() {
+                self.place(n.nonnegative_integer().map_err(|k| span.error(k, "invalid selection label"))?, &mut targets)
+            } else { false };
+            if !found { return Err(span.error(ErrorKind::Index, "cannot assign to a missing item")); }
+            values.fill(right, 1);
+        }
+        else { self.collect(selected, right, span, &mut targets, &mut values)?; }
+        let shape = vec![targets.len()];
+        let values = values.finish(shape.clone().into(), || right.prototype()).map_err(|k| span.error(k, "invalid replacement"))?;
+        Ok((Selection { frame: Frame::Array(shape.into()), targets }, values))
+    }
+    fn collect(&self, selected: &Value, right: &Value, span: &Span, targets: &mut Targets, values: &mut Gather) -> Result<(), Error> {
         let aligned;
         let right = if right.has_keys() && selected.has_keys() {
-            aligned = crate::keyed::reorder(right, selected.axis_keys(), true).map_err(|k| span.error(k, "replacement does not supply selected keys"))?;
+            aligned = crate::keyed::reorder(right, &(0..selected.shape().len()).map(|a| selected.keys(a).cloned()).collect::<Vec<_>>(), true)
+                .map_err(|k| span.error(k, "replacement does not supply selected keys"))?;
             &aligned
         } else { right };
         if !right.is_singleton() && right.shape() != selected.shape() {
             return Err(span.error(ErrorKind::Length, "replacement shape does not match selection"));
         }
+        let pick = |i: usize| if right.is_singleton() { 0 } else { i };
+        let label = |i: usize, id: usize, targets: &mut Targets, values: &mut Gather| -> Result<(), Error> {
+            if id == 0 { return Ok(()); }
+            if !self.place(id, targets) { return Err(span.error(ErrorKind::Index, "cannot assign to fill introduced by a selection")); }
+            values.push(right, pick(i));
+            Ok(())
+        };
+        if let Items::Integers(ids) = selected.as_items() {
+            for (i, &id) in ids.iter().enumerate() {
+                label(i, usize::try_from(id).map_err(|_| span.error(ErrorKind::Domain, "invalid selection label"))?, targets, values)?;
+            }
+            return Ok(());
+        }
         for (i, item) in selected.elements().enumerate() {
-            let value = right.at(if right.is_singleton() { 0 } else { i });
             match item {
-                Value::Number(n) => {
-                    let id = n.nonnegative_integer().map_err(|k| span.error(k, "invalid selection label"))?;
-                    if id == 0 { continue; }
-                    let path = id
-                        .checked_sub(1)
-                        .and_then(|i| self.paths.get(i))
-                        .ok_or_else(|| span.error(ErrorKind::Index, "cannot assign to fill introduced by a selection"))?;
-                    paths.push(path.clone());
-                    values.push(value);
-                }
-                a @ Value::Array(_) => {
-                    if let Some((_, path)) = self.nested.get(&a.storage_id()) {
-                        paths.push(path.clone());
-                        values.push(value);
-                    } else { self.collect(&a, &value.clone(), span, paths, values)?; }
-                }
+                Value::Number(n) => label(i, n.nonnegative_integer().map_err(|k| span.error(k, "invalid selection label"))?, targets, values)?,
+                a @ Value::Array(_) => match self.nested.get(&a.storage_id()) {
+                    Some((_, path)) => {
+                        targets.push(path);
+                        values.push(right, pick(i));
+                    }
+                    None => self.collect(&a, &right.at(pick(i)), span, targets, values)?,
+                },
                 Value::Character(_) | Value::Function(_) => return Err(span.error(ErrorKind::Domain, "invalid selection")),
             }
         }

@@ -93,7 +93,7 @@ nr ← {  ⍝ Newton-Raphson.
   ⍵+(⍺×y)÷y-∆y  ⍝ next estimate.
 }
 
-traj2 ← { ¯1⊸↓⍤(,⟜⊂⟜⍶⟜↑⟜⌽⍨⍣(∊⍨⟜⊂⟜↑⟜⌽⍨)⍤⊂)⍵ }
+traj2 ← { ¯1⊸↓⍤(,⟜⊂⟜⍶⟜↑⟜⌽⍨⍣(∊⍨⟜⊂⟜↑⟜⌽⍨)⍤(,⊂))⍵ }
 
 ⍝ From http://dfns.dyalog.com/c_while.htm
 

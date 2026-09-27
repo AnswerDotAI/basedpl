@@ -14,4 +14,8 @@ Inside [brackets](brackets.qmd), `⋄` separates major cells. A trailing `⋄` b
 ⍴[42 ⋄]            ⍝ [1]
 ```
 
-Inside parentheses, `⋄` is a `SYNTAX` error, because parentheses hold one expression.
+Inside [parentheses](parentheses.qmd), `⋄` separates rows, and the result is a vector of the rows. Each row reads as brackets do, so it is always a vector.
+
+```apl
+(1 2 ⋄ 3)          ⍝ [[1 2] [3]]
+```

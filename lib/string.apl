@@ -176,7 +176,7 @@ wrapnote ← {                                 ⍝ Wrap text paragraphs in note 
 
   nls←•ucs 10 13 133                         ⍝ version-proof newlines.
   nl←↑nls∩⍵                                  ⍝ newline separator.
-  [to fm]←2↑⍺,first 1↓split ⍵~'─'            ⍝ to and from notes width.
+  [to fm]←2↑⍺,first 1↓split ⍵~"─"            ⍝ to and from notes width.
   vex←split ⍵                                ⍝ line_vector notes to vec-of-vecs.
   text←0,1↓spill test¨vex                    ⍝ mask of lines of flowtext.
   segs←1,1↓¯1⌽0 1⍷text                       ⍝ partition at start of flowtext.
@@ -226,7 +226,7 @@ tabTrips ← {∧/(⍳2+⍴⍵)tabTrip¨⊂⍵}
 ⍝ From http://dfns.dyalog.com/c_dlb.htm
 
 dlb ← {  ⍝ Drop Leading Blanks.
-  ⍺←' ' ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
+  ⍺←" " ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
   2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
   1≥⍴⍴⍵:(+/∧\⍵∊⍺)↓⍵  ⍝ vector
   (∨\∨⌿~⍵∊⍺)/⍵  ⍝ matrix
@@ -235,7 +235,7 @@ dlb ← {  ⍝ Drop Leading Blanks.
 ⍝ From http://dfns.dyalog.com/c_dtb.htm
 
 dtb ← {  ⍝ Drop Trailing Blanks.
-  ⍺←' ' ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
+  ⍺←" " ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
   2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
   1≥⍴⍴⍵:(-+/∧\⌽⍵∊⍺)↓⍵  ⍝ vector
   (~⌽∧\⌽∧⌿⍵∊⍺)/⍵  ⍝ matrix
@@ -244,7 +244,7 @@ dtb ← {  ⍝ Drop Trailing Blanks.
 ⍝ From http://dfns.dyalog.com/c_deb.htm
 
 deb ← {  ⍝ Drop Ending Blanks.
-  ⍺←' ' ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
+  ⍺←" " ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
   2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
   b←⍵∊⍺  ⍝ mask
   1≥⍴⍴⍵:((∧\b)⍱⌽∧\⌽b)/⍵  ⍝ vector
@@ -254,7 +254,7 @@ deb ← {  ⍝ Drop Ending Blanks.
 ⍝ From http://dfns.dyalog.com/c_dmb.htm
 
 dmb ← {  ⍝ Drop Multiple Blanks.
-  ⍺←' ' ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
+  ⍺←" " ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
   2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
   2>⍴⍴⍵:(∨/2↕(~⍵∊⍺),1)/⍵
   (∨/2↕(,∨⌿~⍵∊⍺),1)/⍵
@@ -263,7 +263,7 @@ dmb ← {  ⍝ Drop Multiple Blanks.
 ⍝ From http://dfns.dyalog.com/c_dxb.htm
 
 dxb ← {  ⍝ Drop eXtraneous Blanks.
-  ⍺←' ' ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
+  ⍺←" " ⋄ 1<|≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
   2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
   b←⍵∊⍺  ⍝ mask
   1≥⍴⍴⍵:(1↑b)↓(b⍲1↓b,1)/⍵  ⍝ vector
@@ -273,7 +273,7 @@ dxb ← {  ⍝ Drop eXtraneous Blanks.
 ⍝ From http://dfns.dyalog.com/c_dab.htm
 
 dab←{  ⍝ Drop All Blanks.
-  ⍺←' ' ⋄ 1<≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
+  ⍺←" " ⋄ 1<≡⍵:(⊂⍺)∇¨⍵  ⍝ nested?
   1≥⍴⍴⍵:⍵~⍺  ⍝ vector
   2=⍴⍴⍵:⊃(↓⍵)~¨⊂⍺
   (¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array

@@ -30,7 +30,14 @@ Parentheses give the rank-0 spelling. Parentheses round literal syntax make a sc
 
 Array notation extends brackets to higher ranks. `[1 2 ⋄ 3 4]` is a matrix, as in Dyalog's array notation. `⋄` stacks its rows as major cells, so each row adds its own rank to the result. `[1 ⋄ 2]` is the vector `1 2`, a column is `[[1] ⋄ [2]]`, and `[a ⋄ b]` is the Mix of `[a b]` when `a` and `b` have the same shape. BQN's literals can't form rank-0 arrays, which Lochbaum lists under "High-rank array notation awkwardness". Here every rank has a spelling.
 
-Items in brackets can be functions. `[+/ ÷ ≢]` is a vector of three functions. A one-item vector turns a function expression into a value: `[+/÷≢]`. BQN needs `⊑⟨Expr⟩` or a name for this, which Lochbaum lists under "Converting a function expression to a subject is tricky". Parentheses enclose a function written as one glyph or held in one name: `(+)` and `(f)` are scalars holding a function.
+Parentheses with `⋄` write a vector of rows. Each row reads as brackets do, so it is always a vector, and the rows can differ in length. So `⋄` adds an axis inside brackets and a level of nesting inside parentheses. Brackets write flat arrays, and parentheses nest. A vector of strings or of names already has its spelling, `["ab" "cd"]` or `[x y]`, so nothing is lost by making every row a vector.
+
+```apl
+(4 ⋄ 4 5 ⋄ 4 5 6)≡[[4] [4 5] [4 5 6]]   ⍝ 1
+≢¨(1 2 ⋄ 3)                            ⍝ 2 1
+```
+
+Items in brackets can be functions. `[+/ ÷ ≢]` is a vector of three functions. A one-item vector turns a function expression into a value: `[+/÷≢]`. BQN needs `⊑⟨Expr⟩` or a name for this, which Lochbaum lists under "Converting a function expression to a subject is tricky". Parentheses enclose a function written as a glyph: `(+)` is a scalar holding `+`.
 
 Items in a list are evaluated left to right, as statements are. BQN chose the same order for its lists and strands.
 
@@ -133,3 +140,21 @@ bAsedPL uses BQN's [based array model](https://mlochbaum.github.io/BQN/doc/based
 ```
 
 APL's nested array model identifies a simple scalar with its enclosure, and enclosing 3 gives 3 again. Under the based model, every value has one representation, whether you pass it to a function, return it, or store it in an array. Functions are atoms too, and they can be items of a list, as in `[+/ ÷ ≢]`. Lochbaum's page on the model gives the longer argument.
+
+## Functions act on major cells
+
+bAsedPL follows BQN's leading-axis model. A function that works on a whole array acts on its major cells, the cells along its first axis. The last-axis glyphs `⌽ / \ ,` are the leading-axis functions applied at rank 1, and their first-axis twins `⊖ ⌿ ⍀ ⍪` are the leading-axis functions themselves. So one rule says how every function treats a matrix.
+
+Search follows the same rule. `⍳ ∊ ~ ∪ ∩` compare the major cells of the searched argument, so a matrix is searched row by row. The other argument's cells have the same rank. A unit has no major cells, so it can't be searched. `s~" "` removes the spaces from a string, and `s~' '` is a `RANK` error.
+
+Partition splits along the first axis too, into blocks of major cells. `⊂⍤1` splits each row instead, and `⊂⍠1` splits a matrix into blocks of columns. Encode and Decode put digits on the last axis, as J's `#:` and `#.` do. Encoding a vector gives one row of digits for each number, and Decode reads each row back.
+
+```apl
+m←[1 2 ⋄ 3 4 ⋄ 1 2]
+m~[1 2 ⋄ 5 6]          ⍝ [3 4 ⋄]
+1 0 1⊂m                ⍝ [[1 2 ⋄ 3 4] [1 2 ⋄]]
+2 2 2⊤5 6              ⍝ [1 0 1 ⋄ 1 1 0]
+2⊥[1 0 1 ⋄ 1 1 0]      ⍝ 5 6
+```
+
+Rank 0 passes each 0-cell as a unit, as BQN's `⎉0` does, not the item inside it. So `⊢⍤0` gives back its argument unchanged, even when the argument is nested. Each, `¨`, is the operator that passes items.

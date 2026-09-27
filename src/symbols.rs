@@ -1,104 +1,47 @@
 //! Shared names for Python functions and glyph completion.
-use std::{collections::HashMap, sync::OnceLock};
+use crate::primitive::{OperatorKind, Primitive};
+use foldhash::HashMap;
+use std::sync::OnceLock;
 
-// One row per glyph: glyph, canonical name (nbs/glyphs.qmd), monad, dyad, extra completion aliases.
-// Empty operation names mean that valence is not a primitive function; aliases are space-separated.
-pub(crate) const SYMBOLS: &[(&str, &str, &str, &str, &str)] = &[
-    ("←", "assign", "", "", "left-arrow"),
-    ("→", "pipe", "", "", "right-arrow"),
-    ("⍳", "iota", "iota", "index-of", ""),
-    (":", "colon", "unkey", "keyed", ""),
-    ("⍴", "rho", "shape", "reshape", ""),
-    ("≢", "tally", "tally", "not-match", ""),
-    ("≡", "match", "depth", "match", ""),
-    ("+", "add", "conjugate", "plus", ""),
-    ("-", "dash", "negate", "subtract", ""),
-    ("×", "mul", "sign", "times", "multiply direction"),
-    ("÷", "div", "reciprocal", "divide", ""),
-    ("⌈", "ceiling", "ceiling", "max", ""),
-    ("⌊", "floor", "floor", "min", ""),
-    ("|", "stile", "magnitude", "residue", "abs"),
-    ("*", "star", "exponential", "exponent", "exp"),
-    ("⍟", "log", "logarithm", "log", ""),
-    ("○", "circle", "cis", "circle", ""),
-    ("π", "pi", "pi-times", "pi-ratio", ""),
-    ("√", "root", "sqrt", "root", ""),
-    ("!", "factorial", "factorial", "binomial", ""),
-    ("∧", "and", "polar", "lcm", ""),
-    ("∨", "or", "real-imag", "gcd", ""),
-    ("⍲", "nand", "square", "nand", ""),
-    ("⍱", "nor", "double", "nor", ""),
-    ("~", "tilde", "not", "without", ""),
-    ("=", "equal", "classify", "equal", ""),
-    ("≠", "not-equal", "unique-mask", "not-equal", ""),
-    ("<", "less", "", "less", ""),
-    ("≤", "less-or-equal", "decrement", "less-equal", ""),
-    (">", "greater", "", "greater", ""),
-    ("≥", "greater-or-equal", "increment", "greater-equal", ""),
-    ("⎕", "quad", "", "", ""),
-    ("•", "bullet", "", "", "system"),
-    ("⍺", "alpha", "", "", ""),
-    ("⍵", "omega", "", "", ""),
-    ("⍶", "alpha-underbar", "", "", "left-operand"),
-    ("⍹", "omega-underbar", "", "", "right-operand"),
-    ("∇", "del", "", "", "recursion"),
-    ("⍢", "del-diaeresis", "", "", "operator-recursion"),
-    ("⍝", "comment", "", "", ""),
-    ("⋄", "diamond", "", "", ""),
-    ("¯", "overbar", "", "", ""),
-    ("∞", "infinity", "", "", ""),
-    ("⍬", "zilde", "", "", "empty"),
-    (",", "comma", "ravel", "catenate", ""),
-    ("⍪", "table", "table", "catenate-first", ""),
-    ("⊂", "enclose", "enclose", "partitioned-enclose", ""),
-    ("⊃", "mix", "mix", "pick", ""),
-    ("⊆", "nest", "nest", "partition", ""),
-    ("∊", "member", "enlist", "member", "epsilon"),
-    ("∪", "union", "unique", "union", ""),
-    ("∩", "intersection", "", "intersection", ""),
-    ("⍋", "grade-up", "grade-up", "grade-up-by", ""),
-    ("⍒", "grade-down", "grade-down", "grade-down-by", ""),
-    ("↑", "take", "first", "take", "disclose"),
-    ("↓", "drop", "split", "drop", ""),
-    ("⌽", "reverse", "reverse", "rotate", ""),
-    ("⊖", "reverse-first", "reverse-first", "rotate-first", ""),
-    ("⍉", "transpose", "transpose", "reorder-axes", ""),
-    ("⊤", "encode", "binary-encode", "encode", ""),
-    ("⊥", "decode", "binary-decode", "decode", ""),
-    ("⍎", "execute", "execute", "", ""),
-    ("⍕", "format", "format", "format-spec", ""),
-    ("⌷", "squad", "materialise", "index", ""),
-    ("⌹", "domino", "inverse", "matrix-divide", ""),
-    ("¨", "each", "", "", "dieresis"),
-    ("/", "slash", "", "replicate", "reduce"),
-    ("⌿", "slash-bar", "", "replicate-first", "reduce-first"),
-    ("\\", "backslash", "", "expand", "scan"),
-    ("⍀", "backslash-bar", "", "expand-first", "scan-first"),
-    ("⍤", "rank", "", "", "atop"),
-    ("⍠", "axis", "", "", ""),
-    ("⊸", "before", "", "", "bind"),
-    ("⌝", "outer-product", "", "", ""),
-    ("⍨", "commute", "", "", ""),
-    ("⍥", "over", "", "", ""),
-    ("⟜", "after", "", "", "hook bind-right"),
-    ("⍣", "power", "", "", "repeat iterate history"),
-    ("⇄", "inverse-pair", "", "", ""),
-    ("⌾", "under", "", "", ""),
-    ("↕", "windows", "", "windows", ""),
-    ("ℙ", "prime", "prime", "prime-mode", ""),
-    ("⨸", "factor", "factors", "factor-spec", ""),
-    ("⊛", "polynomial", "polynomial", "polyval", ""),
-    ("∂", "derivative", "", "", ""),
-    ("◶", "agenda", "", "", "choose"),
-    ("⍸", "where", "where", "interval-index", ""),
-    ("⍷", "find", "", "find", ""),
-    ("⊢", "right", "same", "right", ""),
-    ("⊣", "left", "same-left", "left", ""),
-    ("⌸", "key", "", "", ""),
-    ("@", "at", "", "", ""),
-    ("⌺", "stencil", "", "", ""),
-    ("?", "question", "roll", "deal", ""),
+/// One row per glyph: glyph, canonical name (nbs/glyphs.qmd), monad, dyad, extra completion aliases.
+/// An empty operation name means that valence has no typed name. Aliases are space-separated.
+pub(crate) type Symbol = (&'static str, &'static str, &'static str, &'static str, &'static str);
+
+// Glyphs that are syntax, not functions or operators: glyph, name, aliases.
+const SYNTAX: &[(&str, &str, &str)] = &[
+    ("←", "assign", "left-arrow"),
+    ("→", "pipe", "right-arrow"),
+    ("⎕", "quad", ""),
+    ("•", "bullet", "system"),
+    ("⍺", "alpha", ""),
+    ("⍵", "omega", ""),
+    ("⍶", "alpha-underbar", "left-operand"),
+    ("⍹", "omega-underbar", "right-operand"),
+    ("∇", "del", "recursion"),
+    ("⍢", "del-diaeresis", "operator-recursion"),
+    ("⍝", "comment", ""),
+    ("⋄", "diamond", ""),
+    ("¯", "overbar", ""),
+    ("∞", "infinity", ""),
+    ("⍬", "zilde", "empty"),
 ];
+
+/// Every glyph's names: syntax, then primitives and operators from their rows in `primitive.rs`.
+pub(crate) fn symbols() -> &'static [Symbol] {
+    static SYMBOLS: OnceLock<Vec<Symbol>> = OnceLock::new();
+    SYMBOLS.get_or_init(|| {
+        let syntax = SYNTAX.iter().map(|&(glyph, name, aliases)| (glyph, name, "", "", aliases));
+        let primitives = Primitive::all().map(|p| {
+            let info = p.info();
+            (info.glyph, info.name, info.monad.map_or("", |m| m.name), info.dyad.map_or("", |d| d.name), info.aliases)
+        });
+        let operators = OperatorKind::all().filter_map(|op| {
+            let info = op.info();
+            info.names.map(|(name, aliases)| (info.glyph, name, "", "", aliases))
+        });
+        syntax.chain(primitives).chain(operators).collect()
+    })
+}
 
 // Keys are US characters after Shift but before Alt. Browser adapters share this resource.
 pub(crate) fn alt_keys() -> &'static HashMap<char, char> {

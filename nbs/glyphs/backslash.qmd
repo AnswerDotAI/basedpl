@@ -21,7 +21,7 @@
 100+\10 20         ⍝ 110 130
 ```
 
-The whole seed starts each lane. Use Rank for separate seeds per cell.
+The whole seed starts each lane. A unit seed stands for its content, so `(10)+\v` is `10+\v`. Use Rank for separate seeds per cell.
 
 ```apl
 M←[1 2 3 ⋄ 4 5 6]

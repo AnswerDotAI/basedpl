@@ -51,7 +51,7 @@ cfract ← {  ⍝ Continued fraction approximation of real ⍵.
 ⍝ From http://dfns.dyalog.com/c_colsum.htm
 
 colsum ← {  ⍝ Sum of (default decimal) columns.
-  ⍺←10 ⋄ ⍺{{(0=⍬⍴⍵)↓⍵}+⌿1 0⌽0,[0 ⍺]⊤⍵}⍣≡+⌿⍵  ⍝ repeat while overflow.
+  ⍺←10 ⋄ ⍺{{(0=⍬⍴⍵)↓⍵}+⌿1 0⌽0,⍉[0 ⍺]⊤⍵}⍣≡+⌿⍵  ⍝ repeat while overflow.
 }
 
 ⍝ From http://dfns.dyalog.com/c_efract.htm
@@ -83,7 +83,7 @@ sulFib ← {  ⍝ Sullivan Fibonacci
 ⍝ From http://dfns.dyalog.com/c_factors.htm
 
 factors ← { ⍵{  ⍝ Prime factors of ⍵.
-    ⍵,(⍺÷×/⍵)~1  ⍝ append factor > sqrt(⍵).
+    ⍵,(⍺÷×/⍵)~[1]  ⍝ append factor > sqrt(⍵).
   }∊⍵{  ⍝ concatenated,
     (0=(⍵*1+⍳⌊⍵⍟⍺)|⍺)/⍵  ⍝ powers of each prime factor.
   }¨⍬{  ⍝ remove multiples:
@@ -120,9 +120,9 @@ k6174 ← {  ⍝ Kaprekar's operation.
 hex ← {  ⍝ Hexadecimal from decimal.
   ⍺←⊢  ⍝ no width specification.
   1≠≡,⍵:⍺∇¨⍵  ⍝ simple-array-wise:
-  0∊⍵-1+⍵:"Too big"
+  0∊,⍵-1+⍵:"Too big"
   n←⍬⍴⍺,2*⌈2⍟2⌈16⍟1+⌈/|⍵  ⍝ default width.
-  (↓⍠0)"0123456789abcdef"((n/16)⊤⍵)
+  ↓"0123456789abcdef"((n/16)⊤⍵)
 }
 
 ⍝ From http://dfns.dyalog.com/c_dec.htm
@@ -177,7 +177,7 @@ rational ← {  ⍝ Rational approximation to real ⍵.
 
 roman ← {  ⍝ Roman numeral arithmetic.
   num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5×⌝10*⍳4)(7|"IVXLCDMivxlcdm"⍳⍵)}
-  fmt←{~⟜' ',1 0 0⍉(' '⍪3 4⍴"MCXI DLV ")([∞ ⍵⊤⍨4⍴10]⌷0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)}
+  fmt←{~⟜" ",1 0 0⍉(' '⍪3 4⍴"MCXI DLV ")([∞ ⍵⊤⍨4⍴10]⌷⍉0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)}
   depth←{⍹≥|≡⍵ : ⍶ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1  ⍝ arabic from roman.
   fmts←fmt depth 0  ⍝ roman from arabic.
@@ -238,7 +238,7 @@ xs ← {+/×⍵-⌝⍺}  ⍝ Signum sum
 
 xm ← {⌈/⊃×⌿×⍺,.-⍉⍵}  ⍝ Max signum
 
-xr ← {d←⍉⊃+/×⍵,.-⍉⍺ ⋄ ((2∨.=|d)/d)←2 ⋄ 3⊥d}  ⍝ Outside location
+xr ← {d←⍉⊃+/×⍵,.-⍉⍺ ⋄ ((2∨.=|d)/d)←2 ⋄ 3⊥⍉d}  ⍝ Outside location
 
 ⍝ From http://dfns.dyalog.com/c_alt.htm
 
@@ -246,7 +246,7 @@ alt ← {  ⍝ Alternant.
   [r c]←⍴⍵  ⍝ matrix ⍵
   0=r:⍹⌿,⍵
   1≥c:⍶⌿,⍵
-  M←~⍤1 0⍨⍳r  ⍝ minors
+  M←(⍳r)~⍤1⍪⍳r  ⍝ minors
   ⍵.[∞ 0]⍶.⍹∇¨⊂⍠[1 2]⍵.[M 1↓⍳c]
 }
 
@@ -271,7 +271,7 @@ det ← {  ⍝ Determinant of square matrix.
   0=n←≢⍵:⍺  ⍝ result for 0-by-0
   [i j]←(⍴⍵)⊤{⍵⍳⌈/⍵}|,⍵
   k←⍳n
-  (⍺×⍵.[i j]×¯1*i+j)∇ ⍵.[k~i k~j] - ⍵.[k~i j] ×⌝ ⍵.[i k~j] ÷ ⍵.[i j]
+  (⍺×⍵.[i j]×¯1*i+j)∇ ⍵.[k~[i] k~[j]] - ⍵.[k~[i] j] ×⌝ ⍵.[i k~[j]] ÷ ⍵.[i j]
 }
 
 ⍝ From http://dfns.dyalog.com/c_gauss_jordan.htm
@@ -302,7 +302,7 @@ kcell ← {  ⍝ Relationship between point and k-cell.
   b←,⍠((2=⍴⍴⍺)/0)⍺
   p←((2⌊⍴⍴⍺)↓1 1,⍴⍵)⍴⍵  ⍝ Points to evaluate.
   d←(,⍶⌿)⍤1 ⍉×-b,.-p
-  ⍶/⍬:⌈/d ⋄ 5⊥⍉d
+  ⍶/⍬:⌈/d ⋄ 5⊥d
 }
 
 ⍝ From http://dfns.dyalog.com/c_kball.htm
@@ -351,7 +351,7 @@ phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
   ""≡0/∊⍵:{
     1<|≡⍵:∇¨⍵
     '¯'=↑⍵:-∇ 1↓⍵
-    a←Ø⊥•d⍳⍵~'.'
+    a←Ø⊥•d⍳⍵~"."
     a÷Ø*(≢⍵∪'.')-1+(,⍵)⍳'.'
   }⍵
   0≠≡⍵:⍺∇¨⍵
@@ -446,7 +446,7 @@ xtimes ← { m←0  ⍝ Fast multi-digit product using FFT.
   FFT       ← {,(cube xroots⍴⍵)floop cube ⍵}
   iFFT      ← {(⍴⍵)÷⍨, (cube+xroots⍴⍵)floop cube ⍵}
   rconvolve ← {(¯1+(⍴⍺)+⍴⍵)↑iFFT×/FFT¨(⍺ extend ⍵)}
-  carry     ← {1↓+⌿1 0⌽0,0 10⊤⍵}
+  carry     ← {1↓+⌿1 0⌽0,⍉0 10⊤⍵}
   (+/∧\0=t)↓t←carry⍣≡0,⌊0.5+9○(⍺ rconvolve ⍵)
 }
 

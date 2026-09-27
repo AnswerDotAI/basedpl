@@ -225,7 +225,7 @@ Rank preserves frame keys. Assembled cell axes keep keys shared by every result 
 
 ```apl
 V←"aa" "bb":1 2
-{[⍵ ⍵]}⍤0 V                 ⍝ "aa" "bb":[1 1 ⋄ 2 2]
+{⍵,⍵}⍤0 V                   ⍝ "aa" "bb":[1 1 ⋄ 2 2]
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
 ⌽⍤1 M                       ⍝ ["alice" "bob";"qty" "price"]:[2 10 ⋄ 4 20]
 {10=↑⍵:⌽⍵ ⋄ ⍵}⍤1 M          ⍝ "alice" "bob":[2 10 ⋄ 20 4]

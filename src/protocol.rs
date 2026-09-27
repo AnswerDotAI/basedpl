@@ -26,7 +26,7 @@ fn array(a: &Value) -> JsonValue {
     if !a.axis_names().is_empty() { encoded["axis_names"] = json!(a.axis_names().iter().map(|n| n.as_deref()).collect::<Vec<_>>()); }
     if a.has_keys() {
         encoded["axis_keys"] =
-            json!(a.axis_keys().iter().map(|k| k.as_ref().map(|k| k.names().iter().map(|k| k.as_deref()).collect::<Vec<_>>())).collect::<Vec<_>>());
+            json!((0..a.shape().len()).map(|x| a.keys(x).map(|k| k.names().iter().map(|k| k.as_deref()).collect::<Vec<_>>())).collect::<Vec<_>>());
     }
     encoded
 }

@@ -1,6 +1,6 @@
-# `( )` — Group / Scalar / Train
+# `( )` — Group / Scalar / Rows / Train
 
-Parentheses round an expression group it. They hold one expression wherever they appear, including inside [brackets](brackets.qmd).
+Parentheses round an expression group it. Without `⋄`, they hold one expression wherever they appear, including inside [brackets](brackets.qmd).
 
 ```apl
 (2×3)+4            ⍝ 10
@@ -27,7 +27,20 @@ total←(1+2
 total              ⍝ 21
 ```
 
-`⋄` inside parentheses is a `SYNTAX` error. Brackets write vectors: `[a b]` is a vector, and `[a]` is a one-item vector.
+## Rows
+
+With `⋄`, parentheses write a vector whose items are the rows. Each row reads as [brackets](brackets.qmd) do, so every row is a vector, even a row with one item. The rows can differ in length. A trailing `⋄` makes a one-item vector holding one row. A line break still counts as a space, so rows written over several lines need `⋄` at the end of each line.
+
+```apl
+(4 ⋄ 4 5 ⋄ 4 5 6)       ⍝ [[4] [4 5] [4 5 6]]
+a←1 ⋄ b←2
+(a b ⋄ b)               ⍝ [[1 2] [2]]
+(1 2 ⋄)                 ⍝ [[1 2]]
+```
+
+Brackets with `⋄` stack their rows into one array instead: `[1 2 ⋄ 3 4]` is a matrix, and `(1 2 ⋄ 3 4)` is a vector of two vectors. A vector of strings or of names is written in brackets: `["ab" "cd"]` or `[a b]`.
+
+## Trains
 
 Two functions form an atop: `(f g)Y` is `f(g Y)`. Glyphs alone separated by spaces make a scalar instead, as above, so a train of bare glyphs is written without spaces.
 

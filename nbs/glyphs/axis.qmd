@@ -46,7 +46,7 @@ n←["row":2 "col":3]⍴⍳6
 A primitive with its own axis meaning keeps it:
 
 - Multi-axis reduce, including seeded reduce. `+/⍠1 2` flattens each cell before reducing.
-- Partitioned enclose. `1 0 1 0⊂⍠1` cuts the whole matrix into blocks. Nest `⊆⍠K` follows the general rule. Both match Dyalog.
+- Partitioned enclose and partition. `1 0 1 0⊂⍠1` and `1 1 2 2⊆⍠1` cut the whole matrix into blocks along axis 1. `⊂⍠K` matches Dyalog. Dyalog's `⊆[K]` partitions each lane instead, which is `{⍺⊆⍵}⍠K` here.
 - Rotate with a count array. `1 2 3 4⌽⍠0` pairs one count with each column.
 - Mix. `⊃⍠A` places the cell axes among the frame axes.
 - Axis selectors. `⍳⍠A` returns the keys or positions of the selected axes.

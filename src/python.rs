@@ -80,7 +80,7 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
     if a.has_keys() {
         result.set_item(
             "axis_keys",
-            a.axis_keys().iter().map(|k| k.as_ref().map(|k| k.names().iter().map(|k| k.as_deref().map(str::to_owned)).collect::<Vec<_>>())).collect::<Vec<_>>(),
+            (0..a.shape().len()).map(|x| a.keys(x).map(|k| k.names().iter().map(|k| k.as_deref().map(str::to_owned)).collect::<Vec<_>>())).collect::<Vec<_>>(),
         )?;
     }
     Ok(result.unbind())
@@ -418,7 +418,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_run_j_kernel, m)?)?;
     m.add_function(wrap_pyfunction!(_install_kernelspec, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    let symbols: Vec<_> = crate::symbols::SYMBOLS.iter().map(|&(g, n, m, d, a)| (g, n, m, d, a, crate::symbols::chord(g))).collect();
+    let symbols: Vec<_> = crate::symbols::symbols().iter().map(|&(g, n, m, d, a)| (g, n, m, d, a, crate::symbols::chord(g))).collect();
     m.add("symbols", symbols)?;
     m.add("_system_functions", crate::system::names().filter(|name| Function::builtin(name).is_some()).collect::<Vec<_>>())?;
     Ok(())

@@ -1,5 +1,6 @@
 use crate::{execution::Context, keyed, primitive::real, Error, ErrorKind, Number, Value};
-use std::{collections::HashMap, fs::OpenOptions, io::Write};
+use foldhash::{HashMap, HashMapExt};
+use std::{fs::OpenOptions, io::Write};
 
 pub(crate) fn text(value: &Value, span: &Context<'_>) -> Result<String, Error> {
     keyed::name(value).map(|s| s.to_string()).ok_or_else(|| span.error(ErrorKind::Domain, "expected text"))

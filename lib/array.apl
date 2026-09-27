@@ -117,7 +117,7 @@ disp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄ ⍺←⍬  
     [rows cols]  ⍝ shape decorators.
   }
   matr←{⊃,↓⍵}
-  sepr←{+/¨1⊂⊃⍵}
+  sepr←{+/¨1⊂⍠¯1 ⊃⍵}
   open←{(⍺⌈⍴⍵)↑⍵}
   isor←{1 ⍬≡[≡⍵ ⍴⍵]}  ⍝ is ⎕or of object?
   glue←{0=⍴⍵ : ⍵ ⋄ ⍺{⍺,⍶,⍵}/⍵}
@@ -192,7 +192,7 @@ displayr ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Boxed 
     bot←(⍴top)↑(↑2↓⍺),hrz
     rgt←"┐│",vrt,'┘'  ⍝ right side with corners
     lax←(↑¨(¯1↓3↓⍺)⌷¨(-1⌈¯1+⍴1⊃⍺)↑(⊂"│⌽"),¨⊂⍤⍕¨¯1↓0,1⊃⍺),¨⊂vrt
-    lax←(⊂1+⍴vrt)↑¨(lax~¨⊂' '),¨'│'  ⍝ pad and trim
+    lax←(⊂1+⍴vrt)↑¨(lax~¨⊂" "),¨'│'  ⍝ pad and trim
     lft←⍉'┌',(⊃lax),'└'
     lft,(top⍪⍵⍪bot),rgt  ⍝ fully boxed array
   }
@@ -232,7 +232,7 @@ dsp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Reduced ver
     0 ¯1↓join top¨join¨↓⍉⊃[⍵ bars]
   } 1 ∇¨ ⍵  ⍝ vector: formatted items
   subs←⍺ ∇¨ ⍵  ⍝ higher rank: formatted items
-  [rs cs]←+/¨1⊂⊃⍴¨subs
+  [rs cs]←+/¨1⊂⍠¯1 ⊃⍴¨subs
   dims←(mrs←⌈/rs) ,⌝ mcs←⌈/⍪⍉cs
   join←{⍺{⍺,⍶,⍵}/⍵}
   rows←(mrs/¨'│')join¨↓dims↑¨subs  ⍝ complete rows with '│'-separated items
@@ -265,7 +265,7 @@ from ← {  ⍝ Select (1↓⍴⍵)-cells from array ⍵.
   {
     [indx axis]←⍺  ⍝ index and axis for selection.
     indx≡,⊂⍬:⍵  ⍝ skip: select all items.
-    vec←⊂⍠((⍳⍴⍴⍵)~axis)⍵  ⍝ vector along given axis.
+    vec←⊂⍠((⍳⍴⍴⍵)~[axis])⍵  ⍝ vector along given axis.
     sel←⊃indx⊃¨⊂vec
     pos←axis+⍳⍴⍴indx
     (pos,(⍳⍴⍴sel)~pos)⍉sel  ⍝ simple selection.
@@ -361,7 +361,7 @@ perv ← { ⍺←⊢  ⍝ Scalar pervasion
 
 pmat ← {  ⍝ Permutation matrix of ⍳⍵.
   {  ⍝ perms of ⍳⍵:
-    1≥⍴⍵:⊃,↓⍵ ⋄ ⊃⍪/⍵,⟜∇¨⍵⊸~¨⍵
+    1≥⍴⍵:⊃,↓⍵ ⋄ ⊃⍪/⍵,⟜∇¨⍵⊸~¨,¨⍵
   }⍳⍵  ⍝ permutations of identity perm.
 }
 

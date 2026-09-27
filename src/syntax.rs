@@ -209,26 +209,9 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                     TokenKind::Literal(Value::from_parts(vec![data.len()], data, Value::Character(' ')).unwrap())
                 }
                 '⍬' => TokenKind::Literal(Value::empty(vec![0], Value::Number(Number::try_from(0.0).unwrap())).unwrap()),
-                '¨' => TokenKind::Operator(OperatorKind::Each),
-                '⍨' => TokenKind::Operator(OperatorKind::Commute),
-                '⊸' => TokenKind::Operator(OperatorKind::Before),
-                '⍤' => TokenKind::Operator(OperatorKind::Rank),
-                '⍠' => TokenKind::Operator(OperatorKind::Axis),
-                '⍥' => TokenKind::Operator(OperatorKind::Over),
-                '⟜' => TokenKind::Operator(OperatorKind::After),
                 '∘' | '⍛' => {
                     return Err(span(start + c.len_utf8()).error(ErrorKind::Syntax, format!("{c} is retired: use ⊸ or ⟜ to bind or preprocess, and ⍤ for Atop")))
                 }
-                '.' => TokenKind::Operator(OperatorKind::Product),
-                '⌝' => TokenKind::Operator(OperatorKind::Outer),
-                '⌸' => TokenKind::Operator(OperatorKind::Key),
-                '⍣' => TokenKind::Operator(OperatorKind::Power),
-                '⇄' => TokenKind::Operator(OperatorKind::PairInverse),
-                '⌾' => TokenKind::Operator(OperatorKind::Under),
-                '∂' => TokenKind::Operator(OperatorKind::Differentiate),
-                '◶' => TokenKind::Operator(OperatorKind::Agenda),
-                '@' => TokenKind::Operator(OperatorKind::At),
-                '⌺' => TokenKind::Operator(OperatorKind::Stencil),
                 '(' => TokenKind::Open,
                 ')' => TokenKind::Close,
                 '[' => TokenKind::BracketOpen,
@@ -250,7 +233,6 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                     if error { chars.next(); }
                     TokenKind::Guard(error)
                 }
-                '/' | '⌿' | '\\' | '⍀' => TokenKind::Hybrid(Hybrid { scan: matches!(c, '\\' | '⍀'), first: matches!(c, '⌿' | '⍀') }),
                 '{' => TokenKind::BraceOpen,
                 '}' => TokenKind::BraceClose,
                 '⍺' | '⍵' | '⍶' | '⍹' | '∇' | '⍢' => TokenKind::Name(c.to_string()),
@@ -259,9 +241,11 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                     continue;
                 }
                 c if c.is_whitespace() => continue,
-                c => match Primitive::from_glyph(c) {
-                    Some(f) => TokenKind::Function(f),
-                    None => return Err(span(start + c.len_utf8()).error(ErrorKind::Unsupported, format!("{c:?} is not supported yet"))),
+                c => match (Hybrid::from_glyph(c), OperatorKind::from_glyph(c), Primitive::from_glyph(c)) {
+                    (Some(h), ..) => TokenKind::Hybrid(h),
+                    (_, Some(op), _) => TokenKind::Operator(op),
+                    (.., Some(f)) => TokenKind::Function(f),
+                    _ => return Err(span(start + c.len_utf8()).error(ErrorKind::Unsupported, format!("{c:?} is not supported yet"))),
                 },
             }
         };
@@ -281,7 +265,7 @@ fn cover(nodes: &[Node]) -> Span { Span { source: nodes[0].span.source.clone(), 
 enum Piece {
     Node(Node),
     Newline,
-    Diamond(Span),
+    Diamond,
     Semicolon(Span),
 }
 
@@ -298,7 +282,7 @@ impl Parser<'_> {
                     continue;
                 }
                 TokenKind::Separator => {
-                    pieces.push(Piece::Diamond(span));
+                    pieces.push(Piece::Diamond);
                     continue;
                 }
                 TokenKind::Semicolon => {
@@ -327,7 +311,7 @@ impl Parser<'_> {
                             let kind = statements.iter().map(|s| definition_kind(&s.nodes)).max().unwrap_or(DefinitionKind::Function);
                             NodeKind::Dfn(Arc::new(Definition { body: Parsed { statements }, span: span.clone(), kind }))
                         }
-                        TokenKind::Open => NodeKind::Group(parenthesised(inner, &span)?),
+                        TokenKind::Open => parenthesised(inner, &span)?,
                         _ => brackets(inner, &span)?,
                     }
                 }
@@ -357,7 +341,7 @@ fn statements(pieces: Vec<Piece>) -> Result<Vec<Vec<Node>>, ParseFailure> {
     for piece in pieces {
         match piece {
             Piece::Node(n) => nodes.push(n),
-            Piece::Newline | Piece::Diamond(_) => {
+            Piece::Newline | Piece::Diamond => {
                 if !nodes.is_empty() { result.push(expression(std::mem::take(&mut nodes))?); }
             }
             Piece::Semicolon(s) => return Err(invalid(&s, "; separates items only inside brackets")),
@@ -367,19 +351,44 @@ fn statements(pieces: Vec<Piece>) -> Result<Vec<Vec<Node>>, ParseFailure> {
     Ok(result)
 }
 
-/// Parentheses group, or make a scalar when `encloses` holds. A line break inside them is a space.
-fn parenthesised(pieces: Vec<Piece>, span: &Span) -> Result<Vec<Node>, ParseFailure> {
+/// Parentheses group, or make a scalar when `encloses` holds. With `⋄` they write rows instead. A line break inside them is a space.
+fn parenthesised(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
+    if pieces.iter().any(|p| matches!(p, Piece::Diamond)) { return rows(pieces, span); }
     let mut nodes = Vec::new();
     for piece in pieces {
         match piece {
             Piece::Node(n) => nodes.push(n),
-            Piece::Newline => (),
-            Piece::Diamond(s) => return Err(invalid(&s, "⋄ cannot separate items in parentheses: brackets write lists")),
+            Piece::Newline | Piece::Diamond => (),
             Piece::Semicolon(s) => return Err(invalid(&s, "; separates items only inside brackets")),
         }
     }
     if nodes.is_empty() { return Err(invalid(span, "empty grouping is not a value")); }
-    expression(nodes)
+    Ok(NodeKind::Group(expression(nodes)?))
+}
+
+/// `(4 ⋄ 4 5)` is `[[4] [4 5]]`. Its items are the rows, each read as a bracketed list.
+fn rows(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
+    let mut parts = vec![Vec::new()];
+    for piece in pieces {
+        match piece {
+            Piece::Node(n) => parts.last_mut().unwrap().push(n),
+            Piece::Newline => (),
+            Piece::Diamond => parts.push(Vec::new()),
+            Piece::Semicolon(s) => return Err(invalid(&s, "; separates items only inside brackets")),
+        }
+    }
+    // A trailing `⋄` gives one row: `(1 2 ⋄)` is `[[1 2]]`.
+    if parts.len() > 1 && parts.last().is_some_and(Vec::is_empty) { parts.pop(); }
+    if parts.iter().any(Vec::is_empty) { return Err(invalid(span, "empty row between diamonds")); }
+    let cells = parts
+        .into_iter()
+        .map(|row| {
+            let span = cover(&row);
+            let items = items(row)?;
+            Ok(vec![Node { kind: NodeKind::ArrayLiteral { record: items.iter().any(|c| keyed_item(c)), cells: items, block: false }, span }])
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(NodeKind::ArrayLiteral { cells, block: false, record: false })
 }
 
 /// Whether parentheses round `nodes` make a scalar: they hold a literal, a strand, or glyphs separated by spaces.
@@ -397,14 +406,14 @@ pub(crate) fn encloses(nodes: &[Node]) -> bool {
 /// A line break is a space. Brackets round one item make a one-item vector.
 fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
     let semicolon = pieces.iter().any(|p| matches!(p, Piece::Semicolon(_)));
-    let diamond = pieces.iter().any(|p| matches!(p, Piece::Diamond(_)));
+    let diamond = pieces.iter().any(|p| matches!(p, Piece::Diamond));
     if semicolon && diamond { return Err(invalid(span, "; and ⋄ cannot both separate items in one pair of brackets")); }
     let mut parts = vec![Vec::new()];
     for piece in pieces {
         match piece {
             Piece::Node(n) => parts.last_mut().unwrap().push(n),
             Piece::Newline => (),
-            Piece::Diamond(_) | Piece::Semicolon(_) => parts.push(Vec::new()),
+            Piece::Diamond | Piece::Semicolon(_) => parts.push(Vec::new()),
         }
     }
     // A trailing `⋄` gives one-row arrays: `[1 2 ⋄]` is a 1×2 matrix.

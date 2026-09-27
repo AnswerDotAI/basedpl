@@ -21,6 +21,15 @@ m←2 3⍴⍳6
 
 Negative ranks count back from argument rank. Excessive ranks clamp. Empty frames call the operand on prototype cells.
 
+Rank 0 passes each position as a scalar, not the value it holds. So `⊢⍤0` returns its argument unchanged, and each item of a nested array arrives enclosed. [Each](each.qmd) passes the items themselves.
+
+```apl
+v←[[1 2] [3 4 5]]
+≢⍤0 v              ⍝ 1 1
+≢¨v                ⍝ 2 3
+(⊢⍤0 v)≡v          ⍝ 1
+```
+
 `∞` is the whole argument, and `¯∞` is rank 0. So `⍤1 ∞` pairs each row on the left with the whole right argument. That gives the matrix-vector product, which also multiplies matrices. A literal argument right after a literal operand needs brackets, because a list of literals would take it into the operand.
 
 ```apl

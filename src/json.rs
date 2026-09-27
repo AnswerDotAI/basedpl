@@ -31,7 +31,7 @@ pub(crate) fn exportable(value: &Value) -> Value {
         names.extend(keys.map(|k| k.names()[i].clone()));
         data.push(exportable(&e));
     }
-    if keys.is_some() { keyed::partial_vector(names, data) } else { value.layout().collect(data, value.prototype()) }.expect("subset of a valid array")
+    if keys.is_some() { keyed::partial_vector(names, data) } else { value.layout().collect(data, || value.prototype()) }.expect("subset of a valid array")
 }
 
 fn import(value: &Json, fill: &Number, span: &Context<'_>) -> Result<Value, Error> {

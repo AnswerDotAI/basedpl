@@ -10,20 +10,20 @@
 ⍝ ngn:4 —
 (⍳6)~0 2 4   ⍝ 1 3 5
 
-⍝ ngn:5 —
-"ab" "cd" "ad"~'a'   ⍝ "ab" "cd" "ad"
+⍝ ngn:5 — A unit can't be searched, so the searched argument is a one-item vector
+"ab" "cd" "ad"~['a']   ⍝ "ab" "cd" "ad"
 
 ⍝ ngn:6 —
 "ab" "cd" "ad"~"cd"   ⍝ "ab" "cd" "ad"
 
-⍝ ngn:7 —
-"ab" "cd" "ad"~⊂"cd"   ⍝ "ab" "ad"
+⍝ ngn:7 — A unit can't be searched, so the searched argument is a one-item vector
+"ab" "cd" "ad"~["cd"]   ⍝ "ab" "ad"
 
 ⍝ ngn:8 —
 "ab" "cd" "ad"~'a' "cd"   ⍝ "ab" "ad"
 
-⍝ ngn:9 —
-(11+⍳6)~2 3⍴1 2 3 14 5 6   ⍝ 11 12 13 15 16
+⍝ ngn:9 — ~ removes major cells, so the matrix is ravelled to remove its elements
+(11+⍳6)~,2 3⍴1 2 3 14 5 6   ⍝ 11 12 13 15 16
 
 ⍝ ngn:10 —
 (2 2⍴⍳4)~2
@@ -777,14 +777,14 @@ T←"ONE(TWO) BOOK(S)"⋄((T∊"()")⍱≠\T∊"()")/T   ⍝ "ONE BOOK"
 ⍝ ngn:248 —
 "abc"∪"cad"   ⍝ "abcd"
 
-⍝ ngn:249 —
-1∪1   ⍝ 1⍴1
+⍝ ngn:249 — A unit can't be searched, so the searched argument is a one-item vector
+[1]∪1   ⍝ 1⍴1
 
-⍝ ngn:250 —
-1∪2   ⍝ 1 2
+⍝ ngn:250 — A unit can't be searched, so the searched argument is a one-item vector
+[1]∪2   ⍝ 1 2
 
-⍝ ngn:251 —
-1∪2 1   ⍝ 1 2
+⍝ ngn:251 — A unit can't be searched, so the searched argument is a one-item vector
+[1]∪2 1   ⍝ 1 2
 
 ⍝ ngn:252 —
 1 2∪2 2 2 2   ⍝ 1 2
@@ -805,9 +805,10 @@ T←"ONE(TWO) BOOK(S)"⋄((T∊"()")⍱≠\T∊"()")/T   ⍝ "ONE BOOK"
 1 2∪2 2⍴3
 ⍝ error: RANK ERROR
 
-⍝ ngn:258 —
+⍝ ngn:258 — Union works on major cells, so the matrix gains the row 4 5; ngn gives RANK ERROR
 (2 2⍴3)∪4 5
-⍝ error: RANK ERROR
+⍝ =>
+[3 3 ⋄ 3 3 ⋄ 4 5]
 
 ⍝ ngn:259 —
 ["ab" 'c' [0 1]]∪"ab" "de"   ⍝ ["ab" 'c' [0 1] "de"]
@@ -830,8 +831,8 @@ T←"ONE(TWO) BOOK(S)"⋄((T∊"()")⍱≠\T∊"()")/T   ⍝ "ONE BOOK"
 ⍝ ngn:265 —
 1'2'3∩⍳5   ⍝ 1 3
 
-⍝ ngn:266 —
-1∩2   ⍝ ⍬
+⍝ ngn:266 — A unit can't be searched, so the searched argument is a one-item vector
+1∩[2]   ⍝ ⍬
 
 ⍝ ngn:267 —
 1∩2 3⍴4
@@ -856,8 +857,8 @@ T←"ONE(TWO) BOOK(S)"⋄((T∊"()")⍱≠\T∊"()")/T   ⍝ "ONE BOOK"
 ⍝ ngn:273 —
 0 20 12 4⊥2 15 6 3   ⍝ 2667
 
-⍝ ngn:274 —
-1760 3 12⊥3 3⍴1 1 1 2 0 3 0 1 8   ⍝ 60 37 80
+⍝ ngn:274 — ⊥ decodes along the last axis, as J's #., so Dyalog's digit columns need ⍉
+1760 3 12⊥⍉3 3⍴1 1 1 2 0 3 0 1 8   ⍝ 60 37 80
 
 ⍝ ngn:275 —
 60 60⊥3 13   ⍝ 193
@@ -883,16 +884,16 @@ T←"ONE(TWO) BOOK(S)"⋄((T∊"()")⍱≠\T∊"()")/T   ⍝ "ONE BOOK"
 ⍝ ngn:282 —
 10⊥3 4.5j1   ⍝ 34.5j1
 
-⍝ ngn:283 —
-(4 3⍴1 1 1 2 2 2 3 3 3 4 4 4)⊥3 8⍴0 0 0 0 1 1 1 1 0 0 1 1 0 0 1 1 0 1 0 1 0 1 0 1
+⍝ ngn:283 — ⊥ decodes along the last axis, as J's #., so each base row pairs with each digit column through ⌝
+(↓4 3⍴1 1 1 2 2 2 3 3 3 4 4 4)⊥⌝↓⍉3 8⍴0 0 0 0 1 1 1 1 0 0 1 1 0 0 1 1 0 1 0 1 0 1 0 1
 4 8⍴0 1 1 2 1 2 2 3 0 1 2 3 4 5 6 7 0 1 3 4 9 10 12 13 0 1 4 5 16 17 20 21
 
-⍝ ngn:284 —
-2⊥3 8⍴0 0 0 0 1 1 1 1 0 0 1 1 0 0 1 1 0 1 0 1 0 1 0 1
+⍝ ngn:284 — ⊥ decodes along the last axis, as J's #., so Dyalog's digit columns need ⍉
+2⊥⍉3 8⍴0 0 0 0 1 1 1 1 0 0 1 1 0 0 1 1 0 1 0 1 0 1 0 1
 0 1 2 3 4 5 6 7
 
-⍝ ngn:285 —
-(2 1⍴2 10)⊥3 8⍴0 0 0 0 1 1 1 1 0 0 1 1 0 0 1 1 0 1 0 1 0 1 0 1
+⍝ ngn:285 — ⊥ decodes along the last axis, as J's #., so each base row pairs with each digit column through ⌝
+(↓2 1⍴2 10)⊥⌝↓⍉3 8⍴0 0 0 0 1 1 1 1 0 0 1 1 0 0 1 1 0 1 0 1 0 1 0 1
 2 8⍴0 1 2 3 4 5 6 7 0 1 10 11 100 101 110 111
 
 ⍝ ngn:286 —
@@ -1001,21 +1002,21 @@ T←"ONE(TWO) BOOK(S)"⋄((T∊"()")⍱≠\T∊"()")/T   ⍝ "ONE BOOK"
 ⍝ ngn:320 —
 0 1⊤75.3   ⍝ 75 0.2999999999999972
 
-⍝ ngn:321 —
+⍝ ngn:321 — Digits on the last axis, as J's #:, so ngn's result transposed
 2 2 2 2 2⊤1 2 3 4 5
-5 5⍴0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 1 1 0 0 1 0 1 0 1
+5 5⍴0 0 0 0 1 0 0 0 1 0 0 0 0 1 1 0 0 1 0 0 0 0 1 0 1
 
 ⍝ ngn:322 —
 10⊤5 15 125   ⍝ 5 5 5
 
-⍝ ngn:323 —
-0 10⊤5 15 125   ⍝ 2 3⍴0 1 12 5 5 5
+⍝ ngn:323 — Digits on the last axis, as J's #:, so ngn's result transposed
+0 10⊤5 15 125   ⍝ 3 2⍴0 5 1 5 12 5
 
 ⍝ ngn:324 —
 0j1 2j3 4j5⊤6j7   ⍝ 0 ¯2j2 2j2
 
-⍝ ngn:325 —
-(8 3⍴2 0 0 2 0 0 2 0 0 2 0 0 2 8 0 2 8 0 2 8 16 2 8 16)⊤75
+⍝ ngn:325 — Base vectors are rows, as in J's #:, so Dyalog's base columns need ⍉
+⍉(⍉8 3⍴2 0 0 2 0 0 2 0 0 2 0 0 2 8 0 2 8 0 2 8 16 2 8 16)⊤75
 8 3⍴0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 1 0 1 1 4 1 3 11
 
 ⍝ ngn:326 —
@@ -2244,8 +2245,8 @@ f←{(⍵,(⍴⍵)⍴0)⍪⍵,⍵} ⋄ S←{" #" (f⍣⍵)1 1⍴1} ⋄ S 5
 c←(3 3⍴⍳9)∊1 2 3 4 7 ⋄ c←(3 3⍴⍳9)∊1 3 6 7 8 ⋄ b←¯1⊖¯2⌽5 7↑c ⋄ life←{[1 ⍵]∨.∧3 4=⊂+/+⌿1 0 ¯1⊖⌝1 0 ¯1⌽¨⊂⍵} ⋄ gen←{" #" (life⍣⍵)b} ⋄ gen¨1+⍳3
 [5 7⍴"                # #    ##      #   ";5 7⍴"                #      # #    ##   ";5 7⍴"                 #    ##      ##   "]
 
-⍝ ngn/examples/5-rule30:1 — See https://en.wikipedia.org/wiki/Rule_30; Use eight generations
-r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ " #" ⊃⌽{⍵,⍨⊂t(⊥⍉3↕0,0,⍨↑⍵)}⍣n⊂z,1,z←n⍴0
+⍝ ngn/examples/5-rule30:1 — See https://en.wikipedia.org/wiki/Rule_30; Use eight generations; ⊥ decodes each window along the last axis
+r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ " #" ⊃⌽{⍵,⍨⊂t(⊥3↕0,0,⍨↑⍵)}⍣n⊂z,1,z←n⍴0
 9 17⍴"        #               ###             ##  #           ## ####         ##  #   #       ## #### ###     ##  #    #  #   ## ####  ###### ##  #   ###     #"
 
 ⍝ ngn/examples/6-queens:1 — Rotate and reflect the accumulator in basedpl's left scan

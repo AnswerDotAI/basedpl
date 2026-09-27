@@ -33,7 +33,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `∧` [and](glyphs/and.qmd) | Alt-0 | polar | lcm | Monad as J's `*.` |
 | `⍲` [nand](glyphs/nand.qmd) | Alt-Shift-0 | square | nand | Monad as J's `*:` |
 | `⍱` [nor](glyphs/nor.qmd) | Alt-Shift-9 | double | nor | Monad as J's `+:` |
-| `~` [tilde](glyphs/tilde.qmd) | | not | without | |
+| `~` [tilde](glyphs/tilde.qmd) | | not | without | Searches the major cells of `Y`: `s~" "`, not `s~' '` |
 | `=` [equal](glyphs/equal.qmd) | | classify | equal | Monad as J: one mask row per distinct major cell |
 | `≠` [not-equal](glyphs/not-equal.qmd) | Alt-8 | unique-mask | not-equal | |
 | `<` [less](glyphs/less.qmd) | | — | less | |
@@ -51,15 +51,15 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `↑` [take](glyphs/take.qmd) | Alt-k | first | take | Monad as Dyalog `⎕ML≥2`, but takes a major cell: `↑2 3⍴⍳6` is `0 1 2` |
 | `↓` [drop](glyphs/drop.qmd) | Alt-j | split | drop | |
 | `↕` [windows](glyphs/windows.qmd) | Alt-Shift-u | — | windows | As BQN's `↕`, plus movements and padding (negative sizes) as in `⌺`. Replaces windowed reduce: `+/2↕1 2 3 4` is `3 5 7` |
-| `⊂` [enclose](glyphs/enclose.qmd) | Alt-z | enclose | partitioned-enclose | Encloses atoms too, as BQN: `(⊂3)≡3` is `0x` |
-| `⊆` [nest](glyphs/nest.qmd) | Alt-Shift-z | nest | partition | |
+| `⊂` [enclose](glyphs/enclose.qmd) | Alt-z | enclose | partitioned-enclose | Encloses atoms too, as BQN: `(⊂3)≡3` is `0x`. Partitions along the first axis |
+| `⊆` [nest](glyphs/nest.qmd) | Alt-Shift-z | nest | partition | Splits along the first axis |
 | `⊃` [mix](glyphs/mix.qmd) | Alt-x | mix | pick | Monad as Dyalog `⎕ML≥2`. Pick takes cells: `1⊃2 3⍴⍳6` is `3 4 5`. A string picks by [key](keyed.qmd) |
 | `⌷` [squad](glyphs/squad.qmd) | Alt-Shift-l | materialise | index | Negative positions count from the end. `∞` takes a whole axis and `¯∞` reverses it |
 | `⍳` [iota](glyphs/iota.qmd) | Alt-i | iota | index-of | `⍳⍠A Y` returns axis selectors. A negative length counts down, as J: `⍳¯3` is `2 1 0` |
 | `⍸` [where](glyphs/where.qmd) | Alt-Shift-i | where | interval-index | Dyad counts the boundaries at or below each value, as BQN's `⍋`: `1 3 5⍸0 3 9` is `0 2 3` |
-| `∊` [member](glyphs/member.qmd) | Alt-e | enlist | member | |
-| `∪` [union](glyphs/union.qmd) | Alt-v | unique | union | |
-| `∩` [intersection](glyphs/intersection.qmd) | Alt-c | — | intersection | |
+| `∊` [member](glyphs/member.qmd) | Alt-e | enlist | member | Searches the major cells of `Y`, as BQN |
+| `∪` [union](glyphs/union.qmd) | Alt-v | unique | union | Compares major cells, as BQN |
+| `∩` [intersection](glyphs/intersection.qmd) | Alt-c | — | intersection | Compares major cells, as BQN |
 | `⍷` [find](glyphs/find.qmd) | Alt-Shift-e | — | find | |
 | `⍋` [grade-up](glyphs/grade-up.qmd) | Alt-Shift-4 | grade-up | grade-up-by | |
 | `⍒` [grade-down](glyphs/grade-down.qmd) | Alt-Shift-3 | grade-down | grade-down-by | |
@@ -67,8 +67,8 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⌿` [slash-bar](glyphs/slash-bar.qmd) | Alt-/ | — | replicate-first | |
 | `\` [backslash](glyphs/backslash.qmd) | | — | expand | |
 | `⍀` [backslash-bar](glyphs/backslash-bar.qmd) | Alt-. | — | expand-first | |
-| `⊤` [encode](glyphs/encode.qmd) | Alt-n | binary-encode | encode | Monad as J's `#:`, but digits run along the first axis |
-| `⊥` [decode](glyphs/decode.qmd) | Alt-b | binary-decode | decode | Monad as J's `#.`, but digits run along the first axis |
+| `⊤` [encode](glyphs/encode.qmd) | Alt-n | binary-encode | encode | As J's `#:`, with digits on the last axis |
+| `⊥` [decode](glyphs/decode.qmd) | Alt-b | binary-decode | decode | As J's `#.`, with digits on the last axis |
 | `⌹` [domino](glyphs/domino.qmd) | Alt-Shift-= | inverse | matrix-divide | |
 | `⊣` [left](glyphs/left.qmd) | Alt-Shift-Backslash | same-left | left | |
 | `⊢` [right](glyphs/right.qmd) | Alt-Backslash | same | right | |
@@ -89,7 +89,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⍨` [commute](glyphs/commute.qmd) | Alt-Shift-t | `f⍨`, `a⍨` | Self / commute / constant | |
 | `⊸` [before](glyphs/before.qmd) | Alt-u | `f⊸g`, `a⊸f` | Before / bind left | As BQN's `⊸` |
 | `⟜` [after](glyphs/after.qmd) | Alt-t | `f⟜g`, `f⟜a` | After / bind right | As BQN's `⟜` |
-| `⍤` [rank](glyphs/rank.qmd) | Alt-Shift-j | `f⍤g`, `f⍤r` | Atop / rank | |
+| `⍤` [rank](glyphs/rank.qmd) | Alt-Shift-j | `f⍤g`, `f⍤r` | Atop / rank | `⍤0` passes units, as BQN's `⎉0` |
 | `⍠` [axis](glyphs/axis.qmd) | Alt-Shift-/ | `f⍠A` | Apply along axes | Axes are numbers or names, in place of Dyalog's `f[A]` |
 | `⍥` [over](glyphs/over.qmd) | Alt-Shift-v | `f⍥g` | Over | |
 | `.` [dot](glyphs/dot.qmd) | | `f.g` | Inner product | Outer product is `g⌝`. After an array, `T.name` is `"name"⊃T`, and `x.(I)` is `(I)⌷x` |
@@ -109,14 +109,14 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 |---|---|---|
 | `←` [assign](glyphs/assign.qmd) | Alt-h | Assignment, including modified and selective forms |
 | `→` [pipe](glyphs/pipe.qmd) | Alt-l | Left-to-right function application |
-| `(…)` [parentheses](glyphs/parentheses.qmd) | | Grouping. Round a literal or glyphs separated by spaces, a scalar: `(1 2)` is `⊂1 2`, and `(+ -)` is `⊂[+ -]` |
+| `(…)` [parentheses](glyphs/parentheses.qmd) | | Grouping. Round a literal or glyphs separated by spaces, a scalar: `(1 2)` is `⊂1 2`, and `(+ -)` is `⊂[+ -]`. With `⋄`, a vector of rows: `(4 ⋄ 4 5)` is `[[4] [4 5]]` |
 | `[…]` [brackets](glyphs/brackets.qmd) | | Vectors and arrays: `[a b c]`, `[a;b c]`, `[1 2 ⋄ 3 4]`. One item makes a one-item vector: `[x]` is `,⊂x` |
 | `{…}` [braces](glyphs/braces.qmd) | | Defined function or operator |
 | `⍺` [alpha](glyphs/alpha.qmd), `⍵` [omega](glyphs/omega.qmd) | Alt-a, Alt-w | Left / right argument |
 | `⍶` [alpha-underbar](glyphs/alpha-underbar.qmd), `⍹` [omega-underbar](glyphs/omega-underbar.qmd) | Alt-Shift-a, Alt-Shift-w | Left / right operand |
 | `∇` [del](glyphs/del.qmd), `⍢` [del-diaeresis](glyphs/del-diaeresis.qmd) | Alt-g, Alt-Shift-g | Function / operator self-reference |
 | `:` [colon](glyphs/colon.qmd), `::` [error-guard](glyphs/error-guard.qmd) | | Unkey / key axes; Boolean guard / error guard inside dfns |
-| `⋄` [diamond](glyphs/diamond.qmd) | Alt-Backtick | Separates statements, and rows inside brackets |
+| `⋄` [diamond](glyphs/diamond.qmd) | Alt-Backtick | Separates statements, rows inside brackets, and rows of a vector inside parentheses |
 | `⍝` [comment](glyphs/comment.qmd) | Alt-, | Comment |
 | `⎕←` [quad](glyphs/quad.qmd) | Alt-] | Explicit output |
 | `•` [bullet](glyphs/bullet.qmd) | Alt-q | [System name](#system-names) prefix |
@@ -160,11 +160,12 @@ Index origin: 0. Negative positions and axes count from the end. Comparison tole
 
 ## Language-wide differences from Dyalog APL
 
-- [Vectors](glyphs/brackets.qmd): brackets write vectors, `[a b c]`, and a strand of literals can leave them out, `1 2 3`. Brackets round one item make a one-item vector: `[5]` is `,5`. [Parentheses](glyphs/parentheses.qmd) round a literal make a scalar: `(5)` is `⊂5`. Nothing else strands, so arrays next to each other don't form a vector.
+- [Vectors](glyphs/brackets.qmd): brackets write vectors, `[a b c]`, and a strand of literals can leave them out, `1 2 3`. Brackets round one item make a one-item vector: `[5]` is `,5`. [Parentheses](glyphs/parentheses.qmd) round a literal make a scalar: `(5)` is `⊂5`. Nothing else strands, so arrays next to each other don't form a vector. Parentheses with `⋄` write a vector of rows: `(1 2 ⋄ 3)` is `[[1 2] [3]]`.
 - [Runs](rules.qmd): outside brackets, a space separates runs, and each run is evaluated first: `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train: `+/÷≢` is the mean, and `2×` is `2⊸×`. A run that ends in a dyadic operator takes the next run as its right operand: `f⍤ 1` is `f⍤1`.
 - [Array application](glyphs/squad.qmd): an array next to an argument selects from it, as K does: `v 0` is the first item of `v`.
 - [Atoms](rules.qmd#arrays-nesting-and-fill): numbers, characters and functions are atoms, distinct from scalars, as BQN. Enclosing always adds a layer: `(⊂3)≡3` is `0x`.
 - [Numbers](rules.qmd#numbers): bare numbers are approximate. `x` and `r` mark exact integers and rationals, as J: `1x÷3x` is `1r3`. Predicates, positions, tally and shape are exact.
 - [Agreement](rules.qmd#agreement-and-pervasion): scalar functions, Each and Rank align leading axes, and dimensions of length 1 expand: `(2 3⍴⍳6)+10 20` is `[10 11 12 ⋄ 23 24 25]`.
+- [Major cells](principles.qmd#functions-act-on-major-cells): `∊ ~ ∪ ∩` compare major cells, `N⊂Y` and `N⊆Y` split along the first axis, and `⍤0` passes units, as BQN. `⊤` and `⊥` put digits on the last axis, as J.
 - [System names](#system-names): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
 - [Axis keys](keyed.qmd) name data. `K:Y` evaluates its keys. `T.a` is `"a"⊃T`, and `X⍎Y` is `Y⊃X`.

@@ -22,6 +22,8 @@ mod protocol;
 #[doc(hidden)]
 pub mod reference;
 mod regex;
+mod scalar;
+mod search;
 mod selection;
 mod symbols;
 mod syntax;

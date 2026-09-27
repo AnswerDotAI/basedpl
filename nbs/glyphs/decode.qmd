@@ -1,12 +1,12 @@
 # `⊥` — Decode
 
-`⊥Y` decodes binary digits along the first axis.
+`⊥Y` decodes binary digits along the last axis.
 
 ```apl
 ⊥1 0 1 0          ⍝ 10
 ```
 
-`B⊥Y` evaluates digits `Y` in base(s) `B`. A unit base expands; the first mixed-base entry is unused.
+`B⊥Y` evaluates digits `Y` in base(s) `B`. A unit base extends to every digit. The first entry of a mixed base is unused.
 
 ```apl
 2⊥1 0 1 0          ⍝ 10
@@ -19,4 +19,9 @@ For coefficient vector `C`, `X⊥C` evaluates the polynomial in descending power
 3⊥2 4 5            ⍝ 35
 ```
 
-Arrays contract the last base axis with the first digit axis. See [Encode](encode.qmd).
+Each row of `Y` holds one number's digits, so `B⊥B⊤Y` gives back `Y` when `B` has enough digits. See [Encode](encode.qmd).
+
+```apl
+2⊥[1 0 1 ⋄ 0 1 1]   ⍝ 5 3
+2 2 2⊥2 2 2⊤3 5     ⍝ 3 5
+```

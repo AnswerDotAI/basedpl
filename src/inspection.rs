@@ -35,7 +35,7 @@ pub(crate) fn documentation(symbol: &str) -> Option<&'static str> {
         "(" | ")" => "parentheses",
         "." => "dot",
         "'" | "\"" => "quote",
-        _ => crate::symbols::SYMBOLS.iter().find(|row| row.0 == symbol)?.1,
+        _ => crate::symbols::symbols().iter().find(|row| row.0 == symbol)?.1,
     })
 }
 
