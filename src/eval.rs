@@ -520,7 +520,7 @@ fn composition(
 }
 
 fn agenda_index(index: &Value, len: usize, span: &Span) -> Result<usize, Error> {
-    if !index.is_scalar() { return Err(span.error(ErrorKind::Rank, "agenda index must be a unit")); }
+    if !index.is_unit() { return Err(span.error(ErrorKind::Rank, "agenda index must be a unit")); }
     let n = index.as_number().ok_or_else(|| span.error(ErrorKind::Domain, "agenda index must be numeric"))?;
     crate::primitive::position(&n, len, span)
 }
@@ -615,7 +615,7 @@ fn stencil(f: &Function, spec: &Value, right: &Value, span: &Span, session: &mut
         let positions = (0..len).map(|i| Some(i * windows[a].step));
         layout = layout.select(a, positions).map_err(|k| span.error(k, "invalid stencil frame keys"))?;
     }
-    let result = layout.assemble(&results, &Value::scalar(0.).unwrap()).map_err(|k| span.error(k, "invalid stencil result"))?;
+    let result = layout.assemble(&results, &Value::number(0.).unwrap()).map_err(|k| span.error(k, "invalid stencil result"))?;
     Ok(Bound::new(Binding::from_element(result)))
 }
 
@@ -651,7 +651,7 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Sp
                     Ok((n < 0, n.unsigned_abs()))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            if count.is_scalar() {
+            if count.is_unit() {
                 let (negative, n) = counts[0];
                 let inverse;
                 let f = if negative {
@@ -744,9 +744,9 @@ fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, span: &Sp
             let Primitive(p) = g.node.as_ref() else { return Err(span.error(ErrorKind::Domain, "this commute has no known inverse")); };
             match p {
                 P::Arithmetic(Arithmetic::Plus) => {
-                    P::Arithmetic(Arithmetic::Divide).call(Some(right), &Value::scalar(crate::Number::from_integer(2)).unwrap(), &session.execution.at(span))
+                    P::Arithmetic(Arithmetic::Divide).call(Some(right), &Value::number(crate::Number::from_integer(2)).unwrap(), &session.execution.at(span))
                 }
-                P::Arithmetic(Arithmetic::Times) => P::Math(Math::Power).call(Some(right), &Value::scalar(0.5).unwrap(), &session.execution.at(span)),
+                P::Arithmetic(Arithmetic::Times) => P::Math(Math::Power).call(Some(right), &Value::number(0.5).unwrap(), &session.execution.at(span)),
                 P::Math(Math::Floor | Math::Ceiling) => Ok(right.clone()),
                 _ => Err(span.error(ErrorKind::Domain, "this commute has no known inverse")),
             }
@@ -892,7 +892,7 @@ fn inverse_scan(
 
 fn key(f: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
     let keys = left.unwrap_or(right);
-    if keys.is_scalar() || right.is_scalar() { return Err(span.error(ErrorKind::Rank, "key arguments must have major cells")); }
+    if keys.is_unit() || right.is_unit() { return Err(span.error(ErrorKind::Rank, "key arguments must have major cells")); }
     if keys.shape()[0] != right.shape()[0] { return Err(span.error(ErrorKind::Length, "key arguments must have equal tallies")); }
     let values = if left.is_none() { crate::keyed::selectors(right, &[0]).map_err(|k| span.error(k, "invalid group indices"))? } else { right.clone() };
     let cells = keys.cells(keys.shape().len() - 1).map_err(|k| span.error(k, "invalid key cells"))?;
@@ -967,7 +967,7 @@ fn inner(
     if nx != ny && !left.is_singleton() && !right.is_singleton() { return Err(span.error(ErrorKind::Length, "product contraction lengths must agree")); }
     let n = if left.is_singleton() { ny } else { nx };
     let xf = &left.shape()[..left.shape().len().saturating_sub(1)];
-    let yf = &right.shape()[usize::from(!right.is_scalar())..];
+    let yf = &right.shape()[usize::from(!right.is_unit())..];
     let layout = left.layout().axes(0..xf.len()).concat(&right.layout().axes(1..right.shape().len()));
     let size = generated_len(layout.shape()).map_err(|k| span.error(k, "inner product is too large"))?;
     let rows = generated_len(xf).map_err(|k| span.error(k, "invalid product frame"))?;
@@ -1134,7 +1134,7 @@ fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Cont
     };
     if let FunctionNode::Primitive(p @ (Primitive::Ravel | Primitive::CatenateFirst | Primitive::Union)) = operand.node.as_ref() {
         let p = if matches!(p, Primitive::CatenateFirst) { Primitive::Replicate(true) } else { Primitive::Replicate(false) };
-        return p.call(Some(&Value::scalar(0.).unwrap()), &prototype.clone(), span);
+        return p.call(Some(&Value::number(0.).unwrap()), &prototype.clone(), span);
     }
     let n = match operand.node.as_ref() {
         FunctionNode::Primitive(
@@ -1201,7 +1201,7 @@ fn fold(
     }
     let result = fold_array(operand, hybrid, axis.as_ref(), left, right, span, session, output)?;
     if !hybrid.scan && right.shape().len() == 1 { return Ok(result.at(0)); }
-    if hybrid.scan || right.is_scalar() { return Ok(result); }
+    if hybrid.scan || right.is_unit() { return Ok(result); }
     let axis = hybrid.axis(axis.as_ref(), right, span)?;
     let layout = right.layout().axes((0..right.shape().len()).filter(|&a| a != axis));
     result.with_layout(layout).map_err(|k| span.error(k, "invalid fold keys"))
@@ -1223,7 +1223,7 @@ fn fold_array(
             .with_layout(right.layout().clone())
             .map_err(|k| span.error(k, "invalid scan result"));
     }
-    if right.is_scalar() && axis.is_none() {
+    if right.is_unit() && axis.is_none() {
         return match left { Some(seed) => operand.call_array(Some(&right.at(0)), seed, span, session, output), None => Ok(right.at(0)) };
     }
     let axis = hybrid.axis(axis, right, span)?;
@@ -1315,7 +1315,7 @@ fn float_scan(values: &[f64], seed: Option<f64>, axis: &Axis, shape: &[usize], o
 }
 
 fn scan_axis(hybrid: Hybrid, axis: Option<&Value>, right: &Value, span: &Span) -> Result<Axis, Error> {
-    if right.is_scalar() && axis.is_none() { return Ok(Axis { outer: 1, len: 1, inner: 1 }); }
+    if right.is_unit() && axis.is_none() { return Ok(Axis { outer: 1, len: 1, inner: 1 }); }
     let index = hybrid.axis(axis, right, span)?;
     Axis::new(right.shape(), index).map_err(|k| span.error(k, "invalid scan axis"))
 }
@@ -2026,6 +2026,7 @@ impl Session {
     /// Whether a node holds an array. A group holds whatever its expression reduces to, so `(M←-)` is a function.
     fn holds_array(&self, node: &Node) -> bool {
         let NodeKind::Group(inner) = &node.kind else { return matches!(self.node_category(node), Category::Value) };
+        if crate::syntax::encloses(inner) { return true; }
         let inner = if Self::has_members(inner) { self.members(inner) } else { inner.clone() };
         !inner.is_empty() && matches!(self.assignment_operand(&inner, inner.len(), 0), Ok((_, Category::Value)))
     }
@@ -2055,6 +2056,7 @@ impl Session {
         if depth == 128 { return Err(nodes[end - 1].span.error(ErrorKind::Limit, "assignment operand nesting exceeds 128")); }
         let mut start = end - 1;
         let mut category = match &nodes[start].kind {
+            NodeKind::Group(inner) if crate::syntax::encloses(inner) => Value,
             NodeKind::Group(inner) => {
                 if inner.is_empty() { return Err(nodes[start].span.error(ErrorKind::Syntax, "empty assignment operand")); }
                 // Rewrite the group's own dot access first, so that `(x.a).b` classifies `(x.a)` as a value.
@@ -2086,7 +2088,11 @@ impl Session {
     fn assignment_start(&self, nodes: &[Node]) -> Result<usize, Error> {
         let end = nodes.len();
         let (operand, category) = self.assignment_operand(nodes, end, 0)?;
-        let modified = operand > 0 && matches!(category, Category::Function | Category::Hybrid) && !self.assignment_names(&nodes[operand..]);
+        // Inside a dfn a name before `←` is a target, unless an array comes directly before it. Then the name's value
+        // decides, as at top level: a function makes a modified assignment, as in `a(f)←3` and `(a)f←3`.
+        let modified = operand > 0
+            && matches!(category, Category::Function | Category::Hybrid)
+            && (self.holds_array(&nodes[operand - 1]) || !self.assignment_names(&nodes[operand..]));
         let mut start = if modified { operand - 1 } else { end - 1 };
         let value = |n: &Node| self.holds_array(n);
         while start > 0 && value(&nodes[start]) && value(&nodes[start - 1]) { start -= 1; }
@@ -2273,7 +2279,7 @@ impl Session {
             NodeKind::Group(inner) => self.selection_expression(inner, output)?,
             _ => return Err(span.error(ErrorKind::Syntax, "selection must end in an array name")),
         };
-        let (Step::Done(result), kind) = Binder::evaluate_marked(nodes, self, output, false, Some((root, selected, kind)))? else { unreachable!() };
+        let (Step::Done(result), kind) = Binder::evaluate_marked(nodes, self, output, false, Some((root, selected, kind)), None)? else { unreachable!() };
         Ok((binding, labels, result.array(span)?, kind.unwrap()))
     }
 
@@ -2320,6 +2326,20 @@ impl Session {
             NodeKind::System(name) => {
                 crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?.value()
             }
+            // Parentheses round a literal, a strand or glyphs separated by spaces make a scalar. Otherwise they group.
+            NodeKind::Group(nodes) if crate::syntax::encloses(nodes) => {
+                let glyph = |n: &Node| match &n.kind {
+                    NodeKind::Function(p) => Value::Function(Function::primitive(*p)),
+                    NodeKind::Hybrid(h) => Value::Function(Function::primitive(h.primitive())),
+                    _ => unreachable!(),
+                };
+                let content = match nodes.as_slice() {
+                    [Node { kind: NodeKind::Literal(a), .. }] => a.clone(),
+                    [one] => glyph(one),
+                    many => Value::new(vec![many.len()], many.iter().map(glyph).collect()).map_err(|k| node.span.error(k, "invalid function list"))?,
+                };
+                Binding::Value(content.enclose().map_err(|k| node.span.error(k, "invalid scalar"))?)
+            }
             NodeKind::Group(nodes) => self.bind(nodes, output)?.value,
             NodeKind::Run(nodes) => match self.bind(nodes, output)?.value {
                 Binding::Operator(_) => {
@@ -2357,8 +2377,7 @@ impl Session {
                 }
                 let arrays = cells.iter().map(|nodes| self.array_result(nodes, output)).collect::<Result<Vec<_>, _>>()?;
                 let result = if *block {
-                    let arrays =
-                        arrays.into_iter().map(|a| if a.is_scalar() { Value::new(vec![1], a.elements().collect()).unwrap() } else { a }).collect::<Vec<_>>();
+                    // Each row is a major cell, so unit rows give a vector: `[1 ⋄ 2]` is `1 2`.
                     Value::assemble(&[arrays.len()], &arrays, &arrays[0])
                 } else { Value::new(vec![arrays.len()], arrays.into_iter().collect()) };
                 Binding::Value(
@@ -2376,6 +2395,15 @@ impl Session {
         })
     }
 
+    /// Whether a run ends in a dyadic operator, which then takes the next item as its right operand.
+    fn ends_in_dyadic_operator(&self, nodes: &[Node]) -> bool {
+        match nodes.last().map(|n| &n.kind) {
+            Some(NodeKind::Operator(op)) => Operator::Primitive(*op).is_dyadic(),
+            Some(NodeKind::Name(name)) => matches!(self.lookup(name), Some(Binding::Operator(op)) if op.is_dyadic()),
+            Some(NodeKind::Dfn(d)) => d.kind == DefinitionKind::DyadicOperator,
+            _ => false,
+        }
+    }
     fn lookup(&self, name: &str) -> Option<&Binding> { self.binding(name).map(|(_, value)| value) }
 
     fn binding(&self, name: &str) -> Option<(Option<usize>, &Binding)> {
@@ -2646,7 +2674,7 @@ impl Rule {
 struct Binder { stack: Vec<Entity> }
 impl Binder {
     fn evaluate(nodes: &[Node], session: &mut Session, output: &mut Vec<Output>, tail: bool) -> Result<Step, Error> {
-        Self::evaluate_marked(nodes, session, output, tail, None).map(|(step, _)| step)
+        Self::evaluate_marked(nodes, session, output, tail, None, None).map(|(step, _)| step)
     }
     fn evaluate_marked(
         nodes: &[Node],
@@ -2654,13 +2682,14 @@ impl Binder {
         output: &mut Vec<Output>,
         tail: bool,
         marked: Option<(usize, Value, SelectionKind)>,
+        seed: Option<Entity>,
     ) -> Result<(Step, Option<SelectionKind>), Error> {
         let members;
         let nodes = if marked.is_none() && Session::has_members(nodes) {
             members = session.members(nodes);
             &members[..]
         } else { nodes };
-        let mut binder = Self { stack: Vec::new() };
+        let mut binder = Self { stack: seed.into_iter().collect() };
         let mut cursor = nodes.len();
         let mut assignment = None;
         let mut pending = Vec::new();
@@ -2675,7 +2704,17 @@ impl Binder {
                     None
                 } else {
                     let selected = marked.as_ref().filter(|(index, ..)| *index == i);
-                    let term = if let Some((_, array, _)) = selected { Term::Binding(Binding::Value(array.clone())) } else { Term::Binding(session.resolve(node, output)?) };
+                    let term = if let Some((_, array, _)) = selected {
+                        Term::Binding(Binding::Value(array.clone()))
+                    } else if matches!(&node.kind, NodeKind::Run(inner) if session.ends_in_dyadic_operator(inner)) {
+                        // A run that ends in a dyadic operator takes the next item as its right operand, as if no space came between them.
+                        let NodeKind::Run(inner) = &node.kind else { unreachable!() };
+                        let Some(right) = binder.stack.pop() else {
+                            return Err(node.span.error(ErrorKind::Syntax, "an operator at the end of a run needs a right operand after it"));
+                        };
+                        let (Step::Done(bound), _) = Self::evaluate_marked(inner, session, output, false, None, Some(right))? else { unreachable!() };
+                        Term::Binding(bound.value)
+                    } else { Term::Binding(session.resolve(node, output)?) };
                     Some(Entity { term, span: node.span.clone(), shy: false, selection: selected.map(|(_, _, kind)| *kind), assignment: false })
                 }
             } else { None };
@@ -2759,7 +2798,7 @@ impl Binder {
                 // `v i` is `(⊂i)⌷v`: positions along the leading axis, or coordinates when the positions are vectors.
                 let positions = right.array()?.enclose().map_err(|k| right_span.error(k, "invalid positions"))?;
                 let array = left.array()?;
-                if array.is_scalar() { return Err(span.error(ErrorKind::Index, "a unit has no leading axis to select from")); }
+                if array.is_unit() { return Err(span.error(ErrorKind::Index, "a unit has no leading axis to select from")); }
                 return Ok(Some(Application {
                     function: self::Function::primitive(Primitive::Index),
                     left: Some(positions),
@@ -2852,7 +2891,7 @@ mod tests {
         let weak = Arc::downgrade(&source);
         let result = s.eval_source(source);
         assert!(result.error.is_none());
-        assert_eq!(result.value.unwrap(), Value::scalar(5.0).unwrap());
+        assert_eq!(result.value.unwrap(), Value::number(5.0).unwrap());
         assert_eq!(s.peak_frames, 2);
         assert!(s.frames.is_empty());
         assert!(s.current.is_none());
@@ -2871,13 +2910,13 @@ mod tests {
             let mut s = Session::new();
             let result = s.eval(code);
             assert!(result.error.is_none(), "{code}: {:?}", result.error);
-            assert_eq!(result.value.unwrap(), Value::scalar(expected).unwrap());
+            assert_eq!(result.value.unwrap(), Value::number(expected).unwrap());
             assert_eq!(s.peak_frames, frames);
             assert!(s.frames.is_empty() && s.current.is_none());
         }
         let mut s = Session::new();
-        assert_eq!(s.eval("f←{11::7 ⋄ ⍵=0:1÷0 ⋄ ∇⍵-1} ⋄ f 5").value.unwrap(), Value::scalar(7.).unwrap());
-        assert_eq!(s.eval("f 500").value.unwrap(), Value::scalar(7.).unwrap());
+        assert_eq!(s.eval("f←{11::7 ⋄ ⍵=0:1÷0 ⋄ ∇⍵-1} ⋄ f 5").value.unwrap(), Value::number(7.).unwrap());
+        assert_eq!(s.eval("f 500").value.unwrap(), Value::number(7.).unwrap());
         assert_eq!(s.eval("f 2000").error.unwrap().kind, ErrorKind::Limit);
         assert!(s.frames.is_empty() && s.current.is_none());
     }

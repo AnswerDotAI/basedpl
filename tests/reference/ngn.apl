@@ -91,11 +91,11 @@
 ⍝ error: RANK ERROR
 
 ⍝ ngn:30 —
-(2 2)⊃1 2
+2 2⊃1 2
 ⍝ error: RANK ERROR
 
 ⍝ ngn:31 —
-(0 2)⊃2 2⍴"ABCD"
+0 2⊃2 2⍴"ABCD"
 ⍝ error: INDEX ERROR
 
 ⍝ ngn:32 —
@@ -103,7 +103,7 @@ a←" this is a test "⋄(a≠' ')⊂a
 "t" "h" "i" "s " "i" "s " "a " "t" "e" "s" "t "
 
 ⍝ ngn:33 —
-↓1 2 3   ⍝ ⊂(1 2 3)
+↓1 2 3   ⍝ ⊂1 2 3
 
 ⍝ ngn:34 —
 ↓[1 2;3 4]   ⍝ ⊂[1 2;3 4]
@@ -1274,13 +1274,13 @@ a←1⋄b←¯22⋄c←85⋄sqrt←{⍵*.5}⋄((-b)(+,-)sqrt(b*2)-4×a×c)÷2×a
 ⍋13 8 122 4   ⍝ 3 1 0 2
 
 ⍝ ngn:406 —
-a←13 8 122 4⋄a[⍋a]   ⍝ 4 8 13 122
+a←13 8 122 4⋄a(⍋a)   ⍝ 4 8 13 122
 
 ⍝ ngn:407 —
 ⍋"ZAMBIA"   ⍝ 1 5 3 4 2 0
 
 ⍝ ngn:408 —
-s←"ZAMBIA"⋄s[⍋s]   ⍝ "AABIMZ"
+s←"ZAMBIA"⋄s(⍋s)   ⍝ "AABIMZ"
 
 ⍝ ngn:409 —
 t←3 3⍴"BOBALFZAK"⋄⍋t   ⍝ 1 0 2
@@ -1289,14 +1289,14 @@ t←3 3⍴"BOBALFZAK"⋄⍋t   ⍝ 1 0 2
 t←3 3⍴4 5 6 1 1 3 1 1 2⋄⍋t   ⍝ 2 1 0
 
 ⍝ ngn:411 —
-t←3 3⍴4 5 6 1 1 3 1 1 2⋄t[⍋t]   ⍝ 3 3⍴1 1 2 1 1 3 4 5 6
+t←3 3⍴4 5 6 1 1 3 1 1 2⋄t(⍋t)   ⍝ 3 3⍴1 1 2 1 1 3 4 5 6
 
 ⍝ ngn:412 —
-a←3 2 3⍴2 3 4 0 1 0 1 1 3 4 5 6 1 1 2 10 11 12⋄a[⍋a]
+a←3 2 3⍴2 3 4 0 1 0 1 1 3 4 5 6 1 1 2 10 11 12⋄a(⍋a)
 3 2 3⍴1 1 2 10 11 12 1 1 3 4 5 6 2 3 4 0 1 0
 
 ⍝ ngn:413 —
-a←3 2 5⍴"joe  doe  bob  jonesbob  zwart"⋄a[⍋a]
+a←3 2 5⍴"joe  doe  bob  jonesbob  zwart"⋄a(⍋a)
 3 2 5⍴"bob  jonesbob  zwartjoe  doe  "
 
 ⍝ ngn:414 —
@@ -1306,11 +1306,11 @@ a←3 2 5⍴"joe  doe  bob  jonesbob  zwart"⋄a[⍋a]
 (⌽•a)⍋3 3⍴"BOBALFZAK"   ⍝ 2 0 1
 
 ⍝ ngn:416 —
-a←6 4⍴"ABLEaBLEACREABELaBELACES"⋄a[(2 26⍴"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")⍋a]
+a←6 4⍴"ABLEaBLEACREABELaBELACES"⋄a((2 26⍴"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")⍋a)
 6 4⍴"ABELaBELABLEaBLEACESACRE"
 
 ⍝ ngn:417 —
-a←6 4⍴"ABLEaBLEACREABELaBELACES"⋄a["AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz"⍋a]
+a←6 4⍴"ABLEaBLEACREABELaBELACES"⋄a("AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz"⍋a)
 6 4⍴"ABELABLEACESACREaBELaBLE"
 
 ⍝ ngn:418 —
@@ -1834,10 +1834,10 @@ m←45 60 33 50 66 19⋄(m=50)/⍳≢m   ⍝ 1⍴3
 1⌷3 5 8   ⍝ 5
 
 ⍝ ngn:596 —
-(3 5 8)1   ⍝ 5
+[3 5 8] 1   ⍝ 5
 
 ⍝ ngn:597 —
-[⍬;]⌷3 5 8   ⍝ ⍬
+[⍬]⌷3 5 8   ⍝ ⍬
 
 ⍝ ngn:598 —
 [2 2 0;1 2]⌷3 3⍴⍳9   ⍝ 3 2⍴7 8 7 8 1 2
@@ -1858,13 +1858,13 @@ m←45 60 33 50 66 19⋄(m=50)/⍳≢m   ⍝ 1⍴3
 1⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34   ⍝ 21 22 23 24
 
 ⍝ ngn:604 —
-[3 2;]⌷111 222 333 444   ⍝ 444 333
+(3 2)⌷111 222 333 444   ⍝ 444 333
 
 ⍝ ngn:605 —
 [2;1 0]⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34   ⍝ 32 31
 
 ⍝ ngn:606 —
-a←2 2⍴0⋄a.(∞ 0)←1⋄a   ⍝ 2 2⍴1 0 1 0
+a←2 2⍴0⋄a.[∞ 0]←1⋄a   ⍝ 2 2⍴1 0 1 0
 
 ⍝ ngn:607 —
 [1 2;0]⌷3 4⍴11 12 13 14 21 22 23 24 31 32 33 34   ⍝ 21 31
@@ -1905,7 +1905,7 @@ a←2 3⍴0⋄a.[1;0 2]←1⋄a   ⍝ 2 3⍴0 0 0 1 0 1
 ∞ 1⌷2 3⍴100 101 102 110 111 112   ⍝ 101 111
 
 ⍝ ngn:619 —
-(23 54 38)[0 2]   ⍝ 23 38
+[23 54 38][0 2]   ⍝ 23 38
 
 ⍝ ngn:620 —
 " X"((3 3⍴⍳9)∊1 3 6 7 8)   ⍝ 3 3⍴" X X  XXX"
@@ -1920,10 +1920,10 @@ a←2 3⍴0⋄a.[1;0 2]←1⋄a   ⍝ 2 3⍴0 0 0 1 0 1
 ("axlrose"[4 3 0 2 5 6 1])(⍳4)   ⍝ "oral"
 
 ⍝ ngn:624 —
-[⍬;]⌷1 2 3   ⍝ ⍬
+[⍬]⌷1 2 3   ⍝ ⍬
 
 ⍝ ngn:625 —
-⍴(1 2 3)(1 2 3 0 5⍴0)   ⍝ 1 2 3 0 5
+⍴[1 2 3](1 2 3 0 5⍴0)   ⍝ 1 2 3 0 5
 
 ⍝ ngn:626 —
 ⌷⍳3   ⍝ 0 1 2
@@ -1944,7 +1944,8 @@ a←⍳5⋄a[1 3]←7⋄a   ⍝ 0 7 2 7 4
 a←2 2⍴⍳4⋄a.[0 0]←4⋄a   ⍝ 2 2⍴4 1 2 3
 
 ⍝ ngn:632 —
-a←⍳5⋄a[1]←7 8⋄a   ⍝ [0 [7 8] 2 3 4]
+a←⍳5⋄a[1]←7 8⋄a
+⍝ error: LENGTH ERROR
 
 ⍝ ngn:633 —
 a←3 4⍴⍳12⋄a.[∞;1 2]←99   ⍝ 99
@@ -1960,7 +1961,7 @@ a←"this is a test"⋄a[0 5]←"TI"   ⍝ "TI"
 a←0 4 8⋄10+(a[0 2]←7 9)   ⍝ 17 19
 
 ⍝ ngn:637 —
-a←1 2 3⋄a[⍬]←4⋄a   ⍝ 1 2 3
+a←1 2 3⋄a.[⍬]←4⋄a   ⍝ 1 2 3
 
 ⍝ ngn:638 —
 a←3 3⍴⍳9⋄a.[⍬;1 2]←789⋄a   ⍝ 3 3⍴⍳9
@@ -2190,7 +2191,7 @@ tw←{⍶⍶⍵}⋄*tw 2   ⍝ 1618.177991912654
 ∞ ∞   ⍝ ∞ ∞
 
 ⍝ ngn:724 —
-⍴x[⍋x←6?49]   ⍝ 1⍴6
+⍴x(⍋x←6?49)   ⍝ [6]
 
 ⍝ ngn:725 —
 [a b]←1 2⋄a   ⍝ 1
@@ -2244,7 +2245,7 @@ c←(3 3⍴⍳9)∊1 2 3 4 7 ⋄ c←(3 3⍴⍳9)∊1 3 6 7 8 ⋄ b←¯1⊖¯2�
 [5 7⍴"                # #    ##      #   ";5 7⍴"                #      # #    ##   ";5 7⍴"                 #    ##      ##   "]
 
 ⍝ ngn/examples/5-rule30:1 — See https://en.wikipedia.org/wiki/Rule_30; Use eight generations
-r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ " #"[⊃⌽{⍵,⍨⊂t[⊥⍉3↕0,0,⍨↑⍵]}⍣n⊂z,1,z←n⍴0]
+r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ " #" ⊃⌽{⍵,⍨⊂t(⊥⍉3↕0,0,⍨↑⍵)}⍣n⊂z,1,z←n⍴0
 9 17⍴"        #               ###             ##  #           ## ####         ##  #   #       ## #### ###     ##  #    #  #   ## ####  ###### ##  #   ###     #"
 
 ⍝ ngn/examples/6-queens:1 — Rotate and reflect the accumulator in basedpl's left scan

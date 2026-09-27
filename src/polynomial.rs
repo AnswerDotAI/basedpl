@@ -47,7 +47,7 @@ impl Polynomial {
         if a.len() != 2 { return Err(span.error(ErrorKind::Length, "factored polynomial needs multiplier and roots")); }
         let multiplier = a.at(0).clone();
         let roots = a.at(1).clone();
-        if !multiplier.is_scalar() || roots.shape().len() > 1 {
+        if !multiplier.is_unit() || roots.shape().len() > 1 {
             return Err(span.error(ErrorKind::Rank, "factored polynomial needs a unit multiplier and vector roots"));
         }
         Ok(Self::Factored(numbers(&multiplier, span)?[0].clone(), numbers(&roots, span)?))
@@ -218,7 +218,7 @@ pub(crate) fn call(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
             &missing
         };
         results.push(if left.is_some() {
-            Value::scalar(polynomial.evaluate(&coordinates(&point, span)?, span)?).unwrap()
+            Value::number(polynomial.evaluate(&coordinates(&point, span)?, span)?).unwrap()
         } else if matches!(polynomial, Polynomial::Coefficients(_)) { polynomial.roots(span)? } else { vector(polynomial.coefficients(span)?, span)? });
     }
     if agreement.layout.shape().is_empty() { return Ok(results.remove(0)); }
@@ -238,7 +238,7 @@ pub(crate) fn derivative(source: &Value, order: usize, cotangent: Option<&Value>
         .map(|u| crate::keyed::reorder(u, agreement.layout.axis_keys(), false))
         .transpose()
         .map_err(|k| span.error(k, "cotangent keys must match the output"))?;
-    if order > 1 && (!right.is_scalar() || !agreement.layout.shape().is_empty()) {
+    if order > 1 && (!right.is_unit() || !agreement.layout.shape().is_empty()) {
         return Err(span.error(ErrorKind::Rank, "repeated differentiation currently requires unit input and output"));
     }
     let mut partials = Vec::new();

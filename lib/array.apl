@@ -131,10 +131,10 @@ disp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄ ⍺←⍬  
 display ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⍝ Boxed display of array.
   box←{  ⍝ box with type and axes
     [vrt hrz]←(¯1+⍴⍵)⍴¨"│─"  ⍝ vert. and horiz. lines
-    top←"─⊖→".[¯1↑⍺;],hrz
+    top←"─⊖→".[¯1↑⍺],hrz
     bot←(↑⍺),hrz
     rgt←"┐│",vrt,'┘'  ⍝ right side with corners
-    lax←"│⌽↓".[¯1↓1↓⍺;],¨⊂vrt
+    lax←"│⌽↓".[¯1↓1↓⍺],¨⊂vrt
     lft←⍉'┌',(⊃lax),'└'
     lft,(top⍪⍵⍪bot),rgt  ⍝ fully boxed array
   }
@@ -159,12 +159,12 @@ displays ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Boxed 
   box←{  ⍝ Box with type and axes.
     [shp w]←open\⍵
     [vrt hrz]←(¯1+⍴w)⍴¨"│─"  ⍝ Vert. and horiz. lines.
-    top←"─⊖→".[¯1↑⍺;],hrz
+    top←"─⊖→".[¯1↑⍺],hrz
     ok←(⍴shp)<⍴hrz
     top←(⍴top)↑(2↑top),(ok/shp),(2+ok×⍴shp)↓top
     bot←(↑⍺),hrz
     rgt←"┐│",vrt,'┘'  ⍝ Right side with corners.
-    lax←"│⌽↓".[¯1↓1↓⍺;],¨⊂vrt
+    lax←"│⌽↓".[¯1↓1↓⍺],¨⊂vrt
     lft←⍉'┌',(⊃lax),'└'
     lft,(top⍪w⍪bot),rgt  ⍝ Fully boxed array.
   }
@@ -456,7 +456,7 @@ subs ← {  ⍝ Vector substitution.
 lcase ← {  ⍝ Lower-casification,
   lc←"abcdefghijklmnopqrstuvwxyzåäöàæéñøü"  ⍝ (lower case alphabet)
   uc←"ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖÀÆÉÑØÜ"  ⍝ (upper case alphabet)
-  (⍴⍵)⍴[(uc,,⍵)⍳⍵;]⌷lc,,⍵  ⍝ ... of simple array.
+  (⍴⍵)⍴[(uc,,⍵)⍳⍵]⌷lc,,⍵  ⍝ ... of simple array.
 }
 
 ⍝ From http://dfns.dyalog.com/c_ucase.htm
@@ -464,5 +464,5 @@ lcase ← {  ⍝ Lower-casification,
 ucase ← {  ⍝ Upper-casification,
   lc←"abcdefghijklmnopqrstuvwxyzåäöàæéñøü"  ⍝ (lower case alphabet)
   uc←"ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖÀÆÉÑØÜ"  ⍝ (upper case alphabet)
-  (⍴⍵)⍴[(lc,,⍵)⍳⍵;]⌷uc,,⍵  ⍝ ... of simple array.
+  (⍴⍵)⍴[(lc,,⍵)⍳⍵]⌷uc,,⍵  ⍝ ... of simple array.
 }

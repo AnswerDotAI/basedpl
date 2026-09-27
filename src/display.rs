@@ -67,7 +67,7 @@ impl Block {
 }
 
 fn array(a: &Value, budget: &mut usize) -> Block {
-    if a.is_scalar() || (a.has_keys() && a.shape() == [0]) { return Block::new(a.to_string()); }
+    if a.is_unit() || (a.has_keys() && a.shape() == [0]) { return Block::new(a.to_string()); }
     // Render prototypes for empty axes. Cap diagrams independently of array storage.
     let shape: Vec<_> = a.shape().iter().map(|&d| d.max(1)).collect();
     let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);

@@ -36,14 +36,15 @@ On an axis where only some positions have keys, `⍳⍠A Y` gives the keys where
 "abc"⍳⊂'b'          ⍝ 1ₓ
 ```
 
-A single query returns an atom. Batch axes supply the result shape. Enclose an array-valued query to search for it as one item.
+A single query returns an atom. Batch axes supply the result shape. To search for an array as one item, enclose it with `⊂`, or write a literal in parentheses.
 
 ```apl
 C←"cat" "dog"
 C⍳⊂"dog"           ⍝ 1ₓ
-C⍳["dog";]         ⍝ [1ₓ;]
+C⍳("dog")          ⍝ 1ₓ
+C⍳["dog"]          ⍝ [1ₓ]
 m←[10 20 ⋄ 30 40 ⋄ 50 60]
 m⍳30 40            ⍝ 1ₓ
-m⍳[30 40 ⋄]        ⍝ [1ₓ;]
+m⍳[30 40 ⋄]        ⍝ [1ₓ]
 m⍳[30 40 ⋄ 10 20]  ⍝ 1ₓ 0ₓ
 ```

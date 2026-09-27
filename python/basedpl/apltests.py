@@ -122,7 +122,33 @@ def _element(value):
     if not isinstance(value, dict): return _number(value)
     if 'complex' in value: return 'j'.join(_number(x) for x in value['complex'])
     if 'infinity' in value: return '¯∞' if value['infinity']<0 else '∞'
-    return '⊂('+literal(value)+')'
+    return '⊂'+literal(value)
+
+
+def _spaced(text):
+    "Whether `text` has a space outside quotes, brackets, parentheses and braces."
+    depth, i = 0, 0
+    while i < len(text):
+        c = text[i]
+        if c=="'": i += 2
+        elif c=='"': i = text.index('"', i+1)
+        elif c in '([{': depth += 1
+        elif c in ')]}': depth -= 1
+        elif c==' ' and not depth: return True
+        i += 1
+    return False
+
+
+def _item(x):
+    "`x` as one item of a strand or bracket list."
+    if not (isinstance(x, dict) and 'shape' in x):
+        text = _element(x)
+        return '('+text+')' if _spaced(text) else text
+    text = literal(x)
+    if not _spaced(text): return text
+    # Parentheses round a strand make a scalar, so a vector that would print as a strand takes brackets.
+    if len(x['shape'])==1 and x['data'] and not all(isinstance(y, str) for y in x['data']): return '['+text+']'
+    return '('+text+')'
 
 
 def literal(array):
@@ -139,15 +165,11 @@ def literal(array):
         values = _string(''.join(data))
         if len(shape)==1: return values
     else:
-        def item(x):
-            if isinstance(x, dict) and 'shape' in x: return '('+literal(x)+')'
-            text = _element(x)
-            return '('+text+')' if text.startswith('•ucs ') else text
-        items = [item(x) for x in data]
+        items = [_item(x) for x in data]
         # Only literals form a strand, so a list with any other item needs brackets.
-        values = ('[{}]' if any(t.startswith('(') for t in items) else '{}').format(' '.join(items))
-        if shape==[len(data)] and len(data)>1: return values
-        if len(data)==1: values = _element(data[0])
+        values = ' '.join(items)
+        if len(data)==1 or any(t[0] in '([⊂,' for t in items): values = '['+values+']'
+        if len(shape)==1: return values
     return dims+'⍴'+values
 
 
@@ -272,9 +294,13 @@ def native_cases(path):
 def _load(path): return parse(path.read_text())
 
 
+def _check(case, timeout=2):
+    from ._core import _check_reference
+    return json.loads(_check_reference(json.dumps(case), timeout))
+
+
 def add(ids, output='tests/reference', directory='tests/reference/inventory'):
     "Check and append reviewed cases, then mark their inventory records active."
-    from ._core import _check_reference
     output = Path(output)
     existing = {case.id for path in output.glob('*.apl') for case in _load(path) if case.id}
     if len(set(ids))!=len(ids) or existing.intersection(ids): raise ValueError('duplicate case ID in selection or destination')
@@ -284,10 +310,10 @@ def add(ids, output='tests/reference', directory='tests/reference/inventory'):
     for id,row in rows.items():
         if row['status']=='excluded': raise ValueError(f'{id}: excluded: {row["reason"]}')
         case = convert(row)
-        result = json.loads(_check_reference(json.dumps(row), 2))
+        result = _check(row)
         if result['status']!='pass': raise ValueError(f'{id}: {result}')
         if not row.get('expected_error') and 'expected' in row and 'expected_code' not in row:
-            result = json.loads(_check_reference(json.dumps(dict(code=case.expect, expected=row['expected'])), 2))
+            result = _check(dict(code=case.expect, expected=row['expected']))
             if result['status']!='pass': raise ValueError(f'{id}: converted expectation: {result}')
         pending[id.split(':')[0].split('/')[0]].append(case)
     texts = {source: render(cases) for source,cases in pending.items()}
@@ -299,6 +325,50 @@ def add(ids, output='tests/reference', directory='tests/reference/inventory'):
         path.write_text(text)
     corpus.update(rows, status='active')
     return list(rows)
+
+
+def check_file(
+    path, # An `.apl` reference file
+    ids=None, # Check only the cases whose id or header line is in `ids`
+    exact:bool=None, # Require the same numeric representation; defaults to true for `core.apl`, as `tests/reference.rs` does
+    timeout=2 # Seconds allowed for each case
+):
+    "Check the cases in `path` through the installed extension, as `tests/reference.rs` does, and return the failures."
+    path = Path(path)
+    if exact is None: exact = path.stem=='core'
+    fails = []
+    for c in _load(path):
+        if ids and c.id not in ids and c.line not in ids: continue
+        case = dict(code=c.code, exact_representation=exact)
+        if c.expect.startswith('⍝ error: '): case['expected_error'] = c.expect.removeprefix('⍝ error: ')
+        else: case['expected_code'] = c.expect
+        if c.output is not None: case['expected_output'] = c.output
+        if c.rtol: case['relative_tolerance'] = c.rtol
+        if c.atol: case['absolute_tolerance'] = c.atol
+        r = _check(case, timeout)
+        if r['status']!='pass': fails.append(dict(line=c.line, id=c.id, status=r['status'], message=r.get('message'), code=c.code, expect=c.expect))
+    return fails
+
+
+def check_page(path):
+    "Run the APL examples in `.qmd` page `path` as `tests/core.rs` does, and return the failures."
+    # `_check_reference` compares values but runs each case in a fresh session, so each check replays its block from the start.
+    fails, block = [], None
+    for i,text in enumerate(Path(path).read_text().splitlines(), 1):
+        if text=='```apl':
+            block = []
+            continue
+        if block is None: continue
+        closing = text.startswith('```')
+        source, _, expected = text.partition(' ⍝ ')
+        if not closing: block.append(source)
+        if expected or closing:
+            r = _check(dict(code='\n'.join(block), expected_code=expected or '{}0', relative_tolerance=1e-13, absolute_tolerance=1e-13))
+            error = (r.get('actual') or {}).get('error')
+            if (expected and r['status']!='pass') or (not expected and error):
+                fails.append(dict(line=i, code=source, expected=expected, status=r['status'], message=r.get('message')))
+        if closing: block = None
+    return fails
 
 
 def preview(directory='tests/reference/inventory', output='meta/apl-preview', native='tests/core.rs', replace=False):

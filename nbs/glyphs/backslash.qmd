@@ -26,7 +26,7 @@ The whole seed starts each lane. Use Rank for separate seeds per cell.
 ```apl
 M←[1 2 3 ⋄ 4 5 6]
 10 20+\⍤0 1 M      ⍝ [11 13 16 ⋄ 24 29 35]
-[10;]+\1 2 3       ⍝ [[11;] [13;] [16;]]
+[10]+\1 2 3        ⍝ [[11] [13] [16]]
 ```
 
 Empty scans and unseeded singletons make no calls. [Axis](axis.qmd) `⍠K` selects the axis, and [`⍀`](backslash-bar.qmd) defaults to the first.

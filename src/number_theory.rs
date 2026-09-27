@@ -8,7 +8,6 @@ fn number(e: &Value, span: &Context<'_>) -> Result<Number, Error> {
     match e { Value::Number(n) => Ok(n.clone()), _ => Err(span.error(ErrorKind::Domain, "number theory requires numeric arguments")) }
 }
 fn exact(n: impl Into<BigInt>) -> Value { Value::Number(Number::try_from(BigRational::from_integer(n.into())).unwrap()) }
-fn scalar(n: impl Into<BigInt>) -> Value { exact(n) }
 fn array(shape: Vec<usize>, data: Vec<Value>, span: &Context<'_>) -> Result<Value, Error> {
     Value::from_parts(shape, data, exact(0)).map_err(|k| span.error(k, "number theory result exceeds array limits"))
 }
@@ -228,10 +227,10 @@ fn prime(selector: &Number, n: BigInt, span: &Context<'_>) -> Result<Value, Erro
     let op = selector.integer().map_err(|k| span.error(k, "prime selector must be integral"))?;
     if matches!(op, 0 | 1) {
         let yes = match n.to_biguint() { Some(n) => is_prime(&n, span)?, None => false };
-        return Ok(scalar(i32::from(yes == (op == 1))));
+        return Ok(exact(i32::from(yes == (op == 1))));
     }
-    if op == -1 && n <= BigInt::from(2) { return Ok(scalar(0)); }
-    if op == 4 && n < BigInt::from(2) { return Ok(scalar(2)); }
+    if op == -1 && n <= BigInt::from(2) { return Ok(exact(0)); }
+    if op == 4 && n < BigInt::from(2) { return Ok(exact(2)); }
     let n = n.to_biguint().ok_or_else(|| span.error(ErrorKind::Domain, "expected a nonnegative integer"))?;
     match op {
         -1 => {
@@ -239,7 +238,7 @@ fn prime(selector: &Number, n: BigInt, span: &Context<'_>) -> Result<Value, Erro
             let mut primes = Primes::default();
             for index in 1u64.. {
                 let p = primes.next(span)?;
-                if p >= target { return Ok(scalar(index - 1)); }
+                if p >= target { return Ok(exact(index - 1)); }
             }
             unreachable!()
         }
@@ -251,14 +250,14 @@ fn prime(selector: &Number, n: BigInt, span: &Context<'_>) -> Result<Value, Erro
                 span.check()?;
                 if forward { p += 1u8; } else { p -= 1u8; }
             }
-            Ok(scalar(p))
+            Ok(exact(p))
         }
         2 => factor_result(Some(&Number::try_from(f64::NEG_INFINITY).unwrap()), n, span),
         3 => factor_result(None, n, span),
         5 => {
             let mut result = n.clone();
             for (p, _) in factors(n, span)? { result = result / &p * (p - 1u8); }
-            Ok(scalar(result))
+            Ok(exact(result))
         }
         _ => Err(span.error(ErrorKind::Domain, "unknown prime selector")),
     }

@@ -85,7 +85,7 @@ pub(crate) fn vector(names: Vec<Arc<str>>, values: Vec<Value>) -> Result<Value, 
 
 /// A vector whose entries with a name are keyed by it.
 pub(crate) fn partial_vector(names: Vec<Option<Arc<str>>>, values: Vec<Value>) -> Result<Value, ErrorKind> {
-    Value::from_parts(vec![names.len()], values, Value::scalar(0.)?)?.with_keys(vec![Some(Keys::partial(names)?)])
+    Value::from_parts(vec![names.len()], values, Value::number(0.)?)?.with_keys(vec![Some(Keys::partial(names)?)])
 }
 
 /// The entries of a keyed vector, in order. An empty vector has none. Every entry needs a name.

@@ -15,7 +15,7 @@ adic ← {  ⍝ Bijective base-⍺ numeration.
   1=b:⍵/⍺  ⍝ unary: special case
   n←⌊b⍟1+⍵×b-1  ⍝ number of digits
   z←(¯1+b*n)÷b-1  ⍝ smallest integer with length n
-  a[(n/b)⊤⍵-z]
+  a((n/b)⊤⍵-z)
 }
 
 ⍝ From http://dfns.dyalog.com/c_apportion.htm
@@ -107,10 +107,10 @@ lcm ← { ⍺×⍵÷(⍺ gcd ⍵) }  ⍝ Least common multiple.
 k6174 ← {  ⍝ Kaprekar's operation.
   enco←(4/10)⊤  ⍝ 4-digit encode.
   deco←enco⍣¯1  ⍝ and decode.
-  1=⍴∪enco[⍵]:"error"  ⍝ all digits the same: no go.
+  1=⍴∪enco(⍵):"error"  ⍝ all digits the same: no go.
   ⍬{  ⍝ starting with null sequence.
     ⍵=↑⌽⍺:⍺
-    v←{⍵[⍒⍵]}enco ⍵  ⍝ digits in descending order.
+    v←{⍵(⍒⍵)}enco ⍵  ⍝ digits in descending order.
     (⍺,⍵)∇(deco v)-deco⌽v  ⍝ smaller to larger difference.
   }⍵  ⍝ :: [#] ∇ # → [#]
 }
@@ -122,7 +122,7 @@ hex ← {  ⍝ Hexadecimal from decimal.
   1≠≡,⍵:⍺∇¨⍵  ⍝ simple-array-wise:
   0∊⍵-1+⍵:"Too big"
   n←⍬⍴⍺,2*⌈2⍟2⌈16⍟1+⌈/|⍵  ⍝ default width.
-  (↓⍠0)"0123456789abcdef"[(n/16)⊤⍵]
+  (↓⍠0)"0123456789abcdef"((n/16)⊤⍵)
 }
 
 ⍝ From http://dfns.dyalog.com/c_dec.htm
@@ -176,7 +176,7 @@ rational ← {  ⍝ Rational approximation to real ⍵.
 ⍝ From http://dfns.dyalog.com/c_roman.htm
 
 roman ← {  ⍝ Roman numeral arithmetic.
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5×⌝10*⍳4)[7|"IVXLCDMivxlcdm"⍳⍵]}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5×⌝10*⍳4)(7|"IVXLCDMivxlcdm"⍳⍵)}
   fmt←{~⟜' ',1 0 0⍉(' '⍪3 4⍴"MCXI DLV ")([∞ ⍵⊤⍨4⍴10]⌷0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)}
   depth←{⍹≥|≡⍵ : ⍶ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1  ⍝ arabic from roman.
@@ -230,7 +230,7 @@ xd ← {×⍺-⍵}  ⍝ Signum difference
 
 bd ← {(⍺>⍵)-(⍺<⍵)}  ⍝ Boolean difference
 
-rg ← {(⍺.(0)⍶ ⍵)∧⍺.(1)⍹ ⍵}  ⍝ Range operator
+rg ← {(⍺.[0]⍶ ⍵)∧⍺.[1]⍹ ⍵}  ⍝ Range operator
 
 xp ← {×/×⍵-⌝⍺}  ⍝ Signum product
 
@@ -247,7 +247,7 @@ alt ← {  ⍝ Alternant.
   0=r:⍹⌿,⍵
   1≥c:⍶⌿,⍵
   M←~⍤1 0⍨⍳r  ⍝ minors
-  ⍵.(∞ 0)⍶.⍹∇¨⊂⍠(1 2)⍵.[M 1↓⍳c]
+  ⍵.[∞ 0]⍶.⍹∇¨⊂⍠[1 2]⍵.[M 1↓⍳c]
 }
 
 bayes ← { ⍺(×÷+.×)⍵ }  ⍝ Bayes' formula. (implemented as a fork)
@@ -360,7 +360,7 @@ phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
   ⍺{
     ⍺=0:⍵
     ⍵≡⍬:"0"
-    fmt←{"01"[⍵]}
+    fmt←{"01"(⍵)}
     lft←(⌽⍳0⌈1+⌈/⍵)∊⍵
     rgt←(-1+⍳0⌈|⌊/⍵)∊⍵
     rgt∧.=0:fmt lft

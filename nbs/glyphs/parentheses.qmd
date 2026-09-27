@@ -1,11 +1,22 @@
-# `( )` — Group / Train
+# `( )` — Group / Scalar / Train
 
-Parentheses only group. They hold one expression wherever they appear, including inside [brackets](brackets.qmd).
+Parentheses round an expression group it. They hold one expression wherever they appear, including inside [brackets](brackets.qmd).
 
 ```apl
 (2×3)+4            ⍝ 10
 x←2 4 9
 [(+/x) ≢x]         ⍝ 15 3
+```
+
+Parentheses round literal syntax make a scalar holding it: a literal, a strand, or glyphs separated by spaces. So `(+)` holds `+`, and `(+ -)` holds the vector `[+ -]`. Glyphs that touch form a train, so `(-×)` groups. Around a name, parentheses group whatever the name holds, so `(x)` is `x` and `(f)` is `f`. The text alone decides, so reading the code never depends on what a name holds. This gives a literal a spelling at every rank: `(1 2)` is rank 0, `[1 2]` is rank 1, and `[1 2 ⋄ 3 4]` is rank 2. [`⊂`](enclose.qmd) encloses any other array.
+
+```apl
+(5)≡⊂5             ⍝ 1
+⍴(1 2)             ⍝ ⍬
+x←1 2 ⋄ (x)≡x      ⍝ 1
+≡(+)               ⍝ 1
+≢↑(+ -)            ⍝ 2
+f←- ⋄ (f)3         ⍝ ¯3
 ```
 
 A line break inside parentheses counts as a space. So an expression can continue across lines. Outside brackets, spaces separate runs, and each run is evaluated first. So this means `(1+2)×(3+4)`:
@@ -16,12 +27,13 @@ total←(1+2
 total              ⍝ 21
 ```
 
-`⋄` inside parentheses is a `SYNTAX` error. Brackets write lists: `[a b]` is a vector, and `[a;]` is a one-item vector.
+`⋄` inside parentheses is a `SYNTAX` error. Brackets write vectors: `[a b]` is a vector, and `[a]` is a one-item vector.
 
-Two functions form an atop: `(f g)Y` is `f(g Y)`.
+Two functions form an atop: `(f g)Y` is `f(g Y)`. Glyphs alone separated by spaces make a scalar instead, as above, so a train of bare glyphs is written without spaces.
 
 ```apl
 (- +/)1 2 3        ⍝ ¯6
+(-×)3              ⍝ ¯1
 ```
 
 Three form a fork: `(f g h)Y` is `(f Y)g(h Y)`. Dyadic forks pass both arguments to each arm.

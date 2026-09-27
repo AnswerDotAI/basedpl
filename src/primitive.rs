@@ -237,7 +237,7 @@ fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Err
         .map_err(|k| span.error(k, "invalid windows"))
 }
 
-pub(crate) fn axis_value(axis: usize) -> Value { Value::scalar(Number::from_integer(axis as i64)).unwrap() }
+pub(crate) fn axis_value(axis: usize) -> Value { Value::number(Number::from_integer(axis as i64)).unwrap() }
 pub(crate) fn resolve_axes(spec: &Value, target: &Value, span: &Span) -> Result<Value, Error> {
     let resolve = |value: Value| match crate::keyed::name(&value) {
         None => Ok(value),
@@ -908,7 +908,7 @@ fn self_classify(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let cells = right.cells(rank).and_then(|c| c.collect()).map_err(|k| span.error(k, "invalid major cells"))?;
     let distinct = unique(right, span)?;
     let classes = distinct.cells(rank).and_then(|c| c.collect()).map_err(|k| span.error(k, "invalid classes"))?;
-    let items = if right.is_scalar() { vec![1].into() } else { right.layout().axes(0..1) };
+    let items = if right.is_unit() { vec![1].into() } else { right.layout().axes(0..1) };
     let layout = Layout::from(vec![classes.len()]).concat(&items);
     let mut data = Vec::with_capacity(generated_len(layout.shape()).map_err(|k| span.error(k, "classification is too large"))?);
     for class in &classes { for cell in &cells { data.push(integer(i64::from(array_match(class, cell, span)?))); } }
@@ -941,7 +941,7 @@ fn unique_mask(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
         if unique { representatives.push(cell.clone()); }
         data.push(integer(i64::from(unique)));
     }
-    let layout = if right.is_scalar() { vec![1].into() } else { right.layout().axes(0..1) };
+    let layout = if right.is_unit() { vec![1].into() } else { right.layout().axes(0..1) };
     layout.collect(data, integer(0)).map_err(|k| span.error(k, "invalid unique mask"))
 }
 
@@ -999,7 +999,7 @@ fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
 struct SearchCells { left: Vec<Value>, right: Vec<Value>, frame: Frame }
 
 fn search_cells(left: &Value, right: &Value, span: &Context<'_>) -> Result<SearchCells, Error> {
-    if left.is_scalar() { return Err(span.error(ErrorKind::Rank, "search needs a left argument that is not a unit")); }
+    if left.is_unit() { return Err(span.error(ErrorKind::Rank, "search needs a left argument that is not a unit")); }
     let rank = left.shape().len() - 1;
     let split = right.shape().len().checked_sub(rank).ok_or_else(|| span.error(ErrorKind::Rank, "right argument has insufficient rank"))?;
     if left.shape()[1..] != right.shape()[split..] { return Err(span.error(ErrorKind::Length, "search cell shapes do not agree")); }
@@ -1180,7 +1180,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
             Math(crate::number::Math::Pi) if first => call(p, Some(a), right),
             Math(crate::number::Math::Pi) => {
                 let product = call(Arithmetic(Times), Some(right), a)?;
-                call(Arithmetic(Divide), Some(&product), &Value::scalar(std::f64::consts::PI).unwrap())
+                call(Arithmetic(Divide), Some(&product), &Value::number(std::f64::consts::PI).unwrap())
             }
             Math(crate::number::Math::Log) if first => call(Math(crate::number::Math::Power), Some(a), right),
             Math(crate::number::Math::Log) => call(Math(crate::number::Math::Power), Some(a), &Arithmetic(Divide).call(None, right, span)?),
@@ -1207,16 +1207,16 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
     }
     match p {
         // Prime indices count from 0, so a prime's index is the number of primes below it.
-        Prime => p.call(Some(&Value::scalar(Number::from_integer(-1)).unwrap()), right, span),
+        Prime => p.call(Some(&Value::number(Number::from_integer(-1)).unwrap()), right, span),
         Factor => crate::number_theory::product(right, span),
         Polynomial => p.call(None, right, span),
         Arithmetic(Plus | Minus | Divide) | Reverse(_) | Transpose | Identity(_) | Index | MatrixDivide => p.call(None, right, span),
         Math(crate::number::Math::Power) => Math(crate::number::Math::Log).call(None, right, span),
         Math(crate::number::Math::Log) => Math(crate::number::Math::Power).call(None, right, span),
-        Math(crate::number::Math::Pi) => Arithmetic(Divide).call(Some(right), &Value::scalar(std::f64::consts::PI).unwrap(), span),
+        Math(crate::number::Math::Pi) => Arithmetic(Divide).call(Some(right), &Value::number(std::f64::consts::PI).unwrap(), span),
         Math(crate::number::Math::Circle) => {
             let log = Math(crate::number::Math::Log).call(None, right, span)?;
-            Arithmetic(Times).call(Some(&Value::scalar(num_complex::Complex64::new(0., -1.)).unwrap()), &log, span)
+            Arithmetic(Times).call(Some(&Value::number(num_complex::Complex64::new(0., -1.)).unwrap()), &log, span)
         }
         Math(crate::number::Math::Root) => Math(crate::number::Math::Nand).call(None, right, span),
         Math(crate::number::Math::Nand) => Math(crate::number::Math::Root).call(None, right, span),
@@ -1227,7 +1227,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
         Decode => Encode.call(None, right, span),
         Enclose => Take.call(None, right, span),
         Take => Enclose.call(None, right, span),
-        Nest => Ok(if right.is_scalar() { right.disclose().clone() } else { right.clone() }),
+        Nest => Ok(if right.is_unit() { right.disclose().clone() } else { right.clone() }),
         Iota => {
             let counter = if right.shape().len() == 1 && matches!(right.prototype(), Value::Number(_)) { Tally } else { Shape };
             let candidate = counter.call(None, right, span)?;
@@ -1246,7 +1246,7 @@ fn boolean_array(a: &Value) -> bool {
 }
 
 fn inverse_decode(base: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if !base.is_scalar() {
+    if !base.is_unit() {
         if base.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "inverse decode needs a unit or vector base")); }
         let result = radix(base, right, true, span)?;
         if !array_match(&radix(base, &result, false, span)?, right, span)? {
@@ -1371,7 +1371,7 @@ fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Res
             .map(|(i, j)| Number::try_from(result[(i, j)]).map_err(|e| span.error(e, "matrix result is not finite")))
             .collect::<Result<Vec<_>, _>>()?
     };
-    if layout.shape().is_empty() && (right.is_atom() || !right.is_scalar()) && left.is_none_or(|x| x.is_atom() || !x.is_scalar()) {
+    if layout.shape().is_empty() && (right.is_atom() || !right.is_unit()) && left.is_none_or(|x| x.is_atom() || !x.is_unit()) {
         return Ok(Value::Number(values[0].clone()));
     }
     layout.collect(values.into_iter().map(Value::Number).collect(), prototype).map_err(|e| span.error(e, "invalid matrix result"))
@@ -1543,7 +1543,7 @@ fn array_order(left: &Value, right: &Value) -> Ordering {
 
 fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Context<'_>) -> Result<Value, Error> {
     if right.has_functions() || left.is_some_and(Value::has_functions) { return Err(span.error(ErrorKind::Domain, "functions have no ordering")); }
-    if right.is_scalar() || left.is_some_and(Value::is_scalar) { return Err(span.error(ErrorKind::Rank, "grade needs arrays of rank at least one")); }
+    if right.is_unit() || left.is_some_and(Value::is_unit) { return Err(span.error(ErrorKind::Rank, "grade needs arrays of rank at least one")); }
     let count = generated_len(&right.shape()[..1]).map_err(|k| span.error(k, "grade result is too large"))?;
     let mut indices: Vec<usize> = (0..count).collect();
     let direction = |order: Ordering| if down { order.reverse() } else { order };
@@ -1732,8 +1732,8 @@ fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>, 
     if counts.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "take/drop counts must be a unit or vector")); }
     if axes.is_some_and(|a| a.len() != counts.len()) { return Err(span.error(ErrorKind::Length, "counts do not agree with axes")); }
     if counts.is_empty() { return Ok(right.clone()); }
-    let old = if right.is_scalar() { vec![1; counts.len()] } else { right.shape().to_vec() };
-    let mut layout = if right.is_scalar() { old.clone().into() } else { right.layout().clone() };
+    let old = if right.is_unit() { vec![1; counts.len()] } else { right.shape().to_vec() };
+    let mut layout = if right.is_unit() { old.clone().into() } else { right.layout().clone() };
     let mut starts = vec![0i128; old.len()];
     if counts.len() > old.len() { return Err(span.error(ErrorKind::Rank, "counts exceed argument rank")); }
     for (i, item) in counts.elements().enumerate() {
@@ -1770,7 +1770,7 @@ fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>, 
 
 fn replicate(counts: &Value, right: &Value, first: bool, axis: Option<usize>, expand: bool, span: &Context<'_>) -> Result<Value, Error> {
     if counts.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "replication counts must be a unit or vector")); }
-    let mut shape = if right.is_scalar() { vec![1] } else { right.shape().to_vec() };
+    let mut shape = if right.is_unit() { vec![1] } else { right.shape().to_vec() };
     let axis = axis.unwrap_or(if first { 0 } else { shape.len() - 1 });
     let traversal = Axis::new(&shape, axis).map_err(|_| span.error(ErrorKind::Domain, "invalid replication axis"))?;
     if !expand && !counts.is_singleton() && traversal.len != 1 && counts.len() != traversal.len {
@@ -1827,7 +1827,7 @@ fn replicate(counts: &Value, right: &Value, first: bool, axis: Option<usize>, ex
 }
 
 fn rotate(counts: Option<&Value>, right: &Value, axis: usize, span: &Context<'_>) -> Result<Value, Error> {
-    let shape = if right.is_scalar() { vec![1] } else { right.shape().to_vec() };
+    let shape = if right.is_unit() { vec![1] } else { right.shape().to_vec() };
     let traversal = Axis::new(&shape, axis).map_err(|_| span.error(ErrorKind::Domain, "axis is outside array rank"))?;
     let mut frame = shape.clone();
     frame.remove(axis);
@@ -1882,8 +1882,8 @@ fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: bool, span:
     let promote = |a: &Value, other: &Value| -> Result<Value, Error> {
         if a.shape().len() == rank { return Ok(a.clone()); }
         let mut shape = a.shape().to_vec();
-        if a.is_scalar() {
-            shape = if other.is_scalar() { vec![1] } else { other.shape().to_vec() };
+        if a.is_unit() {
+            shape = if other.is_unit() { vec![1] } else { other.shape().to_vec() };
             shape[axis] = 1;
             let len = generated_len(&shape).map_err(|k| span.error(k, "catenate exceeds array limits"))?;
             return Value::from_parts(shape, vec![a.at(0); len], a.prototype()).map_err(|k| span.error(k, "invalid scalar extension"));
@@ -1978,7 +1978,7 @@ fn transpose(axes: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<
 }
 
 fn split(right: &Value, axis: Option<usize>, span: &Context<'_>) -> Result<Value, Error> {
-    if right.is_scalar() { return Value::new(vec![], vec![right.clone()]).map_err(|k| span.error(k, "invalid split result")); }
+    if right.is_unit() { return Value::new(vec![], vec![right.clone()]).map_err(|k| span.error(k, "invalid split result")); }
     let axis = axis.unwrap_or(right.shape().len() - 1);
     let traversal = Axis::new(right.shape(), axis).map_err(|_| span.error(ErrorKind::Domain, "split axis is outside array rank"))?;
     let frame = right.layout().axes((0..right.shape().len()).filter(|&a| a != axis));
@@ -1997,17 +1997,17 @@ fn split(right: &Value, axis: Option<usize>, span: &Context<'_>) -> Result<Value
 }
 
 fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: bool, span: &Context<'_>) -> Result<Value, Error> {
-    if left.shape().len() > 1 || runs && right.is_scalar() {
+    if left.shape().len() > 1 || runs && right.is_unit() {
         return Err(span.error(ErrorKind::Rank, "partition needs a unit or vector left argument and a right argument that is not a unit"));
     }
-    let right = if right.is_scalar() { right.with_shape(vec![1]).unwrap() } else { right.clone() };
+    let right = if right.is_unit() { right.with_shape(vec![1]).unwrap() } else { right.clone() };
     let axis = axis.unwrap_or(right.shape().len() - 1);
     let traversal = Axis::new(right.shape(), axis).map_err(|k| span.error(k, "invalid partition axis"))?;
     let counts: Vec<_> = left
         .elements()
         .map(|e| numeric(&e, span)?.nonnegative_integer().map_err(|k| span.error(k, "partition marks must be nonnegative integers")))
         .collect::<Result<_, _>>()?;
-    let extend = left.is_scalar() || runs && left.is_singleton();
+    let extend = left.is_unit() || runs && left.is_singleton();
     if !extend && (if runs { counts.len() != traversal.len } else { counts.len() > traversal.len.saturating_add(1) }) {
         return Err(span.error(ErrorKind::Length, "partition marks do not agree with the axis length"));
     }
@@ -2088,7 +2088,7 @@ fn coordinate_offset(coords: &Value, right: &Value, prototype: bool, span: &Cont
 
 pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, span: &Context<'_>) -> Result<Value, Error> {
     if left.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "Pick needs one coordinate field per axis")); }
-    let source = if right.is_scalar() { &[1][..] } else { right.shape() };
+    let source = if right.is_unit() { &[1][..] } else { right.shape() };
     let fields = coordinate_fields(left);
     if fields.is_empty() { return Ok(right.clone()); }
     if fields.len() > source.len() { return Err(span.error(ErrorKind::Rank, "too many Pick coordinates")); }
@@ -2203,7 +2203,7 @@ pub(crate) fn choose(right: &Value, indices: &Value, span: &Context<'_>) -> Resu
 }
 
 pub(crate) fn at_indices(right: &Value, indices: &Value, span: &Context<'_>) -> Result<Selection, Error> {
-    if right.is_scalar() { return Err(span.error(ErrorKind::Length, "a unit has no major-cell axis")); }
+    if right.is_unit() { return Err(span.error(ErrorKind::Length, "a unit has no major-cell axis")); }
     selection(right, &[Some(indices.clone())], span)
 }
 

@@ -21,14 +21,14 @@ Oversized full windows give empty frames. Zero sizes give `n+1` empty windows; `
 A two-row left argument gives sizes, then movements. A window starts every `M` positions.
 
 ```apl
-[3 ⋄ 2]↕⍳8           ⍝ [0 1 2 ⋄ 2 3 4 ⋄ 4 5 6]
+[[3] ⋄ [2]]↕⍳8       ⍝ [0 1 2 ⋄ 2 3 4 ⋄ 4 5 6]
 ```
 
 A negative size pads its axis. Each window is centred on a position, as in [Stencil](stencil.qmd), with prototype fill beyond the edges. Each axis follows the sign of its own size.
 
 ```apl
 ¯3↕1 2 3 4           ⍝ [0 1 2 ⋄ 1 2 3 ⋄ 2 3 4 ⋄ 3 4 0]
-[¯3 ⋄ 2]↕1+⍳8        ⍝ [0 1 2 ⋄ 2 3 4 ⋄ 4 5 6 ⋄ 6 7 8]
+[[¯3] ⋄ [2]]↕1+⍳8    ⍝ [0 1 2 ⋄ 2 3 4 ⋄ 4 5 6 ⋄ 6 7 8]
 ⍴¯3 2↕3 4⍴⍳12        ⍝ 3 3 3 2
 ```
 

@@ -6,11 +6,12 @@ At statement level, `⋄` separates expressions. A line break does the same.
 x←2 ⋄ y←3 ⋄ x+y    ⍝ 5
 ```
 
-Inside [brackets](brackets.qmd), `⋄` separates major cells. A trailing `⋄` builds an array from one cell.
+Inside [brackets](brackets.qmd), `⋄` separates major cells. A trailing `⋄` builds an array from one cell. A single number is a cell of rank 0, so `[42 ⋄]` is a one-item vector.
 
 ```apl
 [1 2 ⋄ 3 4]        ⍝ 2 2⍴1 2 3 4
-⍴[42 ⋄]            ⍝ 1 1
+⍴[1 2 ⋄]           ⍝ 1 2
+⍴[42 ⋄]            ⍝ [1]
 ```
 
-Inside parentheses, `⋄` is a `SYNTAX` error, because parentheses only group.
+Inside parentheses, `⋄` is a `SYNTAX` error, because parentheses hold one expression.

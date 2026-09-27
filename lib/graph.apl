@@ -115,7 +115,7 @@ path ← {  ⍝ Shortest path from/to ⍵ in graph ⍺.
       ⍵<0:⍺  ⍝ root: finished
       (⍵,⍺)∇ ⍶ ⍵
     }1↑⍺∩to  ⍝ found vertex ⍺
-    next←(graph[,⍺])∩¨⊂⍸⍵=¯2
+    next←(graph(,⍺))∩¨⊂⍸⍵=¯2
     back←,/⍺+0×next
     wave←,/next
     (∪wave)∇ back@wave ⍵  ⍝ advanced wave front

@@ -11,8 +11,7 @@ fn run(code: &str) -> Result<Option<AplValue>, Error> {
     match result.error { Some(e) => Err(e), None => Ok(result.value) }
 }
 
-fn number(n: f64) -> AplValue { AplValue::Number(n.try_into().unwrap()) }
-fn scalar(n: impl TryInto<basedpl::Number>) -> AplValue { AplValue::scalar(n).unwrap() }
+fn number(n: impl TryInto<basedpl::Number>) -> AplValue { AplValue::number(n).unwrap() }
 fn vector(values: &[f64]) -> AplValue { AplValue::from_parts(vec![values.len()], values.iter().copied().map(number).collect(), number(0.0)).unwrap() }
 fn ints(values: &[i64]) -> AplValue { AplValue::integers(vec![values.len()], values.to_vec()).unwrap() }
 
@@ -131,7 +130,7 @@ fn explicit_output_without_echo() {
     let code = r#"1 ⋄ ⎕←2 ⋄ ⍎"3 ⋄ ⎕←4 ⋄ 5" ⋄ 6"#;
     let r = s.eval_with(code, quiet());
     assert!(r.error.is_none());
-    assert_eq!(r.value, Some(scalar(6.0)));
+    assert_eq!(r.value, Some(number(6.0)));
     assert_eq!(r.output_text(), ["2", "4"]);
     assert_eq!(s.eval(code).output_text(), ["1", "2", "3", "4", "5", "6"]);
     for code in ["x←7", "+", "/", "f←{⎕←⍵ ⋄ ⍵+1} ⋄ f 8"] {
@@ -173,24 +172,24 @@ fn calls_with_array_arguments() {
         assert_eq!(r.value, run(expected).unwrap());
         assert!(r.output_text().is_empty());
     }
-    assert_eq!(s.call("+", &[scalar(3.0)]).output_text(), ["3"]);
-    let r = s.call("{}", &[scalar(3.0)]);
+    assert_eq!(s.call("+", &[number(3.0)]).output_text(), ["3"]);
+    let r = s.call("{}", &[number(3.0)]);
     assert!(r.value.is_none() && r.error.is_none() && r.output_text().is_empty());
     for (function, args, kind) in [
         ("+", vec![], Length),
-        ("+", vec![scalar(1.0); 3], Length),
-        ("", vec![scalar(1.0)], Syntax),
-        ("1", vec![scalar(1.0)], Syntax),
-        ("¨", vec![scalar(1.0)], Syntax),
-        ("+ ⋄ -", vec![scalar(1.0)], Syntax),
+        ("+", vec![number(1.0); 3], Length),
+        ("", vec![number(1.0)], Syntax),
+        ("1", vec![number(1.0)], Syntax),
+        ("¨", vec![number(1.0)], Syntax),
+        ("+ ⋄ -", vec![number(1.0)], Syntax),
     ] { assert_eq!(s.call(function, &args).error.unwrap().kind, kind); }
-    let r = s.call("bad", &[scalar(0.0)]);
+    let r = s.call("bad", &[number(0.0)]);
     assert_eq!(r.output_text(), ["0"]);
     let e = r.error.as_ref().unwrap();
     assert_eq!(e.kind, Domain);
     assert_eq!(e.calls.last().unwrap().source.text, "bad");
     assert!(e.span.source.text.contains("bad←"));
-    let r = s.call_with("{∇⍵}", &[scalar(0.0)], basedpl::EvalOptions { timeout: Some(std::time::Duration::ZERO), ..basedpl::EvalOptions::default() });
+    let r = s.call_with("{∇⍵}", &[number(0.0)], basedpl::EvalOptions { timeout: Some(std::time::Duration::ZERO), ..basedpl::EvalOptions::default() });
     assert_eq!(r.error.as_ref().unwrap().kind, Timeout);
     equiv_in(&mut s, "x", "42");
 }
@@ -265,7 +264,7 @@ fn general_axis_forms() {
 fn boxed_display_and_function_trees() {
     let mut s = Session::new();
     assert!(s.eval("]box on -style=max -trains=tree -fns=on").error.is_none());
-    assert_eq!(s.eval("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂¨0ₓ 1ₓ").output_text(), ["⊂4ₓ", "⊂⊂4ₓ", "┌→────────┐\n│ ⊂0ₓ ⊂1ₓ │\n└∊────────┘"]);
+    assert_eq!(s.eval("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂¨0ₓ 1ₓ").output_text(), ["(4ₓ)", "⊂(4ₓ)", "┌→──────────┐\n│ (0ₓ) (1ₓ) │\n└∊──────────┘"]);
     let r = s.eval(r#"A←2 3 4⍴"DUCKSWANBIRDWORMCAKESEED" ⋄ ⊂⍠2 A"#);
     assert!(r.error.is_none(), "{:?}", r.error);
     assert_eq!(r.output_text(), ["┌→─────────────────────┐\n↓ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │DUCK│ │SWAN│ │BIRD│ │\n│ └────┘ └────┘ └────┘ │\n│ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │WORM│ │CAKE│ │SEED│ │\n│ └────┘ └────┘ └────┘ │\n└∊─────────────────────┘"]);
@@ -295,7 +294,7 @@ fn boxed_display_and_function_trees() {
 fn execute_source_and_session() {
     let mut s = Session::new();
     let r = s.eval(r#"a←⍎"1+1 ⋄ 2+2""#);
-    assert_eq!(r.value, Some(scalar(4.)));
+    assert_eq!(r.value, Some(number(4.)));
     assert_eq!(r.output_text(), ["2"]);
     equiv_in(&mut s, "a", "4");
     let failed = s.eval(r#"⍎"⎕←7 ⋄ 1÷0""#);
@@ -337,7 +336,7 @@ fn compact_integers_and_promotion() {
         ("1⌽⍳3ₓ", vec![1, 2, 0]),
         ("5↑⍳3ₓ", vec![0, 1, 2, 0, 0]),
         ("1↓⍳3ₓ", vec![1, 2]),
-        ("[2 0;]⌷⍳3ₓ", vec![2, 0]),
+        ("[[2 0]]⌷⍳3ₓ", vec![2, 0]),
         ("1 0 1/⍳3ₓ", vec![0, 2]),
         ("1 0 1\\1ₓ 2ₓ", vec![1, 0, 2]),
         ("+\\⍳3ₓ", vec![0, 1, 3]),
@@ -437,7 +436,7 @@ fn dfn_defaults_shy_results_and_numbered_guards() {
     ] {
         let r = s.eval(code);
         assert!(r.error.is_none(), "{code}: {:?}", r.error);
-        assert_eq!(r.value, expected.map(scalar), "{code}");
+        assert_eq!(r.value, expected.map(number), "{code}");
         assert_eq!(r.output_text(), output, "{code}");
     }
     fails_in(&mut s, Value, &["x←{}0", "1+{}0"]);
@@ -459,7 +458,7 @@ fn dfn_defaults_shy_results_and_numbered_guards() {
     fails(Syntax, &[r#"0 •signal "DOMAIN ERROR""#]);
 }
 
-fn exact(n: i64, d: i64) -> AplValue { AplValue::scalar(num_rational::BigRational::new(n.into(), d.into())).unwrap() }
+fn exact(n: i64, d: i64) -> AplValue { AplValue::number(num_rational::BigRational::new(n.into(), d.into())).unwrap() }
 
 #[test]
 fn scalar_math() {
@@ -537,7 +536,7 @@ fn complex_arithmetic_and_roundtrips() {
         ("1.7E308÷0.5j0.5", 1.7e308, -1.7e308),
     ] {
         let a = run(code).unwrap().unwrap();
-        let expected = if im == 0.0 { scalar(re) } else { AplValue::scalar(num_complex::Complex64::new(re, im)).unwrap() };
+        let expected = if im == 0.0 { number(re) } else { AplValue::number(num_complex::Complex64::new(re, im)).unwrap() };
         assert_eq!(a, expected, "{code}");
         assert_eq!(run(&a.to_string()).unwrap().unwrap(), a, "display round-trip: {code}");
     }
@@ -570,7 +569,7 @@ fn complex_comparison_errors_and_recovery() {
     }
 
     fails(Domain, &[&format!("1{}x+0j1", "0".repeat(400))]);
-    assert_eq!(AplValue::scalar(num_complex::Complex64::new(0.0, f64::INFINITY)), Err(Domain));
+    assert_eq!(AplValue::number(num_complex::Complex64::new(0.0, f64::INFINITY)), Err(Domain));
     let mut s = Session::new();
     let failed = s.eval("⎕←1j2 ⋄ 1j2÷0");
     assert_eq!(failed.output_text(), ["1j2"]);
@@ -620,7 +619,7 @@ fn exact_literals_arithmetic_and_roundtrips() {
     let huge = format!("1{}", "0".repeat(400));
     assert_eq!(run(&format!("{huge}x÷{huge}x")).unwrap().unwrap(), exact(1, 1));
     fails(Domain, &[&format!("{huge}x+0")]);
-    assert_eq!(run(&format!("{huge}1r{huge}0+0.5")).unwrap().unwrap(), scalar(1.5));
+    assert_eq!(run(&format!("{huge}1r{huge}0+0.5")).unwrap().unwrap(), number(1.5));
 
     let e = run("¯2+1r0").unwrap_err();
     assert_eq!(&e.span.source.text[e.span.range], "1r0");
@@ -647,9 +646,9 @@ fn exact_arrays_prototypes_and_counts() {
     assert_eq!(run("2ₓ/1r3").unwrap().unwrap().elements().collect::<Vec<_>>(), vec![exact(1, 3).at(0); 2]);
 
     let invalid = num_rational::BigRational::new_raw(1.into(), 0.into());
-    assert_eq!(AplValue::scalar(invalid), Err(Domain));
+    assert_eq!(AplValue::number(invalid), Err(Domain));
     let raw = num_rational::BigRational::new_raw(2.into(), (-4).into());
-    assert_eq!(scalar(raw), exact(-1, 2));
+    assert_eq!(number(raw), exact(-1, 2));
 }
 
 #[test]
@@ -745,7 +744,7 @@ fn structural_completeness_and_source_lifetime() {
 
 #[test]
 fn based_values() {
-    let n = scalar(3.0);
+    let n = number(3.0);
     let unit = n.enclose().unwrap();
     check("3", n.clone());
     check("⊂3", unit.clone());
@@ -757,15 +756,15 @@ fn based_values() {
 
 #[test]
 fn array_invariants() {
-    let scalar = scalar(7.0);
+    let seven = number(7.0);
     let singleton = vector(&[7.0]);
-    assert_ne!(scalar, singleton);
-    assert!(scalar.shape().is_empty());
+    assert_ne!(seven, singleton);
+    assert!(seven.shape().is_empty());
     assert_eq!(singleton.shape(), &[1]);
     assert_eq!(AplValue::new(vec![2, 2], vec![number(1.0); 3]), Err(Length));
     assert_eq!(AplValue::new(vec![], vec![]), Err(Length));
     assert_eq!(AplValue::new(vec![usize::MAX, 2], vec![number(1.0)]), Err(Limit));
-    assert_eq!(AplValue::scalar(f64::NAN), Err(Domain));
+    assert_eq!(AplValue::number(f64::NAN), Err(Domain));
     let rows = AplValue::empty(vec![0, 3], number(0.0)).unwrap();
     let cols = AplValue::empty(vec![3, 0], number(0.0)).unwrap();
     assert_ne!(rows, cols);
@@ -776,7 +775,7 @@ fn array_invariants() {
     let text = AplValue::empty(vec![0, 3], Character('x')).unwrap();
     assert_ne!(rows, text);
     assert_eq!(text.prototype(), Character(' '));
-    let normalized = AplValue::new(vec![1], vec![scalar]).unwrap();
+    let normalized = AplValue::new(vec![1], vec![seven]).unwrap();
     assert_eq!(normalized, singleton);
 }
 
@@ -875,10 +874,10 @@ fn hybrid_categories_and_singleton_replicate() {
     // Dyalog 20 binding-strength and replicate documentation; not reference executions.
     let mut s = Session::new();
     for _ in 0..2 { equiv_in(&mut s, "op←{⍶⍵} ⋄ +op 3", "3"); }
-    for code in ["r←/ ⋄ +r 1 2 3", "+(/)1 2 3", "r←(/) ⋄ sum←+r ⋄ sum 1 2 3", "r←/ ⋄ alias←r ⋄ +(alias)1 2 3"] {
+    for code in ["r←/ ⋄ +r 1 2 3", "r←/ ⋄ sum←+r ⋄ sum 1 2 3", "r←/ ⋄ alias←r ⋄ +(alias)1 2 3"] {
         let r = s.eval(code);
         assert!(r.error.is_none(), "{code}: {:?}", r.error);
-        assert_eq!(r.value.unwrap(), scalar(6.0));
+        assert_eq!(r.value.unwrap(), number(6.0));
     }
     for (code, expected) in [("1 0 1 r 2 4 6", vec![2.0, 6.0]), ("(,2)/3 4", vec![3.0, 3.0, 4.0, 4.0]), ("1 0 1/,3", vec![3.0, 3.0])] {
         let r = s.eval(code);
@@ -890,14 +889,14 @@ fn hybrid_categories_and_singleton_replicate() {
 #[test]
 fn binder_limits() {
     let mut s = Session::new();
-    assert_eq!(s.eval(&format!("{}7", "a←".repeat(10_000))).value.unwrap(), scalar(7.0));
+    assert_eq!(s.eval(&format!("{}7", "a←".repeat(10_000))).value.unwrap(), number(7.0));
     fails_in(&mut s, Limit, &[&format!("+{}1", "/".repeat(10_000))]);
     fails_in(&mut s, Limit, &[&format!("f←+ ⋄ {}", "f←f+f ⋄ ".repeat(128))]);
-    assert_eq!(s.eval("2+2").value.unwrap(), scalar(4.0));
+    assert_eq!(s.eval("2+2").value.unwrap(), number(4.0));
 }
 
 #[test]
-fn real_infinities() { check("¯∞", scalar(f64::NEG_INFINITY)); }
+fn real_infinities() { check("¯∞", number(f64::NEG_INFINITY)); }
 
 #[test]
 fn diagnostic_width_and_call_context() {
@@ -928,5 +927,5 @@ fn guard_errors_and_recovery() {
     fails_in(&mut s, Domain, &["{x←2 ⋄ {x+⍵}}0"]);
     equiv_in(&mut s, "f←{1:+ ⋄ 0}0 ⋄ 2 f 3", "5");
     assert!(matches!(parse(Source::new("guard", "f←{0::⎕←1}")), ParseStatus::Complete(_)));
-    assert_eq!(s.eval("2+2").value.unwrap(), scalar(4.0));
+    assert_eq!(s.eval("2+2").value.unwrap(), number(4.0));
 }

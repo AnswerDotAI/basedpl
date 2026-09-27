@@ -27,7 +27,7 @@ T≡"price" "qty":[[1 2 3] [4 5 6]]   ⍝ 1ₓ
 A character atom or string is one string key. Characters side by side form one string, so `'a' 'b'` is the key `"ab"`. Use `"a" "b"` for two one-character keys.
 
 ```apl
-⍳⍠0 ('a' 'b':1 2)           ⍝ ["ab";]
+⍳⍠0 ('a' 'b':1 2)           ⍝ ["ab"]
 ⍳⍠0 ("a" "b":1 2)           ⍝ "a" "b"
 ```
 
@@ -76,7 +76,7 @@ Keys must be unique strings on each axis: `DOMAIN`. A key-list length must match
 
 ## Selection and assignment
 
-[Index](glyphs/squad.qmd) `I⌷M` takes one selector for each leading axis. Dot indexing, `M.(I)`, writes the same selection after the array. An array applied to a selector selects on its leading axis, so `M "bob"` is `"bob"⌷M`. A selector is a key or a position. A unit selector removes its axis. A vector selector retains it. A character vector selects one string key.
+[Index](glyphs/squad.qmd) `I⌷M` takes one selector for each leading axis. Dot indexing writes the same selection after the array, with one bracket item for each axis: `M.["alice" "qty"]` is `"alice" "qty"⌷M`. An array applied to a selector selects on its leading axis, so `M "bob"` is `"bob"⌷M`. A selector is a key or a position. A unit selector removes its axis. A vector selector retains it. A character vector selects one string key.
 
 ```apl
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
@@ -86,8 +86,8 @@ M "bob"                     ⍝ "price" "qty":20 4
 ∞ "qty"⌷M                   ⍝ "alice" "bob":2 4
 "alice" "qty"⌷M             ⍝ 2
 "bob" 0⌷M                   ⍝ 20
-[,⊂"alice";]⌷M              ⍝ [["alice";] ["price" "qty"]]:1 2⍴10 2
-("bob" "qty")⊃M             ⍝ 4
+[,⊂"alice"]⌷M               ⍝ [["alice"] ["price" "qty"]]:[10 2 ⋄]
+"bob" "qty"⊃M               ⍝ 4
 M⍎"bob"                     ⍝ "price" "qty":20 4
 ```
 
@@ -111,9 +111,9 @@ Plain assignment through dot indexing appends missing rows or columns, as it doe
 
 ```apl
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
-M.("cara")←30 5
+M.["cara"]←30 5
 "cara" "qty"⌷M                ⍝ 5
-M.(∞ "tax")←1 2 3
+M.[∞ "tax"]←1 2 3
 "alice" "tax"⌷M               ⍝ 1
 ```
 
@@ -121,7 +121,7 @@ Appending on several axes fills the new cross-cells too.
 
 ```apl
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
-M.("cara" "tax")←3
+M.["cara" "tax"]←3
 "cara"⌷M                    ⍝ "price" "qty" "tax":0 0 3
 ∞ "tax"⌷M                   ⍝ "alice" "bob" "cara":0 0 3
 ```
@@ -133,16 +133,16 @@ For `T←"aa" "bb":1 2`:
 | Expression | Error |
 |---|---|
 | `"cc"⌷T` | `INDEX` |
-| `T.("cc")+←1` | `INDEX` |
-| `[0 0;]⌷T` | `DOMAIN` |
-| `T.(2)←9` | `INDEX` |
+| `T.["cc"]+←1` | `INDEX` |
+| `[[0 0]]⌷T` | `DOMAIN` |
+| `T.[2]←9` | `INDEX` |
 
 Selecting with a unit stores the whole RHS. A vector selection aligns its retained axis.
 
 ```apl
 T←"aa" "bb":1 2 ⋄ U←"bb" "aa":8 9
-T.("aa")←U ⋄ "aa"⌷T           ⍝ "bb" "aa":8 9
-T.[,⊂"aa";]←U ⋄ "aa"⌷T        ⍝ 9
+T.["aa"]←U ⋄ "aa"⌷T           ⍝ "bb" "aa":8 9
+T.[,⊂"aa"]←U ⋄ "aa"⌷T         ⍝ 9
 ```
 
 ## Agreement
@@ -158,8 +158,8 @@ Corresponding keyed axes align by union: left keys, then right-only keys. An abs
 Each keyed axis aligns independently, including reordered keys.
 
 ```apl
-A←[["alice";] ["price";]]:1 1⍴10
-B←[["bob";] ["qty";]]:1 1⍴2
+A←[["alice"] ["price"]]:1 1⍴10
+B←[["bob"] ["qty"]]:1 1⍴2
 A+B                         ⍝ ["alice" "bob";"price" "qty"]:[10 0 ⋄ 0 2]
 ("aa" "bb":1 2)+("bb" "aa":10 20) ⍝ "aa" "bb":21 12
 ```
@@ -262,7 +262,7 @@ Catenate joins keys on its joined axis and aligns other keyed axes. Positions fr
 ("aa":1),("bb":2)            ⍝ "aa" "bb":1 2
 ("aa" "bb":1 2),5            ⍝ ["aa":1 "bb":2 5]
 A←["aa" "bb";"xx" "yy"]:[1 2 ⋄ 3 4]
-B←["bb" "aa";["zz";]]:[5 ⋄ 6]
+B←["bb" "aa";["zz"]]:[[5] ⋄ [6]]
 A,B                         ⍝ ["aa" "bb";"xx" "yy" "zz"]:[1 2 6 ⋄ 3 4 5]
 ```
 
@@ -336,7 +336,7 @@ Monadic Key passes named positions to its operand. Dyadic Key preserves labels o
 
 ```apl
 V←"aa" "bb" "cc":1 2 1
-{⊂⍵}⌸V                     ⍝ [["aa" "cc"] ["bb";]]
+{⊂⍵}⌸V                     ⍝ [["aa" "cc"] ["bb"]]
 1 2 1{⊂⍵}⌸V                ⍝ [["aa":1 "cc":1] ["bb":2]]
 ```
 

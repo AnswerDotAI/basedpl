@@ -4,7 +4,7 @@ The `.apl` files are the executable language tests. `core.apl` holds bAsedPL's o
 
 Source entries are not necessarily executable tests. Many APLcart recipes have unbound arguments and no expected result. They need concrete examples. Library cases need their definitions and setup. Use the scanner below for current counts and failures; fixture reasons describe their last review, not necessarily today's implementation. Progress notes belong in `meta/`, not this README.
 
-Active cases use bAsedPL spellings: `π` for APL's monadic `○`, `g⌝` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, `⍢` for `∇∇`, `•name` for system names, `"…"` for multi-character strings written `'…'`, `Y[I]` for first-axis bracket indexing, `[I;J]⌷Y` for indexing several axes, and `f⍠A` for bracket axes `f[A]`. They follow the spacing rules in `meta/spacing.md`: lists that aren't strands use brackets, spaces separate runs, and `⊸` and `⟜` replace `∘` and `⍛`. Positions and axes count from 0, so the positions in upstream code and in expectations captured with `⎕IO←1` are converted. Original inventory sources retain their dialect's notation.
+Active cases use bAsedPL spellings: `π` for APL's monadic `○`, `g⌝` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, `⍢` for `∇∇`, `•name` for system names, `"…"` for multi-character strings written `'…'`, `Y(I)` or `Y I` for first-axis bracket indexing `Y[I]`, `[I;J]⌷Y` for indexing several axes, and `f⍠A` for bracket axes `f[A]`. They follow the spacing rules in `meta/spacing.md`: vectors that aren't strands use brackets, `[x]` is a one-item vector, parentheses round a literal make a scalar, spaces separate runs, and `⊸` and `⟜` replace `∘` and `⍛`. Positions and axes count from 0, so the positions in upstream code and in expectations captured with `⎕IO←1` are converted. Original inventory sources retain their dialect's notation.
 
 Run the active cases with:
 
@@ -135,6 +135,8 @@ During conversion, comments are extracted from descriptions, unchanged ngn asser
 Use `basedpl.apltests.parse(text)` to read records as `Case` objects with `id`, `comment`, `code`, `expect`, `rtol`, `atol`, `section`, optional `output` text and the header's `line`. `render(cases)` writes them back. The conversion checks preserve source text and reproduce captured values, shapes and recursive prototypes; they do not infer new expectations from the program under test.
 
 Use `add(['ngn:177'])` from `basedpl.apltests` to activate selected inventory IDs from a kernel. It is the equivalent of the `add` command above.
+
+Use `check_file(path)` from `basedpl.apltests` to run a reference file through the installed extension and list its failures. It applies the same exact-representation and tolerance options as `tests/reference.rs`. `check_page(path)` does the same for the APL examples in a `.qmd` page.
 
 The converter remains available for inspecting a fresh conversion without overwriting edited tests:
 

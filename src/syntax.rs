@@ -166,7 +166,7 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
             let end = chars.peek().map_or(source.text.len(), |(i, _)| *i);
             let n = Number::parse(&source.text[start..end])
                 .map_err(|k| span(end).error(k, "invalid numeric literal (real values, finite complex components or integer x/r components required)"))?;
-            TokenKind::Literal(Value::scalar(n).unwrap())
+            TokenKind::Literal(Value::number(n).unwrap())
         } else if (c.is_alphabetic() || matches!(c, '_' | '∆' | '⍙')) && Primitive::from_glyph(c).is_none() {
             chars.next();
             while chars.peek().is_some_and(|(_, c)| (c.is_alphanumeric() || matches!(c, '_' | '∆' | '⍙')) && Primitive::from_glyph(*c).is_none()) {
@@ -367,7 +367,7 @@ fn statements(pieces: Vec<Piece>) -> Result<Vec<Vec<Node>>, ParseFailure> {
     Ok(result)
 }
 
-/// Parentheses only group. A line break inside them is a space.
+/// Parentheses group, or make a scalar when `encloses` holds. A line break inside them is a space.
 fn parenthesised(pieces: Vec<Piece>, span: &Span) -> Result<Vec<Node>, ParseFailure> {
     let mut nodes = Vec::new();
     for piece in pieces {
@@ -382,8 +382,19 @@ fn parenthesised(pieces: Vec<Piece>, span: &Span) -> Result<Vec<Node>, ParseFail
     expression(nodes)
 }
 
+/// Whether parentheses round `nodes` make a scalar: they hold a literal, a strand, or glyphs separated by spaces.
+/// Glyphs that touch form a train, and a name or any other expression only groups, so the text alone decides.
+pub(crate) fn encloses(nodes: &[Node]) -> bool {
+    let glyph = |n: &Node| matches!(n.kind, NodeKind::Function(_) | NodeKind::Hybrid(_));
+    match nodes {
+        [Node { kind: NodeKind::Literal(_), .. }] => true,
+        [] => false,
+        _ => nodes.iter().all(glyph) && nodes.windows(2).all(|w| w[0].span.range.end != w[1].span.range.start),
+    }
+}
+
 /// Brackets build arrays. A space separates items, `;` separates items that contain spaces, and `⋄` separates major cells.
-/// A line break is a space. Brackets round one item without `;` only group it.
+/// A line break is a space. Brackets round one item make a one-item vector.
 fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
     let semicolon = pieces.iter().any(|p| matches!(p, Piece::Semicolon(_)));
     let diamond = pieces.iter().any(|p| matches!(p, Piece::Diamond(_)));
@@ -396,10 +407,11 @@ fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
             Piece::Diamond(_) | Piece::Semicolon(_) => parts.push(Vec::new()),
         }
     }
-    // A trailing separator ends the last item or row.
-    if parts.len() > 1 && parts.last().is_some_and(Vec::is_empty) { parts.pop(); }
+    // A trailing `⋄` gives one-row arrays: `[1 2 ⋄]` is a 1×2 matrix.
+    if diamond && parts.len() > 1 && parts.last().is_some_and(Vec::is_empty) { parts.pop(); }
     if (semicolon || diamond) && parts.iter().any(Vec::is_empty) {
-        return Err(invalid(span, if semicolon { "empty item between semicolons" } else { "empty row between diamonds" }));
+        let message = if diamond { "empty row between diamonds" } else if parts.last().is_some_and(Vec::is_empty) { "a trailing ; leaves an empty item: [x] is already a one-item vector" } else { "empty item between semicolons" };
+        return Err(invalid(span, message));
     }
     let record = |cells: &[Vec<Node>]| cells.iter().any(|c| keyed_item(c));
     if semicolon {
@@ -418,9 +430,8 @@ fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
             .collect::<Result<Vec<_>, _>>()?;
         return Ok(NodeKind::ArrayLiteral { cells, block: true, record: false });
     }
-    let mut cells = items(parts.pop().unwrap())?;
-    let record = record(&cells);
-    Ok(if cells.len() == 1 && !record { NodeKind::Group(cells.pop().unwrap()) } else { NodeKind::ArrayLiteral { cells, block: false, record } })
+    let cells = items(parts.pop().unwrap())?;
+    Ok(NodeKind::ArrayLiteral { record: record(&cells), cells, block: false })
 }
 
 /// Items separated by spaces: each run of nodes with no space between them is one item.

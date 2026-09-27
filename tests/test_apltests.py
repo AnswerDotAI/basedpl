@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import pytest
 from basedpl.reference import Corpus
-from basedpl.apltests import Case, parse, render, convert, native_cases, add, description
+from basedpl.apltests import Case, parse, render, convert, native_cases, add, description, literal, _check
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -44,6 +44,12 @@ def test_comment_extraction():
     assert '0 <= x < n' not in description(corpus['ngn:518', '*'])
     comment = description(corpus['april/libraries/dfns/array/demo.lisp:14', '*'])
     assert 'self-contained' not in comment and 'original independent expectation' not in comment
+
+
+def test_captured_literals():
+    for line in (ROOT/'tests/reference/inventory/ngn.jsonl').read_text().splitlines():
+        expected = json.loads(line).get('expected')
+        if isinstance(expected, dict): assert _check(dict(code=literal(expected), expected=expected))['status']=='pass', literal(expected)
 
 
 def test_native_and_incremental_export(tmp_path):

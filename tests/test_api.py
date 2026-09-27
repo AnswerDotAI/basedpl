@@ -40,7 +40,7 @@ def test_python_printer():
         '×': 'sign', '×⟜2': 'times(2.)', '2⊸-': 'subtract.left(2.)', '2-': 'subtract.left(2.)',
         '×⟜2x': 'times(2)', '÷⟜1r2': 'divide(Fraction(1, 2))',
         '+/÷≢': 'plus.reduce / tally', '+.×': 'plus @ times', '×⌝': 'times.outer',
-        '+/⍠1': 'plus.reduce[1.]', '1⊸+⍣[≡;]': 'plus.left(1.).history(match)', '+⌿': 'plus.reduce[0]', '-⍨': 'subtract.commute',
+        '+/⍠1': 'plus.reduce[1.]', '1⊸+⍣[≡]': 'plus.left(1.).history(match)', '+⌿': 'plus.reduce[0]', '-⍨': 'subtract.commute',
         '+⍤×': 'conjugate.atop(sign)', '+⍥×': 'conjugate.over(sign)', '-⊸+': 'negate.before(plus)', '+⟜-': 'plus.after(negate)',
         '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each',
     }.items(): teq(to_python(apl(code)), expected)
@@ -164,7 +164,7 @@ def test_keyed_arrays():
     np.testing.assert_array_equal(t.py['b'], [1, 2])
     assert repr(t).startswith("{'b': ")
     d = dict(z=1, y=dict(k=[1, 2, 3]), e={})
-    assert list(apl('⍳⍠0 t', t=d).py) == ['z', 'y', 'e'] and apl('t.y.k.(1)+t.e≡⍬:⍬', t=d).py == 3
+    assert list(apl('⍳⍠0 t', t=d).py) == ['z', 'y', 'e'] and apl('t.y.k.[1]+t.e≡⍬:⍬', t=d).py == 3
     assert (Array(dict(a=1, b=2)) + Array(dict(b=10))).py == dict(a=1, b=12)
     assert Array({'a': 1, 1: 5}).py == {'a': 1, 1: 5}
     with pytest.raises(TypeError): Array({2: 5})
@@ -203,7 +203,7 @@ def test_based_values():
         assert apl('value').shape == value.shape
     assert Array(3).is_atom and not Array(np.array(3)).is_atom
     assert apl('v←3 4 ⋄ 1⌷v').is_atom
-    assert not apl('[⊂1;]⌷v').is_atom
+    assert not apl('[⊂1]⌷v').is_atom
     assert apl('1⊃v').is_atom
     assert Array([3, 4])[1].is_atom and not Array([3, 4])[np.array(1)].is_atom
     assert apl('fs←[+ ×]')[1](3, 4).py == 12
@@ -226,7 +226,7 @@ def test_words_binding_and_operators():
     np.testing.assert_array_equal(plus.scan([1, 2, 3]), [1, 3, 6])
     np.testing.assert_array_equal(subtract.scan([1, 2, 3]), [1, -1, -4])
     np.testing.assert_array_equal(plus.scan(10, [1, 2, 3]), [11, 13, 16])
-    assert type(tally('abc').py) is int and shape(Array([1., 2.])).apl == '[2ₓ;]'
+    assert type(tally('abc').py) is int and shape(Array([1., 2.])).apl == '[2ₓ]'
     assert (Array('abc') + 1).py == 'bcd'
     np.testing.assert_array_equal(plus.reduce[0](Array([[1, 2], [3, 4]])), [4, 6])
     np.testing.assert_array_equal(plus.reduce[1, 2](np.arange(1, 9).reshape(2, 2, 2)), [10, 26])

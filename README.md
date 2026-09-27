@@ -8,7 +8,7 @@ bAsedPL (“Based-array APL”) is an APL-derived array language, borrowing idea
 For APL users, the main choices are:
 
 - [Based arrays](rules.qmd#arrays-nesting-and-fill), as in BQN: numbers, characters and functions are atoms; enclosure always adds a layer.
-- **Brackets write lists**, and spaces group: `[a b c]` is a vector, and `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train, so `+/÷≢ x` is the mean of `x`, and `2×` binds 2. An array next to an argument selects from it: `v 0` is the first item.
+- **Brackets write vectors**, and spaces group: `[a b c]` is a vector, and `a+b × c+d` is `(a+b)×(c+d)`. Parentheses round a literal make a scalar: `(1 2)` is `⊂1 2`. A run that ends in a function is a train, so `+/÷≢ x` is the mean of `x`, and `2×` binds 2. An array next to an argument selects from it: `v 0` is the first item.
 - **Leading-axis broadcasting**, including expansion of length-1 axes, plus string keys and names on axes.
 - **Exact integers and rationals** alongside approximate real and complex numbers.
 - Dfns, trains and operators, with additions such as Under, iteration histories, windows and function arrays.
@@ -132,7 +132,7 @@ Keys and names travel with axes through operations such as transpose. Arithmetic
 
 ### Function operators
 
-A list of counts keeps the history: one state for each count, where count 0 is the initial value. Here, double up to four times:
+A vector of counts keeps the history: one state for each count, where count 0 is the initial value. Here, double up to four times:
 
 ``` apl
 2×⍣(⍳5) 1

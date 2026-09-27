@@ -75,7 +75,7 @@ Axis order determines the ravel order. Unselected axes retain their order and ke
 An empty axis vector makes singleton cells. A seed is passed whole to each cell.
 
 ```apl
-+/⍠⍬ (1 2 3)          ⍝ 1 2 3
++/⍠⍬ [1 2 3]          ⍝ 1 2 3
 10+/⍠1 2 (2 2 3⍴⍳6)   ⍝ 25 25
 ```
 

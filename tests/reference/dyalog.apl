@@ -175,7 +175,7 @@ a←3⍴0 ⋄ (5⍴a)+←1 ⋄ a   ⍝ 2 2 1
 ⍳2 3   ⍝ [[0 0] [0 1] [0 2] ⋄ [1 0] [1 1] [1 2]]
 
 ⍝ dyalog:index-generator:2 — Combined setup and indexed expression
-A←2 4⍴"MAINEXIT" ⋄ A[⍳⍴A]   ⍝ ["MAIN" ⋄ "EXIT"]
+A←2 4⍴"MAINEXIT" ⋄ A(⍳⍴A)   ⍝ ["MAIN" ⋄ "EXIT"]
 
 ⍝ dyalog:exponential:3 —
 1+*π0j1   ⍝ 0
@@ -227,14 +227,14 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 ⍴⍨3   ⍝ 3 3 3
 
 ⍝ dyalog:each-monadic:1 — Inlined G
-⍴¨[["TOM" ⍳3] ["DICK" ⍳4] ["HARRY" ⍳5]]   ⍝ [[2;] [2;] [2;]]
+⍴¨[["TOM" ⍳3] ["DICK" ⍳4] ["HARRY" ⍳5]]   ⍝ [[2] [2] [2]]
 
 ⍝ dyalog:each-dyadic:1 —
 "ABC",¨"XYZ"   ⍝ "AX" "BY" "CZ"
 
 ⍝ dyalog:each-dyadic:2 — Inlined G
 1 2 3 4↑¨[[1 [2 3]] [4 [5 6]] [8 9] 10]
-[[1;] [4 [5 6]] [8 9 0] [10 0 0 0]]
+[[1] [4 [5 6]] [8 9 0] [10 0 0 0]]
 
 ⍝ dyalog:reduce-n-wise:1 —
 +/3↕⍳4   ⍝ 3 6
@@ -367,7 +367,7 @@ N←3 2 5 4 6 1 3 ⋄ N/⍨2|N   ⍝ 3 5 1 3
 'K'
 
 ⍝ dyalog:index:shape — Inline VEC definition
-[[2 0 3 ⋄ 0 1 2];]⌷111 222 333 444   ⍝ [333 111 444 ⋄ 111 222 333]
+[[2 0 3 ⋄ 0 1 2]]⌷111 222 333 444   ⍝ [333 111 444 ⋄ 111 222 333]
 
 ⍝ dyalog:encode:mixed-base —
 0 10⊤5 15 125   ⍝ [0 1 12 ⋄ 5 5 5]
@@ -500,49 +500,49 @@ lisp "(+ 2"
 
 ⍝ — Dyalog dfns: Cut
 •load "lib/dyalog.apl"
-1 0 1 0(+/Cut(¯1))1 2 3 4
+1 0 1 0(+/Cut ¯1)1 2 3 4
 ⍝ =>
 2 4
 
 ⍝ — Dyalog dfns: Cut
 •load "lib/dyalog.apl"
-0 1 0 1(+/Cut(2))1 2 3 4
+0 1 0 1(+/Cut 2)1 2 3 4
 ⍝ =>
 3 7
 
 ⍝ — Dyalog dfns: Cut
 •load "lib/dyalog.apl"
-0 1 0 1(+/Cut(¯2))1 2 3 4
+0 1 0 1(+/Cut ¯2)1 2 3 4
 ⍝ =>
 1 3
 
 ⍝ — Dyalog dfns: Cut
 •load "lib/dyalog.apl"
-[1 1 ⋄ 2 2](⊢Cut(0))3 4⍴⍳12
+[1 1 ⋄ 2 2](⊢Cut 0)3 4⍴⍳12
 ⍝ =>
 [5 6 ⋄ 9 10]
 
 ⍝ — Dyalog dfns: Cut
 •load "lib/dyalog.apl"
-2(+/Cut(3))⍳5
+2(+/Cut 3)⍳5
 ⍝ =>
 1 3 5 7 4
 
 ⍝ — Dyalog dfns: Cut
 •load "lib/dyalog.apl"
-2(+/Cut(¯3))⍳5
+2(+/Cut ¯3)⍳5
 ⍝ =>
 1 3 5 7
 
 ⍝ — Dyalog dfns: Cut
 •load "lib/dyalog.apl"
-[1 0 1;1 0 1 0]((+/,)Cut(1))3 4⍴⍳12
+[1 0 1;1 0 1 0]((+/,)Cut 1)3 4⍴⍳12
 ⍝ =>
 [10 18 ⋄ 17 21]
 
 ⍝ — Dyalog dfns: Cut
 •load "lib/dyalog.apl"
-(+/Cut(1))1 2 1 4
+(+/Cut 1)1 2 1 4
 ⍝ =>
 3 5
 
@@ -550,7 +550,7 @@ lisp "(+ 2"
 •load "lib/dyalog.apl"
 [eis 1;1 2 eis 3 4;eis [1 2;3 4]]
 ⍝ =>
-[⊂[1;] [[1 2] [3 4]] [[1 2] [3 4]]]
+[⊂[1] [[1 2] [3 4]] [[1 2] [3 4]]]
 
 ⍝ — Dyalog dfns: iotag
 •load "lib/dyalog.apl"
@@ -598,11 +598,11 @@ ssword "alpha alphabet alpha12 alpha" "alpha" 'X'
 •load "lib/dyalog.apl"
 words¨"" "123" "abc12 + 34def" "abc_def"
 ⍝ =>
-[0⍴⊂"";["123";];"abc12" " + 34" "def";["abc_def";]]
+[0⍴⊂"";["123"];"abc12" " + 34" "def";["abc_def"]]
 
 ⍝ — Dyalog dfns: word boundaries
 •load "lib/dyalog.apl"
-("abc" "123")words "a12+b3 cZ1a"
+["abc" "123"]words "a12+b3 cZ1a"
 ⍝ =>
 "a12" "+" "b3" " " "c" "Z1" "a"
 
@@ -620,7 +620,7 @@ words¨"" "123" "abc12 + 34def" "abc_def"
 
 ⍝ — Dyalog dfns: Baby skips a store with a negative accumulator
 •load "lib/dyalog.apl"
-m←⌽⍉(32⍴2)⊤32↑0 16389 49152 24582 57344 13 0 ⋄ 2⊥⌽6⌷baby[m]
+m←⌽⍉(32⍴2)⊤32↑0 16389 49152 24582 57344 13 0 ⋄ 2⊥⌽6⌷baby(m)
 ⍝ =>
 0
 

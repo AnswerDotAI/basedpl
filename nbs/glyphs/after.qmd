@@ -13,7 +13,7 @@
 "abc" ,⟜⌽ "de"     ⍝ "abced"
 ```
 
-`f⟜A` binds the right argument. The bound function takes one argument. A literal argument straight after a literal operand joins its strand: `-⟜10 3` binds the vector `10 3` and has no argument. Use parentheses or a name.
+`f⟜A` binds the right argument. The bound function takes one argument. A literal argument straight after a literal operand joins its strand: `-⟜10 3` binds the vector `10 3` and has no argument. Put the function in parentheses, as in `(-⟜10) 3`, or use a name.
 
 ```apl
 (-⟜10)3            ⍝ ¯7

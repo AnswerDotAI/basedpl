@@ -299,8 +299,8 @@ impl Value {
         Ok(Self::Array(Arc::new(ArrayData { layout: shape.into(), data, prototype, depth, exact, functions, environment })))
     }
 
-    pub fn scalar(n: impl TryInto<Number>) -> Result<Self, ErrorKind> { Ok(Self::Number(n.try_into().map_err(|_| ErrorKind::Domain)?)) }
-    pub fn is_scalar(&self) -> bool { self.shape().is_empty() }
+    pub fn number(n: impl TryInto<Number>) -> Result<Self, ErrorKind> { Ok(Self::Number(n.try_into().map_err(|_| ErrorKind::Domain)?)) }
+    pub fn is_unit(&self) -> bool { self.shape().is_empty() }
     pub fn is_singleton(&self) -> bool { self.len() == 1 }
     pub fn shape(&self) -> &[usize] { match self { Self::Array(a) => &a.layout.shape, _ => &[] } }
     pub fn len(&self) -> usize {
@@ -388,7 +388,7 @@ impl Value {
     }
 
     pub fn as_number(&self) -> Option<Number> {
-        if !self.is_scalar() { return None; }
+        if !self.is_unit() { return None; }
         match self.at(0) { Value::Number(n) => Some(n), _ => None }
     }
 
@@ -398,7 +398,7 @@ impl Value {
     }
 
     pub(crate) fn formatted(&self) -> Result<Self, ErrorKind> {
-        if self.is_scalar() {
+        if self.is_unit() {
             if let Value::Function(f) = self.at(0) {
                 let text = format!("⟨{}⟩", f.apl());
                 return Self::new(vec![text.chars().count()], text.chars().map(Value::Character).collect());
@@ -608,6 +608,7 @@ impl Value {
     pub(crate) fn literal(&self) -> String {
         match self {
             Self::Number(n) => n.to_string(),
+            Self::Character(c) if c.is_control() => format!("•ucs {}", *c as u32),
             Self::Character(c) => format!("'{c}'"),
             Self::Function(f) => {
                 let text = f.apl();
@@ -618,9 +619,12 @@ impl Value {
             Self::Array(_) => {
                 if self.axis_names().iter().any(Option::is_some) { return self.named_literal(); }
                 if let Some(s) = self.string_literal() { return s; }
+                if let Some(s) = crate::keyed::name(self) {
+                    return format!(",•ucs {}", s.chars().map(|c| (c as u32).to_string()).collect::<Vec<_>>().join(" "));
+                }
                 if self.is_empty() && !self.has_keys() { return self.empty_literal(); }
                 match self.shape().len() {
-                    0 => format!("⊂{}", self.at(0).literal()),
+                    0 => Self::enclosed_literal(&self.at(0)),
                     1 => self.vector_literal(),
                     _ if self.has_keys() => self.keyed_literal(),
                     _ => match self.cells(self.shape().len() - 1).and_then(|c| c.collect()) {
@@ -641,6 +645,22 @@ impl Value {
         if self.is_strand() { format!("[{text}]") } else if needs_group(&text) { format!("({text})") } else { text }
     }
 
+    /// Source text for a scalar holding `content`. Parentheses enclose a literal, a strand, a glyph or glyphs separated
+    /// by spaces. Other functions have no enclosing spelling, so they reshape a one-item vector to rank 0.
+    fn enclosed_literal(content: &Value) -> String {
+        let text = content.literal();
+        let glyph = |v: &Value| matches!(v, Self::Function(_)) && v.literal().chars().count() == 1;
+        if matches!(content, Self::Array(_)) && content.shape().len() == 1 && content.len() >= 2 && !content.has_keys() && content.elements().all(|e| glyph(&e))
+        { return format!("({})", content.elements().map(|e| e.literal()).collect::<Vec<_>>().join(" ")); }
+        let written = match content {
+            Self::Number(_) => true,
+            Self::Character(c) => !c.is_control(),
+            Self::Function(_) => glyph(content),
+            Self::Array(_) => content.string_literal().is_some() || content.is_strand() || matches!(text.as_str(), "⍬" | "\"\""),
+        };
+        if written { format!("({text})") } else if matches!(content, Self::Function(_)) { format!("⍬⍴[{text}]") } else if needs_group(&text) { format!("⊂({text})") } else { format!("⊂{text}") }
+    }
+
     /// An array with named axes: its keyed shape reshapes the array without names. Reshape keeps position keys.
     fn named_literal(&self) -> String {
         let shape: Vec<_> =
@@ -657,7 +677,7 @@ impl Value {
             .enumerate()
             .map(|(axis, &len)| {
                 let keys: Vec<_> = (0..len).map(|i| self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| i.to_string(), |k| quoted(k))).collect();
-                match keys.len() { 0 => "⍬".into(), 1 => format!("[{};]", keys[0]), _ => keys.join(" ") }
+                match keys.len() { 0 => "⍬".into(), 1 => format!("[{}]", keys[0]), _ => keys.join(" ") }
             })
             .collect();
         format!("[{}]:{}", lists.join(";"), self.unkeyed().literal())
@@ -671,7 +691,7 @@ impl Value {
             && !self.has_keys()
             && self.axis_names().iter().all(Option::is_none)
             && self.string_literal().is_none()
-            && self.elements().all(|e| matches!(e, Self::Number(_) | Self::Character(_)) || e.string_literal().is_some())
+            && self.elements().all(|e| matches!(e, Self::Number(_)) || matches!(e, Self::Character(c) if !c.is_control()) || e.string_literal().is_some())
     }
 
     /// An empty array: `⍬` or `""` for a simple vector, and otherwise its shape reshaping its prototype.
@@ -682,7 +702,7 @@ impl Value {
             ([_], Self::Character(_)) => "\"\"".into(),
             (shape, _) => {
                 let shape: Vec<_> = shape.iter().map(ToString::to_string).collect();
-                let fill = if matches!(prototype, Self::Array(_)) { format!("⊂{}", prototype.literal()) } else { prototype.literal() };
+                let fill = if matches!(prototype, Self::Array(_)) { Self::enclosed_literal(&prototype) } else { prototype.literal() };
                 format!("{}⍴{fill}", shape.join(" "))
             }
         }
@@ -694,24 +714,25 @@ impl Value {
             Some(keys) => {
                 keys.names().iter().zip(self.elements()).map(|(k, v)| k.as_ref().map_or_else(|| v.item(), |k| format!("{}:{}", quoted(k), v.item()))).collect()
             }
-            None if self.len() == 1 => return format!("[{};]", self.at(0).literal()),
             None if self.is_strand() => return self.elements().map(|e| e.literal()).collect::<Vec<_>>().join(" "),
             None => self.elements().map(|e| e.item()).collect(),
         };
         format!("[{}]", items.join(" "))
     }
 
-    /// A major cell as one part of array notation: a vector's items side by side, or one item.
+    /// A major cell as one part of array notation: a vector's items side by side, or one item. A row with one item
+    /// needs its own brackets, because a single item would be a cell by itself.
     fn row(&self) -> String {
         if self.shape().len() == 1 && !self.has_keys() && self.string_literal().is_none() {
-            // A row of one array item would read back as that array's items, so it needs a one-item list.
-            if let [item @ Self::Array(_)] = &self.elements().collect::<Vec<_>>()[..] { return format!("[{};]", item.literal()); }
+            if self.len() == 1 { return format!("[{}]", self.at(0).item()); }
             self.elements().map(|e| e.item()).collect::<Vec<_>>().join(" ")
         } else { self.item() }
     }
 
-    /// A character vector as a double-quoted literal.
-    fn string_literal(&self) -> Option<String> { if let Self::Array(_) = self { crate::keyed::name(self).map(|s| quoted(&s)) } else { None } }
+    /// A character vector as a double-quoted literal, unless it holds control characters, which a literal can't show.
+    fn string_literal(&self) -> Option<String> {
+        if let Self::Array(_) = self { crate::keyed::name(self).filter(|s| !s.chars().any(char::is_control)).map(|s| quoted(&s)) } else { None }
+    }
 
     /// Assemble cells by trailing-axis agreement, padding each with its own fill.
     pub(crate) fn assemble(frame: &[usize], cells: &[Self], empty_cell: &Self) -> Result<Self, ErrorKind> {
@@ -786,7 +807,7 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Number(n) => return write!(f, "{n}"),
-            Self::Character(c) => return write!(f, "'{c}'"),
+            Self::Character(_) => return f.write_str(&self.literal()),
             Self::Function(fun) => return write!(f, "⟨{}⟩", fun.apl()),
             _ => (),
         }

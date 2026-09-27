@@ -338,10 +338,10 @@
 0⌷⍠1 (3 3⍴⍳9)   ⍝ 0 3 6
 
 ⍝ april:672 —
-[3 4 1 5 2 6 0;]⌷"MARANGA"   ⍝ "ANAGRAM"
+[[3 4 1 5 2 6 0]]⌷"MARANGA"   ⍝ "ANAGRAM"
 
 ⍝ april:673 —
-[⍬,4;0]⌷5 5⍴⍳25   ⍝ [20;]
+[⍬,4;0]⌷5 5⍴⍳25   ⍝ [20]
 
 ⍝ april:674 —
 [4 3;0]⌷5 5⍴⍳25   ⍝ 20 15
@@ -450,10 +450,10 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 [[0 0 0 0 ⋄ 0 0 1 0 ⋄ 0 0 0 0] ⋄ [0 0 0 0 ⋄ 0 0 0 0 ⋄ 0 0 0 0]]
 
 ⍝ april:734 —
-⍸1   ⍝ 1⍴⊂(⍬)
+⍸1   ⍝ [⍬]
 
 ⍝ april:735 —
-⍸0   ⍝ 0⍴⊂(⍬)
+⍸0   ⍝ 0⍴⊂⍬
 
 ⍝ april:736 —
 ⍸0 0 1 0 1 0 0 1 1 0   ⍝ 2 4 7 8
@@ -498,13 +498,13 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 ,⍠(⍬,0) (3 3⍴⍳9)   ⍝ [0 1 2 ⋄ 3 4 5 ⋄ 6 7 8]
 
 ⍝ april:760 —
-⊃[3 4⍴⍳9;]   ⍝ [[0 1 2 3 ⋄ 4 5 6 7 ⋄ 8 0 1 2] ⋄]
+⊃[(3 4⍴⍳9)]   ⍝ [[0 1 2 3 ⋄ 4 5 6 7 ⋄ 8 0 1 2] ⋄]
 
 ⍝ april:761 —
-{⊃[⍵;]}⍤1⊢3 4⍴⍳9   ⍝ [[0 1 2 3 ⋄] ⋄ [4 5 6 7 ⋄] ⋄ [8 0 1 2 ⋄]]
+{⊃[⍵]}⍤1⊢3 4⍴⍳9   ⍝ [[0 1 2 3 ⋄] ⋄ [4 5 6 7 ⋄] ⋄ [8 0 1 2 ⋄]]
 
 ⍝ april:762 —
-{[⍵;]}⍤0⊢3 4⍴⍳9   ⍝ [[0 ⋄ 1 ⋄ 2 ⋄ 3] ⋄ [4 ⋄ 5 ⋄ 6 ⋄ 7] ⋄ [8 ⋄ 0 ⋄ 1 ⋄ 2]]
+{[⍵]}⍤0⊢3 4⍴⍳9   ⍝ [[[0] ⋄ [1] ⋄ [2] ⋄ [3]] ⋄ [[4] ⋄ [5] ⋄ [6] ⋄ [7]] ⋄ [[8] ⋄ [0] ⋄ [1] ⋄ [2]]]
 
 ⍝ april:763 —
 ,⍠0 1 (2 3 3⍴⍳12)   ⍝ [0 1 2 ⋄ 3 4 5 ⋄ 6 7 8 ⋄ 9 10 11 ⋄ 0 1 2 ⋄ 3 4 5]
@@ -524,10 +524,10 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 [0 0 0 1 1 1 2 2 2 3 3 3 4 4 4 ⋄ 0 0 0 1 1 1 2 2 2 3 3 3 4 4 4 ⋄ 0 0 0 1 1 1 2 2 2 3 3 3 4 4 4]
 
 ⍝ april:772 —
-,⍠⍬ (5)   ⍝ 1⍴5
+,⍠⍬⊢5   ⍝ 1⍴5
 
 ⍝ april:773 —
-,⍠⍬ (⍳5)   ⍝ [0 ⋄ 1 ⋄ 2 ⋄ 3 ⋄ 4]
+,⍠⍬ (⍳5)   ⍝ [[0] ⋄ [1] ⋄ [2] ⋄ [3] ⋄ [4]]
 
 ⍝ april:774 —
 5 6,3   ⍝ 5 6 3
@@ -562,7 +562,7 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 [0 1 2 3 ⋄ 4 5 0 1 ⋄ 2 3 4 5 ⋄ 0 1 2 3 ⋄ 4 5 0 1 ⋄ 0 1 2 3 ⋄ 4 5 6 7 ⋄ 8 0 1 2]
 
 ⍝ april:786 —
-(6 7 8 9 0),⍪1 2 3 4 5   ⍝ 5 2⍴6 1 7 2 8 3 9 4 0 5
+6 7 8 9 0,⍪1 2 3 4 5   ⍝ [6 1 ⋄ 7 2 ⋄ 8 3 ⋄ 9 4 ⋄ 0 5]
 
 ⍝ april:787 —
 (2 3 4⍴⍳5),2 3⍴9
@@ -576,7 +576,7 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 1 2 3,4 5 6   ⍝ 1 2 3 4 5 6
 
 ⍝ april:794 —
-1 2 3,⍠0 (4 5 6)   ⍝ 1 2 3 4 5 6
+1 2 3,⍠0 [4 5 6]   ⍝ 1 2 3 4 5 6
 
 ⍝ april:795 —
 "abc","def;ghi"   ⍝ "abcdef;ghi"
@@ -606,7 +606,7 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 (2 3⍴⍳9)({[⍺ ⍵]}⍤0)2 3⍴⍳9   ⍝ [[0 0 ⋄ 1 1 ⋄ 2 2] ⋄ [3 3 ⋄ 4 4 ⋄ 5 5]]
 
 ⍝ april:807 —
-"UNDER",⍠0.0 ('-')   ⍝ "UNDER-"
+"UNDER",⍠0.0⊢'-'   ⍝ "UNDER-"
 
 ⍝ april:808 —
 ↓⊃["UNDER";5⍴'-']   ⍝ "UNDER" "-----"
@@ -756,7 +756,7 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 3↑⍳9   ⍝ 0 1 2
 
 ⍝ april:903 —
-¯1↑⍳5   ⍝ [4;]
+¯1↑⍳5   ⍝ [4]
 
 ⍝ april:904 —
 3↑"abcdef"   ⍝ "abc"
@@ -1064,17 +1064,17 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 1⊂5   ⍝ 1⍴⊂(1⍴5)
 
 ⍝ april:1047 —
-1⊂⍳5   ⍝ [[0;] [1;] [2;] [3;] [4;]]
+1⊂⍳5   ⍝ [[0] [1] [2] [3] [4]]
 
 ⍝ april:1048 —
-2⊂⍳5   ⍝ [⍬ [0;] ⍬ [1;] ⍬ [2;] ⍬ [3;] ⍬ [4;]]
+2⊂⍳5   ⍝ [⍬ [0] ⍬ [1] ⍬ [2] ⍬ [3] ⍬ [4]]
 
 ⍝ april:1049 —
-0 1 0 0 1 1 0 0 0⊂⍳9   ⍝ [[1 2 3] [4;] [5 6 7 8]]
+0 1 0 0 1 1 0 0 0⊂⍳9   ⍝ [[1 2 3] [4] [5 6 7 8]]
 
 ⍝ april:1050 —
 0 1 0 0 1 1 0 0⊂4 8⍴⍳9
-[[1 2 3 ⋄ 0 1 2 ⋄ 8 0 1 ⋄ 7 8 0] [4 ⋄ 3 ⋄ 2 ⋄ 1] [5 6 7 ⋄ 4 5 6 ⋄ 3 4 5 ⋄ 2 3 4]]
+[[1 2 3 ⋄ 0 1 2 ⋄ 8 0 1 ⋄ 7 8 0] [[4] ⋄ [3] ⋄ [2] ⋄ [1]] [5 6 7 ⋄ 4 5 6 ⋄ 3 4 5 ⋄ 2 3 4]]
 
 ⍝ april:1053 —
 0 1 0 1⊂⍠0 (4 8⍴⍳9)
@@ -1094,7 +1094,7 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 (0/⍳3 3)≡↑0 0 0⊂⍳3 3   ⍝ 1
 
 ⍝ april:1059 —
-↑0 0 0⊂⍳3 3   ⍝ 3 0⍴⊂(0 0)
+↑0 0 0⊂⍳3 3   ⍝ 3 0⍴⊂0 0
 
 ⍝ april:1060 —
 ↑↑↑0 0 0⊂⍳3 3   ⍝ 0 0
@@ -1121,21 +1121,21 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 ⊆"hello" "how" "are" "you"   ⍝ "hello" "how" "are" "you"
 
 ⍝ april:1075 —
-2⊆⍳3   ⍝ [[0 1 2];]
+2⊆⍳3   ⍝ [[0 1 2]]
 
 ⍝ april:1076 —
-1 1 0⊆5 6 0   ⍝ 1⍴⊂(5 6)
+1 1 0⊆5 6 0   ⍝ [[5 6]]
 
 ⍝ april:1077 —
 1 1 2 2 2 3 3 3 3⊆⍳9   ⍝ [[0 1] [2 3 4] [5 6 7 8]]
 
 ⍝ april:1078 —
 1 1 0 1⊆4 4 4⍴⍳9
-[[[0 1] [3;] ⋄ [4 5] [7;] ⋄ [8 0] [2;] ⋄ [3 4] [6;]] ⋄ [[7 8] [1;] ⋄ [2 3] [5;] ⋄ [6 7] [0;] ⋄ [1 2] [4;]] ⋄ [[5 6] [8;] ⋄ [0 1] [3;] ⋄ [4 5] [7;] ⋄ [8 0] [2;]] ⋄ [[3 4] [6;] ⋄ [7 8] [1;] ⋄ [2 3] [5;] ⋄ [6 7] [0;]]]
+[[[0 1] [3] ⋄ [4 5] [7] ⋄ [8 0] [2] ⋄ [3 4] [6]] ⋄ [[7 8] [1] ⋄ [2 3] [5] ⋄ [6 7] [0] ⋄ [1 2] [4]] ⋄ [[5 6] [8] ⋄ [0 1] [3] ⋄ [4 5] [7] ⋄ [8 0] [2]] ⋄ [[3 4] [6] ⋄ [7 8] [1] ⋄ [2 3] [5] ⋄ [6 7] [0]]]
 
 ⍝ april:1082 —
 1 1 0 1⊆⍠1 (4 4 4⍴⍳9)
-[[[0 4] [1 5] [2 6] [3 7] ⋄ [3;] [4;] [5;] [6;]] ⋄ [[7 2] [8 3] [0 4] [1 5] ⋄ [1;] [2;] [3;] [4;]] ⋄ [[5 0] [6 1] [7 2] [8 3] ⋄ [8;] [0;] [1;] [2;]] ⋄ [[3 7] [4 8] [5 0] [6 1] ⋄ [6;] [7;] [8;] [0;]]]
+[[[0 4] [1 5] [2 6] [3 7] ⋄ [3] [4] [5] [6]] ⋄ [[7 2] [8 3] [0 4] [1 5] ⋄ [1] [2] [3] [4]] ⋄ [[5 0] [6 1] [7 2] [8 3] ⋄ [8] [0] [1] [2]] ⋄ [[3 7] [4 8] [5 0] [6 1] ⋄ [6] [7] [8] [0]]]
 
 ⍝ april:1095 —
 ↑3   ⍝ 3
@@ -1536,22 +1536,22 @@ v←1 2 3 ⋄ (⊂v)≡⊂1 2 3   ⍝ 1
 ⍋5 6⍴⍳16   ⍝ 0 3 1 4 2
 
 ⍝ april:1339 —
-⍋,0   ⍝ [0;]
+⍋,0   ⍝ [0]
 
 ⍝ april:1340 —
-⍋1 1⍴0   ⍝ [0;]
+⍋1 1⍴0   ⍝ [0]
 
 ⍝ april:1341 —
-"abcd"⍋,'d'   ⍝ [0;]
+"abcd"⍋,'d'   ⍝ [0]
 
 ⍝ april:1342 —
 "nsew"⍋"swwewnh"   ⍝ 5 0 3 1 2 4 6
 
 ⍝ april:1343 —
-st←"aodjeignwug" ⋄ st[⍋st]   ⍝ "adeggijnouw"
+st←"aodjeignwug" ⋄ st(⍋st)   ⍝ "adeggijnouw"
 
 ⍝ april:1344 —
-{⍵[⍋⍵]}"abcABC012xyzXYZ789"   ⍝ "012789ABCXYZabcxyz"
+{⍵(⍋⍵)}"abcABC012xyzXYZ789"   ⍝ "012789ABCXYZabcxyz"
 
 ⍝ april:1345 —
 (2 5⍴"ABCDEabcde")⍋"ACaEed"   ⍝ 0 2 1 5 3 4
@@ -1563,16 +1563,16 @@ st←"aodjeignwug" ⋄ st[⍋st]   ⍝ "adeggijnouw"
 ⍒5 6⍴⍳12   ⍝ 1 3 0 2 4
 
 ⍝ april:1353 —
-"abcd"⍒,'d'   ⍝ [0;]
+"abcd"⍒,'d'   ⍝ [0]
 
 ⍝ april:1354 —
 "nsew"⍒"swwewnh"   ⍝ 6 1 2 4 3 0 5
 
 ⍝ april:1355 —
-st←"aodjeignwug" ⋄ st[⍒st]   ⍝ "wuonjiggeda"
+st←"aodjeignwug" ⋄ st(⍒st)   ⍝ "wuonjiggeda"
 
 ⍝ april:1356 —
-{⍵[⍒⍵]}"abcABC012xyzXYZ789"   ⍝ "zyxcbaZYXCBA987210"
+{⍵(⍒⍵)}"abcABC012xyzXYZ789"   ⍝ "zyxcbaZYXCBA987210"
 
 ⍝ april:1357 —
 (2 5⍴"ABCDEabcde")⍒"ACaEed"   ⍝ 4 3 5 1 2 0
@@ -1744,13 +1744,13 @@ v←⍳3 ⋄ ⍎'v'   ⍝ 0 1 2
 ⍎¨"1+1" "2+2" "3+3"   ⍝ 2 4 6
 
 ⍝ april:1462 — Reviewed Execute example checked through the Rust reference worker
-⍎(' '@{'x'=⍵}) "(22x11)"   ⍝ 22 11
+⍎(' '@{'x'=⍵}) "[22x11]"   ⍝ 22 11
 
 ⍝ april:1465 —
 x←55 ⋄ x   ⍝ 55
 
 ⍝ april:1466 —
-x←2 3 4⍴⍳9 ⋄ x.(∞ 0)←7 ⋄ x
+x←2 3 4⍴⍳9 ⋄ x.[∞ 0]←7 ⋄ x
 [[7 7 7 7 ⋄ 4 5 6 7 ⋄ 8 0 1 2] ⋄ [7 7 7 7 ⋄ 7 8 0 1 ⋄ 2 3 4 5]]
 
 ⍝ april:1468 —
@@ -1924,13 +1924,13 @@ g←÷ ⋄ g/⍬   ⍝ 1
 +⍀⍠1 (3 4⍴⍳12)   ⍝ [0 1 3 6 ⋄ 4 9 15 22 ⋄ 8 17 27 38]
 
 ⍝ april:1572 —
-⍳¨1 2 3   ⍝ [[0;] [0 1] [0 1 2]]
+⍳¨1 2 3   ⍝ [[0] [0 1] [0 1 2]]
 
 ⍝ april:1573 —
 ↑¨↓⍳5   ⍝ ⊂0
 
 ⍝ april:1574 —
-(1=)¨⍬,1   ⍝ [1;]
+(1=)¨⍬,1   ⍝ [1]
 
 ⍝ april:1575 —
 {⍵÷3}¨10   ⍝ 3.3333333333333335
@@ -1981,17 +1981,17 @@ g←÷ ⋄ g/⍬   ⍝ 1
 
 ⍝ april:1605 —
 (1 1 1⍴⊂1 1 1)↓¨⊂3 3 3⍴⍳27
-[[[[[13 14 ⋄ 16 17] ⋄ [22 23 ⋄ 25 26]];] ⋄] ⋄]
+[[[[[13 14 ⋄ 16 17] ⋄ [22 23 ⋄ 25 26]]] ⋄] ⋄]
 
 ⍝ april:1606 —
 [1 0 0;1 1 0 1 0]⊂¨"abc" "a|b|c"
-[["abc";] ["a" "|b" "|c"]]
+[["abc"] ["a" "|b" "|c"]]
 
 ⍝ april:1608 —
 ~⟜3¨@1 [2 3;3;2 4;1 5;3]   ⍝ [[2 3] ⍬ [2 4] [1 5] 3]
 
 ⍝ april:1609 —
-(⊂"ab"),¨1⍴⊂⊂,'c'   ⍝ 1⍴⊂('a' 'b' "c")
+(⊂"ab"),¨1⍴⊂⊂,'c'   ⍝ [['a' 'b' "c"]]
 
 ⍝ april:1610 —
 +/¨{1⊂⊃⍵}⍴¨2 2⍴⊂"abc"   ⍝ 1⍴⊂(2 2⍴3 3 3 3)
@@ -2021,11 +2021,11 @@ fn←{⍺+3×⍵} ⋄ 16 fn⍨ 8   ⍝ 56
 fruit←"Apple" "Orange" "Apple" "Pear" "Orange" "Peach" "Pear" "Pear"
     quantities ← 12 3 2 6 8 16 7 3 ⋄ fruit {[⍺ ⍵]}⌸ quantities
 ⍝ =>
-["Apple" [12 2] ⋄ "Orange" [3 8] ⋄ "Pear" [6 7 3] ⋄ "Peach" [16;]]
+["Apple" [12 2] ⋄ "Orange" [3 8] ⋄ "Pear" [6 7 3] ⋄ "Peach" [16]]
 
 ⍝ april:1625 — restore quantities from preceding upstream example
 quantities←12 3 2 6 8 16 7 3 ⋄ {⊂⍵}⌸quantities
-[[0;] [1 7] [2;] [3;] [4;] [5;] [6;]]
+[[0] [1 7] [2] [3] [4] [5] [6]]
 
 ⍝ april:1626 —
 fruit←"Apple" "Orange" "Apple" "Pear" "Orange" "Peach" ⋄ {⍴⍵}⌸ fruit
@@ -2036,7 +2036,7 @@ fruit←"Apple" "Orange" "Apple" "Pear" "Orange" "Peach" ⋄ {⍴⍵}⌸ fruit
 [[0 1 ⋄ 4 5 ⋄ 8 9 ⋄ 12 13 ⋄ 16 17] ⋄ [2 3 ⋄ 6 7 ⋄ 10 11 ⋄ 14 15 ⋄ 18 19]]
 
 ⍝ april:1630 —
-{[⍺ ⍵]}⌸⊃[1 2;1 2;3 4]   ⍝ [[1 2] [0 1] ⋄ [3 4] [2;]]
+{[⍺ ⍵]}⌸⊃[1 2;1 2;3 4]   ⍝ [[1 2] [0 1] ⋄ [3 4] [2]]
 
 ⍝ april:1644 —
 3+.×5   ⍝ 15
@@ -2080,14 +2080,14 @@ fruit←"Apple" "Orange" "Apple" "Pear" "Orange" "Peach" ⋄ {⍴⍵}⌸ fruit
 
 ⍝ april:1657 —
 1 2 3 ⍴⌝ 1 2 3
-3 3⍴[[1;];[2;];[3;];1 1;2 2;3 3;1 1 1;2 2 2;3 3 3]
+3 3⍴[[1];[2];[3];1 1;2 2;3 3;1 1 1;2 2 2;3 3 3]
 
 ⍝ april:1659 —
 ⊃0 1 2⌽⌝↓3 3⍴⍳3
 [[0 1 2 ⋄ 0 1 2 ⋄ 0 1 2] ⋄ [1 2 0 ⋄ 1 2 0 ⋄ 1 2 0] ⋄ [2 0 1 ⋄ 2 0 1 ⋄ 2 0 1]]
 
 ⍝ april:1661 —
-1 2 3 ⍴⌝ ⊂1 2 3   ⍝ [[1;] [1 2] [1 2 3]]
+1 2 3 ⍴⌝ ⊂1 2 3   ⍝ [[1] [1 2] [1 2 3]]
 
 ⍝ april:1662 —
 1 2 3 ⌽⌝ ⊂1 2 3   ⍝ [2 3 1;3 1 2;1 2 3]
@@ -2122,7 +2122,7 @@ fn←{⍺×⍵+1} ⋄ 1 2 3 fn⌝  4 5 6   ⍝ 3 3⍴5 6 7 10 12 14 15 18 21
 
 ⍝ april:1678 —
 ' ' { [A W]←{(⍵≠(≢⍵)⍴' ')/⍵}¨[⍺ ⍵] ⋄ ((⍴A)=⍴W)∧∧/(+/A=⌝W)=+/A=⌝A } "dog"
-[0;]
+[0]
 
 ⍝ april:1679 —
 ⍴+.×⌿?2 30 30⍴1e10   ⍝ 30 30
@@ -2140,13 +2140,13 @@ fn←{⍺×⍵+1} ⋄ 1 2 3 fn⌝  4 5 6   ⍝ 3 3⍴5 6 7 10 12 14 15 18 21
 1 -⟜- 1   ⍝ 2
 
 ⍝ april:1686 —
-fn←⍴⍤⍴ ⋄ fn 2 3 4⍴⍳9   ⍝ [3;]
+fn←⍴⍤⍴ ⋄ fn 2 3 4⍴⍳9   ⍝ [3]
 
 ⍝ april:1687 —
-⍴⍤⍴ 2 3 4⍴⍳9   ⍝ [3;]
+⍴⍤⍴ 2 3 4⍴⍳9   ⍝ [3]
 
 ⍝ april:1688 —
-⍴⍤⍴⍤⍴ 2 3 4⍴⍳9   ⍝ [1;]
+⍴⍤⍴⍤⍴ 2 3 4⍴⍳9   ⍝ [1]
 
 ⍝ april:1689 —
 ÷⟜5 ⊢30   ⍝ 6
@@ -2196,7 +2196,7 @@ rr←-⍤(⌽⍠0) ⋄ rr 3 3⍴⍳9   ⍝ [¯6 ¯7 ¯8 ⋄ ¯3 ¯4 ¯5 ⋄ 0 ¯
 [[0 1 2 3] [4 5 6 7] [8 0 1 2] ⋄ [3 4 5 6] [7 8 0 1] [2 3 4 5]]
 
 ⍝ april:1712 —
-{⍵[⍋⍵]}⍤1⊢3 4 5⍴⍳9
+{⍵(⍋⍵)}⍤1⊢3 4 5⍴⍳9
 [[0 1 2 3 4 ⋄ 0 5 6 7 8 ⋄ 1 2 3 4 5 ⋄ 0 1 6 7 8] ⋄ [2 3 4 5 6 ⋄ 0 1 2 7 8 ⋄ 3 4 5 6 7 ⋄ 0 1 2 3 8] ⋄ [4 5 6 7 8 ⋄ 0 1 2 3 4 ⋄ 0 5 6 7 8 ⋄ 1 2 3 4 5]]
 
 ⍝ april:1715 —
@@ -2346,7 +2346,7 @@ fn←{⍺+⍵×12} ⋄ test←{0=3|⍵} ⋄ 4 fn@test ⍳12
 6 6⍴0 0 0 0 0 0 0 0 0 0 0 0 0 0 5 0 0 0 0 0 0 5 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 
 ⍝ april:1782 —
-{⍵.(1 1)÷⍨@1⊢⍵} 3 3⍴⍳9   ⍝ [0 1 2 ⋄ 0.75 1 1.25 ⋄ 6 7 8]
+{⍵.[1 1]÷⍨@1⊢⍵} 3 3⍴⍳9   ⍝ [0 1 2 ⋄ 0.75 1 1.25 ⋄ 6 7 8]
 
 ⍝ april:1783 —
 9@(1+⍳⍴2 2 2⍴⍳8)⊢4 4 4⍴0
@@ -2523,7 +2523,7 @@ fn←{3+⍵} ⋄ {fn [8 ⍵]} 9   ⍝ 11 12
 ('(',"asdf")⍳'('   ⍝ 0
 
 ⍝ april:1909 — Variable-referenced values, including an element within an array, in a vector
-a←9 ⋄ b←2 3 4⍴⍳9 ⋄ [1 2 a 3 b.(0 1 0)]   ⍝ 1 2 9 3 4
+a←9 ⋄ b←2 3 4⍴⍳9 ⋄ [1 2 a 3 b.[0 1 0]]   ⍝ 1 2 9 3 4
 
 ⍝ april:1911 — Index of inline vector
 1⌷5 6 7 8   ⍝ 6
@@ -2532,16 +2532,16 @@ a←9 ⋄ b←2 3 4⍴⍳9 ⋄ [1 2 a 3 b.(0 1 0)]   ⍝ 1 2 9 3 4
 0⌷[[1 2 3 4] 15]   ⍝ 1 2 3 4
 
 ⍝ april:1916 — Indexed item in vector
-la←5 6 7 ⋄ [la.[0 2;] "apple"]   ⍝ [[5 7] "apple"]
+la←5 6 7 ⋄ [la.[[0 2]] "apple"]   ⍝ [[5 7] "apple"]
 
 ⍝ april:1917 — Function taking an index applied to indices of vector
-↓⍠0 ("abcde".[2 2⍴1 2;])   ⍝ "bb" "cc"
+↓⍠0 ("abcde".[(2 2⍴1 2)])   ⍝ "bb" "cc"
 
 ⍝ april:1919 — Index of vector of strings
 1⌷"abc" "def" "ghi"   ⍝ "def"
 
 ⍝ april:1920 — Indexing with empty vectors to create n-dimensional empty arrays
-a←3 4⍴⍳12 ⋄ ⍴[⍬;]⌷a   ⍝ 0 4
+a←3 4⍴⍳12 ⋄ ⍴[⍬]⌷a   ⍝ 0 4
 
 ⍝ april:1922 — Indexing with variables
 x←3 3⍴⍳9 ⋄ y←0 ⋄ [∞ y]⌷x   ⍝ 0 3 6
@@ -2550,13 +2550,13 @@ x←3 3⍴⍳9 ⋄ y←0 ⋄ [∞ y]⌷x   ⍝ 0 3 6
 gg←2 3 4 5 ⋄ 9,gg.[1],3 4   ⍝ 9 3 3 4
 
 ⍝ april:1925 — Assignment of an element within an array
-a←2 3⍴⍳9 ⋄ a.(0 1)←20 ⋄ a   ⍝ [0 20 2 ⋄ 3 4 5]
+a←2 3⍴⍳9 ⋄ a.[0 1]←20 ⋄ a   ⍝ [0 20 2 ⋄ 3 4 5]
 
 ⍝ april:1927 — Assignment of enclosed array to multiple indices of an array
 a←⍳9 ⋄ a[2 5]←⊂9 8 ⋄ a   ⍝ [0 1 [9 8] 3 4 [9 8] 6 7 8]
 
 ⍝ april:1929 — Assignment to copy of an array
-a←3 3⍴⍳9 ⋄ b←a ⋄ b.(0)←0 ⋄ a,b
+a←3 3⍴⍳9 ⋄ b←a ⋄ b.[0]←0 ⋄ a,b
 [0 1 2 0 0 0 ⋄ 3 4 5 3 4 5 ⋄ 6 7 8 6 7 8]
 
 ⍝ april:1935 — Strand assignment of variables without parentheses
@@ -2579,11 +2579,11 @@ a←3 3⍴⍳9 ⋄ b←a ⋄ b.(0)←0 ⋄ a,b
 [[[0 1 2 ⋄ 3 4 5] ⋄ [6 7 8 ⋄ 0 1 2]] ⋄ [[9 10 11 ⋄ 12 13 14] ⋄ [15 16 17 ⋄ 9 10 11]]]
 
 ⍝ april:1947 — Elided assignment
-a←2 3 4⍴⍳9 ⋄ a.(1 ∞ 2)←0 ⋄ a
+a←2 3 4⍴⍳9 ⋄ a.[1 ∞ 2]←0 ⋄ a
 [[0 1 2 3 ⋄ 4 5 6 7 ⋄ 8 0 1 2] ⋄ [3 4 0 6 ⋄ 7 8 0 1 ⋄ 2 3 0 5]]
 
 ⍝ april:1949 — Another elided assignment
-a←2 3 4⍴⍳40 ⋄ a.(0)←3 4⍴0 ⋄ a
+a←2 3 4⍴⍳40 ⋄ a.[0]←3 4⍴0 ⋄ a
 [[0 0 0 0 ⋄ 0 0 0 0 ⋄ 0 0 0 0] ⋄ [12 13 14 15 ⋄ 16 17 18 19 ⋄ 20 21 22 23]]
 
 ⍝ april:1951 — Assignment from an array to an area of an array with the same shape
@@ -2595,7 +2595,7 @@ gg←5 5⍴⍳9 ⋄ gg[1 4]←2 5⍴0 1 ⋄ gg
 [0 1 2 3 4 ⋄ 0 1 0 1 0 ⋄ 1 2 3 4 5 ⋄ 6 7 8 0 1 ⋄ 1 0 1 0 1]
 
 ⍝ april:1957 — Elision and indexed array elements
-[0 3;]⌷6 8⍴⍳9   ⍝ [0 1 2 3 4 5 6 7 ⋄ 6 7 8 0 1 2 3 4]
+[[0 3]]⌷6 8⍴⍳9   ⍝ [0 1 2 3 4 5 6 7 ⋄ 6 7 8 0 1 2 3 4]
 
 ⍝ april:1959 — As above but more complex
 [0 3;∞;1 0]⌷6 8 5⍴⍳9
@@ -2605,13 +2605,13 @@ gg←5 5⍴⍳9 ⋄ gg[1 4]←2 5⍴0 1 ⋄ gg
 [0;1 3 4]⌷[0 3;∞;1 0]⌷6 8 5⍴⍳9   ⍝ [6 5 ⋄ 7 6 ⋄ 3 2]
 
 ⍝ april:1964 — Array as array index
-[2 3⍴⍳9;]⌷10+⍳9   ⍝ [10 11 12 ⋄ 13 14 15]
+[(2 3⍴⍳9)]⌷10+⍳9   ⍝ [10 11 12 ⋄ 13 14 15]
 
 ⍝ april:1966 — Sub-coordinates of nested arrays
 (3 4⍴⍳9)[[0 1] [2 0]]   ⍝ 1 8
 
 ⍝ april:1967 — Choose indexing of nested array sub-coordinates
-[2 2⍴⊂1 2;]⌷3 4⍴⍳9   ⍝ [6 6 ⋄ 6 6]
+[(2 2⍴⊂1 2)]⌷3 4⍴⍳9   ⍝ [6 6 ⋄ 6 6]
 
 ⍝ april:1969 — Reach indexing of components within sub-vectors
 ["JAN" 1;"FEB" 2;"MAR" 3;"APR" 4;"MAY" 5;"JUN" 6][[1 0] [0 1]]
@@ -2626,14 +2626,14 @@ toasn←["JAN" 1;"FEB" 2;"MAR" 3;"APR" 4;"MAY" 5;"JUN" 6] ⋄ toasn[[1 0] [0 1]]
 ["JAN" 67;45 2;"MAR" 3;"APR" 4;"MAY" 5;"JUN" 6]
 
 ⍝ april:1976 — Reach indexing assignment compared to duplicate index assignment
-{n←v←3/⊂5⍴0 ⋄ n[0 0]←⍵ ⋄ v.[⊂0 0;]←⍵ ⋄ n,v} 5
+{n←v←3/⊂5⍴0 ⋄ n[0 0]←⍵ ⋄ v.[(⊂0 0)]←⍵ ⋄ n,v} 5
 [5 [0 0 0 0 0] [0 0 0 0 0] [5 0 0 0 0] [0 0 0 0 0] [0 0 0 0 0]]
 
 ⍝ april:1978 — Creation of empty array by passing empty vectors as indices
-(⍳3)[⍬]   ⍝ ⍬
+(⍳3)⍬   ⍝ ⍬
 
 ⍝ april:1979 — As above with multiple dimensions
-(⍴[∞;⍬;1 2]⌷5 5 5⍴1),⍴[⍬;]⌷3 3⍴1   ⍝ 5 0 2 0 3
+(⍴[∞;⍬;1 2]⌷5 5 5⍴1),⍴[⍬]⌷3 3⍴1   ⍝ 5 0 2 0 3
 
 ⍝ april:1980 — Assignment by function
 a←3 2 1 ⋄ a+←5 ⋄ a   ⍝ 8 7 6
@@ -2707,7 +2707,7 @@ x←6 8⍴⍳9 ⋄ ((30>+⌿x)/x)←6 7⍴10×⍳3 ⋄ x
 {mt←3 4⍴⍳12 ⋄ (5↑,mt)←⍵ ⋄ mt} 0   ⍝ [0 0 0 0 ⋄ 0 5 6 7 ⋄ 8 9 10 11]
 
 ⍝ april:2024 — Selective assignment of vector elements by take of sub-indices
-{mt←⍳20 ⋄ (3↑mt.[1+2×⍳8;])←⍵ ⋄ mt} 99
+{mt←⍳20 ⋄ (3↑mt.[1+2×⍳8])←⍵ ⋄ mt} 99
 0 99 2 99 4 99 6 7 8 9 10 11 12 13 14 15 16 17 18 19
 
 ⍝ april:2026 — Selective assignment of nested character vector elements enlisted by [/ compress] function
@@ -2781,7 +2781,7 @@ _if_ ← {(⍶⍣(⍹ ⍵))⍵} ⋄ ((+⟜1) _if_ (>⟜0))¨5 0 ¯5 9 ¯9   ⍝ 
 _if_←{(⍶⍣(⍹ ⍵))⍵} ⋄ (+⟜1) _if_ (>⟜0) 100   ⍝ 101
 
 ⍝ april:2081 — Multiple operator compositions in sequence
-1 0 {,¨+⌿×-⍵,.-⍺} 2 2⍴0 0 1 1   ⍝ [[1;] [¯1;]]
+1 0 {,¨+⌿×-⍵,.-⍺} 2 2⍴0 0 1 1   ⍝ [[1] [¯1]]
 
 ⍝ april:2082 — Operator composition calling accumulating function
 {acm←⍬ ⋄ {acm,←↑,/⍵ ⋄ ⌽¯1↓⍵}⍣⍵⊢⍳⍵ ⋄ acm} 5   ⍝ ⍬
@@ -2836,7 +2836,7 @@ x←⍳8 ⋄ x ({12}>+) x*1.2   ⍝ 1ₓ 1ₓ 1ₓ 1ₓ 1ₓ 1ₓ 0ₓ 0ₓ
 (1+-⍤÷) 4   ⍝ 0.75
 
 ⍝ april:2110 — Five-element dyadic fork function train
-' ' (∊{⍺,⍵.[,⍺;],⍵}≠⊆⊢) " one two  three"
+' ' (∊{⍺,⍵.[,⍺],⍵}≠⊆⊢) " one two  three"
 1 "two" "one" "two" "three"
 
 ⍝ april:2112 — Five-element monadic fork function train including lateral and pivotal function compositions; Replace index-origin lookup with basedpl fixed origin zero
@@ -3023,7 +3023,7 @@ key←⌸ ⋄ {(2|⍳≢⍵)⊢key ⍵}10 2⍴⍳20
 [0 1 2 3 0 1 2 3 0 1 3 6 ⋄ 4 6 8 10 4 6 8 10 4 9 15 22 ⋄ 12 15 18 21 12 15 18 21 8 17 27 38]
 
 ⍝ april:2211 — Aliasing of [¨ each] operator
-{e←¨ ⋄ ⍴ e (⍳⍵)⍴¨⊂⍳9} 3   ⍝ [[0ₓ;] [1ₓ;] [2ₓ;]]
+{e←¨ ⋄ ⍴ e (⍳⍵)⍴¨⊂⍳9} 3   ⍝ [[0ₓ] [1ₓ] [2ₓ]]
 
 ⍝ april:2212 — Aliasing of [⍨ commute] operator
 {c←⍨ ⋄ +c ⍵} 35   ⍝ 70
@@ -3042,19 +3042,19 @@ key←⌸ ⋄ {(2|⍳≢⍵)⊢key ⍵}10 2⍴⍳20
 {c←⊸ ⋄ ⍵ - c - ⍵} 1   ⍝ ¯2
 
 ⍝ april:2218 — Aliasing of [⍤ rank] operator
-{r←⍤ ⋄ ⍵ +r(1) 3 3⍴⍳9} ⍳3   ⍝ [0 2 4 ⋄ 3 5 7 ⋄ 6 8 10]
+{r←⍤ ⋄ ⍵ +r[1] 3 3⍴⍳9} ⍳3   ⍝ [0 2 4 ⋄ 3 5 7 ⋄ 6 8 10]
 
 ⍝ april:2219 — Aliasing of [⍥ over] operator
 8 10 12 {o←⍥ ⋄ (⍺×⍵)÷o(+/)⍺} 16 32 64   ⍝ 40.53333333333333
 
 ⍝ april:2220 — Aliasing of [⍣ power] operator
-{p←⍣ ⋄ ⍳p(¯1) ⍵} ⍳9   ⍝ 1⍴9
+{p←⍣ ⋄ ⍳p ¯1 ⍵} ⍳9   ⍝ 1⍴9
 
 ⍝ april:2221 — Aliasing of [@ at] operator
-{a←@ ⋄ (22 33)a(2 4)⊢⍵} ⍳9   ⍝ 0 1 22 3 33 5 6 7 8
+{a←@ ⋄ [22 33]a[2 4]⊢⍵} ⍳9   ⍝ 0 1 22 3 33 5 6 7 8
 
 ⍝ april:2222 — Aliasing of [⌺ stencil] operator
-{s←⌺ ⋄ ⊢⟜⊂s(2) ⍵} ⍳8   ⍝ [[0 1] [1 2] [2 3] [3 4] [4 5] [5 6] [6 7]]
+{s←⌺ ⋄ ⊢⟜⊂s 2 ⍵} ⍳8   ⍝ [[0 1] [1 2] [2 3] [3 4] [4 5] [5 6] [6 7]]
 
 ⍝ april:2224 — Conditional aliasing of pivotal operator; Conditional named-operator aliasing uses Execute of the selected operator, which basedpl supports; Avoids April nonlocal operator rebinding and its statement-return difference; original independent expected values retained
 0 1 {o←⍎⍺⊃'⍤' '⍥' ⋄ 1 +o- ⍵}¨ 2   ⍝ ¯1 ¯3
@@ -3520,21 +3520,21 @@ found alpush "may" "rock"
 
 ⍝ april/libraries/dfns/array/demo.lisp:33 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 •load "lib/array.apl"
-ditty←2 2⍴["Tea" (2 1⍴4 2) '&' (2 40)]
+ditty←2 2⍴["Tea" (2 1⍴4 2) '&' [2 40]]
 ↓disp ditty
 ⍝ =>
 "┌───┬────┐" "│Tea│4   │" "│   │2   │" "├───┼────┤" "│&  │2 40│" "└───┴────┘"
 
 ⍝ april/libraries/dfns/array/demo.lisp:39 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 •load "lib/array.apl"
-ditty←2 2⍴["Tea" (2 1⍴4 2) '&' (2 40)]
+ditty←2 2⍴["Tea" (2 1⍴4 2) '&' [2 40]]
 ↓ 1 disp ditty
 ⍝ =>
 "┌→──┬────┐" "↓Tea│4   │" "│   │2   ↓" "├──→┼~──→┤" "│&  │2 40│" "└───┴~──→┘"
 
 ⍝ april/libraries/dfns/array/demo.lisp:45 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 •load "lib/array.apl"
-ditty←2 2⍴["Tea" (2 1⍴4 2) '&' (2 40)]
+ditty←2 2⍴["Tea" (2 1⍴4 2) '&' [2 40]]
 +/⍤∊¨ ∊⟜"→↓~"¨ (1⊸disp {[⍶ ⍵;⍹ ⍵]} display) ditty
 ⍝ =>
 8 8
@@ -3553,7 +3553,7 @@ ditty←2 2⍴["Tea" (2 1⍴4 2) '&' (2 40)]
 
 ⍝ april/libraries/dfns/array/demo.lisp:59 — Embedded display helper uses existing glyphs: 0-origin offsets, character-prototype test instead of April ⎕TY, matrix ⍕ instead of ⎕FMT. Full example/setup retained; Capture uses the rank-2 format helper also for character scalars
 •load "lib/array.apl"
-↓display 2 2⍴["Tea" (2 1⍴4 2) '&' (2 40)]
+↓display 2 2⍴["Tea" (2 1⍴4 2) '&' [2 40]]
 ⍝ =>
 "┌→─────────────┐" "↓ ┌→──┐ ┌→┐    │" "│ │Tea│ ↓4│    │" "│ └───┘ │2│    │" "│       └~┘    │" "│       ┌→───┐ │" "│ &     │2 40│ │" "│ -     └~───┘ │" "└∊─────────────┘"
 
@@ -3701,7 +3701,7 @@ tea ← 2 2⍴["tea" 4 "two";2 "for" 'T';"me" '&' "you";'u' "and" "me"]
 ⍝ april/libraries/dfns/array/demo.lisp:133 — Upstream from selection helper and test arrays ported to origin 0
 •load "lib/array.apl"
 [ta1 ta2 ta3 ta4]← {10⊥¨1+⍳⌽⍵}¨,\5 4 3 2
-[1 0;] from ta1
+[[1 0]] from ta1
 ⍝ =>
 2 1
 
@@ -3848,7 +3848,7 @@ tea ← 2 2⍴["tea" 4 "two";2 "for" 'T';"me" '&' "you";'u' "and" "me"]
 ⍝ april/libraries/dfns/array/demo.lisp:164 — Upstream from selection helper; test arrays keep 1-based digit labels, and positions count from 0
 •load "lib/array.apl"
 [ta1 ta2 ta3 ta4]←{10⊥¨1+⍳⌽⍵}¨,\5 4 3 2
-{ta3.[⍵;] ≡ [⍵ ,⊂⍬ ,⊂⍬] from ta3} 2 2⍴1 0
+{ta3.[⍵] ≡ [⍵ ,⊂⍬ ,⊂⍬] from ta3} 2 2⍴1 0
 ⍝ =>
 1
 
@@ -3944,7 +3944,7 @@ tea ← 2 2⍴["tea" 4 "two";2 "for" 'T';"me" '&' "you";'u' "and" "me"]
 •load "lib/array.apl"
 0 in (1 1⍴⊂)⍣4⊢0
 ⍝ =>
-[[[0 0] [0 0] [0 0] [0 0]];]
+[[[0 0] [0 0] [0 0] [0 0]]]
 
 ⍝ april/libraries/dfns/array/demo.lisp:179 —
 •load "lib/array.apl"
@@ -4062,13 +4062,13 @@ pmat 3
 
 ⍝ april/libraries/dfns/array/demo.lisp:210 —
 •load "lib/array.apl"
-{⍵[pmat⍴⍵]}["tic" "tac" "toe"]
+{⍵(pmat⍴⍵)}["tic" "tac" "toe"]
 ⍝ =>
 6 3⍴"tic" "tac" "toe" "tic" "toe" "tac" "tac" "tic" "toe" "tac" "toe" "tic" "toe" "tic" "tac" "toe" "tac" "tic"
 
 ⍝ april/libraries/dfns/array/demo.lisp:212 —
 •load "lib/array.apl"
-4 3 2⍴↓{⍵[pmat⍴⍵]}"abcd"
+4 3 2⍴↓{⍵(pmat⍴⍵)}"abcd"
 ⍝ =>
 4 3 2⍴"abcd" "abdc" "acbd" "acdb" "adbc" "adcb" "bacd" "badc" "bcad" "bcda" "bdac" "bdca" "cabd" "cadb" "cbad" "cbda" "cdab" "cdba" "dabc" "dacb" "dbac" "dbca" "dcab" "dcba"
 
@@ -4101,7 +4101,7 @@ letterMatrices←⊂⍠1 2 (3 3 5⍴⊃"one" "two" "three" "four" "five" "six" "
 ⍝ april/libraries/dfns/array/demo.lisp:222 —
 •load "lib/array.apl"
 letterMatrices←⊂⍠1 2 (3 3 5⍴⊃"one" "two" "three" "four" "five" "six" "seven" "eight" "nine")
-↓¨ {⍵[⍋⍵]} rows letterMatrices
+↓¨ {⍵(⍋⍵)} rows letterMatrices
 ⍝ =>
 [["  eno" "  otw" "eehrt"] [" foru" " efiv" "  isx"] ["eensv" "eghit" " einn"]]
 
@@ -4477,14 +4477,14 @@ assign costs2
 ⍝ april/libraries/dfns/graph/demo.lisp:20 — First-true masks use cumulative counts under basedpl left scan
 •load "lib/graph.apl"
 costs2←[7 38 23 27 11 3 34 34 47 20⋄ 26 42 2 3 27 34 1 20 4 21⋄ 35 30 47 43 27 5 33 21 36 46⋄ 39 14 3 37 17 32 38 50 19 13⋄ 50 37 38 33 4 32 45 14 22 39⋄ 24 12 14 18 9 25 45 46 4 46]
-{⍵×assign[⍵]} costs2
+{⍵×assign(⍵)} costs2
 ⍝ =>
 6 10⍴7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 5 0 0 0 0 0 0 3 0 0 0 0 0 0 0 0 0 0 0 4 0 0 0 0 0 0 0 0 0 0 0 0 0 4 0
 
 ⍝ april/libraries/dfns/graph/demo.lisp:22 — First-true masks use cumulative counts under basedpl left scan
 •load "lib/graph.apl"
 costs2←[7 38 23 27 11 3 34 34 47 20⋄ 26 42 2 3 27 34 1 20 4 21⋄ 35 30 47 43 27 5 33 21 36 46⋄ 39 14 3 37 17 32 38 50 19 13⋄ 50 37 38 33 4 32 45 14 22 39⋄ 24 12 14 18 9 25 45 46 4 46]
-{+/+/⍵×assign[⍵]} costs2
+{+/+/⍵×assign(⍵)} costs2
 ⍝ =>
 24
 
@@ -4498,14 +4498,14 @@ assign -costs2
 ⍝ april/libraries/dfns/graph/demo.lisp:25 — First-true masks use cumulative counts under basedpl left scan
 •load "lib/graph.apl"
 costs2←[7 38 23 27 11 3 34 34 47 20⋄ 26 42 2 3 27 34 1 20 4 21⋄ 35 30 47 43 27 5 33 21 36 46⋄ 39 14 3 37 17 32 38 50 19 13⋄ 50 37 38 33 4 32 45 14 22 39⋄ 24 12 14 18 9 25 45 46 4 46]
-{-⍵×assign[⍵]} -costs2
+{-⍵×assign(⍵)} -costs2
 ⍝ =>
 6 10⍴0 0 0 0 0 0 0 0 47 0 0 42 0 0 0 0 0 0 0 0 0 0 47 0 0 0 0 0 0 0 0 0 0 0 0 0 0 50 0 0 50 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 46
 
 ⍝ april/libraries/dfns/graph/demo.lisp:27 — First-true masks use cumulative counts under basedpl left scan
 •load "lib/graph.apl"
 costs2←[7 38 23 27 11 3 34 34 47 20⋄ 26 42 2 3 27 34 1 20 4 21⋄ 35 30 47 43 27 5 33 21 36 46⋄ 39 14 3 37 17 32 38 50 19 13⋄ 50 37 38 33 4 32 45 14 22 39⋄ 24 12 14 18 9 25 45 46 4 46]
-{+/+/-⍵×assign[⍵]} -costs2
+{+/+/-⍵×assign(⍵)} -costs2
 ⍝ =>
 282
 
@@ -4779,7 +4779,7 @@ sudokuX 4 4⍴ 0 0 0 0,0 0 2 1,3 0 0 4,0 0 0 0
 •load "lib/graph.apl"
 queensX¨⍳7
 ⍝ =>
-[(0 0⍴0) [1 ⋄] [0 0 ⋄ 0 0] [0 0 0 ⋄ 0 0 0 ⋄ 0 0 0] [0 1 0 0 ⋄ 0 0 0 1 ⋄ 1 0 0 0 ⋄ 0 0 1 0] [0 0 0 0 1 ⋄ 0 1 0 0 0 ⋄ 0 0 0 1 0 ⋄ 1 0 0 0 0 ⋄ 0 0 1 0 0] [0 0 0 0 1 0 ⋄ 0 0 1 0 0 0 ⋄ 1 0 0 0 0 0 ⋄ 0 0 0 0 0 1 ⋄ 0 0 0 1 0 0 ⋄ 0 1 0 0 0 0]]
+[(0 0⍴0) [[1] ⋄] [0 0 ⋄ 0 0] [0 0 0 ⋄ 0 0 0 ⋄ 0 0 0] [0 1 0 0 ⋄ 0 0 0 1 ⋄ 1 0 0 0 ⋄ 0 0 1 0] [0 0 0 0 1 ⋄ 0 1 0 0 0 ⋄ 0 0 0 1 0 ⋄ 1 0 0 0 0 ⋄ 0 0 1 0 0] [0 0 0 0 1 0 ⋄ 0 0 1 0 0 0 ⋄ 1 0 0 0 0 0 ⋄ 0 0 0 0 0 1 ⋄ 0 0 0 1 0 0 ⋄ 0 1 0 0 0 0]]
 
 ⍝ april/libraries/dfns/graph/demo.lisp:97 —
 •load "lib/graph.apl"
@@ -4863,7 +4863,7 @@ apportion p2010
 •load "lib/numeric.apl"
 s2010 ← "AL" "AK" "AZ" "AR" "CA" "CO" "CT" "DE" "FL" "GA" "HI" "ID" "IL" "IN" "IA" "KS" "KY" "LA" "ME" "MD" "MA" "MI" "MN" "MS" "MO" "MT" "NE" "NV" "NH" "NJ" "NM" "NY" "NC" "ND" "OH" "OK" "OR" "PA" "RI" "SC" "SD" "TN" "TX" "UT" "VT" "VA" "WA" "WV" "WI" "WY"
 p2010 ← 4822023 731449 6553255 2949131 38041430 5187582 3590347 917092 19317568 9919945 1392313 1595728 12875255 6537334 3074186 2885905 4380415 4601893 1329192 5884563 6646144 9883360 5379139 2984926 6021988 1005141 1855525 2758931 1320718 8864590 2085538 19570261 9752073 699628 11544225 3814820 3899353 12763536 1050292 4723723 833354 6456243 26059203 2855287 626011 8185867 6897012 1855413 5726398 576412
-,⍕s2010,⍪apportion[p2010]
+,⍕s2010,⍪apportion(p2010)
 ⍝ =>
 " AL   7 AK   1 AZ   9 AR   4 CA  53 CO   7 CT   5 DE   1 FL  27 GA  14 HI   2 ID   2 IL  18 IN   9 IA   4 KS   4 KY   6 LA   6 ME   2 MD   8 MA   9 MI  14 MN   7 MS   4 MO   8 MT   1 NE   3 NV   4 NH   2 NJ  12 NM   3 NY  27 NC  14 ND   1 OH  16 OK   5 OR   5 PA  18 RI   2 SC   7 SD   1 TN   9 TX  36 UT   4 VT   1 VA  11 WA  10 WV   3 WI   8 WY   1"
 
@@ -6293,13 +6293,13 @@ solf←⊃"do" " re" "  mi" "   fa" "    sol" "     la" "      ti"
 
 ⍝ april/libraries/dfns/string/demo.lisp:139 — Embedded display helper uses existing glyphs: 0-origin offsets, character-prototype test instead of April ⎕TY, matrix ⍕ instead of ⎕FMT. Full example/setup retained
 •load "lib/string.apl"
-↓display {(⊂⍵(⍋lcase ⍵)),⊂⍵[⍋⍵]} 5 7⍴"Baker  Fox    able   Dog    charlie"
+↓display {(⊂⍵(⍋lcase ⍵)),⊂⍵(⍋⍵)} 5 7⍴"Baker  Fox    able   Dog    charlie"
 ⍝ =>
 "┌→────────────────────┐" "│ ┌→──────┐ ┌→──────┐ │" "│ ↓able   │ ↓Baker  │ │" "│ │Baker  │ │Dog    │ │" "│ │charlie│ │Fox    │ │" "│ │Dog    │ │able   │ │" "│ │Fox    │ │charlie│ │" "│ └───────┘ └───────┘ │" "└∊────────────────────┘"
 
 ⍝ april/libraries/dfns/string/demo.lisp:149 — Embedded display helper uses existing glyphs: 0-origin offsets, character-prototype test instead of April ⎕TY, matrix ⍕ instead of ⎕FMT. Full example/setup retained
 •load "lib/string.apl"
-↓display {(⊂⍵),⊂mtrim[⍵]} 4 10⍴"It        little    profits   that      "
+↓display {(⊂⍵),⊂mtrim(⍵)} 4 10⍴"It        little    profits   that      "
 ⍝ =>
 "┌→───────────────────────┐" "│ ┌→─────────┐ ┌→──────┐ │" "│ ↓It        │ ↓It     │ │" "│ │little    │ │little │ │" "│ │profits   │ │profits│ │" "│ │that      │ │that   │ │" "│ └──────────┘ └───────┘ │" "└∊───────────────────────┘"
 
@@ -6909,7 +6909,7 @@ tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6
 ⍝ april/libraries/dfns/tree/demo.lisp:175 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 •load "lib/tree.apl"
 put←'∪' avl ⋄ get←'⍎' avl ⋄ rem←'~' avl ⋄ fmt←'⍕' avl ⋄ chk←'?' avl ⋄ vec←'∊' avl ⋄ tree←0⊸(put foldl)
-↓disp fmt¨ ∪ tree¨ 1+↓pmat[5]
+↓disp fmt¨ ∪ tree¨ 1+ ↓pmat 5
 ⍝ =>
 "┌─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┐" "│   ┌<1=1     │   ┌─1=1┐    │   ┌─1=1┐    │        ┌─1=1│        ┌>1=1│        ┌>1=1│" "│2=2┤         │   │    └>2=2│   │    └>2=2│   ┌>2=2┤    │   ┌─2=2┘    │   ┌─2=2┘    │" "│   │    ┌─3=3│3=3┤         │3=3┤         │   │    └─3=3│3=3┤         │3=3┤         │" "│   └>4=4┤    │   └─4=4┐    │   │    ┌>4=4│4=4┤         │   └─4=4┐    │   │    ┌>4=4│" "│        └─5=5│        └>5=5│   └─5=5┘    │   └<5=5     │        └>5=5│   └─5=5┘    │" "└─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴─────────────┘"
 
@@ -7172,7 +7172,7 @@ pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ fmt←'⍕' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay ⋄ tree←0⊸(put foldl)
 pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]] ⋄ tt←tree pairs
-pairs[⍋⊃⊃¨pairs] ≡ vec tree pairs
+pairs(⍋⊃⊃¨pairs) ≡ vec tree pairs
 ⍝ =>
 1
 
@@ -7195,7 +7195,7 @@ pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven
 ⍝ april/libraries/dfns/tree/demo.lisp:741 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ fmt←'⍕' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay ⋄ tree←0⊸(put foldl)
-try←{⊃ fmt\¨ (get/)traj ⍺,⊂tree[⍵]}
+try←{⊃ fmt\¨ (get/)traj ⍺,⊂tree(⍵)}
 ↓disp 10 try 1+⍳10
 ⍝ =>
 "┌──┬─────────────────────────────────────────┐" "│10│1=1┐                                     │" "│  │   └2=2┐                                 │" "│  │       └3=3┐                             │" "│  │           └4=4┐                         │" "│  │               └5=5┐                     │" "│  │                   └6=6┐                 │" "│  │                       └7=7┐             │" "│  │                           └8=8┐         │" "│  │                               └9=9┐     │" "│  │                                   └10=10│" "├──┼─────────────────────────────────────────┤" "│10│1=1┐                                     │" "│  │   └2=2┐                                 │" "│  │       └3=3┐                             │" "│  │           └4=4┐                         │" "│  │               └5=5┐                     │" "│  │                   └6=6┐                 │" "│  │                       └7=7┐             │" "│  │                           │         ┌8=8│" "│  │                           │     ┌9=9┘   │" "│  │                           └10=10┘       │" "├──┼─────────────────────────────────────────┤" "│10│1=1┐                                     │" "│  │   └2=2┐                                 │" "│  │       └3=3┐                             │" "│  │           └4=4┐                         │" "│  │               └5=5┐                     │" "│  │                   │         ┌6=6        │" "│  │                   │     ┌7=7┤           │" "│  │                   │     │   │   ┌8=8    │" "│  │                   │     │   └9=9┘       │" "│  │                   └10=10┘               │" "├──┼─────────────────────────────────────────┤" "│10│1=1┐                                     │" "│  │   └2=2┐                                 │" "│  │       └3=3┐                             │" "│  │           │         ┌4=4                │" "│  │           │     ┌5=5┤                   │" "│  │           │     │   │   ┌6=6            │" "│  │           │     │   └7=7┤               │" "│  │           │     │       │   ┌8=8        │" "│  │           │     │       └9=9┘           │" "│  │           └10=10┘                       │" "├──┼─────────────────────────────────────────┤" "│10│1=1┐                                     │" "│  │   │         ┌2=2                        │" "│  │   │     ┌3=3┤                           │" "│  │   │     │   │   ┌4=4                    │" "│  │   │     │   └5=5┤                       │" "│  │   │     │       │   ┌6=6                │" "│  │   │     │       └7=7┤                   │" "│  │   │     │           │   ┌8=8            │" "│  │   │     │           └9=9┘               │" "│  │   └10=10┘                               │" "├──┼─────────────────────────────────────────┤" "│10│     ┌1=1┐                               │" "│  │     │   │   ┌2=2                        │" "│  │     │   └3=3┤                           │" "│  │     │       │   ┌4=4                    │" "│  │     │       └5=5┤                       │" "│  │     │           │   ┌6=6                │" "│  │     │           └7=7┤                   │" "│  │     │               │   ┌8=8            │" "│  │     │               └9=9┘               │" "│  │10=10┘                                   │" "└──┴─────────────────────────────────────────┘"
@@ -7203,7 +7203,7 @@ try←{⊃ fmt\¨ (get/)traj ⍺,⊂tree[⍵]}
 ⍝ april/libraries/dfns/tree/demo.lisp:808 — Self-contained library example with full setup and glyph-only matrix display; expectation from Dyalog with ⎕IO←0
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ fmt←'⍕' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay ⋄ tree←0⊸(put foldl)
-try←{⊃ fmt\¨ (get/)traj ⍺,⊂tree[⍵]}
+try←{⊃ fmt\¨ (get/)traj ⍺,⊂tree(⍵)}
 ↓disp 1 try ⌽⍳10
 ⍝ =>
 "┌─┬───────────────────────────────────────┐" "│1│                                   ┌0=0│" "│ │                               ┌1=1┘   │" "│ │                           ┌2=2┘       │" "│ │                       ┌3=3┘           │" "│ │                   ┌4=4┘               │" "│ │               ┌5=5┘                   │" "│ │           ┌6=6┘                       │" "│ │       ┌7=7┘                           │" "│ │   ┌8=8┘                               │" "│ │9=9┘                                   │" "├─┼───────────────────────────────────────┤" "│1│                           ┌0=0        │" "│ │                       ┌1=1┤           │" "│ │                       │   └2=2┐       │" "│ │                       │       └3=3    │" "│ │                   ┌4=4┘               │" "│ │               ┌5=5┘                   │" "│ │           ┌6=6┘                       │" "│ │       ┌7=7┘                           │" "│ │   ┌8=8┘                               │" "│ │9=9┘                                   │" "├─┼───────────────────────────────────────┤" "│1│                   ┌0=0                │" "│ │               ┌1=1┤                   │" "│ │               │   │   ┌2=2┐           │" "│ │               │   │   │   └3=3        │" "│ │               │   └4=4┤               │" "│ │               │       └5=5            │" "│ │           ┌6=6┘                       │" "│ │       ┌7=7┘                           │" "│ │   ┌8=8┘                               │" "│ │9=9┘                                   │" "├─┼───────────────────────────────────────┤" "│1│           ┌0=0                        │" "│ │       ┌1=1┤                           │" "│ │       │   │       ┌2=2┐               │" "│ │       │   │       │   └3=3            │" "│ │       │   │   ┌4=4┤                   │" "│ │       │   │   │   └5=5                │" "│ │       │   └6=6┤                       │" "│ │       │       └7=7                    │" "│ │   ┌8=8┘                               │" "│ │9=9┘                                   │" "├─┼───────────────────────────────────────┤" "│1│   ┌0=0                                │" "│ │1=1┤                                   │" "│ │   │           ┌2=2┐                   │" "│ │   │           │   └3=3                │" "│ │   │       ┌4=4┤                       │" "│ │   │       │   └5=5                    │" "│ │   │   ┌6=6┤                           │" "│ │   │   │   └7=7                        │" "│ │   └8=8┤                               │" "│ │       └9=9                            │" "└─┴───────────────────────────────────────┘"
@@ -7211,7 +7211,7 @@ try←{⊃ fmt\¨ (get/)traj ⍺,⊂tree[⍵]}
 ⍝ april/libraries/dfns/tree/demo.lisp:875 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ fmt←'⍕' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay ⋄ tree←0⊸(put foldl)
-try←{⊃ fmt\¨ (get/)traj ⍺,⊂tree[⍵]}
+try←{⊃ fmt\¨ (get/)traj ⍺,⊂tree(⍵)}
 ↓disp 1 try 3 2 1
 ⍝ =>
 "┌─┬───────────┐" "│1│       ┌1=1│" "│ │   ┌2=2┘   │" "│ │3=3┘       │" "├─┼───────────┤" "│1│1=1┐       │" "│ │   └2=2┐   │" "│ │       └3=3│" "└─┴───────────┘"
@@ -7219,7 +7219,7 @@ try←{⊃ fmt\¨ (get/)traj ⍺,⊂tree[⍵]}
 ⍝ april/libraries/dfns/tree/demo.lisp:884 — Upstream splay-tree demo setup; original expected result
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ fmt←'⍕' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay ⋄ tree←0⊸(put foldl)
-try←{⊃ fmt\¨ (get/)traj ⍺,⊂tree[⍵]}
+try←{⊃ fmt\¨ (get/)traj ⍺,⊂tree(⍵)}
 ↓disp 3 try 4 2 3
 ⍝ =>
 "┌─┬───────────┐" "│3│   ┌2=2┐   │" "│ │   │   └3=3│" "│ │4=4┘       │" "├─┼───────────┤" "│3│   ┌2=2    │" "│ │3=3┤       │" "│ │   └4=4    │" "└─┴───────────┘"
@@ -7324,7 +7324,7 @@ tnest ,⍤⊂¨0 "tea"
 ⍝ april/libraries/dfns/tree/demo.lisp:896 — 0-origin splay definitions and preceding state included; Random 256-node workloads assert validity, keys and search/removal results rather than a seeded shape
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ fmt←'⍕' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay ⋄ tree←0⊸(put foldl)
-check←{s←chk ⍵ ⋄ (1 256≡2↑s)∧(⍳256)≡↑¨vec[⍵]}
+check←{s←chk ⍵ ⋄ (1 256≡2↑s)∧(⍳256)≡↑¨vec(⍵)}
 tt←tree 256?256 ⋄ revt←{↑⌽ ⍵ get ⍺}
 check tt
 ⍝ =>
@@ -7402,7 +7402,7 @@ rational (+⟜÷)/¨0<⍳¨1+⍳10
 ⍝ — Splay tree validity after searches (32 nodes; April tree demo:899)
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
-check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec[⍵]}
+check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec(⍵)}
 tt←0 put foldl 32?32 ⋄ revt←{↑⌽ ⍵ get ⍺}
 tt←tt revt foldl 32?32
 check tt
@@ -7412,7 +7412,7 @@ check tt
 ⍝ — Splay tree search depths and retrieved keys (32 nodes; April tree demo:901)
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
-check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec[⍵]}
+check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec(⍵)}
 tt←0 put foldl 32?32 ⋄ revt←{↑⌽ ⍵ get ⍺}
 tt←tt revt foldl 32?32
 keys←8?32 ⋄ d←keys dep¨ ⊂tt
@@ -7423,7 +7423,7 @@ keys←8?32 ⋄ d←keys dep¨ ⊂tt
 ⍝ — Splay tree repeated searches (32 nodes; April tree demo:903)
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
-check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec[⍵]}
+check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec(⍵)}
 tt←0 put foldl 32?32 ⋄ revt←{↑⌽ ⍵ get ⍺}
 tt←tt revt foldl 32?32
 keys←8?32 ⋄ tt←tt revt foldl 8/keys ⋄ d←keys dep¨ ⊂tt
@@ -7434,7 +7434,7 @@ keys←8?32 ⋄ tt←tt revt foldl 8/keys ⋄ d←keys dep¨ ⊂tt
 ⍝ — Splay tree validity after repeated searches (32 nodes; April tree demo:904)
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
-check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec[⍵]}
+check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec(⍵)}
 tt←0 put foldl 32?32 ⋄ revt←{↑⌽ ⍵ get ⍺}
 tt←tt revt foldl 32?32
 keys←8?32 ⋄ tt←tt revt foldl 8/keys
@@ -7445,7 +7445,7 @@ check tt
 ⍝ — Splay tree remove all keys (32 nodes; April tree demo:905)
 •load "lib/tree.apl"
 put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay
-check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec[⍵]}
+check←{(1 32≡2↑chk ⍵)∧(⍳32)≡↑¨vec(⍵)}
 tt←0 put foldl 32?32 ⋄ revt←{↑⌽ ⍵ get ⍺}
 tt←tt revt foldl 32?32
 keys←8?32 ⋄ tt←tt revt foldl 8/keys
@@ -7470,7 +7470,7 @@ tabTrips tabText
 ⍝ april/libraries/dfns/string/demo.lisp:309 — Original all-width workload passes the normal two-second debug deadline; Load shared library; original all-width workload
 •load "lib/string.apl"
 tabText←"whistles        far     and wee" 
-tabTrips ,(6 35⍴↑,/(⍳20)↑¨'⎕'),⊃⌽•ucs[10]
+tabTrips ,(6 35⍴↑,/(⍳20)↑¨'⎕'),⊃⌽(•ucs 10)
 ⍝ =>
 1
 
@@ -7543,16 +7543,16 @@ myns←(⍬:⍬) ⋄ myns.f1←{⍵+3} ⋄ myns.a←(⍬:⍬) ⋄ myns.a.f2←{�
 
 ⍝ april:2319 — Update fields in nested record vectors
 myns←(⍬:⍬) ⋄ myns.aa←(⍬:⍬) ⋄ myns.aa.bb←⍳9
-myns.aa.bb.[1 3;]←⊂(⍬:⍬) ⋄ myns.aa.bb.[1].cc←3 ⋄ myns.aa.bb.[3].cc←5
-myns.aa.bb.[1 3;]←{r←⍵ ⋄ r.cc+←3 ⋄ r}¨myns.aa.bb.[1 3;]
-(⊂myns),{⍵.cc}¨myns.aa.bb.[1 3;]
+myns.aa.bb.[[1 3]]←⊂(⍬:⍬) ⋄ myns.aa.bb.[1].cc←3 ⋄ myns.aa.bb.[3].cc←5
+myns.aa.bb.[[1 3]]←{r←⍵ ⋄ r.cc+←3 ⋄ r}¨myns.aa.bb.[[1 3]]
+(⊂myns),{⍵.cc}¨myns.aa.bb.[[1 3]]
 ⍝ =>
 [["aa":["bb":[0 ["cc":6] 2 ["cc":8] 4 5 6 7 8]]] 6 8]
 
 ⍝ april:2335 — Map updates across nested records
 myns←(⍬:⍬) ⋄ myns.a←1 ⋄ myns.b←2
 myns.c←{n←(⍬:⍬) ⋄ n.a←⍵ ⋄ n.b←⍵×2 ⋄ n.d←⍳5 ⋄ n}¨⍳3
-myns.c←{n←⍵ ⋄ n.a+←2 ⋄ n.c←5 ⋄ n.d.[2 4;]←⊂['a':2] ⋄ n.e←{['a':3]}¨⍳3 ⋄ n}¨myns.c
+myns.c←{n←⍵ ⋄ n.a+←2 ⋄ n.c←5 ⋄ n.d.[[2 4]]←⊂['a':2] ⋄ n.e←{['a':3]}¨⍳3 ⋄ n}¨myns.c
 myns
 ⍝ =>
 e←[['a':3] ['a':3] ['a':3]] ⋄ d←[0 1 ['a':2] 3 ['a':2]]
