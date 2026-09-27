@@ -7358,7 +7358,7 @@ phinary 42
 •load "lib/numeric.apl"
 ↓⊃ {(⍕⍵),": ",⍕ 0 phinary ⍵}¨ 0 to 9
 ⍝ =>
-"0:          " "1: 0        " "2: 1 ¯2     " "3: 2 ¯2     " "4: 2 0 ¯2   " "5: 3 ¯1 ¯4  " "6: 3 1 ¯4   " "7: 4 ¯4     " "8: 4 0 ¯4   " "9: 4 1 ¯2 ¯4"
+"0:              " "1: 0ₓ           " "2: 1ₓ ¯2ₓ       " "3: 2ₓ ¯2ₓ       " "4: 2ₓ 0ₓ ¯2ₓ    " "5: 3ₓ ¯1ₓ ¯4ₓ   " "6: 3ₓ 1ₓ ¯4ₓ    " "7: 4ₓ ¯4ₓ       " "8: 4ₓ 0ₓ ¯4ₓ    " "9: 4ₓ 1ₓ ¯2ₓ ¯4ₓ"
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:289 — Phinary; original independent upstream expectation
 •load "lib/numeric.apl"

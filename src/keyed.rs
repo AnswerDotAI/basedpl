@@ -79,9 +79,15 @@ impl Selector {
 
 pub(crate) fn vector(names: Vec<Arc<str>>, values: Vec<Value>) -> Result<Value, ErrorKind> { partial_vector(names.into_iter().map(Some).collect(), values) }
 
-/// A vector whose entries with a name are keyed by it.
+/// A vector whose entries with a name are keyed by it. Each entry keeps its kind, as items written in brackets do.
 pub(crate) fn partial_vector(names: Vec<Option<Arc<str>>>, values: Vec<Value>) -> Result<Value, ErrorKind> {
-    Value::from_parts(vec![names.len()], values, Value::number(0.)?)?.with_keys(vec![Some(Keys::partial(names)?)])
+    let vector = if values.is_empty() { Value::empty(vec![0], Value::number(0.)?)? } else { Value::written(vec![values.len()], values)? };
+    vector.with_keys(vec![Some(Keys::partial(names)?)])
+}
+
+/// A keyed vector whose entries keep their own kinds, as an imported JSON object's do. Its storage stays mixed.
+pub(crate) fn record(names: Vec<Arc<str>>, values: Vec<Value>) -> Result<Value, ErrorKind> {
+    Value::mixed(vec![names.len()], values, Value::number(0.)?)?.with_keys(vec![Some(Keys::partial(names.into_iter().map(Some).collect())?)])
 }
 
 /// The entries of a keyed vector, in order. An empty vector has none. Every entry needs a name.
@@ -187,7 +193,9 @@ pub(crate) fn mapped_index(mut flat: usize, result: &[usize], source: &[usize], 
     Some(offset)
 }
 
-pub(crate) fn extended(target: &Value, selectors: &[Option<Value>]) -> Result<Option<Value>, ErrorKind> {
+/// `target` with an entry for each key in `selectors` that it lacks. A new vector entry that a longer path descends into starts as a
+/// record. Otherwise a new entry starts as the prototype, which the assignment replaces. Mixed storage stays mixed.
+pub(crate) fn extended(target: &Value, selectors: &[Option<Value>], descend: bool) -> Result<Option<Value>, ErrorKind> {
     let mut keys = (0..target.shape().len()).map(|a| target.keys(a).cloned()).collect::<Vec<_>>();
     let mut shape = target.shape().to_vec();
     let mut changed = false;
@@ -207,12 +215,11 @@ pub(crate) fn extended(target: &Value, selectors: &[Option<Value>]) -> Result<Op
     }
     if !changed { return Ok(None); }
     let maps = shape.iter().zip(target.shape()).map(|(&n, &old)| (0..n).map(|i| (i < old).then_some(i)).collect()).collect::<Vec<_>>();
-    // A new vector entry is either written or descended into by a longer path, so it starts as a record.
-    let fill = if shape.len() == 1 { vector(vec![], vec![])? } else { target.prototype() };
-    let data = (0..crate::array::generated_len(&shape)?)
-        .map(|i| mapped_index(i, &shape, target.shape(), &maps).map_or_else(|| fill.clone(), |i| target.at(i)))
-        .collect();
-    Value::from_parts(shape, data, target.prototype())?.with_keys(keys)?.with_axis_names(target.axis_names().to_vec()).map(Some)
+    let fill = if descend && shape.len() == 1 { vector(vec![], vec![])? } else { target.prototype() };
+    let len = crate::array::generated_len(&shape)?;
+    let mut data = Gather::new(&[target], len);
+    for i in 0..len { match mapped_index(i, &shape, target.shape(), &maps) { Some(i) => data.push(target, i), None => data.fill(&fill, 1) } }
+    data.finish(shape.into(), || target.prototype())?.with_keys(keys)?.with_axis_names(target.axis_names().to_vec()).map(Some)
 }
 
 /// `value` with each keyed axis in the order of its keys in `wanted`. Other axes keep their order.

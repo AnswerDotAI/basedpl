@@ -218,7 +218,7 @@ X←["xx" "yy" "zz";"aa" "bb"]:3 2⍴⍳6
 X←"aa" "bb":2ₓ 3ₓ ⋄ Y←"bb" "cc":5ₓ 7ₓ
 [X+Y X×Y X<Y (X+0)+Y X+¨Y]
 ⍝ =>
-[("aa" "bb" "cc":2ₓ 8ₓ 7ₓ) ("aa" "bb" "cc":0ₓ 15ₓ 0ₓ) ("aa" "bb" "cc":0ₓ 1ₓ 1ₓ) ("aa" "bb" "cc":2 8 7ₓ) ("aa" "bb" "cc":2ₓ 8ₓ 7ₓ)]
+[("aa" "bb" "cc":2ₓ 8ₓ 7ₓ) ("aa" "bb" "cc":0ₓ 15ₓ 0ₓ) ("aa" "bb" "cc":0ₓ 1ₓ 1ₓ) ("aa" "bb" "cc":2 8 7) ("aa" "bb" "cc":2ₓ 8ₓ 7ₓ)]
 
 ⍝ axis-partition — Partition cells retain sliced labels; group axes are new and unkeyed
 M←["alice" "bob";"xx" "yy" "zz"]:2 3⍴⍳6
@@ -1439,9 +1439,8 @@ n←4 ⋄ ℙn   ⍝ 11ₓ
 ℙ¯1
 ⍝ error: DOMAIN ERROR
 
-⍝ — Prime indices require exact integrality, without comparison tolerance
-ℙ1.000000000000001
-⍝ error: DOMAIN ERROR
+⍝ — A prime index accepts a float within comparison tolerance of an integer
+ℙ1.000000000000001   ⍝ 3ₓ
 
 ⍝ —
 1ℙ2.5
@@ -1575,7 +1574,7 @@ f←{⍵+1}⇄{⍵-1} ⋄ (f⍣¯1)⍣¯1⊢5   ⍝ 6
 {⌊⍵÷2}⍣[0 1 ∞]⊢100   ⍝ 100 50 0
 
 ⍝ — A negative infinite count runs the inverse until it converges
-({2×⍵}⇄{⌊⍵÷2})⍣¯∞⊢100   ⍝ 0
+({2×⍵}⇄{⌊⍵÷2})⍣¯∞⊢100   ⍝ 0ₓ
 
 ⍝ — A zero count in a list keeps the initial value without calling the operand
 {1÷0}⍣[0]⊢"ab"   ⍝ ["ab" ⋄]
@@ -2559,9 +2558,8 @@ u←•UcS ⋄ u ["A⍳" ⋄ "λ😀"]   ⍝ [65ₓ 9075ₓ ⋄ 955ₓ 128512ₓ
 'a'×2
 ⍝ error: DOMAIN ERROR
 
-⍝ — Character offsets must be integral without comparison tolerance
-'a'+1.000000000000001
-⍝ error: DOMAIN ERROR
+⍝ — A character offset accepts a float within comparison tolerance of an integer
+'a'+1.000000000000001   ⍝ 'b'
 
 ⍝ —
 'a'+∞
@@ -2973,10 +2971,29 @@ s←+/ ⋄ s⍠0 [1 2 3 ⋄ 4 5 6]   ⍝ 5 7 9
 0 3|¯2 6   ⍝ ¯2 0
 
 ⍝ — Floor applies comparison tolerance near integers
-⌊1.000000000000001 ¯1.000000000000001   ⍝ 1 ¯1
+⌊1.000000000000001 ¯1.000000000000001   ⍝ 1ₓ ¯1ₓ
 
-⍝ —
-⌈¯2.3 0.1 3   ⍝ ¯2 1 3
+⍝ — Ceiling of a float is an exact integer
+⌈¯2.3 0.1 3   ⍝ ¯2ₓ 1ₓ 3ₓ
+
+⍝ — Floor of a large float is its exact integer
+⌊2*70   ⍝ 1180591620717411303424ₓ
+
+⍝ — Floor keeps an infinity, and the other results stay exact
+⌊1.5 ∞ ¯∞   ⍝ 1ₓ ∞ ¯∞
+
+⍝ — Signum of a float is an exact integer
+×¯2.5 0 ∞   ⍝ ¯1ₓ 0ₓ 1ₓ
+
+⍝ — An integer argument accepts a float within comparison tolerance of an integer
+((0.1×3)×10)⌷10 20 30 40   ⍝ 40
+
+⍝ — A count accepts a float within comparison tolerance of an integer
+⍳(0.1×3)×10   ⍝ 0 1 2
+
+⍝ — A count still rejects a fraction outside tolerance
+⍳2.5
+⍝ error: DOMAIN ERROR
 
 ⍝ —
 2 3⌊3 2   ⍝ 2 2
@@ -3758,8 +3775,8 @@ each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3   ⍝ 6
 ⍝ —
 ÷¯∞   ⍝ 0
 
-⍝ —
-×∞ ¯∞   ⍝ 1 ¯1
+⍝ — Signum of an infinity is an exact integer
+×∞ ¯∞   ⍝ 1ₓ ¯1ₓ
 
 ⍝ — Approximate reduction overflow produces real infinity
 +/1E308 1E308   ⍝ ∞
@@ -3802,6 +3819,9 @@ each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3   ⍝ 6
 
 ⍝ — Minimum retains a finite exact value even beyond float range
 ∞⌊10ₓ*1000ₓ   ⍝ 10ₓ*1000ₓ
+
+⍝ — Minimum against infinity keeps an exact integer exact
+3ₓ⌊∞   ⍝ 3ₓ
 
 ⍝ — Maximum against negative infinity preserves an exact fraction
 ¯∞⌈1r3   ⍝ 1r3
@@ -4085,13 +4105,13 @@ offset←{+/⍶+⍵} ⋄ (1 2 offset)3   ⍝ 9
 +¯2   ⍝ ¯2.0
 
 ⍝ —
-×¯9   ⍝ ¯1.0
+×¯9   ⍝ ¯1ₓ
 
 ⍝ —
-×0   ⍝ 0.0
+×0   ⍝ 0ₓ
 
 ⍝ —
-×3   ⍝ 1.0
+×3   ⍝ 1ₓ
 
 ⍝ —
 ÷4   ⍝ 0.25
@@ -4756,9 +4776,9 @@ fill •tojson fill •json "{""x"":[null,2]}"
 ⍝ =>
 "{""x"":[null,2]}"
 
-⍝ — Import keeps integers beyond i64 and float syntax distinct
-•json "[9223372036854775808,1.0,1e2]"
-9223372036854775808ₓ 1 100
+⍝ — Import keeps an integer beyond i64 that no float equals, beside float syntax
+•json "[9223372036854775809,1.0,1e2]"
+9223372036854775809ₓ 1 100
 
 ⍝ — Large exact integers export without rounding
 •tojson 9223372036854775808ₓ   ⍝ "9223372036854775808"

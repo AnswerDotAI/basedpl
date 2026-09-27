@@ -1,5 +1,5 @@
 use crate::{
-    data::{text, Options},
+    data::{imported, text, Options},
     execution::Context,
     keyed, Error, ErrorKind, Number, Value,
 };
@@ -47,12 +47,12 @@ fn import(value: &Json, fill: &Number, span: &Context<'_>) -> Result<Value, Erro
         }
         Json::Array(items) => {
             let data = items.iter().map(|v| import(v, fill, span)).collect::<Result<Vec<_>, _>>()?;
-            Value::from_parts(vec![data.len()], data, Value::Number(Number::from_integer(0))).map_err(|k| span.error(k, "invalid JSON array"))?
+            imported(vec![data.len()], data, |i| items[i].is_null(), Value::Number(Number::from_integer(0))).map_err(|k| span.error(k, "invalid JSON array"))?
         }
         Json::Object(items) => {
             let keys = items.keys().map(|k| k.as_str().into()).collect();
             let data = items.values().map(|v| import(v, fill, span)).collect::<Result<_, _>>()?;
-            keyed::vector(keys, data).map_err(|k| span.error(k, "invalid JSON object"))?
+            keyed::record(keys, data).map_err(|k| span.error(k, "invalid JSON object"))?
         }
     };
     Ok(value)

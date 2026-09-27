@@ -282,9 +282,8 @@ fn tolerant_first(haystack: &[f64], needles: &[f64], span: &Context<'_>) -> Resu
     }
     needles
         .iter()
-        .enumerate()
-        .map(|(j, &y)| {
-            if j % 4096 == 0 { span.check()?; }
+        .map(|&y| {
+            span.check()?;
             Ok(buckets.near(y).filter(|&i| float_equal(haystack[i], y)).min())
         })
         .collect()
@@ -295,7 +294,7 @@ fn tolerant_classes(cells: &[f64], span: &Context<'_>) -> Result<Vec<usize>, Err
     let mut representatives = Buckets::new(cells.len(), 0);
     let mut classes = Vec::with_capacity(cells.len());
     for (i, &x) in cells.iter().enumerate() {
-        if i % 4096 == 0 { span.check()?; }
+        span.check()?;
         let found = representatives.near(x).filter(|&r| float_equal(cells[r], x)).min();
         classes.push(found.unwrap_or_else(|| {
             representatives.push(bucket(x), i);

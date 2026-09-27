@@ -650,6 +650,8 @@ impl Primitive {
             Self::Mix => {
                 if let Some(x) = left { return pick(x, right, false, span); }
                 if let Some(axis) = axis { return mix_axes(right, &axis_value(axis), span); }
+                // Mixing a simple array changes nothing.
+                if !right.is_atom() && right.graph_depth() == 1 { return Ok(right.clone()); }
                 let cells: Vec<_> = right.elements().collect();
                 return right.layout().assemble(&cells, &right.prototype()).map_err(|k| span.error(k, "cannot assemble cells"));
             }
@@ -710,13 +712,12 @@ impl Primitive {
             return Value::empty(agreement.layout.shape().to_vec(), prototype).map_err(|k| span.error(k, "invalid empty result"));
         }
         if !fill { if let Some(result) = crate::scalar::map(self, left, right, agreement) { return Ok(result); } }
-        let data = (0..agreement.len)
-            .map(|i| {
-                let (x, y) = agreement.values(left, right, i);
-                self.scalar_item(x.as_ref(), &y, span, fill)
-            })
-            .collect::<Result<_, _>>()?;
-        Value::new(agreement.layout.shape().to_vec(), data).map_err(|k| span.error(k, "invalid scalar result"))
+        let mut data = Gather::items(agreement.len);
+        for i in 0..agreement.len {
+            let (x, y) = agreement.values(left, right, i);
+            data.add(self.scalar_item(x.as_ref(), &y, span, fill)?);
+        }
+        data.finish(agreement.layout.shape().to_vec().into(), || right.prototype()).map_err(|k| span.error(k, "invalid scalar result"))
     }
 
     fn scalar_item(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
@@ -730,7 +731,9 @@ impl Primitive {
         }
         if fill {
             return Ok(match (self, left, right) {
-                (Self::Compare(_) | Self::Math(Math::Not), _, _) | (Self::Math(Math::Nand | Math::Nor), Some(_), _) => integer(0),
+                (Self::Compare(_) | Self::Math(Math::Not), _, _)
+                | (Self::Math(Math::Nand | Math::Nor), Some(_), _)
+                | (Self::Math(Math::Floor | Math::Ceiling) | Self::Arithmetic(Arithmetic::Times), None, _) => integer(0),
                 (Self::Random, _, Value::Number(y)) => Value::Number(y.unit(0)),
                 (Self::Math(Math::Circle | Math::Pi | Math::Log), _, _) | (Self::Math(Math::Power), None, _) => float(0.0),
                 (Self::Math(_), None, Value::Number(y)) => Value::Number(y.result_zero(None)),
@@ -864,11 +867,13 @@ fn membership(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, 
 fn enlist(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     fn append(array: &Value, data: &mut Gather, span: &Context<'_>) -> Result<(), Error> {
         let limit = || span.error(ErrorKind::Limit, "enlist exceeds array limits");
-        let Items::Values(items) = array.as_items() else {
+        // A simple mixed array keeps its storage. A nested array's items are gathered one by one.
+        if !matches!(array.as_items(), Items::Values(_)) || array.graph_depth() == 1 {
             if data.len() + array.len() > MAX_GENERATED_ELEMENTS { return Err(limit()); }
             data.extend(array, 0..array.len());
             return Ok(());
-        };
+        }
+        let Items::Values(items) = array.as_items() else { unreachable!() };
         for item in items {
             if let a @ Value::Array(_) = item { append(a, data, span)?; } else {
                 if data.len() == MAX_GENERATED_ELEMENTS { return Err(limit()); }
@@ -1444,22 +1449,14 @@ fn exact_solve(a: &[Number], b: Option<&[Number]>, m: usize, n: usize, k: usize,
 }
 
 fn binary_encode(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    use num_bigint::BigInt;
-    use num_traits::{FromPrimitive, Signed};
+    use num_traits::Signed;
     let invalid = || span.error(ErrorKind::Domain, "binary encoding needs nonnegative integers");
     let mut numbers = Vec::with_capacity(right.len());
     let mut width = 0;
     for item in right.elements() {
         span.check()?;
         let n = numeric(&item, span)?;
-        let value = if let Some(q) = n.as_exact() {
-            if !q.is_integer() || q.is_negative() { return Err(invalid()); }
-            q.to_integer()
-        } else {
-            let z = n.to_complex().map_err(|_| invalid())?;
-            if z.im != 0.0 || z.re < 0.0 || z.re.fract() != 0.0 { return Err(invalid()); }
-            BigInt::from_f64(z.re).ok_or_else(invalid)?
-        };
+        let value = n.big_integer().ok().filter(|v| !v.is_negative()).ok_or_else(invalid)?;
         width = width.max(value.bits() as usize);
         numbers.push((value, n.clone()));
     }
@@ -1760,16 +1757,10 @@ fn reshape(dimensions: &Value, right: &Value, span: &Context<'_>) -> Result<Valu
     // A keyed shape names the axes. Its unkeyed entries leave theirs unnamed.
     let names = dimensions.keys(0).map_or_else(Vec::new, |k| k.names().to_vec());
     if right.shape() == shape && !right.is_atom() { return right.clone().with_axis_names(names).map_err(|k| span.error(k, "invalid axis names")); }
-    if let Some(values) = right.as_floats() {
-        let data = if values.is_empty() { vec![0.0; len] } else { values.iter().copied().cycle().take(len).collect() };
-        return Value::floats(shape, data).and_then(|a| a.with_axis_names(names)).map_err(|k| span.error(k, "invalid reshape"));
-    }
-    if let Some(values) = right.as_integers() {
-        let data = if values.is_empty() { vec![0; len] } else { values.iter().copied().cycle().take(len).collect() };
-        return Value::integers(shape, data).and_then(|a| a.with_axis_names(names)).map_err(|k| span.error(k, "invalid reshape"));
-    }
-    let data = if right.is_empty() { vec![right.prototype().clone(); len] } else { right.elements().cycle().take(len).collect() };
-    Value::from_parts(shape, data, right.prototype().clone()).and_then(|a| a.with_axis_names(names)).map_err(|k| span.error(k, "invalid reshape"))
+    let mut data = Gather::new(&[right], len);
+    if right.is_empty() { data.fill(&right.prototype(), len) }
+    else { data.cycle(right, len) }
+    data.finish(shape.into(), || right.prototype()).and_then(|a| a.with_axis_names(names)).map_err(|k| span.error(k, "invalid reshape"))
 }
 
 /// The distance between neighbouring items along each axis of an array of `shape`.
@@ -2192,59 +2183,45 @@ impl Selection {
     }
 
     pub(crate) fn read(&self, array: &Value, span: &Context<'_>) -> Result<Value, Error> {
-        let paths = match (&self.targets, &self.frame) {
+        let invalid = |k| span.error(k, "invalid selection");
+        let item = |path: &[usize]| path.iter().fold(array.clone(), |item, &i| item.at(i));
+        let layout = match (&self.targets, &self.frame) {
             (Targets::Offsets(offsets), Frame::Direct) => return Ok(array.at(offsets[0])),
-            (Targets::Offsets(offsets), Frame::Array(layout)) => {
+            (Targets::Paths(paths), Frame::Direct) => return Frame::Direct.collect(paths.iter().map(|p| item(p)), || array.prototype()).map_err(invalid),
+            (_, Frame::Array(layout)) => layout,
+        };
+        let data = match &self.targets {
+            Targets::Offsets(offsets) => {
                 let mut data = Gather::new(&[array], offsets.len());
                 data.rows(array, offsets, 1);
-                return data.finish(layout.clone(), || array.prototype()).map_err(|k| span.error(k, "invalid selection"));
+                data
             }
-            (Targets::Paths(paths), _) => paths,
+            // Each item comes from the array that holds it.
+            Targets::Paths(paths) => {
+                let mut data = Gather::items(paths.len());
+                for path in paths { match path.split_last() { Some((&last, outer)) => data.push(&item(outer), last), None => data.add(array.clone()) } }
+                data
+            }
         };
-        let data = paths.iter().map(|path| {
-            let mut item = array.clone();
-            for &i in path { item = item.at(i); }
-            item
-        });
-        self.frame.clone().collect(data, || array.prototype()).map_err(|k| span.error(k, "invalid selection"))
+        data.finish(layout.clone(), || array.prototype()).map_err(invalid)
     }
 
-    /// `array` with each target replaced by its value. Offsets scatter into a copy of the array's items. A later target at the same
-    /// position wins.
+    /// `array` with each target replaced by its value. A later target at the same position wins. Compact storage widens for wider
+    /// numbers, and mixed storage stays mixed.
     pub(crate) fn write(&self, array: &Value, values: &Value, span: &Context<'_>) -> Result<Value, Error> {
         let items = self.values(values, span)?;
         let offsets = match &self.targets {
             Targets::Offsets(offsets) => offsets,
             Targets::Paths(paths) => return write_paths(array, &paths.iter().map(Vec::as_slice).zip(items).collect::<Vec<_>>(), span),
         };
-        if matches!(self.frame, Frame::Array(_)) && !array.is_atom() {
-            let pick = |k: usize| if values.is_singleton() { 0 } else { k };
-            let typed = match (array.as_items(), values.as_items()) {
-                (Items::Integers(x), Items::Integers(y)) => {
-                    let mut data = x.to_vec();
-                    for (k, &o) in offsets.iter().enumerate() { data[o] = y[pick(k)]; }
-                    Some(Value::integers(array.shape().to_vec(), data))
-                }
-                (Items::Floats(x), Items::Floats(y)) => {
-                    let mut data = x.to_vec();
-                    for (k, &o) in offsets.iter().enumerate() { data[o] = y[pick(k)]; }
-                    Some(Value::float_storage(array.shape().to_vec(), data))
-                }
-                (Items::Characters(x), Items::Characters(y)) => {
-                    let mut data = x.to_vec();
-                    for (k, &o) in offsets.iter().enumerate() { data[o] = y[pick(k)]; }
-                    Some(Value::characters(array.shape().to_vec(), data))
-                }
-                _ => None,
-            };
-            if let Some(result) = typed {
-                return result.and_then(|v| v.with_layout(array.layout().clone())).map_err(|k| span.error(k, "invalid amended array"));
-            }
-        }
-        let mut data: Vec<_> = array.elements().collect();
-        for (&o, value) in offsets.iter().zip(items) { data[o] = value; }
-        if array.is_atom() { return Ok(data.remove(0)); }
-        array.layout().collect(data, || array.prototype()).map_err(|k| span.error(k, "invalid amended array"))
+        if array.is_atom() { return Ok(items.last().unwrap_or_else(|| array.clone())); }
+        let invalid = |k| span.error(k, "invalid amended array");
+        // A direct target takes the whole value as one item.
+        let source = if matches!(self.frame, Frame::Direct) && !values.is_atom() { values.enclose().map_err(invalid)? } else { values.clone() };
+        let mut data = Gather::new(&[array, &source], array.len());
+        data.extend(array, 0..array.len());
+        data.scatter(offsets, &source);
+        data.finish(array.layout().clone(), || array.prototype()).map_err(invalid)
     }
 }
 
@@ -2256,15 +2233,17 @@ fn write_paths(array: &Value, updates: &[(&[usize], Value)], span: &Context<'_>)
         (&replacement, &updates[last + 1..])
     } else { (array, updates) };
     if updates.is_empty() { return Ok(array.clone()); }
-    let mut data: Vec<_> = array.elements().collect();
+    let mut items: Vec<_> = array.elements().collect();
     let mut groups: HashMap<usize, Vec<(&[usize], Value)>> = HashMap::new();
     for (path, value) in updates { groups.entry(path[0]).or_default().push((&path[1..], value.clone())); }
     for (i, edits) in groups {
-        if i >= data.len() { return Err(span.error(ErrorKind::Index, "replacement changed a selected path")); }
-        data[i] = write_paths(&data[i].clone(), &edits, span)?;
+        if i >= items.len() { return Err(span.error(ErrorKind::Index, "replacement changed a selected path")); }
+        items[i] = write_paths(&items[i].clone(), &edits, span)?;
     }
-    if array.is_atom() { return Ok(data.remove(0)); }
-    array.layout().collect(data, || array.prototype()).map_err(|k| span.error(k, "invalid amended array"))
+    if array.is_atom() { return Ok(items.remove(0)); }
+    let mut data = Gather::new(&[array], items.len());
+    for item in items { data.add(item) }
+    data.finish(array.layout().clone(), || array.prototype()).map_err(|k| span.error(k, "invalid amended array"))
 }
 
 pub(crate) fn choose(right: &Value, indices: &Value, span: &Context<'_>) -> Result<Selection, Error> {

@@ -270,6 +270,7 @@ fn boxed_display_and_function_trees() {
     assert_eq!(r.output_text(), ["┌→─────────────────────┐\n↓ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │DUCK│ │SWAN│ │BIRD│ │\n│ └────┘ └────┘ └────┘ │\n│ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │WORM│ │CAKE│ │SEED│ │\n│ └────┘ └────┘ └────┘ │\n└∊─────────────────────┘"]);
     assert_eq!(s.eval("⍬").output_text(), ["┌⊖┐\n│0│\n└~┘"]);
     assert_eq!(s.eval("0 3⍴0").output_text(), ["┌→────┐\n⌽0 0 0│\n└~────┘"]);
+    assert_eq!(s.eval("1↓'a' 1 2").output_text(), ["┌→──┐\n│1 2│\n└+──┘"]);
     let f = s.eval("avg←+/÷≢ ⋄ avg");
     assert!(f.error.is_none() && f.value.is_none());
     assert_eq!(f.output_text(), ["fork\n├─ /\n│  └─ +\n├─ ÷\n└─ ≢"]);
@@ -382,6 +383,93 @@ fn float_storage_and_kernels() {
     assert_eq!(AplValue::floats(vec![1], vec![f64::NAN]), Err(Domain));
     assert_eq!(AplValue::floats(vec![2], vec![1.]), Err(Length));
     assert_eq!(AplValue::floats(vec![1], vec![-0.]).unwrap().as_floats().unwrap()[0].to_bits(), 0);
+}
+
+/// An operation's result keeps numbers of one kind in compact storage. A float turns exact integers into floats, and a complex number
+/// turns every number complex. Items written in a literal list or in brackets keep each number's exactness, so only floats widen, to
+/// complex. Mixed storage keeps each item's kind until a computation builds fresh storage. A rational has no compact form, so it keeps
+/// its array mixed.
+#[test]
+fn numeric_storage_rules() {
+    let storage = |code: &str| match run(code) {
+        Ok(Some(v)) if v.as_integers().is_some() => "integer".to_string(),
+        Ok(Some(v)) if v.as_floats().is_some() => "float".into(),
+        Ok(Some(v)) if v.as_complex().is_some() => "complex".into(),
+        Ok(Some(_)) => "mixed".into(),
+        other => format!("{other:?}"),
+    };
+    let failures: Vec<_> = [
+        ("0.5,⍳3ₓ", "float"),
+        ("⊃[1ₓ 2ₓ;0.5 1.5]", "float"),
+        ("{⍵=0:0.5 ⋄ ⍵}¨⍳3ₓ", "float"),
+        ("x←⍳3ₓ ⋄ x[1]←0.5 ⋄ x", "float"),
+        ("x←0.5 1.5 ⋄ x[0]←2ₓ ⋄ x", "float"),
+        ("0.5@1⊢⍳3ₓ", "float"),
+        ("x←'a' 1ₓ 2ₓ ⋄ x[0]←0ₓ ⋄ x", "mixed"),
+        ("1↓'a' 1ₓ 2ₓ", "mixed"),
+        ("(1↓'a' 1ₓ 2ₓ),3ₓ", "mixed"),
+        ("1×1ₓ 0.5", "float"),
+        ("1ₓ×1↓'a' 1ₓ 2ₓ", "integer"),
+        ("0.5,1r3", "mixed"),
+        ("1j2,0.5", "complex"),
+        ("1j2,⍳2ₓ", "complex"),
+        ("1j2,1r3", "mixed"),
+        ("⌊0.5 1.5", "integer"),
+        ("×¯2.5 0 3.5", "integer"),
+        // An infinity never makes exact integers approximate.
+        ("⌊1.5 ∞", "mixed"),
+        ("(⍳3ₓ),∞", "mixed"),
+        ("∞,⍳3ₓ", "mixed"),
+        ("(⍳3ₓ),2⍴∞", "mixed"),
+        ("{⍵=1:∞ ⋄ ⍵}¨⍳3ₓ", "mixed"),
+        ("x←⍳3ₓ ⋄ x[1]←∞ ⋄ x", "mixed"),
+        ("0.5,∞ ¯∞", "float"),
+        ("(⍳3ₓ)+∞", "float"),
+        // Written items keep each number's exactness.
+        ("1ₓ 2ₓ", "integer"),
+        ("1ₓ 0.5", "mixed"),
+        ("1j2 0.5", "complex"),
+        ("1ₓ 1j2", "mixed"),
+        ("1ₓ 1r2", "mixed"),
+        ("[1ₓ;0.5]", "mixed"),
+        ("[0.5;1j2]", "complex"),
+        ("[1ₓ 2ₓ ⋄ 0.5 1.5]", "mixed"),
+        ("a←2ₓ ⋄ b←0.5 ⋄ [a;b]", "mixed"),
+        (r#"["a":1ₓ;"b":0.5]"#, "mixed"),
+        (r#"•json "[1,1.5]""#, "float"),
+        (r#"•json "[1.5,9007199254740993]""#, "mixed"),
+        (r#"•json "{""a"":1,""b"":2}""#, "mixed"),
+    ]
+    .into_iter()
+    .map(|(code, expected)| (code.to_string(), expected))
+    // Rearranging or combining a mixed array keeps it mixed.
+    .chain(
+        [
+            "⌽m",
+            "2↑m",
+            "4↑m",
+            "1 0 1/m",
+            "1 0 1 1\\m",
+            "(⊂1 0)⌷m",
+            "m 1 0",
+            "2 1⍴m",
+            "⍉2 1⍴m",
+            "m,m",
+            "m⍪m",
+            "1⌽m",
+            "∪m",
+            "m~,2ₓ",
+            "↑⊂m",
+            "∊⊂m",
+            "↑↓2 2⍴m",
+            "↑1 1 0⊆m",
+            "0⊃⊂m",
+        ]
+        .map(|e| (format!("m←1ₓ 0.5 2ₓ ⋄ {e}"), "mixed")),
+    )
+    .filter_map(|(code, expected)| (storage(&code) != expected).then(|| format!("{code}: {} not {expected}", storage(&code))))
+    .collect();
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 #[test]

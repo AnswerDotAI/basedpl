@@ -74,8 +74,8 @@ fn divisor(n: &BigUint, span: &Context<'_>) -> Result<BigUint, Error> {
         let mut r = 1usize;
         loop {
             let x = y.clone();
-            for i in 0..r {
-                if i % 128 == 0 { span.check()?; }
+            for _ in 0..r {
+                span.check()?;
                 y = step(&y);
             }
             let mut k = 0;

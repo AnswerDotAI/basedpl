@@ -6,6 +6,18 @@ pub(crate) fn text(value: &Value, span: &Context<'_>) -> Result<String, Error> {
     keyed::name(value).map(|s| s.to_string()).ok_or_else(|| span.error(ErrorKind::Domain, "expected text"))
 }
 
+/// Imported items, where `filled` marks the fills for missing values. When any other item is a finite float, numbers become floats if
+/// every one converts exactly. Otherwise, or when one wouldn't, each item keeps its own kind. A fill or an infinity never makes exact
+/// numbers approximate.
+pub(crate) fn imported(shape: Vec<usize>, items: Vec<Value>, filled: impl Fn(usize) -> bool, empty_prototype: Value) -> Result<Value, ErrorKind> {
+    if items.iter().enumerate().any(|(i, v)| !filled(i) && matches!(v, Value::Number(n) if n.as_float().is_some_and(f64::is_finite))) {
+        if let Some(floats) = items.iter().map(|v| if let Value::Number(n) = v { n.lossless_float() } else { None }).collect::<Option<Vec<_>>>() {
+            return Value::floats(shape, floats);
+        }
+    }
+    Value::keeping_kinds(shape, items, empty_prototype)
+}
+
 pub(crate) struct Options { pub values: HashMap<String, Value>, name: &'static str }
 
 impl Options {

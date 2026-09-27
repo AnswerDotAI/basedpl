@@ -89,7 +89,7 @@ Interactive sessions start with:
 ]box on -style=max -trains=tree -fns=on
 ```
 
-Arrays with axes have boxes, axis arrows and type markers. Enter a function name to see its tree.
+Arrays with axes have boxes, axis arrows and a type marker on the bottom edge. The marker is `~` for numbers, `─` for characters, `∊` for nested arrays and `+` for mixed storage, whose items keep their own kinds. Enter a function name to see its tree.
 
 | Command | Effect |
 |---|---|

@@ -2163,8 +2163,8 @@ impl Session {
         }
     }
 
-    fn extend_selected(&mut self, nodes: &mut Vec<Node>, output: &mut Vec<Output>) -> Result<(), Error> {
-        if let [Node { kind: NodeKind::Group(inner), .. }] = nodes.as_mut_slice() { return self.extend_selected(inner, output); }
+    fn extend_selected(&mut self, nodes: &mut Vec<Node>, output: &mut Vec<Output>, descend: bool) -> Result<(), Error> {
+        if let [Node { kind: NodeKind::Group(inner), .. }] = nodes.as_mut_slice() { return self.extend_selected(inner, output, descend); }
         // A key may name an entry that the container lacks: after the container in array application,
         // or before `⊃` or `⌷`, where it can be a list of keys.
         let root = self.selection_root(nodes);
@@ -2183,9 +2183,9 @@ impl Session {
         nodes.splice(keys, [Node { kind: NodeKind::Literal(value), span: span.clone() }]);
         if !selectors.iter().flatten().any(|s| matches!(crate::keyed::Selector::of(s), Ok(Some(_)))) { return Ok(()); }
         let mut container: Vec<Node> = if applied { nodes.drain(root..root + 1).collect() } else { nodes.split_off(2) };
-        self.extend_selected(&mut container, output)?;
+        self.extend_selected(&mut container, output, true)?;
         let target = self.array_result(&container, output)?;
-        if let Some(extended) = crate::keyed::extended(&target, &selectors).map_err(|k| span.error(k, "invalid named axis extension"))? {
+        if let Some(extended) = crate::keyed::extended(&target, &selectors, descend).map_err(|k| span.error(k, "invalid named axis extension"))? {
             self.assign_selected(&container, None, &Binding::Value(extended), output)?;
         }
         if applied { nodes.splice(root..root, container); }
@@ -2206,7 +2206,7 @@ impl Session {
     fn assign_selected(&mut self, nodes: &[Node], modifier: Option<Function>, value: &Binding, output: &mut Vec<Output>) -> Result<(), Error> {
         let right = &value.clone().into_value(&nodes[0].span)?;
         let mut nodes = if Self::has_members(nodes) { self.members(nodes) } else { nodes.to_vec() };
-        if modifier.is_none() { self.extend_selected(&mut nodes, output)?; }
+        if modifier.is_none() { self.extend_selected(&mut nodes, output, false)?; }
         let (binding, labels, selected, kind) = self.selection_expression(&nodes, output)?;
         let span = &nodes[0].span;
         let (selection, values) = labels.replacements(&selected, right, kind, span)?;
@@ -2339,8 +2339,8 @@ impl Session {
                 let arrays = cells.iter().map(|nodes| self.array_result(nodes, output)).collect::<Result<Vec<_>, _>>()?;
                 let result = if *block {
                     // Each row is a major cell, so unit rows give a vector: `[1 ⋄ 2]` is `1 2`.
-                    Value::assemble(&[arrays.len()], &arrays, &arrays[0])
-                } else { Value::new(vec![arrays.len()], arrays.into_iter().collect()) };
+                    Value::assemble_written(&[arrays.len()], &arrays, &arrays[0])
+                } else { Value::written(vec![arrays.len()], arrays) };
                 Binding::Value(
                     result.map_err(|k| node.span.error(k, if k == ErrorKind::Limit { "array literal nests too deeply" } else { "invalid array literal" }))?,
                 )

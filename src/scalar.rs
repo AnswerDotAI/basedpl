@@ -11,6 +11,7 @@ use crate::{
     primitive::{Comparison, Primitive},
     Value,
 };
+use num_traits::ToPrimitive;
 use std::borrow::Cow;
 
 /// Compact element storage: `f64` for floats and `i64` for integers.
@@ -29,11 +30,11 @@ pub(crate) trait Dyad<A> {
     fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy) -> Self::Output;
 }
 
-/// A loop that applies a monadic kernel.
+/// A loop that applies a monadic kernel. A kernel either keeps its argument type or gives integers.
 pub(crate) trait Monad<A> {
     type Output;
     fn same(self, f: impl Fn(A) -> Option<A> + Copy) -> Self::Output;
-    fn boolean(self, f: impl Fn(A) -> Option<bool> + Copy) -> Self::Output;
+    fn integer(self, f: impl Fn(A) -> Option<i64> + Copy) -> Self::Output;
 }
 
 impl Element for f64 {
@@ -68,11 +69,11 @@ impl Element for f64 {
         Some(match p {
             Primitive::Arithmetic(Plus) => run.same(Some),
             Primitive::Arithmetic(Minus) => run.same(|y| Some(-y)),
-            Primitive::Arithmetic(Times) => run.same(|y| Some(real::signum(y))),
+            Primitive::Arithmetic(Times) => run.integer(|y| Some(real::signum(y) as i64)),
             Primitive::Arithmetic(Divide) => run.same(|y| real::divide(1.0, y)),
             Primitive::Math(Magnitude) => run.same(|y| Some(y.abs())),
-            Primitive::Math(Floor) => run.same(|y| Some(real::floor(y))),
-            Primitive::Math(Ceiling) => run.same(|y| Some(real::ceiling(y))),
+            Primitive::Math(Floor) => run.integer(|y| real::floor(y).to_i64()),
+            Primitive::Math(Ceiling) => run.integer(|y| real::ceiling(y).to_i64()),
             Primitive::Math(Power) => run.same(|y| Some(y.exp())),
             Primitive::Math(Log) => run.same(real::ln),
             Primitive::Math(Pi) => run.same(|y| Some(real::pi_times(y))),
@@ -119,7 +120,7 @@ impl Element for i64 {
             Primitive::Arithmetic(Times) => run.same(|y: i64| Some(y.signum())),
             Primitive::Arithmetic(Divide) => run.same(|y| int::divide(1, y)),
             Primitive::Math(Magnitude) => run.same(i64::checked_abs),
-            Primitive::Math(Not) => run.boolean(int::not),
+            Primitive::Math(Not) => run.integer(|y| int::not(y).map(i64::from)),
             _ => return None,
         })
     }
@@ -149,7 +150,7 @@ fn reals(value: &Value) -> Option<Cow<'_, [f64]>> {
     match value.as_items() {
         Items::Floats(y) => Some(Cow::Borrowed(y)),
         Items::Integers(y) => Some(Cow::Owned(y.iter().map(|&n| n as f64).collect())),
-        Items::Characters(_) | Items::Values(_) => None,
+        Items::Complex(_) | Items::Characters(_) | Items::Values(_) => None,
     }
 }
 
@@ -199,7 +200,7 @@ impl<A: Element> Dyad<A> for Map<'_, A> {
 impl<A: Element> Monad<A> for Map<'_, A> {
     type Output = Option<Value>;
     fn same(self, f: impl Fn(A) -> Option<A> + Copy) -> Option<Value> { A::build(self.shape(), self.unary(f)?) }
-    fn boolean(self, f: impl Fn(A) -> Option<bool> + Copy) -> Option<Value> { i64::build(self.shape(), self.unary(|y| f(y).map(i64::from))?) }
+    fn integer(self, f: impl Fn(A) -> Option<i64> + Copy) -> Option<Value> { i64::build(self.shape(), self.unary(f)?) }
 }
 
 /// A reduction of compact values along `axis`, from the right as the general fold does. Float sums and products use algebraic operations.

@@ -166,9 +166,39 @@ Bare numbers are approximate (`f64`). `x` or `ₓ` marks exact integers; `r` mar
 1E¯3                 ⍝ 0.001
 ```
 
-Predicates, positions, tally and shape return exact integers. Iota and random integer generation preserve exact arguments. Mixed arrays retain each element's domain.
+Predicates, positions, tally, shape, and monadic `⌊`, `⌈` and `×` return exact integers. A float beyond the `i64` range floors to an exact big integer. Iota and random integer generation preserve exact arguments. An argument that must be an integer, such as an index or a count, accepts a float within comparison tolerance of one:
+
+```apl
+⌊2.5 ¯2.5            ⍝ 2ₓ ¯3ₓ
+⌊2*70                ⍝ 1180591620717411303424ₓ
+⍳(0.1×3)×10          ⍝ 0 1 2
+```
+
+Numbers that an operation puts in one array share a kind. A float among exact integers makes them all floats, and a complex number makes every number complex:
+
+```apl
+(⍳3ₓ),0.5            ⍝ 0 1 2 0.5
+(⍳2ₓ),1j2            ⍝ 0 1 1j2
+(1ₓ,0.5)÷2ₓ          ⍝ 0.5 0.25
+```
+
+Items written in a literal list or in brackets keep each number's exactness, so exact and approximate numbers written together stay mixed. Floats written beside complex numbers become complex, which changes no value:
+
+```apl
+1ₓ 0.5÷2ₓ            ⍝ 1r2 0.25
+[1ₓ;0.5]÷2ₓ          ⍝ 1r2 0.25
+```
+
+A rational has no compact form, so an array that holds one keeps each item's kind. So does an array that also holds characters, nested arrays or functions, and so does an imported JSON object. Selecting from, catenating or assigning into this mixed storage keeps each item's kind. Arithmetic builds fresh storage, so `1×x` makes every number a float. Boxed display marks mixed storage with `+`.
 
 Reals include `∞` and `¯∞`. `DOMAIN`: NaN, non-finite complex components, undefined infinity arithmetic, `⍟0`, division by zero except `0÷0=1`.
+
+An infinity never makes exact numbers approximate. `⌊` and `⌈` return an exact argument unchanged beside one. An array of exact integers and an infinity keeps each item's kind, in mixed storage. Arithmetic with an infinity gives floats:
+
+```apl
+3ₓ⌊∞                 ⍝ 3ₓ
+(⍳3ₓ),∞              ⍝ 0ₓ 1ₓ 2ₓ ∞
+```
 
 ## Arrays, nesting and fill
 

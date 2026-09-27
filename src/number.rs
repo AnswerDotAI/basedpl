@@ -70,10 +70,13 @@ fn log_gamma(z: Complex64) -> Complex64 {
     (2.0 * pi).ln() / 2.0 + (z + 0.5) * t.ln() - t + x.ln()
 }
 
-fn real_floor(y: f64) -> f64 {
+/// The integer within comparison tolerance of `y`, when there is one. `⌊`, `⌈` and integer arguments share this test.
+fn near_integer(y: f64) -> Option<f64> {
     let n = y.round();
-    if (y - n).abs() <= COMPARISON_TOLERANCE * y.abs().max(n.abs()) { n } else { y.floor() }
+    ((y - n).abs() <= COMPARISON_TOLERANCE * y.abs().max(n.abs())).then_some(n)
 }
+
+fn real_floor(y: f64) -> f64 { near_integer(y).unwrap_or_else(|| y.floor()) }
 
 fn real_gcd(x: f64, y: f64) -> f64 {
     let (x, y) = (x.abs().max(y.abs()), x.abs().min(y.abs()));
@@ -159,17 +162,18 @@ fn complex_residue(x: Complex64, y: Complex64) -> Result<Complex64, &'static str
 /// Real cases of the scalar functions, shared by `Number` and the compact kernels in `scalar.rs`.
 /// `None` means the general path must give the result: an error, or a complex result.
 pub(crate) mod real {
-    use super::{complex_residue, float_equal, real_floor, Arithmetic, ErrorKind};
+    use super::{complex_residue, float_equal, near_integer, real_floor, Arithmetic, ErrorKind};
     use num_complex::Complex64;
     use num_traits::ToPrimitive;
     use std::cmp::Ordering;
 
     fn real(n: f64) -> Option<f64> { (!n.is_nan()).then_some(n) }
-    /// A whole float as an integer. A fraction or an infinity is DOMAIN, and a value outside `i64` is LIMIT.
-    pub(crate) fn integer(n: f64) -> Result<i64, ErrorKind> { if n.fract() != 0.0 { Err(ErrorKind::Domain) } else { n.to_i64().ok_or(ErrorKind::Limit) } }
-    /// A whole float as a count. A negative value is also DOMAIN.
+    /// A float within comparison tolerance of an integer, as that integer. A fraction or an infinity is DOMAIN, and a value outside `i64`
+    /// is LIMIT.
+    pub(crate) fn integer(n: f64) -> Result<i64, ErrorKind> { near_integer(n).ok_or(ErrorKind::Domain)?.to_i64().ok_or(ErrorKind::Limit) }
+    /// A float within comparison tolerance of an integer, as a count. A negative value is also DOMAIN.
     pub(crate) fn nonnegative_integer(n: f64) -> Result<usize, ErrorKind> {
-        if n < 0.0 || n.fract() != 0.0 { Err(ErrorKind::Domain) } else { n.to_usize().ok_or(ErrorKind::Limit) }
+        near_integer(n).filter(|&n| n >= 0.0).ok_or(ErrorKind::Domain)?.to_usize().ok_or(ErrorKind::Limit)
     }
     pub(crate) fn arithmetic(op: Arithmetic, x: f64, y: f64) -> Option<f64> {
         match op {
@@ -303,6 +307,11 @@ impl Number {
         if n.is_integer() { if let Some(i) = n.numer().to_i64() { return Self(Integer(i)); } }
         Self(Exact(Box::new(n)))
     }
+    /// A whole float as an exact integer of any size. An infinity stays a float.
+    fn exact_integer(n: f64) -> Self {
+        if n.is_infinite() { return Self::float(n); }
+        n.to_i64().map_or_else(|| Self::exact(BigRational::from_float(n).unwrap()), Self::from_integer)
+    }
     pub fn as_float(&self) -> Option<f64> { match self.0 { Float(n) => Some(n), _ => None } }
     pub(crate) fn float_slice(&self) -> Option<&[f64]> { match &self.0 { Float(n) => Some(std::slice::from_ref(n)), _ => None } }
     pub(crate) fn is_infinite(&self) -> bool { self.as_float().is_some_and(f64::is_infinite) }
@@ -310,6 +319,18 @@ impl Number {
         match &self.0 { Integer(n) => Some(BigRational::from_integer((*n).into())), Exact(n) => Some(n.as_ref().clone()), _ => None }
     }
     pub fn as_complex(&self) -> Option<Complex64> { match self.0 { Complex(n) => Some(n), _ => None } }
+    pub(crate) fn complex_slice(&self) -> Option<&[Complex64]> { match &self.0 { Complex(n) => Some(std::slice::from_ref(n)), _ => None } }
+    /// The float equal to this number, when one is.
+    pub(crate) fn lossless_float(&self) -> Option<f64> {
+        if let Some(f) = self.as_float() { return Some(f); }
+        if let Some(i) = self.as_integer() {
+            let f = i as f64;
+            return (f as i128 == i as i128).then_some(f);
+        }
+        let rational = self.as_exact()?;
+        let f = rational.to_f64()?;
+        (BigRational::from_float(f)? == rational).then_some(f)
+    }
 
     pub(crate) fn parse(text: &str) -> Result<Self, ErrorKind> {
         let text = text.replace('¯', "-").replace('∞', "inf");
@@ -364,7 +385,7 @@ impl Number {
     pub(crate) fn big_integer(&self) -> Result<BigInt, ErrorKind> {
         match &self.0 {
             Integer(n) => Ok((*n).into()),
-            Float(n) if n.fract() == 0.0 => BigInt::from_f64(*n).ok_or(ErrorKind::Domain),
+            Float(n) => near_integer(*n).and_then(BigInt::from_f64).ok_or(ErrorKind::Domain),
             Exact(n) if n.is_integer() => Ok(n.to_integer()),
             _ => Err(ErrorKind::Domain),
         }
@@ -428,8 +449,8 @@ impl Number {
             let y = self.to_float()?;
             let real = match op {
                 Magnitude => Some(y.abs()),
-                Floor => Some(real::floor(y)),
-                Ceiling => Some(real::ceiling(y)),
+                Floor => return Ok(Self::exact_integer(real::floor(y))),
+                Ceiling => return Ok(Self::exact_integer(real::ceiling(y))),
                 Power => Some(y.exp()),
                 Log if y == 0.0 => return Err("logarithm of zero"),
                 Log => real::ln(y),
@@ -748,7 +769,7 @@ impl Number {
             Float(y) => match op {
                 Plus => Ok(Self::float(*y)),
                 Minus => Ok(Self::float(-y)),
-                Times => Ok(Self::float(real::signum(*y))),
+                Times => Ok(Self::from_integer(real::signum(*y) as i64)),
                 Divide => real::divide(1.0, *y).map(Self::float).ok_or("division by zero"),
             },
             Complex(y) => Self::try_from(match op {

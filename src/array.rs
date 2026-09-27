@@ -1,5 +1,6 @@
 use crate::{keyed::Keys, number::real, ErrorKind, Number};
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use num_complex::Complex64;
 use std::{
     borrow::Cow,
     fmt,
@@ -128,7 +129,9 @@ impl Layout {
         all[axis] = Some(keys.select(positions)?);
         layout.with_keys(all)
     }
-    pub fn assemble(&self, cells: &[Value], empty_cell: &Value) -> Result<Value, ErrorKind> { Value::assemble_layout(self, cells, empty_cell) }
+    pub fn assemble(&self, cells: &[Value], empty_cell: &Value) -> Result<Value, ErrorKind> {
+        Value::assemble_layout(self, cells, empty_cell, Widening::Operation)
+    }
 }
 
 /// A prototype, or a function that makes one. A builder calls the function only when its result is empty.
@@ -189,111 +192,206 @@ pub struct ArrayData {
     depth: u8,
     exact: Option<bool>,
     functions: bool,
+    // Float storage whose items are all infinite. It's found once, when the array is built, so gathering never rescans it.
+    infinite: bool,
 }
 
-/// An array's items. Mixed storage also holds the prototype: stored for an empty array, and filled from the first item on first
-/// request for a nonempty one.
+/// An array's items. Numbers in compact storage share one kind. Mixed storage keeps each item's kind, and also holds the prototype:
+/// stored for an empty array, and filled from the first item on first request for a nonempty one.
 #[derive(Debug)]
 enum Storage {
     Integer(Vec<i64>),
     Float(Vec<f64>),
+    Complex(Vec<Complex64>),
     Character(Vec<char>),
     Mixed(Vec<Value>, OnceLock<Box<Value>>),
 }
 
-// A nonempty array's prototype follows from its items, so only an empty array's stored prototype takes part in equality.
+// Storage that holds the same items is equal, whatever its kind. A nonempty array's prototype follows from its items, so only an empty
+// array's prototype takes part in equality.
 impl PartialEq for Storage {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Integer(x), Self::Integer(y)) => x == y,
             (Self::Float(x), Self::Float(y)) => x == y,
+            (Self::Complex(x), Self::Complex(y)) => x == y,
             (Self::Character(x), Self::Character(y)) => x == y,
-            (Self::Mixed(x, p), Self::Mixed(y, q)) => x == y && (!x.is_empty() || p.get() == q.get()),
-            _ => false,
+            (Self::Mixed(x, _), Self::Mixed(y, _)) if !x.is_empty() => x == y,
+            _ if self.len() != other.len() => false,
+            _ if self.len() == 0 => self.prototype() == other.prototype(),
+            _ => (0..self.len()).all(|i| self.item(i) == other.item(i)),
         }
     }
 }
 
-/// A kind of compact storage.
-#[derive(Clone, Copy, PartialEq)]
-enum Kind { Integer, Float, Character }
+/// A kind of compact storage. Numbers widen from integer to float to complex. An infinity has its own kind, because it never makes an
+/// exact integer approximate.
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
+enum Kind {
+    Integer,
+    Infinity,
+    Float,
+    Complex,
+    Character,
+}
 
+/// How numbers of different kinds share compact storage. An operation's result widens exact integers to floats, as arithmetic does.
+/// Items written in a literal list or in brackets keep each number's exactness, so only floats widen, to complex. That changes no
+/// value, because a complex number with no imaginary part reads back as a float.
+#[derive(Clone, Copy, PartialEq)]
+enum Widening { Operation, Written }
+
+impl Kind {
+    /// The kind that holds the items of both kinds under `widening`. Characters and numbers share none. Exact integers stay exact beside
+    /// an infinity, and beside a written approximate number, so they share no compact kind with it.
+    fn join(self, other: Self, widening: Widening) -> Option<Self> {
+        if self == other { return Some(self); }
+        if self == Self::Character || other == Self::Character { return None; }
+        let keeps_integers = widening == Widening::Written || self == Self::Infinity || other == Self::Infinity;
+        if keeps_integers && (self == Self::Integer || other == Self::Integer) { return None; }
+        Some(if self > other { self } else { other })
+    }
+    /// The kind of storage that holds this kind's items. Float storage holds infinities.
+    fn stored(self) -> Self { if self == Self::Infinity { Self::Float } else { self } }
+}
+
+/// The compact kind of `source`'s items. An array records whether it's float storage of infinities alone when it's built.
+fn source_kind(source: &Value) -> Option<Kind> {
+    match source {
+        Value::Array(a) if a.infinite => Some(Kind::Infinity),
+        Value::Array(a) => a.data.items().kind(),
+        atom => item_kind(atom),
+    }
+}
 /// The compact kind that holds `item`, if any does.
 fn item_kind(item: &Value) -> Option<Kind> {
     match item {
         Value::Number(n) if n.as_integer().is_some() => Some(Kind::Integer),
+        Value::Number(n) if n.is_infinite() => Some(Kind::Infinity),
         Value::Number(n) if n.as_float().is_some() => Some(Kind::Float),
+        Value::Number(n) if n.as_complex().is_some() => Some(Kind::Complex),
         Value::Character(_) => Some(Kind::Character),
         _ => None,
     }
 }
 
-/// Runs `$body` with `$d` and `$s` bound to the target and source buffers when both have the same compact kind, and gives whether it
-/// ran.
-macro_rules! same_kind {
-    ($target:expr, $source:expr, |$d:ident, $s:ident| $body:expr) => {
+/// Runs `$body` with `$d` bound to the target buffer, `$s` to the source items and `$f` to the conversion of a source item for the
+/// target, when the target's compact kind holds the source's items. Gives whether it ran. Numbers widen from integer to float to complex.
+macro_rules! copy_into {
+    ($target:expr, $source:expr, |$d:ident, $s:ident, $f:ident| $body:expr) => {
         match ($target, $source) {
-            (Storage::Integer($d), Storage::Integer($s)) => {
-                $body;
-                true
-            }
-            (Storage::Float($d), Storage::Float($s)) => {
-                $body;
-                true
-            }
-            (Storage::Character($d), Storage::Character($s)) => {
-                $body;
-                true
-            }
+            (Storage::Integer($d), Items::Integers($s)) => copy_into!(@run $body, $f, |x: i64| x),
+            (Storage::Float($d), Items::Floats($s)) => copy_into!(@run $body, $f, |x: f64| x),
+            (Storage::Float($d), Items::Integers($s)) => copy_into!(@run $body, $f, |x: i64| x as f64),
+            (Storage::Complex($d), Items::Complex($s)) => copy_into!(@run $body, $f, |x: Complex64| x),
+            (Storage::Complex($d), Items::Floats($s)) => copy_into!(@run $body, $f, |x: f64| Complex64::new(x, 0.0)),
+            (Storage::Complex($d), Items::Integers($s)) => copy_into!(@run $body, $f, |x: i64| Complex64::new(x as f64, 0.0)),
+            (Storage::Character($d), Items::Characters($s)) => copy_into!(@run $body, $f, |x: char| x),
             _ => false,
+        }
+    };
+    (@run $body:expr, $f:ident, $conversion:expr) => {{
+        let $f = $conversion;
+        $body;
+        true
+    }};
+}
+
+/// Runs `$body` with `$d` bound to the buffer, whatever the storage.
+macro_rules! any_buffer {
+    ($storage:expr, |$d:ident| $body:expr) => {
+        match $storage {
+            Storage::Integer($d) => $body,
+            Storage::Float($d) => $body,
+            Storage::Complex($d) => $body,
+            Storage::Character($d) => $body,
+            Storage::Mixed($d, _) => $body,
         }
     };
 }
 
 impl Storage {
     fn mixed(data: Vec<Value>) -> Self { Self::Mixed(data, OnceLock::new()) }
+    /// Copies `range` of `source` when it has this storage's kind, and gives whether it could.
+    fn copy_slice(&mut self, source: Items, range: std::ops::Range<usize>) -> bool {
+        match (self, source) {
+            (Self::Integer(d), Items::Integers(s)) => d.extend_from_slice(&s[range]),
+            (Self::Float(d), Items::Floats(s)) => d.extend_from_slice(&s[range]),
+            (Self::Complex(d), Items::Complex(s)) => d.extend_from_slice(&s[range]),
+            (Self::Character(d), Items::Characters(s)) => d.extend_from_slice(&s[range]),
+            _ => return false,
+        }
+        true
+    }
     fn with_capacity(kind: Option<Kind>, capacity: usize) -> Self {
         match kind {
             Some(Kind::Integer) => Self::Integer(Vec::with_capacity(capacity)),
-            Some(Kind::Float) => Self::Float(Vec::with_capacity(capacity)),
+            Some(Kind::Float | Kind::Infinity) => Self::Float(Vec::with_capacity(capacity)),
+            Some(Kind::Complex) => Self::Complex(Vec::with_capacity(capacity)),
             Some(Kind::Character) => Self::Character(Vec::with_capacity(capacity)),
             None => Self::mixed(Vec::with_capacity(capacity)),
+        }
+    }
+    fn items(&self) -> Items<'_> {
+        match self {
+            Self::Integer(v) => Items::Integers(v),
+            Self::Float(v) => Items::Floats(v),
+            Self::Complex(v) => Items::Complex(v),
+            Self::Character(v) => Items::Characters(v),
+            Self::Mixed(v, _) => Items::Values(v),
         }
     }
     fn kind(&self) -> Option<Kind> {
         match self {
             Self::Integer(_) => Some(Kind::Integer),
             Self::Float(_) => Some(Kind::Float),
+            Self::Complex(_) => Some(Kind::Complex),
             Self::Character(_) => Some(Kind::Character),
             Self::Mixed(..) => None,
         }
     }
-    fn len(&self) -> usize {
+    fn len(&self) -> usize { any_buffer!(self, |d| d.len()) }
+    fn capacity(&self) -> usize { any_buffer!(self, |d| d.capacity()) }
+    fn item(&self, i: usize) -> Value {
         match self {
-            Self::Integer(d) => d.len(),
-            Self::Float(d) => d.len(),
-            Self::Character(d) => d.len(),
-            Self::Mixed(d, _) => d.len(),
+            Self::Integer(v) => Value::Number(Number::from_integer(v[i])),
+            Self::Float(v) => Value::Number(v[i].try_into().unwrap()),
+            // An item with no imaginary part is a widened real, which may be infinite.
+            Self::Complex(v) => Value::Number(if v[i].im == 0.0 { v[i].re.try_into() } else { v[i].try_into() }.unwrap()),
+            Self::Character(v) => Value::Character(v[i]),
+            Self::Mixed(v, _) => v[i].clone(),
         }
     }
-    fn capacity(&self) -> usize {
+    /// Compact storage gives its kind's zero. An empty mixed array keeps a stored prototype. A nonempty one fills its first item on first
+    /// request and keeps the result.
+    fn prototype(&self) -> Value {
         match self {
-            Self::Integer(d) => d.capacity(),
-            Self::Float(d) => d.capacity(),
-            Self::Character(d) => d.capacity(),
-            Self::Mixed(d, _) => d.capacity(),
+            Self::Integer(_) => Value::Number(Number::from_integer(0)),
+            Self::Float(_) | Self::Complex(_) => Value::Number(0.0.try_into().unwrap()),
+            Self::Character(_) => Value::Character(' '),
+            Self::Mixed(d, p) => p.get_or_init(|| Box::new(d[0].fill())).as_ref().clone(),
         }
     }
-    // Collecting from `data.iter()` sizes the compact buffer exactly. Consuming `data` would reuse its larger allocation.
-    fn compact(data: Vec<Value>) -> Self {
-        let integer = |e: &Value| match e { Value::Number(n) => n.as_integer(), _ => None };
-        let float = |e: &Value| match e { Value::Number(n) => n.as_float(), _ => None };
-        let character = |e: &Value| match e { Value::Character(c) => Some(*c), _ => None };
-        if data.is_empty() { return Self::mixed(data); }
-        if data.iter().all(|e| integer(e).is_some()) { return Self::Integer(data.iter().map(|e| integer(e).unwrap()).collect()); }
-        if data.iter().all(|e| float(e).is_some()) { return Self::Float(data.iter().map(|e| float(e).unwrap()).collect()); }
-        if data.iter().all(|e| character(e).is_some()) { return Self::Character(data.iter().map(|e| character(e).unwrap()).collect()); }
-        Self::mixed(data)
+    /// Whether every number, including those in nested arrays, is exact. `None` when there are no numbers.
+    fn exact(&self) -> Option<bool> {
+        match self {
+            Self::Integer(_) => Some(true),
+            Self::Float(_) | Self::Complex(_) => Some(false),
+            Self::Character(_) => None,
+            Self::Mixed(d, _) => d.iter().filter_map(Value::exact_domain).reduce(|a, b| a && b),
+        }
+    }
+    /// Compact storage of the kind that `widening` gives the items, when there is one. Other items stay mixed.
+    fn compact(data: Vec<Value>, widening: Widening) -> Self {
+        let mut kinds = data.iter().map(item_kind);
+        let Some(kind) = kinds.next().flatten().and_then(|first| kinds.try_fold(first, |k, i| k.join(i?, widening))) else { return Self::mixed(data) };
+        // Collecting from `data.iter()` sizes the compact buffer exactly. Consuming `data` would reuse its larger allocation.
+        match kind {
+            Kind::Integer => Self::Integer(data.iter().map(|e| number(e).unwrap().as_integer().unwrap()).collect()),
+            Kind::Float | Kind::Infinity => Self::Float(data.iter().map(|e| number(e).unwrap().to_float().unwrap()).collect()),
+            Kind::Complex => Self::Complex(data.iter().map(|e| number(e).unwrap().to_complex().unwrap()).collect()),
+            Kind::Character => Self::Character(data.iter().map(|e| if let Value::Character(c) = e { *c } else { unreachable!() }).collect()),
+        }
     }
 }
 
@@ -301,17 +399,32 @@ impl Storage {
 pub(crate) enum Items<'a> {
     Integers(&'a [i64]),
     Floats(&'a [f64]),
+    Complex(&'a [Complex64]),
     Characters(&'a [char]),
     Values(&'a [Value]),
 }
 
+/// The real number `z` holds, when its imaginary part is zero.
+fn real_part(z: &Complex64) -> Result<f64, ErrorKind> { if z.im == 0.0 { Ok(z.re) } else { Err(ErrorKind::Domain) } }
+
 impl<'a> Items<'a> {
+    /// The compact kind of these items, or `None` for mixed ones.
+    fn kind(&self) -> Option<Kind> {
+        match self {
+            Self::Integers(_) => Some(Kind::Integer),
+            Self::Floats(_) => Some(Kind::Float),
+            Self::Complex(_) => Some(Kind::Complex),
+            Self::Characters(_) => Some(Kind::Character),
+            Self::Values(_) => None,
+        }
+    }
     /// Each item as an integer. Integer storage is borrowed. A fraction, an infinity or a non-number is DOMAIN, and a value outside
     /// `i64` is LIMIT.
     pub(crate) fn integers(&self) -> Result<Cow<'a, [i64]>, ErrorKind> {
         match *self {
             Self::Integers(d) => Ok(Cow::Borrowed(d)),
             Self::Floats(d) => d.iter().map(|&n| real::integer(n)).collect::<Result<_, _>>().map(Cow::Owned),
+            Self::Complex(d) => d.iter().map(|z| real_part(z).and_then(real::integer)).collect::<Result<_, _>>().map(Cow::Owned),
             Self::Characters(_) => Err(ErrorKind::Domain),
             Self::Values(d) => d.iter().map(|v| number(v)?.integer().map(|n| n as i64)).collect::<Result<_, _>>().map(Cow::Owned),
         }
@@ -321,6 +434,7 @@ impl<'a> Items<'a> {
         match *self {
             Self::Integers(d) => d.iter().map(|&n| usize::try_from(n).map_err(|_| ErrorKind::Domain)).collect(),
             Self::Floats(d) => d.iter().map(|&n| real::nonnegative_integer(n)).collect(),
+            Self::Complex(d) => d.iter().map(|z| real_part(z).and_then(real::nonnegative_integer)).collect(),
             Self::Characters(_) => Err(ErrorKind::Domain),
             Self::Values(d) => d.iter().map(|v| number(v)?.nonnegative_integer()).collect(),
         }
@@ -328,73 +442,124 @@ impl<'a> Items<'a> {
 }
 
 fn number(value: &Value) -> Result<&Number, ErrorKind> { match value { Value::Number(n) => Ok(n), _ => Err(ErrorKind::Domain) } }
-/// Items copied from source arrays into a new array. The buffer keeps compact storage while every copied or filled item fits the
-/// storage all the sources share. Otherwise it holds values, which `Value::new` compacts as it would any others.
-pub(crate) struct Gather { data: Storage }
+/// Items copied from source arrays into a new array. The buffer takes the compact kind that its `widening` gives the nonempty sources,
+/// and widens for wider items. A mixed source, or an item that no compact kind holds, makes the buffer mixed, and it stays mixed.
+pub(crate) struct Gather { data: Storage, kind: Option<Kind>, open: bool, widening: Widening }
 
 impl Gather {
-    pub(crate) fn new(sources: &[&Value], capacity: usize) -> Self {
-        let kind = sources.iter().map(|v| v.storage().and_then(Storage::kind)).reduce(|a, b| if a == b { a } else { None }).flatten();
-        Self { data: Storage::with_capacity(kind, capacity) }
+    /// A buffer for an operation's result.
+    pub(crate) fn new(sources: &[&Value], capacity: usize) -> Self { Self::with_widening(sources, capacity, Widening::Operation) }
+    fn with_widening(sources: &[&Value], capacity: usize, widening: Widening) -> Self {
+        // An empty compact source holds no items that could change the buffer's kind.
+        let mut kinds = sources.iter().filter(|v| !v.is_empty() || source_kind(v).is_none()).map(|v| source_kind(v));
+        let Some(first) = kinds.next() else { return Self { widening, ..Self::items(capacity) } };
+        let kind = first.and_then(|first| kinds.try_fold(first, |k, i| k.join(i?, widening)));
+        Self { data: Storage::with_capacity(kind, capacity), kind, open: false, widening }
     }
     pub(crate) fn len(&self) -> usize { self.data.len() }
-    /// An empty buffer for items added one at a time. It takes the storage type of the first items.
-    pub(crate) fn items(capacity: usize) -> Self { Self { data: Storage::Integer(Vec::with_capacity(capacity)) } }
-    /// Appends `item`. The buffer keeps compact storage while the items fit it.
-    pub(crate) fn add(&mut self, item: Value) { if !self.compact_fill(&item, 1) { self.mixed().push(item) } }
-    /// An empty compact buffer switches to the kind of its first items.
-    fn follow(&mut self, kind: Option<Kind>) {
-        if kind.is_some() && self.data.len() == 0 && self.data.kind().is_some_and(|k| Some(k) != kind) {
-            self.data = Storage::with_capacity(kind, self.data.capacity());
+    /// An empty buffer for an operation's items, added one at a time. It takes the kind of its first items.
+    pub(crate) fn items(capacity: usize) -> Self {
+        Self { data: Storage::Integer(Vec::with_capacity(capacity)), kind: Some(Kind::Integer), open: true, widening: Widening::Operation }
+    }
+    /// Appends `item`.
+    pub(crate) fn add(&mut self, item: Value) {
+        self.follow(item_kind(&item));
+        if let Storage::Mixed(d, _) = &mut self.data { return d.push(item); }
+        // The buffer's kind now holds the item.
+        match (&mut self.data, &item) {
+            (Storage::Integer(d), Value::Number(n)) => d.push(n.as_integer().unwrap()),
+            (Storage::Float(d), Value::Number(n)) => d.push(n.to_float().unwrap()),
+            (Storage::Complex(d), Value::Number(n)) => d.push(n.to_complex().unwrap()),
+            (Storage::Character(d), Value::Character(c)) => d.push(*c),
+            _ => unreachable!(),
         }
     }
-    /// The buffer as values, for an item that doesn't fit its compact storage.
+    /// Makes the buffer ready for items of `kind`. An open buffer takes the kind. A compact buffer widens where its `widening` allows,
+    /// and otherwise becomes mixed. A mixed buffer stays mixed.
+    fn follow(&mut self, kind: Option<Kind>) {
+        if self.open {
+            self.open = false;
+            if kind.map(Kind::stored) != self.data.kind() { self.data = Storage::with_capacity(kind, self.data.capacity()); }
+            self.kind = kind;
+            return;
+        }
+        let Some(current) = self.kind.filter(|&c| Some(c) != kind) else { return };
+        match kind.and_then(|k| current.join(k, self.widening)) {
+            Some(joined) if joined == current => (),
+            Some(joined) => {
+                self.kind = Some(joined);
+                if joined.stored() == current.stored() { return; }
+                let capacity = self.data.capacity();
+                let old = std::mem::replace(&mut self.data, Storage::with_capacity(Some(joined), capacity));
+                copy_into!(&mut self.data, old.items(), |d, s, f| d.extend(s.iter().map(|&x| f(x))));
+            }
+            None => {
+                self.mixed();
+            }
+        }
+    }
+    /// The buffer as values, for an item that no compact kind holds.
     fn mixed(&mut self) -> &mut Vec<Value> {
+        self.open = false;
+        self.kind = None;
         if !matches!(self.data, Storage::Mixed(..)) {
-            let data = match std::mem::replace(&mut self.data, Storage::mixed(Vec::new())) {
-                Storage::Integer(d) => d.into_iter().map(|n| Value::Number(Number::from_integer(n))).collect(),
-                Storage::Float(d) => d.into_iter().map(|n| Value::Number(n.try_into().unwrap())).collect(),
-                Storage::Character(d) => d.into_iter().map(Value::Character).collect(),
-                Storage::Mixed(d, _) => d,
-            };
-            self.data = Storage::mixed(data);
+            let old = std::mem::replace(&mut self.data, Storage::mixed(Vec::new()));
+            let mut items = Vec::with_capacity(old.capacity());
+            items.extend((0..old.len()).map(|i| old.item(i)));
+            self.data = Storage::mixed(items);
         }
         let Storage::Mixed(d, _) = &mut self.data else { unreachable!() };
         d
     }
-    /// Appends `n` copies of `item` to compact storage of its kind, and gives whether it could.
+    /// Appends `n` copies of `item` in the buffer's compact kind, and gives whether it could.
     fn compact_fill(&mut self, item: &Value, n: usize) -> bool {
         self.follow(item_kind(item));
-        match (&mut self.data, item) {
-            (Storage::Integer(d), Value::Number(x)) => x.as_integer().map(|x| d.extend(std::iter::repeat_n(x, n))).is_some(),
-            (Storage::Float(d), Value::Number(x)) => x.as_float().map(|x| d.extend(std::iter::repeat_n(x, n))).is_some(),
-            (Storage::Character(d), Value::Character(c)) => {
-                d.extend(std::iter::repeat_n(*c, n));
-                true
-            }
-            _ => false,
-        }
+        copy_into!(&mut self.data, item.as_items(), |d, s, f| d.extend(std::iter::repeat_n(f(s[0]), n)))
     }
     /// Copies the items of `source` in `range`.
     pub(crate) fn extend(&mut self, source: &Value, range: std::ops::Range<usize>) {
-        if let Some(s) = source.storage() {
-            self.follow(s.kind());
-            if same_kind!(&mut self.data, s, |d, s| d.extend_from_slice(&s[range.clone()])) { return; }
-        }
+        if range.is_empty() { return; }
+        self.follow(source_kind(source));
+        if self.data.copy_slice(source.as_items(), range.clone())
+            || copy_into!(&mut self.data, source.as_items(), |d, s, f| d.extend(s[range.clone()].iter().map(|&x| f(x))))
+        { return; }
         self.mixed().extend(source.items(range))
     }
     pub(crate) fn push(&mut self, source: &Value, i: usize) { self.extend(source, i..i + 1) }
+    /// Appends `len` items, cycling through the items of the nonempty `source`.
+    pub(crate) fn cycle(&mut self, source: &Value, len: usize) {
+        if len == 0 { return; }
+        self.follow(source_kind(source));
+        if copy_into!(&mut self.data, source.as_items(), |d, s, f| d.extend(s.iter().map(|&x| f(x)).cycle().take(len))) { return; }
+        self.mixed().extend(source.elements().cycle().take(len))
+    }
     /// Copies the cells of `source` at `rows`, each `width` items long.
     pub(crate) fn rows(&mut self, source: &Value, rows: &[usize], width: usize) {
-        if let Some(s) = source.storage() {
-            self.follow(s.kind());
-            let copied = if width == 1 { same_kind!(&mut self.data, s, |d, s| d.extend(rows.iter().map(|&r| s[r]))) } else { same_kind!(&mut self.data, s, |d, s| for &r in rows { d.extend_from_slice(&s[r * width..(r + 1) * width]) }) };
-            if copied { return; }
-        }
-        for &r in rows { self.extend(source, r * width..(r + 1) * width) }
+        if rows.is_empty() || width == 0 { return; }
+        self.follow(source_kind(source));
+        let copied = if width == 1 {
+            copy_into!(&mut self.data, source.as_items(), |d, s, f| d.extend(rows.iter().map(|&r| f(s[r]))))
+        } else if rows.iter().all(|&r| self.data.copy_slice(source.as_items(), r * width..(r + 1) * width)) { true } else { copy_into!(&mut self.data, source.as_items(), |d, s, f| for &r in rows { d.extend(s[r * width..(r + 1) * width].iter().map(|&x| f(x))) }) };
+        if copied { return; }
+        let d = self.mixed();
+        for &r in rows { d.extend(source.items(r * width..(r + 1) * width)) }
     }
     /// Appends `n` copies of `item`.
-    pub(crate) fn fill(&mut self, item: &Value, n: usize) { if !self.compact_fill(item, n) { self.mixed().extend(std::iter::repeat_n(item.clone(), n)) } }
+    pub(crate) fn fill(&mut self, item: &Value, n: usize) {
+        if n > 0 && !self.compact_fill(item, n) { self.mixed().extend(std::iter::repeat_n(item.clone(), n)) }
+    }
+    /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one. A later offset wins.
+    pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) {
+        if offsets.is_empty() { return; }
+        let single = source.len() == 1;
+        let pick = |k: usize| if single { 0 } else { k };
+        self.follow(source_kind(source));
+        if copy_into!(&mut self.data, source.as_items(), |d, s, f| for (k, &o) in offsets.iter().enumerate() {
+            d[o] = f(s[pick(k)])
+        }) { return; }
+        let d = self.mixed();
+        for (k, &o) in offsets.iter().enumerate() { d[o] = source.at(pick(k)) }
+    }
     /// Copies the items of `source` at `base` plus one offset from each table, looping over the tables in order with the last varying
     /// fastest. A `None` offset gives the prototype of `source` in place of the item.
     pub(crate) fn walk(&mut self, source: &Value, base: usize, tables: &[Vec<Option<usize>>]) {
@@ -413,22 +578,19 @@ impl Gather {
         }
         let Some(base) = base else { return self.fill(&source.prototype(), last.len()) };
         if let Some(start) = run { return self.extend(source, base + start..base + start + last.len()); }
-        if let (true, Some(s)) = (complete, source.storage()) {
-            self.follow(s.kind());
-            if same_kind!(&mut self.data, s, |d, s| d.extend(last.iter().map(|o| s[base + o.unwrap()]))) { return; }
+        if complete && !last.is_empty() {
+            self.follow(source_kind(source));
+            if copy_into!(&mut self.data, source.as_items(), |d, s, f| d.extend(last.iter().map(|o| f(s[base + o.unwrap()])))) { return; }
         }
         for o in last { match o { Some(o) => self.push(source, base + o), None => self.fill(&source.prototype(), 1) } }
     }
     /// The gathered array, laid out by `layout`. An empty array takes `prototype`.
     pub(crate) fn finish(self, layout: Layout, prototype: impl Prototype) -> Result<Value, ErrorKind> {
         let shape = layout.shape().to_vec();
-        let value = if self.len() == 0 { Value::empty(shape, prototype.value())? } else {
-            match self.data {
-                Storage::Integer(d) => Value::integers(shape, d)?,
-                Storage::Float(d) => Value::float_storage(shape, d)?,
-                Storage::Character(d) => Value::characters(shape, d)?,
-                Storage::Mixed(d, _) => Value::new(shape, d)?,
-            }
+        let value = match self.data {
+            Storage::Mixed(ref d, _) if d.is_empty() && !self.open => Value::empty_of(shape, prototype.value(), true)?,
+            data if data.len() == 0 => Value::empty(shape, prototype.value())?,
+            data => Value::from_storage(shape, data)?,
         };
         value.with_layout(layout)
     }
@@ -489,16 +651,50 @@ impl Value {
         if data.is_empty() { Self::empty(shape, empty_prototype) } else { Self::new(shape, data) }
     }
 
-    /// Nonempty construction derives the prototype from the first item when it is first needed.
-    pub fn new(shape: Vec<usize>, data: Vec<Value>) -> Result<Self, ErrorKind> {
-        if element_count(&shape)? != data.len() || data.is_empty() { return Err(ErrorKind::Length); }
-        let depth = data.iter().map(Value::depth).max().unwrap();
-        if depth > MAX_NESTING { return Err(ErrorKind::Limit); }
-        let exact = data.iter().filter_map(Value::exact_domain).reduce(|a, b| a && b);
-        let functions = data.iter().any(Value::has_functions);
-        let environment = data.iter().filter_map(Value::environment).max();
-        let data = Arc::new(Storage::compact(data));
-        Ok(Self::Array(Arc::new(ArrayData { layout: shape.into(), data, depth: depth as u8, exact, functions, environment: environment.map(|i| i as u16) })))
+    /// Nonempty construction of an operation's result. Numbers take the widest kind among them, and characters share character
+    /// storage. Other items stay mixed. The prototype comes from the first item when it is first needed.
+    pub fn new(shape: Vec<usize>, data: Vec<Value>) -> Result<Self, ErrorKind> { Self::widened(shape, data, Widening::Operation) }
+
+    /// Nonempty construction of items written in a literal list or in brackets. Each number keeps its exactness, so exact and
+    /// approximate numbers together stay mixed.
+    pub(crate) fn written(shape: Vec<usize>, data: Vec<Value>) -> Result<Self, ErrorKind> { Self::widened(shape, data, Widening::Written) }
+
+    fn widened(shape: Vec<usize>, data: Vec<Value>, widening: Widening) -> Result<Self, ErrorKind> {
+        if data.is_empty() { return Err(ErrorKind::Length); }
+        Self::from_storage(shape, Storage::compact(data, widening))
+    }
+
+    /// Mixed storage, which keeps each item's kind. An empty array takes `empty_prototype`.
+    pub(crate) fn mixed(shape: Vec<usize>, data: Vec<Value>, empty_prototype: impl Prototype) -> Result<Self, ErrorKind> {
+        if data.is_empty() { Self::empty_of(shape, empty_prototype.value(), true) } else { Self::from_storage(shape, Storage::mixed(data)) }
+    }
+
+    /// Items that keep their own kinds, as written items do. An empty array takes `empty_prototype` in mixed storage.
+    pub(crate) fn keeping_kinds(shape: Vec<usize>, data: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
+        if data.is_empty() { Self::mixed(shape, data, empty_prototype) } else { Self::written(shape, data) }
+    }
+
+    /// An array of `data`. Mixed storage gives the nesting depth, exactness, functions and environment of its items.
+    fn from_storage(shape: Vec<usize>, data: Storage) -> Result<Self, ErrorKind> {
+        if element_count(&shape)? != data.len() { return Err(ErrorKind::Length); }
+        let (mut depth, mut functions, mut environment) = (0, false, None);
+        if let Storage::Mixed(items, _) = &data {
+            depth = items.iter().map(Value::depth).max().unwrap_or(0);
+            if depth > MAX_NESTING { return Err(ErrorKind::Limit); }
+            functions = items.iter().any(Value::has_functions);
+            environment = items.iter().filter_map(Value::environment).max();
+        }
+        let exact = data.exact();
+        let infinite = matches!(&data, Storage::Float(v) if !v.is_empty() && v.iter().all(|x| x.is_infinite()));
+        Ok(Self::Array(Arc::new(ArrayData {
+            layout: shape.into(),
+            data: Arc::new(data),
+            depth: depth as u8,
+            exact,
+            functions,
+            environment: environment.map(|i| i as u16),
+            infinite,
+        })))
     }
 
     pub fn floats(shape: Vec<usize>, mut data: Vec<f64>) -> Result<Self, ErrorKind> {
@@ -508,44 +704,16 @@ impl Value {
     }
 
     /// Floats that already hold no NaN and no `¯0`, as items copied from float storage do.
-    pub(crate) fn float_storage(shape: Vec<usize>, data: Vec<f64>) -> Result<Self, ErrorKind> {
-        if element_count(&shape)? != data.len() { return Err(ErrorKind::Length); }
-        Ok(Self::Array(Arc::new(ArrayData {
-            layout: shape.into(),
-            data: Arc::new(Storage::Float(data)),
-            depth: 0,
-            exact: Some(false),
-            functions: false,
-            environment: None,
-        })))
-    }
-
-    pub(crate) fn characters(shape: Vec<usize>, data: Vec<char>) -> Result<Self, ErrorKind> {
-        if element_count(&shape)? != data.len() { return Err(ErrorKind::Length); }
-        Ok(Self::Array(Arc::new(ArrayData {
-            layout: shape.into(),
-            data: Arc::new(Storage::Character(data)),
-            environment: None,
-            depth: 0,
-            exact: None,
-            functions: false,
-        })))
-    }
-    pub fn integers(shape: Vec<usize>, data: Vec<i64>) -> Result<Self, ErrorKind> {
-        if element_count(&shape)? != data.len() { return Err(ErrorKind::Length); }
-        Ok(Self::Array(Arc::new(ArrayData {
-            layout: shape.into(),
-            data: Arc::new(Storage::Integer(data)),
-            depth: 0,
-            exact: Some(true),
-            functions: false,
-            environment: None,
-        })))
-    }
+    pub(crate) fn float_storage(shape: Vec<usize>, data: Vec<f64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Float(data)) }
+    pub(crate) fn characters(shape: Vec<usize>, data: Vec<char>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Character(data)) }
+    pub fn integers(shape: Vec<usize>, data: Vec<i64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Integer(data)) }
     pub fn is_exact(&self) -> bool { self.exact_domain() == Some(true) }
 
     /// Empty arrays require a prototype item; their shape is never inferred from the buffer.
-    pub fn empty(shape: Vec<usize>, prototype: Value) -> Result<Self, ErrorKind> {
+    pub fn empty(shape: Vec<usize>, prototype: Value) -> Result<Self, ErrorKind> { Self::empty_of(shape, prototype, false) }
+
+    /// An empty array whose storage is mixed when `mixed` is set or when no compact kind holds the prototype.
+    fn empty_of(shape: Vec<usize>, prototype: Value, mixed: bool) -> Result<Self, ErrorKind> {
         if element_count(&shape)? != 0 { return Err(ErrorKind::Length); }
         let depth = prototype.depth();
         if depth > MAX_NESTING { return Err(ErrorKind::Limit); }
@@ -553,56 +721,39 @@ impl Value {
         let exact = prototype.exact_domain();
         let functions = prototype.has_functions();
         let environment = prototype.environment();
-        let data = Arc::new(match &prototype {
-            Value::Number(n) if n.as_integer().is_some() => Storage::Integer(Vec::new()),
-            Value::Number(n) if n.as_float().is_some() => Storage::Float(Vec::new()),
-            Value::Character(_) => Storage::Character(Vec::new()),
-            _ => Storage::Mixed(Vec::new(), OnceLock::from(Box::new(prototype.clone()))),
+        let data = Arc::new(match item_kind(&prototype).filter(|_| !mixed) {
+            Some(kind) => Storage::with_capacity(Some(kind), 0),
+            None => Storage::Mixed(Vec::new(), OnceLock::from(Box::new(prototype.clone()))),
         });
-        Ok(Self::Array(Arc::new(ArrayData { layout: shape.into(), data, depth: depth as u8, exact, functions, environment: environment.map(|i| i as u16) })))
+        Ok(Self::Array(Arc::new(ArrayData { layout: shape.into(), data, depth: depth as u8, exact, functions, environment: environment.map(|i| i as u16), infinite: false })))
     }
 
     pub fn number(n: impl TryInto<Number>) -> Result<Self, ErrorKind> { Ok(Self::Number(n.try_into().map_err(|_| ErrorKind::Domain)?)) }
     pub fn is_unit(&self) -> bool { self.shape().is_empty() }
     pub fn is_singleton(&self) -> bool { self.len() == 1 }
     pub fn shape(&self) -> &[usize] { match self { Self::Array(a) => &a.layout.shape, _ => &[] } }
-    pub fn len(&self) -> usize {
-        match self.storage() {
-            Some(Storage::Integer(v)) => v.len(),
-            Some(Storage::Float(v)) => v.len(),
-            Some(Storage::Character(v)) => v.len(),
-            Some(Storage::Mixed(v, _)) => v.len(),
-            None => 1,
-        }
-    }
+    pub fn len(&self) -> usize { self.storage().map_or(1, Storage::len) }
     pub fn is_empty(&self) -> bool { self.len() == 0 }
     /// The items in their storage type. An atom is its own single item.
     pub(crate) fn as_items(&self) -> Items<'_> {
         match self {
-            Self::Array(a) => match &*a.data {
-                Storage::Integer(v) => Items::Integers(v),
-                Storage::Float(v) => Items::Floats(v),
-                Storage::Character(v) => Items::Characters(v),
-                Storage::Mixed(v, _) => Items::Values(v),
-            },
-            Self::Number(n) => {
-                n.integer_slice().map(Items::Integers).or_else(|| n.float_slice().map(Items::Floats)).unwrap_or(Items::Values(std::slice::from_ref(self)))
-            }
-            _ => Items::Values(std::slice::from_ref(self)),
+            Self::Array(a) => a.data.items(),
+            Self::Number(n) => n
+                .integer_slice()
+                .map(Items::Integers)
+                .or_else(|| n.float_slice().map(Items::Floats))
+                .or_else(|| n.complex_slice().map(Items::Complex))
+                .unwrap_or(Items::Values(std::slice::from_ref(self))),
+            Self::Character(c) => Items::Characters(std::slice::from_ref(c)),
+            Self::Function(_) => Items::Values(std::slice::from_ref(self)),
         }
     }
-    pub fn as_floats(&self) -> Option<&[f64]> {
-        match self { Self::Number(n) => n.float_slice(), Self::Array(a) => match &*a.data { Storage::Float(v) => Some(v), _ => None }, _ => None }
-    }
-    pub fn as_integers(&self) -> Option<&[i64]> {
-        match self { Self::Number(n) => n.integer_slice(), Self::Array(a) => match &*a.data { Storage::Integer(v) => Some(v), _ => None }, _ => None }
-    }
+    pub fn as_floats(&self) -> Option<&[f64]> { match self.as_items() { Items::Floats(v) => Some(v), _ => None } }
+    pub fn as_integers(&self) -> Option<&[i64]> { match self.as_items() { Items::Integers(v) => Some(v), _ => None } }
+    pub fn as_complex(&self) -> Option<&[Complex64]> { match self.as_items() { Items::Complex(v) => Some(v), _ => None } }
     pub fn at(&self, i: usize) -> Value {
         match self.storage() {
-            Some(Storage::Integer(v)) => Value::Number(Number::from_integer(v[i])),
-            Some(Storage::Float(v)) => Value::Number(v[i].try_into().unwrap()),
-            Some(Storage::Character(v)) => Value::Character(v[i]),
-            Some(Storage::Mixed(v, _)) => v[i].clone(),
+            Some(s) => s.item(i),
             None => {
                 assert_eq!(i, 0);
                 self.clone()
@@ -611,25 +762,17 @@ impl Value {
     }
     pub fn elements(&self) -> impl DoubleEndedIterator<Item = Value> + ExactSizeIterator + Clone + '_ { (0..self.len()).map(|i| self.at(i)) }
     pub(crate) fn items(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = Value> + '_ { range.map(|i| self.at(i)) }
-    /// The items in `range`, as an array of `shape` with no keys or axis names.
+    /// The items in `range`, as an array of `shape` with no keys or axis names. Mixed storage stays mixed.
     pub(crate) fn part(&self, range: std::ops::Range<usize>, shape: Vec<usize>) -> Result<Self, ErrorKind> {
-        match self.storage() {
-            Some(Storage::Float(data)) => Value::float_storage(shape, data[range].to_vec()),
-            Some(Storage::Integer(data)) => Value::integers(shape, data[range].to_vec()),
-            Some(Storage::Character(data)) => Value::characters(shape, data[range].to_vec()),
-            _ => Value::from_parts(shape, self.items(range).collect(), self.prototype()),
-        }
+        let mut data = Gather::new(&[self], range.len());
+        data.extend(self, range);
+        data.finish(Layout::from(shape), || self.prototype())
     }
-    /// An array's prototype. Compact storage gives 0. An empty mixed array keeps a stored prototype. Other arrays fill their first item
-    /// on first request and keep the result.
+    /// An array's prototype. Compact storage gives its kind's zero. An empty mixed array keeps a stored prototype. Other arrays fill their
+    /// first item on first request and keep the result.
     pub fn prototype(&self) -> Value {
         let Self::Array(a) = self else { return self.fill() };
-        match &*a.data {
-            Storage::Integer(_) => Value::Number(Number::from_integer(0)),
-            Storage::Float(_) => Value::Number(0.0.try_into().unwrap()),
-            Storage::Character(_) => Value::Character(' '),
-            Storage::Mixed(d, p) => p.get_or_init(|| Box::new(d[0].fill())).as_ref().clone(),
-        }
+        a.data.prototype()
     }
 
     pub(crate) fn with_shape(&self, shape: Vec<usize>) -> Result<Self, ErrorKind> {
@@ -691,7 +834,7 @@ impl Value {
         if self.is_unit() {
             if let Value::Function(f) = self.at(0) {
                 let text = format!("⟨{}⟩", f.apl());
-                return Self::new(vec![text.chars().count()], text.chars().map(Value::Character).collect());
+                return Self::characters(vec![text.chars().count()], text.chars().collect());
             }
         }
         // A keyed array formats as its display text, so its keys stay visible.
@@ -735,7 +878,12 @@ impl Value {
             (shape, result)
         } else if !keyed {
             // Numbers join with spaces as APL writes them, whatever form the value displays in.
-            let text = self.elements().map(|e| e.to_string()).collect::<Vec<_>>().join(" ");
+            use fmt::Write;
+            let mut text = String::new();
+            for (i, e) in self.elements().enumerate() {
+                if i > 0 { text.push(' '); }
+                write!(text, "{e}").unwrap();
+            }
             (vec![text.chars().count()], text)
         } else {
             let text = self.to_string();
@@ -747,7 +895,9 @@ impl Value {
             }
         };
         generated_len(&shape)?;
-        Self::from_parts(shape, text.chars().map(Value::Character).collect(), Value::Character(' '))
+        let mut chars = Vec::with_capacity(text.chars().count());
+        chars.extend(text.chars());
+        Self::characters(shape, chars)
     }
 
     fn formatted_cells(&self) -> Result<Self, ErrorKind> {
@@ -1061,7 +1211,11 @@ impl Value {
     pub(crate) fn assemble(frame: &[usize], cells: &[Self], empty_cell: &Self) -> Result<Self, ErrorKind> {
         Layout::from(frame.to_vec()).assemble(cells, empty_cell)
     }
-    fn assemble_layout(frame: &Layout, cells: &[Self], empty_cell: &Self) -> Result<Self, ErrorKind> {
+    /// Assemble rows written in brackets, as `assemble` does. Each number keeps its exactness.
+    pub(crate) fn assemble_written(frame: &[usize], cells: &[Self], empty_cell: &Self) -> Result<Self, ErrorKind> {
+        Self::assemble_layout(&Layout::from(frame.to_vec()), cells, empty_cell, Widening::Written)
+    }
+    fn assemble_layout(frame: &Layout, cells: &[Self], empty_cell: &Self, widening: Widening) -> Result<Self, ErrorKind> {
         if element_count(frame.shape())? != cells.len() { return Err(ErrorKind::Length); }
         if cells.is_empty() { return frame.concat(empty_cell.layout()).collect(vec![], empty_cell.prototype()); }
         let rank = cells.iter().map(|a| a.shape().len()).max().unwrap();
@@ -1073,7 +1227,7 @@ impl Value {
         let shape = [frame.shape(), &cell_shape].concat();
         let len = generated_len(&shape)?;
         let cell_len = element_count(&cell_shape)?;
-        let mut data = Gather::new(&cells.iter().collect::<Vec<_>>(), len);
+        let mut data = Gather::with_widening(&cells.iter().collect::<Vec<_>>(), len, widening);
         for cell in cells {
             if cell.shape() == cell_shape.as_slice() {
                 data.extend(cell, 0..cell_len);
@@ -1118,14 +1272,16 @@ impl Value {
             data: Arc::new(match &*a.data {
                 Storage::Integer(v) => Storage::Integer(vec![0; v.len()]),
                 Storage::Float(v) => Storage::Float(vec![0.0; v.len()]),
+                Storage::Complex(v) => Storage::Float(vec![0.0; v.len()]),
                 Storage::Character(v) => Storage::Character(vec![' '; v.len()]),
                 Storage::Mixed(v, p) if v.is_empty() => Storage::Mixed(vec![], p.clone()),
-                Storage::Mixed(v, _) => Storage::compact(v.iter().map(|e| e.prototype_with(filled)).collect()),
+                Storage::Mixed(v, _) => Storage::compact(v.iter().map(|e| e.prototype_with(filled)).collect(), Widening::Written),
             }),
             depth: a.depth,
             exact: a.exact,
             functions: a.functions,
             environment: a.environment,
+            infinite: false,
         }));
         filled.insert(key, result.clone());
         result

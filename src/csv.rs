@@ -1,7 +1,6 @@
 use crate::{array::generated_len, data::text as string, execution::Context, keyed, Error, ErrorKind, Number, Value};
 use num_bigint::BigInt;
 use num_rational::BigRational;
-use num_traits::ToPrimitive;
 use std::sync::Arc;
 
 struct Options {
@@ -155,41 +154,23 @@ fn import(source: &str, opts: &Options, span: &Context<'_>) -> Result<Value, Err
         let parsed: Vec<_> = cells.iter().map(|s| if text_columns[j] || missing.contains(s) { None } else { opts.number(s) }).collect();
         let is_numeric = numeric_columns[j]
             || (!text_columns[j] && parsed.iter().any(Option::is_some) && cells.iter().zip(&parsed).all(|(s, n)| n.is_some() || missing.contains(s)));
-        let (data, prototype) = if is_numeric {
-            let approximate = parsed.iter().flatten().any(|n| n.as_float().is_some());
+        let column = if is_numeric {
             let mut numbers = Vec::with_capacity(cells.len());
             for (i, (s, n)) in cells.iter().zip(parsed).enumerate() {
-                numbers.push(match n {
+                numbers.push(Value::Number(match n {
                     Some(n) => n,
                     None if missing.contains(s) => fill.clone(),
                     None => {
                         return Err(span.error(ErrorKind::Domain, format!("CSV row {}, column {}: invalid number {s:?}", i + 1 + usize::from(header), j + 1)))
                     }
-                });
+                }));
             }
-            // Missing fill does not promote an otherwise exact column.
-            let floats: Option<Vec<_>> = approximate.then(|| numbers.iter().map(lossless_float).collect()).flatten();
-            let data = match floats {
-                Some(values) => values.into_iter().map(|n| Value::Number(Number::try_from(n).unwrap())).collect(),
-                None => numbers.into_iter().map(Value::Number).collect(),
-            };
-            (data, Value::Number(Number::from_integer(0)))
-        } else { (cells.iter().map(|s| keyed::text(if missing.contains(s) { "" } else { s })).collect(), keyed::text("")) };
-        result.push(Value::from_parts(vec![cells.len()], data, prototype).map_err(|k| span.error(k, "invalid CSV column"))?);
+            crate::data::imported(vec![cells.len()], numbers, |i| missing.contains(&cells[i]), Value::Number(Number::from_integer(0)))
+        } else { Value::from_parts(vec![cells.len()], cells.iter().map(|s| keyed::text(if missing.contains(s) { "" } else { s })).collect(), keyed::text("")) };
+        result.push(column.map_err(|k| span.error(k, "invalid CSV column"))?);
     }
     match headers { Some(names) => keyed::vector(names, result), None => Value::from_parts(vec![result.len()], result, keyed::text("")) }
     .map_err(|k| span.error(k, "CSV headers must be unique"))
-}
-
-fn lossless_float(n: &Number) -> Option<f64> {
-    if let Some(f) = n.as_float() { return Some(f); }
-    if let Some(i) = n.as_integer() {
-        let f = i as f64;
-        return (f as i128 == i as i128).then_some(f);
-    }
-    let rational = n.as_exact()?;
-    let f = rational.to_f64()?;
-    (BigRational::from_float(f)? == rational).then_some(f)
 }
 
 fn export(table: &Value, opts: &Options, span: &Context<'_>) -> Result<Value, Error> {

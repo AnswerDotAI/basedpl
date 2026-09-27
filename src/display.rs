@@ -1,4 +1,4 @@
-use crate::Value;
+use crate::{array::Items, Value};
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Copy, Default)]
@@ -77,7 +77,8 @@ fn array(a: &Value, budget: &mut usize) -> Block {
     let elements: Vec<_> = (0..count).map(|i| if a.is_empty() { a.prototype().clone() } else { a.at(i) }).collect();
     let nested = elements.iter().any(|e| matches!(e, Value::Array(_)));
     let chars = elements.iter().all(|e| matches!(e, Value::Character(_)));
-    let kind = if nested { '∊' } else if chars { '─' } else if elements.iter().all(|e| matches!(e, Value::Number(_))) { '~' } else { '+' };
+    // The marker follows storage, so mixed storage shows even when every item is a number.
+    let kind = if nested { '∊' } else { match a.as_items() { Items::Characters(_) => '─', Items::Values(_) => '+', _ => '~' } };
     let cells: Vec<_> = elements
         .iter()
         .map(|e| match e {

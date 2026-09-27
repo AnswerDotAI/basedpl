@@ -8,10 +8,7 @@ use pyo3::{
     sync::MutexExt,
     types::{PyByteArray, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple},
 };
-use std::{
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
-};
+use std::sync::{Arc, Mutex};
 
 fn import_array(raw: &Bound<'_, PyDict>, depth: usize) -> PyResult<Value> {
     if depth > 128 { return Err(PyValueError::new_err("array nesting exceeds 128 levels")); }
@@ -37,7 +34,11 @@ fn import_array(raw: &Bound<'_, PyDict>, depth: usize) -> PyResult<Value> {
     let shape = field("shape")?.extract::<Vec<usize>>()?;
     let data = field("data")?.try_iter()?.map(|o| element(o?)).collect::<PyResult<Vec<_>>>()?;
     let prototype = element(field("prototype")?)?;
-    let mut result = Value::from_parts(shape, data, prototype).map_err(|k| PyValueError::new_err(k.to_string()))?;
+    // Python data takes the import rules. A dict keeps each value's kind, as a JSON object does. Other data becomes floats only when
+    // every number converts exactly.
+    let record = raw.get_item("axis_keys")?.is_some();
+    let mut result = if record { Value::mixed(shape, data, prototype) } else { crate::data::imported(shape, data, |_| false, prototype) }
+        .map_err(|k| PyValueError::new_err(k.to_string()))?;
     if let Some(names) = raw.get_item("axis_names")? {
         let names = names.extract::<Vec<Option<String>>>()?.into_iter().map(|n| n.map(Into::into)).collect();
         result = result.with_axis_names(names).map_err(|k| PyValueError::new_err(k.to_string()))?;
@@ -296,12 +297,9 @@ impl PySession {
     fn interrupt(&self) { if let Some(active) = &*self.active.lock().unwrap() { active.interrupt(); } }
 }
 
+/// A poll that interrupts the evaluation when Python has a pending signal, such as Ctrl-C. It keeps the signal's error to raise.
 fn ctrl_c(caught: Arc<Mutex<Option<PyErr>>>) -> crate::Poll {
-    let last = Mutex::new(Instant::now());
     Arc::new(move || {
-        let mut last = last.lock().unwrap();
-        if last.elapsed() < Duration::from_millis(10) { return false; }
-        *last = Instant::now();
         let Err(e) = Python::attach(|py| py.check_signals()) else { return false };
         *caught.lock().unwrap() = Some(e);
         true

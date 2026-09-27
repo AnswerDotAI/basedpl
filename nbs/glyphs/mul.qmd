@@ -1,9 +1,9 @@
 # `×` — Direction / Multiply
 
-`×Y` gives direction: zero, or `Y÷|Y`. Pervasive.
+`×Y` gives direction: zero, or `Y÷|Y`. The direction of a real number is an exact integer. Pervasive.
 
 ```apl
-×¯3 0 4           ⍝ ¯1 0 1
+×¯3 0 4           ⍝ ¯1ₓ 0ₓ 1ₓ
 ×0j2              ⍝ 0j1
 ```
 

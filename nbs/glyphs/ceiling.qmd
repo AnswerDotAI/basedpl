@@ -1,9 +1,9 @@
 # `⌈` — Ceiling / Maximum
 
-`⌈Y` rounds up. Pervasive; tolerant near integers. Complex ceiling is `-⌊-Y`.
+`⌈Y` rounds up to an exact integer. Pervasive; tolerant near integers. An infinity stays a float. Complex ceiling is `-⌊-Y`.
 
 ```apl
-⌈1.2 ¯1.2         ⍝ 2 ¯1
+⌈1.2 ¯1.2         ⍝ 2ₓ ¯1ₓ
 ⌈3r2              ⍝ 2ₓ
 ```
 

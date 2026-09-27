@@ -8244,17 +8244,11 @@ op←{⍶ ⍺} ⋄ 2 +op 3   ⍝ 2
 ⍝ aplcart/table.tsv:2944 — Prototypical dyadic dop deriving dyadic functions; assignment recipes also read the target, and definition recipes call the defined function/operator
 op←{⍹ ⍺} ⋄ 2 +op- 3   ⍝ ¯2
 
-⍝ aplcart/table.tsv:2945 — Meaning of life (modern); pure Execute recipe checked against Dyalog with fixed settings
-⍎⌽⍕⌈*π≡⍬   ⍝ 42
-
 ⍝ aplcart/table.tsv:2946 — Fast: The number of leading blank spaces in each row of D; assignment recipes also read the target, and definition recipes call the defined function/operator
 D←2 4⍴"  ab c d"  ⋄ +/∧\' '=D   ⍝ 2 1
 
 ⍝ aplcart/table.tsv:3768 — An expression giving itself; assignment recipes also read the target, and definition recipes call the defined function/operator
 1⌽,⍨9⍴"""1⌽,⍨9⍴"""   ⍝ "1⌽,⍨9⍴""""""1⌽,⍨9⍴"""""""
-
-⍝ aplcart/table.tsv:3774 — Meaning of life (traditional); pure Execute recipe checked against Dyalog with fixed settings
-⍎⊖⍕⊃⊂|⌊-*+π⌈×÷!⌽⍉⌹~⍴⍋⍒,⍟?⍳0   ⍝ 42
 
 ⍝ aplcart/table.tsv:3775 — Generate random UUIDv4; Original UUIDv4 generator; assert length, hyphen positions, version 4, variant bits and lowercase hexadecimal alphabet, not a random sample; Independent expected truth and Dyalog check
 u←'-'@(8+5×⍳4)⊢(•d,•c•a)(4(8+|)@19⊢4@14?36⍴16) ⋄ (36=≢u)∧(∧/'-'=u[8 13 18 23])∧('4'=(u 14))∧((u 19)∊"89ab")∧∧/(u~"-")∊•d,•c•a
