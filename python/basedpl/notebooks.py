@@ -50,8 +50,8 @@ class APLMagic:
 def _load(self:APLMagic):
     if self._loaded: return
     js = files('basedpl')
-    keyboard = (files('basedpl')/'keyboard.json').read_text()
-    display(Javascript(f"{(js/'lb.js').read_text()}({json.dumps(symbols)}, {(js/'input.js').read_text()}, {keyboard})"))
+    layout = (files('basedpl')/'layout.json').read_text()
+    display(Javascript(f"{(js/'lb.js').read_text()}({json.dumps(symbols)}, {(js/'input.js').read_text()}, {layout})"))
     display(HTML(_css))
     self._loaded = True
 
@@ -86,7 +86,7 @@ def complete(self:APLMagic, context):
     else: return empty
     if any(m.end() == len(code) for m in re.finditer(r'''"(?:[^"]|"")*(?:"|$)|'(?:[^\n]'?|$)|⍝[^\n]*''', code)): return empty
     start = len(code)
-    glyphs = {row[0] for row in symbols} - {'•'}
+    glyphs = {s['glyph'] for s in symbols} - {'•'}
     while start and code[start-1] not in glyphs and (code[start-1].isalnum() or code[start-1] in '_∆⍙•'): start -= 1
     prefix = code[start:]
     if not prefix: return empty

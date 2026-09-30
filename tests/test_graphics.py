@@ -5,7 +5,7 @@ from basedpl import apl, AplError
 from basedpl.worker import Worker
 
 
-def test_svg_display_and_mime_fields():
+def test_svg_display_and_mimefields():
     pic = apl('circle←•element "circle" ⋄ pic←•svg ["r":20] circle ⍬')
     root = ET.fromstring(pic._repr_mimebundle_()['image/svg+xml'])
     teq(root.tag, '{http://www.w3.org/2000/svg}svg')
@@ -15,11 +15,11 @@ def test_svg_display_and_mime_fields():
     teq(result.events[1]['data']['image/svg+xml'], pic._repr_mimebundle_()['image/svg+xml'])
     apl('pic.children.attrs.r←30')
     teq(ET.fromstring(apl('pic')._repr_mimebundle_()['image/svg+xml'])[0].attrib['r'], '30')
-    apl('x←["items":[1 2 3]] ⋄ x._mime_←{["text/plain":⍕+/⍵.items]}')
+    apl('x←["items":[1 2 3]] ⋄ x._mime←{["text/plain":⍕+/⍵.items]}')
     teq(apl('x')._repr_mimebundle_(), {'text/plain': '6'})
     apl('x.items+←10')
     teq(apl('x')._repr_mimebundle_(), {'text/plain': '36'})
-    apl('bad←["items":[1 2]] ⋄ bad._mime_←{1÷0}')
+    apl('bad←["items":[1 2]] ⋄ bad._mime←{1÷"a"}')
     teq(list(apl('bad', 'repl').events[0]['data']), ['text/plain'])
     teq(list(apl('bad')._repr_mimebundle_()), ['text/plain'])
     with pytest.raises(AplError): apl('•mime bad')

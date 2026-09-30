@@ -3,9 +3,10 @@ from fractions import Fraction
 from itertools import repeat
 from json import dumps
 from . import _Array, _Function, symbols
-from .functions import Function, _builtins, _python_name
+from .functions import Function, _builtins, _python_name, _MONADIC
 
-_names = {g: (m, d) for g, _, m, d, *_ in symbols}
+_names = {s['glyph']: (s['monad'], s['dyad']) for s in symbols}
+_methods = {glyph: name for name, glyph in _MONADIC.items()}
 _infix = {'+': ('+', 20), '-': ('-', 20), '×': ('*', 30), '÷': ('/', 30),
           '=': ('==', 10), '≠': ('!=', 10), '<': ('<', 10), '≤': ('<=', 10), '>': ('>', 10), '≥': ('>=', 10)}
 
@@ -55,7 +56,7 @@ class _Printer:
             axis = f'[{r(args[1])}]' if len(args) == 2 else '[0]' if kind in ('⌿', '⍀') else ''
             return f'{r(a, True, 100)}.{method}{axis}', 100
         if kind == 'axis': return f'{r(a, dyad, 100)}[{r(args[1])}]', 100
-        if kind == 'inverse': return f'{r(a, dyad, 41)} ** -1', 40
+        if kind == 'inverse': return f'{r(a, dyad, 100)}.undo', 100
         if kind == 'fork':
             b, c = args[1:]
             middle = b.parts()
@@ -63,15 +64,15 @@ class _Printer:
                 op, p = _infix[middle[0]]
                 return f'{r(a, dyad, p+1)} {op} {r(c, dyad, p+1)}', p
             return f'fork({r(a, dyad)}, {r(b, True)}, {r(c, dyad)})', 100
-        if kind in ('¨', '⍨', '⌝', '⌸', '∂') and isinstance(a, _Function):
-            method = {'¨': 'each', '⍨': 'commute', '⌝': 'outer', '⌸': 'key', '∂': 'derivative'}[kind]
+        if kind in ('¨', '⍨', '⊗', '⌸', '∂') and isinstance(a, _Function):
+            method = _methods[kind]
             valence = dyad if kind == '¨' else kind != '∂'
             return f'{r(a, valence, 100)}.{method}', 100
         if len(args) != 2: return _apl(f), 100
         b = args[1]
         af, bf = isinstance(a, _Function), isinstance(b, _Function)
-        if kind == '⊸' and not af: return f'{r(b, True, 100)}.left({r(a)})', 100
-        if kind == '⟜' and not bf:
+        if kind == '⍃' and not af: return f'{r(b, True, 100)}.left({r(a)})', 100
+        if kind == '⍄' and not bf:
             operand = a.parts()
             if operand and not operand[1] and _names.get(operand[0], ('', ''))[1]:
                 return f'{r(a, True, 100)}({r(b)})', 100
@@ -82,8 +83,8 @@ class _Printer:
             raw = b.parts()
             if raw.get('shape') == [1] and isinstance(raw['data'][0], _Function): return f'{r(a, dyad, 100)}.history({r(raw["data"][0], True)})', 100
             return f'{r(a, dyad, 41)} ** {r(b)}', 40
-        methods = {'⍤': ('atop' if bf else 'rank', False if bf else dyad, dyad),
-                   '⍥': ('over', dyad, False), '⊸': ('before', False, True), '⟜': ('after', True, False), '⌾': ('under', dyad, False),
+        methods = {'⍤': ('rank', dyad, dyad), '∘': ('atop', False, dyad),
+                   '⍥': ('over', dyad, False), '⍃': ('before', False, True), '⍄': ('after', True, False), '⌾': ('under', dyad, False),
                    '⇄': ('with_inverse', dyad, dyad), '@': ('at', dyad, False), '⌺': ('stencil', True, False)}
         if kind in methods and af:
             method, av, bv = methods[kind]

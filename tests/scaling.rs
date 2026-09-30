@@ -43,12 +43,17 @@ const LIMIT: f64 = 16.0;
 /// number, beside the text they're read from.
 const PEAK_PER_ITEM: usize = 128;
 
-struct Cost { time: Duration, allocated: usize, peak: usize, kept: usize }
+struct Cost {
+    time: Duration,
+    allocated: usize,
+    peak: usize,
+    kept: usize,
+}
 
 /// A session whose arguments have `n` items.
 fn session(n: usize) -> Session {
     let mut session = Session::new();
-    let setup = session.eval(&format!("v←?{n}⍴0 ⋄ w←?{n}⍴0 ⋄ iv←⍳{n}ₓ ⋄ b←0=3|iv ⋄ i←?{n}⍴{n}ₓ"));
+    let setup = session.eval(&format!("v←?{n}⍴0 ⋄ w←?{n}⍴0 ⋄ iv←⍳{n}ₓ ⋄ b←0=3|iv ⋄ i←?{n}⍴{n}ₓ ⋄ m←{} 2⍴v ⋄ q←iv÷7", n / 2));
     assert!(setup.error.is_none(), "{:?}", setup.error);
     session
 }
@@ -107,5 +112,69 @@ fn costs_grow_as_expected() {
 #[ignore = "each update copies the array until step 1 of meta/inplace.md"]
 fn updates_grow_linearly() {
     let failures = failures(&["x←0×iv ⋄ {x(⍵)←1}¨iv", "r←⍬ ⋄ {r,←⍵}¨iv"]);
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// Each case may allocate `times` its result's bytes, plus `scratch` bytes for each argument item. Scalar and structural functions write
+/// their result once. A reshape that keeps the number of items shares its argument's storage. Search builds a table of the items it
+/// searches. Grade's radix sort moves pairs of a key and a position between two buffers, and returns its positions in one of them.
+/// Format builds each number's text once, then converts it to characters. Its data is fixed, because the text's length decides where
+/// its buffer doubles.
+const BUDGETS: &[(&str, f64, usize)] = &[
+    ("-v", 1.0, 0),
+    ("v+w", 1.0, 0),
+    ("v<w", 1.0, 0),
+    ("⌊v", 1.0, 0),
+    ("*v", 1.0, 0),
+    ("iv+1ₓ", 1.0, 0),
+    ("iv×0.5", 1.0, 0),
+    ("v×iv", 1.0, 0),
+    ("+/v", 1.0, 0),
+    ("⌈/iv", 1.0, 0),
+    ("+\\v", 1.0, 0),
+    ("v,w", 1.0, 0),
+    ("⌽v", 1.0, 0),
+    ("1⌽v", 1.0, 0),
+    ("⍉m", 1.0, 0),
+    ("⊖m", 1.0, 0),
+    ("((≢v)÷2)↑v", 1.0, 0),
+    ("((≢v)÷2)↓v", 1.0, 0),
+    ("v i", 1.0, 0),
+    ("b#v", 1.0, 0),
+    ("⍸b", 1.0, 0),
+    (",m", 0.0, 0),
+    ("(⍴m)⍴v", 0.0, 0),
+    ("v⍳w", 1.0, 48),
+    ("iv⍳i", 1.0, 16),
+    ("i∊iv", 1.0, 16),
+    ("≠i", 1.0, 16),
+    ("∪i", 1.0, 24),
+    ("⍋v", 1.0, 24),
+    ("⍕q", 1.5, 0),
+];
+
+/// The bytes that the result of `code` holds: its number of items times the size of one item in its storage.
+fn result_bytes(session: &mut Session, code: &str) -> usize {
+    let sizes = format!("[1 8 8 16 4 {}]ₓ", std::mem::size_of::<basedpl::Value>());
+    let names = r#""boolean" "integer" "float" "complex" "character" "mixed""#;
+    let result = session.eval(&format!("r←{code} ⋄ s←•storage r ⋄ (≢,r)×{sizes}({names}⍳⊂s)"));
+    assert!(result.error.is_none(), "{code}: {:?}", result.error);
+    result.value.and_then(|v| v.as_number()).and_then(|n| n.as_integer()).unwrap() as usize
+}
+
+/// Bytes allocated for each added item stay within each case's budget, with 25% and one byte per item to spare. Fixed costs, such as
+/// parsing the code, cancel in the difference between the runs at `N` and `8 * N` items.
+#[test]
+fn allocations_fit_the_result() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (mut small, mut large) = (session(N), session(8 * N));
+    let added = (7 * N) as f64;
+    let mut failures = Vec::new();
+    for &(code, times, scratch) in BUDGETS {
+        let allocated = cost(&mut large, code).allocated as f64 - cost(&mut small, code).allocated as f64;
+        let result = result_bytes(&mut large, code) as f64 - result_bytes(&mut small, code) as f64;
+        let (per_item, budget) = (allocated / added, (times * result / added + scratch as f64) * 1.25 + 1.0);
+        if per_item > budget { failures.push(format!("{code}: {per_item:.1} bytes per item, budget {budget:.1}, result {:.1}", result / added)); }
+    }
     assert!(failures.is_empty(), "{failures:#?}");
 }

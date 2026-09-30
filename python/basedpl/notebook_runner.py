@@ -25,9 +25,9 @@ def run_notebook(path, save=False):
     return count
 
 
-@call_parse
+@call_parse(pos=['path'])
 def main(
-    path:Path, # APL notebook or directory to search
+    path:Path=Path('nbs'), # APL notebook or directory to search
     save:bool=False, # Save outputs in the notebook
 ):
     "Run bAsedPL notebooks without starting Jupyter."

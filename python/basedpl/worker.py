@@ -38,8 +38,8 @@ class Worker:
 
     def request(self, payload, timeout=None, grace=1):
         "Return one result. A hard timeout closes the worker and raises TimeoutError (session lost)."
-        if timeout is not None and (not math.isfinite(timeout) or timeout < 0): raise ValueError('timeout must be finite and nonnegative')
-        if grace < 0 or not math.isfinite(grace): raise ValueError('grace must be finite and nonnegative')
+        for name, seconds in [('timeout', timeout), ('grace', grace)]:
+            if seconds is not None and (not math.isfinite(seconds) or seconds < 0): raise ValueError(f'{name} must be finite and nonnegative')
         with self._request_lock:
             if self.process.poll() is not None: raise RuntimeError('worker is closed; its session is lost')
             self._id += 1

@@ -51,10 +51,7 @@ unsafe extern "C" fn output(_: Jt, kind: c_int, text: *const c_char) {
 
 /// Supply the next line of a multi-line definition, or `)` to end it. J reads the line after this returns.
 unsafe extern "C" fn input(_: Jt, _prompt: *const c_char) -> *const c_char {
-    CALL.with_borrow_mut(|call| {
-        call.line = CString::new(call.input.pop_front().unwrap_or_else(|| ")".into())).unwrap_or_default();
-        call.line.as_ptr()
-    })
+    CALL.with_borrow_mut(|call| { call.line = CString::new(call.input.pop_front().unwrap_or_else(|| ")".into())).unwrap_or_default(); call.line.as_ptr() })
 }
 
 /// The collected output, leaving out error displays unless `errors`.
@@ -184,7 +181,7 @@ struct JSession {
 
 #[async_trait::async_trait]
 impl LanguageSession for JSession {
-    fn kernel_info(&self) -> anyhow::Result<KernelInfo> {
+    fn kernel_info(&self) -> kernmini::Result<KernelInfo> {
         Ok(KernelInfo {
             implementation: "basedpl-j".into(),
             implementation_version: env!("CARGO_PKG_VERSION").into(),
@@ -195,13 +192,10 @@ impl LanguageSession for JSession {
 
     fn execution_count(&self) -> u64 { self.count.load(Ordering::Acquire) }
 
-    async fn execute(&self, request: ExecuteRequest, context: ExecutionContext) -> anyhow::Result<ExecuteOutcome> {
+    async fn execute(&self, request: ExecuteRequest, context: ExecutionContext) -> kernmini::Result<ExecuteOutcome> {
         let count = crate::kernel::next_count(&self.count, &request);
         let interrupter = self.interrupter;
-        context.set_interrupt_handler(Arc::new(move || {
-            interrupter.interrupt();
-            Ok(())
-        }))?;
+        context.set_interrupt_handler(Arc::new(move || { interrupter.interrupt(); Ok(()) }))?;
         let silent = request.silent;
         let error = match self.worker.call(move |engine| engine.run(&request.code)).await? {
             Ok(text) => {
@@ -213,19 +207,19 @@ impl LanguageSession for JSession {
                 Some(LanguageError { ename: "JError".into(), evalue: text.clone(), traceback: vec![text] })
             }
         };
-        Ok(ExecuteOutcome { execution_count: count, result: None, result_metadata: json!({}), error, user_expressions: json!({}), payload: json!([]) })
+        Ok(crate::kernel::outcome(count, error, json!({})))
     }
 
-    async fn shutdown(&self) -> anyhow::Result<()> { self.worker.shutdown().await }
+    async fn shutdown(&self) -> kernmini::Result<()> { self.worker.shutdown().await }
 }
 
 /// Serve a J kernel on the connection in `file`, with libj from `lib`. `startup` runs first, and its errors go to stderr.
-pub(crate) fn run_kernel(file: &str, lib: &Path, startup: Option<&str>) -> anyhow::Result<()> {
+pub(crate) fn run_kernel(file: &str, lib: &Path, startup: Option<&str>) -> kernmini::Result<()> {
     let (lib, startup) = (lib.to_path_buf(), startup.map(String::from));
     crate::kernel::serve(file, async move {
         // J's recursion check assumes a larger stack than a thread's default. With the default, deep recursion crashes the kernel.
         let worker = ThreadWorker::start(std::thread::Builder::new().name("j".into()).stack_size(64 << 20), move || {
-            let mut engine = Engine::new(&lib).map_err(anyhow::Error::msg)?;
+            let mut engine = Engine::new(&lib).map_err(|error| kernmini::Error::new(kernmini::ErrorKind::Adapter, error))?;
             if let Some(Err(e)) = startup.map(|code| engine.run(&code)) { eprintln!("startup.ijs failed: {e}"); }
             Ok(engine)
         })

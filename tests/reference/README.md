@@ -1,10 +1,10 @@
 # Reference acceptance cases
 
-The `.apl` files are the executable language tests. `core.apl` holds bAsedPL's own semantic cases. The other files cover ngn assertions/example programs, April core and library assertions/demos/setup, APLcart main/tacit catalogue rows, and selected Dyalog documentation examples. The tracked `inventory/*.jsonl` files retain original records, independent expectations, adaptations and candidates for activation. Entries are not removed because bAsedPL cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
+The `.apl` files are the executable language tests. `core.apl` holds bAsedPL's own semantic cases. `lib.apl` covers library code that the upstream examples leave untested. The other files cover ngn assertions/example programs, April core and library assertions/demos/setup, APLcart main/tacit catalogue rows, and selected Dyalog documentation examples. The tracked `inventory/*.jsonl` files retain original records, independent expectations, adaptations and candidates for activation. Entries are not removed because bAsedPL cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
 
 Source entries are not necessarily executable tests. Many APLcart recipes have unbound arguments and no expected result. They need concrete examples. Library cases need their definitions and setup. Use the scanner below for current counts and failures; fixture reasons describe their last review, not necessarily today's implementation. Progress notes belong in `meta/`, not this README.
 
-Active cases use bAsedPL spellings: `π` for APL's monadic `○`, `g⌝` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, `⍢` for `∇∇`, `•name` for system names, `"…"` for multi-character strings written `'…'`, `Y(I)` or `Y I` for first-axis bracket indexing `Y[I]`, `[I;J]⌷Y` for indexing several axes, and `f⍠A` for bracket axes `f[A]`. They follow the spacing rules in `meta/spacing.md`: vectors that aren't strands use brackets, `[x]` is a one-item vector, parentheses round a literal make a scalar, spaces separate runs, and `⊸` and `⟜` replace `∘` and `⍛`. Positions and axes count from 0, so the positions in upstream code and in expectations captured with `⎕IO←1` are converted. Original inventory sources retain their dialect's notation.
+Active cases use bAsedPL spellings: `π` for APL's monadic `○`, `g⊗` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, `⍢` for `∇∇`, `•name` for system names, `"…"` for multi-character strings written `'…'`, `Y(I)` or `Y I` for first-axis bracket indexing `Y[I]`, `[I;J]⌷Y` for indexing several axes, and `f⍠A` for bracket axes `f[A]`. They follow the spacing rules in `meta/spacing.md`: vectors that aren't strands use brackets, `[x]` is a one-item vector, parentheses round a literal group it, spaces separate runs, and `⍃` and `⍄` replace `∘` and `⍛`. Positions and axes count from 0, so the positions in upstream code and in expectations captured with `⎕IO←1` are converted. Original inventory sources retain their dialect's notation.
 
 Run the active cases with:
 
@@ -12,13 +12,7 @@ Run the active cases with:
 cargo test --test reference -- --nocapture
 ```
 
-Put cases taking more than one second in the optimized development build in `slow.apl`. The larger splay workloads also belong there. Normal testing skips this file. Run it explicitly with:
-
-```bash
-cargo test --test reference slow_reference_cases -- --ignored --nocapture
-```
-
-Normal reference cases have a two-second deadline. Slow cases have a 60-second deadline. Keep small correctness cases in the normal suite.
+Each reference case has a two-second deadline.
 
 To run active cases, set `BASEDPL_CASE` to an ID or ID prefix:
 
@@ -32,12 +26,12 @@ To run the active cases of one file, set `BASEDPL_SOURCE` to its name without `.
 BASEDPL_SOURCE=core cargo test --test reference enabled_reference_cases -- --nocapture
 ```
 
-The `.apl` file determines whether a case runs normally or only in the slow suite, regardless of inventory status. Edit these files directly once cases are active. Each JSONL inventory row has a stable `id`, `code`, and `status`. A `reason` records adaptations or remaining work. Its original source, expectation or recipe is retained.
+The `.apl` files determine which cases run, regardless of inventory status. Edit these files directly once cases are active. Each JSONL inventory row has a stable `id`, `code`, and `status`. A `reason` records adaptations or remaining work. Its original source, expectation or recipe is retained.
 
 | Status | Meaning |
 |---|---|
 | `active` | Exported to the `.apl` corpus. |
-| `slow` | Exported to `slow.apl`; tested only on request. |
+| `duplicate` | Same code and expectation as the active case named in `duplicate_of`. Not exported. |
 | `setup` | Upstream initialization retained for self-contained cases; no standalone assertion. |
 | `pending` | Intended coverage that still needs implementation, an origin/dialect adaptation, concrete inputs, or an expectation. |
 | `question` | Retain until the scope/semantic decision is resolved. The question list is in `meta/reference-questions.md`. |
@@ -50,14 +44,14 @@ To enable a case:
 3. Activate the reviewed case:
 
    ```bash
-   python -m basedpl.apltests add april:1684
+   python scripts/reference.py add april:1684
    ```
 
-   This checks the program against its independent expectation and checks the converted expectation against the captured value. It appends to the source's `.apl` file and marks the inventory record active. Excluded cases, missing expectations, failed checks and duplicate IDs are rejected before writing.
+   This appends the case to the source's `.apl` file and marks the inventory record active. It doesn't run the program. It rejects excluded cases, missing expectations and duplicate IDs before writing. A captured expectation's numbers are written as approximate literals. Where the language's rules give exact results, mark them with `ₓ`.
 
 4. Run the normal suite. To check candidates without activating them, use the scanner below.
 
-Pending cases do not count as passing tests. New failures in active cases fail the suite. Code and expectation execute in separate fresh sessions. Tests compare shape, nesting, data and prototype. Numeric comparisons use `rtol=1e-13` and `atol=1e-13` unless a case specifies its own (`relative_tolerance` or `absolute_tolerance` in the inventory). The bound is `max(absolute, relative × max(|actual|, |expected|))`. The default absolute tolerance treats every value below `1e-13` as zero. Round such residues to zero in expectations. `core.apl` compares exactly and ignores tolerances. Shape and nesting remain exact. Display expectations remain separate from array expectations.
+Pending cases do not count as passing tests. New failures in active cases fail the suite. Code and expectation execute in separate fresh sessions. Tests compare shape, axis keys and names, nesting, data and prototype. Numeric comparisons use `rtol=1e-13` and `atol=1e-13` unless a case specifies its own (`relative_tolerance` or `absolute_tolerance` in the inventory). The bound is `max(absolute, relative × max(|actual|, |expected|))`. The default absolute tolerance treats every value below `1e-13` as zero. Round such residues to zero in expectations. The tolerances apply only to approximate numbers. Each number's exactness must match, and exact numbers compare exactly. Shape and nesting remain exact. Display expectations remain separate from array expectations.
 
 Implementation gaps stay in the JSONL inventory with `status: pending` and a `Not implemented:` reason. Record the intended result when settled. Do not turn the current failure into an active error expectation. Active error cases assert invalid language operations or explicit scope exclusions.
 
@@ -85,14 +79,14 @@ Additional Dyalog workspace ports live in `lib/dyalog.apl`. Their APLcart invent
 Rebuild the installed command after Rust changes, then scan:
 
 ```bash
-maturin develop --release
+maturin develop
 python scripts/reference.py scan
 python scripts/reference.py show --source april
 python scripts/reference.py show --status mismatch --match '∧|∨'
 python scripts/reference.py activate --source april --match 'april:590\b'
 ```
 
-`scan` checks pending cases with independent expectations and collects every outcome. It never edits fixtures. `show` defaults to passes; filter by source, result status or regex over ID/code/message. Use `--limit` to change the display count. `--details` dumps complete records and arrays; use it only for a narrow selection. `activate` appends the reviewed passing selection to `.apl` and marks its inventory records active. It refuses fixture records changed since the scan and rechecks the selected cases before writing. Review dialect, origin and prerequisites before activation; a passing result alone is not that review.
+`scan` checks pending cases with independent expectations and collects every outcome. A captured expectation carries no exactness, so the scan compares its numbers by value. It never edits fixtures. `show` defaults to passes; filter by source, result status or regex over ID/code/message. Use `--limit` to change the display count. `--details` dumps complete records and arrays; use it only for a narrow selection. `activate` appends the reviewed passing selection to `.apl` and marks its inventory records active. It refuses fixture records changed since the scan and rechecks the selected cases before writing. Review dialect, origin and prerequisites before activation; a passing result alone is not that review.
 
 Rust's `reference::check` owns comparison for the test runner, worker and private Python `_check_reference(json_case, timeout)` API. It accepts captured `expected` arrays, `expected_error` kinds, or an `expected_code` expression. Each case receives a fresh session inside a persistent worker. The scanner uses a 0.25-second cooperative deadline per case, adjustable with `--timeout`. An unresponsive process is killed after the client's grace period and replaced for the next case. The failed case is not retried. Random cases, missing expectations and scope questions are counted separately, not treated as execution failures.
 
@@ -112,7 +106,7 @@ Write `code   ⍝ expected` when the whole line is under 70 characters and reads
 
 Longer single-line expressions use one line each. If either expression is multiline, an exact `⍝ =>` line separates code from expectation. An empty line separates records. A record ends at the next case header, section heading or EOF. At EOF the separator and final newline are optional. Other blank lines belong to the expressions.
 
-Errors use `⍝ error: DOMAIN ERROR` on the expectation line. A no-result expectation is the APL expression `{}0`. A case overrides the default tolerances with an optional suffix on the header, such as `[rtol=1e-10]`. These are comparison tolerances, not APL `⎕CT`. `core.apl` instead uses exact Rust array equality, including numeric domains and prototypes, as its original Rust assertions did.
+Errors use `⍝ error: DOMAIN ERROR` on the expectation line. A no-result expectation is the APL expression `{}0`. A case overrides the default tolerances with an optional suffix on the header, such as `[rtol=1e-10]`. These are comparison tolerances, not APL `⎕CT`.
 
 Group cases with `⍝⍝ Section name`. Sections are labels, not shared sessions. Each case must supply its own definitions and setup.
 
@@ -136,20 +130,11 @@ Use `basedpl.apltests.parse(text)` to read records as `Case` objects with `id`, 
 
 Use `add(['ngn:177'])` from `basedpl.apltests` to activate selected inventory IDs from a kernel. It is the equivalent of the `add` command above.
 
-Use `check_file(path)` from `basedpl.apltests` to run a reference file through the installed extension and list its failures. It applies the same exact-representation and tolerance options as `tests/reference.rs`. `check_page(path)` does the same for the APL examples in a `.qmd` page.
-
-The converter remains available for inspecting a fresh conversion without overwriting edited tests:
-
-```bash
-python -m basedpl.apltests preview --replace
-pytest -q tests/test_apltests.py
-```
-
-The output is `meta/apl-preview/{ngn,april,aplcart,dyalog,core}.apl`. The reference previews contain records marked active in the inventory. The core preview extracts any remaining fully literal `equiv!` tables and `fails` lists from Rust; it does not reproduce the curated `core.apl`. Storage, ownership, parser diagnostics, API behaviour and cross-call recovery checks remain in Rust. Preview generation does not change the inventory or executable corpus. Do not regenerate the executable corpus from the inventory after editing `.apl` tests.
+Use `check_file(path)` from `basedpl.apltests` to run a reference file through the installed extension and list its failures. It applies the same comparison and tolerances as `tests/reference.rs`. `check_page(path)` does the same for the APL examples in a `.qmd` page.
 
 ## Sources and adaptations
 
-Active cases use bAsedPL's postfix `g⌝` for outer product. The inventory retains upstream `∘.g` spellings.
+Active cases use bAsedPL's postfix `g⊗` for outer product. The inventory retains upstream `∘.g` spellings.
 
 System names use `•` in active cases (`•c`, `•ucs`, etc.). The inventory retains upstream `⎕` spellings. `⎕←` is output in both.
 
@@ -172,7 +157,7 @@ April's literal Common Lisp expectations were converted to structured values. Or
 
 APLcart's TIO links were decoded offline. All 972 available decoded programs are retained. No TIO service was contacted. Small closed calculator examples were checked in Dyalog 20.0.53963.0 with `⎕IO=1`, `⎕CT=1E¯14`, `⎕DIV=0`, `⎕ML=1`, and `⎕PP=17`. Multi-output examples collect their values in an array literal. The original program remains in `example`. The import does not execute arbitrary catalogue programs.
 
-`basedpl.reference` contains the import, reference capture, scan, review and activation functions. `scripts/reference.py` is their CLI. Rust tests read the checked-in `.apl` files. They need neither the JSONL inventory, sibling clones, Dyalog, Common Lisp, Node, Python nor network access. Python converter tests also check serialization against the tracked inventory. Import a new upstream snapshot into a new directory and review it against the inventory rather than replacing reviewed statuses.
+`basedpl.reference` contains the import, reference capture, scan, review and activation functions. `scripts/reference.py` is the shell command for scan, review, activation and `add`. Rust tests read the checked-in `.apl` files. They need neither the JSONL inventory, sibling clones, Dyalog, Common Lisp, Node, Python nor network access. Python converter tests also check serialization against the tracked inventory. Import a new upstream snapshot into a new directory and review it against the inventory rather than replacing reviewed statuses.
 
 For live reference work, use `basedpl.dyalog.Apl`, which runs Dyalog, not `basedpl.Session`, which runs bAsedPL:
 

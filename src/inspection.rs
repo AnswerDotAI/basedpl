@@ -33,9 +33,8 @@ pub(crate) fn documentation(symbol: &str) -> Option<&'static str> {
         "{" | "}" => "braces",
         "[" | "]" => "brackets",
         "(" | ")" => "parentheses",
-        "." => "dot",
         "'" | "\"" => "quote",
-        _ => crate::symbols::symbols().iter().find(|row| row.0 == symbol)?.1,
+        _ => crate::symbols::symbols().iter().find(|s| s.glyph == symbol)?.name,
     })
 }
 
@@ -57,9 +56,7 @@ pub(crate) fn help_command(code: &str) -> Option<(&str, bool)> {
     words.next().is_none().then_some((name, detail))
 }
 
-pub(crate) fn word_char(c: char) -> bool {
-    (c.is_alphanumeric() || matches!(c, '_' | '∆' | '⍙' | '•')) && crate::primitive::Primitive::from_glyph(c).is_none()
-}
+pub(crate) fn word_char(c: char) -> bool { crate::syntax::name_char(c) || c == '•' || c.is_ascii_digit() }
 
 pub(crate) fn at_cursor(code: &str, cursor: usize) -> Option<&str> {
     if documentation(code.trim()).is_some() { return Some(code.trim()); }

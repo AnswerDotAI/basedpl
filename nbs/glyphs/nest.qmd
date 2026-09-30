@@ -17,5 +17,5 @@
 Marks are nonnegative integers. Unit and singleton marks extend. `N⊆⍠K Y` partitions along axis `K` instead. `N⊆⍤1 Y` partitions each row. Unlike [`⊂`](enclose.qmd), positive marks need not start a partition at every position.
 
 ```apl
-1 1 0 1 1⊆⍤1 (2 5⍴"abcdefghij") ⍝ ["ab" "de" ⋄ "fg" "ij"]
+1 1 0 1 1⊆⍤1 ["abcde" ⋄ "fghij"] ⍝ ["ab" "de" ⋄ "fg" "ij"]
 ```

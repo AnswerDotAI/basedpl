@@ -4,14 +4,14 @@
 
 ```apl
 ⊤5                ⍝ 1 0 1
-⊤2x 5x            ⍝ [0ₓ 1ₓ 0ₓ ⋄ 1ₓ 0ₓ 1ₓ]
+⊤[2 5]ₓ           ⍝ [0 1 0 ⋄ 1 0 1]ₓ
 ```
 
 `B⊤Y` represents numbers in bases `B`. A zero base retains the remaining quotient.
 
 ```apl
 2 2 2 2⊤10         ⍝ 1 0 1 0
-0x 60x 60x⊤3661x   ⍝ 1ₓ 1ₓ 1ₓ
+[0 60 60]ₓ⊤3661x   ⍝ [1 1 1]ₓ
 ```
 
 A unit `B` gives residues. A vector `B` adds its digits as a new last axis, so the result's shape is `(⍴Y),⍴B`. Exact operands retain exact arithmetic.

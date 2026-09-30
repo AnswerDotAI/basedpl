@@ -14,8 +14,4 @@
 2x!5x             ⍝ 10ₓ
 ```
 
-Extends through Gamma to non-integral and complex arguments.
-
-## Errors
-
-- `DOMAIN`: factorial poles
+Extends through Gamma to non-integral and complex arguments. At a pole, a negative integer, the result is an infinity or NaN, as the gamma function gives it.

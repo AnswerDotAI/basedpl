@@ -22,14 +22,14 @@ Result cells with the same rank as the selected cells return to the axes `A`. Ot
 ```apl
 m←2 3⍴⍳6
 {⌽⍵}⍠0 m                  ⍝ [3 4 5 ⋄ 0 1 2]
-⍴{,⍵}⍠0 1 (2 3 4⍴⍳24)     ⍝ 6 4
+⍴{,⍵}⍠0 1 (2 3 4⍴⍳24)     ⍝ [6 4]ₓ
 ```
 
 With two arguments, `A` applies to both, and leading frames agree as they do for rank. An argument without the selected axes is one whole cell, paired with every cell of the other argument.
 
 ```apl
 m←2 3⍴⍳6
-1 0 1 {⍺/⍵}⍠1 m           ⍝ [0 2 ⋄ 3 5]
+1 0 1 {⍺#⍵}⍠1 m           ⍝ [0 2 ⋄ 3 5]
 10 20 {⍺+⍵}⍠0 m           ⍝ [10 11 12 ⋄ 23 24 25]
 ```
 

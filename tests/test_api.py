@@ -37,15 +37,15 @@ def test_builtin_attributes():
 def test_python_printer():
     from basedpl import to_python
     for code, expected in {
-        '×': 'sign', '×⟜2': 'times(2.)', '2⊸-': 'subtract.left(2.)', '2-': 'subtract.left(2.)',
-        '×⟜2x': 'times(2)', '÷⟜1r2': 'divide(Fraction(1, 2))',
-        '+/÷≢': 'plus.reduce / tally', '+.×': 'plus @ times', '×⌝': 'times.outer',
-        '+/⍠1': 'plus.reduce[1.]', '1⊸+⍣[≡]': 'plus.left(1.).history(match)', '+⌿': 'plus.reduce[0]', '-⍨': 'subtract.commute',
-        '+⍤×': 'conjugate.atop(sign)', '+⍥×': 'conjugate.over(sign)', '-⊸+': 'negate.before(plus)', '+⟜-': 'plus.after(negate)',
-        '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each',
+        '×': 'sign', '×⍄2': 'times(2.)', '2⍃-': 'subtract.left(2.)', '2-': 'subtract.left(2.)',
+        '×⍄2x': 'times(2)', '÷⍄1r2': 'divide(Fraction(1, 2))',
+        '+/÷≢': 'plus.reduce / tally', '+.×': 'plus @ times', '×⊗': 'times.outer',
+        '+/⍠1': 'plus.reduce[1.]', '1⍃+⍣[≡]': 'plus.left(1.).history(match)', '+⌿': 'plus.reduce[0]', '-⍨': 'subtract.commute',
+        '+∘×': 'conjugate.atop(sign)', '+⍥×': 'conjugate.over(sign)', '-⍃+': 'negate.before(plus)', '+⍄-': 'plus.after(negate)',
+        '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each', '(×⍄2)⁻¹': 'times(2.).undo',
     }.items(): teq(to_python(apl(code)), expected)
     teq(to_python(apl('×'), dyad=True), 'times')
-    teq(to_python(apl('+⍤×'), dyad=True), 'conjugate.atop(times)')
+    teq(to_python(apl('+∘×'), dyad=True), 'conjugate.atop(times)')
     teq(to_python(times(2.) ** 3), 'times(2.) ** 3')
     teq(to_python((plus.reduce / tally).each), '(plus.reduce / tally).each')
     teq(to_python(apl.fn('{⎕←1 ⋄ ⍵}')), 'fn("{⎕←1 ⋄ ⍵}")')
@@ -61,7 +61,7 @@ def test_load(tmp_path, monkeypatch):
     assert apl('•LOAD "main.apl"').py == 14
     assert apl('twice x').py == 14
     assert apl('{loaded←•load "defs.apl" ⋄ twice ⍵}3').py == 6
-    source.write_text('⎕←x\n1÷0')
+    source.write_text('⎕←x\n1÷"a"')
     with pytest.raises(AplError, match=r'defs.apl:2') as err: apl('•load "defs.apl"')
     assert err.value.output == ['7']
     source.write_text('⎕←9\n{∇⍵}0')
@@ -226,7 +226,7 @@ def test_words_binding_and_operators():
     np.testing.assert_array_equal(plus.scan([1, 2, 3]), [1, 3, 6])
     np.testing.assert_array_equal(subtract.scan([1, 2, 3]), [1, -1, -4])
     np.testing.assert_array_equal(plus.scan(10, [1, 2, 3]), [11, 13, 16])
-    assert type(tally('abc').py) is int and shape(Array([1., 2.])).apl == '[2ₓ]'
+    assert type(tally('abc').py) is int and shape(Array([1., 2.])).apl == '[2]ₓ'
     assert (Array('abc') + 1).py == 'bcd'
     np.testing.assert_array_equal(plus.reduce[0](Array([[1, 2], [3, 4]])), [4, 6])
     np.testing.assert_array_equal(plus.reduce[1, 2](np.arange(1, 9).reshape(2, 2, 2)), [10, 26])
@@ -315,7 +315,7 @@ def test_axis_names():
     teq(reshape([4], v).axis_names, (None,))
     teq(plus.scan(v).axis_names, ('city',))
     apl(V=v)
-    for code, names in [('2/V', ('city',)), ('1↕V', (None, None)), ('{⍵}⌺1 V', (None, None)), ('V,V', ('city',))]:
+    for code, names in [('2#V', ('city',)), ('1↕V', (None, None)), ('{⍵}⌺1 V', (None, None)), ('V,V', ('city',))]:
         teq(apl(code).axis_names, names)
     with pytest.raises(ValueError, match='DOMAIN'): Array(data, axis_names=('city', 'city'))
     with pytest.raises(ValueError): Array(data, axis_names=('city',))

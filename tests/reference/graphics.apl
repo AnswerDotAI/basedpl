@@ -23,11 +23,11 @@ pic←•svg ["cx":50 "cy":50 "r":20] c ⍬
 pic.children.attrs.r←30
 ("image/svg+xml"⊃•mime pic)≡•xml pic
 ⍝ =>
-1ₓ
+$t
 
-⍝ mime-field — A function in _mime_ renders the current keyed vector
+⍝ mime-field — A function in _mime renders the current keyed vector
 total←["items":[1 2 3]]
-total._mime_←{["text/html":"<b>",(⍕+/⍵.items),"</b>"]}
+total._mime←{["text/html":"<b>",(⍕+/⍵.items),"</b>"]}
 total.items.[1]←10
 "text/html"⊃•mime total
 ⍝ =>
@@ -49,7 +49,7 @@ p.y.scale←"log" ⋄ p.series.a.color←"red"
 ⍝ plot-svg — The renderer draws the current spec as SVG
 "<svg"≡4↑"image/svg+xml"⊃•mime •plot 3 1 4
 ⍝ =>
-1ₓ
+$t
 
 ⍝ plot-unknown — Rendering reports unknown fields
 p←•plot 1 2 3 ⋄ p.titel←'x' ⋄ •mime p

@@ -11,7 +11,7 @@ One string names the whole right value. Several strings name its leading-axis ce
 ```apl
 T←"price" "qty":[[1 2 3] [4 5 6]]
 ≢T                          ⍝ 2ₓ
-⍴"ab":11 12 13              ⍝ ,1ₓ
+⍴"ab":11 12 13              ⍝ [1]ₓ
 "price" "qty":2 3⍴⍳6        ⍝ "price" "qty":⍠0 (2 3⍴⍳6)
 ≢⍬:⍬                        ⍝ 0ₓ
 ```
@@ -20,8 +20,8 @@ Brackets with any item written as `key:value` build one keyed vector. Items with
 
 ```apl
 T←["price":[1 2 3] "qty":[4 5 6]]
-T≡"price" "qty":[[1 2 3] [4 5 6]]   ⍝ 1ₓ
-["kind":"bar"]≡"kind":"bar"       ⍝ 1ₓ
+T≡"price" "qty":[[1 2 3] [4 5 6]]   ⍝ $t
+["kind":"bar"]≡"kind":"bar"       ⍝ $t
 ```
 
 A character atom or string is one string key. Characters side by side form one string, so `'a' 'b'` is the key `"ab"`. Use `"a" "b"` for two one-character keys.
@@ -44,11 +44,11 @@ Several key vectors label successive axes. `:⍠` with several axes chooses thei
 
 ```apl
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
-⍴M                          ⍝ 2ₓ 2ₓ
+⍴M                          ⍝ [2 2]ₓ
 ⍳⍠0 M                       ⍝ "alice" "bob"
 ⍳⍠1 M                       ⍝ "price" "qty"
 ⍳⍠0 1 M                     ⍝ [["alice" "bob"] ["price" "qty"]]
-M≡["price" "qty";"alice" "bob"]:⍠1 0 [10 2 ⋄ 20 4] ⍝ 1ₓ
+M≡["price" "qty";"alice" "bob"]:⍠1 0 [10 2 ⋄ 20 4] ⍝ $t
 ```
 
 Monadic `:` removes all keys. `:⍠` with axes removes only the selected axes' keys.
@@ -57,7 +57,7 @@ Monadic `:` removes all keys. `:⍠` with axes removes only the selected axes' k
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
 :M                          ⍝ [10 2 ⋄ 20 4]
 :⍠1 M                       ⍝ "alice" "bob":[10 2 ⋄ 20 4]
-⍳⍠0 1 (:M)                  ⍝ [[0ₓ 1ₓ] [0ₓ 1ₓ]]
+⍳⍠0 1 (:M)                  ⍝ [[0 1] [0 1]]ₓ
 ```
 
 Inside dfns, group functional colon: `(X:Y)` or `(:Y)`. A direct colon separates a guard.
@@ -147,12 +147,12 @@ T.[,⊂"aa"]←U ⋄ "aa"⌷T         ⍝ 9
 
 ## Agreement
 
-Corresponding keyed axes align by union: left keys, then right-only keys. An absent counterpart receives the present value's prototype.
+Corresponding keyed axes align by union: left keys, then right-only keys. An absent entry reads as its own array's prototype.
 
 ```apl
-("aa":2)+("bb":3)            ⍝ "aa" "bb":2 3
-("aa":2)×("bb":3)            ⍝ "aa" "bb":0 0
-("aa":0)=("bb":0)            ⍝ "aa" "bb":1ₓ 1ₓ
+["aa":2] + ["bb":3]          ⍝ ["aa":2 "bb":3]
+["aa":2] × ["bb":3]          ⍝ ["aa":0 "bb":0]
+["aa":0] = ["bb":0]          ⍝ ["aa":$t "bb":$t]
 ```
 
 Each keyed axis aligns independently, including reordered keys.
@@ -161,15 +161,15 @@ Each keyed axis aligns independently, including reordered keys.
 A←[["alice"] ["price"]]:1 1⍴10
 B←[["bob"] ["qty"]]:1 1⍴2
 A+B                         ⍝ ["alice" "bob";"price" "qty"]:[10 0 ⋄ 0 2]
-("aa" "bb":1 2)+("bb" "aa":10 20) ⍝ "aa" "bb":21 12
+["aa":1 "bb":2] + ["bb":10 "aa":20] ⍝ ["aa":21 "bb":12]
 ```
 
 With one axis unkeyed, agreement is positional. Expanding a keyed singleton drops that axis's labels. Enclosure broadcasts within the named value.
 
 ```apl
-("base":5)+10 20 30          ⍝ 15 25 35
-("base":5)+⊂10 20 30         ⍝ "base":15 25 35
-("aa" "bb":1 2)+10 20        ⍝ "aa" "bb":11 22
+["base":5] + 10 20 30        ⍝ 15 25 35
+["base":5] + ⊂10 20 30       ⍝ ["base":[15 25 35]]
+["aa":1 "bb":2] + 10 20      ⍝ ["aa":11 "bb":22]
 ```
 
 An axis operand chooses the correspondence.
@@ -186,7 +186,7 @@ Transpose moves axes with their keys.
 
 ```apl
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
-⍉M                          ⍝ ["price" "qty";"alice" "bob"]:[10 20 ⋄ 2 4]
+Mᵀ                          ⍝ ["price" "qty";"alice" "bob"]:[10 20 ⋄ 2 4]
 ```
 
 Reverse, rotate, take, drop and filtering move keys with their positions.
@@ -197,7 +197,7 @@ V←"aa" "bb" "cc":10 20 5
 1⌽V                         ⍝ "bb" "cc" "aa":20 5 10
 ¯1↑V                        ⍝ "cc":5
 1↓V                         ⍝ "bb" "cc":20 5
-1 0 1/V                     ⍝ "aa" "cc":10 5
+1 0 1#V                     ⍝ "aa" "cc":10 5
 ```
 
 Reduction removes the reduced axis. Scan retains it. Each retains its frame keys.
@@ -241,7 +241,7 @@ M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
 Outer product retains both arguments' axes. Array-valued power counts supply the result frame.
 
 ```apl
-("aa" "bb":1 2)+⌝("xx" "yy":10 20) ⍝ ["aa" "bb";"xx" "yy"]:[11 21 ⋄ 12 22]
+["aa":1 "bb":2] +⊗ ["xx":10 "yy":20] ⍝ ["aa" "bb";"xx" "yy"]:[11 21 ⋄ 12 22]
 N←"initial" "once" "twice":0 1 2
 2×⍣N 3                      ⍝ "initial" "once" "twice":3 6 12
 ```
@@ -249,18 +249,18 @@ N←"initial" "once" "twice":0 1 2
 Inner product, Decode and matrix solve align contracted keys. Both keyed: equal key sets required (`LENGTH` otherwise). Either unkeyed: positional contraction.
 
 ```apl
-("hi" "lo":1 2)+.×("lo" "hi":10 20) ⍝ 40
-("hi" "lo":10 10)⊥("lo" "hi":2 1) ⍝ 12
-M←["r1" "r2";"xx" "yy"]:[2x 0x ⋄ 0x 4x]
-("r2" "r1":12x 4x)⌹M        ⍝ "xx" "yy":2ₓ 3ₓ
+["hi":1 "lo":2] +.× ["lo":10 "hi":20] ⍝ 40
+["hi":10 "lo":10] ⊥ ["lo":2 "hi":1] ⍝ 12
+M←["r1" "r2";"xx" "yy"]:[2 0 ⋄ 0 4]ₓ
+["r2":12 "r1":4]ₓ ⌹ M       ⍝ ["xx":2 "yy":3]ₓ
 ⌹M                          ⍝ ["xx" "yy";"r1" "r2"]:[1r2 0ₓ ⋄ 0ₓ 1r4]
 ```
 
 Catenate joins keys on its joined axis and aligns other keyed axes. Positions from an unkeyed part of the joined axis have no keys.
 
 ```apl
-("aa":1),("bb":2)            ⍝ "aa" "bb":1 2
-("aa" "bb":1 2),5            ⍝ ["aa":1 "bb":2 5]
+["aa":1] , ["bb":2]          ⍝ ["aa":1 "bb":2]
+["aa":1 "bb":2] , 5          ⍝ ["aa":1 "bb":2 5]
 A←["aa" "bb";"xx" "yy"]:[1 2 ⋄ 3 4]
 B←["bb" "aa";["zz"]]:[[5] ⋄ [6]]
 A,B                         ⍝ ["aa" "bb";"xx" "yy" "zz"]:[1 2 6 ⋄ 3 4 5]
@@ -269,15 +269,15 @@ A,B                         ⍝ ["aa" "bb";"xx" "yy" "zz"]:[1 2 6 ⋄ 3 4 5]
 Replicate can repeat an unkeyed axis while retaining keys on other axes.
 
 ```apl
-2/"aa" "bb":[1 2 ⋄ 3 4]     ⍝ "aa" "bb":[1 1 2 2 ⋄ 3 3 4 4]
+2#⍠¯1 ["aa" "bb"]:[1 2 ⋄ 3 4] ⍝ "aa" "bb":[1 1 2 2 ⋄ 3 3 4 4]
 ```
 
-Take and Expand add positions with no key, as fills from an unkeyed part do.
+Take and [expand](glyphs/hash.qmd#expand) add positions with no key, as fills from an unkeyed part do.
 
 ```apl
 V←"aa" "bb":1 2
 3↑V                         ⍝ ["aa":1 "bb":2 0]
-1 0 1\V                     ⍝ ["aa":1 0 "bb":2]
+1 0 1#⁻¹V                   ⍝ ["aa":1 0 "bb":2]
 ```
 
 Repeated positions on a keyed axis give `DOMAIN`. For `V←"aa" "bb":1 2`:
@@ -285,7 +285,7 @@ Repeated positions on a keyed axis give `DOMAIN`. For `V←"aa" "bb":1 2`:
 | Expression | Reason |
 |---|---|
 | `V,V` | Duplicate joined keys |
-| `2/V` | Repeated keys |
+| `2#V` | Repeated keys |
 
 ### Windows
 
@@ -296,8 +296,8 @@ V←"aa" "bb" "cc":1 2 3
 2↕V                         ⍝ [1 2 ⋄ 2 3]
 3↕V                         ⍝ "aa" "bb" "cc":⍠1 [1 2 3 ⋄]
 ¯3↕V                        ⍝ "aa" "bb" "cc":[0 1 2 ⋄ 1 2 3 ⋄ 2 3 0]
-+/⍤⊢⌺3 V                    ⍝ "aa" "bb" "cc":3 6 5
-{(⍳⍠0 ⍵)≡"aa" "bb" "cc"}⌺3 V ⍝ "aa" "bb" "cc":0ₓ 1ₓ 0ₓ
++/∘⊢⌺3 V                    ⍝ "aa" "bb" "cc":3 6 5
+{(⍳⍠0 ⍵)≡"aa" "bb" "cc"}⌺3 V ⍝ "aa" "bb" "cc":[$f $t $f]
 ```
 
 ## Match and search
@@ -306,12 +306,12 @@ Match aligns keys independently on every keyed axis. Shapes and unkeyed axes mus
 
 ```apl
 V←"low" "mid" "high":10 20 30
-V≡⌽V                        ⍝ 1ₓ
+V≡⌽V                        ⍝ $t
 V⍳20 99                     ⍝ "mid" 3ₓ
 V⍸5 15 25 40                ⍝ 0ₓ "low" "mid" "high"
 ⍒V                          ⍝ "high" "mid" "low"
 V ⍒V                        ⍝ "high" "mid" "low":30 20 10
-("aa":7)∊("bb":7)            ⍝ "aa":1ₓ
+["aa":7] ∊ ["bb":7]          ⍝ ["aa":$t]
 ```
 
 Multidimensional positions mix keys and numeric coordinates. Bare Iota generates from values as usual.
@@ -348,7 +348,7 @@ An array's shape is keyed by its axis names. Reshape by a keyed shape to name th
 
 ```apl
 M←["city":2 "month":3]⍴⍳6
-⍴M                            ⍝ ["city":2ₓ "month":3ₓ]
+⍴M                            ⍝ ["city":2 "month":3]ₓ
 ⍴M "month"                    ⍝ 3ₓ
 +/⍠"month" M                  ⍝ ["city":2]⍴3 12
 ```
@@ -357,15 +357,15 @@ An unkeyed entry of the shape leaves its axis unnamed. `(N:⍴M)⍴M` renames th
 
 ```apl
 M←["city":2 "month":3]⍴⍳6
-⍴("city" 1:⍴M)⍴M              ⍝ ["city":2ₓ 3ₓ]
-⍴(:⍴M)⍴M                      ⍝ 2ₓ 3ₓ
+⍴("city" 1:⍴M)⍴M              ⍝ ["city":2 3]ₓ
+⍴(:⍴M)⍴M                      ⍝ [2 3]ₓ
 ```
 
 A keyed vector on the left of `:` supplies both axis names and position keys. Its keys name axes. Its values list their positions.
 
 ```apl
 sales←["city":["NY" "LA"] "month":["Jan" "Feb" "Mar"]]:[10 20 30 ⋄ 40 50 60]
-⍴sales                        ⍝ ["city":2ₓ "month":3ₓ]
+⍴sales                        ⍝ ["city":2 "month":3]ₓ
 ⍳⍠0 1 sales                   ⍝ [["NY" "LA"] ["Jan" "Feb" "Mar"]]
 "LA" "Feb"⌷sales              ⍝ 50
 ```
@@ -375,15 +375,15 @@ Reuse descriptions, or attach them to selected axes. Other axes keep their names
 ```apl
 months←"month":"Jan" "Feb" "Mar"
 M←months:⍠1 (2 3⍴⍳6)
-⍴M                            ⍝ [2ₓ "month":3ₓ]
+⍴M                            ⍝ [2 "month":3]ₓ
 ⍳⍠1 M                         ⍝ "Jan" "Feb" "Mar"
-⍴("city":"NY" "LA"):M         ⍝ ["city":2ₓ "month":3ₓ]
+⍴("city":"NY" "LA"):M         ⍝ ["city":2 "month":3]ₓ
 ```
 
 ```apl
 axes←["month":["Jan" "Feb" "Mar"] "city":["NY" "LA"]]
 M←axes:⍠1 0 (2 3⍴⍳6)
-⍴M                            ⍝ ["city":2ₓ "month":3ₓ]
+⍴M                            ⍝ ["city":2 "month":3]ₓ
 ⍳⍠0 1 M                       ⍝ [["NY" "LA"] ["Jan" "Feb" "Mar"]]
 ```
 
@@ -393,8 +393,8 @@ Agreement first pairs equal names, wherever they occur. Unpaired axes broadcast.
 M←["city":2 "month":3]⍴⍳6
 N←["month":3]⍴10 20 30
 M+N                           ⍝ ["city":2 "month":3]⍴[10 21 32 ⋄ 13 24 35]
-⍴N+M                          ⍝ ["month":3ₓ "city":2ₓ]
-M+⍉M                          ⍝ ["city":2 "month":3]⍴[0 2 4 ⋄ 6 8 10]
+⍴N+M                          ⍝ ["month":3 "city":2]ₓ
+M+Mᵀ                          ⍝ ["city":2 "month":3]⍴[0 2 4 ⋄ 6 8 10]
 ```
 
 Remaining axes pair in leading-axis order. A named/unnamed pair keeps the name. Two different names remain separate broadcast dimensions. Length agreement and position-key alignment then apply.
@@ -404,7 +404,7 @@ M←["city":2 "month":3]⍴⍳6
 M+10 20                       ⍝ ["city":2 "month":3]⍴[10 11 12 ⋄ 23 24 25]
 A←["city":2 3]⍴1
 B←["product":4 3]⍴2
-⍴A+B                          ⍝ ["city":2ₓ 3ₓ "product":4ₓ]
+⍴A+B                          ⍝ ["city":2 3 "product":4]ₓ
 ```
 
 A string or a list of strings as the `⍠` operand names axes. Index `⌷` with that operand selects positions on the named axes.
@@ -412,8 +412,8 @@ A string or a list of strings as the `⍠` operand names axes. Index `⌷` with 
 ```apl
 M←["city":["LA" "NY"] "month":["Jan" "Feb" "Mar"]]:2 3⍴⍳6
 ⍳⍠0 ("LA"⌷⍠"city" M)          ⍝ "Jan" "Feb" "Mar"
-("LA"⌷M)≡"LA"⌷⍠"city" M       ⍝ 1ₓ
-⍴⊂⍠"month" M                  ⍝ ["city":2ₓ]
+"LA"⌷M ≡ "LA"⌷⍠"city" M       ⍝ $t
+⍴⊂⍠"month" M                  ⍝ ["city":2]ₓ
 +/⍠"city" "month" M          ⍝ 15
 ```
 
@@ -421,21 +421,21 @@ Transpose moves names. Selecting with a unit removes the selected axis. Repeatin
 
 ```apl
 M←["city":2 "month":3]⍴⍳6
-⍴⍉M                          ⍝ ["month":3ₓ "city":2ₓ]
-⍴0⌷M                         ⍝ ["month":3ₓ]
-⍴2 3⍴M                       ⍝ 2ₓ 3ₓ
-⍴,M                          ⍝ ,6ₓ
+⍴Mᵀ                          ⍝ ["month":3 "city":2]ₓ
+⍴0⌷M                         ⍝ ["month":3]ₓ
+⍴2 3⍴M                       ⍝ [2 3]ₓ
+⍴,M                          ⍝ [6]ₓ
 V←["city":2]⍴1 2
-⍴2/V                         ⍝ ["city":4ₓ]
-⍴⍪V                          ⍝ ["city":2ₓ 1ₓ]
+⍴2#V                         ⍝ ["city":4]ₓ
+⍴⍪V                          ⍝ ["city":2 1]ₓ
 ```
 
 Duplicating an axis name drops every occurrence of it. Position keys remain.
 
 ```apl
 V←["city":2]⍴"LA" "NY":1 2
-W←V×⌝V
-⍴W                           ⍝ 2ₓ 2ₓ
+W←V×⊗V
+⍴W                           ⍝ [2 2]ₓ
 ⍳⍠0 1 W                      ⍝ [["LA" "NY"] ["LA" "NY"]]
 ```
 

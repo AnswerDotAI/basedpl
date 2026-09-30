@@ -7,7 +7,7 @@
 [1 0 ⋄ 0 1]+.×2 2⍴⍳4 ⍝ 2 2⍴⍳4
 ```
 
-Singleton contraction axes extend. Empty contractions use the reduction identity. `g⌝` is [outer product](outer-product.qmd).
+Singleton contraction axes extend. Empty contractions use the reduction identity. `g⊗` is [outer product](outer-product.qmd).
 
 After an array, `.name` reads a [keyed array](../keyed.qmd) value: `T.name` is `"name"⊃T`. It also works as an assignment target. Plain assignment creates missing records along the path.
 
@@ -17,7 +17,7 @@ T.addr.city        ⍝ "LA"
 T.n+←1 ⋄ T.n       ⍝ 2
 ```
 
-After an array, `.` followed by parentheses or brackets indexes it through [Index](squad.qmd). `x.(I)` is `(I)⌷x`, and `x.[I]` is `[I]⌷x`. Dot indexing binds as tightly as `.name`. It needs no parentheses inside a larger expression. Paths chain from left to right. Inside the brackets, each item indexes one axis, so the positions for one axis form one item, as in `m.[[2 0]]`. `x.(I)` takes its index from a computed vector, one item per axis. Parentheses round a literal make a scalar, so `m.(1 2)` selects rows 1 and 2, the same as `m.[[1 2]]`. The array is evaluated before the index.
+After an array, `.` followed by parentheses or brackets indexes it through [Index](squad.qmd). `x.(I)` is `(I)⌷x`, and `x.[I]` is `[I]⌷x`. Dot indexing binds as tightly as `.name`. It needs no parentheses inside a larger expression. Paths chain from left to right. Inside the brackets, each item indexes one axis, so the positions for one axis form one item, as in `m.[[2 0]]`. `x.(I)` takes its index from a computed vector, one item per axis. So `m.(1 2)` is the same as `m.[1 2]`. The array is evaluated before the index.
 
 ```apl
 m←3 4⍴⍳12

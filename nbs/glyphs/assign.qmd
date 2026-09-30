@@ -4,7 +4,7 @@
 
 ```apl
 x←3 ⋄ x+2          ⍝ 5
-sum←+/ ⋄ sum 1 2 3 ⍝ 6
+sum←+/ ⋄ sum1 2 3 ⍝ 6
 ```
 
 `←` binds tightly on its left and loosely on its right. The target is the run immediately before `←`: a name, a group, or arrays applied to each other such as `x[1]`. The value is everything to its right, so spaces there group runs as usual.

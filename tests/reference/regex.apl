@@ -2,7 +2,7 @@
 
 ⍝ regex:matches — Bound functions share a compiled pattern
 p←•r "[0-9]+" ⋄ [p.match "abc123def45";p.position "abc123def45";p.length "abc123def45";'#' p.replace "abc123def45"]
-["123" "45";3ₓ 9ₓ;3ₓ 2ₓ;"abc#def#"]
+["123" "45";3 9;3 2;"abc#def#"]ₓ
 
 ⍝ regex:groups — Captures exclude the whole match; absent captures are empty strings
 p←•r "(a)?(b+)" ⋄ p.groups "abbb b"
@@ -10,23 +10,23 @@ p←•r "(a)?(b+)" ⋄ p.groups "abbb b"
 
 ⍝ regex:unicode — Positions count characters, not UTF-8 bytes
 p←•r "é|🐈+" ⋄ [p.position "aé🐈🐈z";p.length "aé🐈🐈z"]
-[1ₓ 2ₓ;1ₓ 2ₓ]
+[1 2;1 2]ₓ
 
 ⍝ regex:empty — Empty matches occur at character boundaries
 p←•r "" ⋄ [p.position "é🐈";'-' p.replace "é🐈"]
-[0ₓ 1ₓ 2ₓ;"-é-🐈-"]
+[0 1 2;"-é-🐈-"]ₓ
 
 ⍝ regex:nomatch — Typed empty results and unchanged replacement
 p←•r "(z)" ⋄ [p.match "abc";p.position "abc";p.groups "abc";'x' p.replace "abc"]
-[0⍴⊂"";0⍴0ₓ;0⍴⊂,⊂"";"abc"]
+[0⍴⊂"";⍬ₓ;0⍴⊂,⊂"";"abc"]
 
 ⍝ regex:replacement — Rust capture expansion and literal dollar
 p←•r "(?P<word>[a-z]+)([0-9]+)" ⋄ "${word}:$2:$$" p.replace "ab12 cd3"
 "ab:12:$ cd:3:$"
 
 ⍝ regex:each — Bound functions compose and work with Each
-p←•r "(?i)cat" ⋄ f←≢⍤p.match ⋄ f¨"Cat cat" "dog"
-2ₓ 0ₓ
+p←•r "(?i)cat" ⋄ f←≢∘p.match ⋄ f¨"Cat cat" "dog"
+[2 0]ₓ
 
 ⍝ regex:badpattern — Compile errors are located DOMAIN errors
 •r "a(b"

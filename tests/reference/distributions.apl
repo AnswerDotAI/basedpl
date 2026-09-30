@@ -12,15 +12,15 @@ a←•beta 1 1 ⋄ b←•beta 2 2 ⋄ [a.quantile 0.25 0.75;b.density 0.5;b.cd
 
 ⍝ distribution:binomial — Mass at integers, floor for cdf
 d←•binomial 2 0.5 ⋄ [d.density ¯1 0 0.5 1 2 3;d.cdf ¯1 0.5 1.5 2;d.quantile 0 0.25 0.5 1]
-[0 0.25 0 0.5 0.25 0;0 0.25 0.75 1;0ₓ 0ₓ 1ₓ 2ₓ]
+[0 0.25 0 0.5 0.25 0;0 0.25 0.75 1;[0 0 1 2]ₓ]
 
 ⍝ distribution:degenerate — Certain events and zero-rate Poisson
 b←•binomial 3 1 ⋄ p←•poisson 0 ⋄ [b.quantile 0 0.5 1;p.sample 3;p.quantile 0 1]
-[3ₓ 3ₓ 3ₓ;0ₓ 0ₓ 0ₓ;0ₓ 0ₓ]
+[3 3 3;0 0 0;0 0]ₓ
 
 ⍝ distribution:poisson — Poisson mass and unbounded quantile
 d←•poisson 2 ⋄ [d.density 0 1;d.quantile 0 1;d.cdf 0]
-[1 2×*¯2;0 ∞;*¯2]
+[1 2×*¯2;0ₓ ∞;*¯2]
 
 ⍝ distribution:gamma — Gamma uses scale, exponential uses rate
 g←•gamma 1 2 ⋄ e←•exponential 0.5 ⋄ [g.density 2;e.quantile 1-*¯1;g.cdf 2]
@@ -60,11 +60,11 @@ d←•uniform 0 1 ⋄ [d.cdf "a" "b":0.25 0.5;d.cdf [[0.25 0.5] 0⍴0]]
 
 ⍝ distribution:shapes — Shape argument controls scalar and empty draws
 d←•normal 0 1 ⋄ [⍴d.sample ⍬;⍴d.sample 2 0 3;⍴d.sample 2 3]
-[⍬;2ₓ 0ₓ 3ₓ;2ₓ 3ₓ]
+[⍬;2 0 3;2 3]ₓ
 
 ⍝ distribution:bernoulli — All four methods on a certain event
 d←•bernoulli 1 ⋄ [d.sample 3;d.density 0 1;d.cdf 0 1;d.quantile 0 0.5 1]
-[1ₓ 1ₓ 1ₓ;0 1;0 1;1ₓ 1ₓ 1ₓ]
+[[1 1 1]ₓ;0 1;0 1;[1 1 1]ₓ]
 
 ⍝ distribution:bad-probability — Quantile validates before entering the library
 d←•normal 0 1 ⋄ d.quantile 1.01
@@ -99,7 +99,7 @@ d←•normal 0 1 ⋄ 2 d.density 3
 ⍝ error: SYNTAX ERROR
 
 ⍝ distribution:sample-limit — Check allocations before drawing
-d←•normal 0 1 ⋄ d.sample 1000001
+d←•normal 0 1 ⋄ d.sample 1000000001
 ⍝ error: LIMIT ERROR
 
 ⍝ distribution:integer-limit — Trial count is checked before floating-point rounding
@@ -110,10 +110,10 @@ d←•normal 0 1 ⋄ d.sample 1000001
 g←•rand 42 ⋄ h←•rand 42 ⋄ d←•normal 0 1
 [(g.roll 6 6 6) ≡ h.roll 6 6 6;(g d.sample 4) ≡ h d.sample 4;(3 g.deal 10) ≡ 3 h.deal 10]
 ⍝ =>
-1ₓ 1ₓ 1ₓ
+$t $t $t
 
 ⍝ distribution:generator-stream — Copies of a generator draw from one stream
-g←•rand 42 ⋄ h←g ⋄ a←g.roll 1000 1000 ⋄ b←h.roll 1000 1000 ⋄ k←•rand 42 ⋄ (a,b)≡k.roll 4⍴1000   ⍝ 1ₓ
+g←•rand 42 ⋄ h←g ⋄ a←g.roll 1000 1000 ⋄ b←h.roll 1000 1000 ⋄ k←•rand 42 ⋄ (a,b)≡k.roll 4⍴1000   ⍝ $t
 
 ⍝ distribution:generator-values — A seed fixes the draws, which pins the generator algorithm
 (•rand 42).roll 6 6 6   ⍝ 4 1 5

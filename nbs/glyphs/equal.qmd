@@ -3,15 +3,15 @@
 `=Y` self-classifies major cells. Rows correspond to distinct cells in first-occurrence order; columns correspond to Y's cells. Entries are equality masks.
 
 ```apl
-="aba"            ⍝ [1ₓ 0ₓ 1ₓ ⋄ 0ₓ 1ₓ 0ₓ]
+="aba"            ⍝ [$t $f $t ⋄ $f $t $f]
 ```
 
-`X=Y` tests equality, pervasively.
+`X=Y` tests equality, pervasively. NaN equals nothing, as IEEE 754 defines.
 
 ```apl
-1 2 3=2            ⍝ 0ₓ 1ₓ 0ₓ
-0.3=0.1+0.2        ⍝ 1ₓ
-"abc"='b'          ⍝ 0ₓ 1ₓ 0ₓ
+1 2 3=2            ⍝ $f $t $f
+0.3=0.1+0.2        ⍝ $t
+"abc"='b'          ⍝ $f $t $f
 ```
 
 See [tolerance](../rules.qmd#equality-and-ordering) and whole-array [match `≡`](match.qmd).

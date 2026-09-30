@@ -13,28 +13,28 @@ bAsedPL writes lists in brackets, `[a b c]`, as Python and JavaScript do. Lochba
 ```apl
 x←5
 [1 x 3]              ⍝ 1 5 3
-≢[+/ ÷ ≢]            ⍝ 3
+≢[+/ ÷ ≢]            ⍝ 3ₓ
 ```
 
 Only literals strand, because a name can hold anything. If names that hold atoms stranded, a program's meaning would depend on run-time values. A reduction returns an atom, and `(+/x) 3` would be a list when `x` is a vector and a selection when `x` is a matrix. J and K also strand only literals. Lochbaum names the cost. Changing one item of a list from a constant to a variable means rewriting the list: `1 2 3` becomes `[1 x 3]`.
 
 Brackets always write a vector, whatever the number of items. `[1 2 3]` is `1 2 3`, and `[1]` is a one-item vector. A single literal isn't a strand: `1` is a number.
 
-Parentheses give the rank-0 spelling. Parentheses round literal syntax make a scalar holding it: a literal, a strand, or glyphs separated by spaces. So `(1 2)` is `⊂1 2` and `(+ -)` is `⊂[+ -]`. Parentheses round anything else group it, including a name. The text alone decides, so reading the code never depends on what a name holds. A literal therefore has a spelling at every rank: `(1 2)` is rank 0, `[1 2]` is rank 1, and `[1 2 ⋄ 3 4]` is rank 2. A computed value is enclosed with `⊂`.
+Parentheses group, as they do in maths, whatever they hold. `(1+2)×3` is 9, `(1 2)` is `1 2`, and `(x)` is `x`. So writing a name in place of the literal it holds never changes the reading. A scalar is written with `⊂`, as in BQN: `⊂[1 2]` is a scalar holding a vector. Glyphs alone, separated by spaces, make a scalar instead. `⊂+` is a train, so parentheses give a glyph its scalar: `(+ -)` is `⊂[+ -]`. The text alone decides, so reading the code never depends on what a name holds.
 
 ```apl
-⍴[1]                 ⍝ [1]
-(1 2)≡⊂1 2           ⍝ 1
+⍴[1]                 ⍝ [1]ₓ
+⍴⊂[1 2]              ⍝ ⍬ₓ
 (1+2)×3              ⍝ 9
 ```
 
-Array notation extends brackets to higher ranks. `[1 2 ⋄ 3 4]` is a matrix, as in Dyalog's array notation. `⋄` stacks its rows as major cells, so each row adds its own rank to the result. `[1 ⋄ 2]` is the vector `1 2`, a column is `[[1] ⋄ [2]]`, and `[a ⋄ b]` is the Mix of `[a b]` when `a` and `b` have the same shape. BQN's literals can't form rank-0 arrays, which Lochbaum lists under "High-rank array notation awkwardness". Here every rank has a spelling.
+Array notation extends brackets to higher ranks. `[1 2 ⋄ 3 4]` is a matrix, as in Dyalog's array notation. `⋄` stacks its rows as major cells, so each row adds its own rank to the result. `[1 ⋄ 2]` is the vector `1 2`, a column is `[[1] ⋄ [2]]`, and `[a ⋄ b]` is the Mix of `[a b]` when `a` and `b` have the same shape.
 
 Parentheses with `⋄` write a vector of rows. Each row reads as brackets do, so it is always a vector, and the rows can differ in length. So `⋄` adds an axis inside brackets and a level of nesting inside parentheses. Brackets write flat arrays, and parentheses nest. A vector of strings or of names already has its spelling, `["ab" "cd"]` or `[x y]`, so nothing is lost by making every row a vector.
 
 ```apl
-(4 ⋄ 4 5 ⋄ 4 5 6)≡[[4] [4 5] [4 5 6]]   ⍝ 1
-≢¨(1 2 ⋄ 3)                            ⍝ 2 1
+(4 ⋄ 4 5 ⋄ 4 5 6)≡[[4] [4 5] [4 5 6]]   ⍝ $t
+≢¨(1 2 ⋄ 3)                            ⍝ [2 1]ₓ
 ```
 
 Items in brackets can be functions. `[+/ ÷ ≢]` is a vector of three functions. A one-item vector turns a function expression into a value: `[+/÷≢]`. BQN needs `⊑⟨Expr⟩` or a name for this, which Lochbaum lists under "Converting a function expression to a subject is tricky". Parentheses enclose a function written as a glyph: `(+)` is a scalar holding `+`.
@@ -51,12 +51,13 @@ a+b×c+d              ⍝ 15
 a+b × c+d            ⍝ 21
 ```
 
-Runs also fix the operand problem. A run ends at a space, and `f⍤1 M` applies rank 1 to `M` with no `⊢`. A run that ends in a dyadic operator takes the next run as its right operand, as if no space came between them, so `f⍤ 1 M` means the same. That is how a named operator takes a literal operand: `+Depth 0 x`. Without the space, `Depth0` would be one name.
+Runs also fix the operand problem. A run ends at a space, and `f⍤1 M` applies rank 1 to `M` with no `⊢`. A literal argument would join the operand's strand, so it goes in parentheses: `f⍤1(2 3)`. A run that ends in a dyadic operator takes the next run as its right operand, as if no space came between them, so `f⍤ 1 M` means the same. That is how a named operator takes a literal operand: `+Depth 0 x`. Without the space, `Depth0` would be one name.
 
 ```apl
 m←2 3⍴⍳6
 +/⍤1 m               ⍝ 3 12
 +/⍤ 1 m              ⍝ 3 12
++/⍤1(2 3⍴⍳6)         ⍝ 3 12
 ```
 
 Lochbaum describes the problem that runs solve, under "Modifiers look looser than trains without spaces". In BQN's `⋆∘-×˜`, the `-` looks closer to `⋆`, but it binds to `×˜`. Writing `⋆∘- ×˜` shows the structure. He calls it "unfortunate that this is something the writer must do rather than something the notation encourages". In bAsedPL the space is part of the notation. Under "Long trains are hard for humans to parse", he notes that readers lose track of a train's structure after four to eight parts. Runs let spaces show that structure: `⌊ +/÷≢` is the floor of the mean.
@@ -67,14 +68,14 @@ Other languages give spaces meaning too. K reads `a -1` differently from `a - 1`
 
 ## A space before an argument makes a train
 
-A run that ends in a function has no argument yet. It is a function, built as an APL train with one addition. An array directly before a function binds to it. `2×` is `2⊸×`, and `32+1.8×` converts Celsius to Fahrenheit.
+A run that ends in a function has no argument yet. It is a function, built as an APL train with one addition. An array directly before a function binds to it. `2×` is `2⍃×`, and `32+1.8×` converts Celsius to Fahrenheit.
 
 ```apl
 f←32+1.8×
-f 100                ⍝ 212
+f100                 ⍝ 212
 ```
 
-APL's train rules decide the rest, including Dyalog's fork with a constant, `0.5×⊢+÷`. Binding covers the common case of fixing a left argument, without `⊸`. K has the same idea, called projection, in which `2*` is a function.
+APL's train rules decide the rest, including Dyalog's fork with a constant, `0.5×⊢+÷`. Binding covers the common case of fixing a left argument, without `⍃`. K has the same idea, called projection, in which `2*` is a function.
 
 The space before an argument decides the reading. `+/÷≢ x` is the train `+/÷≢` applied to `x`, which is the mean. `+/÷≢x` is one run that ends in an array. It is an expression, `+/(÷(≢x))`.
 
@@ -90,14 +91,14 @@ If both spellings meant the same, the space would carry nothing. Everyday arithm
 
 With stranding gone, two arrays side by side had no meaning. bAsedPL applies the first to the second, as K applies a list to indices. An array next to an argument selects along its leading axis. An array is a function from positions to items, and in a function's position it acts as one. BQN's Select, `⊏`, does the same job with a glyph.
 
-The result has the shape of the positions, followed by the shape of each selected cell. So the brackets and parentheses show the rank of the result. `v 1` is an item, `v(1)` is that item enclosed, because `(1)` is a scalar, and `v[1]` is a one-item vector. Dyalog hides this rule: its `v[1]` is a scalar, and a one-item result needs `v[,1]`.
+The result has the shape of the positions, followed by the shape of each selected cell. So the positions show the rank of the result. `v1` is an item, `v ⊂1` is that item enclosed, and `v[1]` is a one-item vector. Dyalog hides this rule: its `v[1]` is a scalar, and a one-item result needs `v[,1]`.
 
 ```apl
 v←10 20 30 40
 v[2 0]               ⍝ 30 10
-v ¯1                 ⍝ 40
-v 1                  ⍝ 20
-v(1)                 ⍝ (20)
+v¯1                  ⍝ 40
+v1                   ⍝ 20
+v ⊂1                 ⍝ ⊂20
 v[1]                 ⍝ [20]
 ```
 
@@ -127,7 +128,7 @@ Two rules follow J and BQN where 0-origin left a choice. A negative length count
 
 ```apl
 ⍳¯3                  ⍝ 2 1 0
-1 3 5⍸0 3 9          ⍝ 0 2 3
+1 3 5⍸0 3 9          ⍝ [0 2 3]ₓ
 ```
 
 ## Based arrays
@@ -135,8 +136,8 @@ Two rules follow J and BQN where 0-origin left a choice. A negative length count
 bAsedPL uses BQN's [based array model](https://mlochbaum.github.io/BQN/doc/based.html). Numbers, characters and functions are atoms. An array is a rectangular collection of values, and an atom is not an array. Enclosing always adds a layer. `⊂3` is a rank-0 array holding 3, and it differs from 3.
 
 ```apl
-(⊂3)≡3               ⍝ 0
-≡⊂⊂3                 ⍝ 2
+⊂3 ≡ 3               ⍝ $f
+≡⊂⊂3                 ⍝ 2ₓ
 ```
 
 APL's nested array model identifies a simple scalar with its enclosure, and enclosing 3 gives 3 again. Under the based model, every value has one representation, whether you pass it to a function, return it, or store it in an array. Functions are atoms too, and they can be items of a list, as in `[+/ ÷ ≢]`. Lochbaum's page on the model gives the longer argument.

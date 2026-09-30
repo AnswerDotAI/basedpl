@@ -1,38 +1,64 @@
-((symbols, keyboard) => {
+((symbols, layout) => {
     // US physical keys, before macOS Option or another layout transforms event.key.
     const punctuation = {Backquote: '`~', Minus: '-_', Equal: '=+', BracketLeft: '[{', BracketRight: ']}',
         Backslash: '\\|', Semicolon: ';:', Quote: "'\"", Comma: ',<', Period: '.>', Slash: '/?'};
-    function chord(ev) {
-        const {code, shiftKey} = ev;
-        let key;
-        if (/^Key[A-Z]$/.test(code)) key = shiftKey ? code.slice(3) : code.slice(3).toLowerCase();
-        else if (/^Digit[0-9]$/.test(code)) key = shiftKey ? ')!@#$%^&*('[Number(code[5])] : code[5];
-        else key = punctuation[code]?.[Number(shiftKey)];
-        return keyboard[key];
+    function usKey({code, shiftKey}) {
+        if (/^Key[A-Z]$/.test(code)) return shiftKey ? code.slice(3) : code.slice(3).toLowerCase();
+        if (/^Digit[0-9]$/.test(code)) return shiftKey ? ')!@#$%^&*('[Number(code[5])] : code[5];
+        return punctuation[code]?.[Number(shiftKey)];
     }
 
+    // Composed input from `layout.json`, with the same rules as the REPL and the macOS layout. `pending` is the dead-key state
+    // that the next key completes.
+    let pending = null;
+    const act = action => typeof action === 'string' ? (pending = null, action) : (pending = action.state, '');
+    // What a key types: `{text, stop}`, where `stop` means the key itself does nothing more, or nothing for an ordinary key.
+    // `option` is whether an Option chord counts here, and `code` whether a plain dead key such as `^` starts a sequence.
+    function press(ev, option, code) {
+        const key = usKey(ev), plain = !ev.altKey && !ev.ctrlKey && !ev.metaKey;
+        if (pending) {
+            const state = layout.states[pending];
+            pending = null;
+            if (plain && ev.key === ' ') return {text: state.terminator, stop: true};
+            if (ev.key === 'Backspace' || ev.key === 'Escape') return {text: '', stop: true};
+            if (plain && key in state.keys) return {text: act(state.keys[key]), stop: true};
+            // Any other key types the terminator, then acts as if nothing were pending.
+            const rest = press(ev, option, code);
+            return {text: state.terminator + (rest?.text ?? ''), stop: rest?.stop ?? false};
+        }
+        if (option && ev.altKey && !ev.shiftKey && !ev.ctrlKey && !ev.metaKey && key in layout.option) return {text: act(layout.option[key]), stop: true};
+        if (plain && code && key in layout.plain) return {text: act(layout.plain[key]), stop: true};
+    }
+    const reset = () => { pending = null; };
+
+    // At each level (exact, prefix, prefixes of hyphen-separated parts) a name outranks a search word, as in `editor.rs`.
     function matches(query) {
         query = query.toLowerCase();
-        let best = 3, found = [];
-        for (const [glyph, glyphName, monad, dyad, aliases] of symbols) {
-            let rank = 3, name;
-            for (const alias of [glyphName, monad, dyad, aliases].join(' ').split(' ').filter(Boolean)) {
-                const letters = alias.replaceAll('-', '');
-                let rest = query;
-                for (const part of alias.split('-')) {
-                    let n = 0;
-                    while (n < part.length && part[n] === rest[n]) n++;
-                    if (!n) break;
-                    rest = rest.slice(n);
-                    if (!rest) break;
+        const letters = word => word.replaceAll('-', '');
+        let best = Infinity, found = [];
+        for (const {glyph, name, monad, dyad, aliases} of symbols) {
+            let rank = Infinity;
+            [name, monad, dyad, ...aliases.split(' ')].filter(Boolean).forEach((word, i) => {
+                const level = letters(word) === query ? 0 : letters(word).startsWith(query) ? 1 : 2;
+                if (level === 2) {
+                    let rest = query;
+                    for (const part of word.split('-')) {
+                        let n = 0;
+                        while (n < part.length && part[n] === rest[n]) n++;
+                        if (!n) break;
+                        rest = rest.slice(n);
+                        if (!rest) break;
+                    }
+                    if (rest) return;
                 }
-                const r = letters === query ? 0 : letters.startsWith(query) ? 1 : !rest ? 2 : 3;
-                if (r < rank) { rank = r; name = alias; }
-            }
+                rank = Math.min(rank, 2 * level + (i > 0));
+            });
             if (rank < best) { best = rank; found = []; }
-            if (rank < 3 && rank === best) found.push([glyph, name]);
+            if (rank < Infinity && rank === best) found.push([glyph, name]);
         }
-        return found;
+        // A name that is a prefix of every other match wins: `om gives omega, `omu gives omega-underbar.
+        const shortest = found.find(([, a]) => found.every(([, b]) => letters(b).startsWith(letters(a))));
+        return shortest && found.length > 1 ? [shortest] : found;
     }
 
     function inCode(text, python = false) {
@@ -70,5 +96,5 @@
         if (/^[a-z]*$/i.test(query)) return {start, query, found: matches(query)};
     }
 
-    return {matches, inCode, aplStart, entry, chord};
+    return {matches, inCode, aplStart, entry, press, reset};
 })

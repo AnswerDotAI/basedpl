@@ -72,7 +72,7 @@ def test_numpy_inputs_and_copies():
     np.testing.assert_array_equal(apl('+/m'), [2, 10, 18])
     for a in [np.array(True), np.array(3, dtype=np.float32), np.array([1., 2j]), np.array([2**64-1], dtype=np.uint64).astype(object),
         np.empty((0, 3), dtype=int), np.empty((2, 0)), np.array([np.inf, -np.inf]), np.array([['a', 'b'], ['c', 'd']]), np.array([[1, Fraction(2, 3)]], dtype=object),
-        np.arange(6, dtype=np.int8).reshape(2, 3).T, np.array([0.5, -0.], dtype=np.float32), np.array([2**63-1], dtype=np.uint64)]:
+        np.arange(6, dtype=np.int8).reshape(2, 3).T, np.array([0.5, -0.], dtype=np.float32), np.array([2**63-1], dtype=np.uint64), np.array([1., np.nan])]:
         result = apl('x', x=a)
         np.testing.assert_array_equal(result, a)
         assert np.shape(result) == a.shape
@@ -80,8 +80,7 @@ def test_numpy_inputs_and_copies():
     assert apl('x', x=np.float32(1.5)).py == 1.5
     assert apl('x', x=np.int64(3)).py == 3
     assert apl('x+1', x=float('inf')).py == float('inf')
-    for a in [complex(np.inf, 0), complex(0, np.nan), [float('nan')], np.array([1., np.nan]), np.array([2**64-1], dtype=np.uint64)]:
-        with pytest.raises(ValueError): apl(x=a)
+    with pytest.raises(ValueError): apl(x=np.array([2**64-1], dtype=np.uint64))
     for a in [np.array([b'a']), np.array(['2020'], dtype='datetime64[Y]'), object()]:
         with pytest.raises(TypeError): apl(x=a)
     np.testing.assert_array_equal(saved, np.full((3, 2), 77))
@@ -112,7 +111,7 @@ def test_exact_nested_and_character_values():
     assert apl('0 3⍴""').shape == (0, 3) and apl('0⍴⊂1 2').np.dtype == object
     assert apl('x', x=[[], []]).shape == (2, 0)
     assert type(apl('1j2×1j¯2').py) is float and apl('+1j2').py == 1-2j
-    assert apl('0/1j2').np.dtype == np.float64
+    assert apl('0#1j2').np.dtype == np.float64
     empty = apl('0⍴⊂2 3⍴1x')
     assert apl('x≡0⍴⊂2 3⍴1x', x=empty).py == 1
     assert Array(a := [1, 2]).shape == (2,)
@@ -123,7 +122,7 @@ def test_exact_nested_and_character_values():
 
 def test_errors_capture_output_and_recover(capsys):
     for call in [apl, lambda src: apl(src, 'explicit')]:
-        with pytest.raises(AplError) as caught: call('x←7 ⋄ ⎕←1x ⋄ 1÷0')
+        with pytest.raises(AplError) as caught: call('x←7 ⋄ ⎕←1x ⋄ 1÷"a"')
         e = caught.value
         assert e.kind == 'DOMAIN ERROR' and e.output == ['1ₓ'] and '÷' in e.source and len(e.span) == 2
         assert ' --> <input>:1:' in str(e)
@@ -131,7 +130,7 @@ def test_errors_capture_output_and_recover(capsys):
         assert apl('x+1').py == 8
     definition = 'bad←{1÷⍵}'
     apl(definition)
-    with pytest.raises(AplError) as caught: apl.fn('bad')(0)
+    with pytest.raises(AplError) as caught: apl.fn('bad')('a')
     assert caught.value.source == definition and caught.value.calls[-1]['source']['text'] == 'bad'
     apl.timeout = .01
     with pytest.raises(AplError) as caught: apl('{∇⍵}0', 'explicit')
@@ -173,22 +172,22 @@ def test_without_numpy():
 
 
 def test_installed_command(tmp_path):
-    for code, status, output in [('2×3+4', 0, '14\n'), ('¯2+1÷0', 1, '')]:
+    for code, status, output in [('2×3+4', 0, '14\n'), ('¯2+1÷"a"', 1, '')]:
         res = subprocess.run(['bapl', '-e', code], capture_output=True, text=True, timeout=10)
         assert (res.returncode, res.stdout) == (status, output)
         if status: assert 'DOMAIN ERROR' in res.stderr and '<expression>:1:5' in res.stderr
         else: assert not res.stderr
     path = tmp_path/'lesson.apl'
-    path.write_text('v←⍳10\nsum←+/\nsum v\n', encoding='utf-8')
+    path.write_text('#!/usr/bin/env bapl\nv←⍳10\nsum←+/\nsum v\n', encoding='utf-8')
     res = subprocess.run(['bapl', str(path)], capture_output=True, text=True, timeout=10)
     assert (res.returncode, res.stdout, res.stderr) == (0, '45\n', '')
 
 
-def test_installed_json_command():
-    codes = ['v←9007199254740993x 0.5 1r3', 'v', '0/1r3', '1r0', '1r3+1r6', '2x*100x', '1j2 3j4']
-    res = subprocess.run(['bapl', '--json'], input='\n'.join(json.dumps(c) for c in codes)+'\n', capture_output=True, text=True, timeout=10)
+def test_installed_worker_command():
+    codes = ['v←9007199254740993x 0.5 1r3', 'v', '0#1r3', '1r0', '1r3+1r6', '2x*100x', '1j2 3j4']
+    res = subprocess.run(['bapl', '--worker'], input=''.join(json.dumps(dict(code=c))+'\n' for c in codes), capture_output=True, text=True, timeout=10)
     assert res.returncode == 0 and not res.stderr
-    replies = [json.loads(line) for line in res.stdout.splitlines()]
+    replies = [json.loads(line)['result'] for line in res.stdout.splitlines()]
     assert replies[1]['value'] == dict(shape=[3], data=[9007199254740993, 0.5, {'rational': ['1', '3']}], prototype=0)
     assert replies[2]['value'] == dict(shape=[0], data=[], prototype=0)
     assert replies[3]['error']['kind'] == 'DOMAIN ERROR'

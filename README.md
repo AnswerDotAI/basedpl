@@ -67,10 +67,10 @@ avg 1 2 3 4
 
     2.5
 
-To see how these ideas express an algorithm, start from “a prime has exactly two positive divisors”. Form all remainders of 1 to 50 (`|⌝⍨1+⍳50`), count the zeros down each column (`+⌿0=`), and find the positions (`⍸`) whose count is two. Positions count from 0, so `1+` turns them back into numbers:
+To see how these ideas express an algorithm, start from “a prime has exactly two positive divisors”. Form all remainders of 1 to 50 (`|⊗⍨1+⍳50`), count the zeros down each column (`+⌿0=`), and find the positions (`⍸`) whose count is two. Positions count from 0, so `1+` turns them back into numbers:
 
 ``` apl
-1+⍸2=+⌿0=|⌝⍨1+⍳50
+1+⍸2=+⌿0=|⊗⍨1+⍳50
 ```
 
     2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
@@ -158,12 +158,12 @@ Explore [iteration and inverses](glyphs/power.qmd), [Under](glyphs/under.qmd), [
 ⨸360x
 ```
 
-    2ₓ 2ₓ 2ₓ 3ₓ 3ₓ 5ₓ
+    [2 2 2 3 3 5]ₓ
 
 [Polynomials](glyphs/polynomial.qmd) support coefficients, roots and evaluation. Polynomial functions can be [differentiated](glyphs/derivative.qmd): for f(x) = 1 + 2x + 3x², f′(2) = 14.
 
 ``` apl
-f←1x 2x 3x⊛ ⋄ f∂2x
+f←1x 2x 3x⌻ ⋄ f∂2x
 ```
 
     14ₓ
@@ -227,4 +227,39 @@ mean([1, 2, 3])
 
 Arrays have `.py`, `.np` and `.df` conversions for Python values, NumPy and pandas. Functions also have Python names and composition operators. See the [Python tutorial](python.ipynb).
 
-For other frontends, the [process interfaces](processes.qmd) provide JSON messages and interruptible workers. The [APL library](https://github.com/AnswerDotAI/basedpl/tree/main/lib) contains more algorithms, codecs, interpreters and puzzles. See [DEV.md](https://github.com/AnswerDotAI/basedpl/blob/main/DEV.md) for source installation and contributing.
+For other frontends, the [process interfaces](processes.qmd) provide JSON messages and interruptible workers. The [APL library](https://github.com/AnswerDotAI/basedpl/tree/main/lib) contains more algorithms, codecs, interpreters and puzzles.
+
+## Install from source
+
+Requires Python ≥3.10 and Rust ≥1.98. In your Python environment:
+
+``` bash
+git clone https://github.com/AnswerDotAI/basedpl.git
+cd basedpl
+pip install .
+```
+
+For a standalone executable without Python, run `cargo install --path .`. Cargo installs it in its `bin` directory, normally `~/.cargo/bin`. Put that directory on your PATH.
+
+## Contributing
+
+Install the development and documentation tools with `pip install -e '.[dev]'`. The main commands are:
+
+``` bash
+cargo test
+cargo run -- -e '2×3+4'
+cargo fastfmt
+maturin develop
+pytest -q
+ship-rs-build
+```
+
+Rebuild with `maturin develop` after Rust changes, before checking the installed extension. Cargo tests alone don’t update the editable Python installation. Use `cargo fastfmt`, not `cargo fmt`.
+
+Before a release, run `python scripts/prep.py` from the repository root. It checks the glyph reference against the interpreter’s glyph table, writes the syntax highlighters’ glyph lists, cleans and exports the notebooks, and renders this README.
+
+Use lowercase `j` in complex literals throughout tests and examples, including adapted reference cases. Reserve uppercase `J` for explicit input-alias tests. Keep archived upstream source unchanged.
+
+Write literal matrices in array notation, `[10 20 30 ⋄ 40 50 60]`, not as a reshape, `2 3⍴10 20 30 40 50 60`. Keep `⍴` where the example is about reshape.
+
+Brackets are the usual way to write a list. A bare literal list, such as `1 2 3`, is a shorthand. End an operand with a space, not with parentheses or `⊢`. Where a literal operand would run into a literal argument, write brackets instead, as in `f⍤1 [2 3]`. Report any case where neither a space nor brackets works.

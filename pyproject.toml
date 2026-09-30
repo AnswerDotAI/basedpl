@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.9.2,<2.0"]
+requires = ["maturin>=1.9.4,<2.0"]
 build-backend = "maturin"
 
 [project]
@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["fastship>=0.0.11", "maturin>=1.0,<2.0", "pytest", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "jlanguage"]
+dev = ["fastship>=0.0.11", "maturin>=1.9.4,<2.0", "pytest", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "jlanguage", "pillow"]
 
 [project.scripts]
 bapl = "basedpl._cli:main"
@@ -34,18 +34,20 @@ Documentation = "https://answerdotai.github.io/basedpl"
 
 [tool.maturin]
 data = "wheel"
-features = ["extension-module"]
+features = ["python"]
+profile = "dev"
 python-source = "python"
 module-name = "basedpl._core"
 
 [tool.uv]
-cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.rs" }, { file = "build.rs" }, { file = "nbs/**/*.qmd" }, { file = "python/basedpl/keyboard.json" }, { file = "Cargo.toml" }, { file = ".git/fastws-cargo-key" }]
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.rs" }, { file = "build.rs" }, { file = "nbs/**/*.qmd" }, { file = "python/basedpl/layout.json" }, { file = "Cargo.toml" }, { file = ".git/fastws-cargo-key" }]
 
 [tool.fastship]
 branch = "main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-q"
 
 [tool.nbdev]
 lib_path = "python/basedpl"

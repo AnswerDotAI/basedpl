@@ -3,7 +3,7 @@
 `Y→f→g` passes Y through f, then g. Each stage uses ordinary APL binding.
 
 ```apl
-1+2×3 → 2× → -⟜1    ⍝ 13
+1+2×3 → 2× → -⍄1    ⍝ 13
 ⍳4 → +/ → √          ⍝ √6
 ```
 
@@ -18,7 +18,7 @@ Stages receive one right argument. A train such as `10-` binds a dyad's left arg
 
 ```apl
 3 → 10-       ⍝ 7
-3 → -⟜10      ⍝ ¯7
+3 → -⍄10      ⍝ ¯7
 3 → {⍵×⍵}    ⍝ 9
 ```
 

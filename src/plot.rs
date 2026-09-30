@@ -1,4 +1,4 @@
-use crate::{data::Options, display, execution::Context, keyed, primitive::real, Error, ErrorKind, Value};
+use crate::{data::Options, display, execution::Context, keyed, primitive::real, Error, ErrorAt, ErrorKind, Value};
 use plotters::{
     coord::{
         ranged1d::{DefaultFormatting, KeyPointHint, Ranged},
@@ -9,8 +9,8 @@ use plotters::{
 
 type Area<'a> = DrawingArea<SVGBackend<'a>, Shift>;
 
-const PLOT: &[&str] = &["data", "mark", "title", "width", "height", "x", "y", "legend", "grid", "flip", "color", "size", "labels", "series", "_mime_"];
-const FIGURE: &[&str] = &["data", "title", "width", "height", "widths", "heights", "share", "_mime_"];
+const PLOT: &[&str] = &["data", "mark", "title", "width", "height", "x", "y", "legend", "grid", "flip", "color", "size", "labels", "series", "_mime"];
+const FIGURE: &[&str] = &["data", "title", "width", "height", "widths", "heights", "share", "_mime"];
 const STYLE: &[&str] = &["mark", "color", "size", "labels"];
 const PALETTE: [(&str, RGBColor); 10] = [
     ("blue", RGBColor(31, 119, 180)),
@@ -25,24 +25,22 @@ const PALETTE: [(&str, RGBColor); 10] = [
     ("cyan", RGBColor(23, 190, 207)),
 ];
 
-fn invalid(span: &Context<'_>, message: impl Into<String>) -> Error { span.error(ErrorKind::Domain, message) }
-
 fn drawn<T, E: std::fmt::Display>(result: Result<T, E>, span: &Context<'_>) -> Result<T, Error> {
-    result.map_err(|e| invalid(span, format!("plot drawing failed: {e}")))
+    result.map_err(|e| span.domain_error(format!("plot drawing failed: {e}")))
 }
 
-/// `X •plot Y` returns a spec holding the data `Y`, the settings in `X` and a `_mime_` renderer. Plain text `X` is shorthand for `mark`.
+/// `X •plot Y` returns a spec holding the data `Y`, the settings in `X` and a `_mime` renderer. Plain text `X` is shorthand for `mark`.
 pub(crate) fn plot(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let settings = match left {
         Some(mark) if keyed::name(mark).is_some() => Some(keyed::vector(vec!["mark".into()], vec![mark.clone()])),
         left => left.cloned().map(Ok),
     };
     let spec = keyed::vector(vec!["data".into()], vec![right.clone()]).and_then(|spec| settings.map_or(Ok(spec.clone()), |s| keyed::merge(&spec, &s?)));
-    spec.and_then(|spec| display::with_renderer(&spec, "plot-renderer", render)).map_err(|k| span.error(k, "•plot settings must be a keyed vector or a mark"))
+    spec.and_then(|spec| display::with_renderer(&spec, "plot-renderer", render)).error_at(span, "•plot settings must be a keyed vector or a mark")
 }
 
 fn render(_: Option<&Value>, spec: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let data = keyed::field(spec, "data").ok_or_else(|| invalid(span, "•plot needs data"))?;
+    let data = keyed::field(spec, "data").ok_or_else(|| span.domain_error("•plot needs data"))?;
     let figure = is_figure(&data);
     let opts = Options::new("•plot", Some(spec), None, if figure { FIGURE } else { PLOT }, span)?;
     let size = (opts.number("width", 600., span)? as u32, opts.number("height", 400., span)? as u32);
@@ -54,7 +52,7 @@ fn render(_: Option<&Value>, spec: &Value, span: &Context<'_>) -> Result<Value, 
         else { Chart::new(&opts, span)?.draw(&root, span)? }
         drawn(root.present(), span)?;
     }
-    display::svg(keyed::text(&svg)).map_err(|k| span.error(k, "invalid plot MIME bundle"))
+    display::svg(keyed::text(&svg)).error_at(span, "invalid plot MIME bundle")
 }
 
 fn record(opts: &Options, key: &str, allowed: &[&str], span: &Context<'_>) -> Result<Options, Error> {
@@ -66,7 +64,7 @@ fn titled<'a>(area: &Area<'a>, title: &str, span: &Context<'_>) -> Result<Area<'
 }
 
 fn numbers(value: &Value, span: &Context<'_>) -> Result<Vec<f64>, Error> {
-    value.elements().map(|e| real(&e, span).and_then(|v| if v.is_finite() { Ok(v) } else { Err(invalid(span, "•plot values must be finite")) })).collect()
+    value.elements().map(|e| real(&e, span).and_then(|v| if v.is_finite() { Ok(v) } else { Err(span.domain_error("•plot values must be finite")) })).collect()
 }
 
 fn names(value: &Value, axis: usize) -> Vec<String> {
@@ -103,7 +101,7 @@ fn parse(data: &Value, span: &Context<'_>) -> Result<Data, Error> {
             (d.x, d.categories, d.x_title, d.legend_title) = (positions(cols), names(data, 1), axis_name(data, 1), axis_name(data, 0));
         }
         [_] if data.keys(0).is_some() && data.elements().all(|e| !e.is_atom()) => {
-            let columns = keyed::pairs(data).map_err(|k| span.error(k, "invalid •plot table"))?;
+            let columns = keyed::pairs(data).error_at(span, "invalid •plot table")?;
             d.x = positions(columns.first().map_or(0, |(_, c)| c.len()));
             for (name, column) in columns {
                 if &*name != "x" {
@@ -136,13 +134,13 @@ impl Axis {
         let log = match opts.text("scale", Some("linear"), span)?.as_str() {
             "linear" => false,
             "log" => true,
-            _ => return Err(invalid(span, "•plot scale must be 'linear' or 'log'")),
+            _ => return Err(span.domain_error("•plot scale must be 'linear' or 'log'")),
         };
         Ok(Self { lo: 0., hi: 1., log, title: opts.text("title", Some(&title), span)?, ticks: opts.values.get("ticks").cloned(), categories, inner: false })
     }
 
     fn map(&self, v: f64, span: &Context<'_>) -> Result<f64, Error> {
-        if !self.log { Ok(v) } else if v > 0. { Ok(v.log10()) } else { Err(invalid(span, "log scales need positive values")) }
+        if !self.log { Ok(v) } else if v > 0. { Ok(v.log10()) } else { Err(span.domain_error("log scales need positive values")) }
     }
 
     /// Fit the range to `values`, padded by `fraction` of the range and at least `pad`.
@@ -158,7 +156,7 @@ impl Axis {
     fn ticks(&self, count: f64, span: &Context<'_>) -> Result<Vec<(f64, String)>, Error> {
         let ticks = match &self.ticks {
             Some(t) if t.keys(0).is_some() => keyed::pairs(t)
-                .map_err(|k| span.error(k, "invalid •plot ticks"))?
+                .error_at(span, "invalid •plot ticks")?
                 .into_iter()
                 .map(|(name, v)| Ok((self.map(real(&v, span)?, span)?, name.to_string())))
                 .collect::<Result<Vec<_>, Error>>()?,
@@ -192,16 +190,16 @@ fn mark(value: &Value, span: &Context<'_>) -> Result<Mark, Error> {
         Some("line") => Ok(Mark::Line),
         Some("point") => Ok(Mark::Point),
         Some("bar") => Ok(Mark::Bar),
-        _ => Err(invalid(span, "•plot mark must be 'line', 'point' or 'bar'")),
+        _ => Err(span.domain_error("•plot mark must be 'line', 'point' or 'bar'")),
     }
 }
 
 fn color(value: &Value, span: &Context<'_>) -> Result<RGBColor, Error> {
-    let name = keyed::name(value).ok_or_else(|| invalid(span, "•plot colours must be text"))?;
+    let name = keyed::name(value).ok_or_else(|| span.domain_error("•plot colours must be text"))?;
     if let Some(n) = name.strip_prefix('#').filter(|h| h.len() == 6).and_then(|h| u32::from_str_radix(h, 16).ok()) {
         return Ok(RGBColor((n >> 16) as u8, (n >> 8) as u8, n as u8));
     }
-    PALETTE.iter().find(|(n, _)| **n == *name).map(|(_, c)| *c).ok_or_else(|| invalid(span, format!("unknown colour: {name}")))
+    PALETTE.iter().find(|(n, _)| **n == *name).map(|(_, c)| *c).ok_or_else(|| span.domain_error(format!("unknown colour: {name}")))
 }
 
 /// Point radii: a unit is pixels; a vector is data scaled so that area follows value.
@@ -251,12 +249,12 @@ struct Chart {
 
 impl Chart {
     fn new(opts: &Options, span: &Context<'_>) -> Result<Self, Error> {
-        let data = parse(opts.values.get("data").ok_or_else(|| invalid(span, "•plot needs data"))?, span)?;
+        let data = parse(opts.values.get("data").ok_or_else(|| span.domain_error("•plot needs data"))?, span)?;
         let mut x = Axis::new(&record(opts, "x", &["title", "scale", "ticks"], span)?, data.x_title, data.categories, span)?;
         let mut y = Axis::new(&record(opts, "y", &["title", "scale", "ticks"], span)?, String::new(), vec![], span)?;
-        let styles = opts.values.get("series").map_or(Ok(vec![]), keyed::pairs).map_err(|k| span.error(k, "•plot series must be keyed by series name"))?;
+        let styles = opts.values.get("series").map_or(Ok(vec![]), keyed::pairs).error_at(span, "•plot series must be keyed by series name")?;
         if let Some((name, _)) = styles.iter().find(|(name, _)| !data.series.iter().any(|(n, _)| n.as_deref() == Some(&**name))) {
-            return Err(invalid(span, format!("•plot has no series named {name}")));
+            return Err(span.domain_error(format!("•plot has no series named {name}")));
         }
         let mut series = Vec::new();
         for (i, (name, raw)) in data.series.into_iter().enumerate() {
@@ -292,7 +290,7 @@ impl Chart {
             "bottom-left" => corner(SeriesLabelPosition::LowerLeft),
             "bottom" => corner(SeriesLabelPosition::LowerMiddle),
             "bottom-right" => corner(SeriesLabelPosition::LowerRight),
-            _ => return Err(invalid(span, "unknown •plot legend position")),
+            _ => return Err(span.domain_error("unknown •plot legend position")),
         };
         Ok(Self {
             title: opts.text("title", Some(""), span)?,
@@ -387,17 +385,11 @@ impl Chart {
         // Data labels sit above their points and move up. End labels sit right of each series' last point and move down.
         let above = labels
             .iter()
-            .map(|(t, (x, y), _)| {
-                let (w, h) = size(t);
-                [x - w / 2, y - 6 - h, x - w / 2 + w, y - 6]
-            })
+            .map(|(t, (x, y), _)| { let (w, h) = size(t); [x - w / 2, y - 6 - h, x - w / 2 + w, y - 6] })
             .collect();
         let beside = ends
             .iter()
-            .map(|(t, (x, y), _)| {
-                let (w, h) = size(t);
-                [x + 8, y - h / 2, x + 8 + w, y - h / 2 + h]
-            })
+            .map(|(t, (x, y), _)| { let (w, h) = size(t); [x + 8, y - h / 2, x + 8 + w, y - h / 2 + h] })
             .collect();
         let origin = area.get_base_pixel();
         for ((text, _, color), [x0, y0, ..]) in labels.iter().zip(place(above, true)).chain(ends.iter().zip(place(beside, false))) {
@@ -495,9 +487,6 @@ fn edges(opts: &Options, key: &str, n: usize, size: u32, span: &Context<'_>) -> 
     let total: f64 = weights.iter().sum();
     let mut sum = 0.;
     Ok(std::iter::once(0)
-        .chain(weights.iter().map(|w| {
-            sum += w;
-            (size as f64 * sum / total).round() as u32
-        }))
+        .chain(weights.iter().map(|w| { sum += w; (size as f64 * sum / total).round() as u32 }))
         .collect())
 }

@@ -2,19 +2,19 @@
 
 `f∂X`: gradient; requires unit output. `U(f∂)X`: vector–Jacobian product, with `U` shaped like the output. Result has `X`'s shape.
 
-Currently supports real evaluators `C⊛`, including factored and exponent-table forms. `C⊛` is a train that binds `C`, the same as `C⊸⊛`.
+Currently supports real evaluators `C⌻`, including factored and exponent-table forms. `C⌻` is a train that binds `C`, the same as `C⍃⌻`.
 
 ```apl
-f←1x 2x 3x⊛ ⋄ f∂2x                ⍝ 14ₓ
-f←1x 2x 3x⊛ ⋄ f∂∂2x               ⍝ 6ₓ
-f←1x 2x 3x⊛ ⋄ 10x 20x(f∂)1x 2x    ⍝ 80ₓ 280ₓ
+f←[1 2 3]ₓ⌻ ⋄ f∂2x                ⍝ 14ₓ
+f←[1 2 3]ₓ⌻ ⋄ f∂∂2x               ⍝ 6ₓ
+f←[1 2 3]ₓ⌻ ⋄ [10 20]ₓ f∂ [1 2]ₓ  ⍝ [80 280]ₓ
 ```
 
 Multivariate gradients retain the coordinate enclosure. A shared unit coordinate sums partials.
 
 ```apl
-f←(⊂[1x 2x 0x ⋄ 1x 0x 2x])⊛ ⋄ f∂⊂3x 4x  ⍝ ⊂6ₓ 8ₓ
-f←(⊂[1x 2x 0x ⋄ 1x 0x 2x])⊛ ⋄ f∂3x      ⍝ 12ₓ
+f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)⌻ ⋄ f∂⊂[3 4]ₓ      ⍝ ⊂[6 8]ₓ
+f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)⌻ ⋄ f∂3x           ⍝ 12ₓ
 ```
 
 Repeated `∂` requires unit input and output and one variable.

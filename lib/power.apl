@@ -9,19 +9,19 @@
 
 for ← {  ⍝ Multiple selection of function list.
   (¯1↓⍺)⍶{1≠⍴⍺:⍺ ⍶ ⍵
-    (⍶⍣(↑⍺))⍵
-  }(⍹⍣(↑⌽⍺))⍵
+    ⍶⍣(↑⍺) ⍵
+  }⍹⍣(↑⌽⍺)⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_invr.htm
 invr ← {  ⍝ Approx inverse of real-valued function.
   ⍺←1+1e¯14+0×⍵
-  ∆x←1e¯14*÷2
-  -⟜⍵⍤⍶{
+  ∆x←√1e¯14
+  -⍄⍵∘⍶{
     ⍹ ⍵:⍵
     [y y∆]←⍶¨[0 ∆x]+⊂⍵
     ∇ ⍵-y×∆x÷y∆-y  ⍝ refined estimate.
-  }(⍵⊸≡⍤⍶)⍺
+  }(⍵⍃≡∘⍶)⍺
 }
 
 ⍝ From http://dfns.dyalog.com/c_limit.htm
@@ -62,14 +62,14 @@ ArcTan ← {
     GM←{(×/⍵)*÷⍴⍵}  ⍝ geometric  mean.
     (AM ⍵),GM(AM ⍵),1↓⍵
   }
-  start←(1+⍵*2)*-÷2
+  start←(1+⍵²)*-÷2
   finish←↑ next limit start,1
   ⍵×start÷finish
 }
 
 ⍝ From http://dfns.dyalog.com/c_pow.htm
 
-pow ← { (⍶⍣⍺)⍵ }  ⍝ Explicit function power.
+pow ← { ⍶⍣⍺ ⍵ }  ⍝ Explicit function power.
 
 ⍝ From http://dfns.dyalog.com/s_pow.htm
 
@@ -93,7 +93,7 @@ nr ← {  ⍝ Newton-Raphson.
   ⍵+(⍺×y)÷y-∆y  ⍝ next estimate.
 }
 
-traj2 ← { ¯1⊸↓⍤(,⟜⊂⟜⍶⟜↑⟜⌽⍨⍣(∊⍨⟜⊂⟜↑⟜⌽⍨)⍤(,⊂))⍵ }
+traj_2 ← { ¯1⍃↓ ,⍄⊂⍄⍶⍄↑⍄⌽⍨⍣(∊⍨⍄⊂⍄↑⍄⌽⍨)∘(,⊂) ⍵ }
 
 ⍝ From http://dfns.dyalog.com/c_while.htm
 

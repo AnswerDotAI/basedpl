@@ -3,7 +3,7 @@
 `?N`: uniform draw from `⍳N`. `?0`: U(0,1). Pervasive.
 
 ```apl
-(?6)∊⍳6           ⍝ 1ₓ
+(?6)∊⍳6           ⍝ $t
 ```
 
 `M?N`: `M` draws without replacement from `⍳N`.

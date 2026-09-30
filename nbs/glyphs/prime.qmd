@@ -1,13 +1,13 @@
-# `ℙ` — Prime
+# `⍭` — Prime
 
-`ℙN`: the prime with N primes before it, so positions count from 0 and `ℙ0` is 2. J's `p:` family. Integral inputs; exact integer results.
+`⍭N`: the prime with N primes before it, so positions count from 0 and `⍭0` is 2. J's `p:` family. Integral inputs; exact integer results.
 
 ```apl
-ℙ⍳8               ⍝ 2ₓ 3ₓ 5ₓ 7ₓ 11ₓ 13ₓ 17ₓ 19ₓ
-ℙ⍣¯1 ℙ⍳4          ⍝ 0ₓ 1ₓ 2ₓ 3ₓ
+⍭⍳8               ⍝ [2 3 5 7 11 13 17 19]ₓ
+⍭⁻¹⍭⍳4            ⍝ [0 1 2 3]ₓ
 ```
 
-`KℙN` selects an operation; codes retain J's values.
+`K⍭N` selects an operation; codes retain J's values.
 
 | K | Result |
 |---|---|
@@ -21,11 +21,11 @@
 | `5` | Euler's totient |
 
 ```apl
-¯1ℙ1 2 3 4 5 6     ⍝ 0ₓ 0ₓ 1ₓ 2ₓ 2ₓ 3ₓ
-1ℙ¯1 0 1 2 3 4     ⍝ 0ₓ 0ₓ 0ₓ 1ₓ 1ₓ 0ₓ
-4ℙ1 2 3 4 5        ⍝ 2ₓ 3ₓ 5ₓ 5ₓ 7ₓ
-5ℙ1 2 3 4 5 6      ⍝ 1ₓ 1ₓ 2ₓ 2ₓ 4ₓ 2ₓ
-2ℙ700               ⍝ [2ₓ 5ₓ 7ₓ ⋄ 2ₓ 2ₓ 1ₓ]
+¯1⍭1 2 3 4 5 6     ⍝ [0 0 1 2 2 3]ₓ
+1⍭¯1 0 1 2 3 4     ⍝ [0 0 0 1 1 0]ₓ
+4⍭1 2 3 4 5        ⍝ [2 3 5 5 7]ₓ
+5⍭1 2 3 4 5 6      ⍝ [1 1 2 2 4 2]ₓ
+2⍭700               ⍝ [2 5 7 ⋄ 2 2 1]ₓ
 ```
 
 Unit cells; results assemble with fill. Inverse: the number of primes below the argument, which is a prime's index. Primality testing is deterministic through 64 bits, probabilistic above that (false-positive bound `2⁻⁶⁴`).

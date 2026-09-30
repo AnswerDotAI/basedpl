@@ -15,6 +15,7 @@ __all__ = ['__version__', 'symbols', 'Array', 'Result', 'AplError', 'apl', 'fn']
 def _dtype(items):
     import numpy as np
     types = {type(o) for o in items}
+    if types == {bool}: return np.bool_
     if types == {int} and all(-(1<<63) <= o < 1<<63 for o in items): return np.int64
     if types <= {float, complex}: return np.complex128 if complex in types else np.float64
     if types == {str}: return 'U1'
@@ -67,7 +68,7 @@ def _dataframe(raw):
 def _element(value, seen):
     np = sys.modules.get('numpy')
     if np is not None and isinstance(value, np.generic): value = value.item()
-    if isinstance(value, bool): return int(value)
+    if isinstance(value, bool): return value
     if isinstance(value, Fraction): return value.numerator, value.denominator
     if isinstance(value, Function): return value._inner
     if type(value) in (int, float, complex): return value
@@ -90,7 +91,6 @@ def _array(value, seen=None):
     if isinstance(value, _Array): return value
     if seen is None: seen = set()
     if id(value) in seen: raise ValueError('cyclic Python container')
-    if len(seen) > 128: raise ValueError('array nesting exceeds 128 levels')
     np = sys.modules.get('numpy')
     prototype = 0.
     if isinstance(value, dict):
@@ -104,7 +104,8 @@ def _array(value, seen=None):
         kind, size = value.dtype.kind, value.dtype.itemsize
         if kind not in 'biufcUO' or kind == 'f' and size > 8 or kind == 'c' and size > 16: raise TypeError('unsupported NumPy dtype')
         if kind == 'u' and size == 8 and value.size and value.max() >= 1<<63: raise ValueError('uint64 values above the int64 range; convert with .astype(object) for exact integers')
-        if kind in 'biu': return _Array.numeric(list(value.shape), np.ascontiguousarray(value, dtype=np.int64))
+        if kind == 'b': return _Array.numeric(list(value.shape), np.ascontiguousarray(value).view(np.uint8))
+        if kind in 'iu': return _Array.numeric(list(value.shape), np.ascontiguousarray(value, dtype=np.int64))
         if kind == 'f': return _Array.numeric(list(value.shape), np.ascontiguousarray(value, dtype=np.float64))
         shape, data = value.shape, value.ravel().tolist()
         if kind == 'U': prototype = ' '

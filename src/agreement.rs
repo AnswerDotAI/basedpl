@@ -14,7 +14,6 @@ pub(crate) enum Mapping {
 }
 impl Mapping {
     pub fn index(&self, i: usize) -> usize { self.get(i).expect("positional mapping") }
-    pub fn numeric<T: Copy + Default>(&self, data: &[T], i: usize) -> T { self.get(i).map_or_else(T::default, |j| data[j]) }
     pub fn get(&self, i: usize) -> Option<usize> {
         Some(match self {
             Self::Scalar => 0,
@@ -31,8 +30,7 @@ impl Mapping {
     fn new(input: &Layout, axes: &[usize], result: &Layout, count: usize) -> Self {
         if count == 0 { return Self::Scalar; }
         let (shape, output) = (input.shape(), result.shape());
-        let mut strides = vec![1; output.len()];
-        for i in (1..output.len()).rev() { strides[i - 1] = strides[i] * output[i]; }
+        let strides = crate::primitive::strides(output);
         if axes.iter().enumerate().any(|(a, &b)| input.keys(a).is_some() && input.keys(a) != result.keys(b)) {
             let mut source = 1;
             let mut map = Vec::new();
@@ -122,15 +120,14 @@ impl Agreement {
         let y = Mapping::new(right, ya, &layout, len);
         Ok(Self { layout, len, left: x, right: y })
     }
+    /// The pair of items at position `i` of the result. A missing entry reads as its own array's prototype.
     pub fn values(&self, left: Option<&Value>, right: &Value, i: usize) -> (Option<Value>, Value) {
         if self.len == 0 {
             let item = |a: &Value| if a.is_empty() { a.prototype() } else { a.at(0) };
             return (left.map(item), item(right));
         }
-        let x = left.and_then(|a| self.left.get(i).map(|j| a.at(j)));
-        let y = self.right.get(i).map(|j| right.at(j));
-        let xf = left.map(|a| x.clone().unwrap_or_else(|| y.as_ref().map_or_else(|| a.prototype(), Value::fill)));
-        let yf = y.unwrap_or_else(|| x.as_ref().map_or_else(|| right.prototype(), Value::fill));
-        (xf, yf)
+        let x = left.map(|a| self.left.get(i).map_or_else(|| a.prototype(), |j| a.at(j)));
+        let y = self.right.get(i).map_or_else(|| right.prototype(), |j| right.at(j));
+        (x, y)
     }
 }

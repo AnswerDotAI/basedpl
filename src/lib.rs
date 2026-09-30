@@ -32,9 +32,10 @@ mod worker;
 mod xml;
 
 pub use array::Value;
+pub(crate) use error::{DomainAt, ErrorAt};
 pub use error::{Error, ErrorKind, Source, Span};
 pub use eval::{Evaluation, Function, Session};
-pub use execution::{EvalOptions, InterruptHandle, MimeBundle, Output, OutputKind, OutputSink, Poll};
+pub use execution::{EvalOptions, Input, InterruptHandle, MimeBundle, Output, OutputKind, OutputSink, Poll};
 pub use inspection::Inspection;
 pub use keyed::Keys;
 pub use number::Number;

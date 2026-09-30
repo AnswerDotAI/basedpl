@@ -1,4 +1,4 @@
-# `⎕` — Output
+# `⎕` — Output and input
 
 `⎕←Y` explicitly prints `Y` and retains its value.
 
@@ -7,5 +7,15 @@
 ```
 
 The example prints `2` before returning `3`. Explicit output is separate from implicit result display and is captured by the evaluation API.
+
+## Input
+
+Reading `⎕` gives the next line of standard input as a string, without its line ending. At the end of the input it gives `⍬`, not the `""` of an empty line. `•nget "-"` gives the rest of standard input as one string.
+
+```bash
+printf '3\n4\n' | bapl -e '+/⍎¨[⎕ ⎕]'       # 7
+```
+
+`bapl -e`, script files and the interactive REPL read standard input. In a notebook, `⎕` asks for a line in a text box. That input never ends, so `•nget "-"` is a `VALUE` error in a notebook. `bapl -` and piped REPL input read the program from standard input. There, and in `bapl --worker` and the Python API, reading `⎕` or `•nget "-"` is a `VALUE` error.
 
 System names: [•a](alphabet.qmd), [•d](digits.qmd), [•c](case.qmd), [•ucs](unicode.qmd).

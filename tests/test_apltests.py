@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import pytest
 from basedpl.reference import Corpus
-from basedpl.apltests import Case, parse, render, convert, native_cases, add, description, literal, _check
+from basedpl.apltests import Case, parse, render, convert, add, description, literal, _check
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -52,14 +52,7 @@ def test_captured_literals():
         if isinstance(expected, dict): assert _check(dict(code=literal(expected), expected=expected))['status']=='pass', literal(expected)
 
 
-def test_native_and_incremental_export(tmp_path):
-    native = tmp_path/'core.rs'
-    native.write_text('fn sums() { equiv! { "+/2 3⍴⍳6" => "6 15" } fails(Syntax, &["(\\n"]); }')
-    cases = native_cases(native)
-    assert cases and all(not case.id for case in cases)
-    assert parse(render(cases)) == cases
-    assert any(case.expect=='⍝ error: SYNTAX ERROR' and '\n' in case.code for case in cases)
-    assert any(case.code=='+/2 3⍴⍳6' and case.expect=='6 15' for case in cases)
+def test_incremental_export(tmp_path):
     inventory = tmp_path/'inventory'
     inventory.mkdir()
     rows = Corpus(ROOT/'tests/reference/inventory').get_many(['ngn:177', 'ngn:517', 'ngn:518'], '*')
@@ -76,8 +69,3 @@ def test_native_and_incremental_export(tmp_path):
     with pytest.raises(ValueError, match='duplicate'): add(['ngn:518'], tmp_path, inventory)
     assert (tmp_path/'ngn.apl').read_bytes() == saved
     assert all(row['status']=='active' for row in Corpus(inventory).get_many(rows, '*').values())
-    bad = rows['ngn:177']
-    bad.update(id='ngn:bad', code='0', status='pending')
-    (inventory/'ngn.jsonl').write_text(json.dumps(bad)+'\n')
-    with pytest.raises(ValueError, match='mismatch'): add(['ngn:bad'], tmp_path, inventory)
-    assert (tmp_path/'ngn.apl').read_bytes() == saved

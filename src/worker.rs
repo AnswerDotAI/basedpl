@@ -13,39 +13,38 @@ pub(crate) fn run(output: &mut impl Write) -> io::Result<()> {
     let (send, receive) = mpsc::channel();
     std::thread::spawn(move || {
         for line in io::stdin().lock().lines() {
-            let request = line.and_then(|s| serde_json::from_str::<Value>(&s).map_err(io::Error::other));
-            if let Ok(request) = &request {
-                if let Some(id) = request.get("interrupt").and_then(Value::as_u64) {
-                    if let Some(handle) = controls.lock().unwrap().get(&id) { handle.interrupt(); }
-                    continue;
-                }
+            let request = match line {
+                Ok(line) => serde_json::from_str::<Value>(&line).map_err(|e| format!("malformed JSON: {e}")),
+                Err(e) if e.kind() == io::ErrorKind::InvalidData => Err(e.to_string()),
+                Err(_) => break,
+            };
+            if let Some(id) = request.as_ref().ok().and_then(|r| r.get("interrupt")).and_then(Value::as_u64) {
+                if let Some(handle) = controls.lock().unwrap().get(&id) { handle.interrupt(); }
+                continue;
             }
             let interrupt = InterruptHandle::default();
-            if let Ok(request) = &request { if let Some(id) = request["id"].as_u64() { controls.lock().unwrap().insert(id, interrupt.clone()); } }
+            if let Some(id) = request.as_ref().ok().and_then(|r| r["id"].as_u64()) { controls.lock().unwrap().insert(id, interrupt.clone()); }
             if send.send((request, interrupt)).is_err() { break; }
         }
-        for handle in controls.lock().unwrap().values() { handle.interrupt(); }
     });
     let mut session = Session::new();
     for (request, interrupt) in receive {
-        let request = request?;
-        let id = request["id"].as_u64().ok_or_else(|| io::Error::other("worker request needs an integer id"))?;
-        let timeout = match request.get("timeout_ms") {
-            Some(value) => Some(Duration::from_millis(value.as_u64().ok_or_else(|| io::Error::other("timeout_ms must be a nonnegative integer"))?)),
-            None => None,
-        };
-        let echo = match request.get("echo") { Some(value) => value.as_bool().ok_or_else(|| io::Error::other("echo must be a boolean"))?, None => true };
-        let options = EvalOptions { interrupt, timeout, echo, ..EvalOptions::default() };
-        let result = if let Some(case) = request.get("case") { crate::reference::check(case, options) } else {
-            match crate::protocol::request(&mut session, &request, options) {
-                Ok(result) => crate::protocol::response(result),
-                Err(message) => json!({"value":null, "output":[], "error":{"kind":"REQUEST ERROR", "message":message}}),
-            }
-        };
-        active.lock().unwrap().remove(&id);
-        serde_json::to_writer(&mut *output, &json!({"id":id, "result":result}))?;
+        let id = request.as_ref().ok().and_then(|r| r["id"].as_u64());
+        let result = request.and_then(|r| reply(&mut session, &r, interrupt)).unwrap_or_else(|message| crate::protocol::request_error(&message));
+        if let Some(id) = id { active.lock().unwrap().remove(&id); }
+        serde_json::to_writer(&mut *output, &json!({"id": id, "result": result}))?;
         writeln!(output)?;
         output.flush()?;
     }
     Ok(())
+}
+
+/// The result of one request, or why it can't run.
+fn reply(session: &mut Session, request: &Value, interrupt: InterruptHandle) -> Result<Value, String> {
+    if request.get("id").is_some_and(|id| !id.is_u64()) { return Err("id must be a nonnegative integer".into()); }
+    let timeout = request.get("timeout_ms").map(|v| v.as_u64().map(Duration::from_millis).ok_or("timeout_ms must be a nonnegative integer")).transpose()?;
+    let echo = request.get("echo").map(|v| v.as_bool().ok_or("echo must be a boolean")).transpose()?.unwrap_or(true);
+    let options = EvalOptions { interrupt, timeout, echo, ..EvalOptions::default() };
+    if let Some(case) = request.get("case") { return Ok(crate::reference::check(case, options)); }
+    crate::protocol::request(session, request, options).map(crate::protocol::response)
 }

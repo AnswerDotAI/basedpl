@@ -2,13 +2,12 @@
 
 `⊂Y` makes a rank-zero array containing `Y`.
 
-[Parentheses](parentheses.qmd) round a literal also make a scalar: `(1 2)` is `⊂1 2`. [Brackets](brackets.qmd) round one item make a one-item vector, not a scalar. `⊂` cannot enclose a function, because `⊂` next to a function forms a train. Parentheses round a glyph enclose it instead: `(+)` is a scalar holding `+`. Parentheses round a name only group, so a named function has no enclosing spelling of its own: `⍬⍴[f]` reshapes a one-item vector to a scalar.
+[Brackets](brackets.qmd) round one item make a one-item vector, not a scalar. `⊂` cannot enclose a function, because `⊂` next to a function forms a train. [Parentheses](parentheses.qmd) round a glyph enclose it instead: `(+)` is a scalar holding `+`. Parentheses round a name only group, so a named function has no enclosing spelling of its own: `⍬⍴[f]` reshapes a one-item vector to a scalar.
 
 ```apl
-⍴⊂1 2 3            ⍝ 0⍴0ₓ
+⍴⊂1 2 3            ⍝ ⍬ₓ
 ↑⊂1 2 3            ⍝ 1 2 3
-(⊂3)≡3             ⍝ 0ₓ
-(1 2)≡⊂1 2          ⍝ 1
+⊂3 ≡ 3             ⍝ $f
 ```
 
 With [axes](axis.qmd), `⊂⍠K Y` encloses cells on axes `K`.

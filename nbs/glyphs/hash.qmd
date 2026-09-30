@@ -1,0 +1,58 @@
+# `#` — Replicate
+
+`N#Y` repeats each major cell of `Y` by its count in `N`. Boolean counts filter.
+
+```apl
+1 0 1#10 20 30          ⍝ 10 30
+2 1#10 20               ⍝ 10 10 20
+0 2#[1 2 ⋄ 3 4]         ⍝ [3 4 ⋄ 3 4]
+```
+
+A negative count gives that many fills in place of its cell. A single count applies to every cell. A single cell serves every count.
+
+```apl
+1 ¯2#10 20              ⍝ 10 0 0
+2#3 4                   ⍝ 3 3 4 4
+1 0 2#5                 ⍝ 5 5 5
+```
+
+[Axis](axis.qmd) `⍠K` selects another axis, so `#⍠¯1` replicates along the last.
+
+```apl
+1 0 1#⍠¯1 [1 2 3 ⋄ 4 5 6]   ⍝ [1 3 ⋄ 4 6]
+```
+
+## Expand
+
+With `N` fixed, [`⁻¹`](superscript.qmd) inverts `N#`. The inverse gives one cell for each count. A positive count gives the first of its copies. A zero or negative count gives a fill. A Boolean mask therefore expands: each 1 takes the next cell, and each 0 inserts a fill.
+
+```apl
+1 0 1#⁻¹10 20           ⍝ 10 0 20
+1 0 1 #⁻¹⍠¯1 [1 2 ⋄ 3 4]      ⍝ [1 0 2 ⋄ 3 0 4]
+2 1#⁻¹10 10 20          ⍝ 10 20
+```
+
+The counts must use every cell once, unless `Y` has one cell, which every count shares. A single count undoes a replicate by that count.
+
+```apl
+1 0 1#⁻¹5               ⍝ 5 0 5
+2#⁻¹1 1 2 2             ⍝ 1 2
+```
+
+[Under](under.qmd) uses this inverse, so the cells that `N` drops come back as fills. [Selective assignment](assign.qmd) keeps them.
+
+```apl
+-⌾(1 0 1#)1 2 3         ⍝ ¯1 0 ¯3
+x←1 2 3
+(1 0 1#x)←0
+x                       ⍝ 0 2 0
+```
+
+APL difference: `#` replaces `/` and `⌿`, and its inverse replaces `\` and `⍀`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻¹Y`.
+
+## Errors
+
+- `SYNTAX`: no counts
+- `RANK`: counts of rank 2 or more
+- `LENGTH`: counts that don't match the cells, or an inverse that doesn't use every cell
+- `DOMAIN`: counts that aren't integers, or one inverse count that neither matches nor divides the number of cells

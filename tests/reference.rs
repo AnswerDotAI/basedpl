@@ -1,7 +1,7 @@
 use basedpl::{reference, EvalOptions};
 use serde_json::{json, Value};
 
-const SOURCES: [(&str, &str); 8] = [
+const SOURCES: [(&str, &str); 9] = [
     ("core", include_str!("reference/core.apl")),
     ("graphics", include_str!("reference/graphics.apl")),
     ("ngn", include_str!("reference/ngn.apl")),
@@ -10,6 +10,7 @@ const SOURCES: [(&str, &str); 8] = [
     ("dyalog", include_str!("reference/dyalog.apl")),
     ("regex", include_str!("reference/regex.apl")),
     ("distributions", include_str!("reference/distributions.apl")),
+    ("lib", include_str!("reference/lib.apl")),
 ];
 
 fn header(line: &str) -> Option<(&str, &str)> {
@@ -112,12 +113,14 @@ fn reference_format_and_comparison() {
     assert_eq!(parsed_output[0]["section"], "Output");
     assert_eq!(parsed_output[0]["expected_output"], "9\n2");
     for case in parsed_output { assert_eq!(reference::check(&case, EvalOptions::default())["status"], "pass"); }
-    let mut output_error = json!({"code":"⎕←9 ⋄ 1÷0", "expected_error":"DOMAIN ERROR", "expected_output":"9"});
+    let mut output_error = json!({"code":"⎕←9 ⋄ 1÷'a'", "expected_error":"DOMAIN ERROR", "expected_output":"9"});
     assert_eq!(reference::check(&output_error, EvalOptions::default())["status"], "pass");
     output_error["expected_output"] = json!("2");
     assert_eq!(reference::check(&output_error, EvalOptions::default())["status"], "mismatch");
-    let representation = json!({"code":"1", "expected_code":"1ₓ", "exact_representation":true});
-    assert_eq!(reference::check(&representation, EvalOptions::default())["status"], "mismatch");
+    let exactness = json!({"code":"1", "expected_code":"1ₓ"});
+    assert_eq!(reference::check(&exactness, EvalOptions::default())["status"], "mismatch");
+    let captured = json!({"code":"1ₓ", "expected":{"shape":[], "data":[1], "prototype":0}});
+    assert_eq!(reference::check(&captured, EvalOptions::default())["status"], "pass");
     let parsed = cases("⍝  — [rtol=1e-14 atol=1e-15]\nf←{\n\n⍵+1\n}\nf 2\n⍝ =>\n3\n\n⍝  —\n\"unfinished\n⍝ error: SYNTAX ERROR\n\n");
     assert_eq!(parsed[0]["code"], "f←{\n\n⍵+1\n}\nf 2");
     assert_eq!(parsed[1]["line"], 10);
@@ -136,7 +139,7 @@ fn reference_format_and_comparison() {
         (r#""aa":1"#, r#""bb":1"#, "mismatch"),
         (r#""aa":1"#, ",1", "mismatch"),
         (r#"["row":1]⍴1"#, r#"["col":1]⍴1"#, "mismatch"),
-        ("3", "÷0", "invalid"),
+        ("3", "÷'a'", "invalid"),
     ] {
         let case = json!({"code":code, "expected_code":expect});
         assert_eq!(reference::check(&case, EvalOptions::default())["status"], status, "{code} vs {expect}");
@@ -149,20 +152,20 @@ fn reference_format_and_comparison() {
     assert_eq!(reference::check(&case, EvalOptions::default())["status"], "mismatch");
 }
 
-fn run_reference_cases(sources: &[(&str, &str)], timeout: u64) {
+#[test]
+fn enabled_reference_cases() {
     let mut ids = std::collections::HashSet::new();
     let mut count = 0;
     let mut failures = Vec::new();
     let selected = std::env::var("BASEDPL_CASE").ok();
     let file = std::env::var("BASEDPL_SOURCE").ok();
-    for &(name, source) in sources {
+    for (name, source) in SOURCES {
         if file.as_deref().is_some_and(|f| f != name) { continue; }
-        for mut case in cases(source) {
-            if name == "core" { case["exact_representation"] = json!(true); }
+        for case in cases(source) {
             let id = case["id"].as_str().unwrap();
             assert!(id.is_empty() || ids.insert(id.to_owned()), "duplicate source id: {id}");
             if selected.as_deref().is_some_and(|s| !id.starts_with(s)) { continue; }
-            let result = reference::check(&case, EvalOptions { timeout: Some(std::time::Duration::from_secs(timeout)), echo: false, ..EvalOptions::default() });
+            let result = reference::check(&case, EvalOptions { timeout: Some(std::time::Duration::from_secs(2)), echo: false, ..EvalOptions::default() });
             if result["status"] != "pass" {
                 failures.push(format!(
                     "{name}.apl:{} [{}] {id}: {} ({})",
@@ -179,10 +182,3 @@ fn run_reference_cases(sources: &[(&str, &str)], timeout: u64) {
     assert!(failures.is_empty(), "{} of {count} reference cases failed:\n{}", failures.len(), failures.join("\n"));
     eprintln!("{count} reference cases passed");
 }
-
-#[test]
-fn enabled_reference_cases() { run_reference_cases(&SOURCES, 2); }
-
-#[test]
-#[ignore = "slow workloads"]
-fn slow_reference_cases() { run_reference_cases(&[("slow", include_str!("reference/slow.apl"))], 60); }

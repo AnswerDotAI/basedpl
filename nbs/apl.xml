@@ -10,11 +10,16 @@
         <RegExpr String="[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*(\.[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*)*" attribute="Normal Text"/>
         <RegExpr String="•[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*" attribute="System"/>
         <RegExpr String="¯?∞|¯?(\d+(\.\d+)?|\.\d+)([eE]¯?\d+)?([jJ]¯?(\d+(\.\d+)?|\.\d+)([eE]¯?\d+)?|[xₓ]|r¯?\d+)?" attribute="Number"/>
-        <AnyChar String="⍬" attribute="Number"/>
-        <AnyChar String="?⊣⊢|⌊⌈*⍟○π√!∨∧⍲⍱~+-×÷=≠&lt;≤&gt;≥⍳:≡⍸∊∪∩⍷⍋⍒⌷⊤⊥⌹⍎⍕⍴≢,⊂⊆⊃↑↓⍪⌽⊖⍉↕ℙ⨸⊛" attribute="Function"/>
-        <AnyChar String="¨⍨⊸⍤⍠⍥⟜.⌝⌸⍣⇄⌾∂◶@⌺/⌿\⍀" attribute="Operator"/>
+        <RegExpr String="⍬(ₓ|x(?![A-Za-z0-9_∆⍙]))?" attribute="Number"/>
+        <RegExpr String="\$[tfn]" attribute="Number"/>
+        <RegExpr String="\](?=ₓ|x(?![A-Za-z0-9_∆⍙]))" attribute="Normal Text" context="Mark"/>
+        <AnyChar String="+-×÷⌈⌊|*⍟○π√!∧∨⍲⍱~=≠&lt;≤&gt;≥⍳:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹#↕⍭⨸⌻⍸⍷⊢⊣?" attribute="Function"/>
+        <AnyChar String="¨⍨⍃⍤∘⍠⍥⍄.⊗⌸⍣⇄⌾∂⍰@⌺/⌿\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀ" attribute="Operator"/>
         <AnyChar String="⍺⍵⍶⍹∇⍢" attribute="Argument"/>
         <AnyChar String="←→⋄⎕" attribute="Keyword"/>
+      </context>
+      <context name="Mark" attribute="Number" lineEndContext="#pop">
+        <AnyChar String="ₓx" attribute="Number" context="#pop"/>
       </context>
       <context name="Comment" attribute="Comment" lineEndContext="#pop"/>
       <context name="String" attribute="String" lineEndContext="#pop">

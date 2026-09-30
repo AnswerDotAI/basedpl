@@ -1,4 +1,7 @@
-use crate::{array::Items, Value};
+use crate::{
+    array::{page_breaks, Decimals},
+    Value,
+};
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Copy, Default)]
@@ -40,10 +43,7 @@ impl Block {
         let width = lines.iter().map(|s| s.width()).max().unwrap_or(0);
         Self { lines, width }
     }
-    fn line(&self, row: usize) -> String {
-        let s = self.lines.get(row).map_or("", String::as_str);
-        format!("{s}{}", " ".repeat(self.width - s.width()))
-    }
+    fn line(&self, row: usize) -> String { let s = self.lines.get(row).map_or("", String::as_str); format!("{s}{}", " ".repeat(self.width - s.width())) }
     fn text(self) -> String { self.lines.join("\n") }
     fn labelled(self, name: &str) -> Self {
         let label = format!("{name}:");
@@ -66,6 +66,18 @@ impl Block {
     }
 }
 
+/// The bottom-edge marker for an array's storage.
+fn marker(a: &Value) -> char {
+    match a.storage_name() {
+        "boolean" => '$',
+        "integer" => 'ₓ',
+        "float" => '~',
+        "complex" => 'j',
+        "character" => '─',
+        _ => '+',
+    }
+}
+
 fn array(a: &Value, budget: &mut usize) -> Block {
     if a.is_unit() || (a.has_keys() && a.shape() == [0]) { return Block::new(a.to_string()); }
     // Render prototypes for empty axes. Cap diagrams independently of array storage.
@@ -73,43 +85,50 @@ fn array(a: &Value, budget: &mut usize) -> Block {
     let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);
     if count > *budget { return Block::new(format!("… (shape {})", a.shape().iter().map(usize::to_string).collect::<Vec<_>>().join(" "))); }
     *budget -= count;
-    if a.has_keys() && a.shape().len() > 1 { return Block::new(a.to_string()).framed(a.shape(), '~', false); }
+    if a.has_keys() && a.shape().len() > 1 { return Block::new(a.to_string()).framed(a.shape(), marker(a), false); }
     let elements: Vec<_> = (0..count).map(|i| if a.is_empty() { a.prototype().clone() } else { a.at(i) }).collect();
     let nested = elements.iter().any(|e| matches!(e, Value::Array(_)));
     let chars = elements.iter().all(|e| matches!(e, Value::Character(_)));
-    // The marker follows storage, so mixed storage shows even when every item is a number.
-    let kind = if nested { '∊' } else { match a.as_items() { Items::Characters(_) => '─', Items::Values(_) => '+', _ => '~' } };
+    let kind = if nested { '∊' } else { marker(a) };
     let cells: Vec<_> = elements
         .iter()
         .map(|e| match e {
+            // An `ₓ` box already says its numbers are exact.
+            Value::Number(n) if kind == 'ₓ' => Block::new(format!("{n:#}")),
             Value::Number(n) => Block::new(n.to_string()),
             Value::Character(c) => Block::new(if c.is_control() { c.escape_default().to_string() } else { c.to_string() }),
             a @ Value::Array(_) => array(a, budget),
-            Value::Function(f) => Block::new(format!("⟨{}⟩", f.apl())),
+            Value::Function(f) => Block::new(f.to_string()),
         })
         .enumerate()
         .map(|(i, cell)| match a.keys(0).and_then(|keys| keys.names().get(i)?.as_ref()) { Some(key) => cell.labelled(key), None => cell })
         .collect();
     let columns = shape.last().copied().unwrap_or(1);
-    let mut widths = vec![0; columns];
-    for (i, c) in cells.iter().enumerate() { widths[i % columns] = widths[i % columns].max(c.width); }
+    // Numbers in a column line up on their decimal points, as they do in plain display.
+    let numbers: Vec<_> = cells.iter().zip(&elements).map(|(c, e)| matches!(e, Value::Number(_)).then(|| Decimals::of(c.lines[0].chars()))).collect();
+    let (mut widths, mut decimals) = (vec![0; columns], vec![Decimals::default(); columns]);
+    for (i, (c, n)) in cells.iter().zip(&numbers).enumerate() {
+        widths[i % columns] = widths[i % columns].max(c.width);
+        if let Some(n) = n { decimals[i % columns].fit(*n); }
+    }
+    for (w, d) in widths.iter_mut().zip(&decimals) { *w = (*w).max(d.width()); }
     let mut lines = Vec::new();
     for (row, chunk) in cells.chunks(columns).enumerate() {
-        if row > 0 {
-            let mut period = 1;
-            for &dim in shape.iter().rev().skip(1).take(shape.len().saturating_sub(2)) {
-                period *= dim;
-                if row % period == 0 { lines.push(String::new()); }
-            }
-        }
+        lines.extend(std::iter::repeat_n(String::new(), page_breaks(&shape, row)));
         for y in 0..chunk.iter().map(|b| b.lines.len()).max().unwrap_or(1) {
             let mut line = String::new();
             for (x, cell) in chunk.iter().enumerate() {
                 if x > 0 && !(chars && !a.has_keys()) { line.push(' '); }
-                let pad = " ".repeat(widths[x] - cell.width);
-                if matches!(elements[row * columns + x], Value::Number(_)) { line.push_str(&pad); }
+                let (before, after) = match numbers[row * columns + x] {
+                    Some(n) => {
+                        let (before, after) = decimals[x].padding(n);
+                        (before + widths[x] - decimals[x].width(), after)
+                    }
+                    None => (0, widths[x] - cell.width),
+                };
+                line.extend(std::iter::repeat_n(' ', before));
                 line.push_str(&cell.line(y));
-                if !matches!(elements[row * columns + x], Value::Number(_)) { line.push_str(&pad); }
+                line.extend(std::iter::repeat_n(' ', after));
             }
             lines.push(line);
         }
@@ -149,14 +168,14 @@ pub(crate) fn bundle(value: &Value) -> Result<crate::MimeBundle, crate::ErrorKin
         .collect()
 }
 
-/// `record` with a `_mime_` field holding the native renderer `render`.
+/// `record` with a `_mime` field holding the native renderer `render`.
 pub(crate) fn with_renderer(
     record: &Value,
     name: &'static str,
     render: fn(Option<&Value>, &Value, &crate::execution::Context<'_>) -> Result<Value, crate::Error>,
 ) -> Result<Value, crate::ErrorKind> {
-    let renderer = Value::Function(crate::Function::system(crate::system::SystemFunction { name, call: crate::system::Call::Value(render) }));
-    crate::keyed::merge(record, &crate::keyed::vector(vec!["_mime_".into()], vec![renderer])?)
+    let renderer = crate::system::native(name, crate::system::Call::Value(render), crate::system::Valence::Ambivalent);
+    crate::keyed::merge(record, &crate::keyed::vector(vec!["_mime".into()], vec![renderer])?)
 }
 
 /// A MIME bundle holding SVG text.

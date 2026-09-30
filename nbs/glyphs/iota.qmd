@@ -4,7 +4,7 @@
 
 ```apl
 ⍳4                 ⍝ 0 1 2 3
-⍳3x                ⍝ 0ₓ 1ₓ 2ₓ
+⍳3x                ⍝ [0 1 2]ₓ
 ⍳¯3                ⍝ 2 1 0
 ```
 
@@ -19,7 +19,7 @@ A shape vector generates an array of coordinate vectors. A negative length rever
 
 ```apl
 ⍳⍠0 ["price":1 "qty":2] ⍝ "price" "qty"
-⍳⍠1 (2 3⍴0)         ⍝ 0ₓ 1ₓ 2ₓ
+⍳⍠1 (2 3⍴0)         ⍝ [0 1 2]ₓ
 ```
 
 On an axis where only some positions have keys, `⍳⍠A Y` gives the keys where present and positions elsewhere.
@@ -31,20 +31,19 @@ On an axis where only some positions have keys, `⍳⍠A Y` gives the keys where
 `X⍳Y` finds the first matching major cell in `X` for each cell of `Y`. Not found: `≢X`. Uses tolerant matching and returns exact positions.
 
 ```apl
-"abc"⍳"cabz"        ⍝ 2ₓ 0ₓ 1ₓ 3ₓ
+"abc"⍳"cabz"        ⍝ [2 0 1 3]ₓ
 "abc"⍳'b'           ⍝ 1ₓ
 "abc"⍳⊂'b'          ⍝ 1ₓ
 ```
 
-A single query returns an atom. Batch axes supply the result shape. To search for an array as one item, enclose it with `⊂`, or write a literal in parentheses.
+A single query returns an atom. Batch axes supply the result shape. To search for an array as one item, enclose it with `⊂`.
 
 ```apl
 C←"cat" "dog"
 C⍳⊂"dog"           ⍝ 1ₓ
-C⍳("dog")          ⍝ 1ₓ
-C⍳["dog"]          ⍝ [1ₓ]
+C⍳["dog"]          ⍝ [1]ₓ
 m←[10 20 ⋄ 30 40 ⋄ 50 60]
 m⍳30 40            ⍝ 1ₓ
-m⍳[30 40 ⋄]        ⍝ [1ₓ]
-m⍳[30 40 ⋄ 10 20]  ⍝ 1ₓ 0ₓ
+m⍳[30 40 ⋄]        ⍝ [1]ₓ
+m⍳[30 40 ⋄ 10 20]  ⍝ [1 0]ₓ
 ```

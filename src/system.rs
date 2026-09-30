@@ -1,10 +1,11 @@
 use crate::{
-    array::generated_len,
+    array::{generated_len, Items},
     eval::Operand,
     execution::Context,
-    primitive::{integer, numeric},
-    Error, ErrorKind, Function, Value,
+    primitive::{integer, numeric, pervade, EmptyFill},
+    Error, ErrorAt, ErrorKind, Function, Value,
 };
+use std::borrow::Cow;
 
 #[derive(Clone, Debug)]
 pub(crate) enum Call {
@@ -16,12 +17,38 @@ pub(crate) enum Call {
     Load,
     Element(std::sync::Arc<str>),
     Mime,
+    Time,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct SystemFunction { pub name: &'static str, pub call: Call }
+/// How many arguments a system function takes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Valence { Monadic, Dyadic, Ambivalent }
+use Valence::{Ambivalent, Dyadic, Monadic};
 
-enum Builtin { Text(&'static str), Function(Call) }
+#[derive(Clone, Debug)]
+pub(crate) struct SystemFunction { pub name: &'static str, pub call: Call, pub valence: Valence }
+
+impl SystemFunction {
+    /// A call with the wrong number of arguments is a SYNTAX error.
+    pub(crate) fn check(&self, left: Option<&Value>, span: &crate::Span) -> Result<(), Error> {
+        match (self.valence, left) {
+            (Monadic, Some(_)) => Err(span.error(ErrorKind::Syntax, format!("{} is monadic", self.name))),
+            (Dyadic, None) => Err(span.error(ErrorKind::Syntax, format!("{} needs a left argument", self.name))),
+            _ => Ok(()),
+        }
+    }
+}
+
+/// A function value that calls `call` natively.
+pub(crate) fn native(name: &'static str, call: Call, valence: Valence) -> Value { Value::Function(Function::system(SystemFunction { name, call, valence })) }
+
+/// A keyed vector of native functions, each named by its key.
+pub(crate) fn natives(entries: impl IntoIterator<Item = (&'static str, Call, Valence)>) -> Value {
+    let (keys, functions) = entries.into_iter().map(|(name, call, valence)| (name.into(), native(name, call, valence))).unzip();
+    crate::keyed::vector(keys, functions).expect("distinct keys")
+}
+
+enum Builtin { Text(&'static str), Function(Call, Valence) }
 
 /// Help text for a system name, or the embedded glyph page that documents it.
 enum Help { Text(&'static str), Page(&'static str) }
@@ -29,48 +56,50 @@ enum Help { Text(&'static str), Page(&'static str) }
 const BUILTINS: &[(&str, Builtin, Help)] = &[
     ("•a", Builtin::Text("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), Help::Page("alphabet")),
     ("•d", Builtin::Text("0123456789"), Help::Page("digits")),
-    ("•c", Builtin::Function(Call::Value(case_convert)), Help::Page("case")),
-    ("•csv", Builtin::Function(Call::Value(crate::csv::parse)), Help::Text(CSV)),
-    ("•tocsv", Builtin::Function(Call::Value(crate::csv::serialize)), Help::Text(TOCSV)),
-    ("•json", Builtin::Function(Call::Value(crate::json::parse)), Help::Text(JSON)),
-    ("•tojson", Builtin::Function(Call::Value(crate::json::serialize)), Help::Text(TOJSON)),
-    ("•mime", Builtin::Function(Call::Mime), Help::Text(MIME)),
-    ("•element", Builtin::Function(Call::Value(crate::xml::factory)), Help::Text(ELEMENT)),
-    ("•xml", Builtin::Function(Call::Value(crate::xml::serialize)), Help::Text(XML)),
-    ("•svg", Builtin::Function(Call::Value(crate::xml::svg)), Help::Text(SVG)),
-    ("•plot", Builtin::Function(Call::Value(crate::plot::plot)), Help::Text(PLOT)),
-    ("•vfi", Builtin::Function(Call::Value(crate::data::vfi)), Help::Text(VFI)),
-    ("•r", Builtin::Function(Call::Value(crate::regex::compile)), Help::Text(REGEX)),
-    ("•normal", Builtin::Function(Call::Value(crate::distribution::normal)), Help::Text(DISTRIBUTION)),
-    ("•uniform", Builtin::Function(Call::Value(crate::distribution::uniform)), Help::Text(DISTRIBUTION)),
-    ("•beta", Builtin::Function(Call::Value(crate::distribution::beta)), Help::Text(DISTRIBUTION)),
-    ("•bernoulli", Builtin::Function(Call::Value(crate::distribution::bernoulli)), Help::Text(DISTRIBUTION)),
-    ("•binomial", Builtin::Function(Call::Value(crate::distribution::binomial)), Help::Text(DISTRIBUTION)),
-    ("•cauchy", Builtin::Function(Call::Value(crate::distribution::cauchy)), Help::Text(DISTRIBUTION)),
-    ("•chisquared", Builtin::Function(Call::Value(crate::distribution::chisquared)), Help::Text(DISTRIBUTION)),
-    ("•exponential", Builtin::Function(Call::Value(crate::distribution::exponential)), Help::Text(DISTRIBUTION)),
-    ("•fisher", Builtin::Function(Call::Value(crate::distribution::fisher)), Help::Text(DISTRIBUTION)),
-    ("•gamma", Builtin::Function(Call::Value(crate::distribution::gamma)), Help::Text(DISTRIBUTION)),
-    ("•inversegamma", Builtin::Function(Call::Value(crate::distribution::inversegamma)), Help::Text(DISTRIBUTION)),
-    ("•laplace", Builtin::Function(Call::Value(crate::distribution::laplace)), Help::Text(DISTRIBUTION)),
-    ("•lognormal", Builtin::Function(Call::Value(crate::distribution::lognormal)), Help::Text(DISTRIBUTION)),
-    ("•logistic", Builtin::Function(Call::Value(crate::distribution::logistic_distribution)), Help::Text(DISTRIBUTION)),
-    ("•poisson", Builtin::Function(Call::Value(crate::distribution::poisson)), Help::Text(DISTRIBUTION)),
-    ("•student", Builtin::Function(Call::Value(crate::distribution::student)), Help::Text(DISTRIBUTION)),
-    ("•weibull", Builtin::Function(Call::Value(crate::distribution::weibull)), Help::Text(DISTRIBUTION)),
-    ("•rand", Builtin::Function(Call::Value(crate::distribution::generator)), Help::Text(RAND)),
-    ("•nget", Builtin::Function(Call::Value(crate::data::read)), Help::Text(NGET)),
-    ("•nput", Builtin::Function(Call::Value(crate::data::write)), Help::Text(NPUT)),
-    ("•ucs", Builtin::Function(Call::Value(unicode_convert)), Help::Page("unicode")),
-    ("•load", Builtin::Function(Call::Load), Help::Page("load")),
-    ("•signal", Builtin::Function(Call::Value(signal)), Help::Page("error-guard")),
-    ("•nc", Builtin::Function(Call::Session(crate::Session::system_nc)), Help::Text(NC)),
-    ("•nl", Builtin::Function(Call::Session(crate::Session::system_nl)), Help::Text(NL)),
-    ("•src", Builtin::Function(Call::Session(crate::Session::system_src)), Help::Text(SRC)),
-    ("•ex", Builtin::Function(Call::Session(crate::Session::system_ex)), Help::Text(EX)),
+    ("•c", Builtin::Function(Call::Value(case_convert), Ambivalent), Help::Page("case")),
+    ("•csv", Builtin::Function(Call::Value(crate::csv::parse), Ambivalent), Help::Text(CSV)),
+    ("•tocsv", Builtin::Function(Call::Value(crate::csv::serialize), Ambivalent), Help::Text(TOCSV)),
+    ("•json", Builtin::Function(Call::Value(crate::json::parse), Ambivalent), Help::Text(JSON)),
+    ("•tojson", Builtin::Function(Call::Value(crate::json::serialize), Ambivalent), Help::Text(TOJSON)),
+    ("•mime", Builtin::Function(Call::Mime, Monadic), Help::Text(MIME)),
+    ("•element", Builtin::Function(Call::Value(crate::xml::factory), Monadic), Help::Text(ELEMENT)),
+    ("•xml", Builtin::Function(Call::Value(crate::xml::serialize), Monadic), Help::Text(XML)),
+    ("•svg", Builtin::Function(Call::Value(crate::xml::svg), Ambivalent), Help::Text(SVG)),
+    ("•plot", Builtin::Function(Call::Value(crate::plot::plot), Ambivalent), Help::Text(PLOT)),
+    ("•vfi", Builtin::Function(Call::Value(crate::data::vfi), Ambivalent), Help::Text(VFI)),
+    ("•r", Builtin::Function(Call::Value(crate::regex::compile), Monadic), Help::Text(REGEX)),
+    ("•normal", Builtin::Function(Call::Value(crate::distribution::normal), Monadic), Help::Text(DISTRIBUTION)),
+    ("•uniform", Builtin::Function(Call::Value(crate::distribution::uniform), Monadic), Help::Text(DISTRIBUTION)),
+    ("•beta", Builtin::Function(Call::Value(crate::distribution::beta), Monadic), Help::Text(DISTRIBUTION)),
+    ("•bernoulli", Builtin::Function(Call::Value(crate::distribution::bernoulli), Monadic), Help::Text(DISTRIBUTION)),
+    ("•binomial", Builtin::Function(Call::Value(crate::distribution::binomial), Monadic), Help::Text(DISTRIBUTION)),
+    ("•cauchy", Builtin::Function(Call::Value(crate::distribution::cauchy), Monadic), Help::Text(DISTRIBUTION)),
+    ("•chisquared", Builtin::Function(Call::Value(crate::distribution::chisquared), Monadic), Help::Text(DISTRIBUTION)),
+    ("•exponential", Builtin::Function(Call::Value(crate::distribution::exponential), Monadic), Help::Text(DISTRIBUTION)),
+    ("•fisher", Builtin::Function(Call::Value(crate::distribution::fisher), Monadic), Help::Text(DISTRIBUTION)),
+    ("•gamma", Builtin::Function(Call::Value(crate::distribution::gamma), Monadic), Help::Text(DISTRIBUTION)),
+    ("•inversegamma", Builtin::Function(Call::Value(crate::distribution::inversegamma), Monadic), Help::Text(DISTRIBUTION)),
+    ("•laplace", Builtin::Function(Call::Value(crate::distribution::laplace), Monadic), Help::Text(DISTRIBUTION)),
+    ("•lognormal", Builtin::Function(Call::Value(crate::distribution::lognormal), Monadic), Help::Text(DISTRIBUTION)),
+    ("•logistic", Builtin::Function(Call::Value(crate::distribution::logistic_distribution), Monadic), Help::Text(DISTRIBUTION)),
+    ("•poisson", Builtin::Function(Call::Value(crate::distribution::poisson), Monadic), Help::Text(DISTRIBUTION)),
+    ("•student", Builtin::Function(Call::Value(crate::distribution::student), Monadic), Help::Text(DISTRIBUTION)),
+    ("•weibull", Builtin::Function(Call::Value(crate::distribution::weibull), Monadic), Help::Text(DISTRIBUTION)),
+    ("•rand", Builtin::Function(Call::Value(crate::distribution::generator), Monadic), Help::Text(RAND)),
+    ("•nget", Builtin::Function(Call::Value(crate::data::read), Ambivalent), Help::Text(NGET)),
+    ("•nput", Builtin::Function(Call::Value(crate::data::write), Dyadic), Help::Text(NPUT)),
+    ("•ucs", Builtin::Function(Call::Value(unicode_convert), Ambivalent), Help::Page("unicode")),
+    ("•load", Builtin::Function(Call::Load, Monadic), Help::Page("load")),
+    ("•signal", Builtin::Function(Call::Value(signal), Monadic), Help::Page("error-guard")),
+    ("•storage", Builtin::Function(Call::Value(storage), Monadic), Help::Text(STORAGE)),
+    ("•time", Builtin::Function(Call::Time, Ambivalent), Help::Text(TIME)),
+    ("•nc", Builtin::Function(Call::Session(crate::Session::system_nc), Monadic), Help::Text(NC)),
+    ("•nl", Builtin::Function(Call::Session(crate::Session::system_nl), Ambivalent), Help::Text(NL)),
+    ("•src", Builtin::Function(Call::Session(crate::Session::system_src), Monadic), Help::Text(SRC)),
+    ("•ex", Builtin::Function(Call::Session(crate::Session::system_ex), Monadic), Help::Text(EX)),
 ];
 
-const CSV: &str = r#"`•csv text` parses CSV into a vector of columns. Headers become keys. Numeric columns become numbers. Missing numeric cells become `∞`. Missing text cells become `""`.
+const CSV: &str = r#"`•csv text` parses CSV into a vector of columns. Headers become keys. Numeric columns become numbers. Missing numeric cells become NaN. An integer column with missing cells stays exact. Missing text cells become `""`.
 
 `X •csv text` takes options on the left: `header`, `separator`, `quotechar`, `doublequote`, `escapechar`, `decimal`, `thousands`, `trim`, `fill`, `text_columns`, `numeric_columns` and `missing`. The Files, CSV and JSON guide describes them.
 
@@ -78,21 +107,21 @@ Errors: DOMAIN for invalid options or duplicate headers; LENGTH for unequal reco
 
 const TOCSV: &str = r#"`•tocsv T` returns CSV text for a vector of columns. Keys supply the header. Column lengths must agree.
 
-`X •tocsv T` takes options on the left: `header`, `separator`, `quotechar`, `doublequote`, `escapechar`, `decimal`, `thousands`, `trim`, `fill`, `forcequotes` and `lineending`. `fill` writes that exact value as an empty cell. `"forcequotes":2` quotes every field.
+`X •tocsv T` takes options on the left: `header`, `separator`, `quotechar`, `doublequote`, `escapechar`, `decimal`, `thousands`, `trim`, `fill`, `forcequotes` and `lineending`. NaN writes as an empty cell, and so does the exact value given as `fill`. `"forcequotes":2` quotes every field.
 
 Errors: DOMAIN for nonintegral rationals, complex numbers, functions or nested cells; LENGTH for unequal columns."#;
 
 const JSON: &str = r#"`•json text` parses JSON. Objects become keyed vectors. Arrays become vectors. Strings become character vectors. Integers stay exact. `true` and `false` become `1x` and `0x`.
 
-`["fill":v] •json text` replaces `null` with `v`. The default is `∞`.
+`["fill":v] •json text` replaces `null` with `v`. The default is NaN. An integer array with a `null` stays exact.
 
 Errors: DOMAIN for malformed JSON, with its line and column."#;
 
-const TOJSON: &str = r#"`•tojson Y` returns JSON text. Keyed axes become objects. Unkeyed axes become arrays. Character vectors become strings. Keyed entries that hold functions, such as `_mime_` renderers, are left out.
+const TOJSON: &str = r#"`•tojson Y` returns JSON text. Keyed axes become objects. Unkeyed axes become arrays. Character vectors become strings. Keyed entries that hold functions, such as `_mime` renderers, are left out.
 
-`["fill":v] •tojson Y` writes `v` as `null`.
+NaN exports as `null`. `["fill":v] •tojson Y` also writes `v` as `null`.
 
-Errors: DOMAIN for infinity without `fill`, out-of-range floats, nonintegral rationals, complex numbers and other functions."#;
+Errors: DOMAIN for an infinity that isn't `fill`, out-of-range floats, nonintegral rationals, complex numbers and other functions."#;
 
 const VFI: &str = r"`•vfi text` returns `[valid numbers]` for the whitespace-separated fields of `text`. An invalid field has flag `0x` and value `0`. Fields are parsed as numbers, never executed.
 
@@ -100,11 +129,11 @@ const VFI: &str = r"`•vfi text` returns `[valid numbers]` for the whitespace-s
 
 Errors: DOMAIN when either argument is not text.";
 
-const NGET: &str = r#"`•nget path` reads a UTF-8 text file.
+const NGET: &str = r#"`•nget path` reads a UTF-8 text file. `•nget "-"` reads the rest of standard input.
 
 `X •nget path` takes options on the left: `binary` (`1` reads a vector of byte values) and `encoding` (`"UTF-8"`).
 
-Errors: VALUE for missing files, invalid UTF-8 and other file errors; DOMAIN for invalid options."#;
+Errors: VALUE for missing files, invalid UTF-8, other file errors and standard input that the frontend doesn't provide; DOMAIN for invalid options."#;
 
 const NPUT: &str = r#"`path •nput data` writes `data` to a new UTF-8 file. It returns the number of bytes written.
 
@@ -120,9 +149,9 @@ const XML: &str = r#"`•xml tree` returns the XML text of an element tree. It e
 
 Errors: DOMAIN for invalid names or attribute values."#;
 
-const SVG: &str = r#"`X •svg children` returns an `svg` element with attributes `X`. It adds `xmlns` for the SVG namespace and `viewBox="0 0 100 100"`. Attributes in `X` replace these. Its `_mime_` field makes notebooks display it as a picture."#;
+const SVG: &str = r#"`X •svg children` returns an `svg` element with attributes `X`. It adds `xmlns` for the SVG namespace and `viewBox="0 0 100 100"`. Attributes in `X` replace these. Its `_mime` field makes notebooks display it as a picture."#;
 
-const MIME: &str = r"`•mime Y` returns the MIME bundle that display uses for `Y`. The bundle is a keyed vector from MIME types to text. It always has `text/plain`. If `Y` has a function in its `_mime_` field, `•mime` calls it with `Y` as `⍵` and adds its entries.
+const MIME: &str = r"`•mime Y` returns the MIME bundle that display uses for `Y`. The bundle is a keyed vector from MIME types to text. It always has `text/plain`. If `Y` has a function in its `_mime` field, `•mime` calls it with `Y` as `⍵` and adds its entries.
 
 Display shows the text form when a renderer fails. Only a direct `•mime` call reports the error.";
 
@@ -195,7 +224,15 @@ A distribution's `sample` takes a generator on its left, as in `g d.sample 3`. C
 
 Errors: DOMAIN for a seed that is not a nonnegative integer, or a left argument to `sample` that is not a generator; LENGTH or RANK for more than one seed; SYNTAX for a dyadic call to `•rand`.";
 
-const NC: &str = r"`•nc names` gives the class of each name: `¯1` invalid, `0` undefined, `2` value, `3` function or hybrid, `4` operator. A character vector names one binding. An array of strings keeps its shape.";
+const NC: &str = r"`•nc names` gives the class of each name: `¯1` invalid, `0` undefined, `2` value, `3` function, `4` operator. A character vector names one binding. An array of strings keeps its shape.";
+
+const STORAGE: &str = r#"`•storage Y` names the storage that holds the items of `Y`: `"boolean"`, `"integer"`, `"float"`, `"complex"`, `"character"` or `"mixed"`. An atom gives its own kind, which can also be `"rational"` or `"function"`. Compact storage holds items of one kind. Mixed storage keeps each item's kind. Boxed display marks the same storage on its bottom edge."#;
+
+const TIME: &str = r#"`•time t` gives the seconds since time `t`. Time counts from the session's start on a monotonic clock. `•time 0` is the current reading. `t←•time 0` starts a timer. `•time t` then gives the seconds since it started.
+
+`F •time x` calls each function in `F` on `x` for about 0.1 s. The result is each function's fastest time per call in seconds, with the shape and keys of `F`. With `F←["sum":+/ "max":⌈/]`, `F •time x` labels each time. Time a dyadic function with its left argument bound, as in `2⍃⍴`.
+
+Errors: DOMAIN for a left argument that holds anything but functions, or a `t` that isn't a number. Errors from a timed function stop the timing."#;
 
 const NL: &str = r"`prefix •nl classes` lists the visible user names in `classes` that begin with `prefix`, as a sorted vector of strings. `•nl classes` lists them all.
 
@@ -220,20 +257,17 @@ pub(crate) fn help(name: &str) -> Option<&'static str> {
 pub(crate) fn lookup(name: &str) -> Option<Operand> {
     let &(name, ref builtin, _) = BUILTINS.iter().find(|(key, ..)| key.eq_ignore_ascii_case(name))?;
     Some(match builtin {
-        Builtin::Text(text) => Operand::Value(Value::new(vec![text.len()], text.chars().map(Value::Character).collect()).unwrap()),
-        Builtin::Function(call) => Operand::Function(Function::system(SystemFunction { name, call: call.clone() })),
+        Builtin::Text(text) => Operand::Value(crate::keyed::text(text)),
+        Builtin::Function(call, valence) => Operand::Function(Function::system(SystemFunction { name, call: call.clone(), valence: *valence })),
     })
 }
 
-fn signal(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if left.is_some() { return Err(span.error(ErrorKind::Syntax, "•signal is monadic")); }
+fn storage(_: Option<&Value>, right: &Value, _: &Context<'_>) -> Result<Value, Error> { Ok(crate::keyed::text(right.storage_name())) }
+
+fn signal(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "•signal needs an error name vector")); }
-    let invalid = || span.error(ErrorKind::Domain, "•signal needs an ordinary error name such as \"DOMAIN ERROR\"");
-    let name: String = right
-        .elements()
-        .map(|e| match e { Value::Character(c) => Ok(c), _ => Err(invalid()) })
-        .collect::<Result<_, _>>()?;
-    let kind = match name.as_str() {
+    let invalid = || span.domain_error("•signal needs an ordinary error name such as \"DOMAIN ERROR\"");
+    let kind = match crate::keyed::name(right).ok_or_else(invalid)?.as_ref() {
         "SYNTAX ERROR" => ErrorKind::Syntax,
         "INDEX ERROR" => ErrorKind::Index,
         "RANK ERROR" => ErrorKind::Rank,
@@ -249,33 +283,26 @@ fn signal(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Val
 fn case_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let mode = match left {
         None => -3,
-        Some(a) if a.is_singleton() => numeric(&a.at(0), span)?.integer().map_err(|k| span.error(k, "•c mode must be 1, ¯1 or ¯3"))?,
-        _ => return Err(span.error(ErrorKind::Domain, "•c needs one case mode")),
+        Some(a) if a.is_singleton() => numeric(&a.at(0), span)?.integer().error_at(span, "•c mode must be 1, ¯1 or ¯3")?,
+        _ => return Err(span.domain_error("•c needs one case mode")),
     };
-    if !matches!(mode, -3 | -1 | 1) { return Err(span.error(ErrorKind::Domain, "•c mode must be 1, ¯1 or ¯3")); }
-    fn map(a: &Value, mode: isize, span: &Context<'_>) -> Result<Value, Error> {
-        let mapper = icu_casemap::CaseMapper::new();
-        let item = |e: Value| {
-            span.check()?;
-            Ok(match e {
-                Value::Character(c) => Value::Character(match mode {
-                    1 => mapper.simple_uppercase(c),
-                    -1 => mapper.simple_lowercase(c),
-                    _ => mapper.simple_fold(c),
-                }),
-                a @ Value::Array(_) => map(&a, mode, span)?,
-                e => e,
-            })
-        };
-        if a.is_atom() { return item(a.clone()); }
-        let data = a.elements().map(item).collect::<Result<Vec<_>, Error>>()?;
-        a.layout().collect(data, item(a.prototype())?).map_err(|k| span.error(k, "invalid case conversion"))
-    }
-    map(right, mode, span)
+    if !matches!(mode, -3 | -1 | 1) { return Err(span.domain_error("•c mode must be 1, ¯1 or ¯3")); }
+    let mapper = icu_casemap::CaseMapper::new();
+    let case = |e: Value| {
+        Ok(match e {
+            Value::Character(c) => Value::Character(match mode {
+                1 => mapper.simple_uppercase(c),
+                -1 => mapper.simple_lowercase(c),
+                _ => mapper.simple_fold(c),
+            }),
+            e => e,
+        })
+    };
+    pervade(right, &case, &EmptyFill::Mapped, span)
 }
 
 fn unicode_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let invalid = || span.error(ErrorKind::Domain, "invalid Unicode conversion");
+    let invalid = || span.domain_error("invalid Unicode conversion");
     let encoding = if let Some(spec) = left {
         let name = if matches!(spec.elements().next(), Some(Value::Array(_))) {
             if spec.shape().len() > 1 || !(1..=2).contains(&spec.len()) { return Err(invalid()); }
@@ -286,38 +313,31 @@ fn unicode_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
             }
             spec.at(0).clone()
         } else { spec.clone() };
-        if name.shape().len() != 1 { return Err(invalid()); }
-        let name: String = name
-            .elements()
-            .map(|e| match e { Value::Character(c) => Ok(c), _ => Err(invalid()) })
-            .collect::<Result<_, _>>()?;
-        if !matches!(name.as_str(), "UTF-8" | "UTF-16" | "UTF-32") { return Err(invalid()); }
+        let text = crate::keyed::name(&name).filter(|_| !name.is_atom()).ok_or_else(invalid)?;
+        if !matches!(&*text, "UTF-8" | "UTF-16" | "UTF-32") { return Err(invalid()); }
         if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "encoded •ucs needs a vector")); }
-        Some(name)
+        Some(text)
     } else { None };
-    let characters = matches!(right.prototype(), Value::Character(_));
-    let data = if characters {
-        let mut data = Vec::new();
-        for e in right.elements() {
-            span.check()?;
-            let Value::Character(c) = e else { return Err(invalid()); };
-            match encoding.as_deref() {
-                Some("UTF-8") => data.extend(c.encode_utf8(&mut [0; 4]).bytes().map(|b| integer(b as i64))),
-                Some("UTF-16") => data.extend(c.encode_utf16(&mut [0; 2]).iter().map(|&u| integer(u as i64))),
-                _ => data.push(integer(c as i64)),
-            }
-        }
-        data
+    let shape = |len: usize| {
+        let shape = if encoding.is_some() { vec![len] } else { right.shape().to_vec() };
+        generated_len(&shape).map(|_| shape).error_at(span, "Unicode result exceeds element limit")
+    };
+    let result = if matches!(right.prototype(), Value::Character(_)) {
+        let chars: Cow<[char]> = match right.as_items() {
+            Items::Characters(cs) => Cow::Borrowed(cs),
+            Items::Values(vs) => Cow::Owned(vs.iter().map(|v| if let Value::Character(c) = v { Ok(*c) } else { Err(invalid()) }).collect::<Result<_, _>>()?),
+            _ => return Err(invalid()),
+        };
+        let codes: Vec<i64> = match encoding.as_deref() {
+            Some("UTF-8") => chars.iter().collect::<String>().bytes().map(i64::from).collect(),
+            Some("UTF-16") => chars.iter().collect::<String>().encode_utf16().map(i64::from).collect(),
+            _ => chars.iter().map(|&c| i64::from(u32::from(c))).collect(),
+        };
+        if encoding.is_none() && right.is_atom() { return Ok(integer(codes[0])); }
+        Value::integers(shape(codes.len())?, codes)
     } else {
         if !matches!(right.prototype(), Value::Number(_)) { return Err(invalid()); }
-        let codes: Vec<u32> = right
-            .elements()
-            .map(|e| {
-                span.check()?;
-                let n = numeric(&e, span)?.nonnegative_integer().map_err(|_| invalid())?;
-                u32::try_from(n).map_err(|_| invalid())
-            })
-            .collect::<Result<_, Error>>()?;
+        let codes = right.as_items().nonnegative_integers().map_err(|_| invalid())?;
         let chars: Vec<char> = match encoding.as_deref() {
             Some("UTF-8") => {
                 let bytes: Vec<_> = codes.into_iter().map(u8::try_from).collect::<Result<_, _>>().map_err(|_| invalid())?;
@@ -327,13 +347,10 @@ fn unicode_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
                 let units: Vec<_> = codes.into_iter().map(u16::try_from).collect::<Result<_, _>>().map_err(|_| invalid())?;
                 char::decode_utf16(units).collect::<Result<_, _>>().map_err(|_| invalid())?
             }
-            _ => codes.into_iter().map(char::from_u32).collect::<Option<_>>().ok_or_else(invalid)?,
+            _ => codes.into_iter().map(|n| u32::try_from(n).ok().and_then(char::from_u32)).collect::<Option<_>>().ok_or_else(invalid)?,
         };
-        chars.into_iter().map(Value::Character).collect()
+        if encoding.is_none() && right.is_atom() { return Ok(Value::Character(chars[0])); }
+        Value::characters(shape(chars.len())?, chars)
     };
-    if encoding.is_none() && right.is_atom() { return Ok(data[0].clone()); }
-    let shape = if encoding.is_some() { vec![data.len()] } else { right.shape().to_vec() };
-    generated_len(&shape).map_err(|k| span.error(k, "Unicode result exceeds element limit"))?;
-    let result = Value::from_parts(shape, data, if characters { integer(0) } else { Value::Character(' ') });
-    result.and_then(|a| if encoding.is_none() { a.with_layout(right.layout().clone()) } else { Ok(a) }).map_err(|k| span.error(k, "invalid Unicode result"))
+    result.and_then(|a| if encoding.is_none() { a.with_layout(right.layout().clone()) } else { Ok(a) }).error_at(span, "invalid Unicode result")
 }

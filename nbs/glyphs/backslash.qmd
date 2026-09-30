@@ -1,11 +1,4 @@
-# `\` — Expand / Scan
-
-`N\Y` expands the last axis. Positive counts consume and repeat an item; zero inserts one fill; negative counts insert `|N|` fills.
-
-```apl
-1 0 1\10 20        ⍝ 10 0 20
-2 ¯2 1\10 20       ⍝ 10 10 0 0 20
-```
+# `\` — Scan
 
 `f\Y` scans left-to-right: each result becomes the next call's left argument.
 
@@ -21,7 +14,7 @@
 100+\10 20         ⍝ 110 130
 ```
 
-The whole seed starts each lane. A unit seed stands for its content, so `(10)+\v` is `10+\v`. Use Rank for separate seeds per cell.
+The whole seed starts each lane. A unit seed stands for its content, so `(⊂10)+\v` is `10+\v`. Use Rank for separate seeds per cell.
 
 ```apl
 M←[1 2 3 ⋄ 4 5 6]
@@ -36,3 +29,7 @@ Empty scans and unseeded singletons make no calls. [Axis](axis.qmd) `⍠K` selec
 ```
 
 APL difference: every scan left-accumulates, including dfns.
+
+## Errors
+
+- `DOMAIN`: an array operand. Expand with [`#⁻¹`](hash.qmd#expand)

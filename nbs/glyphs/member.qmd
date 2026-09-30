@@ -9,19 +9,19 @@
 `X∊Y` marks each cell of `X` found among the major cells of `Y`, using tolerant matching. The cells of `X` have the rank of a major cell of `Y`. Against a vector, each item of `X` is one query. A single query returns an atom. Batch axes follow the leading axes of `X`.
 
 ```apl
-1 2 3∊2 4          ⍝ 0ₓ 1ₓ 0ₓ
-"banana"∊"an"       ⍝ 0ₓ 1ₓ 1ₓ 1ₓ 1ₓ 1ₓ
+1 2 3∊2 4          ⍝ $f $t $f
+"banana"∊"an"       ⍝ $f $t $t $t $t $t
 C←"cat" "dog"
-("dog")∊C          ⍝ 1ₓ
-["dog"]∊C          ⍝ [1ₓ]
+⊂"dog" ∊ C         ⍝ $t
+["dog"]∊C          ⍝ [$t]
 ```
 
 Against a matrix, each row of `X` is one query.
 
 ```apl
 m←[10 20 ⋄ 30 40]
-30 40∊m            ⍝ 1ₓ
-[30 40 ⋄ 50 60]∊m  ⍝ 1ₓ 0ₓ
+30 40∊m            ⍝ $t
+[30 40 ⋄ 50 60]∊m  ⍝ $t $f
 ```
 
 ## Errors

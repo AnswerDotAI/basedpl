@@ -1,5 +1,6 @@
 links/
 meta/
+DEV.md
 *.tgz
 __pycache__/
 *.py[cod]

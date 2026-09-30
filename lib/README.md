@@ -23,6 +23,8 @@ The same call works from Python: `apl('•load "lib/numeric.apl"')`. Definitions
 
 The ports count positions from 0, as the rest of bAsedPL does. They use based arrays, `↑` for First, `⊃` for Mix, `⍶`/`⍹` operands, and seeded reductions.
 
+bAsedPL's `≡` returns an unsigned depth, as Dyalog's does when `⎕ML` is 2 or more. Where an original under the default `⎕ML` writes `|≡`, its port writes `≡`. Dyalog's First takes the first element in ravel order, while `↑` takes the first major cell, so a port takes the first element of a matrix with `↑,⍵`.
+
 `dyalog.apl` includes `cal [year month]` and `cal year` for calendars, `packZ` for LZW compression (`0 packZ` expands; a negative bit limit returns the dictionary), `variables unify expressions` for structural unification with an occurs check, and `digits ratsum` for repeating-unit rational addition/negation.
 
-Examples in `tests/reference/{april,aplcart,dyalog}.apl` load these files and retain independent upstream or Dyalog expectations. Case-specific setup stays in the tests. Unported Dyalog definitions remain in the reference inventory with their outstanding dependencies.
+Examples in `tests/reference/{april,aplcart,dyalog}.apl` load these files and retain independent upstream or Dyalog expectations. Case-specific setup stays in the tests. `tests/reference/lib.apl` covers the branches those examples miss, with expectations worked out from each function's definition or from published results. Unported Dyalog definitions remain in the reference inventory with their outstanding dependencies.

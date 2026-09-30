@@ -12,7 +12,7 @@ def test_worker_bindings_calls_and_echo():
         assert r['output'] == [dict(kind='explicit', data={'text/plain':'6ₓ'})] and r['value']['data'] == [2, 3, 4] and r['error'] is None
         r = w.request(dict(call='-', args=[a, a], echo=False), timeout=2)
         assert r['output'] == [] and r['value']['data'] == [0, 0, 0]
-        for code in ['3x', '⊂3x', '⊂⊂3x', "[(2x*100x) 0.5 1r3 1j2 'a']", '[[1 2] "ab" (0 3⍴0x)]', '0⍴⊂1 2', '0 2⍴""', '∞ ¯∞']:
+        for code in ['3x', '⊂3x', '⊂⊂3x', "[(2x*100x) 0.5 1r3 1j2 'a']", '[[1 2] "ab" (0 3⍴0x)]', '0⍴⊂1 2', '0 2⍴""', '∞ ¯∞', '$t $f', '0⍴$f']:
             original = w.eval(code, timeout=2)
             r = w.request(dict(bindings=dict(v=original['value']), call='⊢', args=[original['value']]), timeout=2)
             assert r == original
@@ -21,13 +21,13 @@ def test_worker_bindings_calls_and_echo():
         for payload in [dict(bindings={'x←99': a}), dict(bindings=dict(x=dict(shape=[1], data=[1, 2], prototype=0))),
             dict(bindings=dict(x=dict(shape=[], data=[{'rational':['1', '0']}], prototype=0))),
             dict(bindings=dict(x=dict(shape=[], data=['ab'], prototype=' '))), dict(bindings=[]),
-            dict(call='+', args=[dict(shape=[], data=[True], prototype=0)]), dict(call='+'), dict(args=[a]),
+            dict(call='+'), dict(args=[a]),
             dict(code='1', call='+', args=[a]),
             dict(bindings=dict(x=dict(shape=[], data=[{'infinity': 0}], prototype=0))),
         ]: assert w.request(payload, timeout=2)['error']['kind'] == 'REQUEST ERROR'
-        r = w.request(dict(call='{⎕←⍵ ⋄ 1÷0}', args=[a], echo=False), timeout=2)
-        assert r['output'] == [dict(kind='explicit', data={'text/plain':'1ₓ 2ₓ 3ₓ'})] and r['error']['kind'] == 'DOMAIN ERROR'
-        assert r['error']['calls'][-1]['source']['text'] == '{⎕←⍵ ⋄ 1÷0}'
+        r = w.request(dict(call='{⎕←⍵ ⋄ 1÷"a"}', args=[a], echo=False), timeout=2)
+        assert r['output'] == [dict(kind='explicit', data={'text/plain':'[1 2 3]ₓ'})] and r['error']['kind'] == 'DOMAIN ERROR'
+        assert r['error']['calls'][-1]['source']['text'] == '{⎕←⍵ ⋄ 1÷"a"}'
         assert w.request(dict(call='{∇⍵}', args=[a]), timeout=.01)['error']['kind'] == 'TIMEOUT'
         for value in [float('inf'), float('-inf'), float('nan')]:
             with pytest.raises(ValueError): w.request(dict(bindings=dict(x=dict(shape=[], data=[value], prototype=0))))

@@ -1,7 +1,7 @@
 use crate::{
-    array::{Frame, Gather, Items},
+    array::{generated_len, Frame, Gather, Items},
     primitive::{Selection, Targets},
-    Error, ErrorKind, Number, Span, Value,
+    Error, ErrorAt, ErrorKind, Number, Span, Value,
 };
 use foldhash::{HashMap, HashMapExt};
 
@@ -21,10 +21,10 @@ impl Labels {
         let simple = match original.as_items() { Items::Values(items) => items.iter().all(Value::is_atom), _ => true };
         let (mut labels, array) = if matches!(original, Value::Array(_)) && !original.is_empty() && simple {
             let n = original.len();
-            if n >= crate::array::MAX_GENERATED_ELEMENTS { return Err(span.error(ErrorKind::Limit, "selection is too large")); }
+            generated_len(original.shape()).error_at(span, "selection is too large")?;
             let array = Value::integers(original.shape().to_vec(), (1..=n as i64).collect())
                 .and_then(|a| a.with_layout(original.layout().clone()))
-                .map_err(|k| span.error(k, "invalid selection labels"))?;
+                .error_at(span, "invalid selection labels")?;
             (Self { places: Places::Offsets(n), nested: HashMap::new() }, array)
         } else {
             let mut labels = Self { places: Places::Paths(vec![]), nested: HashMap::new() };
@@ -38,7 +38,7 @@ impl Labels {
     fn build(&mut self, a: &Value, path: &mut Vec<usize>, span: &Span) -> Result<Value, Error> {
         let mut items = Vec::new();
         for (i, e) in a.elements().enumerate() {
-            if self.len() + self.nested.len() >= crate::array::MAX_GENERATED_ELEMENTS { return Err(span.error(ErrorKind::Limit, "selection is too large")); }
+            generated_len(&[self.len() + self.nested.len() + 1]).error_at(span, "selection is too large")?;
             path.push(i);
             items.push(match e {
                 a @ Value::Array(_) => {
@@ -55,10 +55,8 @@ impl Labels {
             });
             path.pop();
         }
-        let prototype = if a.is_empty() {
-            Self::prototype(&a.prototype(), &mut HashMap::new()).map_err(|k| span.error(k, "invalid selection prototype"))?
-        } else { Value::Number(Number::from_integer(0)) };
-        a.layout().collect(items, prototype).map_err(|k| span.error(k, "invalid selection labels"))
+        let prototype = if a.is_empty() { Self::prototype(&a.prototype(), &mut HashMap::new()).error_at(span, "invalid selection prototype")? } else { Value::Number(Number::from_integer(0)) };
+        a.layout().collect(items, prototype).error_at(span, "invalid selection labels")
     }
     fn prototype(e: &Value, seen: &mut HashMap<usize, Value>) -> Result<Value, ErrorKind> {
         let a @ Value::Array(_) = e else { return Ok(Value::Number(Number::from_integer(0))); };
@@ -86,22 +84,19 @@ impl Labels {
             let found = if let Some((_, path)) = self.nested.get(&selected.storage_id()) {
                 targets.push(path);
                 true
-            } else if let Some(n) = selected.as_number() {
-                self.place(n.nonnegative_integer().map_err(|k| span.error(k, "invalid selection label"))?, &mut targets)
-            } else { false };
+            } else if let Some(n) = selected.as_number() { self.place(n.nonnegative_integer().error_at(span, "invalid selection label")?, &mut targets) } else { false };
             if !found { return Err(span.error(ErrorKind::Index, "cannot assign to a missing item")); }
             values.fill(right, 1);
         }
         else { self.collect(selected, right, span, &mut targets, &mut values)?; }
         let shape = vec![targets.len()];
-        let values = values.finish(shape.clone().into(), || right.prototype()).map_err(|k| span.error(k, "invalid replacement"))?;
+        let values = values.finish(shape.clone().into(), || right.prototype()).error_at(span, "invalid replacement")?;
         Ok((Selection { frame: Frame::Array(shape.into()), targets }, values))
     }
     fn collect(&self, selected: &Value, right: &Value, span: &Span, targets: &mut Targets, values: &mut Gather) -> Result<(), Error> {
         let aligned;
         let right = if right.has_keys() && selected.has_keys() {
-            aligned = crate::keyed::reorder(right, &(0..selected.shape().len()).map(|a| selected.keys(a).cloned()).collect::<Vec<_>>(), true)
-                .map_err(|k| span.error(k, "replacement does not supply selected keys"))?;
+            aligned = crate::keyed::reorder(right, &selected.layout().all_keys(), true).error_at(span, "replacement does not supply selected keys")?;
             &aligned
         } else { right };
         if !right.is_singleton() && right.shape() != selected.shape() {
@@ -116,13 +111,13 @@ impl Labels {
         };
         if let Items::Integers(ids) = selected.as_items() {
             for (i, &id) in ids.iter().enumerate() {
-                label(i, usize::try_from(id).map_err(|_| span.error(ErrorKind::Domain, "invalid selection label"))?, targets, values)?;
+                label(i, usize::try_from(id).map_err(|_| span.domain_error("invalid selection label"))?, targets, values)?;
             }
             return Ok(());
         }
         for (i, item) in selected.elements().enumerate() {
             match item {
-                Value::Number(n) => label(i, n.nonnegative_integer().map_err(|k| span.error(k, "invalid selection label"))?, targets, values)?,
+                Value::Number(n) => label(i, n.nonnegative_integer().error_at(span, "invalid selection label")?, targets, values)?,
                 a @ Value::Array(_) => match self.nested.get(&a.storage_id()) {
                     Some((_, path)) => {
                         targets.push(path);
@@ -130,7 +125,7 @@ impl Labels {
                     }
                     None => self.collect(&a, &right.at(pick(i)), span, targets, values)?,
                 },
-                Value::Character(_) | Value::Function(_) => return Err(span.error(ErrorKind::Domain, "invalid selection")),
+                Value::Character(_) | Value::Function(_) => return Err(span.domain_error("invalid selection")),
             }
         }
         Ok(())

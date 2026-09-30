@@ -12,10 +12,10 @@
 adic ← {  ⍝ Bijective base-⍺ numeration.
   b←≢a←,⍺  ⍝ base and alphabet
   1=⍴⍴⍵:b⊥1+a⍳⍵
-  1=b:⍵/⍺  ⍝ unary: special case
+  1=b:⍵#⍺  ⍝ unary: special case
   n←⌊b⍟1+⍵×b-1  ⍝ number of digits
   z←(¯1+b*n)÷b-1  ⍝ smallest integer with length n
-  a((n/b)⊤⍵-z)
+  a(n#b ⊤ ⍵-z)
 }
 
 ⍝ From http://dfns.dyalog.com/c_apportion.htm
@@ -23,7 +23,7 @@ adic ← {  ⍝ Bijective base-⍺ numeration.
 apportion ← {  ⍝ Huntington-Hill apportionment.
   ⍺←435  ⍝ default number of seats
   ⍵{  ⍝ population per state
-    d←(⍵×⍵+1)*0.5  ⍝ divisor
+    d←√⍵×⍵+1  ⍝ divisor
     cs←⍺÷d  ⍝ priority value
     ⍵+cs=⌈/cs  ⍝ next seat allocation
   }⍣(⍺-≢⍵),1  ⍝ iterated per remaining seat.
@@ -76,8 +76,8 @@ fibonacci ← { ⍺←0 1  ⍝ Tail-recursive Fibonacci.
 }
 
 sulFib ← {  ⍝ Sullivan Fibonacci
-  z←0.5×1+s←5*0.5
-  ((z*⍵)-(2○π⍵)×z*-⍵)÷s
+  z←0.5×1+s←√5
+  (z*⍵ - 2○π⍵ × z*-⍵)÷s
 }
 
 ⍝ From http://dfns.dyalog.com/c_factors.htm
@@ -85,28 +85,28 @@ sulFib ← {  ⍝ Sullivan Fibonacci
 factors ← { ⍵{  ⍝ Prime factors of ⍵.
     ⍵,(⍺÷×/⍵)~[1]  ⍝ append factor > sqrt(⍵).
   }∊⍵{  ⍝ concatenated,
-    (0=(⍵*1+⍳⌊⍵⍟⍺)|⍺)/⍵  ⍝ powers of each prime factor.
+    (0 = ⍵*1+⍳⌊⍵⍟⍺ | ⍺)#⍵  ⍝ powers of each prime factor.
   }¨⍬{  ⍝ remove multiples:
     nxt←↑⍵
     msk←0≠nxt|⍵  ⍝ ... mask of non-multiples.
     ∧/1↓msk:⍺,⍵  ⍝ all non multiples - finished.
-    (⍺,nxt)∇ msk/⍵  ⍝ sieve remainder.
+    (⍺,nxt)∇ msk#⍵  ⍝ sieve remainder.
   }⍵{  ⍝ from,
-    (0=⍵|⍺)/⍵  ⍝ divisors of ⍵ in:
-  }2,(3+2×⍳⌊0.5×⍵*÷2),⍵  ⍝ 2,3 5 .. sqrt(⍵),⍵
+    (0=⍵|⍺)#⍵  ⍝ divisors of ⍵ in:
+  }2,(3+2×⍳⌊0.5×√⍵),⍵  ⍝ 2,3 5 .. sqrt(⍵),⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_gcd.htm
 
 gcd ← { ⍵=0 : |⍺ ⋄ ⍵∇⍵|⍺ }  ⍝ Greatest common divisor.
 
-lcm ← { ⍺×⍵÷(⍺ gcd ⍵) }  ⍝ Least common multiple.
+lcm ← { ⍺×⍵÷g+0=g←⍺ gcd ⍵ }  ⍝ Least common multiple. The lcm of 0 and 0 is 0.
 
 ⍝ From http://dfns.dyalog.com/c_k6174.htm
 
-k6174 ← {  ⍝ Kaprekar's operation.
-  enco←(4/10)⊤  ⍝ 4-digit encode.
-  deco←enco⍣¯1  ⍝ and decode.
+k_6174 ← {  ⍝ Kaprekar's operation.
+  enco←(4#10)⊤  ⍝ 4-digit encode.
+  deco←enco⁻¹  ⍝ and decode.
   1=⍴∪enco(⍵):"error"  ⍝ all digits the same: no go.
   ⍬{  ⍝ starting with null sequence.
     ⍵=↑⌽⍺:⍺
@@ -122,27 +122,27 @@ hex ← {  ⍝ Hexadecimal from decimal.
   1≠≡,⍵:⍺∇¨⍵  ⍝ simple-array-wise:
   0∊,⍵-1+⍵:"Too big"
   n←⍬⍴⍺,2*⌈2⍟2⌈16⍟1+⌈/|⍵  ⍝ default width.
-  ↓"0123456789abcdef"((n/16)⊤⍵)
+  ↓"0123456789abcdef"(n#16 ⊤ ⍵)
 }
 
 ⍝ From http://dfns.dyalog.com/c_dec.htm
 
 dec ← {  ⍝ Decimal from hexadecimal
-  ⍺←0  ⍝ unsigned by default.
-  1<⍴⍴⍵:⍺⊸∇⍤1 ⍵  ⍝ vector-wise:
+  ⍺←$f  ⍝ unsigned by default.
+  1<⍴⍴⍵:⍺⍃∇⍤1 ⍵  ⍝ vector-wise:
   0≡≢⍵:0  ⍝ dec"" → 0.
   1≠≡,⍵:⍺∇¨⍵  ⍝ simple-array-wise:
-  ws←∊⟜(•ucs 9 10 13 32 133 160)
+  ws←∊⍄(•ucs 9 10 13 32 133 160)
   ws↑⍵:⍺ ∇ 1↓⍵
   ws↑⌽⍵:⍺ ∇ ¯1↓⍵
   ∨/ws ⍵:⍺∇¨(1+ws ⍵)⊆⍵  ⍝ white-space-separated:
   v←16|"0123456789abcdef0123456789ABCDEF"⍳⍵
-  (16⊥v)-⍺×(8≤↑v)×16*≢v
+  16⊥v - ⍺ × 8≤↑v × 16*≢v
 }
 
 ⍝ From http://dfns.dyalog.com/c_int.htm
 
-int ← {m←2*⍺-1 ⋄ ((2×m)|m+⍵)-m}  ⍝ Signed from unsigned integer.
+int ← {m←2*⍺-1 ⋄ (2×m | m+⍵)-m}  ⍝ Signed from unsigned integer.
 
 ⍝ From http://dfns.dyalog.com/c_uns.htm
 
@@ -159,13 +159,13 @@ nicediv ← {  ⍝ ⍵ similar integers with sum ⍺.
 
 ⍝ From http://dfns.dyalog.com/s_nicediv.htm
 
-stack ← { ⍉⊃( ⍺ nicediv ⍵)/¨'⎕' }
+stack ← { ⍉⊃( ⍺ nicediv ⍵)#¨'⎕' }
 
 osc ← { 1=⍵ : 1 ⋄ 2|⍵ : ∇ 1+3×⍵ ⋄ ∇ ⍵÷2 }  ⍝ Oscillate - probably returns 1.
 
 ⍝ From http://dfns.dyalog.com/c_range.htm
 
-range ← { (⍴⍵)⍴((⍴⍺)↓⍋⍋⍺,,⍵)-⍋⍋,⍵ }  ⍝ Numeric range classification.
+range ← { (⍴⍵)⍴(⍴⍺ ↓ ⍋⍋⍺,,⍵)-⍋⍋,⍵ }  ⍝ Numeric range classification.
 
 ⍝ From http://dfns.dyalog.com/c_rational.htm
 
@@ -176,9 +176,9 @@ rational ← {  ⍝ Rational approximation to real ⍵.
 ⍝ From http://dfns.dyalog.com/c_roman.htm
 
 roman ← {  ⍝ Roman numeral arithmetic.
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5×⌝10*⍳4)(7|"IVXLCDMivxlcdm"⍳⍵)}
-  fmt←{~⟜" ",1 0 0⍉(' '⍪3 4⍴"MCXI DLV ")([∞ ⍵⊤⍨4⍴10]⌷⍉0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)}
-  depth←{⍹≥|≡⍵ : ⍶ ⍵ ⋄ ∇¨⍵}
+  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5×⊗10*⍳4)(7|"IVXLCDMivxlcdm"⍳⍵)}
+  fmt←{~⍄" ",1 0 0⍉(' '⍪3 4⍴"MCXI DLV ")([∞ ⍵⊤⍨4⍴10]⌷⍉0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)}
+  depth←{⍹≥≡⍵ : ⍶ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1  ⍝ arabic from roman.
   fmts←fmt depth 0  ⍝ roman from arabic.
   ⍺←⍬ ⋄ ⍬≡⍺:fmts ⍶ ⌊nums ⍵
@@ -189,7 +189,7 @@ roman ← {  ⍝ Roman numeral arithmetic.
 
 stamps ← {  ⍝ Postage stamps to the value of ⍵.
   ⍺←1 5 6 10 26 39 43  ⍝ Default UK stamp denominations.
-  graph←⍺{⍵⊸∩¨⍵+⊂⍺}⍳⍵+|⌊/⍺  ⍝ values: 0 ·· ⍵.
+  graph←⍺{⍵⍃∩¨⍵+⊂⍺}⍳⍵+|⌊/⍺  ⍝ values: 0 ·· ⍵.
   spath←graph path [0 ⍵]
   -/⌽2↕spath
 }
@@ -201,7 +201,7 @@ sieve ← {  ⍝ Sieve of Eratosthenes.
   nxt←1↑⍵  ⍝ Next prime, and
   msk←0≠nxt|⍵  ⍝ ... mask of non-multiples.
   ∧/1↓msk:⍺,⍵  ⍝ All non multiples - finished.
-  (⍺,nxt)∇ msk/⍵  ⍝ Sieve remainder.
+  (⍺,nxt)∇ msk#⍵  ⍝ Sieve remainder.
 }
 
 ⍝ From http://dfns.dyalog.com/c_to.htm
@@ -228,17 +228,17 @@ bp ← {↑[⍺<⍵ ⍺>⍵]}  ⍝ Boolean pair (2-vector)
 
 xd ← {×⍺-⍵}  ⍝ Signum difference
 
-bd ← {(⍺>⍵)-(⍺<⍵)}  ⍝ Boolean difference
+bd ← {⍺>⍵ - ⍺<⍵}  ⍝ Boolean difference
 
 rg ← {(⍺.[0]⍶ ⍵)∧⍺.[1]⍹ ⍵}  ⍝ Range operator
 
-xp ← {×/×⍵-⌝⍺}  ⍝ Signum product
+xp ← {×/×⍵-⊗⍺}  ⍝ Signum product
 
-xs ← {+/×⍵-⌝⍺}  ⍝ Signum sum
+xs ← {+/×⍵-⊗⍺}  ⍝ Signum sum
 
-xm ← {⌈/⊃×⌿×⍺,.-⍉⍵}  ⍝ Max signum
+xm ← {⌈/⊃×⌿×⍺,.-⍵ᵀ}  ⍝ Max signum
 
-xr ← {d←⍉⊃+/×⍵,.-⍉⍺ ⋄ ((2∨.=|d)/d)←2 ⋄ 3⊥⍉d}  ⍝ Outside location
+xr ← {d←⍉⊃+/×⍵,.-⍺ᵀ ⋄ (2∨.=|d #⍠¯1 d)←2 ⋄ 3⊥dᵀ}  ⍝ Outside location
 
 ⍝ From http://dfns.dyalog.com/c_alt.htm
 
@@ -250,18 +250,18 @@ alt ← {  ⍝ Alternant.
   ⍵.[∞ 0]⍶.⍹∇¨⊂⍠[1 2]⍵.[M 1↓⍳c]
 }
 
-bayes ← { ⍺(×÷+.×)⍵ }  ⍝ Bayes' formula. (implemented as a fork)
+bayes ← { ⍺ ×÷+.× ⍵ }  ⍝ Bayes' formula. (implemented as a fork)
 
 ⍝ From http://dfns.dyalog.com/c_Cholesky.htm
 
 Cholesky ← {  ⍝ decomposition of a Hermitian positive-definite matrix.
-  1≥n←≢⍵:⍵*0.5
+  1≥n←≢⍵:√⍵
   p←⌈n÷2
   q←⌊n÷2
   X←(p,p)↑⍵⊣Y←(p,-q)↑⍵⊣Z←(-q,q)↑⍵
-  L0←∇ X
-  L1←∇ Z-(TT←(+⍉Y)+.×⌹X)+.×Y
-  ((p,n)↑L0)⍪(TT+.×L0),L1
+  L_0←∇ X
+  L_1←∇ Z-(TT←+Yᵀ +.× ⌹X)+.×Y
+  (p,n)↑L_0 ⍪ TT+.×L_0 , L_1
 }
 
 ⍝ From http://dfns.dyalog.com/c_det.htm
@@ -271,7 +271,7 @@ det ← {  ⍝ Determinant of square matrix.
   0=n←≢⍵:⍺  ⍝ result for 0-by-0
   [i j]←(⍴⍵)⊤{⍵⍳⌈/⍵}|,⍵
   k←⍳n
-  (⍺×⍵.[i j]×¯1*i+j)∇ ⍵.[k~[i] k~[j]] - ⍵.[k~[i] j] ×⌝ ⍵.[i k~[j]] ÷ ⍵.[i j]
+  (⍺×⍵.[i j]×¯1*i+j)∇ ⍵.[k~[i] k~[j]] - ⍵.[k~[i] j] ×⊗ ⍵.[i k~[j]] ÷ ⍵.[i j]
 }
 
 ⍝ From http://dfns.dyalog.com/c_gauss_jordan.htm
@@ -281,7 +281,7 @@ gauss_jordan ← {  ⍝ Gauss-Jordan elimination.
     p←⍺+{⍵⍳⌈/⍵}|⍺↓⍵.[∞ ⍺]
     swap←⊖@[⍺ p] ⍵  ⍝ ⍺th and pth rows exchanged
     mat←swap.[⍺ ⍺]÷⍨@⍺ swap  ⍝ col diagonal reduced to 1
-    mat-(mat.[∞ ⍺]×⍺≠⍳≢⍵)×⌝mat.(⍺)
+    mat-(mat.[∞ ⍺]×⍺≠⍳≢⍵)×⊗mat.(⍺)
   }
   ⍺←=/⊃⍳⍴⍵
   (⍴⍺)⍴(0 1×⍴⍵)↓(⍵,⍺)elim/⌽⍳⌊/⍴⍵
@@ -293,14 +293,14 @@ tryGJ←{⍺←⊢ ⋄ [⍺⌹⍵ (⍺ gauss_jordan ⍵)]}  ⍝ gauss_jordan vs 
 
 ⍝ From http://dfns.dyalog.com/s_gauss_jordan.htm
 
-hil ← {÷1+ +⌝⍨⍳⍵}  ⍝ order ⍵ Hilbert matrix.
+hil ← {÷1+ +⊗⍨⍳⍵}  ⍝ order ⍵ Hilbert matrix.
 
 ⍝ From http://dfns.dyalog.com/c_kcell.htm
 
 kcell ← {  ⍝ Relationship between point and k-cell.
-  ⍺←(≢⍵)/2 1⍴0 1  ⍝ Default is unit k-cell.
-  b←,⍠((2=⍴⍴⍺)/0)⍺
-  p←((2⌊⍴⍴⍺)↓1 1,⍴⍵)⍴⍵  ⍝ Points to evaluate.
+  ⍺←(≢⍵)#⍠¯1 [2 1]⍴0 1  ⍝ Default is unit k-cell.
+  b←,⍠(2=⍴⍴⍺ # 0)⍺
+  p←(2⌊⍴⍴⍺ ↓ 1 1,⍴⍵)⍴⍵  ⍝ Points to evaluate.
   d←(,⍶⌿)⍤1 ⍉×-b,.-p
   ⍶/⍬:⌈/d ⋄ 5⊥d
 }
@@ -308,7 +308,7 @@ kcell ← {  ⍝ Relationship between point and k-cell.
 ⍝ From http://dfns.dyalog.com/c_kball.htm
 
 kball ← { ⍺←1  ⍝ Relationship between point and k-ball.
-  r←↑⍺ ⋄ p←1/⍵
+  r←↑⍺ ⋄ p←1#⍵
   c←(≢p)↑1↓⍺  ⍝ Remaining coordinates are center.
   ×-/[⍉p-⍠0 c;r]+.*¨2
 }
@@ -323,7 +323,7 @@ ksphere ← {  ⍝ Surface area of k-sphere.
 
 ⍝ From http://dfns.dyalog.com/s_ksphere.htm
 
-kvol ← { ⍵×((⍺-1) ksphere ⍵)÷⍺ }
+kvol ← { ⍵×(⍺-1 ksphere ⍵)÷⍺ }
 
 ⍝ From http://dfns.dyalog.com/c_mean.htm
 
@@ -332,7 +332,7 @@ mean ← { sum←+/⍵ ⋄ num←⍴⍵ ⋄ sum÷num }  ⍝ Arithmetic mean.
 ⍝ From http://dfns.dyalog.com/s_mean.htm
 
 stdev ← {
-  square←*⟜2 ⋄ sqrt←*⟜0.5
+  square←*⍄2 ⋄ sqrt←*⍄0.5
   sqrt(mean square ⍵)-square mean ⍵
 }
 
@@ -340,16 +340,16 @@ stdev ← {
 
 NormRand ← {                                 ⍝ Random numbers with a normal distribution
   depth←10*9                                 ⍝ randomness depth - can be larger from v14.0
-  [x y]←⊂⍤¯1 (1+?(2,⍵)⍴depth)÷depth          ⍝ two random variables within ]0;1]
-  ((¯2×⍟x)*0.5)×1○π2×y                       ⍝ Box-Muller distribution
+  [x y]←⊂⍤¯1 (1+?depth⍴⍨2,⍵)÷depth          ⍝ two random variables within ]0;1]
+  (¯2×⍟x * 0.5)×1○π2×y                       ⍝ Box-Muller distribution
 }
 
 ⍝ From http://dfns.dyalog.com/c_phinary.htm
 phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
   ⍺←1
-  Ø←(1+5*÷2)÷2
-  ""≡0/∊⍵:{
-    1<|≡⍵:∇¨⍵
+  Ø←(1+√5)÷2
+  ""≡0#∊⍵:{
+    1<≡⍵:∇¨⍵
     '¯'=↑⍵:-∇ 1↓⍵
     a←Ø⊥•d⍳⍵~"."
     a÷Ø*(≢⍵∪'.')-1+(,⍵)⍳'.'
@@ -366,9 +366,9 @@ phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
     rgt∧.=0:fmt lft
     lft∧.=0:"0.",fmt rgt
     (fmt lft),'.',fmt rgt
-  }⍬{
+  }⍬ₓ{
     num=Ø+.*⍺:⍺
-    ∆←(-⍴⍺)↑1
+    ∆←(-⍴⍺)↑1ₓ
     num=Ø+.*⍺+∆:⍺+∆
     k←⌊Ø⍟⍵
     (⍺,k)∇ ⍵-Ø*k
@@ -377,7 +377,7 @@ phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
 
 ⍝ From http://dfns.dyalog.com/s_phinary.htm
 
-align←{p←{⍵⍳'.'}¨⍵ ⋄ ⊃((⌈/p)-p){(⍺⍴' '),⍵}¨⍵}
+align←{p←{⍵⍳'.'}¨⍵ ⋄ ⊃(⌈/p - p){(⍺⍴' '),⍵}¨⍵}
 
 ⍝ From http://dfns.dyalog.com/c_root.htm
 
@@ -387,18 +387,18 @@ root ← { ⍺←2 ⋄ ⍵*÷⍺ }  ⍝ ⍺'th root, default to sqrt.
 
 realroots ← {  ⍝ Real roots of quadratic.
   [a b c]←⍵  ⍝ Coefficients.
-  d←(b*2)-4×a×c  ⍝ Discriminant.
+  d←b²-4×a×c  ⍝ Discriminant.
   d<0:⍬  ⍝ No roots
   d=0:-b÷2×a  ⍝ One root
-  d>0:(-b+¯1 1×d*0.5)÷2×a  ⍝ Two roots
+  d>0:(-b+¯1 1×√d)÷2×a  ⍝ Two roots
 }
 
 ⍝ From http://dfns.dyalog.com/s_roots.htm
 
 roots ← {  ⍝ Roots of quadratic.
   [a b c]←⍵  ⍝ coefficients.
-  d←(b*2)-4×a×c  ⍝ discriminant.
-  (-b+¯1 1×d*0.5)÷2×a  ⍝ both roots.
+  d←b²-4×a×c  ⍝ discriminant.
+  (-b+¯1 1×√d)÷2×a  ⍝ both roots.
 }
 
 
@@ -408,12 +408,12 @@ roots ← {  ⍝ Roots of quadratic.
 
 polar ← {  ⍝ Polar from/to cartesian coordinates.
   pol_car←{  ⍝ polar from cartesian (default).
-    radius←{(+⌿⍵*2)*0.5}  ⍝ radius (pythagorus).
+    radius←{√+⌿⍵²}  ⍝ radius (pythagorus).
     angle←{  ⍝ phase angle.
       [x y]←⊂⍤¯1 ⍵  ⍝ x and y coordinates.
-      [x0 xn]←1 0=⊂0=x  ⍝ points on/off y axis.
-      atan←¯3○y÷x+x0  ⍝ arctan y÷x (avoiding y÷0).
-      qne←(xn×atan)+x0×π0.5×2-×y
+      [on off]←1 0=⊂0=x  ⍝ points on/off y axis.
+      atan←¯3○y÷x+on  ⍝ arctan y÷x (avoiding y÷0).
+      qne←(off×atan)+on×π0.5×2-×y
       nsw←πx<0
       qse←π2×(x>0)∧y<0
       nsw+qse+qne  ⍝ all quadrants.
@@ -434,27 +434,27 @@ polar ← {  ⍝ Polar from/to cartesian coordinates.
 
 rnd ← { (10*-⍺)×⌊0.5+⍵×10*⍺ }
 
-poly ← { 2 1 ○⌝ (π2÷⍵)×⍳⍵ }
+poly ← { 2 1 ○⊗ (π2÷⍵)×⍳⍵ }
 
 ⍝ From http://dfns.dyalog.com/c_xtimes.htm
 
 xtimes ← { m←0  ⍝ Fast multi-digit product using FFT.
   xroots    ← {×\1,1↓(⍵÷2)⍴¯1*2÷⍵}
   cube      ← {⍵⍴⍨2⍴⍨⌊2⍟⍴⍵}
-  extend    ← {(2*⌈2⍟¯1+(⍴⍺)+⍴⍵)↑¨[⍺ ⍵]}
-  floop     ← {(⊣/⍺)∇⍣(×m) (+⌿⍵){⊃[⍺ ⍵]}⍤(¯1+(≢⍴⍵)-m) ⍺×⍠(⍳m←≢⍴⍺)-⌿⍵}
+  extend    ← {(2*⌈2⍟¯1+⍺+⍥⍴⍵)↑¨[⍺ ⍵]}
+  floop     ← {(⊣/⍺)∇⍣(×m) (+⌿⍵){⊃[⍺ ⍵]}⍤(≢⍴⍵ - m+1) ⍺×⍠(⍳m←≢⍴⍺)-⌿⍵}
   FFT       ← {,(cube xroots⍴⍵)floop cube ⍵}
   iFFT      ← {(⍴⍵)÷⍨, (cube+xroots⍴⍵)floop cube ⍵}
-  rconvolve ← {(¯1+(⍴⍺)+⍴⍵)↑iFFT×/FFT¨(⍺ extend ⍵)}
+  rconvolve ← {(¯1+⍺+⍥⍴⍵)↑iFFT×/FFT¨(⍺ extend ⍵)}
   carry     ← {1↓+⌿1 0⌽0,⍉0 10⊤⍵}
   (+/∧\0=t)↓t←carry⍣≡0,⌊0.5+9○(⍺ rconvolve ⍵)
 }
 
-convolve ← { +⌿(-⍳⍴⍺)⌽⍺×⌝⍵,0×1↓⍺ }
+convolve ← { +⌿(-⍳⍴⍺)⌽⍺×⊗⍵,0×1↓⍺ }
 
 ⍝ From http://dfns.dyalog.com/c_xpower.htm
 
 xpower ← {  ⍝ Fast multi-digit power using FFT.
-  xt←{(0,⍺)xtimes 0,⍵} ⋄ b←⌽2⊥⍣¯1+10⊥⍵  ⍝ boolean showing which powers needed
-  ⊃,/xt/b/{xt⍨⍺}\(⊂,10⊥⍣¯1+⍺)⍴⍨⍴b
+  xt←{(0,⍺)xtimes 0,⍵} ⋄ b←⌽2⊥⁻¹10⊥⍵  ⍝ boolean showing which powers needed
+  ⊃,/xt/b#{xt⍨⍺}\(⊂,10⊥⁻¹⍺)⍴⍨⍴b
 }

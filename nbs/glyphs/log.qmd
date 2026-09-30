@@ -13,8 +13,4 @@
 10⍟100            ⍝ 2
 ```
 
-Uses complex logarithms where needed.
-
-## Errors
-
-- `DOMAIN`: zero argument, base 1
+Uses complex logarithms where needed. `⍟0` is `¯∞`, as IEEE 754 gives it. With base 1, the result is an infinity or NaN.

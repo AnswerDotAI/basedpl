@@ -1,9 +1,9 @@
 # `⌊` — Floor / Minimum
 
-`⌊Y` rounds down to an exact integer. Pervasive; tolerant near integers. An infinity stays a float.
+`⌊Y` rounds down to an exact integer. Pervasive; tolerant near integers. An infinity or NaN stays a float.
 
 ```apl
-⌊1.8 ¯1.8         ⍝ 1ₓ ¯2ₓ
+⌊1.8 ¯1.8         ⍝ [1 ¯2]ₓ
 ⌊3r2              ⍝ 1ₓ
 ```
 
@@ -13,7 +13,7 @@ Complex floor uses APL's Gaussian-integer rule.
 ⌊1.5j0.5          ⍝ 1j1
 ```
 
-`X⌊Y` takes the real minimum. Pervasive. Empty reduction identity: `∞`.
+`X⌊Y` takes the real minimum. Pervasive. Beside NaN it returns the other argument, as Rust's `f64::min` does. Empty reduction identity: `∞`.
 
 ```apl
 3⌊1 5             ⍝ 1 3

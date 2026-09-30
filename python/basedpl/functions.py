@@ -17,53 +17,22 @@ def _build(kind, *operands, valence=0):
 class _Combinators(_Operators):
     def __bool__(self): raise TypeError('an APL function has no truth value')
     @property
-    def left(self): return _build('⊸', _HOLE, self, valence=1)
-    @property
-    def reduce(self): return _build('/', self)
-    @property
-    def scan(self): return _build('\\', self)
-    @property
-    def each(self): return _build('¨', self)
-    @property
-    def commute(self): return _build('⍨', self)
-    @property
-    def outer(self): return _build('⌝', self)
-    @property
-    def key(self): return _build('⌸', self)
-    @property
-    def inner(self): return _build('.', self, _HOLE)
-    @property
-    def rank(self): return _build('⍤', self, _HOLE)
-    @property
-    def after(self): return _build('⟜', self, _HOLE)
-    @property
-    def atop(self): return _build('⍤', self, _HOLE)
-    @property
-    def over(self): return _build('⍥', self, _HOLE)
-    @property
-    def before(self): return _build('⊸', self, _HOLE)
-    @property
-    def under(self): return _build('⌾', self, _HOLE)
-    @property
-    def with_inverse(self): return _build('⇄', self, _HOLE)
-    @property
-    def power(self): return _build('⍣', self, _HOLE)
-    @property
-    def history(self): return _build('history', self, _HOLE)
-    @property
-    def derivative(self): return _build('∂', self)
-    @property
-    def at(self): return _build('@', self, _HOLE)
-    @property
-    def stencil(self): return _build('⌺', self, _HOLE)
+    def left(self): return _build('⍃', _HOLE, self, valence=1)
     def __pow__(self, counts): return _build('⍣', self, counts)
     def __getitem__(self, axis): return _build('axis', self, axis, valence=self._valence)
-    def __lshift__(self, g): return _build('⍤', self, g)
-    def __rshift__(self, g): return _build('⍤', g, self)
+    def __lshift__(self, g): return _build('∘', self, g)
+    def __rshift__(self, g): return _build('∘', g, self)
     def __matmul__(self, g):
         if not isinstance(g, _Combinators): raise TypeError('inner product requires two functions')
         return _build('.', self, g)
     def __rmatmul__(self, g): raise TypeError('inner product requires two functions')
+
+# Operator properties by name. A dyadic operator waits for its right operand.
+_MONADIC = dict(reduce='/', scan='\\', each='¨', commute='⍨', outer='⊗', key='⌸', undo='⁻¹', derivative='∂')
+_DYADIC = dict(inner='.', rank='⍤', atop='∘', after='⍄', over='⍥', before='⍃', under='⌾', with_inverse='⇄', power='⍣', history='history',
+    at='@', stencil='⌺')
+for _name, _glyph in _MONADIC.items(): setattr(_Combinators, _name, property(lambda self, g=_glyph: _build(g, self)))
+for _name, _glyph in _DYADIC.items(): setattr(_Combinators, _name, property(lambda self, g=_glyph: _build(g, self, _HOLE)))
 
 class _Pending(_Combinators):
     "Function construction awaiting operator operands, innermost first."
@@ -99,25 +68,24 @@ class Function(_Combinators):
         if kwargs:
             if self._valence == 1: raise TypeError('keyword arguments need a dyadic call')
             args = (kwargs, args[0] if len(args) == 1 else list(args))
-        elif len(args) == 1 and self._valence == 2: return _build('⟜', self, args[0], valence=1)
+        elif len(args) == 1 and self._valence == 2: return _build('⍄', self, args[0], valence=1)
         if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this APL function')
         return apl._request(dict(function=self._inner, args=[_array(o) for o in args]), True).value
 
 def fork(f, g, h): return _build('fork', f, g, h)
-def atop(f, g): return _build('⍤', f, g)
+def atop(f, g): return _build('∘', f, g)
 
 def _python_name(name):
     name = normalize('NFKC', name.replace('-', '_'))
     return name+'_' if iskeyword(name) else name
 
 _builtins = {alias: (name, 0) for name in _system_functions for alias in (name, name[1:])}
-for _glyph, _glyph_name, _monad, _dyad, _aliases, _shortcut in symbols:
-    if not (_monad or _dyad): continue
-    for _name in (_glyph, _glyph_name, *_aliases.split()):
-        if not _name: continue
-        _builtins[_name] = _builtins[_python_name(_name)] = (_glyph, 0)
-    for _valence, _name in enumerate((_monad, _dyad), 1):
-        if _name: _builtins[_name] = _builtins[_python_name(_name)] = (_glyph, _valence)
+for _s in symbols:
+    if _s['kind'] != 'function': continue
+    for _name in (_s['glyph'], _s['name'], *_s['aliases'].split()):
+        _builtins[_name] = _builtins[_python_name(_name)] = (_s['glyph'], 0)
+    for _valence, _name in enumerate((_s['monad'], _s['dyad']), 1):
+        if _name: _builtins[_name] = _builtins[_python_name(_name)] = (_s['glyph'], _valence)
 
 __all__ = ['Function', 'fork', 'atop', *(name for name in _builtins if name.isidentifier() and not iskeyword(name))]
 

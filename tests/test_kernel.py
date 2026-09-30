@@ -24,7 +24,7 @@ async def kernel_story():
         reply, messages = await kc.exec_ok('⎕←8 ⋄ v←4 5', silent=True)
         assert not displayed(messages)
         assert reply['content']['execution_count'] == 5
-        reply, messages = await kc.exec_ok('v', user_expressions={'total': '+/v', 'bad': '1÷0'})
+        reply, messages = await kc.exec_ok('v', user_expressions={'total': '+/v', 'bad': '1÷"a"'})
         assert displayed(messages) == [('execute_result', '4 5')]
         expressions = reply['content']['user_expressions']
         assert expressions['total']['data']['text/plain'] == '9' and expressions['bad']['ename'] == 'DOMAIN ERROR'
@@ -60,9 +60,9 @@ async def kernel_story():
         assert not result['found']
         result = (await kc.shell_request('complete_request', code='•sr', cursor_pos=3))['content']
         assert result['matches'] == ['•src']
-        reply, messages = await kc.exec_drain('⎕←7 ⋄ 1÷0')
+        reply, messages = await kc.exec_drain('⎕←7 ⋄ 1÷"a"')
         assert reply['content']['ename'] == 'DOMAIN ERROR' and displayed(messages) == [('stream', '7\n')]
-        assert '1÷0' in '\n'.join(reply['content']['traceback'])
+        assert '1÷"a"' in '\n'.join(reply['content']['traceback'])
 
         # Receiving output before interruption proves output isn't buffered until completion.
         running = kc.run('⎕←9 ⋄ {∇⍵}0', timeout=10)
@@ -80,6 +80,23 @@ async def kernel_story():
         rich = [m['content']['data'] for m in messages if m['msg_type']=='execute_result']
         assert 'http://www.w3.org/2000/svg' in rich[0]['image/svg+xml']
         assert displayed(messages)[0] == ('stream', 'SVG\n')
+        messages = [m async for m in kc.run('⎕←"Name?" ⋄ ⌽⎕', on_stdin=lambda msg: 'Jo', timeout=10)]
+        assert displayed(messages) == [('stream', 'Name?\n'), ('execute_result', 'oJ')]
+        reply, _ = await kc.exec_drain('⎕', allow_stdin=False)
+        assert reply['content']['ename'] == 'VALUE ERROR'
+        reply, _ = await kc.exec_drain('•nget "-"', allow_stdin=True)
+        assert reply['content']['ename'] == 'VALUE ERROR'
+
+        # Ctrl-C while `⎕` waits for the notebook's reply interrupts the evaluation.
+        asked = asyncio.Event()
+        async def unanswered(msg):
+            asked.set()
+            await asyncio.Event().wait()
+        running = kc.run('⎕', on_stdin=unanswered, timeout=10)
+        await asyncio.wait_for(asked.wait(), 10)
+        await kc.interrupt()
+        reply = next(m for m in [m async for m in running] if m['msg_type']=='execute_reply')
+        assert reply['content']['ename'] == 'KeyboardInterrupt'
 
 
 def test_jupyter_kernel(): asyncio.run(kernel_story())

@@ -5,6 +5,7 @@ from fractions import Fraction
 from pathlib import Path
 
 _literal = r'"(?:""|[^"])*"' r"|'.'"
+_dyalog_string = r"'(?:''|[^'])*'"
 
 
 def source_definitions(text):
@@ -168,7 +169,7 @@ def lisp_expected(text):
 
 def scope(code):
     'Only explicit exclusions; uncertain language features remain review questions.'
-    clean = re.sub(r"'(?:''|[^'])*'|⍝[^\n]*", '', code)
+    clean = re.sub(_dyalog_string+r"|⍝[^\n]*", '', code)
     if '«' in clean or '»' in clean: return 'excluded', 'host-language escapes are arbitrary FFI (§5.3)'
     files = 'NGET|NPUT|NREAD|NAPPEND|NREPLACE|NINFO|NTIE|NUNTIE|NCREATE|NDELETE|NCOPY|NMOVE|NEXISTS|NPARTS|NRESIZE|NLOCK|NERASE|NRENAME|NNAMES|NNUMS|NSIZE|NXLATE|MKDIR'
     files += '|FREAD|FAPPEND|FREPLACE|FSTAC|FSTIE|FTIE|FUNTIE|FCREATE|FERASE|FCOPY|FDROP|FRENAME|FRESIZE|FPROPS|FAVAIL|FSIZE|FNAMES|FNUMS|FLOCK|FHOLD|FLIB|FHIST|FCHK'
@@ -246,7 +247,7 @@ def april_file(path, source):
             try: case['expected'] = lisp_expected(expected)
             except (ValueError, StopIteration, TypeError) as e: case['expectation_note'] = str(e)
         if '⋆' in code:
-            case['code'] = re.sub(r"'(?:''|[^'])*'|⍝[^\n]*|⋆", lambda m: '*' if m[0] == '⋆' else m[0], code)
+            case['code'] = re.sub(_dyalog_string+r"|⍝[^\n]*|⋆", lambda m: '*' if m[0] == '⋆' else m[0], code)
             case['adaptation'] = 'April power alias ⋆ written with standard APL *'
         cases.append(case)
     return cases
@@ -332,7 +333,7 @@ def capture_ngn_expectations(apl, cases):
     captured = 0
     for case in cases:
         expression = case.get('expected_apl', '')
-        clean = re.sub(r"'(?:''|[^'])*'", '', expression)
+        clean = re.sub(_dyalog_string, '', expression)
         if not expression or not re.fullmatch(r'[\d\s.EeJj¯⍴⊂(),⍬]*', clean): continue
         try: case['expected'] = dyalog_expected(apl, expression)
         except AplError as e:
@@ -355,7 +356,7 @@ def capture_aplcart_examples(apl, cases):
         # Dyalog captures the expectation from its own array notation, but the case keeps a bAsedPL list.
         dyalog_code = expressions[0] if len(expressions) == 1 else '('+' ⋄ '.join(expressions)+')'
         code = expressions[0] if len(expressions) == 1 else '['+';'.join(expressions)+']'
-        clean = re.sub(r"'(?:''|[^'])*'", '', dyalog_code)
+        clean = re.sub(_dyalog_string, '', dyalog_code)
         if not re.fullmatch(r'[\d\s.EeJj¯+\-×÷⍴,⊂⊃↑↓⌽⊖⍉≢=≠<≤>≥⍳/⌿\\⍀()⍬⋄]*', clean): continue
         if any(float(n) > 1000 for n in re.findall(r'\d+(?:\.\d*)?(?:[eE][¯-]?\d+)?', clean.replace('¯', '-'))): continue
         try: expected = dyalog_expected(apl, dyalog_code)
@@ -395,7 +396,7 @@ def scan(directory='tests/reference/inventory', source='', match='', timeout=.25
                 if 'expected' not in case and not case.get('expected_code') and not case.get('expected_error'):
                     inventory['needs expectation'] += 1
                     continue
-                clean = re.sub(r"'(?:''|[^'])*'|⍝[^\n]*", '', case['code'])
+                clean = re.sub(_dyalog_string+r"|⍝[^\n]*", '', case['code'])
                 if '?' in clean:
                     inventory['random: review separately'] += 1
                     continue

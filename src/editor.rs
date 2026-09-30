@@ -1,5 +1,5 @@
 //! Glyph completion and terminal input. Source execution never rewrites aliases.
-use crate::symbols::{alt_keys, chord, symbols};
+use crate::symbols::{chord, find, layout, symbols, Action, Symbol};
 use rustyline::{
     completion::{Completer, Pair},
     highlight::Highlighter,
@@ -22,7 +22,7 @@ pub(crate) fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
     let query = query.to_ascii_lowercase();
     let mut found = Vec::new();
     let mut best = usize::MAX;
-    for &(glyph, name, monad, dyad, words) in symbols() {
+    for &Symbol { glyph, name, monad, dyad, aliases: words, .. } in symbols() {
         let rank = std::iter::once(name)
             .chain([monad, dyad])
             .chain(words.split_whitespace())
@@ -84,13 +84,59 @@ struct Input {
     // Only a typed prefix auto-expands. Paste, history and cursor movement cancel this state.
     active: bool,
     pending: Option<(Range<usize>, String)>,
+    // The dead-key state that the next key completes.
+    dead: Option<String>,
 }
 
 impl Input {
+    /// Types an action's text, or waits in its dead-key state for the next key.
+    fn act(&mut self, action: &Action) -> Cmd {
+        match action {
+            Action::Text(text) => Cmd::Insert(1, text.clone()),
+            Action::State(name) => {
+                self.dead = Some(name.clone());
+                Cmd::Noop
+            }
+        }
+    }
+
+    /// The next key after a dead key. A listed key types its text or moves on. Space types the terminator alone. Backspace and
+    /// Escape cancel and type nothing. Any other key types the terminator, then acts as if nothing were pending. Enter submits
+    /// the line with the terminator added.
+    fn pending_key(&mut self, name: &str, key: KeyEvent, line: &str, pos: usize) -> Cmd {
+        let state = layout().state(name);
+        match key {
+            KeyEvent(KeyCode::Char(' '), Modifiers::NONE) => return Cmd::Insert(1, state.terminator.clone()),
+            KeyEvent(KeyCode::Backspace | KeyCode::Esc, _) => return Cmd::Noop,
+            KeyEvent(KeyCode::Char(c), m) if m.difference(Modifiers::SHIFT).is_empty() => {
+                if let Some(action) = find(&state.keys, c) { return self.act(action); }
+            }
+            _ => {}
+        }
+        if key == KeyEvent::from('\r') || key == KeyEvent::from('\n') {
+            self.pending = Some((pos..pos, state.terminator.clone()));
+            return Cmd::AcceptLine;
+        }
+        match self.key(key, line, pos) {
+            Some(Cmd::Insert(n, text)) => Cmd::Insert(n, format!("{}{text}", state.terminator)),
+            _ => match key {
+                KeyEvent(KeyCode::Char(c), m) if m.difference(Modifiers::SHIFT).is_empty() => Cmd::Insert(1, format!("{}{c}", state.terminator)),
+                _ => Cmd::Insert(1, state.terminator.clone()),
+            },
+        }
+    }
     fn key(&mut self, key: KeyEvent, line: &str, pos: usize) -> Option<Cmd> {
+        if let Some(name) = self.dead.take() { return Some(self.pending_key(&name, key, line, pos)); }
         if let KeyEvent(KeyCode::Char(c), Modifiers::ALT) = key {
             self.active = false;
-            if let Some(&glyph) = alt_keys().get(&c) { return Some(Cmd::Insert(1, glyph.to_string())); }
+            if let Some(action) = find(&layout().option, c) { return Some(self.act(action)); }
+        }
+        // A plain dead key such as `^` starts a sequence only in code. In a string or comment it types itself.
+        if let KeyEvent(KeyCode::Char(c), Modifiers::NONE) = key {
+            if let Some(action) = find(&layout().plain, c).filter(|_| in_code(&line[..pos])) {
+                self.active = false;
+                return Some(self.act(action));
+            }
         }
         let enter = key == KeyEvent::from('\r') || key == KeyEvent::from('\n');
         let tab = key == KeyEvent::from('\t');
@@ -185,7 +231,7 @@ impl Validator for Symbols {
 fn styled(entry: &str) -> String {
     let mut parts = entry.splitn(3, ' ');
     let (glyph, name, key) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""), parts.next());
-    if name.is_empty() || !symbols().iter().any(|row| row.0 == glyph) { return entry.into(); }
+    if name.is_empty() || !symbols().iter().any(|s| s.glyph == glyph) { return entry.into(); }
     format!("\x1b[1;36m{glyph}\x1b[0m {name}{}", key.map_or(String::new(), |key| format!(" \x1b[2m{key}\x1b[0m")))
 }
 
@@ -222,18 +268,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn alt_layout_covers_glyphs_and_inserts_literal_characters() {
-        let mut input = Input::default();
-        for (&key, &glyph) in alt_keys() {
-            assert!(key.is_ascii() && !glyph.is_ascii());
-            for line in ["", "'", "⍝ "] {
-                assert_eq!(input.key(KeyEvent::new(key, Modifiers::ALT), line, line.len()), Some(Cmd::Insert(1, glyph.to_string())));
-            }
+    fn layout_covers_glyphs_and_follows_dead_key_rules() {
+        // Each step is a key and the command it gives, from one fresh input.
+        let run = |line: &str, keys: &[(KeyEvent, Option<Cmd>)]| {
+            let mut input = Input::default();
+            for (i, (key, cmd)) in keys.iter().enumerate() { assert_eq!(&input.key(*key, line, line.len()), cmd, "{line:?} key {i}"); }
+        };
+        let (alt, plain) = (|c| KeyEvent::new(c, Modifiers::ALT), |c| KeyEvent::new(c, Modifiers::NONE));
+        let text = |s: &str| Some(Cmd::Insert(1, s.into()));
+        for &Symbol { glyph, .. } in symbols() { if glyph.chars().count() == 1 && !glyph.is_ascii() { assert!(!chord(glyph).is_empty(), "{glyph}"); } }
+        for (key, action) in &layout().option {
+            if let Action::Text(glyph) = action { for line in ["", "'", "⍝ "] { run(line, &[(alt(*key), text(glyph))]); } }
         }
-        for &(glyph, ..) in symbols() {
-            if glyph.chars().count() == 1 && !glyph.is_ascii() { assert!(alt_keys().values().any(|&c| glyph.starts_with(c)), "{glyph}"); }
-        }
-        for (glyph, keys) in [("⍺", " a"), ("⍶", " Sa"), ("∞", " S-"), ("+", ""), ("⍢", " Sg")] { assert_eq!(chord(glyph), keys); }
+        run("", &[(alt('c'), Some(Cmd::Noop)), (plain('t'), text("⍝"))]);
+        run("", &[(plain('^'), Some(Cmd::Noop)), (plain('2'), text("²"))]);
+        run("", &[(plain('^'), Some(Cmd::Noop)), (plain('-'), Some(Cmd::Noop)), (plain('1'), text("⁻¹"))]);
+        run("", &[(plain('^'), Some(Cmd::Noop)), (plain(' '), text("^"))]);
+        run("", &[(alt('o'), Some(Cmd::Noop)), (KeyEvent(KeyCode::Backspace, Modifiers::NONE), Some(Cmd::Noop)), (plain('x'), None)]);
+        run("", &[(alt('o'), Some(Cmd::Noop)), (plain('x'), text("○x"))]);
+        run("", &[(alt('o'), Some(Cmd::Noop)), (alt('c'), text("○")), (plain('t'), text("⍝"))]);
+        run("'", &[(plain('^'), None)]);
+        for (glyph, keys) in [("⍺", " a"), ("⍶", " a _"), ("∞", " 8"), ("+", ""), ("⍝", " c t")] { assert_eq!(chord(glyph), keys, "{glyph}"); }
     }
 
     #[test]
@@ -248,32 +303,30 @@ mod tests {
             ("alpha", "⍺"),
             ("alphaunderbar", "⍶"),
             ("omegaunderbar", "⍹"),
-            ("replicate", "/"),
+            ("replicate", "#"),
             ("om", "⍵"),
             ("omu", "⍹"),
             ("sca", "\\"),
-        ] { assert_eq!(matches(name).iter().map(|(g, _)| *g).collect::<Vec<_>>(), [glyph]); }
+            ("lar", "←"),
+            ("larr", "←"),
+            ("leftar", "←"),
+            ("grup", "⍋"),
+        ] { assert_eq!(matches(name).iter().map(|(g, _)| *g).collect::<Vec<_>>(), [glyph], "{name}"); }
+        for name in ["nosuchsymbol", "lg", "lrr"] { assert!(matches(name).is_empty(), "{name}"); }
         assert!(matches("de").len() > 1);
-        for name in ["lar", "larr", "leftar"] { assert_eq!(matches(name), [("←", "assign")]); }
-        assert_eq!(matches("grup"), [("⍋", "grade-up")]);
-        for name in ["nosuchsymbol", "lg", "lrr"] { assert!(matches(name).is_empty()); }
         for text in ["\"`io", "\"can't `io", "\"a\"\"`io", "⍝ `io"] { assert!(entry(text, text.len()).is_none()); }
         for text in ["界+`io", "\"text\" `io", "''' `io", "'a' `io", "⍝ comment\n`io"] { assert_eq!(entry(text, text.len()).unwrap().1, "io"); }
-        let index = include_str!("../nbs/glyphs.qmd");
-        for &(glyph, name, monad, dyad, words) in symbols() {
+        for &Symbol { glyph, name, monad, dyad, aliases: words, .. } in symbols() {
             for word in [name, monad, dyad].into_iter().chain(words.split_whitespace()).filter(|word| !word.is_empty()) {
                 assert_eq!(matches(&word.replace('-', "")), [(glyph, name)], "{word}");
             }
-            let link = format!("` [{name}](glyphs/{name}.qmd)");
-            let cell = index[..index.find(&link).expect(name)].rsplit('`').next().unwrap();
-            assert!(cell.starts_with(glyph) || cell.strip_prefix('\\') == Some(glyph), "{glyph} {name}");
         }
     }
 
     #[test]
     fn accepting_keys_do_not_rewrite_other_input() {
         let line = "界+`io";
-        let mut input = Input { active: true, pending: None };
+        let mut input = Input { active: true, ..Input::default() };
         assert_eq!(input.key(KeyEvent::from('3'), line, line.len()), Some(Cmd::Complete));
         assert_eq!(input.pending.take(), Some((4..7, "⍳3".into())));
         input.active = true;

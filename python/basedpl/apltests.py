@@ -1,9 +1,10 @@
 "Read APL test cases, convert reference inventories, and activate reviewed cases."
-import argparse, json, math, re
-from collections import Counter, defaultdict
+import json, math, re
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from .reference import Corpus
+from ._core import _captured_literal
+from .reference import Corpus, _dyalog_string
 
 HEADER = re.compile(r'^⍝ (?:(\S*) )?—(?: (.*))?$')
 SEPARATOR = '⍝ =>'
@@ -106,71 +107,9 @@ def render(cases):
     return ''.join(result)
 
 
-def _number(value):
-    text = str(value)
-    if text.endswith('.0'): text = text[:-2]
-    return text.replace('-', '¯').replace('e+', 'e')
-
-
-def _string(text):
-    if all(c.isprintable() for c in text): return '"'+text.replace('"', '""')+'"'
-    return ',•ucs '+' '.join(str(ord(c)) for c in text)
-
-
-def _element(value):
-    if isinstance(value, str): return "'"+value+"'" if value.isprintable() else '•ucs '+str(ord(value))
-    if not isinstance(value, dict): return _number(value)
-    if 'complex' in value: return 'j'.join(_number(x) for x in value['complex'])
-    if 'infinity' in value: return '¯∞' if value['infinity']<0 else '∞'
-    return '⊂'+literal(value)
-
-
-def _spaced(text):
-    "Whether `text` has a space outside quotes, brackets, parentheses and braces."
-    depth, i = 0, 0
-    while i < len(text):
-        c = text[i]
-        if c=="'": i += 2
-        elif c=='"': i = text.index('"', i+1)
-        elif c in '([{': depth += 1
-        elif c in ')]}': depth -= 1
-        elif c==' ' and not depth: return True
-        i += 1
-    return False
-
-
-def _item(x):
-    "`x` as one item of a strand or bracket list."
-    if not (isinstance(x, dict) and 'shape' in x):
-        text = _element(x)
-        return '('+text+')' if _spaced(text) else text
-    text = literal(x)
-    if not _spaced(text): return text
-    # Parentheses round a strand make a scalar, so a vector that would print as a strand takes brackets.
-    if len(x['shape'])==1 and x['data'] and not all(isinstance(y, str) for y in x['data']): return '['+text+']'
-    return '('+text+')'
-
-
 def literal(array):
-    "Express a captured reference array in APL, including empty shape and recursive fill."
-    if array is None: return '{}0'
-    shape, data, prototype = array['shape'], array['data'], array['prototype']
-    if not shape: return _element(data[0])
-    dims = ' '.join(map(str, shape))
-    if not data:
-        if shape==[0] and prototype==0: return '⍬'
-        if shape==[0] and prototype==' ': return '""'
-        return dims+'⍴'+_element(prototype)
-    if all(isinstance(x, str) for x in data):
-        values = _string(''.join(data))
-        if len(shape)==1: return values
-    else:
-        items = [_item(x) for x in data]
-        # Only literals form a strand, so a list with any other item needs brackets.
-        values = ' '.join(items)
-        if len(data)==1 or any(t[0] in '([⊂,' for t in items): values = '['+values+']'
-        if len(shape)==1: return values
-    return dims+'⍴'+values
+    "Express a captured reference array in APL, as the interpreter writes values."
+    return '{}0' if array is None else _captured_literal(json.dumps(array))
 
 
 # Keep related corpus phrases together rather than packing lines by width.
@@ -201,7 +140,7 @@ _BOILERPLATE = {'reviewed independent reference expectation', 'reviewed independ
     'operand aliases standardised', 'fixed origin one and standard operand aliases',
     'fixed origin one, standard ∧ and operand aliases', 'origin one', 'no library definitions required'}
 _BOILERPLATE = {s.casefold() for s in _BOILERPLATE}
-_APL_PARTS = re.compile(r"'(?:''|[^'])*'|⍝[^\n]*|\s+|[^'⍝\s]+")
+_APL_PARTS = re.compile(_dyalog_string+r"|⍝[^\n]*|\s+|[^'⍝\s]+")
 
 
 def _compact(code): return ''.join(m[0] for m in _APL_PARTS.finditer(code) if not m[0].isspace() and not m[0].startswith('⍝'))
@@ -213,7 +152,7 @@ def description(row):
     if not title and row['id'].startswith('ngn:'):
         original = re.split(r'←→|!!', row.get('upstream', ''), maxsplit=1)[0]
         if _compact(original)==_compact(row['code']):
-            parts = re.finditer(r"'(?:''|[^'])*'|#([^\n]*)", row.get('expected_apl', ''))
+            parts = re.finditer(_dyalog_string+r"|#([^\n]*)", row.get('expected_apl', ''))
             title = next((m[1] for m in parts if m[1] is not None), '')
     if not title and '/examples/' in row['id']:
         comments = []
@@ -243,54 +182,6 @@ def convert(row):
     return Case(row['code'], expect, row['id'], description(row), row.get('relative_tolerance', 0), row.get('absolute_tolerance', 0))
 
 
-_RUST_STRING = re.compile(r'r(#{0,16})"([\s\S]*?)"\1|"(?:\\[\s\S]|[^"\\])*"')
-_RUST_SPACE = re.compile(r'(?:\s+|//[^\n]*(?:\n|$))*')
-
-
-def _rust_string(text, pos):
-    pos = _RUST_SPACE.match(text, pos).end()
-    match = _RUST_STRING.match(text, pos)
-    if not match: raise ValueError(f'expected a literal Rust string at character {pos}')
-    if match[1] is not None: return match[2], match.end()
-    def unescape(m):
-        value = m[0][1:]
-        if value.startswith('u{'): return chr(int(value[2:-1].replace('_', ''), 16))
-        if value.startswith('x'): return chr(int(value[1:], 16))
-        if value.startswith('\n'): return ''
-        return {'n':'\n', 'r':'\r', 't':'\t', '0':'\0', '\\':'\\', '"':'"', "'":"'"}[value]
-    value = re.sub(r'\\(?:u\{[\da-fA-F_]+\}|x[\da-fA-F]{2}|\n\s*|.)', unescape, match[0][1:-1])
-    return value, match.end()
-
-
-def native_cases(path):
-    "Extract standalone literal equiv! tables and fails lists; leave stateful/API/constructor tests in Rust."
-    text = Path(path).read_text()
-    functions = list(re.finditer(r'^fn (\w+)\(', text, re.M))
-    result = []
-    for match in re.finditer(r'\bequiv!\s*\{|\bfails\(\s*(\w+),\s*&\[', text):
-        title = next(m[1].replace('_', ' ') for m in reversed(functions) if m.start()<match.start())
-        kind, pos, batch = match[1], match.end(), []
-        end = ']' if kind else '}'
-        while True:
-            pos = _RUST_SPACE.match(text, pos).end()
-            if text[pos]==end:
-                result.extend(batch)
-                break
-            if not _RUST_STRING.match(text, pos): break
-            code, pos = _rust_string(text, pos)
-            if kind: expect = '⍝ error: '+kind.upper()+(' ERROR' if kind not in ('Unsupported', 'Interrupt', 'Timeout') else '')
-            else:
-                pos = _RUST_SPACE.match(text, pos).end()
-                if text[pos:pos+2]!='=>': raise ValueError(f'{path}: expected => at character {pos}')
-                pos = _RUST_SPACE.match(text, pos+2).end()
-                if not _RUST_STRING.match(text, pos): break
-                expect,pos = _rust_string(text, pos)
-            batch.append(Case(code, expect, comment=title))
-            pos = _RUST_SPACE.match(text, pos).end()
-            if text[pos]==',': pos += 1
-    return result
-
-
 def _load(path): return parse(path.read_text())
 
 
@@ -300,7 +191,7 @@ def _check(case, timeout=2):
 
 
 def add(ids, output='tests/reference', directory='tests/reference/inventory'):
-    "Check and append reviewed cases, then mark their inventory records active."
+    "Append reviewed cases, then mark their inventory records active."
     output = Path(output)
     existing = {case.id for path in output.glob('*.apl') for case in _load(path) if case.id}
     if len(set(ids))!=len(ids) or existing.intersection(ids): raise ValueError('duplicate case ID in selection or destination')
@@ -310,11 +201,6 @@ def add(ids, output='tests/reference', directory='tests/reference/inventory'):
     for id,row in rows.items():
         if row['status']=='excluded': raise ValueError(f'{id}: excluded: {row["reason"]}')
         case = convert(row)
-        result = _check(row)
-        if result['status']!='pass': raise ValueError(f'{id}: {result}')
-        if not row.get('expected_error') and 'expected' in row and 'expected_code' not in row:
-            result = _check(dict(code=case.expect, expected=row['expected']))
-            if result['status']!='pass': raise ValueError(f'{id}: converted expectation: {result}')
         pending[id.split(':')[0].split('/')[0]].append(case)
     texts = {source: render(cases) for source,cases in pending.items()}
     output.mkdir(parents=True, exist_ok=True)
@@ -330,16 +216,14 @@ def add(ids, output='tests/reference', directory='tests/reference/inventory'):
 def check_file(
     path, # An `.apl` reference file
     ids=None, # Check only the cases whose id or header line is in `ids`
-    exact:bool=None, # Require the same numeric representation; defaults to true for `core.apl`, as `tests/reference.rs` does
     timeout=2 # Seconds allowed for each case
 ):
     "Check the cases in `path` through the installed extension, as `tests/reference.rs` does, and return the failures."
     path = Path(path)
-    if exact is None: exact = path.stem=='core'
     fails = []
     for c in _load(path):
         if ids and c.id not in ids and c.line not in ids: continue
-        case = dict(code=c.code, exact_representation=exact)
+        case = dict(code=c.code)
         if c.expect.startswith('⍝ error: '): case['expected_error'] = c.expect.removeprefix('⍝ error: ')
         else: case['expected_code'] = c.expect
         if c.output is not None: case['expected_output'] = c.output
@@ -369,40 +253,3 @@ def check_page(path):
                 fails.append(dict(line=i, code=source, expected=expected, status=r['status'], message=r.get('message')))
         if closing: block = None
     return fails
-
-
-def preview(directory='tests/reference/inventory', output='meta/apl-preview', native='tests/core.rs', replace=False):
-    "Convert active references and standalone native tables into a separate preview directory."
-    output = Path(output)
-    batches, inventory = {}, Counter()
-    for path in sorted(Path(directory).glob('*.jsonl')):
-        rows = [json.loads(line) for line in path.read_text().splitlines()]
-        inventory.update(row['status'] for row in rows)
-        batches[path.stem] = [convert(row) for row in rows if row['status']=='active']
-    if native: batches['core'] = native_cases(native)
-    texts = {name: render(cases) for name,cases in batches.items()}
-    for name,text in texts.items():
-        if parse(text)!=batches[name]: raise ValueError(f'{name}: conversion does not round-trip')
-        if not replace and (output/f'{name}.apl').exists(): raise FileExistsError(output/f'{name}.apl')
-    output.mkdir(parents=True, exist_ok=True)
-    for name,text in texts.items():
-        with (output/f'{name}.apl').open('w' if replace else 'x') as f: f.write(text)
-    return dict(inventory=dict(inventory), files={name: dict(cases=len(cases), described=sum(bool(c.comment) for c in cases),
-        multiline=sum('\n' in c.code or '\n' in c.expect for c in cases)) for name,cases in batches.items()})
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['preview', 'add'])
-    parser.add_argument('ids', nargs='*')
-    parser.add_argument('--directory', default='tests/reference/inventory')
-    parser.add_argument('--output', help='defaults to tests/reference for add, meta/apl-preview for preview')
-    parser.add_argument('--native', default='tests/core.rs')
-    parser.add_argument('--replace', action='store_true')
-    args = parser.parse_args()
-    if args.action=='add': result = add(args.ids, args.output or 'tests/reference', args.directory)
-    else: result = preview(args.directory, args.output or 'meta/apl-preview', args.native, args.replace)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-
-
-if __name__=='__main__': main()

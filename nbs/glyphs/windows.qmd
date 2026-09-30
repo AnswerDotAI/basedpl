@@ -29,7 +29,7 @@ A negative size pads its axis. Each window is centred on a position, as in [Sten
 ```apl
 ¯3↕1 2 3 4           ⍝ [0 1 2 ⋄ 1 2 3 ⋄ 2 3 4 ⋄ 3 4 0]
 [[¯3] ⋄ [2]]↕1+⍳8    ⍝ [0 1 2 ⋄ 2 3 4 ⋄ 4 5 6 ⋄ 6 7 8]
-⍴¯3 2↕3 4⍴⍳12        ⍝ 3 3 3 2
+⍴¯3 2↕3 4⍴⍳12        ⍝ [3 3 3 2]ₓ
 ```
 
 An axis of length `n` has `0⌈1+⌊(n-S)÷M` full windows, or `⌈(n-0=2|S)÷M` padded windows. Movements default to 1.

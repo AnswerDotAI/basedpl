@@ -63,14 +63,14 @@ i {(⍋𝕨⊏˘𝕩)⊏𝕩} ym
 
 ### Lookup table
 
-Source: APLcart. The `1+` goes, because positions count from 0. The strand `¯1` stops at `⍵`, and no `⊢` is needed between the operand and the argument. The space splits the body into two runs, `•d,•a` and `16⊥⍣¯1⍵`. Applying the first run to the second selects the digits. BQN has no encode primitive. Its line writes out the base conversion.
+Source: APLcart. The `1+` goes, because positions count from 0. `⁻¹` inverts `⊥` without a count, so nothing needs to separate it from the argument. The space splits the body into two runs, `•d,•a` and `16⊥⁻¹⍵`. Applying the first run to the second selects the digits. BQN has no encode primitive. Its line writes out the base conversion.
 
 ```dyalog
 {(⎕D,⎕A)[1+16⊥⍣¯1⊢⍵]}
 ```
 
 ```apl
-{•d,•a 16⊥⍣¯1⍵} 255    ⍝ "FF"
+{•d,•a 16⊥⁻¹⍵} 255      ⍝ "FF"
 ```
 
 ```bqn
@@ -103,7 +103,7 @@ Source: the ngn/apl tests. Application evaluates its argument before the array, 
 ```
 
 ```apl
-⍴x(⍋x←6?49)            ⍝ [6]
+⍴x(⍋x←6?49)            ⍝ [6]ₓ
 ```
 
 ```bqn
@@ -240,7 +240,7 @@ q[j]←q[j]~¨⊂,/q[i~j]
 
 ```apl
 q←[[1 2 3] [1 2] [2 4] [3 4 5]] ⋄ i←0 1 2 ⋄ j←0 2
-q(j)←(q(j))~¨⊂,/q(i~j)
+q(j)←q(j) ~¨ ⊂,/q(i~j)
 q   ⍝ (3 ⋄ 1 2 ⋄ 4 ⋄ 3 4 5)
 ```
 
@@ -328,14 +328,14 @@ sales←["city":["NY" "LA"] "month":["Jan" "Feb" "Mar"]]:[10 20 30 ⋄ 40 50 60]
 
 ### Rank with a numeric operand
 
-An operator takes one item to its right. In APL, `⊢` separates the operand `1` from the argument, because arrays side by side strand into one operand. bAsedPL has the same problem only with literals: `1 2 3` is one strand. A group ends the strand. With a name as the argument, a space is enough: `+/⍤1 m`.
+An operator takes one item to its right. In APL, `⊢` separates the operand `1` from the argument, because arrays side by side strand into one operand. bAsedPL has the same problem only with literals: `1 2 3` is one strand. A space ends the operand. Brackets keep a literal argument out of it. With a name as the argument, the space is enough: `+/⍤1 m`.
 
 ```dyalog
 +/⍤1⊢2 3⍴⍳6
 ```
 
 ```apl
-+/⍤1(2 3⍴⍳6)           ⍝ 3 12
++/⍤1 [2 3]⍴⍳6          ⍝ 3 12
 ```
 
 ```bqn
@@ -344,7 +344,7 @@ An operator takes one item to its right. In APL, `⊢` separates the operand `1`
 
 ### A named operator with a numeric operand
 
-Source: `Depth` in the dfns workspace. It applies its left operand at the depths that its right operand gives, as BQN's `⚇` does. A run that ends in an operator takes the next run as its right operand. `Depth0` would read as one name, and the space after `Depth` separates the operand. The spelling is Dyalog's.
+Source: `Depth` in the dfns workspace. It applies its left operand at the depths that its right operand gives, as BQN's `⚇` does. A run that ends in an operator takes the next run as its right operand. `Depth0` would read as one name, and the space after `Depth` separates the operand. The brackets keep `3 4` out of the operand.
 
 ```dyalog
 1 2(+Depth 0)3 4
@@ -352,7 +352,7 @@ Source: `Depth` in the dfns workspace. It applies its left operand at the depths
 
 ```apl
 •load "lib/dyalog.apl"
-1 2(+Depth 0)3 4       ⍝ 4 6
+1 2 +Depth 0 [3 4]     ⍝ 4 6
 ```
 
 ```bqn
@@ -378,14 +378,14 @@ n←2 3 4⍴⍳24
 
 ### Stencil with a numeric operand
 
-Brackets end the operand, as parentheses would. `+/⍤⊢` reduces each window and ignores the padding counts that Stencil passes as its left argument. Windows with a negative size pad the ends, and they give the same result without Stencil. BQN has no Stencil. Its line pads with zeros.
+A space ends the operand. Brackets keep `1 2 3 4` out of it. `+/∘⊢` reduces each window and ignores the padding counts that Stencil passes as its left argument. Windows with a negative size pad the ends, and they give the same result without Stencil. BQN has no Stencil. Its line pads with zeros.
 
 ```dyalog
 {+/,⍵}⌺3⊢1 2 3 4
 ```
 
 ```apl
-+/⍤⊢⌺3[1 2 3 4]        ⍝ 3 6 9 7
++/∘⊢⌺3 [1 2 3 4]       ⍝ 3 6 9 7
 +/¯3↕1 2 3 4           ⍝ 3 6 9 7
 ```
 
@@ -429,14 +429,14 @@ x←2 4 9
 
 ### A train that binds arrays
 
-An array directly before a function in a train binds to it: `1.8×` is `1.8⊸×`. `32` is the constant of the fork `32 + 1.8⊸×`, as in Dyalog. Dyalog and BQN need `∘` and `⊸` to bind `1.8`.
+An array directly before a function in a train binds to it: `1.8×` is `1.8⍃×`. `32` is the constant of the fork `32 + 1.8⍃×`, as in Dyalog. Dyalog and BQN need `∘` and `⍃` to bind `1.8`.
 
 ```dyalog
 f←32+1.8∘× ⋄ f 100
 ```
 
 ```apl
-f←32+1.8× ⋄ f 100      ⍝ 212
+f←32+1.8× ⋄ f100       ⍝ 212
 ```
 
 ```bqn
@@ -445,7 +445,7 @@ F←32+1.8⊸× ⋄ F 100
 
 ### Quadratic root
 
-Runs replace two of the three pairs of parentheses. `-b` is one run, negated before the addition. `b*2 - 4×a×c` is three runs, and `√` applies to the whole difference. Dyalog has no `√`.
+Runs replace two of the three pairs of parentheses. `-b` is one run, negated before the addition. `b² - 4×a×c` is three runs, and `√` applies to the whole difference. Dyalog has no `√`.
 
 ```dyalog
 ((-b)+((b*2)-4×a×c)*0.5)÷2×a
@@ -453,7 +453,7 @@ Runs replace two of the three pairs of parentheses. `-b` is one run, negated bef
 
 ```apl
 a←1 ⋄ b←¯3 ⋄ c←2
-(-b + √ b*2 - 4×a×c)÷2×a   ⍝ 2
+(-b + √ b² - 4×a×c)÷2×a   ⍝ 2
 ```
 
 ```bqn
@@ -462,7 +462,7 @@ a←1 ⋄ b←¯3 ⋄ c←2
 
 ### A two-number operand before a named argument
 
-Source: "Why not whitespace?" in [BQN's documentation](https://mlochbaum.github.io/BQN/doc/arrayrepr.html). Without BQN's ligature `‿`, nothing says which of `1`, `∞` and `b` belong together. In bAsedPL, `1 ∞` is a strand, and the name `b` never joins it. BQN's `∘` is Atop. bAsedPL spells Atop `⍤`. A rank of `∞` takes the whole argument, as in BQN.
+Source: "Why not whitespace?" in [BQN's documentation](https://mlochbaum.github.io/BQN/doc/arrayrepr.html). Without BQN's ligature `‿`, nothing says which of `1`, `∞` and `b` belong together. In bAsedPL, `1 ∞` is a strand, and the name `b` never joins it. bAsedPL spells Atop `∘`, as BQN does. A rank of `∞` takes the whole argument, as in BQN.
 
 ```bqn
 a +˝∘×⎉1‿∞ b
@@ -470,12 +470,12 @@ a +˝∘×⎉1‿∞ b
 
 ```apl
 a←2 3⍴⍳6 ⋄ b←3 2⍴⍳6
-a +⌿⍤×⍤1 ∞ b           ⍝ [10 13 ⋄ 28 40]
+a +⌿∘×⍤1 ∞ b           ⍝ [10 13 ⋄ 28 40]
 ```
 
 ### A vector bound into a composition
 
-Source: "Why not whitespace?" in BQN's documentation. BQN tells the two readings apart with its ligature. In bAsedPL and Dyalog, `3 1` is one operand, and the other reading needs parentheses. bAsedPL uses BQN's `⊸`.
+Source: "Why not whitespace?" in BQN's documentation. BQN tells the two readings apart with its ligature. In bAsedPL and Dyalog, `3 1` is one operand, and the other reading needs parentheses. bAsedPL writes BQN's `⊸` as `⍃`.
 
 ```bqn
 3 1⊸+⊸× 5    # 20
@@ -488,8 +488,8 @@ Source: "Why not whitespace?" in BQN's documentation. BQN tells the two readings
 ```
 
 ```apl
-3 (1⊸+⊸×) 5            ⍝ 20
-3 1⊸+⊸× 5              ⍝ 40 30
+3 (1⍃+⍃×) 5            ⍝ 20
+3 1⍃+⍃× 5              ⍝ 40 30
 ```
 
 ## Lists
@@ -538,8 +538,8 @@ IfElse ← {c‿T‿F: c◶F‿T@}
 ```
 
 ```apl
-≢[2 + 3]               ⍝ 3
-ifelse←{[c t f]←⍵ ⋄ c◶[f t]0}
+≢[2 + 3]               ⍝ 3ₓ
+ifelse←{[c t f]←⍵ ⋄ c⍰[f t]0}
 ifelse [1 {⍵+10} {⍵+20}]   ⍝ 10
 ```
 
@@ -556,7 +556,7 @@ IfElse (𝕩<mid⊑𝕨)‿{𝕤
 ```
 
 ```apl
-ifelse←{[c t f]←⍵ ⋄ c◶[f t]0}
+ifelse←{[c t f]←⍵ ⋄ c⍰[f t]0}
 step←{mid←3 ⋄ hi←9 ⋄ lo←0
   _←ifelse [⍵<mid⊃⍺
     {hi⊢←mid}
@@ -586,7 +586,7 @@ x←1 2 ⋄ y←3 4
 
 ### Searching for one string
 
-Parentheses round a literal make a scalar. `("ab")` encloses the string, and `⍳` searches for it as one item. Dyalog writes the same scalar as `⊂'ab'`. A search for one item gives a plain number in bAsedPL and Dyalog. BQN's search functions always return an array, and BQN's documentation suggests `list⊸⊐⌾<elt` to get a plain number.
+`⊂"ab"` encloses the string, and `⍳` searches for it as one item, as in Dyalog. A search for one item gives a plain number in bAsedPL and Dyalog. BQN's search functions always return an array, and BQN's documentation suggests `list⊸⊐⌾<elt` to get a plain number.
 
 ```dyalog
 names⍳⊂'ab'
@@ -594,7 +594,7 @@ names⍳⊂'ab'
 
 ```apl
 names←"cd" "ab" "ef"
-names⍳("ab")           ⍝ 1
+names⍳⊂"ab"            ⍝ 1ₓ
 ```
 
 ```bqn
@@ -648,7 +648,7 @@ Source: `det` in the dfns workspace. Each line shows the recursive step. The ste
 ```
 
 ```apl
-det←{⍺←1 ⋄ 0=n←≢⍵:⍺ ⋄ [i j]←(⍴⍵)⊤{⍵⍳⌈/⍵}|,⍵ ⋄ k←⍳n ⋄ ⍺×⍵.[i j]×¯1*i+j ∇ ⍵.[k~[i] k~[j]] - ⍵.[k~[i] j] ×⌝ ⍵.[i k~[j]] ÷ ⍵.[i j]}
+det←{⍺←1 ⋄ 0=n←≢⍵:⍺ ⋄ [i j]←(⍴⍵)⊤{⍵⍳⌈/⍵}|,⍵ ⋄ k←⍳n ⋄ ⍺×⍵.[i j]×¯1*i+j ∇ ⍵.[k~[i] k~[j]] - ⍵.[k~[i] j] ×⊗ ⍵.[i k~[j]] ÷ ⍵.[i j]}
 det [1 2 ⋄ 3 4]        ⍝ ¯2
 det [2 0 1 ⋄ 1 3 2 ⋄ 1 1 2]   ⍝ 6
 ```
@@ -667,10 +667,10 @@ fmt←{⎕IO←0 ⋄ ~∘' ',1 0 0⍉(' '⍪3 4⍴'MCXI DLV ')[(0 4 2 2⊤0 16 2
 ```
 
 ```apl
-num←{{⍵+.××0.5+×-/2↕⍵,0}(,⍉1 5×⌝10*⍳4)(7|"IVXLCDMivxlcdm"⍳⍵)}
-fmt←{~⟜" ",0 1 0⍉(' '⍪3 4⍴"MCXI DLV ")(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)(⍵⊤⍨4⍴10)}
+num←{{⍵+.××0.5+×-/2↕⍵,0}(,⍉1 5×⊗10*⍳4)(7|"IVXLCDMivxlcdm"⍳⍵)}
+fmt←{~⍄" ",0 1 0⍉(' '⍪3 4⍴"MCXI DLV ")(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)(⍵⊤⍨4⍴10)}
 num "MCMXCIV"          ⍝ 1994
-fmt 1994               ⍝ "MCMXCIV"
+fmt1994                ⍝ "MCMXCIV"
 ```
 
 ```bqn
@@ -705,7 +705,7 @@ r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ ' #'[1+↑⌽{⍵,⍨⊂t[1+2⊥¨3
 ```apl
 r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2
 picture←" #" ⊃⌽{⍵,⍨⊂t(⊥3↕0,0,⍨↑⍵)}⍣n⊂z,1,z←n⍴0
-⍴picture               ⍝ 9 17
+⍴picture               ⍝ [9 17]ₓ
 ```
 
 ```bqn

@@ -1,24 +1,20 @@
 use crate::{
     agreement::Agreement,
-    array::generated_len,
+    array::{generated_len, Cells, Frame, Layout},
     execution::Context,
     number::{Arithmetic, Math},
-    Error, ErrorKind, Number, Value,
+    DomainAt, Error, ErrorAt, ErrorKind, Number, Value,
 };
 use num_complex::Complex64;
-use num_traits::Zero;
 
 fn int(n: usize) -> Number { Number::from_integer(n as i64) }
-fn zero(n: &Number) -> bool { n.as_exact().is_some_and(|n| n.is_zero()) || n.as_float() == Some(0.) || n.as_complex().is_some_and(|n| n.is_zero()) }
-fn calc(result: Result<Number, &'static str>, span: &Context<'_>) -> Result<Number, Error> { result.map_err(|m| span.error(ErrorKind::Domain, m)) }
 fn numbers(a: &Value, span: &Context<'_>) -> Result<Vec<Number>, Error> {
     a.elements()
-        .map(|e| match e { Value::Number(n) => Ok(n), _ => Err(span.error(ErrorKind::Domain, "polynomials require numeric values")) })
+        .map(|e| match e { Value::Number(n) => Ok(n), _ => Err(span.domain_error("polynomials require numeric values")) })
         .collect()
 }
 fn vector(data: Vec<Number>, span: &Context<'_>) -> Result<Value, Error> {
-    Value::from_parts(vec![data.len()], data.into_iter().map(Value::Number).collect(), Value::Number(int(0)))
-        .map_err(|k| span.error(k, "invalid polynomial vector"))
+    Value::from_parts(vec![data.len()], data.into_iter().map(Value::Number).collect(), Value::Number(int(0))).error_at(span, "invalid polynomial vector")
 }
 
 enum Polynomial {
@@ -59,13 +55,13 @@ impl Polynomial {
         match self {
             Self::Coefficients(c) => Ok(c.clone()),
             Self::Factored(m, roots) => {
-                generated_len(&[roots.len() + 1]).map_err(|k| span.error(k, "too many polynomial coefficients"))?;
+                generated_len(&[roots.len() + 1]).error_at(span, "too many polynomial coefficients")?;
                 let mut c = vec![m.clone()];
                 for r in roots {
                     span.check()?;
                     let mut next = vec![int(0); c.len() + 1];
                     for (i, value) in c.iter().enumerate() {
-                        next[i] = calc(next[i].dyad(Arithmetic::Minus, &calc(value.dyad(Arithmetic::Times, r), span)?), span)?;
+                        next[i] = next[i].dyad(Arithmetic::Minus, &value.dyad(Arithmetic::Times, r).domain_at(span)?).domain_at(span)?;
                         next[i + 1] = value.clone();
                     }
                     c = next;
@@ -73,16 +69,16 @@ impl Polynomial {
                 Ok(c)
             }
             Self::Powers { coefficients, exponents, variables } => {
-                if *variables != 1 { return Err(span.error(ErrorKind::Domain, "coefficient conversion requires a univariate polynomial")); }
+                if *variables != 1 { return Err(span.domain_error("coefficient conversion requires a univariate polynomial")); }
                 let degrees = exponents
                     .iter()
-                    .map(|e| e[0].nonnegative_integer().map_err(|k| span.error(k, "coefficient conversion needs nonnegative integral exponents")))
+                    .map(|e| e[0].nonnegative_integer().error_at(span, "coefficient conversion needs nonnegative integral exponents"))
                     .collect::<Result<Vec<_>, _>>()?;
                 let len =
                     degrees.iter().max().copied().unwrap_or(0).checked_add(1).ok_or_else(|| span.error(ErrorKind::Limit, "polynomial degree is too large"))?;
-                generated_len(&[len]).map_err(|k| span.error(k, "polynomial degree is too large"))?;
+                generated_len(&[len]).error_at(span, "polynomial degree is too large")?;
                 let mut c = vec![int(0); len];
-                for (a, &i) in coefficients.iter().zip(&degrees) { c[i] = calc(c[i].dyad(Arithmetic::Plus, a), span)?; }
+                for (a, &i) in coefficients.iter().zip(&degrees) { c[i] = c[i].dyad(Arithmetic::Plus, a).domain_at(span)?; }
                 Ok(c)
             }
         }
@@ -100,11 +96,11 @@ impl Polynomial {
         if x.is_empty() { return Err(span.error(ErrorKind::Length, "polynomial needs coordinates")); }
         match self {
             Self::Coefficients(c) => {
-                let mut it = c.iter().rev().skip_while(|n| zero(n));
+                let mut it = c.iter().rev().skip_while(|n| n.is_zero());
                 let mut y = it.next().cloned().unwrap_or_else(|| c.first().unwrap_or(&int(0)).unit(0));
                 for c in it {
                     span.check()?;
-                    y = calc(calc(y.dyad(Arithmetic::Times, &x[0]), span)?.dyad(Arithmetic::Plus, c), span)?;
+                    y = y.dyad(Arithmetic::Times, &x[0]).domain_at(span)?.dyad(Arithmetic::Plus, c).domain_at(span)?;
                 }
                 Ok(y)
             }
@@ -112,7 +108,7 @@ impl Polynomial {
                 let mut y = m.clone();
                 for r in roots {
                     span.check()?;
-                    y = calc(y.dyad(Arithmetic::Times, &calc(x[0].dyad(Arithmetic::Minus, r), span)?), span)?;
+                    y = y.dyad(Arithmetic::Times, &x[0].dyad(Arithmetic::Minus, r).domain_at(span)?).domain_at(span)?;
                 }
                 Ok(y)
             }
@@ -120,13 +116,13 @@ impl Polynomial {
                 let mut y = int(0);
                 for (c, powers) in coefficients.iter().zip(exponents) {
                     span.check()?;
-                    if zero(c) { continue; }
+                    if c.is_zero() { continue; }
                     let mut term = c.clone();
                     for (j, e) in powers.iter().enumerate() {
-                        let power = calc(x[if x.len() == 1 { 0 } else { j }].math_dyad(Math::Power, e), span)?;
-                        term = calc(term.dyad(Arithmetic::Times, &power), span)?;
+                        let power = x[if x.len() == 1 { 0 } else { j }].math_dyad(Math::Power, e).domain_at(span)?;
+                        term = term.dyad(Arithmetic::Times, &power).domain_at(span)?;
                     }
-                    y = calc(y.dyad(Arithmetic::Plus, &term), span)?;
+                    y = y.dyad(Arithmetic::Plus, &term).domain_at(span)?;
                 }
                 Ok(y)
             }
@@ -135,20 +131,15 @@ impl Polynomial {
 
     fn roots(&self, span: &Context<'_>) -> Result<Value, Error> {
         let mut c = self.coefficients(span)?;
-        if c.iter().any(Number::is_infinite) { return Err(span.error(ErrorKind::Domain, "root finding needs finite coefficients")); }
-        while c.last().is_some_and(zero) { c.pop(); }
+        while c.last().is_some_and(Number::is_zero) { c.pop(); }
         let m = c.last().cloned().unwrap_or_else(|| int(0));
         let degree = c.len().saturating_sub(1);
-        generated_len(&[degree, degree]).map_err(|k| span.error(k, "polynomial companion matrix is too large"))?;
+        generated_len(&[degree, degree]).error_at(span, "polynomial companion matrix is too large")?;
         let mut roots = Vec::new();
         if degree > 0 {
             let normalized = c[..degree]
                 .iter()
-                .map(|n| {
-                    let z = calc(n.dyad(Arithmetic::Divide, &m), span)?.to_complex().map_err(|m| span.error(ErrorKind::Domain, m))?;
-                    if !z.is_finite() { return Err(span.error(ErrorKind::Domain, "root finding needs finite coefficients")); }
-                    Ok(-z)
-                })
+                .map(|n| Ok(-n.dyad(Arithmetic::Divide, &m).domain_at(span)?.to_complex().domain_at(span)?))
                 .collect::<Result<Vec<_>, _>>()?;
             span.check()?;
             let values = if normalized.iter().all(|z| z.im == 0.) {
@@ -156,25 +147,24 @@ impl Polynomial {
             } else {
                 faer::Mat::from_fn(degree, degree, |i, j| if j == degree - 1 { normalized[i] } else { Complex64::new(f64::from(i == j + 1), 0.) }).eigenvalues()
             }
-            .map_err(|_| span.error(ErrorKind::Domain, "polynomial root solver did not converge"))?;
+            .map_err(|_| span.domain_error("polynomial root solver did not converge"))?;
             span.check()?;
-            roots =
-                values.into_iter().map(|z| Number::try_from(z).map_err(|k| span.error(k, "root is outside numeric range"))).collect::<Result<Vec<_>, _>>()?;
+            roots = values.into_iter().map(Number::from).collect();
         }
         let roots = vector(roots, span)?;
-        Value::new(vec![2], vec![Value::Number(m), roots]).map_err(|k| span.error(k, "invalid polynomial roots"))
+        Value::new(vec![2], vec![Value::Number(m), roots]).error_at(span, "invalid polynomial roots")
     }
 
     fn partial(&self, axis: usize, order: usize, span: &Context<'_>) -> Result<Self, Error> {
         let (mut coefficients, mut exponents) = self.terms(span)?;
         for (c, e) in coefficients.iter_mut().zip(&mut exponents) {
             for _ in 0..order {
-                if zero(c) || zero(&e[axis]) {
+                if c.is_zero() || e[axis].is_zero() {
                     *c = int(0);
                     break;
                 }
-                *c = calc(c.dyad(Arithmetic::Times, &e[axis]), span)?;
-                e[axis] = calc(e[axis].dyad(Arithmetic::Minus, &int(1)), span)?;
+                *c = c.dyad(Arithmetic::Times, &e[axis]).domain_at(span)?;
+                e[axis] = e[axis].dyad(Arithmetic::Minus, &int(1)).domain_at(span)?;
             }
         }
         Ok(Self::Powers { coefficients, exponents, variables: self.variables() })
@@ -188,7 +178,7 @@ impl Polynomial {
 }
 
 fn real(n: &Number, span: &Context<'_>) -> Result<(), Error> {
-    if n.as_complex().is_some() || n.is_infinite() { return Err(span.error(ErrorKind::Domain, "differentiation requires finite real values")); }
+    if n.as_complex().is_some() || n.is_infinite() { return Err(span.domain_error("differentiation requires finite real values")); }
     Ok(())
 }
 fn coordinates(a: &Value, span: &Context<'_>) -> Result<Vec<Number>, Error> {
@@ -196,14 +186,18 @@ fn coordinates(a: &Value, span: &Context<'_>) -> Result<Vec<Number>, Error> {
     numbers(a, span)
 }
 
+/// The cells of `source`, each one polynomial, and their agreement with the points of `layout`.
+fn polynomial_cells<'a>(source: &'a Value, layout: &Layout, span: &Context<'_>) -> Result<(Cells<'a>, Agreement), Error> {
+    let cells = source.cells(source.shape().len().min(1)).error_at(span, "invalid polynomial cells")?;
+    let agreement = Agreement::new(&cells.frame_layout(), layout).error_at(span, "polynomial frames must agree")?;
+    Ok((cells, agreement))
+}
 pub(crate) fn call(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let source = left.unwrap_or(right);
-    let cells = source.cells(source.shape().len().min(1)).map_err(|k| span.error(k, "invalid polynomial cells"))?;
-    let agreement = Agreement::new(&cells.frame_layout(), left.map_or(&Default::default(), |_| right.layout()))
-        .map_err(|k| span.error(k, "polynomial frames must agree"))?;
+    let (cells, agreement) = polynomial_cells(source, left.map_or(&Default::default(), |_| right.layout()), span)?;
     let mut polynomials = Vec::with_capacity(cells.len().max(1));
     for i in 0..cells.len().max(1) {
-        let a = if cells.len() == 0 { cells.prototype() } else { cells.get(i) }.map_err(|k| span.error(k, "invalid polynomial cell"))?;
+        let a = if cells.len() == 0 { cells.prototype() } else { cells.get(i) }.error_at(span, "invalid polynomial cell")?;
         polynomials.push(Polynomial::parse(&a, span)?);
     }
     let mut results = Vec::with_capacity(agreement.len.max(1));
@@ -211,43 +205,35 @@ pub(crate) fn call(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
         span.check()?;
         let index = agreement.left.get(i);
         let point_index = agreement.right.get(i);
-        let point = if left.is_none() || right.is_empty() { right.prototype() } else if let Some(j) = point_index { right.at(j) } else if let Some(j) = index { cells.get(j).map_err(|k| span.error(k, "invalid polynomial cell"))?.fill() } else { right.prototype() };
+        let point = if left.is_none() || right.is_empty() { right.prototype() } else if let Some(j) = point_index { right.at(j) } else if let Some(j) = index { cells.get(j).error_at(span, "invalid polynomial cell")?.fill() } else { right.prototype() };
         let missing;
-        let polynomial = if let Some(j) = index { &polynomials[j] } else {
-            missing = Polynomial::parse(&point.fill(), span)?;
-            &missing
-        };
+        let polynomial = if let Some(j) = index { &polynomials[j] } else { missing = Polynomial::parse(&point.fill(), span)?; &missing };
         results.push(if left.is_some() {
             Value::number(polynomial.evaluate(&coordinates(&point, span)?, span)?).unwrap()
         } else if matches!(polynomial, Polynomial::Coefficients(_)) { polynomial.roots(span)? } else { vector(polynomial.coefficients(span)?, span)? });
     }
     if agreement.layout.shape().is_empty() { return Ok(results.remove(0)); }
-    agreement.layout.assemble(&results[..agreement.len], &results[0]).map_err(|k| span.error(k, "polynomial result exceeds array limits"))
+    agreement.layout.assemble(&results[..agreement.len], &results[0]).error_at(span, "polynomial result exceeds array limits")
 }
 
 pub(crate) fn derivative(source: &Value, order: usize, cotangent: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let cells = source.cells(source.shape().len().min(1)).map_err(|k| span.error(k, "invalid polynomial cells"))?;
-    let agreement = Agreement::new(&cells.frame_layout(), right.layout()).map_err(|k| span.error(k, "polynomial frames must agree"))?;
+    let (cells, agreement) = polynomial_cells(source, right.layout(), span)?;
     if let Some(u) = cotangent {
         if u.shape() != agreement.layout.shape() { return Err(span.error(ErrorKind::Length, "cotangent must have the output shape")); }
     }
     else if !agreement.layout.shape().is_empty() {
         return Err(span.error(ErrorKind::Rank, "monadic differentiation requires a unit output; supply a cotangent for a VJP"));
     }
-    let cotangent = cotangent
-        .map(|u| crate::keyed::reorder(u, &(0..agreement.layout.shape().len()).map(|a| agreement.layout.keys(a).cloned()).collect::<Vec<_>>(), false))
-        .transpose()
-        .map_err(|k| span.error(k, "cotangent keys must match the output"))?;
+    let cotangent =
+        cotangent.map(|u| crate::keyed::reorder(u, &agreement.layout.all_keys(), false)).transpose().error_at(span, "cotangent keys must match the output")?;
     if order > 1 && (!right.is_unit() || !agreement.layout.shape().is_empty()) {
         return Err(span.error(ErrorKind::Rank, "repeated differentiation currently requires unit input and output"));
     }
     let mut partials = Vec::new();
     for i in 0..cells.len() {
-        let polynomial = Polynomial::parse(&cells.get(i).map_err(|k| span.error(k, "invalid polynomial cell"))?, span)?;
+        let polynomial = Polynomial::parse(&cells.get(i).error_at(span, "invalid polynomial cell")?, span)?;
         polynomial.real(span)?;
-        if order > 1 && polynomial.variables() != 1 {
-            return Err(span.error(ErrorKind::Domain, "repeated differentiation currently requires a univariate polynomial"));
-        }
+        if order > 1 && polynomial.variables() != 1 { return Err(span.domain_error("repeated differentiation currently requires a univariate polynomial")); }
         partials.push((0..polynomial.variables()).map(|axis| polynomial.partial(axis, order, span)).collect::<Result<Vec<_>, _>>()?);
     }
     let points = right.elements().collect::<Vec<_>>();
@@ -262,7 +248,7 @@ pub(crate) fn derivative(source: &Value, order: usize, cotangent: Option<&Value>
         let (Some(j), Some(p)) = (agreement.right.get(i), agreement.left.get(i)) else { continue; };
         let coords = coordinates(&points[j], span)?;
         let u = if let Some(u) = &cotangent {
-            let Value::Number(n) = u.at(i) else { return Err(span.error(ErrorKind::Domain, "cotangent must have numeric elements")); };
+            let Value::Number(n) = u.at(i) else { return Err(span.domain_error("cotangent must have numeric elements")); };
             n
         } else { int(1) };
         real(&u, span)?;
@@ -270,18 +256,14 @@ pub(crate) fn derivative(source: &Value, order: usize, cotangent: Option<&Value>
             let d = partial.evaluate(&coords, span)?;
             real(&d, span)?;
             let k = if coords.len() == 1 { 0 } else { axis };
-            gradients[j][k] = calc(gradients[j][k].dyad(Arithmetic::Plus, &calc(u.dyad(Arithmetic::Times, &d), span)?), span)?;
+            gradients[j][k] = gradients[j][k].dyad(Arithmetic::Plus, &u.dyad(Arithmetic::Times, &d).domain_at(span)?).domain_at(span)?;
         }
     }
     let data = points
         .iter()
         .zip(gradients)
-        .map(|(point, gradient)| {
-            if point.is_atom() { return Ok(Value::Number(gradient[0].clone())); }
-            point.layout().collect(gradient.into_iter().map(Value::Number), Value::Number(int(0)))
-        })
+        .map(|(point, gradient)| Frame::of(point).collect(gradient.into_iter().map(Value::Number), Value::Number(int(0))))
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|k| span.error(k, "invalid polynomial gradient"))?;
-    if right.is_atom() { return Ok(data[0].clone()); }
-    right.layout().collect(data, || right.prototype()).map_err(|k| span.error(k, "invalid polynomial gradient"))
+        .error_at(span, "invalid polynomial gradient")?;
+    Frame::of(right).collect(data, || right.prototype()).error_at(span, "invalid polynomial gradient")
 }

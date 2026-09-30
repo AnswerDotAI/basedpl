@@ -3,10 +3,10 @@
 Single quotes hold exactly one character. Double quotes hold a string, which is a vector of any length.
 
 ```apl
-⍴'a'               ⍝ 0⍴0ₓ
-⍴"a"               ⍝ ,1ₓ
-⍴"abc"             ⍝ ,3ₓ
-⍴""                ⍝ ,0ₓ
+⍴'a'               ⍝ ⍬ₓ
+⍴"a"               ⍝ [1]ₓ
+⍴"abc"             ⍝ [3]ₓ
+⍴""                ⍝ [0]ₓ
 ```
 
 The quote character is `'''`. An apostrophe needs no escaping inside a string. Double a double quote inside a string.

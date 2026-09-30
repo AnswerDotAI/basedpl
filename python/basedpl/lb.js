@@ -1,12 +1,12 @@
 // Based on Adám Brudzewsky's APL language bar: https://abrudz.github.io/lb
 // MIT License, Copyright (c) 2011-2020 Nikolay G. Nikolov and Adam Brudzevski.
 // bAsedPL name completion, editor adapters, dark mode and overlay layout by Jeremy Howard.
-((symbols, input, keyboard) => {
+((symbols, input, layout) => {
     const d = document;
     if (d.querySelector('.ngn_lb') || d.querySelector('meta[name=generator][content^=quarto]')) return;
 
-    const {inCode, aplStart, entry, chord} = input(symbols, keyboard);
-    const shortcuts = new Map(symbols.map(([glyph, , , , , shortcut]) => [glyph, shortcut]));
+    const {inCode, aplStart, entry, press, reset} = input(symbols, layout);
+    const shortcuts = new Map(symbols.map(({glyph, shortcut}) => [glyph, shortcut]));
     let leftAlt = false, rightAlt = false;
 
     function textareaRect(t) {
@@ -95,7 +95,7 @@
         b.type = 'button'; b.textContent = glyph; b.title = name + shortcuts.get(glyph); b.dataset.glyph = glyph;
         return b;
     }
-    for (const [glyph, name, monad, dyad, aliases] of symbols)
+    for (const {glyph, name, monad, dyad, aliases} of symbols)
         bar.append(button(glyph, [...new Set([name, monad, dyad, aliases].join(' ').split(' ').filter(Boolean))].join(' ')));
     new ResizeObserver(layout).observe(bar);
     layout();
@@ -150,7 +150,8 @@
         keyInput = false;
         requestAnimationFrame(() => { lastEditor = editor(ev.target); refresh(ev.target); });
     });
-    window.addEventListener('blur', () => { leftAlt = rightAlt = false; cancel(); });
+    window.addEventListener('blur', () => { leftAlt = rightAlt = false; cancel(); reset(); });
+    window.addEventListener('focusin', reset, true);
     window.addEventListener('keyup', ev => {
         if (ev.code === 'AltLeft') leftAlt = false;
         if (ev.code === 'AltRight') rightAlt = false;
@@ -164,13 +165,12 @@
         const e = editor(ev.target);
         if (!e || ev.isComposing || ev.defaultPrevented) { cancel(); return; }
         lastEditor = e;
-        if (leftAlt && !rightAlt && ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.getModifierState('AltGraph') && aplStart(e) >= 0) {
-            const glyph = chord(ev);
-            if (glyph) {
-                cancel();
-                e.insert(glyph);
-                ev.preventDefault(); ev.stopImmediatePropagation(); return;
-            }
+        const body = aplStart(e);
+        const pressed = press(ev, leftAlt && !rightAlt && !ev.getModifierState('AltGraph') && body >= 0,
+            body >= 0 && e.empty && inCode(e.text.slice(body, e.pos)));
+        if (pressed) {
+            if (pressed.text) e.insert(pressed.text);
+            if (pressed.stop) { cancel(); ev.preventDefault(); ev.stopImmediatePropagation(); return; }
         }
         const item = entry(e), plain = !ev.ctrlKey && !ev.altKey && !ev.metaKey;
         const tab = ev.key === 'Tab' && plain && !ev.shiftKey, enter = ev.key === 'Enter';

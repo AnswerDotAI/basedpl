@@ -17,32 +17,21 @@ path = "src/main.rs"
 test = false
 
 [profile.dev]
-opt-level = 1
-lto = "off"
-
-[profile.release]
-lto = false
-codegen-units = 16
-
-[profile.release.package.basedpl]
-incremental = true
+opt-level = 2
+overflow-checks = false
+debug-assertions = false
+debug = "line-tables-only"
 
 [profile.dist]
-inherits = "release"
-opt-level = 2
-lto = "off"
+inherits = "dev"
 incremental = false
-codegen-units = 16
 strip = true
-
-[profile.dist.package.basedpl]
-incremental = false
 
 [dependencies]
 csv = "1"
 regex = "1"
 tempfile = "3"
-kernmini = ">=0.1.16, <1"
+kernmini = ">=0.1.17, <1"
 anyhow = "1"
 async-trait = ">=0.1, <1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
@@ -57,6 +46,7 @@ num-rational = ">=0.4.2, <1"
 num-complex = ">=0.4.6, <1"
 num-bigint = ">=0.4.6, <0.5"
 num-traits = ">=0.2.19, <1"
+num-integer = ">=0.1.46, <1"
 libm = ">=0.2, <1"
 lambert_w = ">=1.2.34, <2"
 rand = ">=0.10.2, <1"
@@ -68,4 +58,3 @@ foldhash = ">=0.2.0, <1"
 
 [features]
 python = ["dep:pyo3", "dep:libloading"]
-extension-module = ["python", "pyo3/extension-module"]

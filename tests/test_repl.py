@@ -33,10 +33,14 @@ def test_terminal_symbol_entry_and_exit():
         read_until(b'\x1b[?2004h')
         enter('1 2\r', '│1 2│\r\n└~──┘\r\n')
         enter(']box off\r', 'OFF -style=max -trains=tree -fns=on\r\n')
-        keys = json.loads(files('basedpl').joinpath('keyboard.json').read_text())
-        enter('"' + ''.join('\x1b'+k for k in keys) + '"\r', '\r\n' + ''.join(keys.values()) + '\r\n')
-        enter('r\x1bh1+2\x1bl2\x1bu×\r', '\r\n')  # r←1+2→2⊸×
-        enter('\x1b]\x1bhr\r', '\r\n6\r\n')  # explicit output via Alt-]
+        layout = json.loads(files('basedpl').joinpath('layout.json').read_text())
+        typed = {k: v for k, v in layout['option'].items() if isinstance(v, str)}
+        enter('"' + ''.join('\x1b'+k for k in typed) + '"\r', '\r\n' + ''.join(typed.values()) + '\r\n')
+        enter('r\x1bh1+2\x1bl2\x1bq<×\r', '\r\n')  # r←1+2→2⍃×
+        enter('\x1bq \x1bhr\r', '\r\n6\r\n')  # explicit output: Alt-q, then Space, types ⎕
+        enter('3^2\r', '\r\n9\r\n')  # the ^ dead key, then 2, types ²
+        enter('"a^b"\r', '\r\na^b\r\n')  # in a string, ^ types itself
+        enter('\x1bi_1 0 1\r', '\r\n[0 2]ₓ\r\n')  # Alt-i, then _, types ⍸
         enter('1 2 3\x1bl+/\r', '\r\n6\r\n')
         enter('界`assign `io\t4\r', '\r\n')  # space, Tab, Unicode byte offsets
         enter('+/界\r', '\r\n6\r\n')
@@ -54,6 +58,9 @@ def test_terminal_symbol_entry_and_exit():
         enter('(2+\r', '\r\n')
         enter('\x03', '\r\n')  # Ctrl-C discards the whole unfinished expression
         enter('2+3\r', '\r\n5\r\n')
+        os.write(master, '⌽⎕\r'.encode())
+        read_until(b'\x1b[?2004l')  # readline has returned the terminal to line mode
+        enter('ab\r', 'ba\r\n')  # ⎕ reads a line typed at the terminal
         os.write(master, b'\x04')
         tail = read_until(b'\r\n')
         assert child.wait(timeout=5) == 0

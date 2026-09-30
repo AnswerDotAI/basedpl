@@ -11,5 +11,5 @@
 `X≢Y` negates [match](match.qmd).
 
 ```apl
-1≢,1               ⍝ 1ₓ
+1≢,1               ⍝ $t
 ```
