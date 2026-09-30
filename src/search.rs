@@ -9,9 +9,9 @@
 //!   match only characters.
 //! - Exact data is hashed. Numbers must be exact, and arrays must have no keys and no functions. A hash bucket is only a candidate
 //!   list, so `array_match` confirms each candidate.
-//! - Reals are hashed with tolerance. Each goes into a bucket of 256 neighbouring `float_key`s, and each of its matches lies in its own
-//!   bucket or the next one on either side. Cells that are arrays go into the bucket of their first number, and `array_match` confirms
-//!   each candidate.
+//! - Reals are hashed with tolerance. Each goes into a bucket of 512 neighbouring `float_key`s, and each of its matches lies in its own
+//!   bucket or the neighbour on the side of its half. Cells that are arrays go into the bucket of their first number, and
+//!   `array_match` confirms each candidate.
 //! Other data takes the pairwise comparison.
 use crate::{
     array::Items,
@@ -300,16 +300,34 @@ impl Buckets {
             }
         }
     }
+    /// Pushes `i` with `key` unless `copy` holds for a position already pushed with that key. One map lookup does both.
+    fn push_new(&mut self, key: u64, i: usize, copy: impl Fn(usize) -> bool) {
+        match self.ends.entry(key) {
+            Entry::Occupied(mut e) => {
+                let (first, last) = e.get_mut();
+                if links(&self.next, *first).any(copy) { return; }
+                self.next[*last as usize] = i as u32;
+                *last = i as u32;
+            }
+            Entry::Vacant(e) => {
+                e.insert((i as u32, i as u32));
+            }
+        }
+    }
     /// The positions with `key`, from the one pushed first.
     fn chain(&self, key: u64) -> impl Iterator<Item = usize> + '_ {
-        let first = self.ends.get(&key).map(|&(i, _)| i);
-        std::iter::successors(first, |&i| Some(self.next[i as usize]).filter(|&j| j != u32::MAX)).map(|i| i as usize)
+        self.ends.get(&key).into_iter().flat_map(|&(first, _)| links(&self.next, first))
     }
-    /// The positions near real `y`, when the keys are buckets: those in its bucket and the two beside it.
+    /// The positions near real `y`, when the keys are buckets: those in its bucket and in the neighbour on the side of its half.
     fn near(&self, y: f64) -> impl Iterator<Item = usize> + '_ {
-        let b = bucket(y);
-        [b.checked_sub(1), Some(b), b.checked_add(1)].into_iter().flatten().flat_map(|b| self.chain(b))
+        let (b, upper) = (bucket(y), float_key(y) & 256 != 0);
+        [Some(b), if upper { b.checked_add(1) } else { b.checked_sub(1) }].into_iter().flatten().flat_map(|b| self.chain(b))
     }
+}
+
+/// The positions linked from `first` through `next`, in the order they were pushed.
+fn links(next: &[u32], first: u32) -> impl Iterator<Item = usize> + '_ {
+    std::iter::successors(Some(first), |&i| Some(next[i as usize]).filter(|&j| j != u32::MAX)).map(|i| i as usize)
 }
 
 fn hashed_first(haystack: &Cells, x: &[u64], needles: &Cells, y: &[u64], span: &Context<'_>) -> Result<Vec<i64>, Error> {
@@ -407,13 +425,14 @@ pub(crate) fn sort_rows(n: usize, width: usize, key: impl Fn(usize, usize) -> u6
     items.into_iter().map(|(_, i)| i).collect()
 }
 
-/// The bucket of a real for tolerant hashing: its `float_key` in groups of 256. Reals within tolerance of each other have keys at
-/// most 181 apart, because 1e-14 of the larger magnitude is at most 2^54 × 1e-14 steps in the smaller one's binade. So every match of
-/// a real lies in its own bucket or a neighbouring one.
-fn bucket(x: f64) -> u64 { float_key(x) >> 8 }
+/// The bucket of a real for tolerant hashing: its `float_key` in groups of 512. Reals within tolerance of each other have keys at
+/// most 181 apart, because 1e-14 of the larger magnitude is at most 2^54 × 1e-14 steps in the smaller one's binade. A key in the
+/// lower half of its bucket is at least 256 from the upper edge, so every match of a real lies in its own bucket or the neighbour on
+/// the side of its half.
+fn bucket(x: f64) -> u64 { float_key(x) >> 9 }
 
 /// For each needle, the first haystack cell that `matches` it, or the haystack length. Each haystack cell `i` is filed under the
-/// bucket of `x[i]`, and each needle `j` looks in the buckets beside `y[j]`. Matching cells have reals within tolerance, so every
+/// bucket of `x[i]`, and each needle `j` looks in the two buckets nearest `y[j]`. Matching cells have reals within tolerance, so every
 /// candidate lies there. The index holds only the first of each run of `copies`, because a later copy can't be a first match.
 fn tolerant_first(
     x: &[f64],
@@ -423,7 +442,7 @@ fn tolerant_first(
     matches: impl Fn(usize, usize) -> Result<bool, Error>,
 ) -> Result<Vec<i64>, Error> {
     let mut buckets = Buckets::new(x.len());
-    for (i, &v) in x.iter().enumerate() { let b = bucket(v); if !buckets.chain(b).any(|j| copies(j, i)) { buckets.push(b, i); } }
+    for (i, &v) in x.iter().enumerate() { buckets.push_new(bucket(v), i, |j| copies(j, i)); }
     let miss = x.len();
     y.iter()
         .enumerate()

@@ -43,9 +43,9 @@ const CASES: &[(f64, &[&str])] = &[
     (11.0, &["3|jv"]),
     // Each item needs a call to the maths library.
     (45.0, &["*v", "⍟v"]),
-    // Each item goes into a hash table, and each item of the other argument is looked up in it. A tolerant search looks in three
+    // Each item goes into a hash table, and each item of the other argument is looked up in it. A tolerant search looks in two
     // buckets for each item, where an exact search looks in one, and a plain exact hash search costs about 60 copies.
-    (200.0, &["v⍳w", "∪v"]),
+    (300.0, &["v⍳w", "∪v"]),
     // About twenty comparisons for each item.
     (200.0, &["⍋v", "⍋jv"]),
 ];
