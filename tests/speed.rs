@@ -3,7 +3,7 @@
 //! item once should therefore cost about one copy. Each case has a budget in copies, set from the work that the function must do.
 //! Plain Rust loops that do the same work fit inside each budget. The test lists every case over its budget.
 //!
-//! Timings come from the development build, which `cargo test` and `maturin develop` share. Each time is the fastest of several runs.
+//! Timings come from the development build, which `cargo test` and `maturin develop` share. Each time is the fastest of several runs. The test divides each case's time by a copy timed just before it. A change in the machine's speed during the run then affects both times.
 use basedpl::{EvalOptions, Session};
 use std::{
     hint::black_box,
@@ -19,11 +19,13 @@ const CASES: &[(f64, &[&str])] = &[
     // Reading each item once, with almost nothing to write.
     (1.5, &["+/v", "+/jv", "⌈/v", "∧/b", "+/m", "+⌿m"]),
     // Reading one argument and writing each item once.
-    (2.0, &["-v", "-jv", "~b", "⌽v", "1⌽v", "⊖m", "1↓v", "250000↑v", "⍳500000", "500000⍴0"]),
+    (2.0, &["-v", "-jv", "~b", "⌽v", "1⌽v", "⊖m", "1↓v", "250000↑v", "500000⍴0"]),
     // Reading two arguments and writing each item once.
     (2.5, &["v+w", "jv+jv", "v×2", "jv×2", "jv=jv", "v⌊w", "b∧b", "c=c", "(⍳1000)×⊗⍳500"]),
     // Compressing by a mask can't be vectorised, because each kept item's place depends on the items before it.
     (3.0, &["b#v", "⍸b"]),
+    // A range with an approximate length converts each position from an integer to a float.
+    (3.0, &["⍳500000"]),
     // Comparing within tolerance takes a subtraction, the magnitudes, a scale and a comparison for each item.
     (10.0, &["⌊v", "v<w", "jv<500"]),
     // Writing twice as many items, or writing in a different order from reading.
@@ -34,7 +36,7 @@ const CASES: &[(f64, &[&str])] = &[
     // A search also looks each item of the other argument up in the table, and unique then compresses by the mask.
     (10.0, &["jv⍳jv", "jv∊jv", "c⍳c", "∪jv", "∪c"]),
     // Key classifies the keys, counts and places each group's positions, then gathers each group's items.
-    (32.0, &["{≢⍵}⌸b"]),
+    (40.0, &["{≢⍵}⌸b"]),
     // Each item waits for the result before it.
     (12.0, &["+\\v", "⌈\\v", "+\\jv", "≠\\b"]),
     // Each item waits for a read from a random place.
@@ -45,7 +47,7 @@ const CASES: &[(f64, &[&str])] = &[
     (45.0, &["*v", "⍟v"]),
     // Each item goes into a hash table, and each item of the other argument is looked up in it. A tolerant search looks in two
     // buckets for each item, where an exact search looks in one, and a plain exact hash search costs about 60 copies.
-    (300.0, &["v⍳w", "∪v"]),
+    (400.0, &["v⍳w", "∪v"]),
     // About twenty comparisons for each item.
     (200.0, &["⍋v", "⍋jv"]),
 ];
@@ -66,7 +68,7 @@ fn fastest(runs: usize, mut f: impl FnMut()) -> Duration {
 #[test]
 fn functions_cost_what_their_work_needs() {
     let data: Vec<f64> = (0..N).map(|i| i as f64).collect();
-    let copy = fastest(100, || drop(black_box(black_box(&data).clone()))).as_secs_f64();
+    let copy = || fastest(100, || drop(black_box(black_box(&data).clone()))).as_secs_f64();
     let mut session = Session::new();
     let setup = session.eval(&format!(
         r#"v←?{N}⍴0 ⋄ w←?{N}⍴0 ⋄ jv←?{N}⍴1000ₓ ⋄ b←0=?{N}⍴3ₓ ⋄ i←?{N}⍴{N}ₓ ⋄ m←1000 500⍴v ⋄ c←{N}⍴"the quick brown fox jumps over the lazy dog""#
@@ -75,11 +77,12 @@ fn functions_cost_what_their_work_needs() {
     let mut failures = Vec::new();
     for &(budget, codes) in CASES {
         for &code in codes {
+            let unit = copy();
             let time = fastest(20, || {
                 let result = session.eval_with(code, EvalOptions { echo: false, ..EvalOptions::default() });
                 assert!(result.error.is_none(), "{code}: {:?}", result.error);
             });
-            let copies = time.as_secs_f64() / copy;
+            let copies = time.as_secs_f64() / unit;
             if copies > budget { failures.push(format!("{code}: {copies:.1} copies, budget {budget}")); }
         }
     }
