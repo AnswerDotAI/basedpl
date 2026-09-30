@@ -66,9 +66,9 @@ def highlight():
     changed = set()
     for kind, attribute in [('function', 'Function'), ('operator', 'Operator')]:
         text = f'<AnyChar String="{escape(glyphs(kind), {chr(34): "&quot;"})}" attribute="{attribute}"/>'
-        if replace('nbs/apl.xml', f'<AnyChar String="[^"]*" attribute="{attribute}"/>', text): changed.add('nbs/apl.xml')
-        group = 'apl' + attribute
-        if replace('editors/vim/syntax/apl.vim', f'(?m)^syntax match {group} .*$', f'syntax match {group} {vim_class(glyphs(kind))}'): changed.add('editors/vim/syntax/apl.vim')
+        if replace('nbs/bpl.xml', f'<AnyChar String="[^"]*" attribute="{attribute}"/>', text): changed.add('nbs/bpl.xml')
+        group = 'bpl' + attribute
+        if replace('editors/vim/syntax/bpl.vim', f'(?m)^syntax match {group} .*$', f'syntax match {group} {vim_class(glyphs(kind))}'): changed.add('editors/vim/syntax/bpl.vim')
     return sorted(changed)
 
 

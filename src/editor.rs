@@ -131,13 +131,6 @@ impl Input {
             self.active = false;
             if let Some(action) = find(&layout().option, c) { return Some(self.act(action)); }
         }
-        // A plain dead key such as `^` starts a sequence only in code. In a string or comment it types itself.
-        if let KeyEvent(KeyCode::Char(c), Modifiers::NONE) = key {
-            if let Some(action) = find(&layout().plain, c).filter(|_| in_code(&line[..pos])) {
-                self.active = false;
-                return Some(self.act(action));
-            }
-        }
         let enter = key == KeyEvent::from('\r') || key == KeyEvent::from('\n');
         let tab = key == KeyEvent::from('\t');
         let plain = key.1.is_empty();
@@ -281,13 +274,13 @@ mod tests {
             if let Action::Text(glyph) = action { for line in ["", "'", "⍝ "] { run(line, &[(alt(*key), text(glyph))]); } }
         }
         run("", &[(alt('c'), Some(Cmd::Noop)), (plain('t'), text("⍝"))]);
-        run("", &[(plain('^'), Some(Cmd::Noop)), (plain('2'), text("²"))]);
-        run("", &[(plain('^'), Some(Cmd::Noop)), (plain('-'), Some(Cmd::Noop)), (plain('1'), text("⁻¹"))]);
-        run("", &[(plain('^'), Some(Cmd::Noop)), (plain(' '), text("^"))]);
+        run("", &[(alt('6'), Some(Cmd::Noop)), (plain('2'), text("²"))]);
+        run("", &[(alt('6'), Some(Cmd::Noop)), (plain('-'), Some(Cmd::Noop)), (plain('1'), text("⁻¹"))]);
+        run("", &[(alt('6'), Some(Cmd::Noop)), (plain(' '), text("^"))]);
         run("", &[(alt('o'), Some(Cmd::Noop)), (KeyEvent(KeyCode::Backspace, Modifiers::NONE), Some(Cmd::Noop)), (plain('x'), None)]);
         run("", &[(alt('o'), Some(Cmd::Noop)), (plain('x'), text("○x"))]);
         run("", &[(alt('o'), Some(Cmd::Noop)), (alt('c'), text("○")), (plain('t'), text("⍝"))]);
-        run("'", &[(plain('^'), None)]);
+        for line in ["", "'", "⍝ "] { run(line, &[(plain('^'), None), (plain('2'), None)]); }
         for (glyph, keys) in [("⍺", " a"), ("⍶", " a _"), ("∞", " 8"), ("+", ""), ("⍝", " c t")] { assert_eq!(chord(glyph), keys, "{glyph}"); }
     }
 

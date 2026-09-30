@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import pytest
 from basedpl.reference import Corpus
-from basedpl.apltests import Case, parse, render, convert, add, description, literal, _check
+from basedpl.bpltests import Case, parse, render, convert, add, description, literal, _check
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -61,11 +61,11 @@ def test_incremental_export(tmp_path):
     for row in rows.values(): row['status'] = 'pending'
     (inventory/'ngn.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in rows.values()))
     assert add(['ngn:177', 'ngn:517'], tmp_path, inventory) == ['ngn:177', 'ngn:517']
-    path = tmp_path/'ngn.apl'
+    path = tmp_path/'ngn.bpl'
     path.write_text(path.read_text().rstrip('\n'))
     assert add(['ngn:518'], tmp_path, inventory) == ['ngn:518']
-    assert [case.id for case in parse((tmp_path/'ngn.apl').read_text())] == ['ngn:177', 'ngn:517', 'ngn:518']
-    saved = (tmp_path/'ngn.apl').read_bytes()
+    assert [case.id for case in parse((tmp_path/'ngn.bpl').read_text())] == ['ngn:177', 'ngn:517', 'ngn:518']
+    saved = (tmp_path/'ngn.bpl').read_bytes()
     with pytest.raises(ValueError, match='duplicate'): add(['ngn:518'], tmp_path, inventory)
-    assert (tmp_path/'ngn.apl').read_bytes() == saved
+    assert (tmp_path/'ngn.bpl').read_bytes() == saved
     assert all(row['status']=='active' for row in Corpus(inventory).get_many(rows, '*').values())

@@ -2,14 +2,14 @@
 
 `!Y`: Y!. Pervasive.
 
-```apl
+```bpl
 !5                ⍝ 120
 !5x               ⍝ 120ₓ
 ```
 
 `X!Y`: binomial coefficient, Y choose X. Pervasive.
 
-```apl
+```bpl
 2!5               ⍝ 10
 2x!5x             ⍝ 10ₓ
 ```

@@ -1,8 +1,8 @@
 import pytest
-from basedpl import apl
+from basedpl import bpl
 
 
 @pytest.fixture(autouse=True)
 def cleared_workspace():
-    apl(']clear')
-    apl.timeout = None
+    bpl(']clear')
+    bpl.timeout = None

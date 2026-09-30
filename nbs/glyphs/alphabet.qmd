@@ -2,7 +2,7 @@
 
 The uppercase Latin alphabet. Read-only; name is case-insensitive.
 
-```apl
+```bpl
 3↑•a               ⍝ "ABC"
 •a⍳"CAB"           ⍝ [2 0 1]ₓ
 ```

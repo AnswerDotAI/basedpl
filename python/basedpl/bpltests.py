@@ -1,4 +1,4 @@
-"Read APL test cases, convert reference inventories, and activate reviewed cases."
+"Read BPL test cases, convert reference inventories, and activate reviewed cases."
 import json, math, re
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -108,7 +108,7 @@ def render(cases):
 
 
 def literal(array):
-    "Express a captured reference array in APL, as the interpreter writes values."
+    "Express a captured reference array in BPL, as the interpreter writes values."
     return '{}0' if array is None else _captured_literal(json.dumps(array))
 
 
@@ -140,10 +140,10 @@ _BOILERPLATE = {'reviewed independent reference expectation', 'reviewed independ
     'operand aliases standardised', 'fixed origin one and standard operand aliases',
     'fixed origin one, standard ∧ and operand aliases', 'origin one', 'no library definitions required'}
 _BOILERPLATE = {s.casefold() for s in _BOILERPLATE}
-_APL_PARTS = re.compile(_dyalog_string+r"|⍝[^\n]*|\s+|[^'⍝\s]+")
+_BPL_PARTS = re.compile(_dyalog_string+r"|⍝[^\n]*|\s+|[^'⍝\s]+")
 
 
-def _compact(code): return ''.join(m[0] for m in _APL_PARTS.finditer(code) if not m[0].isspace() and not m[0].startswith('⍝'))
+def _compact(code): return ''.join(m[0] for m in _BPL_PARTS.finditer(code) if not m[0].isspace() and not m[0].startswith('⍝'))
 
 
 def description(row):
@@ -193,7 +193,7 @@ def _check(case, timeout=2):
 def add(ids, output='tests/reference', directory='tests/reference/inventory'):
     "Append reviewed cases, then mark their inventory records active."
     output = Path(output)
-    existing = {case.id for path in output.glob('*.apl') for case in _load(path) if case.id}
+    existing = {case.id for path in output.glob('*.bpl') for case in _load(path) if case.id}
     if len(set(ids))!=len(ids) or existing.intersection(ids): raise ValueError('duplicate case ID in selection or destination')
     corpus = Corpus(directory)
     rows = corpus.get_many(ids, '*')
@@ -205,7 +205,7 @@ def add(ids, output='tests/reference', directory='tests/reference/inventory'):
     texts = {source: render(cases) for source,cases in pending.items()}
     output.mkdir(parents=True, exist_ok=True)
     for source,text in texts.items():
-        path = output/f'{source}.apl'
+        path = output/f'{source}.bpl'
         previous = path.read_text() if path.exists() else ''
         if previous: text = previous.rstrip('\n')+'\n\n'+text
         path.write_text(text)
@@ -214,7 +214,7 @@ def add(ids, output='tests/reference', directory='tests/reference/inventory'):
 
 
 def check_file(
-    path, # An `.apl` reference file
+    path, # A `.bpl` reference file
     ids=None, # Check only the cases whose id or header line is in `ids`
     timeout=2 # Seconds allowed for each case
 ):
@@ -235,11 +235,11 @@ def check_file(
 
 
 def check_page(path):
-    "Run the APL examples in `.qmd` page `path` as `tests/core.rs` does, and return the failures."
+    "Run the BPL examples in `.qmd` page `path` as `tests/core.rs` does, and return the failures."
     # `_check_reference` compares values but runs each case in a fresh session, so each check replays its block from the start.
     fails, block = [], None
     for i,text in enumerate(Path(path).read_text().splitlines(), 1):
-        if text=='```apl':
+        if text=='```bpl':
             block = []
             continue
         if block is None: continue

@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "basedpl"
 dynamic = ["version"]
-description = "bAsedPL is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation."
+description = "BasedPL, the Based-array Programming Language, is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation."
 license = "Apache-2.0"
 requires-python = ">=3.10"
 dependencies = [
@@ -22,9 +22,9 @@ classifiers = [
 dev = ["fastship>=0.0.11", "maturin>=1.9.4,<2.0", "pytest", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "jlanguage", "pillow"]
 
 [project.scripts]
-bapl = "basedpl._cli:main"
-bapl-nb = "basedpl.notebook_runner:main"
-bapl-install-magic = "basedpl.notebooks:create_ipython_config"
+bpl = "basedpl._cli:main"
+bpl-nb = "basedpl.notebook_runner:main"
+bpl-install-magic = "basedpl.notebooks:create_ipython_config"
 
 [project.urls]
 Homepage = "https://github.com/AnswerDotAI/basedpl"
@@ -53,5 +53,5 @@ addopts = "-q"
 lib_path = "python/basedpl"
 custom_sidebar = true
 tst_flags = "dyalog"
-title = "bAsedPL"
+title = "BasedPL"
 put_version_in_init = false

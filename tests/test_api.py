@@ -2,9 +2,9 @@ import operator
 from fractions import Fraction
 from pathlib import Path
 import numpy as np, pytest
-import basedpl as bapl
+import basedpl
 from fastcore.test import test_eq as teq
-from basedpl import (Array, apl, AplError, plus, times, subtract, divide, exponent, sign, tally, iota,
+from basedpl import (Array, bpl, BplError, plus, times, subtract, divide, exponent, sign, tally, iota,
     reshape, shape, floor, logarithm, reverse, transpose, fork, atop, first, pick, not_)
 
 
@@ -15,23 +15,23 @@ def test_documentation_examples():
 
 
 def test_builtin_attributes():
-    for api in (bapl, apl):
+    for api in (basedpl, bpl):
         teq(api.add([1, 2], 10).py, [11, 12])
         teq((api.plus(2)(3).py, api.times(2)(3).py, api.divide(2)(3).py), (5, 6, Fraction(3, 2)))
         teq(getattr(api, '•binomial')([2, 0.5])['quantile'](1.).py, 2)
         assert {'add', 'plus', 'normal', 'π'} <= set(dir(api))
         for name in ('plu', 'userfn', 'nonexistent', 'minus'):
             with pytest.raises(AttributeError): getattr(api, name)
-    apl('plus←99 ⋄ userfn←{⍵+1}')
-    teq(apl.plus(2, 3).py, 5)
-    teq(apl['plus'].py, 99)
-    teq(apl.execute('plus').py, 99)
-    teq(apl.not_(0).py, 1)
-    assert apl.names.__func__ is type(apl).names
-    with pytest.raises(AttributeError): apl.userfn
+    bpl('plus←99 ⋄ userfn←{⍵+1}')
+    teq(bpl.plus(2, 3).py, 5)
+    teq(bpl['plus'].py, 99)
+    teq(bpl.execute('plus').py, 99)
+    teq(bpl.not_(0).py, 1)
+    assert bpl.names.__func__ is type(bpl).names
+    with pytest.raises(AttributeError): bpl.userfn
     from basedpl import add
     teq(add(2).py, 2)
-    assert 'plus' not in vars(bapl)
+    assert 'plus' not in vars(basedpl)
 
 
 def test_python_printer():
@@ -43,87 +43,87 @@ def test_python_printer():
         '+/⍠1': 'plus.reduce[1.]', '1⍃+⍣[≡]': 'plus.left(1.).history(match)', '+⌿': 'plus.reduce[0]', '-⍨': 'subtract.commute',
         '+∘×': 'conjugate.atop(sign)', '+⍥×': 'conjugate.over(sign)', '-⍃+': 'negate.before(plus)', '+⍄-': 'plus.after(negate)',
         '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each', '(×⍄2)⁻¹': 'times(2.).undo',
-    }.items(): teq(to_python(apl(code)), expected)
-    teq(to_python(apl('×'), dyad=True), 'times')
-    teq(to_python(apl('+∘×'), dyad=True), 'conjugate.atop(times)')
+    }.items(): teq(to_python(bpl(code)), expected)
+    teq(to_python(bpl('×'), dyad=True), 'times')
+    teq(to_python(bpl('+∘×'), dyad=True), 'conjugate.atop(times)')
     teq(to_python(times(2.) ** 3), 'times(2.) ** 3')
     teq(to_python((plus.reduce / tally).each), '(plus.reduce / tally).each')
-    teq(to_python(apl.fn('{⎕←1 ⋄ ⍵}')), 'fn("{⎕←1 ⋄ ⍵}")')
-    teq(to_python(apl.fn('unknown')), 'fn("unknown")')
-    teq(to_python(apl.fn('(⎕←1)+')), 'fn("(⎕←1)+")')
+    teq(to_python(bpl.fn('{⎕←1 ⋄ ⍵}')), 'fn("{⎕←1 ⋄ ⍵}")')
+    teq(to_python(bpl.fn('unknown')), 'fn("unknown")')
+    teq(to_python(bpl.fn('(⎕←1)+')), 'fn("(⎕←1)+")')
 
 
 def test_load(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    source = tmp_path/'defs.apl'
+    source = tmp_path/'defs.bpl'
     source.write_text('twice←{2×⍵}\nx←7\n')
-    (tmp_path/'main.apl').write_text('•load "defs.apl"\ntwice x')
-    assert apl('•LOAD "main.apl"').py == 14
-    assert apl('twice x').py == 14
-    assert apl('{loaded←•load "defs.apl" ⋄ twice ⍵}3').py == 6
+    (tmp_path/'main.bpl').write_text('•load "defs.bpl"\ntwice x')
+    assert bpl('•LOAD "main.bpl"').py == 14
+    assert bpl('twice x').py == 14
+    assert bpl('{loaded←•load "defs.bpl" ⋄ twice ⍵}3').py == 6
     source.write_text('⎕←x\n1÷"a"')
-    with pytest.raises(AplError, match=r'defs.apl:2') as err: apl('•load "defs.apl"')
+    with pytest.raises(BplError, match=r'defs.bpl:2') as err: bpl('•load "defs.bpl"')
     assert err.value.output == ['7']
     source.write_text('⎕←9\n{∇⍵}0')
-    apl.timeout = .001
-    with pytest.raises(AplError, match='TIMEOUT'): apl('•load "defs.apl"')
-    apl.timeout = None
-    assert apl('x').py == 7
-    with pytest.raises(AplError, match='VALUE'): apl('•load "missing.apl"')
+    bpl.timeout = .001
+    with pytest.raises(BplError, match='TIMEOUT'): bpl('•load "defs.bpl"')
+    bpl.timeout = None
+    assert bpl('x').py == 7
+    with pytest.raises(BplError, match='VALUE'): bpl('•load "missing.bpl"')
 
 
 def test_data_io(tmp_path):
     source, dest = tmp_path/'sales.json', tmp_path/'sales.csv'
     source.write_text('{"price":[10.5,20.0],"qty":[2,4]}', encoding='utf-8')
-    read, write = apl.nget, apl.nput
-    table = apl.json(read(str(source), encoding='UTF-8'))
-    encoded = apl.tocsv(table).py
+    read, write = bpl.nget, bpl.nput
+    table = bpl.json(read(str(source), encoding='UTF-8'))
+    encoded = bpl.tocsv(table).py
     teq(write(encoded, path=str(dest)).py, len(encoded.encode('utf-8')))
-    teq(apl.fn('≡')(apl.csv(read(str(dest))), table).py, 1)
-    with pytest.raises(AplError, match='VALUE'): write('replacement', path=str(dest))
+    teq(bpl.fn('≡')(bpl.csv(read(str(dest))), table).py, 1)
+    with pytest.raises(BplError, match='VALUE'): write('replacement', path=str(dest))
     teq(dest.read_text(), encoded)
     teq(write('é\r\n', path=str(dest), overwrite=1).py, 4)
     teq(read(str(dest)).py, 'é\r\n')
-    with pytest.raises(AplError, match='encoding'): write('bad', path=str(dest), overwrite=1, encoding='UTF-16')
+    with pytest.raises(BplError, match='encoding'): write('bad', path=str(dest), overwrite=1, encoding='UTF-16')
     teq(dest.read_bytes(), 'é\r\n'.encode())
     dest.write_bytes(b'\xff')
-    with pytest.raises(AplError, match='VALUE'): read(str(dest))
-    with pytest.raises(AplError, match='VALUE'): read(str(tmp_path/'absent'))
+    with pytest.raises(BplError, match='VALUE'): read(str(dest))
+    with pytest.raises(BplError, match='VALUE'): read(str(tmp_path/'absent'))
 
 
 def test_binary_files(tmp_path):
     path, dest = tmp_path/'bytes', tmp_path/'copy'
     data = bytes(range(256))
     path.write_bytes(data)
-    read, write = apl.nget, apl.nput
+    read, write = bpl.nget, bpl.nput
     values = read(str(path), binary=1)
     teq(values.np.dtype, np.dtype('int64'))
     teq(values.py, list(data))
     opts = dict(path=str(dest), binary=1)
     teq(write(values, **opts).py, 256)
     teq(dest.read_bytes(), data)
-    with pytest.raises(AplError, match='VALUE'): write(values, **opts)
+    with pytest.raises(BplError, match='VALUE'): write(values, **opts)
     opts['overwrite'] = 1
     for bad in ([256], [-1], [0.5], [float('inf')], ['a']):
-        with pytest.raises(AplError, match='DOMAIN'): write(bad, **opts)
+        with pytest.raises(BplError, match='DOMAIN'): write(bad, **opts)
         teq(dest.read_bytes(), data)
-    with pytest.raises(AplError, match='encoding'): read(str(path), binary=1, encoding='UTF-8')
+    with pytest.raises(BplError, match='encoding'): read(str(path), binary=1, encoding='UTF-8')
     teq(write([], **opts).py, 0)
     teq(dest.read_bytes(), b'')
     teq(read(str(dest), binary=1).shape, (0,))
 
 
 def test_regex_functions():
-    p = apl.fn('•r')(r'([a-z]+)([0-9]+)')
+    p = bpl.fn('•r')(r'([a-z]+)([0-9]+)')
     match, replace = p['match'], p['replace']
     teq(match('ab12 cd3').py, ['ab12', 'cd3'])
     teq(replace('$2:$1', 'ab12 cd3').py, '12:ab 3:cd')
-    teq(apl('p.position s', p=p, s='é ab12').py, [2])
+    teq(bpl('p.position s', p=p, s='é ab12').py, [2])
     teq(match('x9').py, ['x9'])
 
 
 def test_distribution_functions():
-    normal, binomial = apl.fn('•normal')([3., 2.]), apl.fn('•binomial')([10, 0.5])
+    normal, binomial = bpl.fn('•normal')([3., 2.]), bpl.fn('•binomial')([10, 0.5])
     sample = normal['sample']
     x, y = sample(10000).np, binomial['sample'](10000).np
     assert x.dtype == np.float64 and y.dtype == np.int64
@@ -142,7 +142,7 @@ def test_array_surface():
     np.testing.assert_array_equal(a[1, :], [4, 5, 6])
     np.testing.assert_array_equal(a[:, [0, 2]], [[1, 3], [4, 6]])
     np.testing.assert_array_equal(list(a)[0], [1, 2, 3])
-    with pytest.raises(AplError): a[2, 0]
+    with pytest.raises(BplError): a[2, 0]
     with pytest.raises(TypeError): a[1:2, :]
     assert (Array(7) % 3).py == 1 and (Array(7) // 3).py == 2
     assert (Array(2) ** 3).py == 8 and (Array(3) / 2).py == Fraction(3, 2)
@@ -154,17 +154,17 @@ def test_array_surface():
     np.testing.assert_array_equal(a > 3, [[0, 0, 0], [1, 1, 1]])
     np.testing.assert_array_equal(~(a > 3), a <= 3)
     np.testing.assert_array_equal(a @ transpose(a), [[14, 32], [32, 77]])
-    assert Array(2).apl == '2ₓ' and Array(2.).apl == '2'
+    assert Array(2).bpl == '2ₓ' and Array(2.).bpl == '2'
     assert repr(Array(2)) != repr(Array(2.))
     assert [repr(Array(s)) for s in ('text', '', ['ab', 'cd'])] == ["'text'", "''", "['ab', 'cd']"]
 
 def test_keyed_arrays():
-    t = apl('["b":[1 2] "a":["x":"hi" "n":3]]')
+    t = bpl('["b":[1 2] "a":["x":"hi" "n":3]]')
     assert list(t.py) == ['b', 'a'] and t.py['a'] == dict(x='hi', n=3) and t.shape == (2,)
     np.testing.assert_array_equal(t.py['b'], [1, 2])
     assert repr(t).startswith("{'b': ")
     d = dict(z=1, y=dict(k=[1, 2, 3]), e={})
-    assert list(apl('⍳⍠0 t', t=d).py) == ['z', 'y', 'e'] and apl('t.y.k.[1]+t.e≡⍬:⍬', t=d).py == 3
+    assert list(bpl('⍳⍠0 t', t=d).py) == ['z', 'y', 'e'] and bpl('t.y.k.[1]+t.e≡⍬:⍬', t=d).py == 3
     assert (Array(dict(a=1, b=2)) + Array(dict(b=10))).py == dict(a=1, b=12)
     assert Array({'a': 1, 1: 5}).py == {'a': 1, 1: 5}
     with pytest.raises(TypeError): Array({2: 5})
@@ -172,8 +172,8 @@ def test_keyed_arrays():
     assert k['price'].py == 1 and k['price'].is_atom and k[1].py == 1
     assert list(k[['tax', 'qty']].py) == ['tax', 'qty']
     assert k.axis_keys == (('qty', 'price', 'tax'),)
-    with pytest.raises(AplError, match='INDEX'): k['missing']
-    with pytest.raises(AplError, match='DOMAIN'): k[['qty', 'qty']]
+    with pytest.raises(BplError, match='INDEX'): k['missing']
+    with pytest.raises(BplError, match='DOMAIN'): k[['qty', 'qty']]
 
 def test_axis_keys_dataframe():
     import pandas as pd
@@ -193,20 +193,20 @@ def test_axis_keys_dataframe():
         with pytest.raises(ValueError): Array([[1, 2], [3, 4]], axis_keys=keys)
 
 def test_based_values():
-    atom, unit, vector = [apl(code) for code in ('3', '⊂3', ',3')]
+    atom, unit, vector = [bpl(code) for code in ('3', '⊂3', ',3')]
     assert atom.is_atom and not unit.is_atom and not vector.is_atom
     assert atom.shape == unit.shape == () and vector.shape == (1,)
     assert isinstance(atom.py, float) and isinstance(unit.py, np.ndarray) and unit.py.shape == ()
     for value in (atom, unit, vector):
-        apl(value=value)
-        assert apl('value').is_atom == value.is_atom
-        assert apl('value').shape == value.shape
+        bpl(value=value)
+        assert bpl('value').is_atom == value.is_atom
+        assert bpl('value').shape == value.shape
     assert Array(3).is_atom and not Array(np.array(3)).is_atom
-    assert apl('v←3 4 ⋄ 1⌷v').is_atom
-    assert not apl('[⊂1]⌷v').is_atom
-    assert apl('1⊃v').is_atom
+    assert bpl('v←3 4 ⋄ 1⌷v').is_atom
+    assert not bpl('[⊂1]⌷v').is_atom
+    assert bpl('1⊃v').is_atom
     assert Array([3, 4])[1].is_atom and not Array([3, 4])[np.array(1)].is_atom
-    assert apl('fs←[+ ×]')[1](3, 4).py == 12
+    assert bpl('fs←[+ ×]')[1](3, 4).py == 12
 
 
 def test_words_binding_and_operators():
@@ -226,7 +226,7 @@ def test_words_binding_and_operators():
     np.testing.assert_array_equal(plus.scan([1, 2, 3]), [1, 3, 6])
     np.testing.assert_array_equal(subtract.scan([1, 2, 3]), [1, -1, -4])
     np.testing.assert_array_equal(plus.scan(10, [1, 2, 3]), [11, 13, 16])
-    assert type(tally('abc').py) is int and shape(Array([1., 2.])).apl == '[2]ₓ'
+    assert type(tally('abc').py) is int and shape(Array([1., 2.])).bpl == '[2]ₓ'
     assert (Array('abc') + 1).py == 'bcd'
     np.testing.assert_array_equal(plus.reduce[0](Array([[1, 2], [3, 4]])), [4, 6])
     np.testing.assert_array_equal(plus.reduce[1, 2](np.arange(1, 9).reshape(2, 2, 2)), [10, 26])
@@ -256,7 +256,7 @@ def test_math_construction():
     f = plus.left(1).with_inverse(subtract(1))
     np.testing.assert_array_equal(f.power([2, -1, 0])(10), [12, 9, 10])
     np.testing.assert_array_equal(f.history(-2)(10), [10, 9, 8])
-    stop = apl('limit←13 ⋄ {⍺≥limit}')
+    stop = bpl('limit←13 ⋄ {⍺≥limit}')
     np.testing.assert_array_equal(f.history(stop)(10), [10, 11, 12, 13])
     np.testing.assert_array_equal(windows(2, [1, 2, 3]), [[1, 2], [2, 3]])
     assert prime(9).py == 29 and prime_mode(1, 29).py == 1
@@ -289,34 +289,34 @@ def test_axis_names():
     other = Array([30, 20, 10], axis_names=('month',), axis_keys=(('Mar', 'Feb', 'Jan'),))
     teq((keyed + other).np, data + [10, 20, 30])
     assert keyed.df.index.name == 'city' and keyed.df.columns.name == 'month'
-    apl(M=keyed)
-    assert apl('⍴M').py == dict(city=2, month=3)
-    renamed = apl('("town" 1:⍴M)⍴M')
+    bpl(M=keyed)
+    assert bpl('⍴M').py == dict(city=2, month=3)
+    renamed = bpl('("town" 1:⍴M)⍴M')
     teq(renamed.axis_names, ('town', None))
     teq(renamed.axis_keys, keyed.axis_keys)
-    assert apl('⍴("town" 1:⍴M)⍴M').py == {'town': 2, 1: 3}
-    teq(apl('(:⍴M)⍴M').axis_names, (None, None))
-    teq(apl('(⍴M)⍴(:⍴M)⍴M').axis_names, keyed.axis_names)
-    assert apl('⍴("items":2)⍴1 2').py == dict(items=2)
+    assert bpl('⍴("town" 1:⍴M)⍴M').py == {'town': 2, 1: 3}
+    teq(bpl('(:⍴M)⍴M').axis_names, (None, None))
+    teq(bpl('(⍴M)⍴(:⍴M)⍴M').axis_names, keyed.axis_names)
+    assert bpl('⍴("items":2)⍴1 2').py == dict(items=2)
     for code in ['["city":2 "city":3]⍴M', '("city" "city":⍴M)⍴M', '(1 1:⍴M)⍴M']:
-        with pytest.raises(AplError, match='DOMAIN'): apl(code)
-    teq(apl('"Paris"⌷⍠"city" M').np, data[0])
-    teq(apl('1⌷M').axis_names, ('month',))
-    teq(apl('+/⍠"city" "month" M').np, 15)
-    teq(apl('⍉M').axis_names, ('month', 'city'))
-    teq(apl('2 3⍴M').axis_names, (None, None))
-    teq(apl('(⍴M)⍴M').axis_names, ('city', 'month'))
-    teq(apl(':M').axis_names, ('city', 'month'))
-    teq(apl('+/¨⊂⍠1 M').axis_names, ('city',))
-    teq(apl('⌽⍤1 M').axis_names, ('city', 'month'))
-    with pytest.raises(AplError, match='INDEX'): apl('+/⍠"missing" M')
+        with pytest.raises(BplError, match='DOMAIN'): bpl(code)
+    teq(bpl('"Paris"⌷⍠"city" M').np, data[0])
+    teq(bpl('1⌷M').axis_names, ('month',))
+    teq(bpl('+/⍠"city" "month" M').np, 15)
+    teq(bpl('⍉M').axis_names, ('month', 'city'))
+    teq(bpl('2 3⍴M').axis_names, (None, None))
+    teq(bpl('(⍴M)⍴M').axis_names, ('city', 'month'))
+    teq(bpl(':M').axis_names, ('city', 'month'))
+    teq(bpl('+/¨⊂⍠1 M').axis_names, ('city',))
+    teq(bpl('⌽⍤1 M').axis_names, ('city', 'month'))
+    with pytest.raises(BplError, match='INDEX'): bpl('+/⍠"missing" M')
     v = Array([1, 2], axis_names=('city',))
     teq(times.outer(v, v).axis_names, (None, None))
     teq(reshape([4], v).axis_names, (None,))
     teq(plus.scan(v).axis_names, ('city',))
-    apl(V=v)
+    bpl(V=v)
     for code, names in [('2#V', ('city',)), ('1↕V', (None, None)), ('{⍵}⌺1 V', (None, None)), ('V,V', ('city',))]:
-        teq(apl(code).axis_names, names)
+        teq(bpl(code).axis_names, names)
     with pytest.raises(ValueError, match='DOMAIN'): Array(data, axis_names=('city', 'city'))
     with pytest.raises(ValueError): Array(data, axis_names=('city',))
 
@@ -336,69 +336,69 @@ def test_function_arrays():
     fs = Array([plus, times])
     assert pick(1, fs)(2, 3).py == 6
     assert fs.py[0](2, 3).py == 5
-    fs = apl('offset←10 ⋄ [{offset+⍵} +]')
-    apl(offset=20)
-    for f in [first(fs), first(list(fs)[0]), fs.py[0], first(Array(fs.np)[0]), apl.fn('{↑⍵}')(fs)]: assert f(3).py == 23
+    fs = bpl('offset←10 ⋄ [{offset+⍵} +]')
+    bpl(offset=20)
+    for f in [first(fs), first(list(fs)[0]), fs.py[0], first(Array(fs.np)[0]), bpl.fn('{↑⍵}')(fs)]: assert f(3).py == 23
     assert pick(1, reverse(fs))(3).py == 23
-    apl(fs=fs)
-    assert apl('f←0⊃fs ⋄ f 3').py == 23
+    bpl(fs=fs)
+    assert bpl('f←0⊃fs ⋄ f 3').py == 23
 
 
 def test_retained_and_late_bound_functions(capsys):
-    with pytest.raises(AplError) as caught: apl.fn('{')
+    with pytest.raises(BplError) as caught: bpl.fn('{')
     assert caught.value.source == '{'
-    apl(k=2)
-    f = apl('{k+⍵}')
+    bpl(k=2)
+    f = bpl('{k+⍵}')
     assert f(3).py == 5
-    apl(k=10)
+    bpl(k=10)
     assert f(3).py == 13
-    late = apl.fn('g')
-    apl('g←+')
+    late = bpl.fn('g')
+    bpl('g←+')
     composed = late + times(2)
     assert composed(3).py == 9
     assert late.reduce([]).py == 0
-    assert (apl.fn('+') @ apl.fn('×'))([], []).py == 0
-    np.testing.assert_array_equal(apl.fn('⌽')[0]([[1, 2], [3, 4]]), [[3, 4], [1, 2]])
-    apl('scale←2×')
-    assert (apl.fn('scale') ** -1)(6).py == 3
-    apl(fold=late.reduce)
-    assert apl('fold ⍬').py == 0
-    apl(loop=apl.fn('loop'))
-    with pytest.raises(AplError, match='LIMIT'): apl('loop 1')
-    assert apl('1+1').py == 2
-    assert apl('count←{⍵=0:0 ⋄ 1+∇⍵-1} ⋄ count 500').py == 500
-    apl('g←-')
+    assert (bpl.fn('+') @ bpl.fn('×'))([], []).py == 0
+    np.testing.assert_array_equal(bpl.fn('⌽')[0]([[1, 2], [3, 4]]), [[3, 4], [1, 2]])
+    bpl('scale←2×')
+    assert (bpl.fn('scale') ** -1)(6).py == 3
+    bpl(fold=late.reduce)
+    assert bpl('fold ⍬').py == 0
+    bpl(loop=bpl.fn('loop'))
+    with pytest.raises(BplError, match='LIMIT'): bpl('loop 1')
+    assert bpl('1+1').py == 2
+    assert bpl('count←{⍵=0:0 ⋄ 1+∇⍵-1} ⋄ count 500').py == 500
+    bpl('g←-')
     assert composed(3).py == 3
-    saved = apl('g')
-    apl('g←+')
+    saved = bpl('g')
+    bpl('g←+')
     assert saved(3).py == -3 and late(3).py == 3
-    assert apl('f 5', f=times(2)).py == 10
-    apl('outer←{k←100 ⋄ ⍶ ⍵}', f=f)
-    assert apl('f outer 1').py == 11
-    g = apl('{⎕←⍵ ⋄ ⍵}')
+    assert bpl('f 5', f=times(2)).py == 10
+    bpl('outer←{k←100 ⋄ ⍶ ⍵}', f=f)
+    assert bpl('f outer 1').py == 11
+    g = bpl('{⎕←⍵ ⋄ ⍵}')
     assert (g + g)(2).py == 4 and capsys.readouterr().out == '2ₓ\n2ₓ\n'
-    assert apl('g', 'explicit', g=g).value(2).py == 2
+    assert bpl('g', 'explicit', g=g).value(2).py == 2
     assert capsys.readouterr().out == '2ₓ\n'
     assert saved(3).py == -3
 
 
 def test_function_inspection():
     source = '{⍝ Mean of a vector\n(+/⍵)÷≢⍵}'
-    apl('mean←'+source)
-    mean = apl.fn('mean')
+    bpl('mean←'+source)
+    mean = bpl.fn('mean')
     teq(mean.source, source)
     assert 'Mean of a vector' in mean.__doc__
     assert 'adds' in plus.__doc__
-    teq(apl.names(prefix='me'), ['mean'])
-    assert apl.inspect('mean')['kind'] == 'function'
-    assert apl.inspect('mean 1 2 3') is None
-    assert 'Mean of a vector' in '\n'.join(apl(']help mean', 'explicit').output)
-    assert source in '\n'.join(apl(']help mean -source', 'explicit').output)
+    teq(bpl.names(prefix='me'), ['mean'])
+    assert bpl.inspect('mean')['kind'] == 'function'
+    assert bpl.inspect('mean 1 2 3') is None
+    assert 'Mean of a vector' in '\n'.join(bpl(']help mean', 'explicit').output)
+    assert source in '\n'.join(bpl(']help mean -source', 'explicit').output)
     for command in [']help', ']help mean -other', ']help mean -source extra']:
-        with pytest.raises(AplError, match='SYNTAX'): apl(command, 'explicit')
-    with pytest.raises(AplError, match='VALUE'): apl(']help absent', 'explicit')
-    apl('changed←0 ⋄ danger←{changed+←1 ⋄ ⍵}')
-    assert apl.inspect('danger')['source'].startswith('{')
-    teq(apl('changed').py, 0)
-    apl('mean←{42}')
+        with pytest.raises(BplError, match='SYNTAX'): bpl(command, 'explicit')
+    with pytest.raises(BplError, match='VALUE'): bpl(']help absent', 'explicit')
+    bpl('changed←0 ⋄ danger←{changed+←1 ⋄ ⍵}')
+    assert bpl.inspect('danger')['source'].startswith('{')
+    teq(bpl('changed').py, 0)
+    bpl('mean←{42}')
     teq(mean.source, '{42}')

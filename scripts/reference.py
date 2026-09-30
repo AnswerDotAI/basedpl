@@ -1,6 +1,6 @@
 'Scan, review, activate and add reference cases without regenerating the corpus.'
 import argparse, json
-from basedpl.apltests import add
+from basedpl.bpltests import add
 from basedpl.reference import scan, review, activate
 
 
@@ -16,7 +16,7 @@ def main():
     parser.add_argument('--limit', type=int, default=20, help='show: 0 displays all matches')
     parser.add_argument('--details', action='store_true')
     parser.add_argument('--directory', default='tests/reference/inventory', help='add: inventory directory')
-    parser.add_argument('--output', default='tests/reference', help='add: directory of the .apl files')
+    parser.add_argument('--output', default='tests/reference', help='add: directory of the .bpl files')
     args = parser.parse_args()
     common = dict(report=args.report, source=args.source, match=args.match)
     if args.action == 'add': print(json.dumps(add(args.ids, args.output, args.directory), ensure_ascii=False, indent=2))

@@ -61,8 +61,8 @@ pub(crate) enum Action { Text(String), State(String) }
 pub(crate) struct DeadState { pub terminator: String, pub keys: Vec<(char, Action)> }
 
 /// The shared key mapping in `python/basedpl/layout.json`, which the macOS layout and the browser also read. Keys are US characters
-/// after Shift. `option` holds unshifted keys typed with Option, and `plain` holds dead keys typed alone, such as `^`.
-pub(crate) struct KeyLayout { pub option: Vec<(char, Action)>, pub plain: Vec<(char, Action)>, pub states: HashMap<String, DeadState> }
+/// after Shift. `option` holds unshifted keys typed with Option.
+pub(crate) struct KeyLayout { pub option: Vec<(char, Action)>, pub states: HashMap<String, DeadState> }
 
 impl KeyLayout { pub(crate) fn state(&self, name: &str) -> &DeadState { &self.states[name] } }
 
@@ -83,7 +83,7 @@ pub(crate) fn layout() -> &'static KeyLayout {
             .expect("states")
             .iter()
             .map(|(name, s)| (name.clone(), DeadState { terminator: s["terminator"].as_str().expect("a terminator").into(), keys: keys(&s["keys"]) }));
-        KeyLayout { option: keys(&json["option"]), plain: keys(&json["plain"]), states: states.collect() }
+        KeyLayout { option: keys(&json["option"]), states: states.collect() }
     })
 }
 

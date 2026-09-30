@@ -2,14 +2,14 @@
 
 `○Y`: e<sup>iY</sup> = cos Y + i sin Y. Real Y is an angle in radians. Pervasive.
 
-```apl
+```bpl
 ○0                ⍝ 1
 ○0j1              ⍝ *¯1
 ```
 
 `K○Y` selects a circular function. Pervasive; angles in radians.
 
-```apl
+```bpl
 1○0               ⍝ 0
 2○0               ⍝ 1
 9 11○3j4          ⍝ 3 4

@@ -2,7 +2,7 @@
 
 `f⍠A` applies `f` to the cells made of the axes `A`. The other axes form the frame. `A` is a list of axes, given as numbers or names, so it needs no enclosing. Axes count from 0, and negative axes count from the end.
 
-```apl
+```bpl
 m←2 3⍴⍳6
 {+/⍵}⍠0 m                 ⍝ 3 5 7
 ax←0 ⋄ {+/⍵}⍠ax m         ⍝ 3 5 7
@@ -10,7 +10,7 @@ ax←0 ⋄ {+/⍵}⍠ax m         ⍝ 3 5 7
 
 Rank is the case that selects the last `r` axes. So `⍤1` and `⍠¯1` both select the last axis.
 
-```apl
+```bpl
 m←2 3⍴⍳6
 +/⍤1 m                    ⍝ 3 12
 +/⍠¯1 m                   ⍝ 3 12
@@ -19,7 +19,7 @@ m←2 3⍴⍳6
 
 Result cells with the same rank as the selected cells return to the axes `A`. Other result cells start at the position of the first selected axis.
 
-```apl
+```bpl
 m←2 3⍴⍳6
 {⌽⍵}⍠0 m                  ⍝ [3 4 5 ⋄ 0 1 2]
 ⍴{,⍵}⍠0 1 (2 3 4⍴⍳24)     ⍝ [6 4]ₓ
@@ -27,7 +27,7 @@ m←2 3⍴⍳6
 
 With two arguments, `A` applies to both, and leading frames agree as they do for rank. An argument without the selected axes is one whole cell, paired with every cell of the other argument.
 
-```apl
+```bpl
 m←2 3⍴⍳6
 1 0 1 {⍺#⍵}⍠1 m           ⍝ [0 2 ⋄ 3 5]
 10 20 {⍺+⍵}⍠0 m           ⍝ [10 11 12 ⋄ 23 24 25]
@@ -35,7 +35,7 @@ m←2 3⍴⍳6
 
 A string names one axis, and a list of strings names several.
 
-```apl
+```bpl
 n←["row":2 "col":3]⍴⍳6
 {+/⍵}⍠"row" n             ⍝ ["col":3]⍴3 5 7
 {+/,⍵}⍠"row" "col" n      ⍝ 15
@@ -51,13 +51,13 @@ A primitive with its own axis meaning keeps it:
 - Mix. `⊃⍠A` places the cell axes among the frame axes.
 - Axis selectors. `⍳⍠A` returns the keys or positions of the selected axes.
 
-```apl
+```bpl
 +/⍠1 2 (2 3 4⍴⍳24)        ⍝ 66 210
 ```
 
 A dfn has no axis meaning of its own, so wrapping a primitive in a dfn gives the general rule.
 
-```apl
+```bpl
 {+/⍵}⍠1 2 (2 3 4⍴⍳24)     ⍝ [6 22 38 ⋄ 54 70 86]
 ```
 

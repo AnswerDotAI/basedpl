@@ -8,9 +8,9 @@ def displayed(messages):
 
 
 async def kernel_story():
-    async with run_kernel('apl') as (_, kc):
+    async with run_kernel('bpl') as (_, kc):
         info = await kc.shell_request('kernel_info_request')
-        assert info['content']['implementation'] == 'basedpl' and info['content']['language_info']['name'] == 'apl'
+        assert info['content']['implementation'] == 'basedpl' and info['content']['language_info']['name'] == 'bpl'
         await kc.exec_ok(']box off', silent=True)
         for code, expected in [
             ('v←⍳3 ⋄ mean←+/÷≢', []),

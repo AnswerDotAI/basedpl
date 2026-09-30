@@ -1,30 +1,30 @@
-# APL libraries
+# BPL libraries
 
-APL utilities and Dyalog dfns adapted from [April's ports](https://github.com/phantomics/april/tree/master/libraries/dfns) and the Dyalog `dfns` workspace. Load a file from the repository root:
+BPL utilities and Dyalog dfns adapted from [April's ports](https://github.com/phantomics/april/tree/master/libraries/dfns) and the Dyalog `dfns` workspace. Load a file from the repository root:
 
-```apl
-•load "lib/numeric.apl"
+```bpl
+•load "lib/numeric.bpl"
 phinary 42                     ⍝ "10100010.00100001"
 84 gcd 30                      ⍝ 6
 ```
 
-The same call works from Python: `apl('•load "lib/numeric.apl"')`. Definitions enter the current scope. Paths are relative to the working directory.
+The same call works from Python: `bpl('•load "lib/numeric.bpl"')`. Definitions enter the current scope. Paths are relative to the working directory.
 
 | File | Contents | Loads |
 |---|---|---|
-| `array.apl` | Array algorithms, lists, displays, selection, scans | |
-| `numeric.apl` | Number theory, fractions, linear algebra, Phinary, FFT | `graph.apl` |
-| `graph.apl` | Traversals, paths, components, assignment, exact cover | `array.apl` |
-| `string.apl` | Search/replace, wrapping, justification, whitespace | `array.apl` |
-| `power.apl` | Iteration, trajectories, numerical inversion | `array.apl` |
-| `tree.apl` | AVL, red-black, splay and binary search trees | `power.apl` |
-| `dyalog.apl` | Compression, dates, puzzles, Lisp, parsing, text and macro expansion | `array.apl` |
-| `regex.apl` | `pattern (f regex_replace) text`: transform matched strings | |
+| `array.bpl` | Array algorithms, lists, displays, selection, scans | |
+| `numeric.bpl` | Number theory, fractions, linear algebra, Phinary, FFT | `graph.bpl` |
+| `graph.bpl` | Traversals, paths, components, assignment, exact cover | `array.bpl` |
+| `string.bpl` | Search/replace, wrapping, justification, whitespace | `array.bpl` |
+| `power.bpl` | Iteration, trajectories, numerical inversion | `array.bpl` |
+| `tree.bpl` | AVL, red-black, splay and binary search trees | `power.bpl` |
+| `dyalog.bpl` | Compression, dates, puzzles, Lisp, parsing, text and macro expansion | `array.bpl` |
+| `regex.bpl` | `pattern (f regex_replace) text`: transform matched strings | |
 
-The ports count positions from 0, as the rest of bAsedPL does. They use based arrays, `↑` for First, `⊃` for Mix, `⍶`/`⍹` operands, and seeded reductions.
+The ports count positions from 0, as the rest of BPL does. They use based arrays, `↑` for First, `⊃` for Mix, `⍶`/`⍹` operands, and seeded reductions.
 
-bAsedPL's `≡` returns an unsigned depth, as Dyalog's does when `⎕ML` is 2 or more. Where an original under the default `⎕ML` writes `|≡`, its port writes `≡`. Dyalog's First takes the first element in ravel order, while `↑` takes the first major cell, so a port takes the first element of a matrix with `↑,⍵`.
+BPL's `≡` returns an unsigned depth, as Dyalog's does when `⎕ML` is 2 or more. Where an original under the default `⎕ML` writes `|≡`, its port writes `≡`. Dyalog's First takes the first element in ravel order, while `↑` takes the first major cell, so a port takes the first element of a matrix with `↑,⍵`.
 
-`dyalog.apl` includes `cal [year month]` and `cal year` for calendars, `packZ` for LZW compression (`0 packZ` expands; a negative bit limit returns the dictionary), `variables unify expressions` for structural unification with an occurs check, and `digits ratsum` for repeating-unit rational addition/negation.
+`dyalog.bpl` includes `cal [year month]` and `cal year` for calendars, `packZ` for LZW compression (`0 packZ` expands; a negative bit limit returns the dictionary), `variables unify expressions` for structural unification with an occurs check, and `digits ratsum` for repeating-unit rational addition/negation.
 
-Examples in `tests/reference/{april,aplcart,dyalog}.apl` load these files and retain independent upstream or Dyalog expectations. Case-specific setup stays in the tests. `tests/reference/lib.apl` covers the branches those examples miss, with expectations worked out from each function's definition or from published results. Unported Dyalog definitions remain in the reference inventory with their outstanding dependencies.
+Examples in `tests/reference/{april,aplcart,dyalog}.bpl` load these files and retain independent upstream or Dyalog expectations. Case-specific setup stays in the tests. `tests/reference/lib.bpl` covers the branches those examples miss, with expectations worked out from each function's definition or from published results. Unported Dyalog definitions remain in the reference inventory with their outstanding dependencies.

@@ -1,10 +1,10 @@
 # Glyph reference
 
-Each glyph has a name, which links to its definitions and examples. A function glyph also has a name for its monad, which takes one argument, and for its dyad, which takes two. Operators take functions or arrays and derive functions. Notes give glyph-specific differences from Dyalog APL. Examples show an equivalent APL value after `⍝`.
+Each glyph has a name, which links to its definitions and examples. A function glyph also has a name for its monad, which takes one argument, and for its dyad, which takes two. Operators take functions or arrays and derive functions. Notes give glyph-specific differences from Dyalog APL. Examples show an equivalent BPL value after `⍝`.
 
 ## Typing glyphs
 
-Hold Alt, which is Option on a Mac, and press the key in the Key column. Keys refer to a US layout, and no glyph needs Shift with Alt. Where the column shows a second key, release Alt and press it: `Alt-c t` is Alt-C, then T. An Alt key that starts such a sequence types its own glyph when Space or an unlisted key follows it, so Alt-o then Space gives `○`. Backspace or Escape cancels it. Superscripts start with `^`, or Alt-6, followed by a digit, `-` and a digit, or `t`. In a string, `^` types itself. A glyph with no key, such as `+`, is on an ordinary ASCII key. The arrows are on hjkl. Alt-[ is left vacant, because terminals encode it as the start of control sequences. Alt-7 gives `∆` and Alt-7 then `_` gives `⍙`, which are identifier characters.
+Hold Alt, which is Option on a Mac, and press the key in the Key column. Keys refer to a US layout, and no glyph needs Shift with Alt. Where the column shows a second key, release Alt and press it: `Alt-c t` is Alt-C, then T. An Alt key that starts such a sequence types its own glyph when Space or an unlisted key follows it, so Alt-o then Space gives `○`. Backspace or Escape cancels it. Superscripts start with Alt-6, followed by a digit, `-` and a digit, or `t`. A glyph with no key, such as `+`, is on an ordinary ASCII key. The arrows are on hjkl. Alt-[ is left vacant, because terminals encode it as the start of control sequences. Alt-7 gives `∆` and Alt-7 then `_` gives `⍙`, which are identifier characters.
 
 The names are the ones you type. In the REPL, a backtick and any glyph, monad or dyad name, then Tab, enters the glyph, as [named entry](repl.qmd#named-entry) describes. Python exports the function names, with `_` in place of `-` and a trailing `_` on Python keywords, as in `index_of` and `and_`.
 
@@ -124,7 +124,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `¯` [overbar](glyphs/overbar.qmd) | Alt-Minus | Negative literal sign |
 | `∞` [infinity](glyphs/infinity.qmd) | Alt-8 | Real infinity |
 | `$t` `$f` `$n` [constants](rules.qmd#numbers) | | True, false and NaN |
-| `²` `⁻¹` `ᵀ` [superscript](glyphs/superscript.qmd) | ^ | Postfix on the item before it: `x²` is `x*2`, `f²` is `f⍣2`, `f⁻¹` is the inverse of `f`, and `mᵀ` is `⍉m` |
+| `²` `⁻¹` `ᵀ` [superscript](glyphs/superscript.qmd) | Alt-6 | Postfix on the item before it: `x²` is `x*2`, `f²` is `f⍣2`, `f⁻¹` is the inverse of `f`, and `mᵀ` is `⍉m` |
 
 Numeric notation `x`, `r`, `j`, `E`: see [numbers](rules.qmd#numbers).
 
@@ -150,8 +150,8 @@ Names are case-insensitive. `•a` and `•d` are constant arrays; the other nam
 | `•mime` [Rich display](xml.ipynb#rich-display) | The MIME bundle that display uses |
 | `•plot` [Plots](plot.ipynb) | Charts from vectors, matrices and tables |
 | `•ucs` [Unicode](glyphs/unicode.qmd) | Unicode code points / encodings |
-| `•load` [Load](glyphs/load.qmd) | Evaluate an APL source file |
-| `•signal` [Signal](glyphs/error-guard.qmd#signal) | Raise an ordinary APL error |
+| `•load` [Load](glyphs/load.qmd) | Evaluate an BPL source file |
+| `•signal` [Signal](glyphs/error-guard.qmd#signal) | Raise an ordinary BPL error |
 | `•storage` [Storage](rules.qmd#numbers) | Name the storage that holds an array's items |
 | `•time` [Timing](repl.qmd#timing) | Seconds since a time, or each function's fastest time per call |
 | `•nc` [Name class](introspection.ipynb) | Classify visible names |

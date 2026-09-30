@@ -55,7 +55,7 @@ fn import_element(value: &JsonValue, approximate: bool) -> Result<Value, String>
             )))
         }
         JsonValue::Object(o) if o.contains_key("shape") => return import_array(value, approximate),
-        _ => return Err("invalid APL element".into()),
+        _ => return Err("invalid BPL element".into()),
     };
     number.map(Value::Number).map_err(|k| k.to_string())
 }
@@ -97,7 +97,7 @@ pub(crate) fn request(session: &mut Session, request: &JsonValue, options: EvalO
             .iter()
             .map(|(name, value)| Ok((name, import(value, false)?)))
             .collect::<Result<Vec<_>, String>>()?;
-        for (name, value) in bindings { session.set(name, value).map_err(|_| "binding requires an ordinary APL name")?; }
+        for (name, value) in bindings { session.set(name, value).map_err(|_| "binding requires an ordinary BPL name")?; }
     }
     Ok(match (code, function) {
         (Some(code), _) => session.eval_with(code, options),

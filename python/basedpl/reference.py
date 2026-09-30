@@ -353,7 +353,7 @@ def capture_aplcart_examples(apl, cases):
         lines = [line.strip() for line in case['example'].splitlines() if line.strip()]
         if not all(line.startswith('⎕←') for line in lines): continue
         expressions = [line[2:].strip() for line in lines]
-        # Dyalog captures the expectation from its own array notation, but the case keeps a bAsedPL list.
+        # Dyalog captures the expectation from its own array notation, but the case keeps a BPL list.
         dyalog_code = expressions[0] if len(expressions) == 1 else '('+' ⋄ '.join(expressions)+')'
         code = expressions[0] if len(expressions) == 1 else '['+';'.join(expressions)+']'
         clean = re.sub(_dyalog_string, '', dyalog_code)
@@ -435,7 +435,7 @@ def review(report, source='', match='', status='pass', limit=20, details=False):
 
 def activate(report, source='', match='', output='tests/reference'):
     "Activate reviewed passing selections only if their saved fixture records are unchanged."
-    from basedpl.apltests import add
+    from basedpl.bpltests import add
     rows = selected(report, source, match)
     if not rows:
         print('Activated 0 reviewed cases')

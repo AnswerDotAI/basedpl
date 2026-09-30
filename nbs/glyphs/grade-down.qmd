@@ -2,13 +2,13 @@
 
 `⍒Y` gives indices that sort major cells descending. Stable, with the same [ordering](grade-up.qmd) as Grade up.
 
-```apl
+```bpl
 ⍒30 10 20          ⍝ [0 2 1]ₓ
 ⍒2 1 2 1           ⍝ [0 2 1 3]ₓ
 ```
 
 `C⍒Y` uses character collation `C`.
 
-```apl
+```bpl
 "cba"⍒"abc"        ⍝ [0 1 2]ₓ
 ```

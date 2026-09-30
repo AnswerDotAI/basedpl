@@ -2,7 +2,7 @@
 use crate::{EvalOptions, Session, Value};
 use serde_json::{json, Value as JsonValue};
 
-/// A value captured from another interpreter. Its numbers carry no exactness. A capture encodes a simple atom as a scalar array, and APL
+/// A value captured from another interpreter. Its numbers carry no exactness. A capture encodes a simple atom as a scalar array, and BPL
 /// expectations use based values directly.
 pub(crate) fn expected_array(value: &JsonValue) -> Option<Value> {
     let result = crate::protocol::import(value, true).ok()?;
@@ -38,7 +38,7 @@ pub fn difference(x: &Value, y: &Value, relative: f64, absolute: f64, exactness:
     x.elements().zip(y.elements()).position(|(a, b)| !same(&a, &b)).map(|i| format!("data[{i}]"))
 }
 
-/// Check an independent captured value or APL expectation. Each side receives a fresh session. An APL expectation must match each
+/// Check an independent captured value or BPL expectation. Each side receives a fresh session. An BPL expectation must match each
 /// number's exactness. A value captured from another interpreter carries none, so its numbers compare by value.
 pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
     let Some(code) = case["code"].as_str() else { return json!({"status":"invalid", "message":"missing code"}); };

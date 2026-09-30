@@ -2,7 +2,7 @@
 
 `⍭N`: the prime with N primes before it, so positions count from 0 and `⍭0` is 2. J's `p:` family. Integral inputs; exact integer results.
 
-```apl
+```bpl
 ⍭⍳8               ⍝ [2 3 5 7 11 13 17 19]ₓ
 ⍭⁻¹⍭⍳4            ⍝ [0 1 2 3]ₓ
 ```
@@ -20,7 +20,7 @@
 | `4` | Next prime, strictly above N |
 | `5` | Euler's totient |
 
-```apl
+```bpl
 ¯1⍭1 2 3 4 5 6     ⍝ [0 0 1 2 2 3]ₓ
 1⍭¯1 0 1 2 3 4     ⍝ [0 0 0 1 1 0]ₓ
 4⍭1 2 3 4 5        ⍝ [2 3 5 5 7]ₓ

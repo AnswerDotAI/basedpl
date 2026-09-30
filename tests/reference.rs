@@ -2,15 +2,15 @@ use basedpl::{reference, EvalOptions};
 use serde_json::{json, Value};
 
 const SOURCES: [(&str, &str); 9] = [
-    ("core", include_str!("reference/core.apl")),
-    ("graphics", include_str!("reference/graphics.apl")),
-    ("ngn", include_str!("reference/ngn.apl")),
-    ("april", include_str!("reference/april.apl")),
-    ("aplcart", include_str!("reference/aplcart.apl")),
-    ("dyalog", include_str!("reference/dyalog.apl")),
-    ("regex", include_str!("reference/regex.apl")),
-    ("distributions", include_str!("reference/distributions.apl")),
-    ("lib", include_str!("reference/lib.apl")),
+    ("core", include_str!("reference/core.bpl")),
+    ("graphics", include_str!("reference/graphics.bpl")),
+    ("ngn", include_str!("reference/ngn.bpl")),
+    ("april", include_str!("reference/april.bpl")),
+    ("aplcart", include_str!("reference/aplcart.bpl")),
+    ("dyalog", include_str!("reference/dyalog.bpl")),
+    ("regex", include_str!("reference/regex.bpl")),
+    ("distributions", include_str!("reference/distributions.bpl")),
+    ("lib", include_str!("reference/lib.bpl")),
 ];
 
 fn header(line: &str) -> Option<(&str, &str)> {
@@ -168,7 +168,7 @@ fn enabled_reference_cases() {
             let result = reference::check(&case, EvalOptions { timeout: Some(std::time::Duration::from_secs(2)), echo: false, ..EvalOptions::default() });
             if result["status"] != "pass" {
                 failures.push(format!(
-                    "{name}.apl:{} [{}] {id}: {} ({})",
+                    "{name}.bpl:{} [{}] {id}: {} ({})",
                     case["line"],
                     case["section"].as_str().unwrap(),
                     result["message"],

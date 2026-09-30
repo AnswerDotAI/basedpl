@@ -1,15 +1,15 @@
 # `::` — Error guard
 
-`codes::handler` catches matching later errors in a dfn. `0::` catches ordinary APL errors; a vector selects several error numbers.
+`codes::handler` catches matching later errors in a dfn. `0::` catches ordinary BPL errors; a vector selects several error numbers.
 
-```apl
+```bpl
 {0::42 ⋄ 1÷⍵}'a'   ⍝ 42
 {11::0 ⋄ ÷⍵}'a'    ⍝ 0
 ```
 
 The handler sees local bindings as they were when the error happened. Nothing is rolled back, including outer writes and output. The selected guard is inactive in its handler.
 
-```apl
+```bpl
 {x←1 ⋄ 0::x ⋄ x←2 ⋄ 1÷⍵}'a' ⍝ 2
 ```
 
@@ -17,9 +17,9 @@ Cancellation and unsupported-feature errors bypass guards.
 
 ## Signal
 
-`•signal "DOMAIN ERROR"` raises an ordinary APL error. It is monadic and does not return a value. Existing `::` guards catch it in the same way as an error from a primitive.
+`•signal "DOMAIN ERROR"` raises an ordinary BPL error. It is monadic and does not return a value. Existing `::` guards catch it in the same way as an error from a primitive.
 
-```apl
+```bpl
 positive←{⍵≤0:•signal "DOMAIN ERROR" ⋄ ⍵}
 safe←{11::0 ⋄ positive ⍵}
 safe¯3    ⍝ 0

@@ -19,7 +19,7 @@ fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
         if let Ok(s) = o.cast::<PyString>() {
             return crate::protocol::character(s.to_str()?).map(Value::Character).ok_or_else(|| PyValueError::new_err("expected one character"));
         }
-        let number = if let Ok(b) = o.cast::<PyBool>() { Ok(Number::from_bool(b.is_true())) } else if o.is_instance_of::<PyFloat>() { Ok(o.extract::<f64>()?.into()) } else if let Ok(z) = o.cast::<PyComplex>() { Ok(num_complex::Complex64::new(z.real(), z.imag()).into()) } else if o.is_instance_of::<PyInt>() { Ok(o.extract::<BigInt>()?.into()) } else if o.is_instance_of::<PyTuple>() { let (n, d) = o.extract::<(BigInt, BigInt)>()?; Number::try_from(BigRational::new_raw(n, d)) } else { return Err(PyTypeError::new_err("unsupported APL element")); };
+        let number = if let Ok(b) = o.cast::<PyBool>() { Ok(Number::from_bool(b.is_true())) } else if o.is_instance_of::<PyFloat>() { Ok(o.extract::<f64>()?.into()) } else if let Ok(z) = o.cast::<PyComplex>() { Ok(num_complex::Complex64::new(z.real(), z.imag()).into()) } else if o.is_instance_of::<PyInt>() { Ok(o.extract::<BigInt>()?.into()) } else if o.is_instance_of::<PyTuple>() { let (n, d) = o.extract::<(BigInt, BigInt)>()?; Number::try_from(BigRational::new_raw(n, d)) } else { return Err(PyTypeError::new_err("unsupported BPL element")); };
         number.map(Value::Number).map_err(|k| PyValueError::new_err(k.to_string()))
     };
     let field = |key| raw.get_item(key)?.ok_or_else(|| PyValueError::new_err("missing array field"));
@@ -166,7 +166,7 @@ impl PyFunction {
         let operands = values.iter().map(operand).collect::<PyResult<Vec<_>>>()?;
         Function::build(kind, operands).map(|inner| Self { inner }).map_err(|e| PyValueError::new_err(e.to_string()))
     }
-    fn __repr__(&self) -> String { self.inner.apl() }
+    fn __repr__(&self) -> String { self.inner.bpl() }
     fn parts(&self, py: Python<'_>) -> PyResult<Option<(String, Vec<Py<PyAny>>)>> {
         let Some((kind, operands)) = self.inner.parts() else { return Ok(None); };
         let args = operands
@@ -190,7 +190,7 @@ impl EvalRequest {
     fn run(&mut self, session: &mut Session) -> Result<Evaluation, &'static str> {
         for (name, value) in self.bindings.drain(..) {
             match value { Operand::Value(a) => session.set(&name, a), Operand::Function(f) => session.set_function(&name, f) }
-            .map_err(|_| "binding requires an ordinary APL name and an exportable value")?;
+            .map_err(|_| "binding requires an ordinary BPL name and an exportable value")?;
         }
         let options = std::mem::take(&mut self.options);
         Ok(match (&self.code, &self.function) {
@@ -321,7 +321,7 @@ fn _check_reference(case: &str, timeout: f64) -> PyResult<String> {
     Ok(crate::reference::check(&case, options(Some(timeout), false)?).to_string())
 }
 
-/// APL source for a value captured from another interpreter, given as JSON.
+/// BPL source for a value captured from another interpreter, given as JSON.
 #[pyfunction]
 fn _captured_literal(value: &str) -> PyResult<String> {
     let value = serde_json::from_str(value).map_err(|e| PyValueError::new_err(e.to_string()))?;

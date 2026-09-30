@@ -2,13 +2,13 @@
 
 `?N`: uniform draw from `⍳N`. `?0`: U(0,1). Pervasive.
 
-```apl
+```bpl
 (?6)∊⍳6           ⍝ $t
 ```
 
 `M?N`: `M` draws without replacement from `⍳N`.
 
-```apl
+```bpl
 ≢3?10             ⍝ 3ₓ
 ≢∪3?10            ⍝ 3ₓ
 ```

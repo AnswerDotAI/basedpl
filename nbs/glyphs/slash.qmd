@@ -2,7 +2,7 @@
 
 `f/Y` reduces the last axis, right-associated. Empty axes use `f`'s identity.
 
-```apl
+```bpl
 +/1 2 3            ⍝ 6
 -/1 2 3            ⍝ 2
 +/⍬                ⍝ 0
@@ -10,7 +10,7 @@
 
 Reduction returns the accumulator. An unseeded one-item reduction returns that item. Unreduced axes supply the result frame.
 
-```apl
+```bpl
 ,/⊂2 3            ⍝ 2 3
 ,/,⊂2 3           ⍝ 2 3
 +/⊂⊂3             ⍝ ⊂3
@@ -18,7 +18,7 @@ Reduction returns the accumulator. An unseeded one-item reduction returns that i
 
 `S f/ Y` starts from seed `S` on the right. With `Y` holding `[a b c]`, it is `a f b f c f S`. Empty reductions return the seed. Each lane uses the whole seed. The seed can share a run with the reduction, as in `10-/1 2 3`. In `10 -/1 2 3`, the run `-/1 2 3` is a value, so `10` is applied to it as an array.
 
-```apl
+```bpl
 10-/1 2 3          ⍝ ¯8
 10+/2 3⍴⍳6         ⍝ 13 22
 ⊂10 +/ 1 2 3       ⍝ ⊂16
@@ -27,14 +27,14 @@ Reduction returns the accumulator. An unseeded one-item reduction returns that i
 
 Nested paths use seeded Pick reduction.
 
-```apl
+```bpl
 tree←[[10 20] [30 [40 50]]]
 tree⊃/⌽1 1 0       ⍝ 40
 ```
 
 Use [full windows](windows.qmd) for moving reductions.
 
-```apl
+```bpl
 +/2↕1 2 3 4        ⍝ 3 5 7
 -/⌽2↕1 2 3         ⍝ 1 1
 +/0↕1 2            ⍝ 0 0 0
@@ -44,7 +44,7 @@ Use [full windows](windows.qmd) for moving reductions.
 
 Several axes form one reduction cell. `f/⍠A Y` ravels each selected cell before reducing, equivalent to `(f/∘,)¨⊂⍠A Y`. This is an exception to the general rule in [Axis](axis.qmd). A single axis retains ordinary reduction behavior.
 
-```apl
+```bpl
 n←2 2 3⍴⍳6
 +/⍠1 2 n             ⍝ 15 15
 +/⍠0 2 n             ⍝ 6 24
@@ -52,14 +52,14 @@ n←2 2 3⍴⍳6
 
 Axis order determines the ravel order. Unselected axes retain their order and keys. Selecting every axis gives the reduced value itself, as a dfn along the same axes does.
 
-```apl
+```bpl
 -/⍠0 1 (2 2⍴⍳4)      ⍝ ¯2
 -/⍠1 0 (2 2⍴⍳4)      ⍝ ¯4
 ```
 
 An empty axis vector makes singleton cells. A seed is passed whole to each cell.
 
-```apl
+```bpl
 +/⍠⍬ [1 2 3]          ⍝ 1 2 3
 10+/⍠1 2 (2 2 3⍴⍳6)   ⍝ 25 25
 ```

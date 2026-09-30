@@ -291,7 +291,7 @@ impl Function {
                 FunctionNode::Fork([a, b, c]) => FunctionNode::Fork([fun(a)?, fun(b)?, fun(c)?]),
                 _ => unreachable!(),
             };
-            Self::new(node, &Span::whole(Source::new("<call>", self.apl())))?
+            Self::new(node, &Span::whole(Source::new("<call>", self.bpl())))?
         };
         // Keep the source node alive so its address cannot be reused during resolution.
         resolved.insert(id, (self.clone(), result.clone()));
@@ -371,7 +371,7 @@ impl Function {
         Self::new(FunctionNode::LateBound(Arc::new(parsed), span.clone()), &span)
     }
 
-    pub fn apl(&self) -> String { self.text(&mut 1000) }
+    pub fn bpl(&self) -> String { self.text(&mut 1000) }
     /// The native call behind a system function.
     pub(crate) fn system_call(&self) -> Option<&crate::system::Call> { match self.node() { FunctionNode::System(f) => Some(&f.call), _ => None } }
     #[cfg(feature = "python")]
@@ -388,9 +388,9 @@ impl Function {
     }
     pub fn inspect(&self, session: &Session) -> crate::Inspection {
         if let FunctionNode::LateBound(_, span) = self.node() {
-            if let Some(Binding::Function(f)) = session.lookup(span.source.text.trim()) { return crate::Inspection::new("function", f.apl()); }
+            if let Some(Binding::Function(f)) = session.lookup(span.source.text.trim()) { return crate::Inspection::new("function", f.bpl()); }
         }
-        crate::Inspection::new("function", self.apl())
+        crate::Inspection::new("function", self.bpl())
     }
 
     #[cfg(feature = "python")]
@@ -1263,7 +1263,7 @@ fn scan(
 }
 
 // A lexical link is an index into active frames, never an owning reference.
-// APL results/array elements are arrays and assignments are local. Public function
+// BPL results/array elements are arrays and assignments are local. Public function
 // export rejects frame references throughout the function graph.
 #[derive(Clone, Debug)]
 struct Closure { definition: Arc<Definition>, environment: Option<usize> }
@@ -1572,7 +1572,7 @@ impl Session {
     }
     pub fn call_function_with(&mut self, function: &Function, args: &[Value], options: crate::EvalOptions) -> Evaluation {
         self.execution.begin(options);
-        let span = Span::whole(Source::new("<call>", function.apl()));
+        let span = Span::whole(Source::new("<call>", function.bpl()));
         let mut result = Evaluation::default();
         let called = (|| {
             let (left, right) = match args {

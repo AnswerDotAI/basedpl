@@ -12,7 +12,7 @@ Five rules decide how code reads. [Language principles](principles.qmd) explains
 4. **Trains.** A run that ends in a function is a *train*, a function built from the right.
 5. **Assignment.** `←` assigns to the run before it, and its value is everything after it.
 
-```apl
+```bpl
 2×3+4                ⍝ 14
 2×3 + 4              ⍝ 10
 (2×3)+4              ⍝ 10
@@ -50,7 +50,7 @@ Numbers in every form, `∞`, `¯∞`, `⍬`, characters, strings and the consta
 
 With `⋄`, parentheses write a vector of rows instead. Each row reads as brackets do, so every row is a vector, even a row with one item: `(4 ⋄ 4 5 ⋄ 4 5 6)` is `[[4] [4 5] [4 5 6]]`. A trailing `⋄` makes a one-item vector holding one row: `(1 2 ⋄)` is `[[1 2]]`. Brackets write flat arrays, and parentheses nest.
 
-```apl
+```bpl
 ⍴[5]                 ⍝ [1]ₓ
 ⍴[[1] ⋄ [2]]         ⍝ [2 1]ₓ
 (1 2)≡[1 2]          ⍝ $t
@@ -58,7 +58,7 @@ With `⋄`, parentheses write a vector of rows instead. Each row reads as bracke
 (1+2)×3              ⍝ 9
 ```
 
-```apl
+```bpl
 +/1 2 3              ⍝ 6
 ≢"ab" "cd"           ⍝ 2ₓ
 a←1 ⋄ b←2 ⋄ [a b]    ⍝ 1 2
@@ -68,7 +68,7 @@ a←1 ⋄ b←2 ⋄ [a b]    ⍝ 1 2
 
 Spaces separate runs outside brackets. A line break inside parentheses or brackets counts as a space. Inside braces, a line break separates statements. Each run must reduce to one value: an array, a function, or a lone operator such as the `/` in `+ / x`. Otherwise it is a `SYNTAX` error.
 
-```apl
+```bpl
 a←1 ⋄ b←2 ⋄ c←3 ⋄ d←4 ⋄ a+b × c+d   ⍝ 21
 x←3 ⋄ x+1 ÷ 2                        ⍝ 2
 + / 1 2 3                            ⍝ 6
@@ -78,7 +78,7 @@ x←3 ⋄ x+1 ÷ 2                        ⍝ 2
 
 Operators bind before function application. An operator's left operand is the whole function to its left. Its right operand is the one item to its right. A run ends at a space, so `f⍤1 M` applies `f` at rank 1 to `M`. A strand is one item, so `f⍤1 2 M` has rank `1 2`. A literal argument after a literal operand goes in parentheses: `f⍤1(2 3)`. A run that ends in a dyadic operator takes the next run as its right operand, as if no space came between them. So `f⍤ 1 M` is `f⍤1 M`, and a named operator takes a literal operand after a space: `+Depth 0 x`, where `Depth0` would be one name.
 
-```apl
+```bpl
 m←2 3⍴⍳6 ⋄ +/⍤1 m               ⍝ 3 12
 m←2 3⍴⍳6 ⋄ +/⍤ 1 m              ⍝ 3 12
 x←5 ⋄ 1+⍣3 x                     ⍝ 8
@@ -89,7 +89,7 @@ Names hold arrays, functions or operators, resolved at execution time. Arrays co
 
 A name is made of letters, `∆` and `⍙`. A digit ends a name, as it ends a glyph, so `f2` is `f` applied to 2, as `⍳2` is. `_` puts the next character into the name, whatever it is, so `x_1` and `x_+` are names. After `_`, a digit takes the digits that follow it, so `x_12` is one name. `_` needs a character after it, so a name can't end in `_`. A lone `_` is the name `_` when a space, `]`, `)`, `←`, `;`, `⋄` or the end of the line follows it. It holds a value nothing reads, as in `[k _ v]←⍵`. After a dot, digits stay in the key: `T.q1` is the entry with key `q1`.
 
-```apl
+```bpl
 x_1←10 ⋄ x_12←20 ⋄ x_1+x_12   ⍝ 30
 v←10 20 30 ⋄ v1               ⍝ 20
 T←["q1":5] ⋄ T.q1             ⍝ 5
@@ -100,7 +100,7 @@ T←["q1":5] ⋄ T.q1             ⍝ 5
 
 An array next to an argument selects along its leading axis, with positions as in [Index](glyphs/squad.qmd) `⌷`. The result has the shape of the positions, followed by the shape of each selected cell. `v1` gives item 1, `v ⊂1` gives it enclosed, and `v[1]` gives a one-item vector. Application groups from the right: `v w i` is `v (w i)`. Its argument is everything to its right, so `v 2×3` is `v` applied to 6.
 
-```apl
+```bpl
 v←10 20 30 40 ⋄ v[2 0]          ⍝ 30 10
 v←10 20 30 40 ⋄ v¯1             ⍝ 40
 v←10 20 30 40 ⋄ v ⊂1            ⍝ ⊂20
@@ -111,7 +111,7 @@ v←10 20 30 40 ⋄ v[1]            ⍝ [20]
 
 A train is built from its last function leftwards, as in APL. A function and the item before it make a *fork* with what is built so far: `f g h` gives `(f ⍵) g (h ⍵)`. When that item is an array, it is a *constant*: `A g h` gives `A g (h ⍵)`. An array directly before what is built *binds* to it, so `2×` is `2⍃×`. A function left over at the start makes an *Atop*: `f g` gives `f (g ⍵)`.
 
-```apl
+```bpl
 f←32+1.8× ⋄ f100     ⍝ 212
 (+/÷≢) 1 2 3 6       ⍝ 3
 (0.5×⊢+÷) 2          ⍝ 1.25
@@ -126,7 +126,7 @@ A space before an argument decides the reading. `+/÷≢ x` is the mean of `x`, 
 
 The target of `←` is the run before it: a name, a selection such as `v[2]` or `T.x`, a list of names such as `[a b]`, or one of these followed by a function for [modified assignment](glyphs/assign.qmd). A named function joins the target in parentheses, because a space would end the run: `a(f)←3` is `a←a f 3`, at top level and in dfns. The value is everything to the right of `←`, up to the end of the statement or group. `a←1 b←2` is not two assignments, because the first `←` takes `1 b←2` as its value. Independent assignments need `⋄`.
 
-```apl
+```bpl
 v←10 20 30 ⋄ v[1]←7 ⋄ v          ⍝ 10 7 30
 [a b]←3 4 ⋄ a×b                  ⍝ 12
 a←1 ⋄ f←+ ⋄ a(f)←3 ⋄ a           ⍝ 4
@@ -147,7 +147,7 @@ Spaces change grouping only at the first two levels.
 
 `→` separates pipeline stages. Each function receives the previous result as its right argument. `←` takes the whole pipeline as its value.
 
-```apl
+```bpl
 total←1+2×3 → 2× ⋄ total   ⍝ 14
 ```
 
@@ -161,7 +161,7 @@ total←1+2×3 → 2× ⋄ total   ⍝ 14
 
 Bare numbers are approximate (`f64`). `x` or `ₓ` marks exact integers; `r` marks exact rationals. Exact integers display with `ₓ`. Examples use `x` for typed input. Exact arithmetic grows as needed. Mixing exact and approximate gives approximate.
 
-```apl
+```bpl
 1÷3                  ⍝ 0.3333333333333333
 1x÷3x                ⍝ 1r3
 1r3+1r6              ⍝ 1r2
@@ -171,14 +171,14 @@ Bare numbers are approximate (`f64`). `x` or `ₓ` marks exact integers; `r` mar
 
 `ajb`: a + bi, with approximate components. `J` also parses. `¯` marks negative literals and exponents.
 
-```apl
+```bpl
 1j2+3j4              ⍝ 4j6
 1E¯3                 ⍝ 0.001
 ```
 
 Predicates, positions, tally, shape, and monadic `⌊`, `⌈` and `×` return exact integers. A float beyond the `i64` range floors to an exact big integer. Iota and random integer generation preserve exact arguments. An argument that must be an integer, such as an index or a count, accepts a float within comparison tolerance of one:
 
-```apl
+```bpl
 ⌊2.5 ¯2.5            ⍝ [2 ¯3]ₓ
 ⌊2*70                ⍝ 1180591620717411303424ₓ
 ⍳(0.1×3)×10          ⍝ 0 1 2
@@ -186,7 +186,7 @@ Predicates, positions, tally, shape, and monadic `⌊`, `⌈` and `×` return ex
 
 Numbers that an operation puts in one array share a kind. A float among exact integers makes them all floats, and a complex number makes every number complex:
 
-```apl
+```bpl
 (⍳3ₓ),0.5            ⍝ 0 1 2 0.5
 (⍳2ₓ),1j2            ⍝ 0 1 1j2
 (1ₓ,0.5)÷2ₓ          ⍝ 0.5 0.25
@@ -194,14 +194,14 @@ Numbers that an operation puts in one array share a kind. A float among exact in
 
 Items written in a literal list or in brackets keep each number's exactness, so exact and approximate numbers written together stay mixed. Floats written beside complex numbers become complex, which changes no value:
 
-```apl
+```bpl
 1ₓ 0.5÷2ₓ            ⍝ 1r2 0.25
 [1ₓ;0.5]÷2ₓ          ⍝ 1r2 0.25
 ```
 
 `ₓ` after brackets makes every number written inside them exact, at any depth. Each item must be a literal, and each number must be whole. `⍬ₓ` is the exact empty vector. A vector of exact integers displays in this form, and `⍕` writes it the same way:
 
-```apl
+```bpl
 [1 0 1]ₓ≡1ₓ 0ₓ 1ₓ    ⍝ $t
 [[1 2] 3]ₓ≡[1ₓ 2ₓ;3ₓ]   ⍝ $t
 1↑⍬ₓ                 ⍝ [0]ₓ
@@ -210,7 +210,7 @@ Items written in a literal list or in brackets keep each number's exactness, so 
 
 A rational has no compact form, so an array that holds one keeps each item's kind. So does an array that also holds characters, nested arrays or functions, and so does an imported JSON object. Selecting from, catenating or assigning into this mixed storage keeps each item's kind. Arithmetic builds fresh storage from its results. Each result keeps its own kind. `1×x` makes every number a float, because every result is approximate. `1ₓ×x` keeps exact results exact. `•storage` names the storage. Boxed display marks mixed storage with `+`, and exact integers with `ₓ`:
 
-```apl
+```bpl
 x←1ₓ 0.5 2ₓ
 •storage x           ⍝ "mixed"
 •storage 1×x         ⍝ "float"
@@ -219,7 +219,7 @@ x←1ₓ 0.5 2ₓ
 
 Floats follow IEEE 754. Besides finite numbers, they include `∞`, `¯∞`, NaN and `¯0`. An undefined result is NaN, not an error. `1÷0` is `∞`, and `⍟0` is `¯∞`. NaN is written `$n`. Under `=`, NaN equals nothing, as in IEEE. `≡`, search, grade and Key treat NaN as one value, and grade puts it after every other number. Complex arithmetic follows `num_complex`, so a complex number can have infinite or NaN parts:
 
-```apl
+```bpl
 [0÷0;∞-∞]            ⍝ $n $n
 [1÷0;⍟0]             ⍝ ∞ ¯∞
 $n=$n                ⍝ $f
@@ -228,7 +228,7 @@ $n≡$n                ⍝ $t
 
 An infinity or NaN never makes exact numbers approximate. `⌊` and `⌈` return an exact argument unchanged beside an infinity, and return the other argument beside NaN. Exact integers, infinities and NaN share integer storage. CSV and JSON imports give NaN for a missing number. An integer column with gaps then stays exact. Arithmetic with an infinity gives floats:
 
-```apl
+```bpl
 3ₓ⌊∞                 ⍝ 3ₓ
 (⍳3ₓ),∞              ⍝ [0 1 2 ∞]ₓ
 •storage (⍳3ₓ),∞     ⍝ "integer"
@@ -236,7 +236,7 @@ An infinity or NaN never makes exact numbers approximate. `⌊` and `⌈` return
 
 Comparisons give Booleans. So does every function whose result is a truth value, such as `~`, `∊`, `⍷` and `≡`. `$t` is true and `$f` is false. Wherever a number is expected, `$t` is 1 and `$f` is 0. `+/` counts the true items. `#` filters by a Boolean mask. A Boolean used as an index selects position 0 or 1. Arithmetic on Booleans gives integers. `∧`, `∨`, `⍱`, `⍲`, `⌊` and `⌈` on two Booleans give a Boolean. Boolean storage takes one byte for each item. Boxed display marks it with `$`:
 
-```apl
+```bpl
 x←3 1 4 1 5
 x>2                  ⍝ $t $f $t $f $t
 +/x>2                ⍝ 3ₓ
@@ -255,7 +255,7 @@ Numbers, characters and functions are atoms. Arrays are rectangular collections 
 
 Structural mapping (arithmetic, Each and indexing) preserves the mapped container, including scalars. Cell application (Rank and search) consumes complete cells, returning one result directly or assembling results over surrounding batch axes.
 
-```apl
+```bpl
 ⍴3                   ⍝ ⍬ₓ
 ⍴,3                  ⍝ [1]ₓ
 ⍴2 3⍴⍳6              ⍝ [2 3]ₓ
@@ -264,7 +264,7 @@ Structural mapping (arithmetic, Each and indexing) preserves the mapped containe
 
 [Brackets](glyphs/brackets.qmd) write vectors: `[a b c]`. A strand of literals can leave them out: `1 2 3`. Nothing else forms a vector from separate items. `[Y]` is a one-item vector. `⊂Y` encloses any value, and parentheses enclose glyphs separated by spaces. `↑` retrieves the first item. Enclosure always adds an array layer.
 
-```apl
+```bpl
 ↑[1 2;3 4]           ⍝ 1 2
 ⊂3 ≡ 3              ⍝ $f
 ⊂3 = 3              ⍝ ⊂$t
@@ -274,7 +274,7 @@ Structural mapping (arithmetic, Each and indexing) preserves the mapped containe
 
 Fill follows the first item's prototype: zero, space, or recursively filled nesting. Empty arrays retain a prototype. Assembly pads unequal cells with fill.
 
-```apl
+```bpl
 5↑1 2                ⍝ 1 2 0 0 0
 3↑""                 ⍝ "   "
 ↑0⍴[1 2;3 4 5]       ⍝ 0 0
@@ -284,7 +284,7 @@ Fill follows the first item's prototype: zero, space, or recursively filled nest
 
 Scalar functions align leading axes. Missing trailing dimensions count as 1. Equal dimensions agree. A dimension of length 1 expands, including to zero. Axes of length 1 remain. Other mismatches: `LENGTH`.
 
-```apl
+```bpl
 [1 2 3 ⋄ 4 5 6]+10 20 ⍝ [11 12 13 ⋄ 24 25 26]
 [[10] ⋄ [20]]+[1 2 3 ⋄] ⍝ [11 12 13 ⋄ 21 22 23]
 ⍴[[10] ⋄]+1 2 3       ⍝ [3 1]ₓ
@@ -300,7 +300,7 @@ Positions and axes count from 0. Negative positions and axes count from the end.
 
 [Axis](glyphs/axis.qmd) `⍠` applies a function along axes given as numbers or names, as in `+/⍠0` and `+/⍠"month"`. [Rank](glyphs/rank.qmd) `⍤` applies it to trailing cells, and `⍤0` passes each element as a unit. `/ \ ⌽ ,` default to the last axis, and `⌿ ⍀ ⊖ ⍪` to the first. Replicate `N#Y` and the partitions `N⊂Y` and `N⊆Y` work along the first axis. Encode `⊤` puts its digits on the last axis, and Decode `⊥` reads them from it. Structural functions also accept axis lists.
 
-```apl
+```bpl
 m←[1 2 3 ⋄ 4 5 6]
 m1                   ⍝ 4 5 6
 ∞ 1⌷m                ⍝ 2 5
@@ -311,7 +311,7 @@ m1                   ⍝ 4 5 6
 
 Exact/exact comparison is exact. Approximate comparison uses relative tolerance `1E¯14`. Infinity equals itself, never a finite number.
 
-```apl
+```bpl
 0.3=0.1+0.2          ⍝ $t
 1r3=1x÷3x            ⍝ $t
 ```
@@ -326,7 +326,7 @@ Grade and interval index ignore tolerance. Order: numbers, characters, nested ar
 
 Dfns use lexical scope. Plain assignment is local. Modified and selective updates target the nearest binding. Arrays have value semantics: updating one name leaves other copies unchanged.
 
-```apl
+```bpl
 a←1 2 ⋄ b←a ⋄ a0←9 ⋄ b ⍝ 1 2
 ```
 

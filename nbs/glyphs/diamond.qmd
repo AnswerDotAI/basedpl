@@ -2,13 +2,13 @@
 
 At statement level, `⋄` separates expressions. A line break does the same.
 
-```apl
+```bpl
 x←2 ⋄ y←3 ⋄ x+y    ⍝ 5
 ```
 
 Inside [brackets](brackets.qmd), `⋄` separates major cells. A trailing `⋄` builds an array from one cell. A single number is a cell of rank 0, so `[42 ⋄]` is a one-item vector.
 
-```apl
+```bpl
 [1 2 ⋄ 3 4]        ⍝ 2 2⍴1 2 3 4
 ⍴[1 2 ⋄]           ⍝ [1 2]ₓ
 ⍴[42 ⋄]            ⍝ [1]ₓ
@@ -16,6 +16,6 @@ Inside [brackets](brackets.qmd), `⋄` separates major cells. A trailing `⋄` b
 
 Inside [parentheses](parentheses.qmd), `⋄` separates rows, and the result is a vector of the rows. Each row reads as brackets do, so it is always a vector.
 
-```apl
+```bpl
 (1 2 ⋄ 3)          ⍝ [[1 2] [3]]
 ```

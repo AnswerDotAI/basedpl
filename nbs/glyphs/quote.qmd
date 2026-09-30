@@ -2,7 +2,7 @@
 
 Single quotes hold exactly one character. Double quotes hold a string, which is a vector of any length.
 
-```apl
+```bpl
 ⍴'a'               ⍝ ⍬ₓ
 ⍴"a"               ⍝ [1]ₓ
 ⍴"abc"             ⍝ [3]ₓ
@@ -11,7 +11,7 @@ Single quotes hold exactly one character. Double quotes hold a string, which is 
 
 The quote character is `'''`. An apostrophe needs no escaping inside a string. Double a double quote inside a string.
 
-```apl
+```bpl
 •ucs '''           ⍝ 39ₓ
 ≢"can't"           ⍝ 5ₓ
 ≢"say ""hi"""      ⍝ 8ₓ
@@ -19,7 +19,7 @@ The quote character is `'''`. An apostrophe needs no escaping inside a string. D
 
 Literals separated by spaces form a strand, which is one vector. Characters side by side form a string. Strings side by side form a vector of strings. So `"x" "y"` is two keys, and `'x' 'y'` is the one key `"xy"`.
 
-```apl
+```bpl
 'a' 'b'            ⍝ "ab"
 ≢"aa" "bb"         ⍝ 2ₓ
 ```

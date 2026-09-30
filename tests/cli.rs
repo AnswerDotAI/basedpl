@@ -7,12 +7,12 @@ use std::{
 fn native_expression_and_diagnostic() {
     for (code, expected) in [("2×3+4", "14\n"), ("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂1 2", "⊂4ₓ\n⊂⊂4ₓ\n⊂[1 2]\n"), ("f←{⍵=0:0 ⋄ 1+∇⍵-1} ⋄ f 500", "500\n")]
     {
-        let output = Command::new(env!("CARGO_BIN_EXE_bapl")).args(["-e", code]).output().unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_bpl")).args(["-e", code]).output().unwrap();
         assert!(output.status.success());
         assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
         assert!(output.stderr.is_empty());
     }
-    let output = Command::new(env!("CARGO_BIN_EXE_bapl")).args(["-e", "¯2+)"]).output().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_bpl")).args(["-e", "¯2+)"]).output().unwrap();
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     let error = String::from_utf8(output.stderr).unwrap();
@@ -21,7 +21,7 @@ fn native_expression_and_diagnostic() {
 
 #[test]
 fn repl_continuation_recovery_and_eof() {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_bapl")).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_bpl")).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     child.stdin.take().unwrap().write_all("(2×3\n)+4\n1÷'a'\n2+2\n)\n¯2+5\n".as_bytes()).unwrap();
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(1));
@@ -29,7 +29,7 @@ fn repl_continuation_recovery_and_eof() {
     let errors = String::from_utf8(output.stderr).unwrap();
     assert_eq!(errors.matches("DOMAIN ERROR").count(), 1);
     assert_eq!(errors.matches("SYNTAX ERROR").count(), 1);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_bapl")).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_bpl")).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     child.stdin.take().unwrap().write_all(b"(2+\n").unwrap();
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(1));
@@ -46,7 +46,7 @@ fn worker_flushes_before_eof_and_recovers() {
         time::Duration,
     };
     let mut child =
-        Command::new(env!("CARGO_BIN_EXE_bapl")).arg("--worker").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        Command::new(env!("CARGO_BIN_EXE_bpl")).arg("--worker").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     let mut input = child.stdin.take().unwrap();
     let output = child.stdout.take().unwrap();
     let (send, recv) = mpsc::channel();
@@ -96,7 +96,7 @@ fn worker_flushes_before_eof_and_recovers() {
 fn batch_stdin_and_persistent_repl() {
     for args in [vec!["-"], vec![]] {
         let mut child =
-            Command::new(env!("CARGO_BIN_EXE_bapl")).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+            Command::new(env!("CARGO_BIN_EXE_bpl")).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
         child.stdin.take().unwrap().write_all("v←⍳10\n+/v\n".as_bytes()).unwrap();
         let result = child.wait_with_output().unwrap();
         assert!(result.status.success());
@@ -109,7 +109,7 @@ fn batch_stdin_and_persistent_repl() {
 fn programs_read_standard_input() {
     let run = |args: &[&str], input: &str| {
         let mut child =
-            Command::new(env!("CARGO_BIN_EXE_bapl")).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+            Command::new(env!("CARGO_BIN_EXE_bpl")).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
         child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
         let output = child.wait_with_output().unwrap();
         (String::from_utf8(output.stdout).unwrap(), String::from_utf8(output.stderr).unwrap())

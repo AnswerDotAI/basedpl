@@ -2,7 +2,7 @@
 
 `⍵` is the current dfn's right argument.
 
-```apl
+```bpl
 {⍵×⍵}4             ⍝ 16
 {+/⍵ ÷ ≢⍵}2 4 9    ⍝ 5
 ```

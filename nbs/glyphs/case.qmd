@@ -2,13 +2,13 @@
 
 `•c Y` folds case.
 
-```apl
+```bpl
 •c "AbC"           ⍝ "abc"
 ```
 
 `1•c Y` uppercases; `¯1•c Y` lowercases.
 
-```apl
+```bpl
 1•c "AbC"          ⍝ "ABC"
 ¯1•c "AbC"         ⍝ "abc"
 ```

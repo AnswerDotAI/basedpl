@@ -2,13 +2,13 @@
 
 `⍺` is the current dfn's left argument.
 
-```apl
+```bpl
 10{⍺-⍵}3           ⍝ 7
 ```
 
 `⍺←expression` supplies a lazy default, evaluated only on monadic calls.
 
-```apl
+```bpl
 {⍺←2 ⋄ ⍺×⍵}3       ⍝ 6
 4{⍺←2 ⋄ ⍺×⍵}3      ⍝ 12
 ```

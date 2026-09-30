@@ -4498,7 +4498,7 @@ apply←{⍶ ⍵} ⋄ f←{⎕←⍵ ⋄ ⍵} ⋄ (f apply)/1 2 3
 ⍝ — A whole strand binds as one array operand
 offset←{+/⍶+⍵} ⋄ (1 2 offset)3   ⍝ 9
 
-⍝⍝ Scalar apl
+⍝⍝ Scalar bpl
 
 ⍝ — Reduction remains right-associated
 -/1 2 3   ⍝ 2
@@ -5038,44 +5038,44 @@ M←"aa" "bb":2 2⍴⍳4 ⋄ M∪M   ⍝ "aa" "bb":2 2⍴⍳4
 ⍝⍝ Libraries
 
 ⍝ — Signed 8-bit integers
-•load "lib/numeric.apl"
+•load "lib/numeric.bpl"
 8 int 0 127 128 255
 ⍝ =>
 0 127 ¯128 ¯1
 
 ⍝ — Normal random array shape
-•load "lib/numeric.apl"
+•load "lib/numeric.bpl"
 ⍴NormRand2 3
 ⍝ =>
 [2 3]ₓ
 
 ⍝ — Phinary decoding
-•load "lib/numeric.apl"
+•load "lib/numeric.bpl"
 1e¯12>|42-phinary"10100010.00100001"
 ⍝ =>
 $t
 
 ⍝ — Associative scan along the last axis
-•load "lib/array.apl"
+•load "lib/array.bpl"
 +ascana [1 2 3 ⋄ 4 5 6]
 ⍝ =>
 [1 3 6 ⋄ 4 9 15]
 
 ⍝ — Unwrap line breaks
-•load "lib/string.apl"
+•load "lib/string.bpl"
 unwrap "abc",(•ucs 10),"def"
 ⍝ =>
 "abc def"
 
 ⍝ — Parent-first traversal
-•load "lib/tree.apl"
+•load "lib/tree.bpl"
 t←[1 [2 ,4 ,5] ,3]
 ⍬{⍺,↑⍵}trav{1↓⍵}t
 ⍝ =>
 1 2 4 5 3
 
 ⍝ — Children-first traversal
-•load "lib/tree.apl"
+•load "lib/tree.bpl"
 t←[1 [2 ,4 ,5] ,3]
 ⍬{⍺,↑⍵}ravt{1↓⍵}t
 ⍝ =>
@@ -5269,47 +5269,47 @@ fill •tojson fill •json "{""x"":[null,2]}"
 ⍝ error: DOMAIN ERROR
 
 ⍝ — LZW repeated-code expansion and capped dictionary
-•load "lib/dyalog.apl" ⋄ [0 packZ packZ "aaaaaa";0 packZ 1 packZ "abababab"]
+•load "lib/dyalog.bpl" ⋄ [0 packZ packZ "aaaaaa";0 packZ 1 packZ "abababab"]
 "aaaaaa" "abababab"
 
 ⍝ — LZW dictionary
-•load "lib/dyalog.apl" ⋄ ¯3 packZ "aba"
+•load "lib/dyalog.bpl" ⋄ ¯3 packZ "aba"
 ["a " ⋄ "b " ⋄ "ab" ⋄ "ba"]
 
 ⍝ — LZW alphabet exceeds code width
-•load "lib/dyalog.apl" ⋄ 1 packZ "abc"
+•load "lib/dyalog.bpl" ⋄ 1 packZ "abc"
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Absolute-year calendar layout
-•load "lib/dyalog.apl" ⋄ ⍴cal2025
+•load "lib/dyalog.bpl" ⋄ ⍴cal2025
 [33 66]ₓ
 
 ⍝ — Unification substitutes repeated variables on either side
-•load "lib/dyalog.apl" ⋄ "xy" unify ['f' 3 'y';'f' 'x' 'x']
+•load "lib/dyalog.bpl" ⋄ "xy" unify ['f' 3 'y';'f' 'x' 'x']
 'f' 3 3
 
 ⍝ — Unification rejects cyclic substitution
-•load "lib/dyalog.apl" ⋄ 'x' unify ['x';'f' 'x']
+•load "lib/dyalog.bpl" ⋄ 'x' unify ['x';'f' 'x']
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Unification rejects distinct constants
-•load "lib/dyalog.apl" ⋄ 'x' unify ['f' 1;'f' 2]
+•load "lib/dyalog.bpl" ⋄ 'x' unify ['f' 1;'f' 2]
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Unification rejects different term shapes
-•load "lib/dyalog.apl" ⋄ 'x' unify ['f' 1;'f' 1 2]
+•load "lib/dyalog.bpl" ⋄ 'x' unify ['f' 1;'f' 1 2]
 ⍝ error: LENGTH ERROR
 
 ⍝ — Repeating rational carry and fractional normalization
-•load "lib/dyalog.apl" ⋄ rs←"0123456789"ratsum ⋄ ["<0|0|3>"rs"<0|0|6>";"<0|0.5|0>"rs"<0|0.5|0>"]
+•load "lib/dyalog.bpl" ⋄ rs←"0123456789"ratsum ⋄ ["<0|0|3>"rs"<0|0|6>";"<0|0.5|0>"rs"<0|0.5|0>"]
 "<0|1|0>" "<0|1|0>"
 
 ⍝ — Repeating rational negation and binary carry
-•load "lib/dyalog.apl" ⋄ [("0123456789"ratsum)"<0|1|0>";"<0|1|0>"("01"ratsum)"<0|1|0>"]
+•load "lib/dyalog.bpl" ⋄ [("0123456789"ratsum)"<0|1|0>";"<0|1|0>"("01"ratsum)"<0|1|0>"]
 "<9|9|0>" "<0|10|0>"
 
 ⍝ — Repeating rational invalid input
-•load "lib/dyalog.apl" ⋄ "<0|1|0>"("0123456789"ratsum)"<0||0>"
+•load "lib/dyalog.bpl" ⋄ "<0|1|0>"("0123456789"ratsum)"<0||0>"
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Append a field through a record selected by dot indexing

@@ -2,7 +2,7 @@
 
 `X g⊗Y` applies `g` to every pair. Two atoms call `g` directly. Array arguments supply the result shape `(⍴X),⍴Y`.
 
-```apl
+```bpl
 5+⊗5               ⍝ 10
 5+⊗⊂5              ⍝ ⊂10
 1,⊗2               ⍝ 1 2

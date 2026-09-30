@@ -2,7 +2,7 @@
 
 `f⍤R` applies `f` to trailing cells of rank `R`. Frames use leading agreement. Results assemble with fill. A space ends the operand, so the argument needs no separator.
 
-```apl
+```bpl
 m←2 3⍴⍳6
 +/⍤1 m             ⍝ 3 12
 ```
@@ -17,7 +17,7 @@ Negative ranks count back from argument rank. Excessive ranks clamp. Empty frame
 
 Rank 0 passes each position as a scalar, not the value it holds. So `⊢⍤0` returns its argument unchanged, and each item of a nested array arrives enclosed. [Each](each.qmd) passes the items themselves.
 
-```apl
+```bpl
 v←[[1 2] [3 4 5]]
 ≢⍤0 v              ⍝ [1 1]ₓ
 ≢¨v                ⍝ [2 3]ₓ
@@ -26,7 +26,7 @@ v←[[1 2] [3 4 5]]
 
 `∞` is the whole argument, and `¯∞` is rank 0. So `⍤1 ∞` pairs each row on the left with the whole right argument. That gives the matrix-vector product, which also multiplies matrices. A literal argument right after a literal operand needs brackets, because a list of literals would take it into the operand.
 
-```apl
+```bpl
 m←[1 2 3 ⋄ 4 5 6]
 m +⌿∘×⍤1 ∞ [1 2 3]                   ⍝ 14 32
 m +⌿∘×⍤1 ∞ [1 10 ⋄ 2 20 ⋄ 3 30]      ⍝ [14 140 ⋄ 32 320]

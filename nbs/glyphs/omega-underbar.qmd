@@ -2,7 +2,7 @@
 
 `⍹` makes a defined operator dyadic and denotes its right operand.
 
-```apl
+```bpl
 op←{⍶+⍹×⍵} ⋄ (2 op 3)4 ⍝ 14
 ```
 

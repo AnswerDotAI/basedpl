@@ -2,7 +2,7 @@
 
 `∞` and `¯∞` are approximate real infinities.
 
-```apl
+```bpl
 ∞+3                ⍝ ∞
 3÷∞                ⍝ 0
 ⌊/⍬                ⍝ ∞
@@ -11,7 +11,7 @@
 
 `¯∞` < every finite real < `∞`. Each infinity equals itself. Empty min/max identities are infinite even for exact arrays. As IEEE 754 defines, an undefined result with an infinity is NaN:
 
-```apl
+```bpl
 ∞-∞                ⍝ $n
 0×∞                ⍝ $n
 ```

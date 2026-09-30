@@ -2,7 +2,7 @@
 
 `"0123456789"`. Read-only; name is case-insensitive.
 
-```apl
+```bpl
 3↑•d               ⍝ "012"
 "a2b"∊•d           ⍝ $f $t $f
 ```

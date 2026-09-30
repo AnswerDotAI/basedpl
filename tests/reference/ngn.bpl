@@ -1832,7 +1832,7 @@ m←45 60 33 50 66 19⋄m=50 # ⍳≢m   ⍝ [3]ₓ
 ⍝ ngn:598 —
 [2 2 0;1 2]⌷3 3⍴⍳9   ⍝ [7 8 ⋄ 7 8 ⋄ 1 2]
 
-⍝ ngn:599 — bAsedPL counts negative positions from the end
+⍝ ngn:599 — BPL counts negative positions from the end
 ¯1⌷3 5 8   ⍝ 8
 
 ⍝ ngn:600 —
@@ -1871,7 +1871,7 @@ a←2 3⍴0⋄a.[1;0 2]←1⋄a   ⍝ [0 0 0 ⋄ 1 0 1]
 ⍝ ngn:611 —
 1⌷23 54 38   ⍝ 54
 
-⍝ ngn:612 — bAsedPL counts negative positions from the end
+⍝ ngn:612 — BPL counts negative positions from the end
 1 ¯1⌷[100 101 102 ⋄ 110 111 112]   ⍝ 112
 
 ⍝ ngn:613 —
@@ -1888,7 +1888,7 @@ a←2 3⍴0⋄a.[1;0 2]←1⋄a   ⍝ [0 0 0 ⋄ 1 0 1]
 ⍝ ngn:616 —
 1⌷[100 101 102 ⋄ 110 111 112]   ⍝ 110 111 112
 
-⍝ ngn:617 — bAsedPL counts negative positions from the end
+⍝ ngn:617 — BPL counts negative positions from the end
 ¯1⌷23 54 38   ⍝ 38
 
 ⍝ ngn:618 —

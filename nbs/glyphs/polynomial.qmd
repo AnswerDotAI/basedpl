@@ -6,13 +6,13 @@ J's `p.` family. Ranks: `1` monadic, `1 0` dyadic.
 
 `C⌻X`: evaluate **constant-first** coefficients at `X`. [Decode](decode.qmd) uses the opposite order.
 
-```apl
+```bpl
 [1 2 3]ₓ⌻[0 1 2]ₓ   ⍝ [1 6 17]ₓ
 ```
 
 `⌻C`: leading coefficient and numerical roots, as a nested pair. Ignores trailing zeros. Constants have no roots.
 
-```apl
+```bpl
 ≢1⊃⌻1 0 1           ⍝ 2ₓ
 ```
 
@@ -20,7 +20,7 @@ J's `p.` family. Ranks: `1` monadic, `1 0` dyadic.
 
 `[M R]⌻X`: `M××/X-R`. `⊂R` assumes `M=1`; use `⊂,R` for one root. Monadic `⌻` gives coefficients.
 
-```apl
+```bpl
 [2;1 3]ₓ⌻[0 1 2 3]ₓ        ⍝ [6 0 ¯2 0]ₓ
 ⌻[2;1 3]ₓ                  ⍝ [6 ¯8 2]ₓ
 ⌻⊂[1 3]ₓ                   ⍝ [3 ¯4 1]ₓ
@@ -30,7 +30,7 @@ J's `p.` family. Ranks: `1` monadic, `1 0` dyadic.
 
 Enclosed matrix: one row per term, coefficient then exponents. Enclose one coordinate vector to evaluate one point. A single coordinate extends to all variables. Batch axes collect answers.
 
-```apl
+```bpl
 t←⊂[1 2 0 ⋄ 1 0 2]ₓ
 t⌻⊂[3 4]ₓ                               ⍝ 25ₓ
 t⌻[3 4;5 12]ₓ                           ⍝ [25 169]ₓ

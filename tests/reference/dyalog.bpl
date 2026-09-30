@@ -397,259 +397,259 @@ N←3 2 5 4 6 1 3 ⋄ N#⍨2|N   ⍝ 3 5 1 3
 3 5 7⌹[1 1 ⋄ 1 2 ⋄ 1 3]   ⍝ 1 2
 
 ⍝ — Dyalog dfns: compression round trip
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 0 packN packN [0 0 3 ⋄ 0 0 4]
 ⍝ =>
 [0 0 3 ⋄ 0 0 4]
 
 ⍝ — Dyalog dfns: compression round trip
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 0 packR packR ["abb" ⋄ "ccc"]
 ⍝ =>
 ["abb" ⋄ "ccc"]
 
 ⍝ — Dyalog dfns: compression round trip
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 0 packU packU ["abb" ⋄ "ccc"]
 ⍝ =>
 ["abb" ⋄ "ccc"]
 
 ⍝ — Dyalog dfns: compression round trip
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 0 packB packB [0 1 1 ⋄ 0 1 0]
 ⍝ =>
 [0 1 1 ⋄ 0 1 0]
 
 ⍝ — Dyalog dfns: compression round trip
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 0 packX packX ["abb" ⋄ "ccc"]
 ⍝ =>
 ["abb" ⋄ "ccc"]
 
 ⍝ — Dyalog dfns: compression round trip
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 0 packQ packQ ["abb" ⋄ "ccc"]
 ⍝ =>
 ["abb" ⋄ "ccc"]
 
 ⍝ — Dyalog dfns: compression round trip
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 0 packS packS ["abb" ⋄ "ccc"]
 ⍝ =>
 ["abb" ⋄ "ccc"]
 
 ⍝ — Dyalog dfns: compression round trip
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 0 pack_4 pack_4 ["abb" ⋄ "ccc"]
 ⍝ =>
 ["abb" ⋄ "ccc"]
 
 ⍝ — Dyalog dfns: compression round trip
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 0 packH packH ["abb" ⋄ "ccc"]
 ⍝ =>
 ["abb" ⋄ "ccc"]
 
 ⍝ — Dyalog dfns: queens up to symmetry
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 queens4
 ⍝ =>
 1⍴⊂["· ⍟ · ·" ⋄ "· · · ⍟" ⋄ "⍟ · · ·" ⋄ "· · ⍟ ·"]
 
 ⍝ — Dyalog dfns: nested macro definitions
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 mac "A=++ B=(2A) B"
 ⍝ =>
 "++"
 
 ⍝ — Dyalog dfns: internal box borders
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 [1 2;1 2]box ["abc" ⋄ "def"]
 ⍝ =>
 ["┌─┬─┬─┐" ⋄ "│a│b│c│" ⋄ "├─┼─┼─┤" ⋄ "│d│e│f│" ⋄ "└─┴─┴─┘"]
 
 ⍝ — Dyalog dfns: lisp
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 lisp "((lambda (x) (+ x 1)) 41)"
 ⍝ =>
 42
 
 ⍝ — Dyalog dfns: lisp
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 lisp "(cond ((= 2 3) 10) (else 20))"
 ⍝ =>
 20
 
 ⍝ — Dyalog dfns: lisp
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 lisp "(quote (a (b c)))"
 ⍝ =>
 ["a" ["b" "c"]]
 
 ⍝ — Dyalog dfns: lisp
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 0 lisp "(+ 2 3)"
 ⍝ =>
 "+" 2 3
 
 ⍝ — Dyalog dfns: lisp
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 lisp "(+ 2"
 ⍝ =>
 "unexpected eof"
 
 ⍝ — Dyalog dfns: Cut
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 1 0 1 0(+/Cut ¯1)1 2 3 4
 ⍝ =>
 2 4
 
 ⍝ — Dyalog dfns: Cut
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 0 1 0 1(+/Cut 2)1 2 3 4
 ⍝ =>
 3 7
 
 ⍝ — Dyalog dfns: Cut
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 0 1 0 1(+/Cut ¯2)1 2 3 4
 ⍝ =>
 1 3
 
 ⍝ — Dyalog dfns: Cut
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 [1 1 ⋄ 2 2](⊢Cut 0)3 4⍴⍳12
 ⍝ =>
 [5 6 ⋄ 9 10]
 
 ⍝ — Dyalog dfns: Cut
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 2(+/Cut 3)⍳5
 ⍝ =>
 1 3 5 7 4
 
 ⍝ — Dyalog dfns: Cut
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 2(+/Cut ¯3)⍳5
 ⍝ =>
 1 3 5 7
 
 ⍝ — Dyalog dfns: Cut
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 [1 0 1;1 0 1 0] (+/,)Cut 1 (3 4⍴⍳12)
 ⍝ =>
 [10 18 ⋄ 17 21]
 
 ⍝ — Dyalog dfns: Cut
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 (+/Cut 1)1 2 1 4
 ⍝ =>
 3 5
 
 ⍝ — Dyalog dfns: eis
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 [eis 1;1 2 eis 3 4;eis [1 2;3 4]]
 ⍝ =>
 [⊂[1] [[1 2] [3 4]] [[1 2] [3 4]]]
 
 ⍝ — Dyalog dfns: iotag
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 iotag2 3
 ⍝ =>
 [[0 0] [0 1] [0 2] ⋄ [1 0] [1 1] [1 2]]
 
 ⍝ — Dyalog dfns: iotag
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 iotag¯3
 ⍝ =>
 0 ¯1 ¯2
 
 ⍝ — Dyalog dfns: iotag
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 iotag 'c'
 ⍝ =>
 "abc"
 
 ⍝ — Dyalog dfns: descending character interval
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 'c'iotag'a'
 ⍝ =>
 "cba"
 
 ⍝ — Dyalog dfns: row search
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 [1 2 3 ⋄ 4 5 6]iotag [4 5 6 ⋄ 1 2 3]
 ⍝ =>
 [1 0]ₓ
 
 ⍝ — Dyalog dfns: ssword
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 ssword "alpha alphabet alpha12 alpha" "alpha" 'X'
 ⍝ =>
 "X alphabet alpha12 X"
 
 ⍝ — Dyalog dfns: tokens
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 1 tokens "x←1 2 3 ⋄ 'abc' ⍝ comment"
 ⍝ =>
 "x" "←" "1 2 3" " " "⋄" " " "'abc'" " " "⍝ comment"
 
 ⍝ — Dyalog dfns: word boundaries
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 words¨"" "123" "abc12 + 34def" "abc_def"
 ⍝ =>
 [0⍴⊂"";["123"];"abc12" " + 34" "def";["abc_def"]]
 
 ⍝ — Dyalog dfns: word boundaries
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 ["abc" "123"]words "a12+b3 cZ1a"
 ⍝ =>
 "a12" "+" "b3" " " "c" "Z1" "a"
 
 ⍝ — Dyalog dfns: compression round trip
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 0 packD packD ["abb" ⋄ "ccc"]
 ⍝ =>
 ["abb" ⋄ "ccc"]
 
 ⍝ — Dyalog dfns: run boundaries and escaped characters
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 0 packT packT (257⍴'a'),"bbb",(3⍴•ucs 0),(260⍴'c')
 ⍝ =>
 257⍴'a' , "bbb",(3⍴•ucs 0),(260⍴'c')
 
 ⍝ — Dyalog dfns: Baby skips a store with a negative accumulator
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 m←⌽(32⍴2)⊤32↑0 16389 49152 24582 57344 13 0 ⋄ 2⊥⌽6⌷baby(m)
 ⍝ =>
 0
 
 ⍝ — Dyalog dfns: parse
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 g←"A 1 2 3" "F + ×" 'B' "" "F:A→B" "A:B→A" ⋄ g parse "1+(2×3)"
 ⍝ =>
 [" A         " ⋄ "┌┴─┐       " ⋄ "1 ┌┴─┐     " ⋄ "  + ┌┴─┐   " ⋄ "    ( ┌┴─┐ " ⋄ "      2 ┌┴┐" ⋄ "        × 3"]
 
 ⍝ — Dyalog dfns: parse
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 g←"A 1 2 3" "F + ×" 'B' "" "F:A→B" "A:B→A" ⋄ c←[0 g]parse "" ⋄ c parse "1+2×3"
 ⍝ =>
 ["    A    " ⋄ " ┌──┴──┐ " ⋄ "┌┴─┐  ┌┴┐" ⋄ "1 ┌┴┐ × 3" ⋄ "  + 2    "]
 
 ⍝ — Dyalog dfns: parse
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 g←"A 1 2 3" "F + ×" 'B' "" "F:A→B" "A:B→A" ⋄ g parse ""
 ⍝ =>
 ["  ┌───┬───┐" ⋄ "  │A  │B  │" ⋄ "┌─┼───┼───┤" ⋄ "│A│   │1 A│" ⋄ "├─┼───┼───┤" ⋄ "│F│1 B│   │" ⋄ "└─┴───┴───┘"]
 
 ⍝ — Dyalog dfns: parse
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 g←"A 1 2 3" "F + ×" 'B' "" "F:A→B" "A:B→A" ⋄ g parse "1+z"
 ⍝ =>
 ["┌─┬─┬─┐" ⋄ "│A│F│z│" ⋄ "│1│+│ │" ⋄ "└─┴─┴─┘"]
 
 ⍝ — Dyalog dfns: parse
-•load "lib/dyalog.apl"
+•load "lib/dyalog.bpl"
 g←"N=A" "N 1 2 3" "F + ×" 'B' "" "F:N→B" "N:B→N" ⋄ g parse "1+2×3"
 ⍝ =>
 ["    A    " ⋄ " ┌──┴──┐ " ⋄ "┌┴─┐  ┌┴┐" ⋄ "1 ┌┴┐ × 3" ⋄ "  + 2    "]

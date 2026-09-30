@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE language>
-<language name="APL" section="Sources" version="1" kateversion="5.0" extensions="*.apl" license="Apache-2.0">
+<language name="BPL" section="Sources" version="1" kateversion="5.0" extensions="*.bpl" license="Apache-2.0">
   <highlighting>
     <contexts>
       <context name="Normal" attribute="Normal Text" lineEndContext="#stay">

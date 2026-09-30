@@ -4,7 +4,7 @@
 
 ## JSON lines
 
-Run `bapl --worker`. Send one JSON request per line. Each request gets one flushed JSON reply, in order. Names persist between requests.
+Run `bpl --worker`. Send one JSON request per line. Each request gets one flushed JSON reply, in order. Names persist between requests.
 
 ```json
 {"code":"v←⍳10"}
@@ -25,13 +25,13 @@ A request that can't run gets a `REQUEST ERROR` in its result, and the session c
 
 ### Requests
 
-`code` evaluates APL source. `timeout_ms` sets a deadline. `"echo":false` suppresses implicit display, but not explicit output.
+`code` evaluates BPL source. `timeout_ms` sets a deadline. `"echo":false` suppresses implicit display, but not explicit output.
 
 ```json
 {"id":1,"code":"+/⍳10","timeout_ms":2000,"echo":false}
 ```
 
-`bindings` maps names to encoded values. `call` applies a function to one or two encoded `args`, without generating APL source.
+`bindings` maps names to encoded values. `call` applies a function to one or two encoded `args`, without generating BPL source.
 
 ```json
 {"id":2,"call":"+","args":[2,3],"echo":false}
@@ -59,7 +59,7 @@ Use the tags for infinities and NaN, never raw `NaN` or `Infinity` tokens. Integ
 
 ## Python worker
 
-Python's `Worker` manages a persistent `bapl --worker` subprocess with deadlines and a hard-kill fallback.
+Python's `Worker` manages a persistent `bpl --worker` subprocess with deadlines and a hard-kill fallback.
 
 ```python
 from basedpl.worker import Worker

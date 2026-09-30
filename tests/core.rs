@@ -52,11 +52,11 @@ fn language_examples() {
             let mut session = None;
             let mut code = String::new();
             for (line, text) in text.lines().enumerate() {
-                if text == "```apl" {
+                if text == "```bpl" {
                     session = Some(Session::new());
                     continue;
                 }
-                let Some(apl) = session.as_mut() else { continue; };
+                let Some(bpl) = session.as_mut() else { continue; };
                 let closing = text.starts_with("```");
                 let (source, expected) = text.split_once(" ⍝ ").map_or((text, None), |(c, e)| (c, Some(e)));
                 if !closing {
@@ -64,7 +64,7 @@ fn language_examples() {
                     code.push('\n');
                 }
                 if expected.is_none() && !closing { continue; }
-                let result = apl.eval(&code);
+                let result = bpl.eval(&code);
                 let actual = match result.error { Some(e) => Err(e), None => Ok(result.value) };
                 if let Some(expected) = expected {
                     match (actual, run(expected)) {
@@ -439,13 +439,13 @@ fn binding_error_recovery() {
 
 #[test]
 fn definitions_retain_only_needed_sources() {
-    let source = Source::new("definition.apl", "bad←{1÷⍵}");
+    let source = Source::new("definition.bpl", "bad←{1÷⍵}");
     let weak = Arc::downgrade(&source);
     let mut s = Session::new();
     assert!(s.eval_source(source, EvalOptions::default()).error.is_none());
     assert!(weak.upgrade().is_some());
     let error = s.eval("bad 'a'").error.unwrap();
-    assert_eq!(error.span.source.name, "definition.apl");
+    assert_eq!(error.span.source.name, "definition.bpl");
     assert_eq!(&error.span.source.text[error.span.range.clone()], "÷");
     assert!(s.eval("bad←+").error.is_none());
     assert!(weak.upgrade().is_some());
@@ -483,16 +483,16 @@ fn diagnostic_width_and_call_context() {
     let mut s = Session::new();
     let error = s.eval("界←1 ⋄\t界÷'a'").error.unwrap();
     assert_eq!(error.to_string(), "DOMAIN ERROR: expected numeric elements\n --> <input>:1:11\n界←1 ⋄  界÷'a'\n          ^");
-    assert!(s.eval_source(Source::new("old.apl", "bad←{1÷⍵} ⋄ outer←{bad ⍵}"), EvalOptions::default()).error.is_none());
+    assert!(s.eval_source(Source::new("old.bpl", "bad←{1÷⍵} ⋄ outer←{bad ⍵}"), EvalOptions::default()).error.is_none());
     let e = s.eval("outer 'a'").error.unwrap();
     assert_eq!(&e.span.source.text[e.span.range.clone()], "÷");
     assert_eq!(e.calls.iter().map(|s| &s.source.text[s.range.clone()]).collect::<Vec<_>>(), ["bad", "outer"]);
-    assert!(e.to_string().contains("called from old.apl:"));
+    assert!(e.to_string().contains("called from old.bpl:"));
     let deep = s.eval("down←{⍵=0:1÷'a' ⋄ 1+down ⍵-1} ⋄ down 100").error.unwrap();
     assert_eq!(deep.calls.len(), 101);
     assert_eq!(deep.to_string().matches("called from").count(), 6);
     assert!(deep.to_string().contains("95 more calls"));
-    let empty = Source::new("empty.apl", "f←{}");
+    let empty = Source::new("empty.bpl", "f←{}");
     let weak = Arc::downgrade(&empty);
     s.eval_source(empty, EvalOptions::default());
     assert!(weak.upgrade().is_some());

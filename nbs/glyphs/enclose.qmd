@@ -4,7 +4,7 @@
 
 [Brackets](brackets.qmd) round one item make a one-item vector, not a scalar. `⊂` cannot enclose a function, because `⊂` next to a function forms a train. [Parentheses](parentheses.qmd) round a glyph enclose it instead: `(+)` is a scalar holding `+`. Parentheses round a name only group, so a named function has no enclosing spelling of its own: `⍬⍴[f]` reshapes a one-item vector to a scalar.
 
-```apl
+```bpl
 ⍴⊂1 2 3            ⍝ ⍬ₓ
 ↑⊂1 2 3            ⍝ 1 2 3
 ⊂3 ≡ 3             ⍝ $f
@@ -12,20 +12,20 @@
 
 With [axes](axis.qmd), `⊂⍠K Y` encloses cells on axes `K`.
 
-```apl
+```bpl
 ⊂⍠1 (2 3⍴⍳6)       ⍝ [[0 1 2] [3 4 5]]
 ```
 
 `N⊂Y` starts partitions at positive marks along the leading axis. Each partition is a block of major cells. Leading zero marks are ignored.
 
-```apl
+```bpl
 1 0 1 0⊂"abcd"     ⍝ "ab" "cd"
 1 0 1⊂3 2⍴⍳6       ⍝ [[0 1 ⋄ 2 3] [4 5 ⋄]]
 ```
 
 A mark greater than 1 starts extra empty partitions. Unit marks extend. `N⊂⍠K Y` partitions along axis `K` instead. `N⊂⍤1 Y` partitions each row.
 
-```apl
+```bpl
 1 0 1⊂⍠1 (2 3⍴⍳6)  ⍝ [[0 1 ⋄ 3 4] [[2] ⋄ [5]]]
 1 0 1⊂⍤1 (2 3⍴⍳6)  ⍝ [[0 1] [2] ⋄ [3 4] [5]]
 ```

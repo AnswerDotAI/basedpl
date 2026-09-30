@@ -40,7 +40,7 @@ def expected(presses):
             if s: out, state = out + s['terminator'] * (kind != 'delete'), None
             if s and kind in ('space', 'delete'): continue
             special = {'space': ' ', 'delete': '\x08'}
-            value = special[kind] if kind in special else layout['option'].get(key[0], '') if kind == 'option' else layout['plain'].get(key[0], key[0])
+            value = special[kind] if kind in special else layout['option'].get(key[0], '') if kind == 'option' else key[0]
         state, out = (value['state'], out) if isinstance(value, dict) else (None, out + value)
     return out
 
@@ -54,21 +54,21 @@ def codes(presses):
 
 
 def test_layout_is_generated_from_the_mapping():
+    assert gen['attribute']('"&<>') == '"&#x0022;&#x0026;&#x003C;&#x003E;"'
     assert gen['OUTPUT'].read_text() == gen['keylayout'](layout)
 
 
 def test_macos_follows_the_mapping_rules():
     parsed = parse(gen['OUTPUT'].read_text())
     starts = {v['state']: [('option', k)] for k, v in layout['option'].items() if isinstance(v, dict)}
-    starts |= {v['state']: [('key', k)] for k, v in layout['plain'].items()}
     while len(starts) < len(layout['states']):
         starts |= {v['state']: starts[n] + [('key', k)] for n in list(starts) for k, v in layout['states'][n]['keys'].items() if isinstance(v, dict)}
-    sequences = [[('option', k)] for k in layout['option']] + [[('key', '^'), ('space',), ('key', '^')]]
+    sequences = [[('option', k)] for k in layout['option']] + [[('key', '^'), ('key', '2')]]
     for name, start in starts.items():
         sequences += [start + [('key', k)] for k in layout['states'][name]['keys']]
         sequences += [start + [('space',), ('key', 'x')], start + [('key', 'x')], start + [('delete',), ('key', 'a')], start + [('option', 'h')]]
     for presses in sequences: assert simulate(parsed, codes(presses)) == expected(presses), presses
     assert expected([('option', 'o'), ('key', '-')]) == '⊖'
-    assert expected([('key', '^'), ('key', '-'), ('key', '1')]) == '⁻¹'
+    assert expected([('option', '6'), ('key', '-'), ('key', '1')]) == '⁻¹'
     assert expected([('option', 'o'), ('space',), ('key', '|')]) == '○|'
     assert expected([('option', 'q'), ('key', 'x')]) == '⎕x'

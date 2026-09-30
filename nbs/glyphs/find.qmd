@@ -2,7 +2,7 @@
 
 `X⍷Y` marks starting positions where the whole pattern `X` occurs in `Y`. The result has `Y`'s shape. Overlaps count.
 
-```apl
+```bpl
 "ana"⍷"banana"      ⍝ $f $t $f $t $f $f
 1 1⍷1 1 1          ⍝ $t $t $f
 ```

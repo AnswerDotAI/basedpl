@@ -2,13 +2,13 @@
 
 `⊣Y` returns `Y`.
 
-```apl
+```bpl
 ⊣1 2               ⍝ 1 2
 ```
 
 `X⊣Y` returns `X`. Both arguments evaluate.
 
-```apl
+```bpl
 1 2⊣3 4            ⍝ 1 2
 ```
 

@@ -2,13 +2,13 @@
 
 `⍟Y`: ln Y. Pervasive.
 
-```apl
+```bpl
 ⍟1                ⍝ 0
 ```
 
 `X⍟Y`: log<sub>X</sub> Y. Pervasive.
 
-```apl
+```bpl
 2⍟8               ⍝ 3
 10⍟100            ⍝ 2
 ```

@@ -3,30 +3,30 @@
   src: local("BQN386"), url("https://cdn.jsdelivr.net/gh/dzaima/BQN386@master/BQN386.woff2") format("woff2");
 }
 
-pre.apl,
-.apl pre,
-.apl code,
-pre.apl ~ .cell-output pre,
-pre.apl ~ .cell-output code,
+pre.bpl,
+.bpl pre,
+.bpl code,
+pre.bpl ~ .cell-output pre,
+pre.bpl ~ .cell-output code,
 .aplnb_out {
   font-family: BQN386, monospace;
   line-height: 1.05;
 }
 
-pre.apl,
-.apl pre,
-pre.apl ~ .cell-output pre,
+pre.bpl,
+.bpl pre,
+pre.bpl ~ .cell-output pre,
 .aplnb_out {
   font-size: calc(0.875em + 1pt);
 }
 
-pre.apl span.op,
-.apl code span.op {
+pre.bpl span.op,
+.bpl code span.op {
   color: #8B3FA0;
 }
 
-pre.apl span.va,
-.apl code span.va {
+pre.bpl span.va,
+.bpl code span.va {
   color: #8f5902;
 }
 

@@ -1,11 +1,11 @@
 // Based on Adám Brudzewsky's APL language bar: https://abrudz.github.io/lb
 // MIT License, Copyright (c) 2011-2020 Nikolay G. Nikolov and Adam Brudzevski.
-// bAsedPL name completion, editor adapters, dark mode and overlay layout by Jeremy Howard.
+// BPL name completion, editor adapters, dark mode and overlay layout by Jeremy Howard.
 ((symbols, input, layout) => {
     const d = document;
     if (d.querySelector('.ngn_lb') || d.querySelector('meta[name=generator][content^=quarto]')) return;
 
-    const {inCode, aplStart, entry, press, reset} = input(symbols, layout);
+    const {inCode, bplStart, entry, press, reset} = input(symbols, layout);
     const shortcuts = new Map(symbols.map(({glyph, shortcut}) => [glyph, shortcut]));
     let leftAlt = false, rightAlt = false;
 
@@ -29,7 +29,7 @@
         if (m) {
             const model = m.getModel(), p = m.getPosition(), selection = m.getSelection();
             if (model.getLanguageId() === 'markdown' || m.getOption(window.monaco.editor.EditorOption.readOnly)) return;
-            return {id: m, text: model.getValue(), pos: model.getOffsetAt(p), empty: selection.isEmpty(), apl: model.getLanguageId() === 'apl',
+            return {id: m, text: model.getValue(), pos: model.getOffsetAt(p), empty: selection.isEmpty(), bpl: model.getLanguageId() === 'bpl',
                 rect: () => {
                     const r = m.getDomNode().getBoundingClientRect(), c = m.getScrolledVisiblePosition(p);
                     return {left: r.left + c.left, bottom: r.top + c.top + c.height};
@@ -68,8 +68,8 @@
     }
 
     const host = d.createElement('div');
-    host.innerHTML = `<div class="ngn_lb" aria-label="APL symbols"><button class="ngn_x" title="Close symbol bar">×</button><button class="ngn_o" title="Toggle overlay/push-down"></button></div>
-        <div class="aplnb_choices" role="group" aria-label="APL symbol completions" hidden></div>
+    host.innerHTML = `<div class="ngn_lb" aria-label="BPL symbols"><button class="ngn_x" title="Close symbol bar">×</button><button class="ngn_o" title="Toggle overlay/push-down"></button></div>
+        <div class="aplnb_choices" role="group" aria-label="BPL symbol completions" hidden></div>
         <style>
         .ngn_lb,.aplnb_choices{background:#eee;color:#111;font:15px 'SAX2',monospace;z-index:2147483647}
         .ngn_lb{position:fixed;top:0;left:0;right:0;border-bottom:1px solid #999;padding:2px}
@@ -165,9 +165,8 @@
         const e = editor(ev.target);
         if (!e || ev.isComposing || ev.defaultPrevented) { cancel(); return; }
         lastEditor = e;
-        const body = aplStart(e);
-        const pressed = press(ev, leftAlt && !rightAlt && !ev.getModifierState('AltGraph') && body >= 0,
-            body >= 0 && e.empty && inCode(e.text.slice(body, e.pos)));
+        const body = bplStart(e);
+        const pressed = press(ev, leftAlt && !rightAlt && !ev.getModifierState('AltGraph') && body >= 0);
         if (pressed) {
             if (pressed.text) e.insert(pressed.text);
             if (pressed.stop) { cancel(); ev.preventDefault(); ev.stopImmediatePropagation(); return; }
@@ -187,7 +186,7 @@
             if (tab) { ev.preventDefault(); ev.stopImmediatePropagation(); return; }
         }
         if (ev.key === '`' && plain) {
-            const updated = editor(ev.target), body = aplStart(updated);
+            const updated = editor(ev.target), body = bplStart(updated);
             if (body >= 0 && updated.empty && inCode(updated.text.slice(body, updated.pos))) active = {id: updated.id, start: updated.pos};
             else cancel();
         } else if (!(typed && plain && (/^[a-z]$/i.test(ev.key) || ev.key === 'Backspace'))) cancel();

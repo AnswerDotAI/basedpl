@@ -2,7 +2,7 @@
 
 Parentheses round an expression group it, whatever it holds. Without `⋄`, they hold one expression wherever they appear, including inside [brackets](brackets.qmd). A literal argument after a literal operand goes in parentheses, so it doesn't join the operand's strand.
 
-```apl
+```bpl
 (2×3)+4            ⍝ 10
 x←2 4 9
 [(+/x) ≢x]         ⍝ 15 3ₓ
@@ -11,7 +11,7 @@ x←2 4 9
 
 Round glyphs alone, separated by spaces, parentheses make a scalar holding them. So `(+)` holds `+`, and `(+ -)` holds the vector `[+ -]`. Glyphs that touch form a train, so `(-×)` groups. Around a literal or a name, parentheses group, so `(1 2)` is `1 2` and `(x)` is `x`. The text alone decides, so reading the code never depends on what a name holds. [`⊂`](enclose.qmd) encloses any other value: `⊂[1 2]` is a scalar holding a vector.
 
-```apl
+```bpl
 (5)≡5              ⍝ $t
 ⍴(1 2)             ⍝ [2]ₓ
 x←1 2 ⋄ (x)≡x      ⍝ $t
@@ -22,7 +22,7 @@ f←- ⋄ (f)3         ⍝ ¯3
 
 A line break inside parentheses counts as a space. So an expression can continue across lines. Outside brackets, spaces separate runs, and each run is evaluated first. So this means `(1+2)×(3+4)`:
 
-```apl
+```bpl
 total←(1+2
        × 3+4)
 total              ⍝ 21
@@ -32,7 +32,7 @@ total              ⍝ 21
 
 With `⋄`, parentheses write a vector whose items are the rows. Each row reads as [brackets](brackets.qmd) do, so every row is a vector, even a row with one item. The rows can differ in length. A trailing `⋄` makes a one-item vector holding one row. A line break still counts as a space, so rows written over several lines need `⋄` at the end of each line.
 
-```apl
+```bpl
 (4 ⋄ 4 5 ⋄ 4 5 6)       ⍝ [[4] [4 5] [4 5 6]]
 a←1 ⋄ b←2
 (a b ⋄ b)               ⍝ [[1 2] [2]]
@@ -45,14 +45,14 @@ Brackets with `⋄` stack their rows into one array instead: `[1 2 ⋄ 3 4]` is 
 
 Two functions form an atop: `(f g)Y` is `f(g Y)`. Glyphs alone separated by spaces make a scalar instead, as above, so a train of bare glyphs is written without spaces.
 
-```apl
+```bpl
 (- +/)1 2 3        ⍝ ¯6
 (-×)3              ⍝ ¯1ₓ
 ```
 
 Three form a fork: `(f g h)Y` is `(f Y)g(h Y)`. Dyadic forks pass both arguments to each arm.
 
-```apl
+```bpl
 (+/÷≢)2 4 9        ⍝ 5
 (+/ ÷ ≢)2 4 9      ⍝ 5
 ```

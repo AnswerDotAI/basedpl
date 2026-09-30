@@ -6,9 +6,9 @@ src="$(cd "$(dirname "$0")/../editors/macos" && pwd)"
 dest="$HOME/Library/Keyboard Layouts"
 
 mkdir -p "$dest"
-cp "$src/bAsedPL.keylayout" "$src/bAsedPL.icns" "$dest/"
+cp "$src/BasedPL.keylayout" "$src/BasedPL.icns" "$dest/"
 
-xcrun swift - "$dest/bAsedPL.keylayout" <<'SWIFT'
+xcrun swift - "$dest/BasedPL.keylayout" <<'SWIFT'
 import Carbon
 import Foundation
 
@@ -20,6 +20,6 @@ if status != noErr {
 }
 SWIFT
 
-echo "Installed bAsedPL. In Keyboard settings → Text Input → Edit, add bAsedPL."
-echo "Then select bAsedPL from the input menu."
+echo "Installed BasedPL. In Keyboard settings → Text Input → Edit, add BasedPL."
+echo "Then select BasedPL from the input menu."
 open "x-apple.systempreferences:com.apple.Keyboard-Settings.extension"

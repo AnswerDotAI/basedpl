@@ -2,7 +2,7 @@
 
 `∇` calls the current dfn or derived function recursively.
 
-```apl
+```bpl
 {⍵=0:1 ⋄ ⍵×∇⍵-1}5 ⍝ 120
 ```
 

@@ -13,8 +13,8 @@
     let pending = null;
     const act = action => typeof action === 'string' ? (pending = null, action) : (pending = action.state, '');
     // What a key types: `{text, stop}`, where `stop` means the key itself does nothing more, or nothing for an ordinary key.
-    // `option` is whether an Option chord counts here, and `code` whether a plain dead key such as `^` starts a sequence.
-    function press(ev, option, code) {
+    // `option` is whether an Option chord counts here.
+    function press(ev, option) {
         const key = usKey(ev), plain = !ev.altKey && !ev.ctrlKey && !ev.metaKey;
         if (pending) {
             const state = layout.states[pending];
@@ -23,11 +23,10 @@
             if (ev.key === 'Backspace' || ev.key === 'Escape') return {text: '', stop: true};
             if (plain && key in state.keys) return {text: act(state.keys[key]), stop: true};
             // Any other key types the terminator, then acts as if nothing were pending.
-            const rest = press(ev, option, code);
+            const rest = press(ev, option);
             return {text: state.terminator + (rest?.text ?? ''), stop: rest?.stop ?? false};
         }
         if (option && ev.altKey && !ev.shiftKey && !ev.ctrlKey && !ev.metaKey && key in layout.option) return {text: act(layout.option[key]), stop: true};
-        if (plain && code && key in layout.plain) return {text: act(layout.plain[key]), stop: true};
     }
     const reset = () => { pending = null; };
 
@@ -80,21 +79,21 @@
         return !quote && !comment;
     }
 
-    function aplStart(e) {
-        if (e.apl) return 0;
-        const header = /^%%apl[^\S\n]*(?:\r?\n|$)/.exec(e.text);
+    function bplStart(e) {
+        if (e.bpl) return 0;
+        const header = /^%%bpl[^\S\n]*(?:\r?\n|$)/.exec(e.text);
         if (header) return e.pos >= header[0].length ? header[0].length : -1;
         const start = e.text.lastIndexOf('\n', e.pos - 1) + 1;
-        const line = /^[ \t]*(?:[\p{ID_Start}_][\p{ID_Continue}]*[ \t]*=[ \t]*)?%apl[ \t]+/u.exec(e.text.slice(start, e.pos));
+        const line = /^[ \t]*(?:[\p{ID_Start}_][\p{ID_Continue}]*[ \t]*=[ \t]*)?%bpl[ \t]+/u.exec(e.text.slice(start, e.pos));
         return line && inCode(e.text.slice(0, start), true) ? start + line[0].length : -1;
     }
 
     function entry(e) {
-        const body = aplStart(e), start = e.text.lastIndexOf('`', e.pos - 1);
+        const body = bplStart(e), start = e.text.lastIndexOf('`', e.pos - 1);
         if (body < 0 || start < body || !e.empty || !inCode(e.text.slice(body, start))) return;
         const query = e.text.slice(start + 1, e.pos);
         if (/^[a-z]*$/i.test(query)) return {start, query, found: matches(query)};
     }
 
-    return {matches, inCode, aplStart, entry, press, reset};
+    return {matches, inCode, bplStart, entry, press, reset};
 })

@@ -1317,7 +1317,7 @@ impl Value {
             Self::Character(c) if c.is_control() => format!("•ucs {}", *c as u32),
             Self::Character(c) => format!("'{c}'"),
             Self::Function(f) => {
-                let text = f.apl();
+                let text = f.bpl();
                 // A native function with no source spelling, such as a generator's `roll`, can't read back.
                 if f.system_call().is_some() && crate::system::lookup(&text).is_none() { return f.to_string(); }
                 if text.contains(' ') { format!("({text})") } else { text }
@@ -1607,7 +1607,7 @@ impl fmt::Display for Value {
 }
 
 /// A function value, as display shows it.
-impl fmt::Display for crate::Function { fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "⟨{}⟩", self.apl()) } }
+impl fmt::Display for crate::Function { fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "⟨{}⟩", self.bpl()) } }
 
 #[cfg(test)]
 mod tests {

@@ -29,7 +29,7 @@ def _literal(a):
         if all(isinstance(o, str) for o in raw['data']): return repr(''.join(raw['data']))
         if all(isinstance(o, (int, float, complex, tuple)) for o in raw['data']):
             return '[' + ', '.join(_atom(o) for o in raw['data']) + ']'
-    return f'apl({dumps(repr(a), ensure_ascii=False)})'
+    return f'bpl({dumps(repr(a), ensure_ascii=False)})'
 
 class _Printer:
     def __init__(self): self.budget = repeat(True, 1000)

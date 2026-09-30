@@ -2,18 +2,18 @@
 
 `f⍨Y` is `Y f Y`.
 
-```apl
+```bpl
 ×⍨3                ⍝ 9
 ```
 
 `X f⍨ Y` is `Y f X`.
 
-```apl
+```bpl
 2-⍨10              ⍝ 8
 ```
 
 An array operand makes a constant function: `A⍨Y` and `X A⍨Y` return `A`.
 
-```apl
+```bpl
 42⍨0               ⍝ 42
 ```

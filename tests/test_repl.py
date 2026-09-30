@@ -5,7 +5,7 @@ import pty, re, select, subprocess, termios, time
 def test_terminal_symbol_entry_and_exit():
     master, slave = pty.openpty()
     termios.tcsetwinsize(slave, (24, 100))
-    child = subprocess.Popen(['bapl'], stdin=slave, stdout=slave, stderr=slave, env={**os.environ, 'TERM': 'xterm-256color'})
+    child = subprocess.Popen(['bpl'], stdin=slave, stdout=slave, stderr=slave, env={**os.environ, 'TERM': 'xterm-256color'})
     os.close(slave)
     pending = b''
 
@@ -38,7 +38,7 @@ def test_terminal_symbol_entry_and_exit():
         enter('"' + ''.join('\x1b'+k for k in typed) + '"\r', '\r\n' + ''.join(typed.values()) + '\r\n')
         enter('r\x1bh1+2\x1bl2\x1bq<×\r', '\r\n')  # r←1+2→2⍃×
         enter('\x1bq \x1bhr\r', '\r\n6\r\n')  # explicit output: Alt-q, then Space, types ⎕
-        enter('3^2\r', '\r\n9\r\n')  # the ^ dead key, then 2, types ²
+        enter('3\x1b62\r', '\r\n9\r\n')  # Alt-6, then 2, types ²
         enter('"a^b"\r', '\r\na^b\r\n')  # in a string, ^ types itself
         enter('\x1bi_1 0 1\r', '\r\n[0 2]ₓ\r\n')  # Alt-i, then _, types ⍸
         enter('1 2 3\x1bl+/\r', '\r\n6\r\n')

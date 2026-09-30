@@ -1,6 +1,6 @@
 import json, os, signal, threading
 import pytest
-from basedpl import apl, AplError
+from basedpl import bpl, BplError
 from basedpl._core import _check_reference
 from basedpl.worker import Worker
 
@@ -76,7 +76,7 @@ def test_worker_cancellation_and_reference_sessions():
         case = dict(code='∞', expected_code='∞', relative_tolerance=1e-14)
         assert w.request(dict(case=case))['status'] == 'pass'
         assert w.request(dict(case=dict(case, code='1e308')))['status'] == 'mismatch'
-    apl.timeout = .01
-    with pytest.raises(AplError) as e: apl('x←7 ⋄ {∇⍵}0', 'explicit')
+    bpl.timeout = .01
+    with pytest.raises(BplError) as e: bpl('x←7 ⋄ {∇⍵}0', 'explicit')
     assert e.value.kind == 'TIMEOUT'
-    assert apl('x').py == 7
+    assert bpl('x').py == 7

@@ -11,7 +11,7 @@ use std::sync::{
 };
 
 #[derive(Clone)]
-struct AplSession { worker: ThreadWorker<Session>, count: Arc<AtomicU64> }
+struct BplSession { worker: ThreadWorker<Session>, count: Arc<AtomicU64> }
 
 fn language_error(error: crate::Error) -> LanguageError {
     LanguageError {
@@ -34,13 +34,13 @@ impl Input for NotebookInput {
 }
 
 #[async_trait::async_trait]
-impl LanguageSession for AplSession {
+impl LanguageSession for BplSession {
     fn kernel_info(&self) -> kernmini::Result<KernelInfo> {
         Ok(KernelInfo {
             implementation: "basedpl".into(),
             implementation_version: env!("CARGO_PKG_VERSION").into(),
-            banner: "bAsedPL — an APL-derived array language".into(),
-            language_info: json!({"name": "apl", "version": env!("CARGO_PKG_VERSION"), "mimetype": "text/apl", "file_extension": ".apl", "codemirror_mode": "apl"}),
+            banner: "BasedPL — an APL-derived array language".into(),
+            language_info: json!({"name": "bpl", "version": env!("CARGO_PKG_VERSION"), "mimetype": "text/apl", "file_extension": ".bpl", "codemirror_mode": "apl"}),
         })
     }
 
@@ -97,7 +97,7 @@ impl LanguageSession for AplSession {
                                 }
                                 value
                             } else {
-                                let text = result.value.map(|a| session.display.array(&a, false)).or_else(|| result.function.map(|f| f.apl()));
+                                let text = result.value.map(|a| session.display.array(&a, false)).or_else(|| result.function.map(|f| f.bpl()));
                                 json!({"status": "ok", "data": text.map_or(json!({}), |text| json!({"text/plain": text})), "metadata": {}})
                             };
                             expressions.insert(name.clone(), value);
@@ -175,6 +175,6 @@ pub(crate) fn outcome(execution_count: u64, error: Option<LanguageError>, user_e
 pub(crate) fn run(file: &str) -> kernmini::Result<()> {
     serve(file, async {
         let worker = ThreadWorker::start(std::thread::Builder::new().name("basedpl".into()), || Ok(Session::interactive())).await?;
-        Ok(AplSession { worker, count: Arc::new(AtomicU64::new(0)) })
+        Ok(BplSession { worker, count: Arc::new(AtomicU64::new(0)) })
     })
 }

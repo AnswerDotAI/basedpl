@@ -7,39 +7,39 @@
 `-e` evaluates one expression. Quote it to protect spaces and glyphs from the shell.
 
 ```bash
-bapl -e '+/⍳10'       # 45
+bpl -e '+/⍳10'       # 45
 ```
 
-Pass a UTF-8 APL file to run it as one source. Names persist throughout the file.
+Pass a UTF-8 BPL file to run it as one source. Names persist throughout the file.
 
 ```bash
-bapl lesson.apl
+bpl lesson.bpl
 ```
 
-Expressions display results; assignments are silent. Use `⎕←` for explicit output. `bapl` writes each output as soon as it's produced. Diagnostics go to stderr and include source locations.
+Expressions display results; assignments are silent. Use `⎕←` for explicit output. `bpl` writes each output as soon as it's produced. Diagnostics go to stderr and include source locations.
 
-A first line that starts with `#!` is ignored, so a file can start with `#!/usr/bin/env bapl` and run as a script.
+A first line that starts with `#!` is ignored, so a file can start with `#!/usr/bin/env bpl` and run as a script.
 
 ## Pipes
 
 With no arguments, piped input behaves like the REPL without prompts. Names persist between expressions.
 
 ```bash
-printf 'v←⍳10\n+/v\n' | bapl
+printf 'v←⍳10\n+/v\n' | bpl
 ```
 
 `-` reads all stdin as one source before evaluation.
 
 ```bash
-printf 'v←⍳10\n+/v\n' | bapl -
+printf 'v←⍳10\n+/v\n' | bpl -
 ```
 
-When the program that reads the output closes the pipe, `bapl` stops the evaluation and exits with status 0.
+When the program that reads the output closes the pipe, `bpl` stops the evaluation and exits with status 0.
 
 A program run with `-e` or from a file can read standard input. Reading `⎕` gives the next line, and `⍬` at the end. `•nget "-"` gives the rest as one string, so a program can parse piped CSV:
 
 ```bash
-printf 'name,qty\npen,2\ncup,5\n' | bapl -e '+/(•csv •nget "-").qty'   # 7ₓ
+printf 'name,qty\npen,2\ncup,5\n' | bpl -e '+/(•csv •nget "-").qty'   # 7ₓ
 ```
 
 With `-`, and with piped input and no arguments, standard input holds the program. Reading `⎕` or `•nget "-"` is then a `VALUE` error. The interactive REPL reads `⎕` from the terminal. See [`⎕`](glyphs/quad.qmd#input).
@@ -50,9 +50,9 @@ Use actual glyphs in files, pipes and `-e`; backtick names are a [REPL input met
 
 | Command | Mode |
 |---|---|
-| `bapl` | Interactive REPL when connected to a terminal |
-| `bapl --help` | Usage |
-| `bapl --version` | Version |
-| `bapl --worker` | JSON-lines requests with deadlines and interruption |
+| `bpl` | Interactive REPL when connected to a terminal |
+| `bpl --help` | Usage |
+| `bpl --version` | Version |
+| `bpl --worker` | JSON-lines requests with deadlines and interruption |
 
 See [process interfaces](processes.qmd) for machine-readable output. Exit status: 0 success, 1 evaluation/I/O error, 2 invalid command arguments. Output produced before an error is retained.

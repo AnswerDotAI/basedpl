@@ -4,7 +4,7 @@
 
 `⍬ₓ` is the exact empty vector, `0⍴0ₓ`, and so is `[]ₓ`.
 
-```apl
+```bpl
 ⍴⍬                 ⍝ [0]ₓ
 ⍬,1 2              ⍝ 1 2
 []≡⍬               ⍝ $t
@@ -13,7 +13,7 @@
 
 Other empty types retain their prototypes.
 
-```apl
+```bpl
 3↑0⍴0x             ⍝ [0 0 0]ₓ
 3↑""               ⍝ "   "
 ```

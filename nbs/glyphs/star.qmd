@@ -2,20 +2,20 @@
 
 `*Y`: e<sup>Y</sup>. Pervasive.
 
-```apl
+```bpl
 *0                ⍝ 1
 ```
 
 `X*Y`: X<sup>Y</sup>. Integral powers of exact operands stay exact.
 
-```apl
+```bpl
 2*3               ⍝ 8
 2x*¯3x            ⍝ 1r8
 ```
 
 Other powers use principal complex branches where needed.
 
-```apl
+```bpl
 ¯1*0.5            ⍝ 0j1
 ```
 

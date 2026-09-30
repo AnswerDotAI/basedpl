@@ -1,7 +1,7 @@
 "Word names and composition over the interpreter's immutable function nodes."
 from keyword import iskeyword
 from unicodedata import normalize
-from . import _Operators, _Function, _array, apl, symbols
+from . import _Operators, _Function, _array, bpl, symbols
 from ._core import _system_functions
 
 _HOLE = object()
@@ -10,12 +10,12 @@ def _build(kind, *operands, valence=0):
     if any(o is _HOLE or isinstance(o, _Pending) for o in operands): return _Pending(kind, operands, valence)
     if kind == 'history':
         f, p = operands
-        return _build('⍣', f, [p] if isinstance(p, Function) else apl('{(×⍵)×⍳1+|⍵}')(p))
+        return _build('⍣', f, [p] if isinstance(p, Function) else bpl('{(×⍵)×⍳1+|⍵}')(p))
     values = [o._inner if isinstance(o, Function) else _array(o) for o in operands]
     return Function(_Function.build(kind, values), valence=valence)
 
 class _Combinators(_Operators):
-    def __bool__(self): raise TypeError('an APL function has no truth value')
+    def __bool__(self): raise TypeError('an BPL function has no truth value')
     @property
     def left(self): return _build('⍃', _HOLE, self, valence=1)
     def __pow__(self, counts): return _build('⍣', self, counts)
@@ -50,12 +50,12 @@ class _Pending(_Combinators):
         return _build(self.kind, *values, valence=self._valence)
 
 class Function(_Combinators):
-    "An APL function node."
+    "An BPL function node."
     def __init__(self, inner, valence=0): self._inner, self._valence = inner, valence
     def __repr__(self): return repr(self._inner)
     def inspect(self):
-        "APL source and help, without running the function."
-        info = apl._session.inspect(function=self._inner)
+        "BPL source and help, without running the function."
+        info = bpl._session.inspect(function=self._inner)
         calls = ('f(right) or f(left, right)', 'f(right)', 'f(left, right); f(right) binds the right argument')[self._valence]
         info['help'] = f'Calls: {calls}\n\n' + info['help']
         return info
@@ -69,8 +69,8 @@ class Function(_Combinators):
             if self._valence == 1: raise TypeError('keyword arguments need a dyadic call')
             args = (kwargs, args[0] if len(args) == 1 else list(args))
         elif len(args) == 1 and self._valence == 2: return _build('⍄', self, args[0], valence=1)
-        if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this APL function')
-        return apl._request(dict(function=self._inner, args=[_array(o) for o in args]), True).value
+        if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this BPL function')
+        return bpl._request(dict(function=self._inner, args=[_array(o) for o in args]), True).value
 
 def fork(f, g, h): return _build('fork', f, g, h)
 def atop(f, g): return _build('∘', f, g)

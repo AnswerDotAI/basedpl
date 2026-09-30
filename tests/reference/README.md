@@ -1,10 +1,10 @@
 # Reference acceptance cases
 
-The `.apl` files are the executable language tests. `core.apl` holds bAsedPL's own semantic cases. `lib.apl` covers library code that the upstream examples leave untested. The other files cover ngn assertions/example programs, April core and library assertions/demos/setup, APLcart main/tacit catalogue rows, and selected Dyalog documentation examples. The tracked `inventory/*.jsonl` files retain original records, independent expectations, adaptations and candidates for activation. Entries are not removed because bAsedPL cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
+The `.bpl` files are the executable language tests. `core.bpl` holds BPL's own semantic cases. `lib.bpl` covers library code that the upstream examples leave untested. The other files cover ngn assertions/example programs, April core and library assertions/demos/setup, APLcart main/tacit catalogue rows, and selected Dyalog documentation examples. The tracked `inventory/*.jsonl` files retain original records, independent expectations, adaptations and candidates for activation. Entries are not removed because BPL cannot execute them yet. Explicit exclusions remain in the inventory with their reason.
 
 Source entries are not necessarily executable tests. Many APLcart recipes have unbound arguments and no expected result. They need concrete examples. Library cases need their definitions and setup. Use the scanner below for current counts and failures; fixture reasons describe their last review, not necessarily today's implementation. Progress notes belong in `meta/`, not this README.
 
-Active cases use bAsedPL spellings: `π` for APL's monadic `○`, `g⊗` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, `⍢` for `∇∇`, `•name` for system names, `"…"` for multi-character strings written `'…'`, `Y(I)` or `Y I` for first-axis bracket indexing `Y[I]`, `[I;J]⌷Y` for indexing several axes, and `f⍠A` for bracket axes `f[A]`. They follow the spacing rules in `meta/spacing.md`: vectors that aren't strands use brackets, `[x]` is a one-item vector, parentheses round a literal group it, spaces separate runs, and `⍃` and `⍄` replace `∘` and `⍛`. Positions and axes count from 0, so the positions in upstream code and in expectations captured with `⎕IO←1` are converted. Original inventory sources retain their dialect's notation.
+Active cases use BPL spellings: `π` for APL's monadic `○`, `g⊗` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, `⍢` for `∇∇`, `•name` for system names, `"…"` for multi-character strings written `'…'`, `Y(I)` or `Y I` for first-axis bracket indexing `Y[I]`, `[I;J]⌷Y` for indexing several axes, and `f⍠A` for bracket axes `f[A]`. They follow the spacing rules in `meta/spacing.md`: vectors that aren't strands use brackets, `[x]` is a one-item vector, parentheses round a literal group it, spaces separate runs, and `⍃` and `⍄` replace `∘` and `⍛`. Positions and axes count from 0, so the positions in upstream code and in expectations captured with `⎕IO←1` are converted. Original inventory sources retain their dialect's notation.
 
 Run the active cases with:
 
@@ -20,17 +20,17 @@ To run active cases, set `BASEDPL_CASE` to an ID or ID prefix:
 BASEDPL_CASE=ngn:177 cargo test --test reference enabled_reference_cases -- --nocapture
 ```
 
-To run the active cases of one file, set `BASEDPL_SOURCE` to its name without `.apl`:
+To run the active cases of one file, set `BASEDPL_SOURCE` to its name without `.bpl`:
 
 ```bash
 BASEDPL_SOURCE=core cargo test --test reference enabled_reference_cases -- --nocapture
 ```
 
-The `.apl` files determine which cases run, regardless of inventory status. Edit these files directly once cases are active. Each JSONL inventory row has a stable `id`, `code`, and `status`. A `reason` records adaptations or remaining work. Its original source, expectation or recipe is retained.
+The `.bpl` files determine which cases run, regardless of inventory status. Edit these files directly once cases are active. Each JSONL inventory row has a stable `id`, `code`, and `status`. A `reason` records adaptations or remaining work. Its original source, expectation or recipe is retained.
 
 | Status | Meaning |
 |---|---|
-| `active` | Exported to the `.apl` corpus. |
+| `active` | Exported to the `.bpl` corpus. |
 | `duplicate` | Same code and expectation as the active case named in `duplicate_of`. Not exported. |
 | `setup` | Upstream initialization retained for self-contained cases; no standalone assertion. |
 | `pending` | Intended coverage that still needs implementation, an origin/dialect adaptation, concrete inputs, or an expectation. |
@@ -40,14 +40,14 @@ The `.apl` files determine which cases run, regardless of inventory status. Edit
 To enable a case:
 
 1. Find its `id` in the inventory. Check its recipe, prerequisites and original expectation. Do not treat another dialect as the specification.
-2. Supply concrete `code` and `expected` or `expected_error` if missing. Array expectations contain `shape`, flat `data`, and `prototype`. Nested arrays use the same structure. Complex elements use `{"complex":[real,imag]}`. Real infinities use `{"infinity":1}` or `{"infinity":-1}`. `expected: null` explicitly expects no result; an absent expectation remains invalid. Derive expectations independently of bAsedPL.
+2. Supply concrete `code` and `expected` or `expected_error` if missing. Array expectations contain `shape`, flat `data`, and `prototype`. Nested arrays use the same structure. Complex elements use `{"complex":[real,imag]}`. Real infinities use `{"infinity":1}` or `{"infinity":-1}`. `expected: null` explicitly expects no result; an absent expectation remains invalid. Derive expectations independently of BPL.
 3. Activate the reviewed case:
 
    ```bash
    python scripts/reference.py add april:1684
    ```
 
-   This appends the case to the source's `.apl` file and marks the inventory record active. It doesn't run the program. It rejects excluded cases, missing expectations and duplicate IDs before writing. A captured expectation's numbers are written as approximate literals. Where the language's rules give exact results, mark them with `ₓ`.
+   This appends the case to the source's `.bpl` file and marks the inventory record active. It doesn't run the program. It rejects excluded cases, missing expectations and duplicate IDs before writing. A captured expectation's numbers are written as approximate literals. Where the language's rules give exact results, mark them with `ₓ`.
 
 4. Run the normal suite. To check candidates without activating them, use the scanner below.
 
@@ -72,9 +72,9 @@ corpus.update_many({'ngn:391': {'reason': 'reviewed'}, 'ngn:392': {'reason': 're
 
 `find` searches full ID/code/reason text and returns single-line previews of at most 180 characters, keyed by ID. Filter with `source` or `status`; `limit=None` returns all matches. `corpus[id]` returns code/status/reason. Use `corpus[id, 'code', 'expected']` for selected fields or `corpus[id, '*']` for the full record. Unknown IDs raise `KeyError`. Use `get_many(ids, *fields)` for bulk reads. Updates read fresh files, preserve unrelated fields, and report changed field names. Use `remove=['expected_error']` when replacing an error expectation with a value; `None` means JSON null, not deletion. Unknown IDs write nothing. Use these methods rather than reading and patching whole JSONL lines in the conversation.
 
-Library recipes use the shared ports in `lib/`: start a case with `•load "lib/numeric.apl"`, for example. Keep case-specific setup in the case. Combine related examples only when their combined expectation stays clear. `library_definitions(path)` reads top-level named assignments; `source_definitions(text)` does the same for a string. `library_dependencies(definitions, code)` selects transitive references for review, ignoring strings/comments but not resolving lexical shadowing. Retain original source and adaptation metadata in the inventory. The upstream checkout is only needed when reviewing new ports.
+Library recipes use the shared ports in `lib/`: start a case with `•load "lib/numeric.bpl"`, for example. Keep case-specific setup in the case. Combine related examples only when their combined expectation stays clear. `library_definitions(path)` reads top-level named assignments; `source_definitions(text)` does the same for a string. `library_dependencies(definitions, code)` selects transitive references for review, ignoring strings/comments but not resolving lexical shadowing. Retain original source and adaptation metadata in the inventory. The upstream checkout is only needed when reviewing new ports.
 
-Additional Dyalog workspace ports live in `lib/dyalog.apl`. Their APLcart inventory entries retain `original_definition`, `definition_source` and `definition_version`. Unported definitions keep `pending` status and a reason naming the remaining work. Licence confirmation for these workspace sources is pending; the Dyalog documentation licence below covers documentation examples.
+Additional Dyalog workspace ports live in `lib/dyalog.bpl`. Their APLcart inventory entries retain `original_definition`, `definition_source` and `definition_version`. Unported definitions keep `pending` status and a reason naming the remaining work. Licence confirmation for these workspace sources is pending; the Dyalog documentation licence below covers documentation examples.
 
 Rebuild the installed command after Rust changes, then scan:
 
@@ -86,15 +86,15 @@ python scripts/reference.py show --status mismatch --match '∧|∨'
 python scripts/reference.py activate --source april --match 'april:590\b'
 ```
 
-`scan` checks pending cases with independent expectations and collects every outcome. A captured expectation carries no exactness, so the scan compares its numbers by value. It never edits fixtures. `show` defaults to passes; filter by source, result status or regex over ID/code/message. Use `--limit` to change the display count. `--details` dumps complete records and arrays; use it only for a narrow selection. `activate` appends the reviewed passing selection to `.apl` and marks its inventory records active. It refuses fixture records changed since the scan and rechecks the selected cases before writing. Review dialect, origin and prerequisites before activation; a passing result alone is not that review.
+`scan` checks pending cases with independent expectations and collects every outcome. A captured expectation carries no exactness, so the scan compares its numbers by value. It never edits fixtures. `show` defaults to passes; filter by source, result status or regex over ID/code/message. Use `--limit` to change the display count. `--details` dumps complete records and arrays; use it only for a narrow selection. `activate` appends the reviewed passing selection to `.bpl` and marks its inventory records active. It refuses fixture records changed since the scan and rechecks the selected cases before writing. Review dialect, origin and prerequisites before activation; a passing result alone is not that review.
 
 Rust's `reference::check` owns comparison for the test runner, worker and private Python `_check_reference(json_case, timeout)` API. It accepts captured `expected` arrays, `expected_error` kinds, or an `expected_code` expression. Each case receives a fresh session inside a persistent worker. The scanner uses a 0.25-second cooperative deadline per case, adjustable with `--timeout`. An unresponsive process is killed after the client's grace period and replaced for the next case. The failed case is not retried. Random cases, missing expectations and scope questions are counted separately, not treated as execution failures.
 
 The report defaults to `meta/reference-scan.json`. It contains each original fixture and its result, including actual structured values on mismatches. A case needs an explicit tolerance only when the defaults are too tight. Semantic differences do not get a tolerance. CI runs ordinary offline Rust tests; it does not need the scanner or a worker process.
 
-## APL record format
+## BPL record format
 
-```apl
+```bpl
 ⍝ ngn:177 — sin(pi/6) = .5
 1e¯10>|.5-1○○÷6   ⍝ 1
 
@@ -106,13 +106,13 @@ Write `code   ⍝ expected` when the whole line is under 70 characters and reads
 
 Longer single-line expressions use one line each. If either expression is multiline, an exact `⍝ =>` line separates code from expectation. An empty line separates records. A record ends at the next case header, section heading or EOF. At EOF the separator and final newline are optional. Other blank lines belong to the expressions.
 
-Errors use `⍝ error: DOMAIN ERROR` on the expectation line. A no-result expectation is the APL expression `{}0`. A case overrides the default tolerances with an optional suffix on the header, such as `[rtol=1e-10]`. These are comparison tolerances, not APL `⎕CT`.
+Errors use `⍝ error: DOMAIN ERROR` on the expectation line. A no-result expectation is the BPL expression `{}0`. A case overrides the default tolerances with an optional suffix on the header, such as `[rtol=1e-10]`. These are comparison tolerances, not APL `⎕CT`.
 
 Group cases with `⍝⍝ Section name`. Sections are labels, not shared sessions. Each case must supply its own definitions and setup.
 
 File cases can use `testpath`. When mentioned in the source, the runner binds it to a new path in a per-case temporary directory, removed after the check. The file does not yet exist. Write fixture contents before reading them. This works in scans, activation and the Rust suite.
 
-```apl
+```bpl
 ⍝⍝ Evaluation order
 
 ⍝ — The right argument prints before the left
@@ -126,15 +126,15 @@ An optional final `⍝ ⎕: text` checks explicit output. Write `\n` for a newli
 
 During conversion, comments are extracted from descriptions, unchanged ngn assertions, or leading comments in example programs. Known import/review boilerplate is removed from reasons and adaptations. Other clauses are retained on the same header line. Comments are not paraphrased or corrected. Converted comments can therefore contain inaccurate source wording or lack a description where none can be extracted.
 
-Use `basedpl.apltests.parse(text)` to read records as `Case` objects with `id`, `comment`, `code`, `expect`, `rtol`, `atol`, `section`, optional `output` text and the header's `line`. `render(cases)` writes them back. The conversion checks preserve source text and reproduce captured values, shapes and recursive prototypes; they do not infer new expectations from the program under test.
+Use `basedpl.bpltests.parse(text)` to read records as `Case` objects with `id`, `comment`, `code`, `expect`, `rtol`, `atol`, `section`, optional `output` text and the header's `line`. `render(cases)` writes them back. The conversion checks preserve source text and reproduce captured values, shapes and recursive prototypes; they do not infer new expectations from the program under test.
 
-Use `add(['ngn:177'])` from `basedpl.apltests` to activate selected inventory IDs from a kernel. It is the equivalent of the `add` command above.
+Use `add(['ngn:177'])` from `basedpl.bpltests` to activate selected inventory IDs from a kernel. It is the equivalent of the `add` command above.
 
-Use `check_file(path)` from `basedpl.apltests` to run a reference file through the installed extension and list its failures. It applies the same comparison and tolerances as `tests/reference.rs`. `check_page(path)` does the same for the APL examples in a `.qmd` page.
+Use `check_file(path)` from `basedpl.bpltests` to run a reference file through the installed extension and list its failures. It applies the same comparison and tolerances as `tests/reference.rs`. `check_page(path)` does the same for the BPL examples in a `.qmd` page.
 
 ## Sources and adaptations
 
-Active cases use bAsedPL's postfix `g⊗` for outer product. The inventory retains upstream `∘.g` spellings.
+Active cases use BPL's postfix `g⊗` for outer product. The inventory retains upstream `∘.g` spellings.
 
 System names use `•` in active cases (`•c`, `•ucs`, etc.). The inventory retains upstream `⎕` spellings. `⎕←` is output in both.
 
@@ -149,17 +149,17 @@ Dyalog cases use `dyalog:page:example` IDs. Source pages default to `language-re
 
 For each new glyph, read its documented valences and select examples that establish distinct semantics. Add structured expectations, run them, and fix failures as part of that glyph's implementation rather than deferring discovered gaps.
 
-Dyalog's two fixed-order float reduction examples are retained as explicit exclusions. bAsedPL permits reassociation of primitive float sums/products. Generic-function reduction and primitive scan order remain tested; do not replace excluded expectations with one compiler's chosen answer.
+Dyalog's two fixed-order float reduction examples are retained as explicit exclusions. BPL permits reassociation of primitive float sums/products. Generic-function reduction and primitive scan order remain tested; do not replace excluded expectations with one compiler's chosen answer.
 
-ngn uses origin 0 and has different prototype/dialect rules. Its original expressions and expectations are retained. bAsedPL also counts from 0, so index and axis operands can keep ngn's origin. Inventory records from bAsedPL's 1-origin period keep their adapted code, with the upstream code in `original_code` and the changed origin in `original_origin`. Closed literal right-hand expectations were evaluated independently in Dyalog, not with bAsedPL.
+ngn uses origin 0 and has different prototype/dialect rules. Its original expressions and expectations are retained. BPL also counts from 0, so index and axis operands can keep ngn's origin. Inventory records from BPL's 1-origin period keep their adapted code, with the upstream code in `original_code` and the changed origin in `original_origin`. Closed literal right-hand expectations were evaluated independently in Dyalog, not with BPL.
 
-April's literal Common Lisp expectations were converted to structured values. Ordinary rational expectations represent approximate results under bAsedPL's numeric policy, not opt-in exact `r` literals. The power alias `⋆` is written as standard `*` outside quoted text. Printed-format expectations, host wrappers, and library dependencies remain visible for review.
+April's literal Common Lisp expectations were converted to structured values. Ordinary rational expectations represent approximate results under BPL's numeric policy, not opt-in exact `r` literals. The power alias `⋆` is written as standard `*` outside quoted text. Printed-format expectations, host wrappers, and library dependencies remain visible for review.
 
 APLcart's TIO links were decoded offline. All 972 available decoded programs are retained. No TIO service was contacted. Small closed calculator examples were checked in Dyalog 20.0.53963.0 with `⎕IO=1`, `⎕CT=1E¯14`, `⎕DIV=0`, `⎕ML=1`, and `⎕PP=17`. Multi-output examples collect their values in an array literal. The original program remains in `example`. The import does not execute arbitrary catalogue programs.
 
-`basedpl.reference` contains the import, reference capture, scan, review and activation functions. `scripts/reference.py` is the shell command for scan, review, activation and `add`. Rust tests read the checked-in `.apl` files. They need neither the JSONL inventory, sibling clones, Dyalog, Common Lisp, Node, Python nor network access. Python converter tests also check serialization against the tracked inventory. Import a new upstream snapshot into a new directory and review it against the inventory rather than replacing reviewed statuses.
+`basedpl.reference` contains the import, reference capture, scan, review and activation functions. `scripts/reference.py` is the shell command for scan, review, activation and `add`. Rust tests read the checked-in `.bpl` files. They need neither the JSONL inventory, sibling clones, Dyalog, Common Lisp, Node, Python nor network access. Python converter tests also check serialization against the tracked inventory. Import a new upstream snapshot into a new directory and review it against the inventory rather than replacing reviewed statuses.
 
-For live reference work, use `basedpl.dyalog.Apl`, which runs Dyalog, not `basedpl.Session`, which runs bAsedPL:
+For live reference work, use `basedpl.dyalog.Apl`, which runs Dyalog, not `basedpl.Session`, which runs BPL:
 
 ```python
 from basedpl.dyalog import Apl

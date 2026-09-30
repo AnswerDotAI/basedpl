@@ -1,6 +1,6 @@
 # basedpl
 
-> bAsedPL is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation.
+> BasedPL, the Based-array Programming Language, is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation.
 
 ## Modules
 

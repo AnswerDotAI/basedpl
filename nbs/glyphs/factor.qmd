@@ -2,7 +2,7 @@
 
 `⨸N`: sorted prime factors, with multiplicity. J's `q:` family. Positive integral input; exact integer results.
 
-```apl
+```bpl
 ⨸700                 ⍝ [2 2 5 5 7]ₓ
 ⨸1                   ⍝ ⍬ₓ
 ⨸⁻¹⨸700              ⍝ 700ₓ
@@ -17,7 +17,7 @@ Inverse: product. `K⨸N` selects exponents or a factor table.
 | Negative integer | Last `\|K` distinct factors and their exponents, in two rows |
 | `¯∞` | Complete two-row factor/exponent table |
 
-```apl
+```bpl
 2⨸700                ⍝ [2 0]ₓ
 ∞⨸700                ⍝ [2 0 2 1]ₓ
 ¯2⨸700               ⍝ [5 7 ⋄ 2 1]ₓ

@@ -2,13 +2,13 @@
 
 `=Y` self-classifies major cells. Rows correspond to distinct cells in first-occurrence order; columns correspond to Y's cells. Entries are equality masks.
 
-```apl
+```bpl
 ="aba"            ⍝ [$t $f $t ⋄ $f $t $f]
 ```
 
 `X=Y` tests equality, pervasively. NaN equals nothing, as IEEE 754 defines.
 
-```apl
+```bpl
 1 2 3=2            ⍝ $f $t $f
 0.3=0.1+0.2        ⍝ $t
 "abc"='b'          ⍝ $f $t $f

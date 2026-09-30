@@ -2,21 +2,21 @@
 
 `⊤Y` encodes nonnegative integers in binary, choosing enough digits for the largest value. The digits form a new last axis, so each number's digits are one row. Zero needs zero digits.
 
-```apl
+```bpl
 ⊤5                ⍝ 1 0 1
 ⊤[2 5]ₓ           ⍝ [0 1 0 ⋄ 1 0 1]ₓ
 ```
 
 `B⊤Y` represents numbers in bases `B`. A zero base retains the remaining quotient.
 
-```apl
+```bpl
 2 2 2 2⊤10         ⍝ 1 0 1 0
 [0 60 60]ₓ⊤3661x   ⍝ [1 1 1]ₓ
 ```
 
 A unit `B` gives residues. A vector `B` adds its digits as a new last axis, so the result's shape is `(⍴Y),⍴B`. Exact operands retain exact arithmetic.
 
-```apl
+```bpl
 9⊤15               ⍝ 6
 9⊤⊂15              ⍝ ⊂6
 10⊤12 34           ⍝ 2 4

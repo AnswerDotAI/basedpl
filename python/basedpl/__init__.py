@@ -1,4 +1,4 @@
-"""bAsedPL is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation.
+"""BasedPL, the Based-array Programming Language, is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation.
 
 Modules:
 
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 from ._core import __version__, symbols, _Array, _Function, _Session
 
-__all__ = ['__version__', 'symbols', 'Array', 'Result', 'AplError', 'apl', 'fn']
+__all__ = ['__version__', 'symbols', 'Array', 'Result', 'BplError', 'bpl', 'fn']
 
 def _dtype(items):
     import numpy as np
@@ -74,7 +74,7 @@ def _element(value, seen):
     if type(value) in (int, float, complex): return value
     if isinstance(value, str) and len(value) == 1: return value
     if isinstance(value, (Array, str, list, tuple, dict)) or np is not None and isinstance(value, np.ndarray): return _array(value, seen)
-    raise TypeError(f'cannot convert {type(value).__name__} to APL')
+    raise TypeError(f'cannot convert {type(value).__name__} to BPL')
 
 def _rectangular(value, seen):
     if not isinstance(value, (list, tuple)): return (), [value]
@@ -174,7 +174,7 @@ def _array_repr(raw):
     return cells(shape)
 
 class Array(_Operators):
-    "An immutable native APL value. Conversion to Python or NumPy makes a copy."
+    "An immutable native BPL value. Conversion to Python or NumPy makes a copy."
     __slots__ = ('_inner',)
     def __init__(self, value, *, axis_keys=None, axis_names=None):
         self._inner = _array(value)
@@ -204,7 +204,7 @@ class Array(_Operators):
     @property
     def df(self): return _dataframe(self._inner.parts())
     @property
-    def apl(self): return repr(self._inner)
+    def bpl(self): return repr(self._inner)
     def _scalar(self): return _value(self._inner.scalar())
     def __float__(self): return float(self._scalar())
     def __int__(self): return int(self._scalar())
@@ -214,12 +214,12 @@ class Array(_Operators):
         if not self.shape: raise TypeError('a unit has no length')
         return self.shape[0]
     def __iter__(self): return (Array(a) for a in self._inner.cells())
-    def __contains__(self, item): raise TypeError('use member for APL membership')
+    def __contains__(self, item): raise TypeError('use member for BPL membership')
     def __getitem__(self, index):
         parts = index if isinstance(index, tuple) else (index,)
         def part(o):
             if not isinstance(o, slice): return _array(o)
-            if o.start is not None or o.stop is not None or o.step is not None: raise TypeError('only a full : slice is supported; use APL index arrays')
+            if o.start is not None or o.stop is not None or o.step is not None: raise TypeError('only a full : slice is supported; use BPL index arrays')
             return None
         return _result(self._inner.select([part(o) for o in parts])).value
     def __matmul__(self, other):
@@ -233,7 +233,7 @@ class Array(_Operators):
     def __repr__(self): return _array_repr(self._inner.parts())
     def _repr_mimebundle_(self, include=None, exclude=None):
         try: data = _builtin('•mime')(self).py
-        except AplError: data = {'text/plain': self.apl}
+        except BplError: data = {'text/plain': self.bpl}
         return {k:v for k,v in data.items() if (include is None or k in include) and (exclude is None or k not in exclude)}
 
 @dataclass(frozen=True)
@@ -243,8 +243,8 @@ class Result:
     @property
     def output(self): return _output_text(self.events)
 
-class AplError(RuntimeError):
-    "An APL diagnostic, with retained source, UTF-8 byte spans, calls and captured output."
+class BplError(RuntimeError):
+    "An BPL diagnostic, with retained source, UTF-8 byte spans, calls and captured output."
     def __init__(self, error, events):
         super().__init__(error['display'])
         self.kind, self.message = error['kind'], error['message']
@@ -260,14 +260,14 @@ def _print(output):
 
 def _result(raw, display=False):
     if display: _print(_output_text(raw['output']))
-    if error := raw['error']: raise AplError(error, raw['output'])
+    if error := raw['error']: raise BplError(error, raw['output'])
     value = raw['value']
     if isinstance(value, _Function): value = Function(value)
     elif value is not None: value = Array(value)
     return Result(value, raw['output'])
 
 class _Workspace:
-    "The APL workspace, `apl`. Calls return native values. `timeout` sets a per-evaluation deadline in seconds."
+    "The BPL workspace, `bpl`. Calls return native values. `timeout` sets a per-evaluation deadline in seconds."
     def __init__(self): self.timeout, self._session = None, _Session()
 
     def _request(self, payload, display, echo=False):
@@ -280,7 +280,7 @@ class _Workspace:
     def _eval(self, source, bindings, display, echo=False):
         payload = dict(bindings=[(k, v._inner if isinstance(v, Function) else _array(v)) for k,v in bindings.items()])
         if source is not None:
-            if not isinstance(source, str): raise TypeError('APL source must be a string')
+            if not isinstance(source, str): raise TypeError('BPL source must be a string')
             payload['code'] = source
         return self._request(payload, display, echo)
 
@@ -323,8 +323,8 @@ class _Workspace:
         "Interrupt an evaluation from another thread."
         self._session.interrupt()
 
-apl = _Workspace()
-fn = apl.fn
+bpl = _Workspace()
+fn = bpl.fn
 
 from .functions import Function, fork, atop, __all__ as _function_names, _binary, _unary, _builtin, _builtins
 from .printing import to_python

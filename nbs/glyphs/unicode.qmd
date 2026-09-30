@@ -2,14 +2,14 @@
 
 `•ucs Y` converts characters ↔ exact integer code points, preserving shape.
 
-```apl
+```bpl
 •ucs "ABC"         ⍝ [65 66 67]ₓ
 •ucs 65 66 67      ⍝ "ABC"
 ```
 
 `E•ucs Y` encodes characters or decodes integer units. `E` is `"UTF-8"`, `"UTF-16"` or `"UTF-32"`.
 
-```apl
+```bpl
 "UTF-8"•ucs 'é'    ⍝ [195 169]ₓ
 "UTF-8"•ucs 195 169 ⍝ "é"
 ```

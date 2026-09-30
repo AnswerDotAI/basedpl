@@ -1,9 +1,9 @@
-⍝ Dyalog dfns — adapted for bAsedPL
+⍝ Dyalog dfns — adapted for BPL
 ⍝ Source: https://dfns.dyalog.com/n_contents.htm
 ⍝ Exported from Dyalog 20.0.53963.0; individual sources below.
-⍝ Modified to count from 0, for based arrays and for bAsedPL notation.
+⍝ Modified to count from 0, for based arrays and for BPL notation.
 
-•load "lib/array.apl"
+•load "lib/array.bpl"
 ⍝ From https://dfns.dyalog.com/c_segs.htm
 segs←{(~⍵∊⍺)⊆⍵}  ⍝ Separator-delimited segments.
 

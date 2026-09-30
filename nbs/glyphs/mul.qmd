@@ -2,13 +2,13 @@
 
 `×Y` gives direction: zero, or `Y÷|Y`. The direction of a real number is an exact integer. Pervasive.
 
-```apl
+```bpl
 ×¯3 0 4           ⍝ [¯1 0 1]ₓ
 ×0j2              ⍝ 0j1
 ```
 
 `X×Y` multiplies. Pervasive.
 
-```apl
+```bpl
 2x×[1 2 3]ₓ       ⍝ [2 4 6]ₓ
 ```

@@ -2,12 +2,12 @@
 
 `⍲Y`: Y<sup>2</sup>. Pervasive.
 
-```apl
+```bpl
 ⍲[2 3]ₓ           ⍝ [4 9]ₓ
 ```
 
 `X⍲Y` is Boolean NAND. Pervasive.
 
-```apl
+```bpl
 0 0 1 1⍲0 1 0 1   ⍝ $t $t $t $f
 ```

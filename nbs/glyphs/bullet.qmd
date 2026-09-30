@@ -2,6 +2,6 @@
 
 `•` starts a [system name](../glyphs.qmd#system-names). Names are case-insensitive.
 
-```apl
+```bpl
 3↑•a               ⍝ "ABC"
 ```

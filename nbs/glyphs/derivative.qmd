@@ -4,7 +4,7 @@
 
 Currently supports real evaluators `C⌻`, including factored and exponent-table forms. `C⌻` is a train that binds `C`, the same as `C⍃⌻`.
 
-```apl
+```bpl
 f←[1 2 3]ₓ⌻ ⋄ f∂2x                ⍝ 14ₓ
 f←[1 2 3]ₓ⌻ ⋄ f∂∂2x               ⍝ 6ₓ
 f←[1 2 3]ₓ⌻ ⋄ [10 20]ₓ f∂ [1 2]ₓ  ⍝ [80 280]ₓ
@@ -12,7 +12,7 @@ f←[1 2 3]ₓ⌻ ⋄ [10 20]ₓ f∂ [1 2]ₓ  ⍝ [80 280]ₓ
 
 Multivariate gradients retain the coordinate enclosure. A shared unit coordinate sums partials.
 
-```apl
+```bpl
 f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)⌻ ⋄ f∂⊂[3 4]ₓ      ⍝ ⊂[6 8]ₓ
 f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)⌻ ⋄ f∂3x           ⍝ 12ₓ
 ```
