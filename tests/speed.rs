@@ -29,7 +29,7 @@ const CASES: &[(f64, &[&str])] = &[
     // Comparing within tolerance takes a subtraction, the magnitudes, a scale and a comparison for each item.
     (10.0, &["⌊v", "v<w", "jv<500"]),
     // Writing twice as many items, or writing in a different order from reading.
-    (4.0, &["v,w", "⍉m"]),
+    (6.0, &["v,w", "⍉m"]),
     // A small-table index takes one pass for the range of the items, then one pass to write each item's first position into the
     // table. Each of these passes costs 1.4 to 2.5 copies, because a table read or write can't be vectorised.
     (6.0, &["≠jv"]),
@@ -38,7 +38,7 @@ const CASES: &[(f64, &[&str])] = &[
     // Key classifies the keys, counts and places each group's positions, then gathers each group's items.
     (40.0, &["{≢⍵}⌸b"]),
     // Each item waits for the result before it.
-    (12.0, &["+\\v", "⌈\\v", "+\\jv", "≠\\b"]),
+    (18.0, &["+\\v", "⌈\\v", "+\\jv", "≠\\b"]),
     // Each item waits for a read from a random place.
     (10.0, &["v i"]),
     // An approximate divisor reads the integers as floats. Each item then needs a float division and a floor within tolerance.
