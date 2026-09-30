@@ -708,6 +708,10 @@ choose←{⎕←9 ⋄ 1}⍰[{⎕←1 ⋄ 1÷0} {⎕←2 ⋄ ⍺-⍵}] ⋄ 10 cho
 ⍝ — Axis permutation and unit-axis extension work together
 [[10] ⋄ [20]]+⍠1 0 [[1] ⋄ [2] ⋄ [3]]   ⍝ [11 12 13 ⋄ 21 22 23]
 
+⍝ — Broadcasting keeps each argument on its own side, in every direction
+m←[1 2 3 ⋄ 4 5 6] ⋄ [m-10 20;10 20-m;m-⍠1 [10 20 30];[10 20 30]-⍠1 m;(1 3⍴1 2 3)-2 1⍴10 20;(2 1⍴10 20)-1 3⍴1 2 3]
+[[¯9 ¯8 ¯7 ⋄ ¯16 ¯15 ¯14];[9 8 7 ⋄ 16 15 14];[¯9 ¯18 ¯27 ⋄ ¯6 ¯15 ¯24];[9 18 27 ⋄ 6 15 24];[¯9 ¯8 ¯7 ⋄ ¯19 ¯18 ¯17];[9 8 7 ⋄ 19 18 17]]
+
 ⍝ — Broadcasting recurs inside nested arrays
 (⊂[[1] ⋄ [2]])+⊂[10 20 30 ⋄]   ⍝ ⊂[11 21 31 ⋄ 12 22 32]
 
@@ -2232,6 +2236,15 @@ G←2 3⍴[["ABC" 1] ["DEF" 2] ["GHI" 3] ["JKL" 4] ["MNO" 5] ["PQR" 6]] ⋄ H←
 ⍝ — Encode puts the digit axis after the value frame, including a zero-length digit axis
 ⍴(0⍴0)⊤2 2⍴1   ⍝ [2 2 0]ₓ
 
+⍝ — Encode gives each value's digits along the last axis, for negative bases and values too
+[¯10 10]ₓ⊤[123 ¯45 7]ₓ   ⍝ [¯8 3 ⋄ ¯5 5 ⋄ 0 7]ₓ
+
+⍝ — A quotient beyond the integer range still gives exact digits
+[7 ¯1]ₓ⊤[¯9223372036854775808 5]ₓ   ⍝ [1 0 ⋄ 2 0]ₓ
+
+⍝ — Approximate bases give approximate digits
+x←10 10⊤[12 34]ₓ ⋄ [x;•storage x]   ⍝ [[1 2 ⋄ 3 4];"float"]
+
 ⍝ — Decode the same digits in binary and decimal
 [[2] ⋄ [10]]⊥1 0 1   ⍝ 5 101
 
@@ -3198,6 +3211,10 @@ s←+/ ⋄ s⍠0 [1 2 3 ⋄ 4 5 6]   ⍝ 5 7 9
 
 ⍝ — Zero residue-base returns the argument unchanged
 0 3|¯2 6   ⍝ ¯2 0
+
+⍝ — Residue by one integer takes that integer's sign across the whole integer range
+x←[¯7 7 0 ¯9223372036854775808 9223372036854775807]ₓ ⋄ [3ₓ|x;¯3ₓ|x;4ₓ|x;¯1ₓ|x]
+[[2 1 0 1 1]ₓ;[¯1 ¯2 0 ¯2 ¯2]ₓ;[1 3 0 0 3]ₓ;[0 0 0 0 0]ₓ]
 
 ⍝ — Floor applies comparison tolerance near integers
 ⌊1.000000000000001 ¯1.000000000000001   ⍝ [1 ¯1]ₓ

@@ -155,6 +155,7 @@ impl Layout {
     /// The array with this layout holding the integers `data`, in integer storage.
     pub fn integers(&self, data: Vec<i64>) -> Result<Value, ErrorKind> { Value::integers(self.shape.clone(), data)?.with_layout(self.clone()) }
     pub fn booleans(&self, data: Vec<bool>) -> Result<Value, ErrorKind> { Value::booleans(self.shape.clone(), data)?.with_layout(self.clone()) }
+    pub fn floats(&self, data: Vec<f64>) -> Result<Value, ErrorKind> { Value::floats(self.shape.clone(), data)?.with_layout(self.clone()) }
     pub fn replace(&self, axes: std::ops::Range<usize>, other: &Self) -> Self {
         self.axes(0..axes.start).concat(other).concat(&self.axes(axes.end..self.shape.len()))
     }

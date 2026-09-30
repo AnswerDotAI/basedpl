@@ -102,10 +102,10 @@ impl Element for f64 {
             Primitive::Math(Lcm) => run.same(|x, y| real::integral(x, y, int::lcm)),
             Primitive::Compare(Equal) => run.boolean(|x, y| Some(float_equal(x, y))),
             Primitive::Compare(NotEqual) => run.boolean(|x, y| Some(!float_equal(x, y))),
-            Primitive::Compare(Less) => run.boolean(|x, y| Some(x < y && !float_equal(x, y))),
-            Primitive::Compare(LessEqual) => run.boolean(|x, y| Some(x <= y || float_equal(x, y))),
-            Primitive::Compare(Greater) => run.boolean(|x, y| Some(x > y && !float_equal(x, y))),
-            Primitive::Compare(GreaterEqual) => run.boolean(|x, y| Some(x >= y || float_equal(x, y))),
+            Primitive::Compare(Less) => run.boolean(|x, y| Some((x < y) & !float_equal(x, y))),
+            Primitive::Compare(LessEqual) => run.boolean(|x, y| Some((x <= y) | float_equal(x, y))),
+            Primitive::Compare(Greater) => run.boolean(|x, y| Some((x > y) & !float_equal(x, y))),
+            Primitive::Compare(GreaterEqual) => run.boolean(|x, y| Some((x >= y) | float_equal(x, y))),
             _ => return None,
         })
     }
@@ -237,6 +237,7 @@ pub(crate) fn map(p: Primitive, left: Option<&Value>, right: &Value, agreement: 
     };
     if let Primitive::Math(Math::Circle) = p { return circle(left, right, agreement); }
     if let Primitive::Compare(op) = p { if let Some(result) = against_number(op, left, right, agreement) { return Some(result); } }
+    if let Primitive::Math(Math::Magnitude) = p { if let Some(result) = residues(left, right, agreement) { return Some(result); } }
     match (left.checked_items(), right.checked_items()) {
         (Items::Integers(x), Items::Integers(y)) if matches!(p, Primitive::Math(Math::Lcm | Math::Gcd)) => {
             booleans(p, x, y, agreement).or_else(|| dyadic::<i64, _, _>(p, x, y, agreement))
@@ -327,6 +328,13 @@ fn within<T: Copy>(op: Comparison, x: &[T], read: impl Fn(T) -> f64 + Copy, c: f
 
 /// `f` on each item of `x`.
 fn mask<T: Copy>(x: &[T], f: impl Fn(T) -> bool) -> Vec<bool> { x.iter().map(|&a| f(a)).collect() }
+
+/// `x|Y` for one integer `x`, dividing by multiplication. `x` of 0 takes the general kernel.
+fn residues(left: &Value, right: &Value, agreement: &Agreement) -> Option<Value> {
+    let (Mapping::Scalar, Items::Integers(&[x]), Items::Integers(y)) = (&agreement.left, left.checked_items(), right.checked_items()) else { return None };
+    let divisor = int::Divisor::new(x)?;
+    Map { x: &[x], y, agreement }.binary(|_, b| divisor.div_mod(b).map(|(_, r)| r))
+}
 
 /// `∧` or `∨` on Booleans, which is `and` or `or`. `None` at the first other integer, where the gcd kernel must run instead.
 fn booleans(p: Primitive, x: &[i64], y: &[i64], agreement: &Agreement) -> Option<Value> {
@@ -420,6 +428,14 @@ fn filled<I, B: Element>(len: usize, items: impl Iterator<Item = I>, f: impl Fn(
     fill(&mut data, len, items, f).then_some(data)
 }
 
+/// The results of `f` on `blocks`, each of `n` items, one block after another. `None` when any item failed. A block loop needs no
+/// division to find each item.
+fn blocks<I, B: Element>(len: usize, n: usize, blocks: impl Iterator<Item = impl Iterator<Item = I>>, f: impl Fn(I) -> Option<B> + Copy) -> Option<Vec<B>> {
+    let mut data = Vec::with_capacity(len);
+    let ok = blocks.fold(true, |ok, block| fill(&mut data, n, block, f) & ok);
+    ok.then_some(data)
+}
+
 /// Appends the results of `f` on the `n` items of `items` to `data`, and gives whether every item succeeded. The results go straight
 /// into spare capacity, which is never zeroed first. The loop never stops early, and a failed item gives a placeholder. With `ok` a
 /// local, the compiler can vectorize the loop.
@@ -456,11 +472,12 @@ impl<X: Element, Y: Element> Map<'_, X, Y> {
                 filled(len, x.iter().map(|&a| (a, b)), f)
             }
             (Mapping::Linear(1), Mapping::Linear(1)) => filled(len, x.iter().copied().zip(y.iter().copied()), f),
-            (Mapping::Linear(n), Mapping::Tiled(m)) if n == m => {
-                let mut data = Vec::with_capacity(len);
-                let ok = x.iter().fold(true, |ok, &a| fill(&mut data, y.len(), y.iter().map(|&b| (a, b)), f) & ok);
-                ok.then_some(data)
-            }
+            (Mapping::Linear(n), Mapping::Tiled(m)) if n == m => blocks(len, *n, x.iter().map(|&a| y.iter().map(move |&b| (a, b))), f),
+            (Mapping::Tiled(n), Mapping::Linear(m)) if n == m => blocks(len, *n, y.iter().map(|&b| x.iter().map(move |&a| (a, b))), f),
+            (Mapping::Linear(1), Mapping::Linear(r)) => blocks(len, *r, x.chunks(*r).zip(y).map(|(xs, &b)| xs.iter().map(move |&a| (a, b))), f),
+            (Mapping::Linear(r), Mapping::Linear(1)) => blocks(len, *r, x.iter().zip(y.chunks(*r)).map(|(&a, ys)| ys.iter().map(move |&b| (a, b))), f),
+            (Mapping::Linear(1), Mapping::Tiled(n)) => blocks(len, *n, x.chunks(*n).map(|xs| xs.iter().copied().zip(y.iter().copied())), f),
+            (Mapping::Tiled(n), Mapping::Linear(1)) => blocks(len, *n, y.chunks(*n).map(|ys| x.iter().copied().zip(ys.iter().copied())), f),
             (left, right) => filled(len, (0..len).map(|i| (item(left, x, i), item(right, y, i))), f),
         }?;
         B::build(self.agreement.layout.shape().to_vec(), data)

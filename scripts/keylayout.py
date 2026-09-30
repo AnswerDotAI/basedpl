@@ -69,8 +69,8 @@ def keylayout(layout):
         keys += [f'<key code="{code}" output={attribute(text)}/>' for code, text in FIXED_KEYS.items()]
         keymaps.append(f'  <keyMap index="{index}">\n' + ''.join(f'   {k}\n' for k in keys) + '  </keyMap>\n')
     # Space types a state's terminator alone. Delete and Escape cancel a state and type nothing.
-    cancel = {name: {'state': 'none'} for name in states}
-    actions['space'] = {'none': ' ', **{name: s['terminator'] or {'state': 'none'} for name, s in states.items()}}
+    cancel = {name: '' for name in states}
+    actions['space'] = {'none': ' ', **{name: s['terminator'] for name, s in states.items()}}
     actions['delete'] = {'none': '\x08', **cancel}
     actions['escape'] = {'none': '\x1b', **cancel}
     texts = [v for a in actions.values() for v in a.values() if isinstance(v, str)] + [s['terminator'] for s in states.values()]

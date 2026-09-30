@@ -976,51 +976,51 @@
   </action>
   <action id="delete">
    <when state="none" output="&#x0008;"/>
-   <when state="diaeresis" next="none"/>
-   <when state="superscript" next="none"/>
-   <when state="superscript-minus" next="none"/>
-   <when state="delta" next="none"/>
-   <when state="or" next="none"/>
-   <when state="and" next="none"/>
-   <when state="bar" next="none"/>
-   <when state="match" next="none"/>
-   <when state="quad" next="none"/>
-   <when state="omega" next="none"/>
-   <when state="epsilon" next="none"/>
-   <when state="iota" next="none"/>
-   <when state="circle" next="none"/>
-   <when state="stile" next="none"/>
-   <when state="alpha" next="none"/>
-   <when state="del" next="none"/>
-   <when state="take" next="none"/>
-   <when state="enclose" next="none"/>
-   <when state="cap" next="none"/>
-   <when state="decode" next="none"/>
-   <when state="encode" next="none"/>
+   <when state="diaeresis" output=""/>
+   <when state="superscript" output=""/>
+   <when state="superscript-minus" output=""/>
+   <when state="delta" output=""/>
+   <when state="or" output=""/>
+   <when state="and" output=""/>
+   <when state="bar" output=""/>
+   <when state="match" output=""/>
+   <when state="quad" output=""/>
+   <when state="omega" output=""/>
+   <when state="epsilon" output=""/>
+   <when state="iota" output=""/>
+   <when state="circle" output=""/>
+   <when state="stile" output=""/>
+   <when state="alpha" output=""/>
+   <when state="del" output=""/>
+   <when state="take" output=""/>
+   <when state="enclose" output=""/>
+   <when state="cap" output=""/>
+   <when state="decode" output=""/>
+   <when state="encode" output=""/>
   </action>
   <action id="escape">
    <when state="none" output="&#x001B;"/>
-   <when state="diaeresis" next="none"/>
-   <when state="superscript" next="none"/>
-   <when state="superscript-minus" next="none"/>
-   <when state="delta" next="none"/>
-   <when state="or" next="none"/>
-   <when state="and" next="none"/>
-   <when state="bar" next="none"/>
-   <when state="match" next="none"/>
-   <when state="quad" next="none"/>
-   <when state="omega" next="none"/>
-   <when state="epsilon" next="none"/>
-   <when state="iota" next="none"/>
-   <when state="circle" next="none"/>
-   <when state="stile" next="none"/>
-   <when state="alpha" next="none"/>
-   <when state="del" next="none"/>
-   <when state="take" next="none"/>
-   <when state="enclose" next="none"/>
-   <when state="cap" next="none"/>
-   <when state="decode" next="none"/>
-   <when state="encode" next="none"/>
+   <when state="diaeresis" output=""/>
+   <when state="superscript" output=""/>
+   <when state="superscript-minus" output=""/>
+   <when state="delta" output=""/>
+   <when state="or" output=""/>
+   <when state="and" output=""/>
+   <when state="bar" output=""/>
+   <when state="match" output=""/>
+   <when state="quad" output=""/>
+   <when state="omega" output=""/>
+   <when state="epsilon" output=""/>
+   <when state="iota" output=""/>
+   <when state="circle" output=""/>
+   <when state="stile" output=""/>
+   <when state="alpha" output=""/>
+   <when state="del" output=""/>
+   <when state="take" output=""/>
+   <when state="enclose" output=""/>
+   <when state="cap" output=""/>
+   <when state="decode" output=""/>
+   <when state="encode" output=""/>
   </action>
  </actions>
  <terminators>

@@ -3,7 +3,7 @@ use crate::{
     array::{compress, generated_len, or_and_sum, Axis, Frame, Gather, Items, Layout, Steps},
     execution::Context,
     keyed::Selector,
-    number::{Arithmetic, Math},
+    number::{int, Arithmetic, Math},
     search::{classify, first_matches, firsts, Cells},
     DomainAt, Error, ErrorAt, ErrorKind, Number, Span, Value,
 };
@@ -1495,7 +1495,11 @@ fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_>) -> Resul
     if encode {
         let digits = if left.is_unit() { Layout::from(vec![]) } else { left.layout().axes(left.shape().len() - 1..left.shape().len()) };
         let layout = agreement.layout.concat(&digits);
-        let mut data = Vec::with_capacity(generated_len(layout.shape()).error_at(span, "encode result is too large")?);
+        let len = generated_len(layout.shape()).error_at(span, "encode result is too large")?;
+        if let (Mapping::Scalar, Mapping::Linear(1)) = (&agreement.left, &agreement.right) {
+            if let Some(result) = encode_whole(left.checked_items(), right.checked_items(), &layout) { return Ok(result); }
+        }
+        let mut data = Vec::with_capacity(len);
         for i in 0..if xlen == 0 { 0 } else { agreement.len } {
             span.check()?;
             let (bases, mut value) = (&xs[cell(&agreement.left, i, xlen)?..][..xlen], ys[cell(&agreement.right, i, 1)?].clone());
@@ -1538,6 +1542,24 @@ fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_>) -> Resul
     }
     if agreement.layout.shape().is_empty() { return Ok(data.remove(0)); }
     agreement.layout.collect(data, Value::Number(zero)).error_at(span, "invalid decode result")
+}
+
+/// `bases⊤values` when both hold whole numbers in compact storage, with each value's digits together and in order. Each base divides
+/// by multiplication. The digits are floats when either argument is. `None` for other arguments, or when a quotient leaves `i64`.
+fn encode_whole<'a>(bases: Items<'a>, values: Items<'a>, layout: &Layout) -> Option<Value> {
+    let exact = !matches!(bases, Items::Floats(_)) && !matches!(values, Items::Floats(_));
+    let whole = |items: Items<'a>| match items { Items::Booleans(_) | Items::Integers(_) | Items::Floats(_) => items.integers().ok(), _ => None };
+    let (bases, values) = (whole(bases)?, whole(values)?);
+    if bases.is_empty() { return None; }
+    let divisors: Vec<_> = bases.iter().map(|&b| int::Divisor::new(b)).collect();
+    let mut data = vec![0; bases.len() * values.len()];
+    for (digits, &value) in data.chunks_mut(bases.len()).zip(values.iter()) {
+        let mut value = value;
+        for (digit, divisor) in digits.iter_mut().zip(&divisors).rev() {
+            (value, *digit) = match divisor { Some(d) => d.div_mod(value)?, None => (0, value) };
+        }
+    }
+    if exact { layout.integers(data) } else { layout.floats(data.into_iter().map(|n| n as f64).collect()) }.ok()
 }
 
 /// The order of two items. `None` when the comparison reaches a function, which has no ordering.

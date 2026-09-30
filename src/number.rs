@@ -35,7 +35,7 @@ pub(crate) fn float_equal(x: f64, y: f64) -> bool {
 }
 /// Whether `x` and `y` match, as `≡` and search compare them. NaN matches NaN here. `float_equal` follows IEEE, where NaN equals nothing.
 #[inline]
-pub(crate) fn float_match(x: f64, y: f64) -> bool { float_equal(x, y) || (x.is_nan() && y.is_nan()) }
+pub(crate) fn float_match(x: f64, y: f64) -> bool { float_equal(x, y) | (x.is_nan() & y.is_nan()) }
 
 /// The floats tolerantly equal to `c`, as the range `lo..=hi`: `float_equal(x, c)` holds exactly when `lo <= x && x <= hi`. A
 /// comparison against one number works out the range once, so each item needs only plain comparisons. `None` for NaN, which equals
@@ -279,6 +279,22 @@ pub(crate) mod int {
         if x == 0 { return Some(y); }
         let r = y.checked_rem(x)?;
         Some(if r != 0 && (r < 0) != (x < 0) { r + x } else { r })
+    }
+    /// A fixed nonzero divisor for dividing many numbers. Each division uses multiplications and shifts, not a division instruction.
+    /// Setting one up costs more than a single division.
+    #[derive(Clone, Copy)]
+    pub(crate) struct Divisor { x: i64, magnitude: strength_reduce::StrengthReducedU64 }
+    impl Divisor {
+        pub(crate) fn new(x: i64) -> Option<Self> { (x != 0).then(|| Self { x, magnitude: strength_reduce::StrengthReducedU64::new(x.unsigned_abs()) }) }
+        /// The floored quotient `⌊y÷x` and the residue `x|y`. The residue takes the sign of `x`. `None` when the quotient is outside `i64`.
+        #[inline]
+        pub(crate) fn div_mod(self, y: i64) -> Option<(i64, i64)> {
+            let (q, r) = strength_reduce::StrengthReducedU64::div_rem(y.unsigned_abs(), self.magnitude);
+            let (q, r) = (i64::try_from(q).ok()?, r as i64);
+            let q = if (y < 0) != (self.x < 0) { -q } else { q };
+            let r = if y < 0 { -r } else { r };
+            Some(if r != 0 && (r < 0) != (self.x < 0) { (q - 1, r + self.x) } else { (q, r) })
+        }
     }
     /// Exact powers share the exponent limit of the general exact path.
     #[inline]
