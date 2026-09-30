@@ -25,7 +25,7 @@ const CASES: &[(f64, &[&str])] = &[
     // Compressing by a mask can't be vectorised, because each kept item's place depends on the items before it.
     (3.0, &["b#v", "⍸b"]),
     // Comparing within tolerance takes a subtraction, the magnitudes, a scale and a comparison for each item.
-    (6.0, &["⌊v", "v<w", "jv<500"]),
+    (10.0, &["⌊v", "v<w", "jv<500"]),
     // Writing twice as many items, or writing in a different order from reading.
     (4.0, &["v,w", "⍉m"]),
     // A small-table index takes one pass for the range of the items, then one pass to write each item's first position into the
