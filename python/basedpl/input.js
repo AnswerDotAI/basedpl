@@ -81,7 +81,7 @@
 
     function bplStart(e) {
         if (e.bpl) return 0;
-        const header = /^%%bpl[^\S\n]*(?:\r?\n|$)/.exec(e.text);
+        const header = /^%%(?:bpl|apl)[^\S\n]*(?:\r?\n|$)/.exec(e.text);
         if (header) return e.pos >= header[0].length ? header[0].length : -1;
         const start = e.text.lastIndexOf('\n', e.pos - 1) + 1;
         const line = /^[ \t]*(?:[\p{ID_Start}_][\p{ID_Continue}]*[ \t]*=[ \t]*)?%bpl[ \t]+/u.exec(e.text.slice(start, e.pos));
