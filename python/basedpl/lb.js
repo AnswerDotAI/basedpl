@@ -86,7 +86,7 @@
     let overlay = false, active, lastEditor, choice, keyInput = false;
     const originalPadding = d.body.style.paddingTop;
     try { overlay = localStorage.getItem('ngn_lb_overlay') === '1'; } catch {}
-    function layout() {
+    function reflow() {
         toggle.textContent = overlay ? '▼' : '▲';
         d.body.style.paddingTop = overlay || bar.hidden ? originalPadding : `${bar.offsetHeight}px`;
     }
@@ -97,8 +97,8 @@
     }
     for (const {glyph, name, monad, dyad, aliases} of symbols)
         bar.append(button(glyph, [...new Set([name, monad, dyad, aliases].join(' ').split(' ').filter(Boolean))].join(' ')));
-    new ResizeObserver(layout).observe(bar);
-    layout();
+    new ResizeObserver(reflow).observe(bar);
+    reflow();
 
     function cancel() { active = undefined; choice = undefined; tip.hidden = true; }
     function show(e, item) {
@@ -127,11 +127,11 @@
     bar.addEventListener('mousedown', ev => {
         ev.preventDefault();
         const b = ev.target.closest('button');
-        if (b?.classList.contains('ngn_x')) { bar.hidden = true; layout(); }
+        if (b?.classList.contains('ngn_x')) { bar.hidden = true; reflow(); }
         else if (b === toggle) {
             overlay = !overlay;
             try { localStorage.setItem('ngn_lb_overlay', overlay ? '1' : '0'); } catch {}
-            layout();
+            reflow();
         } else if (b?.dataset.glyph && lastEditor) lastEditor.insert(b.dataset.glyph);
         cancel();
     });
