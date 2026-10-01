@@ -22,7 +22,7 @@ mod protocol;
 #[doc(hidden)]
 pub mod reference;
 mod regex;
-mod scalar;
+mod pervasive;
 mod search;
 mod selection;
 mod symbols;

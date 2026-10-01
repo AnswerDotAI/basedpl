@@ -16,11 +16,11 @@ x←5
 ≢[+/ ÷ ≢]            ⍝ 3ₓ
 ```
 
-BPL never writes a selection as one array next to another. [Index](glyphs/squad.qmd) `⌷` selects. So arrays side by side have one meaning, whatever the names hold. `(+/x) 3` is a two-item list whether `x` is a vector or a matrix. Each run is one item, so `a b+1` is `[a (b+1)]`, and `[1 2] 3` is `[[1 2] 3]`.
+BPL never writes a selection as one array next to another. [Index](glyphs/squad.qmd) `⌷` selects. So subjects side by side have one meaning, whatever the names hold. `(+/x) 3` is a two-item list whether `x` is a vector or a matrix. Each run is one item, so `a b+1` is `[a (b+1)]`, and `[1 2] 3` is `[[1 2] 3]`.
 
 Brackets always write a vector, whatever the number of items. `[1 2 3]` is `1 2 3`, and `[1]` is a one-item vector. A single literal isn't a strand: `1` is a number.
 
-Parentheses group, as they do in maths, whatever they hold. `(1+2)×3` is 9, `(1 2)` is `1 2`, and `(x)` is `x`. So writing a name in place of the literal it holds never changes the reading. A scalar is written with `⊂`, as in BQN: `⊂[1 2]` is a scalar holding a vector. Glyphs alone, separated by spaces, make a scalar instead. `⊂+` is a train, so parentheses give a glyph its scalar: `(+ -)` is `⊂[+ -]`. The text alone decides, so reading the code never depends on what a name holds.
+Parentheses group, as they do in maths, whatever they hold. `(1+2)×3` is 9, `(1 2)` is `1 2`, and `(x)` is `x`. So writing a name in place of the literal it holds never changes the reading. A scalar is written with `⊂`, as in BQN: `⊂[1 2]` is a scalar holding a vector. `⊂+` is a train, so a function's scalar is written with `ᵘ` after it: `+ᵘ` is a scalar holding `+`.
 
 ```bpl
 ⍴[1]                 ⍝ [1]ₓ
@@ -37,7 +37,7 @@ Parentheses with `⋄` write a vector of rows. Each row reads as brackets do, so
 ≢¨(1 2 ⋄ 3)                            ⍝ [2 1]ₓ
 ```
 
-Items in brackets can be functions. `[+/ ÷ ≢]` is a vector of three functions. A one-item vector turns a function expression into a value: `[+/÷≢]`. BQN needs `⊑⟨Expr⟩` or a name for this, which Lochbaum lists under "Converting a function expression to a subject is tricky". `ᵘ` after a function makes a unit that holds it: `+ᵘ`.
+Items in brackets can be functions. `[+/ ÷ ≢]` is a vector of three functions. A one-item vector turns a function expression into a value: `[+/÷≢]`. BQN needs `⊑⟨Expr⟩` or a name for this, which Lochbaum lists under "Converting a function expression to a subject is tricky". `ᵘ` after a function makes a scalar that holds it: `+ᵘ`.
 
 Items in a list are evaluated left to right, as statements are. BQN chose the same order for its lists and strands.
 
@@ -68,16 +68,16 @@ Other languages give spaces meaning too. K reads `a -1` differently from `a - 1`
 
 ## A space before an argument makes a train
 
-A run that ends in a function has no argument yet. It is a function, built as an APL train with one addition. An array directly before a function binds to it. `2×` is `2⍃×`, and `32+1.8×` converts Celsius to Fahrenheit.
+A run that ends in a function has no argument yet. It is a function, built as an APL train with one addition. A subject directly before a function binds to it. `2×` is `2⍃×`, and `32+1.8×` converts Celsius to Fahrenheit.
 
 ```bpl
 f←32+1.8×
 f100                 ⍝ 212
 ```
 
-APL's train rules decide the rest, including Dyalog's fork with a constant, `0.5×⊢+÷`. Binding covers the common case of fixing a left argument, without `⍃`. K has the same idea, called projection, in which `2*` is a function.
+APL's train rules decide the rest, including Dyalog's fork with a subject on the left, `0.5×⊢+÷`. Binding covers the common case of fixing a left argument, without `⍃`. K has the same idea, called projection, in which `2*` is a function.
 
-The space before an argument decides the reading. `+/÷≢ x` is the train `+/÷≢` applied to `x`, which is the mean. `+/÷≢x` is one run that ends in an array. It is an expression, `+/(÷(≢x))`.
+The space before an argument decides the reading. `+/÷≢ x` is the train `+/÷≢` applied to `x`, which is the mean. `+/÷≢x` is one run that ends in a subject. It is an expression, `+/(÷(≢x))`.
 
 ```bpl
 x←1 2 3 6
@@ -89,7 +89,7 @@ If both spellings meant the same, the space would carry nothing. Everyday arithm
 
 ## Selection is a function
 
-Index, `⌷`, selects: `I⌷Y` takes one item of `I` for each leading axis of `Y`. K applies a list to its positions, as if the list were a function, so `v 1` selects. BPL keeps arrays and functions apart. An array before a function is that function's left argument, and selection is a function like any other. For one position, `1⌷v` is as long as `v 1`.
+Index, `⌷`, selects: `I⌷Y` takes one item of `I` for each leading axis of `Y`. K applies a list to its positions, as if the list were a function, so `v 1` selects. BPL keeps subjects and functions apart. A subject before a function is that function's left argument, and selection is a function like any other. For one position, `1⌷v` is as long as `v 1`.
 
 A single position removes its axis. An array of positions replaces the axis with its own shape, so the positions show the rank of the result. `1⌷v` is an item, `[⊂1]⌷v` is that item enclosed, and `[[1]]⌷v` is a one-item vector. Dyalog hides this rule: its `v[1]` is a scalar, and a one-item result needs `v[,1]`.
 
@@ -156,4 +156,4 @@ m~[1 2 ⋄ 5 6]          ⍝ [3 4 ⋄]
 2⊥[1 0 1 ⋄ 1 1 0]      ⍝ 5 6
 ```
 
-Rank 0 passes each 0-cell as a unit, as BQN's `⎉0` does, not the item inside it. So `⊢⍤0` gives back its argument unchanged, even when the argument is nested. Each, `¨`, is the operator that passes items.
+Rank 0 passes each 0-cell as a scalar, as BQN's `⎉0` does, not the item inside it. So `⊢⍤0` gives back its argument unchanged, even when the argument is nested. Each, `¨`, is the operator that passes items.

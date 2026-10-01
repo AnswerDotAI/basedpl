@@ -147,7 +147,7 @@ impl From<BigInt> for Number { fn from(n: BigInt) -> Self { Self::exact(BigRatio
 /// A complex number with no imaginary part is a float.
 impl From<Complex64> for Number { fn from(n: Complex64) -> Self { if n.im == 0.0 { n.re.into() } else { Self(Complex(n)) } } }
 
-/// Real cases of the scalar functions, shared by `Number` and the compact kernels in `scalar.rs`. They follow IEEE 754. `None` means the
+/// Real cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`. They follow IEEE 754. `None` means the
 /// result is complex, so the general path must give it.
 pub(crate) mod real {
     use super::{float_equal, near_integer, real_floor, Arithmetic, ErrorKind};
@@ -250,7 +250,7 @@ pub(crate) mod real {
     }
 }
 
-/// Integer cases of the scalar functions, shared by `Number` and the compact kernels in `scalar.rs`.
+/// Integer cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`.
 /// `None` means the exact or error path must give the result: an overflow, a fraction, or an argument outside the domain.
 pub(crate) mod int {
     use super::Arithmetic;
@@ -314,7 +314,7 @@ pub(crate) mod int {
     pub(crate) fn not(y: i64) -> Option<bool> { Some(!boolean(y)?) }
 }
 
-/// Complex cases of the scalar functions, shared by `Number` and the compact kernels in `scalar.rs`. Arithmetic is `num_complex`'s.
+/// Complex cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`. Arithmetic is `num_complex`'s.
 /// Complex storage also holds floats that widened into it. `Number` reads such an item as a float, because its imaginary part is zero.
 /// So `times`, `divide`, `equal` and `magnitude` take the real case when no argument has an imaginary part. Addition and subtraction give
 /// the same results either way.
@@ -483,7 +483,10 @@ impl Number {
         Ok(text.parse::<f64>().map_err(|_| ErrorKind::Syntax)?.into())
     }
 
-    pub(crate) fn unit(&self, n: i32) -> Self { if self.is_exact() { Self(Integer(n as i64)) } else { Self(Float(n as f64)) } }
+    /// `n` as an exact integer if this number is exact, and as a float otherwise.
+    pub(crate) fn like(&self, n: i32) -> Self { if self.is_exact() { Self(Integer(n as i64)) } else { Self(Float(n as f64)) } }
+    pub(crate) fn zero(&self) -> Self { self.like(0) }
+    pub(crate) fn one(&self) -> Self { self.like(1) }
 
     pub(crate) fn to_float(&self) -> Result<f64, &'static str> {
         match &self.0 {
@@ -534,7 +537,7 @@ impl Number {
     }
 
     pub(crate) fn result_zero(&self, left: Option<&Self>) -> Self {
-        if matches!(left.map(|n| &n.0), Some(Float(_) | Complex(_))) { Self(Float(0.0)) } else { self.unit(0) }
+        if matches!(left.map(|n| &n.0), Some(Float(_) | Complex(_))) { Self(Float(0.0)) } else { self.zero() }
     }
 
     /// Whether the numbers are equal, with tolerance. NaN equals nothing, as in IEEE.
@@ -673,7 +676,7 @@ impl Number {
 
     pub(crate) fn parts(&self, polar: bool) -> Result<[Self; 2], &'static str> {
         if polar { return Ok([self.math_monad(Math::Magnitude)?, self.to_complex()?.arg().into()]); }
-        match self.as_complex() { Some(z) => Ok([Self(Float(z.re)), Self(Float(z.im))]), None => Ok([self.clone(), self.unit(0)]) }
+        match self.as_complex() { Some(z) => Ok([Self(Float(z.re)), Self(Float(z.im))]), None => Ok([self.clone(), self.zero()]) }
     }
 
     fn root(&self, right: &Self) -> Result<Self, &'static str> {
@@ -842,23 +845,23 @@ impl Number {
 
     pub(crate) fn boolean(&self) -> Result<bool, &'static str> {
         if let Boolean(b) = self.0 { return Ok(b); }
-        if self.equal(&self.unit(0))? { Ok(false) } else if self.equal(&self.unit(1))? { Ok(true) } else { Err("expected a Boolean") }
+        if self.equal(&self.zero())? { Ok(false) } else if self.equal(&self.one())? { Ok(true) } else { Err("expected a Boolean") }
     }
 
     fn binomial(&self, right: &Self) -> Result<Self, &'static str> {
-        let one = right.result_zero(Some(self)).unit(1);
+        let one = right.result_zero(Some(self)).one();
         if let Ok(k) = self.integer() {
             if k < 0 {
-                let Ok(n) = right.integer() else { return Ok(one.unit(0)); };
-                if n >= 0 || k > n { return Ok(one.unit(0)); }
+                let Ok(n) = right.integer() else { return Ok(one.zero()); };
+                if n >= 0 || k > n { return Ok(one.zero()); }
                 let count = n.checked_sub(k).ok_or("binomial argument is too large")?;
                 let upper = k.checked_neg().and_then(|v| v.checked_sub(1)).ok_or("binomial argument is too large")?;
                 let a = Self::exact(BigRational::from_integer(count.into()));
                 let b = Self::exact(BigRational::from_integer(upper.into()));
-                let value = a.binomial(&b)?.dyad(Arithmetic::Times, &one.unit(if count % 2 == 0 { 1 } else { -1 }))?;
+                let value = a.binomial(&b)?.dyad(Arithmetic::Times, &one.like(if count % 2 == 0 { 1 } else { -1 }))?;
                 return Ok(value);
             }
-            let k = if let Ok(n) = right.integer() { if n >= 0 && k > n { return Ok(one.unit(0)); } if n >= 0 { k.min(n - k) } else { k } } else { k };
+            let k = if let Ok(n) = right.integer() { if n >= 0 && k > n { return Ok(one.zero()); } if n >= 0 { k.min(n - k) } else { k } } else { k };
             if k > 100_000 { return Err("binomial argument is too large"); }
             let mut value = one.clone();
             for i in 0..k {

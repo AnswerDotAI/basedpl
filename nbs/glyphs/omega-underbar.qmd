@@ -6,4 +6,4 @@
 op←{⍶+⍹×⍵} ⋄ (2 op 3)4 ⍝ 14
 ```
 
-Operands can be arrays or functions; arguments remain `⍺` and `⍵`.
+Operands can be subjects or functions; arguments remain `⍺` and `⍵`.

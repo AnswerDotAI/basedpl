@@ -39,7 +39,7 @@ f←{⎕←⍺ ⋄ ⍺+⍵} ⋄ f/⍠1 2 (0 2 2⍴0)
 +/⍠1 1 (2 2⍴⍳4)
 ⍝ error: DOMAIN ERROR
 
-⍝ reduce-axes-rank — An axis specification is a scalar or vector
+⍝ reduce-axes-rank — An axis specification is a unit or vector
 +/⍠[1 2 ⋄] 2 2⍴⍳4
 ⍝ error: RANK ERROR
 
@@ -196,7 +196,7 @@ M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
 ⍝ =>
 [4 4 ["price":10 "qty":2] ⊂10 ["bob" "price"]]
 
-⍝ axis-explicit — Explicit scalar axes align the labels on those axes
+⍝ axis-explicit — Explicit axes for a pervasive function align the labels on those axes
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
 M+⍠1 ("qty" "tax":10 2)
 ⍝ =>
@@ -386,7 +386,7 @@ v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}   ⍝ 15
 ⍝ — Self-classify major cells
 =[1 2 ⋄ 3 4 ⋄ 1 2]   ⍝ [$t $f $t ⋄ $f $t $f]
 
-⍝ — A scalar has one class and one item
+⍝ — An atom has one class and one item
 =7   ⍝ [[$t] ⋄]
 
 ⍝ — No items, no classes
@@ -635,7 +635,7 @@ v←10 20 30 ⋄ v[2]   ⍝ [10 20 30;[2]]
 ⍝ — Two bracket lists side by side form a strand
 [10 20 30] [2 0]   ⍝ [10 20 30;2 0]
 
-⍝ — A unit holding a function is one item
+⍝ — A scalar holding a function is one item
 ≢(-ᵘ)3   ⍝ 2ₓ
 
 ⍝ — Each run is one item
@@ -668,7 +668,7 @@ choose←{⍺>⍵}⍚[- ÷] ⋄ 12 choose 3   ⍝ 4
 ⍝ — An agenda branch may itself return a function
 choose←0⍚[{↑⍵} ⊢] ⋄ f←choose [+ ×] ⋄ 2 f 3   ⍝ 5
 
-⍝ — A singleton vector is not a scalar selector
+⍝ — A singleton vector is not a unit selector
 (,1)⍚[+ ×]
 ⍝ error: RANK ERROR
 
@@ -676,7 +676,7 @@ choose←0⍚[{↑⍵} ⊢] ⋄ f←choose [+ ×] ⋄ 2 f 3   ⍝ 5
 1⍚ ⍬⍴[+]
 ⍝ error: RANK ERROR
 
-⍝ — A selector function must return one scalar index
+⍝ — A selector function must return a unit index
 {1 2}⍚[+ ×] 3
 ⍝ error: RANK ERROR
 
@@ -752,7 +752,7 @@ m←[1 2 3 ⋄ 4 5 6] ⋄ [m-10 20;10 20-m;m-⍠1 [10 20 30];[10 20 30]-⍠1 m;(
 ⍝ — A vector frame aligns with the leading matrix axis
 1 2 +⍤0 [2 3]⍴0   ⍝ [1 1 1 ⋄ 2 2 2]
 
-⍝ — Each and rank 0 broadcast leading unit axes as scalar functions do
+⍝ — Each and rank 0 align leading axes as pervasive functions do
 x←2 3⍴⍳6 ⋄ [x+10 20;x+¨10 20;x+⍤0[10 20]]
 3⍴⊂[10 11 12 ⋄ 23 24 25]
 
@@ -813,7 +813,7 @@ a←[1 2;3 4] ⋄ (⊢↑a)←7 8 9 ⋄ a   ⍝ [7 8 9;3 4]
 ⍝ — Identity selection may replace the whole array with a different shape
 a←1 2 ⋄ (⊣a)←3 4 5 ⋄ a   ⍝ 3 4 5
 
-⍝ — An empty pick path selects the whole scalar for replacement
+⍝ — An empty pick path selects the whole atom for replacement
 a←1 ⋄ (⍬⊃a)←3 4 ⋄ a   ⍝ 3 4
 
 ⍝ — Whole-array replacement also works when the old array is empty
@@ -979,7 +979,7 @@ r←["a":1] ⋄ r,←["a":2]
 x←1 2 ⋄ {x,←{⍵} ⋄ 0}0
 ⍝ error: DOMAIN ERROR
 
-⍝ — Appending rows to a matrix spreads a scalar into a row
+⍝ — Appending rows to a matrix spreads a unit into a row
 m←[1 2 ⋄ 3 4] ⋄ m⍪←5 6 ⋄ m⍪←0 ⋄ m   ⍝ [1 2 ⋄ 3 4 ⋄ 5 6 ⋄ 0 0]
 
 ⍝ — A new key leaves an array that shares the original unchanged
@@ -1141,7 +1141,7 @@ a←1 2 ⋄ f←{⎕←a ⋄ ⍺+⍵} ⋄ a.[[0 1]]f←10 20 ⋄ a   ⍝ 11 22
 1 2,⍠0.5 [3 4]
 ⍝ error: DOMAIN ERROR
 
-⍝ — Scalar-function axis zero aligns the vector with rows
+⍝ — Pervasive-function axis zero aligns the vector with rows
 1 2+⍠0 (2 3⍴⍳6)   ⍝ [1 2 3 ⋄ 5 6 7]
 
 ⍝ — Take counts follow the specified axis order
@@ -1176,7 +1176,7 @@ a←1 2 ⋄ f←{⎕←a ⋄ ⍺+⍵} ⋄ a.[[0 1]]f←10 20 ⋄ a   ⍝ 11 22
 ⊂⍠0 0 (2 3⍴⍳6)
 ⍝ error: DOMAIN ERROR
 
-⍝ — A scalar function's axes must match the lower-rank argument
+⍝ — A pervasive function's axes must match the lower-rank argument
 1+⍠0 (2 3⍴⍳6)
 ⍝ error: LENGTH ERROR
 
@@ -1336,7 +1336,7 @@ T←["a":1] ⋄ (U←T).["b"]←2
 ⍝ — Default formatting switches to exponents beyond these magnitude thresholds
 ⍕1E¯6 1E¯7 1E16 1E17   ⍝ "0.000001 1E¯7 10000000000000000 1E17"
 
-⍝ — Formatting a scalar produces a character vector
+⍝ — Formatting a number produces a character vector
 ⍴⍕1   ⍝ [1]ₓ
 
 ⍝ — A zero-row matrix retains column widths and separators
@@ -1469,7 +1469,7 @@ a←⍎""
 ⍝ — Empty exact evaluation points retain an exact prototype
 [1 2]ₓ⌻0⍴0ₓ   ⍝ ⍬ₓ
 
-⍝ — Polynomial rows pair with scalar evaluation points by frame
+⍝ — Each polynomial row pairs with one evaluation point by frame
 [1 2 3 ⋄ 4 5 6]ₓ⌻[1 2]ₓ   ⍝ [6 38]ₓ
 
 ⍝ —
@@ -1499,27 +1499,27 @@ f←[2ₓ;[1 3]ₓ]⍃⌻ ⋄ f∂2ₓ   ⍝ 0ₓ
 ⍝ — A multivariate gradient retains the coordinate enclosure
 f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)⍃⌻ ⋄ f∂⊂[3 4]ₓ   ⍝ ⊂[6 8]ₓ
 
-⍝ — A scalar cotangent scales the multivariate gradient
+⍝ — A unit cotangent scales the multivariate gradient
 f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)⍃⌻ ⋄ 2ₓ(f∂)⊂[3 4]ₓ   ⍝ ⊂[12 16]ₓ
 
-⍝ — A shared scalar coordinate sums the partial derivatives
+⍝ — A shared unit coordinate sums the partial derivatives
 f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)⍃⌻ ⋄ f∂3ₓ   ⍝ 12ₓ
 
-⍝ — Multiple polynomial outputs contribute to one scalar-input VJP
+⍝ — Multiple polynomial outputs contribute to one unit-input VJP
 f←[1 2 ⋄ 3 4]ₓ⍃⌻ ⋄ [10 20]ₓ f∂ 3ₓ   ⍝ 100ₓ
 
 ⍝ — Negative exponents cannot be converted to a coefficient vector
 ⌻⊂[1 ¯1 ⋄]
 ⍝ error: DOMAIN ERROR
 
-⍝ — The cotangent must match the scalar output's structure
+⍝ — The cotangent must match the unit output's structure
 (⊂1 2)(1 2⍃⌻∂)3
 ⍝ error: DOMAIN ERROR
 
 ⍝ — An infinite coefficient follows IEEE
 ⌻1 ∞   ⍝ [∞ [¯0]]
 
-⍝ — Monadic derivative requires scalar output, not a vector of evaluations
+⍝ — Monadic derivative requires unit output, not a vector of evaluations
 1 2⍃⌻∂1 2
 ⍝ error: RANK ERROR
 
@@ -1833,7 +1833,7 @@ W←×⍄*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ⍝ — A fixed matrix occupies the trailing axes of the outer-product result
 (×⊗⍄[1 2 ⋄ 3 4])⁻¹3 2 2⍴1 2 3 4 2 4 6 8 3 6 9 12   ⍝ 1 2 3
 
-⍝ — Outer inversion with a fixed scalar recovers a vector
+⍝ — Outer inversion with a fixed number recovers a vector
 4⍃(×⊗)⁻¹4 8   ⍝ 1 2
 
 ⍝ — Removing the fixed vector's axes can leave a scalar
@@ -1992,7 +1992,7 @@ W←×⍄*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ⍝ — Right-bound each recovers every left element
 (-¨⍄2)⁻¹3 4   ⍝ 5 6
 
-⍝ — Right-bound rank recovers vector cells against the fixed scalar
+⍝ — Right-bound rank recovers vector cells against the fixed number
 (-⍤1 0⍄2)⁻¹3 4   ⍝ 5 6
 
 ⍝ — Invert left-accumulating subtraction scan
@@ -2016,7 +2016,7 @@ W←×⍄*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ⍝ —
 +\⁻¹⍬   ⍝ ⍬
 
-⍝ — A seeded scalar scan still needs its first step undone
+⍝ — A seeded scan of a number still needs its first step undone
 10+\⁻¹13   ⍝ 3
 
 ⍝ — Inverse axis-enclosure restores both shape and axis order
@@ -2028,7 +2028,7 @@ W←×⍄*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ⍝ — Inverse mix along an axis recovers the original nested vectors
 ⊃⁻¹⍠0 [1 4 ⋄ 2 5 ⋄ 3 6]   ⍝ [1 2 3;4 5 6]
 
-⍝ — Scalar inversion with an axis aligns the fixed left vector with rows
+⍝ — Inverting a pervasive function with an axis aligns the fixed left vector with rows
 10 20 +⁻¹⍠0 [11 12 13 ⋄ 24 25 26]   ⍝ [1 2 3 ⋄ 4 5 6]
 
 ⍝ — A zero product prefix loses information about subsequent factors
@@ -2464,7 +2464,7 @@ x←10 20 30 ⋄ (¯1⌷x)←9 ⋄ x   ⍝ 10 20 9
 ⍝ — A one-element partition marker extends over the whole vector
 (,1)⊂"abcd"   ⍝ ,⊂"abcd"
 
-⍝ — A scalar partition label groups the whole vector
+⍝ — A unit partition label groups the whole vector
 1⊆"abcd"   ⍝ ,⊂"abcd"
 
 ⍝ — A singleton label vector also extends over the whole argument
@@ -2717,10 +2717,10 @@ u←•UcS ⋄ u ["A⍳" ⋄ "λ😀"]   ⍝ [65 9075 ⋄ 955 128512]ₓ
 ⍝ —
 "UTF-32"•ucs 65 128512   ⍝ "A😀"
 
-⍝ — Encoding a scalar character returns a byte vector
+⍝ — Encoding a character returns a byte vector
 "UTF-8"•ucs 'A'   ⍝ [65]ₓ
 
-⍝ — Decoding a scalar byte returns a character vector
+⍝ — Decoding one byte returns a character vector
 "UTF-8"•ucs 65   ⍝ "A"
 
 ⍝ —
@@ -2949,7 +2949,7 @@ b"
 ⍝ =>
 ⍝ error: SYNTAX ERROR
 
-⍝ — Scalar ordering is numeric; character sorting uses grade
+⍝ — Pervasive ordering is numeric; character sorting uses grade
 'a'<'b'
 ⍝ error: DOMAIN ERROR
 
@@ -3016,7 +3016,7 @@ b"
 ⍝ — Numeric negation of empty text yields an empty numeric result
 -""   ⍝ ⍬
 
-⍝ — Direct scalar division on empty text makes no element calls
+⍝ — Direct division on empty text makes no element calls
 1÷""   ⍝ ⍬
 
 ⍝ —
@@ -3082,7 +3082,7 @@ gg←2 3 4 5 ⋄ 9,gg.[1],3 4   ⍝ 9 3 3 4
 ⍝ —
 10ₓ-\[1 2 3]ₓ   ⍝ [9 7 4]ₓ
 
-⍝ — Seeded scalar scan still applies the operand once
+⍝ — A seeded scan of a number still applies the operand once
 2+\5   ⍝ 7
 
 ⍝ — Trailing-axis scan takes one seed per row
@@ -3217,7 +3217,7 @@ v←⊂1 2 3 ⋄ 1⌷↑v   ⍝ 2
 ⍝ —
 1 ¯1↓[1 2 3 ⋄ 4 5 6]   ⍝ [4 5 ⋄]
 
-⍝ — Taking a matrix from a scalar pads rather than repeating it
+⍝ — Taking a matrix from a number pads rather than repeating it
 2 3↑7   ⍝ [7 0 0 ⋄ 0 0 0]
 
 ⍝ —
@@ -3275,7 +3275,7 @@ s←+/ ⋄ s⍠0 [1 2 3 ⋄ 4 5 6]   ⍝ 5 7 9
 {[⌽⌽⍵;⊖⊖⍵;⍉⍉⍵;⊃↓⍵]}¨[0 3;3 0;2 3;2 2 3]⍴¨⊂⍳12
 {4⍴⊂⍵}¨[0 3;3 0;2 3;2 2 3]⍴¨⊂⍳12
 
-⍝⍝ Scalar math
+⍝⍝ Pervasive math
 
 ⍝ — Complex floor uses Gaussian-integer cells, not independent component floors
 ⌊1.5j0.5   ⍝ 1j1
@@ -3447,7 +3447,7 @@ x←1 ⋄ y←1+8E¯15 ⋄ z←1+16E¯15 ⋄ [x y]⍳z   ⍝ 1ₓ
 ⍝ — Membership uses tolerance when approximate values participate
 1 2∊[1+8E¯15]   ⍝ $t $f
 
-⍝ — A vector pattern does not fit a scalar search target
+⍝ — A vector pattern does not fit a unit search target
 (,1)⍷1   ⍝ $f
 
 ⍝ — An empty pattern still cannot exceed the target on another axis
@@ -3456,7 +3456,7 @@ x←1 ⋄ y←1+8E¯15 ⋄ z←1+16E¯15 ⋄ [x y]⍳z   ⍝ 1ₓ
 ⍝ — Rank-zero iota contains one enclosed empty coordinate
 ⍳⍬   ⍝ ⊂⍬
 
-⍝ — Where on scalar zero retains an empty-coordinate prototype
+⍝ — Where on the number 0 retains an empty-coordinate prototype
 ⍸0   ⍝ 0⍴⊂⍬ₓ
 
 ⍝ —
@@ -3567,10 +3567,10 @@ e←¨ ⋄ sum←+/ ⋄ sum e [[1 2] [3 4 5]]   ⍝ 3 12
 1{⍺÷'a'}¨⍬
 ⍝ error: DOMAIN ERROR
 
-⍝ — Each with a scalar function gives the same result as the function, here `÷⍬`
+⍝ — Each with a pervasive function gives the same result as the function, here `÷⍬`
 ÷¨⍬   ⍝ ⍬
 
-⍝ — Dyadic Each with a scalar function gives the same result as `1÷⍬`
+⍝ — Dyadic Each with a pervasive function gives the same result as `1÷⍬`
 1÷¨⍬   ⍝ ⍬
 
 ⍝ —
@@ -3757,7 +3757,7 @@ r←⍬ {⎕←⍴⍵ ⋄ ⍳3}⌸ 0 2⍴0
 
 ⍝⍝ Products
 
-⍝ — Inner product may use catenate rather than a scalar reduction
+⍝ — Inner product may reduce with catenate rather than a pervasive function
 1 2 3,.-3 3⍴4 5 6   ⍝ [[¯3 ¯2 ¯1] [¯4 ¯3 ¯2] [¯5 ¯4 ¯3]]
 
 ⍝ — This fork enumerates leading-axis indices and selects each major cell
@@ -3882,7 +3882,7 @@ sum←+/ ⋄ f←{⍵×+⍵} ⋄ [sum 1j2 3j4;-/1j2 3j4 5j6;f 3j4]   ⍝ 4j6 3j4
 1j2#3
 ⍝ error: DOMAIN ERROR
 
-⍝ — Complex numbers have no scalar ordering, even against themselves
+⍝ — Complex numbers have no pervasive ordering, even against themselves
 1j2<1j2
 ⍝ error: DOMAIN ERROR
 
@@ -4008,7 +4008,7 @@ sum←+/ ⋄ add←{⍺+⍵} ⋄ [+/1r3 1r6;sum 1r3 1r6;add/1r3 1r6;-/[1 2 3]ₓ
 ⍝ — Shape returns exact dimensions even for approximate data
 ⍴2 3⍴0.5   ⍝ [2 3]ₓ
 
-⍝ — Scalar shape is an empty exact vector
+⍝ — An atom's shape is an empty exact vector
 ⍴42   ⍝ ⍬ₓ
 
 ⍝ — Tally counts rows, so a zero-row matrix has tally zero
@@ -4173,7 +4173,7 @@ each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3   ⍝ 6
 ⍝ —
 3 4+,2   ⍝ 5 6
 
-⍝ — Scalar plus singleton preserves the vector shape
+⍝ — A number plus a singleton preserves the vector shape
 2+,3   ⍝ ,5
 
 ⍝ — A singleton count extends over an empty argument without creating items
@@ -4581,7 +4581,7 @@ apply←{⍶ ⍵} ⋄ f←{⎕←⍵ ⋄ ⍵} ⋄ (f apply)/1 2 3
 ⍝ — A whole strand binds as one array operand
 offset←{+/⍶+⍵} ⋄ (1 2 offset)3   ⍝ 9
 
-⍝⍝ Scalar bpl
+⍝⍝ Pervasive functions and reduction
 
 ⍝ — Reduction remains right-associated
 -/1 2 3   ⍝ 2
@@ -4592,7 +4592,7 @@ offset←{+/⍶+⍵} ⋄ (1 2 offset)3   ⍝ 9
 ⍝ — Empty product uses the multiplicative identity
 ×/⍳0   ⍝ 1
 
-⍝ — Reduction of a scalar preserves it
+⍝ — Reduction of an atom preserves it
 +/7   ⍝ 7
 
 ⍝ —
@@ -4607,10 +4607,10 @@ offset←{+/⍶+⍵} ⋄ (1 2 offset)3   ⍝ 9
 ⍝ — Tally of a singleton vector is exact
 ≢,7   ⍝ 1ₓ
 
-⍝ — A scalar has an empty shape vector
+⍝ — An atom has an empty shape vector
 ⍴7   ⍝ ⍬ₓ
 
-⍝ — Scalar extension over an empty vector remains empty
+⍝ — Unit extension over an empty vector remains empty
 2+⍳0   ⍝ ⍬
 
 ⍝ —
@@ -4990,7 +4990,7 @@ T
 T←"price" "qty":[1 2 3;4 5 6] ⋄ T.[["qty" "price"]]←[10 20;30] ⋄ T
 "price" "qty":[30;10 20]
 
-⍝ axis-assignment-scalar — Scalar selection replaces a value; vector selection aligns its retained axis
+⍝ axis-assignment-scalar — Unit selection replaces a value; vector selection aligns its retained axis
 T←"aa" "bb":1 2 ⋄ T.["aa"]←"bb" "aa":8 9 ⋄ T.["bb"]+←10 ⋄ T
 ["aa":["bb":8 "aa":9] "bb":12]
 
@@ -5306,7 +5306,7 @@ fill •tojson fill •json "{""x"":[null,2]}"
 ⍝ — Empty objects, arrays and strings retain their distinct meanings
 •tojson •json "[{},[],""""]"   ⍝ "[{},[],""""]"
 
-⍝ — Scalar strings remain strings, including one-character strings
+⍝ — JSON strings remain strings, including one-character strings
 •tojson •json "[""a"","""",[""b"",""c""]]"
 "[""a"","""",[""b"",""c""]]"
 

@@ -14,7 +14,7 @@
 100+\10 20         ⍝ 110 130
 ```
 
-The whole seed starts each lane. A unit seed stands for its content, so `(⊂10)+\v` is `10+\v`. Use Rank for separate seeds per cell.
+The whole seed starts each lane. A scalar seed stands for its content, so `(⊂10)+\v` is `10+\v`. Use Rank for separate seeds per cell.
 
 ```bpl
 M←[1 2 3 ⋄ 4 5 6]
@@ -32,4 +32,4 @@ APL difference: every scan left-accumulates, including dfns.
 
 ## Errors
 
-- `DOMAIN`: an array operand. Expand with [`#⁻¹`](hash.qmd#expand)
+- `DOMAIN`: a subject operand. Expand with [`#⁻¹`](hash.qmd#expand)

@@ -1,6 +1,6 @@
 # `⍶` — Left operand
 
-In a defined operator, `⍶` denotes its left operand: function or array.
+In a defined operator, `⍶` denotes its left operand: function or subject.
 
 ```bpl
 apply←{⍶ ⍵} ⋄ (-apply)3 ⍝ ¯3

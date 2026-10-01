@@ -58,7 +58,7 @@ d←•logistic 0 1 ⋄ [d.cdf ¯∞ ¯1000 1000 ∞;d.density ¯∞ ∞;d.quant
 d←•uniform 0 1 ⋄ [d.cdf "a" "b":0.25 0.5;d.cdf [[0.25 0.5] 0⍴⊂[0.25 0.5]]]
 [["a":0.25 "b":0.5] [[0.25 0.5] 0⍴⊂[0 0]]]
 
-⍝ distribution:shapes — Shape argument controls scalar and empty draws
+⍝ distribution:shapes — Shape argument controls unit and empty draws
 d←•normal 0 1 ⋄ [⍴d.sample ⍬;⍴d.sample 2 0 3;⍴d.sample 2 3]
 [⍬;2 0 3;2 3]ₓ
 

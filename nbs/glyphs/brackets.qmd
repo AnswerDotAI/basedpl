@@ -1,6 +1,6 @@
 # `[ ]` — Vector / Array notation
 
-Brackets write vectors, whatever the number of items. Inside brackets, a space separates items, and a run of tokens with no spaces between them is one item. Items can be arrays or functions. They are evaluated left to right.
+Brackets write vectors, whatever the number of items. Inside brackets, a space separates items, and a run of tokens with no spaces between them is one item. Items can be subjects or functions. They are evaluated left to right.
 
 ```bpl
 a←1 ⋄ b←2

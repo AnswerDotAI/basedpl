@@ -177,9 +177,9 @@ impl Function {
         };
         if token { text } else { format!("({text})") }
     }
-    /// A train, built from its last function leftwards. An array directly before what's built binds to it. A function
-    /// makes a fork with the item before it, which is a constant when it is an array. A function left over at the start
-    /// makes an Atop. So `32+1.8×` is `(32⍃+)∘(1.8⍃×)`, and `2×-⌽` is `2⍃(×-⌽)`.
+    /// A train, built from its last function leftwards. A subject directly before what's built binds to it. A function
+    /// makes a fork with the item before it, which can be a subject. A function left over at the start
+    /// makes an atop. So `32+1.8×` is `(32⍃+)∘(1.8⍃×)`, and `2×-⌽` is `2⍃(×-⌽)`.
     fn train(mut tines: Vec<Tine>, span: &Span) -> Result<Self, Error> {
         let Some(Tine::Function(mut result)) = tines.pop() else { unreachable!("a train ends in a function") };
         while let Some(tine) = tines.pop() {
@@ -808,7 +808,7 @@ fn inverse_scan(
     let inverse = f.inverse(span)?;
     if right.is_atom() { return inverse.call_array(seed, right, span, session, output); }
     if let FunctionNode::Primitive(p) = f.node() {
-        if let Some(result) = crate::scalar::inverse_scan(*p, right, seed, &axis) {
+        if let Some(result) = crate::pervasive::inverse_scan(*p, right, seed, &axis) {
             return result.with_layout(right.layout().clone()).error_at(span, "invalid inverse scan");
         }
     }
@@ -857,15 +857,15 @@ fn key(f: &Function, left: Option<&Value>, right: &Value, span: &Span, session: 
     Ok(Bound::from(result))
 }
 
-/// The primitive in `f`, when `f` is a primitive whose form for this valence is a scalar function. Each and Outer call such a primitive on whole arrays.
-fn scalar_primitive(f: &Function, dyadic: bool) -> Option<Primitive> {
+/// The primitive in `f`, when `f` is a primitive whose form for this valence is a pervasive function. Each and Outer call such a primitive on whole arrays.
+fn pervasive_primitive(f: &Function, dyadic: bool) -> Option<Primitive> {
     match f.node() { FunctionNode::Primitive(p) if p.pervasive(dyadic) => Some(*p), _ => None }
 }
 
 fn outer(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
     let left = left.ok_or_else(|| span.error(ErrorKind::Syntax, "outer product needs a left argument"))?;
     if left.is_atom() && right.is_atom() { return operand.call(Some(left), right, span, session, output); }
-    if let Some(p) = scalar_primitive(operand, true) { return Ok(Bound::from(p.outer(left, right, &session.execution.at(span))?)); }
+    if let Some(p) = pervasive_primitive(operand, true) { return Ok(Bound::from(p.outer(left, right, &session.execution.at(span))?)); }
     let layout = left.layout().concat(right.layout());
     let len = generated_len(layout.shape()).error_at(span, "outer product is too large")?;
     // With no pairs, an empty argument gives its prototype and a nonempty one its first item.
@@ -899,7 +899,7 @@ fn inner(
     generated_len(&[n.max(1), cols.max(1)]).error_at(span, "product contraction is too large")?;
     if let (FunctionNode::Primitive(pf), FunctionNode::Primitive(pg)) = (f.node(), g.node()) {
         if nx == ny && n > 0 && size > 0 && !left.is_unit() && !right.is_unit() && matches!(positions, Mapping::Linear(1)) {
-            if let Some(result) = crate::scalar::inner(*pf, *pg, left, right, [rows, n, cols], layout.shape().to_vec()) {
+            if let Some(result) = crate::pervasive::inner(*pf, *pg, left, right, [rows, n, cols], layout.shape().to_vec()) {
                 if layout.shape().is_empty() { return Ok(Bound::from(result.at(0))); }
                 return Ok(Bound::from(result.with_layout(layout).error_at(span, "invalid inner product result")?));
             }
@@ -1075,7 +1075,7 @@ fn each_pair(
 
 fn each(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
     if right.is_atom() && left.is_none_or(Value::is_atom) { return operand.call(left, right, span, session, output); }
-    if scalar_primitive(operand, left.is_some()).is_some() { return operand.call(left, right, span, session, output); }
+    if pervasive_primitive(operand, left.is_some()).is_some() { return operand.call(left, right, span, session, output); }
     let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).error_at(span, "Each frames do not agree")?;
     each_pair(operand, agreement.len, agreement.layout.clone(), |i| agreement.values(left, right, i), "Each", span, session, output)
 }
@@ -1098,8 +1098,8 @@ fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Cont
         }
         (Boolean(b), _) => Ok(Value::Number(crate::Number::from_bool(b))),
         (Infinity(positive), _) => number(if positive { f64::INFINITY } else { f64::NEG_INFINITY }),
-        (Unit(n), Value::Number(value)) => Ok(Value::Number(value.unit(n))),
-        (Unit(n), _) => number(f64::from(n)),
+        (Number(n), Value::Number(value)) => Ok(Value::Number(value.like(n))),
+        (Number(n), _) => number(f64::from(n)),
     }
 }
 
@@ -1168,7 +1168,7 @@ fn fold_array(
         use crate::number::Arithmetic::{Plus, Times};
         // Float sums and products take the kernel for any number of items, because they fold in any order.
         if traversal.len >= 2 || (right.as_floats().is_some() && matches!(p, Primitive::Arithmetic(Plus | Times))) {
-            if let Some(result) = crate::scalar::fold(*p, right, &traversal, shape.clone()) { return Ok(result); }
+            if let Some(result) = crate::pervasive::fold(*p, right, &traversal, shape.clone()) { return Ok(result); }
         }
         if let Primitive::Arithmetic(op) = p {
             if right.elements().all(|e| matches!(e, Value::Number(_))) { return numeric_fold(*op, right, &traversal, shape, &session.execution.at(span)); }
@@ -1245,7 +1245,7 @@ fn scan(
     let seed = seed.as_ref();
     if right.is_atom() { return match seed { Some(seed) => operand.call_array(Some(seed), right, span, session, output), None => Ok(right.clone()) }; }
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
-    if let FunctionNode::Primitive(p) = operand.node() { if let Some(result) = crate::scalar::scan(*p, right, seed, &axis) { return Ok(result); } }
+    if let FunctionNode::Primitive(p) = operand.node() { if let Some(result) = crate::pervasive::scan(*p, right, seed, &axis) { return Ok(result); } }
     if let FunctionNode::Primitive(Primitive::Arithmetic(op)) = operand.node() {
         let numeric = |a: &Value| a.elements().all(|e| matches!(e, Value::Number(_)));
         if numeric(right) && seed.is_none_or(|a| matches!(a, Value::Number(_))) {
@@ -1389,7 +1389,7 @@ impl Bound {
     fn result(self, span: &Span) -> Result<Self, Error> {
         match self.value {
             Binding::Value(_) | Binding::Function(_) | Binding::NoResult => Ok(self),
-            _ => Err(span.error(ErrorKind::Syntax, "dfn results must be arrays or functions")),
+            _ => Err(span.error(ErrorKind::Syntax, "dfn results must be subjects or functions")),
         }
     }
 }
@@ -1968,7 +1968,7 @@ impl Session {
                             self.execution.output(output, crate::OutputKind::Explicit, self.display.array(a, self.current.is_some()));
                             Ok(())
                         }
-                        _ => return Err(target.span.domain_error("output requires an array")),
+                        _ => return Err(target.span.domain_error("output requires a subject")),
                     }
                 }
                 NodeKind::Group(nodes) => {
@@ -2208,7 +2208,7 @@ impl Session {
         if let (ResultFrame::Array(_), Targets::Offsets(offsets), FunctionNode::Primitive(p)) = (&selection.frame, &selection.targets, f.node()) {
             if p.pervasive(true) && distinct(offsets) {
                 let items = selection.read(original, &self.execution.at(span))?;
-                // A singleton goes to every target, as a scalar.
+                // A singleton goes to every target, as a unit.
                 let right = if right.is_singleton() && right.shape() != items.shape() {
                     let item = right.at(0);
                     if item.is_atom() { item } else { item.enclose().error_at(span, "invalid modified selection")? }
@@ -2690,9 +2690,9 @@ impl Binder {
                 let operand = Operand::from_value(left.value()?);
                 let Binding::Operator(operator) = right.value()? else { unreachable!() };
                 if matches!(operator, self::Operator::Primitive(OperatorKind::Super(Superscript::Unit))) {
-                    // `ᵘ` makes a unit that holds a function. `⊂` encloses an array.
-                    let Operand::Function(f) = operand else { return Err(span.domain_error("ᵘ makes a unit that holds a function. Enclose an array with ⊂")) };
-                    Term::Binding(Binding::Value(crate::Value::Function(f).enclose().error_at(&span, "invalid unit")?))
+                    // `ᵘ` makes a scalar that holds a function. `⊂` encloses a subject.
+                    let Operand::Function(f) = operand else { return Err(span.domain_error("ᵘ makes a scalar that holds a function. Enclose a subject with ⊂")) };
+                    Term::Binding(Binding::Value(crate::Value::Function(f).enclose().error_at(&span, "invalid scalar")?))
                 } else {
                     // A superscript on an array is a call to `*` or `⍉`.
                     if let (self::Operator::Primitive(OperatorKind::Super(s)), Operand::Value(array)) = (&operator, &operand) {

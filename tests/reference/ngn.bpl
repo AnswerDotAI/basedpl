@@ -1248,10 +1248,10 @@ a←1⋄b←¯22⋄c←85⋄sqrt←√⋄(-b)(+,-)sqrt(b²)-4×a×c ÷ 2×a   �
 ⍝ ngn:400 —
 ⍕1 ⍬ 2 "" 3   ⍝ "1    2    3"
 
-⍝ ngn:401 — Infinity formatting; basedpl scalar format is a character vector, not the ngn matrix
+⍝ ngn:401 — Infinity formatting; basedpl formats a number as a character vector, not the ngn matrix
 ⍕∞   ⍝ "∞"
 
-⍝ ngn:402 — Infinity formatting; basedpl scalar format is a character vector, not the ngn matrix
+⍝ ngn:402 — Infinity formatting; basedpl formats a number as a character vector, not the ngn matrix
 ⍕¯∞   ⍝ "¯∞"
 
 ⍝ ngn:403 —

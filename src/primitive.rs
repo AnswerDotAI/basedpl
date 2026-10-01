@@ -40,7 +40,7 @@ pub(crate) enum OperatorKind {
     Stencil,
     Fold(FoldKind),
     /// A superscript after an item: `²` or `⁻¹` repeats or inverts a function and raises an array to a power. `ᵀ` transposes an
-    /// array, and `ᵘ` makes a unit that holds a function. It binds as a monadic operator does.
+    /// array, and `ᵘ` makes a scalar that holds a function. It binds as a monadic operator does.
     Super(Superscript),
 }
 impl FoldKind {
@@ -211,7 +211,7 @@ pub(crate) const WHOLE: Rank = Rank::MAX;
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Identity {
     /// 0 or 1 in the numeric domain of the prototype.
-    Unit(i32),
+    Number(i32),
     /// A Boolean, whatever the prototype.
     Boolean(bool),
     /// Positive or negative real infinity.
@@ -253,9 +253,9 @@ pub(crate) struct Info {
 }
 
 const fn monad(name: &'static str, rank: Rank) -> Monad { Monad { name, rank, extends: true, pervasive: false, axes: false } }
-const fn scalar_monad(name: &'static str) -> Monad { Monad { name, rank: 0, extends: true, pervasive: true, axes: false } }
+const fn pervasive_monad(name: &'static str) -> Monad { Monad { name, rank: 0, extends: true, pervasive: true, axes: false } }
 const fn dyad(name: &'static str, ranks: [Rank; 2]) -> Dyad { Dyad { name, ranks, pervasive: false, axes: false, identity: None } }
-const fn scalar_dyad(name: &'static str) -> Dyad { Dyad { name, ranks: [0, 0], pervasive: true, axes: true, identity: None } }
+const fn pervasive_dyad(name: &'static str) -> Dyad { Dyad { name, ranks: [0, 0], pervasive: true, axes: true, identity: None } }
 impl Monad {
     /// A form that raises an error on arguments above its rank.
     const fn bounded(self) -> Self { Self { extends: false, ..self } }
@@ -493,30 +493,30 @@ impl Primitive {
             Info { glyph, name, aliases, monad: monad.into(), dyad: dyad.into() }
         }
         match self {
-            Self::Arithmetic(Plus) => row("+", "add", "", scalar_monad("conjugate"), scalar_dyad("plus").identity(Unit(0))),
-            Self::Arithmetic(Minus) => row("-", "dash", "", scalar_monad("negate"), scalar_dyad("subtract").identity(Unit(0))),
-            Self::Arithmetic(Times) => row("×", "mul", "multiply direction", scalar_monad("sign"), scalar_dyad("times").identity(Unit(1))),
-            Self::Arithmetic(Divide) => row("÷", "div", "", scalar_monad("reciprocal"), scalar_dyad("divide").identity(Unit(1))),
-            Self::Math(Ceiling) => row("⌈", "ceiling", "", scalar_monad("ceiling"), scalar_dyad("max").identity(Infinity(false))),
-            Self::Math(Floor) => row("⌊", "floor", "", scalar_monad("floor"), scalar_dyad("min").identity(Infinity(true))),
-            Self::Math(Magnitude) => row("|", "stile", "abs", scalar_monad("magnitude"), scalar_dyad("residue").identity(Unit(0))),
-            Self::Math(Power) => row("*", "star", "exp", scalar_monad("exponential"), scalar_dyad("exponent").identity(Unit(1))),
-            Self::Math(Log) => row("⍟", "log", "", scalar_monad("logarithm"), scalar_dyad("log")),
-            Self::Math(Circle) => row("○", "circle", "", scalar_monad("cis"), scalar_dyad("circle")),
-            Self::Math(Pi) => row("π", "pi", "", scalar_monad("pi-times"), scalar_dyad("pi-ratio")),
-            Self::Math(Root) => row("√", "root", "", scalar_monad("sqrt"), scalar_dyad("root")),
-            Self::Math(Factorial) => row("!", "factorial", "", scalar_monad("factorial"), scalar_dyad("binomial").identity(Unit(1))),
-            Self::Math(Lcm) => row("∧", "and", "", monad("polar", 0), scalar_dyad("lcm").identity(Unit(1))),
-            Self::Math(Gcd) => row("∨", "or", "", monad("real-imag", 0), scalar_dyad("gcd").identity(Unit(0))),
-            Self::Math(Nand) => row("⍲", "nand", "", scalar_monad("square"), scalar_dyad("nand")),
-            Self::Math(Nor) => row("⍱", "nor", "", scalar_monad("double"), scalar_dyad("nor")),
-            Self::Math(Not) => row("~", "tilde", "", scalar_monad("not"), dyad("without", [W, W])),
-            Self::Compare(Equal) => row("=", "equal", "", monad("classify", W), scalar_dyad("equal").identity(Boolean(true))),
-            Self::Compare(NotEqual) => row("≠", "not-equal", "", monad("unique-mask", W), scalar_dyad("not-equal").identity(Boolean(false))),
-            Self::Compare(Less) => row("<", "less", "", None, scalar_dyad("less").identity(Boolean(false))),
-            Self::Compare(LessEqual) => row("≤", "less-or-equal", "", scalar_monad("decrement"), scalar_dyad("less-equal").identity(Boolean(true))),
-            Self::Compare(Greater) => row(">", "greater", "", None, scalar_dyad("greater").identity(Boolean(false))),
-            Self::Compare(GreaterEqual) => row("≥", "greater-or-equal", "", scalar_monad("increment"), scalar_dyad("greater-equal").identity(Boolean(true))),
+            Self::Arithmetic(Plus) => row("+", "add", "", pervasive_monad("conjugate"), pervasive_dyad("plus").identity(Identity::Number(0))),
+            Self::Arithmetic(Minus) => row("-", "dash", "", pervasive_monad("negate"), pervasive_dyad("subtract").identity(Identity::Number(0))),
+            Self::Arithmetic(Times) => row("×", "mul", "multiply direction", pervasive_monad("sign"), pervasive_dyad("times").identity(Identity::Number(1))),
+            Self::Arithmetic(Divide) => row("÷", "div", "", pervasive_monad("reciprocal"), pervasive_dyad("divide").identity(Identity::Number(1))),
+            Self::Math(Ceiling) => row("⌈", "ceiling", "", pervasive_monad("ceiling"), pervasive_dyad("max").identity(Infinity(false))),
+            Self::Math(Floor) => row("⌊", "floor", "", pervasive_monad("floor"), pervasive_dyad("min").identity(Infinity(true))),
+            Self::Math(Magnitude) => row("|", "stile", "abs", pervasive_monad("magnitude"), pervasive_dyad("residue").identity(Identity::Number(0))),
+            Self::Math(Power) => row("*", "star", "exp", pervasive_monad("exponential"), pervasive_dyad("exponent").identity(Identity::Number(1))),
+            Self::Math(Log) => row("⍟", "log", "", pervasive_monad("logarithm"), pervasive_dyad("log")),
+            Self::Math(Circle) => row("○", "circle", "", pervasive_monad("cis"), pervasive_dyad("circle")),
+            Self::Math(Pi) => row("π", "pi", "", pervasive_monad("pi-times"), pervasive_dyad("pi-ratio")),
+            Self::Math(Root) => row("√", "root", "", pervasive_monad("sqrt"), pervasive_dyad("root")),
+            Self::Math(Factorial) => row("!", "factorial", "", pervasive_monad("factorial"), pervasive_dyad("binomial").identity(Identity::Number(1))),
+            Self::Math(Lcm) => row("∧", "and", "", monad("polar", 0), pervasive_dyad("lcm").identity(Identity::Number(1))),
+            Self::Math(Gcd) => row("∨", "or", "", monad("real-imag", 0), pervasive_dyad("gcd").identity(Identity::Number(0))),
+            Self::Math(Nand) => row("⍲", "nand", "", pervasive_monad("square"), pervasive_dyad("nand")),
+            Self::Math(Nor) => row("⍱", "nor", "", pervasive_monad("double"), pervasive_dyad("nor")),
+            Self::Math(Not) => row("~", "tilde", "", pervasive_monad("not"), dyad("without", [W, W])),
+            Self::Compare(Equal) => row("=", "equal", "", monad("classify", W), pervasive_dyad("equal").identity(Boolean(true))),
+            Self::Compare(NotEqual) => row("≠", "not-equal", "", monad("unique-mask", W), pervasive_dyad("not-equal").identity(Boolean(false))),
+            Self::Compare(Less) => row("<", "less", "", None, pervasive_dyad("less").identity(Boolean(false))),
+            Self::Compare(LessEqual) => row("≤", "less-or-equal", "", pervasive_monad("decrement"), pervasive_dyad("less-equal").identity(Boolean(true))),
+            Self::Compare(Greater) => row(">", "greater", "", None, pervasive_dyad("greater").identity(Boolean(false))),
+            Self::Compare(GreaterEqual) => row("≥", "greater-or-equal", "", pervasive_monad("increment"), pervasive_dyad("greater-equal").identity(Boolean(true))),
             Self::Iota => row("⍳", "iota", "", monad("iota", 1).bounded().axes(), dyad("index-of", [W, W])),
             Self::Keys => row(":", "colon", "", monad("unkey", W).axes(), dyad("keyed", [1, W]).axes()),
             Self::Shape => row("⍴", "rho", "", monad("shape", W), dyad("reshape", [1, W])),
@@ -534,16 +534,16 @@ impl Primitive {
             Self::Grade(true) => row("⍒", "grade-down", "", monad("grade-down", W), dyad("grade-down-by", [1, W])),
             Self::Take => row("↑", "take", "disclose", monad("first", W), dyad("take", [1, W]).axes()),
             Self::Drop => row("↓", "drop", "", monad("split", 1).axes(), dyad("drop", [1, W]).axes()),
-            Self::Reverse(false) => row("⌽", "reverse", "", monad("reverse", 1).axes(), dyad("rotate", [0, 1]).axes().identity(Unit(0))),
-            Self::Reverse(true) => row("⊖", "reverse-first", "", monad("reverse-first", W).axes(), dyad("rotate-first", [W, W]).axes().identity(Unit(0))),
+            Self::Reverse(false) => row("⌽", "reverse", "", monad("reverse", 1).axes(), dyad("rotate", [0, 1]).axes().identity(Identity::Number(0))),
+            Self::Reverse(true) => row("⊖", "reverse-first", "", monad("reverse-first", W).axes(), dyad("rotate-first", [W, W]).axes().identity(Identity::Number(0))),
             Self::Transpose => row("⍉", "transpose", "", monad("transpose", W), dyad("reorder-axes", [1, W])),
-            Self::Encode => row("⊤", "encode", "", monad("binary-encode", W), dyad("encode", [1, 0]).identity(Unit(0))),
+            Self::Encode => row("⊤", "encode", "", monad("binary-encode", W), dyad("encode", [1, 0]).identity(Identity::Number(0))),
             Self::Decode => row("⊥", "decode", "", monad("binary-decode", 1), dyad("decode", [1, 1])),
             Self::Execute => row("⍎", "execute", "", monad("execute", 1).bounded(), dyad("lookup", [W, W])),
             Self::Format => row("⍕", "format", "", monad("format", W), dyad("format-spec", [1, 1])),
             Self::Index => row("⌷", "squad", "", monad("materialise", W).axes(), dyad("index", [1, W]).axes()),
             Self::MatrixDivide => row("⌹", "domino", "", monad("inverse", 2).bounded(), dyad("matrix-divide", [W, 2])),
-            Self::Replicate => row("#", "hash", "replicate compress", None, dyad("replicate", [1, W]).axes().identity(Unit(1))),
+            Self::Replicate => row("#", "hash", "replicate compress", None, dyad("replicate", [1, W]).axes().identity(Identity::Number(1))),
             Self::Windows => row("↕", "windows", "", None, dyad("windows", [1, W])),
             Self::Prime => row("⍭", "prime", "", monad("prime", 0), dyad("prime-mode", [0, 0])),
             Self::Factor => row("⨸", "factor", "", monad("factors", 0), dyad("factor-spec", [0, 0])),
@@ -568,7 +568,7 @@ impl Primitive {
         let info = self.info();
         if dyadic { info.dyad.is_some_and(|d| d.axes) } else { info.monad.is_some_and(|m| m.axes) }
     }
-    /// Whether this form is a scalar function. Such a form reaches into nested arrays, and Each doesn't change its result.
+    /// Whether this form is a pervasive function. Such a form reaches into nested arrays, and Each doesn't change its result.
     pub(crate) fn pervasive(self, dyadic: bool) -> bool {
         let info = self.info();
         if dyadic { info.dyad.is_some_and(|d| d.pervasive) } else { info.monad.is_some_and(|m| m.pervasive) }
@@ -578,7 +578,7 @@ impl Primitive {
         let resolved = resolve_axes(spec, target, span)?;
         let spec = &resolved;
         if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be a unit or vector")); }
-        if let Some(left) = left { if self.pervasive(true) { return scalar_axes(self, left, right, spec, span); } }
+        if let Some(left) = left { if self.pervasive(true) { return pervasive_axes(self, left, right, spec, span); } }
         match (self, left) {
             (Self::Keys, left) => {
                 let axes = axes(spec, right.shape().len(), span)?;
@@ -700,46 +700,46 @@ impl Primitive {
             (Self::Take, None) => pick(&integer(0), right, false, span),
             (Self::Drop, None) => split(right, axis, span),
             (Self::Take | Self::Drop, Some(x)) => take_drop(matches!(self, Self::Take), x, right, axis.map(|a| vec![a]).as_deref(), span),
-            _ => self.scalar_apply(left, right, span, false),
+            _ => self.pervasive_apply(left, right, span, false),
         }
     }
 
-    fn scalar_apply(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
+    fn pervasive_apply(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
         if matches!(self, Self::Random) && !fill { return roll_array(right, &mut rand::rng(), span); }
-        if right.is_atom() && left.is_none_or(Value::is_atom) { return self.scalar_item(left, right, span, fill); }
+        if right.is_atom() && left.is_none_or(Value::is_atom) { return self.pervasive_item(left, right, span, fill); }
         let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).error_at(span, "array shapes do not agree")?;
-        self.scalar_mapped(left, right, span, fill, agreement)
+        self.pervasive_mapped(left, right, span, fill, agreement)
     }
-    /// `x f⊗ y` for a scalar function. Each argument keeps its own axes, and the left argument's axes come first.
+    /// `x f⊗ y` for a pervasive function. Each argument keeps its own axes, and the left argument's axes come first.
     pub(crate) fn outer(self, left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
         let agreement = Agreement::outer(left.layout(), right.layout()).error_at(span, "outer product is too large")?;
-        self.scalar_mapped(Some(left), right, span, false, agreement)
+        self.pervasive_mapped(Some(left), right, span, false, agreement)
     }
     /// The function applied to the items that `agreement` pairs, laid out as `agreement` lays out the result.
-    fn scalar_mapped(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool, agreement: Agreement) -> Result<Value, Error> {
+    fn pervasive_mapped(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool, agreement: Agreement) -> Result<Value, Error> {
         if agreement.len == 0 {
-            let prototype = self.scalar_item(left.map(Value::prototype).as_ref(), &right.prototype(), span, true)?;
+            let prototype = self.pervasive_item(left.map(Value::prototype).as_ref(), &right.prototype(), span, true)?;
             return Value::empty(agreement.layout.shape().to_vec(), prototype)
                 .and_then(|v| v.with_layout(agreement.layout))
                 .error_at(span, "invalid empty result");
         }
         if !fill {
-            if let Some(result) = crate::scalar::map(self, left, right, &agreement) {
+            if let Some(result) = crate::pervasive::map(self, left, right, &agreement) {
                 return result.with_layout(agreement.layout).error_at(span, "invalid keyed result");
             }
         }
         let mut data = Gather::items(agreement.len);
         for i in 0..agreement.len {
             let (x, y) = agreement.values(left, right, i);
-            data.add(self.scalar_item(x.as_ref(), &y, span, fill)?);
+            data.add(self.pervasive_item(x.as_ref(), &y, span, fill)?);
         }
-        data.finish(agreement.layout, || right.prototype()).error_at(span, "invalid scalar result")
+        data.finish(agreement.layout, || right.prototype()).error_at(span, "invalid pervasive result")
     }
 
-    fn scalar_item(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
+    fn pervasive_item(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
         span.check()?;
         if matches!((self, left, right), (Self::Arithmetic(Arithmetic::Plus), None, Value::Character(_))) { return Ok(right.clone()); }
-        if matches!(right, Value::Array(_)) || matches!(left, Some(Value::Array(_))) { return self.scalar_apply(left, right, span, fill); }
+        if matches!(right, Value::Array(_)) || matches!(left, Some(Value::Array(_))) { return self.pervasive_apply(left, right, span, fill); }
         if let (Self::Arithmetic(op @ (Arithmetic::Plus | Arithmetic::Minus)), Some(left)) = (self, left) {
             if matches!(right, Value::Character(_)) || matches!(left, Value::Character(_)) {
                 return character_arithmetic(op, left, right, fill).domain_at(span);
@@ -749,7 +749,7 @@ impl Primitive {
             return Ok(match (self, left, right) {
                 (Self::Compare(_) | Self::Math(Math::Not), _, _) | (Self::Math(Math::Nand | Math::Nor), Some(_), _) => Value::Number(Number::from_bool(false)),
                 (Self::Math(Math::Floor | Math::Ceiling) | Self::Arithmetic(Arithmetic::Times), None, _) => integer(0),
-                (Self::Random, _, Value::Number(y)) => Value::Number(y.unit(0)),
+                (Self::Random, _, Value::Number(y)) => Value::Number(y.zero()),
                 (Self::Math(Math::Circle | Math::Pi | Math::Log), _, _) | (Self::Math(Math::Power), None, _) => float(0.0),
                 (Self::Math(_) | Self::Arithmetic(_), None, Value::Number(y)) => Value::Number(y.result_zero(None)),
                 (Self::Math(_) | Self::Arithmetic(_), Some(Value::Number(x)), Value::Number(y)) => Value::Number(y.result_zero(Some(x))),
@@ -955,7 +955,7 @@ fn complex_parts(right: &Value, polar: bool, span: &Context<'_>) -> Result<Value
         span.check()?;
         data.extend(numeric(&item, span)?.parts(polar).domain_at(span)?.map(Value::Number));
     }
-    let prototype = Value::Number(numeric(&right.prototype(), span)?.unit(0));
+    let prototype = Value::Number(numeric(&right.prototype(), span)?.zero());
     layout.collect(data, prototype).error_at(span, "invalid decomposition")
 }
 
@@ -1247,7 +1247,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
     }
     let call = |p: Primitive, x: Option<&Value>, y: &Value| match axis { Some(axis) => p.call_axes(x, y, axis, span), None => p.call(x, y, span) };
     if let Some((a, first)) = bound {
-        if matches!(p, Arithmetic(Times | Divide)) && a.elements().any(|e| matches!(e, Value::Number(n) if n.equal(&n.unit(0)).unwrap_or(false))) {
+        if matches!(p, Arithmetic(Times | Divide)) && a.elements().any(|e| matches!(e, Value::Number(n) if n.equal(&n.zero()).unwrap_or(false))) {
             return Err(span.domain_error("zero multiplier/divisor has no inverse"));
         }
         return match p {
@@ -1337,15 +1337,15 @@ fn inverse_decode(base: &Value, right: &Value, span: &Context<'_>) -> Result<Val
         return radix(base, right, true, span);
     }
     let b = numeric(&base.at(0), span)?.clone();
-    if b.order(&b.unit(1)).domain_at(span)? != Ordering::Greater { return Err(span.domain_error("inverse decode base must exceed one")); }
+    if b.order(&b.one()).domain_at(span)? != Ordering::Greater { return Err(span.domain_error("inverse decode base must exceed one")); }
     let mut digits = 0;
     for e in right.elements() {
         let mut n = numeric(&e, span)?.clone();
-        if n.order(&n.unit(0)).domain_at(span)?.is_lt() { return Err(span.domain_error("inverse decode requires nonnegative values")); }
+        if n.order(&n.zero()).domain_at(span)?.is_lt() { return Err(span.domain_error("inverse decode requires nonnegative values")); }
         let mut count = 0;
-        while !n.equal(&n.unit(0)).domain_at(span)? {
+        while !n.equal(&n.zero()).domain_at(span)? {
             span.check()?;
-            if n.order(&n.unit(1)).domain_at(span)?.is_lt() { return Err(span.domain_error("inverse decode cannot represent this value")); }
+            if n.order(&n.one()).domain_at(span)?.is_lt() { return Err(span.domain_error("inverse decode cannot represent this value")); }
             n = n.dyad(Arithmetic::Divide, &b).and_then(|n| n.math_monad(Math::Floor)).domain_at(span)?;
             count += 1;
             generated_len(&[count]).error_at(span, "inverse decode is too large")?;
@@ -1498,9 +1498,9 @@ fn binary_encode(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let mut data = Vec::with_capacity(generated_len(layout.shape()).error_at(span, "binary encoding is too large")?);
     for (n, domain) in &numbers {
         span.check()?;
-        data.extend((0..width).rev().map(|bit| Value::Number(domain.unit(i32::from(n.bit(bit as u64))))));
+        data.extend((0..width).rev().map(|bit| Value::Number(domain.like(i32::from(n.bit(bit as u64))))));
     }
-    let prototype = Value::Number(numeric(&right.prototype(), span)?.unit(0));
+    let prototype = Value::Number(numeric(&right.prototype(), span)?.zero());
     layout.collect(data, prototype).error_at(span, "invalid binary encoding")
 }
 
@@ -1540,7 +1540,7 @@ fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_>) -> Resul
                 } else { base };
                 let digit = base.math_dyad(Math::Magnitude, &value).map_err(error)?;
                 if k != 0 {
-                    value = if base.grade_order(&base.unit(0)).is_eq() { zero.clone() } else { value.dyad(Arithmetic::Minus, &digit).and_then(|v| v.dyad(Arithmetic::Divide, base)).map_err(error)? };
+                    value = if base.grade_order(&base.zero()).is_eq() { zero.clone() } else { value.dyad(Arithmetic::Minus, &digit).and_then(|v| v.dyad(Arithmetic::Divide, base)).map_err(error)? };
                 }
                 digits[k] = Value::Number(if !exact && digit.is_exact() { Number::try_from(digit.to_complex().map_err(error)?).unwrap() } else { digit });
             }
@@ -1752,13 +1752,13 @@ pub(crate) fn deal<R: rand::Rng + ?Sized>(left: &Value, right: &Value, rng: &mut
     generated_items(vec![n], rand::seq::index::sample(rng, total, n).into_vec(), exact).error_at(span, "invalid deal result")
 }
 
-fn scalar_axes(p: Primitive, left: &Value, right: &Value, spec: &Value, span: &Context<'_>) -> Result<Value, Error> {
+fn pervasive_axes(p: Primitive, left: &Value, right: &Value, spec: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let left_small = left.shape().len() < right.shape().len();
     let (small, large) = if left_small { (left, right) } else { (right, left) };
     let axes = axes(spec, large.shape().len(), span)?;
-    if axes.len() != small.shape().len() { return Err(span.error(ErrorKind::Length, "scalar-function axes must match the lower rank")); }
-    let agreement = Agreement::with_axes(left.layout(), right.layout(), &axes).error_at(span, "scalar-function axis lengths differ")?;
-    p.scalar_mapped(Some(left), right, span, false, agreement)
+    if axes.len() != small.shape().len() { return Err(span.error(ErrorKind::Length, "pervasive-function axes must match the lower rank")); }
+    let agreement = Agreement::with_axes(left.layout(), right.layout(), &axes).error_at(span, "pervasive-function axis lengths differ")?;
+    p.pervasive_mapped(Some(left), right, span, false, agreement)
 }
 
 fn reorder(right: &Value, order: &[usize], span: &Context<'_>) -> Result<Value, Error> {
@@ -2002,7 +2002,7 @@ fn promoted(a: &Value, other: &Value, rank: usize, axis: usize, span: &Context<'
         shape = if other.is_unit() { vec![1] } else { other.shape().to_vec() };
         shape[axis] = 1;
         let len = generated_len(&shape).error_at(span, "catenate exceeds array limits")?;
-        return Value::from_parts(shape, vec![a.at(0); len], a.prototype()).error_at(span, "invalid scalar extension");
+        return Value::from_parts(shape, vec![a.at(0); len], a.prototype()).error_at(span, "invalid unit extension");
     }
     if shape.len() + 1 != rank { return Err(span.error(ErrorKind::Rank, "catenate ranks differ by more than one")); }
     shape.insert(axis, 1);

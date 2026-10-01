@@ -1,7 +1,7 @@
 use crate::{
     keyed::Keys,
     number::{extended, real},
-    scalar::Element,
+    pervasive::Element,
     ErrorKind, Number,
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
@@ -935,7 +935,7 @@ impl Value {
     pub fn fill(&self) -> Self {
         match self {
             Self::Number(n) if n.as_bool().is_some() => Self::Number(Number::from_bool(false)),
-            Self::Number(n) => Self::Number(n.unit(0)),
+            Self::Number(n) => Self::Number(n.zero()),
             Self::Character(_) => Self::Character(' '),
             Self::Array(_) => self.fill_array(),
             Self::Function(_) => self.clone(),

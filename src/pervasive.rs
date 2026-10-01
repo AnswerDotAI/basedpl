@@ -1,4 +1,4 @@
-//! Compact kernels for the scalar functions.
+//! Compact kernels for the pervasive functions.
 //!
 //! Each dispatch matches a primitive once and hands its element kernel to a loop. The loops are generic over the kernel, so each is
 //! compiled for its function and nothing is chosen per element. No loop stops early. A kernel that fails on an item marks the loop, and
@@ -217,7 +217,7 @@ impl Element for Complex64 {
     }
 }
 
-/// A scalar function applied to compact arguments, on the frame of `agreement`.
+/// A pervasive function applied to compact arguments, on the frame of `agreement`.
 pub(crate) fn map(p: Primitive, left: Option<&Value>, right: &Value, agreement: &Agreement) -> Option<Value> {
     fn dyadic<A: Element, X: Source<A>, Y: Source<A>>(p: Primitive, x: &[X], y: &[Y], agreement: &Agreement) -> Option<Value> {
         A::dyad(p, Map { x, y, agreement })?

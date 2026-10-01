@@ -98,7 +98,7 @@ fn growth_failures(codes: &[&str]) -> Vec<String> {
     failures
 }
 
-/// Each case may allocate `times` its result's bytes, plus `scratch` bytes for each argument item. Scalar and structural functions write
+/// Each case may allocate `times` its result's bytes, plus `scratch` bytes for each argument item. Pervasive and structural functions write
 /// their result once. A reshape that keeps the number of items shares its argument's storage. Search builds a table of the items it
 /// searches. Grade's radix sort moves pairs of a key and a position between two buffers, and returns its positions in one of them.
 /// Format builds each number's text once, then converts it to characters. Its data is fixed, because the text's length decides where
@@ -160,7 +160,7 @@ fn allocation_failures() -> Vec<String> {
     failures
 }
 
-/// Scalar functions, reductions, catenation, indexing, search, Key, partitions, display and each are linear. So are loops of single-item updates and of appends, in their count. Grade is n log n. Each case
+/// Pervasive functions, reductions, catenation, indexing, search, Key, partitions, display and each are linear. So are loops of single-item updates and of appends, in their count. Grade is n log n. Each case
 /// in `BUDGETS` allocates within its budget.
 #[test]
 fn costs_grow_as_expected() {

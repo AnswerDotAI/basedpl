@@ -206,11 +206,11 @@ class Array(_Operators):
     def df(self): return _dataframe(self._inner.parts())
     @property
     def bpl(self): return repr(self._inner)
-    def _scalar(self): return _value(self._inner.scalar())
-    def __float__(self): return float(self._scalar())
-    def __int__(self): return int(self._scalar())
-    def __index__(self): return operator.index(self._scalar())
-    def __bool__(self): return bool(self._scalar())
+    def _atom(self): return _value(self._inner.atom())
+    def __float__(self): return float(self._atom())
+    def __int__(self): return int(self._atom())
+    def __index__(self): return operator.index(self._atom())
+    def __bool__(self): return bool(self._atom())
     def __len__(self):
         if not self.shape: raise TypeError('a unit has no length')
         return self.shape[0]

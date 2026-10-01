@@ -40,7 +40,7 @@ AGM ← {↑{(AM ⍵),GM ⍵}limit ⍵}  ⍝ Arithmetic-geometric mean.
 
 ArcTan ← {
   ⍝ Inverse trigonometric tangent - gqr 19-11-2002.
-  ⍝ For scalar ⍵: (ArcTan ⍵)≡¯3○⍵
+  ⍝ For a number ⍵: (ArcTan ⍵)≡¯3○⍵
   ⍝
   ⍝ Limit's operand function returns a 2-vector. Repeated application
   ⍝ of the function produces two sequences, both of which converge and

@@ -93,7 +93,7 @@ t←0⍃(put foldl) 64ₓ|7ₓ×⍳64ₓ ⋄ u←t⍃(rem foldl) 48↑64ₓ|13�
 •load "lib/dyalog.bpl" ⋄ M←["abc" ⋄ "def"] ⋄ [box M;[⍬ ⍬ 1] box M;[1] box M]
 [["┌───┐" ⋄ "│abc│" ⋄ "│def│" ⋄ "└───┘"] ["+---+" ⋄ "|abc|" ⋄ "|def|" ⋄ "+---+"] ["┌───┐" ⋄ "│abc│" ⋄ "├───┤" ⋄ "│def│" ⋄ "└───┘"]]
 
-⍝ — box accepts a scalar border position: [1 ⍬] draws a row divider and [⍬ 1] a column divider
+⍝ — box accepts a unit border position: [1 ⍬] draws a row divider and [⍬ 1] a column divider
 •load "lib/dyalog.bpl" ⋄ M←["abc" ⋄ "def"] ⋄ [[1 ⍬] box M;[⍬ 1] box M]
 [["┌───┐" ⋄ "│abc│" ⋄ "├───┤" ⋄ "│def│" ⋄ "└───┘"] ["┌─┬──┐" ⋄ "│a│bc│" ⋄ "│d│ef│" ⋄ "└─┴──┘"]]
 

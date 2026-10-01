@@ -9,7 +9,7 @@ x←2 4 9
 1+⍣3(5)            ⍝ 8
 ```
 
-Parentheses group a glyph or a name just as they group a literal: `(1 2)` is `1 2`, `(x)` is `x`, and `(-)` is `-`. [`⊂`](enclose.qmd) encloses an array, so `⊂[1 2]` is a unit holding a vector. To make a unit that holds a function, write [`ᵘ`](superscript.qmd) after it: `+ᵘ` holds `+`.
+Parentheses group a glyph or a name just as they group a literal: `(1 2)` is `1 2`, `(x)` is `x`, and `(-)` is `-`. [`⊂`](enclose.qmd) encloses a subject, so `⊂[1 2]` is a scalar holding a vector. To make a scalar that holds a function, write [`ᵘ`](superscript.qmd) after it: `+ᵘ` holds `+`.
 
 ```bpl
 (5)≡5              ⍝ $t
@@ -56,4 +56,4 @@ Three form a fork: `(f g h)Y` is `(f Y)g(h Y)`. Dyadic forks pass both arguments
 (+/ ÷ ≢)2 4 9      ⍝ 5
 ```
 
-Longer trains group from the right. A fork's left arm can be a constant. The right arm evaluates first.
+Longer trains group from the right. A fork's left arm can be a subject. The right arm evaluates first.

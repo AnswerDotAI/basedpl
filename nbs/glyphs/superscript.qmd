@@ -38,7 +38,7 @@ A superscript takes the whole function on its left, as a monadic operator does, 
 
 Inverses follow the rules of Power. They pass through bound arguments, Each, rank and the other compositions that it lists. [Inverse pair](inverse-pair.qmd) attaches an inverse to any function.
 
-`ᵘ` after a function makes a unit that holds it, so the function can be an item of an array. [`⊂`](enclose.qmd) encloses an array instead.
+`ᵘ` after a function makes a scalar that holds it, so the function can be an item of an array. [`⊂`](enclose.qmd) encloses a subject instead.
 
 ```bpl
 ⍴+ᵘ                ⍝ ⍬ₓ

@@ -112,7 +112,7 @@ impl PyArray {
         Ok(Some(("f8", bytes(py, v.iter().map(|n| n.to_ne_bytes()))?)))
     }
     fn __repr__(&self) -> String { self.inner.to_string() }
-    fn scalar(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+    fn atom(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         if !self.inner.is_singleton() { return Err(PyValueError::new_err("conversion requires a singleton array")); }
         if matches!(self.inner.at(0), Value::Array(_)) { return Err(PyTypeError::new_err("conversion requires an atom")); }
         array(py, &self.inner.at(0))

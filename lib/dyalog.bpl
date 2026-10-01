@@ -866,7 +866,7 @@ packH←{                      ⍝ Huffman packing.
          p_2←{(¯1⌽k↓⍺)⊂⍠⍶(⍶⍴0 , k←-1⍳⍨⌽⍺)↓⍵}
          Blk_1←{0=≢⍺:⍵ ⋄ 0=≢↑⍺:(1↓⍺) (1+⍶)⍢ ⍵ ⋄ (1↓⍺) (1+⍶)⍢ ⊃(⊂↑⍺)⊂⍠⍶¨⍵}
          Blk_2←{0=≢⍺:⍵ ⋄ 0=≢↑⍺:(1↓⍺) (1+⍶)⍢ ⍵ ⋄ (1↓⍺) (1+⍶)⍢ ⊃(⊂↑⍺)(⍶ p_2)¨⍵}
-         ifv←{(⍉⍺,⍪)⍣ 2>≢⍴⍵ ⍵}          ⍝ laminate ⍺ if ⍵ is vector or scalar
+         ifv←{(⍉⍺,⍪)⍣ 2>≢⍴⍵ ⍵}          ⍝ laminate ⍺ if ⍵ is vector or unit
          ci←{(0>s){⌽⍣⍺ ⍵}¨(⍳¨|s)+(i |⍨ ⍴i ↑ ⍴⍵)-(0>i)×¯1+|s⊣[i s]←↓(1 ifv ⍺)}
          ti←{⊃{⊃[⍵ (×s)×(|s)⌊r-⍵]}¨m⍃×¨⍳⌈r÷m+(0=m)×r←(⍴m)⍴⍴⍵⊣[m s]←↓(1 ifv ⍺)}
          tj←{⊃{⊃[⍵ s]}¨m⍃×¨⍳⌈(1+r-|s)÷m+(0=m)×r←(⍴m)⍴⍴⍵⊣[m s]←↓(1 ifv ⍺)}
@@ -927,7 +927,7 @@ words←{  ⍝ Split a string into words and intervening text.
      m∧1=⍴⍴⍵:,⊗/∇¨⍵                ⍝ Vector right argument
      m∧ischar ⍵:AlphaInterval ⍵      ⍝ Alpha Monadic.
      m:(×⍵)×⍳|⍵                      ⍝ Integer Monadic.
-     s←0=⍴⍴⍺                         ⍝ Scalar Left Argument?
+     s←0=⍴⍴⍺                         ⍝ Unit Left Argument?
      s∧ischar ⍵:⍺ AlphaInterval ⍵    ⍝ Alpha Interval.
      s:⍺ Interval ⍵                  ⍝ Numeric Interval.
      ⍺ IndexOf ⍵                     ⍝ Dyadic.

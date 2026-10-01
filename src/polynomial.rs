@@ -97,7 +97,7 @@ impl Polynomial {
         match self {
             Self::Coefficients(c) => {
                 let mut it = c.iter().rev().skip_while(|n| n.is_zero());
-                let mut y = it.next().cloned().unwrap_or_else(|| c.first().unwrap_or(&int(0)).unit(0));
+                let mut y = it.next().cloned().unwrap_or_else(|| c.first().unwrap_or(&int(0)).zero());
                 for c in it {
                     span.check()?;
                     y = y.dyad(Arithmetic::Times, &x[0]).domain_at(span)?.dyad(Arithmetic::Plus, c).domain_at(span)?;

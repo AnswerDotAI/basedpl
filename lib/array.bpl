@@ -38,7 +38,7 @@ acc ← { ⍶{(⊂⍺⍶↑⍬⍴⍵),⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵ }  �
 format ← {t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Simple array as a character matrix.
 open ← {(1⌈⍴⍵)⍴⍵}  ⍝ Exposure of null axes.
 axes ← {(-2⌈⍴⍴⍵)↑1+×⍴⍵}  ⍝ Array axis types.
-char ← {⍬≡⍴⍵:'─' ⋄ (↑⍵∊'¯',•d)⊃"#~"}∘⍕  ⍝ Type character of a simple scalar.
+char ← {⍬≡⍴⍵:'─' ⋄ (↑⍵∊'¯',•d)⊃"#~"}∘⍕  ⍝ Type character of an atom.
 type ← {{(1=⍴⍵)⊃['+' ⍵]}∪,char¨⍵}  ⍝ Type characters of an array.
 deco ← {⍺←type open ⍵ ⋄ ⍺,axes ⍵}  ⍝ Type and axes vector.
 trim ← {(~1 1⍷∧⌿⍵=' ')#⍠¯1 ⍵}  ⍝ Removal of extra blank columns.
@@ -111,15 +111,15 @@ disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
   type←{  ⍝ Type decoration char.
     dec<≡⍵:'─'  ⍝ nested: '─'
     isor ⍵:'∇'  ⍝ ⎕or:    '∇'
-    sst←{  ⍝ simple scalar type.
-      0=dec×⍴⍴⍵:'─'  ⍝ undecorated or scalar ⍕⍵: char,
+    sst←{  ⍝ atom type.
+      0=dec×⍴⍴⍵:'─'  ⍝ undecorated or atom ⍕⍵: char,
       (↑⍵∊'¯',•d)⊃"#~"
-    }∘⍕  ⍝ ⍕ distinguishes type of scalar.
-    0=≡⍵:sst ⍵  ⍝ simple scalar: type.
+    }∘⍕  ⍝ ⍕ distinguishes type of atom.
+    0=≡⍵:sst ⍵  ⍝ atom: type.
     {(1=⍴⍵)⊃['+' ⍵]}∪,sst¨(dec open ⍵)
   }
   shape←{
-    dec≤0=⍴⍴⍵:⍺#¨"│─"  ⍝ no decoration or scalar.
+    dec≤0=⍴⍴⍵:⍺#¨"│─"  ⍝ no decoration or unit.
     cols←(×¯1↑⍴⍵)⊃"⊖→"
     rsig←(××/¯1↓⍴⍵)⊃"⌽↓"
     rows←(¯1+3⌊⍴⍴⍵)⊃['│' rsig '⍒']
@@ -219,7 +219,7 @@ fuzzy ← {a←lcase ⍺ ⋄ ({⍵⍳⌊/⍵}a⍃dist∘lcase¨⍵)⊃⍵}
 dsp ← {  ⍝ Reduced version of disp.
   (1=≡,⍵)∨0∊⍴⍵:format ⍵
   ⍺←1 ⋄ top←'─'⍪⍣⍺  ⍝ top '─' bar if ⍺
-  1≥⍴⍴⍵:{  ⍝ vector or scalar:
+  1≥⍴⍴⍵:{  ⍝ vector or unit:
     bars←{⍪(⌊/≢¨[⍺ ⍵])#'│'}/2↕⍵,0
     join←{⊃,/(⌈/≢¨⍵)↑¨⍵}
     0 ¯1↓join top¨join¨↓⍉⊃[⍵ bars]
@@ -345,7 +345,7 @@ nlines ← {  ⍝ Number of display lines for simple array.
 
 ⍝ From http://dfns.dyalog.com/s_perv.htm
 
-perv ← { ⍺←⊢  ⍝ Scalar pervasion
+perv ← { ⍺←⊢  ⍝ Pervasion
   1=≡[⍺ ⍵ ⍵]:⍺ ⍶ ⍵
            ⍺ ∇¨ ⍵  ⍝ (⍺ or) ⍵ deeper: recursive traversal.
 }
@@ -435,7 +435,7 @@ subvec ← { 0∊⍴⍺:1  ⍝ Is ⍺ a subvector of ⍵?
 
 subs ← {  ⍝ Vector substitution.
   [fs ts]←≢¨[fm to]←⍺  ⍝ old and new vectors and sizes
-  1≡≡⍺:to@ fm= ⍵  ⍝ special case: simple scalar subs
+  1≡≡⍺:to@ fm= ⍵  ⍝ special case: atom subs
   0=⍴⍴⍵:↑(⍵≡fm)⌽[⍵ ⊂to]
   lead←fs↑1  ⍝ leading mask
   (fm⍷⍵){  ⍝ hits mask

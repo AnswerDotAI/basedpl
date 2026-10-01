@@ -69,4 +69,4 @@ Float sum/product reductions allow reassociation; generic reductions retain oper
 ## Errors
 
 - `RANK`: higher-rank axis specification
-- `DOMAIN`: axis vector with repeated or invalid axes, or an array operand. Replicate with [`#`](hash.qmd)
+- `DOMAIN`: axis vector with repeated or invalid axes, or a subject operand. Replicate with [`#`](hash.qmd)

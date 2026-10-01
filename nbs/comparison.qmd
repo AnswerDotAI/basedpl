@@ -429,7 +429,7 @@ x←2 4 9
 
 ### A train that binds arrays
 
-An array directly before a function in a train binds to it: `1.8×` is `1.8⍃×`. `32` is the constant of the fork `32 + 1.8⍃×`, as in Dyalog. Dyalog and BQN need `∘` and `⍃` to bind `1.8`.
+A subject directly before a function in a train binds to it: `1.8×` is `1.8⍃×`. `32` is the left part of the fork `32 + 1.8⍃×`, as in Dyalog. Dyalog and BQN need `∘` and `⍃` to bind `1.8`.
 
 ```dyalog
 f←32+1.8∘× ⋄ f 100
@@ -494,7 +494,7 @@ Source: "Why not whitespace?" in BQN's documentation. BQN tells the two readings
 
 ## Lists
 
-### A list that mixes constants and names
+### A list that mixes literals and names
 
 Source: BQN's documentation, on stranding in J and K. Only literals join a strand. A list that holds a name needs brackets. APL strands any arrays written side by side, and BQN joins them with `‿`.
 
