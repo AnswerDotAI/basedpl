@@ -8,7 +8,7 @@ BasedPL, the Based-array Programming Language, is an APL-derived array language,
 For APL users, the main choices are:
 
 - [Based arrays](rules.qmd#arrays-nesting-and-fill), as in BQN: numbers, characters and functions are atoms; enclosure always adds a layer.
-- **Brackets write vectors**, and spaces group: `[a b c]` is a vector, and `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train, so `+/÷≢ x` is the mean of `x`, and `2×` binds 2. An array next to an argument selects from it: `v 0` is the first item.
+- **Brackets write vectors**, and spaces group: `[a b c]` is a vector, and `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train, so `+/÷≢ x` is the mean of `x`, and `2×` binds 2. Index `⌷` selects, so `0⌷v` is the first item.
 - **Leading-axis broadcasting**, including expansion of length-1 axes, plus string keys and names on axes.
 - **Exact integers and rationals** alongside approximate real and complex numbers.
 - Dfns, trains and operators, with additions such as Under, iteration histories, windows and function arrays.
@@ -143,7 +143,7 @@ A vector of counts keeps the history: one state for each count, where count 0 is
 Under (`⌾`) transforms the argument, applies a function, then reverses the transformation. Scale by ten, floor, and scale back to round down to tenths:
 
 ``` bpl
-⌊⌾(10×)1.25 2.78
+⌊⌾ 10× 1.25 2.78
 ```
 
     1.2 2.7
@@ -262,6 +262,8 @@ Use lowercase `j` in complex literals throughout tests and examples, including a
 
 Write literal matrices in array notation, `[10 20 30 ⋄ 40 50 60]`, not as a reshape, `2 3⍴10 20 30 40 50 60`. Keep `⍴` where the example is about reshape.
 
-Brackets are the usual way to write a list. A bare literal list, such as `1 2 3`, is a shorthand. End an operand with a space, not with parentheses or `⊢`. Where a literal operand would run into the argument, write the argument in parentheses: `f⍤1(2 3)`. Report any case where neither a space nor parentheses works.
+Brackets are the usual way to write a list. A bare literal list, such as `1 2 3`, is a shorthand. End an operand with a space, not with parentheses or `⊢`. A space after an operator also makes the whole next run its operand, so `⌊⌾ 10× x` needs no parentheses. Where a literal operand would run into the argument, a vector argument goes in touching brackets: `f⍤1[2 3]`. A single number goes in parentheses: `f⍣¯2(5)`. Judge each line by how it reads, and report any case where none of these works.
 
-A name applied to a literal touches it, as a glyph does: `fib10`, `v¯1` and `1+⌽f5`. Write it that way where it’s shorter and needs no new parentheses. Keep the space where the literal would join the next part of the expression, or where an array before the name is its left argument.
+A name applied to a literal touches it, as a glyph does: `fib10` and `1+⌽f5`. Write it that way where it’s shorter and needs no new parentheses. Keep the space where the literal would join the next part of the expression, or where an array before the name is its left argument.
+
+Read a selection with `⌷`, as in `[⍋v]⌷v`, or with a subscript for one literal position, as in `v₁`. Use `.` for assignment targets, such as `v.[i]←0`, for record fields, such as `T.name`, and wherever `⌷` would be longer.

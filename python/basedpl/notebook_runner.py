@@ -10,7 +10,7 @@ def run_notebook(path, save=False):
     "Run BPL cells in a cleared workspace. Save outputs only when requested."
     path = Path(path)
     nb = json.loads(path.read_text())
-    if nb['metadata']['kernelspec']['language'] != 'bpl': raise ValueError(f'{path}: expected an BPL notebook')
+    if nb['metadata']['kernelspec']['language'] != 'bpl': raise ValueError(f'{path}: expected a BPL notebook')
     count = 0
     bpl(']clear')
     for i, cell in enumerate(nb['cells'], 1):

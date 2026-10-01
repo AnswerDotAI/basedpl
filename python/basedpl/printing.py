@@ -3,10 +3,10 @@ from fractions import Fraction
 from itertools import repeat
 from json import dumps
 from . import _Array, _Function, symbols
-from .functions import Function, _builtins, _python_name, _MONADIC
+from .functions import Function, _builtins, _python_name, _MONADIC, _DYADIC
 
 _names = {s['glyph']: (s['monad'], s['dyad']) for s in symbols}
-_methods = {glyph: name for name, glyph in _MONADIC.items()}
+_methods = {glyph: name for name, glyph in (_MONADIC | _DYADIC).items()}
 _infix = {'+': ('+', 20), '-': ('-', 20), '×': ('*', 30), '÷': ('/', 30),
           '=': ('==', 10), '≠': ('!=', 10), '<': ('<', 10), '≤': ('<=', 10), '>': ('>', 10), '≥': ('>=', 10)}
 
@@ -83,12 +83,11 @@ class _Printer:
             raw = b.parts()
             if raw.get('shape') == [1] and isinstance(raw['data'][0], _Function): return f'{r(a, dyad, 100)}.history({r(raw["data"][0], True)})', 100
             return f'{r(a, dyad, 41)} ** {r(b)}', 40
-        methods = {'⍤': ('rank', dyad, dyad), '∘': ('atop', False, dyad),
-                   '⍥': ('over', dyad, False), '⍃': ('before', False, True), '⍄': ('after', True, False), '⌾': ('under', dyad, False),
-                   '⇄': ('with_inverse', dyad, dyad), '@': ('at', dyad, False), '⌺': ('stencil', True, False)}
-        if kind in methods and af:
-            method, av, bv = methods[kind]
-            return f'{r(a, av, 100)}.{method}({r(b, bv)})', 100
+        valences = {'⍤': (dyad, dyad), '∘': (False, dyad), '⍥': (dyad, False), '⍃': (False, True), '⍄': (True, False),
+                    '⌾': (dyad, False), '⇄': (dyad, dyad), '⊘': (False, True), '@': (dyad, False), '⌺': (True, False)}
+        if kind in valences and af:
+            av, bv = valences[kind]
+            return f'{r(a, av, 100)}.{_methods[kind]}({r(b, bv)})', 100
         return _apl(f), 100
 
 def to_python(f, dyad=False):

@@ -98,14 +98,6 @@ fn growth_failures(codes: &[&str]) -> Vec<String> {
     failures
 }
 
-/// A loop of single-item updates, or of appends, is linear in its count.
-#[test]
-#[ignore = "each update copies the array until step 1 of meta/inplace.md"]
-fn updates_grow_linearly() {
-    let failures = growth_failures(&["x←0×iv ⋄ {x(⍵)←1}¨iv", "r←⍬ ⋄ {r,←⍵}¨iv"]);
-    assert!(failures.is_empty(), "{failures:#?}");
-}
-
 /// Each case may allocate `times` its result's bytes, plus `scratch` bytes for each argument item. Scalar and structural functions write
 /// their result once. A reshape that keeps the number of items shares its argument's storage. Search builds a table of the items it
 /// searches. Grade's radix sort moves pairs of a key and a position between two buffers, and returns its positions in one of them.
@@ -130,7 +122,7 @@ const BUDGETS: &[(&str, f64, usize)] = &[
     ("⊖m", 1.0, 0),
     ("((≢v)÷2)↑v", 1.0, 0),
     ("((≢v)÷2)↓v", 1.0, 0),
-    ("v i", 1.0, 0),
+    ("[i]⌷v", 1.0, 0),
     ("b#v", 1.0, 0),
     ("⍸b", 1.0, 0),
     (",m", 0.0, 0),
@@ -148,7 +140,7 @@ const BUDGETS: &[(&str, f64, usize)] = &[
 fn result_bytes(session: &mut Session, code: &str) -> usize {
     let sizes = format!("[1 8 8 16 4 {}]ₓ", std::mem::size_of::<basedpl::Value>());
     let names = r#""boolean" "integer" "float" "complex" "character" "mixed""#;
-    let result = session.eval(&format!("r←{code} ⋄ s←•storage r ⋄ (≢,r)×{sizes}({names}⍳⊂s)"));
+    let result = session.eval(&format!("r←{code} ⋄ s←•storage r ⋄ (≢,r)×({names}⍳⊂s)⌷{sizes}"));
     assert!(result.error.is_none(), "{code}: {:?}", result.error);
     result.value.and_then(|v| v.as_number()).and_then(|n| n.as_integer()).unwrap() as usize
 }
@@ -168,11 +160,12 @@ fn allocation_failures() -> Vec<String> {
     failures
 }
 
-/// Scalar functions, reductions, catenation, indexing, search, Key, partitions, display and each are linear. Grade is n log n. Each case
+/// Scalar functions, reductions, catenation, indexing, search, Key, partitions, display and each are linear. So are loops of single-item updates and of appends, in their count. Grade is n log n. Each case
 /// in `BUDGETS` allocates within its budget.
 #[test]
 fn costs_grow_as_expected() {
-    let mut failures = growth_failures(&["v+w", "+/v", "v,w", "v i", "v⍳w", "{≢⍵}⌸b", "b⊂iv", "⍕v", "{⍵+1}¨iv", "⍋v"]);
+    let mut failures =
+        growth_failures(&["v+w", "+/v", "v,w", "[i]⌷v", "v⍳w", "{≢⍵}⌸b", "b⊂iv", "⍕v", "{⍵+1}¨iv", "⍋v", "x←0×iv ⋄ {x.[⍵]←1}¨iv", "r←⍬ ⋄ {r,←⍵}¨iv"]);
     failures.extend(allocation_failures());
     assert!(failures.is_empty(), "{failures:#?}");
 }

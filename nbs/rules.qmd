@@ -6,9 +6,9 @@
 
 Five rules decide how code reads. [Language principles](principles.qmd) explains why the notation works this way.
 
-1. **Brackets and parentheses.** [Brackets](glyphs/brackets.qmd) write vectors: `[a b c]`, and `[x]` is a one-item vector. A strand of literals can leave them out: `1 2 3` is one vector. Parentheses group, whatever they hold. Round glyphs alone, separated by spaces, they make a scalar: `(+ -)` is `⊂[+ -]`. With `⋄`, they write a vector of rows: `(4 ⋄ 4 5)` is `[[4] [4 5]]`.
+1. **Brackets and parentheses.** [Brackets](glyphs/brackets.qmd) write vectors: `[a b c]`, and `[x]` is a one-item vector. A strand of literals can leave them out: `1 2 3` is one vector. Parentheses group, whatever they hold. With `⋄`, they write a vector of rows: `(4 ⋄ 4 5)` is `[[4] [4 5]]`.
 2. **Runs.** A *run* is a sequence of tokens with no spaces between them. A bracketed, parenthesised or braced group counts as one token. Each run is evaluated first, and then the runs combine. Parentheses round an expression group it.
-3. **Application.** Right to left, with no precedence between functions. A function takes everything to its right as its right argument, and the array directly to its left as its left argument. An operator takes the function to its left and one item to its right. A run that ends in a dyadic operator takes the next run as that item. An array next to an argument selects from it: `v(⍋v)` sorts `v`.
+3. **Application.** Right to left, with no precedence between functions. A function takes everything to its right as its right argument, and the array directly to its left as its left argument. An operator takes the function to its left and one item to its right. A run that ends in a dyadic operator takes the next run as that item. Arrays side by side form a strand: `a b` is `[a b]`.
 4. **Trains.** A run that ends in a function is a *train*, a function built from the right.
 5. **Assignment.** `←` assigns to the run before it, and its value is everything after it.
 
@@ -24,13 +24,12 @@ Five rules decide how code reads. [Language principles](principles.qmd) explains
 | Term | Meaning |
 |---|---|
 | literal | a number, character, string, `∞`, `⍬`, or a constant: `$t` true, `$f` false or `$n` NaN |
-| strand | literals separated by spaces, read as a vector without brackets: `1 2 3` is `[1 2 3]` |
+| strand | arrays side by side, read as a vector without brackets: `1 2 3` is `[1 2 3]`, and `a b` is `[a b]` |
 | scalar | an array of rank 0, holding one value: `⊂5` is a scalar holding the number 5, and `5` is a number |
 | unit | a rank-0 value: a number, character, function or scalar |
 | run | a sequence of tokens with no spaces between them |
 | argument | an array a function applies to |
 | operand | a function or array an operator applies to |
-| application | an array next to an argument, selecting from it: `v0` |
 | expression | a run, group or statement that ends in an array |
 | train | a run, group or statement that ends in a function |
 | fork | three parts of a train, `f g h`, giving `(f ⍵) g (h ⍵)` |
@@ -46,7 +45,7 @@ Numbers in every form, `∞`, `¯∞`, `⍬`, characters, strings and the consta
 
 [Brackets](glyphs/brackets.qmd) always write a vector, whatever the number of items: `[5]` is a one-item vector. `;` separates items that contain spaces. `⋄` stacks rows into an array of higher rank. Each row is a major cell, so a row that is a single number has rank 0, and `[1 ⋄ 2]` is the vector `1 2`. A column is written `[[1] ⋄ [2]]`.
 
-[Parentheses](glyphs/parentheses.qmd) group, whatever they hold: `(1 2)` is `1 2`, and `(x)` is `x`. Round glyphs alone, separated by spaces, they make a scalar holding them: `(+)` holds `+`, and `(+ -)` holds the vector `[+ -]`. Glyphs that touch form a train, so `(-×)` groups. `⊂` encloses any other value: `⊂[1 2]` is a scalar holding a vector.
+[Parentheses](glyphs/parentheses.qmd) group, whatever they hold: `(1 2)` is `1 2`, `(x)` is `x`, and `(-)` is `-`. `⊂` encloses an array: `⊂[1 2]` is a unit holding a vector. A [superscript](glyphs/superscript.qmd) `ᵘ` makes a unit that holds a function: `+ᵘ` holds `+`.
 
 With `⋄`, parentheses write a vector of rows instead. Each row reads as brackets do, so every row is a vector, even a row with one item: `(4 ⋄ 4 5 ⋄ 4 5 6)` is `[[4] [4 5] [4 5 6]]`. A trailing `⋄` makes a one-item vector holding one row: `(1 2 ⋄)` is `[[1 2]]`. Brackets write flat arrays, and parentheses nest.
 
@@ -76,7 +75,7 @@ x←3 ⋄ x+1 ÷ 2                        ⍝ 2
 
 ### Operators and operands
 
-Operators bind before function application. An operator's left operand is the whole function to its left. Its right operand is the one item to its right. A run ends at a space, so `f⍤1 M` applies `f` at rank 1 to `M`. A strand is one item, so `f⍤1 2 M` has rank `1 2`. A literal argument after a literal operand goes in parentheses: `f⍤1(2 3)`. A run that ends in a dyadic operator takes the next run as its right operand, as if no space came between them. So `f⍤ 1 M` is `f⍤1 M`, and a named operator takes a literal operand after a space: `+Depth 0 x`, where `Depth0` would be one name.
+Operators bind before function application. An operator's left operand is the whole function to its left. Its right operand is the one item to its right. A run ends at a space, so `f⍤1 M` applies `f` at rank 1 to `M`. A strand is one item, so `f⍤1 2 M` has rank `1 2`. A vector argument after a literal operand goes in brackets: `f⍤1[2 3]`. A single number goes in parentheses: `f⍣¯2(5)`. A run that ends in a dyadic operator takes the next run as its right operand, as if no space came between them. So `f⍤ 1 M` is `f⍤1 M`. In `⌊⌾ 10× x`, the operand of `⌾` is the whole of `10×`.
 
 ```bpl
 m←2 3⍴⍳6 ⋄ +/⍤1 m               ⍝ 3 12
@@ -91,21 +90,31 @@ A name is made of letters, `∆` and `⍙`. A digit ends a name, as it ends a gl
 
 ```bpl
 x_1←10 ⋄ x_12←20 ⋄ x_1+x_12   ⍝ 30
-v←10 20 30 ⋄ v1               ⍝ 20
+f←- ⋄ f2                       ⍝ ¯2
 T←["q1":5] ⋄ T.q1             ⍝ 5
 [k _ v]←1 2 3 ⋄ k+v            ⍝ 4
 ```
 
-### Application
+### Arrays side by side
 
-An array next to an argument selects along its leading axis, with positions as in [Index](glyphs/squad.qmd) `⌷`. The result has the shape of the positions, followed by the shape of each selected cell. `v1` gives item 1, `v ⊂1` gives it enclosed, and `v[1]` gives a one-item vector. Application groups from the right: `v w i` is `v (w i)`. Its argument is everything to its right, so `v 2×3` is `v` applied to 6.
+Arrays side by side form a strand, a vector with one item for each array, as `[a b]` writes it. Each run is evaluated first, so `a b+1` is `[a (b+1)]`. A strand of literals stays one item: `x 1 2` is `[x [1 2]]`.
 
 ```bpl
-v←10 20 30 40 ⋄ v[2 0]          ⍝ 30 10
-v←10 20 30 40 ⋄ v¯1             ⍝ 40
-v←10 20 30 40 ⋄ v ⊂1            ⍝ ⊂20
-v←10 20 30 40 ⋄ v[1]            ⍝ [20]
+a←1 2 ⋄ b←3 4 ⋄ a b        ⍝ [[1 2] [3 4]]
+a←1 ⋄ b←2 ⋄ a b+1          ⍝ 1 3
+x←5 ⋄ x 1 2                ⍝ [5 [1 2]]
 ```
+
+[Index](glyphs/squad.qmd) `⌷` selects along the leading axis. The result has the shape of the positions, followed by the shape of each selected cell.
+
+```bpl
+v←10 20 30 40 ⋄ [[2 0]]⌷v       ⍝ 30 10
+v←10 20 30 40 ⋄ ¯1⌷v            ⍝ 40
+v←10 20 30 40 ⋄ [⊂1]⌷v          ⍝ ⊂20
+v←10 20 30 40 ⋄ [[1]]⌷v         ⍝ [20]
+```
+
+A [subscript](glyphs/subscript.qmd) writes one literal position on the leading axis: `v₁` is `1⌷v`, and `v₋₁` is `¯1⌷v`.
 
 ### Trains
 
@@ -124,10 +133,10 @@ A space before an argument decides the reading. `+/÷≢ x` is the mean of `x`, 
 
 ### Assignment
 
-The target of `←` is the run before it: a name, a selection such as `v[2]` or `T.x`, a list of names such as `[a b]`, or one of these followed by a function for [modified assignment](glyphs/assign.qmd). A named function joins the target in parentheses, because a space would end the run: `a(f)←3` is `a←a f 3`, at top level and in dfns. The value is everything to the right of `←`, up to the end of the statement or group. `a←1 b←2` is not two assignments, because the first `←` takes `1 b←2` as its value. Independent assignments need `⋄`.
+The target of `←` is the run before it: a name, a selection such as `(1⌷v)`, `v₁`, `v.[1]` or `T.x`, a list of names such as `[a b]`, or one of these followed by a function for [modified assignment](glyphs/assign.qmd). A named function joins the target in parentheses, because a space would end the run: `a(f)←3` is `a←a f 3`, at top level and in dfns. The value is everything to the right of `←`, up to the end of the statement or group. `a←1 b←2` is not two assignments, because the first `←` takes `1 b←2` as its value. Independent assignments need `⋄`.
 
 ```bpl
-v←10 20 30 ⋄ v[1]←7 ⋄ v          ⍝ 10 7 30
+v←10 20 30 ⋄ v.[1]←7 ⋄ v         ⍝ 10 7 30
 [a b]←3 4 ⋄ a×b                  ⍝ 12
 a←1 ⋄ f←+ ⋄ a(f)←3 ⋄ a           ⍝ 4
 ```
@@ -153,9 +162,9 @@ total←1+2×3 → 2× ⋄ total   ⍝ 14
 
 ### Mixed spacing
 
-- `x ×2` is `x` applied to the sign of 2, so it selects item 1 of `x` with no error.
-- `10 -/1 2 3` applies `10` as an array to the reduction. With a vector on the left, it selects with no error. A seeded reduction needs the same spacing on both sides of the function: `10-/1 2 3`.
-- `x[2]+ 1` is a `SYNTAX` error. The run `x[2]+` is a train in which `[2]` and `x` both bind to `+`. The sum of item 2 and 1 is `(x 2)+1`.
+- `x ×2` is a strand of `x` and the sign of 2, with no error.
+- `10 -/1 2 3` is a strand of `10` and the reduction: `10 2`. A seeded reduction needs the same spacing on both sides of the function: `10-/1 2 3`.
+- `x[2]+ 1` is a `SYNTAX` error. The run `x[2]+` is a train in which `[2]` and `x` both bind to `+`. The sum of item 2 and 1 is `(2⌷x)+1`.
 
 ## Numbers
 
@@ -241,7 +250,7 @@ x←3 1 4 1 5
 x>2                  ⍝ $t $f $t $f $t
 +/x>2                ⍝ 3ₓ
 (x>2)#x              ⍝ 3 4 5
-"no" "yes" (4>2)     ⍝ "yes"
+(4>2)⌷"no" "yes"     ⍝ "yes"
 $t+$t                ⍝ 2ₓ
 $t∧$f                ⍝ $f
 •storage x>2         ⍝ "boolean"
@@ -262,7 +271,7 @@ Structural mapping (arithmetic, Each and indexing) preserves the mapped containe
 ⍴0 3⍴0               ⍝ [0 3]ₓ
 ```
 
-[Brackets](glyphs/brackets.qmd) write vectors: `[a b c]`. A strand of literals can leave them out: `1 2 3`. Nothing else forms a vector from separate items. `[Y]` is a one-item vector. `⊂Y` encloses any value, and parentheses enclose glyphs separated by spaces. `↑` retrieves the first item. Enclosure always adds an array layer.
+[Brackets](glyphs/brackets.qmd) write vectors: `[a b c]`. A strand can leave them out: `1 2 3`, and `a b` is `[a b]`. `[Y]` is a one-item vector. `⊂Y` encloses any value, and parentheses enclose glyphs separated by spaces. `↑` retrieves the first item. Enclosure always adds an array layer.
 
 ```bpl
 ↑[1 2;3 4]           ⍝ 1 2
@@ -296,13 +305,13 @@ This extends APL agreement. NumPy aligns trailing axes.
 
 ## Axes and indices
 
-Positions and axes count from 0. Negative positions and axes count from the end. A count or position must be an integer, or a float within comparison tolerance of one. An array next to an argument selects along its leading axis: `m1` is row 1, the second row. [Index](glyphs/squad.qmd) `⌷` selects along several axes, and `∞` selects a whole axis. After an array, [dot indexing](glyphs/dot.qmd) writes the same selection: `m.[∞ 1]` is `∞ 1⌷m`.
+Positions and axes count from 0. Negative positions and axes count from the end. A count or position must be an integer, or a float within comparison tolerance of one. [Index](glyphs/squad.qmd) `⌷` selects along leading axes: `1⌷m` is row 1, the second row, and `∞` selects a whole axis. After an array, [dot indexing](glyphs/dot.qmd) writes the same selection: `m.[∞ 1]` is `∞ 1⌷m`.
 
 [Axis](glyphs/axis.qmd) `⍠` applies a function along axes given as numbers or names, as in `+/⍠0` and `+/⍠"month"`. [Rank](glyphs/rank.qmd) `⍤` applies it to trailing cells, and `⍤0` passes each element as a unit. `/ \ ⌽ ,` default to the last axis, and `⌿ ⍀ ⊖ ⍪` to the first. Replicate `N#Y` and the partitions `N⊂Y` and `N⊆Y` work along the first axis. Encode `⊤` puts its digits on the last axis, and Decode `⊥` reads them from it. Structural functions also accept axis lists.
 
 ```bpl
 m←[1 2 3 ⋄ 4 5 6]
-m1                   ⍝ 4 5 6
+1⌷m                  ⍝ 4 5 6
 ∞ 1⌷m                ⍝ 2 5
 +/⍠0 m               ⍝ 5 7 9
 ```
@@ -327,7 +336,7 @@ Grade and interval index ignore tolerance. Order: numbers, characters, nested ar
 Dfns use lexical scope. Plain assignment is local. Modified and selective updates target the nearest binding. Arrays have value semantics: updating one name leaves other copies unchanged.
 
 ```bpl
-a←1 2 ⋄ b←a ⋄ a0←9 ⋄ b ⍝ 1 2
+a←1 2 ⋄ b←a ⋄ a.[0]←9 ⋄ b ⍝ 1 2
 ```
 
 A dfn returns its first result-producing non-assignment expression, or its final assignment silently. Top-level assignments also retain their value without display.

@@ -1,0 +1,13 @@
+# `⊘` — Valences
+
+`f⊘g` calls `f` when it has one argument, and `g` when it has two. Each side is a whole function, so each case can take as many statements as it needs.
+
+```bpl
+f←{⍵×2}⊘{⍺+⍵}
+f 5                ⍝ 10
+3 f 5              ⍝ 8
+```
+
+A dfn can test for a left argument with `•nc"⍺"` instead, but then only the statements after the guard can be more than one expression.
+
+APL difference: Dyalog has no Valences operator. BQN writes it as `⊘` too.

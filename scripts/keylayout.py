@@ -1,9 +1,10 @@
-"Write the macOS keyboard layout from `python/basedpl/layout.json`. Pass `--icon` to also rebuild its input-menu icon."
+"Write the macOS keyboard layout bundle from `python/basedpl/layout.json`. Pass `--icon` to also rebuild its input-menu icon."
 import argparse, json, subprocess, tempfile
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
-LAYOUT, OUTPUT = Path('python/basedpl/layout.json'), Path('editors/macos/BasedPL.keylayout')
+LAYOUT, BUNDLE = Path('python/basedpl/layout.json'), Path('editors/macos/BasedPL.bundle/Contents')
+OUTPUT = BUNDLE/'Resources/BasedPL.keylayout'
 ICON = OUTPUT.with_suffix('.icns')
 FONT, MENLO_BOLD, PURPLE = '/System/Library/Fonts/Menlo.ttc', 1, (61, 31, 107)
 
@@ -111,9 +112,22 @@ def icns():
         return Path(f'{tmp}/icon.icns').read_bytes()
 
 
+def plist(**entries):
+    "A property list holding `entries` as string keys and values."
+    items = ''.join(f'\t<key>{k}</key>\n\t<string>{v}</string>\n' for k, v in entries.items())
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+            f'<plist version="1.0">\n<dict>\n{items}</dict>\n</plist>\n')
+
+
+def metadata():
+    "The bundle's property lists and localized name, with the identifier of the bundle users already have installed."
+    return {BUNDLE/'Info.plist': plist(CFBundleIdentifier='org.basedpl.keyboardlayout.basedpl', CFBundleName='BasedPL', CFBundleVersion='').encode(),
+            BUNDLE/'version.plist': plist(BuildVersion='', ProjectName='BasedPL', SourceVersion='').encode(),
+            BUNDLE/'Resources/en.lproj/InfoPlist.strings': '"BasedPL" = "BasedPL";\n'.encode('utf-16')}
+
 def write(with_icon=False):
-    "Write the layout, optionally rebuild its icon, and return the paths that changed."
-    outputs = {OUTPUT: keylayout(json.loads(LAYOUT.read_text())).encode()}
+    "Write the bundle's layout and metadata, optionally rebuild its icon, and return the paths that changed."
+    outputs = {OUTPUT: keylayout(json.loads(LAYOUT.read_text())).encode(), **metadata()}
     if with_icon: outputs[ICON] = icns()
     changed = [path for path, data in outputs.items() if not path.exists() or path.read_bytes() != data]
     for path in changed:

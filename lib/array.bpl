@@ -27,16 +27,25 @@ alget ← {  ⍝ Value for key ⍵ in association list ⍺.
 
 alset ← {  ⍝ Assoc list ⍺ with (key value) pair ⍵ replaced.
   [key val]←⍵  ⍝ key and new value
-  {val@(⍺⍳⊂key) ⍵}\⍺
+  {val@ ⍺⍳⊂key ⍵}\⍺
 }
 
 ⍝ From http://dfns.dyalog.com/c_acc.htm
 
 acc ← { ⍶{(⊂⍺⍶↑⍬⍴⍵),⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵ }  ⍝ Accumulating reduction.
 
+⍝ Helpers shared by disp, display, displays, displayr and dsp.
+format ← {t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Simple array as a character matrix.
+open ← {(1⌈⍴⍵)⍴⍵}  ⍝ Exposure of null axes.
+axes ← {(-2⌈⍴⍴⍵)↑1+×⍴⍵}  ⍝ Array axis types.
+char ← {⍬≡⍴⍵:'─' ⋄ (↑⍵∊'¯',•d)⊃"#~"}∘⍕  ⍝ Type character of a simple scalar.
+type ← {{(1=⍴⍵)⊃['+' ⍵]}∪,char¨⍵}  ⍝ Type characters of an array.
+deco ← {⍺←type open ⍵ ⋄ ⍺,axes ⍵}  ⍝ Type and axes vector.
+trim ← {(~1 1⍷∧⌿⍵=' ')#⍠¯1 ⍵}  ⍝ Removal of extra blank columns.
+
 ⍝ From http://dfns.dyalog.com/c_disp.htm
 
-disp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄ ⍺←⍬  ⍝ Boxed sketch of nested array.
+disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
   [dec ctd]←2↑⍺  ⍝ 1:decorated, 1:centred.
   box←{  ⍝ Recursive boxing of nested array.
     isor ⍵:format⊂⍵
@@ -90,7 +99,7 @@ disp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄ ⍺←⍬  
   }
   right←{  ⍝ Border right each subarray.
     types←2⊥¨(⍳⍴⍵)=⊂¯1+⍴⍵
-    chars←"┼┤┴┘" types
+    chars←[types]⌷"┼┤┴┘"
     rgt←{⍵,(-≢⍵)↑[≢⍵ 1 1]#'│',⍺}  ⍝ form right border.
     (matr 1 open ⍺),¨chars rgt¨ ⍵  ⍝ cells bordered right.
   }
@@ -128,7 +137,7 @@ disp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄ ⍺←⍬  
 
 ⍝ From http://dfns.dyalog.com/c_display.htm
 
-display ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⍝ Boxed display of array.
+display ← {  ⍝ Boxed display of array.
   box←{  ⍝ box with type and axes
     [vrt hrz]←(¯1+⍴⍵)⍴¨"│─"  ⍝ vert. and horiz. lines
     top←"─⊖→".[¯1↑⍺],hrz
@@ -138,12 +147,6 @@ display ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⍝ Box
     lft←⍉'┌',(⊃lax),'└'
     lft,(top⍪⍵⍪bot),rgt  ⍝ fully boxed array
   }
-  deco←{⍺←type open ⍵ ⋄ ⍺,axes ⍵}  ⍝ type and axes vector
-  axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}  ⍝ array axis types
-  open←{(1⌈⍴⍵)⍴⍵}  ⍝ exposure of null axes
-  trim←{(~1 1⍷∧⌿⍵=' ')#⍠¯1 ⍵}  ⍝ removal of extra blank cols
-  char←{⍬≡⍴⍵:'─' ⋄ (↑⍵∊'¯',•d)⊃"#~"}∘⍕
-  type←{{(1=⍴⍵)⊃['+' ⍵]}∪,char¨⍵}
   line←{(""≡0⍴⍵)⊃" -"}
   {
     0=≡⍵:' '⍪(open format ⍵)⍪line ⍵
@@ -155,7 +158,7 @@ display ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄  ⍝ Box
 
 ⍝ From http://dfns.dyalog.com/c_displays.htm
 
-displays ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Boxed display of array.
+displays ← {  ⍝ Boxed display of array.
   box←{  ⍝ Box with type and axes.
     [shp w]←open\⍵
     [vrt hrz]←(¯1+⍴w)⍴¨"│─"  ⍝ Vert. and horiz. lines.
@@ -168,12 +171,7 @@ displays ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Boxed 
     lft←⍉'┌',(⊃lax),'└'
     lft,(top⍪w⍪bot),rgt  ⍝ Fully boxed array.
   }
-  deco←{⍺←type open ⍵ ⋄ ⍺,axes ⍵}  ⍝ Type and axes vector.
-  axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}  ⍝ Array axis types.
-  open←{(1⌈⍴⍵)⍴⍵}  ⍝ Expose null axes.
   trim←{[0⊃⍵ (~1 1⍷∧⌿' '=1⊃⍵)#⍠¯1(1⊃⍵)]}
-  char←{⍬≡⍴⍵:'─' ⋄ (↑⍵∊'¯',•d)⊃"#~"}∘⍕
-  type←{{(1=⍴⍵)⊃['+' ⍵]}∪,char¨⍵}
   qfmt←{[⍕0+⍴⍺;format open ⍵]}
   {  ⍝ Recursively box arrays:
     0=≡⍵:' '⍪(format ⍵)⍪(' '≡↑0⍴⍵)⊃" -"
@@ -185,7 +183,7 @@ displays ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Boxed 
 
 ⍝ From http://dfns.dyalog.com/c_displayr.htm
 
-displayr ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Boxed display of array
+displayr ← {  ⍝ Boxed display of array
   box←{  ⍝ box with type and axes
     [vrt hrz]←(¯1+⍴⍵)⍴¨"│─"  ⍝ vert. and horiz. lines
     top←(1+⍴hrz)↑(↑ ¯1↑⍺ ⌷ "─⊖",⊂⍕¯1↑1⊃⍺),hrz
@@ -197,11 +195,6 @@ displayr ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Boxed 
     lft,(top⍪⍵⍪bot),rgt  ⍝ fully boxed array
   }
   deco←{⍺←type open ⍵ ⋄ ⍴⍴⍵ , ⊂0+⍴⍵ , ⍺ , axes ⍵}
-  axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}  ⍝ array axis types
-  open←{(1⌈⍴⍵)⍴⍵}  ⍝ exposed null axes
-  trim←{(~1 1⍷∧⌿⍵=' ')#⍠¯1 ⍵}  ⍝ removal of extra blank cols
-  char←{⍬≡⍴⍵:'─' ⋄ (↑⍵∊'¯',•d)⊃"#~"}∘⍕
-  type←{{(1=⍴⍵)⊃['+' ⍵]}∪,char¨⍵}
   {  ⍝ recursively boxed arrays:
     0=≡⍵:' '⍪(open format ⍵)⍪(' '=↑0⍴⍵)⊃" -"
     1 ⍬≡[≡⍵ ⍴⍵]:["" [0 0] '∇' 0 0] box format ⍵
@@ -223,7 +216,7 @@ fuzzy ← {a←lcase ⍺ ⋄ ({⍵⍳⌊/⍵}a⍃dist∘lcase¨⍵)⊃⍵}
 
 ⍝ From http://dfns.dyalog.com/n_dsp.htm
 
-dsp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Reduced version of disp.
+dsp ← {  ⍝ Reduced version of disp.
   (1=≡,⍵)∨0∊⍴⍵:format ⍵
   ⍺←1 ⋄ top←'─'⍪⍣⍺  ⍝ top '─' bar if ⍺
   1≥⍴⍴⍵:{  ⍝ vector or scalar:
@@ -318,7 +311,7 @@ listRmDups ← {  ⍝ remove adjacent duplicates.
 ⍝ From http://dfns.dyalog.com/c_match.htm
 
 match ← {  ⍝ Wildcard match.
-  [p x]←{[⍵ '*']}⍣(1=≡,⍺),⍺  ⍝ pattern and wildcard.
+  [p x]←{[⍵ '*']}⍣ 1=≡,⍺ ,⍺  ⍝ pattern and wildcard.
   v←1↓¨{(x⍃≡¨⍵)⊂⍵}(⊂x),p
   h←⊃v⍷¨⊂⍵
   r←0,¯1↓,⊃⍴¨v
@@ -338,7 +331,7 @@ match ← {  ⍝ Wildcard match.
 
 ⍝ From http://dfns.dyalog.com/s_match.htm
 
-showmatch ← {marks←" ¯" ⍺ match ⍵ ⋄ ,⍠(⍳⍴⍴⍵) ⍵ {[⍺ ⋄ ⍵]}⍤1 marks}
+showmatch ← {marks←[(⍺ match ⍵)]⌷" ¯" ⋄ ,⍠ ⍳⍴⍴⍵ ⍵ {[⍺ ⋄ ⍵]}⍤1 marks}
 
 ⍝ From http://dfns.dyalog.com/n_nlines.htm
 
@@ -442,7 +435,7 @@ subvec ← { 0∊⍴⍺:1  ⍝ Is ⍺ a subvector of ⍵?
 
 subs ← {  ⍝ Vector substitution.
   [fs ts]←≢¨[fm to]←⍺  ⍝ old and new vectors and sizes
-  1≡≡⍺:to@(fm=)⍵  ⍝ special case: simple scalar subs
+  1≡≡⍺:to@ fm= ⍵  ⍝ special case: simple scalar subs
   0=⍴⍴⍵:↑(⍵≡fm)⌽[⍵ ⊂to]
   lead←fs↑1  ⍝ leading mask
   (fm⍷⍵){  ⍝ hits mask

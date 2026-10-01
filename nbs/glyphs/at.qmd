@@ -22,7 +22,14 @@ v←10 20 30 40 ⋄ i←[0 3 ⋄ 1 2]
 A function right operand computes a Boolean selection mask.
 
 ```bpl
-0@(2|) ⍳5          ⍝ 0 0 2 0 4
+0@ 2| ⍳5          ⍝ 0 0 2 0 4
+```
+
+A keyed replacement aligns by key with the selected positions, as it does in assignment.
+
+```bpl
+x←["a":1 "b":2 "c":3]
+["b":20 "a":10]@0 1 x   ⍝ ["a":10 "b":20 "c":3]
 ```
 
 Indices include nested paths. Dyadic calls pass the left argument to the replacement function. Repeated indices are written in order; the last replacement wins.

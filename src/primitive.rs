@@ -1,6 +1,6 @@
 use crate::{
     agreement::{Agreement, Mapping},
-    array::{compress, generated_len, or_and_sum, Axis, Frame, Gather, Items, Layout, Steps},
+    array::{compress, generated_len, or_and_sum, Axis, Bit, Frame, Gather, Items, Layout, Steps},
     execution::Context,
     keyed::Selector,
     number::{int, Arithmetic, Math},
@@ -14,9 +14,9 @@ use std::cmp::Ordering;
 /// A reduce or scan along the last or first axis. Its glyphs are `/ ⌿ \ ⍀`.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct FoldKind { pub scan: bool, pub first: bool }
-/// A superscript: a power, with `⁻` for a negative one, or `ᵀ`.
+/// A superscript: a power, with `⁻` for a negative one, `ᵀ`, or `ᵘ`.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Superscript { Power(i64), Transpose }
+pub(crate) enum Superscript { Power(i64), Transpose, Unit }
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum OperatorKind {
     Each,
@@ -32,6 +32,7 @@ pub(crate) enum OperatorKind {
     Key,
     Power,
     PairInverse,
+    Valences,
     Under,
     Differentiate,
     Agenda,
@@ -39,7 +40,7 @@ pub(crate) enum OperatorKind {
     Stencil,
     Fold(FoldKind),
     /// A superscript after an item: `²` or `⁻¹` repeats or inverts a function and raises an array to a power. `ᵀ` transposes an
-    /// array. It binds as a monadic operator does.
+    /// array, and `ᵘ` makes a unit that holds a function. It binds as a monadic operator does.
     Super(Superscript),
 }
 impl FoldKind {
@@ -81,7 +82,7 @@ pub(crate) struct OperatorInfo {
 impl OperatorInfo { pub(crate) fn dyadic(&self) -> bool { self.right.is_some() } }
 
 impl OperatorKind {
-    const ALL: [Self; 22] = {
+    const ALL: [Self; 23] = {
         use OperatorKind::*;
         [
             Each,
@@ -97,6 +98,7 @@ impl OperatorKind {
             Key,
             Power,
             PairInverse,
+            Valences,
             Under,
             Differentiate,
             Agenda,
@@ -125,9 +127,10 @@ impl OperatorKind {
             Power => ("⍣", ("power", "repeat iterate history"), Function, Some(Any)),
             Super(_) => ("", ("superscript", ""), Any, None),
             PairInverse => ("⇄", ("inverse-pair", ""), Function, Some(Function)),
+            Valences => ("⊘", ("valences", ""), Function, Some(Function)),
             Under => ("⌾", ("under", ""), Function, Some(Function)),
             Differentiate => ("∂", ("derivative", ""), Function, None),
-            Agenda => ("⍰", ("agenda", "choose"), Any, Some(Array)),
+            Agenda => ("⍚", ("agenda", "choose"), Any, Some(Array)),
             At => ("@", ("at", ""), Any, Some(Any)),
             Stencil => ("⌺", ("stencil", ""), Function, Some(Array)),
             Fold(kind) => (kind.glyph(), kind.names(), Function, None),
@@ -536,7 +539,7 @@ impl Primitive {
             Self::Transpose => row("⍉", "transpose", "", monad("transpose", W), dyad("reorder-axes", [1, W])),
             Self::Encode => row("⊤", "encode", "", monad("binary-encode", W), dyad("encode", [1, 0]).identity(Unit(0))),
             Self::Decode => row("⊥", "decode", "", monad("binary-decode", 1), dyad("decode", [1, 1])),
-            Self::Execute => row("⍎", "execute", "", monad("execute", 1).bounded(), dyad("", [W, W])),
+            Self::Execute => row("⍎", "execute", "", monad("execute", 1).bounded(), dyad("lookup", [W, W])),
             Self::Format => row("⍕", "format", "", monad("format", W), dyad("format-spec", [1, 1])),
             Self::Index => row("⌷", "squad", "", monad("materialise", W).axes(), dyad("index", [1, W]).axes()),
             Self::MatrixDivide => row("⌹", "domino", "", monad("inverse", 2).bounded(), dyad("matrix-divide", [W, 2])),
@@ -1002,6 +1005,30 @@ fn where_vector(counts: &[i64], span: &Context<'_>) -> Result<Value, Error> {
     }
     Value::integers(vec![total], data).error_at(span, "invalid where result")
 }
+/// The positions of the `total` 1s in `mask`.
+fn ones<M: Bit>(mask: &[M], total: usize) -> Vec<usize> {
+    let mut data = vec![0; total];
+    compress(&mut data, mask, |j| j);
+    data
+}
+/// The flat offsets of the 1s in `mask`, whatever its shape. Boolean storage, and integer storage whose items are all 0 or 1, are read
+/// directly. Any other item must be a number equal to 0 or 1.
+pub(crate) fn mask_offsets(mask: &Value, span: &Context<'_>) -> Result<Vec<usize>, Error> {
+    match mask.as_items() {
+        Items::Booleans(m) => return Ok(ones(m, m.iter().map(|&b| usize::from(b)).sum())),
+        Items::Integers(m) => {
+            let (any, sum) = or_and_sum(m);
+            if (0..=1).contains(&any) { return Ok(ones(m, sum as usize)); }
+        }
+        _ => (),
+    }
+    let mut offsets = Vec::new();
+    for (i, e) in mask.elements().enumerate() {
+        let Value::Number(n) = e else { return Err(span.domain_error("at mask must be Boolean")) };
+        if n.boolean().domain_at(span)? { offsets.push(i) }
+    }
+    Ok(offsets)
+}
 fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if let (Items::Booleans(mask), [_]) = (right.as_items(), right.shape()) {
         if right.keys(0).is_none() {
@@ -1170,8 +1197,6 @@ fn format_array(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Resu
 pub(crate) enum EmptyFill {
     /// The argument's prototype, mapped as any item is.
     Mapped,
-    /// The prototype of the mapped prototype. A nested prototype gives the fill of its first item.
-    MappedPrototype,
     /// The argument's prototype with a float zero for each number, character or function.
     Zeros,
 }
@@ -1184,7 +1209,6 @@ pub(crate) fn pervade(value: &Value, f: &dyn Fn(Value) -> Result<Value, Error>, 
         let prototype = value.prototype();
         let prototype = match empty {
             EmptyFill::Mapped => pervade(&prototype, f, empty, span)?,
-            EmptyFill::MappedPrototype => pervade(&prototype, f, empty, span)?.prototype(),
             EmptyFill::Zeros => pervade(&prototype, &|_| Ok(float(0.0)), empty, span)?,
         };
         Value::empty(value.shape().to_vec(), prototype)
@@ -1555,9 +1579,7 @@ fn encode_whole<'a>(bases: Items<'a>, values: Items<'a>, layout: &Layout) -> Opt
     let mut data = vec![0; bases.len() * values.len()];
     for (digits, &value) in data.chunks_mut(bases.len()).zip(values.iter()) {
         let mut value = value;
-        for (digit, divisor) in digits.iter_mut().zip(&divisors).rev() {
-            (value, *digit) = match divisor { Some(d) => d.div_mod(value)?, None => (0, value) };
-        }
+        for (digit, divisor) in digits.iter_mut().zip(&divisors).rev() { (value, *digit) = match divisor { Some(d) => d.div_mod(value)?, None => (0, value) }; }
     }
     if exact { layout.integers(data) } else { layout.floats(data.into_iter().map(|n| n as f64).collect()) }.ok()
 }
@@ -1971,26 +1993,61 @@ fn rotate(counts: Option<&Value>, right: &Value, axis: usize, span: &Context<'_>
     data.finish(layout, || right.prototype()).error_at(span, "invalid structural result")
 }
 
+/// `a` with `rank` axes for joining along `axis` with `other`. A unit becomes one cell with `other`'s other axes. An array with one
+/// axis fewer gains `axis`, with one position.
+fn promoted(a: &Value, other: &Value, rank: usize, axis: usize, span: &Context<'_>) -> Result<Value, Error> {
+    if a.shape().len() == rank { return Ok(a.clone()); }
+    let mut shape = a.shape().to_vec();
+    if a.is_unit() {
+        shape = if other.is_unit() { vec![1] } else { other.shape().to_vec() };
+        shape[axis] = 1;
+        let len = generated_len(&shape).error_at(span, "catenate exceeds array limits")?;
+        return Value::from_parts(shape, vec![a.at(0); len], a.prototype()).error_at(span, "invalid scalar extension");
+    }
+    if shape.len() + 1 != rank { return Err(span.error(ErrorKind::Rank, "catenate ranks differ by more than one")); }
+    shape.insert(axis, 1);
+    let layout = a.layout().replace(axis..axis, &vec![1].into());
+    a.with_shape(shape).and_then(|v| v.with_layout(layout)).error_at(span, "invalid catenate shape")
+}
+
+/// What `left,right` on a vector or `left⍪right` adds along the leading axis, when `left` can grow in place: the new cells, and the
+/// keys of the new positions when the leading axis has keys or gains them. `None` when the result would have another rank, gain keys
+/// on another axis, change an axis name or be empty. It gives the errors that `catenate` gives, before anything is written.
+pub(crate) fn append_plan(
+    left: &Value,
+    right: &Value,
+    first: bool,
+    span: &Context<'_>,
+) -> Result<Option<(Value, Option<Vec<Option<std::sync::Arc<str>>>>)>, Error> {
+    let rank = left.shape().len();
+    if rank == 0 || (!first && rank != 1) || right.shape().len() > rank || (left.is_empty() && right.is_empty()) { return Ok(None); }
+    let right = promoted(right, left, rank, 0, span)?;
+    let wanted: Vec<_> = (0..rank).map(|a| if a == 0 { None } else { left.keys(a).cloned() }).collect();
+    let right = crate::keyed::reorder(&right, &wanted, false).error_at(span, "catenate axis keys differ")?;
+    if left.shape()[1..] != right.shape()[1..] { return Err(span.error(ErrorKind::Length, "catenate frames differ")); }
+    if (1..rank).any(|a| left.keys(a).is_none() && right.keys(a).is_some()) { return Ok(None); }
+    if (0..rank).any(|a| right.axis_name(a).is_some_and(|y| left.axis_name(a) != Some(y))) { return Ok(None); }
+    let mut shape = left.shape().to_vec();
+    shape[0] = shape[0].checked_add(right.shape()[0]).ok_or_else(|| span.error(ErrorKind::Limit, "catenate axis overflow"))?;
+    generated_len(&shape).error_at(span, "catenate exceeds array limits")?;
+    let names = match (left.keys(0), right.keys(0)) {
+        (None, None) => None,
+        (keys, added) => {
+            let added = added.map_or_else(|| vec![None; right.shape()[0]], |k| k.names().to_vec());
+            if keys.is_some_and(|k| added.iter().flatten().any(|n| k.position(n).is_some())) {
+                return Err(span.domain_error("catenate has duplicate axis keys"));
+            }
+            Some(added)
+        }
+    };
+    Ok(Some((right, names)))
+}
 fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: bool, span: &Context<'_>) -> Result<Value, Error> {
     let rank = left.shape().len().max(right.shape().len()).max(1);
     let axis = axis.unwrap_or(if first { 0 } else { rank - 1 });
     if axis >= rank { return Err(span.domain_error("catenate axis is outside result rank")); }
-    let promote = |a: &Value, other: &Value| -> Result<Value, Error> {
-        if a.shape().len() == rank { return Ok(a.clone()); }
-        let mut shape = a.shape().to_vec();
-        if a.is_unit() {
-            shape = if other.is_unit() { vec![1] } else { other.shape().to_vec() };
-            shape[axis] = 1;
-            let len = generated_len(&shape).error_at(span, "catenate exceeds array limits")?;
-            return Value::from_parts(shape, vec![a.at(0); len], a.prototype()).error_at(span, "invalid scalar extension");
-        }
-        if shape.len() + 1 != rank { return Err(span.error(ErrorKind::Rank, "catenate ranks differ by more than one")); }
-        shape.insert(axis, 1);
-        let layout = a.layout().replace(axis..axis, &vec![1].into());
-        a.with_shape(shape).and_then(|v| v.with_layout(layout)).error_at(span, "invalid catenate shape")
-    };
-    let left = promote(left, right)?;
-    let right = promote(right, &left)?;
+    let left = promoted(left, right, rank, axis, span)?;
+    let right = promoted(right, &left, rank, axis, span)?;
     let mut wanted = (0..rank).map(|a| if a == axis { None } else { left.keys(a).cloned() }).collect::<Vec<_>>();
     let right = crate::keyed::reorder(&right, &wanted, false).error_at(span, "catenate axis keys differ")?;
     if (0..rank).any(|i| i != axis && left.shape()[i] != right.shape()[i]) { return Err(span.error(ErrorKind::Length, "catenate frames differ")); }
@@ -2130,6 +2187,11 @@ fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: bool, span:
 }
 
 fn squad(left: &Value, right: &Value, axes: Option<&[usize]>, span: &Context<'_>) -> Result<Value, Error> {
+    select(right, &squad_parts(left, right, axes, span)?, span)
+}
+
+/// The part for each axis of `right` that the indices `left` of `⌷` give. An axis with no index has none.
+fn squad_parts(left: &Value, right: &Value, axes: Option<&[usize]>, span: &Context<'_>) -> Result<Vec<Option<Value>>, Error> {
     if left.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "squad indices must be a unit or vector")); }
     let fields = coordinate_fields(left);
     if fields.len() > right.shape().len() || axes.is_some_and(|a| a.len() != fields.len()) {
@@ -2140,7 +2202,12 @@ fn squad(left: &Value, right: &Value, axes: Option<&[usize]>, span: &Context<'_>
         let part = parts.get_mut(axes.map_or(i, |a| a[i])).ok_or_else(|| span.error(ErrorKind::Rank, "squad axis is outside array rank"))?;
         *part = Some(coords);
     }
-    select(right, &parts, span)
+    Ok(parts)
+}
+
+/// The items that `left⌷right` reads, as a selection to write into.
+pub(crate) fn squad_selection(left: &Value, right: &Value, span: &Context<'_>) -> Result<Selection, Error> {
+    selection(right, &squad_parts(left, right, None, span)?, span)
 }
 
 pub(crate) fn coordinate_fields(value: &Value) -> Vec<Value> {
@@ -2215,6 +2282,8 @@ pub(crate) enum Targets { Offsets(Vec<usize>), Paths(Vec<Vec<usize>>) }
 
 impl Targets {
     pub(crate) fn len(&self) -> usize { match self { Self::Offsets(o) => o.len(), Self::Paths(p) => p.len() } }
+    /// The path of target `i`. An offset is a path of one position.
+    pub(crate) fn path(&self, i: usize) -> &[usize] { match self { Self::Offsets(o) => std::slice::from_ref(&o[i]), Self::Paths(p) => &p[i] } }
     /// Adds the target at `path`. A path of one position stays an offset.
     pub(crate) fn push(&mut self, path: &[usize]) {
         match (&mut *self, path) {
@@ -2232,12 +2301,21 @@ impl Targets {
 pub(crate) struct Selection { pub frame: Frame, pub targets: Targets }
 
 impl Selection {
-    pub(crate) fn values<'a>(&'a self, values: &'a Value, span: &Context<'_>) -> Result<impl Iterator<Item = Value> + 'a, Error> {
-        if matches!(self.frame, Frame::Array(_)) && !values.is_singleton() && values.shape() != self.frame.shape() {
+    /// `values` ready for the targets. A keyed value aligns to the keys of the selection. A singleton goes to every target, and
+    /// otherwise the shape must match the selection's.
+    pub(crate) fn checked(&self, values: &Value, span: &Context<'_>) -> Result<Value, Error> {
+        let Frame::Array(layout) = &self.frame else { return Ok(values.clone()) };
+        let values = if values.has_keys() && layout.has_keys() {
+            crate::keyed::reorder(values, &layout.all_keys(), true).error_at(span, "replacement does not supply selected keys")?
+        } else { values.clone() };
+        if !values.is_singleton() && values.shape() != layout.shape() {
             return Err(span.error(ErrorKind::Length, "replacement shape does not match selection"));
         }
-        Ok((0..self.targets.len()).map(|i| if matches!(self.frame, Frame::Direct) { values.clone() } else { selected(values, i) }))
+        Ok(values)
     }
+
+    /// The value of target `i`. A direct target takes the whole value.
+    pub(crate) fn item(&self, values: &Value, i: usize) -> Value { if matches!(self.frame, Frame::Direct) { values.clone() } else { selected(values, i) } }
 
     pub(crate) fn read(&self, array: &Value, span: &Context<'_>) -> Result<Value, Error> {
         let invalid = |k| span.error(k, "invalid selection");
@@ -2263,22 +2341,52 @@ impl Selection {
         data.finish(layout.clone(), || array.prototype()).map_err(invalid)
     }
 
-    /// `array` with each target replaced by its value. A later target at the same position wins. Compact storage widens for wider
-    /// numbers, and mixed storage stays mixed.
+    /// `array` with each target replaced by its value, as `write_into` writes it.
     pub(crate) fn write(&self, array: &Value, values: &Value, span: &Context<'_>) -> Result<Value, Error> {
-        let items = self.values(values, span)?;
+        let mut array = array.clone();
+        self.write_into(&mut array, values, span)?;
+        Ok(array)
+    }
+
+    /// Replaces each target of `array` with its value, in place. Every check comes before the first write, so an error leaves
+    /// `array` unchanged. A later target at the same position wins. Compact storage widens for wider numbers, and mixed storage
+    /// stays mixed.
+    pub(crate) fn write_into(&self, array: &mut Value, values: &Value, span: &Context<'_>) -> Result<(), Error> {
+        let values = self.checked(values, span)?;
         let offsets = match &self.targets {
             Targets::Offsets(offsets) => offsets,
-            Targets::Paths(paths) => return write_paths(array, &paths.iter().map(Vec::as_slice).zip(items).collect::<Vec<_>>(), span),
+            Targets::Paths(paths) => {
+                let items = (0..paths.len()).map(|i| self.item(&values, i));
+                let mut sorted: Vec<_> = paths.iter().collect();
+                sorted.sort_unstable();
+                sorted.dedup();
+                // Writing a target can remove a path inside it, so a selection with such paths writes into a copy.
+                if sorted.windows(2).any(|w| w[1].starts_with(w[0])) {
+                    *array = write_paths(array, &paths.iter().map(Vec::as_slice).zip(items).collect::<Vec<_>>(), span)?;
+                }
+                else { for (path, item) in paths.iter().zip(items) { array.write_path(path, item) } }
+                return Ok(());
+            }
         };
-        if array.is_atom() { return Ok(items.last().unwrap_or_else(|| array.clone())); }
-        let invalid = |k| span.error(k, "invalid amended array");
+        if array.is_atom() {
+            if let Some(i) = offsets.len().checked_sub(1) { *array = self.item(&values, i); }
+            return Ok(());
+        }
         // A direct target takes the whole value as one item.
-        let source = if matches!(self.frame, Frame::Direct) && !values.is_atom() { values.enclose().map_err(invalid)? } else { values.clone() };
-        let mut data = Gather::new(&[array, &source], array.len());
-        data.extend(array, 0..array.len());
-        data.scatter(offsets, &source);
-        data.finish(array.layout().clone(), || array.prototype()).map_err(invalid)
+        let source = if matches!(self.frame, Frame::Direct) && !values.is_atom() { values.enclose().error_at(span, "invalid amended array")? } else { values };
+        array.scatter(offsets, &source);
+        Ok(())
+    }
+
+    /// This selection of the item at `path`, as a selection of the whole array.
+    pub(crate) fn within(self, path: &[usize]) -> Self {
+        if path.is_empty() { return self; }
+        let inside = |p: &[usize]| [path, p].concat();
+        let targets = match self.targets {
+            Targets::Offsets(offsets) => Targets::Paths(offsets.iter().map(|&i| inside(&[i])).collect()),
+            Targets::Paths(paths) => Targets::Paths(paths.iter().map(|p| inside(p)).collect()),
+        };
+        Self { targets, ..self }
     }
 }
 

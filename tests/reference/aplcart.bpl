@@ -434,14 +434,14 @@ Y←3 1 2 1 ⋄ ⍋Y   ⍝ [1 3 2 0]ₓ
 [⍋ 2 5 1 3 4;⍋⍋ 2 5 1 3 4]   ⍝ [2 0 3 4 1;1 4 0 2 3]ₓ
 
 ⍝ aplcart/table.tsv:141 — Ascending grade using collation sequence C
-[⍋ "Banana";"Banana" ⍋"Banana";"an" ⍋ "Banana";"Banana" ("an" ⍋ "Banana")]
+[⍋ "Banana";[⍋"Banana"]⌷"Banana";"an" ⍋ "Banana";[("an" ⍋ "Banana")]⌷"Banana"]
 [0 1 3 5 2 4;"Baaann";1 3 5 2 4 0;"aaannB"]ₓ
 
 ⍝ aplcart/table.tsv:142 — Descending grade: Indices to reorder Y into descending order
 Y←3 1 2 1 ⋄ ⍒Y   ⍝ [0 2 1 3]ₓ
 
 ⍝ aplcart/table.tsv:143 — Descending grade using collation sequence C
-[⍒ "Banana";"Banana" ⍒"Banana";"an" ⍒ "Banana";"Banana" ("an" ⍒ "Banana")]
+[⍒ "Banana";[⍒"Banana"]⌷"Banana";"an" ⍒ "Banana";[("an" ⍒ "Banana")]⌷"Banana"]
 [2 4 1 3 5 0;"nnaaaB";0 2 4 1 3 5;"Bnnaaa"]ₓ
 
 ⍝ aplcart/table.tsv:144 — Expand last axis of Y
@@ -604,7 +604,7 @@ mat ← 3 2⍴⍳6 ⋄ 1 0 1 1 #⁻¹⍠0 mat   ⍝ [0 1 ⋄ 0 0 ⋄ 2 3 ⋄ 4 5
 mat ← 3 2⍴⍳6 ⋄ +\⍠0 mat   ⍝ [0 1 ⋄ 2 4 ⋄ 6 9]
 
 ⍝ aplcart/table.tsv:203 — Modified Indexed Assignment (tradfns/tradops only)
-var←20 30 40 ⋄ var[0 0 2]+←2 ⋄ var   ⍝ 24 30 42
+var←20 30 40 ⋄ var.[[0 0 2]]+←2 ⋄ var   ⍝ 24 30 42
 
 ⍝ aplcart/table.tsv:204 — Constant (K-combinator): ignore arguments and return Y
 X←3 1 2 1 ⋄ Y←3 1 3 2 ⋄ Z←42 ⋄ X Y⍨ Z   ⍝ 3 1 3 2
@@ -624,25 +624,25 @@ cube ← 2 2 3⍴⍳12 ⋄ cmat ← ["abc" ⋄ "zxy"] ⋄ [,⍤2 cube;⍋⍤1 cm
 "XYZ"@{0 1 1 0 0 1} "abcdef"   ⍝ "aXYdeZ"
 
 ⍝ aplcart/table.tsv:209 — At: apply X∘f to modify positions N in Y
-10 (×@1 3) 1 2 3 4 5   ⍝ 1 20 3 40 5
+10 ×@1 3 [1 2 3 4 5]   ⍝ 1 20 3 40 5
 
 ⍝ aplcart/table.tsv:210 — At: apply X∘f to modify positions identified by Boolean mask (g Y) in Y
-10 ×@(≤⍄3) 3 1 4 1 5   ⍝ 30 10 4 10 5
+10 ×@ ≤⍄3 [3 1 4 1 5]   ⍝ 30 10 4 10 5
 
 ⍝ aplcart/table.tsv:211 — At: use values in X to replace positions N in Y
-(0@1 3) 1 2 3 4 5   ⍝ 1 0 3 0 5
+0@1 3[1 2 3 4 5]   ⍝ 1 0 3 0 5
 
 ⍝ aplcart/table.tsv:212 — At: use values in X to replace positions identified by Boolean mask (g Y) in Y
-'*'@(2|) 1 2 3 4 5   ⍝ '*' 2 '*' 4 '*'
+'*'@ 2| 1 2 3 4 5   ⍝ '*' 2 '*' 4 '*'
 
 ⍝ aplcart/table.tsv:213 — Amend row Js of matrix Ym
 mat ← 3 2⍴⍳6 ⋄ (8 9@1) mat   ⍝ [0 1 ⋄ 8 9 ⋄ 4 5]
 
 ⍝ aplcart/table.tsv:214 — At: apply f to modify positions N in Y
-(÷@1 3) 1 2 3 4 5   ⍝ 1 0.5 3 0.25 5
+÷@1 3[1 2 3 4 5]   ⍝ 1 0.5 3 0.25 5
 
 ⍝ aplcart/table.tsv:215 — At: apply f to modify positions identified by Boolean mask (g Y) in Y
-⌽@(2|) 1 2 3 4 5   ⍝ 5 2 3 4 1
+⌽@ 2| 1 2 3 4 5   ⍝ 5 2 3 4 1
 
 ⍝ aplcart/table.tsv:216 — Power: apply X∘f on Y Js times
 1 (+⍣3) 5   ⍝ 8
@@ -658,7 +658,7 @@ mat ← 1+4 4⍴⍳16 ⋄ [{⊂⍵}⌺3 3 mat;{+/,⍵}⌺3 3 mat]
 var←20 30 40 ⋄ (2 0 1#var)+←2 ⋄ var   ⍝ 24 30 42
 
 ⍝ aplcart/table.tsv:224 — Modified Indexed Assignment (also dfns/dops)
-var←20 30 40 ⋄ plus←+ ⋄ {var[0 0 2]plus⍄⊢←2}⍬ ⋄ var   ⍝ 24 30 42
+var←20 30 40 ⋄ plus←+ ⋄ {var.[[0 0 2]]plus⍄⊢←2}⍬ ⋄ var   ⍝ 24 30 42
 
 ⍝ aplcart/table.tsv:225 — Modified Selective Assignment: exp is an expression that selects elements of "name" (also dfns/dops)
 var←20 30 40 ⋄ plus←+ ⋄ {(2 0 1#var)plus⍄⊢←2}⍬ ⋄ var   ⍝ 24 30 42
@@ -691,7 +691,7 @@ Y←42 "Pete" "Πέτρος"  ⋄ ¯1⍃•c Y   ⍝ 42 "pete" "πέτρος"
 [25;0 1 4 9 16 25 36 49 64 81;1 6.25 0 6.25 17.28j9.46;[0 1 4 ⋄ 9 16 25 ⋄ 36 49 64]]
 
 ⍝ aplcart/table.tsv:529 — Random Permutation of length Js; Reviewed deterministic random-operation invariant; independently checked in Dyalog and through the Rust reference worker; Assert shape, range, uniqueness, permutation preservation, rounding bounds or deterministic sorting; no sampled values or seed are compared
-Js←7 ⋄ r←?⍨Js ⋄ ⍳Js ≡ r(⍋r)   ⍝ $t
+Js←7 ⋄ r←?⍨Js ⋄ ⍳Js ≡ [⍋r]⌷r   ⍝ $t
 
 ⍝ aplcart/table.tsv:530 — Ones, same shape and structure
 [3 3⍴⍳9;"";=⍨ 3 3⍴⍳9]
@@ -894,7 +894,7 @@ f←+/ ⋄ g←- ⋄ h←×/ ⋄ X←1 2 3 ⋄ Y←2 3 4 ⋄ X f⍃g⍄h Y   ⍝
 [15;"";[0 1 2 ⋄ 3 4 5 ⋄ 6 7 8];"";3 12 21]
 
 ⍝ aplcart/table.tsv:589 — Running sum of Is consecutive elements of N
-[+/∘(2⍃↕) 2 2 3 2 2;"";5 5⍴⍳9;"";(+/∘(3⍃↕)⍤1) 5 5⍴⍳9]
+[+/∘ 2⍃↕ 2 2 3 2 2;"";5 5⍴⍳9;"";(+/∘(3⍃↕)⍤1) 5 5⍴⍳9]
 [4 5 5 4;"";[0 1 2 3 4 ⋄ 5 6 7 8 0 ⋄ 1 2 3 4 5 ⋄ 6 7 8 0 1 ⋄ 2 3 4 5 6];"";[3 6 9 ⋄ 18 21 15 ⋄ 6 9 12 ⋄ 21 15 9 ⋄ 9 12 15]]
 
 ⍝ aplcart/table.tsv:590 — Row-wise alternating sum: ((N[1]-N[2])+N[3])-N[4]+…
@@ -1106,7 +1106,7 @@ I←[1 0 2 ⋄ 1 0 1] ⋄ Y←2 3⍴⍳6 ⋄ I#⍥,Y   ⍝ 0 2 2 3 5
 2 3 ⍴⍄⊂ "abc"   ⍝ 2 3⍴⊂"abc"
 
 ⍝ aplcart/table.tsv:674 — Corner element of a (non-empty) array Y[1;1;1…]
-[3 3⍴ ,/∘(2⍃↕) ⍳9;"";↑∘, 3 3⍴ ,/∘(2⍃↕) ⍳9]
+[3 3⍴ ,/∘ 2⍃↕ ⍳9;"";↑∘, 3 3⍴ ,/∘ 2⍃↕ ⍳9]
 [3 3⍴[0 1;1 2;2 3;3 4;4 5;5 6;6 7;7 8;0 1];"";0 1]
 
 ⍝ aplcart/table.tsv:675 — Select major cells Iv from Y
@@ -1299,7 +1299,7 @@ Ms←1j1 ⋄ Nv←1 1j1 0j1 ⋄ Ms×⍄×⍨Nv
 N←¯3 ¯2 0 2 3 ⋄ ×⍄|⍨N   ⍝ ¯9 ¯4 0 4 9
 
 ⍝ aplcart/table.tsv:740 — Random Permutation vector for Y; Reviewed deterministic random-operation invariant; independently checked in Dyalog and through the Rust reference worker; Assert shape, range, uniqueness, permutation preservation, rounding bounds or deterministic sorting; no sampled values or seed are compared
-Y←3 2⍴⍳6 ⋄ r←?⍨∘≢Y ⋄ ⍳≢Y ≡ r(⍋r)   ⍝ $t
+Y←3 2⍴⍳6 ⋄ r←?⍨∘≢Y ⋄ ⍳≢Y ≡ [⍋r]⌷r   ⍝ $t
 
 ⍝ aplcart/table.tsv:741 — M'th Root of N
 M←2 3 ⋄ N←4 27 ⋄ M*⍄÷⍨N   ⍝ 2 3
@@ -1353,7 +1353,7 @@ B←1 1 0 1 0 1 0 ⋄ ≠⍀⍃∨B   ⍝ 1 1 0 1 1 1 0
 B←1 1 0 1 0 1 0 ⋄ ≠⍀⍃>B   ⍝ $f $f $f $f $t $f $f
 
 ⍝ aplcart/table.tsv:758 — Merge the leading two axes of Y
-[a ← 2 3 4⍴⍳24;⍴ a;,⍠(⍳2) a;⍴ ,⍠(⍳2) a]
+[a ← 2 3 4⍴⍳24;⍴ a;,⍠ ⍳2 a;⍴ ,⍠ ⍳2 a]
 [2 3 4⍴0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23;[2 3 4]ₓ;[0 1 2 3 ⋄ 4 5 6 7 ⋄ 8 9 10 11 ⋄ 12 13 14 15 ⋄ 16 17 18 19 ⋄ 20 21 22 23];[6 4]ₓ]
 
 ⍝ aplcart/table.tsv:759 — Transpose matrix Ym on condition Bs
@@ -1703,7 +1703,7 @@ Y←3 1 3 2 ⋄ ⊂∘⍒⍃⌷Y   ⍝ 3 3 2 1
 Av←1 0 1 0 ⋄ Y←3 1 3 2 ⋄ Av⊂∘⍒⍃⌷Y   ⍝ 3 3 1 2
 
 ⍝ aplcart/table.tsv:879 — First Js triangular pyramidal numbers
-Js←4 ⋄ +\⍣2∘(1+⍳)Js   ⍝ 1 4 10 20
+Js←4 ⋄ +\⍣2∘ 1+⍳ Js   ⍝ 1 4 10 20
 
 ⍝ aplcart/table.tsv:880 — Reflect counter-diagonally
 Ym←2 3⍴⍳6 ⋄ ⌽∘⍉∘⌽Ym   ⍝ [5 2 ⋄ 4 1 ⋄ 3 0]
@@ -1860,13 +1860,13 @@ Ym←2 3⍴⍳6 ⋄ 1⍃↑⍤1 Ym   ⍝ [[0] ⋄ [3]]
 Ym←2 3⍴⍳6 ⋄ ¯1⍃↑⍤1 Ym   ⍝ [[2] ⋄ [5]]
 
 ⍝ aplcart/table.tsv:927 — Replacing all values Ys in Y with Xs; optional {X} instantiated as dyadic use
-Xs←9 ⋄ Ys←1 ⋄ Y←3 1 3 2 ⋄ Xs@(Ys⍃=)Y   ⍝ 3 9 3 2
+Xs←9 ⋄ Ys←1 ⋄ Y←3 1 3 2 ⋄ Xs@ Ys⍃= Y   ⍝ 3 9 3 2
 
 ⍝ aplcart/table.tsv:928 — Handling array Y temporarily as a vector (optionally with left argument X); optional {X} instantiated as dyadic use
-X←10 ⋄ f←⌽ ⋄ Y←2 3⍴⍳6 ⋄ X f@(1⍨¨) Y   ⍝ [4 5 0 ⋄ 1 2 3]
+X←10 ⋄ f←⌽ ⋄ Y←2 3⍴⍳6 ⋄ X f@ 1⍨¨ Y   ⍝ [4 5 0 ⋄ 1 2 3]
 
 ⍝ aplcart/table.tsv:929 — Fill array Y with Xs; optional {X} instantiated as dyadic use
-Xs←9 ⋄ Y←2 3⍴⍳6 ⋄ Xs@(1⍨¨)Y   ⍝ [9 9 9 ⋄ 9 9 9]
+Xs←9 ⋄ Y←2 3⍴⍳6 ⋄ Xs@ 1⍨¨ Y   ⍝ [9 9 9 ⋄ 9 9 9]
 
 ⍝ aplcart/table.tsv:930 — Ms±Ns; optional {X} instantiated as dyadic use
 Ms←2 ⋄ Ns←3 ⋄ Ms +,- Ns   ⍝ 5 ¯1
@@ -1930,7 +1930,7 @@ X←3 1 2 1 ⋄ Y←1 2 ⋄ X ⌊/⍳ Y   ⍝ 1ₓ
 [0 3 1 4 2]ₓ
 
 ⍝ aplcart/table.tsv:950 — Even integers from 0 to 2×Js
-[2×⍳∘(1+) 5;2×⍳∘(1+) 6]   ⍝ [[0 2 4 6 8 10] [0 2 4 6 8 10 12]]
+[2×⍳∘ 1+ 5;2×⍳∘ 1+ 6]   ⍝ [[0 2 4 6 8 10] [0 2 4 6 8 10 12]]
 
 ⍝ aplcart/table.tsv:951 — All; optional {X} instantiated as dyadic use
 B←1 1 0 1 0 1 0 ⋄ ~0⍃∊ B   ⍝ $f
@@ -2053,7 +2053,7 @@ Y←3 1 3 2 ⋄ {⊂⍵}⌸Y   ⍝ [[0 2] [1] [3]]ₓ
 Y←3 1 3 2 ⋄ ≢⍃⍴⍄1 0⍃#Y   ⍝ 3 3
 
 ⍝ aplcart/table.tsv:1002 — Continued fraction: 1+÷2+÷3+÷4+÷5+÷6+÷…Js; optional {X} instantiated as dyadic use
-Js←4 ⋄ +⍄÷/∘(1+⍳)Js   ⍝ 1.4333333333333333
+Js←4 ⋄ +⍄÷/∘ 1+⍳ Js   ⍝ 1.4333333333333333
 
 ⍝ aplcart/table.tsv:1003 — Moving width-Is window of indices for array Y; optional {X} instantiated as dyadic use
 Is←2 ⋄ Y←3 1 3 2 ⋄ ,/Is↕⍳≢Y   ⍝ [[0 1] [1 2] [2 3]]ₓ
@@ -2120,7 +2120,7 @@ N←4 9 16 ⋄ *⍄÷⍄3 N
 1.5874010519681994 2.080083823051904 2.5198420997897464
 
 ⍝ aplcart/table.tsv:1023 — Probabilistic NOR
-M←0 0.5 1 ⋄ N←1 0.25 0 ⋄ M×⍥(1⍃-)N   ⍝ 0 0.375 0
+M←0 0.5 1 ⋄ N←1 0.25 0 ⋄ M×⍥ 1⍃- N   ⍝ 0 0.375 0
 
 ⍝ aplcart/table.tsv:1024 — Mirror complex N across x-axis if As
 As←1 ⋄ N←1j2 3j¯4 ⋄ As(¯10+~)⍃○N   ⍝ 1j¯2 3j4
@@ -2152,7 +2152,7 @@ N←2 3⍴⍳6 ⋄ +⌿÷≢ N   ⍝ 1.5 2.5 3.5
 [1 0 0 0 0 ⋄ 0 0 0 1 0 ⋄ 0 1 0 0 0 ⋄ 0 0 0 0 1 ⋄ 0 0 1 0 0]
 
 ⍝ aplcart/table.tsv:1033 — Segment lengths from beginning indices
-Iv←2 5 9 ⋄ -/∘⌽∘(2⍃↕) 0⍃, Iv   ⍝ 2 3 4
+Iv←2 5 9 ⋄ -/∘⌽∘ 2⍃↕ 0⍃, Iv   ⍝ 2 3 4
 
 ⍝ aplcart/table.tsv:1034 — Positive maximum, at least zero (also for empty N)
 N←⍬ ⋄ ⌈/,⍄0 N   ⍝ 0
@@ -2170,10 +2170,10 @@ N←1 3 3 2 5 ⋄ 0⍪(>/⍠1∘(2⍃↕)) N   ⍝ 0 0 0 1 0
 Y←1 1 2 2 1 ⋄ 1⍪(≢/⍠1∘(2⍃↕)) Y   ⍝ 1 0 1 0 1
 
 ⍝ aplcart/table.tsv:1040 — First ones in each group of ones
-B←1 1 0 1 0 1 0 ⋄ </⍠1∘(2⍃↕) 0⍃⍪ B   ⍝ $t $f $f $t $f $t $f
+B←1 1 0 1 0 1 0 ⋄ </⍠1∘ 2⍃↕ 0⍃⍪ B   ⍝ $t $f $f $t $f $t $f
 
 ⍝ aplcart/table.tsv:1041 — Last ones in each group of ones
-B←1 1 0 1 0 1 0 ⋄ >/⍠1∘(2⍃↕) ⍪⍄0 B   ⍝ $f $t $f $t $f $t $f
+B←1 1 0 1 0 1 0 ⋄ >/⍠1∘ 2⍃↕ ⍪⍄0 B   ⍝ $f $t $f $t $f $t $f
 
 ⍝ aplcart/table.tsv:1042 — Number of items in trailing axis
 Y←3 1 3 2 ⋄ ↑⌽∘⍴ Y   ⍝ 4ₓ
@@ -2228,7 +2228,7 @@ Y←3 1 3 2 ⋄ 1≥≢∘∪ Y   ⍝ $f
 Js←4 ⋄ ∪⍳⍃∨ Js   ⍝ 4 1 2
 
 ⍝ aplcart/table.tsv:1059 — Force numbers N to range (-M)≤N≤M
-3 (⌊⍄-⍣2) 0 1 ¯2 4 ¯5   ⍝ 0 1 ¯2 3 ¯3
+3 ⌊⍄-⍣2 [0 1 ¯2 4 ¯5]   ⍝ 0 1 ¯2 3 ¯3
 
 ⍝ aplcart/table.tsv:1060 — Prefixes of a vector
 Yv←4 5 6 ⋄ ,¨,\ Yv   ⍝ [[4] [4 5] [4 5 6]]
@@ -2294,7 +2294,7 @@ Ms←0.1 ⋄ N←100 200 300 ⋄ Ms 1⍃+⍃⊥ N   ⍝ 641
 Is←10 ⋄ J←123 450 7 ⋄ Is +/⊥⁻¹ J   ⍝ 6 9 7
 
 ⍝ aplcart/table.tsv:1080 — An array that begins with 1↑N and has pair-wise sums 1↓N
-[(¯1⊥¨,\) 3,4 5 5 6;+/∘(2⍃↕) (¯1⊥¨,\) 3,4 5 5 6]
+[(¯1⊥¨,\) 3,4 5 5 6;+/∘ 2⍃↕ (¯1⊥¨,\) 3,4 5 5 6]
 [[3 1 4 1 5] [4 5 5 6]]
 
 ⍝ aplcart/table.tsv:1081 — Decoding numeric codes J packed with field widths Iv (ZYYYZZZ:1 3 2)
@@ -2431,7 +2431,7 @@ Y← ["ab";1 2]  ⋄ ↑0⍴,Y   ⍝ "  "
 I←2 ⋄ B←0 1 0 0 1 0 ⋄ I ⊣+↓⍳1⍨ B   ⍝ 4
 
 ⍝ aplcart/table.tsv:1131 — Coefficients of the binomial (exact, fastest below 10)
-Js←6 ⋄ ⊢!⍨⍳∘(1+) Js   ⍝ 1 6 15 20 15 6 1
+Js←6 ⋄ ⊢!⍨⍳∘ 1+ Js   ⍝ 1 6 15 20 15 6 1
 
 ⍝ aplcart/table.tsv:1132 — Is Y within the range ( 1⌷X , 2⌷X )
 [1 3 (5=⍳+3×⍸) 0;1 3 (5=⍳+3×⍸) 1;1 3 (5=⍳+3×⍸) 2;1 3 (5=⍳+3×⍸) 3;1 3 (5=⍳+3×⍸) 4]
@@ -2502,7 +2502,7 @@ Dv← "/ab/cd/ef"  ⋄ ↑+.=⊢ Dv   ⍝ 3ₓ
 Jm←[1 1 2 ⋄ 1 2 3] ⋄ 1+(⍴⊥⍉∘(¯1⍃+)) Jm   ⍝ 1 2 6
 
 ⍝ aplcart/table.tsv:1152 — Hamming weight
-J←0 3 15 ⋄ 2⍃(+/⊥⁻¹)J   ⍝ 0 2 4
+J←0 3 15 ⋄ 2⍃ +/⊥⁻¹ J   ⍝ 0 2 4
 
 ⍝ aplcart/table.tsv:1153 — ISBN check digit generator from ten first digits Jv
 Jv←0 3 0 6 4 0 6 1 5 ⋄ |¯11|1⊥+\ Jv   ⍝ 5
@@ -2526,7 +2526,7 @@ D←"Abc 19 Σς!"  ⋄ (¯1⍃•c=1⍃•c)D   ⍝ $f $f $f $t $t $t $t $f $f 
 D← ["abc " ⋄ "a  b" ⋄ " xyz"]  ⋄ ⍳⍄' '⍤1 D   ⍝ [3 1 0]ₓ
 
 ⍝ aplcart/table.tsv:1164 — Shuffle major cells; Reviewed deterministic random-operation invariant; independently checked in Dyalog and through the Rust reference worker; Assert shape, range, uniqueness, permutation preservation, rounding bounds or deterministic sorting; no sampled values or seed are compared
-Y←4 2⍴⍳8 ⋄ r←⊂∘?⍨∘≢⍃⌷Y ⋄ Y≡r(⍋r)   ⍝ $t
+Y←4 2⍴⍳8 ⋄ r←⊂∘?⍨∘≢⍃⌷Y ⋄ Y≡[⍋r]⌷r   ⍝ $t
 
 ⍝ aplcart/table.tsv:1165 — Transitive closure
 Bm←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ ∨.∧⍨⍃∨⍣≡Bm   ⍝ [1 1 1 ⋄ 1 1 1 ⋄ 1 1 1]
@@ -2571,7 +2571,7 @@ N←[1 2 3 ⋄ 4 5 6] ⋄ 100×(⊢÷⍤1+⌿) N
 [20 28.57142857142857 33.33333333333333 ⋄ 80 71.42857142857143 66.66666666666666]
 
 ⍝ aplcart/table.tsv:1178 — Apply function f (optionally with left argument X) to last cell of Y
-X←10 ⋄ f←+ ⋄ Y←1 2 3 ⋄ X f@(1↑⍨⍄-≢) Y   ⍝ 1 2 13
+X←10 ⋄ f←+ ⋄ Y←1 2 3 ⋄ X f@ 1↑⍨⍄-≢ Y   ⍝ 1 2 13
 
 ⍝ aplcart/table.tsv:1179 — Rotation matrix for angle Ns (in radians) counter-clockwise
 Ns←0.5 ⋄ (2 2⍴(-@1(2 1 1 2○⊢)))Ns
@@ -2695,7 +2695,7 @@ states←⊂3 3 ⍴¨ ↓(9⍴2)⊤⍳512 ⋄ Bv←states#⍨{(3=+/∊⍵)∨(1=
 Dm←["abc" ⋄ "   " ⋄ "de "]  ⋄ ∨.≠⍄' '⍃#Dm   ⍝ ["abc" ⋄ "de "]
 
 ⍝ aplcart/table.tsv:1216 — Binomial coefficients until Js
-Js←4 ⋄ !⊗⍨⍳∘(1+) Js
+Js←4 ⋄ !⊗⍨⍳∘ 1+ Js
 [1 1 1 1 1 ⋄ 0 1 2 3 4 ⋄ 0 0 1 3 6 ⋄ 0 0 0 1 4 ⋄ 0 0 0 0 1]
 
 ⍝ aplcart/table.tsv:1217 — Set Identity (are the sets identical?)
@@ -2732,7 +2732,7 @@ D← ["  ab" ⋄ " c d"]  ⋄ ∨\' '⍃≠ D   ⍝ [$f $f $t $t ⋄ $f $t $t $t
 N←[1 3 6 ⋄ 2 5 9] ⋄ -⍨/∘(2⍃↕)⍤1 N   ⍝ [2 3 ⋄ 3 4]
 
 ⍝ aplcart/table.tsv:1235 — Merge the leading Is axes of Y
-[a ← 2 3 4⍴⍳24;⍴ a;⍴ 1 {,⍠(⍳⍺)⍵} a;⍴ 2 {,⍠(⍳⍺)⍵} a;⍴ 3 {,⍠(⍳⍺)⍵} a]
+[a ← 2 3 4⍴⍳24;⍴ a;⍴ 1 {,⍠ ⍳⍺ ⍵} a;⍴ 2 {,⍠ ⍳⍺ ⍵} a;⍴ 3 {,⍠ ⍳⍺ ⍵} a]
 [[[0 1 2 3 ⋄ 4 5 6 7 ⋄ 8 9 10 11] ⋄ [12 13 14 15 ⋄ 16 17 18 19 ⋄ 20 21 22 23]] [2 3 4]ₓ [2 3 4]ₓ [6 4]ₓ [24]ₓ]
 
 ⍝ aplcart/table.tsv:1236 — Does D have any duplicated spaces? (per row)
@@ -2796,7 +2796,7 @@ Ym←2 3⍴⍳6 ⋄ ⊢⌽⍨(¯1+⍳∘≢) Ym   ⍝ [2 0 1 ⋄ 3 4 5]
 X←1 2 3 ⋄ Y←2 4 ⋄ X ⍳|⍨(1+⍄≢⊣) Y   ⍝ 1 3
 
 ⍝ aplcart/table.tsv:1258 — Integers from -Js to Js
-Js←4 ⋄ (⌽⌽,0,-)∘(1+⍳)Js   ⍝ ¯4 ¯3 ¯2 ¯1 0 1 2 3 4
+Js←4 ⋄ (⌽⌽,0,-)∘ 1+⍳ Js   ⍝ ¯4 ¯3 ¯2 ¯1 0 1 2 3 4
 
 ⍝ aplcart/table.tsv:1259 — All possible subvectors grouped by length (Yv must be simple)
 Yv←1 2 3 4 ⋄ (1+⍳≢Yv){,/⍺↕⍵}¨⊂Yv
@@ -2809,7 +2809,7 @@ mat←3 2⍴⍳6 ⋄ [mat (⍸-⍳<⍄≢⊣) 3 3;mat (⍸-⍳<⍄≢⊣) 3 4]  
 Js←12 ⋄ +/∘∪⍳⍃∨ Js   ⍝ 28
 
 ⍝ aplcart/table.tsv:1262 — Are X and Y permutations of each other?
-X←1 2 3 1 ⋄ Y←3 1 1 2 ⋄ X≡⍥(⊂∘⍋⌷⊢)Y   ⍝ $t
+X←1 2 3 1 ⋄ Y←3 1 1 2 ⋄ X≡⍥ ⊂∘⍋⌷⊢ Y   ⍝ $t
 
 ⍝ aplcart/table.tsv:1263 — Is N Strictly Decreasing?
 [(⍳∘≢≡⌽∘⍋) 314 159 265;(⍳∘≢≡⌽∘⍋) 314 159 26 5;(⍳∘≢≡⌽∘⍋) 2700 1828 1828 459]
@@ -2879,7 +2879,7 @@ Is←10 ⋄ Js←12345 ⋄ Is ⊣⊥⊣|(1⊥⊥⁻¹) Js   ⍝ 5
 Iv←1 4 6 ⋄ Jv←2 3 ⋄ Iv ↓(1+⊢⊤¯1+⊣) Jv   ⍝ [[1 1] [2 1] [2 3]]
 
 ⍝ aplcart/table.tsv:1283 — Formatting N with Jv decimals in fields of width Iv; Swap outer arguments so the width/precision specification, not the data matrix, goes through (∊,⍤0/); original recipe errors in Dyalog
-Iv←7 8 ⋄ Jv←1 2 ⋄ N←[1.25 2.375 ⋄ 3.25 4.625] ⋄ N⍕⍨⍄(∊,⍤0/)[Iv Jv]
+Iv←7 8 ⋄ Jv←1 2 ⋄ N←[1.25 2.375 ⋄ 3.25 4.625] ⋄ N⍕⍨⍄ ∊,⍤0/ [Iv Jv]
 ["    1.3    2.38" ⋄ "    3.3    4.63"]
 
 ⍝ aplcart/table.tsv:1285 — Ascending shortlex grade
@@ -2974,7 +2974,7 @@ Mv←1 3 ⋄ N←0 1 2 3 4 ⋄ Mv ↑⍃>∨⊢/⍃≤ N   ⍝ $t $f $f $t $t
 Mv←1 3 ⋄ N←0 1 2 3 4 ⋄ Mv ↑⍃≤∧⊢/⍃> N   ⍝ $f $t $t $f $f
 
 ⍝ aplcart/table.tsv:1317 — Widening matrix Ym to be compatible with Xm
-Xm←2 4⍴0 ⋄ Ym←2 2⍴⍳4 ⋄ Xm↑∘⌽∘⍴⍃(↑⍤1)Ym   ⍝ [0 1 0 0 ⋄ 2 3 0 0]
+Xm←2 4⍴0 ⋄ Ym←2 2⍴⍳4 ⋄ Xm↑∘⌽∘⍴⍃ ↑⍤1 Ym   ⍝ [0 1 0 0 ⋄ 2 3 0 0]
 
 ⍝ aplcart/table.tsv:1318 — last index of ((⍳): Last indices in X of major cells Y
 X←1 2 3 2 ⋄ Y←2 4 ⋄ X 1-(⊖⍃⍳-⍄≢⊣) Y   ⍝ 5 1
@@ -3004,7 +3004,7 @@ Jv←2 3 1 ⋄ +\∊⍨⍄(1+⍳)+/ Jv   ⍝ $f $t $f $f $t $t
 B←1 1 0 1 0 1 0 ⋄ (∧⍀∨⍀⍃=)⍃∧B   ⍝ 1 1 0 0 0 0 0
 
 ⍝ aplcart/table.tsv:1327 — Progressive index of (⍳) cyclic uniques (∪) without replacement
-[i←¯1+[0]~⍨,⍉(1+⊢)⌸"abracadabra";"abracadabra"(i)]
+[i←¯1+[0]~⍨,⍉(1+⊢)⌸"abracadabra";[i]⌷"abracadabra"]
 [0 1 2 4 6 3 8 9 5 7 10;"abrcdabraaa"]
 
 ⍝ aplcart/table.tsv:1328 — Length of vector Nv
@@ -3081,7 +3081,7 @@ D←["  ab" ⋄ " c d"]  ⋄ '-'@(=⍄' ')D   ⍝ ["--ab" ⋄ "-c-d"]
 X←1 2 ⋄ Y←1 3 ⋄ X{↑(⍋-⍒)[⍺ ⍵]}Y   ⍝ ¯1ₓ
 
 ⍝ aplcart/table.tsv:1355 — Formatting with zero values replaced with blanks
-N←[0 1 2 ⋄ 3 0 4] ⋄ ⍕' '@(0⍃=) N   ⍝ ["  1 2" ⋄ "3   4"]
+N←[0 1 2 ⋄ 3 0 4] ⋄ ⍕' '@ 0⍃= N   ⍝ ["  1 2" ⋄ "3   4"]
 
 ⍝ aplcart/table.tsv:1356 — Rounding to nearest even number (favouring away from 0)
 N←¯3 ¯2.5 2.5 3 ⋄ ××⍄⌊(|+1≤2||) N   ⍝ [¯4 ¯2 2 4]ₓ
@@ -3177,15 +3177,15 @@ Js←8 ⋄ +⍨>(1⊥⍄∪⍳⍃∨) Js   ⍝ $t
 Mv←1 3 ⋄ N←0 1 2 3 4 ⋄ Mv ¯2+(1⊥⍉∘(<⊗⍪≤⊗)) N   ⍝ ¯2 ¯1 0 1 2
 
 ⍝ aplcart/table.tsv:1386 — All binary representations with Js bits (truth table with Js variables, matrix for choosing all subsets)
-2⍃(⍴⍨⊤⍳∘*) 3
+2⍃ ⍴⍨⊤⍳∘* 3
 [0 0 0 ⋄ 0 0 1 ⋄ 0 1 0 ⋄ 0 1 1 ⋄ 1 0 0 ⋄ 1 0 1 ⋄ 1 1 0 ⋄ 1 1 1]
 
 ⍝ aplcart/table.tsv:1387 — All tuples of corresponding elements of ⍳¨Jv (for large Jv even above length 15)
-Jv←2 3 2 ⋄ ⊢⊤⍳∘(×/) Jv
+Jv←2 3 2 ⋄ ⊢⊤⍳∘ ×/ Jv
 [0 0 0 ⋄ 0 0 1 ⋄ 0 1 0 ⋄ 0 1 1 ⋄ 0 2 0 ⋄ 0 2 1 ⋄ 1 0 0 ⋄ 1 0 1 ⋄ 1 1 0 ⋄ 1 1 1 ⋄ 1 2 0 ⋄ 1 2 1]
 
 ⍝ aplcart/table.tsv:1388 — Vertical column headings for character matrix of width Js; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-•d⌷⍨⍄⊂⍉∘(10⊥⁻¹⍳) 12   ⍝ ["000000000011" ⋄ "012345678901"]
+•d⌷⍨⍄⊂⍉∘ 10⊥⁻¹⍳ 12   ⍝ ["000000000011" ⋄ "012345678901"]
 
 ⍝ aplcart/table.tsv:1389 — Detect case of characters (1:uppercase, ¯1:lowercase, 0:neither)
 D←"Abc 19 Σς!"  ⋄ ¯1⍃•c⍃≠-1⍃•c⍃≠ D   ⍝ [1 ¯1 ¯1 0 0 0 0 1 ¯1 0]ₓ
@@ -3245,7 +3245,7 @@ Jv←2026 9 18 ⋄ ('-'@4 7∘⍕1000⊥3⍃↑)Jv   ⍝ "2026-09-18"
 Bs←0 ⋄ "correct",⍨"in"#⍨~ Bs   ⍝ "incorrect"
 
 ⍝ aplcart/table.tsv:1410 — Replace backslashes with slashes
-'/'@('\'⍃=) "path\to\file"   ⍝ "path/to/file"
+'/'@ '\'⍃= "path\to\file"   ⍝ "path/to/file"
 
 ⍝ aplcart/table.tsv:1411 — Is Nm an upper triangular matrix without diagonal?
 Nm←[0 1 2 ⋄ 0 0 3 ⋄ 0 0 0] ⋄ <⊗⍨∘⍳∘≢⍃×⍃≡Nm   ⍝ $t
@@ -3270,7 +3270,7 @@ Iv←5 1 ⋄ Y←2 3⍴⍳6 ⋄ Iv ⊢↑⍨≢∘⊣↑⌊⍄⍴ Y   ⍝ [[0] �
 Yv←1 1 2 3 3 ⋄ ≠/2↕Yv , 1   ⍝ 0 1 1 0 1
 
 ⍝ aplcart/table.tsv:1418 — Derivative of polynomial with descending coefficients Nv
-Nv←2 3 4 5 ⋄ ¯1⍃(↓×⍄⌽⍄(1+⍳)+⍄≢)Nv   ⍝ 6 6 4
+Nv←2 3 4 5 ⋄ ¯1⍃ ↓×⍄⌽⍄(1+⍳)+⍄≢ Nv   ⍝ 6 6 4
 
 ⍝ aplcart/table.tsv:1419 — Major cells of Y except those enumerated in I
 I←1 3 ⋄ Y←4 2⍴⍳8 ⋄ I ⊂∘~⍨⍄⍳⍄≢⌷⊢ Y   ⍝ [0 1 ⋄ 4 5]
@@ -3296,10 +3296,10 @@ Jv←2 3 6 ⋄ 0=(⊢|⊗⍨⍄(1+⍳)⌈/) Jv
 [$t $t $t ⋄ $t $f $t ⋄ $f $t $t ⋄ $f $f $f ⋄ $f $f $f ⋄ $f $f $t]
 
 ⍝ aplcart/table.tsv:1426 — Rounding to nearest hundredth (favouring up)
-N←¯1.234 0.125 2.678 ⋄ 0.01⍃(⊣×⍄⌊0.5+÷⍨)N   ⍝ ¯1.23 0.13 2.68
+N←¯1.234 0.125 2.678 ⋄ 0.01⍃ ⊣×⍄⌊0.5+÷⍨ N   ⍝ ¯1.23 0.13 2.68
 
 ⍝ aplcart/table.tsv:1427 — Rounding currencies to nearest 5 subunits
-N←1.23 2.47 3.51 ⋄ 0.05⍃(⊣×⍄⌊0.5+÷⍨)N   ⍝ 1.25 2.45 3.5
+N←1.23 2.47 3.51 ⋄ 0.05⍃ ⊣×⍄⌊0.5+÷⍨ N   ⍝ 1.25 2.45 3.5
 
 ⍝ aplcart/table.tsv:1428 — Is-norm
 2 ⊣*⍄÷⍨(1⊥*⍨⍄|) 3 4   ⍝ 5
@@ -3337,7 +3337,7 @@ Js←20 ⋄ (⊢~,∘(×⊗⍨))(2↓⍳) Js   ⍝ 2 3 5 7 11 13 17 19
 Dm← ["ab  " ⋄ "c   "]  ⋄ ⊢⌽⍨(1-1⊥⍨=⍄' ') Dm   ⍝ ["  ab" ⋄ "   c"]
 
 ⍝ aplcart/table.tsv:1443 — Remove non-alphanumeric ASCII characters
-Dv←"Hello, world! 123"  ⋄ ∩⍄(•d,•a,•c•a) Dv   ⍝ "Helloworld123"
+Dv←"Hello, world! 123"  ⋄ ∩⍄ •d,•a,•c•a Dv   ⍝ "Helloworld123"
 
 ⍝ aplcart/table.tsv:1444 — Remove punctuation
 Dv← "Hello, world! Why?"  ⋄ ~⍄".,:;?!" Dv   ⍝ "Hello world Why"
@@ -3387,7 +3387,7 @@ Jm←[¯1 1 0 ⋄ 0 ¯1 1 ⋄ 1 0 ¯1] ⋄ ⍳∘≢+.×⍨(1 ¯1=⊗⍉) Jm
 [[0 0 ⋄ 0 1 ⋄ 1 0 ⋄ 1 1] [0 1 1 1.4142135623730951 ⋄ 1 0 1.4142135623730951 1 ⋄ 1 1.4142135623730951 0 1 ⋄ 1.4142135623730951 1 1 0]]
 
 ⍝ aplcart/table.tsv:1459 — Matrix of all indices of Y (↑,⍳⍴Y for large Y)
-Y←2 3⍴0 ⋄ ⍴⊤⍳∘(×/∘⍴) Y   ⍝ [0 0 ⋄ 0 1 ⋄ 0 2 ⋄ 1 0 ⋄ 1 1 ⋄ 1 2]ₓ
+Y←2 3⍴0 ⋄ ⍴⊤⍳∘ ×/∘⍴ Y   ⍝ [0 0 ⋄ 0 1 ⋄ 0 2 ⋄ 1 0 ⋄ 1 1 ⋄ 1 2]ₓ
 
 ⍝ aplcart/table.tsv:1460 — Probabilistic XNOR
 M←0 0.5 1 ⋄ N←1 0.25 0 ⋄ M (1+×-⊣)×(1+×-⊢) N   ⍝ 0 0.546875 0
@@ -3402,7 +3402,7 @@ Dv← "a+'hello'+b"  ⋄ ≠\⍃∨∘=⍄'''⍃#Dv   ⍝ "'hello'"
 Ms←2j3 ⋄ N←1j2 ¯3j4 ⋄ Ms (9 11○⊣)+.×(9 11○⊗⊢) N   ⍝ 8 6
 
 ⍝ aplcart/table.tsv:1465 — Number of digit positions in integers in J
-J←0 1 9 10 ¯99 100 ⋄ 0⍃(1+<+⍄⌊10⍟⍄|⊢+=)J   ⍝ 1 2 2 3 2 4
+J←0 1 9 10 ¯99 100 ⋄ 0⍃ 1+<+⍄⌊10⍟⍄|⊢+= J   ⍝ 1 2 2 3 2 4
 
 ⍝ aplcart/table.tsv:1466 — Increasing the leading dimension of Y to multiple of Is
 Is←4 ⋄ Y←1 2 3 4 5 ⋄ Is ⊢↑⍨⊢⍄≢+|⍄-⍄≢ Y   ⍝ 1 2 3 4 5 0 0 0
@@ -3442,7 +3442,7 @@ Y←2 3 2⍴3 2 1 4 2 1 5 6 4 5 6 4 ⋄ (⍉⊂∘⍋⍃⌷⍤1∘⍉)⍤2 Y
 [[1 1 ⋄ 2 2 ⋄ 3 4] ⋄ [4 4 ⋄ 5 5 ⋄ 6 6]]
 
 ⍝ aplcart/table.tsv:1478 — Kronecker product
-A ← [1 ¯4 7 ⋄ ¯2 3 3] ⋄ B ← [8 ¯9 ¯6 5 ⋄ 1 ¯3 ¯4 7 ⋄ 2 8 ¯8 ¯3 ⋄ 1 2 ¯5 ¯1] ⋄ A {,⍤2,⍠(⍳2)0 2 1 3⍉⍺×⊗⍵} B
+A ← [1 ¯4 7 ⋄ ¯2 3 3] ⋄ B ← [8 ¯9 ¯6 5 ⋄ 1 ¯3 ¯4 7 ⋄ 2 8 ¯8 ¯3 ⋄ 1 2 ¯5 ¯1] ⋄ A {,⍤2,⍠ ⍳2 [0 2 1 3]⍉⍺×⊗⍵} B
 [8 ¯9 ¯6 5 ¯32 36 24 ¯20 56 ¯63 ¯42 35 ⋄ 1 ¯3 ¯4 7 ¯4 12 16 ¯28 7 ¯21 ¯28 49 ⋄ 2 8 ¯8 ¯3 ¯8 ¯32 32 12 14 56 ¯56 ¯21 ⋄ 1 2 ¯5 ¯1 ¯4 ¯8 20 4 7 14 ¯35 ¯7 ⋄ ¯16 18 12 ¯10 24 ¯27 ¯18 15 24 ¯27 ¯18 15 ⋄ ¯2 6 8 ¯14 3 ¯9 ¯12 21 3 ¯9 ¯12 21 ⋄ ¯4 ¯16 16 6 6 24 ¯24 ¯9 6 24 ¯24 ¯9 ⋄ ¯2 ¯4 10 2 3 6 ¯15 ¯3 3 6 ¯15 ¯3]
 
 ⍝ aplcart/table.tsv:1479 — Predicted values of least squares linear fit given X values Mv and Y values Nv
@@ -3460,7 +3460,7 @@ N←[[100 200] [0.05 0.1] [1 2 3]] ⋄ ↑×⊗(2⍃⊃*⊗⍨(1+1⍃⊃)) N
 [[105 110.25 115.76250000000002 ⋄ 110.00000000000001 121.00000000000001 133.10000000000005] ⋄ [210 220.5 231.52500000000003 ⋄ 220.00000000000003 242.00000000000003 266.2000000000001]]
 
 ⍝ aplcart/table.tsv:1484 — Area of triangle with side lengths N
-N←3 4 5 ⋄ 0.5⍃(⊣*⍨(+.××.-0,⊢))N   ⍝ 6
+N←3 4 5 ⋄ 0.5⍃ ⊣*⍨(+.××.-0,⊢) N   ⍝ 6
 
 ⍝ aplcart/table.tsv:1485 — Valid credit card?
 Jv←4 5 3 9 1 4 8 8 0 3 4 3 6 4 6 7 ⋄ 0=(10|1⊥⍄,(0 10⊤⊢×⍄⌽(1 2⍴⍨≢))) Jv
@@ -3541,7 +3541,7 @@ Mv←0 2 2 0 ⋄ Nv←0 0 3 3 ⋄ Mv |+.×⍄(¯1⍃⌽-1⍃⌽)÷2⍨ Nv   ⍝ 
 Ms←10 ⋄ Nm←[1 2 ⋄ 3 4 ⋄ 5 6] ⋄ Ms (0j1⊥⍉∘(1↓⊢⍄⊖))×⊣÷⊣-⊢⌿∘⊢ Nm   ⍝ 2j6 5j10
 
 ⍝ aplcart/table.tsv:1508 — Rot-13; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1. Corrected ROT13 to 1+26|12+index so M does not select index zero; sample covers M/N and nonletters
-{•a(26|13+•a⍳⍵)}@(∊⍄•a)"AMNZ 123 abc!"   ⍝ "NZAM 123 abc!"
+{[26|13+•a⍳⍵]⌷•a}@ ∊⍄•a "AMNZ 123 abc!"   ⍝ "NZAM 123 abc!"
 
 ⍝ aplcart/table.tsv:1509 — Cyclic compression of successive blanks
 Dv← "  ab  c  "  ⋄ ⊢#⍨(1(⊢∨⌽)' '⍃≠) Dv   ⍝ " ab c"
@@ -3550,15 +3550,15 @@ Dv← "  ab  c  "  ⋄ ⊢#⍨(1(⊢∨⌽)' '⍃≠) Dv   ⍝ " ab c"
 Y←1 2 1 3 1 2 ⋄ {⍵⌷⍨⊂⍒⊢/⍵},⍄≢⌸ Y   ⍝ [1 3 ⋄ 2 2 ⋄ 3 1]
 
 ⍝ aplcart/table.tsv:1511 — First one (<\) in each subvector of Bv indicated by Av (fast ∊<\¨Av⊂Bv)
-Av←1 0 0 1 0 0 ⋄ Bv←0 1 1 1 0 1 ⋄ Av ∧∨⊢{⍵#⁻¹ </∘(2⍃↕) 0,⍵#⍺}∨ Bv
+Av←1 0 0 1 0 0 ⋄ Bv←0 1 1 1 0 1 ⋄ Av ∧∨⊢{⍵#⁻¹ </∘ 2⍃↕ 0,⍵#⍺}∨ Bv
 0 1 0 1 0 0
 
 ⍝ aplcart/table.tsv:1512 — State of switch given Bv on and Av off spikes
-Av←0 0 1 0 0 1 ⋄ Bv←1 0 0 0 1 0 ⋄ Av ≠\∨{⍺#⁻¹ ≠/∘(2⍃↕) 0,⍺#⍵}⊢ Bv
+Av←0 0 1 0 0 1 ⋄ Bv←1 0 0 0 1 0 ⋄ Av ≠\∨{⍺#⁻¹ ≠/∘ 2⍃↕ 0,⍺#⍵}⊢ Bv
 $t $t $f $f $t $f
 
 ⍝ aplcart/table.tsv:1516 — Position of /*comments*/
-D← "a/*bc*/d/*e*/f"  ⋄ "/*"⍃(≠\⍷∨¯1⌽⍄⌽⍷⍄⌽)D
+D← "a/*bc*/d/*e*/f"  ⋄ "/*"⍃ ≠\⍷∨¯1⌽⍄⌽⍷⍄⌽ D
 $f $t $t $t $t $t $t $f $t $t $t $t $t $f
 
 ⍝ aplcart/table.tsv:1517 — Predicted values of least squares exponential fit given X values Mv and Y values Nv
@@ -3588,7 +3588,7 @@ Is←220 ⋄ Js←284 ⋄ Is ∧/+=⍄(+/∘∪⍳⍃∨)¨, Js   ⍝ $t
 Mv←3 4 ⋄ Ns←6 ⋄ Mv ⊣,⍥(2*⍄÷⍨+.×⍨)⊢÷2⍨ Ns   ⍝ 5 3
 
 ⍝ aplcart/table.tsv:1528 — Remove leading, trailing and duplicate blanks
-Dv← "  ab  c  "  ⋄ ' '⍃(1↓,#⍨(1(⊢∨⌽)0,≠))Dv   ⍝ "ab c"
+Dv← "  ab  c  "  ⋄ ' '⍃ 1↓,#⍨(1(⊢∨⌽)0,≠) Dv   ⍝ "ab c"
 
 ⍝ aplcart/table.tsv:1529 — Arithmetic-harmonic mean
 Nv←1 4 ⋄ ↑((+⌿÷≢),≢÷1⊥÷)⍣≡ Nv   ⍝ 2
@@ -3602,7 +3602,7 @@ Dv←"Hello, world! 123"  ⋄ Dv ⊂⍨ 1 , 1 ↓ ≢Dv ↑ </2↕(•c Dv)∊"a
 "Hel" "lo, " "world! 123"
 
 ⍝ aplcart/table.tsv:1532 — Groups of ones in Bv pointed to by at least one 1 in Av
-Av←0 1 0 0 0 0 0 1 ⋄ Bv←0 1 1 0 1 1 0 1 ⋄ Av ∧{⍵∧s∊⍺#s←+\ </∘(2⍃↕) 0,⍵}⊢ Bv
+Av←0 1 0 0 0 0 0 1 ⋄ Bv←0 1 1 0 1 1 0 1 ⋄ Av ∧{⍵∧s∊⍺#s←+\ </∘ 2⍃↕ 0,⍵}⊢ Bv
 0 1 1 0 0 0 0 1
 
 ⍝ aplcart/table.tsv:1534 — Date (⎕TS format) to M/D/YY
@@ -3612,7 +3612,7 @@ Jv←2026 9 18 ⋄ '/'@(' '⍃=)∘⍕100|1⌽3⍃↑ Jv   ⍝ "9/18/26"
 Jv←2026 9 18 ⋄ '.'@(' '⍃=)∘⍕∘⌽3⍃↑ Jv   ⍝ "18.9.2026"
 
 ⍝ aplcart/table.tsv:1536 — Mask Operator: Merge X and Y using Bv (1 for X's item, 0 for Yv's item)
-X←10 20 30 ⋄ Bv←1 0 1 ⋄ Y←1 2 3 ⋄ X Bv{(⍶#⍺)@(⍸⍶) ⍵} Y   ⍝ 10 2 30
+X←10 20 30 ⋄ Bv←1 0 1 ⋄ Y←1 2 3 ⋄ X Bv{(⍶#⍺)@ ⍸⍶ ⍵} Y   ⍝ 10 2 30
 
 ⍝ aplcart/table.tsv:1537 — Diagonal ravel
 Ym←2 3⍴⍳6 ⋄ ,⌷⍨⍄⊂⍄⍋(1⊥⍴⊤⍳∘(×/∘⍴)) Ym   ⍝ 0 1 3 2 4 5
@@ -3624,7 +3624,7 @@ Mv←1 2 3 ⋄ Nv←4 5 6 ⋄ Mv (1⍃⌽∘⊣×¯1⌽⊢)-(¯1⍃⌽∘⊣×1�
 Is←48 ⋄ Js←75 ⋄ Is ∧/+=(¯1+⍄(+/∘∪⍳⍃∨)¨,) Js   ⍝ $t
 
 ⍝ aplcart/table.tsv:1541 — Doubling quotes for execution
-Dv← "don't"  ⋄ '''⍃(⊣,⊣,⍨⊢#⍨(1+=))Dv   ⍝ "'don''t'"
+Dv← "don't"  ⋄ '''⍃ ⊣,⊣,⍨⊢#⍨(1+=) Dv   ⍝ "'don''t'"
 
 ⍝ aplcart/table.tsv:1542 — Histogram (distribution barchart, down the page)
 Jv←1 3 3 4 ⋄ {'⎕'#⍨¯1+≢⍵}⌸⌈/(1+⍳)⍃,⊢ Jv   ⍝ ["⎕ " ⋄ "  " ⋄ "⎕⎕" ⋄ "⎕ "]
@@ -3646,7 +3646,7 @@ Nm←[0 2 9 ⋄ 2 0 3 ⋄ 9 3 0] ⋄ ⍳∘≢(⊢⌊⌷⍤1+⊗⌷)/∘,⊂ Nm
 [0 2 5 ⋄ 2 0 3 ⋄ 5 3 0]
 
 ⍝ aplcart/table.tsv:1549 — Component of Mv in direction of Nv
-Mv←1 2 3 ⋄ Nv←1 1 0 ⋄ Mv(⊢×+.×)⍄(⊢÷2*⍄÷⍨+.×⍨)Nv   ⍝ 1.4999999999999998 1.4999999999999998 0
+Mv←1 2 3 ⋄ Nv←1 1 0 ⋄ Mv(⊢×+.×)⍄ ⊢÷2*⍄÷⍨+.×⍨ Nv   ⍝ 1.4999999999999998 1.4999999999999998 0
 
 ⍝ aplcart/table.tsv:1550 — Arithmetic-geometric mean
 Nv←1 4 ⋄ ↑((+⌿÷≢),×⌿*⍄÷≢)⍣≡ Nv   ⍝ 2.2430285802876027
@@ -3682,7 +3682,7 @@ Ord ← ⍕,{2↑"thstndrd"↓⍨2×↑⍵⌽∊1 ¯1 8#⊂10↑⍳4} ⋄ [Ord 0
 Js←3 ⋄ (⍳-⍄⌈÷⍄2)(⊣⊖⌽),⍨⍴⍄⍳×⍨ Js   ⍝ [5 7 0 ⋄ 6 2 4 ⋄ 1 3 8]
 
 ⍝ aplcart/table.tsv:1562 — Scatter plot of two series (one per row of Jm)
-Jm←[1 2 3 ⋄ 3 1 2] ⋄ {" +○⍟"(2⊥⍉⍵=⊗⌽1+⍳⌈/,⍵)}Jm   ⍝ ["+ ○" ⋄ " ○+" ⋄ "○+ "]
+Jm←[1 2 3 ⋄ 3 1 2] ⋄ {[2⊥⍉⍵=⊗⌽1+⍳⌈/,⍵]⌷" +○⍟"}Jm   ⍝ ["+ ○" ⋄ " ○+" ⋄ "○+ "]
 
 ⍝ aplcart/table.tsv:1563 — Start and length of groups of 1s in Bv
 Bv←0 1 1 0 1 1 1 0 ⋄ p←⍸≠/2↕0,Bv,0 ⋄ -⍨\[(≢p)÷2 2]⍴p   ⍝ [1 2 ⋄ 4 3]ₓ
@@ -3695,7 +3695,7 @@ I←2 2 4 ⋄ J←2000 1900 2026 ⋄ I (31-2|7|¯1+⊣)-(2⍃=∘⊣×2-0≠.=(4
 Nv←1 2 4 ⋄ ((≢×+.*⍄2)-2*⍨+⌿)÷(≢×1⌈¯1+≢) Nv   ⍝ 2.3333333333333335
 
 ⍝ aplcart/table.tsv:1566 — Sample Pearson correlation coefficient
-Mv←1 2 3 4 ⋄ Nv←2 4 6 8 ⋄ Mv+.×⍥((⊢÷2*⍄÷⍨+.×⍨)⊢-+⌿÷≢)Nv   ⍝ 1
+Mv←1 2 3 4 ⋄ Nv←2 4 6 8 ⋄ Mv+.×⍥ (⊢÷2*⍄÷⍨+.×⍨)⊢-+⌿÷≢ Nv   ⍝ 1
 
 ⍝ aplcart/table.tsv:1568 — Solutions of quadratic equation Nv₁x²+Nv₂x+Nv₃=0
 Nv←1 ¯5 6 ⋄ ↑÷(¯2÷(1⍃⊃-(¯1 1×(2*⍄÷⍨((×⍨1⍃⊃)-(×/4@1)))))) Nv   ⍝ 2 3
@@ -3705,73 +3705,45 @@ Nv←1 ¯5 6 ⋄ ↑÷(¯2÷(1⍃⊃-(¯1 1×(2*⍄÷⍨((×⍨1⍃⊃)-(×/4@1)
 192 ¯192
 
 ⍝ aplcart/table.tsv:1571 — Numeric matrix of all unordered combinations of Is out of Js without replacement
-Is←2 ⋄ Js←4 ⋄ Is {⍵#⍠¯1⍨∧⌿ </⍠1∘(2⍃↕) ⍵}(-⍃↑⍄(1+⍳))⍉∘⊤⍄⍳(!×⍄!⊣) Js
+Is←2 ⋄ Js←4 ⋄ Is {⍵#⍠¯1⍨∧⌿ </⍠1∘ 2⍃↕ ⍵}(-⍃↑⍄(1+⍳))⍉∘⊤⍄⍳(!×⍄!⊣) Js
 [0 0 0 1 1 2 ⋄ 1 2 3 2 3 3]
 
 ⍝ aplcart/table.tsv:1573 — Value of saddle point; First-true masks use cumulative counts under basedpl left scan
 Nm←[3 4 ⋄ 1 2] ⋄ ,#⍨(⊢=⍴⍴⌈⌿){⍵∧1=+\⍵}∘,∘∧⊢=⍄⍉⌽∘⍴⍴⌊/ Nm   ⍝ [3]
 
 ⍝ aplcart/table.tsv:1574 — Convert inverted table to table (character data as matrices; remove trailing spaces); dfns display import/wrappers omitted to test underlying arrays
-⍉∘⊃{(+/∨\' '≠⌽⍵)↑¨↓⍵}¨@(2=≢∘⍴¨) [["Ab  " ⋄ "Cdef"];1 2;7 3]
+⍉∘⊃{(+/∨\' '≠⌽⍵)↑¨↓⍵}¨@ 2=≢∘⍴¨ [["Ab  " ⋄ "Cdef"];1 2;7 3]
 ["Ab" 1 7 ⋄ "Cdef" 2 3]
 
 ⍝ aplcart/table.tsv:1575 — Multiplicative inverse of Js modulo Is (fast)
 Is←7 ⋄ Js←3 ⋄ Is ⊣|⍄↑{0=⍵:1 0 ⋄ (⍵∇⍵|⍺)+.×0 1,⍪1,-⌊⍺÷⍵}⍨ Js   ⍝ 5
 
 ⍝ aplcart/table.tsv:1580 — Determinant of any square matrix
-Nm←[1 2 3 ⋄ 0 4 5 ⋄ 1 0 6] ⋄ ↑∘,({-⍺+.×⍨(+\-+/)@(=⊗⍨⍳∘≢)⍵×≤⊗⍨⍳≢⍵}/≢⍴⊂) Nm
+Nm←[1 2 3 ⋄ 0 4 5 ⋄ 1 0 6] ⋄ ↑∘,({-⍺+.×⍨(+\-+/)@ =⊗⍨⍳∘≢ ⍵×≤⊗⍨⍳≢⍵}/≢⍴⊂) Nm
 22
 
-⍝ aplcart/table.tsv:1583 — ⍵-permutation of vertices of graph ⍺; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:32. Local definitions replace the dfns namespace; no namespace feature implied
-gperm ← {(⊂⍵)⍳¨⍺(⍵)}
+⍝ aplcart/table.tsv:1583 — ⍵-permutation of vertices of graph ⍺; Concrete APLcart library call; setup from april/libraries/dfns/graph/demo.lisp:32
+•load "lib/graph.bpl"
 g ← [[1 2] 2 [1 3] [0 4] 2]
-result←g gperm 1 0 2 3 4
+g gperm 1 0 2 3 4
 ⍝ =>
 [2 [0 2] [0 3] [1 4] 2]ₓ
 
-⍝ aplcart/table.tsv:1584 — Insert vertex ⍵ in graph ⍺; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:34. Local definitions replace the dfns namespace; no namespace feature implied
-insnode ← {
-  ⍵⌈⍴⍺ ↑ ⍺,⍵⍴⊂⍬
-}
+⍝ aplcart/table.tsv:1585 — Graph ⍺ with vertex ⍵ removed; Concrete APLcart library call; setup from april/libraries/dfns/graph/demo.lisp:35
+•load "lib/graph.bpl"
 g ← [[1 2] 2 [1 3] [0 4] 2]
-result←g insnode 10
-⍝ =>
-[[1 2] 2 [1 3] [0 4] 2 ⍬ ⍬ ⍬ ⍬ ⍬]
-
-⍝ aplcart/table.tsv:1585 — Graph ⍺ with vertex ⍵ removed; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:35. Local definitions replace the dfns namespace; no namespace feature implied
-remnode ← {
-  new←⍵≠⍳⍴⍺ # ⍺~¨⊂[⍵]
-  new-new>⍵
-}
-g ← [[1 2] 2 [1 3] [0 4] 2]
-result←g remnode 2
+g remnode 2
 ⍝ =>
 [[1] ⍬ [0 3] ⍬]
 
-⍝ aplcart/table.tsv:1587 — Hypersphere surface area; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:265. Local definitions replace the dfns namespace; no namespace feature implied
-ksphere ← {
-  n←⍺+1
-  pi←π1 * n÷2
-  n × ⍵*⍺ × pi÷!n÷2
-}
-result←3 ksphere 2
+⍝ aplcart/table.tsv:1587 — Hypersphere surface area; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:265
+•load "lib/numeric.bpl"
+3 ksphere 2
 ⍝ =>
 157.9136704174297
 
-⍝ aplcart/table.tsv:1589 — Extract html segments; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:183. Local definitions replace the dfns namespace; no namespace feature implied
-htx ← {
-  1≠≡,⍵:⍺∇{⍺,' ',⍵}/⍵
-  xtags←{seg sep cmb vec ⍵}
-  seg←{(0=2|⍳⍴⍵)#⍵}
-  sep←{(fm⍷⍵ ∨ to⍷⍵)⊂⍵}
-  cmb←{(~"  "⍷⍵)#⍵}
-  vec←{(~⍵∊•ucs 8 10 13){⍺#⁻¹⍺#⍵}⍵}
-  rlt←{(1++/∧\'>'≠⍵)↓⍵}
-  att←{⍵,to,'>'}
-  [fm to]←'<' "</",¨⊂⍺~"<>"
-  '<'=↑⍺:att¨xtags,⍵
-         rlt¨xtags,⍵
-}
+⍝ aplcart/table.tsv:1589 — Extract html segments; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:183
+•load "lib/string.bpl"
 newl←•ucs 13
     htm←,"<html>                                                    ",newl
     htm,←"  <body>                                                  ",newl
@@ -3782,441 +3754,117 @@ newl←•ucs 13
     htm,←"    </table>                                              ",newl
     htm,←" </body>                                                  ",newl
     htm,←"</html>                                                   ",newl
-result←"td" htx htm
+"td" htx htm
 ⍝ =>
 "%" "Eye Poke" "Kumquat" "Guys" "60" "40" "Dolls" "20" "80"
 
-⍝ aplcart/table.tsv:1590 — Kaprekar's operation; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:48. Local definitions replace the dfns namespace; no namespace feature implied
-k_6174 ← {
-  enco←(4#10)⊤
-  deco←enco⁻¹
-  1=⍴∪enco(⍵):"error"
-  ⍬{
-    ⍵=↑⌽⍺:⍺
-    v←{⍵(⍒⍵)}enco ⍵
-    ⍺,⍵ ∇ (deco v)-deco⌽v
-  }⍵
-}
-result←k_6174 3524
+⍝ aplcart/table.tsv:1590 — Kaprekar's operation; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:48
+•load "lib/numeric.bpl"
+k_6174 3524
 ⍝ =>
 3524 3087 8352 6174
 
-⍝ aplcart/table.tsv:1594 — Value for key ⍵, and reduced list ⍺; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:15. Local definitions replace the dfns namespace; no namespace feature implied
-alpop ← {
-  [keys vals]←⍺
-  indx←keys⍳⊂⍵
-  val←indx⊃vals
-  list←⊂indx≠⍳⍴keys #¨ ⍺
-  [val list]
-}
-list ← { {[⍺ ⍵]}/⍵,'∘' }
+⍝ aplcart/table.tsv:1594 — Value for key ⍵, and reduced list ⍺; Concrete APLcart library call; setup from april/libraries/dfns/array/demo.lisp:15
+•load "lib/array.bpl"
 found←[["milly" "molly" "may"] ["star" "thing" "stone"]]
-result←found alpop "molly"
+found alpop "molly"
 ⍝ =>
 ["thing" [["milly" "may"] ["star" "stone"]]]
 
-⍝ aplcart/table.tsv:1595 — Value for key ⍵ from list ⍺; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:14. Local definitions replace the dfns namespace; no namespace feature implied
-alget ← {
-  [keys vals]←⍺
-  keys⍳⊂⍵ ⊃ vals
-}
+⍝ aplcart/table.tsv:1595 — Value for key ⍵ from list ⍺; Concrete APLcart library call; setup from april/libraries/dfns/array/demo.lisp:14
+•load "lib/array.bpl"
 found←[["milly" "molly" "may"] ["star" "thing" "stone"]]
-result←found alget "may"
+found alget "may"
 ⍝ =>
 "stone"
 
-⍝ aplcart/table.tsv:1596 — Breadth-first search of graph ⍺; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:41. Local definitions replace the dfns namespace; no namespace feature implied
-search ← {
-  graph←⍺
-  (,⍵){
-    ⍵≡⍬:⍺
-    adjv←graph ⍵
-    next←∪(,/adjv)~⍺
-    (⍺,next)∇ next
-  }⍵
-}
+⍝ aplcart/table.tsv:1597 — Path through spanning tree ⍺ to vertex ⍵; Concrete APLcart library call; setup from april/libraries/dfns/graph/demo.lisp:73
+•load "lib/graph.bpl"
 g←[1 2;2;1 3;0 4;2]
-result←g search 2
-⍝ =>
-2 1 3 0 4
-
-⍝ aplcart/table.tsv:1597 — Path through spanning tree ⍺ to vertex ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:73. Local definitions replace the dfns namespace; no namespace feature implied
-span ← {
-  graph←⍺
-  (¯2 + ⍳⍴⍺ ∊ ,⍵){
-    ⍵≡⍬:⍺
-    next←(graph ⍵)∩¨⊂⍸⍺=¯2
-    back←⍵+0×next
-    tree←(∊back)@(∊next) ⍺
-    tree ∇ ∪∊next
-  }⍵
-}
-stpath ← {
-  tree←⍺
-  ⍬{
-    ⍵<0:(⍵=¯2)↓⍺
-    (⍵,⍺)∇ ⍵⊃tree
-  }⍵
-}
-g←[1 2;2;1 3;0 4;2]
-result←(g span 2)stpath 4
+(g span 2)stpath 4
 ⍝ =>
 2 3 4
 
-⍝ aplcart/table.tsv:1601 — Numeric matrix of all permutations of length Js; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:208. Local definitions replace the dfns namespace; no namespace feature implied
-pmat ← {
-  {
-    1≥⍴⍵:⊃,↓⍵ ⋄ ⊃⍪/⍵,⍄∇¨⍵⍃~¨,¨⍵
-  }⍳⍵
-}
-result←pmat3
-⍝ =>
-[0 1 2 ⋄ 0 2 1 ⋄ 1 0 2 ⋄ 1 2 0 ⋄ 2 0 1 ⋄ 2 1 0]
-
-⍝ aplcart/table.tsv:1603 — Hungarian method cost assignment; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:14. Local definitions replace the dfns namespace; no namespace feature implied; First-true masks use cumulative counts under basedpl left scan
-assign ← {
-  step_0←{step_1(⌽⌈\⌽⍴⍵)↑⍵}
-  step_1←{step_2⊃(↓⍵)-⌊/⍵}
-  step_2←{
-    stars←{
-      ~1∊,⍵:⍺
-      next←{⍵∧1=+\⍵}{⍵∧1=+⍀⍵}⍵
-      mask←(rows next)∨cols next
-      (⍺∨next)∇ ⍵>mask
-    }
-    zeros←{⍵ + 0 stars ⍵}⍵=0
-    step_3 [⍵ zeros]
-  }
-  step_3←{[costs zeros]←⍵
-    stars←zeros=2
-    covers←2×cols stars
-    ~0∊,covers:stars
-    step_4 [costs zeros covers]
-  }
-  step_4←{[costs zeros covers]←⍵
-    mask←covers=0
-    open←1=mask×zeros
-    ~1∊,open:(⌊/ ,mask # ,costs)step_6 ⍵
-    prime←first open
-    prow←rows prime
-    star←2=zeros×prow
-    ~1∊,star:prime step_5 {
-      [costs ⍵ prime]
-    }zeros+2×prime
-    cnext←covers+prow-2×(cols star)
-    znext←zeros⌈3×prime
-    ∇ [costs znext cnext]
-  }
-  step_5←{[costs zeros prime]←⍵
-    star←(cols prime)∧zeros=2
-    ~1∊,star:step_3 ⍺{
-      {[costs ⍵]}{⍵-2×⍵=3}⍵-⍺∧⍵>1
-    }zeros
-    pnext←(rows star)∧zeros=3
-    (⍺∨pnext∨star)∇ [costs zeros pnext]
-  }
-  step_6←{[costs zeros covers]←⍵
-    cnext←costs+⍺×¯1 1+.×0 3=⊗covers
-    znext←zeros + ×costs - ×cnext
-    step_4 [cnext znext covers]
-  }
-  rows←{⍴⍵ ⍴ ↑⌽⍴⍵ # ∨/⍵}
-  cols←{(⍴⍵)⍴∨⌿⍵}
-  first←{(⍴⍵)⍴{⍵∧1=+\⍵},⍵}
-  (⍴⍵)↑step_0 ⍵
-}
-costs_1←[72 99 88 ⋄ 23 30 35 ⋄ 51 59 84]
-result←assign costs_1
-⍝ =>
-[$t $f $f ⋄ $f $f $t ⋄ $f $t $f]
-
-⍝ aplcart/table.tsv:1607 — Lower-casification; Concrete APLcart library call with self-contained April dfns definitions and standard operand names; no namespace support implied
-lcase ← {
-  lc←"abcdefghijklmnopqrstuvwxyzåäöàæéñøü"
-  uc←"ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖÀÆÉÑØÜ"
-  ⍴⍵ ⍴ (lc,,⍵) (uc,,⍵)⍳⍵
-}
-result←lcase "HELLO ÅÄÖ"
+⍝ aplcart/table.tsv:1607 — Lower-casification; Concrete APLcart library call
+•load "lib/array.bpl"
+lcase "HELLO ÅÄÖ"
 ⍝ =>
 "hello åäö"
 
-⍝ aplcart/table.tsv:1608 — Upper-casification; Concrete APLcart library call with self-contained April dfns definitions and standard operand names; no namespace support implied
-ucase ← {
-  lc←"abcdefghijklmnopqrstuvwxyzåäöàæéñøü"
-  uc←"ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖÀÆÉÑØÜ"
-  ⍴⍵ ⍴ (uc,,⍵) (lc,,⍵)⍳⍵
-}
-result←ucase "Hello åäö"
+⍝ aplcart/table.tsv:1608 — Upper-casification; Concrete APLcart library call
+•load "lib/array.bpl"
+ucase "Hello åäö"
 ⍝ =>
 "HELLO ÅÄÖ"
 
-⍝ aplcart/table.tsv:1610 — Compress multiple blanks; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:171. Local definitions replace the dfns namespace; no namespace feature implied
-squeeze ← { (~"  "⍷⍵)#⍵ }
-result←squeeze "   oranges    and     lemons"
-⍝ =>
-" oranges and lemons"
-
-⍝ aplcart/table.tsv:1611 — Remove trailing blanks; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:290. Local definitions replace the dfns namespace; no namespace feature implied
-vtrim ← {
-  [lf sp]←•ucs 10 32
-  1↓¯1↓{
-    types←[lf sp]⍳⍵
-    mask←~1 1⍷types
-    comp←mask#types
-    csl←2 1 0⍷comp
-    lsl←0 1 0⍷comp
-    from←mask#⁻¹csl∨lsl
-    upto←1 0⍷types
-    ~¯1⌽≠\from∨upto # ⍵
-  }lf,⍵,lf
-}
-subs ← {
-  [fs ts]←≢¨[fm to]←⍺
-  1≡≡⍺:to@(fm⍃=)⍵
-  0=⍴⍴⍵:↑(⍵≡fm)⌽[⍵ ⊂to]
-  lead←fs↑1
-  (fm⍷⍵){
-    ~1∊⍺:⍵
-    ts↓,/{to,fs↓⍵}¨(lead,⍺)⊂fm,⍵
-  }⍤1 ⍵
-}
+⍝ aplcart/table.tsv:1611 — Remove trailing blanks; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:290
+•load "lib/string.bpl"
 text←(•ucs 10) {⊃⍶{⍺,⍶,⍵}/⍵} "Where Alph, the sacred river, ran  " "Through caverns measureless to man    " "  Down to a sunless sea.           "
 show←" ·"⍃subs
-result←vtrim "some text   "
+vtrim "some text   "
 ⍝ =>
 "some text"
 
-⍝ aplcart/table.tsv:1613 — Replace [LF] with blanks; Concrete APLcart library call with self-contained April dfns definitions and standard operand names; no namespace support implied
-unwrap ← { (~⍵∊•ucs 10 13 133){⍺#⁻¹⍺#⍵}⍵ }
-result←unwrap "one",(•ucs 10),"two",(•ucs 13),"three"
+⍝ aplcart/table.tsv:1613 — Replace [LF] with blanks; Concrete APLcart library call
+•load "lib/string.bpl"
+unwrap "one",(•ucs 10),"two",(•ucs 13),"three"
 ⍝ =>
 "one two three"
 
-⍝ aplcart/table.tsv:1615 — Cost vector for path ⍵ through weighted graph ⍺; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:97. Local definitions replace the dfns namespace; no namespace feature implied
-wcost ← {
-  [graph costs]←↓⍺
-  2>≢⍵:0
-  {
-    node←,⍺⊃graph
-    indx←node⍳⍵
-    indx⊃,⍺⊃costs
-  }/2↕⍵
-}
+⍝ aplcart/table.tsv:1615 — Cost vector for path ⍵ through weighted graph ⍺; Concrete APLcart library call; setup from april/libraries/dfns/graph/demo.lisp:97
+•load "lib/graph.bpl"
 g←[1 2;2;1 3;0 4;2]
 w←[1 3;1;4 1;1 1;1]
-result←(2 5⍴g,w)wcost 0 2 3 4 2 1 2 1
+(2 5⍴g,w)wcost 0 2 3 4 2 1 2 1
 ⍝ =>
 3 1 1 1 4 1 4
 
-⍝ aplcart/table.tsv:1617 — Trim off trailing blank cols; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:149. Local definitions replace the dfns namespace; no namespace feature implied
-display ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
-  box←{
-    [vrt hrz]←¯1+⍴⍵ ⍴¨ "│─"
-    top←"─⊖→".[¯1↑⍺],hrz
-    bot←↑⍺ , hrz
-    rgt←"┐│",vrt,'┘'
-    lax←"│⌽↓".[¯1↓1↓⍺],¨⊂vrt
-    lft←⍉'┌',(⊃lax),'└'
-    lft , top⍪⍵⍪bot , rgt
-  }
-  deco←{⍺←type open ⍵ ⋄ ⍺,axes ⍵}
-  axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
-  open←{(1⌈⍴⍵)⍴⍵}
-  trim←{(~1 1⍷∧⌿⍵=' ')#⍠¯1 ⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (↑⍵∊'¯',•d)⊃"#~"}∘⍕
-  type←{{(1=⍴⍵)⊃['+' ⍵]}∪,char¨⍵}
-  line←{(""≡0⍴⍵)⊃" -"}
-  {
-    0=≡⍵:' '⍪(open format ⍵)⍪line ⍵
-    1 ⍬≡[≡⍵ ⍴⍵]:'∇' 0 0 box format ⍵
-    1=≡⍵:(deco ⍵)box open format open ⍵
-    ('∊'deco ⍵)box trim format ∇¨open ⍵
-  }⍵
-}
-mtrim ← { (⌽∨\⌽∨⌿⍵≠' ')#⍠¯1 ⍵ }
-result←mtrim ["abc  " ⋄ "def  " ⋄ "ghi  "]
+⍝ aplcart/table.tsv:1617 — Trim off trailing blank cols; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:149
+•load "lib/string.bpl"
+mtrim ["abc  " ⋄ "def  " ⋄ "ghi  "]
 ⍝ =>
 ["abc" ⋄ "def" ⋄ "ghi"]
 
-⍝ aplcart/table.tsv:1618 — Boxed display of array; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:53. Local definitions replace the dfns namespace; no namespace feature implied
-display ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
-  box←{
-    [vrt hrz]←¯1+⍴⍵ ⍴¨ "│─"
-    top←"─⊖→".[¯1↑⍺],hrz
-    bot←↑⍺ , hrz
-    rgt←"┐│",vrt,'┘'
-    lax←"│⌽↓".[¯1↓1↓⍺],¨⊂vrt
-    lft←⍉'┌',(⊃lax),'└'
-    lft , top⍪⍵⍪bot , rgt
-  }
-  deco←{⍺←type open ⍵ ⋄ ⍺,axes ⍵}
-  axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
-  open←{(1⌈⍴⍵)⍴⍵}
-  trim←{(~1 1⍷∧⌿⍵=' ')#⍠¯1 ⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (↑⍵∊'¯',•d)⊃"#~"}∘⍕
-  type←{{(1=⍴⍵)⊃['+' ⍵]}∪,char¨⍵}
-  line←{(""≡0⍴⍵)⊃" -"}
-  {
-    0=≡⍵:' '⍪(open format ⍵)⍪line ⍵
-    1 ⍬≡[≡⍵ ⍴⍵]:'∇' 0 0 box format ⍵
-    1=≡⍵:(deco ⍵)box open format open ⍵
-    ('∊'deco ⍵)box trim format ∇¨open ⍵
-  }⍵
-}
-result←display [1 'a' "abc" [1 2 3 ⋄ 4 5 6]]
+⍝ aplcart/table.tsv:1618 — Boxed display of array; Concrete APLcart library call; setup from april/libraries/dfns/array/demo.lisp:53
+•load "lib/array.bpl"
+display [1 'a' "abc" [1 2 3 ⋄ 4 5 6]]
 ⍝ =>
 ["┌→──────────────────┐" ⋄ "│     ┌→──┐ ┌→────┐ │" ⋄ "│ 1 a │abc│ ↓1 2 3│ │" ⋄ "│   - └───┘ │4 5 6│ │" ⋄ "│           └~────┘ │" ⋄ "└∊──────────────────┘"]
 
-⍝ aplcart/table.tsv:1619 — Boxed display of array with axis lengths; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:80. Local definitions replace the dfns namespace; no namespace feature implied; Format exact counts as ordinary numbers
-displays ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
-  box←{
-    [shp w]←open\⍵
-    [vrt hrz]←¯1+⍴w ⍴¨ "│─"
-    top←"─⊖→".[¯1↑⍺],hrz
-    ok←⍴shp < ⍴hrz
-    top←⍴top ↑ 2↑top , ok#shp , 2+ok×⍴shp ↓ top
-    bot←↑⍺ , hrz
-    rgt←"┐│",vrt,'┘'
-    lax←"│⌽↓".[¯1↓1↓⍺],¨⊂vrt
-    lft←⍉'┌',(⊃lax),'└'
-    lft , top⍪w⍪bot , rgt
-  }
-  deco←{⍺←type open ⍵ ⋄ ⍺,axes ⍵}
-  axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
-  open←{(1⌈⍴⍵)⍴⍵}
-  trim←{[0⊃⍵ (~1 1⍷∧⌿' '=1⊃⍵)#⍠¯1(1⊃⍵)]}
-  char←{⍬≡⍴⍵:'─' ⋄ (↑⍵∊'¯',•d)⊃"#~"}∘⍕
-  type←{{(1=⍴⍵)⊃['+' ⍵]}∪,char¨⍵}
-  qfmt←{[⍕0+⍴⍺;format open ⍵]}
-  {
-    0=≡⍵:' '⍪(format ⍵)⍪(' '≡↑0⍴⍵)⊃" -"
-    1 ⍬≡[≡⍵ ⍴⍵]:'∇' 0 0 box ["─";format ⍵]
-    1=≡⍵:(deco ⍵)box open ⍵ qfmt ⍵
-    ('∊'deco ⍵)box trim ⍵ qfmt ∇¨open ⍵
-  }⍵
-}
-result←displays [1 'a' "abc" [1 2 3 ⋄ 4 5 6]]
+⍝ aplcart/table.tsv:1619 — Boxed display of array with axis lengths; Concrete APLcart library call; setup from april/libraries/dfns/array/demo.lisp:80; Format exact counts as ordinary numbers
+•load "lib/array.bpl"
+displays [1 'a' "abc" [1 2 3 ⋄ 4 5 6]]
 ⍝ =>
 ["┌→─4────────────────┐" ⋄ "│     ┌→─3┐ ┌→─2 3┐ │" ⋄ "│ 1 a │abc│ ↓1 2 3│ │" ⋄ "│   - └───┘ │4 5 6│ │" ⋄ "│           └~────┘ │" ⋄ "└∊──────────────────┘"]
 
-⍝ aplcart/table.tsv:1620 — Boxed display of array with axis lengths and subarray depths; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:86. Local definitions replace the dfns namespace; no namespace feature implied; Format exact counts as ordinary numbers
-displayr ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
-  box←{
-    [vrt hrz]←¯1+⍴⍵ ⍴¨ "│─"
-    top←1+⍴hrz ↑ ↑(¯1↑⍺)⌷"─⊖",⊂⍕¯1↑1⊃⍺ , hrz
-    bot←⍴top ↑ ↑2↓⍺ , hrz
-    rgt←"┐│",vrt,'┘'
-    lax←↑¨(¯1↓3↓⍺)⌷¨(-1⌈¯1+⍴1⊃⍺)↑(⊂"│⌽"),¨⊂∘⍕¨¯1↓0,1⊃⍺ ,¨ ⊂vrt
-    lax←⊂1+⍴vrt ↑¨ lax~¨⊂" " ,¨ '│'
-    lft←⍉'┌',(⊃lax),'└'
-    lft , top⍪⍵⍪bot , rgt
-  }
-  deco←{⍺←type open ⍵ ⋄ ⍴⍴⍵ , ⊂0+⍴⍵ , ⍺ , axes ⍵}
-  axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
-  open←{(1⌈⍴⍵)⍴⍵}
-  trim←{(~1 1⍷∧⌿⍵=' ')#⍠¯1 ⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (↑⍵∊'¯',•d)⊃"#~"}∘⍕
-  type←{{(1=⍴⍵)⊃['+' ⍵]}∪,char¨⍵}
-  {
-    0=≡⍵:' '⍪(open format ⍵)⍪(' '=↑0⍴⍵)⊃" -"
-    1 ⍬≡[≡⍵ ⍴⍵]:["" [0 0] '∇' 0 0] box format ⍵
-    1=≡⍵:(deco ⍵)box open' ',format open ⍵
-    (⊂⍕0+≡⍵ deco ⍵)box trim' ',format ∇¨open ⍵
-  }⍵
-}
-result←displayr [1 'a' "abc" [1 2 3 ⋄ 4 5 6]]
+⍝ aplcart/table.tsv:1620 — Boxed display of array with axis lengths and subarray depths; Concrete APLcart library call; setup from april/libraries/dfns/array/demo.lisp:86; Format exact counts as ordinary numbers
+•load "lib/array.bpl"
+displayr [1 'a' "abc" [1 2 3 ⋄ 4 5 6]]
 ⍝ =>
 ["┌4────────────────────┐" ⋄ "│     ┌3───┐ ┌3─────┐ │" ⋄ "│ 1 a │ abc│ 2 1 2 3│ │" ⋄ "│   - └────┘ │ 4 5 6│ │" ⋄ "│            └~─────┘ │" ⋄ "└2────────────────────┘"]
 
-⍝ aplcart/table.tsv:1621 — Character matrix from tree(s); Concrete APLcart library call; self-contained setup from april/libraries/dfns/tree/demo.lisp:907. Local definitions replace the dfns namespace; no namespace feature implied
-tfmt ← {
-  ⍺←""
-  1=≡,⍵:⊃,↓⍺,⍵
-  node←⍺,↑⍵
-  subs←(⍺,4↑'·')⍃∇¨1↓⍵
-  ⊃(⊂node),,/↓¨subs
-}
-result←tfmt "hot" "tea" "coffee"
+⍝ aplcart/table.tsv:1621 — Character matrix from tree(s); Concrete APLcart library call; setup from april/libraries/dfns/tree/demo.lisp:907
+•load "lib/tree.bpl"
+tfmt "hot" "tea" "coffee"
 ⍝ =>
 ["hot       " ⋄ "·   tea   " ⋄ "·   coffee"]
 
-⍝ aplcart/table.tsv:1626 — Levenshtein distance; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:92. Local definitions replace the dfns namespace; no namespace feature implied
-dist ← {
-  a←(n+1)⍴(⍴⍺)+n←⍴⍵
-  f←⍵{⌊\⍵⌊(↑⍵),(¯1↓⍵)-1x+⍺=⍶}
-  z←f/(⌽⍺),⊂a
-  ↑⌽z
-}
-result←"Sunday" dist "Saturday"
-⍝ =>
-3ₓ
-
-⍝ aplcart/table.tsv:1627 — Spanning-tree path lengths; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:72. Local definitions replace the dfns namespace; no namespace feature implied
-span ← {
-  graph←⍺
-  (¯2 + ⍳⍴⍺ ∊ ,⍵){
-    ⍵≡⍬:⍺
-    next←(graph ⍵)∩¨⊂⍸⍺=¯2
-    back←⍵+0×next
-    tree←(∊back)@(∊next) ⍺
-    tree ∇ ∪∊next
-  }⍵
-}
-stdists ← {
-  tree←⍵
-  0x{
-    [next dvec]←⍵
-    next≡⍬:dvec
-    ∆dvec←⍺@next dvec
-    ∆next←⍸tree∊,next
-    (⍺+1x)∇ [∆next ∆dvec]
-  }[⍵⍳¯1 ⍵⊢¨¯1x]
-}
+⍝ aplcart/table.tsv:1627 — Spanning-tree path lengths; Concrete APLcart library call; setup from april/libraries/dfns/graph/demo.lisp:72
+•load "lib/graph.bpl"
 g←[1 2;2;1 3;0 4;2]
-result←stdists g span 2
+stdists g span 2
 ⍝ =>
 [2 1 0 1 2]ₓ
 
-⍝ aplcart/table.tsv:1628 — Bijective base-⍺ numeration; Concrete APLcart recipe; local definitions from april/libraries/dfns/numeric/demo.lisp:13 replace the dfns namespace; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-adic ← {
-  b←≢a←,⍺
-  1=⍴⍴⍵:b⊥1+a⍳⍵
-  1=b:⍵#⍺
-  n←⌊b⍟1+⍵×b-1
-  z←¯1+b*n ÷ b-1
-  a(n#b ⊤ ⍵-z)
-}
-to ← {
-  [from step]←1 ¯1×-\2↑⍺,⍺+×⍵-⍺
-  from+step×⍳0⌈1+⌊(⍵-from)÷step+step=0
-}
-result←•a adic 703
+⍝ aplcart/table.tsv:1628 — Bijective base-⍺ numeration; Concrete APLcart recipe; setup from april/libraries/dfns/numeric/demo.lisp:13; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
+•load "lib/numeric.bpl"
+•a adic 703
 ⍝ =>
 "AAA"
 
-⍝ aplcart/table.tsv:1629 — Fast multi-digit power using FFT; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:317. Local definitions replace the dfns namespace; no namespace feature implied; Square the accumulator in basedpl left scan
-xtimes ← { m←0
-  xroots    ← {×\1,1↓(⍵÷2)⍴¯1*2÷⍵}
-  cube      ← {⍵⍴⍨2⍴⍨⌊2⍟⍴⍵}
-  extend    ← {(2*⌈2⍟¯1+⍺+⍥⍴⍵)↑¨[⍺ ⍵]}
-  floop     ← {(⊣/⍺)∇⍣(×m) (+⌿⍵){⊃[⍺ ⍵]}⍤(≢⍴⍵ - m+1) ⍺×⍠(⍳m←≢⍴⍺)-⌿⍵}
-  FFT       ← {,(cube xroots⍴⍵)floop cube ⍵}
-  iFFT      ← {(⍴⍵)÷⍨, (cube+xroots⍴⍵)floop cube ⍵}
-  rconvolve ← {(¯1+⍺+⍥⍴⍵)↑iFFT×/FFT¨(⍺ extend ⍵)}
-  carry     ← {1↓+⌿1 0⌽0,⍉0 10⊤⍵}
-  (+/∧\0=t)↓t←carry⍣≡0,⌊0.5+9○(⍺ rconvolve ⍵)
-}
-xpower ← {
-  xt←{(0,⍺)xtimes 0,⍵} ⋄ b←⌽2⊥⁻¹10⊥⍵
-  ⊃,/xt/b#{xt⍨⍺}\(⊂,10⊥⁻¹⍺)⍴⍨⍴b
-}
-result←2 xpower 16
-⍝ =>
-6 5 5 3 6
-
-⍝ aplcart/table.tsv:1631 — Shannon entropy of message ⍵; Concrete APLcart recipe; local definitions from april/libraries/dfns/array/demo.lisp:352 replace the dfns namespace; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-shannon ← { -+/(2⍃⍟×⊣)¨({≢⍵}⌸÷≢)⍵ }
-result←shannon "banana"
+⍝ aplcart/table.tsv:1631 — Shannon entropy of message ⍵; Concrete APLcart recipe; setup from april/libraries/dfns/array/demo.lisp:352; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
+•load "lib/array.bpl"
+shannon "banana"
 ⍝ =>
 1.459147917027245
 
@@ -4226,394 +3874,108 @@ result←8 int 0 127 128 255
 ⍝ =>
 0 127 ¯128 ¯1
 
-⍝ aplcart/table.tsv:1633 — Numeric range classification; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:130. Local definitions replace the dfns namespace; no namespace feature implied
-range ← { (⍴⍵)⍴(⍴⍺ ↓ ⍋⍋⍺,,⍵)-⍋⍋,⍵ }
-result←0 5 10 15 range ¯1+⍳18
-⍝ =>
-[0 1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4]ₓ
-
-⍝ aplcart/table.tsv:1636 — List from vector ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:179. Local definitions replace the dfns namespace; no namespace feature implied
-list ← { {[⍺ ⍵]}/⍵,'∘' }
-result←list "hello"
-⍝ =>
-['h' ['e' ['l' ['l' "o∘"]]]]
-
-⍝ aplcart/table.tsv:1637 — List ⍺ with key-value ⍵ replacement; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:16. Local definitions replace the dfns namespace; no namespace feature implied
-alset ← {
-  [key val]←⍵
-  {val@(⍺⍳⊂key) ⍵}\⍺
-}
+⍝ aplcart/table.tsv:1637 — List ⍺ with key-value ⍵ replacement; Concrete APLcart library call; setup from april/libraries/dfns/array/demo.lisp:16
+•load "lib/array.bpl"
 found←[["milly" "molly" "may"] ["star" "thing" "stone"]]
-result←found alset "may" "pebble"
+found alset "may" "pebble"
 ⍝ =>
 [["milly" "molly" "may"] ["star" "thing" "pebble"]]
 
-⍝ aplcart/table.tsv:1638 — List ⍺ extended with key-value pair ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:17. Local definitions replace the dfns namespace; no namespace feature implied
-alpush ← {
-  ⍺,⍨⍄⊂¨⍵
-}
+⍝ aplcart/table.tsv:1638 — List ⍺ extended with key-value pair ⍵; Concrete APLcart library call; setup from april/libraries/dfns/array/demo.lisp:17
+•load "lib/array.bpl"
 found←[["milly" "molly" "may"] ["star" "thing" "stone"]]
-result←found alpush "may" "rock"
+found alpush "may" "rock"
 ⍝ =>
 [["may" "milly" "molly" "may"] ["rock" "star" "thing" "stone"]]
 
-⍝ aplcart/table.tsv:1640 — Number of display lines for simple array; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:202. Local definitions replace the dfns namespace; no namespace feature implied
-nlines ← {
-  {
-    ×/⍵ + {
-      +/+\0⌈⍵-1,¯1↓⍵
-    }×\¯1↓⍵
-  }¯1↓⍴⍵
-}
-result←nlines 2 3 4⍴⍳24
-⍝ =>
-7
-
-⍝ aplcart/table.tsv:1641 — Egyptian fractions; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:35. Local definitions replace the dfns namespace; no namespace feature implied
-efract ← {
-  ⍬{
-    [p q]←⍵÷∨/⍵
-    p=1:⍺,q
-    r←p|q ⋄ s←q-r ÷ p
-    ⍺,s+1 ∇ [p-r q×s+1]
-  }[⍺ ⍵]
-}
-result←2 efract 11
+⍝ aplcart/table.tsv:1641 — Egyptian fractions; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:35
+•load "lib/numeric.bpl"
+2 efract 11
 ⍝ =>
 6 66
 
-⍝ aplcart/table.tsv:1642 — Sequence ⍺ … ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:65. Local definitions replace the dfns namespace; no namespace feature implied
-hex ← {
-  ⍺←⊢
-  1≠≡,⍵:⍺∇¨⍵
-  0∊⍵-1+⍵:"Too big"
-  n←⍬⍴⍺,2*⌈2⍟2⌈16⍟1+⌈/|⍵
-  ↓⍠0 "0123456789abcdef"((n#16)⊤⍵)
-}
-dec ← {
-  ⍺←0
-  1<⍴⍴⍵:⍺⍃∇⍤1 ⍵
-  0≡≢⍵:0
-  1≠≡,⍵:⍺∇¨⍵
-  ws←∊⍄(•ucs 9 10 13 32 133 160)
-  ws↑⍵:⍺ ∇ 1↓⍵
-  ws↑⌽⍵:⍺ ∇ ¯1↓⍵
-  ∨/ws ⍵:⍺∇¨(1+ws ⍵)⊆⍵
-  v←16|"0123456789abcdef0123456789ABCDEF"⍳⍵
-  16⊥v - ⍺ × 8≤↑v × 16*≢v
-}
-to ← {
-  [from step]←1 ¯1×-\2↑⍺,⍺+×⍵-⍺
-  from+step×⍳0⌈1+⌊(⍵-from)÷step+step=0
-}
-result←¯3 to 3
+⍝ aplcart/table.tsv:1642 — Sequence ⍺ … ⍵; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:65
+•load "lib/numeric.bpl"
+¯3 to 3
 ⍝ =>
 ¯3 ¯2 ¯1 0 1 2 3
 
-⍝ aplcart/table.tsv:1643 — Prime factors of ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:45. Local definitions replace the dfns namespace; no namespace feature implied
-factors ← { ⍵{
-    ⍵ , ⍺÷×/⍵ ~ [1]
-  }∊⍵{
-    0=(⍵*1+⍳⌊⍵⍟⍺)|⍺ # ⍵
-  }¨⍬{
-    nxt←↑⍵
-    msk←0≠nxt|⍵
-    ∧/1↓msk:⍺,⍵
-    (⍺,nxt)∇ msk#⍵
-  }⍵{
-    0=⍵|⍺ # ⍵
-  }2,(3+2×⍳⌊0.5×√⍵),⍵
-}
-result←factors441256830030
+⍝ aplcart/table.tsv:1643 — Prime factors of ⍵; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:45
+•load "lib/numeric.bpl"
+factors441256830030
 ⍝ =>
 2 3 3 5 71 73 945949
 
-⍝ aplcart/table.tsv:1644 — Tail-recursive Fibonacci; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:39. Local definitions replace the dfns namespace; no namespace feature implied
-fibonacci ← { ⍺←0 1
-  ⍵=0:↑⍺ ⋄ (1↓⍺,+/⍺)∇ ⍵-1
-}
-result←fibonacci10
+⍝ aplcart/table.tsv:1644 — Tail-recursive Fibonacci; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:39
+•load "lib/numeric.bpl"
+fibonacci10
 ⍝ =>
 55
 
-⍝ aplcart/table.tsv:1645 — Sieve of Eratosthenes; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:161. Local definitions replace the dfns namespace; no namespace feature implied
-sieve ← {
-  ⍺←⍬
-  nxt←1↑⍵
-  msk←0≠nxt|⍵
-  ∧/1↓msk:⍺,⍵
-  (⍺,nxt)∇ msk#⍵
-}
-to ← {
-  [from step]←1 ¯1×-\2↑⍺,⍺+×⍵-⍺
-  from+step×⍳0⌈1+⌊(⍵-from)÷step+step=0
-}
-result←sieve 2 to 100
+⍝ aplcart/table.tsv:1645 — Sieve of Eratosthenes; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:161
+•load "lib/numeric.bpl"
+sieve 2 to 100
 ⍝ =>
 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97
 
-⍝ aplcart/table.tsv:1647 — Real roots of quadratic; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:302. Local definitions replace the dfns namespace; no namespace feature implied
-roots ← {
-  [a b c]←⍵
-  d←b² - 4×a×c
-  -b+¯1 1×√d ÷ 2×a
-}
-result←roots1 ¯3 2
+⍝ aplcart/table.tsv:1647 — Real roots of quadratic; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:302
+•load "lib/numeric.bpl"
+roots1 ¯3 2
 ⍝ =>
 2 1
 
-⍝ aplcart/table.tsv:1648 — ⍵ similar integers with sum ⍺; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:115. Local definitions replace the dfns namespace; no namespace feature implied
-nicediv ← {
-  q←⍵⍴⌊⍺÷⍵
-  d←+\(⍵|⍺)÷⍵⍴⍵
-  i←</2↕0,⌊0.5+d
-  q+i
-}
-result←100 nicediv 7
-⍝ =>
-[14 15 14 14 14 15 14]ₓ
-
-⍝ aplcart/table.tsv:1649 — Tail recursive factorial; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:38. Local definitions replace the dfns namespace; no namespace feature implied
-factorial←{⍺←1 ⋄ ⍵=0:⍺ ⋄ (⍺×⍵)∇⍵-1}
-result←factorial10
+⍝ aplcart/table.tsv:1649 — Tail recursive factorial; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:38
+•load "lib/numeric.bpl"
+factorial10
 ⍝ =>
 3628800
 
-⍝ aplcart/table.tsv:1650 — Arithmetic mean; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:270. Local definitions replace the dfns namespace; no namespace feature implied
-mean ← { sum←+/⍵ ⋄ num←⍴⍵ ⋄ sum÷num }
-result←mean1 2 3 4
-⍝ =>
-1⍴2.5
-
-⍝ aplcart/table.tsv:1651 — Determinant of square matrix; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:219. Local definitions replace the dfns namespace; no namespace feature implied
-det ← {
-  ⍺←1
-  0=n←≢⍵:⍺
-  [i j]←⍴⍵ ⊤ {⍵⍳⌈/⍵}|,⍵
-  k←⍳n
-  (⍺×⍵.[i j]×¯1*i+j)∇ ⍵.[k~[i] k~[j]] - ⍵.[k~[i] j] ×⊗ ⍵.[i k~[j]] ÷ ⍵.[i j]
-}
-result←det [2 3 ⋄ 4 5]
-⍝ =>
-¯2.000000000000002
-
-⍝ aplcart/table.tsv:1652 — Oscillate - probably returns 1; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:129. Local definitions replace the dfns namespace; no namespace feature implied
-osc ← { 1=⍵ : 1 ⋄ 2|⍵ : ∇ 1+3×⍵ ⋄ ∇ ⍵÷2 }
-result←osc10
+⍝ aplcart/table.tsv:1652 — Oscillate - probably returns 1; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:129
+•load "lib/numeric.bpl"
+osc10
 ⍝ =>
 1
 
-⍝ aplcart/table.tsv:1653 — Greatest Common Divisor; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:47. Local definitions replace the dfns namespace; no namespace feature implied
-gcd ← { ⍵=0 : |⍺ ⋄ ⍵∇⍵|⍺ }
-result←105 gcd 330
-⍝ =>
-15
-
-⍝ aplcart/table.tsv:1655 — Locations of item ⍺ in array ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:175. Local definitions replace the dfns namespace; no namespace feature implied
-in ← {
-  D←≡item←⍺
-  ⍬{
-    item≡⍵:,⊂⍺
-    D≥≡⍵:⍬
-    paths←⍺⍃,∘⊂¨⍳⍴⍵
-    ,/, paths ∇¨ ⍵
-  }⍵
-}
-result←1 in 3 1 4 1 5
-⍝ =>
-[[1] [3]]ₓ
-
-⍝ aplcart/table.tsv:1656 — Spanning tree paths; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:78. Local definitions replace the dfns namespace; no namespace feature implied
-span ← {
-  graph←⍺
-  (¯2 + ⍳⍴⍺ ∊ ,⍵){
-    ⍵≡⍬:⍺
-    next←(graph ⍵)∩¨⊂⍸⍺=¯2
-    back←⍵+0×next
-    tree←(∊back)@(∊next) ⍺
-    tree ∇ ∪∊next
-  }⍵
-}
-stpaths ← {
-  tree←⍵
-  root←⍵⍳¯1
-  paths←root=⍳⍴⍵ ↑¨ root
-  paths{
-    next←⍵=⊂tree #¨ ⊂⍳⍴tree
-    ⊂⍬ ∧.≡ next:⍺
-    exts←⊂¨⍵⊃¨⊂⍺ ,¨¨ next
-    indx←,/next
-    paths←(,/exts)@indx ⍺
-    paths ∇ indx
-  }root
-}
+⍝ aplcart/table.tsv:1656 — Spanning tree paths; Concrete APLcart library call; setup from april/libraries/dfns/graph/demo.lisp:78
+•load "lib/graph.bpl"
 g←[1 2;2;1 3;0 4;2]
-result←stpaths g span 2
+stpaths g span 2
 ⍝ =>
 [2 3 0;2 1;[2];2 3;2 3 4]ₓ
 
-⍝ aplcart/table.tsv:1658 — Bayes' formula; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:202. Local definitions replace the dfns namespace; no namespace feature implied
-bayes ← { ⍺ ×÷+.× ⍵ }
-result←(3 2 4÷11 11 16)bayes 11 11 16÷38
-⍝ =>
-0.3333333333333333 0.2222222222222223 0.4444444444444444
-
-⍝ aplcart/table.tsv:1660 — Select (1↓⍴⍵)-cells from array ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:134. Local definitions replace the dfns namespace; no namespace feature implied
-from ← {
-  ~(≢⍺)≡≢⍴⍵:"error"
-  indx←⍺
-  axes←+\0,¯1↓{↑⍴⍴⍵}¨⍺
-  {
-    [indx axis]←⍺
-    indx≡,⊂⍬:⍵
-    vec←⊂⍠(⍳⍴⍴⍵ ~ [axis])⍵
-    sel←⊃indx⊃¨⊂vec
-    pos←axis+⍳⍴⍴indx
-    pos,(⍳⍴⍴sel)~pos ⍉ sel
-  }/⌽(⊂⍵),↓⍉⊃[indx axes]
-}
+⍝ aplcart/table.tsv:1660 — Select (1↓⍴⍵)-cells from array ⍵; Concrete APLcart library call; setup from april/libraries/dfns/array/demo.lisp:134
+•load "lib/array.bpl"
 [ta_1 ta_2 ta_3 ta_4]←{10⊥¨⍳⌽⍵}¨,\5 4 3 2
-result←[1 0;,⊂⍬]from ta_2
+[1 0;,⊂⍬]from ta_2
 ⍝ =>
 [10 11 12 13 14 ⋄ 0 1 2 3 4]
 
-⍝ aplcart/table.tsv:1661 — ⍺-selection of items from vector ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:335. Local definitions replace the dfns namespace; no namespace feature implied
-select ← { ⍺⊃¨,¨/⊂¨¨⍵ }
-result←1 0 1 1 0 select [1 2 3 4 5;10 20 30 40 50]
+⍝ aplcart/table.tsv:1661 — ⍺-selection of items from vector ⍵; Concrete APLcart library call; setup from april/libraries/dfns/array/demo.lisp:335
+•load "lib/array.bpl"
+1 0 1 1 0 select [1 2 3 4 5;10 20 30 40 50]
 ⍝ =>
 10 2 30 40 5
 
-⍝ aplcart/table.tsv:1668 — Breadth-first span tree for graph ⍺ from vertex ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:48. Local definitions replace the dfns namespace; no namespace feature implied
-span ← {
-  graph←⍺
-  (¯2 + ⍳⍴⍺ ∊ ,⍵){
-    ⍵≡⍬:⍺
-    next←(graph ⍵)∩¨⊂⍸⍺=¯2
-    back←⍵+0×next
-    tree←(∊back)@(∊next) ⍺
-    tree ∇ ∪∊next
-  }⍵
-}
-g←[1 2;2;1 3;0 4;2]
-result←g span 0
-⍝ =>
-¯1 0 0 2 3
-
-⍝ aplcart/table.tsv:1669 — Depth-first spanning tree: graph ⍺ from vertex ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:51. Local definitions replace the dfns namespace; no namespace feature implied
-dfspan ← {
-  graph←⍺
-  trav←{
-    ¯2≠⍺⊃⍵:⍵
-    next←⌽⍺⊃graph
-    tree←⍶@⍺ ⍵
-    tree (⍺⍢)/ next
-  }
-  ⍵(¯1 trav)¯2⊣¨⍺
-}
-g←[1 2;2;1 3;0 4;2]
-result←g dfspan 0
-⍝ =>
-¯1 0 1 2 3
-
-⍝ aplcart/table.tsv:1670 — Spanning tree for weighted graph ⍺ from ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:103. Local definitions replace the dfns namespace; no namespace feature implied
-wspan ← {
-  [graph costs]←↓⍺
-  tree←¯1⊣¨graph
-  cost←0@⍵ (⍴costs)⍴∞
-  I←⊃¨⍄⊂
-  ⍵{
-    [tree cost]←⍵
-    ⍺≡⍬:tree
-    adjv←⍺ I graph
-    accm←⍺ I cost+costs
-    mask←accm < adjv I¨ ⊂cost
-    cvec←,/mask#¨accm
-    next←mask#¨adjv
-    back←,/⍺+0×next
-    decr←(⍒cvec)I⊢
-    wave←decr,/next
-    new←[back cvec] decr⍨@wave¨ ⍵
-    (∪wave)∇ new
-  }[tree cost]
-}
+⍝ aplcart/table.tsv:1670 — Spanning tree for weighted graph ⍺ from ⍵; Concrete APLcart library call; setup from april/libraries/dfns/graph/demo.lisp:103
+•load "lib/graph.bpl"
 g←[1 2;2;1 3;0 4;2]
 w←[1 3;1;4 1;1 1;1]
-result←(⊃[g w])wspan 0
+(⊃[g w])wspan 0
 ⍝ =>
 ¯1 0 1 2 3
 
-⍝ aplcart/table.tsv:1671 — Minimum Spanning Tree for weighted graph ⍺; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:105. Local definitions replace the dfns namespace; no namespace feature implied
-wmst ← {
-  [graph costs]←↓⍺
-  xvec←⍳⍴graph
-  (,⍵){
-    [tree todo]←⍵
-    todo≡⍬:tree
-    edges←graph∊¨⊂todo ∧ xvec∊⍺
-    min←⌊/⌊/¨edges#¨costs
-    masks←edges∧min=costs
-    [fm to]←{⊃,/masks#¨⍵}¨[xvec graph]
-    fm≡⍬:tree
-    (⍺,to)∇ [fm@to tree;todo~to]
-  }[¯1⊣¨graph xvec~,⍵]
-}
+⍝ aplcart/table.tsv:1671 — Minimum Spanning Tree for weighted graph ⍺; Concrete APLcart library call; setup from april/libraries/dfns/graph/demo.lisp:105
+•load "lib/graph.bpl"
 aa←⊃[[1 2 3;0 2;0 1 3 4;0 2 4;2 3] [1 3 1;1 2;3 2 1 1;1 1 1;1 1]]
-result←aa wmst 1
+aa wmst 1
 ⍝ =>
 1 ¯1 3 0 3
 
-⍝ aplcart/table.tsv:1672 — Unsigned from signed integers; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:114. Local definitions replace the dfns namespace; no namespace feature implied
-uns ← { (2*⍺)|⍵ }
-to ← {
-  [from step]←1 ¯1×-\2↑⍺,⍺+×⍵-⍺
-  from+step×⍳0⌈1+⌊(⍵-from)÷step+step=0
-}
-result←8 uns ¯3 to 3
-⍝ =>
-253 254 255 0 1 2 3
-
-⍝ aplcart/table.tsv:1673 — Decomposition of Hermitian positive-definite matrix; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:216. Local definitions replace the dfns namespace; no namespace feature implied
-Cholesky ← {
-  1≥n←≢⍵:√⍵
-  p←⌈n÷2
-  q←⌊n÷2
-  X←(p,p)↑⍵⊣Y←(p,-q)↑⍵⊣Z←-q,q ↑ ⍵
-  L_0←∇ X
-  L_1←∇ Z-(TT←+Yᵀ +.× ⌹X)+.×Y
-  (p,n)↑L_0 ⍪ TT+.×L_0 , L_1
-}
-result←Cholesky [4 12 ¯16 ⋄ 12 37 ¯43 ⋄ ¯16 ¯43 98]
+⍝ aplcart/table.tsv:1673 — Decomposition of Hermitian positive-definite matrix; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:216
+•load "lib/numeric.bpl"
+Cholesky [4 12 ¯16 ⋄ 12 37 ¯43 ⋄ ¯16 ¯43 98]
 ⍝ =>
 [2 0 0 ⋄ 6 1 0 ⋄ ¯8 5 3]
-
-⍝ aplcart/table.tsv:1674 — Is ⍺ a subvector of ⍵?; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:355. Local definitions replace the dfns namespace; no namespace feature implied
-subvec ← { 0∊⍴⍺:1
-  0∊⍴⍵:0
-  1↓⍺ ∇ 1+⍵⍳1↑⍺ ↓ ⍵
-}
-result←"abba" subvec "babba"
-⍝ =>
-1
-
-⍝ aplcart/table.tsv:1676 — Fast multi-digit product using FFT; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:315. Local definitions replace the dfns namespace; no namespace feature implied; Square the accumulator in basedpl left scan
-xtimes ← { m←0
-  xroots    ← {×\1,1↓(⍵÷2)⍴¯1*2÷⍵}
-  cube      ← {⍵⍴⍨2⍴⍨⌊2⍟⍴⍵}
-  extend    ← {(2*⌈2⍟¯1+⍺+⍥⍴⍵)↑¨[⍺ ⍵]}
-  floop     ← {(⊣/⍺)∇⍣(×m) (+⌿⍵){⊃[⍺ ⍵]}⍤(≢⍴⍵ - m+1) ⍺×⍠(⍳m←≢⍴⍺)-⌿⍵}
-  FFT       ← {,(cube xroots⍴⍵)floop cube ⍵}
-  iFFT      ← {(⍴⍵)÷⍨, (cube+xroots⍴⍵)floop cube ⍵}
-  rconvolve ← {(¯1+⍺+⍥⍴⍵)↑iFFT×/FFT¨(⍺ extend ⍵)}
-  carry     ← {1↓+⌿1 0⌽0,⍉0 10⊤⍵}
-  (+/∧\0=t)↓t←carry⍣≡0,⌊0.5+9○(⍺ rconvolve ⍵)
-}
-xpower ← {
-  xt←{(0,⍺)xtimes 0,⍵} ⋄ b←⌽2⊥⁻¹10⊥⍵
-  ⊃,/xt/b#{xt⍨⍺}\(⊂,10⊥⁻¹⍺)⍴⍨⍴b
-}
-result←9 3 5 8 1 0 5 xtimes 6 2 3 7 4
-⍝ =>
-5 8 3 7 0 2 4 4 1 2 7 0
 
 ⍝ aplcart/table.tsv:1677 — Fast: X and Y are ignored (sink; no result produced)
 X←3 1 2 1 ⋄ Y←3 1 3 2 ⋄ X{}Y   ⍝ {}0
@@ -4636,875 +3998,166 @@ Iv←0 2 4 ⋄ Y←⍳6 ⋄ Iv⍸⁻¹⍃⊂Y   ⍝ [[0 1] [2 3] [4 5]]
 ⍝ aplcart/table.tsv:1693 — Count number of trailing elements that are unequal between two vectors of equal length
 "Analyst" (1⊥≠) "Anatomy"   ⍝ 4
 
-⍝ aplcart/table.tsv:1694 — Insert edge ⍵ in graph ⍺; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:39. Local definitions replace the dfns namespace; no namespace feature implied
-inslink ← {
-  [fm to]←⍵
-  ∪⍄to∘,@fm ⍺
-}
-g←[1 2;2;1 3;0 4;2]
-result←g inslink 4 0
-⍝ =>
-[1 2;2;1 3;0 4;2 0]
-
-⍝ aplcart/table.tsv:1695 — Remove edge ⍵ from graph ⍺; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:40. Local definitions replace the dfns namespace; no namespace feature implied
-remlink ← {
-  [fm to]←⍵
-  ~⍄[to]@fm ⍺
-}
-g←[1 2;2;1 3;0 4;2]
-result←g remlink 1 2
-⍝ =>
-[1 2;⍬;1 3;0 4;2]
-
-⍝ aplcart/table.tsv:1696 — Vector substitution; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:369. Local definitions replace the dfns namespace; no namespace feature implied
-subs ← {
-  [fs ts]←≢¨[fm to]←⍺
-  1≡≡⍺:to@(fm⍃=)⍵
-  0=⍴⍴⍵:↑(⍵≡fm)⌽[⍵ ⊂to]
-  lead←fs↑1
-  (fm⍷⍵){
-    ~1∊⍺:⍵
-    ts↓,/{to,fs↓⍵}¨(lead,⍺)⊂fm,⍵
-  }⍤1 ⍵
-}
-result←[6 7;666 777]subs 2 3 4⍴⍳12
+⍝ aplcart/table.tsv:1696 — Vector substitution; Concrete APLcart library call; setup from april/libraries/dfns/array/demo.lisp:369
+•load "lib/array.bpl"
+[6 7;666 777]subs 2 3 4⍴⍳12
 ⍝ =>
 2 3 4⍴0 1 2 3 4 5 666 777 8 9 10 11 0 1 2 3 4 5 666 777 8 9 10 11
 
-⍝ aplcart/table.tsv:1698 — Shortest path between ⍵ in graph ⍺; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:42. Local definitions replace the dfns namespace; no namespace feature implied
-path ← {
-  graph←⍺ ⋄ [fm to]←,¨⍵
-  fm{
-    ⍺≡⍬:⍬
-    ∨/to∊⍺:⍬(⊃⍄⍵){
-      ⍵<0:⍺
-      (⍵,⍺)∇ ⍶ ⍵
-    }1↑⍺∩to
-    next←graph(,⍺) ∩¨ ⊂⍸⍵=¯2
-    back←,/⍺+0×next
-    wave←,/next
-    (∪wave)∇ back@wave ⍵
-  }¯2+(⍳⍴⍺)∊fm
-}
-g←[1 2;2;1 3;0 4;2]
-result←g path 1 0
-⍝ =>
-1 2 3 0
-
-⍝ aplcart/table.tsv:1701 — Approximate alternative to xutils' ss; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:158. Local definitions replace the dfns namespace; no namespace feature implied
-ss ← {
-  [srce find repl]←,¨⍵
-  mask←find⍷srce
-  prem←⍴find ↑ 1
-  cvex←prem,mask ⊂ find,srce
-  ⍴repl ↓ ∊{repl,(⍴find)↓⍵}¨cvex
-}
-result←ss "Banana" "an" "AN"
+⍝ aplcart/table.tsv:1701 — Approximate alternative to xutils' ss; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:158
+•load "lib/string.bpl"
+ss "Banana" "an" "AN"
 ⍝ =>
 "BANANa"
 
-⍝ aplcart/table.tsv:1703 — Hexadecimal from decimal; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:63. Local definitions replace the dfns namespace; no namespace feature implied
-hex ← {
-  ⍺←⊢
-  1≠≡,⍵:⍺∇¨⍵
-  0∊,⍵-1+⍵:"Too big"
-  n←⍬⍴⍺,2*⌈2⍟2⌈16⍟1+⌈/|⍵
-  ↓"0123456789abcdef"(n#16 ⊤ ⍵)
-}
-dec ← {
-  ⍺←0
-  1<⍴⍴⍵:⍺⍃∇⍤1 ⍵
-  0≡≢⍵:0
-  1≠≡,⍵:⍺∇¨⍵
-  ws←∊⍄(•ucs 9 10 13 32 133 160)
-  ws↑⍵:⍺ ∇ 1↓⍵
-  ws↑⌽⍵:⍺ ∇ ¯1↓⍵
-  ∨/ws ⍵:⍺∇¨(1+ws ⍵)⊆⍵
-  v←16|"0123456789abcdef0123456789ABCDEF"⍳⍵
-  16⊥v - ⍺ × 8≤↑v × 16*≢v
-}
-to ← {
-  [from step]←1 ¯1×-\2↑⍺,⍺+×⍵-⍺
-  from+step×⍳0⌈1+⌊(⍵-from)÷step+step=0
-}
-result←4 hex 1234 5678
-⍝ =>
-"04d2" "162e"
-
-⍝ aplcart/table.tsv:1704 — Matrix search/replace; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:164. Local definitions replace the dfns namespace; no namespace feature implied
-ss ← {
-  [srce find repl]←,¨⍵
-  mask←find⍷srce
-  prem←⍴find ↑ 1
-  cvex←prem,mask ⊂ find,srce
-  ⍴repl ↓ ∊{repl,(⍴find)↓⍵}¨cvex
-}
-ssmat ← {
-  [cmat find repl]←⍵
-  ⊃{ss[⍵ find repl]}¨↓cmat
-}
-result←ssmat [3 5⍴⍳15;7 8 9;70 80 90]
-⍝ =>
-[0 1 2 3 4 ⋄ 5 6 70 80 90 ⋄ 10 11 12 13 14]
-
-⍝ aplcart/table.tsv:1707 — Gauss-Jordan elimination; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:230. Local definitions replace the dfns namespace; no namespace feature implied
-gauss_jordan ← {
-  elim←{
-    p←⍺+{⍵⍳⌈/⍵}|⍺↓⍵.[∞ ⍺]
-    swap←⊖@[⍺ p] ⍵
-    mat←swap.[⍺ ⍺]÷⍨@⍺ swap
-    mat - mat.[∞ ⍺]×⍺≠⍳≢⍵ ×⊗ mat.(⍺)
-  }
-  ⍺←=/⊃⍳⍴⍵
-  ⍴⍺ ⍴ 0 1×⍴⍵ ↓ (⍵,⍺)elim/⌽⍳⌊/⍴⍵
-}
-hil ← {÷1+ +⊗⍨⍳⍵}
-to ← {
-  [from step]←1 ¯1×-\2↑⍺,⍺+×⍵-⍺
-  from+step×⍳0⌈1+⌊(⍵-from)÷step+step=0
-}
-result←gauss_jordan [2 1 0 ⋄ 1 2 1 ⋄ 0 1 2]
+⍝ aplcart/table.tsv:1707 — Gauss-Jordan elimination; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:230
+•load "lib/numeric.bpl"
+gauss_jordan [2 1 0 ⋄ 1 2 1 ⋄ 0 1 2]
 ⍝ =>
 [0.75 ¯0.4999999999999999 0.2499999999999999 ⋄ ¯0.4999999999999999 0.9999999999999999 ¯0.4999999999999999 ⋄ 0.25 ¯0.4999999999999999 0.7499999999999999]
 
-⍝ aplcart/table.tsv:1708 — Nested vector to lines; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:209. Local definitions replace the dfns namespace; no namespace feature implied
-ltov ← {
-  ⍺←•ucs 10 13 133
-  1↓¨⍺{
-    ⍵∊⍺ ⊂ ⍵
-  }¯1⌽⍵,(~ ¯1↑⍵ ∊ ⍺)#1↑⍺
-}
-vtol ← {
-  ⍺←•ucs 10
-  ,/⍵,¨⊂⍺
-}
-result←0 vtol [1 2 3;4 5 6;7 8 9]
+⍝ aplcart/table.tsv:1708 — Nested vector to lines; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:209
+•load "lib/string.bpl"
+0 vtol [1 2 3;4 5 6;7 8 9]
 ⍝ =>
 1 2 3 0 4 5 6 0 7 8 9 0
 
-⍝ aplcart/table.tsv:1709 — Justify line-vector to ⍺ columns; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:283. Local definitions replace the dfns namespace; no namespace feature implied
-justify ← {
-  segs←{¯1+⍵{(⍵,⍴⍺)-¯1,⍵}⍸⍵}
-  split←{(⍵|⍺ > ⍳⍵)+⌊⍺÷1⌈⍵}
-  [lf sp]←(•ucs 10 32)=⊂⍵
-  sizes←segs lf
-  ⍺←⌈/sizes
-  blanks←segs ~ lf∨sp # sp
-  required←blanks+⍺-sizes
-  breps←required split¨ blanks
-  last←1⌈¯1+⍴sizes
-  brep←∊(last↑breps),×last↓breps
-  (~sp)+sp#⁻¹∊brep # ⍵
-}
-subs ← {
-  [fs ts]←≢¨[fm to]←⍺
-  1≡≡⍺:to@(fm⍃=)⍵
-  0=⍴⍴⍵:↑(⍵≡fm)⌽[⍵ ⊂to]
-  lead←fs↑1
-  (fm⍷⍵){
-    ~1∊⍺:⍵
-    ts↓,/{to,fs↓⍵}¨(lead,⍺)⊂fm,⍵
-  }⍤1 ⍵
-}
-result←20 justify "short line",(•ucs 10),"and another"
+⍝ aplcart/table.tsv:1709 — Justify line-vector to ⍺ columns; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:283
+•load "lib/string.bpl"
+20 justify "short line",(•ucs 10),"and another"
 ⍝ =>
 •ucs 115 104 111 114 116 32 32 32 32 32 32 32 32 32 32 32 108 105 110 101 10 97 110 100 32 97 110 111 116 104 101 114
 
-⍝ aplcart/table.tsv:1710 — List ⍺-leaves of nested array; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:120. Local definitions replace the dfns namespace; no namespace feature implied
-enlist ← {
-  ⍺←0
-  ⍺≥¯1+≡⍵:,⍵
-  1↓,/(⊂⊂↑↑⍵),⍺∇¨,⍵
-}
-vecs←[["hello" "world";"bonjour" "monde"] ["good" "night";"bon" "soir"]]
-result←1 enlist vecs
-⍝ =>
-"hello" "world" "bonjour" "monde" "good" "night" "bon" "soir"
-
-⍝ aplcart/table.tsv:1711 — Minus scan; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:328. Local definitions replace the dfns namespace; no namespace feature implied
-mscan ← {
-  ⍺←⍬⍴⌽⍳⍴⍴⍵
-  +\⍠⍺ ⍵×⍠⍺ (⍺⊃⍴⍵)⍴1,-1
-}
-result←mscan ⍳10
-⍝ =>
-0 ¯1 1 ¯2 2 ¯3 3 ¯4 4 ¯5
-
-⍝ aplcart/table.tsv:1712 — Divide scan; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:329. Local definitions replace the dfns namespace; no namespace feature implied
-dscan ← {
-  ⍺←⍬⍴⌽⍳⍴⍴⍵
-  ×\⍠⍺ ⍵*⍠⍺ (⍺⊃⍴⍵)⍴1,-1
-}
-result←dscan 1+⍳10
+⍝ aplcart/table.tsv:1712 — Divide scan; Concrete APLcart library call; setup from april/libraries/dfns/array/demo.lisp:329
+•load "lib/array.bpl"
+dscan 1+⍳10
 ⍝ =>
 1 0.5 1.5 0.375 1.875 0.3125 2.1875 0.2734375 2.4609375 0.24609375
 
-⍝ aplcart/table.tsv:1713 — Lines to nested vector; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:204. Local definitions replace the dfns namespace; no namespace feature implied
-ltov ← {
-  ⍺←•ucs 10 13 133
-  1↓¨⍺{
-    ⍵∊⍺ ⊂ ⍵
-  }¯1⌽⍵,(~ ¯1↑⍵ ∊ ⍺)#1↑⍺
-}
-lvec←{"fooling around", ⍵, "with barrels", ⍵, "in alleys"} •ucs 10
-result←ltov lvec
+⍝ aplcart/table.tsv:1713 — Lines to nested vector; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:204
+•load "lib/string.bpl"
+•load "tests/reference/support/april.bpl"
+ltov lvec
 ⍝ =>
 "fooling around" "with barrels" "in alleys"
 
-⍝ aplcart/table.tsv:1715 — Quickest path from/to ⍵ in weighted graph ⍺; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:101. Local definitions replace the dfns namespace; no namespace feature implied
-wpath ← {
-  [graph costs]←↓⍺
-  [fm to]←⍵
-  tree←¯1⊣¨graph
-  cost←0@fm (⍴costs)⍴∞
-  I←⊃¨⍄⊂
-  fm{
-    [acc to]←⍵
-    to<0:(to=¯2)↓acc
-    ⍺ ∇ [to,acc to⊃⍺]
-  }{
-    [tree cost]←⍵
-    ⍺≡⍬:tree ⍶ [⍬ to]
-    adjv←⍺ I graph
-    accm←⍺ I cost+costs
-    best←adjv I¨ ⊂cost
-    mask←accm<best⌊to⊃cost
-    next←mask#¨adjv
-    back←,/⍺+0×next
-    cvec←,/mask#¨accm
-    decr←{(⍒cvec)I ⍵}
-    wave←decr,/next
-    new←[back cvec] decr⍨@wave¨ ⍵
-    (∪wave)∇ new
-  }[tree cost]
-}
+⍝ aplcart/table.tsv:1715 — Quickest path from/to ⍵ in weighted graph ⍺; Concrete APLcart library call; setup from april/libraries/dfns/graph/demo.lisp:101
+•load "lib/graph.bpl"
 md_1←,¨⊃[[1 2;3;3;⍬] [2 3;1;2;⍬]]
-result←md_1 wpath 0 3
+md_1 wpath 0 3
 ⍝ =>
 0 1 3
 
-⍝ aplcart/table.tsv:1718 — Drop All Blanks; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:320. Local definitions replace the dfns namespace; no namespace feature implied
-subs ← {
-  [fs ts]←≢¨[fm to]←⍺
-  1≡≡⍺:to@(fm=)⍵
-  0=⍴⍴⍵:↑(⍵≡fm)⌽[⍵ ⊂to]
-  lead←fs↑1
-  (fm⍷⍵){
-    ~1∊⍺:⍵
-    ts↓,/{to,fs↓⍵}¨(lead,⍺)⊂fm,⍵
-  }⍤1 ⍵
-}
-dab←{
-  ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵
-  1≥⍴⍴⍵:⍵~⍺
-  2=⍴⍴⍵:⊃(↓⍵)~¨⊂⍺
-  (¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵
-}
+⍝ aplcart/table.tsv:1718 — Drop All Blanks; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:320
+•load "lib/string.bpl"
 show←" ·"⍃subs
 cvec←"  twas  ever  thus  "
-result←dab cvec
+dab cvec
 ⍝ =>
 "twaseverthus"
 
-⍝ aplcart/table.tsv:1719 — Drop Multiple Blanks; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:318. Local definitions replace the dfns namespace; no namespace feature implied
-subs ← {
-  [fs ts]←≢¨[fm to]←⍺
-  1≡≡⍺:to@(fm=)⍵
-  0=⍴⍴⍵:↑(⍵≡fm)⌽[⍵ ⊂to]
-  lead←fs↑1
-  (fm⍷⍵){
-    ~1∊⍺:⍵
-    ts↓,/{to,fs↓⍵}¨(lead,⍺)⊂fm,⍵
-  }⍤1 ⍵
-}
-dmb ← {
-  ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵
-  2>⍴⍴⍵:(∨/2↕1,⍨~⍵∊⍺)#⍵
-  (∨/2↕1,⍨,∨⌿~⍵∊⍺)#⍠¯1 ⍵
-}
+⍝ aplcart/table.tsv:1719 — Drop Multiple Blanks; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:318
+•load "lib/string.bpl"
 show←" ·"⍃subs
 cvec←"  twas  ever  thus  "
-result←dmb cvec
+dmb cvec
 ⍝ =>
 " twas ever thus "
 
-⍝ aplcart/table.tsv:1720 — Drop Ending Blanks; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:317. Local definitions replace the dfns namespace; no namespace feature implied
-subs ← {
-  [fs ts]←≢¨[fm to]←⍺
-  1≡≡⍺:to@(fm=)⍵
-  0=⍴⍴⍵:↑(⍵≡fm)⌽[⍵ ⊂to]
-  lead←fs↑1
-  (fm⍷⍵){
-    ~1∊⍺:⍵
-    ts↓,/{to,fs↓⍵}¨(lead,⍺)⊂fm,⍵
-  }⍤1 ⍵
-}
-deb ← {
-  ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵
-  b←⍵∊⍺
-  1≥⍴⍴⍵:(∧\b ⍱ ⌽∧\⌽b)#⍵
-  b←∧⌿b ⋄ (∧\b ⍱ ⌽∧\⌽b)#⍠¯1 ⍵
-}
+⍝ aplcart/table.tsv:1720 — Drop Ending Blanks; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:317
+•load "lib/string.bpl"
 show←" ·"⍃subs
 cvec←"  twas  ever  thus  "
-result←deb cvec
+deb cvec
 ⍝ =>
 "twas  ever  thus"
 
-⍝ aplcart/table.tsv:1721 — Drop Leading Blanks; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:315. Local definitions replace the dfns namespace; no namespace feature implied
-subs ← {
-  [fs ts]←≢¨[fm to]←⍺
-  1≡≡⍺:to@(fm=)⍵
-  0=⍴⍴⍵:↑(⍵≡fm)⌽[⍵ ⊂to]
-  lead←fs↑1
-  (fm⍷⍵){
-    ~1∊⍺:⍵
-    ts↓,/{to,fs↓⍵}¨(lead,⍺)⊂fm,⍵
-  }⍤1 ⍵
-}
-dlb ← {
-  ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵
-  1≥⍴⍴⍵:(+/∧\⍵∊⍺)↓⍵
-  (∨\∨⌿~⍵∊⍺)#⍠¯1 ⍵
-}
+⍝ aplcart/table.tsv:1721 — Drop Leading Blanks; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:315
+•load "lib/string.bpl"
 show←" ·"⍃subs
 cvec←"  twas  ever  thus  "
-result←dlb cvec
+dlb cvec
 ⍝ =>
 "twas  ever  thus  "
 
-⍝ aplcart/table.tsv:1722 — Drop Trailing Blanks; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:316. Local definitions replace the dfns namespace; no namespace feature implied
-subs ← {
-  [fs ts]←≢¨[fm to]←⍺
-  1≡≡⍺:to@(fm=)⍵
-  0=⍴⍴⍵:↑(⍵≡fm)⌽[⍵ ⊂to]
-  lead←fs↑1
-  (fm⍷⍵){
-    ~1∊⍺:⍵
-    ts↓,/{to,fs↓⍵}¨(lead,⍺)⊂fm,⍵
-  }⍤1 ⍵
-}
-dtb ← {
-  ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵
-  1≥⍴⍴⍵:(-+/∧\⌽⍵∊⍺)↓⍵
-  (~⌽∧\⌽∧⌿⍵∊⍺)#⍠¯1 ⍵
-}
+⍝ aplcart/table.tsv:1722 — Drop Trailing Blanks; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:316
+•load "lib/string.bpl"
 show←" ·"⍃subs
 cvec←"  twas  ever  thus  "
-result←dtb cvec
+dtb cvec
 ⍝ =>
 "  twas  ever  thus"
 
-⍝ aplcart/table.tsv:1723 — Drop eXtraneous Blanks; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:319. Local definitions replace the dfns namespace; no namespace feature implied
-subs ← {
-  [fs ts]←≢¨[fm to]←⍺
-  1≡≡⍺:to@(fm=)⍵
-  0=⍴⍴⍵:↑(⍵≡fm)⌽[⍵ ⊂to]
-  lead←fs↑1
-  (fm⍷⍵){
-    ~1∊⍺:⍵
-    ts↓,/{to,fs↓⍵}¨(lead,⍺)⊂fm,⍵
-  }⍤1 ⍵
-}
-dxb ← {
-  ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵
-  b←⍵∊⍺
-  1≥⍴⍴⍵:1↑b ↓ b⍲1↓b,1 # ⍵
-  b←∧⌿b ⋄ 0,1↑b ↓ b⍲1↓b,1 #⍠¯1 ⍵
-}
+⍝ aplcart/table.tsv:1723 — Drop eXtraneous Blanks; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:319
+•load "lib/string.bpl"
 show←" ·"⍃subs
 cvec←"  twas  ever  thus  "
-result←dxb cvec
+dxb cvec
 ⍝ =>
 "twas ever thus"
 
-⍝ aplcart/table.tsv:1724 — Array from TreeView style tree; Concrete APLcart library call; self-contained setup from april/libraries/dfns/tree/demo.lisp:919. Local definitions replace the dfns namespace; no namespace feature implied
-disp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄ ⍺←⍬
-  [dec ctd]←2↑⍺
-  box←{
-    isor ⍵:format⊂⍵
-    1=≡,⍵:dec open format dec open ⍵
-    mat←matr 1# dec open ⍵
-    [r c]←×⍴mat
-    dec<0∊[r c]:c#⍠¯1 r# ∇ 1 open mat
-    subs←aligned ∇¨mat
-    (≢⍴⍵)gaps ⍵ plane subs
-  }
-  aligned←{
-    [rows cols]←sepr⍴¨⍵
-    sizes←(⌈/rows) ,⊗ ⌈⌿cols
-    ctd=0:sizes↑¨⍵
-    [v h]←sepr⌈0.5×⊃(⍴¨⍵)-sizes
-    v⊖¨h⌽¨sizes↑¨⍵
-  }
-  gaps←{
-    ⍺≤2:⍵
-    subs←⍺-1 ∇¨ ⍵
-    width←↑⌽⍴↑subs
-    fill←[⍺ width]-3 0 ⍴ ' '
-    ⊃{⍺⍪fill⍪⍵}/ 1 open subs
-  }
-  plane←{
-    2<⍴⍴⍺:⍺ join ⍵
-    odec←(dec shape ⍺)outer ⍵
-    idec←inner ⍺
-    (odec,idec)collect ⍵
-  }
-  join←{
-    sep←≢⍵ ÷ 1⌈≢⍺
-    split←(0=sep|⍳≢⍵)⊂⍠0 ⍵
-    (⊂⍤¯1 ⍺)plane¨split
-  }
-  outer←{
-    sizes←1 0{↑↓ ⍉⍣⍺ ⍵}¨sepr⍴¨⍵
-    sides←sizes#¨¨"│─"
-    bords←dec↓¨"├┬"glue¨sides
-    ,¨/[['┌' ""] ⍺ bords "└┐"]
-  }
-  inner←{
-    deco←{(type ⍵), 1 shape ⍵}
-    sepr deco¨matr dec open ⍵
-  }
-  collect←{
-    [lft top tt vv hh]←⍺
-    cells←vv right 1 open [tt hh] lower ⍵
-    boxes←(dec∨0∊⍴⍵)open cells
-    lft,top⍪⍪⌿,/boxes
-  }
-  right←{
-    types←2 ⊥¨ ⍳⍴⍵ = ⊂¯1+⍴⍵
-    chars←"┼┤┴┘" types
-    rgt←{⍵,(-≢⍵)↑[≢⍵ 1 1]#'│',⍺}
-    (matr 1 open ⍺),¨chars rgt¨ ⍵
-  }
-  lower←{
-    split←{(¯2+1⊃⍴⍵ # '─')glue ⍺}
-    bot←{⍵⍪(-1⊃⍴⍵)↑ ⍺ split ⍵}
-    (matr,¨/⍺)bot¨matr ⍵
-  }
-  type←{
-    dec<≡⍵:'─'
-    isor ⍵:'∇'
-    sst←{
-      0=dec×⍴⍴⍵:'─'
-      ↑⍵∊'¯',•d ⊃ "#~"
-    }∘⍕
-    0=≡⍵:sst ⍵
-    {(1=⍴⍵)⊃['+' ⍵]}∪,sst¨(dec open ⍵)
-  }
-  shape←{
-    dec≤0=⍴⍴⍵:⍺#¨"│─"
-    cols←×¯1↑⍴⍵ ⊃ "⊖→"
-    rsig←××/¯1↓⍴⍵ ⊃ "⌽↓"
-    rows←¯1+3⌊⍴⍴⍵ ⊃ ['│' rsig '⍒']
-    [rows cols]
-  }
-  matr←{⊃,↓⍵}
-  sepr←{+/¨1⊂⊃⍵}
-  open←{(⍺⌈⍴⍵)↑⍵}
-  isor←{1 ⍬≡[≡⍵ ⍴⍵]}
-  glue←{0=⍴⍵ : ⍵ ⋄ ⍺{⍺,⍶,⍵}/⍵}
-  isor ⍵:format⊂⍵
-  1=≡,⍵:format ⍵
-  box ⍵
-}
-tnest ← {
-  [dvec ivec]←⍵
-  1=≢dvec:↑ivec
-  node←1↑ivec
-  [dsub isub]←(1=dvec)⍃⊂¨⍵
-  node,∇¨↓⍉⊃[dsub-1 isub]
-}
-result←tnest [0 1 1;"hot" "tea" "coffee"]
+⍝ aplcart/table.tsv:1724 — Array from TreeView style tree; Concrete APLcart library call; setup from april/libraries/dfns/tree/demo.lisp:919
+•load "lib/tree.bpl"
+tnest [0 1 1;"hot" "tea" "coffee"]
 ⍝ =>
 "hot" "tea" "coffee"
 
-⍝ aplcart/table.tsv:1726 — TreeView style from nested array; Concrete APLcart library call; self-contained setup from april/libraries/dfns/tree/demo.lisp:963. Local definitions replace the dfns namespace; no namespace feature implied
-disp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄ ⍺←⍬
-  [dec ctd]←2↑⍺
-  box←{
-    isor ⍵:format⊂⍵
-    1=≡,⍵:dec open format dec open ⍵
-    mat←matr 1# dec open ⍵
-    [r c]←×⍴mat
-    dec<0∊[r c]:c#⍠¯1 r# ∇ 1 open mat
-    subs←aligned ∇¨mat
-    (≢⍴⍵)gaps ⍵ plane subs
-  }
-  aligned←{
-    [rows cols]←sepr⍴¨⍵
-    sizes←(⌈/rows) ,⊗ ⌈⌿cols
-    ctd=0:sizes↑¨⍵
-    [v h]←sepr⌈0.5×⊃(⍴¨⍵)-sizes
-    v⊖¨h⌽¨sizes↑¨⍵
-  }
-  gaps←{
-    ⍺≤2:⍵
-    subs←⍺-1 ∇¨ ⍵
-    width←↑⌽⍴↑subs
-    fill←[⍺ width]-3 0 ⍴ ' '
-    ⊃{⍺⍪fill⍪⍵}/ 1 open subs
-  }
-  plane←{
-    2<⍴⍴⍺:⍺ join ⍵
-    odec←(dec shape ⍺)outer ⍵
-    idec←inner ⍺
-    (odec,idec)collect ⍵
-  }
-  join←{
-    sep←≢⍵ ÷ 1⌈≢⍺
-    split←(0=sep|⍳≢⍵)⊂⍠0 ⍵
-    (⊂⍤¯1 ⍺)plane¨split
-  }
-  outer←{
-    sizes←1 0{↑↓ ⍉⍣⍺ ⍵}¨sepr⍴¨⍵
-    sides←sizes#¨¨"│─"
-    bords←dec↓¨"├┬"glue¨sides
-    ,¨/[['┌' ""] ⍺ bords "└┐"]
-  }
-  inner←{
-    deco←{(type ⍵), 1 shape ⍵}
-    sepr deco¨matr dec open ⍵
-  }
-  collect←{
-    [lft top tt vv hh]←⍺
-    cells←vv right 1 open [tt hh] lower ⍵
-    boxes←(dec∨0∊⍴⍵)open cells
-    lft,top⍪⍪⌿,/boxes
-  }
-  right←{
-    types←2 ⊥¨ ⍳⍴⍵ = ⊂¯1+⍴⍵
-    chars←"┼┤┴┘" types
-    rgt←{⍵,(-≢⍵)↑[≢⍵ 1 1]#'│',⍺}
-    (matr 1 open ⍺),¨chars rgt¨ ⍵
-  }
-  lower←{
-    split←{(¯2+1⊃⍴⍵ # '─')glue ⍺}
-    bot←{⍵⍪(-1⊃⍴⍵)↑ ⍺ split ⍵}
-    (matr,¨/⍺)bot¨matr ⍵
-  }
-  type←{
-    dec<≡⍵:'─'
-    isor ⍵:'∇'
-    sst←{
-      0=dec×⍴⍴⍵:'─'
-      ↑⍵∊'¯',•d ⊃ "#~"
-    }∘⍕
-    0=≡⍵:sst ⍵
-    {(1=⍴⍵)⊃['+' ⍵]}∪,sst¨(dec open ⍵)
-  }
-  shape←{
-    dec≤0=⍴⍴⍵:⍺#¨"│─"
-    cols←×¯1↑⍴⍵ ⊃ "⊖→"
-    rsig←××/¯1↓⍴⍵ ⊃ "⌽↓"
-    rows←¯1+3⌊⍴⍴⍵ ⊃ ['│' rsig '⍒']
-    [rows cols]
-  }
-  matr←{⊃,↓⍵}
-  sepr←{+/¨1⊂⊃⍵}
-  open←{(⍺⌈⍴⍵)↑⍵}
-  isor←{1 ⍬≡[≡⍵ ⍴⍵]}
-  glue←{0=⍴⍵ : ⍵ ⋄ ⍺{⍺,⍶,⍵}/⍵}
-  isor ⍵:format⊂⍵
-  1=≡,⍵:format ⍵
-  box ⍵
-}
-tview ← {
-  ⍺←0x
-  1=≡,⍵:⍺,⊂,⊂⍵
-  node←⍺,⊂1↑⍵
-  subs←⍺+1x ∇¨ 1↓⍵
-  ,⌿node⍪⊃subs
-}
-result←tview "hot" "tea" "coffee"
+⍝ aplcart/table.tsv:1726 — TreeView style from nested array; Concrete APLcart library call; setup from april/libraries/dfns/tree/demo.lisp:963
+•load "lib/tree.bpl"
+tview "hot" "tea" "coffee"
 ⍝ =>
 [[0 1 1]ₓ;"hot" "tea" "coffee"]
 
 ⍝ aplcart/table.tsv:1730 — Fast: X and Y as a two item vector (X Y)
 X←3 1 2 1 ⋄ Y←3 1 3 2 ⋄ X{[⍺ ⍵]}Y   ⍝ [3 1 2 1;3 1 3 2]
 
-⍝ aplcart/table.tsv:1733 — Strongly connected components of directed graph ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/graph/demo.lisp:64. Local definitions replace the dfns namespace; no namespace feature implied; First-true masks use cumulative counts under basedpl left scan
-scc ← {
-  TT←(3#⊂0⊣¨G←⍵),1 ⍬
-  [C L X x S]←⍳⍴TT
-  put←{(⍹⊃⍵)@(⊂[⍶ ⍺])⍵}
-  Lx←L put x
-  Xx←X put x
-  succ←{1+@x ⍵}
-  push←,@S
-  ⍺←$f ⋄ trace←{⍵⊣⎕←0 dsp ⍺,⍵}⍣⍺
-  comp←{ v←⍺
-    pops←1++/∧\v≠stk←S⊃⍵
-    C∆←(1+⌈/C⊃⍵)@(pops↑stk) C⊃⍵
-    [(pops↓stk) C∆]@[S C]⍵
-  }
-  conn←{ v←⍺
-    T_0←v trace ⍵
-    T_1←succ v push v Lx v Xx T_0
-    T_2←T_1 {w←⍺
-      min_L←{(w⊃⍺⊃⍵)⌊@(⊂[L v])⍵}
-      0=w⊃X⊃⍵:L min_L w conn ⍵
-      X min_L⍣(w∊S⊃⍵) ⍵
-    }/ ⌽v⊃G
-    root←v⊃L⊃T_2 = v⊃X⊃T_2
-    v comp⍣root T_2
-  }
-  loop←{
-    vert←{⍺ conn⍣(0=⍺⊃X⊃⍵) ⍵}
-    ⍵ vert/ ⌽⍳⍴G
-  }
-  (∪⍳⊢) C⊃loop TT
-}
-X ← {
-  ⍺←1∨.∨⍵
-  x←⍳⍴⍺
-  d←(x~⍺#x) =⊗ x
-  z←{
-    [r c]←⍴⍵
-    c=0:r⍴0
-    n←+⌿⍵
-    f←({⍵∧1=+\⍵}n=⌊/n)#⍠¯1 ⍵
-    ⍵ ∇{
-      ~1∊⍵:0
-      f←{⍵∧1=+\⍵}⍵
-      c←,f#⍺
-      r←∨/c#⍠¯1 ⍺
-      s←⍶(~c)#⍠¯1 (~r)#⍺
-      s≡0:⍺ ∇ f<⍵
-      f ∨ ~r #⁻¹ s
-    } ,f
-  }⍵⍪d
-  z≡0:0
-  -+/~⍺ ↓ z
-}
+⍝ aplcart/table.tsv:1733 — Strongly connected components of directed graph ⍵; Concrete APLcart library call; setup from april/libraries/dfns/graph/demo.lisp:64; First-true masks use cumulative counts under basedpl left scan
+•load "lib/graph.bpl"
 scg_1←,¨[1;2 4 5;3 6;2 7;0 5;6;5;3 6]
-result←scc scg_1
+scc scg_1
 ⍝ =>
 [0 0 1 1 0 2 2 1]ₓ
 
-⍝ aplcart/table.tsv:1734 — Huntington-Hill apportionment; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:23. Local definitions replace the dfns namespace; no namespace feature implied
-apportion ← {
-  ⍺←435
-  ⍵{
-    d←⍵×⍵+1 * 0.5
-    cs←⍺÷d
-    ⍵+cs=⌈/cs
-  }⍣(⍺-≢⍵),1
-}
-p_1790 ← 236841 55540 70835 68705 278514 475327 141822 179570 331589 353523 432879 68446 206236 85533 630560
-result←105 apportion p_1790
-⍝ =>
-7 2 2 2 8 14 4 5 10 10 12 2 6 3 18
-
-⍝ aplcart/table.tsv:1737 — Sum of (default decimal) digit columns with carry; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:30. Local definitions replace the dfns namespace; no namespace feature implied
-colsum ← {
-  ⍺←10 ⋄ ⍺{{(0=⍬⍴⍵)↓⍵}+⌿1 0⌽0,⍉[0 ⍺]⊤⍵}⍣≡+⌿⍵
-}
-result←colsum 10 10⍴⍳9
-⍝ =>
-4 0 1 2 3 4 5 6 7 7 6
-
-⍝ aplcart/table.tsv:1738 — Expand/compress HT chars; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:306. Local definitions replace the dfns namespace; no namespace feature implied
-xtabs ← {
-  ⍺←8
-  ⍺=0:⍵
-  chs←~⍵∊•ucs 10 13 133
-  ⍺>0:⍺{
-    [tabs nabs]←1 0=⊂⍵∊•ucs 9
-    sync←tabs≥chs
-    segs←¯1+{⍵-¯1,¯1↓⍵}⍸sync
-    pads←0 ⌈ ⍺ - ⍺ | sync#tabs # segs
-    nabs+tabs#⁻¹pads # nabs#⁻¹nabs#⍵
-  }⍵
-  ⍺<0:(-⍺){
-    [bks nks]←1 0=⊂⍵=' '
-    runs←{⍵{⍵-⌈\⍵×~⍺}+\⍵}
-    tabs←bks∧chs∧0=⍺|runs chs
-    onoff←{(⍺≠⍵){≠\⍺#⁻¹≠/2↕¯1,⍺#⍵}⍺-⍵}
-    pretab←⌽(⌽tabs)onoff⌽nks
-    pretab≤tabs # (•ucs 9)@{tabs}⍵
-  }⍵
-}
-subs ← {
-  [fs ts]←≢¨[fm to]←⍺
-  1≡≡⍺:to@(fm⍃=)⍵
-  0=⍴⍴⍵:↑(⍵≡fm)⌽[⍵ ⊂to]
-  lead←fs↑1
-  (fm⍷⍵){
-    ~1∊⍺:⍵
-    ts↓,/{to,fs↓⍵}¨(lead,⍺)⊂fm,⍵
-  }⍤1 ⍵
-}
+⍝ aplcart/table.tsv:1738 — Expand/compress HT chars; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:306
+•load "lib/string.bpl"
 tabText←"whistles        far     and wee"
-result←¯8 xtabs tabText
+¯8 xtabs tabText
 ⍝ =>
 •ucs 119 104 105 115 116 108 101 115 9 102 97 114 9 97 110 100 32 119 101 101
 
-⍝ aplcart/table.tsv:1741 — Reduced version of disp; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:102. Local definitions replace the dfns namespace; no namespace feature implied
-dsp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}
-  (1=≡,⍵)∨0∊⍴⍵:format ⍵
-  ⍺←1 ⋄ top←'─'⍪⍣⍺
-  1≥⍴⍴⍵:{
-    bars←{⍪(⌊/≢¨[⍺ ⍵])#'│'}/2↕⍵,0
-    join←{⊃,/(⌈/≢¨⍵)↑¨⍵}
-    0 ¯1↓join top¨join¨↓⍉⊃[⍵ bars]
-  } 1 ∇¨ ⍵
-  subs←⍺ ∇¨ ⍵
-  [rs cs]←+/¨1⊂⊃⍴¨subs
-  dims←(mrs←⌈/rs) ,⊗ mcs←⌈/⍪csᵀ
-  join←{⍺{⍺,⍶,⍵}/⍵}
-  rows←(mrs#¨'│')join¨↓dims↑¨subs
-  hzs←'┼'join mcs#¨'─'
-  cells←{⍺⍪hzs⍪⍵}/rows
-  gaps←⌽1+⍳¯2+⍴⍴⍵ #¨ ' '
-  cjoin←{⍪/(⊂⍺),⍶,⊂⍵}
-  top{(⍺ cjoin)⌿⍵}/gaps,⊂cells
-}
-result←dsp "hello" "world"
+⍝ aplcart/table.tsv:1741 — Reduced version of disp; Concrete APLcart library call; setup from april/libraries/dfns/array/demo.lisp:102
+•load "lib/array.bpl"
+dsp "hello" "world"
 ⍝ =>
 ["───────────" ⋄ "hello│world"]
 
-⍝ aplcart/table.tsv:1758 — Postage stamps for ⍵; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:164. Local definitions replace the dfns namespace; no namespace feature implied
-path ← {
-  graph←⍺ ⋄ [fm to]←,¨⍵
-  fm{
-    ⍺≡⍬:⍬
-    ∨/to∊⍺:⍬(⊃⍄⍵){
-      ⍵<0:⍺
-      (⍵,⍺)∇ ⍶ ⍵
-    }1↑⍺∩to
-    next←graph(,⍺) ∩¨ ⊂⍸⍵=¯2
-    back←,/⍺+0×next
-    wave←,/next
-    (∪wave)∇ back@wave ⍵
-  }¯2+(⍳⍴⍺)∊fm
-}
-stamps ← {
-  ⍺←1 5 6 10 26 39 43
-  graph←⍺{⍵⍃∩¨⍵+⊂⍺}⍳⍵+|⌊/⍺
-  spath←graph path [0 ⍵]
-  -/⌽2↕spath
-}
-result←stamps53
+⍝ aplcart/table.tsv:1758 — Postage stamps for ⍵; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:164
+•load "lib/numeric.bpl"
+stamps53
 ⍝ =>
 43 10
 
-⍝ aplcart/table.tsv:1759 — ⍺'th root; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:208. Local definitions replace the dfns namespace; no namespace feature implied
-cfract ← {
-  ,{
-    ⍵=1:⍺
-    n r←0 ⍵⊤⍺
-    n,⍵∇r
-  }/⌊1E¯14+⍵ 1÷1∨⍵
-}
-root ← { ⍺←2 ⋄ ⍵*÷⍺ }
-result←root5
+⍝ aplcart/table.tsv:1759 — ⍺'th root; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:208
+•load "lib/numeric.bpl"
+root5
 ⍝ =>
 2.23606797749979
 
-⍝ aplcart/table.tsv:1760 — Decimal from hexadecimal; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:95. Local definitions replace the dfns namespace; no namespace feature implied
-hex ← {
-  ⍺←⊢
-  1≠≡,⍵:⍺∇¨⍵
-  0∊⍵-1+⍵:"Too big"
-  n←⍬⍴⍺,2*⌈2⍟2⌈16⍟1+⌈/|⍵
-  ↓⍠0 "0123456789abcdef"((n#16)⊤⍵)
-}
-dec ← {
-  ⍺←0
-  1<⍴⍴⍵:⍺⍃∇⍤1 ⍵
-  0≡≢⍵:0
-  1≠≡,⍵:⍺∇¨⍵
-  ws←∊⍄(•ucs 9 10 13 32 133 160)
-  ws↑⍵:⍺ ∇ 1↓⍵
-  ws↑⌽⍵:⍺ ∇ ¯1↓⍵
-  ∨/ws ⍵:⍺∇¨(1+ws ⍵)⊆⍵
-  v←16|"0123456789abcdef0123456789ABCDEF"⍳⍵
-  16⊥v - ⍺ × 8≤↑v × 16*≢v
-}
-to ← {
-  [from step]←1 ¯1×-\2↑⍺,⍺+×⍵-⍺
-  from+step×⍳0⌈1+⌊(⍵-from)÷step+step=0
-}
-result←dec "DEAD" "beef"
+⍝ aplcart/table.tsv:1760 — Decimal from hexadecimal; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:95
+•load "lib/numeric.bpl"
+dec "DEAD" "beef"
 ⍝ =>
 57005 48879
 
-⍝ aplcart/table.tsv:1761 — Relationship between point and k-ball; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:251. Local definitions replace the dfns namespace; no namespace feature implied
-kball ← { ⍺←1
-  r←↑⍺ ⋄ p←1#⍵
-  c←≢p ↑ 1↓⍺
-  ×-/[⍉p-⍠0 c;r]+.*¨2
-}
-result←2 1 kball 1 3⍴2 3 4
-⍝ =>
-[¯1 0 1]ₓ
-
-⍝ aplcart/table.tsv:1763 — Justify text array; Concrete APLcart library call; self-contained setup from april/libraries/dfns/string/demo.lisp:72. Local definitions replace the dfns namespace; no namespace feature implied
-display ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄
-  box←{
-    [vrt hrz]←¯1+⍴⍵ ⍴¨ "│─"
-    top←"─⊖→".[¯1↑⍺],hrz
-    bot←↑⍺ , hrz
-    rgt←"┐│",vrt,'┘'
-    lax←"│⌽↓".[¯1↓1↓⍺],¨⊂vrt
-    lft←⍉'┌',(⊃lax),'└'
-    lft , top⍪⍵⍪bot , rgt
-  }
-  deco←{⍺←type open ⍵ ⋄ ⍺,axes ⍵}
-  axes←{(-2⌈⍴⍴⍵)↑1+×⍴⍵}
-  open←{(1⌈⍴⍵)⍴⍵}
-  trim←{(~1 1⍷∧⌿⍵=' ')#⍠¯1 ⍵}
-  char←{⍬≡⍴⍵:'─' ⋄ (↑⍵∊'¯',•d)⊃"#~"}∘⍕
-  type←{{(1=⍴⍵)⊃['+' ⍵]}∪,char¨⍵}
-  line←{(""≡0⍴⍵)⊃" -"}
-  {
-    0=≡⍵:' '⍪(open format ⍵)⍪line ⍵
-    1 ⍬≡[≡⍵ ⍴⍵]:'∇' 0 0 box format ⍵
-    1=≡⍵:(deco ⍵)box open format open ⍵
-    ('∊'deco ⍵)box trim format ∇¨open ⍵
-  }⍵
-}
-just ← {
-  ⍺←¯1
-  ⍺=¯1:(+/∧\' '=⍵)⌽⍵
-  ⍺=1:(-+/∧\' '=⌽⍵)⌽⍵
-  ⌈0.5×(+/∧\' '=⍵)-+/∧\' '=⌽⍵ ⌽ ⍵
-}
-result←0 just "  hello world  "
+⍝ aplcart/table.tsv:1763 — Justify text array; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:72
+•load "lib/string.bpl"
+0 just "  hello world  "
 ⍝ =>
 "  hello world  "
 
-⍝ aplcart/table.tsv:1767 — Polar from/to cartesian coordinates; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:303. Local definitions replace the dfns namespace; no namespace feature implied
-polar ← {
-  pol_car←{
-    radius←{√+⌿⍵²}
-    angle←{
-      [x y]←⊂⍤¯1 ⍵
-      [on off]←1 0=⊂0=x
-      atan←¯3○y÷x+on
-      qne←off×atan + on×π0.5×2-×y
-      nsw←πx<0
-      qse←π2 × x>0 ∧ y<0
-      nsw+qse+qne
-    }
-    (radius ⍵)lam angle ⍵
-  }
-  car_pol←{
-    [r o]←⊂⍤¯1 ⍵
-    (r×2○o)lam r×1○o
-  }
-  lam←{⊃[⍺ ⍵]}
-  ⍺←1
-  ⍺=+1:pol_car ⍵
-  ⍺=-1:car_pol ⍵
-}
-result←polar [3 0 ¯3 ⋄ 4 1 4]
+⍝ aplcart/table.tsv:1767 — Polar from/to cartesian coordinates; Concrete APLcart library call; setup from april/libraries/dfns/numeric/demo.lisp:303
+•load "lib/numeric.bpl"
+polar [3 0 ¯3 ⋄ 4 1 4]
 ⍝ =>
 [5 1 5 ⋄ 0.9272952180016122 1.570796326794897 2.214297435588181]
 
@@ -5532,31 +4185,10 @@ J←1 2 3 ⋄ {⍵+1-1}J   ⍝ 1 2 3
 ⍝ aplcart/table.tsv:1790 — Changing an index origin dependent result to be as ⎕IO=1; Pure glyph recipe; quoted quad is data or origin lookup is replaced with fixed one; Supply small operands and use fixed origin zero where the recipe reads index origin; Quoted quad remains character data
 J←1 2 3 ⋄ {⍵+~1}J   ⍝ 1 2 3
 
-⍝ aplcart/table.tsv:1792 — Exact cover: Knuth's Algorithm X; Concrete APLcart recipe; local definitions from april/libraries/dfns/graph/demo.lisp:83 replace the dfns namespace; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1; First-true masks use cumulative counts under basedpl left scan
-X ← {
-  ⍺←1∨.∨⍵
-  x←⍳⍴⍺
-  d←(x~⍺#x) =⊗ x
-  z←{
-    [r c]←⍴⍵
-    c=0:r⍴0
-    n←+⌿⍵
-    f←({⍵∧1=+\⍵}n=⌊/n)#⍠¯1 ⍵
-    ⍵ ∇{
-      ~1∊⍵:0
-      f←{⍵∧1=+\⍵}⍵
-      c←,f#⍺
-      r←∨/c#⍠¯1 ⍺
-      s←⍶(~c)#⍠¯1 (~r)#⍺
-      s≡0:⍺ ∇ f<⍵
-      f ∨ ~r #⁻¹ s
-    } ,f
-  }⍵⍪d
-  z≡0:0
-  -+/~⍺ ↓ z
-}
+⍝ aplcart/table.tsv:1792 — Exact cover: Knuth's Algorithm X; Concrete APLcart recipe; setup from april/libraries/dfns/graph/demo.lisp:83; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1; First-true masks use cumulative counts under basedpl left scan
+•load "lib/graph.bpl"
 M←[1 0 0 1 0 0 1 ⋄ 1 0 0 1 0 0 0 ⋄ 0 0 0 1 1 0 1 ⋄ 0 0 1 0 1 1 0 ⋄ 0 1 1 0 0 1 1 ⋄ 0 1 0 0 0 0 1]
-result←X M
+X M
 ⍝ =>
 0 1 0 1 0 1
 
@@ -5587,7 +4219,7 @@ $f $t $t $t
 $t $f $f $t
 
 ⍝ aplcart/table.tsv:1806 — Indexing two-element vector Xv with Boolean values B
-Xv←"no" "yes" ⋄ B←0 1 1 0 ⋄ Xv{⍺(⍵)}B
+Xv←"no" "yes" ⋄ B←0 1 1 0 ⋄ Xv{[⍵]⌷⍺}B
 "no" "yes" "yes" "no"
 
 ⍝ aplcart/table.tsv:1807 — Integer quotient and remainder (new leading length-2 axis) of all combinations of an element from N divided by an element from M
@@ -5622,120 +4254,15 @@ Is←2 ⋄ Js←5 ⋄ Is{+\⍣⍺ 1+⍳⍵}Js   ⍝ 1 4 10 20 35
 ⍝ aplcart/table.tsv:1822 — Locate fill elements formed by expanding Y by Iv
 Iv←1 0 1 0 1 ⋄ Y←10 20 30 ⋄ Iv{~⍺#⁻¹1⍨¨⍵}Y   ⍝ $f $t $f $t $f
 
-⍝ aplcart/table.tsv:1823 — Find with wildcards; Concrete APLcart recipe; local definitions from april/libraries/dfns/array/demo.lisp:201 replace the dfns namespace; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-match ← {
-  [p x]←{[⍵ '*']}⍣(1=≡,⍺),⍺
-  v←1↓¨{(x⍃≡¨⍵)⊂⍵}(⊂x),p
-  h←⊃v⍷¨⊂⍵
-  r←0,¯1↓,⊃⍴¨v
-  sl←{
-    a←¯1↓⍴⍵
-    x←⌈/⍺
-    p←⍵ , a,x ⍴ 0
-    s←⍉a⍴⍺
-    -(0×a),x ↓ s⌽p
-  }
-  m←⌽∨\⌽(r sl h)
-  ↑{
-    [[lh lm] [und rm]]←[⍺ ⍵]
-    [lh∧rm lm]
-  }/↓⍉⊃⊂⍤¯1¨[h m]
-}
-result←"a*b*d" match "aaaabbbccd"
+⍝ aplcart/table.tsv:1823 — Find with wildcards; Concrete APLcart recipe; setup from april/libraries/dfns/array/demo.lisp:201; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
+•load "lib/array.bpl"
+"a*b*d" match "aaaabbbccd"
 ⍝ =>
 1 1 1 1 0 0 0 0 0 0
 
-⍝ aplcart/table.tsv:1825 — Boxed sketch of nested array; Concrete APLcart recipe; local definitions from april/libraries/dfns/array/demo.lisp:24 replace the dfns namespace; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-disp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄ ⍺←⍬
-  [dec ctd]←2↑⍺
-  box←{
-    isor ⍵:format⊂⍵
-    1=≡,⍵:dec open format dec open ⍵
-    mat←matr 1# dec open ⍵
-    [r c]←×⍴mat
-    dec<0∊[r c]:c#⍠¯1 r# ∇ 1 open mat
-    subs←aligned ∇¨mat
-    (≢⍴⍵)gaps ⍵ plane subs
-  }
-  aligned←{
-    [rows cols]←sepr⍴¨⍵
-    sizes←(⌈/rows) ,⊗ ⌈⌿cols
-    ctd=0:sizes↑¨⍵
-    [v h]←sepr⌈0.5×⊃(⍴¨⍵)-sizes
-    v⊖¨h⌽¨sizes↑¨⍵
-  }
-  gaps←{
-    ⍺≤2:⍵
-    subs←⍺-1 ∇¨ ⍵
-    width←↑⌽⍴↑subs
-    fill←[⍺ width]-3 0 ⍴ ' '
-    ⊃{⍺⍪fill⍪⍵}/ 1 open subs
-  }
-  plane←{
-    2<⍴⍴⍺:⍺ join ⍵
-    odec←(dec shape ⍺)outer ⍵
-    idec←inner ⍺
-    (odec,idec)collect ⍵
-  }
-  join←{
-    sep←≢⍵ ÷ 1⌈≢⍺
-    split←(0=sep|⍳≢⍵)⊂⍠0 ⍵
-    (⊂⍤¯1 ⍺)plane¨split
-  }
-  outer←{
-    sizes←1 0{↑↓ ⍉⍣⍺ ⍵}¨sepr⍴¨⍵
-    sides←sizes#¨¨"│─"
-    bords←dec↓¨"├┬"glue¨sides
-    ,¨/[['┌' ""] ⍺ bords "└┐"]
-  }
-  inner←{
-    deco←{(type ⍵), 1 shape ⍵}
-    sepr deco¨matr dec open ⍵
-  }
-  collect←{
-    [lft top tt vv hh]←⍺
-    cells←vv right 1 open [tt hh] lower ⍵
-    boxes←(dec∨0∊⍴⍵)open cells
-    lft,top⍪⍪⌿,/boxes
-  }
-  right←{
-    types←2 ⊥¨ ⍳⍴⍵ = ⊂¯1+⍴⍵
-    chars←"┼┤┴┘" types
-    rgt←{⍵,(-≢⍵)↑[≢⍵ 1 1]#'│',⍺}
-    (matr 1 open ⍺),¨chars rgt¨ ⍵
-  }
-  lower←{
-    split←{(¯2+1⊃⍴⍵ # '─')glue ⍺}
-    bot←{⍵⍪(-1⊃⍴⍵)↑ ⍺ split ⍵}
-    (matr,¨/⍺)bot¨matr ⍵
-  }
-  type←{
-    dec<≡⍵:'─'
-    isor ⍵:'∇'
-    sst←{
-      0=dec×⍴⍴⍵:'─'
-      ↑⍵∊'¯',•d ⊃ "#~"
-    }∘⍕
-    0=≡⍵:sst ⍵
-    {(1=⍴⍵)⊃['+' ⍵]}∪,sst¨(dec open ⍵)
-  }
-  shape←{
-    dec≤0=⍴⍴⍵:⍺#¨"│─"
-    cols←×¯1↑⍴⍵ ⊃ "⊖→"
-    rsig←××/¯1↓⍴⍵ ⊃ "⌽↓"
-    rows←¯1+3⌊⍴⍴⍵ ⊃ ['│' rsig '⍒']
-    [rows cols]
-  }
-  matr←{⊃,↓⍵}
-  sepr←{+/¨1⊂⍠¯1 ⊃⍵}
-  open←{(⍺⌈⍴⍵)↑⍵}
-  isor←{1 ⍬≡[≡⍵ ⍴⍵]}
-  glue←{0=⍴⍵ : ⍵ ⋄ ⍺{⍺,⍶,⍵}/⍵}
-  isor ⍵:format⊂⍵
-  1=≡,⍵:format ⍵
-  box ⍵
-}
-result←disp [1 2;3 4 5]
+⍝ aplcart/table.tsv:1825 — Boxed sketch of nested array; Concrete APLcart recipe; setup from april/libraries/dfns/array/demo.lisp:24; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
+•load "lib/array.bpl"
+disp [1 2;3 4 5]
 ⍝ =>
 ["┌───┬─────┐" ⋄ "│1 2│3 4 5│" ⋄ "└───┴─────┘"]
 
@@ -5764,7 +4291,7 @@ Js←13 ⋄ {∊⍕¨2⊥⁻¹⍵}Js   ⍝ "1101"
 [0 0 0 0 0 1 0 ⋄ 0 0 0 0 0 0 1 ⋄ 1 0 0 0 0 0 0 ⋄ 0 0 0 0 0 0 0]
 
 ⍝ aplcart/table.tsv:1839 — Remove consecutive duplicates from an ordered vector
-Yv←1 1 2 2 2 3 ⋄ {⍵#⍨1, ≢/⍠1∘(2⍃↕) ⍵}Yv   ⍝ 1 2 3
+Yv←1 1 2 2 2 3 ⋄ {⍵#⍨1, ≢/⍠1∘ 2⍃↕ ⍵}Yv   ⍝ 1 2 3
 
 ⍝ aplcart/table.tsv:1840 — Is differences of differences of adjacents
 Is←2 ⋄ N←1 4 9 16 25 ⋄ {-/⌽2↕⍵}⍣Is N   ⍝ 2 2 2
@@ -5831,10 +4358,10 @@ Is←1 ⋄ N←[5 6 ⋄ 3 4 ⋄ 1 2] ⋄ Is{~0∊2>/⍠⍺ ⍵}N   ⍝ $t
 Is←5 ⋄ Y←[1 2 ⋄ 3 4] ⋄ Is{⍺↑⍵⍪⍺#¯1↑⍵}Y   ⍝ [1 2 ⋄ 3 4 ⋄ 3 4 ⋄ 3 4 ⋄ 3 4]
 
 ⍝ aplcart/table.tsv:1874 — Zero-padded character matrix from vector of integers; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-{•d(10⊥⁻¹⍵)}31 0 2718   ⍝ ["0031" ⋄ "0000" ⋄ "2718"]
+{[10⊥⁻¹⍵]⌷•d}31 0 2718   ⍝ ["0031" ⋄ "0000" ⋄ "2718"]
 
 ⍝ aplcart/table.tsv:1875 — Remove consecutive duplicate rows from ordered matrix Ym
-Ym←[1 2 ⋄ 1 2 ⋄ 3 4 ⋄ 3 4] ⋄ {⍵#⍨1,∨/ ≢/⍠1∘(2⍃↕) ⍵}Ym   ⍝ [1 2 ⋄ 3 4]
+Ym←[1 2 ⋄ 1 2 ⋄ 3 4 ⋄ 3 4] ⋄ {⍵#⍨1,∨/ ≢/⍠1∘ 2⍃↕ ⍵}Ym   ⍝ [1 2 ⋄ 3 4]
 
 ⍝ aplcart/table.tsv:1876 — Is-diagonal matrix of size Jv (n or m,n)
 ¯2 {⍺=-⍨/¨⍳2⍴⍵} 6 7
@@ -5866,7 +4393,7 @@ Iv←1 2 0 ⋄ Js←2 ⋄ Iv{⍺⊂⍃⌷⍣⍵⍳≢⍺}Js   ⍝ [2 0 1]ₓ
 1 0 1 0 {≠\⍵#⁻¹⍺≠¯1↓0,⍺} 1 0 0 1 0 1 0 1 0   ⍝ $t $t $t $f $f $t $t $f $f
 
 ⍝ aplcart/table.tsv:1886 — 1-rotate on each subvector of Bv indicated by Av (Fast ∊1⌽¨Av⊂Bv)
-1 0 0 0 1 0 0 {⍵(⍋⍺++\⍺)} "abcdEFG"   ⍝ "bcdaFGE"
+1 0 0 0 1 0 0 {[⍋⍺++\⍺]⌷⍵} "abcdEFG"   ⍝ "bcdaFGE"
 
 ⍝ aplcart/table.tsv:1887 — Cantor set iteration Js
 Js←2 ⋄ {1 0 1(, ∧⊗ )⍣⍵ 1}Js   ⍝ 1 0 1 0 0 0 1 0 1
@@ -5897,10 +4424,10 @@ X←[1 2 ⋄ 3 4 ⋄ 5 6] ⋄ Y←[9 2 ⋄ 3 4 ⋄ 5 6] ⋄ X +/(∧\∘⌽≡�
 X←[1 2 ⋄ 3 4 ⋄ 5 6] ⋄ Y←[1 2 ⋄ 3 4 ⋄ 7 8] ⋄ X +/(∧\∘⌽≢⍤¯1) Y   ⍝ 1ₓ
 
 ⍝ aplcart/table.tsv:1899 — FIFO stock Nv decremented by Ms
-Ms←5 ⋄ Nv←3 4 2 ⋄ Ms{-/∘⌽∘(2⍃↕) 0,0⌈⍺-⍨+\⍵}Nv   ⍝ 0 2 2
+Ms←5 ⋄ Nv←3 4 2 ⋄ Ms{-/∘⌽∘ 2⍃↕ 0,0⌈⍺-⍨+\⍵}Nv   ⍝ 0 2 2
 
 ⍝ aplcart/table.tsv:1900 — Matricise (like ⍪ but preserves trailing instead of leading shape)
-Y←2 3 4⍴⍳24 ⋄ {,⍠(¯1↓⍳≢⍴⍵) 1#⍵}Y
+Y←2 3 4⍴⍳24 ⋄ {,⍠ ¯1↓⍳≢⍴⍵ 1#⍵}Y
 6 4⍴⍳24
 
 ⍝ aplcart/table.tsv:1901 — Non-unique major cells
@@ -5916,7 +4443,7 @@ I←2 ⋄ N←1.234 ¯2.345 0.005 ⋄ I{p÷⍨⌊0.5+⍵×p←10*⍺}N   ⍝ 1.2
 Av←1 0 1 0 0 ⋄ Y←3 1 5 2 4 ⋄ Av{⍵⌷⍨⊂⍋⍺++\⍺}Y   ⍝ 1 3 2 4 5
 
 ⍝ aplcart/table.tsv:1905 — Sort rows of matrix Ym according to column(s) I
-I←1 ⋄ Ym←[1 30 ⋄ 2 10 ⋄ 3 20] ⋄ I{⍵ ⍋[∞ ⍺]⌷⍵}Ym   ⍝ [2 10 ⋄ 3 20 ⋄ 1 30]
+I←1 ⋄ Ym←[1 30 ⋄ 2 10 ⋄ 3 20] ⋄ I{[⍋[∞ ⍺]⌷⍵]⌷⍵}Ym   ⍝ [2 10 ⋄ 3 20 ⋄ 1 30]
 
 ⍝ aplcart/table.tsv:1906 — Deal: Is random items from ⍳Jv (without replacement); Reviewed deterministic random-operation invariant; independently checked in Dyalog and through the Rust reference worker; Assert shape, range, uniqueness, permutation preservation, rounding bounds or deterministic sorting; no sampled values or seed are compared
 Is←4 ⋄ Jv←2 3 ⋄ r←Is{↓⍵⊤⍺?×/⍵}Jv ⋄ Is=≢r ∧ r≡∪r ∧ ∧/r∊,⍳Jv   ⍝ $t
@@ -5925,7 +4452,7 @@ Is←4 ⋄ Jv←2 3 ⋄ r←Is{↓⍵⊤⍺?×/⍵}Jv ⋄ Is=≢r ∧ r≡∪r �
 Is←4 ⋄ Y←2 3⍴⍳6 ⋄ Is{⍺-⍃↑(99⍴1),⍴⍵}Y   ⍝ 1 1 2 3
 
 ⍝ aplcart/table.tsv:1910 — Remove leading and multiple blanks
-( {⍵#⍨ ∨/∘(2⍃↕) 0,' '≠⍵} "      If     only I    knew  how to   do   proper word   spacing    " ), '.'
+( {⍵#⍨ ∨/∘ 2⍃↕ 0,' '≠⍵} "      If     only I    knew  how to   do   proper word   spacing    " ), '.'
 "If only I knew how to do proper word spacing ."
 
 ⍝ aplcart/table.tsv:1911 — Intersection (∩) on major cells for any rank
@@ -5945,7 +4472,7 @@ Is←2 ⋄ {,⊃+⊗/⍵⍴⊂⍳10}Is
 Xv←", " ⋄ Yv←"ab" "" "cd" ⋄ Xv{⍪/1↓,⍺⊂⍃,⍪⍵}Yv   ⍝ "ab, , cd"
 
 ⍝ aplcart/table.tsv:1924 — Caesar's cipher for uppercase D (Is:encryption, -Is:decryption); Concrete APLcart Caesar cipher; rewritten for positions from 0 as 26|⍺+•a⍳⍵, which also wraps correctly after Z; HELLO shifted by 3 is KHOOR, independently checked in Dyalog 20.0.53963.0 with IO=1 CT=1E¯14 DIV=0 ML=1
-3{•a(26|⍺+•a⍳⍵)}"HELLO"   ⍝ "KHOOR"
+3{[26|⍺+•a⍳⍵]⌷•a}"HELLO"   ⍝ "KHOOR"
 
 ⍝ aplcart/table.tsv:1925 — Are circular lists Xv and Yv identical (excluding phase)
 Xv←1 2 3 ⋄ Yv←2 3 1 ⋄ Xv{⍺⊂⍃∊⌽⍄⍵¨⍳≢⍵}Yv   ⍝ $t
@@ -5958,33 +4485,33 @@ I←2 ⋄ Y←5 2⍴⍳10 ⋄ I{⍵⊂⍠0⍨⍵≢⍃⍴⍺↑1}Y
 [[0 1 ⋄ 2 3] [4 5 ⋄ 6 7] [8 9 ⋄]]
 
 ⍝ aplcart/table.tsv:1928 — ¯1-rotate on each subvector of Bv indicated by Av (Fast ∊¯1⌽¨Av⊂Bv)
-Av←1 0 1 0 0 ⋄ Bv←1 1 1 0 1 ⋄ Av{⍵(⍋⍺+\⍃-1⌽⍺)}Bv   ⍝ 1 1 1 1 0
+Av←1 0 1 0 0 ⋄ Bv←1 1 1 0 1 ⋄ Av{[⍋⍺+\⍃-1⌽⍺]⌷⍵}Bv   ⍝ 1 1 1 1 0
 
 ⍝ aplcart/table.tsv:1929 — Value of polynomial with coefficients Nv at point Ms
 Ms←2 ⋄ Nv←1 2 3 ⋄ Ms{⍵+.×⍨⍺*⍳≢⍵}Nv   ⍝ 17
 
 ⍝ aplcart/table.tsv:1931 — Remove multiple and trailing blanks
-{⍵#⍨ ∨/∘(2⍃↕) 0,⍨' '≠⍵} "      If     only I    knew  how to   do   proper word   spacing    "
+{⍵#⍨ ∨/∘ 2⍃↕ 0,⍨' '≠⍵} "      If     only I    knew  how to   do   proper word   spacing    "
 " If only I knew how to do proper word spacing"
 
 ⍝ aplcart/table.tsv:1932 — Justifying left
 D← ["  ab" ⋄ " c  "]  ⋄ {⍵⌽⍨+/∧\' '=⍵}D   ⍝ ["ab  " ⋄ "c   "]
 
 ⍝ aplcart/table.tsv:1933 — Sum (+/) of each subvector of N indicated by Av (fast +/¨Av⊂Nv)
-Av←1 0 1 0 0 ⋄ N←1 2 3 4 5 ⋄ Av{-/⍠1∘(⌽⍠1)∘(2⍃↕) 0⍪(1⌽⍺)#+⍀⍵}N
+Av←1 0 1 0 0 ⋄ N←1 2 3 4 5 ⋄ Av{-/⍠1∘(⌽⍠1)∘ 2⍃↕ 0⍪(1⌽⍺)#+⍀⍵}N
 3 12
 
 ⍝ aplcart/table.tsv:1934 — Any-true or any-positive (∨/×) of each subvector of non-negative N indicated by Av (fast ∨/¨Av⊂×Nv)
-Av←1 0 1 0 0 ⋄ N←1 2 3 4 5 ⋄ Av{</⍠1∘(2⍃↕) 0⍪(1⌽⍺)#+⍀⍵}N   ⍝ $t $t
+Av←1 0 1 0 0 ⋄ N←1 2 3 4 5 ⋄ Av{</⍠1∘ 2⍃↕ 0⍪(1⌽⍺)#+⍀⍵}N   ⍝ $t $t
 
 ⍝ aplcart/table.tsv:1935 — Reverse parity (=⌿) in each subvector of B as indicated by Av (fast =/¨Av⊂Bv)
-Av←1 0 1 0 0 ⋄ B←1 0 1 1 0 ⋄ Av{=/⍠1∘(2⍃↕) 1⍪(1⌽⍺)#=⍀⍵}B   ⍝ $f $f
+Av←1 0 1 0 0 ⋄ B←1 0 1 1 0 ⋄ Av{=/⍠1∘ 2⍃↕ 1⍪(1⌽⍺)#=⍀⍵}B   ⍝ $f $f
 
 ⍝ aplcart/table.tsv:1936 — Parity (≠⌿) in each subvector of B indicated by Av (fast ≠/¨Av⊂Bv)
-Av←1 0 1 0 0 ⋄ B←1 0 1 1 0 ⋄ Av{≠/⍠1∘(2⍃↕) 0⍪(1⌽⍺)#≠⍀⍵}B   ⍝ $t $f
+Av←1 0 1 0 0 ⋄ B←1 0 1 1 0 ⋄ Av{≠/⍠1∘ 2⍃↕ 0⍪(1⌽⍺)#≠⍀⍵}B   ⍝ $t $f
 
 ⍝ aplcart/table.tsv:1937 — Scale Nv so the maximum element is Ms
-5 {⍵×⍺÷⍵(↑⍒|⍵)} ¯2 ¯1   ⍝ 5 2.5
+5 {⍵×⍺÷[↑⍒|⍵]⌷⍵} ¯2 ¯1   ⍝ 5 2.5
 
 ⍝ aplcart/table.tsv:1938 — Remove leading blank columns
 Dm← ["  ab" ⋄ "  c "]  ⋄ {⍵#⍠¯1⍨∨\' '∨.≠⍵}Dm   ⍝ ["ab" ⋄ "c "]
@@ -5993,7 +4520,7 @@ Dm← ["  ab" ⋄ "  c "]  ⋄ {⍵#⍠¯1⍨∨\' '∨.≠⍵}Dm   ⍝ ["ab" �
 Dm← ["   " ⋄ "ab " ⋄ "c d"]  ⋄ {⍵#⍨∨\⍵∨.≠' '}Dm   ⍝ ["ab " ⋄ "c d"]
 
 ⍝ aplcart/table.tsv:1940 — Sorting words in list Dm according to word length
-Dm← ["abc" ⋄ "de " ⋄ "f  "]  ⋄ {⍵(⍋⍵+.≠' ')}Dm   ⍝ ["f  " ⋄ "de " ⋄ "abc"]
+Dm← ["abc" ⋄ "de " ⋄ "f  "]  ⋄ {[⍋⍵+.≠' ']⌷⍵}Dm   ⍝ ["f  " ⋄ "de " ⋄ "abc"]
 
 ⍝ aplcart/table.tsv:1941 — The Is smallest cells of Y in order of occurrence
 Is←2 ⋄ Y←3 1 5 2 4 ⋄ Is{⍵#⍨(⍋⍋⍵)∊⍳⍺}Y   ⍝ 1 2
@@ -6002,11 +4529,11 @@ Is←2 ⋄ Y←3 1 5 2 4 ⋄ Is{⍵#⍨(⍋⍋⍵)∊⍳⍺}Y   ⍝ 1 2
 Is←2 ⋄ Y←3 1 5 2 4 ⋄ Is{⍵#⍨(⍋⍒⍵)∊⍳⍺}Y   ⍝ 5 4
 
 ⍝ aplcart/table.tsv:1943 — Locations of texts between and including quotes
-Dv←"a+'hello'+b" ⋄ {∨/∘(2⍃↕) 0,≠\⍵='''}Dv
+Dv←"a+'hello'+b" ⋄ {∨/∘ 2⍃↕ 0,≠\⍵='''}Dv
 0 0 1 1 1 1 1 1 1 0 0
 
 ⍝ aplcart/table.tsv:1944 — Locations of texts between and excluding quotes
-Dv←"a+'hello'+b" ⋄ {∧/∘(2⍃↕) 0,≠\⍵='''}Dv
+Dv←"a+'hello'+b" ⋄ {∧/∘ 2⍃↕ 0,≠\⍵='''}Dv
 0 0 0 1 1 1 1 1 0 0 0
 
 ⍝ aplcart/table.tsv:1947 — Extending Y with last cell of Y to length Is
@@ -6025,10 +4552,10 @@ Iv←2 1 3 ⋄ Y←⍳6 ⋄ Iv{⍺-⍃↑¨↑⍄⍵¨+\⍺}Y   ⍝ [0 1;[2];3 4
 Av←1 0 1 0 0 ⋄ Y←3 1 5 2 4 ⋄ Av{⍵⌷⍨⊂⌈\⍺×⍳≢⍺}Y   ⍝ 3 3 5 5 5
 
 ⍝ aplcart/table.tsv:1956 — Work done for demand N with capacity M
-Mv←3 3 3 3 ⋄ Nv←1 5 2 6 ⋄ Mv{⍺+ -/⍠1∘(2⍃↕) ⌈⍀0⍪+⍀⍺-⍵}Nv   ⍝ 1 3 3 3
+Mv←3 3 3 3 ⋄ Nv←1 5 2 6 ⋄ Mv{⍺+ -/⍠1∘ 2⍃↕ ⌈⍀0⍪+⍀⍺-⍵}Nv   ⍝ 1 3 3 3
 
 ⍝ aplcart/table.tsv:1957 — Convert to hexadecimal; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-{(•d,•a)(16⊥⁻¹⍵)}65535   ⍝ "FFFF"
+{[16⊥⁻¹⍵]⌷•d,•a}65535   ⍝ "FFFF"
 
 ⍝ aplcart/table.tsv:1958 — Maxima of elements of subsets of Nv specified by A (one mask per column)
 A←[1 0 ⋄ 0 1 ⋄ 1 1] ⋄ Nv←2 7 4 ⋄ A{m+⍺⌈.×⍨⍵-m←⌊/⍵}Nv   ⍝ 4 7
@@ -6049,10 +4576,10 @@ X←[1 2 ⋄ 3 4] ⋄ Y←[3 4 ⋄ 5 6] ⋄ X{⍺⍪⍵#⍨⍺≢⍃=⍺⍳⍵}Y
 Is←1 ⋄ N←2 3⍴⍳6 ⋄ Is{+/⍠⍺÷(⍺⊃⍴) ⍵}N   ⍝ 1 4
 
 ⍝ aplcart/table.tsv:1965 — Replacing elements of Y in set X with prototypical elements
-X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X{(↑0⍴⊂)@(∊⍄⍺)⍵}Y   ⍝ 1 0 3 0 5
+X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X{(↑0⍴⊂)@ ∊⍄⍺ ⍵}Y   ⍝ 1 0 3 0 5
 
 ⍝ aplcart/table.tsv:1966 — Ordinal numbers of words in Dv that indices I point to
-I←0 2 4 6 ⋄ Dv←"ab cd ef" ⋄ I{(+\' '=⍵)(⍺)}Dv   ⍝ [0 1 1 2]ₓ
+I←0 2 4 6 ⋄ Dv←"ab cd ef" ⋄ I{[⍺]⌷+\' '=⍵}Dv   ⍝ [0 1 1 2]ₓ
 
 ⍝ aplcart/table.tsv:1967 — Changing connectivity matrix Jm to a connectivity list
 Jm←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ {⍵,⍃#s⊤⍳×/s←⍴⍵}Jm   ⍝ [0 1 ⋄ 1 2 ⋄ 2 0]ₓ
@@ -6061,28 +4588,28 @@ Jm←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ {⍵,⍃#s⊤⍳×/s←⍴⍵}Jm   ⍝ [0 1
 Ns←2 ⋄ Nv←1 1 1 1 ⋄ Ns{+/⍵××\1,⍺÷1+⍳¯1+≢⍵}Nv   ⍝ 6.333333333333333
 
 ⍝ aplcart/table.tsv:1969 — Not leading zeroes (∨\) in each subvector of Bv indicated by Av (fast ∊∨\¨Av⊂Nv)
-Av←1 0 1 0 0 ⋄ Bv←1 1 1 0 1 ⋄ Av{≠⍀b#⁻¹ ≠/⍠1∘(2⍃↕) 0⍪⍵#⍨b←⍺∨⍵}Bv
+Av←1 0 1 0 0 ⋄ Bv←1 1 1 0 1 ⋄ Av{≠⍀b#⁻¹ ≠/⍠1∘ 2⍃↕ 0⍪⍵#⍨b←⍺∨⍵}Bv
 $t $t $t $t $t
 
 ⍝ aplcart/table.tsv:1970 — Date (⎕TS format) to hh:mm:ss
 Jv←2026 9 18 12 34 56 0 ⋄ {1↓∊':'@0∘⍕¨100+3↑3↓⍵}Jv   ⍝ "12:34:56"
 
 ⍝ aplcart/table.tsv:1971 — Sum elements of Nv marked by successive identicals in Mv
-Mv←1 1 2 2 2 ⋄ Nv←1 2 3 4 5 ⋄ Mv{-/⍠1∘(⌽⍠1)∘(2⍃↕) 0⍪(≠/∘(2⍃↕) ⍺⍪0)#+⍀⍵}Nv
+Mv←1 1 2 2 2 ⋄ Nv←1 2 3 4 5 ⋄ Mv{-/⍠1∘(⌽⍠1)∘ 2⍃↕ 0⍪(≠/∘(2⍃↕) ⍺⍪0)#+⍀⍵}Nv
 3 12
 
 ⍝ aplcart/table.tsv:1972 — Sums over (+/) subvectors of N, lengths in Iv
-Iv←2 3 ⋄ N←1 2 3 4 5 ⋄ Iv{-/⍠1∘(⌽⍠1)∘(2⍃↕) 0⍪(+⍀⍵)(¯1++\⍺)}N   ⍝ 3 12
+Iv←2 3 ⋄ N←1 2 3 4 5 ⋄ Iv{-/⍠1∘(⌽⍠1)∘ 2⍃↕ 0⍪[¯1++\⍺]⌷+⍀⍵}N   ⍝ 3 12
 
 ⍝ aplcart/table.tsv:1973 — Remove trailing blank columns
 [(2 10⍴" 2    a       a a    "),"||";({⍵#⍠¯1⍨⌽∨\⌽' '∨.≠⍵} 2 10⍴" 2    a       a a    "),"||"]
 [[" 2    a   |" ⋄ "    a a   |"];[" 2    a|" ⋄ "    a a|"]]
 
 ⍝ aplcart/table.tsv:1974 — Grade up (⍋) for sorting each subarray of Y indicated by Av
-Av←1 0 1 0 0 ⋄ Y←3 1 5 2 4 ⋄ Av{g←⍋⍵ ⋄ g ⍋(+\⍺)(g)}Y   ⍝ [1 0 3 4 2]ₓ
+Av←1 0 1 0 0 ⋄ Y←3 1 5 2 4 ⋄ Av{g←⍋⍵ ⋄ [⍋[g]⌷+\⍺]⌷g}Y   ⍝ [1 0 3 4 2]ₓ
 
 ⍝ aplcart/table.tsv:1975 — Grade down (⍒) for sorting each subarray of Y indicated by Av
-Av←1 0 1 0 0 ⋄ Y←3 1 5 2 4 ⋄ Av{g←⍒⍵ ⋄ g ⍋(+\⍺)(g)}Y   ⍝ [0 1 2 4 3]ₓ
+Av←1 0 1 0 0 ⋄ Y←3 1 5 2 4 ⋄ Av{g←⍒⍵ ⋄ [⍋[g]⌷+\⍺]⌷g}Y   ⍝ [0 1 2 4 3]ₓ
 
 ⍝ aplcart/table.tsv:1976 — Largest sum of any contiguous subvector
 Nv←¯2 3 ¯1 4 ¯5 ⋄ {s←0 ⋄ ⌈/{s⊢←0⌈s+⍵}¨⍵}Nv   ⍝ 6
@@ -6102,7 +4629,7 @@ X←1 2 3 2 ⋄ Y←2 4 ⋄ X{(l-2+⍺⊖⍃⍳⍵)|⍨l←1+≢⍺}Y   ⍝ 3 4
 X←2 3 4⍴0 ⋄ Y←1 2 ⋄ X{(-≢⍴⍺)↑(99⍴1),⍴⍵}Y   ⍝ 1 1 2
 
 ⍝ aplcart/table.tsv:1981 — Replacing elements of Y not in set X with prototypical elements
-X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X{(↑0⍴⊂)@(~∊⍄⍺)⍵}Y   ⍝ 0 2 0 4 0
+X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X{(↑0⍴⊂)@ ~∊⍄⍺ ⍵}Y   ⍝ 0 2 0 4 0
 
 ⍝ aplcart/table.tsv:1982 — Without (~) on major cells for any rank
 X←[1 2 ⋄ 3 4 ⋄ 5 6] ⋄ Y←[3 4 ⋄ 9 0] ⋄ X{⍺#⍨~(⍳≢⍺)∊⍺⍳⍵}Y   ⍝ [1 2 ⋄ 5 6]
@@ -6119,7 +4646,7 @@ Ms←1.05 ⋄ Nv←100 200 300 ⋄ Ms{r×+\⍵÷r←×\1@0⍴⍄⍺≢⍵}Nv
 100 305 620.25
 
 ⍝ aplcart/table.tsv:1988 — Trim groups of ones in B to begin only where first pointed to by a 1 in A
-A←0 1 0 0 1 ⋄ B←1 1 0 1 1 ⋄ A{⍵∧s=⌈⍀⍺×s←+⍀ </∘(2⍃↕) 0⍪⍵}B
+A←0 1 0 0 1 ⋄ B←1 1 0 1 1 ⋄ A{⍵∧s=⌈⍀⍺×s←+⍀ </∘ 2⍃↕ 0⍪⍵}B
 0 1 0 0 1
 
 ⍝ aplcart/table.tsv:1989 — Count of occurrences of the cells of Y
@@ -6166,7 +4693,7 @@ Av←1 0 1 0 0 ⋄ Bv←1 1 1 0 1 ⋄ Av{~≠\z#⁻¹(≠/∘(2⍃↕))0,~⍵#�
 $t $t $t $f $f
 
 ⍝ aplcart/table.tsv:2007 — Mesh major cells of elements of Yv
-[{(⊃⍪/⍵)(⍋∊⍳∘≢¨⍵)} ["abc" •d "ABCDEF"];{(⊃⍪/⍵)(⍋∊⍳∘≢¨⍵)} [["aa" ⋄ "bb" ⋄ "cc" ⋄ "dd"];["AA" ⋄ "BB"]]]
+[{[⍋∊⍳∘≢¨⍵]⌷⊃⍪/⍵} ["abc" •d "ABCDEF"];{[⍋∊⍳∘≢¨⍵]⌷⊃⍪/⍵} [["aa" ⋄ "bb" ⋄ "cc" ⋄ "dd"];["AA" ⋄ "BB"]]]
 ["a0Ab1Bc2C3D4E5F6789";["aa" ⋄ "AA" ⋄ "bb" ⋄ "BB" ⋄ "cc" ⋄ "dd"]]
 
 ⍝ aplcart/table.tsv:2008 — Determinant of three-row matrix
@@ -6193,7 +4720,7 @@ Mv←1 2 3 ⋄ Nv←4 5 6 ⋄ Mv{⍵+.×⍨(1+⍳≢⍺)⌽⍤0 1+⌽⍺}Nv   �
 Nv←1 2 3 ⋄ {⍵+.×⍨(1+⍳≢⍵)⌽⍤0 1+⌽⍵}Nv   ⍝ 13 13 10
 
 ⍝ aplcart/table.tsv:2016 — Surround any-rank array Y with scalar Xs
-Xs←9 ⋄ Y←2 3⍴⍳6 ⋄ Xs{⍵@(1+⍳⍴⍵) ⍺⍴⍨2+⍴⍵}Y
+Xs←9 ⋄ Y←2 3⍴⍳6 ⋄ Xs{⍵@ 1+⍳⍴⍵ ⍺⍴⍨2+⍴⍵}Y
 [9 9 9 9 9 ⋄ 9 0 1 2 9 ⋄ 9 3 4 5 9 ⋄ 9 9 9 9 9]
 
 ⍝ aplcart/table.tsv:2017 — Fast: A nested vector comprising simple character vectors constructed from the rows of Dm (which must be of depth 1) with trailing spaces removed
@@ -6201,7 +4728,7 @@ Dm← ["ab " ⋄ "c  " ⋄ "def"]  ⋄ {(+/∨\' '≠⌽⍵)↑¨↓⍵}Dm
 "ab" "c" "def"
 
 ⍝ aplcart/table.tsv:2018 — Sorting rows of Ym according to key Xv (alphabetising)
-Xv← "cba"  ⋄ Ym← ["ab" ⋄ "ac" ⋄ "ba"]  ⋄ Xv{⍵ ⍋(1+≢⍺)⊥⍺⍳⍵}Ym
+Xv← "cba"  ⋄ Ym← ["ab" ⋄ "ac" ⋄ "ba"]  ⋄ Xv{[⍋(1+≢⍺)⊥⍺⍳⍵]⌷⍵}Ym
 ["ba" ⋄ "ac" ⋄ "ab"]
 
 ⍝ aplcart/table.tsv:2019 — Vector of character vectors constructed from the character vector Dv where the first character is the delimiter
@@ -6229,11 +4756,11 @@ Dm← ["ab    " ⋄ "cde   "]  ⋄ {⍵⌽⍨-⌊2÷⍨+/∧\' '=⌽⍵}Dm
 ["  ab  " ⋄ " cde  "]
 
 ⍝ aplcart/table.tsv:2026 — Cumulative sum (+⍀) in each subvector of N indicated by Av (fast ∊+\¨Av⊂Nv)
-Av←1 0 1 0 0 ⋄ N←1 2 3 4 5 ⋄ Av{+⍀⍵-⍺#⁻¹ -/∘⌽∘(2⍃↕) 0⍪⍺#+⍀¯1↓0⍪⍵}N
+Av←1 0 1 0 0 ⋄ N←1 2 3 4 5 ⋄ Av{+⍀⍵-⍺#⁻¹ -/∘⌽∘ 2⍃↕ 0⍪⍺#+⍀¯1↓0⍪⍵}N
 1 3 3 7 12
 
 ⍝ aplcart/table.tsv:2027 — Running parity (≠⍀) in each subvector of B indicated by Av (fast ∊≠\¨Av⊂Bv)
-Av←1 0 1 0 0 ⋄ B←1 0 1 1 0 ⋄ Av{≠⍀⍵≠⍺#⁻¹ ≠/∘(2⍃↕) 0⍪⍺#≠⍀¯1↓0⍪⍵}B
+Av←1 0 1 0 0 ⋄ B←1 0 1 1 0 ⋄ Av{≠⍀⍵≠⍺#⁻¹ ≠/∘ 2⍃↕ 0⍪⍺#≠⍀¯1↓0⍪⍵}B
 $t $t $t $f $f
 
 ⍝ aplcart/table.tsv:2028 — Vectors as column matrices in catenation beneath each other
@@ -6259,7 +4786,7 @@ Av←1 0 1 0 0 ⋄ Y←3 1 5 2 4 ⋄ Av{⍵⌷⍨⊂z⍳⌈\z←⍋⍋⍺+\⍃,�
 Av←1 0 1 0 0 ⋄ Y←3 1 5 2 4 ⋄ Av{⍵⌷⍨⊂z⍳⌊\z←⍋⍋⍺+\⍃,⍪⍵}Y   ⍝ 3 1 1 1 1
 
 ⍝ aplcart/table.tsv:2036 — Cumulative reverse parity (=⍀) in each subvector B as indicated by Av (fast ∊=\¨Av⊂Bv)
-Av←1 0 1 0 0 ⋄ B←1 0 1 1 0 ⋄ Av{=⍀⍵≠⍺#⁻¹ ≠/∘(2⍃↕) 0⍪~⍺#=⍀¯1↓1⍪⍵}B
+Av←1 0 1 0 0 ⋄ B←1 0 1 1 0 ⋄ Av{=⍀⍵≠⍺#⁻¹ ≠/∘ 2⍃↕ 0⍪~⍺#=⍀¯1↓1⍪⍵}B
 $t $f $t $t $f
 
 ⍝ aplcart/table.tsv:2037 — Rounding N to I significant digits (Fast ⍎(-Is)⍕N)
@@ -6281,11 +4808,11 @@ Iv←1 2 ⋄ N←0 4 10 ⋄ Iv{+⍀(1↑⍵),i#(-/∘⌽∘(2⍃↕) ⍵)÷i←1
 0 2 4 6 8 10
 
 ⍝ aplcart/table.tsv:2042 — Sierpiński triangle of size Js; Pure glyph recipe; quoted quad is data or origin lookup is replaced with fixed one; Supply small operands and use fixed origin zero where the recipe reads index origin; Quoted quad remains character data; Generate each row from the scan accumulator
-Js←3 ⋄ {" ⎕"(⊃≠\∘⊣\↓1⍴⍨2⍴2*⍵)}Js
+Js←3 ⋄ {[⊃≠\∘⊣\↓1⍴⍨2⍴2*⍵]⌷" ⎕"}Js
 ["⎕⎕⎕⎕⎕⎕⎕⎕" ⋄ "⎕ ⎕ ⎕ ⎕ " ⋄ "⎕⎕  ⎕⎕  " ⋄ "⎕   ⎕   " ⋄ "⎕⎕⎕⎕    " ⋄ "⎕ ⎕     " ⋄ "⎕⎕      " ⋄ "⎕       "]
 
 ⍝ aplcart/table.tsv:2043 — Inverse of monadic ⍸ with optional result shape as left argument
-Yv←1 3 3 4 ⋄ {⍺←0⌈1+⊃⌈/⍵ ⋄ r←⍺⍴0 ⋄ r(⍵)+←1 ⋄ r}Yv   ⍝ 0 1 0 2 1
+Yv←1 3 3 4 ⋄ {⍺←0⌈1+⊃⌈/⍵ ⋄ r←⍺⍴0 ⋄ r.[⍵]+←1 ⋄ r}Yv   ⍝ 0 1 0 2 1
 
 ⍝ aplcart/table.tsv:2044 — Reversal (⊖) of subvectors of Y having lengths Iv
 Iv←2 3 ⋄ Y←1 2 3 4 5 ⋄ Iv{⍵⌷⍨⊂⌽⍒+\(⍳≢⍵)∊+\0,⍺}Y   ⍝ 2 1 5 4 3
@@ -6295,7 +4822,7 @@ Is←3 ⋄ N←1 1.2 1.23 1.234 ⋄ Is{0+.≠(10*⌽⍳1+⍺)|⊗⌊⍵×10*⍺}
 [0 1 2 3]ₓ
 
 ⍝ aplcart/table.tsv:2046 — Conversion of characters to hexadecimal byte representation
-Dv←"Hello, world! 123"  ⋄ {,(3↑⍤1)(•d,•a)(16 16⊤¯1+"UTF-8"•ucs ⍵)}Dv
+Dv←"Hello, world! 123"  ⋄ {,(3↑⍤1)[(16 16⊤¯1+"UTF-8"•ucs ⍵)]⌷•d,•a}Dv
 "47 64 6B 6B 6E 2B 1F 76 6E 71 6B 63 20 1F 30 31 32 "
 
 ⍝ aplcart/table.tsv:2047 — Increasing rank of Y to rank of X
@@ -6313,7 +4840,7 @@ Av←1 0 1 0 0 ⋄ Bv←1 1 1 0 1 ⋄ Av{(⍺#y)∧z#1⌽z←⍺#⍨⍺≥y←�
 $t $f $t $t $t $t $f
 
 ⍝ aplcart/table.tsv:2051 — Not first zero (≤\) in each subvector of B indicated by Av (fast ∊≤\¨Av⊂Bv)
-Av←1 0 1 0 0 ⋄ B←1 0 1 1 0 ⋄ Av{(b∧⍺)⍱c#⁻¹ </∘(2⍃↕) 0⍪(c←b∨⍺)#b←~⍵}B
+Av←1 0 1 0 0 ⋄ B←1 0 1 1 0 ⋄ Av{(b∧⍺)⍱c#⁻¹ </∘ 2⍃↕ 0⍪(c←b∨⍺)#b←~⍵}B
 $t $f $t $t $f
 
 ⍝ aplcart/table.tsv:2054 — Discrete Fourier Transformation
@@ -6326,26 +4853,26 @@ X←1 2 1 ⋄ Y←1 1 1 2 ⋄ X{⍺(R⍨⍳R←≢∘⊢⍴⍄⍋⍄⍋⍺⍨⍳
 X←1 2 1 ⋄ Y←1 1 1 2 ⋄ X{⍺(R⍨∊R←≢∘⊢⍴⍄⍋⍄⍋⍺⍨⍳⍪⍨)⍵}Y   ⍝ $t $t $t
 
 ⍝ aplcart/table.tsv:2057 — Minimum (⌊/) in each subvector of Y indicated by Av (fast ⌊/¨Av⊂Yv)
-Av←1 0 1 0 0 ⋄ Y←3 1 5 2 4 ⋄ Av{g←⍋⍵ ⋄ ⍵ g(⍺#⍋(+\⍺)g)}Y   ⍝ 1 2
+Av←1 0 1 0 0 ⋄ Y←3 1 5 2 4 ⋄ Av{g←⍋⍵ ⋄ [[⍺#⍋[g]⌷+\⍺]⌷g]⌷⍵}Y   ⍝ 1 2
 
 ⍝ aplcart/table.tsv:2058 — Maximum (⌈/) in each subvector of Y indicated by Av (fast ⌈/¨Av⊂Yv)
-Av←1 0 1 0 0 ⋄ Y←3 1 5 2 4 ⋄ Av{g←⍒⍵ ⋄ ⍵ g(⍺#⍋(+\⍺)g)}Y   ⍝ 3 5
+Av←1 0 1 0 0 ⋄ Y←3 1 5 2 4 ⋄ Av{g←⍒⍵ ⋄ [[⍺#⍋[g]⌷+\⍺]⌷g]⌷⍵}Y   ⍝ 3 5
 
 ⍝ aplcart/table.tsv:2060 — Occurrence Count: Enumerate each unique major cells separately
-Y←1 2 1 3 2 1 ⋄ {m←≠⍵ ⋄ 1+o-(m#o←⍋⍋⍵)(⍵⍳⍨⍵#⍨m)}Y   ⍝ 1 1 2 1 2 3
+Y←1 2 1 3 2 1 ⋄ {m←≠⍵ ⋄ 1+o-[⍵⍳⍨⍵#⍨m]⌷m#o←⍋⍋⍵}Y   ⍝ 1 1 2 1 2 3
 
 ⍝ aplcart/table.tsv:2063 — Adding an empty cell into Y at fractional positions Mv
 Mv←0.5 2.5 ⋄ Y←1 2 3 ⋄ Mv{⍵#⁻¹⍨~(⍳⍺+⍥≢⍵)∊⍺⌊⍃+⍳≢⍺}Y   ⍝ 0 1 2 0 3
 
 ⍝ aplcart/table.tsv:2064 — Inverted Table Grade Up (⍋Y where Y is unverted Yv)
-Yv←[2 1 2;["ba" ⋄ "ca" ⋄ "db"]] ⋄ {{⍵ ⍋⍺(⍵)}/⍵,⊂⍳≢↑⍵}Yv   ⍝ [1 0 2]ₓ
+Yv←[2 1 2;["ba" ⋄ "ca" ⋄ "db"]] ⋄ {{[⍋[⍵]⌷⍺]⌷⍵}/⍵,⊂⍳≢↑⍵}Yv   ⍝ [1 0 2]ₓ
 
 ⍝ aplcart/table.tsv:2065 — Inverse Discrete Fourier Transformation
 {n÷⍨⍵+.×⍨*π0j2×n÷⍨×⊗⍨⍳n←≢⍵} 2 ¯2j¯2 0j¯2 4j4
 1 2j¯1 0j¯1 ¯1j2
 
 ⍝ aplcart/table.tsv:2066 — Changing connectivity list Jm to a connectivity matrix
-Jm←[0 1 ⋄ 1 2 ⋄ 2 0] ⋄ {s⍴1@(s.[1]⊥⍵) 0⍴⍨×/s←0 0+1+⌈/,⍵}Jm
+Jm←[0 1 ⋄ 1 2 ⋄ 2 0] ⋄ {s⍴1@ s.[1]⊥⍵ 0⍴⍨×/s←0 0+1+⌈/,⍵}Jm
 [0 1 0 ⋄ 0 0 1 ⋄ 1 0 0]
 
 ⍝ aplcart/table.tsv:2067 — Expansion vector (left argument for #⁻¹) to insert Iv[i] elements after i'th subvector (subvectors indicated by Bv)
@@ -6427,7 +4954,7 @@ $t $t $f $t $f $f $t $t $t
 [0 1 3 2 1 2 0]ₓ
 
 ⍝ aplcart/table.tsv:2097 — Evaluate Roman numeral
-Dv← "MCMXCIV"  ⋄ {v←(×\1,6⍴5 2)("IVXLCDM"⍳⍵) ⋄ v+.×¯1*</2↕v,0}Dv
+Dv← "MCMXCIV"  ⋄ {v←["IVXLCDM"⍳⍵]⌷×\1,6⍴5 2 ⋄ v+.×¯1*</2↕v,0}Dv
 1994
 
 ⍝ aplcart/table.tsv:2098 — Cumulative sum (+\) of each subvector of Bv indicated by Av (fast ∊+\¨Av⊂Nv)
@@ -6442,17 +4969,17 @@ Is←3 ⋄ Nv←1 2 4 6 7 ⋄ Is{+/((⊢×⍺÷⌈/)⍵-⌊/⍵)≥⊗⍳⍺}Nv 
 [2 3 1 0 0 2 1]ₓ
 
 ⍝ aplcart/table.tsv:2104 — Grade up (⍋) for sorting subarrays of Y having lengths Iv (≢Y ↔ +/Iv)
-Iv←2 3 ⋄ Y←3 1 5 2 4 ⋄ Iv{g ⍋(+\(⍳≢⍵)∊+\0,⍺)(g←⍋⍵)}Y   ⍝ [1 0 3 4 2]ₓ
+Iv←2 3 ⋄ Y←3 1 5 2 4 ⋄ Iv{g←⍋⍵ ⋄ [⍋[g]⌷+\(⍳≢⍵)∊+\0,⍺]⌷g}Y   ⍝ [1 0 3 4 2]ₓ
 
 ⍝ aplcart/table.tsv:2105 — Grade down (⍒) for sorting subarrays of Y having lengths Iv (≢Y ↔ +/Iv)
-Iv←2 3 ⋄ Y←3 1 5 2 4 ⋄ Iv{g ⍋(+\(⍳≢⍵)∊+\0,⍺)(g←⍒⍵)}Y   ⍝ [0 1 2 4 3]ₓ
+Iv←2 3 ⋄ Y←3 1 5 2 4 ⋄ Iv{g←⍒⍵ ⋄ [⍋[g]⌷+\(⍳≢⍵)∊+\0,⍺]⌷g}Y   ⍝ [0 1 2 4 3]ₓ
 
 ⍝ aplcart/table.tsv:2106 — Date and time (⎕TS format) to YYYY-MM-DD hh:mm:ss
 Jv←2026 9 18 12 34 56 0 ⋄ {"-- ::"@(4+3×⍳5)∊⍕¨(↑,100+1⍃↓)6↑⍵}Jv
 "2026-09-18 12:34:56"
 
 ⍝ aplcart/table.tsv:2107 — Inverted Table Sort (Y[⍋Y;] where Y is unverted Yv)
-Yv←[2 1 2;["ba" ⋄ "ca" ⋄ "db"]] ⋄ {⍵⌷¨⍨⊂⊂{⍵ ⍋⍺(⍵)}/⍵,⊂⍳≢↑⍵}Yv
+Yv←[2 1 2;["ba" ⋄ "ca" ⋄ "db"]] ⋄ {⍵⌷¨⍨⊂⊂{[⍋[⍵]⌷⍺]⌷⍵}/⍵,⊂⍳≢↑⍵}Yv
 [1 2 2;["ca" ⋄ "ba" ⋄ "db"]]
 
 ⍝ aplcart/table.tsv:2108 — Less than or equal reduction on each subvector of Bv indicated by Av (Fast ≤/¨Av⊂Bv)
@@ -6460,7 +4987,7 @@ Av←1 0 1 0 0 ⋄ Bv←1 1 1 0 1 ⋄ Av{⍵×/⍃≥(z#1⌽z←⍺#⍨⍺≥z)�
 $f $t
 
 ⍝ aplcart/table.tsv:2110 — Cut Y into I partitions of equal lengths (with even distribution of variation)
-I←3 ⋄ Y←⍳8 ⋄ I{⍵⊂⍠0⍨ -/∘⌽∘(2⍃↕) 0,(⌊0.5+l×⍺÷⍨⍳⍺)⍸⍳l←≢⍵}Y
+I←3 ⋄ Y←⍳8 ⋄ I{⍵⊂⍠0⍨ -/∘⌽∘ 2⍃↕ 0,(⌊0.5+l×⍺÷⍨⍳⍺)⍸⍳l←≢⍵}Y
 [0 1 2;3 4;5 6 7]
 
 ⍝ aplcart/table.tsv:2111 — Normally distributed numbers with mean M and standard deviation N; Reviewed deterministic random-operation invariant; independently checked in Dyalog and through the Rust reference worker; Zero standard deviation must return the supplied mean vector; tests the degenerate normal-distribution recipe without probabilistic thresholds
@@ -6488,11 +5015,11 @@ Is←1 ⋄ Dv← "/ab/cd/ef"  ⋄ Is{r←+\⍵=d←↑⍵ ⋄ 0<⍺:⍵#⍨r>⍺
 6 3⍴[0 1 2 0 2 1 1 0 2 1 2 0 2 0 1 2 1 0]ₓ
 
 ⍝ aplcart/table.tsv:2120 — Sorting rows of matrix Y into ascending order (Fast (⊂∘⍋⌷⊢)⍤1)
-Y←[3 1 2 ⋄ 6 4 5] ⋄ {s⍴r(g(⍋(,⍉(⌽s←⍴⍵)⍴⍳≢⍵)(g←⍋r←,⍵)))}Y
+Y←[3 1 2 ⋄ 6 4 5] ⋄ {g←⍋r←,⍵ ⋄ s⍴[[⍋[g]⌷,⍉(⌽s←⍴⍵)⍴⍳≢⍵]⌷g]⌷r}Y
 [1 2 3 ⋄ 4 5 6]
 
 ⍝ aplcart/table.tsv:2122 — Permutation vector for Is-rotate on each subvector indicated by Bv (Fast ∊Is⌽¨⍵⊂⍳≢Bv)
-[p←2 {⍋j+((i|⍺)(j←¯1++\⍵))≥+\1-⍵#⁻¹¯1↓0,i←i-¯1↓0,i←1+⍸1⌽⍵} 1 0 0 0 0 1 0 0 0;"abcdeABCD"(p)]
+[p←2 {⍋j+([j←¯1++\⍵]⌷i|⍺)≥+\1-⍵#⁻¹¯1↓0,i←i-¯1↓0,i←1+⍸1⌽⍵} 1 0 0 0 0 1 0 0 0;[p]⌷"abcdeABCD"]
 [2 3 4 0 1 7 8 5 6;"cdeabCDAB"]ₓ
 
 ⍝ aplcart/table.tsv:2123 — Clamp non-negative N to fit in ⍕ field Iv[1 2]
@@ -6500,13 +5027,13 @@ Iv←5 2 ⋄ N←0 0.01 12.34 123.45 ⋄ Iv{1(↑⌊⍵⍨⌈↓)([¯1 1 ⋄ 1 �
 0 0.01 12.34 99.99
 
 ⍝ aplcart/table.tsv:2124 — Progressive without (~) without replacement
-X←1 2 1 3 ⋄ Y←1 1 1 2 ⋄ X{⍺ ⍺⍳∘≢⍃~⍺(R⍨⍳R←≢∘⊢⍴⍄⍋⍄⍋⍺⍨⍳⍪⍨)⍵}Y   ⍝ [3]
+X←1 2 1 3 ⋄ Y←1 1 1 2 ⋄ X{[⍺⍳∘≢⍃~⍺(R⍨⍳R←≢∘⊢⍴⍄⍋⍄⍋⍺⍨⍳⍪⍨)⍵]⌷⍺}Y   ⍝ [3]
 
 ⍝ aplcart/table.tsv:2125 — Progressive intersection (∩) without replacement
-X←1 2 1 3 ⋄ Y←1 1 1 2 ⋄ X{⍺ ⍺⍳∘≢⍃∩⍺(R⍨⍳R←≢∘⊢⍴⍄⍋⍄⍋⍺⍨⍳⍪⍨)⍵}Y   ⍝ 1 2 1
+X←1 2 1 3 ⋄ Y←1 1 1 2 ⋄ X{[⍺⍳∘≢⍃∩⍺(R⍨⍳R←≢∘⊢⍴⍄⍋⍄⍋⍺⍨⍳⍪⍨)⍵]⌷⍺}Y   ⍝ 1 2 1
 
 ⍝ aplcart/table.tsv:2126 — Intersperse: Insert cell X between major cells in Y
-X←9 ⋄ Y←1 2 3 ⋄ X{m←(¯1+2×≢⍵)⍴1,-≢⍺ ⋄ ⍺⍴⍨⍄⍴@(⍸m|⍃#m<0) (|m)#(m>0)#⁻¹⍵}Y
+X←9 ⋄ Y←1 2 3 ⋄ X{m←(¯1+2×≢⍵)⍴1,-≢⍺ ⋄ ⍺⍴⍨⍄⍴@ ⍸m|⍃#m<0 (|m)#(m>0)#⁻¹⍵}Y
 1 9 2 9 3
 
 ⍝ aplcart/table.tsv:2127 — Length of longest common substring
@@ -6521,7 +5048,7 @@ D← ["a b " ⋄ " cd "]  ⋄ {⍵⍴⍃⍴(,(+/b)>⊗⍳¯1↑⍴⍵)#⁻¹⍵#
 ["ab  " ⋄ "cd  "]
 
 ⍝ aplcart/table.tsv:2132 — Tesselate: Cut Y into tiles of size Iv (padding Y if necessary); dfns display import/wrappers omitted to test underlying arrays
-2 3 {⊂⍠(1+2×⍳k)(,s,⍪r)⍴⍵↑⍨r×s←⌈R÷r←1+(-k←≢R←⍴⍵)↑⍺-1} 4 5⍴•a
+2 3 {⊂⍠ 1+2×⍳k (,s,⍪r)⍴⍵↑⍨r×s←⌈R÷r←1+(-k←≢R←⍴⍵)↑⍺-1} 4 5⍴•a
 2 2⍴[["ABC" ⋄ "FGH"];["DE " ⋄ "IJ "];["KLM" ⋄ "PQR"];["NO " ⋄ "ST "]]
 
 ⍝ aplcart/table.tsv:2133 — ASCII frame a matrix
@@ -6529,7 +5056,7 @@ Dm← ["abc" ⋄ "def"]  ⋄ {'+'@(⊂0 0)∘⌽∘⍉⍣4⊃(⍪⍄⌽⍄⍉)/"
 ["+---+" ⋄ "|abc|" ⋄ "|def|" ⋄ "+---+"]
 
 ⍝ aplcart/table.tsv:2134 — Tesselate: Distribute Y's elements into evenly-sized tiles in an array of shape Iv (padding Y if necessary); dfns display import/wrappers omitted to test underlying arrays
-2 3 {⊂⍠(2×⍳k)(,s,⍪r)⍴⍵↑⍨r×s←⌈R÷r←1+(-k←≢R←⍴⍵)↑⍺-1} 4 5⍴•a
+2 3 {⊂⍠ 2×⍳k (,s,⍪r)⍴⍵↑⍨r×s←⌈R÷r←1+(-k←≢R←⍴⍵)↑⍺-1} 4 5⍴•a
 2 3⍴[["AD" ⋄ "KN"];["BE" ⋄ "LO"];["C " ⋄ "M "];["FI" ⋄ "PS"];["GJ" ⋄ "QT"];["H " ⋄ "R "]]
 
 ⍝ aplcart/table.tsv:2135 — Unicode frame a matrix
@@ -6537,11 +5064,11 @@ Dm← ["abc" ⋄ "def"]  ⋄ {⊣@(⊂0 0)⍄⌽⍄⍉/"┌┐┘└",⊂⍪⍄�
 ["┌───┐" ⋄ "│abc│" ⋄ "│def│" ⋄ "└───┘"]
 
 ⍝ aplcart/table.tsv:2136 — Indices of smallest Is elements of Nv (Fast Is↑⍋Nv); Reviewed deterministic random-operation invariant; independently checked in Dyalog and through the Rust reference worker; Assert shape, range, uniqueness, permutation preservation, rounding bounds or deterministic sorting; no sampled values or seed are compared
-Is←3 ⋄ Yv←8 1 6 1 9 2 7 2 5 ⋄ r←Is{i←⍸⍵≤(⍺-1)⊃⊂∘⍋⍃⌷⍵((⌈0.5*⍨⍺×n)?n←≢⍵) ⋄ i(⍺↑⍋⍵(i))}Yv ⋄ r≡Is↑⍋Yv
+Is←3 ⋄ Yv←8 1 6 1 9 2 7 2 5 ⋄ r←Is{i←⍸⍵≤(⍺-1)⊃⊂∘⍋⍃⌷([(⌈0.5*⍨⍺×n)?n←≢⍵]⌷⍵) ⋄ [⍺↑⍋[i]⌷⍵]⌷i}Yv ⋄ r≡Is↑⍋Yv
 $t
 
 ⍝ aplcart/table.tsv:2137 — Indices of largest Is elements of Nv (Fast Is↑⍒Nv); Reviewed deterministic random-operation invariant; independently checked in Dyalog and through the Rust reference worker; Assert shape, range, uniqueness, permutation preservation, rounding bounds or deterministic sorting; no sampled values or seed are compared
-Is←3 ⋄ Yv←8 1 6 1 9 2 7 2 5 ⋄ r←Is{i←⍸⍵≥(⍺-1)⊃⊂∘⍒⍃⌷⍵((⌈0.5*⍨⍺×n)?n←≢⍵) ⋄ i(⍺↑⍒⍵(i))}Yv ⋄ r≡Is↑⍒Yv
+Is←3 ⋄ Yv←8 1 6 1 9 2 7 2 5 ⋄ r←Is{i←⍸⍵≥(⍺-1)⊃⊂∘⍒⍃⌷([(⌈0.5*⍨⍺×n)?n←≢⍵]⌷⍵) ⋄ [⍺↑⍒[i]⌷⍵]⌷i}Yv ⋄ r≡Is↑⍒Yv
 $t
 
 ⍝ aplcart/table.tsv:2138 — Decommenting a matrix representation of a function (⎕CR)
@@ -6581,859 +5108,98 @@ Nm←[1 2 3 ⋄ 0 4 5 ⋄ 1 0 6] ⋄ {↑,{-((+\-+/)@{=⊗⍨⍳≢⍵}⍵×≤�
 23 1000
 
 ⍝ aplcart/table.tsv:2148 — Fast Fourier Transformation; Move the misplaced opening brace after the reshape dfn so it becomes the operand of the intended dop; Eight-point transform; original recipe retained
-Nv←1 2 3 4 5 6 7 8 ⋄ {⍵⍴⍨2⍴⍨2⍟⍴⍵}{,(⍶×\1,1↓(2÷⍨⍴⍵)⍴¯1*2÷⍴⍵){(⊣/⍺)∇⍣(×m) (+⌿⍵){⊃[⍺ ⍵]}⍤(¯1+(≢⍴⍵)-m) ⍺×⍠(⍳m←≢⍴⍺)-⌿⍵}⍶ ⍵}Nv
+Nv←1 2 3 4 5 6 7 8 ⋄ {⍵⍴⍨2⍴⍨2⍟⍴⍵}{,(⍶×\1,1↓(2÷⍨⍴⍵)⍴¯1*2÷⍴⍵){(⊣/⍺)∇⍣ ×m (+⌿⍵){⊃[⍺ ⍵]}⍤ ¯1+(≢⍴⍵)-m ⍺×⍠(⍳m←≢⍴⍺)-⌿⍵}⍶ ⍵}Nv
 36 ¯4.000000000000002j¯9.65685424949238 ¯4.000000000000001j¯4 ¯4.000000000000001j¯1.65685424949238 ¯4 ¯4j1.656854249492381 ¯3.999999999999999j4 ¯3.999999999999997j9.65685424949238
 
 ⍝ aplcart/table.tsv:2149 — Inverse Fast Fourier Transformation; Move the misplaced opening brace after the reshape dfn so it becomes the operand of the intended dop; Eight-point transform; original recipe retained
-Nv←1 2 3 4 5 6 7 8 ⋄ {⍵⍴⍨2⍴⍨2⍟⍴⍵}{⍵÷⍄⍴⍨, (⍶+×\1,1↓(2÷⍨⍴⍵)⍴¯1*2÷⍴⍵){(⊣/⍺)∇⍣(×m) (+⌿⍵){⊃[⍺ ⍵]}⍤(¯1+(≢⍴⍵)-m) ⍺×⍠(⍳m←≢⍴⍺)-⌿⍵}⍶ ⍵}Nv
+Nv←1 2 3 4 5 6 7 8 ⋄ {⍵⍴⍨2⍴⍨2⍟⍴⍵}{⍵÷⍄⍴⍨, (⍶+×\1,1↓(2÷⍨⍴⍵)⍴¯1*2÷⍴⍵){(⊣/⍺)∇⍣ ×m (+⌿⍵){⊃[⍺ ⍵]}⍤ ¯1+(≢⍴⍵)-m ⍺×⍠(⍳m←≢⍴⍺)-⌿⍵}⍶ ⍵}Nv
 4.5 ¯0.5000000000000002j1.207106781186547 ¯0.5000000000000001j0.5 ¯0.5000000000000001j0.2071067811865475 ¯0.5 ¯0.5j¯0.2071067811865476 ¯0.4999999999999999j¯0.5 ¯0.4999999999999996j¯1.207106781186547
 
 ⍝ aplcart/table.tsv:2151 — Where: Execute f on condition B mask
 f←- ⋄ B←1 0 1 0 1 ⋄ Y←3 1 5 2 4 ⋄ f@{B}Y   ⍝ ¯3 1 ¯5 2 ¯4
 
-⍝ aplcart/table.tsv:2152 — Function limit 'trajectory'; Concrete APLcart library call; self-contained setup from april/libraries/dfns/power/demo.lisp:41. Local definitions replace the dfns namespace; no namespace feature implied
-traj ← {
-  ⍺←⍬
-  ⊂⍵ ∊ ⍺:⍺
-  (⍺,⊂⍵) ∇ ⍶ ⍵
-}
-result←{2|⍵:1+3×⍵ ⋄ ⍵÷2}traj 7
-⍝ =>
-7 22 11 34 17 52 26 13 40 20 10 5 16 8 4 2 1
-
-⍝ aplcart/table.tsv:2153 — Associative vector scan; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:330. Local definitions replace the dfns namespace; no namespace feature implied
-ascan ← {
-  2>0⊥⍴⍵:⍵
-  ⌽⊃⍶{(⊂ ↑⍵ ⍶ ⍺),⍵}/⌽(⊂∘↑¨↓⍵),⊃1↓¨↓⍵
-}
-result←+ascan ⍳10
-⍝ =>
-0 1 3 6 10 15 21 28 36 45
-
-⍝ aplcart/table.tsv:2155 — Binary search; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:27. Local definitions replace the dfns namespace; no namespace feature implied
-bsearch ← {
-  ¯1≤-/⍵:1↑⍵+2-+/⍶¨⍵
-  mid←⌈0.5×+/⍵
-  ⍶ mid:∇(1↑⍵),mid
-         ∇ mid,1↓⍵
-}
-result←{⍵≥5}bsearch 3 7
-⍝ =>
-1⍴5
-
-⍝ aplcart/table.tsv:2156 — Relationship between point and k-cell; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:236. Local definitions replace the dfns namespace; no namespace feature implied
-kcell ← {
-  ⍺←(≢⍵)#⍠¯1 [2 1]⍴0 1
-  b←,⍠(2=⍴⍴⍺ # 0)⍺
-  p←(2⌊⍴⍴⍺)↓1 1,⍴⍵ ⍴ ⍵
-  d←⊃,¨⍶⌿×-b,.-p
-  ⍶/⍬:⌈/d ⋄ 5⊥dᵀ
-}
-result←3 ×kcell ⍳5
-⍝ =>
-[¯1 ¯1 ¯1 0 1]ₓ
-
-⍝ aplcart/table.tsv:2157 — Function power; Concrete APLcart library call; self-contained setup from april/libraries/dfns/power/demo.lisp:37. Local definitions replace the dfns namespace; no namespace feature implied
-pow ← { ⍶⍣⍺ ⍵ }
-result←6 {'<',⍵,'>'}pow "wow"
-⍝ =>
-"<<<<<<wow>>>>>>"
-
-⍝ aplcart/table.tsv:2158 — Fold (reduce) from the left; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:129. Local definitions replace the dfns namespace; no namespace feature implied
-foldl ← { ⍶⍨/(⌽⍵),⊂⍺ }
-result←"abracadabra" {⍺~[⍵⊃⍺]}foldl 0 1
-⍝ =>
-"bcdb"
-
-⍝ aplcart/table.tsv:2159 — Generic depth-first parent-last tree; Concrete APLcart library call with self-contained April dfns definitions and standard operand names; no namespace support implied
-ravt ← {
-  ∇⍨/⌽(⊂⍺),⍺⍹⍵ ⍶ ⍵
-}
+⍝ aplcart/table.tsv:2159 — Generic depth-first parent-last tree; Concrete APLcart library call
+•load "lib/tree.bpl"
 tree←[1 [2 3] [4 [5 6]]] ⋄ acc←{⍺,⊂⍵} ⋄ subs←{1≥≡⍵:⍬ ⋄ ⍵}
-result←⍬ (acc ravt subs) tree
+⍬ (acc ravt subs) tree
 ⍝ =>
 [1 [2 3] 4 [5 6] [4 [5 6]] [1 [2 3] [4 [5 6]]]]
 
-⍝ aplcart/table.tsv:2160 — Generic depth-first parent-first tree; Concrete APLcart library call with self-contained April dfns definitions and standard operand names; no namespace support implied
-trav ← {
-  ∇⍨/⌽(⊂⍺⍶⍵),⍺⍹⍵
-}
+⍝ aplcart/table.tsv:2160 — Generic depth-first parent-first tree; Concrete APLcart library call
+•load "lib/tree.bpl"
 tree←[1 [2 3] [4 [5 6]]] ⋄ acc←{⍺,⊂⍵} ⋄ subs←{1≥≡⍵:⍬ ⋄ ⍵}
-result←⍬ (acc trav subs) tree
+⍬ (acc trav subs) tree
 ⍝ =>
 [[1 [2 3] [4 [5 6]]] 1 [2 3] [4 [5 6]] 4 [5 6]]
 
-⍝ aplcart/table.tsv:2161 — List traversal; Concrete APLcart library call with self-contained April dfns definitions and standard operand names; no namespace support implied
-ltrav ← {
-  '∘'≡[head tail]←⍵:⍺
-  (⍺ ⍶ head)∇ tail
-}
-list ← { {[⍺ ⍵]}/⍵,'∘' }
-result←0 {⍺+1}ltrav list "abc"
+⍝ aplcart/table.tsv:2161 — List traversal; Concrete APLcart library call
+•load "lib/array.bpl"
+0 {⍺+1}ltrav list "abc"
 ⍝ =>
 3
 
-⍝ aplcart/table.tsv:2163 — Partitioned reduction; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:209. Local definitions replace the dfns namespace; no namespace feature implied
-pred ← { ⊃⍶/¨(⍺#1+⍳⍴⍺)⊆⍵ }
-result←2 3 3 2 +pred ⍳10
-⍝ =>
-1 9 18 17
-
-⍝ aplcart/table.tsv:2164 — Alternant; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:194. Local definitions replace the dfns namespace; no namespace feature implied
-alt ← {
-  [r c]←⍴⍵
-  0=r:⍹⌿,⍵
-  1≥c:⍶⌿,⍵
-  M←(⍳r)~⍤1⍪⍳r
-  ⍵.[∞ 0]⍶.⍹∇¨⊂⍠[1 2]⍵.[M 1↓⍳c]
-}
-result←-alt×[2 3 ⋄ 4 5]
-⍝ =>
-¯2
-
-⍝ aplcart/table.tsv:2169 — Function power limit (fixpoint); Concrete APLcart library call; self-contained setup from april/libraries/dfns/power/demo.lisp:29. Local definitions replace the dfns namespace; no namespace feature implied
-limit ← {
-  ⍵ ⍶{
-    ⍺≡⍵:⍵
-    ⍵ ∇ ⍶ ⍵
-  } ⍶⍵
-}
-result←{1⌈⍵÷2}limit 16
+⍝ aplcart/table.tsv:2169 — Function power limit (fixpoint); Concrete APLcart library call; setup from april/libraries/dfns/power/demo.lisp:29
+•load "lib/power.bpl"
+{1⌈⍵÷2}limit 16
 ⍝ =>
 1
 
-⍝ aplcart/table.tsv:2170 — Accumulating reduction; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:19. Local definitions replace the dfns namespace; no namespace feature implied
-acc ← { ⍶{(⊂⍺⍶↑⍬⍴⍵),⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵ }
-result←+acc ⍳4
-⍝ =>
-6 6 5 3
-
-⍝ aplcart/table.tsv:2171 — Conditional function power; Concrete APLcart library call; self-contained setup from april/libraries/dfns/power/demo.lisp:89. Local definitions replace the dfns namespace; no namespace feature implied
-until ← {
-  ⍶{
-    ⍹ ⍵:⍵
-    ∇ ⍶ ⍵
-  }⍹ ⍶ ⍵
-}
-result←{⍵,'.'}until{12=⍴⍵}"Note"
+⍝ aplcart/table.tsv:2171 — Conditional function power; Concrete APLcart library call; setup from april/libraries/dfns/power/demo.lisp:89
+•load "lib/power.bpl"
+{⍵,'.'}until{12=⍴⍵}"Note"
 ⍝ =>
 "Note........"
 
-⍝ aplcart/table.tsv:2172 — Conditional function power; Concrete APLcart library call; self-contained setup from april/libraries/dfns/power/demo.lisp:78. Local definitions replace the dfns namespace; no namespace feature implied
-while ← {
-  ⍹ ⍵:∇ ⍶ ⍵
-  ⍵
-}
-result←,⍄'.'while(12>⍴)"Note"
+⍝ aplcart/table.tsv:2172 — Conditional function power; Concrete APLcart library call; setup from april/libraries/dfns/power/demo.lisp:78
+•load "lib/power.bpl"
+,⍄'.'while(12>⍴)"Note"
 ⍝ =>
 "Note........"
 
-⍝ aplcart/table.tsv:2180 — Associative higher rank scan; Concrete APLcart library call with self-contained April dfns definitions and standard operand names; no namespace support implied
-ascan ← {
-  2>0⊥⍴⍵:⍵
-  ⌽⊃⍶{(⊂ ↑⍵ ⍶ ⍺),⍵}/⌽(⊂∘↑¨↓⍵),⊃1↓¨↓⍵
-}
-ascana ← {
-  ⍺←⍬⍴⌽⍳⍴⍴⍵
-  (⍶ ascan)⍠⍺ ⍵
-}
-result←+ascana 2 3⍴⍳6
+⍝ aplcart/table.tsv:2180 — Associative higher rank scan; Concrete APLcart library call
+•load "lib/array.bpl"
++ascana 2 3⍴⍳6
 ⍝ =>
 [0 1 3 ⋄ 3 7 12]
 
-⍝ aplcart/table.tsv:2183 — Select and modify; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:227. Local definitions replace the dfns namespace; no namespace feature implied
-disp ← { format←{t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t} ⋄ ⍺←⍬
-  [dec ctd]←2↑⍺
-  box←{
-    isor ⍵:format⊂⍵
-    1=≡,⍵:dec open format dec open ⍵
-    mat←matr 1# dec open ⍵
-    [r c]←×⍴mat
-    dec<0∊[r c]:c#⍠¯1 r# ∇ 1 open mat
-    subs←aligned ∇¨mat
-    (≢⍴⍵)gaps ⍵ plane subs
-  }
-  aligned←{
-    [rows cols]←sepr⍴¨⍵
-    sizes←(⌈/rows) ,⊗ ⌈⌿cols
-    ctd=0:sizes↑¨⍵
-    [v h]←sepr⌈0.5×⊃(⍴¨⍵)-sizes
-    v⊖¨h⌽¨sizes↑¨⍵
-  }
-  gaps←{
-    ⍺≤2:⍵
-    subs←⍺-1 ∇¨ ⍵
-    width←↑⌽⍴↑subs
-    fill←[⍺ width]-3 0 ⍴ ' '
-    ⊃{⍺⍪fill⍪⍵}/ 1 open subs
-  }
-  plane←{
-    2<⍴⍴⍺:⍺ join ⍵
-    odec←(dec shape ⍺)outer ⍵
-    idec←inner ⍺
-    (odec,idec)collect ⍵
-  }
-  join←{
-    sep←≢⍵ ÷ 1⌈≢⍺
-    split←(0=sep|⍳≢⍵)⊂⍠0 ⍵
-    (⊂⍤¯1 ⍺)plane¨split
-  }
-  outer←{
-    sizes←1 0{↑↓ ⍉⍣⍺ ⍵}¨sepr⍴¨⍵
-    sides←sizes#¨¨"│─"
-    bords←dec↓¨"├┬"glue¨sides
-    ,¨/[['┌' ""] ⍺ bords "└┐"]
-  }
-  inner←{
-    deco←{(type ⍵), 1 shape ⍵}
-    sepr deco¨matr dec open ⍵
-  }
-  collect←{
-    [lft top tt vv hh]←⍺
-    cells←vv right 1 open [tt hh] lower ⍵
-    boxes←(dec∨0∊⍴⍵)open cells
-    lft,top⍪⍪⌿,/boxes
-  }
-  right←{
-    types←2 ⊥¨ ⍳⍴⍵ = ⊂¯1+⍴⍵
-    chars←"┼┤┴┘" types
-    rgt←{⍵,(-≢⍵)↑[≢⍵ 1 1]#'│',⍺}
-    (matr 1 open ⍺),¨chars rgt¨ ⍵
-  }
-  lower←{
-    split←{(¯2+1⊃⍴⍵ # '─')glue ⍺}
-    bot←{⍵⍪(-1⊃⍴⍵)↑ ⍺ split ⍵}
-    (matr,¨/⍺)bot¨matr ⍵
-  }
-  type←{
-    dec<≡⍵:'─'
-    isor ⍵:'∇'
-    sst←{
-      0=dec×⍴⍴⍵:'─'
-      ↑⍵∊'¯',•d ⊃ "#~"
-    }∘⍕
-    0=≡⍵:sst ⍵
-    {(1=⍴⍵)⊃['+' ⍵]}∪,sst¨(dec open ⍵)
-  }
-  shape←{
-    dec≤0=⍴⍴⍵:⍺#¨"│─"
-    cols←×¯1↑⍴⍵ ⊃ "⊖→"
-    rsig←××/¯1↓⍴⍵ ⊃ "⌽↓"
-    rows←¯1+3⌊⍴⍴⍵ ⊃ ['│' rsig '⍒']
-    [rows cols]
-  }
-  matr←{⊃,↓⍵}
-  sepr←{+/¨1⊂⊃⍵}
-  open←{(⍺⌈⍴⍵)↑⍵}
-  isor←{1 ⍬≡[≡⍵ ⍴⍵]}
-  glue←{0=⍴⍵ : ⍵ ⋄ ⍺{⍺,⍶,⍵}/⍵}
-  isor ⍵:format⊂⍵
-  1=≡,⍵:format ⍵
-  box ⍵
-}
-sam ← {
-  ⍺←⊢
-  array←⍵
-  (⍺ ⍶ array)←⍹ ⍺ ⍶ array
-  array
-}
-ucase ← {
-  lc←"abcdefghijklmnopqrstuvwxyzåäöàæéñøü"
-  uc←"ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖÀÆÉÑØÜ"
-  ⍴⍵ ⍴ (uc,,⍵) (lc,,⍵)⍳⍵
-}
+⍝ aplcart/table.tsv:2183 — Select and modify; Concrete APLcart library call; setup from april/libraries/dfns/array/demo.lisp:227
+•load "lib/array.bpl"
 vex←[["one" "two" "three"] ["alpha" "beta" "gamma"] ["red" "blue" "green"]]
-result←2 ↑sam⌽ vex
+2 ↑sam⌽ vex
 ⍝ =>
 [["alpha" "beta" "gamma"] ["one" "two" "three"] ["red" "blue" "green"]]
 
-⍝ aplcart/table.tsv:2184 — Operand function applied to argument rows; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:218. Local definitions replace the dfns namespace; no namespace feature implied
-rows ← {
-  1<≡⍵:∇¨⍵
-  ⍶⍤1 ⍵
-}
-result←{'<',⍵,'>'}rows "ten" 'a' "penny"
+⍝ aplcart/table.tsv:2184 — Operand function applied to argument rows; Concrete APLcart library call; setup from april/libraries/dfns/array/demo.lisp:218
+•load "lib/array.bpl"
+{'<',⍵,'>'}rows "ten" 'a' "penny"
 ⍝ =>
 "<ten>" "<a>" "<penny>"
 
-⍝ aplcart/table.tsv:2185 — Scalar pervasion; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:207. Local definitions replace the dfns namespace; no namespace feature implied
-perv ← { ⍺←⊢
-  1=≡[⍺ ⍵ ⍵]:⍺ ⍶ ⍵
-           ⍺ ∇¨ ⍵
-}
-result←[1 [2 3]],perv[[4 5] 6]
-⍝ =>
-[[[1 4] [1 5]] [[2 6] [3 6]]]
-
-⍝ aplcart/table.tsv:2190 — Simple Binary Search Trees; Concrete APLcart library call; self-contained setup from april/libraries/dfns/tree/demo.lisp:285. Local definitions replace the dfns namespace; no namespace feature implied
-sbst ← {
-  put←{
-    ⍺≡0:[[⍵ [0 0]] 0]
-    [[[nxt _] subs] [key _]]←[⍺ ⍵]
-    nxt≡key:[[⍵ subs] 0]
-    ⍺ ∇ search ⍵
-  }
-  get←{
-    ⍺≡0:[⍺ '?']
-    [[[nxt val] _] [key _]]←[⍺ ⍵]
-    nxt≡key:[⍺ val]
-    ⍺ ∇ search ⍵
-  }
-  rem←{
-    ⍺≡0:[⍺ 0]
-    [[[nxt _] subs] [key _]]←[⍺ ⍵]
-    ~nxt≡key:⍺ ∇ search ⍵
-    0 0≡subs:0 0
-    0∊subs:[(subs⍳0)⊃⌽subs 0]
-    (rrot ⍺)∇ ⍵
-  }
-  rrot←{
-    [B [[A [p q]] r]]←⍵
-    [A [p [B [q r]]]]
-  }
-  search←{
-    [inf [lft rgt]]←⍺
-    dir←1-2×>/⍋⊃↑¨[inf ⍵]
-    wise←{(2×⍺)↑3⍴⍵}
-    [_ nxt]←dir wise [lft rgt]
-    [sub val]←nxt ⍶ ⍵
-    subs←dir wise [lft sub rgt]
-    [[inf subs] val]
-  }
-  fmt←{
-    null←0 0⍴""
-    ⍵≡0:null
-    [[key val] subs]←⍵
-    key_val←⊃,/⍕¨[key '=' val]
-    fmts←{⊖⍵}\"┌└"{
-      0 0≡⍴⍵:⍵
-      mask←∧\' '=↑↓⌽⍵ᵀ
-      ⍉⌽⊃(⊂⌽⍺,mask#'│'),↓⌽⍵ᵀ
-    }¨{⊖⍵}\∇¨subs
-    case←~[null null]≡¨fmts
-    join←2⊥case ⊃ "∘┐┘┤"
-    join≡'∘':⊃,↓key_val
-    dent←' '⊣¨key_val
-    pads←{↓,/dent,⊂⍵}¨fmts
-    ⊃{⍺,(↓key_val,join),⍵}/pads
-  }
-  vec←{
-    ⍵≡0:⍬
-    [key_val [lft rgt]]←⍵
-    ∇lft , ⊂key_val , ∇rgt
-  }
-  chk←{
-    0=≡⍵:[0≡⍵ 0x 0x 0x ⍬]
-    [[key _] subs]←⍵
-    stats←⍺+1x ∇¨ subs
-    [oks szs dps hts krs]←↓⍉⊃stats
-    keys←key{⍺,(⊂⍶),⍵}/krs
-    okkey←{⍵≡⍳⍴⍵}⍋⊃keys
-    okstr←2 2 ≡ ⍴⍵ , ⍴↑⌽⍵
-    ok←okkey∧okstr∧∧/oks
-    sz←1x++/szs
-    dp←⍺++/dps
-    ht←1x+⌈/hts
-    kr←⌽2⍴¯1⌽keys
-    ⍺>0:[ok sz dp ht kr]
-    [ok sz ⌊0.5+dp÷sz ht]
-  }
-  bal←{
-    [vine size]←0 0 list ⍵
-    log←⌊2⍟size+1
-    rem←1+size-2*log
-    cmps←¯2+2*1+⍳log
-    cmp/(1↓cmps,2×rem),⊂vine
-  }
-  cmp←{
-    ⍺=0:⍵
-    [inf [lft rgt]]←⍵
-    lev←(⍺-1)∇ lft
-    2|⍺:[inf [lev rgt]]
-    rrot [inf [lev rgt]]
-  }
-  list←{
-    0≡⍵:⍺
-    [inf [lft rgt]]←⍵
-    [lev s]←⍺ ∇ lft
-    [[inf [lev 0]] s+1]∇ rgt
-  }
-  op←⍶
-  '∪'≡op:↑ ⍺ put ⍵
-  '⍎'≡op:↑⌽ ⍵ get [⍺ 0]
-  '~'≡op:↑ ⍺ rem [⍵ 0]
-  '⍕'≡op:fmt ⍵
-  '∊'≡op:vec ⍵
-  '?'≡op:4↑ 0x chk ⍵
-  '='≡op:bal ⍵
-}
-foldl ← { ⍶⍨/(⌽⍵),⊂⍺ }
-put←'∪' sbst ⋄ get←'⍎' sbst ⋄ rem←'~' sbst ⋄ fmt←'⍕' sbst ⋄ chk←'?' sbst ⋄ vec←'∊' sbst ⋄ bal←'=' sbst ⋄ tree←0⍃(put foldl)
-result←'?' sbst tree ⍳7
+⍝ aplcart/table.tsv:2190 — Simple Binary Search Trees; Concrete APLcart library call; setup from april/libraries/dfns/tree/demo.lisp:285
+•load "tests/reference/support/sbst.bpl"
+'?' sbst tree ⍳7
 ⍝ =>
 [$t 7 3 7]ₓ
 
-⍝ aplcart/table.tsv:2191 — Splay trees; Concrete APLcart library call; self-contained setup from april/libraries/dfns/tree/demo.lisp:893. Local definitions replace the dfns namespace; no namespace feature implied
-splay ← {
-  wise←{(2×⍶)↑3⍴⍵}
-  put←{
-    ⍺≡0:[⍵ [0 0]]
-    [[[nxt _] subs] [key _]]←[⍺ ⍵]
-    nxt≡key:[⍵ subs]
-    ⍺ ∇ search ⍵
-  }
-  rem←{
-    ⍺≡0:0
-    [[[nxt _] subs] [key _]]←[⍺ ⍵]
-    ~nxt≡key:⍺ ∇ search ⍵
-    0 0≡subs:0
-    0∊subs:(subs⍳0)⊃⌽subs
-    (⍺ rot 1)∇ ⍵
-  }
-  search←{
-    [inf [lft rgt]]←⍺
-    dir←1-2×>/⍋⊃↑¨[inf ⍵]
-    [_ nxt]←dir wise [lft rgt]
-    sub←nxt ⍶ ⍵
-    [inf (dir wise [lft sub rgt])]
-  }
-  get←{
-    ⍺≡0:0 0 0
-    [[key val] [lft rgt]]←⍺
-    key≡⍵:[val ⍺ ⍬]
-    dir←1-2×>/⍋⊃[key ⍵]
-    [_ nxt]←dir wise [lft rgt]
-    [rslt sub path]←nxt ∇ ⍵
-    ∆path←dir,path
-    cand←[[key val] [lft sub rgt]]
-    tree←(dir wise)\cand bal ∆path
-    [rslt tree ∆path]
-  }
-  bal←{
-    2≠⍴⍵:⍺
-    [pos neg]←1 ¯1×↑⍵
-    =/⍵:(⍺ rot neg)rot neg
-    [C [BpA s]]←(neg wise)\⍺
-    ∆C←(neg wise)\[C [(BpA rot pos) s]]
-    ∆C rot neg
-  }
-  rot←{
-    [B [Apq r]]←(⍵ wise)\⍺
-    [A [p q]]←(⍵ wise)\Apq
-    Bqr←(⍵ wise)\[B [q r]]
-    (⍵ wise)\[A [p Bqr]]
-  }
-  vec←{
-    ⍵≡0:⍬
-    [key_val [lft rgt]]←⍵
-    ∇lft , ⊂key_val , ∇rgt
-  }
-  lift←{
-    [val root path]←⍵
-    0∊path:
-    1≠⍴path:[val root]
-    [val (root rot -↑path)]
-  }
-  fmt←{
-    null←0 0⍴""
-    ⍵≡0:null
-    [[key val] subs]←⍵
-    key_val←⊃,/⍕¨[key '=' val]
-    fmts←{⊖⍵}\"┌└"{
-      0 0≡⍴⍵:⍵
-      mask←∧\' '=↑↓⌽⍵ᵀ
-      ⍉⌽⊃(⊂⌽⍺,mask#'│'),↓⌽⍵ᵀ
-    }¨{⊖⍵}\∇¨subs
-    case←~[null null]≡¨fmts
-    join←2⊥case ⊃ "∘┐┘┤"
-    join≡'∘':⊃,↓key_val
-    dent←' '⊣¨key_val
-    pads←{↓,/dent,⊂⍵}¨fmts
-    ⊃{⍺,(↓key_val,join),⍵}/pads
-  }
-  dep←{
-    ⍺≡0:0x
-    [[key val] subs]←⍺
-    key≡⍵:1x
-    dir←1-2×>/⍋⊃[key ⍵]
-    [_ sub]←dir wise subs
-    {⍵+×⍵} sub ∇ ⍵
-  }
-  chk←{
-    0=≡⍵:[0≡⍵ 0x 0x 0x ⍬]
-    [[key _] subs]←⍵
-    stats←⍺+1x ∇¨ subs
-    [oks szs dps hts krs]←↓⍉⊃stats
-    keys←key{⍺,(⊂⍶),⍵}/krs
-    okkey←{⍵≡⍳⍴⍵}⍋⊃keys
-    okstr←2 2 ≡ ⍴⍵ , ⍴↑⌽⍵
-    ok←okkey∧okstr∧∧/oks
-    sz←1x++/szs
-    dp←⍺++/dps
-    ht←1x+⌈/hts
-    kr←⌽2⍴¯1⌽keys
-    ⍺>0:[ok sz dp ht kr]
-    [ok sz ⌊0.5+dp÷sz ht]
-  }
-  op←⍶
-  '∪'≡op:⍺ put ⍵
-  '⍎'≡op:lift ⍵ get ⍺
-  '~'≡op:⍺ rem [⍵ 0]
-  '?'≡op:4↑ 0x chk ⍵
-  '⍕'≡op:fmt ⍵
-  '∊'≡op:vec ⍵
-  '≡'≡op:⍵ dep ⍺
-}
-foldl ← { ⍶⍨/(⌽⍵),⊂⍺ }
-put←'∪' splay ⋄ get←'⍎' splay ⋄ rem←'~' splay ⋄ fmt←'⍕' splay ⋄ chk←'?' splay ⋄ vec←'∊' splay ⋄ dep←'≡' splay ⋄ tree←0⍃(put foldl)
-result←'?' splay tree ⍳7
+⍝ aplcart/table.tsv:2191 — Splay trees; Concrete APLcart library call; setup from april/libraries/dfns/tree/demo.lisp:893
+•load "tests/reference/support/splay.bpl"
+'?' splay tree ⍳7
 ⍝ =>
 [$t 7 3 7]ₓ
 
-⍝ aplcart/table.tsv:2192 — Red-black trees; Concrete APLcart library call; self-contained setup from april/libraries/dfns/tree/demo.lisp:518. Local definitions replace the dfns namespace; no namespace feature implied
-redblack ← {
-  ins←{
-    ⍺≡0:base [⍵ 1 [0 0]]
-    [[[nxt _] red subs] [key _]]←[⍺ ⍵]
-    nxt≡key:done [⍵ red subs]
-    [node path]←⍺ ∇ search ⍵
-    2≠⍴path:[node path]
-    [p c]←path
-    ~ node isred p:[node path]
-    node isred -p:node insRR p
-    p=c:node insRBo p
-    (node rot⍄p sub p)insRBo p
-  }
-  insRR←{
-    g←flip ⍺
-    u←g flip sub ⍵
-    base u flip sub -⍵
-  }
-  insRBo←{
-    g←flip ⍺
-    p←g rot -⍵
-    done flip p
-  }
-  get←{
-    ⍺≡0:
-    [[nxt val] _ subs]←⍺
-    nxt≡⍵:val
-    (>/⍋⊃[⍵ nxt] ⊃ subs)∇ ⍵
-  }
-  rem←{
-    ⍺≡0:done0
-    [[nxt _] red [lft rgt]]←⍺
-    ~nxt≡↑⍵:bal ⍺ ∇ search ⍵
-    0≡lft:bal rgt rep red
-    0≡rgt:bal lft rep red
-    kv←left rgt
-    [sub path]←rgt ∇ kv
-    bal [[kv red [lft sub]] 1,path]
-  }
-  left←{
-    [kv _ [lft _]]←⍵
-    0≡lft:kv
-    ∇ lft
-  }
-  rep←{
-    ⍵:done ⍺
-    ⍺≡0:dblk0
-    [inf red subs]←⍺
-    red:done [inf 0 subs]
-    dblk ⍺
-  }
-  bal←{
-    [sub path]←⍵
-    2≠⍴path:⍵
-    [dir ddblk]←path×¯1 1
-    ddblk≠0:⍵
-    sub isred dir:sub balR dir
-    sub balB dir
-  }
-  balR←{
-    p_0←flip ⍺
-    p_1←p_0 rot -⍵
-    p_2←flip p_1
-    [Pinf Pred Psubs]←p_2
-    [N S]←⍵ wise Psubs
-    [Nn path]←N balB ⍵
-    P_subs←⍵ wise [Nn S]
-    [[Pinf Pred P_subs] path]
-  }
-  balB←{
-    [near far]←⍺⍃isred¨⍵×1,¨¯1 1
-    near⍱far:⍺ balBbb ⍵
-    far:⍺ balB_r ⍵
-    ⍺ balBrb ⍵
-  }
-  balBbb←{
-    pred←⍺ isred ⍬
-    p_0←⍺ flip sub ⍵
-    pred:done flip p_0
-    dblk p_0
-  }
-  balB_r←{
-    colr←{[kv _ lr]←⍺ ⋄ [kv ⍵ lr]}
-    pred←⍺ isred ⍬
-    p_0←⍺ colr 0
-    p_1←p_0 rot -⍵
-    p_2←p_1 flip sub ⍵
-    p_3←p_2 colr pred
-    done p_3
-  }
-  balBrb←{
-    p_0←⍺ flip sub ⍵
-    p_1←p_0 rot⍄⍵ sub ⍵
-    p_2←p_1 flip sub ⍵
-    p_2 balB_r ⍵
-  }
-  root←{
-    0≡↑⍵:0
-    [[inf _ subs] _]←⍵
-    [inf 0 subs]
-  }
-  fmt←{
-    null←⊃,↓"[∘]"
-    ⍵≡0:null
-    [[key val] red subs]←⍵
-    [l r]←red⊃"[]" "<>"
-    key_val←⊃,/⍕¨[l key '=' val r]
-    fmts←{⊖⍵}\"┌└"{
-      0 0≡⍴⍵:⍵
-      mask←∧\' '=↑↓⌽⍵ᵀ
-      ⍉⌽⊃(⊂⌽⍺,mask#'│'),↓⌽⍵ᵀ
-    }¨{⊖⍵}\∇¨subs
-    dent←' '⊣¨key_val
-    pads←{↓,/dent,⊂⍵}¨fmts
-    ⊃{⍺,(↓key_val,'┤'),⍵}/pads
-  }
-  vec←{
-    0≡⍵:⍬
-    [key_val bal [lft rgt]]←⍵
-    ∇lft , ⊂key_val , ∇rgt
-  }
-  chk←{
-    0=≡⍵:[0≡⍵ 0x 0x 0x ⍬ 1x 1x]
-    [[key _] red subs]←⍵
-    blk←~red
-    stats←⍺+1x ∇¨ subs
-    [oks ss ds hs ks bs bks]←↓⍉⊃stats
-    keys←key{⍺,(⊂⍶),⍵}/ks
-    okK←{⍵≡⍳⍴⍵}⍋⊃keys
-    okR←blk∨∧/bks
-    okB←=/bs
-    ok←okK∧okR∧okB∧∧/oks
-    kr←⌽2⍴¯1⌽keys
-    blks←blk+⌈/bs
-    [ht sz]←1x + ⌈/hs , +/ss
-    dp←⍺++/ds
-    ⍺>0:[ok sz dp ht kr blks blk]
-    [ok sz ⌊0.5+dp÷sz ht]
-  }
-  search←{
-    [inf red [lft rgt]]←⍺
-    dir←1-2×>/⍋⊃↑¨[inf ⍵]
-    [_ nxt]←dir wise [lft rgt]
-    [sub path]←nxt ⍶ ⍵
-    subs←dir wise [lft sub rgt]
-    [[inf red subs] dir,path]
-  }
-  rot←{
-    [Ninf Nred Nsubs]←⍺
-    [[Linf Lred Lsubs] R]←⍵ wise Nsubs
-    [ll lr]←⍵ wise Lsubs
-    Nn←[Ninf Nred (⍵ wise [lr R])]
-    [Linf Lred (⍵ wise [ll Nn])]
-  }
-  sub←{
-    [inf red subs]←⍺
-    [lft rgt]←⍵ wise subs
-    sub←⍶ rgt
-    [inf red (⍵ wise [lft sub])]
-    }
-  isred←{
-    [inf col [lft rgt]]←⍺
-    ⍵≡⍬:col
-    (↑⌽ ↑⍵ wise [lft rgt])∇ 1↓⍵
-  }
-  wise←{(2×⍺)↑3⍴⍵}
-  flip←{[kv b lr]←⍵ ⋄ [kv ~b lr]}
-  done←{[⍺ ⍵]}⍄0 0 0
-  base←{[⍺ ⍵]}⍄⍬
-  dblk←{[⍺ ⍵]}⍄(,0)
-  op←⍶
-  '∪'≡op:root ⍺ ins ⍵
-  '~'≡op:root ⍺ rem [⍵ 0]
-  '⍎'≡op:⍵ get ⍺
-  '⍕'≡op:fmt ⍵
-  '∊'≡op:vec ⍵
-  '?'≡op:4↑ 0x chk ⍵
-}
-foldl ← { ⍶⍨/(⌽⍵),⊂⍺ }
-put←'∪' redblack ⋄ get←'⍎' redblack ⋄ rem←'~' redblack ⋄ fmt←'⍕' redblack ⋄ chk←'?' redblack ⋄ vec←'∊' redblack ⋄ tree←0⍃(put foldl)
+⍝ aplcart/table.tsv:2192 — Red-black trees; Concrete APLcart library call; setup from april/libraries/dfns/tree/demo.lisp:518
+•load "tests/reference/support/redblack.bpl"
 pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]] ⋄ tt←tree pairs
-result←'?' redblack tree ⍳7
+'?' redblack tree ⍳7
 ⍝ =>
 [1 7 2 4]ₓ
 
-⍝ aplcart/table.tsv:2193 — Adelson-Velskii, Landis (AVL) trees; Concrete APLcart library call; self-contained setup from april/libraries/dfns/tree/demo.lisp:209. Local definitions replace the dfns namespace; no namespace feature implied
-avl ← {
-  get←{
-    ⍺≡0:
-    [[k v] _ subs]←⍺
-    k≡⍵:v
-    dir←-/⍋⊃[⍵ k]
-    [sub sib]←dir wise subs
-    sub ∇ ⍵
-  }
-  put←{
-    ⍺≡0:[[⍵ 0 [0 0]] $t]
-    [[kv obal subs] [key val]]←[⍺ ⍵]
-    key≡↑kv:[[⍵ obal subs] $f]
-    [dir obv]←[1 ¯1]ₓ×-/⍋⊃[key ↑kv]
-    [sub sib]←dir wise subs
-    [nsub inc]←sub ∇ ⍵
-    new←obv proj [kv obal [nsub sib]]
-    ~inc:[new $f]
-    [(dir balance new) obal=0]
-  }
-  rem←{
-    ⍺≡0:[0 $f]
-    ⍵≡↑↑⍺:rmnode ⍺
-    [dir obv]←[1 ¯1]ₓ×-/⍋⊃[⍵ ↑↑⍺]
-    [kv obal [sub sib]]←obv proj ⍺
-    [nsub inc]←sub ∇ ⍵
-    new←obv proj [kv obal [nsub sib]]
-    ~inc:[new $f]
-    [nkv nbal nsubs]←obv balance new
-    [[nkv nbal nsubs] nbal=0]
-  }
-  rmnode←{
-    [kv obal subs]←⍵
-    0∊subs:[(subs⍳0)⊃⌽subs $t]
-    [lft rgt]←subs
-    [[sk sv] _ _]←rgt limt ¯1
-    [rm inc]←rgt rem sk
-    new←[[sk sv] obal [lft rm]]
-    ~inc:[new $f]
-    [nkv nbal nsubs]←¯1 balance new
-    [[nkv nbal nsubs] nbal=0]
-  }
-  limt←{
-    sub←↑ ⍵ wise ↑⌽⍺
-    sub≡0:⍺
-    sub ∇ ⍵
-  }
-  balance←{
-    [kv obal subs]←⍵
-    new←⍺+obal
-    0∊[obal new]:[kv new subs]
-    [[_ Bbal _] _]←obal wise subs
-    Bbal≠-obal:(-obal)srot ⍵
-               (-obal)drot ⍵
-  }
-  srot←{
-    [Akv Abal [B r]]←⍺ proj ⍵
-    [Bkv Bbal [p q]]←⍺ proj B
-    AAbal←-⍺×Bbal=0
-    BBbal←+⍺×Bbal=0
-    AA←⍺ proj [Akv AAbal [q r]]
-    ⍺ proj [Bkv BBbal [p AA]]
-  }
-  drot←{
-    [Akv Abal [B s]]←⍺ proj ⍵
-    [Bkv Bbal [p C]]←⍺ proj B
-    [Ckv Cbal [q r]]←⍺ proj C
-    AAbal←⍺×Cbal=-⍺
-    BBbal←-⍺×Cbal=⍺
-    BB←⍺ proj [Bkv BBbal [p q]]
-    AA←⍺ proj [Akv AAbal [r s]]
-    ⍺ proj [Ckv 0 [BB AA]]
-  }
-  vec←{
-    0≡⍵:⍬
-    [key_val bal [lft rgt]]←⍵
-    ∇lft , ⊂key_val , ∇rgt
-  }
-  chk←{
-    0=≡⍵:[⍵≡0 0x 0x 0x ⍬]
-    [[key _] bal subs]←⍵
-    stats←⍺+1x ∇¨ subs
-    [oks szs dps hts krs]←↓⍉⊃stats
-    keys←key{⍺,(⊂⍶),⍵}/krs
-    okkey←{⍵≡⍳⍴⍵}⍋⊃keys
-    okhgt←bal=--/hts
-    okbal←bal∊¯1 0 1
-    ok←okkey∧okbal∧okhgt∧∧/oks
-    sz←1x++/szs
-    dp←⍺++/dps
-    ht←1x+⌈/hts
-    kr←⌽2⍴¯1⌽keys
-    ⍺>0:[ok sz dp ht kr]
-    [ok sz ⌊0.5+dp÷sz ht]
-  }
-  fmt←{
-    null←0 0⍴""
-    ⍵≡0:null
-    [[key val] bal subs]←⍵
-    key_val←⍺,,/⍕¨[key '=' val]
-    deco←1+bal ⊃ "><" '─' "<>"
-    fmts←{⊖⍵}\"┌└"{
-      0 0≡⍴⍵:⍵
-      mask←∧\' '=↑↓⌽⍵ᵀ
-      ⍉⌽⊃(⊂⌽⍺,mask#'│'),↓⌽⍵ᵀ
-    }¨{⊖⍵}\deco∇¨subs
-    case←~[null null]≡¨fmts
-    join←2⊥case ⊃ "∘┐┘┤"
-    join≡'∘':⊃,↓key_val
-    dent←' '⊣¨key_val
-    pads←{↓,/dent,⊂⍵}¨fmts
-    ⊃{⍺,(↓key_val,join),⍵}/pads
-  }
-  proj←{(⍺=0 0 ¯1)⌽¨⍵}
-  wise←{(⍺=1)⌽⍵}
-  op←⍶
-  '∪'≡op:↑ ⍺ put ⍵
-  '⍎'≡op:⍺ get ⍵
-  '~'≡op:↑ ⍺ rem ⍵
-  '⍕'≡op:""fmt ⍵
-  '∊'≡op:vec ⍵
-  '?'≡op:4↑ 0x chk ⍵
-}
-foldl ← { ⍶⍨/(⌽⍵),⊂⍺ }
-put←'∪' avl ⋄ get←'⍎' avl ⋄ rem←'~' avl ⋄ fmt←'⍕' avl ⋄ chk←'?' avl ⋄ vec←'∊' avl ⋄ tree←0⍃(put foldl)
+⍝ aplcart/table.tsv:2193 — Adelson-Velskii, Landis (AVL) trees; Concrete APLcart library call; setup from april/libraries/dfns/tree/demo.lisp:209
+•load "tests/reference/support/avl.bpl"
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]] ⋄ tt←tt put foldl [["one" 11] ["two" 22] ["three" 33]]
-result←'?' avl tree ⍳7
+'?' avl tree ⍳7
 ⍝ =>
 [$t 7 1 3]ₓ
-
-⍝ aplcart/table.tsv:2194 — Apply function Simple-Array-Wise; Concrete APLcart library call; self-contained setup from april/libraries/dfns/array/demo.lisp:324. Local definitions replace the dfns namespace; no namespace feature implied
-saw ← {
-  ⍺←⊢
-  2≥≡[⍺ ⍵ ⍵]:⍺ ⍶ ⍵
-  1≥≡⍵      :⍺ ∇¨ ⊂⍵
-  2≥≡[⍺ 1]  :(⍺ ∇)¨⍵
-  ⍺ ∇¨ ⍵
-}
-eng←"One" "" "" "" "Five"
-esp←"Uno" "Dos" "Tres" "" ""
-result←⌽saw [eng esp]
-⍝ =>
-[["enO" "" "" "" "eviF"] ["onU" "soD" "serT" "" ""]]
-
-⍝ aplcart/table.tsv:2197 — Roman numeral arithmetic; Concrete APLcart library call; self-contained setup from april/libraries/dfns/numeric/demo.lisp:137. Local definitions replace the dfns namespace; no namespace feature implied
-roman ← {
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5×⊗10*⍳4)(7|"IVXLCDMivxlcdm"⍳⍵)}
-  fmt←{~⍄" ",1 0 0⍉(' '⍪3 4⍴"MCXI DLV ")([∞ ⍵⊤⍨4⍴10]⌷⍉0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)}
-  depth←{⍹≥≡⍵ : ⍶ ⍵ ⋄ ∇¨⍵}
-  nums←num depth 1
-  fmts←fmt depth 0
-  ⍺←⍬ ⋄ ⍬≡⍺:fmts ⍶ ⌊nums ⍵
-  fmts(⌊nums ⍺)⍶ ⌊nums ⍵
-}
-result←"IX" +roman "IX"
-⍝ =>
-"XVIII"
 
 ⍝ aplcart/table.tsv:2201 — Apply monadic function taking two-element argument as a dyadic function
 Sum ← +/ ⋄ [Sum 3 4;3 Sum{⍶[⍺ ⍵]} 4]   ⍝ 7 7
@@ -7476,27 +5242,15 @@ X←1 2 3 4 ⋄ f←= ⋄ Y←0 2 3 9 ⋄ X f{↑⍸⍺⍶⍵} Y   ⍝ 1ₓ
 ⍝ aplcart/table.tsv:2216 — Function power: apply f on Is repeated Is times
 Is←3 ⋄ f←1⍃+ ⋄ Y←1 2 3 ⋄ Is f{⍶⍣⍺ ⍵} Y   ⍝ 4 5 6
 
-⍝ aplcart/table.tsv:2219 — Multiple selection of function list; Concrete APLcart library call with self-contained April dfns definitions and standard operand names; no namespace support implied
-for ← {
-  (¯1↓⍺)⍶{1≠⍴⍺:⍺ ⍶ ⍵
-    ⍶⍣(↑⍺) ⍵
-  }⍹⍣(↑⌽⍺)⍵
-}
-result←1 2 1 (-for{⍵+1}for{⍵×2}) 3
+⍝ aplcart/table.tsv:2219 — Multiple selection of function list; Concrete APLcart library call
+•load "lib/power.bpl"
+1 2 1 (-for{⍵+1}for{⍵×2}) 3
 ⍝ =>
 ¯8
 
-⍝ aplcart/table.tsv:2222 — Inverse of real-valued function; Concrete APLcart library call; self-contained setup from april/libraries/dfns/power/demo.lisp:19. Local definitions replace the dfns namespace; no namespace feature implied
-invr ← {
-  ⍺←1+1e¯14+0×⍵
-  ∆x←√1e¯14
-  -⍄⍵∘⍶{
-    ⍹ ⍵:⍵
-    [y y∆]←⍶¨[0 ∆x]+⊂⍵
-    ∇ ⍵-y×∆x÷y∆-y
-  }(⍵⍃≡∘⍶)⍺
-}
-result←{⍵²}invr 49
+⍝ aplcart/table.tsv:2222 — Inverse of real-valued function; Concrete APLcart library call; setup from april/libraries/dfns/power/demo.lisp:19
+•load "lib/power.bpl"
+{⍵²}invr 49
 ⍝ =>
 7.000000000000002
 
@@ -7587,7 +5341,7 @@ f←1+ ⋄ g←≢ ⋄ Y←1 2 3 ⋄ f{⍶⍣(⍹ ⍵) ⍵}g Y   ⍝ 4 5 6
 f←- ⋄ Y←1 2 3 ⋄ 0 f{⍶⍨/⍵⌽⍃,⊂⍺} Y   ⍝ ¯6
 
 ⍝ aplcart/table.tsv:2257 — Stable bubble sort using custom comparison function f (true:left precedes right)
-f←< ⋄ Y←3 1 2 1 ⋄ f{⍵ ⍒⍶⊗⍨⍵}Y   ⍝ 1 1 2 3
+f←< ⋄ Y←3 1 2 1 ⋄ f{[⍒⍶⊗⍨⍵]⌷⍵}Y   ⍝ 1 1 2 3
 
 ⍝ aplcart/table.tsv:2258 — Position of the Is'th Y in X
 X←1 2 1 3 ⋄ Is←1 ⋄ Y←1 ⋄ X Is{⍶⊃⍸⍺≡¨⊂⍵} Y   ⍝ 2ₓ
@@ -7608,10 +5362,10 @@ f←{} ⋄ Y←1 2 3 ⋄ f{⍎"⍶ ⍵ ⋄ ⍵" ⋄ ⍶}Y   ⍝ 1 2 3
 1 ⊣{⍺(⍶⍨ ⍹ ⍶)⍵}⊢ 0   ⍝ 1
 
 ⍝ aplcart/table.tsv:2264 — Apply costly monadic function f on repetitive arguments
-f←×⍨ ⋄ Y←2 1 2 3 ⋄ f{(⍶∪⍵) ∪⍃⍳⍵}Y   ⍝ 4 1 4 9
+f←×⍨ ⋄ Y←2 1 2 3 ⋄ f{[∪⍃⍳⍵]⌷⍶∪⍵}Y   ⍝ 4 1 4 9
 
 ⍝ aplcart/table.tsv:2265 — For each: f on items of Y unless Y is empty
-f←≢ ⋄ Y←[1 2;3 4 5] ⋄ f{⍶¨⍣(~0∊⍴⍵) ⍵}Y   ⍝ [2 3]ₓ
+f←≢ ⋄ Y←[1 2;3 4 5] ⋄ f{⍶¨⍣ ~0∊⍴⍵ ⍵}Y   ⍝ [2 3]ₓ
 
 ⍝ aplcart/table.tsv:2266 — Sums of N according to codes X for lookup table Y
 X←1 2 3 ⋄ Y←1 2 1 3 ⋄ N←10 20 30 40 ⋄ X Y{⍺ =⊗ ⍶+.×⍵} N   ⍝ $f $f $f
@@ -7624,7 +5378,7 @@ Is←6 ⋄ Iv←1 2 ⋄ Nm←[1.25 2.375 ⋄ 3.25 4.625] ⋄ (Is{⍵⍕⍤1⍨�
 X←8 9 ⋄ Is←2 ⋄ Y←1 2 3 4 ⋄ X Is{(⍶↑⍵)⍪⍺⍪⍶↓⍵} Y   ⍝ 1 2 8 9 3 4
 
 ⍝ aplcart/table.tsv:2270 — Replacing elements of Y satisfying Bv with Xs
-Xs←9 ⋄ Bv←1 0 1 ⋄ Y←1 2 3 ⋄ Xs{⍶@(⍹⍃⊣)⍵}Bv Y   ⍝ 9 2 9
+Xs←9 ⋄ Bv←1 0 1 ⋄ Y←1 2 3 ⋄ Xs{⍶@ ⍹⍃⊣ ⍵}Bv Y   ⍝ 9 2 9
 
 ⍝ aplcart/table.tsv:2271 — Apply X∘f to Y, X g Y times
 X←2 ⋄ f←+ ⋄ g←⊣ ⋄ Y←1 2 3 ⋄ X f{⍺ ⍶⍣(⍺ ⍹ ⍵) ⍵}g Y   ⍝ 5 6 7
@@ -7660,7 +5414,7 @@ Y←1+2 3⍴⍳6 ⋄ [2 (2{⍺ {⊃⍺⍴⊂⍵}⍤[0 ⍶] ⍵}) Y;2 (0{⍺ {⊃
 [2 2 3⍴1 2 3 4 5 6 1 2 3 4 5 6;2 3 2⍴1 1 2 2 3 3 4 4 5 5 6 6;2 2 3⍴1 2 3 1 2 3 4 5 6 4 5 6]
 
 ⍝ aplcart/table.tsv:2281 — Giving a default value X for indices beyond end of Y
-I←0 3 1 ⋄ X←99 ⋄ Y←10 20 30 ⋄ I X{(⍵⍪⍶) ⍺⌊≢⍵} Y   ⍝ 10 99 20
+I←0 3 1 ⋄ X←99 ⋄ Y←10 20 30 ⋄ I X{[⍺⌊≢⍵]⌷⍵⍪⍶} Y   ⍝ 10 99 20
 
 ⍝ aplcart/table.tsv:2282 — Under: preprocess (g) argument(s) before applying main function (f), then undo preprocessing
 X←2 ⋄ f←+ ⋄ g←⍟ ⋄ Y←3 ⋄ X f{⍺←⊢ ⋄ ⍹⁻¹ ⍺ ⍶⍥⍹ ⍵}g Y   ⍝ 6
@@ -7683,7 +5437,7 @@ X←10 20 ⋄ f←+ ⋄ ax←0 ⋄ Y←[1 2 3 ⋄ 4 5 6] ⋄ X f{⊃⍠⍹(⊂�
 3 2 4⍴8#10 21 32
 
 ⍝ aplcart/table.tsv:2290 — Mesh arrays X and Y under control of A () (0:element from X, 1:cell from Y, …)
-X←1 2 3 ⋄ A←0 1 0 ⋄ Y←10 20 30 ⋄ X A{(⍶#⍥,⍵)@(⍶⍨)⍺} Y   ⍝ 1 20 3
+X←1 2 3 ⋄ A←0 1 0 ⋄ Y←10 20 30 ⋄ X A{(⍶#⍥,⍵)@ ⍶⍨ ⍺} Y   ⍝ 1 20 3
 
 ⍝ aplcart/table.tsv:2291 — Partition (⊂) Ym along both axes (Av can be one or two partitioning vectors); dfns display import/wrappers omitted to test underlying arrays
 mat←1+6 6⍴⍳36 ⋄ [1 1 0 1 0 0 {⊃(⊂⊢/⊆⍺)⊂⍠¯1¨(↑⊆⍺)⊂⍵} mat;[1 1 0 1 0 0;1 0 1 0 1 0] {⊃(⊂⊢/⊆⍺)⊂⍠¯1¨(↑⊆⍺)⊂⍵} mat]
@@ -7718,7 +5472,7 @@ f←< ⋄ Y←3 1 4 2 ⋄ f{⌽@(1(⌽∨⊢)0{⍵∧1=+\⍵}∘,(⍶/∘⌽2↕
 1 2 3 4
 
 ⍝ aplcart/table.tsv:2300 — Insert X at fractional positions Nv in Y (≢Nv)=≢X
-X←8 9 ⋄ Nv←0.5 2.5 ⋄ Y←1 2 3 4 ⋄ X{(⍵,⍶) ⍋(⍳≢⍵),⌊⍹}Nv Y
+X←8 9 ⋄ Nv←0.5 2.5 ⋄ Y←1 2 3 4 ⋄ X{[⍋(⍳≢⍵),⌊⍹]⌷⍵,⍶}Nv Y
 1 8 2 3 9 4
 
 ⍝ aplcart/table.tsv:2301 — Power: apply X∘f on Y J times
@@ -7732,7 +5486,7 @@ X←2 ⋄ f←+ ⋄ J←0 1 3 ⋄ Y←10 ⋄ X(f{⍺ ⍶{⍺ ⍶⍣⍵ ⍹}⍵�
 -{c←↑⍵ ⋄ (1↑⍵),⍶{c⊢←c ⍶ ⍵}¨1↓⍵}10 3 1 4   ⍝ 10 7 6 2
 
 ⍝ aplcart/table.tsv:2304 — Replacing elements of Z that appear in Xv with the corresponding element from Yv
-Xv←2 4 ⋄ Yv←20 40 ⋄ Z←1 2 3 4 2 ⋄ Xv{⍶(⍳⊂⍃⌷⍹⍨)@(∊⍄⍶)⍵}Yv Z
+Xv←2 4 ⋄ Yv←20 40 ⋄ Z←1 2 3 4 2 ⋄ Xv{⍶(⍳⊂⍃⌷⍹⍨)@ ∊⍄⍶ ⍵}Yv Z
 1 20 3 40 20
 
 ⍝ aplcart/table.tsv:2306 — Formatted function table for function Cv with Xv down and Yv across; Reviewed Execute example checked through the Rust reference worker
@@ -7778,7 +5532,7 @@ M←0.25 ⋄ I←1 6 7 ⋄ N←0.5 ⋄ M I{+/(⍶⊤⍨4⍴2)×⍤1⊃,[1-⍺ �
 0.125 0.5 0.625
 
 ⍝ aplcart/table.tsv:2317 — Replacing major cells of Z that appear in X with the corresponding major cell from Y
-X←2 4 ⋄ Y←20 40 ⋄ Z←1 2 3 4 2 ⋄ X{⍶(⍳⊂⍃⌷⍹⍨)@(⍸⍶≢⍃>⍶⍳⍵) ⍵}Y Z
+X←2 4 ⋄ Y←20 40 ⋄ Z←1 2 3 4 2 ⋄ X{⍶(⍳⊂⍃⌷⍹⍨)@ ⍸⍶≢⍃>⍶⍳⍵ ⍵}Y Z
 1 20 3 40 20
 
 ⍝ aplcart/table.tsv:2318 — Ravel of a matrix to Is columns with a gap of Js
@@ -7806,7 +5560,7 @@ X←2 ⋄ f←+ ⋄ Y←3 ⋄ Z←10 ⋄ X f{⍺←⊢ ⋄ r⊣(⍺ ⍶{⍺←�
 10 12 14 16
 
 ⍝ aplcart/table.tsv:2325 — Inserting Is Y's into Z after indices Iv
-Iv←0 2 ⋄ Is←2 ⋄ Y←9 ⋄ Z←1 2 3 4 ⋄ Iv Is{(⍵⍪⍹) (≢⍵)⌊⍋(⍳≢⍵),⍺⍴⍨⍶×≢⍺}Y Z
+Iv←0 2 ⋄ Is←2 ⋄ Y←9 ⋄ Z←1 2 3 4 ⋄ Iv Is{[(≢⍵)⌊⍋(⍳≢⍵),⍺⍴⍨⍶×≢⍺]⌷⍵⍪⍹}Y Z
 1 9 9 2 3 9 9 4
 
 ⍝ aplcart/table.tsv:2326 — Mesh vectors Xv and Yv differently in each column under control of Am (0:cell from Xv, 1:cell from Yv, …)
@@ -7818,7 +5572,7 @@ Xm←[10 20 ⋄ 30 40] ⋄ Am←[0 1 0 1 ⋄ 1 0 1 0] ⋄ Ym←[1 2 ⋄ 3 4] ⋄
 [10 2 ⋄ 1 20 ⋄ 30 4 ⋄ 3 40]
 
 ⍝ aplcart/table.tsv:2328 — Graph of scalar function f at points Nv; Reviewed Execute example checked through the Rust reference worker
-f←×⍨ ⋄ Nv←¯2 ¯1 0 1 2 ⋄ f{" ∘" {(⌽(⌊/⍵)+⍳1+(⌈/⍵)-⌊/⍵)=⊗⍵}⌊0.5+⍶⍵}Nv
+f←×⍨ ⋄ Nv←¯2 ¯1 0 1 2 ⋄ f{[{(⌽(⌊/⍵)+⍳1+(⌈/⍵)-⌊/⍵)=⊗⍵}⌊0.5+⍶⍵]⌷" ∘"}Nv
 ["∘   ∘" ⋄ "     " ⋄ "     " ⋄ " ∘ ∘ " ⋄ "  ∘  "]
 
 ⍝ aplcart/table.tsv:2329 — Open a gap of Iv[i] after Y[Jv[i]] (for all i)
@@ -7826,7 +5580,7 @@ Iv←2 1 ⋄ Jv←0 2 ⋄ Y←10 20 30 ⋄ Iv{⍵#⁻¹⍨(1+⍳⍵≢⍃++/⍶)
 10 0 0 20 30 0
 
 ⍝ aplcart/table.tsv:2330 — Stable quicksort using custom comparison function f (negative:left precedes right, zero:keep ordering, positive:right precedes left); Reviewed deterministic random-operation invariant; independently checked in Dyalog and through the Rust reference worker; Assert shape, range, uniqueness, permutation preservation, rounding bounds or deterministic sorting; no sampled values or seed are compared
-f←{(↑⍺)-↑⍵} ⋄ Y←[2 30 ⋄ 1 90 ⋄ 2 10 ⋄ 1 70 ⋄ 2 20] ⋄ r←f{1≥≢⍵:⍵ ⋄ c←⍵ (⍶-⍶⍨)⍤¯1 99 ?∘≢⍃⌷⍵ ⋄ (∇⍵#⍨0>c)⍪(⍵#⍨0=c)⍪∇⍵#⍨0<c}Y ⋄ r≡(Y ⍋∞ 0⌷Y)
+f←{(↑⍺)-↑⍵} ⋄ Y←[2 30 ⋄ 1 90 ⋄ 2 10 ⋄ 1 70 ⋄ 2 20] ⋄ r←f{1≥≢⍵:⍵ ⋄ c←⍵ (⍶-⍶⍨)⍤¯1 99 ?∘≢⍃⌷⍵ ⋄ (∇⍵#⍨0>c)⍪(⍵#⍨0=c)⍪∇⍵#⍨0<c}Y ⋄ r≡([(⍋∞ 0⌷Y)]⌷Y)
 $t
 
 ⍝ aplcart/table.tsv:2331 — Delta; assignment recipes also read the target, and definition recipes call the defined function/operator
@@ -8067,7 +5821,7 @@ name←1 2 3 4 ⋄ Js←¯2 ⋄ name↓⍨←Js ⋄ name   ⍝ 1 2
 Foo←{a←⍵ ⋄ Plus←+ ⋄ a(Plus⍄⊢)←1 ⋄ a} ⋄ Foo3   ⍝ 4
 
 ⍝ aplcart/table.tsv:2702 — Indexing (scatter-point)
-X←1+3 4⍴⍳12 ⋄ Iv←0 1 ⋄ Jv←2 3 ⋄ X[Iv Jv]   ⍝ 2 12
+X←1+3 4⍴⍳12 ⋄ Iv←0 1 ⋄ Jv←2 3 ⋄ [[Iv Jv]]⌷X   ⍝ 2 12
 
 ⍝ aplcart/table.tsv:2730 — Multiple assignment
 [a b]←1 2 ⋄ a+b   ⍝ 3
@@ -8146,7 +5900,7 @@ D←["  ab" ⋄ " c d"]  ⋄ +/∧\' '=D   ⍝ [2 1]ₓ
 1⌽,⍨9⍴"""1⌽,⍨9⍴"""   ⍝ "1⌽,⍨9⍴""""""1⌽,⍨9⍴"""""""
 
 ⍝ aplcart/table.tsv:3775 — Generate random UUIDv4; Original UUIDv4 generator; assert length, hyphen positions, version 4, variant bits and lowercase hexadecimal alphabet, not a random sample; Independent expected truth and Dyalog check
-u←'-'@(8+5×⍳4) (•d,•c•a) 4(8+|)@19(4@14?36⍴16) ⋄ 36=≢u ∧ ∧/'-'=u[8 13 18 23] ∧ '4'=u14 ∧ (u19)∊"89ab" ∧ ∧/(u~"-")∊•d,•c•a
+u←'-'@ 8+5×⍳4 [4(8+|)@19(4@14?36⍴16)]⌷•d,•c•a ⋄ 36=≢u ∧ ∧/'-'=[[8 13 18 23]]⌷u ∧ '4'=14⌷u ∧ (19⌷u)∊"89ab" ∧ ∧/(u~"-")∊•d,•c•a
 $t
 
 ⍝ aplcart/tt.tsv:2 — *N×0j1; Reuse concrete inputs from aplcart/table.tsv:574; execute this alternate recipe independently
@@ -8160,7 +5914,7 @@ N←3j4 0j2 ⋄ {¯10○⍵}N   ⍝ 3j¯4 0j¯2
 J←¯3 0 1 7 ⋄ {¯1-⍵}J   ⍝ 2 ¯1 ¯2 ¯8
 
 ⍝ aplcart/tt.tsv:7 — 2-argument arctangent (M:x, N:y)
-M←1 ¯1 ¯1 1 ⋄ N←1 1 ¯1 ¯1 ⋄ M 12⍃○∘(⊣+0j1⍃×∘⊢) N
+M←1 ¯1 ¯1 1 ⋄ N←1 1 ¯1 ¯1 ⋄ M 12⍃○∘ ⊣+0j1⍃×∘⊢ N
 0.7853981633974483 2.356194490192345 ¯2.356194490192345 ¯0.7853981633974483
 
 ⍝ aplcart/tt.tsv:8 — 2-argument arctangent (M:x, N:y); Reuse concrete inputs from aplcart/table.tsv:1098; execute this alternate recipe independently
@@ -8264,7 +6018,7 @@ Jv←2 3 ⋄ {,⍳⍵}Jv   ⍝ [0 0;0 1;0 2;1 0;1 1;1 2]
 Js←4 ⋄ (-/¨ ,\1+⍳)Js   ⍝ 1 ¯1 2 ¯2
 
 ⍝ aplcart/tt.tsv:51 — An array that begins with 1↑N and has pair-wise sums 1↓N
-[(¯1⊥¨,\) 3,4 5 5 6;+/∘(2⍃↕) (¯1⊥¨,\) 3,4 5 5 6]
+[(¯1⊥¨,\) 3,4 5 5 6;+/∘ 2⍃↕ (¯1⊥¨,\) 3,4 5 5 6]
 [3 1 4 1 5;4 5 5 6]
 
 ⍝ aplcart/tt.tsv:52 — An array that begins with 1↑N and has pair-wise sums 1↓N
@@ -8274,13 +6028,13 @@ N←1 2 3 4 ⋄ {¯1⊥¨⍪⍀⍵}N   ⍝ 1 1 2 2
 M←1 ⋄ N←1 2 ⋄ M{¯3○⍺÷⍵}N   ⍝ 0.7853981633974483 0.4636476090008061
 
 ⍝ aplcart/tt.tsv:55 — Annual rate to modal rate
-M←12 ⋄ N←0.05 ⋄ M ¯1⍃+∘(⊣*⍄÷⍨1⍃+∘⊢) N   ⍝ 0.004074123783648353
+M←12 ⋄ N←0.05 ⋄ M ¯1⍃+∘ ⊣*⍄÷⍨1⍃+∘⊢ N   ⍝ 0.004074123783648353
 
 ⍝ aplcart/tt.tsv:56 — Annual rate to modal rate; Reuse concrete inputs from aplcart/table.tsv:1302; execute this alternate recipe independently
 M←12 ⋄ N←0.05 ⋄ M{¯1+(1+⍵)*÷⍺}N   ⍝ 0.004074123783648353
 
 ⍝ aplcart/tt.tsv:57 — Annuity coefficient: I periods at interest N
-I←12 ⋄ N←0.05 ⋄ I ⊢÷⍄⍉1⍃+∘(⊣×⊗1⍃+∘⊢) N   ⍝ 0.003676470588235294
+I←12 ⋄ N←0.05 ⋄ I ⊢÷⍄⍉1⍃+∘ ⊣×⊗1⍃+∘⊢ N   ⍝ 0.003676470588235294
 
 ⍝ aplcart/tt.tsv:58 — Annuity coefficient: I periods at interest N; Reuse concrete inputs from aplcart/table.tsv:1456; execute this alternate recipe independently
 I←12 ⋄ N←0.05 ⋄ I{⍵÷⍉1+⍺×⊗1+⍵}N   ⍝ 0.003676470588235294
@@ -8348,7 +6102,7 @@ Is←48 ⋄ Js←75 ⋄ Is ∧/+=(¯1+(+/∘∪⊢∨⍳))¨∘, Js   ⍝ $t
 Is←48 ⋄ Js←75 ⋄ Is{∧/(⍺+⍵)=¯1+{+/∪⍵∨⍳⍵}¨⍺,⍵}Js   ⍝ $t
 
 ⍝ aplcart/tt.tsv:88 — Are X and Y permutations of each other?; Reuse concrete inputs from aplcart/table.tsv:1262; execute this alternate recipe independently
-X←1 2 3 1 ⋄ Y←3 1 1 2 ⋄ X{(⍺(⍋⍺))≡⍵(⍋⍵)}Y   ⍝ $t
+X←1 2 3 1 ⋄ Y←3 1 1 2 ⋄ X{([⍋⍺]⌷⍺)≡[⍋⍵]⌷⍵}Y   ⍝ $t
 
 ⍝ aplcart/tt.tsv:90 — Are all elements of simple Y equal?
 Y←2 3⍴7 ⋄ {1=≢∪,⍵}Y   ⍝ $t
@@ -8405,7 +6159,7 @@ N←[1 3 ⋄ 2 2 ⋄ 3 1] ⋄ {∧⌿⍵=⌊⍀⍵}N   ⍝ $f $t
 B←1 1 0 1 0 1 0 ⋄ {~∨/,⍵}B   ⍝ $f
 
 ⍝ aplcart/tt.tsv:115 — Area of a polygon given Mv,Nv endpoints; Reuse concrete inputs from aplcart/table.tsv:1506; execute this alternate recipe independently
-Mv←0 2 2 0 ⋄ Nv←0 0 3 3 ⋄ Mv |÷⍄2∘(+.×⍄(¯1⍃⌽-1⍃⌽)) Nv   ⍝ 6
+Mv←0 2 2 0 ⋄ Nv←0 0 3 3 ⋄ Mv |÷⍄2∘(+.×⍄ ¯1⍃⌽-1⍃⌽) Nv   ⍝ 6
 
 ⍝ aplcart/tt.tsv:119 — Area of circle with radius N; optional {X} instantiated as dyadic use
 N←4 9 16 ⋄ π*⍄2 N
@@ -8419,7 +6173,7 @@ N←4 9 16 ⋄ π4×*⍄2 N
 201.0619298297468 1017.876019763093 3216.990877275948
 
 ⍝ aplcart/tt.tsv:127 — Area of triangle with side lengths N
-N←3 4 5 ⋄ 0.5⍃(⊣*⍨+.××.-0⍃,∘⊢)N   ⍝ 6
+N←3 4 5 ⋄ 0.5⍃ ⊣*⍨+.××.-0⍃,∘⊢ N   ⍝ 6
 
 ⍝ aplcart/tt.tsv:129 — Arithmetic mean of N
 N←1+2 3⍴⍳6 ⋄ +⌿÷≢ N   ⍝ 2.5 3.5 4.5
@@ -8514,7 +6268,7 @@ Ms←2 ⋄ Ns←3 ⋄ Ms ⍳, Ns   ⍝ 2 3⍴[0 0;0 1;0 2;1 0;1 1;1 2]
 N←¯40 0 100 ⋄ 32+1.8× N   ⍝ ¯40 32 212
 
 ⍝ aplcart/tt.tsv:213 — Centering text line Dv into a field of width Is; Reuse concrete inputs from aplcart/table.tsv:1468; execute this alternate recipe independently
-Is←9 ⋄ Dv← "abc"  ⋄ Is ⊢↑⍨⍄-⍄⌊÷⍄2∘(+⍄≢) Dv   ⍝ "   abc"
+Is←9 ⋄ Dv← "abc"  ⋄ Is ⊢↑⍨⍄-⍄⌊÷⍄2∘ +⍄≢ Dv   ⍝ "   abc"
 
 ⍝ aplcart/tt.tsv:215 — Change all 0s in J into Is
 10 (⊢+⊣×0⍃=∘⊢) 3 1 0 2 7 0 0 1 6   ⍝ 3 1 10 2 7 10 10 1 6
@@ -8536,7 +6290,7 @@ Mv←0 1 2 3 ⋄ Nv←2 6 18 54 ⋄ Mv *@0⊢⍄⍟⌹1⍃,∘⍪∘⊣ Nv   ⍝
 Mv←0 1 2 3 ⋄ Nv←1 3 5 7 ⋄ Mv ⊢⌹1⍃,∘⍪∘⊣ Nv   ⍝ 1 2
 
 ⍝ aplcart/tt.tsv:247 — Coefficients of the binomial (approximated, fastest above 10); Reuse concrete inputs from aplcart/table.tsv:1854; execute this alternate recipe independently
-Js←5 ⋄ 1,(×\⌽÷⊢)∘(1+⍳) Js   ⍝ 1 5 10 10 5 1
+Js←5 ⋄ 1,(×\⌽÷⊢)∘ 1+⍳ Js   ⍝ 1 5 10 10 5 1
 
 ⍝ aplcart/tt.tsv:251 — Column-wise alternating sum: ((N[1]-N[2])+N[3])-N[4]+…
 [5 3⍴3×⍳5;"";-⌿5 3⍴3×⍳5]
@@ -8555,10 +6309,10 @@ N←0.1 1 10 100 ⋄ 10⍃⍟N   ⍝ ¯0.9999999999999998 0 1 2
 X←[1 2 ⋄ 3 4 ⋄ 1 2] ⋄ Yv←1 2 ⋄ X∧.=Yv   ⍝ $t $f $t
 
 ⍝ aplcart/tt.tsv:265 — Component of Mv in direction of Nv
-Mv←1 2 3 ⋄ Nv←1 1 0 ⋄ Mv(⊢×+.×)⍄(⊢÷2*⍄÷⍨+.×⍨)Nv   ⍝ 1.5 1.5 0
+Mv←1 2 3 ⋄ Nv←1 1 0 ⋄ Mv(⊢×+.×)⍄ ⊢÷2*⍄÷⍨+.×⍨ Nv   ⍝ 1.5 1.5 0
 
 ⍝ aplcart/tt.tsv:267 — Compound interest for principals N[1] at rates N[2] in times N[3]
-N←[100 200;0.05 0.1;1 2 3] ⋄ ↑×⊗2⍃⊃*⊗⍨1⍃+∘(1⍃⊃) N
+N←[100 200;0.05 0.1;1 2 3] ⋄ ↑×⊗2⍃⊃*⊗⍨1⍃+∘ 1⍃⊃ N
 2 2 3⍴105 110.25 115.7625 110 121 133.1000000000001 210 220.5 231.525 220 242 266.2000000000001
 
 ⍝ aplcart/tt.tsv:271 — Conditional drop of last element of Y; Reuse concrete inputs from aplcart/table.tsv:663; execute this alternate recipe independently
@@ -8571,19 +6325,19 @@ A←1 0 1 ⋄ N←4 9 16 ⋄ A ⊢×¯1⍃*∘⊣ N   ⍝ ¯4 9 ¯16
 Y←3 1 3 2 1 ⋄ ∪⍳⊢ Y   ⍝ [0 1 0 2 1]ₓ
 
 ⍝ aplcart/tt.tsv:281 — Consecutive integers from Is to Js (Is≤Js)
-Is←¯2 ⋄ Js←3 ⋄ Is ⊣+⍄⍳1⍃+∘(-⍨) Js   ⍝ ¯2 ¯1 0 1 2 3
+Is←¯2 ⋄ Js←3 ⋄ Is ⊣+⍄⍳1⍃+∘ -⍨ Js   ⍝ ¯2 ¯1 0 1 2 3
 
 ⍝ aplcart/tt.tsv:283 — Consecutive integers from Is to Js (descending if Is>Js)
 Is←5 ⋄ Js←2 ⋄ Is ⊣-⍄(⍳∘(1+|)××)- Js   ⍝ 5 4 3 2
 
 ⍝ aplcart/tt.tsv:289 — Continued fraction: 1+÷2+÷3+÷4+÷5+÷6+÷…Js; optional {X} instantiated as dyadic use
-Js←4 ⋄ +⍄÷/∘(1+⍳)Js   ⍝ 1.433333333333333
+Js←4 ⋄ +⍄÷/∘ 1+⍳ Js   ⍝ 1.433333333333333
 
 ⍝ aplcart/tt.tsv:295 — Conversion of indices Jm of array to indices of ravelled array
 Jm←[0 0 1 ⋄ 0 1 2] ⋄ ⍴⊥⍉ Jm   ⍝ 0 1 5
 
 ⍝ aplcart/tt.tsv:297 — Conversion of set of indices Jv to a mask; Reuse concrete inputs from aplcart/table.tsv:1372; execute this alternate recipe independently
-Jv←1 3 4 ⋄ ⊢∊⍨⍄⍳1⍃+∘(⌈/) Jv   ⍝ $f $t $f $t $t
+Jv←1 3 4 ⋄ ⊢∊⍨⍄⍳1⍃+∘ ⌈/ Jv   ⍝ $f $t $f $t $t
 
 ⍝ aplcart/tt.tsv:319 — Convert bits Bv representing a signed integer of As-endianess (0:big, 1:little) into a number
 [1 {(¯1*↑∘,)×(2⊥↑∘,≠,) ⊖⍣⍺ (8,⍨8÷⍨≢⍵)⍴⍵} 64↑1 1;1 {(¯1*↑∘,)×(2⊥↑∘,≠,) ⊖⍣⍺ (8,⍨8÷⍨≢⍵)⍴⍵} ~64↑1 1]
@@ -8613,7 +6367,7 @@ Yv←[1 2 3;["ab" ⋄ " c" ⋄ "de"]] ⋄ (⍉∘⊃{1=≢⍴⍵:⍵ ⋄ ↓⍵}
 [1 "ab" ⋄ 2 " c" ⋄ 3 "de"]
 
 ⍝ aplcart/tt.tsv:338 — Convert inverted table to table (character data as matrices; remove trailing spaces)
-Yv←[1 2 3;["ab" ⋄ " c" ⋄ "de"]] ⋄ ⍉∘⊃{(+/∨\' '≠⌽⍵)↑¨↓⍵}¨@(2=≢∘⍴¨) Yv
+Yv←[1 2 3;["ab" ⋄ " c" ⋄ "de"]] ⋄ ⍉∘⊃{(+/∨\' '≠⌽⍵)↑¨↓⍵}¨@ 2=≢∘⍴¨ Yv
 [1 "ab" ⋄ 2 " c" ⋄ 3 "de"]
 
 ⍝ aplcart/tt.tsv:340 — Convert inverted table to table (character data as vectors of vectors)
@@ -8644,7 +6398,7 @@ states←⊂3 3 ⍴¨ ↓(9⍴2)⊤⍳512 ⋄ Bv←states#⍨{(3=+/∊⍵)∨(1=
 5 5⍴[$f $f $f $f $f $f $f $f $f $f $f $t $t $t $f $f $f $f $f $f $f $f $f $f $f]
 
 ⍝ aplcart/tt.tsv:361 — Corner element of a (non-empty) array Y[1;1;1…]
-[3 3⍴ ,/∘(2⍃↕) ⍳9;"";↑∘, 3 3⍴ ,/∘(2⍃↕) ⍳9]
+[3 3⍴ ,/∘ 2⍃↕ ⍳9;"";↑∘, 3 3⍴ ,/∘ 2⍃↕ ⍳9]
 [3 3⍴[0 1;1 2;2 3;3 4;4 5;5 6;6 7;7 8;0 1];"";0 1]
 
 ⍝ aplcart/tt.tsv:362 — Corner element of a (non-empty) array Y[1;1;1…]
@@ -8696,7 +6450,7 @@ Jv←2 3 ⋄ 2⍃⍴⍴(1,⍴⍄0) Jv   ⍝ [1 0 0 ⋄ 0 1 0]
 Yv←1 2 3 ⋄ -∘⍳∘≢⌽⊢,(0 ¯1+≢)⍴0⍃⍴ Yv   ⍝ [1 0 0 ⋄ 0 2 0 ⋄ 0 0 3]
 
 ⍝ aplcart/tt.tsv:445 — Diagonal ravel
-Ym←1+2 3⍴⍳6 ⋄ ,⌷⍨⍄⊂⍄⍋1⍃⊥∘(⍴⊤⍳∘(×/∘⍴)) Ym   ⍝ 1 2 4 3 5 6
+Ym←1+2 3⍴⍳6 ⋄ ,⌷⍨⍄⊂⍄⍋1⍃⊥∘(⍴⊤⍳∘ ×/∘⍴) Ym   ⍝ 1 2 4 3 5 6
 
 ⍝ aplcart/tt.tsv:449 — Differences of successive elements of N along direction Is
 Is←2 ⋄ N←[1 3 6 ⋄ 2 5 9] ⋄ -/∘⌽∘(2⍃↕)⍤1 N   ⍝ [2 3 ⋄ 3 4]
@@ -8726,7 +6480,7 @@ M←1+2 3⍴⍳6 ⋄ N←1+3 2⍴⍳6 ⋄ M+.×N   ⍝ [22 28 ⋄ 49 64]
 N←4 9 16 ⋄ +⍨N   ⍝ 8 18 32
 
 ⍝ aplcart/tt.tsv:487 — Doubling quotes for execution
-Dv← "don't"  ⋄ '''⍃(⊣,⊣,⍨⊢#⍨1⍃+∘=)Dv   ⍝ "'don''t'"
+Dv← "don't"  ⋄ '''⍃ ⊣,⊣,⍨⊢#⍨1⍃+∘= Dv   ⍝ "'don''t'"
 
 ⍝ aplcart/tt.tsv:489 — Drop Is columns from matrix Ym; Reuse concrete inputs from aplcart/table.tsv:809; execute this alternate recipe independently
 Is←2 ⋄ Ym←1+2 3⍴⍳6 ⋄ Is ⊢↓⍨0⍃,∘⊣ Ym   ⍝ 2 1⍴3 6
@@ -8735,7 +6489,7 @@ Is←2 ⋄ Ym←1+2 3⍴⍳6 ⋄ Is ⊢↓⍨0⍃,∘⊣ Ym   ⍝ 2 1⍴3 6
 Iv←1 2 ⋄ Y←1+4 6⍴⍳24 ⋄ Iv -∘⊣↓↓ Y   ⍝ [9 10 ⋄ 15 16]
 
 ⍝ aplcart/tt.tsv:495 — Effective rate of interest with nominal rate N for I periods
-I←12 ⋄ N←0.05 ⋄ I ⊣*⍨1⍃+∘(÷⍨) N   ⍝ 1.051161897881733
+I←12 ⋄ N←0.05 ⋄ I ⊣*⍨1⍃+∘ ÷⍨ N   ⍝ 1.051161897881733
 
 ⍝ aplcart/tt.tsv:500 — Empty array along first axis
 Y←2 3⍴⍳6 ⋄ 0⍃#Y   ⍝ 0 3⍴0
@@ -8806,10 +6560,10 @@ Js←4 ⋄ +/1=(⊢∨⍳) Js   ⍝ 2ₓ
 Mv←2 3 4 ⋄ Nv←1 2 3 ⋄ Mv⊥⍨⍄⍪Nv   ⍝ 9 18 31
 
 ⍝ aplcart/tt.tsv:547 — Even integers from 0 to 2×Js
-[2×⍳∘(1+) 5;2×⍳∘(1+) 6]   ⍝ [0 2 4 6 8 10;0 2 4 6 8 10 12]
+[2×⍳∘ 1+ 5;2×⍳∘ 1+ 6]   ⍝ [0 2 4 6 8 10;0 2 4 6 8 10 12]
 
 ⍝ aplcart/tt.tsv:548 — Even integers from 0 to 2×Js
-Js←4 ⋄ 2×⍳∘(1+) Js   ⍝ 0 2 4 6 8
+Js←4 ⋄ 2×⍳∘ 1+ Js   ⍝ 0 2 4 6 8
 
 ⍝ aplcart/tt.tsv:553 — Expansion mask (left argument for ⍀) for fields of length Jv to uniform field of length |Is
 Is←4 ⋄ Jv←2 3 1 ⋄ Is ,(⊣↑1⍃(⍴⍨)∘⊢)⍤0 Jv   ⍝ 1 1 0 0 1 1 1 0 1 0 0 0
@@ -8902,10 +6656,10 @@ Y←1+2 3⍴⍳6 ⋄ ⊢⌿Y   ⍝ 4 5 6
 Y←1+2 3⍴⍳6 ⋄ ⊢/Y   ⍝ 3 6
 
 ⍝ aplcart/tt.tsv:597 — Fill array Y with Xs; Reuse concrete inputs from aplcart/table.tsv:929; execute this alternate recipe independently
-Xs←9 ⋄ Y←2 3⍴⍳6 ⋄ Xs@(1⍴⍨⍴)Y   ⍝ [9 9 9 ⋄ 9 9 9]
+Xs←9 ⋄ Y←2 3⍴⍳6 ⋄ Xs@ 1⍴⍨⍴ Y   ⍝ [9 9 9 ⋄ 9 9 9]
 
 ⍝ aplcart/tt.tsv:607 — First Js figurate numbers
-Js←4 ⋄ +\+\∘(1+⍳) Js   ⍝ 1 4 10 20
+Js←4 ⋄ +\+\∘ 1+⍳ Js   ⍝ 1 4 10 20
 
 ⍝ aplcart/tt.tsv:609 — First Js triangular numbers; optional {X} instantiated as dyadic use
 Js←4 ⋄ +\1+⍳ Js   ⍝ 1 3 6 10
@@ -8986,7 +6740,7 @@ N←1 4 16 ⋄ ×⌿*⍄÷≢ N   ⍝ 4
 Nv←1 4 ⋄ ↑((×⌿*⍄÷≢),≢÷1⍃⊥∘÷)⍣≡ Nv   ⍝ 1.783303179974246
 
 ⍝ aplcart/tt.tsv:695 — Handling array Y temporarily as a vector (optionally with left argument X); Reuse concrete inputs from aplcart/table.tsv:928; execute this alternate recipe independently
-X←10 ⋄ f←⌽ ⋄ Y←1+2 3⍴⍳6 ⋄ X f@(1⍴⍨⍴) Y   ⍝ [5 6 1 ⋄ 2 3 4]
+X←10 ⋄ f←⌽ ⋄ Y←1+2 3⍴⍳6 ⋄ X f@ 1⍴⍨⍴ Y   ⍝ [5 6 1 ⋄ 2 3 4]
 
 ⍝ aplcart/tt.tsv:697 — Harmonic mean
 N←4 9 16 ⋄ ≢÷1⍃⊥∘÷ N   ⍝ 7.081967213114754
@@ -9060,7 +6814,7 @@ Y←1+2 3⍴⍳6 ⋄ ⊃,∘⊂⍤1 Y   ⍝ 2 1 3⍴1 2 3 4 5 6
 N←4 9 16 ⋄ 1⍃+N   ⍝ 5 10 17
 
 ⍝ aplcart/tt.tsv:783 — Index of first consecutive occurrence of major cells of X in Y; Reuse concrete inputs from aplcart/table.tsv:1213; execute this alternate recipe independently
-X←[3 4 ⋄ 5 6] ⋄ Y←[1 2 ⋄ 3 4 ⋄ 5 6 ⋄ 7 8] ⋄ X ⍳⍄1∘(↑⍤¯1∘⍷) Y   ⍝ 1ₓ
+X←[3 4 ⋄ 5 6] ⋄ Y←[1 2 ⋄ 3 4 ⋄ 5 6 ⋄ 7 8] ⋄ X ⍳⍄1∘ ↑⍤¯1∘⍷ Y   ⍝ 1ₓ
 
 ⍝ aplcart/tt.tsv:787 — Index of first instance of each major cell; Reuse concrete inputs from aplcart/table.tsv:1136; execute this alternate recipe independently
 Y←3 1 3 2 ⋄ ⍳⍨∪⍳⊢ Y   ⍝ [0 1 0 3]ₓ
@@ -9109,7 +6863,7 @@ Js←4 ⋄ ⍴⍨0⍃, Js   ⍝ 0 4⍴0
 Bv←1 1 1 0 0 ⋄ 2⍃⊥Bv   ⍝ 28
 
 ⍝ aplcart/tt.tsv:861 — Integers from -Js to Js
-Js←4 ⋄ (⌽⌽,0,-)∘(1+⍳)Js   ⍝ ¯4 ¯3 ¯2 ¯1 0 1 2 3 4
+Js←4 ⋄ (⌽⌽,0,-)∘ 1+⍳ Js   ⍝ ¯4 ¯3 ¯2 ¯1 0 1 2 3 4
 
 ⍝ aplcart/tt.tsv:866 — Integral and fractional part of positive number
 N←0 1.5 2.75 ⋄ 0 1⍃⊤N   ⍝ [0 0 ⋄ 1 0.5 ⋄ 2 0.75]
@@ -9143,32 +6897,32 @@ Bm←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ ⊢≡≤⊗⍨∘⍳∘≢ Bm   ⍝ $f
 Bm←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ ⊢≡<⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:879 — Is Bm a lower triangular matrix with diagonal?; nested displayed values saved once in evaluation order and returned together
-[r_1←[1 1 1 ⋄ 1 1 1 ⋄ 1 1 1];~0∊,∘(×∘|≤≥⊗⍨∘⍳∘≢) r_1;r_3←[1 0 0 ⋄ 1 1 0 ⋄ 1 1 1];~0∊,∘(×∘|≤≥⊗⍨∘⍳∘≢) r_3;r_5←[0 0 0 ⋄ 1 0 0 ⋄ 1 1 0];~0∊,∘(×∘|≤≥⊗⍨∘⍳∘≢) r_5;r_7←[0 0 0 ⋄ 0 0 0 ⋄ 1 0 0];~0∊,∘(×∘|≤≥⊗⍨∘⍳∘≢) r_7]
+[r_1←[1 1 1 ⋄ 1 1 1 ⋄ 1 1 1];~0∊,∘ ×∘|≤≥⊗⍨∘⍳∘≢ r_1;r_3←[1 0 0 ⋄ 1 1 0 ⋄ 1 1 1];~0∊,∘ ×∘|≤≥⊗⍨∘⍳∘≢ r_3;r_5←[0 0 0 ⋄ 1 0 0 ⋄ 1 1 0];~0∊,∘ ×∘|≤≥⊗⍨∘⍳∘≢ r_5;r_7←[0 0 0 ⋄ 0 0 0 ⋄ 1 0 0];~0∊,∘ ×∘|≤≥⊗⍨∘⍳∘≢ r_7]
 [[1 1 1 ⋄ 1 1 1 ⋄ 1 1 1];$f;[1 0 0 ⋄ 1 1 0 ⋄ 1 1 1];$t;[0 0 0 ⋄ 1 0 0 ⋄ 1 1 0];$t;[0 0 0 ⋄ 0 0 0 ⋄ 1 0 0];$t]
 
 ⍝ aplcart/tt.tsv:880 — Is Bm a lower triangular matrix with diagonal?
-Bm←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ ~0∊,∘(×∘|≤≥⊗⍨∘⍳∘≢) Bm   ⍝ $f
+Bm←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ ~0∊,∘ ×∘|≤≥⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:881 — Is Bm a lower triangular matrix without diagonal?; nested displayed values saved once in evaluation order and returned together
-[r_1←[1 1 1 ⋄ 1 1 1 ⋄ 1 1 1];~0∊,∘(×∘|≤>⊗⍨∘⍳∘≢) r_1;r_3←[1 0 0 ⋄ 1 1 0 ⋄ 1 1 1];~0∊,∘(×∘|≤>⊗⍨∘⍳∘≢) r_3;r_5←[0 0 0 ⋄ 1 0 0 ⋄ 1 1 0];~0∊,∘(×∘|≤>⊗⍨∘⍳∘≢) r_5;r_7←[0 0 0 ⋄ 0 0 0 ⋄ 1 0 0];~0∊,∘(×∘|≤>⊗⍨∘⍳∘≢) r_7]
+[r_1←[1 1 1 ⋄ 1 1 1 ⋄ 1 1 1];~0∊,∘ ×∘|≤>⊗⍨∘⍳∘≢ r_1;r_3←[1 0 0 ⋄ 1 1 0 ⋄ 1 1 1];~0∊,∘ ×∘|≤>⊗⍨∘⍳∘≢ r_3;r_5←[0 0 0 ⋄ 1 0 0 ⋄ 1 1 0];~0∊,∘ ×∘|≤>⊗⍨∘⍳∘≢ r_5;r_7←[0 0 0 ⋄ 0 0 0 ⋄ 1 0 0];~0∊,∘ ×∘|≤>⊗⍨∘⍳∘≢ r_7]
 [[1 1 1 ⋄ 1 1 1 ⋄ 1 1 1];$f;[1 0 0 ⋄ 1 1 0 ⋄ 1 1 1];$f;[0 0 0 ⋄ 1 0 0 ⋄ 1 1 0];$t;[0 0 0 ⋄ 0 0 0 ⋄ 1 0 0];$t]
 
 ⍝ aplcart/tt.tsv:882 — Is Bm a lower triangular matrix without diagonal?
-Bm←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ ~0∊,∘(×∘|≤>⊗⍨∘⍳∘≢) Bm   ⍝ $f
+Bm←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ ~0∊,∘ ×∘|≤>⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:883 — Is Bm an upper triangular matrix with diagonal?; nested displayed values saved once in evaluation order and returned together
-[r_1←[1 1 1 ⋄ 1 1 1 ⋄ 1 1 1];~0∊,∘(×∘|≤≤⊗⍨∘⍳∘≢) r_1;r_3←[1 1 1 ⋄ 0 1 1 ⋄ 0 0 1];~0∊,∘(×∘|≤≤⊗⍨∘⍳∘≢) r_3;r_5←[0 1 1 ⋄ 0 0 1 ⋄ 0 0 0];~0∊,∘(×∘|≤≤⊗⍨∘⍳∘≢) r_5;r_7←[0 0 1 ⋄ 0 0 0 ⋄ 0 0 0];~0∊,∘(×∘|≤≤⊗⍨∘⍳∘≢) r_7]
+[r_1←[1 1 1 ⋄ 1 1 1 ⋄ 1 1 1];~0∊,∘ ×∘|≤≤⊗⍨∘⍳∘≢ r_1;r_3←[1 1 1 ⋄ 0 1 1 ⋄ 0 0 1];~0∊,∘ ×∘|≤≤⊗⍨∘⍳∘≢ r_3;r_5←[0 1 1 ⋄ 0 0 1 ⋄ 0 0 0];~0∊,∘ ×∘|≤≤⊗⍨∘⍳∘≢ r_5;r_7←[0 0 1 ⋄ 0 0 0 ⋄ 0 0 0];~0∊,∘ ×∘|≤≤⊗⍨∘⍳∘≢ r_7]
 [[1 1 1 ⋄ 1 1 1 ⋄ 1 1 1];$f;[1 1 1 ⋄ 0 1 1 ⋄ 0 0 1];$t;[0 1 1 ⋄ 0 0 1 ⋄ 0 0 0];$t;[0 0 1 ⋄ 0 0 0 ⋄ 0 0 0];$t]
 
 ⍝ aplcart/tt.tsv:884 — Is Bm an upper triangular matrix with diagonal?
-Bm←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ ~0∊,∘(×∘|≤≤⊗⍨∘⍳∘≢) Bm   ⍝ $f
+Bm←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ ~0∊,∘ ×∘|≤≤⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:885 — Is Bm an upper triangular matrix without diagonal?; nested displayed values saved once in evaluation order and returned together
-[r_1←[1 1 1 ⋄ 1 1 1 ⋄ 1 1 1];~0∊,∘(×∘|≤<⊗⍨∘⍳∘≢) r_1;r_3←[1 1 1 ⋄ 0 1 1 ⋄ 0 0 1];~0∊,∘(×∘|≤<⊗⍨∘⍳∘≢) r_3;r_5←[0 1 1 ⋄ 0 0 1 ⋄ 0 0 0];~0∊,∘(×∘|≤<⊗⍨∘⍳∘≢) r_5;r_7←[0 0 1 ⋄ 0 0 0 ⋄ 0 0 0];~0∊,∘(×∘|≤<⊗⍨∘⍳∘≢) r_7]
+[r_1←[1 1 1 ⋄ 1 1 1 ⋄ 1 1 1];~0∊,∘ ×∘|≤<⊗⍨∘⍳∘≢ r_1;r_3←[1 1 1 ⋄ 0 1 1 ⋄ 0 0 1];~0∊,∘ ×∘|≤<⊗⍨∘⍳∘≢ r_3;r_5←[0 1 1 ⋄ 0 0 1 ⋄ 0 0 0];~0∊,∘ ×∘|≤<⊗⍨∘⍳∘≢ r_5;r_7←[0 0 1 ⋄ 0 0 0 ⋄ 0 0 0];~0∊,∘ ×∘|≤<⊗⍨∘⍳∘≢ r_7]
 [[1 1 1 ⋄ 1 1 1 ⋄ 1 1 1];$f;[1 1 1 ⋄ 0 1 1 ⋄ 0 0 1];$f;[0 1 1 ⋄ 0 0 1 ⋄ 0 0 0];$t;[0 0 1 ⋄ 0 0 0 ⋄ 0 0 0];$t]
 
 ⍝ aplcart/tt.tsv:886 — Is Bm an upper triangular matrix without diagonal?
-Bm←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ ~0∊,∘(×∘|≤<⊗⍨∘⍳∘≢) Bm   ⍝ $f
+Bm←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ ~0∊,∘ ×∘|≤<⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:898 — Is Dv a palindrome?
 Dv←"racecar" ⋄ ⌽≡⊢ Dv   ⍝ $t
@@ -9231,14 +6985,14 @@ Y←3 1 3 2 ⋄ 1=≢∘⍴ Y   ⍝ $t
 $t $t $f $t $t
 
 ⍝ aplcart/tt.tsv:990 — Is Y outside the range ( 1⌷X , 2⌷X )
-X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X 5⍃≠∘(⍳+3⍃×∘⍸) Y   ⍝ $t $t $f $t $t
+X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X 5⍃≠∘ ⍳+3⍃×∘⍸ Y   ⍝ $t $t $f $t $t
 
 ⍝ aplcart/tt.tsv:991 — Is Y outside the range ( 1⌷X , 2⌷X ]
 [1 3 (1⍃≠∘(5 8⍃⍸)∘(⍳+3⍃×∘⍸)) 0;1 3 (1⍃≠∘(5 8⍃⍸)∘(⍳+3⍃×∘⍸)) 1;1 3 (1⍃≠∘(5 8⍃⍸)∘(⍳+3⍃×∘⍸)) 2;1 3 (1⍃≠∘(5 8⍃⍸)∘(⍳+3⍃×∘⍸)) 3;1 3 (1⍃≠∘(5 8⍃⍸)∘(⍳+3⍃×∘⍸)) 4]
 $t $t $f $f $t
 
 ⍝ aplcart/tt.tsv:992 — Is Y outside the range ( 1⌷X , 2⌷X ]
-X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X 1⍃≠∘(5 8⍃⍸)∘(⍳+3⍃×∘⍸) Y   ⍝ $t $t $f $f $t
+X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X 1⍃≠∘(5 8⍃⍸)∘ ⍳+3⍃×∘⍸ Y   ⍝ $t $t $f $f $t
 
 ⍝ aplcart/tt.tsv:993 — Is Y outside the range [ 1⌷X , 2⌷X )
 [1 3 (1⍃≠∘⍸) 0;1 3 (1⍃≠∘⍸) 1;1 3 (1⍃≠∘⍸) 2;1 3 (1⍃≠∘⍸) 3;1 3 (1⍃≠∘⍸) 4]
@@ -9252,21 +7006,21 @@ X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X 1≠⍸ Y   ⍝ $t $f $f $t $t
 $t $f $f $f $t
 
 ⍝ aplcart/tt.tsv:996 — Is Y outside the range [ 1⌷X , 2⌷X ]
-X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X 1⍃≠∘(3 8⍃⍸)∘(⍳+3⍃×∘⍸) Y   ⍝ $t $f $f $f $t
+X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X 1⍃≠∘(3 8⍃⍸)∘ ⍳+3⍃×∘⍸ Y   ⍝ $t $f $f $f $t
 
 ⍝ aplcart/tt.tsv:997 — Is Y within the range ( 1⌷X , 2⌷X )
 [1 3 (5⍃=∘(⍳+3⍃×∘⍸)) 0;1 3 (5⍃=∘(⍳+3⍃×∘⍸)) 1;1 3 (5⍃=∘(⍳+3⍃×∘⍸)) 2;1 3 (5⍃=∘(⍳+3⍃×∘⍸)) 3;1 3 (5⍃=∘(⍳+3⍃×∘⍸)) 4]
 $f $f $t $f $f
 
 ⍝ aplcart/tt.tsv:998 — Is Y within the range ( 1⌷X , 2⌷X )
-X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X 5⍃=∘(⍳+3⍃×∘⍸) Y   ⍝ $f $f $t $f $f
+X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X 5⍃=∘ ⍳+3⍃×∘⍸ Y   ⍝ $f $f $t $f $f
 
 ⍝ aplcart/tt.tsv:999 — Is Y within the range ( 1⌷X , 2⌷X ]
 [1 3 (1⍃=∘(5 8⍃⍸)∘(⍳+3⍃×∘⍸)) 0;1 3 (1⍃=∘(5 8⍃⍸)∘(⍳+3⍃×∘⍸)) 1;1 3 (1⍃=∘(5 8⍃⍸)∘(⍳+3⍃×∘⍸)) 2;1 3 (1⍃=∘(5 8⍃⍸)∘(⍳+3⍃×∘⍸)) 3;1 3 (1⍃=∘(5 8⍃⍸)∘(⍳+3⍃×∘⍸)) 4]
 $f $f $t $t $f
 
 ⍝ aplcart/tt.tsv:1000 — Is Y within the range ( 1⌷X , 2⌷X ]
-X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X 1⍃=∘(5 8⍃⍸)∘(⍳+3⍃×∘⍸) Y   ⍝ $f $f $t $t $f
+X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X 1⍃=∘(5 8⍃⍸)∘ ⍳+3⍃×∘⍸ Y   ⍝ $f $f $t $t $f
 
 ⍝ aplcart/tt.tsv:1001 — Is Y within the range [ 1⌷X , 2⌷X )
 [1 3 (1⍃=∘⍸) 0;1 3 (1⍃=∘⍸) 1;1 3 (1⍃=∘⍸) 2;1 3 (1⍃=∘⍸) 3;1 3 (1⍃=∘⍸) 4]
@@ -9280,7 +7034,7 @@ X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X 1=⍸ Y   ⍝ $f $t $t $f $f
 $f $t $t $t $f
 
 ⍝ aplcart/tt.tsv:1004 — Is Y within the range [ 1⌷X , 2⌷X ]
-X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X 1⍃=∘(3 8⍃⍸)∘(⍳+3⍃×∘⍸) Y   ⍝ $f $t $t $t $f
+X←2 4 ⋄ Y←1 2 3 4 5 ⋄ X 1⍃=∘(3 8⍃⍸)∘ ⍳+3⍃×∘⍸ Y   ⍝ $f $t $t $t $f
 
 ⍝ aplcart/tt.tsv:1006 — Is Ym a square matrix?
 Ym←2 3⍴⍳6 ⋄ =/⍴ Ym   ⍝ $f
@@ -9292,7 +7046,7 @@ Ym←[1 2 3 ⋄ 2 4 5 ⋄ 3 5 6] ⋄ ⍉≡⊢ Ym   ⍝ $t
 C←"cat" "dog" "bird" ⋄ Dv←"dog" ⋄ C∊⍨⍄⊂Dv   ⍝ $t
 
 ⍝ aplcart/tt.tsv:1013 — Is'th moment of Nv
-Is←2 ⋄ Nv←1 2 4 ⋄ Is ⊢⍄≢÷⍨1⍃⊥∘(⊣*⍨⊢-⊢⍄≢÷⍨1⍃⊥∘⊢) Nv   ⍝ 1.555555555555556
+Is←2 ⋄ Nv←1 2 4 ⋄ Is ⊢⍄≢÷⍨1⍃⊥∘ ⊣*⍨⊢-⊢⍄≢÷⍨1⍃⊥∘⊢ Nv   ⍝ 1.555555555555556
 
 ⍝ aplcart/tt.tsv:1015 — Is'th number in the Aliqout sequence for Js; Reuse concrete inputs from aplcart/table.tsv:1494; execute this alternate recipe independently
 Is←2 ⋄ Js←6 ⋄ Is{(+/∘∪⊢∨⍳)⍣⍺ ⍵}Js   ⍝ 28
@@ -9305,10 +7059,10 @@ names ← "Bob" "Dan" "Cal" "Abe" ⋄ [1 {⍺←0 ⋄ (⍺⊃⍒⍵)⌷⍵} name
 Is←1 ⋄ Y←[1 2 ⋄ 5 6 ⋄ 3 4] ⋄ Is{⍺←0 ⋄ (⍺⊃⍒⍵)⌷⍵}Y   ⍝ 3 4
 
 ⍝ aplcart/tt.tsv:1019 — Is-norm
-2 ⊣*⍄÷⍨1⍃⊥∘(*⍨⍄|) 3 4   ⍝ 5
+2 ⊣*⍄÷⍨1⍃⊥∘ *⍨⍄| 3 4   ⍝ 5
 
 ⍝ aplcart/tt.tsv:1020 — Is-norm
-Is←2 ⋄ N←3 4 ⋄ Is ⊣*⍄÷⍨1⍃⊥∘(*⍨⍄|) N   ⍝ 5
+Is←2 ⋄ N←3 4 ⋄ Is ⊣*⍄÷⍨1⍃⊥∘ *⍨⍄| N   ⍝ 5
 
 ⍝ aplcart/tt.tsv:1021 — Is-smallest (default: the smallest) major cell of Y
 names ← "Bob" "Dan" "Cal" "Abe" ⋄ [1 {⍺←0 ⋄ (⍺⊃⍋⍵)⌷⍵} names;{⍺←0 ⋄ (⍺⊃⍋⍵)⌷⍵} names]
@@ -9349,7 +7103,7 @@ N←[1 2 3 ⋄ 4 5 6] ⋄ (⊣+¯11⍃○∘⊢)⌿N   ⍝ 1j4 2j5 3j6
 M←1 2 3 ⋄ N←4 5 6 ⋄ M ⊣+¯11⍃○∘⊢ N   ⍝ 1j4 2j5 3j6
 
 ⍝ aplcart/tt.tsv:1055 — Join scalar elements of vector Yv with separator Xs
-Xs←9 ⋄ Yv←4 5 6 ⋄ Xs 1⍃↓∘,∘(,⍤0) Yv   ⍝ 4 9 5 9 6
+Xs←9 ⋄ Yv←4 5 6 ⋄ Xs 1⍃↓∘,∘ ,⍤0 Yv   ⍝ 4 9 5 9 6
 
 ⍝ aplcart/tt.tsv:1058 — Joining date YYYY M D to packed YYYYMMDD integer
 Jv←2026 9 18 ⋄ 100⍃⊥Jv   ⍝ 20260918
@@ -9366,7 +7120,7 @@ Y←1+2 3 4⍴⍳24 ⋄ (×⌿2 2⍴1,⍴)⍴1 0 2⍃⍉ Y
 [1 2 3 4 13 14 15 16 ⋄ 5 6 7 8 17 18 19 20 ⋄ 9 10 11 12 21 22 23 24]
 
 ⍝ aplcart/tt.tsv:1066 — Kronecker product
-Mm←[1 2 ⋄ 3 4] ⋄ Nm←1+2 3⍴⍳6 ⋄ Mm{,⍤2,⍠(⍳2)0 2 1 3⍉⍺×⊗⍵}Nm
+Mm←[1 2 ⋄ 3 4] ⋄ Nm←1+2 3⍴⍳6 ⋄ Mm{,⍤2,⍠ ⍳2 [0 2 1 3]⍉⍺×⊗⍵}Nm
 [1 2 3 2 4 6 ⋄ 4 5 6 8 10 12 ⋄ 3 6 9 4 8 12 ⋄ 12 15 18 16 20 24]
 
 ⍝ aplcart/tt.tsv:1072 — Largest whole multiple of M less than or equal to N (N rounded down to closest smaller multiple of M)
@@ -9443,7 +7197,7 @@ D←["  a" ⋄ "  b" ⋄ "  c"]  ⋄ ∧⌿' '= D   ⍝ $t $t $f
 D←["abc" ⋄ "   " ⋄ "de "]  ⋄ ∧/' '= D   ⍝ $f $t $f
 
 ⍝ aplcart/tt.tsv:1163 — Matrix of all indices of Y (↑,⍳⍴Y for large Y)
-Y←2 3⍴0 ⋄ ⍴⊤⍳∘(×/∘⍴) Y   ⍝ 6 2⍴[0 0 0 1 0 2 1 0 1 1 1 2]ₓ
+Y←2 3⍴0 ⋄ ⍴⊤⍳∘ ×/∘⍴ Y   ⍝ 6 2⍴[0 0 0 1 0 2 1 0 1 1 1 2]ₓ
 
 ⍝ aplcart/tt.tsv:1167 — Matrix to vector of column vectors
 (↓⍉) 3 4⍴⍳12   ⍝ [0 4 8;1 5 9;2 6 10;3 7 11]
@@ -9477,7 +7231,7 @@ Xm←2 3⍴⍳6 ⋄ Yv←4 5 6 ⋄ Xm ⍉⍴⍨⍄⌽⍄⍴⍨ Yv   ⍝ [4 6 5 �
 N←4 9 16 ⋄ ⌈/N   ⍝ 16
 
 ⍝ aplcart/tt.tsv:1189 — Maximum table of 1…Js; optional {X} instantiated as dyadic use
-Js←4 ⋄ ⌈⊗⍨∘(1+⍳)Js   ⍝ [1 2 3 4 ⋄ 2 2 3 4 ⋄ 3 3 3 4 ⋄ 4 4 4 4]
+Js←4 ⋄ ⌈⊗⍨∘ 1+⍳ Js   ⍝ [1 2 3 4 ⋄ 2 2 3 4 ⋄ 3 3 3 4 ⋄ 4 4 4 4]
 
 ⍝ aplcart/tt.tsv:1192 — Mean squared error
 M←2 3 4 ⋄ N←4 9 16 ⋄ M (+⌿÷≢)2*⍨- N   ⍝ 61.33333333333334
@@ -9486,18 +7240,18 @@ M←2 3 4 ⋄ N←4 9 16 ⋄ M (+⌿÷≢)2*⍨- N   ⍝ 61.33333333333334
 Nv←7 1 4 2 ⋄ 2÷⍨1⊥(⊢⌷⍨⍄⊂⍋⌷⍨⍄⊂⍄⌊(2÷⍨¯1 0+≢)) Nv   ⍝ 3
 
 ⍝ aplcart/tt.tsv:1197 — Merge the leading Is axes of Y
-[a←2 3 4⍴⍳24;⍴a;⍴ 1 {,⍠(⍳⍺)⍵} a;⍴ 2 {,⍠(⍳⍺)⍵} a;⍴ 3 {,⍠(⍳⍺)⍵} a]
+[a←2 3 4⍴⍳24;⍴a;⍴ 1 {,⍠ ⍳⍺ ⍵} a;⍴ 2 {,⍠ ⍳⍺ ⍵} a;⍴ 3 {,⍠ ⍳⍺ ⍵} a]
 [2 3 4⍴0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23;[2 3 4]ₓ;[2 3 4]ₓ;[6 4]ₓ;[24]ₓ]
 
 ⍝ aplcart/tt.tsv:1198 — Merge the leading Is axes of Y
-Is←2 ⋄ Y←2 3 2⍴⍳12 ⋄ Is{,⍠(⍳⍺)⍵}Y   ⍝ [0 1 ⋄ 2 3 ⋄ 4 5 ⋄ 6 7 ⋄ 8 9 ⋄ 10 11]
+Is←2 ⋄ Y←2 3 2⍴⍳12 ⋄ Is{,⍠ ⍳⍺ ⍵}Y   ⍝ [0 1 ⋄ 2 3 ⋄ 4 5 ⋄ 6 7 ⋄ 8 9 ⋄ 10 11]
 
 ⍝ aplcart/tt.tsv:1199 — Merge the leading two axes of Y
-[a←2 3 4⍴⍳24;⍴a;,⍠(⍳2) a;⍴ ,⍠(⍳2) a]
+[a←2 3 4⍴⍳24;⍴a;,⍠ ⍳2 a;⍴ ,⍠ ⍳2 a]
 [2 3 4⍴0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23;[2 3 4]ₓ;[0 1 2 3 ⋄ 4 5 6 7 ⋄ 8 9 10 11 ⋄ 12 13 14 15 ⋄ 16 17 18 19 ⋄ 20 21 22 23];[6 4]ₓ]
 
 ⍝ aplcart/tt.tsv:1200 — Merge the leading two axes of Y
-Y←2 3 2⍴⍳12 ⋄ ,⍠(⍳2)Y   ⍝ [0 1 ⋄ 2 3 ⋄ 4 5 ⋄ 6 7 ⋄ 8 9 ⋄ 10 11]
+Y←2 3 2⍴⍳12 ⋄ ,⍠ ⍳2 Y   ⍝ [0 1 ⋄ 2 3 ⋄ 4 5 ⋄ 6 7 ⋄ 8 9 ⋄ 10 11]
 
 ⍝ aplcart/tt.tsv:1202 — Merge vectors in Yv alternately (↓⍉↑ that removes trailing elements from longer vectors)
 Yv←[1 2 3;4 5] ⋄ ↓(⌊/≢¨)↑⍉∘⊃ Yv   ⍝ [1 4;2 5]
@@ -9532,7 +7286,7 @@ Is←2 ⋄ Y←3 1 3 2 ⋄ ,/Is↕⍳≢Y   ⍝ [0 1;1 2;2 3]ₓ
 Iv←¯1 0 1 ⋄ Jv←2 3 ⋄ Iv ×⊗ Jv   ⍝ [¯2 ¯3 ⋄ 0 0 ⋄ 2 3]
 
 ⍝ aplcart/tt.tsv:1239 — Multiplication Table for Numbers up to Js; optional {X} instantiated as dyadic use
-Js←4 ⋄ ×⊗⍨∘(1+⍳)Js   ⍝ [1 2 3 4 ⋄ 2 4 6 8 ⋄ 3 6 9 12 ⋄ 4 8 12 16]
+Js←4 ⋄ ×⊗⍨∘ 1+⍳ Js   ⍝ [1 2 3 4 ⋄ 2 4 6 8 ⋄ 3 6 9 12 ⋄ 4 8 12 16]
 
 ⍝ aplcart/tt.tsv:1241 — Multivariate Beta Function
 N←2 3 4 ⋄ (×⌿∘!-⍄1)÷⍄!(¯1++⌿) N   ⍝ 0.0002976190476190476
@@ -9599,7 +7353,7 @@ J←1 9 10 999 ⋄ ⌊1+10⍃⍟ J   ⍝ [1 1 2 3]ₓ
 Js←4 ⋄ ≢∘∪⊢∨⍳ Js   ⍝ 3ₓ
 
 ⍝ aplcart/tt.tsv:1323 — Numeric matrix of all unordered combinations of Is out of Js without replacement; Reuse concrete inputs from aplcart/table.tsv:1571; execute this alternate recipe independently
-Is←2 ⋄ Js←4 ⋄ Is {⍵#⍠¯1⍨∧⌿ </⍠1∘(2⍃↕) ⍵}{(-⍺)↑1+⍳⍵}⍉∘⊤⍄⍳!×⍄!⊣ Js
+Is←2 ⋄ Js←4 ⋄ Is {⍵#⍠¯1⍨∧⌿ </⍠1∘ 2⍃↕ ⍵}{(-⍺)↑1+⍳⍵}⍉∘⊤⍄⍳!×⍄!⊣ Js
 [0 0 0 1 1 2 ⋄ 1 2 3 2 3 3]
 
 ⍝ aplcart/tt.tsv:1327 — Odd integers from 1 to 2×Js
@@ -9682,10 +7436,10 @@ Yv←4 5 6 ⋄ ,¨,\ Yv   ⍝ [1⍴4;4 5;4 5 6]
 Ms←0.1 ⋄ Nv←100 200 300 ⋄ Ms ⊢⍄⌽⊥⍨⍄÷(1+⊣) Nv   ⍝ 529.7520661157025
 
 ⍝ aplcart/tt.tsv:1409 — Primes until Js
-Js←20 ⋄ ⊢~,∘(×⊗⍨) 2↓⍳ Js   ⍝ 2 3 5 7 11 13 17 19
+Js←20 ⋄ ⊢~,∘ ×⊗⍨ 2↓⍳ Js   ⍝ 2 3 5 7 11 13 17 19
 
 ⍝ aplcart/tt.tsv:1415 — Probabilistic OR; Reuse concrete inputs from aplcart/table.tsv:885; execute this alternate recipe independently
-M←0 0.5 1 ⋄ N←1 0.25 0 ⋄ M 1-×⍥(1⍃-) N   ⍝ 1 0.625 1
+M←0 0.5 1 ⋄ N←1 0.25 0 ⋄ M 1-×⍥ 1⍃- N   ⍝ 1 0.625 1
 
 ⍝ aplcart/tt.tsv:1417 — Probabilistic XNOR; Reuse concrete inputs from aplcart/table.tsv:1460; execute this alternate recipe independently
 M←0 0.5 1 ⋄ N←1 0.25 0 ⋄ M (1-⊣×1-⊢)×(1-⊢×1-⊣) N   ⍝ 0 0.546875 0
@@ -9719,7 +7473,7 @@ N←[3 1 4 ⋄ 1 5 2] ⋄ ×/N   ⍝ 12 10
 Mv←1 2 ⋄ Nv←1 3 2 ⋄ Mv +⌿∘⊃(,\(0×⊣))(1↓,)¨×⍄⊂ Nv   ⍝ 1 5 8 4
 
 ⍝ aplcart/tt.tsv:1441 — Progressive index of (⍳) cyclic uniques (∪) without replacement
-[i←(¯1+[0]~⍨⍄,⍄⍉{1+⍵}⌸) "abracadabra";"abracadabra"(i)]
+[i←(¯1+[0]~⍨⍄,⍄⍉{1+⍵}⌸) "abracadabra";[i]⌷"abracadabra"]
 [0 1 2 4 6 3 8 9 5 7 10;"abrcdabraaa"]
 
 ⍝ aplcart/tt.tsv:1442 — Progressive index of (⍳) cyclic uniques (∪) without replacement
@@ -9753,10 +7507,10 @@ Iv←2 3 ⋄ Jv←[[0 0] [1 0] [1 2]] ⋄ Iv{⍺⍃⊥¨⍵}Jv   ⍝ 0 3 5
 Js←4 ⋄ *∘π0j2×(⊢÷⍨⍳,⊢) Js   ⍝ 1 0j1 ¯1 0j¯1 1
 
 ⍝ aplcart/tt.tsv:1499 — Remove leading, multiple and trailing Xs's
-Xs←0 ⋄ Yv←0 0 1 0 0 2 0 0 ⋄ Xs 1⍃↓∘(,#⍨1⍃(⊢∨⌽)∘(0⍃,∘≠)) Yv   ⍝ 1 0 2
+Xs←0 ⋄ Yv←0 0 1 0 0 2 0 0 ⋄ Xs 1⍃↓∘(,#⍨1⍃(⊢∨⌽)∘ 0⍃,∘≠) Yv   ⍝ 1 0 2
 
 ⍝ aplcart/tt.tsv:1501 — Remove leading, trailing and duplicate blanks
-Dv← "  ab  c  "  ⋄ ' '⍃(1⍃↓∘(,#⍨1⍃(⊢∨⌽)∘(0⍃,∘≠)))Dv   ⍝ "ab c"
+Dv← "  ab  c  "  ⋄ ' '⍃(1⍃↓∘(,#⍨1⍃(⊢∨⌽)∘ 0⍃,∘≠)) Dv   ⍝ "ab c"
 
 ⍝ aplcart/tt.tsv:1507 — Reorder X according to the order of Y
 X←10 20 30 ⋄ Y←3 1 2 ⋄ X⌷⍨⍄⊂⍄⍋⍄⍋Y   ⍝ 30 10 20
@@ -9768,13 +7522,13 @@ B←[1 0 1 ⋄ 0 1 1] ⋄ (1+⍸)@⊢B   ⍝ [1 0 2 ⋄ 0 3 4]
 Y←["  ab" ⋄ " c d"]  ⋄ '-'@(=⍄' ')Y   ⍝ ["--ab" ⋄ "-c-d"]
 
 ⍝ aplcart/tt.tsv:1514 — Replace all occurrences of elements from Y in array Z with X
-X←9 ⋄ Y←1 3 ⋄ Z←1 2 3 4 1 ⋄ X@(∊⍄Y)Z   ⍝ 9 2 9 4 9
+X←9 ⋄ Y←1 3 ⋄ Z←1 2 3 4 1 ⋄ X@ ∊⍄Y Z   ⍝ 9 2 9 4 9
 
 ⍝ aplcart/tt.tsv:1515 — Replace backslashes with slashes
-'/'@('\'⍃=) "path\to\file"   ⍝ "path/to/file"
+'/'@ '\'⍃= "path\to\file"   ⍝ "path/to/file"
 
 ⍝ aplcart/tt.tsv:1516 — Replace backslashes with slashes
-Dv←"a\b\c" ⋄ '/'@('\'⍃=) Dv   ⍝ "a/b/c"
+Dv←"a\b\c" ⋄ '/'@ '\'⍃= Dv   ⍝ "a/b/c"
 
 ⍝ aplcart/tt.tsv:1525 — Replacing zeroes in N with corresponding elements of M
 M←10 20 30 ⋄ N←0 1 0 ⋄ M ⊢+⊣×0⍃=∘⊢ N   ⍝ 10 1 30
@@ -9783,7 +7537,7 @@ M←10 20 30 ⋄ N←0 1 0 ⋄ M ⊢+⊣×0⍃=∘⊢ N   ⍝ 10 1 30
 Is←2 ⋄ Yv←⍳6 ⋄ Is ⍉⊢⍴⍨⊣,⍨⊢⍄≢÷⊣ Yv   ⍝ [0 2 4 ⋄ 1 3 5]
 
 ⍝ aplcart/tt.tsv:1539 — Reshape as in J (outer shape Iv with inner shape of major cells of Y)
-Iv←2 2 ⋄ Y←2 3⍴⍳6 ⋄ Iv ⊢⍴⍨⊣,1⍃↓∘(⊢⍄⍴) Y   ⍝ 2 2 3⍴0 1 2 3 4 5 0 1 2 3 4 5
+Iv←2 2 ⋄ Y←2 3⍴⍳6 ⋄ Iv ⊢⍴⍨⊣,1⍃↓∘ ⊢⍄⍴ Y   ⍝ 2 2 3⍴0 1 2 3 4 5 0 1 2 3 4 5
 
 ⍝ aplcart/tt.tsv:1541 — Reshaping non-empty lower-rank array Yv into a matrix
 Yv←4 5 6 ⋄ ⊢⍴⍨(1⌈¯2↑⍴) Yv   ⍝ 1 3⍴4 5 6
@@ -9829,15 +7583,15 @@ Ns←0.5 ⋄ 2 2⍴2 1 1 2-@1∘○⊢ Ns
 [0.8775825618903728 ¯0.479425538604203 ⋄ 0.479425538604203 0.8775825618903728]
 
 ⍝ aplcart/tt.tsv:1575 — Rounding N to nearest M (favouring away from 0)
-M←0.5 ⋄ N←¯1.25 ¯0.75 0.75 1.25 ⋄ M ⊢⍄××⊣×⍄⌊0.5⍃+∘|∘(÷⍨) N
+M←0.5 ⋄ N←¯1.25 ¯0.75 0.75 1.25 ⋄ M ⊢⍄××⊣×⍄⌊0.5⍃+∘|∘ ÷⍨ N
 ¯1.5 ¯1 1 1.5
 
 ⍝ aplcart/tt.tsv:1577 — Rounding N to nearest M (favouring towards 0)
-M←0.5 ⋄ N←¯1.25 ¯0.75 0.75 1.25 ⋄ M ⊢⍄××⊣×⍄⌈¯0.5⍃+∘|∘(÷⍨) N
+M←0.5 ⋄ N←¯1.25 ¯0.75 0.75 1.25 ⋄ M ⊢⍄××⊣×⍄⌈¯0.5⍃+∘|∘ ÷⍨ N
 ¯1 ¯0.5 0.5 1
 
 ⍝ aplcart/tt.tsv:1579 — Rounding currencies to nearest 5 subunits
-N←1.23 2.47 3.51 ⋄ 0.05⍃(⊣×⍄⌊0.5⍃+∘(÷⍨))N   ⍝ 1.25 2.45 3.5
+N←1.23 2.47 3.51 ⋄ 0.05⍃(⊣×⍄⌊0.5⍃+∘ ÷⍨) N   ⍝ 1.25 2.45 3.5
 
 ⍝ aplcart/tt.tsv:1581 — Rounding to nearest even integer (favouring up)
 N←¯3 ¯2.5 0 1 2.5 3 ⋄ ⌊⊢+(1≤2|⊢) N   ⍝ [¯2 ¯2 0 2 2 4]ₓ
@@ -9849,7 +7603,7 @@ N←¯3 ¯2.5 2.5 3 ⋄ ××⍄⌊|+(1≤2||) N   ⍝ [¯4 ¯2 2 4]ₓ
 N←¯3 ¯2.5 2.5 3 ⋄ ××(2×⍄⌈2÷⍨1-⍨|) N   ⍝ ¯2 ¯2 2 2
 
 ⍝ aplcart/tt.tsv:1587 — Rounding to nearest hundredth (favouring up)
-N←¯1.234 0.125 2.678 ⋄ 0.01⍃(⊣×⍄⌊0.5⍃+∘(÷⍨))N   ⍝ ¯1.23 0.13 2.68
+N←¯1.234 0.125 2.678 ⋄ 0.01⍃(⊣×⍄⌊0.5⍃+∘ ÷⍨) N   ⍝ ¯1.23 0.13 2.68
 
 ⍝ aplcart/tt.tsv:1590 — Rounding to nearest integer (favouring up)
 N←¯2.5 ¯1.2 0.5 2.5 ⋄ ⌊0.5+⊢ N   ⍝ [¯2 ¯1 1 3]ₓ
@@ -9881,7 +7635,7 @@ N←[1 2 3 ⋄ 4 5 6] ⋄ 100×(⊢÷⍤1 0+/) N
 Is←3 ⋄ N←1 2 3 4 5 ⋄ +/Is↕N   ⍝ 6 9 12
 
 ⍝ aplcart/tt.tsv:1623 — Sample Pearson correlation coefficient
-Mv←1 2 3 4 ⋄ Nv←2 4 6 8 ⋄ Mv+.×⍥((⊢÷2*⍄÷⍨+.×⍨)⊢-+⌿÷≢)Nv   ⍝ 1
+Mv←1 2 3 4 ⋄ Nv←2 4 6 8 ⋄ Mv+.×⍥ (⊢÷2*⍄÷⍨+.×⍨)⊢-+⌿÷≢ Nv   ⍝ 1
 
 ⍝ aplcart/tt.tsv:1625 — Sample standard deviation
 Nv←1 2 4 ⋄ (2*⍄÷⍨(+⌿÷¯1+≢))(2*⍨(⊢-+⌿÷≢)) Nv   ⍝ 1.527525231651947
@@ -9924,7 +7678,7 @@ Js←123456789 ⋄ 1↓0⍃⍕ Js   ⍝ "123456789"
 Y←4 2⍴⍳8 ⋄ r←⊂∘?⍨∘≢⌷⊢ Y ⋄ Y≡[⍋r]⌷r   ⍝ $t
 
 ⍝ aplcart/tt.tsv:1691 — Skew N in y-axis by fraction Ms
-Ms←0.5 ⋄ N←1j2 3j4 ⋄ Ms ⊢+¯11⍃○∘(⊣×9⍃○∘⊢) N   ⍝ 1j2.5 3j5.5
+Ms←0.5 ⋄ N←1j2 3j4 ⋄ Ms ⊢+¯11⍃○∘ ⊣×9⍃○∘⊢ N   ⍝ 1j2.5 3j5.5
 
 ⍝ aplcart/tt.tsv:1701 — Sort Ascending; Reuse concrete inputs from aplcart/table.tsv:871; execute this alternate recipe independently
 Y←3 1 3 2 ⋄ ⊂∘⍋⌷⊢ Y   ⍝ 1 2 3 3
@@ -9961,7 +7715,7 @@ X← "cba"  ⋄ Y← "abca"  ⋄ X ⌷⍨⍄⊂⍄⍋⍨ Y   ⍝ "cba"
 X←30 10 20 40 ⋄ Jv←0 2 1 ⋄ X ⊂∘⍋∘⌷⍨⍄⊂⌷⊢ Jv   ⍝ 1 2 0
 
 ⍝ aplcart/tt.tsv:1723 — Split Yv (which has to be simple) at occurrences of Xs (removes separators and keeps empty segments)
-Xs←0 ⋄ Yv←0 1 2 0 0 3 0 ⋄ Xs 1⍃↓¨∘(,⊂⍨1⍃,∘=) Yv   ⍝ [⍬;1 2;⍬;1⍴3;⍬]
+Xs←0 ⋄ Yv←0 1 2 0 0 3 0 ⋄ Xs 1⍃↓¨∘ ,⊂⍨1⍃,∘= Yv   ⍝ [⍬;1 2;⍬;1⍴3;⍬]
 
 ⍝ aplcart/tt.tsv:1726 — Split Yv at occurrences of Xs (removes separators and empty segments)
 Xs←0 ⋄ Yv←0 1 2 0 0 3 0 ⋄ Xs ≠⊆⊢ Yv   ⍝ [[1 2] [3]]
@@ -10034,7 +7788,7 @@ N←2 3⍴⍳6 ⋄ +/N   ⍝ 3 12
 N←[1 2;[3 [4 5]]] ⋄ +/∊ N   ⍝ 15
 
 ⍝ aplcart/tt.tsv:1787 — Sum of common parts of matrices (matrix sum)
-Mm←3 2⍴⍳6 ⋄ Nm←2 3⍴⍳6 ⋄ Mm 0 1 0 1⍃⍉∘(+⊗) Nm   ⍝ [0 2 ⋄ 5 7]
+Mm←3 2⍴⍳6 ⋄ Nm←2 3⍴⍳6 ⋄ Mm 0 1 0 1⍃⍉∘ +⊗ Nm   ⍝ [0 2 ⋄ 5 7]
 
 ⍝ aplcart/tt.tsv:1793 — Sum of positive divisors of Js
 (+/∘∪⊢∨⍳) 12   ⍝ 28
@@ -10056,7 +7810,7 @@ M←[1 3 ⋄ 2 4] ⋄ N←0 1 2 3 4 5 ⋄ M(+/∘× -⊗ ⍨)N
 6 2⍴[¯2 ¯2 ¯1 ¯2 0 ¯1 1 0 2 1 2 2]ₓ
 
 ⍝ aplcart/tt.tsv:1823 — Test relations (¯2…2) of major cells Y to range 1⌷X , 2⌷X
-X←1 3 ⋄ Y←0 1 2 3 4 ⋄ X ⌊¯3⍃+∘(0.6⍃×)∘(1⍃+∘⍳+3⍃×∘⍸) Y   ⍝ [¯2 ¯1 0 1 2]ₓ
+X←1 3 ⋄ Y←0 1 2 3 4 ⋄ X ⌊¯3⍃+∘(0.6⍃×)∘ 1⍃+∘⍳+3⍃×∘⍸ Y   ⍝ [¯2 ¯1 0 1 2]ₓ
 
 ⍝ aplcart/tt.tsv:1826 — Tetration: ᴺˢIs
 Is←3 ⋄ Ns←2 ⋄ Is */⍴ Ns   ⍝ 16
@@ -10190,7 +7944,7 @@ mat←3 2⍴⍳6 ⋄ ["ABCDABCDEF" (¯1⍃-∘(⍳⍨⍄⊖⍨-⍄≢⊣)) "ACF"
 [4 6 9;2]
 
 ⍝ aplcart/tt.tsv:1960 — last index of ((⍳): Last indices in X of major cells Y; Reuse concrete inputs from aplcart/table.tsv:1318; execute this alternate recipe independently
-X←1 2 3 2 ⋄ Y←2 4 ⋄ X ¯1⍃-∘(⍳⍨⍄⊖⍨-⍄≢⊣) Y   ⍝ 3 ¯1
+X←1 2 3 2 ⋄ Y←2 4 ⋄ X ¯1⍃-∘ ⍳⍨⍄⊖⍨-⍄≢⊣ Y   ⍝ 3 ¯1
 
 ⍝ aplcart/tt.tsv:1963 — ±N by juxtaposition
 N←4 9 16 ⋄ 1 ¯1×⊂ N   ⍝ [[4 9 16] [¯4 ¯9 ¯16]]
@@ -10270,7 +8024,7 @@ Xv←[1 2 1 3;"abab"] ⋄ Zv←[10 20 30 40;1 2 3 4] ⋄ {(↓⍉⊃Xv){+/⍵}�
 Xv←[1 2 1 3;"abab"] ⋄ Yv←[1 3 4;"abc"] ⋄ ↓⍉⊃Xv ⍳ ↓⍉⊃Yv   ⍝ [0 3 4]ₓ
 
 ⍝ aplcart/table.tsv:2150 — Pick'th fn applied to arg; Native agenda
-(1⍰[- ÷ ×])4   ⍝ 0.25
+(1⍚[- ÷ ×])4   ⍝ 0.25
 
 ⍝ aplcart/table.tsv:2165 — Sequential test; Short-circuit with a guard
 {⍵≤0:0 ⋄ 2>⍟⍵}¨¯1 0 5 12   ⍝ 0 0 $t $f
@@ -10312,7 +8066,7 @@ v←[+ ×] ⋄ 2(0⊃v)3 , 2(1⊃v)3   ⍝ 5 6
 f←0⊃[+ ×] ⋄ 2 f 3   ⍝ 5
 
 ⍝ aplcart/table.tsv:2217 — Condition f else g …; Concrete native equivalent; independent Dyalog dfns expectation; Choose the branch with Agenda
-{(1-⍵)⍰[+ -] 5}¨0 1   ⍝ ¯5 5
+{(1-⍵)⍚[+ -] 5}¨0 1   ⍝ ¯5 5
 
 ⍝ aplcart/table.tsv:2223 — Prefix-friendly @; Concrete native equivalent; independent Dyalog dfns expectation; Use native At with vector indices
 10 +@1 3 [1 2 3 4]   ⍝ 1 12 3 14
@@ -11029,7 +8783,7 @@ T←"age":36 ⋄ {3::1⊃⍵ ⋄ (↑⍵)⌷T}¨[["age" 0] ["height" 170]]
 36 170
 
 ⍝ aplcart/table.tsv:478 — Assign a vector of named values
-T←["name":"Ada" "age":36] ⋄ T["age" "city"]←37 "London" ⋄ T
+T←["name":"Ada" "age":36] ⋄ T.[["age" "city"]]←37 "London" ⋄ T
 ["name":"Ada" "age":37 "city":"London"]
 
 ⍝ aplcart/table.tsv:479 — Assign name–value pairs
@@ -11040,7 +8794,7 @@ T←(⍬:⍬) ⋄ pairs←[["aa" 1] ["bb" 2]] ⋄ T.[↑¨pairs]←1⊃¨pairs �
 T←"age":36 ⋄ 170 {3::⍺ ⋄ ⍵⌷T} "height"   ⍝ 170
 
 ⍝ aplcart/table.tsv:1831 — Assign values by name
-T←(⍬:⍬) ⋄ T["aa" "bb"]←1 2 ⋄ T   ⍝ "aa" "bb":1 2
+T←(⍬:⍬) ⋄ T.[["aa" "bb"]]←1 2 ⋄ T   ⍝ "aa" "bb":1 2
 
 ⍝ aplcart/table.tsv:2167 — Apply a function to every record value
 (×⍄2)¨["price":[10 20] "qty":[2 4]]   ⍝ ["price":[20 40] "qty":[4 8]]

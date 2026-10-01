@@ -9,8 +9,8 @@
 
 for ← {  ⍝ Multiple selection of function list.
   (¯1↓⍺)⍶{1≠⍴⍺:⍺ ⍶ ⍵
-    ⍶⍣(↑⍺) ⍵
-  }⍹⍣(↑⌽⍺)⍵
+    ⍶⍣ ↑⍺ ⍵
+  }⍹⍣ ↑⌽⍺ ⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_invr.htm
@@ -58,8 +58,6 @@ ArcTan ← {
   ⍝   a(n+1)=a(n) and g(n+1)=g(n) and a(n+1)=g(n+1)
 
   next←{  ⍝ next term in sequence.
-    AM←{(+/⍵)×÷⍴⍵}  ⍝ arithmetic mean.
-    GM←{(×/⍵)*÷⍴⍵}  ⍝ geometric  mean.
     (AM ⍵),GM(AM ⍵),1↓⍵
   }
   start←(1+⍵²)*-÷2

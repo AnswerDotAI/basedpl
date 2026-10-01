@@ -8,7 +8,7 @@ In APL, arrays written side by side form a list. `1 2 3` is a vector, and so are
 
 That last case causes real trouble. An operator's right operand is the single item to its right, and stranding happens first. In APL, `f⍤1 M` makes `1 M` the operand. You have to write `f⍤1⊢M`, where `⊢` is there only to break the strand. BQN's documentation gives the example `a +˝∘×⎉1‿∞ b`, a matrix product. No rule decides well which of `1`, `∞` and `b` should strand together. BQN marks its strands with `‿` instead.
 
-BPL writes lists in brackets, `[a b c]`, as Python and JavaScript do. Lochbaum notes that new BQN programmers "are always expecting `[]` to be the list notation, and it'd let you copy-paste JSON too". A list of literals can still leave its brackets out. `1 2 3` and `"no" "yes"` are vectors. Nothing else forms a list.
+BPL writes lists in brackets, `[a b c]`, as Python and JavaScript do. Lochbaum notes that new BQN programmers "are always expecting `[]` to be the list notation, and it'd let you copy-paste JSON too". A list of literals can still leave its brackets out. `1 2 3` and `"no" "yes"` are vectors. Arrays side by side also form a list. `a b` is `[a b]`.
 
 ```bpl
 x←5
@@ -16,7 +16,7 @@ x←5
 ≢[+/ ÷ ≢]            ⍝ 3ₓ
 ```
 
-Only literals strand, because a name can hold anything. If names that hold atoms stranded, a program's meaning would depend on run-time values. A reduction returns an atom, and `(+/x) 3` would be a list when `x` is a vector and a selection when `x` is a matrix. J and K also strand only literals. Lochbaum names the cost. Changing one item of a list from a constant to a variable means rewriting the list: `1 2 3` becomes `[1 x 3]`.
+BPL never writes a selection as one array next to another. [Index](glyphs/squad.qmd) `⌷` selects. So arrays side by side have one meaning, whatever the names hold. `(+/x) 3` is a two-item list whether `x` is a vector or a matrix. Each run is one item, so `a b+1` is `[a (b+1)]`, and `[1 2] 3` is `[[1 2] 3]`.
 
 Brackets always write a vector, whatever the number of items. `[1 2 3]` is `1 2 3`, and `[1]` is a one-item vector. A single literal isn't a strand: `1` is a number.
 
@@ -37,13 +37,13 @@ Parentheses with `⋄` write a vector of rows. Each row reads as brackets do, so
 ≢¨(1 2 ⋄ 3)                            ⍝ [2 1]ₓ
 ```
 
-Items in brackets can be functions. `[+/ ÷ ≢]` is a vector of three functions. A one-item vector turns a function expression into a value: `[+/÷≢]`. BQN needs `⊑⟨Expr⟩` or a name for this, which Lochbaum lists under "Converting a function expression to a subject is tricky". Parentheses enclose a function written as a glyph: `(+)` is a scalar holding `+`.
+Items in brackets can be functions. `[+/ ÷ ≢]` is a vector of three functions. A one-item vector turns a function expression into a value: `[+/÷≢]`. BQN needs `⊑⟨Expr⟩` or a name for this, which Lochbaum lists under "Converting a function expression to a subject is tricky". `ᵘ` after a function makes a unit that holds it: `+ᵘ`.
 
 Items in a list are evaluated left to right, as statements are. BQN chose the same order for its lists and strands.
 
 ## Spaces group
 
-Once brackets write vectors, a space outside brackets has no vector to build. BPL gives it one job instead. It separates runs. A run is a sequence of tokens with no spaces between them. Each run is evaluated first, and then the runs combine. Spaces act as light parentheses.
+Once brackets write vectors, a space outside brackets builds a vector only between literals, as in the strand `1 2 3`. Everywhere else it has one job. It separates runs. A run is a sequence of tokens with no spaces between them. Each run is evaluated first, and then the runs combine. Spaces act as light parentheses.
 
 ```bpl
 a←1 ⋄ b←2 ⋄ c←3 ⋄ d←4
@@ -51,7 +51,7 @@ a+b×c+d              ⍝ 15
 a+b × c+d            ⍝ 21
 ```
 
-Runs also fix the operand problem. A run ends at a space, and `f⍤1 M` applies rank 1 to `M` with no `⊢`. A literal argument would join the operand's strand, so it goes in parentheses: `f⍤1(2 3)`. A run that ends in a dyadic operator takes the next run as its right operand, as if no space came between them, so `f⍤ 1 M` means the same. That is how a named operator takes a literal operand: `+Depth 0 x`. Without the space, `Depth0` would be one name.
+Runs also fix the operand problem. A run ends at a space, and `f⍤1 M` applies rank 1 to `M` with no `⊢`. A literal argument would join the operand's strand, so a vector argument goes in brackets: `f⍤1[2 3]`. A run that ends in a dyadic operator takes the next run as its right operand, as if no space came between them, so `f⍤ 1 M` means the same. A space after an operator also lets a longer function be its operand without parentheses: `⌊⌾ 10× x`.
 
 ```bpl
 m←2 3⍴⍳6
@@ -87,37 +87,35 @@ x←1 2 3 6
 
 If both spellings meant the same, the space would carry nothing. Everyday arithmetic doesn't notice the rule. Its functions have arrays between them, as in `32+1.8×`, and then the train gives the same result as the expression. The readings differ only where a fork gets a function as its left part, as in `0.5×⊢+÷`. APL has the same split, with nothing in the source to mark it. Removing the argument from APL's `0.5×⊢+÷⍵` turns it into a fork with a different meaning. In BPL the space shows which reading you get.
 
-## An array selects from its positions
+## Selection is a function
 
-With stranding gone, two arrays side by side had no meaning. BPL applies the first to the second, as K applies a list to indices. An array next to an argument selects along its leading axis. An array is a function from positions to items, and in a function's position it acts as one. BQN's Select, `⊏`, does the same job with a glyph.
+Index, `⌷`, selects: `I⌷Y` takes one item of `I` for each leading axis of `Y`. K applies a list to its positions, as if the list were a function, so `v 1` selects. BPL keeps arrays and functions apart. An array before a function is that function's left argument, and selection is a function like any other. For one position, `1⌷v` is as long as `v 1`.
 
-The result has the shape of the positions, followed by the shape of each selected cell. So the positions show the rank of the result. `v1` is an item, `v ⊂1` is that item enclosed, and `v[1]` is a one-item vector. Dyalog hides this rule: its `v[1]` is a scalar, and a one-item result needs `v[,1]`.
+A single position removes its axis. An array of positions replaces the axis with its own shape, so the positions show the rank of the result. `1⌷v` is an item, `[⊂1]⌷v` is that item enclosed, and `[[1]]⌷v` is a one-item vector. Dyalog hides this rule: its `v[1]` is a scalar, and a one-item result needs `v[,1]`.
 
 ```bpl
 v←10 20 30 40
-v[2 0]               ⍝ 30 10
-v¯1                  ⍝ 40
-v1                   ⍝ 20
-v ⊂1                 ⍝ ⊂20
-v[1]                 ⍝ [20]
+[[2 0]]⌷v            ⍝ 30 10
+¯1⌷v                 ⍝ 40
+1⌷v                  ⍝ 20
+[⊂1]⌷v               ⍝ ⊂20
+[[1]]⌷v              ⍝ [20]
 ```
 
 A Boolean selects directly, which pairs well with counting from 0.
 
 ```bpl
 c←1
-"no" "yes" c         ⍝ "yes"
+c⌷"no" "yes"         ⍝ "yes"
 ```
 
-Application takes everything to its right as its argument, like any function. `v 2×3` is `v` applied to 6. Selection after a computation reads left to right. `+/sales "NY"` totals each row and then selects the row for NY, like `sales.sum(axis=1)["NY"]` in pandas.
-
-Two other meanings were considered for arrays side by side. Stranding would bring back a second way to write vectors, and `v 2` would become a two-item vector. Multiplication, as in maths or Julia's `2x`, is too narrow a use for a whole piece of syntax. The cost of application is that a stray space can select rather than fail. `x ×2` is `x` applied to the sign of 2, which is item 1 of `x`.
+`⌷` takes everything to its right as its right argument, so selecting from a computed array needs no parentheses. `"NY"⌷+/sales` totals each row and then selects the row for NY.
 
 ## Counting from 0
 
 Positions and axes count from 0, as in BQN, J, K, Python and NumPy. Negative positions count from the end.
 
-- A Boolean selects directly, as in `"no" "yes" c`. With 1-origin it would need `1+c`.
+- A Boolean selects directly, as in `c⌷"no" "yes"`. With 1-origin it would need `1+c`.
 - Positions run from `¯n` to `n-1` with no gap. With 1-origin, position 0 is an error that sits between the first item and the last.
 - `n|i` wraps a position round a vector of length `n`. `⌊i÷n` and `n|i` give the row and column of a flat position.
 - The Python API returns positions from functions such as `grade` and `where`, and these agree with Python and NumPy. The origin has to be the same in both frontends.

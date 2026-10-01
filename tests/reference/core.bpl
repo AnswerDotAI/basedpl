@@ -363,9 +363,6 @@ v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}   ⍝ 15
 ⍝ — Parenthesized assignments may construct stages
 3→(f←2×)→f   ⍝ 12
 
-⍝ — Adjacent argument glyphs apply as arrays; operand glyphs classify operators
-{⍵⍵}1 0   ⍝ 0 1
-
 ⍝ — Left and right operands bind without spaces
 2{⍶+⍹×⍵}3(4)   ⍝ 14
 
@@ -621,68 +618,98 @@ fs←[# +] ⋄ f←↑fs ⋄ 1 0 1 f 2 3 4   ⍝ 2 4
 ⍝ — A defined operator can put its function operand in a returned list
 op←{[⍶ +]} ⋄ fs←(×op)0 ⋄ f←↑fs ⋄ 2 f 3   ⍝ 6
 
+⍝⍝ Strands of arrays
+
+⍝ — Arrays side by side form a strand, as brackets do
+a←1 2 ⋄ b←3 4 ⋄ a b   ⍝ [1 2;3 4]
+
+⍝ — A longer strand has one item for each array
+a←1 2 ⋄ b←3 4 ⋄ a b a   ⍝ [1 2;3 4;1 2]
+
+⍝ — An argument beside itself
+{⍵⍵}1 0   ⍝ [1 0;1 0]
+
+⍝ — A vector beside a bracket list is a strand, not a selection
+v←10 20 30 ⋄ v[2]   ⍝ [10 20 30;[2]]
+
+⍝ — Two bracket lists side by side form a strand
+[10 20 30] [2 0]   ⍝ [10 20 30;2 0]
+
+⍝ — A unit holding a function is one item
+≢(-ᵘ)3   ⍝ 2ₓ
+
+⍝ — Each run is one item
+a←1 ⋄ b←2 ⋄ a b+1   ⍝ 1 3
+
+⍝ — A parenthesised strand stays one item
+a←1 2 ⋄ b←3 4 ⋄ a (b b)   ⍝ [1 2;[3 4;3 4]]
+
+⍝ — A strand is not an assignment target
+{v←1 2 3 ⋄ i←0 ⋄ (v)i←9 ⋄ v}0
+⍝ error: SYNTAX ERROR
+
 ⍝⍝ Agenda
 
 ⍝ — Agenda chooses negate for a negative argument
-cases←[- ⊢] ⋄ abs←{⍵≥0}⍰cases ⋄ abs¯3   ⍝ 3
+cases←[- ⊢] ⋄ abs←{⍵≥0}⍚cases ⋄ abs¯3   ⍝ 3
 
 ⍝ — Agenda chooses identity for a nonnegative argument
-cases←[- ⊢] ⋄ abs←{⍵≥0}⍰cases ⋄ abs3   ⍝ 3
+cases←[- ⊢] ⋄ abs←{⍵≥0}⍚cases ⋄ abs3   ⍝ 3
 
 ⍝ — A constant selector chooses the second function
-mul←1⍰[+ ×] ⋄ 2 mul 3   ⍝ 6
+mul←1⍚[+ ×] ⋄ 2 mul 3   ⍝ 6
 
 ⍝ — A negative selector counts from the end
-mul←¯1⍰[+ ×] ⋄ 2 mul 3   ⍝ 6
+mul←¯1⍚[+ ×] ⋄ 2 mul 3   ⍝ 6
 
 ⍝ — The selector and selected function both receive the original arguments
-choose←{⍺>⍵}⍰[- ÷] ⋄ 12 choose 3   ⍝ 4
+choose←{⍺>⍵}⍚[- ÷] ⋄ 12 choose 3   ⍝ 4
 
 ⍝ — An agenda branch may itself return a function
-choose←0⍰[{↑⍵} ⊢] ⋄ f←choose [+ ×] ⋄ 2 f 3   ⍝ 5
+choose←0⍚[{↑⍵} ⊢] ⋄ f←choose [+ ×] ⋄ 2 f 3   ⍝ 5
 
 ⍝ — A singleton vector is not a scalar selector
-(,1)⍰[+ ×]
+(,1)⍚[+ ×]
 ⍝ error: RANK ERROR
 
 ⍝ — The cases must be a vector, not a function-containing scalar
-1⍰(⍬⍴[+])
+1⍚ ⍬⍴[+]
 ⍝ error: RANK ERROR
 
 ⍝ — A selector function must return one scalar index
-{1 2}⍰[+ ×] 3
+{1 2}⍚[+ ×] 3
 ⍝ error: RANK ERROR
 
 ⍝ —
-1.5⍰[+ ×]
+1.5⍚[+ ×]
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-1⍰(0↑[+ ×])
+1⍚ 0↑[+ ×]
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-1⍰1 2
+1⍚1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-{'a'}⍰[+ ×] 3
+{'a'}⍚[+ ×] 3
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-2⍰[+ ×]
+2⍚[+ ×]
 ⍝ error: INDEX ERROR
 
 ⍝ —
-¯3⍰[+ ×]
+¯3⍚[+ ×]
 ⍝ error: INDEX ERROR
 
 ⍝ —
-{3}⍰[+ ×] 3
+{3}⍚[+ ×] 3
 ⍝ error: INDEX ERROR
 
 ⍝ — Agenda evaluates the selector, then only the selected branch
-choose←{⎕←9 ⋄ 1}⍰[{⎕←1 ⋄ 1÷0} {⎕←2 ⋄ ⍺-⍵}] ⋄ 10 choose 3
+choose←{⎕←9 ⋄ 1}⍚[{⎕←1 ⋄ 1÷0} {⎕←2 ⋄ ⍺-⍵}] ⋄ 10 choose 3
 7
 ⍝ ⎕: 9\n2
 
@@ -726,7 +753,7 @@ m←[1 2 3 ⋄ 4 5 6] ⋄ [m-10 20;10 20-m;m-⍠1 [10 20 30];[10 20 30]-⍠1 m;(
 1 2 +⍤0 [2 3]⍴0   ⍝ [1 1 1 ⋄ 2 2 2]
 
 ⍝ — Each and rank 0 broadcast leading unit axes as scalar functions do
-x←2 3⍴⍳6 ⋄ [x+10 20;x+¨10 20;x+⍤0(10 20)]
+x←2 3⍴⍳6 ⋄ [x+10 20;x+¨10 20;x+⍤0[10 20]]
 3⍴⊂[10 11 12 ⋄ 23 24 25]
 
 ⍝ —
@@ -734,7 +761,7 @@ a←[10 ⋄ 20] ⋄ b←[1 2 3 ⋄] ⋄ [a+b;a+¨b;a+⍤0 b]
 3⍴⊂[11 12 13 ⋄ 21 22 23]
 
 ⍝ —
-a←[10 ⋄] ⋄ [a+1 2 3;a+¨1 2 3;a+⍤0(1 2 3)]
+a←[10 ⋄] ⋄ [a+1 2 3;a+¨1 2 3;a+⍤0[1 2 3]]
 3⍴⊂[11 ⋄ 12 ⋄ 13]
 
 ⍝ — An empty frame broadcasts too
@@ -750,7 +777,7 @@ a←1 0⍴0ₓ ⋄ b←2 1⍴0ₓ ⋄ [a+b;a+¨b;a+⍤0 b]
 ⍝ error: LENGTH ERROR
 
 ⍝ —
-(2 3⍴0)+⍤0(1 2 3)
+(2 3⍴0)+⍤0[1 2 3]
 ⍝ error: LENGTH ERROR
 
 ⍝ —
@@ -827,6 +854,9 @@ a←"HELLO" "WORLD" ⋄ (2↑¨a)←'*' ⋄ a   ⍝ "**LLO" "**RLD"
 
 ⍝ — Each uses a separate mask for each nested vector
 a←"HELLO" "WORLD" ⋄ (a='O' #¨ a)←'*' ⋄ a   ⍝ "HELL*" "W*RLD"
+
+⍝ — A selection written with spaces finds its array as the touching form does
+lv←1 2 3 ⋄ e←0 1 0 ⋄ (e # 1⌽lv)←9 ⋄ lv   ⍝ 1 2 9
 
 ⍝ — Replacing one nested item may change its length
 a←[1 2;3 4] ⋄ (1↑a)←⊂8 9 10 ⋄ a   ⍝ [8 9 10;3 4]
@@ -920,8 +950,67 @@ a←10 ⋄ g←{a+←⍵ ⋄ a} ⋄ f←{a←2 ⋄ z←g ⍵ ⋄ z,a} ⋄ z←f3
 ⍝ — Updating an outer array leaves a previously assigned copy unchanged
 a←1 2 ⋄ b←a ⋄ f←{a.[0]←⍵ ⋄ a} ⋄ z←f3 ⋄ z,a,b   ⍝ 3 2 3 2 1 2
 
+⍝ — Writing into an array that shares only another's storage leaves the other unchanged
+x←1 2 3 ⋄ y←,x ⋄ y.[0]←9 ⋄ x,y   ⍝ 1 2 3 9 2 3
+
+⍝ — Writing inside a nested item that another item shares leaves the other unchanged
+a←1 2 ⋄ n←[a a] ⋄ n.[0].[1]←9 ⋄ [n a]   ⍝ ([1 9] [1 2] ⋄ 1 2)
+
+⍝ — Writing an array into one of its own items stores the array as it was
+x←1 2 3 ⋄ x.[0]←x ⋄ x   ⍝ [[1 2 3] 2 3]
+
+⍝ — Appending leaves an array that shares the original unchanged
+a←1 2 ⋄ b←a ⋄ a,←3 ⋄ [a b]   ⍝ [[1 2 3] [1 2]]
+
+⍝ — Appending to an empty compact array takes the kind of the new items, as joining does
+r←⍬ ⋄ r,←$t ⋄ s←•storage r ⋄ r,←2ₓ ⋄ [s (•storage r) r]   ⍝ ["boolean" "integer" [1 2]ₓ]
+
+⍝ — An empty mixed array takes its prototype from the first appended item
+r←0⍴⊂1 2 ⋄ r,←⊂"abc" ⋄ ⍴↑0⍴r   ⍝ [3]ₓ
+
+⍝ — Appending keeps keys
+r←["a":1] ⋄ r,←["b":2] ⋄ r   ⍝ ["a":1 "b":2]
+
+⍝ — Appending a key the array already has is an error
+r←["a":1] ⋄ r,←["a":2]
+⍝ error: DOMAIN ERROR
+
+⍝ — A local dfn can't be appended to an outer array
+x←1 2 ⋄ {x,←{⍵} ⋄ 0}0
+⍝ error: DOMAIN ERROR
+
+⍝ — Appending rows to a matrix spreads a scalar into a row
+m←[1 2 ⋄ 3 4] ⋄ m⍪←5 6 ⋄ m⍪←0 ⋄ m   ⍝ [1 2 ⋄ 3 4 ⋄ 5 6 ⋄ 0 0]
+
+⍝ — A new key leaves an array that shares the original unchanged
+T←["a":1] ⋄ T.b←2 ⋄ U←T ⋄ T.c←3 ⋄ [T U]   ⍝ [["a":1 "b":2 "c":3] ["a":1 "b":2]]
+
+⍝ — A new key inside a nested record, and a new record on the way to a key
+T←["a":["x":1]] ⋄ T.a.y←2 ⋄ T.b.c←3 ⋄ T   ⍝ ["a":["x":1 "y":2] "b":["c":3]]
+
 ⍝ — Selective modified assignment can update an outer array
 a←1 2 ⋄ f←{(⌽a)+←⍵ ⋄ a} ⋄ z←f3 ⋄ z,a   ⍝ 4 5 4 5
+
+⍝ — Modified selective assignment writes as plain assignment does, so the whole array takes the kind of the new values
+x←[1 2 3]ₓ ⋄ x.[0]+←0.5 ⋄ b←1 0 1=1 ⋄ b.[0]+←1 ⋄ [x b]   ⍝ (1.5 2 3 ⋄ 2 0 1)
+
+⍝ — Repeated positions accumulate, with a primitive or a dfn
+x←0 0 0 ⋄ y←x ⋄ x.[[1 1]]+←1 ⋄ y.[[1 1]]{⍺+⍵}←1 ⋄ x,y   ⍝ 0 2 0 0 2 0
+
+⍝ — A modifier that reassigns or erases its target doesn't change the update
+x←1 2 3 ⋄ x.[0]{x,←5 ⋄ ⍺+⍵}←10 ⋄ y←1 2 3 ⋄ y.[0]{_←•ex "y" ⋄ ⍺+⍵}←10 ⋄ x,y   ⍝ 11 2 3 11 2 3
+
+⍝ — An error in the modifier leaves the target unchanged
+x←1 2 3 ⋄ {0::x ⋄ x[0 1]{⍵=2:÷'a' ⋄ ⍺+⍵}←1 2}0   ⍝ 1 2 3
+
+⍝ — An index error leaves the target unchanged
+x←1 2 3 ⋄ {0::x ⋄ x[0 5]←9}0   ⍝ 1 2 3
+
+⍝ — A replacement of the wrong length leaves the target unchanged
+x←1 2 3 ⋄ {0::x ⋄ x[0 1]←1 2 3}0   ⍝ 1 2 3
+
+⍝ — A rejected local closure leaves the target unchanged
+x←1 2 3 ⋄ {0::x ⋄ x(0)←{⍵} ⋄ 0}0   ⍝ 1 2 3
 
 ⍝ — A local error guard does not roll back writes to an outer binding
 a←10 ⋄ f←{0::a ⋄ a+←⍵ ⋄ 1÷'a'} ⋄ z←f3 ⋄ z,a   ⍝ 13 13
@@ -964,9 +1053,6 @@ a←1 ⋄ f←+ ⋄ a(f)←3 ⋄ a   ⍝ 4
 
 ⍝ — In a dfn, a named function directly after an array performs modified assignment, in either spelling
 {a←1 ⋄ f←+ ⋄ a(f)←3 ⋄ (a)f←3 ⋄ a}0   ⍝ 7
-
-⍝ — In a dfn, a name holding an array directly after an array is application, as at top level
-{v←10 20 ⋄ i←1 ⋄ (v)i←9 ⋄ v}0   ⍝ 10 9
 
 ⍝ — A named rank operand binds before modified assignment
 a←1 2 ⋄ r←0 ⋄ 1+a+⍤r←3 4   ⍝ 4 5
@@ -1150,12 +1236,6 @@ m←["row":3 "col":4]⍴⍳12 ⋄ ({+/⍵}⍠"row" m)≡{+/⍵}⍠0 m   ⍝ $t
 ⍝ — Spaces inside brackets separate items
 ≢[1 2]   ⍝ 2ₓ
 
-⍝ — Brackets after an array select with a one-item vector, so the result is a one-item vector
-v←10 20 30 ⋄ v[2]   ⍝ [30]
-
-⍝ — A bracketed list next to an argument selects from it
-[10 20 30] [2 0]   ⍝ 30 10
-
 ⍝ — Semicolons separate items only inside brackets
 1;2
 ⍝ error: SYNTAX ERROR
@@ -1177,10 +1257,6 @@ M←["aa" "bb";"xx" "yy"]:[1 2 ⋄ 3 4] ⋄ ("cc" "zz"⌷M)←9 ⋄ "cc" "zz"⌷
 
 ⍝ —
 T←"aa":1 ⋄ ([["cc" "dd"]]⌷T)←3 4 ⋄ T   ⍝ "aa" "cc" "dd":1 3 4
-
-⍝ — A run's value applies to the next run, and a unit has no leading axis to select from
-≢[1 2] 3 4
-⍝ error: INDEX ERROR
 
 ⍝ — Dot access after a group that contains dot access
 inner←"bb" "cc":1 2 ⋄ x←["aa":inner "zz":0] ⋄ (x.aa).bb   ⍝ 1
@@ -1229,6 +1305,10 @@ m←2 2⍴⍳4 ⋄ m.[∞ 1]←0 ⋄ m   ⍝ [0 0 ⋄ 2 0]
 
 ⍝ — Dot assignment adds missing keys
 T←"aa":1 ⋄ T.[["bb" "cc"]]←2 3 ⋄ T   ⍝ "aa" "bb" "cc":1 2 3
+
+⍝ — An assignment inside the container of a dot assignment is not a selection
+T←["a":1] ⋄ (U←T).["b"]←2
+⍝ error: SYNTAX ERROR
 
 ⍝ — Between functions the dot is inner product, even before a group
 1 2 3 +.(×⍨) 4 5 6   ⍝ 32
@@ -1597,7 +1677,7 @@ n←4 ⋄ ⍭n   ⍝ 11ₓ
 (¯4↕⍳5)≡{⍵}⌺4⍳5   ⍝ $t
 
 ⍝ — Padded matrix windows with movements match stencil windows
-([¯3 ¯2 ⋄ 2 1]↕4 5⍴⍳20)≡{⍵}⌺([3 2 ⋄ 2 1]) 4 5⍴⍳20   ⍝ $t
+([¯3 ¯2 ⋄ 2 1]↕4 5⍴⍳20)≡{⍵}⌺[3 2 ⋄ 2 1] 4 5⍴⍳20   ⍝ $t
 
 ⍝ —
 0.5↕⍳3
@@ -1642,16 +1722,16 @@ f←{⍺+⍵}⇄{⍵-⍺} ⋄ (3⍃f)⁻¹8   ⍝ 5
 f←{⍵+1}⇄{⍵-1} ⋄ (f⁻¹)⁻¹5   ⍝ 6
 
 ⍝ — Dyadic under transforms both arguments, then inverts the result
-3 +⌾(2×) 4   ⍝ 7
+3 +⌾ 2× 4   ⍝ 7
 
 ⍝ — Monadic under changes coordinates before and after reversal
-⌽⌾(1+) 1 2 3   ⍝ 3 2 1
+⌽⌾ 1+ 1 2 3   ⍝ 3 2 1
 
 ⍝ — Power preserves the count array's shape, including negative and repeated counts
 (1+)⍣[3 ¯2 ⋄ 0 3] 10   ⍝ [13 8 ⋄ 10 13]
 
 ⍝ — A singleton count vector adds a singleton result frame
-+⍣(,1) 2   ⍝ ,2
++⍣[1] 2   ⍝ ,2
 
 ⍝ — Different-sized iterates assemble into padded rows
 {⍵,1}⍣0 1 2 ,2   ⍝ [2 0 0 ⋄ 2 1 0 ⋄ 2 1 1]
@@ -1691,7 +1771,7 @@ limit←4 ⋄ stop←[{⍺≥limit}] ⋄ 1+⍣stop 1   ⍝ 1 2 3 4
 ⍝ error: DOMAIN ERROR
 
 ⍝ — A list of counts is not inverted as if it were ordinary repeated application
-((1+)⍣(⍳3))⁻¹1 2 3
+((1+)⍣ ⍳3)⁻¹1 2 3
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Parenthesizing power leaves the following backslash as ordinary scan
@@ -2148,11 +2228,14 @@ x←[(9223372036854775807ₓ+[1 0]ₓ)-1ₓ;9223372036854775808r1-[1 2]ₓ] ⋄ 
 ⍝ — At applies reverse to the selected subarray, not each item separately
 ⌽@1 3⍳5   ⍝ 0 3 2 1 4
 
+⍝ — A keyed value aligns by key, as it does in assignment
+x←["a":1 "b":2 "c":3] ⋄ ["b":20 "a":10]@0 1 x   ⍝ ["a":10 "b":20 "c":3]
+
 ⍝ —
 10×@1 3⍳5   ⍝ 0 10 2 30 4
 
 ⍝ — A selection function supplies a Boolean mask
-0@(2⍃|)⍳5   ⍝ 0 0 2 0 4
+0@ 2⍃| ⍳5   ⍝ 0 0 2 0 4
 
 ⍝ — Repeated replacement indices use the last supplied value
 10 20@1 1⍳3   ⍝ 0 20 2
@@ -2514,17 +2597,17 @@ v←⍳1000 ⋄ +/v+v   ⍝ 999000
 •storage¨[0.5,1r3;1j2,1r3]   ⍝ "mixed" "mixed"
 
 ⍝ — Writing a float into integer storage converts the whole array
-x←⍳3ₓ ⋄ x[1]←0.5 ⋄ •storage x   ⍝ "float"
+x←⍳3ₓ ⋄ x.[1]←0.5 ⋄ •storage x   ⍝ "float"
 
 ⍝ — Writing an exact integer into float storage makes it a float
-x←0.5 1.5 ⋄ x[0]←2ₓ ⋄ •storage x   ⍝ "float"
+x←0.5 1.5 ⋄ x.[0]←2ₓ ⋄ •storage x   ⍝ "float"
 
 ⍝ — Writing into mixed storage keeps it mixed
-x←'a' 1ₓ 2ₓ ⋄ x[0]←0ₓ ⋄ •storage x   ⍝ "mixed"
+x←'a' 1ₓ 2ₓ ⋄ x.[0]←0ₓ ⋄ •storage x   ⍝ "mixed"
 
 ⍝ — Rearranging or combining mixed storage keeps it mixed
-m←1ₓ 0.5 2ₓ ⋄ •storage¨[⌽m;2↑m;4↑m;1 0 1#m;1 0 1 1#⁻¹m;(⊂1 0)⌷m;m 1 0;2 1⍴m;⍉2 1⍴m;m,m;m⍪m;1⌽m;∪m;m~,2ₓ;↑⊂m;∊⊂m;↑↓2 2⍴m;↑1 1 0⊆m;0⊃⊂m]
-19⍴⊂"mixed"
+m←1ₓ 0.5 2ₓ ⋄ •storage¨[⌽m;2↑m;4↑m;1 0 1#m;1 0 1 1#⁻¹m;(⊂1 0)⌷m;2 1⍴m;⍉2 1⍴m;m,m;m⍪m;1⌽m;∪m;m~,2ₓ;↑⊂m;∊⊂m;↑↓2 2⍴m;↑1 1 0⊆m;0⊃⊂m]
+18⍴⊂"mixed"
 
 ⍝ —
 •storage¨[1↓'a' 1ₓ 2ₓ;(1↓'a' 1ₓ 2ₓ),3ₓ]   ⍝ "mixed" "mixed"
@@ -2540,7 +2623,7 @@ m←1ₓ 0.5 2ₓ ⋄ •storage¨[⌽m;2↑m;4↑m;1 0 1#m;1 0 1 1#⁻¹m;(⊂1
 "integer" "integer" "integer" "integer" "integer"
 
 ⍝ —
-x←⍳3ₓ ⋄ x[1]←∞ ⋄ •storage x   ⍝ "integer"
+x←⍳3ₓ ⋄ x.[1]←∞ ⋄ •storage x   ⍝ "integer"
 
 ⍝ — Arithmetic with an infinity gives floats
 •storage¨[0.5,∞ ¯∞;(⍳3ₓ)+∞]   ⍝ "float" "float"
@@ -3024,7 +3107,7 @@ gg←2 3 4 5 ⋄ 9,gg.[1],3 4   ⍝ 9 3 3 4
 {1÷0}\,5   ⍝ ,5
 
 ⍝ — Empty scan rows retain their frame and shape
-10 20 +\2 0⍴0   ⍝ 2 0⍴0
+10 20+\2 0⍴0   ⍝ 2 0⍴0
 
 ⍝ — Three empty rows reduce to three identities
 +/3 0⍴0   ⍝ 0 0 0
@@ -4578,12 +4661,8 @@ offset←{+/⍶+⍵} ⋄ (1 2 offset)3   ⍝ 9
 ⍝ —
 1E¯2+2e¯2   ⍝ 0.03
 
-⍝ — Parentheses round a glyph make a scalar, which selects rather than calls
-(-)3
-⍝ error: INDEX ERROR
-
-⍝ — First retrieves the function that a parenthesised glyph holds
-2(↑(-))3   ⍝ ¯1.0
+⍝ — First retrieves the function that a unit made with ᵘ holds
+2(↑-ᵘ)3   ⍝ ¯1.0
 
 ⍝ — A parenthesis inside a comment does not affect grouping
 (2×3) + 4 ⍝ comment )
@@ -4902,13 +4981,13 @@ T←("name":"Ann"),("addr":"city":"Paris"),("items":[["name":"pen"] ["name":"ink
 
 ⍝ axis-assignment-alignment — Keyed RHS aligns to selection and ignores extra keys
 T←"price" "qty":[1 2 3;4 5 6]
-T["price" "qty"]←"qty" "extra" "price":7 9 8
+T.[["price" "qty"]]←"qty" "extra" "price":7 9 8
 T
 ⍝ =>
 "price" "qty":8 7
 
 ⍝ axis-assignment-position — Unkeyed RHS assigns by position
-T←"price" "qty":[1 2 3;4 5 6] ⋄ T["qty" "price"]←[10 20;30] ⋄ T
+T←"price" "qty":[1 2 3;4 5 6] ⋄ T.[["qty" "price"]]←[10 20;30] ⋄ T
 "price" "qty":[30;10 20]
 
 ⍝ axis-assignment-scalar — Scalar selection replaces a value; vector selection aligns its retained axis
@@ -4919,11 +4998,11 @@ T←"aa" "bb":1 2 ⋄ T.["aa"]←"bb" "aa":8 9 ⋄ T.["bb"]+←10 ⋄ T
 T←"aa" "bb":1 2 ⋄ T.[,⊂"aa"]←"bb" "aa":8 9 ⋄ T   ⍝ "aa" "bb":9 2
 
 ⍝ axis-assignment-missing — Every selected key must occur in a keyed replacement
-T←"aa" "bb":1 2 ⋄ T["aa" "bb"]←"aa":5
+T←"aa" "bb":1 2 ⋄ T.[["aa" "bb"]]←"aa":5
 ⍝ error: INDEX ERROR
 
 ⍝ axis-assignment-repeat — Assignment cannot select a labelled position twice
-T←"aa" "bb":1 2 ⋄ T[0 0]←5 6
+T←"aa" "bb":1 2 ⋄ T.[[0 0]]←5 6
 ⍝ error: DOMAIN ERROR
 
 ⍝ axis-nested-write — Pick and dot replace stored values without changing other copies
@@ -4955,8 +5034,8 @@ T←"a":1 ⋄ T.a.y←2
 ⍝ error: RANK ERROR
 
 ⍝ axis-bracket-insert — New names append in selector order, including keyed RHS alignment
-T←"aa":1 ⋄ T.["bb"]←2 ⋄ T["cc" "aa" "dd"]←30 10 40
-U←⍬:⍬ ⋄ U["xx" "yy"]←"yy" "xx":2 1 ⋄ [T U]
+T←"aa":1 ⋄ T.["bb"]←2 ⋄ T.[["cc" "aa" "dd"]]←30 10 40
+U←⍬:⍬ ⋄ U.[["xx" "yy"]]←"yy" "xx":2 1 ⋄ [T U]
 ⍝ =>
 [("aa" "bb" "cc" "dd":10 2 30 40) ("xx" "yy":1 2)]
 
@@ -4973,7 +5052,7 @@ T←"aa":1 ⋄ T.[1]←5
 ⍝ error: INDEX ERROR
 
 ⍝ axis-new-repeat — A newly appended position cannot be selected twice
-T←"aa":1 ⋄ T["zz" "zz"]←1 2
+T←"aa":1 ⋄ T.[["zz" "zz"]]←1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ axis-rename — Reattach edited axis selectors to rename keys
@@ -4991,7 +5070,7 @@ T←"price" "qty":[1 2 3;4 5 6]
 
 ⍝ axis-filter — Filtering and ordering retain the selected labels
 Q←"aa" "bb" "cc":10 20 5
-[1 0 1#Q;1⌽Q;1↓Q;¯1↑Q;Q(⍋Q);Q[2 0]]
+[1 0 1#Q;1⌽Q;1↓Q;¯1↑Q;[⍋Q]⌷Q;[[2 0]]⌷Q]
 ⍝ =>
 [("aa" "cc":10 5);("bb" "cc" "aa":20 5 10);("bb" "cc":20 5);("cc":5);("cc" "aa" "bb":5 10 20);("cc" "aa":5 10)]
 

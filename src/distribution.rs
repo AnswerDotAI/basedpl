@@ -204,7 +204,7 @@ fn logistic(op: Operation, location: f64, scale: f64, x: f64) -> f64 {
 }
 
 pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if !matches!(op, Operation::Sample) { return pervade(right, &|e| d.evaluate(op, real(&e, span)?, span), &EmptyFill::MappedPrototype, span); }
+    if !matches!(op, Operation::Sample) { return pervade(right, &|e| d.evaluate(op, real(&e, span)?, span), &EmptyFill::Zeros, span); }
     if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "sample shape must be a unit or vector")); }
     let shape = right.as_items().nonnegative_integers().error_at(span, "invalid sample dimension")?;
     let len = generated_len(&shape).error_at(span, "sample shape exceeds array limits")?;

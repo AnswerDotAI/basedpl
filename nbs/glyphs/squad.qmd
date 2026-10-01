@@ -1,12 +1,11 @@
 # `⌷` — Index
 
-`I⌷Y` indexes `Y`. The left argument has one item for each leading axis of `Y`. Axes that it omits are taken whole. `⌷Y` is identity. An array next to an argument selects along its leading axis: `Y I` is `[I]⌷Y`. After an array, [Dot](dot.qmd) indexing is `⌷`: `x.(I)` is `(I)⌷x`.
+`I⌷Y` indexes `Y`. The left argument has one item for each leading axis of `Y`. Axes that it omits are taken whole. `⌷Y` is identity. A [subscript](subscript.qmd) writes a single position: `m₁` is `1⌷m`. After an array, [Dot](dot.qmd) indexing is `⌷`: `x.(I)` is `(I)⌷x`.
 
 ```bpl
 m←3 4⍴⍳12
 1⌷m                ⍝ 4 5 6 7
 1 2⌷m              ⍝ 6
-m1                 ⍝ 4 5 6 7
 ```
 
 Each item of the left argument is a single position, an array of positions, or `∞`. A single position removes its axis from the result. An array of positions replaces the axis with its own shape. An array of positions for one axis is one item, as in `[[2 0]]`, because `[2 0]` gives a position on each of two axes.
@@ -31,7 +30,6 @@ An array of positions whose elements are vectors does choose indexing. Each vect
 ```bpl
 m←3 4⍴⍳12
 [[0 1;2 ¯1]]⌷m     ⍝ 1 11
-m [0 1;2 ¯1]       ⍝ 1 11
 ```
 
 `∞` takes a whole axis, and `¯∞` takes it in reverse order. They are valid only as a whole item, not inside an array of positions.
@@ -47,7 +45,6 @@ On a keyed axis, a string is one key.
 ```bpl
 T←"aa" "bb":1 2
 "bb"⌷T             ⍝ 2
-T "bb"             ⍝ 2
 ```
 
 Assignment through `⌷` replaces the selected items. A missing key is added, even on an axis with no keys.
@@ -71,5 +68,5 @@ With an axis, `⌷⍠K` applies the left argument's items to the axes `K`.
 
 - `RANK`: left argument not a unit or vector
 - `LENGTH`: more items than axes
-- `INDEX`: position outside its axis, missing key, a unit applied to an argument
+- `INDEX`: position outside its axis, missing key
 - `DOMAIN`: non-integral position, `∞` or `¯∞` inside an array of positions

@@ -1,14 +1,15 @@
 #!/bin/bash
-# Install the macOS layout; requires Xcode Command Line Tools for Swift.
+# Copy the repository's keyboard layout bundle over the installed one, register it, and open Keyboard settings. Registration needs Xcode Command Line Tools for Swift.
 set -euo pipefail
 
-src="$(cd "$(dirname "$0")/../editors/macos" && pwd)"
+src="$(cd "$(dirname "$0")/.." && pwd)/editors/macos/BasedPL.bundle"
 dest="$HOME/Library/Keyboard Layouts"
 
 mkdir -p "$dest"
-cp "$src/BasedPL.keylayout" "$src/BasedPL.icns" "$dest/"
+rm -rf "$dest/BasedPL.bundle"
+cp -R "$src" "$dest/"
 
-xcrun swift - "$dest/BasedPL.keylayout" <<'SWIFT'
+xcrun swift - "$dest/BasedPL.bundle" <<'SWIFT'
 import Carbon
 import Foundation
 
@@ -22,4 +23,3 @@ SWIFT
 
 echo "Installed BasedPL. In Keyboard settings → Text Input → Edit, add BasedPL."
 echo "Then select BasedPL from the input menu."
-open "x-apple.systempreferences:com.apple.Keyboard-Settings.extension"

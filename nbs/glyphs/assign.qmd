@@ -7,19 +7,18 @@ x←3 ⋄ x+2          ⍝ 5
 sum←+/ ⋄ sum1 2 3 ⍝ 6
 ```
 
-`←` binds tightly on its left and loosely on its right. The target is the run immediately before `←`: a name, a group, or arrays applied to each other such as `x[1]`. The value is everything to its right, so spaces there group runs as usual.
+`←` binds tightly on its left and loosely on its right. The target is the run immediately before `←`: a name, a dot path such as `x.[1]`, or a group. The value is everything to its right, so spaces there group runs as usual.
 
 ```bpl
 x←1+2 × 3 ⋄ x      ⍝ 9
 ```
 
-`N f←Y` updates with `N f Y`. A named function goes in parentheses, `N(f)←Y`, because a space would end the run that holds the target. An array applied to positions is a selective target, so `x[1]←9` updates item 1. Other selections need parentheses: `(f N)←Y` updates the items that `f` selects, as [Index](squad.qmd) `⌷` does. Assignment to a [dot index](dot.qmd), such as `x.[1]←9`, goes through `⌷`.
+`N f←Y` updates with `N f Y`. A named function goes in parentheses, `N(f)←Y`, because a space would end the run that holds the target. A [dot index](dot.qmd) is a selective target. `x.[1]←9` updates item 1 through [Index](squad.qmd) `⌷`. Other selections need parentheses: `(f N)←Y` updates the items that `f` selects.
 
 ```bpl
 x←10 ⋄ x+←3 ⋄ x    ⍝ 13
 f←× ⋄ x←3 ⋄ x(f)←4 ⋄ x ⍝ 12
-x←1 2 3 ⋄ x[1]←9 ⋄ x ⍝ 1 9 3
-x←1 2 3 ⋄ x[0 2]+←10 ⋄ x ⍝ 11 2 13
+x←1 2 3 ⋄ x.[[0 2]]+←10 ⋄ x ⍝ 11 2 13
 x←1 2 3 ⋄ x.[1]←9 ⋄ x ⍝ 1 9 3
 x←1 2 3 ⋄ (2↑x)←8 9 ⋄ x ⍝ 8 9 3
 ```

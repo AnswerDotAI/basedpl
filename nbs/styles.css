@@ -1,22 +1,23 @@
-@font-face {
-  font-family: BQN386;
-  src: local("BQN386"), url("https://cdn.jsdelivr.net/gh/dzaima/BQN386@master/BQN386.woff2") format("woff2");
-}
-
 pre.bpl,
 .bpl pre,
 .bpl code,
 pre.bpl ~ .cell-output pre,
-pre.bpl ~ .cell-output code,
-.aplnb_out {
-  font-family: BQN386, monospace;
+pre.bpl ~ .cell-output code {
+  font-family: var(--bpl-font), monospace;
+  line-height: 1.05;
+}
+
+pre.apl,
+.apl pre,
+.apl code {
+  font-family: var(--apl-font), monospace;
   line-height: 1.05;
 }
 
 pre.bpl,
 .bpl pre,
 pre.bpl ~ .cell-output pre,
-.aplnb_out {
+.bpl_out {
   font-size: calc(0.875em + 1pt);
 }
 

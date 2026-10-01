@@ -4,7 +4,7 @@ The `.bpl` files are the executable language tests. `core.bpl` holds BPL's own s
 
 Source entries are not necessarily executable tests. Many APLcart recipes have unbound arguments and no expected result. They need concrete examples. Library cases need their definitions and setup. Use the scanner below for current counts and failures; fixture reasons describe their last review, not necessarily today's implementation. Progress notes belong in `meta/`, not this README.
 
-Active cases use BPL spellings: `π` for APL's monadic `○`, `g⊗` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, `⍢` for `∇∇`, `•name` for system names, `"…"` for multi-character strings written `'…'`, `Y(I)` or `Y I` for first-axis bracket indexing `Y[I]`, `[I;J]⌷Y` for indexing several axes, and `f⍠A` for bracket axes `f[A]`. They follow the spacing rules in `meta/spacing.md`: vectors that aren't strands use brackets, `[x]` is a one-item vector, parentheses round a literal group it, spaces separate runs, and `⍃` and `⍄` replace `∘` and `⍛`. Positions and axes count from 0, so the positions in upstream code and in expectations captured with `⎕IO←1` are converted. Original inventory sources retain their dialect's notation.
+Active cases use BPL spellings: `π` for APL's monadic `○`, `g⊗` for `∘.g`, `⍶`/`⍹` for `⍺⍺`/`⍵⍵`, `⍢` for `∇∇`, `•name` for system names, `"…"` for multi-character strings written `'…'`, `[I]⌷Y` for first-axis bracket indexing `Y[I]`, `[I;J]⌷Y` for indexing several axes, and `f⍠A` for bracket axes `f[A]`. They follow the spacing rules in `meta/spacing.md`: vectors that aren't strands use brackets, `[x]` is a one-item vector, parentheses round a literal group it, spaces separate runs, and `⍃` and `⍄` replace `∘` and `⍛`. Positions and axes count from 0, so the positions in upstream code and in expectations captured with `⎕IO←1` are converted. Original inventory sources retain their dialect's notation.
 
 Run the active cases with:
 
@@ -26,7 +26,7 @@ To run the active cases of one file, set `BASEDPL_SOURCE` to its name without `.
 BASEDPL_SOURCE=core cargo test --test reference enabled_reference_cases -- --nocapture
 ```
 
-The `.bpl` files determine which cases run, regardless of inventory status. Edit these files directly once cases are active. Each JSONL inventory row has a stable `id`, `code`, and `status`. A `reason` records adaptations or remaining work. Its original source, expectation or recipe is retained.
+The `.bpl` files determine which cases run, regardless of inventory status. Edit these files directly once cases are active. Each JSONL inventory row has a stable `id`, `code`, and `status`. `code` records the case as it was ported. It is provenance, and stays unchanged when the `.bpl` case changes later. A `reason` records adaptations or remaining work. Its original source, expectation or recipe is retained.
 
 | Status | Meaning |
 |---|---|

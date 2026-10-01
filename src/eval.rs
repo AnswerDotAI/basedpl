@@ -28,6 +28,8 @@ const FUNCTION_CLASS: i64 = 3;
 const OPERATOR_CLASS: i64 = 4;
 
 fn implicit_name(name: &str) -> bool { matches!(name, "⍺" | "⍵" | "⍶" | "⍹" | "∇" | "⍢") }
+/// Whether no offset repeats.
+fn distinct(offsets: &[usize]) -> bool { let mut seen = HashSet::with_capacity(offsets.len()); offsets.iter().all(|&o| seen.insert(o)) }
 
 #[derive(Debug)]
 enum FunctionNode {
@@ -137,11 +139,7 @@ impl Function {
             FunctionNode::LateBound(_, span) => span.source.text.clone(),
             FunctionNode::Defined(c) => c.text().into(),
             FunctionNode::Fold(f, h) => format!("{}{}", f.left_text(budget), h.glyph()),
-            FunctionNode::Inverse(f) => {
-                // `⁻¹` after a number applies to the number, so that text needs parentheses.
-                let text = f.left_text(budget);
-                if text.ends_with(|c: char| c.is_ascii_digit() || matches!(c, '∞' | 'ₓ')) { format!("({text})⁻¹") } else { format!("{text}⁻¹") }
-            }
+            FunctionNode::Inverse(f) => f.superscripted("⁻¹", budget),
             FunctionNode::Axis(f, a) => format!("{}⍠{}", f.left_text(budget), a.operand()),
             FunctionNode::Modified(op, a) => format!("{}{}", a.left_text(budget), op.glyph()),
             FunctionNode::Composed(op, [a, b]) => format!("{}{}{}", a.left_text(budget), op.glyph(), b.right_text(budget)),
@@ -162,6 +160,12 @@ impl Function {
     /// An operator takes the whole function to its left, so only a train needs parentheses there.
     fn left_text(&self, budget: &mut usize) -> String {
         if matches!(self.node(), FunctionNode::Fork(_)) { format!("({})", self.text(budget)) } else { self.text(budget) }
+    }
+    /// The function with the superscript `mark` after it. Text that ends in a number goes in parentheses, because a
+    /// superscript there would apply to the number. So does text with a space, which would split the run.
+    pub(crate) fn superscripted(&self, mark: &str, budget: &mut usize) -> String {
+        let text = self.left_text(budget);
+        if text.contains(' ') || text.ends_with(|c: char| c.is_ascii_digit() || matches!(c, '∞' | 'ₓ')) { format!("({text}){mark}") } else { format!("{text}{mark}") }
     }
     /// An operator takes one item to its right, so anything larger than one token needs parentheses there.
     fn right_text(&self, budget: &mut usize) -> String {
@@ -450,6 +454,7 @@ fn composition(
         (Operand::Function(f), Operand::Value(ranks)) if matches!(op, Rank) => rank(f, ranks, left, right, span, session, output),
         (Operand::Function(f), Operand::Function(g)) => match op {
             PairInverse => f.call(left, right, span, session, output),
+            Valences => if left.is_some() { g.call(left, right, span, session, output) } else { f.call(None, right, span, session, output) },
             Product => inner(f, g, left, right, span, session, output),
             After => {
                 let y = g.call_array(None, right, span, session, output)?;
@@ -494,11 +499,7 @@ fn at(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span,
         Operand::Function(f) => {
             let mask = f.call_array(None, right, span, session, output)?;
             if mask.shape() != right.shape() { return Err(span.error(ErrorKind::Length, "at mask must match argument shape")); }
-            let mut offsets = Vec::new();
-            for (i, e) in mask.elements().enumerate() {
-                let Value::Number(n) = e else { return Err(span.domain_error("at mask must be Boolean")); };
-                if n.boolean().domain_at(span)? { offsets.push(i); }
-            }
+            let offsets = crate::primitive::mask_offsets(&mask, &session.execution.at(span))?;
             Selection { frame: ResultFrame::Array(vec![offsets.len()].into()), targets: Targets::Offsets(offsets) }
         }
     };
@@ -1861,7 +1862,6 @@ impl Session {
     /// Whether a node holds an array. A group holds whatever its expression reduces to, so `(M←-)` is a function.
     fn holds_array(&self, node: &Node) -> bool {
         let NodeKind::Group(inner) = &node.kind else { return matches!(self.node_category(node), Category::Value) };
-        if crate::syntax::encloses(inner) { return true; }
         let inner = self.members(inner);
         !inner.is_empty() && matches!(self.assignment_operand(&inner, inner.len()), Ok((_, Category::Value)))
     }
@@ -1889,7 +1889,6 @@ impl Session {
         if end == 0 { return Err(nodes[0].span.error(ErrorKind::Syntax, "missing assignment operand")); }
         let mut start = end - 1;
         let mut category = match &nodes[start].kind {
-            NodeKind::Group(inner) if crate::syntax::encloses(inner) => Value,
             NodeKind::Group(inner) => {
                 if inner.is_empty() { return Err(nodes[start].span.error(ErrorKind::Syntax, "empty assignment operand")); }
                 // Rewrite the group's own dot access first, so that `(x.a).b` classifies `(x.a)` as a value.
@@ -1899,8 +1898,15 @@ impl Session {
             _ => self.node_category(&nodes[start]),
         };
         if matches!(category, Operator) && start > 0 {
-            start = self.assignment_operand(nodes, start)?.0;
-            category = Function;
+            let superscript = match &nodes[start].kind { NodeKind::Operator(OperatorKind::Super(s)) => Some(*s), _ => None };
+            let (operand, operand_category) = self.assignment_operand(nodes, start)?;
+            start = operand;
+            // `ᵘ` always gives an array, and the other superscripts give one on an array.
+            category = match superscript {
+                Some(Superscript::Unit) => Value,
+                Some(_) if matches!(operand_category, Value) => Value,
+                _ => Function,
+            };
         }
         if start > 0 && matches!(Rule::get(self.node_category(&nodes[start - 1]), category), Rule::BindRight) {
             start = self.assignment_operand(nodes, start - 1)?.0;
@@ -1909,8 +1915,7 @@ impl Session {
         Ok((start, category))
     }
 
-    /// The target of `←` is the run before it: an array, or arrays applied to each other as in `v[2]`, followed by the
-    /// function of a modified assignment such as `x+←1`.
+    /// The target of `←` is the run before it: an array, followed by the function of a modified assignment such as `x+←1`.
     fn assignment_start(&self, nodes: &[Node]) -> Result<usize, Error> {
         let end = nodes.len();
         let (operand, category) = self.assignment_operand(nodes, end)?;
@@ -1918,7 +1923,12 @@ impl Session {
         // decides, as at top level: a function makes a modified assignment, as in `a(f)←3` and `(a)f←3`.
         let modified =
             operand > 0 && matches!(category, Category::Function) && (self.holds_array(&nodes[operand - 1]) || !self.assignment_names(&nodes[operand..]));
-        Ok(self.applied_start(nodes, if modified { operand - 1 } else { end - 1 }))
+        let start = if modified { operand - 1 } else { end - 1 };
+        if start > 0 && self.holds_array(&nodes[start]) && self.holds_array(&nodes[start - 1]) {
+            let span = Span { source: nodes[start].span.source.clone(), range: nodes[start - 1].span.range.start..nodes[start].span.range.end };
+            return Err(span.error(ErrorKind::Syntax, STRAND_TARGET));
+        }
+        Ok(start)
     }
 
     fn store(&mut self, name: &str, value: Binding, span: &Span) -> Result<(), Error> {
@@ -1982,8 +1992,6 @@ impl Session {
         }
         match array {
             [Node { kind: NodeKind::Group(nodes), .. }] => self.assign_selected(nodes, modifier, value, output),
-            // Arrays applied to each other, as in `v[2]←9`.
-            [_, _, ..] => self.assign_selected(array, modifier, value, output),
             _ => Err(span.error(ErrorKind::Syntax, "assignment needs a name or selection")),
         }
     }
@@ -1994,6 +2002,14 @@ impl Session {
             NodeKind::Group(inner) => self.modify_names(inner, right, modifier, output),
             NodeKind::Name(name) => {
                 let binding = self.array_binding(name, &node.span)?;
+                // Joining along the leading axis grows the array in place.
+                if let FunctionNode::Primitive(p @ (Primitive::Ravel | Primitive::CatenateFirst)) = modifier.node() {
+                    let first = matches!(p, Primitive::CatenateFirst);
+                    if let Some((cells, names)) = crate::primitive::append_plan(&binding.value, right, first, &self.execution.at(&node.span))? {
+                        if cells.environment() > binding.owner { return Err(node.span.domain_error("array would export a local closure")); }
+                        return self.write_kept(binding, &node.span, |value, _| Ok(value.append(&cells, names.as_deref())));
+                    }
+                }
                 let updated = modifier.call_array(Some(&binding.value), right, &node.span, self, output)?;
                 self.update_array(&binding, updated, &node.span)
             }
@@ -2024,61 +2040,129 @@ impl Session {
 
     fn extend_selected(&mut self, nodes: &mut Vec<Node>, output: &mut Vec<Output>, descend: bool) -> Result<(), Error> {
         if let [Node { kind: NodeKind::Group(inner), .. }] = nodes.as_mut_slice() { return self.extend_selected(inner, output, descend); }
-        // A key may name an entry that the container lacks: after the container in array application,
-        // or before `⊃` or `⌷`, where it can be a list of keys.
-        let root = self.selection_root(nodes);
-        let applied = root + 1 < nodes.len();
-        let keys = if applied { root + 1..nodes.len() } else {
-            let Some(i) = nodes.iter().position(|n| matches!(n.kind, NodeKind::Function(Primitive::Mix | Primitive::Index))) else { return Ok(()) };
-            if i == 0 || i + 1 == nodes.len() || !nodes[..i].iter().all(crate::syntax::key_node) { return Ok(()); }
-            0..i
-        };
-        let span = nodes[keys.start].span.clone();
-        let value = self.array_result(&nodes[keys.clone()], output)?;
-        let index = if applied { value.enclose().error_at(&span, "invalid positions")? } else { value.clone() };
-        let selectors: Vec<_> = crate::primitive::coordinate_fields(&index).into_iter().map(Some).collect();
+        // A key before `⊃` or `⌷` may name an entry that the container lacks. It can be a list of keys.
+        let Some(i) = nodes.iter().position(|n| matches!(n.kind, NodeKind::Function(Primitive::Mix | Primitive::Index))) else { return Ok(()) };
+        if i == 0 || i + 1 == nodes.len() || !nodes[..i].iter().all(crate::syntax::key_node) { return Ok(()); }
+        let span = nodes[0].span.clone();
+        let value = self.array_result(&nodes[..i], output)?;
+        let selectors: Vec<_> = crate::primitive::coordinate_fields(&value).into_iter().map(Some).collect();
         // Replace the keys with their value, so that they are evaluated once.
-        nodes.splice(keys, [Node { kind: NodeKind::Literal(value), span: span.clone() }]);
+        nodes.splice(..i, [Node { kind: NodeKind::Literal(value), span: span.clone() }]);
         if !selectors.iter().flatten().any(|s| matches!(crate::keyed::Selector::of(s), Ok(Some(_)))) { return Ok(()); }
-        let mut container: Vec<Node> = if applied { nodes.drain(root..root + 1).collect() } else { nodes.split_off(2) };
+        let mut container = nodes.split_off(2);
         self.extend_selected(&mut container, output, true)?;
-        let target = self.array_result(&container, output)?;
-        if let Some(extended) = crate::keyed::extended(&target, &selectors, descend).error_at(&span, "invalid named axis extension")? {
-            self.assign_selected(&container, None, &Binding::Value(extended), output)?;
+        if let Some((binding, path)) = self.direct_item(&mut container, output)? {
+            let target = path.iter().fold(binding.value.clone(), |a, &i| a.at(i));
+            let added = crate::keyed::missing(&target, &selectors).error_at(&span, "invalid named axis extension")?;
+            // Holding the item would make the write copy it.
+            drop(target);
+            if added.iter().any(|k| !k.is_empty()) {
+                self.write_kept(binding, &span, |value, _| {
+                    crate::keyed::extend(value.item_mut(&path, false), added, descend).error_at(&span, "invalid named axis extension")
+                })?;
+            }
         }
-        if applied { nodes.splice(root..root, container); }
-        else { nodes.extend(container); }
+        else {
+            let mut target = self.array_result(&container, output)?;
+            let added = crate::keyed::missing(&target, &selectors).error_at(&span, "invalid named axis extension")?;
+            if added.iter().any(|k| !k.is_empty()) {
+                crate::keyed::extend(&mut target, added, descend).error_at(&span, "invalid named axis extension")?;
+                self.assign_selected(&container, None, &Binding::Value(target), output)?;
+            }
+        }
+        nodes.extend(container);
         Ok(())
-    }
-
-    /// The array that a selection writes into: the first of the arrays applied to each other at the end, as `mt` in
-    /// `3↑mt[i]`, or otherwise the last node, as `v` in `2⊃v`.
-    fn selection_root(&self, nodes: &[Node]) -> usize {
-        let last = nodes.len() - 1;
-        let start = self.applied_start(nodes, last);
-        if start < last && matches!(nodes[start].kind, NodeKind::Name(_) | NodeKind::Group(_)) { start } else { last }
-    }
-
-    /// The first of the arrays applied to each other that end at `end`, as `mt` in `mt[i]`.
-    fn applied_start(&self, nodes: &[Node], end: usize) -> usize {
-        let mut start = end;
-        while start > 0 && self.holds_array(&nodes[start]) && self.holds_array(&nodes[start - 1]) { start -= 1; }
-        start
     }
 
     fn assign_selected(&mut self, nodes: &[Node], modifier: Option<Function>, value: &Binding, output: &mut Vec<Output>) -> Result<(), Error> {
         let right = &value.clone().into_value(&nodes[0].span)?;
         let mut nodes = self.members(nodes).into_owned();
         if modifier.is_none() { self.extend_selected(&mut nodes, output, false)?; }
-        let (binding, labels, selected, kind) = self.selection_expression(&nodes, output)?;
-        let span = &nodes[0].span;
-        let (selection, values) = labels.replacements(&selected, right, kind, span)?;
-        let updated = match modifier {
-            Some(f) => self.modify_selection(&binding.value, &selection, &f, &values, span, output)?,
-            None => selection.write(&binding.value, &values, &self.execution.at(span))?,
+        let span = nodes[0].span.clone();
+        let (binding, selection, values) = match self.direct_target(&mut nodes, output)? {
+            Some((binding, selection)) => (binding, selection, right.clone()),
+            None => {
+                let (binding, labels, selected, kind) = self.selection_expression(&nodes, output)?;
+                let (selection, values) = labels.replacements(&selected, right, kind, &span)?;
+                (binding, selection, values)
+            }
         };
-        self.update_array(&binding, updated, &nodes[0].span)?;
+        let values = match modifier { Some(f) => self.modified_values(&binding.value, &selection, &f, &values, &span, output)?, None => values };
+        self.write_selection(binding, &selection, &values, &span)
+    }
+
+    /// Writes `values` at `selection` into the array that `binding` kept, then stores it under the name.
+    fn write_selection(&mut self, binding: ArrayBinding, selection: &Selection, values: &Value, span: &Span) -> Result<(), Error> {
+        // The items already in the array passed this check when they were stored.
+        if values.environment() > binding.owner { return Err(span.domain_error("array would export a local closure")); }
+        self.write_kept(binding, span, |value, context| selection.write_into(value, values, context))
+    }
+
+    /// Runs `write` on the array that `binding` kept, then stores it under the name. The name's current binding goes first, so the
+    /// write happens in place unless something else holds the array. `write` makes every check before it changes anything, so an
+    /// error leaves the name as it was.
+    fn write_kept(
+        &mut self,
+        binding: ArrayBinding,
+        span: &Span,
+        write: impl FnOnce(&mut Value, &crate::execution::Context<'_>) -> Result<(), Error>,
+    ) -> Result<(), Error> {
+        let ArrayBinding { name, owner, mut value } = binding;
+        // The kept array can be written in place only when the name no longer holds it too.
+        let current = self.names_mut(owner).remove(&name);
+        let same = matches!(&current, Some(Binding::Value(v)) if v.storage_id() == value.storage_id());
+        let current = current.filter(|_| !same);
+        if let Err(e) = write(&mut value, &self.execution.at(span)) {
+            if let Some(restored) = if same { Some(Binding::Value(value)) } else { current } { self.names_mut(owner).insert(name, restored); }
+            return Err(e);
+        }
+        self.names_mut(owner).insert(name, Binding::from_element(value));
         Ok(())
+    }
+
+    /// A target whose text gives its positions: `I⌷` or `k⊃` of a name or of such a target, as dot access writes them. It gives
+    /// the binding and the selection without the labels that other targets need. Each index is evaluated once and its node
+    /// becomes its value, so a target that needs labels after all evaluates nothing twice.
+    fn direct_target(&mut self, nodes: &mut [Node], output: &mut Vec<Output>) -> Result<Option<(ArrayBinding, Selection)>, Error> {
+        let span = nodes[0].span.clone();
+        match nodes {
+            [Node { kind: NodeKind::Group(inner) | NodeKind::Run(inner), .. }] => self.direct_target(inner, output),
+            [left, Node { kind: NodeKind::Function(p @ (Primitive::Index | Primitive::Mix)), .. }, rest @ ..] if self.holds_array(left) => {
+                let pick = matches!(p, Primitive::Mix);
+                let Some((binding, path)) = self.direct_item(rest, output)? else { return Ok(None) };
+                let left = self.evaluate_once(left, output)?;
+                let item = path.iter().fold(binding.value.clone(), |a, &i| a.at(i));
+                let context = self.execution.at(&span);
+                let selection = if !pick && left.is_simple() {
+                    crate::primitive::squad_selection(&left, &item, &context)?
+                } else if pick && item.shape().len() == 1 && (left.is_atom() || crate::keyed::name(&left).is_some()) {
+                    // One position or key picks one item of a vector.
+                    crate::primitive::selection(&item, &[Some(left)], &context)?
+                } else { return Ok(None); };
+                Ok(Some((binding, selection.within(&path))))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// The array that `nodes` names, or the one whole item that a direct target reaches: its binding and its path.
+    fn direct_item(&mut self, nodes: &mut [Node], output: &mut Vec<Output>) -> Result<Option<(ArrayBinding, Vec<usize>)>, Error> {
+        match nodes {
+            [Node { kind: NodeKind::Name(name), span }] => Ok(Some((self.array_binding(name, span)?, vec![]))),
+            [Node { kind: NodeKind::Group(inner) | NodeKind::Run(inner), .. }] => self.direct_item(inner, output),
+            _ => Ok(self.direct_target(nodes, output)?.and_then(|(binding, selection)| match (selection.frame, selection.targets) {
+                (ResultFrame::Direct, Targets::Offsets(offsets)) => Some((binding, offsets)),
+                (ResultFrame::Direct, Targets::Paths(mut paths)) if paths.len() == 1 => Some((binding, paths.remove(0))),
+                _ => None,
+            })),
+        }
+    }
+
+    /// The value of `node`, which then becomes a literal, so that nothing evaluates it again.
+    fn evaluate_once(&mut self, node: &mut Node, output: &mut Vec<Output>) -> Result<Value, Error> {
+        let value = self.array_result(std::slice::from_ref(node), output)?;
+        node.kind = NodeKind::Literal(value.clone());
+        Ok(value)
     }
 
     fn selection_expression(
@@ -2088,7 +2172,7 @@ impl Session {
     ) -> Result<(ArrayBinding, crate::selection::Labels, Value, SelectionKind), Error> {
         let members = self.members(nodes);
         let nodes = &members[..];
-        let root = self.selection_root(nodes);
+        let root = nodes.len() - 1;
         let span = &nodes[root].span;
         let (binding, labels, selected, kind) = match &nodes[root].kind {
             NodeKind::Name(name) => {
@@ -2096,43 +2180,55 @@ impl Session {
                 let (labels, selected) = crate::selection::Labels::new(&binding.value, span)?;
                 (binding, labels, selected, SelectionKind::Item)
             }
-            NodeKind::Group(inner) => self.selection_expression(inner, output)?,
+            NodeKind::Group(inner) | NodeKind::Run(inner) => self.selection_expression(inner, output)?,
+            _ if root > 0 && self.holds_array(&nodes[root - 1]) && self.holds_array(&nodes[root]) => {
+                let span = Span { source: span.source.clone(), range: nodes[root - 1].span.range.start..span.range.end };
+                return Err(span.error(ErrorKind::Syntax, STRAND_TARGET));
+            }
             _ => return Err(span.error(ErrorKind::Syntax, "selection must end in an array name")),
         };
         let (Step::Done(result), kind) = Binder::evaluate_marked(nodes, self, output, false, Some((root, selected, kind)), None)? else { unreachable!() };
         Ok((binding, labels, result.array(span)?, kind.unwrap()))
     }
 
-    fn modify_selection(
+    /// The new value of each target of `selection`. `f` takes the target's item of `original` on its left and its value from `right`
+    /// on its right. A target that repeats a position reads the result of the earlier one, so repeats accumulate. When `f` is a pervasive
+    /// primitive and no position repeats, one call covers every target. The result is laid out for `Selection::write_into`, which
+    /// writes it as a plain assignment would.
+    fn modified_values(
         &mut self,
         original: &Value,
-        selection: &crate::primitive::Selection,
+        selection: &Selection,
         f: &Function,
         right: &Value,
         span: &Span,
         output: &mut Vec<Output>,
     ) -> Result<Value, Error> {
-        let values = selection.values(right, &self.execution.at(span))?;
-        if let Targets::Offsets(offsets) = &selection.targets {
-            let mut data: Vec<_> = original.elements().collect();
-            for (&o, r) in offsets.iter().zip(values) {
-                let result = f.call_array(Some(&data[o].clone()), &r, span, self, output)?;
-                data[o] = result;
+        let right = selection.checked(right, &self.execution.at(span))?;
+        if let (ResultFrame::Array(_), Targets::Offsets(offsets), FunctionNode::Primitive(p)) = (&selection.frame, &selection.targets, f.node()) {
+            if p.pervasive(true) && distinct(offsets) {
+                let items = selection.read(original, &self.execution.at(span))?;
+                // A singleton goes to every target, as a scalar.
+                let right = if right.is_singleton() && right.shape() != items.shape() {
+                    let item = right.at(0);
+                    if item.is_atom() { item } else { item.enclose().error_at(span, "invalid modified selection")? }
+                } else { right };
+                return f.call_array(Some(&items), &right, span, self, output);
             }
-            return ResultFrame::of(original)
-                .collect(data, || original.prototype())
-                .and_then(|a| a.with_layout(original.layout().clone()))
-                .error_at(span, "invalid modified selection");
         }
-        let Targets::Paths(paths) = &selection.targets else { unreachable!() };
-        let mut updated = original.clone();
-        for (path, r) in paths.iter().zip(values) {
-            let one = Selection { frame: ResultFrame::Direct, targets: Targets::Paths(vec![path.clone()]) };
-            let left = one.read(&updated, &self.execution.at(span))?;
-            let result = f.call_array(Some(&left), &r, span, self, output)?;
-            updated = one.write(&updated, &result, &self.execution.at(span))?;
+        let mut results: Vec<Value> = Vec::with_capacity(selection.targets.len());
+        let mut latest: HashMap<&[usize], usize> = HashMap::new();
+        for i in 0..selection.targets.len() {
+            let path = selection.targets.path(i);
+            let item = match latest.get(path) { Some(&j) => results[j].clone(), None => path.iter().fold(original.clone(), |a, &k| a.at(k)) };
+            results.push(f.call_array(Some(&item), &selection.item(&right, i), span, self, output)?);
+            latest.insert(path, i);
         }
-        Ok(updated)
+        match &selection.frame {
+            ResultFrame::Direct => Ok(results.pop().unwrap_or(right)),
+            ResultFrame::Array(layout) if !results.is_empty() => Value::new(layout.shape().to_vec(), results).error_at(span, "invalid modified selection"),
+            ResultFrame::Array(_) => Ok(right),
+        }
     }
 
     // Resolving one structural item may execute a group, but never derives an operator
@@ -2145,15 +2241,6 @@ impl Session {
             NodeKind::Name(name) => self.lookup(name).cloned().ok_or_else(|| node.span.error(ErrorKind::Value, format!("undefined name: {name}")))?,
             NodeKind::System(name) => {
                 crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?.value()
-            }
-            // Parentheses round glyphs separated by spaces make a scalar. Otherwise they group.
-            NodeKind::Group(nodes) if crate::syntax::encloses(nodes) => {
-                let glyph = |n: &Node| match &n.kind { NodeKind::Function(p) => Value::Function(Function::primitive(*p)), _ => unreachable!() };
-                let content = match nodes.as_slice() {
-                    [one] => glyph(one),
-                    many => Value::new(vec![many.len()], many.iter().map(glyph).collect()).error_at(&node.span, "invalid function list")?,
-                };
-                Binding::Value(content.enclose().error_at(&node.span, "invalid scalar")?)
             }
             NodeKind::Group(nodes) => self.bind(nodes, output)?.value,
             NodeKind::Run(nodes) => match self.bind(nodes, output)?.value {
@@ -2371,6 +2458,8 @@ enum Term {
     /// Functions and arrays side by side before a function with no argument.
     Train(Vec<Tine>),
     Left(Value, Function),
+    /// Arrays side by side, one item each. They become a vector when used.
+    Strand(Vec<Value>),
 }
 enum Tine { Array(Value), Function(Function) }
 struct Entity {
@@ -2383,13 +2472,19 @@ struct Entity {
 
 impl Entity {
     fn category(&self) -> Category {
-        match self.term { Term::Binding(ref value) => Category::of(value), Term::Train(_) => Category::Train, Term::Left(..) => Category::Left }
+        match self.term {
+            Term::Binding(ref value) => Category::of(value),
+            Term::Strand(_) => Category::Value,
+            Term::Train(_) => Category::Train,
+            Term::Left(..) => Category::Left,
+        }
     }
     fn value(self) -> Result<Binding, Error> {
         Ok(match self.term {
             Term::Binding(v) => v,
             Term::Train(tines) => Binding::Function(self::Function::train(tines, &self.span)?),
             Term::Left(a, f) => Binding::Function(before(a, f, &self.span)?),
+            Term::Strand(items) => Binding::Value(Value::new(vec![items.len()], items).map_err(|k| self.span.error(k, "invalid strand"))?),
         })
     }
     fn function(self) -> Result<Function, Error> { let span = self.span.clone(); Function::from_value(self.value()?, &span) }
@@ -2418,17 +2513,22 @@ impl Category {
     }
 }
 
+/// The error for arrays side by side before `←`. A strand is not an assignment target.
+const STRAND_TARGET: &str = "a strand can't be assigned: write A.[I]← or (I⌷A)← to assign a selection, or [a b]← to assign several names";
+/// The error for a selection target that does something other than select from its array, such as assigning the selection.
+const INVALID_SELECTION: &str = "invalid selective-assignment expression";
+
 // Binding actions and precedence share one category table. Wait rows establish
 // precedence without claiming that an operator has its left operand.
-// An array next to an argument selects from it. Application binds more loosely than a left argument,
-// so `v i+1` is `v (i+1)`, and more tightly than a call, so `f v i` is `f (v i)`.
+// Arrays side by side form a strand, which binds more loosely than a left argument, so `a b+1` is `a (b+1)`, and more
+// tightly than a call, so `f a b` is `f (a b)`.
 // Everything else before a function with no argument joins its train, which `Function::train` builds.
 #[derive(Clone, Copy)]
 enum Rule {
     Derive,
     BindRight,
     Attach,
-    Apply,
+    Adjacent,
     Call,
     Train,
     Wait(u8),
@@ -2440,7 +2540,7 @@ impl Rule {
         use Category::*;
         match (left, right) {
             (NoResult, _) | (_, NoResult) => Self::Missing,
-            (Value, Value) => Self::Apply,
+            (Value, Value) => Self::Adjacent,
             (Value | Function | Train, Operator) => Self::Derive,
             (DyadicOperator, Value | Function | Train) => Self::BindRight,
             (Value, Function) => Self::Attach,
@@ -2455,7 +2555,7 @@ impl Rule {
             Self::BindRight => 6,
             Self::Derive => 5,
             Self::Attach => 4,
-            Self::Apply => 3,
+            Self::Adjacent => 3,
             Self::Call => 2,
             Self::Train => 1,
             Self::Wait(n) => n,
@@ -2515,8 +2615,8 @@ impl Binder {
                     // A superscript waits for its operand. On an array it gives an array, which can be the left argument of the function to its right.
                     Some(_) if matches!(&left.term, Term::Binding(Binding::Operator(self::Operator::Primitive(OperatorKind::Super(_))))) => true,
                     Some(old) => match Rule::get(left.category(), binder.stack[n - 1].category()) {
-                        // Application groups from the right: `v w i` is `v (w i)`.
-                        Rule::Apply if matches!(old, Rule::Apply) => false,
+                        // Adjacent arrays group from the right: `v w i` is `v (w i)`.
+                        Rule::Adjacent if matches!(old, Rule::Adjacent) => false,
                         new => new.strength() >= old.strength(),
                     },
                 } {
@@ -2530,6 +2630,7 @@ impl Binder {
                     let begin = nodes[..i].iter().rposition(|n| matches!(n.kind, NodeKind::Assign)).map_or(0, |j| j + 1);
                     if begin == i || n == 0 { return Err(nodes[i].span.error(ErrorKind::Syntax, "assignment needs a target and value")); }
                     let entity = binder.stack.pop().unwrap();
+                    if entity.selection.is_some() { return Err(nodes[i].span.error(ErrorKind::Syntax, INVALID_SELECTION)); }
                     let value = entity.value()?;
                     if matches!(value, Binding::NoResult) { return Err(nodes[i].span.error(ErrorKind::Value, "assignment requires a value")); }
                     cursor = begin + session.assignment_start(&nodes[begin..i])?;
@@ -2574,41 +2675,36 @@ impl Binder {
         let span = left.span.clone();
         let right_span = right.span.clone();
         let selection = left.selection.or(right.selection);
-        let selectable = match (left.category(), right.category()) {
-            (Function | Train | Left, Value) => true,
-            (Value, Value) => right.selection.is_none(),
-            _ => false,
-        };
-        if selection.is_some() && !selectable { return Err(span.error(ErrorKind::Syntax, "invalid selective-assignment expression")); }
+        let selectable = matches!((left.category(), right.category()), (Function | Train | Left, Value));
+        if selection.is_some() && !selectable { return Err(span.error(ErrorKind::Syntax, INVALID_SELECTION)); }
         let rule = Rule::get(left.category(), right.category());
         let term = match rule {
             Rule::Missing => return Err(span.error(ErrorKind::Value, "expression produced no value")),
-            Rule::Apply => {
-                // `v i` is `(⊂i)⌷v`: positions along the leading axis, or coordinates when the positions are vectors.
-                let positions = right.array()?.enclose().error_at(&right_span, "invalid positions")?;
-                let array = left.array()?;
-                if array.is_unit() { return Err(span.error(ErrorKind::Index, "a unit has no leading axis to select from")); }
-                return Ok(Some(Application {
-                    function: self::Function::primitive(Primitive::Index),
-                    left: Some(positions),
-                    right: array,
-                    span,
-                    unshy: false,
-                    selection,
-                }));
+            // Arrays side by side form a strand, one item each, as in `[a b c]`.
+            Rule::Adjacent => {
+                let mut items = match left.term { Term::Strand(items) => items, _ => vec![left.array()?] };
+                match right.term { Term::Strand(rest) => items.extend(rest), _ => items.push(right.array()?) }
+                Term::Strand(items)
             }
             Rule::Derive => {
                 let operand = Operand::from_value(left.value()?);
                 let Binding::Operator(operator) = right.value()? else { unreachable!() };
-                // A superscript on an array is a call to `*` or `⍉`.
-                if let (self::Operator::Primitive(OperatorKind::Super(s)), Operand::Value(array)) = (&operator, &operand) {
-                    let (function, left, right) = match *s {
-                        Superscript::Power(n) => (Primitive::Math(crate::number::Math::Power), Some(array.clone()), integer(n)),
-                        Superscript::Transpose => (Primitive::Transpose, None, array.clone()),
-                    };
-                    return Ok(Some(Application { function: self::Function::primitive(function), left, right, span, unshy: false, selection }));
+                if matches!(operator, self::Operator::Primitive(OperatorKind::Super(Superscript::Unit))) {
+                    // `ᵘ` makes a unit that holds a function. `⊂` encloses an array.
+                    let Operand::Function(f) = operand else { return Err(span.domain_error("ᵘ makes a unit that holds a function. Enclose an array with ⊂")) };
+                    Term::Binding(Binding::Value(crate::Value::Function(f).enclose().error_at(&span, "invalid unit")?))
+                } else {
+                    // A superscript on an array is a call to `*` or `⍉`.
+                    if let (self::Operator::Primitive(OperatorKind::Super(s)), Operand::Value(array)) = (&operator, &operand) {
+                        let (function, left, right) = match *s {
+                            Superscript::Power(n) => (Primitive::Math(crate::number::Math::Power), Some(array.clone()), integer(n)),
+                            Superscript::Transpose => (Primitive::Transpose, None, array.clone()),
+                            Superscript::Unit => unreachable!(),
+                        };
+                        return Ok(Some(Application { function: self::Function::primitive(function), left, right, span, unshy: false, selection }));
+                    }
+                    Term::Binding(operator.derive(operand, &span)?)
                 }
-                Term::Binding(operator.derive(operand, &span)?)
             }
             Rule::BindRight => {
                 let Binding::Operator(operator) = left.value()? else { unreachable!() };

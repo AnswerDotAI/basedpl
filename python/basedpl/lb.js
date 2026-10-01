@@ -69,20 +69,20 @@
 
     const host = d.createElement('div');
     host.innerHTML = `<div class="ngn_lb" aria-label="BPL symbols"><button class="ngn_x" title="Close symbol bar">×</button><button class="ngn_o" title="Toggle overlay/push-down"></button></div>
-        <div class="aplnb_choices" role="group" aria-label="BPL symbol completions" hidden></div>
+        <div class="bpl_choices" role="group" aria-label="BPL symbol completions" hidden></div>
         <style>
-        .ngn_lb,.aplnb_choices{background:#eee;color:#111;font:15px 'SAX2',monospace;z-index:2147483647}
+        .ngn_lb,.bpl_choices{background:#eee;color:#111;font:15px var(--bpl-font),monospace;z-index:2147483647}
         .ngn_lb{position:fixed;top:0;left:0;right:0;border-bottom:1px solid #999;padding:2px}
-        .ngn_lb button,.aplnb_choices button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:2px 4px}
-        .ngn_lb button:hover,.aplnb_choices button:hover{background:#777;color:white}
+        .ngn_lb button,.bpl_choices button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:2px 4px}
+        .ngn_lb button:hover,.bpl_choices button:hover{background:#777;color:white}
         .ngn_x,.ngn_o{float:right}
-        .aplnb_choices{position:fixed;max-height:240px;max-width:calc(100vw - 16px);overflow:auto;border:1px solid #888;border-radius:4px;box-shadow:0 3px 12px #0003;padding:4px}
-        .aplnb_choices button{display:block;width:100%;text-align:left;white-space:nowrap}
-        .aplnb_choices small{display:block;padding:4px}
-        @media(prefers-color-scheme:dark){.ngn_lb,.aplnb_choices{background:#222;color:#ddd}.ngn_lb button:hover,.aplnb_choices button:hover{background:#bbb;color:#111}}
+        .bpl_choices{position:fixed;max-height:240px;max-width:calc(100vw - 16px);overflow:auto;border:1px solid #888;border-radius:4px;box-shadow:0 3px 12px #0003;padding:4px}
+        .bpl_choices button{display:block;width:100%;text-align:left;white-space:nowrap}
+        .bpl_choices small{display:block;padding:4px}
+        @media(prefers-color-scheme:dark){.ngn_lb,.bpl_choices{background:#222;color:#ddd}.ngn_lb button:hover,.bpl_choices button:hover{background:#bbb;color:#111}}
         </style>`;
     d.body.append(host);
-    const bar = host.querySelector('.ngn_lb'), tip = host.querySelector('.aplnb_choices'), toggle = bar.querySelector('.ngn_o');
+    const bar = host.querySelector('.ngn_lb'), tip = host.querySelector('.bpl_choices'), toggle = bar.querySelector('.ngn_o');
     let overlay = false, active, lastEditor, choice, keyInput = false;
     const originalPadding = d.body.style.paddingTop;
     try { overlay = localStorage.getItem('ngn_lb_overlay') === '1'; } catch {}

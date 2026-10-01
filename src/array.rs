@@ -261,6 +261,19 @@ enum Storage {
 #[derive(Clone, Debug, Default)]
 struct Memo { prototype: OnceLock<Box<Value>>, environment: OnceLock<Option<u16>> }
 
+// The flag is atomic, so storage copies it by hand. `Arc::make_mut` copies storage this way before writing into shared storage.
+impl Clone for Storage {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Boolean(v) => Self::Boolean(v.clone()),
+            Self::Integer(v, flag) => Self::integers(v.clone(), flag.load(Relaxed)),
+            Self::Float(v) => Self::Float(v.clone()),
+            Self::Complex(v) => Self::Complex(v.clone()),
+            Self::Character(v) => Self::Character(v.clone()),
+            Self::Mixed(v, memo) => Self::Mixed(v.clone(), memo.clone()),
+        }
+    }
+}
 // Storage that holds the same items is equal, whatever its kind. A nonempty array's prototype follows from its items, so only an empty
 // array's prototype takes part in equality.
 impl PartialEq for Storage {
@@ -562,6 +575,12 @@ pub(crate) struct Gather {
 impl Gather {
     /// A buffer for an operation's result, joining compact arrays.
     pub(crate) fn new(sources: &[&Value], capacity: usize) -> Self { Self::with_widening(sources, capacity, Widening::Arrays) }
+    /// A buffer that continues `data`, for writing into an existing array. Empty compact storage takes the kind of its first items, as
+    /// joining ignores an empty compact array.
+    fn resume(data: Storage) -> Self {
+        let kind = data.items().kind();
+        Self { open: kind.is_some() && data.len() == 0, kind, data, widening: Widening::Arrays }
+    }
     fn with_widening(sources: &[&Value], capacity: usize, widening: Widening) -> Self {
         // An empty compact source holds no items that could change the buffer's kind.
         let sources: Vec<_> = sources.iter().filter(|v| !v.is_empty() || source_kind(v, false).is_none()).collect();
@@ -602,7 +621,7 @@ impl Gather {
             Some(joined) => {
                 self.kind = Some(joined);
                 if joined.stored() == current.stored() { return; }
-                if let (Kind::Integer, Storage::Integer(_, flag)) = (current, &mut self.data) {
+                if let (Kind::Extended, Storage::Integer(_, flag)) = (joined, &mut self.data) {
                     *flag.get_mut() = true;
                     return;
                 }
@@ -643,6 +662,12 @@ impl Gather {
         self.mixed().extend(source.items(range))
     }
     pub(crate) fn push(&mut self, source: &Value, i: usize) { self.extend(source, i..i + 1) }
+    /// Appends the items of `source`, as joining it does. An empty compact source can't change the buffer's kind, and an empty mixed
+    /// one makes the buffer mixed.
+    pub(crate) fn append(&mut self, source: &Value) {
+        if !source.is_empty() { return self.extend(source, 0..source.len()); }
+        if source_kind(source, false).is_none() { self.mixed(); }
+    }
     /// Copies the items of `source` at `indices`, each in `-n..n` for `n` items. A negative index counts back from the end.
     pub(crate) fn items_at(&mut self, source: &Value, indices: &[i64]) {
         self.follow(self.kind_of(source));
@@ -964,6 +989,73 @@ impl Value {
             if let Some(Storage::Integer(_, flag)) = Arc::get_mut(a).and_then(|a| Arc::get_mut(&mut a.data)) { *flag.get_mut() = true; }
         }
         self
+    }
+    /// The storage of this array for writing. The layout and the storage are copied first when anything else holds them.
+    fn storage_mut(&mut self) -> &mut Storage {
+        let Self::Array(a) = self else { unreachable!("only an array has storage") };
+        Arc::make_mut(&mut Arc::make_mut(a).data)
+    }
+    /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one, in place. A later
+    /// offset wins. Storage that can't hold an item widens as a `Gather` does. Mixed storage forgets its prototype when item 0
+    /// changes, and its environment when a written or overwritten item depends on a frame.
+    pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) {
+        if offsets.is_empty() { return; }
+        let data = self.storage_mut();
+        if let Storage::Mixed(items, memo) = data {
+            if offsets.contains(&0) { memo.prototype.take(); }
+            if source.environment().is_some() || offsets.iter().any(|&o| items[o].environment().is_some()) { memo.environment.take(); }
+        }
+        let mut gather = Gather::resume(std::mem::replace(data, Storage::Boolean(Vec::new())));
+        gather.scatter(offsets, source);
+        *data = gather.data;
+    }
+    /// Writes `item` at `path` in place, through nested items. The empty path replaces the whole array.
+    pub(crate) fn write_path(&mut self, path: &[usize], item: Value) {
+        let Some((&last, outer)) = path.split_last() else { return *self = item };
+        let dependent = item.environment().is_some();
+        let source = if item.is_atom() { item } else { item.enclose().expect("a unit holds any item") };
+        self.item_mut(outer, dependent).scatter(&[last], &source);
+    }
+    /// The item at `path`, for writing in place. Each level on the way is copied first only when something else holds it. Its memo
+    /// forgets the prototype when the path goes through item 0, and the environment when `dependent` is set or the item on the path
+    /// depends on a frame.
+    pub(crate) fn item_mut(&mut self, path: &[usize], dependent: bool) -> &mut Value {
+        let mut current = self;
+        for &i in path {
+            let Storage::Mixed(items, memo) = current.storage_mut() else { unreachable!("only mixed storage holds arrays") };
+            if i == 0 { memo.prototype.take(); }
+            if dependent || items[i].environment().is_some() { memo.environment.take(); }
+            current = &mut items[i];
+        }
+        current
+    }
+    /// Appends the major cells of `cells` in place. `cells` has this array's rank and matches its other axes. `names` holds the keys
+    /// of the new cells when the leading axis has keys or gains them. Positions already there keep their keys, or have none. The
+    /// caller checks that the keys are new and that the length is within the limit.
+    pub(crate) fn append(&mut self, cells: &Value, names: Option<&[Option<Arc<str>>]>) {
+        let Self::Array(a) = self else { unreachable!("only an array grows") };
+        let a = Arc::make_mut(a);
+        let (old, rank) = (a.layout.shape[0], a.layout.shape.len());
+        a.layout.shape[0] += cells.shape()[0];
+        if let Some(names) = names {
+            let labels = a.layout.labels_mut();
+            if labels.keys.is_empty() { labels.keys = vec![None; rank]; }
+            match &mut labels.keys[0] {
+                Some(keys) => {
+                    let keys = Arc::make_mut(keys);
+                    for name in names { keys.push(name.clone()) }
+                }
+                slot => *slot = Some(Keys::partial(std::iter::repeat_n(None, old).chain(names.iter().cloned()).collect()).expect("the caller checks keys")),
+            }
+        }
+        let data = Arc::make_mut(&mut a.data);
+        if let Storage::Mixed(items, memo) = data {
+            if items.is_empty() && !cells.is_empty() { memo.prototype.take(); }
+            if cells.environment().is_some() { memo.environment.take(); }
+        }
+        let mut gather = Gather::resume(std::mem::replace(data, Storage::Boolean(Vec::new())));
+        gather.append(cells);
+        *data = gather.data;
     }
     /// Complex results of an operation. When no item has an imaginary part, the array holds floats, as `Number` gives them.
     pub(crate) fn complex(shape: Vec<usize>, data: Vec<Complex64>) -> Result<Self, ErrorKind> {
@@ -1367,15 +1459,10 @@ impl Value {
         if outside(&text, |c| !(c.is_ascii_digit() || " ¯.eEjJrxₓ∞⍬".contains(c))) { format!("({text})") } else { text }
     }
 
-    /// Source text for a scalar holding `content`. Parentheses enclose a glyph or glyphs separated by spaces. Other
-    /// functions have no enclosing spelling, so they reshape a one-item vector to rank 0. Anything else follows `⊂`.
+    /// Source text for a scalar holding `content`: `ᵘ` after a function, and `⊂` before anything else.
     fn enclosed_literal(content: &Value) -> String {
-        let glyph = |v: &Value| matches!(v, Self::Function(_)) && v.literal().chars().count() == 1;
-        if matches!(content, Self::Array(_)) && content.shape().len() == 1 && content.len() >= 2 && !content.has_keys() && content.elements().all(|e| glyph(&e))
-        { return format!("({})", content.elements().map(|e| e.literal()).collect::<Vec<_>>().join(" ")); }
         match content {
-            Self::Function(_) if glyph(content) => format!("({})", content.literal()),
-            Self::Function(_) => format!("⍬⍴[{}]", content.literal()),
+            Self::Function(f) => f.superscripted("ᵘ", &mut 1000),
             _ => format!("⊂{}", content.item()),
         }
     }

@@ -21,9 +21,9 @@ from IPython.paths import get_ipython_dir
 
 # %% ../../nbs/magics.ipynb #07eae6b5
 class AplOut(str):
-    "APL output text, displayed in the SAX2 font where HTML is available."
+    "APL output text, displayed in the BPL code font where HTML is available."
     def __repr__(self): return str(self)
-    def _repr_html_(self): return f'<pre class="aplnb_out sax2">{html.escape(self.rstrip(chr(10)))}</pre>'
+    def _repr_html_(self): return f'<pre class="bpl_out">{html.escape(self.rstrip(chr(10)))}</pre>'
 
 
 # %% ../../nbs/magics.ipynb #3cdb5893
@@ -35,11 +35,6 @@ def display_events(events):
         else: display(data, raw=True)
 
 # %% ../../nbs/magics.ipynb #04f56c87
-_css = r"""<style>
-@font-face { font-family:'SAX2'; src: local('SAX2'), url('https://cdn.jsdelivr.net/gh/abrudz/SAX2@master/SAX2.ttf') format('truetype') }
-.sax2 { font-family:'SAX2',monospace !important; line-height:1.05 !important }
-</style>"""
-
 class BPLMagic:
     "IPython BPL magics that evaluate in the workspace `basedpl.bpl`."
     def __init__(self): self._loaded = False
@@ -52,13 +47,13 @@ def _load(self:BPLMagic):
     js = files('basedpl')
     layout = (files('basedpl')/'layout.json').read_text()
     display(Javascript(f"{(js/'lb.js').read_text()}({json.dumps(symbols)}, {(js/'input.js').read_text()}, {layout})"))
-    display(HTML(_css))
+    display(HTML(f"<style>{(js/'fonts.css').read_text()}</style>"))
     self._loaded = True
 
 # %% ../../nbs/magics.ipynb #0b57e64c
 @patch
 def bpl(self:BPLMagic, line, cell=None):
-    "Evaluate a line as a native value or display a cell as an BPL session."
+    "Evaluate a line as a native value or display a cell as a BPL session."
     self._load()
     code = line if cell is None else cell.rstrip()
     show = not (cell is not None and code.endswith(';'))

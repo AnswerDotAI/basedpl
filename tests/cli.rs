@@ -95,8 +95,7 @@ fn worker_flushes_before_eof_and_recovers() {
 #[test]
 fn batch_stdin_and_persistent_repl() {
     for args in [vec!["-"], vec![]] {
-        let mut child =
-            Command::new(env!("CARGO_BIN_EXE_bpl")).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_bpl")).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
         child.stdin.take().unwrap().write_all("v←⍳10\n+/v\n".as_bytes()).unwrap();
         let result = child.wait_with_output().unwrap();
         assert!(result.status.success());
@@ -108,8 +107,7 @@ fn batch_stdin_and_persistent_repl() {
 #[test]
 fn programs_read_standard_input() {
     let run = |args: &[&str], input: &str| {
-        let mut child =
-            Command::new(env!("CARGO_BIN_EXE_bpl")).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_bpl")).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
         child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
         let output = child.wait_with_output().unwrap();
         (String::from_utf8(output.stdout).unwrap(), String::from_utf8(output.stderr).unwrap())

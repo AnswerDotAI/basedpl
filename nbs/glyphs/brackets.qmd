@@ -73,22 +73,22 @@ Brackets with any `key:value` item build one [keyed vector](../keyed.qmd). An it
 
 ## Selecting
 
-Brackets do not index. An array next to an argument selects from it, and [Index](squad.qmd) `⌷` selects along several axes. [Axis](axis.qmd) `⍠` applies a function along axes.
+Brackets do not index. [Index](squad.qmd) `⌷` selects, with one item of its left argument for each axis. [Axis](axis.qmd) `⍠` applies a function along axes.
 
 ```bpl
 v←10 20 30
-v[2 0]             ⍝ 30 10
+[[2 0]]⌷v          ⍝ 30 10
 m←2 3⍴⍳6
 ∞ 1⌷m              ⍝ 1 4
 ```
 
 ## Function arrays
 
-Items in brackets can be functions: `[+/ ÷ ≢]` is a vector of three functions. Array application, Pick `⊃`, First `↑` and complete atomic [Index](squad.qmd) `⌷` positions return a stored function you can call. [Agenda](agenda.qmd) selects a function and calls it. Successive Picks go down into nested arrays. Empty coordinates return the argument unchanged.
+Items in brackets can be functions: `[+/ ÷ ≢]` is a vector of three functions. Pick `⊃`, First `↑` and complete atomic [Index](squad.qmd) `⌷` positions return a stored function you can call. [Agenda](agenda.qmd) selects a function and calls it. Successive Picks go down into nested arrays. Empty coordinates return the argument unchanged.
 
 ```bpl
-fs←[+ × ÷] ⋄ mul←fs1 ⋄ 2 mul 3                   ⍝ 6
-fs←[+/ {⍵×⍵} 3⍃+] ⋄ square←fs1 ⋄ square4         ⍝ 16
+fs←[+ × ÷] ⋄ mul←1⌷fs ⋄ 2 mul 3                  ⍝ 6
+fs←[+/ {⍵×⍵} 3⍃+] ⋄ square←1⌷fs ⋄ square4        ⍝ 16
 fs←[+ ×] ⋄ ≢[fs ÷]                                ⍝ 2ₓ
 fs←[+ × ÷] ⋄ div←↑⌽fs ⋄ 6 div 3                  ⍝ 2
 fs←[+ ×] ⋄ result←(⊂1 2 3),1↓fs ⋄ f←1⊃result ⋄ 2 f 3   ⍝ 6

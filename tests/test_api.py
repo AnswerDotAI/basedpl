@@ -25,10 +25,12 @@ def test_builtin_attributes():
     bpl('plus←99 ⋄ userfn←{⍵+1}')
     teq(bpl.plus(2, 3).py, 5)
     teq(bpl['plus'].py, 99)
+    teq(bpl.userfn(1).py, 2)
+    assert 'userfn' in dir(bpl)
     teq(bpl.execute('plus').py, 99)
+    teq(bpl.lookup([10, 20], 1).py, 20)
     teq(bpl.not_(0).py, 1)
     assert bpl.names.__func__ is type(bpl).names
-    with pytest.raises(AttributeError): bpl.userfn
     from basedpl import add
     teq(add(2).py, 2)
     assert 'plus' not in vars(basedpl)
@@ -39,9 +41,9 @@ def test_python_printer():
     for code, expected in {
         '×': 'sign', '×⍄2': 'times(2.)', '2⍃-': 'subtract.left(2.)', '2-': 'subtract.left(2.)',
         '×⍄2x': 'times(2)', '÷⍄1r2': 'divide(Fraction(1, 2))',
-        '+/÷≢': 'plus.reduce / tally', '+.×': 'plus @ times', '×⊗': 'times.outer',
+        '+/÷≢': 'plus.reduce / tally', '+.×': 'plus @ times', '×⊗': 'times.outer_product',
         '+/⍠1': 'plus.reduce[1.]', '1⍃+⍣[≡]': 'plus.left(1.).history(match)', '+⌿': 'plus.reduce[0]', '-⍨': 'subtract.commute',
-        '+∘×': 'conjugate.atop(sign)', '+⍥×': 'conjugate.over(sign)', '-⍃+': 'negate.before(plus)', '+⍄-': 'plus.after(negate)',
+        '+∘×': 'conjugate.atop(sign)', '+⍥×': 'conjugate.over(sign)', '-⍃+': 'negate.before(plus)', '+⍄-': 'plus.after(negate)', '-⊘+': 'negate.valences(plus)',
         '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each', '(×⍄2)⁻¹': 'times(2.).undo',
     }.items(): teq(to_python(bpl(code)), expected)
     teq(to_python(bpl('×'), dyad=True), 'times')
@@ -136,6 +138,8 @@ def test_distribution_functions():
 
 def test_array_surface():
     a = Array([[1, 2, 3], [4, 5, 6]])
+    np.testing.assert_array_equal(bpl('m.[0 0]←0 ⋄ m', m=a), [[0, 2, 3], [4, 5, 6]])
+    np.testing.assert_array_equal(a, [[1, 2, 3], [4, 5, 6]])
     assert len(a) == 2
     np.testing.assert_array_equal(a + [10, 20], [[11, 12, 13], [24, 25, 26]])
     np.testing.assert_array_equal(10 - a, [[9, 8, 7], [6, 5, 4]])
@@ -164,7 +168,7 @@ def test_keyed_arrays():
     np.testing.assert_array_equal(t.py['b'], [1, 2])
     assert repr(t).startswith("{'b': ")
     d = dict(z=1, y=dict(k=[1, 2, 3]), e={})
-    assert list(bpl('⍳⍠0 t', t=d).py) == ['z', 'y', 'e'] and bpl('t.y.k.[1]+t.e≡⍬:⍬', t=d).py == 3
+    assert list(bpl('⍳⍠0 t', t=d).py) == ['z', 'y', 'e'] and bpl('(1⌷t.y.k)+t.e≡⍬:⍬', t=d).py == 3
     assert (Array(dict(a=1, b=2)) + Array(dict(b=10))).py == dict(a=1, b=12)
     assert Array({'a': 1, 1: 5}).py == {'a': 1, 1: 5}
     with pytest.raises(TypeError): Array({2: 5})
@@ -230,7 +234,7 @@ def test_words_binding_and_operators():
     assert (Array('abc') + 1).py == 'bcd'
     np.testing.assert_array_equal(plus.reduce[0](Array([[1, 2], [3, 4]])), [4, 6])
     np.testing.assert_array_equal(plus.reduce[1, 2](np.arange(1, 9).reshape(2, 2, 2)), [10, 26])
-    np.testing.assert_array_equal(times.outer([1, 2], [3, 4]), [[3, 4], [6, 8]])
+    np.testing.assert_array_equal(times.outer_product([1, 2], [3, 4]), [[3, 4], [6, 8]])
     assert (plus @ times)([1, 2], [3, 4]).py == 11
     assert (subtract(1) ** 3)(10).py == 7
     assert (times(2.) ** -1)(10).py == 5
@@ -249,11 +253,12 @@ def test_words_binding_and_operators():
     teq(plus.left(1).power.each.power(2)(3)([0, 10]).py, [6, 16])
     teq(plus.power.reduce[0](1)([[1, 2], [3, 4]]).py, [4, 6])
     teq((subtract.left.each + 10)(2)([3, 4]).py, [9, 8])
+    teq((sign.valences(plus)(-3).py, sign.valences(plus)(2, 3).py), (-1, 5))
 
 
 def test_math_construction():
     from basedpl import prime, prime_mode, factors, factor_spec, polynomial, polyval, windows
-    f = plus.left(1).with_inverse(subtract(1))
+    f = plus.left(1).inverse_pair(subtract(1))
     np.testing.assert_array_equal(f.power([2, -1, 0])(10), [12, 9, 10])
     np.testing.assert_array_equal(f.history(-2)(10), [10, 9, 8])
     stop = bpl('limit←13 ⋄ {⍺≥limit}')
@@ -311,7 +316,7 @@ def test_axis_names():
     teq(bpl('⌽⍤1 M').axis_names, ('city', 'month'))
     with pytest.raises(BplError, match='INDEX'): bpl('+/⍠"missing" M')
     v = Array([1, 2], axis_names=('city',))
-    teq(times.outer(v, v).axis_names, (None, None))
+    teq(times.outer_product(v, v).axis_names, (None, None))
     teq(reshape([4], v).axis_names, (None,))
     teq(plus.scan(v).axis_names, ('city',))
     bpl(V=v)

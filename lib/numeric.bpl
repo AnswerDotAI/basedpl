@@ -15,7 +15,7 @@ adic ← {  ⍝ Bijective base-⍺ numeration.
   1=b:⍵#⍺  ⍝ unary: special case
   n←⌊b⍟1+⍵×b-1  ⍝ number of digits
   z←(¯1+b*n)÷b-1  ⍝ smallest integer with length n
-  a(n#b ⊤ ⍵-z)
+  [(n#b ⊤ ⍵-z)]⌷a
 }
 
 ⍝ From http://dfns.dyalog.com/c_apportion.htm
@@ -26,7 +26,7 @@ apportion ← {  ⍝ Huntington-Hill apportionment.
     d←√⍵×⍵+1  ⍝ divisor
     cs←⍺÷d  ⍝ priority value
     ⍵+cs=⌈/cs  ⍝ next seat allocation
-  }⍣(⍺-≢⍵),1  ⍝ iterated per remaining seat.
+  }⍣ ⍺-≢⍵ ,1  ⍝ iterated per remaining seat.
 }
 
 ⍝ From http://dfns.dyalog.com/c_bsearch.htm
@@ -110,7 +110,7 @@ k_6174 ← {  ⍝ Kaprekar's operation.
   1=⍴∪enco(⍵):"error"  ⍝ all digits the same: no go.
   ⍬{  ⍝ starting with null sequence.
     ⍵=↑⌽⍺:⍺
-    v←{⍵(⍒⍵)}enco ⍵  ⍝ digits in descending order.
+    v←{[⍒⍵]⌷⍵}enco ⍵  ⍝ digits in descending order.
     (⍺,⍵)∇(deco v)-deco⌽v  ⍝ smaller to larger difference.
   }⍵  ⍝ :: [#] ∇ # → [#]
 }
@@ -122,7 +122,7 @@ hex ← {  ⍝ Hexadecimal from decimal.
   1≠≡,⍵:⍺∇¨⍵  ⍝ simple-array-wise:
   0∊,⍵-1+⍵:"Too big"
   n←⍬⍴⍺,2*⌈2⍟2⌈16⍟1+⌈/|⍵  ⍝ default width.
-  ↓"0123456789abcdef"(n#16 ⊤ ⍵)
+  ↓[(n#16 ⊤ ⍵)]⌷"0123456789abcdef"
 }
 
 ⍝ From http://dfns.dyalog.com/c_dec.htm
@@ -176,8 +176,8 @@ rational ← {  ⍝ Rational approximation to real ⍵.
 ⍝ From http://dfns.dyalog.com/c_roman.htm
 
 roman ← {  ⍝ Roman numeral arithmetic.
-  num←{{⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5×⊗10*⍳4)(7|"IVXLCDMivxlcdm"⍳⍵)}
-  fmt←{~⍄" ",1 0 0⍉(' '⍪3 4⍴"MCXI DLV ")([∞ ⍵⊤⍨4⍴10]⌷⍉0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)}
+  num←{{⍵+.××0.5+×-/2↕⍵,0}[7|"IVXLCDMivxlcdm"⍳⍵]⌷,⍉1 5×⊗10*⍳4}
+  fmt←{~⍄" ",0 1 0⍉(⊂[⍵⊤⍨4⍴10]⌷0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)⌷' '⍪3 4⍴"MCXI DLV "}
   depth←{⍹≥≡⍵ : ⍶ ⍵ ⋄ ∇¨⍵}
   nums←num depth 1  ⍝ arabic from roman.
   fmts←fmt depth 0  ⍝ roman from arabic.
@@ -247,7 +247,7 @@ alt ← {  ⍝ Alternant.
   0=r:⍹⌿,⍵
   1≥c:⍶⌿,⍵
   M←(⍳r)~⍤1⍪⍳r  ⍝ minors
-  ⍵.[∞ 0]⍶.⍹∇¨⊂⍠[1 2]⍵.[M 1↓⍳c]
+  ⍵.[∞ 0]⍶.⍹∇¨⊂⍠[1 2][M 1↓⍳c]⌷⍵
 }
 
 bayes ← { ⍺ ×÷+.× ⍵ }  ⍝ Bayes' formula. (implemented as a fork)
@@ -271,14 +271,14 @@ det ← {  ⍝ Determinant of square matrix.
   0=n←≢⍵:⍺  ⍝ result for 0-by-0
   [i j]←(⍴⍵)⊤{⍵⍳⌈/⍵}|,⍵
   k←⍳n
-  (⍺×⍵.[i j]×¯1*i+j)∇ ⍵.[k~[i] k~[j]] - ⍵.[k~[i] j] ×⊗ ⍵.[i k~[j]] ÷ ⍵.[i j]
+  (⍺×⍵.[i j]×¯1*i+j)∇ [k~[i] k~[j]]⌷⍵ - [k~[i] j]⌷⍵ ×⊗ [i k~[j]]⌷⍵ ÷ [i j]⌷⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_gauss_jordan.htm
 
 gauss_jordan ← {  ⍝ Gauss-Jordan elimination.
   elim←{  ⍝ elimination of row/col ⍺
-    p←⍺+{⍵⍳⌈/⍵}|⍺↓⍵.[∞ ⍺]
+    p←⍺+{⍵⍳⌈/⍵}|⍺↓[∞ ⍺]⌷⍵
     swap←⊖@[⍺ p] ⍵  ⍝ ⍺th and pth rows exchanged
     mat←swap.[⍺ ⍺]÷⍨@⍺ swap  ⍝ col diagonal reduced to 1
     mat-(mat.[∞ ⍺]×⍺≠⍳≢⍵)×⊗mat.(⍺)
@@ -360,7 +360,7 @@ phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
   ⍺{
     ⍺=0:⍵
     ⍵≡⍬:"0"
-    fmt←{"01"(⍵)}
+    fmt←{[⍵]⌷"01"}
     lft←(⌽⍳0⌈1+⌈/⍵)∊⍵
     rgt←(-1+⍳0⌈|⌊/⍵)∊⍵
     rgt∧.=0:fmt lft

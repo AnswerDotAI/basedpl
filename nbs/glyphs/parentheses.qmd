@@ -1,4 +1,4 @@
-# `( )` — Group / Scalar / Rows / Train
+# `( )` — Group / Rows / Train
 
 Parentheses round an expression group it, whatever it holds. Without `⋄`, they hold one expression wherever they appear, including inside [brackets](brackets.qmd). A literal argument after a literal operand goes in parentheses, so it doesn't join the operand's strand.
 
@@ -9,14 +9,13 @@ x←2 4 9
 1+⍣3(5)            ⍝ 8
 ```
 
-Round glyphs alone, separated by spaces, parentheses make a scalar holding them. So `(+)` holds `+`, and `(+ -)` holds the vector `[+ -]`. Glyphs that touch form a train, so `(-×)` groups. Around a literal or a name, parentheses group, so `(1 2)` is `1 2` and `(x)` is `x`. The text alone decides, so reading the code never depends on what a name holds. [`⊂`](enclose.qmd) encloses any other value: `⊂[1 2]` is a scalar holding a vector.
+Parentheses group a glyph or a name just as they group a literal: `(1 2)` is `1 2`, `(x)` is `x`, and `(-)` is `-`. [`⊂`](enclose.qmd) encloses an array, so `⊂[1 2]` is a unit holding a vector. To make a unit that holds a function, write [`ᵘ`](superscript.qmd) after it: `+ᵘ` holds `+`.
 
 ```bpl
 (5)≡5              ⍝ $t
 ⍴(1 2)             ⍝ [2]ₓ
 x←1 2 ⋄ (x)≡x      ⍝ $t
-≡(+)               ⍝ 1ₓ
-≢↑(+ -)            ⍝ 2ₓ
+(-)3               ⍝ ¯3
 f←- ⋄ (f)3         ⍝ ¯3
 ```
 
@@ -43,7 +42,7 @@ Brackets with `⋄` stack their rows into one array instead: `[1 2 ⋄ 3 4]` is 
 
 ## Trains
 
-Two functions form an atop: `(f g)Y` is `f(g Y)`. Glyphs alone separated by spaces make a scalar instead, as above, so a train of bare glyphs is written without spaces.
+Two functions form an atop: `(f g)Y` is `f(g Y)`.
 
 ```bpl
 (- +/)1 2 3        ⍝ ¯6

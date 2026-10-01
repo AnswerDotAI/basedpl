@@ -11,6 +11,7 @@ from fractions import Fraction
 from ._core import __version__, symbols, _Array, _Function, _Session
 
 __all__ = ['__version__', 'symbols', 'Array', 'Result', 'BplError', 'bpl', 'fn']
+__pyskill_sigs__ = False
 
 def _dtype(items):
     import numpy as np
@@ -224,8 +225,8 @@ class Array(_Operators):
         return _result(self._inner.select([part(o) for o in parts])).value
     def __matmul__(self, other):
         if isinstance(other, Function): raise TypeError('inner product requires two arrays or two functions')
-        return _builtin('+').inner(_builtin('×'))(self, other)
-    def __rmatmul__(self, other): return _builtin('+').inner(_builtin('×'))(other, self)
+        return _builtin('+').dot(_builtin('×'))(self, other)
+    def __rmatmul__(self, other): return _builtin('+').dot(_builtin('×'))(other, self)
     def __array__(self, dtype=None, copy=None):
         if copy is False: raise ValueError('basedpl conversion requires a copy')
         result = self.np
@@ -244,7 +245,7 @@ class Result:
     def output(self): return _output_text(self.events)
 
 class BplError(RuntimeError):
-    "An BPL diagnostic, with retained source, UTF-8 byte spans, calls and captured output."
+    "A BPL diagnostic, with retained source, UTF-8 byte spans, calls and captured output."
     def __init__(self, error, events):
         super().__init__(error['display'])
         self.kind, self.message = error['kind'], error['message']
@@ -268,6 +269,7 @@ def _result(raw, display=False):
 
 class _Workspace:
     "The BPL workspace, `bpl`. Calls return native values. `timeout` sets a per-evaluation deadline in seconds."
+    __pyskill_sigs__ = False
     def __init__(self): self.timeout, self._session = None, _Session()
 
     def _request(self, payload, display, echo=False):
@@ -293,10 +295,13 @@ class _Workspace:
     def __getitem__(self, source): return self(source)
 
     def __getattr__(self, name):
-        "Look up a builtin function by glyph, registered name/alias, or system name."
-        return _builtin(name)
+        "Look up a builtin function by glyph, registered name/alias or system name, then a workspace name."
+        try: return _builtin(name)
+        except AttributeError:
+            if name.startswith('_') or name not in self.names(name): raise
+        return self(name)
 
-    def __dir__(self): return sorted(set(super().__dir__()) | _builtins.keys())
+    def __dir__(self): return sorted(set(super().__dir__()) | _builtins.keys() | set(self.names()))
 
     def __setitem__(self, name, value):
         if not isinstance(name, str): raise TypeError('binding name must be a string')

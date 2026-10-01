@@ -40,7 +40,7 @@ const CASES: &[(f64, &[&str])] = &[
     // Each item waits for the result before it.
     (18.0, &["+\\v", "⌈\\v", "+\\jv", "≠\\b"]),
     // Each item waits for a read from a random place.
-    (10.0, &["v i"]),
+    (10.0, &["[i]⌷v"]),
     // An approximate divisor reads the integers as floats. Each item then needs a float division and a floor within tolerance.
     (11.0, &["3|jv"]),
     // Each item needs a call to the maths library.

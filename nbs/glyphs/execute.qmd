@@ -1,4 +1,4 @@
-# `⍎` — Execute
+# `⍎` — Execute / Lookup
 
 `⍎Y` evaluates character code in the current lexical scope.
 

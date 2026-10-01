@@ -76,12 +76,11 @@ Keys must be unique strings on each axis: `DOMAIN`. A key-list length must match
 
 ## Selection and assignment
 
-[Index](glyphs/squad.qmd) `I⌷M` takes one selector for each leading axis. Dot indexing writes the same selection after the array, with one bracket item for each axis: `M.["alice" "qty"]` is `"alice" "qty"⌷M`. An array applied to a selector selects on its leading axis, so `M "bob"` is `"bob"⌷M`. A selector is a key or a position. A unit selector removes its axis. A vector selector retains it. A character vector selects one string key.
+[Index](glyphs/squad.qmd) `I⌷M` takes one selector for each leading axis. Dot indexing writes the same selection after the array, with one bracket item for each axis: `M.["alice" "qty"]` is `"alice" "qty"⌷M`. A selector is a key or a position. A unit selector removes its axis. A vector selector retains it. A character vector selects one string key.
 
 ```bpl
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
 "bob"⌷M                     ⍝ "price" "qty":20 4
-M "bob"                     ⍝ "price" "qty":20 4
 1⌷M                         ⍝ "price" "qty":20 4
 ∞ "qty"⌷M                   ⍝ "alice" "bob":2 4
 "alice" "qty"⌷M             ⍝ 2
@@ -310,7 +309,7 @@ V≡⌽V                        ⍝ $t
 V⍳20 99                     ⍝ "mid" 3ₓ
 V⍸5 15 25 40                ⍝ 0ₓ "low" "mid" "high"
 ⍒V                          ⍝ "high" "mid" "low"
-V ⍒V                        ⍝ "high" "mid" "low":30 20 10
+[⍒V]⌷V                      ⍝ "high" "mid" "low":30 20 10
 ["aa":7] ∊ ["bb":7]          ⍝ ["aa":$t]
 ```
 
@@ -349,7 +348,7 @@ An array's shape is keyed by its axis names. Reshape by a keyed shape to name th
 ```bpl
 M←["city":2 "month":3]⍴⍳6
 ⍴M                            ⍝ ["city":2 "month":3]ₓ
-⍴M "month"                    ⍝ 3ₓ
+"month"⌷⍴M                    ⍝ 3ₓ
 +/⍠"month" M                  ⍝ ["city":2]⍴3 12
 ```
 

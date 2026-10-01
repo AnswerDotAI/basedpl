@@ -168,7 +168,7 @@ wrapnote ← {                                 ⍝ Wrap text paragraphs in note 
   pics←{1∊"┌┬┐├┼┤└┴┘│─"∊⍵}                   ⍝ line contains box-drawing chars?
   and←{(⍶⍵)∧⍹⍵}                              ⍝ test combiner.
   test←~∘pics and jlft and jrgt              ⍝ test for flowtext.
-  first←{(1+⍵⍳0)⊃⍵}∘(≢¨)                     ⍝ length of first non-blank line.
+  first←{(1+⍵⍳0)⊃⍵}∘ ≢¨                     ⍝ length of first non-blank line.
   spill←{⍵∨¯1⌽⍵}                             ⍝ include next item to right.
   list←{squeeze dehyph' 'join ⍵}             ⍝ first enlist, then
   fold←{split to wrap ⍵}                     ⍝ re-wrap paragraph.
@@ -227,7 +227,7 @@ tabTrips ← {∧/(⍳2+⍴⍵)tabTrip¨⊂⍵}
 
 dlb ← {  ⍝ Drop Leading Blanks.
   ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
+  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵  ⍝ array
   1≥⍴⍴⍵:(+/∧\⍵∊⍺)↓⍵  ⍝ vector
   (∨\∨⌿~⍵∊⍺)#⍠¯1 ⍵  ⍝ matrix
 }
@@ -236,7 +236,7 @@ dlb ← {  ⍝ Drop Leading Blanks.
 
 dtb ← {  ⍝ Drop Trailing Blanks.
   ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
+  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵  ⍝ array
   1≥⍴⍴⍵:(-+/∧\⌽⍵∊⍺)↓⍵  ⍝ vector
   (~⌽∧\⌽∧⌿⍵∊⍺)#⍠¯1 ⍵  ⍝ matrix
 }
@@ -245,7 +245,7 @@ dtb ← {  ⍝ Drop Trailing Blanks.
 
 deb ← {  ⍝ Drop Ending Blanks.
   ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
+  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵  ⍝ array
   b←⍵∊⍺  ⍝ mask
   1≥⍴⍴⍵:(∧\b ⍱ ⌽∧\⌽b)#⍵  ⍝ vector
   b←∧⌿b ⋄ (∧\b ⍱ ⌽∧\⌽b)#⍠¯1 ⍵  ⍝ matrix
@@ -255,7 +255,7 @@ deb ← {  ⍝ Drop Ending Blanks.
 
 dmb ← {  ⍝ Drop Multiple Blanks.
   ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
+  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵  ⍝ array
   2>⍴⍴⍵:(∨/2↕1,⍨~⍵∊⍺)#⍵
   (∨/2↕1,⍨,∨⌿~⍵∊⍺)#⍠¯1 ⍵
 }
@@ -264,7 +264,7 @@ dmb ← {  ⍝ Drop Multiple Blanks.
 
 dxb ← {  ⍝ Drop eXtraneous Blanks.
   ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
+  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵  ⍝ array
   b←⍵∊⍺  ⍝ mask
   1≥⍴⍴⍵:1↑b ↓ b⍲1↓b,1 # ⍵  ⍝ vector
   b←∧⌿b ⋄ 0,1↑b ↓ b⍲1↓b,1 #⍠¯1 ⍵  ⍝ matrix
@@ -276,5 +276,5 @@ dab←{  ⍝ Drop All Blanks.
   ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵  ⍝ nested?
   1≥⍴⍴⍵:⍵~⍺  ⍝ vector
   2=⍴⍴⍵:⊃(↓⍵)~¨⊂⍺
-  (¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠(¯1↓⍳⍴⍴⍵)⍵  ⍝ array
+  (¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵  ⍝ array
 }

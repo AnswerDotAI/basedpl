@@ -175,7 +175,7 @@ a←3⍴0 ⋄ (5⍴a)+←1 ⋄ a   ⍝ 2 2 1
 ⍳2 3   ⍝ [[0 0] [0 1] [0 2] ⋄ [1 0] [1 1] [1 2]]
 
 ⍝ dyalog:index-generator:2 — Combined setup and indexed expression
-A←["MAIN" ⋄ "EXIT"] ⋄ A(⍳⍴A)   ⍝ ["MAIN" ⋄ "EXIT"]
+A←["MAIN" ⋄ "EXIT"] ⋄ [⍳⍴A]⌷A   ⍝ ["MAIN" ⋄ "EXIT"]
 
 ⍝ dyalog:exponential:3 —
 1+*π0j1   ⍝ 0

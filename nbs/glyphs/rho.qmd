@@ -11,7 +11,7 @@ The shape is keyed by the axis names. An unnamed axis gives an unkeyed entry. Se
 ```bpl
 M←["city":2 "month":3]⍴⍳6
 ⍴M                 ⍝ ["city":2 "month":3]ₓ
-⍴M "month"         ⍝ 3ₓ
+"month"⌷⍴M         ⍝ 3ₓ
 ```
 
 `S⍴Y` reshapes, cycling or truncating the ravel of `Y`. Dimensions are nonnegative integers. Empty `Y` supplies fill.

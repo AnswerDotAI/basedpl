@@ -14,7 +14,7 @@
         <RegExpr String="\$[tfn]" attribute="Number"/>
         <RegExpr String="\](?=ₓ|x(?![A-Za-z0-9_∆⍙]))" attribute="Normal Text" context="Mark"/>
         <AnyChar String="+-×÷⌈⌊|*⍟○π√!∧∨⍲⍱~=≠&lt;≤&gt;≥⍳:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹#↕⍭⨸⌻⍸⍷⊢⊣?" attribute="Function"/>
-        <AnyChar String="¨⍨⍃⍤∘⍠⍥⍄.⊗⌸⍣⇄⌾∂⍰@⌺/⌿\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀ" attribute="Operator"/>
+        <AnyChar String="¨⍨⍃⍤∘⍠⍥⍄.⊗⌸⍣⇄⊘⌾∂⍚@⌺/⌿\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘ₀₁₂₃₄₅₆₇₈₉₋" attribute="Operator"/>
         <AnyChar String="⍺⍵⍶⍹∇⍢" attribute="Argument"/>
         <AnyChar String="←→⋄⎕" attribute="Keyword"/>
       </context>

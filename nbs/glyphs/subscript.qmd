@@ -1,0 +1,27 @@
+# `₁` `₋₁` — Subscripts
+
+A subscript is postfix. It selects a major cell of the array just before it, with no space between them, so `v₁` is `1⌷v`. A negative subscript counts from the end. Type a subscript digit with Alt-5 then the digit, and a negative one with Alt-5 then `-` then the digit.
+
+```bpl
+v←10 20 30
+v₁                 ⍝ 20
+v₋₁                ⍝ 30
+[1 2 ⋄ 3 4]₁       ⍝ 3 4
+```
+
+An item with a subscript can be an assignment target. A subscript binds as tightly as a superscript, so `v₁²` squares the selected item.
+
+```bpl
+v←10 20 30
+v₁←5 ⋄ v           ⍝ 10 5 30
+v₁+←1 ⋄ v          ⍝ 10 6 30
+v₁²                ⍝ 36
+```
+
+A subscript writes one literal position on the leading axis. Use [`⌷`](squad.qmd) for a computed position, several positions, a key or another axis.
+
+## Errors
+
+- `SYNTAX`: a space between the item and its subscript, or `₋` with no digit after it
+- `INDEX`: the position is outside the leading axis
+- `LENGTH`: the item is a unit, which has no axis to select from

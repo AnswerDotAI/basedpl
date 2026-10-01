@@ -4,6 +4,10 @@
 •load "lib/array.bpl" ⋄ X←["a" "ccc" ⋄ "bb" "d"] ⋄ [0 0 disp X;0 1 disp X]
 [["┌──┬───┐" ⋄ "│a │ccc│" ⋄ "├──┼───┤" ⋄ "│bb│d  │" ⋄ "└──┴───┘"] ["┌──┬───┐" ⋄ "│a │ccc│" ⋄ "├──┼───┤" ⋄ "│bb│ d │" ⋄ "└──┴───┘"]]
 
+⍝ — disp and dsp draw each plane of a nested rank-3 array, and disp leaves a blank row between rank-4 hyperplanes
+•load "lib/array.bpl" ⋄ v←'a' "bb" 'c' "dd" ⋄ [disp 2 1 2⍴v;dsp 2 1 2⍴v;disp 2 2 1 1⍴v]
+[["┌─┬──┐" ⋄ "│a│bb│" ⋄ "└─┴──┘" ⋄ "┌─┬──┐" ⋄ "│c│dd│" ⋄ "└─┴──┘"] ["────" ⋄ "a│bb" ⋄ "    " ⋄ "c│dd"] ["┌──┐" ⋄ "│a │" ⋄ "└──┘" ⋄ "┌──┐" ⋄ "│bb│" ⋄ "└──┘" ⋄ "    " ⋄ "┌──┐" ⋄ "│c │" ⋄ "└──┘" ⋄ "┌──┐" ⋄ "│dd│" ⋄ "└──┘"]]
+
 ⍝⍝ Blank removal
 
 ⍝ — On a matrix, blank removal acts on columns that are blank in every row
@@ -221,3 +225,35 @@ $t $t $t
 ⍝ — words with a plain alphabet splits a string into its words and the text between them
 •load "lib/dyalog.bpl" ⋄ "abc" words "ab1c ba"
 "ab" "1" "c" " " "ba"
+
+⍝ — dots marks the indentation under each closing brace of a nested dfn, with a chosen dot
+•load "lib/dyalog.bpl" ⋄ '.' dots ⊃"f←{" "    g←{" "        ⍵+1" "    }" "    g ⍵" "}"
+["f←{        " ⋄ ".   g←{    " ⋄ ".   .   ⍵+1" ⋄ ".   }      " ⋄ ".   g ⍵    " ⋄ "}          "]
+
+⍝ — dots marks the indentation above :Else and :EndIf
+•load "lib/dyalog.bpl" ⋄ dots ⊃" r←f x" " :If x" "     r←1" " :Else" "     r←2" " :EndIf"
+[" r←f x  " ⋄ " :If x  " ⋄ " ·   r←1" ⋄ " :Else  " ⋄ " ·   r←2" ⋄ " :EndIf "]
+
+⍝ — mac: a backslash stops the next character expanding, and / repeats a character by the count before the macro name
+•load "lib/dyalog.bpl" ⋄ [mac "?=x  ?? \??\? ??";mac " ∆=/+ <1∆> <2∆> <3 ∆> <4∆> <12∆>";mac "l=[-/<+/>] 2l 1l 0l"]
+" xx ?x? xx" " <+> <++> <3 > <++++> <++++++++++++>" "[-<<+>>] [-<+>] [-+]"
+
+⍝ — mac: a later definition replaces an earlier one, a block keeps its definitions local, and a body expands names when defined unless escaped
+•load "lib/dyalog.bpl" ⋄ mac¨"a=KO a=OK a" "a=K (a=O a)a" "a=OK b=a a=KO b" "a=KO b=\a a=OK b" "O=? b=\\\OK b" "a=K b=(a=O a) ba"
+"OK" "OK" "OK" "OK" "OK" "OK"
+
+⍝ — baby runs a program that uses every instruction: both jumps, both compare outcomes, both subtract codes, load, store and halt
+•load "lib/dyalog.bpl" ⋄ m←⌽(32⍴2)⊤32↑0 16404 49152 57344 32789 24598 8215 57344 57344 16406 49152 40981 24600 25 57344 57344 0 0 0 0 3 1 0 2 0 14 ⋄ 2⊥⌽baby(m)
+0 16404 49152 57344 32789 24598 8215 57344 57344 16406 49152 40981 24600 25 57344 57344 0 0 0 0 3 1 4294967292 2 3 14 0 0 0 0 0 0
+
+⍝ — ary rounds a fraction whose digits run past its limit, and marks the result with ?
+•load "lib/dyalog.bpl" ⋄ [10 ary π 1;10 ary 2*÷2;16 ary π 1]
+"3.1415926535898?" "1.4142135623731?" "3.243F6A8885A?"
+
+⍝ — Cut 3 tiles a matrix by the given movements and sizes, keeping partial tiles; ¯3 keeps only whole tiles, and a negative size reverses each tile
+•load "lib/dyalog.bpl" ⋄ x←5 7⍴1+⍳35 ⋄ [[2 1 ⋄ 3 2]({+/,⍵}Cut 3)x;¯3 2({↑,⍵}Cut ¯3)x]
+[[51 57 63 69 75 81 42 ⋄ 135 141 147 153 159 165 84 ⋄ 59 61 63 65 67 69 35] [15 16 17 18 19 20 ⋄ 22 23 24 25 26 27 ⋄ 29 30 31 32 33 34]]
+
+⍝ — lisp reports a missing end of input at the top level, inside a list and after a quote, and literals of 20 characters; - and * apply to their arguments
+•load "lib/dyalog.bpl" ⋄ [lisp "";lisp "  ";lisp 20⍴"1";lisp 20⍴"a";lisp "'";lisp "(a '";lisp "(a 'b";lisp "(- 10 (* 2 3))"]
+"unexpected eof" "unexpected eof" "numeric literal too long" "atom too long" "unexpected eof" "unexpected eof" "unexpected eof" 4

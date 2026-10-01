@@ -56,13 +56,13 @@
    <key code="38" action="u006A"/>
    <key code="39" output="'"/>
    <key code="40" output="k"/>
-   <key code="41" output=";"/>
+   <key code="41" action="u003B"/>
    <key code="42" action="u005C"/>
    <key code="43" action="u002C"/>
    <key code="44" action="u002F"/>
    <key code="45" output="n"/>
    <key code="46" action="u006D"/>
-   <key code="47" output="."/>
+   <key code="47" action="u002E"/>
    <key code="50" action="u0060"/>
    <key code="49" action="space"/>
    <key code="51" action="delete"/>
@@ -162,7 +162,7 @@
    <key code="41" action="u003A"/>
    <key code="42" action="u007C"/>
    <key code="43" action="u003C"/>
-   <key code="44" action="u003F"/>
+   <key code="44" output="?"/>
    <key code="45" output="N"/>
    <key code="46" output="M"/>
    <key code="47" action="u003E"/>
@@ -262,13 +262,13 @@
    <key code="38" output="J"/>
    <key code="39" output="'"/>
    <key code="40" output="K"/>
-   <key code="41" output=";"/>
+   <key code="41" action="u003B"/>
    <key code="42" action="u005C"/>
    <key code="43" action="u002C"/>
    <key code="44" action="u002F"/>
    <key code="45" output="N"/>
    <key code="46" output="M"/>
-   <key code="47" output="."/>
+   <key code="47" action="u002E"/>
    <key code="50" action="u0060"/>
    <key code="49" action="space"/>
    <key code="51" action="delete"/>
@@ -346,9 +346,9 @@
    <key code="18" action="diaeresis-start"/>
    <key code="19" output=""/>
    <key code="20" output="√"/>
-   <key code="21" output=""/>
+   <key code="21" output="⇄"/>
    <key code="22" action="superscript-start"/>
-   <key code="23" output="⇄"/>
+   <key code="23" action="subscript-start"/>
    <key code="24" action="match-start"/>
    <key code="25" action="or-start"/>
    <key code="26" action="delta-start"/>
@@ -372,7 +372,7 @@
    <key code="45" action="encode-start"/>
    <key code="46" output="×"/>
    <key code="47" output="≥"/>
-   <key code="50" output="⋄"/>
+   <key code="50" action="diamond-start"/>
    <key code="49" action="space"/>
    <key code="51" action="delete"/>
    <key code="53" action="escape"/>
@@ -471,7 +471,7 @@
    <key code="41" action="u003A"/>
    <key code="42" action="u007C"/>
    <key code="43" action="u003C"/>
-   <key code="44" action="u003F"/>
+   <key code="44" output="?"/>
    <key code="45" output="N"/>
    <key code="46" output="M"/>
    <key code="47" action="u003E"/>
@@ -756,31 +756,43 @@
    <when state="none" output="1"/>
    <when state="superscript" output="¹"/>
    <when state="superscript-minus" output="⁻¹"/>
+   <when state="subscript" output="₁"/>
+   <when state="subscript-minus" output="₋₁"/>
   </action>
   <action id="u0032">
    <when state="none" output="2"/>
    <when state="superscript" output="²"/>
    <when state="superscript-minus" output="⁻²"/>
+   <when state="subscript" output="₂"/>
+   <when state="subscript-minus" output="₋₂"/>
   </action>
   <action id="u0033">
    <when state="none" output="3"/>
    <when state="superscript" output="³"/>
    <when state="superscript-minus" output="⁻³"/>
+   <when state="subscript" output="₃"/>
+   <when state="subscript-minus" output="₋₃"/>
   </action>
   <action id="u0034">
    <when state="none" output="4"/>
    <when state="superscript" output="⁴"/>
    <when state="superscript-minus" output="⁻⁴"/>
+   <when state="subscript" output="₄"/>
+   <when state="subscript-minus" output="₋₄"/>
   </action>
   <action id="u0036">
    <when state="none" output="6"/>
    <when state="superscript" output="⁶"/>
    <when state="superscript-minus" output="⁻⁶"/>
+   <when state="subscript" output="₆"/>
+   <when state="subscript-minus" output="₋₆"/>
   </action>
   <action id="u0035">
    <when state="none" output="5"/>
    <when state="superscript" output="⁵"/>
    <when state="superscript-minus" output="⁻⁵"/>
+   <when state="subscript" output="₅"/>
+   <when state="subscript-minus" output="₋₅"/>
   </action>
   <action id="u003D">
    <when state="none" output="="/>
@@ -790,26 +802,44 @@
    <when state="none" output="9"/>
    <when state="superscript" output="⁹"/>
    <when state="superscript-minus" output="⁻⁹"/>
+   <when state="subscript" output="₉"/>
+   <when state="subscript-minus" output="₋₉"/>
   </action>
   <action id="u0037">
    <when state="none" output="7"/>
    <when state="superscript" output="⁷"/>
    <when state="superscript-minus" output="⁻⁷"/>
+   <when state="subscript" output="₇"/>
+   <when state="subscript-minus" output="₋₇"/>
   </action>
   <action id="u002D">
    <when state="none" output="-"/>
    <when state="superscript" next="superscript-minus"/>
+   <when state="subscript" next="subscript-minus"/>
+   <when state="diamond" output="⍚"/>
+   <when state="delta" output="⍙"/>
+   <when state="omega" output="⍹"/>
+   <when state="epsilon" output="⍷"/>
+   <when state="iota" output="⍸"/>
    <when state="circle" output="⊖"/>
+   <when state="alpha" output="⍶"/>
+   <when state="enclose" output="⊆"/>
   </action>
   <action id="u0038">
    <when state="none" output="8"/>
+   <when state="diaeresis" output="⍣"/>
    <when state="superscript" output="⁸"/>
    <when state="superscript-minus" output="⁻⁸"/>
+   <when state="subscript" output="₈"/>
+   <when state="subscript-minus" output="₋₈"/>
+   <when state="circle" output="⍟"/>
   </action>
   <action id="u0030">
    <when state="none" output="0"/>
    <when state="superscript" output="⁰"/>
    <when state="superscript-minus" output="⁻⁰"/>
+   <when state="subscript" output="₀"/>
+   <when state="subscript-minus" output="₋₀"/>
   </action>
   <action id="u006F">
    <when state="none" output="o"/>
@@ -817,6 +847,7 @@
   </action>
   <action id="u0075">
    <when state="none" output="u"/>
+   <when state="superscript" output="ᵘ"/>
    <when state="quad" output="⌹"/>
    <when state="circle" output="⨸"/>
   </action>
@@ -824,29 +855,48 @@
    <when state="none" output="j"/>
    <when state="take" output="↕"/>
   </action>
+  <action id="u003B">
+   <when state="none" output=";"/>
+   <when state="quad" output="⍠"/>
+  </action>
   <action id="u005C">
    <when state="none" output="\"/>
+   <when state="delta" output="⍋"/>
    <when state="bar" output="⍀"/>
+   <when state="quad" output="⌷"/>
    <when state="circle" output="⍉"/>
+   <when state="del" output="⍒"/>
   </action>
   <action id="u002C">
    <when state="none" output=","/>
    <when state="bar" output="⍪"/>
+   <when state="quad" output="⍃"/>
   </action>
   <action id="u002F">
    <when state="none" output="/"/>
    <when state="match" output="≢"/>
+   <when state="circle" output="⊘"/>
   </action>
   <action id="u006D">
    <when state="none" output="m"/>
    <when state="circle" output="⊗"/>
   </action>
+  <action id="u002E">
+   <when state="none" output="."/>
+   <when state="quad" output="⍄"/>
+  </action>
   <action id="u0060">
    <when state="none" output="`"/>
+   <when state="diaeresis" output="⍨"/>
+   <when state="or" output="⍱"/>
+   <when state="and" output="⍲"/>
    <when state="quad" output="⌺"/>
+   <when state="circle" output="⍬"/>
+   <when state="stile" output="⍭"/>
   </action>
   <action id="u005F">
    <when state="none" output="_"/>
+   <when state="diamond" output="⍚"/>
    <when state="delta" output="⍙"/>
    <when state="omega" output="⍹"/>
    <when state="epsilon" output="⍷"/>
@@ -873,10 +923,6 @@
   <action id="u003C">
    <when state="none" output="&#x003C;"/>
    <when state="quad" output="⍃"/>
-  </action>
-  <action id="u003F">
-   <when state="none" output="?"/>
-   <when state="quad" output="⍰"/>
   </action>
   <action id="u003E">
    <when state="none" output="&#x003E;"/>
@@ -920,6 +966,9 @@
   <action id="superscript-start">
    <when state="none" next="superscript"/>
   </action>
+  <action id="subscript-start">
+   <when state="none" next="subscript"/>
+  </action>
   <action id="match-start">
    <when state="none" next="match"/>
   </action>
@@ -950,11 +999,17 @@
   <action id="encode-start">
    <when state="none" next="encode"/>
   </action>
+  <action id="diamond-start">
+   <when state="none" next="diamond"/>
+  </action>
   <action id="space">
    <when state="none" output=" "/>
    <when state="diaeresis" output="¨"/>
    <when state="superscript" output="^"/>
    <when state="superscript-minus" output="⁻"/>
+   <when state="subscript" output="_"/>
+   <when state="subscript-minus" output="₋"/>
+   <when state="diamond" output="⋄"/>
    <when state="delta" output="∆"/>
    <when state="or" output="∨"/>
    <when state="and" output="∧"/>
@@ -979,6 +1034,9 @@
    <when state="diaeresis" output=""/>
    <when state="superscript" output=""/>
    <when state="superscript-minus" output=""/>
+   <when state="subscript" output=""/>
+   <when state="subscript-minus" output=""/>
+   <when state="diamond" output=""/>
    <when state="delta" output=""/>
    <when state="or" output=""/>
    <when state="and" output=""/>
@@ -1003,6 +1061,9 @@
    <when state="diaeresis" output=""/>
    <when state="superscript" output=""/>
    <when state="superscript-minus" output=""/>
+   <when state="subscript" output=""/>
+   <when state="subscript-minus" output=""/>
+   <when state="diamond" output=""/>
    <when state="delta" output=""/>
    <when state="or" output=""/>
    <when state="and" output=""/>
@@ -1027,6 +1088,9 @@
   <when state="diaeresis" output="¨"/>
   <when state="superscript" output="^"/>
   <when state="superscript-minus" output="⁻"/>
+  <when state="subscript" output="_"/>
+  <when state="subscript-minus" output="₋"/>
+  <when state="diamond" output="⋄"/>
   <when state="delta" output="∆"/>
   <when state="or" output="∨"/>
   <when state="and" output="∧"/>

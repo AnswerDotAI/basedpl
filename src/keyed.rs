@@ -6,7 +6,7 @@ use foldhash::{HashMap, HashSet, HashSetExt};
 use std::sync::Arc;
 
 /// Names for the positions on one axis. A position may have no name. The names that are present are unique.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Keys { names: Vec<Option<Arc<str>>>, index: HashMap<Arc<str>, usize> }
 
 // Arrangement is part of representation equality; Match compares key sets instead.
@@ -27,6 +27,11 @@ impl Keys {
     /// Whether no position has a name. An axis like that carries no keys.
     pub(crate) fn blank(&self) -> bool { self.index.is_empty() && !self.names.is_empty() }
     pub fn position(&self, name: &str) -> Option<usize> { self.index.get(name).copied() }
+    /// Adds a position at the end. A name must be new.
+    pub(crate) fn push(&mut self, name: Option<Arc<str>>) {
+        if let Some(name) = &name { self.index.insert(name.clone(), self.names.len()); }
+        self.names.push(name);
+    }
     /// For each position of `wanted`, the matching position here. Named positions match by name. Unnamed positions match in order.
     pub(crate) fn align(&self, wanted: &Self) -> Vec<Option<usize>> {
         let mut gaps = self.names.iter().enumerate().filter(|(_, n)| n.is_none()).map(|(i, _)| i);
@@ -216,33 +221,55 @@ pub(crate) fn mapped_index(flat: usize, result: &[usize], source: &[usize], maps
     Some(offset)
 }
 
-/// `target` with an entry for each key in `selectors` that it lacks. A new vector entry that a longer path descends into starts as a
-/// record. Otherwise a new entry starts as the prototype, which the assignment replaces. Mixed storage stays mixed.
-pub(crate) fn extended(target: &Value, selectors: &[Option<Value>], descend: bool) -> Result<Option<Value>, ErrorKind> {
-    let mut keys = target.layout().all_keys();
-    let mut shape = target.shape().to_vec();
-    let mut changed = false;
+/// For each axis of `target`, the keys in `selectors` that it lacks, each once.
+pub(crate) fn missing(target: &Value, selectors: &[Option<Value>]) -> Result<Vec<Vec<Arc<str>>>, ErrorKind> {
+    let rank = target.shape().len();
+    let mut added: Vec<Vec<Arc<str>>> = vec![vec![]; rank];
     for (axis, selector) in selectors.iter().enumerate() {
         let Some(selector) = selector else { continue; };
         let Some(selector) = Selector::of(selector)? else { continue; };
-        let slot = keys.get_mut(axis).ok_or(ErrorKind::Rank)?;
+        if axis >= rank { return Err(ErrorKind::Rank); }
         let wanted = match selector { Selector::One(k) => vec![k], Selector::Many(_, names) => names };
-        let mut names = slot.as_ref().map_or_else(|| vec![None; shape[axis]], |k| k.names().to_vec());
-        let mut added = HashSet::new();
-        for name in wanted { if slot.as_ref().is_none_or(|k| k.position(&name).is_none()) && added.insert(name.clone()) { names.push(Some(name)); } }
-        if names.len() != shape[axis] {
-            changed = true;
-            shape[axis] = names.len();
-            *slot = Some(Keys::partial(names)?);
-        }
+        let mut seen = HashSet::new();
+        for name in wanted { if target.keys(axis).is_none_or(|k| k.position(&name).is_none()) && seen.insert(name.clone()) { added[axis].push(name); } }
     }
-    if !changed { return Ok(None); }
-    let maps = shape.iter().zip(target.shape()).map(|(&n, &old)| (0..n).map(|i| (i < old).then_some(i)).collect()).collect::<Vec<_>>();
-    let fill = if descend && shape.len() == 1 { vector(vec![], vec![])? } else { target.prototype() };
+    Ok(added)
+}
+
+/// Adds an entry to `target` for each key in `added`, which `missing` gives for each axis. A new vector entry that a longer path
+/// descends into starts as a record. Otherwise a new entry starts as the prototype, which the assignment replaces. Mixed storage stays
+/// mixed. New keys on the leading axis alone append in place. New keys on another axis rebuild the array.
+pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: bool) -> Result<(), ErrorKind> {
+    let rank = target.shape().len();
+    let fill = if descend && rank == 1 { vector(vec![], vec![])? } else { target.prototype() };
+    let mut shape = target.shape().to_vec();
+    if added[1..].iter().all(Vec::is_empty) {
+        shape[0] += added[0].len();
+        crate::array::generated_len(&shape)?;
+        shape[0] = added[0].len();
+        let len = crate::array::generated_len(&shape)?;
+        if len > 0 {
+            let cells = Value::from_parts(shape, vec![fill.clone(); len], fill)?;
+            target.append(&cells, Some(&added[0].iter().cloned().map(Some).collect::<Vec<_>>()));
+            return Ok(());
+        }
+        shape = target.shape().to_vec();
+    }
+    let mut keys = target.layout().all_keys();
+    for (axis, names) in added.into_iter().enumerate() {
+        if names.is_empty() { continue; }
+        let mut all = keys[axis].as_ref().map_or_else(|| vec![None; shape[axis]], |k| k.names().to_vec());
+        all.extend(names.into_iter().map(Some));
+        shape[axis] = all.len();
+        keys[axis] = Some(Keys::partial(all)?);
+    }
+    let old = target.clone();
+    let maps = shape.iter().zip(old.shape()).map(|(&n, &len)| (0..n).map(|i| (i < len).then_some(i)).collect()).collect::<Vec<_>>();
     let len = crate::array::generated_len(&shape)?;
-    let mut data = Gather::new(&[target], len);
-    for i in 0..len { match mapped_index(i, &shape, target.shape(), &maps) { Some(i) => data.push(target, i), None => data.fill(&fill, 1) } }
-    data.finish(shape.into(), || target.prototype())?.with_keys(keys)?.with_axis_names(target.axis_names().to_vec()).map(Some)
+    let mut data = Gather::new(&[&old], len);
+    for i in 0..len { match mapped_index(i, &shape, old.shape(), &maps) { Some(i) => data.push(&old, i), None => data.fill(&fill, 1) } }
+    *target = data.finish(shape.into(), || old.prototype())?.with_keys(keys)?.with_axis_names(old.axis_names().to_vec())?;
+    Ok(())
 }
 
 /// `value` with each keyed axis in the order of its keys in `wanted`. Other axes keep their order.

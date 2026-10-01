@@ -94,6 +94,8 @@ enum TokenKind {
     Literal(Value),
     Function(Primitive),
     Operator(OperatorKind),
+    /// A subscript integer, such as `₁` or `₋₁`, which selects a major cell of the item just before it.
+    Subscript(i64),
     Open,
     Close,
     BracketOpen,
@@ -202,11 +204,30 @@ fn run_on(chars: &mut Peekable<CharIndices<'_>>, digit: bool) -> Option<usize> {
     ((digit && c.is_ascii_digit()) || matches!(c, '.' | 'e' | 'E' | 'x' | 'ₓ' | 'r' | 'J' | 'j')).then(|| i + c.len_utf8())
 }
 
-/// Whether `c` can start or continue a name: a letter that isn't a glyph or `ᵀ`, `_`, `∆` or `⍙`. Digits end a name.
-pub(crate) fn name_char(c: char) -> bool { ((c.is_alphabetic() && c != 'ᵀ') || matches!(c, '_' | '∆' | '⍙')) && Primitive::from_glyph(c).is_none() }
+/// Whether `c` can start or continue a name: a letter that isn't a glyph or `ᵀ` or `ᵘ`, `_`, `∆` or `⍙`. Digits end a name.
+pub(crate) fn name_char(c: char) -> bool { ((c.is_alphabetic() && !matches!(c, 'ᵀ' | 'ᵘ')) || matches!(c, '_' | '∆' | '⍙')) && Primitive::from_glyph(c).is_none() }
 
-/// The value of a superscript digit, such as `²`.
-fn superscript_digit(c: char) -> Option<i64> { "⁰¹²³⁴⁵⁶⁷⁸⁹".chars().position(|d| d == c).map(|i| i as i64) }
+const SUPERSCRIPT_DIGITS: &str = "⁰¹²³⁴⁵⁶⁷⁸⁹";
+const SUBSCRIPT_DIGITS: &str = "₀₁₂₃₄₅₆₇₈₉";
+/// Every character that writes a superscript or a subscript, for the editors' glyph lists.
+#[cfg(feature = "python")]
+pub(crate) fn scripts() -> String { [SUPERSCRIPT_DIGITS, "⁻ᵀᵘ", SUBSCRIPT_DIGITS, "₋"].concat() }
+
+/// The value of `c` among `digits`, such as `²` among the superscript digits.
+fn script_digit(digits: &str, c: char) -> Option<i64> { digits.chars().position(|d| d == c).map(|i| i as i64) }
+
+/// The integer that a superscript or subscript writes, from its first character `c`: a digit, or the minus (`⁻` or `₋`) of a
+/// negative integer. `what` names the kind in errors.
+fn script_integer(c: char, chars: &mut Peekable<CharIndices<'_>>, digits: &str, what: &str) -> Result<i64, (ErrorKind, String)> {
+    let (mut value, mut count) = script_digit(digits, c).map_or((0, 0), |d| (d, 1));
+    while let Some(d) = chars.peek().and_then(|&(_, c)| script_digit(digits, c)) {
+        chars.next();
+        count += 1;
+        value = value.checked_mul(10).and_then(|v| v.checked_add(d)).ok_or((ErrorKind::Limit, format!("{what} is too large")))?;
+    }
+    if count == 0 { return Err((ErrorKind::Syntax, format!("{c} needs a {what} digit after it"))); }
+    Ok(if script_digit(digits, c).is_some() { value } else { -value })
+}
 
 const UNQUOTED: &str = "_ quotes the next character into a name, and there is none";
 
@@ -339,18 +360,13 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                     continue;
                 }
                 'ᵀ' => TokenKind::Operator(OperatorKind::Super(Superscript::Transpose)),
-                c if c == '⁻' || superscript_digit(c).is_some() => {
-                    let (mut power, mut count) = superscript_digit(c).map_or((0, 0), |d| (d, 1));
-                    while let Some(d) = chars.peek().and_then(|&(_, c)| superscript_digit(c)) {
-                        chars.next();
-                        count += 1;
-                        power = power
-                            .checked_mul(10)
-                            .and_then(|p| p.checked_add(d))
-                            .ok_or_else(|| span(position(&mut chars, len)).error(ErrorKind::Limit, "superscript is too large"))?;
-                    }
-                    if count == 0 { return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, "⁻ needs a superscript digit after it")); }
-                    TokenKind::Operator(OperatorKind::Super(Superscript::Power(if c == '⁻' { -power } else { power })))
+                'ᵘ' => TokenKind::Operator(OperatorKind::Super(Superscript::Unit)),
+                c if c == '⁻' || script_digit(SUPERSCRIPT_DIGITS, c).is_some() => {
+                    let power = script_integer(c, &mut chars, SUPERSCRIPT_DIGITS, "superscript").map_err(|(k, m)| span(position(&mut chars, len)).error(k, m))?;
+                    TokenKind::Operator(OperatorKind::Super(Superscript::Power(power)))
+                }
+                c if c == '₋' || script_digit(SUBSCRIPT_DIGITS, c).is_some() => {
+                    TokenKind::Subscript(script_integer(c, &mut chars, SUBSCRIPT_DIGITS, "subscript").map_err(|(k, m)| span(position(&mut chars, len)).error(k, m))?)
                 }
                 c if c.is_whitespace() => continue,
                 c => match (OperatorKind::from_glyph(c), Primitive::from_glyph(c)) {
@@ -436,6 +452,17 @@ impl Parser<'_> {
                 TokenKind::Literal(a) => NodeKind::Literal(a.clone()),
                 TokenKind::Function(f) => NodeKind::Function(*f),
                 TokenKind::Operator(op) => NodeKind::Operator(*op),
+                TokenKind::Subscript(index) => {
+                    // A subscript selects from the item just before it, with no space between them: `v₁` is `(1⌷v)`.
+                    let item = match pieces.pop() {
+                        Some(Piece::Node(item)) if item.span.range.end == span.range.start => item,
+                        _ => return Err(invalid(&span, "a subscript selects from the item just before it, with no space between them")),
+                    };
+                    let index = Node { kind: NodeKind::Literal(Value::Number(Number::from_integer(*index))), span: span.clone() };
+                    let squad = Node { kind: NodeKind::Function(Primitive::Index), span: span.clone() };
+                    span.range.start = item.span.range.start;
+                    NodeKind::Group(vec![index, squad, item])
+                }
                 TokenKind::Name(name) => NodeKind::Name(name.clone()),
                 TokenKind::System(name) => NodeKind::System(name.clone()),
                 TokenKind::Assign => NodeKind::Assign,
@@ -472,7 +499,7 @@ fn statements(pieces: Vec<Piece>) -> Result<Vec<Vec<Node>>, ParseFailure> {
     split(pieces, true, false)?.into_iter().filter(|nodes| !nodes.is_empty()).map(expression).collect()
 }
 
-/// Parentheses group, or make a scalar when `encloses` holds. With `⋄` they write rows instead. A line break inside them is a space.
+/// Parentheses group. With `⋄` they write rows instead. A line break inside them is a space.
 fn parenthesised(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
     if pieces.iter().any(|p| matches!(p, Piece::Diamond)) { return rows(pieces, span); }
     let nodes = split(pieces, false, false)?.pop().unwrap();
@@ -498,12 +525,6 @@ fn row(nodes: Vec<Node>) -> Result<Node, ParseFailure> {
 fn rows(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
     let cells = diamond_rows(split(pieces, false, false)?, span)?.into_iter().map(|nodes| Ok(vec![row(nodes)?])).collect::<Result<_, _>>()?;
     Ok(NodeKind::ArrayLiteral { cells, block: false, record: false })
-}
-
-/// Whether parentheses round `nodes` make a scalar: they hold glyphs alone, separated by spaces. Glyphs that touch
-/// form a train, and anything else only groups, so the text alone decides.
-pub(crate) fn encloses(nodes: &[Node]) -> bool {
-    !nodes.is_empty() && nodes.iter().all(|n| matches!(n.kind, NodeKind::Function(_))) && nodes.windows(2).all(|w| !touching(&w[0], &w[1]))
 }
 
 /// Whether nothing comes between two nodes in the source.
@@ -574,6 +595,7 @@ fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
                 let raised = match power {
                     Superscript::Power(k) => n.math_dyad(Math::Power, &Number::from_integer(k)),
                     Superscript::Transpose => Ok(n.clone()),
+                    Superscript::Unit => break,
                 };
                 node.span.range.end = end;
                 let raised = raised.map_err(|m| ParseFailure::Invalid(node.span.error(ErrorKind::Domain, m)))?;

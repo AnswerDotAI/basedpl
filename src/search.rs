@@ -315,9 +315,7 @@ impl Buckets {
         }
     }
     /// The positions with `key`, from the one pushed first.
-    fn chain(&self, key: u64) -> impl Iterator<Item = usize> + '_ {
-        self.ends.get(&key).into_iter().flat_map(|&(first, _)| links(&self.next, first))
-    }
+    fn chain(&self, key: u64) -> impl Iterator<Item = usize> + '_ { self.ends.get(&key).into_iter().flat_map(|&(first, _)| links(&self.next, first)) }
     /// The positions near real `y`, when the keys are buckets: those in its bucket and in the neighbour on the side of its half.
     fn near(&self, y: f64) -> impl Iterator<Item = usize> + '_ {
         let (b, upper) = (bucket(y), float_key(y) & 256 != 0);

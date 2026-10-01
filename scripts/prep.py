@@ -1,15 +1,15 @@
-"Prepare the docs for a release. Check the glyph reference, write the highlighters' glyph lists and the macOS keyboard layout, then clean and export the notebooks and render README.md."
+"Prepare the docs for a release. Check the glyph reference, write the highlighters' glyph lists, the docs' font stylesheet and the macOS keyboard layout, then clean and export the notebooks and render README.md."
 import re, runpy, subprocess, sys
 from pathlib import Path
 from xml.sax.saxutils import escape
 from basedpl import symbols
+from basedpl._core import _scripts  # Superscripts and subscripts, which `symbols` leaves out
 
 SECTIONS = {'Functions': 'function', 'Operators': 'operator', 'Syntax and literals': 'syntax'}
 KEY_NAMES = {'-': 'Minus', '\\': 'Backslash', '`': 'Backtick'}
-SUPERSCRIPTS = '⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀ'  # Not in `symbols`, so the operator lists add them here
 
 
-def glyphs(kind): return ''.join(s['glyph'] for s in symbols if s['kind'] == kind) + (SUPERSCRIPTS if kind == 'operator' else '')
+def glyphs(kind): return ''.join(s['glyph'] for s in symbols if s['kind'] == kind) + (_scripts if kind == 'operator' else '')
 
 
 def key(shortcut):
@@ -72,10 +72,19 @@ def highlight():
     return sorted(changed)
 
 
+def fonts():
+    "Copy the package's font stylesheet to `nbs/fonts.css`, and say whether that changed the file."
+    text, dest = Path('python/basedpl/fonts.css').read_text(), Path('nbs/fonts.css')
+    changed = not dest.exists() or dest.read_text() != text
+    if changed: dest.write_text(text)
+    return changed
+
+
 def main():
     problems = check()
     if problems: sys.exit('nbs/glyphs.qmd disagrees with basedpl.symbols:\n' + '\n'.join(problems))
     for path in highlight(): print(f'wrote {path}')
+    if fonts(): print('wrote nbs/fonts.css')
     for path in runpy.run_path(str(Path(__file__).with_name('keylayout.py')))['write'](): print(f'wrote {path}')
     for command in ['nbdev-clean', 'nbdev-export', 'nbdev-readme']: subprocess.run([command], check=True)
 

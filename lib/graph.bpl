@@ -63,7 +63,7 @@ assign ← {  ⍝ Hungarian method cost assignment.
 
 ⍝ From http://dfns.dyalog.com/n_alists.htm
 
-gperm ← {⊂⍵ ⍳¨ ⍺ ⍵}  ⍝ ⍵-permutation of vertices of graph ⍺.
+gperm ← {⊂⍵ ⍳¨ [⍵]⌷⍺}  ⍝ ⍵-permutation of vertices of graph ⍺.
 
 ⍝ From http://dfns.dyalog.com/n_insnode.htm
 
@@ -99,7 +99,7 @@ search ← {  ⍝ Breadth-first search of graph ⍺.
   graph←⍺  ⍝ ⍺ is graph vector.
   (,⍵){  ⍝ from starting vertex.
     ⍵≡⍬:⍺  ⍝ no unvisited vertices: done.
-    adjv←graph ⍵  ⍝ adjacent vertices.
+    adjv←[⍵]⌷graph  ⍝ adjacent vertices.
     next←∪(,/adjv)~⍺
     (⍺,next)∇ next  ⍝ advance wave of visited vertices.
   }⍵  ⍝ from starting vertex.
@@ -115,7 +115,7 @@ path ← {  ⍝ Shortest path from/to ⍵ in graph ⍺.
       ⍵<0:⍺  ⍝ root: finished
       (⍵,⍺)∇ ⍶ ⍵
     }1↑⍺∩to  ⍝ found vertex ⍺
-    next←graph(,⍺) ∩¨ ⊂⍸⍵=¯2
+    next←[,⍺]⌷graph ∩¨ ⊂⍸⍵=¯2
     back←,/⍺+0×next
     wave←,/next
     (∪wave)∇ back@wave ⍵  ⍝ advanced wave front
@@ -128,9 +128,9 @@ span ← {  ⍝ Breadth-first spanning tree for graph ⍺.
   graph←⍺  ⍝ ⍺ is graph vector.
   (¯2 + ⍳⍴⍺ ∊ ,⍵){  ⍝ ⍺: partial spanning tree.
     ⍵≡⍬:⍺  ⍝ no vertices: done.
-    next←(graph ⍵)∩¨⊂⍸⍺=¯2  ⍝ untravelled edges
+    next←([⍵]⌷graph)∩¨⊂⍸⍺=¯2  ⍝ untravelled edges
     back←⍵+0×next  ⍝ back link per edge
-    tree←(∊back)@(∊next) ⍺  ⍝ partial spanning tree
+    tree←(∊back)@ ∊next ⍺  ⍝ partial spanning tree
     tree ∇ ∪∊next  ⍝ advanced wave front
   }⍵  ⍝ ⍵: next wave of vertices to visit.
 }
@@ -159,7 +159,7 @@ scc ← {  ⍝ Strongly connected components (Tarjan).
   ⍝ C: components; L: low-links; X: indices; x: next index; S: stack.
   TT←(3#⊂0⊣¨G←⍵),1 ⍬  ⍝ state tuple T :: C L X x S
   [C L X x S]←⍳⍴TT  ⍝ access names for items of tuple TT
-  put←{(⍹⊃⍵)@(⊂[⍶ ⍺])⍵}  ⍝ ⍹ at ⍺ in field ⍶ of ⍵
+  put←{(⍹⊃⍵)@ ⊂[⍶ ⍺] ⍵}  ⍝ ⍹ at ⍺ in field ⍶ of ⍵
   Lx←L put x  ⍝ ⍺ at x in lowlink vec :: T ← ⍺ ∇ T
   Xx←X put x  ⍝ ⍺ at x in indices vec :: T ← ⍺ ∇ T
   succ←{1+@x ⍵}  ⍝ successor of index x  :: T ←   ∇ T
@@ -167,22 +167,22 @@ scc ← {  ⍝ Strongly connected components (Tarjan).
   ⍺←$f ⋄ trace←{⍵⊣⎕←0 dsp ⍺,⍵}⍣⍺  ⍝ ⍺: optional tracing   :: T ←   ∇ T  
   comp←{ v←⍺  ⍝ strongly connected component
     pops←1++/∧\v≠stk←S⊃⍵  ⍝ number of connected comps on stack
-    C∆←(1+⌈/C⊃⍵)@(pops↑stk) C⊃⍵  ⍝ extended strongly connected comps
+    C∆←(1+⌈/C⊃⍵)@ pops↑stk C⊃⍵  ⍝ extended strongly connected comps
     [(pops↓stk) C∆]@[S C]⍵  ⍝ reduced stack; extended comps
   }  ⍝ :: T ← v ∇ T
   conn←{ v←⍺  ⍝ connection of vertex v
     T_0←v trace ⍵  ⍝ optional tracing
     T_1←succ v push v Lx v Xx T_0  ⍝ successor state for x S L and X
     T_2←T_1 {w←⍺
-      min_L←{(w⊃⍺⊃⍵)⌊@(⊂[L v])⍵}
+      min_L←{(w⊃⍺⊃⍵)⌊@ ⊂[L v] ⍵}
       0=w⊃X⊃⍵:L min_L w conn ⍵
-      X min_L⍣(w∊S⊃⍵) ⍵  ⍝ low-link if w on stack
+      X min_L⍣ w∊S⊃⍵ ⍵  ⍝ low-link if w on stack
     }/ ⌽v⊃G  ⍝ for each edge from vertex v
     root←(v⊃L⊃T_2)=v⊃X⊃T_2
     v comp⍣root T_2  ⍝ new component if root
   }  ⍝ :: T ← v ∇ T
   loop←{  ⍝ for each vertex in graph G
-    vert←{⍺ conn⍣(0=⍺⊃X⊃⍵) ⍵}
+    vert←{⍺ conn⍣ 0=⍺⊃X⊃⍵ ⍵}
     ⍵ vert/ ⌽⍳⍴G
   }  ⍝ :: T ← ∇ T
   (∪⍳⊢) C⊃loop TT  ⍝ for each vertex
@@ -290,7 +290,7 @@ queensX ← {  ⍝ Exact cover N-Queens.
   r←=/¨1 0 1⍃#¨m  ⍝ each rank must contain one queen.
   f←=/¨0 1 1⍃#¨m  ⍝ ..  file  ..     ..      ..
   dm←-/¨⍳2#⍵  ⍝ diagonals.
-  du←{⍵ ⍋⍵}∪,dm  ⍝ unique diagnonals.
+  du←{[⍋⍵]⌷⍵}∪,dm  ⍝ unique diagnonals.
   x←dm =⊗ du
   y←(⊖dm) =⊗ du
   m←,⍠0 1 x,y,r,f  ⍝ constraints matrix.

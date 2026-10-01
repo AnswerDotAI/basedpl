@@ -1264,13 +1264,13 @@ a←1⋄b←¯22⋄c←85⋄sqrt←√⋄(-b)(+,-)sqrt(b²)-4×a×c ÷ 2×a   �
 ⍋13 8 122 4   ⍝ [3 1 0 2]ₓ
 
 ⍝ ngn:406 —
-a←13 8 122 4⋄a(⍋a)   ⍝ 4 8 13 122
+a←13 8 122 4⋄[⍋a]⌷a   ⍝ 4 8 13 122
 
 ⍝ ngn:407 —
 ⍋"ZAMBIA"   ⍝ [1 5 3 4 2 0]ₓ
 
 ⍝ ngn:408 —
-s←"ZAMBIA"⋄s(⍋s)   ⍝ "AABIMZ"
+s←"ZAMBIA"⋄[⍋s]⌷s   ⍝ "AABIMZ"
 
 ⍝ ngn:409 —
 t←["BOB" ⋄ "ALF" ⋄ "ZAK"]⋄⍋t   ⍝ [1 0 2]ₓ
@@ -1279,14 +1279,14 @@ t←["BOB" ⋄ "ALF" ⋄ "ZAK"]⋄⍋t   ⍝ [1 0 2]ₓ
 t←[4 5 6 ⋄ 1 1 3 ⋄ 1 1 2]⋄⍋t   ⍝ [2 1 0]ₓ
 
 ⍝ ngn:411 —
-t←[4 5 6 ⋄ 1 1 3 ⋄ 1 1 2]⋄t(⍋t)   ⍝ [1 1 2 ⋄ 1 1 3 ⋄ 4 5 6]
+t←[4 5 6 ⋄ 1 1 3 ⋄ 1 1 2]⋄[⍋t]⌷t   ⍝ [1 1 2 ⋄ 1 1 3 ⋄ 4 5 6]
 
 ⍝ ngn:412 —
-a←3 2 3⍴2 3 4 0 1 0 1 1 3 4 5 6 1 1 2 10 11 12⋄a(⍋a)
+a←3 2 3⍴2 3 4 0 1 0 1 1 3 4 5 6 1 1 2 10 11 12⋄[⍋a]⌷a
 3 2 3⍴1 1 2 10 11 12 1 1 3 4 5 6 2 3 4 0 1 0
 
 ⍝ ngn:413 —
-a←3 2 5⍴"joe  doe  bob  jonesbob  zwart"⋄a(⍋a)
+a←3 2 5⍴"joe  doe  bob  jonesbob  zwart"⋄[⍋a]⌷a
 3 2 5⍴"bob  jonesbob  zwartjoe  doe  "
 
 ⍝ ngn:414 —
@@ -1296,11 +1296,11 @@ a←3 2 5⍴"joe  doe  bob  jonesbob  zwart"⋄a(⍋a)
 ⌽•a ⍋ ["BOB" ⋄ "ALF" ⋄ "ZAK"]   ⍝ [2 0 1]ₓ
 
 ⍝ ngn:416 —
-a←["ABLE" ⋄ "aBLE" ⋄ "ACRE" ⋄ "ABEL" ⋄ "aBEL" ⋄ "ACES"]⋄a(["ABCDEFGHIJKLMNOPQRSTUVWXYZ" ⋄ "abcdefghijklmnopqrstuvwxyz"]⍋a)
+a←["ABLE" ⋄ "aBLE" ⋄ "ACRE" ⋄ "ABEL" ⋄ "aBEL" ⋄ "ACES"]⋄[["ABCDEFGHIJKLMNOPQRSTUVWXYZ" ⋄ "abcdefghijklmnopqrstuvwxyz"]⍋a]⌷a
 ["ABEL" ⋄ "aBEL" ⋄ "ABLE" ⋄ "aBLE" ⋄ "ACES" ⋄ "ACRE"]
 
 ⍝ ngn:417 —
-a←["ABLE" ⋄ "aBLE" ⋄ "ACRE" ⋄ "ABEL" ⋄ "aBEL" ⋄ "ACES"]⋄a("AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz"⍋a)
+a←["ABLE" ⋄ "aBLE" ⋄ "ACRE" ⋄ "ABEL" ⋄ "aBEL" ⋄ "ACES"]⋄["AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz"⍋a]⌷a
 ["ABEL" ⋄ "ABLE" ⋄ "ACES" ⋄ "ACRE" ⋄ "aBEL" ⋄ "aBLE"]
 
 ⍝ ngn:418 —
@@ -1824,7 +1824,7 @@ m←45 60 33 50 66 19⋄m=50 # ⍳≢m   ⍝ [3]ₓ
 1⌷3 5 8   ⍝ 5
 
 ⍝ ngn:596 —
-[3 5 8] 1   ⍝ 5
+1⌷3 5 8   ⍝ 5
 
 ⍝ ngn:597 —
 [⍬]⌷3 5 8   ⍝ ⍬
@@ -1895,25 +1895,25 @@ a←2 3⍴0⋄a.[1;0 2]←1⋄a   ⍝ [0 0 0 ⋄ 1 0 1]
 ∞ 1⌷[100 101 102 ⋄ 110 111 112]   ⍝ 101 111
 
 ⍝ ngn:619 —
-[23 54 38][0 2]   ⍝ 23 38
+[[0 2]]⌷23 54 38   ⍝ 23 38
 
 ⍝ ngn:620 —
-" X"(3 3⍴⍳9 ∊ 1 3 6 7 8)   ⍝ [" X " ⋄ "X  " ⋄ "XXX"]
+[(3 3⍴⍳9 ∊ 1 3 6 7 8)]⌷" X"   ⍝ [" X " ⋄ "X  " ⋄ "XXX"]
 
 ⍝ ngn:621 —
 1⌷"hello"   ⍝ 'e'
 
 ⍝ ngn:622 —
-"ipodlover"[1 2 5 8 3 7 6 0 4]   ⍝ "poordevil"
+[[1 2 5 8 3 7 6 0 4]]⌷"ipodlover"   ⍝ "poordevil"
 
 ⍝ ngn:623 —
-("axlrose"[4 3 0 2 5 6 1])(⍳4)   ⍝ "oral"
+[⍳4]⌷[[4 3 0 2 5 6 1]]⌷"axlrose"   ⍝ "oral"
 
 ⍝ ngn:624 —
 [⍬]⌷1 2 3   ⍝ ⍬
 
 ⍝ ngn:625 —
-⍴[1 2 3](1 2 3 0 5⍴0)   ⍝ [1 2 3 0 5]ₓ
+⍴[(1 2 3 0 5⍴0)]⌷1 2 3   ⍝ [1 2 3 0 5]ₓ
 
 ⍝ ngn:626 —
 ⌷⍳3   ⍝ 0 1 2
@@ -1922,19 +1922,19 @@ a←2 3⍴0⋄a.[1;0 2]←1⋄a   ⍝ [0 0 0 ⋄ 1 0 1]
 ⍴⍬ ⍬⌷3 3⍴⍳9   ⍝ [0 0]ₓ
 
 ⍝ ngn:628 —
-a←⍳5⋄a[1 3]←7 8⋄a   ⍝ 0 7 2 8 4
+a←⍳5⋄a.[[1 3]]←7 8⋄a   ⍝ 0 7 2 8 4
 
 ⍝ ngn:629 —
-a←1 2 3⋄a[1]←4⋄a   ⍝ 1 4 3
+a←1 2 3⋄a.[1]←4⋄a   ⍝ 1 4 3
 
 ⍝ ngn:630 —
-a←⍳5⋄a[1 3]←7⋄a   ⍝ 0 7 2 7 4
+a←⍳5⋄a.[[1 3]]←7⋄a   ⍝ 0 7 2 7 4
 
 ⍝ ngn:631 —
 a←2 2⍴⍳4⋄a.[0 0]←4⋄a   ⍝ [4 1 ⋄ 2 3]
 
 ⍝ ngn:632 —
-a←⍳5⋄a[1]←7 8⋄a
+a←⍳5⋄a.[[1]]←7 8⋄a
 ⍝ error: LENGTH ERROR
 
 ⍝ ngn:633 —
@@ -1945,10 +1945,10 @@ a←5 5⍴0⋄a.[1 3;2 4]←2 2⍴1+⍳4⋄a
 [0 0 0 0 0 ⋄ 0 0 1 0 2 ⋄ 0 0 0 0 0 ⋄ 0 0 3 0 4 ⋄ 0 0 0 0 0]
 
 ⍝ ngn:635 —
-a←"this is a test"⋄a[0 5]←"TI"   ⍝ "TI"
+a←"this is a test"⋄a.[[0 5]]←"TI"   ⍝ "TI"
 
 ⍝ ngn:636 —
-a←0 4 8⋄10+(a[0 2]←7 9)   ⍝ 17 19
+a←0 4 8⋄10+(a.[[0 2]]←7 9)   ⍝ 17 19
 
 ⍝ ngn:637 —
 a←1 2 3⋄a.[⍬]←4⋄a   ⍝ 1 2 3
@@ -2181,7 +2181,7 @@ tw←{⍶⍶⍵}⋄*tw 2   ⍝ 1618.177991912654
 ∞ ∞   ⍝ ∞ ∞
 
 ⍝ ngn:724 —
-⍴x(⍋x←6?49)   ⍝ [6]ₓ
+⍴[⍋x]⌷x←6?49   ⍝ [6]ₓ
 
 ⍝ ngn:725 —
 [a b]←1 2⋄a   ⍝ 1
@@ -2223,7 +2223,7 @@ tw←{⍶⍶⍵}⋄*tw 2   ⍝ 1618.177991912654
 [0 0 0 0 0 0 0 0 0 0 ⋄ 0 1 2 3 4 5 6 7 8 9 ⋄ 0 2 4 6 8 10 12 14 16 18 ⋄ 0 3 6 9 12 15 18 21 24 27 ⋄ 0 4 8 12 16 20 24 28 32 36 ⋄ 0 5 10 15 20 25 30 35 40 45 ⋄ 0 6 12 18 24 30 36 42 48 54 ⋄ 0 7 14 21 28 35 42 49 56 63 ⋄ 0 8 16 24 32 40 48 56 64 72 ⋄ 0 9 18 27 36 45 54 63 72 81]
 
 ⍝ ngn/examples/2-sierpinski:1 — Sierpinski's triangle; Pure glyph program with explicit-output wrapper removed; Dyalog and Rust agree; Remove shebang/comments and return the final value; Translate character subscripts and Life seed positions to origin 0; Insert spaces before negative vector items
-f←{⍵,(⍴⍵)⍴0 ⍪ ⍵,⍵} ⋄ S←{" #" (f⍣⍵)1 1⍴1} ⋄ S5
+f←{⍵,(⍴⍵)⍴0 ⍪ ⍵,⍵} ⋄ S←{[((f⍣⍵)1 1⍴1)]⌷" #"} ⋄ S5
 ["#                               " ⋄ "##                              " ⋄ "# #                             " ⋄ "####                            " ⋄ "#   #                           " ⋄ "##  ##                          " ⋄ "# # # #                         " ⋄ "########                        " ⋄ "#       #                       " ⋄ "##      ##                      " ⋄ "# #     # #                     " ⋄ "####    ####                    " ⋄ "#   #   #   #                   " ⋄ "##  ##  ##  ##                  " ⋄ "# # # # # # # #                 " ⋄ "################                " ⋄ "#               #               " ⋄ "##              ##              " ⋄ "# #             # #             " ⋄ "####            ####            " ⋄ "#   #           #   #           " ⋄ "##  ##          ##  ##          " ⋄ "# # # #         # # # #         " ⋄ "########        ########        " ⋄ "#       #       #       #       " ⋄ "##      ##      ##      ##      " ⋄ "# #     # #     # #     # #     " ⋄ "####    ####    ####    ####    " ⋄ "#   #   #   #   #   #   #   #   " ⋄ "##  ##  ##  ##  ##  ##  ##  ##  " ⋄ "# # # # # # # # # # # # # # # # " ⋄ "################################"]
 
 ⍝ ngn/examples/3-primes:1 —
@@ -2231,19 +2231,19 @@ f←{⍵,(⍴⍵)⍴0 ⍪ ⍵,⍵} ⋄ S←{" #" (f⍣⍵)1 1⍴1} ⋄ S5
 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97
 
 ⍝ ngn/examples/4-life:1 — Conway's game of life This example was inspired by the impressive demo at https://www.youtube.com/watch?v=a9xAKttWgP4 0 1 1 1 1 0 0 1 0; Pure glyph program with explicit-output wrapper removed; Dyalog and Rust agree; Remove shebang/comments and return the final value; Translate character subscripts and Life seed positions to origin 0; Insert spaces before negative vector items
-c←3 3⍴⍳9 ∊ 1 2 3 4 7 ⋄ c←3 3⍴⍳9 ∊ 1 3 6 7 8 ⋄ b←¯1⊖¯2⌽5 7↑c ⋄ life←{[1 ⍵]∨.∧3 4=⊂+/+⌿1 0 ¯1⊖⊗1 0 ¯1⌽¨⊂⍵} ⋄ gen←{" #" (life⍣⍵)b} ⋄ gen¨1+⍳3
+c←3 3⍴⍳9 ∊ 1 2 3 4 7 ⋄ c←3 3⍴⍳9 ∊ 1 3 6 7 8 ⋄ b←¯1⊖¯2⌽5 7↑c ⋄ life←{[1 ⍵]∨.∧3 4=⊂+/+⌿1 0 ¯1⊖⊗1 0 ¯1⌽¨⊂⍵} ⋄ gen←{[(life⍣⍵)b]⌷" #"} ⋄ gen¨1+⍳3
 [["       " ⋄ "       " ⋄ "  # #  " ⋄ "  ##   " ⋄ "   #   "];["       " ⋄ "       " ⋄ "  #    " ⋄ "  # #  " ⋄ "  ##   "];["       " ⋄ "       " ⋄ "   #   " ⋄ " ##    " ⋄ "  ##   "]]
 
 ⍝ ngn/examples/5-rule30:1 — See https://en.wikipedia.org/wiki/Rule_30; Use eight generations; ⊥ decodes each window along the last axis
-r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ " #" ⊃⌽{⍵,⍨⊂t(⊥3↕0,0,⍨↑⍵)}⍣n⊂z,1,z←n⍴0
+r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ [⊃⌽{⍵,⍨⊂[⊥3↕0,0,⍨↑⍵]⌷t}⍣n⊂z,1,z←n⍴0]⌷" #"
 ["        #        " ⋄ "       ###       " ⋄ "      ##  #      " ⋄ "     ## ####     " ⋄ "    ##  #   #    " ⋄ "   ## #### ###   " ⋄ "  ##  #    #  #  " ⋄ " ## ####  ###### " ⋄ "##  #   ###     #"]
 
 ⍝ ngn/examples/6-queens:1 — Rotate and reflect the accumulator in basedpl's left scan
-queens←{ search←{ (⊂⍬)∊⍵:0⍴⊂⍬ ⋄ 0=⍴⍵:rmdups ⍺ ⋄ [hd tl]←[↑⍵ 1↓⍵] ⋄ next←⍺⍃,¨hd ⋄ rems←hd free¨ ⊂tl ⋄ ,/ next ∇¨ rems } ⋄ cvex←1+⍳⍵ × ⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4#⊂⍵} ⋄ refs←{{⍋⍺}\2#⊂⍵} ⋄ best←{↑⍋⊃⍵ ⊃ ⍵} ⋄ syms←, ⊃ refs¨ rots ⍵ ⋄ (⍵≡best syms)⊃[⍬ ,⊂⍵] } ⋄ fmt←{ chars←"·⍟" (⊃⍵)=⊗⍳⍺ ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd#⁻¹⍠¯1chars } ⋄ squares←⊂⍳⌈⍵÷2 , 1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares } ⋄ queens5
+queens←{ search←{ (⊂⍬)∊⍵:0⍴⊂⍬ ⋄ 0=⍴⍵:rmdups ⍺ ⋄ [hd tl]←[↑⍵ 1↓⍵] ⋄ next←⍺⍃,¨hd ⋄ rems←hd free¨ ⊂tl ⋄ ,/ next ∇¨ rems } ⋄ cvex←1+⍳⍵ × ⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4#⊂⍵} ⋄ refs←{{⍋⍺}\2#⊂⍵} ⋄ best←{↑⍋⊃⍵ ⊃ ⍵} ⋄ syms←, ⊃ refs¨ rots ⍵ ⋄ (⍵≡best syms)⊃[⍬ ,⊂⍵] } ⋄ fmt←{ chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟" ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd#⁻¹⍠¯1chars } ⋄ squares←⊂⍳⌈⍵÷2 , 1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares } ⋄ queens5
 [["⍟ · · · ·" ⋄ "· · ⍟ · ·" ⋄ "· · · · ⍟" ⋄ "· ⍟ · · ·" ⋄ "· · · ⍟ ·"];["· ⍟ · · ·" ⋄ "· · · · ⍟" ⋄ "· · ⍟ · ·" ⋄ "⍟ · · · ·" ⋄ "· · · ⍟ ·"]]
 
 ⍝ ngn/examples/7-mandelbrot:1 — Use a 13 by 13 grid
-" #"(9>|{⍺+⍵²}/9⍴⊂¯3×.7j.5-⍉a+⊗0j1×a←(⍳n+1)÷n←12)
+[9>|{⍺+⍵²}/9⍴⊂¯3×.7j.5-⍉a+⊗0j1×a←(⍳n+1)÷n←12]⌷" #"
 ["             " ⋄ "             " ⋄ "        #    " ⋄ "        #    " ⋄ "      ####   " ⋄ "    #######  " ⋄ " #########   " ⋄ "    #######  " ⋄ "      ####   " ⋄ "        #    " ⋄ "        #    " ⋄ "             " ⋄ "             "]
 
 ⍝ ngn:501 — ngn accepts count/function operands to power in either order (apl.js, voc[⍣]); port to function⍣count; Explicit modified assignment updates the outer counter under basedpl scope rules; Original expected 5 retained and checked in Dyalog 20.0.53963.0

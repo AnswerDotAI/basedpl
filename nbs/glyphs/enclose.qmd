@@ -2,7 +2,7 @@
 
 `⊂Y` makes a rank-zero array containing `Y`.
 
-[Brackets](brackets.qmd) round one item make a one-item vector, not a scalar. `⊂` cannot enclose a function, because `⊂` next to a function forms a train. [Parentheses](parentheses.qmd) round a glyph enclose it instead: `(+)` is a scalar holding `+`. Parentheses round a name only group, so a named function has no enclosing spelling of its own: `⍬⍴[f]` reshapes a one-item vector to a scalar.
+[Brackets](brackets.qmd) round one item make a one-item vector, not a scalar. `⊂` cannot enclose a function, because `⊂` next to a function forms a train. [`ᵘ`](superscript.qmd) after a function encloses it instead: `+ᵘ` is a unit holding `+`, and `fᵘ` is a unit holding `f`.
 
 ```bpl
 ⍴⊂1 2 3            ⍝ ⍬ₓ

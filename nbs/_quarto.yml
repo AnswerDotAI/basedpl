@@ -4,7 +4,7 @@ project:
 format:
   html:
     theme: cosmo
-    css: styles.css
+    css: [fonts.css, styles.css]
     syntax-definitions: [bpl.xml]
     toc: true
   commonmark: default
