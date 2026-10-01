@@ -138,8 +138,8 @@ a←[0 1 2 ⋄ 3 4 5 ⋄ 6 7 8 ⋄ 9 10 11] ⋄ (1⌽)⌾(↑⍤1) a
 {"(",⍺,")F",⍵}\"a" "b" "c" "d"
 "a" "(a)Fb" "((a)Fb)Fc" "(((a)Fb)Fc)Fd"
 
-⍝ bqn:scan:75 — A scalar seed starts the fold
-(⊂"w") {"(",⍺,")F",⍵}\ ["a" "b" "c" "d"]
+⍝ bqn:scan:75 — A seed starts the fold
+"w" {"(",⍺,")F",⍵}\ ["a" "b" "c" "d"]
 "(w)Fa" "((w)Fa)Fb" "(((w)Fa)Fb)Fc" "((((w)Fa)Fb)Fc)Fd"
 
 ⍝ bqn:scan:80 — Scan calls its operand once for each item after the first

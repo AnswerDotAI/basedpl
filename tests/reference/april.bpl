@@ -2723,8 +2723,8 @@ aa←3 ⋄ bob←{aa+←⍵ ⋄ aa} ⋄ bob5   ⍝ 8
 ⍝ april:2071 — Pivotal composition of overloaded function, further composed laterally
 (1 0 1⍃#)¨⍳3   ⍝ [[0 0] [1 1] [2 2]]
 
-⍝ april:2073 — Pivotal composition composed across a vector followed by another lateral composition. Rank passes an atom as a unit, so the sum is a unit, as in BQN
-+/×⍤1¨1 0 ¯1   ⍝ ⊂0ₓ
+⍝ april:2073 — Pivotal composition composed across a vector followed by another lateral composition
++/×⍤1¨1 0 ¯1   ⍝ 0ₓ
 
 ⍝ april:2075 — Pivotal composition with another pivotal composition preceding right operand within defn
 {⊢⍤1 ⊢⍤1 ⍵}⍳3   ⍝ 0 1 2

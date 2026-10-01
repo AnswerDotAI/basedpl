@@ -116,7 +116,8 @@ impl Function {
                 })
             }
             FunctionNode::Axis(f, _) => f.selection_kind(left, right, kind),
-            FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) | FunctionNode::Composed(OperatorKind::Rank, [Operand::Function(f), Operand::Value(_)]) => {
+            FunctionNode::Modified(OperatorKind::Each, Operand::Function(f))
+            | FunctionNode::Composed(OperatorKind::Rank, [Operand::Function(f), Operand::Value(_)]) => {
                 f.selection_kind(left, right, SelectionKind::Elements).map(|_| SelectionKind::Elements)
             }
             FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(f)]) if !dyadic => f.selection_kind(Some(a), right, kind),
@@ -145,10 +146,7 @@ impl Function {
             }
             FunctionNode::Fork([f, g, h]) => {
                 let Some(actual) = actual else { return Ok(None) };
-                let (path, other, g) = match g.node() {
-                    FunctionNode::Modified(OperatorKind::Commute, Operand::Function(g)) => (f, h, g),
-                    _ => (h, f, g),
-                };
+                let (path, other, g) = match g.node() { FunctionNode::Modified(OperatorKind::Commute, Operand::Function(g)) => (f, h, g), _ => (h, f, g) };
                 let Some((labels, kind)) = path.select(left, labels, Some(actual), kind, span, session, output)? else { return Ok(None) };
                 let x = other.call_array(left, actual, span, session, output)?;
                 let along = path.call_array(left, actual, span, session, output)?;
@@ -264,10 +262,10 @@ impl Function {
                     if fs.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "agenda needs a vector of functions")); }
                     if fs.is_empty() { return Err(span.domain_error("agenda needs a nonempty vector of functions")); }
                     // An array among the functions acts as a constant function.
-                    let options = fs.elements().map(|e| match e {
-                        Value::Function(f) => Ok(Value::Function(f)),
-                        a => Function::constant(a, span).map(Value::Function),
-                    }).collect::<Result<Vec<_>, _>>()?;
+                    let options = fs
+                        .elements()
+                        .map(|e| match e { Value::Function(f) => Ok(Value::Function(f)), a => Function::constant(a, span).map(Value::Function) })
+                        .collect::<Result<Vec<_>, _>>()?;
                     if let Operand::Value(index) = &a { agenda_index(index, options.len(), span)?; }
                     b = Operand::Value(Value::new(vec![options.len()], options).error_at(span, "invalid agenda options")?);
                 }
@@ -692,7 +690,8 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Sp
             }
             if history {
                 let items = states.iter().map(|s| s.enclose()).collect::<Result<Vec<_>, _>>().error_at(span, "history result is too large")?;
-                value = Value::assemble(&[items.len()], &items, &right.enclose().error_at(span, "history result is too large")?).error_at(span, "history result is too large")?;
+                value = Value::assemble(&[items.len()], &items, &right.enclose().error_at(span, "history result is too large")?)
+                    .error_at(span, "history result is too large")?;
             }
         }
     }
@@ -720,10 +719,13 @@ fn power_counts(count: &Value, span: &Span, counts: &mut Vec<(bool, usize)>) -> 
 
 /// `count` with each count replaced by the state after that many steps, as one item. A nested count array gives a nested item.
 fn power_states(count: &Value, states: &HashMap<(bool, usize), Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-    let items = count.elements().map(|e| {
-        let state = match &e { Value::Number(n) => states[&power_count(n, span)?].clone(), _ => power_states(&e, states, right, span)? };
-        state.enclose().error_at(span, "power result is too large")
-    }).collect::<Result<Vec<_>, _>>()?;
+    let items = count
+        .elements()
+        .map(|e| {
+            let state = match &e { Value::Number(n) => states[&power_count(n, span)?].clone(), _ => power_states(&e, states, right, span)? };
+            state.enclose().error_at(span, "power result is too large")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     count.layout().assemble(&items, &right.enclose().error_at(span, "power result is too large")?).error_at(span, "power result is too large")
 }
 
@@ -749,7 +751,9 @@ fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, span: &Sp
             inverse_outer(g, bound, first, right, span, session, output)
         }
         Modified(Commute, Operand::Value(k)) => {
-            if !crate::primitive::array_match(k, right, &session.execution.at(span))? { return Err(span.domain_error("a constant function gives only its own value")); }
+            if !crate::primitive::array_match(k, right, &session.execution.at(span))? {
+                return Err(span.domain_error("a constant function gives only its own value"));
+            }
             Ok(right.clone())
         }
         Modified(Commute, Operand::Function(g)) => {
@@ -769,7 +773,9 @@ fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, span: &Sp
                 P::Math(Math::Floor | Math::Ceiling) | P::Identity(_) => Ok(right.clone()),
                 P::Math(Math::Lcm | Math::Gcd) => {
                     let at = session.execution.at(span);
-                    if !crate::primitive::array_match(&p.call(Some(right), right, &at)?, right, &at)? { return Err(span.domain_error("no argument gives this result")); }
+                    if !crate::primitive::array_match(&p.call(Some(right), right, &at)?, right, &at)? {
+                        return Err(span.domain_error("no argument gives this result"));
+                    }
                     Ok(right.clone())
                 }
                 _ => Err(span.domain_error("this commute has no known inverse")),
@@ -899,8 +905,6 @@ fn inverse_scan(
     output: &mut Vec<Output>,
 ) -> Result<Value, Error> {
     let axis = scan_axis(h, axis, right, span)?;
-    let seed = scan_seed(seed);
-    let seed = seed.as_ref();
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
     let inverse = f.inverse(span)?;
     if right.is_atom() { return inverse.call_array(seed, right, span, session, output); }
@@ -968,7 +972,7 @@ fn outer(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, s
     // With no pairs, an empty argument gives its prototype and a nonempty one its first item.
     let item = |a: &Value, i| if a.is_empty() { a.prototype() } else { a.at(i) };
     let columns = right.len().max(1);
-    each_pair(operand, len, layout, |i| (Some(item(left, i / columns)), item(right, i % columns)), "outer product", span, session, output)
+    each_pair(operand, len, layout, |i| (Some(item(left, i / columns)), item(right, i % columns)), span, session, output)
 }
 
 fn inner(
@@ -1059,33 +1063,17 @@ fn rank(
     let cell_rank = |a: &Value, k: isize| if k < 0 { a.shape().len().saturating_sub(k.unsigned_abs()) } else { a.shape().len().min(k as usize) };
     let yr = cell_rank(right, if left.is_some() { r } else { p });
     let xr = left.map(|a| cell_rank(a, q)).unwrap_or(0);
-    // For atom arguments, Rank gives a unit and the direct call gives an atom. Atoms keep the general path.
-    if let FunctionNode::Primitive(prim) = operand.node() {
-        let direct = match left {
-            Some(x) => xr == 0 && yr == 0 && prim.pervasive(true) && !(x.is_atom() && right.is_atom()),
-            None => !right.is_atom() && prim.info().monad.is_some_and(|m| m.extends && yr >= usize::from(m.rank)),
-        };
-        if direct { return operand.call(left, right, span, session, output); }
-    }
+    // With no frame, the one cell is the whole argument and f gives the result. A monad that extends to any rank already maps over its cells.
+    let extends = |p: &Primitive| p.info().monad.is_some_and(|m| m.extends && yr >= usize::from(m.rank));
+    let direct = (yr == right.shape().len() && left.is_none_or(|x| xr == x.shape().len()))
+        || (left.is_none() && matches!(operand.node(), FunctionNode::Primitive(p) if extends(p)));
+    if direct { return operand.call(left, right, span, session, output); }
     let framed = |a: &Value, rank| a.cells(rank)?.framed();
     let ys = framed(right, yr).error_at(span, "invalid rank cells")?;
     let xs = left.map(|a| framed(a, xr)).transpose().error_at(span, "invalid rank cells")?;
-    let agreement = Agreement::new(xs.as_ref().map_or(&Default::default(), Value::layout), ys.layout()).error_at(span, "rank frames do not agree")?;
-    let frame = &agreement.layout.shape();
-    let count = agreement.len;
-    let cell = |a: &Value, rank| a.cells(rank)?.prototype();
-    let mut results = Vec::with_capacity(count.max(1));
-    for i in 0..count.max(1) {
-        let (x, y) = if count == 0 {
-            (left.map(|a| cell(a, xr)).transpose().error_at(span, "invalid rank cell")?, cell(right, yr).error_at(span, "invalid rank cell")?)
-        } else { agreement.values(xs.as_ref(), &ys, i) };
-        let value =
-            if count == 0 { operand.call_prototype(x.as_ref(), &y, span, session, output)? } else { operand.call(x.as_ref(), &y, span, session, output)? };
-        results.push(value.array(span)?);
-    }
-    if frame.is_empty() { return Ok(Bound::from(results.remove(0))); }
-    let result = agreement.layout.assemble(&results[..count], &results[0]).error_at(span, "invalid rank result")?;
-    Ok(Bound::from(result))
+    let results = each(operand, xs.as_ref(), &ys, span, session, output)?;
+    let Binding::Value(results) = results.value else { return Ok(results) };
+    Ok(Bound::from(Primitive::Mix.call(None, &results, &session.execution.at(span))?))
 }
 
 /// Apply `f` to the cells made of the selected axes. The other axes form the frame.
@@ -1144,7 +1132,6 @@ fn each_pair(
     len: usize,
     layout: crate::array::Layout,
     pair: impl Fn(usize) -> (Option<Value>, Value),
-    name: &str,
     span: &Span,
     session: &mut Session,
     output: &mut Vec<Output>,
@@ -1162,19 +1149,20 @@ fn each_pair(
                 missing = true;
                 continue;
             }
-            _ => return Err(span.error(ErrorKind::Syntax, format!("{name} operand must return an array, function or no result"))),
+            _ => return Err(span.error(ErrorKind::Syntax, "the operand must return an array, function or no result")),
         };
         if empty { first = Some(item) } else { data.add(item) }
     }
-    let value = if missing { Binding::NoResult } else { Binding::Value(data.finish(layout, || first.unwrap().fill()).map_err(|k| span.error(k, format!("invalid {name} result")))?) };
+    let value =
+        if missing { Binding::NoResult } else { Binding::Value(data.finish(layout, || first.unwrap().fill()).map_err(|k| span.error(k, "invalid result"))?) };
     Ok(Bound::new(value))
 }
 
 fn each(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
     if right.is_atom() && left.is_none_or(Value::is_atom) { return operand.call(left, right, span, session, output); }
     if pervasive_primitive(operand, left.is_some()).is_some() { return operand.call(left, right, span, session, output); }
-    let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).error_at(span, "Each frames do not agree")?;
-    each_pair(operand, agreement.len, agreement.layout.clone(), |i| agreement.values(left, right, i), "Each", span, session, output)
+    let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).error_at(span, "frames do not agree")?;
+    each_pair(operand, agreement.len, agreement.layout.clone(), |i| agreement.values(left, right, i), span, session, output)
 }
 
 fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Context<'_>) -> Result<Value, Error> {
@@ -1318,9 +1306,6 @@ fn scan_items<T: Clone>(axis: &Axis, seed: Option<T>, item: impl Fn(usize) -> T,
     Ok(data)
 }
 
-/// A unit seed stands for its content, the item the scan starts from, as in BQN.
-fn scan_seed(seed: Option<&Value>) -> Option<Value> { seed.map(|s| if matches!(s, Value::Array(_)) && s.is_unit() { s.at(0) } else { s.clone() }) }
-
 fn scan_axis(kind: FoldKind, axis: Option<&Value>, right: &Value, span: &Span) -> Result<Axis, Error> {
     if right.is_unit() && axis.is_none() { return Ok(Axis { outer: 1, len: 1, inner: 1 }); }
     let index = kind.axis(axis, right, span)?;
@@ -1338,8 +1323,6 @@ fn scan(
     output: &mut Vec<Output>,
 ) -> Result<Value, Error> {
     let axis = scan_axis(kind, axis, right, span)?;
-    let seed = scan_seed(seed);
-    let seed = seed.as_ref();
     if right.is_atom() { return match seed { Some(seed) => operand.call_array(Some(seed), right, span, session, output), None => Ok(right.clone()) }; }
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
     if let FunctionNode::Primitive(p) = operand.node() { if let Some(result) = crate::pervasive::scan(*p, right, seed, &axis) { return Ok(result); } }
@@ -1390,10 +1373,7 @@ fn accepts(kind: OperandKind, a: &Operand) -> bool {
 
 /// An operand where an operator takes a function. An array there acts as a constant function, `A⍨`, as in `0⊘1`.
 fn constant_operand(kind: OperandKind, a: Operand, span: &Span) -> Result<Operand, Error> {
-    match (kind, a) {
-        (OperandKind::Function, Operand::Value(v)) => Ok(Operand::Function(Function::constant(v, span)?)),
-        (_, a) => Ok(a),
-    }
+    match (kind, a) { (OperandKind::Function, Operand::Value(v)) => Ok(Operand::Function(Function::constant(v, span)?)), (_, a) => Ok(a) }
 }
 
 impl Operator {
@@ -1955,7 +1935,10 @@ impl Session {
                 let item = out.pop().expect("the parser puts an item before each subscript");
                 let span = Span { source: item.span.source.clone(), range: item.span.range.start..nodes[i].span.range.end };
                 let index = Node { kind: NodeKind::Literal(Value::Number(crate::number::Number::from_integer(index))), span: nodes[i].span.clone() };
-                out.push(Node { kind: NodeKind::Group(vec![index, Node { kind: NodeKind::Function(Primitive::Index), span: nodes[i].span.clone() }, item]), span });
+                out.push(Node {
+                    kind: NodeKind::Group(vec![index, Node { kind: NodeKind::Function(Primitive::Index), span: nodes[i].span.clone() }, item]),
+                    span,
+                });
                 i += 1;
                 continue;
             }

@@ -1548,7 +1548,7 @@ N←1j2 ¯3j4 ⋄ 10 12○⊂ N
 N←1j2 ¯3j4 ⋄ 9 11○⊂ N   ⍝ [1 ¯3;2 4]
 
 ⍝ aplcart/table.tsv:822 — Enclose each major cell for any rank Y
-Y←3 1 3 2 ⋄ ⊂⍤¯1 Y   ⍝ [⊂3 ⊂1 ⊂3 ⊂2]
+Y←3 1 3 2 ⋄ ⊂⍤¯1 Y   ⍝ 3 1 3 2
 
 ⍝ aplcart/table.tsv:823 — Select major cell of Y at cyclic offset Is (like ⎕IO←0, default Is:¯1)
 Is←2 ⋄ Y←3 1 3 2 ⋄ Is 0⌷⊖ Y   ⍝ 3
@@ -1899,7 +1899,7 @@ Yv←[2 2⍴⍳4;2 3⍴⍳6] ⋄ ,/ Yv   ⍝ [0 1 0 1 2 ⋄ 2 3 3 4 5]
 Y←[2 3⍴⍳6;1 3⍴7 8 9] ⋄ ⍪⌿ Y   ⍝ [0 1 2 ⋄ 3 4 5 ⋄ 7 8 9]
 
 ⍝ aplcart/table.tsv:940 — Vector of major cells for any rank Y; optional {X} instantiated as dyadic use
-Y←3 1 3 2 ⋄ ,⊂⍤¯1 Y   ⍝ [⊂3 ⊂1 ⊂3 ⊂2]
+Y←3 1 3 2 ⋄ ,⊂⍤¯1 Y   ⍝ 3 1 3 2
 
 ⍝ aplcart/table.tsv:941 — Type: 'a' 1 ⎕NULL → ' ' 0 ⎕NULL (∊ with ⎕ML←0); optional {X} instantiated as dyadic use
 Y← 'a' 1  ⋄ ↑0⍴⊂ Y   ⍝ ' ' 0

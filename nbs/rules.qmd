@@ -36,6 +36,9 @@ Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): 
 | [scalar]{#term-scalar} | an array of rank 0, holding one value: `⊂5` is a scalar holding the number 5, and `5` is a number |
 | [unit]{#term-unit} | a rank-0 value: a number, character, function or scalar |
 | [subject]{#term-subject} | a value that isn't a function: a number, character or array |
+| cell | a sub-array made of an array's last k axes, called a k-cell: a matrix's rows are its 1-cells. A 0-cell is the unit at one position, the atom there or the array there enclosed. When k is at least the array's rank, the whole array is its one cell |
+| frame | the axes before the cells, with one cell at each position |
+| assembly | building one array from results, one for each position of a frame: the shape is the frame followed by the results' shape, each result fills its position with its items, and shorter results are padded with fill |
 | literal | a number, character, string, `∞`, `⍬`, or a constant: `$t` true, `$f` false or `$n` NaN |
 | strand | subjects side by side, read as a vector without brackets: `1 2 3` is `[1 2 3]`, and `a b` is `[a b]` |
 | run | a sequence of tokens with no spaces between them |
@@ -288,7 +291,7 @@ Structural mapping (arithmetic, Each and indexing) preserves the mapped containe
 ⍴0 3⍴0               ⍝ [0 3]ₓ
 ```
 
-[Brackets](glyphs/brackets.qmd) write vectors: `[a b c]`. A strand can leave them out: `1 2 3`, and `a b` is `[a b]`. `[Y]` is a one-item vector. `⊂Y` encloses any value, and parentheses enclose glyphs separated by spaces. `↑` retrieves the first item. Enclosure always adds an array layer.
+[Brackets](glyphs/brackets.qmd) write vectors: `[a b c]`. A strand can leave them out: `1 2 3`, and `a b` is `[a b]`. `[Y]` is a one-item vector. `⊂Y` encloses a subject, and `fᵘ` makes a scalar that holds the function `f`. `↑` retrieves the first item. Enclosure always adds an array layer.
 
 ```bpl
 ↑[1 2;3 4]           ⍝ 1 2
@@ -324,7 +327,7 @@ This extends APL agreement. NumPy aligns trailing axes.
 
 Positions and axes count from 0. Negative positions and axes count from the end. A count or position must be an integer, or a float within comparison tolerance of one. [Index](glyphs/squad.qmd) `⌷` selects along leading axes: `1⌷m` is row 1, the second row, and `∞` selects a whole axis. After an array, [dot indexing](glyphs/dot.qmd) writes the same selection: `m.[∞ 1]` is `∞ 1⌷m`.
 
-[Axis](glyphs/axis.qmd) `⍠` applies a function along axes given as numbers or names, as in `+/⍠0` and `+/⍠"month"`. [Rank](glyphs/rank.qmd) `⍤` applies it to trailing cells, and `⍤0` passes each element as a scalar. `/ \ ⌽ ,` default to the last axis, and `⌿ ⍀ ⊖ ⍪` to the first. Replicate `N#Y` and the partitions `N⊂Y` and `N⊆Y` work along the first axis. Encode `⊤` puts its digits on the last axis, and Decode `⊥` reads them from it. Structural functions also accept axis lists.
+[Axis](glyphs/axis.qmd) `⍠` applies a function along axes given as numbers or names, as in `+/⍠0` and `+/⍠"month"`. [Rank](glyphs/rank.qmd) `⍤` applies it to trailing cells, and `⍤0` passes each element as a unit, so an atom arrives as itself. `/ \ ⌽ ,` default to the last axis, and `⌿ ⍀ ⊖ ⍪` to the first. Replicate `N#Y` and the partitions `N⊂Y` and `N⊆Y` work along the first axis. Encode `⊤` puts its digits on the last axis, and Decode `⊥` reads them from it. Structural functions also accept axis lists.
 
 ```bpl
 m←[1 2 3 ⋄ 4 5 6]

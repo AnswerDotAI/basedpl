@@ -1,6 +1,10 @@
 # `⍤` — Rank
 
-`f⍤R` applies `f` to trailing cells of rank `R`. Frames use leading agreement. Results assemble with fill. A space ends the operand, so the argument needs no separator.
+`f⍤R` applies `f` to the cells of rank `R`, and the frames use leading agreement. A space ends the operand, so the argument needs no separator. Three rules give the result:
+
+1. A 0-cell inside a frame is the unit at its position: an atom arrives as itself, and an array arrives enclosed.
+2. The results assemble as `⊃` does. The shape is the frame followed by the results' shape, each result fills its position with its items, and shorter results are padded with fill.
+3. When no argument has a frame, `f` applies to the arguments themselves, and its result is the result. An argument has no frame when its rank is at most its cell rank, so an atom never has one.
 
 ```bpl
 m←2 3⍴⍳6
@@ -13,15 +17,17 @@ m←2 3⍴⍳6
 | `q r` | `r` | `q r` |
 | `p q r` | `p` | `q r` |
 
-Negative ranks count back from argument rank. Excessive ranks clamp. Empty frames call the operand on prototype cells.
+Negative ranks count back from argument rank, and a rank at least the argument's rank takes the whole argument as one cell. Empty frames call the operand on prototype cells.
 
-Rank 0 passes each position as a scalar, not the value it holds. So `⊢⍤0` returns its argument unchanged, and each item of a nested array arrives enclosed. [Each](each.qmd) passes the items themselves.
+By these rules, `⊢⍤0` returns its argument unchanged, and on an array of atoms `f⍤0` is `⊃f¨`. [Each](each.qmd) passes the items themselves, and keeps each result whole.
 
 ```bpl
 v←[[1 2] [3 4 5]]
 ≢⍤0 v              ⍝ [1 1]ₓ
 ≢¨v                ⍝ [2 3]ₓ
 (⊢⍤0 v)≡v          ⍝ $t
+{⍵ ⍵}⍤0[1 2]      ⍝ [1 1 ⋄ 2 2]
+-⍤0(5)             ⍝ ¯5
 ```
 
 `∞` is the whole argument, and `¯∞` is rank 0. So `⍤1 ∞` pairs each row on the left with the whole right argument. That gives the matrix-vector product, which also multiplies matrices. A literal argument right after a literal operand needs brackets, because a list of literals would take it into the operand.

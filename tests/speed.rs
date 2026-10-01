@@ -32,7 +32,7 @@ const CASES: &[(f64, &[&str])] = &[
     (6.0, &["v,w", "⍉m"]),
     // A small-table index takes one pass for the range of the items, then one pass to write each item's first position into the
     // table. Each of these passes costs 1.4 to 2.5 copies, because a table read or write can't be vectorised.
-    (6.0, &["≠jv"]),
+    (10.0, &["≠jv"]),
     // A search also looks each item of the other argument up in the table, and unique then compresses by the mask.
     (10.0, &["jv⍳jv", "jv∊jv", "c⍳c", "∪jv", "∪c"]),
     // Key classifies the keys, counts and places each group's positions, then gathers each group's items.

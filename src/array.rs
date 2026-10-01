@@ -223,13 +223,17 @@ impl Cells<'_> {
     pub fn shape(&self) -> &[usize] { &self.array.shape()[self.split..] }
     pub fn len(&self) -> usize { self.count }
     pub fn get(&self, i: usize) -> Result<Value, ErrorKind> {
+        if self.split == 0 { return Ok(self.array.clone()); }
+        if self.shape().is_empty() { return self.array.at(i).unit(); }
         self.array.part(i * self.size..(i + 1) * self.size, self.shape().to_vec())?.with_layout(self.cell_layout())
     }
     pub fn prototype(&self) -> Result<Value, ErrorKind> {
+        if self.shape().is_empty() { return self.array.prototype().unit(); }
         let len = generated_len(self.shape())?;
         self.cell_layout().collect(vec![self.array.prototype(); len], self.array.prototype())
     }
     pub fn framed(&self) -> Result<Value, ErrorKind> {
+        if self.split > 0 && self.shape().is_empty() && self.array.is_simple() { return Ok(self.array.clone()); }
         let values = (0..self.len()).map(|i| self.get(i)).collect::<Result<Vec<_>, _>>()?;
         self.frame_layout().collect(values, self.prototype()?)
     }
@@ -946,6 +950,8 @@ impl Value {
     }
     pub fn is_atom(&self) -> bool { !matches!(self, Self::Array(_)) }
     pub fn enclose(&self) -> Result<Self, ErrorKind> { Self::new(vec![], vec![self.clone()]) }
+    /// This value as a unit: an atom is itself, and an array is enclosed. A 0-cell inside a frame is the unit of its item.
+    pub(crate) fn unit(self) -> Result<Self, ErrorKind> { if self.is_atom() { Ok(self) } else { self.enclose() } }
     pub(crate) fn storage_id(&self) -> usize { match self { Self::Array(a) => Arc::as_ptr(a) as usize, _ => 0 } }
     fn storage(&self) -> Option<&Storage> { match self { Self::Array(a) => Some(&a.data), _ => None } }
     /// Whether no item is an array. Compact storage holds none. An empty array answers for its prototype.

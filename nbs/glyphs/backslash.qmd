@@ -14,7 +14,7 @@
 100+\10 20         ⍝ 110 130
 ```
 
-Each lane starts from the whole seed. A scalar seed stands for its content, so `(⊂10)+\v` is `10+\v`. Use Rank for separate seeds per cell.
+Each lane starts from the whole seed. Use Rank for separate seeds per cell.
 
 ```bpl
 M←[1 2 3 ⋄ 4 5 6]

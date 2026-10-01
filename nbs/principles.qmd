@@ -156,4 +156,4 @@ m~[1 2 ⋄ 5 6]          ⍝ [3 4 ⋄]
 2⊥[1 0 1 ⋄ 1 1 0]      ⍝ 5 6
 ```
 
-Rank 0 passes each 0-cell as a scalar, as BQN's `⎉0` does, not the item inside it. So `⊢⍤0` gives back its argument unchanged, even when the argument is nested. Each, `¨`, is the operator that passes items.
+Rank 0 passes each 0-cell as a unit: an atom arrives as itself, and an array item arrives enclosed. BQN's `⎉0` encloses atoms as well. So `⊢⍤0` gives back its argument unchanged, even when the argument is nested, and a function under `⍤0` sees the same numbers that literals and selection give. Each, `¨`, is the operator that passes items.

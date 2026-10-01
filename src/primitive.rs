@@ -1352,7 +1352,9 @@ fn inverse_catenate(a: &Value, first: bool, right: &Value, axis: Option<usize>, 
     let rank = right.shape().len();
     let k = axis.unwrap_or(if leading { 0 } else { rank.saturating_sub(1) });
     let n = if a.shape().len() == rank { a.shape()[k] as i64 } else { 1 };
-    let counts = (0..rank).map(|i| if i != k { 0 } else if first { n } else { -n }).collect();
+    let counts = (0..rank)
+        .map(|i| { if i != k { 0 } else if first { n } else { -n } })
+        .collect();
     let y = Primitive::Drop.call(Some(&Value::integers(vec![rank], counts).error_at(span, "invalid catenate inverse")?), right, span)?;
     let back = if first { catenate(a, &y, axis, leading, span)? } else { catenate(&y, a, axis, leading, span)? };
     if !array_match(&back, right, span)? { return Err(span.domain_error("no argument catenates with the fixed one to give this result")); }

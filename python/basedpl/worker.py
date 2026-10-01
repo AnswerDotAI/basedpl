@@ -89,7 +89,7 @@ class Worker:
     def __enter__(self): return self
     def __exit__(self, *args): self.close()
 
-def run(
+def fresh(
     code, # BPL source
     timeout=None # Seconds before the evaluation is interrupted
 ):

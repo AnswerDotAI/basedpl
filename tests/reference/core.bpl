@@ -3692,7 +3692,7 @@ m←[1 2 ⋄ 3 4] ⋄ [(⊂⍤∞ m) ≡ ⊂m;(⊂⍤¯∞ m) ≡ ⊂⍤0 m]   �
 ⍝ — Empty rank application exposes its single prototype call
 {⎕←⍵ ⋄ ⍳3}⍤0(⍬)
 0 3⍴0
-⍝ ⎕: ⊂0
+⍝ ⎕: 0
 
 ⍝ — Over transforms the right argument before the left
 f←{⎕←⍵ ⋄ ⍵} ⋄ 2 +⍥f 3

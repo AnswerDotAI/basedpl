@@ -714,7 +714,7 @@ impl<A: Element + FromBoolean> Dyad<A> for Fold<'_, A> {
     fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy) -> Option<Value> { bool::build(self.shape.clone(), self.lanes(f, A::from_boolean)?) }
 }
 
-/// A scan of compact values along `axis` by successive left accumulation, as the general scan does. A unit seed stands for its item.
+/// A scan of compact values along `axis` by successive left accumulation, as the general scan does.
 pub(crate) fn scan(p: Primitive, right: &Value, seed: Option<&Value>, axis: &Axis) -> Option<Value> { scanned(p, right, seed, axis, false) }
 
 /// The inverse of a scan by `=` or `≠`, each of which undoes itself. Each item after a lane's first is compared with the item before
