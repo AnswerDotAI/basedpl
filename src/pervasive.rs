@@ -274,8 +274,8 @@ pub(crate) fn map(p: Primitive, left: Option<&Value>, right: &Value, agreement: 
 fn against_number(op: Comparison, left: &Value, right: &Value, agreement: &Agreement) -> Option<Value> {
     use Comparison::*;
     let (items, number, op) = match (&agreement.left, &agreement.right) {
-        (Mapping::Linear(1), Mapping::Scalar) => (left, right, op),
-        (Mapping::Scalar, Mapping::Linear(1)) => (
+        (Mapping::Linear(1), Mapping::Single) => (left, right, op),
+        (Mapping::Single, Mapping::Linear(1)) => (
             right,
             left,
             match op {
@@ -331,7 +331,7 @@ fn mask<T: Copy>(x: &[T], f: impl Fn(T) -> bool) -> Vec<bool> { x.iter().map(|&a
 
 /// `x|Y` for one integer `x`, dividing by multiplication. `x` of 0 takes the general kernel.
 fn residues(left: &Value, right: &Value, agreement: &Agreement) -> Option<Value> {
-    let (Mapping::Scalar, Items::Integers(&[x]), Items::Integers(y)) = (&agreement.left, left.checked_items(), right.checked_items()) else { return None };
+    let (Mapping::Single, Items::Integers(&[x]), Items::Integers(y)) = (&agreement.left, left.checked_items(), right.checked_items()) else { return None };
     let divisor = int::Divisor::new(x)?;
     Map { x: &[x], y, agreement }.binary(|_, b| divisor.div_mod(b).map(|(_, r)| r))
 }
@@ -390,7 +390,7 @@ fn integers(value: &Value) -> Option<Cow<'_, [i64]>> {
 /// `X○Y` with one code applies that code's function to every item. Other codes, and complex results, take the `Number` path.
 fn circle(codes: &Value, right: &Value, agreement: &Agreement) -> Option<Value> {
     let Value::Number(code) = codes.at(0) else { return None };
-    if !matches!(agreement.left, Mapping::Scalar) { return None; }
+    if !matches!(agreement.left, Mapping::Single) { return None; }
     let f = real::circle(code.integer().ok()?)?;
     <Map<f64, f64> as Monad<f64>>::same(Map { x: &[], y: &reals(right)?, agreement }, f)
 }
@@ -463,11 +463,11 @@ impl<X: Element, Y: Element> Map<'_, X, Y> {
     fn binary<B: Element>(&self, f: impl Fn(X, Y) -> Option<B>) -> Option<Value> {
         let (x, y, len, f) = (self.x, self.y, self.agreement.len, |(a, b)| f(a, b));
         let data = match (&self.agreement.left, &self.agreement.right) {
-            (Mapping::Scalar, Mapping::Linear(1)) => {
+            (Mapping::Single, Mapping::Linear(1)) => {
                 let a = x[0];
                 filled(len, y.iter().map(|&b| (a, b)), f)
             }
-            (Mapping::Linear(1), Mapping::Scalar) => {
+            (Mapping::Linear(1), Mapping::Single) => {
                 let b = y[0];
                 filled(len, x.iter().map(|&a| (a, b)), f)
             }

@@ -38,7 +38,7 @@ acc ← { ⍶{(⊂⍺⍶↑⍬⍴⍵),⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵ }  �
 format ← {t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Simple array as a character matrix.
 open ← {(1⌈⍴⍵)⍴⍵}  ⍝ Exposure of null axes.
 axes ← {(-2⌈⍴⍴⍵)↑1+×⍴⍵}  ⍝ Array axis types.
-char ← {⍬≡⍴⍵:'─' ⋄ (↑⍵∊'¯',•d)⊃"#~"}∘⍕  ⍝ Type character of an atom.
+char ← {⍬≡⍴⍵?'─';(↑⍵∊'¯',•d)⊃"#~"}∘⍕  ⍝ Type character of an atom.
 type ← {{(1=⍴⍵)⊃['+' ⍵]}∪,char¨⍵}  ⍝ Type characters of an array.
 deco ← {⍺←type open ⍵ ⋄ ⍺,axes ⍵}  ⍝ Type and axes vector.
 trim ← {(~1 1⍷∧⌿⍵=' ')#⍠¯1 ⍵}  ⍝ Removal of extra blank columns.
@@ -48,30 +48,30 @@ trim ← {(~1 1⍷∧⌿⍵=' ')#⍠¯1 ⍵}  ⍝ Removal of extra blank columns
 disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
   [dec ctd]←2↑⍺  ⍝ 1:decorated, 1:centred.
   box←{  ⍝ Recursive boxing of nested array.
-    isor ⍵:format⊂⍵
-    1=≡,⍵:dec open format dec open ⍵
+    isor ⍵?format⊂⍵;
+    1=≡,⍵?dec open format dec open ⍵;
     mat←matr 1# dec open ⍵  ⍝ matrix of opened subarrays.
     [r c]←×⍴mat  ⍝ non-null rows/cols.
-    dec<0∊[r c]:c#⍠¯1 r# ∇ 1 open mat  ⍝ undecorated null: empty result.
+    dec<0∊[r c]?c#⍠¯1 r# ∇ 1 open mat;  ⍝ undecorated null: empty result.
     subs←aligned ∇¨mat  ⍝ aligned boxed subarrays.
     (≢⍴⍵)gaps ⍵ plane subs  ⍝ collection into single plane.
   }
   aligned←{  ⍝ Alignment and centring.
     [rows cols]←sepr⍴¨⍵  ⍝ subarray dimensions.
     sizes←(⌈/rows) ,⊗ ⌈⌿cols
-    ctd=0:sizes↑¨⍵  ⍝ top-left alignment.
+    ctd=0?sizes↑¨⍵;  ⍝ top-left alignment.
     [v h]←sepr⌈0.5×⊃(⍴¨⍵)-sizes
     v⊖¨h⌽¨sizes↑¨⍵  ⍝ centred aligned subarrays.
   }
   gaps←{  ⍝ Gap-separated sub-planes.
-    ⍺≤2:⍵  ⍝ lowish rank: done.
+    ⍺≤2?⍵;  ⍝ lowish rank: done.
     subs←(⍺-1)∇¨⍵  ⍝ sub-hyperplanes.
     width←↑⌽⍴↑subs
     fill←([⍺ width]-3 0)⍴' '  ⍝ inter-plane gap.
     ⊃{⍺⍪fill⍪⍵}/ 1 open subs
   }
   plane←{  ⍝ Boxed rank-2 plane.
-    2<⍴⍴⍺:⍺ join ⍵  ⍝ gap-separated sub-planes.
+    2<⍴⍴⍺?⍺ join ⍵;  ⍝ gap-separated sub-planes.
     odec←(dec shape ⍺)outer ⍵  ⍝ outer type and shape decoration.
     idec←inner ⍺  ⍝ inner type and shape decorations.
     (odec,idec)collect ⍵  ⍝ collected, formatted subarrays.
@@ -109,17 +109,17 @@ disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
     (matr,¨/⍺)bot¨matr ⍵
   }
   type←{  ⍝ Type decoration char.
-    dec<≡⍵:'─'  ⍝ nested: '─'
-    isor ⍵:'∇'  ⍝ ⎕or:    '∇'
+    dec<≡⍵?'─';  ⍝ nested: '─'
+    isor ⍵?'∇';  ⍝ ⎕or:    '∇'
     sst←{  ⍝ atom type.
-      0=dec×⍴⍴⍵:'─'  ⍝ undecorated or atom ⍕⍵: char,
+      0=dec×⍴⍴⍵?'─';  ⍝ undecorated or atom ⍕⍵: char,
       (↑⍵∊'¯',•d)⊃"#~"
     }∘⍕  ⍝ ⍕ distinguishes type of atom.
-    0=≡⍵:sst ⍵  ⍝ atom: type.
+    0=≡⍵?sst ⍵;  ⍝ atom: type.
     {(1=⍴⍵)⊃['+' ⍵]}∪,sst¨(dec open ⍵)
   }
   shape←{
-    dec≤0=⍴⍴⍵:⍺#¨"│─"  ⍝ no decoration or unit.
+    dec≤0=⍴⍴⍵?⍺#¨"│─";  ⍝ no decoration or unit.
     cols←(×¯1↑⍴⍵)⊃"⊖→"
     rsig←(××/¯1↓⍴⍵)⊃"⌽↓"
     rows←(¯1+3⌊⍴⍴⍵)⊃['│' rsig '⍒']
@@ -129,9 +129,9 @@ disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
   sepr←{+/¨1⊂⍠¯1 ⊃⍵}
   open←{(⍺⌈⍴⍵)↑⍵}
   isor←{1 ⍬≡[≡⍵ ⍴⍵]}  ⍝ is ⎕or of object?
-  glue←{0=⍴⍵ : ⍵ ⋄ ⍺{⍺,⍶,⍵}/⍵}
-  isor ⍵:format⊂⍵
-  1=≡,⍵:format ⍵
+  glue←{0=⍴⍵ ? ⍵;⍺{⍺,⍶,⍵}/⍵}
+  isor ⍵?format⊂⍵;
+  1=≡,⍵?format ⍵;
   box ⍵  ⍝ recursive boxing of array.
 }
 
@@ -149,9 +149,9 @@ display ← {  ⍝ Boxed display of array.
   }
   line←{(""≡0⍴⍵)⊃" -"}
   {
-    0=≡⍵:' '⍪(open format ⍵)⍪line ⍵
-    1 ⍬≡[≡⍵ ⍴⍵]:'∇' 0 0 box format ⍵
-    1=≡⍵:(deco ⍵)box open format open ⍵
+    0=≡⍵?' '⍪(open format ⍵)⍪line ⍵;
+    1 ⍬≡[≡⍵ ⍴⍵]?'∇' 0 0 box format ⍵;
+    1=≡⍵?(deco ⍵)box open format open ⍵;
     ('∊'deco ⍵)box trim format ∇¨open ⍵
   }⍵
 }
@@ -174,9 +174,9 @@ displays ← {  ⍝ Boxed display of array.
   trim←{[0⊃⍵ (~1 1⍷∧⌿' '=1⊃⍵)#⍠¯1(1⊃⍵)]}
   qfmt←{[⍕0+⍴⍺;format open ⍵]}
   {  ⍝ Recursively box arrays:
-    0=≡⍵:' '⍪(format ⍵)⍪(' '≡↑0⍴⍵)⊃" -"
-    1 ⍬≡[≡⍵ ⍴⍵]:'∇' 0 0 box ["─";format ⍵]
-    1=≡⍵:(deco ⍵)box open ⍵ qfmt ⍵  ⍝ Simple array.
+    0=≡⍵?' '⍪(format ⍵)⍪(' '≡↑0⍴⍵)⊃" -";
+    1 ⍬≡[≡⍵ ⍴⍵]?'∇' 0 0 box ["─";format ⍵];
+    1=≡⍵?(deco ⍵)box open ⍵ qfmt ⍵;  ⍝ Simple array.
     ('∊'deco ⍵)box trim ⍵ qfmt ∇¨open ⍵  ⍝ Nested array.
   }⍵
 }
@@ -196,9 +196,9 @@ displayr ← {  ⍝ Boxed display of array
   }
   deco←{⍺←type open ⍵ ⋄ ⍴⍴⍵ , ⊂0+⍴⍵ , ⍺ , axes ⍵}
   {  ⍝ recursively boxed arrays:
-    0=≡⍵:' '⍪(open format ⍵)⍪(' '=↑0⍴⍵)⊃" -"
-    1 ⍬≡[≡⍵ ⍴⍵]:["" [0 0] '∇' 0 0] box format ⍵
-    1=≡⍵:(deco ⍵)box open' ',format open ⍵
+    0=≡⍵?' '⍪(open format ⍵)⍪(' '=↑0⍴⍵)⊃" -";
+    1 ⍬≡[≡⍵ ⍴⍵]?["" [0 0] '∇' 0 0] box format ⍵;
+    1=≡⍵?(deco ⍵)box open' ',format open ⍵;
     (⊂⍕0+≡⍵ deco ⍵)box trim' ',format ∇¨open ⍵
   }⍵
 }
@@ -217,13 +217,13 @@ fuzzy ← {a←lcase ⍺ ⋄ ({⍵⍳⌊/⍵}a⍃dist∘lcase¨⍵)⊃⍵}
 ⍝ From http://dfns.dyalog.com/n_dsp.htm
 
 dsp ← {  ⍝ Reduced version of disp.
-  (1=≡,⍵)∨0∊⍴⍵:format ⍵
+  (1=≡,⍵)∨0∊⍴⍵?format ⍵;
   ⍺←1 ⋄ top←'─'⍪⍣⍺  ⍝ top '─' bar if ⍺
-  1≥⍴⍴⍵:{  ⍝ vector or unit:
+  1≥⍴⍴⍵?{  ⍝ vector or unit:
     bars←{⍪(⌊/≢¨[⍺ ⍵])#'│'}/2↕⍵,0
     join←{⊃,/(⌈/≢¨⍵)↑¨⍵}
     0 ¯1↓join top¨join¨↓⍉⊃[⍵ bars]
-  } 1 ∇¨ ⍵  ⍝ vector: formatted items
+  } 1 ∇¨ ⍵;  ⍝ vector: formatted items
   subs←⍺ ∇¨ ⍵  ⍝ higher rank: formatted items
   [rs cs]←+/¨1⊂⍠¯1 ⊃⍴¨subs
   dims←(mrs←⌈/rs) ,⊗ mcs←⌈/⍪csᵀ
@@ -245,19 +245,19 @@ Rgt ← { ⊂2↑⍵ , 2↓¯1↓⍵ , ↑⌽⍵ }  ⍝ tape-head moves right 1 
 
 enlist ← {  ⍝ List ⍺-leaves of nested array.
   ⍺←0  ⍝ default: list 0-leaves.
-  ⍺≥¯1+≡⍵:,⍵  ⍝ all shallow leaves: finished.
+  ⍺≥¯1+≡⍵?,⍵;  ⍝ all shallow leaves: finished.
   1↓,/(⊂⊂↑↑⍵),⍺∇¨,⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_from.htm
 
 from ← {  ⍝ Select (1↓⍴⍵)-cells from array ⍵.
-  ~(≢⍺)≡≢⍴⍵:"error"  ⍝ check index length.
+  ~(≢⍺)≡≢⍴⍵?"error";  ⍝ check index length.
   indx←⍺
   axes←+\0,¯1↓{↑⍴⍴⍵}¨⍺
   {
     [indx axis]←⍺  ⍝ index and axis for selection.
-    indx≡,⊂⍬:⍵  ⍝ skip: select all items.
+    indx≡,⊂⍬?⍵;  ⍝ skip: select all items.
     vec←⊂⍠(⍳⍴⍴⍵ ~ [axis])⍵  ⍝ vector along given axis.
     sel←⊃indx⊃¨⊂vec
     pos←axis+⍳⍴⍴indx
@@ -274,8 +274,8 @@ foldl ← { ⍺ ⍶⍨/ ⌽⍵ }  ⍝ Fold (reduce) from the left.
 in ← {  ⍝ Locations of item ⍺ in array ⍵.
   D←≡item←⍺  ⍝ (depth of) sought item
   ⍬{  ⍝ ⍺ is pick-path
-    item≡⍵:,⊂⍺  ⍝ match: path
-    D≥≡⍵:⍬  ⍝ give up
+    item≡⍵?,⊂⍺;  ⍝ match: path
+    D≥≡⍵?⍬;  ⍝ give up
     paths←⍺⍃,∘⊂¨⍳⍴⍵  ⍝ extended paths
     ,/, paths ∇¨ ⍵
   }⍵  ⍝ ⍵ is searched-in array
@@ -288,7 +288,7 @@ list ← { {[⍺ ⍵]}/⍵,'∘' }  ⍝ List from vector ⍵, with '∘' as null
 ⍝ From http://dfns.dyalog.com/c_ltrav.htm
 
 ltrav ← {  ⍝ List traversal.
-  '∘'≡[head tail]←⍵:⍺  ⍝ head and tail of list, else accumulator
+  '∘'≡[head tail]←⍵?⍺;  ⍝ head and tail of list, else accumulator
   (⍺ ⍶ head)∇ tail
 }
 
@@ -303,8 +303,8 @@ revl ← '∘'⍃({[⍺ ⍵]}⍨ ltrav)
 listRmDups ← {  ⍝ remove adjacent duplicates.
   ⍺←'∘'  ⍝ null accumulator.
   [a [b tail]]←⍵  ⍝ first two items.
-  b≡'∘': revl [a ⍺]  ⍝ b null: list expired.
-  a≡b:⍺ ∇ [b tail]  ⍝ two items match: drop first one.
+  b≡'∘'? revl [a ⍺];  ⍝ b null: list expired.
+  a≡b?⍺ ∇ [b tail];  ⍝ two items match: drop first one.
   [a ⍺] ∇ [b tail]  ⍝ accumulate first, continue.
 }
 
@@ -346,7 +346,7 @@ nlines ← {  ⍝ Number of display lines for simple array.
 ⍝ From http://dfns.dyalog.com/s_perv.htm
 
 perv ← { ⍺←⊢  ⍝ Pervasion
-  1=≡[⍺ ⍵ ⍵]:⍺ ⍶ ⍵
+  1=≡[⍺ ⍵ ⍵]?⍺ ⍶ ⍵;
            ⍺ ∇¨ ⍵  ⍝ (⍺ or) ⍵ deeper: recursive traversal.
 }
 
@@ -354,7 +354,7 @@ perv ← { ⍺←⊢  ⍝ Pervasion
 
 pmat ← {  ⍝ Permutation matrix of ⍳⍵.
   {  ⍝ perms of ⍳⍵:
-    1≥⍴⍵:⊃,↓⍵ ⋄ ⊃⍪/⍵,⍄∇¨⍵⍃~¨,¨⍵
+    1≥⍴⍵?⊃,↓⍵;⊃⍪/⍵,⍄∇¨⍵⍃~¨,¨⍵
   }⍳⍵  ⍝ permutations of identity perm.
 }
 
@@ -365,7 +365,7 @@ pred ← { ⊃⍶/¨(⍺#1+⍳⍴⍺)⊆⍵ }  ⍝ Partitioned reduction.
 ⍝ From http://dfns.dyalog.com/c_rows.htm
 
 rows ← {  ⍝ Operand function applied to argument rows.
-  1<≡⍵:∇¨⍵  ⍝ nested: item-wise application
+  1<≡⍵?∇¨⍵;  ⍝ nested: item-wise application
   ⍶⍤1 ⍵
 }
 
@@ -382,9 +382,9 @@ sam ← {  ⍝ Select and modify.
 
 saw ← {  ⍝ Function operand applied Simple-Array-Wise.
   ⍺←⊢  ⍝ default left arg.
-  2≥≡[⍺ ⍵ ⍵]:⍺ ⍶ ⍵
-  1≥≡⍵      :⍺ ∇¨ ⊂⍵  ⍝ ⍵ simple: traverse ⍺.
-  2≥≡[⍺ 1]  :(⍺ ∇)¨⍵  ⍝ ⍺ simple: traverse ⍵.
+  2≥≡[⍺ ⍵ ⍵]?⍺ ⍶ ⍵;
+  1≥≡⍵      ?⍺ ∇¨ ⊂⍵;  ⍝ ⍵ simple: traverse ⍺.
+  2≥≡[⍺ 1]  ?(⍺ ∇)¨⍵;  ⍝ ⍺ simple: traverse ⍵.
   ⍺ ∇¨ ⍵  ⍝ Both nested: traverse both.
 }
 
@@ -405,7 +405,7 @@ dscan ← {  ⍝ Divide scan
 ⍝ From http://dfns.dyalog.com/c_ascan.htm
 
 ascan ← {  ⍝ Associative scan.
-  2>0⊥⍴⍵:⍵  ⍝ few items: done.
+  2>0⊥⍴⍵?⍵;  ⍝ few items: done.
   ⌽⊃⍶{(⊂ ↑⍵ ⍶ ⍺),⍵}/⌽(⊂∘↑¨↓⍵),⊃1↓¨↓⍵
 }
 
@@ -426,8 +426,8 @@ shannon ← { -+/(2⍃⍟×⊣)¨({≢⍵}⌸÷≢)⍵ }  ⍝ Shannon entropy of
 
 ⍝ From http://dfns.dyalog.com/c_subvec.htm
 
-subvec ← { 0∊⍴⍺:1  ⍝ Is ⍺ a subvector of ⍵?
-  0∊⍴⍵:0  ⍝ null ⍵: failure.
+subvec ← { 0∊⍴⍺?1;  ⍝ Is ⍺ a subvector of ⍵?
+  0∊⍴⍵?0;  ⍝ null ⍵: failure.
   (1↓⍺)∇(1+⍵⍳1↑⍺)↓⍵  ⍝ otherwise, check remaining items.
 }
 
@@ -435,11 +435,11 @@ subvec ← { 0∊⍴⍺:1  ⍝ Is ⍺ a subvector of ⍵?
 
 subs ← {  ⍝ Vector substitution.
   [fs ts]←≢¨[fm to]←⍺  ⍝ old and new vectors and sizes
-  1≡≡⍺:to@ fm= ⍵  ⍝ special case: atom subs
-  0=⍴⍴⍵:↑(⍵≡fm)⌽[⍵ ⊂to]
+  1≡≡⍺?to@ fm= ⍵;  ⍝ special case: atom subs
+  0=⍴⍴⍵?↑(⍵≡fm)⌽[⍵ ⊂to];
   lead←fs↑1  ⍝ leading mask
   (fm⍷⍵){  ⍝ hits mask
-    ~1∊⍺:⍵  ⍝ early out if no match
+    ~1∊⍺?⍵;  ⍝ early out if no match
     ts↓,/{to,fs↓⍵}¨(lead,⍺)⊂fm,⍵
   }⍤1 ⍵  ⍝ apply to vectors
 }

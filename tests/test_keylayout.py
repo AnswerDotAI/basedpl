@@ -1,10 +1,9 @@
-import json, re, runpy
+import json, re
 import xml.etree.ElementTree as ET
-from pathlib import Path
+from basedpl.editors import LAYOUT, CHARACTER_KEYS, PLAIN, SHIFT, OPTION, attribute, keylayout
 
-gen = runpy.run_path('scripts/keylayout.py')
-layout = json.loads(gen['LAYOUT'].read_text())
-KEYS = {c: (code, i) for code, pair in gen['CHARACTER_KEYS'].items() for i, c in zip([gen['PLAIN'], gen['SHIFT']], pair)}
+layout = json.loads(LAYOUT.read_text())
+KEYS = {c: (code, i) for code, pair in CHARACTER_KEYS.items() for i, c in zip([PLAIN, SHIFT], pair)}
 
 
 def parse(text):
@@ -48,18 +47,14 @@ def expected(presses):
 def codes(presses):
     "The key code and key-map index of each press."
     def press(kind, *key):
-        if kind in ('space', 'delete'): return {'space': 49, 'delete': 51}[kind], gen['PLAIN']
-        return (KEYS[key[0]][0], gen['OPTION']) if kind == 'option' else KEYS[key[0]]
+        if kind in ('space', 'delete'): return {'space': 49, 'delete': 51}[kind], PLAIN
+        return (KEYS[key[0]][0], OPTION) if kind == 'option' else KEYS[key[0]]
     return [press(*p) for p in presses]
 
 
-def test_layout_is_generated_from_the_mapping():
-    assert gen['attribute']('"&<>') == '"&#x0022;&#x0026;&#x003C;&#x003E;"'
-    assert gen['OUTPUT'].read_text() == gen['keylayout'](layout)
-
-
 def test_macos_follows_the_mapping_rules():
-    parsed = parse(gen['OUTPUT'].read_text())
+    assert attribute('"&<>') == '"&#x0022;&#x0026;&#x003C;&#x003E;"'
+    parsed = parse(keylayout(layout))
     starts = {v['state']: [('option', k)] for k, v in layout['option'].items() if isinstance(v, dict)}
     while len(starts) < len(layout['states']):
         starts |= {v['state']: starts[n] + [('key', k)] for n in list(starts) for k, v in layout['states'][n]['keys'].items() if isinstance(v, dict)}

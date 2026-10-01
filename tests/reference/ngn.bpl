@@ -1562,55 +1562,55 @@ f←{⍺+2×⍵}⋄f/⍬
 •ucs 2 2⍴97+⍳4   ⍝ ["ab" ⋄ "cd"]
 
 ⍝ ngn:510 —
-n←6⋄r←?n⋄0≤r ∧ r<n   ⍝ $t
+n←6⋄r←¿n⋄0≤r ∧ r<n   ⍝ $t
 
 ⍝ ngn:511 — Fixed origin 0 single possible result
-?1   ⍝ 0
+¿1   ⍝ 0
 
 ⍝ ngn:512 —
-r←?0⋄0≤r ∧ r<1   ⍝ $t
+r←¿0⋄0≤r ∧ r<1   ⍝ $t
 
 ⍝ ngn:513 —
-?1.5
+¿1.5
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:514 —
-?'a'
+¿'a'
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:515 —
-?1j2
+¿1j2
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:516 — Infinity is not an integer bound for roll; original DOMAIN ERROR retained
-?∞
+¿∞
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:517 — a permutation (an 'n?n' dealing) contains all 0...n
-n←100⋄+/n?n = +/⍳n   ⍝ $t
+n←100⋄+/n¿n = +/⍳n   ⍝ $t
 
 ⍝ ngn:518 —
-n←100⋄A←n÷2 ? n⋄∧/(0≤A),A<n   ⍝ $t
+n←100⋄A←n÷2 ¿ n⋄∧/(0≤A),A<n   ⍝ $t
 
 ⍝ ngn:519 —
-0?100   ⍝ ⍬
+0¿100   ⍝ ⍬
 
 ⍝ ngn:520 —
-0?0   ⍝ ⍬
+0¿0   ⍝ ⍬
 
 ⍝ ngn:521 — Fixed origin 0 single possible result
-1?1   ⍝ 1⍴0
+1¿1   ⍝ 1⍴0
 
 ⍝ ngn:522 —
-1?1 1
+1¿1 1
 ⍝ error: LENGTH ERROR
 
 ⍝ ngn:523 —
-5?3
+5¿3
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:524 —
-¯1?3
+¯1¿3
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:526 —
@@ -2121,10 +2121,10 @@ a×a←2 5   ⍝ 4 25
 {1+1}1   ⍝ 2
 
 ⍝ ngn:696 —
-{⍵=0:1⋄2×∇⍵-1}5   ⍝ 32
+{⍵=0?1;2×∇⍵-1}5   ⍝ 32
 
 ⍝ ngn:697 —
-{⍵<2:1⋄∇⍵-1 + ∇⍵-2}8   ⍝ 34
+{⍵<2?1;∇⍵-1 + ∇⍵-2}8   ⍝ 34
 
 ⍝ ngn:698 —
 ⊂{⍶ ⍶ ⍵}"ab"   ⍝ ⊂⊂"ab"
@@ -2181,7 +2181,7 @@ tw←{⍶⍶⍵}⋄*tw 2   ⍝ 1618.177991912654
 ∞ ∞   ⍝ ∞ ∞
 
 ⍝ ngn:724 —
-⍴[⍋x]⌷x←6?49   ⍝ [6]ₓ
+⍴[⍋x]⌷x←6¿49   ⍝ [6]ₓ
 
 ⍝ ngn:725 —
 [a b]←1 2⋄a   ⍝ 1
@@ -2239,7 +2239,7 @@ r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ [⊃⌽{⍵,⍨⊂[⊥3↕0,0,⍨�
 ["        #        " ⋄ "       ###       " ⋄ "      ##  #      " ⋄ "     ## ####     " ⋄ "    ##  #   #    " ⋄ "   ## #### ###   " ⋄ "  ##  #    #  #  " ⋄ " ## ####  ###### " ⋄ "##  #   ###     #"]
 
 ⍝ ngn/examples/6-queens:1 — Rotate and reflect the accumulator in basedpl's left scan
-queens←{ search←{ (⊂⍬)∊⍵:0⍴⊂⍬ ⋄ 0=⍴⍵:rmdups ⍺ ⋄ [hd tl]←[↑⍵ 1↓⍵] ⋄ next←⍺⍃,¨hd ⋄ rems←hd free¨ ⊂tl ⋄ ,/ next ∇¨ rems } ⋄ cvex←1+⍳⍵ × ⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4#⊂⍵} ⋄ refs←{{⍋⍺}\2#⊂⍵} ⋄ best←{↑⍋⊃⍵ ⊃ ⍵} ⋄ syms←, ⊃ refs¨ rots ⍵ ⋄ (⍵≡best syms)⊃[⍬ ,⊂⍵] } ⋄ fmt←{ chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟" ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd#⁻¹⍠¯1chars } ⋄ squares←⊂⍳⌈⍵÷2 , 1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares } ⋄ queens5
+queens←{ search←{ (⊂⍬)∊⍵?0⍴⊂⍬;0=⍴⍵?rmdups ⍺;[hd tl]←[↑⍵ 1↓⍵] ⋄ next←⍺⍃,¨hd ⋄ rems←hd free¨ ⊂tl ⋄ ,/ next ∇¨ rems } ⋄ cvex←1+⍳⍵ × ⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4#⊂⍵} ⋄ refs←{{⍋⍺}\2#⊂⍵} ⋄ best←{↑⍋⊃⍵ ⊃ ⍵} ⋄ syms←, ⊃ refs¨ rots ⍵ ⋄ (⍵≡best syms)⊃[⍬ ,⊂⍵] } ⋄ fmt←{ chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟" ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd#⁻¹⍠¯1chars } ⋄ squares←⊂⍳⌈⍵÷2 , 1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares } ⋄ queens5
 [["⍟ · · · ·" ⋄ "· · ⍟ · ·" ⋄ "· · · · ⍟" ⋄ "· ⍟ · · ·" ⋄ "· · · ⍟ ·"];["· ⍟ · · ·" ⋄ "· · · · ⍟" ⋄ "· · ⍟ · ·" ⋄ "⍟ · · · ·" ⋄ "· · · ⍟ ·"]]
 
 ⍝ ngn/examples/7-mandelbrot:1 — Use a 13 by 13 grid
@@ -2260,10 +2260,10 @@ f←{⍺+2×⍵} ⋄ g←{789 f/⍵} ⋄ f/⍬
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:683 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Replace ngn ambivalent pairing with a dop using lazy default-left valence dispatch
-Amb←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍵ ⋄ ⍺ ⍹ ⍵} ⋄ {1}Amb{2} 0   ⍝ 1
+Amb←{m←0 ⋄ ⍺←m←1 ⋄ m?⍶ ⍵;⍺ ⍹ ⍵} ⋄ {1}Amb{2} 0   ⍝ 1
 
 ⍝ ngn:684 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Replace ngn ambivalent pairing with a dop using lazy default-left valence dispatch
-Amb←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍵ ⋄ ⍺ ⍹ ⍵} ⋄ 0 {1}Amb{2} 0   ⍝ 2
+Amb←{m←0 ⋄ ⍺←m←1 ⋄ m?⍶ ⍵;⍺ ⍹ ⍵} ⋄ 0 {1}Amb{2} 0   ⍝ 2
 
 ⍝ ngn:690 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Call the circumference/area functions explicitly; π replaces the old circle monad; Both observe the updated radius
 r←3 ⋄ c←{2×πr} ⋄ S←{πr²} ⋄ bef←.01×⌊100×[r;c 0;S 0] ⋄ r←r+1 ⋄ aft←.01×⌊100×[r;c 0;S 0] ⋄ [bef aft]
@@ -2273,11 +2273,11 @@ r←3 ⋄ c←{2×πr} ⋄ S←{πr²} ⋄ bef←.01×⌊100×[r;c 0;S 0] ⋄ r�
 f←{⍺←¯1 ⋄ ⍺×⍵} ⋄ [f 5;3 f 5]   ⍝ ¯5 15
 
 ⍝ ngn:707 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
-Twice←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍶ ⍵ ⋄ ⍺ ⍶ ⍺ ⍶ ⍵} ⋄ *Twice 2
+Twice←{m←0 ⋄ ⍺←m←1 ⋄ m?⍶ ⍶ ⍵;⍺ ⍶ ⍺ ⍶ ⍵} ⋄ *Twice 2
 1618.1779919126539
 
 ⍝ ngn:708 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
-Twice←{m←0 ⋄ ⍺←m←1 ⋄ m:⍶ ⍶ ⍵ ⋄ ⍺ ⍶ ⍺ ⍶ ⍵} ⋄ 3*Twice 2   ⍝ 19683
+Twice←{m←0 ⋄ ⍺←m←1 ⋄ m?⍶ ⍶ ⍵;⍺ ⍶ ⍺ ⍶ ⍵} ⋄ 3*Twice 2   ⍝ 19683
 
 ⍝ ngn:709 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
 H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ +H÷2   ⍝ 2.5

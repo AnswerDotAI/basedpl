@@ -1,6 +1,6 @@
 # `⍺` — Left argument
 
-`⍺` is the current dfn's left argument.
+`⍺` is the current dfn's left argument. In a call with one argument it is absent, and drops out of the expression that uses it, as [dfns](../dfns.qmd#arguments) describes: `{⍺-⍵}3` is `¯3`.
 
 ```bpl
 10{⍺-⍵}3           ⍝ 7

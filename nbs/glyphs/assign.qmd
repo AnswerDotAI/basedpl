@@ -13,7 +13,7 @@ sum←+/ ⋄ sum1 2 3 ⍝ 6
 x←1+2 × 3 ⋄ x      ⍝ 9
 ```
 
-`N f←Y` updates with `N f Y`. A named function goes in parentheses, `N(f)←Y`, because a space would end the run that holds the target. A [dot index](dot.qmd) is a selective target. `x.[1]←9` updates item 1 through [Index](squad.qmd) `⌷`. Other selections need parentheses: `(f N)←Y` updates the items that `f` selects.
+`N f←Y` updates with `N f Y`. A named function goes in parentheses, `N(f)←Y`, because a space would end the run that holds the target. A [dot index](dot.qmd) is a selective target. `x.[1]←9` updates item 1 through [Index](squad.qmd) `⌷`. Other selections need parentheses: `(f N)←Y` updates the items that `f` selects. `f` must only select or rearrange, as for structural [Under](under.qmd).
 
 ```bpl
 x←10 ⋄ x+←3 ⋄ x    ⍝ 13
@@ -21,6 +21,7 @@ f←× ⋄ x←3 ⋄ x(f)←4 ⋄ x ⍝ 12
 x←1 2 3 ⋄ x.[[0 2]]+←10 ⋄ x ⍝ 11 2 13
 x←1 2 3 ⋄ x.[1]←9 ⋄ x ⍝ 1 9 3
 x←1 2 3 ⋄ (2↑x)←8 9 ⋄ x ⍝ 8 9 3
+M←[1 2 ⋄ 3 4] ⋄ ((0⌷⍤1) M)←9 ⋄ M ⍝ [9 2 ⋄ 9 4]
 ```
 
 Brackets destructure: each name gets the corresponding item.

@@ -1,20 +1,20 @@
 # `\` — Scan
 
-`f\Y` scans left-to-right: each result becomes the next call's left argument.
+`f\Y` scans the last axis from left to right. Each result combines the previous result, as `f`'s left argument, with the next item: `-\1 2 3` is `1`, `1-2` and `(1-2)-3`.
 
 ```bpl
 +\1 2 3            ⍝ 1 3 6
 -\1 2 3            ⍝ 1 ¯1 ¯4
 ```
 
-`S f\ Y` starts with seed `S`, excluding the seed from the result.
+`S f\ Y` starts from seed `S` as the first previous result, and leaves the seed out of the result.
 
 ```bpl
 10-\1 2 3          ⍝ 9 7 4
 100+\10 20         ⍝ 110 130
 ```
 
-The whole seed starts each lane. A scalar seed stands for its content, so `(⊂10)+\v` is `10+\v`. Use Rank for separate seeds per cell.
+Each lane starts from the whole seed. A scalar seed stands for its content, so `(⊂10)+\v` is `10+\v`. Use Rank for separate seeds per cell.
 
 ```bpl
 M←[1 2 3 ⋄ 4 5 6]

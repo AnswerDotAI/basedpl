@@ -8,6 +8,13 @@ f 5                ⍝ 10
 3 f 5              ⍝ 8
 ```
 
-A dfn can test for a left argument with `•nc"⍺"` instead, but then only the statements after the guard can be more than one expression.
+A dfn can also serve both cases, because an absent `⍺` drops out of the expression that uses it: `{⍺-⍵}3` is `¯3`. See [dfns](../dfns.qmd#arguments).
+
+An array operand acts as a constant function. `⍺ 0⊘1 ⍵` uses that to test for a left argument. It gives `1` in a call with two arguments and `0` in a call with one.
+
+```bpl
+{⍺ 0⊘1 ⍵}5         ⍝ 0
+3{⍺ 0⊘1 ⍵}5        ⍝ 1
+```
 
 APL difference: Dyalog has no Valences operator. BQN writes it as `⊘` too.

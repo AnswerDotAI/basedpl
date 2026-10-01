@@ -378,8 +378,9 @@ def write_cases(directory, sources, replace=False):
             for case in cases: f.write(json.dumps(case, ensure_ascii=False, separators=(',', ':'))+'\n')
     return {source: len(cases) for source, cases in sources.items()}
 
+REPORT = 'meta/reference-scan.json'
 
-def scan(directory='tests/reference/inventory', source='', match='', timeout=.25, report='meta/reference-scan.json'):
+def scan(directory='tests/reference/inventory', source='', match='', timeout=.25, report=REPORT):
     "Check pending cases with independent expectations; never change fixture metadata."
     from basedpl.worker import Worker
     rows, inventory = [], Counter()
@@ -423,7 +424,7 @@ def selected(report, source='', match='', status='pass'):
         and (not match or re.search(match, r['case']['id']+' '+r['case']['code']+' '+r.get('message', '')))]
 
 
-def review(report, source='', match='', status='pass', limit=20, details=False):
+def review(report=REPORT, source='', match='', status='pass', limit=20, details=False):
     rows = selected(report, source, match, status)
     for row in rows[:limit or None]:
         case = row['case']
@@ -433,7 +434,7 @@ def review(report, source='', match='', status='pass', limit=20, details=False):
     print(f'{len(rows)} matching; {min(limit or len(rows), len(rows))} shown')
 
 
-def activate(report, source='', match='', output='tests/reference'):
+def activate(report=REPORT, source='', match='', output='tests/reference'):
     "Activate reviewed passing selections only if their saved fixture records are unchanged."
     from basedpl.bpltests import add
     rows = selected(report, source, match)

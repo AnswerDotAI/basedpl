@@ -8,7 +8,8 @@ use std::sync::OnceLock;
 pub(crate) struct Symbol {
     pub glyph: &'static str,
     pub name: &'static str,
-    /// `"function"`, `"operator"` or `"syntax"`. Only `basedpl.symbols` reads it.
+    /// `"function"`, `"monadic-operator"`, `"dyadic-operator"`, or a syntax kind: `"argument"`, `"literal"`, `"comment"`, `"system"` or `"syntax"`.
+    /// Only `basedpl.symbols` reads it.
     #[cfg_attr(not(feature = "python"), allow(dead_code))]
     pub kind: &'static str,
     pub monad: &'static str,
@@ -16,30 +17,31 @@ pub(crate) struct Symbol {
     pub aliases: &'static str,
 }
 
-// Glyphs that are syntax, not functions or operators: glyph, name, aliases.
-const SYNTAX: &[(&str, &str, &str)] = &[
-    ("←", "assign", "left-arrow"),
-    ("→", "pipe", "right-arrow"),
-    ("⎕", "quad", ""),
-    ("•", "bullet", "system"),
-    ("⍺", "alpha", ""),
-    ("⍵", "omega", ""),
-    ("⍶", "alpha-underbar", "left-operand"),
-    ("⍹", "omega-underbar", "right-operand"),
-    ("∇", "del", "recursion"),
-    ("⍢", "del-diaeresis", "operator-recursion"),
-    ("⍝", "comment", ""),
-    ("⋄", "diamond", ""),
-    ("¯", "overbar", ""),
-    ("∞", "infinity", ""),
-    ("⍬", "zilde", "empty"),
+// Glyphs that are syntax, not functions or operators: glyph, name, kind, aliases.
+const SYNTAX: &[(&str, &str, &str, &str)] = &[
+    ("←", "assign", "syntax", "left-arrow"),
+    ("→", "pipe", "syntax", "right-arrow"),
+    ("⎕", "quad", "syntax", ""),
+    ("•", "bullet", "system", "system"),
+    ("⍺", "alpha", "argument", ""),
+    ("⍵", "omega", "argument", ""),
+    ("⍶", "alpha-underbar", "argument", "left-operand"),
+    ("⍹", "omega-underbar", "argument", "right-operand"),
+    ("∇", "del", "argument", "recursion"),
+    ("⍢", "del-diaeresis", "argument", "operator-recursion"),
+    ("⍝", "comment", "comment", ""),
+    ("⋄", "diamond", "syntax", ""),
+    ("?", "question", "syntax", "predicate"),
+    ("¯", "overbar", "literal", ""),
+    ("∞", "infinity", "literal", ""),
+    ("⍬", "zilde", "literal", "empty"),
 ];
 
 /// Every glyph: syntax, then primitives and operators from their rows in `primitive.rs`.
 pub(crate) fn symbols() -> &'static [Symbol] {
     static SYMBOLS: OnceLock<Vec<Symbol>> = OnceLock::new();
     SYMBOLS.get_or_init(|| {
-        let syntax = SYNTAX.iter().map(|&(glyph, name, aliases)| Symbol { glyph, name, kind: "syntax", monad: "", dyad: "", aliases });
+        let syntax = SYNTAX.iter().map(|&(glyph, name, kind, aliases)| Symbol { glyph, name, kind, monad: "", dyad: "", aliases });
         let primitives = Primitive::all().map(|p| {
             let info = p.info();
             let (monad, dyad) = (info.monad.map_or("", |m| m.name), info.dyad.map_or("", |d| d.name));
@@ -48,7 +50,8 @@ pub(crate) fn symbols() -> &'static [Symbol] {
         let operators = OperatorKind::all().map(|op| {
             let info = op.info();
             let (name, aliases) = info.names;
-            Symbol { glyph: info.glyph, name, kind: "operator", monad: "", dyad: "", aliases }
+            let kind = if info.dyadic() { "dyadic-operator" } else { "monadic-operator" };
+            Symbol { glyph: info.glyph, name, kind, monad: "", dyad: "", aliases }
         });
         syntax.chain(primitives).chain(operators).collect()
     })

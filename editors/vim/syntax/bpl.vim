@@ -7,10 +7,11 @@ syntax match bplSystem /\v•[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*/
 syntax match bplNumber /\v¯?∞|¯?(\d+(\.\d+)?|\.\d+)([eE]¯?\d+)?([jJ]¯?(\d+(\.\d+)?|\.\d+)([eE]¯?\d+)?|[xₓ]|r¯?\d+)?|⍬(ₓ|x([A-Za-z0-9_∆⍙])@!)?/
 syntax match bplNumber /\v(\])@<=(ₓ|x([A-Za-z0-9_∆⍙])@!)/
 syntax match bplNumber /\v\$[tfn]/
-syntax match bplFunction /[+×÷⌈⌊|*⍟○π√!∧∨⍲⍱~=≠<≤>≥⍳:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹#↕⍭⨸⌻⍸⍷⊢⊣?-]/
-syntax match bplOperator #[¨⍨⍃⍤∘⍠⍥⍄.⊗⌸⍣⇄⊘⌾∂⍚@⌺/⌿\\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘ₀₁₂₃₄₅₆₇₈₉₋]#
+syntax match bplFunction /[+×÷⌈⌊|*⍟○π√!∧∨⍲⍱~=≠<≤>≥⍳:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹#↕⍭⨸⌻⍸⍷⊢⊣¿-]/
+syntax match bplMonadicOperator #[¨⍨⊗⌸∂/⌿\\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘ]#
+syntax match bplDyadicOperator /[⍃⍤∘⍠⍥⍄.⍣⇄⊘⌾⍚@⌺]/
 syntax match bplArgument /[⍺⍵⍶⍹∇⍢]/
-syntax match bplKeyword /[←→⋄⎕]/
+syntax match bplKeyword /[←→⎕⋄?₀₁₂₃₄₅₆₇₈₉₋]/
 syntax match bplCharacter /'.'/
 syntax region bplString oneline start=/"/ skip=/""/ end=/"/
 syntax match bplComment /⍝.*$/
@@ -19,7 +20,8 @@ syntax match bplComment /\%^#!.*/
 highlight default link bplSystem PreProc
 highlight default link bplNumber Number
 highlight default link bplFunction Function
-highlight default link bplOperator Operator
+highlight default link bplMonadicOperator Operator
+highlight default link bplDyadicOperator Type
 highlight default link bplArgument Special
 highlight default link bplKeyword Statement
 highlight default link bplCharacter Character

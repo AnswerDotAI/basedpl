@@ -105,10 +105,10 @@
 0 4 8 12j1 16j1 21j1 25j1 29j2 33j2 38j2 42j2 46j3 50j3 55j3 58j4 63j4 67j4 71j5 75j5 79j5
 
 ⍝ april:485 —
-⍴5?⍴⍳5   ⍝ [5]ₓ
+⍴5¿⍴⍳5   ⍝ [5]ₓ
 
 ⍝ april:486 —
-0=+/,3<?3 3⍴2   ⍝ $t
+0=+/,3<¿3 3⍴2   ⍝ $t
 
 ⍝ april:498 —
 ⌊100000×π1   ⍝ 314159ₓ
@@ -1952,7 +1952,7 @@ g←÷ ⋄ g/⍬   ⍝ 1
 +/¨{1⊂⍠¯1⊃⍵}⍴¨2 2⍴⊂"abc"   ⍝ 1⍴⊂[3 3 ⋄ 3 3]ₓ
 
 ⍝ april:1611 —
-≢?¨3 3 3   ⍝ 3ₓ
+≢¿¨3 3 3   ⍝ 3ₓ
 
 ⍝ april:1612 —
 5⍴÷¨1 2 3   ⍝ 1 0.5 0.3333333333333333 1 0.5
@@ -2080,7 +2080,7 @@ fn←{⍺×⍵+1} ⋄ 1 2 3 fn⊗  4 5 6   ⍝ [5 6 7 ⋄ 10 12 14 ⋄ 15 18 21]
 [0]ₓ
 
 ⍝ april:1679 —
-⍴+.×⌿?2 30 30⍴1e10   ⍝ [30 30]ₓ
+⍴+.×⌿¿2 30 30⍴1e10   ⍝ [30 30]ₓ
 
 ⍝ april:1680 —
 "ADG",.,"EIHF" "BIHC" "BFEC"   ⍝ "AEIHFDBIHCGBFEC"
@@ -2376,25 +2376,25 @@ fn←{⍺+⍵×12} ⋄ test←{0=3|⍵} ⋄ 4 fn@test ⍳12
 [[[0 0 0 ⋄ 0 0 1 ⋄ 0 0 1] ⋄ [0 0 0 ⋄ 0 1 2 ⋄ 0 1 2] ⋄ [0 0 0 ⋄ 1 2 3 ⋄ 1 2 3] ⋄ [0 0 0 ⋄ 2 3 4 ⋄ 2 3 4] ⋄ [0 0 0 ⋄ 3 4 0 ⋄ 3 4 0]] ⋄ [[0 0 1 ⋄ 0 0 1 ⋄ 0 0 1] ⋄ [0 1 2 ⋄ 0 1 2 ⋄ 0 1 2] ⋄ [1 2 3 ⋄ 1 2 3 ⋄ 1 2 3] ⋄ [2 3 4 ⋄ 2 3 4 ⋄ 2 3 4] ⋄ [3 4 0 ⋄ 3 4 0 ⋄ 3 4 0]] ⋄ [[0 0 1 ⋄ 0 0 1 ⋄ 0 0 1] ⋄ [0 1 2 ⋄ 0 1 2 ⋄ 0 1 2] ⋄ [1 2 3 ⋄ 1 2 3 ⋄ 1 2 3] ⋄ [2 3 4 ⋄ 2 3 4 ⋄ 2 3 4] ⋄ [3 4 0 ⋄ 3 4 0 ⋄ 3 4 0]] ⋄ [[0 0 1 ⋄ 0 0 1 ⋄ 0 0 1] ⋄ [0 1 2 ⋄ 0 1 2 ⋄ 0 1 2] ⋄ [1 2 3 ⋄ 1 2 3 ⋄ 1 2 3] ⋄ [2 3 4 ⋄ 2 3 4 ⋄ 2 3 4] ⋄ [3 4 0 ⋄ 3 4 0 ⋄ 3 4 0]] ⋄ [[0 0 1 ⋄ 0 0 1 ⋄ 0 0 1] ⋄ [0 1 2 ⋄ 0 1 2 ⋄ 0 1 2] ⋄ [1 2 3 ⋄ 1 2 3 ⋄ 1 2 3] ⋄ [2 3 4 ⋄ 2 3 4 ⋄ 2 3 4] ⋄ [3 4 0 ⋄ 3 4 0 ⋄ 3 4 0]] ⋄ [[0 0 1 ⋄ 0 0 1 ⋄ 0 0 0] ⋄ [0 1 2 ⋄ 0 1 2 ⋄ 0 0 0] ⋄ [1 2 3 ⋄ 1 2 3 ⋄ 0 0 0] ⋄ [2 3 4 ⋄ 2 3 4 ⋄ 0 0 0] ⋄ [3 4 0 ⋄ 3 4 0 ⋄ 0 0 0]]]
 
 ⍝ april:1853 — Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-{⍵:2 ⋄ 3}1   ⍝ 2
+{⍵?2;3}1   ⍝ 2
 
 ⍝ april:1854 — Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-{⍵:2 ⋄ 3}0   ⍝ 3
+{⍵?2;3}0   ⍝ 3
 
 ⍝ april:1855 — Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-x←5 ⋄ y←3 ⋄ x+←{⍵>2:10 ⋄ 20}y ⋄ x   ⍝ 15
+x←5 ⋄ y←3 ⋄ x+←{⍵>2?10;20}y ⋄ x   ⍝ 15
 
 ⍝ april:1856 — Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-3+{5>6:1 ⋄ 7>8:2 ⋄ 3}0   ⍝ 6
+3+{5>6?1;7>8?2;3}0   ⍝ 6
 
 ⍝ april:1857 — Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-{⍵+5}⍣({3>2:4 ⋄ 5}0) 2   ⍝ 22
+{⍵+5}⍣({3>2?4;5}0) 2   ⍝ 22
 
 ⍝ april:1858 — Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-{⍵>5:{G←3⋄H←5⋄G+H}⍬ ⋄ C←8⋄D←2⋄C×D}¨3 7   ⍝ 16 8
+{⍵>5?{G←3⋄H←5⋄G+H}⍬;C←8⋄D←2⋄C×D}¨3 7   ⍝ 16 8
 
 ⍝ april:1859 — Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-{⍵<3:5 ⋄ e←⍵+2 ⋄ -{⍶ ⍵}e}¨⍳9   ⍝ 5 5 5 ¯5 ¯6 ¯7 ¯8 ¯9 ¯10
+{⍵<3?5;e←⍵+2 ⋄ -{⍶ ⍵}e}¨⍳9   ⍝ 5 5 5 ¯5 ¯6 ¯7 ¯8 ¯9 ¯10
 
 ⍝ april:1869 — Scalar value
 5   ⍝ 5
@@ -2700,7 +2700,7 @@ a←⍳5 ⋄ b←(2⊃a)←30 ⋄ [a b]   ⍝ [[0 1 30 3 4] 30]
 aa←3 ⋄ bob←{aa+←⍵ ⋄ aa} ⋄ bob5   ⍝ 8
 
 ⍝ april:2053 — Creation of lexical variable unchanged by reassignment within a sub-function's scope
-{gg←1 ⋄ {gg←⍵}¨⍳⍵ ⋄ gg} 5   ⍝ 0 1 2 3 4
+{gg←1 ⋄ {gg←⍵}¨⍳⍵ ⋄ gg} 5   ⍝ 1
 
 ⍝ april:2057 — Alias of [× multiply], [⍴ shape] and [⍳ index] functions
 ,/{m←× ⋄ s←⍴ ⋄ i←⍳ ⋄ 5 m 2 3 s i ⍵}¨2 6
@@ -2739,7 +2739,7 @@ _if←{⍶⍣(⍹ ⍵) ⍵} ⋄ (+⍄1) _if (>⍄0) 100   ⍝ 101
 1 0 {,¨+⌿×-⍵,.-⍺} [0 0 ⋄ 1 1]   ⍝ [[1] [¯1]]ₓ
 
 ⍝ april:2082 — Operator composition calling accumulating function
-{acm←⍬ ⋄ {acm,←↑,/⍵ ⋄ ⌽¯1↓⍵}⍣⍵ ⍳⍵ ⋄ acm} 5   ⍝ ⍬
+{acm←⍬ ⋄ {acm,←,/⍵ ⋄ ⌽¯1↓⍵}⍣⍵ ⍳⍵ ⋄ acm} 5   ⍝ 0 1 2 3 4 3 2 1 0 1 2 3 2 1 2
 
 ⍝ april:2084 — Operator composition involving lexical variables within function
 {next←⊂1 3 6 8 ⋄ back←,/1+0×next ⋄ back@ ,/next ⍵} 1 0 0 1 0 2 0 1 2 0 2 3 1 2 0
@@ -2822,7 +2822,7 @@ $t "two" "one" "two" "three"
 3 3 7⍴4 5 5 5 5 5 5 4 5 5 5 5 5 5 4 5 5 5 5 5 5 4 5 5 5 5 5 5 4 5 5 5 5 5 5 4 5 5 5 5 5 5 4 5 5 5 5 5 5 4 5 5 5 5 5 5 4 5 5 5 5 5 5
 
 ⍝ april:2127 — Recursive function; Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-refn←{A←⍵-1 ⋄ A≥0:A,refn A ⋄ 0} ⋄ refn5   ⍝ 4 3 2 1 0 0
+refn←{A←⍵-1 ⋄ A≥0?A,refn A;0} ⋄ refn5   ⍝ 4 3 2 1 0 0
 
 ⍝ april:2128 — Lateral operator definition
 lop←{8 ⍶ 5×2+⍵} ⋄ × lop 5   ⍝ 280
@@ -2840,10 +2840,10 @@ pop←{(⍵ ⍹ ⍺) ⍶ (⍺ ⍹ ⍵)} ⋄ 2-pop≤3   ⍝ ¯1ₓ
 pop←{(⍵ ⍹ ⍺) ⍶ (⍺ ⍹ ⍵)} ⋄ {2-pop≤⍵} 3   ⍝ ¯1ₓ
 
 ⍝ april:2135 — Lateral recursive operator definition with reference to composed function; Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-rlop←{⍵<2000:⍵,∇ 3 ⍶ 2×2+⊃⍵ ⋄ ⍵} ⋄ × rlop 5   ⍝ 5 42 264 1596 9588
+rlop←{⍵<2000?⍵,∇ 3 ⍶ 2×2+⊃⍵;⍵} ⋄ × rlop 5   ⍝ 5 42 264 1596 9588
 
 ⍝ april:2137 — Lateral recursive operator definition with self-reference; Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-rlop←{⍵<2000:⍵,⍶⍢ 3 ⍶ 2×2+⊃⍵ ⋄ ⍵} ⋄ × rlop 5   ⍝ 5 42 264 1596 9588
+rlop←{⍵<2000?⍵,⍶⍢ 3 ⍶ 2×2+⊃⍵;⍵} ⋄ × rlop 5   ⍝ 5 42 264 1596 9588
 
 ⍝ april:2139 — Inline lateral operator
 × {8 ⍶ 5×2+⍵} 5   ⍝ 280
@@ -2888,7 +2888,7 @@ rlop←{⍵<2000:⍵,⍶⍢ 3 ⍶ 2×2+⊃⍵ ⋄ ⍵} ⋄ × rlop 5   ⍝ 5 42 
 fn←{÷ {⍶ ⍵} 1+⍵} ⋄ - fn2   ⍝ ¯0.3333333333333333
 
 ⍝ april:2155 — Inline pivotal operator in parentheses with internal ⋄ breaks
-3 (+{⍶ 2 ⋄ ⍺ ⍹ ⍵}÷) 4   ⍝ 2
+3 (+{⍶ 2 ⋄ ⍺ ⍹ ⍵}÷) 4   ⍝ 0.75
 
 ⍝ april:2156 — Inline lateral operator used with single-character function-referring operand; Dyalog operand names (April aliases)
 '*' {⍶,⍵} " b c d"   ⍝ "* b c d"
@@ -2935,29 +2935,29 @@ filter←{⍶¨⍵ # ⍵} ⋄ {2|⍵} filter ⍳20   ⍝ 1 3 5 7 9 11 13 15 17 1
 {⍵,≡⍵}3⌷{5=¯1↑⍵ ⊃ [¯1 (⊂⍵)]}¨(⊂1 5),⍨3⍴⊂⍳4   ⍝ [[1 5] 2ₓ]
 
 ⍝ april:2184 — Basic guard
-{⍵=1:2⋄3}¨ 1 2 1 0 0 1 2 1   ⍝ 2 3 2 3 3 2 3 2
+{⍵=1?2;3}¨ 1 2 1 0 0 1 2 1   ⍝ 2 3 2 3 3 2 3 2
 
 ⍝ april:2185 — Guard with multiple successive clauses and clauses preceding guard
-{1+1 ⋄ 2+2 ⋄ ⍵=1:2⋄3⋄4⋄⍵=2:3⋄⍵=3:4⋄5}¨1 2 3   ⍝ 2 2 2
+{1+1 ⋄ 2+2 ⋄ ⍵=1?2;3⋄4⋄⍵=2?3;⍵=3?4;5}¨1 2 3   ⍝ 2 3 4
 
 ⍝ april:2187 — Fibonacci sequence generated using [∇ self] within guard for self-reference within a function
-{(⍵=1)∨⍵=2 : 1 ⋄ (∇ ⍵-2)+∇ ⍵-1}¨1+⍳12
+{(⍵=1)∨⍵=2 ? 1;(∇ ⍵-2)+∇ ⍵-1}¨1+⍳12
 1 1 2 3 5 8 13 21 34 55 89 144
 
 ⍝ april:2189 — Locally-scoped function used with lateral operator within if-statement; Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-(⍳3){g←{5+⍵} ⋄ b←-⍄5 ⋄ h←{~2|⍺:12×b¨⍵ ⋄ 12×g ⍵} ⋄ ⍺ h¨ ⍵}(⍳3)+3⍴⊂⍳3
+(⍳3){g←{5+⍵} ⋄ b←-⍄5 ⋄ h←{~2|⍺?12×b¨⍵;12×g ⍵} ⋄ ⍺ h¨ ⍵}(⍳3)+3⍴⊂⍳3
 [[¯60 ¯48 ¯36] [72 84 96] [¯36 ¯24 ¯12]]
 
 ⍝ april:2192 — Locally-scoped function used with function-overloaded lateral operator within if-statement; Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-(⍳3){g←{5+⍵} ⋄ b←-⍄× ⋄ h←{~2|⍺:12×b/⍵ ⋄ 12×g ⍵} ⋄ ⍺ h¨ ⍵}(⍳3)+3⍴⊂⍳3
+(⍳3){g←{5+⍵} ⋄ b←-⍄× ⋄ h←{~2|⍺?12×b/⍵;12×g ⍵} ⋄ ⍺ h¨ ⍵}(⍳3)+3⍴⊂⍳3
 [0 [72 84 96] 12]
 
 ⍝ april:2195 — Locally-scoped function used with pivotal operator within if-statement; Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
-(⍳3){g←{⍵×⍺-2} ⋄ b←{⍺×⍵÷3} ⋄ h←{~2|⍺:12× ⍺ (b . g) ⍵ ⋄ 12× ⍺ g ⍵} ⋄ ⍺ h¨ ⍵}(⍳3)+3⍴⊂⍳3
+(⍳3){g←{⍵×⍺-2} ⋄ b←{⍺×⍵÷3} ⋄ h←{~2|⍺?12× ⍺ (b . g) ⍵;12× ⍺ g ⍵} ⋄ ⍺ h¨ ⍵}(⍳3)+3⍴⊂⍳3
 [0 [¯12 ¯24 ¯36] 0]
 
 ⍝ april:2198 — Pivotal operator with value operands but no arguments defined and used; Dyalog operand names (April aliases)
-2{⍶⋄⍹}3(10)   ⍝ 2
+2{⍶⋄⍹}3(10)   ⍝ 3
 
 ⍝ april:2200 — Function containing multiple nested locally-scoped functions
 {aa←{⍵+5} ⋄ bb←{cc←{⍺,aa ⍵} ⋄ ⍺ cc ⍵} ⋄ 9 bb ⍵} 100   ⍝ 9 105
@@ -4191,7 +4191,7 @@ eng {⍺,'=',⍵}saw esp
 •load "lib/array.bpl"
 eng←"One" "" "" "" "Five"
 esp←"Uno" "Dos" "Tres" "" ""
-eng {⍺{' '∧.=⍺:⍵ ⋄ ⍺}saw ⍵} esp
+eng {⍺{' '∧.=⍺?⍵;⍺}saw ⍵} esp
 ⍝ =>
 "One" "Dos" "Tres" "" "Five"
 
@@ -4199,7 +4199,7 @@ eng {⍺{' '∧.=⍺:⍵ ⋄ ⍺}saw ⍵} esp
 •load "lib/array.bpl"
 eng←"One" "" "" "" "Five"
 esp←"Uno" "Dos" "Tres" "" ""
-{⍺{' '∧.=⍺:⍵ ⋄ ⍺}saw ⍵}/ [eng esp "¿?"]
+{⍺{' '∧.=⍺?⍵;⍺}saw ⍵}/ [eng esp "¿?"]
 ⍝ =>
 "One" "Dos" "Tres" "¿?" "Five"
 
@@ -6080,7 +6080,7 @@ AM1 2 3 4 5
 
 ⍝ april/libraries/dfns/power/demo.lisp:41 —
 •load "lib/power.bpl"
-{2|⍵:1+3×⍵ ⋄ ⍵÷2}traj 7
+{2|⍵?1+3×⍵;⍵÷2}traj 7
 ⍝ =>
 7 22 11 34 17 52 26 13 40 20 10 5 16 8 4 2 1
 
@@ -6104,7 +6104,7 @@ AM1 2 3 4 5
 
 ⍝ april/libraries/dfns/power/demo.lisp:77 —
 •load "lib/power.bpl"
-{2|⍵:1+3×⍵ ⋄ ⍵÷2}traj_2 7
+{2|⍵?1+3×⍵;⍵÷2}traj_2 7
 ⍝ =>
 7 22 11 34 17 52 26 13 40 20 10 5 16 8 4 2 1
 
@@ -6914,7 +6914,7 @@ chk tt
 
 ⍝ april/libraries/dfns/tree/demo.lisp:301 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 •load "tests/reference/support/sbst.bpl"
-↓fmt bal tree 1+15?15
+↓fmt bal tree 1+15¿15
 ⍝ =>
 "           ┌1=1      " "       ┌2=2┤         " "       │   └3=3      " "   ┌4=4┤             " "   │   │   ┌5=5      " "   │   └6=6┤         " "   │       └7=7      " "8=8┤                 " "   │           ┌9=9  " "   │     ┌10=10┤     " "   │     │     └11=11" "   └12=12┤           " "         │     ┌13=13" "         └14=14┤     " "               └15=15"
 
@@ -7017,20 +7017,20 @@ pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven
 
 ⍝ april/libraries/dfns/tree/demo.lisp:574 — Random red-black tree: validate structure, size and all sorted keys, not seed-dependent height/depth
 •load "tests/reference/support/redblack.bpl"
-vv←100?100 ⋄ tt←tree vv ⋄ (1 100≡2↑chk tt)∧(⍳100)≡vec tt
+vv←100¿100 ⋄ tt←tree vv ⋄ (1 100≡2↑chk tt)∧(⍳100)≡vec tt
 ⍝ =>
 $t
 
 ⍝ april/libraries/dfns/tree/demo.lisp:575 — Self-contained red-black tree library with 0-origin offsets and full setup; original independent April expectations; Random construction cases assert lookup/order properties, not a sampled tree shape
 •load "tests/reference/support/redblack.bpl"
-pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]] ⋄ tt←tree pairs ⋄ vv←100?100 ⋄ tt←tree vv
+pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]] ⋄ tt←tree pairs ⋄ vv←100¿100 ⋄ tt←tree vv
 vv ≡ vv get¨ ⊂tt
 ⍝ =>
 $t
 
 ⍝ april/libraries/dfns/tree/demo.lisp:576 — Self-contained red-black tree library with 0-origin offsets and full setup; original independent April expectations; Random construction cases assert lookup/order properties, not a sampled tree shape
 •load "tests/reference/support/redblack.bpl"
-pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]] ⋄ tt←tree pairs ⋄ vv←100?100 ⋄ tt←tree vv
+pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]] ⋄ tt←tree pairs ⋄ vv←100¿100 ⋄ tt←tree vv
 (⍳⍴vv) ≡ vec tt
 ⍝ =>
 $t
@@ -7123,8 +7123,8 @@ chk tree ⍳7
 ⍝ april/libraries/dfns/tree/demo.lisp:899 — Splay tree validity after searches
 •load "tests/reference/support/splay.bpl"
 •load "tests/reference/support/april.bpl"
-tt←0 put foldl 256?256 ⋄ revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 256?256
+tt←0 put foldl 256¿256 ⋄ revt←{↑⌽ ⍵ get ⍺}
+tt←tt revt foldl 256¿256
 256 check tt
 ⍝ =>
 $t
@@ -7132,9 +7132,9 @@ $t
 ⍝ april/libraries/dfns/tree/demo.lisp:901 — Splay tree search depths and retrieved keys
 •load "tests/reference/support/splay.bpl"
 •load "tests/reference/support/april.bpl"
-tt←0 put foldl 256?256 ⋄ revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 256?256
-keys←16?256 ⋄ d←keys dep¨ ⊂tt
+tt←0 put foldl 256¿256 ⋄ revt←{↑⌽ ⍵ get ⍺}
+tt←tt revt foldl 256¿256
+keys←16¿256 ⋄ d←keys dep¨ ⊂tt
 (256 check tt)∧(∧/d≥1)∧(∧/d≤256)∧keys≡↑¨ keys get¨ ⊂tt
 ⍝ =>
 $t
@@ -7142,9 +7142,9 @@ $t
 ⍝ april/libraries/dfns/tree/demo.lisp:903 — Splay tree repeated searches
 •load "tests/reference/support/splay.bpl"
 •load "tests/reference/support/april.bpl"
-tt←0 put foldl 256?256 ⋄ revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 256?256
-keys←16?256 ⋄ tt←tt revt foldl 16#keys ⋄ d←keys dep¨ ⊂tt
+tt←0 put foldl 256¿256 ⋄ revt←{↑⌽ ⍵ get ⍺}
+tt←tt revt foldl 256¿256
+keys←16¿256 ⋄ tt←tt revt foldl 16#keys ⋄ d←keys dep¨ ⊂tt
 (256 check tt)∧(∧/d≥1)∧(∧/d≤256)∧keys≡↑¨ keys get¨ ⊂tt
 ⍝ =>
 $t
@@ -7152,19 +7152,19 @@ $t
 ⍝ april/libraries/dfns/tree/demo.lisp:904 — Splay tree validity after repeated searches
 •load "tests/reference/support/splay.bpl"
 •load "tests/reference/support/april.bpl"
-tt←0 put foldl 256?256 ⋄ revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 256?256
-keys←16?256 ⋄ tt←tt revt foldl 16#keys
+tt←0 put foldl 256¿256 ⋄ revt←{↑⌽ ⍵ get ⍺}
+tt←tt revt foldl 256¿256
+keys←16¿256 ⋄ tt←tt revt foldl 16#keys
 256 check tt
 ⍝ =>
 $t
 
 ⍝ april/libraries/dfns/tree/demo.lisp:905 — Splay tree remove all keys
 •load "tests/reference/support/splay.bpl"
-tt←0 put foldl 256?256 ⋄ revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 256?256
-keys←16?256 ⋄ tt←tt revt foldl 16#keys
-tt rem foldl 256?256
+tt←0 put foldl 256¿256 ⋄ revt←{↑⌽ ⍵ get ⍺}
+tt←tt revt foldl 256¿256
+keys←16¿256 ⋄ tt←tt revt foldl 16#keys
+tt rem foldl 256¿256
 ⍝ =>
 0
 
@@ -7261,7 +7261,7 @@ tnest ,∘⊂¨0 "tea"
 ⍝ april/libraries/dfns/tree/demo.lisp:896 — 0-origin splay definitions and preceding state included; Random 256-node workloads assert validity, keys and search/removal results rather than a seeded shape
 •load "tests/reference/support/splay.bpl"
 •load "tests/reference/support/april.bpl"
-tt←tree 256?256 ⋄ revt←{↑⌽ ⍵ get ⍺}
+tt←tree 256¿256 ⋄ revt←{↑⌽ ⍵ get ⍺}
 256 check tt
 ⍝ =>
 $t
@@ -7335,8 +7335,8 @@ rational (+⍄÷)/¨0<⍳¨1+⍳10
 ⍝ — Splay tree validity after searches (32 nodes; April tree demo:899)
 •load "tests/reference/support/splay.bpl"
 •load "tests/reference/support/april.bpl"
-tt←0 put foldl 32?32 ⋄ revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 32?32
+tt←0 put foldl 32¿32 ⋄ revt←{↑⌽ ⍵ get ⍺}
+tt←tt revt foldl 32¿32
 32 check tt
 ⍝ =>
 $t
@@ -7344,9 +7344,9 @@ $t
 ⍝ — Splay tree search depths and retrieved keys (32 nodes; April tree demo:901)
 •load "tests/reference/support/splay.bpl"
 •load "tests/reference/support/april.bpl"
-tt←0 put foldl 32?32 ⋄ revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 32?32
-keys←8?32 ⋄ d←keys dep¨ ⊂tt
+tt←0 put foldl 32¿32 ⋄ revt←{↑⌽ ⍵ get ⍺}
+tt←tt revt foldl 32¿32
+keys←8¿32 ⋄ d←keys dep¨ ⊂tt
 (32 check tt)∧(∧/d≥1)∧(∧/d≤32)∧keys≡↑¨ keys get¨ ⊂tt
 ⍝ =>
 $t
@@ -7354,9 +7354,9 @@ $t
 ⍝ — Splay tree repeated searches (32 nodes; April tree demo:903)
 •load "tests/reference/support/splay.bpl"
 •load "tests/reference/support/april.bpl"
-tt←0 put foldl 32?32 ⋄ revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 32?32
-keys←8?32 ⋄ tt←tt revt foldl 8#keys ⋄ d←keys dep¨ ⊂tt
+tt←0 put foldl 32¿32 ⋄ revt←{↑⌽ ⍵ get ⍺}
+tt←tt revt foldl 32¿32
+keys←8¿32 ⋄ tt←tt revt foldl 8#keys ⋄ d←keys dep¨ ⊂tt
 (32 check tt)∧(∧/d≥1)∧(∧/d≤32)∧keys≡↑¨ keys get¨ ⊂tt
 ⍝ =>
 $t
@@ -7364,19 +7364,19 @@ $t
 ⍝ — Splay tree validity after repeated searches (32 nodes; April tree demo:904)
 •load "tests/reference/support/splay.bpl"
 •load "tests/reference/support/april.bpl"
-tt←0 put foldl 32?32 ⋄ revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 32?32
-keys←8?32 ⋄ tt←tt revt foldl 8#keys
+tt←0 put foldl 32¿32 ⋄ revt←{↑⌽ ⍵ get ⍺}
+tt←tt revt foldl 32¿32
+keys←8¿32 ⋄ tt←tt revt foldl 8#keys
 32 check tt
 ⍝ =>
 $t
 
 ⍝ — Splay tree remove all keys (32 nodes; April tree demo:905)
 •load "tests/reference/support/splay.bpl"
-tt←0 put foldl 32?32 ⋄ revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 32?32
-keys←8?32 ⋄ tt←tt revt foldl 8#keys
-tt rem foldl 32?32
+tt←0 put foldl 32¿32 ⋄ revt←{↑⌽ ⍵ get ⍺}
+tt←tt revt foldl 32¿32
+keys←8¿32 ⋄ tt←tt revt foldl 8#keys
+tt rem foldl 32¿32
 ⍝ =>
 0
 

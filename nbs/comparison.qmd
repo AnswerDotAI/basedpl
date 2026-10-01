@@ -96,14 +96,14 @@ lc←"abcdefghijklmnopqrstuvwxyz" ⋄ uc←•a
 
 ### An index that assigns the array's name
 
-Source: the ngn/apl tests. `⌷` evaluates its right argument first, so the assignment moves to the right. `x←6?49` runs before `[⍋x]` reads `x`. BQN sorts with `∧` and needs no index.
+Source: the ngn/apl tests. `⌷` evaluates its right argument first, so the assignment moves to the right. `x←6¿49` runs before `[⍋x]` reads `x`. BQN sorts with `∧` and needs no index.
 
 ```dyalog
 ⍴x[⍋x←6?49]
 ```
 
 ```bpl
-⍴[⍋x]⌷x←6?49           ⍝ [6]ₓ
+⍴[⍋x]⌷x←6¿49           ⍝ [6]ₓ
 ```
 
 ```bqn
@@ -558,7 +558,7 @@ IfElse (𝕩<mid⊑𝕨)‿{𝕤
 ```bpl
 ifelse←{[c t f]←⍵ ⋄ c⍚[f t]0}
 step←{mid←3 ⋄ hi←9 ⋄ lo←0
-  _←ifelse [⍵<mid⊃⍺
+  ifelse [⍵<mid⊃⍺
     {hi⊢←mid}
     {lo⊢←mid}]
   [lo hi]}
@@ -648,7 +648,7 @@ Source: `det` in the dfns workspace. Each line shows the recursive step. The ste
 ```
 
 ```bpl
-det←{⍺←1 ⋄ 0=n←≢⍵:⍺ ⋄ [i j]←(⍴⍵)⊤{⍵⍳⌈/⍵}|,⍵ ⋄ k←⍳n ⋄ ⍺×⍵.[i j]×¯1*i+j ∇ [k~[i] k~[j]]⌷⍵ - [k~[i] j]⌷⍵ ×⊗ [i k~[j]]⌷⍵ ÷ [i j]⌷⍵}
+det←{⍺←1 ⋄ 0=n←≢⍵?⍺;[i j]←(⍴⍵)⊤{⍵⍳⌈/⍵}|,⍵ ⋄ k←⍳n ⋄ ⍺×⍵.[i j]×¯1*i+j ∇ [k~[i] k~[j]]⌷⍵ - [k~[i] j]⌷⍵ ×⊗ [i k~[j]]⌷⍵ ÷ [i j]⌷⍵}
 det [1 2 ⋄ 3 4]        ⍝ ¯2
 det [2 0 1 ⋄ 1 3 2 ⋄ 1 1 2]   ⍝ 6
 ```

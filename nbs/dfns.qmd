@@ -1,0 +1,111 @@
+# Dfns
+
+[Glyph index](glyphs.qmd)
+
+A dfn is a function written in braces. `⍵` is its right argument, and `⍺` is its left argument.
+
+```bpl
+{⍵×2}3             ⍝ 6
+2{⍺+⍵}3            ⍝ 5
+```
+
+## Statements
+
+A dfn holds statements, separated by `⋄` or line breaks. Every statement runs in order. The last statement gives the result, and the values of earlier statements are discarded.
+
+```bpl
+{x←⍵+1 ⋄ x×2}3     ⍝ 8
+{1 ⋄ 2}0           ⍝ 2
+```
+
+A statement can run only for its side effect. Here the Each adds to `s`, and the last statement returns `s`.
+
+```bpl
+{s←0 ⋄ {s+←⍵}¨⍵ ⋄ s}1 2 3   ⍝ 6
+```
+
+A final assignment returns its value without displaying it.
+
+```bpl
+{x←⍵+1}3           ⍝ 4
+```
+
+## Scope
+
+Names follow lexical scope. Plain assignment creates a name local to the dfn. Modified assignment, such as `+←`, updates the nearest existing binding, which can belong to an enclosing dfn or to the top level.
+
+```bpl
+aa←3 ⋄ bob←{aa+←⍵ ⋄ aa} ⋄ bob 5   ⍝ 8
+{gg←1 ⋄ {gg←⍵}¨⍳⍵ ⋄ gg}5          ⍝ 1
+```
+
+## Bodies and predicates
+
+`;` separates a dfn's bodies. A [predicate](glyphs/question.qmd) `C?` tests `C`, which must be a Boolean singleton. When `C` is true, the rest of the body runs. When it is false, the dfn moves on to its next body.
+
+```bpl
+{⍵<0?-⍵;⍵}¯3                             ⍝ 3
+{⍵<0?a←-⍵ ⋄ a×2;⍵}¯3                     ⍝ 6
+{a←⍵ ⋄ a>9?"big";a>0?"small";"none"}5   ⍝ "small"
+```
+
+Statements before a predicate run first. The bodies share one scope, and a name assigned in one body stays visible in the bodies after it. Every body but the last needs a predicate. If every predicate fails, the call is a `DOMAIN` error.
+
+An empty body returns no result. `{}` returns no result, and so does a body that ends right after its predicate, as the first body of `{⍵≡0?;⍵}` does.
+
+## Arguments
+
+In a call with one argument, `⍺` is absent. It drops out of the expression that uses it. `⍺ f ⍵` calls `f` with one argument, and `f ⍺` is also absent. A list or strand leaves an absent `⍺` out, and `[⍺ ⍵]` is `[⍵]`. One dfn can then serve both cases. Any other use, such as `x←⍺` or `⍺` as an operand, is a `VALUE` error.
+
+```bpl
+{⍺-⍵}3             ⍝ ¯3
+10{⍺-⍵}3           ⍝ 7
+{(2×⍺)-⍵}3         ⍝ ¯3
+{[⍺ ⍵]}3           ⍝ [3]
+```
+
+`⍺←` gives `⍺` a [default](glyphs/alpha.qmd). The assignment runs only when `⍺` is absent.
+
+```bpl
+{⍺←10 ⋄ ⍺-⍵}3      ⍝ 7
+2{⍺←10 ⋄ ⍺-⍵}3     ⍝ ¯1
+```
+
+[Valences](glyphs/valences.qmd) `⊘` joins a monadic function and a dyadic function into one.
+
+## Recursion
+
+[`∇`](glyphs/del.qmd) calls the current dfn. Tail calls reuse execution frames.
+
+```bpl
+{⍵=0?1;⍵×∇⍵-1}5    ⍝ 120
+```
+
+## Operators
+
+`⍶` is a dfn's left operand, and `⍹` is its right operand. A dfn that uses `⍶` is a monadic operator, and a dfn that uses `⍹` is a dyadic operator. [`⍢`](glyphs/del-diaeresis.qmd) refers to the current operator, for recursion with new operands.
+
+```bpl
+twice←{⍶ ⍶ ⍵} ⋄ (-twice)3   ⍝ 3
+2 (+{⍺ ⍶ ⍹ ⍵}-) 3            ⍝ ¯1
+```
+
+## Error guards
+
+An [error guard](glyphs/error-guard.qmd) `codes::handler` catches matching errors in the statements after it, including those in later bodies. The handler's value becomes the result.
+
+```bpl
+{11::0 ⋄ ÷⍵}"a"    ⍝ 0
+```
+
+## Design
+
+BPL's dfns come from Dyalog APL, with three rules from BQN's [blocks](https://mlochbaum.github.io/BQN/doc/block.html). Every statement runs, and the last gives the result. Predicates choose between bodies separated by `;`. A left argument that isn't given drops out of the expression, as BQN's `𝕨` does.
+
+In Dyalog APL, a statement that isn't an assignment returns at once. The statements after it never run, and a statement run for its side effect needs a workaround to avoid returning.
+
+Marshall Lochbaum's [five-year review of BQN's design](https://mlochbaum.github.io/BQN/commentary/fiveyears.html) shaped what BPL leaves out. Bodies aren't chosen by argument count, which the review calls useless. Valences covers that case. Block headers are left out, because the review finds them more complex than they need to be. The review reports that BQN's rule for `𝕨` has held up, and that it makes ambivalent code easier to write than tacit combinators do.
+
+The review would rather not decide a block's kind from special names in its body. BPL keeps that rule. Braces always define a function or an operator, and `⍶` and `⍹` only tell the two apart.
+
+Unlike a BQN block, a dfn keeps one scope across its bodies, as Dyalog APL's guards do.

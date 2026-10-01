@@ -10,13 +10,13 @@ tree_hang ← {  ⍝ node label ⍺ with formatted subtrees ⍵ hung below it.
   key_val←⍺
   null←0 0⍴""  ⍝ format of null tree.
   fmts←{⊖⍵}\"┌└"{  ⍝ hang subtrees by ┌─ ─┐ branches.
-    0 0≡⍴⍵:⍵  ⍝ null: done.
+    0 0≡⍴⍵?⍵;  ⍝ null: done.
     mask←∧\' '=↑↓⌽⍵ᵀ
     ⍉⌽⊃(⊂⌽⍺,mask#'│'),↓⌽⍵ᵀ
   }¨{⊖⍵}\⍵  ⍝ formatted subtrees.
   case←~[null null]≡¨fmts  ⍝ non-null subtree cases.
   join←(2⊥case)⊃"∘┐┘┤"
-  join≡'∘':⊃,↓key_val
+  join≡'∘'?⊃,↓key_val;
   dent←' '⊣¨key_val  ⍝ subtree padding.
   pads←{↓,/dent,⊂⍵}¨fmts
   ⊃{⍺,(↓key_val,join),⍵}/pads
@@ -24,19 +24,19 @@ tree_hang ← {  ⍝ node label ⍺ with formatted subtrees ⍵ hung below it.
 
 ⍝ Helpers shared by sbst and splay.
 bst_fmt ← {  ⍝ formatted tree ⍵.
-  ⍵≡0:0 0⍴""  ⍝ null tree: null format.
+  ⍵≡0?0 0⍴"";  ⍝ null tree: null format.
   [[key val] subs]←⍵  ⍝ node info.
   (⊃,/⍕¨[key '=' val]) tree_hang ∇¨subs
 }  ⍝ :: ∇ t → [-;]
 
 bst_vec ← {  ⍝ vector of key=value pairs.
-  ⍵≡0:⍬  ⍝ null tree: null vector.
+  ⍵≡0?⍬;  ⍝ null tree: null vector.
   [key_val [lft rgt]]←⍵  ⍝ key=val and subtrees.
   ∇lft , ⊂key_val , ∇rgt  ⍝ left_vec, key=val, right_vec.
 }  ⍝ :: ∇ t → [k v]
 
 bst_chk ← {  ⍝ tree stats / integrity check.
-  0=≡⍵:[0≡⍵ 0x 0x 0x ⍬]  ⍝ null: ok ht=0 sz=0 depth=0 range=⍬.
+  0=≡⍵?[0≡⍵ 0x 0x 0x ⍬];  ⍝ null: ok ht=0 sz=0 depth=0 range=⍬.
   [[key _] subs]←⍵  ⍝ node info and subtrees.
   stats←(⍺+1x)∇¨subs  ⍝ subtree stats.
   [oks szs dps hts krs]←↓⍉⊃stats
@@ -48,13 +48,13 @@ bst_chk ← {  ⍝ tree stats / integrity check.
   dp←⍺++/dps  ⍝ total node depth.
   ht←1x+⌈/hts  ⍝ node height.
   kr←⌽2⍴¯1⌽keys  ⍝ key range for subtree.
-  ⍺>0:[ok sz dp ht kr]  ⍝ subtree: ok size tot_dep height range.
+  ⍺>0?[ok sz dp ht kr];  ⍝ subtree: ok size tot_dep height range.
   [ok sz ⌊0.5+dp÷sz ht]  ⍝ root: ok size mean_depth height.
 }  ⍝ :: ∇ t → y s d h {r}
 
 ⍝ Shared by avl and redblack, whose nodes also hold a balance or colour.
 tree_vec ← {  ⍝ enlist of tree ⍵.
-  0≡⍵:⍬  ⍝ null tree: null vector.
+  0≡⍵?⍬;  ⍝ null tree: null vector.
   [key_val bal [lft rgt]]←⍵  ⍝ node info and subtrees.
   ∇lft , ⊂key_val , ∇rgt  ⍝ left_vec, key=val, right_vec.
 }  ⍝ :: ∇ t → [k v]
@@ -63,57 +63,57 @@ tree_vec ← {  ⍝ enlist of tree ⍵.
 
 avl ← {  ⍝ Adelson-Velskii, Landis trees.
   get←{  ⍝ value for key ⍵ from AVL tree ⍺.
-    ⍺≡0:  ⍝ key not in tree: no value.
+    ⍺≡0?;  ⍝ key not in tree: no value.
     [[k v] _ subs]←⍺  ⍝ next key, value and subtrees.
-    k≡⍵:v  ⍝ match: value from tree.
+    k≡⍵?v;  ⍝ match: value from tree.
     dir←-/⍋⊃[⍵ k]
     [sub sib]←dir wise subs  ⍝ subtree to search and its sibling.
     sub ∇ ⍵  ⍝ value from subtree.
   }  ⍝ :: t ∇ k → v
   put←{  ⍝ tree ⍺ with key=value ⍵.
-    ⍺≡0:[[⍵ 0 [0 0]] $t]  ⍝ null tree: new leaf, height incr.
+    ⍺≡0?[[⍵ 0 [0 0]] $t];  ⍝ null tree: new leaf, height incr.
     [[kv obal subs] [key val]]←[⍺ ⍵]  ⍝ next node and key=val pair.
-    key≡↑kv:[[⍵ obal subs] $f]
+    key≡↑kv?[[⍵ obal subs] $f];
     [dir obv]←[1 ¯1]ₓ×-/⍋⊃[key ↑kv]
     [sub sib]←dir wise subs  ⍝ subtree to search and its sibling.
     [nsub inc]←sub ∇ ⍵  ⍝ new subtree and height increment.
     new←obv proj [kv obal [nsub sib]]  ⍝ tree with new node.
-    ~inc:[new $f]  ⍝ no height increment: done.
+    ~inc?[new $f];  ⍝ no height increment: done.
     [(dir balance new) obal=0]  ⍝ height increment if OLD balance is 0.
   }  ⍝ :: t ∇ k v → t i
   rem←{  ⍝ tree ⍺ without key ⍵.
-    ⍺≡0:[0 $f]  ⍝ key not in tree: done.
-    ⍵≡↑↑⍺:rmnode ⍺
+    ⍺≡0?[0 $f];  ⍝ key not in tree: done.
+    ⍵≡↑↑⍺?rmnode ⍺;
     [dir obv]←[1 ¯1]ₓ×-/⍋⊃[⍵ ↑↑⍺]
     [kv obal [sub sib]]←obv proj ⍺  ⍝ subtree to search and its sibling.
     [nsub inc]←sub ∇ ⍵  ⍝ new subtree and height increment.
     new←obv proj [kv obal [nsub sib]]  ⍝ tree with node removed.
-    ~inc:[new $f]  ⍝ no height decrement: done.
+    ~inc?[new $f];  ⍝ no height decrement: done.
     [nkv nbal nsubs]←obv balance new  ⍝ balanced tree.
     [[nkv nbal nsubs] nbal=0]  ⍝ height decrement if NEW balance is 0.
   }  ⍝ :: t ∇ k → t i
   rmnode←{  ⍝ node ⍵ removed.
     [kv obal subs]←⍵  ⍝ subnodes.
-    0∊subs:[(subs⍳0)⊃⌽subs $t]  ⍝ either sub null: the other.
+    0∊subs?[(subs⍳0)⊃⌽subs $t];  ⍝ either sub null: the other.
     [lft rgt]←subs  ⍝ left and right non-null subtrees.
     [[sk sv] _ _]←rgt limt ¯1  ⍝ successor key=val.
     [rm inc]←rgt rem sk  ⍝ right subtree with successor removed.
     new←[[sk sv] obal [lft rm]]  ⍝ target node replaced with successor.
-    ~inc:[new $f]  ⍝ no height decrement: done.
+    ~inc?[new $f];  ⍝ no height decrement: done.
     [nkv nbal nsubs]←¯1 balance new  ⍝ new balanced node.
     [[nkv nbal nsubs] nbal=0]  ⍝ height decrement if NEW balance is 0.
   }  ⍝ :: ∇ t → t i
   limt←{  ⍝ ⍵-most node of (sub)tree ⍺.
     sub←↑ ⍵ wise ↑⌽⍺
-    sub≡0:⍺  ⍝ null: this.
+    sub≡0?⍺;  ⍝ null: this.
     sub ∇ ⍵  ⍝ else: ⍵-most of sub.
   }  ⍝ :: t ∇ d → t
   balance←{  ⍝ tree ⍵ with balancing moment ⍺.
     [kv obal subs]←⍵  ⍝ original tree.
     new←⍺+obal  ⍝ new balance.
-    0∊[obal new]:[kv new subs]  ⍝ balance bits absorb moment: done.
+    0∊[obal new]?[kv new subs];  ⍝ balance bits absorb moment: done.
     [[_ Bbal _] _]←obal wise subs  ⍝ otherwise:
-    Bbal≠-obal:(-obal)srot ⍵  ⍝ single or
+    Bbal≠-obal?(-obal)srot ⍵;  ⍝ single or
                (-obal)drot ⍵  ⍝ double rotation.
   }  ⍝ :: m ∇ t → t
   srot←{                                     ⍝ single ⍺-rotation of tree ⍵.
@@ -136,7 +136,7 @@ avl ← {  ⍝ Adelson-Velskii, Landis trees.
     ⍺ proj [Ckv 0 [BB AA]]                   ⍝                   where:
   }                                          ⍝ :: d ∇ t → t      x y∊"<>" "< " " >"
   chk←{  ⍝ tree stats / integrity check.
-    0=≡⍵:[⍵≡0 0x 0x 0x ⍬]  ⍝ null: ok maxbal=0 height=0 key-range.
+    0=≡⍵?[⍵≡0 0x 0x 0x ⍬];  ⍝ null: ok maxbal=0 height=0 key-range.
     [[key _] bal subs]←⍵  ⍝ key, balance and subtrees.
     stats←(⍺+1x)∇¨subs  ⍝ subtrees stats.
     [oks szs dps hts krs]←↓⍉⊃stats
@@ -149,11 +149,11 @@ avl ← {  ⍝ Adelson-Velskii, Landis trees.
     dp←⍺++/dps  ⍝ total node depth.
     ht←1x+⌈/hts  ⍝ subtree height.
     kr←⌽2⍴¯1⌽keys  ⍝ key range for subtree.
-    ⍺>0:[ok sz dp ht kr]  ⍝ subtree: ok size tot_dep height range.
+    ⍺>0?[ok sz dp ht kr];  ⍝ subtree: ok size tot_dep height range.
     [ok sz ⌊0.5+dp÷sz ht]  ⍝ root: ok size mean_depth height.
   }  ⍝ :: ∇ t → y s d h {r}
   fmt←{  ⍝ formatted tree ⍵, its key=value after decoration ⍺.
-    ⍵≡0:0 0⍴""  ⍝ null tree: null format.
+    ⍵≡0?0 0⍴"";  ⍝ null tree: null format.
     [[key val] bal subs]←⍵  ⍝ node info.
     deco←(1+bal)⊃"><" '─' "<>"
     (⍺,,/⍕¨[key '=' val]) tree_hang deco∇¨subs
@@ -161,20 +161,20 @@ avl ← {  ⍝ Adelson-Velskii, Landis trees.
   proj←{(⍺=0 0 ¯1)⌽¨⍵}  ⍝ ⍺-projection of node ⍵.
   wise←{(⍺=1)⌽⍵}  ⍝ subtrees ⍵ in -⍺, +⍺ order.
   op←⍶  ⍝ operand label.
-  '∪'≡op:↑ ⍺ put ⍵
-  '⍎'≡op:⍺ get ⍵  ⍝ value for key ⍺ in tree ⍵.
-  '~'≡op:↑ ⍺ rem ⍵
-  '⍕'≡op:""fmt ⍵  ⍝ formatted tree ⍵.
-  '∊'≡op:tree_vec ⍵  ⍝ vector of key=value pairs for tree ⍵.
-  '?'≡op:4↑ 0x chk ⍵  ⍝ stats for tree ⍵: ok size dpth height.
+  '∪'≡op?↑ ⍺ put ⍵;
+  '⍎'≡op?⍺ get ⍵;  ⍝ value for key ⍺ in tree ⍵.
+  '~'≡op?↑ ⍺ rem ⍵;
+  '⍕'≡op?""fmt ⍵;  ⍝ formatted tree ⍵.
+  '∊'≡op?tree_vec ⍵;  ⍝ vector of key=value pairs for tree ⍵.
+  '?'≡op?4↑ 0x chk ⍵  ⍝ stats for tree ⍵: ok size dpth height.
 }
 
 ⍝ From http://dfns.dyalog.com/s_avl.htm
 
 fibtree ← {  ⍝ Depth-⍵ worst-case fibonacci tree.
   ↑⍬⍴1{
-    ⍵=0:[0 ⍺]  ⍝ f 0 → []
-    ⍵=1:[[⍺ 0 [0 0]] ⍺+1]  ⍝ f 1 → ⍺ [] []
+    ⍵=0?[0 ⍺];  ⍝ f 0 → []
+    ⍵=1?[[⍺ 0 [0 0]] ⍺+1];  ⍝ f 1 → ⍺ [] []
     [l m]←⍺ ∇ ⍵-2  ⍝ left subtree and next value
     [r n]←(m+1)∇ ⍵-1  ⍝ right ..  ..  ..  ..  ..
     [[m 1 [l r]] n]  ⍝ f ⍵+1 → ⍺ [f ⍵-2] [f ⍵-1]
@@ -185,23 +185,23 @@ fibtree ← {  ⍝ Depth-⍵ worst-case fibonacci tree.
 
 sbst ← {  ⍝ Simple Binary Search Trees.
   put←{  ⍝ tree ⍺ with key=value ⍵.
-    ⍺≡0:[[⍵ [0 0]] 0]  ⍝ null: new node.
+    ⍺≡0?[[⍵ [0 0]] 0];  ⍝ null: new node.
     [[[nxt _] subs] [key _]]←[⍺ ⍵]  ⍝ node and search key/val.
-    nxt≡key:[[⍵ subs] 0]  ⍝ match: new value.
+    nxt≡key?[[⍵ subs] 0];  ⍝ match: new value.
     ⍺ ∇ search ⍵  ⍝ natch: try subtrees.
   }  ⍝ :: t ∇ k v → t _
   get←{  ⍝ value for key ⍵ from tree ⍺.
-    ⍺≡0:[⍺ '?']  ⍝ null: key not in tree: no value.
+    ⍺≡0?[⍺ '?'];  ⍝ null: key not in tree: no value.
     [[[nxt val] _] [key _]]←[⍺ ⍵]  ⍝ node and search key.
-    nxt≡key:[⍺ val]  ⍝ match: tree & value.
+    nxt≡key?[⍺ val];  ⍝ match: tree & value.
     ⍺ ∇ search ⍵  ⍝ natch: try subtrees.
   }  ⍝ :: t ∇ k _ → _ v
   rem←{  ⍝ tree ⍺ without key ⍵.
-    ⍺≡0:[⍺ 0]  ⍝ null: key not in tree: no change.
+    ⍺≡0?[⍺ 0];  ⍝ null: key not in tree: no change.
     [[[nxt _] subs] [key _]]←[⍺ ⍵]  ⍝ node and key.
-    ~nxt≡key:⍺ ∇ search ⍵  ⍝ natch: value.
-    0 0≡subs:0 0  ⍝ leaf: done.              X~X → Y
-    0∊subs:[(subs⍳0)⊃⌽subs 0]  ⍝ one null: use other.    /       \
+    ~nxt≡key?⍺ ∇ search ⍵;  ⍝ natch: value.
+    0 0≡subs?0 0;  ⍝ leaf: done.              X~X → Y
+    0∊subs?[(subs⍳0)⊃⌽subs 0];  ⍝ one null: use other.    /       \
     (rrot ⍺)∇ ⍵  ⍝ remove from rgt-rotn:  Y         X~X
   }  ⍝ :: t ∇ k _ → t _
                          ⍝    B   →   A
@@ -226,41 +226,41 @@ sbst ← {  ⍝ Simple Binary Search Trees.
     vine cmp/ 1↓cmps,2×rem
   }  ⍝ :: ∇ t → t
   cmp←{  ⍝ compress of alternate vine sections.
-    ⍺=0:⍵  ⍝ far enough: terminal leaf.
+    ⍺=0?⍵;  ⍝ far enough: terminal leaf.
     [inf [lft rgt]]←⍵  ⍝ parts of node.
     lev←(⍺-1)∇ lft  ⍝ leftmost vine leaf.
-    2|⍺:[inf [lev rgt]]  ⍝ copying of alternate vine sections.
+    2|⍺?[inf [lev rgt]];  ⍝ copying of alternate vine sections.
     rrot [inf [lev rgt]]  ⍝ rotation of alternate vine sections.
   }  ⍝ :: n ∇ v → t
   list←{                                     ⍝ list (0-vine) from tree ⍵.         /
-    0≡⍵:⍺                                    ⍝ null: accumlated vine.    /       C
+    0≡⍵?⍺;                                    ⍝ null: accumlated vine.    /       C
     [inf [lft rgt]]←⍵                        ⍝ node info & subtrees.    B   →   /
     [lev s]←⍺ ∇ lft                          ⍝ left vine & size,       / \     B
     [[inf [lev 0]] s+1]∇ rgt                 ⍝ ++ right vine.         A   C   /
   }                                          ⍝ :: v ∇ t → v s                A
   op←⍶  ⍝ operand label.
-  '∪'≡op:↑ ⍺ put ⍵
-  '⍎'≡op:↑⌽ ⍵ get [⍺ 0]
-  '~'≡op:↑ ⍺ rem [⍵ 0]
-  '⍕'≡op:bst_fmt ⍵  ⍝ formatted tree.
-  '∊'≡op:bst_vec ⍵  ⍝ vector of key=value pairs.
-  '?'≡op:4↑ 0x bst_chk ⍵  ⍝ tree stats and integrity check.
-  '='≡op:bal ⍵  ⍝ balanced tree ⍵.
+  '∪'≡op?↑ ⍺ put ⍵;
+  '⍎'≡op?↑⌽ ⍵ get [⍺ 0];
+  '~'≡op?↑ ⍺ rem [⍵ 0];
+  '⍕'≡op?bst_fmt ⍵;  ⍝ formatted tree.
+  '∊'≡op?bst_vec ⍵;  ⍝ vector of key=value pairs.
+  '?'≡op?4↑ 0x bst_chk ⍵;  ⍝ tree stats and integrity check.
+  '='≡op?bal ⍵  ⍝ balanced tree ⍵.
 }
 
 ⍝ From http://dfns.dyalog.com/c_redblack.htm
   
 redblack ← {  ⍝ Red-black trees.
   ins←{  ⍝ tree ⍺ with key=val ⍵.        [ins]
-    ⍺≡0:base [⍵ 1 [0 0]]  ⍝ null: new <red> node and path.
+    ⍺≡0?base [⍵ 1 [0 0]];  ⍝ null: new <red> node and path.
     [[[nxt _] red subs] [key _]]←[⍺ ⍵]  ⍝ parts of node.
-    nxt≡key:done [⍵ red subs]  ⍝ match: new value, long path.
+    nxt≡key?done [⍵ red subs];  ⍝ match: new value, long path.
     [node path]←⍺ ∇ search ⍵  ⍝ natch: search subtrees.
-    2≠⍴path:[node path]  ⍝ not grandparent: continue.
+    2≠⍴path?[node path];  ⍝ not grandparent: continue.
     [p c]←path  ⍝ parent and child sides.
-    ~ node isred p:[node path]  ⍝ parent black [insB]: no change.
-    node isred -p:node insRR p  ⍝ uncle red [insRR]:
-    p=c:node insRBo p  ⍝ C is P's outer child [insRBo]:
+    ~ node isred p?[node path];  ⍝ parent black [insB]: no change.
+    node isred -p?node insRR p;  ⍝ uncle red [insRR]:
+    p=c?node insRBo p;  ⍝ C is P's outer child [insRBo]:
     (node rot⍄p sub p)insRBo p  ⍝ C is P's inner child [insRBi]:
   }  ⍝ t p ← t ∇ k v
   insRR←{  ⍝ red uncle.                    [insRR]
@@ -274,39 +274,39 @@ redblack ← {  ⍝ Red-black trees.
     done flip p  ⍝ <P> → [P]
   }  ⍝ :: t ∇ p → t p
   get←{  ⍝ value for key ⍵ from tree ⍺.
-    ⍺≡0:  ⍝ key not in tree: no value.
+    ⍺≡0?;  ⍝ key not in tree: no value.
     [[nxt val] _ subs]←⍺  ⍝ next key, value and subtrees.
-    nxt≡⍵:val  ⍝ match: value from tree.
+    nxt≡⍵?val;  ⍝ match: value from tree.
     (>/⍋⊃[⍵ nxt] ⊃ subs)∇ ⍵
   }  ⍝ v ← t ∇ k
   rem←{  ⍝ remove key ⍵ from tree ⍺.
-    ⍺≡0:done0  ⍝ null: key not in tree.
+    ⍺≡0?done0;  ⍝ null: key not in tree.
     [[nxt _] red [lft rgt]]←⍺  ⍝ node key and subtrees.
-    ~nxt≡↑⍵:bal ⍺ ∇ search ⍵
-    0≡lft:bal rgt rep red  ⍝ no left subtree: replace with right.
-    0≡rgt:bal lft rep red  ⍝ no right subtree: replace with left.
+    ~nxt≡↑⍵?bal ⍺ ∇ search ⍵;
+    0≡lft?bal rgt rep red;  ⍝ no left subtree: replace with right.
+    0≡rgt?bal lft rep red;  ⍝ no right subtree: replace with left.
     kv←left rgt  ⍝ two subtrees: right-successor node.
     [sub path]←rgt ∇ kv  ⍝ right subtree with successor removed.
     bal [[kv red [lft sub]] 1,path]  ⍝ replaced with successor's key=val.
   }  ⍝ :: t ∇ k _ → t p
   left←{  ⍝ left-most key=val in subtree ⍵.
     [kv _ [lft _]]←⍵  ⍝ key=val and left subtree.
-    0≡lft:kv  ⍝ no left node: successor key.
+    0≡lft?kv;  ⍝ no left node: successor key.
     ∇ lft  ⍝ examine left subtree.
   }  ⍝ :: ∇ t → kv
   rep←{  ⍝ repaint deleted node's child. [rep]
-    ⍵:done ⍺  ⍝ red X: [C]                    [repR]
-    ⍺≡0:dblk0  ⍝ child null: [[∘]]             [repBB]
+    ⍵?done ⍺;  ⍝ red X: [C]                    [repR]
+    ⍺≡0?dblk0;  ⍝ child null: [[∘]]             [repBB]
     [inf red subs]←⍺  ⍝ child non-null.
-    red:done [inf 0 subs]  ⍝ child red: <C> →  [C]         [repBR]
+    red?done [inf 0 subs];  ⍝ child red: <C> →  [C]         [repBR]
     dblk ⍺  ⍝ child blk: [C] → [[C]]        [repBB]
   }  ⍝ :: t ∇ r → t p
   bal←{  ⍝ double-black balancing.       [bal]
     [sub path]←⍵  ⍝ subtree and path to new child.
-    2≠⍴path:⍵  ⍝ not parent: continue.
+    2≠⍴path?⍵;  ⍝ not parent: continue.
     [dir ddblk]←path×¯1 1  ⍝ direction and 0 => double-black.
-    ddblk≠0:⍵  ⍝ not double black: continue.
-    sub isred dir:sub balR dir  ⍝ red sibling: [balR]
+    ddblk≠0?⍵;  ⍝ not double black: continue.
+    sub isred dir?sub balR dir;  ⍝ red sibling: [balR]
     sub balB dir  ⍝ blk sibling: [balB]
   }  ⍝ :: ∇ t p → t p
   balR←{  ⍝ sibling red                   [balR]
@@ -321,14 +321,14 @@ redblack ← {  ⍝ Red-black trees.
   }  ⍝ :: t ∇ r → t p
   balB←{  ⍝ sibling black                 [balB]
     [near far]←⍺⍃isred¨⍵×1,¨¯1 1  ⍝ nephew colours.
-    near⍱far:⍺ balBbb ⍵  ⍝ both nephews black: [balBbb]
-    far:⍺ balB_r ⍵  ⍝ far nephew red: [balB_r]
+    near⍱far?⍺ balBbb ⍵;  ⍝ both nephews black: [balBbb]
+    far?⍺ balB_r ⍵;  ⍝ far nephew red: [balB_r]
     ⍺ balBrb ⍵  ⍝ far nephew black: [balBrb]
   }  ⍝ :: t ∇ r → t p
   balBbb←{  ⍝ both nephews black            [balBbb]
     pred←⍺ isred ⍬  ⍝ parent colour.
     p_0←⍺ flip sub ⍵  ⍝ [S] → <S>
-    pred:done flip p_0  ⍝ <P> → [P]
+    pred?done flip p_0;  ⍝ <P> → [P]
     dblk p_0  ⍝ [P] → [[P]]
   }  ⍝ :: t ∇ r → t p
   balB_r←{  ⍝ far nephew red.               [balB_r]
@@ -347,18 +347,18 @@ redblack ← {  ⍝ Red-black trees.
     p_2 balB_r ⍵  ⍝ [balB_r]
   }  ⍝ :: t ∇ r → t p
   root←{  ⍝ root:
-    0≡↑⍵:0
+    0≡↑⍵?0;
     [[inf _ subs] _]←⍵  ⍝ tree and path.
     [inf 0 subs]  ⍝ root: black - rule [I].
   }  ⍝ t ← ∇ t p
   fmt←{  ⍝ formatted tree ⍵.
-    ⍵≡0:⊃,↓"[∘]"  ⍝ null tree: [∘].
+    ⍵≡0?⊃,↓"[∘]";  ⍝ null tree: [∘].
     [[key val] red subs]←⍵  ⍝ node info.
     [l r]←red⊃"[]" "<>"
     (⊃,/⍕¨[l key '=' val r]) tree_hang ∇¨subs
   }  ⍝ :: ∇ t → [-;]
   chk←{  ⍝ tree statistics.
-    0=≡⍵:[0≡⍵ 0x 0x 0x ⍬ 1x 1x]  ⍝ null: ok size dep ht range blks isblk.
+    0=≡⍵?[0≡⍵ 0x 0x 0x ⍬ 1x 1x];  ⍝ null: ok size dep ht range blks isblk.
     [[key _] red subs]←⍵  ⍝ parts of node.
     blk←~red  ⍝ black node.
     stats←(⍺+1x)∇¨subs  ⍝ subtree stats.
@@ -372,7 +372,7 @@ redblack ← {  ⍝ Red-black trees.
     blks←blk+⌈/bs  ⍝ black count increment.
     [ht sz]←1x+(⌈/hs),+/ss  ⍝ tree height and size.
     dp←⍺++/ds  ⍝ total depths.
-    ⍺>0:[ok sz dp ht kr blks blk]  ⍝ subtree stats.
+    ⍺>0?[ok sz dp ht kr blks blk];  ⍝ subtree stats.
     [ok sz ⌊0.5+dp÷sz ht]  ⍝ root: ok size mean_depth height.
   }  ⍝ ok size tot_dep ht rng blks blk ← ∇ t
   search←{  ⍝ search subtree ⍺ for key ⊃⍵.
@@ -398,7 +398,7 @@ redblack ← {  ⍝ Red-black trees.
     }
   isred←{  ⍝ colour for subtree ⍺, path ⍵.
     [inf col [lft rgt]]←⍺  ⍝ (possibly null) node colour and subs.
-    ⍵≡⍬:col  ⍝ colour of (possibly null) node.
+    ⍵≡⍬?col;  ⍝ colour of (possibly null) node.
     (↑⌽ ↑⍵ wise [lft rgt])∇ 1↓⍵
   }  ⍝ :: t ∇ p → red
   wise←{(2×⍺)↑3⍴⍵}  ⍝ parameterise direction.
@@ -407,12 +407,12 @@ redblack ← {  ⍝ Red-black trees.
   base←{[⍺ ⍵]}⍄⍬  ⍝ new child: node with null path.
   dblk←{[⍺ ⍵]}⍄[0]  ⍝ double black node.
   op←⍶  ⍝ operand label.
-  '∪'≡op:root ⍺ ins ⍵  ⍝ insert/replace value in tree.
-  '~'≡op:root ⍺ rem [⍵ 0]  ⍝ remove key=value from tree.
-  '⍎'≡op:⍵ get ⍺  ⍝ search for value for key.
-  '⍕'≡op:fmt ⍵  ⍝ formatted tree.
-  '∊'≡op:tree_vec ⍵  ⍝ vector of key=value pairs.
-  '?'≡op:4↑ 0x chk ⍵  ⍝ tree stats: ok size mean_depth height.
+  '∪'≡op?root ⍺ ins ⍵;  ⍝ insert/replace value in tree.
+  '~'≡op?root ⍺ rem [⍵ 0];  ⍝ remove key=value from tree.
+  '⍎'≡op?⍵ get ⍺;  ⍝ search for value for key.
+  '⍕'≡op?fmt ⍵;  ⍝ formatted tree.
+  '∊'≡op?tree_vec ⍵;  ⍝ vector of key=value pairs.
+  '?'≡op?4↑ 0x chk ⍵  ⍝ tree stats: ok size mean_depth height.
 }
   
 ⍝ From http://dfns.dyalog.com/c_splay.htm
@@ -420,17 +420,17 @@ redblack ← {  ⍝ Red-black trees.
 splay ← {  ⍝ Splay trees.
   wise←{(2×⍶)↑3⍴⍵}  ⍝ parameterise direction.
   put←{  ⍝ tree ⍺ with key=value ⍵.
-    ⍺≡0:[⍵ [0 0]]  ⍝ null: new leaf.
+    ⍺≡0?[⍵ [0 0]];  ⍝ null: new leaf.
     [[[nxt _] subs] [key _]]←[⍺ ⍵]  ⍝ node info and subtrees.
-    nxt≡key:[⍵ subs]  ⍝ match: new value.
+    nxt≡key?[⍵ subs];  ⍝ match: new value.
     ⍺ ∇ search ⍵  ⍝ natch: search subtrees.
   }  ⍝ :: t ∇ k v → t
   rem←{  ⍝ tree ⍺ without key ⍵.
-    ⍺≡0:0  ⍝ null: key not in tree: no change.
+    ⍺≡0?0;  ⍝ null: key not in tree: no change.
     [[[nxt _] subs] [key _]]←[⍺ ⍵]  ⍝ node and search key.
-    ~nxt≡key:⍺ ∇ search ⍵  ⍝ natch: remove from subtree.
-    0 0≡subs:0  ⍝ leaf: replace with null.
-    0∊subs:(subs⍳0)⊃⌽subs  ⍝ one null: use the other.
+    ~nxt≡key?⍺ ∇ search ⍵;  ⍝ natch: remove from subtree.
+    0 0≡subs?0;  ⍝ leaf: replace with null.
+    0∊subs?(subs⍳0)⊃⌽subs;  ⍝ one null: use the other.
     (⍺ rot 1)∇ ⍵  ⍝ neither: remove from rotated tree.
   }  ⍝ :: t ∇ k → t
   search←{  ⍝ search subtree ⍺ for key ⊃⍵.
@@ -441,9 +441,9 @@ splay ← {  ⍝ Splay trees.
     [inf (dir wise [lft sub rgt])]  ⍝ new node.
   }  ⍝ :: t (t ∇ k _ → t) ⍢ k _ → t
   get←{  ⍝ value for key ⍵ from tree ⍺.
-    ⍺≡0:0 0 0  ⍝ null: no value.
+    ⍺≡0?0 0 0;  ⍝ null: no value.
     [[key val] [lft rgt]]←⍺  ⍝ parts of node.
-    key≡⍵:[val ⍺ ⍬]  ⍝ match: value tree path.
+    key≡⍵?[val ⍺ ⍬];  ⍝ match: value tree path.
     dir←1-2×>/⍋⊃[key ⍵]
     [_ nxt]←dir wise [lft rgt]  ⍝ next subtree to search.
     [rslt sub path]←nxt ∇ ⍵  ⍝ value, subtree and path to value.
@@ -453,9 +453,9 @@ splay ← {  ⍝ Splay trees.
     [rslt tree ∆path]  ⍝ value, tree and path to value.
   }  ⍝ :: t ∇ k → v t p
   bal←{  ⍝ improve balance of tree.
-    2≠⍴⍵:⍺  ⍝ not grandchild: continue.
+    2≠⍴⍵?⍺;  ⍝ not grandchild: continue.
     [pos neg]←1 ¯1×↑⍵
-    =/⍵:(⍺ rot neg)rot neg  ⍝ same dirns: double ¯⍵-rotation.
+    =/⍵?(⍺ rot neg)rot neg;  ⍝ same dirns: double ¯⍵-rotation.
     [C [BpA s]]←(neg wise)\⍺  ⍝ diff dirns:
     ∆C←(neg wise)\[C [(BpA rot pos) s]]
     ∆C rot neg  ⍝ ¯⍵-⍵-rotation.       (see notes)
@@ -469,33 +469,33 @@ splay ← {  ⍝ Splay trees.
   }  ⍝ :: t ∇ r → t
   lift←{  ⍝ lift child of root.
     [val root path]←⍵  ⍝ val and revised tree.
-    0∊path:  ⍝ no value: quit.
-    1≠⍴path:[val root]  ⍝ val not child of root: done.
+    0∊path?;  ⍝ no value: quit.
+    1≠⍴path?[val root];  ⍝ val not child of root: done.
     [val (root rot -↑path)]
   }  ⍝ :: ∇ v t p → v t
   dep←{  ⍝ depth of key ⍵ in tree ⍺.
-    ⍺≡0:0x  ⍝ key not found: failure.
+    ⍺≡0?0x;  ⍝ key not found: failure.
     [[key val] subs]←⍺  ⍝ parts of tree.
-    key≡⍵:1x  ⍝ key found: at depth 1.
+    key≡⍵?1x;  ⍝ key found: at depth 1.
     dir←1-2×>/⍋⊃[key ⍵]
     [_ sub]←dir wise subs  ⍝ next subtree to search.
     {⍵+×⍵} sub ∇ ⍵  ⍝ incremental depth.
   }  ⍝ :: t ∇ k → d
   op←⍶  ⍝ operand label.
-  '∪'≡op:⍺ put ⍵  ⍝ insert/replace value in tree.
-  '⍎'≡op:lift ⍵ get ⍺  ⍝ search for value for key.
-  '~'≡op:⍺ rem [⍵ 0]  ⍝ remove key=value from tree.
-  '?'≡op:4↑ 0x bst_chk ⍵  ⍝ tree stats: ok size depth height.
-  '⍕'≡op:bst_fmt ⍵  ⍝ formatted tree.
-  '∊'≡op:bst_vec ⍵  ⍝ list of key=value pairs.
-  '≡'≡op:⍵ dep ⍺  ⍝ depth of key ⍺ in tree ⍵.
+  '∪'≡op?⍺ put ⍵;  ⍝ insert/replace value in tree.
+  '⍎'≡op?lift ⍵ get ⍺;  ⍝ search for value for key.
+  '~'≡op?⍺ rem [⍵ 0];  ⍝ remove key=value from tree.
+  '?'≡op?4↑ 0x bst_chk ⍵;  ⍝ tree stats: ok size depth height.
+  '⍕'≡op?bst_fmt ⍵;  ⍝ formatted tree.
+  '∊'≡op?bst_vec ⍵;  ⍝ list of key=value pairs.
+  '≡'≡op?⍵ dep ⍺  ⍝ depth of key ⍺ in tree ⍵.
 }
   
 ⍝ From http://dfns.dyalog.com/c_tfmt.htm
 
 tfmt ← {  ⍝ Char matrix from tree.
   ⍺←""  ⍝ default: no indentation.
-  1=≡,⍵:⊃,↓⍺,⍵
+  1=≡,⍵?⊃,↓⍺,⍵;
   node←⍺,↑⍵
   subs←(⍺,4↑'·')⍃∇¨1↓⍵  ⍝ subtrees.
   ⊃(⊂node),,/↓¨subs
@@ -505,7 +505,7 @@ tfmt ← {  ⍝ Char matrix from tree.
 
 tnest ← {  ⍝ Array from TreeView style tree.
   [dvec ivec]←⍵  ⍝ depth and items vectors.
-  1=≢dvec:↑ivec
+  1=≢dvec?↑ivec;
   node←1↑ivec  ⍝ tree: node value.
   [dsub isub]←(1=dvec)⍃⊂¨⍵  ⍝ sub treeviews.
   node,∇¨↓⍉⊃[dsub-1 isub]
@@ -527,7 +527,7 @@ ravt ← {                                     ⍝ Generic depth-first tree trav
 
 tview ← {  ⍝ TreeView style tree from nested array.
   ⍺←0x  ⍝ default depth 0.
-  1=≡,⍵:⍺,⊂,⊂⍵  ⍝ atom: leaf node depth and value.
+  1=≡,⍵?⍺,⊂,⊂⍵;  ⍝ atom: leaf node depth and value.
   node←⍺,⊂1↑⍵  ⍝ tree:      node depth and value.
   subs←(⍺+1x)∇¨1↓⍵  ⍝ sub-trees.
   ,⌿node⍪⊃subs

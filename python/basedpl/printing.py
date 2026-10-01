@@ -29,7 +29,7 @@ def _literal(a):
         if all(isinstance(o, str) for o in raw['data']): return repr(''.join(raw['data']))
         if all(isinstance(o, (int, float, complex, tuple)) for o in raw['data']):
             return '[' + ', '.join(_atom(o) for o in raw['data']) + ']'
-    return f'bpl({dumps(repr(a), ensure_ascii=False)})'
+    return f'bpl({dumps(a.literal(), ensure_ascii=False)})'
 
 class _Printer:
     def __init__(self): self.budget = repeat(True, 1000)
@@ -64,7 +64,7 @@ class _Printer:
                 op, p = _infix[middle[0]]
                 return f'{r(a, dyad, p+1)} {op} {r(c, dyad, p+1)}', p
             return f'fork({r(a, dyad)}, {r(b, True)}, {r(c, dyad)})', 100
-        if kind in ('¨', '⍨', '⊗', '⌸', '∂') and isinstance(a, _Function):
+        if kind in _MONADIC.values() and isinstance(a, _Function):
             method = _methods[kind]
             valence = dyad if kind == '¨' else kind != '∂'
             return f'{r(a, valence, 100)}.{method}', 100
@@ -84,7 +84,7 @@ class _Printer:
             if raw.get('shape') == [1] and isinstance(raw['data'][0], _Function): return f'{r(a, dyad, 100)}.history({r(raw["data"][0], True)})', 100
             return f'{r(a, dyad, 41)} ** {r(b)}', 40
         valences = {'⍤': (dyad, dyad), '∘': (False, dyad), '⍥': (dyad, False), '⍃': (False, True), '⍄': (True, False),
-                    '⌾': (dyad, False), '⇄': (dyad, dyad), '⊘': (False, True), '@': (dyad, False), '⌺': (True, False)}
+                    '⌾': (dyad, False), '⇄': (dyad, dyad), '⊘': (False, True), '@': (dyad, False), '⌺': (True, False), '⍚': (dyad, False)}
         if kind in valences and af:
             av, bv = valences[kind]
             return f'{r(a, av, 100)}.{_methods[kind]}({r(b, bv)})', 100

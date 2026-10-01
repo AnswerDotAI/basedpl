@@ -26,6 +26,11 @@ pre.bpl span.op,
   color: #8B3FA0;
 }
 
+pre.bpl span.ex,
+.bpl code span.ex {
+  color: #127A6E;
+}
+
 pre.bpl span.va,
 .bpl code span.va {
   color: #8f5902;

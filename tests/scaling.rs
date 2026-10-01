@@ -52,7 +52,7 @@ struct Cost {
 /// A session whose arguments have `n` items.
 fn session(n: usize) -> Session {
     let mut session = Session::new();
-    let setup = session.eval(&format!("v←?{n}⍴0 ⋄ w←?{n}⍴0 ⋄ iv←⍳{n}ₓ ⋄ b←0=3|iv ⋄ i←?{n}⍴{n}ₓ ⋄ m←{} 2⍴v ⋄ q←iv÷7", n / 2));
+    let setup = session.eval(&format!("v←¿{n}⍴0 ⋄ w←¿{n}⍴0 ⋄ iv←⍳{n}ₓ ⋄ b←0=3|iv ⋄ i←¿{n}⍴{n}ₓ ⋄ m←{} 2⍴v ⋄ q←iv÷7", n / 2));
     assert!(setup.error.is_none(), "{:?}", setup.error);
     session
 }

@@ -1,7 +1,7 @@
 use basedpl::{reference, EvalOptions};
 use serde_json::{json, Value};
 
-const SOURCES: [(&str, &str); 9] = [
+const SOURCES: &[(&str, &str)] = &[
     ("core", include_str!("reference/core.bpl")),
     ("graphics", include_str!("reference/graphics.bpl")),
     ("ngn", include_str!("reference/ngn.bpl")),
@@ -11,6 +11,7 @@ const SOURCES: [(&str, &str); 9] = [
     ("regex", include_str!("reference/regex.bpl")),
     ("distributions", include_str!("reference/distributions.bpl")),
     ("lib", include_str!("reference/lib.bpl")),
+    ("bqn", include_str!("reference/bqn.bpl")),
 ];
 
 fn header(line: &str) -> Option<(&str, &str)> {
@@ -159,7 +160,7 @@ fn enabled_reference_cases() {
     let mut failures = Vec::new();
     let selected = std::env::var("BASEDPL_CASE").ok();
     let file = std::env::var("BASEDPL_SOURCE").ok();
-    for (name, source) in SOURCES {
+    for &(name, source) in SOURCES {
         if file.as_deref().is_some_and(|f| f != name) { continue; }
         for case in cases(source) {
             let id = case["id"].as_str().unwrap();

@@ -1,6 +1,6 @@
 # `/` — Reduce
 
-`f/Y` reduces the last axis, right-associated. Empty axes use `f`'s identity.
+`f/Y` puts `f` between the items along the last axis, and evaluates that expression as usual, from the right: `-/1 2 3` is `1-2-3`, which is 2. Empty axes use `f`'s identity.
 
 ```bpl
 +/1 2 3            ⍝ 6

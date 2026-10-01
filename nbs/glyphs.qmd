@@ -28,7 +28,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⍭` [prime](glyphs/prime.qmd) | Alt-Backslash ~ | prime | prime-mode | As J's `p:`, with the same codes |
 | `⨸` [factor](glyphs/factor.qmd) | Alt-o u | factors | factor-spec | As J's `q:`, with `∞` and `¯∞` for J's `_` and `__` |
 | `⌻` [polynomial](glyphs/polynomial.qmd) | Alt-q t | polynomial | polyval | As J's `p.`: coefficients are constant-first |
-| `?` [question](glyphs/question.qmd) | | roll | deal | |
+| `¿` [inverted-question](glyphs/inverted-question.qmd) | Alt-/ | roll | deal | Dyalog's `?` |
 | `∨` [or](glyphs/or.qmd) | Alt-9 | real-imag | gcd | Monad as J's `+.` |
 | `∧` [and](glyphs/and.qmd) | Alt-0 | polar | lcm | Monad as J's `*.` |
 | `⍲` [nand](glyphs/nand.qmd) | Alt-0 ~ | square | nand | Monad as J's `*:` |
@@ -80,7 +80,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | Glyph | Key | Form | Meaning | Note |
 |---|---|---|---|---|
 | `/` [slash](glyphs/slash.qmd) | | `f/` | Reduce / seeded reduce last | Seed as BQN's `´`: `10 -/1 2 3` is `¯8`. For windows use `↕`. Replicate is `#` |
-| `⌿` [slash-bar](glyphs/slash-bar.qmd) | Alt-/ | `f⌿` | Reduce / seeded reduce first | Seed and windows as `/` |
+| `⌿` [slash-bar](glyphs/slash-bar.qmd) | Alt-Minus / | `f⌿` | Reduce / seeded reduce first | Seed and windows as `/` |
 | `\` [backslash](glyphs/backslash.qmd) | | `f\` | Scan / seeded scan last | Accumulates left to right as BQN's Scan: `-\1 2 3` is `1 ¯1 ¯4`. Expand is `#⁻¹` |
 | `⍀` [backslash-bar](glyphs/backslash-bar.qmd) | Alt-Minus Backslash | `f⍀` | Scan / seeded scan first | Left to right as `\` |
 | `¨` [each](glyphs/each.qmd) | Alt-1 | `f¨` | Each | |
@@ -111,11 +111,11 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `→` [pipe](glyphs/pipe.qmd) | Alt-l | Left-to-right function application |
 | `(…)` [parentheses](glyphs/parentheses.qmd) | | Grouping. With `⋄`, a vector of rows: `(4 ⋄ 4 5)` is `[[4] [4 5]]` |
 | `[…]` [brackets](glyphs/brackets.qmd) | | Vectors and arrays: `[a b c]`, `[a;b c]`, `[1 2 ⋄ 3 4]`. One item makes a one-item vector: `[x]` is `,⊂x` |
-| `{…}` [braces](glyphs/braces.qmd) | | Defined function or operator |
+| `{…}` [braces](glyphs/braces.qmd) | | Defined function or operator. `;` separates its bodies |
 | `⍺` [alpha](glyphs/alpha.qmd), `⍵` [omega](glyphs/omega.qmd) | Alt-a, Alt-w | Left / right argument |
 | `⍶` [alpha-underbar](glyphs/alpha-underbar.qmd), `⍹` [omega-underbar](glyphs/omega-underbar.qmd) | Alt-a _, Alt-w _ | Left / right operand |
 | `∇` [del](glyphs/del.qmd), `⍢` [del-diaeresis](glyphs/del-diaeresis.qmd) | Alt-g, Alt-1 g | Function / operator self-reference |
-| `:` [colon](glyphs/colon.qmd), `::` [error-guard](glyphs/error-guard.qmd) | | Boolean guard / error guard inside dfns |
+| `?` [question](glyphs/question.qmd), `::` [error-guard](glyphs/error-guard.qmd) | | Predicate / error guard inside dfns |
 | `⋄` [diamond](glyphs/diamond.qmd) | Alt-Backtick | Separates statements, rows inside brackets, and rows of a vector inside parentheses |
 | `⍝` [comment](glyphs/comment.qmd) | Alt-c t | Comment |
 | `⎕←` [quad](glyphs/quad.qmd) | Alt-q | Explicit output. Read alone, the next line of input |

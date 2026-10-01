@@ -4,7 +4,7 @@ use crate::{
 };
 
 pub(crate) enum Mapping {
-    Scalar,
+    Single,
     Linear(usize),
     /// The input fills the trailing result axes and repeats as one block.
     Tiled(usize),
@@ -16,7 +16,7 @@ impl Mapping {
     pub fn index(&self, i: usize) -> usize { self.get(i).expect("positional mapping") }
     pub fn get(&self, i: usize) -> Option<usize> {
         Some(match self {
-            Self::Scalar => 0,
+            Self::Single => 0,
             Self::Linear(repeat) => i / repeat,
             Self::Tiled(size) => i % size,
             Self::Positions(positions) => positions[i],
@@ -28,7 +28,7 @@ impl Mapping {
         match (left.keys(laxis), right.keys(raxis)) { (Some(x), Some(y)) if x != y => Ok(Self::Positions(y.positions(x, false)?)), _ => Ok(Self::Linear(1)) }
     }
     fn new(input: &Layout, axes: &[usize], result: &Layout, count: usize) -> Self {
-        if count == 0 { return Self::Scalar; }
+        if count == 0 { return Self::Single; }
         let (shape, output) = (input.shape(), result.shape());
         let strides = crate::primitive::strides(output);
         if axes.iter().enumerate().any(|(a, &b)| input.keys(a).is_some() && input.keys(a) != result.keys(b)) {
@@ -45,7 +45,7 @@ impl Mapping {
             return Self::Keyed(map);
         }
         let size: usize = shape.iter().product();
-        if size == 1 { return Self::Scalar; }
+        if size == 1 { return Self::Single; }
         let mut source = 1;
         let mut map = Vec::new();
         for (&len, &axis) in shape.iter().zip(axes).rev() {

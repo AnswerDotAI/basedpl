@@ -2,7 +2,7 @@ import json, os, signal, threading
 import pytest
 from basedpl import bpl, BplError
 from basedpl._core import _check_reference
-from basedpl.worker import Worker
+from basedpl.worker import Worker, run
 
 def test_worker_bindings_calls_and_echo():
     with Worker() as w:
@@ -32,6 +32,9 @@ def test_worker_bindings_calls_and_echo():
         for value in [float('inf'), float('-inf'), float('nan')]:
             with pytest.raises(ValueError): w.request(dict(bindings=dict(x=dict(shape=[], data=[value], prototype=0))))
         assert w.eval('x', timeout=2)['value'] == a
+    assert run('⎕←1 ⋄ 2') == '1\n2'
+    with pytest.raises(BplError) as e: run('1÷"a"')
+    assert e.value.kind == 'DOMAIN ERROR'
 
 def test_worker_keyed_arrays():
     with Worker() as w:

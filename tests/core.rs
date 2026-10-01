@@ -273,7 +273,7 @@ fn shy_results_and_signal_messages() {
     for (code, output) in [
         ("f←{a←1} ⋄ f 0", vec![]),
         ("(f 0)", vec!["1"]),
-        ("{f ⍵ ⋄ 2}0", vec![]),
+        ("{2 ⋄ f ⍵}0", vec![]),
         ("{11::a←7 ⋄ 1÷⍵}'a'", vec![]),
         ("{f←{a←1} ⋄ (+f+)3}0", vec![]),
         ("{⎕←7}0", vec!["7"]),
@@ -434,7 +434,7 @@ fn binding_error_recovery() {
     equiv_in(&mut s, "x", "10");
     fails_in(&mut s, Limit, &["loop←{1+∇⍵} ⋄ loop 0"]);
     equiv_in(&mut s, "2+2", "4");
-    fails_in(&mut s, Syntax, &["{⍵←1 ⋄ ⍵}2"]);
+    fails_in(&mut s, Syntax, &["⍵←1"]);
 }
 
 #[test]
@@ -488,7 +488,7 @@ fn diagnostic_width_and_call_context() {
     assert_eq!(&e.span.source.text[e.span.range.clone()], "÷");
     assert_eq!(e.calls.iter().map(|s| &s.source.text[s.range.clone()]).collect::<Vec<_>>(), ["bad", "outer"]);
     assert!(e.to_string().contains("called from old.bpl:"));
-    let deep = s.eval("down←{⍵=0:1÷'a' ⋄ 1+down ⍵-1} ⋄ down 100").error.unwrap();
+    let deep = s.eval("down←{⍵=0?1÷'a';1+down ⍵-1} ⋄ down 100").error.unwrap();
     assert_eq!(deep.calls.len(), 101);
     assert_eq!(deep.to_string().matches("called from").count(), 6);
     assert!(deep.to_string().contains("95 more calls"));

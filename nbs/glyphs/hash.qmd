@@ -39,10 +39,10 @@ The counts must use every cell once, unless `Y` has one cell, which every count 
 2#⁻¹1 1 2 2             ⍝ 1 2
 ```
 
-[Under](under.qmd) uses this inverse, so the cells that `N` drops come back as fills. [Selective assignment](assign.qmd) keeps them.
+[Under](under.qmd) and [selective assignment](assign.qmd) both keep the cells that `N` drops.
 
 ```bpl
--⌾(1 0 1#)1 2 3         ⍝ ¯1 0 ¯3
+-⌾(1 0 1#)1 2 3         ⍝ ¯1 2 ¯3
 x←1 2 3
 (1 0 1#x)←0
 x                       ⍝ 0 2 0

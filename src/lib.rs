@@ -15,6 +15,7 @@ mod kernel;
 mod keyed;
 mod number;
 mod number_theory;
+mod pervasive;
 mod plot;
 mod polynomial;
 mod primitive;
@@ -22,7 +23,6 @@ mod protocol;
 #[doc(hidden)]
 pub mod reference;
 mod regex;
-mod pervasive;
 mod search;
 mod selection;
 mod symbols;

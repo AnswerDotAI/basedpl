@@ -11,8 +11,8 @@
 
 adic ← {  ⍝ Bijective base-⍺ numeration.
   b←≢a←,⍺  ⍝ base and alphabet
-  1=⍴⍴⍵:b⊥1+a⍳⍵
-  1=b:⍵#⍺  ⍝ unary: special case
+  1=⍴⍴⍵?b⊥1+a⍳⍵;
+  1=b?⍵#⍺;  ⍝ unary: special case
   n←⌊b⍟1+⍵×b-1  ⍝ number of digits
   z←(¯1+b*n)÷b-1  ⍝ smallest integer with length n
   [(n#b ⊤ ⍵-z)]⌷a
@@ -32,9 +32,9 @@ apportion ← {  ⍝ Huntington-Hill apportionment.
 ⍝ From http://dfns.dyalog.com/c_bsearch.htm
 
 bsearch ← {  ⍝ Binary search: least n in range ⍵ with ⍶ n.
-  ¯1≤-/⍵:1↑⍵+2-+/⍶¨⍵
+  ¯1≤-/⍵?1↑⍵+2-+/⍶¨⍵;
   mid←⌈0.5×+/⍵  ⍝ Mid point:
-  ⍶ mid:∇(1↑⍵),mid
+  ⍶ mid?∇(1↑⍵),mid;
          ∇ mid,1↓⍵  ⍝ 0: search upper half.
 }
 
@@ -42,7 +42,7 @@ bsearch ← {  ⍝ Binary search: least n in range ⍵ with ⍶ n.
 
 cfract ← {  ⍝ Continued fraction approximation of real ⍵.
   ,{
-    ⍵=0:⍬
+    ⍵=0?⍬;
     [n r]←[0 ⍵]⊤⍺  ⍝ next term and remainder.
     n,⍵∇r  ⍝ next term and cf of remainder.
   }/⌊1E¯14+[⍵ 1]÷1∨⍵
@@ -59,7 +59,7 @@ colsum ← {  ⍝ Sum of (default decimal) columns.
 efract ← {  ⍝ Egyptian fractions: Fibonacci-Sylvester algorithm
   ⍬{
     [p q]←⍵÷∨/⍵
-    p=1:⍺,q
+    p=1?⍺,q;
     r←p|q ⋄ s←(q-r)÷p
     (⍺,s+1)∇[p-r q×s+1]
   }[⍺ ⍵]
@@ -67,12 +67,12 @@ efract ← {  ⍝ Egyptian fractions: Fibonacci-Sylvester algorithm
 
 ⍝ From http://dfns.dyalog.com/c_factorial.htm
 
-factorial←{⍺←1 ⋄ ⍵=0:⍺ ⋄ (⍺×⍵)∇⍵-1}  ⍝ Tail recursive factorial.
+factorial←{⍺←1 ⋄ ⍵=0?⍺;(⍺×⍵)∇⍵-1}  ⍝ Tail recursive factorial.
 
 ⍝ From http://dfns.dyalog.com/c_fibonacci.htm
 
 fibonacci ← { ⍺←0 1  ⍝ Tail-recursive Fibonacci.
-  ⍵=0:↑⍺ ⋄ (1↓⍺,+/⍺)∇ ⍵-1
+  ⍵=0?↑⍺;(1↓⍺,+/⍺)∇ ⍵-1
 }
 
 sulFib ← {  ⍝ Sullivan Fibonacci
@@ -89,7 +89,7 @@ factors ← { ⍵{  ⍝ Prime factors of ⍵.
   }¨⍬{  ⍝ remove multiples:
     nxt←↑⍵
     msk←0≠nxt|⍵  ⍝ ... mask of non-multiples.
-    ∧/1↓msk:⍺,⍵  ⍝ all non multiples - finished.
+    ∧/1↓msk?⍺,⍵;  ⍝ all non multiples - finished.
     (⍺,nxt)∇ msk#⍵  ⍝ sieve remainder.
   }⍵{  ⍝ from,
     (0=⍵|⍺)#⍵  ⍝ divisors of ⍵ in:
@@ -98,7 +98,7 @@ factors ← { ⍵{  ⍝ Prime factors of ⍵.
 
 ⍝ From http://dfns.dyalog.com/c_gcd.htm
 
-gcd ← { ⍵=0 : |⍺ ⋄ ⍵∇⍵|⍺ }  ⍝ Greatest common divisor.
+gcd ← { ⍵=0 ? |⍺;⍵∇⍵|⍺ }  ⍝ Greatest common divisor.
 
 lcm ← { ⍺×⍵÷g+0=g←⍺ gcd ⍵ }  ⍝ Least common multiple. The lcm of 0 and 0 is 0.
 
@@ -107,9 +107,9 @@ lcm ← { ⍺×⍵÷g+0=g←⍺ gcd ⍵ }  ⍝ Least common multiple. The lcm of
 k_6174 ← {  ⍝ Kaprekar's operation.
   enco←(4#10)⊤  ⍝ 4-digit encode.
   deco←enco⁻¹  ⍝ and decode.
-  1=⍴∪enco(⍵):"error"  ⍝ all digits the same: no go.
+  1=⍴∪enco(⍵)?"error";  ⍝ all digits the same: no go.
   ⍬{  ⍝ starting with null sequence.
-    ⍵=↑⌽⍺:⍺
+    ⍵=↑⌽⍺?⍺;
     v←{[⍒⍵]⌷⍵}enco ⍵  ⍝ digits in descending order.
     (⍺,⍵)∇(deco v)-deco⌽v  ⍝ smaller to larger difference.
   }⍵  ⍝ :: [#] ∇ # → [#]
@@ -119,8 +119,8 @@ k_6174 ← {  ⍝ Kaprekar's operation.
 
 hex ← {  ⍝ Hexadecimal from decimal.
   ⍺←⊢  ⍝ no width specification.
-  1≠≡,⍵:⍺∇¨⍵  ⍝ simple-array-wise:
-  0∊,⍵-1+⍵:"Too big"
+  1≠≡,⍵?⍺∇¨⍵;  ⍝ simple-array-wise:
+  0∊,⍵-1+⍵?"Too big";
   n←⍬⍴⍺,2*⌈2⍟2⌈16⍟1+⌈/|⍵  ⍝ default width.
   ↓[(n#16 ⊤ ⍵)]⌷"0123456789abcdef"
 }
@@ -129,13 +129,13 @@ hex ← {  ⍝ Hexadecimal from decimal.
 
 dec ← {  ⍝ Decimal from hexadecimal
   ⍺←$f  ⍝ unsigned by default.
-  1<⍴⍴⍵:⍺⍃∇⍤1 ⍵  ⍝ vector-wise:
-  0≡≢⍵:0  ⍝ dec"" → 0.
-  1≠≡,⍵:⍺∇¨⍵  ⍝ simple-array-wise:
+  1<⍴⍴⍵?⍺⍃∇⍤1 ⍵;  ⍝ vector-wise:
+  0≡≢⍵?0;  ⍝ dec"" → 0.
+  1≠≡,⍵?⍺∇¨⍵;  ⍝ simple-array-wise:
   ws←∊⍄(•ucs 9 10 13 32 133 160)
-  ws↑⍵:⍺ ∇ 1↓⍵
-  ws↑⌽⍵:⍺ ∇ ¯1↓⍵
-  ∨/ws ⍵:⍺∇¨(1+ws ⍵)⊆⍵  ⍝ white-space-separated:
+  ws↑⍵?⍺ ∇ 1↓⍵;
+  ws↑⌽⍵?⍺ ∇ ¯1↓⍵;
+  ∨/ws ⍵?⍺∇¨(1+ws ⍵)⊆⍵;  ⍝ white-space-separated:
   v←16|"0123456789abcdef0123456789ABCDEF"⍳⍵
   16⊥v - ⍺ × 8≤↑v × 16*≢v
 }
@@ -161,7 +161,7 @@ nicediv ← {  ⍝ ⍵ similar integers with sum ⍺.
 
 stack ← { ⍉⊃( ⍺ nicediv ⍵)#¨'⎕' }
 
-osc ← { 1=⍵ : 1 ⋄ 2|⍵ : ∇ 1+3×⍵ ⋄ ∇ ⍵÷2 }  ⍝ Oscillate - probably returns 1.
+osc ← { 1=⍵ ? 1;2|⍵ ? ∇ 1+3×⍵;∇ ⍵÷2 }  ⍝ Oscillate - probably returns 1.
 
 ⍝ From http://dfns.dyalog.com/c_range.htm
 
@@ -178,10 +178,10 @@ rational ← {  ⍝ Rational approximation to real ⍵.
 roman ← {  ⍝ Roman numeral arithmetic.
   num←{{⍵+.××0.5+×-/2↕⍵,0}[7|"IVXLCDMivxlcdm"⍳⍵]⌷,⍉1 5×⊗10*⍳4}
   fmt←{~⍄" ",0 1 0⍉(⊂[⍵⊤⍨4⍴10]⌷0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)⌷' '⍪3 4⍴"MCXI DLV "}
-  depth←{⍹≥≡⍵ : ⍶ ⍵ ⋄ ∇¨⍵}
+  depth←{⍹≥≡⍵ ? ⍶ ⍵;∇¨⍵}
   nums←num depth 1  ⍝ arabic from roman.
   fmts←fmt depth 0  ⍝ roman from arabic.
-  ⍺←⍬ ⋄ ⍬≡⍺:fmts ⍶ ⌊nums ⍵
+  ⍺←⍬ ⋄ ⍬≡⍺?fmts ⍶ ⌊nums ⍵;
   fmts(⌊nums ⍺)⍶ ⌊nums ⍵
 }
 
@@ -200,7 +200,7 @@ sieve ← {  ⍝ Sieve of Eratosthenes.
   ⍺←⍬  ⍝ Default no primes yet.
   nxt←1↑⍵  ⍝ Next prime, and
   msk←0≠nxt|⍵  ⍝ ... mask of non-multiples.
-  ∧/1↓msk:⍺,⍵  ⍝ All non multiples - finished.
+  ∧/1↓msk?⍺,⍵;  ⍝ All non multiples - finished.
   (⍺,nxt)∇ msk#⍵  ⍝ Sieve remainder.
 }
 
@@ -244,8 +244,8 @@ xr ← {d←⍉⊃+/×⍵,.-⍺ᵀ ⋄ (2∨.=|d #⍠¯1 d)←2 ⋄ 3⊥dᵀ}  �
 
 alt ← {  ⍝ Alternant.
   [r c]←⍴⍵  ⍝ matrix ⍵
-  0=r:⍹⌿,⍵
-  1≥c:⍶⌿,⍵
+  0=r?⍹⌿,⍵;
+  1≥c?⍶⌿,⍵;
   M←(⍳r)~⍤1⍪⍳r  ⍝ minors
   ⍵.[∞ 0]⍶.⍹∇¨⊂⍠[1 2][M 1↓⍳c]⌷⍵
 }
@@ -255,7 +255,7 @@ bayes ← { ⍺ ×÷+.× ⍵ }  ⍝ Bayes' formula. (implemented as a fork)
 ⍝ From http://dfns.dyalog.com/c_Cholesky.htm
 
 Cholesky ← {  ⍝ decomposition of a Hermitian positive-definite matrix.
-  1≥n←≢⍵:√⍵
+  1≥n←≢⍵?√⍵;
   p←⌈n÷2
   q←⌊n÷2
   X←(p,p)↑⍵⊣Y←(p,-q)↑⍵⊣Z←(-q,q)↑⍵
@@ -268,7 +268,7 @@ Cholesky ← {  ⍝ decomposition of a Hermitian positive-definite matrix.
 
 det ← {  ⍝ Determinant of square matrix.
   ⍺←1  ⍝ product of co-factor coefficients so far
-  0=n←≢⍵:⍺  ⍝ result for 0-by-0
+  0=n←≢⍵?⍺;  ⍝ result for 0-by-0
   [i j]←(⍴⍵)⊤{⍵⍳⌈/⍵}|,⍵
   k←⍳n
   (⍺×⍵.[i j]×¯1*i+j)∇ [k~[i] k~[j]]⌷⍵ - [k~[i] j]⌷⍵ ×⊗ [i k~[j]]⌷⍵ ÷ [i j]⌷⍵
@@ -302,7 +302,7 @@ kcell ← {  ⍝ Relationship between point and k-cell.
   b←,⍠(2=⍴⍴⍺ # 0)⍺
   p←(2⌊⍴⍴⍺ ↓ 1 1,⍴⍵)⍴⍵  ⍝ Points to evaluate.
   d←(,⍶⌿)⍤1 ⍉×-b,.-p
-  ⍶/⍬:⌈/d ⋄ 5⊥d
+  ⍶/⍬?⌈/d;5⊥d
 }
 
 ⍝ From http://dfns.dyalog.com/c_kball.htm
@@ -340,7 +340,7 @@ stdev ← {
 
 NormRand ← {                                 ⍝ Random numbers with a normal distribution
   depth←10*9                                 ⍝ randomness depth - can be larger from v14.0
-  [x y]←⊂⍤¯1 (1+?depth⍴⍨2,⍵)÷depth          ⍝ two random variables within ]0;1]
+  [x y]←⊂⍤¯1 (1+¿depth⍴⍨2,⍵)÷depth          ⍝ two random variables within ]0;1]
   (¯2×⍟x * 0.5)×1○π2×y                       ⍝ Box-Muller distribution
 }
 
@@ -348,28 +348,28 @@ NormRand ← {                                 ⍝ Random numbers with a normal 
 phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
   ⍺←1
   Ø←(1+√5)÷2
-  ""≡0#∊⍵:{
-    1<≡⍵:∇¨⍵
-    '¯'=↑⍵:-∇ 1↓⍵
+  ""≡0#∊⍵?{
+    1<≡⍵?∇¨⍵;
+    '¯'=↑⍵?-∇ 1↓⍵;
     a←Ø⊥•d⍳⍵~"."
     a÷Ø*(≢⍵∪'.')-1+(,⍵)⍳'.'
-  }⍵
-  0≠≡⍵:⍺∇¨⍵
-  ⍵<0:'¯',⍺∇-⍵
+  }⍵;
+  0≠≡⍵?⍺∇¨⍵;
+  ⍵<0?'¯',⍺∇-⍵;
   num←⍵
   ⍺{
-    ⍺=0:⍵
-    ⍵≡⍬:"0"
+    ⍺=0?⍵;
+    ⍵≡⍬?"0";
     fmt←{[⍵]⌷"01"}
     lft←(⌽⍳0⌈1+⌈/⍵)∊⍵
     rgt←(-1+⍳0⌈|⌊/⍵)∊⍵
-    rgt∧.=0:fmt lft
-    lft∧.=0:"0.",fmt rgt
+    rgt∧.=0?fmt lft;
+    lft∧.=0?"0.",fmt rgt;
     (fmt lft),'.',fmt rgt
   }⍬ₓ{
-    num=Ø+.*⍺:⍺
+    num=Ø+.*⍺?⍺;
     ∆←(-⍴⍺)↑1ₓ
-    num=Ø+.*⍺+∆:⍺+∆
+    num=Ø+.*⍺+∆?⍺+∆;
     k←⌊Ø⍟⍵
     (⍺,k)∇ ⍵-Ø*k
   }⍵
@@ -388,9 +388,9 @@ root ← { ⍺←2 ⋄ ⍵*÷⍺ }  ⍝ ⍺'th root, default to sqrt.
 realroots ← {  ⍝ Real roots of quadratic.
   [a b c]←⍵  ⍝ Coefficients.
   d←b²-4×a×c  ⍝ Discriminant.
-  d<0:⍬  ⍝ No roots
-  d=0:-b÷2×a  ⍝ One root
-  d>0:(-b+¯1 1×√d)÷2×a  ⍝ Two roots
+  d<0?⍬;  ⍝ No roots
+  d=0?-b÷2×a;  ⍝ One root
+  d>0?(-b+¯1 1×√d)÷2×a  ⍝ Two roots
 }
 
 ⍝ From http://dfns.dyalog.com/s_roots.htm
@@ -426,8 +426,8 @@ polar ← {  ⍝ Polar from/to cartesian coordinates.
   }
   lam←{⊃[⍺ ⍵]}
   ⍺←1  ⍝ default polar from cartesian.
-  ⍺=+1:pol_car ⍵  ⍝ polar from cartesian.
-  ⍺=-1:car_pol ⍵  ⍝ cartesian from polar.
+  ⍺=+1?pol_car ⍵;  ⍝ polar from cartesian.
+  ⍺=-1?car_pol ⍵  ⍝ cartesian from polar.
 }
 
 ⍝ From http://dfns.dyalog.com/s_polar.htm

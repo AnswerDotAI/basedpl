@@ -11,8 +11,8 @@
 
 just ← {  ⍝ Justify text array.
   ⍺←¯1  ⍝ left justify by default.
-  ⍺=¯1:(+/∧\' '=⍵)⌽⍵              ⍝ │left        │
-  ⍺=1:(-+/∧\' '=⌽⍵)⌽⍵              ⍝ │       right│
+  ⍺=¯1?(+/∧\' '=⍵)⌽⍵;              ⍝ │left        │
+  ⍺=1?(-+/∧\' '=⌽⍵)⌽⍵;              ⍝ │       right│
   (⌈0.5× +/∧\' '=⍵ - +/∧\' '=⌽⍵)⌽⍵  ⍝ │   centre   │
 }
 
@@ -54,7 +54,7 @@ timestamp ← {  ⍝ Time-stamped message.
 ⍝ From http://dfns.dyalog.com/c_htx.htm
 
 htx ← {  ⍝ Extract html segments.
-  1≠≡,⍵:⍺∇{⍺,' ',⍵}/⍵
+  1≠≡,⍵?⍺∇{⍺,' ',⍵}/⍵;
   xtags←{seg sep cmb vec ⍵}  ⍝ extract tags, where:
   seg←{(0=2|⍳⍴⍵)#⍵}
   sep←{(fm⍷⍵ ∨ to⍷⍵)⊂⍵}  ⍝ html separated at tags.
@@ -63,7 +63,7 @@ htx ← {  ⍝ Extract html segments.
   rlt←{(1++/∧\'>'≠⍵)↓⍵}  ⍝ remove leading tag.
   att←{⍵,to,'>'}  ⍝ append trailing tag.
   [fm to]←'<' "</",¨⊂⍺~"<>"  ⍝ opening and closing html tags.
-  '<'=↑⍺:att¨xtags,⍵
+  '<'=↑⍺?att¨xtags,⍵;
          rlt¨xtags,⍵  ⍝ untagged segments.
 }
 
@@ -90,7 +90,7 @@ vtol ← {  ⍝ Nested vector to lines.
 
 wrap ← {  ⍝ Wrap word vector at ⍺ cols.
   ⍺←102  ⍝ default 102-wrap.
-  ⍺≥⍴⍵:⍵  ⍝ short enough vector: finished.
+  ⍺≥⍴⍵?⍵;  ⍝ short enough vector: finished.
   gaps←⍸' '=(⍺+1)↑⍵
   take←¯1↑⍺,(⍺≥gaps)#gaps  ⍝ chars to take.
   drop←take+' '=take⊃⍵
@@ -114,7 +114,7 @@ wrap_2 ← { ⍺←102  ⍝ ⍺-wrap (Bob Smith).
 ⍝ From http://dfns.dyalog.com/s_wrap.htm
 
 wrap_3 ← { ⍺←102  ⍝ ⍺-wrap (John Daintree).
-  ⍺≥⍴,⍵:,⊂⍵  ⍝ out if short enough
+  ⍺≥⍴,⍵?,⊂⍵;  ⍝ out if short enough
   sze←(⍵∊"-?., ")#1+⍳⍴⍵  ⍝ length of each choice
   len←↑⌽(⍺≥sze)#sze
   len←↑(len∊sze)⌽[⍺ len]
@@ -182,7 +182,7 @@ wrapnote ← {                                 ⍝ Wrap text paragraphs in note 
   segs←1,1↓¯1⌽0 1⍷text                       ⍝ partition at start of flowtext.
 
   vtrim nl join ,/(segs⊂text){               ⍝ re-collect lines of notes.
-    0=↑⍺:⍵                                   ⍝ no flowtext here: continue.
+    0=↑⍺?⍵;                                   ⍝ no flowtext here: continue.
     flow←⍺#⍵ ⋄ rest←(~⍺)#⍵  ⍝ separate flowtext from the rest.
     vex←fold list flow                       ⍝ refold paragraph.
     wrp←to wrap ' 'join vex                  ⍝ re-re-wrap text.
@@ -195,16 +195,16 @@ wrapnote ← {                                 ⍝ Wrap text paragraphs in note 
 
 xtabs ← {  ⍝ Expand/compress HT chars.
   ⍺←8  ⍝ default: 8-col tab stops.
-  ⍺=0:⍵  ⍝ ⍺=0: no-op.
+  ⍺=0?⍵;  ⍝ ⍺=0: no-op.
   chs←~⍵∊•ucs 10 13 133
-  ⍺>0:⍺{  ⍝ +ive ⍺: expand tabs → blanks.
+  ⍺>0?⍺{  ⍝ +ive ⍺: expand tabs → blanks.
     [tabs nabs]←1 0=⊂⍵∊•ucs[9]
     sync←tabs≥chs  ⍝ sync at tab and end of line.
     segs←¯1+{⍵-¯1,¯1↓⍵}⍸sync
     pads←0⌈⍺-⍺|(sync#tabs)#segs  ⍝ padding lengths.
     (nabs+tabs#⁻¹pads)#nabs#⁻¹nabs#⍵  ⍝ padded char vector.
-  }⍵
-  ⍺<0:(-⍺){  ⍝ -ive ⍺: squeeze blanks → tabs.
+  }⍵;
+  ⍺<0?(-⍺){  ⍝ -ive ⍺: squeeze blanks → tabs.
     [bks nks]←1 0=⊂⍵=' '  ⍝ blanks and non-blanks
     runs←{⍵{⍵-⌈\⍵×~⍺}+\⍵}  ⍝ runs of adjacent 1s.
     tabs←bks∧chs∧0=⍺|runs chs  ⍝ tab positions.
@@ -226,55 +226,55 @@ tabTrips ← {∧/(⍳2+⍴⍵)tabTrip¨⊂⍵}
 ⍝ From http://dfns.dyalog.com/c_dlb.htm
 
 dlb ← {  ⍝ Drop Leading Blanks.
-  ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵  ⍝ array
-  1≥⍴⍴⍵:(+/∧\⍵∊⍺)↓⍵  ⍝ vector
+  ⍺←" " ⋄ 1<≡⍵?⊂⍺ ∇¨ ⍵;  ⍝ nested?
+  2<⍴⍴⍵?(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵;  ⍝ array
+  1≥⍴⍴⍵?(+/∧\⍵∊⍺)↓⍵;  ⍝ vector
   (∨\∨⌿~⍵∊⍺)#⍠¯1 ⍵  ⍝ matrix
 }
 
 ⍝ From http://dfns.dyalog.com/c_dtb.htm
 
 dtb ← {  ⍝ Drop Trailing Blanks.
-  ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵  ⍝ array
-  1≥⍴⍴⍵:(-+/∧\⌽⍵∊⍺)↓⍵  ⍝ vector
+  ⍺←" " ⋄ 1<≡⍵?⊂⍺ ∇¨ ⍵;  ⍝ nested?
+  2<⍴⍴⍵?(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵;  ⍝ array
+  1≥⍴⍴⍵?(-+/∧\⌽⍵∊⍺)↓⍵;  ⍝ vector
   (~⌽∧\⌽∧⌿⍵∊⍺)#⍠¯1 ⍵  ⍝ matrix
 }
 
 ⍝ From http://dfns.dyalog.com/c_deb.htm
 
 deb ← {  ⍝ Drop Ending Blanks.
-  ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵  ⍝ array
+  ⍺←" " ⋄ 1<≡⍵?⊂⍺ ∇¨ ⍵;  ⍝ nested?
+  2<⍴⍴⍵?(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵;  ⍝ array
   b←⍵∊⍺  ⍝ mask
-  1≥⍴⍴⍵:(∧\b ⍱ ⌽∧\⌽b)#⍵  ⍝ vector
+  1≥⍴⍴⍵?(∧\b ⍱ ⌽∧\⌽b)#⍵;  ⍝ vector
   b←∧⌿b ⋄ (∧\b ⍱ ⌽∧\⌽b)#⍠¯1 ⍵  ⍝ matrix
 }
 
 ⍝ From http://dfns.dyalog.com/c_dmb.htm
 
 dmb ← {  ⍝ Drop Multiple Blanks.
-  ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵  ⍝ array
-  2>⍴⍴⍵:(∨/2↕1,⍨~⍵∊⍺)#⍵
+  ⍺←" " ⋄ 1<≡⍵?⊂⍺ ∇¨ ⍵;  ⍝ nested?
+  2<⍴⍴⍵?(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵;  ⍝ array
+  2>⍴⍴⍵?(∨/2↕1,⍨~⍵∊⍺)#⍵;
   (∨/2↕1,⍨,∨⌿~⍵∊⍺)#⍠¯1 ⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_dxb.htm
 
 dxb ← {  ⍝ Drop eXtraneous Blanks.
-  ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵  ⍝ nested?
-  2<⍴⍴⍵:(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵  ⍝ array
+  ⍺←" " ⋄ 1<≡⍵?⊂⍺ ∇¨ ⍵;  ⍝ nested?
+  2<⍴⍴⍵?(¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵;  ⍝ array
   b←⍵∊⍺  ⍝ mask
-  1≥⍴⍴⍵:1↑b ↓ b⍲1↓b,1 # ⍵  ⍝ vector
+  1≥⍴⍴⍵?1↑b ↓ b⍲1↓b,1 # ⍵;  ⍝ vector
   b←∧⌿b ⋄ 0,1↑b ↓ b⍲1↓b,1 #⍠¯1 ⍵  ⍝ matrix
 }
 
 ⍝ From http://dfns.dyalog.com/c_dab.htm
 
 dab←{  ⍝ Drop All Blanks.
-  ⍺←" " ⋄ 1<≡⍵:⊂⍺ ∇¨ ⍵  ⍝ nested?
-  1≥⍴⍴⍵:⍵~⍺  ⍝ vector
-  2=⍴⍴⍵:⊃(↓⍵)~¨⊂⍺
+  ⍺←" " ⋄ 1<≡⍵?⊂⍺ ∇¨ ⍵;  ⍝ nested?
+  1≥⍴⍴⍵?⍵~⍺;  ⍝ vector
+  2=⍴⍴⍵?⊃(↓⍵)~¨⊂⍺;
   (¯1↓⍴⍵){(⍺,1↓⍴⍵)⍴⍵}⍺∇,⍠ ¯1↓⍳⍴⍴⍵ ⍵  ⍝ array
 }

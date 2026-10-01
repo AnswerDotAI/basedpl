@@ -13,10 +13,11 @@
         <RegExpr String="⍬(ₓ|x(?![A-Za-z0-9_∆⍙]))?" attribute="Number"/>
         <RegExpr String="\$[tfn]" attribute="Number"/>
         <RegExpr String="\](?=ₓ|x(?![A-Za-z0-9_∆⍙]))" attribute="Normal Text" context="Mark"/>
-        <AnyChar String="+-×÷⌈⌊|*⍟○π√!∧∨⍲⍱~=≠&lt;≤&gt;≥⍳:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹#↕⍭⨸⌻⍸⍷⊢⊣?" attribute="Function"/>
-        <AnyChar String="¨⍨⍃⍤∘⍠⍥⍄.⊗⌸⍣⇄⊘⌾∂⍚@⌺/⌿\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘ₀₁₂₃₄₅₆₇₈₉₋" attribute="Operator"/>
+        <AnyChar String="+-×÷⌈⌊|*⍟○π√!∧∨⍲⍱~=≠&lt;≤&gt;≥⍳:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹#↕⍭⨸⌻⍸⍷⊢⊣¿" attribute="Function"/>
+        <AnyChar String="¨⍨⊗⌸∂/⌿\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘ" attribute="MonadicOperator"/>
+        <AnyChar String="⍃⍤∘⍠⍥⍄.⍣⇄⊘⌾⍚@⌺" attribute="DyadicOperator"/>
         <AnyChar String="⍺⍵⍶⍹∇⍢" attribute="Argument"/>
-        <AnyChar String="←→⋄⎕" attribute="Keyword"/>
+        <AnyChar String="←→⎕⋄?₀₁₂₃₄₅₆₇₈₉₋" attribute="Keyword"/>
       </context>
       <context name="Mark" attribute="Number" lineEndContext="#pop">
         <AnyChar String="ₓx" attribute="Number" context="#pop"/>
@@ -35,7 +36,8 @@
       <itemData name="Number" defStyleNum="dsDecVal"/>
       <itemData name="System" defStyleNum="dsBuiltIn"/>
       <itemData name="Function" defStyleNum="dsFunction"/>
-      <itemData name="Operator" defStyleNum="dsOperator"/>
+      <itemData name="MonadicOperator" defStyleNum="dsOperator"/>
+      <itemData name="DyadicOperator" defStyleNum="dsExtension"/>
       <itemData name="Argument" defStyleNum="dsVariable"/>
       <itemData name="Keyword" defStyleNum="dsKeyword"/>
     </itemDatas>

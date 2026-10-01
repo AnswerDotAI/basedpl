@@ -1,6 +1,6 @@
 # `::` — Error guard
 
-`codes::handler` catches matching later errors in a dfn. `0::` catches ordinary BPL errors; a vector selects several error numbers.
+`codes::handler` catches matching later errors in a dfn, including errors in its later bodies. `0::` catches ordinary BPL errors; a vector selects several error numbers.
 
 ```bpl
 {0::42 ⋄ 1÷⍵}'a'   ⍝ 42
@@ -20,7 +20,7 @@ Cancellation and unsupported-feature errors bypass guards.
 `•signal "DOMAIN ERROR"` raises an ordinary BPL error. It is monadic and does not return a value. Existing `::` guards catch it in the same way as an error from a primitive.
 
 ```bpl
-positive←{⍵≤0:•signal "DOMAIN ERROR" ⋄ ⍵}
+positive←{⍵≤0?•signal "DOMAIN ERROR";⍵}
 safe←{11::0 ⋄ positive ⍵}
 safe¯3    ⍝ 0
 safe4     ⍝ 4

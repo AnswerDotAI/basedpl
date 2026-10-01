@@ -434,9 +434,9 @@ N←3 2 5 4 6 1 3 ⋄ N#⍨2|N   ⍝ 3 5 1 3
 
 ⍝ — Dyalog dfns: compression round trip
 •load "lib/dyalog.bpl"
-0 packS packS ["abb" ⋄ "ccc"]
+0 packS packS [3 1 4 1 5 9 ⋄ 2 6 5 3 5 8]
 ⍝ =>
-["abb" ⋄ "ccc"]
+[3 1 4 1 5 9 ⋄ 2 6 5 3 5 8]
 
 ⍝ — Dyalog dfns: compression round trip
 •load "lib/dyalog.bpl"

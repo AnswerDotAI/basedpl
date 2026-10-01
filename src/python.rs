@@ -112,6 +112,7 @@ impl PyArray {
         Ok(Some(("f8", bytes(py, v.iter().map(|n| n.to_ne_bytes()))?)))
     }
     fn __repr__(&self) -> String { self.inner.to_string() }
+    fn literal(&self) -> String { self.inner.literal() }
     fn atom(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         if !self.inner.is_singleton() { return Err(PyValueError::new_err("conversion requires a singleton array")); }
         if matches!(self.inner.at(0), Value::Array(_)) { return Err(PyTypeError::new_err("conversion requires an atom")); }
@@ -404,6 +405,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         .collect();
     m.add("symbols", symbols)?;
     m.add("_system_functions", crate::system::names().filter(|name| Function::builtin(name).is_some()).collect::<Vec<_>>())?;
-    m.add("_scripts", crate::syntax::scripts())?;
+    m.add("_superscripts", crate::syntax::superscripts())?;
+    m.add("_subscripts", crate::syntax::subscripts())?;
     Ok(())
 }

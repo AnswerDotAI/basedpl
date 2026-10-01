@@ -14,7 +14,7 @@ assign ← {  ⍝ Hungarian method cost assignment.
   step_1←{step_2⊃(↓⍵)-⌊/⍵}
   step_2←{  ⍝ 2: mark independent zeros.
     stars←{  ⍝ independent zeros.
-      ~1∊,⍵:⍺  ⍝ no more zeros: done.
+      ~1∊,⍵?⍺;  ⍝ no more zeros: done.
       next←{⍵∧1=+\⍵}{⍵∧1=+⍀⍵}⍵
       mask←(rows next)∨cols next  ⍝ mask of dependent rows and cols.
       (⍺∨next)∇ ⍵>mask  ⍝ ⍺-accumulated star matrix.
@@ -25,28 +25,28 @@ assign ← {  ⍝ Hungarian method cost assignment.
   step_3←{[costs zeros]←⍵  ⍝ 3: cover cols with starred zeros.
     stars←zeros=2  ⍝ starred zeros.
     covers←2×cols stars  ⍝ covered cols.
-    ~0∊,covers:stars  ⍝ all cols covered: solution.
+    ~0∊,covers?stars;  ⍝ all cols covered: solution.
     step_4 [costs zeros covers]  ⍝ next step: 4.
   }
   step_4←{[costs zeros covers]←⍵  ⍝ 4: adjust covering lines.
     mask←covers=0  ⍝ mask of uncovered elements.
     open←1=mask×zeros  ⍝ uncovered zeros.
-    ~1∊,open:(⌊/ ,mask # ,costs)step_6 ⍵  ⍝ no uncovered zeros, next step :6.
+    ~1∊,open?(⌊/ ,mask # ,costs)step_6 ⍵;  ⍝ no uncovered zeros, next step :6.
     prime←first open  ⍝ choose first uncovered zero.
     prow←rows prime  ⍝ row containing prime.
     star←2=zeros×prow  ⍝ star in row containing prime.
-    ~1∊,star:prime step_5 {  ⍝ no star in row, next step :5,
+    ~1∊,star?prime step_5 {  ⍝ no star in row, next step :5,
       [costs ⍵ prime]  ⍝ adjusted zeros matrix,
-    }zeros+2×prime  ⍝ new primed zero (3).
+    }zeros+2×prime;  ⍝ new primed zero (3).
     cnext←covers+prow-2×(cols star)  ⍝ adjusted covers.
     znext←zeros⌈3×prime  ⍝ primed zero.
     ∇ [costs znext cnext]  ⍝ adjusted zeros and covers
   }
   step_5←{[costs zeros prime]←⍵  ⍝ 5: exchange starred zeros.
     star←(cols prime)∧zeros=2  ⍝ next star.
-    ~1∊,star:step_3 ⍺{  ⍝ no stars: next step :3.
+    ~1∊,star?step_3 ⍺{  ⍝ no stars: next step :3.
       {[costs ⍵]}{⍵-2×⍵=3}⍵-⍺∧⍵>1  ⍝ unstarred stars; starred primes.
-    }zeros  ⍝ adjusted zero markers.
+    }zeros;  ⍝ adjusted zero markers.
     pnext←(rows star)∧zeros=3  ⍝ next prime.
     (⍺∨pnext∨star)∇ [costs zeros pnext]  ⍝ ⍺-accumulated prime-star-··· path.
   }
@@ -98,7 +98,7 @@ remlink ← {  ⍝ Graph ⍺ without edge ⍵.
 search ← {  ⍝ Breadth-first search of graph ⍺.
   graph←⍺  ⍝ ⍺ is graph vector.
   (,⍵){  ⍝ from starting vertex.
-    ⍵≡⍬:⍺  ⍝ no unvisited vertices: done.
+    ⍵≡⍬?⍺;  ⍝ no unvisited vertices: done.
     adjv←[⍵]⌷graph  ⍝ adjacent vertices.
     next←∪(,/adjv)~⍺
     (⍺,next)∇ next  ⍝ advance wave of visited vertices.
@@ -110,11 +110,11 @@ search ← {  ⍝ Breadth-first search of graph ⍺.
 path ← {  ⍝ Shortest path from/to ⍵ in graph ⍺.
   graph←⍺ ⋄ [fm to]←,¨⍵  ⍝ graph and entry/exit vertex vectors
   fm{  ⍝ fm is the starting-from vertex
-    ⍺≡⍬:⍬  ⍝ no vertices left: no path
-    ∨/to∊⍺:⍬(⊃⍄⍵){  ⍝ found target: path from tree:
-      ⍵<0:⍺  ⍝ root: finished
+    ⍺≡⍬?⍬;  ⍝ no vertices left: no path
+    ∨/to∊⍺?⍬(⊃⍄⍵){  ⍝ found target: path from tree:
+      ⍵<0?⍺;  ⍝ root: finished
       (⍵,⍺)∇ ⍶ ⍵
-    }1↑⍺∩to  ⍝ found vertex ⍺
+    }1↑⍺∩to;  ⍝ found vertex ⍺
     next←[,⍺]⌷graph ∩¨ ⊂⍸⍵=¯2
     back←,/⍺+0×next
     wave←,/next
@@ -127,7 +127,7 @@ path ← {  ⍝ Shortest path from/to ⍵ in graph ⍺.
 span ← {  ⍝ Breadth-first spanning tree for graph ⍺.
   graph←⍺  ⍝ ⍺ is graph vector.
   (¯2 + ⍳⍴⍺ ∊ ,⍵){  ⍝ ⍺: partial spanning tree.
-    ⍵≡⍬:⍺  ⍝ no vertices: done.
+    ⍵≡⍬?⍺;  ⍝ no vertices: done.
     next←([⍵]⌷graph)∩¨⊂⍸⍺=¯2  ⍝ untravelled edges
     back←⍵+0×next  ⍝ back link per edge
     tree←(∊back)@ ∊next ⍺  ⍝ partial spanning tree
@@ -140,7 +140,7 @@ span ← {  ⍝ Breadth-first spanning tree for graph ⍺.
 dfspan ← {  ⍝ Depth-first spanning tree: graph ⍺ from vertex ⍵.
   graph←⍺  ⍝ ⍺ is graph vector.
   trav←{  ⍝ initial vertex and parent
-    ¯2≠⍺⊃⍵:⍵  ⍝ vertex visited: backtrack
+    ¯2≠⍺⊃⍵?⍵;  ⍝ vertex visited: backtrack
     next←⌽⍺⊃graph  ⍝ edges from vertex ⍺
     tree←⍶@⍺ ⍵  ⍝ ⍶ is ⍺'s parent
     tree (⍺⍢)/ next
@@ -175,7 +175,7 @@ scc ← {  ⍝ Strongly connected components (Tarjan).
     T_1←succ v push v Lx v Xx T_0  ⍝ successor state for x S L and X
     T_2←T_1 {w←⍺
       min_L←{(w⊃⍺⊃⍵)⌊@ ⊂[L v] ⍵}
-      0=w⊃X⊃⍵:L min_L w conn ⍵
+      0=w⊃X⊃⍵?L min_L w conn ⍵;
       X min_L⍣ w∊S⊃⍵ ⍵  ⍝ low-link if w on stack
     }/ ⌽v⊃G  ⍝ for each edge from vertex v
     root←(v⊃L⊃T_2)=v⊃X⊃T_2
@@ -206,7 +206,7 @@ stdists ← {  ⍝ Spanning-tree path lengths.
   tree←⍵  ⍝ spanning tree
   0x{  ⍝ distance from root
     [next dvec]←⍵  ⍝ chldren and distance vector
-    next≡⍬:dvec  ⍝ no children: finished
+    next≡⍬?dvec;  ⍝ no children: finished
     ∆dvec←⍺@next dvec  ⍝ extended distance vector
     ∆next←⍸tree∊,next  ⍝ grandchildren
     (⍺+1x)∇ [∆next ∆dvec]  ⍝ examine rest of tree
@@ -218,7 +218,7 @@ stdists ← {  ⍝ Spanning-tree path lengths.
 stpath ← {  ⍝ Path through spanning tree ⍺ to vertex ⍵.
   tree←⍺  ⍝ (partial) spanning tree.
   ⍬{  ⍝ path accumulator.
-    ⍵<0:(⍵=¯2)↓⍺  ⍝ root or unvisited vertex: finished.
+    ⍵<0?(⍵=¯2)↓⍺;  ⍝ root or unvisited vertex: finished.
     (⍵,⍺)∇ ⍵⊃tree  ⍝ otherwise: prefix previous (parent) vertex.
   }⍵
 }
@@ -231,7 +231,7 @@ stpaths ← {  ⍝ Spanning tree paths.
   paths←(root=⍳⍴⍵)↑¨root  ⍝ initial path vector.
   paths{  ⍝ path to current vertices.
     next←(⍵=⊂tree)#¨⊂⍳⍴tree  ⍝ vertices at next tree level.
-    (⊂⍬)∧.≡next:⍺  ⍝ all null: finished.
+    (⊂⍬)∧.≡next?⍺;  ⍝ all null: finished.
     exts←⊂¨⍵⊃¨⊂⍺ ,¨¨ next  ⍝ paths to next tree level.
     indx←,/next
     paths←(,/exts)@indx ⍺
@@ -247,20 +247,20 @@ X ← {  ⍝ Exact cover: Knuth's Algorithm X.
   d←(x~⍺#x) =⊗ x
   z←{  ⍝ cover vector.
     [r c]←⍴⍵  ⍝ number of rows and columns.
-    c=0:r⍴0  ⍝ empty matrix: success.
+    c=0?r⍴0;  ⍝ empty matrix: success.
     n←+⌿⍵  ⍝ number of covers per column.
     f←({⍵∧1=+\⍵}n=⌊/n)#⍠¯1 ⍵
     ⍵ ∇{  ⍝ ⍺ is constraint matrix.
-      ~1∊⍵:0  ⍝ no rows: failure.
+      ~1∊⍵?0;  ⍝ no rows: failure.
       f←{⍵∧1=+\⍵}⍵
       c←,f#⍺  ⍝ cols selected by first row.
       r←∨/c#⍠¯1 ⍺  ⍝ rows covered by selected cols.
       s←⍶(~c)#⍠¯1 (~r)#⍺
-      s≡0:⍺ ∇ f<⍵  ⍝ failure: try a different row.
+      s≡0?⍺ ∇ f<⍵;  ⍝ failure: try a different row.
       f∨(~r)#⁻¹s  ⍝ success: row f included.
     } ,f  ⍝ ⍵ is vector of marked rows.
   }⍵⍪d  ⍝ exact cover.
-  z≡0:0  ⍝ failure: 0
+  z≡0?0;  ⍝ failure: 0
   (-+/~⍺)↓z  ⍝ without dummy rows.
 }
 
@@ -303,7 +303,7 @@ queensX ← {  ⍝ Exact cover N-Queens.
 
 wcost ← {  ⍝ Cost vector for path ⍵ through weighted graph ⍺.
   [graph costs]←↓⍺  ⍝ edges and edge-costs.
-  2>≢⍵:0  ⍝ null path: no cost.
+  2>≢⍵?0;  ⍝ null path: no cost.
   {
     node←,⍺⊃graph  ⍝ exits from vertex.
     indx←node⍳⍵  ⍝ index of (⍺ ⍵) vertex.
@@ -321,11 +321,11 @@ wpath ← {  ⍝ Quickest path fm/to ⍵ in weighted graph ⍺.
   I←⊃¨⍄⊂  ⍝ helper function: ⍺th items of ⍵
   fm{  ⍝ from starting vertex.
     [acc to]←⍵  ⍝ accumulator and next vertex
-    to<0:(to=¯2)↓acc  ⍝ root or unvisited vertex: finished
+    to<0?(to=¯2)↓acc;  ⍝ root or unvisited vertex: finished
     ⍺ ∇ [to,acc to⊃⍺]  ⍝ otherwise: parent vertex prefix
   }{  ⍝ lowest spanning cost tree:
     [tree cost]←⍵  ⍝ current tree and cost vectors
-    ⍺≡⍬:tree ⍶ [⍬ to]
+    ⍺≡⍬?tree ⍶ [⍬ to];
     adjv←⍺ I graph  ⍝ adjacent vertices
     accm←⍺ I cost+costs  ⍝ costs to adjacent vertices
     best←adjv I¨ ⊂cost  ⍝ costs to beat
@@ -349,7 +349,7 @@ wspan ← {  ⍝ Spanning tree for weighted graph ⍺ from ⍵.
   I←⊃¨⍄⊂  ⍝ helper function: ⍺th items of ⍵
   ⍵{  ⍝ from starting vertex.
     [tree cost]←⍵  ⍝ current tree and costs
-    ⍺≡⍬:tree  ⍝ all vertices visited: done
+    ⍺≡⍬?tree;  ⍝ all vertices visited: done
     adjv←⍺ I graph  ⍝ adjacent vertices
     accm←⍺ I cost+costs  ⍝ cumulative cost via this vertex
     mask←accm < adjv I¨ ⊂cost  ⍝ mask of better routes
@@ -370,12 +370,12 @@ wmst ← {  ⍝ Minimum Spanning Tree for wu-graph ⍺.
   xvec←⍳⍴graph  ⍝ index vector for graph
   (,⍵){  ⍝ vertices inside tree: T
     [tree todo]←⍵  ⍝ partial tree and unconnected vertices
-    todo≡⍬:tree  ⍝ all vertices connected: finished
+    todo≡⍬?tree;  ⍝ all vertices connected: finished
     edges←(graph∊¨⊂todo)∧xvec∊⍺  ⍝ edges from T to G~T
     min←⌊/⌊/¨edges#¨costs  ⍝ minimum edge cost
     masks←edges∧min=costs  ⍝ lowest cost edge masks
     [fm to]←{⊃,/masks#¨⍵}¨[xvec graph]
-    fm≡⍬:tree  ⍝ disjoint graph: quit
+    fm≡⍬?tree;  ⍝ disjoint graph: quit
     (⍺,to)∇ [fm@to tree;todo~to]  ⍝ vertices from G~T to T
   }[¯1⊣¨graph xvec~,⍵]  ⍝ initial tree and unconnected vertices
 }

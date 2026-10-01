@@ -60,8 +60,6 @@ M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
 ⍳⍠0 1 (:M)                  ⍝ [[0 1] [0 1]]ₓ
 ```
 
-Inside dfns, group functional colon: `(X:Y)` or `(:Y)`. A direct colon separates a guard.
-
 ```bpl
 {+/(:⍵)}"aa" "bb":1 2       ⍝ 3
 {("total":+/⍵)}1 2 3        ⍝ "total":6
@@ -227,7 +225,7 @@ V←"aa" "bb":1 2
 {⍵,⍵}⍤0 V                   ⍝ "aa" "bb":[1 1 ⋄ 2 2]
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
 ⌽⍤1 M                       ⍝ ["alice" "bob";"qty" "price"]:[2 10 ⋄ 4 20]
-{10=↑⍵:⌽⍵ ⋄ ⍵}⍤1 M          ⍝ "alice" "bob":[2 10 ⋄ 20 4]
+{10=↑⍵?⌽⍵;⍵}⍤1 M          ⍝ "alice" "bob":[2 10 ⋄ 20 4]
 ```
 
 Per-cell rotation drops keys on the rotated axis when cells use different rotations.

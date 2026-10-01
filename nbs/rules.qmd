@@ -94,6 +94,12 @@ x←5 ⋄ 1+⍣3 x                     ⍝ 8
 1+⍣3(5)                          ⍝ 8
 ```
 
+Where an operator takes a function, an array operand acts as a constant function, as `A⍨` does. Reduce and scan still need a function, and `5/` is an error. Replicate is `#`.
+
+```bpl
+5¨ 1 2 3                         ⍝ 5 5 5
+```
+
 Names hold subjects, functions or operators, resolved at execution time. Arrays contain numbers, characters, functions and arrays.
 
 A name is made of letters, `∆` and `⍙`. A digit ends a name, as it ends a glyph, so `f2` is `f` applied to 2, as `⍳2` is. `_` puts the next character into the name, whatever it is, so `x_1` and `x_+` are names. After `_`, a digit takes the digits that follow it, so `x_12` is one name. `_` needs a character after it, so a name can't end in `_`. A lone `_` is the name `_` when a space, `]`, `)`, `←`, `;`, `⋄` or the end of the line follows it. It holds a value nothing reads, as in `[k _ v]←⍵`. After a dot, digits stay in the key: `T.q1` is the entry with key `q1`.
@@ -159,8 +165,9 @@ From tightest to loosest:
 2. across runs, right to left
 3. the pipe `→`, whose stages run left to right
 4. assignment `←`
-5. the guards `:` and `::`
-6. the statement separator `⋄`
+5. the error guard `::`
+6. `⋄`, which separates statements, and `?`, which ends a predicate
+7. `;`, which separates a dfn's bodies
 
 Spaces change grouping only at the first two levels.
 
@@ -349,7 +356,7 @@ Dfns use lexical scope. Plain assignment is local. Modified and selective update
 a←1 2 ⋄ b←a ⋄ a.[0]←9 ⋄ b ⍝ 1 2
 ```
 
-A dfn returns its first result-producing non-assignment expression, or its final assignment silently. Top-level assignments also retain their value without display.
+Every statement in a dfn body runs, and the body's last statement gives the result. A final assignment returns its value silently. Top-level assignments also retain their value without display. See [Dfns](dfns.qmd).
 
 Evaluation is right-to-left, including fork arms. Items inside brackets evaluate left-to-right, as statements do.
 

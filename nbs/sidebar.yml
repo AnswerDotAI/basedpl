@@ -11,6 +11,7 @@ website:
           - principles.qmd
           - glyphs.qmd
           - rules.qmd
+          - dfns.qmd
           - keyed.qmd
           - comparison.qmd
       - section: Working with data

@@ -1163,8 +1163,8 @@ impl Value {
     pub fn keys(&self, axis: usize) -> Option<&Arc<Keys>> { self.layout().keys(axis) }
     pub fn has_keys(&self) -> bool { self.layout().has_keys() }
     pub(crate) fn layout(&self) -> &Layout {
-        static SCALAR: Layout = Layout { shape: vec![], labels: None };
-        match self { Self::Array(a) => &a.layout, _ => &SCALAR }
+        static ATOM: Layout = Layout { shape: vec![], labels: None };
+        match self { Self::Array(a) => &a.layout, _ => &ATOM }
     }
     pub(crate) fn with_layout(self, layout: Layout) -> Result<Self, ErrorKind> {
         let layout = layout.unique_names();
@@ -1461,10 +1461,7 @@ impl Value {
 
     /// Source text for a scalar holding `content`: `ᵘ` after a function, and `⊂` before anything else.
     fn enclosed_literal(content: &Value) -> String {
-        match content {
-            Self::Function(f) => f.superscripted("ᵘ", &mut 1000),
-            _ => format!("⊂{}", content.item()),
-        }
+        match content { Self::Function(f) => f.superscripted("ᵘ", &mut 1000), _ => format!("⊂{}", content.item()) }
     }
 
     /// An array with named axes: its keyed shape reshapes the array without names. Reshape keeps position keys.

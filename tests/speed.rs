@@ -71,7 +71,7 @@ fn functions_cost_what_their_work_needs() {
     let copy = || fastest(100, || drop(black_box(black_box(&data).clone()))).as_secs_f64();
     let mut session = Session::new();
     let setup = session.eval(&format!(
-        r#"v←?{N}⍴0 ⋄ w←?{N}⍴0 ⋄ jv←?{N}⍴1000ₓ ⋄ b←0=?{N}⍴3ₓ ⋄ i←?{N}⍴{N}ₓ ⋄ m←1000 500⍴v ⋄ c←{N}⍴"the quick brown fox jumps over the lazy dog""#
+        r#"v←¿{N}⍴0 ⋄ w←¿{N}⍴0 ⋄ jv←¿{N}⍴1000ₓ ⋄ b←0=¿{N}⍴3ₓ ⋄ i←¿{N}⍴{N}ₓ ⋄ m←1000 500⍴v ⋄ c←{N}⍴"the quick brown fox jumps over the lazy dog""#
     ));
     assert!(setup.error.is_none(), "{:?}", setup.error);
     let mut failures = Vec::new();

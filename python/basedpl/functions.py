@@ -78,11 +78,12 @@ def _python_name(name):
     name = normalize('NFKC', name.replace('-', '_'))
     return name+'_' if iskeyword(name) else name
 
-# Operator properties take Rust's operator names in Python spelling. Rust names `/` and `\` after their shapes and has no row for
-# `⁻¹` or history, so those four keep Python names. A dyadic operator waits for its right operand.
-_operator_names = {s['glyph']: _python_name(s['name']) for s in symbols if s['kind'] == 'operator'}
-_MONADIC = dict(reduce='/', scan='\\', undo='⁻¹') | {_operator_names[g]: g for g in '¨⍨⊗⌸∂'}
-_DYADIC = {_operator_names[g]: g for g in '.⍤∘⍄⍥⍃⌾⇄⊘⍣@⌺'} | dict(history='history')
+# Operator properties take Rust's operator names in Python spelling. Rust names `/⌿\⍀` after their shapes. `reduce` and `scan`
+# spell `/` and `\`, and `f.reduce[0]` and `f.scan[0]` spell `⌿` and `⍀`. `f[axis]` spells `⍠`. Rust has no row for `⁻¹` or
+# history. A dyadic operator waits for its right operand.
+_operators = [(s['glyph'], _python_name(s['name']), s['kind']) for s in symbols if s['kind'].endswith('-operator') and s['glyph'] not in '/⌿\\⍀⍠']
+_MONADIC = dict(reduce='/', scan='\\', undo='⁻¹') | {n: g for g, n, k in _operators if k == 'monadic-operator'}
+_DYADIC = {n: g for g, n, k in _operators if k == 'dyadic-operator'} | dict(history='history')
 for _name, _glyph in _MONADIC.items(): setattr(_Combinators, _name, property(lambda self, g=_glyph: _build(g, self)))
 for _name, _glyph in _DYADIC.items(): setattr(_Combinators, _name, property(lambda self, g=_glyph: _build(g, self, _HOLE)))
 

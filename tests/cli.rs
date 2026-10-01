@@ -5,7 +5,7 @@ use std::{
 
 #[test]
 fn native_expression_and_diagnostic() {
-    for (code, expected) in [("2×3+4", "14\n"), ("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂1 2", "⊂4ₓ\n⊂⊂4ₓ\n⊂[1 2]\n"), ("f←{⍵=0:0 ⋄ 1+∇⍵-1} ⋄ f 500", "500\n")]
+    for (code, expected) in [("2×3+4", "14\n"), ("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂1 2", "⊂4ₓ\n⊂⊂4ₓ\n⊂[1 2]\n"), ("f←{⍵=0?0;1+∇⍵-1} ⋄ f 500", "500\n")]
     {
         let output = Command::new(env!("CARGO_BIN_EXE_bpl")).args(["-e", code]).output().unwrap();
         assert!(output.status.success());

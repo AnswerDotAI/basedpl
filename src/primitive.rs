@@ -516,7 +516,9 @@ impl Primitive {
             Self::Compare(Less) => row("<", "less", "", None, pervasive_dyad("less").identity(Boolean(false))),
             Self::Compare(LessEqual) => row("≤", "less-or-equal", "", pervasive_monad("decrement"), pervasive_dyad("less-equal").identity(Boolean(true))),
             Self::Compare(Greater) => row(">", "greater", "", None, pervasive_dyad("greater").identity(Boolean(false))),
-            Self::Compare(GreaterEqual) => row("≥", "greater-or-equal", "", pervasive_monad("increment"), pervasive_dyad("greater-equal").identity(Boolean(true))),
+            Self::Compare(GreaterEqual) => {
+                row("≥", "greater-or-equal", "", pervasive_monad("increment"), pervasive_dyad("greater-equal").identity(Boolean(true)))
+            }
             Self::Iota => row("⍳", "iota", "", monad("iota", 1).bounded().axes(), dyad("index-of", [W, W])),
             Self::Keys => row(":", "colon", "", monad("unkey", W).axes(), dyad("keyed", [1, W]).axes()),
             Self::Shape => row("⍴", "rho", "", monad("shape", W), dyad("reshape", [1, W])),
@@ -535,7 +537,9 @@ impl Primitive {
             Self::Take => row("↑", "take", "disclose", monad("first", W), dyad("take", [1, W]).axes()),
             Self::Drop => row("↓", "drop", "", monad("split", 1).axes(), dyad("drop", [1, W]).axes()),
             Self::Reverse(false) => row("⌽", "reverse", "", monad("reverse", 1).axes(), dyad("rotate", [0, 1]).axes().identity(Identity::Number(0))),
-            Self::Reverse(true) => row("⊖", "reverse-first", "", monad("reverse-first", W).axes(), dyad("rotate-first", [W, W]).axes().identity(Identity::Number(0))),
+            Self::Reverse(true) => {
+                row("⊖", "reverse-first", "", monad("reverse-first", W).axes(), dyad("rotate-first", [W, W]).axes().identity(Identity::Number(0)))
+            }
             Self::Transpose => row("⍉", "transpose", "", monad("transpose", W), dyad("reorder-axes", [1, W])),
             Self::Encode => row("⊤", "encode", "", monad("binary-encode", W), dyad("encode", [1, 0]).identity(Identity::Number(0))),
             Self::Decode => row("⊥", "decode", "", monad("binary-decode", 1), dyad("decode", [1, 1])),
@@ -552,7 +556,7 @@ impl Primitive {
             Self::Find => row("⍷", "find", "", None, dyad("find", [W, W])),
             Self::Identity(false) => row("⊢", "right", "", monad("same", W), dyad("right", [W, W])),
             Self::Identity(true) => row("⊣", "left", "", monad("same-left", W), dyad("left", [W, W])),
-            Self::Random => row("?", "question", "", monad("roll", 0), dyad("deal", [0, 0])),
+            Self::Random => row("¿", "inverted-question", "", monad("roll", 0), dyad("deal", [0, 0])),
         }
     }
     pub(crate) fn glyph(self) -> &'static str { self.info().glyph }
@@ -1224,7 +1228,7 @@ pub(crate) fn lambert_w(right: &Value, span: &Context<'_>) -> Result<Value, Erro
 pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value, axis: Option<&Value>, span: &Context<'_>) -> Result<Value, Error> {
     use crate::number::{
         Arithmetic::*,
-        Math::{Circle, Log, Nand, Nor, Pi, Power, Root},
+        Math::{Circle, Log, Nand, Nor, Not, Pi, Power, Root},
     };
     use Primitive::*;
     if let Some(axis) = axis {
@@ -1241,7 +1245,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
                 _ => Err(span.domain_error("this axis-qualified primitive has no known inverse")),
             };
         }
-        if !matches!(p, Arithmetic(_) | Math(_) | Compare(_) | Reverse(_) | Replicate) {
+        if !matches!(p, Arithmetic(_) | Math(_) | Compare(_) | Reverse(_) | Replicate | Ravel | CatenateFirst) {
             return Err(span.domain_error("this axis-qualified primitive has no known inverse"));
         }
     }
@@ -1289,6 +1293,14 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
             }
             Decode if first => inverse_decode(a, right, span),
             Encode if first => Decode.call(Some(a), right, span),
+            Identity(left) => {
+                if left == first && !array_match(a, right, span)? { return Err(span.domain_error("the result must match the fixed argument")); }
+                Ok(right.clone())
+            }
+            Ravel | CatenateFirst => {
+                let axis = axis.map(|x| single_axis(&resolve_axes(x, right, span)?, right.shape().len(), span)).transpose()?;
+                inverse_catenate(a, first, right, axis, matches!(p, CatenateFirst), span)
+            }
             _ => Err(span.domain_error("this bound function has no known inverse")),
         };
     }
@@ -1297,7 +1309,11 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
         Prime => p.call(Some(&integer(-1)), right, span),
         Factor => crate::number_theory::product(right, span),
         Polynomial => p.call(None, right, span),
-        Arithmetic(Plus | Minus | Divide) | Reverse(_) | Transpose | Identity(_) | Index | MatrixDivide => p.call(None, right, span),
+        Arithmetic(Plus | Minus | Divide) | Reverse(_) | Transpose | Identity(_) | Math(Not) | Index | MatrixDivide => p.call(None, right, span),
+        Arithmetic(Times) => {
+            if !array_match(&p.call(None, right, span)?, right, span)? { return Err(span.domain_error("× gives only ¯1, 0, 1 and unit complex numbers")); }
+            Ok(right.clone())
+        }
         Math(Power) => Math(Log).call(None, right, span),
         Math(Log) => Math(Power).call(None, right, span),
         Math(Pi) => Arithmetic(Divide).call(Some(right), &float(std::f64::consts::PI), span),
@@ -1329,6 +1345,18 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
 
 fn boolean_array(a: &Value) -> bool {
     a.elements().all(|e| match e { Value::Number(n) => n.boolean().is_ok(), a @ Value::Array(_) => boolean_array(&a), _ => false })
+}
+
+/// The argument that catenates with the fixed `a` to give `right`, checked by catenating again.
+fn inverse_catenate(a: &Value, first: bool, right: &Value, axis: Option<usize>, leading: bool, span: &Context<'_>) -> Result<Value, Error> {
+    let rank = right.shape().len();
+    let k = axis.unwrap_or(if leading { 0 } else { rank.saturating_sub(1) });
+    let n = if a.shape().len() == rank { a.shape()[k] as i64 } else { 1 };
+    let counts = (0..rank).map(|i| if i != k { 0 } else if first { n } else { -n }).collect();
+    let y = Primitive::Drop.call(Some(&Value::integers(vec![rank], counts).error_at(span, "invalid catenate inverse")?), right, span)?;
+    let back = if first { catenate(a, &y, axis, leading, span)? } else { catenate(&y, a, axis, leading, span)? };
+    if !array_match(&back, right, span)? { return Err(span.domain_error("no argument catenates with the fixed one to give this result")); }
+    Ok(y)
 }
 
 fn inverse_decode(base: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -1520,7 +1548,7 @@ fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_>) -> Resul
         let digits = if left.is_unit() { Layout::from(vec![]) } else { left.layout().axes(left.shape().len() - 1..left.shape().len()) };
         let layout = agreement.layout.concat(&digits);
         let len = generated_len(layout.shape()).error_at(span, "encode result is too large")?;
-        if let (Mapping::Scalar, Mapping::Linear(1)) = (&agreement.left, &agreement.right) {
+        if let (Mapping::Single, Mapping::Linear(1)) = (&agreement.left, &agreement.right) {
             if let Some(result) = encode_whole(left.checked_items(), right.checked_items(), &layout) { return Ok(result); }
         }
         let mut data = Vec::with_capacity(len);

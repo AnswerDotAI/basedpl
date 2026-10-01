@@ -2,7 +2,7 @@
 import json, math, queue, subprocess, sys, threading
 from collections import deque
 from decimal import Decimal
-from . import _output_text
+from . import BplError, _output_text
 
 class Worker:
     "One request at a time. Interrupt from another thread; never retry a request automatically."
@@ -88,3 +88,12 @@ class Worker:
 
     def __enter__(self): return self
     def __exit__(self, *args): self.close()
+
+def run(
+    code, # BPL source
+    timeout=None # Seconds before the evaluation is interrupted
+):
+    "Return what `code` prints in a fresh worker process. A BPL error raises `BplError`."
+    with Worker() as w: r = w.eval(code, timeout)
+    if r['error']: raise BplError(r['error'], r['output'])
+    return '\n'.join(_output_text(r['output']))

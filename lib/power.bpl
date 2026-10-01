@@ -8,7 +8,7 @@
 ⍝ From http://dfns.dyalog.com/c_for.htm
 
 for ← {  ⍝ Multiple selection of function list.
-  (¯1↓⍺)⍶{1≠⍴⍺:⍺ ⍶ ⍵
+  (¯1↓⍺)⍶{1≠⍴⍺?⍺ ⍶ ⍵;
     ⍶⍣ ↑⍺ ⍵
   }⍹⍣ ↑⌽⍺ ⍵
 }
@@ -18,7 +18,7 @@ invr ← {  ⍝ Approx inverse of real-valued function.
   ⍺←1+1e¯14+0×⍵
   ∆x←√1e¯14
   -⍄⍵∘⍶{
-    ⍹ ⍵:⍵
+    ⍹ ⍵?⍵;
     [y y∆]←⍶¨[0 ∆x]+⊂⍵
     ∇ ⍵-y×∆x÷y∆-y  ⍝ refined estimate.
   }(⍵⍃≡∘⍶)⍺
@@ -28,7 +28,7 @@ invr ← {  ⍝ Approx inverse of real-valued function.
 
 limit ← {  ⍝ Function power limit (fixpoint).
   ⍵ ⍶{
-    ⍺≡⍵:⍵  ⍝ old matches new: finished.
+    ⍺≡⍵?⍵;  ⍝ old matches new: finished.
     ⍵ ∇ ⍶ ⍵
   } ⍶⍵
 }
@@ -79,7 +79,7 @@ roll ← {⌊⍵×⍺÷¯1+2*31}  ⍝ roll ⍵ with random link ⍺.
 
 traj ← {  ⍝ Function limit 'trajectory'.
   ⍺←⍬  ⍝ Initial null history.
-  (⊂⍵)∊⍺:⍺  ⍝ Argument in history: finished.
+  (⊂⍵)∊⍺?⍺;  ⍝ Argument in history: finished.
   (⍺,⊂⍵) ∇ ⍶ ⍵
 }
 
@@ -96,7 +96,7 @@ traj_2 ← { ¯1⍃↓ ,⍄⊂⍄⍶⍄↑⍄⌽⍨⍣(∊⍨⍄⊂⍄↑⍄⌽�
 ⍝ From http://dfns.dyalog.com/c_while.htm
 
 while ← {  ⍝ Conditional function power.
-  ⍹ ⍵:∇ ⍶ ⍵
+  ⍹ ⍵?∇ ⍶ ⍵;
   ⍵  ⍝ Otherwise: finished.
 }
 
@@ -104,7 +104,7 @@ while ← {  ⍝ Conditional function power.
 
 until ← {  ⍝ Conditional function power.
   ⍶{
-    ⍹ ⍵:⍵
+    ⍹ ⍵?⍵;
     ∇ ⍶ ⍵
   }⍹ ⍶ ⍵
 }

@@ -49,13 +49,13 @@ async def kernel_story():
         assert result['found'] and 'Alphabet' in result['data']['text/plain']
         result = (await kc.shell_request('inspect_request', code='⍵', cursor_pos=1, detail_level=0))['content']
         assert result['found']
-        _, messages = await kc.exec_ok(']help ?')
+        _, messages = await kc.exec_ok(']help ¿')
         assert 'Roll' in displayed(messages)[0][1]
-        _, messages = await kc.exec_ok('?1')
+        _, messages = await kc.exec_ok('¿1')
         assert displayed(messages) == [('execute_result', '0')]
-        _, messages = await kc.exec_ok('??')
+        _, messages = await kc.exec_ok('¿¿')
         text = displayed(messages)[0][1]
-        assert '?' in text and 'Roll' not in text
+        assert '¿' in text and 'Roll' not in text
         result = (await kc.shell_request('inspect_request', code='"inspectme"', cursor_pos=5, detail_level=0))['content']
         assert not result['found']
         result = (await kc.shell_request('complete_request', code='•sr', cursor_pos=3))['content']

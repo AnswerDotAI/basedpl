@@ -44,6 +44,7 @@ def test_python_printer():
         '+/÷≢': 'plus.reduce / tally', '+.×': 'plus @ times', '×⊗': 'times.outer_product',
         '+/⍠1': 'plus.reduce[1.]', '1⍃+⍣[≡]': 'plus.left(1.).history(match)', '+⌿': 'plus.reduce[0]', '-⍨': 'subtract.commute',
         '+∘×': 'conjugate.atop(sign)', '+⍥×': 'conjugate.over(sign)', '-⍃+': 'negate.before(plus)', '+⍄-': 'plus.after(negate)', '-⊘+': 'negate.valences(plus)',
+        '{⍵<0}⍚[⊢ -]': 'fn("{⍵<0}").agenda(bpl("[⊢ -]"))', '[1 2 ⋄ 3 4]⍃+': 'plus.left(bpl("[1 2 ⋄ 3 4]"))',
         '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each', '(×⍄2)⁻¹': 'times(2.).undo',
     }.items(): teq(to_python(bpl(code)), expected)
     teq(to_python(bpl('×'), dyad=True), 'times')
@@ -245,7 +246,7 @@ def test_words_binding_and_operators():
     np.testing.assert_array_equal(reverse.rank(1)(Array([[1, 2], [3, 4]])), [[2, 1], [4, 3]])
     np.testing.assert_array_equal(times(2).at([1, 3])([1, 2, 3, 4]), [1, 4, 3, 8])
     with pytest.raises(TypeError): plus @ Array(2)
-    with pytest.raises(ValueError, match='DOMAIN'): plus.over(3)
+    assert plus.over(3)(10).py == 3
     with pytest.raises(ValueError, match='DOMAIN'): plus.stencil(times)
     assert subtract.commute.reduce([1, 2, 3]).py == 0
     teq(times(2).power.each(3)([1, 2]).py, [8, 16])
@@ -371,7 +372,7 @@ def test_retained_and_late_bound_functions(capsys):
     bpl(loop=bpl.fn('loop'))
     with pytest.raises(BplError, match='LIMIT'): bpl('loop 1')
     assert bpl('1+1').py == 2
-    assert bpl('count←{⍵=0:0 ⋄ 1+∇⍵-1} ⋄ count 500').py == 500
+    assert bpl('count←{⍵=0?0;1+∇⍵-1} ⋄ count 500').py == 500
     bpl('g←-')
     assert composed(3).py == 3
     saved = bpl('g')

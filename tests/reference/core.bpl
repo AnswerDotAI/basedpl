@@ -77,9 +77,9 @@ A←["city":2 3]⍴1 ⋄ B←["product":4 3]⍴2
 •tojson ["a":1 2]
 ⍝ error: DOMAIN ERROR
 
-⍝ axis-colon — Colon binds as a function; literal separators and dfn guards retain their meanings
+⍝ axis-colon — Colon binds as a function, including in a dfn, and literal separators keep their meanings
 f←: ⋄ a←"n" f 5
-g←{⍵<0:-⍵ ⋄ +/(:("n":⍵))}
+g←{⍵<0?-⍵;+/:"n":⍵}
 [(:a);≢["a":1 "b":2];g ¯3;g 3]
 ⍝ =>
 [[5] 2ₓ 3 3]
@@ -174,7 +174,7 @@ $t
 
 ⍝ axis-rank — Frame keys survive assembly; cell axes need the same labels in every result
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
-[+/⍤1 M;⊢⍤1 M;⌽⍤1 M;{10=↑⍵:⌽⍵ ⋄ ⍵}⍤1 M]
+[+/⍤1 M;⊢⍤1 M;⌽⍤1 M;{10=↑⍵?⌽⍵;⍵}⍤1 M]
 ⍝ =>
 [["alice":12 "bob":24] (["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]) (["alice" "bob";"qty" "price"]:[2 10 ⋄ 4 20]) ("alice" "bob":[2 10 ⋄ 20 4])]
 
@@ -342,8 +342,8 @@ r←s←⍳4 → +/ → √ ⋄ [r s]   ⍝ [√6 √6]
 ⍝ — Pipe bodies still classify defined operators
 op←{⍵→⍶→⍹} ⋄ -op| 3   ⍝ 3
 
-⍝ — A pipeline may supply a guard condition or result
-{⍵→0<:⍵→⍲ ⋄ 0}3   ⍝ 9
+⍝ — A pipeline may supply a predicate or a result
+{⍵→0<?⍵→⍲;0}3   ⍝ 9
 
 ⍝ — Stages see earlier effects and run exactly once
 v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}   ⍝ 15
@@ -651,10 +651,10 @@ a←1 2 ⋄ b←3 4 ⋄ a (b b)   ⍝ [1 2;[3 4;3 4]]
 ⍝⍝ Agenda
 
 ⍝ — Agenda chooses negate for a negative argument
-cases←[- ⊢] ⋄ abs←{⍵≥0}⍚cases ⋄ abs¯3   ⍝ 3
+cases←[- ⊢] ⋄ abs←(0≤)⍚cases ⋄ abs¯3   ⍝ 3
 
 ⍝ — Agenda chooses identity for a nonnegative argument
-cases←[- ⊢] ⋄ abs←{⍵≥0}⍚cases ⋄ abs3   ⍝ 3
+cases←[- ⊢] ⋄ abs←(0≤)⍚cases ⋄ abs3   ⍝ 3
 
 ⍝ — A constant selector chooses the second function
 mul←1⍚[+ ×] ⋄ 2 mul 3   ⍝ 6
@@ -663,7 +663,7 @@ mul←1⍚[+ ×] ⋄ 2 mul 3   ⍝ 6
 mul←¯1⍚[+ ×] ⋄ 2 mul 3   ⍝ 6
 
 ⍝ — The selector and selected function both receive the original arguments
-choose←{⍺>⍵}⍚[- ÷] ⋄ 12 choose 3   ⍝ 4
+choose←>⍚[- ÷] ⋄ 12 choose 3   ⍝ 4
 
 ⍝ — An agenda branch may itself return a function
 choose←0⍚[{↑⍵} ⊢] ⋄ f←choose [+ ×] ⋄ 2 f 3   ⍝ 5
@@ -688,9 +688,8 @@ choose←0⍚[{↑⍵} ⊢] ⋄ f←choose [+ ×] ⋄ 2 f 3   ⍝ 5
 1⍚ 0↑[+ ×]
 ⍝ error: DOMAIN ERROR
 
-⍝ —
-1⍚1 2
-⍝ error: DOMAIN ERROR
+⍝ — An array among agenda's options acts as a constant function
+1⍚[1 2] 5   ⍝ 2
 
 ⍝ —
 {'a'}⍚[+ ×] 3
@@ -998,10 +997,10 @@ x←[1 2 3]ₓ ⋄ x.[0]+←0.5 ⋄ b←1 0 1=1 ⋄ b.[0]+←1 ⋄ [x b]   ⍝ (
 x←0 0 0 ⋄ y←x ⋄ x.[[1 1]]+←1 ⋄ y.[[1 1]]{⍺+⍵}←1 ⋄ x,y   ⍝ 0 2 0 0 2 0
 
 ⍝ — A modifier that reassigns or erases its target doesn't change the update
-x←1 2 3 ⋄ x.[0]{x,←5 ⋄ ⍺+⍵}←10 ⋄ y←1 2 3 ⋄ y.[0]{_←•ex "y" ⋄ ⍺+⍵}←10 ⋄ x,y   ⍝ 11 2 3 11 2 3
+x←1 2 3 ⋄ x.[0]{x,←5 ⋄ ⍺+⍵}←10 ⋄ y←1 2 3 ⋄ y.[0]{•ex "y" ⋄ ⍺+⍵}←10 ⋄ x,y   ⍝ 11 2 3 11 2 3
 
 ⍝ — An error in the modifier leaves the target unchanged
-x←1 2 3 ⋄ {0::x ⋄ x[0 1]{⍵=2:÷'a' ⋄ ⍺+⍵}←1 2}0   ⍝ 1 2 3
+x←1 2 3 ⋄ {0::x ⋄ x[0 1]{⍵=2?÷'a';⍺+⍵}←1 2}0   ⍝ 1 2 3
 
 ⍝ — An index error leaves the target unchanged
 x←1 2 3 ⋄ {0::x ⋄ x[0 5]←9}0   ⍝ 1 2 3
@@ -1022,10 +1021,10 @@ a←10 ⋄ f←{0::a ⋄ a+←⍵ ⋄ 1÷'a'} ⋄ z←f3 ⋄ z,a   ⍝ 13 13
 1+a←3   ⍝ 4
 
 ⍝ — Applying a function to an assignment result makes it non-shy
-{1+a←3 ⋄ 9}0   ⍝ 4
+{1+a←3}0   ⍝ 4
 
 ⍝ — Modified assignment yields its right argument, not the updated binding
-{a←1 ⋄ +a+←3 ⋄ 9}0   ⍝ 3
+{a←1 ⋄ +a+←3}0   ⍝ 3
 
 ⍝ —
 a←1+b←2 ⋄ [a b]   ⍝ 3 2
@@ -1306,9 +1305,10 @@ m←2 2⍴⍳4 ⋄ m.[∞ 1]←0 ⋄ m   ⍝ [0 0 ⋄ 2 0]
 ⍝ — Dot assignment adds missing keys
 T←"aa":1 ⋄ T.[["bb" "cc"]]←2 3 ⋄ T   ⍝ "aa" "bb" "cc":1 2 3
 
-⍝ — An assignment inside the container of a dot assignment is not a selection
-T←["a":1] ⋄ (U←T).["b"]←2
+⍝ — An assignment inside the container of a dot assignment is a syntax error, raised before anything runs
+T←["a":1] ⋄ (⎕←T).[⎕←"b"]←2
 ⍝ error: SYNTAX ERROR
+⍝ ⎕:
 
 ⍝ — Between functions the dot is inner product, even before a group
 1 2 3 +.(×⍨) 4 5 6   ⍝ 32
@@ -2137,7 +2137,7 @@ avg←+/÷≢ ⋄ avg [1 2 4]ₓ   ⍝ 7r3
 ≠/⍬   ⍝ $f
 
 ⍝ — Empty nested roll retains an exact vector prototype
-↑?0⍴⊂[1 2]ₓ   ⍝ [0 0]ₓ
+↑¿0⍴⊂[1 2]ₓ   ⍝ [0 0]ₓ
 
 ⍝ — Exact arithmetic gives integer storage
 v←[¯2 0 3]ₓ ⋄ x←[1ₓ 2r2 6r3;⍳3r1;1ₓ+[2 3]ₓ;10ₓ-[2 3]ₓ;[2 3]ₓ×4ₓ;[6 8]ₓ÷2ₓ;-[1 ¯2]ₓ;×[¯2 0 2]ₓ;(v>0)×v] ⋄ [x;•storage¨x]
@@ -2164,7 +2164,7 @@ x←[(9223372036854775807ₓ+[1 0]ₓ)-1ₓ;9223372036854775808r1-[1 2]ₓ] ⋄ 
 [2⍴⊂[9223372036854775807 9223372036854775806]ₓ;"integer" "integer"]
 
 ⍝ — Roll gives each result the exactness of its bound. Iota gives exact results only for exact arguments
-•storage¨[?0ₓ;?3ₓ 3;↑↑⍳[2 3]ₓ;↑↑⍳2ₓ 3]   ⍝ "float" "mixed" "integer" "float"
+•storage¨[¿0ₓ;¿3ₓ 3;↑↑⍳[2 3]ₓ;↑↑⍳2ₓ 3]   ⍝ "float" "mixed" "integer" "float"
 
 ⍝ — An exact number beside an approximate one gives an approximate result
 [0∨3ₓ;3ₓ∨0;1ₓ×3;3ₓ+0]   ⍝ 3 3 3 3
@@ -2619,7 +2619,7 @@ m←1ₓ 0.5 2ₓ ⋄ •storage¨[⌽m;2↑m;4↑m;1 0 1#m;1 0 1 1#⁻¹m;(⊂1
 •storage¨[⌊0.5 1.5;×¯2.5 0 3.5]   ⍝ "integer" "integer"
 
 ⍝ — An infinity never makes exact integers approximate, and shares integer storage with them
-•storage¨[⌊1.5 ∞;(⍳3ₓ),∞;∞,⍳3ₓ;(⍳3ₓ),2⍴∞;{⍵=1:∞ ⋄ ⍵}¨⍳3ₓ]
+•storage¨[⌊1.5 ∞;(⍳3ₓ),∞;∞,⍳3ₓ;(⍳3ₓ),2⍴∞;{⍵=1?∞;⍵}¨⍳3ₓ]
 "integer" "integer" "integer" "integer" "integer"
 
 ⍝ —
@@ -2656,7 +2656,7 @@ x←⍳3ₓ ⋄ x.[1]←∞ ⋄ •storage x   ⍝ "integer"
 a←2ₓ ⋄ b←0.5 ⋄ •storage [a;b]   ⍝ "mixed"
 
 ⍝ — Results computed item by item keep each number's exactness, as written items do. Kernels on compact storage give compact results
-x←1ₓ 0.5 ⋄ •storage¨[1×x;1ₓ×x;{⍵}¨x;?6ₓ 7;{⍵=0:0.5 ⋄ ⍵}¨⍳3ₓ;1ₓ×⍳3ₓ]
+x←1ₓ 0.5 ⋄ •storage¨[1×x;1ₓ×x;{⍵}¨x;¿6ₓ 7;{⍵=0?0.5;⍵}¨⍳3ₓ;1ₓ×⍳3ₓ]
 "float" "mixed" "mixed" "mixed" "mixed" "integer"
 
 ⍝ — JSON arrays take the import rule, and JSON objects stay mixed
@@ -3268,8 +3268,8 @@ s←+/ ⋄ s⍠0 [1 2 3 ⋄ 4 5 6]   ⍝ 5 7 9
 +/⍠0.5 [1 2 ⋄ 3 4]
 ⍝ error: DOMAIN ERROR
 
-⍝ — A dfn guard's diamond does not split the surrounding matrix
-∞ 0⌷[{⍵=0:1 ⋄ ⍵+2}0 3 ⋄ 4 5]   ⍝ 1 4
+⍝ — A dfn's separators don't split the surrounding matrix
+∞ 0⌷[{⍵=0?1;⍵+2}0 3 ⋄ 4 5]   ⍝ 1 4
 
 ⍝ — Reversing twice, flipping twice, transposing twice and splitting then mixing give back the argument
 {[⌽⌽⍵;⊖⊖⍵;⍉⍉⍵;⊃↓⍵]}¨[0 3;3 0;2 3;2 2 3]⍴¨⊂⍳12
@@ -3460,11 +3460,11 @@ x←1 ⋄ y←1+8E¯15 ⋄ z←1+16E¯15 ⋄ [x y]⍳z   ⍝ 1ₓ
 ⍸0   ⍝ 0⍴⊂⍬ₓ
 
 ⍝ —
-3?2
+3¿2
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-?¯1
+¿¯1
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
@@ -3490,15 +3490,15 @@ x←1 ⋄ y←1+8E¯15 ⋄ z←1+16E¯15 ⋄ [x y]⍳z   ⍝ 1ₓ
 ↑¨[⌊0⍴1ₓ;⌈0⍴1ₓ;|0⍴1ₓ;!0⍴1ₓ;2ₓ*0⍴1ₓ]   ⍝ [0 0 0 0 0]ₓ
 
 ⍝ — Roll gives whole numbers below its argument, exact only for an exact argument
-{[⍴⍵;∧/(⍵<9)∧⍵=⌊⍵;•storage ⍵]}¨[?100⍴9;?100⍴9ₓ]
+{[⍴⍵;∧/(⍵<9)∧⍵=⌊⍵;•storage ⍵]}¨[¿100⍴9;¿100⍴9ₓ]
 [[[100]ₓ;$t;"float"];[[100]ₓ;$t;"integer"]]
 
 ⍝ — Deal gives distinct whole numbers below its right argument
-{[⍴⍵;≢∪⍵;∧/(⍵<52)∧⍵=⌊⍵;•storage ⍵]}¨[13?52;13ₓ?52ₓ]
+{[⍴⍵;≢∪⍵;∧/(⍵<52)∧⍵=⌊⍵;•storage ⍵]}¨[13¿52;13ₓ¿52ₓ]
 [[[13]ₓ;13ₓ;$t;"float"];[[13]ₓ;13ₓ;$t;"integer"]]
 
 ⍝ — Roll of zero gives floats strictly between 0 and 1
-x←?100⍴0 ⋄ ∧/(0<x)∧x<1   ⍝ $t
+x←¿100⍴0 ⋄ ∧/(0<x)∧x<1   ⍝ $t
 
 ⍝⍝ Each commute and reduction
 
@@ -3573,21 +3573,17 @@ e←¨ ⋄ sum←+/ ⋄ sum e [[1 2] [3 4 5]]   ⍝ 3 12
 ⍝ — Dyadic Each with a pervasive function gives the same result as `1÷⍬`
 1÷¨⍬   ⍝ ⍬
 
-⍝ —
-2¨3
-⍝ error: DOMAIN ERROR
+⍝ — An array operand acts as a constant function
+2¨3   ⍝ 2
 
 ⍝ —
-f←2¨
-⍝ error: DOMAIN ERROR
+f←2¨ ⋄ f 1 2 3   ⍝ 2 2 2
 
 ⍝ —
-f←2⍃3
-⍝ error: DOMAIN ERROR
+f←2⍃3 ⋄ f 1   ⍝ 3
 
 ⍝ —
-f←+⍥3
-⍝ error: DOMAIN ERROR
+f←+⍥3 ⋄ f 10   ⍝ 3
 
 ⍝ —
 f←+⌺×
@@ -3632,7 +3628,7 @@ r←{⎕←7 ⋄ ⍵}¨⍬
 ⍝ ⎕: 1 0
 
 ⍝ — A no-result operand call makes the whole each return no result
-{⍵=2:{}⍵ ⋄ ⍵}¨1 2 3   ⍝ {}0
+{⍵=2?;⍵}¨1 2 3   ⍝ {}0
 
 ⍝ — Pick in an empty Each's prototype call selects by structure, so a missing position gives no error. The call's output shows.
 f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
@@ -4345,7 +4341,7 @@ each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3   ⍝ 6
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-?∞
+¿∞
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
@@ -4365,7 +4361,7 @@ each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3   ⍝ 6
 ⍝ — The gamma function gives an infinity or NaN at its poles
 [!¯1;!¯2ₓ]   ⍝ [∞ $n]
 
-⍝⍝ Dfn defaults, results and numbered guards
+⍝⍝ Dfn defaults, results, predicates and error guards
 
 ⍝ — A default left argument applies only when none is given
 f←{⍺←2 ⋄ ⍺+⍵} ⋄ f3   ⍝ 5
@@ -4373,14 +4369,15 @@ f←{⍺←2 ⋄ ⍺+⍵} ⋄ f3   ⍝ 5
 ⍝ — A given left argument skips the default's expression
 f←{⍺←1÷0 ⋄ ⍺+⍵} ⋄ 10 f 3   ⍝ 13
 
-⍝ — A final assignment's value is the result, and a statement that isn't an assignment returns at once
-f←{a←1} ⋄ [f 0;1+f 0;{f ⍵ ⋄ 2}0]   ⍝ 1 2 1
+⍝ — A final assignment's value is the result, and statements before the last run without returning
+f←{a←1} ⋄ [f 0;1+f 0;{f ⍵ ⋄ 2}0]   ⍝ 1 2 2
 
-⍝ — An empty dfn, or one whose guards all fail, gives no result
+⍝ — An empty dfn gives no result
 {}0   ⍝ {}0
 
-⍝ —
-{a←1 ⋄ 0:2}0   ⍝ {}0
+⍝ — A dfn whose predicates all fail raises an error
+{a←1 ⋄ 0?2}0
+⍝ error: DOMAIN ERROR
 
 ⍝ — Output inside a dfn shows, and its value is the result
 {⎕←7}0
@@ -4399,8 +4396,8 @@ f←{a←1} ⋄ [f 0;1+f 0;{f ⍵ ⋄ 2}0]   ⍝ 1 2 1
 ⍝ — A dfn that ends in an assignment works inside a train
 {f←{a←1} ⋄ (+f+)3}0   ⍝ 1
 
-⍝ — A guard condition is a one-item Boolean of any rank, within tolerance
-g←{⍵:7 ⋄ 9} ⋄ [g ,1;g 1 1⍴0;g 1 1 1⍴1;g 1.000000000000001]   ⍝ 7 9 7 7
+⍝ — A predicate is a one-item Boolean of any rank, within tolerance
+g←{⍵?7;9} ⋄ [g ,1;g 1 1⍴0;g 1 1 1⍴1;g 1.000000000000001]   ⍝ 7 9 7 7
 
 ⍝ — No result can't be assigned or used as an argument
 x←{}0
@@ -4410,36 +4407,42 @@ x←{}0
 1+{}0
 ⍝ error: VALUE ERROR
 
-⍝ — A guard for other error numbers passes the error on
+⍝ — An error guard for other error numbers passes the error on
 {6::7 ⋄ 1÷⍵}'a'
 ⍝ error: DOMAIN ERROR
 
-⍝ — A guard holds one condition
-{1:1:2}0
+⍝ — A body can hold several predicates, and runs on only while each holds
+[{1?1?2}0;{1?0?2;3}0]   ⍝ 2 3
+
+⍝ — A body without a predicate must be last, because it always returns
+{1;2}0
 ⍝ error: SYNTAX ERROR
 
-⍝ — A guard condition must be one Boolean
-{⍵:7 ⋄ 9}1 1
+⍝ — A predicate must be one Boolean
+{⍵?7;9}1 1
 ⍝ error: LENGTH ERROR
 
 ⍝ —
-{⍵:7 ⋄ 9}⍬
+{⍵?7;9}⍬
 ⍝ error: LENGTH ERROR
 
 ⍝ —
-{⍵:7 ⋄ 9}⊂,1
+{⍵?7;9}⊂,1
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-{⍵:7 ⋄ 9}'a'
+{⍵?7;9}'a'
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-{⍵:7 ⋄ 9}2
+{⍵?7;9}2
 ⍝ error: DOMAIN ERROR
 
-⍝ — An inner dfn has no left argument unless it's given one
-10{g←{⍺+⍵} ⋄ g ⍵}3
+⍝ — Without a left argument, ⍺ drops out, along with any call on it, and out of lists and strands. An inner dfn has its own ⍺
+[10{g←{⍺+⍵} ⋄ g ⍵}3;{(2×⍺)-⍵}3;{[⍺ ⍵]}3;{⍺ ⍵}3]   ⍝ [3 ¯3 [3] 3]
+
+⍝ — An absent ⍺ can't be a value
+{x←⍺}3
 ⍝ error: VALUE ERROR
 
 ⍝ — A numbered guard catches an error that •signal raises by name
@@ -4494,27 +4497,27 @@ f←{•signal "LENGTH ERROR"} ⋄ g←{⍵+1} ⋄ {0::g ⍵ ⋄ f ⍵}3   ⍝ 4
 ⍝ — A handler sees names assigned after its guard
 {0::fresh ⋄ fresh←1 ⋄ 1÷⍵}'a'   ⍝ 1
 
-⍝ — A guard condition must be 0 or 1
-{2:1 ⋄ 0}0
+⍝ — A predicate must be 0 or 1
+{2?1;0}0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — A dfn can't return a function that uses its local names
 {x←2 ⋄ {x+⍵}}0
 ⍝ error: DOMAIN ERROR
 
-⍝ — A guard can give a function
-f←{1:+ ⋄ 0}0 ⋄ 2 f 3   ⍝ 5
+⍝ — A predicate's body can give a function
+f←{1?+;0}0 ⋄ 2 f 3   ⍝ 5
 
 ⍝ — A handler is an expression, including an output assignment, and runs only on an error
 f←{0::⎕←1} ⋄ f0   ⍝ {}0
 
-⍝⍝ Lexical frames recursion and guards
+⍝⍝ Lexical frames, recursion, predicates and error guards
 
-⍝ — A false empty guard falls through. Dyalog 20.0.53963.0, IO=1, CT=1E¯14, DIV=0.
-{⍵=0: ⋄ 3}1   ⍝ 3
+⍝ — A false predicate moves on to the next body. Dyalog 20.0.53963.0, IO=1, CT=1E¯14, DIV=0.
+{⍵=0?;3}1   ⍝ 3
 
-⍝ — A no-result guard cannot supply an argument to addition
-1+{⍵=0: ⋄ 3}0
+⍝ — A predicate that ends its body gives no result, which addition rejects
+1+{⍵=0?;3}0
 ⍝ error: VALUE ERROR
 
 ⍝ — Name lookup follows lexical nesting, not the caller's local bindings
@@ -4532,10 +4535,10 @@ outer←{offset←{⍶+⍵} ⋄ (2 offset)3} ⋄ outer0   ⍝ 5.0
 offset←{⍶+⍵} ⋄ a←2 ⋄ kept←a offset ⋄ a←9 ⋄ kept3   ⍝ 5.0
 
 ⍝ — Recursion through del uses the current dfn
-fact←{⍵=0:1 ⋄ ⍵×∇⍵-1} ⋄ fact6   ⍝ 720.0
+fact←{⍵=0?1;⍵×∇⍵-1} ⋄ fact6   ⍝ 720.0
 
 ⍝ — Mutually recursive local functions resolve definitions introduced later
-outer←{even←{⍵=0:1 ⋄ odd ⍵-1} ⋄ odd←{⍵=0:0 ⋄ even ⍵-1} ⋄ even ⍵} ⋄ outer8
+outer←{even←{⍵=0?1;odd ⍵-1} ⋄ odd←{⍵=0?0;even ⍵-1} ⋄ even ⍵} ⋄ outer8
 1.0
 
 ⍝ — A callee's error reaches the caller's guard, and the handler sees the caller's locals as they were at the error
@@ -4544,14 +4547,14 @@ bad←{1÷⍵} ⋄ guarded←{x←10 ⋄ 0::x ⋄ x←20 ⋄ bad ⍵} ⋄ guarde
 ⍝ — A failing handler is inactive while it runs, allowing the earlier guard to catch it
 guarded←{0::7 ⋄ 0::1÷'a' ⋄ 1÷⍵} ⋄ guarded 'a'   ⍝ 7.0
 
-⍝ — A true guard with an empty body returns no result
-{⍵=0: ⋄ 3}0   ⍝ {}0
+⍝ — A true predicate that ends its body returns no result
+{⍵=0?;3}0   ⍝ {}0
 
 ⍝ — An empty error handler catches the error and returns no result
 {0:: ⋄ 1÷'a'}0   ⍝ {}0
 
-⍝ — A final empty guard also returns no result
-{⍵=0:}0   ⍝ {}0
+⍝ — A final predicate that ends its body also returns no result
+{⍵=0?}0   ⍝ {}0
 
 ⍝ — Output is not rolled back by a guard.
 guarded←{0::7 ⋄ ⎕←2 ⋄ 1÷⍵} ⋄ guarded 'a'
@@ -4931,8 +4934,8 @@ T←"price" "qty":[1 2 3;4 5 6]
 ⍝ =>
 [2ₓ;[2]ₓ;1 2 3;4 5 6;[3]ₓ;"price" "qty"]
 
-⍝ axis-function-value — Stored functions retain ordinary dfn guards
-("sign"⊃"sign":{⍵<0:¯1 ⋄ 1})¨¯2 3   ⍝ ¯1 1
+⍝ axis-function-value — Stored functions keep their predicates
+("sign"⊃"sign":{⍵<0?¯1;1})¨¯2 3   ⍝ ¯1 1
 
 ⍝ axis-empty — Empty labelled axes retain their key lists
 T←⍬:⍬ ⋄ [≢T;⍴⍳⍠0 T;T≡⍬;T≡T;2⍴T]
