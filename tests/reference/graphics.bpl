@@ -28,7 +28,7 @@ $t
 ⍝ mime-field — A function in _mime renders the current keyed vector
 total←["items":[1 2 3]]
 total._mime←{["text/html":"<b>",(⍕+/⍵.items),"</b>"]}
-total.items.[1]←10
+total.items₁←10
 "text/html"⊃•mime total
 ⍝ =>
 "<b>14</b>"

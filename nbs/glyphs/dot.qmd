@@ -28,7 +28,7 @@ i←1 2 ⋄ m.(i)      ⍝ 6
 9,m.[0 1],3        ⍝ 9 1 3
 ```
 
-A number cannot follow the dot directly, because `.2` is a number. Write `v.[2]`. A decimal point needs a digit after it, so a dot after a number is never part of the number. Assignment to a dot path goes through `⌷`, and adds missing keys.
+A number cannot follow the dot directly, because `.2` is a number. Write `v.[2]`, or the [subscript](subscript.qmd) `v₂`. A decimal point needs a digit after it, so a dot after a number is never part of the number. Assignment to a dot path goes through `⌷`, and adds missing keys.
 
 ```bpl
 v←10 20 30

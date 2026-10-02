@@ -79,19 +79,18 @@ Source: APLcart. The `1+` goes, because positions count from 0. `⁻¹` inverts 
 
 ### Translate characters
 
-Source: `lcase` in the dfns workspace. The table is `lc,,⍵`, and the positions are `(uc,,⍵)⍳⍵`. A selection has the shape of its positions. Here that is the shape of `⍵`. The BPL spelling leaves out the original's `(⍴⍵)⍴`.
+Source: the translation in `lcase` in the dfns workspace, here with tables that complement a DNA strand. The table is `"TGCA",,⍵`, and the positions are `("ACGT",,⍵)⍳⍵`. A selection has the shape of its positions. Here that is the shape of `⍵`. The BPL spelling leaves out the original's `(⍴⍵)⍴`.
 
 ```dyalog
-(⍴⍵)⍴(lc,,⍵)[(uc,,⍵)⍳⍵]
+(⍴⍵)⍴('TGCA',,⍵)[('ACGT',,⍵)⍳⍵]
 ```
 
 ```bpl
-lc←"abcdefghijklmnopqrstuvwxyz" ⋄ uc←•a
-{[(uc,,⍵)⍳⍵]⌷lc,,⍵} "HeLLo!"   ⍝ "hello!"
+{[("ACGT",,⍵)⍳⍵]⌷"TGCA",,⍵} "GATTACA"   ⍝ "CTAATGT"
 ```
 
 ```bqn
-{(lc∾⥊𝕩)⊏˜(uc∾⥊𝕩)⊐𝕩}
+{("TGCA"∾⥊𝕩)⊏˜("ACGT"∾⥊𝕩)⊐𝕩}
 ```
 
 ### An index that assigns the array's name
@@ -112,7 +111,7 @@ Source: the ngn/apl tests. `⌷` evaluates its right argument first, so the assi
 
 ### Indexing inside arithmetic
 
-Spaces replace the parentheses. `0⌷v*2`, `+` and `1⌷v*2` are three runs, and each run is evaluated first. `⌷` takes everything to its right, so each run squares `v` and then selects one item. The BQN line sums the squares of the first two items.
+A subscript selects one position, and a superscript squares. Both bind more tightly than anything else, so `v₀²+v₁²` needs no parentheses. The Dyalog line sums the squares of the first two items.
 
 ```dyalog
 (v[1]*2)+v[2]*2
@@ -120,7 +119,7 @@ Spaces replace the parentheses. `0⌷v*2`, `+` and `1⌷v*2` are three runs, and
 
 ```bpl
 v←3 4 5
-0⌷v*2 + 1⌷v*2          ⍝ 25
+v₀²+v₁²                 ⍝ 25
 ```
 
 ```bqn
@@ -178,15 +177,14 @@ Source: the April tests. When the positions are vectors, `⌷` reads each one as
 
 ### Two sorts, each enclosed
 
-Source: the dfns string examples. Brackets write the pair directly, where APL builds it with `⊂` and `,`. Inside brackets, each unspaced expression is one item. `lcase⍵` needs no space, because `⍵` is a glyph, not a name.
+Source: the dfns string examples. Brackets write the pair directly, where APL builds it with `⊂` and `,`. Inside brackets, each unspaced expression is one item. The system function `•c` lowercases, so BPL needs no `lcase`. `•c⍵` needs no space, because `⍵` is a glyph, not a name.
 
 ```dyalog
 {(⊂⍵[⍋lcase ⍵]),⊂⍵[⍋⍵]}
 ```
 
 ```bpl
-lcase←{[(•a,,⍵)⍳⍵]⌷"abcdefghijklmnopqrstuvwxyz",,⍵}
-{[[⍋lcase⍵]⌷⍵ [⍋⍵]⌷⍵]} "baC"   ⍝ "abC" "Cab"
+{[[⍋•c⍵]⌷⍵ [⍋⍵]⌷⍵]} "baC"   ⍝ "abC" "Cab"
 ```
 
 ```bqn
@@ -291,12 +289,12 @@ T   ⍝ ["name":"Ann" "age":37 "city":"London"]
 
 ### Assigning through a path
 
-Source: the [XML guide](xml.ipynb). A path of names and dot indexes reads and writes nested keyed values. Assignment through a path creates any record missing along it. A BQN namespace has a fixed set of fields, and code outside it can't assign them.
+Source: the [XML guide](xml.ipynb). A path of names, subscripts and dot indexes reads and writes nested keyed values. Assignment through a path creates any record missing along it. A BQN namespace has a fixed set of fields, and code outside it can't assign them.
 
 ```bpl
 pic←["tag":"svg" "children":[["tag":"circle" "attrs":["fill":"red"]]]]
-pic.children.[0].attrs.fill←"steelblue"
-pic.children.[0].attrs.fill   ⍝ "steelblue"
+pic.children₀.attrs.fill←"steelblue"
+pic.children₀.attrs.fill   ⍝ "steelblue"
 ```
 
 ### Looking up a value in an association list
@@ -639,43 +637,50 @@ a⊏˜26|3+a⊐t
 
 ## Programs
 
-### Determinant
+### Sierpinski's triangle
 
-Source: `det` in the dfns workspace. Each line shows the recursive step. The step takes the largest element as the pivot, then recurses on the reduced matrix. In BPL, each spaced part is one run: the left argument of `∇`, then the terms of the update. The left argument needs no parentheses.
+Source: the ngn/apl examples. In BPL, each spaced part of `f` is one run, so its body needs no parentheses. The lookup table `" #"` is the right argument of `⌷`, and the brackets make the picture one item of positions. `⍪1` writes the 1-by-1 starting matrix without spaces, because a space would separate items inside the brackets.
 
 ```dyalog
-(⍺×⍵[i;j]×¯1*i+j)∇ ⍵[k~i;k~j]-⍵[k~i;j]∘.×⍵[i;k~j]÷⍵[i;j]
+f←{(⍵,(⍴⍵)⍴0)⍪⍵,⍵}
+S←{' #'[(f⍣⍵)1 1⍴1]}
 ```
 
 ```bpl
-det←{⍺←1 ⋄ 0=n←≢⍵?⍺;[i j]←(⍴⍵)⊤{⍵⍳⌈/⍵}|,⍵ ⋄ k←⍳n ⋄ ⍺×⍵.[i j]×¯1*i+j ∇ [k~[i] k~[j]]⌷⍵ - [k~[i] j]⌷⍵ ×⊗ [i k~[j]]⌷⍵ ÷ [i j]⌷⍵}
-det [1 2 ⋄ 3 4]        ⍝ ¯2
-det [2 0 1 ⋄ 1 3 2 ⋄ 1 1 2]   ⍝ 6
+f←{⍵,(⍴⍵)⍴0 ⍪ ⍵,⍵}
+S←{[(f⍣⍵)⍪1]⌷" #"}
+⍴S 5                   ⍝ [32 32]ₓ
 ```
 
 ```bqn
-(𝕨×(⟨i,j⟩⊑𝕩)×¯1⋆i+j)𝕊(⟨(k≠i)/k,(k≠j)/k⟩⊏𝕩)-(⟨(k≠i)/k,<j⟩⊏𝕩)×⌜(⟨<i,(k≠j)/k⟩⊏𝕩)÷⟨i,j⟩⊑𝕩
+F←{(𝕩∾˘(≢𝕩)⥊0)∾𝕩∾˘𝕩}
+S←{" #"⊏˜F⍟𝕩 1‿1⥊1}
 ```
 
-### Roman numerals
+The picture for `S 3`:
 
-Source: `roman` in the dfns workspace. The original sets `⎕IO←0`, as BPL always counts. `⌷` selects from each table, with the positions on its left. `⊤` puts its digits on the last axis, so the encoded table in `fmt` has a row for each decimal digit, and `[⍵⊤⍨4⍴10]⌷` selects a row for each digit of `⍵`. Those rows form a matrix of positions, and `⊂` makes it one item for the outer `⌷`. `~` searches the major cells of its right argument, so the blank to remove is the string `" "`. `num` uses windows, `-/2↕⍵,0`, in place of `⍵-1↓⍵,0`. BQN has no encode primitive. Its `Fmt` lists the digit patterns directly.
+```text
+#       
+##      
+# #     
+####    
+#   #   
+##  ##  
+# # # # 
+########
+```
+
+### The Mandelbrot set
+
+Source: the ngn/apl examples. Outer product is `+⊗`, in place of `∘.+`. Reducing a list of matrices gives a matrix, not a scalar that holds one, so the original's `⊃` goes. The lookup table `" #"` is the right argument of `⌷`, and the brackets make the picture one item of positions. BQN has no complex numbers.
 
 ```dyalog
-num←{⎕IO←0 ⋄ {⍵+.××0.5+×⍵-1↓⍵,0}(,⍉1 5∘.×10*⍳4)[7|'IVXLCDMivxlcdm'⍳⍵]}
-fmt←{⎕IO←0 ⋄ ~∘' ',1 0 0⍉(' '⍪3 4⍴'MCXI DLV ')[(0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)[;⍵⊤⍨4⍴10];]}
+' #'[9>|⊃{⍺+⍵*2}/9⍴⊂¯3×.7j.5-⍉a∘.+0j1×a←(⍳n+1)÷n←98]
 ```
 
 ```bpl
-num←{{⍵+.××0.5+×-/2↕⍵,0}[7|"IVXLCDMivxlcdm"⍳⍵]⌷,⍉1 5×⊗10*⍳4}
-fmt←{~⍄" ",0 1 0⍉(⊂[⍵⊤⍨4⍴10]⌷0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)⌷' '⍪3 4⍴"MCXI DLV "}
-num "MCMXCIV"          ⍝ 1994
-fmt1994                ⍝ "MCMXCIV"
-```
-
-```bqn
-Num←{{+´𝕩××0.5+×-´˘2↕𝕩∾0}(⥊⍉1‿5×⌜10⋆↕4)⊏˜7|"IVXLCDMivxlcdm"⊐𝕩}
-Fmt←{∾"MMM"‿"CDM"‿"XLC"‿"IVX"⊏¨˜⟨⟨⟩,⟨0⟩,0‿0,0‿0‿0,0‿1,⟨1⟩,1‿0,1‿0‿0,1‿0‿0‿0,0‿2⟩⊏˜10|⌊𝕩÷1000‿100‿10‿1}
+picture←[9>|{⍺+⍵*2}/9⍴⊂¯3×.7j.5-⍉a+⊗0j1×a←(⍳n+1)÷n←98]⌷" #"
+⍴picture               ⍝ [99 99]ₓ
 ```
 
 ### Value of a Roman numeral

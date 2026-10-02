@@ -556,14 +556,15 @@ fn mask_selection(mask: &Value, right: &Value, span: &Span, session: &Session) -
 }
 
 fn at(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
-    // A Boolean array is a mask, as a selector function's result is. Other arrays give positions.
-    let selection = match &operands[1] {
-        Operand::Value(mask) if mask.as_booleans().is_some() => mask_selection(mask, right, span, session)?,
-        Operand::Value(indices) => crate::primitive::at_indices(right, indices, &session.execution.at(span))?,
-        Operand::Function(f) => {
-            let mask = f.call_array(None, right, span, session, output)?;
-            mask_selection(&mask, right, span, session)?
-        }
+    // A Boolean array is a mask. Other arrays give positions. A selector function's result follows the same rule.
+    let selector = match &operands[1] {
+        Operand::Value(a) => a.clone(),
+        Operand::Function(f) => f.call_array(None, right, span, session, output)?,
+    };
+    let selection = if selector.as_booleans().is_some() {
+        mask_selection(&selector, right, span, session)?
+    } else {
+        crate::primitive::at_indices(right, &selector, &session.execution.at(span))?
     };
     let values = match &operands[0] {
         Operand::Value(a) => a.clone(),

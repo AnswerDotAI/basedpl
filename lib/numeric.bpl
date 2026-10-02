@@ -35,7 +35,7 @@ bsearch ← {  ⍝ Binary search: least n in range ⍵ with ⍶ n.
   ¯1≤-/⍵?1↑⍵+2-+/⍶¨⍵;
   mid←⌈0.5×+/⍵  ⍝ Mid point:
   ⍶ mid?∇(1↑⍵),mid;
-         ∇ mid,1↓⍵  ⍝ 0: search upper half.
+  ∇ mid,1↓⍵  ⍝ 0: search upper half.
 }
 
 ⍝ From http://dfns.dyalog.com/c_cfract.htm
@@ -51,7 +51,7 @@ cfract ← {  ⍝ Continued fraction approximation of real ⍵.
 ⍝ From http://dfns.dyalog.com/c_colsum.htm
 
 colsum ← {  ⍝ Sum of (default decimal) columns.
-  ⍺←10 ⋄ ⍺{{(0=⍬⍴⍵)↓⍵}+⌿1 0⌽0,⍉[0 ⍺]⊤⍵}⍣≡+⌿⍵  ⍝ repeat while overflow.
+  ⍺←10 ⋄ ⍺{{(0=↑⍵)↓⍵}+⌿1 0⌽0,⍉[0 ⍺]⊤⍵}⍣≡+⌿⍵  ⍝ repeat while overflow.
 }
 
 ⍝ From http://dfns.dyalog.com/c_efract.htm
@@ -96,12 +96,6 @@ factors ← { ⍵{  ⍝ Prime factors of ⍵.
   }2,(3+2×⍳⌊0.5×√⍵),⍵  ⍝ 2,3 5 .. sqrt(⍵),⍵
 }
 
-⍝ From http://dfns.dyalog.com/c_gcd.htm
-
-gcd ← { ⍵=0 ? |⍺;⍵∇⍵|⍺ }  ⍝ Greatest common divisor.
-
-lcm ← { ⍺×⍵÷g+0=g←⍺ gcd ⍵ }  ⍝ Least common multiple. The lcm of 0 and 0 is 0.
-
 ⍝ From http://dfns.dyalog.com/c_k6174.htm
 
 k_6174 ← {  ⍝ Kaprekar's operation.
@@ -118,10 +112,9 @@ k_6174 ← {  ⍝ Kaprekar's operation.
 ⍝ From http://dfns.dyalog.com/c_hex.htm
 
 hex ← {  ⍝ Hexadecimal from decimal.
-  ⍺←⊢  ⍝ no width specification.
   1≠≡,⍵?⍺∇¨⍵;  ⍝ simple-array-wise:
   0∊,⍵-1+⍵?"Too big";
-  n←⍬⍴⍺,2*⌈2⍟2⌈16⍟1+⌈/|⍵  ⍝ default width.
+  n←↑⍺,2*⌈2⍟2⌈16⍟1+⌈/|⍵  ⍝ default width.
   ↓[(n#16 ⊤ ⍵)]⌷"0123456789abcdef"
 }
 
@@ -146,7 +139,7 @@ int ← {m←2*⍺-1 ⋄ (2×m | m+⍵)-m}  ⍝ Signed from unsigned integer.
 
 ⍝ From http://dfns.dyalog.com/c_uns.htm
 
-uns ← { (2*⍺)|⍵ }  ⍝ Unsigned from signed integer.
+uns ← {(2*⍺)|⍵}  ⍝ Unsigned from signed integer.
 
 ⍝ From http://dfns.dyalog.com/c_nicediv.htm
 
@@ -159,13 +152,9 @@ nicediv ← {  ⍝ ⍵ similar integers with sum ⍺.
 
 ⍝ From http://dfns.dyalog.com/s_nicediv.htm
 
-stack ← { ⍉⊃( ⍺ nicediv ⍵)#¨'⎕' }
+stack ← {⍉⊃(⍺ nicediv ⍵)#¨'⎕'}
 
-osc ← { 1=⍵ ? 1;2|⍵ ? ∇ 1+3×⍵;∇ ⍵÷2 }  ⍝ Oscillate - probably returns 1.
-
-⍝ From http://dfns.dyalog.com/c_range.htm
-
-range ← { (⍴⍵)⍴(⍴⍺ ↓ ⍋⍋⍺,,⍵)-⍋⍋,⍵ }  ⍝ Numeric range classification.
+osc ← {1=⍵?1;2|⍵?∇ 1+3×⍵;∇ ⍵÷2}  ⍝ Oscillate - probably returns 1.
 
 ⍝ From http://dfns.dyalog.com/c_rational.htm
 
@@ -178,10 +167,9 @@ rational ← {  ⍝ Rational approximation to real ⍵.
 roman ← {  ⍝ Roman numeral arithmetic.
   num←{{⍵+.××0.5+×-/2↕⍵,0}[7|"IVXLCDMivxlcdm"⍳⍵]⌷,⍉1 5×⊗10*⍳4}
   fmt←{~⍄" ",0 1 0⍉(⊂[⍵⊤⍨4⍴10]⌷0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)⌷' '⍪3 4⍴"MCXI DLV "}
-  depth←{⍹≥≡⍵ ? ⍶ ⍵;∇¨⍵}
+  depth←{⍹≥≡⍵?⍶ ⍵;∇¨⍵}
   nums←num depth 1  ⍝ arabic from roman.
   fmts←fmt depth 0  ⍝ roman from arabic.
-  ⍺←⍬ ⋄ ⍬≡⍺?fmts ⍶ ⌊nums ⍵;
   fmts(⌊nums ⍺)⍶ ⌊nums ⍵
 }
 
@@ -224,19 +212,7 @@ xTo ← {  ⍝ Sequence ⍺ .. ⍵
 
 ⍝ From http://dfns.dyalog.com/n_abc.htm
 
-bp ← {↑[⍺<⍵ ⍺>⍵]}  ⍝ Boolean pair (2-vector)
-
-xd ← {×⍺-⍵}  ⍝ Signum difference
-
-bd ← {⍺>⍵ - ⍺<⍵}  ⍝ Boolean difference
-
-rg ← {(⍺.[0]⍶ ⍵)∧⍺.[1]⍹ ⍵}  ⍝ Range operator
-
-xp ← {×/×⍵-⊗⍺}  ⍝ Signum product
-
-xs ← {+/×⍵-⊗⍺}  ⍝ Signum sum
-
-xm ← {⌈/⊃×⌿×⍺,.-⍵ᵀ}  ⍝ Max signum
+rg ← {(⍺₀⍶ ⍵)∧⍺₁⍹ ⍵}  ⍝ Range operator
 
 xr ← {d←⍉⊃+/×⍵,.-⍺ᵀ ⋄ (2∨.=|d #⍠¯1 d)←2 ⋄ 3⊥dᵀ}  ⍝ Outside location
 
@@ -250,7 +226,7 @@ alt ← {  ⍝ Alternant.
   ⍵.[∞ 0]⍶.⍹∇¨⊂⍠[1 2][M 1↓⍳c]⌷⍵
 }
 
-bayes ← { ⍺ ×÷+.× ⍵ }  ⍝ Bayes' formula. (implemented as a fork)
+bayes ← {⍺ ×÷+.× ⍵}  ⍝ Bayes' formula. (implemented as a fork)
 
 ⍝ From http://dfns.dyalog.com/c_Cholesky.htm
 
@@ -258,7 +234,7 @@ Cholesky ← {  ⍝ decomposition of a Hermitian positive-definite matrix.
   1≥n←≢⍵?√⍵;
   p←⌈n÷2
   q←⌊n÷2
-  X←(p,p)↑⍵⊣Y←(p,-q)↑⍵⊣Z←(-q,q)↑⍵
+  X←(p,p)↑⍵ ⋄ Y←(p,-q)↑⍵ ⋄ Z←(-q,q)↑⍵
   L_0←∇ X
   L_1←∇ Z-(TT←+Yᵀ +.× ⌹X)+.×Y
   (p,n)↑L_0 ⍪ TT+.×L_0 , L_1
@@ -269,7 +245,7 @@ Cholesky ← {  ⍝ decomposition of a Hermitian positive-definite matrix.
 det ← {  ⍝ Determinant of square matrix.
   ⍺←1  ⍝ product of co-factor coefficients so far
   0=n←≢⍵?⍺;  ⍝ result for 0-by-0
-  [i j]←(⍴⍵)⊤{⍵⍳⌈/⍵}|,⍵
+  [i j]←(⍴⍵)⊤↑⍒|,⍵
   k←⍳n
   (⍺×⍵.[i j]×¯1*i+j)∇ [k~[i] k~[j]]⌷⍵ - [k~[i] j]⌷⍵ ×⊗ [i k~[j]]⌷⍵ ÷ [i j]⌷⍵
 }
@@ -278,10 +254,10 @@ det ← {  ⍝ Determinant of square matrix.
 
 gauss_jordan ← {  ⍝ Gauss-Jordan elimination.
   elim←{  ⍝ elimination of row/col ⍺
-    p←⍺+{⍵⍳⌈/⍵}|⍺↓[∞ ⍺]⌷⍵
+    p←⍺+↑⍒|⍺↓[∞ ⍺]⌷⍵
     swap←⊖@[⍺ p] ⍵  ⍝ ⍺th and pth rows exchanged
     mat←swap.[⍺ ⍺]÷⍨@⍺ swap  ⍝ col diagonal reduced to 1
-    mat-(mat.[∞ ⍺]×⍺≠⍳≢⍵)×⊗mat.(⍺)
+    mat-(mat.[∞ ⍺]×⍺≠⍳≢⍵)×⊗⍺⌷mat
   }
   ⍺←=/⊃⍳⍴⍵
   (⍴⍺)⍴(0 1×⍴⍵)↓(⍵,⍺)elim/⌽⍳⌊/⍴⍵
@@ -289,7 +265,7 @@ gauss_jordan ← {  ⍝ Gauss-Jordan elimination.
 
 ⍝ From http://dfns.dyalog.com/s_gauss_jordan.htm
 
-tryGJ←{⍺←⊢ ⋄ [⍺⌹⍵ (⍺ gauss_jordan ⍵)]}  ⍝ gauss_jordan vs primitive ⌹.
+tryGJ←{[⍺⌹⍵ (⍺ gauss_jordan ⍵)]}  ⍝ gauss_jordan vs primitive ⌹.
 
 ⍝ From http://dfns.dyalog.com/s_gauss_jordan.htm
 
@@ -323,23 +299,16 @@ ksphere ← {  ⍝ Surface area of k-sphere.
 
 ⍝ From http://dfns.dyalog.com/s_ksphere.htm
 
-kvol ← { ⍵×(⍺-1 ksphere ⍵)÷⍺ }
-
-⍝ From http://dfns.dyalog.com/c_mean.htm
-
-mean ← { sum←+/⍵ ⋄ num←⍴⍵ ⋄ sum÷num }  ⍝ Arithmetic mean.
+kvol ← {⍵×(⍺-1 ksphere ⍵)÷⍺}
 
 ⍝ From http://dfns.dyalog.com/s_mean.htm
 
-stdev ← {
-  square←*⍄2 ⋄ sqrt←*⍄0.5
-  sqrt(mean square ⍵)-square mean ⍵
-}
+stdev ← {√(+/÷≢ ⍵²)-(+/÷≢ ⍵)²}  ⍝ Standard deviation.
 
 ⍝ From http://dfns.dyalog.com/c_NormRand.htm
 
 NormRand ← {                                 ⍝ Random numbers with a normal distribution
-  depth←10*9                                 ⍝ randomness depth - can be larger from v14.0
+  depth←10*9                                 ⍝ randomness depth
   [x y]←⊂⍤¯1 (1+¿depth⍴⍨2,⍵)÷depth          ⍝ two random variables within ]0;1]
   (¯2×⍟x * 0.5)×1○π2×y                       ⍝ Box-Muller distribution
 }
@@ -379,10 +348,6 @@ phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
 
 align←{p←{⍵⍳'.'}¨⍵ ⋄ ⊃(⌈/p - p){(⍺⍴' '),⍵}¨⍵}
 
-⍝ From http://dfns.dyalog.com/c_root.htm
-
-root ← { ⍺←2 ⋄ ⍵*÷⍺ }  ⍝ ⍺'th root, default to sqrt.
-
 ⍝ From http://dfns.dyalog.com/c_roots.htm
 
 realroots ← {  ⍝ Real roots of quadratic.
@@ -390,7 +355,7 @@ realroots ← {  ⍝ Real roots of quadratic.
   d←b²-4×a×c  ⍝ Discriminant.
   d<0?⍬;  ⍝ No roots
   d=0?-b÷2×a;  ⍝ One root
-  d>0?(-b+¯1 1×√d)÷2×a  ⍝ Two roots
+  (-b+¯1 1×√d)÷2×a  ⍝ Two roots
 }
 
 ⍝ From http://dfns.dyalog.com/s_roots.htm
@@ -432,9 +397,9 @@ polar ← {  ⍝ Polar from/to cartesian coordinates.
 
 ⍝ From http://dfns.dyalog.com/s_polar.htm
 
-rnd ← { (10*-⍺)×⌊0.5+⍵×10*⍺ }
+rnd ← {(10*-⍺)×⌊0.5+⍵×10*⍺}
 
-poly ← { 2 1 ○⊗ (π2÷⍵)×⍳⍵ }
+poly ← {2 1 ○⊗ (π2÷⍵)×⍳⍵}
 
 ⍝ From http://dfns.dyalog.com/c_xtimes.htm
 
@@ -450,7 +415,7 @@ xtimes ← { m←0  ⍝ Fast multi-digit product using FFT.
   (+/∧\0=t)↓t←carry⍣≡0,⌊0.5+9○(⍺ rconvolve ⍵)
 }
 
-convolve ← { +⌿(-⍳⍴⍺)⌽⍺×⊗⍵,0×1↓⍺ }
+convolve ← {+⌿(-⍳⍴⍺)⌽⍺×⊗⍵,0×1↓⍺}
 
 ⍝ From http://dfns.dyalog.com/c_xpower.htm
 

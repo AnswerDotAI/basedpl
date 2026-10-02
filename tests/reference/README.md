@@ -35,7 +35,7 @@ The `.bpl` files determine which cases run, regardless of inventory status. Edit
 | `setup` | Upstream initialization retained for self-contained cases; no standalone assertion. |
 | `pending` | Intended coverage that still needs implementation, an origin/dialect adaptation, concrete inputs, or an expectation. |
 | `question` | Retain until the scope/semantic decision is resolved. The question list is in `meta/reference-questions.md`. |
-| `excluded` | Conflicts with an explicit calculator exclusion. Do not execute. Keep the source and rationale. |
+| `excluded` | Conflicts with an explicit calculator exclusion, or records a decided difference from the source. Do not execute. Keep the source and rationale. |
 
 To enable a case:
 

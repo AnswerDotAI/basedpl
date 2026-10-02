@@ -1,11 +1,12 @@
 # BPL libraries
 
-BPL utilities and Dyalog dfns adapted from [April's ports](https://github.com/phantomics/april/tree/master/libraries/dfns) and the Dyalog `dfns` workspace. Load a file from the repository root:
+BPL utilities and Dyalog dfns adapted from [April's ports](https://github.com/phantomics/april/tree/master/libraries/dfns) and the Dyalog `dfns` workspace. John Scholes, who created dfns, collected that workspace as examples of the style. These ports keep that purpose. Each function is an example of a dfn, including those that compute what a BPL primitive already gives.
+
+Load a file from the repository root:
 
 ```bpl
 •load "lib/numeric.bpl"
 phinary 42                     ⍝ "10100010.00100001"
-84 gcd 30                      ⍝ 6
 ```
 
 The same call works from Python: `bpl('•load "lib/numeric.bpl"')`. Definitions enter the current scope. Paths are relative to the working directory.

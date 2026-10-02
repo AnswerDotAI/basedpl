@@ -2258,7 +2258,7 @@ fn←{⍵×2} ⋄ fn⍣3(4)   ⍝ 32
 ÷@2 4 ⍳9   ⍝ 0 1 0.5 3 0.25 5 6 7 8
 
 ⍝ april:1766 —
-⌽@ 2⍃| ⍳5   ⍝ 0 3 2 1 4
+⌽@ 1=2| ⍳5   ⍝ 0 3 2 1 4
 
 ⍝ april:1767 —
 ⌽@0 2 4 ⍳5   ⍝ 4 1 2 3 0
@@ -2502,7 +2502,7 @@ a←3 4⍴⍳12 ⋄ ⍴[⍬]⌷a   ⍝ [0 4]ₓ
 x←3 3⍴⍳9 ⋄ y←0 ⋄ [∞ y]⌷x   ⍝ 0 3 6
 
 ⍝ april:1923 — Application of functions to indexed array elements
-gg←2 3 4 5 ⋄ 9,gg.[1],3 4   ⍝ 9 3 3 4
+gg←2 3 4 5 ⋄ 9,gg₁,3 4   ⍝ 9 3 3 4
 
 ⍝ april:1925 — Assignment of an element within an array
 a←2 3⍴⍳9 ⋄ a.[0 1]←20 ⋄ a   ⍝ [0 20 2 ⋄ 3 4 5]
@@ -2511,7 +2511,7 @@ a←2 3⍴⍳9 ⋄ a.[0 1]←20 ⋄ a   ⍝ [0 20 2 ⋄ 3 4 5]
 a←⍳9 ⋄ a.[[2 5]]←⊂9 8 ⋄ a   ⍝ [0 1 [9 8] 3 4 [9 8] 6 7 8]
 
 ⍝ april:1929 — Assignment to copy of an array
-a←3 3⍴⍳9 ⋄ b←a ⋄ b.[0]←0 ⋄ a,b
+a←3 3⍴⍳9 ⋄ b←a ⋄ b₀←0 ⋄ a,b
 [0 1 2 0 0 0 ⋄ 3 4 5 3 4 5 ⋄ 6 7 8 6 7 8]
 
 ⍝ april:1935 — Strand assignment of variables without parentheses
@@ -2521,10 +2521,10 @@ a←3 3⍴⍳9 ⋄ b←a ⋄ b.[0]←0 ⋄ a,b
 [cc [dd ee]]←[7 [8 9]] ⋄ dd⍴cc×ee   ⍝ 63 63 63 63 63 63 63 63
 
 ⍝ april:1937 — Assignment of axis-selected element within inline function
-{m←"+∘×".[1],⍵ ⋄ ↓m} 3 3⍴"ab"   ⍝ "∘aba" "∘bab" "∘aba"
+{m←"+∘×"₁,⍵ ⋄ ↓m} 3 3⍴"ab"   ⍝ "∘aba" "∘bab" "∘aba"
 
 ⍝ april:1939 — As before but more compact
-↓"+∘×".[1]⍃, 3 3⍴"ab"   ⍝ "∘aba" "∘bab" "∘aba"
+↓"+∘×"₁⍃, 3 3⍴"ab"   ⍝ "∘aba" "∘bab" "∘aba"
 
 ⍝ april:1940 — Selection from an array with multiple elided dimensions
 1 ∞ 2 ∞ 1⌷2 3 3 4 5⍴⍳9   ⍝ [5 1 6 2 ⋄ 2 7 3 8 ⋄ 8 4 0 5]
@@ -2538,7 +2538,7 @@ a←2 3 4⍴⍳9 ⋄ a.[1 ∞ 2]←0 ⋄ a
 [[0 1 2 3 ⋄ 4 5 6 7 ⋄ 8 0 1 2] ⋄ [3 4 0 6 ⋄ 7 8 0 1 ⋄ 2 3 0 5]]
 
 ⍝ april:1949 — Another elided assignment
-a←2 3 4⍴⍳40 ⋄ a.[0]←3 4⍴0 ⋄ a
+a←2 3 4⍴⍳40 ⋄ a₀←3 4⍴0 ⋄ a
 [[0 0 0 0 ⋄ 0 0 0 0 ⋄ 0 0 0 0] ⋄ [12 13 14 15 ⋄ 16 17 18 19 ⋄ 20 21 22 23]]
 
 ⍝ april:1951 — Assignment from an array to an area of an array with the same shape
@@ -2594,7 +2594,7 @@ toasn←["JAN" 1;"FEB" 2;"MAR" 3;"APR" 4;"MAY" 5;"JUN" 6] ⋄ toasn.[[[1 0] [0 1
 a←3 2 1 ⋄ a+←5 ⋄ a   ⍝ 8 7 6
 
 ⍝ april:1981 — Assignment by function at index
-a←3 2 1 ⋄ a.[1]+←5 ⋄ a   ⍝ 3 7 1
+a←3 2 1 ⋄ a₁+←5 ⋄ a   ⍝ 3 7 1
 
 ⍝ april:1982 — Elided assignment of applied function's results
 a←2 3 4⍴⍳9 ⋄ a.[1 ∞ 2]+←10 ⋄ a
@@ -2649,7 +2649,7 @@ x←6 8⍴⍳9 ⋄ (30>+⌿x #⍠¯1 x)←6 7⍴10×⍳3 ⋄ x
 {na←3⍴⊂⍳4 ⋄ (1↑na)←⍵ ⋄ na} 99   ⍝ [99 [0 1 2 3] [0 1 2 3]]
 
 ⍝ april:2016 — Selective assignment of elements within nested array by [⊃ pick] function
-{na←3⍴⊂⍳4 ⋄ (1↑↑na.[0])←⍵ ⋄ na} 99
+{na←3⍴⊂⍳4 ⋄ (1↑↑na₀)←⍵ ⋄ na} 99
 [[99 1 2 3] [0 1 2 3] [0 1 2 3]]
 
 ⍝ april:2018 — Selective assignment of matrix elements by [⍉ transpose] function
@@ -2673,7 +2673,7 @@ x←6 8⍴⍳9 ⋄ (30>+⌿x #⍠¯1 x)←6 7⍴10×⍳3 ⋄ x
 {A←"STELLAR" ⋄ (A∊"AEIOU" # A)←⍵ ⋄ A} '*'   ⍝ "ST*LL*R"
 
 ⍝ april:2031 — Multiple assignment with selective assignment in midstream
-a←⍳5 ⋄ b←(2⊃a)←30 ⋄ [a b]   ⍝ [[0 1 30 3 4] 30]
+a←⍳5 ⋄ b←a₂←30 ⋄ [a b]   ⍝ [[0 1 30 3 4] 30]
 
 ⍝ april:2033 — Selective assignment with [¨ each]-composed [↑ take] function
 {A←"RANDOM" "CHANCE" ⋄ (2↑¨A)←⍵ ⋄ A} '*'   ⍝ "**NDOM" "**ANCE"
@@ -2906,7 +2906,7 @@ filter←{⍶¨⍵ # ⍵} ⋄ {2|⍵} filter ⍳20   ⍝ 1 3 5 7 9 11 13 15 17 1
 3{[1 2 ⍶ 4 5]×⍵}9   ⍝ 9 18 27 36 45
 
 ⍝ april:2166 — Lateral operator with variable operand defined and used within function; Dyalog operand names (April aliases)
-(⍳3) {q←{⍶+⍺×⍵} ⋄ ⍵(3 q)6⊣¨⍺} 5   ⍝ 33 33 33
+(⍳3) {q←{⍶+⍺×⍵} ⋄ ⍵(3 q)6¨⍺} 5   ⍝ 33 33 33
 
 ⍝ april:2168 — More complex lateral operator use within function; Dyalog operand names (April aliases)
 { ee←{⊃⍪/(⊂⍺),⍶,⊂⍵} ⋄ ⍵⊃↑{⊂(⍺ ee)⌿⍵}/9⍴⊂⍳9 } 21   ⍝ 0
@@ -4925,8 +4925,7 @@ factors +441256830031
 587 9007 83459
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:47 —
-•load "lib/numeric.bpl"
-105 gcd 330
+105∨330
 ⍝ =>
 15
 
@@ -4938,25 +4937,23 @@ k_6174¨⍳20
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:57 —
 •load "lib/numeric.bpl"
-factors (3×5×7) gcd 5×7×11
+factors (3×5×7)∨5×7×11
 ⍝ =>
 5 7
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:58 —
 •load "lib/numeric.bpl"
-factors (3×5×7) lcm 5×7×11
+factors (3×5×7)∧5×7×11
 ⍝ =>
 3 5 7 11
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:59 —
-•load "lib/numeric.bpl"
-¯1 0 1 gcd⊗  ¯1 0 1
+¯1 0 1∨⊗ ¯1 0 1
 ⍝ =>
 [1 1 1 ⋄ 1 0 1 ⋄ 1 1 1]
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:60 —
-•load "lib/numeric.bpl"
-¯1 0 1 lcm⊗  ¯1 0 1
+¯1 0 1∧⊗ ¯1 0 1
 ⍝ =>
 [1 0 ¯1 ⋄ 0 0 0 ⋄ ¯1 0 1]
 
@@ -5159,20 +5156,18 @@ osc¨1+⍳30
 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:130 —
-•load "lib/numeric.bpl"
-0 5 10 15 range ¯1+⍳18
+0 5 10 15⍸¯1+⍳18
 ⍝ =>
 [0 1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4]ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:131 —
-•load "lib/numeric.bpl"
-¯1 0 1 range 1○⍳40
+¯1 0 1⍸1○⍳40
 ⍝ =>
 [2 2 2 2 1 1 1 2 2 2 1 1 1 2 2 2 1 1 1 2 2 2 1 1 1 1 2 2 2 1 1 1 2 2 2 1 1 1 2 2]ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:133 — Upstream to-range helper; original April expectation retained
 •load "lib/numeric.bpl"
-(5 7 to 20) range 2 3 4⍴ 1 to 24
+(5 7 to 20)⍸2 3 4⍴ 1 to 24
 ⍝ =>
 2 3 4⍴[0 0 0 0 1 1 2 2 3 3 4 4 5 5 6 6 7 7 8 8 8 8 8 8]ₓ
 
@@ -5362,24 +5357,6 @@ stamps¨15 16 17 18
 ⍝ =>
 5 5⍴[¯1 6;¯1 4;¯1 2;¯1 0;¯1 ¯2;0 6;0 4;0 2;0 0;0 ¯2;1 6;1 4;1 2;1 0;1 ¯2;2 6;2 4;2 2;2 0;2 ¯2;3 6;3 4;3 2;3 0;3 ¯2]
 
-⍝ april/libraries/dfns/numeric/demo.lisp:183 —
-•load "lib/numeric.bpl"
-2 3 4 bp 3
-⍝ =>
-$t $f $f
-
-⍝ april/libraries/dfns/numeric/demo.lisp:184 —
-•load "lib/numeric.bpl"
-2 3 4 xd 3
-⍝ =>
-[¯1 0 1]ₓ
-
-⍝ april/libraries/dfns/numeric/demo.lisp:185 —
-•load "lib/numeric.bpl"
-2 3 4 bd 3
-⍝ =>
-[¯1 0 1]ₓ
-
 ⍝ april/libraries/dfns/numeric/demo.lisp:186 — Upstream to-range helper; original April expectation retained
 •load "lib/numeric.bpl"
 1 3 <rg> 0 to 4
@@ -5403,24 +5380,6 @@ $f $f $t $t $f
 1 3 ≤rg> 0 to 4
 ⍝ =>
 $f $t $t $f $f
-
-⍝ april/libraries/dfns/numeric/demo.lisp:190 — Upstream to-range helper; original April expectation retained
-•load "lib/numeric.bpl"
-1 3 xp 0 to 4
-⍝ =>
-[1 0 ¯1 0 1]ₓ
-
-⍝ april/libraries/dfns/numeric/demo.lisp:191 — Upstream to-range helper; original April expectation retained
-•load "lib/numeric.bpl"
-1 3 xs 0 to 4
-⍝ =>
-[¯2 ¯1 0 1 2]ₓ
-
-⍝ april/libraries/dfns/numeric/demo.lisp:192 —
-•load "lib/numeric.bpl"
-[3 2 ⋄ 5 6] xm [6 8 ⋄ 5 2 ⋄ 4 4 ⋄ 7 6 ⋄ 3 5 ⋄ 2 3]
-⍝ =>
-[1 0 ¯1 1 0 1]ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:193 —
 •load "lib/numeric.bpl"
@@ -5514,7 +5473,7 @@ cfract¨ ¯4 to 4
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:208 — Fixed CT=1E¯14 port; original April expectation retained
 •load "lib/numeric.bpl"
-20↑cfract 0.5×1+root5
+20↑cfract 0.5×1+√5
 ⍝ =>
 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
 
@@ -5526,7 +5485,7 @@ cfract¯2.3
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:210 — Euclidean continued fractions terminate at denominator zero, including non-coprime integer approximations; no change to approximate GCD or recursion limits
 •load "lib/numeric.bpl"
-10↑cfract 0.5×3+root13
+10↑cfract 0.5×3+√13
 ⍝ =>
 3 3 3 3 3 3 3 3 3 3
 
@@ -5614,11 +5573,11 @@ tryGJ [1 2 3 ⋄ ¯3 1 5 ⋄ 2 4 ¯1]
 ⍝ =>
 [[¯3.5833333333333344 ¯5.645833333333334 ¯21.708333333333336 ¯23.770833333333336 ¯25.833333333333336 ⋄ 1.4166666666666674 2.8541666666666674 14.291666666666668 15.729166666666668 17.166666666666668 ⋄ 0.7499999999999996 0.18749999999999956 ¯6.375000000000001 ¯6.937500000000001 ¯7.500000000000001 ⋄ ¯1.166666666666666 ¯0.5416666666666661 8.083333333333334 8.708333333333334 9.333333333333334] [¯3.583333333333333 ¯5.645833333333333 ¯21.708333333333332 ¯23.770833333333332 ¯25.833333333333332 ⋄ 1.416666666666666 2.854166666666666 14.291666666666668 15.729166666666668 17.166666666666668 ⋄ 0.7500000000000002 0.18750000000000022 ¯6.375000000000001 ¯6.937500000000001 ¯7.500000000000001 ⋄ ¯1.166666666666667 ¯0.541666666666667 8.083333333333334 8.708333333333334 9.333333333333334]]
 
-⍝ april/libraries/dfns/numeric/demo.lisp:230 — Upstream Gauss-Jordan and Hilbert setup; formatted row prototype captured independently
+⍝ april/libraries/dfns/numeric/demo.lisp:230 — Upstream Gauss-Jordan and Hilbert setup; formatted row prototype captured independently; the last digits follow the pivot on the exact maximum
 •load "lib/numeric.bpl"
 ↓⍕ gauss_jordan∘hil¨ 0 to 5
 ⍝ =>
-"   1   4.000000000000001 ¯6.000000000000002    9.000000000000046  ¯36.00000000000024   30.000000000000224    15.999999999999883  ¯119.99999999999783   239.9999999999938  ¯139.9999999999956     24.999999999987118   ¯299.9999999997692    1049.9999999990343   ¯1399.9999999985732    629.9999999993136 " "      ¯6.000000000000002 12.000000000000004  ¯36.00000000000024   192.00000000000125 ¯180.00000000000117   ¯119.99999999999781   1199.9999999999666  ¯2699.99999999991    1679.9999999999377   ¯299.9999999997712     4799.9999999959655  ¯18899.999999983276    26879.999999975462  ¯12599.999999988255  " "                                              30.000000000000224 ¯180.00000000000117  180.00000000000108    239.9999999999938   ¯2699.99999999991     6479.999999999763  ¯4199.999999999837    1049.99999999905     ¯18899.999999983414    79379.99999993171   ¯117599.99999990022    56699.99999995239   " "                                                                                                           ¯139.9999999999956    1679.999999999938   ¯4199.999999999837   2799.999999999889   ¯1399.9999999986044    26879.999999975804  ¯117599.9999999008     179199.99999985553   ¯88199.99999993124   " "                                                                                                                                                                                                629.9999999993314   ¯12599.99999998847     56699.99999995289    ¯88199.99999993156    44099.999999967484  "
+"   1   4.000000000000001 ¯6.000000000000002    9.000000000000043  ¯36.00000000000022   30.000000000000206    15.999999999999693  ¯119.99999999999588   239.9999999999893  ¯139.99999999999275     24.999999999986745   ¯299.9999999997712    1049.9999999990632   ¯1399.9999999986362    629.9999999993507 " "      ¯6.000000000000002 12.000000000000004  ¯36.00000000000022   192.00000000000114 ¯180.00000000000108   ¯119.99999999999568   1199.999999999945   ¯2699.9999999998604  1679.9999999999065    ¯299.99999999976944    4799.9999999961055  ¯18899.99999998428     26879.999999977354  ¯12599.999999989303  " "                                              30.000000000000206 ¯180.00000000000108  180.00000000000102    239.99999999998855  ¯2699.9999999998563   6479.99999999964   ¯4199.99999999976      1049.9999999990555   ¯18899.99999998428     79379.99999993718   ¯117599.99999991017    56699.999999957814  " "                                                                                                           ¯139.9999999999921    1679.9999999999022  ¯4199.999999999755   2799.999999999837    ¯1399.999999998628     26879.999999977423  ¯117599.99999991049    179199.99999987276   ¯88199.99999994051   " "                                                                                                                                                                                                 629.9999999993494   ¯12599.999999989388    56699.999999958185   ¯88199.99999994085    44099.99999997245   "
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:236 —
 •load "lib/numeric.bpl"
@@ -5813,34 +5772,31 @@ kball .8 .9
 [31415 41887 49348 52637 51677 47247 40587 32985 25501]ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:270 —
-•load "lib/numeric.bpl"
-mean1 2 3 4
++/÷≢ 1 2 3 4
 ⍝ =>
-1⍴2.5
+2.5
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:297 —
 •load "lib/numeric.bpl"
 stdev2 2 2
 ⍝ =>
-1⍴0
+0
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:298 —
 •load "lib/numeric.bpl"
 ⌊100000×stdev1 2 3
 ⍝ =>
-[81649]ₓ
+81649ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:299 —
-•load "lib/numeric.bpl"
-⌈root64
+⌈√64
 ⍝ =>
 8ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:300 —
-•load "lib/numeric.bpl"
-⌈3 root 64
+⌈64*÷3
 ⍝ =>
-4
+4ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:301 —
 •load "lib/numeric.bpl"
@@ -6006,29 +5962,26 @@ embrace ← {'(',⍵,')'} for {'[',⍵,']'} for {'{',⍵,'}'} for {'<',⍵,'>'}
 1230ₓ
 
 ⍝ april/libraries/dfns/power/demo.lisp:28 —
-•load "lib/power.bpl"
-enlist ← {1↓,/'·',,,¨⍵}limit
+enlist ← {1↓,/'·',,,¨⍵}⍣∞
 enlist ,⍄⊂/⍳5
 ⍝ =>
 0 1 2 3 4
 
 ⍝ april/libraries/dfns/power/demo.lisp:29 —
-•load "lib/power.bpl"
-⌊1000× 0.5⍃×limit 2
+⌊1000× 0.5⍃×⍣∞(2)
 ⍝ =>
 0ₓ
 
 ⍝ april/libraries/dfns/power/demo.lisp:30 —
-•load "lib/power.bpl"
-AM1 2 3 4 5
++/÷≢ 1 2 3 4 5
 ⍝ =>
-1⍴3
+3
 
 ⍝ april/libraries/dfns/power/demo.lisp:31 —
 •load "lib/power.bpl"
 ⌊1000×GM1 2 3 4 5
 ⍝ =>
-[2605]ₓ
+2605ₓ
 
 ⍝ april/libraries/dfns/power/demo.lisp:32 —
 •load "lib/power.bpl"
@@ -6055,26 +6008,23 @@ AM1 2 3 4 5
 463ₓ
 
 ⍝ april/libraries/dfns/power/demo.lisp:36 —
-•load "lib/power.bpl"
-⌊1000× ↑{⍵×2-¯1↑⍵}limit 20 0.3
+⌊1000× ↑{⍵×2-¯1↑⍵}⍣∞[20 0.3]
 ⍝ =>
 66666ₓ
 
 ⍝ april/libraries/dfns/power/demo.lisp:37 —
-•load "lib/power.bpl"
-6 {'<',⍵,'>'} pow "wow"
+{'<',⍵,'>'}⍣6("wow")
 ⍝ =>
 "<<<<<<wow>>>>>>"
 
 ⍝ april/libraries/dfns/power/demo.lisp:38 —
-•load "lib/power.bpl"
-4 ⊂ pow "wow"
+⊂⍣4("wow")
 ⍝ =>
 ⊂⊂⊂⊂"wow"
 
 ⍝ april/libraries/dfns/power/demo.lisp:39 —
 •load "lib/power.bpl"
-1↓(rl pow)⍄1¨1+⍳35 roll¨ 1+⍳34
+1↓{rl⍣⍺ ⍵}⍄1¨1+⍳35 roll¨ 1+⍳34
 ⍝ =>
 [0 1 1 2 1 0 4 5 8 3 5 9 0 0 7 10 0 6 1 8 14 12 21 20 13 2 17 11 20 27 23 8 1 25]ₓ
 
@@ -7454,7 +7404,7 @@ rational (+⍄÷)/¨,\ 0 cfract π1
 [3 22 333 355 103993 104348 208341 312689 833719 1146408 5419351 ⋄ 1 7 106 113 33102 33215 66317 99532 265381 364913 1725033]
 
 ⍝ april:2311 — Namespace-as-data: empty keyed vector, dotted insertion and lookup
-myns←⍬:⍬ ⋄ myns.aa←5 ⋄ myns.bb←⍳9 ⋄ myns.cc←3 3⍴⍳9 ⋄ myns.cc.[1],myns.aa×myns.bb
+myns←⍬:⍬ ⋄ myns.aa←5 ⋄ myns.bb←⍳9 ⋄ myns.cc←3 3⍴⍳9 ⋄ myns.cc₁,myns.aa×myns.bb
 3 4 5 0 5 10 15 20 25 30 35 40
 
 ⍝ april:2314 — Nested namespaces as immutable keyed vectors; dotted insertion and lookup
@@ -7470,7 +7420,7 @@ myns←(⍬:⍬) ⋄ myns.f1←{⍵+3} ⋄ myns.a←(⍬:⍬) ⋄ myns.a.f2←{�
 
 ⍝ april:2319 — Update fields in nested record vectors
 myns←(⍬:⍬) ⋄ myns.aa←(⍬:⍬) ⋄ myns.aa.bb←⍳9
-myns.aa.bb.[[1 3]]←⊂(⍬:⍬) ⋄ myns.aa.bb.[1].cc←3 ⋄ myns.aa.bb.[3].cc←5
+myns.aa.bb.[[1 3]]←⊂(⍬:⍬) ⋄ myns.aa.bb₁.cc←3 ⋄ myns.aa.bb₃.cc←5
 myns.aa.bb.[[1 3]]←{r←⍵ ⋄ r.cc+←3 ⋄ r}¨myns.aa.bb.[[1 3]]
 ⊂myns , {⍵.cc}¨myns.aa.bb.[[1 3]]
 ⍝ =>

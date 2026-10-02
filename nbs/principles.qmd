@@ -89,7 +89,7 @@ If both spellings meant the same, the space would carry nothing. Everyday arithm
 
 ## Selection is a function
 
-Index, `⌷`, selects: `I⌷Y` takes one item of `I` for each leading axis of `Y`. K applies a list to its positions, as if the list were a function, so `v 1` selects. BPL keeps subjects and functions apart. A subject before a function is that function's left argument, and selection is a function like any other. For one position, `1⌷v` is as long as `v 1`.
+Index, `⌷`, selects: `I⌷Y` takes one item of `I` for each leading axis of `Y`. K applies a list to its positions, as if the list were a function, so `v 1` selects. BPL keeps subjects and functions apart. A subject before a function is that function's left argument, and selection is a function like any other. For one position, `1⌷v` is as long as `v 1`, and a [subscript](glyphs/subscript.qmd) is shorter: `v₁` is `1⌷v`.
 
 A single position removes its axis. An array of positions replaces the axis with its own shape, so the positions show the rank of the result. `1⌷v` is an item, `[⊂1]⌷v` is that item enclosed, and `[[1]]⌷v` is a one-item vector. Dyalog hides this rule: its `v[1]` is a scalar, and a one-item result needs `v[,1]`.
 

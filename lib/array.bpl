@@ -32,7 +32,7 @@ alset ← {  ⍝ Assoc list ⍺ with (key value) pair ⍵ replaced.
 
 ⍝ From http://dfns.dyalog.com/c_acc.htm
 
-acc ← { ⍶{(⊂⍺⍶↑⍬⍴⍵),⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵ }  ⍝ Accumulating reduction.
+acc ← {⍶{(⊂⍺⍶↑⍬⍴⍵),⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵}  ⍝ Accumulating reduction.
 
 ⍝ Helpers shared by disp, display, displays, displayr and dsp.
 format ← {t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Simple array as a character matrix.
@@ -129,7 +129,7 @@ disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
   sepr←{+/¨1⊂⍠¯1 ⊃⍵}
   open←{(⍺⌈⍴⍵)↑⍵}
   isor←{1 ⍬≡[≡⍵ ⍴⍵]}  ⍝ is ⎕or of object?
-  glue←{0=⍴⍵ ? ⍵;⍺{⍺,⍶,⍵}/⍵}
+  glue←{0=⍴⍵?⍵;⍺{⍺,⍶,⍵}/⍵}
   isor ⍵?format⊂⍵;
   1=≡,⍵?format ⍵;
   box ⍵  ⍝ recursive boxing of array.
@@ -148,12 +148,10 @@ display ← {  ⍝ Boxed display of array.
     lft,(top⍪⍵⍪bot),rgt  ⍝ fully boxed array
   }
   line←{(""≡0⍴⍵)⊃" -"}
-  {
-    0=≡⍵?' '⍪(open format ⍵)⍪line ⍵;
-    1 ⍬≡[≡⍵ ⍴⍵]?'∇' 0 0 box format ⍵;
-    1=≡⍵?(deco ⍵)box open format open ⍵;
-    ('∊'deco ⍵)box trim format ∇¨open ⍵
-  }⍵
+  0=≡⍵?' '⍪(open format ⍵)⍪line ⍵;
+  1 ⍬≡[≡⍵ ⍴⍵]?'∇' 0 0 box format ⍵;
+  1=≡⍵?(deco ⍵)box open format open ⍵;
+  ('∊'deco ⍵)box trim format ∇¨open ⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_displays.htm
@@ -171,14 +169,12 @@ displays ← {  ⍝ Boxed display of array.
     lft←⍉'┌',(⊃lax),'└'
     lft,(top⍪w⍪bot),rgt  ⍝ Fully boxed array.
   }
-  trim←{[0⊃⍵ (~1 1⍷∧⌿' '=1⊃⍵)#⍠¯1(1⊃⍵)]}
+  trim←{[⍵₀ (~1 1⍷∧⌿' '=⍵₁)#⍠¯1(⍵₁)]}
   qfmt←{[⍕0+⍴⍺;format open ⍵]}
-  {  ⍝ Recursively box arrays:
-    0=≡⍵?' '⍪(format ⍵)⍪(' '≡↑0⍴⍵)⊃" -";
-    1 ⍬≡[≡⍵ ⍴⍵]?'∇' 0 0 box ["─";format ⍵];
-    1=≡⍵?(deco ⍵)box open ⍵ qfmt ⍵;  ⍝ Simple array.
-    ('∊'deco ⍵)box trim ⍵ qfmt ∇¨open ⍵  ⍝ Nested array.
-  }⍵
+  0=≡⍵?' '⍪(format ⍵)⍪(' '≡↑0⍴⍵)⊃" -";
+  1 ⍬≡[≡⍵ ⍴⍵]?'∇' 0 0 box ["─";format ⍵];
+  1=≡⍵?(deco ⍵)box open ⍵ qfmt ⍵;  ⍝ Simple array.
+  ('∊'deco ⍵)box trim ⍵ qfmt ∇¨open ⍵  ⍝ Nested array.
 }
 
 ⍝ From http://dfns.dyalog.com/c_displayr.htm
@@ -186,21 +182,19 @@ displays ← {  ⍝ Boxed display of array.
 displayr ← {  ⍝ Boxed display of array
   box←{  ⍝ box with type and axes
     [vrt hrz]←(¯1+⍴⍵)⍴¨"│─"  ⍝ vert. and horiz. lines
-    top←(1+⍴hrz)↑(↑ ¯1↑⍺ ⌷ "─⊖",⊂⍕¯1↑1⊃⍺),hrz
+    top←(1+⍴hrz)↑(↑ ¯1↑⍺ ⌷ "─⊖",⊂⍕¯1↑⍺₁),hrz
     bot←⍴top ↑ ↑2↓⍺ , hrz
     rgt←"┐│",vrt,'┘'  ⍝ right side with corners
-    lax←(↑¨ ¯1↓3↓⍺ ⌷¨ -1⌈¯1+⍴1⊃⍺ ↑ ⊂"│⌽" ,¨ ⊂∘⍕¨¯1↓0,1⊃⍺),¨⊂vrt
+    lax←(↑¨ ¯1↓3↓⍺ ⌷¨ -1⌈¯1+⍴⍺₁ ↑ ⊂"│⌽" ,¨ ⊂∘⍕¨¯1↓0,⍺₁),¨⊂vrt
     lax←⊂1+⍴vrt ↑¨ lax~¨⊂" " ,¨ '│'  ⍝ pad and trim
     lft←⍉'┌',(⊃lax),'└'
     lft,(top⍪⍵⍪bot),rgt  ⍝ fully boxed array
   }
   deco←{⍺←type open ⍵ ⋄ ⍴⍴⍵ , ⊂0+⍴⍵ , ⍺ , axes ⍵}
-  {  ⍝ recursively boxed arrays:
-    0=≡⍵?' '⍪(open format ⍵)⍪(' '=↑0⍴⍵)⊃" -";
-    1 ⍬≡[≡⍵ ⍴⍵]?["" [0 0] '∇' 0 0] box format ⍵;
-    1=≡⍵?(deco ⍵)box open' ',format open ⍵;
-    (⊂⍕0+≡⍵ deco ⍵)box trim' ',format ∇¨open ⍵
-  }⍵
+  0=≡⍵?' '⍪(open format ⍵)⍪(' '=↑0⍴⍵)⊃" -";
+  1 ⍬≡[≡⍵ ⍴⍵]?["" [0 0] '∇' 0 0] box format ⍵;
+  1=≡⍵?(deco ⍵)box open' ',format open ⍵;
+  (⊂⍕0+≡⍵ deco ⍵)box trim' ',format ∇¨open ⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_dist.htm
@@ -212,7 +206,7 @@ dist ← {  ⍝ Levenshtein distance.
   ↑⌽z
 }
 
-fuzzy ← {a←lcase ⍺ ⋄ ({⍵⍳⌊/⍵}a⍃dist∘lcase¨⍵)⊃⍵}
+fuzzy ← {a←lcase ⍺ ⋄ (↑⍋a⍃dist∘lcase¨⍵)⊃⍵}
 
 ⍝ From http://dfns.dyalog.com/n_dsp.htm
 
@@ -238,8 +232,8 @@ dsp ← {  ⍝ Reduced version of disp.
 
 ⍝ From http://dfns.dyalog.com/s_dsp.htm
 
-Tape ← { '∘',(⍺↑⍵),⊂{[⍺ ⍵]}/⍺↓⍵,'∘' }  ⍝ ⍺-window tape
-Rgt ← { ⊂2↑⍵ , 2↓¯1↓⍵ , ↑⌽⍵ }  ⍝ tape-head moves right 1 item
+Tape ← {'∘',(⍺↑⍵),⊂{[⍺ ⍵]}/⍺↓⍵,'∘'}  ⍝ ⍺-window tape
+Rgt ← {⊂2↑⍵ , 2↓¯1↓⍵ , ↑⌽⍵}  ⍝ tape-head moves right 1 item
 
 ⍝ From http://dfns.dyalog.com/c_enlist.htm
 
@@ -267,7 +261,7 @@ from ← {  ⍝ Select (1↓⍴⍵)-cells from array ⍵.
 
 ⍝ From http://dfns.dyalog.com/n_foldl.htm
 
-foldl ← { ⍺ ⍶⍨/ ⌽⍵ }  ⍝ Fold (reduce) from the left.
+foldl ← {⍺ ⍶⍨/ ⌽⍵}  ⍝ Fold (reduce) from the left.
 
 ⍝ From http://dfns.dyalog.com/c_in.htm
 
@@ -283,7 +277,7 @@ in ← {  ⍝ Locations of item ⍺ in array ⍵.
 
 ⍝ From http://dfns.dyalog.com/c_list.htm
 
-list ← { {[⍺ ⍵]}/⍵,'∘' }  ⍝ List from vector ⍵, with '∘' as null.
+list ← {{[⍺ ⍵]}/⍵,'∘'}  ⍝ List from vector ⍵, with '∘' as null.
 
 ⍝ From http://dfns.dyalog.com/c_ltrav.htm
 
@@ -303,7 +297,7 @@ revl ← '∘'⍃({[⍺ ⍵]}⍨ ltrav)
 listRmDups ← {  ⍝ remove adjacent duplicates.
   ⍺←'∘'  ⍝ null accumulator.
   [a [b tail]]←⍵  ⍝ first two items.
-  b≡'∘'? revl [a ⍺];  ⍝ b null: list expired.
+  b≡'∘'?revl [a ⍺];  ⍝ b null: list expired.
   a≡b?⍺ ∇ [b tail];  ⍝ two items match: drop first one.
   [a ⍺] ∇ [b tail]  ⍝ accumulate first, continue.
 }
@@ -345,9 +339,9 @@ nlines ← {  ⍝ Number of display lines for simple array.
 
 ⍝ From http://dfns.dyalog.com/s_perv.htm
 
-perv ← { ⍺←⊢  ⍝ Pervasion
+perv ← {  ⍝ Pervasion
   1=≡[⍺ ⍵ ⍵]?⍺ ⍶ ⍵;
-           ⍺ ∇¨ ⍵  ⍝ (⍺ or) ⍵ deeper: recursive traversal.
+  ⍺ ∇¨ ⍵  ⍝ (⍺ or) ⍵ deeper: recursive traversal.
 }
 
 ⍝ From http://dfns.dyalog.com/c_pmat.htm
@@ -360,7 +354,7 @@ pmat ← {  ⍝ Permutation matrix of ⍳⍵.
 
 ⍝ From http://dfns.dyalog.com/c_pred.htm
 
-pred ← { ⊃⍶/¨(⍺#1+⍳⍴⍺)⊆⍵ }  ⍝ Partitioned reduction.
+pred ← {⊃⍶/¨(⍺#1+⍳⍴⍺)⊆⍵}  ⍝ Partitioned reduction.
 
 ⍝ From http://dfns.dyalog.com/c_rows.htm
 
@@ -372,19 +366,16 @@ rows ← {  ⍝ Operand function applied to argument rows.
 ⍝ From http://dfns.dyalog.com/c_sam.htm
 
 sam ← {  ⍝ Select and modify.
-  ⍺←⊢  ⍝ id function for missing ⍺.
-  array←⍵  ⍝ 'name' array argument.
-  (⍺ ⍶ array)←⍹ ⍺ ⍶ array
-  array  ⍝ return updated value.
+  (⍺ ⍶ ⍵)←⍹ ⍺ ⍶ ⍵
+  ⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_saw.htm
 
 saw ← {  ⍝ Function operand applied Simple-Array-Wise.
-  ⍺←⊢  ⍝ default left arg.
   2≥≡[⍺ ⍵ ⍵]?⍺ ⍶ ⍵;
-  1≥≡⍵      ?⍺ ∇¨ ⊂⍵;  ⍝ ⍵ simple: traverse ⍺.
-  2≥≡[⍺ 1]  ?(⍺ ∇)¨⍵;  ⍝ ⍺ simple: traverse ⍵.
+  1≥≡⍵?⍺ ∇¨ ⊂⍵;  ⍝ ⍵ simple: traverse ⍺.
+  2≥≡[⍺ 1]?(⍺ ∇)¨⍵;  ⍝ ⍺ simple: traverse ⍵.
   ⍺ ∇¨ ⍵  ⍝ Both nested: traverse both.
 }
 
@@ -411,22 +402,22 @@ ascan ← {  ⍝ Associative scan.
 
 ⍝ From http://dfns.dyalog.com/c_ascana.htm
 
-ascana ← {                                   ⍝ Higher rank associative scan.
-  ⍺←¯1                                    ⍝ default last axis.
+ascana ← {  ⍝ Higher rank associative scan.
+  ⍺←¯1  ⍝ default last axis.
   (⍶ ascan)⍠⍺ ⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_select.htm
 
-select ← { ⍺⊃¨,¨/⊂¨¨⍵ }  ⍝ ⍺-selection of items of vector ⍵.
+select ← {⍺⊃¨,¨/⊂¨¨⍵}  ⍝ ⍺-selection of items of vector ⍵.
 
 ⍝ From http://dfns.dyalog.com/c_shannon.htm
 
-shannon ← { -+/(2⍃⍟×⊣)¨({≢⍵}⌸÷≢)⍵ }  ⍝ Shannon entropy of message ⍵.
+shannon ← {-+/(2⍃⍟×⊣)¨({≢⍵}⌸÷≢)⍵}  ⍝ Shannon entropy of message ⍵.
 
 ⍝ From http://dfns.dyalog.com/c_subvec.htm
 
-subvec ← { 0∊⍴⍺?1;  ⍝ Is ⍺ a subvector of ⍵?
+subvec ← {0∊⍴⍺?1;  ⍝ Is ⍺ a subvector of ⍵?
   0∊⍴⍵?0;  ⍝ null ⍵: failure.
   (1↓⍺)∇(1+⍵⍳1↑⍺)↓⍵  ⍝ otherwise, check remaining items.
 }
@@ -444,18 +435,8 @@ subs ← {  ⍝ Vector substitution.
   }⍤1 ⍵  ⍝ apply to vectors
 }
 
-⍝ From http://dfns.dyalog.com/c_lcase.htm
-
-lcase ← {  ⍝ Lower-casification,
-  lc←"abcdefghijklmnopqrstuvwxyzåäöàæéñøü"  ⍝ (lower case alphabet)
-  uc←"ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖÀÆÉÑØÜ"  ⍝ (upper case alphabet)
-  (⍴⍵)⍴[(uc,,⍵)⍳⍵]⌷lc,,⍵  ⍝ ... of simple array.
-}
-
-⍝ From http://dfns.dyalog.com/c_ucase.htm
-
-ucase ← {  ⍝ Upper-casification,
-  lc←"abcdefghijklmnopqrstuvwxyzåäöàæéñøü"  ⍝ (lower case alphabet)
-  uc←"ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖÀÆÉÑØÜ"  ⍝ (upper case alphabet)
-  (⍴⍵)⍴[(lc,,⍵)⍳⍵]⌷uc,,⍵  ⍝ ... of simple array.
-}
+⍝ From http://dfns.dyalog.com/c_lcase.htm and http://dfns.dyalog.com/c_ucase.htm
+letters ← ["abcdefghijklmnopqrstuvwxyzåäöàæéñøü" "ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖÀÆÉÑØÜ"]  ⍝ Lower and upper case, at matching positions.
+recase ← {[from to]←⍺ ⋄ [(from,,⍵)⍳⍵]⌷to,,⍵}  ⍝ Simple array ⍵, with each letter from ⍺'s first list replaced by its second.
+lcase ← (⌽letters)⍃recase  ⍝ Lower-casification.
+ucase ← letters⍃recase  ⍝ Upper-casification.

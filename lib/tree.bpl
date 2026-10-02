@@ -17,7 +17,7 @@ tree_hang ← {  ⍝ node label ⍺ with formatted subtrees ⍵ hung below it.
   case←~[null null]≡¨fmts  ⍝ non-null subtree cases.
   join←(2⊥case)⊃"∘┐┘┤"
   join≡'∘'?⊃,↓key_val;
-  dent←' '⊣¨key_val  ⍝ subtree padding.
+  dent←' '¨key_val  ⍝ subtree padding.
   pads←{↓,/dent,⊂⍵}¨fmts
   ⊃{⍺,(↓key_val,join),⍵}/pads
 }  ⍝ :: k ∇ [f f] → [-;]
@@ -58,6 +58,9 @@ tree_vec ← {  ⍝ enlist of tree ⍵.
   [key_val bal [lft rgt]]←⍵  ⍝ node info and subtrees.
   ∇lft , ⊂key_val , ∇rgt  ⍝ left_vec, key=val, right_vec.
 }  ⍝ :: ∇ t → [k v]
+
+⍝ Shared by sbst, redblack and splay.
+wise ← {(2×⍶)↑3⍴⍵}  ⍝ parameterise direction.
 
 ⍝ From http://dfns.dyalog.com/c_avl.htm
 
@@ -114,7 +117,7 @@ avl ← {  ⍝ Adelson-Velskii, Landis trees.
     0∊[obal new]?[kv new subs];  ⍝ balance bits absorb moment: done.
     [[_ Bbal _] _]←obal wise subs  ⍝ otherwise:
     Bbal≠-obal?(-obal)srot ⍵;  ⍝ single or
-               (-obal)drot ⍵  ⍝ double rotation.
+    (-obal)drot ⍵  ⍝ double rotation.
   }  ⍝ :: m ∇ t → t
   srot←{                                     ⍝ single ⍺-rotation of tree ⍵.
     [Akv Abal [B r]]←⍺ proj ⍵                ⍝    <<A         yB>
@@ -160,19 +163,18 @@ avl ← {  ⍝ Adelson-Velskii, Landis trees.
   }  ⍝ :: ∇ t → [-;]
   proj←{(⍺=0 0 ¯1)⌽¨⍵}  ⍝ ⍺-projection of node ⍵.
   wise←{(⍺=1)⌽⍵}  ⍝ subtrees ⍵ in -⍺, +⍺ order.
-  op←⍶  ⍝ operand label.
-  '∪'≡op?↑ ⍺ put ⍵;
-  '⍎'≡op?⍺ get ⍵;  ⍝ value for key ⍺ in tree ⍵.
-  '~'≡op?↑ ⍺ rem ⍵;
-  '⍕'≡op?""fmt ⍵;  ⍝ formatted tree ⍵.
-  '∊'≡op?tree_vec ⍵;  ⍝ vector of key=value pairs for tree ⍵.
-  '?'≡op?4↑ 0x chk ⍵  ⍝ stats for tree ⍵: ok size dpth height.
+  '∪'≡⍶?↑ ⍺ put ⍵;
+  '⍎'≡⍶?⍺ get ⍵;  ⍝ value for key ⍺ in tree ⍵.
+  '~'≡⍶?↑ ⍺ rem ⍵;
+  '⍕'≡⍶?""fmt ⍵;  ⍝ formatted tree ⍵.
+  '∊'≡⍶?tree_vec ⍵;  ⍝ vector of key=value pairs for tree ⍵.
+  '?'≡⍶?4↑ 0x chk ⍵  ⍝ stats for tree ⍵: ok size dpth height.
 }
 
 ⍝ From http://dfns.dyalog.com/s_avl.htm
 
 fibtree ← {  ⍝ Depth-⍵ worst-case fibonacci tree.
-  ↑⍬⍴1{
+  ↑1{
     ⍵=0?[0 ⍺];  ⍝ f 0 → []
     ⍵=1?[[⍺ 0 [0 0]] ⍺+1];  ⍝ f 1 → ⍺ [] []
     [l m]←⍺ ∇ ⍵-2  ⍝ left subtree and next value
@@ -180,7 +182,7 @@ fibtree ← {  ⍝ Depth-⍵ worst-case fibonacci tree.
     [[m 1 [l r]] n]  ⍝ f ⍵+1 → ⍺ [f ⍵-2] [f ⍵-1]
   }⍵  ⍝ :: tree next ← next ∇ depth
 }
-  
+
 ⍝ From http://dfns.dyalog.com/c_sbst.htm
 
 sbst ← {  ⍝ Simple Binary Search Trees.
@@ -212,7 +214,6 @@ sbst ← {  ⍝ Simple Binary Search Trees.
   search←{  ⍝ search subtree ⍺ for key ⊃⍵.
     [inf [lft rgt]]←⍺  ⍝ parts of node.
     dir←1-2×>/⍋⊃↑¨[inf ⍵]
-    wise←{(2×⍺)↑3⍴⍵}  ⍝ parameterise direction.
     [_ nxt]←dir wise [lft rgt]  ⍝ nxt subtree to search.
     [sub val]←nxt ⍶ ⍵
     subs←dir wise [lft sub rgt]  ⍝ lft and rgth subtrees.
@@ -238,18 +239,17 @@ sbst ← {  ⍝ Simple Binary Search Trees.
     [lev s]←⍺ ∇ lft                          ⍝ left vine & size,       / \     B
     [[inf [lev 0]] s+1]∇ rgt                 ⍝ ++ right vine.         A   C   /
   }                                          ⍝ :: v ∇ t → v s                A
-  op←⍶  ⍝ operand label.
-  '∪'≡op?↑ ⍺ put ⍵;
-  '⍎'≡op?↑⌽ ⍵ get [⍺ 0];
-  '~'≡op?↑ ⍺ rem [⍵ 0];
-  '⍕'≡op?bst_fmt ⍵;  ⍝ formatted tree.
-  '∊'≡op?bst_vec ⍵;  ⍝ vector of key=value pairs.
-  '?'≡op?4↑ 0x bst_chk ⍵;  ⍝ tree stats and integrity check.
-  '='≡op?bal ⍵  ⍝ balanced tree ⍵.
+  '∪'≡⍶?↑ ⍺ put ⍵;
+  '⍎'≡⍶?↑⌽ ⍵ get [⍺ 0];
+  '~'≡⍶?↑ ⍺ rem [⍵ 0];
+  '⍕'≡⍶?bst_fmt ⍵;  ⍝ formatted tree.
+  '∊'≡⍶?bst_vec ⍵;  ⍝ vector of key=value pairs.
+  '?'≡⍶?4↑ 0x bst_chk ⍵;  ⍝ tree stats and integrity check.
+  '='≡⍶?bal ⍵  ⍝ balanced tree ⍵.
 }
 
 ⍝ From http://dfns.dyalog.com/c_redblack.htm
-  
+
 redblack ← {  ⍝ Red-black trees.
   ins←{  ⍝ tree ⍺ with key=val ⍵.        [ins]
     ⍺≡0?base [⍵ 1 [0 0]];  ⍝ null: new <red> node and path.
@@ -395,30 +395,27 @@ redblack ← {  ⍝ Red-black trees.
     [lft rgt]←⍵ wise subs  ⍝ right subtree is target.
     sub←⍶ rgt
     [inf red (⍵ wise [lft sub])]  ⍝ reassembled tree.
-    }
+  }
   isred←{  ⍝ colour for subtree ⍺, path ⍵.
     [inf col [lft rgt]]←⍺  ⍝ (possibly null) node colour and subs.
     ⍵≡⍬?col;  ⍝ colour of (possibly null) node.
     (↑⌽ ↑⍵ wise [lft rgt])∇ 1↓⍵
   }  ⍝ :: t ∇ p → red
-  wise←{(2×⍺)↑3⍴⍵}  ⍝ parameterise direction.
   flip←{[kv b lr]←⍵ ⋄ [kv ~b lr]}  ⍝ flip colour of node ⍵.
   done←{[⍺ ⍵]}⍄0 0 0  ⍝ node with long path.
   base←{[⍺ ⍵]}⍄⍬  ⍝ new child: node with null path.
   dblk←{[⍺ ⍵]}⍄[0]  ⍝ double black node.
-  op←⍶  ⍝ operand label.
-  '∪'≡op?root ⍺ ins ⍵;  ⍝ insert/replace value in tree.
-  '~'≡op?root ⍺ rem [⍵ 0];  ⍝ remove key=value from tree.
-  '⍎'≡op?⍵ get ⍺;  ⍝ search for value for key.
-  '⍕'≡op?fmt ⍵;  ⍝ formatted tree.
-  '∊'≡op?tree_vec ⍵;  ⍝ vector of key=value pairs.
-  '?'≡op?4↑ 0x chk ⍵  ⍝ tree stats: ok size mean_depth height.
+  '∪'≡⍶?root ⍺ ins ⍵;  ⍝ insert/replace value in tree.
+  '~'≡⍶?root ⍺ rem [⍵ 0];  ⍝ remove key=value from tree.
+  '⍎'≡⍶?⍵ get ⍺;  ⍝ search for value for key.
+  '⍕'≡⍶?fmt ⍵;  ⍝ formatted tree.
+  '∊'≡⍶?tree_vec ⍵;  ⍝ vector of key=value pairs.
+  '?'≡⍶?4↑ 0x chk ⍵  ⍝ tree stats: ok size mean_depth height.
 }
-  
+
 ⍝ From http://dfns.dyalog.com/c_splay.htm
 
 splay ← {  ⍝ Splay trees.
-  wise←{(2×⍶)↑3⍴⍵}  ⍝ parameterise direction.
   put←{  ⍝ tree ⍺ with key=value ⍵.
     ⍺≡0?[⍵ [0 0]];  ⍝ null: new leaf.
     [[[nxt _] subs] [key _]]←[⍺ ⍵]  ⍝ node info and subtrees.
@@ -481,16 +478,15 @@ splay ← {  ⍝ Splay trees.
     [_ sub]←dir wise subs  ⍝ next subtree to search.
     {⍵+×⍵} sub ∇ ⍵  ⍝ incremental depth.
   }  ⍝ :: t ∇ k → d
-  op←⍶  ⍝ operand label.
-  '∪'≡op?⍺ put ⍵;  ⍝ insert/replace value in tree.
-  '⍎'≡op?lift ⍵ get ⍺;  ⍝ search for value for key.
-  '~'≡op?⍺ rem [⍵ 0];  ⍝ remove key=value from tree.
-  '?'≡op?4↑ 0x bst_chk ⍵;  ⍝ tree stats: ok size depth height.
-  '⍕'≡op?bst_fmt ⍵;  ⍝ formatted tree.
-  '∊'≡op?bst_vec ⍵;  ⍝ list of key=value pairs.
-  '≡'≡op?⍵ dep ⍺  ⍝ depth of key ⍺ in tree ⍵.
+  '∪'≡⍶?⍺ put ⍵;  ⍝ insert/replace value in tree.
+  '⍎'≡⍶?lift ⍵ get ⍺;  ⍝ search for value for key.
+  '~'≡⍶?⍺ rem [⍵ 0];  ⍝ remove key=value from tree.
+  '?'≡⍶?4↑ 0x bst_chk ⍵;  ⍝ tree stats: ok size depth height.
+  '⍕'≡⍶?bst_fmt ⍵;  ⍝ formatted tree.
+  '∊'≡⍶?bst_vec ⍵;  ⍝ list of key=value pairs.
+  '≡'≡⍶?⍵ dep ⍺  ⍝ depth of key ⍺ in tree ⍵.
 }
-  
+
 ⍝ From http://dfns.dyalog.com/c_tfmt.htm
 
 tfmt ← {  ⍝ Char matrix from tree.
@@ -513,13 +509,13 @@ tnest ← {  ⍝ Array from TreeView style tree.
 
 ⍝ From http://dfns.dyalog.com/c_trav.htm
 
-trav ← {                                     ⍝ Generic depth-first tree traversal.
+trav ← {  ⍝ Generic depth-first tree traversal.
   (⍺⍶⍵)∇⍨/⌽⍺⍹⍵  ⍝ visits parent before children.
 }
 
 ⍝ From http://dfns.dyalog.com/c_ravt.htm
 
-ravt ← {                                     ⍝ Generic depth-first tree traversal.
+ravt ← {  ⍝ Generic depth-first tree traversal.
   (⍺∇⍨/⌽⍺⍹⍵)⍶⍵  ⍝ visits children before parent.
 }
 

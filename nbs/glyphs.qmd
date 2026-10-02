@@ -87,7 +87,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⍨` [commute](glyphs/commute.qmd) | Alt-1 ~ | `f⍨`, `a⍨` | Self / commute / constant | |
 | `⍃` [before](glyphs/before.qmd) | Alt-q < | `f⍃g`, `a⍃f` | Before / bind left | As BQN's `⊸` |
 | `⍄` [after](glyphs/after.qmd) | Alt-q > | `f⍄g`, `f⍄a` | After / bind right | As BQN's `⟜` |
-| `⍤` [rank](glyphs/rank.qmd) | Alt-1 t | `f⍤r` | Rank | `⍤0` passes scalars, as BQN's `⎉0` |
+| `⍤` [rank](glyphs/rank.qmd) | Alt-1 t | `f⍤r` | Rank | `⍤0` passes an atom as itself and an array enclosed |
 | `∘` [atop](glyphs/atop.qmd) | Alt-t | `f∘g` | Atop | As BQN's `∘` |
 | `⍠` [axis](glyphs/axis.qmd) | Alt-q : | `f⍠A` | Apply along axes | Axes are numbers or names, in place of Dyalog's `f[A]` |
 | `⍥` [over](glyphs/over.qmd) | Alt-1 o | `f⍥g` | Over | |
@@ -171,6 +171,6 @@ Index origin: 0. Negative positions and axes count from the end. Comparison tole
 - [Atoms](rules.qmd#arrays-nesting-and-fill): numbers, characters and functions are atoms, distinct from scalars, as BQN. Enclosing always adds a layer: `(⊂3)≡3` is `0x`.
 - [Numbers](rules.qmd#numbers): bare numbers are approximate. `x` and `r` mark exact integers and rationals, as J: `1x÷3x` is `1r3`. Predicates, positions, tally and shape are exact.
 - [Agreement](rules.qmd#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes, and dimensions of length 1 expand: `(2 3⍴⍳6)+10 20` is `[10 11 12 ⋄ 23 24 25]`.
-- [Major cells](principles.qmd#functions-act-on-major-cells): `∊ ~ ∪ ∩` compare major cells, `N#Y` replicates them, `N⊂Y` and `N⊆Y` split along the first axis, and `⍤0` passes scalars, as BQN. `⊤` and `⊥` put digits on the last axis, as J.
+- [Major cells](principles.qmd#functions-act-on-major-cells): `∊ ~ ∪ ∩` compare major cells, `N#Y` replicates them, `N⊂Y` and `N⊆Y` split along the first axis. `⊤` and `⊥` put digits on the last axis, as J.
 - [System names](#system-names): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
 - [Axis keys](keyed.qmd) name data. `K:Y` evaluates its keys. `T.a` is `"a"⊃T`, and `X⍎Y` is `Y⊃X`.

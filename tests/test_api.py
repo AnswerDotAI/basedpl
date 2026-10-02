@@ -169,7 +169,7 @@ def test_keyed_arrays():
     np.testing.assert_array_equal(t.py['b'], [1, 2])
     assert repr(t).startswith("{'b': ")
     d = dict(z=1, y=dict(k=[1, 2, 3]), e={})
-    assert list(bpl('⍳⍠0 t', t=d).py) == ['z', 'y', 'e'] and bpl('(1⌷t.y.k)+t.e≡⍬:⍬', t=d).py == 3
+    assert list(bpl('⍳⍠0 t', t=d).py) == ['z', 'y', 'e'] and bpl('t.y.k₁+t.e≡⍬:⍬', t=d).py == 3
     assert (Array(dict(a=1, b=2)) + Array(dict(b=10))).py == dict(a=1, b=12)
     assert Array({'a': 1, 1: 5}).py == {'a': 1, 1: 5}
     with pytest.raises(TypeError): Array({2: 5})

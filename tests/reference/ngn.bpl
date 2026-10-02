@@ -1925,7 +1925,7 @@ a←2 3⍴0⋄a.[1;0 2]←1⋄a   ⍝ [0 0 0 ⋄ 1 0 1]
 a←⍳5⋄a.[[1 3]]←7 8⋄a   ⍝ 0 7 2 8 4
 
 ⍝ ngn:629 —
-a←1 2 3⋄a.[1]←4⋄a   ⍝ 1 4 3
+a←1 2 3⋄a₁←4⋄a   ⍝ 1 4 3
 
 ⍝ ngn:630 —
 a←⍳5⋄a.[[1 3]]←7⋄a   ⍝ 0 7 2 7 4
@@ -2259,11 +2259,11 @@ f←{⍺+2×⍵} ⋄ 456 f/ ⍬   ⍝ 456
 f←{⍺+2×⍵} ⋄ g←{789 f/⍵} ⋄ f/⍬
 ⍝ error: DOMAIN ERROR
 
-⍝ ngn:683 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Replace ngn ambivalent pairing with a dop using lazy default-left valence dispatch
-Amb←{m←0 ⋄ ⍺←m←1 ⋄ m?⍶ ⍵;⍺ ⍹ ⍵} ⋄ {1}Amb{2} 0   ⍝ 1
+⍝ ngn:683 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; ngn's ambivalent pairing is Valences ⊘
+{1}⊘{2} 0   ⍝ 1
 
-⍝ ngn:684 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Replace ngn ambivalent pairing with a dop using lazy default-left valence dispatch
-Amb←{m←0 ⋄ ⍺←m←1 ⋄ m?⍶ ⍵;⍺ ⍹ ⍵} ⋄ 0 {1}Amb{2} 0   ⍝ 2
+⍝ ngn:684 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; ngn's ambivalent pairing is Valences ⊘
+0 {1}⊘{2} 0   ⍝ 2
 
 ⍝ ngn:690 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Call the circumference/area functions explicitly; π replaces the old circle monad; Both observe the updated radius
 r←3 ⋄ c←{2×πr} ⋄ S←{πr²} ⋄ bef←.01×⌊100×[r;c 0;S 0] ⋄ r←r+1 ⋄ aft←.01×⌊100×[r;c 0;S 0] ⋄ [bef aft]
@@ -2272,12 +2272,12 @@ r←3 ⋄ c←{2×πr} ⋄ S←{πr²} ⋄ bef←.01×⌊100×[r;c 0;S 0] ⋄ r�
 ⍝ ngn:705 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
 f←{⍺←¯1 ⋄ ⍺×⍵} ⋄ [f 5;3 f 5]   ⍝ ¯5 15
 
-⍝ ngn:707 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
-Twice←{m←0 ⋄ ⍺←m←1 ⋄ m?⍶ ⍶ ⍵;⍺ ⍶ ⍺ ⍶ ⍵} ⋄ *Twice 2
+⍝ ngn:707 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; One body serves both valences, because an absent ⍺ drops out
+Twice←{⍺ ⍶ ⍺ ⍶ ⍵} ⋄ *Twice 2
 1618.1779919126539
 
-⍝ ngn:708 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
-Twice←{m←0 ⋄ ⍺←m←1 ⋄ m?⍶ ⍶ ⍵;⍺ ⍶ ⍺ ⍶ ⍵} ⋄ 3*Twice 2   ⍝ 19683
+⍝ ngn:708 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; One body serves both valences, because an absent ⍺ drops out
+Twice←{⍺ ⍶ ⍺ ⍶ ⍵} ⋄ 3*Twice 2   ⍝ 19683
 
 ⍝ ngn:709 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
 H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ +H÷2   ⍝ 2.5

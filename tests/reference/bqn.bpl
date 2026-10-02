@@ -30,6 +30,9 @@ fn←("rtd"⍳↑)⍚[⌽ 1↑ 1↓ ⊢] ⋄ [fn "r123";fn "d123";fn "123"]
 a←[0 1 2 ⋄ 3 4 5 ⋄ 6 7 8 ⋄ 9 10 11] ⋄ (1⌽)⌾(↑⍤1) a
 [3 1 2 ⋄ 6 4 5 ⋄ 9 7 8 ⋄ 0 10 11]
 
+⍝ bqn:under:69 — Reverse the first half of a list
+⌽⌾((2÷⍨≢)↑⊢) "abcdef"   ⍝ "cbadef"
+
 ⍝ bqn:under:73 — Add 10 to the elements below 5, with the mask computed from the argument
 {10+⌾((⍵<5)#)⍵} 3 8 2 2 6   ⍝ 13 8 12 12 6
 
@@ -65,6 +68,9 @@ a←[0 1 2 ⋄ 3 4 5 ⋄ 6 7 8 ⋄ 9 10 11] ⋄ (1⌽)⌾(↑⍤1) a
 
 ⍝ bqn:undo:36 — Undo multiplication by a bound left argument
 (3×)⁻¹ 12   ⍝ 4
+
+⍝ bqn:undo:51 — Undo Left accepts arguments that already match
+3 ⊣⁻¹ 3   ⍝ 3
 
 ⍝⍝ Repeat
 
@@ -204,6 +210,9 @@ x←3 2 4⍴⍳60 ⋄ c←100×(⍳3)=⊗⍳2 ⋄ c+x
 [[100 101 102 103 ⋄ 4 5 6 7] ⋄ [8 9 10 11 ⋄ 112 113 114 115] ⋄ [16 17 18 19 ⋄ 20 21 22 23]]
 
 ⍝⍝ Blocks
+
+⍝ bqn:block:49 — A block can modify its argument
+{⍵+←2 ⋄ [0 ⍵]}3   ⍝ 0 5
 
 ⍝ bqn:block:55 — An absent left argument makes the function that receives it monadic
 [3{(2×⍺)-⍵}1;{(2×⍺)-⍵}1]   ⍝ 5 ¯1

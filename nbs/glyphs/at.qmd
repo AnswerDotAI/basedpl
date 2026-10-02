@@ -19,10 +19,10 @@ v←10 20 30 40 ⋄ i←[0 3 ⋄ 1 2]
 {⍵+[100 200 ⋄ 300 400]}@i v   ⍝ 110 320 430 240
 ```
 
-A Boolean array right operand is a selection mask, and so is the result of a function right operand.
+A Boolean array right operand is a selection mask, and an array of integers gives positions. A function right operand is called on the argument, and its result is read the same way.
 
 ```bpl
-0@ 2| ⍳5          ⍝ 0 0 2 0 4
+0@ 1=2| ⍳5        ⍝ 0 0 2 0 4
 x←3 8 2 ⋄ (10+)@(x<5) x   ⍝ 13 8 12
 ```
 

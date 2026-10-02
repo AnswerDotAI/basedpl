@@ -60,9 +60,11 @@ M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
 ⍳⍠0 1 (:M)                  ⍝ [[0 1] [0 1]]ₓ
 ```
 
+Inside a dfn, `:` means Keys as well.
+
 ```bpl
-{+/(:⍵)}"aa" "bb":1 2       ⍝ 3
-{("total":+/⍵)}1 2 3        ⍝ "total":6
+{+/:⍵}"aa" "bb":1 2         ⍝ 3
+{"total":+/⍵}1 2 3          ⍝ "total":6
 ```
 
 Keys must be unique strings on each axis: `DOMAIN`. A key-list length must match its axis: `LENGTH`.

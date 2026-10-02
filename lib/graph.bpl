@@ -145,7 +145,7 @@ dfspan ← {  ⍝ Depth-first spanning tree: graph ⍺ from vertex ⍵.
     tree←⍶@⍺ ⍵  ⍝ ⍶ is ⍺'s parent
     tree (⍺⍢)/ next
   }  ⍝ :: tree ← vtx (vtx ⍢) tree
-  ⍵(¯1 trav)¯2⊣¨⍺  ⍝ depth-first traversal of graph ⍵
+  ⍵(¯1 trav)¯2¨⍺  ⍝ depth-first traversal of graph ⍵
 }
 
 ⍝ From http://dfns.dyalog.com/s_scc.htm
@@ -157,20 +157,20 @@ show ← {⊃(⍕¨⍳0+⍴⍵),¨" → "⍃,¨⍕¨⍵}
 scc ← {  ⍝ Strongly connected components (Tarjan).
   ⍝ State T: C L X x S
   ⍝ C: components; L: low-links; X: indices; x: next index; S: stack.
-  TT←(3#⊂0⊣¨G←⍵),1 ⍬  ⍝ state tuple T :: C L X x S
+  TT←(3#⊂0¨G←⍵),1 ⍬  ⍝ state tuple T :: C L X x S
   [C L X x S]←⍳⍴TT  ⍝ access names for items of tuple TT
   put←{(⍹⊃⍵)@ ⊂[⍶ ⍺] ⍵}  ⍝ ⍹ at ⍺ in field ⍶ of ⍵
   Lx←L put x  ⍝ ⍺ at x in lowlink vec :: T ← ⍺ ∇ T
   Xx←X put x  ⍝ ⍺ at x in indices vec :: T ← ⍺ ∇ T
   succ←{1+@x ⍵}  ⍝ successor of index x  :: T ←   ∇ T
   push←,@S
-  ⍺←$f ⋄ trace←{⍵⊣⎕←0 dsp ⍺,⍵}⍣⍺  ⍝ ⍺: optional tracing   :: T ←   ∇ T  
-  comp←{ v←⍺  ⍝ strongly connected component
+  ⍺←$f ⋄ trace←{⎕←0 dsp ⍺,⍵ ⋄ ⍵}⍣⍺  ⍝ ⍺: optional tracing   :: T ←   ∇ T
+  comp←{v←⍺  ⍝ strongly connected component
     pops←1++/∧\v≠stk←S⊃⍵  ⍝ number of connected comps on stack
     C∆←(1+⌈/C⊃⍵)@ pops↑stk C⊃⍵  ⍝ extended strongly connected comps
     [(pops↓stk) C∆]@[S C]⍵  ⍝ reduced stack; extended comps
   }  ⍝ :: T ← v ∇ T
-  conn←{ v←⍺  ⍝ connection of vertex v
+  conn←{v←⍺  ⍝ connection of vertex v
     T_0←v trace ⍵  ⍝ optional tracing
     T_1←succ v push v Lx v Xx T_0  ⍝ successor state for x S L and X
     T_2←T_1 {w←⍺
@@ -210,7 +210,7 @@ stdists ← {  ⍝ Spanning-tree path lengths.
     ∆dvec←⍺@next dvec  ⍝ extended distance vector
     ∆next←⍸tree∊,next  ⍝ grandchildren
     (⍺+1x)∇ [∆next ∆dvec]  ⍝ examine rest of tree
-  }[⍵⍳¯1 ⍵⊢¨¯1x]  ⍝ starting vertex and initial distances
+  }[⍵⍳¯1 ¯1x¨⍵]  ⍝ starting vertex and initial distances
 }
 
 ⍝ From http://dfns.dyalog.com/n_stpath.htm
@@ -276,7 +276,7 @@ sudokuMatrix ← {  ⍝ Matrix for ⍵ ⍵-Sudoku puzzle.
   same¨row,col,box,all  ⍝ constraints matrix for ⍵ ⍵-puzzle.
 }
 
-sudokuX ← { [n n]←⍴⍵  ⍝ Exact cover Sudoku solver.
+sudokuX ← {[n n]←⍴⍵  ⍝ Exact cover Sudoku solver.
   ⍺←sudokuMatrix n  ⍝ generic ⍵×⍵ constraint matrix.
   r←∊(⍵≠0)>(⊂1+⍳n)=¨⍵  ⍝ already placed rows.
   m←(~r)#⍺  ⍝ reduced matrix.
@@ -316,7 +316,7 @@ wcost ← {  ⍝ Cost vector for path ⍵ through weighted graph ⍺.
 wpath ← {  ⍝ Quickest path fm/to ⍵ in weighted graph ⍺.
   [graph costs]←↓⍺  ⍝ graph structure and costs
   [fm to]←⍵  ⍝ start and ending vertices
-  tree←¯1⊣¨graph  ⍝ initial spanning tree
+  tree←¯1¨graph  ⍝ initial spanning tree
   cost←0@fm (⍴costs)⍴∞
   I←⊃¨⍄⊂  ⍝ helper function: ⍺th items of ⍵
   fm{  ⍝ from starting vertex.
@@ -344,7 +344,7 @@ wpath ← {  ⍝ Quickest path fm/to ⍵ in weighted graph ⍺.
 
 wspan ← {  ⍝ Spanning tree for weighted graph ⍺ from ⍵.
   [graph costs]←↓⍺  ⍝ graph structure and costs.
-  tree←¯1⊣¨graph  ⍝ initial spanning tree.
+  tree←¯1¨graph  ⍝ initial spanning tree.
   cost←0@⍵ (⍴costs)⍴∞
   I←⊃¨⍄⊂  ⍝ helper function: ⍺th items of ⍵
   ⍵{  ⍝ from starting vertex.
@@ -377,5 +377,5 @@ wmst ← {  ⍝ Minimum Spanning Tree for wu-graph ⍺.
     [fm to]←{⊃,/masks#¨⍵}¨[xvec graph]
     fm≡⍬?tree;  ⍝ disjoint graph: quit
     (⍺,to)∇ [fm@to tree;todo~to]  ⍝ vertices from G~T to T
-  }[¯1⊣¨graph xvec~,⍵]  ⍝ initial tree and unconnected vertices
+  }[¯1¨graph xvec~,⍵]  ⍝ initial tree and unconnected vertices
 }

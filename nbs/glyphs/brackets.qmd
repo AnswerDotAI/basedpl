@@ -84,11 +84,11 @@ m←2 3⍴⍳6
 
 ## Function arrays
 
-Items in brackets can be functions: `[+/ ÷ ≢]` is a vector of three functions. Pick `⊃`, First `↑` and complete atomic [Index](squad.qmd) `⌷` positions return a stored function you can call. [Agenda](agenda.qmd) selects a function and calls it. Successive Picks go down into nested arrays. Empty coordinates return the argument unchanged.
+Items in brackets can be functions: `[+/ ÷ ≢]` is a vector of three functions. Pick `⊃`, First `↑`, [subscripts](subscript.qmd) and complete atomic [Index](squad.qmd) `⌷` positions return a stored function you can call. [Agenda](agenda.qmd) selects a function and calls it. Successive Picks go down into nested arrays. Empty coordinates return the argument unchanged.
 
 ```bpl
-fs←[+ × ÷] ⋄ mul←1⌷fs ⋄ 2 mul 3                  ⍝ 6
-fs←[+/ {⍵×⍵} 3⍃+] ⋄ square←1⌷fs ⋄ square4        ⍝ 16
+fs←[+ × ÷] ⋄ mul←fs₁ ⋄ 2 mul 3                   ⍝ 6
+fs←[+/ {⍵×⍵} 3⍃+] ⋄ square←fs₁ ⋄ square4         ⍝ 16
 fs←[+ ×] ⋄ ≢[fs ÷]                                ⍝ 2ₓ
 fs←[+ × ÷] ⋄ div←↑⌽fs ⋄ 6 div 3                  ⍝ 2
 fs←[+ ×] ⋄ result←(⊂1 2 3),1↓fs ⋄ f←1⊃result ⋄ 2 f 3   ⍝ 6

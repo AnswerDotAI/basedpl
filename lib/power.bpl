@@ -24,19 +24,9 @@ invr ← {  ⍝ Approx inverse of real-valued function.
   }(⍵⍃≡∘⍶)⍺
 }
 
-⍝ From http://dfns.dyalog.com/c_limit.htm
-
-limit ← {  ⍝ Function power limit (fixpoint).
-  ⍵ ⍶{
-    ⍺≡⍵?⍵;  ⍝ old matches new: finished.
-    ⍵ ∇ ⍶ ⍵
-  } ⍶⍵
-}
-
 ⍝ From http://dfns.dyalog.com/s_limit.htm
-AM  ← {(+/⍵)×÷⍴,⍵}  ⍝ Arithmetic mean.
-GM  ← {(×/⍵)*÷⍴,⍵}  ⍝ Geometric  mean.
-AGM ← {↑{(AM ⍵),GM ⍵}limit ⍵}  ⍝ Arithmetic-geometric mean.
+GM ← ×/*÷∘≢  ⍝ Geometric mean.
+AGM ← {↑((+/÷≢),GM)⍣∞ ⍵}  ⍝ Arithmetic-geometric mean.
 
 ArcTan ← {
   ⍝ Inverse trigonometric tangent - gqr 19-11-2002.
@@ -58,16 +48,12 @@ ArcTan ← {
   ⍝   a(n+1)=a(n) and g(n+1)=g(n) and a(n+1)=g(n+1)
 
   next←{  ⍝ next term in sequence.
-    (AM ⍵),GM(AM ⍵),1↓⍵
+    (+/÷≢ ⍵),GM(+/÷≢ ⍵),1↓⍵
   }
   start←(1+⍵²)*-÷2
-  finish←↑ next limit start,1
+  finish←↑ next⍣∞ start,1
   ⍵×start÷finish
 }
-
-⍝ From http://dfns.dyalog.com/c_pow.htm
-
-pow ← { ⍶⍣⍺ ⍵ }  ⍝ Explicit function power.
 
 ⍝ From http://dfns.dyalog.com/s_pow.htm
 
@@ -91,7 +77,7 @@ nr ← {  ⍝ Newton-Raphson.
   ⍵+(⍺×y)÷y-∆y  ⍝ next estimate.
 }
 
-traj_2 ← { ¯1⍃↓ ,⍄⊂⍄⍶⍄↑⍄⌽⍨⍣(∊⍨⍄⊂⍄↑⍄⌽⍨)∘(,⊂) ⍵ }
+traj_2 ← {¯1⍃↓ ,⍄⊂⍄⍶⍄↑⍄⌽⍨⍣(∊⍨⍄⊂⍄↑⍄⌽⍨)∘(,⊂) ⍵}
 
 ⍝ From http://dfns.dyalog.com/c_while.htm
 

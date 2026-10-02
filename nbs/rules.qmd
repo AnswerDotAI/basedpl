@@ -36,19 +36,19 @@ Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): 
 | [scalar]{#term-scalar} | an array of rank 0, holding one value: `⊂5` is a scalar holding the number 5, and `5` is a number |
 | [unit]{#term-unit} | a rank-0 value: a number, character, function or scalar |
 | [subject]{#term-subject} | a value that isn't a function: a number, character or array |
-| cell | a sub-array made of an array's last k axes, called a k-cell: a matrix's rows are its 1-cells. A 0-cell is the unit at one position, the atom there or the array there enclosed. When k is at least the array's rank, the whole array is its one cell |
-| frame | the axes before the cells, with one cell at each position |
-| assembly | building one array from results, one for each position of a frame: the shape is the frame followed by the results' shape, each result fills its position with its items, and shorter results are padded with fill |
-| literal | a number, character, string, `∞`, `⍬`, or a constant: `$t` true, `$f` false or `$n` NaN |
-| strand | subjects side by side, read as a vector without brackets: `1 2 3` is `[1 2 3]`, and `a b` is `[a b]` |
-| run | a sequence of tokens with no spaces between them |
-| argument | a subject a function applies to |
-| operand | a value an operator applies to |
-| expression | a run, group or statement that ends in a subject |
-| train | a run, group or statement that ends in a function |
-| fork | three parts of a train, `f g h`, giving `(f ⍵) g (h ⍵)`, or `A g h` with a subject on the left, giving `A g (h ⍵)` |
-| atop | two parts of a train, `f g`, giving `f (g ⍵)` |
-| bind | a subject directly before a function in a train, fixing its left argument: `2×` is `2⍃×` |
+| [cell]{#term-cell} | a sub-array made of an array's last k axes, called a k-cell: a matrix's rows are its 1-cells. A 0-cell is the unit at one position, the atom there or the array there enclosed. When k is at least the array's rank, the whole array is its one cell |
+| [frame]{#term-frame} | the axes before the cells, with one cell at each position |
+| [assembly]{#term-assembly} | building one array from results, one for each position of a frame: the shape is the frame followed by the results' shape, each result fills its position with its items, and shorter results are padded with fill |
+| [literal]{#term-literal} | a number, character, string, `∞`, `⍬`, or a constant: `$t` true, `$f` false or `$n` NaN |
+| [strand]{#term-strand} | subjects side by side, read as a vector without brackets: `1 2 3` is `[1 2 3]`, and `a b` is `[a b]` |
+| [run]{#term-run} | a sequence of tokens with no spaces between them |
+| [argument]{#term-argument} | a subject a function applies to |
+| [operand]{#term-operand} | a value an operator applies to |
+| [expression]{#term-expression} | a run, group or statement that ends in a subject |
+| [train]{#term-train} | a run, group or statement that ends in a function |
+| [fork]{#term-fork} | three parts of a train, `f g h`, giving `(f ⍵) g (h ⍵)`, or `A g h` with a subject on the left, giving `A g (h ⍵)` |
+| [atop]{#term-atop} | two parts of a train, `f g`, giving `f (g ⍵)` |
+| [bind]{#term-bind} | a subject directly before a function in a train, fixing its left argument: `2×` is `2⍃×` |
 
 ### Strands
 
@@ -155,7 +155,7 @@ A space before an argument decides the reading. `+/÷≢ x` is the mean of `x`, 
 The target of `←` is the run before it: a name, a selection such as `(1⌷v)`, `v₁`, `v.[1]` or `T.x`, a list of names such as `[a b]`, or one of these followed by a function for [modified assignment](glyphs/assign.qmd). A named function joins the target in parentheses, because a space would end the run: `a(f)←3` is `a←a f 3`, at top level and in dfns. The value is everything to the right of `←`, up to the end of the statement or group. `a←1 b←2` is not two assignments, because the first `←` takes `1 b←2` as its value. Independent assignments need `⋄`.
 
 ```bpl
-v←10 20 30 ⋄ v.[1]←7 ⋄ v         ⍝ 10 7 30
+v←10 20 30 ⋄ v₁←7 ⋄ v            ⍝ 10 7 30
 [a b]←3 4 ⋄ a×b                  ⍝ 12
 a←1 ⋄ f←+ ⋄ a(f)←3 ⋄ a           ⍝ 4
 ```
@@ -356,7 +356,7 @@ Grade and interval index ignore tolerance. Order: numbers, characters, nested ar
 Dfns use lexical scope. Plain assignment is local. Modified and selective updates target the nearest binding. Arrays have value semantics: updating one name leaves other copies unchanged.
 
 ```bpl
-a←1 2 ⋄ b←a ⋄ a.[0]←9 ⋄ b ⍝ 1 2
+a←1 2 ⋄ b←a ⋄ a₀←9 ⋄ b ⍝ 1 2
 ```
 
 Every statement in a dfn body runs, and the body's last statement gives the result. A final assignment returns its value silently. Top-level assignments also retain their value without display. See [Dfns](dfns.qmd).

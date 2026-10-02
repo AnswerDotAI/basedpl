@@ -1,9 +1,9 @@
 # `⍤` — Rank
 
-`f⍤R` applies `f` to the cells of rank `R`, and the frames use leading agreement. A space ends the operand, so the argument needs no separator. Three rules give the result:
+`f⍤R` applies `f` to the [cells](../rules.qmd#term-cell) of rank `R`, and the [frames](../rules.qmd#term-frame) use leading agreement. A space ends the operand, so the argument needs no separator. Three rules give the result:
 
 1. A 0-cell inside a frame is the unit at its position: an atom arrives as itself, and an array arrives enclosed.
-2. The results assemble as `⊃` does. The shape is the frame followed by the results' shape, each result fills its position with its items, and shorter results are padded with fill.
+2. The results [assemble](../rules.qmd#term-assembly) as `⊃` does. The shape is the frame followed by the results' shape, each result fills its position with its items, and shorter results are padded with fill.
 3. When no argument has a frame, `f` applies to the arguments themselves, and its result is the result. An argument has no frame when its rank is at most its cell rank, so an atom never has one.
 
 ```bpl

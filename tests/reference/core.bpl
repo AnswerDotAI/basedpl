@@ -7,7 +7,7 @@ n←2 2 3⍴⍳6
 [15 15;6 24;15 15]
 
 ⍝ reduce-axes-order — Axis order determines the ravel, not a sequence of reductions
-[-/⍠0 1 (2 2⍴⍳4);-/⍠1 0 (2 2⍴⍳4)]   ⍝ ¯2 ¯4
+m←2 2⍴⍳4 ⋄ [-/⍠0 1 m;-/⍠1 0 m]   ⍝ ¯2 ¯4
 
 ⍝ reduce-axes-binding — Glyphs, named operators and already-derived reductions use the same axes
 r←/ ⋄ sum←+/ ⋄ n←2 2 3⍴⍳6
@@ -482,11 +482,11 @@ v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}   ⍝ 15
 
 ⍝⍝ Function arrays
 
-⍝ — Pick a function from a vector, then call it
-fs←[+ × ÷] ⋄ mul←1⊃fs ⋄ 2 mul 3   ⍝ 6
+⍝ — Select a function from a vector, then call it
+fs←[+ × ÷] ⋄ mul←fs₁ ⋄ 2 mul 3   ⍝ 6
 
 ⍝ — Primitives, dfns and derived functions share one function vector
-fs←[+/ {⍵×⍵} 3⍃+] ⋄ square←1⊃fs ⋄ square4   ⍝ 16
+fs←[+/ {⍵×⍵} 3⍃+] ⋄ square←fs₁ ⋄ square4   ⍝ 16
 
 ⍝ — A record entry can hold a function, and the record's text reads back
 r←["sum":+/ "max":⌈/] ⋄ [r.sum 1 2 3;(⍎⍕r).max 1 2 3]   ⍝ 6 3
@@ -507,13 +507,13 @@ fs←[+ ×] ⋄ f←2⊃3↑fs ⋄ 2 f 3   ⍝ 5
 fs←[+ ×] ⋄ f←2⊃[0↑fs 0↑fs ÷] ⋄ 6 f 3   ⍝ 2
 
 ⍝ — Arrays and functions can share a mixed vector
-fs←[+ ×] ⋄ result←(⊂1 2 3),1⌷fs ⋄ back←1⊃result ⋄ 2 back 3   ⍝ 6
+fs←[+ ×] ⋄ result←(⊂1 2 3),fs₁ ⋄ back←result₁ ⋄ 2 back 3   ⍝ 6
 
 ⍝ — A pick path descends into a nested function vector
 x←[[+ ×] [- ÷]] ⋄ f←1⊃0⊃x ⋄ 2 f 3   ⍝ 6
 
 ⍝ — A dfn can return a selected function
-fs←[+ ×] ⋄ f←{1⊃⍵}fs ⋄ 2 f 3   ⍝ 6
+fs←[+ ×] ⋄ f←{⍵₁}fs ⋄ 2 f 3   ⍝ 6
 
 ⍝ — Inverse enclose discloses a callable function
 fs←[+ ×] ⋄ f←⊂⁻¹ [⊂1]⌷fs ⋄ 2 f 3   ⍝ 6
@@ -525,7 +525,7 @@ fs←[+ ×] ⋄ f←↑↑¨fs ⋄ 2 f 3   ⍝ 5
 fs←[+ ×] ⋄ f←↑↑⍤0 fs ⋄ 2 f 3   ⍝ 5
 
 ⍝ — An empty pick path preserves the scalar array, without disclosing its function
-fs←[+ ×] ⋄ fs.[⊂1]≡⍬⊃fs.[⊂1]   ⍝ $t
+fs←[+ ×] ⋄ s←[⊂1]⌷fs ⋄ s≡⍬⊃s   ⍝ $t
 
 ⍝ — A function vector matches itself by function identity
 fs←[+ ×] ⋄ fs≡fs   ⍝ $t
@@ -546,7 +546,7 @@ fs←[{⍵×⍵} +] ⋄ f←{↑⍵}fs ⋄ f3   ⍝ 9
 fs←[+ ×] ⋄ ⍴⍕fs   ⍝ [6]ₓ
 
 ⍝ — One list may contain numbers, callable functions and text
-x←[1 + "abc"] ⋄ f←1⊃x ⋄ (0⊃x)f≢2⊃x   ⍝ 4
+x←[1 + "abc"] ⋄ f←x₁ ⋄ x₀f≢x₂   ⍝ 4
 
 ⍝ — Functions have no grade ordering
 ⍋[+ ×]
@@ -563,8 +563,8 @@ x←[1 + "abc"] ⋄ f←1⊃x ⋄ (0⊃x)f≢2⊃x   ⍝ 4
 {x←⍵ ⋄ [{x+⍵} +]}2
 ⍝ error: DOMAIN ERROR
 
-⍝ — Assignment to a dot path cannot export a local function into an outer array
-fs←[+ ×] ⋄ {fs.[0]←0⌷[{⍵} +] ⋄ 0}2
+⍝ — Assignment to a selection cannot export a local function into an outer array
+fs←[+ ×] ⋄ {fs₀←0⌷[{⍵} +] ⋄ 0}2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Even an empty function vector retains its prototype function
@@ -601,7 +601,7 @@ fs←[+ ×] ⋄ {fs.[0]←0⌷[{⍵} +] ⋄ 0}2
 a←1 2 ⋄ b←3 4 ⋄ [a b]   ⍝ [1 2;3 4]
 
 ⍝ — A function list can be one item within a list
-x←[1 [+ ×] 4] ⋄ f←1⊃1⊃x ⋄ (0⊃x)f 2⊃x   ⍝ 4
+x←[1 [+ ×] 4] ⋄ f←1⊃x₁ ⋄ x₀ f x₂   ⍝ 4
 
 ⍝ — The list forms before reduction applies
 +/[1 2 3]   ⍝ 6
@@ -876,7 +876,7 @@ a←0⍴⊂2 3⍴⍳6 ⋄ (⌽⍠1¨a)←9 ⋄ ⍴↑a   ⍝ [2 3]ₓ
 a←1 2 ⋄ (3↑a)←4 ⋄ a   ⍝ 4 4
 
 ⍝ —
-a←[1 2;3 4] ⋄ (↑a)←7 8 9 ⋄ 0⊃a   ⍝ 7 8 9
+a←[1 2;3 4] ⋄ (↑a)←7 8 9 ⋄ a₀   ⍝ 7 8 9
 
 ⍝ — First selection replaces an atom with a vector
 a←1 ⋄ (↑a)←3 4 ⋄ a   ⍝ 3 4
@@ -947,16 +947,16 @@ a←10 ⋄ f←{a←2 ⋄ g←{a+←⍵ ⋄ a} ⋄ z←g ⍵ ⋄ z,a} ⋄ z←f3
 a←10 ⋄ g←{a+←⍵ ⋄ a} ⋄ f←{a←2 ⋄ z←g ⍵ ⋄ z,a} ⋄ z←f3 ⋄ z,a   ⍝ 13 2 13
 
 ⍝ — Updating an outer array leaves a previously assigned copy unchanged
-a←1 2 ⋄ b←a ⋄ f←{a.[0]←⍵ ⋄ a} ⋄ z←f3 ⋄ z,a,b   ⍝ 3 2 3 2 1 2
+a←1 2 ⋄ b←a ⋄ f←{a₀←⍵ ⋄ a} ⋄ z←f3 ⋄ z,a,b   ⍝ 3 2 3 2 1 2
 
 ⍝ — Writing into an array that shares only another's storage leaves the other unchanged
-x←1 2 3 ⋄ y←,x ⋄ y.[0]←9 ⋄ x,y   ⍝ 1 2 3 9 2 3
+x←1 2 3 ⋄ y←,x ⋄ y₀←9 ⋄ x,y   ⍝ 1 2 3 9 2 3
 
 ⍝ — Writing inside a nested item that another item shares leaves the other unchanged
-a←1 2 ⋄ n←[a a] ⋄ n.[0].[1]←9 ⋄ [n a]   ⍝ ([1 9] [1 2] ⋄ 1 2)
+a←1 2 ⋄ n←[a a] ⋄ n₀.[1]←9 ⋄ [n a]   ⍝ ([1 9] [1 2] ⋄ 1 2)
 
 ⍝ — Writing an array into one of its own items stores the array as it was
-x←1 2 3 ⋄ x.[0]←x ⋄ x   ⍝ [[1 2 3] 2 3]
+x←1 2 3 ⋄ x₀←x ⋄ x   ⍝ [[1 2 3] 2 3]
 
 ⍝ — Appending leaves an array that shares the original unchanged
 a←1 2 ⋄ b←a ⋄ a,←3 ⋄ [a b]   ⍝ [[1 2 3] [1 2]]
@@ -991,25 +991,25 @@ T←["a":["x":1]] ⋄ T.a.y←2 ⋄ T.b.c←3 ⋄ T   ⍝ ["a":["x":1 "y":2] "b"
 a←1 2 ⋄ f←{(⌽a)+←⍵ ⋄ a} ⋄ z←f3 ⋄ z,a   ⍝ 4 5 4 5
 
 ⍝ — Modified selective assignment writes as plain assignment does, so the whole array takes the kind of the new values
-x←[1 2 3]ₓ ⋄ x.[0]+←0.5 ⋄ b←1 0 1=1 ⋄ b.[0]+←1 ⋄ [x b]   ⍝ (1.5 2 3 ⋄ 2 0 1)
+x←[1 2 3]ₓ ⋄ x₀+←0.5 ⋄ b←1 0 1=1 ⋄ b₀+←1 ⋄ [x b]   ⍝ (1.5 2 3 ⋄ 2 0 1)
 
 ⍝ — Repeated positions accumulate, with a primitive or a dfn
 x←0 0 0 ⋄ y←x ⋄ x.[[1 1]]+←1 ⋄ y.[[1 1]]{⍺+⍵}←1 ⋄ x,y   ⍝ 0 2 0 0 2 0
 
 ⍝ — A modifier that reassigns or erases its target doesn't change the update
-x←1 2 3 ⋄ x.[0]{x,←5 ⋄ ⍺+⍵}←10 ⋄ y←1 2 3 ⋄ y.[0]{•ex "y" ⋄ ⍺+⍵}←10 ⋄ x,y   ⍝ 11 2 3 11 2 3
+x←1 2 3 ⋄ x₀{x,←5 ⋄ ⍺+⍵}←10 ⋄ y←1 2 3 ⋄ y₀{•ex "y" ⋄ ⍺+⍵}←10 ⋄ x,y   ⍝ 11 2 3 11 2 3
 
 ⍝ — An error in the modifier leaves the target unchanged
-x←1 2 3 ⋄ {0::x ⋄ x[0 1]{⍵=2?÷'a';⍺+⍵}←1 2}0   ⍝ 1 2 3
+x←1 2 3 ⋄ {11::x ⋄ x.[[0 1]]{⍵=2?÷'a';⍺+⍵}←1 2}0   ⍝ 1 2 3
 
 ⍝ — An index error leaves the target unchanged
-x←1 2 3 ⋄ {0::x ⋄ x[0 5]←9}0   ⍝ 1 2 3
+x←1 2 3 ⋄ {3::x ⋄ x.[[0 5]]←9}0   ⍝ 1 2 3
 
 ⍝ — A replacement of the wrong length leaves the target unchanged
-x←1 2 3 ⋄ {0::x ⋄ x[0 1]←1 2 3}0   ⍝ 1 2 3
+x←1 2 3 ⋄ {5::x ⋄ x.[[0 1]]←1 2 3}0   ⍝ 1 2 3
 
 ⍝ — A rejected local closure leaves the target unchanged
-x←1 2 3 ⋄ {0::x ⋄ x(0)←{⍵} ⋄ 0}0   ⍝ 1 2 3
+x←1 2 3 ⋄ {11::x ⋄ x₀←{⍵} ⋄ 0}0   ⍝ 1 2 3
 
 ⍝ — A local error guard does not roll back writes to an outer binding
 a←10 ⋄ f←{0::a ⋄ a+←⍵ ⋄ 1÷'a'} ⋄ z←f3 ⋄ z,a   ⍝ 13 13
@@ -1029,8 +1029,8 @@ a←10 ⋄ f←{0::a ⋄ a+←⍵ ⋄ 1÷'a'} ⋄ z←f3 ⋄ z,a   ⍝ 13 13
 ⍝ —
 a←1+b←2 ⋄ [a b]   ⍝ 3 2
 
-⍝ — Modified assignment to a dot path yields the supplied increment
-a←1 2 3 ⋄ 2×a.[2]+←10   ⍝ 20
+⍝ — Modified assignment to a selection yields the supplied increment
+a←1 2 3 ⋄ 2×a₂+←10   ⍝ 20
 
 ⍝ — An enclosing expression sees the replacement in selection order
 a←1 2 3 ⋄ 1+(⌽a)←4 5 6   ⍝ 5 6 7
@@ -1066,7 +1066,7 @@ a←1 ⋄ b←2 ⋄ [a b]+←3 ⋄ [a b]   ⍝ 4 5
 a←1 ⋄ [a a]+←3 4 ⋄ a   ⍝ 8
 
 ⍝ —
-a←1 2 3 ⋄ a.[1]←9 ⋄ a   ⍝ 1 9 3
+a←1 2 3 ⋄ a₁←9 ⋄ a   ⍝ 1 9 3
 
 ⍝ — Repeated indices accumulate rather than overwriting from the original value
 a←1 2 3 ⋄ r←a.[[1 1]]+←10 20 ⋄ a   ⍝ 1 32 3
@@ -1099,7 +1099,7 @@ a←1 ⋄ f←{a+←1 ⋄ a} ⋄ [f0 a]   ⍝ 2 2
 a←1 2 3 ⋄ a.[[2 0]].[1]←9 ⋄ a   ⍝ 9 2 3
 
 ⍝ — A reach index after the dot updates an element inside the second item
-a←[1 2;3 4] ⋄ a.[⊂[[1] [0]]]←9 ⋄ ↑1⊃a   ⍝ 9
+a←[1 2;3 4] ⋄ a.[⊂[[1] [0]]]←9 ⋄ ↑a₁   ⍝ 9
 
 ⍝ — Destructuring modification calls the operand from left to right
 a←1 ⋄ b←2 ⋄ [a b]{⎕←⍺ ⋄ ⍺+⍵}←3 4 ⋄ [a b]
@@ -1405,7 +1405,7 @@ T←["a":1] ⋄ (⎕←T).[⎕←"b"]←2
 a←4 ⋄ f←{a←10 ⋄ ⍎"a+⍵"} ⋄ b←f3 ⋄ [b a]   ⍝ 13 4
 
 ⍝ — Dyadic execute selects values without executing character data
-T←("a":"1+2"),("b":4) ⋄ [T⍎"a";T⍎"b";T⍎⊂"b" "a"]
+T←["a":"1+2" "b":4] ⋄ [T⍎"a";T⍎"b";T⍎⊂"b" "a"]
 ["1+2" 4 [4 "1+2"]]
 
 ⍝ — A string selector requires keys on that axis
@@ -1733,11 +1733,11 @@ f←{⍵+1}⇄{⍵-1} ⋄ (f⁻¹)⁻¹5   ⍝ 6
 ⍝ — A singleton count vector adds a singleton result frame
 +⍣[1] 2   ⍝ ,2
 
-⍝ — Different-sized iterates assemble into padded rows
-{⍵,1}⍣0 1 2 ,2   ⍝ [2 0 0 ⋄ 2 1 0 ⋄ 2 1 1]
+⍝ — Each state is one item, whatever its length
+{⍵,1}⍣0 1 2 ,2   ⍝ (2 ⋄ 2 1 ⋄ 2 1 1)
 
-⍝ — Empty counts never invoke the operand and retain count and argument shapes
-{1÷0}⍣(0 2⍴0) "ab"   ⍝ 0 2 2⍴' '
+⍝ — Empty counts never call the operand, and give an empty array of the counts' shape with the argument's fill as prototype
+{1÷0}⍣(0 2⍴0) "ab"   ⍝ 0 2⍴⊂"  "
 
 ⍝ — Counts from 0 give the starting value and each step
 1+⍣(⍳4) 5   ⍝ 5 6 7 8
@@ -1761,7 +1761,7 @@ f←{⍵+1}⇄{⍵-1} ⋄ (f⁻¹)⁻¹5   ⍝ 6
 ({2×⍵}⇄{⌊⍵÷2})⍣¯∞(100)   ⍝ 0ₓ
 
 ⍝ — A zero count in a list keeps the initial value without calling the operand
-{1÷0}⍣[0] "ab"   ⍝ ["ab" ⋄]
+{1÷0}⍣[0] "ab"   ⍝ ["ab"]
 
 ⍝ — A named predicate list uses ordinary function calls and global lookup
 limit←4 ⋄ stop←[{⍺≥limit}] ⋄ 1+⍣stop 1   ⍝ 1 2 3 4
@@ -2234,8 +2234,8 @@ x←["a":1 "b":2 "c":3] ⋄ ["b":20 "a":10]@0 1 x   ⍝ ["a":10 "b":20 "c":3]
 ⍝ —
 10×@1 3⍳5   ⍝ 0 10 2 30 4
 
-⍝ — A selection function supplies a Boolean mask
-0@ 2⍃| ⍳5   ⍝ 0 0 2 0 4
+⍝ — A selection function's Boolean result is a mask, as a Boolean array is
+0@ 1=2| ⍳5   ⍝ 0 0 2 0 4
 
 ⍝ — Repeated replacement indices use the last supplied value
 10 20@1 1⍳3   ⍝ 0 20 2
@@ -2279,9 +2279,8 @@ a←⍳3 ⋄ b←0@2 a ⋄ a   ⍝ 0 1 2
 {⍵}⌺1 1⍳3
 ⍝ error: RANK ERROR
 
-⍝ —
-0@{2 0 1}⍳3
-⍝ error: DOMAIN ERROR
+⍝ — A selection function's integer result gives positions, as an array of integers does
+0@{2 0 1}⍳3   ⍝ 0 0 0
 
 ⍝ — Nested index paths select fields inside matrix items
 G←2 3⍴[["ABC" 1] ["DEF" 2] ["GHI" 3] ["JKL" 4] ["MNO" 5] ["PQR" 6]] ⋄ (⊂[[[0 1] 0] [[1 2] 1]])⌷G
@@ -2402,7 +2401,7 @@ x←10 10⊤[12 34]ₓ ⋄ [x;•storage x]   ⍝ [[1 2 ⋄ 3 4];"float"]
 x←[1 2 ⋄ 3 4] ⋄ (¯∞ ∞⌷x)←[5 6 ⋄ 7 8] ⋄ x   ⍝ [7 8 ⋄ 5 6]
 
 ⍝ — Selective assignment through a negative position
-x←10 20 30 ⋄ (¯1⌷x)←9 ⋄ x   ⍝ 10 20 9
+x←10 20 30 ⋄ x₋₁←9 ⋄ x   ⍝ 10 20 9
 
 ⍝ —
 ¯4⌷10 20 30
@@ -2597,13 +2596,13 @@ v←⍳1000 ⋄ +/v+v   ⍝ 999000
 •storage¨[0.5,1r3;1j2,1r3]   ⍝ "mixed" "mixed"
 
 ⍝ — Writing a float into integer storage converts the whole array
-x←⍳3ₓ ⋄ x.[1]←0.5 ⋄ •storage x   ⍝ "float"
+x←⍳3ₓ ⋄ x₁←0.5 ⋄ •storage x   ⍝ "float"
 
 ⍝ — Writing an exact integer into float storage makes it a float
-x←0.5 1.5 ⋄ x.[0]←2ₓ ⋄ •storage x   ⍝ "float"
+x←0.5 1.5 ⋄ x₀←2ₓ ⋄ •storage x   ⍝ "float"
 
 ⍝ — Writing into mixed storage keeps it mixed
-x←'a' 1ₓ 2ₓ ⋄ x.[0]←0ₓ ⋄ •storage x   ⍝ "mixed"
+x←'a' 1ₓ 2ₓ ⋄ x₀←0ₓ ⋄ •storage x   ⍝ "mixed"
 
 ⍝ — Rearranging or combining mixed storage keeps it mixed
 m←1ₓ 0.5 2ₓ ⋄ •storage¨[⌽m;2↑m;4↑m;1 0 1#m;1 0 1 1#⁻¹m;(⊂1 0)⌷m;2 1⍴m;⍉2 1⍴m;m,m;m⍪m;1⌽m;∪m;m~,2ₓ;↑⊂m;∊⊂m;↑↓2 2⍴m;↑1 1 0⊆m;0⊃⊂m]
@@ -2623,7 +2622,7 @@ m←1ₓ 0.5 2ₓ ⋄ •storage¨[⌽m;2↑m;4↑m;1 0 1#m;1 0 1 1#⁻¹m;(⊂1
 "integer" "integer" "integer" "integer" "integer"
 
 ⍝ —
-x←⍳3ₓ ⋄ x.[1]←∞ ⋄ •storage x   ⍝ "integer"
+x←⍳3ₓ ⋄ x₁←∞ ⋄ •storage x   ⍝ "integer"
 
 ⍝ — Arithmetic with an infinity gives floats
 •storage¨[0.5,∞ ¯∞;(⍳3ₓ)+∞]   ⍝ "float" "float"
@@ -3035,7 +3034,7 @@ b"
 1⌷"abc" "def" "ghi"   ⍝ "def"
 
 ⍝ —
-gg←2 3 4 5 ⋄ 9,gg.[1],3 4   ⍝ 9 3 3 4
+gg←2 3 4 5 ⋄ 9,gg₁,3 4   ⍝ 9 3 3 4
 
 ⍝ — Split into rows; each further split encloses the resulting vector or scalar
 ↓↓↓2 2⍴⍳4   ⍝ ⊂⊂[[0 1] [2 3]]
@@ -3098,10 +3097,10 @@ gg←2 3 4 5 ⋄ 9,gg.[1],3 4   ⍝ 9 3 3 4
 {⍺,⍵}\1 2 3   ⍝ [1 [1 2] [1 2 3]]
 
 ⍝ — A seed participates in every growing accumulator
-0 {⍺,⍵}\ 1 2 3   ⍝ [[0 1] [0 1 2] [0 1 2 3]]
+0{⍺,⍵}\1 2 3   ⍝ [[0 1] [0 1 2] [0 1 2 3]]
 
 ⍝ — An empty seeded scan makes no operand calls
-10 {1÷0}\ ⍬   ⍝ ⍬
+10{1÷0}\⍬   ⍝ ⍬
 
 ⍝ — An unseeded singleton scan makes no operand calls
 {1÷0}\,5   ⍝ ,5
@@ -3164,7 +3163,7 @@ f←{⎕←[⍺ ⍵] ⋄ ⍺-⍵} ⋄ f\1 2 3
 ⍝ ⎕: 1 2\n¯1 3
 
 ⍝ — Seeded scan exposes the seed as the first left argument
-r←10 {⎕←[⍺ ⍵] ⋄ ⍺-⍵}\ 1 2 3
+r←10{⎕←[⍺ ⍵] ⋄ ⍺-⍵}\1 2 3
 9 7 4
 ⍝ ⎕: 10 1\n9 2\n7 3
 
@@ -3832,7 +3831,7 @@ sum←+/ ⋄ f←{⍵×+⍵} ⋄ [sum 1j2 3j4;-/1j2 3j4 5j6;f 3j4]   ⍝ 4j6 3j4
 •storage¨[1j2 2×1j¯2 2;1j2 2×1j2 2]   ⍝ "float" "complex"
 
 ⍝ — Complex storage holds infinities as reals, and an infinity equals only itself
-[(1j2 2 ∞ ∞)=5 2 5 ∞;(1j2 ∞)=∞ 1j2]   ⍝ [[$f $t $f $t];[$f $f]]
+[1j2 2 ∞ ∞=5 2 5 ∞;1j2 ∞=∞ 1j2]   ⍝ [[$f $t $f $t];[$f $f]]
 
 ⍝⍝ Complex comparison errors and recovery
 
@@ -4847,7 +4846,7 @@ a←[[1 2] [3 4]] ⋄ (1⊃0⊃a)←9 ⋄ a   ⍝ [[1 9] [3 4]]
 a←3 ⋄ a.[]←4 ⋄ a   ⍝ 4
 
 ⍝ —
-v←3 4 ⋄ (v.[0]*2)+v.[1]*2   ⍝ 25
+v←3 4 ⋄ v₀²+v₁²   ⍝ 25
 
 ⍝ —
 [[1 3] [2 4]]⍳⊂1 3   ⍝ 0ₓ
@@ -4856,16 +4855,16 @@ v←3 4 ⋄ (v.[0]*2)+v.[1]*2   ⍝ 25
 v←10 20 30 ⋄ [1⌷v [⊂1]⌷v [,1]⌷v]   ⍝ [20 (⊂20) (,20)]
 
 ⍝ —
-a←[[1 2] [3 4]] ⋄ a.[1].[0]←9 ⋄ a   ⍝ [[1 2] [9 4]]
+a←[[1 2] [3 4]] ⋄ a₁.[0]←9 ⋄ a   ⍝ [[1 2] [9 4]]
 
 ⍝ —
-a←[[1 2] [3 4]] ⋄ a.[1],←5 ⋄ a   ⍝ [[1 2] [3 4 5]]
+a←[[1 2] [3 4]] ⋄ a₁,←5 ⋄ a   ⍝ [[1 2] [3 4 5]]
 
 ⍝ —
-a←[[1 2] [3 4]] ⋄ a.[1]←5 6 7 ⋄ a   ⍝ [[1 2] [5 6 7]]
+a←[[1 2] [3 4]] ⋄ a₁←5 6 7 ⋄ a   ⍝ [[1 2] [5 6 7]]
 
 ⍝ —
-fs←[+ ×] ⋄ fs.[1]←- ⋄ f←1⌷fs ⋄ 3 f 2   ⍝ 1
+fs←[+ ×] ⋄ fs₁←- ⋄ f←fs₁ ⋄ 3 f 2   ⍝ 1
 
 ⍝ —
 1 3⍳2   ⍝ 2ₓ
@@ -4915,7 +4914,7 @@ fs←[+ ×] ⋄ fs.[1]←- ⋄ f←1⌷fs ⋄ 3 f 2   ⍝ 1
 10 20 (+/⍤0 1) 2 3⍴⍳6   ⍝ 13 32
 
 ⍝ — Empty reduction returns the whole seed without calling the operand
-[[1 2] [3 4]] {1÷0}/ ⍬   ⍝ [[1 2] [3 4]]
+[[1 2] [3 4]]{1÷0}/⍬   ⍝ [[1 2] [3 4]]
 
 ⍝ — Seeded reduction follows a nested path
 tree←[[10 20] [30 [40 50]]] ⋄ tree⊃/⌽1 1 0   ⍝ 40
@@ -4935,7 +4934,7 @@ T←"price" "qty":[1 2 3;4 5 6]
 [2ₓ;[2]ₓ;1 2 3;4 5 6;[3]ₓ;"price" "qty"]
 
 ⍝ axis-function-value — Stored functions keep their predicates
-("sign"⊃"sign":{⍵<0?¯1;1})¨¯2 3   ⍝ ¯1 1
+T←["sign":{⍵<0?¯1;1}] ⋄ T.sign¨¯2 3   ⍝ ¯1 1
 
 ⍝ axis-empty — Empty labelled axes retain their key lists
 T←⍬:⍬ ⋄ [≢T;⍴⍳⍠0 T;T≡⍬;T≡T;2⍴T]
@@ -4969,7 +4968,7 @@ T←"price" "qty":[1 2 3;4 5 6]
 [[4 5 6;1 2 3];[1 2 3;1 2 3]]
 
 ⍝ axis-nested — Nested lookups use axis-local names
-T←("name":"Ann"),("addr":"city":"Paris"),("items":[["name":"pen"] ["name":"ink"]])
+T←["name":"Ann" "addr":"city":"Paris" "items":[["name":"pen"] ["name":"ink"]]]
 ["city"⊃"addr"⊃T;"name"⊃1⊃"items"⊃T;T.addr.city]
 ⍝ =>
 "Paris" "ink" "Paris"
@@ -5009,11 +5008,11 @@ T←"aa" "bb":1 2 ⋄ T.[[0 0]]←5 6
 ⍝ error: DOMAIN ERROR
 
 ⍝ axis-nested-write — Pick and dot replace stored values without changing other copies
-T←("n":1),("addr":"city":"Paris")
+T←["n":1 "addr":"city":"Paris"]
 ("n"⊃T)←5 ⋄ T.n+←1 ⋄ ("city"⊃"addr"⊃T)←"Rome"
 U←T ⋄ U.addr.city←"Oslo" ⋄ [T;U.addr.city]
 ⍝ =>
-[("n":6),("addr":"city":"Rome");"Oslo"]
+[["n":6 "addr":"city":"Rome"];"Oslo"]
 
 ⍝ axis-nested-index-write — Dot indexing after a dotted value updates inside it
 T←"v":1 2 3 ⋄ T.v.[1]←9 ⋄ T.v.[2]+←1 ⋄ T   ⍝ "v":1 9 4
@@ -5027,7 +5026,7 @@ T←"a":1 ⋄ T.b+←2
 ⍝ error: INDEX ERROR
 
 ⍝ axis-path-create — Plain assignment through a dot path creates missing records
-T←("n":1)
+T←"n":1
 T.style.color←"red" ⋄ T.style.width←2 ⋄ T.a.b.c←3 ⋄ T
 ⍝ =>
 ["n":1 "style":["color":"red" "width":2] "a":["b":["c":3]]]
@@ -5059,7 +5058,7 @@ T←"aa":1 ⋄ T.[["zz" "zz"]]←1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ axis-rename — Reattach edited axis selectors to rename keys
-T←"price" "qty":1 2 ⋄ K←⍳⍠0 T ⋄ K.[0]←"cost" ⋄ K:T
+T←"price" "qty":1 2 ⋄ K←⍳⍠0 T ⋄ K₀←"cost" ⋄ K:T
 "cost" "qty":1 2
 
 ⍝ axis-nested-agreement — Nested keyed values align their own axes
@@ -5100,7 +5099,7 @@ T←"price" "qty":[1 2 3;4 5 6]
 [("price" "qty":2 5);("aa" "bb":[1 0;2 3])]
 
 ⍝ axis-match-position — Match ignores labelled-axis order; positional access observes it
-A←"aa" "bb":1 2 ⋄ B←"bb" "aa":2 1 ⋄ [A≡B;(0⊃A)≡0⊃B]   ⍝ $t $f
+A←"aa" "bb":1 2 ⋄ B←"bb" "aa":2 1 ⋄ [A≡B;A₀≡B₀]   ⍝ $t $f
 
 ⍝ axis-sets — Set operations compare values, retaining selected labels
 A←"aa" "bb":1 2 ⋄ B←"aa" "bb" "cc":1 9 3
@@ -5226,7 +5225,7 @@ T←["price":10.5 20;"qty":[2 4]ₓ;"note":"a,b" "say ""hi"""]
 ["price":10.5 20;"qty":[2 4]ₓ;"note":"a,b" "say ""hi"""]
 
 ⍝ — Export uses CSV minus signs and no exact suffix
-•tocsv ("n":[¯2 3]ₓ)   ⍝ 'n',(•ucs 10),"-2",(•ucs 10),'3',•ucs 10
+•tocsv "n":[¯2 3]ₓ   ⍝ 'n',(•ucs 10),"-2",(•ucs 10),'3',•ucs 10
 
 ⍝ — Infinity remains a number unless fill is explicitly configured
 T←"n":1ₓ ∞ ⋄ [•tocsv T;("fill":∞) •tocsv T]
@@ -5267,11 +5266,11 @@ T←"n":,1234.5
 ⍝ error: LENGTH ERROR
 
 ⍝ — Export rejects nested cells
-•tocsv ("a":,⊂1 2)
+•tocsv "a":,⊂1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Quote-free export errors when a field needs quoting
-("quotechar":"") •tocsv ("a":,⊂"x,y")
+("quotechar":"") •tocsv "a":,⊂"x,y"
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Escape characters round-trip inside quoted text
@@ -5291,7 +5290,7 @@ opts •csv csv
 •json "[true,false,null]"   ⍝ [$t $f $n]
 
 ⍝ — Explicit null fill works recursively in both directions
-fill←("fill":¯1ₓ)
+fill←"fill":¯1ₓ
 fill •tojson fill •json "{""x"":[null,2]}"
 ⍝ =>
 "{""x"":[null,2]}"
@@ -5317,7 +5316,7 @@ fill •tojson fill •json "{""x"":[null,2]}"
 •tojson [1 2 ⋄ 3 4]ₓ   ⍝ "[[1,2],[3,4]]"
 
 ⍝ — Keyed axes export as object levels
-•tojson ("row":"col" "val":[1 2]ₓ)
+•tojson "row":"col" "val":[1 2]ₓ
 "{""row"":{""col"":1,""val"":2}}"
 
 ⍝ — Unkeyed scalar arrays export their contents
