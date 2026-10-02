@@ -9,7 +9,7 @@ use plotters::{
 
 type Area<'a> = DrawingArea<SVGBackend<'a>, Shift>;
 
-const PLOT: &[&str] = &["data", "mark", "title", "width", "height", "x", "y", "legend", "grid", "flip", "color", "palette", "colorbar", "size", "labels", "series", "_mime"];
+const PLOT: &[&str] = &["data", "mark", "title", "width", "height", "x", "y", "legend", "grid", "axes", "flip", "color", "palette", "colorbar", "size", "labels", "series", "_mime"];
 const FIGURE: &[&str] = &["data", "title", "width", "height", "widths", "heights", "share", "_mime"];
 const STYLE: &[&str] = &["mark", "color", "size", "labels"];
 const COLORS: [(&str, RGBColor); 10] = [
@@ -118,7 +118,7 @@ fn parse(data: &Value, span: &Context<'_>) -> Result<Data, Error> {
     Ok(d)
 }
 
-/// `inner` hides the labels of an axis that a neighbouring plot in a figure labels. `reverse` runs the axis from `hi` to `lo`.
+/// `inner` hides an axis and its labels, for `"axis":$f` in its record, for `"axes":$f`, or when a neighbouring plot in a figure labels that axis. `reverse` runs the axis from `hi` to `lo`.
 #[derive(Default)]
 struct Axis {
     lo: f64,
@@ -132,13 +132,13 @@ struct Axis {
 }
 
 impl Axis {
-    fn new(opts: &Options, title: String, categories: Vec<String>, span: &Context<'_>) -> Result<Self, Error> {
+    fn new(opts: &Options, title: String, categories: Vec<String>, shown: bool, span: &Context<'_>) -> Result<Self, Error> {
         let log = match opts.text("scale", Some("linear"), span)?.as_str() {
             "linear" => false,
             "log" => true,
             _ => return Err(span.domain_error("•plot scale must be 'linear' or 'log'")),
         };
-        Ok(Self { lo: 0., hi: 1., log, title: opts.text("title", Some(&title), span)?, ticks: opts.values.get("ticks").cloned(), categories, inner: false, reverse: false })
+        Ok(Self { lo: 0., hi: 1., log, title: opts.text("title", Some(&title), span)?, ticks: opts.values.get("ticks").cloned(), categories, inner: !opts.boolean("axis", shown, span)?, reverse: false })
     }
 
     fn map(&self, v: f64, span: &Context<'_>) -> Result<f64, Error> {
@@ -267,7 +267,8 @@ struct Chart {
 impl Chart {
     fn new(opts: &Options, span: &Context<'_>) -> Result<Self, Error> {
         let data = parse(opts.values.get("data").ok_or_else(|| span.domain_error("•plot needs data"))?, span)?;
-        let mut x = Axis::new(&record(opts, "x", &["title", "scale", "ticks"], span)?, data.x_title, data.categories, span)?;
+        let axes = opts.boolean("axes", true, span)?;
+        let mut x = Axis::new(&record(opts, "x", &["title", "scale", "ticks", "axis"], span)?, data.x_title, data.categories, axes, span)?;
         let styles = opts.values.get("series").map_or(Ok(vec![]), keyed::pairs).error_at(span, "•plot series must be keyed by series name")?;
         if let Some((name, _)) = styles.iter().find(|(name, _)| !data.series.iter().any(|(n, _)| n.as_deref() == Some(&**name))) {
             return Err(span.domain_error(format!("•plot has no series named {name}")));
@@ -300,7 +301,7 @@ impl Chart {
         let cells = series.iter().any(|s| s.mark == Mark::Cell);
         if cells && series.iter().any(|s| s.mark != Mark::Cell) { return Err(span.domain_error("•plot can't mix cells with other marks")); }
         let rows = if cells { series.iter().map(|s| s.name.clone()).collect::<Option<Vec<_>>>().unwrap_or_default() } else { vec![] };
-        let mut y = Axis::new(&record(opts, "y", &["title", "scale", "ticks"], span)?, if cells { data.legend_title.clone() } else { String::new() }, rows, span)?;
+        let mut y = Axis::new(&record(opts, "y", &["title", "scale", "ticks", "axis"], span)?, if cells { data.legend_title.clone() } else { String::new() }, rows, axes, span)?;
         for (r, s) in series.iter_mut().enumerate() {
             s.y = if cells { vec![r as f64; s.raw.len()] } else { s.raw.iter().map(|&v| y.map(v, span)).collect::<Result<_, _>>()? };
         }

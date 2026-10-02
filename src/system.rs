@@ -171,9 +171,10 @@ The structure of `Y` chooses the series and axes:
 | `mark` | `"line"`, `"point"`, `"bar"` or `"cell"` | `"line"` |
 | `title` | Chart title | none |
 | `width`, `height` | Size in pixels | `600`, `400` |
-| `x`, `y` | `title`, `scale` (`"linear"` or `"log"`) and `ticks` | |
+| `x`, `y` | `title`, `scale` (`"linear"` or `"log"`), `ticks`, and `axis` (`$f` hides that axis) | |
 | `legend` | `position` (`"end"` or a corner) and `border` | none |
 | `grid` | `$f` hides the grid lines | `$t`, or `$f` for cells |
+| `axes` | `$f` hides both axes, with their ticks and titles. An `axis` setting in `x` or `y` overrides it for that axis | `$t` |
 | `flip` | `$t` swaps the axes | `$f` |
 | `palette` | Colours for numbers: `"viridis"`, `"gray"`, or a list of colours | `"viridis"` |
 | `colorbar` | `$t` shows the colour scale beside the plot | `$f` |
