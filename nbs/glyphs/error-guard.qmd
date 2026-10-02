@@ -1,6 +1,6 @@
 # `::` — Error guard
 
-`codes::handler` catches matching later errors in a dfn, including errors in its later bodies. `0::` catches ordinary BPL errors; a vector selects several error numbers.
+`codes::handler` catches matching later errors in a dfn, including errors in its later bodies. `0::` catches all ordinary BPL errors. A vector of codes catches the errors with those numbers.
 
 ```bpl
 {0::42 ⋄ 1÷⍵}'a'   ⍝ 42

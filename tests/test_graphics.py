@@ -46,6 +46,14 @@ def test_plot_labels():
     close = texts('["mark":"point" "labels":["aa" "bb" ""]] •plot ["x":[1 1.01 10] "v":[5 5 5]]')
     assert abs(close['aa'] - close['bb']) >= 10
 
+def test_plot_cells():
+    "Cell rows run down the plot as the matrix prints, and each run of equal colours in a row is one rectangle."
+    root = ET.fromstring(bpl('"image/svg+xml"⊃•mime ["mark":"cell" "colorbar":$t] •plot ["city":["London" "Paris"] "month":["Jan" "Feb"]]:[10 20 ⋄ 30 60]').py)
+    y = {e.text.strip(): float(e.get('y')) for e in root.iter('{http://www.w3.org/2000/svg}text')}
+    assert y['London'] < y['Paris'] and {'10', '60'} <= y.keys()
+    root = ET.fromstring(bpl('"image/svg+xml"⊃•mime "cell" •plot [1 1 2 ⋄ 3 3 3]').py)
+    teq(len(root.findall('{http://www.w3.org/2000/svg}rect')), 4)
+
 def test_svg_worker():
     with Worker() as w:
         result = w.eval('⎕←"picture" ⋄ •svg ⍬')

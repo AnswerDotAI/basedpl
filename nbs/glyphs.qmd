@@ -4,7 +4,9 @@ Each glyph has a name, which links to its definitions and examples. A function g
 
 ## Typing glyphs
 
-Hold Alt, which is Option on a Mac, and press the key in the Key column. Keys refer to a US layout, and no glyph needs Shift with Alt. Where the column shows a second key, release Alt and press it: `Alt-c t` is Alt-C, then T. A second key that needs Shift also works unshifted, unless the unshifted key types a glyph of its own: `Alt-q ,` types `⍃`, as `Alt-q <` does, but in the circle family `\` types `⍉`, so `⌽` needs `|`. An Alt key that starts such a sequence types its own glyph when Space or an unlisted key follows it, so Alt-o then Space gives `○`. Backspace or Escape cancels it. Superscripts start with Alt-6, followed by a digit, `-` and a digit, `t` or `u`. Subscripts start with Alt-5, followed by a digit, or `-` and a digit. A glyph with no key, such as `+`, is on an ordinary ASCII key. The arrows are on hjkl. Alt-[ is left vacant, because terminals encode it as the start of control sequences. Alt-7 gives `∆` and Alt-7 then `_` gives `⍙`, which are identifier characters.
+Hold Alt, which is Option on a Mac, and press the key in the Key column. Keys refer to a US layout. No glyph needs Shift with Alt. Where the column shows a second key, release Alt, then press the second key. For example, `Alt-c t` means Alt-c, then `t`. You can type a shifted second key without Shift. For example, `Alt-q ,` types `⍃`, the same as `Alt-q <`. The one exception is `Alt-o |` for `⌽`, because `Alt-o \` types `⍉`. An Alt key that takes a second key types its own glyph when Space or an unlisted key follows. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence.
+
+Superscripts start with Alt-6. The second key is a digit, `-` then a digit, `t` for `ᵀ`, or `u` for `ᵘ`. Subscripts start with Alt-5, followed by a digit, or `-` then a digit. A glyph with no key, such as `+`, is on an ordinary ASCII key. The arrows are on hjkl. Alt-[ types nothing, because terminals send it as the start of a control sequence. The identifier characters `∆` and `⍙` are Alt-7, and Alt-7 then `_`.
 
 The names are the ones you type. In the REPL, a backtick and any glyph, monad or dyad name, then Tab, enters the glyph, as [named entry](repl.qmd#named-entry) describes. Python exports the function names, with `_` in place of `-` and a trailing `_` on Python keywords, as in `index_of` and `and_`.
 
@@ -132,7 +134,7 @@ Numeric notation `x`, `r`, `j`, `E`: see [numbers](rules.qmd#numbers).
 
 ## System names
 
-Names are case-insensitive. `•a` and `•d` are constant arrays; the other names are functions, usable with operators and composition.
+Names are case-insensitive. `•a` and `•d` are constant arrays. Every other name is a function.
 
 | Name | Meaning |
 |---|---|
@@ -165,12 +167,12 @@ Index origin: 0. Negative positions and axes count from the end. Comparison tole
 
 ## Language-wide differences from Dyalog APL
 
-- [Vectors](glyphs/brackets.qmd): brackets write vectors, `[a b c]`, and a strand of literals can leave them out, `1 2 3`. Brackets round one item make a one-item vector: `[5]` is `,5`. [Parentheses](glyphs/parentheses.qmd) round a literal group it: `(5)` is `5`, and `⊂5` is a scalar. Arrays side by side also form a vector: `a b` is `[a b]`. Parentheses with `⋄` write a vector of rows: `(1 2 ⋄ 3)` is `[[1 2] [3]]`.
-- [Runs](rules.qmd): outside brackets, a space separates runs, and each run is evaluated first: `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train: `+/÷≢` is the mean, and `2×` is `2⍃×`. A run that ends in a dyadic operator takes the next run as its right operand: `f⍤ 1` is `f⍤1`.
-- [Indexing](glyphs/squad.qmd): brackets write vectors and never index. Index selects: `0⌷v` is the first item of `v`.
+- [Vectors](glyphs/brackets.qmd): a bracket list such as `[a b c]` is a vector. A strand of literals, such as `1 2 3`, needs no brackets. `[5]` is a one-item vector, the same as `,5`. [Parentheses](glyphs/parentheses.qmd) group: `(5)` is `5`. A scalar holding `5` is `⊂5`. Arrays side by side also form a vector: `a b` is `[a b]`. `(1 2 ⋄ 3)` is the vector of rows `[[1 2] [3]]`.
+- [Runs](rules.qmd): outside brackets, spaces separate runs. Each run is evaluated first: `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train: `+/÷≢` is the mean, and `2×` is `2⍃×`. A run that ends in a dyadic operator takes the next run as its right operand: `f⍤ 1` is `f⍤1`.
+- [Indexing](glyphs/squad.qmd): brackets are used to write vectors, never to index. Index selects: `0⌷v` is the first item of `v`.
 - [Atoms](rules.qmd#arrays-nesting-and-fill): numbers, characters and functions are atoms, distinct from scalars, as BQN. Enclosing always adds a layer: `(⊂3)≡3` is `0x`.
 - [Numbers](rules.qmd#numbers): bare numbers are approximate. `x` and `r` mark exact integers and rationals, as J: `1x÷3x` is `1r3`. Predicates, positions, tally and shape are exact.
-- [Agreement](rules.qmd#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes, and dimensions of length 1 expand: `(2 3⍴⍳6)+10 20` is `[10 11 12 ⋄ 23 24 25]`.
+- [Agreement](rules.qmd#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes. An axis of length 1 expands to match: `(2 3⍴⍳6)+10 20` is `[10 11 12 ⋄ 23 24 25]`.
 - [Major cells](principles.qmd#functions-act-on-major-cells): `∊ ~ ∪ ∩` compare major cells, `N#Y` replicates them, `N⊂Y` and `N⊆Y` split along the first axis. `⊤` and `⊥` put digits on the last axis, as J.
 - [System names](#system-names): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
 - [Axis keys](keyed.qmd) name data. `K:Y` evaluates its keys. `T.a` is `"a"⊃T`, and `X⍎Y` is `Y⊃X`.

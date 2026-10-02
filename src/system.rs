@@ -159,26 +159,31 @@ const PLOT: &str = r#"`X •plot Y` returns a plot spec: a keyed vector holding 
 
 The structure of `Y` chooses the series and axes:
 
-- A vector plots its values against `1…n`.
+- A vector plots its values against `0…n-1`.
 - A keyed vector of numbers uses its keys as x labels.
 - A matrix plots one series per row. Row keys name the series. Column keys label x.
+- With the `cell` mark, each row of a matrix is a row of cells, coloured by value. Row keys label the rows, and row 0 is at the top.
 - A table, a keyed vector of equal-length columns, plots each column as a series. A column named `x` supplies the x values.
 - A vector or matrix of plots draws a figure.
 
 | Setting | Holds | Default |
 |---|---|---|
-| `mark` | `"line"`, `"point"` or `"bar"` | `"line"` |
+| `mark` | `"line"`, `"point"`, `"bar"` or `"cell"` | `"line"` |
 | `title` | Chart title | none |
 | `width`, `height` | Size in pixels | `600`, `400` |
 | `x`, `y` | `title`, `scale` (`"linear"` or `"log"`) and `ticks` | |
 | `legend` | `position` (`"end"` or a corner) and `border` | none |
-| `grid` | `0` hides the grid lines | `1` |
-| `flip` | `1` swaps the axes | `0` |
+| `grid` | `$f` hides the grid lines | `$t`, or `$f` for cells |
+| `flip` | `$t` swaps the axes | `$f` |
+| `palette` | Colours for numbers: `"viridis"`, `"gray"`, or a list of colours | `"viridis"` |
+| `colorbar` | `$t` shows the colour scale beside the plot | `$f` |
 | `color`, `size`, `labels` | Styles for every series | |
 | `series` | Styles for one series, keyed by its name | |
 | `widths`, `heights`, `share` | Figure cell sizes and shared axis ranges | |
 
-`•mime` reports these errors: DOMAIN for unknown settings or values; LENGTH when series, sizes or labels don't match the x values; RANK for data that isn't a vector, matrix or table."#;
+`color` also takes one number per point. `palette` turns these numbers into colours, over the range of every series in the plot. A cell takes its colour from its own value unless `color` is set.
+
+`•mime` reports these errors: DOMAIN for unknown settings or values, and for cells mixed with other marks; LENGTH when series, colours, sizes or labels don't match the x values; RANK for data that isn't a vector, matrix or table."#;
 
 const REGEX: &str = r"`•r pattern` compiles a Rust regex. It returns a keyed vector of functions that share the pattern: `match`, `position`, `length`, `groups` and `replace`. Positions count characters from 0.
 

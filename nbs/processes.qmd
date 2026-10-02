@@ -21,7 +21,7 @@ The second reply is:
 
 Build each request with a JSON encoder, such as Python's `json.dumps` or JavaScript's `JSON.stringify`, and end it with a newline. The encoder escapes newlines in the source. Stdout contains only replies. EOF ends the session.
 
-A request that can't run gets a `REQUEST ERROR` in its result, and the session continues. Malformed JSON, an invalid field and an invalid encoded array all do this.
+Malformed JSON, an invalid field or an invalid encoded array gives a `REQUEST ERROR` in that request's result. The session continues.
 
 ### Requests
 
@@ -39,7 +39,7 @@ A request that can't run gets a `REQUEST ERROR` in its result, and the session c
 
 ### Results
 
-`output` contains ordered events: `kind` is `display` or `explicit`, and `data` is a MIME bundle with `text/plain`. SVG display adds `image/svg+xml`. Returned values carry contents and axis labels. Keyed entries that hold functions, such as `_mime` renderers, are omitted. Other functions in a result give a `DOMAIN` error.
+`output` holds the events in order. Each event's `kind` is `display` or `explicit`, and its `data` is a MIME bundle with `text/plain`. SVG display adds `image/svg+xml`. Returned values carry contents and axis labels. Keyed entries that hold functions, such as `_mime` renderers, are omitted. Other functions in a result give a `DOMAIN` error.
 
 Atoms are encoded directly. Arrays carry shape, row-major data and prototype, including rank-zero arrays. Nested elements use the same encoding. A [keyed array](keyed.qmd) adds `axis_keys`: one string list or `null` per axis. All-unkeyed arrays omit it.
 
@@ -55,7 +55,7 @@ Named dimensions add `axis_names`: one string or `null` per axis, e.g. `["city",
 | Infinity | `{"infinity":1}` or `{"infinity":-1}` |
 | NaN | `{"nan":1}` |
 
-Use the tags for infinities and NaN, never raw `NaN` or `Infinity` tokens. Integer inputs stay exact. Ordinary JavaScript `JSON.parse` can round large integers, so use an integer-preserving parser. Error spans are UTF-8 byte ranges into the supplied source. Call sites accompany the original location.
+Use the tags for infinities and NaN, never raw `NaN` or `Infinity` tokens. Integer inputs stay exact. JavaScript's `JSON.parse` rounds integers larger than 2⁵³. Use a parser that keeps integers exact. Error spans are UTF-8 byte ranges into the supplied source. Call sites accompany the original location.
 
 ## Python worker
 
@@ -70,4 +70,4 @@ with Worker() as w:
     assert r['value'] == 45
 ```
 
-`w.interrupt()` cancels from another thread. Ctrl-C requests cancellation too. Cooperative cancellation preserves the session and completed assignments. After the grace period (default one second), an unresponsive process is killed and its session is lost. Requests are never replayed. `w.diagnostics` holds recent stderr. `Worker.request(payload, timeout=...)` sends any request, and supplies its `id`.
+`w.interrupt()` cancels from another thread. Ctrl-C requests cancellation too. Cooperative cancellation preserves the session and completed assignments. If the process doesn't respond within the grace period, one second by default, `Worker` kills it and the session is lost. `Worker` never replays a request. `w.diagnostics` holds recent stderr. `Worker.request(payload, timeout=...)` sends any request and supplies its `id`.

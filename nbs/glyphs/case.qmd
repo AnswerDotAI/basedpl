@@ -13,4 +13,4 @@
 ¯1•c "AbC"         ⍝ "abc"
 ```
 
-Unicode simple mappings preserve shape and nesting; non-character leaves stay unchanged.
+Case conversion uses Unicode's simple case mappings. `•c` keeps the argument's shape and nesting, and leaves items that aren't characters unchanged.

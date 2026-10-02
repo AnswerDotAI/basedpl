@@ -7,7 +7,7 @@
 -\1 2 3            ⍝ 1 ¯1 ¯4
 ```
 
-`S f\ Y` starts from seed `S` as the first previous result, and leaves the seed out of the result.
+`S f\ Y` uses the seed `S` as the previous result for the first item. The result doesn't include the seed.
 
 ```bpl
 10-\1 2 3          ⍝ 9 7 4
@@ -22,7 +22,7 @@ M←[1 2 3 ⋄ 4 5 6]
 [10]+\1 2 3        ⍝ [[11] [13] [16]]
 ```
 
-Empty scans and unseeded singletons make no calls. [Axis](axis.qmd) `⍠K` selects the axis, and [`⍀`](backslash-bar.qmd) defaults to the first.
+An empty scan, or an unseeded scan of one item, doesn't call `f`. [Axis](axis.qmd) `⍠K` chooses the axis to scan. [`⍀`](backslash-bar.qmd) scans the first axis.
 
 ```bpl
 +\⍠0 [1 2 3 ⋄ 4 5 6]  ⍝ [1 2 3 ⋄ 5 7 9]

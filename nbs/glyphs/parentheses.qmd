@@ -1,6 +1,6 @@
 # `( )` — Group / Rows / Train
 
-Parentheses round an expression group it, whatever it holds. Without `⋄`, they hold one expression wherever they appear, including inside [brackets](brackets.qmd). A literal argument after a literal operand goes in parentheses, so it doesn't join the operand's strand.
+Parentheses round an expression group it, whatever it holds. Without `⋄`, they hold one expression wherever they appear, including inside [brackets](brackets.qmd). Put a literal argument after a literal operand in parentheses, as in `f⍣2(3)`. Without parentheses, `f⍣2 3` takes `2 3` as the operand.
 
 ```bpl
 (2×3)+4            ⍝ 10
@@ -9,7 +9,7 @@ x←2 4 9
 1+⍣3(5)            ⍝ 8
 ```
 
-Parentheses group a glyph or a name just as they group a literal: `(1 2)` is `1 2`, `(x)` is `x`, and `(-)` is `-`. [`⊂`](enclose.qmd) encloses a subject, so `⊂[1 2]` is a scalar holding a vector. To make a scalar that holds a function, write [`ᵘ`](superscript.qmd) after it: `+ᵘ` holds `+`.
+Parentheses group a glyph or a name as they group a literal: `(1 2)` is `1 2`, `(x)` is `x`, and `(-)` is `-`. For a scalar, use [`⊂`](enclose.qmd) on a subject, as in `⊂[1 2]`, or [`ᵘ`](superscript.qmd) on a function, as in `+ᵘ`.
 
 ```bpl
 (5)≡5              ⍝ $t
@@ -19,7 +19,7 @@ x←1 2 ⋄ (x)≡x      ⍝ $t
 f←- ⋄ (f)3         ⍝ ¯3
 ```
 
-A line break inside parentheses counts as a space. So an expression can continue across lines. Outside brackets, spaces separate runs, and each run is evaluated first. So this means `(1+2)×(3+4)`:
+A line break inside parentheses counts as a space. Outside brackets, spaces separate runs. Each run is grouped as if it were in parentheses. This expression means `(1+2)×(3+4)`:
 
 ```bpl
 total←(1+2
@@ -29,7 +29,7 @@ total              ⍝ 21
 
 ## Rows
 
-With `⋄`, parentheses write a vector whose items are the rows. Each row reads as [brackets](brackets.qmd) do, so every row is a vector, even a row with one item. The rows can differ in length. A trailing `⋄` makes a one-item vector holding one row. A line break still counts as a space, so rows written over several lines need `⋄` at the end of each line.
+Parentheses with `⋄` are used to write a vector whose items are the rows. Each row is a vector, even a row with one item. Rows can differ in length. With a trailing `⋄`, the result is a one-item vector holding one row. Rows written over several lines need `⋄` at the end of each line.
 
 ```bpl
 (4 ⋄ 4 5 ⋄ 4 5 6)       ⍝ [[4] [4 5] [4 5 6]]
@@ -38,7 +38,7 @@ a←1 ⋄ b←2
 (1 2 ⋄)                 ⍝ [[1 2]]
 ```
 
-Brackets with `⋄` stack their rows into one array instead: `[1 2 ⋄ 3 4]` is a matrix, and `(1 2 ⋄ 3 4)` is a vector of two vectors. A vector of strings or of names is written in brackets: `["ab" "cd"]` or `[a b]`.
+In brackets, rows separated by `⋄` form one array instead: `[1 2 ⋄ 3 4]` is a matrix, and `(1 2 ⋄ 3 4)` is a vector of two vectors. Write a vector of strings or of names in brackets: `["ab" "cd"]` or `[a b]`.
 
 ## Trains
 

@@ -7,13 +7,13 @@ x←3 ⋄ x+2          ⍝ 5
 sum←+/ ⋄ sum1 2 3 ⍝ 6
 ```
 
-`←` binds tightly on its left and loosely on its right. The target is the run immediately before `←`: a name, a [subscript](subscript.qmd) such as `x₁`, a dot path such as `x.[i]`, or a group. The value is everything to its right, so spaces there group runs as usual.
+`←` binds tightly on its left and loosely on its right. The target is the run immediately before `←`: a name, a [subscript](subscript.qmd) such as `x₁`, a dot path such as `x.[i]`, or a group. The value is the whole expression to its right.
 
 ```bpl
 x←1+2 × 3 ⋄ x      ⍝ 9
 ```
 
-`N f←Y` updates with `N f Y`. A named function goes in parentheses, `N(f)←Y`, because a space would end the run that holds the target. A [subscript](subscript.qmd) or a [dot index](dot.qmd) is a selective target. `x₁←9` updates item 1 through [Index](squad.qmd) `⌷`. Other selections need parentheses: `(f N)←Y` updates the items that `f` selects. `f` must only select or rearrange, as for structural [Under](under.qmd).
+`N f←Y` updates with `N f Y`. A named function goes in parentheses, `N(f)←Y`. In `N f←Y`, the target would be `f`, because the target of `←` is the run before it. A [subscript](subscript.qmd) or a [dot index](dot.qmd) is a selective target. `x₁←9` updates item 1 through [Index](squad.qmd) `⌷`. Other selections need parentheses: `(f N)←Y` updates the items that `f` selects. `f` must only select or rearrange, as for structural [Under](under.qmd).
 
 ```bpl
 x←10 ⋄ x+←3 ⋄ x    ⍝ 13

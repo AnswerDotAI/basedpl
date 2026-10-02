@@ -14,7 +14,7 @@ total←⍳4 → +/ ⋄ total   ⍝ 6
 1+(⍳4 → +/)             ⍝ 7
 ```
 
-Stages receive one right argument. A train such as `10-` binds a dyad's left argument. [After](after.qmd) binds its right argument. A dfn also works.
+Each stage takes one right argument. A train such as `10-` binds a dyad's left argument. [After](after.qmd) binds its right argument. A dfn also works.
 
 ```bpl
 3 → 10-       ⍝ 7

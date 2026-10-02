@@ -8,8 +8,8 @@ pre.bpl ~ .cell-output code {
 }
 
 pre.apl,
-.apl pre,
-.apl code {
+pre.dyalog,
+pre.bqn {
   font-family: var(--apl-font), monospace;
   line-height: 1.05;
 }
@@ -21,20 +21,30 @@ pre.bpl ~ .cell-output pre,
   font-size: calc(0.875em + 1pt);
 }
 
-pre.bpl span.op,
-.bpl code span.op {
+:is(pre.bpl, .bpl code, pre.apl, pre.dyalog, pre.bqn) span.op {
   color: #8B3FA0;
 }
 
-pre.bpl span.ex,
-.bpl code span.ex {
+:is(pre.bpl, .bpl code, pre.apl, pre.dyalog, pre.bqn) span.ex {
   color: #127A6E;
 }
 
-pre.bpl span.va,
-.bpl code span.va {
+:is(pre.bpl, .bpl code, pre.apl, pre.dyalog, pre.bqn) span.va {
   color: #8f5902;
 }
+
+/* Language labels on the APL-family blocks, placed left of Quarto's copy button. A block gets a label when its language sets `content`. */
+pre.sourceCode::before {
+  position: absolute;
+  top: 0.3rem;
+  right: 2.4rem;
+  font: 0.75rem var(--bs-body-font-family);
+  color: var(--bs-secondary-color);
+}
+
+pre.apl::before { content: "APL"; }
+pre.dyalog::before { content: "Dyalog"; }
+pre.bqn::before { content: "BQN"; }
 
 .cell {
   margin-bottom: 1rem;

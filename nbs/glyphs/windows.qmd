@@ -16,7 +16,7 @@ Shape: position frame, window sizes, trailing axes.
 ⍬↕2 3⍴⍳6            ⍝ 2 3⍴⍳6
 ```
 
-Oversized full windows give empty frames. Zero sizes give `n+1` empty windows; `⍬` leaves `Y` unchanged.
+Oversized full windows give empty frames. Zero sizes give `n+1` empty windows. `⍬↕Y` is `Y`.
 
 A two-row left argument gives sizes, then movements. A window starts every `M` positions.
 

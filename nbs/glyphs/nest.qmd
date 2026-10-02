@@ -7,7 +7,7 @@
 ⊆1                 ⍝ ⊂1
 ```
 
-`N⊆Y` partitions along the leading axis. Each partition is a block of major cells. Zero omits, and a rise in the mark starts a partition.
+`N⊆Y` partitions along the leading axis. Each partition is a block of major cells. A zero in `N` leaves out its major cell. A new partition starts wherever `N` rises.
 
 ```bpl
 1 1 0 1 1⊆"abcde" ⍝ "ab" "de"

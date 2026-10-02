@@ -12,7 +12,7 @@
 2⍕3.125            ⍝ " 3.13"
 ```
 
-`W D⍕Y` supplies field width too; pairs can be supplied per column. Width 0 chooses a width. Overflowing fields become `*`.
+`W D⍕Y` also sets the field width `W`. Give one pair per column to set each column separately. Width 0 chooses a width. Overflowing fields become `*`.
 
 ```bpl
 6 2⍕3.125          ⍝ "  3.13"

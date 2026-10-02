@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE language>
+<language name="Dyalog" section="Sources" version="1" kateversion="5.0" extensions="*.dyalog;*.apl" license="Apache-2.0">
+  <highlighting>
+    <contexts>
+      <context name="Normal" attribute="Normal Text" lineEndContext="#stay">
+        <DetectChar char="⍝" attribute="Comment" context="Comment"/>
+        <DetectChar char="'" attribute="String" context="String"/>
+        <RegExpr String="[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*" attribute="Normal Text"/>
+        <RegExpr String="⎕[A-Za-z]+" attribute="System"/>
+        <RegExpr String="¯?(\d+(\.\d+)?|\.\d+)([eE]¯?\d+)?([jJ]¯?(\d+(\.\d+)?|\.\d+)([eE]¯?\d+)?)?" attribute="Number"/>
+        <DetectChar char="⍬" attribute="Number"/>
+        <AnyChar String="+-×÷⌈⌊|*⍟○!?~∧∨⍲⍱&lt;≤=≥&gt;≠≡≢⍴,⍪⌽⊖⍉↑↓⊂⊃⊆⊇⌷⍋⍒⊤⊥⍳⍸∊⍷∪∩⊣⊢⍎⍕⌹" attribute="Function"/>
+        <AnyChar String="¨⍨/⌿\⍀⌸&amp;⌶" attribute="MonadicOperator"/>
+        <AnyChar String="∘⍤⍥⍣⍠⌺@.⍛" attribute="DyadicOperator"/>
+        <AnyChar String="⍺⍵∇" attribute="Argument"/>
+        <AnyChar String="←→⋄:⎕⍞" attribute="Keyword"/>
+      </context>
+      <context name="Comment" attribute="Comment" lineEndContext="#pop"/>
+      <context name="String" attribute="String" lineEndContext="#pop">
+        <Detect2Chars char="'" char1="'" attribute="String"/>
+        <DetectChar char="'" attribute="String" context="#pop"/>
+      </context>
+    </contexts>
+    <itemDatas>
+      <itemData name="Normal Text" defStyleNum="dsNormal"/>
+      <itemData name="Comment" defStyleNum="dsComment"/>
+      <itemData name="String" defStyleNum="dsString"/>
+      <itemData name="Number" defStyleNum="dsDecVal"/>
+      <itemData name="System" defStyleNum="dsBuiltIn"/>
+      <itemData name="Function" defStyleNum="dsFunction"/>
+      <itemData name="MonadicOperator" defStyleNum="dsOperator"/>
+      <itemData name="DyadicOperator" defStyleNum="dsExtension"/>
+      <itemData name="Argument" defStyleNum="dsVariable"/>
+      <itemData name="Keyword" defStyleNum="dsKeyword"/>
+    </itemDatas>
+  </highlighting>
+  <general>
+    <comments>
+      <comment name="singleLine" start="⍝"/>
+    </comments>
+  </general>
+</language>

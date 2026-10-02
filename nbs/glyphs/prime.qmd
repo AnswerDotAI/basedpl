@@ -1,13 +1,13 @@
 # `⍭` — Prime
 
-`⍭N`: the prime with N primes before it, so positions count from 0 and `⍭0` is 2. J's `p:` family. Integral inputs; exact integer results.
+`⍭N`: the prime with `N` primes before it. `⍭0` is 2. J's `p:` family. Integral inputs; exact integer results.
 
 ```bpl
 ⍭⍳8               ⍝ [2 3 5 7 11 13 17 19]ₓ
 ⍭⁻¹⍭⍳4            ⍝ [0 1 2 3]ₓ
 ```
 
-`K⍭N` selects an operation; codes retain J's values.
+`K⍭N` selects an operation by the code `K`. The codes are J's.
 
 | K | Result |
 |---|---|

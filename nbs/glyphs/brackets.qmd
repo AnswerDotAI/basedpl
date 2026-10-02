@@ -1,6 +1,6 @@
 # `[ ]` — Vector / Array notation
 
-Brackets write vectors, whatever the number of items. Inside brackets, a space separates items, and a run of tokens with no spaces between them is one item. Items can be subjects or functions. They are evaluated left to right.
+A bracket list is a vector, whatever the number of items. Inside brackets, spaces separate items. For example, `[a+b a×b]` has two items, `a+b` and `a×b`. Items can be subjects or functions. They are evaluated left to right.
 
 ```bpl
 a←1 ⋄ b←2
@@ -9,9 +9,9 @@ a←1 ⋄ b←2
 ≢[+/ ÷ ≢]          ⍝ 3ₓ
 ```
 
-A strand of literals can leave the brackets out, so `1 2 3` is the same as `[1 2 3]`. An item that contains spaces needs [parentheses](parentheses.qmd): `[(a + b) c]` has two items.
+A strand of literals needs no brackets: `1 2 3` is the same as `[1 2 3]`. An item that contains spaces needs [parentheses](parentheses.qmd): `[(a + b) c]` has two items.
 
-Brackets round one item make a one-item vector. A single literal is a number, so the brackets are what make `[5]` a vector. [`⊂`](enclose.qmd) encloses any value, so `⊂5` is a scalar. `[]` is an empty vector, the same as `⍬`.
+`[5]` is a one-item vector holding `5`. [`⊂5`](enclose.qmd) is a scalar holding `5`. `[]` is an empty vector, the same as `⍬`.
 
 ```bpl
 [5]                ⍝ [5]
@@ -22,7 +22,7 @@ f←0⊃[+/÷≢] ⋄ f1 2 3 ⍝ 2
 
 ## Semicolons
 
-With `;`, only `;` separates items. Inside each item, spaces separate runs as they do outside brackets. A trailing `;` is a `SYNTAX` error, because `[x]` already writes a one-item vector.
+With `;`, only `;` separates items. Inside each item, spaces separate runs as they do outside brackets. A trailing `;` is a `SYNTAX` error, because `[x]` is already a one-item vector.
 
 ```bpl
 [1 2;3 4]          ⍝ [[1 2] [3 4]]
@@ -32,7 +32,7 @@ x←2 4 9
 
 ## Array notation
 
-With `⋄`, brackets are array notation. `[A ⋄ B]` assembles the major cells `A` and `B` with fill. `[A ⋄]` builds an array from one cell. Each row adds its own rank, so a row that is a single number is a cell of rank 0: `[1 ⋄ 2]` is the vector `1 2`, and a column is written `[[1] ⋄ [2]]`. `;` and `⋄` cannot both separate items in one pair of brackets.
+With `⋄`, brackets are array notation. `[A ⋄ B]` is an array whose major cells are `A` and `B`, padded with fill to a common shape. `[A ⋄]` is an array whose only major cell is `A`. A row that is a single number is a cell of rank 0: `[1 ⋄ 2]` is the vector `1 2`, and `[[1] ⋄ [2]]` is a column. `;` and `⋄` cannot both separate items in one pair of brackets.
 
 ```bpl
 [1 2 ⋄ 3 4]        ⍝ 2 2⍴1 2 3 4
@@ -44,7 +44,7 @@ With `⋄`, brackets are array notation. `[A ⋄ B]` assembles the major cells `
 
 [Parentheses](parentheses.qmd) with `⋄` keep the rows apart. `(1 2 ⋄ 3)` is a vector of two vectors, `[[1 2] [3]]`.
 
-A line break inside brackets counts as a space. So a vector can span lines, and a matrix written over several lines needs `⋄` at the end of each row.
+A line break inside brackets counts as a space. A matrix written over several lines needs `⋄` at the end of each row.
 
 ```bpl
 m←[1 2 3 ⋄
@@ -54,7 +54,7 @@ m←[1 2 3 ⋄
 
 ## Exact numbers
 
-`ₓ` after the closing bracket makes every number written inside exact, at any depth. Each item must be a literal, and each number must be whole. A vector of exact integers displays in this form.
+In `[…]ₓ`, every number is exact, at any depth. Each item must be a literal, and each number must be whole. A vector of exact integers displays in this form.
 
 ```bpl
 [1 0 1]ₓ≡1ₓ 0ₓ 1ₓ  ⍝ $t
@@ -63,7 +63,7 @@ m←[1 2 3 ⋄
 
 ## Keyed items
 
-Brackets with any `key:value` item build one [keyed vector](../keyed.qmd). An item without a key is a position with no key. A value that contains spaces needs parentheses.
+A bracket list with any `key:value` item is one [keyed vector](../keyed.qmd). An item without a key is a position with no key. A value that contains spaces needs parentheses.
 
 ```bpl
 ["aa":1 "bb":2]              ⍝ "aa" "bb":1 2

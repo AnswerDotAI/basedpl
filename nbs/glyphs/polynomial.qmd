@@ -4,7 +4,7 @@ J's `p.` family. Ranks: `1` monadic, `1 0` dyadic.
 
 ## Coefficients
 
-`C⌻X`: evaluate **constant-first** coefficients at `X`. [Decode](decode.qmd) uses the opposite order.
+`C⌻X` evaluates the polynomial with coefficients `C` at `X`, constant term first. [Decode](decode.qmd) uses the opposite order.
 
 ```bpl
 [1 2 3]ₓ⌻[0 1 2]ₓ   ⍝ [1 6 17]ₓ
@@ -38,7 +38,7 @@ t⌻[3 4;5 12]ₓ                           ⍝ [25 169]ₓ
 ⌻⊂[1 5 ⋄ ¯1 0]ₓ                         ⍝ [¯1 0 0 0 0 1]ₓ
 ```
 
-Evaluation accepts fractional/negative exponents. Conversion to coefficients requires one variable and nonnegative integral exponents; repeated degrees add.
+Evaluation accepts fractional and negative exponents. Conversion to coefficients requires one variable and nonnegative integral exponents. Conversion also adds together terms of the same degree.
 
 Derivative coefficients: `1↓C × 1+⍳¯1+≢C`. Integral: `K,C÷1+⍳≢C`. See [Derivative](derivative.qmd).
 

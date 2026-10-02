@@ -1,4 +1,4 @@
-"""Write the editor files derived from BPL's glyph metadata: the glyph lists in the Quarto and vim highlighters, and the macOS keyboard layout bundle. Paths are relative to the repository root.
+"""Write the generated parts of the editor files: the glyph lists in the Quarto and vim highlighters, and the macOS keyboard layout bundle. BPL's lists come from its glyph metadata, and the bundle from `layout.json`. The Quarto highlighters for Dyalog APL and BQN, used on the comparison page, take their lists from tables here. Paths are relative to the repository root.
 
 `write` writes them all, and the release script calls it. `icon` rebuilds the bundle's input-menu icon. It needs Pillow and macOS's `iconutil`, and only runs when the icon's design changes."""
 import json, re, subprocess, tempfile
@@ -8,21 +8,22 @@ from . import symbols
 from ._core import _superscripts, _subscripts
 
 LAYOUT = Path(__file__).with_name('layout.json')
-QUARTO, VIM = Path('nbs/bpl.xml'), Path('editors/vim/syntax/bpl.vim')
+VIM = Path('editors/vim/syntax/bpl.vim')
 BUNDLE = Path('editors/macos/BasedPL.bundle/Contents')
 KEYLAYOUT = BUNDLE/'Resources/BasedPL.keylayout'
 ICON = KEYLAYOUT.with_suffix('.icns')
 FONT, MENLO_BOLD, PURPLE = '/System/Library/Fonts/Menlo.ttc', 1, (61, 31, 107)
 
-# Each highlight class: the symbol kind it colours, and the script characters it adds.
-CLASSES = {'Function': ('function', ''), 'MonadicOperator': ('monadic-operator', _superscripts), 'DyadicOperator': ('dyadic-operator', ''),
-           'Argument': ('argument', ''), 'Keyword': ('syntax', _subscripts)}
-
-
-def glyphs(cls):
-    "The characters that highlight class `cls` colours."
-    kind, scripts = CLASSES[cls]
-    return ''.join(s['glyph'] for s in symbols if s['kind'] == kind) + scripts
+# Each highlight class: the Kate style that colours it in every highlighter, the BPL symbol kind it covers, and the script characters it adds.
+CLASSES = {'Function': ('dsFunction', 'function', ''), 'MonadicOperator': ('dsOperator', 'monadic-operator', _superscripts),
+           'DyadicOperator': ('dsExtension', 'dyadic-operator', ''), 'Argument': ('dsVariable', 'argument', ''), 'Keyword': ('dsKeyword', 'syntax', _subscripts)}
+# The characters each class colours in each language. The Dyalog APL and BQN tables serve the comparison page.
+BPL = {cls: ''.join(s['glyph'] for s in symbols if s['kind'] == kind) + scripts for cls, (_, kind, scripts) in CLASSES.items()}
+DYALOG = {'Function': '+-×÷⌈⌊|*⍟○!?~∧∨⍲⍱<≤=≥>≠≡≢⍴,⍪⌽⊖⍉↑↓⊂⊃⊆⊇⌷⍋⍒⊤⊥⍳⍸∊⍷∪∩⊣⊢⍎⍕⌹', 'MonadicOperator': r'¨⍨/⌿\⍀⌸&⌶',
+          'DyadicOperator': '∘⍤⍥⍣⍠⌺@.⍛', 'Argument': '⍺⍵∇', 'Keyword': '←→⋄:⎕⍞'}
+BQN = {'Function': '+-×÷⋆√⌊⌈|¬∧∨<>≠=≤≥≡≢⊣⊢⥊∾≍⋈↑↓↕«»⌽⍉/⍋⍒⊏⊑⊐⊒∊⍷⊔!', 'MonadicOperator': '˙˜˘¨⌜⁼´˝`',
+       'DyadicOperator': '∘○⊸⟜⌾⊘◶⎉⚇⍟⎊', 'Argument': '𝕨𝕩𝕗𝕘𝕤𝕣𝕎𝕏𝔽𝔾𝕊', 'Keyword': '←↩⇐⋄,‿·?:;'}
+HIGHLIGHTERS = {Path('nbs/bpl.xml'): BPL, Path('nbs/dyalog.xml'): DYALOG, Path('nbs/bqn.xml'): BQN}
 
 
 def _replace(text, pattern, line):
@@ -40,16 +41,17 @@ def vim_class(chars):
     return f'{delimiter}[{body}]{delimiter}'
 
 
-def quarto(text):
-    "The Quarto highlighter `text` with each class's glyph list regenerated."
-    for cls in CLASSES:
-        text = _replace(text, f'<AnyChar String="[^"]*" attribute="{cls}"/>', f'<AnyChar String="{escape(glyphs(cls), {chr(34): "&quot;"})}" attribute="{cls}"/>')
+def quarto(text, glyphs):
+    "The Quarto highlighter `text`, with each class's style regenerated and its glyph list taken from `glyphs`."
+    for cls, (style, *_) in CLASSES.items():
+        text = _replace(text, f'<AnyChar String="[^"]*" attribute="{cls}"/>', f'<AnyChar String="{escape(glyphs[cls], {chr(34): "&quot;"})}" attribute="{cls}"/>')
+        text = _replace(text, f'<itemData name="{cls}" defStyleNum="[^"]*"/>', f'<itemData name="{cls}" defStyleNum="{style}"/>')
     return text
 
 
 def vim(text):
     "The vim syntax `text` with each class's glyph list regenerated."
-    for cls in CLASSES: text = _replace(text, f'(?m)^syntax match bpl{cls} .*$', f'syntax match bpl{cls} {vim_class(glyphs(cls))}')
+    for cls in CLASSES: text = _replace(text, f'(?m)^syntax match bpl{cls} .*$', f'syntax match bpl{cls} {vim_class(BPL[cls])}')
     return text
 
 
@@ -172,8 +174,9 @@ def icon():
 
 
 def write():
-    "Write the highlighters' glyph lists and the keyboard layout bundle from the current glyph metadata."
-    for path, update in [(QUARTO, quarto), (VIM, vim)]: path.write_text(update(path.read_text()))
+    "Write the highlighters' glyph lists and styles, and the keyboard layout bundle."
+    for path, glyphs in HIGHLIGHTERS.items(): path.write_text(quarto(path.read_text(), glyphs))
+    VIM.write_text(vim(VIM.read_text()))
     for path, data in {KEYLAYOUT: keylayout(json.loads(LAYOUT.read_text())).encode(), **metadata()}.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)

@@ -1,6 +1,6 @@
 # `⍬` — Empty vector
 
-`⍬` is an empty approximate numeric vector: `0⍴0`. Empty brackets, `[]`, give the same value.
+`⍬` is an empty approximate numeric vector: `0⍴0`. `[]` is the same value.
 
 `⍬ₓ` is the exact empty vector, `0⍴0ₓ`, and so is `[]ₓ`.
 

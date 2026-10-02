@@ -17,7 +17,7 @@ T.addr.city        ⍝ "LA"
 T.n+←1 ⋄ T.n       ⍝ 2
 ```
 
-After an array, `.` followed by parentheses or brackets indexes it through [Index](squad.qmd). `x.(I)` is `(I)⌷x`, and `x.[I]` is `[I]⌷x`. Dot indexing binds as tightly as `.name`. It needs no parentheses inside a larger expression. Paths chain from left to right. Inside the brackets, each item indexes one axis, so the positions for one axis form one item, as in `m.[[2 0]]`. `x.(I)` takes its index from a computed vector, one item per axis. So `m.(1 2)` is the same as `m.[1 2]`. The array is evaluated before the index.
+After an array, `.` followed by brackets or parentheses indexes it through [Index](squad.qmd). `x.[I]` is `[I]⌷x`, and `x.(I)` is `(I)⌷x`. Each bracket item indexes one axis. The positions on one axis form one item, as in `m.[[2 0]]`. In `x.(I)`, the computed vector `I` holds one item per axis: `m.(1 2)` is the same as `m.[1 2]`. Dot indexing binds as tightly as `.name` and needs no parentheses inside a larger expression. Paths chain from left to right. The array is evaluated before the index.
 
 ```bpl
 m←3 4⍴⍳12
@@ -28,7 +28,7 @@ i←1 2 ⋄ m.(i)      ⍝ 6
 9,m.[0 1],3        ⍝ 9 1 3
 ```
 
-A number cannot follow the dot directly, because `.2` is a number. Write `v.[2]`, or the [subscript](subscript.qmd) `v₂`. A decimal point needs a digit after it, so a dot after a number is never part of the number. Assignment to a dot path goes through `⌷`, and adds missing keys.
+A dot followed by a digit is a decimal point: `.2` is a number. To index position 2, write `v.[2]` or the [subscript](subscript.qmd) `v₂`. Assignment to a dot path goes through `⌷` and adds missing keys.
 
 ```bpl
 v←10 20 30

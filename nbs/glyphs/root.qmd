@@ -7,7 +7,7 @@
 √1r9              ⍝ 1r3
 ```
 
-`X√Y`: principal Xth root. Negative real Y with odd integral X uses the real root. Negative degrees reciprocate, so zero with a negative degree gives `∞`.
+`X√Y`: principal Xth root. Negative real Y with odd integral X uses the real root. A negative degree gives the reciprocal of the root. `¯2√0` is `∞`.
 
 ```bpl
 3√¯8              ⍝ ¯2

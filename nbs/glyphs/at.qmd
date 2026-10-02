@@ -19,7 +19,7 @@ v←10 20 30 40 ⋄ i←[0 3 ⋄ 1 2]
 {⍵+[100 200 ⋄ 300 400]}@i v   ⍝ 110 320 430 240
 ```
 
-A Boolean array right operand is a selection mask, and an array of integers gives positions. A function right operand is called on the argument, and its result is read the same way.
+As the right operand, a Boolean array is a mask, and an array of integers is a list of positions. A function right operand is called on the argument, and its result is read the same way.
 
 ```bpl
 0@ 1=2| ⍳5        ⍝ 0 0 2 0 4
@@ -33,4 +33,4 @@ x←["a":1 "b":2 "c":3]
 ["b":20 "a":10]@0 1 x   ⍝ ["a":10 "b":20 "c":3]
 ```
 
-Indices include nested paths. Dyadic calls pass the left argument to the replacement function. Repeated indices are written in order; the last replacement wins.
+Indices include nested paths. Dyadic calls pass the left argument to the replacement function. With repeated indices, the last replacement wins.

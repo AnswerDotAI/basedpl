@@ -1,6 +1,6 @@
 # `⍃` — Before
 
-`f⍃g Y` is `(f Y)g Y`: `f` prepares the left argument of `g`. Operators bind from the left, so `3⍃<⍃/` is `(3⍃<)⍃/`, which computes a mask and then filters.
+`f⍃g Y` is `(f Y)g Y`, where `f` prepares the left argument of `g`. Operators bind from the left. For example, `3⍃<⍃#` is `(3⍃<)⍃#`, which keeps the items greater than 3.
 
 ```bpl
 -⍃+ 5              ⍝ 0

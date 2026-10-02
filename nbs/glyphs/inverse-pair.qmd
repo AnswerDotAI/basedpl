@@ -1,6 +1,6 @@
 # `⇄` — Inverse pair
 
-`f⇄g` calls `f`; its inverse is `g⇄f`.
+`f⇄g` calls `f`. `(f⇄g)⁻¹` is `g⇄f`.
 
 ```bpl
 f←{⍵+1}⇄{⍵-1} ⋄ f5            ⍝ 6

@@ -1,8 +1,8 @@
 # `⊂` — Enclose / Partitioned enclose
 
-`⊂Y` makes a rank-zero array containing `Y`.
+`⊂Y` is a scalar holding `Y`.
 
-[Brackets](brackets.qmd) round one item make a one-item vector, not a scalar. `⊂` cannot enclose a function, because `⊂` next to a function forms a train. [`ᵘ`](superscript.qmd) after a function encloses it instead: `+ᵘ` is a scalar holding `+`, and `fᵘ` is a scalar holding `f`.
+A one-item [bracket list](brackets.qmd), `[Y]`, is a vector, not a scalar. `⊂` cannot enclose a function, because `⊂` next to a function forms a train. To enclose a function, write [`ᵘ`](superscript.qmd) after it. `fᵘ` is a scalar holding `f`.
 
 ```bpl
 ⍴⊂1 2 3            ⍝ ⍬ₓ

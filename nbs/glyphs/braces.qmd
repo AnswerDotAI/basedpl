@@ -1,6 +1,6 @@
 # `{ }` — Dfn / Dop
 
-`{…}` defines a function of `⍺` and `⍵`, or an operator when it uses `⍶` or `⍹`. `;` separates its bodies, and a [predicate](question.qmd) `C?` chooses between them. The last statement gives the result. See [Dfns](../dfns.qmd).
+`{…}` defines a function of `⍺` and `⍵`, or an operator when it uses `⍶` or `⍹`. `;` separates its bodies. When a [predicate](question.qmd) `C?` is false, evaluation moves on to the next body. The last statement gives the result. See [Dfns](../dfns.qmd).
 
 ```bpl
 {⍵×2}3             ⍝ 6

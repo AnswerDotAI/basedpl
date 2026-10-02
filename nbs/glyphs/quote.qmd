@@ -17,7 +17,7 @@ The quote character is `'''`. An apostrophe needs no escaping inside a string. D
 ≢"say ""hi"""      ⍝ 8ₓ
 ```
 
-Literals separated by spaces form a strand, which is one vector. Characters side by side form a string. Strings side by side form a vector of strings. So `"x" "y"` is two keys, and `'x' 'y'` is the one key `"xy"`.
+Literals separated by spaces form a strand, which is one vector. Characters side by side form a string. Strings side by side form a vector of strings. For example, `"x" "y"` is two keys, and `'x' 'y'` is the one key `"xy"`.
 
 ```bpl
 'a' 'b'            ⍝ "ab"

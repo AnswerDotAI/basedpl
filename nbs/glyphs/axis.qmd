@@ -1,6 +1,6 @@
 # `⍠` — Axis
 
-`f⍠A` applies `f` to the cells made of the axes `A`. The other axes form the frame. `A` is a list of axes, given as numbers or names, so it needs no enclosing. Axes count from 0, and negative axes count from the end.
+`f⍠A` applies `f` to the cells made of the axes `A`. The other axes form the frame. `A` is a list of axes, given as numbers or names. Axes count from 0, and negative axes count from the end.
 
 ```bpl
 m←2 3⍴⍳6
@@ -25,7 +25,7 @@ m←2 3⍴⍳6
 ⍴{,⍵}⍠0 1 (2 3 4⍴⍳24)     ⍝ [6 4]ₓ
 ```
 
-With two arguments, `A` applies to both, and leading frames agree as they do for rank. An argument without the selected axes is one whole cell, paired with every cell of the other argument.
+With two arguments, `A` applies to both. Cells pair using leading agreement of the frames, as for [Rank](rank.qmd). An argument without the selected axes is one whole cell, paired with every cell of the other argument.
 
 ```bpl
 m←2 3⍴⍳6
@@ -55,7 +55,7 @@ A primitive with its own axis meaning keeps it:
 +/⍠1 2 (2 3 4⍴⍳24)        ⍝ 66 210
 ```
 
-A dfn has no axis meaning of its own, so wrapping a primitive in a dfn gives the general rule.
+Wrapping a primitive in a dfn gives the general rule:
 
 ```bpl
 {+/⍵}⍠1 2 (2 3 4⍴⍳24)     ⍝ [6 22 38 ⋄ 54 70 86]

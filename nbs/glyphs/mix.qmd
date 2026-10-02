@@ -7,7 +7,7 @@
 ⊃[[1 2] [3 4 5]]   ⍝ [1 2 0 ⋄ 3 4 5]
 ```
 
-`P⊃Y` selects leading-axis coordinates. Remaining axes form a cell; full coordinates return the stored value. Successive Picks traverse nesting. Empty coordinates return `Y`.
+`P⊃Y` selects at coordinates `P` along the leading axes. With fewer coordinates than axes, the result is the cell made of the remaining axes. With a coordinate for every axis, the result is the stored value. Successive Picks traverse nesting. Empty coordinates return `Y`.
 
 ```bpl
 1⊃2 3⍴⍳6           ⍝ 3 4 5

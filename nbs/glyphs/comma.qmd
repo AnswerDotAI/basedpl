@@ -14,7 +14,7 @@
 1 2,3 4            ⍝ 1 2 3 4
 ```
 
-There is no laminate. Array notation joins arrays along a new leading axis, and Rank pairs their items along a new last axis.
+There is no laminate. `[x ⋄ y]` has `x` and `y` as its major cells, along a new leading axis. `x,⍤0 y` pairs the items of `x` and `y` along a new last axis.
 
 ```bpl
 x←1 2 ⋄ y←3 4

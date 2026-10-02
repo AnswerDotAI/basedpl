@@ -16,6 +16,6 @@ Reading `⎕` gives the next line of standard input as a string, without its lin
 printf '3\n4\n' | bpl -e '+/⍎¨[⎕ ⎕]'       # 7
 ```
 
-`bpl -e`, script files and the interactive REPL read standard input. In a notebook, `⎕` asks for a line in a text box. That input never ends, so `•nget "-"` is a `VALUE` error in a notebook. `bpl -` and piped REPL input read the program from standard input. There, and in `bpl --worker` and the Python API, reading `⎕` or `•nget "-"` is a `VALUE` error.
+`bpl -e`, script files and the interactive REPL read standard input. In a notebook, `⎕` asks for a line in a text box, but `•nget "-"` is a `VALUE` error. `bpl -` and piped REPL input read the program itself from standard input. In those two modes, in `bpl --worker` and in the Python API, reading `⎕` or `•nget "-"` is a `VALUE` error.
 
 System names: [•a](alphabet.qmd), [•d](digits.qmd), [•c](case.qmd), [•ucs](unicode.qmd).

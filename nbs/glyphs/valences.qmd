@@ -1,6 +1,6 @@
 # `⊘` — Valences
 
-`f⊘g` calls `f` when it has one argument, and `g` when it has two. Each side is a whole function, so each case can take as many statements as it needs.
+`f⊘g` calls `f` when it has one argument, and `g` when it has two. Either side can be a dfn with any number of statements.
 
 ```bpl
 f←{⍵×2}⊘{⍺+⍵}

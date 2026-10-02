@@ -7,7 +7,7 @@
 2+⍣3(1)            ⍝ 7
 ```
 
-Negative counts apply the known inverse. A [superscript](superscript.qmd) writes `f⍣¯1` as `f⁻¹`, and `f⍣2` as `f²`.
+Negative counts apply the known inverse. With a [superscript](superscript.qmd), `f⍣¯1` is written `f⁻¹`, and `f⍣2` is written `f²`.
 
 ```bpl
 2×⍣¯1(10)          ⍝ 5
@@ -22,7 +22,7 @@ Inverses propagate through Atop, dyadic After and Before, bound arguments, Each,
 1+⍣{⍺>4}0          ⍝ 5
 ```
 
-A vector of counts gives one item for each count, holding the state after that many steps. Counts `⍳N` give the first `N` states, starting with `Y`. A nested vector of counts gives a nested result, with one item for each inner vector, and a scalar count gives a scalar. Computed counts need parentheses, because an operator takes one item to its right.
+A vector of counts gives one item for each count, holding the state after that many steps. Counts `⍳N` give the first `N` states, starting with `Y`. A nested vector of counts gives a nested result, with one item for each inner vector. A scalar count gives a scalar. Computed counts need parentheses, because an operator takes one item to its right.
 
 ```bpl
 2×⍣(⍳5) 1              ⍝ 1 2 4 8 16
@@ -34,11 +34,11 @@ A vector of counts gives one item for each count, holding the state after that m
 2×⍣(⊂3) 1              ⍝ ⊂8
 ```
 
-Positive steps run first, then inverse steps from `Y`; repeated counts reuse states. Empty counts give an empty result with the counts' shape.
+Positive counts run first, then negative counts run the inverse, also from `Y`. A repeated count reuses its state. Empty counts give an empty result with the counts' shape.
 
 ## Fixed point
 
-A count of `∞` runs until the state stops changing, the same test as `⍣≡`. `¯∞` runs the inverse until it converges. `∞` can sit in a vector of counts. A literal argument after `∞` would join its strand, so it goes in parentheses: `n⍣∞(1)`.
+A count of `∞` runs until the state stops changing, the same test as `⍣≡`. `¯∞` runs the inverse until it converges. `∞` can sit in a vector of counts. Put a literal argument after `∞` in parentheses, as in `n⍣∞(1)`.
 
 ```bpl
 n←{0.5×⍵+2÷⍵}
@@ -48,7 +48,7 @@ n⍣[0 ∞]1               ⍝ 1 1.414213562373095
 
 ## History
 
-The until form keeps every state when its predicate is in a one-item vector: `f⍣[g]`. The states include `Y` and the state where `g` holds, so it always takes at least one step.
+The until form keeps every state when its predicate is in a one-item vector: `f⍣[g]`. The states run from `Y` to the first state where `g` holds. `f` always runs at least once. For example, `⊢⍣[≡]4` gives `4 4`.
 
 ```bpl
 1+⍣[{⍺=3}]0           ⍝ 0 1 2 3

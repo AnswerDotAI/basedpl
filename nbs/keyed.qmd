@@ -16,7 +16,7 @@ T←"price" "qty":[[1 2 3] [4 5 6]]
 ≢⍬:⍬                        ⍝ 0ₓ
 ```
 
-Brackets with any item written as `key:value` build one keyed vector. Items without a key are positions with no key, so `["aa":1 2]` has a key only on its first position. Keyed vectors display in this form. A vector that holds a record needs brackets round the record: `[15 ["aa":1]]` has two items, and the second is a record.
+A bracket list with any item written as `key:value` is one keyed vector. An item without a key is a position with no key. For example, `["aa":1 2]` has a key only on its first position. Keyed vectors display in this form. A vector that holds a record needs brackets round the record: `[15 ["aa":1]]` has two items, and the second is a record.
 
 ```bpl
 T←["price":[1 2 3] "qty":[4 5 6]]
@@ -24,7 +24,7 @@ T≡"price" "qty":[[1 2 3] [4 5 6]]   ⍝ $t
 ["kind":"bar"]≡"kind":"bar"       ⍝ $t
 ```
 
-A character atom or string is one string key. Characters side by side form one string, so `'a' 'b'` is the key `"ab"`. Use `"a" "b"` for two one-character keys.
+A character atom or string is one string key. Characters side by side form one string: `'a' 'b'` is the key `"ab"`. Use `"a" "b"` for two one-character keys.
 
 ```bpl
 ⍳⍠0 ('a' 'b':1 2)           ⍝ ["ab"]
@@ -40,7 +40,7 @@ M←"Jan" "Feb" "Mar":⍠1 M
 ∞ "Feb"⌷M                   ⍝ 1 4
 ```
 
-Several key vectors label successive axes. `:⍠` with several axes chooses their axes in the supplied order. Brackets with `;` write the key vectors, because each one contains spaces.
+Several key vectors label successive axes. `:⍠` with several axes chooses their axes in the supplied order. Write the key vectors inside one pair of brackets, with `;` between them, because each one contains spaces.
 
 ```bpl
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
@@ -106,7 +106,7 @@ T.style.color←"red"
 T.style                     ⍝ ["color":"red"]
 ```
 
-Plain assignment through dot indexing appends missing rows or columns, as it does through `⌷`. New matrix cells receive the array's prototype before assignment.
+Plain assignment through dot indexing appends missing rows or columns, as it does through `⌷`. Assignment first fills new matrix cells with the array's prototype.
 
 ```bpl
 M←["alice" "bob";"price" "qty"]:[10 2 ⋄ 20 4]
@@ -352,7 +352,7 @@ M←["city":2 "month":3]⍴⍳6
 +/⍠"month" M                  ⍝ ["city":2]⍴3 12
 ```
 
-An unkeyed entry of the shape leaves its axis unnamed. `(N:⍴M)⍴M` renames the axes, and `(:⍴M)⍴M` removes the names. In `"city" 1`, the integer key equals its own position, counting from 0, so that position has no key. A reshape that keeps the shape also keeps the position keys and shares the element buffer. Assign with `M←…` to store the result.
+An unkeyed entry of the shape leaves its axis unnamed. `(N:⍴M)⍴M` renames the axes, and `(:⍴M)⍴M` removes the names. An integer key that equals its own position, counting from 0, means no key. For example, the second position of `"city" 1` has no key. A reshape that keeps the shape also keeps the position keys and shares the element buffer. Assign with `M←…` to store the result.
 
 ```bpl
 M←["city":2 "month":3]⍴⍳6
@@ -386,7 +386,7 @@ M←axes:⍠1 0 (2 3⍴⍳6)
 ⍳⍠0 1 M                       ⍝ [["NY" "LA"] ["Jan" "Feb" "Mar"]]
 ```
 
-Agreement first pairs equal names, wherever they occur. Unpaired axes broadcast. Result order is left axes, then right-only axes.
+Agreement first pairs equal names, wherever they occur. Unpaired axes broadcast. The result has the left argument's axes first, then the axes only the right argument has.
 
 ```bpl
 M←["city":2 "month":3]⍴⍳6
@@ -456,7 +456,7 @@ assert record.py == {'price': 10, 'address': {'city': 'LA'}}
 assert record.axis_keys == (('price', 'address'),)
 ```
 
-Attach position keys with `axis_keys`, axis names with `axis_names`. `None` leaves an axis unkeyed/unnamed. The corresponding properties inspect them; `.np` copies the values to NumPy.
+Attach position keys with `axis_keys`, and axis names with `axis_names`. `None` leaves an axis without keys or a name. The properties of the same names return the keys and names. `.np` copies the values to NumPy.
 
 ```python
 rows, cols = ['NY', 'LA'], ['Jan', 'Feb', 'Mar']
@@ -470,7 +470,7 @@ assert columns_only.axis_keys == (None, tuple(cols))
 assert columns_only.axis_names == (None, 'month')
 ```
 
-`.df` converts to pandas. For a matrix, keys label rows/columns and axis names name the index/columns. `.py` uses this conversion for keyed arrays of rank ≥2. Install pandas with `pip install pandas`; it is imported on conversion.
+`.df` converts to a pandas DataFrame. For a matrix, the position keys become the row and column labels, and the axis names become the names of the index and the columns. `.py` uses this conversion for keyed arrays of rank 2 or more. Install pandas with `pip install pandas`. basedpl imports it only when converting.
 
 ```python
 df = sales.df
