@@ -1,4 +1,4 @@
-use crate::{data, display, execution::Context, keyed, Error, ErrorAt, ErrorKind, Value};
+use crate::{data, display, element::read_as, execution::Context, keyed, Error, ErrorAt, ErrorKind, Value};
 use ::image::{DynamicImage, ImageBuffer, ImageFormat};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use std::io::Cursor;
@@ -66,7 +66,7 @@ fn pixels(picture: &Value, span: &Context<'_>) -> Result<DynamicImage, Error> {
         [height, width, channels @ 1..=4] => (height, width, channels),
         _ => return Err(span.error(ErrorKind::Rank, "a picture has axes for rows, columns and up to four channels")),
     };
-    let values = picture.as_items().reals().ok_or_else(|| span.domain_error("a picture holds real numbers"))?;
+    let values = read_as::<f64>(picture).ok_or_else(|| span.domain_error("a picture holds real numbers"))?;
     let data: Vec<u8> = values.iter().map(|v| (v.clamp(0., 1.) * 255.).round() as u8).collect();
     let (width, height) = (width as u32, height as u32);
     let image = match channels {

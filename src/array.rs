@@ -1,7 +1,7 @@
 use crate::{
     keyed::Keys,
     number::{extended, real},
-    pervasive::Element,
+    element::{read_flagged, Element, Source},
     display::{positions, Elide},
     execution::Context,
     DomainAt, Error, ErrorKind, Number,
@@ -355,24 +355,25 @@ fn item_kind(item: &Value) -> Option<Kind> {
 
 /// Runs `$body` with `$d` bound to the target buffer, `$s` to the source items and `$f` to the conversion of a source item for the
 /// target, when the target's compact kind holds the source's items. Gives whether it ran. Numbers widen from Boolean to integer to float
-/// to complex. Integer storage receives floats only when they're non-finite, and then has its flag set.
+/// to complex, converting through `Source`. Flagged integer storage converts its reserved values to the floats they stand for. Integer
+/// storage receives floats only when they're non-finite, and then has its flag set.
 macro_rules! copy_into {
     ($target:expr, $source:expr, |$d:ident, $s:ident, $f:ident| $body:expr) => {
         match ($target, $source) {
-            (Storage::Boolean($d), Items::Booleans($s)) => copy_into!(@run $body, $f, |x: bool| x),
-            (Storage::Integer($d, _), Items::Booleans($s)) => copy_into!(@run $body, $f, i64::from),
-            (Storage::Integer($d, _), Items::Integers($s) | Items::Extended($s)) => copy_into!(@run $body, $f, |x: i64| x),
+            (Storage::Boolean($d), Items::Booleans($s)) => copy_into!(@run $body, $f, Source::<bool>::read),
+            (Storage::Integer($d, _), Items::Booleans($s)) => copy_into!(@run $body, $f, Source::<i64>::read),
+            (Storage::Integer($d, _), Items::Integers($s) | Items::Extended($s)) => copy_into!(@run $body, $f, Source::<i64>::read),
             (Storage::Integer($d, _), Items::Floats($s)) => copy_into!(@run $body, $f, extended::from_float),
-            (Storage::Float($d), Items::Floats($s)) => copy_into!(@run $body, $f, |x: f64| x),
-            (Storage::Float($d), Items::Booleans($s)) => copy_into!(@run $body, $f, |x: bool| f64::from(u8::from(x))),
-            (Storage::Float($d), Items::Integers($s)) => copy_into!(@run $body, $f, |x: i64| x as f64),
-            (Storage::Float($d), Items::Extended($s)) => copy_into!(@run $body, $f, extended::float),
-            (Storage::Complex($d), Items::Complex($s)) => copy_into!(@run $body, $f, |x: Complex64| x),
-            (Storage::Complex($d), Items::Floats($s)) => copy_into!(@run $body, $f, |x: f64| Complex64::new(x, 0.0)),
-            (Storage::Complex($d), Items::Booleans($s)) => copy_into!(@run $body, $f, |x: bool| Complex64::new(f64::from(u8::from(x)), 0.0)),
-            (Storage::Complex($d), Items::Integers($s)) => copy_into!(@run $body, $f, |x: i64| Complex64::new(x as f64, 0.0)),
-            (Storage::Complex($d), Items::Extended($s)) => copy_into!(@run $body, $f, |x: i64| Complex64::new(extended::float(x), 0.0)),
-            (Storage::Character($d), Items::Characters($s)) => copy_into!(@run $body, $f, |x: char| x),
+            (Storage::Float($d), Items::Floats($s)) => copy_into!(@run $body, $f, Source::<f64>::read),
+            (Storage::Float($d), Items::Booleans($s)) => copy_into!(@run $body, $f, Source::<f64>::read),
+            (Storage::Float($d), Items::Integers($s)) => copy_into!(@run $body, $f, Source::<f64>::read),
+            (Storage::Float($d), Items::Extended($s)) => copy_into!(@run $body, $f, read_flagged::<f64>),
+            (Storage::Complex($d), Items::Complex($s)) => copy_into!(@run $body, $f, Source::<Complex64>::read),
+            (Storage::Complex($d), Items::Floats($s)) => copy_into!(@run $body, $f, Source::<Complex64>::read),
+            (Storage::Complex($d), Items::Booleans($s)) => copy_into!(@run $body, $f, Source::<Complex64>::read),
+            (Storage::Complex($d), Items::Integers($s)) => copy_into!(@run $body, $f, Source::<Complex64>::read),
+            (Storage::Complex($d), Items::Extended($s)) => copy_into!(@run $body, $f, read_flagged::<Complex64>),
+            (Storage::Character($d), Items::Characters($s)) => copy_into!(@run $body, $f, Source::<char>::read),
             _ => false,
         }
     };
@@ -543,17 +544,6 @@ impl<'a> Items<'a> {
             Self::Characters(_) => Err(ErrorKind::Domain),
             Self::Values(d) => d.iter().map(|v| other(number(v)?)).collect(),
         }
-    }
-    /// Compact numbers as floats. A Boolean or an integer converts as `Number` converts it beside a float. A non-finite value in flagged
-    /// integer storage becomes the float it stands for.
-    pub(crate) fn reals(&self) -> Option<Cow<'a, [f64]>> {
-        Some(match *self {
-            Self::Floats(y) => Cow::Borrowed(y),
-            Self::Integers(y) => Cow::Owned(y.iter().map(|&n| n as f64).collect()),
-            Self::Extended(y) => Cow::Owned(y.iter().map(|&n| extended::float(n)).collect()),
-            Self::Booleans(y) => Cow::Owned(y.iter().map(|&b| f64::from(u8::from(b))).collect()),
-            Self::Complex(_) | Self::Characters(_) | Self::Values(_) => return None,
-        })
     }
     /// Each item as an integer. Integer storage is borrowed. A fraction, an infinity or a non-number is DOMAIN, and a value outside
     /// `i64` is LIMIT.

@@ -7,6 +7,7 @@ mod display;
 mod distribution;
 mod editor;
 mod error;
+mod element;
 mod eval;
 mod execution;
 mod image;

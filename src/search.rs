@@ -16,6 +16,7 @@
 //! Other data takes the pairwise comparison.
 use crate::{
     array::Items,
+    element::read_as,
     execution::Context,
     number::{equal_range, float_match},
     Error, ErrorKind, Value,
@@ -45,16 +46,24 @@ impl Key for bool { fn key(self) -> i64 { self.into() } }
 impl Key for i64 { fn key(self) -> i64 { self } }
 impl Key for char { fn key(self) -> i64 { i64::from(u32::from(self)) } }
 
+/// `Some($body)`, with each `$x` bound to the items of its `$items`, when they are all Booleans, all integers or all characters: the
+/// types that implement `Key`. Otherwise `None`.
+macro_rules! with_keys {
+    ([$($items:expr),+], |$($x:ident),+| $body:expr) => {
+        match ($($items,)+) {
+            ($(Some(Items::Booleans($x)),)+) => Some($body),
+            ($(Some(Items::Integers($x) | Items::Extended($x)),)+) => Some($body),
+            ($(Some(Items::Characters($x)),)+) => Some($body),
+            _ => None,
+        }
+    };
+}
+
 /// For each needle, the position of the first haystack cell that matches it, or the number of haystack cells when none does.
 pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_>) -> Result<Vec<i64>, Error> {
     if let Some(found) = scanned(haystack, needles) { return Ok(found); }
     if needles.len() > 1 && haystack.len() >= 8 && haystack.len().saturating_mul(needles.len()) >= 256 {
-        match (haystack.items(), needles.items()) {
-            (Some(Items::Booleans(x)), Some(Items::Booleans(y))) => return Ok(key_positions(x, y)),
-            (Some(Items::Integers(x) | Items::Extended(x)), Some(Items::Integers(y) | Items::Extended(y))) => return Ok(key_positions(x, y)),
-            (Some(Items::Characters(x)), Some(Items::Characters(y))) => return Ok(key_positions(x, y)),
-            _ => (),
-        }
+        if let Some(found) = with_keys!([haystack.items(), needles.items()], |x, y| key_positions(x, y)) { return Ok(found); }
         let seed = RandomState::default();
         if let Some(x) = hashes(haystack, &seed) { if let Some(y) = hashes(needles, &seed) { return hashed_first(haystack, &x, needles, &y, span); } }
         if let (Some(x), Some(y)) = (reals(haystack), reals(needles)) {
@@ -77,8 +86,8 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_
 /// With at most 16 needles, one pass over compact items for each needle costs less than building an index. A real needle among floats
 /// or integers becomes the range of floats tolerantly equal to it, worked out once, so the pass makes only plain comparisons.
 fn scanned(haystack: &Cells, needles: &Cells) -> Option<Vec<i64>> {
-    fn each<T>(x: &[T], y: &[T], matches: impl Fn(&T, &T) -> bool) -> Vec<i64> {
-        y.iter().map(|n| x.iter().position(|h| matches(h, n)).unwrap_or(x.len()) as i64).collect()
+    fn each<T: PartialEq>(x: &[T], y: &[T]) -> Vec<i64> {
+        y.iter().map(|n| x.iter().position(|h| h == n).unwrap_or(x.len()) as i64).collect()
     }
     /// The first item of `x`, read as a float, that matches `n`.
     fn ranged<T: Copy>(x: &[T], read: impl Fn(T) -> f64, n: f64) -> i64 {
@@ -89,13 +98,8 @@ fn scanned(haystack: &Cells, needles: &Cells) -> Option<Vec<i64>> {
         found.unwrap_or(x.len()) as i64
     }
     if needles.len() > 16 { return None; }
+    if let Some(found) = with_keys!([haystack.items(), needles.items()], |x, y| each(x, y)) { return Some(found); }
     let x = haystack.items()?;
-    match (&x, needles.items()?) {
-        (Items::Booleans(x), Items::Booleans(y)) => return Some(each(x, y, |h, n| h == n)),
-        (Items::Integers(x) | Items::Extended(x), Items::Integers(y) | Items::Extended(y)) => return Some(each(x, y, |h, n| h == n)),
-        (Items::Characters(x), Items::Characters(y)) => return Some(each(x, y, |h, n| h == n)),
-        _ => (),
-    }
     let y = reals(needles)?;
     match x {
         Items::Floats(x) => Some(y.iter().map(|&n| ranged(x, |h| h, n)).collect()),
@@ -115,12 +119,7 @@ fn scanned(haystack: &Cells, needles: &Cells) -> Option<Vec<i64>> {
 /// chain. A cell that matches none represents a new class.
 pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<usize>, Error> {
     if cells.len() >= 16 {
-        match cells.items() {
-            Some(Items::Booleans(x)) => return Ok(key_classes(x)),
-            Some(Items::Integers(x) | Items::Extended(x)) => return Ok(key_classes(x)),
-            Some(Items::Characters(x)) => return Ok(key_classes(x)),
-            _ => (),
-        }
+        if let Some(classes) = with_keys!([cells.items()], |x| key_classes(x)) { return Ok(classes); }
         if let Some(x) = hashes(cells, &RandomState::default()) { return hashed_classes(cells, &x, span); }
         if let Some(x) = reals(cells) { return tolerant_classes(&x, span, |r, i| Ok(float_match(x[r], x[i]))); }
         if let Some(x) = leading_reals(cells) { return tolerant_classes(&x, span, |r, i| cells.get(r).matches(&cells.get(i), span)); }
@@ -184,12 +183,7 @@ fn key_classes<K: Key>(x: &[K]) -> Vec<usize> {
 /// Whether each cell is the first of its class.
 pub(crate) fn firsts(cells: &Cells, span: &Context<'_>) -> Result<Vec<bool>, Error> {
     if cells.len() >= 16 {
-        match cells.items() {
-            Some(Items::Booleans(x)) => return Ok(key_firsts(x)),
-            Some(Items::Integers(x) | Items::Extended(x)) => return Ok(key_firsts(x)),
-            Some(Items::Characters(x)) => return Ok(key_firsts(x)),
-            _ => (),
-        }
+        if let Some(mask) = with_keys!([cells.items()], |x| key_firsts(x)) { return Ok(mask); }
     }
     Ok(classify(cells, span)?.into_iter().enumerate().map(|(i, f)| f == i).collect())
 }
@@ -365,7 +359,7 @@ fn reals<'a>(cells: &'a Cells) -> Option<Cow<'a, [f64]>> {
     let Cells::Items(array) = cells else { return None };
     match array.as_items() {
         Items::Values(items) => Some(Cow::Owned(items.iter().map(real).collect::<Option<_>>()?)),
-        items => items.reals(),
+        _ => read_as(array),
     }
 }
 

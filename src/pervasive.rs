@@ -12,33 +12,13 @@
 use crate::{
     agreement::{Agreement, Mapping},
     array::{Axis, Items},
+    element::{read_all, read_as, Element, Source},
     number::{complex, equal_range, extended, float_equal, int, real, Arithmetic, Math},
     primitive::{Comparison, Primitive},
     Value,
 };
 use num_complex::Complex64;
 use std::{borrow::Cow, cell::Cell};
-
-/// Compact element storage: `bool` for Booleans, `f64` for floats, `i64` for integers, `Complex64` for complex numbers and `char` for
-/// characters.
-pub(crate) trait Element: Copy {
-    /// The item a missing keyed entry reads as: the fill of its own array, which has this type.
-    const FILL: Self;
-    fn slice(value: &Value) -> Option<&[Self]>;
-    fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value>;
-    fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output>;
-    fn monad<R: Monad<Self>>(p: Primitive, run: R) -> Option<R::Output>;
-}
-
-/// An item that a kernel reads as type `A`: a Boolean as an integer, an integer as a float, or a real as a complex number.
-pub(crate) trait Source<A>: Element { fn read(self) -> A; }
-impl<A: Element> Source<A> for A { fn read(self) -> A { self } }
-impl Source<i64> for bool { fn read(self) -> i64 { self.into() } }
-impl Source<f64> for bool { fn read(self) -> f64 { f64::from(u8::from(self)) } }
-impl Source<Complex64> for bool { fn read(self) -> Complex64 { Complex64::new(f64::from(u8::from(self)), 0.0) } }
-impl Source<f64> for i64 { fn read(self) -> f64 { self as f64 } }
-impl Source<Complex64> for i64 { fn read(self) -> Complex64 { Complex64::new(self as f64, 0.0) } }
-impl Source<Complex64> for f64 { fn read(self) -> Complex64 { Complex64::new(self, 0.0) } }
 
 /// A loop that applies a dyadic kernel. A kernel either keeps its argument type or gives Booleans.
 pub(crate) trait Dyad<A> {
@@ -55,10 +35,13 @@ pub(crate) trait Monad<A> {
     fn boolean(self, f: impl Fn(A) -> Option<bool> + Copy) -> Self::Output;
 }
 
-impl Element for bool {
-    const FILL: Self = false;
-    fn slice(value: &Value) -> Option<&[Self]> { value.as_booleans() }
-    fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::booleans(shape, data).ok() }
+/// Picks the element kernel of a primitive for one element type, and hands it to a loop.
+pub(crate) trait Kernels: Element {
+    fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output>;
+    fn monad<R: Monad<Self>>(p: Primitive, run: R) -> Option<R::Output>;
+}
+
+impl Kernels for bool {
     /// The logical functions and comparisons. Other functions read Booleans as the integers 0 and 1.
     fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
         use {Comparison::*, Math::*};
@@ -80,10 +63,7 @@ impl Element for bool {
         match p { Primitive::Math(Math::Not) => Some(run.same(|y: bool| Some(!y))), _ => None }
     }
 }
-impl Element for f64 {
-    const FILL: Self = 0.0;
-    fn slice(value: &Value) -> Option<&[Self]> { value.as_floats() }
-    fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::floats(shape, data).ok() }
+impl Kernels for f64 {
     fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
         use {Arithmetic::*, Comparison::*, Math::*};
         Some(match p {
@@ -129,10 +109,7 @@ impl Element for f64 {
     }
 }
 
-impl Element for i64 {
-    const FILL: Self = 0;
-    fn slice(value: &Value) -> Option<&[Self]> { value.as_integers() }
-    fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::integers(shape, data).ok() }
+impl Kernels for i64 {
     fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
         use {Arithmetic::*, Comparison::*, Math::*};
         Some(match p {
@@ -171,10 +148,7 @@ impl Element for i64 {
     }
 }
 
-impl Element for char {
-    const FILL: Self = ' ';
-    fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Characters(v) => Some(v), _ => None } }
-    fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::characters(shape, data).ok() }
+impl Kernels for char {
     fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
         Some(match p {
             Primitive::Compare(Comparison::Equal) => run.boolean(|x, y| Some(x == y)),
@@ -185,10 +159,7 @@ impl Element for char {
     fn monad<R: Monad<Self>>(_: Primitive, _: R) -> Option<R::Output> { None }
 }
 
-impl Element for Complex64 {
-    const FILL: Self = Complex64::new(0.0, 0.0);
-    fn slice(value: &Value) -> Option<&[Self]> { value.as_complex() }
-    fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::complex(shape, data).ok() }
+impl Kernels for Complex64 {
     fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
         use {Arithmetic::*, Comparison::*};
         Some(match p {
@@ -219,10 +190,10 @@ impl Element for Complex64 {
 
 /// A pervasive function applied to compact arguments, on the frame of `agreement`.
 pub(crate) fn map(p: Primitive, left: Option<&Value>, right: &Value, agreement: &Agreement) -> Option<Value> {
-    fn dyadic<A: Element, X: Source<A>, Y: Source<A>>(p: Primitive, x: &[X], y: &[Y], agreement: &Agreement) -> Option<Value> {
+    fn dyadic<A: Kernels, X: Source<A>, Y: Source<A>>(p: Primitive, x: &[X], y: &[Y], agreement: &Agreement) -> Option<Value> {
         A::dyad(p, Map { x, y, agreement })?
     }
-    fn monadic<A: Element, Y: Source<A>>(p: Primitive, y: &[Y], agreement: &Agreement) -> Option<Value> { A::monad(p, Map { x: &[] as &[Y], y, agreement })? }
+    fn monadic<A: Kernels, Y: Source<A>>(p: Primitive, y: &[Y], agreement: &Agreement) -> Option<Value> { A::monad(p, Map { x: &[] as &[Y], y, agreement })? }
     let Some(left) = left else {
         return match right.checked_items() {
             Items::Floats(y) => monadic::<f64, _>(p, y, agreement).or_else(|| nonfinite_whole(p, y, agreement)),
@@ -238,21 +209,14 @@ pub(crate) fn map(p: Primitive, left: Option<&Value>, right: &Value, agreement: 
     if let Primitive::Math(Math::Circle) = p { return circle(left, right, agreement); }
     if let Primitive::Compare(op) = p { if let Some(result) = against_number(op, left, right, agreement) { return Some(result); } }
     if let Primitive::Math(Math::Magnitude) = p { if let Some(result) = residues(left, right, agreement) { return Some(result); } }
+    // Mixed kinds read through `Source`, with no copy. `pair` gives the other arguments one kind.
     match (left.checked_items(), right.checked_items()) {
-        (Items::Integers(x), Items::Integers(y)) if matches!(p, Primitive::Math(Math::Lcm | Math::Gcd)) => {
-            booleans(p, x, y, agreement).or_else(|| dyadic::<i64, _, _>(p, x, y, agreement))
-        }
-        (Items::Integers(x), Items::Integers(y)) => dyadic::<i64, _, _>(p, x, y, agreement),
-        (Items::Floats(x), Items::Floats(y)) => dyadic::<f64, _, _>(p, x, y, agreement),
         (Items::Integers(x), Items::Floats(y)) if !keeps_exact(p, y) => dyadic::<f64, _, _>(p, x, y, agreement),
         (Items::Floats(x), Items::Integers(y)) if !keeps_exact(p, x) => dyadic::<f64, _, _>(p, x, y, agreement),
-        (Items::Complex(x), Items::Complex(y)) => dyadic::<Complex64, _, _>(p, x, y, agreement),
         (Items::Complex(x), Items::Floats(y)) => dyadic::<Complex64, _, _>(p, x, y, agreement),
         (Items::Floats(x), Items::Complex(y)) => dyadic::<Complex64, _, _>(p, x, y, agreement),
         (Items::Complex(x), Items::Integers(y)) => dyadic::<Complex64, _, _>(p, x, y, agreement),
         (Items::Integers(x), Items::Complex(y)) => dyadic::<Complex64, _, _>(p, x, y, agreement),
-        (Items::Characters(x), Items::Characters(y)) => dyadic::<char, _, _>(p, x, y, agreement),
-        (Items::Booleans(x), Items::Booleans(y)) => dyadic::<bool, _, _>(p, x, y, agreement).or_else(|| dyadic::<i64, _, _>(p, x, y, agreement)),
         (Items::Booleans(x), Items::Integers(y)) => dyadic::<i64, _, _>(p, x, y, agreement),
         (Items::Integers(x), Items::Booleans(y)) => dyadic::<i64, _, _>(p, x, y, agreement),
         (Items::Booleans(x), Items::Floats(y)) if !keeps_exact(p, y) => dyadic::<f64, _, _>(p, x, y, agreement),
@@ -260,10 +224,15 @@ pub(crate) fn map(p: Primitive, left: Option<&Value>, right: &Value, agreement: 
         (Items::Booleans(x), Items::Complex(y)) => dyadic::<Complex64, _, _>(p, x, y, agreement),
         (Items::Complex(x), Items::Booleans(y)) => dyadic::<Complex64, _, _>(p, x, y, agreement),
         _ => match pair(p, left, right)? {
+            Pair::Booleans(x, y) => dyadic::<bool, _, _>(p, x, y, agreement).or_else(|| dyadic::<i64, _, _>(p, x, y, agreement)),
+            Pair::Integers(x, y) if matches!(p, Primitive::Math(Math::Lcm | Math::Gcd)) => {
+                booleans(p, &x, &y, agreement).or_else(|| dyadic::<i64, _, _>(p, &x, &y, agreement))
+            }
+            Pair::Integers(x, y) => dyadic::<i64, _, _>(p, &x, &y, agreement),
             Pair::Extended(x, y) => with_nonfinite(|seen| i64::dyad(p, Nonfinite { run: Map { x: &x, y: &y, agreement }, p, seen })),
             Pair::Floats(x, y) => dyadic::<f64, _, _>(p, &x, &y, agreement),
             Pair::Complex(x, y) => dyadic::<Complex64, _, _>(p, &x, &y, agreement),
-            Pair::Booleans(..) | Pair::Integers(..) | Pair::Characters(..) => None,
+            Pair::Characters(x, y) => dyadic::<char, _, _>(p, x, y, agreement),
         },
     }
 }
@@ -371,9 +340,9 @@ fn pair<'a>(p: Primitive, x: &'a Value, y: &'a Value) -> Option<Pair<'a>> {
         }
         (Items::Floats(f), a) | (a, Items::Floats(f)) if whole(&a) || matches!(a, Items::Extended(_)) => {
             if keeps_exact(p, f) { return None; }
-            Pair::Floats(x.as_items().reals()?, y.as_items().reals()?)
+            Pair::Floats(read_as(x)?, read_as(y)?)
         }
-        (Items::Complex(_), _) | (_, Items::Complex(_)) => Pair::Complex(complexes(x)?, complexes(y)?),
+        (Items::Complex(_), _) | (_, Items::Complex(_)) => Pair::Complex(read_as(x)?, read_as(y)?),
         _ => return None,
     })
 }
@@ -382,7 +351,7 @@ fn pair<'a>(p: Primitive, x: &'a Value, y: &'a Value) -> Option<Pair<'a>> {
 fn integers(value: &Value) -> Option<Cow<'_, [i64]>> {
     match value.as_items() {
         Items::Integers(y) | Items::Extended(y) => Some(Cow::Borrowed(y)),
-        Items::Booleans(y) => Some(Cow::Owned(y.iter().map(|&b| b.into()).collect())),
+        Items::Booleans(y) => Some(Cow::Owned(read_all(y))),
         _ => None,
     }
 }
@@ -392,19 +361,7 @@ fn circle(codes: &Value, right: &Value, agreement: &Agreement) -> Option<Value> 
     let Value::Number(code) = codes.at(0) else { return None };
     if !matches!(agreement.left, Mapping::Single) { return None; }
     let f = real::circle(code.integer().ok()?)?;
-    <Map<f64, f64> as Monad<f64>>::same(Map { x: &[], y: &right.as_items().reals()?, agreement }, f)
-}
-
-/// Compact numbers as complex numbers. `Number` converts a real this way beside a complex number.
-fn complexes(value: &Value) -> Option<Cow<'_, [Complex64]>> {
-    match value.as_items() {
-        Items::Complex(z) => Some(Cow::Borrowed(z)),
-        Items::Floats(y) => Some(Cow::Owned(y.iter().map(|&n| Complex64::from(n)).collect())),
-        Items::Integers(y) => Some(Cow::Owned(y.iter().map(|&n| Complex64::from(n as f64)).collect())),
-        Items::Extended(y) => Some(Cow::Owned(y.iter().map(|&n| Complex64::from(extended::float(n))).collect())),
-        Items::Booleans(y) => Some(Cow::Owned(y.iter().map(|&b| Complex64::from(f64::from(u8::from(b)))).collect())),
-        Items::Characters(_) | Items::Values(_) => None,
-    }
+    <Map<f64, f64> as Monad<f64>>::same(Map { x: &[], y: &read_as(right)?, agreement }, f)
 }
 
 /// Item `i` of the frame, read from `data` through `mapping`.
@@ -576,7 +533,7 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: &Axis, shape: Vec<usize>) 
             Primitive::Arithmetic(Plus) => i64::build(shape, accumulate(data, axis, 0i64, |s, b| s + i64::from(b))),
             _ => match truth_fold(p, data, axis, shape.clone()).or_else(|| bool::dyad(p, Fold { data, axis, shape: shape.clone() })?) {
                 Some(result) => Some(result),
-                None => fold(p, &Value::integers(right.shape().to_vec(), data.iter().map(|&b| b.into()).collect()).ok()?, axis, shape),
+                None => fold(p, &Value::integers(right.shape().to_vec(), read_all(data)).ok()?, axis, shape),
             },
         },
         Items::Integers(data) => match p {
@@ -722,7 +679,7 @@ fn scanned(p: Primitive, right: &Value, seed: Option<&Value>, axis: &Axis, inver
         // The logical functions and comparisons keep Booleans. Other functions read Booleans as integers.
         Items::Booleans(data) => match bool::dyad(p, lanes(data, seed, axis, shape.clone(), inverse)?) {
             Some(result) => result,
-            None => scanned(p, &Value::integers(shape, data.iter().map(|&b| b.into()).collect()).ok()?, seed, axis, inverse),
+            None => scanned(p, &Value::integers(shape, read_all(data)).ok()?, seed, axis, inverse),
         },
         Items::Floats(data) => f64::dyad(p, lanes(data, seed, axis, shape, inverse)?)?,
         Items::Integers(data) if matches!(p, Primitive::Arithmetic(Arithmetic::Plus)) && seed.is_none() && !inverse && axis.inner == 1 => {
@@ -811,7 +768,7 @@ impl<A: Element + FromBoolean> Dyad<A> for Scan<'_, A> {
 /// Otherwise each row applies `g` to its block of the right argument and folds `f` down the block's columns.
 pub(crate) fn inner(f: Primitive, g: Primitive, x: &Value, y: &Value, [rows, n, cols]: [usize; 3], shape: Vec<usize>) -> Option<Value> {
     use Arithmetic::{Plus, Times};
-    fn typed<A: Element>(f: Primitive, g: Primitive, x: &[A], y: &[A], [rows, n, cols]: [usize; 3]) -> Option<Vec<Value>> {
+    fn typed<A: Kernels>(f: Primitive, g: Primitive, x: &[A], y: &[A], [rows, n, cols]: [usize; 3]) -> Option<Vec<Value>> {
         (0..rows)
             .map(|i| {
                 let block = A::dyad(g, Block { x: &x[i * n..(i + 1) * n], y, cols })??;
@@ -827,10 +784,7 @@ pub(crate) fn inner(f: Primitive, g: Primitive, x: &Value, y: &Value, [rows, n, 
             return f64::build(shape, data);
         }
         Pair::Floats(a, b) => typed(f, g, &a, &b, [rows, n, cols])?,
-        Pair::Booleans(a, b) => typed(f, g, a, b, [rows, n, cols]).or_else(|| {
-            let whole = |v: &[bool]| v.iter().map(|&b| i64::from(b)).collect::<Vec<_>>();
-            typed(f, g, &whole(a), &whole(b), [rows, n, cols])
-        })?,
+        Pair::Booleans(a, b) => typed(f, g, a, b, [rows, n, cols]).or_else(|| typed(f, g, &read_all::<i64, _>(a), &read_all(b), [rows, n, cols]))?,
         Pair::Integers(a, b) => typed(f, g, &a, &b, [rows, n, cols])?,
         Pair::Characters(a, b) => typed(f, g, a, b, [rows, n, cols])?,
         Pair::Complex(a, b) => typed(f, g, &a, &b, [rows, n, cols])?,
@@ -844,7 +798,7 @@ pub(crate) fn inner(f: Primitive, g: Primitive, x: &Value, y: &Value, [rows, n, 
         return i64::build(shape, parts.iter().flat_map(|r| r.as_integers().unwrap().iter().copied()).collect());
     }
     if parts.iter().all(|r| matches!(r.as_items(), Items::Complex(_) | Items::Floats(_))) {
-        return Complex64::build(shape, parts.iter().flat_map(|r| complexes(r).unwrap().into_owned()).collect());
+        return Complex64::build(shape, parts.iter().flat_map(|r| read_as::<Complex64>(r).unwrap().into_owned()).collect());
     }
     None
 }
