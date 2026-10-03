@@ -1,0 +1,78 @@
+# Characters and strings
+
+A character is an atom, like a number. A string is a vector of characters. Single quotes write one character, and double quotes write a string of any length, even one character or none.
+
+```bpl
+⍴'a'               ⍝ ⍬ₓ
+⍴"a"               ⍝ [1]ₓ
+⍴"abc"             ⍝ [3]ₓ
+⍴""                ⍝ [0]ₓ
+```
+
+## Quotes inside text
+
+The character literal for a single quote is `'''`. A string can hold an apostrophe as it is. To put a double quote inside a string, write it twice.
+
+```bpl
+•ucs '''           ⍝ 39ₓ
+≢"can't"           ⍝ 5ₓ
+≢"say ""hi"""      ⍝ 8ₓ
+```
+
+## Strands of text
+
+Literals separated by spaces form a strand, which is one vector. Characters side by side form a string. Strings side by side form a vector of strings. So `"x" "y"` is two strings, and `'x' 'y'` is the one string `"xy"`.
+
+```bpl
+'a' 'b' 'c'        ⍝ "abc"
+≢"one" "three"     ⍝ 2ₓ
+≢¨"one" "three"    ⍝ [3 5]ₓ
+```
+
+A vector of strings is how keys are written, as in `"x" "y":1 2`. [Axis keys](keyed.qmd) covers keyed arrays.
+
+## How text displays
+
+A string on its own displays as its text, and a character matrix displays one row per line. Inside a larger array, strings show in double quotes and characters in single quotes, so you can tell them apart. In the REPL:
+
+```text
+      "abc"
+abc
+      2 3⍴"abcdef"
+abc
+def
+      ⊂"ab"
+⊂"ab"
+      "abc",⊂"de"
+'a' 'b' 'c' "de"
+```
+
+## Working with text
+
+Functions that work on vectors work on strings. `=` compares character by character, and `≡` compares whole strings. Search functions find characters or patterns, and Grade sorts characters by code point.
+
+```bpl
+"abc"="abd"        ⍝ $t $t $f
+"abc"≡"abc"        ⍝ $t
+"abc"⍳"cz"         ⍝ [2 3]ₓ
+"an"⍷"banana"      ⍝ $f $t $f $t $f $f
+[⍋"bca"]⌷"bca"     ⍝ "abc"
+⌽"abc"             ⍝ "cba"
+```
+
+Adding an integer to a character moves it along the Unicode code points. Subtracting one character from another gives the distance between them. `<` and the other order comparisons take only numbers.
+
+```bpl
+'a'+3              ⍝ 'd'
+'a'+⍳3             ⍝ "abc"
+'d'-'a'            ⍝ 3ₓ
+```
+
+[System functions](system-functions.qmd) cover the rest of text handling. `•ucs` converts between characters and code points, `•c` changes case, and `•a` and `•d` hold the alphabet and the digits. `⍕` formats values as text, and `•r` matches regular expressions, as [Regular expressions](regex.ipynb) shows.
+
+```bpl
+•ucs "ABC"         ⍝ [65 66 67]ₓ
+•c "Hello"         ⍝ "hello"
+"a2b"∊•d           ⍝ $f $t $f
+⍕3.5 2             ⍝ "3.5 2"
+```

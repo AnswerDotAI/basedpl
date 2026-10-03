@@ -9,7 +9,7 @@ Each file is a module. `•load` runs it and returns a record of its names. Take
 phinary 42                     ⍝ "10100010.00100001"
 ```
 
-The same call works from Python: `bpl('•load "lib/numeric.bpl"')` returns the record as a dict. A file that uses another loads it by a `./` path, relative to its own location, and keeps it under a private name such as `_array`. [Namespaces](../nbs/namespaces.qmd) covers modules.
+The same call works from Python: `bpl('•load "lib/numeric.bpl"')` returns the record as a dict. A file that uses another loads it by a `./` path, relative to its own location, and keeps it under a private name such as `_array`. [Modules](../nbs/modules.qmd) describes how loading works.
 
 | File | Contents | Loads |
 |---|---|---|

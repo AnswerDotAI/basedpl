@@ -1,0 +1,67 @@
+# Assignment
+
+`←` gives a value a name. The target is the run just before `←`, and the value is everything to its right. Besides plain names, a target can be a selection, a dot path, a subscript or a list of names. A function between the target and `←` makes a modified assignment. [Assign](glyphs/assign.qmd) is the reference entry, and [Assignment](rules.qmd#assignment) gives the rule for reading targets.
+
+## Plain assignment
+
+`x←Y` binds `x` to `Y`, which can be an array, a function or an operator. An assignment returns its value without displaying it, so assignments can be chained. Independent assignments need `⋄`, because `a←1 b←2` gives `a` the value of `1 b←2`.
+
+```bpl
+x←3 ⋄ x+2          ⍝ 5
+sum←+/ ⋄ sum 1 2 3 ⍝ 6
+a←b←3 ⋄ a+b        ⍝ 6
+```
+
+The name `_` discards a value: `_←Y` evaluates `Y` and keeps nothing.
+
+## Modified assignment
+
+`x f←Y` sets `x` to `x f Y`. A named function goes in parentheses, `x(f)←Y`, because in `x f←Y` the target would be `f`.
+
+```bpl
+x←10 ⋄ x+←3 ⋄ x    ⍝ 13
+s←"abc" ⋄ s,←"d" ⋄ s ⍝ "abcd"
+f←× ⋄ y←3 ⋄ y(f)←4 ⋄ y ⍝ 12
+```
+
+## Assigning to part of an array
+
+A target can name part of an array, and the assignment replaces only that part. A [subscript](scripts.qmd#subscripts) writes one literal position. A dot path writes a field, and dot brackets write positions. Other selections go in parentheses, as `(f x)←Y`, where `f` only selects or rearranges, as for structural [Under](glyphs/under.qmd). Each form also works with modified assignment.
+
+```bpl
+v←1 2 3 ⋄ v₁←9 ⋄ v           ⍝ 1 9 3
+v←1 2 3 ⋄ v.[[0 2]]+←10 ⋄ v  ⍝ 11 2 13
+v←1 2 3 ⋄ (2↑v)←8 9 ⋄ v      ⍝ 8 9 3
+M←[1 2 ⋄ 3 4] ⋄ ((0⌷⍤1) M)←9 ⋄ M ⍝ [9 2 ⋄ 9 4]
+```
+
+A plain assignment to a dot path creates any missing records along the path. A subscript can follow a dot path.
+
+```bpl
+T←["n":1]
+T.n+←1 ⋄ T.n               ⍝ 2
+T.addr.city←"SF" ⋄ T.addr.city ⍝ "SF"
+T.a←[1 2] ⋄ T.a₁←7 ⋄ T.a   ⍝ 1 7
+```
+
+## Destructuring
+
+A list of names in brackets destructures. Each name gets the matching item, by position. A single value goes to every name, and a nested list of names destructures a nested value. A vector with a key for every item is matched by key instead. Each name gets the item whose key is that name, and items that no name takes are left out. A program takes names from a [module](modules.qmd) this way, as in `[disp]←•load "lib/array.bpl"`. Inside brackets every name is a target, even a name that holds a function.
+
+```bpl
+[a b]←10 20 ⋄ a+b          ⍝ 30
+[c d]←5 ⋄ c d              ⍝ 5 5
+[e [f g]]←1 (2 3) ⋄ g      ⍝ 3
+[h i]←1 2 ⋄ [h i]+←10 ⋄ h i ⍝ 11 12
+[b a]←["a":1 "b":2 "c":3] ⋄ a b ⍝ 1 2
+```
+
+## Names inside dfns
+
+Inside a dfn, plain assignment makes a local name. Modified and selective assignment update the nearest existing binding, which can be outside the dfn. An array has value semantics: changing one name leaves other copies unchanged.
+
+```bpl
+s←0 ⋄ f←{s←⍵ ⋄ s} ⋄ _←f 5 ⋄ s   ⍝ 0
+s←0 ⋄ g←{s+←⍵ ⋄ s} ⋄ _←g 5 ⋄ s  ⍝ 5
+a←1 2 ⋄ b←a ⋄ a₀←9 ⋄ b          ⍝ 1 2
+```

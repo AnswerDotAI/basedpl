@@ -1,0 +1,117 @@
+# Numbers
+
+BPL has two kinds of number. A bare number such as `0.5` is approximate: a 64-bit float. A number marked with `x` or `ₓ`, such as `3x`, is an exact integer, and `1r3` is an exact rational. Exact integers display with `ₓ`. Comparisons give Booleans, written `$t` and `$f`.
+
+## Writing numbers
+
+| Written | Value |
+|---|---|
+| `3`, `0.5`, `1E¯3` | Approximate numbers. `E` writes an exponent |
+| `¯2` | A negative number. [`¯`](glyphs/overbar.qmd) is part of the number, and [`-`](glyphs/dash.qmd) is a function |
+| `3x`, `3ₓ` | An exact integer |
+| `1r3` | An exact rational |
+| `2j3`, `2J3` | A complex number, 2 + 3i, with approximate parts |
+| `∞`, `¯∞` | [Infinities](glyphs/infinity.qmd) |
+| `$n` | NaN |
+| `$t`, `$f` | True and false |
+| `⍬`, `⍬ₓ` | The approximate and the exact [empty vector](glyphs/zilde.qmd) |
+| `[…]ₓ` | A list in which every number is exact |
+
+```bpl
+1j2+3j4              ⍝ 4j6
+1E¯3                 ⍝ 0.001
+¯2+5                 ⍝ 3
+2J3≡2j3              ⍝ $t
+```
+
+## Exact and approximate
+
+Exact arithmetic grows as needed. Mixing exact and approximate numbers gives an approximate result. Examples on these pages write `x` for exact input.
+
+```bpl
+1÷3                  ⍝ 0.3333333333333333
+1x÷3x                ⍝ 1r3
+1r3+1r6              ⍝ 1r2
+1r2+0.5              ⍝ 1
+9223372036854775807x+1x ⍝ 9223372036854775808ₓ
+```
+
+Predicates, positions, tally, shape, and monadic `⌊`, `⌈` and `×` return exact integers. A float beyond the `i64` range floors to an exact big integer. Iota and random integer generation preserve exact arguments. An argument that must be an integer, such as an index or a count, accepts a float within comparison tolerance of one:
+
+```bpl
+⌊2.5 ¯2.5            ⍝ [2 ¯3]ₓ
+⌊2*70                ⍝ 1180591620717411303424ₓ
+⍳(0.1×3)×10          ⍝ 0 1 2
+```
+
+## Numbers in one array
+
+Numbers that an operation puts in one array share a kind. A float among exact integers makes them all floats, and a complex number makes every number complex:
+
+```bpl
+(⍳3ₓ),0.5            ⍝ 0 1 2 0.5
+(⍳2ₓ),1j2            ⍝ 0 1 1j2
+(1ₓ,0.5)÷2ₓ          ⍝ 0.5 0.25
+```
+
+Each number written in a literal list or in brackets keeps its own exactness, even beside numbers of the other kind. Floats written beside complex numbers become complex. Their values don't change:
+
+```bpl
+1ₓ 0.5÷2ₓ            ⍝ 1r2 0.25
+[1ₓ;0.5]÷2ₓ          ⍝ 1r2 0.25
+```
+
+In `[…]ₓ`, every number is exact, at any depth. Each item must be a literal, and each number must be whole. A vector of exact integers displays in this form, and `⍕` writes it the same way:
+
+```bpl
+[1 0 1]ₓ≡1ₓ 0ₓ 1ₓ    ⍝ $t
+[[1 2] 3]ₓ≡[1ₓ 2ₓ;3ₓ]   ⍝ $t
+1↑⍬ₓ                 ⍝ [0]ₓ
+⍕1ₓ ¯2ₓ              ⍝ "[1 ¯2]ₓ"
+```
+
+## Storage
+
+An array keeps its items in one of six storages: `boolean`, `integer`, `float`, `complex`, `character` or `mixed`. `•storage` names it. Mixed storage keeps each item's own kind. An array uses mixed storage when it holds a rational, because rationals have no compact storage. An array also uses mixed storage when it holds numbers together with characters, nested arrays or functions, and so does an imported JSON object. Selecting from, catenating or assigning into mixed storage keeps each item's kind. Arithmetic builds fresh storage from its results, and each result keeps its own kind. `1×x` makes every number a float, because every result is approximate. `1ₓ×x` keeps exact results exact. Boxed display marks mixed storage with `+`, and exact integers with `ₓ`:
+
+```bpl
+x←1ₓ 0.5 2ₓ
+•storage x           ⍝ "mixed"
+•storage 1×x         ⍝ "float"
+•storage 1ₓ×x        ⍝ "mixed"
+```
+
+## Infinities and NaN
+
+Floats follow IEEE 754. Besides finite numbers, they include `∞`, `¯∞`, NaN and `¯0`. An undefined result is NaN, not an error. `1÷0` is `∞`, and `⍟0` is `¯∞`. Write NaN as `$n`. Under `=`, NaN equals nothing, as in IEEE. `≡`, search, grade and Key treat NaN as one value, and grade puts it after every other number. Complex arithmetic follows `num_complex`. A complex number can have infinite or NaN parts:
+
+```bpl
+[0÷0;∞-∞]            ⍝ $n $n
+[1÷0;⍟0]             ⍝ ∞ ¯∞
+$n=$n                ⍝ $f
+$n≡$n                ⍝ $t
+```
+
+An infinity or NaN never makes exact numbers approximate. `⌊` and `⌈` return an exact argument unchanged beside an infinity, and return the other argument beside NaN. Exact integers, infinities and NaN share integer storage. CSV and JSON imports give NaN for a missing number. An integer column with gaps then stays exact. Arithmetic with an infinity gives floats:
+
+```bpl
+3ₓ⌊∞                 ⍝ 3ₓ
+(⍳3ₓ),∞              ⍝ [0 1 2 ∞]ₓ
+•storage (⍳3ₓ),∞     ⍝ "integer"
+```
+
+## Booleans
+
+Comparisons give Booleans. So does every function whose result is a truth value, such as `~`, `∊`, `⍷` and `≡`. `$t` is true and `$f` is false. Wherever a number is expected, `$t` is 1 and `$f` is 0. `+/` counts the true items. `#` filters by a Boolean mask. A Boolean used as an index selects position 0 or 1. Arithmetic on Booleans gives integers. `∧`, `∨`, `⍱`, `⍲`, `⌊` and `⌈` on two Booleans give a Boolean. Boolean storage takes one byte for each item. Boxed display marks it with `$`:
+
+```bpl
+x←3 1 4 1 5
+x>2                  ⍝ $t $f $t $f $t
++/x>2                ⍝ 3ₓ
+(x>2)#x              ⍝ 3 4 5
+(4>2)⌷"no" "yes"     ⍝ "yes"
+$t+$t                ⍝ 2ₓ
+$t∧$f                ⍝ $f
+•storage x>2         ⍝ "boolean"
+```
+

@@ -1,0 +1,79 @@
+# Arrays
+
+BPL has two kinds of value: atoms and arrays. Numbers, characters and functions are atoms. An array is a rectangular collection of values, and those values can themselves be arrays. This is the *based arrays* model, named in a [1981 paper](https://dl.acm.org/doi/abs/10.1145/586656.586663) and popularized by [BQN](https://mlochbaum.github.io/BQN/doc/based.html).
+
+## Shape and rank
+
+An array's shape lists the lengths of its axes, and its rank is the number of axes. Scalars, vectors and matrices are arrays of rank 0, 1 and 2. An atom has an empty shape, as a scalar does, but a scalar is an array and an atom isn't. An axis can have length 0, and the other axes keep their lengths. Ravel, `,`, lists the items in row-major order.
+
+```bpl
+⍴3                   ⍝ ⍬ₓ
+⍴,3                  ⍝ [1]ₓ
+⍴2 3⍴⍳6              ⍝ [2 3]ₓ
+≢⍴2 3⍴⍳6             ⍝ 2ₓ
+⍴0 3⍴0               ⍝ [0 3]ₓ
+,2 2⍴⍳4              ⍝ 0 1 2 3
+```
+
+## Writing arrays
+
+Brackets are used to write vectors: `[a b c]` is a vector. A strand needs no brackets, so `1 2 3` is a vector, and so is `a b`. `[Y]` is a one-item vector. Reshape, `⍴`, builds an array of any shape. [Types of brackets](bracket-types.qmd) covers the bracket syntax, including array notation for matrices.
+
+## Nesting
+
+`⊂Y` encloses a subject, giving a scalar that holds it, and `fᵘ` is a scalar holding the function `f`. Enclosing always adds a layer, even around an atom. `↑` gives the first item, and Each, `¨`, applies a function to each item. Depth, monadic `≡`, counts the layers.
+
+```bpl
+↑[1 2;3 4]           ⍝ 1 2
+≢¨[1 2 3;4 5]        ⍝ [3 2]ₓ
+⊂3 ≡ 3               ⍝ $f
+≡[1 2;3]             ⍝ 2ₓ
+```
+
+Arithmetic, Each and indexing keep the container they map over, including a scalar. Rank and the search functions work on whole cells, as [Rank](glyphs/rank.qmd) describes.
+
+```bpl
+⊂3 + 4               ⍝ ⊂7
+⊂3 = 3               ⍝ ⊂$t
+```
+
+## Fill
+
+Each array has a prototype, which gives its fill: zero for numbers, a space for characters, and a filled copy of the first item for nested arrays. An empty array keeps its prototype. Take pads with fill, and so does assembly when results have different lengths.
+
+```bpl
+5↑1 2                ⍝ 1 2 0 0 0
+3↑""                 ⍝ "   "
+↑0⍴[1 2;3 4 5]       ⍝ 0 0
+```
+
+## Keys
+
+An axis can carry keys, which label its positions, and the axes themselves can have names. `T.x` picks the item with key `"x"`. [Axis keys](keyed.qmd) covers keyed arrays.
+
+```bpl
+T←"x" "y":1 2
+T.x                  ⍝ 1
+M←["city":2 "month":3]⍴⍳6
+⍴M                   ⍝ ["city":2 "month":3]ₓ
+```
+
+## Functions in arrays
+
+An array can hold functions: `[+/ ÷ ≢]` is a vector of three functions. Pick `⊃`, First `↑`, [subscripts](scripts.qmd#subscripts) and complete atomic [Index](glyphs/squad.qmd) `⌷` positions return a stored function you can call. [Agenda](glyphs/agenda.qmd) selects a function and calls it. Successive Picks go down into nested arrays. Empty coordinates return the argument unchanged.
+
+```bpl
+fs←[+ × ÷] ⋄ mul←fs₁ ⋄ 2 mul 3                   ⍝ 6
+fs←[+ ×] ⋄ ≢[fs ÷]                                ⍝ 2ₓ
+fs←[+ × ÷] ⋄ div←↑⌽fs ⋄ 6 div 3                  ⍝ 2
+fs←[+ ×] ⋄ result←(⊂1 2 3),1↓fs ⋄ f←1⊃result ⋄ 2 f 3   ⍝ 6
+x←[[+ ×] [- ÷]] ⋄ f←1⊃0⊃x ⋄ 2 f 3                ⍝ 6
+fs←[+ ×] ⋄ f←{1⊃⍵}fs ⋄ 2 f 3                     ⍝ 6
+```
+
+Function elements are shared handles, not source strings. Reshape, selection, catenate and other structural operations move them without executing them. Display prints each function as source. A native function with no source spelling, such as a generator's `roll`, prints in `⟨…⟩`. A function's fill is that same function. Equality and match compare handle identity, not mathematical equivalence. Functions have no grade or interval ordering.
+
+Dfns can return functions. A captured local function can be used while its defining call is active. Returning or assigning it into a longer-lived scope, including inside an array or an empty prototype, is a `DOMAIN` error.
+
+Python `Array` accepts BPL functions as elements. An atomic index retrieves the stored value. The word functions `first` and `pick` return selected callables. `.py` and `.np` expose callable function elements. JSON export rejects functions and function arrays. It never reconstructs executable functions from source text.
+

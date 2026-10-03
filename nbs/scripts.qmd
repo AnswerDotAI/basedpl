@@ -1,0 +1,92 @@
+# Superscripts and subscripts
+
+Superscripts and subscripts are marks written straight after an item. A superscript applies an operation to the item: `x²` squares `x`, and `f⁻¹` is the inverse of `f`. A subscript selects from the item: `v₁` is `1⌷v`. Both bind more tightly than anything else, so `v₁²` squares item 1 of `v` without parentheses. [Typing glyphs](glyphs.qmd#typing-glyphs) gives their keys.
+
+## Superscripts
+
+### On an array
+
+On an array, a superscript digit is a power, and `ᵀ` transposes. A superscript applies only to the item just before it. In `2 3²`, that item is `3`. Write the list in brackets to square every number.
+
+```bpl
+x←3 ⋄ x²+1         ⍝ 10
+2 3²               ⍝ 2 9
+[2 3]²             ⍝ 4 9
+2⁻¹                ⍝ 0.5
+[1 2 ⋄ 3 4]ᵀ       ⍝ [1 3 ⋄ 2 4]
+```
+
+### On a function
+
+On a function, a superscript digit is a repeat count, as in [Power](glyphs/power.qmd): `f²` is `f⍣2`. `f⁻¹` is the inverse of `f`, the same as `f⍣¯1`. `f⁻¹ Y` gives the `X` for which `f X` is `Y`.
+
+```bpl
+f←{⍵+1} ⋄ f² 5     ⍝ 7
+*⁻¹1               ⍝ 0
+⊤⁻¹1 0 1           ⍝ 5
+```
+
+In a dyadic call, the left argument stays fixed. `X f⁻¹ Y` gives the `Z` for which `X f Z` is `Y`. The inverse of [Replicate](glyphs/hash.qmd#expand) expands.
+
+```bpl
+2×⁻¹10             ⍝ 5
+2*⁻¹8              ⍝ 3
+1 0 1#⁻¹10 20      ⍝ 10 0 20
+```
+
+A superscript applies to the whole function on its left, as a monadic operator does. For example, `+\⁻¹` is the inverse of the scan `+\`. A superscript just after a number applies to the number, as a power. Put a function that ends in a number in parentheses, as in `(+⍄3)⁻¹` and `(⊂⍠1 0)⁻¹`. Without parentheses, `+⍄3⁻¹` adds a third. With the axis operator, the inverse can also go before `⍠`. For example, `#⁻¹⍠¯1` is the same function as `(#⍠¯1)⁻¹`.
+
+```bpl
++\⁻¹1 3 6          ⍝ 1 2 3
+2⍃×⁻¹10            ⍝ 5
+-¨⁻¹1 2 3          ⍝ ¯1 ¯2 ¯3
+```
+
+Inverses follow the rules of Power. They pass through bound arguments, Each, Rank and the other compositions that Power lists. [Inverse pair](glyphs/inverse-pair.qmd) attaches an inverse to any function.
+
+### A function as a scalar
+
+`fᵘ` is a scalar holding the function `f`. It does for a function what [`⊂`](glyphs/enclose.qmd) does for a subject. `⊂` can't take a function as its argument, because `⊂` next to a function forms a train.
+
+```bpl
+⍴+ᵘ                ⍝ ⍬ₓ
+≡+ᵘ                ⍝ 1ₓ
+```
+
+### Errors
+
+- `DOMAIN`: a function with no known inverse, `ᵀ` on a function, or `ᵘ` on an array
+
+## Subscripts
+
+A subscript selects a major cell of the item just before it: `v₁` is `1⌷v`. A negative subscript counts from the end. A dotted path counts as one item, so `T.a₁` is `1⌷T.a`.
+
+```bpl
+v←10 20 30
+v₁                 ⍝ 20
+v₋₁                ⍝ 30
+[1 2 ⋄ 3 4]₁       ⍝ 3 4
+T←["a":[10 20]]
+T.a₁               ⍝ 20
+```
+
+An item with a subscript can be an assignment target, including in modified assignment.
+
+```bpl
+v←10 20 30
+v₁←5 ⋄ v           ⍝ 10 5 30
+v₁+←1 ⋄ v          ⍝ 10 6 30
+v₁²                ⍝ 36
+```
+
+Use a subscript for one literal position on the leading axis. Use [Index](glyphs/squad.qmd) `⌷` for a computed position, several positions, a key or another axis.
+
+### Errors
+
+- `SYNTAX`: a space between the item and its subscript, or `₋` with no digit after it
+- `INDEX`: the position is outside the leading axis
+- `LENGTH`: the item is a unit, which has no axis to select from
+
+## Differences from APL
+
+Dyalog writes `x*2`, `f⍣2` and `f⍣¯1`, which BPL also accepts. BQN writes the inverse as `𝔽⁼`. Neither has subscripts.

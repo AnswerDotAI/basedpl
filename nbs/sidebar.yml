@@ -18,7 +18,7 @@ website:
           - scripts.qmd
           - assignment.qmd
           - dfns.qmd
-          - namespaces.qmd
+          - modules.qmd
           - keyed.qmd
           - system-functions.qmd
           - comparison.qmd
