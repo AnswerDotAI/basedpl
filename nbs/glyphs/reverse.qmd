@@ -1,5 +1,7 @@
 # `⌽` — Reverse / Rotate last
 
+Keys: `Alt-o |`
+
 `⌽Y` reverses the last axis. `⌽⍠K` selects the axis.
 
 ```bpl

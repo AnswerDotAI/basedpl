@@ -1,5 +1,7 @@
 # `∧` — AND / LCM
 
+Keys: `Alt-0`
+
 `∧Y` gives a magnitude and an angle for each number in `Y`, along a new last axis. Angles are in radians.
 
 ```bpl

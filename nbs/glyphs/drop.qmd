@@ -1,5 +1,7 @@
 # `↓` — Split / Drop
 
+Keys: `Alt-j`
+
 `↓Y` nests vectors along the last axis.
 
 ```bpl

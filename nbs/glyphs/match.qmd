@@ -1,5 +1,7 @@
 # `≡` — Depth / Match
 
+Keys: `Alt-=`
+
 `≡Y` gives nesting depth: 0 for an atom, and otherwise 1 more than the deepest item. An empty array takes the depth of its prototype.
 
 ```bpl

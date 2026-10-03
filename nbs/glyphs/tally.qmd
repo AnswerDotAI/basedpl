@@ -1,5 +1,7 @@
 # `≢` — Tally / Not match
 
+Keys: `Alt-= /`
+
 `≢Y` counts major cells: first-axis length, or 1 for a unit.
 
 ```bpl

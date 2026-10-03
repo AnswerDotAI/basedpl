@@ -1,5 +1,7 @@
 # `π` — Pi
 
+Keys: `Alt-p`
+
 `πY`: πY. Pervasive.
 
 ```bpl

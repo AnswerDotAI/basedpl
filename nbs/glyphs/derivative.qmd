@@ -1,5 +1,7 @@
 # `∂` — Derivative
 
+Keys: `Alt-f`
+
 `f∂X`: gradient of `f` at `X`. `f` must return a unit. `U(f∂)X`: vector–Jacobian product, where `U` has the shape of `f`'s result. The result has the shape of `X`.
 
 Currently supports real evaluators `C⌻`, including factored and exponent-table forms. `C⌻` is a train that binds `C`, the same as `C⍃⌻`.

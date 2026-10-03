@@ -1,5 +1,7 @@
 # `⊥` — Decode
 
+Keys: `Alt-b`
+
 `⊥Y` decodes binary digits along the last axis.
 
 ```bpl

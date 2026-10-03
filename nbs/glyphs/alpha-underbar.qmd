@@ -1,5 +1,7 @@
 # `⍶` — Left operand
 
+Keys: `Alt-a _`
+
 In a defined operator, `⍶` denotes its left operand: function or subject.
 
 ```bpl

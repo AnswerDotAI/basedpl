@@ -1,5 +1,7 @@
 # `⌈` — Ceiling / Maximum
 
+Keys: `Alt-s`
+
 `⌈Y` rounds up to an exact integer. Pervasive; tolerant near integers. An infinity or NaN stays a float. Complex ceiling is `-⌊-Y`.
 
 ```bpl

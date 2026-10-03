@@ -1,5 +1,7 @@
 # `⍵` — Right argument
 
+Keys: `Alt-w`
+
 `⍵` is the current dfn's right argument.
 
 ```bpl

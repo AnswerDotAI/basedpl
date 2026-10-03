@@ -1,17 +1,11 @@
 import re
 from pathlib import Path
 from basedpl import symbols
+from basedpl.editors import key
 
 GLYPHS = Path(__file__).resolve().parents[1]/'nbs/glyphs.qmd'
 SECTIONS = {'Functions': {'function'}, 'Operators': {'monadic-operator', 'dyadic-operator'},
             'Syntax and literals': {'argument', 'literal', 'comment', 'system', 'syntax'}}
-KEY_NAMES = {'-': 'Minus', '\\': 'Backslash', '`': 'Backtick'}
-
-
-def key(shortcut):
-    "The key column's text for a symbol's `shortcut`: `' a'` is `Alt-a`, and `' c t'` is `Alt-c t`, Option-C then T."
-    keys = [KEY_NAMES.get(k, k) for k in shortcut.split()]
-    return ' '.join(['Alt-' + keys[0], *keys[1:]]) if keys else ''
 
 
 def check(path):

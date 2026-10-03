@@ -1,5 +1,7 @@
 # `⇄` — Inverse pair
 
+Keys: `Alt-4`
+
 `f⇄g` calls `f`. `(f⇄g)⁻¹` is `g⇄f`.
 
 ```bpl

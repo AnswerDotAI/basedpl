@@ -1,5 +1,7 @@
 # `¿` — Roll / Deal
 
+Keys: `Alt-/`
+
 `¿N`: uniform draw from `⍳N`. `¿0`: U(0,1). Pervasive.
 
 ```bpl

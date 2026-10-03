@@ -1,7 +1,7 @@
 ⍝ Graph dfns — adapted for BPL from April
 ⍝ Source: https://dfns.dyalog.com/n_contents.htm (individual sources below)
 ⍝ April: libraries/dfns/graph/graph.apl; Apache-2.0, see LICENSE-april
-•load "lib/array.bpl"
+_array←•load "./array.bpl"
 
 ⍝⍝ Ported from Dyalog's dfns at http://dfns.dyalog.com/n_Graphs.htm into April APL
 
@@ -164,7 +164,7 @@ scc ← {  ⍝ Strongly connected components (Tarjan).
   Xx←X put x  ⍝ ⍺ at x in indices vec :: T ← ⍺ ∇ T
   succ←{1+@x ⍵}  ⍝ successor of index x  :: T ←   ∇ T
   push←,@S
-  ⍺←$f ⋄ trace←{⎕←0 dsp ⍺,⍵ ⋄ ⍵}⍣⍺  ⍝ ⍺: optional tracing   :: T ←   ∇ T
+  ⍺←$f ⋄ trace←{⎕←0 _array.dsp ⍺,⍵ ⋄ ⍵}⍣⍺  ⍝ ⍺: optional tracing   :: T ←   ∇ T
   comp←{v←⍺  ⍝ strongly connected component
     pops←1++/∧\v≠stk←S⊃⍵  ⍝ number of connected comps on stack
     C∆←(1+⌈/C⊃⍵)@ pops↑stk C⊃⍵  ⍝ extended strongly connected comps

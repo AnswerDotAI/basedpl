@@ -53,7 +53,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `↑` [take](glyphs/take.qmd) | Alt-k | first | take | Monad as Dyalog `⎕ML≥2`, but takes a major cell: `↑2 3⍴⍳6` is `0 1 2` |
 | `↓` [drop](glyphs/drop.qmd) | Alt-j | split | drop | |
 | `↕` [windows](glyphs/windows.qmd) | Alt-k j | — | windows | As BQN's `↕`, plus movements and padding (negative sizes) as in `⌺`. Replaces windowed reduce: `+/2↕1 2 3 4` is `3 5 7` |
-| `⊂` [enclose](glyphs/enclose.qmd) | Alt-z | enclose | partitioned-enclose | Encloses atoms too, as BQN: `(⊂3)≡3` is `0x`. Partitions along the first axis |
+| `⊂` [enclose](glyphs/enclose.qmd) | Alt-z | enclose | partitioned-enclose | Encloses atoms too, as BQN: `(⊂3)≡3` is `$f`. Partitions along the first axis |
 | `⊆` [nest](glyphs/nest.qmd) | Alt-z _ | nest | partition | Splits along the first axis |
 | `⊃` [mix](glyphs/mix.qmd) | Alt-x | mix | pick | Monad as Dyalog `⎕ML≥2`. Pick takes cells: `1⊃2 3⍴⍳6` is `3 4 5`. A string picks by [key](keyed.qmd) |
 | `⌷` [squad](glyphs/squad.qmd) | Alt-q \| | materialise | index | Negative positions count from the end. `∞` takes a whole axis and `¯∞` reverses it |
@@ -121,47 +121,20 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⋄` [diamond](glyphs/diamond.qmd) | Alt-Backtick | Separates statements, rows inside brackets, and rows of a vector inside parentheses |
 | `⍝` [comment](glyphs/comment.qmd) | Alt-c t | Comment |
 | `⎕←` [quad](glyphs/quad.qmd) | Alt-q | Explicit output. Read alone, the next line of input |
-| `•` [bullet](glyphs/bullet.qmd) | Alt-y | [System name](#system-names) prefix |
+| `•` [bullet](glyphs/bullet.qmd) | Alt-y | [System function](system-functions.qmd) prefix |
 | `⍬` [zilde](glyphs/zilde.qmd) | Alt-o ~ | Empty numeric vector |
 | `'…'` `"…"` [quote](glyphs/quote.qmd) | | Character and string literals |
 | `¯` [overbar](glyphs/overbar.qmd) | Alt-Minus | Negative literal sign |
 | `∞` [infinity](glyphs/infinity.qmd) | Alt-8 | Real infinity |
-| `$t` `$f` `$n` [constants](rules.qmd#numbers) | | True, false and NaN |
-| `²` `⁻¹` `ᵀ` `ᵘ` [superscript](glyphs/superscript.qmd) | Alt-6 | Postfix on the item before it: `x²` is `x*2`, `f²` is `f⍣2`, `f⁻¹` is the inverse of `f`, `mᵀ` is `⍉m`, and `fᵘ` is a scalar holding `f` |
-| `₁` `₋₁` [subscript](glyphs/subscript.qmd) | Alt-5 | Postfix on the array before it: `v₁` is `1⌷v`, `v₋₁` is the last major cell, and `v₁←5` assigns to that cell |
+| `$t` `$f` `$n` [constants](numbers.qmd#writing-numbers) | | True, false and NaN |
+| `²` `⁻¹` `ᵀ` `ᵘ` [superscript](scripts.qmd#superscripts) | Alt-6 | Postfix on the item before it: `x²` is `x*2`, `f²` is `f⍣2`, `f⁻¹` is the inverse of `f`, `mᵀ` is `⍉m`, and `fᵘ` is a scalar holding `f` |
+| `₁` `₋₁` [subscript](scripts.qmd#subscripts) | Alt-5 | Postfix on the array before it: `v₁` is `1⌷v`, `v₋₁` is the last major cell, and `v₁←5` assigns to that cell |
 
-Numeric notation `x`, `r`, `j`, `E`: see [numbers](rules.qmd#numbers).
+[Numbers](numbers.qmd) covers numeric notation, such as `x`, `r`, `j` and `E`.
 
 ## System names
 
-Names are case-insensitive. `•a` and `•d` are constant arrays. Every other name is a function.
-
-| Name | Meaning |
-|---|---|
-| `•a` [Alphabet](glyphs/alphabet.qmd) | Uppercase Latin alphabet |
-| `•d` [Digits](glyphs/digits.qmd) | Decimal digits |
-| `•c` [Case](glyphs/case.qmd) | Unicode case conversion |
-| `•csv` [CSV](data.ipynb#csv) | CSV text → keyed column vectors |
-| `•tocsv` [CSV](data.ipynb#csv) | Keyed column vectors → CSV text |
-| `•r` [Regex](regex.ipynb) | Compiled search, captures and replacement |
-| `•normal`, `•binomial`, … [Distributions](distributions.ipynb) | Sampling, density, CDF and quantiles; 17 families |
-| `•json` [JSON](data.ipynb#json) | JSON text → arrays and keyed vectors |
-| `•tojson` [JSON](data.ipynb#json) | Arrays and keyed vectors → JSON text |
-| `•vfi` [Numeric input](data.ipynb#numeric-input) | Parse numeric fields with a validity mask |
-| `•nget` [Read](data.ipynb#files) | Read UTF-8 text or bytes |
-| `•nput` [Write](data.ipynb#files) | Write UTF-8 text or bytes |
-| `•element`, `•xml`, `•svg` [XML and SVG](xml.ipynb) | Build, serialize and display element trees |
-| `•mime` [Rich display](xml.ipynb#rich-display) | The MIME bundle that display uses |
-| `•plot` [Plots](plot.ipynb) | Charts from vectors, matrices and tables |
-| `•ucs` [Unicode](glyphs/unicode.qmd) | Unicode code points / encodings |
-| `•load` [Load](glyphs/load.qmd) | Evaluate a BPL source file |
-| `•signal` [Signal](glyphs/error-guard.qmd#signal) | Raise an ordinary BPL error |
-| `•storage` [Storage](rules.qmd#numbers) | Name the storage that holds an array's items |
-| `•time` [Timing](repl.qmd#timing) | Seconds since a time, or each function's fastest time per call |
-| `•nc` [Name class](introspection.ipynb) | Classify visible names |
-| `•nl` [Name list](introspection.ipynb) | List names by class and prefix |
-| `•src` [Source](introspection.ipynb) | Function/operator source |
-| `•ex` [Expunge](introspection.ipynb) | Erase bindings |
+System names start with `•`. [System functions](system-functions.qmd) lists them.
 
 Index origin: 0. Negative positions and axes count from the end. Comparison tolerance: `1E¯14`.
 
@@ -170,9 +143,9 @@ Index origin: 0. Negative positions and axes count from the end. Comparison tole
 - [Vectors](glyphs/brackets.qmd): a bracket list such as `[a b c]` is a vector. A strand of literals, such as `1 2 3`, needs no brackets. `[5]` is a one-item vector, the same as `,5`. [Parentheses](glyphs/parentheses.qmd) group: `(5)` is `5`. A scalar holding `5` is `⊂5`. Arrays side by side also form a vector: `a b` is `[a b]`. `(1 2 ⋄ 3)` is the vector of rows `[[1 2] [3]]`.
 - [Runs](rules.qmd): outside brackets, spaces separate runs. Each run is evaluated first: `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train: `+/÷≢` is the mean, and `2×` is `2⍃×`. A run that ends in a dyadic operator takes the next run as its right operand: `f⍤ 1` is `f⍤1`.
 - [Indexing](glyphs/squad.qmd): brackets are used to write vectors, never to index. Index selects: `0⌷v` is the first item of `v`.
-- [Atoms](rules.qmd#arrays-nesting-and-fill): numbers, characters and functions are atoms, distinct from scalars, as BQN. Enclosing always adds a layer: `(⊂3)≡3` is `0x`.
-- [Numbers](rules.qmd#numbers): bare numbers are approximate. `x` and `r` mark exact integers and rationals, as J: `1x÷3x` is `1r3`. Predicates, positions, tally and shape are exact.
+- [Atoms](arrays.qmd): numbers, characters and functions are atoms, distinct from scalars, as BQN. Enclosing always adds a layer: `(⊂3)≡3` is `$f`.
+- [Numbers](numbers.qmd): bare numbers are approximate. `x` and `r` mark exact integers and rationals, as J: `1x÷3x` is `1r3`. Predicates, positions, tally and shape are exact.
 - [Agreement](rules.qmd#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes. An axis of length 1 expands to match: `(2 3⍴⍳6)+10 20` is `[10 11 12 ⋄ 23 24 25]`.
 - [Major cells](principles.qmd#functions-act-on-major-cells): `∊ ~ ∪ ∩` compare major cells, `N#Y` replicates them, `N⊂Y` and `N⊆Y` split along the first axis. `⊤` and `⊥` put digits on the last axis, as J.
-- [System names](#system-names): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
+- [System names](system-functions.qmd): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
 - [Axis keys](keyed.qmd) name data. `K:Y` evaluates its keys. `T.a` is `"a"⊃T`, and `X⍎Y` is `Y⊃X`.

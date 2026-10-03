@@ -71,6 +71,12 @@ class Function(_Combinators):
         if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this BPL function')
         return bpl._request(dict(function=self._inner, args=[_array(o) for o in args]), True).value
 
+class Operator:
+    "A BPL operator held as a value, as a module record holds it. Call it with its operand, or both operands of a dyadic operator, to get a `Function`."
+    def __init__(self, inner): self._inner = inner
+    def __repr__(self): return repr(self._inner)
+    def __call__(self, *operands): return Function(self._inner.derive(*[o._inner if isinstance(o, Function) else _array(o) for o in operands]))
+
 def fork(f, g, h): return _build('fork', f, g, h)
 def atop(f, g): return _build('∘', f, g)
 
@@ -95,7 +101,7 @@ for _s in symbols:
     for _valence, _name in enumerate((_s['monad'], _s['dyad']), 1):
         if _name: _builtins[_name] = _builtins[_python_name(_name)] = (_s['glyph'], _valence)
 
-__all__ = ['Function', 'fork', 'atop', *(name for name in _builtins if name.isidentifier() and not iskeyword(name) and not hasattr(builtins, name))]
+__all__ = ['Function', 'Operator', 'fork', 'atop', *(name for name in _builtins if name.isidentifier() and not iskeyword(name) and not hasattr(builtins, name))]
 
 def _builtin(name):
     "Resolve a builtin with operation-name valence."

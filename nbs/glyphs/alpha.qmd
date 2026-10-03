@@ -1,5 +1,7 @@
 # `⍺` — Left argument
 
+Keys: `Alt-a`
+
 `⍺` is the current dfn's left argument. In a call with one argument, `⍺` is absent and drops out of the expression that uses it. For example, `{⍺-⍵}3` is `¯3`. [Dfns](../dfns.qmd#arguments) gives the full rule.
 
 ```bpl

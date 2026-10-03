@@ -1,5 +1,7 @@
 # `∊` — Enlist / Membership
 
+Keys: `Alt-e`
+
 `∊Y` recursively ravels all nested leaves.
 
 ```bpl

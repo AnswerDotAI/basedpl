@@ -1,5 +1,7 @@
 # `⍟` — Natural log / Logarithm
 
+Keys: `Alt-o *`
+
 `⍟Y`: ln Y. Pervasive.
 
 ```bpl

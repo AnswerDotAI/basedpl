@@ -1,5 +1,7 @@
 # `⍃` — Before
 
+Keys: `Alt-q <`
+
 `f⍃g Y` is `(f Y)g Y`, where `f` prepares the left argument of `g`. Operators bind from the left. For example, `3⍃<⍃#` is `(3⍃<)⍃#`, which keeps the items greater than 3.
 
 ```bpl

@@ -1,5 +1,7 @@
 # `⊆` — Nest / Partition
 
+Keys: `Alt-z _`
+
 `⊆Y` encloses atoms and simple arrays. Already-nested arrays stay unchanged.
 
 ```bpl

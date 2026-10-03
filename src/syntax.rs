@@ -506,7 +506,7 @@ fn split(pieces: Vec<Piece>, lines: bool, semicolons: bool) -> Result<Vec<Vec<No
         match piece {
             Piece::Node(n) => parts.last_mut().unwrap().push(n),
             Piece::Newline if !lines => (),
-            Piece::Semicolon(s) if !semicolons => return Err(invalid(&s, "; separates items only inside brackets")),
+            Piece::Semicolon(s) if !semicolons => return Err(invalid(&s, "; separates items in brackets and bodies in braces, and nowhere else")),
             Piece::Predicate(s) => return Err(invalid(&s, "? ends a predicate, which belongs in a dfn")),
             _ => parts.push(Vec::new()),
         }

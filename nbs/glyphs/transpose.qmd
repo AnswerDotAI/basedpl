@@ -1,5 +1,7 @@
 # `⍉` — Transpose
 
+Keys: `Alt-o Backslash`
+
 `⍉Y` reverses axis order.
 
 ```bpl

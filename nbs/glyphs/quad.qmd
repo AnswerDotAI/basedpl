@@ -1,5 +1,7 @@
 # `⎕` — Output and input
 
+Keys: `Alt-q`
+
 `⎕←Y` explicitly prints `Y` and retains its value.
 
 ```bpl
@@ -18,4 +20,4 @@ printf '3\n4\n' | bpl -e '+/⍎¨[⎕ ⎕]'       # 7
 
 `bpl -e`, script files and the interactive REPL read standard input. In a notebook, `⎕` asks for a line in a text box, but `•nget "-"` is a `VALUE` error. `bpl -` and piped REPL input read the program itself from standard input. In those two modes, in `bpl --worker` and in the Python API, reading `⎕` or `•nget "-"` is a `VALUE` error.
 
-System names: [•a](alphabet.qmd), [•d](digits.qmd), [•c](case.qmd), [•ucs](unicode.qmd).
+Dyalog's `⎕A`, `⎕D`, `⎕C` and `⎕UCS` are BPL's [`•a`, `•d`, `•c` and `•ucs`](../system-functions.qmd#text).

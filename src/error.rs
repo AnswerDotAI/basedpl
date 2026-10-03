@@ -1,11 +1,15 @@
-use std::{fmt, ops::Range, sync::Arc};
+use std::{fmt, ops::Range, path::PathBuf, sync::Arc};
 use unicode_width::UnicodeWidthStr;
 
 /// Shared source identity and text. Syntax and errors retain only the sources they use.
 #[derive(Debug)]
-pub struct Source { pub name: String, pub text: String }
+/// `file` marks a source read from a file. Its `name` is then the file's path.
+pub struct Source { pub name: String, pub text: String, pub file: bool }
 
-impl Source { pub fn new(name: impl Into<String>, text: impl Into<String>) -> Arc<Self> { Arc::new(Self { name: name.into(), text: text.into() }) } }
+impl Source {
+    pub fn new(name: impl Into<String>, text: impl Into<String>) -> Arc<Self> { Arc::new(Self { name: name.into(), text: text.into(), file: false }) }
+    pub fn file(path: impl Into<String>, text: impl Into<String>) -> Arc<Self> { Arc::new(Self { name: path.into(), text: text.into(), file: true }) }
+}
 
 /// A UTF-8 byte range within an owned source, never an offset into a later input.
 #[derive(Clone, Debug)]
@@ -72,6 +76,15 @@ impl Span {
         Error { kind, message: message.into(), span: self.clone(), calls: Vec::new() }
     }
     pub(crate) fn domain_error(&self, message: impl Into<String>) -> Error { self.error(ErrorKind::Domain, message) }
+    /// The file `path` names. A path that starts with `./` or `../` is relative to the file holding this code. Other relative paths,
+    /// and every path in code not read from a file, are relative to the working directory.
+    pub(crate) fn path(&self, path: &str) -> PathBuf {
+        let relative = path.starts_with("./") || path.starts_with("../");
+        match std::path::Path::new(&self.source.name).parent() {
+            Some(dir) if relative && self.source.file => dir.join(path),
+            _ => path.into(),
+        }
+    }
 }
 
 /// Places an error from array building, which carries only its kind, at a source span.

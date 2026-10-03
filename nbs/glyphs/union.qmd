@@ -1,5 +1,7 @@
 # `∪` — Unique / Union
 
+Keys: `Alt-v`
+
 `∪Y` keeps the first of each matching major cell. Uses tolerant matching.
 
 ```bpl

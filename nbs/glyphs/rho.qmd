@@ -1,5 +1,7 @@
 # `⍴` — Shape / Reshape
 
+Keys: `Alt-r`
+
 `⍴Y` gives axis lengths.
 
 ```bpl

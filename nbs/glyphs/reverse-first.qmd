@@ -1,5 +1,7 @@
 # `⊖` — Reverse / Rotate first
 
+Keys: `Alt-o Minus`
+
 First-axis forms of [`⌽`](reverse.qmd). `⊖⍠K` overrides the axis.
 
 ```bpl

@@ -3,7 +3,7 @@
 ⍝ Exported from Dyalog 20.0.53963.0; individual sources below.
 ⍝ Modified to count from 0, for based arrays and for BPL notation.
 
-•load "lib/array.bpl"
+_array←•load "./array.bpl"
 ⍝ From https://dfns.dyalog.com/c_segs.htm
 segs←{(~⍵∊⍺)⊆⍵}  ⍝ Separator-delimited segments.
 
@@ -1056,7 +1056,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          wds←↑¨ ⊂" " segs¨ lines                  ⍝ first word from each line.
          [msk nsk]←1 0=⊂'='∊¨wds                 ⍝ mask of alias lines.
          dict←⊂"=" segs¨ msk#wds                 ⍝ (fm to) substitution pairs.
-         {subs/dict,⊂⍵}¨nsk#lines               ⍝ lines with expanded aliases.
+         {_array.subs/dict,⊂⍵}¨nsk#lines        ⍝ lines with expanded aliases.
      }⍣ 2≠≢⍴↑⌽defs                             ⍝ compile unless compiled.
 
      table←{                                     ⍝ formatted Bunda-Gerth table.
@@ -1079,7 +1079,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
              cnr←⊃[1 t-2 1]⍃#¨"  ┌" "  │" "┌─┼"    ⍝ empty corner.
              cnr@(⍳3 ,⊗ ⍳t) ⍵                 ⍝ snipped formatted matrix.
          }                                       ⍝ cmat ← ∇ cmat
-         bfmt←snip∘disp∘(⍕¨)∘trim∘table          ⍝ binding matrix formatting.
+         bfmt←snip∘_array.disp∘(⍕¨)∘trim∘table   ⍝ binding matrix formatting.
          bfmt [cats bmat zmat]                   ⍝ formatted table.
      }opt;                                        ⍝ opt-ional formatting.
 
@@ -1137,7 +1137,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
      }
 
      pfmt←atop⍄tfmt⌿                             ⍝ format of (token cat) pair.
-     sfmt←disp∘pfmt∘⍉∘⊃∘vect                     ⍝ format of parse stream.
+     sfmt←_array.disp∘pfmt∘⍉∘⊃∘vect              ⍝ format of parse stream.
 
      lft←{[[∆l L] A B C ∆r]←⍵ ⋄ [∆l L A B [C ∆r]]}     ⍝ skip left.
      rgt←{[∆l A B C [R ∆r]]←⍵ ⋄ [[∆l A] B C R ∆r]}     ⍝ skip right.

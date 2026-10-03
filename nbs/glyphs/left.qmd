@@ -1,5 +1,7 @@
 # `⊣` — Left
 
+Keys: `Alt-;`
+
 `⊣Y` returns `Y`.
 
 ```bpl

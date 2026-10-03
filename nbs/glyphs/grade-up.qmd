@@ -1,5 +1,7 @@
 # `⍋` — Grade up
 
+Keys: `Alt-7 |`
+
 `⍋Y` gives indices that sort major cells ascending. Stable; uses [structural ordering](../rules.qmd#equality-and-ordering), without tolerance. NaN sorts after every other number.
 
 ```bpl

@@ -99,6 +99,7 @@ fn array(a: &Value, budget: &mut usize) -> Block {
             Value::Character(c) => Block::new(if c.is_control() { c.escape_default().to_string() } else { c.to_string() }),
             a @ Value::Array(_) => array(a, budget),
             Value::Function(f) => Block::new(f.to_string()),
+            Value::Operator(op) => Block::new(op.to_string()),
         })
         .enumerate()
         .map(|(i, cell)| match a.keys(0).and_then(|keys| keys.names().get(i)?.as_ref()) { Some(key) => cell.labelled(key), None => cell })

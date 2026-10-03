@@ -1,5 +1,7 @@
 # `⌻` — Polynomial
 
+Keys: `Alt-q t`
+
 J's `p.` family. Ranks: `1` monadic, `1 0` dyadic.
 
 ## Coefficients

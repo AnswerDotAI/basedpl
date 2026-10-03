@@ -1,5 +1,7 @@
 # `√` — Root
 
+Keys: `Alt-3`
+
 `√Y`: square root. Pervasive. Perfect roots of exact values stay exact.
 
 ```bpl

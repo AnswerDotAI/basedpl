@@ -28,7 +28,7 @@ i←1 2 ⋄ m.(i)      ⍝ 6
 9,m.[0 1],3        ⍝ 9 1 3
 ```
 
-A dot followed by a digit is a decimal point: `.2` is a number. To index position 2, write `v.[2]` or the [subscript](subscript.qmd) `v₂`. Assignment to a dot path goes through `⌷` and adds missing keys.
+A dot followed by a digit is a decimal point: `.2` is a number. To index position 2, write `v.[2]` or the [subscript](../scripts.qmd#subscripts) `v₂`. Assignment to a dot path goes through `⌷` and adds missing keys.
 
 ```bpl
 v←10 20 30

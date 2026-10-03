@@ -1,5 +1,7 @@
 # `⊢` — Right
 
+Keys: `Alt-'`
+
 `⊢Y` and `X⊢Y` return `Y`.
 
 ```bpl

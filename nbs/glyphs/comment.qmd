@@ -1,5 +1,7 @@
 # `⍝` — Comment
 
+Keys: `Alt-c t`
+
 `⍝` comments to end of line.
 
 ```text

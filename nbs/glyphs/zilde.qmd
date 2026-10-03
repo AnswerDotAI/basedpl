@@ -1,5 +1,7 @@
 # `⍬` — Empty vector
 
+Keys: `Alt-o ~`
+
 `⍬` is an empty approximate numeric vector: `0⍴0`. `[]` is the same value.
 
 `⍬ₓ` is the exact empty vector, `0⍴0ₓ`, and so is `[]ₓ`.
@@ -17,3 +19,5 @@ Other empty types retain their prototypes.
 3↑0⍴0x             ⍝ [0 0 0]ₓ
 3↑""               ⍝ "   "
 ```
+
+[Numbers](../numbers.qmd) covers exact and approximate numbers.

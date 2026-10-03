@@ -1,5 +1,7 @@
 # `⌸` — Key
 
+Keys: `Alt-q =`
+
 `K f⌸Y` groups major cells of `Y` by corresponding keys in `K`. Calls `key f group`; groups appear in first-occurrence order.
 
 ```bpl

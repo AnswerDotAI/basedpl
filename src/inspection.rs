@@ -38,7 +38,7 @@ pub(crate) fn documentation(symbol: &str) -> Option<&'static str> {
     })
 }
 
-/// The glyph page `name` from `nbs/glyphs`.
+/// The glyph page `name` from `nbs/glyphs`, or the block `•x` of `nbs/system-functions.qmd`.
 pub(crate) fn page(name: &str) -> Option<&'static str> { HELP.iter().find(|(page, _)| *page == name).map(|(_, text)| *text) }
 
 pub(crate) fn item(text: &str) -> Option<NodeKind> {

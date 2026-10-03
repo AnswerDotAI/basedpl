@@ -1,5 +1,7 @@
 # `×` — Direction / Multiply
 
+Keys: `Alt-m`
+
 `×Y` gives direction: zero, or `Y÷|Y`. The direction of a real number is an exact integer. Pervasive.
 
 ```bpl

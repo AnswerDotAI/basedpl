@@ -58,7 +58,7 @@ Numbers in every form, `∞`, `¯∞`, `⍬`, characters, strings and the consta
 
 [Brackets](glyphs/brackets.qmd) always write a vector, whatever the number of items: `[5]` is a one-item vector. `;` separates items that contain spaces. `⋄` stacks rows into an array of higher rank. Each row is a major cell. A row of one number has rank 0. For example, `[1 ⋄ 2]` is the vector `1 2`. Write a column as `[[1] ⋄ [2]]`.
 
-[Parentheses](glyphs/parentheses.qmd) group, whatever they hold: `(1 2)` is `1 2`, `(x)` is `x`, and `(-)` is `-`. `⊂` encloses a subject: `⊂[1 2]` is a scalar holding a vector. [`fᵘ`](glyphs/superscript.qmd) is a scalar holding the function `f`.
+[Parentheses](glyphs/parentheses.qmd) group, whatever they hold: `(1 2)` is `1 2`, `(x)` is `x`, and `(-)` is `-`. `⊂` encloses a subject: `⊂[1 2]` is a scalar holding a vector. [`fᵘ`](scripts.qmd#superscripts) is a scalar holding the function `f`.
 
 With `⋄`, parentheses are used to write a vector of rows instead. Each row is a bracket list, even a row with one item. For example, `(4 ⋄ 4 5 ⋄ 4 5 6)` is `[[4] [4 5] [4 5 6]]`. With a trailing `⋄`, the result is a one-item vector holding one row: `(1 2 ⋄)` is `[[1 2]]`. Rows in brackets form a flat array, and rows in parentheses form a nested vector.
 
@@ -133,7 +133,7 @@ v←10 20 30 40 ⋄ [⊂1]⌷v          ⍝ ⊂20
 v←10 20 30 40 ⋄ [[1]]⌷v         ⍝ [20]
 ```
 
-A [subscript](glyphs/subscript.qmd) selects one position on the leading axis: `v₁` is `1⌷v`, and `v₋₁` is `¯1⌷v`.
+A [subscript](scripts.qmd#subscripts) selects one position on the leading axis: `v₁` is `1⌷v`, and `v₋₁` is `¯1⌷v`.
 
 ### Trains
 
@@ -188,126 +188,11 @@ total←1+2×3 → 2× ⋄ total   ⍝ 14
 
 ## Numbers
 
-Bare numbers are approximate (`f64`). `x` or `ₓ` marks exact integers; `r` marks exact rationals. Exact integers display with `ₓ`. Examples use `x` for typed input. Exact arithmetic grows as needed. Mixing exact and approximate gives approximate.
-
-```bpl
-1÷3                  ⍝ 0.3333333333333333
-1x÷3x                ⍝ 1r3
-1r3+1r6              ⍝ 1r2
-1r2+0.5              ⍝ 1
-9223372036854775807x+1x ⍝ 9223372036854775808ₓ
-```
-
-`ajb`: a + bi, with approximate components. `J` also parses. `¯` marks negative literals and exponents.
-
-```bpl
-1j2+3j4              ⍝ 4j6
-1E¯3                 ⍝ 0.001
-```
-
-Predicates, positions, tally, shape, and monadic `⌊`, `⌈` and `×` return exact integers. A float beyond the `i64` range floors to an exact big integer. Iota and random integer generation preserve exact arguments. An argument that must be an integer, such as an index or a count, accepts a float within comparison tolerance of one:
-
-```bpl
-⌊2.5 ¯2.5            ⍝ [2 ¯3]ₓ
-⌊2*70                ⍝ 1180591620717411303424ₓ
-⍳(0.1×3)×10          ⍝ 0 1 2
-```
-
-Numbers that an operation puts in one array share a kind. A float among exact integers makes them all floats, and a complex number makes every number complex:
-
-```bpl
-(⍳3ₓ),0.5            ⍝ 0 1 2 0.5
-(⍳2ₓ),1j2            ⍝ 0 1 1j2
-(1ₓ,0.5)÷2ₓ          ⍝ 0.5 0.25
-```
-
-Each number written in a literal list or in brackets keeps its own exactness, even beside numbers of the other kind. Floats written beside complex numbers become complex. Their values don't change:
-
-```bpl
-1ₓ 0.5÷2ₓ            ⍝ 1r2 0.25
-[1ₓ;0.5]÷2ₓ          ⍝ 1r2 0.25
-```
-
-In `[…]ₓ`, every number is exact, at any depth. Each item must be a literal, and each number must be whole. `⍬ₓ` is the exact empty vector. A vector of exact integers displays in this form, and `⍕` writes it the same way:
-
-```bpl
-[1 0 1]ₓ≡1ₓ 0ₓ 1ₓ    ⍝ $t
-[[1 2] 3]ₓ≡[1ₓ 2ₓ;3ₓ]   ⍝ $t
-1↑⍬ₓ                 ⍝ [0]ₓ
-⍕1ₓ ¯2ₓ              ⍝ "[1 ¯2]ₓ"
-```
-
-Mixed storage keeps each item's own kind. An array uses mixed storage when it holds a rational, because rationals have no compact storage. An array also uses mixed storage when it holds numbers together with characters, nested arrays or functions, and so does an imported JSON object. Selecting from, catenating or assigning into mixed storage keeps each item's kind. Arithmetic builds fresh storage from its results. Each result keeps its own kind. `1×x` makes every number a float, because every result is approximate. `1ₓ×x` keeps exact results exact. `•storage` names the storage. Boxed display marks mixed storage with `+`, and exact integers with `ₓ`:
-
-```bpl
-x←1ₓ 0.5 2ₓ
-•storage x           ⍝ "mixed"
-•storage 1×x         ⍝ "float"
-•storage 1ₓ×x        ⍝ "mixed"
-```
-
-Floats follow IEEE 754. Besides finite numbers, they include `∞`, `¯∞`, NaN and `¯0`. An undefined result is NaN, not an error. `1÷0` is `∞`, and `⍟0` is `¯∞`. Write NaN as `$n`. Under `=`, NaN equals nothing, as in IEEE. `≡`, search, grade and Key treat NaN as one value, and grade puts it after every other number. Complex arithmetic follows `num_complex`. A complex number can have infinite or NaN parts:
-
-```bpl
-[0÷0;∞-∞]            ⍝ $n $n
-[1÷0;⍟0]             ⍝ ∞ ¯∞
-$n=$n                ⍝ $f
-$n≡$n                ⍝ $t
-```
-
-An infinity or NaN never makes exact numbers approximate. `⌊` and `⌈` return an exact argument unchanged beside an infinity, and return the other argument beside NaN. Exact integers, infinities and NaN share integer storage. CSV and JSON imports give NaN for a missing number. An integer column with gaps then stays exact. Arithmetic with an infinity gives floats:
-
-```bpl
-3ₓ⌊∞                 ⍝ 3ₓ
-(⍳3ₓ),∞              ⍝ [0 1 2 ∞]ₓ
-•storage (⍳3ₓ),∞     ⍝ "integer"
-```
-
-Comparisons give Booleans. So does every function whose result is a truth value, such as `~`, `∊`, `⍷` and `≡`. `$t` is true and `$f` is false. Wherever a number is expected, `$t` is 1 and `$f` is 0. `+/` counts the true items. `#` filters by a Boolean mask. A Boolean used as an index selects position 0 or 1. Arithmetic on Booleans gives integers. `∧`, `∨`, `⍱`, `⍲`, `⌊` and `⌈` on two Booleans give a Boolean. Boolean storage takes one byte for each item. Boxed display marks it with `$`:
-
-```bpl
-x←3 1 4 1 5
-x>2                  ⍝ $t $f $t $f $t
-+/x>2                ⍝ 3ₓ
-(x>2)#x              ⍝ 3 4 5
-(4>2)⌷"no" "yes"     ⍝ "yes"
-$t+$t                ⍝ 2ₓ
-$t∧$f                ⍝ $f
-•storage x>2         ⍝ "boolean"
-```
+[Numbers](numbers.qmd) covers how numbers are written, exact and approximate arithmetic, storage, infinities, NaN and Booleans.
 
 ## Arrays, nesting and fill
 
-The *based arrays* model was named in a [1981 paper](https://dl.acm.org/doi/abs/10.1145/586656.586663) and popularized by [BQN](https://mlochbaum.github.io/BQN/doc/based.html).
-
-Numbers, characters and functions are atoms. Arrays are rectangular collections of values. An array's shape lists its axis lengths. Its rank is the number of axes. Scalars, vectors and matrices are arrays of rank 0, 1 and 2. A scalar is distinct from an atom. Atoms have rank zero for shape operations. Constructors such as Enclose, Ravel and Reshape create arrays. Ravel order is row-major. Zero dimensions retain the other dimensions.
-
-Structural mapping (arithmetic, Each and indexing) preserves the mapped container, including scalars. Cell application (Rank and search) consumes complete cells, returning one result directly or assembling results over surrounding batch axes.
-
-```bpl
-⍴3                   ⍝ ⍬ₓ
-⍴,3                  ⍝ [1]ₓ
-⍴2 3⍴⍳6              ⍝ [2 3]ₓ
-⍴0 3⍴0               ⍝ [0 3]ₓ
-```
-
-A [bracket list](glyphs/brackets.qmd) such as `[a b c]` is a vector. A strand needs no brackets: `1 2 3` is a vector, and `a b` is `[a b]`. `[Y]` is a one-item vector. `⊂Y` encloses a subject, and `fᵘ` is a scalar holding the function `f`. `↑` retrieves the first item. Enclosure always adds an array layer.
-
-```bpl
-↑[1 2;3 4]           ⍝ 1 2
-⊂3 ≡ 3              ⍝ $f
-⊂3 = 3              ⍝ ⊂$t
-⊂3 + 4              ⍝ ⊂7
-≢¨[1 2 3;4 5]        ⍝ [3 2]ₓ
-```
-
-Fill follows the first item's prototype: zero, space, or recursively filled nesting. Empty arrays retain a prototype. Assembly pads unequal cells with fill.
-
-```bpl
-5↑1 2                ⍝ 1 2 0 0 0
-3↑""                 ⍝ "   "
-↑0⍴[1 2;3 4 5]       ⍝ 0 0
-```
+[Arrays](arrays.qmd) covers atoms and arrays, shape and rank, nesting, fill, keys and functions held in arrays.
 
 ## Agreement and pervasion
 

@@ -58,20 +58,27 @@ def test_python_printer():
 
 def test_load(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    source = tmp_path/'defs.bpl'
-    source.write_text('twice←{2×⍵}\nx←7\n')
-    (tmp_path/'main.bpl').write_text('•load "defs.bpl"\ntwice x')
-    assert bpl('•LOAD "main.bpl"').py == 14
-    assert bpl('twice x').py == 14
-    assert bpl('{loaded←•load "defs.bpl" ⋄ twice ⍵}3').py == 6
-    source.write_text('⎕←x\n1÷"a"')
-    with pytest.raises(BplError, match=r'defs.bpl:2') as err: bpl('•load "defs.bpl"')
+    lib = tmp_path/'lib'
+    lib.mkdir()
+    source = lib/'defs.bpl'
+    source.write_text('_half←{⍵÷2}\nhalve←{_half ⍵}\ntwice←{⍶ ⍶ ⍵}\nx←7\n')
+    (lib/'main.bpl').write_text('[halve]←•load "./defs.bpl"\nq←halve 10\n')
+    m = bpl('•load "lib/defs.bpl"').py
+    assert sorted(m) == ['halve', 'twice', 'x']
+    assert m['twice'](bpl.fn('{⍵+1}'))(3).py == 5
+    assert bpl('{m←•load "lib/defs.bpl" ⋄ [halve x]←m ⋄ (halve x),-m.twice 3}0').py.tolist() == [3.5, 3]
+    assert 'halve' not in bpl.names()
+    assert bpl('•LOAD "lib/main.bpl"').py['q'] == 5
+    (lib/'a.bpl').write_text('•load "./b.bpl"')
+    (lib/'b.bpl').write_text('•load "./a.bpl"')
+    with pytest.raises(BplError, match='load cycle'): bpl('•load "lib/a.bpl"')
+    source.write_text('x←7\n⎕←x\nx\n1÷"a"')
+    with pytest.raises(BplError, match=r'defs.bpl:4') as err: bpl('•load "lib/defs.bpl"')
     assert err.value.output == ['7']
     source.write_text('⎕←9\n{∇⍵}0')
     bpl.timeout = .001
-    with pytest.raises(BplError, match='TIMEOUT'): bpl('•load "defs.bpl"')
+    with pytest.raises(BplError, match='TIMEOUT'): bpl('•load "lib/defs.bpl"')
     bpl.timeout = None
-    assert bpl('x').py == 7
     with pytest.raises(BplError, match='VALUE'): bpl('•load "missing.bpl"')
 
 

@@ -1,4 +1,4 @@
-"""Write the generated parts of the editor files: the glyph lists in the Quarto and vim highlighters, and the macOS keyboard layout bundle. BPL's lists come from its glyph metadata, and the bundle from `layout.json`. The Quarto highlighters for Dyalog APL and BQN, used on the comparison page, take their lists from tables here. Paths are relative to the repository root.
+"""Write the generated parts of the editor files: the glyph lists in the Quarto and vim highlighters, the macOS keyboard layout bundle, and the keys line on each glyph page. BPL's lists come from its glyph metadata, and the bundle from `layout.json`. The Quarto highlighters for Dyalog APL and BQN, used on the comparison page, take their lists from tables here. Paths are relative to the repository root.
 
 `write` writes them all, and the release script calls it. `icon` rebuilds the bundle's input-menu icon. It needs Pillow and macOS's `iconutil`, and only runs when the icon's design changes."""
 import json, re, subprocess, tempfile
@@ -12,6 +12,8 @@ VIM = Path('editors/vim/syntax/bpl.vim')
 BUNDLE = Path('editors/macos/BasedPL.bundle/Contents')
 KEYLAYOUT = BUNDLE/'Resources/BasedPL.keylayout'
 ICON = KEYLAYOUT.with_suffix('.icns')
+GLYPH_PAGES = Path('nbs/glyphs')
+KEY_NAMES = {'-': 'Minus', '\\': 'Backslash', '`': 'Backtick'}
 FONT, MENLO_BOLD, PURPLE = '/System/Library/Fonts/Menlo.ttc', 1, (61, 31, 107)
 
 # Each highlight class: the Kate style that colours it in every highlighter, the BPL symbol kind it covers, and the script characters it adds.
@@ -53,6 +55,19 @@ def vim(text):
     "The vim syntax `text` with each class's glyph list regenerated."
     for cls in CLASSES: text = _replace(text, f'(?m)^syntax match bpl{cls} .*$', f'syntax match bpl{cls} {vim_class(BPL[cls])}')
     return text
+
+
+def key(shortcut):
+    "The keys that type a glyph, from its `shortcut` in `basedpl.symbols`. For example, `' o *'` is `Alt-o *`."
+    keys = [KEY_NAMES.get(k, k) for k in shortcut.split()]
+    return ' '.join(['Alt-' + keys[0], *keys[1:]]) if keys else ''
+
+
+def glyph_page(text, shortcut):
+    "The glyph page `text` with the keys line after its title regenerated. A glyph typed without Alt has no keys line."
+    title, rest = text.split('\n\n', 1)
+    rest = re.sub(r'\AKeys: .*\n\n', '', rest)
+    return f'{title}\n\n' + (f'Keys: `{key(shortcut)}`\n\n' if shortcut.strip() else '') + rest
 
 
 # US key codes, with each key's character unshifted and shifted. Code 10 is the extra key on ISO keyboards.
@@ -174,9 +189,12 @@ def icon():
 
 
 def write():
-    "Write the highlighters' glyph lists and styles, and the keyboard layout bundle."
+    "Write the highlighters' glyph lists and styles, the keyboard layout bundle, and the keys line on each glyph page."
     for path, glyphs in HIGHLIGHTERS.items(): path.write_text(quarto(path.read_text(), glyphs))
     VIM.write_text(vim(VIM.read_text()))
     for path, data in {KEYLAYOUT: keylayout(json.loads(LAYOUT.read_text())).encode(), **metadata()}.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
+    for s in symbols:
+        path = GLYPH_PAGES/f"{s['name']}.qmd"
+        path.write_text(glyph_page(path.read_text(), s['shortcut']))

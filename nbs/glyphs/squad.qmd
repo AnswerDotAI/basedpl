@@ -1,6 +1,8 @@
 # `⌷` — Index
 
-`I⌷Y` indexes `Y`. The left argument has one item for each leading axis of `Y`. Axes that it omits are taken whole. `⌷Y` is identity. A [subscript](subscript.qmd) writes a single position: `m₁` is `1⌷m`. After an array, [Dot](dot.qmd) indexing is `⌷`: `x.(I)` is `(I)⌷x`.
+Keys: `Alt-q |`
+
+`I⌷Y` indexes `Y`. The left argument has one item for each leading axis of `Y`. Axes that it omits are taken whole. `⌷Y` is identity. A [subscript](../scripts.qmd#subscripts) writes a single position: `m₁` is `1⌷m`. After an array, [Dot](dot.qmd) indexing is `⌷`: `x.(I)` is `(I)⌷x`.
 
 ```bpl
 m←3 4⍴⍳12
@@ -8,7 +10,7 @@ m←3 4⍴⍳12
 1 2⌷m              ⍝ 6
 ```
 
-Each item of the left argument is a single position, an array of positions, or `∞`. A single position removes its axis from the result. An array of positions replaces the axis with its own shape. An array of positions for one axis is one item, as in `[[2 0]]`, because `[2 0]` gives a position on each of two axes.
+Each item of the left argument is a single position, an array of positions, or `∞`. Selecting with a single position drops that axis from the result. Selecting with an array of positions puts the array's shape in place of the axis. An array of positions for one axis is one item, as in `[[2 0]]`, because `[2 0]` gives a position on each of two axes.
 
 ```bpl
 v←10 20 30

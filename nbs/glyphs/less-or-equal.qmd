@@ -1,5 +1,7 @@
 # `≤` — Less or equal
 
+Keys: `Alt-,`
+
 `≤Y` is `Y-1`. Pervasive.
 
 ```bpl

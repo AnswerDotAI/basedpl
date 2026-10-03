@@ -42,7 +42,7 @@ pub(crate) fn exportable(value: &Value) -> Value {
     let keys = value.keys(0).filter(|_| value.shape().len() == 1);
     let (mut names, mut data, mut changed) = (Vec::new(), Vec::new(), false);
     for (i, e) in items.iter().enumerate() {
-        if keys.is_some() && matches!(e, Value::Function(_)) {
+        if keys.is_some() && matches!(e, Value::Function(_) | Value::Operator(_)) {
             changed = true;
             continue;
         }
@@ -85,7 +85,7 @@ fn export(value: &Value, fill: Option<&Number>, span: &Context<'_>) -> Result<Js
             if let Some(n) = n.as_float().and_then(serde_json::Number::from_f64) { return Ok(Json::Number(n)); }
             Err(span.domain_error("JSON numbers must be finite floats or integers"))
         }
-        Value::Function(_) => Err(span.domain_error("JSON cannot encode functions")),
+        Value::Function(_) | Value::Operator(_) => Err(span.domain_error("JSON cannot encode functions or operators")),
         _ if value.keys(0).is_none() && keyed::name(value).is_some() => Ok(Json::String(text(value, span)?)),
         _ if value.shape().is_empty() => export(&value.at(0), fill, span),
         _ => {

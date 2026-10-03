@@ -1,5 +1,7 @@
 # `⍕` — Format
 
+Keys: `Alt-n t`
+
 `⍕Y` returns character text. Matrix rows remain rows.
 
 ```bpl

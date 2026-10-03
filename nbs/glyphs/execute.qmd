@@ -1,5 +1,7 @@
 # `⍎` — Execute / Lookup
 
+Keys: `Alt-b t`
+
 `⍎Y` evaluates character code in the current lexical scope.
 
 ```bpl

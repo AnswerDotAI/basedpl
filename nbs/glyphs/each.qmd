@@ -1,5 +1,7 @@
 # `¨` — Each
 
+Keys: `Alt-1`
+
 `f¨Y` applies `f` to each item and collects the returned values in `Y`'s shape. On atoms it calls `f` directly.
 
 ```bpl

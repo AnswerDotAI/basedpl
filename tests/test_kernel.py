@@ -46,7 +46,7 @@ async def kernel_story():
         result = (await kc.shell_request('inspect_request', code='+', cursor_pos=1, detail_level=0))['content']
         assert result['found'] and 'adds' in result['data']['text/plain']
         result = (await kc.shell_request('inspect_request', code='•A', cursor_pos=2, detail_level=0))['content']
-        assert result['found'] and 'Alphabet' in result['data']['text/plain']
+        assert result['found'] and 'Latin alphabet' in result['data']['text/plain']
         result = (await kc.shell_request('inspect_request', code='⍵', cursor_pos=1, detail_level=0))['content']
         assert result['found']
         _, messages = await kc.exec_ok(']help ¿')

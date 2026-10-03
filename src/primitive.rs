@@ -12,12 +12,12 @@ use rand::RngExt;
 use std::cmp::Ordering;
 
 /// A reduce or scan along the last or first axis. Its glyphs are `/ ⌿ \ ⍀`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct FoldKind { pub scan: bool, pub first: bool }
 /// A superscript: a power, with `⁻` for a negative one, `ᵀ`, or `ᵘ`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Superscript { Power(i64), Transpose, Unit }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum OperatorKind {
     Each,
     Commute,
@@ -844,6 +844,7 @@ fn element_match(left: &Value, right: &Value, span: &Context<'_>) -> Result<bool
         (Value::Number(x), Value::Number(y)) => x.matches(y).domain_at(span),
         (Value::Character(x), Value::Character(y)) => Ok(x == y),
         (Value::Function(x), Value::Function(y)) => Ok(x == y),
+        (Value::Operator(x), Value::Operator(y)) => Ok(x == y),
         (x @ Value::Array(_), y @ Value::Array(_)) => array_match(x, y, span),
         _ => Ok(false),
     }
@@ -1617,7 +1618,7 @@ fn encode_whole<'a>(bases: Items<'a>, values: Items<'a>, layout: &Layout) -> Opt
 /// The order of two items. `None` when the comparison reaches a function, which has no ordering.
 fn element_order(left: &Value, right: &Value) -> Option<Ordering> {
     Some(match (left, right) {
-        (Value::Function(_), _) | (_, Value::Function(_)) => return None,
+        (Value::Function(_) | Value::Operator(_), _) | (_, Value::Function(_) | Value::Operator(_)) => return None,
         (Value::Number(x), Value::Number(y)) => x.grade_order(y),
         (Value::Character(x), Value::Character(y)) => x.cmp(y),
         (Value::Number(_), Value::Character(_)) => Ordering::Less,

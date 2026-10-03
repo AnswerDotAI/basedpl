@@ -1,5 +1,7 @@
 # `≠` — Unique mask / Not equal
 
+Keys: `Alt-]`
+
 `≠Y` marks first occurrences of major cells. Uses tolerant comparison and first matching representatives.
 
 ```bpl

@@ -1,5 +1,7 @@
 # `⋄` — Separator
 
+Keys: `Alt-Backtick`
+
 At statement level, `⋄` separates expressions. A line break does the same.
 
 ```bpl
@@ -19,3 +21,5 @@ Inside [parentheses](parentheses.qmd), `⋄` separates the rows of a vector. Eac
 ```bpl
 (1 2 ⋄ 3)          ⍝ [[1 2] [3]]
 ```
+
+[Types of brackets](../bracket-types.qmd) compares `⋄` in brackets, parentheses and braces.

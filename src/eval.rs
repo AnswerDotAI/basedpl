@@ -1348,17 +1348,25 @@ fn scan(
 // BPL results/array elements are arrays and assignments are local. Public function
 // export rejects frame references throughout the function graph.
 #[derive(Clone, Debug)]
-struct Closure { definition: Arc<Definition>, environment: Option<usize> }
+struct Closure { definition: Arc<Definition>, environment: Option<usize>, module: usize }
 
 impl Closure { fn text(&self) -> &str { let span = &self.definition.span; &span.source.text[span.range.clone()] } }
-struct Frame { names: HashMap<String, Binding>, parent: Option<usize> }
+impl PartialEq for Closure {
+    fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&self.definition, &other.definition) && (self.environment, self.module) == (other.environment, other.module) }
+}
+/// A function call's names. `module` is the module whose names the call sees after its frames.
+struct Frame { names: HashMap<String, Binding>, parent: Option<usize>, module: usize }
 struct ArrayBinding { name: String, owner: Option<usize>, value: Value }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Operand { Value(Value), Function(Function) }
 
-#[derive(Clone, Debug)]
-enum Operator { Defined(Closure), Primitive(OperatorKind), Bound(Box<Operator>, Operand) }
+#[derive(Clone, Debug, PartialEq)]
+enum OperatorNode { Defined(Closure), Primitive(OperatorKind), Bound(Box<OperatorNode>, Operand) }
+
+/// An operator held as a value, as in a record field.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Operator(Arc<OperatorNode>);
 
 fn operand_dependencies<'a>(operands: impl Iterator<Item = &'a Operand>) -> (Option<usize>, bool) {
     operands.fold((None, false), |(environment, late), op| match op {
@@ -1377,7 +1385,7 @@ fn constant_operand(kind: OperandKind, a: Operand, span: &Span) -> Result<Operan
     match (kind, a) { (OperandKind::Function, Operand::Value(v)) => Ok(Operand::Function(Function::constant(v, span)?)), (_, a) => Ok(a) }
 }
 
-impl Operator {
+impl OperatorNode {
     fn text(&self) -> String {
         match self {
             Self::Defined(c) => c.text().into(),
@@ -1405,6 +1413,32 @@ impl Operator {
         };
         Function::new(node, span).map(Binding::Function)
     }
+    /// The innermost frame the operator depends on: its dfn's, or that of an operand bound to it.
+    fn environment(&self) -> Option<usize> {
+        match self {
+            Self::Defined(c) => c.environment,
+            Self::Primitive(_) => None,
+            Self::Bound(op, right) => op.environment().max(operand_dependencies(std::iter::once(right)).0),
+        }
+    }
+}
+
+impl Operator {
+    pub(crate) fn environment(&self) -> Option<usize> { self.0.environment() }
+    /// The function `f op` or `f op g` derives, with `left` as `f` and `right` as `g`.
+    #[cfg(feature = "python")]
+    pub(crate) fn derive(&self, left: Operand, right: Option<Operand>, span: &Span) -> Result<Function, Error> {
+        let node = match right {
+            Some(right) if self.0.is_dyadic() => OperatorNode::Bound(Box::new((*self.0).clone()), right),
+            None if !self.0.is_dyadic() => (*self.0).clone(),
+            _ => return Err(span.domain_error(if self.0.is_dyadic() { "this operator takes two operands" } else { "this operator takes one operand" })),
+        };
+        Function::from_value(node.derive(left, span)?, span)
+    }
+}
+
+impl std::fmt::Display for Operator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(&self.0.text()) }
 }
 
 impl Operand {
@@ -1428,7 +1462,7 @@ enum Binding {
     Absent,
     Value(Value),
     Function(Function),
-    Operator(Operator),
+    Operator(OperatorNode),
 }
 impl Binding {
     fn class(&self) -> i64 {
@@ -1447,15 +1481,19 @@ impl Binding {
             Self::NoResult | Self::Absent => return None,
         })
     }
-    fn from_element(element: Value) -> Self { match element { Value::Function(f) => Self::Function(f), _ => Self::Value(element) } }
-    fn environment(&self) -> Option<usize> { match self { Self::Value(a) => a.environment(), Self::Function(f) => f.environment(), _ => None } }
+    fn from_element(element: Value) -> Self {
+        match element { Value::Function(f) => Self::Function(f), Value::Operator(op) => Self::Operator(Arc::unwrap_or_clone(op.0)), _ => Self::Value(element) }
+    }
+    fn environment(&self) -> Option<usize> {
+        match self { Self::Value(a) => a.environment(), Self::Function(f) => f.environment(), Self::Operator(op) => op.environment(), _ => None }
+    }
     fn into_value(self, span: &Span) -> Result<Value, Error> {
         match self {
             Self::Value(a) => Ok(a),
             v @ Self::Function(_) => Ok(Value::Function(Function::from_value(v, span)?)),
+            Self::Operator(op) => Ok(Value::Operator(Operator(Arc::new(op)))),
             Self::NoResult => Err(span.error(ErrorKind::Value, "expression produced no value")),
             Self::Absent => Err(span.error(ErrorKind::Value, ABSENT)),
-            _ => Err(span.error(ErrorKind::Syntax, "expression must produce a value")),
         }
     }
 }
@@ -1489,6 +1527,7 @@ impl Bound {
 pub struct Evaluation {
     pub value: Option<Value>,
     pub function: Option<Function>,
+    pub operator: Option<Operator>,
     pub output: Vec<Output>,
     pub error: Option<Error>,
 }
@@ -1507,6 +1546,12 @@ pub struct Session {
     pub(crate) display: crate::display::Settings,
     display_defaults: crate::display::Settings,
     names: HashMap<String, Binding>,
+    /// The names of each loaded file. Module `m` is `modules[m-1]`.
+    modules: Vec<HashMap<String, Binding>>,
+    /// The module whose top level is running.
+    module: usize,
+    /// The files being loaded. Loading one of them again is a cycle.
+    loading: Vec<std::path::PathBuf>,
     frames: Vec<Frame>,
     current: Option<usize>,
     depth: usize,
@@ -1529,7 +1574,7 @@ impl Session {
             names.extend(self.frames[i].names.keys().map(String::as_str).filter(|name| !implicit_name(name)));
             scope = self.frames[i].parent;
         }
-        names.extend(self.names.keys().map(String::as_str));
+        names.extend(self.table(self.module()).keys().map(String::as_str));
         let mut names: Vec<_> = names.into_iter().collect();
         names.sort_unstable();
         names.into_iter()
@@ -1565,9 +1610,13 @@ impl Session {
             _ => Err(ErrorKind::Value),
         }
     }
-    /// The names of the frame that owns a binding, or the global names.
+    /// The module whose names code sees after its frames: the module that defined the running function, or the module whose top
+    /// level is running. Module 0 is the session's own names.
+    fn module(&self) -> usize { self.current.map_or(self.module, |i| self.frames[i].module) }
+    fn table(&self, module: usize) -> &HashMap<String, Binding> { if module == 0 { &self.names } else { &self.modules[module - 1] } }
+    /// The names of the frame that owns a binding, or the names of the current module.
     fn names_mut(&mut self, owner: Option<usize>) -> &mut HashMap<String, Binding> {
-        match owner { Some(i) => &mut self.frames[i].names, None => &mut self.names }
+        match (owner, self.module()) { (Some(i), _) => &mut self.frames[i].names, (None, 0) => &mut self.names, (None, m) => &mut self.modules[m - 1] }
     }
     pub fn erase(&mut self, name: &str) -> bool {
         if implicit_name(name) || !matches!(crate::inspection::item(name), Some(NodeKind::Name(_))) { return false; }
@@ -1711,10 +1760,11 @@ impl Session {
         let mut result = Evaluation::default();
         for range in parts {
             let text = &source.text[range.clone()];
-            let part = Source::new(source.name.clone(), format!("{}{text}", "\n".repeat(source.text[..range.start].matches('\n').count())));
+            let code = format!("{}{text}", "\n".repeat(source.text[..range.start].matches('\n').count()));
+            let part = Arc::new(Source { name: source.name.clone(), text: code, file: source.file });
             let mut next = if text.trim_start().starts_with(']') { self.command(part) } else { self.evaluate_code(part) };
             result.output.append(&mut next.output);
-            (result.value, result.function) = (next.value, next.function);
+            (result.value, result.function, result.operator) = (next.value, next.function, next.operator);
             if next.error.is_some() {
                 result.error = next.error;
                 break;
@@ -1732,7 +1782,7 @@ impl Session {
     fn eval_display(&mut self, parsed: &Parsed, diagram: bool) -> Evaluation {
         let mut result = Evaluation::default();
         for (i, statement) in parsed.statements.iter().enumerate() {
-            result.function = None;
+            (result.function, result.operator) = (None, None);
             let nodes = &statement.nodes;
             match self.bind(nodes, &mut result.output) {
                 Ok(bound) => {
@@ -1757,10 +1807,10 @@ impl Session {
                             None
                         }
                         Binding::Operator(op) => {
-                            result.value = None;
-                            let message = if op.is_dyadic() { "an operator needs operands on both sides" } else { "an operator needs an operand on its left" };
-                            result.error = Some(nodes[0].span.error(ErrorKind::Syntax, message));
-                            return result;
+                            let op = Operator(Arc::new(op));
+                            if self.execution.echo { self.execution.output(&mut result.output, crate::OutputKind::Display, op.to_string()); }
+                            if i + 1 == parsed.statements.len() { result.operator = Some(op); }
+                            None
                         }
                     };
                 }
@@ -1874,10 +1924,29 @@ impl Session {
             .collect()
     }
 
+    /// `•load path` runs a file in a module of its own and returns a record of the module's public names: the names its top level
+    /// assigns that don't start with `_`, in alphabetical order. The file adds no names to the caller, and shows nothing except
+    /// explicit output.
     fn load(&mut self, right: &Value, span: &Span, output: &mut Vec<Output>) -> Result<Bound, Error> {
-        let path = Self::source_text(right, span)?;
-        let code = std::fs::read_to_string(&path).map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))?;
-        self.execute_source(Source::new(path, code), span, output)
+        let text = Self::source_text(right, span)?;
+        let path = span.path(&text);
+        let code = std::fs::read_to_string(&path).map_err(|e| span.error(ErrorKind::Value, format!("{text}: {e}")))?;
+        let file = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        if self.loading.contains(&file) { return Err(span.domain_error(format!("load cycle: {text} is already loading"))); }
+        self.modules.push(HashMap::new());
+        let module = self.modules.len();
+        let caller = (self.current, self.module, std::mem::replace(&mut self.execution.echo, false));
+        (self.current, self.module) = (None, module);
+        self.loading.push(file);
+        let result = self.execute_source(Source::file(path.to_string_lossy(), code), span, output);
+        self.loading.pop();
+        (self.current, self.module, self.execution.echo) = caller;
+        result?;
+        let mut names: Vec<_> = self.modules[module - 1].iter().filter(|(name, _)| !name.starts_with('_')).collect();
+        names.sort_unstable_by(|a, b| a.0.cmp(b.0));
+        let (keys, values): (Vec<_>, Vec<_>) = names.into_iter().map(|(name, value)| (Arc::<str>::from(name.as_str()), value.clone())).unzip();
+        let values = values.into_iter().map(|v| v.into_value(span)).collect::<Result<Vec<_>, _>>()?;
+        Ok(Bound::new(Binding::Value(crate::keyed::vector(keys, values).error_at(span, "invalid module record")?)))
     }
 
     fn execute_source(&mut self, source: Arc<Source>, span: &Span, output: &mut Vec<Output>) -> Result<Bound, Error> {
@@ -1957,7 +2026,10 @@ impl Session {
                 (self.current.is_some() && !implicit_name(name)) || !matches!(self.lookup(name), Some(Binding::Function(_) | Binding::Operator(_)))
             }
             NodeKind::Group(inner) => self.assignment_names(inner),
-            NodeKind::ArrayLiteral { cells, block: false, record: false } => cells.iter().all(|c| self.assignment_names(c)),
+            // Inside brackets every name is a target, whatever it holds.
+            NodeKind::ArrayLiteral { cells, block: false, record: false } => {
+                cells.iter().all(|c| matches!(&c[..], [Node { kind: NodeKind::Name(_), .. }]) || self.assignment_names(c))
+            }
             _ => false,
         }
     }
@@ -1974,7 +2046,7 @@ impl Session {
         match &node.kind {
             NodeKind::Function(_) => Function,
             NodeKind::Operator(op) => {
-                if self::Operator::Primitive(*op).is_dyadic() { DyadicOperator } else { Operator }
+                if self::OperatorNode::Primitive(*op).is_dyadic() { DyadicOperator } else { Operator }
             }
             NodeKind::Name(name) => self.lookup(name).map_or(Value, Category::of),
             NodeKind::System(name) => crate::system::lookup(name).map_or(Value, |v| Category::of(&v.value())),
@@ -2078,7 +2150,7 @@ impl Session {
                 }
                 NodeKind::ArrayLiteral { cells, .. } if self.assignment_names(std::slice::from_ref(target)) => {
                     let right = value.clone().into_value(span)?;
-                    let pairs: Vec<_> = Self::destructure(cells, &right, span)?.collect();
+                    let pairs = Self::destructure(cells, &right, span)?;
                     for (cell, item) in pairs.into_iter().rev() { self.assign(cell, &Binding::from_element(item), output)?; }
                     return Ok(());
                 }
@@ -2123,12 +2195,22 @@ impl Session {
     }
 
     /// Pair each name in `[a b]←` with its item of `right`. A singleton goes to every name.
-    fn destructure<'a>(cells: &'a [Vec<Node>], right: &Value, span: &Span) -> Result<impl Iterator<Item = (&'a [Node], Value)>, Error> {
+    /// Pair each name in `[a b]←` with its item of `right`. A vector with a key for every item gives each name the item with that
+    /// key, and can hold items that no name takes. Other values pair items by position, and a singleton goes to every name.
+    fn destructure<'a>(cells: &'a [Vec<Node>], right: &Value, span: &Span) -> Result<Vec<(&'a [Node], Value)>, Error> {
+        if right.shape().len() == 1 && right.keys(0).is_some_and(|keys| keys.complete()) {
+            let item = |cell: &'a Vec<Node>| {
+                let [Node { kind: NodeKind::Name(name), span }] = &cell[..] else {
+                    return Err(cell[0].span.error(ErrorKind::Syntax, "a keyed value destructures into names"));
+                };
+                crate::keyed::field(right, name).map(|item| (&cell[..], item)).ok_or_else(|| span.error(ErrorKind::Value, format!("no item has the key {name}")))
+            };
+            return cells.iter().map(item).collect();
+        }
         if !right.is_singleton() && (right.shape().len() != 1 || right.len() != cells.len()) {
             return Err(span.error(ErrorKind::Length, "destructuring needs one item for each name"));
         }
-        let right = right.clone();
-        Ok(cells.iter().enumerate().map(move |(i, cell)| (&cell[..], right.at(if right.is_singleton() { 0 } else { i }))))
+        Ok(cells.iter().enumerate().map(|(i, cell)| (&cell[..], right.at(if right.is_singleton() { 0 } else { i }))).collect())
     }
 
     fn modifier(&mut self, nodes: &[Node], output: &mut Vec<Output>) -> Result<Option<Function>, Error> {
@@ -2347,7 +2429,7 @@ impl Session {
         Ok(match &node.kind {
             NodeKind::Literal(a) => Binding::Value(a.clone()),
             NodeKind::Function(p) => Binding::Function(Function::primitive(*p)),
-            NodeKind::Operator(op) => Binding::Operator(Operator::Primitive(*op)),
+            NodeKind::Operator(op) => Binding::Operator(OperatorNode::Primitive(*op)),
             NodeKind::Name(name) => match self.lookup(name) {
                 Some(value) => value.clone(),
                 None if name == "⍺" && self.current.is_some() => Binding::Absent,
@@ -2357,12 +2439,16 @@ impl Session {
                 crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?.value()
             }
             NodeKind::Group(nodes) => self.bind(nodes, output)?.value,
-            NodeKind::Run(nodes) => match self.bind(nodes, output)?.value {
-                Binding::Operator(_) => {
-                    return Err(node.span.error(ErrorKind::Syntax, "a run must reduce to one value: an array, a function or an operator glyph"))
+            // A dot path such as `m.op` names an operator as a name does, so its run can reduce to one.
+            NodeKind::Run(nodes) => {
+                let path = matches!(&self.members(nodes)[..], [Node { kind: NodeKind::Group(_), .. }]);
+                match self.bind(nodes, output)?.value {
+                    Binding::Operator(_) if !path => {
+                        return Err(node.span.error(ErrorKind::Syntax, "a run must reduce to one value: an array, a function or an operator glyph"))
+                    }
+                    value => value,
                 }
-                value => value,
-            },
+            }
             NodeKind::Pipeline(stages) => {
                 let mut result = self.bind(&stages[0], output)?;
                 for stage in &stages[1..] {
@@ -2399,10 +2485,10 @@ impl Session {
                 Binding::Value(result.error_at(&node.span, "invalid array literal")?)
             }
             NodeKind::Dfn(definition) => {
-                let closure = Closure { definition: definition.clone(), environment: self.current };
+                let closure = Closure { definition: definition.clone(), environment: self.current, module: self.module() };
                 match definition.kind {
                     DefinitionKind::Function => Binding::Function(self::Function::new(FunctionNode::Defined(closure), &node.span)?),
-                    DefinitionKind::MonadicOperator | DefinitionKind::DyadicOperator => Binding::Operator(Operator::Defined(closure)),
+                    DefinitionKind::MonadicOperator | DefinitionKind::DyadicOperator => Binding::Operator(OperatorNode::Defined(closure)),
                 }
             }
             NodeKind::Output => match self.execution.input(&node.span, |input| input.line())? {
@@ -2415,11 +2501,27 @@ impl Session {
 
     /// Whether a run ends in a dyadic operator, which then takes the next item as its right operand.
     fn ends_in_dyadic_operator(&self, nodes: &[Node]) -> bool {
+        let nodes = self.members(nodes);
         match nodes.last().map(|n| &n.kind) {
-            Some(NodeKind::Operator(op)) => Operator::Primitive(*op).is_dyadic(),
+            Some(NodeKind::Operator(op)) => OperatorNode::Primitive(*op).is_dyadic(),
             Some(NodeKind::Name(name)) => matches!(self.lookup(name), Some(Binding::Operator(op)) if op.is_dyadic()),
             Some(NodeKind::Dfn(d)) => d.kind == DefinitionKind::DyadicOperator,
+            Some(NodeKind::Group(_)) => matches!(self.static_field(&nodes[nodes.len() - 1]), Some(Value::Operator(op)) if op.0.is_dyadic()),
             _ => false,
+        }
+    }
+    /// The value a dot path such as `m.f` or `m.a.f` names, read without evaluating anything. Dot access writes `m.f` as the
+    /// group `"f"⊃m`.
+    fn static_field(&self, node: &Node) -> Option<Value> {
+        match &node.kind {
+            NodeKind::Name(name) => match self.lookup(name)? { Binding::Value(v) => Some(v.clone()), _ => None },
+            NodeKind::Group(inner) => match &inner[..] {
+                [Node { kind: NodeKind::Literal(key), .. }, Node { kind: NodeKind::Function(Primitive::Mix), .. }, root] => {
+                    crate::keyed::field(&self.static_field(root)?, &crate::keyed::name(key)?)
+                }
+                _ => None,
+            },
+            _ => None,
         }
     }
     fn lookup(&self, name: &str) -> Option<&Binding> { self.binding(name).map(|(_, value)| value) }
@@ -2431,7 +2533,7 @@ impl Session {
             if let Some(value) = self.frames[i].names.get(name) { return Some((scope, value)); }
             scope = self.frames[i].parent;
         }
-        self.names.get(name).map(|value| (None, value))
+        self.table(self.module()).get(name).map(|value| (None, value))
     }
 
     fn call_defined(&mut self, function: &Function, left: Option<&Value>, right: &Value, output: &mut Vec<Output>) -> Result<Bound, Error> {
@@ -2454,11 +2556,11 @@ impl Session {
             if let Some(a) = left { names.insert("⍺".into(), Binding::Value(a)); }
             if let Some(f) = operand {
                 names.insert("⍶".into(), f.value());
-                names.insert("⍢".into(), Binding::Operator(Operator::Defined(closure.clone())));
+                names.insert("⍢".into(), Binding::Operator(OperatorNode::Defined(closure.clone())));
             }
             if let Some(f) = right_operand { names.insert("⍹".into(), f.value()); }
             self.current = Some(self.frames.len());
-            self.frames.push(Frame { names, parent: closure.environment });
+            self.frames.push(Frame { names, parent: closure.environment, module: closure.module });
             #[cfg(test)]
             { self.peak_frames = self.peak_frames.max(self.frames.len()); }
             match self.run_definition(&closure.definition, output) {
@@ -2747,7 +2849,7 @@ impl Binder {
                     // An operator still awaiting its operand cannot reduce with its right neighbour.
                     Some(Rule::Wait(_)) => true,
                     // A superscript waits for its operand. On an array it gives an array, which can be the left argument of the function to its right.
-                    Some(_) if matches!(&left.term, Term::Binding(Binding::Operator(self::Operator::Primitive(OperatorKind::Super(_))))) => true,
+                    Some(_) if matches!(&left.term, Term::Binding(Binding::Operator(self::OperatorNode::Primitive(OperatorKind::Super(_))))) => true,
                     Some(old) => match Rule::get(left.category(), binder.stack[n - 1].category()) {
                         // Adjacent arrays group from the right: `v w i` is `v (w i)`.
                         Rule::Adjacent if matches!(old, Rule::Adjacent) => false,
@@ -2835,7 +2937,7 @@ impl Binder {
             Rule::Derive => {
                 let operand = Operand::from_value(left.value()?);
                 let Binding::Operator(operator) = right.value()? else { unreachable!() };
-                if matches!(operator, self::Operator::Primitive(OperatorKind::Super(Superscript::Unit))) {
+                if matches!(operator, self::OperatorNode::Primitive(OperatorKind::Super(Superscript::Unit))) {
                     // `ᵘ` makes a scalar that holds a function. `⊂` encloses a subject.
                     let Operand::Function(f) = operand else {
                         return Err(span.domain_error("ᵘ makes a scalar that holds a function. Enclose a subject with ⊂"));
@@ -2843,7 +2945,7 @@ impl Binder {
                     Term::Binding(Binding::Value(crate::Value::Function(f).enclose().error_at(&span, "invalid scalar")?))
                 } else {
                     // A superscript on an array is a call to `*` or `⍉`.
-                    if let (self::Operator::Primitive(OperatorKind::Super(s)), Operand::Value(array)) = (&operator, &operand) {
+                    if let (self::OperatorNode::Primitive(OperatorKind::Super(s)), Operand::Value(array)) = (&operator, &operand) {
                         let (function, left, right) = match *s {
                             Superscript::Power(n) => (Primitive::Math(crate::number::Math::Power), Some(array.clone()), integer(n)),
                             Superscript::Transpose => (Primitive::Transpose, None, array.clone()),
@@ -2856,7 +2958,7 @@ impl Binder {
             }
             Rule::BindRight => {
                 let Binding::Operator(operator) = left.value()? else { unreachable!() };
-                Term::Binding(Binding::Operator(self::Operator::Bound(Box::new(operator), Operand::from_value(right.value()?))))
+                Term::Binding(Binding::Operator(self::OperatorNode::Bound(Box::new(operator), Operand::from_value(right.value()?))))
             }
             Rule::Attach => Term::Left(left.array()?, right.function()?),
             Rule::Call if matches!(right.term, Term::Binding(Binding::Absent)) => Term::Binding(Binding::Absent),

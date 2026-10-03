@@ -14,7 +14,7 @@ fn element(e: &Value) -> Option<JsonValue> {
         }
         Value::Character(c) => json!(c.to_string()),
         a @ Value::Array(_) => return array(a),
-        Value::Function(_) => return None,
+        Value::Function(_) | Value::Operator(_) => return None,
     })
 }
 

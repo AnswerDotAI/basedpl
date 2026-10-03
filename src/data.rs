@@ -106,7 +106,7 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
     let path = text(right, span)?;
     span.check()?;
     let data =
-        if path == "-" { span.input(|input| input.rest())? } else { std::fs::read(&path).map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))? };
+        if path == "-" { span.input(|input| input.rest())? } else { std::fs::read(span.path(&path)).map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))? };
     span.check()?;
     if binary { return Value::integers(vec![data.len()], data.into_iter().map(i64::from).collect()).error_at(span, "invalid byte vector"); }
     let data = String::from_utf8(data).map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))?;
@@ -130,7 +130,7 @@ pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
         .create_new(!overwrite)
         .create(overwrite)
         .truncate(overwrite)
-        .open(&path)
+        .open(span.path(&path))
         .map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))?;
     file.write_all(&data).map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))?;
     Ok(Value::Number(Number::from_integer(data.len() as i64)))

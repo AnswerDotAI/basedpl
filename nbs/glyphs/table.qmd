@@ -1,5 +1,7 @@
 # `⍪` — Table / Catenate first
 
+Keys: `Alt-Minus ,`
+
 `⍪Y` makes a matrix: first axis becomes rows, remaining axes become columns.
 
 ```bpl

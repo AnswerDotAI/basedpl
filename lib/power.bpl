@@ -1,8 +1,6 @@
 ⍝ Power dfns — adapted for BPL from April
 ⍝ Source: https://dfns.dyalog.com/n_contents.htm (individual sources below)
 ⍝ April: libraries/dfns/power/power.apl; Apache-2.0, see LICENSE-april
-•load "lib/array.bpl"
-
 ⍝⍝ Ported from Dyalog's dfns at http://dfns.dyalog.com/n_contents.htm into April APL
 
 ⍝ From http://dfns.dyalog.com/c_for.htm

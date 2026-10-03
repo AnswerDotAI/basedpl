@@ -1,5 +1,7 @@
 # `↕` — Windows
 
+Keys: `Alt-k j`
+
 `S↕Y`: windows of sizes `S` on leading axes. Trailing axes stay inside each window.
 
 ```bpl

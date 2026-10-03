@@ -1,59 +1,33 @@
 # `( )` — Group / Rows / Train
 
-Parentheses round an expression group it, whatever it holds. Without `⋄`, they hold one expression wherever they appear, including inside [brackets](brackets.qmd). Put a literal argument after a literal operand in parentheses, as in `f⍣2(3)`. Without parentheses, `f⍣2 3` takes `2 3` as the operand.
+`(Y)` groups an expression, whatever it holds: `(1 2)` is `1 2`, `(x)` is `x`, and `(-)` is `-`. Inside parentheses, spaces separate runs, and a line break counts as a space. Parentheses hold one expression wherever they appear, including inside brackets.
 
 ```bpl
 (2×3)+4            ⍝ 10
 x←2 4 9
 [(+/x) ≢x]         ⍝ 15 3ₓ
-1+⍣3(5)            ⍝ 8
-```
-
-Parentheses group a glyph or a name as they group a literal: `(1 2)` is `1 2`, `(x)` is `x`, and `(-)` is `-`. For a scalar, use [`⊂`](enclose.qmd) on a subject, as in `⊂[1 2]`, or [`ᵘ`](superscript.qmd) on a function, as in `+ᵘ`.
-
-```bpl
-(5)≡5              ⍝ $t
-⍴(1 2)             ⍝ [2]ₓ
-x←1 2 ⋄ (x)≡x      ⍝ $t
 (-)3               ⍝ ¯3
 f←- ⋄ (f)3         ⍝ ¯3
 ```
 
-A line break inside parentheses counts as a space. Outside brackets, spaces separate runs. Each run is grouped as if it were in parentheses. This expression means `(1+2)×(3+4)`:
+A literal argument after a literal operand goes in parentheses, as in `f⍣2(3)`. Without parentheses, `f⍣2 3` takes `2 3` as the operand.
 
 ```bpl
-total←(1+2
-       × 3+4)
-total              ⍝ 21
+1+⍣3(5)            ⍝ 8
 ```
 
-## Rows
-
-Parentheses with `⋄` are used to write a vector whose items are the rows. Each row is a vector, even a row with one item. Rows can differ in length. With a trailing `⋄`, the result is a one-item vector holding one row. Rows written over several lines need `⋄` at the end of each line.
+`(A ⋄ B)` is a vector of the rows `A` and `B`. Each row is a vector, even a row with one item, and rows can differ in length. `(A ⋄)` is a one-item vector holding the row `A`.
 
 ```bpl
-(4 ⋄ 4 5 ⋄ 4 5 6)       ⍝ [[4] [4 5] [4 5 6]]
-a←1 ⋄ b←2
-(a b ⋄ b)               ⍝ [[1 2] [2]]
-(1 2 ⋄)                 ⍝ [[1 2]]
+(4 ⋄ 4 5 ⋄ 4 5 6)  ⍝ [[4] [4 5] [4 5 6]]
+(1 2 ⋄)            ⍝ [[1 2]]
 ```
 
-In brackets, rows separated by `⋄` form one array instead: `[1 2 ⋄ 3 4]` is a matrix, and `(1 2 ⋄ 3 4)` is a vector of two vectors. Write a vector of strings or of names in brackets: `["ab" "cd"]` or `[a b]`.
-
-## Trains
-
-Two functions form an atop: `(f g)Y` is `f(g Y)`.
+`(f g)Y` is the atop `f(g Y)`, and `(f g h)Y` is the fork `(f Y)g(h Y)`. [Trains](../rules.qmd#trains) gives the rules for longer trains and dyadic calls.
 
 ```bpl
 (- +/)1 2 3        ⍝ ¯6
-(-×)3              ⍝ ¯1ₓ
-```
-
-Three form a fork: `(f g h)Y` is `(f Y)g(h Y)`. Dyadic forks pass both arguments to each arm.
-
-```bpl
 (+/÷≢)2 4 9        ⍝ 5
-(+/ ÷ ≢)2 4 9      ⍝ 5
 ```
 
-Longer trains group from the right. A fork's left arm can be a subject. The right arm evaluates first.
+For a scalar, use [`⊂`](enclose.qmd) on a subject or [`ᵘ`](../scripts.qmd#a-function-as-a-scalar) on a function. [Types of brackets](../bracket-types.qmd) compares parentheses with brackets and braces.

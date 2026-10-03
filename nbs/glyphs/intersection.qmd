@@ -1,5 +1,7 @@
 # `∩` — Intersection
 
+Keys: `Alt-c`
+
 `X∩Y` keeps the major cells of `X` found among the major cells of `Y`. Order and repetitions are retained. Uses tolerant matching.
 
 ```bpl

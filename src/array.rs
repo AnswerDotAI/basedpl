@@ -79,6 +79,7 @@ pub enum Value {
     Character(char),
     Array(Arc<ArrayData>),
     Function(crate::Function),
+    Operator(crate::Operator),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -934,7 +935,7 @@ pub(crate) fn element_count(shape: &[usize]) -> Result<usize, ErrorKind> {
 
 impl Value {
     fn exact_domain(&self) -> Option<bool> {
-        match self { Self::Number(n) => Some(n.is_exact()), Self::Character(_) | Self::Function(_) => None, Self::Array(a) => a.data.exact() }
+        match self { Self::Number(n) => Some(n.is_exact()), Self::Character(_) | Self::Function(_) | Self::Operator(_) => None, Self::Array(a) => a.data.exact() }
     }
     pub fn fill(&self) -> Self {
         match self {
@@ -942,11 +943,11 @@ impl Value {
             Self::Number(n) => Self::Number(n.zero()),
             Self::Character(_) => Self::Character(' '),
             Self::Array(_) => self.fill_array(),
-            Self::Function(_) => self.clone(),
+            Self::Function(_) | Self::Operator(_) => self.clone(),
         }
     }
     pub(crate) fn environment(&self) -> Option<usize> {
-        match self { Self::Function(f) => f.environment(), Self::Array(a) => a.data.environment().map(usize::from), _ => None }
+        match self { Self::Function(f) => f.environment(), Self::Operator(op) => op.environment(), Self::Array(a) => a.data.environment().map(usize::from), _ => None }
     }
     pub fn is_atom(&self) -> bool { !matches!(self, Self::Array(_)) }
     pub fn enclose(&self) -> Result<Self, ErrorKind> { Self::new(vec![], vec![self.clone()]) }
@@ -1103,7 +1104,7 @@ impl Value {
                 .or_else(|| n.complex_slice().map(Items::Complex))
                 .unwrap_or(Items::Values(std::slice::from_ref(self))),
             Self::Character(c) => Items::Characters(std::slice::from_ref(c)),
-            Self::Function(_) => Items::Values(std::slice::from_ref(self)),
+            Self::Function(_) | Self::Operator(_) => Items::Values(std::slice::from_ref(self)),
         }
     }
     /// The items in their storage type, as a kernel reads them. Integer storage flagged for non-finite values is checked first. When
@@ -1420,6 +1421,10 @@ impl Value {
                 if f.system_call().is_some() && crate::system::lookup(&text).is_none() { return f.to_string(); }
                 if text.contains(' ') { format!("({text})") } else { text }
             }
+            Self::Operator(op) => {
+                let text = op.to_string();
+                if text.contains(' ') { format!("({text})") } else { text }
+            }
             Self::Array(_) => {
                 if self.axis_names().iter().any(Option::is_some) { return self.named_literal(); }
                 if let Some(s) = self.string_literal() { return s; }
@@ -1684,7 +1689,7 @@ impl fmt::Display for Value {
         if self.elements().all(|e| matches!(e, Value::Number(_))) { if let Ok(formatted) = self.formatted() { return formatted.fmt(f); } }
         let text: Vec<_> = self
             .elements()
-            .map(|e| match e { Value::Character(c) => c.to_string(), Value::Function(f) => f.to_string(), e => e.item() })
+            .map(|e| match e { Value::Character(c) => c.to_string(), Value::Function(f) => f.to_string(), Value::Operator(op) => op.to_string(), e => e.item() })
             .collect();
         let mut widths = vec![0; columns];
         for (i, s) in text.iter().enumerate() { widths[i % columns] = widths[i % columns].max(s.width()); }

@@ -1,5 +1,7 @@
 # `⌾` — Under
 
+Keys: `Alt-o t`
+
 When `g` only selects or rearranges, `f⌾g Y` puts the result of `f(g Y)` back where `g` took it from. The rest of `Y` is unchanged. `g` qualifies when [selective assignment](assign.qmd) accepts it as a target: Take, Drop, Replicate, Reverse, Transpose, Ravel, Enlist, Pick and `⌷`, with Each, Rank, Axis or an atop of them.
 
 ```bpl

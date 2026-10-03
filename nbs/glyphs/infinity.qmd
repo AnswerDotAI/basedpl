@@ -1,5 +1,7 @@
 # `∞` — Infinity
 
+Keys: `Alt-8`
+
 `∞` and `¯∞` are approximate real infinities.
 
 ```bpl
@@ -15,6 +17,8 @@
 ∞-∞                ⍝ $n
 0×∞                ⍝ $n
 ```
+
+[Infinities and NaN](../numbers.qmd#infinities-and-nan) covers how infinities combine with exact numbers.
 
 ## Errors
 

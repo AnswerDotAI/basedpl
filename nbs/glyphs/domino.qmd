@@ -1,5 +1,7 @@
 # `⌹` — Matrix inverse / Matrix divide
 
+Keys: `Alt-q u`
+
 `⌹Y` gives an inverse, or a full-column-rank least-squares pseudoinverse. Units reciprocate.
 
 ```bpl

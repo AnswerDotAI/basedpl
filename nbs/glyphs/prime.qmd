@@ -1,5 +1,7 @@
 # `⍭` — Prime
 
+Keys: `Alt-Backslash ~`
+
 `⍭N`: the prime with `N` primes before it. `⍭0` is 2. J's `p:` family. Integral inputs; exact integer results.
 
 ```bpl

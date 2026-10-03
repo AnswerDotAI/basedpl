@@ -1,5 +1,7 @@
 # `∘` — Atop
 
+Keys: `Alt-t`
+
 `f∘g Y` is `f(g Y)`, and `X f∘g Y` is `f(X g Y)`.
 
 ```bpl

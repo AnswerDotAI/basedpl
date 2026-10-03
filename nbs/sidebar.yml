@@ -11,8 +11,16 @@ website:
           - principles.qmd
           - glyphs.qmd
           - rules.qmd
+          - arrays.qmd
+          - numbers.qmd
+          - strings.qmd
+          - bracket-types.qmd
+          - scripts.qmd
+          - assignment.qmd
           - dfns.qmd
+          - namespaces.qmd
           - keyed.qmd
+          - system-functions.qmd
           - comparison.qmd
       - section: Working with data
         contents:

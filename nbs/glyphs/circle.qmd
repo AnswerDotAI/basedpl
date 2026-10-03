@@ -1,5 +1,7 @@
 # `○` — Unit circle / Circular functions
 
+Keys: `Alt-o`
+
 `○Y`: e<sup>iY</sup> = cos Y + i sin Y. Real Y is an angle in radians. Pervasive.
 
 ```bpl

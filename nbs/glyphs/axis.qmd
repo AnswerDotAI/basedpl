@@ -1,5 +1,7 @@
 # `⍠` — Axis
 
+Keys: `Alt-q :`
+
 `f⍠A` applies `f` to the cells made of the axes `A`. The other axes form the frame. `A` is a list of axes, given as numbers or names. Axes count from 0, and negative axes count from the end.
 
 ```bpl

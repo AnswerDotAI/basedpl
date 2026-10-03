@@ -1,5 +1,7 @@
 # `∨` — OR / GCD
 
+Keys: `Alt-9`
+
 `∨Y` gives real/imaginary pairs along a new last axis. Y is a numeric array.
 
 ```bpl

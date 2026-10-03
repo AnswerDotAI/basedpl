@@ -1,5 +1,7 @@
 # `⍲` — NAND
 
+Keys: `Alt-0 ~`
+
 `⍲Y`: Y<sup>2</sup>. Pervasive.
 
 ```bpl

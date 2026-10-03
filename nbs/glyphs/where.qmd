@@ -1,5 +1,7 @@
 # `⍸` — Where / Interval index
 
+Keys: `Alt-i _`
+
 `⍸Y` lists exact positions, repeated according to their nonnegative integer counts. Higher-rank arguments give coordinate vectors.
 
 ```bpl

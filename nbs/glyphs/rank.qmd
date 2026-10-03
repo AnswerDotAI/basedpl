@@ -1,5 +1,7 @@
 # `⍤` — Rank
 
+Keys: `Alt-1 t`
+
 `f⍤R` applies `f` to the [cells](../rules.qmd#term-cell) of rank `R`. With two arguments, `f⍤R` pairs cells using leading agreement of the [frames](../rules.qmd#term-frame). Write a literal argument after the rank in brackets or [parentheses](parentheses.qmd), as in `-⍤0(5)`. Without brackets or parentheses, `0 5` in `-⍤0 5` is the rank. Three rules give the result:
 
 1. Inside a frame, the 0-cell at a position holding an atom is that atom. The 0-cell at a position holding an array is a scalar holding the array.

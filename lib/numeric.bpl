@@ -1,7 +1,7 @@
 ⍝ Numeric dfns — adapted for BPL from April
 ⍝ Source: https://dfns.dyalog.com/n_contents.htm (individual sources below)
 ⍝ April: libraries/dfns/numeric/numeric.apl; Apache-2.0, see LICENSE-april
-•load "lib/graph.bpl"
+_graph←•load "./graph.bpl"
 
 ⍝⍝ Ported from http://dfns.dyalog.com/n_contents.htm into April APL
 
@@ -178,7 +178,7 @@ roman ← {  ⍝ Roman numeral arithmetic.
 stamps ← {  ⍝ Postage stamps to the value of ⍵.
   ⍺←1 5 6 10 26 39 43  ⍝ Default UK stamp denominations.
   graph←⍺{⍵⍃∩¨⍵+⊂⍺}⍳⍵+|⌊/⍺  ⍝ values: 0 ·· ⍵.
-  spath←graph path [0 ⍵]
+  spath←graph _graph.path [0 ⍵]
   -/⌽2↕spath
 }
 

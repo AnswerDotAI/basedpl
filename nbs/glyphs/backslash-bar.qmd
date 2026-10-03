@@ -1,5 +1,7 @@
 # `⍀` — Scan first
 
+Keys: `Alt-Minus Backslash`
+
 `f⍀Y` scans down the first axis.
 
 ```bpl

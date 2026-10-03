@@ -1,5 +1,7 @@
 # `⍒` — Grade down
 
+Keys: `Alt-g |`
+
 `⍒Y` gives indices that sort major cells descending. Stable, with the same [ordering](grade-up.qmd) as Grade up.
 
 ```bpl

@@ -1,5 +1,7 @@
 # `⍨` — Self / Commute / Constant
 
+Keys: `Alt-1 ~`
+
 `f⍨Y` is `Y f Y`.
 
 ```bpl

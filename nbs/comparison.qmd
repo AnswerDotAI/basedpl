@@ -349,7 +349,7 @@ Source: `Depth` in the dfns workspace. It applies its left operand at the depths
 ```
 
 ```bpl
-•load "lib/dyalog.bpl"
+[Depth]←•load "lib/dyalog.bpl"
 1 2 +Depth 0 [3 4]     ⍝ 4 6
 ```
 

@@ -1,5 +1,7 @@
 # `→` — Pipe
 
+Keys: `Alt-l`
+
 `Y→f→g` passes Y through f, then g. Each stage uses ordinary BPL binding.
 
 ```bpl

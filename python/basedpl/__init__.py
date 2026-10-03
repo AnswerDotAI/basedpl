@@ -8,7 +8,7 @@ Modules:
 import math, operator, sys
 from dataclasses import dataclass
 from fractions import Fraction
-from ._core import __version__, symbols, _Array, _Function, _Session
+from ._core import __version__, symbols, _Array, _Function, _Operator, _Session
 
 __all__ = ['__version__', 'symbols', 'Array', 'Result', 'BplError', 'bpl', 'fn']
 __pyskill_sigs__ = False
@@ -32,6 +32,7 @@ def _value(raw, as_array=False):
     def item(o):
         if isinstance(o, tuple): return Fraction(*o)
         if isinstance(o, _Function): return Function(o)
+        if isinstance(o, _Operator): return Operator(o)
         return _value(o) if isinstance(o, dict) else o
     if 'atom' in raw:
         result = item(raw['atom'])
@@ -71,7 +72,7 @@ def _element(value, seen):
     if np is not None and isinstance(value, np.generic): value = value.item()
     if isinstance(value, bool): return value
     if isinstance(value, Fraction): return value.numerator, value.denominator
-    if isinstance(value, Function): return value._inner
+    if isinstance(value, (Function, Operator)): return value._inner
     if type(value) in (int, float, complex): return value
     if isinstance(value, str) and len(value) == 1: return value
     if isinstance(value, (Array, str, list, tuple, dict)) or np is not None and isinstance(value, np.ndarray): return _array(value, seen)
@@ -264,6 +265,7 @@ def _result(raw, display=False):
     if error := raw['error']: raise BplError(error, raw['output'])
     value = raw['value']
     if isinstance(value, _Function): value = Function(value)
+    elif isinstance(value, _Operator): value = Operator(value)
     elif value is not None: value = Array(value)
     return Result(value, raw['output'])
 
@@ -331,7 +333,7 @@ class _Workspace:
 bpl = _Workspace()
 fn = bpl.fn
 
-from .functions import Function, fork, atop, __all__ as _function_names, _binary, _unary, _builtin, _builtins
+from .functions import Function, Operator, fork, atop, __all__ as _function_names, _binary, _unary, _builtin, _builtins
 from .printing import to_python
 __all__ += ['to_python']
 __all__ += _function_names

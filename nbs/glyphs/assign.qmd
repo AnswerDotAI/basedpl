@@ -1,35 +1,29 @@
 # `←` — Assign
 
-`N←Y` binds a name to an array, function or operator. Chained assignment returns the assigned value silently.
+Keys: `Alt-h`
+
+`N←Y` binds the name `N` to `Y`, an array, function or operator, and returns `Y` without displaying it. The target is the run just before `←`, and the value is everything to its right. Independent assignments need `⋄`, as in `a←1 ⋄ b←2`.
 
 ```bpl
 x←3 ⋄ x+2          ⍝ 5
-sum←+/ ⋄ sum1 2 3 ⍝ 6
-```
-
-`←` binds tightly on its left and loosely on its right. The target is the run immediately before `←`: a name, a [subscript](subscript.qmd) such as `x₁`, a dot path such as `x.[i]`, or a group. The value is the whole expression to its right.
-
-```bpl
 x←1+2 × 3 ⋄ x      ⍝ 9
+sum←+/ ⋄ sum 1 2 3 ⍝ 6
 ```
 
-`N f←Y` updates with `N f Y`. A named function goes in parentheses, `N(f)←Y`. In `N f←Y`, the target would be `f`, because the target of `←` is the run before it. A [subscript](subscript.qmd) or a [dot index](dot.qmd) is a selective target. `x₁←9` updates item 1 through [Index](squad.qmd) `⌷`. Other selections need parentheses: `(f N)←Y` updates the items that `f` selects. `f` must only select or rearrange, as for structural [Under](under.qmd).
+`N f←Y` sets `N` to `N f Y`. A named function goes in parentheses, `N(f)←Y`, because in `N f←Y` the target would be `f`.
 
 ```bpl
 x←10 ⋄ x+←3 ⋄ x    ⍝ 13
 f←× ⋄ x←3 ⋄ x(f)←4 ⋄ x ⍝ 12
-x←1 2 3 ⋄ x.[[0 2]]+←10 ⋄ x ⍝ 11 2 13
-x←1 2 3 ⋄ x₁←9 ⋄ x ⍝ 1 9 3
-x←1 2 3 ⋄ (2↑x)←8 9 ⋄ x ⍝ 8 9 3
-M←[1 2 ⋄ 3 4] ⋄ ((0⌷⍤1) M)←9 ⋄ M ⍝ [9 2 ⋄ 9 4]
 ```
 
-Brackets destructure: each name gets the corresponding item.
+A target can also be a [subscript](../scripts.qmd#subscripts) such as `x₁`, a [dot](dot.qmd) path such as `T.a` or `x.[i]`, or a selection in parentheses, `(f N)`, where `f` only selects or rearranges, as for structural [Under](under.qmd). `[a b]←Y` destructures: each name gets the matching item.
 
 ```bpl
+x←1 2 3 ⋄ x₁←9 ⋄ x ⍝ 1 9 3
+x←1 2 3 ⋄ x.[[0 2]]+←10 ⋄ x ⍝ 11 2 13
+x←1 2 3 ⋄ (2↑x)←8 9 ⋄ x ⍝ 8 9 3
 [a b]←10 20 ⋄ a+b  ⍝ 30
 ```
 
-Independent assignments need `⋄`, as in `a←1 ⋄ b←2`.
-
-Inside dfns, plain assignment is local. Modified and selective array updates target the nearest existing binding. Arrays have value semantics.
+Inside a dfn, plain assignment is local. Modified and selective assignment update the nearest existing binding. [Assignment](../assignment.qmd) covers every form.

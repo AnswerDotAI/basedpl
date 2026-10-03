@@ -1,5 +1,7 @@
 # `⊤` — Encode
 
+Keys: `Alt-n`
+
 `⊤Y` encodes nonnegative integers in binary, choosing enough digits for the largest value. Each number's digits lie along a new last axis. Zero needs zero digits.
 
 ```bpl

@@ -1,30 +1,21 @@
 # `'` `"` — Character and string literals
 
-Single quotes hold exactly one character. Double quotes hold a string, which is a vector of any length.
+`'c'` is one character. `"text"` is a string, a vector of characters of any length.
 
 ```bpl
 ⍴'a'               ⍝ ⍬ₓ
 ⍴"a"               ⍝ [1]ₓ
-⍴"abc"             ⍝ [3]ₓ
 ⍴""                ⍝ [0]ₓ
 ```
 
-The quote character is `'''`. An apostrophe needs no escaping inside a string. Double a double quote inside a string.
+`'''` is the quote character. Inside a string, an apostrophe needs no escaping, and a double quote is written twice.
 
 ```bpl
 •ucs '''           ⍝ 39ₓ
-≢"can't"           ⍝ 5ₓ
 ≢"say ""hi"""      ⍝ 8ₓ
 ```
 
-Literals separated by spaces form a strand, which is one vector. Characters side by side form a string. Strings side by side form a vector of strings. For example, `"x" "y"` is two keys, and `'x' 'y'` is the one key `"xy"`.
-
-```bpl
-'a' 'b'            ⍝ "ab"
-≢"aa" "bb"         ⍝ 2ₓ
-```
-
-Results show strings in double quotes and characters in single quotes.
+Literals separated by spaces form one vector: `'a' 'b'` is `"ab"`, and `"aa" "bb"` is a vector of two strings. See [Characters and strings](../strings.qmd).
 
 ## Errors
 

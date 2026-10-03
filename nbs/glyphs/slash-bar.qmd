@@ -1,5 +1,7 @@
 # `⌿` — Reduce first
 
+Keys: `Alt-Minus /`
+
 `f⌿Y` reduces the first axis.
 
 ```bpl

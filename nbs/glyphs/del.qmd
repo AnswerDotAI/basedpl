@@ -1,5 +1,7 @@
 # `∇` — Function self-reference
 
+Keys: `Alt-g`
+
 `∇` calls the current dfn or derived function recursively.
 
 ```bpl

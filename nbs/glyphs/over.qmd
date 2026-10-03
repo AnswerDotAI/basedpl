@@ -1,5 +1,7 @@
 # `⍥` — Over
 
+Keys: `Alt-1 o`
+
 `f⍥g Y` is `f(g Y)`.
 
 ```bpl

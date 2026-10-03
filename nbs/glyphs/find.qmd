@@ -1,5 +1,7 @@
 # `⍷` — Find
 
+Keys: `Alt-e _`
+
 `X⍷Y` marks starting positions where the whole pattern `X` occurs in `Y`. The result has `Y`'s shape. Overlaps count.
 
 ```bpl

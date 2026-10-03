@@ -15,6 +15,7 @@ fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
     let element = |o: Bound<'_, PyAny>| -> PyResult<Value> {
         if let Ok(a) = o.extract::<PyRef<'_, PyArray>>() { return Ok(a.inner.clone()); }
         if let Ok(f) = o.extract::<PyRef<'_, PyFunction>>() { return Ok(Value::Function(f.inner.clone())); }
+        if let Ok(op) = o.extract::<PyRef<'_, PyOperator>>() { return Ok(Value::Operator(op.inner.clone())); }
         if let Ok(d) = o.cast::<PyDict>() { return import_array(d); }
         if let Ok(s) = o.cast::<PyString>() {
             return crate::protocol::character(s.to_str()?).map(Value::Character).ok_or_else(|| PyValueError::new_err("expected one character"));
@@ -48,6 +49,7 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
             Value::Character(c) => PyString::new(py, &c.to_string()).into_any().unbind(),
             a @ Value::Array(_) => array(py, a)?.into_any(),
             Value::Function(f) => Py::new(py, PyFunction { inner: f.clone() })?.into_any(),
+            Value::Operator(op) => Py::new(py, PyOperator { inner: op.clone() })?.into_any(),
         })
     }
     let result = PyDict::new(py);
@@ -180,6 +182,22 @@ impl PyFunction {
         Ok(Some((kind, args)))
     }
 }
+
+/// An operator held as a value, as a module record holds it.
+#[pyclass(frozen, name = "_Operator")]
+struct PyOperator { inner: crate::Operator }
+
+#[pymethods]
+impl PyOperator {
+    /// The function this operator derives from its operand, or from both operands of a dyadic operator.
+    #[pyo3(signature = (left, right=None))]
+    fn derive(&self, left: &Bound<'_, PyAny>, right: Option<&Bound<'_, PyAny>>) -> PyResult<PyFunction> {
+        let span = Span::whole(Source::new("<operator>", self.inner.to_string()));
+        let right = right.map(operand).transpose()?;
+        self.inner.derive(operand(left)?, right, &span).map(|inner| PyFunction { inner }).map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+    fn __repr__(&self) -> String { self.inner.to_string() }
+}
 struct EvalRequest {
     code: Option<String>,
     function: Option<Function>,
@@ -303,7 +321,15 @@ fn python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
 
 /// A result as the dict that the JSON protocol sends, holding native arrays and functions.
 fn response(py: Python<'_>, result: Evaluation) -> PyResult<Py<PyDict>> {
-    let value = if let Some(inner) = result.value { Some(Py::new(py, PyArray { inner })?.into_any()) } else if let Some(inner) = result.function { Some(Py::new(py, PyFunction { inner })?.into_any()) } else { None };
+    let value = if let Some(inner) = result.value {
+        Some(Py::new(py, PyArray { inner })?.into_any())
+    } else if let Some(inner) = result.function {
+        Some(Py::new(py, PyFunction { inner })?.into_any())
+    } else if let Some(inner) = result.operator {
+        Some(Py::new(py, PyOperator { inner })?.into_any())
+    } else {
+        None
+    };
     let d = PyDict::new(py);
     d.set_item("value", value)?;
     d.set_item("output", output(py, &result.output)?)?;
@@ -383,6 +409,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySession>()?;
     m.add_class::<PyArray>()?;
     m.add_class::<PyFunction>()?;
+    m.add_class::<PyOperator>()?;
     m.add_function(wrap_pyfunction!(run_cli, m)?)?;
     m.add_function(wrap_pyfunction!(_check_reference, m)?)?;
     m.add_function(wrap_pyfunction!(_captured_literal, m)?)?;

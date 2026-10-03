@@ -1,3 +1,5 @@
 ⍝ The sbst operations that tree cases use. Each case runs in a fresh session, so it loads this file.
-•load "lib/tree.bpl"
-put←'∪' sbst ⋄ get←'⍎' sbst ⋄ rem←'~' sbst ⋄ fmt←'⍕' sbst ⋄ chk←'?' sbst ⋄ vec←'∊' sbst ⋄ bal←'=' sbst ⋄ tree←0⍃(put foldl)
+_tree←•load "../../../lib/tree.bpl"
+_array←•load "../../../lib/array.bpl"
+_t←_tree.sbst
+put←'∪' _t ⋄ get←'⍎' _t ⋄ rem←'~' _t ⋄ fmt←'⍕' _t ⋄ chk←'?' _t ⋄ vec←'∊' _t ⋄ bal←'=' _t ⋄ tree←0⍃(put _array.foldl)

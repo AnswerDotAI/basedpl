@@ -1,5 +1,7 @@
 # `⌺` — Stencil
 
+Keys: `Alt-q Backtick`
+
 `f⌺S Y` applies `f` to neighbourhoods of sizes `S` on leading axes. Windows at the edges are padded with prototype fill.
 
 Negative sizes in [Windows](windows.qmd) return the same windows as one array.

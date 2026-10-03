@@ -51,7 +51,7 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
     let (expected, no_result) = if let Some(source) = case["expected_code"].as_str() {
         let expected = Session::new()
             .eval_with(source, EvalOptions { timeout: options.timeout, interrupt: options.interrupt.clone(), echo: false, ..EvalOptions::default() });
-        if expected.error.is_some() || expected.function.is_some() {
+        if expected.error.is_some() || expected.function.is_some() || expected.operator.is_some() {
             return json!({"status":"invalid", "message":"expectation must produce a value or no result", "actual":crate::protocol::response(expected)});
         }
         let no_result = expected.value.is_none();
@@ -80,7 +80,11 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
             return json!({"status":"error", "kind":kind, "message":error.message, "actual":crate::protocol::response(result)});
         }
     }
-    let mismatch = if result.error.is_some() { None } else if result.function.is_some() { Some("unexpected function result".into()) } else {
+    let mismatch = if result.error.is_some() {
+        None
+    } else if result.function.is_some() || result.operator.is_some() {
+        Some("unexpected function or operator result".into())
+    } else {
         match (error_kind, &result.value, expected) {
             (Some(kind), _, _) => Some(format!("expected {kind}")),
             (_, None, _) if no_result => None,

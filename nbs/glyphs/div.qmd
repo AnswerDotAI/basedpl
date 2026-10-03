@@ -1,5 +1,7 @@
 # `÷` — Reciprocal / Divide
 
+Keys: `Alt-u`
+
 `÷Y`: 1/Y. Pervasive.
 
 ```bpl

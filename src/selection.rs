@@ -125,7 +125,7 @@ impl Labels {
                     }
                     None => self.collect(&a, &right.at(pick(i)), span, targets, values)?,
                 },
-                Value::Character(_) | Value::Function(_) => return Err(span.domain_error("invalid selection")),
+                Value::Character(_) | Value::Function(_) | Value::Operator(_) => return Err(span.domain_error("invalid selection")),
             }
         }
         Ok(())

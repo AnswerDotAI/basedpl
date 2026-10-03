@@ -1,5 +1,7 @@
 # `⊃` — Mix / Pick
 
+Keys: `Alt-x`
+
 `⊃Y` assembles items into rectangular cells, padding to a common shape with fill.
 
 ```bpl
