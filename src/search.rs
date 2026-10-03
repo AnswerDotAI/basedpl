@@ -1,6 +1,6 @@
 //! Search and classification of cells, for `⍳ ∊ ~ ∪ ∩`, monadic `∪ ≠ =` and Key.
 //!
-//! Two cells match when `array_match` says they do. A search for up to 16 needles among compact integers, floats or characters scans
+//! Two cells match when `Value::matches` says they do. A search for up to 16 needles among compact integers, floats or characters scans
 //! the items once for each needle. A real needle among floats or integers is compared with the range of floats tolerantly equal to it.
 //! Other small searches compare every pair, as do other searches for one needle. Larger ones build an
 //! index:
@@ -8,16 +8,16 @@
 //!   whether or not their storage is flagged for infinities. An infinity then shares its value with `i64::MAX` or `i64::MIN`. Characters
 //!   match only characters.
 //! - Exact data is hashed. Numbers must be exact, and arrays must have no keys and no functions. A hash bucket is only a candidate
-//!   list, so `array_match` confirms each candidate.
+//!   list, so `Value::matches` confirms each candidate.
 //! - Reals are hashed with tolerance. Each goes into a bucket of 512 neighbouring `float_key`s, and each of its matches lies in its own
 //!   bucket or the neighbour on the side of its half. Cells that are arrays go into the bucket of their first number, and
-//!   `array_match` confirms each candidate.
+//!   `Value::matches` confirms each candidate.
+//!
 //! Other data takes the pairwise comparison.
 use crate::{
     array::Items,
     execution::Context,
-    number::{equal_range, extended, float_match},
-    primitive::array_match,
+    number::{equal_range, float_match},
     Error, ErrorKind, Value,
 };
 use foldhash::{fast::RandomState, HashMap, HashMapExt};
@@ -61,14 +61,14 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_
             return tolerant_first(&x, &y, span, |j, i| x[j].to_bits() == x[i].to_bits(), |i, j| Ok(float_match(x[i], y[j])));
         }
         if let (Some(x), Some(y)) = (leading_reals(haystack), leading_reals(needles)) {
-            return tolerant_first(&x, &y, span, |j, i| haystack.get(j) == haystack.get(i), |i, j| array_match(&haystack.get(i), &needles.get(j), span));
+            return tolerant_first(&x, &y, span, |j, i| haystack.get(j).same(&haystack.get(i)), |i, j| haystack.get(i).matches(&needles.get(j), span));
         }
     }
     let miss = haystack.len() as i64;
     (0..needles.len())
         .map(|j| {
             let y = needles.get(j);
-            for i in 0..haystack.len() { if array_match(&haystack.get(i), &y, span)? { return Ok(i as i64); } }
+            for i in 0..haystack.len() { if haystack.get(i).matches(&y, span)? { return Ok(i as i64); } }
             Ok(miss)
         })
         .collect()
@@ -123,7 +123,7 @@ pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<usize>, 
         }
         if let Some(x) = hashes(cells, &RandomState::default()) { return hashed_classes(cells, &x, span); }
         if let Some(x) = reals(cells) { return tolerant_classes(&x, span, |r, i| Ok(float_match(x[r], x[i]))); }
-        if let Some(x) = leading_reals(cells) { return tolerant_classes(&x, span, |r, i| array_match(&cells.get(r), &cells.get(i), span)); }
+        if let Some(x) = leading_reals(cells) { return tolerant_classes(&x, span, |r, i| cells.get(r).matches(&cells.get(i), span)); }
     }
     let mut representatives = Vec::new();
     let mut classes = Vec::with_capacity(cells.len());
@@ -131,7 +131,7 @@ pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<usize>, 
         let cell = cells.get(i);
         let mut class = i;
         for &r in &representatives {
-            if array_match(&cells.get(r), &cell, span)? {
+            if cells.get(r).matches(&cell, span)? {
                 class = r;
                 break;
             }
@@ -336,7 +336,7 @@ fn hashed_first(haystack: &Cells, x: &[u64], needles: &Cells, y: &[u64], span: &
         .enumerate()
         .map(|(j, &hash)| {
             let needle = needles.get(j);
-            for i in buckets.chain(hash) { if array_match(&haystack.get(i), &needle, span)? { return Ok(i as i64); } }
+            for i in buckets.chain(hash) { if haystack.get(i).matches(&needle, span)? { return Ok(i as i64); } }
             Ok(miss)
         })
         .collect()
@@ -350,7 +350,7 @@ fn hashed_classes(cells: &Cells, x: &[u64], span: &Context<'_>) -> Result<Vec<us
         let cell = cells.get(i);
         let mut class = None;
         for r in representatives.chain(hash) {
-            if array_match(&cells.get(r), &cell, span)? {
+            if cells.get(r).matches(&cell, span)? {
                 class = Some(r);
                 break;
             }
@@ -363,14 +363,10 @@ fn hashed_classes(cells: &Cells, x: &[u64], span: &Context<'_>) -> Result<Vec<us
 /// The cells as reals, when every cell is a real atom.
 fn reals<'a>(cells: &'a Cells) -> Option<Cow<'a, [f64]>> {
     let Cells::Items(array) = cells else { return None };
-    Some(match array.as_items() {
-        Items::Floats(x) => Cow::Borrowed(x),
-        Items::Integers(x) => Cow::Owned(x.iter().map(|&n| n as f64).collect()),
-        Items::Extended(x) => Cow::Owned(x.iter().map(|&n| extended::float(n)).collect()),
-        Items::Booleans(x) => Cow::Owned(x.iter().map(|&b| f64::from(u8::from(b))).collect()),
-        Items::Values(items) => Cow::Owned(items.iter().map(real).collect::<Option<_>>()?),
-        _ => return None,
-    })
+    match array.as_items() {
+        Items::Values(items) => Some(Cow::Owned(items.iter().map(real).collect::<Option<_>>()?)),
+        items => items.reals(),
+    }
 }
 
 /// A real number as a float. Exact fractions and complex numbers give `None`.

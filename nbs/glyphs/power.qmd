@@ -9,7 +9,7 @@ Keys: `Alt-1 *`
 2+⍣3(1)            ⍝ 7
 ```
 
-Negative counts apply the known inverse. With a [superscript](../scripts.qmd#superscripts), `f⍣¯1` is written `f⁻¹`, and `f⍣2` is written `f²`.
+Negative counts apply the known inverse. With a [superscript](../scripts.ipynb#superscripts), `f⍣¯1` is written `f⁻¹`, and `f⍣2` is written `f²`.
 
 ```bpl
 2×⍣¯1(10)          ⍝ 5

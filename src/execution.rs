@@ -1,6 +1,6 @@
 use crate::{Error, ErrorKind, Span};
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     io,
     ops::Deref,
     sync::{
@@ -63,6 +63,8 @@ pub(crate) struct Execution {
     timeout: Option<(Instant, Duration)>,
     pub echo: bool,
     output: Option<OutputSink>,
+    /// Output that no sink takes, kept for the evaluation's result.
+    captured: RefCell<Vec<Output>>,
     input: Option<Arc<dyn Input>>,
     /// The poll, and when it last ran.
     poll: Option<(Poll, Cell<Instant>)>,
@@ -79,12 +81,13 @@ impl Execution {
         self.poll = options.poll.map(|poll| (poll, Cell::new(Instant::now())));
         self.countdown.set(0);
     }
-    pub(crate) fn output(&self, captured: &mut Vec<Output>, kind: OutputKind, text: String) {
-        self.emit(captured, Output { kind, data: [("text/plain".into(), text.into())].into_iter().collect() });
+    pub(crate) fn output(&self, kind: OutputKind, text: String) { self.emit(Output { kind, data: [("text/plain".into(), text)].into_iter().collect() }); }
+    /// Sends `output` to the sink, or keeps it for the evaluation's result when there is none.
+    pub(crate) fn emit(&self, output: Output) {
+        if let Some(sink) = &self.output { sink(&output); } else { self.captured.borrow_mut().push(output); }
     }
-    pub(crate) fn emit(&self, captured: &mut Vec<Output>, output: Output) {
-        if let Some(sink) = &self.output { sink(&output); } else { captured.push(output); }
-    }
+    /// The output kept since the last call.
+    pub(crate) fn take_output(&self) -> Vec<Output> { self.captured.take() }
     /// The result of `read` on the frontend's input. A frontend with no input, or a read that fails, is a VALUE error. A read that
     /// fails as interrupted, or during an interrupt, is an interrupt.
     pub(crate) fn input<T>(&self, span: &Span, read: impl FnOnce(&dyn Input) -> io::Result<T>) -> Result<T, Error> {
@@ -109,13 +112,13 @@ impl Execution {
         if self.timeout.is_some_and(|(start, limit)| now - start >= limit) { return Err(span.error(ErrorKind::Timeout, "evaluation deadline exceeded")); }
         Ok(())
     }
-    pub(crate) fn at<'a>(&'a self, span: &'a Span) -> Context<'a> { Context { span, execution: self } }
 }
 
-pub(crate) struct Context<'a> { span: &'a Span, execution: &'a Execution }
+/// Where an evaluation step runs: the span it reports errors at, and the session it reads and changes.
+pub(crate) struct Context<'a> { pub span: &'a Span, pub session: &'a mut crate::Session }
 impl Context<'_> {
-    pub(crate) fn check(&self) -> Result<(), Error> { self.execution.check(self.span) }
-    pub(crate) fn input<T>(&self, read: impl FnOnce(&dyn Input) -> io::Result<T>) -> Result<T, Error> { self.execution.input(self.span, read) }
+    pub(crate) fn check(&self) -> Result<(), Error> { self.session.execution.check(self.span) }
+    pub(crate) fn input<T>(&self, read: impl FnOnce(&dyn Input) -> io::Result<T>) -> Result<T, Error> { self.session.execution.input(self.span, read) }
 }
 impl Deref for Context<'_> {
     type Target = Span;

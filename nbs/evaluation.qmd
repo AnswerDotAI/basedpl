@@ -1,0 +1,152 @@
+# Evaluation
+
+After [Syntax](syntax.qmd) divides a statement into runs, BPL binds the runs as it evaluates them. Binding depends on values. A name can hold a subject, a function or an operator. BPL looks a name up when the statement runs.
+
+## Binding
+
+Evaluation goes from right to left. Functions have no precedence over each other. A function's right argument is everything to its right. Its left argument is the subject directly to its left, if there is one. The value to a function's left therefore decides whether the function gets one argument or two. In `g(f)4` with `g←÷`, the function `g` stands to the left of `(f)`, which makes `f` monadic.
+
+```bpl
+2×3+4                ⍝ 14
+10-3-2               ⍝ 9
+f←- ⋄ 5(f)3          ⍝ 2
+f←- ⋄ g←÷ ⋄ g(f)4    ⍝ ¯0.25
+```
+
+Subjects side by side form a [strand](terms.qmd#term-strand), a vector with one item for each subject. Each run is evaluated before the strand forms. A literal strand counts as one item.
+
+```bpl
+a←1 2 ⋄ b←3 4 ⋄ a b        ⍝ [[1 2] [3 4]]
+a←1 ⋄ b←2 ⋄ a b+1          ⍝ 1 3
+x←5 ⋄ x 1 2                ⍝ [5 [1 2]]
+```
+
+## Operators and operands
+
+Operators bind before functions apply. An operator's left [operand](terms.qmd#term-operand) is the whole function to its left. Its right operand is the one item to its right, which ends at the next space. A literal strand counts as one item: in `f⍤1 2 M`, the rank is `1 2`. Put a vector argument after a literal operand in brackets, as in `f⍤1[2 3]`. Put a single number there in parentheses, as in `f⍣¯2(5)`.
+
+A run that ends in a dyadic operator takes the next run as its right operand, as if no space came between them. A name that holds a dyadic operator counts. In `⌊⌾ 10× x`, the right operand of `⌾` is `10×`.
+
+```bpl
+m←2 3⍴⍳6 ⋄ +/⍤1 m               ⍝ 3 12
+m←2 3⍴⍳6 ⋄ +/⍤ 1 m              ⍝ 3 12
+x←5 ⋄ 1+⍣3 x                     ⍝ 8
+1+⍣3(5)                          ⍝ 8
+```
+
+Where an operator takes a function, an array operand acts as a constant function, like `A⍨`. Reduce and scan still need a function. `5/` is an error, and Replicate is written `#`.
+
+```bpl
+5¨ 1 2 3                         ⍝ 5 5 5
+```
+
+## Trains
+
+A run, group or statement that ends in a function is a [train](terms.qmd#term-train). BPL builds a train from its last function leftwards, as APL does:
+
+- A function and the item before it form a [fork](terms.qmd#term-fork) with the part already built. `f g h` gives `(f ⍵) g (h ⍵)`. With a subject `A` in place of `f`, `A g h` gives `A g (h ⍵)`.
+- A subject directly before the part already built [binds](terms.qmd#term-bind) to it. `2×` is `2↣×`.
+- A function left over at the start forms an [atop](terms.qmd#term-atop). `f g` gives `f (g ⍵)`.
+
+With two arguments, a fork `f g h` gives `(⍺ f ⍵) g (⍺ h ⍵)`. `A g h` gives `A g (⍺ h ⍵)`. An atop `f g` gives `f (⍺ g ⍵)`. A bound function takes one argument only: `3 (2×) 4` is a `SYNTAX` error.
+
+```bpl
+f←32+1.8× ⋄ f100     ⍝ 212
+(+/÷≢) 1 2 3 6       ⍝ 3
+(0.5×⊢+÷) 2          ⍝ 1.25
+2 (1-×) 5            ⍝ ¯9
+```
+
+A space before an argument keeps the train separate from it. `+/÷≢ x` applies the train `+/÷≢` to `x`. `+/÷≢x` is one run, which reads as `+/(÷(≢x))`. A train whose subjects and functions alternate, such as `32+1.8×`, gives the same result either way.
+
+Two names next to each other need a space between them. A literal can touch a name, as it touches a glyph: `1+⌽f5`. Inside a longer expression, put a name argument in parentheses, as in `1+⌽f(x)`. Without them, `1+⌽f x` applies the train `1+⌽f` to `x`. A run that starts with a function is a call: `×2` is the sign of 2.
+
+## Agreement and pervasion
+
+[Pervasive functions](terms.qmd#term-pervasive-function) align the leading axes of their arguments. Missing trailing axes count as length 1. Axes of equal length agree. An axis of length 1 expands to the other length, including to zero. Axes of length 1 in both arguments remain. Any other mismatch is a `LENGTH` error.
+
+```bpl
+[1 2 3 ⋄ 4 5 6]+10 20 ⍝ [11 12 13 ⋄ 24 25 26]
+[[10] ⋄ [20]]+[1 2 3 ⋄] ⍝ [11 12 13 ⋄ 21 22 23]
+⍴[[10] ⋄]+1 2 3       ⍝ [3 1]ₓ
+```
+
+Pervasion repeats these rules inside nested items. Each and Rank frames also use leading agreement. Products, replication, indexing and assignment have their own rules. BPL's agreement extends APL's. NumPy aligns trailing axes instead.
+
+## Axes and indices
+
+Positions and axes count from 0. Negative positions and axes count from the end. A count or position must be an integer, or a float within comparison tolerance of an integer.
+
+[Index](glyphs/squad.qmd) `⌷` selects along leading axes. Its result has the shape of the positions, followed by the shape of each selected cell. `∞` selects a whole axis. [Dot indexing](glyphs/dot.qmd) writes the same selection after an array: `m.[∞ 1]` is `[∞ 1]⌷m`. A [subscript](scripts.ipynb#subscripts) selects one position on the leading axis.
+
+```bpl
+v←10 20 30 40 ⋄ [[2 0]]⌷v       ⍝ 30 10
+v←10 20 30 40 ⋄ [⊂1]⌷v          ⍝ ⊂20
+v←10 20 30 40 ⋄ [[1]]⌷v         ⍝ [20]
+v←10 20 30 40 ⋄ v₋₁             ⍝ 40
+m←[1 2 3 ⋄ 4 5 6] ⋄ 1⌷m         ⍝ 4 5 6
+m←[1 2 3 ⋄ 4 5 6] ⋄ ∞ 1⌷m       ⍝ 2 5
+```
+
+[Axis](glyphs/axis.qmd) `⍠` applies a function along axes given as numbers or names, as in `+/⍠0` and `+/⍠"month"`. [Rank](glyphs/rank.qmd) `⍤` applies a function to trailing cells. `⍤0` passes an atom item as itself, and an array item as a scalar holding it.
+
+Some functions have a default axis:
+
+- `/ \ ⌽ ,` work along the last axis.
+- `⌿ ⍀ ⊖ ⍪` work along the first axis.
+- Replicate `N#Y` and the partitions `N⊂Y` and `N⊆Y` work along the first axis.
+- Encode `⊤` puts its digits on the last axis. Decode `⊥` reads them from the last axis.
+
+Structural functions also accept lists of axes.
+
+```bpl
++/⍠0 [1 2 3 ⋄ 4 5 6]           ⍝ 5 7 9
+```
+
+## Equality and ordering
+
+Comparison between exact numbers is exact. Approximate comparison uses relative tolerance `1E¯14`. Infinity equals itself. Infinity never equals a finite number.
+
+```bpl
+0.3=0.1+0.2          ⍝ $t
+1r3=1ₓ÷3ₓ            ⍝ $t
+```
+
+Search functions compare major cells. `⍳` and `⍸` search their left argument. `∊ ~ ∩` search their right argument. The other argument's cells have the same rank as the major cells of the searched argument. A unit can't be searched, because it has no major cells: `s~" "` removes spaces, but `s~' '` is a `RANK` error.
+
+Search, membership, match and grouping use tolerant comparison. Tolerance isn't transitive. Search and grouping therefore compare each item with the first item it matches.
+
+Grade and interval index ignore tolerance. They order values like this:
+
+- Numbers come before characters, and characters before nested arrays.
+- Numbers compare by value. Complex numbers compare by real part, then by imaginary part.
+- Characters compare by code point.
+- Nested arrays compare by rank, then by ravel lexicographically, then by shape. Prototypes don't count.
+
+Grade is stable. Pervasive ordering (`< ≤ > ≥ ⌊ ⌈`) requires real numbers.
+
+## Functions and effects
+
+Dfns use lexical scope. Plain assignment is local. Modified and selective updates change the nearest binding. Arrays have value semantics: updating one name leaves other copies unchanged.
+
+```bpl
+a←1 2 ⋄ b←a ⋄ a₀←9 ⋄ b ⍝ 1 2
+```
+
+Every statement in a dfn body runs. The body's last statement gives the result. A final assignment returns its value without displaying it. An assignment at top level displays nothing either. [Dfns](dfns.ipynb) covers bodies, predicates and arguments.
+
+Evaluation is right to left, including fork arms. Items inside brackets evaluate left to right, as statements do.
+
+Empty Each, Rank, Outer and Inner product call the operand on prototypes. Empty scan makes no calls. Generic reduction associates to the right. Float sum and product may reassociate. All scans accumulate left to right.
+
+## Errors
+
+| Error | Meaning |
+|---|---|
+| `DOMAIN` | Invalid values or unknown inverse |
+| `RANK` / `LENGTH` | Invalid rank or shape/count agreement |
+| `INDEX` | Invalid position |
+| `SYNTAX` | Invalid syntax or call form |
+| `VALUE` | Undefined name or missing value |
+
+Each error report gives the error's location in the source. Unsupported features and resource limits have their own errors.

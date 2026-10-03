@@ -1,6 +1,6 @@
 # `≥` — Greater or equal
 
-Keys: `Alt-.`
+Keys: `Alt->`
 
 `≥Y` is `Y+1`. Pervasive.
 

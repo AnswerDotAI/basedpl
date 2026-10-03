@@ -1,6 +1,8 @@
 # SAX2B
 
-SAX2B adds BPL's missing superscripts and subscripts to SAX2. Existing glyphs are unchanged. The subscript `ₓ` has a full character-cell advance for integer box borders.
+SAX2B adds BPL's missing superscripts and subscripts to SAX2. Existing glyphs are unchanged. The subscript letters `ₓ ᵣ ₑ ⱼ` have full character-cell advances for box borders.
+
+The tailed arrows `↣ ↢` reuse SAX2's right-arrow outline and arrowhead. They retain its character-cell width and vertical alignment.
 
 Rebuild from the repository root in a Python kernel with `fonttools` and `brotli` installed:
 

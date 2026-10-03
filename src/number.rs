@@ -55,7 +55,7 @@ fn range_end(mut x: f64, c: f64, out: fn(f64) -> f64, back: fn(f64) -> f64) -> f
     x
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Arithmetic {
     Plus,
     Minus,
@@ -63,7 +63,7 @@ pub(crate) enum Arithmetic {
     Divide,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Math {
     Magnitude,
     Floor,
@@ -186,7 +186,7 @@ pub(crate) mod real {
     /// A whole float within `i64`, as that integer. NaN and floats outside `i64` give `None`. Callers pass results of `⌊`, `⌈` or `×`,
     /// which are whole.
     #[inline]
-    pub(crate) fn whole(n: f64) -> Option<i64> { (n >= -9_223_372_036_854_775_808.0 && n < 9_223_372_036_854_775_808.0).then_some(n as i64) }
+    pub(crate) fn whole(n: f64) -> Option<i64> { (-9_223_372_036_854_775_808.0..9_223_372_036_854_775_808.0).contains(&n).then_some(n as i64) }
     /// `f` on whole `x` and `y` as integers. While `|x×y|` is below 1e14, tolerant gcd gives the same result as integer gcd. Other
     /// arguments give `None`.
     #[inline]
@@ -407,7 +407,7 @@ pub(crate) mod extended {
     #[inline]
     pub(crate) fn whole(n: f64) -> Option<i64> {
         let value = if n.is_nan() { NAN } else { n as i64 };
-        (!(n.abs() >= 9_223_372_036_854_775_808.0) || n.is_infinite()).then_some(value)
+        (n.is_nan() || n.abs() < 9_223_372_036_854_775_808.0 || n.is_infinite()).then_some(value)
     }
     /// `x op y` when `x` or `y` is non-finite, computed as floats. `None` for a finite result, which is a float.
     pub(crate) fn arithmetic(op: Arithmetic, x: i64, y: i64) -> Option<i64> {
@@ -861,7 +861,13 @@ impl Number {
                 let value = a.binomial(&b)?.dyad(Arithmetic::Times, &one.like(if count % 2 == 0 { 1 } else { -1 }))?;
                 return Ok(value);
             }
-            let k = if let Ok(n) = right.integer() { if n >= 0 && k > n { return Ok(one.zero()); } if n >= 0 { k.min(n - k) } else { k } } else { k };
+            let k = match right.integer() {
+                Ok(n) if n >= 0 => {
+                    if k > n { return Ok(one.zero()); }
+                    k.min(n - k)
+                }
+                _ => k,
+            };
             if k > 100_000 { return Err("binomial argument is too large"); }
             let mut value = one.clone();
             for i in 0..k {
@@ -955,7 +961,7 @@ impl Number {
 fn write_float(out: &mut impl fmt::Write, n: f64) -> fmt::Result {
     if n.is_nan() { return out.write_str(NAN_NAME); }
     if n.is_infinite() { return out.write_str(if n.is_sign_positive() { "∞" } else { "-∞" }); }
-    if n != 0.0 && !(1e-6..1e17).contains(&n.abs()) { write!(out, "{n:E}") } else { write!(out, "{n}") }
+    if n != 0.0 && !(1e-6..1e17).contains(&n.abs()) { out.write_str(&format!("{n:E}").replacen('E', "ₑ", 1)) } else { write!(out, "{n}") }
 }
 
 /// Writes text with the high minus `¯` in place of each `-`.
@@ -981,10 +987,10 @@ impl fmt::Display for Number {
             Integer(n) => write!(out, "{n}{mark}"),
             Float(n) => write_float(&mut out, *n),
             Exact(n) if n.is_integer() => write!(out, "{}{mark}", n.numer()),
-            Exact(n) => write!(out, "{}r{}", n.numer(), n.denom()),
+            Exact(n) => write!(out, "{}ᵣ{}", n.numer(), n.denom()),
             Complex(n) => {
                 write_float(&mut out, n.re)?;
-                out.write_str("j")?;
+                out.write_str("ⱼ")?;
                 write_float(&mut out, n.im)
             }
         }

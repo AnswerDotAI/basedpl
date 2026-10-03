@@ -5,7 +5,7 @@ Keys: `Alt-q u`
 `⌹Y` gives an inverse, or a full-column-rank least-squares pseudoinverse. Units reciprocate.
 
 ```bpl
-⌹2x                ⍝ 1r2
+⌹2ₓ                ⍝ 1r2
 ⌹[1 0 ⋄ 0 2]ₓ     ⍝ [1ₓ 0ₓ ⋄ 0ₓ 1r2]
 ```
 

@@ -26,7 +26,7 @@ def test_scan_and_activate(tmp_path):
     assert selected(report, source='ngn')[0]['case'] == row
     activate(report, output=output)
     assert Corpus(inventory)['ngn:1']['status'] == 'active'
-    assert '1 2 3+2 3 4   ⍝ 3 5 7' in (output/'ngn.bpl').read_text()
+    assert '1 2 3+2 3 4   ⍝ [3 5 7]' in (output/'ngn.bpl').read_text()
 
 
 def test_corpus_review_and_updates(tmp_path):

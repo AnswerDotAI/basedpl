@@ -13,11 +13,18 @@ fn vector(values: &[f64]) -> AplValue { AplValue::from_parts(vec![values.len()],
 fn check_in(session: &mut Session, code: &str, expected: AplValue) {
     let result = session.eval(code);
     assert!(result.error.is_none(), "{code}: {:?}", result.error);
-    assert_eq!(result.value, Some(expected), "{code}");
+    assert_same(result.value, &expected);
 }
 
 #[track_caller]
 fn check(code: &str, expected: AplValue) { check_in(&mut Session::new(), code, expected); }
+
+/// Asserts that `actual` is exactly `expected`, as `Value::same` compares them.
+#[track_caller]
+fn assert_same(actual: impl Into<Option<AplValue>>, expected: &AplValue) {
+    let actual = actual.into();
+    assert!(actual.as_ref().is_some_and(|a| a.same(expected)), "{actual:?} is not {expected:?}");
+}
 
 #[track_caller]
 fn equiv_in(session: &mut Session, code: &str, expected: &str) { check_in(session, code, run(expected).unwrap().expect("expected an array")); }
@@ -106,8 +113,8 @@ fn explicit_output_without_echo() {
     let code = r#"1 ⋄ ⎕←2 ⋄ ⍎"3 ⋄ ⎕←4 ⋄ 5" ⋄ 6"#;
     let r = s.eval_with(code, quiet());
     assert!(r.error.is_none());
-    assert_eq!(r.value, Some(number(6.0)));
     assert_eq!(r.output_text(), ["2", "4"]);
+    assert_same(r.value, &number(6.0));
     assert_eq!(s.eval(code).output_text(), ["1", "2", "3", "4", "5", "6"]);
     for code in ["x←7", "+", "f←{⎕←⍵ ⋄ ⍵+1} ⋄ f 8"] {
         let r = s.eval_with(code, quiet());
@@ -117,7 +124,7 @@ fn explicit_output_without_echo() {
     let r = s.eval_with("⎕←9 ⋄ 1÷'a'", quiet());
     assert_eq!(r.error.as_ref().unwrap().kind, Domain);
     assert_eq!(r.output_text(), ["9"]);
-    for code in ["]Display 1 2", "]box ?", "]help +", "]help f -source"] { assert!(!s.eval_with(code, quiet()).output_text().is_empty()); }
+    for code in ["]Display 1 2", "]help +", "]help f -source"] { assert!(!s.eval_with(code, quiet()).output_text().is_empty()); }
     let streamed = Arc::new(std::sync::Mutex::new(Vec::new()));
     let events = streamed.clone();
     let output =
@@ -145,8 +152,8 @@ fn calls_with_array_arguments() {
         let args: Vec<_> = codes.iter().map(|c| run(c).unwrap().unwrap()).collect();
         let r = s.call_with(function, &args, basedpl::EvalOptions { echo: false, ..basedpl::EvalOptions::default() });
         assert!(r.error.is_none(), "{function}: {:?}", r.error);
-        assert_eq!(r.value, run(expected).unwrap());
         assert!(r.output_text().is_empty());
+        assert_same(r.value, &run(expected).unwrap().unwrap());
     }
     assert_eq!(s.call("+", &[number(3.0)]).output_text(), ["3"]);
     let r = s.call("{}", &[number(3.0)]);
@@ -196,7 +203,7 @@ fn cancellation_preserves_session_and_unwinds_calls() {
 #[test]
 fn boxed_display_and_function_trees() {
     let mut s = Session::new();
-    assert!(s.eval("]box on -style=max -trains=tree -fns=on").error.is_none());
+    assert!(s.eval(r#"•prefs ["box":$t "trees":$t "fns":$t]"#).error.is_none());
     assert_eq!(s.eval("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂¨[0 1]ₓ").output_text(), ["⊂4ₓ", "⊂⊂4ₓ", "┌→────────┐\n│ ⊂0ₓ ⊂1ₓ │\n└∊────────┘"]);
     let r = s.eval(r#"A←2 3 4⍴"DUCKSWANBIRDWORMCAKESEED" ⋄ ⊂⍠2 A"#);
     assert!(r.error.is_none(), "{:?}", r.error);
@@ -212,14 +219,16 @@ fn boxed_display_and_function_trees() {
     let r = s.eval("{⎕←⍵ ⋄ ⍵}1 2");
     assert_eq!(r.output_text().len(), 2);
     assert_eq!(r.output_text()[0], r.output_text()[1]);
-    assert!(s.eval("]box -fns=off").error.is_none());
+    assert!(s.eval(r#"•prefs ["fns":$f]"#).error.is_none());
     assert_eq!(s.eval("{⎕←⍵ ⋄ ⍵}1 2").output_text()[0], "1 2");
     equiv_in(&mut s, "⍕1 2", r#""1 2""#);
-    assert!(s.eval("]box off").error.is_none());
+    assert!(s.eval(r#"•prefs ["box":$f]"#).error.is_none());
     assert_eq!(s.eval("1 2").output_text(), ["1 2"]);
     assert_eq!(s.eval("]Display ⎕←1 2").output_text(), ["1 2", "┌→──┐\n│1 2│\n└~──┘"]);
     assert_eq!(s.eval("1 2").output_text(), ["1 2"]);
-    assert!(s.eval("]box on -misspelled").error.is_some());
+    assert!(s.eval(r#"•prefs ["boks":$t]"#).error.is_some());
+    assert!(s.eval(r#"p←•prefs ["limit":4 "edges":1]"#).error.is_none());
+    assert_eq!(s.eval(r#"3 3⍴⍳9 ⋄ ⍳9 ⋄ ⎕←⍳9 ⋄ "abcdefghi" ⋄ ≢⍕⍳9"#).output_text(), ["0 … 2\n⋮ ⋱ ⋮\n6 … 8", "0 … 8", "0 1 2 3 4 5 6 7 8", "a…i", "17ₓ"]);
     assert_eq!(s.eval("1 2").output_text(), ["1 2"]);
     let wide = s.eval("]Display '界' 'a'").output_text().join("\n");
     assert!(wide.contains("界"));
@@ -229,8 +238,8 @@ fn boxed_display_and_function_trees() {
 fn execute_source_and_session() {
     let mut s = Session::new();
     let r = s.eval(r#"a←⍎"1+1 ⋄ 2+2""#);
-    assert_eq!(r.value, Some(number(4.)));
     assert_eq!(r.output_text(), ["2"]);
+    assert_same(r.value, &number(4.));
     equiv_in(&mut s, "a", "4");
     let failed = s.eval(r#"⍎"⎕←7 ⋄ 1÷'a'""#);
     assert!(failed.value.is_none());
@@ -240,24 +249,24 @@ fn execute_source_and_session() {
 
 #[test]
 fn numeric_constructors() {
-    assert_eq!(AplValue::floats(vec![2], vec![1.]), Err(Length));
+    assert_eq!(AplValue::floats(vec![2], vec![1.]).err(), Some(Length));
     assert_eq!(AplValue::floats(vec![1], vec![-0.]).unwrap().as_floats().unwrap()[0].to_bits(), (-0f64).to_bits());
-    assert_eq!(AplValue::number(num_rational::BigRational::new_raw(1.into(), 0.into())), Err(Domain));
-    assert_eq!(number(num_rational::BigRational::new_raw(2.into(), (-4).into())), exact(-1, 2));
+    assert_eq!(AplValue::number(num_rational::BigRational::new_raw(1.into(), 0.into())).err(), Some(Domain));
+    assert_same(number(num_rational::BigRational::new_raw(2.into(), (-4).into())), &exact(-1, 2));
 }
 
 #[test]
 fn exact_results_and_readback() {
-    for code in ["0.1|0.3", "3|6.000000000000001"] { assert_eq!(run(code).unwrap().unwrap(), number(0.0), "{code}"); }
+    for code in ["0.1|0.3", "3|6.000000000000001"] { assert!(run(code).unwrap().unwrap().same(&number(0.0)), "{code}"); }
     for code in ["1j2÷3j4", "×3j4", "÷1j2", "¯.5j2E¯1", "1E2j¯4E¯1", "1.7E308÷0.5j0.5", "5E¯324 ¯1.2345678901234567E200 1E¯100j2E100"] {
         let a = run(code).unwrap().unwrap();
-        assert_eq!(run(&a.to_string()).unwrap().unwrap(), a, "{code}");
+        assert!(run(&a.to_string()).unwrap().unwrap().same(&a), "{code}");
     }
     let huge = format!("1{}", "0".repeat(400));
-    assert_eq!(run(&format!("{huge}x÷{huge}x")).unwrap().unwrap(), exact(1, 1));
-    assert_eq!(run(&format!("{huge}1r{huge}0+0.5")).unwrap().unwrap(), number(1.5));
-    assert_eq!(run(&format!("{huge}x+0")).unwrap().unwrap(), number(f64::INFINITY));
-    assert_eq!(run(&format!("{huge}x+0j1")).unwrap().unwrap(), number(num_complex::Complex64::new(f64::INFINITY, 1.0)));
+    assert_same(run(&format!("{huge}ₓ÷{huge}ₓ")).unwrap().unwrap(), &exact(1, 1));
+    assert_same(run(&format!("{huge}1r{huge}0+0.5")).unwrap().unwrap(), &number(1.5));
+    assert_same(run(&format!("{huge}ₓ+0")).unwrap().unwrap(), &number(f64::INFINITY));
+    assert_same(run(&format!("{huge}ₓ+0j1")).unwrap().unwrap(), &number(num_complex::Complex64::new(f64::INFINITY, 1.0)));
 }
 #[test]
 fn array_literal_completeness() {
@@ -294,7 +303,7 @@ fn exact(n: i64, d: i64) -> AplValue { AplValue::number(num_rational::BigRationa
 fn huge_shapes_count_exactly() {
     let mut session = Session::new();
     session.set("a", AplValue::empty(vec![usize::MAX, 0], number(0.)).unwrap()).unwrap();
-    equiv_in(&mut session, "≢a", &format!("{}x", usize::MAX));
+    equiv_in(&mut session, "≢a", &format!("{}ₓ", usize::MAX));
     equiv_in(&mut session, "⍴a", &format!("[{} 0]ₓ", usize::MAX));
 }
 
@@ -340,32 +349,32 @@ fn based_values() {
     check("⊂3", unit.clone());
     check("⊂⊂3", unit.enclose().unwrap());
     check(",3", vector(&[3.]));
-    assert_ne!(n, unit);
-    assert_ne!(unit, vector(&[3.]));
+    assert!(!n.same(&unit));
+    assert!(!unit.same(&vector(&[3.])));
 }
 
 #[test]
 fn array_invariants() {
     let seven = number(7.0);
     let singleton = vector(&[7.0]);
-    assert_ne!(seven, singleton);
+    assert!(!seven.same(&singleton));
     assert!(seven.shape().is_empty());
     assert_eq!(singleton.shape(), &[1]);
-    assert_eq!(AplValue::new(vec![2, 2], vec![number(1.0); 3]), Err(Length));
-    assert_eq!(AplValue::new(vec![], vec![]), Err(Length));
-    assert_eq!(AplValue::new(vec![usize::MAX, 2], vec![number(1.0)]), Err(Limit));
+    assert_eq!(AplValue::new(vec![2, 2], vec![number(1.0); 3]).err(), Some(Length));
+    assert_eq!(AplValue::new(vec![], vec![]).err(), Some(Length));
+    assert_eq!(AplValue::new(vec![usize::MAX, 2], vec![number(1.0)]).err(), Some(Limit));
     let rows = AplValue::empty(vec![0, 3], number(0.0)).unwrap();
     let cols = AplValue::empty(vec![3, 0], number(0.0)).unwrap();
-    assert_ne!(rows, cols);
+    assert!(!rows.same(&cols));
     assert!(rows.is_empty());
     assert_eq!(rows.shape(), &[0, 3]);
     assert!(AplValue::empty(vec![usize::MAX, 2, 0], number(0.0)).is_ok());
-    assert_eq!(AplValue::empty(vec![], number(0.0)), Err(Length));
+    assert_eq!(AplValue::empty(vec![], number(0.0)).err(), Some(Length));
     let text = AplValue::empty(vec![0, 3], Character('x')).unwrap();
-    assert_ne!(rows, text);
-    assert_eq!(text.prototype(), Character(' '));
+    assert!(!rows.same(&text));
+    assert_same(text.prototype(), &Character(' '));
     let normalized = AplValue::new(vec![1], vec![seven]).unwrap();
-    assert_eq!(normalized, singleton);
+    assert_same(normalized, &singleton);
 }
 
 #[test]
@@ -373,20 +382,20 @@ fn nested_prototypes_and_value_semantics() {
     // Dyalog 20 prototype examples, documentation-derived:
     // https://docs.dyalog.com/20.0/programming-reference-guide/introduction/arrays/prototypes-and-fill-items/
     let nested = AplValue::new(vec![2], vec![vector(&[1.0, 2.0]), vector(&[3.0, 4.0, 5.0])]).unwrap();
-    assert_eq!(nested.prototype(), vector(&[0.0, 0.0]));
+    assert_same(nested.prototype(), &vector(&[0.0, 0.0]));
     let empty = AplValue::empty(vec![0], nested.prototype().clone()).unwrap();
-    assert_eq!(empty.prototype(), nested.prototype());
+    assert_same(empty.prototype(), &nested.prototype());
     let mixed = AplValue::new(vec![2], vec![number(88.0), Character('X')]).unwrap();
     let a = AplValue::new(vec![], vec![mixed]).unwrap();
     let expected = AplValue::new(vec![2], vec![number(0.0), Character(' ')]).unwrap();
-    assert_eq!(a.prototype(), expected);
+    assert_same(a.prototype(), &expected);
     let saved = nested.clone();
     let mut detached: Vec<AplValue> = nested.elements().collect();
     detached[0] = number(9.0);
     let changed = AplValue::new(vec![2], detached).unwrap();
-    assert_ne!(changed, saved);
+    assert!(!changed.same(&saved));
     drop(nested);
-    assert_eq!(saved.prototype(), vector(&[0.0, 0.0]));
+    assert_same(saved.prototype(), &vector(&[0.0, 0.0]));
 }
 
 #[test]
@@ -466,17 +475,17 @@ fn operator_categories_and_singleton_replicate() {
     for code in ["r←/ ⋄ +r 1 2 3", "r←/ ⋄ sum←+r ⋄ sum 1 2 3", "r←/ ⋄ alias←r ⋄ +(alias)1 2 3"] {
         let r = s.eval(code);
         assert!(r.error.is_none(), "{code}: {:?}", r.error);
-        assert_eq!(r.value.unwrap(), number(6.0));
+        assert_same(r.value, &number(6.0));
     }
     for (code, expected) in [("(,2)#3 4", vec![3.0, 3.0, 4.0, 4.0]), ("1 0 1#,3", vec![3.0, 3.0])] {
         let r = s.eval(code);
         assert!(r.error.is_none(), "{code}: {:?}", r.error);
-        assert_eq!(r.value.unwrap(), vector(&expected));
+        assert_same(r.value, &vector(&expected));
     }
 }
 
 #[test]
-fn long_assignment_chains() { assert_eq!(Session::new().eval(&format!("{}7", "a←".repeat(10_000))).value.unwrap(), number(7.0)); }
+fn long_assignment_chains() { assert_same(Session::new().eval(&format!("{}7", "a←".repeat(10_000))).value, &number(7.0)); }
 
 #[test]
 fn diagnostic_width_and_call_context() {

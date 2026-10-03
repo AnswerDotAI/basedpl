@@ -9,6 +9,7 @@ mod editor;
 mod error;
 mod eval;
 mod execution;
+mod image;
 mod inspection;
 mod json;
 mod kernel;

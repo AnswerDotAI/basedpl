@@ -85,7 +85,7 @@ FIXED_KEYS = {
     **{code: '\x10' for code in [64, 79, 80, 96, 97, 98, 99, 100, 101, 103, 105, 106, 107, 109, 111, 113, 118, 120, 122]},
     114: '\x05', 115: '\x01', 116: '\x0b', 117: '\x7f', 119: '\x04', 121: '\x0c', 123: '\x1c', 124: '\x1d', 125: '\x1f', 126: '\x1e',
 }
-# The key map for each combination of modifiers. Option–Shift types the shifted character, since no glyph needs Shift.
+# The key map for each combination of modifiers. Option–Shift types the glyph `option` gives the shifted character, or the shifted character itself.
 MODIFIERS = ['', 'anyShift caps?', 'caps', 'anyOption caps?', 'anyShift anyOption caps?', 'command anyShift? anyOption? caps? anyControl?',
              'anyControl anyShift? anyOption? caps?']
 PLAIN, SHIFT, CAPS, OPTION, OPTION_SHIFT, COMMAND, CONTROL = range(len(MODIFIERS))
@@ -96,7 +96,8 @@ def typed(code, index, layout):
     lower, upper = CHARACTER_KEYS[code]
     if index == CONTROL: return chr(ord(lower) - 96) if lower.isalpha() else {'[': '\x1b', '\\': '\x1c', ']': '\x1d'}.get(lower, lower)
     if index == OPTION: return layout['option'].get(lower, '')
-    return {PLAIN: lower, SHIFT: upper, CAPS: lower.upper(), OPTION_SHIFT: upper, COMMAND: lower}[index]
+    if index == OPTION_SHIFT: return layout['option'].get(upper, upper)
+    return {PLAIN: lower, SHIFT: upper, CAPS: lower.upper(), COMMAND: lower}[index]
 
 
 def attribute(text):

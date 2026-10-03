@@ -16,7 +16,7 @@ Keys: `Alt-o ~`
 Other empty types retain their prototypes.
 
 ```bpl
-3↑0⍴0x             ⍝ [0 0 0]ₓ
+3↑0⍴0ₓ             ⍝ [0 0 0]ₓ
 3↑""               ⍝ "   "
 ```
 

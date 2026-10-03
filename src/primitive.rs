@@ -1,6 +1,6 @@
 use crate::{
     agreement::{Agreement, Mapping},
-    array::{compress, generated_len, or_and_sum, Axis, Bit, Frame, Gather, Items, Layout, Steps},
+    array::{agreed, compress, generated_len, or_and_sum, Axis, Bit, Frame, Gather, Items, Layout, Steps},
     execution::Context,
     keyed::Selector,
     number::{int, Arithmetic, Math},
@@ -115,12 +115,12 @@ impl OperatorKind {
         let (glyph, names, left, right) = match self {
             Each => ("¨", ("each", "dieresis"), Function, None),
             Commute => ("⍨", ("commute", ""), Any, None),
-            Before => ("⍃", ("before", "bind"), Any, Some(Function)),
+            Before => ("↣", ("before", "bind"), Any, Some(Function)),
             Rank => ("⍤", ("rank", ""), Function, Some(Array)),
             Atop => ("∘", ("atop", ""), Function, Some(Function)),
             Axis => ("⍠", ("axis", ""), Function, Some(Array)),
             Over => ("⍥", ("over", ""), Function, Some(Function)),
-            After => ("⍄", ("after", "hook bind-right"), Function, Some(Any)),
+            After => ("↢", ("after", "hook bind-right"), Function, Some(Any)),
             Product => (".", ("dot", ""), Function, Some(Function)),
             Outer => ("⊗", ("outer-product", ""), Function, None),
             Key => ("⌸", ("key", ""), Function, None),
@@ -142,7 +142,7 @@ impl OperatorKind {
     pub(crate) fn all() -> impl Iterator<Item = Self> { Self::ALL.into_iter() }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Comparison {
     Equal,
     NotEqual,
@@ -163,7 +163,7 @@ impl Comparison {
         }
     }
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Primitive {
     Arithmetic(Arithmetic),
     Math(Math),
@@ -297,7 +297,7 @@ impl WindowAxis {
     pub(crate) fn fits(&self, len: usize) -> bool { !self.padded || self.size / 2 < len }
     /// Number of windows along an axis of length `len` that `fits`.
     pub(crate) fn count(&self, len: usize) -> usize {
-        if self.padded { (len - usize::from(self.size % 2 == 0)).div_ceil(self.step) } else if len < self.size { 0 } else { (len - self.size) / self.step + 1 }
+        if self.padded { (len - usize::from(self.size.is_multiple_of(2))).div_ceil(self.step) } else if len < self.size { 0 } else { (len - self.size) / self.step + 1 }
     }
     /// Axis offset of window `i`'s first element; negative when padding precedes the edge.
     pub(crate) fn start(&self, i: usize) -> isize { (i * self.step) as isize - if self.padded { ((self.size - 1) / 2) as isize } else { 0 } }
@@ -364,7 +364,7 @@ fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Err
         data.walk(right, 0, &tables);
     }
     else {
-        for i in 0..if width == 0 { 0 } else { len / width } {
+        for i in 0..len.checked_div(width).unwrap_or(0) {
             span.check()?;
             let mut starts = vec![0; count];
             for (a, c) in digits(i, &frame) { starts[a] = axes[a].start(c); }
@@ -650,9 +650,9 @@ impl Primitive {
             (Self::Decode, None) => radix(&integer(2), right, false, span),
             (Self::Index, Some(x)) => squad(x, right, axis.map(|a| vec![a]).as_deref(), span),
             (Self::Index, None) => Ok(right.clone()),
-            (Self::Depth, Some(x)) => Ok(Value::Number(Number::from_bool(array_match(x, right, span)?))),
+            (Self::Depth, Some(x)) => Ok(Value::Number(Number::from_bool(x.matches(right, span)?))),
             (Self::Depth, None) => Ok(integer(depth(right) as i64)),
-            (Self::Tally, Some(x)) => Ok(Value::Number(Number::from_bool(!array_match(x, right, span)?))),
+            (Self::Tally, Some(x)) => Ok(Value::Number(Number::from_bool(!x.matches(right, span)?))),
             (Self::Tally, None) => Ok(generated(right.shape().first().copied().unwrap_or(1), true)),
             (Self::Iota, Some(x)) => index_of(x, right, span),
             (Self::Iota, None) => iota(right, span),
@@ -776,7 +776,7 @@ impl Primitive {
             Self::Compare(op @ (Comparison::Equal | Comparison::NotEqual)) => {
                 let equal = match (left.unwrap(), right) {
                     (Value::Number(x), Value::Number(y)) => x.equal(y).domain_at(span)?,
-                    (x, y) => element_match(x, y, span)?,
+                    (x, y) => x.matches(y, span)?,
                 };
                 Ok(Value::Number(Number::from_bool(equal == matches!(op, Comparison::Equal))))
             }
@@ -802,51 +802,6 @@ fn character_arithmetic(op: Arithmetic, left: &Value, right: &Value, fill: bool)
         (Arithmetic::Minus, Character(c), Number(n)) => shift(*c, n, true),
         (Arithmetic::Minus, Character(x), Character(y)) => Ok(integer(if fill { 0 } else { *x as i64 - *y as i64 })),
         _ => Err("unsupported character arithmetic"),
-    }
-}
-
-pub(crate) fn array_match(left: &Value, right: &Value, span: &Context<'_>) -> Result<bool, Error> {
-    if left.is_atom() || right.is_atom() { return element_match(left, right, span); }
-    span.check()?;
-    if left.shape() != right.shape() { return Ok(false); }
-    let keyed = left.has_keys() || right.has_keys();
-    let mut maps = Vec::new();
-    if keyed {
-        for axis in 0..left.shape().len() {
-            let map = match (left.keys(axis), right.keys(axis)) {
-                (None, None) => (0..left.shape()[axis]).map(Some).collect(),
-                (Some(x), Some(y)) => y.align(x),
-                _ => return Ok(false),
-            };
-            if map.iter().any(Option::is_none) { return Ok(false); }
-            maps.push(map);
-        }
-    }
-    if left.is_empty() { return element_match(&left.prototype(), &right.prototype(), span); }
-    if !keyed {
-        match (left.as_items(), right.as_items()) {
-            (Items::Integers(x) | Items::Extended(x), Items::Integers(y) | Items::Extended(y)) => return Ok(x == y),
-            (Items::Floats(x), Items::Floats(y)) => return Ok(x.iter().zip(y).all(|(&a, &b)| crate::number::float_match(a, b))),
-            (Items::Characters(x), Items::Characters(y)) => return Ok(x == y),
-            _ => (),
-        }
-    }
-    for (i, x) in left.elements().enumerate() {
-        let j = if keyed { crate::keyed::mapped_index(i, left.shape(), right.shape(), &maps).unwrap() } else { i };
-        if !element_match(&x, &right.at(j), span)? { return Ok(false); }
-    }
-    Ok(true)
-}
-
-fn element_match(left: &Value, right: &Value, span: &Context<'_>) -> Result<bool, Error> {
-    span.check()?;
-    match (left, right) {
-        (Value::Number(x), Value::Number(y)) => x.matches(y).domain_at(span),
-        (Value::Character(x), Value::Character(y)) => Ok(x == y),
-        (Value::Function(x), Value::Function(y)) => Ok(x == y),
-        (Value::Operator(x), Value::Operator(y)) => Ok(x == y),
-        (x @ Value::Array(_), y @ Value::Array(_)) => array_match(x, y, span),
-        _ => Ok(false),
     }
 }
 
@@ -925,7 +880,7 @@ fn find(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error>
             (Items::Integers(x) | Items::Extended(x), Items::Integers(y) | Items::Extended(y)) => Ok(x[i] == y[o]),
             (Items::Floats(x), Items::Floats(y)) => Ok(crate::number::float_match(x[i], y[o])),
             (Items::Characters(x), Items::Characters(y)) => Ok(x[i] == y[o]),
-            _ => element_match(&left.at(i), &right.at(o), span),
+            _ => left.at(i).matches(&right.at(o), span),
         };
         let mut coords = vec![0; shape.len()];
         for (flat, result) in data.iter_mut().enumerate() {
@@ -1295,7 +1250,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
             Decode if first => inverse_decode(a, right, span),
             Encode if first => Decode.call(Some(a), right, span),
             Identity(left) => {
-                if left == first && !array_match(a, right, span)? { return Err(span.domain_error("the result must match the fixed argument")); }
+                if left == first && !a.matches(right, span)? { return Err(span.domain_error("the result must match the fixed argument")); }
                 Ok(right.clone())
             }
             Ravel | CatenateFirst => {
@@ -1312,7 +1267,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
         Polynomial => p.call(None, right, span),
         Arithmetic(Plus | Minus | Divide) | Reverse(_) | Transpose | Identity(_) | Math(Not) | Index | MatrixDivide => p.call(None, right, span),
         Arithmetic(Times) => {
-            if !array_match(&p.call(None, right, span)?, right, span)? { return Err(span.domain_error("× gives only ¯1, 0, 1 and unit complex numbers")); }
+            if !p.call(None, right, span)?.matches(right, span)? { return Err(span.domain_error("× gives only ¯1, 0, 1 and unit complex numbers")); }
             Ok(right.clone())
         }
         Math(Power) => Math(Log).call(None, right, span),
@@ -1358,7 +1313,7 @@ fn inverse_catenate(a: &Value, first: bool, right: &Value, axis: Option<usize>, 
         .collect();
     let y = Primitive::Drop.call(Some(&Value::integers(vec![rank], counts).error_at(span, "invalid catenate inverse")?), right, span)?;
     let back = if first { catenate(a, &y, axis, leading, span)? } else { catenate(&y, a, axis, leading, span)? };
-    if !array_match(&back, right, span)? { return Err(span.domain_error("no argument catenates with the fixed one to give this result")); }
+    if !back.matches(right, span)? { return Err(span.domain_error("no argument catenates with the fixed one to give this result")); }
     Ok(y)
 }
 
@@ -1573,7 +1528,7 @@ fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_>) -> Resul
                 if k != 0 {
                     value = if base.grade_order(&base.zero()).is_eq() { zero.clone() } else { value.dyad(Arithmetic::Minus, &digit).and_then(|v| v.dyad(Arithmetic::Divide, base)).map_err(error)? };
                 }
-                digits[k] = Value::Number(if !exact && digit.is_exact() { Number::try_from(digit.to_complex().map_err(error)?).unwrap() } else { digit });
+                digits[k] = Value::Number(if !exact && digit.is_exact() { Number::from(digit.to_complex().map_err(error)?) } else { digit });
             }
             data.extend(digits);
         }
@@ -1641,7 +1596,7 @@ fn array_order(left: &Value, right: &Value) -> Option<Ordering> {
 /// 16 columns. `float_key` orders floats as `array_order` does.
 fn radix_grade(right: &Value, count: usize, down: bool) -> Option<Vec<usize>> {
     use crate::search::{float_key, sort_rows};
-    let width = if count == 0 { 0 } else { right.len() / count };
+    let width = right.len().checked_div(count).unwrap_or(0);
     if width > 16 { return None; }
     let flip = |k: u64| if down { !k } else { k };
     Some(match right.as_items() {
@@ -1875,13 +1830,19 @@ fn offsets(tables: &[Steps]) -> Vec<usize> {
     tables.iter().fold(vec![0], |sums, table| sums.iter().flat_map(|&s| table.offsets().map(move |o| s + o.unwrap())).collect())
 }
 
+/// `layout` for a result that rearranges or selects the items of `right`. A result with `right`'s rank keeps its renderer.
+fn rearranged(layout: Layout, right: &Value) -> Layout {
+    let renderer = right.renderer().filter(|_| layout.shape().len() == right.shape().len()).cloned();
+    layout.with_renderer(renderer)
+}
+
 /// Items of `right` laid out by `layout`, read through one `Steps` per axis as `Gather::walk` reads them.
 fn remap(right: &Value, layout: Layout, tables: &[Steps], span: &Context<'_>) -> Result<Value, Error> {
     let len = generated_len(layout.shape()).error_at(span, "result exceeds array limits")?;
     if right.is_atom() && layout.shape().is_empty() { return Ok(right.clone()); }
     let mut data = Gather::new(&[right], len);
     data.walk(right, 0, tables);
-    data.finish(layout, || right.prototype()).error_at(span, "invalid structural result")
+    data.finish(rearranged(layout, right), || right.prototype()).error_at(span, "invalid structural result")
 }
 
 fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>, span: &Context<'_>) -> Result<Value, Error> {
@@ -1921,7 +1882,7 @@ fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, 
             let mut data = Gather::new(&[right], total);
             data.compress(right, mask, total);
             return data
-                .finish(Layout::from(vec![total]).inherit_names(right.axis_names().to_vec()), || right.prototype())
+                .finish(rearranged(Layout::from(vec![total]).inherit_names(right.axis_names().to_vec()), right), || right.prototype())
                 .error_at(span, "invalid replication");
         }
     }
@@ -1952,7 +1913,7 @@ fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, 
     // A vector with no keys and no negative counts copies each item by its count, with no table of offsets.
     if !inverse && !keyed && traversal.outer * traversal.inner == 1 && (single || len == traversal.len) && any >= 0 {
         let total = shape[axis];
-        let layout = Layout::from(shape).with_keys(keys).error_at(span, "invalid replication keys")?.inherit_names(right.axis_names().to_vec());
+        let layout = rearranged(Layout::from(shape).with_keys(keys).error_at(span, "invalid replication keys")?.inherit_names(right.axis_names().to_vec()), right);
         let mut data = Gather::new(&[right], total);
         if boolean { data.compress(right, &counts, total) }
         else { data.replicate(right, &counts, total) }
@@ -2041,6 +2002,9 @@ fn promoted(a: &Value, other: &Value, rank: usize, axis: usize, span: &Context<'
     a.with_shape(shape).and_then(|v| v.with_layout(layout)).error_at(span, "invalid catenate shape")
 }
 
+/// What `append_plan` gives.
+type AppendPlan = (Value, Option<Vec<Option<std::sync::Arc<str>>>>);
+
 /// What `left,right` on a vector or `left⍪right` adds along the leading axis, when `left` can grow in place: the new cells, and the
 /// keys of the new positions when the leading axis has keys or gains them. `None` when the result would have another rank, gain keys
 /// on another axis, change an axis name or be empty. It gives the errors that `catenate` gives, before anything is written.
@@ -2049,7 +2013,7 @@ pub(crate) fn append_plan(
     right: &Value,
     first: bool,
     span: &Context<'_>,
-) -> Result<Option<(Value, Option<Vec<Option<std::sync::Arc<str>>>>)>, Error> {
+) -> Result<Option<AppendPlan>, Error> {
     let rank = left.shape().len();
     if rank == 0 || (!first && rank != 1) || right.shape().len() > rank || (left.is_empty() && right.is_empty()) { return Ok(None); }
     let right = promoted(right, left, rank, 0, span)?;
@@ -2082,8 +2046,8 @@ fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: bool, span:
     let mut wanted = (0..rank).map(|a| if a == axis { None } else { left.keys(a).cloned() }).collect::<Vec<_>>();
     let right = crate::keyed::reorder(&right, &wanted, false).error_at(span, "catenate axis keys differ")?;
     if (0..rank).any(|i| i != axis && left.shape()[i] != right.shape()[i]) { return Err(span.error(ErrorKind::Length, "catenate frames differ")); }
-    for a in 0..rank {
-        wanted[a] = if a == axis {
+    for (a, keys) in wanted.iter_mut().enumerate() {
+        *keys = if a == axis {
             match (left.keys(a), right.keys(a)) {
                 (None, None) => None,
                 (x, y) => {
@@ -2105,10 +2069,8 @@ fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: bool, span:
             data.extend(a, i * len..(i + 1) * len);
         }
     }
-    let names = (0..rank)
-        .map(|a| match (left.axis_name(a), right.axis_name(a)) { (Some(x), Some(y)) if x != y => None, (x, y) => x.or(y).cloned() })
-        .collect();
-    let layout = Layout::from(shape).with_keys(wanted).error_at(span, "invalid catenate result")?.inherit_names(names);
+    let names = (0..rank).map(|a| agreed(left.axis_name(a), right.axis_name(a))).collect();
+    let layout = Layout::from(shape).with_keys(wanted).error_at(span, "invalid catenate result")?.inherit_names(names).with_renderer(agreed(left.renderer(), right.renderer()));
     data.finish(layout, || left.prototype()).error_at(span, "invalid catenate result")
 }
 
@@ -2488,7 +2450,7 @@ fn select_vector(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> 
     let names = if indices.shape().len() == 1 { vec![right.axis_name(0).cloned()] } else { vec![] };
     let mut data = Gather::new(&[right], ix.len());
     data.items_at(right, ix);
-    data.finish(Layout::from(indices.shape().to_vec()).inherit_names(names), || right.prototype()).error_at(span, "invalid selection").map(Some)
+    data.finish(rearranged(Layout::from(indices.shape().to_vec()).inherit_names(names), right), || right.prototype()).error_at(span, "invalid selection").map(Some)
 }
 
 pub(crate) fn selection(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> Result<Selection, Error> {

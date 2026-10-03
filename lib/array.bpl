@@ -9,7 +9,7 @@
 ⍝ From http://dfns.dyalog.com/n_alists.htm
 
 alpush ← {  ⍝ Association list ⍺ prefixed with (key value) pair ⍵.
-  ⍺,⍨⍄⊂¨⍵  ⍝ :: list ← list ∇ key val
+  ⍺,⍨↢⊂¨⍵  ⍝ :: list ← list ∇ key val
 }
 
 alpop ← {  ⍝ Leftmost value for key ⍵ from list ⍺
@@ -201,12 +201,12 @@ displayr ← {  ⍝ Boxed display of array
 
 dist ← {  ⍝ Levenshtein distance.
   a←(n+1)⍴(⍴⍺)+n←⍴⍵  ⍝ first row of matrix
-  f←⍵{⌊\⍵⌊(↑⍵),(¯1↓⍵)-1x+⍺=⍶}
+  f←⍵{⌊\⍵⌊(↑⍵),(¯1↓⍵)-1ₓ+⍺=⍶}
   z←a f/ ⌽⍺
   ↑⌽z
 }
 
-fuzzy ← {a←lcase ⍺ ⋄ (↑⍋a⍃dist∘lcase¨⍵)⊃⍵}
+fuzzy ← {a←lcase ⍺ ⋄ (↑⍋a↣dist∘lcase¨⍵)⊃⍵}
 
 ⍝ From http://dfns.dyalog.com/n_dsp.htm
 
@@ -270,7 +270,7 @@ in ← {  ⍝ Locations of item ⍺ in array ⍵.
   ⍬{  ⍝ ⍺ is pick-path
     item≡⍵?,⊂⍺;  ⍝ match: path
     D≥≡⍵?⍬;  ⍝ give up
-    paths←⍺⍃,∘⊂¨⍳⍴⍵  ⍝ extended paths
+    paths←⍺↣,∘⊂¨⍳⍴⍵  ⍝ extended paths
     ,/, paths ∇¨ ⍵
   }⍵  ⍝ ⍵ is searched-in array
 }
@@ -288,11 +288,11 @@ ltrav ← {  ⍝ List traversal.
 
 ⍝ From http://dfns.dyalog.com/s_list.htm
 
-listLength ← 0x⍃({⍺+1x} ltrav)
+listLength ← 0ₓ↣({⍺+1ₓ} ltrav)
 
-vectFromList ← ⍬⍃({⍺,⊂⍵} ltrav)
+vectFromList ← ⍬↣({⍺,⊂⍵} ltrav)
 
-revl ← '∘'⍃({[⍺ ⍵]}⍨ ltrav)
+revl ← '∘'↣({[⍺ ⍵]}⍨ ltrav)
 
 listRmDups ← {  ⍝ remove adjacent duplicates.
   ⍺←'∘'  ⍝ null accumulator.
@@ -306,7 +306,7 @@ listRmDups ← {  ⍝ remove adjacent duplicates.
 
 match ← {  ⍝ Wildcard match.
   [p x]←{[⍵ '*']}⍣ 1=≡,⍺ ,⍺  ⍝ pattern and wildcard.
-  v←1↓¨{(x⍃≡¨⍵)⊂⍵}(⊂x),p
+  v←1↓¨{(x↣≡¨⍵)⊂⍵}(⊂x),p
   h←⊃v⍷¨⊂⍵
   r←0,¯1↓,⊃⍴¨v
   sl←{  ⍝ array shifted left.
@@ -348,7 +348,7 @@ perv ← {  ⍝ Pervasion
 
 pmat ← {  ⍝ Permutation matrix of ⍳⍵.
   {  ⍝ perms of ⍳⍵:
-    1≥⍴⍵?⊃,↓⍵;⊃⍪/⍵,⍄∇¨⍵⍃~¨,¨⍵
+    1≥⍴⍵?⊃,↓⍵;⊃⍪/⍵,↢∇¨⍵↣~¨,¨⍵
   }⍳⍵  ⍝ permutations of identity perm.
 }
 
@@ -413,7 +413,7 @@ select ← {⍺⊃¨,¨/⊂¨¨⍵}  ⍝ ⍺-selection of items of vector ⍵.
 
 ⍝ From http://dfns.dyalog.com/c_shannon.htm
 
-shannon ← {-+/(2⍃⍟×⊣)¨({≢⍵}⌸÷≢)⍵}  ⍝ Shannon entropy of message ⍵.
+shannon ← {-+/(2↣⍟×⊣)¨({≢⍵}⌸÷≢)⍵}  ⍝ Shannon entropy of message ⍵.
 
 ⍝ From http://dfns.dyalog.com/c_subvec.htm
 
@@ -438,5 +438,5 @@ subs ← {  ⍝ Vector substitution.
 ⍝ From http://dfns.dyalog.com/c_lcase.htm and http://dfns.dyalog.com/c_ucase.htm
 letters ← ["abcdefghijklmnopqrstuvwxyzåäöàæéñøü" "ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖÀÆÉÑØÜ"]  ⍝ Lower and upper case, at matching positions.
 recase ← {[from to]←⍺ ⋄ [(from,,⍵)⍳⍵]⌷to,,⍵}  ⍝ Simple array ⍵, with each letter from ⍺'s first list replaced by its second.
-lcase ← (⌽letters)⍃recase  ⍝ Lower-casification.
-ucase ← letters⍃recase  ⍝ Upper-casification.
+lcase ← (⌽letters)↣recase  ⍝ Lower-casification.
+ucase ← letters↣recase  ⍝ Upper-casification.

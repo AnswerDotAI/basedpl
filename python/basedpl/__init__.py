@@ -285,7 +285,7 @@ class _Workspace:
         payload = dict(bindings=[(k, v._inner if isinstance(v, Function) else _array(v)) for k,v in bindings.items()])
         if source is not None:
             if not isinstance(source, str): raise TypeError('BPL source must be a string')
-            payload['code'] = source
+            payload['source'] = source
         return self._request(payload, display, echo)
 
     def __call__(self, source=None, capture=None, /, **bindings):

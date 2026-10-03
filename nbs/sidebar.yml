@@ -6,22 +6,27 @@ website:
       - notebooks.ipynb
       - repl.qmd
       - cli.qmd
-      - section: Language
+      - section: Reference
         contents:
-          - principles.qmd
           - glyphs.qmd
-          - rules.qmd
-          - arrays.qmd
-          - numbers.qmd
-          - strings.qmd
-          - bracket-types.qmd
-          - scripts.qmd
-          - assignment.qmd
-          - dfns.qmd
-          - modules.qmd
-          - keyed.qmd
+          - syntax.qmd
+          - evaluation.qmd
+          - terms.qmd
           - system-functions.qmd
           - comparison.qmd
+      - section: Explanations
+        contents:
+          - overview.ipynb
+          - principles.ipynb
+          - arrays.ipynb
+          - numbers.qmd
+          - strings.ipynb
+          - bracket-types.ipynb
+          - scripts.ipynb
+          - assignment.ipynb
+          - dfns.ipynb
+          - modules.qmd
+          - keyed.ipynb
       - section: Working with data
         contents:
           - data.ipynb

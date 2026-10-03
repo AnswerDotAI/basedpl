@@ -1,0 +1,131 @@
+# Syntax
+
+BPL divides each statement into runs and items before it evaluates anything. The rules on this page don't depend on what any name holds. [Evaluation](evaluation.qmd) covers how the runs then bind. [Types of brackets](bracket-types.ipynb) and the [Language overview](overview.ipynb) explain the same rules with more examples.
+
+## Names
+
+A name consists of letters, `∆` and `⍙`. A digit ends a name, as it ends a glyph. `f2` therefore applies `f` to 2, the same way `⍳2` applies `⍳` to 2.
+
+`_` adds the next character to a name, whatever that character is. Digits straight after `_` all stay in the name. A name can't end in `_`, except the lone name `_`. A lone `_` is a name when a space, `]`, `)`, `←`, `;`, `⋄` or the end of the line follows it. Assign to `_` a value that nothing reads.
+
+After a dot, digits stay in the key: `T.q1` is the entry with key `q1`.
+
+```bpl
+f←- ⋄ f2                       ⍝ ¯2
+x_1←10 ⋄ x_12←20 ⋄ x_1+x_12   ⍝ 30
+x_+←3 ⋄ x_+                    ⍝ 3
+[k _ v]←1 2 3 ⋄ k+v            ⍝ 4
+T←["q1":5] ⋄ T.q1             ⍝ 5
+```
+
+## Literals and strands
+
+Numbers, `∞`, `¯∞`, `⍬`, characters, strings and the constants `$t`, `$f` and `$n` are [literals](terms.qmd#term-literal). A constant is `$` followed by one letter. [Numbers](numbers.qmd) and [Characters and strings](strings.ipynb) give the written forms of numbers and text.
+
+`ₓ` straight after a number, `⍬`, `]` or `)` makes every number it covers exact, as in `5ₓ`, `[1 2]ₓ` and `(0 1 ⋄ 2 3)ₓ`.
+
+After a number, a plain `e`, `j` or `r` continues the number only when the rest of a number follows it, as in `1e5`, `2j3` and `1r3`. Otherwise it starts a name. `2edges` is `2` beside the name `edges`. The subscripts `ₑ`, `ⱼ` and `ᵣ` always continue the number.
+
+Literals separated by spaces form a [strand](terms.qmd#term-strand), which is one vector. Names never join a literal strand. System constants such as `•a` are names. BPL forms strands before it forms runs. Inside brackets without `;`, a space separates items and forms no strand.
+
+`⍝` starts a comment, which ends at the end of the line.
+
+## Brackets, parentheses and braces
+
+A [bracket list](glyphs/brackets.qmd) is a vector, whatever the number of items. Without `;`, each space inside the brackets separates two items. With `;`, only `;` separates items. `⋄` stacks rows into an array of higher rank, with each row as one major cell. A row of one number has rank 0. Write a column with a one-item vector in each row.
+
+```bpl
+⍴[5]                 ⍝ [1]ₓ
+[1+2;3 4]            ⍝ [3 [3 4]]
+⍴[1 ⋄ 2]             ⍝ [2]ₓ
+⍴[[1] ⋄ [2]]         ⍝ [2 1]ₓ
+```
+
+A line break means `⋄`, inside every kind of bracket and at the top level. A line break just after `[`, `(` or `{`, just before `]`, `)` or `}`, or next to `;`, `⋄` or `?` separates nothing.
+
+```bpl
+m←[
+  1 2 3
+  4 5 6
+]
+⍴m                   ⍝ [2 3]ₓ
+```
+
+[Parentheses](glyphs/parentheses.qmd) group, whatever they hold. With `⋄` inside, parentheses are used to write a vector of rows instead. Each row is a bracket list, even a row with one item. A trailing `⋄` gives a vector that holds one row. Rows in brackets form a flat array. Rows in parentheses form a nested vector.
+
+```bpl
+(1 2)≡[1 2]                     ⍝ $t
+(1+2)×3                         ⍝ 9
+(-)3                            ⍝ ¯3
+(4 ⋄ 4 5)≡[[4] [4 5]]           ⍝ $t
+(1 2 ⋄)≡[[1 2]]                 ⍝ $t
+```
+
+[Braces](glyphs/braces.qmd) define a function. Inside braces, `⋄` separates statements. `;` separates bodies. `?` ends a body's predicate. [Dfns](dfns.ipynb) describes what each part means.
+
+Outside brackets, parentheses and braces, `⋄` separates statements. A `;` outside brackets and braces is a `SYNTAX` error.
+
+## Runs
+
+Outside brackets, spaces divide a statement into [runs](terms.qmd#term-run). A group in brackets, parentheses or braces counts as one token, even when it contains spaces. Each run must give one value: a subject, a function, or a lone operator such as the `/` in `+ / x`. A run that gives anything else is a `SYNTAX` error.
+
+```bpl
+a←1 ⋄ b←2 ⋄ c←3 ⋄ d←4 ⋄ a+b × c+d   ⍝ 21
+x←3 ⋄ x+1 ÷ 2                        ⍝ 2
++ / 1 2 3                            ⍝ 6
+```
+
+## Superscripts and subscripts
+
+A [superscript or subscript](scripts.ipynb) written straight after an item applies to that item. After an array item, a superscript binds more tightly than anything else. After a function, a superscript takes the whole function to its left, as a monadic operator does. A superscript or subscript that stands alone after a space applies to the run before it.
+
+A subscript selects one position on the leading axis: `x₁` is `(1⌷x)`.
+
+```bpl
+2 3²                 ⍝ 2 9
+2 3 ²                ⍝ 4 9
+x←2 ⋄ y←3 ⋄ x y ²    ⍝ 2 9
++↢3 ⁻¹ 10            ⍝ 7
+[2 3]²               ⍝ 4 9
++\⁻¹ 1 3 6           ⍝ 1 2 3
+v←10 20 30 ⋄ v₋₁     ⍝ 30
+2 3 ₁                ⍝ 3
+```
+
+## Assignment
+
+The target of `←` is the run just before it. The value is everything to the right of `←`, up to the end of the statement or group. A target is one of these:
+
+- a name
+- a selection, such as `(1⌷v)`, `v₁`, `v.[1]` or `T.x`
+- a list of names, such as `[a b]`
+- any of these followed by a function, for [modified assignment](glyphs/assign.qmd)
+
+A space would end the target's run. Put a named function in parentheses to keep it in the target: `a(f)←3` is `a←a f 3`, at top level and in dfns. A value can itself contain an assignment. In `a←1 b←2`, the value of `a` is the strand `1 b←2`, which assigns 2 to `b` and gives `1 2`. Separate independent assignments with `⋄`. [Assignment](assignment.ipynb) describes each kind of target.
+
+```bpl
+v←10 20 30 ⋄ v₁←7 ⋄ v            ⍝ 10 7 30
+[a b]←3 4 ⋄ a×b                  ⍝ 12
+a←1 ⋄ f←+ ⋄ a(f)←3 ⋄ a           ⍝ 4
+a←1 b←2 ⋄ a                      ⍝ 1 2
+```
+
+## Precedence
+
+From tightest to loosest:
+
+1. within a run, right to left
+2. across runs, right to left
+3. the pipe `→`, whose stages run left to right
+4. assignment `←`
+5. the error guard `::`
+6. `⋄`, which separates statements, and `?`, which ends a predicate
+7. `;`, which separates a dfn's bodies
+
+Spaces change grouping only at the first two levels.
+
+`→` separates pipeline stages. Each stage applies its function to the previous result, as the right argument. `←` takes the whole pipeline as its value.
+
+```bpl
+total←1+2×3 → 2× ⋄ total   ⍝ 14
+```

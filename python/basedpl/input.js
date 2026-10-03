@@ -26,7 +26,7 @@
             const rest = press(ev, option);
             return {text: state.terminator + (rest?.text ?? ''), stop: rest?.stop ?? false};
         }
-        if (option && ev.altKey && !ev.shiftKey && !ev.ctrlKey && !ev.metaKey && key in layout.option) return {text: act(layout.option[key]), stop: true};
+        if (option && ev.altKey && !ev.ctrlKey && !ev.metaKey && key in layout.option) return {text: act(layout.option[key]), stop: true};
     }
     const reset = () => { pending = null; };
 

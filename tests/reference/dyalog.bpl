@@ -5,10 +5,10 @@
 +\⍣¯1 [1 3 6 10]   ⍝ 1 2 3 4
 
 ⍝ dyalog:power:inverse-decode —
-2⍃⊥⍣¯1(9)   ⍝ 1 0 0 1
+2↣⊥⍣¯1(9)   ⍝ 1 0 0 1
 
 ⍝ dyalog:power:inverse-mixed-base —
-0 60 60⍃⊥⍣¯1(3661)   ⍝ 1 1 1
+0 60 60↣⊥⍣¯1(3661)   ⍝ 1 1 1
 
 ⍝ dyalog:axes:laminate — Laminate is removed, so Mix adds the new leading axis
 ⊃[1 2;3 4]   ⍝ [1 2 ⋄ 3 4]
@@ -280,7 +280,7 @@ N←3 2 5 4 6 1 3 ⋄ N#⍨2|N   ⍝ 3 5 1 3
 [1 2 1 0 4 5]ₓ
 
 ⍝ dyalog:bind:1 —
-*⍄0.5 [4 16 25]   ⍝ 2 4 5
+*↢0.5 [4 16 25]   ⍝ 2 4 5
 
 ⍝ dyalog:atop:1 —
 12-∘÷4   ⍝ ¯3
@@ -289,10 +289,10 @@ N←3 2 5 4 6 1 3 ⋄ N#⍨2|N   ⍝ 3 5 1 3
 2 3 ,⍥⊂ "text"   ⍝ [[2 3] "text"]
 
 ⍝ dyalog:behind:1 —
-3⍃<⍃#2 7 1 8 2 8   ⍝ 7 8 8
+3↣<↣#2 7 1 8 2 8   ⍝ 7 8 8
 
 ⍝ dyalog:behind:2 —
-⌊⍃=⍃#1 3.2 ¯5 0 ¯3.2 8.1   ⍝ 1 ¯5 0
+⌊↣=↣#1 3.2 ¯5 0 ¯3.2 8.1   ⍝ 1 ¯5 0
 
 ⍝ dyalog:rank:1 —
 10 20 30 +⍤0 1 [3 4]⍴⍳12
@@ -320,7 +320,7 @@ N←3 2 5 4 6 1 3 ⋄ N#⍨2|N   ⍝ 3 5 1 3
 2#⍳ 3   ⍝ 0 0 1 1 2 2
 
 ⍝ dyalog:trains:4 —
-⍳(#⍄⊢)⍳ 3   ⍝ 1 2 2
+⍳(#↢⊢)⍳ 3   ⍝ 1 2 2
 
 ⍝ dyalog:inner-product:1 —
 1 2 3+.×10 12 14   ⍝ 76

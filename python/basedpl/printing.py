@@ -71,8 +71,8 @@ class _Printer:
         if len(args) != 2: return _apl(f), 100
         b = args[1]
         af, bf = isinstance(a, _Function), isinstance(b, _Function)
-        if kind == '⍃' and not af: return f'{r(b, True, 100)}.left({r(a)})', 100
-        if kind == '⍄' and not bf:
+        if kind == '↣' and not af: return f'{r(b, True, 100)}.left({r(a)})', 100
+        if kind == '↢' and not bf:
             operand = a.parts()
             if operand and not operand[1] and _names.get(operand[0], ('', ''))[1]:
                 return f'{r(a, True, 100)}({r(b)})', 100
@@ -83,7 +83,7 @@ class _Printer:
             raw = b.parts()
             if raw.get('shape') == [1] and isinstance(raw['data'][0], _Function): return f'{r(a, dyad, 100)}.history({r(raw["data"][0], True)})', 100
             return f'{r(a, dyad, 41)} ** {r(b)}', 40
-        valences = {'⍤': (dyad, dyad), '∘': (False, dyad), '⍥': (dyad, False), '⍃': (False, True), '⍄': (True, False),
+        valences = {'⍤': (dyad, dyad), '∘': (False, dyad), '⍥': (dyad, False), '↣': (False, True), '↢': (True, False),
                     '⌾': (dyad, False), '⇄': (dyad, dyad), '⊘': (False, True), '@': (dyad, False), '⌺': (True, False), '⍚': (dyad, False)}
         if kind in valences and af:
             av, bv = valences[kind]

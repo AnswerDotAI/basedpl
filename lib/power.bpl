@@ -15,11 +15,11 @@ for ← {  ⍝ Multiple selection of function list.
 invr ← {  ⍝ Approx inverse of real-valued function.
   ⍺←1+1e¯14+0×⍵
   ∆x←√1e¯14
-  -⍄⍵∘⍶{
+  -↢⍵∘⍶{
     ⍹ ⍵?⍵;
     [y y∆]←⍶¨[0 ∆x]+⊂⍵
     ∇ ⍵-y×∆x÷y∆-y  ⍝ refined estimate.
-  }(⍵⍃≡∘⍶)⍺
+  }(⍵↣≡∘⍶)⍺
 }
 
 ⍝ From http://dfns.dyalog.com/s_limit.htm
@@ -75,7 +75,7 @@ nr ← {  ⍝ Newton-Raphson.
   ⍵+(⍺×y)÷y-∆y  ⍝ next estimate.
 }
 
-traj_2 ← {¯1⍃↓ ,⍄⊂⍄⍶⍄↑⍄⌽⍨⍣(∊⍨⍄⊂⍄↑⍄⌽⍨)∘(,⊂) ⍵}
+traj_2 ← {¯1↣↓ ,↢⊂↢⍶↢↑↢⌽⍨⍣(∊⍨↢⊂↢↑↢⌽⍨)∘(,⊂) ⍵}
 
 ⍝ From http://dfns.dyalog.com/c_while.htm
 

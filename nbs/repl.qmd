@@ -28,7 +28,7 @@ Type a backtick followed by a name. Tab replaces it with the glyph. A non-letter
 
 Use `` `bullet`` then Tab for the system prefix `•`, and `` `quad`` for `⎕`.
 
-Before `⍃` is Alt-q then `<`, or `` `before`` then Tab. After `⍄` is Alt-q then `>`, or `` `after`` then Tab. Use `` `pi`` for `π` and `` `sqrt`` for `√`.
+Before `↣` is Alt-`.`, or `` `before`` then Tab. After `↢` is Alt-`,`, or `` `after`` then Tab. Use `` `pi`` for `π` and `` `sqrt`` for `√`.
 
 | Input | Result |
 |---|---|
@@ -80,33 +80,35 @@ An unclosed delimiter gives a continuation prompt. Closing it evaluates the comp
 6
 ```
 
-Inside brackets and parentheses, a line break counts as a space. Rows of an array need `⋄`.
+Inside brackets and parentheses, a line break means `⋄`, so each line of a bracket list is a row of the array.
 
 ## Array and function display
 
-Interactive sessions start with:
-
-```text
-]box on -style=max -trains=tree -fns=on
-```
+Interactive sessions draw arrays in boxes, show functions as trees, and box output made inside functions. [`•prefs`](system-functions.qmd#prefs) reads and changes these settings: `•prefs ["box":$f]` turns boxes off, and `•prefs ⍬` shows every setting. Batch, Python and JSON sessions start without boxes.
 
 Arrays with axes have boxes, axis arrows and a type marker on the bottom edge. The marker names the storage: `ₓ` for exact integers, `~` for floats, `j` for complex numbers, `─` for characters, `∊` for nested arrays and `+` for mixed storage, whose items keep their own kinds. Numbers inside an `ₓ` box carry no mark of their own. Enter a function name to see its tree.
 
+An array of more than 1000 items shows only the first and last 3 positions of each long axis. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. The `limit` and `edges` settings of `•prefs` change these numbers. `⎕←` prints every item.
+
+```text
+      100 100⍴⍳10000
+┌→──────────────────────────────┐
+↓   0    1    2 …   97   98   99│
+│ 100  101  102 …  197  198  199│
+│ 200  201  202 …  297  298  299│
+│   ⋮    ⋮    ⋮ ⋱    ⋮    ⋮    ⋮│
+│9700 9701 9702 … 9797 9798 9799│
+│9800 9801 9802 … 9897 9898 9899│
+│9900 9901 9902 … 9997 9998 9999│
+└~──────────────────────────────┘
+```
+
 | Command | Effect |
 |---|---|
-| `]box off` | Plain display |
-| `]box on` | Boxed display |
-| `]box on -trains=def` | Function expressions |
-| `]box on -trains=tree` | Function trees |
-| `]box on -fns=off` | Leave output inside functions unboxed |
-| `]box ?` | Show settings |
-| `]box reset` | Restore the starting display settings |
 | `]help +` | Help for a name or glyph |
 | `]help mean -source` | Definition source |
-| `]Display [[1 2] [3 4]]` | Draw one array without changing settings |
+| `]Display [[1 2] [3 4]]` | Draw one array in a box, whatever the settings |
 | `]clear` | Remove every name and restore the starting display settings |
-
-Boxing controls how the REPL draws results. Batch, Python and JSON sessions start with plain display.
 
 Both display modes show scalars as source: `⊂4ₓ`, `⊂⊂4ₓ` or `⊂[1 2]`.
 
@@ -114,7 +116,9 @@ Both display modes show scalars as source: `⊂4ₓ`, `⊂⊂4ₓ` or `⊂[1 2]`
 
 ```text
       ⎕←v←⍳3
-0 1 2
+┌→────┐
+│0 1 2│
+└~────┘
 ```
 
 ## Timing

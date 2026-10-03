@@ -2,10 +2,10 @@
 
 Keys: `Alt-1 t`
 
-`f⍤R` applies `f` to the [cells](../rules.qmd#term-cell) of rank `R`. With two arguments, `f⍤R` pairs cells using leading agreement of the [frames](../rules.qmd#term-frame). Write a literal argument after the rank in brackets or [parentheses](parentheses.qmd), as in `-⍤0(5)`. Without brackets or parentheses, `0 5` in `-⍤0 5` is the rank. Three rules give the result:
+`f⍤R` applies `f` to the [cells](../terms.qmd#term-cell) of rank `R`. With two arguments, `f⍤R` pairs cells using leading agreement of the [frames](../terms.qmd#term-frame). Write a literal argument after the rank in brackets or [parentheses](parentheses.qmd), as in `-⍤0(5)`. Without brackets or parentheses, `0 5` in `-⍤0 5` is the rank. Three rules give the result:
 
 1. Inside a frame, the 0-cell at a position holding an atom is that atom. The 0-cell at a position holding an array is a scalar holding the array.
-2. [Assembly](../rules.qmd#term-assembly) works as for `⊃`. Shorter results are padded with fill to a common shape. The shape of the whole result is the frame followed by that common shape. Each position in the frame holds the items of its result.
+2. [Assembly](../terms.qmd#term-assembly) works as for `⊃`. Shorter results are padded with fill to a common shape. The shape of the whole result is the frame followed by that common shape. Each position in the frame holds the items of its result.
 3. When no argument has a frame, `f⍤R` is the same as `f`. An argument has no frame when its rank is at most its cell rank. An atom never has a frame.
 
 ```bpl

@@ -1,6 +1,6 @@
 import json, re
 import xml.etree.ElementTree as ET
-from basedpl.editors import LAYOUT, CHARACTER_KEYS, PLAIN, SHIFT, OPTION, attribute, keylayout
+from basedpl.editors import LAYOUT, CHARACTER_KEYS, PLAIN, SHIFT, OPTION, OPTION_SHIFT, attribute, keylayout
 
 layout = json.loads(LAYOUT.read_text())
 KEYS = {c: (code, i) for code, pair in CHARACTER_KEYS.items() for i, c in zip([PLAIN, SHIFT], pair)}
@@ -48,7 +48,8 @@ def codes(presses):
     "The key code and key-map index of each press."
     def press(kind, *key):
         if kind in ('space', 'delete'): return {'space': 49, 'delete': 51}[kind], PLAIN
-        return (KEYS[key[0]][0], OPTION) if kind == 'option' else KEYS[key[0]]
+        code, index = KEYS[key[0]]
+        return (code, {PLAIN: OPTION, SHIFT: OPTION_SHIFT}[index]) if kind == 'option' else (code, index)
     return [press(*p) for p in presses]
 
 

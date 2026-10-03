@@ -14,4 +14,4 @@ Statements before a predicate run first. After it, a body can run several statem
 {⍵>0?⍵<10?⍵;0}15       ⍝ 0
 ```
 
-`C` must be a Boolean singleton. A body that ends after its predicate returns no result. If every predicate fails, the call is a `DOMAIN` error. See [Dfns](../dfns.qmd).
+`C` must be a Boolean singleton. A body that ends after its predicate returns no result. If every predicate fails, the call is a `DOMAIN` error. See [Dfns](../dfns.ipynb).

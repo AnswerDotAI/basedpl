@@ -22,10 +22,11 @@ impl Keys {
     }
     pub fn names(&self) -> &[Option<Arc<str>>] { &self.names }
     pub fn len(&self) -> usize { self.names.len() }
+    pub fn is_empty(&self) -> bool { self.names.is_empty() }
     /// Whether every position has a name.
     pub fn complete(&self) -> bool { self.index.len() == self.names.len() }
     /// Whether no position has a name. An axis like that carries no keys.
-    pub(crate) fn blank(&self) -> bool { self.index.is_empty() && !self.names.is_empty() }
+    pub(crate) fn blank(&self) -> bool { self.index.is_empty() && !self.is_empty() }
     pub fn position(&self, name: &str) -> Option<usize> { self.index.get(name).copied() }
     /// Adds a position at the end. A name must be new.
     pub(crate) fn push(&mut self, name: Option<Arc<str>>) {
@@ -125,8 +126,11 @@ pub(crate) fn pairs(value: &Value) -> Result<Vec<(Arc<str>, Value)>, ErrorKind> 
     entries(value)?.into_iter().map(|(k, v)| Some((k?, v))).collect::<Option<_>>().ok_or(ErrorKind::Domain)
 }
 
+/// A keyed vector entry: its name, if it has one, and its value.
+type Entry = (Option<Arc<str>>, Value);
+
 /// The entries of a keyed vector, in order, with `None` for an entry that has no name.
-pub(crate) fn entries(value: &Value) -> Result<Vec<(Option<Arc<str>>, Value)>, ErrorKind> {
+pub(crate) fn entries(value: &Value) -> Result<Vec<Entry>, ErrorKind> {
     if value.shape().len() != 1 { return Err(ErrorKind::Rank); }
     if value.is_empty() { return Ok(vec![]); }
     let keys = value.keys(0).ok_or(ErrorKind::Domain)?;

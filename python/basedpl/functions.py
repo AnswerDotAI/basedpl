@@ -18,7 +18,7 @@ def _build(kind, *operands, valence=0):
 class _Combinators(_Operators):
     def __bool__(self): raise TypeError('a BPL function has no truth value')
     @property
-    def left(self): return _build('⍃', _HOLE, self, valence=1)
+    def left(self): return _build('↣', _HOLE, self, valence=1)
     def __pow__(self, counts): return _build('⍣', self, counts)
     def __getitem__(self, axis): return _build('axis', self, axis, valence=self._valence)
     def __lshift__(self, g): return _build('∘', self, g)
@@ -67,9 +67,9 @@ class Function(_Combinators):
         if kwargs:
             if self._valence == 1: raise TypeError('keyword arguments need a dyadic call')
             args = (kwargs, args[0] if len(args) == 1 else list(args))
-        elif len(args) == 1 and self._valence == 2: return _build('⍄', self, args[0], valence=1)
+        elif len(args) == 1 and self._valence == 2: return _build('↢', self, args[0], valence=1)
         if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this BPL function')
-        return bpl._request(dict(function=self._inner, args=[_array(o) for o in args]), True).value
+        return bpl._request(dict(source=self._inner, args=[_array(o) for o in args]), True).value
 
 class Operator:
     "A BPL operator held as a value, as a module record holds it. Call it with its operand, or both operands of a dyadic operator, to get a `Function`."

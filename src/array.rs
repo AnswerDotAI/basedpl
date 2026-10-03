@@ -2,7 +2,9 @@ use crate::{
     keyed::Keys,
     number::{extended, real},
     pervasive::Element,
-    ErrorKind, Number,
+    display::{positions, Elide},
+    execution::Context,
+    DomainAt, Error, ErrorKind, Number,
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use num_complex::Complex64;
@@ -14,10 +16,9 @@ use std::{
         Arc, OnceLock,
     },
 };
-use unicode_width::UnicodeWidthStr;
 
 /// Text as a double-quoted string literal.
-fn quoted(text: &str) -> String { format!("\"{}\"", text.replace('"', "\"\"")) }
+pub(crate) fn quoted(text: &str) -> String { format!("\"{}\"", text.replace('"', "\"\"")) }
 
 /// Whether `test` holds for a character of source text outside brackets, parentheses, braces and quotes.
 fn outside(text: &str, test: impl Fn(char) -> bool) -> bool {
@@ -28,7 +29,11 @@ fn outside(text: &str, test: impl Fn(char) -> bool) -> bool {
             ']' | ')' | '}' => depth -= 1,
             // A string ends at a quote that isn't doubled.
             '"' => {
-                while let Some(c) = chars.next() { if c == '"' && chars.clone().next() != Some('"') { break; } if c == '"' { chars.next(); } }
+                while let Some(c) = chars.next() {
+                    if c != '"' { continue; }
+                    if chars.clone().next() != Some('"') { break; }
+                    chars.next();
+                }
             }
             // A character literal is one character between quotes, which may itself be a quote or a space.
             '\'' => {
@@ -44,36 +49,12 @@ fn outside(text: &str, test: impl Fn(char) -> bool) -> bool {
 /// Whether source text has a space or a `:` outside brackets, parentheses, braces and quotes.
 fn needs_group(text: &str) -> bool { outside(text, |c| c == ' ' || c == ':') }
 
-/// The number of blank lines before row `row` of an array of `shape` laid out as rows: one for each axis before the last two
-/// whose position changes there.
-pub(crate) fn page_breaks(shape: &[usize], row: usize) -> usize {
-    if row == 0 { return 0; }
-    let (mut period, mut count) = (1, 0);
-    for &dim in shape.iter().rev().skip(1).take(shape.len().saturating_sub(2)) {
-        period *= dim;
-        count += usize::from(row.is_multiple_of(period));
-    }
-    count
+/// What `x` and `y` agree on: the one that is present, or either when they're equal. Different values give none.
+pub(crate) fn agreed<T: PartialEq + Clone>(x: Option<&T>, y: Option<&T>) -> Option<T> {
+    match (x, y) { (Some(x), Some(y)) if x != y => None, (x, y) => x.or(y).cloned() }
 }
 
-/// A column of numbers aligned on their decimal points: its widest text before the point, and its widest from the point on.
-#[derive(Clone, Copy, Default)]
-pub(crate) struct Decimals { left: usize, right: usize }
-impl Decimals {
-    /// The characters of a number's text before its decimal point, and from the point on.
-    pub(crate) fn of(text: impl IntoIterator<Item = char>) -> Self {
-        let mut d = Self::default();
-        for c in text { if d.right > 0 || c == '.' { d.right += 1 } else { d.left += 1 } }
-        d
-    }
-    /// Widens the column to hold `number`.
-    pub(crate) fn fit(&mut self, number: Self) { *self = Self { left: self.left.max(number.left), right: self.right.max(number.right) } }
-    pub(crate) fn width(self) -> usize { self.left + self.right }
-    /// The spaces before and after `number` that align it in the column.
-    pub(crate) fn padding(self, number: Self) -> (usize, usize) { (self.left - number.left, self.right - number.right) }
-}
-
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Value {
     Number(Number),
     Character(char),
@@ -83,54 +64,62 @@ pub enum Value {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct Layout { shape: Vec<usize>, labels: Option<Box<Labels>> }
+pub(crate) struct Layout { shape: Vec<usize>, meta: Option<Box<Meta>> }
 
-/// The keys and names of a layout's axes. An empty list means none on any axis. A layout with neither holds no `Labels`.
+/// The keys and names of a layout's axes, and the function that renders its array for display. An empty list means none on any axis.
+/// A layout with none of these holds no `Meta`. A general `•meta` would earn its place once a second kind of metadata without syntax of
+/// its own appears, with `•mime` as shorthand over it.
 #[derive(Clone, Debug, Default, PartialEq)]
-struct Labels { keys: Vec<Option<Arc<Keys>>>, names: Vec<Option<Arc<str>>> }
+struct Meta { keys: Vec<Option<Arc<Keys>>>, names: Vec<Option<Arc<str>>>, renderer: Option<crate::Function> }
 
-impl From<Vec<usize>> for Layout { fn from(shape: Vec<usize>) -> Self { Self { shape, labels: None } } }
+impl From<Vec<usize>> for Layout { fn from(shape: Vec<usize>) -> Self { Self { shape, meta: None } } }
 impl Layout {
     pub fn shape(&self) -> &[usize] { &self.shape }
-    pub fn names(&self) -> &[Option<Arc<str>>] { self.labels.as_ref().map_or(&[], |l| &l.names) }
+    pub fn names(&self) -> &[Option<Arc<str>>] { self.meta.as_ref().map_or(&[], |l| &l.names) }
     pub fn name(&self, axis: usize) -> Option<&Arc<str>> { self.names().get(axis).and_then(Option::as_ref) }
-    fn labels_mut(&mut self) -> &mut Labels { self.labels.get_or_insert_with(Default::default) }
-    /// The layout without an empty `Labels`.
-    fn tidy(mut self) -> Self { if self.labels.as_ref().is_some_and(|l| l.keys.is_empty() && l.names.is_empty()) { self.labels = None; } self }
+    fn meta_mut(&mut self) -> &mut Meta { self.meta.get_or_insert_with(Default::default) }
+    /// The layout without an empty `Meta`.
+    fn tidy(mut self) -> Self { if self.meta.as_deref() == Some(&Meta::default()) { self.meta = None; } self }
+    /// The layout with `set` applied to its `Meta`. `empty` says that the new entry needs no `Meta`.
+    fn edit(mut self, empty: bool, set: impl FnOnce(&mut Meta)) -> Self {
+        if empty && self.meta.is_none() { return self; }
+        set(self.meta_mut());
+        self.tidy()
+    }
+    pub fn renderer(&self) -> Option<&crate::Function> { self.meta.as_ref()?.renderer.as_ref() }
+    pub fn with_renderer(self, renderer: Option<crate::Function>) -> Self { self.edit(renderer.is_none(), |m| m.renderer = renderer) }
     pub fn with_names(self, names: Vec<Option<Arc<str>>>) -> Result<Self, ErrorKind> {
         if !names.is_empty() && names.len() != self.shape.len() { return Err(ErrorKind::Rank); }
         let mut seen = HashSet::new();
         if names.iter().flatten().any(|n| !seen.insert(n)) { return Err(ErrorKind::Domain); }
         Ok(self.inherit_names(names))
     }
-    pub fn inherit_names(mut self, names: Vec<Option<Arc<str>>>) -> Self {
+    pub fn inherit_names(self, names: Vec<Option<Arc<str>>>) -> Self {
         assert!(names.is_empty() || names.len() == self.shape.len());
-        if names.iter().all(Option::is_none) && self.labels.is_none() { return self; }
-        self.labels_mut().names = if names.iter().all(Option::is_none) { vec![] } else { names };
-        self.tidy()
+        let empty = names.iter().all(Option::is_none);
+        self.edit(empty, |m| m.names = if empty { vec![] } else { names })
     }
     fn unique_names(mut self) -> Self {
-        let Some(labels) = self.labels.as_mut() else { return self };
+        let Some(meta) = self.meta.as_mut() else { return self };
         let mut counts = HashMap::new();
-        for name in labels.names.iter().flatten() { *counts.entry(name.clone()).or_insert(0) += 1; }
-        for name in &mut labels.names { if name.as_ref().is_some_and(|n| counts[n] > 1) { *name = None; } }
-        if labels.names.iter().all(Option::is_none) { labels.names.clear(); }
+        for name in meta.names.iter().flatten() { *counts.entry(name.clone()).or_insert(0) += 1; }
+        for name in &mut meta.names { if name.as_ref().is_some_and(|n| counts[n] > 1) { *name = None; } }
+        if meta.names.iter().all(Option::is_none) { meta.names.clear(); }
         self.tidy()
     }
-    fn key_list(&self) -> &[Option<Arc<Keys>>] { self.labels.as_ref().map_or(&[], |l| &l.keys) }
+    fn key_list(&self) -> &[Option<Arc<Keys>>] { self.meta.as_ref().map_or(&[], |l| &l.keys) }
     pub fn has_keys(&self) -> bool { !self.key_list().is_empty() }
-    /// Whether no axis has keys or a name.
-    fn plain(&self) -> bool { self.labels.is_none() }
+    /// Whether the layout holds no `Meta`.
+    fn plain(&self) -> bool { self.meta.is_none() }
     pub fn keys(&self, axis: usize) -> Option<&Arc<Keys>> { self.key_list().get(axis).and_then(Option::as_ref) }
     /// The keys of every axis, with `None` for an axis without them.
     pub fn all_keys(&self) -> Vec<Option<Arc<Keys>>> { (0..self.shape.len()).map(|a| self.keys(a).cloned()).collect() }
-    pub fn with_keys(mut self, keys: Vec<Option<Arc<Keys>>>) -> Result<Self, ErrorKind> {
+    pub fn with_keys(self, keys: Vec<Option<Arc<Keys>>>) -> Result<Self, ErrorKind> {
         if !keys.is_empty() && keys.len() != self.shape.len() { return Err(ErrorKind::Rank); }
         if keys.iter().zip(&self.shape).any(|(k, &n)| k.as_ref().is_some_and(|k| k.len() != n)) { return Err(ErrorKind::Length); }
         let keys: Vec<_> = keys.into_iter().map(|k| k.filter(|k| !k.blank())).collect();
-        if keys.iter().all(Option::is_none) && self.labels.is_none() { return Ok(self); }
-        self.labels_mut().keys = if keys.iter().all(Option::is_none) { vec![] } else { keys };
-        Ok(self.tidy())
+        let empty = keys.iter().all(Option::is_none);
+        Ok(self.edit(empty, |m| m.keys = if empty { vec![] } else { keys }))
     }
     /// A layout with one axis for each of `sources`: a layout and one of its axes, whose length, keys and name the new axis takes.
     fn gathered<'a>(sources: impl Iterator<Item = (&'a Self, usize)> + Clone) -> Self {
@@ -241,7 +230,7 @@ impl Cells<'_> {
     pub fn collect(&self) -> Result<Vec<Value>, ErrorKind> { (0..self.len()).map(|i| self.get(i)).collect() }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ArrayData { layout: Layout, data: Arc<Storage> }
 
 impl ArrayData { fn array(shape: Vec<usize>, data: Storage) -> Value { Value::Array(Arc::new(Self { layout: shape.into(), data: Arc::new(data) })) } }
@@ -289,10 +278,10 @@ impl PartialEq for Storage {
             (Self::Float(x), Self::Float(y)) => x == y,
             (Self::Complex(x), Self::Complex(y)) => x == y,
             (Self::Character(x), Self::Character(y)) => x == y,
-            (Self::Mixed(x, _), Self::Mixed(y, _)) if !x.is_empty() => x == y,
+            (Self::Mixed(x, _), Self::Mixed(y, _)) if !x.is_empty() => x.len() == y.len() && x.iter().zip(y).all(|(a, b)| a.same(b)),
             _ if self.len() != other.len() => false,
-            _ if self.len() == 0 => self.prototype() == other.prototype(),
-            _ => (0..self.len()).all(|i| self.item(i) == other.item(i)),
+            _ if self.len() == 0 => self.prototype().same(&other.prototype()),
+            _ => (0..self.len()).all(|i| self.item(i).same(&other.item(i))),
         }
     }
 }
@@ -554,6 +543,17 @@ impl<'a> Items<'a> {
             Self::Characters(_) => Err(ErrorKind::Domain),
             Self::Values(d) => d.iter().map(|v| other(number(v)?)).collect(),
         }
+    }
+    /// Compact numbers as floats. A Boolean or an integer converts as `Number` converts it beside a float. A non-finite value in flagged
+    /// integer storage becomes the float it stands for.
+    pub(crate) fn reals(&self) -> Option<Cow<'a, [f64]>> {
+        Some(match *self {
+            Self::Floats(y) => Cow::Borrowed(y),
+            Self::Integers(y) => Cow::Owned(y.iter().map(|&n| n as f64).collect()),
+            Self::Extended(y) => Cow::Owned(y.iter().map(|&n| extended::float(n)).collect()),
+            Self::Booleans(y) => Cow::Owned(y.iter().map(|&b| f64::from(u8::from(b))).collect()),
+            Self::Complex(_) | Self::Characters(_) | Self::Values(_) => return None,
+        })
     }
     /// Each item as an integer. Integer storage is borrowed. A fraction, an infinity or a non-number is DOMAIN, and a value outside
     /// `i64` is LIMIT.
@@ -880,7 +880,7 @@ fn compress_into<S: Element, D: Clone, M: Bit>(d: &mut Vec<D>, s: &[S], f: &impl
 /// time, so that one addition moves on past all four.
 pub(crate) fn compress<D, M: Bit>(d: &mut [D], mask: &[M], item: impl Fn(usize) -> D) {
     let (mut j, mut k) = (0, 0);
-    for m in mask.chunks_exact(4) {
+    for m in mask.as_chunks::<4>().0 {
         let Some(w) = d.get_mut(k..k + 4) else { break };
         let (a, b, c) = (m[0].bit(), m[1].bit(), m[2].bit());
         w[0] = item(j);
@@ -945,6 +945,59 @@ impl Value {
             Self::Array(_) => self.fill_array(),
             Self::Function(_) | Self::Operator(_) => self.clone(),
         }
+    }
+    /// Whether the values are identical: the same kinds, items, exactness, keys, names and renderer. Internal checks use it, and `≡`
+    /// uses `matches`.
+    pub fn same(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Number(x), Self::Number(y)) => x == y,
+            (Self::Character(x), Self::Character(y)) => x == y,
+            (Self::Array(x), Self::Array(y)) => Arc::ptr_eq(x, y) || (x.layout == y.layout && x.data == y.data),
+            (Self::Function(x), Self::Function(y)) => x == y,
+            (Self::Operator(x), Self::Operator(y)) => x == y,
+            _ => false,
+        }
+    }
+    /// Whether the values match, as `≡` and search compare them. Numbers match within tolerance, whatever their exactness, and NaN
+    /// matches NaN. Keyed arrays match by key. Functions and operators match when built from matching parts. Renderers take no part.
+    pub(crate) fn matches(&self, other: &Self, cx: &Context<'_>) -> Result<bool, Error> {
+        cx.check()?;
+        match (self, other) {
+            (Self::Array(_), Self::Array(_)) => (),
+            (Self::Number(x), Self::Number(y)) => return x.matches(y).domain_at(cx),
+            (Self::Character(x), Self::Character(y)) => return Ok(x == y),
+            (Self::Function(x), Self::Function(y)) => return x.matches(y, cx),
+            (Self::Operator(x), Self::Operator(y)) => return x.matches(y, cx),
+            _ => return Ok(false),
+        }
+        if self.shape() != other.shape() { return Ok(false); }
+        let keyed = self.has_keys() || other.has_keys();
+        let mut maps = Vec::new();
+        if keyed {
+            for axis in 0..self.shape().len() {
+                let map = match (self.keys(axis), other.keys(axis)) {
+                    (None, None) => (0..self.shape()[axis]).map(Some).collect(),
+                    (Some(x), Some(y)) => y.align(x),
+                    _ => return Ok(false),
+                };
+                if map.iter().any(Option::is_none) { return Ok(false); }
+                maps.push(map);
+            }
+        }
+        if self.is_empty() { return self.prototype().matches(&other.prototype(), cx); }
+        if !keyed {
+            match (self.as_items(), other.as_items()) {
+                (Items::Integers(x) | Items::Extended(x), Items::Integers(y) | Items::Extended(y)) => return Ok(x == y),
+                (Items::Floats(x), Items::Floats(y)) => return Ok(x.iter().zip(y).all(|(&a, &b)| crate::number::float_match(a, b))),
+                (Items::Characters(x), Items::Characters(y)) => return Ok(x == y),
+                _ => (),
+            }
+        }
+        for (i, x) in self.elements().enumerate() {
+            let j = if keyed { crate::keyed::mapped_index(i, self.shape(), other.shape(), &maps).unwrap() } else { i };
+            if !x.matches(&other.at(j), cx)? { return Ok(false); }
+        }
+        Ok(true)
     }
     pub(crate) fn environment(&self) -> Option<usize> {
         match self { Self::Function(f) => f.environment(), Self::Operator(op) => op.environment(), Self::Array(a) => a.data.environment().map(usize::from), _ => None }
@@ -1045,9 +1098,9 @@ impl Value {
         let (old, rank) = (a.layout.shape[0], a.layout.shape.len());
         a.layout.shape[0] += cells.shape()[0];
         if let Some(names) = names {
-            let labels = a.layout.labels_mut();
-            if labels.keys.is_empty() { labels.keys = vec![None; rank]; }
-            match &mut labels.keys[0] {
+            let meta = a.layout.meta_mut();
+            if meta.keys.is_empty() { meta.keys = vec![None; rank]; }
+            match &mut meta.keys[0] {
                 Some(keys) => {
                     let keys = Arc::make_mut(keys);
                     for name in names { keys.push(name.clone()) }
@@ -1169,8 +1222,15 @@ impl Value {
     }
     pub fn keys(&self, axis: usize) -> Option<&Arc<Keys>> { self.layout().keys(axis) }
     pub fn has_keys(&self) -> bool { self.layout().has_keys() }
+    pub(crate) fn renderer(&self) -> Option<&crate::Function> { self.layout().renderer() }
+    /// The value displayed through `renderer`. An atom becomes a scalar, because only an array has a layout to hold the renderer.
+    pub(crate) fn with_renderer(self, renderer: crate::Function) -> Result<Self, ErrorKind> {
+        let value = if self.is_atom() { self.enclose()? } else { self };
+        let layout = value.layout().clone().with_renderer(Some(renderer));
+        value.with_layout(layout)
+    }
     pub(crate) fn layout(&self) -> &Layout {
-        static ATOM: Layout = Layout { shape: vec![], labels: None };
+        static ATOM: Layout = Layout { shape: vec![], meta: None };
         match self { Self::Array(a) => &a.layout, _ => &ATOM }
     }
     pub(crate) fn with_layout(self, layout: Layout) -> Result<Self, ErrorKind> {
@@ -1220,26 +1280,15 @@ impl Value {
         if !numeric && !keyed { return self.formatted_cells(); }
         let (shape, text) = if !keyed && self.shape().len() > 1 {
             let columns = *self.shape().last().unwrap();
-            let text: Vec<_> = self
-                .elements()
-                .map(|e| { let Value::Number(n) = e else { unreachable!() }; n.to_string() })
+            // One line per row, without blank lines between planes, as the result keeps the leading axes.
+            let rows = crate::display::rows(self.shape(), None)
+                .into_iter()
+                .map(|(_, _, spots)| (0, spots.iter().map(|spot| crate::display::Cell::spot(spot, |i| crate::display::Cell::number(self.at(i).to_string()))).collect()))
                 .collect();
-            // A column is at least one character wide, so a matrix with no rows keeps its columns.
-            let mut widths = vec![Decimals { left: 1, right: 0 }; columns];
-            for (i, s) in text.iter().enumerate() { widths[i % columns].fit(Decimals::of(s.chars())); }
-            let width = widths.iter().map(|w| w.width()).sum::<usize>() + columns.saturating_sub(1);
+            let (width, lines) = crate::display::grid(columns, rows, crate::display::Style::Uniform { spaced: true, right: true });
             let mut shape = self.shape().to_vec();
             *shape.last_mut().unwrap() = width;
-            generated_len(&shape)?;
-            let mut result = String::new();
-            for (i, s) in text.iter().enumerate() {
-                if i % columns != 0 { result.push(' '); }
-                let (before, after) = widths[i % columns].padding(Decimals::of(s.chars()));
-                result.extend(std::iter::repeat_n(' ', before));
-                result.push_str(s);
-                result.extend(std::iter::repeat_n(' ', after));
-            }
-            (shape, result)
+            (shape, lines.concat().concat())
         } else if !keyed && self.len() >= 2 && matches!(self.as_items(), Items::Integers(_) | Items::Extended(_)) {
             // An exact vector writes as it displays, with one `ₓ` after its brackets.
             let text = self.literal();
@@ -1250,7 +1299,8 @@ impl Value {
             let mut text = String::new();
             for (i, e) in self.elements().enumerate() {
                 if i > 0 { text.push(' '); }
-                write!(text, "{e}").unwrap();
+                let Value::Number(n) = e else { unreachable!("every item is a number") };
+                write!(text, "{n}").unwrap();
             }
             (vec![text.chars().count()], text)
         } else {
@@ -1269,140 +1319,44 @@ impl Value {
     }
 
     fn formatted_cells(&self) -> Result<Self, ErrorKind> {
+        use crate::display::{grid, Cell, Style};
         if self.is_empty() { return Self::empty(vec![0], Value::Character(' ')); }
         let rank = self.shape().len();
         let columns = self.shape().last().copied().unwrap_or(1);
-        let mut widths = vec![0; columns];
-        let mut decimals = vec![Decimals::default(); columns];
-        let mut padded = vec![false; columns];
-        let mut cells = Vec::new();
-        let mut matrix = rank > 1;
-        let mut size = 0;
-        for (i, item) in self.elements().enumerate() {
-            let text = item.clone().formatted()?;
-            size += text.len();
-            generated_len(&[size])?;
-            matrix |= text.shape().len() > 1;
-            let width = text.shape().last().copied().unwrap_or(1);
-            padded[i % columns] |= matches!(item, Value::Array(_));
-            let rows = text.formatted_rows()?;
-            let number = matches!(item, Value::Number(_)).then(|| Decimals::of(rows[0].iter().copied()));
-            if let Some(n) = number { decimals[i % columns].fit(n); }
-            cells.push((rows, width, number));
-        }
-        for (i, (rows, width, number)) in cells.iter_mut().enumerate() {
-            if padded[i % columns] && number.is_none() {
-                for row in rows { row.insert(0, ' '); }
-                *width += 1;
+        let (mut size, mut matrix, mut rows) = (0, rank > 1, Vec::new());
+        for start in (0..self.len()).step_by(columns) {
+            let mut cells = Vec::with_capacity(columns);
+            for item in self.items(start..start + columns) {
+                let text = item.clone().formatted()?;
+                size += text.len();
+                generated_len(&[size])?;
+                matrix |= text.shape().len() > 1;
+                cells.push(Cell::formatted(text.formatted_rows()?, &item));
             }
-            widths[i % columns] = widths[i % columns].max(*width);
+            rows.push((0, cells));
         }
-        for (width, d) in widths.iter_mut().zip(&decimals) { *width = (*width).max(d.width()); }
-        let numeric: Vec<_> = decimals.iter().map(|d| d.left > 0).collect();
-        let separated: Vec<_> =
-            (0..columns).map(|x| x > 0 && ((numeric[x - 1] && !padded[x - 1]) || (numeric[x] && widths[x] == decimals[x].width()))).collect();
-        let width = widths.iter().sum::<usize>() + padded.iter().filter(|&&p| p).count() + separated.iter().filter(|&&s| s).count();
+        let (width, rows) = grid(columns, rows, Style::PerColumn);
         // Each matrix of cells is one plane of lines. A higher rank keeps its leading axes, and every plane is as tall as the tallest.
-        let plane_rows = if rank > 2 { self.shape()[rank - 2] } else { cells.len() / columns };
-        let (mut planes, mut total) = (Vec::new(), 0);
-        for plane in cells.chunks(columns * plane_rows) {
-            let mut lines = Vec::new();
-            for chunk in plane.chunks(columns) {
-                let height = chunk.iter().map(|(rows, _, _)| rows.len()).max().unwrap().max(1);
-                total += height;
-                generated_len(&[total, width])?;
-                for y in 0..height {
-                    let mut line = Vec::with_capacity(width);
-                    for (x, (rows, cell_width, number)) in chunk.iter().enumerate() {
-                        if separated[x] { line.push(' '); }
-                        let extra = widths[x] - cell_width;
-                        let after = number.map_or(if numeric[x] { 0 } else { extra }, |n| decimals[x].right - n.right);
-                        line.extend(std::iter::repeat_n(' ', extra - after));
-                        if let Some(row) = rows.get(y) { line.extend(row); }
-                        else { line.extend(std::iter::repeat_n(' ', *cell_width)); }
-                        line.extend(std::iter::repeat_n(' ', after));
-                        if padded[x] { line.push(' '); }
-                    }
-                    lines.push(line);
-                }
-            }
-            planes.push(lines);
-        }
+        let planes: Vec<Vec<String>> = rows.chunks(if rank > 2 { self.shape()[rank - 2] } else { rows.len() }).map(<[_]>::concat).collect();
         let height = planes.iter().map(Vec::len).max().unwrap();
         let shape = if rank > 2 { [&self.shape()[..rank - 2], &[height, width]].concat() } else if matrix { vec![height, width] } else { vec![width] };
         let mut chars = Vec::with_capacity(generated_len(&shape)?);
         for plane in planes {
-            let blank = height - plane.len();
-            chars.extend(plane.into_iter().flatten());
-            chars.extend(std::iter::repeat_n(' ', blank * width));
+            chars.extend(plane.iter().flat_map(|line| line.chars()));
+            chars.extend(std::iter::repeat_n(' ', (height - plane.len()) * width));
         }
         Self::characters(shape, chars)
     }
 
-    fn fmt_labelled(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let rank = self.shape().len();
-        let (rows, cols) = (self.shape()[rank - 2], self.shape()[rank - 1]);
-        let pages: usize = self.shape()[..rank - 2].iter().product();
-        let label = |axis, i: usize| self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| i.to_string(), |k| k.to_string());
-        for page in 0..pages {
-            if page > 0 { writeln!(f, "\n")?; }
-            if rank > 2 {
-                let mut rest = page;
-                let mut coords = Vec::new();
-                for axis in (0..rank - 2).rev() {
-                    let i = rest % self.shape()[axis];
-                    coords.push(self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| i.to_string(), |k| quoted(k)));
-                    rest /= self.shape()[axis];
-                }
-                coords.reverse();
-                writeln!(f, "{}⌷", coords.join(" "))?;
-            }
-            let mut grid = Vec::new();
-            if self.keys(rank - 1).is_some() {
-                let mut header = vec![String::new()];
-                header.extend((0..cols).map(|j| label(rank - 1, j)));
-                grid.push(header);
-            }
-            for i in 0..rows {
-                let mut row = vec![if self.keys(rank - 2).is_some() { label(rank - 2, i) } else { String::new() }];
-                row.extend((0..cols).map(|j| self.at((page * rows + i) * cols + j).to_string()));
-                grid.push(row);
-            }
-            let mut widths = vec![0; cols + 1];
-            for row in &grid {
-                for (j, text) in row.iter().enumerate() { widths[j] = widths[j].max(text.lines().map(UnicodeWidthStr::width).max().unwrap_or(0)); }
-            }
-            for (i, row) in grid.iter().enumerate() {
-                if i > 0 { writeln!(f)?; }
-                let height = row.iter().map(|s| s.lines().count()).max().unwrap_or(1).max(1);
-                for line in 0..height {
-                    if line > 0 { writeln!(f)?; }
-                    let mut first = true;
-                    for (j, text) in row.iter().enumerate() {
-                        if j == 0 && widths[0] == 0 { continue; }
-                        if !first { f.write_str(" ")?; }
-                        first = false;
-                        let text = text.lines().nth(line).unwrap_or("");
-                        write!(f, "{}{text}", " ".repeat(widths[j] - text.width()))?;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
+    /// The rows of a character array, with a blank row before each one that starts a new plane.
     fn formatted_rows(&self) -> Result<Vec<Vec<char>>, ErrorKind> {
         let columns = self.shape().last().copied().unwrap_or(1);
-        let rows = self.shape().iter().rev().skip(1).product();
-        generated_len(&[rows, columns.max(1)])?;
+        generated_len(&[self.shape().iter().rev().skip(1).product(), columns.max(1)])?;
+        let char_at = |i| match self.at(i) { Value::Character(c) => c, _ => unreachable!("a formatted array holds characters") };
         let mut lines = Vec::new();
-        for row in 0..rows {
-            for _ in 0..page_breaks(self.shape(), row) { lines.push(vec![' '; columns]); }
-            lines.push(
-                (0..columns)
-                    .map(|i| match self.at(row * columns + i) { Value::Character(c) => c, _ => unreachable!() })
-                    .collect(),
-            );
+        for (breaks, _, spots) in crate::display::rows(self.shape(), None) {
+            lines.extend(std::iter::repeat_n(vec![' '; columns], breaks));
+            lines.push(spots.iter().map(|spot| match *spot { crate::display::Spot::At(i) => char_at(i), crate::display::Spot::Gap(c) => c }).collect());
         }
         Ok(lines)
     }
@@ -1410,7 +1364,10 @@ impl Value {
     pub(crate) fn disclose(&self) -> Value { self.elements().next().unwrap_or_else(|| self.prototype().clone()) }
 
     /// Source text that reads back as the value. Strings are quoted, and arrays use bracket notation.
-    pub(crate) fn literal(&self) -> String {
+    pub(crate) fn literal(&self) -> String { self.source(Elide::NONE) }
+
+    /// Source text for the value, with large arrays elided as `el` says. Elided text doesn't read back.
+    pub(crate) fn source(&self, el: Elide) -> String {
         match self {
             Self::Number(n) => n.to_string(),
             Self::Character(c) if c.is_control() => format!("•ucs {}", *c as u32),
@@ -1426,80 +1383,105 @@ impl Value {
                 if text.contains(' ') { format!("({text})") } else { text }
             }
             Self::Array(_) => {
-                if self.axis_names().iter().any(Option::is_some) { return self.named_literal(); }
-                if let Some(s) = self.string_literal() { return s; }
+                if self.axis_names().iter().any(Option::is_some) { return self.named_literal(el); }
+                let edges = el.edges(self.shape());
+                if self.string_literal().is_some() { return quoted(&self.elided_text(edges)); }
                 if let Some(s) = crate::keyed::name(self) {
                     return format!(",•ucs {}", s.chars().map(|c| (c as u32).to_string()).collect::<Vec<_>>().join(" "));
                 }
-                if self.is_empty() && !self.has_keys() { return self.empty_literal(); }
-                let exact = matches!(self.as_items(), Items::Integers(_) | Items::Extended(_)) && !self.is_empty();
+                if self.is_empty() && !self.has_keys() { return self.empty_literal(el); }
+                let exact = self.marks_exact();
                 match self.shape().len() {
-                    0 => Self::enclosed_literal(&self.at(0)),
-                    1 if exact => format!("[{}]ₓ", self.bracket_items(Self::unmarked_item)),
-                    1 => self.vector_literal(),
-                    _ if self.has_keys() => self.keyed_literal(),
-                    _ if exact => format!("{}ₓ", self.block_literal(Self::unmarked_item)),
-                    _ => self.block_literal(Self::item),
+                    0 => Self::enclosed_literal(&self.at(0), el),
+                    1 if exact => format!("[{}]ₓ", self.bracket_items(Self::unmarked_item, el, edges)),
+                    1 => self.vector_literal(el, edges),
+                    _ if self.has_keys() => self.keyed_literal(el),
+                    _ if exact => format!("{}ₓ", self.block_literal(Self::unmarked_item, el, edges)),
+                    _ => self.block_literal(Self::item, el, edges),
                 }
             }
         }
     }
 
-    /// An array of rank 2 or more in array notation, one major cell at a time, with `item` writing each item.
-    fn block_literal(&self, item: fn(&Self) -> String) -> String {
-        match self.cells(self.shape().len() - 1).and_then(|c| c.collect()) {
+    /// The items display shows of a vector, with `None` for the gap that `edges` leaves.
+    fn shown(&self, edges: Option<usize>) -> impl Iterator<Item = Option<Value>> + '_ { positions(self.len(), edges).map(|i| i.map(|i| self.at(i))) }
+
+    /// A character vector's characters, with `…` for the gap that `edges` leaves.
+    pub(crate) fn elided_text(&self, edges: Option<usize>) -> String {
+        self.shown(edges).map(|c| match c { Some(Self::Character(c)) => c, _ => '…' }).collect()
+    }
+
+    /// Text for each shown item of a vector, written by `item`, with `…` for the gap that `edges` leaves.
+    pub(crate) fn shown_items(&self, edges: Option<usize>, item: impl Fn(Value) -> String) -> Vec<String> {
+        self.shown(edges).map(|e| e.map_or_else(|| "…".into(), &item)).collect()
+    }
+
+    /// An array of rank 2 or more in array notation, one major cell at a time, with `item` writing each item. `edges`
+    /// elides positions on every axis of the whole array.
+    fn block_literal(&self, item: fn(&Self, Elide) -> String, el: Elide, edges: Option<usize>) -> String {
+        let Ok(cells) = self.cells(self.shape().len() - 1) else { return crate::display::plain(self, el) };
+        let rows: Result<Vec<String>, ErrorKind> = positions(cells.len(), edges).map(|i| i.map_or(Ok("…".into()), |i| Ok(cells.get(i)?.row(item, el, edges)))).collect();
+        match rows {
             // One major cell needs a trailing `⋄`, or it reads back as that cell alone.
-            Ok(rows) if rows.len() == 1 => format!("[{} ⋄]", rows[0].row(item)),
-            Ok(rows) => format!("[{}]", rows.iter().map(|r| r.row(item)).collect::<Vec<_>>().join(" ⋄ ")),
-            Err(_) => self.to_string(),
+            Ok(rows) if rows.len() == 1 => format!("[{} ⋄]", rows[0]),
+            Ok(rows) => format!("[{}]", rows.join(" ⋄ ")),
+            Err(_) => crate::display::plain(self, el),
         }
     }
 
+    /// Whether the value is a nonempty array in integer storage, which writes one `ₓ` after its notation in place of one for
+    /// each number.
+    fn marks_exact(&self) -> bool { !self.is_empty() && matches!(self.as_items(), Items::Integers(_) | Items::Extended(_)) }
     /// An item of integer storage without its `ₓ`. One `ₓ` after the whole notation marks every number exact.
-    fn unmarked_item(&self) -> String { match self { Self::Number(n) => format!("{n:#}"), cell => cell.block_literal(Self::unmarked_item) } }
-    /// The value as one item inside brackets. A strand needs brackets of its own. Other text with a space between its
-    /// runs, or with a `:` that would read as a key, needs parentheses.
-    pub(crate) fn item(&self) -> String {
-        let text = self.literal();
-        if self.is_strand() { format!("[{text}]") } else if needs_group(&text) { format!("({text})") } else { text }
+    fn unmarked_item(&self, _: Elide) -> String {
+        let Self::Number(n) = self else { unreachable!("integer storage holds numbers") };
+        format!("{n:#}")
     }
-    /// The value as an operator's operand, which is one item. A strand is one item. Text with anything other than literals
-    /// outside brackets, as in `⊂3` or `0 3⍴0`, needs parentheses.
+    /// The value as one item inside brackets. Text with a space between its runs, or with a `:` that would read as a key,
+    /// needs parentheses.
+    pub(crate) fn item(&self, el: Elide) -> String {
+        let text = self.source(el);
+        if needs_group(&text) { format!("({text})") } else { text }
+    }
+    /// The value as an operator's operand, which is one item. Text with anything other than literals outside brackets, as in
+    /// `⊂3` or `0 3⍴0`, needs parentheses.
     pub(crate) fn operand(&self) -> String {
         let text = self.literal();
-        if outside(&text, |c| !(c.is_ascii_digit() || " ¯.eEjJrxₓ∞⍬".contains(c))) { format!("({text})") } else { text }
+        if outside(&text, |c| !(c.is_ascii_digit() || " ¯.ₑⱼᵣₓ∞⍬".contains(c))) { format!("({text})") } else { text }
     }
 
     /// Source text for a scalar holding `content`: `ᵘ` after a function, and `⊂` before anything else.
-    fn enclosed_literal(content: &Value) -> String {
-        match content { Self::Function(f) => f.superscripted("ᵘ", &mut 1000), _ => format!("⊂{}", content.item()) }
+    fn enclosed_literal(content: &Value, el: Elide) -> String {
+        match content { Self::Function(f) => f.superscripted("ᵘ", &mut 1000), _ => format!("⊂{}", content.item(el)) }
     }
 
     /// An array with named axes: its keyed shape reshapes the array without names. Reshape keeps position keys.
-    fn named_literal(&self) -> String {
+    fn named_literal(&self, el: Elide) -> String {
         let shape: Vec<_> =
             self.axis_names().iter().zip(self.shape()).map(|(n, len)| n.as_ref().map_or_else(|| len.to_string(), |n| format!("{}:{len}", quoted(n)))).collect();
-        format!("[{}]⍴{}", shape.join(" "), self.clone().with_axis_names(vec![]).unwrap().literal())
+        format!("[{}]⍴{}", shape.join(" "), self.clone().with_axis_names(vec![]).unwrap().source(el))
     }
 
     /// An array of rank 2 or more with keys: a key list for each axis, applied to the array without keys. A position
     /// stands for each missing key.
-    fn keyed_literal(&self) -> String {
+    fn keyed_literal(&self, el: Elide) -> String {
+        let edges = el.edges(self.shape());
         let lists: Vec<_> = self
             .shape()
             .iter()
             .enumerate()
             .map(|(axis, &len)| {
-                let keys: Vec<_> = (0..len).map(|i| self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| i.to_string(), |k| quoted(k))).collect();
+                let keys: Vec<_> =
+                    positions(len, edges).map(|i| i.map_or_else(|| "…".into(), |i| self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| i.to_string(), |k| quoted(k)))).collect();
                 match keys.len() { 0 => "⍬".into(), 1 => format!("[{}]", keys[0]), _ => keys.join(" ") }
             })
             .collect();
-        format!("[{}]:{}", lists.join(";"), self.unkeyed().literal())
+        format!("[{}]:{}", lists.join(";"), self.unkeyed().source(el))
     }
 
-    /// Whether the value prints as a strand: a vector of two or more numbers, characters or strings. Exact integers print in
-    /// brackets instead.
-    fn is_strand(&self) -> bool {
+    /// Whether plain display shows the vector as a strand: a vector of two or more numbers, characters or strings. Exact
+    /// integers show in brackets instead.
+    pub(crate) fn is_strand(&self) -> bool {
         matches!(self, Self::Array(_))
             && self.shape().len() == 1
             && self.len() >= 2
@@ -1517,7 +1499,7 @@ impl Value {
     }
 
     /// An empty array: `⍬` or `""` for a simple vector, and otherwise its shape reshaping its prototype.
-    fn empty_literal(&self) -> String {
+    fn empty_literal(&self, el: Elide) -> String {
         let prototype = self.prototype();
         match (self.shape(), &prototype) {
             ([_], Self::Number(n)) if n.as_bool().is_some() => "0⍴$f".into(),
@@ -1526,39 +1508,29 @@ impl Value {
             ([_], Self::Character(_)) => "\"\"".into(),
             (shape, _) => {
                 let shape: Vec<_> = shape.iter().map(ToString::to_string).collect();
-                let fill = if matches!(prototype, Self::Array(_)) { Self::enclosed_literal(&prototype) } else { prototype.literal() };
+                let fill = if matches!(prototype, Self::Array(_)) { Self::enclosed_literal(&prototype, el) } else { prototype.source(el) };
                 format!("{}⍴{fill}", shape.join(" "))
             }
         }
     }
-    fn vector_literal(&self) -> String {
+    fn vector_literal(&self, el: Elide, edges: Option<usize>) -> String {
         // An empty record keeps its keyed axis, which `[]` would lose.
         if self.keys(0).is_some() && self.is_empty() { return "⍬:⍬".into(); }
-        if self.keys(0).is_none() {
-            if self.is_strand() {
-                use fmt::Write;
-                let mut text = String::new();
-                for (i, e) in self.elements().enumerate() {
-                    if i > 0 { text.push(' '); }
-                    match &e { Self::Number(n) => write!(text, "{n}").unwrap(), _ => text.push_str(&e.literal()) }
-                }
-                return text;
-            }
-            if self.len() >= 2 && self.elements().all(|e| e.is_row()) {
-                return format!("({})", self.elements().map(|e| e.bracket_items(Self::item)).collect::<Vec<_>>().join(" ⋄ "));
-            }
+        if self.keys(0).is_none() && self.len() >= 2 && self.elements().all(|e| e.is_row()) {
+            let exact = self.elements().all(|e| e.marks_exact());
+            let item = if exact { Self::unmarked_item } else { Self::item };
+            let rows = self.shown_items(edges, |e| e.bracket_items(item, el, el.edges(e.shape()))).join(" ⋄ ");
+            return if exact { format!("({rows})ₓ") } else { format!("({rows})") };
         }
-        format!("[{}]", self.bracket_items(Self::item))
+        format!("[{}]", self.bracket_items(Self::item, el, edges))
     }
 
-    /// A vector's items as they appear between brackets, each written by `item`.
-    fn bracket_items(&self, item: fn(&Self) -> String) -> String {
-        let items: Vec<_> = match self.keys(0) {
-            Some(keys) => {
-                keys.names().iter().zip(self.elements()).map(|(k, v)| k.as_ref().map_or_else(|| item(&v), |k| format!("{}:{}", quoted(k), item(&v)))).collect()
-            }
-            None => self.elements().map(|e| item(&e)).collect(),
-        };
+    /// A vector's items as they appear between brackets, each written by `item`, with `…` for the gap that `edges` leaves.
+    fn bracket_items(&self, item: fn(&Self, Elide) -> String, el: Elide, edges: Option<usize>) -> String {
+        let key = |i: usize| self.keys(0).and_then(|k| k.names()[i].clone());
+        let items: Vec<_> = positions(self.len(), edges)
+            .map(|i| i.map_or_else(|| "…".into(), |i| key(i).map_or_else(|| item(&self.at(i), el), |k| format!("{}:{}", quoted(&k), item(&self.at(i), el)))))
+            .collect();
         items.join(" ")
     }
 
@@ -1571,13 +1543,15 @@ impl Value {
             && self.axis_names().iter().all(Option::is_none)
     }
 
-    /// A major cell as one part of array notation: a vector's items side by side, or one item. A row with one item
-    /// needs its own brackets, because a single item would be a cell by itself.
-    fn row(&self, item: fn(&Self) -> String) -> String {
+    /// A major cell as one part of array notation: a vector's items side by side, a higher rank in its own notation, or one
+    /// item. A row with one item needs its own brackets, because a single item would be a cell by itself. `edges` elides the
+    /// whole array's positions.
+    fn row(&self, item: fn(&Self, Elide) -> String, el: Elide, edges: Option<usize>) -> String {
         if self.shape().len() == 1 && !self.has_keys() && self.string_literal().is_none() {
-            if self.len() == 1 { return format!("[{}]", item(&self.at(0))); }
-            self.elements().map(|e| item(&e)).collect::<Vec<_>>().join(" ")
-        } else { item(self) }
+            if self.len() == 1 { return format!("[{}]", item(&self.at(0), el)); }
+            self.shown_items(edges, |e| item(&e, el)).join(" ")
+        } else if self.shape().len() > 1 && !self.has_keys() { self.block_literal(item, el, edges) }
+        else { item(self, el) }
     }
 
     /// A character vector as a double-quoted literal, unless it holds control characters, which a literal can't show.
@@ -1657,48 +1631,7 @@ impl Value {
 }
 
 impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Number(n) => return write!(f, "{n}"),
-            Self::Character(_) => return f.write_str(&self.literal()),
-            Self::Function(fun) => return write!(f, "{fun}"),
-            _ => (),
-        }
-        if self.has_keys() && self.shape().len() > 1 { return self.fmt_labelled(f); }
-        if self.shape().len() <= 1 {
-            // A string prints as its characters. Other vectors and units print as source.
-            if self.shape().len() == 1
-                && !self.has_keys()
-                && self.axis_names().iter().all(Option::is_none)
-                && !self.is_empty()
-                && self.elements().all(|e| matches!(e, Value::Character(_)))
-            { return self.elements().try_for_each(|e| if let Value::Character(c) = e { write!(f, "{c}") } else { Ok(()) }); }
-            return f.write_str(&self.literal());
-        }
-        if self.is_empty() { return f.write_str(&self.literal()); }
-        let columns = *self.shape().last().unwrap();
-        // A row after the first starts a new line, after a blank line for each plane boundary it crosses.
-        let row_start = |f: &mut fmt::Formatter<'_>, row: usize| (0..=page_breaks(self.shape(), row)).try_for_each(|_| writeln!(f));
-        if self.elements().all(|e| matches!(e, Value::Character(_))) {
-            for (i, item) in self.elements().enumerate() {
-                if i > 0 && i % columns == 0 { row_start(f, i / columns)?; }
-                if let Value::Character(c) = item { write!(f, "{c}")?; }
-            }
-            return Ok(());
-        }
-        if self.elements().all(|e| matches!(e, Value::Number(_))) { if let Ok(formatted) = self.formatted() { return formatted.fmt(f); } }
-        let text: Vec<_> = self
-            .elements()
-            .map(|e| match e { Value::Character(c) => c.to_string(), Value::Function(f) => f.to_string(), Value::Operator(op) => op.to_string(), e => e.item() })
-            .collect();
-        let mut widths = vec![0; columns];
-        for (i, s) in text.iter().enumerate() { widths[i % columns] = widths[i % columns].max(s.width()); }
-        for (i, s) in text.iter().enumerate() {
-            if i > 0 { if i % columns == 0 { row_start(f, i / columns)?; } else { f.write_str(" ")?; } }
-            write!(f, "{}{s}", " ".repeat(widths[i % columns] - s.width()))?;
-        }
-        Ok(())
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(&crate::display::plain(self, Elide::NONE)) }
 }
 
 /// A function value, as display shows it.

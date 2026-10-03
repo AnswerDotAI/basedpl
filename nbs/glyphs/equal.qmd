@@ -14,4 +14,4 @@
 "abc"='b'          ⍝ $f $t $f
 ```
 
-See [tolerance](../rules.qmd#equality-and-ordering) and whole-array [match `≡`](match.qmd).
+See [tolerance](../evaluation.qmd#equality-and-ordering) and whole-array [match `≡`](match.qmd).

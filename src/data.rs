@@ -92,37 +92,39 @@ pub(crate) fn vfi(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Re
     result().error_at(span, "invalid numeric input result")
 }
 
-/// File options: `binary` excludes `encoding`, which must be UTF-8.
-fn file_options(name: &'static str, left: Option<&Value>, shorthand: Option<&str>, allowed: &[&str], span: &Context<'_>) -> Result<(Options, bool), Error> {
+/// File options. `encoding` must be UTF-8.
+fn file_options(name: &'static str, left: Option<&Value>, shorthand: Option<&str>, allowed: &[&str], span: &Context<'_>) -> Result<Options, Error> {
     let opts = Options::new(name, left, shorthand, allowed, span)?;
-    let binary = opts.boolean("binary", false, span)?;
-    if binary && opts.values.contains_key("encoding") { return Err(span.domain_error("binary files do not take an encoding")); }
     if !opts.text("encoding", Some("UTF-8"), span)?.eq_ignore_ascii_case("UTF-8") { return Err(span.domain_error("encoding must be UTF-8")); }
-    Ok((opts, binary))
+    Ok(opts)
+}
+
+/// `data` as a vector of byte values.
+pub(crate) fn byte_vector(data: Vec<u8>) -> Result<Value, ErrorKind> { Value::integers(vec![data.len()], data.into_iter().map(i64::from).collect()) }
+
+/// The bytes in an array of integers from 0 to 255, in ravel order.
+pub(crate) fn bytes(value: &Value, span: &Context<'_>) -> Result<Vec<u8>, Error> {
+    let invalid = || span.domain_error("bytes must be integral numbers in 0..255");
+    value.as_items().nonnegative_integers().map_err(|_| invalid())?.into_iter().map(|n| u8::try_from(n).map_err(|_| invalid())).collect()
 }
 
 pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let (_, binary) = file_options("•nget", left, None, &["encoding", "binary"], span)?;
+    let opts = file_options("•nget", left, None, &["encoding", "binary"], span)?;
+    let binary = opts.boolean("binary", false, span)?;
+    if binary && opts.values.contains_key("encoding") { return Err(span.domain_error("binary files do not take an encoding")); }
     let path = text(right, span)?;
     span.check()?;
-    let data =
-        if path == "-" { span.input(|input| input.rest())? } else { std::fs::read(span.path(&path)).map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))? };
+    let data = if path == "-" { span.input(|input| input.rest())? } else { span.read(&path)? };
     span.check()?;
-    if binary { return Value::integers(vec![data.len()], data.into_iter().map(i64::from).collect()).error_at(span, "invalid byte vector"); }
-    let data = String::from_utf8(data).map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))?;
+    if binary { return byte_vector(data).error_at(span, "invalid byte vector"); }
+    let data = String::from_utf8(data).map_err(|e| span.file_error(&path, e))?;
     Ok(keyed::text(&data))
 }
 
 pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let (opts, binary) = file_options("•nput", left, Some("path"), &["path", "encoding", "binary", "overwrite"], span)?;
+    let opts = file_options("•nput", left, Some("path"), &["path", "encoding", "overwrite"], span)?;
     let path = opts.text("path", None, span)?;
-    let data = if binary {
-        if right.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "binary output needs a vector")); }
-        let invalid = || span.domain_error("bytes must be integral numbers in 0..255");
-        if right.prototype().as_number().is_none() { return Err(invalid()); }
-        let counts = right.as_items().nonnegative_integers().map_err(|_| invalid())?;
-        counts.into_iter().map(|n| u8::try_from(n).map_err(|_| invalid())).collect::<Result<Vec<_>, _>>()?
-    } else { text(right, span)?.into_bytes() };
+    let data = if right.prototype().as_number().is_some() { bytes(right, span)? } else { text(right, span)?.into_bytes() };
     let overwrite = opts.boolean("overwrite", false, span)?;
     span.check()?;
     let mut file = OpenOptions::new()
@@ -131,7 +133,7 @@ pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
         .create(overwrite)
         .truncate(overwrite)
         .open(span.path(&path))
-        .map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))?;
-    file.write_all(&data).map_err(|e| span.error(ErrorKind::Value, format!("{path}: {e}")))?;
+        .map_err(|e| span.file_error(&path, e))?;
+    file.write_all(&data).map_err(|e| span.file_error(&path, e))?;
     Ok(Value::Number(Number::from_integer(data.len() as i64)))
 }

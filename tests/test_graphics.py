@@ -1,11 +1,11 @@
-import xml.etree.ElementTree as ET
+import base64, xml.etree.ElementTree as ET
 import pytest
 from fastcore.test import test_eq as teq
 from basedpl import bpl, BplError
 from basedpl.worker import Worker
 
 
-def test_svg_display_and_mimefields():
+def test_svg_display_and_renderers():
     pic = bpl('circle←•element "circle" ⋄ pic←•svg ["r":20] circle ⍬')
     root = ET.fromstring(pic._repr_mimebundle_()['image/svg+xml'])
     teq(root.tag, '{http://www.w3.org/2000/svg}svg')
@@ -15,16 +15,18 @@ def test_svg_display_and_mimefields():
     teq(result.events[1]['data']['image/svg+xml'], pic._repr_mimebundle_()['image/svg+xml'])
     bpl('pic.children.attrs.r←30')
     teq(ET.fromstring(bpl('pic')._repr_mimebundle_()['image/svg+xml'])[0].attrib['r'], '30')
-    bpl('x←["items":[1 2 3]] ⋄ x._mime←{["text/plain":⍕+/⍵.items]}')
+    bpl('x←{["text/plain":⍕+/⍵.items]}ᵘ •mime ["items":[1 2 3]]')
     teq(bpl('x')._repr_mimebundle_(), {'text/plain': '6'})
     bpl('x.items+←10')
     teq(bpl('x')._repr_mimebundle_(), {'text/plain': '36'})
-    bpl('bad←["items":[1 2]] ⋄ bad._mime←{1÷"a"}')
+    bpl('bad←["items":[1 2]] ⋄ bad←{1÷"a"}ᵘ •mime bad')
     teq(list(bpl('bad', 'repl').events[0]['data']), ['text/plain'])
     teq(list(bpl('bad')._repr_mimebundle_()), ['text/plain'])
     with pytest.raises(BplError): bpl('•mime bad')
     teq(int(bpl('2+3')), 5)
     teq(ET.fromstring(pic._repr_mimebundle_()['image/svg+xml'])[0].attrib['r'], '20')
+    png = bpl('•image 2 3⍴0 0.5 1')._repr_mimebundle_()['image/png']
+    teq(base64.b64decode(png)[:8], b'\x89PNG\r\n\x1a\n')
 
 
 def test_plot_labels():

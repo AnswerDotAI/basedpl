@@ -5,19 +5,19 @@ use crate::{
     system::{native, Call, Valence::Ambivalent},
     DomainAt, Error, ErrorAt, Value,
 };
-
 fn valid_name(name: &str) -> bool {
     name.starts_with(|c: char| c.is_alphabetic() || c == '_') && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ':'))
 }
 
 pub(crate) fn factory(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let tag = keyed::name(right).filter(|s| valid_name(s)).ok_or_else(|| span.domain_error("invalid XML element name"))?;
-    Ok(native("•element", Call::Element(tag.into()), Ambivalent))
+    Ok(Value::Function(native("•element", Call::Element(tag), Ambivalent)))
 }
 
 pub(crate) fn element(tag: &str, attrs: Option<&Value>, children: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let attrs = attrs.cloned().unwrap_or_else(|| keyed::vector(vec![], vec![]).unwrap());
     keyed::vector(vec!["tag".into(), "attrs".into(), "children".into()], vec![keyed::text(tag), attrs, children.clone()])
+        .and_then(|e| e.with_renderer(display::renderer("html-renderer", render_html)))
         .error_at(span, "XML element exceeds array limits")
 }
 
@@ -95,10 +95,12 @@ pub(crate) fn serialize(_: Option<&Value>, right: &Value, span: &Context<'_>) ->
 pub(crate) fn svg(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let defaults = keyed::vector(vec!["xmlns".into(), "viewBox".into()], vec![keyed::text("http://www.w3.org/2000/svg"), keyed::text("0 0 100 100")]).unwrap();
     let attrs = left.map_or(Ok(defaults.clone()), |a| keyed::merge(&defaults, a)).error_at(span, "invalid SVG attributes")?;
-    let tree = element("svg", Some(&attrs), right, span)?;
-    display::with_renderer(&tree, "svg-renderer", render_svg).error_at(span, "SVG exceeds array limits")
+    element("svg", Some(&attrs), right, span)?.with_renderer(display::renderer("svg-renderer", render_svg)).error_at(span, "SVG exceeds array limits")
 }
 
-fn render_svg(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    display::svg(serialize(left, right, span)?).error_at(span, "invalid SVG MIME bundle")
+fn render_html(_: Option<&Value>, tree: &Value, span: &Context<'_>) -> Result<Value, Error> { markup("text/html", tree, span) }
+fn render_svg(_: Option<&Value>, tree: &Value, span: &Context<'_>) -> Result<Value, Error> { markup("image/svg+xml", tree, span) }
+/// The XML text of `tree` as a MIME bundle of type `kind`.
+fn markup(kind: &str, tree: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    display::mime(kind, serialize(None, tree, span)?).error_at(span, "invalid XML MIME bundle")
 }

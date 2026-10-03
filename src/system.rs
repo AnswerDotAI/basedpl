@@ -27,6 +27,19 @@ use Valence::{Ambivalent, Dyadic, Monadic};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SystemFunction { pub name: &'static str, pub call: Call, pub valence: Valence }
+/// System functions match when they share a name and their data matches. A generator matches only its own stream.
+impl PartialEq for SystemFunction {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && match (&self.call, &other.call) {
+                (Call::Regex(x, a), Call::Regex(y, b)) => (x.as_str(), a) == (y.as_str(), b),
+                (Call::Distribution(x, a), Call::Distribution(y, b)) => (x, a) == (y, b),
+                (Call::Generator(x, a), Call::Generator(y, b)) => std::sync::Arc::ptr_eq(x, y) && a == b,
+                (Call::Element(x), Call::Element(y)) => x == y,
+                (x, y) => std::mem::discriminant(x) == std::mem::discriminant(y),
+            }
+    }
+}
 
 impl SystemFunction {
     /// A call with the wrong number of arguments is a SYNTAX error.
@@ -39,12 +52,12 @@ impl SystemFunction {
     }
 }
 
-/// A function value that calls `call` natively.
-pub(crate) fn native(name: &'static str, call: Call, valence: Valence) -> Value { Value::Function(Function::system(SystemFunction { name, call, valence })) }
+/// A function that calls `call` natively.
+pub(crate) fn native(name: &'static str, call: Call, valence: Valence) -> Function { Function::system(SystemFunction { name, call, valence }) }
 
 /// A keyed vector of native functions, each named by its key.
 pub(crate) fn natives(entries: impl IntoIterator<Item = (&'static str, Call, Valence)>) -> Value {
-    let (keys, functions) = entries.into_iter().map(|(name, call, valence)| (name.into(), native(name, call, valence))).unzip();
+    let (keys, functions) = entries.into_iter().map(|(name, call, valence)| (name.into(), Value::Function(native(name, call, valence)))).unzip();
     crate::keyed::vector(keys, functions).expect("distinct keys")
 }
 
@@ -58,11 +71,12 @@ const BUILTINS: &[(&str, Builtin)] = &[
     ("•tocsv", Builtin::Function(Call::Value(crate::csv::serialize), Ambivalent)),
     ("•json", Builtin::Function(Call::Value(crate::json::parse), Ambivalent)),
     ("•tojson", Builtin::Function(Call::Value(crate::json::serialize), Ambivalent)),
-    ("•mime", Builtin::Function(Call::Mime, Monadic)),
+    ("•mime", Builtin::Function(Call::Mime, Ambivalent)),
     ("•element", Builtin::Function(Call::Value(crate::xml::factory), Monadic)),
     ("•xml", Builtin::Function(Call::Value(crate::xml::serialize), Monadic)),
     ("•svg", Builtin::Function(Call::Value(crate::xml::svg), Ambivalent)),
     ("•plot", Builtin::Function(Call::Value(crate::plot::plot), Ambivalent)),
+    ("•image", Builtin::Function(Call::Value(crate::image::image), Ambivalent)),
     ("•vfi", Builtin::Function(Call::Value(crate::data::vfi), Ambivalent)),
     ("•r", Builtin::Function(Call::Value(crate::regex::compile), Monadic)),
     ("•normal", Builtin::Function(Call::Value(crate::distribution::normal), Monadic)),
@@ -90,6 +104,7 @@ const BUILTINS: &[(&str, Builtin)] = &[
     ("•signal", Builtin::Function(Call::Value(signal), Monadic)),
     ("•storage", Builtin::Function(Call::Value(storage), Monadic)),
     ("•time", Builtin::Function(Call::Time, Ambivalent)),
+    ("•prefs", Builtin::Function(Call::Session(crate::display::prefs), Monadic)),
     ("•nc", Builtin::Function(Call::Session(crate::Session::system_nc), Monadic)),
     ("•nl", Builtin::Function(Call::Session(crate::Session::system_nl), Ambivalent)),
     ("•src", Builtin::Function(Call::Session(crate::Session::system_src), Monadic)),

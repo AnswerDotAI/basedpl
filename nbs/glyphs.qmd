@@ -4,9 +4,9 @@ Each glyph has a name, which links to its definitions and examples. A function g
 
 ## Typing glyphs
 
-Hold Alt, which is Option on a Mac, and press the key in the Key column. Keys refer to a US layout. No glyph needs Shift with Alt. Where the column shows a second key, release Alt, then press the second key. For example, `Alt-c t` means Alt-c, then `t`. You can type a shifted second key without Shift. For example, `Alt-q ,` types `⍃`, the same as `Alt-q <`. The one exception is `Alt-o |` for `⌽`, because `Alt-o \` types `⍉`. An Alt key that takes a second key types its own glyph when Space or an unlisted key follows. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence.
+Hold Alt, which is Option on a Mac, and press the key in the Key column. Keys refer to a US layout. `≤` is Alt-<, `≥` is Alt->, and `⌽` is Alt-|, each with Shift held. Where the column shows a second key, release Alt, then press the second key. For example, `Alt-c t` means Alt-c, then `t`. You can type a shifted second key without Shift. For example, `Alt-q ;` types `⍠`, the same as `Alt-q :`. An Alt key that takes a second key types its own glyph when Space or an unlisted key follows. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence.
 
-Superscripts start with Alt-6. The second key is a digit, `-` then a digit, `t` for `ᵀ`, or `u` for `ᵘ`. Subscripts start with Alt-5, followed by a digit, or `-` then a digit. A glyph with no key, such as `+`, is on an ordinary ASCII key. The arrows are on hjkl. Alt-[ types nothing, because terminals send it as the start of a control sequence. The identifier characters `∆` and `⍙` are Alt-7, and Alt-7 then `_`.
+Superscripts start with Alt-6. The second key is a digit, `-` then a digit, `t` for `ᵀ`, or `u` for `ᵘ`. Subscripts start with Alt-5. The second key is a digit, `-` then a digit, or `x`, `j`, `e` or `r` for the number suffixes `ₓ`, `ⱼ`, `ₑ` and `ᵣ`. A glyph with no key, such as `+`, is on an ordinary ASCII key. The arrows are on hjkl. Alt-[ types nothing, because terminals send it as the start of a control sequence. The identifier characters `∆` and `⍙` are Alt-7, and Alt-7 then `_`.
 
 The names are the ones you type. In the REPL, a backtick and any glyph, monad or dyad name, then Tab, enters the glyph, as [named entry](repl.qmd#named-entry) describes. Python exports the function names, with `_` in place of `-` and a trailing `_` on Python keywords, as in `index_of` and `and_`.
 
@@ -15,9 +15,9 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | Glyph | Key | Monad | Dyad | Note |
 |---|---|---|---|---|
 | `+` [add](glyphs/add.qmd) | | conjugate | plus | Character offsets as BQN: `'a'+3` is `'d'` |
-| `-` [dash](glyphs/dash.qmd) | | negate | subtract | Character difference as BQN: `'d'-'a'` is `3x` |
+| `-` [dash](glyphs/dash.qmd) | | negate | subtract | Character difference as BQN: `'d'-'a'` is `3ₓ` |
 | `×` [mul](glyphs/mul.qmd) | Alt-m | sign | times | |
-| `÷` [div](glyphs/div.qmd) | Alt-u | reciprocal | divide | Exact rationals as J: `1x÷3x` is `1r3` |
+| `÷` [div](glyphs/div.qmd) | Alt-u | reciprocal | divide | Exact rationals as J: `1ₓ÷3ₓ` is `1ᵣ3` |
 | `⌊` [floor](glyphs/floor.qmd) | Alt-d | floor | min | `⌊/⍬` is `∞` |
 | `⌈` [ceiling](glyphs/ceiling.qmd) | Alt-s | ceiling | max | `⌈/⍬` is `¯∞` |
 | `\|` [stile](glyphs/stile.qmd) | | magnitude | residue | |
@@ -39,15 +39,15 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `=` [equal](glyphs/equal.qmd) | | classify | equal | Monad as J: one mask row per distinct major cell |
 | `≠` [not-equal](glyphs/not-equal.qmd) | Alt-] | unique-mask | not-equal | |
 | `<` [less](glyphs/less.qmd) | | — | less | |
-| `≤` [less-or-equal](glyphs/less-or-equal.qmd) | Alt-, | decrement | less-equal | Monad as J's `<:` |
+| `≤` [less-or-equal](glyphs/less-or-equal.qmd) | Alt-< | decrement | less-equal | Monad as J's `<:` |
 | `>` [greater](glyphs/greater.qmd) | | — | greater | |
-| `≥` [greater-or-equal](glyphs/greater-or-equal.qmd) | Alt-. | increment | greater-equal | Monad as J's `>:` |
+| `≥` [greater-or-equal](glyphs/greater-or-equal.qmd) | Alt-> | increment | greater-equal | Monad as J's `>:` |
 | `≡` [match](glyphs/match.qmd) | Alt-= | depth | match | Depth has no sign, as in APL2 and BQN |
 | `≢` [tally](glyphs/tally.qmd) | Alt-= / | tally | not-match | |
 | `⍴` [rho](glyphs/rho.qmd) | Alt-r | shape | reshape | `⍬⍴Y` gives a rank-0 array: `⍬⍴1 2` is `⊂1` |
 | `,` [comma](glyphs/comma.qmd) | | ravel | catenate | |
 | `⍪` [table](glyphs/table.qmd) | Alt-Minus , | table | catenate-first | |
-| `⌽` [reverse](glyphs/reverse.qmd) | Alt-o \| | reverse | rotate | |
+| `⌽` [reverse](glyphs/reverse.qmd) | Alt-\| | reverse | rotate | |
 | `⊖` [reverse-first](glyphs/reverse-first.qmd) | Alt-o Minus | reverse-first | rotate-first | |
 | `⍉` [transpose](glyphs/transpose.qmd) | Alt-o Backslash | transpose | reorder-axes | |
 | `↑` [take](glyphs/take.qmd) | Alt-k | first | take | Monad as Dyalog `⎕ML≥2`, but takes a major cell: `↑2 3⍴⍳6` is `0 1 2` |
@@ -55,10 +55,10 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `↕` [windows](glyphs/windows.qmd) | Alt-k j | — | windows | As BQN's `↕`, plus movements and padding (negative sizes) as in `⌺`. Replaces windowed reduce: `+/2↕1 2 3 4` is `3 5 7` |
 | `⊂` [enclose](glyphs/enclose.qmd) | Alt-z | enclose | partitioned-enclose | Encloses atoms too, as BQN: `(⊂3)≡3` is `$f`. Partitions along the first axis |
 | `⊆` [nest](glyphs/nest.qmd) | Alt-z _ | nest | partition | Splits along the first axis |
-| `⊃` [mix](glyphs/mix.qmd) | Alt-x | mix | pick | Monad as Dyalog `⎕ML≥2`. Pick takes cells: `1⊃2 3⍴⍳6` is `3 4 5`. A string picks by [key](keyed.qmd) |
+| `⊃` [mix](glyphs/mix.qmd) | Alt-x | mix | pick | Monad as Dyalog `⎕ML≥2`. Pick takes cells: `1⊃2 3⍴⍳6` is `3 4 5`. A string picks by [key](keyed.ipynb) |
 | `⌷` [squad](glyphs/squad.qmd) | Alt-q \| | materialise | index | Negative positions count from the end. `∞` takes a whole axis and `¯∞` reverses it |
 | `⍳` [iota](glyphs/iota.qmd) | Alt-i | iota | index-of | `⍳⍠A Y` returns axis selectors. A negative length counts down, as J: `⍳¯3` is `2 1 0` |
-| `:` [colon](glyphs/colon.qmd) | | unkey | keyed | Removes or adds [axis keys](keyed.qmd). Not in Dyalog APL |
+| `:` [colon](glyphs/colon.qmd) | | unkey | keyed | Removes or adds [axis keys](keyed.ipynb). Not in Dyalog APL |
 | `⍸` [where](glyphs/where.qmd) | Alt-i _ | where | interval-index | Dyad counts the boundaries at or below each value, as BQN's `⍋`: `1 3 5⍸0 3 9` is `0 2 3` |
 | `∊` [member](glyphs/member.qmd) | Alt-e | enlist | member | Searches the major cells of `Y`, as BQN |
 | `∪` [union](glyphs/union.qmd) | Alt-v | unique | union | Compares major cells, as BQN |
@@ -87,8 +87,8 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⍀` [backslash-bar](glyphs/backslash-bar.qmd) | Alt-Minus Backslash | `f⍀` | Scan / seeded scan first | Left to right as `\` |
 | `¨` [each](glyphs/each.qmd) | Alt-1 | `f¨` | Each | |
 | `⍨` [commute](glyphs/commute.qmd) | Alt-1 ~ | `f⍨`, `a⍨` | Self / commute / constant | |
-| `⍃` [before](glyphs/before.qmd) | Alt-q < | `f⍃g`, `a⍃f` | Before / bind left | As BQN's `⊸` |
-| `⍄` [after](glyphs/after.qmd) | Alt-q > | `f⍄g`, `f⍄a` | After / bind right | As BQN's `⟜` |
+| `↣` [before](glyphs/before.qmd) | Alt-. | `f↣g`, `a↣f` | Before / bind left | As BQN's `⊸` |
+| `↢` [after](glyphs/after.qmd) | Alt-, | `f↢g`, `f↢a` | After / bind right | As BQN's `⟜` |
 | `⍤` [rank](glyphs/rank.qmd) | Alt-1 t | `f⍤r` | Rank | `⍤0` passes an atom as itself and an array enclosed |
 | `∘` [atop](glyphs/atop.qmd) | Alt-t | `f∘g` | Atop | As BQN's `∘` |
 | `⍠` [axis](glyphs/axis.qmd) | Alt-q : | `f⍠A` | Apply along axes | Axes are numbers or names, in place of Dyalog's `f[A]` |
@@ -127,10 +127,10 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `¯` [overbar](glyphs/overbar.qmd) | Alt-Minus | Negative literal sign |
 | `∞` [infinity](glyphs/infinity.qmd) | Alt-8 | Real infinity |
 | `$t` `$f` `$n` [constants](numbers.qmd#writing-numbers) | | True, false and NaN |
-| `²` `⁻¹` `ᵀ` `ᵘ` [superscript](scripts.qmd#superscripts) | Alt-6 | Postfix on the item before it: `x²` is `x*2`, `f²` is `f⍣2`, `f⁻¹` is the inverse of `f`, `mᵀ` is `⍉m`, and `fᵘ` is a scalar holding `f` |
-| `₁` `₋₁` [subscript](scripts.qmd#subscripts) | Alt-5 | Postfix on the array before it: `v₁` is `1⌷v`, `v₋₁` is the last major cell, and `v₁←5` assigns to that cell |
+| `²` `⁻¹` `ᵀ` `ᵘ` [superscript](scripts.ipynb#superscripts) | Alt-6 | Postfix on the item before it, or after a space on the run before it: `x²` is `x*2`, `f²` is `f⍣2`, `f⁻¹` is the inverse of `f`, `mᵀ` is `⍉m`, and `fᵘ` is a scalar holding `f` |
+| `₁` `₋₁` [subscript](scripts.ipynb#subscripts) | Alt-5 | Postfix on the array before it, or after a space on the run before it: `v₁` is `1⌷v`, `v₋₁` is the last major cell, and `v₁←5` assigns to that cell |
 
-[Numbers](numbers.qmd) covers numeric notation, such as `x`, `r`, `j` and `E`.
+[Numbers](numbers.qmd) covers numeric notation, such as `ₓ`, `r`, `j` and `e`.
 
 ## System names
 
@@ -141,11 +141,11 @@ Index origin: 0. Negative positions and axes count from the end. Comparison tole
 ## Language-wide differences from Dyalog APL
 
 - [Vectors](glyphs/brackets.qmd): a bracket list such as `[a b c]` is a vector. A strand of literals, such as `1 2 3`, needs no brackets. `[5]` is a one-item vector, the same as `,5`. [Parentheses](glyphs/parentheses.qmd) group: `(5)` is `5`. A scalar holding `5` is `⊂5`. Arrays side by side also form a vector: `a b` is `[a b]`. `(1 2 ⋄ 3)` is the vector of rows `[[1 2] [3]]`.
-- [Runs](rules.qmd): outside brackets, spaces separate runs. Each run is evaluated first: `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train: `+/÷≢` is the mean, and `2×` is `2⍃×`. A run that ends in a dyadic operator takes the next run as its right operand: `f⍤ 1` is `f⍤1`.
+- [Runs](syntax.qmd#runs): outside brackets, spaces separate runs. Each run is evaluated first: `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train: `+/÷≢` is the mean, and `2×` is `2↣×`. A run that ends in a dyadic operator takes the next run as its right operand: `f⍤ 1` is `f⍤1`.
 - [Indexing](glyphs/squad.qmd): brackets are used to write vectors, never to index. Index selects: `0⌷v` is the first item of `v`.
-- [Atoms](arrays.qmd): numbers, characters and functions are atoms, distinct from scalars, as BQN. Enclosing always adds a layer: `(⊂3)≡3` is `$f`.
-- [Numbers](numbers.qmd): bare numbers are approximate. `x` and `r` mark exact integers and rationals, as J: `1x÷3x` is `1r3`. Predicates, positions, tally and shape are exact.
-- [Agreement](rules.qmd#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes. An axis of length 1 expands to match: `(2 3⍴⍳6)+10 20` is `[10 11 12 ⋄ 23 24 25]`.
-- [Major cells](principles.qmd#functions-act-on-major-cells): `∊ ~ ∪ ∩` compare major cells, `N#Y` replicates them, `N⊂Y` and `N⊆Y` split along the first axis. `⊤` and `⊥` put digits on the last axis, as J.
+- [Atoms](arrays.ipynb): numbers, characters and functions are atoms, distinct from scalars, as BQN. Enclosing always adds a layer: `(⊂3)≡3` is `$f`.
+- [Numbers](numbers.qmd): bare numbers are approximate. `ₓ` marks an exact integer, and `r` or `ᵣ` an exact rational, as in J: `1ₓ÷3ₓ` is `1ᵣ3`. Predicates, positions, tally and shape are exact.
+- [Agreement](evaluation.qmd#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes. An axis of length 1 expands to match: `(2 3⍴⍳6)+10 20` is `[10 11 12 ⋄ 23 24 25]`.
+- [Major cells](principles.ipynb#functions-act-on-major-cells): `∊ ~ ∪ ∩` compare major cells, `N#Y` replicates them, `N⊂Y` and `N⊆Y` split along the first axis. `⊤` and `⊥` put digits on the last axis, as J.
 - [System names](system-functions.qmd): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
-- [Axis keys](keyed.qmd) name data. `K:Y` evaluates its keys. `T.a` is `"a"⊃T`, and `X⍎Y` is `Y⊃X`.
+- [Axis keys](keyed.ipynb) name data. `K:Y` evaluates its keys. `T.a` is `"a"⊃T`, and `X⍎Y` is `Y⊃X`.

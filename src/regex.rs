@@ -12,7 +12,7 @@ use crate::{
 use ::regex::Regex;
 use std::sync::Arc;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Operation {
     Match,
     Position,

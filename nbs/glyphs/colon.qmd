@@ -1,6 +1,6 @@
 # `:` — Unkey / Key
 
-`:Y` removes axis keys. `K:Y` labels leading axes. `K:⍠A Y` labels the axes `A`. A bracket list with any `key:value` item is one keyed vector. The list's other items are entries without keys. See [axis keys](../keyed.qmd).
+`:Y` removes axis keys. `K:Y` labels leading axes. `K:⍠A Y` labels the axes `A`. A bracket list with any `key:value` item is one keyed vector. The list's other items are entries without keys. See [axis keys](../keyed.ipynb).
 
 ```bpl
 :("aa" "bb":1 2)    ⍝ 1 2

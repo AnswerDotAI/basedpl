@@ -2,7 +2,7 @@
 
 Keys: `Alt-Backtick`
 
-At statement level, `⋄` separates expressions. A line break does the same.
+At statement level, `⋄` separates expressions. Everywhere, a line break means `⋄`, unless it's next to a bracket, `;`, `⋄` or `?`.
 
 ```bpl
 x←2 ⋄ y←3 ⋄ x+y    ⍝ 5
@@ -22,4 +22,4 @@ Inside [parentheses](parentheses.qmd), `⋄` separates the rows of a vector. Eac
 (1 2 ⋄ 3)          ⍝ [[1 2] [3]]
 ```
 
-[Types of brackets](../bracket-types.qmd) compares `⋄` in brackets, parentheses and braces.
+[Types of brackets](../bracket-types.ipynb) compares `⋄` in brackets, parentheses and braces.

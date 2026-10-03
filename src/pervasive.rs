@@ -371,7 +371,7 @@ fn pair<'a>(p: Primitive, x: &'a Value, y: &'a Value) -> Option<Pair<'a>> {
         }
         (Items::Floats(f), a) | (a, Items::Floats(f)) if whole(&a) || matches!(a, Items::Extended(_)) => {
             if keeps_exact(p, f) { return None; }
-            Pair::Floats(reals(x)?, reals(y)?)
+            Pair::Floats(x.as_items().reals()?, y.as_items().reals()?)
         }
         (Items::Complex(_), _) | (_, Items::Complex(_)) => Pair::Complex(complexes(x)?, complexes(y)?),
         _ => return None,
@@ -392,19 +392,7 @@ fn circle(codes: &Value, right: &Value, agreement: &Agreement) -> Option<Value> 
     let Value::Number(code) = codes.at(0) else { return None };
     if !matches!(agreement.left, Mapping::Single) { return None; }
     let f = real::circle(code.integer().ok()?)?;
-    <Map<f64, f64> as Monad<f64>>::same(Map { x: &[], y: &reals(right)?, agreement }, f)
-}
-
-/// Compact numbers as floats. `Number` converts a Boolean or an integer this way beside a float. A non-finite value in flagged integer
-/// storage becomes the float it stands for.
-fn reals(value: &Value) -> Option<Cow<'_, [f64]>> {
-    match value.as_items() {
-        Items::Floats(y) => Some(Cow::Borrowed(y)),
-        Items::Integers(y) => Some(Cow::Owned(y.iter().map(|&n| n as f64).collect())),
-        Items::Extended(y) => Some(Cow::Owned(y.iter().map(|&n| extended::float(n)).collect())),
-        Items::Booleans(y) => Some(Cow::Owned(y.iter().map(|&b| f64::from(u8::from(b))).collect())),
-        Items::Complex(_) | Items::Characters(_) | Items::Values(_) => None,
-    }
+    <Map<f64, f64> as Monad<f64>>::same(Map { x: &[], y: &right.as_items().reals()?, agreement }, f)
 }
 
 /// Compact numbers as complex numbers. `Number` converts a real this way beside a complex number.
@@ -624,9 +612,9 @@ fn accumulate<A: Copy, S: Copy>(data: &[A], axis: &Axis, unit: S, add: impl Fn(S
 fn reduce<A: Element>(data: &[A], axis: &Axis, shape: Vec<usize>, unit: A, op: impl Fn(A, A) -> A + Copy) -> Option<Value> {
     if axis.inner > 1 { return A::build(shape, accumulate(data, axis, unit, op)); }
     let lane = |lane: &[A]| {
-        let chunks = lane.chunks_exact(8);
-        let rest = chunks.remainder().iter().fold(unit, |s, &x| op(s, x));
-        let parts = chunks.fold([unit; 8], |mut parts, chunk| { for (p, &x) in parts.iter_mut().zip(chunk) { *p = op(*p, x) } parts });
+        let (chunks, rest) = lane.as_chunks::<8>();
+        let rest = rest.iter().fold(unit, |s, &x| op(s, x));
+        let parts = chunks.iter().fold([unit; 8], |mut parts, chunk| { for (p, &x) in parts.iter_mut().zip(chunk) { *p = op(*p, x) } parts });
         parts.into_iter().fold(rest, op)
     };
     A::build(shape, (0..axis.outer).map(|i| lane(&data[axis.offset(i, 0, 0)..axis.offset(i, axis.len, 0)])).collect())

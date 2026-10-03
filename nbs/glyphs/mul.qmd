@@ -12,5 +12,5 @@ Keys: `Alt-m`
 `X×Y` multiplies. Pervasive.
 
 ```bpl
-2x×[1 2 3]ₓ       ⍝ [2 4 6]ₓ
+2ₓ×[1 2 3]ₓ       ⍝ [2 4 6]ₓ
 ```

@@ -15,7 +15,7 @@
 ≢"say ""hi"""      ⍝ 8ₓ
 ```
 
-Literals separated by spaces form one vector: `'a' 'b'` is `"ab"`, and `"aa" "bb"` is a vector of two strings. See [Characters and strings](../strings.qmd).
+Literals separated by spaces form one vector: `'a' 'b'` is `"ab"`, and `"aa" "bb"` is a vector of two strings. See [Characters and strings](../strings.ipynb).
 
 ## Errors
 

@@ -1,6 +1,6 @@
 # `[ ]` — Vector / Array notation
 
-`[A B C]` is a vector of the items `A`, `B` and `C`, whatever their number. Inside brackets, spaces separate items, and a line break counts as a space. Items can be subjects or functions, and they are evaluated left to right. `[Y]` is a one-item vector, and `[]` is the empty vector `⍬`. A strand of literals needs no brackets: `1 2 3` is `[1 2 3]`.
+`[A B C]` is a vector of the items `A`, `B` and `C`, whatever their number. Inside brackets, spaces separate items, and a line break means `⋄`. Items can be subjects or functions, and they are evaluated left to right. `[Y]` is a one-item vector, and `[]` is the empty vector `⍬`. A strand of literals needs no brackets: `1 2 3` is `[1 2 3]`.
 
 ```bpl
 a←1 ⋄ b←2
@@ -33,14 +33,14 @@ In `[…]ₓ`, every number is exact, at any depth. Each item must be a literal,
 [1 0 1]ₓ≡1ₓ 0ₓ 1ₓ  ⍝ $t
 ```
 
-A bracket list with any `key:value` item is one [keyed vector](../keyed.qmd). An item without a key is a position with no key.
+A bracket list with any `key:value` item is one [keyed vector](../keyed.ipynb). An item without a key is a position with no key.
 
 ```bpl
 ["aa":1 "bb":2]              ⍝ "aa" "bb":1 2
 ["a":1 "b":(•ucs 65 66)]     ⍝ "a" "b":[1 "AB"]
 ```
 
-As an assignment target, `[a b]←Y` [destructures](assign.qmd). Brackets don't index. [Index](squad.qmd) `⌷` selects. [Types of brackets](../bracket-types.qmd) compares brackets with parentheses and braces.
+As an assignment target, `[a b]←Y` [destructures](assign.qmd). Brackets don't index. [Index](squad.qmd) `⌷` selects. [Types of brackets](../bracket-types.ipynb) compares brackets with parentheses and braces.
 
 ## Errors
 

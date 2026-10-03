@@ -17,7 +17,7 @@ use rand::{
 use statrs::distribution::*;
 use std::sync::{Arc, Mutex, PoisonError};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Operation {
     Sample,
     Density,
@@ -28,7 +28,7 @@ pub(crate) enum Operation {
 // One list keeps constructors and dispatch together; the numerical work stays in statrs.
 macro_rules! continuous {
     ($($variant:ident($name:ident, [$($arg:ident),+] => $new:expr)),+ $(,)?) => {
-        #[derive(Debug)]
+        #[derive(Debug, PartialEq)]
         pub(crate) enum Distribution { $($variant($variant),)+ Binomial(Binomial), Poisson(Poisson), Logistic(f64, f64) }
 
         $(pub(crate) fn $name(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -217,7 +217,7 @@ pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right:
 /// A seeded stream of random numbers. Every copy of its record draws from the same stream.
 pub(crate) type Generator = Arc<Mutex<Xoshiro256PlusPlus>>;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Draw { Roll, Deal }
 
 /// `•rand seed` returns a record of `roll` and `deal`, which draw from one stream seeded by `seed`.

@@ -32,11 +32,11 @@ def test_terminal_symbol_entry_and_exit():
     try:
         read_until(b'\x1b[?2004h')
         enter('1 2\r', '│1 2│\r\n└~──┘\r\n')
-        enter(']box off\r', 'OFF -style=max -trains=tree -fns=on\r\n')
+        enter('•prefs ["box":$f]\r', '["box":$f "trees":$t "fns":$t "limit":1000ₓ "edges":3ₓ]\r\n')
         layout = json.loads(files('basedpl').joinpath('layout.json').read_text())
         typed = {k: v for k, v in layout['option'].items() if isinstance(v, str)}
         enter('"' + ''.join('\x1b'+k for k in typed) + '"\r', '\r\n' + ''.join(typed.values()) + '\r\n')
-        enter('r\x1bh1+2\x1bl2\x1bq<×\r', '\r\n')  # r←1+2→2⍃×
+        enter('r\x1bh1+2\x1bl2\x1b.×\r', '\r\n')  # r←1+2→2↣×
         enter('\x1bq \x1bhr\r', '\r\n6\r\n')  # explicit output: Alt-q, then Space, types ⎕
         enter('3\x1b62\r', '\r\n9\r\n')  # Alt-6, then 2, types ²
         enter('"a^b"\r', '\r\na^b\r\n')  # in a string, ^ types itself

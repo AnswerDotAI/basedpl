@@ -24,7 +24,7 @@ Array-valued coordinate fields pair using leading-axis agreement:
 [0 2;1 3]⊃3 4⍴⍳12  ⍝ 1 11
 ```
 
-Coordinate fields may use strings on [keyed axes](../keyed.qmd).
+Coordinate fields may use strings on [keyed axes](../keyed.ipynb).
 
 ```bpl
 T←["price":[1 2 3] "qty":[4 5 6]]

@@ -39,13 +39,13 @@ def test_builtin_attributes():
 def test_python_printer():
     from basedpl import to_python
     for code, expected in {
-        '×': 'sign', '×⍄2': 'times(2.)', '2⍃-': 'subtract.left(2.)', '2-': 'subtract.left(2.)',
-        '×⍄2x': 'times(2)', '÷⍄1r2': 'divide(Fraction(1, 2))',
+        '×': 'sign', '×↢2': 'times(2.)', '2↣-': 'subtract.left(2.)', '2-': 'subtract.left(2.)',
+        '×↢2ₓ': 'times(2)', '÷↢1r2': 'divide(Fraction(1, 2))',
         '+/÷≢': 'plus.reduce / tally', '+.×': 'plus @ times', '×⊗': 'times.outer_product',
-        '+/⍠1': 'plus.reduce[1.]', '1⍃+⍣[≡]': 'plus.left(1.).history(match)', '+⌿': 'plus.reduce[0]', '-⍨': 'subtract.commute',
-        '+∘×': 'conjugate.atop(sign)', '+⍥×': 'conjugate.over(sign)', '-⍃+': 'negate.before(plus)', '+⍄-': 'plus.after(negate)', '-⊘+': 'negate.valences(plus)',
-        '{⍵<0}⍚[⊢ -]': 'fn("{⍵<0}").agenda(bpl("[⊢ -]"))', '[1 2 ⋄ 3 4]⍃+': 'plus.left(bpl("[1 2 ⋄ 3 4]"))',
-        '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each', '(×⍄2)⁻¹': 'times(2.).undo',
+        '+/⍠1': 'plus.reduce[1.]', '1↣+⍣[≡]': 'plus.left(1.).history(match)', '+⌿': 'plus.reduce[0]', '-⍨': 'subtract.commute',
+        '+∘×': 'conjugate.atop(sign)', '+⍥×': 'conjugate.over(sign)', '-↣+': 'negate.before(plus)', '+↢-': 'plus.after(negate)', '-⊘+': 'negate.valences(plus)',
+        '{⍵<0}⍚[⊢ -]': 'fn("{⍵<0}").agenda(bpl("[⊢ -]"))', '[1 2 ⋄ 3 4]↣+': 'plus.left(bpl("[1 2 ⋄ 3 4]"))',
+        '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each', '(×↢2)⁻¹': 'times(2.).undo',
     }.items(): teq(to_python(bpl(code)), expected)
     teq(to_python(bpl('×'), dyad=True), 'times')
     teq(to_python(bpl('+∘×'), dyad=True), 'conjugate.atop(times)')
@@ -109,12 +109,12 @@ def test_binary_files(tmp_path):
     values = read(str(path), binary=1)
     teq(values.np.dtype, np.dtype('int64'))
     teq(values.py, list(data))
-    opts = dict(path=str(dest), binary=1)
+    opts = dict(path=str(dest))
     teq(write(values, **opts).py, 256)
     teq(dest.read_bytes(), data)
     with pytest.raises(BplError, match='VALUE'): write(values, **opts)
     opts['overwrite'] = 1
-    for bad in ([256], [-1], [0.5], [float('inf')], ['a']):
+    for bad in ([256], [-1], [0.5], [float('inf')]):
         with pytest.raises(BplError, match='DOMAIN'): write(bad, **opts)
         teq(dest.read_bytes(), data)
     with pytest.raises(BplError, match='encoding'): read(str(path), binary=1, encoding='UTF-8')

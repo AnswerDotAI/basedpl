@@ -104,7 +104,7 @@ impl PyArray {
     fn buffer<'py>(&self, py: Python<'py>) -> PyResult<Option<(&'static str, Bound<'py, PyByteArray>)>> {
         fn bytes<'py, const N: usize>(py: Python<'py>, items: impl ExactSizeIterator<Item = [u8; N]>) -> PyResult<Bound<'py, PyByteArray>> {
             PyByteArray::new_with(py, items.len() * N, |buf| {
-                for (chunk, item) in buf.chunks_exact_mut(N).zip(items) { chunk.copy_from_slice(&item); }
+                for (chunk, item) in buf.as_chunks_mut::<N>().0.iter_mut().zip(items) { *chunk = item; }
                 Ok(())
             })
         }
@@ -130,10 +130,10 @@ impl PyArray {
     }
     fn select(&self, py: Python<'_>, parts: Vec<Option<PyRef<'_, PyArray>>>) -> PyResult<Py<PyDict>> {
         let span = Span { source: Source::new("<index>", "[]"), range: 0..2 };
-        let execution = crate::execution::Execution::default();
+        let mut session = Session::new();
         let parts = parts.into_iter().map(|a| a.map(|a| a.inner.clone())).collect::<Vec<_>>();
         let mut result = Evaluation::default();
-        match crate::primitive::select(&self.inner, &parts, &execution.at(&span)) {
+        match crate::primitive::select(&self.inner, &parts, &session.at(&span)) {
             Ok(Value::Function(f)) => result.function = Some(f),
             Ok(a) => result.value = Some(a),
             Err(e) => result.error = Some(e),
@@ -198,10 +198,10 @@ impl PyOperator {
     }
     fn __repr__(&self) -> String { self.inner.to_string() }
 }
+/// What a request runs: source code, or a function called with arguments.
+enum Run { Code(String), Call(Function, Vec<Value>) }
 struct EvalRequest {
-    code: Option<String>,
-    function: Option<Function>,
-    args: Vec<Value>,
+    run: Option<Run>,
     bindings: Vec<(String, Operand)>,
     options: EvalOptions,
 }
@@ -212,10 +212,10 @@ impl EvalRequest {
             .map_err(|_| "binding requires an ordinary BPL name and an exportable value")?;
         }
         let options = std::mem::take(&mut self.options);
-        Ok(match (&self.code, &self.function) {
-            (Some(code), _) => session.eval_with(code, options),
-            (_, Some(function)) => session.call_function_with(function, &self.args, options),
-            _ => Evaluation::default(),
+        Ok(match &self.run {
+            Some(Run::Code(code)) => session.eval_with(code, options),
+            Some(Run::Call(function, args)) => session.call_function_with(function, args, options),
+            None => Evaluation::default(),
         })
     }
 }
@@ -227,24 +227,26 @@ struct PySession { session: Mutex<Session>, active: Mutex<Option<InterruptHandle
 impl PySession {
     #[new]
     fn new() -> Self { Self { session: Mutex::new(Session::new()), active: Mutex::new(None) } }
-    #[pyo3(signature = (*, code=None, function=None, args=Vec::new(), bindings=Vec::new(), timeout=None, echo=false))]
-    #[allow(clippy::too_many_arguments)]
+    /// Runs `source`, BPL code or a function called with `args`, after binding `bindings`.
+    #[pyo3(signature = (*, source=None, args=Vec::new(), bindings=Vec::new(), timeout=None, echo=false))]
     fn request(
         &self,
         py: Python<'_>,
-        code: Option<String>,
-        function: Option<PyRef<'_, PyFunction>>,
+        source: Option<Bound<'_, PyAny>>,
         args: Vec<PyRef<'_, PyArray>>,
         bindings: Vec<(String, Bound<'_, PyAny>)>,
         timeout: Option<f64>,
         echo: bool,
     ) -> PyResult<Py<PyDict>> {
-        if code.is_some() && function.is_some() { return Err(PyValueError::new_err("choose code or function, not both")); }
+        let run = source
+            .map(|source| match source.cast::<PyFunction>() {
+                Ok(f) => Ok(Run::Call(f.get().inner.clone(), args.iter().map(|a| a.inner.clone()).collect())),
+                Err(_) => source.extract().map(Run::Code),
+            })
+            .transpose()?;
         let signal = Arc::new(Mutex::new(None));
         let mut request = EvalRequest {
-            code,
-            function: function.map(|f| f.inner.clone()),
-            args: args.iter().map(|a| a.inner.clone()).collect(),
+            run,
             bindings: bindings.into_iter().map(|(n, a)| Ok((n, operand(&a)?))).collect::<PyResult<_>>()?,
             options: EvalOptions { poll: Some(ctrl_c(signal.clone())), ..options(timeout, echo)? },
         };

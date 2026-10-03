@@ -1,6 +1,6 @@
 # BPL, APL and BQN side by side
 
-See also the [language principles](principles.qmd), the [language rules](rules.qmd) and the [glyph index](glyphs.qmd).
+See also the [language principles](principles.ipynb), [Syntax](syntax.qmd), [Evaluation](evaluation.qmd) and the [glyph index](glyphs.qmd).
 
 Each entry shows one task in Dyalog APL, BPL and BQN. Most entries come from existing code: APLcart, the dfns workspace, the ngn/apl and April test suites, and BQN's documentation. A few were written for this page. An entry leaves out a language that has no equivalent.
 
@@ -111,7 +111,7 @@ Source: the ngn/apl tests. The assignment `x←6¿49` moves to the right of `⌷
 
 ### Indexing inside arithmetic
 
-A subscript selects one position, and a superscript squares. Both bind more tightly than anything else, so `v₀²+v₁²` needs no parentheses. The Dyalog line sums the squares of the first two items.
+A subscript selects one position, and a superscript squares. Both bind more tightly than anything else. The Dyalog line sums the squares of the first two items.
 
 ```dyalog
 (v[1]*2)+v[2]*2
@@ -248,7 +248,7 @@ q↩((¬∘∊/⊣)⟜(∾(i(¬∘∊/⊣)j)⊏q))¨⌾(j⊸⊏)q
 
 ## Keys and paths
 
-Dyalog and BQN have no keyed arrays. Most entries here show BPL alone. See [axis keys](keyed.qmd) for the full rules.
+Dyalog and BQN have no keyed arrays. Most entries here show BPL alone. See [axis keys](keyed.ipynb) for the full rules.
 
 ### Reading by keys
 
@@ -427,7 +427,7 @@ x←2 4 9
 
 ### A train that binds arrays
 
-A subject directly before a function in a train binds to it: `1.8×` is `1.8⍃×`. `32` is the left part of the fork `32 + 1.8⍃×`, as in Dyalog. Dyalog and BQN need `∘` and `⍃` to bind `1.8`.
+A subject directly before a function in a train binds to it: `1.8×` is `1.8↣×`. `32` is the left part of the fork `32 + 1.8↣×`, as in Dyalog. Dyalog and BQN need `∘` and `↣` to bind `1.8`.
 
 ```dyalog
 f←32+1.8∘× ⋄ f 100
@@ -473,7 +473,7 @@ a +⌿∘×⍤1 ∞ b           ⍝ [10 13 ⋄ 28 40]
 
 ### A vector bound into a composition
 
-Source: "Why not whitespace?" in BQN's documentation. BQN tells the two readings apart with its ligature. In BPL and Dyalog, `3 1` is one operand, and the other reading needs parentheses. BPL writes BQN's `⊸` as `⍃`.
+Source: "Why not whitespace?" in BQN's documentation. BQN tells the two readings apart with its ligature. In BPL and Dyalog, `3 1` is one operand, and the other reading needs parentheses. BPL writes BQN's `⊸` as `↣`.
 
 ```bqn
 3 1⊸+⊸× 5    # 20
@@ -486,15 +486,15 @@ Source: "Why not whitespace?" in BQN's documentation. BQN tells the two readings
 ```
 
 ```bpl
-3 (1⍃+⍃×) 5            ⍝ 20
-3 1⍃+⍃× 5              ⍝ 40 30
+3 (1↣+↣×) 5            ⍝ 20
+3 1↣+↣× 5              ⍝ 40 30
 ```
 
 ## Lists
 
 ### A list that mixes literals and names
 
-Source: BQN's documentation, on stranding in J and K. Only literals join a strand. Without brackets, `2 n 5+1` is the strand of `2`, `n` and `5+1`, because `5+1` is a run of its own. APL strands any arrays written side by side, and BQN joins them with `‿`.
+Source: BQN's documentation, on stranding in J and K. Without brackets, `2 n 5+1` is the strand of `2`, `n` and `5+1`, because `5+1` is a run of its own. In `[2 n 5]+1`, the list is complete before `+1` applies. APL strands `2 n 5` before adding 1, and BQN joins the items with `‿`.
 
 ```bqn
 2‿n‿5+1
@@ -543,7 +543,7 @@ ifelse [1 {⍵+10} {⍵+20}]   ⍝ 10
 
 ### Long list items across lines
 
-Source: the binary search in BQN's documentation on control flow. A line break inside brackets counts as a space. None of the three items here contains a space or a line break. BPL has no `↩`. `hi⊢←mid` modifies the `hi` of the enclosing function.
+Source: the binary search in BQN's documentation on control flow. Inside the brackets, each line holds one item of the three-item list. BPL has no `↩`. `hi⊢←mid` modifies the `hi` of the enclosing function.
 
 ```bqn
 IfElse (𝕩<mid⊑𝕨)‿{𝕤

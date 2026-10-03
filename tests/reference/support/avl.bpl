@@ -2,4 +2,4 @@
 _tree←•load "../../../lib/tree.bpl"
 _array←•load "../../../lib/array.bpl"
 _t←_tree.avl
-put←'∪' _t ⋄ get←'⍎' _t ⋄ rem←'~' _t ⋄ fmt←'⍕' _t ⋄ chk←'?' _t ⋄ vec←'∊' _t ⋄ tree←0⍃(put _array.foldl)
+put←'∪' _t ⋄ get←'⍎' _t ⋄ rem←'~' _t ⋄ fmt←'⍕' _t ⋄ chk←'?' _t ⋄ vec←'∊' _t ⋄ tree←0↣(put _array.foldl)

@@ -9,8 +9,8 @@ use plotters::{
 
 type Area<'a> = DrawingArea<SVGBackend<'a>, Shift>;
 
-const PLOT: &[&str] = &["data", "mark", "title", "width", "height", "x", "y", "legend", "grid", "axes", "flip", "color", "palette", "colorbar", "size", "labels", "series", "_mime"];
-const FIGURE: &[&str] = &["data", "title", "width", "height", "widths", "heights", "share", "_mime"];
+const PLOT: &[&str] = &["data", "mark", "title", "width", "height", "x", "y", "legend", "grid", "axes", "flip", "color", "palette", "colorbar", "size", "labels", "series"];
+const FIGURE: &[&str] = &["data", "title", "width", "height", "widths", "heights", "share"];
 const STYLE: &[&str] = &["mark", "color", "size", "labels"];
 const COLORS: [(&str, RGBColor); 10] = [
     ("blue", RGBColor(31, 119, 180)),
@@ -29,14 +29,14 @@ fn drawn<T, E: std::fmt::Display>(result: Result<T, E>, span: &Context<'_>) -> R
     result.map_err(|e| span.domain_error(format!("plot drawing failed: {e}")))
 }
 
-/// `X •plot Y` returns a spec holding the data `Y`, the settings in `X` and a `_mime` renderer. Plain text `X` is shorthand for `mark`.
+/// `X •plot Y` returns a spec holding the data `Y`, the settings in `X` and a renderer. Plain text `X` is shorthand for `mark`.
 pub(crate) fn plot(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let settings = match left {
         Some(mark) if keyed::name(mark).is_some() => Some(keyed::vector(vec!["mark".into()], vec![mark.clone()])),
         left => left.cloned().map(Ok),
     };
     let spec = keyed::vector(vec!["data".into()], vec![right.clone()]).and_then(|spec| settings.map_or(Ok(spec.clone()), |s| keyed::merge(&spec, &s?)));
-    spec.and_then(|spec| display::with_renderer(&spec, "plot-renderer", render)).error_at(span, "•plot settings must be a keyed vector or a mark")
+    spec.and_then(|spec| spec.with_renderer(display::renderer("plot-renderer", render))).error_at(span, "•plot settings must be a keyed vector or a mark")
 }
 
 fn render(_: Option<&Value>, spec: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -52,7 +52,7 @@ fn render(_: Option<&Value>, spec: &Value, span: &Context<'_>) -> Result<Value, 
         else { Chart::new(&opts, span)?.draw(&root, span)? }
         drawn(root.present(), span)?;
     }
-    display::svg(keyed::text(&svg)).error_at(span, "invalid plot MIME bundle")
+    display::mime("image/svg+xml", keyed::text(&svg)).error_at(span, "invalid plot MIME bundle")
 }
 
 fn record(opts: &Options, key: &str, allowed: &[&str], span: &Context<'_>) -> Result<Options, Error> {
@@ -530,8 +530,10 @@ fn draw_figure(opts: &Options, data: &Value, root: &Area<'_>, span: &Context<'_>
     let mut cells: Vec<(Value, [usize; 4])> = Vec::new();
     for (i, cell) in data.elements().enumerate().filter(|(_, c)| !c.is_empty()) {
         let (r, c) = (i / cols, i % cols);
-        match cells.iter_mut().find(|(p, _)| *p == cell) {
-            Some((_, b)) => *b = [b[0].min(r), b[1].min(c), b[2].max(r + 1), b[3].max(c + 1)],
+        let mut found = None;
+        for (p, b) in &mut cells { if p.matches(&cell, span)? { found = Some(b); break; } }
+        match found {
+            Some(b) => *b = [b[0].min(r), b[1].min(c), b[2].max(r + 1), b[3].max(c + 1)],
             None => cells.push((cell, [r, c, r + 1, c + 1])),
         }
     }

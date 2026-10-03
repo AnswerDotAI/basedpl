@@ -742,25 +742,25 @@ T←"ONE(TWO) BOOK(S)"⋄(T∊"()")⍱≠\T∊"()" # T   ⍝ "ONE BOOK"
 ≡["abc" (2 4⍴"abc" 2 3 'k')]   ⍝ 3ₓ
 
 ⍝ ngn:240 —
-8 ÷⍄- 2   ⍝ ¯4
+8 ÷↢- 2   ⍝ ¯4
 
 ⍝ ngn:241 —
 ÷∘-2   ⍝ ¯0.5
 
 ⍝ ngn:242 —
-8÷⍄-2   ⍝ ¯4
+8÷↢-2   ⍝ ¯4
 
 ⍝ ngn:243 —
 ⍴∘⍴2 3⍴⍳6   ⍝ [2]ₓ
 
 ⍝ ngn:244 —
-3⍴⍄⍴2 3⍴⍳6   ⍝ [2 3 2]ₓ
+3⍴↢⍴2 3⍴⍳6   ⍝ [2 3 2]ₓ
 
 ⍝ ngn:245 —
-3⍃-1   ⍝ 2
+3↣-1   ⍝ 2
 
 ⍝ ngn:246 —
--⍄2(9)   ⍝ 7
+-↢2(9)   ⍝ 7
 
 ⍝ ngn:247 —
 1 2∪2 3   ⍝ 1 2 3
@@ -1257,8 +1257,8 @@ a←1⋄b←¯22⋄c←85⋄sqrt←√⋄(-b)(+,-)sqrt(b²)-4×a×c ÷ 2×a   �
 ⍝ ngn:403 —
 ⍕¯1   ⍝ "¯1"
 
-⍝ ngn:404 — Dyalog monadic-format result with basedpl lowercase j; original expectation retained
-⍕¯1e¯100j¯2e¯99   ⍝ "¯1E¯100j¯2E¯99"
+⍝ ngn:404 — Dyalog monadic-format result written with BasedPL's subscript ⱼ and ₑ
+⍕¯1e¯100j¯2e¯99   ⍝ "¯1ₑ¯100ⱼ¯2ₑ¯99"
 
 ⍝ ngn:405 —
 ⍋13 8 122 4   ⍝ [3 1 0 2]ₓ
@@ -2239,7 +2239,7 @@ r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ [⊃⌽{⍵,⍨⊂[⊥3↕0,0,⍨�
 ["        #        " ⋄ "       ###       " ⋄ "      ##  #      " ⋄ "     ## ####     " ⋄ "    ##  #   #    " ⋄ "   ## #### ###   " ⋄ "  ##  #    #  #  " ⋄ " ## ####  ###### " ⋄ "##  #   ###     #"]
 
 ⍝ ngn/examples/6-queens:1 — Rotate and reflect the accumulator in basedpl's left scan
-queens←{ search←{ (⊂⍬)∊⍵?0⍴⊂⍬;0=⍴⍵?rmdups ⍺;[hd tl]←[↑⍵ 1↓⍵] ⋄ next←⍺⍃,¨hd ⋄ rems←hd free¨ ⊂tl ⋄ ,/ next ∇¨ rems } ⋄ cvex←1+⍳⍵ × ⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4#⊂⍵} ⋄ refs←{{⍋⍺}\2#⊂⍵} ⋄ best←{↑⍋⊃⍵ ⊃ ⍵} ⋄ syms←, ⊃ refs¨ rots ⍵ ⋄ (⍵≡best syms)⊃[⍬ ,⊂⍵] } ⋄ fmt←{ chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟" ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd#⁻¹⍠¯1chars } ⋄ squares←⊂⍳⌈⍵÷2 , 1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares } ⋄ queens5
+queens←{ search←{ (⊂⍬)∊⍵?0⍴⊂⍬;0=⍴⍵?rmdups ⍺;[hd tl]←[↑⍵ 1↓⍵] ⋄ next←⍺↣,¨hd ⋄ rems←hd free¨ ⊂tl ⋄ ,/ next ∇¨ rems } ⋄ cvex←1+⍳⍵ × ⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4#⊂⍵} ⋄ refs←{{⍋⍺}\2#⊂⍵} ⋄ best←{↑⍋⊃⍵ ⊃ ⍵} ⋄ syms←, ⊃ refs¨ rots ⍵ ⋄ (⍵≡best syms)⊃[⍬ ,⊂⍵] } ⋄ fmt←{ chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟" ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd#⁻¹⍠¯1chars } ⋄ squares←⊂⍳⌈⍵÷2 , 1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares } ⋄ queens5
 [["⍟ · · · ·" ⋄ "· · ⍟ · ·" ⋄ "· · · · ⍟" ⋄ "· ⍟ · · ·" ⋄ "· · · ⍟ ·"];["· ⍟ · · ·" ⋄ "· · · · ⍟" ⋄ "· · ⍟ · ·" ⋄ "⍟ · · · ·" ⋄ "· · · ⍟ ·"]]
 
 ⍝ ngn/examples/7-mandelbrot:1 — Use a 13 by 13 grid

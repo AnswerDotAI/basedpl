@@ -13,7 +13,7 @@ BPL's modules follow BQN's [namespaces](https://mlochbaum.github.io/BQN/doc/name
 
 ## Taking names
 
-Destructuring takes names from the record by key. Names the list doesn't mention stay in the record. [Assignment](assignment.qmd#destructuring) covers destructuring.
+Destructuring takes names from the record by key. Names the list doesn't mention stay in the record. [Assignment](assignment.ipynb#destructuring) covers destructuring.
 
 ```bpl
 [factors factorial]←•load "lib/numeric.bpl"

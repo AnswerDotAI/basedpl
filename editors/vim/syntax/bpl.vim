@@ -4,8 +4,8 @@ endif
 
 syntax match bplName /\v[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*(\.[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*)*/
 syntax match bplSystem /\v•[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*/
-syntax match bplNumber /\v¯?∞|¯?(\d+(\.\d+)?|\.\d+)([eE]¯?\d+)?([jJ]¯?(\d+(\.\d+)?|\.\d+)([eE]¯?\d+)?|[xₓ]|r¯?\d+)?|⍬(ₓ|x([A-Za-z0-9_∆⍙])@!)?/
-syntax match bplNumber /\v(\])@<=(ₓ|x([A-Za-z0-9_∆⍙])@!)/
+syntax match bplNumber /\v¯?∞|¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?([jJⱼ]¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?|ₓ|[rᵣ]¯?\d+)?|⍬ₓ?/
+syntax match bplNumber /\v([\])])@<=ₓ/
 syntax match bplNumber /\v\$[tfn]/
 syntax match bplFunction /[+×÷⌈⌊|*⍟○π√!∧∨⍲⍱~=≠<≤>≥⍳:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹#↕⍭⨸⌻⍸⍷⊢⊣¿-]/
 syntax match bplMonadicOperator #[¨⍨⊗⌸∂/⌿\\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘ]#

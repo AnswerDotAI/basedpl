@@ -1,6 +1,6 @@
 # System functions
 
-A system function is a built-in function whose name starts with [`•`](glyphs/bullet.qmd), as in `•ucs` or `•json`. Type `•` with Alt-y. Names are case-insensitive, so `•ucs` and `•UCS` are the same. `•a` and `•d` are constant arrays, and every other name is a function. Many system functions take their options as a left argument. `]help •name` shows the full help for one name.
+A system function is a built-in function whose name starts with [`•`](glyphs/bullet.qmd), as in `•ucs` or `•json`. Type `•` with Alt-y. Names are case-insensitive. `•a` and `•d` are constant arrays, and every other name is a function. Many system functions take their options as a left argument. `]help •name` shows the full help for one name.
 
 In Python, the workspace object `bpl` has each system function under its name without `•`. Options become keyword arguments, as in `bpl.json('{"a": null}', fill=0)`. [Python](python.ipynb) covers the calling conventions.
 
@@ -101,7 +101,7 @@ Errors: `DOMAIN` for malformed JSON, with its line and column.
 
 ### `•tojson` — Write JSON {#tojson}
 
-`•tojson Y` returns JSON text. Keyed axes become objects. Unkeyed axes become arrays. Character vectors become strings. Keyed entries that hold functions, such as `_mime` renderers, are left out.
+`•tojson Y` returns JSON text. Keyed axes become objects. Unkeyed axes become arrays. Character vectors become strings. Keyed entries that hold functions are left out.
 
 NaN exports as `null`. `["fill":v] •tojson Y` also writes `v` as `null`. [JSON](data.ipynb#json) covers the conversions.
 
@@ -131,11 +131,11 @@ Errors: `VALUE` for missing files, invalid UTF-8, other file errors and standard
 
 ### `•nput` — Write a file {#nput}
 
-`path •nput data` writes `data` to a new UTF-8 file. It returns the number of bytes written. A path that starts with `./` or `../` is relative to the file holding the code, as for [`•load`](#load).
+`path •nput data` writes `data` to a new file. It returns the number of bytes written. Text is written as UTF-8. An array of numbers is written as bytes, each from 0 to 255, in ravel order. A path that starts with `./` or `../` is relative to the file holding the code, as for [`•load`](#load).
 
-`X •nput data` takes options on the left: `path`, `overwrite` (`1` replaces an existing file), `binary` (`1` writes a vector of byte values) and `encoding` (`"UTF-8"`). Plain text on the left is the path. [Files](data.ipynb#files) covers bytes and options.
+`X •nput data` takes options on the left: `path`, `overwrite` (`1` replaces an existing file) and `encoding` (`"UTF-8"`, for text). Plain text on the left is the path. [Files](data.ipynb#files) covers bytes and options.
 
-Errors: `VALUE` for an existing file without `overwrite`, and for other file errors; `DOMAIN` for invalid options or byte values, or `binary` with `encoding`; `RANK` for data that is not a vector.
+Errors: `VALUE` for an existing file without `overwrite`, and for other file errors; `DOMAIN` for invalid options or byte values.
 
 <!-- help -->
 
@@ -145,7 +145,7 @@ Errors: `VALUE` for an existing file without `overwrite`, and for other file err
 
 ### `•element` — XML elements {#element}
 
-`•element tag` returns an element function for the XML tag `tag`. Call it with attributes on the left and children on the right, as in `["r":10] circle ""`. An empty right argument, `""` or `⍬`, gives no children. The result is a keyed vector with `tag`, `attrs` and `children` entries. [XML and SVG](xml.ipynb) covers element trees.
+`•element tag` returns an element function for the XML tag `tag`. Call it with attributes on the left and children on the right, as in `["r":10] circle ""`. An empty right argument, `""` or `⍬`, gives no children. The result is a keyed vector with `tag`, `attrs` and `children` entries. Notebooks display it as HTML. [XML and SVG](xml.ipynb) covers element trees.
 
 Errors: `DOMAIN` for invalid tag or attribute names.
 
@@ -161,21 +161,27 @@ Errors: `DOMAIN` for invalid names or attribute values.
 
 ### `•svg` — SVG pictures {#svg}
 
-`X •svg children` returns an `svg` element with attributes `X`. It adds `xmlns` for the SVG namespace and `viewBox="0 0 100 100"`. Attributes in `X` replace these. Its `_mime` field makes notebooks display it as a picture. [XML and SVG](xml.ipynb) covers element trees.
+`X •svg children` returns an `svg` element with attributes `X`. It adds `xmlns` for the SVG namespace and `viewBox="0 0 100 100"`. Attributes in `X` replace these. Notebooks display it as a picture. [XML and SVG](xml.ipynb) covers element trees.
 
 <!-- help •mime -->
 
 ### `•mime` — Rich display {#mime}
 
-`•mime Y` returns the MIME bundle that display uses for `Y`. The bundle is a keyed vector from MIME types to text. It always has `text/plain`. If `Y` has a function in its `_mime` field, `•mime` calls it with `Y` as `⍵` and adds its entries.
+`•mime Y` returns the MIME bundle that display uses for `Y`. The bundle is a keyed vector from MIME types to text. It always has `text/plain`. If `Y` has a renderer, `•mime` calls it with `Y` as `⍵` and adds its entries.
+
+`F •mime Y` returns `Y` with the renderer that `F` holds, as in `{["text/html":"<b>",(⍕⍵),"</b>"]}ᵘ •mime Y`. A MIME type on the left displays `Y` itself as that type, as in `"text/markdown" •mime "*hi*"`. An atom becomes a scalar, because only an array can hold a renderer.
+
+A result keeps a renderer when it has an item for each item of its argument, as pervasive functions, Each and scans do. Rearranging or selecting from an array without removing an axis also keeps it, as reversal, transpose, take, replicate and catenation do. Changes in place keep it. Other functions drop it, as reductions and `⍴` do. When two arguments have different renderers, the result has none. Match ignores renderers.
 
 Display shows the text form when a renderer fails. Only a direct `•mime` call reports the error. [Rich display](xml.ipynb#rich-display) covers renderers.
+
+Errors: `DOMAIN` for a left argument that holds neither a function nor text.
 
 <!-- help •plot -->
 
 ### `•plot` — Plots {#plot}
 
-`X •plot Y` returns a plot spec: a keyed vector holding the data `Y`, the settings `X` and a renderer. Notebooks display the spec as an SVG chart. Plain text on the left is shorthand for `mark`. [Plots](plot.ipynb) shows each mark and setting with examples.
+`X •plot Y` returns a plot spec: a keyed vector holding the data `Y` and the settings `X`. Its renderer displays the spec as an SVG chart. Plain text on the left is shorthand for `mark`. [Plots](plot.ipynb) shows each mark and setting with examples.
 
 The structure of `Y` chooses the series and axes:
 
@@ -204,8 +210,35 @@ The structure of `Y` chooses the series and axes:
 
 `color` also takes one number per point. `palette` turns these numbers into colours, over the range of every series in the plot. A cell takes its colour from its own value unless `color` is set.
 
-The spec is checked when it's rendered, so a direct [`•mime`](#mime) call reports these errors: `DOMAIN` for unknown settings or values, and for cells mixed with other marks; `LENGTH` when series, colours, sizes or labels don't match the x values; `RANK` for data that isn't a vector, matrix or table.
+A direct [`•mime`](#mime) call on a spec reports these errors: `DOMAIN` for unknown settings or values, and for cells mixed with other marks; `LENGTH` when series, colours, sizes or labels don't match the x values; `RANK` for data that isn't a vector, matrix or table.
 
+<!-- help •image -->
+
+### `•image` — Images {#image}
+
+`•image Y` returns a picture: numbers from 0 to 1, with axes for rows, columns and up to four channels, that notebooks display as an image. One channel is grey, and three are red, green and blue. A second or fourth channel is alpha. `Y` is the path of a PNG or JPEG file, the bytes of one, or the numbers themselves. Values outside 0 to 1 are clipped when the picture is displayed or encoded.
+
+`kind •image Y` encodes the picture `Y` as `"png"` or `"jpeg"` bytes. JPEG drops alpha. [`•nput`](#nput) writes the bytes to a file, as in `"out.png" •nput "png" •image Y`.
+
+Errors: `DOMAIN` for an unknown `kind`, invalid image bytes, or values that aren't real numbers; `RANK` for a shape that isn't a picture; `VALUE` for file errors.
+
+<!-- help •prefs -->
+
+### `•prefs` — Display settings {#prefs}
+
+`•prefs Y` applies the settings in the record `Y` to this session's display, and returns every setting. `•prefs ⍬` changes nothing.
+
+| Setting | Holds | Default |
+|---|---|---|
+| `box` | `$t` draws arrays in boxes | `$t` in the REPL and the BPL Jupyter kernel, `$f` elsewhere |
+| `trees` | `$t` shows a function as a tree while `box` is on | as `box` |
+| `fns` | `$f` leaves output made inside functions unboxed | as `box` |
+| `limit` | The most items display shows in full. `∞` shows every item | `1000` |
+| `edges` | Positions shown at each end of a long axis | `3` |
+
+Display shows part of an array of more than `limit` items: the first and last `edges` positions of each axis longer than twice `edges`. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. A nested array follows the same rule on its own. `⎕←`, [`⍕`](glyphs/format.qmd) and source text always hold every item.
+
+Errors: `DOMAIN` for an unknown setting or an invalid value.
 <!-- help -->
 
 ## Random numbers and distributions
@@ -266,7 +299,7 @@ Errors: `DOMAIN` for invalid parameters, non-real inputs or p ∉ [0,1]; `LENGTH
 
 `•load path` runs the BPL file at `path` as a [module](modules.qmd), with names of its own. It returns a record of the module's public names: the names its top level assigns that don't start with `_`. The file adds no names to the caller, and shows nothing except explicit output. Each call runs the file again.
 
-`[a b]←•load path` takes the names `a` and `b` from the record. `m←•load path` keeps the record, so `m.a` reads one name.
+Destructure the record to take names, as in `[a b]←•load path`, or keep it and read names with a dot, as in `m←•load path` and then `m.a`.
 
 A path that starts with `./` or `../` is relative to the file holding the code. Other relative paths are relative to the working directory. `•nget` and `•nput` follow the same rule.
 
@@ -299,7 +332,7 @@ The argument is one of these uppercase names: `SYNTAX ERROR`, `INDEX ERROR`, `RA
 
 `•time t` gives the seconds since the time `t`. Time counts from the session's start on a monotonic clock. `•time 0` is the current reading. `t←•time 0` starts a timer, and `•time t` then gives the seconds since it started.
 
-`F •time x` calls each function in `F` on `x` for about 0.1 s. The result is each function's fastest time per call in seconds, with the shape and keys of `F`. With `F←["sum":+/ "max":⌈/]`, `F •time x` labels each time. Time a dyadic function with its left argument bound, as in `2⍃⍴`. [Timing](repl.qmd#timing) has examples.
+`F •time x` calls each function in `F` on `x` for about 0.1 s. The result is each function's fastest time per call in seconds, with the shape and keys of `F`. With `F←["sum":+/ "max":⌈/]`, `F •time x` labels each time. Time a dyadic function with its left argument bound, as in `2↣⍴`. [Timing](repl.qmd#timing) has examples.
 
 Errors: `DOMAIN` for a left argument that holds anything but functions, or a `t` that isn't a number. An error from a timed function stops the timing.
 

@@ -1,6 +1,6 @@
 # `⌽` — Reverse / Rotate last
 
-Keys: `Alt-o |`
+Keys: `Alt-|`
 
 `⌽Y` reverses the last axis. `⌽⍠K` selects the axis.
 

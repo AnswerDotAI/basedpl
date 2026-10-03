@@ -122,10 +122,10 @@ hex ← {  ⍝ Hexadecimal from decimal.
 
 dec ← {  ⍝ Decimal from hexadecimal
   ⍺←$f  ⍝ unsigned by default.
-  1<⍴⍴⍵?⍺⍃∇⍤1 ⍵;  ⍝ vector-wise:
+  1<⍴⍴⍵?⍺↣∇⍤1 ⍵;  ⍝ vector-wise:
   0≡≢⍵?0;  ⍝ dec"" → 0.
   1≠≡,⍵?⍺∇¨⍵;  ⍝ simple-array-wise:
-  ws←∊⍄(•ucs 9 10 13 32 133 160)
+  ws←∊↢(•ucs 9 10 13 32 133 160)
   ws↑⍵?⍺ ∇ 1↓⍵;
   ws↑⌽⍵?⍺ ∇ ¯1↓⍵;
   ∨/ws ⍵?⍺∇¨(1+ws ⍵)⊆⍵;  ⍝ white-space-separated:
@@ -166,7 +166,7 @@ rational ← {  ⍝ Rational approximation to real ⍵.
 
 roman ← {  ⍝ Roman numeral arithmetic.
   num←{{⍵+.××0.5+×-/2↕⍵,0}[7|"IVXLCDMivxlcdm"⍳⍵]⌷,⍉1 5×⊗10*⍳4}
-  fmt←{~⍄" ",0 1 0⍉(⊂[⍵⊤⍨4⍴10]⌷0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)⌷' '⍪3 4⍴"MCXI DLV "}
+  fmt←{~↢" ",0 1 0⍉(⊂[⍵⊤⍨4⍴10]⌷0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)⌷' '⍪3 4⍴"MCXI DLV "}
   depth←{⍹≥≡⍵?⍶ ⍵;∇¨⍵}
   nums←num depth 1  ⍝ arabic from roman.
   fmts←fmt depth 0  ⍝ roman from arabic.
@@ -177,7 +177,7 @@ roman ← {  ⍝ Roman numeral arithmetic.
 
 stamps ← {  ⍝ Postage stamps to the value of ⍵.
   ⍺←1 5 6 10 26 39 43  ⍝ Default UK stamp denominations.
-  graph←⍺{⍵⍃∩¨⍵+⊂⍺}⍳⍵+|⌊/⍺  ⍝ values: 0 ·· ⍵.
+  graph←⍺{⍵↣∩¨⍵+⊂⍺}⍳⍵+|⌊/⍺  ⍝ values: 0 ·· ⍵.
   spath←graph _graph.path [0 ⍵]
   -/⌽2↕spath
 }

@@ -288,7 +288,7 @@ M←["r1" "r2";"xx" "yy"]:[2 0 ⋄ 0 4]ₓ
 ∨"first" "second":3j4 5j12   ⍝ "first" "second":[3 4 ⋄ 5 12]
 
 ⍝ axis-gradient — VJP aligns output labels and preserves input coordinate labels
-f←[1 2 3]ₓ⍃⌻ ⋄ g←(⊂[1 2 0 ⋄ 1 0 2]ₓ)⍃⌻
+f←[1 2 3]ₓ↣⌻ ⋄ g←(⊂[1 2 0 ⋄ 1 0 2]ₓ)↣⌻
 [("bb" "aa":[20 10]ₓ) f∂ ("aa" "bb":[1 2]ₓ);g∂⊂"xx" "yy":[3 4]ₓ]
 ⍝ =>
 [["aa":80 "bb":280]ₓ ⊂["xx":6 "yy":8]ₓ]
@@ -303,8 +303,8 @@ f←[1 2 3]ₓ⍃⌻ ⋄ g←(⊂[1 2 0 ⋄ 1 0 2]ₓ)⍃⌻
 
 ⍝ axis-inverse-layout — Inverse scan and outer-product inversion retain surviving axis labels
 V←"aa" "bb":1 3 ⋄ B←"row1" "row2":10 20
-f←(×⍄*)⍨
-[(+\)⁻¹ V;B⍃(+⊗)⁻¹ ⊖B+⊗V;⍳⍠0 f⁻¹ f V]
+f←(×↢*)⍨
+[(+\)⁻¹ V;B↣(+⊗)⁻¹ ⊖B+⊗V;⍳⍠0 f⁻¹ f V]
 ⍝ =>
 [["aa":1 "bb":2] ["aa":1 "bb":3] ["aa" "bb"]]
 
@@ -331,7 +331,7 @@ V←"aa" "bb" "cc":1 2 1
 ⍝⍝ Operand glyphs
 
 ⍝ — Pipeline stages use ordinary APL binding, then apply left to right
-1+2×3 → 2× → -⍄1   ⍝ 13
+1+2×3 → 2× → -↢1   ⍝ 13
 
 ⍝ — Assignment encloses the whole pipeline
 r←s←⍳4 → +/ → √ ⋄ [r s]   ⍝ [√6 √6]
@@ -478,7 +478,7 @@ v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}   ⍝ 15
 [√⁻¹3 ○⁻¹○0.5]   ⍝ 9 0.5
 
 ⍝ — Bound pi fractions invert either argument
-(1⍃π)⁻¹1π4   ⍝ 4
+(1↣π)⁻¹1π4   ⍝ 4
 
 ⍝⍝ Function arrays
 
@@ -486,7 +486,7 @@ v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}   ⍝ 15
 fs←[+ × ÷] ⋄ mul←fs₁ ⋄ 2 mul 3   ⍝ 6
 
 ⍝ — Primitives, dfns and derived functions share one function vector
-fs←[+/ {⍵×⍵} 3⍃+] ⋄ square←fs₁ ⋄ square4   ⍝ 16
+fs←[+/ {⍵×⍵} 3↣+] ⋄ square←fs₁ ⋄ square4   ⍝ 16
 
 ⍝ — A record entry can hold a function, and the record's text reads back
 r←["sum":+/ "max":⌈/] ⋄ [r.sum 1 2 3;(⍎⍕r).max 1 2 3]   ⍝ 6 3
@@ -527,8 +527,8 @@ fs←[+ ×] ⋄ f←↑↑⍤0 fs ⋄ 2 f 3   ⍝ 5
 ⍝ — An empty pick path preserves the scalar array, without disclosing its function
 fs←[+ ×] ⋄ s←[⊂1]⌷fs ⋄ s≡⍬⊃s   ⍝ $t
 
-⍝ — A function vector matches itself by function identity
-fs←[+ ×] ⋄ fs≡fs   ⍝ $t
+⍝ — Functions built from matching parts match, with values compared as `≡` compares them, and a dfn matches only itself
+([+ +/ ×⍤1 1ₓ↣+]≡[+ +/ ×⍤1 1↣+]) ([{⍵}]≡[{⍵}])   ⍝ $t $f
 
 ⍝ — A selected function can use its still-active lexical binding
 {a←⍵ ⋄ fs←[{a+⍵} ×] ⋄ f←↑fs ⋄ f3}4   ⍝ 7
@@ -885,16 +885,16 @@ a←1 ⋄ (↑a)←3 4 ⋄ a   ⍝ 3 4
 a←[1 2;3 4] ⋄ (↑¨a)←[5 6;7 8] ⋄ a   ⍝ [[[5 6] 2] [[7 8] 4]]
 
 ⍝ — A bound take function remains assignment-selective
-a←1 2 3 ⋄ (1⍃↑a)←9 ⋄ a   ⍝ 9 2 3
+a←1 2 3 ⋄ (1↣↑a)←9 ⋄ a   ⍝ 9 2 3
 
 ⍝ — A bound pick function can replace an item with a nested vector
-a←1 2 ⋄ (0⍃⊃a)←3 4 ⋄ a   ⍝ [[3 4] 2]
+a←1 2 ⋄ (0↣⊃a)←3 4 ⋄ a   ⍝ [[3 4] 2]
 
 ⍝ — Binding an empty pick path retains whole-array replacement
-a←1 2 ⋄ (⍬⍃⊃a)←3 4 5 ⋄ a   ⍝ 3 4 5
+a←1 2 ⋄ (⍬↣⊃a)←3 4 5 ⋄ a   ⍝ 3 4 5
 
 ⍝ — Bound pick under each updates the selected nested elements
-a←[1 2;3 4] ⋄ (0⍃⊃¨a)←[5 6;7 8] ⋄ a   ⍝ [[[5 6] 2] [[7 8] 4]]
+a←[1 2;3 4] ⋄ (0↣⊃¨a)←[5 6;7 8] ⋄ a   ⍝ [[[5 6] 2] [[7 8] 4]]
 
 ⍝ — An empty array has no first item to replace
 a←⍬ ⋄ (↑a)←3 4
@@ -1048,7 +1048,7 @@ a←1 ⋄ f←+ ⋄ a(f)←3 ⋄ a   ⍝ 4
 {a←1 ⋄ f←+ ⋄ [a f]←3 ⋄ [a f]}0   ⍝ 3 3
 
 ⍝ — In a dfn, deriving the modifier marks it as a function rather than a local array
-{a←1 ⋄ f←+ ⋄ a(f⍄⊢)←3 ⋄ a}0   ⍝ 4
+{a←1 ⋄ f←+ ⋄ a(f↢⊢)←3 ⋄ a}0   ⍝ 4
 
 ⍝ — In a dfn, a named function directly after an array performs modified assignment, in either spelling
 {a←1 ⋄ f←+ ⋄ a(f)←3 ⋄ (a)f←3 ⋄ a}0   ⍝ 7
@@ -1331,10 +1331,10 @@ T←["a":1] ⋄ (⎕←T).[⎕←"b"]←2
 ¯2⍕[3.125 0.002 ⋄ 1000 20]   ⍝ ⊃" 3.1E0 2.0E¯3" " 1.0E3 2.0E1 "
 
 ⍝ —
-⍕¯1E¯100j¯2E¯99   ⍝ "¯1E¯100j¯2E¯99"
+⍕¯1E¯100j¯2E¯99   ⍝ "¯1ₑ¯100ⱼ¯2ₑ¯99"
 
 ⍝ — Default formatting switches to exponents beyond these magnitude thresholds
-⍕1E¯6 1E¯7 1E16 1E17   ⍝ "0.000001 1E¯7 10000000000000000 1E17"
+⍕1E¯6 1E¯7 1E16 1E17   ⍝ "0.000001 1ₑ¯7 10000000000000000 1ₑ17"
 
 ⍝ — Formatting a number produces a character vector
 ⍴⍕1   ⍝ [1]ₓ
@@ -1378,7 +1378,7 @@ T←["a":1] ⋄ (⎕←T).[⎕←"b"]←2
 ⍕12.34   ⍝ "12.34"
 
 ⍝ —
-⍕1ₓ 1r3   ⍝ "1ₓ 1r3"
+⍕1ₓ 1r3   ⍝ "1ₓ 1ᵣ3"
 
 ⍝ —
 ⍕⍬   ⍝ ""
@@ -1435,10 +1435,10 @@ a←⍎""
 ⍝ error: VALUE ERROR
 
 ⍝ — ⍕ marks each exact number when a big integer keeps the vector mixed
-⍕1x 0ₓ ¯2x 9223372036854775808ₓ   ⍝ "1ₓ 0ₓ ¯2ₓ 9223372036854775808ₓ"
+⍕1ₓ 0ₓ ¯2ₓ 9223372036854775808ₓ   ⍝ "1ₓ 0ₓ ¯2ₓ 9223372036854775808ₓ"
 
 ⍝ — Rationals display in lowest terms, and floats with every digit needed to read back
-⍕¨[1ₓ÷3ₓ;6ₓ÷3ₓ;1ₓ÷3]   ⍝ "1r3" "2ₓ" "0.3333333333333333"
+⍕¨[1ₓ÷3ₓ;6ₓ÷3ₓ;1ₓ÷3]   ⍝ "1ᵣ3" "2ₓ" "0.3333333333333333"
 
 ⍝⍝ Polynomial representations and derivatives
 
@@ -1482,49 +1482,49 @@ a←⍎""
 ⌻[2ₓ;0⍴0ₓ]   ⍝ [2]ₓ
 
 ⍝ — Differentiate the bound polynomial evaluator
-f←[1 2 3]ₓ⍃⌻ ⋄ f∂2ₓ   ⍝ 14ₓ
+f←[1 2 3]ₓ↣⌻ ⋄ f∂2ₓ   ⍝ 14ₓ
 
 ⍝ — Repeated differentiation gives the second derivative
-f←[1 2 3]ₓ⍃⌻ ⋄ f∂∂2ₓ   ⍝ 6ₓ
+f←[1 2 3]ₓ↣⌻ ⋄ f∂∂2ₓ   ⍝ 6ₓ
 
 ⍝ — Differentiating beyond the polynomial's degree gives exact zero
-f←[1 2 3]ₓ⍃⌻ ⋄ f∂∂∂2ₓ   ⍝ 0ₓ
+f←[1 2 3]ₓ↣⌻ ⋄ f∂∂∂2ₓ   ⍝ 0ₓ
 
 ⍝ — Dyadic derivative weights each output derivative by its cotangent
-f←[1 2 3]ₓ⍃⌻ ⋄ [10 20]ₓ f∂ [1 2]ₓ   ⍝ [80 280]ₓ
+f←[1 2 3]ₓ↣⌻ ⋄ [10 20]ₓ f∂ [1 2]ₓ   ⍝ [80 280]ₓ
 
 ⍝ — Differentiate directly from the factored representation
-f←[2ₓ;[1 3]ₓ]⍃⌻ ⋄ f∂2ₓ   ⍝ 0ₓ
+f←[2ₓ;[1 3]ₓ]↣⌻ ⋄ f∂2ₓ   ⍝ 0ₓ
 
 ⍝ — A multivariate gradient retains the coordinate enclosure
-f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)⍃⌻ ⋄ f∂⊂[3 4]ₓ   ⍝ ⊂[6 8]ₓ
+f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)↣⌻ ⋄ f∂⊂[3 4]ₓ   ⍝ ⊂[6 8]ₓ
 
 ⍝ — A unit cotangent scales the multivariate gradient
-f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)⍃⌻ ⋄ 2ₓ(f∂)⊂[3 4]ₓ   ⍝ ⊂[12 16]ₓ
+f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)↣⌻ ⋄ 2ₓ(f∂)⊂[3 4]ₓ   ⍝ ⊂[12 16]ₓ
 
 ⍝ — A shared unit coordinate sums the partial derivatives
-f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)⍃⌻ ⋄ f∂3ₓ   ⍝ 12ₓ
+f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)↣⌻ ⋄ f∂3ₓ   ⍝ 12ₓ
 
 ⍝ — Multiple polynomial outputs contribute to one unit-input VJP
-f←[1 2 ⋄ 3 4]ₓ⍃⌻ ⋄ [10 20]ₓ f∂ 3ₓ   ⍝ 100ₓ
+f←[1 2 ⋄ 3 4]ₓ↣⌻ ⋄ [10 20]ₓ f∂ 3ₓ   ⍝ 100ₓ
 
 ⍝ — Negative exponents cannot be converted to a coefficient vector
 ⌻⊂[1 ¯1 ⋄]
 ⍝ error: DOMAIN ERROR
 
 ⍝ — The cotangent must match the unit output's structure
-(⊂1 2)(1 2⍃⌻∂)3
+(⊂1 2)(1 2↣⌻∂)3
 ⍝ error: DOMAIN ERROR
 
 ⍝ — An infinite coefficient follows IEEE
 ⌻1 ∞   ⍝ [∞ [¯0]]
 
 ⍝ — Monadic derivative requires unit output, not a vector of evaluations
-1 2⍃⌻∂1 2
+1 2↣⌻∂1 2
 ⍝ error: RANK ERROR
 
 ⍝ — VJP requires one cotangent for each output
-1(1 2⍃⌻∂)1 2
+1(1 2↣⌻∂)1 2
 ⍝ error: LENGTH ERROR
 
 ⍝ — The coordinate count must match the exponent table's variables
@@ -1716,7 +1716,7 @@ f←{⍵+1}⇄{⍵-1} ⋄ f⍣¯2(5)   ⍝ 3
 f←{⍺+⍵}⇄{⍵-⍺} ⋄ 3 f⁻¹ 8   ⍝ 5
 
 ⍝ — Binding the left argument retains the declared inverse
-f←{⍺+⍵}⇄{⍵-⍺} ⋄ (3⍃f)⁻¹8   ⍝ 5
+f←{⍺+⍵}⇄{⍵-⍺} ⋄ (3↣f)⁻¹8   ⍝ 5
 
 ⍝ — Inverting an explicitly paired inverse recovers the forward function
 f←{⍵+1}⇄{⍵-1} ⋄ (f⁻¹)⁻¹5   ⍝ 6
@@ -1778,7 +1778,7 @@ limit←4 ⋄ stop←[{⍺≥limit}] ⋄ 1+⍣stop 1   ⍝ 1 2 3 4
 (+⍣1)\1 2 3   ⍝ 1 3 6
 
 ⍝ — A declared right-argument inverse does not provide a left-argument inverse
-((+⇄-)⍄3)⁻¹8
+((+⇄-)↢3)⁻¹8
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
@@ -1798,70 +1798,70 @@ g←{⎕←⍵ ⋄ 2×⍵}⇄{⎕←⍵ ⋄ ⍵÷2} ⋄ 3(+⌾g)4
 ⍝⍝ Inverse power
 
 ⍝ — Inverting x×exp(x) gives the principal Lambert W function
-W←×⍄*⍨⁻¹ ⋄ ⌊1E12×W [0 1 *1 ¯0.1 1j1]
+W←×↢*⍨⁻¹ ⋄ ⌊1E12×W [0 1 *1 ¯0.1 1j1]
 0 567143290409 1000000000000 ¯111832559159 656966069230j325450339413
 
 ⍝ — Lambert W reaches -1 at its real branch point -1/e
-W←×⍄*⍨⁻¹ ⋄ W ¯1÷*1   ⍝ ¯1
+W←×↢*⍨⁻¹ ⋄ W ¯1÷*1   ⍝ ¯1
 
 ⍝ — Lambert W pervades nested exact input and produces approximate values
-W←×⍄*⍨⁻¹ ⋄ W [[0 0]ₓ;0⍴0ₓ]   ⍝ [0 0;⍬]
+W←×↢*⍨⁻¹ ⋄ W [[0 0]ₓ;0⍴0ₓ]   ⍝ [0 0;⍬]
 
 ⍝ — Check W(x)exp(W(x))=x across tiny and large real inputs
-W←×⍄*⍨⁻¹ ⋄ x←1E¯100 ¯1E¯100 1E¯12 ¯1E¯12 0.099 ¯0.099 1E300 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x
+W←×↢*⍨⁻¹ ⋄ x←1E¯100 ¯1E¯100 1E¯12 ¯1E¯12 0.099 ¯0.099 1E300 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x
 $t
 
 ⍝ — Check the Lambert W inverse identity on complex inputs
-W←×⍄*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   ⍝ $t
+W←×↢*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   ⍝ $t
 
 ⍝ — A real Lambert W argument below -1/e gives NaN
-×⍄*⍨⁻¹ ¯1   ⍝ $n
+×↢*⍨⁻¹ ¯1   ⍝ $n
 
 ⍝ —
-×⍄*⍨⁻¹ 'a'
+×↢*⍨⁻¹ 'a'
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Invert an outer subtraction with its right vector fixed
-(-⊗⍄4 5)⁻¹[¯3 ¯4 ⋄ ¯2 ¯3]   ⍝ 1 2
+(-⊗↢4 5)⁻¹[¯3 ¯4 ⋄ ¯2 ¯3]   ⍝ 1 2
 
 ⍝ — Invert an outer subtraction with its left vector fixed
-4 5⍃(-⊗)⁻¹[3 2 ⋄ 4 3]   ⍝ 1 2
+4 5↣(-⊗)⁻¹[3 2 ⋄ 4 3]   ⍝ 1 2
 
 ⍝ — Outer-product inversion preserves exact rational results
-(×⊗⍄[4 5]ₓ)⁻¹[2ₓ 5r2 ⋄ 1ₓ 5r4]   ⍝ 1r2 1r4
+(×⊗↢[4 5]ₓ)⁻¹[2ₓ 5r2 ⋄ 1ₓ 5r4]   ⍝ 1r2 1r4
 
 ⍝ — A fixed matrix occupies the trailing axes of the outer-product result
-(×⊗⍄[1 2 ⋄ 3 4])⁻¹3 2 2⍴1 2 3 4 2 4 6 8 3 6 9 12   ⍝ 1 2 3
+(×⊗↢[1 2 ⋄ 3 4])⁻¹3 2 2⍴1 2 3 4 2 4 6 8 3 6 9 12   ⍝ 1 2 3
 
 ⍝ — Outer inversion with a fixed number recovers a vector
-4⍃(×⊗)⁻¹4 8   ⍝ 1 2
+4↣(×⊗)⁻¹4 8   ⍝ 1 2
 
 ⍝ — Removing the fixed vector's axes can leave a scalar
-(×⊗⍄4 5)⁻¹4 5   ⍝ ⊂1
+(×⊗↢4 5)⁻¹4 5   ⍝ ⊂1
 
 ⍝ — Outer inversion recovers an empty argument from an empty result frame
-(+⊗⍄4 5)⁻¹0 2⍴0   ⍝ ⍬
+(+⊗↢4 5)⁻¹0 2⍴0   ⍝ ⍬
 
 ⍝ — With the left vector fixed, the remaining axes describe the recovered matrix
-4 5⍃(-⊗)⁻¹2 2 2⍴3 2 1 0 4 3 2 1   ⍝ [1 2 ⋄ 3 4]
+4 5↣(-⊗)⁻¹2 2 2⍴3 2 1 0 4 3 2 1   ⍝ [1 2 ⋄ 3 4]
 
 ⍝ — Outer inversion preserves zero dimensions in the recovered frame
-(+⊗⍄4 5)⁻¹3 0 2⍴0   ⍝ 3 0⍴0
+(+⊗↢4 5)⁻¹3 0 2⍴0   ⍝ 3 0⍴0
 
 ⍝ — Every outer-product cell must imply the same recovered value
-(×⊗⍄4 5)⁻¹[4 5 ⋄ 8 11]
+(×⊗↢4 5)⁻¹[4 5 ⋄ 8 11]
 ⍝ error: DOMAIN ERROR
 
 ⍝ — The result axes must agree with the fixed outer-product argument
-(×⊗⍄4 5)⁻¹2 3⍴⍳6
+(×⊗↢4 5)⁻¹2 3⍴⍳6
 ⍝ error: DOMAIN ERROR
 
 ⍝ — An empty fixed argument contains no information to invert
-(×⊗⍄⍬)⁻¹2 0⍴0
+(×⊗↢⍬)⁻¹2 0⍴0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Multiplication by an all-zero fixed argument is not invertible
-(×⊗⍄0 0)⁻¹2 2⍴0
+(×⊗↢0 0)⁻¹2 2⍴0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Inverse iota returns the generating shape as an exact vector
@@ -1871,7 +1871,7 @@ W←×⍄*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ⍳⁻¹⍳2 3   ⍝ [2 3]ₓ
 
 ⍝ — Each positive circle code's inverse agrees with its negative-code counterpart here
-{(5○⍨-⍵)=⍵⍃○⁻¹5}1+⍳12   ⍝ 12⍴$t
+{(5○⍨-⍵)=⍵↣○⁻¹5}1+⍳12   ⍝ 12⍴$t
 
 ⍝ —
 1+⍣¯3(10)   ⍝ 7
@@ -1889,31 +1889,31 @@ W←×⍄*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ≠\⁻¹[1 1 0 0]ₓ   ⍝ [1 0 1 0]ₓ
 
 ⍝ — Inverse base-two decode chooses the required number of digits
-2⍃⊥⁻¹9   ⍝ 1 0 0 1
+2↣⊥⁻¹9   ⍝ 1 0 0 1
 
 ⍝ — Exact base and value produce exact inverse-decode digits
-2ₓ⍃⊥⁻¹9ₓ   ⍝ [1 0 0 1]ₓ
+2ₓ↣⊥⁻¹9ₓ   ⍝ [1 0 0 1]ₓ
 
 ⍝ — Invert mixed-radix time decoding into hours, minutes and seconds
-([0 60 60]ₓ⍃⊥⁻¹)3661ₓ   ⍝ [1 1 1]ₓ
+([0 60 60]ₓ↣⊥⁻¹)3661ₓ   ⍝ [1 1 1]ₓ
 
 ⍝ — Inverse encode decodes the supplied digits
-2ₓ⍃⊤⁻¹[1 0 1]ₓ   ⍝ 5ₓ
+2ₓ↣⊤⁻¹[1 0 1]ₓ   ⍝ 5ₓ
 
 ⍝ — Inverse decode permits a fractional least-significant digit
-2⍃⊥⁻¹2.5   ⍝ 1 0.5
+2↣⊥⁻¹2.5   ⍝ 1 0.5
 
 ⍝ — Inverse transpose applies the inverse axis permutation
-(1 0⍃⍉⁻¹)2 3⍴⍳6   ⍝ [0 3 ⋄ 1 4 ⋄ 2 5]
+(1 0↣⍉⁻¹)2 3⍴⍳6   ⍝ [0 3 ⋄ 1 4 ⋄ 2 5]
 
 ⍝ — Inverting self-addition halves the argument exactly
 +⍨⁻¹3ₓ   ⍝ 3r2
 
 ⍝ — Inverse sine selects a branch which maps back to the input
-0.5=1⍃○(1⍃○⁻¹)0.5   ⍝ $t
+0.5=1↣○(1↣○⁻¹)0.5   ⍝ $t
 
 ⍝ — Inverse sine within the real domain has no imaginary component
-11○(1⍃○⁻¹)0.5   ⍝ 0
+11○(1↣○⁻¹)0.5   ⍝ 0
 
 ⍝ — sqrt(1+x²) avoids overflowing its intermediate square
 4○1E300   ⍝ 1E300
@@ -1922,7 +1922,7 @@ W←×⍄*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ¯4○¯1E300   ⍝ ¯1E300
 
 ⍝ — Inversion preserves rank-zero application
-(2ₓ⍃+⍤0)⁻¹[3 4]ₓ   ⍝ [1 2]ₓ
+(2ₓ↣+⍤0)⁻¹[3 4]ₓ   ⍝ [1 2]ₓ
 
 ⍝ — Inverse where counts repeated indices
 ⍸⁻¹0 2 2   ⍝ [1 0 2]ₓ
@@ -1934,13 +1934,13 @@ W←×⍄*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ⍸⁻¹⍬   ⍝ ⍬ₓ
 
 ⍝ — Zero needs no digits in minimal-width inverse decode
-2⍃⊥⁻¹0   ⍝ ⍬
+2↣⊥⁻¹0   ⍝ ⍬
 
 ⍝ —
 3ₓ+⁻¹5ₓ   ⍝ 2ₓ
 
 ⍝ — Inversion distributes through each
-(2ₓ⍃+)¨⁻¹[3 4]ₓ   ⍝ [1 2]ₓ
+(2ₓ↣+)¨⁻¹[3 4]ₓ   ⍝ [1 2]ₓ
 
 ⍝ — Inverting self-multiplication selects the positive square root
 ×⍨⁻¹4   ⍝ 2
@@ -1952,7 +1952,7 @@ W←×⍄*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ⊂⁻¹⊂[1 2]ₓ   ⍝ [1 2]ₓ
 
 ⍝ — Multiplication by zero has no inverse
-0⍃×⁻¹0
+0↣×⁻¹0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Inverse where counts positions in any order
@@ -1963,37 +1963,37 @@ W←×⍄*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-2⍃⊥⁻¹¯1
+2↣⊥⁻¹¯1
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Inverse decode keeps the low digits of a value beyond its radix range
-(2 2⍃⊥⁻¹)5   ⍝ 0 1
+(2 2↣⊥⁻¹)5   ⍝ 0 1
 
 ⍝⍝ Inverse combinations
 
 ⍝ — Right binding requires inversion with respect to the left argument of composition
-(+⍄-⍄2)⁻¹3   ⍝ 5
+(+↢-↢2)⁻¹3   ⍝ 5
 
 ⍝ — Commute swaps which argument must be recovered
-2 (+⍄-)⍨⁻¹ 3   ⍝ 5
+2 (+↢-)⍨⁻¹ 3   ⍝ 5
 
 ⍝ — Invert atop with a fixed right argument
-(÷∘-⍄2)⁻¹0.5   ⍝ 4
+(÷∘-↢2)⁻¹0.5   ⍝ 4
 
 ⍝ — Invert over with a fixed right argument
-(-⍥-⍄2)⁻¹¯3   ⍝ 5
+(-⍥-↢2)⁻¹¯3   ⍝ 5
 
 ⍝ — Before transforms the fixed left argument before solving for the right
-3 -⍃+⁻¹ 7   ⍝ 10
+3 -↣+⁻¹ 7   ⍝ 10
 
 ⍝ — Right-bound before also inverts the left-side transformation
-(-⍃+⍄3)⁻¹¯7   ⍝ 10
+(-↣+↢3)⁻¹¯7   ⍝ 10
 
 ⍝ — Right-bound each recovers every left element
-(-¨⍄2)⁻¹3 4   ⍝ 5 6
+(-¨↢2)⁻¹3 4   ⍝ 5 6
 
 ⍝ — Right-bound rank recovers vector cells against the fixed number
-(-⍤1 0⍄2)⁻¹3 4   ⍝ 5 6
+(-⍤1 0↢2)⁻¹3 4   ⍝ 5 6
 
 ⍝ — Invert left-accumulating subtraction scan
 -\⁻¹1 ¯1 ¯4   ⍝ 1 2 3
@@ -2002,10 +2002,10 @@ W←×⍄*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 10-\⁻¹9 7 4   ⍝ 1 2 3
 
 ⍝ — Binding the seed retains scan inversion
-10⍃(+\)⁻¹11 13 16   ⍝ 1 2 3
+10↣(+\)⁻¹11 13 16   ⍝ 1 2 3
 
 ⍝ — Scan inversion calls the composed operand's inverse
-(-⍄-)\⁻¹1 3 6   ⍝ 1 2 3
+(-↢-)\⁻¹1 3 6   ⍝ 1 2 3
 
 ⍝ — Inverting seeded division scan retains exact fractions
 2ₓ÷\⁻¹1ₓ 1r3 1r12   ⍝ [2 3 4]ₓ
@@ -2039,8 +2039,8 @@ W←×⍄*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 0 ×\⁻¹ 0 0
 ⍝ error: DOMAIN ERROR
 
-⍝ — Monadic (-⍃+) is constant zero, so its input cannot be recovered
--⍃+⁻¹ 0
+⍝ — Monadic (-↣+) is constant zero, so its input cannot be recovered
+-↣+⁻¹ 0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Rank checks agreement between row seeds and cells
@@ -2341,7 +2341,7 @@ x←10 10⊤[12 34]ₓ ⋄ [x;•storage x]   ⍝ [[1 2 ⋄ 3 4];"float"]
 'K'
 
 ⍝ — Empty coordinates can repeatedly pick an atom without changing it
-(⍬⍃⊃)⁵ 10   ⍝ 10
+(⍬↣⊃)⁵ 10   ⍝ 10
 
 ⍝ — An empty pick path returns the whole argument
 ⍬⊃1 2   ⍝ 1 2
@@ -2905,7 +2905,7 @@ u←•UcS ⋄ u ["A⍳" ⋄ "λ😀"]   ⍝ [65 9075 ⋄ 955 128512]ₓ
 ⍝⍝ Characters nesting and empty fill
 
 ⍝ — System functions use ordinary binding and composition
-upper←1⍃•c ⋄ •ucs∘upper "aZ"   ⍝ [65 90]ₓ
+upper←1↣•c ⋄ •ucs∘upper "aZ"   ⍝ [65 90]ₓ
 
 ⍝ — System names resolve when executed
 f←{•missing ⍵} ⋄ 1   ⍝ 1
@@ -3173,7 +3173,7 @@ r←10{⎕←[⍺ ⍵] ⋄ ⍺-⍵}\1 2 3
 [[1 2 3]]   ⍝ ,⊂1 2 3
 
 ⍝ — A named operator takes a grouped operand through the ordinary binding rule
-p←⍣ ⋄ (1⍃+)p(⍳3) 0   ⍝ 0 1 2
+p←⍣ ⋄ (1↣+)p(⍳3) 0   ⍝ 0 1 2
 
 ⍝ — Functions inside brackets are values, including trains
 fs←[+÷≢] ⋄ (↑fs)2 4 9   ⍝ 2 4 9÷3
@@ -3517,7 +3517,7 @@ pick←{⍺⊃⍵} ⋄ wrap←{⍺ pick ⍵} ⋄ ⍬ wrap¨ ⊂"abc"   ⍝ ""
 op←{⍶ ⍵} ⋄ ({100⊃"abc"}op)¨⍬   ⍝ ""
 
 ⍝ — A composed operand derives character fill in empty each
-⍬(⊃⍄⊢)¨⊂"abc"   ⍝ ""
+⍬(⊃↢⊢)¨⊂"abc"   ⍝ ""
 
 ⍝ — Commute preserves prototype-mode Pick
 (⊂1 2 3)⊃⍨¨⍬   ⍝ ⍬
@@ -3579,7 +3579,7 @@ e←¨ ⋄ sum←+/ ⋄ sum e [[1 2] [3 4 5]]   ⍝ 3 12
 f←2¨ ⋄ f 1 2 3   ⍝ 2 2 2
 
 ⍝ —
-f←2⍃3 ⋄ f 1   ⍝ 3
+f←2↣3 ⋄ f 1   ⍝ 3
 
 ⍝ —
 f←+⍥3 ⋄ f 10   ⍝ 3
@@ -3645,16 +3645,16 @@ f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 c←∘ ⋄ sum←+/c⍳ ⋄ sum¨2 4 6   ⍝ 1 6 15
 
 ⍝ — Dyadic Before reshapes the right argument to the left argument's shape
-"abc"⍴⍃⍴'z'   ⍝ "zzz"
+"abc"⍴↣⍴'z'   ⍝ "zzz"
 
 ⍝ — Before combines matrix rows as imaginary and real components
-¯11⍃○⍃+⌿[1 2 3 ⋄ 4 5 6]   ⍝ 4j1 5j2 6j3
+¯11↣○↣+⌿[1 2 3 ⋄ 4 5 6]   ⍝ 4j1 5j2 6j3
 
 ⍝ — Naming Before and reduction preserves their binding
-b←⍃ ⋄ r←⌿ ⋄ ¯11 b ○ b + r [1 2 3 ⋄ 4 5 6]   ⍝ 4j1 5j2 6j3
+b←↣ ⋄ r←⌿ ⋄ ¯11 b ○ b + r [1 2 3 ⋄ 4 5 6]   ⍝ 4j1 5j2 6j3
 
 ⍝ — After chains bind before reduction derives its function
--⍄+⍄×/1 2 3   ⍝ 0
+-↢+↢×/1 2 3   ⍝ 0
 
 ⍝ — Rank assembles differently sized iota cells with padding
 ⍳⍤0 [1 3 2]   ⍝ [0 0 0 ⋄ 0 1 2 ⋄ 0 1 0]
@@ -3710,13 +3710,13 @@ f←{⎕←⍵ ⋄ ⍵} ⋄ 2 +⍥f 3
 1 +⍣{⍺>4} 0   ⍝ 5
 
 ⍝ — Power accepts a singleton-vector stopping result
-(+⍄1)⍣{,⍺=3}0   ⍝ 3
+(+↢1)⍣{,⍺=3}0   ⍝ 3
 
 ⍝ — A stopping result may have any rank but must contain one Boolean
-(+⍄1)⍣{1 1⍴⍺=3}0   ⍝ 3
+(+↢1)⍣{1 1⍴⍺=3}0   ⍝ 3
 
 ⍝ —
-2⍃×⍣0(3)   ⍝ 3
+2↣×⍣0(3)   ⍝ 3
 
 ⍝ — Tolerant Key groups by representatives, not transitive closure
 {≢⍵}⌸[1 1+8E¯15 1+16E¯15]   ⍝ [2 1]ₓ
@@ -3730,11 +3730,11 @@ f←{⎕←⍵ ⋄ ⍵} ⋄ 2 +⍥f 3
 ⍝ error: LENGTH ERROR
 
 ⍝ —
-(+⍄1)⍣{1 1}0
+(+↢1)⍣{1 1}0
 ⍝ error: LENGTH ERROR
 
 ⍝ —
-(+⍄1)⍣{⍬}0
+(+↢1)⍣{⍬}0
 ⍝ error: LENGTH ERROR
 
 ⍝ — Empty Key calls the operand with an empty group retaining the value-cell shape
@@ -3819,7 +3819,7 @@ r←(0 2⍴0)+.{⎕←[⍺ ⍵] ⋄ ⍺×⍵}2 3⍴⍳6
 sum←+/ ⋄ f←{⍵×+⍵} ⋄ [sum 1j2 3j4;-/1j2 3j4 5j6;f 3j4]   ⍝ 4j6 3j4 25
 
 ⍝ — A complex number with a zero imaginary part displays as a float
-⍕¨[1j2×1j¯2;¯0j2;1j2+3j4;+1j2]   ⍝ "5" "¯0j2" "4j6" "1j¯2"
+⍕¨[1j2×1j¯2;¯0j2;1j2+3j4;+1j2]   ⍝ "5" "¯0ⱼ2" "4ⱼ6" "1ⱼ¯2"
 
 ⍝ — Written items keep their own kinds
 •storage¨1ₓ 0.5 1j2   ⍝ "integer" "float" "complex"
@@ -3836,7 +3836,7 @@ sum←+/ ⋄ f←{⍵×+⍵} ⋄ [sum 1j2 3j4;-/1j2 3j4 5j6;f 3j4]   ⍝ 4j6 3j4
 ⍝⍝ Complex comparison errors and recovery
 
 ⍝ — A complex literal requires an imaginary component
-1j
+1ⱼ
 ⍝ error: SYNTAX ERROR
 
 ⍝ —
@@ -3852,7 +3852,7 @@ sum←+/ ⋄ f←{⍵×+⍵} ⋄ [sum 1j2 3j4;-/1j2 3j4 5j6;f 3j4]   ⍝ 4j6 3j4
 ⍝ error: SYNTAX ERROR
 
 ⍝ — Complex components use approximate literals, not exact integers
-1xj2
+1ₓj2
 ⍝ error: SYNTAX ERROR
 
 ⍝ — Complex components cannot use rational-literal syntax
@@ -3903,7 +3903,7 @@ y←1j1.000000000000012 1j1.00000000000002 1j5E¯15 1j5E¯14 0j1E¯100 1.7E308j1
 ⍝ — Output before a complex error still shows
 ⎕←1j2 ⋄ 1j2<0
 ⍝ error: DOMAIN ERROR
-⍝ ⎕: 1j2
+⍝ ⎕: 1ⱼ2
 
 ⍝⍝ Exact literals arithmetic and roundtrips
 
@@ -3930,6 +3930,9 @@ x←1 ⋄ [x 2]ₓ
 ⍝ — ⍕ writes an exact vector in bracket form
 ⍕[1 ¯2]ₓ   ⍝ "[1 ¯2]ₓ"
 
+⍝ — ₓ after rows marks every number in them exact
+(0 1 ⋄ 2 3)ₓ   ⍝ [[0 1]ₓ [2 3]ₓ]
+
 ⍝ — One approximate operand makes division approximate, even when the other is exact
 1ₓ÷2   ⍝ 0.5
 
@@ -3948,7 +3951,7 @@ x←1 ⋄ [x 2]ₓ
 [1ₓ÷0ₓ;÷0ₓ;¯1ₓ÷0ₓ;0ₓ÷0ₓ]   ⍝ [∞ ∞ ¯∞ $n]
 
 ⍝ —
-1r
+1ᵣ
 ⍝ error: SYNTAX ERROR
 
 ⍝ —
@@ -3956,11 +3959,11 @@ x←1 ⋄ [x 2]ₓ
 ⍝ error: SYNTAX ERROR
 
 ⍝ — Exact-number suffixes require integer syntax, not a decimal literal
-1.5x
+1.5ₓ
 ⍝ error: SYNTAX ERROR
 
 ⍝ — Exact-number suffixes do not accept exponent notation
-1E2x
+1E2ₓ
 ⍝ error: SYNTAX ERROR
 
 ⍝ —
@@ -3972,7 +3975,7 @@ x←1 ⋄ [x 2]ₓ
 ⍝ error: SYNTAX ERROR
 
 ⍝ —
-1x2
+1ₓ2
 ⍝ error: SYNTAX ERROR
 
 ⍝ — Exact literals and arithmetic normalise rationals
@@ -4062,11 +4065,11 @@ x←[0.3;0.1+0.2;¯0.3;1;1;1E8;1E8;0;1E¯100;1E308;1r3;1r3;9007199254740993ₓ;1
 y←[0.1+0.2;0.3;¯0.1-0.2;1+5E¯15;1+5E¯14;1E8+5E¯7;1E8+5E¯5;1E¯100;0;¯1E308;2r6;1r2;9007199254740992ₓ;1000000000000001r1000000000000000;1000000000000001r1000000000000000;1÷3]
 [x=y ⋄ x≠y ⋄ x<y ⋄ x≤y ⋄ x>y ⋄ x≥y]
 ⍝ =>
-[$t $t $t $t $f $t $f $f $f $f $t $f $f $f $t $t ⋄
- $f $f $f $f $t $f $t $t $t $t $f $t $t $t $f $f ⋄
- $f $f $f $f $t $f $t $t $f $f $f $t $f $t $f $f ⋄
- $t $t $t $t $t $t $t $t $f $f $t $t $f $t $t $t ⋄
- $f $f $f $f $f $f $f $f $t $t $f $f $t $f $f $f ⋄
+[$t $t $t $t $f $t $f $f $f $f $t $f $f $f $t $t
+ $f $f $f $f $t $f $t $t $t $t $f $t $t $t $f $f
+ $f $f $f $f $t $f $t $t $f $f $f $t $f $t $f $f
+ $t $t $t $t $t $t $t $t $f $f $t $t $f $t $t $t
+ $f $f $f $f $f $f $f $f $t $t $f $f $t $f $f $f
  $t $t $t $t $f $t $f $f $t $t $t $f $t $f $t $t]
 
 ⍝ — An empty exact comparison has an exact fill
@@ -4104,11 +4107,11 @@ missing
 [1÷0;÷0;¯1÷0]   ⍝ ∞ ∞ ¯∞
 
 ⍝ —
-1e
+1ₑ
 ⍝ error: SYNTAX ERROR
 
 ⍝ — A negative exponent uses high minus, not the subtraction glyph
-1e-2
+1ₑ-2
 ⍝ error: SYNTAX ERROR
 
 ⍝ —
@@ -4315,7 +4318,7 @@ each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3   ⍝ 6
 9 10 11○¯∞   ⍝ ¯∞ ∞ 0
 
 ⍝ — Principal Lambert W has limit infinity
-×⍄*⍨⁻¹∞   ⍝ ∞
+×↢*⍨⁻¹∞   ⍝ ∞
 
 ⍝ — Indeterminate real arithmetic gives NaN
 [0÷0;∞-∞;0×∞;∞×0ₓ;∞÷∞]   ⍝ 5⍴$n
@@ -4843,6 +4846,9 @@ a←3 ⋄ a.[]←4 ⋄ a   ⍝ 4
 
 ⍝ —
 v←3 4 ⋄ v₀²+v₁²   ⍝ 25
+
+⍝ — A subscript after a space selects from the whole run before it
+x←1 2 ⋄ [2 3 ₁;x+1 ₁]   ⍝ 3 3
 
 ⍝ —
 [[1 3] [2 4]]⍳⊂1 3   ⍝ 0ₓ
@@ -5442,11 +5448,11 @@ x←1 ⋄ •src "x"
 [[1 0 1 1 0]ₓ;12 0 ¯3 1.5 0]
 
 ⍝ — Preserve numeric domains, signed exponents, fractions and complex components
-•vfi "+2 3x -4x 1r3 -2r-3 1e-2 1j-2 ∞ -∞"
+•vfi "+2 3ₓ -4ₓ 1r3 -2r-3 1e-2 1j-2 ∞ -∞"
 [9⍴1ₓ;2 3ₓ ¯4ₓ 1r3 2r3 0.01 1j¯2 ∞ ¯∞]
 
 ⍝ — An invalid field's zero never makes exact numbers approximate
-•vfi "2x nope"   ⍝ [[1 0]ₓ;2ₓ 0]
+•vfi "2ₓ nope"   ⍝ [[1 0]ₓ;2ₓ 0]
 
 ⍝ — Invalid fractions, malformed numbers and code remain invalid fields. The text NaN is a valid number, as Rust reads it
 •vfi "1r0 1x2 . NaN ⎕←7"

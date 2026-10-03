@@ -83,14 +83,14 @@ remnode ← {  ⍝ Remove vertex ⍵ from graph ⍺.
 
 inslink ← {  ⍝ Graph ⍺ with new edge ⍵.
   [fm to]←⍵  ⍝ edge
-  ∪⍄to∘,@fm ⍺  ⍝ graph with new edge ⍵.
+  ∪↢to∘,@fm ⍺  ⍝ graph with new edge ⍵.
 }
 
 ⍝ From http://dfns.dyalog.com/n_remlink.htm
 
 remlink ← {  ⍝ Graph ⍺ without edge ⍵.
   [fm to]←⍵  ⍝ edge
-  ~⍄[to]@fm ⍺  ⍝ graph without edge ⍵.
+  ~↢[to]@fm ⍺  ⍝ graph without edge ⍵.
 }
 
 ⍝ From http://dfns.dyalog.com/n_search.htm
@@ -111,7 +111,7 @@ path ← {  ⍝ Shortest path from/to ⍵ in graph ⍺.
   graph←⍺ ⋄ [fm to]←,¨⍵  ⍝ graph and entry/exit vertex vectors
   fm{  ⍝ fm is the starting-from vertex
     ⍺≡⍬?⍬;  ⍝ no vertices left: no path
-    ∨/to∊⍺?⍬(⊃⍄⍵){  ⍝ found target: path from tree:
+    ∨/to∊⍺?⍬(⊃↢⍵){  ⍝ found target: path from tree:
       ⍵<0?⍺;  ⍝ root: finished
       (⍵,⍺)∇ ⍶ ⍵
     }1↑⍺∩to;  ⍝ found vertex ⍺
@@ -150,7 +150,7 @@ dfspan ← {  ⍝ Depth-first spanning tree: graph ⍺ from vertex ⍵.
 
 ⍝ From http://dfns.dyalog.com/s_scc.htm
 
-show ← {⊃(⍕¨⍳0+⍴⍵),¨" → "⍃,¨⍕¨⍵}
+show ← {⊃(⍕¨⍳0+⍴⍵),¨" → "↣,¨⍕¨⍵}
 
 ⍝ From http://dfns.dyalog.com/c_scc.htm
 
@@ -204,13 +204,13 @@ cond ← {  ⍝ Condensation of graph ⍵.
 
 stdists ← {  ⍝ Spanning-tree path lengths.
   tree←⍵  ⍝ spanning tree
-  0x{  ⍝ distance from root
+  0ₓ{  ⍝ distance from root
     [next dvec]←⍵  ⍝ chldren and distance vector
     next≡⍬?dvec;  ⍝ no children: finished
     ∆dvec←⍺@next dvec  ⍝ extended distance vector
     ∆next←⍸tree∊,next  ⍝ grandchildren
-    (⍺+1x)∇ [∆next ∆dvec]  ⍝ examine rest of tree
-  }[⍵⍳¯1 ¯1x¨⍵]  ⍝ starting vertex and initial distances
+    (⍺+1ₓ)∇ [∆next ∆dvec]  ⍝ examine rest of tree
+  }[⍵⍳¯1 ¯1ₓ¨⍵]  ⍝ starting vertex and initial distances
 }
 
 ⍝ From http://dfns.dyalog.com/n_stpath.htm
@@ -287,8 +287,8 @@ sudokuX ← {[n n]←⍴⍵  ⍝ Exact cover Sudoku solver.
 
 queensX ← {  ⍝ Exact cover N-Queens.
   m←⍳3#⍵  ⍝ cell coordinate properties.
-  r←=/¨1 0 1⍃#¨m  ⍝ each rank must contain one queen.
-  f←=/¨0 1 1⍃#¨m  ⍝ ..  file  ..     ..      ..
+  r←=/¨1 0 1↣#¨m  ⍝ each rank must contain one queen.
+  f←=/¨0 1 1↣#¨m  ⍝ ..  file  ..     ..      ..
   dm←-/¨⍳2#⍵  ⍝ diagonals.
   du←{[⍋⍵]⌷⍵}∪,dm  ⍝ unique diagnonals.
   x←dm =⊗ du
@@ -318,7 +318,7 @@ wpath ← {  ⍝ Quickest path fm/to ⍵ in weighted graph ⍺.
   [fm to]←⍵  ⍝ start and ending vertices
   tree←¯1¨graph  ⍝ initial spanning tree
   cost←0@fm (⍴costs)⍴∞
-  I←⊃¨⍄⊂  ⍝ helper function: ⍺th items of ⍵
+  I←⊃¨↢⊂  ⍝ helper function: ⍺th items of ⍵
   fm{  ⍝ from starting vertex.
     [acc to]←⍵  ⍝ accumulator and next vertex
     to<0?(to=¯2)↓acc;  ⍝ root or unvisited vertex: finished
@@ -346,7 +346,7 @@ wspan ← {  ⍝ Spanning tree for weighted graph ⍺ from ⍵.
   [graph costs]←↓⍺  ⍝ graph structure and costs.
   tree←¯1¨graph  ⍝ initial spanning tree.
   cost←0@⍵ (⍴costs)⍴∞
-  I←⊃¨⍄⊂  ⍝ helper function: ⍺th items of ⍵
+  I←⊃¨↢⊂  ⍝ helper function: ⍺th items of ⍵
   ⍵{  ⍝ from starting vertex.
     [tree cost]←⍵  ⍝ current tree and costs
     ⍺≡⍬?tree;  ⍝ all vertices visited: done

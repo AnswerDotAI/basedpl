@@ -3,11 +3,16 @@ use crate::{
     array::{generated_len, Axis, Frame as ResultFrame, Gather},
     primitive::{integer, push_window, FoldKind, OperandKind, OperatorKind, Primitive, Selection, Superscript, Targets, WindowAxis},
     selection::SelectionKind,
+    execution::Context,
     syntax::{Definition, DefinitionKind, Node, NodeKind, StatementKind},
     DomainAt, Error, ErrorAt, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value,
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
-use std::{borrow::Cow, sync::Arc};
+use std::{
+    borrow::Cow,
+    convert::Infallible,
+    sync::Arc,
+};
 
 #[derive(Clone, Debug)]
 pub struct Function { node: Arc<FunctionData> }
@@ -16,7 +21,43 @@ pub struct Function { node: Arc<FunctionData> }
 #[derive(Debug)]
 struct FunctionData { kind: FunctionNode, environment: Option<usize>, late: bool }
 
-impl PartialEq for Function { fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&self.node, &other.node) } }
+/// Compares the values held in functions and operators: exactly for `==`, or by `≡`'s rule for `matches`.
+type ValueRule<'a, E> = dyn FnMut(&Value, &Value) -> Result<bool, E> + 'a;
+fn same_values(x: &Value, y: &Value) -> Result<bool, Infallible> { Ok(x.same(y)) }
+
+impl Function {
+    /// Whether the functions are built from matching parts, with `values` comparing the values in them. A dfn matches only itself, and a
+    /// late-bound name matches the same expression.
+    fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
+        use FunctionNode as N;
+        if Arc::ptr_eq(&self.node, &other.node) { return Ok(true); }
+        Ok(match (&self.node.kind, &other.node.kind) {
+            (N::Primitive(x), N::Primitive(y)) => x == y,
+            (N::System(x), N::System(y)) => x == y,
+            (N::LateBound(_, x), N::LateBound(_, y)) => x.source.text == y.source.text,
+            (N::Fold(f, x), N::Fold(g, y)) => x == y && f.equal_by(g, values)?,
+            (N::Inverse(f), N::Inverse(g)) => f.equal_by(g, values)?,
+            (N::Axis(f, a), N::Axis(g, b)) => f.equal_by(g, values)? && values(a, b)?,
+            (N::Defined(x), N::Defined(y)) => x == y,
+            (N::Derived(c, a, b), N::Derived(d, x, y)) => c == d && a.equal_by(x, values)? && match (b, y) {
+                (Some(b), Some(y)) => b.equal_by(y, values)?,
+                (b, y) => b.is_none() && y.is_none(),
+            },
+            (N::Modified(o, a), N::Modified(p, b)) => o == p && a.equal_by(b, values)?,
+            (N::Composed(o, [a, b]), N::Composed(p, [x, y])) => o == p && a.equal_by(x, values)? && b.equal_by(y, values)?,
+            (N::Fork([f, g, h]), N::Fork([x, y, z])) => f.equal_by(x, values)? && g.equal_by(y, values)? && h.equal_by(z, values)?,
+            _ => false,
+        })
+    }
+    /// Whether the functions match, as `≡` compares them: built from matching parts, with `≡`'s rule for the values in them.
+    pub(crate) fn matches(&self, other: &Self, cx: &Context<'_>) -> Result<bool, Error> { self.equal_by(other, &mut |x, y| x.matches(y, cx)) }
+}
+impl PartialEq for Function {
+    fn eq(&self, other: &Self) -> bool {
+        let Ok(equal) = self.equal_by(other, &mut same_values);
+        equal
+    }
+}
 
 const MAX_RESOLUTION_DEPTH: usize = 128;
 const MAX_CALL_DEPTH: usize = 20_000;
@@ -134,28 +175,26 @@ impl Function {
         labels: &Value,
         actual: Option<&Value>,
         kind: SelectionKind,
-        span: &Span,
-        session: &mut Session,
-        output: &mut Vec<Output>,
+        cx: &mut Context<'_>,
     ) -> Result<Option<(Value, SelectionKind)>, Error> {
         match self.node() {
             FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(g), Operand::Function(h)]) => {
-                let Some((labels, kind)) = h.select(left, labels, actual, kind, span, session, output)? else { return Ok(None) };
-                let actual = actual.map(|a| h.call_array(left, a, span, session, output)).transpose()?;
-                return g.select(None, &labels, actual.as_ref(), kind, span, session, output);
+                let Some((labels, kind)) = h.select(left, labels, actual, kind, cx)? else { return Ok(None) };
+                let actual = actual.map(|a| h.call_array(left, a, cx)).transpose()?;
+                return g.select(None, &labels, actual.as_ref(), kind, cx);
             }
             FunctionNode::Fork([f, g, h]) => {
                 let Some(actual) = actual else { return Ok(None) };
                 let (path, other, g) = match g.node() { FunctionNode::Modified(OperatorKind::Commute, Operand::Function(g)) => (f, h, g), _ => (h, f, g) };
-                let Some((labels, kind)) = path.select(left, labels, Some(actual), kind, span, session, output)? else { return Ok(None) };
-                let x = other.call_array(left, actual, span, session, output)?;
-                let along = path.call_array(left, actual, span, session, output)?;
-                return g.select(Some(&x), &labels, Some(&along), kind, span, session, output);
+                let Some((labels, kind)) = path.select(left, labels, Some(actual), kind, cx)? else { return Ok(None) };
+                let x = other.call_array(left, actual, cx)?;
+                let along = path.call_array(left, actual, cx)?;
+                return g.select(Some(&x), &labels, Some(&along), kind, cx);
             }
             _ => {}
         }
         let Some(kind) = self.selection_kind(left, labels, kind) else { return Ok(None) };
-        Ok(Some((self.call_array(left, labels, span, session, output)?, kind)))
+        Ok(Some((self.call_array(left, labels, cx)?, kind)))
     }
     fn tree(&self, budget: &mut usize) -> crate::display::Tree {
         use crate::display::Tree;
@@ -213,7 +252,7 @@ impl Function {
     }
     /// A train, built from its last function leftwards. A subject directly before what's built binds to it. A function
     /// makes a fork with the item before it, which can be a subject. A function left over at the start
-    /// makes an atop. So `32+1.8×` is `(32⍃+)∘(1.8⍃×)`, and `2×-⌽` is `2⍃(×-⌽)`.
+    /// makes an atop. So `32+1.8×` is `(32↣+)∘(1.8↣×)`, and `2×-⌽` is `2↣(×-⌽)`.
     fn train(mut tines: Vec<Tine>, span: &Span) -> Result<Self, Error> {
         let Some(Tine::Function(mut result)) = tines.pop() else { unreachable!("a train ends in a function") };
         while let Some(tine) = tines.pop() {
@@ -284,22 +323,22 @@ impl Function {
         };
         Ok(Self { node: Arc::new(FunctionData { kind: node, environment, late }) })
     }
-    fn call(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
-        session.execution.check(span)?;
-        if session.depth == MAX_CALL_DEPTH { return Err(span.error(ErrorKind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}"))); }
-        session.depth += 1;
+    fn call(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+        cx.check()?;
+        if cx.session.depth == MAX_CALL_DEPTH { return Err(cx.span.error(ErrorKind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}"))); }
+        cx.session.depth += 1;
         let result = stacker::maybe_grow(STACK_RED_ZONE, STACK_SEGMENT, || {
-            if self.late() { self.resolve(session, output, &mut HashMap::new(), 0).and_then(|f| f.apply(left, right, span, session, output)) } else { self.apply(left, right, span, session, output) }
+            if self.late() { self.resolve(cx.session, &mut HashMap::new(), 0).and_then(|f| f.apply(left, right, cx)) } else { self.apply(left, right, cx) }
         });
-        session.depth -= 1;
-        session.execution.check(span)?;
+        cx.session.depth -= 1;
+        cx.check()?;
         result
     }
-    fn call_array(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Value, Error> {
-        self.call(left, right, span, session, output)?.array(span)
+    fn call_array(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+        self.call(left, right, cx)?.array(cx.span)
     }
-    fn call_prototype(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
-        session.prototype_mode(true, |session| self.call(left, right, span, session, output))
+    fn call_prototype(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+        cx.prototype_mode(true, |cx| self.call(left, right, cx))
     }
     fn inverse(&self, span: &Span) -> Result<Self, Error> {
         match self.node() {
@@ -310,7 +349,7 @@ impl Function {
             _ => Self::new(FunctionNode::Inverse(self.clone()), span),
         }
     }
-    fn resolve(&self, session: &mut Session, output: &mut Vec<Output>, resolved: &mut HashMap<usize, (Self, Self)>, depth: usize) -> Result<Self, Error> {
+    fn resolve(&self, session: &mut Session, resolved: &mut HashMap<usize, (Self, Self)>, depth: usize) -> Result<Self, Error> {
         if !self.late() { return Ok(self.clone()); }
         let id = Arc::as_ptr(&self.node) as usize;
         if let Some((_, f)) = resolved.get(&id) { return Ok(f.clone()); }
@@ -318,16 +357,16 @@ impl Function {
             session.execution.check(origin)?;
             if depth >= MAX_RESOLUTION_DEPTH { return Err(origin.error(ErrorKind::Limit, "late-bound function resolution exceeds 128 levels")); }
             let caller = session.current.take();
-            let bound = session.bind(&parsed.statements[0].nodes, output);
+            let bound = session.bind(&parsed.statements[0].nodes);
             session.current = caller;
-            Self::from_value(bound?.value, origin)?.resolve(session, output, resolved, depth + 1)?
+            Self::from_value(bound?.value, origin)?.resolve(session, resolved, depth + 1)?
         } else {
-            let mut fun = |f: &Self| f.resolve(session, output, resolved, depth + 1);
+            let mut fun = |f: &Self| f.resolve(session, resolved, depth + 1);
             fn operand(a: &Operand, fun: &mut impl FnMut(&Function) -> Result<Function, Error>) -> Result<Operand, Error> {
                 Ok(match a { Operand::Function(f) => Operand::Function(fun(f)?), _ => a.clone() })
             }
             let node = match self.node() {
-                FunctionNode::Fold(f, h) => FunctionNode::Fold(fun(f)?, h.clone()),
+                FunctionNode::Fold(f, h) => FunctionNode::Fold(fun(f)?, *h),
                 FunctionNode::Inverse(f) => FunctionNode::Inverse(fun(f)?),
                 FunctionNode::Axis(f, a) => FunctionNode::Axis(fun(f)?, a.clone()),
                 FunctionNode::Derived(c, a, b) => {
@@ -344,16 +383,16 @@ impl Function {
         resolved.insert(id, (self.clone(), result.clone()));
         Ok(result)
     }
-    fn apply(&self, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
+    fn apply(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         use FunctionNode::{Defined, Derived, Fold, Fork};
         let array = match self.node() {
             FunctionNode::LateBound(..) => unreachable!(),
-            FunctionNode::Primitive(Primitive::Execute) => return session.execute(left, right, span, output),
-            FunctionNode::Inverse(f) => return inverse(f, left.map(|a| (a, true)), right, span, session, output),
-            FunctionNode::Composed(op, operands) => return composition(*op, operands, left, right, span, session, output),
-            FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => return each(f, left, right, span, session, output),
-            FunctionNode::Modified(OperatorKind::Outer, Operand::Function(f)) => return outer(f, left, right, span, session, output),
-            FunctionNode::Modified(OperatorKind::Key, Operand::Function(f)) => return key(f, left, right, span, session, output),
+            FunctionNode::Primitive(Primitive::Execute) => return cx.session.execute(left, right, cx.span),
+            FunctionNode::Inverse(f) => return inverse(f, left.map(|a| (a, true)), right, cx),
+            FunctionNode::Composed(op, operands) => return composition(*op, operands, left, right, cx),
+            FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => return each(f, left, right, cx),
+            FunctionNode::Modified(OperatorKind::Outer, Operand::Function(f)) => return outer(f, left, right, cx),
+            FunctionNode::Modified(OperatorKind::Key, Operand::Function(f)) => return key(f, left, right, cx),
             FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(f)) => {
                 let (mut f, mut order) = (f, 1);
                 while let FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(inner)) = f.node() {
@@ -364,46 +403,46 @@ impl Function {
                     FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(p)])
                         if matches!(p.node(), FunctionNode::Primitive(Primitive::Polynomial)) =>
                     {
-                        crate::polynomial::derivative(a, order, left, right, &session.execution.at(span))
+                        crate::polynomial::derivative(a, order, left, right, cx)
                     }
-                    _ => Err(span.domain_error("differentiation currently requires a bound polynomial evaluator")),
+                    _ => Err(cx.span.domain_error("differentiation currently requires a bound polynomial evaluator")),
                 }
             }
-            FunctionNode::Modified(OperatorKind::Commute, Operand::Function(f)) => return f.call(Some(right), left.unwrap_or(right), span, session, output),
+            FunctionNode::Modified(OperatorKind::Commute, Operand::Function(f)) => return f.call(Some(right), left.unwrap_or(right), cx),
             FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)) => Ok(a.clone()),
             FunctionNode::Modified(..) => unreachable!(),
             FunctionNode::Primitive(p) if matches!((p, left), (Primitive::Mix, Some(_)) | (Primitive::Take, None)) => {
-                let item = crate::primitive::pick(left.unwrap_or(&crate::primitive::integer(0)), right, session.prototype, &session.execution.at(span))?;
+                let item = crate::primitive::pick(left.unwrap_or(&crate::primitive::integer(0)), right, cx.session.prototype, cx)?;
                 return Ok(Bound::from(item));
             }
-            FunctionNode::Primitive(p) => p.call(left, right, &session.execution.at(span)),
+            FunctionNode::Primitive(p) => p.call(left, right, cx),
             FunctionNode::System(f) => {
-                f.check(left, span)?;
+                f.check(left, cx.span)?;
                 match &f.call {
-                    crate::system::Call::Value(call) => call(left, right, &session.execution.at(span)),
-                    crate::system::Call::Element(tag) => crate::xml::element(tag, left, right, &session.execution.at(span)),
-                    crate::system::Call::Mime => session.mime_value(right, span, output),
-                    crate::system::Call::Session(call) => call(session, left, right, span),
-                    crate::system::Call::Time => session.system_time(left, right, span, output),
-                    crate::system::Call::Regex(regex, operation) => crate::regex::call(regex, *operation, left, right, &session.execution.at(span)),
-                    crate::system::Call::Distribution(d, operation) => crate::distribution::call(d, *operation, left, right, &session.execution.at(span)),
-                    crate::system::Call::Generator(g, draw) => crate::distribution::generator_call(g, *draw, left, right, &session.execution.at(span)),
-                    crate::system::Call::Load => return session.load(right, span, output),
+                    crate::system::Call::Value(call) => call(left, right, cx),
+                    crate::system::Call::Element(tag) => crate::xml::element(tag, left, right, cx),
+                    crate::system::Call::Mime => cx.session.mime(left, right, cx.span),
+                    crate::system::Call::Session(call) => call(cx.session, left, right, cx.span),
+                    crate::system::Call::Time => cx.session.system_time(left, right, cx.span),
+                    crate::system::Call::Regex(regex, operation) => crate::regex::call(regex, *operation, left, right, cx),
+                    crate::system::Call::Distribution(d, operation) => crate::distribution::call(d, *operation, left, right, cx),
+                    crate::system::Call::Generator(g, draw) => crate::distribution::generator_call(g, *draw, left, right, cx),
+                    crate::system::Call::Load => return cx.session.load(right, cx.span),
                 }
             }
             Defined(_) | Derived(..) => {
-                return session.call_defined(self, left, right, output).map_err(|mut e| { e.calls.push(span.clone()); e })
+                return cx.session.call_defined(self, left, right).map_err(|mut e| { e.calls.push(cx.span.clone()); e })
             }
             Fork(fns) => {
-                let y = fns[2].call_array(left, right, span, session, output)?;
-                let x = fns[0].call_array(left, right, span, session, output)?;
-                return fns[1].call(Some(&x), &y, span, session, output);
+                let y = fns[2].call_array(left, right, cx)?;
+                let x = fns[0].call_array(left, right, cx)?;
+                return fns[1].call(Some(&x), &y, cx);
             }
-            Fold(operand, kind) => fold(operand, *kind, None, left, right, span, session, output),
+            Fold(operand, kind) => fold(operand, *kind, None, left, right, cx),
             FunctionNode::Axis(f, axis) => match f.node() {
-                FunctionNode::Primitive(p) if p.takes_axes(left.is_some()) => p.call_axes(left, right, axis, &session.execution.at(span)),
-                Fold(operand, h) => fold(operand, *h, Some(axis), left, right, span, session, output),
-                _ => return cell_axes(f, axis, left, right, span, session, output),
+                FunctionNode::Primitive(p) if p.takes_axes(left.is_some()) => p.call_axes(left, right, axis, cx),
+                Fold(operand, h) => fold(operand, *h, Some(axis), left, right, cx),
+                _ => return cell_axes(f, axis, left, right, cx),
             },
         }?;
         Ok(Bound::from(array))
@@ -470,68 +509,66 @@ fn composition(
     operands: &[Operand; 2],
     left: Option<&Value>,
     right: &Value,
-    span: &Span,
-    session: &mut Session,
-    output: &mut Vec<Output>,
+    cx: &mut Context<'_>,
 ) -> Result<Bound, Error> {
     use OperatorKind::*;
-    if matches!(op, At) { return at(operands, left, right, span, session, output); }
-    if matches!(op, Agenda) { return agenda(operands, left, right, span, session, output); }
+    if matches!(op, At) { return at(operands, left, right, cx); }
+    if matches!(op, Agenda) { return agenda(operands, left, right, cx); }
     if matches!(op, Stencil) {
         let [Operand::Function(f), Operand::Value(spec)] = operands else {
-            return Err(span.domain_error("stencil needs a function and window specification"));
+            return Err(cx.span.domain_error("stencil needs a function and window specification"));
         };
-        if left.is_some() { return Err(span.error(ErrorKind::Syntax, "stencil is monadic")); }
-        return stencil(f, spec, right, span, session, output);
+        if left.is_some() { return Err(cx.span.error(ErrorKind::Syntax, "stencil is monadic")); }
+        return stencil(f, spec, right, cx);
     }
-    if matches!(op, Power) { return power(operands, left, right, span, session, output); }
+    if matches!(op, Power) { return power(operands, left, right, cx); }
     match (&operands[0], &operands[1]) {
         (Operand::Value(a), Operand::Function(f)) if matches!(op, Before) => {
-            if left.is_some() { return Err(span.error(ErrorKind::Syntax, "a bound function takes one argument")); }
-            f.call(Some(a), right, span, session, output)
+            if left.is_some() { return Err(cx.span.error(ErrorKind::Syntax, "a bound function takes one argument")); }
+            f.call(Some(a), right, cx)
         }
         (Operand::Function(f), Operand::Value(a)) if matches!(op, After) => {
-            if left.is_some() { return Err(span.error(ErrorKind::Syntax, "a bound function takes one argument")); }
-            f.call(Some(right), a, span, session, output)
+            if left.is_some() { return Err(cx.span.error(ErrorKind::Syntax, "a bound function takes one argument")); }
+            f.call(Some(right), a, cx)
         }
-        (Operand::Function(f), Operand::Value(ranks)) if matches!(op, Rank) => rank(f, ranks, left, right, span, session, output),
+        (Operand::Function(f), Operand::Value(ranks)) if matches!(op, Rank) => rank(f, ranks, left, right, cx),
         (Operand::Function(f), Operand::Function(g)) => match op {
-            PairInverse => f.call(left, right, span, session, output),
+            PairInverse => f.call(left, right, cx),
             Valences => {
-                if left.is_some() { g.call(left, right, span, session, output) } else { f.call(None, right, span, session, output) }
+                if left.is_some() { g.call(left, right, cx) } else { f.call(None, right, cx) }
             }
-            Product => inner(f, g, left, right, span, session, output),
+            Product => inner(f, g, left, right, cx),
             After => {
-                let y = g.call_array(None, right, span, session, output)?;
-                f.call(Some(left.unwrap_or(right)), &y, span, session, output)
+                let y = g.call_array(None, right, cx)?;
+                f.call(Some(left.unwrap_or(right)), &y, cx)
             }
             Atop => {
-                let y = g.call_array(left, right, span, session, output)?;
-                f.call(None, &y, span, session, output)
+                let y = g.call_array(left, right, cx)?;
+                f.call(None, &y, cx)
             }
             Over | Under => {
-                let y = g.call_array(None, right, span, session, output)?;
-                let x = left.map(|x| g.call_array(None, x, span, session, output)).transpose()?;
-                let result = f.call(x.as_ref(), &y, span, session, output)?;
+                let y = g.call_array(None, right, cx)?;
+                let x = left.map(|x| g.call_array(None, x, cx)).transpose()?;
+                let result = f.call(x.as_ref(), &y, cx)?;
                 if !matches!(op, Under) { return Ok(result); }
                 // A structural `g` puts the result back where it took it from. Otherwise its inverse undoes it.
-                let result = result.array(span)?;
-                let (labels, labelled) = crate::selection::Labels::new(right, span)?;
-                match g.select(None, &labelled, Some(right), SelectionKind::Item, span, session, output)? {
+                let result = result.array(cx.span)?;
+                let (labels, labelled) = crate::selection::Labels::new(right, cx.span)?;
+                match g.select(None, &labelled, Some(right), SelectionKind::Item, cx)? {
                     Some((selected, kind)) => {
-                        let (selection, values) = labels.replacements(&selected, &result, kind, span)?;
-                        Ok(Bound::from(selection.write(right, &values, &session.execution.at(span))?))
+                        let (selection, values) = labels.replacements(&selected, &result, kind, cx.span)?;
+                        Ok(Bound::from(selection.write(right, &values, cx)?))
                     }
-                    None => g.inverse(span)?.call(None, &result, span, session, output),
+                    None => g.inverse(cx.span)?.call(None, &result, cx),
                 }
             }
             Before => {
-                let x = f.call_array(None, left.unwrap_or(right), span, session, output)?;
-                g.call(Some(&x), right, span, session, output)
+                let x = f.call_array(None, left.unwrap_or(right), cx)?;
+                g.call(Some(&x), right, cx)
             }
             _ => unreachable!(),
         },
-        _ => Err(span.domain_error("invalid operator operands")),
+        _ => Err(cx.span.domain_error("invalid operator operands")),
     }
 }
 
@@ -541,51 +578,51 @@ fn agenda_index(index: &Value, len: usize, span: &Span) -> Result<usize, Error> 
     crate::primitive::position(&n, len, span)
 }
 
-fn agenda(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
+fn agenda(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let [selector, Operand::Value(fs)] = operands else { unreachable!() };
-    let index = match selector { Operand::Value(a) => a.clone(), Operand::Function(f) => f.call_array(left, right, span, session, output)? };
-    let Value::Function(f) = fs.at(agenda_index(&index, fs.len(), span)?) else { unreachable!() };
-    f.call(left, right, span, session, output)
+    let index = match selector { Operand::Value(a) => a.clone(), Operand::Function(f) => f.call_array(left, right, cx)? };
+    let Value::Function(f) = fs.at(agenda_index(&index, fs.len(), cx.span)?) else { unreachable!() };
+    f.call(left, right, cx)
 }
 
 /// The positions a Boolean mask selects. The mask has the argument's shape.
-fn mask_selection(mask: &Value, right: &Value, span: &Span, session: &Session) -> Result<Selection, Error> {
-    if mask.shape() != right.shape() { return Err(span.error(ErrorKind::Length, "at mask must match argument shape")); }
-    let offsets = crate::primitive::mask_offsets(mask, &session.execution.at(span))?;
+fn mask_selection(mask: &Value, right: &Value, cx: &Context<'_>) -> Result<Selection, Error> {
+    if mask.shape() != right.shape() { return Err(cx.error(ErrorKind::Length, "at mask must match argument shape")); }
+    let offsets = crate::primitive::mask_offsets(mask, cx)?;
     Ok(Selection { frame: ResultFrame::Array(vec![offsets.len()].into()), targets: Targets::Offsets(offsets) })
 }
 
-fn at(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
+fn at(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     // A Boolean array is a mask. Other arrays give positions. A selector function's result follows the same rule.
     let selector = match &operands[1] {
         Operand::Value(a) => a.clone(),
-        Operand::Function(f) => f.call_array(None, right, span, session, output)?,
+        Operand::Function(f) => f.call_array(None, right, cx)?,
     };
     let selection = if selector.as_booleans().is_some() {
-        mask_selection(&selector, right, span, session)?
+        mask_selection(&selector, right, cx)?
     } else {
-        crate::primitive::at_indices(right, &selector, &session.execution.at(span))?
+        crate::primitive::at_indices(right, &selector, cx)?
     };
     let values = match &operands[0] {
         Operand::Value(a) => a.clone(),
-        Operand::Function(f) => f.call_array(left, &selection.read(right, &session.execution.at(span))?, span, session, output)?,
+        Operand::Function(f) => f.call_array(left, &selection.read(right, cx)?, cx)?,
     };
-    let array = selection.write(right, &values, &session.execution.at(span))?;
+    let array = selection.write(right, &values, cx)?;
     Ok(Bound::from(array))
 }
 
-fn stencil(f: &Function, spec: &Value, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
-    let (sizes, movements) = crate::primitive::window_spec(spec, right.shape().len(), span)?;
-    if sizes.is_empty() { return Err(span.domain_error("stencil needs at least one axis")); }
-    if sizes.iter().chain(&movements).any(|&n| n <= 0) { return Err(span.domain_error("stencil sizes and movements must be positive")); }
+fn stencil(f: &Function, spec: &Value, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+    let (sizes, movements) = crate::primitive::window_spec(spec, right.shape().len(), cx.span)?;
+    if sizes.is_empty() { return Err(cx.span.domain_error("stencil needs at least one axis")); }
+    if sizes.iter().chain(&movements).any(|&n| n <= 0) { return Err(cx.span.domain_error("stencil sizes and movements must be positive")); }
     let (axes, sizes): (usize, Vec<usize>) = (sizes.len(), sizes.iter().map(|&n| n as usize).collect());
     let windows: Vec<_> =
         sizes.iter().enumerate().map(|(a, &size)| WindowAxis { size, step: movements.get(a).map_or(1, |&m| m as usize), padded: true }).collect();
-    if windows.iter().zip(right.shape()).any(|(w, &len)| !w.fits(len)) { return Err(span.domain_error("stencil window is too large for the argument")); }
+    if windows.iter().zip(right.shape()).any(|(w, &len)| !w.fits(len)) { return Err(cx.span.domain_error("stencil window is too large for the argument")); }
     let frame: Vec<_> = windows.iter().zip(right.shape()).map(|(w, &len)| w.count(len)).collect();
     let shape = [sizes.as_slice(), &right.shape()[axes..]].concat();
-    let size = generated_len(&shape).error_at(span, "stencil window is too large")?;
-    let count = generated_len(&frame).error_at(span, "stencil result is too large")?;
+    let size = generated_len(&shape).error_at(cx.span, "stencil window is too large")?;
+    let count = generated_len(&frame).error_at(cx.span, "stencil result is too large")?;
     let mut results = Vec::with_capacity(count);
     for position in 0..count {
         let mut starts = vec![0isize; axes];
@@ -603,23 +640,23 @@ fn stencil(f: &Function, spec: &Value, right: &Value, span: &Span, session: &mut
                 right.keys(a).map(|k| k.select((starts[a] as usize..starts[a] as usize + sizes[a]).map(Some))).transpose()
             })
             .collect::<Result<_, _>>()
-            .error_at(span, "invalid stencil window keys")?;
+            .error_at(cx.span, "invalid stencil window keys")?;
         let layout =
-            crate::array::Layout::from(shape.clone()).with_keys(keys).error_at(span, "invalid stencil window")?.inherit_names(right.axis_names().to_vec());
-        let window = data.finish(layout, || right.prototype()).error_at(span, "invalid stencil window")?;
+            crate::array::Layout::from(shape.clone()).with_keys(keys).error_at(cx.span, "invalid stencil window")?.inherit_names(right.axis_names().to_vec());
+        let window = data.finish(layout, || right.prototype()).error_at(cx.span, "invalid stencil window")?;
         let border = Value::floats(vec![axes], padding).unwrap();
-        results.push(f.call_array(Some(&border), &window, span, session, output)?);
+        results.push(f.call_array(Some(&border), &window, cx)?);
     }
     let mut layout = right.layout().axes(0..axes);
     for (a, &len) in frame.iter().enumerate() {
         let positions = (0..len).map(|i| Some(i * windows[a].step));
-        layout = layout.select(a, positions).error_at(span, "invalid stencil frame keys")?;
+        layout = layout.select(a, positions).error_at(cx.span, "invalid stencil frame keys")?;
     }
-    let result = layout.assemble(&results, &Value::number(0.).unwrap()).error_at(span, "invalid stencil result")?;
+    let result = layout.assemble(&results, &Value::number(0.).unwrap()).error_at(cx.span, "invalid stencil result")?;
     Ok(Bound::from(result))
 }
 
-fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
+fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let [Operand::Function(f), operand] = operands else { unreachable!() };
     // A one-item list holding a predicate keeps every state of the until form.
     let listed = match operand {
@@ -630,10 +667,10 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Sp
     let operand = listed.as_ref().unwrap_or(operand);
     // `∞` runs until the state stops changing, the same test as `⍣≡`.
     let matched = Function::primitive(Primitive::Depth);
-    let converge = |step: &Function, value: &mut Value, session: &mut Session, output: &mut Vec<Output>| -> Result<(), Error> {
+    let converge = |step: &Function, value: &mut Value, cx: &mut Context<'_>| -> Result<(), Error> {
         loop {
-            let next = step.call_array(left, value, span, session, output)?;
-            let same = matched.call_array(Some(&next), value, span, session, output)?.boolean().error_at(span, "invalid match")?;
+            let next = step.call_array(left, value, cx)?;
+            let same = matched.call_array(Some(&next), value, cx)?.boolean().error_at(cx.span, "invalid match")?;
             *value = next;
             if same { return Ok(()); }
         }
@@ -641,22 +678,22 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Sp
     let mut value = right.clone();
     match operand {
         Operand::Value(count) if count.is_atom() => {
-            let Some(Value::Number(n)) = count.elements().next() else { return Err(span.domain_error("power counts must be numeric")) };
-            let (negative, n) = power_count(&n, span)?;
+            let Some(Value::Number(n)) = count.elements().next() else { return Err(cx.span.domain_error("power counts must be numeric")) };
+            let (negative, n) = power_count(&n, cx.span)?;
             let inverse;
-            let f = if negative { inverse = f.inverse(span)?; &inverse } else { f };
-            if n == usize::MAX { converge(f, &mut value, session, output)?; } else {
+            let f = if negative { inverse = f.inverse(cx.span)?; &inverse } else { f };
+            if n == usize::MAX { converge(f, &mut value, cx)?; } else {
                 for i in 0..n {
-                    let result = f.call(left, &value, span, session, output)?;
+                    let result = f.call(left, &value, cx)?;
                     if i + 1 == n { return Ok(result); }
-                    value = result.array(span)?;
+                    value = result.array(cx.span)?;
                 }
             }
         }
         // An array of counts gives one item for each count, holding the state after that many steps.
         Operand::Value(count) => {
             let mut counts = Vec::new();
-            power_counts(count, span, &mut counts)?;
+            power_counts(count, cx.span, &mut counts)?;
             counts.sort_unstable();
             counts.dedup();
             let mut states = HashMap::new();
@@ -664,35 +701,35 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Sp
             for c in counts {
                 if c.0 && !negative {
                     (value, negative, steps) = (right.clone(), true, 0);
-                    inverse = Some(f.inverse(span)?);
+                    inverse = Some(f.inverse(cx.span)?);
                 }
                 let step = inverse.as_ref().unwrap_or(f);
-                if c.1 == usize::MAX { converge(step, &mut value, session, output)?; }
+                if c.1 == usize::MAX { converge(step, &mut value, cx)?; }
                 else {
-                    for _ in steps..c.1 { value = step.call_array(left, &value, span, session, output)?; }
+                    for _ in steps..c.1 { value = step.call_array(left, &value, cx)?; }
                 }
                 steps = c.1;
                 states.insert(c, value.clone());
             }
-            value = power_states(count, &states, right, span)?;
+            value = power_states(count, &states, right, cx.span)?;
         }
         Operand::Function(test) => {
             let mut states = if history { vec![value.clone()] } else { Vec::new() };
             loop {
-                let next = f.call_array(left, &value, span, session, output)?;
-                let done = test.call_array(Some(&next), &value, span, session, output)?;
-                let done = done.boolean().error_at(span, "power predicate must return a Boolean singleton")?;
+                let next = f.call_array(left, &value, cx)?;
+                let done = test.call_array(Some(&next), &value, cx)?;
+                let done = done.boolean().error_at(cx.span, "power predicate must return a Boolean singleton")?;
                 value = next;
                 if history {
-                    generated_len(&[states.len() + 1]).error_at(span, "history is too long")?;
+                    generated_len(&[states.len() + 1]).error_at(cx.span, "history is too long")?;
                     states.push(value.clone());
                 }
                 if done { break; }
             }
             if history {
-                let items = states.iter().map(|s| s.enclose()).collect::<Result<Vec<_>, _>>().error_at(span, "history result is too large")?;
-                value = Value::assemble(&[items.len()], &items, &right.enclose().error_at(span, "history result is too large")?)
-                    .error_at(span, "history result is too large")?;
+                let items = states.iter().map(|s| s.enclose()).collect::<Result<Vec<_>, _>>().error_at(cx.span, "history result is too large")?;
+                value = Value::assemble(&[items.len()], &items, &right.enclose().error_at(cx.span, "history result is too large")?)
+                    .error_at(cx.span, "history result is too large")?;
             }
         }
     }
@@ -730,106 +767,105 @@ fn power_states(count: &Value, states: &HashMap<(bool, usize), Value>, right: &V
     count.layout().assemble(&items, &right.enclose().error_at(span, "power result is too large")?).error_at(span, "power result is too large")
 }
 
-fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
+fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     use FunctionNode::*;
     use OperatorKind::*;
     let left = bound.map(|(a, _)| a);
     let first = bound.is_none_or(|(_, first)| first);
     let operand_inverse = |g: &Function| {
-        let g = if first { g.clone() } else { Function::new(Modified(Commute, Operand::Function(g.clone())), span)? };
-        g.inverse(span)
+        let g = if first { g.clone() } else { Function::new(Modified(Commute, Operand::Function(g.clone())), cx.span)? };
+        g.inverse(cx.span)
     };
     let array = match f.node() {
-        Primitive(p) => crate::primitive::inverse(*p, bound, right, None, &session.execution.at(span)),
-        Composed(PairInverse, [_, Operand::Function(g)]) if first => return g.call(left, right, span, session, output),
+        Primitive(p) => crate::primitive::inverse(*p, bound, right, None, cx),
+        Composed(PairInverse, [_, Operand::Function(g)]) if first => return g.call(left, right, cx),
         Composed(Under, [Operand::Function(g), h]) => {
-            return composition(Under, &[Operand::Function(operand_inverse(g)?), h.clone()], left, right, span, session, output)
+            return composition(Under, &[Operand::Function(operand_inverse(g)?), h.clone()], left, right, cx)
         }
-        Inverse(g) if first => return g.call(left, right, span, session, output),
-        Modified(Each, Operand::Function(g)) => return each(&operand_inverse(g)?, left, right, span, session, output),
+        Inverse(g) if first => return g.call(left, right, cx),
+        Modified(Each, Operand::Function(g)) => return each(&operand_inverse(g)?, left, right, cx),
         Modified(Outer, Operand::Function(g)) => {
-            let bound = left.ok_or_else(|| span.domain_error("outer-product inverse needs a bound argument"))?;
-            inverse_outer(g, bound, first, right, span, session, output)
+            let bound = left.ok_or_else(|| cx.span.domain_error("outer-product inverse needs a bound argument"))?;
+            inverse_outer(g, bound, first, right, cx)
         }
         Modified(Commute, Operand::Value(k)) => {
-            if !crate::primitive::array_match(k, right, &session.execution.at(span))? {
-                return Err(span.domain_error("a constant function gives only its own value"));
+            if !k.matches(right, cx)? {
+                return Err(cx.span.domain_error("a constant function gives only its own value"));
             }
             Ok(right.clone())
         }
         Modified(Commute, Operand::Function(g)) => {
-            if let Some((a, first)) = bound { return inverse(g, Some((a, !first)), right, span, session, output); }
+            if let Some((a, first)) = bound { return inverse(g, Some((a, !first)), right, cx); }
             use crate::{
                 number::{Arithmetic, Math},
                 primitive::Primitive as P,
             };
-            // With one argument, `(g⍄h)⍨` is the hook `g⍄h`.
-            if matches!(g.node(), Composed(After, [Operand::Function(_), Operand::Function(_)])) { return inverse(g, None, right, span, session, output); }
-            let Primitive(p) = g.node() else { return Err(span.domain_error("this commute has no known inverse")); };
+            // With one argument, `(g↢h)⍨` is the hook `g↢h`.
+            if matches!(g.node(), Composed(After, [Operand::Function(_), Operand::Function(_)])) { return inverse(g, None, right, cx); }
+            let Primitive(p) = g.node() else { return Err(cx.span.domain_error("this commute has no known inverse")); };
             match p {
                 P::Arithmetic(Arithmetic::Plus) => {
-                    P::Arithmetic(Arithmetic::Divide).call(Some(right), &Value::number(crate::Number::from_integer(2)).unwrap(), &session.execution.at(span))
+                    P::Arithmetic(Arithmetic::Divide).call(Some(right), &Value::number(crate::Number::from_integer(2)).unwrap(), cx)
                 }
-                P::Arithmetic(Arithmetic::Times) => P::Math(Math::Power).call(Some(right), &Value::number(0.5).unwrap(), &session.execution.at(span)),
+                P::Arithmetic(Arithmetic::Times) => P::Math(Math::Power).call(Some(right), &Value::number(0.5).unwrap(), cx),
                 P::Math(Math::Floor | Math::Ceiling) | P::Identity(_) => Ok(right.clone()),
                 P::Math(Math::Lcm | Math::Gcd) => {
-                    let at = session.execution.at(span);
-                    if !crate::primitive::array_match(&p.call(Some(right), right, &at)?, right, &at)? {
-                        return Err(span.domain_error("no argument gives this result"));
+                    if !p.call(Some(right), right, cx)?.matches(right, cx)? {
+                        return Err(cx.span.domain_error("no argument gives this result"));
                     }
                     Ok(right.clone())
                 }
-                _ => Err(span.domain_error("this commute has no known inverse")),
+                _ => Err(cx.span.domain_error("this commute has no known inverse")),
             }
         }
         Composed(Before, [Operand::Value(a), Operand::Function(g)]) if bound.is_none() => {
-            return inverse(g, Some((a, true)), right, span, session, output);
+            return inverse(g, Some((a, true)), right, cx);
         }
         Composed(After, [Operand::Function(g), Operand::Value(a)]) if bound.is_none() => {
-            return inverse(g, Some((a, false)), right, span, session, output);
+            return inverse(g, Some((a, false)), right, cx);
         }
         Composed(After, [Operand::Function(g), Operand::Function(h)]) => {
             let Some((a, first)) = bound else {
-                // One argument makes a hook, `⍵ g h ⍵`. Only `×⍄*` has a known inverse.
+                // One argument makes a hook, `⍵ g h ⍵`. Only `×↢*` has a known inverse.
                 use crate::{
                     number::{Arithmetic, Math},
                     primitive::Primitive as P,
                 };
                 if matches!(g.node(), Primitive(P::Arithmetic(Arithmetic::Times))) && matches!(h.node(), Primitive(P::Math(Math::Power))) {
-                    return crate::primitive::lambert_w(right, &session.execution.at(span)).map(Bound::from);
+                    return crate::primitive::lambert_w(right, cx).map(Bound::from);
                 }
-                return Err(span.domain_error("this hook has no known inverse"));
+                return Err(cx.span.domain_error("this hook has no known inverse"));
             };
             if !first {
-                let fixed = h.call_array(None, a, span, session, output)?;
-                return inverse(g, Some((&fixed, false)), right, span, session, output);
+                let fixed = h.call_array(None, a, cx)?;
+                return inverse(g, Some((&fixed, false)), right, cx);
             }
-            let y = inverse(g, bound, right, span, session, output)?.array(span)?;
-            return h.inverse(span)?.call(None, &y, span, session, output);
+            let y = inverse(g, bound, right, cx)?.array(cx.span)?;
+            return h.inverse(cx.span)?.call(None, &y, cx);
         }
         Composed(Atop, [Operand::Function(g), Operand::Function(h)]) => {
-            let y = g.inverse(span)?.call_array(None, right, span, session, output)?;
-            return inverse(h, bound, &y, span, session, output);
+            let y = g.inverse(cx.span)?.call_array(None, right, cx)?;
+            return inverse(h, bound, &y, cx);
         }
         Composed(Over, [Operand::Function(g), Operand::Function(h)]) => {
-            let fixed = left.map(|a| h.call_array(None, a, span, session, output)).transpose()?;
-            let y = inverse(g, fixed.as_ref().map(|a| (a, first)), right, span, session, output)?.array(span)?;
-            return h.inverse(span)?.call(None, &y, span, session, output);
+            let fixed = left.map(|a| h.call_array(None, a, cx)).transpose()?;
+            let y = inverse(g, fixed.as_ref().map(|a| (a, first)), right, cx)?.array(cx.span)?;
+            return h.inverse(cx.span)?.call(None, &y, cx);
         }
         Composed(Before, [Operand::Function(g), Operand::Function(h)]) if bound.is_some() => {
             if first {
-                let fixed = g.call_array(None, left.unwrap(), span, session, output)?;
-                return inverse(h, Some((&fixed, true)), right, span, session, output);
+                let fixed = g.call_array(None, left.unwrap(), cx)?;
+                return inverse(h, Some((&fixed, true)), right, cx);
             }
-            let y = inverse(h, bound, right, span, session, output)?.array(span)?;
-            return g.inverse(span)?.call(None, &y, span, session, output);
+            let y = inverse(h, bound, right, cx)?.array(cx.span)?;
+            return g.inverse(cx.span)?.call(None, &y, cx);
         }
         Composed(Valences, [Operand::Function(g), Operand::Function(h)]) => {
-            return if bound.is_some() { inverse(h, bound, right, span, session, output) } else { inverse(g, None, right, span, session, output) };
+            return if bound.is_some() { inverse(h, bound, right, cx) } else { inverse(g, None, right, cx) };
         }
         Composed(Power, [Operand::Function(g), Operand::Value(count)]) if first && count.is_atom() => {
-            let count = crate::primitive::Primitive::Arithmetic(crate::number::Arithmetic::Minus).call(None, count, &session.execution.at(span))?;
-            return power(&[Operand::Function(g.clone()), Operand::Value(count)], left, right, span, session, output);
+            let count = crate::primitive::Primitive::Arithmetic(crate::number::Arithmetic::Minus).call(None, count, cx)?;
+            return power(&[Operand::Function(g.clone()), Operand::Value(count)], left, right, cx);
         }
         Composed(Rank, [Operand::Function(g), Operand::Value(ranks)]) => {
             let mut ranks = ranks.clone();
@@ -837,21 +873,21 @@ fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, span: &Sp
                 let mut items: Vec<_> = ranks.elements().collect();
                 let n = items.len();
                 items.swap(n - 2, n - 1);
-                ranks = Value::new(ranks.shape().to_vec(), items).error_at(span, "invalid inverse ranks")?;
+                ranks = Value::new(ranks.shape().to_vec(), items).error_at(cx.span, "invalid inverse ranks")?;
             }
-            return rank(&operand_inverse(g)?, &ranks, left, right, span, session, output);
+            return rank(&operand_inverse(g)?, &ranks, left, right, cx);
         }
-        FunctionNode::Fold(g, h) if h.scan && first => inverse_scan(g, *h, None, left, right, span, session, output),
+        FunctionNode::Fold(g, h) if h.scan && first => inverse_scan(g, *h, None, left, right, cx),
         FunctionNode::Axis(g, axis) => {
             let mut g = g;
             while let FunctionNode::Axis(inner, _) = g.node() { g = inner; }
             match g.node() {
-                Primitive(p) => crate::primitive::inverse(*p, bound, right, Some(axis), &session.execution.at(span)),
-                FunctionNode::Fold(g, h) if h.scan && first => inverse_scan(g, *h, Some(axis), left, right, span, session, output),
-                _ => Err(span.domain_error("this axis-qualified function has no known inverse")),
+                Primitive(p) => crate::primitive::inverse(*p, bound, right, Some(axis), cx),
+                FunctionNode::Fold(g, h) if h.scan && first => inverse_scan(g, *h, Some(axis), left, right, cx),
+                _ => Err(cx.span.domain_error("this axis-qualified function has no known inverse")),
             }
         }
-        _ => Err(span.domain_error("this function has no known inverse")),
+        _ => Err(cx.span.domain_error("this function has no known inverse")),
     }?;
     Ok(Bound::from(array))
 }
@@ -861,38 +897,36 @@ fn inverse_outer(
     bound: &Value,
     first: bool,
     right: &Value,
-    span: &Span,
-    session: &mut Session,
-    output: &mut Vec<Output>,
+    cx: &mut Context<'_>,
 ) -> Result<Value, Error> {
     let rank = bound.shape().len();
-    if bound.is_empty() || right.shape().len() < rank { return Err(span.domain_error("outer-product inverse needs a nonempty matching bound frame")); }
+    if bound.is_empty() || right.shape().len() < rank { return Err(cx.span.domain_error("outer-product inverse needs a nonempty matching bound frame")); }
     let split = if first { rank } else { right.shape().len() - rank };
     let (prefix, suffix) = right.shape().split_at(split);
     let (frame, shape) = if first { (prefix, suffix) } else { (suffix, prefix) };
-    if frame != bound.shape() { return Err(span.domain_error("outer-product inverse needs a matching bound frame")); }
-    let count = crate::array::element_count(shape).error_at(span, "invalid inverse result shape")?;
+    if frame != bound.shape() { return Err(cx.span.domain_error("outer-product inverse needs a matching bound frame")); }
+    let count = crate::array::element_count(shape).error_at(cx.span, "invalid inverse result shape")?;
     let layout = right.layout().axes(if first { split..right.shape().len() } else { 0..split });
     let mut keys = vec![None; right.shape().len()];
     for axis in 0..rank { keys[if first { axis } else { split + axis }] = bound.keys(axis).cloned(); }
-    let right = crate::keyed::reorder(right, &keys, false).error_at(span, "outer-product bound keys must agree")?;
+    let right = crate::keyed::reorder(right, &keys, false).error_at(cx.span, "outer-product bound keys must agree")?;
     let mut result: Vec<Value> = Vec::with_capacity(count.max(1));
     for j in 0..if count == 0 { 1 } else { bound.len() } {
         let a = Operand::Value(bound.at(j));
         let f = Operand::Function(f.clone());
         let operands = if first { [a, f] } else { [f, a] };
-        let inverse = Function::new(FunctionNode::Composed(if first { OperatorKind::Before } else { OperatorKind::After }, operands), span)?.inverse(span)?;
+        let inverse = Function::new(FunctionNode::Composed(if first { OperatorKind::Before } else { OperatorKind::After }, operands), cx.span)?.inverse(cx.span)?;
         for i in 0..count.max(1) {
             let value = if count == 0 { right.prototype() } else { right.at(if first { j * count + i } else { i * bound.len() + j }) };
-            let candidate = inverse.call_array(None, &value, span, session, output)?;
-            if j == 0 { result.push(candidate); } else if !crate::primitive::array_match(&result[i], &candidate, &session.execution.at(span))? {
-                return Err(span.domain_error("outer-product cells do not have a consistent inverse"));
+            let candidate = inverse.call_array(None, &value, cx)?;
+            if j == 0 { result.push(candidate); } else if !result[i].matches(&candidate, cx)? {
+                return Err(cx.span.domain_error("outer-product cells do not have a consistent inverse"));
             }
         }
     }
     let prototype = result[0].prototype();
     if count == 0 { result.clear(); }
-    layout.collect(result, prototype).error_at(span, "invalid outer-product inverse")
+    layout.collect(result, prototype).error_at(cx.span, "invalid outer-product inverse")
 }
 
 fn inverse_scan(
@@ -901,17 +935,15 @@ fn inverse_scan(
     axis: Option<&Value>,
     seed: Option<&Value>,
     right: &Value,
-    span: &Span,
-    session: &mut Session,
-    output: &mut Vec<Output>,
+    cx: &mut Context<'_>,
 ) -> Result<Value, Error> {
-    let axis = scan_axis(h, axis, right, span)?;
+    let axis = scan_axis(h, axis, right, cx.span)?;
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
-    let inverse = f.inverse(span)?;
-    if right.is_atom() { return inverse.call_array(seed, right, span, session, output); }
+    let inverse = f.inverse(cx.span)?;
+    if right.is_atom() { return inverse.call_array(seed, right, cx); }
     if let FunctionNode::Primitive(p) = f.node() {
         if let Some(result) = crate::pervasive::inverse_scan(*p, right, seed, &axis) {
-            return result.with_layout(right.layout().clone()).error_at(span, "invalid inverse scan");
+            return result.with_layout(right.layout().clone()).error_at(cx.span, "invalid inverse scan");
         }
     }
     let mut data: Vec<_> = right.elements().collect();
@@ -920,21 +952,21 @@ fn inverse_scan(
             for k in 0..axis.inner {
                 let offset = axis.offset(i, j, k);
                 let previous = if j == 0 { seed.unwrap().clone() } else { right.at(axis.offset(i, j - 1, k)) };
-                data[offset] = inverse.call_array(Some(&previous), &right.at(offset), span, session, output)?;
+                data[offset] = inverse.call_array(Some(&previous), &right.at(offset), cx)?;
             }
         }
     }
-    right.layout().collect(data, || right.prototype()).error_at(span, "invalid inverse scan")
+    right.layout().collect(data, || right.prototype()).error_at(cx.span, "invalid inverse scan")
 }
 
-fn key(f: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
+fn key(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let keys = left.unwrap_or(right);
-    if keys.is_unit() || right.is_unit() { return Err(span.error(ErrorKind::Rank, "key arguments must have major cells")); }
-    if keys.shape()[0] != right.shape()[0] { return Err(span.error(ErrorKind::Length, "key arguments must have equal tallies")); }
-    let values = if left.is_none() { crate::keyed::selectors(right, &[0]).error_at(span, "invalid group indices")? } else { right.clone() };
-    let cells = keys.cells(keys.shape().len() - 1).error_at(span, "invalid key cells")?;
-    let key_cells = crate::search::Cells::of(keys, keys.shape().len() - 1).error_at(span, "invalid key cells")?;
-    let mut group = crate::search::classify(&key_cells, &session.execution.at(span))?;
+    if keys.is_unit() || right.is_unit() { return Err(cx.span.error(ErrorKind::Rank, "key arguments must have major cells")); }
+    if keys.shape()[0] != right.shape()[0] { return Err(cx.span.error(ErrorKind::Length, "key arguments must have equal tallies")); }
+    let values = if left.is_none() { crate::keyed::selectors(right, &[0]).error_at(cx.span, "invalid group indices")? } else { right.clone() };
+    let cells = keys.cells(keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
+    let key_cells = crate::search::Cells::of(keys, keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
+    let mut group = crate::search::classify(&key_cells, cx)?;
     // Groups are numbered in order of first appearance. A class's first position comes before its others, so one pass turns each class
     // into its group number in place.
     let mut representatives = Vec::new();
@@ -944,18 +976,18 @@ fn key(f: &Function, left: Option<&Value>, right: &Value, span: &Span, session: 
     }
     let (positions, sizes) = crate::search::grouped(&group, representatives.len());
     let count = representatives.len();
-    let width = generated_len(&values.shape()[1..]).error_at(span, "key cell is too large")?;
+    let width = generated_len(&values.shape()[1..]).error_at(cx.span, "key cell is too large")?;
     let mut results = Vec::with_capacity(count.max(1));
     let mut start = 0;
     for g in 0..count.max(1) {
-        let (x, rows) = if count > 0 { start += sizes[g]; (key_cells.get(representatives[g]), &positions[start - sizes[g]..start]) } else { let x = cells.prototype().error_at(span, "invalid key prototype")?; (if cells.shape().is_empty() { x.at(0) } else { x }, &positions[..0]) };
-        let layout = values.layout().select(0, rows.iter().copied().map(Some)).error_at(span, "invalid group keys")?;
+        let (x, rows) = if count > 0 { start += sizes[g]; (key_cells.get(representatives[g]), &positions[start - sizes[g]..start]) } else { let x = cells.prototype().error_at(cx.span, "invalid key prototype")?; (if cells.shape().is_empty() { x.at(0) } else { x }, &positions[..0]) };
+        let layout = values.layout().select(0, rows.iter().copied().map(Some)).error_at(cx.span, "invalid group keys")?;
         let mut data = crate::array::Gather::new(&[&values], rows.len() * width);
         data.rows(&values, rows, width);
-        let y = data.finish(layout, || values.prototype()).error_at(span, "invalid key group")?;
-        results.push(if count == 0 { f.call_prototype(Some(&x), &y, span, session, output)?.array(span)? } else { f.call_array(Some(&x), &y, span, session, output)? });
+        let y = data.finish(layout, || values.prototype()).error_at(cx.span, "invalid key group")?;
+        results.push(if count == 0 { f.call_prototype(Some(&x), &y, cx)?.array(cx.span)? } else { f.call_array(Some(&x), &y, cx)? });
     }
-    let result = Value::assemble(&[count], if count == 0 { &[] } else { &results }, &results[0]).error_at(span, "invalid key result")?;
+    let result = Value::assemble(&[count], if count == 0 { &[] } else { &results }, &results[0]).error_at(cx.span, "invalid key result")?;
     Ok(Bound::from(result))
 }
 
@@ -964,16 +996,16 @@ fn pervasive_primitive(f: &Function, dyadic: bool) -> Option<Primitive> {
     match f.node() { FunctionNode::Primitive(p) if p.pervasive(dyadic) => Some(*p), _ => None }
 }
 
-fn outer(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
-    let left = left.ok_or_else(|| span.error(ErrorKind::Syntax, "outer product needs a left argument"))?;
-    if left.is_atom() && right.is_atom() { return operand.call(Some(left), right, span, session, output); }
-    if let Some(p) = pervasive_primitive(operand, true) { return Ok(Bound::from(p.outer(left, right, &session.execution.at(span))?)); }
+fn outer(operand: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+    let left = left.ok_or_else(|| cx.span.error(ErrorKind::Syntax, "outer product needs a left argument"))?;
+    if left.is_atom() && right.is_atom() { return operand.call(Some(left), right, cx); }
+    if let Some(p) = pervasive_primitive(operand, true) { return Ok(Bound::from(p.outer(left, right, cx)?)); }
     let layout = left.layout().concat(right.layout());
-    let len = generated_len(layout.shape()).error_at(span, "outer product is too large")?;
+    let len = generated_len(layout.shape()).error_at(cx.span, "outer product is too large")?;
     // With no pairs, an empty argument gives its prototype and a nonempty one its first item.
     let item = |a: &Value, i| if a.is_empty() { a.prototype() } else { a.at(i) };
     let columns = right.len().max(1);
-    each_pair(operand, len, layout, |i| (Some(item(left, i / columns)), item(right, i % columns)), span, session, output)
+    each_pair(operand, len, layout, |i| (Some(item(left, i / columns)), item(right, i % columns)), cx)
 }
 
 fn inner(
@@ -981,35 +1013,33 @@ fn inner(
     g: &Function,
     left: Option<&Value>,
     right: &Value,
-    span: &Span,
-    session: &mut Session,
-    output: &mut Vec<Output>,
+    cx: &mut Context<'_>,
 ) -> Result<Bound, Error> {
-    let left = left.ok_or_else(|| span.error(ErrorKind::Syntax, "inner product needs a left argument"))?;
+    let left = left.ok_or_else(|| cx.span.error(ErrorKind::Syntax, "inner product needs a left argument"))?;
     let nx = left.shape().last().copied().unwrap_or(1);
     let ny = right.shape().first().copied().unwrap_or(1);
     let positions =
-        Mapping::contract(left.layout(), left.shape().len().saturating_sub(1), right.layout(), 0).error_at(span, "product contraction keys must agree")?;
-    if nx != ny && !left.is_singleton() && !right.is_singleton() { return Err(span.error(ErrorKind::Length, "product contraction lengths must agree")); }
+        Mapping::contract(left.layout(), left.shape().len().saturating_sub(1), right.layout(), 0).error_at(cx.span, "product contraction keys must agree")?;
+    if nx != ny && !left.is_singleton() && !right.is_singleton() { return Err(cx.span.error(ErrorKind::Length, "product contraction lengths must agree")); }
     let n = if left.is_singleton() { ny } else { nx };
     let xf = &left.shape()[..left.shape().len().saturating_sub(1)];
     let yf = &right.shape()[usize::from(!right.is_unit())..];
     let layout = left.layout().axes(0..xf.len()).concat(&right.layout().axes(1..right.shape().len()));
-    let size = generated_len(layout.shape()).error_at(span, "inner product is too large")?;
-    let rows = generated_len(xf).error_at(span, "invalid product frame")?;
-    let cols = generated_len(yf).error_at(span, "invalid product frame")?;
-    generated_len(&[n.max(1), cols.max(1)]).error_at(span, "product contraction is too large")?;
+    let size = generated_len(layout.shape()).error_at(cx.span, "inner product is too large")?;
+    let rows = generated_len(xf).error_at(cx.span, "invalid product frame")?;
+    let cols = generated_len(yf).error_at(cx.span, "invalid product frame")?;
+    generated_len(&[n.max(1), cols.max(1)]).error_at(cx.span, "product contraction is too large")?;
     if let (FunctionNode::Primitive(pf), FunctionNode::Primitive(pg)) = (f.node(), g.node()) {
         if nx == ny && n > 0 && size > 0 && !left.is_unit() && !right.is_unit() && matches!(positions, Mapping::Linear(1)) {
             if let Some(result) = crate::pervasive::inner(*pf, *pg, left, right, [rows, n, cols], layout.shape().to_vec()) {
                 if layout.shape().is_empty() { return Ok(Bound::from(result.at(0))); }
-                return Ok(Bound::from(result.with_layout(layout).error_at(span, "invalid inner product result")?));
+                return Ok(Bound::from(result.with_layout(layout).error_at(cx.span, "invalid inner product result")?));
             }
         }
     }
     // An empty result, or an empty contraction, calls the operands only for prototypes, so in prototype mode.
     let item = |a: &Value, offset| if n == 0 || a.is_empty() { a.prototype() } else { a.at(if a.is_singleton() { 0 } else { offset }) };
-    let mut results = session.prototype_mode(size == 0, |session| {
+    let mut results = cx.prototype_mode(size == 0, |cx| {
         let mut results = Vec::with_capacity(size.max(1));
         for i in 0..rows.max(1) {
             let mut columns = vec![Vec::with_capacity(n.max(1)); cols.max(1)];
@@ -1017,13 +1047,13 @@ fn inner(
                 for (j, column) in columns.iter_mut().enumerate() {
                     let rk = if n == 0 { 0 } else { positions.index(k) };
                     let (x, y) = (item(left, i * nx + k), item(right, rk * cols + j));
-                    column.push(session.prototype_mode(n == 0, |session| g.call_array(Some(&x), &y, span, session, output))?);
+                    column.push(cx.prototype_mode(n == 0, |cx| g.call_array(Some(&x), &y, cx))?);
                 }
             }
             for column in columns {
                 let paired =
-                    if n == 0 { Value::empty(vec![0], column[0].prototype()) } else { Value::new(vec![n], column) }.error_at(span, "invalid product cell")?;
-                results.push(fold(f, FoldKind { scan: false, first: false }, None, None, &paired, span, session, output)?);
+                    if n == 0 { Value::empty(vec![0], column[0].prototype()) } else { Value::new(vec![n], column) }.error_at(cx.span, "invalid product cell")?;
+                results.push(fold(f, FoldKind { scan: false, first: false }, None, None, &paired, cx)?);
             }
         }
         Ok::<_, Error>(results)
@@ -1032,7 +1062,7 @@ fn inner(
     let prototype = results[0].fill();
     if size == 0 { results.clear(); }
     let result = layout.collect(results, prototype);
-    Ok(Bound::from(result.error_at(span, "invalid inner product result")?))
+    Ok(Bound::from(result.error_at(cx.span, "invalid inner product result")?))
 }
 
 fn rank(
@@ -1040,19 +1070,17 @@ fn rank(
     ranks: &Value,
     left: Option<&Value>,
     right: &Value,
-    span: &Span,
-    session: &mut Session,
-    output: &mut Vec<Output>,
+    cx: &mut Context<'_>,
 ) -> Result<Bound, Error> {
-    if ranks.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "rank operand must be a unit or vector")); }
-    if !(1..=3).contains(&ranks.len()) { return Err(span.error(ErrorKind::Length, "rank operand needs one to three items")); }
+    if ranks.shape().len() > 1 { return Err(cx.span.error(ErrorKind::Rank, "rank operand must be a unit or vector")); }
+    if !(1..=3).contains(&ranks.len()) { return Err(cx.span.error(ErrorKind::Length, "rank operand needs one to three items")); }
     let ranks = ranks
         .elements()
         .map(|e| match e {
             // Infinite ranks rely on the clamping in `cell_rank`: ∞ gives the whole argument and ¯∞ rank 0.
             Value::Number(n) if n.is_infinite() => Ok(if n.as_float().is_some_and(f64::is_sign_positive) { isize::MAX } else { isize::MIN }),
-            Value::Number(n) => n.integer().error_at(span, "cell ranks must be integers"),
-            _ => Err(span.domain_error("cell ranks must be numeric")),
+            Value::Number(n) => n.integer().error_at(cx.span, "cell ranks must be integers"),
+            _ => Err(cx.span.domain_error("cell ranks must be numeric")),
         })
         .collect::<Result<Vec<_>, _>>()?;
     let (p, q, r) = match ranks.as_slice() {
@@ -1068,13 +1096,13 @@ fn rank(
     let extends = |p: &Primitive| p.info().monad.is_some_and(|m| m.extends && yr >= usize::from(m.rank));
     let direct = (yr == right.shape().len() && left.is_none_or(|x| xr == x.shape().len()))
         || (left.is_none() && matches!(operand.node(), FunctionNode::Primitive(p) if extends(p)));
-    if direct { return operand.call(left, right, span, session, output); }
+    if direct { return operand.call(left, right, cx); }
     let framed = |a: &Value, rank| a.cells(rank)?.framed();
-    let ys = framed(right, yr).error_at(span, "invalid rank cells")?;
-    let xs = left.map(|a| framed(a, xr)).transpose().error_at(span, "invalid rank cells")?;
-    let results = each(operand, xs.as_ref(), &ys, span, session, output)?;
+    let ys = framed(right, yr).error_at(cx.span, "invalid rank cells")?;
+    let xs = left.map(|a| framed(a, xr)).transpose().error_at(cx.span, "invalid rank cells")?;
+    let results = each(operand, xs.as_ref(), &ys, cx)?;
     let Binding::Value(results) = results.value else { return Ok(results) };
-    Ok(Bound::from(Primitive::Mix.call(None, &results, &session.execution.at(span))?))
+    Ok(Bound::from(Primitive::Mix.call(None, &results, cx)?))
 }
 
 /// Apply `f` to the cells made of the selected axes. The other axes form the frame.
@@ -1084,28 +1112,26 @@ fn cell_axes(
     spec: &Value,
     left: Option<&Value>,
     right: &Value,
-    span: &Span,
-    session: &mut Session,
-    output: &mut Vec<Output>,
+    cx: &mut Context<'_>,
 ) -> Result<Bound, Error> {
     let target = match left { Some(x) if x.shape().len() > right.shape().len() => x, _ => right };
     let order = target.shape().len();
-    let spec = crate::primitive::resolve_axes(spec, target, span)?;
-    let selected = crate::primitive::axes(&spec, order, &session.execution.at(span))?;
+    let spec = crate::primitive::resolve_axes(spec, target, cx.span)?;
+    let selected = crate::primitive::axes(&spec, order, cx)?;
     let others = |n: usize| (0..n).filter(|i| !selected.contains(i));
     // Move the selected axes to the end, so that rank sees them as the cells.
-    let cells = |x: &Value, session: &Session| -> Result<(Value, usize), Error> {
+    let cells = |x: &Value| -> Result<(Value, usize), Error> {
         let n = x.shape().len();
         if selected.iter().any(|&i| i >= n) { return Ok((x.clone(), n)); }
         let mut destination = vec![0; n];
         for (j, i) in others(n).chain(selected.iter().copied()).enumerate() { destination[i] = j; }
-        Ok((move_axes(x, &destination, &session.execution.at(span))?, selected.len()))
+        Ok((move_axes(x, &destination, cx)?, selected.len()))
     };
-    let (y, yr) = cells(right, session)?;
-    let x = left.map(|x| cells(x, session)).transpose()?;
+    let (y, yr) = cells(right)?;
+    let x = left.map(cells).transpose()?;
     let ranks: Vec<_> = x.iter().map(|(_, r)| *r as i64).chain([yr as i64]).collect();
-    let ranks = Value::integers(vec![ranks.len()], ranks).error_at(span, "invalid cell ranks")?;
-    let result = rank(f, &ranks, x.as_ref().map(|(x, _)| x), &y, span, session, output)?.array(span)?;
+    let ranks = Value::integers(vec![ranks.len()], ranks).error_at(cx.span, "invalid cell ranks")?;
+    let result = rank(f, &ranks, x.as_ref().map(|(x, _)| x), &y, cx)?.array(cx.span)?;
     // Result cells of the selected rank return to the selected axes. Other result cells start at the first selected axis.
     let frame = order - selected.len();
     let cell = result.shape().len().saturating_sub(frame);
@@ -1115,7 +1141,7 @@ fn cell_axes(
             .map(|j| { if j < start { j } else if j < frame { j + cell } else { start + j - frame } })
             .collect()
     };
-    Ok(Bound::from(move_axes(&result, &destination, &session.execution.at(span))?))
+    Ok(Bound::from(move_axes(&result, &destination, cx)?))
 }
 
 /// Transpose so that axis `i` of `x` becomes axis `destination[i]`.
@@ -1127,22 +1153,19 @@ fn move_axes(x: &Value, destination: &[usize], span: &crate::execution::Context<
 
 /// Calls `operand` on the argument pairs `pair(0)`, `pair(1)` and so on up to `len`, and assembles the results in `layout`.
 /// With no pairs it calls the operand once in prototype mode, on `pair(0)`, for the result's prototype.
-#[allow(clippy::too_many_arguments)]
 fn each_pair(
     operand: &Function,
     len: usize,
     layout: crate::array::Layout,
     pair: impl Fn(usize) -> (Option<Value>, Value),
-    span: &Span,
-    session: &mut Session,
-    output: &mut Vec<Output>,
+    cx: &mut Context<'_>,
 ) -> Result<Bound, Error> {
     let empty = len == 0;
     let mut data = Gather::items(len);
     let (mut missing, mut first) = (false, None);
     for i in 0..len.max(1) {
         let (x, y) = pair(i);
-        let result = if empty { operand.call_prototype(x.as_ref(), &y, span, session, output) } else { operand.call(x.as_ref(), &y, span, session, output) };
+        let result = if empty { operand.call_prototype(x.as_ref(), &y, cx) } else { operand.call(x.as_ref(), &y, cx) };
         let item = match result?.value {
             Binding::Value(a) => a,
             Binding::Function(f) => Value::Function(f),
@@ -1150,20 +1173,20 @@ fn each_pair(
                 missing = true;
                 continue;
             }
-            _ => return Err(span.error(ErrorKind::Syntax, "the operand must return an array, function or no result")),
+            _ => return Err(cx.span.error(ErrorKind::Syntax, "the operand must return an array, function or no result")),
         };
         if empty { first = Some(item) } else { data.add(item) }
     }
     let value =
-        if missing { Binding::NoResult } else { Binding::Value(data.finish(layout, || first.unwrap().fill()).map_err(|k| span.error(k, "invalid result"))?) };
+        if missing { Binding::NoResult } else { Binding::Value(data.finish(layout, || first.unwrap().fill()).map_err(|k| cx.span.error(k, "invalid result"))?) };
     Ok(Bound::new(value))
 }
 
-fn each(operand: &Function, left: Option<&Value>, right: &Value, span: &Span, session: &mut Session, output: &mut Vec<Output>) -> Result<Bound, Error> {
-    if right.is_atom() && left.is_none_or(Value::is_atom) { return operand.call(left, right, span, session, output); }
-    if pervasive_primitive(operand, left.is_some()).is_some() { return operand.call(left, right, span, session, output); }
-    let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).error_at(span, "frames do not agree")?;
-    each_pair(operand, agreement.len, agreement.layout.clone(), |i| agreement.values(left, right, i), span, session, output)
+fn each(operand: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+    if right.is_atom() && left.is_none_or(Value::is_atom) { return operand.call(left, right, cx); }
+    if pervasive_primitive(operand, left.is_some()).is_some() { return operand.call(left, right, cx); }
+    let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).error_at(cx.span, "frames do not agree")?;
+    each_pair(operand, agreement.len, agreement.layout.clone(), |i| agreement.values(left, right, i), cx)
 }
 
 fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Context<'_>) -> Result<Value, Error> {
@@ -1195,31 +1218,29 @@ fn fold(
     axis: Option<&Value>,
     left: Option<&Value>,
     right: &Value,
-    span: &Span,
-    session: &mut Session,
-    output: &mut Vec<Output>,
+    cx: &mut Context<'_>,
 ) -> Result<Value, Error> {
-    let axis = axis.map(|a| crate::primitive::resolve_axes(a, right, span)).transpose()?;
+    let axis = axis.map(|a| crate::primitive::resolve_axes(a, right, cx.span)).transpose()?;
     if !kind.scan {
         if let Some(axes) = axis.as_ref().filter(|a| !a.is_singleton()) {
-            let mut reduction = Function::new(FunctionNode::Fold(operand.clone(), kind), span)?;
+            let mut reduction = Function::new(FunctionNode::Fold(operand.clone(), kind), cx.span)?;
             if let Some(seed) = left {
-                reduction = Function::new(FunctionNode::Composed(OperatorKind::Before, [Operand::Value(seed.clone()), Operand::Function(reduction)]), span)?;
+                reduction = before(seed.clone(), reduction, cx.span)?;
             }
             let ravelled = Function::new(
                 FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(reduction), Operand::Function(Function::primitive(Primitive::Ravel))]),
-                span,
+                cx.span,
             )?;
             // The seed binds first, so the general axis rule doesn't split it along the axes.
-            return cell_axes(&ravelled, axes, None, right, span, session, output)?.array(span);
+            return cell_axes(&ravelled, axes, None, right, cx)?.array(cx.span);
         }
     }
-    let result = fold_array(operand, kind, axis.as_ref(), left, right, span, session, output)?;
+    let result = fold_array(operand, kind, axis.as_ref(), left, right, cx)?;
     if !kind.scan && right.shape().len() == 1 { return Ok(result.at(0)); }
     if kind.scan || right.is_unit() { return Ok(result); }
-    let axis = kind.axis(axis.as_ref(), right, span)?;
+    let axis = kind.axis(axis.as_ref(), right, cx.span)?;
     let layout = right.layout().axes((0..right.shape().len()).filter(|&a| a != axis));
-    result.with_layout(layout).error_at(span, "invalid fold keys")
+    result.with_layout(layout).error_at(cx.span, "invalid fold keys")
 }
 
 fn fold_array(
@@ -1228,27 +1249,25 @@ fn fold_array(
     axis: Option<&Value>,
     left: Option<&Value>,
     right: &Value,
-    span: &Span,
-    session: &mut Session,
-    output: &mut Vec<Output>,
+    cx: &mut Context<'_>,
 ) -> Result<Value, Error> {
     // Scan keeps every position, so it keeps every key.
     if kind.scan {
-        return scan(operand, kind, axis, left, right, span, session, output)?.with_layout(right.layout().clone()).error_at(span, "invalid scan result");
+        return scan(operand, kind, axis, left, right, cx)?.with_layout(right.layout().clone()).error_at(cx.span, "invalid scan result");
     }
     if right.is_unit() && axis.is_none() {
-        return match left { Some(seed) => operand.call_array(Some(&right.at(0)), seed, span, session, output), None => Ok(right.at(0)) };
+        return match left { Some(seed) => operand.call_array(Some(&right.at(0)), seed, cx), None => Ok(right.at(0)) };
     }
-    let axis = kind.axis(axis, right, span)?;
-    if axis >= right.shape().len() { return Err(span.domain_error("axis is outside array rank")); }
-    let traversal = Axis::new(right.shape(), axis).error_at(span, "invalid fold axis")?;
+    let axis = kind.axis(axis, right, cx.span)?;
+    if axis >= right.shape().len() { return Err(cx.span.domain_error("axis is outside array rank")); }
+    let traversal = Axis::new(right.shape(), axis).error_at(cx.span, "invalid fold axis")?;
     let mut shape = right.shape().to_vec();
     shape.remove(axis);
-    let size = generated_len(&shape).error_at(span, "fold result exceeds array limits")?;
-    if size == 0 { return Value::empty(shape, right.prototype()).error_at(span, "invalid empty fold"); }
+    let size = generated_len(&shape).error_at(cx.span, "fold result exceeds array limits")?;
+    if size == 0 { return Value::empty(shape, right.prototype()).error_at(cx.span, "invalid empty fold"); }
     if traversal.len == 0 {
-        let item = match left { Some(seed) => seed.clone(), None => identity(operand, &right.prototype(), &session.execution.at(span))? };
-        return Value::new(shape, vec![item; size]).error_at(span, "invalid identity result");
+        let item = match left { Some(seed) => seed.clone(), None => identity(operand, &right.prototype(), cx)? };
+        return Value::new(shape, vec![item; size]).error_at(cx.span, "invalid identity result");
     }
     if let (None, FunctionNode::Primitive(p)) = (left, operand.node()) {
         use crate::number::Arithmetic::{Plus, Times};
@@ -1257,11 +1276,11 @@ fn fold_array(
             if let Some(result) = crate::pervasive::fold(*p, right, &traversal, shape.clone()) { return Ok(result); }
         }
         if let Primitive::Arithmetic(op) = p {
-            if right.elements().all(|e| matches!(e, Value::Number(_))) { return numeric_fold(*op, right, &traversal, shape, &session.execution.at(span)); }
+            if right.elements().all(|e| matches!(e, Value::Number(_))) { return numeric_fold(*op, right, &traversal, shape, cx); }
         }
     }
-    let data = fold_items(&traversal, left, |offset| right.at(offset), |x, y| operand.call_array(Some(x), y, span, session, output))?;
-    Value::new(shape, data).error_at(span, "invalid fold result")
+    let data = fold_items(&traversal, left, |offset| right.at(offset), |x, y| operand.call_array(Some(x), y, cx))?;
+    Value::new(shape, data).error_at(cx.span, "invalid fold result")
 }
 
 fn numeric_fold(op: crate::number::Arithmetic, right: &Value, axis: &Axis, shape: Vec<usize>, span: &crate::execution::Context<'_>) -> Result<Value, Error> {
@@ -1319,12 +1338,10 @@ fn scan(
     axis: Option<&Value>,
     seed: Option<&Value>,
     right: &Value,
-    span: &Span,
-    session: &mut Session,
-    output: &mut Vec<Output>,
+    cx: &mut Context<'_>,
 ) -> Result<Value, Error> {
-    let axis = scan_axis(kind, axis, right, span)?;
-    if right.is_atom() { return match seed { Some(seed) => operand.call_array(Some(seed), right, span, session, output), None => Ok(right.clone()) }; }
+    let axis = scan_axis(kind, axis, right, cx.span)?;
+    if right.is_atom() { return match seed { Some(seed) => operand.call_array(Some(seed), right, cx), None => Ok(right.clone()) }; }
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
     if let FunctionNode::Primitive(p) = operand.node() { if let Some(result) = crate::pervasive::scan(*p, right, seed, &axis) { return Ok(result); } }
     if let FunctionNode::Primitive(Primitive::Arithmetic(op)) = operand.node() {
@@ -1335,13 +1352,13 @@ fn scan(
                 &axis,
                 seed.cloned().map(number),
                 |i| number(right.at(i)),
-                |x, y| { session.execution.check(span)?; x.dyad(*op, y).domain_at(span) },
+                |x, y| { cx.check()?; x.dyad(*op, y).domain_at(cx.span) },
             )?;
-            return Value::new(right.shape().to_vec(), data.into_iter().map(Value::Number).collect()).error_at(span, "invalid numeric scan");
+            return Value::new(right.shape().to_vec(), data.into_iter().map(Value::Number).collect()).error_at(cx.span, "invalid numeric scan");
         }
     }
-    let data = scan_items(&axis, seed.cloned(), |i| right.at(i), |x, y| operand.call_array(Some(x), y, span, session, output))?;
-    Value::new(right.shape().to_vec(), data).error_at(span, "invalid scan result")
+    let data = scan_items(&axis, seed.cloned(), |i| right.at(i), |x, y| operand.call_array(Some(x), y, cx))?;
+    Value::new(right.shape().to_vec(), data).error_at(cx.span, "invalid scan result")
 }
 
 // A lexical link is an index into active frames, never an owning reference.
@@ -1358,15 +1375,45 @@ impl PartialEq for Closure {
 struct Frame { names: HashMap<String, Binding>, parent: Option<usize>, module: usize }
 struct ArrayBinding { name: String, owner: Option<usize>, value: Value }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub(crate) enum Operand { Value(Value), Function(Function) }
+impl Operand {
+    fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
+        match (self, other) {
+            (Self::Value(x), Self::Value(y)) => values(x, y),
+            (Self::Function(f), Self::Function(g)) => f.equal_by(g, values),
+            _ => Ok(false),
+        }
+    }
+}
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 enum OperatorNode { Defined(Closure), Primitive(OperatorKind), Bound(Box<OperatorNode>, Operand) }
+impl OperatorNode {
+    fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
+        Ok(match (self, other) {
+            (Self::Defined(x), Self::Defined(y)) => x == y,
+            (Self::Primitive(x), Self::Primitive(y)) => x == y,
+            (Self::Bound(n, a), Self::Bound(m, b)) => n.equal_by(m, values)? && a.equal_by(b, values)?,
+            _ => false,
+        })
+    }
+}
 
 /// An operator held as a value, as in a record field.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Operator(Arc<OperatorNode>);
+impl Operator {
+    fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> { Ok(Arc::ptr_eq(&self.0, &other.0) || self.0.equal_by(&other.0, values)?) }
+    /// Whether the operators match, as `≡` compares them: built from matching parts, with `≡`'s rule for the values in them.
+    pub(crate) fn matches(&self, other: &Self, cx: &Context<'_>) -> Result<bool, Error> { self.equal_by(other, &mut |x, y| x.matches(y, cx)) }
+}
+impl PartialEq for Operator {
+    fn eq(&self, other: &Self) -> bool {
+        let Ok(equal) = self.equal_by(other, &mut same_values);
+        equal
+    }
+}
 
 fn operand_dependencies<'a>(operands: impl Iterator<Item = &'a Operand>) -> (Option<usize>, bool) {
     operands.fold((None, false), |(environment, late), op| match op {
@@ -1542,7 +1589,7 @@ impl Default for Started { fn default() -> Self { Self(std::time::Instant::now()
 
 #[derive(Default)]
 pub struct Session {
-    execution: crate::execution::Execution,
+    pub(crate) execution: crate::execution::Execution,
     pub(crate) display: crate::display::Settings,
     display_defaults: crate::display::Settings,
     names: HashMap<String, Binding>,
@@ -1561,8 +1608,20 @@ pub struct Session {
     peak_frames: usize,
 }
 
+impl Context<'_> {
+    /// Runs `f` in prototype mode when `on`, then restores the caller's mode, after success and after an error.
+    fn prototype_mode<T>(&mut self, on: bool, f: impl FnOnce(&mut Self) -> T) -> T {
+        let previous = self.session.prototype;
+        self.session.prototype |= on;
+        let result = f(self);
+        self.session.prototype = previous;
+        result
+    }
+}
 impl Session {
     pub fn new() -> Self { Self::default() }
+    /// This session at `span`, for a call that takes a `Context`.
+    pub(crate) fn at<'a>(&'a mut self, span: &'a Span) -> Context<'a> { Context { span, session: self } }
     pub(crate) fn interactive() -> Self {
         let display = crate::display::Settings::interactive();
         Self { display, display_defaults: display, ..Self::default() }
@@ -1649,15 +1708,15 @@ impl Session {
     }
     /// `•time t` gives the seconds since `t`, counting from the session's start. `F •time x` gives each function's fastest time per call
     /// on `x`, in the layout of `F`.
-    fn system_time(&mut self, left: Option<&Value>, right: &Value, span: &Span, output: &mut Vec<Output>) -> Result<Value, Error> {
+    fn system_time(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         let Some(functions) = left else {
             let now = Value::Number(self.started.0.elapsed().as_secs_f64().into());
-            return Primitive::Arithmetic(crate::number::Arithmetic::Minus).call(Some(&now), right, &self.execution.at(span));
+            return Primitive::Arithmetic(crate::number::Arithmetic::Minus).call(Some(&now), right, &self.at(span));
         };
         let times = functions
             .elements()
             .map(|f| match f {
-                Value::Function(f) => self.fastest(&f, right, span, output),
+                Value::Function(f) => self.fastest(&f, right, span),
                 _ => Err(span.domain_error("•time needs functions on its left")),
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1665,13 +1724,13 @@ impl Session {
         Value::floats(functions.shape().to_vec(), times).and_then(|t| t.with_layout(functions.layout().clone())).error_at(span, "invalid •time result")
     }
     /// The fastest time per call of `f` on `x`, in seconds. Calls repeat for about 0.1 s, in batches that double until one takes 1 ms.
-    fn fastest(&mut self, f: &Function, x: &Value, span: &Span, output: &mut Vec<Output>) -> Result<f64, Error> {
+    fn fastest(&mut self, f: &Function, x: &Value, span: &Span) -> Result<f64, Error> {
         use std::time::{Duration, Instant};
         let start = Instant::now();
         let (mut batch, mut best) = (1u32, f64::INFINITY);
         loop {
             let begun = Instant::now();
-            for _ in 0..batch { f.call(None, x, span, self, output)?; }
+            for _ in 0..batch { f.call(None, x, &mut self.at(span))?; }
             let taken = begun.elapsed();
             best = best.min(taken.as_secs_f64() / f64::from(batch));
             if start.elapsed() >= Duration::from_millis(100) { return Ok(best); }
@@ -1697,9 +1756,12 @@ impl Session {
         Ok(())
     }
     pub fn eval(&mut self, code: &str) -> Evaluation { self.eval_with(code, crate::EvalOptions::default()) }
-    pub fn eval_with(&mut self, code: &str, options: crate::EvalOptions) -> Evaluation {
+    pub fn eval_with(&mut self, code: &str, options: crate::EvalOptions) -> Evaluation { self.evaluation(options, |s| s.evaluate_source(Source::new("<input>", code))) }
+    /// One evaluation under `options`: `evaluate`'s result, with the output it produced.
+    fn evaluation(&mut self, options: crate::EvalOptions, evaluate: impl FnOnce(&mut Self) -> Evaluation) -> Evaluation {
         self.execution.begin(options);
-        self.evaluate_source(Source::new("<input>", code))
+        let result = evaluate(self);
+        Evaluation { output: self.execution.take_output(), ..result }
     }
     pub fn eval_timeout(&mut self, code: &str, timeout: std::time::Duration) -> Evaluation {
         self.eval_with(code, crate::EvalOptions { timeout: Some(timeout), ..crate::EvalOptions::default() })
@@ -1711,7 +1773,9 @@ impl Session {
         match Function::late_bound(function) { Ok(f) => self.call_function_with(&f, args, options), Err(error) => Evaluation::failed(error) }
     }
     pub fn call_function_with(&mut self, function: &Function, args: &[Value], options: crate::EvalOptions) -> Evaluation {
-        self.execution.begin(options);
+        self.evaluation(options, |s| s.call_function(function, args))
+    }
+    fn call_function(&mut self, function: &Function, args: &[Value]) -> Evaluation {
         let span = Span::whole(Source::new("<call>", function.bpl()));
         let mut result = Evaluation::default();
         let called = (|| {
@@ -1720,15 +1784,15 @@ impl Session {
                 [left, right] => (Some(left), right),
                 _ => return Err(span.error(ErrorKind::Length, "call requires one or two arguments")),
             };
-            function.call(left, right, &span, self, &mut result.output)?.result(&span)
+            function.call(left, right, &mut self.at(&span))?.result(&span)
         })();
         match called {
             Ok(Bound { value: Binding::Value(a), shy, .. }) => {
-                if self.execution.echo && !shy { if let Err(e) = self.display_value(&a, &span, &mut result.output) { result.error = Some(e); } }
+                if self.execution.echo && !shy { if let Err(e) = self.display_value(&a, &span) { result.error = Some(e); } }
                 result.value = Some(a);
             }
             Ok(Bound { value: Binding::Function(f), shy, .. }) => {
-                if self.execution.echo && !shy { self.display_function(&f, &mut result.output); }
+                if self.execution.echo && !shy { self.display_function(&f); }
                 result.function = Some(f);
             }
             Ok(_) => (),
@@ -1736,10 +1800,7 @@ impl Session {
         }
         result
     }
-    pub fn eval_source(&mut self, source: Arc<Source>, options: crate::EvalOptions) -> Evaluation {
-        self.execution.begin(options);
-        self.evaluate_source(source)
-    }
+    pub fn eval_source(&mut self, source: Arc<Source>, options: crate::EvalOptions) -> Evaluation { self.evaluation(options, |s| s.evaluate_source(source)) }
     /// A line that starts with `]` is a command, unless it closes brackets that the code before it left open. Each part
     /// keeps its line numbers, so errors point at the right line.
     fn evaluate_source(&mut self, source: Arc<Source>) -> Evaluation {
@@ -1762,8 +1823,7 @@ impl Session {
             let text = &source.text[range.clone()];
             let code = format!("{}{text}", "\n".repeat(source.text[..range.start].matches('\n').count()));
             let part = Arc::new(Source { name: source.name.clone(), text: code, file: source.file });
-            let mut next = if text.trim_start().starts_with(']') { self.command(part) } else { self.evaluate_code(part) };
-            result.output.append(&mut next.output);
+            let next = if text.trim_start().starts_with(']') { self.command(part) } else { self.evaluate_code(part) };
             (result.value, result.function, result.operator) = (next.value, next.function, next.operator);
             if next.error.is_some() {
                 result.error = next.error;
@@ -1775,25 +1835,22 @@ impl Session {
     fn evaluate_code(&mut self, source: Arc<Source>) -> Evaluation {
         match crate::parse(source).complete() { Ok(parsed) => self.eval_display(&parsed, false), Err(e) => Evaluation::failed(e) }
     }
-    pub fn eval_parsed(&mut self, parsed: &Parsed, options: crate::EvalOptions) -> Evaluation {
-        self.execution.begin(options);
-        self.eval_display(parsed, false)
-    }
+    pub fn eval_parsed(&mut self, parsed: &Parsed, options: crate::EvalOptions) -> Evaluation { self.evaluation(options, |s| s.eval_display(parsed, false)) }
     fn eval_display(&mut self, parsed: &Parsed, diagram: bool) -> Evaluation {
         let mut result = Evaluation::default();
         for (i, statement) in parsed.statements.iter().enumerate() {
             (result.function, result.operator) = (None, None);
             let nodes = &statement.nodes;
-            match self.bind(nodes, &mut result.output) {
+            match self.bind(nodes) {
                 Ok(bound) => {
                     result.value = match bound.value {
                         Binding::NoResult | Binding::Absent => None,
                         Binding::Value(a) => {
                             if diagram && i + 1 == parsed.statements.len() {
-                                self.execution.output(&mut result.output, crate::OutputKind::Display, crate::display::diagram(&a));
+                                self.execution.output(crate::OutputKind::Display, self.display.diagram(&a));
                             }
                             else if self.execution.echo && !bound.shy {
-                                if let Err(e) = self.display_value(&a, &nodes[0].span, &mut result.output) {
+                                if let Err(e) = self.display_value(&a, &nodes[0].span) {
                                     result.error = Some(e);
                                     return result;
                                 }
@@ -1802,13 +1859,13 @@ impl Session {
                         }
                         _ if bound.shy => None,
                         Binding::Function(f) => {
-                            if self.execution.echo { self.display_function(&f, &mut result.output); }
+                            if self.execution.echo { self.display_function(&f); }
                             if i + 1 == parsed.statements.len() { result.function = Some(f); }
                             None
                         }
                         Binding::Operator(op) => {
                             let op = Operator(Arc::new(op));
-                            if self.execution.echo { self.execution.output(&mut result.output, crate::OutputKind::Display, op.to_string()); }
+                            if self.execution.echo { self.execution.output(crate::OutputKind::Display, op.to_string()); }
                             if i + 1 == parsed.statements.len() { result.operator = Some(op); }
                             None
                         }
@@ -1831,19 +1888,9 @@ impl Session {
         if command.eq_ignore_ascii_case("]help") {
             let Some((name, detail)) = crate::inspection::help_command(code) else { return failed(ErrorKind::Syntax, "usage: ]help name [-source]".into()) };
             let Some(info) = self.inspect(name) else { return failed(ErrorKind::Value, format!("name not found: {name}")) };
-            let mut result = Evaluation::default();
             let data = [("text/plain".to_string(), info.text(detail)), ("text/markdown".to_string(), info.markdown(detail))].into_iter().collect();
-            self.execution.emit(&mut result.output, crate::Output { kind: crate::OutputKind::Display, data });
-            return result;
-        }
-        if matches!(command.to_ascii_lowercase().as_str(), "]box" | "]boxing") {
-            let text = match self.display.configure(args, self.display_defaults) {
-                Ok(text) => text,
-                Err(message) => return failed(ErrorKind::Domain, message.into()),
-            };
-            let mut result = Evaluation::default();
-            self.execution.output(&mut result.output, crate::OutputKind::Display, text);
-            return result;
+            self.execution.emit(crate::Output { kind: crate::OutputKind::Display, data });
+            return Evaluation::default();
         }
         if command.eq_ignore_ascii_case("]clear") {
             if !args.is_empty() { return failed(ErrorKind::Syntax, "usage: ]clear".into()); }
@@ -1859,60 +1906,65 @@ impl Session {
         }
         failed(ErrorKind::Syntax, "unknown user command".into())
     }
-    /// Runs `f` in prototype mode when `on`, then restores the caller's mode, after success and after an error.
-    fn prototype_mode<T>(&mut self, on: bool, f: impl FnOnce(&mut Self) -> T) -> T {
-        let previous = self.prototype;
-        self.prototype |= on;
-        let result = f(self);
-        self.prototype = previous;
-        result
-    }
-    fn bind(&mut self, nodes: &[Node], output: &mut Vec<Output>) -> Result<Bound, Error> {
+    fn bind(&mut self, nodes: &[Node]) -> Result<Bound, Error> {
         self.execution.check(&nodes[0].span)?;
         if self.depth == MAX_CALL_DEPTH { return Err(nodes[0].span.error(ErrorKind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}"))); }
         self.depth += 1;
-        let result = stacker::maybe_grow(STACK_RED_ZONE, STACK_SEGMENT, || self.bind_expression(nodes, output));
+        let result = stacker::maybe_grow(STACK_RED_ZONE, STACK_SEGMENT, || self.bind_expression(nodes));
         self.depth -= 1;
         result
     }
 
-    fn mime_value(&mut self, right: &Value, span: &Span, output: &mut Vec<Output>) -> Result<Value, Error> {
+    /// `•mime Y` is the MIME bundle that displays `Y`. `X •mime Y` is `Y` displayed through `X`, which holds a function or names a MIME
+    /// type. A MIME type shows `Y` itself as that type.
+    fn mime(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+        let Some(left) = left else { return self.mime_value(right, span) };
+        let renderer = match left.is_singleton().then(|| left.at(0)) {
+            Some(Value::Function(f)) => f,
+            _ => {
+                let Some(kind) = crate::keyed::name(left) else { return Err(span.domain_error("•mime needs a function or a MIME type on its left")) };
+                before(crate::keyed::text(&kind), Function::primitive(Primitive::Keys), span)?
+            }
+        };
+        right.clone().with_renderer(renderer).error_at(span, "invalid •mime result")
+    }
+    fn mime_value(&mut self, right: &Value, span: &Span) -> Result<Value, Error> {
         let fallback = crate::keyed::vector(vec!["text/plain".into()], vec![crate::keyed::text(&self.display.array(right, false))]).unwrap();
-        let Some(Value::Function(renderer)) = crate::keyed::field(right, "_mime") else { return Ok(fallback); };
+        let Some(renderer) = right.renderer().cloned() else { return Ok(fallback); };
         let echo = std::mem::replace(&mut self.execution.echo, false);
-        let rendered = renderer.call_array(None, right, span, self, output);
+        let rendered = renderer.call_array(None, right, &mut self.at(span));
         self.execution.echo = echo;
         let bundle = crate::keyed::merge(&fallback, &rendered?).error_at(span, "MIME renderer must return a keyed vector")?;
         crate::display::bundle(&bundle).error_at(span, "MIME bundle must map MIME types to text")?;
         Ok(bundle)
     }
 
-    /// A value with a `_mime` renderer displays through it. Other values, and a renderer that fails, display as text.
-    fn display_value(&mut self, value: &Value, span: &Span, output: &mut Vec<Output>) -> Result<(), Error> {
-        if matches!(crate::keyed::field(value, "_mime"), Some(Value::Function(_))) {
-            match self.mime_value(value, span, output) {
+    /// A value with a renderer displays through it. Other values, and a renderer that fails, display as text.
+    fn display_value(&mut self, value: &Value, span: &Span) -> Result<(), Error> {
+        if value.renderer().is_some() {
+            match self.mime_value(value, span) {
                 Ok(bundle) => {
                     let data = crate::display::bundle(&bundle).expect("•mime checks its bundle");
-                    self.execution.emit(output, Output { kind: crate::OutputKind::Display, data });
+                    self.execution.emit(Output { kind: crate::OutputKind::Display, data });
                     return Ok(());
                 }
                 Err(e) if matches!(e.kind, ErrorKind::Interrupt | ErrorKind::Timeout) => return Err(e),
                 Err(_) => (),
             }
         }
-        self.execution.output(output, crate::OutputKind::Display, self.display.array(value, false));
+        self.execution.output(crate::OutputKind::Display, self.display.array(value, false));
         Ok(())
     }
 
     /// A function displays as a tree when boxed display shows trees, and as text otherwise.
-    fn display_function(&self, f: &Function, output: &mut Vec<Output>) {
-        let text = if self.display.enabled && self.display.trees { f.tree(&mut 1000).render() } else { f.text(&mut 1000) };
-        self.execution.output(output, crate::OutputKind::Display, text);
+    fn display_function(&self, f: &Function) {
+        let text = if self.display.boxed && self.display.trees { f.tree(&mut 1000).render() } else { f.text(&mut 1000) };
+        self.execution.output(crate::OutputKind::Display, text);
     }
 
-    fn execute(&mut self, left: Option<&Value>, right: &Value, span: &Span, output: &mut Vec<Output>) -> Result<Bound, Error> {
-        if let Some(x) = left { return Ok(Bound::from(crate::primitive::pick(right, x, false, &self.execution.at(span))?)); }
-        self.execute_source(Source::new("<execute>", Self::source_text(right, span)?), span, output)
+    fn execute(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
+        if let Some(x) = left { return Ok(Bound::from(crate::primitive::pick(right, x, false, &self.at(span))?)); }
+        self.execute_source(Source::new("<execute>", Self::source_text(right, span)?), span)
     }
 
     fn source_text(right: &Value, span: &Span) -> Result<String, Error> {
@@ -1927,10 +1979,10 @@ impl Session {
     /// `•load path` runs a file in a module of its own and returns a record of the module's public names: the names its top level
     /// assigns that don't start with `_`, in alphabetical order. The file adds no names to the caller, and shows nothing except
     /// explicit output.
-    fn load(&mut self, right: &Value, span: &Span, output: &mut Vec<Output>) -> Result<Bound, Error> {
+    fn load(&mut self, right: &Value, span: &Span) -> Result<Bound, Error> {
         let text = Self::source_text(right, span)?;
         let path = span.path(&text);
-        let code = std::fs::read_to_string(&path).map_err(|e| span.error(ErrorKind::Value, format!("{text}: {e}")))?;
+        let code = std::fs::read_to_string(&path).map_err(|e| span.file_error(&text, e))?;
         let file = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
         if self.loading.contains(&file) { return Err(span.domain_error(format!("load cycle: {text} is already loading"))); }
         self.modules.push(HashMap::new());
@@ -1938,7 +1990,7 @@ impl Session {
         let caller = (self.current, self.module, std::mem::replace(&mut self.execution.echo, false));
         (self.current, self.module) = (None, module);
         self.loading.push(file);
-        let result = self.execute_source(Source::file(path.to_string_lossy(), code), span, output);
+        let result = self.execute_source(Source::file(path.to_string_lossy(), code), span);
         self.loading.pop();
         (self.current, self.module, self.execution.echo) = caller;
         result?;
@@ -1949,18 +2001,18 @@ impl Session {
         Ok(Bound::new(Binding::Value(crate::keyed::vector(keys, values).error_at(span, "invalid module record")?)))
     }
 
-    fn execute_source(&mut self, source: Arc<Source>, span: &Span, output: &mut Vec<Output>) -> Result<Bound, Error> {
+    fn execute_source(&mut self, source: Arc<Source>, span: &Span) -> Result<Bound, Error> {
         let parsed = crate::parse(source).complete()?;
         let mut result = Bound::new(Binding::NoResult);
         for statement in &parsed.statements {
-            if let Binding::Value(a) = &result.value { if self.execution.echo && !result.shy { self.display_value(a, span, output)?; } }
-            result = self.bind(&statement.nodes, output).map_err(|mut e| { e.calls.push(span.clone()); e })?;
+            if let Binding::Value(a) = &result.value { if self.execution.echo && !result.shy { self.display_value(a, span)?; } }
+            result = self.bind(&statement.nodes).map_err(|mut e| { e.calls.push(span.clone()); e })?;
         }
         Ok(result)
     }
 
-    fn bind_expression(&mut self, nodes: &[Node], output: &mut Vec<Output>) -> Result<Bound, Error> {
-        let Step::Done(result) = Binder::evaluate(nodes, self, output, false)? else { unreachable!() };
+    fn bind_expression(&mut self, nodes: &[Node]) -> Result<Bound, Error> {
+        let Step::Done(result) = Binder::evaluate(nodes, self, false)? else { unreachable!() };
         Ok(result)
     }
 
@@ -2124,7 +2176,7 @@ impl Session {
         Ok(())
     }
 
-    fn assign(&mut self, target: &[Node], value: &Binding, output: &mut Vec<Output>) -> Result<(), Error> {
+    fn assign(&mut self, target: &[Node], value: &Binding) -> Result<(), Error> {
         let span = &target[0].span;
         if let [target] = target {
             match &target.kind {
@@ -2132,26 +2184,26 @@ impl Session {
                     return self.store(name, value.clone(), span);
                 }
                 NodeKind::System(_) => {
-                    self.resolve(target, output)?;
+                    self.resolve(target)?;
                     return Err(span.error(ErrorKind::Syntax, "system names are read-only"));
                 }
                 NodeKind::Output => {
                     return match value {
                         Binding::Value(a) => {
-                            self.execution.output(output, crate::OutputKind::Explicit, self.display.array(a, self.current.is_some()));
+                            self.execution.output(crate::OutputKind::Explicit, self.display.explicit(a, self.current.is_some()));
                             Ok(())
                         }
                         _ => return Err(target.span.domain_error("output requires a subject")),
                     }
                 }
                 NodeKind::Group(nodes) => {
-                    if self.assignment_names(nodes) { return self.assign(nodes, value, output); }
-                    return self.assign_selected(nodes, None, value, output);
+                    if self.assignment_names(nodes) { return self.assign(nodes, value); }
+                    return self.assign_selected(nodes, None, value);
                 }
                 NodeKind::ArrayLiteral { cells, .. } if self.assignment_names(std::slice::from_ref(target)) => {
                     let right = value.clone().into_value(span)?;
                     let pairs = Self::destructure(cells, &right, span)?;
-                    for (cell, item) in pairs.into_iter().rev() { self.assign(cell, &Binding::from_element(item), output)?; }
+                    for (cell, item) in pairs.into_iter().rev() { self.assign(cell, &Binding::from_element(item))?; }
                     return Ok(());
                 }
                 _ => (),
@@ -2159,35 +2211,35 @@ impl Session {
         }
         let (operand, category) = self.assignment_operand(target, target.len())?;
         let modified = operand > 0 && matches!(category, Category::Function);
-        let (array, modifier) = if modified { (&target[..operand], self.modifier(&target[operand..], output)?) } else { (target, None) };
+        let (array, modifier) = if modified { (&target[..operand], self.modifier(&target[operand..])?) } else { (target, None) };
         if let Some(modifier) = &modifier {
-            if self.assignment_names(array) { return self.modify_names(array, &value.clone().into_value(span)?, modifier, output); }
+            if self.assignment_names(array) { return self.modify_names(array, &value.clone().into_value(span)?, modifier); }
         }
         match array {
-            [Node { kind: NodeKind::Group(nodes), .. }] => self.assign_selected(nodes, modifier, value, output),
+            [Node { kind: NodeKind::Group(nodes), .. }] => self.assign_selected(nodes, modifier, value),
             _ => Err(span.error(ErrorKind::Syntax, "assignment needs a name or selection")),
         }
     }
 
-    fn modify_names(&mut self, nodes: &[Node], right: &Value, modifier: &Function, output: &mut Vec<Output>) -> Result<(), Error> {
+    fn modify_names(&mut self, nodes: &[Node], right: &Value, modifier: &Function) -> Result<(), Error> {
         let [node] = nodes else { unreachable!() };
         match &node.kind {
-            NodeKind::Group(inner) => self.modify_names(inner, right, modifier, output),
+            NodeKind::Group(inner) => self.modify_names(inner, right, modifier),
             NodeKind::Name(name) => {
                 let binding = self.array_binding(name, &node.span)?;
                 // Joining along the leading axis grows the array in place.
                 if let FunctionNode::Primitive(p @ (Primitive::Ravel | Primitive::CatenateFirst)) = modifier.node() {
                     let first = matches!(p, Primitive::CatenateFirst);
-                    if let Some((cells, names)) = crate::primitive::append_plan(&binding.value, right, first, &self.execution.at(&node.span))? {
+                    if let Some((cells, names)) = crate::primitive::append_plan(&binding.value, right, first, &self.at(&node.span))? {
                         if cells.environment() > binding.owner { return Err(node.span.domain_error("array would export a local closure")); }
-                        return self.write_kept(binding, &node.span, |value, _| Ok(value.append(&cells, names.as_deref())));
+                        return self.write_kept(binding, &node.span, |value, _| { value.append(&cells, names.as_deref()); Ok(()) });
                     }
                 }
-                let updated = modifier.call_array(Some(&binding.value), right, &node.span, self, output)?;
+                let updated = modifier.call_array(Some(&binding.value), right, &mut self.at(&node.span))?;
                 self.update_array(&binding, updated, &node.span)
             }
             NodeKind::ArrayLiteral { cells, .. } => {
-                for (cell, item) in Self::destructure(cells, right, &node.span)? { self.modify_names(cell, &item, modifier, output)?; }
+                for (cell, item) in Self::destructure(cells, right, &node.span)? { self.modify_names(cell, &item, modifier)?; }
                 Ok(())
             }
             _ => unreachable!(),
@@ -2213,28 +2265,28 @@ impl Session {
         Ok(cells.iter().enumerate().map(|(i, cell)| (&cell[..], right.at(if right.is_singleton() { 0 } else { i }))).collect())
     }
 
-    fn modifier(&mut self, nodes: &[Node], output: &mut Vec<Output>) -> Result<Option<Function>, Error> {
+    fn modifier(&mut self, nodes: &[Node]) -> Result<Option<Function>, Error> {
         if nodes.is_empty() { return Ok(None); }
-        match self.bind(nodes, output)?.value {
+        match self.bind(nodes)?.value {
             Binding::Function(f) => Ok(Some(f)),
             _ => Err(nodes[0].span.error(ErrorKind::Syntax, "modified assignment needs a function")),
         }
     }
 
-    fn extend_selected(&mut self, nodes: &mut Vec<Node>, output: &mut Vec<Output>, descend: bool) -> Result<(), Error> {
-        if let [Node { kind: NodeKind::Group(inner), .. }] = nodes.as_mut_slice() { return self.extend_selected(inner, output, descend); }
+    fn extend_selected(&mut self, nodes: &mut Vec<Node>, descend: bool) -> Result<(), Error> {
+        if let [Node { kind: NodeKind::Group(inner), .. }] = nodes.as_mut_slice() { return self.extend_selected(inner, descend); }
         // A key before `⊃` or `⌷` may name an entry that the container lacks. It can be a list of keys.
         let Some(i) = nodes.iter().position(|n| matches!(n.kind, NodeKind::Function(Primitive::Mix | Primitive::Index))) else { return Ok(()) };
         if i == 0 || i + 1 == nodes.len() || !nodes[..i].iter().all(crate::syntax::key_node) { return Ok(()); }
         let span = nodes[0].span.clone();
-        let value = self.array_result(&nodes[..i], output)?;
+        let value = self.array_result(&nodes[..i])?;
         let selectors: Vec<_> = crate::primitive::coordinate_fields(&value).into_iter().map(Some).collect();
         // Replace the keys with their value, so that they are evaluated once.
         nodes.splice(..i, [Node { kind: NodeKind::Literal(value), span: span.clone() }]);
         if !selectors.iter().flatten().any(|s| matches!(crate::keyed::Selector::of(s), Ok(Some(_)))) { return Ok(()); }
         let mut container = nodes.split_off(2);
-        self.extend_selected(&mut container, output, true)?;
-        if let Some((binding, path)) = self.direct_item(&mut container, output)? {
+        self.extend_selected(&mut container, true)?;
+        if let Some((binding, path)) = self.direct_item(&mut container)? {
             let target = path.iter().fold(binding.value.clone(), |a, &i| a.at(i));
             let added = crate::keyed::missing(&target, &selectors).error_at(&span, "invalid named axis extension")?;
             // Holding the item would make the write copy it.
@@ -2246,11 +2298,11 @@ impl Session {
             }
         }
         else {
-            let mut target = self.array_result(&container, output)?;
+            let mut target = self.array_result(&container)?;
             let added = crate::keyed::missing(&target, &selectors).error_at(&span, "invalid named axis extension")?;
             if added.iter().any(|k| !k.is_empty()) {
                 crate::keyed::extend(&mut target, added, descend).error_at(&span, "invalid named axis extension")?;
-                self.assign_selected(&container, None, &Binding::Value(target), output)?;
+                self.assign_selected(&container, None, &Binding::Value(target))?;
             }
         }
         nodes.extend(container);
@@ -2265,21 +2317,21 @@ impl Session {
         match &nodes.last()?.kind { NodeKind::Group(inner) | NodeKind::Run(inner) => self.root_assignment(inner), _ => None }
     }
 
-    fn assign_selected(&mut self, nodes: &[Node], modifier: Option<Function>, value: &Binding, output: &mut Vec<Output>) -> Result<(), Error> {
+    fn assign_selected(&mut self, nodes: &[Node], modifier: Option<Function>, value: &Binding) -> Result<(), Error> {
         if let Some(span) = self.root_assignment(nodes) { return Err(span.error(ErrorKind::Syntax, INVALID_SELECTION)); }
         let right = &value.clone().into_value(&nodes[0].span)?;
         let mut nodes = self.members(nodes).into_owned();
-        if modifier.is_none() { self.extend_selected(&mut nodes, output, false)?; }
+        if modifier.is_none() { self.extend_selected(&mut nodes, false)?; }
         let span = nodes[0].span.clone();
-        let (binding, selection, values) = match self.direct_target(&mut nodes, output)? {
+        let (binding, selection, values) = match self.direct_target(&mut nodes)? {
             Some((binding, selection)) => (binding, selection, right.clone()),
             None => {
-                let (binding, labels, selected, kind) = self.selection_expression(&nodes, output)?;
+                let (binding, labels, selected, kind) = self.selection_expression(&nodes)?;
                 let (selection, values) = labels.replacements(&selected, right, kind, &span)?;
                 (binding, selection, values)
             }
         };
-        let values = match modifier { Some(f) => self.modified_values(&binding.value, &selection, &f, &values, &span, output)?, None => values };
+        let values = match modifier { Some(f) => self.modified_values(&binding.value, &selection, &f, &values, &span)?, None => values };
         self.write_selection(binding, &selection, &values, &span)
     }
 
@@ -2304,7 +2356,7 @@ impl Session {
         let current = self.names_mut(owner).remove(&name);
         let same = matches!(&current, Some(Binding::Value(v)) if v.storage_id() == value.storage_id());
         let current = current.filter(|_| !same);
-        if let Err(e) = write(&mut value, &self.execution.at(span)) {
+        if let Err(e) = write(&mut value, &self.at(span)) {
             if let Some(restored) = if same { Some(Binding::Value(value)) } else { current } { self.names_mut(owner).insert(name, restored); }
             return Err(e);
         }
@@ -2315,16 +2367,16 @@ impl Session {
     /// A target whose text gives its positions: `I⌷` or `k⊃` of a name or of such a target, as dot access writes them. It gives
     /// the binding and the selection without the labels that other targets need. Each index is evaluated once and its node
     /// becomes its value, so a target that needs labels after all evaluates nothing twice.
-    fn direct_target(&mut self, nodes: &mut [Node], output: &mut Vec<Output>) -> Result<Option<(ArrayBinding, Selection)>, Error> {
+    fn direct_target(&mut self, nodes: &mut [Node]) -> Result<Option<(ArrayBinding, Selection)>, Error> {
         let span = nodes[0].span.clone();
         match nodes {
-            [Node { kind: NodeKind::Group(inner) | NodeKind::Run(inner), .. }] => self.direct_target(inner, output),
+            [Node { kind: NodeKind::Group(inner) | NodeKind::Run(inner), .. }] => self.direct_target(inner),
             [left, Node { kind: NodeKind::Function(p @ (Primitive::Index | Primitive::Mix)), .. }, rest @ ..] if self.holds_array(left) => {
                 let pick = matches!(p, Primitive::Mix);
-                let Some((binding, path)) = self.direct_item(rest, output)? else { return Ok(None) };
-                let left = self.evaluate_once(left, output)?;
+                let Some((binding, path)) = self.direct_item(rest)? else { return Ok(None) };
+                let left = self.evaluate_once(left)?;
                 let item = path.iter().fold(binding.value.clone(), |a, &i| a.at(i));
-                let context = self.execution.at(&span);
+                let context = self.at(&span);
                 let selection = if !pick && left.is_simple() {
                     crate::primitive::squad_selection(&left, &item, &context)?
                 } else if pick && item.shape().len() == 1 && (left.is_atom() || crate::keyed::name(&left).is_some()) {
@@ -2338,11 +2390,11 @@ impl Session {
     }
 
     /// The array that `nodes` names, or the one whole item that a direct target reaches: its binding and its path.
-    fn direct_item(&mut self, nodes: &mut [Node], output: &mut Vec<Output>) -> Result<Option<(ArrayBinding, Vec<usize>)>, Error> {
+    fn direct_item(&mut self, nodes: &mut [Node]) -> Result<Option<(ArrayBinding, Vec<usize>)>, Error> {
         match nodes {
             [Node { kind: NodeKind::Name(name), span }] => Ok(Some((self.array_binding(name, span)?, vec![]))),
-            [Node { kind: NodeKind::Group(inner) | NodeKind::Run(inner), .. }] => self.direct_item(inner, output),
-            _ => Ok(self.direct_target(nodes, output)?.and_then(|(binding, selection)| match (selection.frame, selection.targets) {
+            [Node { kind: NodeKind::Group(inner) | NodeKind::Run(inner), .. }] => self.direct_item(inner),
+            _ => Ok(self.direct_target(nodes)?.and_then(|(binding, selection)| match (selection.frame, selection.targets) {
                 (ResultFrame::Direct, Targets::Offsets(offsets)) => Some((binding, offsets)),
                 (ResultFrame::Direct, Targets::Paths(mut paths)) if paths.len() == 1 => Some((binding, paths.remove(0))),
                 _ => None,
@@ -2351,8 +2403,8 @@ impl Session {
     }
 
     /// The value of `node`, which then becomes a literal, so that nothing evaluates it again.
-    fn evaluate_once(&mut self, node: &mut Node, output: &mut Vec<Output>) -> Result<Value, Error> {
-        let value = self.array_result(std::slice::from_ref(node), output)?;
+    fn evaluate_once(&mut self, node: &mut Node) -> Result<Value, Error> {
+        let value = self.array_result(std::slice::from_ref(node))?;
         node.kind = NodeKind::Literal(value.clone());
         Ok(value)
     }
@@ -2360,7 +2412,6 @@ impl Session {
     fn selection_expression(
         &mut self,
         nodes: &[Node],
-        output: &mut Vec<Output>,
     ) -> Result<(ArrayBinding, crate::selection::Labels, Value, SelectionKind), Error> {
         let members = self.members(nodes);
         let nodes = &members[..];
@@ -2372,14 +2423,14 @@ impl Session {
                 let (labels, selected) = crate::selection::Labels::new(&binding.value, span)?;
                 (binding, labels, selected, SelectionKind::Item)
             }
-            NodeKind::Group(inner) | NodeKind::Run(inner) => self.selection_expression(inner, output)?,
+            NodeKind::Group(inner) | NodeKind::Run(inner) => self.selection_expression(inner)?,
             _ if root > 0 && self.holds_array(&nodes[root - 1]) && self.holds_array(&nodes[root]) => {
                 let span = Span { source: span.source.clone(), range: nodes[root - 1].span.range.start..span.range.end };
                 return Err(span.error(ErrorKind::Syntax, STRAND_TARGET));
             }
             _ => return Err(span.error(ErrorKind::Syntax, "selection must end in an array name")),
         };
-        let (Step::Done(result), kind) = Binder::evaluate_marked(nodes, self, output, false, Some((root, selected, kind)), None)? else { unreachable!() };
+        let (Step::Done(result), kind) = Binder::evaluate_marked(nodes, self, false, Some((root, selected, kind)), None)? else { unreachable!() };
         Ok((binding, labels, result.array(span)?, kind.unwrap()))
     }
 
@@ -2394,18 +2445,17 @@ impl Session {
         f: &Function,
         right: &Value,
         span: &Span,
-        output: &mut Vec<Output>,
     ) -> Result<Value, Error> {
-        let right = selection.checked(right, &self.execution.at(span))?;
+        let right = selection.checked(right, &self.at(span))?;
         if let (ResultFrame::Array(_), Targets::Offsets(offsets), FunctionNode::Primitive(p)) = (&selection.frame, &selection.targets, f.node()) {
             if p.pervasive(true) && distinct(offsets) {
-                let items = selection.read(original, &self.execution.at(span))?;
+                let items = selection.read(original, &self.at(span))?;
                 // A singleton goes to every target, as a unit.
                 let right = if right.is_singleton() && right.shape() != items.shape() {
                     let item = right.at(0);
                     if item.is_atom() { item } else { item.enclose().error_at(span, "invalid modified selection")? }
                 } else { right };
-                return f.call_array(Some(&items), &right, span, self, output);
+                return f.call_array(Some(&items), &right, &mut self.at(span));
             }
         }
         let mut results: Vec<Value> = Vec::with_capacity(selection.targets.len());
@@ -2413,7 +2463,7 @@ impl Session {
         for i in 0..selection.targets.len() {
             let path = selection.targets.path(i);
             let item = match latest.get(path) { Some(&j) => results[j].clone(), None => path.iter().fold(original.clone(), |a, &k| a.at(k)) };
-            results.push(f.call_array(Some(&item), &selection.item(&right, i), span, self, output)?);
+            results.push(f.call_array(Some(&item), &selection.item(&right, i), &mut self.at(span))?);
             latest.insert(path, i);
         }
         match &selection.frame {
@@ -2425,7 +2475,7 @@ impl Session {
 
     // Resolving one structural item may execute a group, but never derives an operator
     // or consumes a neighbouring item. The binder alone chooses grammatical reductions.
-    fn resolve(&mut self, node: &Node, output: &mut Vec<Output>) -> Result<Binding, Error> {
+    fn resolve(&mut self, node: &Node) -> Result<Binding, Error> {
         Ok(match &node.kind {
             NodeKind::Literal(a) => Binding::Value(a.clone()),
             NodeKind::Function(p) => Binding::Function(Function::primitive(*p)),
@@ -2438,11 +2488,11 @@ impl Session {
             NodeKind::System(name) => {
                 crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?.value()
             }
-            NodeKind::Group(nodes) => self.bind(nodes, output)?.value,
+            NodeKind::Group(nodes) => self.bind(nodes)?.value,
             // A dot path such as `m.op` names an operator as a name does, so its run can reduce to one.
             NodeKind::Run(nodes) => {
                 let path = matches!(&self.members(nodes)[..], [Node { kind: NodeKind::Group(_), .. }]);
-                match self.bind(nodes, output)?.value {
+                match self.bind(nodes)?.value {
                     Binding::Operator(_) if !path => {
                         return Err(node.span.error(ErrorKind::Syntax, "a run must reduce to one value: an array, a function or an operator glyph"))
                     }
@@ -2450,11 +2500,11 @@ impl Session {
                 }
             }
             NodeKind::Pipeline(stages) => {
-                let mut result = self.bind(&stages[0], output)?;
+                let mut result = self.bind(&stages[0])?;
                 for stage in &stages[1..] {
                     let right = result.array(&node.span)?;
-                    let function = Function::from_value(self.bind(stage, output)?.value, &stage[0].span)?;
-                    result = function.call(None, &right, &stage[0].span, self, output)?;
+                    let function = Function::from_value(self.bind(stage)?.value, &stage[0].span)?;
+                    result = function.call(None, &right, &mut self.at(&stage[0].span))?;
                 }
                 result.value
             }
@@ -2462,13 +2512,13 @@ impl Session {
                 let mut entries = Vec::new();
                 for nodes in cells {
                     let Some(colon) = crate::syntax::key_colon(nodes) else {
-                        entries.extend(self.item_result(nodes, output)?.map(|item| (None, item)));
+                        entries.extend(self.item_result(nodes)?.map(|item| (None, item)));
                         continue;
                     };
                     // The value and the key evaluate separately, value first. As one expression, `key:f` would be a train.
-                    let Some(value) = self.item_result(&nodes[colon + 1..], output)? else { continue };
-                    let key = self.array_result(&nodes[..colon], output)?;
-                    let item = Function::primitive(Primitive::Keys).call(Some(&key), &value, &nodes[colon].span, self, output)?.array(&node.span)?;
+                    let Some(value) = self.item_result(&nodes[colon + 1..])? else { continue };
+                    let key = self.array_result(&nodes[..colon])?;
+                    let item = Function::primitive(Primitive::Keys).call(Some(&key), &value, &mut self.at(&nodes[colon].span))?.array(&node.span)?;
                     entries.extend(crate::keyed::entries(&item).error_at(&node.span, "key:value items must give keyed vectors")?);
                 }
                 let (names, values) = entries.into_iter().unzip();
@@ -2476,7 +2526,7 @@ impl Session {
             }
             NodeKind::ArrayLiteral { cells, block, .. } => {
                 let mut arrays = Vec::with_capacity(cells.len());
-                for nodes in cells { arrays.extend(self.item_result(nodes, output)?); }
+                for nodes in cells { arrays.extend(self.item_result(nodes)?); }
                 if arrays.is_empty() { return Ok(Binding::Value(crate::syntax::zilde(false))); }
                 let result = if *block {
                     // Each row is a major cell, so unit rows give a vector: `[1 ⋄ 2]` is `1 2`.
@@ -2536,7 +2586,7 @@ impl Session {
         self.table(self.module()).get(name).map(|value| (None, value))
     }
 
-    fn call_defined(&mut self, function: &Function, left: Option<&Value>, right: &Value, output: &mut Vec<Output>) -> Result<Bound, Error> {
+    fn call_defined(&mut self, function: &Function, left: Option<&Value>, right: &Value) -> Result<Bound, Error> {
         let return_span = match function.node() { FunctionNode::Defined(c) | FunctionNode::Derived(c, ..) => c.definition.span.clone(), _ => unreachable!() };
         let caller = self.current;
         let base = self.frames.len();
@@ -2563,7 +2613,7 @@ impl Session {
             self.frames.push(Frame { names, parent: closure.environment, module: closure.module });
             #[cfg(test)]
             { self.peak_frames = self.peak_frames.max(self.frames.len()); }
-            match self.run_definition(&closure.definition, output) {
+            match self.run_definition(&closure.definition) {
                 Ok(Step::Done(bound)) => break Ok(bound),
                 Err(error) => break Err(error),
                 Ok(Step::Tail(call)) => {
@@ -2589,21 +2639,21 @@ impl Session {
         result
     }
 
-    fn array_result(&mut self, nodes: &[Node], output: &mut Vec<Output>) -> Result<Value, Error> { self.bind(nodes, output)?.array(&nodes[0].span) }
+    fn array_result(&mut self, nodes: &[Node]) -> Result<Value, Error> { self.bind(nodes)?.array(&nodes[0].span) }
     /// An item of a bracket list, or `None` for an absent `⍺`, which drops out of the list.
-    fn item_result(&mut self, nodes: &[Node], output: &mut Vec<Output>) -> Result<Option<Value>, Error> {
-        let bound = self.bind(nodes, output)?;
+    fn item_result(&mut self, nodes: &[Node]) -> Result<Option<Value>, Error> {
+        let bound = self.bind(nodes)?;
         if matches!(bound.value, Binding::Absent) { Ok(None) } else { bound.array(&nodes[0].span).map(Some) }
     }
 
-    fn return_expression(&mut self, mut nodes: &[Node], output: &mut Vec<Output>, tail: bool) -> Result<Step, Error> {
+    fn return_expression(&mut self, mut nodes: &[Node], tail: bool) -> Result<Step, Error> {
         if nodes.is_empty() { return Ok(Step::Done(Bound::new(Binding::NoResult))); }
         let mut unshy = false;
         while let [Node { kind: NodeKind::Group(inner), .. }] = nodes {
             nodes = inner;
             unshy = true;
         }
-        let step = if nodes.iter().any(|n| matches!(n.kind, NodeKind::Assign)) { Step::Done(self.bind(nodes, output)?) } else { Binder::evaluate(nodes, self, output, tail)? };
+        let step = if nodes.iter().any(|n| matches!(n.kind, NodeKind::Assign)) { Step::Done(self.bind(nodes)?) } else { Binder::evaluate(nodes, self, tail)? };
         match step {
             Step::Done(mut bound) => {
                 if unshy { bound.shy = false; }
@@ -2616,7 +2666,7 @@ impl Session {
         }
     }
 
-    fn run_definition(&mut self, definition: &Definition, output: &mut Vec<Output>) -> Result<Step, Error> {
+    fn run_definition(&mut self, definition: &Definition) -> Result<Step, Error> {
         let frame = self.current.unwrap();
         let mut handlers = Vec::new();
         let result = (|| {
@@ -2627,7 +2677,7 @@ impl Session {
                         StatementKind::DefaultArgument => {
                             if nodes.len() == 2 { return Err(nodes[1].span.error(ErrorKind::Syntax, "default argument needs a value")); }
                             if !self.frames[frame].names.contains_key("⍺") {
-                                let value = self.bind(&nodes[2..], output)?.value;
+                                let value = self.bind(&nodes[2..])?.value;
                                 if matches!(value, Binding::NoResult | Binding::Absent) {
                                     return Err(nodes[0].span.error(ErrorKind::Value, "default argument requires a value"));
                                 }
@@ -2635,18 +2685,18 @@ impl Session {
                             }
                         }
                         StatementKind::ErrorGuard { index: i } => {
-                            let numbers = self.array_result(&nodes[..i], output)?;
+                            let numbers = self.array_result(&nodes[..i])?;
                             if numbers.shape().len() > 1 { return Err(nodes[i].span.error(ErrorKind::Rank, "error numbers must be a unit or vector")); }
                             let numbers = numbers.as_items().nonnegative_integers().error_at(&nodes[i].span, "invalid error number")?;
                             handlers.push((&nodes[i + 1..], numbers));
                         }
                         StatementKind::Predicate => {
                             let span = crate::syntax::cover(nodes);
-                            if !self.array_result(nodes, output)?.boolean().error_at(&span, "a predicate requires a Boolean singleton")? { continue 'bodies; }
+                            if !self.array_result(nodes)?.boolean().error_at(&span, "a predicate requires a Boolean singleton")? { continue 'bodies; }
                         }
                         StatementKind::Expression => {
-                            if position + 1 == body.len() { return self.return_expression(nodes, output, handlers.is_empty()); }
-                            self.bind(nodes, output)?;
+                            if position + 1 == body.len() { return self.return_expression(nodes, handlers.is_empty()); }
+                            self.bind(nodes)?;
                         }
                     }
                 }
@@ -2660,7 +2710,7 @@ impl Session {
             let Some(number) = error.kind.number() else { break; };
             let Some((handler, numbers)) = handlers.pop() else { break; };
             if !numbers.contains(&0) && !numbers.contains(&number) { continue; }
-            result = self.return_expression(handler, output, false);
+            result = self.return_expression(handler, false);
         }
         result
     }
@@ -2802,13 +2852,12 @@ impl Rule {
 
 struct Binder { stack: Vec<Entity> }
 impl Binder {
-    fn evaluate(nodes: &[Node], session: &mut Session, output: &mut Vec<Output>, tail: bool) -> Result<Step, Error> {
-        Self::evaluate_marked(nodes, session, output, tail, None, None).map(|(step, _)| step)
+    fn evaluate(nodes: &[Node], session: &mut Session, tail: bool) -> Result<Step, Error> {
+        Self::evaluate_marked(nodes, session, tail, None, None).map(|(step, _)| step)
     }
     fn evaluate_marked(
         nodes: &[Node],
         session: &mut Session,
-        output: &mut Vec<Output>,
         tail: bool,
         marked: Option<(usize, Value, SelectionKind)>,
         seed: Option<Entity>,
@@ -2835,9 +2884,9 @@ impl Binder {
                         let Some(right) = binder.stack.pop() else {
                             return Err(node.span.error(ErrorKind::Syntax, "an operator at the end of a run needs a right operand after it"));
                         };
-                        let (Step::Done(bound), _) = Self::evaluate_marked(inner, session, output, false, None, Some(right))? else { unreachable!() };
+                        let (Step::Done(bound), _) = Self::evaluate_marked(inner, session, false, None, Some(right))? else { unreachable!() };
                         Term::Binding(bound.value)
-                    } else { Term::Binding(session.resolve(node, output)?) };
+                    } else { Term::Binding(session.resolve(node)?) };
                     Some(Entity { term, span: node.span.clone(), shy: false, selection: selected.map(|(_, _, kind)| *kind) })
                 }
             } else { None };
@@ -2870,7 +2919,7 @@ impl Binder {
                     if matches!(value, Binding::NoResult) { return Err(nodes[i].span.error(ErrorKind::Value, "assignment requires a value")); }
                     if matches!(value, Binding::Absent) { return Err(nodes[i].span.error(ErrorKind::Value, ABSENT)); }
                     cursor = begin + session.assignment_start(&nodes[begin..i])?;
-                    session.assign(&nodes[cursor..i], &value, output)?;
+                    session.assign(&nodes[cursor..i], &value)?;
                     pending.push(Entity { term: Term::Binding(value), span: nodes[i].span.clone(), shy: true, selection: None });
                     continue;
                 }
@@ -2888,12 +2937,12 @@ impl Binder {
                     Some(kind) => {
                         let (selected, kind) = call
                             .function
-                            .select(call.left.as_ref(), &call.right, None, kind, &call.span, session, output)?
+                            .select(call.left.as_ref(), &call.right, None, kind, &mut session.at(&call.span))?
                             .ok_or_else(|| call.span.domain_error("function is not valid for selective assignment"))?;
                         Entity { term: Term::Binding(Binding::Value(selected)), span: call.span, shy: false, selection: Some(kind) }
                     }
                     None => {
-                        let bound = call.function.call(call.left.as_ref(), &call.right, &call.span, session, output)?;
+                        let bound = call.function.call(call.left.as_ref(), &call.right, &mut session.at(&call.span))?;
                         Entity { term: Term::Binding(bound.value), span: call.span, shy: bound.shy, selection: None }
                     }
                 };
@@ -3023,7 +3072,7 @@ mod tests {
         let weak = Arc::downgrade(&source);
         let result = s.eval_source(source, crate::EvalOptions::default());
         assert!(result.error.is_none());
-        assert_eq!(result.value.unwrap(), Value::number(5.0).unwrap());
+        assert!(result.value.unwrap().same(&Value::number(5.0).unwrap()));
         assert_eq!(s.peak_frames, 2);
         assert!(s.frames.is_empty());
         assert!(s.current.is_none());
@@ -3042,14 +3091,14 @@ mod tests {
             let mut s = Session::new();
             let result = s.eval(code);
             assert!(result.error.is_none(), "{code}: {:?}", result.error);
-            assert_eq!(result.value.unwrap(), Value::number(expected).unwrap());
+            assert!(result.value.unwrap().same(&Value::number(expected).unwrap()));
             assert_eq!(s.peak_frames, frames);
             assert!(s.frames.is_empty() && s.current.is_none());
         }
         let mut s = Session::new();
-        assert_eq!(s.eval("f←{11::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 5").value.unwrap(), Value::number(7.).unwrap());
-        assert_eq!(s.eval("f 500").value.unwrap(), Value::number(7.).unwrap());
-        assert_eq!(s.eval("f 2000").value.unwrap(), Value::number(7.).unwrap());
+        assert!(s.eval("f←{11::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 5").value.unwrap().same(&Value::number(7.).unwrap()));
+        assert!(s.eval("f 500").value.unwrap().same(&Value::number(7.).unwrap()));
+        assert!(s.eval("f 2000").value.unwrap().same(&Value::number(7.).unwrap()));
         assert_eq!(s.eval("f 20000").error.unwrap().kind, ErrorKind::Limit);
         assert!(s.frames.is_empty() && s.current.is_none());
     }

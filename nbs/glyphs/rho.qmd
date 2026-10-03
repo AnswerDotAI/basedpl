@@ -8,7 +8,7 @@ Keys: `Alt-r`
 ⍴2 3⍴0             ⍝ [2 3]ₓ
 ```
 
-The shape is keyed by the axis names. An unnamed axis gives an unkeyed entry. See [named axes](../keyed.qmd#named-axes).
+The shape is keyed by the axis names. An unnamed axis gives an unkeyed entry. See [named axes](../keyed.ipynb#named-axes).
 
 ```bpl
 M←["city":2 "month":3]⍴⍳6

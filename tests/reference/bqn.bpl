@@ -1,7 +1,7 @@
 ⍝⍝ Choose
 
 ⍝ bqn:choose:7 — Choose subtracts 1 from negatives and adds 1 otherwise
-(0≤)⍚[-⍄1 +⍄1]¨ 3 ¯1 5   ⍝ 4 ¯2 6
+(0≤)⍚[-↢1 +↢1]¨ 3 ¯1 5   ⍝ 4 ¯2 6
 
 ⍝ bqn:choose:11 — Choose with two arguments as a minimum
 2 >⍚[⊣ ⊢] 6   ⍝ 2
@@ -78,7 +78,7 @@ a←[0 1 2 ⋄ 3 4 5 ⋄ 6 7 8 ⋄ 9 10 11] ⋄ (1⌽)⌾(↑⍤1) a
 3 (+⍣2) 7   ⍝ 13
 
 ⍝ bqn:repeat:39 — Halve the numbers above 6, using a computed count of 0 or 1
-{(÷⍄2)⍣(6<⍵)⍵}¨ 3 7 2 1 8   ⍝ 3 3.5 2 1 4
+{(÷↢2)⍣(6<⍵)⍵}¨ 3 7 2 1 8   ⍝ 3 3.5 2 1 4
 
 ⍝ bqn:repeat:49 — A negative count applies the inverse
 1 (⌽⍣¯1) "abcde"   ⍝ "eabcd"
@@ -185,10 +185,10 @@ m←[0 1 0 ⋄ ¯1 0 0 ⋄ 0 0 1] ⋄ m (+⌿∘×)⍤[1 ∞] 1 2 3×⊗1 10
 ⍝⍝ Fold
 
 ⍝ bqn:fold:115 — A continued fraction for e
-(+⍄÷)/2 1 2 1 1 4 1 1   ⍝ 2.7183098591549295
+(+↢÷)/2 1 2 1 1 4 1 1   ⍝ 2.7183098591549295
 
 ⍝ bqn:fold:139 — A seeded fold starts from the right end
-"STOP" (⌽⍃,)/ ["ABCDE" "012" "abcd"]   ⍝ "EDCBA210dcbaSTOP"
+"STOP" (⌽↣,)/ ["ABCDE" "012" "abcd"]   ⍝ "EDCBA210dcbaSTOP"
 
 ⍝ bqn:fold:158 — Reducing an empty first axis gives one identity per cell
 +⌿0 4⍴0   ⍝ 0 0 0 0
@@ -221,7 +221,7 @@ x←3 2 4⍴⍳60 ⋄ c←100×(⍳3)=⊗⍳2 ⋄ c+x
 [3{(⍺-⌽)⍵}1 2;{(⍺-⌽)⍵}1 2]   ⍝ (1 2 ⋄ ¯2 ¯1)
 
 ⍝ bqn:block:66 — An absent left argument with Before
-{⍺ *⍃- ⍵}5   ⍝ 143.4131591025766
+{⍺ *↣- ⍵}5   ⍝ 143.4131591025766
 
 ⍝ bqn:block:99 — Recursion through Choose
 {⍵×(0<)⍚[1 ∇]⍵-1}7   ⍝ 5040
@@ -261,10 +261,10 @@ thing←{⍵≥3? ⍵≤8? 2|⍵; ⍵=0? '@'; ∞} ⋄ thing¨⍳10
 (∨\∧∨\⌾⌽) 0 0 1 0 1 1 0 0   ⍝ 0 0 1 1 1 1 0 0
 
 ⍝ bqncrate/table.tsv:1098 — Remove trailing spaces
-(∨\⌾⌽' '≠⊢)⍃# "ab c  "   ⍝ "ab c"
+(∨\⌾⌽' '≠⊢)↣# "ab c  "   ⍝ "ab c"
 
 ⍝ bqncrate/table.tsv:1174 — Remove leading and trailing spaces
-{(∨\∧∨\⌾⌽)' '≠⍵}⍃# "  ab c  "   ⍝ "ab c"
+{(∨\∧∨\⌾⌽)' '≠⍵}↣# "  ab c  "   ⍝ "ab c"
 
 ⍝ bqncrate/table.tsv:713 — Ternary: apply F if a0, otherwise G
 a←1 ⋄ (~a)⍚[- ⊢] 5   ⍝ ¯5

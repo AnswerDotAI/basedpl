@@ -85,6 +85,10 @@ impl Span {
             _ => path.into(),
         }
     }
+    /// A VALUE error that names the file `path`.
+    pub(crate) fn file_error(&self, path: &str, e: impl std::fmt::Display) -> Error { self.error(ErrorKind::Value, format!("{path}: {e}")) }
+    /// The bytes of the file `path` names.
+    pub(crate) fn read(&self, path: &str) -> Result<Vec<u8>, Error> { std::fs::read(self.path(path)).map_err(|e| self.file_error(path, e)) }
 }
 
 /// Places an error from array building, which carries only its kind, at a source span.

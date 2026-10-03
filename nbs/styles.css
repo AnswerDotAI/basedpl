@@ -1,9 +1,14 @@
 pre.bpl,
 .bpl pre,
-.bpl code,
-pre.bpl ~ .cell-output pre,
-pre.bpl ~ .cell-output code {
+.bpl code {
   font-family: var(--bpl-font), monospace;
+  line-height: 1.05;
+}
+
+.cell-output pre,
+.cell-output code,
+.cell-output .bpl_out {
+  font-family: var(--apl-font), monospace !important;
   line-height: 1.05;
 }
 

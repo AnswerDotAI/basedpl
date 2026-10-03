@@ -2,7 +2,7 @@
 
 ⍝ xml-tree — Elements preserve case and escape text/attributes
 t←•element "text"
-attrs←["data-X":"a&""b" "x":¯2x]
+attrs←["data-X":"a&""b" "x":¯2ₓ]
 •xml attrs t "x<y & y>z"
 ⍝ =>
 "<text data-X=""a&amp;&quot;b"" x=""-2"">x&lt;y &amp; y&gt;z</text>"
@@ -14,7 +14,7 @@ root←•element "x:root" ⋄ leaf←•element "x:leaf"
 "<x:root xmlns:x=""urn:example""><x:leaf>Hi</x:leaf></x:root>"
 
 ⍝ xml-numeric — Numeric attributes use XML rather than APL spelling
-•xml ["points":[¯2x 1r2 1E3]] (•element "path") ⍬
+•xml ["points":[¯2ₓ 1r2 1E3]] (•element "path") ⍬
 "<path points=""-2 0.5 1000""/>"
 
 ⍝ svg-tree — SVG renders its current tree
@@ -25,17 +25,44 @@ pic.children.attrs.r←30
 ⍝ =>
 $t
 
-⍝ mime-field — A function in _mime renders the current keyed vector
-total←["items":[1 2 3]]
-total._mime←{["text/html":"<b>",(⍕+/⍵.items),"</b>"]}
+⍝ mime-renderer — A renderer attached with •mime displays the current value
+total←{["text/html":"<b>",(⍕+/⍵.items),"</b>"]}ᵘ •mime ["items":[1 2 3]]
 total.items₁←10
 "text/html"⊃•mime total
 ⍝ =>
 "<b>14</b>"
 
+⍝ mime-keep — Pervasive and structural functions keep a renderer, and other functions drop it
+im←•image 0.5×[0 1 ⋄ 1 0]
+≢¨•mime¨[1-im ⍉im im,im +/im ⍴im]
+⍝ =>
+[2 2 2 1 1]ₓ
+
+⍝ image-png — PNG bytes decode to the picture they encode
+•image "png" •image 0.2×[0 1 ⋄ 2 3 ⋄ 4 5]
+⍝ =>
+0.2×[0 1 ⋄ 2 3 ⋄ 4 5]
+
+⍝ image-jpeg — JPEG drops only alpha, so a grey picture stays grey
+⍴•image "jpeg" •image 2 2⍴0 0.5 1 0.25
+⍝ =>
+[2 2]ₓ
+
+⍝ mime-match — Match ignores renderers
+(•image 2 2⍴0.5)≡2 2⍴0.5
+⍝ =>
+$t
+
+⍝ mime-type — Values given one MIME type by separate calls share its renderer, so catenation keeps it
+a←"text/markdown" •mime "*a*" ⋄ b←"text/markdown" •mime "b"
+≢•mime a,b
+⍝ =>
+2ₓ
+
 ⍝ json-hooks — JSON export omits keyed entries that hold functions
-•tojson •svg ⍬
-"{""tag"":""svg"",""attrs"":{""xmlns"":""http://www.w3.org/2000/svg"",""viewBox"":""0 0 100 100""},""children"":[]}"
+•tojson ["a":"x" "f":{⍵}]
+⍝ =>
+"{""a"":""x""}"
 
 ⍝⍝ Plots
 

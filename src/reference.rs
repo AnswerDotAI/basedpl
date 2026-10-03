@@ -8,7 +8,7 @@ pub(crate) fn expected_array(value: &JsonValue) -> Option<Value> {
     let result = crate::protocol::import(value, true).ok()?;
     let prototype = crate::protocol::import(&value["prototype"], true).ok()?;
     let result = if result.shape().is_empty() && !result.is_atom() && result.at(0).is_atom() { result.at(0) } else { result };
-    (result.prototype() == prototype).then_some(result)
+    result.prototype().same(&prototype).then_some(result)
 }
 
 /// Numbers match when they are equal: exact ones exactly, and others within the tolerances. With `exactness`, an exact number never
@@ -22,7 +22,7 @@ fn same_element(x: &Value, y: &Value, relative: f64, absolute: f64, exactness: b
             let (Ok(a), Ok(b)) = (x.to_complex(), y.to_complex()) else { return false };
             a == b || (a.is_finite() && b.is_finite() && (a - b).norm() <= absolute.max(relative * a.norm().max(b.norm())))
         }
-        _ => x == y,
+        _ => x.same(y),
     }
 }
 
@@ -33,7 +33,7 @@ pub fn difference(x: &Value, y: &Value, relative: f64, absolute: f64, exactness:
     if x.is_atom() != y.is_atom() { return Some("atom versus array".into()); }
     if x.is_atom() { return (!same(x, y)).then(|| "atom".into()); }
     if x.shape() != y.shape() { return Some(format!("shape: {:?} != {:?}", x.shape(), y.shape())); }
-    if x.layout() != y.layout() { return Some("axis keys or names".into()); }
+    if x.layout().all_keys() != y.layout().all_keys() || x.axis_names() != y.axis_names() { return Some("axis keys or names".into()); }
     if !same(&x.prototype(), &y.prototype()) { return Some("prototype".into()); }
     x.elements().zip(y.elements()).position(|(a, b)| !same(&a, &b)).map(|i| format!("data[{i}]"))
 }

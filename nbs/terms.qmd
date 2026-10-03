@@ -1,0 +1,32 @@
+# Terms
+
+The [Language overview](overview.ipynb) introduces these terms informally, as they come up.
+
+Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): atoms are [numbers](#term-number), [characters](#term-character) and [functions](#term-function), [scalars](#term-scalar) are arrays of [rank](#term-rank) 0, [units](#term-unit) are atoms and scalars, and [subjects](#term-subject) are all values except functions.
+
+| Term | Meaning |
+|---|---|
+| [value]{#term-value} | a number, character, function or array |
+| [atom]{#term-atom} | a value that isn't an array: a number, character or function |
+| [number]{#term-number} | an approximate real or complex number, or an exact integer or rational, as [Numbers](numbers.qmd) describes |
+| [character]{#term-character} | one Unicode character, written in single quotes: `'a'` |
+| [function]{#term-function} | a primitive, dfn, train or derived function, which applies to arguments |
+| [pervasive function]{#term-pervasive-function} | a function that applies to each atom of its arguments, through any nesting: `1+[2 ⊂3]` is `[3 ⊂4]` |
+| [array]{#term-array} | a rectangular collection of values along zero or more axes |
+| [rank]{#term-rank} | the number of axes: a vector has rank 1, and atoms and scalars have rank 0 |
+| [scalar]{#term-scalar} | an array of rank 0, holding one value: `⊂5` is a scalar holding the number 5, and `5` is a number |
+| [unit]{#term-unit} | a rank-0 value: a number, character, function or scalar |
+| [subject]{#term-subject} | a value that isn't a function: a number, character or array |
+| [cell]{#term-cell} | a sub-array made of an array's last k axes, called a k-cell: a matrix's rows are its 1-cells. A 0-cell is the unit at one position, the atom there or the array there enclosed. When k is at least the array's rank, the whole array is its one cell |
+| [frame]{#term-frame} | the axes before the cells, with one cell at each position |
+| [assembly]{#term-assembly} | building one array from results, one for each position of a frame: the shape is the frame followed by the results' shape, each result fills its position with its items, and shorter results are padded with fill |
+| [literal]{#term-literal} | a number, character, string, `∞`, `⍬`, or a constant: `$t` true, `$f` false or `$n` NaN |
+| [strand]{#term-strand} | subjects side by side, read as a vector without brackets: `1 2 3` is `[1 2 3]`, and `a b` is `[a b]` |
+| [run]{#term-run} | a sequence of tokens with no spaces between them |
+| [argument]{#term-argument} | a subject a function applies to |
+| [operand]{#term-operand} | a value an operator applies to |
+| [expression]{#term-expression} | a run, group or statement that ends in a subject |
+| [train]{#term-train} | a run, group or statement that ends in a function |
+| [fork]{#term-fork} | three parts of a train, `f g h`, giving `(f ⍵) g (h ⍵)`, or `A g h` with a subject on the left, giving `A g (h ⍵)` |
+| [atop]{#term-atop} | two parts of a train, `f g`, giving `f (g ⍵)` |
+| [bind]{#term-bind} | a subject directly before a function in a train, fixing its left argument: `2×` is `2↣×` |

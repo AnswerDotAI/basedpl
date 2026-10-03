@@ -24,7 +24,7 @@ With [Axis](axis.qmd), `#⍠¯1` replicates along the last axis.
 
 ## Expand
 
-With `N` fixed, [`⁻¹`](../scripts.qmd#superscripts) inverts `N#`. The inverse gives one cell for each count. A positive count gives the first of its copies. A zero or negative count gives a fill. With a Boolean mask, the inverse expands `Y`. The result has the next cell of `Y` wherever the mask has 1, and a fill wherever it has 0.
+With `N` fixed, [`⁻¹`](../scripts.ipynb#superscripts) inverts `N#`. The inverse gives one cell for each count. A positive count gives the first of its copies. A zero or negative count gives a fill. With a Boolean mask, the inverse expands `Y`. The result has the next cell of `Y` wherever the mask has 1, and a fill wherever it has 0.
 
 ```bpl
 1 0 1#⁻¹10 20           ⍝ 10 0 20

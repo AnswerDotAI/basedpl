@@ -17,7 +17,7 @@ x←10 ⋄ x+←3 ⋄ x    ⍝ 13
 f←× ⋄ x←3 ⋄ x(f)←4 ⋄ x ⍝ 12
 ```
 
-A target can also be a [subscript](../scripts.qmd#subscripts) such as `x₁`, a [dot](dot.qmd) path such as `T.a` or `x.[i]`, or a selection in parentheses, `(f N)`, where `f` only selects or rearranges, as for structural [Under](under.qmd). `[a b]←Y` destructures: each name gets the matching item.
+A target can also be a [subscript](../scripts.ipynb#subscripts) such as `x₁`, a [dot](dot.qmd) path such as `T.a` or `x.[i]`, or a selection in parentheses, `(f N)`, where `f` only selects or rearranges, as for structural [Under](under.qmd). `[a b]←Y` destructures: each name gets the matching item.
 
 ```bpl
 x←1 2 3 ⋄ x₁←9 ⋄ x ⍝ 1 9 3
@@ -26,4 +26,4 @@ x←1 2 3 ⋄ (2↑x)←8 9 ⋄ x ⍝ 8 9 3
 [a b]←10 20 ⋄ a+b  ⍝ 30
 ```
 
-Inside a dfn, plain assignment is local. Modified and selective assignment update the nearest existing binding. [Assignment](../assignment.qmd) covers every form.
+Inside a dfn, plain assignment is local. Modified and selective assignment update the nearest existing binding. [Assignment](../assignment.ipynb) covers every form.

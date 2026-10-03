@@ -10,7 +10,7 @@ f 5                ⍝ 10
 3 f 5              ⍝ 8
 ```
 
-A dfn can also serve both cases, because an absent `⍺` drops out of the expression that uses it: `{⍺-⍵}3` is `¯3`. See [dfns](../dfns.qmd#arguments).
+A dfn can also serve both cases, because an absent `⍺` drops out of the expression that uses it: `{⍺-⍵}3` is `¯3`. See [dfns](../dfns.ipynb#arguments).
 
 An array operand acts as a constant function. `⍺ 0⊘1 ⍵` uses that to test for a left argument. It gives `1` in a call with two arguments and `0` in a call with one.
 

@@ -10,7 +10,7 @@
 
 ```bpl
 2*3               ⍝ 8
-2x*¯3x            ⍝ 1r8
+2ₓ*¯3ₓ            ⍝ 1r8
 ```
 
 Other powers use principal complex branches where needed.
