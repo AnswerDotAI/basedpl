@@ -1,0 +1,18 @@
+
+
+# `≤` — Less or equal
+
+Keys: `Alt-<`
+
+`≤Y` is `Y-1`. Pervasive.
+
+``` bpl
+≤[1 2 3]ₓ         ⍝ [0 1 2]ₓ
+```
+
+`X≤Y` tests whether `X` is less than or equal to `Y`, for real numbers.
+Pervasive; tolerant.
+
+``` bpl
+1 2 3≤2            ⍝ $t $t $f
+```

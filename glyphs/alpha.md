@@ -1,0 +1,20 @@
+
+
+# `⍺` — Left argument
+
+Keys: `Alt-a`
+
+`⍺` is the current dfn’s left argument. In a call with one argument, `⍺`
+is absent and drops out of the expression that uses it. For example,
+`{⍺-⍵}3` is `¯3`. [Dfns](../dfns.ipynb#arguments) gives the full rule.
+
+``` bpl
+10{⍺-⍵}3           ⍝ 7
+```
+
+`⍺←expression` supplies a lazy default, evaluated only on monadic calls.
+
+``` bpl
+{⍺←2 ⋄ ⍺×⍵}3       ⍝ 6
+4{⍺←2 ⋄ ⍺×⍵}3      ⍝ 12
+```

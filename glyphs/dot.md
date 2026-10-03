@@ -1,0 +1,51 @@
+
+
+# `.` — Inner product
+
+`X f.g Y` pairs items with `g`, then reduces with `f`. It contracts the
+last axis of `X` with the first of `Y`.
+
+``` bpl
+1 2 3+.×4 5 6      ⍝ 32
+[1 0 ⋄ 0 1]+.×2 2⍴⍳4 ⍝ 2 2⍴⍳4
+```
+
+Singleton contraction axes extend. Empty contractions use the reduction
+identity. `g⊗` is [outer product](outer-product.qmd).
+
+After an array, `.name` reads a [keyed array](../keyed.ipynb) value:
+`T.name` is `"name"⊃T`. It also works as an assignment target. Plain
+assignment creates missing records along the path.
+
+``` bpl
+T←["n":1 "addr":["city":"LA"]]
+T.addr.city        ⍝ "LA"
+T.n+←1 ⋄ T.n       ⍝ 2
+```
+
+After an array, `.` followed by brackets or parentheses indexes it
+through [Index](squad.qmd). `x.[I]` is `[I]⌷x`, and `x.(I)` is `(I)⌷x`.
+Each bracket item indexes one axis. The positions on one axis form one
+item, as in `m.[[2 0]]`. In `x.(I)`, the computed vector `I` holds one
+item per axis: `m.(1 2)` is the same as `m.[1 2]`. Dot indexing binds as
+tightly as `.name` and needs no parentheses inside a larger expression.
+Paths chain from left to right. The array is evaluated before the index.
+
+``` bpl
+m←3 4⍴⍳12
+m.[1 2]            ⍝ 6
+m.[[2 0]]          ⍝ [8 9 10 11 ⋄ 0 1 2 3]
+m.[⍳2 ¯1]          ⍝ 3 7
+i←1 2 ⋄ m.(i)      ⍝ 6
+9,m.[0 1],3        ⍝ 9 1 3
+```
+
+A dot followed by a digit is a decimal point: `.2` is a number. To index
+position 2, write `v.[2]` or the
+[subscript](../scripts.ipynb#subscripts) `v₂`. Assignment to a dot path
+goes through `⌷` and adds missing keys.
+
+``` bpl
+v←10 20 30
+v.[[2 0]]←7 8 ⋄ v  ⍝ 8 20 7
+```

@@ -1,0 +1,18 @@
+
+
+# `≠` — Unique mask / Not equal
+
+Keys: `Alt-]`
+
+`≠Y` marks first occurrences of major cells. Uses tolerant comparison
+and first matching representatives.
+
+``` bpl
+≠3 1 3 2 1         ⍝ $t $t $f $t $f
+```
+
+`X≠Y` tests inequality, pervasively.
+
+``` bpl
+1 2 3≠2            ⍝ $t $f $t
+```

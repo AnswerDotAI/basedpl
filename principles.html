@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Why BPL’s notation differs from APL’s, and where each choice comes from">
+
+<title>Language principles – BasedPL</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-f2788e636de456f6409e966386820849.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="Language principles – BasedPL">
+<meta property="og:description" content="Why BPL’s notation differs from APL’s, and where each choice comes from">
+<meta property="og:site_name" content="BasedPL">
+<meta name="twitter:title" content="Language principles – BasedPL">
+<meta name="twitter:description" content="Why BPL’s notation differs from APL’s, and where each choice comes from">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">BasedPL</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="./getting-started.html" aria-current="page"> 
+<span class="menu-text">Get started</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./glyphs.html"> 
+<span class="menu-text">Glyph reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./python.html"> 
+<span class="menu-text">Python</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/AnswerDotAI/basedpl"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./overview.html">Explanations</a></li><li class="breadcrumb-item"><a href="./principles.html">Language principles</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./python.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Python</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./notebooks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Using BPL notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./repl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">REPL</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Command line</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./glyphs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glyph reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./syntax.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Syntax</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./evaluation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Evaluation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./terms.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Terms</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./system-functions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">System functions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./comparison.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BPL, APL and BQN side by side</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">Explanations</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./overview.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language overview</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./principles.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Language principles</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./arrays.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Arrays</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./numbers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Numbers</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./strings.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Characters and strings</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./bracket-types.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Types of brackets</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./scripts.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Superscripts and subscripts</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./assignment.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Assignment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dfns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dfns</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./modules.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modules</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./keyed.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Axis keys</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">Working with data</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Files, CSV and JSON</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./regex.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regex</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./distributions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Probability distributions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./xml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">XML, SVG and images</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./plot.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Plots</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">Tooling</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./introspection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Names and help</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./processes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Process interfaces</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dyalog.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dyalog sessions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./j.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">J</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#lists-are-written-in-brackets" id="toc-lists-are-written-in-brackets" class="nav-link active" data-scroll-target="#lists-are-written-in-brackets">Lists are written in brackets</a></li>
+  <li><a href="#spaces-group" id="toc-spaces-group" class="nav-link" data-scroll-target="#spaces-group">Spaces group</a></li>
+  <li><a href="#a-run-that-ends-in-a-function-is-a-train" id="toc-a-run-that-ends-in-a-function-is-a-train" class="nav-link" data-scroll-target="#a-run-that-ends-in-a-function-is-a-train">A run that ends in a function is a train</a></li>
+  <li><a href="#selection-is-a-function" id="toc-selection-is-a-function" class="nav-link" data-scroll-target="#selection-is-a-function">Selection is a function</a></li>
+  <li><a href="#counting-from-0" id="toc-counting-from-0" class="nav-link" data-scroll-target="#counting-from-0">Counting from 0</a></li>
+  <li><a href="#based-arrays" id="toc-based-arrays" class="nav-link" data-scroll-target="#based-arrays">Based arrays</a></li>
+  <li><a href="#functions-act-on-major-cells" id="toc-functions-act-on-major-cells" class="nav-link" data-scroll-target="#functions-act-on-major-cells">Functions act on major cells</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="principles.html.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./overview.html">Explanations</a></li><li class="breadcrumb-item"><a href="./principles.html">Language principles</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Language principles</h1>
+</div>
+
+<div>
+  <div class="description">
+    Why BPL’s notation differs from APL’s, and where each choice comes from
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<p>BasedPL (BPL) keeps APL’s glyphs and its right-to-left evaluation. It changes the notation where APL’s rules make code harder to read or to write. Most of the changes follow from one decision, to write lists in brackets. BasedPL stands for Based-array Programming Language, after the array model it takes from BQN.</p>
+<p>Many of the notation choices answer problems that Marshall Lochbaum, BQN’s author, lists in his notes on <a href="https://mlochbaum.github.io/BQN/commentary/problems.html">BQN’s problems</a> and on <a href="https://mlochbaum.github.io/BQN/commentary/fiveyears.html">its first five years</a>. <a href="./syntax.html">Syntax</a> and <a href="./evaluation.html">Evaluation</a> state the rules without the reasons. <a href="./comparison.html">BPL, APL and BQN side by side</a> shows the choices on real code.</p>
+<section id="lists-are-written-in-brackets" class="level2">
+<h2 class="anchored" data-anchor-id="lists-are-written-in-brackets">Lists are written in brackets</h2>
+<p>In APL, arrays written side by side form a list. <code>1 2 3</code>, <code>a b c</code> and <code>(x+1) y</code> are all vectors. This is called stranding. It’s short, but it gives a space a different job in different places. Between arrays, a space separates the items of a list. Between functions it means nothing: <code>+/÷≢</code> and <code>+ / ÷ ≢</code> are the same train. Between an operator and an array, it can do either.</p>
+<p>That last case causes real trouble. An operator takes the single item to its right as its operand, after stranding has already joined that item to its neighbours. In APL, the operand in <code>f⍤1 M</code> is <code>1 M</code>. You have to write <code>f⍤1⊢M</code>, where <code>⊢</code> is there only to break the strand. BQN’s documentation gives the example <code>a +˝∘×⎉1‿∞ b</code>, a matrix product. No rule decides well which of <code>1</code>, <code>∞</code> and <code>b</code> should strand together. BQN marks its strands with <code>‿</code> instead.</p>
+<p>In BPL, lists are written in brackets, <code>[a b c]</code>, as in Python and JavaScript. Lochbaum notes that new BQN programmers “are always expecting <code>[]</code> to be the list notation, and it’d let you copy-paste JSON too”. A list of literals can still leave its brackets out, as in <code>1 2 3</code> and <code>"no" "yes"</code>. Inside brackets, names and literals mix freely:</p>
+<div id="965bfa61" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>x<span class="kw">←</span><span class="dv">5</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>[<span class="dv">1</span> x <span class="dv">3</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>1 5 3</code></pre>
+</div>
+</div>
+<p>Outside brackets, arrays side by side form a list too, whatever the names hold. <code>(+/x) 3</code> is a two-item list whether <code>x</code> is a vector or a matrix. Each run, a stretch of code with no spaces in it, is one item of the list. In <code>a b+1</code> the items are <code>a</code> and <code>b+1</code>. A bracket list is one run like any other:</p>
+<div id="2f9726e9" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>a<span class="kw">←</span><span class="dv">1</span> <span class="kw">⋄</span> b<span class="kw">←</span><span class="dv">2</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>a b<span class="fu">+</span><span class="dv">1</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>[<span class="dv">1</span> <span class="dv">2</span>] <span class="dv">3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>1 3</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>[[1 2] 3]</code></pre>
+</div>
+</div>
+<p>A bracket list is a vector, however many items it has. <code>[1]</code> is a one-item vector, not a number:</p>
+<div id="9f5ca493" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⍴</span>[<span class="dv">1</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[1]ₓ</code></pre>
+</div>
+</div>
+<p>Parentheses only group, as they do in maths. <code>(1 2)</code> is the same value as <code>1 2</code>. To make a scalar, enclose with <code>⊂</code>, as in BQN. <code>⊂[1 2]</code> is a scalar holding a vector, with no axes:</p>
+<div id="a7461877" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⍴⊂</span>[<span class="dv">1</span> <span class="dv">2</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>⍬ₓ</code></pre>
+</div>
+</div>
+<p>A function after <code>⊂</code> makes a train instead, as in <code>⊂+</code>. The scalar holding <code>+</code> is written <code>+ᵘ</code>.</p>
+<p>Array notation extends brackets to higher ranks, as Dyalog’s does. Rows separated by <code>⋄</code>, or written on separate lines, become major cells:</p>
+<div id="12fd5647" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>[<span class="dv">1</span> <span class="dv">2</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a> <span class="dv">3</span> <span class="dv">4</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>1 2
+3 4</code></pre>
+</div>
+</div>
+<p>The result has one more axis than each row. Rows that are numbers have no axes, and give a vector. Rows that are one-item vectors give a column:</p>
+<div id="4f6dcc4e" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>[<span class="dv">1</span> <span class="kw">⋄</span> <span class="dv">2</span>]</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>[[<span class="dv">1</span>] <span class="kw">⋄</span> [<span class="dv">2</span>]]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>1 2</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>1
+2</code></pre>
+</div>
+</div>
+<p><code>[a ⋄ b]</code> is the Mix of <code>[a b]</code> when <code>a</code> and <code>b</code> have the same shape.</p>
+<p>In parentheses, rows form a new level of nesting instead of a new axis. Each row is one item of a vector, read as if written in brackets. The rows can have different lengths:</p>
+<div id="b5601b88" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">≢</span><span class="op">¨</span>(<span class="dv">4</span> <span class="kw">⋄</span> <span class="dv">4</span> <span class="dv">5</span> <span class="kw">⋄</span> <span class="dv">4</span> <span class="dv">5</span> <span class="dv">6</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[1 2 3]ₓ</code></pre>
+</div>
+</div>
+<p>A row holding one string is still a vector of one item. <code>("ab" ⋄ "cd")</code> holds two one-item vectors, while <code>["ab" "cd"]</code> is the vector of two strings:</p>
+<div id="b08ffba9" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">≢</span><span class="op">¨</span>(<span class="st">"ab"</span> <span class="kw">⋄</span> <span class="st">"cd"</span>)</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="fu">≢</span><span class="op">¨</span>[<span class="st">"ab"</span> <span class="st">"cd"</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[1 1]ₓ</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>[2 2]ₓ</code></pre>
+</div>
+</div>
+<p>Items in brackets can be functions. <code>[+/ ÷ ≢]</code> holds three functions. Without the spaces, <code>[+/÷≢]</code> holds one, the mean:</p>
+<div id="43e54d11" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">≢</span>[<span class="fu">+</span><span class="op">/</span> <span class="fu">÷</span> <span class="fu">≢</span>]</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="fu">≢</span>[<span class="fu">+</span><span class="op">/</span><span class="fu">÷≢</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>3ₓ</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>1ₓ</code></pre>
+</div>
+</div>
+<p>Writing a function expression in brackets is one way to make it a value. In BQN this takes <code>⊑⟨Expr⟩</code> or a name, a problem Lochbaum lists as “Converting a function expression to a subject is tricky”. The other way is <code>fᵘ</code>, a scalar holding the function <code>f</code>.</p>
+<p>Items in a list are evaluated left to right, as statements are. BQN chose the same order for its lists and strands. Here each item prints as it’s evaluated, before the list itself displays:</p>
+<div id="991b4663" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>[<span class="kw">⎕←</span><span class="dv">1</span> <span class="kw">⎕←</span><span class="dv">2</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>1
+2</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>1 2</code></pre>
+</div>
+</div>
+</section>
+<section id="spaces-group" class="level2">
+<h2 class="anchored" data-anchor-id="spaces-group">Spaces group</h2>
+<p>Outside brackets, literals separated by spaces form a strand, as in <code>1 2 3</code>. Every other space separates runs. A run is a sequence of tokens with no spaces between them. Each run is evaluated first, as if it were in parentheses:</p>
+<div id="d9fb1455" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>c<span class="kw">←</span><span class="dv">3</span> <span class="kw">⋄</span> d<span class="kw">←</span><span class="dv">4</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>a<span class="fu">+</span>b<span class="fu">×</span>c<span class="fu">+</span>d</span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>a<span class="fu">+</span>b <span class="fu">×</span> c<span class="fu">+</span>d</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>15</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>21</code></pre>
+</div>
+</div>
+<p>Runs also fix the operand problem. Because a run ends at a space, <code>+/⍤1 m</code> applies <code>+/⍤1</code> to <code>m</code> with no <code>⊢</code> needed. A run ending in a dyadic operator takes the next run as its operand, as if no space came between them. A literal argument still joins the operand’s strand, as in <code>f⍤1 2 3</code>, whose operand is <code>1 2 3</code>. Write such an argument in brackets or parentheses. All three of these sum each row:</p>
+<div id="f57c4e5a" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>m<span class="kw">←</span><span class="dv">2</span> <span class="dv">3</span><span class="fu">⍴⍳</span><span class="dv">6</span></span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">/</span><span class="ex">⍤</span><span class="dv">1</span> m</span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">/</span><span class="ex">⍤</span> <span class="dv">1</span> m</span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">/</span><span class="ex">⍤</span><span class="dv">1</span>(<span class="dv">2</span> <span class="dv">3</span><span class="fu">⍴⍳</span><span class="dv">6</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>3 12</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>3 12</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>3 12</code></pre>
+</div>
+</div>
+<p>A space after an operator also lets a longer function be its operand without parentheses. <code>⌊⌾ 10×</code> rounds down to one decimal place, with <code>10×</code> as the operand of <code>⌾</code>:</p>
+<div id="791bd2fb" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⌊</span><span class="ex">⌾</span> <span class="dv">10</span><span class="fu">×</span> <span class="dv">1.24</span> <span class="dv">3.57</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>1.2 3.5</code></pre>
+</div>
+</div>
+<p>Lochbaum describes the problem that runs solve, under “Modifiers look looser than trains without spaces”. In BQN’s <code>⋆∘-×˜</code>, the <code>-</code> looks closer to <code>⋆</code>, but it binds to <code>×˜</code>. Writing <code>⋆∘- ×˜</code> shows the structure. He calls it “unfortunate that this is something the writer must do rather than something the notation encourages”. In BPL the space is part of the notation.</p>
+<p>Under “Long trains are hard for humans to parse”, he notes that readers lose track of a train’s structure after four to eight parts. Runs let spaces show that structure. <code>⌊ +/÷≢</code> is the floor of the mean:</p>
+<div id="104a9c2e" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⌊</span> <span class="fu">+</span><span class="op">/</span><span class="fu">÷≢</span> <span class="dv">1</span> <span class="dv">2</span> <span class="dv">4</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>2ₓ</code></pre>
+</div>
+</div>
+<p>Code that is fully spaced, or not spaced at all, groups as in APL. Only mixed spacing changes the grouping. A reader used to APL reads <code>1+2 × 3</code> as 7, but here it’s 9:</p>
+<div id="5b5bf8e8" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span><span class="fu">+</span><span class="dv">2</span> <span class="fu">×</span> <span class="dv">3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>9</code></pre>
+</div>
+</div>
+<p>A tool that normalises spaces would change a program’s meaning. Other languages give spaces meaning too. K reads <code>a -1</code> differently from <code>a - 1</code>. Nim tried an experimental mode in which the spaces around an operator changed its precedence, and removed it in version 0.20.</p>
+</section>
+<section id="a-run-that-ends-in-a-function-is-a-train" class="level2">
+<h2 class="anchored" data-anchor-id="a-run-that-ends-in-a-function-is-a-train">A run that ends in a function is a train</h2>
+<p>A run that ends in a function has no argument yet. It’s a function, built as an APL train with one addition. A subject directly before a function binds to it, as <code>2</code> does in <code>2×</code>. Here <code>32+1.8×</code> converts Celsius to Fahrenheit:</p>
+<div id="dc33b602" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>f<span class="kw">←</span><span class="dv">32</span><span class="fu">+</span><span class="dv">1.8</span><span class="fu">×</span></span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a>f100</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>212</code></pre>
+</div>
+</div>
+<p>The rest follows APL’s train rules, including Dyalog’s fork with a subject on the left, <code>0.5×⊢+÷</code>. Binding covers the common case of fixing a left argument, without <code>↣</code>. K has the same idea, called projection, in which <code>2*</code> is a function.</p>
+<p><code>+/÷≢ nums</code> and <code>+/÷≢nums</code> differ only in the space before <code>nums</code>. The first applies the train <code>+/÷≢</code>, the mean, to <code>nums</code>. The second is one run ending in a subject, the expression <code>+/(÷(≢nums))</code>:</p>
+<div id="2fb344e4" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a>nums<span class="kw">←</span><span class="dv">1</span> <span class="dv">2</span> <span class="dv">3</span> <span class="dv">6</span></span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">/</span><span class="fu">÷≢</span> nums</span>
+<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">/</span><span class="fu">÷≢</span>nums</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>3</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>1ᵣ4</code></pre>
+</div>
+</div>
+<p>If both spellings meant the same, the space would mean nothing. In everyday arithmetic the two readings agree. When the functions have arrays between them, as in <code>32+1.8×</code>, the train gives the same result as the expression. The readings differ only where a fork gets a function as its left part, as in <code>0.5×⊢+÷</code>. APL has the same split, with nothing in the source to mark it. Removing the argument from APL’s <code>0.5×⊢+÷⍵</code> turns it into a fork with a different meaning. In BPL the space shows which reading you get.</p>
+</section>
+<section id="selection-is-a-function" class="level2">
+<h2 class="anchored" data-anchor-id="selection-is-a-function">Selection is a function</h2>
+<p>Index, <code>⌷</code>, selects. <code>I⌷Y</code> takes one item of <code>I</code> for each leading axis of <code>Y</code>. In K, <code>v 1</code> selects, because K treats a list as a function of its positions. In BPL <code>v 1</code> is a strand, because subjects and functions stay apart. One literal position can be written more briefly as a <a href="./scripts.html#subscripts">subscript</a>, as in <code>v₁</code>:</p>
+<div id="24fb3076" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>v<span class="kw">←</span><span class="dv">10</span> <span class="dv">20</span> <span class="dv">30</span> <span class="dv">40</span></span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span><span class="fu">⌷</span>v</span>
+<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a>v<span class="kw">₁</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>20</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>20</code></pre>
+</div>
+</div>
+<p>Selecting with a number drops that axis from the result. Selecting with an array of positions puts the array’s shape in place of the axis. <code>[⊂1]⌷v</code> gives a scalar holding the item, <code>[[1]]⌷v</code> a one-item vector, and <code>[[2 0]]⌷v</code> two items:</p>
+<div id="88166231" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb47"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a>[<span class="fu">⊂</span><span class="dv">1</span>]<span class="fu">⌷</span>v</span>
+<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a>[[<span class="dv">1</span>]]<span class="fu">⌷</span>v</span>
+<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a>[[<span class="dv">2</span> <span class="dv">0</span>]]<span class="fu">⌷</span>v</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>⊂20</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>[20]</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>30 10</code></pre>
+</div>
+</div>
+<p>Dyalog has the same rule, but its <code>v[1]</code> looks like a one-item list and gives a scalar. A one-item result needs <code>v[,1]</code>.</p>
+<p>Because Index takes its positions on the left, its right argument can be any expression. With <code>sales</code> <a href="./keyed.html">keyed</a> by city and month, <code>"NY"⌷+/sales</code> selects New York’s total with no parentheses:</p>
+<div id="f9b4eeb5" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb51"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a>sales<span class="kw">←</span>[<span class="st">"NY"</span> <span class="st">"LA"</span>;<span class="st">"jan"</span> <span class="st">"feb"</span>]<span class="fu">:</span>[<span class="dv">1</span> <span class="dv">2</span> <span class="kw">⋄</span> <span class="dv">3</span> <span class="dv">4</span>]</span>
+<span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a>sales</span>
+<span id="cb51-3"><a href="#cb51-3" aria-hidden="true" tabindex="-1"></a><span class="st">"NY"</span><span class="fu">⌷+</span><span class="op">/</span>sales</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>   jan feb
+NY   1   2
+LA   3   4</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>3</code></pre>
+</div>
+</div>
+</section>
+<section id="counting-from-0" class="level2">
+<h2 class="anchored" data-anchor-id="counting-from-0">Counting from 0</h2>
+<p>Positions and axes count from 0, as in BQN, J, K, Python and NumPy. Negative positions count from the end.</p>
+<ul>
+<li>A Boolean is a valid position, as in <code>c⌷"no" "yes"</code>. With 1-origin, the position would be <code>1+c</code>.</li>
+<li>Positions run from <code>¯n</code> to <code>n-1</code> with no gap. With 1-origin, position 0 is an error that sits between the first item and the last.</li>
+<li><code>n|i</code> wraps a position round a vector of length <code>n</code>. <code>⌊i÷n</code> and <code>n|i</code> give the row and column of a flat position.</li>
+<li>The Python API returns positions from functions such as <code>grade</code> and <code>where</code>. Those positions must agree with Python and NumPy, which count from 0.</li>
+</ul>
+<p>Here the comparison is the position:</p>
+<div id="b7bb0d4b" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb54"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb54-1"><a href="#cb54-1" aria-hidden="true" tabindex="-1"></a>(<span class="dv">3</span><span class="fu">&gt;</span><span class="dv">2</span>)<span class="fu">⌷</span><span class="st">"no"</span> <span class="st">"yes"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>yes</code></pre>
+</div>
+</div>
+<p>Counting idioms pay for this with a <code>1+</code>, as in <code>1+⍳10</code> for the numbers 1 to 10. Code from APL books and libraries assumes 1-origin and needs converting.</p>
+<p>Two rules follow J and BQN where 0-origin left a choice. A negative length counts down, as J’s <code>i._3</code> does:</p>
+<div id="f6683e2e" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb56"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb56-1"><a href="#cb56-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⍳</span><span class="dv">¯3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>2 1 0</code></pre>
+</div>
+</div>
+<p>Interval Index counts the boundaries at or below each value, as BQN’s does. Below the first boundary the count is 0. A position there would be <code>¯1</code>, which selects the last item:</p>
+<div id="f110bf6c" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb58"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="dv">3</span> <span class="dv">5</span><span class="fu">⍸</span><span class="dv">0</span> <span class="dv">3</span> <span class="dv">9</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[0 2 3]ₓ</code></pre>
+</div>
+</div>
+</section>
+<section id="based-arrays" class="level2">
+<h2 class="anchored" data-anchor-id="based-arrays">Based arrays</h2>
+<p>BPL uses BQN’s <a href="https://mlochbaum.github.io/BQN/doc/based.html">based array model</a>. Numbers, characters and functions are atoms. An array is a rectangular collection of values. Atoms are not arrays. Enclosing always adds a layer: <code>⊂3</code> is a rank-0 array holding 3, a different value from 3. Enclosing it again gives depth 2:</p>
+<div id="8538eb76" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb60"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⊂</span><span class="dv">3</span> <span class="fu">≡</span> <span class="dv">3</span></span>
+<span id="cb60-2"><a href="#cb60-2" aria-hidden="true" tabindex="-1"></a><span class="fu">≡⊂⊂</span><span class="dv">3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>$f</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>2ₓ</code></pre>
+</div>
+</div>
+<p>In APL’s nested array model, enclosing 3 gives 3 again. Under the based model, every value has one representation, whether you pass it to a function, return it, or store it in an array. Functions are atoms too. <code>[+/ ÷ ≢]</code> is a list of three of them. Lochbaum’s page on the model gives the longer argument.</p>
+</section>
+<section id="functions-act-on-major-cells" class="level2">
+<h2 class="anchored" data-anchor-id="functions-act-on-major-cells">Functions act on major cells</h2>
+<p>BPL follows BQN’s leading-axis model. A function that works on a whole array acts on its major cells, the cells along its first axis. The last-axis glyphs <code>⌽ / \ ,</code> are the leading-axis functions applied at rank 1. Their first-axis twins <code>⊖ ⌿ ⍀ ⍪</code> are the leading-axis functions themselves. Every function therefore treats a matrix by the same rule.</p>
+<p>Search follows that rule. <code>⍳ ∊ ~ ∪ ∩</code> compare the major cells of the searched argument, which for a matrix are its rows. Here <code>~</code> removes every row that is <code>1 2</code>, leaving a one-row matrix:</p>
+<div id="f4f6933f" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb63"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb63-1"><a href="#cb63-1" aria-hidden="true" tabindex="-1"></a>rows<span class="kw">←</span>[<span class="dv">1</span> <span class="dv">2</span></span>
+<span id="cb63-2"><a href="#cb63-2" aria-hidden="true" tabindex="-1"></a>      <span class="dv">3</span> <span class="dv">4</span></span>
+<span id="cb63-3"><a href="#cb63-3" aria-hidden="true" tabindex="-1"></a>      <span class="dv">1</span> <span class="dv">2</span>]</span>
+<span id="cb63-4"><a href="#cb63-4" aria-hidden="true" tabindex="-1"></a>rows<span class="fu">~</span>[<span class="dv">1</span> <span class="dv">2</span> <span class="kw">⋄</span> <span class="dv">5</span> <span class="dv">6</span>]</span>
+<span id="cb63-5"><a href="#cb63-5" aria-hidden="true" tabindex="-1"></a><span class="fu">⍴</span>rows<span class="fu">~</span>[<span class="dv">1</span> <span class="dv">2</span> <span class="kw">⋄</span> <span class="dv">5</span> <span class="dv">6</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>3 4</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>[1 2]ₓ</code></pre>
+</div>
+</div>
+<p>The other argument’s cells have the same rank. A unit has no major cells to search. To remove the spaces from a string, give <code>~</code> the string <code>" "</code>. Giving it the character <code>' '</code>, a unit, is a <code>RANK</code> error:</p>
+<div id="981e3353" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb66"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb66-1"><a href="#cb66-1" aria-hidden="true" tabindex="-1"></a><span class="st">"a b c"</span><span class="fu">~</span><span class="st">" "</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>abc</code></pre>
+</div>
+</div>
+<p>Partition splits along the first axis too, into blocks of major cells. Here new blocks start at rows 0 and 2:</p>
+<div id="29cfc29f" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb68"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb68-1"><a href="#cb68-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="dv">0</span> <span class="dv">1</span><span class="fu">⊂</span>rows</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[[1 2 ⋄ 3 4] [1 2 ⋄]]</code></pre>
+</div>
+</div>
+<p><code>⊂⍤1</code> partitions each row instead, and <code>⊂⍠1</code> splits a matrix into blocks of columns.</p>
+<p>Encode and Decode put digits on the last axis, as J’s <code>#:</code> and <code>#.</code> do. Encode turns each number of a vector into a row of digits. Decode turns the rows back into numbers:</p>
+<div id="d4e93c62" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb70"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb70-1"><a href="#cb70-1" aria-hidden="true" tabindex="-1"></a>d<span class="kw">←</span><span class="dv">2</span> <span class="dv">2</span> <span class="dv">2</span><span class="fu">⊤</span><span class="dv">5</span> <span class="dv">6</span></span>
+<span id="cb70-2"><a href="#cb70-2" aria-hidden="true" tabindex="-1"></a>d</span>
+<span id="cb70-3"><a href="#cb70-3" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span><span class="fu">⊥</span>d</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>1 0 1
+1 1 0</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>5 6</code></pre>
+</div>
+</div>
+<p>At rank 0, the function gets each atom as itself and each array item enclosed in a scalar. BQN’s <code>⎉0</code> encloses atoms as well. The depth of each 0-cell shows the difference:</p>
+<div id="6509b900" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb73"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb73-1"><a href="#cb73-1" aria-hidden="true" tabindex="-1"></a>{<span class="fu">≡</span><span class="va">⍵</span>}<span class="ex">⍤</span><span class="dv">0</span> [<span class="dv">1</span> [<span class="dv">2</span> <span class="dv">3</span>]]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[0 2]ₓ</code></pre>
+</div>
+</div>
+<p>As a result, <code>⊢⍤0</code> returns its argument unchanged, even when the argument is nested. A function under <code>⍤0</code> sees numbers as literals and selection give them. Each, <code>¨</code>, gives the function the items themselves.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/answerdotai\.github\.io\/basedpl");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

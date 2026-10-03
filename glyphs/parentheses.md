@@ -1,0 +1,48 @@
+
+
+# `( )` — Group / Rows / Train
+
+`(Y)` groups an expression, whatever it holds: `(1 2)` is `1 2`, `(x)`
+is `x`, and `(-)` is `-`. Inside parentheses, spaces separate runs, and
+a line break means `⋄`. Parentheses hold one expression wherever they
+appear, including inside brackets.
+
+``` bpl
+(2×3)+4            ⍝ 10
+x←2 4 9
+[(+/x) ≢x]         ⍝ 15 3ₓ
+(-)3               ⍝ ¯3
+f←- ⋄ (f)3         ⍝ ¯3
+```
+
+A literal argument after a literal operand goes in parentheses, as in
+`f⍣2(3)`. Without parentheses, `f⍣2 3` takes `2 3` as the operand.
+
+``` bpl
+1+⍣3(5)            ⍝ 8
+```
+
+`(A ⋄ B)` is a vector of the rows `A` and `B`. Each row is a vector,
+even a row with one item, and rows can differ in length. `(A ⋄)` is a
+one-item vector holding the row `A`. In `(…)ₓ`, every number is exact,
+and each item must be a whole-number literal.
+
+``` bpl
+(4 ⋄ 4 5 ⋄ 4 5 6)  ⍝ [[4] [4 5] [4 5 6]]
+(1 2 ⋄)            ⍝ [[1 2]]
+(0 1 ⋄ 2 3)ₓ       ⍝ [[0 1]ₓ [2 3]ₓ]
+```
+
+`(f g)Y` is the atop `f(g Y)`, and `(f g h)Y` is the fork `(f Y)g(h Y)`.
+[Trains](../evaluation.qmd#trains) gives the rules for longer trains and
+dyadic calls.
+
+``` bpl
+(- +/)1 2 3        ⍝ ¯6
+(+/÷≢)2 4 9        ⍝ 5
+```
+
+For a scalar, use [`⊂`](enclose.qmd) on a subject or
+[`ᵘ`](../scripts.ipynb#a-function-as-a-scalar) on a function. [Types of
+brackets](../bracket-types.ipynb) compares parentheses with brackets and
+braces.

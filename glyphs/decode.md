@@ -1,0 +1,34 @@
+
+
+# `⊥` — Decode
+
+Keys: `Alt-b`
+
+`⊥Y` decodes binary digits along the last axis.
+
+``` bpl
+⊥1 0 1 0          ⍝ 10
+```
+
+`B⊥Y` evaluates digits `Y` in base(s) `B`. A unit base extends to every
+digit. The first entry of a mixed base is unused.
+
+``` bpl
+2⊥1 0 1 0          ⍝ 10
+[0 60 60]ₓ⊥[1 1 1]ₓ ⍝ 3661ₓ
+```
+
+For coefficient vector `C`, `X⊥C` evaluates the polynomial in descending
+powers.
+
+``` bpl
+3⊥2 4 5            ⍝ 35
+```
+
+Each row of `Y` holds the digits of one number, as [Encode](encode.qmd)
+writes them. `B⊥B⊤N` gives back `N` when `B` has enough digits.
+
+``` bpl
+2⊥[1 0 1 ⋄ 0 1 1]   ⍝ 5 3
+2 2 2⊥2 2 2⊤3 5     ⍝ 3 5
+```

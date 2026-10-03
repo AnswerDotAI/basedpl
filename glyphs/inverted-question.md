@@ -1,0 +1,22 @@
+
+
+# `¿` — Roll / Deal
+
+Keys: `Alt-/`
+
+`¿N`: uniform draw from `⍳N`. `¿0`: U(0,1). Pervasive.
+
+``` bpl
+(¿6)∊⍳6           ⍝ $t
+```
+
+`M¿N`: `M` draws without replacement from `⍳N`.
+
+``` bpl
+≢3¿10             ⍝ 3ₓ
+≢∪3¿10            ⍝ 3ₓ
+```
+
+Bounds are nonnegative integers; `M≤N`. Exact arguments give exact
+integer draws. Dyalog APL writes Roll and Deal as `?`, which BPL uses
+for [predicates](question.qmd).

@@ -1,0 +1,15 @@
+
+
+# `⍹` — Right operand
+
+Keys: `Alt-w _`
+
+`⍹` is the right operand of a defined operator. An operator that uses
+`⍹` is dyadic.
+
+``` bpl
+op←{⍶+⍹×⍵} ⋄ (2 op 3)4 ⍝ 14
+```
+
+Operands can be subjects or functions. The arguments are still `⍺` and
+`⍵`.

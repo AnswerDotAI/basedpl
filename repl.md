@@ -1,0 +1,272 @@
+
+
+# REPL
+
+[Home](index.ipynb) · [Command line](cli.qmd)
+
+Run `bpl`. An expression displays its result. An assignment keeps its
+names for later lines. After an error, the REPL shows the error’s source
+location and returns to the prompt.
+
+``` text
+      v←⍳5
+      +/v
+10
+```
+
+## Typing glyphs
+
+Hold Alt and press the key that the [glyph
+reference](glyphs.qmd#typing-glyphs) lists. For example, Alt-m gives
+`×`, Alt-u gives `÷`, and Alt-h, Alt-j, Alt-k and Alt-l give `←`, `↓`,
+`↑` and `→`. Some glyphs take a second key. Alt-a then `_` gives `⍶`,
+and Alt-c then `t` gives `⍝`. Such an Alt key types its own glyph when
+Space or an unlisted key follows it. For example, Alt-o then Space gives
+`○`. Backspace or Escape cancels the sequence. Superscripts start with
+Alt-6: Alt-6 then `2` gives `²`, and Alt-6 then `-1` gives `⁻¹`.
+Subscripts start with Alt-5: Alt-5 then `1` gives `₁`. Alt keys also
+insert glyphs inside strings and comments.
+
+On macOS, configure your terminal to send left Option as Alt. In
+Ghostty:
+
+``` text
+macos-option-as-alt = left
+```
+
+Right Option still types the usual Mac characters. In iTerm2, set the
+left Option key to “Esc+”. In Terminal.app, turn on “Use Option as Meta
+key”. Alt keys type glyphs instead of running the line editor’s Alt
+shortcuts. Cursor keys and Ctrl shortcuts still work.
+
+### Named entry
+
+Type a backtick followed by a name. Tab replaces it with the glyph. A
+non-letter accepts the glyph and enters that character too.
+
+Use `` `bullet `` then Tab for the system prefix `•`, and `` `quad ``
+for `⎕`.
+
+Before `↣` is Alt-`.`, or `` `before `` then Tab. After `↢` is Alt-`,`,
+or `` `after `` then Tab. Use `` `pi `` for `π` and `` `sqrt `` for `√`.
+
+<table>
+<thead>
+<tr>
+<th>Input</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>`io</code> then Tab</td>
+<td><code>⍳</code></td>
+</tr>
+<tr>
+<td><code>`iota5</code></td>
+<td><code>⍳5</code></td>
+</tr>
+<tr>
+<td><code>2`times3</code></td>
+<td><code>2×3</code></td>
+</tr>
+<tr>
+<td><code>v`assign</code> then Space</td>
+<td><code>v←</code></td>
+</tr>
+<tr>
+<td><code>`scan</code> then Tab</td>
+<td><code>\</code></td>
+</tr>
+</tbody>
+</table>
+
+Each glyph has one name, the one the [glyph reference](glyphs.qmd)
+links. The REPL also matches the monad and dyad names the reference
+lists, such as `reshape` for `⍴`, and a few other search words, such as
+`left-arrow` for `←`. It always shows the name: `` `resh `` lists
+`⍴ rho r`.
+
+Names are case-insensitive. Exact matches win, then prefixes, then
+abbreviations formed from prefixes of successive hyphen-separated parts.
+At each level a name beats a search word. A name that is a prefix of
+every other match wins: `` `om `` gives `⍵`, and `` `omu `` gives `⍹`.
+`grup` matches `grade-up`. `lar` matches the search word `left-arrow`,
+not `logarithm`, and lists `← assign h`. Type letters only: `` `lar- ``
+becomes `←-`.
+
+Matches appear as you type. Each listed name ends with the keys that
+type its glyph, such as `a` for Alt-a or `c t` for Alt-c then `t`. Input
+that matches several names stays as typed. Press Tab twice to list the
+matches. Backtick then Tab twice lists every name. Enter accepts a
+unique match and submits the line.
+
+Expansion applies only to typed REPL input, outside strings and
+comments. Pasted BPL, source files, Python and process requests use
+actual glyphs.
+
+### Other editors
+
+The shared table is `python/basedpl/layout.json`, shipped in the Python
+package and embedded in the Rust REPL. `option` gives what each Alt key
+types: a glyph, or a dead-key state that the next key completes. Each
+state in `states` lists its keys, and the terminator that Space or an
+unlisted key types. Keys are US characters after Shift.
+`basedpl.editors.write()` builds the macOS layout bundle in
+`editors/macos` from the same file.
+
+``` python
+import json
+from importlib.resources import files
+
+layout = json.loads(files('basedpl').joinpath('layout.json').read_text())
+assert layout['option']['h'] == '←' and layout['option']['a'] == {'state': 'alpha'}
+assert layout['states']['alpha']['keys']['_'] == '⍶'
+```
+
+Monaco/CodeMirror adapters can import the same JSON. Derive the US
+character from `KeyboardEvent.code` and Shift: macOS Option may already
+have changed `event.key`. Track `AltLeft`/`AltRight` keydown/up to
+select one Option key, and clear modifier state on blur. For a mapped
+key, prevent the browser’s default action and insert the text through
+the editor’s normal edit transaction. Keep a pending dead-key state
+until the next key, and clear it on blur or a focus change. Leave
+composition events to the input method.
+
+## Editing and multiline input
+
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Left / Right</td>
+<td>Move within input</td>
+</tr>
+<tr>
+<td>Up / Down</td>
+<td>Recall this session’s history</td>
+</tr>
+<tr>
+<td>Ctrl-C</td>
+<td>Cancel the current input, including unfinished multiline input</td>
+</tr>
+<tr>
+<td>Ctrl-D on an empty line</td>
+<td>Exit</td>
+</tr>
+</tbody>
+</table>
+
+An unclosed delimiter gives a continuation prompt. Closing it evaluates
+the complete input once.
+
+``` text
+      double←{
+    · ⍵×2
+    · }
+      double 3
+6
+```
+
+Inside brackets and parentheses, a line break means `⋄`, so each line of
+a bracket list is a row of the array.
+
+## Array and function display
+
+Interactive sessions draw arrays in boxes, show functions as trees, and
+box output made inside functions. [`•prefs`](system-functions.qmd#prefs)
+reads and changes these settings: `•prefs ["box":$f]` turns boxes off,
+and `•prefs ⍬` shows every setting. Batch, Python and JSON sessions
+start without boxes.
+
+Arrays with axes have boxes, axis arrows and a type marker on the bottom
+edge. The marker names the storage: `ₓ` for exact integers, `~` for
+floats, `j` for complex numbers, `─` for characters, `∊` for nested
+arrays and `+` for mixed storage, whose items keep their own kinds.
+Numbers inside an `ₓ` box carry no mark of their own. Enter a function
+name to see its tree.
+
+An array of more than 1000 items shows only the first and last 3
+positions of each long axis. `…` replaces the hidden columns, `⋮` the
+hidden rows, and `⋱` sits where they cross. The `limit` and `edges`
+settings of `•prefs` change these numbers. `⎕←` prints every item.
+
+``` text
+      100 100⍴⍳10000
+┌→──────────────────────────────┐
+↓   0    1    2 …   97   98   99│
+│ 100  101  102 …  197  198  199│
+│ 200  201  202 …  297  298  299│
+│   ⋮    ⋮    ⋮ ⋱    ⋮    ⋮    ⋮│
+│9700 9701 9702 … 9797 9798 9799│
+│9800 9801 9802 … 9897 9898 9899│
+│9900 9901 9902 … 9997 9998 9999│
+└~──────────────────────────────┘
+```
+
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Command</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>]help +</code></td>
+<td>Help for a name or glyph</td>
+</tr>
+<tr>
+<td><code>]help mean -source</code></td>
+<td>Definition source</td>
+</tr>
+<tr>
+<td><code>]Display [[1 2] [3 4]]</code></td>
+<td>Draw one array in a box, whatever the settings</td>
+</tr>
+<tr>
+<td><code>]clear</code></td>
+<td>Remove every name and restore the starting display settings</td>
+</tr>
+</tbody>
+</table>
+
+Both display modes show scalars as source: `⊂4ₓ`, `⊂⊂4ₓ` or `⊂[1 2]`.
+
+`⎕←` explicitly prints a value, including an assignment’s result.
+
+``` text
+      ⎕←v←⍳3
+┌→────┐
+│0 1 2│
+└~────┘
+```
+
+## Timing
+
+`•time t` gives the seconds since time `t`. `•time 0` is the current
+reading. `t←•time 0` starts a timer. `•time t` then gives the seconds
+since it started.
+
+`F •time x` compares functions. It calls each function in `F` on `x` for
+about 0.1 s. The result is each function’s fastest time per call in
+seconds, with the shape and keys of `F`:
+
+``` text
+      F←["sum":+/ "max":⌈/]
+      F •time ⍳1000000
+["sum":0.001085375 "max":0.00057625]
+```

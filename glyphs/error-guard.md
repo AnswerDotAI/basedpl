@@ -1,0 +1,25 @@
+
+
+# `::` — Error guard
+
+`codes::handler` catches matching later errors in a dfn, including
+errors in its later bodies. `0::` catches all ordinary BPL errors. A
+vector of codes catches the errors with those numbers.
+
+``` bpl
+{0::42 ⋄ 1÷⍵}'a'   ⍝ 42
+{11::0 ⋄ ÷⍵}'a'    ⍝ 0
+```
+
+The handler sees local bindings as they were when the error happened.
+Nothing is rolled back, including outer writes and output. The selected
+guard is inactive in its handler.
+
+``` bpl
+{x←1 ⋄ 0::x ⋄ x←2 ⋄ 1÷⍵}'a' ⍝ 2
+```
+
+Cancellation and unsupported-feature errors bypass guards.
+
+[`•signal`](../system-functions.qmd#signal) raises an ordinary error. A
+guard catches it as it catches an error from a primitive.

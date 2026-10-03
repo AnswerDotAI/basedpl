@@ -1,0 +1,1296 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>comparison – BasedPL</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-f2788e636de456f6409e966386820849.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="BasedPL">
+<meta property="og:description" content="BasedPL, the Based-array Programming Language, is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation.">
+<meta property="og:site_name" content="BasedPL">
+<meta name="twitter:title" content="BasedPL">
+<meta name="twitter:description" content="BasedPL, the Based-array Programming Language, is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation.">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">BasedPL</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="./getting-started.html" aria-current="page"> 
+<span class="menu-text">Get started</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./glyphs.html"> 
+<span class="menu-text">Glyph reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./python.html"> 
+<span class="menu-text">Python</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/AnswerDotAI/basedpl"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./glyphs.html">Reference</a></li><li class="breadcrumb-item"><a href="./comparison.html">BPL, APL and BQN side by side</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./python.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Python</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./notebooks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Using BPL notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./repl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">REPL</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Command line</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./glyphs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glyph reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./syntax.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Syntax</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./evaluation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Evaluation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./terms.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Terms</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./system-functions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">System functions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./comparison.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">BPL, APL and BQN side by side</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">Explanations</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./overview.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language overview</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./principles.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language principles</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./arrays.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Arrays</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./numbers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Numbers</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./strings.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Characters and strings</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./bracket-types.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Types of brackets</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./scripts.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Superscripts and subscripts</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./assignment.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Assignment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dfns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dfns</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./modules.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modules</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./keyed.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Axis keys</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">Working with data</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Files, CSV and JSON</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./regex.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regex</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./distributions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Probability distributions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./xml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">XML, SVG and images</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./plot.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Plots</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">Tooling</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./introspection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Names and help</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./processes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Process interfaces</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dyalog.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dyalog sessions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./j.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">J</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#bpl-apl-and-bqn-side-by-side" id="toc-bpl-apl-and-bqn-side-by-side" class="nav-link active" data-scroll-target="#bpl-apl-and-bqn-side-by-side">BPL, APL and BQN side by side</a>
+  <ul class="collapse">
+  <li><a href="#selecting-items" id="toc-selecting-items" class="nav-link" data-scroll-target="#selecting-items">Selecting items</a>
+  <ul class="collapse">
+  <li><a href="#sort" id="toc-sort" class="nav-link" data-scroll-target="#sort">Sort</a></li>
+  <li><a href="#sort-by-a-computed-key" id="toc-sort-by-a-computed-key" class="nav-link" data-scroll-target="#sort-by-a-computed-key">Sort by a computed key</a></li>
+  <li><a href="#sort-rows-by-a-column" id="toc-sort-rows-by-a-column" class="nav-link" data-scroll-target="#sort-rows-by-a-column">Sort rows by a column</a></li>
+  <li><a href="#lookup-table" id="toc-lookup-table" class="nav-link" data-scroll-target="#lookup-table">Lookup table</a></li>
+  <li><a href="#translate-characters" id="toc-translate-characters" class="nav-link" data-scroll-target="#translate-characters">Translate characters</a></li>
+  <li><a href="#an-index-that-assigns-the-arrays-name" id="toc-an-index-that-assigns-the-arrays-name" class="nav-link" data-scroll-target="#an-index-that-assigns-the-arrays-name">An index that assigns the array’s name</a></li>
+  <li><a href="#indexing-inside-arithmetic" id="toc-indexing-inside-arithmetic" class="nav-link" data-scroll-target="#indexing-inside-arithmetic">Indexing inside arithmetic</a></li>
+  <li><a href="#indexing-inside-a-longer-expression" id="toc-indexing-inside-a-longer-expression" class="nav-link" data-scroll-target="#indexing-inside-a-longer-expression">Indexing inside a longer expression</a></li>
+  <li><a href="#chained-indexing" id="toc-chained-indexing" class="nav-link" data-scroll-target="#chained-indexing">Chained indexing</a></li>
+  <li><a href="#choose-indexing" id="toc-choose-indexing" class="nav-link" data-scroll-target="#choose-indexing">Choose indexing</a></li>
+  <li><a href="#two-sorts-each-enclosed" id="toc-two-sorts-each-enclosed" class="nav-link" data-scroll-target="#two-sorts-each-enclosed">Two sorts, each enclosed</a></li>
+  <li><a href="#dividing-a-row-by-its-pivot" id="toc-dividing-a-row-by-its-pivot" class="nav-link" data-scroll-target="#dividing-a-row-by-its-pivot">Dividing a row by its pivot</a></li>
+  </ul></li>
+  <li><a href="#assigning" id="toc-assigning" class="nav-link" data-scroll-target="#assigning">Assigning</a>
+  <ul class="collapse">
+  <li><a href="#assigning-to-a-block-of-a-matrix" id="toc-assigning-to-a-block-of-a-matrix" class="nav-link" data-scroll-target="#assigning-to-a-block-of-a-matrix">Assigning to a block of a matrix</a></li>
+  <li><a href="#updating-selected-items-from-other-items" id="toc-updating-selected-items-from-other-items" class="nav-link" data-scroll-target="#updating-selected-items-from-other-items">Updating selected items from other items</a></li>
+  </ul></li>
+  <li><a href="#keys-and-paths" id="toc-keys-and-paths" class="nav-link" data-scroll-target="#keys-and-paths">Keys and paths</a>
+  <ul class="collapse">
+  <li><a href="#reading-by-keys" id="toc-reading-by-keys" class="nav-link" data-scroll-target="#reading-by-keys">Reading by keys</a></li>
+  <li><a href="#reducing-along-a-named-axis" id="toc-reducing-along-a-named-axis" class="nav-link" data-scroll-target="#reducing-along-a-named-axis">Reducing along a named axis</a></li>
+  <li><a href="#selecting-from-a-result" id="toc-selecting-from-a-result" class="nav-link" data-scroll-target="#selecting-from-a-result">Selecting from a result</a></li>
+  <li><a href="#assigning-to-new-keys" id="toc-assigning-to-new-keys" class="nav-link" data-scroll-target="#assigning-to-new-keys">Assigning to new keys</a></li>
+  <li><a href="#assigning-through-a-path" id="toc-assigning-through-a-path" class="nav-link" data-scroll-target="#assigning-through-a-path">Assigning through a path</a></li>
+  <li><a href="#looking-up-a-value-in-an-association-list" id="toc-looking-up-a-value-in-an-association-list" class="nav-link" data-scroll-target="#looking-up-a-value-in-an-association-list">Looking up a value in an association list</a></li>
+  <li><a href="#plotting-a-keyed-matrix" id="toc-plotting-a-keyed-matrix" class="nav-link" data-scroll-target="#plotting-a-keyed-matrix">Plotting a keyed matrix</a></li>
+  </ul></li>
+  <li><a href="#runs-trains-and-operands" id="toc-runs-trains-and-operands" class="nav-link" data-scroll-target="#runs-trains-and-operands">Runs, trains and operands</a>
+  <ul class="collapse">
+  <li><a href="#rank-with-a-numeric-operand" id="toc-rank-with-a-numeric-operand" class="nav-link" data-scroll-target="#rank-with-a-numeric-operand">Rank with a numeric operand</a></li>
+  <li><a href="#a-named-operator-with-a-numeric-operand" id="toc-a-named-operator-with-a-numeric-operand" class="nav-link" data-scroll-target="#a-named-operator-with-a-numeric-operand">A named operator with a numeric operand</a></li>
+  <li><a href="#reducing-several-axes" id="toc-reducing-several-axes" class="nav-link" data-scroll-target="#reducing-several-axes">Reducing several axes</a></li>
+  <li><a href="#stencil-with-a-numeric-operand" id="toc-stencil-with-a-numeric-operand" class="nav-link" data-scroll-target="#stencil-with-a-numeric-operand">Stencil with a numeric operand</a></li>
+  <li><a href="#power-with-a-list-of-counts" id="toc-power-with-a-list-of-counts" class="nav-link" data-scroll-target="#power-with-a-list-of-counts">Power with a list of counts</a></li>
+  <li><a href="#mean" id="toc-mean" class="nav-link" data-scroll-target="#mean">Mean</a></li>
+  <li><a href="#a-train-that-binds-arrays" id="toc-a-train-that-binds-arrays" class="nav-link" data-scroll-target="#a-train-that-binds-arrays">A train that binds arrays</a></li>
+  <li><a href="#quadratic-root" id="toc-quadratic-root" class="nav-link" data-scroll-target="#quadratic-root">Quadratic root</a></li>
+  <li><a href="#a-two-number-operand-before-a-named-argument" id="toc-a-two-number-operand-before-a-named-argument" class="nav-link" data-scroll-target="#a-two-number-operand-before-a-named-argument">A two-number operand before a named argument</a></li>
+  <li><a href="#a-vector-bound-into-a-composition" id="toc-a-vector-bound-into-a-composition" class="nav-link" data-scroll-target="#a-vector-bound-into-a-composition">A vector bound into a composition</a></li>
+  </ul></li>
+  <li><a href="#lists" id="toc-lists" class="nav-link" data-scroll-target="#lists">Lists</a>
+  <ul class="collapse">
+  <li><a href="#a-list-that-mixes-literals-and-names" id="toc-a-list-that-mixes-literals-and-names" class="nav-link" data-scroll-target="#a-list-that-mixes-literals-and-names">A list that mixes literals and names</a></li>
+  <li><a href="#a-list-of-computed-values" id="toc-a-list-of-computed-values" class="nav-link" data-scroll-target="#a-list-of-computed-values">A list of computed values</a></li>
+  <li><a href="#lists-that-hold-functions" id="toc-lists-that-hold-functions" class="nav-link" data-scroll-target="#lists-that-hold-functions">Lists that hold functions</a></li>
+  <li><a href="#long-list-items-across-lines" id="toc-long-list-items-across-lines" class="nav-link" data-scroll-target="#long-list-items-across-lines">Long list items across lines</a></li>
+  <li><a href="#a-new-leading-axis" id="toc-a-new-leading-axis" class="nav-link" data-scroll-target="#a-new-leading-axis">A new leading axis</a></li>
+  <li><a href="#searching-for-one-string" id="toc-searching-for-one-string" class="nav-link" data-scroll-target="#searching-for-one-string">Searching for one string</a></li>
+  </ul></li>
+  <li><a href="#counting-from-0" id="toc-counting-from-0" class="nav-link" data-scroll-target="#counting-from-0">Counting from 0</a>
+  <ul class="collapse">
+  <li><a href="#selecting-by-a-boolean" id="toc-selecting-by-a-boolean" class="nav-link" data-scroll-target="#selecting-by-a-boolean">Selecting by a Boolean</a></li>
+  <li><a href="#caesar-cipher" id="toc-caesar-cipher" class="nav-link" data-scroll-target="#caesar-cipher">Caesar cipher</a></li>
+  </ul></li>
+  <li><a href="#programs" id="toc-programs" class="nav-link" data-scroll-target="#programs">Programs</a>
+  <ul class="collapse">
+  <li><a href="#sierpinskis-triangle" id="toc-sierpinskis-triangle" class="nav-link" data-scroll-target="#sierpinskis-triangle">Sierpinski’s triangle</a></li>
+  <li><a href="#the-mandelbrot-set" id="toc-the-mandelbrot-set" class="nav-link" data-scroll-target="#the-mandelbrot-set">The Mandelbrot set</a></li>
+  <li><a href="#value-of-a-roman-numeral" id="toc-value-of-a-roman-numeral" class="nav-link" data-scroll-target="#value-of-a-roman-numeral">Value of a Roman numeral</a></li>
+  <li><a href="#rule-30" id="toc-rule-30" class="nav-link" data-scroll-target="#rule-30">Rule 30</a></li>
+  </ul></li>
+  </ul></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="comparison.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./glyphs.html">Reference</a></li><li class="breadcrumb-item"><a href="./comparison.html">BPL, APL and BQN side by side</a></li></ol></nav></header>
+
+
+
+
+<section id="bpl-apl-and-bqn-side-by-side" class="level1">
+<h1>BPL, APL and BQN side by side</h1>
+<p>See also the <a href="./principles.html">language principles</a>, <a href="./syntax.html">Syntax</a>, <a href="./evaluation.html">Evaluation</a> and the <a href="./glyphs.html">glyph index</a>.</p>
+<p>Each entry shows one task in Dyalog APL, BPL and BQN. Most entries come from existing code: APLcart, the dfns workspace, the ngn/apl and April test suites, and BQN’s documentation. A few were written for this page. An entry leaves out a language that has no equivalent.</p>
+<p>The Dyalog lines use Dyalog’s default index origin, <code>⎕IO←1</code>, unless the entry says otherwise. BPL and BQN count positions from 0. Where an entry builds sample data with <code>⍳</code> or <code>↕</code>, Dyalog’s data starts at 1 and the others’ data starts at 0. Their results differ for that reason.</p>
+<p>The BPL blocks set sample values and show each result after <code>⍝</code>. The page tests run them. The BQN lines were run with BQN’s JavaScript implementation, with sample values for their free names. BQN reserves uppercase names for functions, and its lines use lowercase names for arrays.</p>
+<section id="selecting-items" class="level2">
+<h2 class="anchored" data-anchor-id="selecting-items">Selecting items</h2>
+<section id="sort" class="level3">
+<h3 class="anchored" data-anchor-id="sort">Sort</h3>
+<p>BPL selects with Index, <code>⌷</code>, which takes the positions on its left. A bracket list is always a vector. <code>[⍋⍵]</code> holds one item, the positions along the one axis of <code>⍵</code>. BQN sorts with one glyph, <code>∧</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>{<span class="va">⍵</span>[<span class="fu">⍋</span><span class="va">⍵</span>]}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>v<span class="kw">←</span><span class="dv">3</span> <span class="dv">1</span> <span class="dv">2</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>{[<span class="fu">⍋</span><span class="va">⍵</span>]<span class="fu">⌷</span><span class="va">⍵</span>} v             <span class="co">⍝ 1 2 3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">∧</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="sort-by-a-computed-key" class="level3">
+<h3 class="anchored" data-anchor-id="sort-by-a-computed-key">Sort by a computed key</h3>
+<p>Source: APLcart. BPL’s <code>⌷</code> and BQN’s <code>⊏</code> both take the positions on the left.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>Av{<span class="va">⍵</span>[<span class="fu">⍋</span><span class="va">⍺</span><span class="fu">++</span><span class="op">\</span><span class="va">⍺</span>]}Bv</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>Av<span class="kw">←</span><span class="dv">3</span> <span class="dv">1</span> <span class="dv">2</span> <span class="kw">⋄</span> Bv<span class="kw">←</span><span class="st">"abc"</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>Av{[<span class="fu">⍋</span><span class="va">⍺</span><span class="fu">++</span><span class="op">\</span><span class="va">⍺</span>]<span class="fu">⌷</span><span class="va">⍵</span>}Bv       <span class="co">⍝ "bac"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>av {(<span class="fu">⍋</span><span class="va">𝕨</span><span class="fu">++</span><span class="op">`</span><span class="va">𝕨</span>)<span class="fu">⊏</span><span class="va">𝕩</span>} bv</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="sort-rows-by-a-column" class="level3">
+<h3 class="anchored" data-anchor-id="sort-rows-by-a-column">Sort rows by a column</h3>
+<p>Source: APLcart. <code>[∞ ⍺]⌷⍵</code> is column <code>⍺</code> of <code>⍵</code>. Index takes one position for each axis, with <code>∞</code> for a whole axis. The outer <code>⌷</code> gets one item, the grade, and selects rows with it.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>I{<span class="va">⍵</span>[<span class="fu">⍋</span><span class="va">⍵</span>[;<span class="va">⍺</span>];]}Ym</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>I<span class="kw">←</span><span class="dv">1</span> <span class="kw">⋄</span> Ym<span class="kw">←</span>[<span class="dv">5</span> <span class="dv">3</span> <span class="kw">⋄</span> <span class="dv">1</span> <span class="dv">9</span> <span class="kw">⋄</span> <span class="dv">4</span> <span class="dv">2</span>]</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>I{[<span class="fu">⍋</span>[<span class="dv">∞</span> <span class="va">⍺</span>]<span class="fu">⌷</span><span class="va">⍵</span>]<span class="fu">⌷</span><span class="va">⍵</span>}Ym      <span class="co">⍝ [4 2 ⋄ 5 3 ⋄ 1 9]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>i {(<span class="fu">⍋</span><span class="va">𝕨</span><span class="fu">⊏</span><span class="op">˘</span><span class="va">𝕩</span>)<span class="fu">⊏</span><span class="va">𝕩</span>} ym</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="lookup-table" class="level3">
+<h3 class="anchored" data-anchor-id="lookup-table">Lookup table</h3>
+<p>Source: APLcart. The <code>1+</code> goes, because positions count from 0. Dyalog writes the inverse as <code>⊥⍣¯1⊢</code>, where <code>⊢</code> separates the count <code>¯1</code> from the argument. BPL’s <code>⊥⁻¹</code> has no count and needs no <code>⊢</code>. <code>⌷</code> takes the table <code>•d,•a</code> on its right. In <code>[16⊥⁻¹⍵]</code>, the digits are one item of positions. BQN has no encode primitive. Its line computes the base conversion directly.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>{(<span class="bu">⎕D</span><span class="fu">,</span><span class="bu">⎕A</span>)[<span class="dv">1</span><span class="fu">+</span><span class="dv">16</span><span class="fu">⊥</span><span class="ex">⍣</span><span class="dv">¯1</span><span class="fu">⊢</span><span class="va">⍵</span>]}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>{[<span class="dv">16</span><span class="fu">⊥</span><span class="op">⁻¹</span><span class="va">⍵</span>]<span class="fu">⌷</span><span class="bu">•d</span><span class="fu">,</span><span class="bu">•a</span>} <span class="dv">255</span>    <span class="co">⍝ "FF"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>{<span class="st">"0123456789ABCDEF"</span><span class="fu">⊏</span><span class="op">˜</span><span class="dv">16</span>{<span class="fu">⌽</span><span class="va">𝕗</span><span class="fu">|⌊</span><span class="ex">∘</span><span class="fu">÷</span><span class="ex">⟜</span><span class="va">𝕗</span><span class="ex">⍟</span>(<span class="fu">↕</span><span class="dv">1</span><span class="fu">+</span><span class="kw">·</span><span class="fu">⌊</span><span class="va">𝕗</span><span class="fu">⋆</span><span class="op">⁼</span><span class="dv">1</span><span class="fu">⌈⊢</span>)<span class="va">𝕩</span>}<span class="va">𝕩</span>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="translate-characters" class="level3">
+<h3 class="anchored" data-anchor-id="translate-characters">Translate characters</h3>
+<p>Source: the translation in <code>lcase</code> in the dfns workspace, here with tables that complement a DNA strand. The table is <code>"TGCA",,⍵</code>, and the positions are <code>("ACGT",,⍵)⍳⍵</code>. A selection has the shape of its positions. Here that is the shape of <code>⍵</code>. The BPL spelling leaves out the original’s <code>(⍴⍵)⍴</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>(<span class="fu">⍴</span><span class="va">⍵</span>)<span class="fu">⍴</span>(<span class="st">'TGCA'</span><span class="fu">,,</span><span class="va">⍵</span>)[(<span class="st">'ACGT'</span><span class="fu">,,</span><span class="va">⍵</span>)<span class="fu">⍳</span><span class="va">⍵</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>{[(<span class="st">"ACGT"</span><span class="fu">,,</span><span class="va">⍵</span>)<span class="fu">⍳</span><span class="va">⍵</span>]<span class="fu">⌷</span><span class="st">"TGCA"</span><span class="fu">,,</span><span class="va">⍵</span>} <span class="st">"GATTACA"</span>   <span class="co">⍝ "CTAATGT"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>{(<span class="st">"TGCA"</span><span class="fu">∾⥊</span><span class="va">𝕩</span>)<span class="fu">⊏</span><span class="op">˜</span>(<span class="st">"ACGT"</span><span class="fu">∾⥊</span><span class="va">𝕩</span>)<span class="fu">⊐</span><span class="va">𝕩</span>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="an-index-that-assigns-the-arrays-name" class="level3">
+<h3 class="anchored" data-anchor-id="an-index-that-assigns-the-arrays-name">An index that assigns the array’s name</h3>
+<p>Source: the ngn/apl tests. The assignment <code>x←6¿49</code> moves to the right of <code>⌷</code>. BPL evaluates the right argument first. <code>x</code> is therefore set before <code>⍋x</code> runs. BQN sorts with <code>∧</code> and needs no index.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⍴</span>x[<span class="fu">⍋</span>x<span class="kw">←</span><span class="dv">6</span><span class="fu">?</span><span class="dv">49</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⍴</span>[<span class="fu">⍋</span>x]<span class="fu">⌷</span>x<span class="kw">←</span><span class="dv">6</span><span class="fu">¿</span><span class="dv">49</span>           <span class="co">⍝ [6]ₓ</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">≢∧</span><span class="dv">6</span> <span class="bu">•rand.Deal</span> <span class="dv">49</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="indexing-inside-arithmetic" class="level3">
+<h3 class="anchored" data-anchor-id="indexing-inside-arithmetic">Indexing inside arithmetic</h3>
+<p>A subscript selects one position, and a superscript squares. Both bind more tightly than anything else. The Dyalog line sums the squares of the first two items.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>(v[<span class="dv">1</span>]<span class="fu">*</span><span class="dv">2</span>)<span class="fu">+</span>v[<span class="dv">2</span>]<span class="fu">*</span><span class="dv">2</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb20"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>v<span class="kw">←</span><span class="dv">3</span> <span class="dv">4</span> <span class="dv">5</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>v<span class="kw">₀</span><span class="op">²</span><span class="fu">+</span>v<span class="kw">₁</span><span class="op">²</span>                 <span class="co">⍝ 25</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb21"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">´</span><span class="fu">×</span><span class="op">˜</span><span class="dv">2</span><span class="fu">↑</span>v</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="indexing-inside-a-longer-expression" class="level3">
+<h3 class="anchored" data-anchor-id="indexing-inside-a-longer-expression">Indexing inside a longer expression</h3>
+<p>Source: <code>path</code> in the dfns workspace. <code>⍺</code> is the wave front, a vector of vertices, and <code>[⍺]⌷graph</code> selects their lists of neighbours. In <code>[⍺]</code>, <code>⍺</code> is one item, the positions along the only axis. The selection needs parentheses. Without them, <code>⌷</code> would select from the whole of <code>graph∩¨⊂⍸⍵=¯2</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb22"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>next<span class="kw">←</span>graph[<span class="va">⍺</span>]<span class="fu">∩</span><span class="op">¨</span><span class="fu">⊂⍸</span><span class="va">⍵</span><span class="fu">=</span><span class="dv">¯2</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb23"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>graph<span class="kw">←</span>[[<span class="dv">1</span> <span class="dv">2</span>] [<span class="dv">2</span>] [<span class="dv">0</span>] [<span class="dv">1</span>]]</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="dv">0</span> <span class="dv">1</span> {([<span class="va">⍺</span>]<span class="fu">⌷</span>graph)<span class="fu">∩</span><span class="op">¨</span><span class="fu">⊂⍸</span><span class="va">⍵</span><span class="fu">=</span><span class="dv">¯2</span>} <span class="dv">¯2</span> <span class="dv">0</span> <span class="dv">¯2</span> <span class="dv">5</span>   <span class="co">⍝ (2 ⋄ 2)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>next<span class="kw">←</span>(<span class="va">𝕨</span><span class="fu">⊏</span>graph)(<span class="fu">∊/⊣</span>)<span class="op">¨</span><span class="fu">&lt;/</span><span class="va">𝕩</span><span class="fu">=</span><span class="dv">¯2</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="chained-indexing" class="level3">
+<h3 class="anchored" data-anchor-id="chained-indexing">Chained indexing</h3>
+<p>Source: the April tests. <code>⌷</code> takes one item for each axis, like APL’s index fields. <code>;</code> separates the items. <code>∞</code> takes a whole axis, in place of an empty field.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>(<span class="dv">6</span> <span class="dv">8</span> <span class="dv">5</span><span class="fu">⍴⍳</span><span class="dv">9</span>)[<span class="dv">1</span> <span class="dv">4</span>;;<span class="dv">2</span> <span class="dv">1</span>][<span class="dv">1</span>;<span class="dv">2</span> <span class="dv">4</span> <span class="dv">5</span>;]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>[<span class="dv">0</span>;<span class="dv">1</span> <span class="dv">3</span> <span class="dv">4</span>]<span class="fu">⌷</span>[<span class="dv">0</span> <span class="dv">3</span>;<span class="dv">∞</span>;<span class="dv">1</span> <span class="dv">0</span>]<span class="fu">⌷</span><span class="dv">6</span> <span class="dv">8</span> <span class="dv">5</span><span class="fu">⍴⍳</span><span class="dv">9</span>     <span class="co">⍝ [6 5 ⋄ 7 6 ⋄ 3 2]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb27"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>⟨<span class="fu">&lt;</span><span class="dv">0</span><span class="kw">,</span><span class="dv">1</span><span class="kw">‿</span><span class="dv">3</span><span class="kw">‿</span><span class="dv">4</span>⟩<span class="fu">⊏</span>⟨<span class="dv">0</span><span class="kw">‿</span><span class="dv">3</span><span class="kw">,</span><span class="fu">↕</span><span class="dv">8</span><span class="kw">,</span><span class="dv">1</span><span class="kw">‿</span><span class="dv">0</span>⟩<span class="fu">⊏</span><span class="dv">6</span><span class="kw">‿</span><span class="dv">8</span><span class="kw">‿</span><span class="dv">5</span><span class="fu">⥊↕</span><span class="dv">9</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="choose-indexing" class="level3">
+<h3 class="anchored" data-anchor-id="choose-indexing">Choose indexing</h3>
+<p>Source: the April tests. When the positions are vectors, <code>⌷</code> reads each one as a coordinate. <code>[0 1;2 0]</code> is a list of two coordinates. In <code>[[0 1;2 0]]</code>, that list is one item. <code>;</code> separates items that contain spaces.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb28"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>(<span class="dv">3</span> <span class="dv">4</span><span class="fu">⍴⍳</span><span class="dv">9</span>)[(<span class="dv">1</span> <span class="dv">2</span>)(<span class="dv">3</span> <span class="dv">1</span>)]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb29"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>[[<span class="dv">0</span> <span class="dv">1</span>;<span class="dv">2</span> <span class="dv">0</span>]]<span class="fu">⌷</span><span class="dv">3</span> <span class="dv">4</span><span class="fu">⍴⍳</span><span class="dv">9</span>    <span class="co">⍝ 1 8</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb30"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>⟨<span class="dv">0</span><span class="kw">‿</span><span class="dv">1</span><span class="kw">,</span><span class="dv">2</span><span class="kw">‿</span><span class="dv">0</span>⟩<span class="fu">⊑</span><span class="dv">3</span><span class="kw">‿</span><span class="dv">4</span><span class="fu">⥊↕</span><span class="dv">9</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="two-sorts-each-enclosed" class="level3">
+<h3 class="anchored" data-anchor-id="two-sorts-each-enclosed">Two sorts, each enclosed</h3>
+<p>Source: the dfns string examples. In BPL, the pair is written in brackets. APL builds it with <code>⊂</code> and <code>,</code>. Inside brackets, each unspaced expression is one item. BPL lowercases with the system function <code>•c</code>, in place of <code>lcase</code>. <code>•c⍵</code> needs no space, because <code>⍵</code> is a glyph, not a name.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb31"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a>{(<span class="fu">⊂</span><span class="va">⍵</span>[<span class="fu">⍋</span>lcase <span class="va">⍵</span>])<span class="fu">,⊂</span><span class="va">⍵</span>[<span class="fu">⍋</span><span class="va">⍵</span>]}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb32"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>{[[<span class="fu">⍋</span><span class="bu">•c</span><span class="va">⍵</span>]<span class="fu">⌷</span><span class="va">⍵</span> [<span class="fu">⍋</span><span class="va">⍵</span>]<span class="fu">⌷</span><span class="va">⍵</span>]} <span class="st">"baC"</span>   <span class="co">⍝ "abC" "Cab"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb33"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>{⟨<span class="va">𝕩</span><span class="fu">⊏</span><span class="op">˜</span><span class="fu">⍋</span>Lcase <span class="va">𝕩</span><span class="kw">,</span> <span class="fu">∧</span><span class="va">𝕩</span>⟩}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="dividing-a-row-by-its-pivot" class="level3">
+<h3 class="anchored" data-anchor-id="dividing-a-row-by-its-pivot">Dividing a row by its pivot</h3>
+<p>Source: Gauss-Jordan elimination in APLcart. The pivot, <code>[⍺ ⍺]⌷swap</code>, is a run of its own and the left argument of <code>÷⍨@⍺</code>. Because the operand <code>⍺</code> ends at the space, no <code>⊢</code> is needed before the right argument.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb34"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a>mat<span class="kw">←</span>swap[<span class="va">⍺</span>;<span class="va">⍺</span>]<span class="fu">÷</span><span class="op">⍨</span><span class="ex">@</span><span class="va">⍺</span><span class="fu">⊢</span>swap</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb35"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a>swap<span class="kw">←</span>[<span class="dv">2</span> <span class="dv">4</span> <span class="kw">⋄</span> <span class="dv">6</span> <span class="dv">8</span>]</span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a><span class="dv">0</span> {[<span class="va">⍺</span> <span class="va">⍺</span>]<span class="fu">⌷</span>swap <span class="fu">÷</span><span class="op">⍨</span><span class="ex">@</span><span class="va">⍺</span> swap} <span class="dv">0</span>   <span class="co">⍝ [1 2 ⋄ 6 8]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb36"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>mat<span class="kw">←</span>(<span class="fu">÷</span><span class="ex">⟜</span>(<span class="va">𝕨</span><span class="kw">‿</span><span class="va">𝕨</span><span class="fu">⊑</span>swap))<span class="ex">⌾</span>(<span class="va">𝕨</span><span class="ex">⊸</span><span class="fu">⊏</span>)swap</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+</section>
+<section id="assigning" class="level2">
+<h2 class="anchored" data-anchor-id="assigning">Assigning</h2>
+<section id="assigning-to-a-block-of-a-matrix" class="level3">
+<h3 class="anchored" data-anchor-id="assigning-to-a-block-of-a-matrix">Assigning to a block of a matrix</h3>
+<p>Source: <code>box</code> in the dfns workspace. Dot indexing takes one item for each axis, like APL’s bracket index. Because <code>0,h</code> and <code>0,w</code> have no spaces, each is one item. The target of <code>←</code> is the run before it. BQN assigns through a selection with Under, <code>⌾</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb37"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a>q[<span class="dv">1</span><span class="fu">,</span>h;<span class="dv">1</span><span class="fu">,</span>w]<span class="kw">←</span><span class="dv">2</span> <span class="dv">2</span><span class="fu">⍴</span>ch</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb38"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a>q<span class="kw">←</span><span class="dv">5</span> <span class="dv">5</span><span class="fu">⍴</span><span class="dv">0</span> <span class="kw">⋄</span> h<span class="kw">←</span><span class="dv">4</span> <span class="kw">⋄</span> w<span class="kw">←</span><span class="dv">4</span> <span class="kw">⋄</span> ch<span class="kw">←</span><span class="dv">1</span> <span class="dv">2</span> <span class="dv">3</span> <span class="dv">4</span></span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a>q<span class="ex">.</span>[<span class="dv">0</span><span class="fu">,</span>h <span class="dv">0</span><span class="fu">,</span>w]<span class="kw">←</span><span class="dv">2</span> <span class="dv">2</span><span class="fu">⍴</span>ch</span>
+<span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a>q   <span class="co">⍝ [1 0 0 0 2 ⋄ 0 0 0 0 0 ⋄ 0 0 0 0 0 ⋄ 0 0 0 0 0 ⋄ 3 0 0 0 4]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb39"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>q<span class="kw">↩</span>(<span class="dv">2</span><span class="kw">‿</span><span class="dv">2</span><span class="fu">⥊</span>ch)<span class="ex">⌾</span>(⟨<span class="dv">0</span><span class="fu">∾</span>h<span class="kw">,</span><span class="dv">0</span><span class="fu">∾</span>w⟩<span class="ex">⊸</span><span class="fu">⊏</span>)q</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="updating-selected-items-from-other-items" class="level3">
+<h3 class="anchored" data-anchor-id="updating-selected-items-from-other-items">Updating selected items from other items</h3>
+<p>Source: <code>sudoku</code> in the dfns workspace. <code>[j]⌷q</code> selects the items at the positions <code>j</code>. Assigning to <code>q.[j]</code> changes those items. The run <code>[j]⌷q</code> ends at a space. Without the space, <code>⌷</code> would take everything to its right as its argument. The target needs no parentheses, because the target of <code>←</code> is the run before it. BQN writes “without” as <code>¬∘∊/⊣</code>. A vector of vectors prints in parentheses, with <code>⋄</code> between its items: <code>(4 ⋄ 1 2)</code> is <code>[[4] [1 2]]</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb40"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a>q[j]<span class="kw">←</span>q[j]<span class="fu">~</span><span class="op">¨</span><span class="fu">⊂,</span><span class="op">/</span>q[i<span class="fu">~</span>j]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb41"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a>q<span class="kw">←</span>[[<span class="dv">1</span> <span class="dv">2</span> <span class="dv">3</span>] [<span class="dv">1</span> <span class="dv">2</span>] [<span class="dv">2</span> <span class="dv">4</span>] [<span class="dv">3</span> <span class="dv">4</span> <span class="dv">5</span>]] <span class="kw">⋄</span> i<span class="kw">←</span><span class="dv">0</span> <span class="dv">1</span> <span class="dv">2</span> <span class="kw">⋄</span> j<span class="kw">←</span><span class="dv">0</span> <span class="dv">2</span></span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a>q<span class="ex">.</span>[j]<span class="kw">←</span>[j]<span class="fu">⌷</span>q <span class="fu">~</span><span class="op">¨</span> <span class="fu">⊂,</span><span class="op">/</span>[i<span class="fu">~</span>j]<span class="fu">⌷</span>q</span>
+<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a>q   <span class="co">⍝ (3 ⋄ 1 2 ⋄ 4 ⋄ 3 4 5)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb42"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a>q<span class="kw">↩</span>((<span class="fu">¬</span><span class="ex">∘</span><span class="fu">∊/⊣</span>)<span class="ex">⟜</span>(<span class="fu">∾</span>(i(<span class="fu">¬</span><span class="ex">∘</span><span class="fu">∊/⊣</span>)j)<span class="fu">⊏</span>q))<span class="op">¨</span><span class="ex">⌾</span>(j<span class="ex">⊸</span><span class="fu">⊏</span>)q</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+</section>
+<section id="keys-and-paths" class="level2">
+<h2 class="anchored" data-anchor-id="keys-and-paths">Keys and paths</h2>
+<p>Dyalog and BQN have no keyed arrays. Most entries here show BPL alone. See <a href="./keyed.html">axis keys</a> for the full rules.</p>
+<section id="reading-by-keys" class="level3">
+<h3 class="anchored" data-anchor-id="reading-by-keys">Reading by keys</h3>
+<p>Keys on an axis name its positions. <code>⌷</code> takes one key for each axis.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb43"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a>sales<span class="kw">←</span>[<span class="st">"city"</span><span class="fu">:</span>[<span class="st">"NY"</span> <span class="st">"LA"</span>] <span class="st">"month"</span><span class="fu">:</span>[<span class="st">"Jan"</span> <span class="st">"Feb"</span> <span class="st">"Mar"</span>]]<span class="fu">:</span>[<span class="dv">10</span> <span class="dv">20</span> <span class="dv">30</span> <span class="kw">⋄</span> <span class="dv">40</span> <span class="dv">50</span> <span class="dv">60</span>]</span>
+<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a><span class="st">"LA"</span> <span class="st">"Feb"</span><span class="fu">⌷</span>sales       <span class="co">⍝ 50</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="reducing-along-a-named-axis" class="level3">
+<h3 class="anchored" data-anchor-id="reducing-along-a-named-axis">Reducing along a named axis</h3>
+<p><code>⍠</code> applies a function along the axes its operand names. The result keeps the keys and the name of the remaining axis. BQN has no axis names. It reduces by position, as <code>+´˘</code> does along the last axis.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb44"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>sales<span class="kw">←</span>[<span class="st">"city"</span><span class="fu">:</span>[<span class="st">"NY"</span> <span class="st">"LA"</span>] <span class="st">"month"</span><span class="fu">:</span>[<span class="st">"Jan"</span> <span class="st">"Feb"</span> <span class="st">"Mar"</span>]]<span class="fu">:</span>[<span class="dv">10</span> <span class="dv">20</span> <span class="dv">30</span> <span class="kw">⋄</span> <span class="dv">40</span> <span class="dv">50</span> <span class="dv">60</span>]</span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">/</span><span class="ex">⍠</span><span class="st">"month"</span> sales       <span class="co">⍝ ["city":2]⍴["NY":60 "LA":150]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="selecting-from-a-result" class="level3">
+<h3 class="anchored" data-anchor-id="selecting-from-a-result">Selecting from a result</h3>
+<p><code>"NY"⌷+/sales</code> totals each row, then selects the row for NY. The sum needs no parentheses, because Index takes its positions on the left. Pandas writes the selection after the sum: <code>sales.sum(axis=1)["NY"]</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb45"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a>sales<span class="kw">←</span>[<span class="st">"city"</span><span class="fu">:</span>[<span class="st">"NY"</span> <span class="st">"LA"</span>] <span class="st">"month"</span><span class="fu">:</span>[<span class="st">"Jan"</span> <span class="st">"Feb"</span> <span class="st">"Mar"</span>]]<span class="fu">:</span>[<span class="dv">10</span> <span class="dv">20</span> <span class="dv">30</span> <span class="kw">⋄</span> <span class="dv">40</span> <span class="dv">50</span> <span class="dv">60</span>]</span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a><span class="st">"NY"</span><span class="fu">⌷+</span><span class="op">/</span>sales           <span class="co">⍝ 60</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="assigning-to-new-keys" class="level3">
+<h3 class="anchored" data-anchor-id="assigning-to-new-keys">Assigning to new keys</h3>
+<p>Assigning to a key that doesn’t exist adds it. In <code>T.[["age" "city"]]</code>, the two keys are one item, the positions along the vector’s one axis. The target needs no parentheses, because the target of <code>←</code> is the run before it.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb46"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a>T<span class="kw">←</span>[<span class="st">"name"</span><span class="fu">:</span><span class="st">"Ann"</span>]</span>
+<span id="cb46-2"><a href="#cb46-2" aria-hidden="true" tabindex="-1"></a>T<span class="ex">.</span>[[<span class="st">"age"</span> <span class="st">"city"</span>]]<span class="kw">←</span><span class="dv">37</span> <span class="st">"London"</span></span>
+<span id="cb46-3"><a href="#cb46-3" aria-hidden="true" tabindex="-1"></a>T   <span class="co">⍝ ["name":"Ann" "age":37 "city":"London"]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="assigning-through-a-path" class="level3">
+<h3 class="anchored" data-anchor-id="assigning-through-a-path">Assigning through a path</h3>
+<p>Source: the <a href="./xml.html">XML guide</a>. Use a path of names, subscripts and dot indexes to read or assign a nested keyed value. Assignment through a path creates any record missing along it. A BQN namespace has a fixed set of fields, and code outside it can’t assign them.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb47"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a>pic<span class="kw">←</span>[<span class="st">"tag"</span><span class="fu">:</span><span class="st">"svg"</span> <span class="st">"children"</span><span class="fu">:</span>[[<span class="st">"tag"</span><span class="fu">:</span><span class="st">"circle"</span> <span class="st">"attrs"</span><span class="fu">:</span>[<span class="st">"fill"</span><span class="fu">:</span><span class="st">"red"</span>]]]]</span>
+<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a>pic.children<span class="kw">₀</span><span class="ex">.</span>attrs.fill<span class="kw">←</span><span class="st">"steelblue"</span></span>
+<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a>pic.children<span class="kw">₀</span><span class="ex">.</span>attrs.fill   <span class="co">⍝ "steelblue"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="looking-up-a-value-in-an-association-list" class="level3">
+<h3 class="anchored" data-anchor-id="looking-up-a-value-in-an-association-list">Looking up a value in an association list</h3>
+<p>Source: <code>lisp</code> in the dfns workspace. The Dyalog code keeps the list as a two-column matrix of names and values. BPL keeps it as a keyed vector, and <code>⍵⌷⍺</code> selects the value for the key <code>⍵</code>. BQN keeps the keys and the values as two lists.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb48"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a><span class="va">⍺</span>[<span class="va">⍺</span>[;<span class="dv">1</span>]<span class="fu">⍳⊂</span><span class="va">⍵</span>;<span class="dv">2</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb49"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a>[<span class="st">"x"</span><span class="fu">:</span><span class="dv">1</span> <span class="st">"y"</span><span class="fu">:</span><span class="dv">2</span>] {<span class="va">⍵</span><span class="fu">⌷</span><span class="va">⍺</span>} <span class="st">"y"</span>   <span class="co">⍝ 2</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb50"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb50-1"><a href="#cb50-1" aria-hidden="true" tabindex="-1"></a>(<span class="fu">⊑</span>k<span class="fu">⊐&lt;</span><span class="va">𝕩</span>)<span class="fu">⊑</span>v</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="plotting-a-keyed-matrix" class="level3">
+<h3 class="anchored" data-anchor-id="plotting-a-keyed-matrix">Plotting a keyed matrix</h3>
+<p>Source: the <a href="./index.html">home page</a>. Each row is one series. The column keys label the x axis. With <code>"legend":"end"</code>, each line is labelled with its row key. See <a href="./plot.html">plots</a>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb51"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a>sales<span class="kw">←</span>[<span class="st">"city"</span><span class="fu">:</span>[<span class="st">"NY"</span> <span class="st">"LA"</span>] <span class="st">"month"</span><span class="fu">:</span>[<span class="st">"Jan"</span> <span class="st">"Feb"</span> <span class="st">"Mar"</span>]]<span class="fu">:</span>[<span class="dv">10</span> <span class="dv">20</span> <span class="dv">30</span> <span class="kw">⋄</span> <span class="dv">40</span> <span class="dv">50</span> <span class="dv">60</span>]</span>
+<span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a>[<span class="st">"legend"</span><span class="fu">:</span><span class="st">"end"</span>] <span class="bu">•plot</span> sales</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+</section>
+<section id="runs-trains-and-operands" class="level2">
+<h2 class="anchored" data-anchor-id="runs-trains-and-operands">Runs, trains and operands</h2>
+<section id="rank-with-a-numeric-operand" class="level3">
+<h3 class="anchored" data-anchor-id="rank-with-a-numeric-operand">Rank with a numeric operand</h3>
+<p>An operator takes one item to its right. In APL, <code>⊢</code> separates the operand <code>1</code> from the argument, because arrays side by side strand into one operand. BPL has the same problem only with literals: <code>1 2 3</code> is one strand. A space ends the operand. Write a literal argument in brackets to keep it out of the operand. With a name as the argument, the space is enough: <code>+/⍤1 m</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb52"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">/</span><span class="ex">⍤</span><span class="dv">1</span><span class="fu">⊢</span><span class="dv">2</span> <span class="dv">3</span><span class="fu">⍴⍳</span><span class="dv">6</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb53"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">/</span><span class="ex">⍤</span><span class="dv">1</span> [<span class="dv">2</span> <span class="dv">3</span>]<span class="fu">⍴⍳</span><span class="dv">6</span>          <span class="co">⍝ 3 12</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb54"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb54-1"><a href="#cb54-1" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">´˘</span><span class="dv">2</span><span class="kw">‿</span><span class="dv">3</span><span class="fu">⥊↕</span><span class="dv">6</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="a-named-operator-with-a-numeric-operand" class="level3">
+<h3 class="anchored" data-anchor-id="a-named-operator-with-a-numeric-operand">A named operator with a numeric operand</h3>
+<p>Source: <code>Depth</code> in the dfns workspace. It applies its left operand at the depths that its right operand gives, as BQN’s <code>⚇</code> does. <code>+Depth 0</code> is one function, because a run that ends in an operator takes the next run as its right operand. <code>1 2</code> is that function’s left argument. <code>3 4</code> is in brackets to keep it out of the operand.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb55"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="dv">2</span>(<span class="fu">+</span>Depth <span class="dv">0</span>)<span class="dv">3</span> <span class="dv">4</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb56"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb56-1"><a href="#cb56-1" aria-hidden="true" tabindex="-1"></a>[Depth]<span class="kw">←</span><span class="bu">•load</span> <span class="st">"lib/dyalog.bpl"</span></span>
+<span id="cb56-2"><a href="#cb56-2" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="dv">2</span> <span class="fu">+</span>Depth <span class="dv">0</span> [<span class="dv">3</span> <span class="dv">4</span>]     <span class="co">⍝ 4 6</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb57"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span><span class="kw">‿</span><span class="dv">2</span> <span class="fu">+</span><span class="ex">⚇</span><span class="dv">0</span> <span class="dv">3</span><span class="kw">‿</span><span class="dv">4</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="reducing-several-axes" class="level3">
+<h3 class="anchored" data-anchor-id="reducing-several-axes">Reducing several axes</h3>
+<p><code>⍠</code> applies a function along the axes its operand lists. The operand <code>1 2</code> is a strand, and the name <code>n</code> doesn’t join it. Dyalog and BQN ravel each cell first.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb58"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">/</span><span class="fu">,</span><span class="ex">⍤</span><span class="dv">2</span><span class="fu">⊢</span>n</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb59"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb59-1"><a href="#cb59-1" aria-hidden="true" tabindex="-1"></a>n<span class="kw">←</span><span class="dv">2</span> <span class="dv">3</span> <span class="dv">4</span><span class="fu">⍴⍳</span><span class="dv">24</span></span>
+<span id="cb59-2"><a href="#cb59-2" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">/</span><span class="ex">⍠</span><span class="dv">1</span> <span class="dv">2</span> n               <span class="co">⍝ 66 210</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb60"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">´</span><span class="ex">∘</span><span class="fu">⥊</span><span class="op">˘</span>n</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="stencil-with-a-numeric-operand" class="level3">
+<h3 class="anchored" data-anchor-id="stencil-with-a-numeric-operand">Stencil with a numeric operand</h3>
+<p>The operand ends at the space. <code>1 2 3 4</code> is in brackets to keep it out of the operand. <code>+/∘⊢</code> reduces each window and ignores the padding counts that Stencil passes as its left argument. The second line gets the same result without Stencil, because <code>↕</code> with a negative size pads the ends. BQN has no Stencil. Its line pads with zeros.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb61"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb61-1"><a href="#cb61-1" aria-hidden="true" tabindex="-1"></a>{<span class="fu">+</span><span class="op">/</span><span class="fu">,</span><span class="va">⍵</span>}<span class="ex">⌺</span><span class="dv">3</span><span class="fu">⊢</span><span class="dv">1</span> <span class="dv">2</span> <span class="dv">3</span> <span class="dv">4</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb62"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb62-1"><a href="#cb62-1" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">/</span><span class="ex">∘</span><span class="fu">⊢</span><span class="ex">⌺</span><span class="dv">3</span> [<span class="dv">1</span> <span class="dv">2</span> <span class="dv">3</span> <span class="dv">4</span>]       <span class="co">⍝ 3 6 9 7</span></span>
+<span id="cb62-2"><a href="#cb62-2" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">/</span><span class="dv">¯3</span><span class="fu">↕</span><span class="dv">1</span> <span class="dv">2</span> <span class="dv">3</span> <span class="dv">4</span>           <span class="co">⍝ 3 6 9 7</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb63"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb63-1"><a href="#cb63-1" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">´˘</span><span class="dv">3</span><span class="fu">↕</span><span class="dv">0</span><span class="fu">∾</span><span class="dv">1</span><span class="kw">‿</span><span class="dv">2</span><span class="kw">‿</span><span class="dv">3</span><span class="kw">‿</span><span class="dv">4</span><span class="fu">∾</span><span class="dv">0</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="power-with-a-list-of-counts" class="level3">
+<h3 class="anchored" data-anchor-id="power-with-a-list-of-counts">Power with a list of counts</h3>
+<p>A list of counts gives the result for each count, as BQN’s Repeat does. <code>⍳5</code> is in parentheses because an operator takes one item to its right. <code>2</code> needs no Bind. Dyadic Power passes its left argument to <code>×</code> at each step. Dyalog has no list form, and its line applies Power once for each count.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb64"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb64-1"><a href="#cb64-1" aria-hidden="true" tabindex="-1"></a>{(<span class="dv">2</span><span class="ex">∘</span><span class="fu">×</span><span class="ex">⍣</span><span class="va">⍵</span>)<span class="dv">1</span>}<span class="op">¨</span><span class="dv">0</span><span class="fu">,⍳</span><span class="dv">4</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb65"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb65-1"><a href="#cb65-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span><span class="fu">×</span><span class="ex">⍣</span>(<span class="fu">⍳</span><span class="dv">5</span>) <span class="dv">1</span>              <span class="co">⍝ 1 2 4 8 16</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb66"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb66-1"><a href="#cb66-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span><span class="ex">⊸</span><span class="fu">×</span><span class="ex">⍟</span>(<span class="fu">↕</span><span class="dv">5</span>)<span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="mean" class="level3">
+<h3 class="anchored" data-anchor-id="mean">Mean</h3>
+<p>A run that ends in a function is a train. The run <code>+/÷≢</code> ends at the space before <code>2 4 9</code>. The train needs no parentheses. Without the space, <code>+/÷≢x</code> is an expression: <code>+/(÷(≢x))</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb67"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb67-1"><a href="#cb67-1" aria-hidden="true" tabindex="-1"></a>(<span class="fu">+</span><span class="op">/</span><span class="fu">÷≢</span>)<span class="dv">2</span> <span class="dv">4</span> <span class="dv">9</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb68"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb68-1"><a href="#cb68-1" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">/</span><span class="fu">÷≢</span> <span class="dv">2</span> <span class="dv">4</span> <span class="dv">9</span>             <span class="co">⍝ 5</span></span>
+<span id="cb68-2"><a href="#cb68-2" aria-hidden="true" tabindex="-1"></a>x<span class="kw">←</span><span class="dv">2</span> <span class="dv">4</span> <span class="dv">9</span></span>
+<span id="cb68-3"><a href="#cb68-3" aria-hidden="true" tabindex="-1"></a><span class="fu">+</span><span class="op">/</span><span class="fu">÷≢</span>x                  <span class="co">⍝ 1r3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb69"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb69-1"><a href="#cb69-1" aria-hidden="true" tabindex="-1"></a>(<span class="fu">+</span><span class="op">´</span><span class="fu">÷≠</span>)<span class="dv">2</span><span class="kw">‿</span><span class="dv">4</span><span class="kw">‿</span><span class="dv">9</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="a-train-that-binds-arrays" class="level3">
+<h3 class="anchored" data-anchor-id="a-train-that-binds-arrays">A train that binds arrays</h3>
+<p>A subject directly before a function in a train binds to it: <code>1.8×</code> is <code>1.8↣×</code>. <code>32</code> is the left part of the fork <code>32 + 1.8↣×</code>, as in Dyalog. Dyalog and BQN need <code>∘</code> and <code>↣</code> to bind <code>1.8</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb70"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb70-1"><a href="#cb70-1" aria-hidden="true" tabindex="-1"></a>f<span class="kw">←</span><span class="dv">32</span><span class="fu">+</span><span class="dv">1.8</span><span class="ex">∘</span><span class="fu">×</span> <span class="kw">⋄</span> f <span class="dv">100</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb71"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb71-1"><a href="#cb71-1" aria-hidden="true" tabindex="-1"></a>f<span class="kw">←</span><span class="dv">32</span><span class="fu">+</span><span class="dv">1.8</span><span class="fu">×</span> <span class="kw">⋄</span> f100       <span class="co">⍝ 212</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb72"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb72-1"><a href="#cb72-1" aria-hidden="true" tabindex="-1"></a>F<span class="kw">←</span><span class="dv">32</span><span class="fu">+</span><span class="dv">1.8</span><span class="ex">⊸</span><span class="fu">×</span> <span class="kw">⋄</span> F <span class="dv">100</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="quadratic-root" class="level3">
+<h3 class="anchored" data-anchor-id="quadratic-root">Quadratic root</h3>
+<p>BPL writes two of the three pairs of parentheses as spaces. <code>-b</code> is one run, negated before the addition. <code>b² - 4×a×c</code> is three runs, and <code>√</code> applies to the whole difference. Dyalog has no <code>√</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb73"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb73-1"><a href="#cb73-1" aria-hidden="true" tabindex="-1"></a>((<span class="fu">-</span>b)<span class="fu">+</span>((b<span class="fu">*</span><span class="dv">2</span>)<span class="fu">-</span><span class="dv">4</span><span class="fu">×</span>a<span class="fu">×</span>c)<span class="fu">*</span><span class="dv">0.5</span>)<span class="fu">÷</span><span class="dv">2</span><span class="fu">×</span>a</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb74"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a>a<span class="kw">←</span><span class="dv">1</span> <span class="kw">⋄</span> b<span class="kw">←</span><span class="dv">¯3</span> <span class="kw">⋄</span> c<span class="kw">←</span><span class="dv">2</span></span>
+<span id="cb74-2"><a href="#cb74-2" aria-hidden="true" tabindex="-1"></a>(<span class="fu">-</span>b <span class="fu">+</span> <span class="fu">√</span> b<span class="op">²</span> <span class="fu">-</span> <span class="dv">4</span><span class="fu">×</span>a<span class="fu">×</span>c)<span class="fu">÷</span><span class="dv">2</span><span class="fu">×</span>a   <span class="co">⍝ 2</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb75"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb75-1"><a href="#cb75-1" aria-hidden="true" tabindex="-1"></a>((<span class="fu">-</span>b)<span class="fu">+√</span>(b<span class="fu">⋆</span><span class="dv">2</span>)<span class="fu">-</span><span class="dv">4</span><span class="fu">×</span>a<span class="fu">×</span>c)<span class="fu">÷</span><span class="dv">2</span><span class="fu">×</span>a</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="a-two-number-operand-before-a-named-argument" class="level3">
+<h3 class="anchored" data-anchor-id="a-two-number-operand-before-a-named-argument">A two-number operand before a named argument</h3>
+<p>Source: “Why not whitespace?” in <a href="https://mlochbaum.github.io/BQN/doc/arrayrepr.html">BQN’s documentation</a>. Without BQN’s ligature <code>‿</code>, nothing says which of <code>1</code>, <code>∞</code> and <code>b</code> belong together. In BPL, <code>1 ∞</code> is a strand, and the name <code>b</code> never joins it. BPL spells Atop <code>∘</code>, as BQN does. A rank of <code>∞</code> takes the whole argument, as in BQN.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb76"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb76-1"><a href="#cb76-1" aria-hidden="true" tabindex="-1"></a>a <span class="fu">+</span><span class="op">˝</span><span class="ex">∘</span><span class="fu">×</span><span class="ex">⎉</span><span class="dv">1</span><span class="kw">‿</span><span class="dv">∞</span> b</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb77"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb77-1"><a href="#cb77-1" aria-hidden="true" tabindex="-1"></a>a<span class="kw">←</span><span class="dv">2</span> <span class="dv">3</span><span class="fu">⍴⍳</span><span class="dv">6</span> <span class="kw">⋄</span> b<span class="kw">←</span><span class="dv">3</span> <span class="dv">2</span><span class="fu">⍴⍳</span><span class="dv">6</span></span>
+<span id="cb77-2"><a href="#cb77-2" aria-hidden="true" tabindex="-1"></a>a <span class="fu">+</span><span class="op">⌿</span><span class="ex">∘</span><span class="fu">×</span><span class="ex">⍤</span><span class="dv">1</span> <span class="dv">∞</span> b           <span class="co">⍝ [10 13 ⋄ 28 40]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="a-vector-bound-into-a-composition" class="level3">
+<h3 class="anchored" data-anchor-id="a-vector-bound-into-a-composition">A vector bound into a composition</h3>
+<p>Source: “Why not whitespace?” in BQN’s documentation. BQN tells the two readings apart with its ligature. In BPL and Dyalog, <code>3 1</code> is one operand, and the other reading needs parentheses. BPL writes BQN’s <code>⊸</code> as <code>↣</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb78"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb78-1"><a href="#cb78-1" aria-hidden="true" tabindex="-1"></a><span class="dv">3</span> <span class="dv">1</span><span class="ex">⊸</span><span class="fu">+</span><span class="ex">⊸</span><span class="fu">×</span> <span class="dv">5</span>    <span class="co"># 20</span></span>
+<span id="cb78-2"><a href="#cb78-2" aria-hidden="true" tabindex="-1"></a><span class="dv">3</span><span class="kw">‿</span><span class="dv">1</span><span class="ex">⊸</span><span class="fu">+</span><span class="ex">⊸</span><span class="fu">×</span> <span class="dv">5</span>    <span class="co"># 40 30</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb79"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb79-1"><a href="#cb79-1" aria-hidden="true" tabindex="-1"></a><span class="dv">3</span>(<span class="dv">1</span><span class="ex">∘</span><span class="fu">+</span><span class="ex">⍛</span><span class="fu">×</span>)<span class="dv">5</span></span>
+<span id="cb79-2"><a href="#cb79-2" aria-hidden="true" tabindex="-1"></a><span class="dv">3</span> <span class="dv">1</span><span class="ex">∘</span><span class="fu">+</span><span class="ex">⍛</span><span class="fu">×</span><span class="dv">5</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb80"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb80-1"><a href="#cb80-1" aria-hidden="true" tabindex="-1"></a><span class="dv">3</span> (<span class="dv">1</span>↣<span class="fu">+</span>↣<span class="fu">×</span>) <span class="dv">5</span>            <span class="co">⍝ 20</span></span>
+<span id="cb80-2"><a href="#cb80-2" aria-hidden="true" tabindex="-1"></a><span class="dv">3</span> <span class="dv">1</span>↣<span class="fu">+</span>↣<span class="fu">×</span> <span class="dv">5</span>              <span class="co">⍝ 40 30</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+</section>
+<section id="lists" class="level2">
+<h2 class="anchored" data-anchor-id="lists">Lists</h2>
+<section id="a-list-that-mixes-literals-and-names" class="level3">
+<h3 class="anchored" data-anchor-id="a-list-that-mixes-literals-and-names">A list that mixes literals and names</h3>
+<p>Source: BQN’s documentation, on stranding in J and K. Without brackets, <code>2 n 5+1</code> is the strand of <code>2</code>, <code>n</code> and <code>5+1</code>, because <code>5+1</code> is a run of its own. In <code>[2 n 5]+1</code>, the list is complete before <code>+1</code> applies. APL strands <code>2 n 5</code> before adding 1, and BQN joins the items with <code>‿</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb81"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb81-1"><a href="#cb81-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span><span class="kw">‿</span>n<span class="kw">‿</span><span class="dv">5</span><span class="fu">+</span><span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb82"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb82-1"><a href="#cb82-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span> n <span class="dv">5</span><span class="fu">+</span><span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb83"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb83-1"><a href="#cb83-1" aria-hidden="true" tabindex="-1"></a>n<span class="kw">←</span><span class="dv">7</span></span>
+<span id="cb83-2"><a href="#cb83-2" aria-hidden="true" tabindex="-1"></a>[<span class="dv">2</span> n <span class="dv">5</span>]<span class="fu">+</span><span class="dv">1</span>              <span class="co">⍝ 3 8 6</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="a-list-of-computed-values" class="level3">
+<h3 class="anchored" data-anchor-id="a-list-of-computed-values">A list of computed values</h3>
+<p>Each unspaced expression inside brackets is one item. The list needs no parentheses round its items.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb84"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb84-1"><a href="#cb84-1" aria-hidden="true" tabindex="-1"></a>(<span class="fu">⌊</span><span class="op">/</span>x)(<span class="fu">⌈</span><span class="op">/</span>x)(<span class="fu">+</span><span class="op">/</span>x<span class="fu">÷≢</span>x)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb85"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb85-1"><a href="#cb85-1" aria-hidden="true" tabindex="-1"></a>x<span class="kw">←</span><span class="dv">2</span> <span class="dv">4</span> <span class="dv">9</span></span>
+<span id="cb85-2"><a href="#cb85-2" aria-hidden="true" tabindex="-1"></a>[<span class="fu">⌊</span><span class="op">/</span>x <span class="fu">⌈</span><span class="op">/</span>x <span class="fu">+</span><span class="op">/</span>x<span class="fu">÷≢</span>x]       <span class="co">⍝ 2 9 5</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb86"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb86-1"><a href="#cb86-1" aria-hidden="true" tabindex="-1"></a>⟨<span class="fu">⌊</span><span class="op">´</span>x<span class="kw">,</span> <span class="fu">⌈</span><span class="op">´</span>x<span class="kw">,</span> <span class="fu">+</span><span class="op">´</span>x<span class="fu">÷≠</span>x⟩</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="lists-that-hold-functions" class="level3">
+<h3 class="anchored" data-anchor-id="lists-that-hold-functions">Lists that hold functions</h3>
+<p>Source: <a href="https://mlochbaum.github.io/BQN/doc/control.html">BQN’s documentation</a>. Inside brackets, every space separates items, even between functions: <code>[2 + 3]</code> is a list of three items. <code>[c t f]←</code> destructures, as BQN’s header does. Because positions count from 0, the Boolean <code>c</code> is a valid position in <code>[f t]</code>. Dyalog arrays can’t hold functions.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb87"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb87-1"><a href="#cb87-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span><span class="kw">‿</span><span class="fu">+</span><span class="kw">‿</span><span class="dv">3</span></span>
+<span id="cb87-2"><a href="#cb87-2" aria-hidden="true" tabindex="-1"></a>IfElse <span class="kw">←</span> {c<span class="kw">‿</span>T<span class="kw">‿</span>F<span class="kw">:</span> c<span class="ex">◶</span>F<span class="kw">‿</span>T<span class="ch">@</span>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb88"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb88-1"><a href="#cb88-1" aria-hidden="true" tabindex="-1"></a><span class="fu">≢</span>[<span class="dv">2</span> <span class="fu">+</span> <span class="dv">3</span>]               <span class="co">⍝ 3ₓ</span></span>
+<span id="cb88-2"><a href="#cb88-2" aria-hidden="true" tabindex="-1"></a>ifelse<span class="kw">←</span>{[c t f]<span class="kw">←</span><span class="va">⍵</span> <span class="kw">⋄</span> c<span class="ex">⍚</span>[f t]<span class="dv">0</span>}</span>
+<span id="cb88-3"><a href="#cb88-3" aria-hidden="true" tabindex="-1"></a>ifelse [<span class="dv">1</span> {<span class="va">⍵</span><span class="fu">+</span><span class="dv">10</span>} {<span class="va">⍵</span><span class="fu">+</span><span class="dv">20</span>}]   <span class="co">⍝ 10</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="long-list-items-across-lines" class="level3">
+<h3 class="anchored" data-anchor-id="long-list-items-across-lines">Long list items across lines</h3>
+<p>Source: the binary search in BQN’s documentation on control flow. Inside the brackets, each line holds one item of the three-item list. BPL has no <code>↩︎</code>. <code>hi⊢←mid</code> modifies the <code>hi</code> of the enclosing function.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb89"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb89-1"><a href="#cb89-1" aria-hidden="true" tabindex="-1"></a>IfElse (<span class="va">𝕩</span><span class="fu">&lt;</span>mid<span class="fu">⊑</span><span class="va">𝕨</span>)<span class="kw">‿</span>{<span class="va">𝕤</span></span>
+<span id="cb89-2"><a href="#cb89-2" aria-hidden="true" tabindex="-1"></a>  hi<span class="kw">↩</span>mid</span>
+<span id="cb89-3"><a href="#cb89-3" aria-hidden="true" tabindex="-1"></a>}<span class="kw">‿</span>{<span class="va">𝕤</span></span>
+<span id="cb89-4"><a href="#cb89-4" aria-hidden="true" tabindex="-1"></a>  lo<span class="kw">↩</span>mid</span>
+<span id="cb89-5"><a href="#cb89-5" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb90"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb90-1"><a href="#cb90-1" aria-hidden="true" tabindex="-1"></a>ifelse<span class="kw">←</span>{[c t f]<span class="kw">←</span><span class="va">⍵</span> <span class="kw">⋄</span> c<span class="ex">⍚</span>[f t]<span class="dv">0</span>}</span>
+<span id="cb90-2"><a href="#cb90-2" aria-hidden="true" tabindex="-1"></a>step<span class="kw">←</span>{mid<span class="kw">←</span><span class="dv">3</span> <span class="kw">⋄</span> hi<span class="kw">←</span><span class="dv">9</span> <span class="kw">⋄</span> lo<span class="kw">←</span><span class="dv">0</span></span>
+<span id="cb90-3"><a href="#cb90-3" aria-hidden="true" tabindex="-1"></a>  ifelse [<span class="va">⍵</span><span class="fu">&lt;</span>mid<span class="fu">⊃</span><span class="va">⍺</span></span>
+<span id="cb90-4"><a href="#cb90-4" aria-hidden="true" tabindex="-1"></a>    {hi<span class="fu">⊢</span><span class="kw">←</span>mid}</span>
+<span id="cb90-5"><a href="#cb90-5" aria-hidden="true" tabindex="-1"></a>    {lo<span class="fu">⊢</span><span class="kw">←</span>mid}]</span>
+<span id="cb90-6"><a href="#cb90-6" aria-hidden="true" tabindex="-1"></a>  [lo hi]}</span>
+<span id="cb90-7"><a href="#cb90-7" aria-hidden="true" tabindex="-1"></a><span class="dv">0</span> <span class="dv">1</span> <span class="dv">2</span> <span class="dv">3</span> <span class="dv">4</span> <span class="dv">5</span> step <span class="dv">1</span>     <span class="co">⍝ 0 3</span></span>
+<span id="cb90-8"><a href="#cb90-8" aria-hidden="true" tabindex="-1"></a><span class="dv">0</span> <span class="dv">1</span> <span class="dv">2</span> <span class="dv">3</span> <span class="dv">4</span> <span class="dv">5</span> step <span class="dv">4</span>     <span class="co">⍝ 3 9</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="a-new-leading-axis" class="level3">
+<h3 class="anchored" data-anchor-id="a-new-leading-axis">A new leading axis</h3>
+<p>Rows in array notation can be computed as well as literal. <code>[x ⋄ y]</code> is a matrix whose rows are <code>x</code> and <code>y</code>. BPL has no laminate.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb91"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb91-1"><a href="#cb91-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="dv">2</span><span class="fu">,</span>[<span class="dv">0.5</span>]<span class="dv">3</span> <span class="dv">4</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb92"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb92-1"><a href="#cb92-1" aria-hidden="true" tabindex="-1"></a>[<span class="dv">1</span> <span class="dv">2</span> <span class="kw">⋄</span> <span class="dv">3</span> <span class="dv">4</span>]            <span class="co">⍝ 2 2⍴1 2 3 4</span></span>
+<span id="cb92-2"><a href="#cb92-2" aria-hidden="true" tabindex="-1"></a>x<span class="kw">←</span><span class="dv">1</span> <span class="dv">2</span> <span class="kw">⋄</span> y<span class="kw">←</span><span class="dv">3</span> <span class="dv">4</span></span>
+<span id="cb92-3"><a href="#cb92-3" aria-hidden="true" tabindex="-1"></a>[x <span class="kw">⋄</span> y]                <span class="co">⍝ [1 2 ⋄ 3 4]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb93"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb93-1"><a href="#cb93-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span><span class="kw">‿</span><span class="dv">2</span><span class="fu">≍</span><span class="dv">3</span><span class="kw">‿</span><span class="dv">4</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="searching-for-one-string" class="level3">
+<h3 class="anchored" data-anchor-id="searching-for-one-string">Searching for one string</h3>
+<p><code>⊂"ab"</code> encloses the string, and <code>⍳</code> searches for it as one item, as in Dyalog. A search for one item gives a plain number in BPL and Dyalog. BQN’s search functions always return an array, and BQN’s documentation suggests <code>list⊸⊐⌾&lt;elt</code> to get a plain number.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb94"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb94-1"><a href="#cb94-1" aria-hidden="true" tabindex="-1"></a>names<span class="fu">⍳⊂</span><span class="st">'ab'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb95"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb95-1"><a href="#cb95-1" aria-hidden="true" tabindex="-1"></a>names<span class="kw">←</span><span class="st">"cd"</span> <span class="st">"ab"</span> <span class="st">"ef"</span></span>
+<span id="cb95-2"><a href="#cb95-2" aria-hidden="true" tabindex="-1"></a>names<span class="fu">⍳⊂</span><span class="st">"ab"</span>            <span class="co">⍝ 1ₓ</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb96"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb96-1"><a href="#cb96-1" aria-hidden="true" tabindex="-1"></a>names<span class="ex">⊸</span><span class="fu">⊐</span><span class="ex">⌾</span><span class="fu">&lt;</span><span class="st">"ab"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+</section>
+<section id="counting-from-0" class="level2">
+<h2 class="anchored" data-anchor-id="counting-from-0">Counting from 0</h2>
+<section id="selecting-by-a-boolean" class="level3">
+<h3 class="anchored" data-anchor-id="selecting-by-a-boolean">Selecting by a Boolean</h3>
+<p><code>(x&gt;0)⌷"no" "yes"</code> selects one string from the strand. The Boolean <code>x&gt;0</code> is the position, with no <code>1+</code>. For an array of Booleans, BQN uses <code>⊏</code> in place of <code>⊑</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb97"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb97-1"><a href="#cb97-1" aria-hidden="true" tabindex="-1"></a>(<span class="st">'no'</span> <span class="st">'yes'</span>)[<span class="dv">1</span><span class="fu">+</span>x<span class="fu">&gt;</span><span class="dv">0</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb98"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb98-1"><a href="#cb98-1" aria-hidden="true" tabindex="-1"></a>x<span class="kw">←</span><span class="dv">5</span></span>
+<span id="cb98-2"><a href="#cb98-2" aria-hidden="true" tabindex="-1"></a>(x<span class="fu">&gt;</span><span class="dv">0</span>)<span class="fu">⌷</span><span class="st">"no"</span> <span class="st">"yes"</span>       <span class="co">⍝ "yes"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb99"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb99-1"><a href="#cb99-1" aria-hidden="true" tabindex="-1"></a>(x<span class="fu">&gt;</span><span class="dv">0</span>)<span class="fu">⊑</span><span class="st">"no"</span><span class="kw">‿</span><span class="st">"yes"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="caesar-cipher" class="level3">
+<h3 class="anchored" data-anchor-id="caesar-cipher">Caesar cipher</h3>
+<p><code>26|</code> wraps a position round the alphabet directly.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb100"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb100-1"><a href="#cb100-1" aria-hidden="true" tabindex="-1"></a>a[<span class="dv">1</span><span class="fu">+</span><span class="dv">26</span><span class="fu">|</span><span class="dv">2</span><span class="fu">+</span>a<span class="fu">⍳</span>t]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb101"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb101-1"><a href="#cb101-1" aria-hidden="true" tabindex="-1"></a>a<span class="kw">←</span><span class="st">"abcdefghijklmnopqrstuvwxyz"</span> <span class="kw">⋄</span> t<span class="kw">←</span><span class="st">"hal"</span></span>
+<span id="cb101-2"><a href="#cb101-2" aria-hidden="true" tabindex="-1"></a>[<span class="dv">26</span><span class="fu">|</span><span class="dv">3</span><span class="fu">+</span>a<span class="fu">⍳</span>t]<span class="fu">⌷</span>a           <span class="co">⍝ "kdo"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb102"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb102-1"><a href="#cb102-1" aria-hidden="true" tabindex="-1"></a>a<span class="fu">⊏</span><span class="op">˜</span><span class="dv">26</span><span class="fu">|</span><span class="dv">3</span><span class="fu">+</span>a<span class="fu">⊐</span>t</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+</section>
+<section id="programs" class="level2">
+<h2 class="anchored" data-anchor-id="programs">Programs</h2>
+<section id="sierpinskis-triangle" class="level3">
+<h3 class="anchored" data-anchor-id="sierpinskis-triangle">Sierpinski’s triangle</h3>
+<p>Source: the ngn/apl examples. In BPL’s <code>f</code>, spaces separate the runs on each side of <code>⍪</code>. Dyalog needs parentheses round the left side instead. The lookup table <code>" #"</code> is the right argument of <code>⌷</code>. The picture, in brackets, is one item of positions. <code>⍪1</code> is the 1-by-1 starting matrix, written without spaces because a space would separate items inside the brackets.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb103"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb103-1"><a href="#cb103-1" aria-hidden="true" tabindex="-1"></a>f<span class="kw">←</span>{(<span class="va">⍵</span><span class="fu">,</span>(<span class="fu">⍴</span><span class="va">⍵</span>)<span class="fu">⍴</span><span class="dv">0</span>)<span class="fu">⍪</span><span class="va">⍵</span><span class="fu">,</span><span class="va">⍵</span>}</span>
+<span id="cb103-2"><a href="#cb103-2" aria-hidden="true" tabindex="-1"></a>S<span class="kw">←</span>{<span class="st">' #'</span>[(f<span class="ex">⍣</span><span class="va">⍵</span>)<span class="dv">1</span> <span class="dv">1</span><span class="fu">⍴</span><span class="dv">1</span>]}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb104"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb104-1"><a href="#cb104-1" aria-hidden="true" tabindex="-1"></a>f<span class="kw">←</span>{<span class="va">⍵</span><span class="fu">,</span>(<span class="fu">⍴</span><span class="va">⍵</span>)<span class="fu">⍴</span><span class="dv">0</span> <span class="fu">⍪</span> <span class="va">⍵</span><span class="fu">,</span><span class="va">⍵</span>}</span>
+<span id="cb104-2"><a href="#cb104-2" aria-hidden="true" tabindex="-1"></a>S<span class="kw">←</span>{[(f<span class="ex">⍣</span><span class="va">⍵</span>)<span class="fu">⍪</span><span class="dv">1</span>]<span class="fu">⌷</span><span class="st">" #"</span>}</span>
+<span id="cb104-3"><a href="#cb104-3" aria-hidden="true" tabindex="-1"></a><span class="fu">⍴</span>S <span class="dv">5</span>                   <span class="co">⍝ [32 32]ₓ</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb105"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb105-1"><a href="#cb105-1" aria-hidden="true" tabindex="-1"></a>F<span class="kw">←</span>{(<span class="va">𝕩</span><span class="fu">∾</span><span class="op">˘</span>(<span class="fu">≢</span><span class="va">𝕩</span>)<span class="fu">⥊</span><span class="dv">0</span>)<span class="fu">∾</span><span class="va">𝕩</span><span class="fu">∾</span><span class="op">˘</span><span class="va">𝕩</span>}</span>
+<span id="cb105-2"><a href="#cb105-2" aria-hidden="true" tabindex="-1"></a>S<span class="kw">←</span>{<span class="st">" #"</span><span class="fu">⊏</span><span class="op">˜</span>F<span class="ex">⍟</span><span class="va">𝕩</span> <span class="dv">1</span><span class="kw">‿</span><span class="dv">1</span><span class="fu">⥊</span><span class="dv">1</span>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The picture for <code>S 3</code>:</p>
+<pre class="text"><code>#       
+##      
+# #     
+####    
+#   #   
+##  ##  
+# # # # 
+########</code></pre>
+</section>
+<section id="the-mandelbrot-set" class="level3">
+<h3 class="anchored" data-anchor-id="the-mandelbrot-set">The Mandelbrot set</h3>
+<p>Source: the ngn/apl examples. Outer product is <code>+⊗</code>, in place of <code>∘.+</code>. Reducing a list of matrices gives a matrix, not a scalar holding one. BPL therefore drops the original’s <code>⊃</code>. The lookup table <code>" #"</code> is the right argument of <code>⌷</code>. The picture, in brackets, is one item of positions. BQN has no complex numbers.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb107"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb107-1"><a href="#cb107-1" aria-hidden="true" tabindex="-1"></a><span class="st">' #'</span>[<span class="dv">9</span><span class="fu">&gt;|⊃</span>{<span class="va">⍺</span><span class="fu">+</span><span class="va">⍵</span><span class="fu">*</span><span class="dv">2</span>}<span class="op">/</span><span class="dv">9</span><span class="fu">⍴⊂</span><span class="dv">¯3</span><span class="fu">×</span><span class="dv">.7j.5</span><span class="fu">-⍉</span>a<span class="ex">∘.</span><span class="fu">+</span><span class="dv">0j1</span><span class="fu">×</span>a<span class="kw">←</span>(<span class="fu">⍳</span>n<span class="fu">+</span><span class="dv">1</span>)<span class="fu">÷</span>n<span class="kw">←</span><span class="dv">98</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb108"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb108-1"><a href="#cb108-1" aria-hidden="true" tabindex="-1"></a>picture<span class="kw">←</span>[<span class="dv">9</span><span class="fu">&gt;|</span>{<span class="va">⍺</span><span class="fu">+</span><span class="va">⍵</span><span class="fu">*</span><span class="dv">2</span>}<span class="op">/</span><span class="dv">9</span><span class="fu">⍴⊂</span><span class="dv">¯3</span><span class="fu">×</span><span class="dv">.7j.5</span><span class="fu">-⍉</span>a<span class="fu">+</span><span class="op">⊗</span><span class="dv">0j1</span><span class="fu">×</span>a<span class="kw">←</span>(<span class="fu">⍳</span>n<span class="fu">+</span><span class="dv">1</span>)<span class="fu">÷</span>n<span class="kw">←</span><span class="dv">98</span>]<span class="fu">⌷</span><span class="st">" #"</span></span>
+<span id="cb108-2"><a href="#cb108-2" aria-hidden="true" tabindex="-1"></a><span class="fu">⍴</span>picture               <span class="co">⍝ [99 99]ₓ</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="value-of-a-roman-numeral" class="level3">
+<h3 class="anchored" data-anchor-id="value-of-a-roman-numeral">Value of a Roman numeral</h3>
+<p>Source: APLcart. The table <code>×\1,6⍴5 2</code> is the right argument of <code>⌷</code>, where it needs no parentheses. BPL uses windows, <code>&lt;/2↕</code>, in place of <code>2&lt;/</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb109"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb109-1"><a href="#cb109-1" aria-hidden="true" tabindex="-1"></a>{(<span class="fu">⊢+</span><span class="ex">.</span><span class="fu">×</span><span class="dv">¯1</span><span class="fu">*</span><span class="dv">2</span><span class="fu">&lt;</span><span class="op">/</span><span class="fu">,</span><span class="ex">∘</span><span class="dv">0</span>)(<span class="fu">×</span><span class="op">\</span><span class="dv">1</span><span class="fu">,</span><span class="dv">6</span><span class="fu">⍴</span><span class="dv">5</span> <span class="dv">2</span>)[<span class="st">'IVXLCDM'</span><span class="fu">⍳</span><span class="va">⍵</span>]}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb110"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb110-1"><a href="#cb110-1" aria-hidden="true" tabindex="-1"></a>{v<span class="kw">←</span>[<span class="st">"IVXLCDM"</span><span class="fu">⍳</span><span class="va">⍵</span>]<span class="fu">⌷×</span><span class="op">\</span><span class="dv">1</span><span class="fu">,</span><span class="dv">6</span><span class="fu">⍴</span><span class="dv">5</span> <span class="dv">2</span> <span class="kw">⋄</span> v<span class="fu">+</span><span class="ex">.</span><span class="fu">×</span><span class="dv">¯1</span><span class="fu">*&lt;</span><span class="op">/</span><span class="dv">2</span><span class="fu">↕</span>v<span class="fu">,</span><span class="dv">0</span>} <span class="st">"MCMXCIV"</span>   <span class="co">⍝ 1994</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb111"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb111-1"><a href="#cb111-1" aria-hidden="true" tabindex="-1"></a>{v<span class="kw">←</span>(<span class="fu">×</span><span class="op">`</span><span class="dv">1</span><span class="fu">∾</span><span class="dv">6</span><span class="fu">⥊</span><span class="dv">5</span><span class="kw">‿</span><span class="dv">2</span>)<span class="fu">⊏</span><span class="op">˜</span><span class="st">"IVXLCDM"</span><span class="fu">⊐</span><span class="va">𝕩</span> <span class="kw">⋄</span> <span class="fu">+</span><span class="op">´</span>v<span class="fu">×</span><span class="dv">¯1</span><span class="fu">⋆&lt;</span><span class="op">´˘</span><span class="dv">2</span><span class="fu">↕</span>v<span class="fu">∾</span><span class="dv">0</span>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="rule-30" class="level3">
+<h3 class="anchored" data-anchor-id="rule-30">Rule 30</h3>
+<p>Source: the ngn/apl examples. <code>⊥3↕…</code> decodes every window at once, in place of <code>2⊥¨3,/…</code>. Each window is a row, and <code>⊥</code> decodes along the last axis. The lookup table <code>" #"</code> is the right argument of <code>⌷</code>. The whole picture, in brackets, is one item of positions. Inside the loop, <code>[⊥…]⌷t</code> selects from <code>t</code>. Because positions count from 0, both of the original’s <code>1+</code> go.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb112"><pre class="sourceCode dyalog code-with-copy"><code class="sourceCode dyalog"><span id="cb112-1"><a href="#cb112-1" aria-hidden="true" tabindex="-1"></a>r<span class="kw">←</span><span class="dv">30</span> <span class="kw">⋄</span> n<span class="kw">←</span><span class="dv">8</span> <span class="kw">⋄</span> t<span class="kw">←</span><span class="fu">⌽</span>r<span class="fu">⊤</span><span class="op">⍨</span><span class="dv">8</span><span class="fu">⍴</span><span class="dv">2</span> <span class="kw">⋄</span> <span class="st">' #'</span>[<span class="dv">1</span><span class="fu">+↑⌽</span>{<span class="va">⍵</span><span class="fu">,</span><span class="op">⍨</span><span class="fu">⊂</span>t[<span class="dv">1</span><span class="fu">+</span><span class="dv">2</span><span class="fu">⊥</span><span class="op">¨</span><span class="dv">3</span><span class="fu">,</span><span class="op">/</span><span class="dv">0</span><span class="fu">,</span><span class="dv">0</span><span class="fu">,</span><span class="op">⍨</span><span class="fu">⊃</span><span class="va">⍵</span>]}<span class="ex">⍣</span>n<span class="fu">⊂</span>z<span class="fu">,</span><span class="dv">1</span><span class="fu">,</span>z<span class="kw">←</span>n<span class="fu">⍴</span><span class="dv">0</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb113"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb113-1"><a href="#cb113-1" aria-hidden="true" tabindex="-1"></a>r<span class="kw">←</span><span class="dv">30</span> <span class="kw">⋄</span> n<span class="kw">←</span><span class="dv">8</span> <span class="kw">⋄</span> t<span class="kw">←</span><span class="fu">⌽</span>r<span class="fu">⊤</span><span class="op">⍨</span><span class="dv">8</span><span class="fu">⍴</span><span class="dv">2</span></span>
+<span id="cb113-2"><a href="#cb113-2" aria-hidden="true" tabindex="-1"></a>picture<span class="kw">←</span>[<span class="fu">⊃⌽</span>{<span class="va">⍵</span><span class="fu">,</span><span class="op">⍨</span><span class="fu">⊂</span>[<span class="fu">⊥</span><span class="dv">3</span><span class="fu">↕</span><span class="dv">0</span><span class="fu">,</span><span class="dv">0</span><span class="fu">,</span><span class="op">⍨</span><span class="fu">↑</span><span class="va">⍵</span>]<span class="fu">⌷</span>t}<span class="ex">⍣</span>n<span class="fu">⊂</span>z<span class="fu">,</span><span class="dv">1</span><span class="fu">,</span>z<span class="kw">←</span>n<span class="fu">⍴</span><span class="dv">0</span>]<span class="fu">⌷</span><span class="st">" #"</span></span>
+<span id="cb113-3"><a href="#cb113-3" aria-hidden="true" tabindex="-1"></a><span class="fu">⍴</span>picture               <span class="co">⍝ [9 17]ₓ</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb114"><pre class="sourceCode bqn code-with-copy"><code class="sourceCode bqn"><span id="cb114-1"><a href="#cb114-1" aria-hidden="true" tabindex="-1"></a>r<span class="kw">←</span><span class="dv">30</span> <span class="kw">⋄</span> n<span class="kw">←</span><span class="dv">8</span> <span class="kw">⋄</span> t<span class="kw">←</span><span class="dv">2</span><span class="fu">|⌊</span>r<span class="fu">÷</span><span class="dv">2</span><span class="fu">⋆↕</span><span class="dv">8</span> <span class="kw">⋄</span> <span class="st">" #"</span><span class="fu">⊏</span><span class="op">˜</span><span class="fu">&gt;</span>{t<span class="fu">⊏</span><span class="op">˜</span><span class="dv">4</span><span class="kw">‿</span><span class="dv">2</span><span class="kw">‿</span><span class="dv">1</span><span class="fu">+</span><span class="op">´</span><span class="ex">∘</span><span class="fu">×</span><span class="ex">⎉</span><span class="dv">1</span> <span class="dv">3</span><span class="fu">↕</span><span class="dv">0</span><span class="fu">∾</span><span class="va">𝕩</span><span class="fu">∾</span><span class="dv">0</span>}<span class="ex">⍟</span>(<span class="fu">↕</span>n<span class="fu">+</span><span class="dv">1</span>)z<span class="fu">∾</span><span class="dv">1</span><span class="fu">∾</span>z<span class="kw">←</span>n<span class="fu">⥊</span><span class="dv">0</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The picture:</p>
+<pre class="text"><code>        #        
+       ###       
+      ##  #      
+     ## ####     
+    ##  #   #    
+   ## #### ###   
+  ##  #    #  #  
+ ## ####  ###### 
+##  #   ###     #</code></pre>
+
+
+</section>
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/answerdotai\.github\.io\/basedpl");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

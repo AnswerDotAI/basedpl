@@ -1,0 +1,19 @@
+
+
+# `×` — Direction / Multiply
+
+Keys: `Alt-m`
+
+`×Y` gives direction: zero, or `Y÷|Y`. The direction of a real number is
+an exact integer. Pervasive.
+
+``` bpl
+×¯3 0 4           ⍝ [¯1 0 1]ₓ
+×0j2              ⍝ 0j1
+```
+
+`X×Y` multiplies. Pervasive.
+
+``` bpl
+2ₓ×[1 2 3]ₓ       ⍝ [2 4 6]ₓ
+```

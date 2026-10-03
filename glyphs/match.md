@@ -1,0 +1,23 @@
+
+
+# `≡` — Depth / Match
+
+Keys: `Alt-=`
+
+`≡Y` gives nesting depth: 0 for an atom, and otherwise 1 more than the
+deepest item. An empty array takes the depth of its prototype.
+
+``` bpl
+≡1 2 3             ⍝ 1ₓ
+≡[1 [2 3]]         ⍝ 2ₓ
+≡5                 ⍝ 0ₓ
+```
+
+`X≡Y` tests equal shape and corresponding contents, using tolerant
+numeric equality. NaN matches NaN. The result is one Boolean.
+[`=`](equal.qmd) compares item by item instead.
+
+``` bpl
+1 2≡1 2            ⍝ $t
+1≡,1               ⍝ $f
+```

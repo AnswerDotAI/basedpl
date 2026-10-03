@@ -1,0 +1,42 @@
+
+
+# `→` — Pipe
+
+Keys: `Alt-l`
+
+`Y→f→g` passes Y through f, then g. Each stage uses ordinary BPL
+binding.
+
+``` bpl
+1+2×3 → 2× → -↢1    ⍝ 13
+⍳4 → +/ → √          ⍝ √6
+```
+
+`←` assigns the final result. Parentheses set a pipeline’s boundary.
+
+``` bpl
+total←⍳4 → +/ ⋄ total   ⍝ 6
+1+(⍳4 → +/)             ⍝ 7
+```
+
+Each stage takes one right argument. A train such as `10-` binds a
+dyad’s left argument. [After](after.qmd) binds its right argument. A dfn
+also works.
+
+``` bpl
+3 → 10-       ⍝ 7
+3 → -↢10      ⍝ ¯7
+3 → {⍵×⍵}    ⍝ 9
+```
+
+Stages evaluate left-to-right, including effects and name lookup.
+Parenthesize assignments within a stage.
+
+``` bpl
+3 → (double←2×) → double    ⍝ 12
+```
+
+## Errors
+
+- `SYNTAX`: empty stage, non-function stage, unparenthesized assignment
+  after `→`

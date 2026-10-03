@@ -1,0 +1,77 @@
+pre.bpl,
+.bpl pre,
+.bpl code {
+  font-family: var(--bpl-font), monospace;
+  line-height: 1.05;
+}
+
+.cell-output pre,
+.cell-output code,
+.cell-output .bpl_out {
+  font-family: var(--apl-font), monospace !important;
+  line-height: 1.05;
+}
+
+pre.apl,
+pre.dyalog,
+pre.bqn {
+  font-family: var(--apl-font), monospace;
+  line-height: 1.05;
+}
+
+pre.bpl,
+.bpl pre,
+pre.bpl ~ .cell-output pre,
+.bpl_out {
+  font-size: calc(0.875em + 1pt);
+}
+
+:is(pre.bpl, .bpl code, pre.apl, pre.dyalog, pre.bqn) span.op {
+  color: #8B3FA0;
+}
+
+:is(pre.bpl, .bpl code, pre.apl, pre.dyalog, pre.bqn) span.ex {
+  color: #127A6E;
+}
+
+:is(pre.bpl, .bpl code, pre.apl, pre.dyalog, pre.bqn) span.va {
+  color: #8f5902;
+}
+
+/* Language labels on the APL-family blocks, placed left of Quarto's copy button. A block gets a label when its language sets `content`. */
+pre.sourceCode::before {
+  position: absolute;
+  top: 0.3rem;
+  right: 2.4rem;
+  font: 0.75rem var(--bs-body-font-family);
+  color: var(--bs-secondary-color);
+}
+
+pre.apl::before { content: "APL"; }
+pre.dyalog::before { content: "Dyalog"; }
+pre.bqn::before { content: "BQN"; }
+
+.cell {
+  margin-bottom: 1rem;
+}
+
+.cell > .sourceCode,
+.cell-output > pre {
+  margin-bottom: 0;
+}
+
+.cell-output > pre,
+.cell-output > .sourceCode > pre {
+  margin-left: 0.8rem;
+  margin-top: 0;
+  background: none;
+  border-left: 2px solid lightsalmon;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.cell-output > .sourceCode {
+  border: none;
+  background: none;
+  margin-top: 0;
+}

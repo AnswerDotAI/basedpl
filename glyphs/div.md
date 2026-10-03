@@ -1,0 +1,25 @@
+
+
+# `÷` — Reciprocal / Divide
+
+Keys: `Alt-u`
+
+`÷Y`: 1/Y. Pervasive.
+
+``` bpl
+÷4                ⍝ 0.25
+```
+
+`X÷Y`: X/Y. Pervasive. Division by zero follows IEEE 754. A nonzero `X`
+divided by zero gives an infinity with the sign of `X`. Zero divided by
+zero gives NaN.
+
+``` bpl
+1ₓ÷3ₓ             ⍝ 1r3
+¯1÷0              ⍝ ¯∞
+0÷0               ⍝ $n
+```
+
+## Errors
+
+- `DOMAIN`: a character argument

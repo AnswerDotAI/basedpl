@@ -1,0 +1,30 @@
+
+
+# `∞` — Infinity
+
+Keys: `Alt-8`
+
+`∞` and `¯∞` are approximate real infinities.
+
+``` bpl
+∞+3                ⍝ ∞
+3÷∞                ⍝ 0
+⌊/⍬                ⍝ ∞
+⌈/⍬                ⍝ ¯∞
+```
+
+`¯∞` \< every finite real \< `∞`. Each infinity equals itself. Empty
+min/max identities are infinite even for exact arrays. As IEEE 754
+defines, an undefined result with an infinity is NaN:
+
+``` bpl
+∞-∞                ⍝ $n
+0×∞                ⍝ $n
+```
+
+[Infinities and NaN](../numbers.qmd#infinities-and-nan) covers how
+infinities combine with exact numbers.
+
+## Errors
+
+- `DOMAIN`: an infinite index or count

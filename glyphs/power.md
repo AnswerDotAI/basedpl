@@ -1,0 +1,86 @@
+
+
+# `⍣` — Iterate / Invert / Fixed point
+
+Keys: `Alt-1 *`
+
+`f⍣N Y` applies `f` `N` times. `N=0` returns `Y`. In dyadic calls the
+left argument stays fixed.
+
+``` bpl
+2×⍣3(1)            ⍝ 8
+2+⍣3(1)            ⍝ 7
+```
+
+Negative counts apply the known inverse. With a
+[superscript](../scripts.ipynb#superscripts), `f⍣¯1` is written `f⁻¹`,
+and `f⍣2` is written `f²`.
+
+``` bpl
+2×⍣¯1(10)          ⍝ 5
+10 -\⍣¯1 [9 7 4]     ⍝ 1 2 3
+```
+
+Inverses propagate through Atop, dyadic After and Before, bound
+arguments, Each, rank, dyadic Commute and scans. Primitive inverses
+include arithmetic bindings, exp/log, circle, axis permutations,
+encode/decode, enclosure/mix/split, Where and
+[replicate](hash.qmd#expand). Square roots and logs select branches.
+
+`f⍣g Y` iterates until `new g old` is true, returning `new`.
+
+``` bpl
+1+⍣{⍺>4}0          ⍝ 5
+```
+
+A vector of counts gives one item for each count, holding the state
+after that many steps. Counts `⍳N` give the first `N` states, starting
+with `Y`. A nested vector of counts gives a nested result, with one item
+for each inner vector. A scalar count gives a scalar. Computed counts
+need parentheses, because an operator takes one item to its right.
+
+``` bpl
+2×⍣(⍳5) 1              ⍝ 1 2 4 8 16
+1+⍣(-⍳3) 5             ⍝ 5 4 3
+1+⍣3 ¯2 0 3(10)        ⍝ 13 8 10 13
+{⍵,1}⍣ ⍳3 ,2          ⍝ [[2] [2 1] [2 1 1]]
+⍴ {÷'a'}⍣(0 2⍴0) "ab"  ⍝ [0 2]ₓ
+2×⍣[2 [4 ¯2 1]] 1       ⍝ [4 [16 0.25 2]]
+2×⍣(⊂3) 1              ⍝ ⊂8
+```
+
+Positive counts run first, then negative counts run the inverse, also
+from `Y`. A repeated count reuses its state. Empty counts give an empty
+result with the counts’ shape.
+
+## Fixed point
+
+A count of `∞` runs until the state stops changing, the same test as
+`⍣≡`. `¯∞` runs the inverse until it converges. `∞` can sit in a vector
+of counts. Put a literal argument after `∞` in parentheses, as in
+`n⍣∞(1)`.
+
+``` bpl
+n←{0.5×⍵+2÷⍵}
+n⍣∞(1)                 ⍝ 1.414213562373095
+n⍣[0 ∞]1               ⍝ 1 1.414213562373095
+```
+
+## History
+
+The until form keeps every state when its predicate is in a one-item
+vector: `f⍣[g]`. The states run from `Y` to the first state where `g`
+holds. `f` always runs at least once. For example, `⊢⍣[≡]4` gives `4 4`.
+
+``` bpl
+1+⍣[{⍺=3}]0           ⍝ 0 1 2 3
+⊢⍣[≡]4                ⍝ 4 4
+n←{0.5×⍵+2÷⍵} ⋄ ≢n⍣[≡]1   ⍝ 7ₓ
+```
+
+See [Inverse pair](inverse-pair.qmd).
+
+## Errors
+
+- `DOMAIN`: a count that is neither an integer nor infinite, non-Boolean
+  predicate, unknown inverse

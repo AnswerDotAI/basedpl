@@ -1,0 +1,99 @@
+
+
+# Command line
+
+[Home](index.ipynb) · [Install](getting-started.ipynb#install) ·
+[REPL](repl.qmd)
+
+## Expressions and files
+
+`-e` evaluates one expression. Quote it to protect spaces and glyphs
+from the shell.
+
+``` bash
+bpl -e '+/⍳10'       # 45
+```
+
+Pass a UTF-8 BPL file to run it as one source. Names persist throughout
+the file.
+
+``` bash
+bpl lesson.bpl
+```
+
+An expression displays its result. An assignment displays nothing. Use
+`⎕←` for explicit output. `bpl` writes each output immediately, without
+waiting for the rest of the source. Diagnostics go to stderr and include
+source locations.
+
+To run a file as a script, start it with `#!/usr/bin/env bpl`. `bpl`
+ignores a first line that starts with `#!`.
+
+## Pipes
+
+With no arguments, piped input behaves like the REPL without prompts.
+Names persist between expressions.
+
+``` bash
+printf 'v←⍳10\n+/v\n' | bpl
+```
+
+`-` reads all stdin as one source before evaluation.
+
+``` bash
+printf 'v←⍳10\n+/v\n' | bpl -
+```
+
+When the program that reads the output closes the pipe, `bpl` stops the
+evaluation and exits with status 0.
+
+A program run with `-e` or from a file can read standard input. Each
+read of `⎕` gives the next line, or `⍬` at the end of the input.
+`•nget "-"` gives the rest of the input as one string. This program
+parses piped CSV:
+
+``` bash
+printf 'name,qty\npen,2\ncup,5\n' | bpl -e '+/(•csv •nget "-").qty'   # 7ₓ
+```
+
+When you pass `-`, or pipe input without arguments, the program comes
+from standard input. Reading `⎕` or `•nget "-"` is then a `VALUE` error.
+The interactive REPL reads `⎕` from the terminal. See
+[`⎕`](glyphs/quad.qmd#input).
+
+Use actual glyphs in files, pipes and `-e`; backtick names are a [REPL
+input method](repl.qmd#typing-glyphs).
+
+## Other modes
+
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Mode</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bpl</code></td>
+<td>Interactive REPL when connected to a terminal</td>
+</tr>
+<tr>
+<td><code>bpl --help</code></td>
+<td>Usage</td>
+</tr>
+<tr>
+<td><code>bpl --version</code></td>
+<td>Version</td>
+</tr>
+<tr>
+<td><code>bpl --worker</code></td>
+<td>JSON-lines requests with deadlines and interruption</td>
+</tr>
+</tbody>
+</table>
+
+See [process interfaces](processes.qmd) for machine-readable output. The
+exit status is 0 on success, 1 after an evaluation or I/O error, and 2
+for invalid command arguments. An error doesn’t discard the output
+written before it.

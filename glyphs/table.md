@@ -1,0 +1,19 @@
+
+
+# `⍪` — Table / Catenate first
+
+Keys: `Alt-Minus ,`
+
+`⍪Y` makes a matrix: first axis becomes rows, remaining axes become
+columns.
+
+``` bpl
+⍪1 2 3             ⍝ 3 1⍴1 2 3
+⍴⍪2 3 4⍴0          ⍝ [2 12]ₓ
+```
+
+`X⍪Y` joins on the first axis. `⍪⍠K` follows [catenate](comma.qmd).
+
+``` bpl
+1 2⍪3 4            ⍝ 1 2 3 4
+```

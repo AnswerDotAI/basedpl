@@ -1,0 +1,17 @@
+
+
+# `⍱` — NOR
+
+Keys: `Alt-9 ~`
+
+`⍱Y`: 2Y. Pervasive.
+
+``` bpl
+⍱1r3              ⍝ 2r3
+```
+
+`X⍱Y` is Boolean NOR. Pervasive.
+
+``` bpl
+0 0 1 1⍱0 1 0 1   ⍝ $t $f $f $f
+```

@@ -1,0 +1,30 @@
+
+
+# `↑` — First / Take
+
+Keys: `Alt-k`
+
+`↑Y` returns the first major item, like `0⊃Y`. On an enclosure it
+returns the contained value. An empty leading axis gives a cell of fill.
+
+``` bpl
+↑[[1 2] [3 4 5]]  ⍝ 1 2
+↑2 3⍴⍳6           ⍝ 0 1 2
+↑⊂7               ⍝ 7
+↑0 3⍴0            ⍝ 0 0 0
+```
+
+`N↑Y` takes leading items; negative `N` takes from the end. Overtake
+inserts fill.
+
+``` bpl
+4↑1 2              ⍝ 1 2 0 0
+¯4↑1 2             ⍝ 0 0 1 2
+```
+
+Vector counts apply to successive leading axes. `N↑⍠K Y` applies the
+counts to axes `K`.
+
+``` bpl
+1 2↑2 3⍴⍳6         ⍝ 1 2⍴0 1
+```

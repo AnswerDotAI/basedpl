@@ -1,0 +1,21 @@
+
+
+# `!` — Factorial / Binomial
+
+`!Y`: Y!. Pervasive.
+
+``` bpl
+!5                ⍝ 120
+!5ₓ               ⍝ 120ₓ
+```
+
+`X!Y`: binomial coefficient, Y choose X. Pervasive.
+
+``` bpl
+2!5               ⍝ 10
+2ₓ!5ₓ             ⍝ 10ₓ
+```
+
+Extends through Gamma to non-integral and complex arguments. At a pole,
+a negative integer, the result is an infinity or NaN, as the gamma
+function gives it.

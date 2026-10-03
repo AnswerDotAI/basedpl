@@ -1,0 +1,25 @@
+
+
+# `⍉` — Transpose
+
+Keys: `Alt-o Backslash`
+
+`⍉Y` reverses axis order.
+
+``` bpl
+⍉2 3⍴⍳6            ⍝ [0 3 ⋄ 1 4 ⋄ 2 5]
+```
+
+In `A⍉Y`, each item of `A` names the result axis for the corresponding
+source axis. Labels start at 0 with no gaps.
+
+``` bpl
+1 0⍉2 3⍴⍳6         ⍝ [0 3 ⋄ 1 4 ⋄ 2 5]
+```
+
+Repeated labels select diagonals, taking the smallest participating
+dimension.
+
+``` bpl
+0 0⍉3 3⍴⍳9         ⍝ 0 4 8
+```

@@ -1,0 +1,34 @@
+
+
+# `∂` — Derivative
+
+Keys: `Alt-f`
+
+`f∂X`: gradient of `f` at `X`. `f` must return a unit. `U(f∂)X`:
+vector–Jacobian product, where `U` has the shape of `f`’s result. The
+result has the shape of `X`.
+
+Currently supports real evaluators `C⌻`, including factored and
+exponent-table forms. `C⌻` is a train that binds `C`, the same as `C↣⌻`.
+
+``` bpl
+f←[1 2 3]ₓ⌻ ⋄ f∂2ₓ                ⍝ 14ₓ
+f←[1 2 3]ₓ⌻ ⋄ f∂∂2ₓ               ⍝ 6ₓ
+f←[1 2 3]ₓ⌻ ⋄ [10 20]ₓ f∂ [1 2]ₓ  ⍝ [80 280]ₓ
+```
+
+Multivariate gradients retain the coordinate enclosure. A shared unit
+coordinate sums partials.
+
+``` bpl
+f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)⌻ ⋄ f∂⊂[3 4]ₓ      ⍝ ⊂[6 8]ₓ
+f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)⌻ ⋄ f∂3ₓ           ⍝ 12ₓ
+```
+
+Repeated `∂` requires unit input and output and one variable.
+
+## Errors
+
+- `RANK`: monadic array output
+- `LENGTH`: wrong cotangent shape
+- `DOMAIN`: unsupported function or nonfinite/non-real data

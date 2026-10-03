@@ -1,0 +1,9 @@
+
+
+# `<` — Less
+
+`X<Y` tests X \< Y for reals. Pervasive; tolerant.
+
+``` bpl
+1 2 3<2            ⍝ $t $f $f
+```

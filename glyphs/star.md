@@ -1,0 +1,24 @@
+
+
+# `*` — Exponential / Exponent
+
+`*Y`: e<sup>Y</sup>. Pervasive.
+
+``` bpl
+*0                ⍝ 1
+```
+
+`X*Y`: X<sup>Y</sup>. Integral powers of exact operands stay exact.
+
+``` bpl
+2*3               ⍝ 8
+2ₓ*¯3ₓ            ⍝ 1r8
+```
+
+Other powers use principal complex branches where needed.
+
+``` bpl
+¯1*0.5            ⍝ 0j1
+```
+
+See also function [power `⍣`](power.qmd).

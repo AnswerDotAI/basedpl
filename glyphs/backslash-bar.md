@@ -1,0 +1,19 @@
+
+
+# `⍀` — Scan first
+
+Keys: `Alt-Minus Backslash`
+
+`f⍀Y` scans down the first axis.
+
+``` bpl
++⍀[1 2 3 ⋄ 4 5 6]  ⍝ [1 2 3 ⋄ 5 7 9]
+```
+
+`S f⍀ Y` supplies a seed.
+
+``` bpl
+10+⍀[1 2 ⋄ 3 4]    ⍝ [11 12 ⋄ 14 16]
+```
+
+Seeds, `⍠K` and errors follow [`\`](backslash.qmd).

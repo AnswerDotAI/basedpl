@@ -1,0 +1,41 @@
+
+
+# `←` — Assign
+
+Keys: `Alt-h`
+
+`N←Y` binds the name `N` to `Y`, an array, function or operator, and
+returns `Y` without displaying it. The target is the run just before
+`←`, and the value is everything to its right. Independent assignments
+need `⋄`, as in `a←1 ⋄ b←2`.
+
+``` bpl
+x←3 ⋄ x+2          ⍝ 5
+x←1+2 × 3 ⋄ x      ⍝ 9
+sum←+/ ⋄ sum 1 2 3 ⍝ 6
+```
+
+`N f←Y` sets `N` to `N f Y`. A named function goes in parentheses,
+`N(f)←Y`, because in `N f←Y` the target would be `f`.
+
+``` bpl
+x←10 ⋄ x+←3 ⋄ x    ⍝ 13
+f←× ⋄ x←3 ⋄ x(f)←4 ⋄ x ⍝ 12
+```
+
+A target can also be a [subscript](../scripts.ipynb#subscripts) such as
+`x₁`, a [dot](dot.qmd) path such as `T.a` or `x.[i]`, or a selection in
+parentheses, `(f N)`, where `f` only selects or rearranges, as for
+structural [Under](under.qmd). `[a b]←Y` destructures: each name gets
+the matching item.
+
+``` bpl
+x←1 2 3 ⋄ x₁←9 ⋄ x ⍝ 1 9 3
+x←1 2 3 ⋄ x.[[0 2]]+←10 ⋄ x ⍝ 11 2 13
+x←1 2 3 ⋄ (2↑x)←8 9 ⋄ x ⍝ 8 9 3
+[a b]←10 20 ⋄ a+b  ⍝ 30
+```
+
+Inside a dfn, plain assignment is local. Modified and selective
+assignment update the nearest existing binding.
+[Assignment](../assignment.ipynb) covers every form.

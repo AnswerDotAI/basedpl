@@ -1,0 +1,21 @@
+
+
+# `⍟` — Natural log / Logarithm
+
+Keys: `Alt-o *`
+
+`⍟Y`: ln Y. Pervasive.
+
+``` bpl
+⍟1                ⍝ 0
+```
+
+`X⍟Y`: log<sub>X</sub> Y. Pervasive.
+
+``` bpl
+2⍟8               ⍝ 3
+10⍟100            ⍝ 2
+```
+
+Uses complex logarithms where needed. `⍟0` is `¯∞`, as IEEE 754 gives
+it. With base 1, the result is an infinity or NaN.

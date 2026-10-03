@@ -1,0 +1,31 @@
+
+
+# `↢` — After
+
+Keys: `Alt-,`
+
+`f↢g Y` is `Y f(g Y)`. The left argument of `f` is `Y` itself. For
+`f(g Y)`, use [Atop](atop.qmd), `f∘g`.
+
+``` bpl
+×↢- 5              ⍝ ¯25
+```
+
+`X f↢g Y` is `X f(g Y)`.
+
+``` bpl
+10 +↢- 3           ⍝ 7
+"abc" ,↢⌽ "de"     ⍝ "abced"
+```
+
+`f↢A` binds the right argument. The bound function takes one argument. A
+literal argument straight after a literal operand joins its strand:
+`-↢10 3` binds the vector `10 3` and has no argument. Put the argument
+in parentheses, as in `-↢10(3)`, or use a name.
+
+``` bpl
+-↢10(3)            ⍝ ¯7
+y←3 ⋄ -↢10 y       ⍝ ¯7
+```
+
+See [Before](before.qmd), [Atop / Rank](rank.qmd) and [Over](over.qmd).

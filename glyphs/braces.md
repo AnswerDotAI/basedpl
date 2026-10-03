@@ -1,0 +1,14 @@
+
+
+# `{ }` — Dfn / Dop
+
+`{…}` defines a function of `⍺` and `⍵`, or an operator when it uses `⍶`
+or `⍹`. `;` separates its bodies. When a [predicate](question.qmd) `C?`
+is false, evaluation moves on to the next body. The last statement gives
+the result. See [Dfns](../dfns.ipynb).
+
+``` bpl
+{⍵×2}3             ⍝ 6
+2{⍺+⍵}3            ⍝ 5
+{⍵<0?-⍵;⍵}¯3       ⍝ 3
+```

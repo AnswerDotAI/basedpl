@@ -1,0 +1,15 @@
+
+
+# `⍷` — Find
+
+Keys: `Alt-e _`
+
+`X⍷Y` marks starting positions where the whole pattern `X` occurs in
+`Y`. The result has `Y`’s shape. Overlaps count.
+
+``` bpl
+"ana"⍷"banana"      ⍝ $f $t $f $t $f $f
+1 1⍷1 1 1          ⍝ $t $t $f
+```
+
+Works with multidimensional patterns and tolerant element matching.

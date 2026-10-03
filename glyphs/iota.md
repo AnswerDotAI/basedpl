@@ -1,0 +1,59 @@
+
+
+# `⍳` — Index generator / Index of
+
+Keys: `Alt-i`
+
+`⍳N` generates `0…N-1`. A negative `N` counts down, as J’s `i.` does.
+Exact input gives exact coordinates.
+
+``` bpl
+⍳4                 ⍝ 0 1 2 3
+⍳3ₓ                ⍝ [0 1 2]ₓ
+⍳¯3                ⍝ 2 1 0
+```
+
+A shape vector generates an array of coordinate vectors. A negative
+length reverses its axis.
+
+``` bpl
+⍳2 2               ⍝ [[0 0] [0 1] ⋄ [1 0] [1 1]]
+⍳2 ¯2              ⍝ [[0 1] [0 0] ⋄ [1 1] [1 0]]
+```
+
+`⍳⍠A Y` returns the keys of axis `A`, or `0…length-1` on an unkeyed
+axis. Several axes return a vector of selector vectors.
+
+``` bpl
+⍳⍠0 ["price":1 "qty":2] ⍝ "price" "qty"
+⍳⍠1 (2 3⍴0)         ⍝ [0 1 2]ₓ
+```
+
+On an axis where only some positions have keys, `⍳⍠A Y` gives the keys
+where present and positions elsewhere.
+
+``` bpl
+⍳⍠0 ["aa":10 20]    ⍝ "aa" 1ₓ
+```
+
+`X⍳Y` finds the first matching major cell in `X` for each cell of `Y`.
+Not found: `≢X`. Uses tolerant matching and returns exact positions.
+
+``` bpl
+"abc"⍳"cabz"        ⍝ [2 0 1 3]ₓ
+"abc"⍳'b'           ⍝ 1ₓ
+"abc"⍳⊂'b'          ⍝ 1ₓ
+```
+
+A single query returns an atom. Batch axes supply the result shape. To
+search for an array as one item, enclose it with `⊂`.
+
+``` bpl
+C←"cat" "dog"
+C⍳⊂"dog"           ⍝ 1ₓ
+C⍳["dog"]          ⍝ [1]ₓ
+m←[10 20 ⋄ 30 40 ⋄ 50 60]
+m⍳30 40            ⍝ 1ₓ
+m⍳[30 40 ⋄]        ⍝ [1]ₓ
+m⍳[30 40 ⋄ 10 20]  ⍝ [1 0]ₓ
+```

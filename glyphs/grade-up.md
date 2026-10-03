@@ -1,0 +1,23 @@
+
+
+# `⍋` — Grade up
+
+Keys: `Alt-7 |`
+
+`⍋Y` gives indices that sort major cells ascending. Stable; uses
+[structural ordering](../evaluation.qmd#equality-and-ordering), without
+tolerance. NaN sorts after every other number.
+
+``` bpl
+⍋30 10 20          ⍝ [1 2 0]ₓ
+v←30 10 20 ⋄ [⍋v]⌷v ⍝ 10 20 30
+⍋2 1 2 1           ⍝ [1 3 0 2]ₓ
+```
+
+`C⍋Y` uses a character collation array `C`.
+
+``` bpl
+"cba"⍋"abc"        ⍝ [2 1 0]ₓ
+```
+
+See [`⍒`](grade-down.qmd).

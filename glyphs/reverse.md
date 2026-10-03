@@ -1,0 +1,23 @@
+
+
+# `⌽` — Reverse / Rotate last
+
+Keys: `Alt-|`
+
+`⌽Y` reverses the last axis. `⌽⍠K` selects the axis.
+
+``` bpl
+⌽1 2 3             ⍝ 3 2 1
+⌽⍠0 (2 2⍴⍳4)        ⍝ [2 3 ⋄ 0 1]
+```
+
+`N⌽Y` rotates left by `N` places; negative `N` rotates right. Integral
+counts cycle modulo axis length.
+
+``` bpl
+1⌽"abcd"           ⍝ "bcda"
+¯1⌽"abcd"          ⍝ "dabc"
+```
+
+A count array supplies counts for the unrotated axes. See
+[`⊖`](reverse-first.qmd).

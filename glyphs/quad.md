@@ -1,0 +1,34 @@
+
+
+# `⎕` — Output and input
+
+Keys: `Alt-q`
+
+`⎕←Y` explicitly prints `Y` and retains its value.
+
+``` bpl
+1+⎕←2              ⍝ 3
+```
+
+The example prints `2` before returning `3`. Explicit output is separate
+from implicit result display and is captured by the evaluation API.
+
+## Input
+
+Reading `⎕` gives the next line of standard input as a string, without
+its line ending. At the end of the input it gives `⍬`, not the `""` of
+an empty line. `•nget "-"` gives the rest of standard input as one
+string.
+
+``` bash
+printf '3\n4\n' | bpl -e '+/⍎¨[⎕ ⎕]'       # 7
+```
+
+`bpl -e`, script files and the interactive REPL read standard input. In
+a notebook, `⎕` asks for a line in a text box, but `•nget "-"` is a
+`VALUE` error. `bpl -` and piped REPL input read the program itself from
+standard input. In those two modes, in `bpl --worker` and in the Python
+API, reading `⎕` or `•nget "-"` is a `VALUE` error.
+
+Dyalog’s `⎕A`, `⎕D`, `⎕C` and `⎕UCS` are BPL’s [`•a`, `•d`, `•c` and
+`•ucs`](../system-functions.qmd#text).

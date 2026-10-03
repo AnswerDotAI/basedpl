@@ -1,0 +1,36 @@
+
+
+# `⌾` — Under
+
+Keys: `Alt-o t`
+
+When `g` only selects or rearranges, `f⌾g Y` puts the result of `f(g Y)`
+back where `g` took it from. The rest of `Y` is unchanged. `g` qualifies
+when [selective assignment](assign.qmd) accepts it as a target: Take,
+Drop, Replicate, Reverse, Transpose, Ravel, Enlist, Pick and `⌷`, with
+Each, Rank, Axis or an atop of them.
+
+``` bpl
+-⌾(1 0 1#)1 2 3         ⍝ ¯1 2 ¯3
++\⌾∊ [3 1 0] [2 5]      ⍝ [[3 4 4] [6 11]]
+9⌾(0⌷) 1 2 3            ⍝ 9 2 3
+```
+
+For any other `g`, `f⌾g Y` is `g⁻¹(f(g Y))`. `X f⌾g Y` is
+`g⁻¹((g X)f(g Y))`.
+
+``` bpl
+3+⌾ 2× 4           ⍝ 7
+⌽⌾ 1+ 1 2 3        ⍝ 3 2 1
+⌊⌾ 10× 1.25        ⍝ 1.2
+```
+
+Call order: `g Y`, `g X`, `f`, then `g` on the positions of `Y`, or
+`g`’s inverse.
+
+See [Inverse pair](inverse-pair.qmd).
+
+## Errors
+
+- `DOMAIN`: `g` neither selects nor has a known inverse
+- `LENGTH`: the result of `f` doesn’t fit the selection

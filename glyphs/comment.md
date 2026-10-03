@@ -1,0 +1,18 @@
+
+
+# `⍝` — Comment
+
+Keys: `Alt-c t`
+
+`⍝` comments to end of line.
+
+``` text
+v←⍳10     ⍝ first ten integers
++/v       ⍝ sum
+```
+
+Inside character and string literals it is an ordinary character.
+
+``` bpl
+≢"a⍝b"             ⍝ 3ₓ
+```

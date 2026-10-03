@@ -1,0 +1,13 @@
+
+
+# `∘` — Atop
+
+Keys: `Alt-t`
+
+`f∘g Y` is `f(g Y)`, and `X f∘g Y` is `f(X g Y)`.
+
+``` bpl
+2 -∘+ 3            ⍝ ¯5
+```
+
+See [Rank](rank.qmd) for applying a function to cells of a chosen rank.

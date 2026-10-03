@@ -1,0 +1,14 @@
+
+
+# `∇` — Function self-reference
+
+Keys: `Alt-g`
+
+`∇` calls the current dfn or derived function recursively.
+
+``` bpl
+{⍵=0?1;⍵×∇⍵-1}5 ⍝ 120
+```
+
+Tail calls reuse execution frames. An active error guard prevents
+tail-call reuse.

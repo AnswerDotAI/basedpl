@@ -1,0 +1,30 @@
+
+
+# `⊘` — Valences
+
+Keys: `Alt-o /`
+
+`f⊘g` calls `f` when it has one argument, and `g` when it has two.
+Either side can be a dfn with any number of statements.
+
+``` bpl
+f←{⍵×2}⊘{⍺+⍵}
+f 5                ⍝ 10
+3 f 5              ⍝ 8
+```
+
+A dfn can also serve both cases, because an absent `⍺` drops out of the
+expression that uses it: `{⍺-⍵}3` is `¯3`. See
+[dfns](../dfns.ipynb#arguments).
+
+An array operand acts as a constant function. `⍺ 0⊘1 ⍵` uses that to
+test for a left argument. It gives `1` in a call with two arguments and
+`0` in a call with one.
+
+``` bpl
+{⍺ 0⊘1 ⍵}5         ⍝ 0
+3{⍺ 0⊘1 ⍵}5        ⍝ 1
+```
+
+APL difference: Dyalog has no Valences operator. BQN writes it as `⊘`
+too.

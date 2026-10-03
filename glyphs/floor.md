@@ -1,0 +1,26 @@
+
+
+# `⌊` — Floor / Minimum
+
+Keys: `Alt-d`
+
+`⌊Y` rounds down to an exact integer. Pervasive; tolerant near integers.
+An infinity or NaN stays a float.
+
+``` bpl
+⌊1.8 ¯1.8         ⍝ [1 ¯2]ₓ
+⌊3r2              ⍝ 1ₓ
+```
+
+Complex floor uses APL’s Gaussian-integer rule.
+
+``` bpl
+⌊1.5j0.5          ⍝ 1j1
+```
+
+`X⌊Y` takes the real minimum. Pervasive. Beside NaN it returns the other
+argument, as Rust’s `f64::min` does. Empty reduction identity: `∞`.
+
+``` bpl
+3⌊1 5             ⍝ 1 3
+```

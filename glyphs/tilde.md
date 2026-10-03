@@ -1,0 +1,30 @@
+
+
+# `~` — NOT / Without
+
+`~Y` negates Booleans, pervasively.
+
+``` bpl
+~0 1               ⍝ $t $f
+```
+
+`X~Y` removes the major cells of `X` found among the major cells of `Y`,
+retaining order and repetitions. Uses tolerant matching.
+
+``` bpl
+1 2 1 3~2 4        ⍝ 1 1 3
+"banana"~"an"       ⍝ "b"
+[1 2 ⋄ 3 4 ⋄ 1 2]~[1 2 ⋄] ⍝ [3 4 ⋄]
+```
+
+`Y` must have rank 1 or more. So to remove one character, write it as a
+string. `' '` is a unit. `" "` is a one-item vector.
+
+``` bpl
+"a b c"~" "         ⍝ "abc"
+```
+
+## Errors
+
+- `RANK`: `Y` is a unit
+- `LENGTH`: the major cells of `X` and `Y` differ in shape
