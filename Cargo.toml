@@ -10,6 +10,8 @@ description = "BasedPL, the Based-array Programming Language, is an APL-derived 
 name = "basedpl"
 crate-type = ["cdylib", "rlib"]
 doctest = false
+# The checks of internals run from `tests/internals.rs`, so `cargo test` compiles the library once.
+test = false
 
 [[bin]]
 name = "bpl"
@@ -58,6 +60,10 @@ image = { version = ">=0.25.6, <1", default-features = false, features = ["png",
 base64 = ">=0.22.1, <1"
 stacker = ">=0.1.25, <1"
 foldhash = ">=0.2.0, <1"
+bytemuck = ">=1.25.2, <2"
+
+[build-dependencies]
+pyo3-build-config = { version = ">=0.29.2, <1", optional = true }
 
 [features]
-python = ["dep:pyo3", "dep:libloading"]
+python = ["dep:pyo3", "dep:libloading", "dep:pyo3-build-config"]

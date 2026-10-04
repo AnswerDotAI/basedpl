@@ -65,9 +65,12 @@ pub(crate) struct DeadState { pub terminator: String, pub keys: Vec<(char, Actio
 
 /// The shared key mapping in `python/basedpl/layout.json`, which the macOS layout and the browser also read. Keys are US characters
 /// after Shift. `option` holds unshifted keys typed with Option.
-pub(crate) struct KeyLayout { pub option: Vec<(char, Action)>, pub states: HashMap<String, DeadState> }
+pub(crate) struct KeyLayout { pub option: Vec<(char, Action)>, pub alt_aliases: Vec<(char, Action)>, pub states: HashMap<String, DeadState> }
 
-impl KeyLayout { pub(crate) fn state(&self, name: &str) -> &DeadState { &self.states[name] } }
+impl KeyLayout {
+    pub(crate) fn state(&self, name: &str) -> &DeadState { &self.states[name] }
+    pub(crate) fn alt(&self, c: char) -> Option<&Action> { find(&self.alt_aliases, c).or_else(|| find(&self.option, c)) }
+}
 
 pub(crate) fn find(keys: &[(char, Action)], key: char) -> Option<&Action> { keys.iter().find(|(k, _)| *k == key).map(|(_, a)| a) }
 
@@ -86,7 +89,7 @@ pub(crate) fn layout() -> &'static KeyLayout {
             .expect("states")
             .iter()
             .map(|(name, s)| (name.clone(), DeadState { terminator: s["terminator"].as_str().expect("a terminator").into(), keys: keys(&s["keys"]) }));
-        KeyLayout { option: keys(&json["option"]), states: states.collect() }
+        KeyLayout { option: keys(&json["option"]), alt_aliases: keys(&json["alt_aliases"]), states: states.collect() }
     })
 }
 

@@ -1,4 +1,5 @@
 {
+ "alt_aliases": {"£": "#"},
  "option": {
   "`": {"state": "diamond"},
   "1": {"state": "diaeresis"},
@@ -10,6 +11,7 @@
   "8": "∞",
   "9": {"state": "or"},
   "0": {"state": "and"},
+  ")": "⍬",
   "-": {"state": "bar"},
   "=": {"state": "match"},
   "q": {"state": "quad"},
@@ -22,7 +24,7 @@
   "i": {"state": "iota"},
   "o": {"state": "circle"},
   "p": "π",
-  "]": "≠",
+  "+": "≠",
   "\\": {"state": "stile"},
   "a": {"state": "alpha"},
   "s": "⌈",
@@ -65,7 +67,7 @@
   "omega": {"terminator": "⍵", "keys": {"_": "⍹", "-": "⍹"}},
   "epsilon": {"terminator": "∊", "keys": {"_": "⍷", "-": "⍷"}},
   "iota": {"terminator": "⍳", "keys": {"_": "⍸", "-": "⍸"}},
-  "circle": {"terminator": "○", "keys": {"-": "⊖", "\\": "⍉", "/": "⊘", "*": "⍟", "~": "⍬", "m": "⊗", "u": "⨸", "t": "⌾", "8": "⍟", "`": "⍬"}},
+  "circle": {"terminator": "○", "keys": {"-": "⊖", "\\": "⍉", "/": "⊘", "*": "⍟", "m": "⊗", "u": "⨸", "t": "⌾", "8": "⍟"}},
   "stile": {"terminator": "|", "keys": {"~": "⍭", "`": "⍭"}},
   "alpha": {"terminator": "⍺", "keys": {"_": "⍶", "-": "⍶"}},
   "del": {"terminator": "∇", "keys": {"|": "⍒", "\\": "⍒"}},

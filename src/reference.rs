@@ -80,11 +80,7 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
             return json!({"status":"error", "kind":kind, "message":error.message, "actual":crate::protocol::response(result)});
         }
     }
-    let mismatch = if result.error.is_some() {
-        None
-    } else if result.function.is_some() || result.operator.is_some() {
-        Some("unexpected function or operator result".into())
-    } else {
+    let mismatch = if result.error.is_some() { None } else if result.function.is_some() || result.operator.is_some() { Some("unexpected function or operator result".into()) } else {
         match (error_kind, &result.value, expected) {
             (Some(kind), _, _) => Some(format!("expected {kind}")),
             (_, None, _) if no_result => None,

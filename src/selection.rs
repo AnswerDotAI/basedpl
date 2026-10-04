@@ -110,7 +110,7 @@ impl Labels {
             Ok(())
         };
         if let Items::Integers(ids) = selected.as_items() {
-            for (i, &id) in ids.iter().enumerate() {
+            for (i, &id) in ids.widened().iter().enumerate() {
                 label(i, usize::try_from(id).map_err(|_| span.domain_error("invalid selection label"))?, targets, values)?;
             }
             return Ok(());

@@ -24,7 +24,7 @@ enum Polynomial {
 }
 impl Polynomial {
     fn parse(a: &Value, span: &Context<'_>) -> Result<Self, Error> {
-        if a.elements().all(|e| matches!(e, Value::Number(_))) { return Ok(Self::Coefficients(numbers(a, span)?)); }
+        if a.all_numbers() { return Ok(Self::Coefficients(numbers(a, span)?)); }
         if a.len() == 1 {
             let boxed = a.at(0).clone();
             if boxed.shape().len() < 2 { return Ok(Self::Factored(int(1), numbers(&boxed, span)?)); }

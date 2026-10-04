@@ -1,3 +1,11 @@
 # x86-64 builds need a CPU with AVX2 (x86-64-v3). The kernels rely on its rounding and wider vector instructions.
 [target.'cfg(target_arch = "x86_64")']
 rustflags = ["-C", "target-cpu=x86-64-v3"]
+
+# `cargo t` runs the Rust tests on the build that `python scripts/develop.py` installs as the extension, so the crate compiles once.
+[alias]
+t = "test --features python"
+
+# PyO3 builds for an extension module, as it does under maturin.
+[env]
+PYO3_BUILD_EXTENSION_MODULE = "1"

@@ -1,0 +1,55 @@
+BasedPL-es: com.apple.keylayout.Spanish-ISO
+
+Chords use the unshifted key label.
+Repeat a prefix chord to type its character, or release modifiers before its next key.
+
+Chord	Output or prefix
+Option-a	alpha prefix
+Option-s	⌈
+Option-d	⌊
+Option-f	∂
+Option-h	←
+Option-g	del prefix
+Option-z	enclose prefix
+Option-x	⊃
+Option-c	cap prefix
+Option-v	∪
+Control-Option-º	stile prefix
+Option-b	decode prefix
+Option-q	quad prefix
+Option-w	omega prefix
+Option-e	epsilon prefix
+Option-r	⍴
+Option-y	•
+Option-t	∘
+Option-Shift-1	diaeresis prefix
+Control-Option-1	⌽
+Option-Shift-3	√
+Option-4	⇄
+Option-6	superscript prefix
+Option-5	subscript prefix
+Option-9	or prefix
+Option-7	delta prefix
+Option-Shift-7	¿
+Option-'	⊢
+Option-8	∞
+Option-0	and prefix
+Option-Shift-0	⍬
+Control-Option-Shift-0	match prefix
+Option-Shift-+	≠
+Option-o	circle prefix
+Option-u	÷
+Option-Shift-`	diamond prefix
+Option-i	iota prefix
+Option-p	π
+Option-l	→
+Option-j	↓
+Option-k	take prefix
+Option-,	↢
+Option-Shift-,	⊣
+Option--	bar prefix
+Option-n	encode prefix
+Option-m	×
+Option-.	↣
+Option-<	≤
+Option-Shift-<	≥

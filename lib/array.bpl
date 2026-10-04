@@ -169,7 +169,7 @@ displays ← {  ⍝ Boxed display of array.
     lft←⍉'┌',(⊃lax),'└'
     lft,(top⍪w⍪bot),rgt  ⍝ Fully boxed array.
   }
-  trim←{[⍵₀ (~1 1⍷∧⌿' '=⍵₁)#⍠¯1(⍵₁)]}
+  trim←{[⍵₀ (~1 1⍷∧⌿' '=⍵₁)#⍠¯1⍵₁]}
   qfmt←{[⍕0+⍴⍺;format open ⍵]}
   0=≡⍵?' '⍪(format ⍵)⍪(' '≡↑0⍴⍵)⊃" -";
   1 ⍬≡[≡⍵ ⍴⍵]?'∇' 0 0 box ["─";format ⍵];

@@ -512,9 +512,9 @@ Dv←"2+3×4" ⋄ ⍎Dv   ⍝ 14
 ⍝ aplcart/table.tsv:164 — Format: Character representation of Y
 [⌽ 12 34;⌽ ⍕ 12 34]   ⍝ [34 12;"43 21"]
 
-⍝ aplcart/table.tsv:165 — Format Y using ({width}, decimals) pairs Iv (negative decimals for scaled notation)
+⍝ aplcart/table.tsv:165 — Format Y using ({width}, decimals) pairs Iv (negative decimals for scaled notation); BPL writes the exponent as ₑ
 [2 ⍕ 3.125 0.002;6 2 ⍕ 3.125 0.002;6 2 ⍕ 1234;¯2 ⍕ 3.125 0.002]
-" 3.13 0.00" "  3.13  0.00" "******" " 3.1E0 2.0E¯3"
+" 3.13 0.00" "  3.13  0.00" "******" " 3.1ₑ0 2.0ₑ¯3"
 
 ⍝ aplcart/table.tsv:169 — Modified Assignment (tradfns/tradops only)
 var←40 ⋄ var+←2 ⋄ var   ⍝ 42
@@ -1188,7 +1188,7 @@ Ym←[1 2 3 ⋄ 2 4 5 ⋄ 3 5 6] ⋄ ⍉↣≡Ym   ⍝ $t
 M←2 3⍴⍳6 ⋄ N←3 2⍴⍳6 ⋄ M+.×N   ⍝ [10 13 ⋄ 28 40]
 
 ⍝ aplcart/table.tsv:703 — Summation over subsets of Nv specified by rows of A
-([1 0 1 ⋄ 0 1 1 ⋄ 1 1 1 ⋄ 1 0 0]) +.× 3 1 4   ⍝ 7 5 8 3
+[1 0 1 ⋄ 0 1 1 ⋄ 1 1 1 ⋄ 1 0 0] +.× 3 1 4   ⍝ 7 5 8 3
 
 ⍝ aplcart/table.tsv:704 — Alternating Matrix Product of M and N (¯1↑⍴M ↔ 1↑⍴N)
 M←2 3⍴⍳6 ⋄ N←3 2⍴⍳6 ⋄ M-.×N   ⍝ [6 7 ⋄ 12 16]
@@ -2480,7 +2480,7 @@ X←1 2 3 4 ⋄ Y←0 2 0 0 ⋄ X ∧\∘⌽≠ Y   ⍝ $t $t $f $f
 Jv←2 0 3 ⋄ +\¯1↓1↣, Jv   ⍝ 1 3 3
 
 ⍝ aplcart/table.tsv:1145 — Convert table to inverted table (character data as matrices); dfns display import/wrappers omitted to test underlying arrays
-⊂⍠0 (["Ab" 1 7 ⋄ "Cdef" 2 3])   ⍝ [["Ab" "Cdef"] [1 2] [7 3]]
+⊂⍠0 ["Ab" 1 7 ⋄ "Cdef" 2 3]   ⍝ [["Ab" "Cdef"] [1 2] [7 3]]
 
 ⍝ aplcart/table.tsv:1146 — Main diagonal of any rank array
 Y←2 3 4⍴⍳24 ⋄ ⊢⍉⍨(0×⍴) Y   ⍝ 0 17
@@ -4696,7 +4696,7 @@ $t $t $t $f $f
 ["a0Ab1Bc2C3D4E5F6789";["aa" ⋄ "AA" ⋄ "bb" ⋄ "BB" ⋄ "cc" ⋄ "dd"]]
 
 ⍝ aplcart/table.tsv:2008 — Determinant of three-row matrix
-Nm←[1 2 3 ⋄ 0 4 5 ⋄ 1 0 6] ⋄ {-/+/×/⍠1([0 1 2 ⋄ 0 2 1])⌽⊃[⍵ ⍵]}Nm   ⍝ 22
+Nm←[1 2 3 ⋄ 0 4 5 ⋄ 1 0 6] ⋄ {-/+/×/⍠1[0 1 2 ⋄ 0 2 1]⌽⊃[⍵ ⍵]}Nm   ⍝ 22
 
 ⍝ aplcart/table.tsv:2009 — Vectors as row matrices in catenation upon each other
 X←1 2 3 ⋄ Y←4 5 6 ⋄ X{[⍺ ⋄ ⍵]}Y   ⍝ [1 2 3 ⋄ 4 5 6]
@@ -5022,7 +5022,7 @@ Y←[3 1 2 ⋄ 6 4 5] ⋄ {g←⍋r←,⍵ ⋄ s⍴[[⍋[g]⌷,⍉(⌽s←⍴⍵
 [2 3 4 0 1 7 8 5 6;"cdeabCDAB"]ₓ
 
 ⍝ aplcart/table.tsv:2123 — Clamp non-negative N to fit in ⍕ field Iv[1 2]
-Iv←5 2 ⋄ N←0 0.01 12.34 123.45 ⋄ Iv{1(↑⌊⍵⍨⌈↓)([¯1 1 ⋄ 1 ¯0.1])+.×10*(-↑⌽⍺),-/⍺+⍺>99 0}N
+Iv←5 2 ⋄ N←0 0.01 12.34 123.45 ⋄ Iv{1(↑⌊⍵⍨⌈↓)[¯1 1 ⋄ 1 ¯0.1]+.×10*(-↑⌽⍺),-/⍺+⍺>99 0}N
 0 0.01 12.34 99.99
 
 ⍝ aplcart/table.tsv:2124 — Progressive without (~) without replacement
@@ -6378,7 +6378,7 @@ B←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ ⍳↢1⍤1 B   ⍝ [1 2 0]ₓ
 I←2 3 1 ⋄ 1↑⍨⍤0- I   ⍝ [0 1 0 ⋄ 0 0 1 ⋄ 1 0 0]
 
 ⍝ aplcart/tt.tsv:351 — Convert table to inverted table (character data as matrices); dfns display import/wrappers omitted to test underlying arrays
-⊂⍠0 (["Ab" 1 7 ⋄ "Cdef" 2 3])   ⍝ ["Ab" "Cdef";1 2;7 3]
+⊂⍠0 ["Ab" 1 7 ⋄ "Cdef" 2 3]   ⍝ ["Ab" "Cdef";1 2;7 3]
 
 ⍝ aplcart/tt.tsv:352 — Convert table to inverted table (character data as matrices)
 Ym←[1 "ab" ⋄ 2 "cd" ⋄ 3 "ef"]  ⋄ ⊃¨⊂⍠0 Ym   ⍝ [1 2 3;["ab" ⋄ "cd" ⋄ "ef"]]

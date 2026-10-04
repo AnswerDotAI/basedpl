@@ -35,3 +35,7 @@ def check(path):
 
 
 def test_glyph_reference_matches_symbols(): assert check(GLYPHS) == []
+
+
+def test_every_glyph_has_keys():
+    assert [s['glyph'] for s in symbols if len(s['glyph']) == 1 and not s['glyph'].isascii() and not s['shortcut']] == []

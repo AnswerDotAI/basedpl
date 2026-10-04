@@ -12,7 +12,9 @@ Run `bpl`. An expression displays its result. An assignment keeps its names for 
 
 ## Typing glyphs
 
-Hold Alt and press the key that the [glyph reference](glyphs.qmd#typing-glyphs) lists. For example, Alt-m gives `×`, Alt-u gives `÷`, and Alt-h, Alt-j, Alt-k and Alt-l give `←`, `↓`, `↑` and `→`. Some glyphs take a second key. Alt-a then `_` gives `⍶`, and Alt-c then `t` gives `⍝`. Such an Alt key types its own glyph when Space or an unlisted key follows it. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence. Superscripts start with Alt-6: Alt-6 then `2` gives `²`, and Alt-6 then `-1` gives `⁻¹`. Subscripts start with Alt-5: Alt-5 then `1` gives `₁`. Alt keys also insert glyphs inside strings and comments.
+Hold Alt and press the key that the [glyph reference](glyphs.qmd#typing-glyphs) lists. For example, Alt-m gives `×`, Alt-u gives `÷`, and Alt-h, Alt-j, Alt-k and Alt-l give `←`, `↓`, `↑` and `→`. Some glyphs take a second key. Alt-a then `_` gives `⍶`, and Alt-c then `t` gives `⍝`. Hold Alt and tap the same dead key twice to type its own character: Alt-backtick twice gives `⋄`, and Alt-a twice gives `⍺`. The sequence ends after the second tap. Space or an unlisted key also types the dead key's character. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence. Superscripts start with Alt-6: Alt-6 then `2` gives `²`, and Alt-6 then `-1` gives `⁻¹`. Subscripts start with Alt-5: Alt-5 then `1` gives `₁`. Alt keys also insert glyphs inside strings and comments.
+
+While a dead key is pending, a compact hint shows its character and valid next keys. For example, Alt-a shows `⍺:_-`.
 
 On macOS, configure your terminal to send left Option as Alt. In Ghostty:
 
@@ -21,6 +23,8 @@ macos-option-as-alt = left
 ```
 
 Right Option still types the usual Mac characters. In iTerm2, set the left Option key to "Esc+". In Terminal.app, turn on "Use Option as Meta key". Alt keys type glyphs instead of running the line editor's Alt shortcuts. Cursor keys and Ctrl shortcuts still work.
+
+On a UK Mac keyboard, Shift-3 types `£`. Hold Alt or left Option while pressing Shift-3 to type `#`. This is the layout-independent alias Alt-£. It also works in the notebook keyboard. Plain `£` is unchanged.
 
 ### Named entry
 
@@ -48,7 +52,7 @@ Expansion applies only to typed REPL input, outside strings and comments. Pasted
 
 ### Other editors
 
-The shared table is `python/basedpl/layout.json`, shipped in the Python package and embedded in the Rust REPL. `option` gives what each Alt key types: a glyph, or a dead-key state that the next key completes. Each state in `states` lists its keys, and the terminator that Space or an unlisted key types. Keys are US characters after Shift. `basedpl.editors.write()` builds the macOS layout bundle in `editors/macos` from the same file.
+The shared table is `python/basedpl/layout.json`, shipped in the Python package and embedded in the Rust REPL. `option` gives what each Alt key types: a glyph, or a dead-key state that the next key completes. Each state in `states` lists its keys, and the terminator that Space or an unlisted key types. Repeating the chord that starts the current state types its terminator and ends the sequence. Keys are US characters after Shift. `alt_aliases` maps actual Alt characters such as `£` to text for the REPL and notebook keyboard. Native macOS layouts ignore these aliases. `basedpl.editors.write()` builds the regional macOS layout bundles in `editors/macos` from the same file and the native maps in `keyboards.json`.
 
 ```python
 import json
@@ -59,7 +63,7 @@ assert layout['option']['h'] == '←' and layout['option']['a'] == {'state': 'al
 assert layout['states']['alpha']['keys']['_'] == '⍶'
 ```
 
-Monaco/CodeMirror adapters can import the same JSON. Derive the US character from `KeyboardEvent.code` and Shift: macOS Option may already have changed `event.key`. Track `AltLeft`/`AltRight` keydown/up to select one Option key, and clear modifier state on blur. For a mapped key, prevent the browser's default action and insert the text through the editor's normal edit transaction. Keep a pending dead-key state until the next key, and clear it on blur or a focus change. Leave composition events to the input method.
+Monaco/CodeMirror adapters can import the same JSON. Check `alt_aliases` against `KeyboardEvent.key` first. Otherwise derive the US character from `KeyboardEvent.code` and Shift: macOS Option may already have changed `event.key`. Track `AltLeft`/`AltRight` keydown/up to select one Option key, and clear modifier state on blur. For a mapped key, prevent the browser's default action and insert the text through the editor's normal edit transaction. Keep a pending dead-key state until the next key, and clear it on blur or a focus change. Leave composition events to the input method.
 
 ## Editing and multiline input
 

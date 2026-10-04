@@ -1,15 +1,19 @@
 use crate::{
     agreement::{Agreement, Mapping},
-    array::{agreed, compress, generated_len, or_and_sum, Axis, Bit, Frame, Gather, Items, Layout, Steps},
+    array::{agreed, compress, generated_len, or_and_sum, with_ints, with_width, Axis, Frame, Gather, Items, Layout, Steps, Storage, Width},
+    element::Key,
     execution::Context,
     keyed::Selector,
-    number::{int, Arithmetic, Math},
+    number::{
+        int::{self, Int},
+        Arithmetic, Math,
+    },
     search::{classify, first_matches, firsts, Cells},
     DomainAt, Error, ErrorAt, ErrorKind, Number, Span, Value,
 };
 use foldhash::{HashMap, HashMapExt};
 use rand::RngExt;
-use std::cmp::Ordering;
+use std::{borrow::Cow, cmp::Ordering};
 
 /// A reduce or scan along the last or first axis. Its glyphs are `/ ⌿ \ ⍀`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -334,24 +338,40 @@ pub(crate) fn window_spec(spec: &Value, rank: usize, span: &Span) -> Result<(Vec
     let moves = sizes.split_off(count);
     Ok((sizes, moves))
 }
+/// The windows along the leading axes of an argument, shared by `↕` and `⌺`: an axis for each, and the number of windows along it.
+pub(crate) struct Windows { pub axes: Vec<WindowAxis>, pub frame: Vec<usize> }
+impl Windows {
+    /// The windows of `sizes` and `moves` over `right`. `padded` says which sizes pad their axis.
+    pub(crate) fn new(sizes: &[i64], moves: &[i64], padded: impl Fn(i64) -> bool, right: &Value, span: &Span) -> Result<Self, Error> {
+        let axes = sizes
+            .iter()
+            .enumerate()
+            .map(|(a, &size)| {
+                let step = match moves.get(a) {
+                    None => 1,
+                    Some(&m) if m > 0 => m as usize,
+                    Some(_) => return Err(span.domain_error("window movements must be positive")),
+                };
+                let axis = WindowAxis { size: size.unsigned_abs() as usize, step, padded: padded(size) };
+                if axis.fits(right.shape()[a]) { Ok(axis) } else { Err(span.domain_error("padded window is too large for the argument")) }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let frame = axes.iter().zip(right.shape()).map(|(w, &n)| w.count(n)).collect();
+        Ok(Self { axes, frame })
+    }
+    /// Where the window at `position` in the frame, counted in ravel order, starts along each axis.
+    pub(crate) fn starts(&self, position: usize) -> Vec<isize> {
+        let mut starts = vec![0; self.axes.len()];
+        for (a, c) in digits(position, &self.frame) { starts[a] = self.axes[a].start(c); }
+        starts
+    }
+}
 fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let (sizes, moves) = window_spec(spec, right.shape().len(), span)?;
     let count = sizes.len();
     if count == 0 { return Ok(right.clone()); }
-    let axes = sizes
-        .iter()
-        .enumerate()
-        .map(|(a, &size)| {
-            let step = match moves.get(a) {
-                None => 1,
-                Some(&m) if m > 0 => m as usize,
-                Some(_) => return Err(span.domain_error("window movements must be positive")),
-            };
-            let axis = WindowAxis { size: size.unsigned_abs() as usize, step, padded: size < 0 };
-            if axis.fits(right.shape()[a]) { Ok(axis) } else { Err(span.domain_error("padded window is too large for the argument")) }
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let frame: Vec<_> = axes.iter().zip(right.shape()).map(|(w, &n)| w.count(n)).collect();
+    let windows = Windows::new(&sizes, &moves, |size| size < 0, right, span)?;
+    let (axes, frame) = (&windows.axes, &windows.frame);
     let cell: Vec<_> = axes.iter().map(|w| w.size).chain(right.shape()[count..].iter().copied()).collect();
     let shape = [frame.as_slice(), cell.as_slice()].concat();
     let len = generated_len(&shape).error_at(span, "windows exceed array limits")?;
@@ -366,9 +386,7 @@ fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Err
     else {
         for i in 0..len.checked_div(width).unwrap_or(0) {
             span.check()?;
-            let mut starts = vec![0; count];
-            for (a, c) in digits(i, &frame) { starts[a] = axes[a].start(c); }
-            push_window(right, &cell, &starts, &mut data);
+            push_window(right, &cell, &windows.starts(i), &mut data);
         }
     }
     let frame_keys = axes.iter().enumerate().map(|(a, w)| match right.keys(a) {
@@ -774,10 +792,7 @@ impl Primitive {
             }
             // `=` follows IEEE, where NaN equals nothing. Match, which `=` uses for other items, treats NaN as one value.
             Self::Compare(op @ (Comparison::Equal | Comparison::NotEqual)) => {
-                let equal = match (left.unwrap(), right) {
-                    (Value::Number(x), Value::Number(y)) => x.equal(y).domain_at(span)?,
-                    (x, y) => x.matches(y, span)?,
-                };
+                let equal = match (left.unwrap(), right) { (Value::Number(x), Value::Number(y)) => x.equal(y).domain_at(span)?, (x, y) => x.matches(y, span)? };
                 Ok(Value::Number(Number::from_bool(equal == matches!(op, Comparison::Equal))))
             }
             Self::Compare(op) => {
@@ -875,11 +890,12 @@ fn find(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error>
         let strides = strides(shape);
         let pattern: Vec<usize> = (0..left.len()).map(|i| digits(i, &pattern_shape).map(|(axis, c)| c * strides[axis]).sum()).collect();
         let (x, y) = (left.as_items(), right.as_items());
-        let same = |i: usize, o: usize| match (&x, &y) {
-            (Items::Booleans(x), Items::Booleans(y)) => Ok(x[i] == y[o]),
-            (Items::Integers(x) | Items::Extended(x), Items::Integers(y) | Items::Extended(y)) => Ok(x[i] == y[o]),
-            (Items::Floats(x), Items::Floats(y)) => Ok(crate::number::float_match(x[i], y[o])),
-            (Items::Characters(x), Items::Characters(y)) => Ok(x[i] == y[o]),
+        let integers = x.raw_integers().zip(y.raw_integers());
+        let same = |i: usize, o: usize| match (&x, &y, integers) {
+            (_, _, Some((x, y))) => Ok(x.get(i) == y.get(o)),
+            (Items::Booleans(x), Items::Booleans(y), _) => Ok(x[i] == y[o]),
+            (Items::Floats(x), Items::Floats(y), _) => Ok(crate::number::float_match(x[i], y[o])),
+            (Items::Characters(x), Items::Characters(y), _) => Ok(x[i] == y[o]),
             _ => left.at(i).matches(&right.at(o), span),
         };
         let mut coords = vec![0; shape.len()];
@@ -938,9 +954,12 @@ fn iota(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let len = generated_len(&shape).error_at(span, "iota exceeds array limits")?;
     let exact = right.is_exact();
     if right.is_singleton() {
-        let (n, down) = (len as i64, lengths[0] < 0);
-        return if exact { Value::integers(shape, if down { (0..n).rev().collect() } else { (0..n).collect() }) } else { Value::floats(shape, if down { (0..n).rev().map(|i| i as f64).collect() } else { (0..n).map(|i| i as f64).collect() }) }
-        .error_at(span, "invalid iota");
+        let down = lengths[0] < 0;
+        if !exact {
+            return Value::floats(shape, if down { (0..len).rev().map(|i| i as f64).collect() } else { (0..len).map(|i| i as f64).collect() })
+                .error_at(span, "invalid iota");
+        }
+        return if down { Value::positions(shape, len, (0..len).rev()) } else { Value::positions(shape, len, 0..len) }.error_at(span, "invalid iota");
     }
     let prototype = generated_items(vec![shape.len()], vec![0; shape.len()], exact).unwrap();
     let data = (0..len).map(|i| coordinates(&lengths, &shape, i, exact)).collect();
@@ -966,7 +985,7 @@ fn where_vector(counts: &[i64], span: &Context<'_>) -> Result<Value, Error> {
     Value::integers(vec![total], data).error_at(span, "invalid where result")
 }
 /// The positions of the `total` 1s in `mask`.
-fn ones<M: Bit>(mask: &[M], total: usize) -> Vec<usize> {
+fn ones<M: Key>(mask: &[M], total: usize) -> Vec<usize> {
     let mut data = vec![0; total];
     compress(&mut data, mask, |j| j);
     data
@@ -977,8 +996,11 @@ pub(crate) fn mask_offsets(mask: &Value, span: &Context<'_>) -> Result<Vec<usize
     match mask.as_items() {
         Items::Booleans(m) => return Ok(ones(m, m.iter().map(|&b| usize::from(b)).sum())),
         Items::Integers(m) => {
-            let (any, sum) = or_and_sum(m);
-            if (0..=1).contains(&any) { return Ok(ones(m, sum as usize)); }
+            let offsets = with_ints!(m, |m| {
+                let (any, sum) = or_and_sum(m);
+                (0..=1).contains(&any).then(|| ones(m, sum as usize))
+            });
+            if let Some(offsets) = offsets { return Ok(offsets); }
         }
         _ => (),
     }
@@ -993,12 +1015,17 @@ fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if let (Items::Booleans(mask), [_]) = (right.as_items(), right.shape()) {
         if right.keys(0).is_none() {
             let total = mask.iter().map(|&b| usize::from(b)).sum();
-            let mut data = vec![0; total];
-            compress(&mut data, mask, |j| j as i64);
-            return Value::integers(vec![total], data).error_at(span, "invalid where result");
+            // Each position is below the mask's length, so the positions take their width before any is written.
+            let width = Width::below(mask.len());
+            let built = with_width!(width, T => {
+                let mut data: Vec<T> = vec![0; total];
+                compress(&mut data, mask, |j| T::from_i64(j as i64));
+                Value::from_storage(vec![total], Storage::within(data, width))
+            });
+            return built.error_at(span, "invalid where result");
         }
     }
-    if let (Items::Integers(counts), [_]) = (right.as_items(), right.shape()) { if right.keys(0).is_none() { return where_vector(counts, span); } }
+    if let (Items::Integers(counts), [_]) = (right.as_items(), right.shape()) { if right.keys(0).is_none() { return where_vector(&counts.widened(), span); } }
     let counts = right.as_items().nonnegative_integers().error_at(span, "where needs nonnegative integer counts")?;
     let total = counts
         .iter()
@@ -1058,7 +1085,9 @@ fn index_of(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Er
     if left.keys(0).is_some() {
         return frame.collect(positions.into_iter().map(|p| position_value(left, 0, p as usize)), integer(0)).error_at(span, "invalid index-of result");
     }
-    frame.integers(positions).error_at(span, "invalid index-of result")
+    // A miss gives the number of haystack cells, so every position is at most that.
+    let bound = left.shape().first().map_or(1, |&n| n + 1);
+    frame.positions(positions.into_iter().map(|p| p as usize), bound).error_at(span, "invalid index-of result")
 }
 
 fn position_value(array: &Value, axis: usize, position: usize) -> Value {
@@ -1088,9 +1117,7 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
         let scaled = y * scale;
         let y = if scale.is_finite() && scale != 0.0 && scaled.abs() < 1e16 { scaled.round() / scale } else { y };
         if precision >= 0 { if y == 0.0 && y.is_sign_negative() { format!(" {:.*}", digits, 0.0) } else { format!("{y:.digits$}") } } else {
-            let s = format!("{:.*e}", digits - 1, y);
-            let (mantissa, exponent) = s.split_once('e').unwrap();
-            format!("{mantissa}E{}", exponent.parse::<i32>().unwrap())
+            crate::number::scientific(&format!("{:.*e}", digits - 1, y))
         }
     };
     if !n.is_exact() {
@@ -1099,7 +1126,7 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
         text = text
             .chars()
             .map(|c| {
-                if c == 'E' { exponent = true; }
+                if c == crate::syntax::EXPONENT.1 { exponent = true; }
                 if !exponent && c.is_ascii_digit() && (c != '0' || significant != 0) { significant += 1; }
                 if !exponent && c.is_ascii_digit() && significant > 16 { '_' } else { c }
             })
@@ -1601,7 +1628,7 @@ fn radix_grade(right: &Value, count: usize, down: bool) -> Option<Vec<usize>> {
     let flip = |k: u64| if down { !k } else { k };
     Some(match right.as_items() {
         Items::Floats(x) => sort_rows(count, width, |r, c| flip(float_key(x[r * width + c]))),
-        Items::Integers(x) => sort_rows(count, width, |r, c| flip(x[r * width + c] as u64 ^ 1 << 63)),
+        Items::Integers(x) => with_ints!(x, |x| sort_rows(count, width, |r, c| flip(x[r * width + c].to_i64() as u64 ^ 1 << 63))),
         // NaN follows `∞` here too, as it follows every float.
         Items::Extended(x) => sort_rows(count, width, |r, c| {
             let n = x[r * width + c];
@@ -1652,9 +1679,7 @@ fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Context<'_>) ->
         indices.sort_by(|&a, &b| { direction(array_order(&cells[a], &cells[b]).unwrap_or_else(|| { unordered = true; Ordering::Equal })) });
         if unordered { return Err(span.domain_error("functions have no ordering")); }
     }
-    if right.keys(0).is_none() {
-        return Value::integers(vec![indices.len()], indices.into_iter().map(|i| i as i64).collect()).error_at(span, "invalid grade result");
-    }
+    if right.keys(0).is_none() { return Value::positions(vec![indices.len()], indices.len(), indices.into_iter()).error_at(span, "invalid grade result"); }
     Value::from_parts(vec![indices.len()], indices.into_iter().map(|i| position_value(right, 0, i)).collect(), integer(0))
         .error_at(span, "invalid grade result")
 }
@@ -1675,7 +1700,7 @@ fn interval_index(left: &Value, right: &Value, span: &Context<'_>) -> Result<Val
         data.push(lo);
     }
     // The number of boundaries at or below each value, as in BQN. On a keyed axis, the key of the last of them.
-    let Some(keys) = left.keys(0) else { return frame.integers(data.into_iter().map(|n| n as i64).collect()).error_at(span, "invalid interval index") };
+    let Some(keys) = left.keys(0) else { return frame.positions(data.into_iter(), boundaries.len() + 1).error_at(span, "invalid interval index") };
     let key = |n: usize| n.checked_sub(1).and_then(|i| keys.names().get(i)?.clone());
     let data = data.into_iter().map(|n| key(n).map_or_else(|| integer(n as i64), |k| crate::keyed::text(&k)));
     frame.collect(data, integer(0)).error_at(span, "invalid interval index")
@@ -1913,7 +1938,8 @@ fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, 
     // A vector with no keys and no negative counts copies each item by its count, with no table of offsets.
     if !inverse && !keyed && traversal.outer * traversal.inner == 1 && (single || len == traversal.len) && any >= 0 {
         let total = shape[axis];
-        let layout = rearranged(Layout::from(shape).with_keys(keys).error_at(span, "invalid replication keys")?.inherit_names(right.axis_names().to_vec()), right);
+        let layout =
+            rearranged(Layout::from(shape).with_keys(keys).error_at(span, "invalid replication keys")?.inherit_names(right.axis_names().to_vec()), right);
         let mut data = Gather::new(&[right], total);
         if boolean { data.compress(right, &counts, total) }
         else { data.replicate(right, &counts, total) }
@@ -2008,12 +2034,7 @@ type AppendPlan = (Value, Option<Vec<Option<std::sync::Arc<str>>>>);
 /// What `left,right` on a vector or `left⍪right` adds along the leading axis, when `left` can grow in place: the new cells, and the
 /// keys of the new positions when the leading axis has keys or gains them. `None` when the result would have another rank, gain keys
 /// on another axis, change an axis name or be empty. It gives the errors that `catenate` gives, before anything is written.
-pub(crate) fn append_plan(
-    left: &Value,
-    right: &Value,
-    first: bool,
-    span: &Context<'_>,
-) -> Result<Option<AppendPlan>, Error> {
+pub(crate) fn append_plan(left: &Value, right: &Value, first: bool, span: &Context<'_>) -> Result<Option<AppendPlan>, Error> {
     let rank = left.shape().len();
     if rank == 0 || (!first && rank != 1) || right.shape().len() > rank || (left.is_empty() && right.is_empty()) { return Ok(None); }
     let right = promoted(right, left, rank, 0, span)?;
@@ -2070,7 +2091,11 @@ fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: bool, span:
         }
     }
     let names = (0..rank).map(|a| agreed(left.axis_name(a), right.axis_name(a))).collect();
-    let layout = Layout::from(shape).with_keys(wanted).error_at(span, "invalid catenate result")?.inherit_names(names).with_renderer(agreed(left.renderer(), right.renderer()));
+    let layout = Layout::from(shape)
+        .with_keys(wanted)
+        .error_at(span, "invalid catenate result")?
+        .inherit_names(names)
+        .with_renderer(agreed(left.renderer(), right.renderer()));
     data.finish(layout, || left.prototype()).error_at(span, "invalid catenate result")
 }
 
@@ -2125,13 +2150,9 @@ fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: bool, span:
     let axis = axis.unwrap_or(0);
     let traversal = Axis::new(right.shape(), axis).error_at(span, "invalid partition axis")?;
     let items = left.as_items();
-    let owned: Vec<i64>;
-    let counts: &[i64] = match items {
-        Items::Integers(d) if d.iter().all(|&n| n >= 0) => d,
-        _ => {
-            owned = items.nonnegative_integers().error_at(span, "partition marks must be nonnegative integers")?.into_iter().map(|n| n as i64).collect();
-            &owned
-        }
+    let counts = match items.integers() {
+        Ok(d) if d.iter().all(|&n| n >= 0) => d,
+        _ => Cow::Owned(items.nonnegative_integers().error_at(span, "partition marks must be nonnegative integers")?.into_iter().map(|n| n as i64).collect()),
     };
     let extend = left.is_unit() || runs && left.is_singleton();
     if !extend && (if runs { counts.len() != traversal.len } else { counts.len() > traversal.len.saturating_add(1) }) {
@@ -2446,11 +2467,22 @@ fn select_vector(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> 
     let Items::Integers(ix) = indices.as_items() else { return Ok(None) };
     if indices.is_atom() || right.keys(0).is_some() { return Ok(None); }
     let n = *size as i64;
-    if !ix.iter().fold(true, |ok, &i| ok & (i >= -n) & (i < n)) { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
     let names = if indices.shape().len() == 1 { vec![right.axis_name(0).cloned()] } else { vec![] };
     let mut data = Gather::new(&[right], ix.len());
-    data.items_at(right, ix);
-    data.finish(rearranged(Layout::from(indices.shape().to_vec()).inherit_names(names), right), || right.prototype()).error_at(span, "invalid selection").map(Some)
+    let inside = with_ints!(ix, |ix| {
+        let inside = ix.iter().fold(true, |ok, &i| {
+            let i = i.to_i64();
+            ok & (i >= -n) & (i < n)
+        });
+        if inside {
+            data.items_at(right, ix);
+        }
+        inside
+    });
+    if !inside { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
+    data.finish(rearranged(Layout::from(indices.shape().to_vec()).inherit_names(names), right), || right.prototype())
+        .error_at(span, "invalid selection")
+        .map(Some)
 }
 
 pub(crate) fn selection(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> Result<Selection, Error> {

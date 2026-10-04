@@ -33,6 +33,11 @@ def test_terminal_symbol_entry_and_exit():
         read_until(b'\x1b[?2004h')
         enter('1 2\r', '│1 2│\r\n└~──┘\r\n')
         enter('•prefs ["box":$f]\r', '["box":$f "trees":$t "fns":$t "limit":1000ₓ "edges":3ₓ]\r\n')
+        os.write(master, b'"\x1ba')
+        read_until('⍺:_-'.encode())
+        enter('_"\r', '\r\n⍶\r\n')
+        enter('"£\x1b£"\r', '\r\n£#\r\n')
+        enter('"\x1b`\x1b` \x1ba\x1ba \x1b6\x1b66"\r', '\r\n⋄ ⍺ ^6\r\n')
         layout = json.loads(files('basedpl').joinpath('layout.json').read_text())
         typed = {k: v for k, v in layout['option'].items() if isinstance(v, str)}
         enter('"' + ''.join('\x1b'+k for k in typed) + '"\r', '\r\n' + ''.join(typed.values()) + '\r\n')
@@ -41,6 +46,8 @@ def test_terminal_symbol_entry_and_exit():
         enter('3\x1b62\r', '\r\n9\r\n')  # Alt-6, then 2, types ²
         enter('"a^b"\r', '\r\na^b\r\n')  # in a string, ^ types itself
         enter('\x1bi_1 0 1\r', '\r\n[0 2]ₓ\r\n')  # Alt-i, then _, types ⍸
+        # Dead keys: Backspace cancels, a plain key types both, Alt-c starts its own, - then 1 types ⁻¹, and Space types ^
+        enter('"\x1bo\x7fx\x1box\x1bo\x1bct\x1b6-1\x1b6 "\r', '\r\nx○x○⍝⁻¹^\r\n')
         enter('1 2 3\x1bl+/\r', '\r\n6\r\n')
         enter('界`assign `io\t4\r', '\r\n')  # space, Tab, Unicode byte offsets
         enter('+/界\r', '\r\n6\r\n')
@@ -50,6 +57,9 @@ def test_terminal_symbol_entry_and_exit():
         enter('`iotx\x7fa3\r', '\r\n0 1 2\r\n')  # backspace while entering a name
         data = enter('`de\t \r', 'UNSUPPORTED')  # ambiguous Tab must not choose a glyph
         assert b'`de ' in data
+        enter('`iota\x1b[D\r', 'UNSUPPORTED')  # moving the cursor ends name entry
+        enter('x`lar-5\r', '\r\n')  # completion replaces only the name
+        enter('x\r', '\r\n¯5\r\n')
         enter('2+2\r', '\r\n4\r\n')
         data = enter('⍝ \\ `iota \r', '\r\n')
         assert b'\\ `iota ' in data  # comments and literal backslash are untouched

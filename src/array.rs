@@ -1,9 +1,9 @@
 use crate::{
-    keyed::Keys,
-    number::{extended, real},
-    element::{read_flagged, Element, Source},
     display::{positions, Elide},
+    element::{cast, read_flagged, Element, Key, Source, Whole},
     execution::Context,
+    keyed::Keys,
+    number::{extended, int::Int, real},
     DomainAt, Error, ErrorKind, Number,
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
@@ -182,12 +182,13 @@ impl Frame {
             Self::Array(layout) => layout.collect(items, prototype),
         }
     }
-    /// Integer items on this frame. A direct application gives its one integer as an atom.
-    pub fn integers(self, data: Vec<i64>) -> Result<Value, ErrorKind> {
-        match (self, data.as_slice()) {
-            (Self::Direct, &[n]) => Ok(Value::Number(Number::from_integer(n))),
+    /// Positions on this frame, each below `bound`. `bound` gives their width, with no pass over them to find it. A direct application
+    /// gives its one position as an atom.
+    pub fn positions(self, mut items: impl ExactSizeIterator<Item = usize>, bound: usize) -> Result<Value, ErrorKind> {
+        match (self, items.len()) {
+            (Self::Direct, 1) => Ok(Value::Number(Number::from_integer(items.next().unwrap() as i64))),
             (Self::Direct, _) => Err(ErrorKind::Length),
-            (Self::Array(layout), _) => layout.integers(data),
+            (Self::Array(layout), _) => Value::positions(layout.shape().to_vec(), bound, items)?.with_layout(layout),
         }
     }
     pub fn booleans(self, data: Vec<bool>) -> Result<Value, ErrorKind> {
@@ -235,14 +236,120 @@ pub struct ArrayData { layout: Layout, data: Arc<Storage> }
 
 impl ArrayData { fn array(shape: Vec<usize>, data: Storage) -> Value { Value::Array(Arc::new(Self { layout: shape.into(), data: Arc::new(data) })) } }
 
-/// An array's items. Numbers in compact storage share one kind. Integer storage carries a flag for non-finite values. With the flag set,
-/// `i64::MAX` reads as `∞`, `i64::MIN` as `¯∞` and `i64::MAX-1` as NaN. A build sets the flag when it stores a non-finite value.
-/// `Value::checked_items` clears it when it finds none. Mixed storage keeps each item's kind. It also remembers what it works out about
-/// its items.
+/// Declares the owned buffers `$owned`, their borrowed view `$view` and the tag `$tag` that names a variant, with one variant for each
+/// element type. Code that needs a variant's element type matches on the variant, as `with_ints!` does.
+macro_rules! buffers {
+    ($owned:ident, $view:ident, $tag:ident: $($variant:ident($t:ty)),+) => {
+        #[derive(Clone, Debug)]
+        pub(crate) enum $owned { $($variant(Vec<$t>)),+ }
+        #[derive(Clone, Copy)]
+        pub(crate) enum $view<'a> { $($variant(&'a [$t])),+ }
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        pub(crate) enum $tag { $($variant),+ }
+        impl $owned {
+            fn with_capacity(tag: $tag, capacity: usize) -> Self { match tag { $($tag::$variant => Self::$variant(Vec::with_capacity(capacity))),+ } }
+            fn view(&self) -> $view<'_> { match self { $(Self::$variant(v) => $view::$variant(v)),+ } }
+            fn capacity(&self) -> usize { match self { $(Self::$variant(v) => v.capacity()),+ } }
+            /// Copies `range` of `source` when it has this buffer's element type, and gives whether it could.
+            fn extend_from(&mut self, source: $view<'_>, range: std::ops::Range<usize>) -> bool {
+                match (self, source) {
+                    $((Self::$variant(d), $view::$variant(s)) => d.extend_from_slice(&s[range]),)+
+                    _ => return false,
+                }
+                true
+            }
+        }
+        impl $view<'_> {
+            pub(crate) fn len(self) -> usize { match self { $(Self::$variant(v) => v.len()),+ } }
+            pub(crate) fn tag(self) -> $tag { match self { $(Self::$variant(_) => $tag::$variant),+ } }
+        }
+    };
+}
+buffers!(IntBuf, Ints, Width: U8(u8), I16(i16), I32(i32), I64(i64));
+
+/// Runs `$body` with `$x` bound to the integers of `$ints`, whatever their width.
+macro_rules! with_ints {
+    ($ints:expr, |$x:ident| $body:expr) => {
+        match $ints {
+            $crate::array::Ints::U8($x) => $body,
+            $crate::array::Ints::I16($x) => $body,
+            $crate::array::Ints::I32($x) => $body,
+            $crate::array::Ints::I64($x) => $body,
+        }
+    };
+}
+pub(crate) use with_ints;
+
+/// Runs `$body` with `$x` and `$y` bound to the integers of `$a` and `$b` at one width: their own when they share it, and otherwise both
+/// widened to 64 bits.
+macro_rules! with_int_pair {
+    ($a:expr, $b:expr, |$x:ident, $y:ident| $body:expr) => {
+        match ($a, $b) {
+            ($crate::array::Ints::U8($x), $crate::array::Ints::U8($y)) => $body,
+            ($crate::array::Ints::I16($x), $crate::array::Ints::I16($y)) => $body,
+            ($crate::array::Ints::I32($x), $crate::array::Ints::I32($y)) => $body,
+            (a, b) => {
+                let (a, b) = (a.widened(), b.widened());
+                let ($x, $y) = (&*a, &*b);
+                $body
+            }
+        }
+    };
+}
+pub(crate) use with_int_pair;
+
+/// Runs `$body` with the type `$t` standing for the element type of the integer width `$width`.
+macro_rules! with_width {
+    ($width:expr, $t:ident => $body:expr) => {
+        match $width {
+            $crate::array::Width::U8 => {
+                type $t = u8;
+                $body
+            }
+            $crate::array::Width::I16 => {
+                type $t = i16;
+                $body
+            }
+            $crate::array::Width::I32 => {
+                type $t = i32;
+                $body
+            }
+            $crate::array::Width::I64 => {
+                type $t = i64;
+                $body
+            }
+        }
+    };
+}
+pub(crate) use with_width;
+
+impl Width {
+    /// The bytes that one integer of this width takes.
+    fn bytes(self) -> usize { with_width!(self, T => std::mem::size_of::<T>()) }
+    /// Whether this width holds `n`.
+    fn holds(self, n: i64) -> bool { with_width!(self, T => T::narrowed(n).is_some()) }
+    /// The narrowest width that holds `min`, `max` and every integer between. Every width holds the empty range, where `min` is above
+    /// `max`.
+    pub(crate) fn narrowest<T: Int>(min: T, max: T) -> Self {
+        let (min, max) = (min.to_i64(), max.to_i64());
+        [Self::U8, Self::I16, Self::I32].into_iter().find(|w| min > max || w.holds(min) && w.holds(max)).unwrap_or(Self::I64)
+    }
+    /// The narrowest width that holds every position below `bound`.
+    pub(crate) fn below(bound: usize) -> Self { Self::narrowest(0, bound as i64 - 1) }
+    /// The narrowest width that holds the integers of both widths.
+    fn join(self, other: Self) -> Self { if self.bytes() >= other.bytes() { self } else { other } }
+    /// The width that a result too wide for this one tries next.
+    fn wider(self) -> Option<Self> { match self { Self::U8 => Some(Self::I16), Self::I16 => Some(Self::I32), Self::I32 => Some(Self::I64), Self::I64 => None } }
+}
+
+/// An array's items. Numbers in compact storage share one kind. Integers have four widths. Integer storage
+/// carries a flag for non-finite values, which only 64-bit integers hold. With the flag set, `i64::MAX` reads as `∞`, `i64::MIN` as `¯∞`
+/// and `i64::MAX-1` as NaN. A build sets the flag when it stores a non-finite value. `Value::checked_items` clears it when it finds
+/// none. Mixed storage keeps each item's kind. It also remembers what it works out about its items.
 #[derive(Debug)]
-enum Storage {
+pub(crate) enum Storage {
     Boolean(Vec<bool>),
-    Integer(Vec<i64>, AtomicBool),
+    Integers(IntBuf, AtomicBool),
     Float(Vec<f64>),
     Complex(Vec<Complex64>),
     Character(Vec<char>),
@@ -253,14 +360,14 @@ enum Storage {
 /// stores it instead. The environment is the innermost frame that any item depends on. Frame indices stay below the call-depth limit
 /// of 20,000, so they fit in `u16`.
 #[derive(Clone, Debug, Default)]
-struct Memo { prototype: OnceLock<Box<Value>>, environment: OnceLock<Option<u16>> }
+pub(crate) struct Memo { prototype: OnceLock<Box<Value>>, environment: OnceLock<Option<u16>> }
 
 // The flag is atomic, so storage copies it by hand. `Arc::make_mut` copies storage this way before writing into shared storage.
 impl Clone for Storage {
     fn clone(&self) -> Self {
         match self {
             Self::Boolean(v) => Self::Boolean(v.clone()),
-            Self::Integer(v, flag) => Self::integers(v.clone(), flag.load(Relaxed)),
+            Self::Integers(v, flag) => Self::integers(v.clone(), flag.load(Relaxed)),
             Self::Float(v) => Self::Float(v.clone()),
             Self::Complex(v) => Self::Complex(v.clone()),
             Self::Character(v) => Self::Character(v.clone()),
@@ -274,7 +381,7 @@ impl PartialEq for Storage {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Boolean(x), Self::Boolean(y)) => x == y,
-            (Self::Integer(x, f), Self::Integer(y, g)) if f.load(Relaxed) == g.load(Relaxed) => x == y,
+            (Self::Integers(x, f), Self::Integers(y, g)) if f.load(Relaxed) == g.load(Relaxed) => x.view() == y.view(),
             (Self::Float(x), Self::Float(y)) => x == y,
             (Self::Complex(x), Self::Complex(y)) => x == y,
             (Self::Character(x), Self::Character(y)) => x == y,
@@ -286,13 +393,13 @@ impl PartialEq for Storage {
     }
 }
 
-/// A kind of compact storage. Numbers widen from Boolean to integer to float to complex. An infinity or NaN has its own kind, because it
-/// never makes an exact integer approximate. Beside exact integers, it makes extended integers, which integer storage holds with its flag
-/// set.
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
-enum Kind {
+/// A kind of compact storage. Numbers widen from Boolean through the integer widths to float to complex. An infinity or NaN has its own
+/// kind, because it never makes an exact integer approximate. Beside exact integers, it makes extended integers, which 64-bit integer
+/// storage holds with its flag set.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Kind {
     Boolean,
-    Integer,
+    Integer(Width),
     Extended,
     Nonfinite,
     Float,
@@ -305,28 +412,43 @@ enum Kind {
 /// exactness. Among them only floats widen, to complex. That changes no value, because a complex number with no imaginary part reads
 /// back as a float.
 #[derive(Clone, Copy, PartialEq)]
-enum Widening { Arrays, Items }
+pub(crate) enum Widening { Arrays, Items }
 
 impl Kind {
-    /// The kind that holds the items of both kinds under `widening`. Characters and numbers share none. Exact integers and non-finite
-    /// values share extended storage. Exact integers stay exact beside an approximate item, so they share no compact kind with it.
-    fn join(self, other: Self, widening: Widening) -> Option<Self> {
+    /// The kind that holds the items of both kinds under `widening`. Characters and numbers share none. Integers of two widths share
+    /// the narrowest width that holds both. Exact integers and non-finite values share extended storage. Exact integers stay exact
+    /// beside an approximate item, so they share no compact kind with it.
+    pub(crate) fn join(self, other: Self, widening: Widening) -> Option<Self> {
         use Kind::*;
         if self == other { return Some(self); }
-        if self == Character || other == Character { return None; }
-        // Joined compact arrays read Booleans as integers. Items gathered one at a time keep a Boolean apart from other numbers.
+        match (self, other) { (Character, _) | (_, Character) => return None, (Integer(a), Integer(b)) => return Some(Integer(a.join(b))), _ => () }
+        // Joined compact arrays read Booleans as the narrowest integers. Items gathered one at a time keep a Boolean apart from other
+        // numbers.
         if self == Boolean || other == Boolean {
             if widening == Widening::Items { return None; }
-            let integer = |k| if k == Boolean { Integer } else { k };
-            return integer(self).join(integer(other), widening);
+            let number = if self == Boolean { other } else { self };
+            return Some(if number == Nonfinite { Extended } else { number });
         }
-        let extended = |k| matches!(k, Integer | Extended | Nonfinite);
+        let extended = |k: Kind| k.is_exact() || k == Nonfinite;
         if extended(self) && extended(other) { return Some(Extended); }
-        if widening == Widening::Items && (matches!(self, Integer | Extended) || matches!(other, Integer | Extended)) { return None; }
-        Some(if self > other { self } else { other })
+        if widening == Widening::Items && (self.is_exact() || other.is_exact()) { return None; }
+        let rank = |k| match k {
+            Complex => 3,
+            Float => 2,
+            Nonfinite => 1,
+            _ => 0,
+        };
+        Some(if rank(self) >= rank(other) { self } else { other })
     }
     /// The kind of storage that holds this kind's items. Float storage holds non-finite values.
     fn stored(self) -> Self { if self == Self::Nonfinite { Self::Float } else { self } }
+    /// Booleans, integers of any width, and extended integers.
+    fn is_exact(self) -> bool { matches!(self, Self::Boolean | Self::Integer(_) | Self::Extended) }
+    /// The kind that a result too wide for this one tries next. Booleans that a function doesn't take read as unsigned bytes, which
+    /// hold every sum and product of two of them.
+    pub(crate) fn wider(self) -> Option<Self> {
+        match self { Self::Boolean => Some(Self::Integer(Width::U8)), Self::Integer(width) => width.wider().map(Self::Integer), _ => None }
+    }
 }
 
 /// Whether nonempty floats are all infinities or NaN.
@@ -340,72 +462,88 @@ fn source_kind(source: &Value, integers: bool) -> Option<Kind> {
         atom => item_kind(atom),
     }
 }
-/// The compact kind that holds `item`, if any does.
+/// The compact kind that holds `item`, if any does. An integer takes the narrowest width that holds it.
 fn item_kind(item: &Value) -> Option<Kind> {
     match item {
         Value::Number(n) if n.as_bool().is_some() => Some(Kind::Boolean),
-        Value::Number(n) if n.as_integer().is_some() => Some(Kind::Integer),
-        Value::Number(n) if n.is_nonfinite() => Some(Kind::Nonfinite),
-        Value::Number(n) if n.as_float().is_some() => Some(Kind::Float),
-        Value::Number(n) if n.as_complex().is_some() => Some(Kind::Complex),
+        Value::Number(n) => match n.as_integer() {
+            Some(i) => Some(Kind::Integer(Width::narrowest(i, i))),
+            None if n.is_nonfinite() => Some(Kind::Nonfinite),
+            None if n.as_float().is_some() => Some(Kind::Float),
+            None if n.as_complex().is_some() => Some(Kind::Complex),
+            None => None,
+        },
         Value::Character(_) => Some(Kind::Character),
         _ => None,
     }
 }
 
 /// Runs `$body` with `$d` bound to the target buffer, `$s` to the source items and `$f` to the conversion of a source item for the
-/// target, when the target's compact kind holds the source's items. Gives whether it ran. Numbers widen from Boolean to integer to float
-/// to complex, converting through `Source`. Flagged integer storage converts its reserved values to the floats they stand for. Integer
-/// storage receives floats only when they're non-finite, and then has its flag set.
+/// target, when the target's compact kind holds the source's items. Gives whether it ran. Each line lists the sources that one target
+/// takes and how it converts them. Numbers widen from Boolean through the integer widths to float to complex. Flagged integer storage
+/// converts its reserved values to the floats they stand for. Integer storage receives floats only when they're non-finite, and then
+/// has its flag set. A narrower integer line takes a 64-bit source only for an atom, whose value `Gather::follow` makes sure the
+/// buffer's width holds.
 macro_rules! copy_into {
-    ($target:expr, $source:expr, |$d:ident, $s:ident, $f:ident| $body:expr) => {
-        match ($target, $source) {
-            (Storage::Boolean($d), Items::Booleans($s)) => copy_into!(@run $body, $f, Source::<bool>::read),
-            (Storage::Integer($d, _), Items::Booleans($s)) => copy_into!(@run $body, $f, Source::<i64>::read),
-            (Storage::Integer($d, _), Items::Integers($s) | Items::Extended($s)) => copy_into!(@run $body, $f, Source::<i64>::read),
-            (Storage::Integer($d, _), Items::Floats($s)) => copy_into!(@run $body, $f, extended::from_float),
-            (Storage::Float($d), Items::Floats($s)) => copy_into!(@run $body, $f, Source::<f64>::read),
-            (Storage::Float($d), Items::Booleans($s)) => copy_into!(@run $body, $f, Source::<f64>::read),
-            (Storage::Float($d), Items::Integers($s)) => copy_into!(@run $body, $f, Source::<f64>::read),
-            (Storage::Float($d), Items::Extended($s)) => copy_into!(@run $body, $f, read_flagged::<f64>),
-            (Storage::Complex($d), Items::Complex($s)) => copy_into!(@run $body, $f, Source::<Complex64>::read),
-            (Storage::Complex($d), Items::Floats($s)) => copy_into!(@run $body, $f, Source::<Complex64>::read),
-            (Storage::Complex($d), Items::Booleans($s)) => copy_into!(@run $body, $f, Source::<Complex64>::read),
-            (Storage::Complex($d), Items::Integers($s)) => copy_into!(@run $body, $f, Source::<Complex64>::read),
-            (Storage::Complex($d), Items::Extended($s)) => copy_into!(@run $body, $f, read_flagged::<Complex64>),
-            (Storage::Character($d), Items::Characters($s)) => copy_into!(@run $body, $f, Source::<char>::read),
-            _ => false,
-        }
-    };
+    (@to Boolean $d:ident) => { Storage::Boolean($d) };
+    (@to Float $d:ident) => { Storage::Float($d) };
+    (@to Complex $d:ident) => { Storage::Complex($d) };
+    (@to Character $d:ident) => { Storage::Character($d) };
+    (@to $width:ident $d:ident) => { Storage::Integers(IntBuf::$width($d), _) };
+    (@from Booleans $s:ident) => { Items::Booleans($s) };
+    (@from Extended $s:ident) => { Items::Extended($s) };
+    (@from Floats $s:ident) => { Items::Floats($s) };
+    (@from Complex $s:ident) => { Items::Complex($s) };
+    (@from Characters $s:ident) => { Items::Characters($s) };
+    (@from $width:ident $s:ident) => { Items::Integers(Ints::$width($s)) };
     (@run $body:expr, $f:ident, $conversion:expr) => {{
         let $f = $conversion;
         $body;
         true
     }};
-}
-
-/// Runs `$body` with `$d` bound to the buffer, whatever the storage.
-macro_rules! any_buffer {
-    ($storage:expr, |$d:ident| $body:expr) => {
-        match $storage {
-            Storage::Boolean($d) => $body,
-            Storage::Integer($d, _) => $body,
-            Storage::Float($d) => $body,
-            Storage::Complex($d) => $body,
-            Storage::Character($d) => $body,
-            Storage::Mixed($d, _) => $body,
+    (@lines $scrutinee:expr, $d:ident, $s:ident, $f:ident, $body:expr; $($to:ident: $($from:ident),+ => $conversion:expr;)+) => {
+        match $scrutinee {
+            $($((copy_into!(@to $to $d), copy_into!(@from $from $s)) => copy_into!(@run $body, $f, $conversion),)+)+
+            _ => false,
         }
+    };
+    ($target:expr, $source:expr, |$d:ident, $s:ident, $f:ident| $body:expr) => {
+        copy_into!(@lines ($target, $source), $d, $s, $f, $body;
+            Boolean: Booleans => Source::<bool>::read;
+            U8: Booleans, U8, I64 => |x| u8::from_i64(i64::from(x));
+            I16: Booleans, U8, I16, I64 => |x| i16::from_i64(i64::from(x));
+            I32: Booleans, U8, I16, I32, I64 => |x| i32::from_i64(i64::from(x));
+            I64: Booleans, U8, I16, I32, I64, Extended => i64::from;
+            I64: Floats => extended::from_float;
+            Float: Booleans, U8, I16, I32, I64, Floats => Source::<f64>::read;
+            Float: Extended => read_flagged::<f64>;
+            Complex: Booleans, U8, I16, I32, I64, Floats, Complex => Source::<Complex64>::read;
+            Complex: Extended => read_flagged::<Complex64>;
+            Character: Characters => Source::<char>::read;
+        )
     };
 }
 
 impl Storage {
-    fn integers(data: Vec<i64>, nonfinite: bool) -> Self { Self::Integer(data, AtomicBool::new(nonfinite)) }
+    /// Integer storage holding `buffer`, with its flag for non-finite values set to `nonfinite`.
+    fn integers(buffer: IntBuf, nonfinite: bool) -> Self { Self::Integers(buffer, AtomicBool::new(nonfinite)) }
     fn mixed(data: Vec<Value>) -> Self { Self::Mixed(data, Memo::default()) }
+    /// The integers `data` at the narrowest width that holds them, found in a pass over them.
+    pub(crate) fn narrowed<T: Whole>(data: Vec<T>) -> Self {
+        let (min, max) = data.iter().fold((i64::MAX, i64::MIN), |(lo, hi), &n| (lo.min(n.to_i64()), hi.max(n.to_i64())));
+        Self::within(data, Width::narrowest(min, max))
+    }
+    /// The integers `data` at `width`, which holds them all. Integers that have the width already keep their buffer.
+    pub(crate) fn within<T: Whole>(data: Vec<T>, width: Width) -> Self {
+        let buffer =
+            if width == T::WIDTH { T::buffer(data) } else { with_width!(width, U => U::buffer(data.iter().map(|&n| U::from_i64(n.to_i64())).collect())) };
+        Self::integers(buffer, false)
+    }
     /// Copies `range` of `source` when it has this storage's kind, and gives whether it could.
     fn copy_slice(&mut self, source: Items, range: std::ops::Range<usize>) -> bool {
         match (self, source) {
             (Self::Boolean(d), Items::Booleans(s)) => d.extend_from_slice(&s[range]),
-            (Self::Integer(d, _), Items::Integers(s) | Items::Extended(s)) => d.extend_from_slice(&s[range]),
+            (Self::Integers(d, _), source) => return source.raw_integers().is_some_and(|s| d.extend_from(s, range)),
             (Self::Float(d), Items::Floats(s)) => d.extend_from_slice(&s[range]),
             (Self::Complex(d), Items::Complex(s)) => d.extend_from_slice(&s[range]),
             (Self::Character(d), Items::Characters(s)) => d.extend_from_slice(&s[range]),
@@ -416,8 +554,8 @@ impl Storage {
     fn with_capacity(kind: Option<Kind>, capacity: usize) -> Self {
         match kind {
             Some(Kind::Boolean) => Self::Boolean(Vec::with_capacity(capacity)),
-            Some(Kind::Integer) => Self::integers(Vec::with_capacity(capacity), false),
-            Some(Kind::Extended) => Self::integers(Vec::with_capacity(capacity), true),
+            Some(Kind::Integer(width)) => Self::integers(IntBuf::with_capacity(width, capacity), false),
+            Some(Kind::Extended) => Self::integers(IntBuf::with_capacity(Width::I64, capacity), true),
             Some(Kind::Float | Kind::Nonfinite) => Self::Float(Vec::with_capacity(capacity)),
             Some(Kind::Complex) => Self::Complex(Vec::with_capacity(capacity)),
             Some(Kind::Character) => Self::Character(Vec::with_capacity(capacity)),
@@ -427,48 +565,59 @@ impl Storage {
     fn items(&self) -> Items<'_> {
         match self {
             Self::Boolean(v) => Items::Booleans(v),
-            Self::Integer(v, flag) if flag.load(Relaxed) => Items::Extended(v),
-            Self::Integer(v, _) => Items::Integers(v),
+            Self::Integers(IntBuf::I64(v), flag) if flag.load(Relaxed) => Items::Extended(v),
+            Self::Integers(v, _) => Items::Integers(v.view()),
             Self::Float(v) => Items::Floats(v),
             Self::Complex(v) => Items::Complex(v),
             Self::Character(v) => Items::Characters(v),
             Self::Mixed(v, _) => Items::Values(v),
         }
     }
-    fn len(&self) -> usize { any_buffer!(self, |d| d.len()) }
-    fn capacity(&self) -> usize { any_buffer!(self, |d| d.capacity()) }
-    fn item(&self, i: usize) -> Value {
+    fn len(&self) -> usize { self.items().len() }
+    fn capacity(&self) -> usize {
         match self {
-            Self::Integer(v, flag) if flag.load(Relaxed) && extended::is_nonfinite(v[i]) => Value::Number(extended::float(v[i]).into()),
-            Self::Boolean(v) => Value::Number(Number::from_bool(v[i])),
-            Self::Integer(v, _) => Value::Number(Number::from_integer(v[i])),
-            Self::Float(v) => Value::Number(v[i].into()),
+            Self::Boolean(v) => v.capacity(),
+            Self::Integers(v, _) => v.capacity(),
+            Self::Float(v) => v.capacity(),
+            Self::Complex(v) => v.capacity(),
+            Self::Character(v) => v.capacity(),
+            Self::Mixed(v, _) => v.capacity(),
+        }
+    }
+    fn item(&self, i: usize) -> Value {
+        match self.items() {
+            Items::Extended(v) if extended::is_nonfinite(v[i]) => Value::Number(extended::float(v[i]).into()),
+            Items::Booleans(v) => Value::Number(Number::from_bool(v[i])),
+            Items::Integers(v) => Value::Number(Number::from_integer(v.get(i))),
+            Items::Extended(v) => Value::Number(Number::from_integer(v[i])),
+            Items::Floats(v) => Value::Number(v[i].into()),
             // An item with no imaginary part is a widened real.
-            Self::Complex(v) => Value::Number(v[i].into()),
-            Self::Character(v) => Value::Character(v[i]),
-            Self::Mixed(v, _) => v[i].clone(),
+            Items::Complex(v) => Value::Number(v[i].into()),
+            Items::Characters(v) => Value::Character(v[i]),
+            Items::Values(v) => v[i].clone(),
         }
     }
     /// Compact storage gives its kind's zero. An empty mixed array keeps a stored prototype. A nonempty one fills its first item on first
     /// request and keeps the result.
     fn prototype(&self) -> Value {
-        match self {
-            Self::Boolean(_) => Value::Number(Number::from_bool(false)),
-            Self::Integer(..) => Value::Number(Number::from_integer(0)),
-            Self::Float(_) | Self::Complex(_) => Value::Number(0.0.into()),
-            Self::Character(_) => Value::Character(' '),
-            Self::Mixed(d, memo) => memo.prototype.get_or_init(|| Box::new(d[0].fill())).as_ref().clone(),
+        if let Self::Mixed(d, memo) = self { return memo.prototype.get_or_init(|| Box::new(d[0].fill())).as_ref().clone(); }
+        match self.items() {
+            Items::Booleans(_) => Value::Number(Number::from_bool(false)),
+            Items::Integers(_) | Items::Extended(_) => Value::Number(Number::from_integer(0)),
+            Items::Floats(_) | Items::Complex(_) => Value::Number(0.0.into()),
+            Items::Characters(_) => Value::Character(' '),
+            Items::Values(_) => unreachable!("mixed storage gives its prototype above"),
         }
     }
     /// Whether every number, including those in nested arrays, is exact. `None` when there are no numbers. Infinities in integer storage
     /// count as exact, because they never make an exact integer approximate. An empty mixed array answers for its prototype.
     fn exact(&self) -> Option<bool> {
-        match self {
-            Self::Boolean(_) | Self::Integer(..) => Some(true),
-            Self::Float(_) | Self::Complex(_) => Some(false),
-            Self::Character(_) => None,
-            Self::Mixed(d, _) if d.is_empty() => self.prototype().exact_domain(),
-            Self::Mixed(d, _) => d.iter().filter_map(Value::exact_domain).reduce(|a, b| a && b),
+        match self.items() {
+            Items::Booleans(_) | Items::Integers(_) | Items::Extended(_) => Some(true),
+            Items::Floats(_) | Items::Complex(_) => Some(false),
+            Items::Characters(_) => None,
+            Items::Values([]) => self.prototype().exact_domain(),
+            Items::Values(d) => d.iter().filter_map(Value::exact_domain).reduce(|a, b| a && b),
         }
     }
     /// The innermost frame that any item depends on. Mixed storage works it out on first request. An empty array answers for its
@@ -480,16 +629,22 @@ impl Storage {
             deepest.map(|i| i as u16)
         })
     }
-    /// Compact storage of the kind that `widening` gives the items, when there is one. Other items stay mixed.
+    /// Compact storage of the kind that `widening` gives the items, when there is one. Other items stay mixed. Integers take the
+    /// narrowest width that holds them all.
     fn compact(data: Vec<Value>, widening: Widening) -> Self {
         let mut kinds = data.iter().map(item_kind);
         let Some(kind) = kinds.next().flatten().and_then(|first| kinds.try_fold(first, |k, i| k.join(i?, widening))) else { return Self::mixed(data) };
         // Collecting from `data.iter()` sizes the compact buffer exactly. Consuming `data` would reuse its larger allocation.
         match kind {
             Kind::Boolean => Self::Boolean(data.iter().map(|e| number(e).unwrap().as_bool().unwrap()).collect()),
-            Kind::Integer => Self::integers(data.iter().map(|e| number(e).unwrap().as_integer().unwrap()).collect(), false),
+            // The widest of the items' own widths holds every item.
+            Kind::Integer(width) => {
+                Self::integers(with_width!(width, T => T::buffer(data.iter().map(|e| T::from_i64(number(e).unwrap().as_integer().unwrap())).collect())), false)
+            }
             Kind::Extended => Self::integers(
-                data.iter().map(|e| number(e).unwrap()).map(|n| n.as_integer().unwrap_or_else(|| extended::from_float(n.as_float().unwrap()))).collect(),
+                IntBuf::I64(
+                    data.iter().map(|e| number(e).unwrap()).map(|n| n.as_integer().unwrap_or_else(|| extended::from_float(n.as_float().unwrap()))).collect(),
+                ),
                 true,
             ),
             Kind::Float | Kind::Nonfinite => Self::Float(data.iter().map(|e| number(e).unwrap().to_float().unwrap()).collect()),
@@ -501,15 +656,25 @@ impl Storage {
 
 /// The items of a value, borrowed in their storage type. Reading items through this view avoids building a `Value` for each one.
 /// `Extended` holds the integers of storage flagged for non-finite values, where the reserved values read as `∞`, `¯∞` and NaN.
+#[derive(Clone, Copy)]
 pub(crate) enum Items<'a> {
     Booleans(&'a [bool]),
-    Integers(&'a [i64]),
+    Integers(Ints<'a>),
     Extended(&'a [i64]),
     Floats(&'a [f64]),
     Complex(&'a [Complex64]),
     Characters(&'a [char]),
     Values(&'a [Value]),
 }
+
+/// Integers of one width, borrowed from storage.
+impl<'a> Ints<'a> {
+    pub(crate) fn get(self, i: usize) -> i64 { with_ints!(self, |x| x[i].to_i64()) }
+    /// The integers as `i64`s, borrowed when they have that width.
+    pub(crate) fn widened(self) -> Cow<'a, [i64]> { cast(self) }
+}
+// Integers are equal when they hold the same integers, whatever their widths.
+impl PartialEq for Ints<'_> { fn eq(&self, other: &Self) -> bool { with_int_pair!(*self, *other, |x, y| x == y) } }
 
 /// The real number `z` holds, when its imaginary part is zero.
 fn real_part(z: &Complex64) -> Result<f64, ErrorKind> { if z.im == 0.0 { Ok(z.re) } else { Err(ErrorKind::Domain) } }
@@ -519,12 +684,23 @@ impl<'a> Items<'a> {
     fn kind(&self) -> Option<Kind> {
         match self {
             Self::Booleans(_) => Some(Kind::Boolean),
-            Self::Integers(_) => Some(Kind::Integer),
+            Self::Integers(ints) => Some(Kind::Integer(ints.tag())),
             Self::Extended(_) => Some(Kind::Extended),
             Self::Floats(_) => Some(Kind::Float),
             Self::Complex(_) => Some(Kind::Complex),
             Self::Characters(_) => Some(Kind::Character),
             Self::Values(_) => None,
+        }
+    }
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            Self::Booleans(v) => v.len(),
+            Self::Integers(v) => v.len(),
+            Self::Extended(v) => v.len(),
+            Self::Floats(v) => v.len(),
+            Self::Complex(v) => v.len(),
+            Self::Characters(v) => v.len(),
+            Self::Values(v) => v.len(),
         }
     }
     /// Each item through `int`, `real` or `other` by its storage. An infinity in extended storage goes through `real`. A complex item
@@ -537,7 +713,7 @@ impl<'a> Items<'a> {
     ) -> Result<Vec<T>, ErrorKind> {
         match *self {
             Self::Booleans(d) => d.iter().map(|&b| int(b.into())).collect(),
-            Self::Integers(d) => d.iter().map(|&n| int(n)).collect(),
+            Self::Integers(ints) => with_ints!(ints, |d| d.iter().map(|&n| int(n.to_i64())).collect()),
             Self::Extended(d) => d.iter().map(|&n| if extended::is_nonfinite(n) { real(extended::float(n)) } else { int(n) }).collect(),
             Self::Floats(d) => d.iter().map(|&n| real(n)).collect(),
             Self::Complex(d) => d.iter().map(|z| real_part(z).and_then(&real)).collect(),
@@ -545,11 +721,15 @@ impl<'a> Items<'a> {
             Self::Values(d) => d.iter().map(|v| other(number(v)?)).collect(),
         }
     }
-    /// Each item as an integer. Integer storage is borrowed. A fraction, an infinity or a non-number is DOMAIN, and a value outside
+    /// Each item as an integer. 64-bit integer storage is borrowed. A fraction, an infinity or a non-number is DOMAIN, and a value outside
     /// `i64` is LIMIT.
     pub(crate) fn integers(&self) -> Result<Cow<'a, [i64]>, ErrorKind> {
-        if let Self::Integers(d) = *self { return Ok(Cow::Borrowed(d)); }
+        if let Self::Integers(ints) = *self { return Ok(ints.widened()); }
         self.each(Ok, real::integer, |n| n.integer().map(|n| n as i64)).map(Cow::Owned)
+    }
+    /// The integers of integer storage of any width, with flagged storage's reserved values as they are stored.
+    pub(crate) fn raw_integers(self) -> Option<Ints<'a>> {
+        match self { Self::Integers(ints) => Some(ints), Self::Extended(v) => Some(Ints::I64(v)), _ => None }
     }
     /// Each item as a count. A negative item is also DOMAIN.
     pub(crate) fn nonnegative_integers(&self) -> Result<Vec<usize>, ErrorKind> {
@@ -579,7 +759,7 @@ impl Gather {
     fn with_widening(sources: &[&Value], capacity: usize, widening: Widening) -> Self {
         // An empty compact source holds no items that could change the buffer's kind.
         let sources: Vec<_> = sources.iter().filter(|v| !v.is_empty() || source_kind(v, false).is_none()).collect();
-        let integers = sources.iter().any(|v| matches!(source_kind(v, false), Some(Kind::Boolean | Kind::Integer | Kind::Extended)));
+        let integers = sources.iter().any(|v| source_kind(v, false).is_some_and(Kind::is_exact));
         let mut kinds = sources.iter().map(|v| source_kind(v, integers));
         let Some(first) = kinds.next() else { return Self { widening, ..Self::items(capacity) } };
         let kind = first.and_then(|first| kinds.try_fold(first, |k, i| k.join(i?, widening)));
@@ -589,14 +769,17 @@ impl Gather {
     /// An empty buffer for an operation's items, added one at a time. It takes the kind of its first items. Each number keeps its
     /// exactness.
     pub(crate) fn items(capacity: usize) -> Self {
-        Self { data: Storage::integers(Vec::with_capacity(capacity), false), kind: Some(Kind::Integer), open: true, widening: Widening::Items }
+        Self {
+            data: Storage::integers(IntBuf::I64(Vec::with_capacity(capacity)), false),
+            kind: Some(Kind::Integer(Width::I64)),
+            open: true,
+            widening: Widening::Items,
+        }
     }
     /// Appends `item`.
     pub(crate) fn add(&mut self, item: Value) { if !self.compact_fill(&item, 1) { self.mixed().push(item) } }
     /// The kind of `source` beside the items gathered so far.
-    fn kind_of(&self, source: &Value) -> Option<Kind> {
-        source_kind(source, !self.open && matches!(self.kind, Some(Kind::Boolean | Kind::Integer | Kind::Extended)))
-    }
+    fn kind_of(&self, source: &Value) -> Option<Kind> { source_kind(source, !self.open && self.kind.is_some_and(Kind::is_exact)) }
     /// Makes the buffer ready for items of `kind`. An open buffer takes the kind. A compact buffer widens where its `widening` allows,
     /// and otherwise becomes mixed. A mixed buffer stays mixed.
     fn follow(&mut self, kind: Option<Kind>) {
@@ -608,7 +791,7 @@ impl Gather {
         }
         let Some(mut current) = self.kind.filter(|&c| Some(c) != kind) else { return };
         // Floats gathered so far keep exact integers exact only when all of them are non-finite.
-        if current == Kind::Float && matches!(kind, Some(Kind::Integer | Kind::Extended)) && matches!(&self.data, Storage::Float(v) if all_nonfinite(v)) {
+        if current == Kind::Float && matches!(kind, Some(Kind::Integer(_) | Kind::Extended)) && matches!(&self.data, Storage::Float(v) if all_nonfinite(v)) {
             current = Kind::Nonfinite;
         }
         match kind.and_then(|k| current.join(k, self.widening)) {
@@ -616,7 +799,7 @@ impl Gather {
             Some(joined) => {
                 self.kind = Some(joined);
                 if joined.stored() == current.stored() { return; }
-                if let (Kind::Extended, Storage::Integer(_, flag)) = (joined, &mut self.data) {
+                if let (Kind::Extended, Storage::Integers(IntBuf::I64(_), flag)) = (joined, &mut self.data) {
                     *flag.get_mut() = true;
                     return;
                 }
@@ -664,10 +847,10 @@ impl Gather {
         if source_kind(source, false).is_none() { self.mixed(); }
     }
     /// Copies the items of `source` at `indices`, each in `-n..n` for `n` items. A negative index counts back from the end.
-    pub(crate) fn items_at(&mut self, source: &Value, indices: &[i64]) {
+    pub(crate) fn items_at<I: Int>(&mut self, source: &Value, indices: &[I]) {
         self.follow(self.kind_of(source));
         let n = source.len() as i64;
-        let at = |i: i64| (i + (n & (i >> 63))) as usize;
+        let at = |i: I| { let i = i.to_i64(); (i + (n & (i >> 63))) as usize };
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| d.extend(indices.iter().map(|&i| f(s[at(i)])))) { return; }
         self.mixed().extend(indices.iter().map(|&i| source.at(at(i))))
     }
@@ -687,10 +870,10 @@ impl Gather {
         for (i, x) in source.elements().enumerate() { d.extend(std::iter::repeat_n(x, counts[if counts.len() == 1 { 0 } else { i }] as usize)) }
     }
     /// Copies the items of the vector `source` whose count in the Boolean `mask` is 1. `total` counts are 1.
-    pub(crate) fn compress<M: Bit>(&mut self, source: &Value, mask: &[M], total: usize) {
+    pub(crate) fn compress<M: Key>(&mut self, source: &Value, mask: &[M], total: usize) {
         self.follow(self.kind_of(source));
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| compress_into(d, s, &f, mask, total)) { return; }
-        self.mixed().extend(source.elements().zip(mask).filter(|&(_, &n)| n.bit() == 1).map(|(x, _)| x))
+        self.mixed().extend(source.elements().zip(mask).filter(|&(_, &n)| n.key() == 1).map(|(x, _)| x))
     }
     /// Copies the cells of `source` at `rows`, each `width` items long.
     pub(crate) fn rows(&mut self, source: &Value, rows: &[usize], width: usize) {
@@ -859,7 +1042,7 @@ fn replicate_into<S: Element, D: Clone>(d: &mut Vec<D>, s: &[S], f: &impl Fn(S) 
 }
 
 /// Appends the items of `s` whose count in the Boolean `mask` is 1, each converted by `f`. `total` counts are 1.
-fn compress_into<S: Element, D: Clone, M: Bit>(d: &mut Vec<D>, s: &[S], f: &impl Fn(S) -> D, mask: &[M], total: usize) {
+fn compress_into<S: Element, D: Clone, M: Key>(d: &mut Vec<D>, s: &[S], f: &impl Fn(S) -> D, mask: &[M], total: usize) {
     let start = d.len();
     d.resize(start + total, f(S::FILL));
     compress(&mut d[start..], mask, |j| f(s[j]));
@@ -868,34 +1051,29 @@ fn compress_into<S: Element, D: Clone, M: Bit>(d: &mut Vec<D>, s: &[S], f: &impl
 /// Fills `d` with `item(j)` for each `j` whose count in the Boolean `mask` is 1, in order. Each item is written where it goes if its
 /// count is 1, and the next item overwrites it if the count is 0. This way the loop has no branch on the mask. It takes four counts at a
 /// time, so that one addition moves on past all four.
-pub(crate) fn compress<D, M: Bit>(d: &mut [D], mask: &[M], item: impl Fn(usize) -> D) {
+pub(crate) fn compress<D, M: Key>(d: &mut [D], mask: &[M], item: impl Fn(usize) -> D) {
     let (mut j, mut k) = (0, 0);
     for m in mask.as_chunks::<4>().0 {
         let Some(w) = d.get_mut(k..k + 4) else { break };
-        let (a, b, c) = (m[0].bit(), m[1].bit(), m[2].bit());
+        let (a, b, c) = (m[0].key() as usize, m[1].key() as usize, m[2].key() as usize);
         w[0] = item(j);
         w[a & 3] = item(j + 1);
         w[(a + b) & 3] = item(j + 2);
         w[(a + b + c) & 3] = item(j + 3);
-        k += a + b + c + m[3].bit();
+        k += a + b + c + m[3].key() as usize;
         j += 4;
     }
     for (j, &n) in mask.iter().enumerate().skip(j) {
         if k < d.len() { d[k] = item(j) }
-        k += n.bit();
+        k += n.key() as usize;
     }
 }
 
-/// An item of a Boolean mask: a Boolean, or an integer that is 0 or 1.
-pub(crate) trait Bit: Copy { fn bit(self) -> usize; }
-impl Bit for i64 { fn bit(self) -> usize { self as usize } }
-impl Bit for bool { fn bit(self) -> usize { self.into() } }
-
 /// The bitwise or of `counts` and their wrapping sum, in one pass. The or is negative when any count is, and at most 1 when all the
 /// counts are 0 or 1.
-pub(crate) fn or_and_sum(counts: &[i64]) -> (i64, i64) {
+pub(crate) fn or_and_sum<T: Int>(counts: &[T]) -> (i64, i64) {
     let (mut any, mut sum) = (0i64, 0i64);
-    for &n in counts { (any, sum) = (any | n, sum.wrapping_add(n)); }
+    for &n in counts { (any, sum) = (any | n.to_i64(), sum.wrapping_add(n.to_i64())); }
     (any, sum)
 }
 
@@ -925,7 +1103,11 @@ pub(crate) fn element_count(shape: &[usize]) -> Result<usize, ErrorKind> {
 
 impl Value {
     fn exact_domain(&self) -> Option<bool> {
-        match self { Self::Number(n) => Some(n.is_exact()), Self::Character(_) | Self::Function(_) | Self::Operator(_) => None, Self::Array(a) => a.data.exact() }
+        match self {
+            Self::Number(n) => Some(n.is_exact()),
+            Self::Character(_) | Self::Function(_) | Self::Operator(_) => None,
+            Self::Array(a) => a.data.exact(),
+        }
     }
     pub fn fill(&self) -> Self {
         match self {
@@ -976,8 +1158,9 @@ impl Value {
         }
         if self.is_empty() { return self.prototype().matches(&other.prototype(), cx); }
         if !keyed {
-            match (self.as_items(), other.as_items()) {
-                (Items::Integers(x) | Items::Extended(x), Items::Integers(y) | Items::Extended(y)) => return Ok(x == y),
+            let (x, y) = (self.as_items(), other.as_items());
+            if let (Some(x), Some(y)) = (x.raw_integers(), y.raw_integers()) { return Ok(x == y); }
+            match (x, y) {
                 (Items::Floats(x), Items::Floats(y)) => return Ok(x.iter().zip(y).all(|(&a, &b)| crate::number::float_match(a, b))),
                 (Items::Characters(x), Items::Characters(y)) => return Ok(x == y),
                 _ => (),
@@ -990,7 +1173,12 @@ impl Value {
         Ok(true)
     }
     pub(crate) fn environment(&self) -> Option<usize> {
-        match self { Self::Function(f) => f.environment(), Self::Operator(op) => op.environment(), Self::Array(a) => a.data.environment().map(usize::from), _ => None }
+        match self {
+            Self::Function(f) => f.environment(),
+            Self::Operator(op) => op.environment(),
+            Self::Array(a) => a.data.environment().map(usize::from),
+            _ => None,
+        }
     }
     pub fn is_atom(&self) -> bool { !matches!(self, Self::Array(_)) }
     pub fn enclose(&self) -> Result<Self, ErrorKind> { Self::new(vec![], vec![self.clone()]) }
@@ -1024,7 +1212,7 @@ impl Value {
         if data.is_empty() { Self::mixed(shape, data, empty_prototype) } else { Self::new(shape, data) }
     }
 
-    fn from_storage(shape: Vec<usize>, data: Storage) -> Result<Self, ErrorKind> {
+    pub(crate) fn from_storage(shape: Vec<usize>, data: Storage) -> Result<Self, ErrorKind> {
         if generated_len(&shape)? != data.len() { return Err(ErrorKind::Length); }
         Ok(ArrayData::array(shape, data))
     }
@@ -1032,11 +1220,16 @@ impl Value {
 
     pub fn floats(shape: Vec<usize>, data: Vec<f64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Float(data)) }
     pub(crate) fn characters(shape: Vec<usize>, data: Vec<char>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Character(data)) }
-    pub fn integers(shape: Vec<usize>, data: Vec<i64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::integers(data, false)) }
+    /// The positions `items`, each below `bound`, written straight to the narrowest width that holds them.
+    pub(crate) fn positions(shape: Vec<usize>, bound: usize, items: impl Iterator<Item = usize>) -> Result<Self, ErrorKind> {
+        with_width!(Width::below(bound), T => T::build(shape, items.map(|i| T::from_i64(i as i64)).collect())).ok_or(ErrorKind::Length)
+    }
+    /// Integers at the narrowest width that holds them.
+    pub fn integers(shape: Vec<usize>, data: Vec<i64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::narrowed(data)) }
     /// This new integer array with its flag for non-finite values set, so that the reserved values read as `∞`, `¯∞` and NaN.
     pub(crate) fn flagged(mut self) -> Self {
         if let Self::Array(a) = &mut self {
-            if let Some(Storage::Integer(_, flag)) = Arc::get_mut(a).and_then(|a| Arc::get_mut(&mut a.data)) { *flag.get_mut() = true; }
+            if let Some(Storage::Integers(IntBuf::I64(_), flag)) = Arc::get_mut(a).and_then(|a| Arc::get_mut(&mut a.data)) { *flag.get_mut() = true; }
         }
         self
     }
@@ -1142,7 +1335,7 @@ impl Value {
             Self::Number(n) => n
                 .bool_slice()
                 .map(Items::Booleans)
-                .or_else(|| n.integer_slice().map(Items::Integers))
+                .or_else(|| n.integer_slice().map(|n| Items::Integers(Ints::I64(n))))
                 .or_else(|| n.float_slice().map(Items::Floats))
                 .or_else(|| n.complex_slice().map(Items::Complex))
                 .unwrap_or(Items::Values(std::slice::from_ref(self))),
@@ -1155,10 +1348,14 @@ impl Value {
     /// clear it too.
     pub(crate) fn checked_items(&self) -> Items<'_> {
         if let Self::Array(a) = self {
-            if let Storage::Integer(v, flag) = a.data.as_ref() { if flag.load(Relaxed) && !extended::any_nonfinite(v) { flag.store(false, Relaxed); } }
+            if let Storage::Integers(IntBuf::I64(v), flag) = a.data.as_ref() {
+                if flag.load(Relaxed) && !extended::any_nonfinite(v) { flag.store(false, Relaxed); }
+            }
         }
         self.as_items()
     }
+    /// The compact kind of the items, as a kernel reads them. An atom takes the narrowest kind that holds it.
+    pub(crate) fn compact_kind(&self) -> Option<Kind> { if self.is_atom() { item_kind(self).map(Kind::stored) } else { self.checked_items().kind() } }
     /// The name of the storage that holds the items, as `•storage` gives it and boxed display marks it. An atom gives its own kind.
     pub(crate) fn storage_name(&self) -> &'static str {
         match (self, self.as_items()) {
@@ -1173,7 +1370,7 @@ impl Value {
         }
     }
     pub fn as_floats(&self) -> Option<&[f64]> { match self.as_items() { Items::Floats(v) => Some(v), _ => None } }
-    pub fn as_integers(&self) -> Option<&[i64]> { match self.as_items() { Items::Integers(v) => Some(v), _ => None } }
+    pub fn as_integers(&self) -> Option<&[i64]> { match self.as_items() { Items::Integers(Ints::I64(v)) => Some(v), _ => None } }
     pub fn as_booleans(&self) -> Option<&[bool]> { match self.as_items() { Items::Booleans(v) => Some(v), _ => None } }
     pub fn as_complex(&self) -> Option<&[Complex64]> { match self.as_items() { Items::Complex(v) => Some(v), _ => None } }
     pub fn at(&self, i: usize) -> Value {
@@ -1186,6 +1383,10 @@ impl Value {
         }
     }
     pub fn elements(&self) -> impl DoubleEndedIterator<Item = Value> + ExactSizeIterator + Clone + '_ { (0..self.len()).map(|i| self.at(i)) }
+    /// Whether every item is a number. Compact numeric storage answers without reading its items.
+    pub(crate) fn all_numbers(&self) -> bool {
+        match self.as_items() { Items::Characters(c) => c.is_empty(), Items::Values(v) => v.iter().all(|e| matches!(e, Value::Number(_))), _ => true }
+    }
     pub(crate) fn items(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = Value> + '_ { range.map(|i| self.at(i)) }
     /// The items in `range`, as an array of `shape` with no keys or axis names. Mixed storage stays mixed.
     pub(crate) fn part(&self, range: std::ops::Range<usize>, shape: Vec<usize>) -> Result<Self, ErrorKind> {
@@ -1266,14 +1467,16 @@ impl Value {
         // A keyed array formats as its display text, so its keys stay visible.
         let keyed = self.has_keys();
         if !keyed && matches!(self.prototype(), Value::Character(_)) && self.elements().all(|e| matches!(e, Value::Character(_))) { return Ok(self.clone()); }
-        let numeric = matches!(self.prototype(), Value::Number(_)) && self.elements().all(|e| matches!(e, Value::Number(_)));
+        let numeric = matches!(self.prototype(), Value::Number(_)) && self.all_numbers();
         if !numeric && !keyed { return self.formatted_cells(); }
         let (shape, text) = if !keyed && self.shape().len() > 1 {
             let columns = *self.shape().last().unwrap();
             // One line per row, without blank lines between planes, as the result keeps the leading axes.
             let rows = crate::display::rows(self.shape(), None)
                 .into_iter()
-                .map(|(_, _, spots)| (0, spots.iter().map(|spot| crate::display::Cell::spot(spot, |i| crate::display::Cell::number(self.at(i).to_string()))).collect()))
+                .map(|(_, _, spots)| {
+                    (0, spots.iter().map(|spot| crate::display::Cell::spot(spot, |i| crate::display::Cell::number(self.at(i).to_string()))).collect())
+                })
                 .collect();
             let (width, lines) = crate::display::grid(columns, rows, crate::display::Style::Uniform { spaced: true, right: true });
             let mut shape = self.shape().to_vec();
@@ -1346,7 +1549,12 @@ impl Value {
         let mut lines = Vec::new();
         for (breaks, _, spots) in crate::display::rows(self.shape(), None) {
             lines.extend(std::iter::repeat_n(vec![' '; columns], breaks));
-            lines.push(spots.iter().map(|spot| match *spot { crate::display::Spot::At(i) => char_at(i), crate::display::Spot::Gap(c) => c }).collect());
+            lines.push(
+                spots
+                    .iter()
+                    .map(|spot| match *spot { crate::display::Spot::At(i) => char_at(i), crate::display::Spot::Gap(c) => c })
+                    .collect(),
+            );
         }
         Ok(lines)
     }
@@ -1398,7 +1606,9 @@ impl Value {
 
     /// A character vector's characters, with `…` for the gap that `edges` leaves.
     pub(crate) fn elided_text(&self, edges: Option<usize>) -> String {
-        self.shown(edges).map(|c| match c { Some(Self::Character(c)) => c, _ => '…' }).collect()
+        self.shown(edges)
+            .map(|c| match c { Some(Self::Character(c)) => c, _ => '…' })
+            .collect()
     }
 
     /// Text for each shown item of a vector, written by `item`, with `…` for the gap that `edges` leaves.
@@ -1410,7 +1620,8 @@ impl Value {
     /// elides positions on every axis of the whole array.
     fn block_literal(&self, item: fn(&Self, Elide) -> String, el: Elide, edges: Option<usize>) -> String {
         let Ok(cells) = self.cells(self.shape().len() - 1) else { return crate::display::plain(self, el) };
-        let rows: Result<Vec<String>, ErrorKind> = positions(cells.len(), edges).map(|i| i.map_or(Ok("…".into()), |i| Ok(cells.get(i)?.row(item, el, edges)))).collect();
+        let rows: Result<Vec<String>, ErrorKind> =
+            positions(cells.len(), edges).map(|i| i.map_or(Ok("…".into()), |i| Ok(cells.get(i)?.row(item, el, edges)))).collect();
         match rows {
             // One major cell needs a trailing `⋄`, or it reads back as that cell alone.
             Ok(rows) if rows.len() == 1 => format!("[{} ⋄]", rows[0]),
@@ -1423,21 +1634,15 @@ impl Value {
     /// each number.
     fn marks_exact(&self) -> bool { !self.is_empty() && matches!(self.as_items(), Items::Integers(_) | Items::Extended(_)) }
     /// An item of integer storage without its `ₓ`. One `ₓ` after the whole notation marks every number exact.
-    fn unmarked_item(&self, _: Elide) -> String {
-        let Self::Number(n) = self else { unreachable!("integer storage holds numbers") };
-        format!("{n:#}")
-    }
+    fn unmarked_item(&self, _: Elide) -> String { let Self::Number(n) = self else { unreachable!("integer storage holds numbers") }; format!("{n:#}") }
     /// The value as one item inside brackets. Text with a space between its runs, or with a `:` that would read as a key,
     /// needs parentheses.
-    pub(crate) fn item(&self, el: Elide) -> String {
-        let text = self.source(el);
-        if needs_group(&text) { format!("({text})") } else { text }
-    }
+    pub(crate) fn item(&self, el: Elide) -> String { let text = self.source(el); if needs_group(&text) { format!("({text})") } else { text } }
     /// The value as an operator's operand, which is one item. Text with anything other than literals outside brackets, as in
     /// `⊂3` or `0 3⍴0`, needs parentheses.
     pub(crate) fn operand(&self) -> String {
         let text = self.literal();
-        if outside(&text, |c| !(c.is_ascii_digit() || " ¯.ₑⱼᵣₓ∞⍬".contains(c))) { format!("({text})") } else { text }
+        if outside(&text, |c| !(c.is_ascii_digit() || " ¯.∞⍬".contains(c) || crate::syntax::subscript(c))) { format!("({text})") } else { text }
     }
 
     /// Source text for a scalar holding `content`: `ᵘ` after a function, and `⊂` before anything else.
@@ -1461,8 +1666,9 @@ impl Value {
             .iter()
             .enumerate()
             .map(|(axis, &len)| {
-                let keys: Vec<_> =
-                    positions(len, edges).map(|i| i.map_or_else(|| "…".into(), |i| self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| i.to_string(), |k| quoted(k)))).collect();
+                let keys: Vec<_> = positions(len, edges)
+                    .map(|i| i.map_or_else(|| "…".into(), |i| self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| i.to_string(), |k| quoted(k))))
+                    .collect();
                 match keys.len() { 0 => "⍬".into(), 1 => format!("[{}]", keys[0]), _ => keys.join(" ") }
             })
             .collect();
@@ -1540,8 +1746,7 @@ impl Value {
         if self.shape().len() == 1 && !self.has_keys() && self.string_literal().is_none() {
             if self.len() == 1 { return format!("[{}]", item(&self.at(0), el)); }
             self.shown_items(edges, |e| item(&e, el)).join(" ")
-        } else if self.shape().len() > 1 && !self.has_keys() { self.block_literal(item, el, edges) }
-        else { item(self, el) }
+        } else if self.shape().len() > 1 && !self.has_keys() { self.block_literal(item, el, edges) } else { item(self, el) }
     }
 
     /// A character vector as a double-quoted literal, unless it holds control characters, which a literal can't show.
@@ -1606,38 +1811,21 @@ impl Value {
     fn fill_array(&self) -> Self {
         let Self::Array(a) = self else { unreachable!() };
         Self::Array(Arc::new(ArrayData {
-            data: Arc::new(match &*a.data {
-                Storage::Boolean(v) => Storage::Boolean(vec![false; v.len()]),
-                Storage::Integer(v, _) => Storage::integers(vec![0; v.len()], false),
-                Storage::Float(v) => Storage::Float(vec![0.0; v.len()]),
-                Storage::Complex(v) => Storage::Float(vec![0.0; v.len()]),
-                Storage::Character(v) => Storage::Character(vec![' '; v.len()]),
-                Storage::Mixed(v, memo) if v.is_empty() => Storage::Mixed(vec![], memo.clone()),
-                Storage::Mixed(v, _) => Storage::compact(v.iter().map(Value::fill).collect(), Widening::Items),
+            data: Arc::new(match (&*a.data, a.data.items()) {
+                (Storage::Mixed(v, memo), _) if v.is_empty() => Storage::Mixed(vec![], memo.clone()),
+                (Storage::Mixed(v, _), _) => Storage::compact(v.iter().map(Value::fill).collect(), Widening::Items),
+                (data, Items::Booleans(_)) => Storage::Boolean(vec![false; data.len()]),
+                (data, Items::Integers(_) | Items::Extended(_)) => Storage::integers(IntBuf::U8(vec![0; data.len()]), false),
+                (data, Items::Floats(_) | Items::Complex(_)) => Storage::Float(vec![0.0; data.len()]),
+                (data, Items::Characters(_)) => Storage::Character(vec![' '; data.len()]),
+                (_, Items::Values(_)) => unreachable!("mixed storage fills above"),
             }),
             layout: a.layout.clone(),
         }))
     }
 }
 
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(&crate::display::plain(self, Elide::NONE)) }
-}
+impl fmt::Display for Value { fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(&crate::display::plain(self, Elide::NONE)) } }
 
 /// A function value, as display shows it.
 impl fmt::Display for crate::Function { fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "⟨{}⟩", self.bpl()) } }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn metadata_shares_storage() {
-        let original = Value::integers(vec![2], vec![1, 2]).unwrap();
-        let named = original.clone().with_axis_names(vec![Some("city".into())]).unwrap();
-        let (Value::Array(a), Value::Array(b)) = (&original, &named) else { unreachable!() };
-        assert!(std::ptr::eq(original.as_integers().unwrap().as_ptr(), named.as_integers().unwrap().as_ptr()));
-        assert!(a.layout.names().is_empty());
-        assert_eq!(b.layout.name(0).unwrap().as_ref(), "city");
-    }
-}

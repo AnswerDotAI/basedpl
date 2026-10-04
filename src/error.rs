@@ -80,10 +80,7 @@ impl Span {
     /// and every path in code not read from a file, are relative to the working directory.
     pub(crate) fn path(&self, path: &str) -> PathBuf {
         let relative = path.starts_with("./") || path.starts_with("../");
-        match std::path::Path::new(&self.source.name).parent() {
-            Some(dir) if relative && self.source.file => dir.join(path),
-            _ => path.into(),
-        }
+        match std::path::Path::new(&self.source.name).parent() { Some(dir) if relative && self.source.file => dir.join(path), _ => path.into() }
     }
     /// A VALUE error that names the file `path`.
     pub(crate) fn file_error(&self, path: &str, e: impl std::fmt::Display) -> Error { self.error(ErrorKind::Value, format!("{path}: {e}")) }

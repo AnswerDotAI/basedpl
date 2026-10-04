@@ -75,3 +75,36 @@ pre.bqn::before { content: "BQN"; }
   background: none;
   margin-top: 0;
 }
+
+.bpl-keyboard-wrap { overflow-x: auto; }
+
+.bpl-keyboard {
+  width: 100%;
+  min-width: 42rem;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0.25rem;
+}
+
+.bpl-keyboard td {
+  position: relative;
+  height: 4.2rem;
+  padding: 0.2rem;
+  text-align: center;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.3rem;
+  background: var(--bs-tertiary-bg);
+}
+
+.bpl-keyboard td.dead { border: 2px solid #ed9227; }
+
+.bpl-keyboard .key-shift,
+.bpl-keyboard .key-option {
+  display: block;
+  font-family: var(--bpl-font), monospace;
+}
+
+.bpl-keyboard .key-shift { height: 1.1rem; font-size: 0.9rem; }
+.bpl-keyboard .key-option { height: 2rem; font-size: 1.7rem; line-height: 1.1; }
+.bpl-keyboard .key-label { position: absolute; bottom: 0.1rem; left: 0.3rem; font-size: 0.7rem; }
+.bpl-keyboard .key-name { font-size: 0.8rem; }

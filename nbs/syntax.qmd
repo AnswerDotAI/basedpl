@@ -26,7 +26,7 @@ Numbers, `∞`, `¯∞`, `⍬`, characters, strings and the constants `$t`, `$f`
 
 After a number, a plain `e`, `j` or `r` continues the number only when the rest of a number follows it, as in `1e5`, `2j3` and `1r3`. Otherwise it starts a name. `2edges` is `2` beside the name `edges`. The subscripts `ₑ`, `ⱼ` and `ᵣ` always continue the number.
 
-Literals separated by spaces form a [strand](terms.qmd#term-strand), which is one vector. Names never join a literal strand. System constants such as `•a` are names. BPL forms strands before it forms runs. Inside brackets without `;`, a space separates items and forms no strand.
+Literals separated by spaces form a [strand](terms.qmd#term-strand), which is one vector. Literals that touch stay separate, as `3` and `'b'` do in `'a',⍣3'b'`. Names never join a literal strand. System constants such as `•a` are names. BPL forms strands before it forms runs. Inside brackets without `;`, a space separates items and forms no strand.
 
 `⍝` starts a comment, which ends at the end of the line.
 

@@ -9,6 +9,7 @@ website:
       - section: Reference
         contents:
           - glyphs.qmd
+          - keyboard.qmd
           - syntax.qmd
           - evaluation.qmd
           - terms.qmd

@@ -2,11 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleIdentifier</key>
-	<string>org.basedpl.keyboardlayout.basedpl</string>
-	<key>CFBundleName</key>
-	<string>BasedPL</string>
-	<key>CFBundleVersion</key>
+	<key>BuildVersion</key>
+	<string></string>
+	<key>ProjectName</key>
+	<string>BasedPL-us</string>
+	<key>SourceVersion</key>
 	<string></string>
 </dict>
 </plist>

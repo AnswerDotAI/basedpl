@@ -606,13 +606,13 @@ v←1 2 3 ⋄ ⊂v ≡ ⊂1 2 3   ⍝ $t
 (2 3⍴⍳9) {⍺,⍵}⍤0 [2 3]⍴⍳9   ⍝ [[0 0 ⋄ 1 1 ⋄ 2 2] ⋄ [3 3 ⋄ 4 4 ⋄ 5 5]]
 
 ⍝ april:807 —
-"UNDER",⍠0.0('-')   ⍝ "UNDER-"
+"UNDER",⍠0.0'-'   ⍝ "UNDER-"
 
 ⍝ april:808 —
 ↓⊃["UNDER";5⍴'-']   ⍝ "UNDER" "-----"
 
 ⍝ april:810 —
-↓"HELLO"{⍺,⍵}⍤0('.')   ⍝ "H." "E." "L." "L." "O."
+↓"HELLO"{⍺,⍵}⍤0'.'   ⍝ "H." "E." "L." "L." "O."
 
 ⍝ april:811 —
 (8+2 2 2⍴⍳8){⊃[⍺ ⍵]}⍤2(2 2 2⍴⍳8)
@@ -6007,12 +6007,12 @@ enlist ,↢⊂/⍳5
 66666ₓ
 
 ⍝ april/libraries/dfns/power/demo.lisp:37 —
-{'<',⍵,'>'}⍣6("wow")
+{'<',⍵,'>'}⍣6"wow"
 ⍝ =>
 "<<<<<<wow>>>>>>"
 
 ⍝ april/libraries/dfns/power/demo.lisp:38 —
-⊂⍣4("wow")
+⊂⍣4"wow"
 ⍝ =>
 ⊂⊂⊂⊂"wow"
 

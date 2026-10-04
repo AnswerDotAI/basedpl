@@ -326,7 +326,7 @@ sales←["city":["NY" "LA"] "month":["Jan" "Feb" "Mar"]]:[10 20 30 ⋄ 40 50 60]
 
 ### Rank with a numeric operand
 
-An operator takes one item to its right. In APL, `⊢` separates the operand `1` from the argument, because arrays side by side strand into one operand. BPL has the same problem only with literals: `1 2 3` is one strand. A space ends the operand. Write a literal argument in brackets to keep it out of the operand. With a name as the argument, the space is enough: `+/⍤1 m`.
+An operator takes one item to its right. In APL, `⊢` separates the operand `1` from the argument, because arrays side by side strand into one operand. BPL has the same problem only with literals separated by spaces: `1 2 3` is one strand. A space ends the operand. Write a literal argument in brackets to keep it out of the operand. With a name as the argument, the space is enough: `+/⍤1 m`.
 
 ```dyalog
 +/⍤1⊢2 3⍴⍳6

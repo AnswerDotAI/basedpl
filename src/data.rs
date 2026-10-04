@@ -1,4 +1,10 @@
-use crate::{execution::Context, keyed, primitive::real, DomainAt, Error, ErrorAt, ErrorKind, Number, Value};
+use crate::{
+    array::{Ints, Items, Storage, Width},
+    execution::Context,
+    keyed,
+    primitive::real,
+    DomainAt, Error, ErrorAt, ErrorKind, Number, Value,
+};
 use foldhash::{HashMap, HashMapExt};
 use std::{fs::OpenOptions, io::Write};
 
@@ -99,11 +105,12 @@ fn file_options(name: &'static str, left: Option<&Value>, shorthand: Option<&str
     Ok(opts)
 }
 
-/// `data` as a vector of byte values.
-pub(crate) fn byte_vector(data: Vec<u8>) -> Result<Value, ErrorKind> { Value::integers(vec![data.len()], data.into_iter().map(i64::from).collect()) }
+/// `data` as a vector of byte values, one byte each.
+pub(crate) fn byte_vector(data: Vec<u8>) -> Result<Value, ErrorKind> { Value::from_storage(vec![data.len()], Storage::within(data, Width::U8)) }
 
 /// The bytes in an array of integers from 0 to 255, in ravel order.
 pub(crate) fn bytes(value: &Value, span: &Context<'_>) -> Result<Vec<u8>, Error> {
+    if let Items::Integers(Ints::U8(v)) = value.as_items() { return Ok(v.to_vec()); }
     let invalid = || span.domain_error("bytes must be integral numbers in 0..255");
     value.as_items().nonnegative_integers().map_err(|_| invalid())?.into_iter().map(|n| u8::try_from(n).map_err(|_| invalid())).collect()
 }

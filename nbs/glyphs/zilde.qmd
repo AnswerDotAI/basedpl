@@ -1,6 +1,6 @@
 # `⍬` — Empty vector
 
-Keys: `Alt-o ~`
+Keys: `Alt-Shift-0`
 
 `⍬` is an empty approximate numeric vector: `0⍴0`. `[]` is the same value.
 

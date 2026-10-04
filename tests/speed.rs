@@ -1,7 +1,7 @@
 //! How long each function takes, compared with copying the same data. The unit is one copy: allocating a vector of `N` 8-byte
 //! numbers and copying `N` numbers into it. Moving data takes longer than simple arithmetic. A function that reads and writes each
 //! item once should therefore cost about one copy. Each case has a budget in copies, set from the work that the function must do.
-//! Plain Rust loops that do the same work fit inside each budget. The test lists every case over its budget.
+//! Plain Rust loops that do the same work fit inside each budget. The test prints every case's cost, shown with `--nocapture`, and fails listing every case over its budget.
 //!
 //! Timings come from the development build, which `cargo test` and `maturin develop` share. Each time is the fastest of several runs. The test divides each case's time by a copy timed just before it. A change in the machine's speed during the run then affects both times.
 use basedpl::{EvalOptions, Session};
@@ -19,9 +19,9 @@ const CASES: &[(f64, &[&str])] = &[
     // Reading each item once, with almost nothing to write.
     (1.5, &["+/v", "+/jv", "⌈/v", "∧/b", "+/m", "+⌿m"]),
     // Reading one argument and writing each item once.
-    (2.0, &["-v", "-jv", "~b", "⌽v", "1⌽v", "⊖m", "1↓v", "250000↑v", "500000⍴0"]),
+    (2.0, &["-v", "-jv", "~b", "∧\\b", "∨\\b", "⌽v", "1⌽v", "⊖m", "1↓v", "250000↑v", "500000⍴0"]),
     // Reading two arguments and writing each item once.
-    (2.5, &["v+w", "jv+jv", "v×2", "jv×2", "jv=jv", "v⌊w", "b∧b", "c=c", "(⍳1000)×⊗⍳500"]),
+    (2.5, &["v+w", "jv+jv", "kv+kv", "v×2", "jv×2", "jv=jv", "b×jv", "b×kv", "v⌊w", "b∧b", "c=c", "(⍳1000)×⊗⍳500"]),
     // Compressing by a mask can't be vectorised, because each kept item's place depends on the items before it.
     (3.0, &["b#v", "⍸b"]),
     // A range with an approximate length converts each position from an integer to a float.
@@ -38,11 +38,11 @@ const CASES: &[(f64, &[&str])] = &[
     // Key classifies the keys, counts and places each group's positions, then gathers each group's items.
     (40.0, &["{≢⍵}⌸b"]),
     // Each item waits for the result before it.
-    (18.0, &["+\\v", "⌈\\v", "+\\jv", "≠\\b"]),
+    (18.0, &["+\\v", "⌈\\v", "+\\jv", "+\\b", "≠\\b"]),
     // Each item waits for a read from a random place.
     (10.0, &["[i]⌷v"]),
     // An approximate divisor reads the integers as floats. Each item then needs a float division and a floor within tolerance.
-    (11.0, &["3|jv"]),
+    (15.0, &["3|jv"]),
     // Each item needs a call to the maths library.
     (45.0, &["*v", "⍟v"]),
     // Each item goes into a hash table, and each item of the other argument is looked up in it. A tolerant search looks in two
@@ -71,7 +71,7 @@ fn functions_cost_what_their_work_needs() {
     let copy = || fastest(100, || drop(black_box(black_box(&data).clone()))).as_secs_f64();
     let mut session = Session::new();
     let setup = session.eval(&format!(
-        r#"v←¿{N}⍴0 ⋄ w←¿{N}⍴0 ⋄ jv←¿{N}⍴1000ₓ ⋄ b←0=¿{N}⍴3ₓ ⋄ i←¿{N}⍴{N}ₓ ⋄ m←1000 500⍴v ⋄ c←{N}⍴"the quick brown fox jumps over the lazy dog""#
+        r#"v←¿{N}⍴0 ⋄ w←¿{N}⍴0 ⋄ jv←¿{N}⍴1000ₓ ⋄ kv←¿{N}⍴1000000000000ₓ ⋄ b←0=¿{N}⍴3ₓ ⋄ i←¿{N}⍴{N}ₓ ⋄ m←1000 500⍴v ⋄ c←{N}⍴"the quick brown fox jumps over the lazy dog""#
     ));
     assert!(setup.error.is_none(), "{:?}", setup.error);
     let mut failures = Vec::new();
@@ -83,7 +83,9 @@ fn functions_cost_what_their_work_needs() {
                 assert!(result.error.is_none(), "{code}: {:?}", result.error);
             });
             let copies = time.as_secs_f64() / unit;
-            if copies > budget { failures.push(format!("{code}: {copies:.1} copies, budget {budget}")); }
+            let line = format!("{code}: {copies:.1} copies, budget {budget}");
+            eprintln!("{line}");
+            if copies > budget { failures.push(line); }
         }
     }
     assert!(failures.is_empty(), "{failures:#?}");

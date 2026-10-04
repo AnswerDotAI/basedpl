@@ -153,10 +153,14 @@ fn real_literal(chars: &mut Peekable<CharIndices<'_>>) -> Result<(), &'static st
 
 /// A numeric suffix: the plain letters that spell it, and its subscript.
 type Suffix = (&'static [char], char);
-const EXPONENT: Suffix = (&['e', 'E'], 'ₑ');
+pub(crate) const EXPONENT: Suffix = (&['e', 'E'], 'ₑ');
 const IMAGINARY: Suffix = (&['J', 'j'], 'ⱼ');
 const DENOMINATOR: Suffix = (&['r'], 'ᵣ');
 const EXACT: Suffix = (&[], 'ₓ');
+const SUFFIXES: [Suffix; 4] = [EXPONENT, IMAGINARY, DENOMINATOR, EXACT];
+
+/// Whether `c` is the subscript of a numeric suffix.
+pub(crate) fn subscript(c: char) -> bool { SUFFIXES.iter().any(|s| s.1 == c) }
 
 /// Whether `chars` starts a part of a number: a digit, `¯`, `∞`, or a point before a digit.
 fn number_part(mut chars: impl Iterator<Item = (usize, char)>) -> bool {
@@ -171,11 +175,7 @@ fn number_part(mut chars: impl Iterator<Item = (usize, char)>) -> bool {
 /// letter before anything else starts a name, so `2edges` is `2` beside `edges`.
 fn suffix_follows(chars: &Peekable<CharIndices<'_>>, (plain, sub): Suffix) -> bool {
     let mut ahead = chars.clone();
-    match ahead.next() {
-        Some((_, c)) if c == sub => true,
-        Some((_, c)) if plain.contains(&c) => number_part(ahead),
-        _ => false,
-    }
+    match ahead.next() { Some((_, c)) if c == sub => true, Some((_, c)) if plain.contains(&c) => number_part(ahead), _ => false }
 }
 
 /// Consumes `suffix` when it comes next, and gives whether it did.
@@ -188,7 +188,12 @@ fn suffix(chars: &mut Peekable<CharIndices<'_>>, suffix: Suffix) -> bool {
 /// The number that literal text writes, read by `Number::parse` after each subscript suffix becomes its plain letter. `•vfi`
 /// shares `Number::parse` and reads only the plain letters.
 fn literal_number(text: &str) -> Result<Number, ErrorKind> {
-    Number::parse(&text.chars().map(|c| match c { 'ₑ' => 'e', 'ⱼ' => 'j', 'ᵣ' => 'r', c => c }).collect::<String>())
+    Number::parse(
+        &text
+            .chars()
+            .map(|c| SUFFIXES.iter().find(|s| s.1 == c).and_then(|s| s.0.first()).copied().unwrap_or(c))
+            .collect::<String>(),
+    )
 }
 
 /// A number written inside `[…]ₓ`. An integer's digits read exactly, and a whole float becomes exact.
@@ -236,14 +241,14 @@ fn position(chars: &mut Peekable<CharIndices<'_>>, len: usize) -> usize { chars.
 /// The end of a character that would run on from a numeric literal: a point, a numeric suffix, or a digit when `digit` is set.
 fn run_on(chars: &mut Peekable<CharIndices<'_>>, digit: bool) -> Option<usize> {
     let &(i, c) = chars.peek()?;
-    let suffix = [EXPONENT, IMAGINARY, DENOMINATOR, EXACT].into_iter().any(|s| suffix_follows(chars, s));
+    let suffix = SUFFIXES.into_iter().any(|s| suffix_follows(chars, s));
     ((digit && c.is_ascii_digit()) || c == '.' || suffix).then(|| i + c.len_utf8())
 }
 
 /// Whether `c` can start or continue a name: a letter that isn't a glyph, a superscript or a numeric suffix, or `_`, `∆` or
 /// `⍙`. Digits end a name.
 pub(crate) fn name_char(c: char) -> bool {
-    ((c.is_alphabetic() && !matches!(c, 'ᵀ' | 'ᵘ' | 'ₓ' | 'ⱼ' | 'ₑ' | 'ᵣ')) || matches!(c, '_' | '∆' | '⍙')) && Primitive::from_glyph(c).is_none()
+    ((c.is_alphabetic() && !(matches!(c, 'ᵀ' | 'ᵘ') || subscript(c))) || matches!(c, '_' | '∆' | '⍙')) && Primitive::from_glyph(c).is_none()
 }
 
 const SUPERSCRIPT_DIGITS: &str = "⁰¹²³⁴⁵⁶⁷⁸⁹";
@@ -702,7 +707,8 @@ fn subscripts_follow_items(nodes: &[Node]) -> Result<(), ParseFailure> {
     Ok(())
 }
 
-/// Literals separated only by spaces form a strand, which becomes one vector literal.
+/// Literals separated by spaces form a strand, which becomes one vector literal. A literal that touches the one before it starts a new
+/// strand: in `⍣3'b'`, `3` is the operand and `'b'` the argument.
 fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
     let (mut out, mut strand) = (Vec::with_capacity(nodes.len()), Vec::new());
     let mut nodes = nodes.into_iter().peekable();
@@ -723,6 +729,7 @@ fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
                 node.kind = NodeKind::Literal(Value::Number(raised));
                 nodes.next();
             }
+            if strand.last().is_some_and(|last| touching(last, &node)) { close_strand(&mut strand, &mut out)?; }
             strand.push(node);
             continue;
         }

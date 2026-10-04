@@ -23,12 +23,13 @@ x←5 ⋄ x 1 2                ⍝ [5 [1 2]]
 
 ## Operators and operands
 
-Operators bind before functions apply. An operator's left [operand](terms.qmd#term-operand) is the whole function to its left. Its right operand is the one item to its right, which ends at the next space. A literal strand counts as one item: in `f⍤1 2 M`, the rank is `1 2`. Put a vector argument after a literal operand in brackets, as in `f⍤1[2 3]`. Put a single number there in parentheses, as in `f⍣¯2(5)`.
+Operators bind before functions apply. An operator's left [operand](terms.qmd#term-operand) is the whole function to its left. Its right operand is the one item to its right, which ends at the next space. A literal strand counts as one item: in `f⍤1 2 M`, the rank is `1 2`. Put a vector argument after a literal operand in brackets, as in `f⍤1[2 3]`. An argument that touches the operand stays out of it: `+/⍤1m` applies `+/⍤1` to `m`, and `'a',⍣3'b'` applies `'a',⍣3` to `'b'`. A number argument after a number operand needs parentheses, as in `f⍣¯2(5)`, where `f⍣¯25` would read `¯25` as the operand.
 
 A run that ends in a dyadic operator takes the next run as its right operand, as if no space came between them. A name that holds a dyadic operator counts. In `⌊⌾ 10× x`, the right operand of `⌾` is `10×`.
 
 ```bpl
 m←2 3⍴⍳6 ⋄ +/⍤1 m               ⍝ 3 12
+m←2 3⍴⍳6 ⋄ +/⍤1m                ⍝ 3 12
 m←2 3⍴⍳6 ⋄ +/⍤ 1 m              ⍝ 3 12
 x←5 ⋄ 1+⍣3 x                     ⍝ 8
 1+⍣3(5)                          ⍝ 8

@@ -819,8 +819,8 @@ T←"ONE(TWO) BOOK(S)"⋄(T∊"()")⍱≠\T∊"()" # T   ⍝ "ONE BOOK"
 ⍝ ngn:264 —
 "abca"∩"dac"   ⍝ "aca"
 
-⍝ ngn:265 —
-1'2'3∩⍳5   ⍝ 1 3
+⍝ ngn:265 — Only spaces build strands, so the strand is spaced
+1 '2' 3∩⍳5   ⍝ 1 3
 
 ⍝ ngn:266 — A unit can't be searched, so the searched argument is a one-item vector
 1∩[2]   ⍝ ⍬
@@ -1547,7 +1547,7 @@ f←{⍺+2×⍵}⋄f/⍬
 ⍴⍣3 [2 2]⍴⍳4   ⍝ [1]ₓ
 
 ⍝ ngn:499 —
-'a',⍣3('b')   ⍝ "aaab"
+'a',⍣3'b'   ⍝ "aaab"
 
 ⍝ ngn:500 —
 1{⍺+÷⍵}⍣=1   ⍝ 1.618033988749897

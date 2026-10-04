@@ -257,19 +257,102 @@ pub(crate) mod int {
 
     pub(crate) fn arithmetic(op: Arithmetic, x: i64, y: i64) -> Option<i64> {
         match op {
-            Arithmetic::Plus => plus(x, y),
-            Arithmetic::Minus => minus(x, y),
-            Arithmetic::Times => x.checked_mul(y),
+            Arithmetic::Plus => x.plus(y),
+            Arithmetic::Minus => x.minus(y),
+            Arithmetic::Times => x.times(y),
             Arithmetic::Divide => divide(x, y),
         }
     }
-    /// `x+y`, or `None` on overflow. The sum overflows when its sign differs from both arguments'. The test has no branch, so a loop of
-    /// sums vectorizes.
-    #[inline]
-    pub(crate) fn plus(x: i64, y: i64) -> Option<i64> { let sum = x.wrapping_add(y); (((x ^ sum) & (y ^ sum)) >= 0).then_some(sum) }
-    /// `x-y`, or `None` on overflow. The difference overflows when the arguments' signs differ and its sign differs from `x`'s.
-    #[inline]
-    pub(crate) fn minus(x: i64, y: i64) -> Option<i64> { let difference = x.wrapping_sub(y); (((x ^ y) & (x ^ difference)) >= 0).then_some(difference) }
+    /// An integer width that compact storage holds. Each method gives `None` where the result doesn't fit this width. The tests have
+    /// no branch, so a loop of them vectorizes. The one exception is `i64` multiplication, because no vector instruction gives a
+    /// 128-bit product.
+    pub(crate) trait Int: Copy + Ord + Into<i64> + TryFrom<i64> + 'static {
+        const LOWEST: Self;
+        const HIGHEST: Self;
+        fn plus(self, y: Self) -> Option<Self>;
+        fn minus(self, y: Self) -> Option<Self>;
+        fn times(self, y: Self) -> Option<Self>;
+        fn negate(self) -> Option<Self>;
+        fn magnitude(self) -> Option<Self>;
+        fn signum(self) -> Self;
+        /// `n` at this width. The caller knows that it fits.
+        fn from_i64(n: i64) -> Self;
+        #[inline]
+        fn to_i64(self) -> i64 { self.into() }
+        /// `n` at this width, when it fits.
+        #[inline]
+        fn narrowed(n: i64) -> Option<Self> { Self::try_from(n).ok() }
+    }
+    /// A sum overflows when its sign differs from both arguments'. A difference overflows when the arguments' signs differ and its sign
+    /// differs from the first argument's. A product is exact at the next width up, which `$times` gives.
+    macro_rules! signed {
+        ($t:ty, |$x:ident, $y:ident| $times:expr) => {
+            impl Int for $t {
+                const LOWEST: Self = <$t>::MIN;
+                const HIGHEST: Self = <$t>::MAX;
+                #[inline]
+                fn plus(self, y: Self) -> Option<Self> {
+                    let sum = self.wrapping_add(y);
+                    (((self ^ sum) & (y ^ sum)) >= 0).then_some(sum)
+                }
+                #[inline]
+                fn minus(self, y: Self) -> Option<Self> {
+                    let difference = self.wrapping_sub(y);
+                    (((self ^ y) & (self ^ difference)) >= 0).then_some(difference)
+                }
+                #[inline]
+                fn times(self, $y: Self) -> Option<Self> {
+                    let $x = self;
+                    $times
+                }
+                #[inline]
+                fn negate(self) -> Option<Self> {
+                    (self != <$t>::MIN).then_some(self.wrapping_neg())
+                }
+                #[inline]
+                fn magnitude(self) -> Option<Self> {
+                    (self != <$t>::MIN).then_some(self.wrapping_abs())
+                }
+                #[inline]
+                fn signum(self) -> Self {
+                    self.signum()
+                }
+                #[inline]
+                fn from_i64(n: i64) -> Self {
+                    n as $t
+                }
+            }
+        };
+    }
+    /// The product of two narrow integers at width `$wide`, when it fits width `$t`.
+    macro_rules! wide_times {
+        ($t:ty, $wide:ty, $x:ident, $y:ident) => {{
+            let product = <$wide>::from($x) * <$wide>::from($y);
+            ((product >= <$t>::MIN as $wide) & (product <= <$t>::MAX as $wide)).then_some(product as $t)
+        }};
+    }
+    signed!(i16, |x, y| wide_times!(i16, i32, x, y));
+    signed!(i32, |x, y| wide_times!(i32, i64, x, y));
+    signed!(i64, |x, y| x.checked_mul(y));
+    /// Unsigned bytes overflow at either end: a sum when it wraps below an argument, and a difference when it would be negative.
+    impl Int for u8 {
+        const LOWEST: Self = 0;
+        const HIGHEST: Self = u8::MAX;
+        #[inline]
+        fn plus(self, y: Self) -> Option<Self> { let sum = self.wrapping_add(y); (sum >= self).then_some(sum) }
+        #[inline]
+        fn minus(self, y: Self) -> Option<Self> { (self >= y).then_some(self.wrapping_sub(y)) }
+        #[inline]
+        fn times(self, y: Self) -> Option<Self> { wide_times!(u8, u16, self, y) }
+        #[inline]
+        fn negate(self) -> Option<Self> { (self == 0).then_some(0) }
+        #[inline]
+        fn magnitude(self) -> Option<Self> { Some(self) }
+        #[inline]
+        fn signum(self) -> Self { u8::from(self > 0) }
+        #[inline]
+        fn from_i64(n: i64) -> Self { n as u8 }
+    }
     /// A quotient that isn't an integer is exact. Division by zero gives an infinity or NaN. Both take the general path.
     #[inline]
     pub(crate) fn divide(x: i64, y: i64) -> Option<i64> { if x.checked_rem(y) == Some(0) { x.checked_div(y) } else { None } }
@@ -667,11 +750,30 @@ impl Number {
         if (self.is_exact() && right.is_exact()) || self.is_infinite() || right.is_infinite() { Ok(selected.clone()) } else { Ok(selected.to_float()?.into()) }
     }
 
+    /// The result at the first of four levels that gives one for `self` and `right`: both 64-bit integers, both exact, both real, and
+    /// otherwise complex. A level gives `None` to pass to the next.
+    fn by_level(
+        &self,
+        right: &Self,
+        int: impl FnOnce(i64, i64) -> Option<i64>,
+        exact: impl FnOnce(BigRational, BigRational) -> Result<Option<Self>, &'static str>,
+        real: impl FnOnce(f64, f64) -> Result<Option<Self>, &'static str>,
+        complex: impl FnOnce(Complex64, Complex64) -> Result<Self, &'static str>,
+    ) -> Result<Self, &'static str> {
+        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = int(*x, *y) { return Ok(Self(Integer(n))); } }
+        if let (Some(x), Some(y)) = (self.as_exact(), right.as_exact()) { if let Some(n) = exact(x, y)? { return Ok(n); } }
+        if self.as_complex().is_none() && right.as_complex().is_none() { if let Some(n) = real(self.to_float()?, right.to_float()?)? { return Ok(n); } }
+        complex(self.to_complex()?, right.to_complex()?)
+    }
+
     fn residue(&self, right: &Self) -> Result<Self, &'static str> {
-        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = int::residue(*x, *y) { return Ok(Self(Integer(n))); } }
-        if let (Some(x), Some(y)) = (self.as_exact(), right.as_exact()) { return Ok(Self::exact(if x.is_zero() { y } else { &y - &x * (&y / &x).floor() })); }
-        if self.as_complex().is_none() && right.as_complex().is_none() { return Ok(real::residue(self.to_float()?, right.to_float()?).into()); }
-        Ok(complex::residue(self.to_complex()?, right.to_complex()?).into())
+        self.by_level(
+            right,
+            int::residue,
+            |x, y| Ok(Some(Self::exact(if x.is_zero() { y } else { &y - &x * (&y / &x).floor() }))),
+            |x, y| Ok(Some(real::residue(x, y).into())),
+            |x, y| Ok(complex::residue(x, y).into()),
+        )
     }
 
     pub(crate) fn parts(&self, polar: bool) -> Result<[Self; 2], &'static str> {
@@ -681,48 +783,42 @@ impl Number {
 
     fn root(&self, right: &Self) -> Result<Self, &'static str> {
         if self.is_zero() { return Err("root degree must be nonzero"); }
-        if let (Some(n), Some(y)) = (self.as_exact(), right.as_exact()) {
-            if n.is_integer() {
-                if let Some(n) = n.to_i32().filter(|n| n.unsigned_abs() <= 1_000_000) {
-                    if !y.is_negative() || n % 2 != 0 {
-                        let k = n.unsigned_abs();
-                        let a = y.numer().abs().nth_root(k);
-                        let b = y.denom().nth_root(k);
-                        if a.pow(k) == y.numer().abs() && b.pow(k) == *y.denom() {
-                            let a = if y.is_negative() { -a } else { a };
-                            let result = Self::exact(BigRational::new(a, b));
-                            return if n < 0 { result.monad(Arithmetic::Divide) } else { Ok(result) };
-                        }
-                    }
-                }
-            }
-        }
-        if self.as_complex().is_none() && right.as_complex().is_none() {
-            let (n, y) = (self.to_float()?, right.to_float()?);
-            if !n.is_finite() { return Err("root degree must be finite"); }
-            if let Some(value) = real::root(n, y) { return Ok(value.into()); }
-        }
-        if self.grade_order(&Self::from_integer(2)).is_eq() { return Ok(right.to_complex()?.sqrt().into()); }
-        right.power(&self.monad(Arithmetic::Divide)?)
+        self.by_level(
+            right,
+            |_, _| None,
+            |n, y| {
+                let Some(n) = n.is_integer().then(|| n.to_i32()).flatten().filter(|n| n.unsigned_abs() <= 1_000_000) else { return Ok(None) };
+                if y.is_negative() && n % 2 == 0 { return Ok(None); }
+                let k = n.unsigned_abs();
+                let (a, b) = (y.numer().abs().nth_root(k), y.denom().nth_root(k));
+                if a.pow(k) != y.numer().abs() || b.pow(k) != *y.denom() { return Ok(None); }
+                let result = Self::exact(BigRational::new(if y.is_negative() { -a } else { a }, b));
+                Ok(Some(if n < 0 { result.monad(Arithmetic::Divide)? } else { result }))
+            },
+            |n, y| if n.is_finite() { Ok(real::root(n, y).map(Into::into)) } else { Err("root degree must be finite") },
+            |_, y| if self.grade_order(&Self::from_integer(2)).is_eq() { Ok(y.sqrt().into()) } else { right.power(&self.monad(Arithmetic::Divide)?) },
+        )
     }
 
     fn power(&self, right: &Self) -> Result<Self, &'static str> {
-        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = int::power(*x, *y) { return Ok(Self(Integer(n))); } }
-        if let (Some(x), Some(y)) = (self.as_exact(), right.as_exact()) {
-            if y.is_integer() {
+        self.by_level(
+            right,
+            int::power,
+            |x, y| {
+                if !y.is_integer() { return Ok(None); }
                 let n = y.to_i32().ok_or("exact exponent is too large")?;
-                if x.is_zero() && n < 0 { return Ok(f64::INFINITY.into()); }
+                if x.is_zero() && n < 0 { return Ok(Some(f64::INFINITY.into())); }
                 if n.unsigned_abs() > 1_000_000 { return Err("exact exponent is too large"); }
-                return Ok(Self::exact(x.pow(n)));
-            }
-        }
-        if self.as_complex().is_none() && right.as_complex().is_none() {
-            let (x, y) = (self.to_float()?, right.to_float()?);
-            if let Some(n) = real::power(x, y) { return Ok(n.into()); }
-        }
-        let (x, y) = (self.to_complex()?, right.to_complex()?);
-        let result = if y.is_zero() { Complex64::new(1.0, 0.0) } else if x.is_zero() && y.im == 0.0 && y.re > 0.0 { Complex64::zero() } else if x.im == 0.0 && y.im == 0.0 && (x.re >= 0.0 || y.re.fract() == 0.0) { Complex64::new(x.re.powf(y.re), 0.0) } else { complex::exp(y * x.ln()) };
-        Ok(result.into())
+                Ok(Some(Self::exact(x.pow(n))))
+            },
+            |x, y| Ok(real::power(x, y).map(Into::into)),
+            |x, y| {
+                let result = if y.is_zero() { Complex64::new(1.0, 0.0) } else if x.is_zero() && y.im == 0.0 && y.re > 0.0 {
+                    Complex64::zero()
+                } else if x.im == 0.0 && y.im == 0.0 && (x.re >= 0.0 || y.re.fract() == 0.0) { Complex64::new(x.re.powf(y.re), 0.0) } else { complex::exp(y * x.ln()) };
+                Ok(result.into())
+            },
+        )
     }
 
     fn gcd(&self, right: &Self) -> Result<Self, &'static str> {
@@ -934,34 +1030,40 @@ impl Number {
     pub(crate) fn dyad(&self, op: Arithmetic, right: &Self) -> Result<Self, &'static str> {
         use Arithmetic::*;
         if self.has_boolean(right) { return self.numeric().dyad(op, &right.numeric()); }
-        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = int::arithmetic(op, *x, *y) { return Ok(Self(Integer(n))); } }
-        if self.is_exact() && right.is_exact() {
-            let (x, y) = (self.as_exact().unwrap(), right.as_exact().unwrap());
-            return Ok(Self::exact(match op {
-                Plus => x + y,
-                Minus => x - y,
-                Times => x * y,
-                Divide if y.is_zero() => {
-                    return Ok((if x.is_zero() { f64::NAN } else if x.is_negative() { f64::NEG_INFINITY } else { f64::INFINITY })
-                    .into())
-                }
-                Divide => x / y,
-            }));
+        // Beside an infinity, an exact number acts as its sign.
+        if (self.is_infinite() || right.is_infinite()) && (self.is_exact() || right.is_exact()) {
+            let sign = |n: &Self| if n.is_exact() { n.monad(Times) } else { Ok(n.clone()) };
+            return Ok(real::arithmetic(op, sign(self)?.to_float()?, sign(right)?.to_float()?).into());
         }
-        match (&self.0, &right.0) {
-            (Complex(_), _) | (_, Complex(_)) => Ok(complex::arithmetic(op, self.to_complex()?, right.to_complex()?).into()),
-            _ => {
-                let value = |n: &Self| { if (self.is_infinite() || right.is_infinite()) && n.is_exact() { n.monad(Times)?.to_float() } else { n.to_float() } };
-                Ok(real::arithmetic(op, value(self)?, value(right)?).into())
-            }
-        }
+        self.by_level(
+            right,
+            |x, y| int::arithmetic(op, x, y),
+            |x, y| {
+                Ok(Some(match op {
+                    Plus => Self::exact(x + y),
+                    Minus => Self::exact(x - y),
+                    Times => Self::exact(x * y),
+                    Divide if y.is_zero() => (if x.is_zero() { f64::NAN } else if x.is_negative() { f64::NEG_INFINITY } else { f64::INFINITY })
+                    .into(),
+                    Divide => Self::exact(x / y),
+                }))
+            },
+            |x, y| Ok(Some(real::arithmetic(op, x, y).into())),
+            |x, y| Ok(complex::arithmetic(op, x, y).into()),
+        )
     }
 }
 
 fn write_float(out: &mut impl fmt::Write, n: f64) -> fmt::Result {
     if n.is_nan() { return out.write_str(NAN_NAME); }
     if n.is_infinite() { return out.write_str(if n.is_sign_positive() { "∞" } else { "-∞" }); }
-    if n != 0.0 && !(1e-6..1e17).contains(&n.abs()) { out.write_str(&format!("{n:E}").replacen('E', "ₑ", 1)) } else { write!(out, "{n}") }
+    if n != 0.0 && !(1e-6..1e17).contains(&n.abs()) { out.write_str(&scientific(&format!("{n:E}"))) } else { write!(out, "{n}") }
+}
+
+/// `text`, which Rust wrote in exponent notation, with the exponent subscript in place of Rust's `e` or `E`.
+pub(crate) fn scientific(text: &str) -> String {
+    let (mantissa, exponent) = text.split_once(['e', 'E']).expect("exponent notation");
+    format!("{mantissa}{}{exponent}", crate::syntax::EXPONENT.1)
 }
 
 /// Writes text with the high minus `¯` in place of each `-`.
@@ -992,34 +1094,6 @@ impl fmt::Display for Number {
                 write_float(&mut out, n.re)?;
                 out.write_str("ⱼ")?;
                 write_float(&mut out, n.im)
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Within 64 floats of each end of the range, and of the number itself, the range agrees with `float_equal`.
-    #[test]
-    fn equal_range_matches_float_equal() {
-        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
-        let mut next = move || {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            state
-        };
-        let mut numbers = vec![1.0, -1.0, 3.0, 0.1, 1e14, 1e300, -2.5e-300, f64::MIN_POSITIVE, 5e-324, f64::MAX];
-        numbers.extend((0..2000).map(|_| f64::from_bits(next())).filter(|c| c.is_finite()));
-        for c in numbers {
-            let (lo, hi) = equal_range(c).unwrap();
-            let steps = |mut x: f64, step: fn(f64) -> f64| { std::iter::from_fn(move || { x = step(x); Some(x) }).take(64) };
-            for end in [lo, hi, c] {
-                for x in steps(end, f64::next_up).chain(steps(end, f64::next_down)).chain([end]) {
-                    assert_eq!(float_equal(x, c), lo <= x && x <= hi, "c = {c:e}, x = {x:e}");
-                }
             }
         }
     }

@@ -488,6 +488,57 @@ fn operator_categories_and_singleton_replicate() {
 fn long_assignment_chains() { assert_same(Session::new().eval(&format!("{}7", "a←".repeat(10_000))).value, &number(7.0)); }
 
 #[test]
+fn tolerant_equality_agrees_between_array_and_item_paths() {
+    // `xs=c` works out once the range of floats tolerantly equal to `c`. A dfn under `¨` compares one pair at a time. The range's ends
+    // lie within a few floats of `c×(1-1e-14)` and `c÷(1-1e-14)`. The two must agree within 64 floats of those ends and of `c`.
+    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut numbers = vec![1.0, -1.0, 3.0, 0.1, 1e14, 1e300, -2.5e-300, f64::MIN_POSITIVE, 5e-324, f64::MAX];
+    numbers.extend((0..2000).map(|_| f64::from_bits(next())).filter(|c| c.is_finite()));
+    let steps = |mut x: f64, step: fn(f64) -> f64| { std::iter::from_fn(move || { x = step(x); Some(x) }).take(64) };
+    let mut s = Session::new();
+    for c in numbers {
+        let ends = [c * (1.0 - 1e-14), c / (1.0 - 1e-14), c];
+        let xs: Vec<f64> = ends.into_iter().flat_map(|end| steps(end, f64::next_up).chain(steps(end, f64::next_down)).chain([end])).collect();
+        s.set("xs", AplValue::floats(vec![xs.len()], xs).unwrap()).unwrap();
+        s.set("c", number(c)).unwrap();
+        let (array, items) = (s.eval("xs=c").value.unwrap(), s.eval("xs{⍺=⍵}¨c").value.unwrap());
+        assert!(array.same(&items), "c = {c:e}");
+    }
+}
+
+#[test]
+fn lexical_frames_are_reclaimed() {
+    // At most 20,000 lexical frames can be alive at once. Each result below depends on frames being freed: 25,000 calls in one input,
+    // 25,000 tail calls, a recursion 15,000 deep in two inputs, and recursion after a LIMIT error. The tail calls in `keep` and `pass`
+    // still read `x` from the frame that defined their function.
+    let mut s = Session::new();
+    for (code, expected) in [
+        ("outer←{x←2 ⋄ add←{x+⍵} ⋄ +/add¨⍵⍴1} ⋄ outer 25000", 75000.),
+        ("+/outer¨25000⍴1", 75000.),
+        ("deep←{⍵=0?0;1+∇⍵-1} ⋄ deep 15000", 15000.),
+        ("deep 15000", 15000.),
+        ("count←{⍺←0 ⋄ ⍵=0?⍺;(⍺+1)∇⍵-1} ⋄ count 25000", 25000.),
+        ("even←{⍵=0?1;odd ⍵-1} ⋄ odd←{⍵=0?0;even ⍵-1} ⋄ even 25000", 1.),
+        ("keep←{x←42 ⋄ loop←{⍵=0?x;∇⍵-1} ⋄ loop ⍵} ⋄ keep 25000", 42.),
+        ("pass←{x←42 ⋄ op←{⍵=0?⍶ ⍵;∇⍵-1} ⋄ ({x}op)⍵} ⋄ pass 25000", 42.),
+        ("loop←{⍵=0?a←7;(∇⍵-1)} ⋄ loop 25000", 7.),
+        ("f←{11::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 2000", 7.),
+    ] { check_in(&mut s, code, number(expected)); }
+    assert_eq!(s.eval("f 20000").error.unwrap().kind, Limit);
+    check_in(&mut s, "deep 15000", number(15000.));
+    let source = Source::new("calls", "outer 25000");
+    let weak = Arc::downgrade(&source);
+    assert!(s.eval_source(source, EvalOptions::default()).error.is_none());
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
 fn diagnostic_width_and_call_context() {
     let mut s = Session::new();
     let error = s.eval("界←1 ⋄\t界÷'a'").error.unwrap();

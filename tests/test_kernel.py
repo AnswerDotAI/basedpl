@@ -1,5 +1,6 @@
 import asyncio
 from conkernelclient import run_kernel
+from basedpl import symbols
 
 
 def displayed(messages):
@@ -32,9 +33,22 @@ async def kernel_story():
             assert (await kc.shell_request('is_complete_request', code=code))['content']['status'] == status
         _, messages = await kc.exec_ok('v')
         assert displayed(messages) == [('execute_result', '4 5')]
+        async def complete(code): return (await kc.shell_request('complete_request', code=code, cursor_pos=len(code)))['content']
         for code, start, matches in [('⍳3 ⋄ `iot', 5, ['⍳']), ('mea', 0, ['mean']), ('"`iot', 5, [])]:
-            result = (await kc.shell_request('complete_request', code=code, cursor_pos=len(code)))['content']
+            result = await complete(code)
             assert (result['cursor_start'], result['cursor_end'], result['matches']) == (start, len(code), matches)
+        # Backtick names match by name, alias or prefix, in any case. Of tied names, one that prefixes all the others wins.
+        names = {'io': '⍳', 'RHO': '⍴', 'exponent': '*', 'power': '⍣', 'scan': '\\', 'scanfirst': '⍀', 'alpha': '⍺', 'alphaunderbar': '⍶',
+                 'omegaunderbar': '⍹', 'replicate': '#', 'om': '⍵', 'omu': '⍹', 'sca': '\\', 'lar': '←', 'larr': '←', 'leftar': '←', 'grup': '⍋'}
+        for name, glyph in names.items(): assert (await complete('`' + name))['matches'] == [glyph], name
+        for s in symbols:
+            for word in filter(None, [s['name'], s['monad'], s['dyad'], *s['aliases'].split()]):
+                assert (await complete('`' + word.replace('-', '')))['matches'] == [s['glyph']], word
+        for name in ['nosuchsymbol', 'lg', 'lrr']: assert (await complete('`' + name))['matches'] == [], name
+        assert len((await complete('`de'))['matches']) > 1
+        # A backtick in a string or comment starts no name.
+        for code in ['"`io', '"can\'t `io', '"a""`io', '⍝ `io']: assert (await complete(code))['matches'] == [], code
+        for code in ['界+`io', '"text" `io', "''' `io", "'a' `io", '⍝ comment\n`io']: assert (await complete(code))['matches'] == ['⍳'], code
         definition = '{⍝ Sum without running during inspection\n⎕←999 ⋄ +/⍵}'
         await kc.exec_ok('inspectme←'+definition, silent=True)
         for detail in (0,1):
@@ -58,8 +72,7 @@ async def kernel_story():
         assert '¿' in text and 'Roll' not in text
         result = (await kc.shell_request('inspect_request', code='"inspectme"', cursor_pos=5, detail_level=0))['content']
         assert not result['found']
-        result = (await kc.shell_request('complete_request', code='•sr', cursor_pos=3))['content']
-        assert result['matches'] == ['•src']
+        assert (await complete('•sr'))['matches'] == ['•src']
         reply, messages = await kc.exec_drain('⎕←7 ⋄ 1÷"a"')
         assert reply['content']['ename'] == 'DOMAIN ERROR' and displayed(messages) == [('stream', '7\n')]
         assert '1÷"a"' in '\n'.join(reply['content']['traceback'])

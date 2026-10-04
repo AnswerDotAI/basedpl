@@ -18,4 +18,7 @@ fn main() {
         for name in marker.split_whitespace() { entries.push(format!("({name:?}, {help:?})")); }
     }
     fs::write(Path::new(&env::var("OUT_DIR").unwrap()).join("help.rs"), format!("const HELP: &[(&str, &str)] = &[{}];", entries.join(",\n"))).unwrap();
+    // The extension leaves Python's symbols undefined, for the interpreter that loads it to supply. This applies to the cdylib only.
+    #[cfg(feature = "python")]
+    pyo3_build_config::add_extension_module_link_args();
 }

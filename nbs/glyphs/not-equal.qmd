@@ -1,6 +1,6 @@
 # `≠` — Unique mask / Not equal
 
-Keys: `Alt-]`
+Keys: `Alt-Shift-=`
 
 `≠Y` marks first occurrences of major cells. Uses tolerant comparison and first matching representatives.
 

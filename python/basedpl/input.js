@@ -16,9 +16,13 @@
     // `option` is whether an Option chord counts here.
     function press(ev, option) {
         const key = usKey(ev), plain = !ev.altKey && !ev.ctrlKey && !ev.metaKey;
+        // Native Option can hide the alias character; accept its US physical chord too.
+        const action = option && ev.altKey && !ev.ctrlKey && !ev.metaKey
+            ? layout.alt_aliases[ev.key] ?? layout.option[key] ?? (Object.values(layout.alt_aliases).includes(key) ? key : null) : null;
         if (pending) {
-            const state = layout.states[pending];
+            const state = layout.states[pending], repeated = action?.state === pending;
             pending = null;
+            if (repeated) return {text: state.terminator, stop: true};
             if (plain && ev.key === ' ') return {text: state.terminator, stop: true};
             if (ev.key === 'Backspace' || ev.key === 'Escape') return {text: '', stop: true};
             if (plain && key in state.keys) return {text: act(state.keys[key]), stop: true};
@@ -26,7 +30,7 @@
             const rest = press(ev, option);
             return {text: state.terminator + (rest?.text ?? ''), stop: rest?.stop ?? false};
         }
-        if (option && ev.altKey && !ev.ctrlKey && !ev.metaKey && key in layout.option) return {text: act(layout.option[key]), stop: true};
+        if (action) return {text: act(action), stop: true};
     }
     const reset = () => { pending = null; };
 

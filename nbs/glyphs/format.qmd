@@ -8,10 +8,11 @@ Keys: `Alt-n t`
 ⍕1 2 3             ⍝ "1 2 3"
 ```
 
-`D⍕Y` gives `D` decimal places. Negative `D` selects exponent notation.
+`D⍕Y` gives `D` decimal places. A negative `D` gives exponent notation with `|D|` significant digits.
 
 ```bpl
 2⍕3.125            ⍝ " 3.13"
+¯2⍕1234.5          ⍝ " 1.2ₑ3"
 ```
 
 `W D⍕Y` also sets the field width `W`. Give one pair per column to set each column separately. Width 0 chooses a width. Overflowing fields become `*`.

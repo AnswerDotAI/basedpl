@@ -3,7 +3,9 @@
 Modules:
 
 - `basedpl.dyalog`: Run Dyalog APL through RIDE for reference checks.
-- `basedpl.j`: Run the J language from Python and Jupyter through libj: sessions, magics and a Jupyter kernel."""
+- `basedpl.editors`: Write editor highlighters, regional macOS keyboards, and glyph-page key lines.
+- `basedpl.j`: Run the J language from Python and Jupyter through libj: sessions, magics and a Jupyter kernel.
+- `basedpl.keyboards`: Generate regional BPL keyboards from macOS layouts."""
 
 import math, operator, sys
 from dataclasses import dataclass
@@ -106,9 +108,13 @@ def _array(value, seen=None):
         kind, size = value.dtype.kind, value.dtype.itemsize
         if kind not in 'biufcUO' or kind == 'f' and size > 8 or kind == 'c' and size > 16: raise TypeError('unsupported NumPy dtype')
         if kind == 'u' and size == 8 and value.size and value.max() >= 1<<63: raise ValueError('uint64 values above the int64 range; convert with .astype(object) for exact integers')
-        if kind == 'b': return _Array.numeric(list(value.shape), np.ascontiguousarray(value).view(np.uint8))
-        if kind in 'iu': return _Array.numeric(list(value.shape), np.ascontiguousarray(value, dtype=np.int64))
-        if kind == 'f': return _Array.numeric(list(value.shape), np.ascontiguousarray(value, dtype=np.float64))
+        if kind == 'b': return _Array.numeric(list(value.shape), True, np.ascontiguousarray(value).view(np.uint8))
+        # Unsigned bytes and signed integers of 16 bits or more cross at their own width. Signed bytes cross as `int16`, and wider unsigned
+        # integers as `int64`, which holds them after the check above.
+        if kind in 'iu':
+            dtype = np.int16 if kind == 'i' and size == 1 else np.int64 if kind == 'u' and size > 1 else value.dtype
+            return _Array.numeric(list(value.shape), False, np.ascontiguousarray(value, dtype=dtype))
+        if kind == 'f': return _Array.numeric(list(value.shape), False, np.ascontiguousarray(value, dtype=np.float64))
         shape, data = value.shape, value.ravel().tolist()
         if kind == 'U': prototype = ' '
     else:

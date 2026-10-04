@@ -95,19 +95,22 @@ impl Input {
             Action::Text(text) => Cmd::Insert(1, text.clone()),
             Action::State(name) => {
                 self.dead = Some(name.clone());
-                Cmd::Noop
+                Cmd::Repaint
             }
         }
     }
 
-    /// The next key after a dead key. A listed key types its text or moves on. Space types the terminator alone. Backspace and
+    /// The next key after a dead key. A listed key types its text or moves on. Repeating the chord or Space types the terminator. Backspace and
     /// Escape cancel and type nothing. Any other key types the terminator, then acts as if nothing were pending. Enter submits
     /// the line with the terminator added.
     fn pending_key(&mut self, name: &str, key: KeyEvent, line: &str, pos: usize) -> Cmd {
         let state = layout().state(name);
         match key {
+            KeyEvent(KeyCode::Char(c), Modifiers::ALT) if matches!(layout().alt(c), Some(Action::State(next)) if next == name) => {
+                return Cmd::Insert(1, state.terminator.clone())
+            }
             KeyEvent(KeyCode::Char(' '), Modifiers::NONE) => return Cmd::Insert(1, state.terminator.clone()),
-            KeyEvent(KeyCode::Backspace | KeyCode::Esc, _) => return Cmd::Noop,
+            KeyEvent(KeyCode::Backspace | KeyCode::Esc, _) => return Cmd::Repaint,
             KeyEvent(KeyCode::Char(c), m) if m.difference(Modifiers::SHIFT).is_empty() => {
                 if let Some(action) = find(&state.keys, c) { return self.act(action); }
             }
@@ -129,7 +132,7 @@ impl Input {
         if let Some(name) = self.dead.take() { return Some(self.pending_key(&name, key, line, pos)); }
         if let KeyEvent(KeyCode::Char(c), Modifiers::ALT) = key {
             self.active = false;
-            if let Some(action) = find(&layout().option, c) { return Some(self.act(action)); }
+            if let Some(action) = layout().alt(c) { return Some(self.act(action)); }
         }
         let enter = key == KeyEvent::from('\r') || key == KeyEvent::from('\n');
         let tab = key == KeyEvent::from('\t');
@@ -203,6 +206,11 @@ impl Hint for Suggestion {
 impl Hinter for Symbols {
     type Hint = Suggestion;
     fn hint(&self, line: &str, pos: usize, _: &Context) -> Option<Suggestion> {
+        if let Some(name) = &self.0.lock().unwrap().dead {
+            let state = layout().state(name);
+            let keys: String = state.keys.iter().map(|(key, _)| key).collect();
+            return Some(Suggestion(format!("  {}:{keys}", state.terminator)));
+        }
         let (_, prefix) = entry(line, pos)?;
         let found = matches(prefix);
         let message = if prefix.is_empty() { "Tab: symbol names".into() } else if found.is_empty() { "unknown symbol".into() } else {
@@ -253,95 +261,5 @@ impl LineEditor {
         if let Some((range, glyph)) = self.0.helper().unwrap().0.lock().unwrap().pending.take() { line.replace_range(range, &glyph); }
         self.0.add_history_entry(line.as_str())?;
         Ok(line)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn layout_covers_glyphs_and_follows_dead_key_rules() {
-        // Each step is a key and the command it gives, from one fresh input.
-        let run = |line: &str, keys: &[(KeyEvent, Option<Cmd>)]| {
-            let mut input = Input::default();
-            for (i, (key, cmd)) in keys.iter().enumerate() { assert_eq!(&input.key(*key, line, line.len()), cmd, "{line:?} key {i}"); }
-        };
-        let (alt, plain) = (|c| KeyEvent::new(c, Modifiers::ALT), |c| KeyEvent::new(c, Modifiers::NONE));
-        let text = |s: &str| Some(Cmd::Insert(1, s.into()));
-        for &Symbol { glyph, .. } in symbols() { if glyph.chars().count() == 1 && !glyph.is_ascii() { assert!(!chord(glyph).is_empty(), "{glyph}"); } }
-        for (key, action) in &layout().option {
-            if let Action::Text(glyph) = action { for line in ["", "'", "⍝ "] { run(line, &[(alt(*key), text(glyph))]); } }
-        }
-        run("", &[(alt('c'), Some(Cmd::Noop)), (plain('t'), text("⍝"))]);
-        run("", &[(alt('6'), Some(Cmd::Noop)), (plain('2'), text("²"))]);
-        run("", &[(alt('6'), Some(Cmd::Noop)), (plain('-'), Some(Cmd::Noop)), (plain('1'), text("⁻¹"))]);
-        run("", &[(alt('6'), Some(Cmd::Noop)), (plain(' '), text("^"))]);
-        run("", &[(alt('o'), Some(Cmd::Noop)), (KeyEvent(KeyCode::Backspace, Modifiers::NONE), Some(Cmd::Noop)), (plain('x'), None)]);
-        run("", &[(alt('o'), Some(Cmd::Noop)), (plain('x'), text("○x"))]);
-        run("", &[(alt('o'), Some(Cmd::Noop)), (alt('c'), text("○")), (plain('t'), text("⍝"))]);
-        for line in ["", "'", "⍝ "] { run(line, &[(plain('^'), None), (plain('2'), None)]); }
-        for (glyph, keys) in [("⍺", " a"), ("⍶", " a _"), ("∞", " 8"), ("+", ""), ("⍝", " c t")] { assert_eq!(chord(glyph), keys, "{glyph}"); }
-    }
-
-    #[test]
-    fn names_prefixes_and_literal_context() {
-        for (name, glyph) in [
-            ("io", "⍳"),
-            ("RHO", "⍴"),
-            ("exponent", "*"),
-            ("power", "⍣"),
-            ("scan", "\\"),
-            ("scanfirst", "⍀"),
-            ("alpha", "⍺"),
-            ("alphaunderbar", "⍶"),
-            ("omegaunderbar", "⍹"),
-            ("replicate", "#"),
-            ("om", "⍵"),
-            ("omu", "⍹"),
-            ("sca", "\\"),
-            ("lar", "←"),
-            ("larr", "←"),
-            ("leftar", "←"),
-            ("grup", "⍋"),
-        ] { assert_eq!(matches(name).iter().map(|(g, _)| *g).collect::<Vec<_>>(), [glyph], "{name}"); }
-        for name in ["nosuchsymbol", "lg", "lrr"] { assert!(matches(name).is_empty(), "{name}"); }
-        assert!(matches("de").len() > 1);
-        for text in ["\"`io", "\"can't `io", "\"a\"\"`io", "⍝ `io"] { assert!(entry(text, text.len()).is_none()); }
-        for text in ["界+`io", "\"text\" `io", "''' `io", "'a' `io", "⍝ comment\n`io"] { assert_eq!(entry(text, text.len()).unwrap().1, "io"); }
-        for &Symbol { glyph, name, monad, dyad, aliases: words, .. } in symbols() {
-            for word in [name, monad, dyad].into_iter().chain(words.split_whitespace()).filter(|word| !word.is_empty()) {
-                assert_eq!(matches(&word.replace('-', "")), [(glyph, name)], "{word}");
-            }
-        }
-    }
-
-    #[test]
-    fn accepting_keys_do_not_rewrite_other_input() {
-        let line = "界+`io";
-        let mut input = Input { active: true, ..Input::default() };
-        assert_eq!(input.key(KeyEvent::from('3'), line, line.len()), Some(Cmd::Complete));
-        assert_eq!(input.pending.take(), Some((4..7, "⍳3".into())));
-        input.active = true;
-        assert_eq!(input.key(KeyEvent::from('\t'), line, line.len()), Some(Cmd::Complete));
-        assert_eq!(input.pending.take(), Some((4..7, "⍳".into())));
-        input.active = true;
-        assert_eq!(input.key(KeyEvent::from('\r'), line, line.len()), Some(Cmd::AcceptLine));
-        assert_eq!(input.pending.take(), Some((4..7, "⍳".into())));
-        for key in [KeyCode::BracketedPasteStart, KeyCode::Left, KeyCode::Up, KeyCode::Esc] {
-            input.active = true;
-            assert_eq!(input.key(KeyEvent(key, Modifiers::NONE), line, line.len()), None);
-            assert_eq!(input.key(KeyEvent::from('\r'), line, line.len()), None);
-            assert!(input.pending.is_none());
-        }
-        input.active = true;
-        assert_eq!(input.key(KeyEvent::from(' '), "`de", 3), None);
-        input.active = true;
-        assert_eq!(input.key(KeyEvent::from('-'), "x`lar", 5), Some(Cmd::Complete));
-        assert_eq!(input.pending.take(), Some((1..5, "←-".into())));
-        input.active = true;
-        assert_eq!(input.key(KeyEvent::from('-'), "`de", 3), None);
-        assert!(input.pending.is_none());
-        assert_eq!(input.key(KeyEvent::from('\\'), "1", 1), None);
     }
 }

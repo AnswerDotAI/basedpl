@@ -90,16 +90,19 @@ pub(crate) fn rows(shape: &[usize], edges: Option<usize>) -> Vec<Row> {
 
 /// Display settings for a session. `•prefs` reads and changes them.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct Settings { pub boxed: bool, pub trees: bool, pub functions: bool, pub elide: Elide }
+pub(crate) struct Settings {
+    pub boxed: bool,
+    pub trees: bool,
+    pub functions: bool,
+    pub elide: Elide,
+}
 
 const KEYS: [&str; 5] = ["box", "trees", "fns", "limit", "edges"];
 
 impl Settings {
     pub fn interactive() -> Self { Self { boxed: true, trees: true, functions: true, ..Self::default() } }
     /// Display text for `a`, boxed unless boxing is off, or `inside` a function while boxing there is off.
-    pub fn array(&self, a: &Value, inside: bool) -> String {
-        if self.boxed && (!inside || self.functions) { self.diagram(a) } else { plain(a, self.elide) }
-    }
+    pub fn array(&self, a: &Value, inside: bool) -> String { if self.boxed && (!inside || self.functions) { self.diagram(a) } else { plain(a, self.elide) } }
     pub fn diagram(&self, a: &Value) -> String { array(a, self.elide).text() }
     /// Text for `⎕←`: the display text, with every item.
     pub fn explicit(&self, a: &Value, inside: bool) -> String { Self { elide: Elide::NONE, ..*self }.array(a, inside) }
@@ -148,7 +151,10 @@ impl Block {
         let width = lines.iter().map(|s| measure(s)).max().unwrap_or(0);
         Self { lines, width, measure }
     }
-    fn line(&self, row: usize) -> String { let s = self.lines.get(row).map_or("", String::as_str); format!("{s}{}", " ".repeat(self.width - (self.measure)(s))) }
+    fn line(&self, row: usize) -> String {
+        let s = self.lines.get(row).map_or("", String::as_str);
+        format!("{s}{}", " ".repeat(self.width - (self.measure)(s)))
+    }
     fn text(self) -> String { self.lines.join("\n") }
     fn labelled(self, name: &str) -> Self {
         let label = format!("{name}:");
@@ -179,7 +185,9 @@ impl Cell {
     /// A cell for `spot`: `item` for an item's offset, and a marker that lines up with the units digits of numbers.
     pub fn spot(spot: &Spot, item: impl FnOnce(usize) -> Self) -> Self { match *spot { Spot::At(i) => item(i), Spot::Gap(c) => Self::number(c.into()) } }
     /// A cell of `⍕`'s layout for `item`, from the rows of its formatted text.
-    pub fn formatted(rows: Vec<Vec<char>>, item: &Value) -> Self { Self::item(Block::measured(rows.into_iter().map(String::from_iter).collect(), |s| s.chars().count()), item) }
+    pub fn formatted(rows: Vec<Vec<char>>, item: &Value) -> Self {
+        Self::item(Block::measured(rows.into_iter().map(String::from_iter).collect(), |s| s.chars().count()), item)
+    }
     /// A cell holding `block`, the text of `item`.
     fn item(block: Block, item: &Value) -> Self {
         let number = matches!(item, Value::Number(_)).then(|| Decimals::of(block.lines[0].chars()));
@@ -311,7 +319,11 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
     if a.has_keys() && a.shape().len() > 1 { return labelled(a, el); }
     let edges = el.edges(a.shape());
     if a.shape().len() <= 1 {
-        let string = a.shape().len() == 1 && !a.has_keys() && a.axis_names().iter().all(Option::is_none) && !a.is_empty() && a.elements().all(|e| matches!(e, Value::Character(_)));
+        let string = a.shape().len() == 1
+            && !a.has_keys()
+            && a.axis_names().iter().all(Option::is_none)
+            && !a.is_empty()
+            && a.elements().all(|e| matches!(e, Value::Character(_)));
         return if string { a.elided_text(edges) } else if a.is_strand() { a.shown_items(edges, |e| e.source(el)).join(" ") } else { a.source(el) };
     }
     if a.is_empty() { return a.literal(); }
@@ -358,7 +370,8 @@ fn labelled(a: &Value, el: Elide) -> String {
             let start = index.iter().zip(a.shape()).fold(0, |n, (&i, &len)| n * len + i) * table;
             let mut grid_rows: Vec<(usize, Vec<Cell>)> = Vec::new();
             if columns_keyed {
-                let header = positions(a.shape()[rank - 1], edges).map(|j| Cell::text(j.map_or_else(|| "…".into(), |j| label(rank - 1, j).map_or_else(|| j.to_string(), |k| k.to_string()))));
+                let header = positions(a.shape()[rank - 1], edges)
+                    .map(|j| Cell::text(j.map_or_else(|| "…".into(), |j| label(rank - 1, j).map_or_else(|| j.to_string(), |k| k.to_string()))));
                 grid_rows.push((0, rows_keyed.then(|| Cell::text(String::new())).into_iter().chain(header).collect()));
             }
             for (_, row, spots) in rows(&a.shape()[rank - 2..], edges) {
@@ -369,7 +382,8 @@ fn labelled(a: &Value, el: Elide) -> String {
             let columns = grid_rows[0].1.len();
             let text = grid(columns, grid_rows, Style::Uniform { spaced: true, right: true }).1.concat().join("\n");
             if rank == 2 { return text; }
-            let coordinates: Vec<_> = index.iter().enumerate().map(|(axis, &i)| label(axis, i).map_or_else(|| i.to_string(), |k| crate::array::quoted(&k))).collect();
+            let coordinates: Vec<_> =
+                index.iter().enumerate().map(|(axis, &i)| label(axis, i).map_or_else(|| i.to_string(), |k| crate::array::quoted(&k))).collect();
             format!("{}⌷\n{text}", coordinates.join(" "))
         })
         .collect();
@@ -409,9 +423,7 @@ pub(crate) fn bundle(value: &Value) -> Result<crate::MimeBundle, crate::ErrorKin
 pub(crate) fn renderer(
     name: &'static str,
     render: fn(Option<&Value>, &Value, &crate::execution::Context<'_>) -> Result<Value, crate::Error>,
-) -> crate::Function {
-    crate::system::native(name, crate::system::Call::Value(render), crate::system::Valence::Monadic)
-}
+) -> crate::Function { crate::system::native(name, crate::system::Call::Value(render), crate::system::Valence::Monadic) }
 
 /// A MIME bundle holding `text` as the type `kind`.
 pub(crate) fn mime(kind: &str, text: Value) -> Result<Value, crate::ErrorKind> { crate::keyed::vector(vec![kind.into()], vec![text]) }

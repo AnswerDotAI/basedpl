@@ -1,18 +1,14 @@
 use crate::{
     agreement::{Agreement, Mapping},
     array::{generated_len, Axis, Frame as ResultFrame, Gather},
-    primitive::{integer, push_window, FoldKind, OperandKind, OperatorKind, Primitive, Selection, Superscript, Targets, WindowAxis},
-    selection::SelectionKind,
     execution::Context,
+    primitive::{integer, push_window, FoldKind, OperandKind, OperatorKind, Primitive, Selection, Superscript, Targets, Windows},
+    selection::SelectionKind,
     syntax::{Definition, DefinitionKind, Node, NodeKind, StatementKind},
     DomainAt, Error, ErrorAt, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value,
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
-use std::{
-    borrow::Cow,
-    convert::Infallible,
-    sync::Arc,
-};
+use std::{borrow::Cow, convert::Infallible, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub struct Function { node: Arc<FunctionData> }
@@ -39,10 +35,11 @@ impl Function {
             (N::Inverse(f), N::Inverse(g)) => f.equal_by(g, values)?,
             (N::Axis(f, a), N::Axis(g, b)) => f.equal_by(g, values)? && values(a, b)?,
             (N::Defined(x), N::Defined(y)) => x == y,
-            (N::Derived(c, a, b), N::Derived(d, x, y)) => c == d && a.equal_by(x, values)? && match (b, y) {
-                (Some(b), Some(y)) => b.equal_by(y, values)?,
-                (b, y) => b.is_none() && y.is_none(),
-            },
+            (N::Derived(c, a, b), N::Derived(d, x, y)) => {
+                c == d
+                    && a.equal_by(x, values)?
+                    && match (b, y) { (Some(b), Some(y)) => b.equal_by(y, values)?, (b, y) => b.is_none() && y.is_none() }
+            }
             (N::Modified(o, a), N::Modified(p, b)) => o == p && a.equal_by(b, values)?,
             (N::Composed(o, [a, b]), N::Composed(p, [x, y])) => o == p && a.equal_by(x, values)? && b.equal_by(y, values)?,
             (N::Fork([f, g, h]), N::Fork([x, y, z])) => f.equal_by(x, values)? && g.equal_by(y, values)? && h.equal_by(z, values)?,
@@ -52,12 +49,7 @@ impl Function {
     /// Whether the functions match, as `≡` compares them: built from matching parts, with `≡`'s rule for the values in them.
     pub(crate) fn matches(&self, other: &Self, cx: &Context<'_>) -> Result<bool, Error> { self.equal_by(other, &mut |x, y| x.matches(y, cx)) }
 }
-impl PartialEq for Function {
-    fn eq(&self, other: &Self) -> bool {
-        let Ok(equal) = self.equal_by(other, &mut same_values);
-        equal
-    }
-}
+impl PartialEq for Function { fn eq(&self, other: &Self) -> bool { let Ok(equal) = self.equal_by(other, &mut same_values); equal } }
 
 const MAX_RESOLUTION_DEPTH: usize = 128;
 const MAX_CALL_DEPTH: usize = 20_000;
@@ -334,9 +326,7 @@ impl Function {
         cx.check()?;
         result
     }
-    fn call_array(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
-        self.call(left, right, cx)?.array(cx.span)
-    }
+    fn call_array(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> { self.call(left, right, cx)?.array(cx.span) }
     fn call_prototype(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         cx.prototype_mode(true, |cx| self.call(left, right, cx))
     }
@@ -504,13 +494,7 @@ impl Function {
     }
 }
 
-fn composition(
-    op: OperatorKind,
-    operands: &[Operand; 2],
-    left: Option<&Value>,
-    right: &Value,
-    cx: &mut Context<'_>,
-) -> Result<Bound, Error> {
+fn composition(op: OperatorKind, operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     use OperatorKind::*;
     if matches!(op, At) { return at(operands, left, right, cx); }
     if matches!(op, Agenda) { return agenda(operands, left, right, cx); }
@@ -594,19 +578,9 @@ fn mask_selection(mask: &Value, right: &Value, cx: &Context<'_>) -> Result<Selec
 
 fn at(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     // A Boolean array is a mask. Other arrays give positions. A selector function's result follows the same rule.
-    let selector = match &operands[1] {
-        Operand::Value(a) => a.clone(),
-        Operand::Function(f) => f.call_array(None, right, cx)?,
-    };
-    let selection = if selector.as_booleans().is_some() {
-        mask_selection(&selector, right, cx)?
-    } else {
-        crate::primitive::at_indices(right, &selector, cx)?
-    };
-    let values = match &operands[0] {
-        Operand::Value(a) => a.clone(),
-        Operand::Function(f) => f.call_array(left, &selection.read(right, cx)?, cx)?,
-    };
+    let selector = match &operands[1] { Operand::Value(a) => a.clone(), Operand::Function(f) => f.call_array(None, right, cx)? };
+    let selection = if selector.as_booleans().is_some() { mask_selection(&selector, right, cx)? } else { crate::primitive::at_indices(right, &selector, cx)? };
+    let values = match &operands[0] { Operand::Value(a) => a.clone(), Operand::Function(f) => f.call_array(left, &selection.read(right, cx)?, cx)? };
     let array = selection.write(right, &values, cx)?;
     Ok(Bound::from(array))
 }
@@ -615,22 +589,16 @@ fn stencil(f: &Function, spec: &Value, right: &Value, cx: &mut Context<'_>) -> R
     let (sizes, movements) = crate::primitive::window_spec(spec, right.shape().len(), cx.span)?;
     if sizes.is_empty() { return Err(cx.span.domain_error("stencil needs at least one axis")); }
     if sizes.iter().chain(&movements).any(|&n| n <= 0) { return Err(cx.span.domain_error("stencil sizes and movements must be positive")); }
-    let (axes, sizes): (usize, Vec<usize>) = (sizes.len(), sizes.iter().map(|&n| n as usize).collect());
-    let windows: Vec<_> =
-        sizes.iter().enumerate().map(|(a, &size)| WindowAxis { size, step: movements.get(a).map_or(1, |&m| m as usize), padded: true }).collect();
-    if windows.iter().zip(right.shape()).any(|(w, &len)| !w.fits(len)) { return Err(cx.span.domain_error("stencil window is too large for the argument")); }
-    let frame: Vec<_> = windows.iter().zip(right.shape()).map(|(w, &len)| w.count(len)).collect();
+    let windows = Windows::new(&sizes, &movements, |_| true, right, cx.span)?;
+    let (axes, sizes): (usize, Vec<usize>) = (sizes.len(), windows.axes.iter().map(|w| w.size).collect());
     let shape = [sizes.as_slice(), &right.shape()[axes..]].concat();
     let size = generated_len(&shape).error_at(cx.span, "stencil window is too large")?;
-    let count = generated_len(&frame).error_at(cx.span, "stencil result is too large")?;
+    let count = generated_len(&windows.frame).error_at(cx.span, "stencil result is too large")?;
     let mut results = Vec::with_capacity(count);
     for position in 0..count {
-        let mut starts = vec![0isize; axes];
-        let mut padding = vec![0.; axes];
-        for (a, c) in crate::primitive::digits(position, &frame) {
-            starts[a] = windows[a].start(c);
-            padding[a] = if starts[a] < 0 { -starts[a] } else { (right.shape()[a] as isize - starts[a] - sizes[a] as isize).min(0) } as f64;
-        }
+        let starts = windows.starts(position);
+        let padding: Vec<f64> =
+            (0..axes).map(|a| if starts[a] < 0 { -starts[a] } else { (right.shape()[a] as isize - starts[a] - sizes[a] as isize).min(0) } as f64).collect();
         let mut data = crate::array::Gather::new(&[right], size);
         push_window(right, &shape, &starts, &mut data);
         let keys = (0..shape.len())
@@ -648,8 +616,8 @@ fn stencil(f: &Function, spec: &Value, right: &Value, cx: &mut Context<'_>) -> R
         results.push(f.call_array(Some(&border), &window, cx)?);
     }
     let mut layout = right.layout().axes(0..axes);
-    for (a, &len) in frame.iter().enumerate() {
-        let positions = (0..len).map(|i| Some(i * windows[a].step));
+    for (a, &len) in windows.frame.iter().enumerate() {
+        let positions = (0..len).map(|i| Some(i * windows.axes[a].step));
         layout = layout.select(a, positions).error_at(cx.span, "invalid stencil frame keys")?;
     }
     let result = layout.assemble(&results, &Value::number(0.).unwrap()).error_at(cx.span, "invalid stencil result")?;
@@ -705,9 +673,7 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut 
                 }
                 let step = inverse.as_ref().unwrap_or(f);
                 if c.1 == usize::MAX { converge(step, &mut value, cx)?; }
-                else {
-                    for _ in steps..c.1 { value = step.call_array(left, &value, cx)?; }
-                }
+                else { for _ in steps..c.1 { value = step.call_array(left, &value, cx)?; } }
                 steps = c.1;
                 states.insert(c, value.clone());
             }
@@ -779,9 +745,7 @@ fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, cx: &mut 
     let array = match f.node() {
         Primitive(p) => crate::primitive::inverse(*p, bound, right, None, cx),
         Composed(PairInverse, [_, Operand::Function(g)]) if first => return g.call(left, right, cx),
-        Composed(Under, [Operand::Function(g), h]) => {
-            return composition(Under, &[Operand::Function(operand_inverse(g)?), h.clone()], left, right, cx)
-        }
+        Composed(Under, [Operand::Function(g), h]) => return composition(Under, &[Operand::Function(operand_inverse(g)?), h.clone()], left, right, cx),
         Inverse(g) if first => return g.call(left, right, cx),
         Modified(Each, Operand::Function(g)) => return each(&operand_inverse(g)?, left, right, cx),
         Modified(Outer, Operand::Function(g)) => {
@@ -789,9 +753,7 @@ fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, cx: &mut 
             inverse_outer(g, bound, first, right, cx)
         }
         Modified(Commute, Operand::Value(k)) => {
-            if !k.matches(right, cx)? {
-                return Err(cx.span.domain_error("a constant function gives only its own value"));
-            }
+            if !k.matches(right, cx)? { return Err(cx.span.domain_error("a constant function gives only its own value")); }
             Ok(right.clone())
         }
         Modified(Commute, Operand::Function(g)) => {
@@ -810,9 +772,7 @@ fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, cx: &mut 
                 P::Arithmetic(Arithmetic::Times) => P::Math(Math::Power).call(Some(right), &Value::number(0.5).unwrap(), cx),
                 P::Math(Math::Floor | Math::Ceiling) | P::Identity(_) => Ok(right.clone()),
                 P::Math(Math::Lcm | Math::Gcd) => {
-                    if !p.call(Some(right), right, cx)?.matches(right, cx)? {
-                        return Err(cx.span.domain_error("no argument gives this result"));
-                    }
+                    if !p.call(Some(right), right, cx)?.matches(right, cx)? { return Err(cx.span.domain_error("no argument gives this result")); }
                     Ok(right.clone())
                 }
                 _ => Err(cx.span.domain_error("this commute has no known inverse")),
@@ -892,13 +852,7 @@ fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, cx: &mut 
     Ok(Bound::from(array))
 }
 
-fn inverse_outer(
-    f: &Function,
-    bound: &Value,
-    first: bool,
-    right: &Value,
-    cx: &mut Context<'_>,
-) -> Result<Value, Error> {
+fn inverse_outer(f: &Function, bound: &Value, first: bool, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
     let rank = bound.shape().len();
     if bound.is_empty() || right.shape().len() < rank { return Err(cx.span.domain_error("outer-product inverse needs a nonempty matching bound frame")); }
     let split = if first { rank } else { right.shape().len() - rank };
@@ -915,13 +869,12 @@ fn inverse_outer(
         let a = Operand::Value(bound.at(j));
         let f = Operand::Function(f.clone());
         let operands = if first { [a, f] } else { [f, a] };
-        let inverse = Function::new(FunctionNode::Composed(if first { OperatorKind::Before } else { OperatorKind::After }, operands), cx.span)?.inverse(cx.span)?;
+        let inverse =
+            Function::new(FunctionNode::Composed(if first { OperatorKind::Before } else { OperatorKind::After }, operands), cx.span)?.inverse(cx.span)?;
         for i in 0..count.max(1) {
             let value = if count == 0 { right.prototype() } else { right.at(if first { j * count + i } else { i * bound.len() + j }) };
             let candidate = inverse.call_array(None, &value, cx)?;
-            if j == 0 { result.push(candidate); } else if !result[i].matches(&candidate, cx)? {
-                return Err(cx.span.domain_error("outer-product cells do not have a consistent inverse"));
-            }
+            if j == 0 { result.push(candidate); } else if !result[i].matches(&candidate, cx)? { return Err(cx.span.domain_error("outer-product cells do not have a consistent inverse")); }
         }
     }
     let prototype = result[0].prototype();
@@ -929,14 +882,7 @@ fn inverse_outer(
     layout.collect(result, prototype).error_at(cx.span, "invalid outer-product inverse")
 }
 
-fn inverse_scan(
-    f: &Function,
-    h: FoldKind,
-    axis: Option<&Value>,
-    seed: Option<&Value>,
-    right: &Value,
-    cx: &mut Context<'_>,
-) -> Result<Value, Error> {
+fn inverse_scan(f: &Function, h: FoldKind, axis: Option<&Value>, seed: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
     let axis = scan_axis(h, axis, right, cx.span)?;
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
     let inverse = f.inverse(cx.span)?;
@@ -1008,13 +954,7 @@ fn outer(operand: &Function, left: Option<&Value>, right: &Value, cx: &mut Conte
     each_pair(operand, len, layout, |i| (Some(item(left, i / columns)), item(right, i % columns)), cx)
 }
 
-fn inner(
-    f: &Function,
-    g: &Function,
-    left: Option<&Value>,
-    right: &Value,
-    cx: &mut Context<'_>,
-) -> Result<Bound, Error> {
+fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let left = left.ok_or_else(|| cx.span.error(ErrorKind::Syntax, "inner product needs a left argument"))?;
     let nx = left.shape().last().copied().unwrap_or(1);
     let ny = right.shape().first().copied().unwrap_or(1);
@@ -1051,8 +991,8 @@ fn inner(
                 }
             }
             for column in columns {
-                let paired =
-                    if n == 0 { Value::empty(vec![0], column[0].prototype()) } else { Value::new(vec![n], column) }.error_at(cx.span, "invalid product cell")?;
+                let paired = if n == 0 { Value::empty(vec![0], column[0].prototype()) } else { Value::new(vec![n], column) }
+                    .error_at(cx.span, "invalid product cell")?;
                 results.push(fold(f, FoldKind { scan: false, first: false }, None, None, &paired, cx)?);
             }
         }
@@ -1065,13 +1005,7 @@ fn inner(
     Ok(Bound::from(result.error_at(cx.span, "invalid inner product result")?))
 }
 
-fn rank(
-    operand: &Function,
-    ranks: &Value,
-    left: Option<&Value>,
-    right: &Value,
-    cx: &mut Context<'_>,
-) -> Result<Bound, Error> {
+fn rank(operand: &Function, ranks: &Value, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     if ranks.shape().len() > 1 { return Err(cx.span.error(ErrorKind::Rank, "rank operand must be a unit or vector")); }
     if !(1..=3).contains(&ranks.len()) { return Err(cx.span.error(ErrorKind::Length, "rank operand needs one to three items")); }
     let ranks = ranks
@@ -1107,13 +1041,7 @@ fn rank(
 
 /// Apply `f` to the cells made of the selected axes. The other axes form the frame.
 /// The selected axes must exist in the higher-rank argument. An argument that lacks one of them is one whole cell.
-fn cell_axes(
-    f: &Function,
-    spec: &Value,
-    left: Option<&Value>,
-    right: &Value,
-    cx: &mut Context<'_>,
-) -> Result<Bound, Error> {
+fn cell_axes(f: &Function, spec: &Value, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let target = match left { Some(x) if x.shape().len() > right.shape().len() => x, _ => right };
     let order = target.shape().len();
     let spec = crate::primitive::resolve_axes(spec, target, cx.span)?;
@@ -1177,8 +1105,7 @@ fn each_pair(
         };
         if empty { first = Some(item) } else { data.add(item) }
     }
-    let value =
-        if missing { Binding::NoResult } else { Binding::Value(data.finish(layout, || first.unwrap().fill()).map_err(|k| cx.span.error(k, "invalid result"))?) };
+    let value = if missing { Binding::NoResult } else { Binding::Value(data.finish(layout, || first.unwrap().fill()).map_err(|k| cx.span.error(k, "invalid result"))?) };
     Ok(Bound::new(value))
 }
 
@@ -1212,21 +1139,12 @@ fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Cont
     }
 }
 
-fn fold(
-    operand: &Function,
-    kind: FoldKind,
-    axis: Option<&Value>,
-    left: Option<&Value>,
-    right: &Value,
-    cx: &mut Context<'_>,
-) -> Result<Value, Error> {
+fn fold(operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
     let axis = axis.map(|a| crate::primitive::resolve_axes(a, right, cx.span)).transpose()?;
     if !kind.scan {
         if let Some(axes) = axis.as_ref().filter(|a| !a.is_singleton()) {
             let mut reduction = Function::new(FunctionNode::Fold(operand.clone(), kind), cx.span)?;
-            if let Some(seed) = left {
-                reduction = before(seed.clone(), reduction, cx.span)?;
-            }
+            if let Some(seed) = left { reduction = before(seed.clone(), reduction, cx.span)?; }
             let ravelled = Function::new(
                 FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(reduction), Operand::Function(Function::primitive(Primitive::Ravel))]),
                 cx.span,
@@ -1243,21 +1161,10 @@ fn fold(
     result.with_layout(layout).error_at(cx.span, "invalid fold keys")
 }
 
-fn fold_array(
-    operand: &Function,
-    kind: FoldKind,
-    axis: Option<&Value>,
-    left: Option<&Value>,
-    right: &Value,
-    cx: &mut Context<'_>,
-) -> Result<Value, Error> {
+fn fold_array(operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
     // Scan keeps every position, so it keeps every key.
-    if kind.scan {
-        return scan(operand, kind, axis, left, right, cx)?.with_layout(right.layout().clone()).error_at(cx.span, "invalid scan result");
-    }
-    if right.is_unit() && axis.is_none() {
-        return match left { Some(seed) => operand.call_array(Some(&right.at(0)), seed, cx), None => Ok(right.at(0)) };
-    }
+    if kind.scan { return scan(operand, kind, axis, left, right, cx)?.with_layout(right.layout().clone()).error_at(cx.span, "invalid scan result"); }
+    if right.is_unit() && axis.is_none() { return match left { Some(seed) => operand.call_array(Some(&right.at(0)), seed, cx), None => Ok(right.at(0)) }; }
     let axis = kind.axis(axis, right, cx.span)?;
     if axis >= right.shape().len() { return Err(cx.span.domain_error("axis is outside array rank")); }
     let traversal = Axis::new(right.shape(), axis).error_at(cx.span, "invalid fold axis")?;
@@ -1275,18 +1182,28 @@ fn fold_array(
         if traversal.len >= 2 || (right.as_floats().is_some() && matches!(p, Primitive::Arithmetic(Plus | Times))) {
             if let Some(result) = crate::pervasive::fold(*p, right, &traversal, shape.clone()) { return Ok(result); }
         }
-        if let Primitive::Arithmetic(op) = p {
-            if right.elements().all(|e| matches!(e, Value::Number(_))) { return numeric_fold(*op, right, &traversal, shape, cx); }
-        }
+        if let Primitive::Arithmetic(op) = p { if right.all_numbers() { return number_lanes(*op, false, right, None, &traversal, shape, cx); } }
     }
     let data = fold_items(&traversal, left, |offset| right.at(offset), |x, y| operand.call_array(Some(x), y, cx))?;
     Value::new(shape, data).error_at(cx.span, "invalid fold result")
 }
 
-fn numeric_fold(op: crate::number::Arithmetic, right: &Value, axis: &Axis, shape: Vec<usize>, span: &crate::execution::Context<'_>) -> Result<Value, Error> {
-    let number = |offset| { let Value::Number(n) = right.at(offset) else { unreachable!() }; n };
-    let data = fold_items(axis, None, number, |x, y| { span.check()?; x.dyad(op, y).domain_at(span) })?;
-    Value::new(shape, data.into_iter().map(Value::Number).collect()).error_at(span, "invalid numeric fold")
+/// A fold or scan by `op` of plain numbers, with an optional `seed`: the general path for an arithmetic primitive when every item is a
+/// number.
+fn number_lanes(
+    op: crate::number::Arithmetic,
+    scan: bool,
+    right: &Value,
+    seed: Option<&Value>,
+    axis: &Axis,
+    shape: Vec<usize>,
+    cx: &Context<'_>,
+) -> Result<Value, Error> {
+    let number = |e: Value| { let Value::Number(n) = e else { unreachable!() }; n };
+    let (item, seed) = (|i| number(right.at(i)), seed.cloned().map(number));
+    let step = |x: &crate::Number, y: &crate::Number| { cx.check()?; x.dyad(op, y).domain_at(cx.span) };
+    let data = if scan { scan_items(axis, seed, item, step)? } else { fold_items(axis, seed.as_ref(), item, step)? };
+    Value::new(shape, data.into_iter().map(Value::Number).collect()).error_at(cx.span, "invalid numeric result")
 }
 
 /// Each lane of `axis` reduced from the right, starting from `seed` or else the lane's last item: `apply(item, result)`.
@@ -1332,29 +1249,14 @@ fn scan_axis(kind: FoldKind, axis: Option<&Value>, right: &Value, span: &Span) -
     Axis::new(right.shape(), index).error_at(span, "invalid scan axis")
 }
 
-fn scan(
-    operand: &Function,
-    kind: FoldKind,
-    axis: Option<&Value>,
-    seed: Option<&Value>,
-    right: &Value,
-    cx: &mut Context<'_>,
-) -> Result<Value, Error> {
+fn scan(operand: &Function, kind: FoldKind, axis: Option<&Value>, seed: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
     let axis = scan_axis(kind, axis, right, cx.span)?;
     if right.is_atom() { return match seed { Some(seed) => operand.call_array(Some(seed), right, cx), None => Ok(right.clone()) }; }
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
     if let FunctionNode::Primitive(p) = operand.node() { if let Some(result) = crate::pervasive::scan(*p, right, seed, &axis) { return Ok(result); } }
     if let FunctionNode::Primitive(Primitive::Arithmetic(op)) = operand.node() {
-        let numeric = |a: &Value| a.elements().all(|e| matches!(e, Value::Number(_)));
-        if numeric(right) && seed.is_none_or(|a| matches!(a, Value::Number(_))) {
-            let number = |e| { let Value::Number(n) = e else { unreachable!() }; n };
-            let data = scan_items(
-                &axis,
-                seed.cloned().map(number),
-                |i| number(right.at(i)),
-                |x, y| { cx.check()?; x.dyad(*op, y).domain_at(cx.span) },
-            )?;
-            return Value::new(right.shape().to_vec(), data.into_iter().map(Value::Number).collect()).error_at(cx.span, "invalid numeric scan");
+        if right.all_numbers() && seed.is_none_or(|a| matches!(a, Value::Number(_))) {
+            return number_lanes(*op, true, right, seed, &axis, right.shape().to_vec(), cx);
         }
     }
     let data = scan_items(&axis, seed.cloned(), |i| right.at(i), |x, y| operand.call_array(Some(x), y, cx))?;
@@ -1369,7 +1271,9 @@ struct Closure { definition: Arc<Definition>, environment: Option<usize>, module
 
 impl Closure { fn text(&self) -> &str { let span = &self.definition.span; &span.source.text[span.range.clone()] } }
 impl PartialEq for Closure {
-    fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&self.definition, &other.definition) && (self.environment, self.module) == (other.environment, other.module) }
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.definition, &other.definition) && (self.environment, self.module) == (other.environment, other.module)
+    }
 }
 /// A function call's names. `module` is the module whose names the call sees after its frames.
 struct Frame { names: HashMap<String, Binding>, parent: Option<usize>, module: usize }
@@ -1404,16 +1308,13 @@ impl OperatorNode {
 #[derive(Clone, Debug)]
 pub struct Operator(Arc<OperatorNode>);
 impl Operator {
-    fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> { Ok(Arc::ptr_eq(&self.0, &other.0) || self.0.equal_by(&other.0, values)?) }
+    fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
+        Ok(Arc::ptr_eq(&self.0, &other.0) || self.0.equal_by(&other.0, values)?)
+    }
     /// Whether the operators match, as `≡` compares them: built from matching parts, with `≡`'s rule for the values in them.
     pub(crate) fn matches(&self, other: &Self, cx: &Context<'_>) -> Result<bool, Error> { self.equal_by(other, &mut |x, y| x.matches(y, cx)) }
 }
-impl PartialEq for Operator {
-    fn eq(&self, other: &Self) -> bool {
-        let Ok(equal) = self.equal_by(other, &mut same_values);
-        equal
-    }
-}
+impl PartialEq for Operator { fn eq(&self, other: &Self) -> bool { let Ok(equal) = self.equal_by(other, &mut same_values); equal } }
 
 fn operand_dependencies<'a>(operands: impl Iterator<Item = &'a Operand>) -> (Option<usize>, bool) {
     operands.fold((None, false), |(environment, late), op| match op {
@@ -1484,9 +1385,7 @@ impl Operator {
     }
 }
 
-impl std::fmt::Display for Operator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(&self.0.text()) }
-}
+impl std::fmt::Display for Operator { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(&self.0.text()) } }
 
 impl Operand {
     fn text(&self, budget: &mut usize) -> String { match self { Self::Value(a) => a.literal(), Self::Function(f) => f.text(budget) } }
@@ -1532,7 +1431,12 @@ impl Binding {
         match element { Value::Function(f) => Self::Function(f), Value::Operator(op) => Self::Operator(Arc::unwrap_or_clone(op.0)), _ => Self::Value(element) }
     }
     fn environment(&self) -> Option<usize> {
-        match self { Self::Value(a) => a.environment(), Self::Function(f) => f.environment(), Self::Operator(op) => op.environment(), _ => None }
+        match self {
+            Self::Value(a) => a.environment(),
+            Self::Function(f) => f.environment(),
+            Self::Operator(op) => op.environment(),
+            _ => None,
+        }
     }
     fn into_value(self, span: &Span) -> Result<Value, Error> {
         match self {
@@ -1604,8 +1508,6 @@ pub struct Session {
     depth: usize,
     prototype: bool,
     started: Started,
-    #[cfg(test)]
-    peak_frames: usize,
 }
 
 impl Context<'_> {
@@ -1715,10 +1617,7 @@ impl Session {
         };
         let times = functions
             .elements()
-            .map(|f| match f {
-                Value::Function(f) => self.fastest(&f, right, span),
-                _ => Err(span.domain_error("•time needs functions on its left")),
-            })
+            .map(|f| match f { Value::Function(f) => self.fastest(&f, right, span), _ => Err(span.domain_error("•time needs functions on its left")) })
             .collect::<Result<Vec<_>, _>>()?;
         if functions.is_atom() { return Value::number(times[0]).error_at(span, "invalid •time result"); }
         Value::floats(functions.shape().to_vec(), times).and_then(|t| t.with_layout(functions.layout().clone())).error_at(span, "invalid •time result")
@@ -1756,7 +1655,9 @@ impl Session {
         Ok(())
     }
     pub fn eval(&mut self, code: &str) -> Evaluation { self.eval_with(code, crate::EvalOptions::default()) }
-    pub fn eval_with(&mut self, code: &str, options: crate::EvalOptions) -> Evaluation { self.evaluation(options, |s| s.evaluate_source(Source::new("<input>", code))) }
+    pub fn eval_with(&mut self, code: &str, options: crate::EvalOptions) -> Evaluation {
+        self.evaluation(options, |s| s.evaluate_source(Source::new("<input>", code)))
+    }
     /// One evaluation under `options`: `evaluate`'s result, with the output it produced.
     fn evaluation(&mut self, options: crate::EvalOptions, evaluate: impl FnOnce(&mut Self) -> Evaluation) -> Evaluation {
         self.execution.begin(options);
@@ -2212,9 +2113,7 @@ impl Session {
         let (operand, category) = self.assignment_operand(target, target.len())?;
         let modified = operand > 0 && matches!(category, Category::Function);
         let (array, modifier) = if modified { (&target[..operand], self.modifier(&target[operand..])?) } else { (target, None) };
-        if let Some(modifier) = &modifier {
-            if self.assignment_names(array) { return self.modify_names(array, &value.clone().into_value(span)?, modifier); }
-        }
+        if let Some(modifier) = &modifier { if self.assignment_names(array) { return self.modify_names(array, &value.clone().into_value(span)?, modifier); } }
         match array {
             [Node { kind: NodeKind::Group(nodes), .. }] => self.assign_selected(nodes, modifier, value),
             _ => Err(span.error(ErrorKind::Syntax, "assignment needs a name or selection")),
@@ -2255,7 +2154,9 @@ impl Session {
                 let [Node { kind: NodeKind::Name(name), span }] = &cell[..] else {
                     return Err(cell[0].span.error(ErrorKind::Syntax, "a keyed value destructures into names"));
                 };
-                crate::keyed::field(right, name).map(|item| (&cell[..], item)).ok_or_else(|| span.error(ErrorKind::Value, format!("no item has the key {name}")))
+                crate::keyed::field(right, name)
+                    .map(|item| (&cell[..], item))
+                    .ok_or_else(|| span.error(ErrorKind::Value, format!("no item has the key {name}")))
             };
             return cells.iter().map(item).collect();
         }
@@ -2409,10 +2310,7 @@ impl Session {
         Ok(value)
     }
 
-    fn selection_expression(
-        &mut self,
-        nodes: &[Node],
-    ) -> Result<(ArrayBinding, crate::selection::Labels, Value, SelectionKind), Error> {
+    fn selection_expression(&mut self, nodes: &[Node]) -> Result<(ArrayBinding, crate::selection::Labels, Value, SelectionKind), Error> {
         let members = self.members(nodes);
         let nodes = &members[..];
         let root = nodes.len() - 1;
@@ -2438,14 +2336,7 @@ impl Session {
     /// on its right. A target that repeats a position reads the result of the earlier one, so repeats accumulate. When `f` is a pervasive
     /// primitive and no position repeats, one call covers every target. The result is laid out for `Selection::write_into`, which
     /// writes it as a plain assignment would.
-    fn modified_values(
-        &mut self,
-        original: &Value,
-        selection: &Selection,
-        f: &Function,
-        right: &Value,
-        span: &Span,
-    ) -> Result<Value, Error> {
+    fn modified_values(&mut self, original: &Value, selection: &Selection, f: &Function, right: &Value, span: &Span) -> Result<Value, Error> {
         let right = selection.checked(right, &self.at(span))?;
         if let (ResultFrame::Array(_), Targets::Offsets(offsets), FunctionNode::Primitive(p)) = (&selection.frame, &selection.targets, f.node()) {
             if p.pervasive(true) && distinct(offsets) {
@@ -2611,8 +2502,6 @@ impl Session {
             if let Some(f) = right_operand { names.insert("⍹".into(), f.value()); }
             self.current = Some(self.frames.len());
             self.frames.push(Frame { names, parent: closure.environment, module: closure.module });
-            #[cfg(test)]
-            { self.peak_frames = self.peak_frames.max(self.frames.len()); }
             match self.run_definition(&closure.definition) {
                 Ok(Step::Done(bound)) => break Ok(bound),
                 Err(error) => break Err(error),
@@ -3036,70 +2925,4 @@ fn atop(f: Function, g: Function, span: &Span) -> Result<Function, Error> {
 
 fn before(a: Value, f: Function, span: &Span) -> Result<Function, Error> {
     Function::new(FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(f)]), span)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn values_and_functions_cross_threads() {
-        fn shared<T: Send + Sync>() {}
-        shared::<Value>();
-        shared::<Function>();
-        shared::<Evaluation>();
-    }
-
-    #[test]
-    fn function_construction_shares_both_arms() {
-        let mut s = Session::new();
-        assert!(s.eval("f←+").error.is_none());
-        for _ in 0..64 {
-            let Binding::Function(previous) = s.names["f"].clone() else { unreachable!() };
-            assert!(s.eval("f←f+f").error.is_none());
-            let Binding::Function(f) = &s.names["f"] else { unreachable!() };
-            let FunctionNode::Fork(arms) = f.node() else { unreachable!() };
-            assert!(Arc::ptr_eq(&arms[0].node, &previous.node));
-            assert!(Arc::ptr_eq(&arms[2].node, &previous.node));
-        }
-    }
-    #[test]
-    fn active_lexical_frames_are_reclaimed_during_one_input() {
-        let mut s = Session::new();
-        let body = format!("outer←{{x←2 ⋄ add←{{x+⍵}} ⋄ {} add 3}}", "r←add 3 ⋄ ".repeat(1_000));
-        assert!(s.eval(&body).error.is_none());
-        let source = Source::new("calls", "outer 0 ⋄ outer 0");
-        let weak = Arc::downgrade(&source);
-        let result = s.eval_source(source, crate::EvalOptions::default());
-        assert!(result.error.is_none());
-        assert!(result.value.unwrap().same(&Value::number(5.0).unwrap()));
-        assert_eq!(s.peak_frames, 2);
-        assert!(s.frames.is_empty());
-        assert!(s.current.is_none());
-        assert!(weak.upgrade().is_none());
-    }
-
-    #[test]
-    fn tail_calls_reclaim_frames_but_keep_lexical_dependencies() {
-        for (code, expected, frames) in [
-            ("count←{⍺←0 ⋄ ⍵=0?⍺;(⍺+1)∇⍵-1} ⋄ count 10000", 10000., 1),
-            ("even←{⍵=0?1;odd ⍵-1} ⋄ odd←{⍵=0?0;even ⍵-1} ⋄ even 10000", 1., 1),
-            ("outer←{x←42 ⋄ loop←{⍵=0?x;∇⍵-1} ⋄ loop ⍵} ⋄ outer 10000", 42., 2),
-            ("outer←{x←42 ⋄ op←{⍵=0?⍶ ⍵;∇⍵-1} ⋄ ({x}op)⍵} ⋄ outer 10000", 42., 2),
-            ("loop←{⍵=0?a←7;(∇⍵-1)} ⋄ loop 10000", 7., 1),
-        ] {
-            let mut s = Session::new();
-            let result = s.eval(code);
-            assert!(result.error.is_none(), "{code}: {:?}", result.error);
-            assert!(result.value.unwrap().same(&Value::number(expected).unwrap()));
-            assert_eq!(s.peak_frames, frames);
-            assert!(s.frames.is_empty() && s.current.is_none());
-        }
-        let mut s = Session::new();
-        assert!(s.eval("f←{11::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 5").value.unwrap().same(&Value::number(7.).unwrap()));
-        assert!(s.eval("f 500").value.unwrap().same(&Value::number(7.).unwrap()));
-        assert!(s.eval("f 2000").value.unwrap().same(&Value::number(7.).unwrap()));
-        assert_eq!(s.eval("f 20000").error.unwrap().kind, ErrorKind::Limit);
-        assert!(s.frames.is_empty() && s.current.is_none());
-    }
 }

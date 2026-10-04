@@ -15,10 +15,10 @@
 //!
 //! Other data takes the pairwise comparison.
 use crate::{
-    array::Items,
-    element::read_as,
+    array::{with_int_pair, with_ints, Items},
+    element::{read_as, Key},
     execution::Context,
-    number::{equal_range, float_match},
+    number::{equal_range, float_match, int::Int},
     Error, ErrorKind, Value,
 };
 use foldhash::{fast::RandomState, HashMap, HashMapExt};
@@ -40,20 +40,25 @@ impl<'a> Cells<'a> {
     fn items(&self) -> Option<Items<'a>> { match self { Self::Items(a) => Some(a.as_items()), Self::Arrays(_) => None } }
 }
 
-/// An item as the integer index takes it: a Boolean's 0 or 1, an integer, or a character's code point.
-trait Key: Copy { fn key(self) -> i64; }
-impl Key for bool { fn key(self) -> i64 { self.into() } }
-impl Key for i64 { fn key(self) -> i64 { self } }
-impl Key for char { fn key(self) -> i64 { i64::from(u32::from(self)) } }
-
 /// `Some($body)`, with each `$x` bound to the items of its `$items`, when they are all Booleans, all integers or all characters: the
-/// types that implement `Key`. Otherwise `None`.
+/// types that implement `Key`. Otherwise `None`. Integers of different widths widen to `i64`.
 macro_rules! with_keys {
-    ([$($items:expr),+], |$($x:ident),+| $body:expr) => {
-        match ($($items,)+) {
-            ($(Some(Items::Booleans($x)),)+) => Some($body),
-            ($(Some(Items::Integers($x) | Items::Extended($x)),)+) => Some($body),
-            ($(Some(Items::Characters($x)),)+) => Some($body),
+    ([$items:expr], |$x:ident| $body:expr) => {
+        match $items {
+            Some(Items::Booleans($x)) => Some($body),
+            Some(Items::Characters($x)) => Some($body),
+            Some(items) => items.raw_integers().map(|ints| with_ints!(ints, |$x| $body)),
+            None => None,
+        }
+    };
+    ([$a:expr, $b:expr], |$x:ident, $y:ident| $body:expr) => {
+        match ($a, $b) {
+            (Some(Items::Booleans($x)), Some(Items::Booleans($y))) => Some($body),
+            (Some(Items::Characters($x)), Some(Items::Characters($y))) => Some($body),
+            (Some(a), Some(b)) => match (a.raw_integers(), b.raw_integers()) {
+                (Some(x), Some(y)) => Some(with_int_pair!(x, y, |$x, $y| $body)),
+                _ => None,
+            },
             _ => None,
         }
     };
@@ -86,9 +91,7 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_
 /// With at most 16 needles, one pass over compact items for each needle costs less than building an index. A real needle among floats
 /// or integers becomes the range of floats tolerantly equal to it, worked out once, so the pass makes only plain comparisons.
 fn scanned(haystack: &Cells, needles: &Cells) -> Option<Vec<i64>> {
-    fn each<T: PartialEq>(x: &[T], y: &[T]) -> Vec<i64> {
-        y.iter().map(|n| x.iter().position(|h| h == n).unwrap_or(x.len()) as i64).collect()
-    }
+    fn each<T: PartialEq>(x: &[T], y: &[T]) -> Vec<i64> { y.iter().map(|n| x.iter().position(|h| h == n).unwrap_or(x.len()) as i64).collect() }
     /// The first item of `x`, read as a float, that matches `n`.
     fn ranged<T: Copy>(x: &[T], read: impl Fn(T) -> f64, n: f64) -> i64 {
         let found = match equal_range(n) {
@@ -104,13 +107,17 @@ fn scanned(haystack: &Cells, needles: &Cells) -> Option<Vec<i64>> {
     match x {
         Items::Floats(x) => Some(y.iter().map(|&n| ranged(x, |h| h, n)).collect()),
         // Tolerance never makes an integer equal to a different whole number below 2^43.
-        Items::Integers(x) => Some(
+        Items::Integers(x) => with_ints!(x, |x| Some(
             y.iter()
                 .map(|&n| {
-                    if n.fract() == 0.0 && n.abs() < 8_796_093_022_208.0 { x.iter().position(|&h| h == n as i64).unwrap_or(x.len()) as i64 } else { ranged(x, |h| h as f64, n) }
+                    if n.fract() == 0.0 && n.abs() < 8_796_093_022_208.0 {
+                        x.iter().position(|&h| h.to_i64() == n as i64).unwrap_or(x.len()) as i64
+                    } else {
+                        ranged(x, |h| h.to_i64() as f64, n)
+                    }
                 })
                 .collect(),
-        ),
+        )),
         _ => None,
     }
 }
@@ -182,9 +189,7 @@ fn key_classes<K: Key>(x: &[K]) -> Vec<usize> {
 
 /// Whether each cell is the first of its class.
 pub(crate) fn firsts(cells: &Cells, span: &Context<'_>) -> Result<Vec<bool>, Error> {
-    if cells.len() >= 16 {
-        if let Some(mask) = with_keys!([cells.items()], |x| key_firsts(x)) { return Ok(mask); }
-    }
+    if cells.len() >= 16 { if let Some(mask) = with_keys!([cells.items()], |x| key_firsts(x)) { return Ok(mask); } }
     Ok(classify(cells, span)?.into_iter().enumerate().map(|(i, f)| f == i).collect())
 }
 
@@ -357,10 +362,7 @@ fn hashed_classes(cells: &Cells, x: &[u64], span: &Context<'_>) -> Result<Vec<us
 /// The cells as reals, when every cell is a real atom.
 fn reals<'a>(cells: &'a Cells) -> Option<Cow<'a, [f64]>> {
     let Cells::Items(array) = cells else { return None };
-    match array.as_items() {
-        Items::Values(items) => Some(Cow::Owned(items.iter().map(real).collect::<Option<_>>()?)),
-        _ => read_as(array),
-    }
+    match array.as_items() { Items::Values(items) => Some(Cow::Owned(items.iter().map(real).collect::<Option<_>>()?)), _ => read_as(array) }
 }
 
 /// A real number as a float. Exact fractions and complex numbers give `None`.

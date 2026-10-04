@@ -1,9 +1,10 @@
 import json, re
 import xml.etree.ElementTree as ET
-from basedpl.editors import LAYOUT, CHARACTER_KEYS, PLAIN, SHIFT, OPTION, OPTION_SHIFT, attribute, keylayout
+from basedpl.keyboards import LAYOUT, PLAIN, SHIFT, OPTION, OPTION_SHIFT, CONTROL_OPTION, attribute, keylayout, bases, shortcuts
 
 layout = json.loads(LAYOUT.read_text())
-KEYS = {c: (code, i) for code, pair in CHARACTER_KEYS.items() for i, c in zip([PLAIN, SHIFT], pair)}
+KEYS = {char: (int(code), i) for code, values in bases()['us']['keys'].items() if int(code) <= 50
+        for i, char in enumerate(values[:2]) if isinstance(char, str) and len(char) == 1 and char.isprintable()}
 
 
 def parse(text):
@@ -25,7 +26,7 @@ def simulate(parsed, presses):
         entries = actions[key['action']]
         if state not in entries: out, state = out + terminators.get(state, ''), 'none'
         w = entries[state]
-        state, out = (w['next'], out) if 'next' in w else ('none', out + w['output'])
+        state, out = w.get('next', 'none'), out + w.get('output', '')
     return out
 
 
@@ -34,7 +35,8 @@ def expected(presses):
     state, out = None, ''
     for kind, *key in presses:
         s = layout['states'][state] if state else None
-        if s and kind == 'key' and key[0] in s['keys']: value = s['keys'][key[0]]
+        if s and kind == 'option' and layout['option'].get(key[0]) == {'state': state}: value = s['terminator']
+        elif s and kind == 'key' and key[0] in s['keys']: value = s['keys'][key[0]]
         else:
             if s: out, state = out + s['terminator'] * (kind != 'delete'), None
             if s and kind in ('space', 'delete'): continue
@@ -56,6 +58,7 @@ def codes(presses):
 def test_macos_follows_the_mapping_rules():
     assert attribute('"&<>') == '"&#x0022;&#x0026;&#x003C;&#x003E;"'
     parsed = parse(keylayout(layout))
+    assert simulate(parsed, [(24, OPTION_SHIFT)]) == '≠'
     starts = {v['state']: [('option', k)] for k, v in layout['option'].items() if isinstance(v, dict)}
     while len(starts) < len(layout['states']):
         starts |= {v['state']: starts[n] + [('key', k)] for n in list(starts) for k, v in layout['states'][n]['keys'].items() if isinstance(v, dict)}
@@ -68,3 +71,28 @@ def test_macos_follows_the_mapping_rules():
     assert expected([('option', '6'), ('key', '-'), ('key', '1')]) == '⁻¹'
     assert expected([('option', 'o'), ('space',), ('key', '|')]) == '○|'
     assert expected([('option', 'q'), ('key', 'x')]) == '⎕x'
+
+
+def test_regional_layouts_preserve_native_typing_and_bpl():
+    native = bases()
+    for lang, base in native.items():
+        parsed = parse(keylayout(layout, lang))
+        assert simulate(parsed, [(29, OPTION_SHIFT)]) == '⍬', lang
+        for char, chord in shortcuts(layout, lang, base).items():
+            value = layout['option'][char]
+            presses = [tuple(chord)] + ([(49, PLAIN)] if isinstance(value, dict) else [])
+            wanted = layout['states'][value['state']]['terminator'] if isinstance(value, dict) else value
+            assert simulate(parsed, presses) == wanted, (lang, char)
+            if isinstance(value, dict): assert simulate(parsed, [chord, chord, (49, PLAIN)]) == wanted + ' ', (lang, char)
+    cases = [('uk', [(20, SHIFT)], '£'), ('uk', [(20, OPTION), (20, OPTION_SHIFT)], '#√'),
+             ('de', [(30, OPTION_SHIFT)], '≠'),
+             ('es', [(30, OPTION_SHIFT)], '≠'),
+             ('de', [(33, PLAIN), (39, SHIFT)], 'üÄ'),
+             ('de', [(23, OPTION), (22, OPTION)], '[]'), ('de', [(10, PLAIN), (0, PLAIN)], 'â'),
+             ('de', [(10, PLAIN), (24, PLAIN), (0, PLAIN)], '^á'),
+             ('de', [(23, OPTION_SHIFT), (18, PLAIN), (22, CONTROL_OPTION), (18, PLAIN)], '₁¹'),
+             ('de', [(50, OPTION_SHIFT)], '≥'),
+             ('de', [(6, OPTION)], '•'), ('fr', [(12, OPTION), (49, PLAIN)], '⍺'),
+             ('fr', [(18, SHIFT), (20, PLAIN)], '1"'), ('fr', [(23, OPTION_SHIFT), (27, OPTION_SHIFT)], '[]'),
+             ('fr', [(33, PLAIN), (14, PLAIN)], 'ê'), ('es', [(41, SHIFT), (39, PLAIN), (0, PLAIN)], 'Ñá')]
+    for lang, presses, wanted in cases: assert simulate(parse(keylayout(layout, lang)), presses) == wanted, lang

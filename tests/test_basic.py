@@ -34,7 +34,7 @@ def test_bindings_functions_and_output(capsys):
     assert mean([1, 2, 4]).py == Fraction(7, 3)
     added = bpl.fn('+')([1, 2, 3], 10)
     np.testing.assert_array_equal(added, [11, 12, 13])
-    assert added.np.dtype == np.int64
+    assert added.np.dtype == np.uint8
     f = bpl.fn('foo')
     bpl('foo←+')
     assert f(3).py == 3
@@ -73,7 +73,7 @@ def test_numpy_inputs_and_copies():
         result = bpl('x', x=a)
         np.testing.assert_array_equal(result, a)
         assert np.shape(result) == a.shape
-    assert bpl('x', x=np.arange(3, dtype=np.int8)).np.dtype == np.int64 and bpl('x', x=np.ones(2, np.float32)).np.dtype == np.float64
+    assert bpl('x', x=np.arange(3, dtype=np.int8)).np.dtype == np.uint8 and bpl('x', x=np.ones(2, np.float32)).np.dtype == np.float64
     assert bpl('x', x=np.float32(1.5)).py == 1.5
     assert bpl('x', x=np.int64(3)).py == 3
     assert bpl('x+1', x=float('inf')).py == float('inf')

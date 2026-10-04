@@ -107,7 +107,7 @@ def test_binary_files(tmp_path):
     path.write_bytes(data)
     read, write = bpl.nget, bpl.nput
     values = read(str(path), binary=1)
-    teq(values.np.dtype, np.dtype('int64'))
+    teq(values.np.dtype, np.dtype('uint8'))
     teq(values.py, list(data))
     opts = dict(path=str(dest))
     teq(write(values, **opts).py, 256)
@@ -136,7 +136,7 @@ def test_distribution_functions():
     normal, binomial = bpl.fn('•normal')([3., 2.]), bpl.fn('•binomial')([10, 0.5])
     sample = normal['sample']
     x, y = sample(10000).np, binomial['sample'](10000).np
-    assert x.dtype == np.float64 and y.dtype == np.int64
+    assert x.dtype == np.float64 and np.issubdtype(y.dtype, np.integer)
     assert abs(x.mean()-3) < 0.15 and abs(x.std()-2) < 0.15
     assert np.all((0 <= y) & (y <= 10)) and abs(y.mean()-5) < 0.15
     teq(binomial['quantile']([0., 1.]).np, [0, 10])

@@ -1325,10 +1325,10 @@ T←["a":1] ⋄ (⎕←T).[⎕←"b"]←2
 2⍕¯0.001 0.001   ⍝ "  0.00 0.00"
 
 ⍝ — A negative precision selects significant digits in exponential notation
-¯2⍕3.25 ¯3.25 325 0.0325   ⍝ " 3.3E0 ¯3.3E0 3.3E2 3.3E¯2"
+¯2⍕3.25 ¯3.25 325 0.0325   ⍝ " 3.3ₑ0 ¯3.3ₑ0 3.3ₑ2 3.3ₑ¯2"
 
 ⍝ — Matrix formatting aligns exponential fields by column
-¯2⍕[3.125 0.002 ⋄ 1000 20]   ⍝ ⊃" 3.1E0 2.0E¯3" " 1.0E3 2.0E1 "
+¯2⍕[3.125 0.002 ⋄ 1000 20]   ⍝ ⊃" 3.1ₑ0 2.0ₑ¯3" " 1.0ₑ3 2.0ₑ1 "
 
 ⍝ —
 ⍕¯1E¯100j¯2E¯99   ⍝ "¯1ₑ¯100ⱼ¯2ₑ¯99"
@@ -1387,7 +1387,7 @@ T←["a":1] ⋄ (⎕←T).[⎕←"b"]←2
 4 1⍕1.1 2 ¯4 2.547   ⍝ " 1.1 2.0¯4.0 2.5"
 
 ⍝ — Fixed-width fields retain a trailing space when the exponent is short
-7 ¯3⍕5 15 155 1555   ⍝ "5.00E0 1.50E1 1.55E2 1.56E3 "
+7 ¯3⍕5 15 155 1555   ⍝ "5.00ₑ0 1.50ₑ1 1.55ₑ2 1.56ₑ3 "
 
 ⍝ —
 0 2⍕1 2   ⍝ " 1.00 2.00"
@@ -3689,7 +3689,7 @@ m←[1 2 3 ⋄ 4 5 6] ⋄ m +⌿∘×⍤1 ∞ [1 10 ⋄ 2 20 ⋄ 3 30]   ⍝ [14
 m←[1 2 ⋄ 3 4] ⋄ [(⊂⍤∞ m) ≡ ⊂m;(⊂⍤¯∞ m) ≡ ⊂⍤0 m]   ⍝ $t $t
 
 ⍝ — Empty rank application exposes its single prototype call
-{⎕←⍵ ⋄ ⍳3}⍤0(⍬)
+{⎕←⍵ ⋄ ⍳3}⍤0⍬
 0 3⍴0
 ⍝ ⎕: 0
 

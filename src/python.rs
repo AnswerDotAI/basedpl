@@ -1,4 +1,9 @@
-use crate::{eval::Operand, EvalOptions, Evaluation, Function, InterruptHandle, Number, Session, Source, Span, Value};
+use crate::{
+    array::{with_ints, Items, Storage},
+    element::Whole,
+    eval::Operand,
+    EvalOptions, Evaluation, Function, InterruptHandle, Number, Session, Source, Span, Value,
+};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use pyo3::{
@@ -75,13 +80,16 @@ impl PyArray {
     #[new]
     fn new(raw: &Bound<'_, PyDict>) -> PyResult<Self> { Ok(Self { inner: import_array(raw)? }) }
     #[staticmethod]
-    fn numeric(shape: Vec<usize>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let py = data.py();
+    fn numeric(shape: Vec<usize>, boolean: bool, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        fn ints<T: Whole + pyo3::buffer::Element>(data: &Bound<'_, PyAny>) -> Option<PyResult<Storage>> {
+            PyBuffer::<T>::get(data).ok().map(|b| Ok(Storage::narrowed(b.to_vec(data.py())?)))
+        }
         // A NumPy Boolean array arrives as its bytes, one for each item.
-        let inner = if let Ok(b) = PyBuffer::<u8>::get(data) { Value::booleans(shape, b.to_vec(py)?.into_iter().map(|x| x != 0).collect()) } else {
-            match PyBuffer::<i64>::get(data) {
-                Ok(b) => Value::integers(shape, b.to_vec(py)?),
-                Err(_) => Value::floats(shape, PyBuffer::<f64>::get(data)?.to_vec(py)?),
+        let inner = if boolean { Value::booleans(shape, PyBuffer::<u8>::get(data)?.to_vec(data.py())?.into_iter().map(|x| x != 0).collect()) } else {
+            let storage = ints::<u8>(data).or_else(|| ints::<i16>(data)).or_else(|| ints::<i32>(data)).or_else(|| ints::<i64>(data));
+            match storage {
+                Some(storage) => Value::from_storage(shape, storage?),
+                None => Value::floats(shape, PyBuffer::<f64>::get(data)?.to_vec(data.py())?),
             }
         };
         inner.map(|inner| Self { inner }).map_err(|k| PyValueError::new_err(k.to_string()))
@@ -102,16 +110,15 @@ impl PyArray {
     fn is_atom(&self) -> bool { self.inner.is_atom() }
     fn parts(&self, py: Python<'_>) -> PyResult<Py<PyDict>> { array(py, &self.inner) }
     fn buffer<'py>(&self, py: Python<'py>) -> PyResult<Option<(&'static str, Bound<'py, PyByteArray>)>> {
-        fn bytes<'py, const N: usize>(py: Python<'py>, items: impl ExactSizeIterator<Item = [u8; N]>) -> PyResult<Bound<'py, PyByteArray>> {
-            PyByteArray::new_with(py, items.len() * N, |buf| {
-                for (chunk, item) in buf.as_chunks_mut::<N>().0.iter_mut().zip(items) { *chunk = item; }
-                Ok(())
-            })
-        }
-        if let Some(v) = self.inner.as_booleans() { return Ok(Some(("?", bytes(py, v.iter().map(|&b| [u8::from(b)]))?))); }
-        if let Some(v) = self.inner.as_integers() { return Ok(Some(("i8", bytes(py, v.iter().map(|n| n.to_ne_bytes()))?))); }
-        let Some(v) = self.inner.as_floats() else { return Ok(None) };
-        Ok(Some(("f8", bytes(py, v.iter().map(|n| n.to_ne_bytes()))?)))
+        /// Integers of one width as their NumPy dtype and their bytes.
+        fn whole<T: Whole>(v: &[T]) -> (&'static str, &[u8]) { (T::DTYPE, bytemuck::cast_slice(v)) }
+        let (dtype, bytes): (&'static str, &[u8]) = match self.inner.as_items() {
+            Items::Booleans(v) => ("?", bytemuck::cast_slice(v)),
+            Items::Integers(ints) => with_ints!(ints, |v| whole(v)),
+            Items::Floats(v) => ("f8", bytemuck::cast_slice(v)),
+            _ => return Ok(None),
+        };
+        Ok(Some((dtype, PyByteArray::new(py, bytes))))
     }
     fn __repr__(&self) -> String { self.inner.to_string() }
     fn literal(&self) -> String { self.inner.literal() }
@@ -200,11 +207,7 @@ impl PyOperator {
 }
 /// What a request runs: source code, or a function called with arguments.
 enum Run { Code(String), Call(Function, Vec<Value>) }
-struct EvalRequest {
-    run: Option<Run>,
-    bindings: Vec<(String, Operand)>,
-    options: EvalOptions,
-}
+struct EvalRequest { run: Option<Run>, bindings: Vec<(String, Operand)>, options: EvalOptions }
 impl EvalRequest {
     fn run(&mut self, session: &mut Session) -> Result<Evaluation, &'static str> {
         for (name, value) in self.bindings.drain(..) {
@@ -323,15 +326,7 @@ fn python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
 
 /// A result as the dict that the JSON protocol sends, holding native arrays and functions.
 fn response(py: Python<'_>, result: Evaluation) -> PyResult<Py<PyDict>> {
-    let value = if let Some(inner) = result.value {
-        Some(Py::new(py, PyArray { inner })?.into_any())
-    } else if let Some(inner) = result.function {
-        Some(Py::new(py, PyFunction { inner })?.into_any())
-    } else if let Some(inner) = result.operator {
-        Some(Py::new(py, PyOperator { inner })?.into_any())
-    } else {
-        None
-    };
+    let value = if let Some(inner) = result.value { Some(Py::new(py, PyArray { inner })?.into_any()) } else if let Some(inner) = result.function { Some(Py::new(py, PyFunction { inner })?.into_any()) } else if let Some(inner) = result.operator { Some(Py::new(py, PyOperator { inner })?.into_any()) } else { None };
     let d = PyDict::new(py);
     d.set_item("value", value)?;
     d.set_item("output", output(py, &result.output)?)?;
@@ -393,8 +388,8 @@ fn _install_kernelspec(name: &str, argv: Vec<String>, display_name: &str, langua
         .map_err(|e| pyo3::exceptions::PyOSError::new_err(format!("{e:#}")))
 }
 
-/// A row of `basedpl.symbols`, which Python receives as a dict. `shortcut` is the glyph's Alt chord as a display suffix, such as
-/// `" Sa"` for Alt-Shift-a.
+/// A row of `basedpl.symbols`, which Python receives as a dict. `shortcut` is the glyph's keys after Alt as a display suffix, such as
+/// `" o *"` for Alt-o then `*`.
 #[derive(IntoPyObject)]
 struct SymbolRow {
     glyph: &'static str,

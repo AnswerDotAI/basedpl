@@ -83,9 +83,7 @@ impl Execution {
     }
     pub(crate) fn output(&self, kind: OutputKind, text: String) { self.emit(Output { kind, data: [("text/plain".into(), text)].into_iter().collect() }); }
     /// Sends `output` to the sink, or keeps it for the evaluation's result when there is none.
-    pub(crate) fn emit(&self, output: Output) {
-        if let Some(sink) = &self.output { sink(&output); } else { self.captured.borrow_mut().push(output); }
-    }
+    pub(crate) fn emit(&self, output: Output) { if let Some(sink) = &self.output { sink(&output); } else { self.captured.borrow_mut().push(output); } }
     /// The output kept since the last call.
     pub(crate) fn take_output(&self) -> Vec<Output> { self.captured.take() }
     /// The result of `read` on the frontend's input. A frontend with no input, or a read that fails, is a VALUE error. A read that
