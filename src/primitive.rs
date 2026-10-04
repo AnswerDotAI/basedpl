@@ -520,7 +520,7 @@ impl Primitive {
             Self::Math(Magnitude) => row("|", "stile", "abs", pervasive_monad("magnitude"), pervasive_dyad("residue").identity(Identity::Number(0))),
             Self::Math(Power) => row("*", "star", "exp", pervasive_monad("exponential"), pervasive_dyad("exponent").identity(Identity::Number(1))),
             Self::Math(Log) => row("⍟", "log", "", pervasive_monad("logarithm"), pervasive_dyad("log")),
-            Self::Math(Circle) => row("○", "circle", "", pervasive_monad("cis"), pervasive_dyad("circle")),
+            Self::Math(Circle | Arc) => row("○", "circle", "", pervasive_monad("cis"), pervasive_dyad("circle")),
             Self::Math(Pi) => row("π", "pi", "", pervasive_monad("pi-times"), pervasive_dyad("pi-ratio")),
             Self::Math(Root) => row("√", "root", "", pervasive_monad("sqrt"), pervasive_dyad("root")),
             Self::Math(Factorial) => row("!", "factorial", "", pervasive_monad("factorial"), pervasive_dyad("binomial").identity(Identity::Number(1))),
@@ -594,6 +594,23 @@ impl Primitive {
     pub(crate) fn pervasive(self, dyadic: bool) -> bool {
         let info = self.info();
         if dyadic { info.dyad.is_some_and(|d| d.pervasive) } else { info.monad.is_some_and(|m| m.pervasive) }
+    }
+    /// Whether this form only selects or rearranges the items of its right argument. Under and selective assignment write
+    /// back through such a form.
+    pub(crate) fn selects(self, dyadic: bool) -> bool {
+        use Primitive::*;
+        match self {
+            Identity(false) | Take | Reverse(_) | Transpose | Index => true,
+            Identity(true) | Ravel | CatenateFirst | Member => !dyadic,
+            Drop | Shape | Replicate | Mix | Enclose | Nest | Windows => dyadic,
+            _ => false,
+        }
+    }
+    /// Whether this form can drop items of its right argument. An inverse can't restore a dropped item, and Under uses an
+    /// inverse only for a function with no such form.
+    pub(crate) fn discards(self, dyadic: bool) -> bool {
+        use Primitive::*;
+        match self { Take => true, Drop | Shape | Transpose | Replicate | Index | Mix | Enclose | Nest | Windows => dyadic, _ => false }
     }
     pub(crate) fn call_axes(self, left: Option<&Value>, right: &Value, spec: &Value, span: &Context<'_>) -> Result<Value, Error> {
         let target = match left { Some(x) if self.pervasive(true) && x.shape().len() > right.shape().len() => x, _ => right };
@@ -772,7 +789,7 @@ impl Primitive {
                 (Self::Compare(_) | Self::Math(Math::Not), _, _) | (Self::Math(Math::Nand | Math::Nor), Some(_), _) => Value::Number(Number::from_bool(false)),
                 (Self::Math(Math::Floor | Math::Ceiling) | Self::Arithmetic(Arithmetic::Times), None, _) => integer(0),
                 (Self::Random, _, Value::Number(y)) => Value::Number(y.zero()),
-                (Self::Math(Math::Circle | Math::Pi | Math::Log), _, _) | (Self::Math(Math::Power), None, _) => float(0.0),
+                (Self::Math(Math::Circle | Math::Arc | Math::Pi | Math::Log), _, _) | (Self::Math(Math::Power), None, _) => float(0.0),
                 (Self::Math(_) | Self::Arithmetic(_), None, Value::Number(y)) => Value::Number(y.result_zero(None)),
                 (Self::Math(_) | Self::Arithmetic(_), Some(Value::Number(x)), Value::Number(y)) => Value::Number(y.result_zero(Some(x))),
                 _ => float(0.0),
@@ -1211,7 +1228,7 @@ pub(crate) fn lambert_w(right: &Value, span: &Context<'_>) -> Result<Value, Erro
 pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value, axis: Option<&Value>, span: &Context<'_>) -> Result<Value, Error> {
     use crate::number::{
         Arithmetic::*,
-        Math::{Circle, Log, Nand, Nor, Not, Pi, Power, Root},
+        Math::{Arc, Circle, Log, Nand, Nor, Not, Pi, Power, Root},
     };
     use Primitive::*;
     if let Some(axis) = axis {
@@ -1260,14 +1277,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
             }
             Math(Log) if first => call(Math(Power), Some(a), right),
             Math(Log) => call(Math(Power), Some(a), &Arithmetic(Divide).call(None, right, span)?),
-            Math(Circle) if first => {
-                for e in a.elements() {
-                    let code = numeric(&e, span)?.integer().error_at(span, "circle inverse needs integer codes")?;
-                    if !(-7..=12).contains(&code) { return Err(span.domain_error("circle code has no supported inverse")); }
-                }
-                let codes = Arithmetic(Minus).call(None, a, span)?;
-                call(p, Some(&codes), right)
-            }
+            Math(Circle) if first => call(Math(Arc), Some(a), right),
             Reverse(_) if first => call(p, Some(&Arithmetic(Minus).call(None, a, span)?), right),
             Transpose if first => {
                 let perm = axes(a, right.shape().len(), span)?;
@@ -1288,10 +1298,9 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
         };
     }
     match p {
-        // Prime indices count from 0, so a prime's index is the number of primes below it.
-        Prime => p.call(Some(&integer(-1)), right, span),
+        Prime => crate::number_theory::index(right, span),
         Factor => crate::number_theory::product(right, span),
-        Polynomial => p.call(None, right, span),
+        Polynomial => crate::polynomial::coefficients(right, span),
         Arithmetic(Plus | Minus | Divide) | Reverse(_) | Transpose | Identity(_) | Math(Not) | Index | MatrixDivide => p.call(None, right, span),
         Arithmetic(Times) => {
             if !p.call(None, right, span)?.matches(right, span)? { return Err(span.domain_error("× gives only ¯1, 0, 1 and unit complex numbers")); }
@@ -1914,22 +1923,22 @@ fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, 
     // Validate even an unused singleton count (e.g. fractional count / empty vector).
     let counts = counts.as_items().integers().error_at(span, "replication count must be a representable integer")?;
     let single = counts.len() == 1;
-    // How many counts use up a cell. A negative count uses up none.
-    let items = counts.iter().filter(|&&n| n >= 0).count();
     let len = match (inverse, single) {
         (false, true) => traversal.len,
-        (false, false) if traversal.len == 1 || items == traversal.len => counts.len(),
+        (false, false) if traversal.len == 1 || counts.len() == traversal.len => counts.len(),
         (false, false) => return Err(span.error(ErrorKind::Length, "replication counts and data do not agree")),
-        (true, true) if counts[0].unsigned_abs() as usize == traversal.len => 1,
-        (true, true) if counts[0] > 0 && traversal.len % counts[0] as usize == 0 => traversal.len / counts[0] as usize,
-        (true, true) => return Err(span.domain_error("one count must match or divide the number of cells to invert")),
+        (true, true) => match counts[0].unsigned_abs() as usize {
+            0 if traversal.len == 0 => 1,
+            n if n > 0 && traversal.len % n == 0 => traversal.len / n,
+            _ => return Err(span.domain_error("one count must divide the number of cells to invert")),
+        },
         (true, false) => counts.len(),
     };
     let count = |j: usize| counts[if single { 0 } else { j }];
     // The or of the counts is negative when any count is, and at most 1 when they are Boolean.
     let (any, sum) = or_and_sum(&counts);
     let boolean = !single && any as u64 <= 1;
-    shape[axis] = if inverse { if single { len } else { items } } else if boolean { sum as usize } else {
+    shape[axis] = if inverse { len } else if boolean { sum as usize } else {
         (0..len)
             .try_fold(0usize, |total, j| total.checked_add(count(j).unsigned_abs() as usize))
             .ok_or_else(|| span.error(ErrorKind::Limit, "replication count overflow"))?
@@ -1952,9 +1961,10 @@ fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, 
         let n = count(j);
         let source = if traversal.len == 1 { 0 } else { consumed };
         let pos = (n > 0).then_some(source);
-        // A negative count inserts fills and uses up no item. The inverse uses up the cells each count made, and gives nothing back for a negative count.
-        consumed = consumed.saturating_add(if inverse { n.unsigned_abs() as usize } else { usize::from(n >= 0) });
-        let repeats = if inverse { usize::from(single || n >= 0) } else { n.unsigned_abs() as usize };
+        // Each count uses up one cell, and a negative count gives that cell's place to fills. The inverse uses up the cells each count
+        // made, and gives back one cell for each count: a fill for a count that kept nothing.
+        consumed = consumed.saturating_add(if inverse { n.unsigned_abs() as usize } else { 1 });
+        let repeats = if inverse { 1 } else { n.unsigned_abs() as usize };
         let offset = pos.map(|p| p * traversal.inner);
         if repeats == 1 { table.push(offset) }
         else { table.extend(std::iter::repeat_n(offset, repeats)) }
@@ -2363,6 +2373,18 @@ impl Selection {
         let mut array = array.clone();
         self.write_into(&mut array, values, span)?;
         Ok(array)
+    }
+    /// Fails when a target repeats with a value that doesn't match its first value. Under needs one value for each position.
+    /// Assignment lets the last value win.
+    pub(crate) fn check_repeats(&self, values: &Value, span: &Context<'_>) -> Result<(), Error> {
+        let mut firsts: HashMap<&[usize], usize> = HashMap::with_capacity(self.targets.len());
+        for i in 0..self.targets.len() {
+            let first = *firsts.entry(self.targets.path(i)).or_insert(i);
+            if first != i && !self.item(values, first).matches(&self.item(values, i), span)? {
+                return Err(span.domain_error("a position selected twice gets different values"));
+            }
+        }
+        Ok(())
     }
 
     /// Replaces each target of `array` with its value, in place. Every check comes before the first write, so an error leaves

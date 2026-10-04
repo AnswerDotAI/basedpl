@@ -92,7 +92,7 @@ pub(crate) fn serialize(_: Option<&Value>, right: &Value, span: &Context<'_>) ->
     Ok(keyed::text(&output))
 }
 
-/// `•xml⁻¹ text` reads XML into the elements that `•xml` writes, with the same meaning. Comments, processing instructions and text that
+/// `•xml text` reads XML into the elements that `•xml⁻¹` writes, with the same meaning. Comments, processing instructions and text that
 /// is only whitespace are dropped.
 pub(crate) fn parse(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let text = crate::data::text(right, span)?;

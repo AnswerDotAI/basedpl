@@ -118,49 +118,75 @@ impl Function {
     }
     fn selection_kind(&self, left: Option<&Value>, right: &Value, kind: SelectionKind) -> Option<SelectionKind> {
         use Primitive::*;
-        let dyadic = left.is_some();
+        if !self.selects(left.is_some()) { return None; }
+        Some(match self.node() {
+            FunctionNode::Primitive(p) => match (p, left) {
+                (Identity(_), _) | (Index, None) => kind,
+                (Take, None) if right.shape().len() <= 1 => SelectionKind::Item,
+                (Mix, Some(x)) if x.is_empty() => kind,
+                (Mix | Index, Some(x))
+                    if {
+                        let fields = crate::primitive::coordinate_fields(x);
+                        fields.len() == right.shape().len().max(1)
+                            && fields.iter().all(|e| (e.is_atom() && !e.as_number().is_some_and(|n| n.is_infinite())) || crate::keyed::name(e).is_some())
+                    } =>
+                {
+                    SelectionKind::Item
+                }
+                _ => SelectionKind::Elements,
+            },
+            FunctionNode::Axis(f, _) => return f.selection_kind(left, right, kind),
+            FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(f)]) => return f.selection_kind(Some(a), right, kind),
+            _ => SelectionKind::Elements,
+        })
+    }
+    /// Whether the function only selects or rearranges the items of its right argument, whatever the values of its arguments.
+    /// Each and Rank need this of their operand, which they apply to every cell of the labels.
+    fn selects(&self, dyadic: bool) -> bool {
+        use {
+            FunctionNode as N,
+            Operand::{Function as F, Value as V},
+            OperatorKind::*,
+        };
+        fn replicate(f: &Function) -> bool { match f.node() { N::Primitive(Primitive::Replicate) => true, N::Axis(f, _) => replicate(f), _ => false } }
         match self.node() {
-            FunctionNode::Primitive(Identity(_)) if !dyadic => Some(kind),
-            FunctionNode::Primitive(p)
-                if match p {
-                    Ravel | CatenateFirst => !dyadic,
-                    Take => true,
-                    Drop | Shape | Replicate => dyadic,
-                    Member => !dyadic,
-                    Mix => dyadic,
-                    Reverse(_) | Transpose | Index => true,
-                    _ => false,
-                } =>
-            {
-                Some(match (p, left) {
-                    (Take, None) if right.shape().len() <= 1 => SelectionKind::Item,
-                    (Mix, Some(x)) if x.is_empty() => kind,
-                    (Mix | Index, Some(x))
-                        if {
-                            let fields = crate::primitive::coordinate_fields(x);
-                            fields.len() == right.shape().len().max(1)
-                                && fields.iter().all(|e| (e.is_atom() && !e.as_number().is_some_and(|n| n.is_infinite())) || crate::keyed::name(e).is_some())
-                        } =>
-                    {
-                        SelectionKind::Item
-                    }
-                    (Index, None) => kind,
-                    _ => SelectionKind::Elements,
-                })
-            }
-            FunctionNode::Axis(f, _) => f.selection_kind(left, right, kind),
-            FunctionNode::Modified(OperatorKind::Each, Operand::Function(f))
-            | FunctionNode::Composed(OperatorKind::Rank, [Operand::Function(f), Operand::Value(_)]) => {
-                f.selection_kind(left, right, SelectionKind::Elements).map(|_| SelectionKind::Elements)
-            }
-            FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(f)]) if !dyadic => f.selection_kind(Some(a), right, kind),
-            _ => None,
+            N::Primitive(p) => p.selects(dyadic),
+            N::Axis(f, _) | N::Modified(Each, F(f)) | N::Composed(Rank, [F(f), V(_)]) => f.selects(dyadic),
+            N::Composed(Atop, [F(f), F(g)]) => f.selects(false) && g.selects(dyadic),
+            N::Composed(Over, [F(f), F(g)]) => f.selects(dyadic) && g.selects(false),
+            N::Composed(Before, [V(_), F(f)]) => !dyadic && f.selects(true),
+            N::Composed(Power, [F(f), V(n)]) => matches!(n.as_number().as_ref().and_then(power_count), Some((false, 0..usize::MAX))) && f.selects(dyadic),
+            // Expand, the inverse of replicate, gives each cell of its argument or a fill.
+            N::Inverse(f) => match f.node() { N::Composed(Before, [V(_), F(r)]) => !dyadic && replicate(r), _ => dyadic && replicate(f) },
+            _ => false,
+        }
+    }
+    /// Whether the function can drop items of its argument. Under uses an inverse only for a function that can't, as BQN's spec
+    /// requires. An inverse drops items only where its function does: BPL's one other inverse that drops items, the inverse
+    /// of a catenate, checks the items it drops. Dfns, system functions, explicit inverse pairs and constants count as keeping
+    /// every item.
+    fn discards(&self, dyadic: bool) -> bool {
+        use {
+            FunctionNode as N,
+            Operand::{Function as F, Value as V},
+            OperatorKind::*,
+        };
+        match self.node() {
+            N::Primitive(p) => p.discards(dyadic),
+            N::Fold(f, _) => f.discards(true) || matches!(f.node(), N::Primitive(Primitive::Identity(_))),
+            N::Composed(Atop, [F(f), F(g)]) => f.discards(false) || g.discards(dyadic),
+            N::Composed(Over, [F(f), F(g)]) => f.discards(dyadic) || g.discards(false),
+            N::Composed(Before | After, [V(_), F(f)] | [F(f), V(_)]) | N::Modified(Commute, F(f)) => f.discards(true),
+            N::Axis(f, _) | N::Inverse(f) | N::Modified(Each, F(f)) | N::Composed(Power | Rank, [F(f), V(_)]) => f.discards(dyadic),
+            N::Fork([f, g, h]) => f.discards(dyadic) || g.discards(true) || h.discards(dyadic),
+            N::Composed(PairInverse, _) | N::Modified(Commute, V(_)) | N::System(_) | N::Defined(_) | N::Derived(..) | N::LateBound(..) => false,
+            node => node.operands().iter().any(|o| matches!(o, F(f) if f.discards(false) || f.discards(true))),
         }
     }
     /// `self` applied to the labelled positions of a selection, with the kind of selection it makes, or `None` when `self`
-    /// isn't structural. Selective assignment and Under both select this way. An atop of structural functions is structural.
-    /// So is a fork whose middle function selects from the tine on the selected path: the other tine computes from `actual`,
-    /// the real argument, which only Under supplies.
+    /// isn't structural. Selective assignment and Under both select this way. An atop, an over or a whole-number power of
+    /// structural functions is structural. So is a fork whose middle function selects from the tine on the selected path: the
+    /// other tine computes from `actual`, the real argument, which only Under supplies.
     fn select(
         &self,
         left: Option<&Value>,
@@ -170,10 +196,22 @@ impl Function {
         cx: &mut Context<'_>,
     ) -> Result<Option<(Value, SelectionKind)>, Error> {
         match self.node() {
-            FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(g), Operand::Function(h)]) => {
-                let Some((labels, kind)) = h.select(left, labels, actual, kind, cx)? else { return Ok(None) };
-                let actual = actual.map(|a| h.call_array(left, a, cx)).transpose()?;
-                return g.select(None, &labels, actual.as_ref(), kind, cx);
+            FunctionNode::Composed(op @ (OperatorKind::Atop | OperatorKind::Over), [Operand::Function(g), Operand::Function(h)]) => {
+                // Atop passes `left` to `h`. Over applies `h` to `left` as well, and passes that to `g`.
+                let (inner, outer) = match op { OperatorKind::Atop => (left, None), _ => (None, left.map(|x| h.call_array(None, x, cx)).transpose()?) };
+                let Some((labels, kind)) = h.select(inner, labels, actual, kind, cx)? else { return Ok(None) };
+                let actual = actual.map(|a| h.call_array(inner, a, cx)).transpose()?;
+                return g.select(outer.as_ref(), &labels, actual.as_ref(), kind, cx);
+            }
+            FunctionNode::Composed(OperatorKind::Power, [Operand::Function(g), Operand::Value(n)]) => {
+                let Some((false, n @ 0..usize::MAX)) = n.as_number().as_ref().and_then(power_count) else { return Ok(None) };
+                let (mut labels, mut actual, mut kind) = (labels.clone(), actual.cloned(), kind);
+                for _ in 0..n {
+                    let Some(step) = g.select(left, &labels, actual.as_ref(), kind, cx)? else { return Ok(None) };
+                    actual = actual.map(|a| g.call_array(left, &a, cx)).transpose()?;
+                    (labels, kind) = step;
+                }
+                return Ok(Some((labels, kind)));
             }
             FunctionNode::Fork([f, g, h]) => {
                 let Some(actual) = actual else { return Ok(None) };
@@ -541,8 +579,10 @@ fn composition(op: OperatorKind, operands: &[Operand; 2], left: Option<&Value>, 
                 match g.select(None, &labelled, Some(right), SelectionKind::Item, cx)? {
                     Some((selected, kind)) => {
                         let (selection, values) = labels.replacements(&selected, &result, kind, cx.span)?;
+                        selection.check_repeats(&values, cx)?;
                         Ok(Bound::from(selection.write(right, &values, cx)?))
                     }
+                    None if g.discards(false) => Err(cx.span.domain_error("Under can't use the inverse of a function that drops items")),
                     None => g.inverse(cx.span)?.call(None, &result, cx),
                 }
             }
@@ -646,8 +686,7 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut 
     let mut value = right.clone();
     match operand {
         Operand::Value(count) if count.is_atom() => {
-            let Some(Value::Number(n)) = count.elements().next() else { return Err(cx.span.domain_error("power counts must be numeric")) };
-            let (negative, n) = power_count(&n, cx.span)?;
+            let (negative, n) = checked_count(count, cx.span)?;
             let inverse;
             let f = if negative { inverse = f.inverse(cx.span)?; &inverse } else { f };
             if n == usize::MAX { converge(f, &mut value, cx)?; } else {
@@ -702,22 +741,21 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut 
     Ok(Bound::from(value))
 }
 
-/// A count's direction and its number of steps, with `usize::MAX` for `∞`.
-fn power_count(n: &crate::Number, span: &Span) -> Result<(bool, usize), Error> {
-    if n.is_infinite() { return Ok((n.as_float().is_some_and(|x| x < 0.), usize::MAX)); }
-    let n = n.integer().error_at(span, "power counts must be integral or infinite")?;
-    Ok((n < 0, n.unsigned_abs()))
+/// A count's direction and its number of steps, with `usize::MAX` for `∞`, or `None` for a count that is neither whole nor infinite.
+fn power_count(n: &crate::Number) -> Option<(bool, usize)> {
+    if n.is_infinite() { return Some((n.as_float().is_some_and(|x| x < 0.), usize::MAX)); }
+    n.integer().ok().map(|n| (n < 0, n.unsigned_abs()))
+}
+
+/// The count that the atom `e` holds.
+fn checked_count(e: &Value, span: &Span) -> Result<(bool, usize), Error> {
+    let Value::Number(n) = e else { return Err(span.domain_error("power counts must be numeric")) };
+    power_count(n).ok_or_else(|| span.domain_error("power counts must be integral or infinite"))
 }
 
 /// The counts in a count array, through any nesting.
 fn power_counts(count: &Value, span: &Span, counts: &mut Vec<(bool, usize)>) -> Result<(), Error> {
-    for e in count.elements() {
-        match &e {
-            Value::Number(n) => counts.push(power_count(n, span)?),
-            Value::Array(_) => power_counts(&e, span, counts)?,
-            _ => return Err(span.domain_error("power counts must be numeric")),
-        }
-    }
+    for e in count.elements() { match &e { Value::Array(_) => power_counts(&e, span, counts)?, _ => counts.push(checked_count(&e, span)?) } }
     Ok(())
 }
 
@@ -726,7 +764,7 @@ fn power_states(count: &Value, states: &HashMap<(bool, usize), Value>, right: &V
     let items = count
         .elements()
         .map(|e| {
-            let state = match &e { Value::Number(n) => states[&power_count(n, span)?].clone(), _ => power_states(&e, states, right, span)? };
+            let state = match &e { Value::Array(_) => power_states(&e, states, right, span)?, _ => states[&checked_count(&e, span)?].clone() };
             state.enclose().error_at(span, "power result is too large")
         })
         .collect::<Result<Vec<_>, _>>()?;

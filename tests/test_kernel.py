@@ -65,6 +65,10 @@ async def kernel_story():
         assert result['found']
         _, messages = await kc.exec_ok(']help ¿')
         assert 'Roll' in displayed(messages)[0][1]
+        _, messages = await kc.exec_ok(']help ?')
+        assert '(dfns.ipynb)' in displayed(messages)[0][1]
+        _, messages = await kc.exec_ok(']help ⌽')
+        assert '(glyphs/reverse-first.qmd)' in displayed(messages)[0][1]
         _, messages = await kc.exec_ok('¿1')
         assert displayed(messages) == [('execute_result', '0')]
         _, messages = await kc.exec_ok('¿¿')

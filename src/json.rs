@@ -4,15 +4,21 @@ use crate::{
     execution::Context,
     keyed, Error, ErrorAt, ErrorKind, Number, Value,
 };
+use foldhash::{HashMap, HashMapExt};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use serde_json::Value as Json;
 
-/// A JSON number, exact when written without a point or exponent and otherwise a float. A float too large for `f64` is an infinity.
+/// A JSON number, exact when written without a point or exponent and otherwise a float. A float too large for `f64` is a DOMAIN error.
 pub(crate) fn number(n: &serde_json::Number) -> Result<Number, ErrorKind> {
     if let Some(i) = n.as_i64() { return Ok(Number::from_integer(i)); }
-    if n.as_str().contains(['.', 'e', 'E']) { return n.as_str().parse::<f64>().map(Number::from).map_err(|_| ErrorKind::Domain); }
-    n.as_str().parse::<BigInt>().map_err(|_| ErrorKind::Domain).and_then(|i| Number::try_from(BigRational::from_integer(i)))
+    if n.as_str().contains(['.', 'e', 'E']) { return n.as_str().parse::<f64>().ok().filter(|x| x.is_finite()).map(Number::from).ok_or(ErrorKind::Domain); }
+    exact(n.as_str().parse::<BigInt>().map_err(|_| ErrorKind::Domain)?)
+}
+
+/// An exact integer of any size.
+fn exact(n: BigInt) -> Result<Number, ErrorKind> {
+    match i64::try_from(&n) { Ok(i) => Ok(Number::from_integer(i)), Err(_) => Number::try_from(BigRational::from_integer(n)) }
 }
 
 /// An exact integer as a JSON number, whatever its size.
@@ -24,106 +30,60 @@ pub(crate) fn integer(n: &Number) -> Option<Json> {
 /// `•json` reads JSON5, which includes all JSON. `fill` replaces `null`.
 pub(crate) fn parse(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let opts = Options::new("•json", left, None, &["fill"], span)?;
-    let json = json5(&text(right, span)?).map_err(str::to_string).and_then(|json| serde_json::from_str(&json).map_err(|e| e.to_string()));
-    let json = json.map_err(|e| span.domain_error(format!("JSON {e}")))?;
-    import(&json, &opts.fill(span)?, span)
+    let read = json5::from_str(&text(right, span)?).map_err(|e| span.domain_error(format!("JSON {e}")))?;
+    import(&read, &opts.fill(span)?, span)
 }
 
-/// JSON5 text as JSON text. Comments and trailing commas go. Single-quoted strings and unquoted keys become JSON strings, and JSON5's
-/// escapes and number forms become JSON's. `Infinity` becomes `1e999`, which reads as `∞`, and `NaN` becomes `null`.
-fn json5(text: &str) -> Result<String, &'static str> {
-    let (mut out, mut chars, mut comma) = (String::with_capacity(text.len()), text.chars().peekable(), false);
-    while let Some(c) = chars.next() {
-        match c {
-            '/' if chars.next_if_eq(&'/').is_some() => while chars.next_if(|&c| c != '\n').is_some() {},
-            '/' if chars.next_if_eq(&'*').is_some() => {
-                let mut last = ' ';
-                loop { match chars.next() { Some('/') if last == '*' => break, Some(c) => last = c, None => return Err("comment never ends") } }
-            }
-            ',' => comma = true,
-            c if c.is_whitespace() => out.push(c),
-            c => {
-                // Writing each comma only once a value follows it drops trailing commas.
-                if std::mem::take(&mut comma) && !matches!(c, '}' | ']') { out.push(','); }
-                match c {
-                    '"' | '\'' => json5_string(c, &mut chars, &mut out)?,
-                    c if c.is_ascii_digit() || matches!(c, '+' | '-' | '.') => {
-                        let mut token = c.to_string();
-                        while let Some(c) = chars.next_if(|&n| n.is_alphanumeric() || n == '.' || (matches!(n, '+' | '-') && token.ends_with(['e', 'E']))) {
-                            token.push(c);
-                        }
-                        let (sign, body) = match token.strip_prefix(['+', '-']) { Some(body) => (&token[..1], body), None => ("", token.as_str()) };
-                        let sign = if sign == "-" { "-" } else { "" };
-                        match body {
-                            "Infinity" => out.push_str(&format!("{sign}1e999")),
-                            "NaN" => out.push_str("null"),
-                            _ if body.starts_with("0x") || body.starts_with("0X") => {
-                                out.push_str(sign);
-                                out.push_str(&BigInt::parse_bytes(&body.as_bytes()[2..], 16).ok_or("invalid hexadecimal number")?.to_string());
-                            }
-                            _ => {
-                                let body = body.replace(".e", ".0e").replace(".E", ".0E");
-                                out.push_str(sign);
-                                if body.starts_with('.') { out.push('0'); }
-                                out.push_str(&body);
-                                if body.ends_with('.') { out.push('0'); }
-                            }
-                        }
-                    }
-                    c if c.is_alphabetic() || matches!(c, '_' | '$') => {
-                        let mut word = c.to_string();
-                        while let Some(c) = chars.next_if(|&n| n.is_alphanumeric() || matches!(n, '_' | '$')) { word.push(c); }
-                        match word.as_str() {
-                            "true" | "false" | "null" => out.push_str(&word),
-                            "Infinity" => out.push_str("1e999"),
-                            "NaN" => out.push_str("null"),
-                            _ => out.push_str(&format!("\"{word}\"")),
-                        }
-                    }
-                    c => out.push(c),
+/// A JSON5 value as the `json5` crate reads it. Unlike `serde_json::Value`, it holds NaN.
+enum Read {
+    Null,
+    Bool(bool),
+    Integer(BigInt),
+    Float(f64),
+    Text(String),
+    List(Vec<Read>),
+    Record(Vec<(String, Read)>),
+}
+
+impl<'de> serde::Deserialize<'de> for Read { fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> { d.deserialize_any(ReadVisitor) } }
+
+struct ReadVisitor;
+
+impl<'de> serde::de::Visitor<'de> for ReadVisitor {
+    type Value = Read;
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { f.write_str("a JSON5 value") }
+    fn visit_unit<E: serde::de::Error>(self) -> Result<Read, E> { Ok(Read::Null) }
+    fn visit_bool<E: serde::de::Error>(self, b: bool) -> Result<Read, E> { Ok(Read::Bool(b)) }
+    fn visit_i64<E: serde::de::Error>(self, n: i64) -> Result<Read, E> { Ok(Read::Integer(n.into())) }
+    fn visit_u64<E: serde::de::Error>(self, n: u64) -> Result<Read, E> { Ok(Read::Integer(n.into())) }
+    fn visit_i128<E: serde::de::Error>(self, n: i128) -> Result<Read, E> { Ok(Read::Integer(n.into())) }
+    fn visit_u128<E: serde::de::Error>(self, n: u128) -> Result<Read, E> { Ok(Read::Integer(n.into())) }
+    fn visit_f64<E: serde::de::Error>(self, x: f64) -> Result<Read, E> { Ok(Read::Float(x)) }
+    fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Read, E> { Ok(Read::Text(s.into())) }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Read, A::Error> {
+        let mut items = Vec::new();
+        while let Some(item) = seq.next_element()? { items.push(item); }
+        Ok(Read::List(items))
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Read, A::Error> {
+        // A repeated key keeps its first place and takes its last value, as serde_json reads it.
+        let (mut entries, mut places): (Vec<(String, Read)>, HashMap<String, usize>) = (Vec::new(), HashMap::new());
+        while let Some((key, value)) = map.next_entry::<String, Read>()? {
+            match places.get(&key) {
+                Some(&i) => entries[i].1 = value,
+                None => {
+                    places.insert(key.clone(), entries.len());
+                    entries.push((key, value));
                 }
             }
         }
+        Ok(Read::Record(entries))
     }
-    if comma { out.push(','); }
-    Ok(out)
 }
 
-/// The rest of a JSON5 string that `quote` opened, written to `out` as a JSON string.
-fn json5_string(quote: char, chars: &mut std::iter::Peekable<std::str::Chars<'_>>, out: &mut String) -> Result<(), &'static str> {
-    out.push('"');
-    loop {
-        match chars.next().ok_or("string never ends")? {
-            c if c == quote => break,
-            '"' => out.push_str("\\\""),
-            '\\' => match chars.next().ok_or("string never ends")? {
-                'x' => {
-                    let hex: String = chars.by_ref().take(2).collect();
-                    out.push_str(&format!("\\u00{hex}"));
-                }
-                'v' => out.push_str("\\u000b"),
-                '0' if !chars.peek().is_some_and(char::is_ascii_digit) => out.push_str("\\u0000"),
-                c @ ('u' | 'b' | 'f' | 'n' | 'r' | 't' | '\\' | '/' | '"') => {
-                    out.push('\\');
-                    out.push(c);
-                }
-                // A backslash before a line break continues the string on the next line.
-                '\r' => {
-                    let _ = chars.next_if_eq(&'\n');
-                }
-                '\n' | '\u{2028}' | '\u{2029}' => {}
-                c => out.push(c),
-            },
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    Ok(())
-}
-
-/// `•tojson`: JSON text for a value. NaN exports as `null`, and so does the number given as `fill`.
+/// `•json⁻¹`: JSON text for a value. NaN exports as `null`, and so does the number given as `fill`.
 pub(crate) fn serialize(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let opts = Options::new("•tojson", left, None, &["fill"], span)?;
+    let opts = Options::new("•json⁻¹", left, None, &["fill"], span)?;
     let fill = opts.fill(span)?;
     Ok(keyed::text(&export(&exportable(right), opts.values.contains_key("fill").then_some(&fill), span)?.to_string()))
 }
@@ -148,20 +108,21 @@ pub(crate) fn exportable(value: &Value) -> Value {
     if keys.is_some() { keyed::partial_vector(names, data) } else { value.layout().collect(data, || value.prototype()) }.expect("subset of a valid array")
 }
 
-fn import(value: &Json, fill: &Number, span: &Context<'_>) -> Result<Value, Error> {
+fn import(value: &Read, fill: &Number, span: &Context<'_>) -> Result<Value, Error> {
     span.check()?;
     let value = match value {
-        Json::Null => Value::Number(fill.clone()),
-        Json::Bool(b) => Value::Number(Number::from_bool(*b)),
-        Json::String(s) => keyed::text(s),
-        Json::Number(n) => Value::Number(number(n).error_at(span, "JSON number is outside the supported range")?),
-        Json::Array(items) => {
+        Read::Null => Value::Number(fill.clone()),
+        Read::Bool(b) => Value::Number(Number::from_bool(*b)),
+        Read::Text(s) => keyed::text(s),
+        Read::Integer(n) => Value::Number(exact(n.clone()).error_at(span, "JSON number is outside the supported range")?),
+        Read::Float(x) => Value::Number((*x).into()),
+        Read::List(items) => {
             let data = items.iter().map(|v| import(v, fill, span)).collect::<Result<Vec<_>, _>>()?;
-            imported(vec![data.len()], data, |i| items[i].is_null(), Value::Number(Number::from_integer(0))).error_at(span, "invalid JSON array")?
+            imported(vec![data.len()], data, |i| matches!(items[i], Read::Null), Value::Number(Number::from_integer(0))).error_at(span, "invalid JSON array")?
         }
-        Json::Object(items) => {
-            let keys = items.keys().map(|k| k.as_str().into()).collect();
-            let data = items.values().map(|v| import(v, fill, span)).collect::<Result<_, _>>()?;
+        Read::Record(entries) => {
+            let keys = entries.iter().map(|(k, _)| k.as_str().into()).collect();
+            let data = entries.iter().map(|(_, v)| import(v, fill, span)).collect::<Result<_, _>>()?;
             keyed::record(keys, data).error_at(span, "invalid JSON object")?
         }
     };

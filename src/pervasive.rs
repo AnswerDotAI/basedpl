@@ -217,7 +217,7 @@ macro_rules! with_reals {
 /// A pervasive function applied to compact arguments, on the frame of `agreement`. The kind that holds both arguments picks the kernel.
 pub(crate) fn map(p: Primitive, left: Option<&Value>, right: &Value, agreement: &Agreement) -> Option<Value> {
     let Some(left) = left else { return monadic_map(p, right, agreement) };
-    if let Primitive::Math(Math::Circle) = p { return circle(left, right, agreement); }
+    if let Primitive::Math(op @ (Math::Circle | Math::Arc)) = p { return circle(left, right, agreement, op == Math::Arc); }
     if let Primitive::Compare(op) = p { if let Some(result) = against_number(op, left, right, agreement) { return Some(result); } }
     if let Primitive::Math(Math::Magnitude) = p { if let Some(result) = residues(left, right, agreement) { return Some(result); } }
     match left.compact_kind()?.join(right.compact_kind()?, Widening::Arrays)? {
@@ -456,11 +456,12 @@ fn integers(value: &Value) -> Option<Cow<'_, [i64]>> {
 
 /// The characters of compact character storage.
 fn chars(value: &Value) -> Option<&[char]> { match value.checked_items() { Items::Characters(c) => Some(c), _ => None } }
-/// `X○Y` with one code applies that code's function to every item. Other codes, and complex results, take the `Number` path.
-fn circle(codes: &Value, right: &Value, agreement: &Agreement) -> Option<Value> {
+/// `X○Y` with one code applies that code's function, or its inverse, to every item. Other codes, and complex results, take the
+/// `Number` path.
+fn circle(codes: &Value, right: &Value, agreement: &Agreement, inverse: bool) -> Option<Value> {
     let Value::Number(code) = codes.at(0) else { return None };
     if !matches!(agreement.left, Mapping::Single) { return None; }
-    let f = real::circle(code.integer().ok()?)?;
+    let f = real::circle(code.integer().ok()?, inverse)?;
     <Map<f64, f64> as Monad<f64>>::same(Map { x: &[], y: &read_as(right)?, agreement }, f)
 }
 

@@ -24,9 +24,9 @@ Links are relative to https://answerdotai.github.io/basedpl/.
 
 - Removed forms: bracket indexing `Y[I]`, bracket axes `f[A]`, laminate, windowed reduce, outer product `∘.f`, and replicate/expand as functions `/ ⌿ \ ⍀`. These four remain reduction/scan operators.
 - Changed functions (monad/dyad): `○` cis/circle; `=` classify/equal (monad as J); `≠` unique-mask/not-equal. Added monads: `∨` real-imag, `∧` polar, `⍲` square, `⍱` double, `≤` decrement, `≥` increment, `⊤` binary-encode, `⊥` binary-decode. `X⍎Y` is `Y⊃X`.
-- Added/renamed functions: `¿` roll/deal (Dyalog `?`); `π` pi-times/pi-ratio; `√` sqrt/root (BQN); `#` replicate first-axis cells, `#⁻¹` expand; `↕` windows (BQN, plus movements/padding); `⍭` primes (J `p:`); `⨸` factors (J `q:`); `⌻` polynomial/polyval (J `p.`); `:` unkey/keyed.
+- Added/renamed functions: `¿` roll/deal (Dyalog `?`); `π` pi-times/pi-ratio; `√` sqrt/root (BQN); `#` replicate first-axis cells, `#⁻¹` expand; `↕` windows (BQN, plus movements/padding); `⍭` primes (like J `p:`, different codes); `⨸` factors (J `q:`); `⌻` polynomial/polyval (J `p.`); `:` unkey/keyed.
 - Changed operators: `∘` atop as BQN, not bind; `⍤` rank only; `⍠` axis by number/name, not Variant. Use `f⍠A`, not `f[A]`.
-- Added operators: `↣` before/bind-left (BQN `⊸`), `↢` after/bind-right (BQN `⟜`), `⊗` outer product (BQN `⌜`), `⊘` valences (BQN), `⌾` under (J `&.`), `selector⍚cases` agenda (BQN `◶`), `⇄` explicit inverse pair (J `:.`), `∂` gradient/vector–Jacobian product.
+- Added operators: `↣` before/bind-left (BQN `⊸`), `↢` after/bind-right (BQN `⟜`), `⊗` outer product (BQN `⌜`), `⊘` valences (BQN), `⌾` under (BQN `⌾`), `selector⍚cases` agenda (BQN `◶`), `⇄` explicit inverse pair (J `:.`), `∂` gradient/vector–Jacobian product.
 - Different details: `+ -` support character offsets/differences; `∊ ~ ∪ ∩` compare major cells; `⊂ ⊆` partition first axis; `⊤ ⊥` put digits on last axis; depth is unsigned; negative `⍳` counts down; dyadic `⍸` as BQN `⍋`. Reduce supports BQN-style seeds; scans accumulate LTR. Power supports list counts, inverses, `f⍣∞` fixed point and `f⍣[g]` history until.
 - `→` is a left-to-right function pipeline, not branch.
 
@@ -41,6 +41,8 @@ BQN's based arrays: numbers, characters and functions are atoms, distinct from r
 Bare numbers are approximate floats. `3ₓ` is an exact integer; `1ᵣ3`/`1r3` an exact rational; `2ⱼ3`/`2j3` complex; `1ₑ¯3`/`1e¯3` an exponent. `[…]ₓ` marks exact literal arrays. Exact integers/rationals grow as needed; mixing with floats becomes approximate. `$t $f $n` are true/false/NaN; `∞ ¯∞` are infinities. IEEE NaN/infinity arithmetic; comparison tolerance `1E¯14`, but grade is exact. Positions, shape, tally and predicates are exact.
 
 `x²` is `x*2`; `f²` is `f⍣2`; `f⁻¹` inverts; `mᵀ` transposes; `fᵘ` encloses a function. `v₁` is `1⌷v`, `v₋₁` selects the last major cell. These postfix marks touch an item, or stand alone after a space to apply to the preceding run. Numeric `ₓ ᵣ ⱼ ₑ` are number markers, not indexing.
+
+Undo and Under follow BQN's inferred-properties spec. Inverse operations are written `f⁻¹`: `#⁻¹` expands, `1○⁻¹` is arcsine, `⍭⁻¹` counts primes and `•json⁻¹` writes JSON. `f⌾g` writes results back through a `g` that selects. For any other `g` it applies `g⁻¹`.
 
 ## Grouping, selection and keys
 
@@ -65,7 +67,7 @@ Plain assignment is local; modified/selective updates change the nearest binding
 `$a` is the uppercase Latin alphabet; `$d` is `"0123456789"`. System functions use case-insensitive `•name`, not `⎕NAME`. Options are generally keyed left arguments.
 
 - Text: `•c •ucs •r`.
-- Data/files: `•csv •tocsv •json •tojson •vfi •nget •nput •zip •hash •uuid`. `•json` reads JSON5. `•xml⁻¹` reads XML, and `•zip⁻¹` decompresses.
-- Display: `•element •xml •svg •mime •plot •image •prefs`.
+- Data/files: `•csv •json •xml •image •deflate •vfi •nget •nput •hash •uuid`. A format function reads its format, and its inverse writes it: `•json⁻¹` writes JSON, and `•deflate⁻¹` compresses. `•json` reads JSON5.
+- Display: `•element •svg •mime •plot •prefs`.
 - Programs/introspection: `•load •signal •storage •time •host •delay •nc •nl •src •ex`.
 - Random: `•rand` makes a seeded generator. `params •distribution name` returns a distribution, as in `0 1 •distribution "normal"`, and `•distribution name` uses standard parameters where the distribution has them. Names: `normal uniform bernoulli binomial poisson beta gamma inversegamma exponential chisquared student fisher cauchy laplace logistic lognormal weibull`. Each distribution is a record with `sample density cdf quantile` functions.

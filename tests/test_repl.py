@@ -32,7 +32,7 @@ def test_terminal_symbol_entry_and_exit():
     try:
         read_until(b'\x1b[?2004h')
         enter('1 2\r', '│1 2│\r\n└~──┘\r\n')
-        enter('•prefs ["box":$f]\r', '["box":$f "trees":$t "fns":$t "limit":1000ₓ "edges":3ₓ "prec":∞]\r\n')
+        enter('•prefs ["box":$f]\r', '["box":$f "trees":$t "fns":$t "limit":1000ₓ "edges":3ₓ "prec":∞ "width":100ₓ]\r\n')
         os.write(master, b'"\x1ba')
         read_until('⍺:_-'.encode())
         enter('_"\r', '\r\n⍶\r\n')

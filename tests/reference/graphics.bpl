@@ -3,25 +3,25 @@
 ⍝ xml-tree — Elements preserve case and escape text/attributes
 t←•element "text"
 attrs←["data-X":"a&""b" "x":¯2ₓ]
-•xml attrs t "x<y & y>z"
+•xml⁻¹ attrs t "x<y & y>z"
 ⍝ =>
 "<text data-X=""a&amp;&quot;b"" x=""-2"">x&lt;y &amp; y&gt;z</text>"
 
 ⍝ xml-prefix — Prefixed names pass through unchanged
 root←•element "x:root" ⋄ leaf←•element "x:leaf"
-•xml ["xmlns:x":"urn:example"] root leaf "Hi"
+•xml⁻¹ ["xmlns:x":"urn:example"] root leaf "Hi"
 ⍝ =>
 "<x:root xmlns:x=""urn:example""><x:leaf>Hi</x:leaf></x:root>"
 
 ⍝ xml-numeric — Numeric attributes use XML rather than APL spelling
-•xml ["points":[¯2ₓ 1r2 1E3]] (•element "path") ⍬
+•xml⁻¹ ["points":[¯2ₓ 1r2 1E3]] (•element "path") ⍬
 "<path points=""-2 0.5 1000""/>"
 
 ⍝ svg-tree — SVG renders its current tree
 c←•element "circle"
 pic←•svg ["cx":50 "cy":50 "r":20] c ⍬
 pic.children.attrs.r←30
-("image/svg+xml"⊃•mime pic)≡•xml pic
+("image/svg+xml"⊃•mime pic)≡•xml⁻¹ pic
 ⍝ =>
 $t
 
@@ -39,12 +39,12 @@ im←•image 0.5×[0 1 ⋄ 1 0]
 [2 2 2 1 1]ₓ
 
 ⍝ image-png — PNG bytes decode to the picture they encode
-•image "png" •image 0.2×[0 1 ⋄ 2 3 ⋄ 4 5]
+•image "png" •image⁻¹ 0.2×[0 1 ⋄ 2 3 ⋄ 4 5]
 ⍝ =>
 0.2×[0 1 ⋄ 2 3 ⋄ 4 5]
 
 ⍝ image-jpeg — JPEG drops only alpha, so a grey picture stays grey
-⍴•image "jpeg" •image 2 2⍴0 0.5 1 0.25
+⍴•image "jpeg" •image⁻¹ 2 2⍴0 0.5 1 0.25
 ⍝ =>
 [2 2]ₓ
 
@@ -60,7 +60,7 @@ a←"text/markdown" •mime "*a*" ⋄ b←"text/markdown" •mime "b"
 2ₓ
 
 ⍝ json-hooks — JSON export omits keyed entries that hold functions
-•tojson ["a":"x" "f":{⍵}]
+•json⁻¹ ["a":"x" "f":{⍵}]
 ⍝ =>
 "{""a"":""x""}"
 

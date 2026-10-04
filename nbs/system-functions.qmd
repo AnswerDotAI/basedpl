@@ -1,8 +1,8 @@
 # System functions
 
-A system function is a built-in function whose name starts with [`•`](glyphs/bullet.qmd), as in `•ucs` or `•json`. Type `•` with Alt-y. Names are case-insensitive. Many system functions take their options as a left argument. `]help •name` shows the full help for one name. Built-in values use `$`.
+A system function is a built-in function whose name starts with [`•`](glyphs/bullet.qmd), as in `•ucs` or `•json`. Type `•` with Alt-y. Names are case-insensitive. Many system functions take their options as a left argument. A function named for a format reads that format, and its [inverse](scripts.ipynb#superscripts) writes it: `•json` reads JSON, and `•json⁻¹` writes it. `]help •name` shows the full help for one name. Built-in values use `$`.
 
-In Python, the workspace object `bpl` has each system function under its name without `•`. Options become keyword arguments, as in `bpl.json('{"a": null}', fill=0)`. [Python](python.ipynb) covers the calling conventions.
+In Python, the workspace object `bpl` has each system function under its name without `•`. Options become keyword arguments, as in `bpl.json('{"a": null}', fill=0)`. `.undo` gives the inverse, as in `bpl.json.undo(Y)` for `•json⁻¹`. [Python](python.ipynb) covers the calling conventions.
 
 <!-- help -->
 
@@ -73,43 +73,27 @@ Errors: `DOMAIN` for invalid patterns, including look-around and backreferences,
 
 <!-- help •csv -->
 
-### `•csv` — Read CSV {#csv}
+### `•csv` — CSV {#csv}
 
 `•csv text` parses CSV into a vector of columns. Headers become keys. Numeric columns become numbers. Missing numeric cells become NaN. An integer column with missing cells stays exact. Missing text cells become `""`.
 
-`X •csv text` takes options on the left: `header`, `separator`, `quotechar`, `doublequote`, `escapechar`, `decimal`, `thousands`, `trim`, `fill`, `text_columns`, `numeric_columns` and `missing`. [CSV](data.ipynb#csv) describes them.
+`•csv⁻¹ T` writes CSV text for a vector of columns. Keys supply the header. Column lengths must agree. NaN writes as an empty cell, and so does the exact value given as `fill`.
 
-Errors: `DOMAIN` for invalid options or duplicate headers; `LENGTH` for unequal record widths.
+Both directions take options on the left: `header`, `separator`, `quotechar`, `doublequote`, `escapechar`, `decimal`, `thousands`, `trim` and `fill`. Reading also takes `text_columns`, `numeric_columns` and `missing`, and writing takes `forcequotes` and `lineending`. `"forcequotes":2` quotes every field. [CSV](data.ipynb#csv) describes the options.
 
-<!-- help •tocsv -->
-
-### `•tocsv` — Write CSV {#tocsv}
-
-`•tocsv T` returns CSV text for a vector of columns. Keys supply the header. Column lengths must agree.
-
-`X •tocsv T` takes options on the left: `header`, `separator`, `quotechar`, `doublequote`, `escapechar`, `decimal`, `thousands`, `trim`, `fill`, `forcequotes` and `lineending`. NaN writes as an empty cell, and so does the exact value given as `fill`. `"forcequotes":2` quotes every field. [CSV](data.ipynb#csv) describes the options.
-
-Errors: `DOMAIN` for nonintegral rationals, complex numbers, functions or nested cells; `LENGTH` for unequal columns.
+Errors: `DOMAIN` for invalid options, duplicate headers, and cells that CSV can't hold: nonintegral rationals, complex numbers, functions or nested cells; `LENGTH` for unequal record widths or columns.
 
 <!-- help •json -->
 
-### `•json` — Read JSON {#json}
+### `•json` — JSON {#json}
 
-`•json text` parses JSON or JSON5. JSON5 adds comments, trailing commas, single-quoted strings, unquoted keys, hexadecimal numbers, `Infinity` and `NaN`. `NaN` reads as `null`. Objects become keyed vectors. Arrays become vectors. Strings become character vectors. Integers stay exact. `true` and `false` become `$t` and `$f`.
+`•json text` reads JSON5, which includes all JSON. JSON5 adds comments, trailing commas, single-quoted strings, unquoted keys, hexadecimal numbers, `Infinity` and `NaN`. Objects become keyed vectors. Arrays become vectors. Strings become character vectors. Integers of up to 128 bits stay exact. `true` and `false` become `$t` and `$f`.
 
-`["fill":v] •json text` replaces `null` with `v`. The default is NaN. An integer array with a `null` stays exact. [JSON](data.ipynb#json) covers the conversions.
+`•json⁻¹ Y` writes JSON text. Keyed axes become objects. Unkeyed axes become arrays. Character vectors become strings. Keyed entries that hold functions are left out. NaN writes as `null`.
 
-Errors: `DOMAIN` for malformed JSON, with its line and column.
+`["fill":v] •json text` reads `null` as `v`. The default is NaN. An integer array with a `null` stays exact. `["fill":v] •json⁻¹ Y` writes `v` as `null`. [JSON](data.ipynb#json) covers the conversions.
 
-<!-- help •tojson -->
-
-### `•tojson` — Write JSON {#tojson}
-
-`•tojson Y` returns JSON text. Keyed axes become objects. Unkeyed axes become arrays. Character vectors become strings. Keyed entries that hold functions are left out.
-
-NaN exports as `null`. `["fill":v] •tojson Y` also writes `v` as `null`. [JSON](data.ipynb#json) covers the conversions.
-
-Errors: `DOMAIN` for an infinity that isn't `fill`, out-of-range floats, nonintegral rationals, complex numbers and other functions.
+Errors: `DOMAIN` for malformed JSON, with its line and column, and for values that JSON can't hold: an infinity that isn't `fill`, out-of-range floats, nonintegral rationals, complex numbers and other functions.
 
 <!-- help •vfi -->
 
@@ -141,15 +125,15 @@ Errors: `VALUE` for missing files, invalid UTF-8, other file errors and standard
 
 Errors: `VALUE` for an existing file without `overwrite`, and for other file errors; `DOMAIN` for invalid options or byte values.
 
-<!-- help •zip -->
+<!-- help •deflate -->
 
-### `•zip` — Compression {#zip}
+### `•deflate` — Compression {#deflate}
 
-`•zip data` compresses `data` with gzip and returns the bytes. Text is compressed as UTF-8, and numbers as bytes from 0 to 255, as [`•nput`](#nput) writes them. `alg •zip data` uses the format `"gzip"`, `"zlib"` or `"deflate"` (raw DEFLATE). `•zip⁻¹` decompresses, and takes the same format names.
+`•deflate bytes` decompresses gzip data and returns the bytes. `•deflate⁻¹ data` compresses `data` with gzip. It compresses text as UTF-8, and numbers as bytes from 0 to 255, as [`•nput`](#nput) writes them. Both directions take a format name on the left: `"gzip"`, `"zlib"` or `"deflate"` (raw DEFLATE).
 
 ```bpl
-•ucs •zip⁻¹ •zip "hello"          ⍝ "hello"
-"zlib" •zip⁻¹ "zlib" •zip 1 2 3   ⍝ [1 2 3]ₓ
+•ucs •deflate •deflate⁻¹ "hello"          ⍝ "hello"
+"zlib" •deflate "zlib" •deflate⁻¹ 1 2 3   ⍝ [1 2 3]ₓ
 ```
 
 Errors: `DOMAIN` for an unknown format, byte values outside 0 to 255, or data that doesn't decompress.
@@ -196,15 +180,15 @@ Errors: `DOMAIN` for invalid tag or attribute names.
 
 ### `•xml` — XML text {#xml}
 
-`•xml tree` returns the XML text of an element tree. It escapes `&`, `<`, `>` and `"` in text and attribute values. A numeric vector attribute becomes space-separated numbers. Children are text, elements or vectors of children. An element with no children closes itself. [XML and SVG](xml.ipynb) covers element trees.
+`•xml text` reads XML into an element tree with the same meaning. Attribute values become text. Names keep their prefixes, and namespace declarations become `xmlns` attributes. Comments, processing instructions and text that is only whitespace are dropped. [XML and SVG](xml.ipynb) covers element trees.
 
-`•xml⁻¹ text` reads XML into an element tree with the same meaning. Attribute values become text. Names keep their prefixes, and namespace declarations become `xmlns` attributes. Comments, processing instructions and text that is only whitespace are dropped.
+`•xml⁻¹ tree` writes the XML text of an element tree. It escapes `&`, `<`, `>` and `"` in text and attribute values. A numeric vector attribute becomes space-separated numbers. Children are text, elements or vectors of children. An element with no children closes itself.
 
 ```bpl
-•xml •xml⁻¹ "<a href=""x"">hi</a>"   ⍝ "<a href=""x"">hi</a>"
+•xml⁻¹ •xml "<a href=""x"">hi</a>"   ⍝ "<a href=""x"">hi</a>"
 ```
 
-Errors: `DOMAIN` for invalid names or attribute values, and for malformed XML given to `•xml⁻¹`.
+Errors: `DOMAIN` for malformed XML, and for invalid names or attribute values given to `•xml⁻¹`.
 
 <!-- help •svg -->
 
@@ -267,7 +251,7 @@ A direct [`•mime`](#mime) call on a spec reports these errors: `DOMAIN` for un
 
 `•image Y` returns a picture: numbers from 0 to 1, with axes for rows, columns and up to four channels, that notebooks display as an image. One channel is grey, and three are red, green and blue. A second or fourth channel is alpha. `Y` is the path of a PNG or JPEG file, the bytes of one, or the numbers themselves. Values outside 0 to 1 are clipped when the picture is displayed or encoded.
 
-`kind •image Y` encodes the picture `Y` as `"png"` or `"jpeg"` bytes. JPEG drops alpha. [`•nput`](#nput) writes the bytes to a file, as in `"out.png" •nput "png" •image Y`.
+`•image⁻¹ Y` encodes the picture `Y` as PNG bytes, and `"jpeg" •image⁻¹ Y` as JPEG bytes. JPEG drops alpha. [`•nput`](#nput) writes the bytes to a file, as in `"out.png" •nput •image⁻¹ Y`.
 
 Errors: `DOMAIN` for an unknown `kind`, invalid image bytes, or values that aren't real numbers; `RANK` for a shape that isn't a picture; `VALUE` for file errors.
 
@@ -285,8 +269,9 @@ Errors: `DOMAIN` for an unknown `kind`, invalid image bytes, or values that aren
 | `limit` | The most items display shows in full. `∞` shows every item | `1000` |
 | `edges` | Positions shown at each end of a long axis | `3` |
 | `prec` | Significant digits shown for each float. `∞` shows every digit | `∞` |
+| `width` | The widest line display shows. `∞` allows any width | The terminal's width in the REPL, `∞` elsewhere |
 
-Display shows part of an array of more than `limit` items: the first and last `edges` positions of each axis longer than twice `edges`. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. A nested array follows the same rule on its own. `⎕←`, [`⍕`](glyphs/format.qmd) and source text always hold every item and every digit.
+Display shows part of an array of more than `limit` items: the first and last `edges` positions of each axis longer than twice `edges`. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. A nested array follows the same rule on its own. A line wider than `width` hides columns in the same way, keeping as many at each end as fit. `⎕←`, [`⍕`](glyphs/format.qmd) and source text always hold every item and every digit.
 
 Errors: `DOMAIN` for an unknown setting or an invalid value.
 <!-- help -->

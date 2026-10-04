@@ -74,7 +74,7 @@ A←["city":2 3]⍴1 ⋄ B←["product":4 3]⍴2
 ⍝ error: LENGTH ERROR
 
 ⍝ axis-gap-json — A JSON object needs a key for every entry
-•tojson ["a":1 2]
+•json⁻¹ ["a":1 2]
 ⍝ error: DOMAIN ERROR
 
 ⍝ axis-colon — Colon binds as a function, including in a dfn, and literal separators keep their meanings
@@ -261,7 +261,7 @@ A+.×B
 
 ⍝ axis-native-rank — Native numerical cell functions align labelled frames like Rank
 P←"aa" "bb":[1 2 ⋄ 10 3] ⋄ X←"bb" "aa":4 5
-[P⌻X;("aa" "bb":5 5)⍭("bb" "aa":10 9)]
+[P⌻X;("aa" "bb":3 3)⍭("bb" "aa":10 9)]
 ⍝ =>
 [["aa":11 "bb":22] ["aa":6 "bb":4]ₓ]
 
@@ -1452,13 +1452,13 @@ a←⍎""
 [2ₓ;[1 3]ₓ]⌻[0 1 2 3]ₓ   ⍝ [6 0 ¯2 0]ₓ
 
 ⍝ — Convert multiplier and roots to constant-first coefficients
-⌻[2ₓ;[1 3]ₓ]   ⍝ [6 ¯8 2]ₓ
+⌻⁻¹[2ₓ;[1 3]ₓ]   ⍝ [6 ¯8 2]ₓ
 
 ⍝ — Enclosed roots imply a leading coefficient of one
-⌻⊂[1 3]ₓ   ⍝ [3 ¯4 1]ₓ
+⌻⁻¹⊂[1 3]ₓ   ⍝ [3 ¯4 1]ₓ
 
 ⍝ — Convert an exponent table for x⁵-1, filling missing degrees with zero
-⌻⊂[1 5 ⋄ ¯1 0]ₓ   ⍝ [¯1 0 0 0 0 1]ₓ
+⌻⁻¹⊂[1 5 ⋄ ¯1 0]ₓ   ⍝ [¯1 0 0 0 0 1]ₓ
 
 ⍝ — Fractional exponents evaluate numerically even with exact input
 (⊂[2ₓ 1r2 ⋄ 3ₓ 1r4])⌻16ₓ   ⍝ 14
@@ -1479,7 +1479,7 @@ a←⍎""
 [0 0]ₓ⌻2ₓ   ⍝ 0ₓ
 
 ⍝ — A multiplier with no roots is a constant polynomial
-⌻[2ₓ;0⍴0ₓ]   ⍝ [2]ₓ
+⌻⁻¹[2ₓ;0⍴0ₓ]   ⍝ [2]ₓ
 
 ⍝ — Differentiate the bound polynomial evaluator
 f←[1 2 3]ₓ↣⌻ ⋄ f∂2ₓ   ⍝ 14ₓ
@@ -1509,7 +1509,7 @@ f←(⊂[1 2 0 ⋄ 1 0 2]ₓ)↣⌻ ⋄ f∂3ₓ   ⍝ 12ₓ
 f←[1 2 ⋄ 3 4]ₓ↣⌻ ⋄ [10 20]ₓ f∂ 3ₓ   ⍝ 100ₓ
 
 ⍝ — Negative exponents cannot be converted to a coefficient vector
-⌻⊂[1 ¯1 ⋄]
+⌻⁻¹⊂[1 ¯1 ⋄]
 ⍝ error: DOMAIN ERROR
 
 ⍝ — The cotangent must match the unit output's structure
@@ -1532,7 +1532,7 @@ f←[1 2 ⋄ 3 4]ₓ↣⌻ ⋄ [10 20]ₓ f∂ 3ₓ   ⍝ 100ₓ
 ⍝ error: LENGTH ERROR
 
 ⍝ — Converting coefficients to roots and back gives the coefficients again [atol=1e-10]
-[⌻⌻0 16 ¯12 2;⌻⌻1 0 1;⌻⌻1 ¯2 1]
+[⌻⁻¹⌻0 16 ¯12 2;⌻⁻¹⌻1 0 1;⌻⁻¹⌻1 ¯2 1]
 [0 16 ¯12 2;1 0 1;1 ¯2 1]
 
 ⍝⍝ Prime and factor families
@@ -1547,28 +1547,19 @@ f←[1 2 ⋄ 3 4]ₓ↣⌻ ⋄ [10 20]ₓ f∂ 3ₓ   ⍝ 100ₓ
 n←4 ⋄ ⍭n   ⍝ 11ₓ
 
 ⍝ — Previous prime is strictly below the argument
-¯4⍭3 4 5 6   ⍝ [2 3 3 5]ₓ
+¯2⍭3 4 5 6   ⍝ [2 3 3 5]ₓ
 
 ⍝ — Count primes strictly below each argument
-¯1⍭1 2 3 4 5 6   ⍝ [0 0 1 2 2 3]ₓ
-
-⍝ — Non-prime includes negative integers, zero and one
-0⍭¯1 0 1 2 3 4   ⍝ [1 1 1 0 0 1]ₓ
+⍭⁻¹1 2 3 4 5 6   ⍝ [0 0 1 2 2 3]ₓ
 
 ⍝ — Test primality rather than indexing the prime sequence
-1⍭¯1 0 1 2 3 4   ⍝ [0 0 0 1 1 0]ₓ
-
-⍝ — Distinct factors occupy the first row, their exponents the second
-2⍭700   ⍝ [2 5 7 ⋄ 2 2 1]ₓ
-
-⍝ — Factor-list mode includes repeated prime factors
-3⍭700   ⍝ [2 2 5 5 7]ₓ
+1⍭¯1 0 1 2 3 4   ⍝ $f $f $f $t $t $f
 
 ⍝ — Next prime is strictly above the argument
-4⍭1 2 3 4 5   ⍝ [2 3 5 5 7]ₓ
+2⍭1 2 3 4 5   ⍝ [2 3 5 5 7]ₓ
 
 ⍝ — Euler's totient counts positive integers up to n coprime to n
-5⍭1 2 3 4 5 6 10   ⍝ [1 1 2 2 4 2 4]ₓ
+3⍭1 2 3 4 5 6 10   ⍝ [1 1 2 2 4 2 4]ₓ
 
 ⍝ —
 ⨸700   ⍝ [2 2 5 5 7]ₓ
@@ -1605,10 +1596,10 @@ n←4 ⋄ ⍭n   ⍝ 11ₓ
 
 ⍝ — Primality accepts exact integers at and beyond the unsigned 64-bit boundary
 1⍭[18446744073709551557 18446744073709551615 170141183460469231731687303715884105727]ₓ
-[1 0 1]ₓ
+$t $f $t
 
 ⍝ — Strong pseudoprimes must not pass as primes
-1⍭[341550071728321 3825123056546413051]ₓ   ⍝ [0 0]ₓ
+1⍭[341550071728321 3825123056546413051]ₓ   ⍝ $f $f
 
 ⍝ — Factor a semiprime whose two factors are both large
 ⨸1000000016000000063ₓ   ⍝ [1000000007 1000000009]ₓ
@@ -1647,7 +1638,7 @@ n←4 ⋄ ⍭n   ⍝ 11ₓ
 ⍝ error: DOMAIN ERROR
 
 ⍝ — There is no prime strictly below two
-¯4⍭2
+¯2⍭2
 ⍝ error: DOMAIN ERROR
 
 ⍝⍝ Windows
@@ -1870,9 +1861,6 @@ W←×↢*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 ⍝ — Inverse iota also recognizes multidimensional index arrays
 ⍳⁻¹⍳2 3   ⍝ [2 3]ₓ
 
-⍝ — Each positive circle code's inverse agrees with its negative-code counterpart here
-{(5○⍨-⍵)=⍵↣○⁻¹5}1+⍳12   ⍝ 12⍴$t
-
 ⍝ —
 1+⍣¯3(10)   ⍝ 7
 
@@ -1913,13 +1901,13 @@ W←×↢*⍨⁻¹ ⋄ x←¯1j0.1 1j¯1 ⋄ ∧/1E¯12>|1-(W x)×(*W x)÷x   �
 0.5=1↣○(1↣○⁻¹)0.5   ⍝ $t
 
 ⍝ — Inverse sine within the real domain has no imaginary component
-11○(1↣○⁻¹)0.5   ⍝ 0
+⊢/∨(1↣○⁻¹)0.5   ⍝ 0
 
 ⍝ — sqrt(1+x²) avoids overflowing its intermediate square
 4○1E300   ⍝ 1E300
 
 ⍝ — Signed sqrt(x²-1) avoids intermediate overflow for large negative x
-¯4○¯1E300   ⍝ ¯1E300
+4○⁻¹¯1E300   ⍝ ¯1E300
 
 ⍝ — Inversion preserves rank-zero application
 (2ₓ↣+⍤0)⁻¹[3 4]ₓ   ⍝ [1 2]ₓ
@@ -3240,11 +3228,11 @@ s←+/ ⋄ s⍠0 [1 2 3 ⋄ 4 5 6]   ⍝ 5 7 9
 ⍝ — Repeated transpose axes select the diagonal of a rectangular matrix
 0 0⍉[1 2 3 ⋄ 4 5 6]   ⍝ 1 5
 
-⍝ — Negative replicate counts insert fills and use up no item
-2 ¯1 1#10 20   ⍝ 10 10 0 20
+⍝ — A negative replicate count replaces its item with fills
+2 ¯1 1#10 20 30   ⍝ 10 10 0 30
 
-⍝ — Inverse replicate skips a negative count's fills, and a zero count gives a fill
-2 0 ¯1 1#⁻¹10 10 0 20   ⍝ 10 0 20
+⍝ — Inverse replicate gives a fill for a zero or negative count
+2 0 ¯1 1#⁻¹10 10 0 30   ⍝ 10 0 0 30
 
 ⍝ — Expansion uses character fill for inserted positions
 1 0 1#⁻¹"ab"   ⍝ "a b"
@@ -3332,9 +3320,6 @@ x←[¯7 7 0 ¯9223372036854775808 9223372036854775807]ₓ ⋄ [3ₓ|x;¯3ₓ|x;
 ⍝ —
 2 ¯2 0*3 3 0   ⍝ 8 ¯8 1
 
-⍝ — Circle selectors nine and eleven extract real and imaginary parts
-9 11○3j4   ⍝ 3 4
-
 ⍝ —
 2ₓ*¯3ₓ   ⍝ 1r8
 
@@ -3359,7 +3344,7 @@ x←[¯7 7 0 ¯9223372036854775808 9223372036854775807]ₓ ⋄ [3ₓ|x;¯3ₓ|x;
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Exponential, logarithm, pi times and circle functions
-[*1;2⍟32;π1;¯1○1]   ⍝ 2.718281828459045 5 3.141592653589793 1.5707963267948966
+[*1;2⍟32;π1;1○⁻¹1]   ⍝ 2.718281828459045 5 3.141592653589793 1.5707963267948966
 
 ⍝ — A negative number to a fractional power is complex
 ¯4*0.5   ⍝ 0j2
@@ -3648,10 +3633,10 @@ c←∘ ⋄ sum←+/c⍳ ⋄ sum¨2 4 6   ⍝ 1 6 15
 "abc"⍴↣⍴'z'   ⍝ "zzz"
 
 ⍝ — Before combines matrix rows as imaginary and real components
-¯11↣○↣+⌿[1 2 3 ⋄ 4 5 6]   ⍝ 4j1 5j2 6j3
+0j1↣×↣+⌿[1 2 3 ⋄ 4 5 6]   ⍝ 4j1 5j2 6j3
 
 ⍝ — Naming Before and reduction preserves their binding
-b←↣ ⋄ r←⌿ ⋄ ¯11 b ○ b + r [1 2 3 ⋄ 4 5 6]   ⍝ 4j1 5j2 6j3
+b←↣ ⋄ r←⌿ ⋄ 0j1 b × b + r [1 2 3 ⋄ 4 5 6]   ⍝ 4j1 5j2 6j3
 
 ⍝ — After chains bind before reduction derives its function
 -↢+↢×/1 2 3   ⍝ 0
@@ -4314,8 +4299,8 @@ each←¨ ⋄ fold←/ ⋄ +⍨ each fold 1 2 3   ⍝ 6
 ⍝ — Hyperbolic tangent has limit one at positive infinity
 7○∞   ⍝ 1
 
-⍝ — Extract real part, magnitude and imaginary part of negative real infinity
-9 10 11○¯∞   ⍝ ¯∞ ∞ 0
+⍝ — Magnitude, real part and imaginary part of negative real infinity
+(|¯∞),∨¯∞   ⍝ ∞ ¯∞ 0
 
 ⍝ — Principal Lambert W has limit infinity
 ×↢*⍨⁻¹∞   ⍝ ∞
@@ -5222,20 +5207,20 @@ nl←•ucs 10 ⋄ src←'n',nl," 2 "
 
 ⍝ — Export and import retain numeric domains, strings and headers
 T←["price":10.5 20;"qty":[2 4]ₓ;"note":"a,b" "say ""hi"""]
-•csv •tocsv T
+•csv •csv⁻¹ T
 ⍝ =>
 ["price":10.5 20;"qty":[2 4]ₓ;"note":"a,b" "say ""hi"""]
 
 ⍝ — Export uses CSV minus signs and no exact suffix
-•tocsv "n":[¯2 3]ₓ   ⍝ 'n',(•ucs 10),"-2",(•ucs 10),'3',•ucs 10
+•csv⁻¹ "n":[¯2 3]ₓ   ⍝ 'n',(•ucs 10),"-2",(•ucs 10),'3',•ucs 10
 
 ⍝ — Infinity remains a number unless fill is explicitly configured
-T←"n":1ₓ ∞ ⋄ [•tocsv T;("fill":∞) •tocsv T]
+T←"n":1ₓ ∞ ⋄ [•csv⁻¹ T;("fill":∞) •csv⁻¹ T]
 ['n',(•ucs 10),'1',(•ucs 10),"inf",•ucs 10;'n',(•ucs 10),'1',(•ucs 10),"""""",•ucs 10]
 
 ⍝ — Export dialect and CRLF
 T←"n":,1234.5
-["separator":';' "decimal":',' "thousands":'.' "lineending":(•ucs 13 10)] •tocsv T
+["separator":';' "decimal":',' "thousands":'.' "lineending":(•ucs 13 10)] •csv⁻¹ T
 ⍝ =>
 'n',(•ucs 13 10),"1.234,5",•ucs 13 10
 
@@ -5264,20 +5249,20 @@ T←"n":,1234.5
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Export requires equal-length column vectors
-•tocsv "a" "b":[1 2;,3]
+•csv⁻¹ "a" "b":[1 2;,3]
 ⍝ error: LENGTH ERROR
 
 ⍝ — Export rejects nested cells
-•tocsv "a":,⊂1 2
+•csv⁻¹ "a":,⊂1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Quote-free export errors when a field needs quoting
-("quotechar":"") •tocsv "a":,⊂"x,y"
+("quotechar":"") •csv⁻¹ "a":,⊂"x,y"
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Escape characters round-trip inside quoted text
 T←"note":,⊂"a\b""c"
-opts←["escapechar":'\' "doublequote":0] ⋄ csv←opts •tocsv T
+opts←["escapechar":'\' "doublequote":0] ⋄ csv←opts •csv⁻¹ T
 opts •csv csv
 ⍝ =>
 "note":,⊂"a\b""c"
@@ -5293,7 +5278,7 @@ opts •csv csv
 
 ⍝ — Explicit null fill works recursively in both directions
 fill←"fill":¯1ₓ
-fill •tojson fill •json "{""x"":[null,2]}"
+fill •json⁻¹ fill •json "{""x"":[null,2]}"
 ⍝ =>
 "{""x"":[null,2]}"
 
@@ -5302,27 +5287,27 @@ fill •tojson fill •json "{""x"":[null,2]}"
 9223372036854775809ₓ 1 100
 
 ⍝ — Large exact integers export without rounding
-•tojson 9223372036854775808ₓ   ⍝ "9223372036854775808"
+•json⁻¹ 9223372036854775808ₓ   ⍝ "9223372036854775808"
 
 ⍝ — JSON true and false read as Booleans and write back unchanged
-•tojson •json "[true,false]"   ⍝ "[true,false]"
+•json⁻¹ •json "[true,false]"   ⍝ "[true,false]"
 
 ⍝ — Empty objects, arrays and strings retain their distinct meanings
-•tojson •json "[{},[],""""]"   ⍝ "[{},[],""""]"
+•json⁻¹ •json "[{},[],""""]"   ⍝ "[{},[],""""]"
 
 ⍝ — JSON strings remain strings, including one-character strings
-•tojson •json "[""a"","""",[""b"",""c""]]"
+•json⁻¹ •json "[""a"","""",[""b"",""c""]]"
 "[""a"","""",[""b"",""c""]]"
 
 ⍝ — Ordinary matrices export as nested JSON arrays
-•tojson [1 2 ⋄ 3 4]ₓ   ⍝ "[[1,2],[3,4]]"
+•json⁻¹ [1 2 ⋄ 3 4]ₓ   ⍝ "[[1,2],[3,4]]"
 
 ⍝ — Keyed axes export as object levels
-•tojson "row":"col" "val":[1 2]ₓ
+•json⁻¹ "row":"col" "val":[1 2]ₓ
 "{""row"":{""col"":1,""val"":2}}"
 
 ⍝ — Unkeyed scalar arrays export their contents
-•tojson ⊂2ₓ   ⍝ "2"
+•json⁻¹ ⊂2ₓ   ⍝ "2"
 
 ⍝ — Duplicate object members follow the JSON library's last-value rule
 •json "{""name"":1,""name"":2}"   ⍝ "name":2ₓ
@@ -5337,20 +5322,23 @@ fill •tojson fill •json "{""x"":[null,2]}"
 ⍝ — JSON5 adds comments, trailing commas, single quotes, unquoted keys, hexadecimal numbers and Infinity
 •json "{a: [1, 0x1F,], b: 'x', c: -Infinity}  // done"   ⍝ ["a":[1 31]ₓ "b":"x" "c":¯∞]
 
+⍝ — JSON5's NaN reads as NaN, not as a missing value
+•json "[1, NaN]"   ⍝ [1 $n]ₓ
+
 ⍝ — Infinity requires explicit fill on export
-•tojson ∞
+•json⁻¹ ∞
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Nonintegral rationals have no JSON number representation
-•tojson 1r3
+•json⁻¹ 1r3
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Complex values have no JSON number representation
-•tojson 1j2
+•json⁻¹ 1j2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Functions have no JSON representation
-•tojson [+ -]
+•json⁻¹ [+ -]
 ⍝ error: DOMAIN ERROR
 
 ⍝ — LZW repeated-code expansion and capped dictionary

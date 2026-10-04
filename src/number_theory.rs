@@ -215,30 +215,18 @@ fn nth_primes(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
 
 fn prime(selector: &Number, n: BigInt, span: &Context<'_>) -> Result<Value, Error> {
     let op = selector.integer().error_at(span, "prime selector must be integral")?;
-    if matches!(op, 0 | 1) {
-        let yes = match n.to_biguint() { Some(n) => is_prime(&n, span)?, None => false };
-        return Ok(exact(i32::from(yes == (op == 1))));
-    }
-    if op == -1 && n <= BigInt::from(2) { return Ok(exact(0)); }
-    if op == 4 && n < BigInt::from(2) { return Ok(exact(2)); }
+    if op == 1 { return Ok(Value::Number(Number::from_bool(match n.to_biguint() { Some(n) => is_prime(&n, span)?, None => false }))); }
+    if op == 2 && n < BigInt::from(2) { return Ok(exact(2)); }
     let n = n.to_biguint().ok_or_else(|| span.domain_error("expected a nonnegative integer"))?;
     match op {
-        -1 => {
-            let target = n.to_u64().ok_or_else(|| span.error(ErrorKind::Limit, "prime enumeration exceeds machine range"))?;
-            let mut primes = Primes::default();
-            for index in 1u64.. { let p = primes.next(span)?; if p >= target { return Ok(exact(index - 1)); } }
-            unreachable!()
-        }
-        -4 | 4 => {
-            let forward = op == 4;
+        -2 | 2 => {
+            let forward = op == 2;
             if !forward && n <= BigUint::from(2u8) { return Err(span.domain_error("no prime below this argument")); }
             let mut p = if forward { n + 1u8 } else { n - 1u8 };
             while !is_prime(&p, span)? { span.check()?; if forward { p += 1u8; } else { p -= 1u8; } }
             Ok(exact(p))
         }
-        2 => factor_result(Some(&Number::from(f64::NEG_INFINITY)), n, span),
-        3 => factor_result(None, n, span),
-        5 => {
+        3 => {
             let mut result = n.clone();
             for (p, _) in factors(n, span)? { result = result / &p * (p - 1u8); }
             Ok(exact(result))
@@ -249,6 +237,24 @@ fn prime(selector: &Number, n: BigInt, span: &Context<'_>) -> Result<Value, Erro
 
 pub(crate) fn call(factor: bool, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if !factor && left.is_none() { return nth_primes(right, span); }
+    each_cell(left, right, span, |x, n| match factor {
+        true => factor_result(x, n.to_biguint().ok_or_else(|| span.domain_error("factorisation requires positive integers"))?, span),
+        false => prime(x.unwrap(), n, span),
+    })
+}
+
+/// `⍭⁻¹`: the number of primes below each item, which is a prime's index.
+pub(crate) fn index(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    each_cell(None, right, span, |_, n| {
+        let Some(target) = n.to_u64() else { return if n < BigInt::zero() { Ok(exact(0)) } else { Err(span.error(ErrorKind::Limit, "prime enumeration exceeds machine range")) } };
+        let mut primes = Primes::default();
+        for index in 0u64.. { if primes.next(span)? >= target { return Ok(exact(index)); } }
+        unreachable!()
+    })
+}
+
+/// `f` applied to the items of `left` and `right` that pair up, with each result as a cell.
+fn each_cell(left: Option<&Value>, right: &Value, span: &Context<'_>, f: impl Fn(Option<&Number>, BigInt) -> Result<Value, Error>) -> Result<Value, Error> {
     let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).error_at(span, "number theory frames must agree")?;
     let mut cells = Vec::with_capacity(agreement.len.max(1));
     for i in 0..agreement.len.max(1) {
@@ -256,9 +262,7 @@ pub(crate) fn call(factor: bool, left: Option<&Value>, right: &Value, span: &Con
         let (x, y) = agreement.values(left, right, i);
         let x = x.as_ref().map(|a| number(a, span)).transpose()?;
         let n = if right.is_empty() { BigInt::one() } else { number(&y, span)?.big_integer().error_at(span, "number theory requires integers")? };
-        cells.push(if factor {
-            factor_result(x.as_ref(), n.to_biguint().ok_or_else(|| span.domain_error("factorisation requires positive integers"))?, span)?
-        } else { prime(x.as_ref().unwrap(), n, span)? });
+        cells.push(f(x.as_ref(), n)?);
     }
     if right.is_atom() && left.is_none_or(Value::is_atom) { return Ok(cells.remove(0)); }
     agreement.layout.assemble(&cells[..agreement.len], &cells[0]).error_at(span, "number theory result exceeds array limits")

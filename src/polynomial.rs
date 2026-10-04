@@ -192,28 +192,39 @@ fn polynomial_cells<'a>(source: &'a Value, layout: &Layout, span: &Context<'_>) 
     let agreement = Agreement::new(&cells.frame_layout(), layout).error_at(span, "polynomial frames must agree")?;
     Ok((cells, agreement))
 }
+/// `⌻Y` finds the roots of each polynomial in `Y`, and `C⌻X` evaluates each polynomial in `C` at `X`.
 pub(crate) fn call(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let source = left.unwrap_or(right);
-    let (cells, agreement) = polynomial_cells(source, left.map_or(&Default::default(), |_| right.layout()), span)?;
-    let mut polynomials = Vec::with_capacity(cells.len().max(1));
-    for i in 0..cells.len().max(1) {
-        let a = if cells.len() == 0 { cells.prototype() } else { cells.get(i) }.error_at(span, "invalid polynomial cell")?;
-        polynomials.push(Polynomial::parse(&a, span)?);
-    }
+    let Some(left) = left else { return each(right, span, |p| p.roots(span)) };
+    let (cells, agreement) = polynomial_cells(left, right.layout(), span)?;
+    let polynomials = parsed(&cells, span)?;
     let mut results = Vec::with_capacity(agreement.len.max(1));
     for i in 0..agreement.len.max(1) {
         span.check()?;
         let index = agreement.left.get(i);
         let point_index = agreement.right.get(i);
-        let point = if left.is_none() || right.is_empty() { right.prototype() } else if let Some(j) = point_index { right.at(j) } else if let Some(j) = index { cells.get(j).error_at(span, "invalid polynomial cell")?.fill() } else { right.prototype() };
+        let point = if right.is_empty() { right.prototype() } else if let Some(j) = point_index { right.at(j) } else if let Some(j) = index { cells.get(j).error_at(span, "invalid polynomial cell")?.fill() } else { right.prototype() };
         let missing;
         let polynomial = if let Some(j) = index { &polynomials[j] } else { missing = Polynomial::parse(&point.fill(), span)?; &missing };
-        results.push(if left.is_some() {
-            Value::number(polynomial.evaluate(&coordinates(&point, span)?, span)?).unwrap()
-        } else if matches!(polynomial, Polynomial::Coefficients(_)) { polynomial.roots(span)? } else { vector(polynomial.coefficients(span)?, span)? });
+        results.push(Value::number(polynomial.evaluate(&coordinates(&point, span)?, span)?).unwrap());
     }
     if agreement.layout.shape().is_empty() { return Ok(results.remove(0)); }
     agreement.layout.assemble(&results[..agreement.len], &results[0]).error_at(span, "polynomial result exceeds array limits")
+}
+
+/// `⌻⁻¹Y`: the coefficients of each polynomial in `Y`, given by its multiplier and roots or by its terms.
+pub(crate) fn coefficients(right: &Value, span: &Context<'_>) -> Result<Value, Error> { each(right, span, |p| vector(p.coefficients(span)?, span)) }
+
+/// Each cell as a polynomial, or the prototype's when there are no cells.
+fn parsed(cells: &Cells<'_>, span: &Context<'_>) -> Result<Vec<Polynomial>, Error> {
+    (0..cells.len().max(1)).map(|i| Polynomial::parse(&if cells.len() == 0 { cells.prototype() } else { cells.get(i) }.error_at(span, "invalid polynomial cell")?, span)).collect()
+}
+/// `f` applied to each polynomial in `source`, with each result as a cell.
+fn each(source: &Value, span: &Context<'_>, f: impl Fn(&Polynomial) -> Result<Value, Error>) -> Result<Value, Error> {
+    let cells = source.cells(source.shape().len().min(1)).error_at(span, "invalid polynomial cells")?;
+    let mut results = parsed(&cells, span)?.iter().map(f).collect::<Result<Vec<_>, _>>()?;
+    let layout = cells.frame_layout();
+    if layout.shape().is_empty() { return Ok(results.remove(0)); }
+    layout.assemble(&results[..cells.len()], &results[0]).error_at(span, "polynomial result exceeds array limits")
 }
 
 pub(crate) fn derivative(source: &Value, order: usize, cotangent: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {

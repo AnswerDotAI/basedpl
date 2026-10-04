@@ -1472,7 +1472,7 @@ impl Value {
         let (shape, text) = if !keyed && self.shape().len() > 1 {
             let columns = *self.shape().last().unwrap();
             // One line per row, without blank lines between planes, as the result keeps the leading axes.
-            let rows = crate::display::rows(self.shape(), None)
+            let rows = crate::display::rows(self.shape(), None, None)
                 .into_iter()
                 .map(|(_, _, spots)| {
                     (0, spots.iter().map(|spot| crate::display::Cell::spot(spot, |i| crate::display::Cell::number(self.at(i).to_string()))).collect())
@@ -1547,7 +1547,7 @@ impl Value {
         generated_len(&[self.shape().iter().rev().skip(1).product(), columns.max(1)])?;
         let char_at = |i| match self.at(i) { Value::Character(c) => c, _ => unreachable!("a formatted array holds characters") };
         let mut lines = Vec::new();
-        for (breaks, _, spots) in crate::display::rows(self.shape(), None) {
+        for (breaks, _, spots) in crate::display::rows(self.shape(), None, None) {
             lines.extend(std::iter::repeat_n(vec![' '; columns], breaks));
             lines.push(
                 spots
@@ -1582,7 +1582,7 @@ impl Value {
             }
             Self::Array(_) => {
                 if self.axis_names().iter().any(Option::is_some) { return self.named_literal(el); }
-                let edges = el.edges(self.shape());
+                let edges = if self.shape().len() == 1 { el.last(self.shape()) } else { el.edges(self.shape()) };
                 if self.string_literal().is_some() { return quoted(&self.elided_text(edges)); }
                 if let Some(s) = crate::keyed::name(self) {
                     return format!(",•ucs {}", s.chars().map(|c| (c as u32).to_string()).collect::<Vec<_>>().join(" "));

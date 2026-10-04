@@ -87,7 +87,7 @@ def test_data_io(tmp_path):
     source.write_text('{"price":[10.5,20.0],"qty":[2,4]}', encoding='utf-8')
     read, write = bpl.nget, bpl.nput
     table = bpl.json(read(str(source), encoding='UTF-8'))
-    encoded = bpl.tocsv(table).py
+    encoded = bpl.csv.undo(table).py
     teq(write(encoded, path=str(dest)).py, len(encoded.encode('utf-8')))
     teq(bpl.fn('≡')(bpl.csv(read(str(dest))), table).py, 1)
     with pytest.raises(BplError, match='VALUE'): write('replacement', path=str(dest))
@@ -277,7 +277,7 @@ def test_math_construction():
     assert prime(9).py == 29 and prime_mode(1, 29).py == 1
     np.testing.assert_array_equal(factors(700), [2, 2, 5, 5, 7])
     np.testing.assert_array_equal(factor_spec(float('inf'), 700), [2, 0, 2, 1])
-    np.testing.assert_array_equal(polynomial([2, [1, 3]]), [6, -8, 2])
+    np.testing.assert_array_equal(polynomial.undo([2, [1, 3]]), [6, -8, 2])
     p = polyval.left([1, 2, 3])
     assert p.derivative(2).py == 14 and p.derivative.derivative(2).py == 6
     np.testing.assert_array_equal(p.derivative([10, 20], [1, 2]), [80, 280])

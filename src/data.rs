@@ -123,30 +123,31 @@ pub(crate) fn payload(value: &Value, span: &Context<'_>) -> Result<Vec<u8>, Erro
     if value.prototype().as_number().is_some() { bytes(value, span) } else { Ok(text(value, span)?.into_bytes()) }
 }
 
-/// The algorithm that the optional left argument names, in lower case, or `default` without one.
-fn algorithm(left: Option<&Value>, default: &str, span: &Context<'_>) -> Result<String, Error> {
+/// The algorithm or format that the optional left argument names, in lower case, or `default` without one.
+pub(crate) fn algorithm(left: Option<&Value>, default: &str, span: &Context<'_>) -> Result<String, Error> {
     left.map_or(Ok(default.into()), |name| text(name, span).map(|s| s.to_lowercase()))
 }
 
-/// `•zip` compresses bytes or text with `"gzip"`, `"zlib"` or `"deflate"`, gzip by default. `•zip⁻¹` decompresses. Both give bytes.
-fn deflate(left: Option<&Value>, right: &Value, span: &Context<'_>, inverse: bool) -> Result<Value, Error> {
+/// `•deflate` decompresses bytes in the format `"gzip"`, `"zlib"` or `"deflate"`, gzip by default. `•deflate⁻¹` compresses bytes or
+/// text. Both give bytes.
+fn flate(left: Option<&Value>, right: &Value, span: &Context<'_>, compress: bool) -> Result<Value, Error> {
     use flate2::{read, Compression};
     let (data, level) = (payload(right, span)?, Compression::default());
-    let mut reader: Box<dyn Read + '_> = match (algorithm(left, "gzip", span)?.as_str(), inverse) {
-        ("gzip", false) => Box::new(read::GzEncoder::new(&data[..], level)),
-        ("gzip", true) => Box::new(read::GzDecoder::new(&data[..])),
-        ("zlib", false) => Box::new(read::ZlibEncoder::new(&data[..], level)),
-        ("zlib", true) => Box::new(read::ZlibDecoder::new(&data[..])),
-        ("deflate", false) => Box::new(read::DeflateEncoder::new(&data[..], level)),
-        ("deflate", true) => Box::new(read::DeflateDecoder::new(&data[..])),
-        _ => return Err(span.domain_error("•zip takes \"gzip\", \"zlib\" or \"deflate\"")),
+    let mut reader: Box<dyn Read + '_> = match (algorithm(left, "gzip", span)?.as_str(), compress) {
+        ("gzip", true) => Box::new(read::GzEncoder::new(&data[..], level)),
+        ("gzip", false) => Box::new(read::GzDecoder::new(&data[..])),
+        ("zlib", true) => Box::new(read::ZlibEncoder::new(&data[..], level)),
+        ("zlib", false) => Box::new(read::ZlibDecoder::new(&data[..])),
+        ("deflate", true) => Box::new(read::DeflateEncoder::new(&data[..], level)),
+        ("deflate", false) => Box::new(read::DeflateDecoder::new(&data[..])),
+        _ => return Err(span.domain_error("•deflate takes \"gzip\", \"zlib\" or \"deflate\"")),
     };
     let mut out = Vec::new();
     reader.read_to_end(&mut out).map_err(|e| span.domain_error(format!("invalid compressed data: {e}")))?;
     byte_vector(out).error_at(span, "invalid byte vector")
 }
-pub(crate) fn zip(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> { deflate(left, right, span, false) }
-pub(crate) fn unzip(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> { deflate(left, right, span, true) }
+pub(crate) fn inflate(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> { flate(left, right, span, false) }
+pub(crate) fn deflate(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> { flate(left, right, span, true) }
 
 /// `•hash` gives the SHA-2 digest of bytes or text in hex, by `"sha224"`, `"sha256"`, `"sha384"` or `"sha512"`, SHA-256 by default.
 pub(crate) fn hash(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {

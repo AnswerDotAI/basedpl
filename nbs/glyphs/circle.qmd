@@ -9,17 +9,17 @@ Keys: `Alt-o`
 ○0j1              ⍝ *¯1
 ```
 
-`K○Y` selects a circular function. Pervasive; angles in radians.
+`K○Y` applies the circular function with code `K`, from 0 to 8. `K○⁻¹Y` applies its inverse. Pervasive; angles in radians.
 
 ```bpl
 1○0               ⍝ 0
 2○0               ⍝ 1
-9 11○3j4          ⍝ 3 4
-10○3j4            ⍝ 5
+1○⁻¹1             ⍝ 1.5707963267948966
 ```
 
-| `k` | `k○y` | `(-k)○y` |
+| `k` | `k○y` | `k○⁻¹y` |
 |---|---|---|
+| 0 | `√(1−y²)` | `√(1−y²)` |
 | 1 | sin | arcsin |
 | 2 | cos | arccos |
 | 3 | tan | arctan |
@@ -27,10 +27,8 @@ Keys: `Alt-o`
 | 5 | sinh | arcsinh |
 | 6 | cosh | arccosh |
 | 7 | tanh | arctanh |
-| 8 | `√(-1−y²)` | negative of code 8 |
-| 9 | real part | identity |
-| 10 | magnitude | conjugate |
-| 11 | imaginary part | multiply by `0j1` |
-| 12 | phase | `exp(0j1×y)` |
+| 8 | `√(-1−y²)` | `-√(-1−y²)` |
 
-Code 0 is `√(1−y²)`. Uses complex continuation where needed.
+Uses complex continuation where needed.
+
+APL difference: there are no negative codes or codes 9 to 12. Write `¯k○Y` as `k○⁻¹Y`. `∨Y` gives the real and imaginary parts, `|Y` the magnitude, and `∧Y` the magnitude and phase.

@@ -377,7 +377,7 @@ polar ← {  ⍝ Polar from/to cartesian coordinates.
     angle←{  ⍝ phase angle.
       [x y]←⊂⍤¯1 ⍵  ⍝ x and y coordinates.
       [on off]←1 0=⊂0=x  ⍝ points on/off y axis.
-      atan←¯3○y÷x+on  ⍝ arctan y÷x (avoiding y÷0).
+      atan←3○⁻¹y÷x+on  ⍝ arctan y÷x (avoiding y÷0).
       qne←(off×atan)+on×π0.5×2-×y
       nsw←πx<0
       qse←π2×(x>0)∧y<0
@@ -412,7 +412,7 @@ xtimes ← { m←0  ⍝ Fast multi-digit product using FFT.
   iFFT      ← {(⍴⍵)÷⍨, (cube+xroots⍴⍵)floop cube ⍵}
   rconvolve ← {(¯1+⍺+⍥⍴⍵)↑iFFT×/FFT¨(⍺ extend ⍵)}
   carry     ← {1↓+⌿1 0⌽0,⍉0 10⊤⍵}
-  (+/∧\0=t)↓t←carry⍣≡0,⌊0.5+9○(⍺ rconvolve ⍵)
+  (+/∧\0=t)↓t←carry⍣≡0,⌊0.5+⊣/∨(⍺ rconvolve ⍵)
 }
 
 convolve ← {+⌿(-⍳⍴⍺)⌽⍺×⊗⍵,0×1↓⍺}

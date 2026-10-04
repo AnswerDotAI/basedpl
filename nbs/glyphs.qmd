@@ -29,7 +29,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `π` [pi](glyphs/pi.qmd) | Alt-p | pi-times | pi-ratio | |
 | `√` [root](glyphs/root.qmd) | Alt-3 | sqrt | root | As BQN's `√` |
 | `!` [factorial](glyphs/factorial.qmd) | | factorial | binomial | |
-| `⍭` [prime](glyphs/prime.qmd) | Alt-Backslash ~ | prime | prime-mode | As J's `p:` |
+| `⍭` [prime](glyphs/prime.qmd) | Alt-Backslash ~ | prime | prime-mode | Like J's `p:`, with different codes |
 | `⨸` [factor](glyphs/factor.qmd) | Alt-o u | factors | factor-spec | As J's `q:` |
 | `⌻` [polynomial](glyphs/polynomial.qmd) | Alt-q t | polynomial | polyval | As J's `p.` |
 | `¿` [inverted-question](glyphs/inverted-question.qmd) | Alt-/ | roll | deal | Dyalog's `?` |
@@ -101,7 +101,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⍣` [power](glyphs/power.qmd) | Alt-1 * | `f⍣n`, `f⍣∞`, `f⍣g`, `f⍣[g]` | Iterate / invert / fixed point / repeat until / history until | List counts give history, as J/BQN |
 | `⇄` [inverse-pair](glyphs/inverse-pair.qmd) | Alt-4 | `f⇄g` | Attach an explicit inverse | As J's `:.` |
 | `⊘` [valences](glyphs/valences.qmd) | Alt-o / | `f⊘g` | Call `f` with one argument, `g` with two | As BQN's `⊘` |
-| `⌾` [under](glyphs/under.qmd) | Alt-o t | `f⌾g` | Transform, apply, inverse-transform | As J's `&.` |
+| `⌾` [under](glyphs/under.qmd) | Alt-o t | `f⌾g` | Apply under a selection or transform | As BQN's `⌾` |
 | `∂` [derivative](glyphs/derivative.qmd) | Alt-f | `f∂` | Gradient / vector–Jacobian product | |
 | `⍚` [agenda](glyphs/agenda.qmd) | Alt-Backtick _ | `selector⍚cases` | Select and call one function | As BQN's `◶` |
 | `@` [at](glyphs/at.qmd) | | `f@a`, `a@g` | Functional amend | |

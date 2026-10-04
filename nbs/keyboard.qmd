@@ -15,7 +15,32 @@ Hold Option (Alt) for the large character. Add Shift for the small character abo
 </div>
 ```
 
-Orange borders mark dead keys. Release Option before typing the next key. Repeat the same Option chord, or press Space, to enter the dead key's own character. See the [glyph reference](glyphs.qmd) for its combinations.
+Orange borders mark dead keys. Release Option before typing the next key. Repeat the same Option chord, or press Space, to enter the dead key's own character. Follow-ups can be sequences, such as `-1` for a negative superscript or subscript.
+
+| Key | Double-tap | Follow-ups |
+|---|---|---|
+| <code>&#96;</code> | <code>⋄</code> | <code>_</code>/<code>-</code>:<code>⍚</code> |
+| <code>1</code> | <code>¨</code> | <code>t</code>:<code>⍤</code>; <code>o</code>:<code>⍥</code>; <code>*</code>/<code>8</code>:<code>⍣</code>; <code>~</code>/<code>&#96;</code>:<code>⍨</code>; <code>g</code>:<code>⍢</code> |
+| <code>5</code> | <code>_</code> | <code>0–9</code>:<code>₀–₉</code>; <code>x</code>:<code>ₓ</code>; <code>j</code>:<code>ⱼ</code>; <code>e</code>:<code>ₑ</code>; <code>r</code>:<code>ᵣ</code>; <code>-0–9</code>:<code>₋₀–₋₉</code> |
+| <code>6</code> | <code>^</code> | <code>0–9</code>:<code>⁰–⁹</code>; <code>-0–9</code>:<code>⁻⁰–⁻⁹</code>; <code>t</code>:<code>ᵀ</code>; <code>u</code>:<code>ᵘ</code> |
+| <code>7</code> | <code>∆</code> | <code>&#124;</code>/<code>&#92;</code>:<code>⍋</code>; <code>_</code>/<code>-</code>:<code>⍙</code> |
+| <code>9</code> | <code>∨</code> | <code>~</code>/<code>&#96;</code>:<code>⍱</code> |
+| <code>0</code> | <code>∧</code> | <code>~</code>/<code>&#96;</code>:<code>⍲</code> |
+| <code>-</code> | <code>¯</code> | <code>,</code>:<code>⍪</code>; <code>&#92;</code>:<code>⍀</code>; <code>/</code>:<code>⌿</code> |
+| <code>=</code> | <code>≡</code> | <code>/</code>:<code>≢</code> |
+| <code>q</code> | <code>⎕</code> | <code>t</code>:<code>⌻</code>; <code>:</code>/<code>;</code>:<code>⍠</code>; <code>=</code>:<code>⌸</code>; <code>u</code>:<code>⌹</code>; <code>&#124;</code>/<code>&#92;</code>:<code>⌷</code>; <code>&#96;</code>:<code>⌺</code> |
+| <code>w</code> | <code>⍵</code> | <code>_</code>/<code>-</code>:<code>⍹</code> |
+| <code>e</code> | <code>∊</code> | <code>_</code>/<code>-</code>:<code>⍷</code> |
+| <code>i</code> | <code>⍳</code> | <code>_</code>/<code>-</code>:<code>⍸</code> |
+| <code>o</code> | <code>○</code> | <code>-</code>:<code>⊖</code>; <code>&#92;</code>:<code>⍉</code>; <code>/</code>:<code>⊘</code>; <code>*</code>/<code>8</code>:<code>⍟</code>; <code>m</code>:<code>⊗</code>; <code>u</code>:<code>⨸</code>; <code>t</code>:<code>⌾</code> |
+| <code>&#92;</code> | <code>&#124;</code> | <code>~</code>/<code>&#96;</code>:<code>⍭</code> |
+| <code>a</code> | <code>⍺</code> | <code>_</code>/<code>-</code>:<code>⍶</code> |
+| <code>g</code> | <code>∇</code> | <code>&#124;</code>/<code>&#92;</code>:<code>⍒</code> |
+| <code>k</code> | <code>↑</code> | <code>j</code>:<code>↕</code> |
+| <code>z</code> | <code>⊂</code> | <code>_</code>/<code>-</code>:<code>⊆</code> |
+| <code>c</code> | <code>∩</code> | <code>t</code>:<code>⍝</code> |
+| <code>b</code> | <code>⊥</code> | <code>t</code>:<code>⍎</code> |
+| <code>n</code> | <code>⊤</code> | <code>t</code>:<code>⍕</code> |
 
 This is the US-based map used in the browser and REPL, and by the native BasedPL-us macOS layout. Regional macOS layouts preserve their native Option characters and move conflicting BPL shortcuts. See [macOS installation](#macos-installation).
 

@@ -43,16 +43,18 @@ impl PartialEq for SystemFunction {
     }
 }
 
-impl SystemFunction {
+impl Valence {
     /// A call with the wrong number of arguments is a SYNTAX error.
-    pub(crate) fn check(&self, left: Option<&Value>, span: &crate::Span) -> Result<(), Error> {
-        match (self.valence, left) {
-            (Monadic, Some(_)) => Err(span.error(ErrorKind::Syntax, format!("{} is monadic", self.name))),
-            (Dyadic, None) => Err(span.error(ErrorKind::Syntax, format!("{} needs a left argument", self.name))),
+    pub(crate) fn check(self, name: &str, left: Option<&Value>, span: &crate::Span) -> Result<(), Error> {
+        match (self, left) {
+            (Monadic, Some(_)) => Err(span.error(ErrorKind::Syntax, format!("{name} is monadic"))),
+            (Dyadic, None) => Err(span.error(ErrorKind::Syntax, format!("{name} needs a left argument"))),
             _ => Ok(()),
         }
     }
 }
+
+impl SystemFunction { pub(crate) fn check(&self, left: Option<&Value>, span: &crate::Span) -> Result<(), Error> { self.valence.check(self.name, left, span) } }
 
 /// A function that calls `call` natively.
 pub(crate) fn native(name: &'static str, call: Call, valence: Valence) -> Function { Function::system(SystemFunction { name, call, valence }) }
@@ -66,22 +68,20 @@ pub(crate) fn natives(entries: impl IntoIterator<Item = (&'static str, Call, Val
 const BUILTINS: &[(&str, Call, Valence)] = &[
     ("•c", Call::Value(case_convert), Ambivalent),
     ("•csv", Call::Value(crate::csv::parse), Ambivalent),
-    ("•tocsv", Call::Value(crate::csv::serialize), Ambivalent),
     ("•json", Call::Value(crate::json::parse), Ambivalent),
-    ("•tojson", Call::Value(crate::json::serialize), Ambivalent),
     ("•mime", Call::Mime, Ambivalent),
     ("•element", Call::Value(crate::xml::factory), Monadic),
-    ("•xml", Call::Value(crate::xml::serialize), Monadic),
+    ("•xml", Call::Value(crate::xml::parse), Monadic),
     ("•svg", Call::Value(crate::xml::svg), Ambivalent),
     ("•plot", Call::Value(crate::plot::plot), Ambivalent),
-    ("•image", Call::Value(crate::image::image), Ambivalent),
+    ("•image", Call::Value(crate::image::image), Monadic),
     ("•vfi", Call::Value(crate::data::vfi), Ambivalent),
     ("•r", Call::Value(crate::regex::compile), Monadic),
     ("•distribution", Call::Value(crate::distribution::distribution), Ambivalent),
     ("•rand", Call::Value(crate::distribution::generator), Monadic),
     ("•nget", Call::Value(crate::data::read), Ambivalent),
     ("•nput", Call::Value(crate::data::write), Dyadic),
-    ("•zip", Call::Value(crate::data::zip), Ambivalent),
+    ("•deflate", Call::Value(crate::data::inflate), Ambivalent),
     ("•hash", Call::Value(crate::data::hash), Ambivalent),
     ("•uuid", Call::Value(crate::data::uuid), Ambivalent),
     ("•ucs", Call::Value(unicode_convert), Ambivalent),
@@ -108,13 +108,20 @@ pub(crate) fn help(name: &str) -> Option<&'static str> { let (name, ..) = builti
 
 pub(crate) fn lookup(name: &str) -> Option<Function> { let (name, call, valence) = builtin(name)?; Some(native(name, call.clone(), *valence)) }
 
-/// The system functions that have inverses, each with its inverse. `•xml⁻¹` reads XML, and `•zip⁻¹` decompresses.
-const INVERSES: &[(&str, Native)] = &[("•xml", crate::xml::parse), ("•zip", crate::data::unzip)];
+/// The format functions, each with its inverse and the inverse's valence. A format function reads its format, and its inverse
+/// writes it.
+const INVERSES: &[(&str, Native, Valence)] = &[
+    ("•csv", crate::csv::serialize, Ambivalent),
+    ("•json", crate::json::serialize, Ambivalent),
+    ("•xml", crate::xml::serialize, Monadic),
+    ("•image", crate::image::encode, Ambivalent),
+    ("•deflate", crate::data::deflate, Ambivalent),
+];
 
-/// `f⁻¹` for a system function `f` that has an inverse. It takes the arguments that `f` takes.
+/// `f⁻¹` for a system function `f` that has an inverse.
 pub(crate) fn inverse(f: &SystemFunction, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
-    let (_, call) = INVERSES.iter().find(|(name, _)| *name == f.name).ok_or_else(|| cx.domain_error("this function has no known inverse"))?;
-    f.check(left, cx.span)?;
+    let (_, call, valence) = INVERSES.iter().find(|(name, ..)| *name == f.name).ok_or_else(|| cx.domain_error("this function has no known inverse"))?;
+    valence.check(&format!("{}⁻¹", f.name), left, cx.span)?;
     call(left, right, cx)
 }
 
@@ -141,9 +148,11 @@ fn host(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, E
 
 /// The width of the terminal that standard output writes to. `None` without one.
 #[cfg(unix)]
-fn terminal_width() -> Option<usize> { rustix::termios::tcgetwinsize(std::io::stdout()).ok().map(|size| usize::from(size.ws_col)).filter(|&w| w > 0) }
+pub(crate) fn terminal_width() -> Option<usize> {
+    rustix::termios::tcgetwinsize(std::io::stdout()).ok().map(|size| usize::from(size.ws_col)).filter(|&w| w > 0)
+}
 #[cfg(not(unix))]
-fn terminal_width() -> Option<usize> { None }
+pub(crate) fn terminal_width() -> Option<usize> { None }
 
 /// `•delay s` pauses for `s` seconds and gives the seconds it waited. `•delay ∞` waits until interrupted. Interrupts stop any delay.
 fn delay(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {

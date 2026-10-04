@@ -71,6 +71,8 @@ pub(crate) enum Math {
     Power,
     Log,
     Circle,
+    /// The inverse of `Circle` for each code, which `k○⁻¹` calls. It has no glyph.
+    Arc,
     Pi,
     Root,
     Factorial,
@@ -223,28 +225,25 @@ pub(crate) mod real {
     }
     #[inline]
     pub(crate) fn factorial(y: f64) -> f64 { libm::tgamma(y + 1.0) }
-    /// The function circle code `code` applies to a real argument. Each gives `None` where its result is complex.
-    pub(crate) fn circle(code: isize) -> Option<fn(f64) -> Option<f64>> {
-        Some(match code {
-            0 => |x: f64| (x.abs() <= 1.0).then(|| (1.0 - x * x).sqrt()),
-            1 => |x: f64| Some(x.sin()),
-            2 => |x: f64| Some(x.cos()),
-            3 => |x: f64| Some(x.tan()),
-            4 => |x: f64| Some(x.hypot(1.0)),
-            5 => |x: f64| Some(x.sinh()),
-            6 => |x: f64| Some(x.cosh()),
-            7 => |x: f64| Some(x.tanh()),
-            -1 => |x: f64| (x.abs() <= 1.0).then(|| x.asin()),
-            -2 => |x: f64| (x.abs() <= 1.0).then(|| x.acos()),
-            -3 => |x: f64| Some(x.atan()),
-            -4 => |x: f64| (x.abs() >= 1.0).then(|| x * (1.0 - (1.0 / x).powi(2)).sqrt()),
-            -5 => |x: f64| Some(x.asinh()),
-            -6 => |x: f64| (x >= 1.0).then(|| x.acosh()),
-            -7 => |x: f64| (x.abs() < 1.0).then(|| x.atanh()),
-            9 | -9 | -10 => Some,
-            10 => |x: f64| Some(x.abs()),
-            11 => |_| Some(0.0),
-            12 => |x: f64| Some(0.0f64.atan2(x)),
+    /// The function circle code `code` applies to a real argument, or its inverse. Each gives `None` where its result is complex.
+    /// Code 0 is its own inverse.
+    pub(crate) fn circle(code: isize, inverse: bool) -> Option<fn(f64) -> Option<f64>> {
+        Some(match (code, inverse) {
+            (0, _) => |x: f64| (x.abs() <= 1.0).then(|| (1.0 - x * x).sqrt()),
+            (1, false) => |x: f64| Some(x.sin()),
+            (2, false) => |x: f64| Some(x.cos()),
+            (3, false) => |x: f64| Some(x.tan()),
+            (4, false) => |x: f64| Some(x.hypot(1.0)),
+            (5, false) => |x: f64| Some(x.sinh()),
+            (6, false) => |x: f64| Some(x.cosh()),
+            (7, false) => |x: f64| Some(x.tanh()),
+            (1, true) => |x: f64| (x.abs() <= 1.0).then(|| x.asin()),
+            (2, true) => |x: f64| (x.abs() <= 1.0).then(|| x.acos()),
+            (3, true) => |x: f64| Some(x.atan()),
+            (4, true) => |x: f64| (x.abs() >= 1.0).then(|| x * (1.0 - (1.0 / x).powi(2)).sqrt()),
+            (5, true) => |x: f64| Some(x.asinh()),
+            (6, true) => |x: f64| (x >= 1.0).then(|| x.acosh()),
+            (7, true) => |x: f64| (x.abs() < 1.0).then(|| x.atanh()),
             _ => return None,
         })
     }
@@ -718,7 +717,7 @@ impl Number {
             Factorial => self.binomial(right),
             Magnitude => self.residue(right),
             Power => self.power(right),
-            Circle => self.circle(right),
+            Circle | Arc => self.circle(right, op == Arc),
             Pi => self.dyad(Arithmetic::Divide, right)?.math_monad(Pi),
             Root => self.root(right),
             Gcd => self.gcd(right),
@@ -868,41 +867,34 @@ impl Number {
         Ok(real::factorial(self.to_float()?).into())
     }
 
-    fn circle(&self, right: &Self) -> Result<Self, &'static str> {
+    /// `self○right`, or the inverse of `self○` on `right`.
+    fn circle(&self, right: &Self, inverse: bool) -> Result<Self, &'static str> {
         let y = right.to_complex()?;
-        let code = self.integer().map_err(|_| "circle selector must be an integer")?;
-        if y.im == 0.0 { let x = y.re; if let Some(real) = real::circle(code).and_then(|f| f(x)) { return Ok(real.into()); } }
+        let code = self.integer().map_err(|_| "circle code must be an integer")?;
+        if y.im == 0.0 { let x = y.re; if let Some(real) = real::circle(code, inverse).and_then(|f| f(x)) { return Ok(real.into()); } }
         let one = Complex64::new(1.0, 0.0);
-        let result = match code {
-            8 | -8 if y.im == 0.0 => Complex64::new(0.0, if code == 8 { y.re.hypot(1.0) } else { -y.re.hypot(1.0) }),
-            -7 if y.im == 0.0 && y.re.abs() > 1.0 => Complex64::new((1.0 / y.re).atanh(), std::f64::consts::FRAC_PI_2.copysign(y.re)),
-            0 => (one - y * y).sqrt(),
-            1 => y.sin(),
-            2 => y.cos(),
-            3 => y.tan(),
-            4 => (one + y * y).sqrt(),
-            5 => y.sinh(),
-            6 => y.cosh(),
-            7 => y.tanh(),
-            8 => (-one - y * y).sqrt(),
-            9 => Complex64::new(y.re, 0.0),
-            10 => Complex64::new(y.norm(), 0.0),
-            11 => Complex64::new(y.im, 0.0),
-            12 => Complex64::new(y.arg(), 0.0),
-            -1 => y.asin(),
-            -2 => y.acos(),
-            -3 => y.atan(),
-            -4 if y == -one => Complex64::zero(),
-            -4 => (y + one) * ((y - one) / (y + one)).sqrt(),
-            -5 => y.asinh(),
-            -6 => y.acosh(),
-            -7 => y.atanh(),
-            -8 => -(-one - y * y).sqrt(),
-            -9 => y,
-            -10 => y.conj(),
-            -11 => y * Complex64::i(),
-            -12 => (y * Complex64::i()).exp(),
-            _ => return Err("circle selector must be between ¯12 and 12"),
+        let result = match (code, inverse) {
+            (8, _) if y.im == 0.0 => Complex64::new(0.0, if inverse { -y.re.hypot(1.0) } else { y.re.hypot(1.0) }),
+            (7, true) if y.im == 0.0 && y.re.abs() > 1.0 => Complex64::new((1.0 / y.re).atanh(), std::f64::consts::FRAC_PI_2.copysign(y.re)),
+            (0, _) => (one - y * y).sqrt(),
+            (1, false) => y.sin(),
+            (2, false) => y.cos(),
+            (3, false) => y.tan(),
+            (4, false) => (one + y * y).sqrt(),
+            (5, false) => y.sinh(),
+            (6, false) => y.cosh(),
+            (7, false) => y.tanh(),
+            (8, false) => (-one - y * y).sqrt(),
+            (1, true) => y.asin(),
+            (2, true) => y.acos(),
+            (3, true) => y.atan(),
+            (4, true) if y == -one => Complex64::zero(),
+            (4, true) => (y + one) * ((y - one) / (y + one)).sqrt(),
+            (5, true) => y.asinh(),
+            (6, true) => y.acosh(),
+            (7, true) => y.atanh(),
+            (8, true) => -(-one - y * y).sqrt(),
+            _ => return Err("circle code must be from 0 to 8"),
         };
         Ok(result.into())
     }

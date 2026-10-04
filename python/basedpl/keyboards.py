@@ -236,8 +236,31 @@ def keyboard_help(layout, lang):
     return '\n'.join(rows) + '\n'
 
 
+def dead_key_table(layout):
+    "List Option dead keys, their double-tap glyphs and follow-up sequences."
+    def code(text):
+        text = escape(text).replace('\\', '&#92;').replace('|', '&#124;').replace('`', '&#96;')
+        return f'<code>{text}</code>'
+    def followups(name, prefix=''):
+        keys = layout['states'][name]['keys']
+        digits = all(isinstance(keys.get(str(i)), str) for i in range(10))
+        if digits: yield prefix + '0–9', keys['0'] + '–' + keys['9']
+        for key, value in keys.items():
+            if digits and key in '0123456789': continue
+            if isinstance(value, dict): yield from followups(value['state'], prefix + key)
+            else: yield prefix + key, value
+    rows = ['| Key | Double-tap | Follow-ups |', '|---|---|---|']
+    for key, value in layout['option'].items():
+        if not isinstance(value, dict): continue
+        groups = {}
+        for sequence, result in followups(value['state']): groups.setdefault(result, []).append(sequence)
+        following = '; '.join('/'.join(code(k) for k in keys) + ':' + code(result) for result, keys in groups.items())
+        rows.append(f'| {code(key)} | {code(layout["states"][value["state"]]["terminator"])} | {following} |')
+    return '\n'.join(rows)
+
+
 def keyboard_page(layout):
-    "Generate the US-based Option keyboard diagram for the docs."
+    "Generate the US-based Option keyboard diagram and dead-key table for the docs."
     base = bases()['us']
     bindings = {chord: layout['option'][char] for char, chord in shortcuts(layout, 'us', base).items()}
     def glyph(value): return escape(layout['states'][value['state']]['terminator'] if isinstance(value, dict) else value)
@@ -268,7 +291,9 @@ Hold Option (Alt) for the large character. Add Shift for the small character abo
 </div>
 ```
 
-Orange borders mark dead keys. Release Option before typing the next key. Repeat the same Option chord, or press Space, to enter the dead key's own character. See the [glyph reference](glyphs.qmd) for its combinations.
+Orange borders mark dead keys. Release Option before typing the next key. Repeat the same Option chord, or press Space, to enter the dead key's own character. Follow-ups can be sequences, such as `-1` for a negative superscript or subscript.
+
+''' + dead_key_table(layout) + r'''
 
 This is the US-based map used in the browser and REPL, and by the native BasedPL-us macOS layout. Regional macOS layouts preserve their native Option characters and move conflicting BPL shortcuts. See [macOS installation](#macos-installation).
 

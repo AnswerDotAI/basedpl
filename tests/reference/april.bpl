@@ -123,10 +123,10 @@
 ⌈1 2 3○π.5 2 .25   ⍝ [1 1 1]ₓ
 
 ⍝ april:504 —
-¯11 ¯10 ¯9 9 10 11○1   ⍝ 0j1 1 1 1 1 0
+[0j1×1 +1 ⊢1 ⊣/∨1 |1 ⊢/∨1]   ⍝ 0j1 1 1 1 1 0
 
 ⍝ april:505 —
-⌊1000×,/9 11○⊂(¯1 ¯7~⍨¯7+⍳16)○⊗0 ¯2 2 ¯2j2 2j3.5
+⌊1000×(⊣/,⊢/)∨(6 5 4 3 2○⁻¹⊗v)⍪(⍳9)○⊗v←0 ¯2 2 ¯2j2 2j3.5
 [0 1316 1316 1734 2095 1570 3141 0 2325 1064 ⋄ 0 ¯1444 1443 ¯1735 2079 0 0 0 754 1038 ⋄ 0 ¯1733 1732 ¯1880 1940 1000 0 0 2128 3607 ⋄ 0 ¯1108 1107 ¯1312 1442 0 0 0 238 215 ⋄ 1570 3141 0 2325 1064 0 ¯1317 1316 ¯1735 ¯2096 ⋄ 1000 0 0 2128 3607 0 1732 1732 1879 ¯1941 ⋄ 0 ¯910 909 ¯3421 15069 0 0 0 ¯1510 ¯6885 ⋄ 1000 ¯417 ¯417 ¯1566 ¯6897 0 0 0 3297 ¯15043 ⋄ 0 2185 ¯2186 28 ¯2 0 0 0 1023 1001 ⋄ 1000 2236 2236 2128 2063 0 0 0 ¯1880 3392 ⋄ 0 ¯3627 3626 1509 ¯3397 0 0 0 3420 ¯1320 ⋄ 1000 3762 3762 ¯1566 ¯3524 0 0 0 ¯3298 ¯1273 ⋄ 0 ¯965 964 ¯1024 972 0 0 0 ¯29 23 ⋄ 0 0 0 1879 3392 1000 2236 2236 2128 ¯2064]ₓ
 
 ⍝ april:524 —
@@ -1382,8 +1382,8 @@ v←1 2 3 ⋄ ⊂v ≡ ⊂1 2 3   ⍝ $t
 ⍝ april:1244 —
 ""≡0#∊'a'   ⍝ $t
 
-⍝ april:1245 — Dyalog's count `¯n` replaces its item with `n` fills. `#` writes that as `¯n 0`
-1 ¯2 0 3 ¯4 0 5#⍠¯1 [3 5]⍴⍳5
+⍝ april:1245 —
+1 ¯2 3 ¯4 5#⍠¯1 [3 5]⍴⍳5
 [0 0 0 2 2 2 0 0 0 0 4 4 4 4 4 ⋄ 0 0 0 2 2 2 0 0 0 0 4 4 4 4 4 ⋄ 0 0 0 2 2 2 0 0 0 0 4 4 4 4 4]
 
 ⍝ april:1248 —
@@ -1440,12 +1440,12 @@ v←1 2 3 ⋄ ⊂v ≡ ⊂1 2 3   ⍝ $t
 3#3 3⍴⍳9
 [0 1 2 ⋄ 0 1 2 ⋄ 0 1 2 ⋄ 3 4 5 ⋄ 3 4 5 ⋄ 3 4 5 ⋄ 6 7 8 ⋄ 6 7 8 ⋄ 6 7 8]
 
-⍝ april:1289 — Dyalog's count `¯n` replaces its item with `n` fills. `#` writes that as `¯n 0`
-1 ¯2 0 3#3 5⍴⍳9
+⍝ april:1289 —
+1 ¯2 3#3 5⍴⍳9
 [0 1 2 3 4 ⋄ 0 0 0 0 0 ⋄ 0 0 0 0 0 ⋄ 1 2 3 4 5 ⋄ 1 2 3 4 5 ⋄ 1 2 3 4 5]
 
-⍝ april:1291 — Dyalog's count `¯n` replaces its item with `n` fills. `#` writes that as `¯n 0`
-1 ¯2 0 3 ¯4 0 5#⍠1 (3 5⍴⍳5)
+⍝ april:1291 —
+1 ¯2 3 ¯4 5#⍠1 (3 5⍴⍳5)
 [0 0 0 2 2 2 0 0 0 0 4 4 4 4 4 ⋄ 0 0 0 2 2 2 0 0 0 0 4 4 4 4 4 ⋄ 0 0 0 2 2 2 0 0 0 0 4 4 4 4 4]
 
 ⍝ april:1294 —
@@ -3066,9 +3066,6 @@ $a,$d   ⍝ "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 ⍝ april:2262 — Inverse monadic scalar functions; April power alias ⋆ written with standard APL *
 ⌊1000×(+⁻¹5),(-⁻¹5),(÷⁻¹5),(*⁻¹5),⍟⁻¹5
 [5000 ¯5000 200 1609 148413]ₓ
-
-⍝ april:2264 — Inverse circular ops
-{5○⍨-⍵ = ⍵↣○⁻¹5} 1+⍳12   ⍝ $t $t $t $t $t $t $t $t $t $t $t $t
 
 ⍝ april:2265 — Inverse indexing
 ⍳⁻¹0 1 2 3 4   ⍝ [5]ₓ
@@ -5997,7 +5994,7 @@ enlist ,↢⊂/⍳5
 463ₓ
 
 ⍝ april/libraries/dfns/power/demo.lisp:35 —
-⌊1000×¯3○0.5
+⌊1000×3○⁻¹0.5
 ⍝ =>
 463ₓ
 
@@ -7434,18 +7431,18 @@ d←{10¿⍵}¨10⍴1000 ⋄ ∧/d≡¨⊂d₀   ⍝ $f
 ⍝ april:1301 — Expand with only positive counts is replicate: `N\Y` is `N#Y`
 3#7   ⍝ [7 7 7]
 
-⍝ april:1302 — Expand written with `#`. Dyalog's `N\Y` is `N#Y` with each 0 count written as `¯1`
+⍝ april:1302 — With one item, expand is replicate: `N\Y` is `N#Y`
 1 ¯2 3 ¯4 5#'.'   ⍝ ".  ...    ....."
 
-⍝ april:1303 — Expand written with `#`. Dyalog's `N\Y` is `N#Y` with each 0 count written as `¯1`. Positions count from 0, so `⍳n` became `1+⍳n`
-1 ¯2 2 ¯1 1#⍠¯1(3+2 3⍴1+⍳6)
+⍝ april:1303 — Expand written with `#⁻¹`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻¹Y`. Positions count from 0, so `⍳n` became `1+⍳n`
+N←1 ¯2 2 0 1 ⋄ Y←3+2 3⍴1+⍳6 ⋄ (1⌈|N)#⍠¯1 (N>0)#⁻¹⍠¯1 Y
 [4 0 0 5 5 0 6 ⋄ 7 0 0 8 8 0 9]
 
-⍝ april:1304 — Expand written with `#`. Dyalog's `N\Y` is `N#Y` with each 0 count written as `¯1`. Positions count from 0, so `⍳n` became `1+⍳n`
-1 ¯2 2 ¯1 1#1+⍳3   ⍝ [1 0 0 2 2 0 3]
+⍝ april:1304 — Expand written with `#⁻¹`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻¹Y`. Positions count from 0, so `⍳n` became `1+⍳n`
+N←1 ¯2 2 0 1 ⋄ (1⌈|N)#(N>0)#⁻¹1+⍳3   ⍝ [1 0 0 2 2 0 3]
 
-⍝ april:1306 — Expand written with `#`. Dyalog's `N\Y` is `N#Y` with each 0 count written as `¯1`. Positions count from 0, so `⍳n` became `1+⍳n`
-1 ¯2 3 4#3 5⍴1+⍳9
+⍝ april:1306 — Expand written with `#⁻¹`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻¹Y`. Positions count from 0, so `⍳n` became `1+⍳n`
+N←1 ¯2 3 4 ⋄ (1⌈|N)#(N>0)#⁻¹3 5⍴1+⍳9
 [1 2 3 4 5 ⋄ 0 0 0 0 0 ⋄ 0 0 0 0 0 ⋄ 6 7 8 9 1 ⋄ 6 7 8 9 1 ⋄ 6 7 8 9 1 ⋄ 2 3 4 5 6 ⋄ 2 3 4 5 6 ⋄ 2 3 4 5 6 ⋄ 2 3 4 5 6]
 
 ⍝ april:1310 — Expand written with `#⁻¹`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻¹Y`. Positions count from 0, so `⍳n` became `1+⍳n`
@@ -7458,7 +7455,7 @@ N←¯3 ⋄ (1⌈|N)#(N>0)#⁻¹0⍴⊂2 2⍴[(⊂3 3⍴1+⍳6) 9 8 7]
 ⍝ april:1329 — Expand with only positive counts is replicate: `N\Y` is `N#Y`
 2#1   ⍝ [1 1]
 
-⍝ april:1330 — Expand written with `#`. Dyalog's `N\Y` is `N#Y` with each 0 count written as `¯1`
+⍝ april:1330 — With one item, expand is replicate: `N\Y` is `N#Y`
 1 ¯2 3 ¯4 5#3   ⍝ [3 0 0 3 3 3 0 0 0 0 3 3 3 3 3]
 
 ⍝ april:1945 — Selection from within an array with spaces in axis specification; Bracket indexing written with `⌷`, with `∞` for the elided axis; Positions count from 0, so `⍳n` became `1+⍳n`

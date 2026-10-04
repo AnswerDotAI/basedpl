@@ -4,17 +4,8 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use std::io::Cursor;
 
 /// `•image Y` returns a picture: the PNG or JPEG file that `Y` names, the bytes of one, or the numbers in `Y`. A picture is numbers from
-/// 0 to 1 with axes for rows, columns and up to four channels, displayed as an image. `kind •image Y` encodes `Y` as `"png"` or `"jpeg"`
-/// bytes.
-pub(crate) fn image(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if let Some(kind) = left {
-        let format = match keyed::name(kind).as_deref() {
-            Some("png") => ImageFormat::Png,
-            Some("jpeg") => ImageFormat::Jpeg,
-            _ => return Err(span.domain_error("•image encodes \"png\" or \"jpeg\"")),
-        };
-        return data::byte_vector(encoded(right, format, span)?).error_at(span, "image exceeds array limits");
-    }
+/// 0 to 1 with axes for rows, columns and up to four channels, displayed as an image.
+pub(crate) fn image(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let picture = match keyed::name(right) {
         Some(path) => decoded(&span.read(&path)?, span)?,
         None if right.shape().len() == 1 => decoded(&data::bytes(right, span)?, span)?,
@@ -24,6 +15,16 @@ pub(crate) fn image(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
         }
     };
     picture.with_renderer(display::renderer("image-renderer", render)).error_at(span, "invalid image")
+}
+
+/// `kind •image⁻¹ Y` encodes the picture `Y` as `"png"` or `"jpeg"` bytes, PNG by default.
+pub(crate) fn encode(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let format = match data::algorithm(left, "png", span)?.as_str() {
+        "png" => ImageFormat::Png,
+        "jpeg" => ImageFormat::Jpeg,
+        _ => return Err(span.domain_error("•image⁻¹ encodes \"png\" or \"jpeg\"")),
+    };
+    data::byte_vector(encoded(right, format, span)?).error_at(span, "image exceeds array limits")
 }
 
 fn render(_: Option<&Value>, picture: &Value, span: &Context<'_>) -> Result<Value, Error> {
