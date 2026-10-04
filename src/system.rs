@@ -1,15 +1,17 @@
 use crate::{
     array::{generated_len, Items},
-    eval::Operand,
     execution::Context,
     primitive::{integer, numeric, pervade, EmptyFill},
     Error, ErrorAt, ErrorKind, Function, Value,
 };
 use std::borrow::Cow;
 
+/// A system function implemented natively, taking an optional left argument and a right argument.
+pub(crate) type Native = fn(Option<&Value>, &Value, &Context<'_>) -> Result<Value, Error>;
+
 #[derive(Clone, Debug)]
 pub(crate) enum Call {
-    Value(fn(Option<&Value>, &Value, &Context<'_>) -> Result<Value, Error>),
+    Value(Native),
     Session(fn(&mut crate::Session, Option<&Value>, &Value, &crate::Span) -> Result<Value, Error>),
     Regex(std::sync::Arc<::regex::Regex>, crate::regex::Operation),
     Distribution(std::sync::Arc<crate::distribution::Distribution>, crate::distribution::Operation),
@@ -61,70 +63,102 @@ pub(crate) fn natives(entries: impl IntoIterator<Item = (&'static str, Call, Val
     crate::keyed::vector(keys, functions).expect("distinct keys")
 }
 
-enum Builtin { Text(&'static str), Function(Call, Valence) }
-
-const BUILTINS: &[(&str, Builtin)] = &[
-    ("•a", Builtin::Text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
-    ("•d", Builtin::Text("0123456789")),
-    ("•c", Builtin::Function(Call::Value(case_convert), Ambivalent)),
-    ("•csv", Builtin::Function(Call::Value(crate::csv::parse), Ambivalent)),
-    ("•tocsv", Builtin::Function(Call::Value(crate::csv::serialize), Ambivalent)),
-    ("•json", Builtin::Function(Call::Value(crate::json::parse), Ambivalent)),
-    ("•tojson", Builtin::Function(Call::Value(crate::json::serialize), Ambivalent)),
-    ("•mime", Builtin::Function(Call::Mime, Ambivalent)),
-    ("•element", Builtin::Function(Call::Value(crate::xml::factory), Monadic)),
-    ("•xml", Builtin::Function(Call::Value(crate::xml::serialize), Monadic)),
-    ("•svg", Builtin::Function(Call::Value(crate::xml::svg), Ambivalent)),
-    ("•plot", Builtin::Function(Call::Value(crate::plot::plot), Ambivalent)),
-    ("•image", Builtin::Function(Call::Value(crate::image::image), Ambivalent)),
-    ("•vfi", Builtin::Function(Call::Value(crate::data::vfi), Ambivalent)),
-    ("•r", Builtin::Function(Call::Value(crate::regex::compile), Monadic)),
-    ("•normal", Builtin::Function(Call::Value(crate::distribution::normal), Monadic)),
-    ("•uniform", Builtin::Function(Call::Value(crate::distribution::uniform), Monadic)),
-    ("•beta", Builtin::Function(Call::Value(crate::distribution::beta), Monadic)),
-    ("•bernoulli", Builtin::Function(Call::Value(crate::distribution::bernoulli), Monadic)),
-    ("•binomial", Builtin::Function(Call::Value(crate::distribution::binomial), Monadic)),
-    ("•cauchy", Builtin::Function(Call::Value(crate::distribution::cauchy), Monadic)),
-    ("•chisquared", Builtin::Function(Call::Value(crate::distribution::chisquared), Monadic)),
-    ("•exponential", Builtin::Function(Call::Value(crate::distribution::exponential), Monadic)),
-    ("•fisher", Builtin::Function(Call::Value(crate::distribution::fisher), Monadic)),
-    ("•gamma", Builtin::Function(Call::Value(crate::distribution::gamma), Monadic)),
-    ("•inversegamma", Builtin::Function(Call::Value(crate::distribution::inversegamma), Monadic)),
-    ("•laplace", Builtin::Function(Call::Value(crate::distribution::laplace), Monadic)),
-    ("•lognormal", Builtin::Function(Call::Value(crate::distribution::lognormal), Monadic)),
-    ("•logistic", Builtin::Function(Call::Value(crate::distribution::logistic_distribution), Monadic)),
-    ("•poisson", Builtin::Function(Call::Value(crate::distribution::poisson), Monadic)),
-    ("•student", Builtin::Function(Call::Value(crate::distribution::student), Monadic)),
-    ("•weibull", Builtin::Function(Call::Value(crate::distribution::weibull), Monadic)),
-    ("•rand", Builtin::Function(Call::Value(crate::distribution::generator), Monadic)),
-    ("•nget", Builtin::Function(Call::Value(crate::data::read), Ambivalent)),
-    ("•nput", Builtin::Function(Call::Value(crate::data::write), Dyadic)),
-    ("•ucs", Builtin::Function(Call::Value(unicode_convert), Ambivalent)),
-    ("•load", Builtin::Function(Call::Load, Monadic)),
-    ("•signal", Builtin::Function(Call::Value(signal), Monadic)),
-    ("•storage", Builtin::Function(Call::Value(storage), Monadic)),
-    ("•time", Builtin::Function(Call::Time, Ambivalent)),
-    ("•prefs", Builtin::Function(Call::Session(crate::display::prefs), Monadic)),
-    ("•nc", Builtin::Function(Call::Session(crate::Session::system_nc), Monadic)),
-    ("•nl", Builtin::Function(Call::Session(crate::Session::system_nl), Ambivalent)),
-    ("•src", Builtin::Function(Call::Session(crate::Session::system_src), Monadic)),
-    ("•ex", Builtin::Function(Call::Session(crate::Session::system_ex), Monadic)),
+const BUILTINS: &[(&str, Call, Valence)] = &[
+    ("•c", Call::Value(case_convert), Ambivalent),
+    ("•csv", Call::Value(crate::csv::parse), Ambivalent),
+    ("•tocsv", Call::Value(crate::csv::serialize), Ambivalent),
+    ("•json", Call::Value(crate::json::parse), Ambivalent),
+    ("•tojson", Call::Value(crate::json::serialize), Ambivalent),
+    ("•mime", Call::Mime, Ambivalent),
+    ("•element", Call::Value(crate::xml::factory), Monadic),
+    ("•xml", Call::Value(crate::xml::serialize), Monadic),
+    ("•svg", Call::Value(crate::xml::svg), Ambivalent),
+    ("•plot", Call::Value(crate::plot::plot), Ambivalent),
+    ("•image", Call::Value(crate::image::image), Ambivalent),
+    ("•vfi", Call::Value(crate::data::vfi), Ambivalent),
+    ("•r", Call::Value(crate::regex::compile), Monadic),
+    ("•distribution", Call::Value(crate::distribution::distribution), Ambivalent),
+    ("•rand", Call::Value(crate::distribution::generator), Monadic),
+    ("•nget", Call::Value(crate::data::read), Ambivalent),
+    ("•nput", Call::Value(crate::data::write), Dyadic),
+    ("•zip", Call::Value(crate::data::zip), Ambivalent),
+    ("•hash", Call::Value(crate::data::hash), Ambivalent),
+    ("•uuid", Call::Value(crate::data::uuid), Ambivalent),
+    ("•ucs", Call::Value(unicode_convert), Ambivalent),
+    ("•load", Call::Load, Monadic),
+    ("•signal", Call::Value(signal), Monadic),
+    ("•storage", Call::Value(storage), Monadic),
+    ("•time", Call::Time, Ambivalent),
+    ("•host", Call::Value(host), Monadic),
+    ("•delay", Call::Value(delay), Monadic),
+    ("•prefs", Call::Session(crate::display::prefs), Monadic),
+    ("•nc", Call::Session(crate::Session::system_nc), Monadic),
+    ("•nl", Call::Session(crate::Session::system_nl), Ambivalent),
+    ("•src", Call::Session(crate::Session::system_src), Monadic),
+    ("•ex", Call::Session(crate::Session::system_ex), Monadic),
 ];
 
 pub(crate) fn names() -> impl Iterator<Item = &'static str> { BUILTINS.iter().map(|(name, ..)| *name) }
 
-/// The help for system name `name`, ignoring case: its block of `nbs/system-functions.qmd`.
-pub(crate) fn help(name: &str) -> Option<&'static str> {
-    let (name, _) = BUILTINS.iter().find(|(key, _)| key.eq_ignore_ascii_case(name))?;
-    crate::inspection::page(name)
+/// The table entry for system name `name`, ignoring case.
+fn builtin(name: &str) -> Option<&'static (&'static str, Call, Valence)> { BUILTINS.iter().find(|(key, ..)| key.eq_ignore_ascii_case(name)) }
+
+/// The help block for system name `name`, ignoring case, from `nbs/system-functions.qmd`.
+pub(crate) fn help(name: &str) -> Option<&'static str> { let (name, ..) = builtin(name)?; crate::inspection::page(name) }
+
+pub(crate) fn lookup(name: &str) -> Option<Function> { let (name, call, valence) = builtin(name)?; Some(native(name, call.clone(), *valence)) }
+
+/// The system functions that have inverses, each with its inverse. `•xml⁻¹` reads XML, and `•zip⁻¹` decompresses.
+const INVERSES: &[(&str, Native)] = &[("•xml", crate::xml::parse), ("•zip", crate::data::unzip)];
+
+/// `f⁻¹` for a system function `f` that has an inverse. It takes the arguments that `f` takes.
+pub(crate) fn inverse(f: &SystemFunction, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+    let (_, call) = INVERSES.iter().find(|(name, _)| *name == f.name).ok_or_else(|| cx.domain_error("this function has no known inverse"))?;
+    f.check(left, cx.span)?;
+    call(left, right, cx)
 }
 
-pub(crate) fn lookup(name: &str) -> Option<Operand> {
-    let &(name, ref builtin) = BUILTINS.iter().find(|(key, ..)| key.eq_ignore_ascii_case(name))?;
-    Some(match builtin {
-        Builtin::Text(text) => Operand::Value(crate::keyed::text(text)),
-        Builtin::Function(call, valence) => Operand::Function(Function::system(SystemFunction { name, call: call.clone(), valence: *valence })),
-    })
+/// The arguments that follow the program on the command line.
+pub(crate) static ARGS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+/// `•host name` gives the host fact called `name`, one of `"args"`, `"version"`, `"env"` and `"width"`.
+fn host(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let fact = match crate::keyed::name(right).as_deref() {
+        Some("args") => {
+            let args = ARGS.get().map_or(&[][..], Vec::as_slice);
+            Value::from_parts(vec![args.len()], args.iter().map(|a| crate::keyed::text(a)).collect(), crate::keyed::text(""))
+        }
+        Some("version") => Ok(crate::keyed::text(env!("CARGO_PKG_VERSION"))),
+        Some("env") => {
+            let (names, values) = std::env::vars_os().map(|(k, v)| (k.to_string_lossy().into(), crate::keyed::text(&v.to_string_lossy()))).unzip();
+            crate::keyed::record(names, values)
+        }
+        Some("width") => terminal_width().map_or_else(|| Value::integers(vec![0], vec![]), |w| Value::number(w as f64)),
+        _ => return Err(span.domain_error("•host takes \"args\", \"version\", \"env\" or \"width\"")),
+    };
+    fact.error_at(span, "invalid host fact")
+}
+
+/// The width of the terminal that standard output writes to. `None` without one.
+#[cfg(unix)]
+fn terminal_width() -> Option<usize> { rustix::termios::tcgetwinsize(std::io::stdout()).ok().map(|size| usize::from(size.ws_col)).filter(|&w| w > 0) }
+#[cfg(not(unix))]
+fn terminal_width() -> Option<usize> { None }
+
+/// `•delay s` pauses for `s` seconds and gives the seconds it waited. `•delay ∞` waits until interrupted. Interrupts stop any delay.
+fn delay(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    use std::time::{Duration, Instant};
+    let seconds = crate::primitive::real(right, span)?;
+    if seconds.is_nan() || seconds < 0.0 { return Err(span.domain_error("•delay needs a nonnegative number of seconds")); }
+    let start = Instant::now();
+    let end = Duration::try_from_secs_f64(seconds).ok().and_then(|d| start.checked_add(d));
+    loop {
+        span.check()?;
+        let now = Instant::now();
+        if end.is_some_and(|end| now >= end) { break; }
+        std::thread::sleep(end.map_or(Duration::MAX, |end| end - now).min(Duration::from_millis(10)));
+    }
+    Ok(Value::Number(start.elapsed().as_secs_f64().into()))
 }
 
 fn storage(_: Option<&Value>, right: &Value, _: &Context<'_>) -> Result<Value, Error> { Ok(crate::keyed::text(right.storage_name())) }

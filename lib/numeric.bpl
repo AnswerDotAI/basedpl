@@ -320,7 +320,7 @@ phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
   ""≡0#∊⍵?{
     1<≡⍵?∇¨⍵;
     '¯'=↑⍵?-∇ 1↓⍵;
-    a←Ø⊥•d⍳⍵~"."
+    a←Ø⊥$d⍳⍵~"."
     a÷Ø*(≢⍵∪'.')-1+(,⍵)⍳'.'
   }⍵;
   0≠≡⍵?⍺∇¨⍵;

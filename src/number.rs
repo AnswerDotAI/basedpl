@@ -1054,6 +1054,15 @@ impl Number {
     }
 }
 
+impl Number {
+    /// This number with each float part rounded to `digits` significant digits. From 17 digits up a float keeps every digit, and
+    /// exact numbers and Booleans stay as they are.
+    pub(crate) fn rounded(&self, digits: usize) -> Self {
+        let round = |x: f64| if digits >= 17 || !x.is_finite() { x } else { format!("{x:.*e}", digits - 1).parse().unwrap_or(x) };
+        match &self.0 { Float(x) => Self(Float(round(*x))), Complex(z) => Self(Complex(Complex64::new(round(z.re), round(z.im)))), _ => self.clone() }
+    }
+}
+
 fn write_float(out: &mut impl fmt::Write, n: f64) -> fmt::Result {
     if n.is_nan() { return out.write_str(NAN_NAME); }
     if n.is_infinite() { return out.write_str(if n.is_sign_positive() { "∞" } else { "-∞" }); }

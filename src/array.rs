@@ -1567,7 +1567,7 @@ impl Value {
     /// Source text for the value, with large arrays elided as `el` says. Elided text doesn't read back.
     pub(crate) fn source(&self, el: Elide) -> String {
         match self {
-            Self::Number(n) => n.to_string(),
+            Self::Number(n) => el.number(n),
             Self::Character(c) if c.is_control() => format!("•ucs {}", *c as u32),
             Self::Character(c) => format!("'{c}'"),
             Self::Function(f) => {
@@ -1749,9 +1749,9 @@ impl Value {
         } else if self.shape().len() > 1 && !self.has_keys() { self.block_literal(item, el, edges) } else { item(self, el) }
     }
 
-    /// A character vector as a double-quoted literal, unless it holds control characters, which a literal can't show.
+    /// A character vector as a double-quoted literal, or `None` when it holds a control character other than a newline.
     fn string_literal(&self) -> Option<String> {
-        if let Self::Array(_) = self { crate::keyed::name(self).filter(|s| !s.chars().any(char::is_control)).map(|s| quoted(&s)) } else { None }
+        if let Self::Array(_) = self { crate::keyed::name(self).filter(|s| !s.chars().any(|c| c.is_control() && c != '\n')).map(|s| quoted(&s)) } else { None }
     }
 
     /// Assemble cells by trailing-axis agreement, padding each with its own fill.

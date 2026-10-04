@@ -18,19 +18,21 @@ impl Decimals {
     fn padding(self, number: Self) -> (usize, usize) { (self.left - number.left, self.right - number.right) }
 }
 
-/// How much of a large array display shows. An array of more than `limit` items shows the first and last `edges`
-/// positions of each axis longer than twice `edges`, and a marker for the positions between.
+/// How much of a large array or a long float display shows. An array of more than `limit` items shows the first and last `edges`
+/// positions of each axis longer than twice `edges`, and a marker for the positions between. A float shows `prec` significant digits.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Elide { pub limit: usize, pub edges: usize }
-impl Default for Elide { fn default() -> Self { Self { limit: 1000, edges: 3 } } }
+pub(crate) struct Elide { pub limit: usize, pub edges: usize, pub prec: usize }
+impl Default for Elide { fn default() -> Self { Self { limit: 1000, edges: 3, prec: usize::MAX } } }
 impl Elide {
-    /// Shows every item, as source text and `⍕` do.
-    pub const NONE: Self = Self { limit: usize::MAX, edges: 0 };
+    /// Shows every item and every digit, as source text and `⍕` do.
+    pub const NONE: Self = Self { limit: usize::MAX, edges: 0, prec: usize::MAX };
     /// The positions kept at each end of a long axis of an array of `shape`, or `None` when display shows every item.
     pub fn edges(self, shape: &[usize]) -> Option<usize> {
         let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);
         (count > self.limit).then_some(self.edges)
     }
+    /// The text of `n` with each float rounded to `prec` significant digits.
+    pub fn number(self, n: &Number) -> String { n.rounded(self.prec).to_string() }
 }
 
 /// The positions display shows along an axis of `len` items: all of them, or the first and last `edges` with `None` for
@@ -97,7 +99,7 @@ pub(crate) struct Settings {
     pub elide: Elide,
 }
 
-const KEYS: [&str; 5] = ["box", "trees", "fns", "limit", "edges"];
+const KEYS: [&str; 6] = ["box", "trees", "fns", "limit", "edges", "prec"];
 
 impl Settings {
     pub fn interactive() -> Self { Self { boxed: true, trees: true, functions: true, ..Self::default() } }
@@ -110,8 +112,8 @@ impl Settings {
     fn record(&self) -> Value {
         let flag = |b| Value::Number(Number::from_bool(b));
         let count = |n: usize| Value::Number(if n == usize::MAX { Number::from(f64::INFINITY) } else { Number::from_integer(n as i64) });
-        let values = vec![flag(self.boxed), flag(self.trees), flag(self.functions), count(self.elide.limit), count(self.elide.edges)];
-        keyed::record(KEYS.map(Into::into).to_vec(), values).expect("five settings fit in a record")
+        let values = vec![flag(self.boxed), flag(self.trees), flag(self.functions), count(self.elide.limit), count(self.elide.edges), count(self.elide.prec)];
+        keyed::record(KEYS.map(Into::into).to_vec(), values).expect("the settings fit in a record")
     }
     /// The settings with the entries of the record `changes` applied.
     fn update(mut self, changes: &Value) -> Result<Self, crate::ErrorKind> {
@@ -127,6 +129,7 @@ impl Settings {
                 "fns" => self.functions = value.boolean()?,
                 "limit" => self.elide.limit = count(&value)?,
                 "edges" => self.elide.edges = count(&value)?,
+                "prec" => self.elide.prec = count(&value).and_then(|d| if d == 0 { Err(crate::ErrorKind::Domain) } else { Ok(d) })?,
                 _ => return Err(crate::ErrorKind::Domain),
             }
         }
@@ -290,7 +293,7 @@ fn array(a: &Value, el: Elide) -> Block {
                     let block = match &item {
                         // An `ₓ` box already says its numbers are exact.
                         Value::Number(n) if kind == 'ₓ' => Block::new(format!("{n:#}")),
-                        Value::Number(n) => Block::new(n.to_string()),
+                        Value::Number(n) => Block::new(el.number(n)),
                         Value::Character(c) => Block::new(if c.is_control() { c.escape_default().to_string() } else { c.to_string() }),
                         Value::Array(_) => array(&item, el),
                         Value::Function(f) => Block::new(f.to_string()),
@@ -311,7 +314,7 @@ fn array(a: &Value, el: Elide) -> Block {
 /// Display text for `a` without frames: a vector or unit as source text, a string as its characters, and higher ranks as rows.
 pub(crate) fn plain(a: &Value, el: Elide) -> String {
     match a {
-        Value::Number(n) => return n.to_string(),
+        Value::Number(n) => return el.number(n),
         Value::Function(f) => return f.to_string(),
         Value::Character(_) | Value::Operator(_) => return a.literal(),
         Value::Array(_) => (),
@@ -339,7 +342,7 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
                         item => {
                             spaced = true;
                             match item {
-                                Value::Number(n) => Cell::number(n.to_string()),
+                                Value::Number(n) => Cell::number(el.number(&n)),
                                 Value::Function(f) => Cell::text(f.to_string()),
                                 Value::Operator(op) => Cell::text(op.to_string()),
                                 item => Cell::text(item.item(el)),
@@ -420,10 +423,9 @@ pub(crate) fn bundle(value: &Value) -> Result<crate::MimeBundle, crate::ErrorKin
 }
 
 /// A native renderer, called with the value to display.
-pub(crate) fn renderer(
-    name: &'static str,
-    render: fn(Option<&Value>, &Value, &crate::execution::Context<'_>) -> Result<Value, crate::Error>,
-) -> crate::Function { crate::system::native(name, crate::system::Call::Value(render), crate::system::Valence::Monadic) }
+pub(crate) fn renderer(name: &'static str, render: crate::system::Native) -> crate::Function {
+    crate::system::native(name, crate::system::Call::Value(render), crate::system::Valence::Monadic)
+}
 
 /// A MIME bundle holding `text` as the type `kind`.
 pub(crate) fn mime(kind: &str, text: Value) -> Result<Value, crate::ErrorKind> { crate::keyed::vector(vec![kind.into()], vec![text]) }

@@ -39,7 +39,7 @@ def test_records_and_boundaries():
 
 
 def test_comment_extraction():
-    corpus = Corpus(ROOT/'tests/reference/inventory')
+    corpus = Corpus(ROOT/'provenance')
     assert 'sin(pi/6)' in description(corpus['ngn:177', '*'])
     assert '0 <= x < n' not in description(corpus['ngn:518', '*'])
     comment = description(corpus['april/libraries/dfns/array/demo.lisp:14', '*'])
@@ -47,7 +47,7 @@ def test_comment_extraction():
 
 
 def test_captured_literals():
-    for line in (ROOT/'tests/reference/inventory/ngn.jsonl').read_text().splitlines():
+    for line in (ROOT/'provenance/ngn.jsonl').read_text().splitlines():
         expected = json.loads(line).get('expected')
         if isinstance(expected, dict): assert _check(dict(code=literal(expected), expected=expected))['status']=='pass', literal(expected)
 
@@ -55,7 +55,7 @@ def test_captured_literals():
 def test_incremental_export(tmp_path):
     inventory = tmp_path/'inventory'
     inventory.mkdir()
-    rows = Corpus(ROOT/'tests/reference/inventory').get_many(['ngn:177', 'ngn:517', 'ngn:518'], '*')
+    rows = Corpus(ROOT/'provenance').get_many(['ngn:177', 'ngn:517', 'ngn:518'], '*')
     rows['ngn:177']['code'] = '1e¯10>|.5-1○π÷6'
     rows['ngn:518']['code'] = 'n←100⋄A←(n÷2)¿n⋄∧/(0≤A),A<n'
     for row in rows.values(): row['status'] = 'pending'

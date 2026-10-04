@@ -20,4 +20,4 @@ printf '3\n4\n' | bpl -e '+/⍎¨[⎕ ⎕]'       # 7
 
 `bpl -e`, script files and the interactive REPL read standard input. In a notebook, `⎕` asks for a line in a text box, but `•nget "-"` is a `VALUE` error. `bpl -` and piped REPL input read the program itself from standard input. In those two modes, in `bpl --worker` and in the Python API, reading `⎕` or `•nget "-"` is a `VALUE` error.
 
-Dyalog's `⎕A`, `⎕D`, `⎕C` and `⎕UCS` are BPL's [`•a`, `•d`, `•c` and `•ucs`](../system-functions.qmd#text).
+Dyalog's `⎕A` and `⎕D` are BPL's [`$a` and `$d`](../system-functions.qmd#constants). `⎕C` and `⎕UCS` are [`•c` and `•ucs`](../system-functions.qmd#text).

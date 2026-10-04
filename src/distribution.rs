@@ -25,24 +25,28 @@ pub(crate) enum Operation {
     Quantile,
 }
 
-// One list keeps constructors and dispatch together; the numerical work stays in statrs.
+// One list gives each distribution's name, standard parameters, constructor and dispatch; the numerical work stays in statrs. The
+// distributions after the `;` have constructors written by hand.
 macro_rules! continuous {
-    ($($variant:ident($name:ident, [$($arg:ident),+] => $new:expr)),+ $(,)?) => {
+    ($($variant:ident($name:ident, [$($arg:ident),+] = [$($standard:expr),*] => $new:expr)),+; $($other:ident = [$($other_standard:expr),*]),+ $(,)?) => {
         #[derive(Debug, PartialEq)]
         pub(crate) enum Distribution { $($variant($variant),)+ Binomial(Binomial), Poisson(Poisson), Logistic(f64, f64) }
 
-        $(pub(crate) fn $name(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+        $(fn $name(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
             let [$($arg),+] = parameters(right, span)?;
-            let d = $new.map_err(|e| span.domain_error(e.to_string()))?;
-            Ok(bundle(Distribution::$variant(d)))
+            valid($new, span).map(Distribution::$variant)
         })+
+
+        /// Each distribution's name, its standard parameters (empty when it has none), and the constructor that takes its parameters.
+        const DISTRIBUTIONS: &[(&str, &[f64], fn(&Value, &Context<'_>) -> Result<Distribution, Error>)] =
+            &[$((stringify!($name), &[$($standard),*], $name),)+ $((stringify!($other), &[$($other_standard),*], $other),)+];
 
         impl Distribution {
             fn samples<R: rand::Rng + ?Sized>(&self, shape: Vec<usize>, len: usize, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
                 match self {
                     $(Self::$variant(d) => Value::floats(shape, draw(len, || d.sample(&mut *rng), span)?),)+
                     Self::Logistic(location, scale) => Value::floats(shape, draw(len, || {
-                        logistic(Operation::Quantile, *location, *scale, Open01.sample(&mut *rng))
+                        logistic_value(Operation::Quantile, *location, *scale, Open01.sample(&mut *rng))
                     }, span)?),
                     Self::Binomial(d) => return discrete_samples(d, shape, len, rng, span),
                     Self::Poisson(d) => return discrete_samples(d, shape, len, rng, span),
@@ -55,7 +59,7 @@ macro_rules! continuous {
                 }
                 let y = match self {
                     $(Self::$variant(d) => continuous_value(d, op, x),)+
-                    Self::Logistic(location, scale) => logistic(op, *location, *scale, x),
+                    Self::Logistic(location, scale) => logistic_value(op, *location, *scale, x),
                     Self::Binomial(d) => {
                         if matches!(op, Operation::Quantile) {
                             if d.p() == 0.0 { return Ok(integer(0)); }
@@ -75,19 +79,20 @@ macro_rules! continuous {
 }
 
 continuous! {
-    Normal(normal, [mean, sd] => Normal::new(mean, sd)),
-    Uniform(uniform, [min, max] => uniform_checked(min, max)),
-    Beta(beta, [a, b] => Beta::new(a, b)),
-    Cauchy(cauchy, [location, scale] => Cauchy::new(location, scale)),
-    ChiSquared(chisquared, [df] => ChiSquared::new(df)),
-    Exp(exponential, [rate] => Exp::new(rate)),
-    FisherSnedecor(fisher, [df1, df2] => FisherSnedecor::new(df1, df2)),
-    Gamma(gamma, [shape, scale] => gamma_with_scale(shape, scale)),
-    InverseGamma(inversegamma, [shape, scale] => InverseGamma::new(shape, scale)),
-    Laplace(laplace, [location, scale] => Laplace::new(location, scale)),
-    LogNormal(lognormal, [location, scale] => LogNormal::new(location, scale)),
-    StudentsT(student, [df] => StudentsT::new(0.0, 1.0, df)),
-    Weibull(weibull, [shape, scale] => Weibull::new(shape, scale)),
+    Normal(normal, [mean, sd] = [0.0, 1.0] => Normal::new(mean, sd)),
+    Uniform(uniform, [min, max] = [0.0, 1.0] => uniform_checked(min, max)),
+    Beta(beta, [a, b] = [] => Beta::new(a, b)),
+    Cauchy(cauchy, [location, scale] = [0.0, 1.0] => Cauchy::new(location, scale)),
+    ChiSquared(chisquared, [df] = [] => ChiSquared::new(df)),
+    Exp(exponential, [rate] = [1.0] => Exp::new(rate)),
+    FisherSnedecor(fisher, [df1, df2] = [] => FisherSnedecor::new(df1, df2)),
+    Gamma(gamma, [shape, scale] = [] => gamma_with_scale(shape, scale)),
+    InverseGamma(inversegamma, [shape, scale] = [] => InverseGamma::new(shape, scale)),
+    Laplace(laplace, [location, scale] = [0.0, 1.0] => Laplace::new(location, scale)),
+    LogNormal(lognormal, [location, scale] = [0.0, 1.0] => LogNormal::new(location, scale)),
+    StudentsT(student, [df] = [] => StudentsT::new(0.0, 1.0, df)),
+    Weibull(weibull, [shape, scale] = [] => Weibull::new(shape, scale));
+    bernoulli = [], binomial = [], poisson = [], logistic = [0.0, 1.0]
 }
 
 fn gamma_with_scale(shape: f64, scale: f64) -> Result<Gamma, GammaError> {
@@ -112,30 +117,46 @@ fn parameters<const N: usize>(right: &Value, span: &Context<'_>) -> Result<[f64;
     Ok(result)
 }
 
-pub(crate) fn bernoulli(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+/// A statrs constructor's result, with its error as DOMAIN.
+fn valid<T>(result: Result<T, impl ToString>, span: &Context<'_>) -> Result<T, Error> { result.map_err(|e| span.domain_error(e.to_string())) }
+
+fn bernoulli(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
     let [p] = parameters(right, span)?;
-    Ok(bundle(Distribution::Binomial(Binomial::new(p, 1).map_err(|e| span.domain_error(e.to_string()))?)))
+    valid(Binomial::new(p, 1), span).map(Distribution::Binomial)
 }
 
-pub(crate) fn binomial(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+fn binomial(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
     let [_, p] = parameters(right, span)?;
     let n = numeric(&right.at(0), span)?.nonnegative_integer().error_at(span, "binomial trials must be a nonnegative integer")?;
     if n > 1usize << 53 { return Err(span.error(ErrorKind::Limit, "binomial trials exceed the sampler's integer range")); }
-    Ok(bundle(Distribution::Binomial(Binomial::new(p, n as u64).map_err(|e| span.domain_error(e.to_string()))?)))
+    valid(Binomial::new(p, n as u64), span).map(Distribution::Binomial)
 }
 
-pub(crate) fn poisson(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+fn poisson(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
     let [rate] = parameters(right, span)?;
     // The sampler uses floating-point integer arithmetic internally.
     if rate > (1u64 << 53) as f64 { return Err(span.error(ErrorKind::Limit, "Poisson rate exceeds the sampler's integer range")); }
-    let d = if rate == 0.0 { Distribution::Binomial(Binomial::new(0.0, 0).unwrap()) } else { Distribution::Poisson(Poisson::new(rate).map_err(|e| span.domain_error(e.to_string()))?) };
-    Ok(bundle(d))
+    if rate == 0.0 { return Ok(Distribution::Binomial(Binomial::new(0.0, 0).unwrap())); }
+    valid(Poisson::new(rate), span).map(Distribution::Poisson)
 }
 
-pub(crate) fn logistic_distribution(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+fn logistic(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
     let [location, scale] = parameters(right, span)?;
     if scale <= 0.0 { return Err(span.domain_error("logistic scale must be positive")); }
-    Ok(bundle(Distribution::Logistic(location, scale)))
+    Ok(Distribution::Logistic(location, scale))
+}
+
+/// `params •distribution name`: the distribution called `name`, with `params`. Without `params`, a distribution takes its standard
+/// parameters, and one without standard parameters is DOMAIN.
+pub(crate) fn distribution(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let name = keyed::name(right).ok_or_else(|| span.domain_error("a distribution name must be a string"))?;
+    let Some(&(_, standard, construct)) = DISTRIBUTIONS.iter().find(|(n, ..)| **n == *name) else { return Err(span.domain_error("unknown distribution")) };
+    let params = match left {
+        Some(params) => params.clone(),
+        None if standard.is_empty() => return Err(span.domain_error(format!("the {name} distribution has no standard parameters"))),
+        None => Value::floats(vec![standard.len()], standard.to_vec()).error_at(span, "invalid standard parameters")?,
+    };
+    Ok(bundle(construct(&params, span)?))
 }
 
 fn bundle(d: Distribution) -> Value {
@@ -190,7 +211,7 @@ fn discrete_value<D: Discrete<u64, f64> + DiscreteCDF<u64, f64>>(d: &D, op: Oper
     Value::Number(y.into())
 }
 
-fn logistic(op: Operation, location: f64, scale: f64, x: f64) -> f64 {
+fn logistic_value(op: Operation, location: f64, scale: f64, x: f64) -> f64 {
     let z = (x - location) / scale;
     let e = (-z.abs()).exp();
     match op {

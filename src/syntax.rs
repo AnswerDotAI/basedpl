@@ -71,8 +71,8 @@ fn statement(nodes: Vec<Node>) -> Result<Statement, ParseFailure> {
     let mut guard = None;
     for (i, node) in nodes.iter().enumerate() {
         if matches!(node.kind, NodeKind::ErrorGuard) {
-            if i == 0 { return Err(ParseFailure::Invalid(node.span.error(ErrorKind::Syntax, "error guard needs error numbers"))); }
-            if guard.is_some() { return Err(ParseFailure::Invalid(node.span.error(ErrorKind::Syntax, "a statement can contain only one error guard"))); }
+            if i == 0 { return Err(invalid(&node.span, "error guard needs error numbers")); }
+            if guard.is_some() { return Err(invalid(&node.span, "a statement can contain only one error guard")); }
             guard = Some(i);
         }
     }
@@ -188,12 +188,7 @@ fn suffix(chars: &mut Peekable<CharIndices<'_>>, suffix: Suffix) -> bool {
 /// The number that literal text writes, read by `Number::parse` after each subscript suffix becomes its plain letter. `•vfi`
 /// shares `Number::parse` and reads only the plain letters.
 fn literal_number(text: &str) -> Result<Number, ErrorKind> {
-    Number::parse(
-        &text
-            .chars()
-            .map(|c| SUFFIXES.iter().find(|s| s.1 == c).and_then(|s| s.0.first()).copied().unwrap_or(c))
-            .collect::<String>(),
-    )
+    Number::parse(&text.chars().map(|c| SUFFIXES.iter().find(|s| s.1 == c).and_then(|s| s.0.first()).copied().unwrap_or(c)).collect::<String>())
 }
 
 /// A number written inside `[…]ₓ`. An integer's digits read exactly, and a whole float becomes exact.
@@ -318,7 +313,7 @@ fn absorbs_line_break(kind: &TokenKind, before: bool) -> bool {
     }
 }
 
-fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
+fn lex(source: &Arc<Source>) -> Result<Vec<Token>, ParseFailure> {
     let len = source.text.len();
     let mut chars = source.text.char_indices().peekable();
     // A script's first line can name its interpreter.
@@ -330,15 +325,16 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
             real_literal(&mut chars).map_err(|message| span(position(&mut chars, len)).error(ErrorKind::Syntax, message))?;
             if suffix(&mut chars, IMAGINARY) {
                 real_literal(&mut chars).map_err(|message| span(position(&mut chars, len)).error(ErrorKind::Syntax, message))?;
-                if let Some(end) = run_on(&mut chars, false) { return Err(span(end).error(ErrorKind::Syntax, "invalid complex numeric literal")); }
-            } else {
+                if let Some(end) = run_on(&mut chars, false) { return Err(span(end).error(ErrorKind::Syntax, "invalid complex numeric literal").into()); }
+            }
+            else {
                 let rational = suffix(&mut chars, DENOMINATOR);
                 if rational {
                     chars.next_if(|&(_, c)| c == '¯');
-                    if digits(&mut chars) == 0 { return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, "expected integer denominator")); }
+                    if digits(&mut chars) == 0 { return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, "expected integer denominator").into()); }
                 }
                 if rational || suffix(&mut chars, EXACT) {
-                    if let Some(end) = run_on(&mut chars, true) { return Err(span(end).error(ErrorKind::Syntax, "invalid exact numeric literal")); }
+                    if let Some(end) = run_on(&mut chars, true) { return Err(span(end).error(ErrorKind::Syntax, "invalid exact numeric literal").into()); }
                 }
             }
             let end = position(&mut chars, len);
@@ -352,7 +348,7 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
             chars.next();
             match c {
                 '\'' => {
-                    let unclosed = |at| Err(span(at).error(ErrorKind::Syntax, "unclosed character literal"));
+                    let unclosed = |at| Err(span(at).error(ErrorKind::Syntax, "unclosed character literal").into());
                     let c = match chars.next() { Some((_, c)) if c != '\n' => c, next => return unclosed(next.map_or(len, |(i, _)| i)) };
                     match chars.peek() {
                         Some((_, '\'')) => {
@@ -360,7 +356,9 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                         }
                         None | Some((_, '\n')) => return unclosed(position(&mut chars, len)),
                         Some(&(i, c)) => {
-                            return Err(span(i + c.len_utf8()).error(ErrorKind::Syntax, "a character literal holds one character (strings use double quotes)"))
+                            return Err(span(i + c.len_utf8())
+                                .error(ErrorKind::Syntax, "a character literal holds one character (strings use double quotes)")
+                                .into())
                         }
                     }
                     TokenKind::Literal(Value::Character(c))
@@ -371,8 +369,13 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                         match chars.next() {
                             Some((_, '"')) if chars.next_if(|&(_, c)| c == '"').is_some() => text.push('"'),
                             Some((_, '"')) => break,
-                            Some((_, '\n')) | None => return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, "unclosed string")),
+                            // Each line ending, whatever its form, reads as one newline. Indentation stays as written.
+                            Some((_, '\r')) => {
+                                chars.next_if(|&(_, c)| c == '\n');
+                                text.push('\n');
+                            }
                             Some((_, c)) => text.push(c),
+                            None => return Err(ParseFailure::Incomplete(span(len).error(ErrorKind::Syntax, "unclosed string"))),
                         }
                     }
                     TokenKind::Literal(crate::keyed::text(&text))
@@ -381,17 +384,21 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                 // A literal constant: `$` and one letter.
                 '$' => {
                     let value = match chars.next() {
-                        Some((_, 't')) => Number::from_bool(true),
-                        Some((_, 'f')) => Number::from_bool(false),
-                        Some((_, 'n')) => Number::from(f64::NAN),
-                        _ => return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, "$ needs t, f or n")),
+                        Some((_, 't')) => Value::Number(Number::from_bool(true)),
+                        Some((_, 'f')) => Value::Number(Number::from_bool(false)),
+                        Some((_, 'n')) => Value::Number(Number::from(f64::NAN)),
+                        Some((_, 'a')) => crate::keyed::text("ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+                        Some((_, 'd')) => crate::keyed::text("0123456789"),
+                        _ => return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, "$ needs t, f, n, a or d").into()),
                     };
                     if chars.peek().is_some_and(|&(_, c)| name_char(c) || c.is_ascii_digit()) {
-                        return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, "a constant is $ and one letter: $t, $f or $n"));
+                        return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, "a constant is $ and one letter: $t, $f, $n, $a or $d").into());
                     }
-                    TokenKind::Literal(Value::Number(value))
+                    TokenKind::Literal(value)
                 }
-                '⍛' => return Err(span(start + c.len_utf8()).error(ErrorKind::Syntax, "⍛ is retired: use ↣ or ↢ to bind or preprocess, and ∘ for Atop")),
+                '⍛' => {
+                    return Err(span(start + c.len_utf8()).error(ErrorKind::Syntax, "⍛ is retired: use ↣ or ↢ to bind or preprocess, and ∘ for Atop").into())
+                }
                 '(' => TokenKind::Open,
                 ')' => TokenKind::Close(suffix(&mut chars, EXACT)),
                 '[' => TokenKind::BracketOpen,
@@ -436,7 +443,7 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
                 c => match (OperatorKind::from_glyph(c), Primitive::from_glyph(c)) {
                     (Some(op), _) => TokenKind::Operator(op),
                     (_, Some(f)) => TokenKind::Function(f),
-                    _ => return Err(span(start + c.len_utf8()).error(ErrorKind::Unsupported, format!("{c:?} is not supported yet"))),
+                    _ => return Err(span(start + c.len_utf8()).error(ErrorKind::Unsupported, format!("{c:?} is not supported yet")).into()),
                 },
             }
         };
@@ -451,6 +458,12 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, Error> {
 enum ParseFailure { Incomplete(Error), Invalid(Error) }
 
 fn invalid(span: &Span, message: &str) -> ParseFailure { ParseFailure::Invalid(span.error(ErrorKind::Syntax, message)) }
+impl From<Error> for ParseFailure { fn from(e: Error) -> Self { Self::Invalid(e) } }
+impl From<ParseFailure> for ParseStatus {
+    fn from(failure: ParseFailure) -> Self {
+        match failure { ParseFailure::Incomplete(e) => Self::Incomplete(e), ParseFailure::Invalid(e) => Self::Invalid(e) }
+    }
+}
 
 pub(crate) fn cover(nodes: &[Node]) -> Span {
     Span { source: nodes[0].span.source.clone(), range: nodes[0].span.range.start..nodes[nodes.len() - 1].span.range.end }
@@ -622,7 +635,7 @@ fn row(nodes: Vec<Node>) -> Result<Node, ParseFailure> {
 
 /// `(4 ⋄ 4 5)` is `[[4] [4 5]]`. Its items are the rows, each read as a bracketed list.
 fn rows(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
-    let cells = diamond_rows(split(pieces, false)?, span)?.into_iter().map(|nodes| Ok(vec![row(nodes)?])).collect::<Result<_, _>>()?;
+    let cells = diamond_rows(split(pieces, false)?, span)?.into_iter().map(|nodes| Ok(vec![row(nodes)?])).collect::<Result<_, ParseFailure>>()?;
     Ok(NodeKind::ArrayLiteral { cells, block: false, record: false })
 }
 
@@ -644,7 +657,7 @@ fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
                 let row = row(nodes)?;
                 Ok(match row.kind { NodeKind::ArrayLiteral { mut cells, .. } if cells.len() == 1 => cells.pop().unwrap(), _ => vec![row] })
             })
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<_, ParseFailure>>()?;
         return Ok(NodeKind::ArrayLiteral { cells, block: true, record: false });
     }
     let cells = if semicolon {
@@ -725,7 +738,7 @@ fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
                     Superscript::Unit => break,
                 };
                 node.span.range.end = end;
-                let raised = raised.map_err(|m| ParseFailure::Invalid(node.span.error(ErrorKind::Domain, m)))?;
+                let raised = raised.map_err(|m| node.span.error(ErrorKind::Domain, m))?;
                 node.kind = NodeKind::Literal(Value::Number(raised));
                 nodes.next();
             }
@@ -747,7 +760,7 @@ fn close_strand(strand: &mut Vec<Node>, out: &mut Vec<Node>) -> Result<(), Parse
     }
     let span = cover(strand);
     let items: Vec<_> = strand.drain(..).map(|n| if let NodeKind::Literal(v) = n.kind { v } else { unreachable!() }).collect();
-    let value = Value::new(vec![items.len()], items).map_err(|k| ParseFailure::Invalid(span.error(k, "invalid literal list")))?;
+    let value = Value::new(vec![items.len()], items).map_err(|k| span.error(k, "invalid literal list"))?;
     out.push(Node { kind: NodeKind::Literal(value), span });
     Ok(())
 }
@@ -851,11 +864,9 @@ fn pipelines(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
         if let Some(pipe) = expression.iter().position(|n| matches!(n.kind, NodeKind::Pipe)) {
             let start = expression[..pipe].iter().rposition(|n| matches!(n.kind, NodeKind::Assign)).map_or(0, |i| i + 1);
             let stages: Vec<_> = expression[start..].split(|n| matches!(n.kind, NodeKind::Pipe)).map(<[Node]>::to_vec).collect();
-            if stages.iter().any(Vec::is_empty) {
-                return Err(ParseFailure::Invalid(expression[pipe].span.error(ErrorKind::Syntax, "pipe needs an expression on each side")));
-            }
+            if stages.iter().any(Vec::is_empty) { return Err(invalid(&expression[pipe].span, "pipe needs an expression on each side")); }
             if stages.iter().skip(1).flatten().any(|n| matches!(n.kind, NodeKind::Assign)) {
-                return Err(ParseFailure::Invalid(expression[pipe].span.error(ErrorKind::Syntax, "parenthesize assignment inside a pipe stage")));
+                return Err(invalid(&expression[pipe].span, "parenthesize assignment inside a pipe stage"));
             }
             let mut span = expression[start].span.clone();
             span.range.end = expression.last().unwrap().span.range.end;
@@ -879,12 +890,11 @@ pub(crate) fn key_node(n: &Node) -> bool { matches!(n.kind, NodeKind::Literal(_)
 
 /// Check structure without evaluation. A complete input can still have a binding or domain error.
 pub fn parse(source: Arc<Source>) -> ParseStatus {
-    let tokens = match lex(&source) { Ok(tokens) => tokens, Err(e) => return ParseStatus::Invalid(e) };
+    let tokens = match lex(&source) { Ok(tokens) => tokens, Err(failure) => return failure.into() };
     match (Parser { tokens: &tokens, pos: 0 }).pieces(None).and_then(statements) {
         Ok(statements) => {
             ParseStatus::Complete(Parsed { statements: statements.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression }).collect() })
         }
-        Err(ParseFailure::Incomplete(e)) => ParseStatus::Incomplete(e),
-        Err(ParseFailure::Invalid(e)) => ParseStatus::Invalid(e),
+        Err(failure) => failure.into(),
     }
 }

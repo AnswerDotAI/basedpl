@@ -38,7 +38,7 @@ acc ← {⍶{(⊂⍺⍶↑⍬⍴⍵),⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵}  ⍝ 
 format ← {t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Simple array as a character matrix.
 open ← {(1⌈⍴⍵)⍴⍵}  ⍝ Exposure of null axes.
 axes ← {(-2⌈⍴⍴⍵)↑1+×⍴⍵}  ⍝ Array axis types.
-char ← {⍬≡⍴⍵?'─';(↑⍵∊'¯',•d)⊃"#~"}∘⍕  ⍝ Type character of an atom.
+char ← {⍬≡⍴⍵?'─';(↑⍵∊'¯',$d)⊃"#~"}∘⍕  ⍝ Type character of an atom.
 type ← {{(1=⍴⍵)⊃['+' ⍵]}∪,char¨⍵}  ⍝ Type characters of an array.
 deco ← {⍺←type open ⍵ ⋄ ⍺,axes ⍵}  ⍝ Type and axes vector.
 trim ← {(~1 1⍷∧⌿⍵=' ')#⍠¯1 ⍵}  ⍝ Removal of extra blank columns.
@@ -113,7 +113,7 @@ disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
     isor ⍵?'∇';  ⍝ ⎕or:    '∇'
     sst←{  ⍝ atom type.
       0=dec×⍴⍴⍵?'─';  ⍝ undecorated or atom ⍕⍵: char,
-      (↑⍵∊'¯',•d)⊃"#~"
+      (↑⍵∊'¯',$d)⊃"#~"
     }∘⍕  ⍝ ⍕ distinguishes type of atom.
     0=≡⍵?sst ⍵;  ⍝ atom: type.
     {(1=⍴⍵)⊃['+' ⍵]}∪,sst¨(dec open ⍵)

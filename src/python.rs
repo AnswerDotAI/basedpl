@@ -428,7 +428,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         })
         .collect();
     m.add("symbols", symbols)?;
-    m.add("_system_functions", crate::system::names().filter(|name| Function::builtin(name).is_some()).collect::<Vec<_>>())?;
+    m.add("_system_functions", crate::system::names().collect::<Vec<_>>())?;
     m.add("_superscripts", crate::syntax::superscripts())?;
     m.add("_subscripts", crate::syntax::subscripts())?;
     Ok(())

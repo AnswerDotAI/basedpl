@@ -121,22 +121,22 @@ a←" this is a test "⋄a≠' ' ⊂ a
 5↓"abc"   ⍝ ""
 
 ⍝ ngn:40 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-0 ¯2↓3 3⍴•a   ⍝ 3 1⍴"ADG"
+0 ¯2↓3 3⍴$a   ⍝ 3 1⍴"ADG"
 
 ⍝ ngn:41 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-¯2 ¯1↓3 3⍴•a   ⍝ 1 2⍴"AB"
+¯2 ¯1↓3 3⍴$a   ⍝ 1 2⍴"AB"
 
 ⍝ ngn:42 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-1↓3 3⍴•a   ⍝ ["DEF" ⋄ "GHI"]
+1↓3 3⍴$a   ⍝ ["DEF" ⋄ "GHI"]
 
 ⍝ ngn:43 —
 ⍬↓3 3⍴⍳9   ⍝ 3 3⍴⍳9
 
 ⍝ ngn:44 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-1 1↓2 3 4⍴•a   ⍝ 1 2 4⍴"QRSTUVWX"
+1 1↓2 3 4⍴$a   ⍝ 1 2 4⍴"QRSTUVWX"
 
 ⍝ ngn:45 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-¯1 ¯1↓2 3 4⍴•a   ⍝ 1 2 4⍴"ABCDEFGH"
+¯1 ¯1↓2 3 4⍴$a   ⍝ 1 2 4⍴"ABCDEFGH"
 
 ⍝ ngn:46 —
 1↓0   ⍝ ⍬
@@ -199,7 +199,7 @@ a←" this is a test "⋄a≠' ' ⊂ a
 2≢2   ⍝ $f
 
 ⍝ ngn:66 — Ravel alphabet matrix; use the supported uppercase spelling of the read-only alphabet constant; independent Dyalog expectation
-,2 13⍴•a   ⍝ "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+,2 13⍴$a   ⍝ "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 ⍝ ngn:67 —
 ,1   ⍝ 1⍴1
@@ -630,7 +630,7 @@ T←"ONE(TWO) BOOK(S)"⋄(T∊"()")⍱≠\T∊"()" # T   ⍝ "ONE BOOK"
 2 3⍴⍳6 , 9   ⍝ [0 1 2 9 ⋄ 3 4 5 9]
 
 ⍝ ngn:203 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-2 3 4⍴•a , '*'   ⍝ 2 3 5⍴"ABCD*EFGH*IJKL*MNOP*QRST*UVWX*"
+2 3 4⍴$a , '*'   ⍝ 2 3 5⍴"ABCD*EFGH*IJKL*MNOP*QRST*UVWX*"
 
 ⍝ ngn:204 —
 12=12   ⍝ $t
@@ -1293,7 +1293,7 @@ a←3 2 5⍴"joe  doe  bob  jonesbob  zwart"⋄[⍋a]⌷a
 "ZYXWVUTSRQPONMLKJIHGFEDCBA"⍋"ZAMBIA"   ⍝ [0 2 4 3 1 5]ₓ
 
 ⍝ ngn:415 — Fixed origin/constants; omit irrelevant PP assignment and constant rebinding; glyph-only formatting where needed
-⌽•a ⍋ ["BOB" ⋄ "ALF" ⋄ "ZAK"]   ⍝ [2 0 1]ₓ
+⌽$a ⍋ ["BOB" ⋄ "ALF" ⋄ "ZAK"]   ⍝ [2 0 1]ₓ
 
 ⍝ ngn:416 —
 a←["ABLE" ⋄ "aBLE" ⋄ "ACRE" ⋄ "ABEL" ⋄ "aBEL" ⋄ "ACES"]⋄[["ABCDEFGHIJKLMNOPQRSTUVWXYZ" ⋄ "abcdefghijklmnopqrstuvwxyz"]⍋a]⌷a
@@ -1324,7 +1324,7 @@ f←{⍺+2×⍵}⋄f/⍬
 "abcde"⍳'d'   ⍝ 3ₓ
 
 ⍝ ngn:429 — Index-of port counting from 0; ⎕A is implemented
-•a⍳"NGN/"   ⍝ [13 6 13 26]ₓ
+$a⍳"NGN/"   ⍝ [13 6 13 26]ₓ
 
 ⍝ ngn:430 —
 "ab" "cd" "efg"⍳"cd" "efh"   ⍝ [1 3]ₓ
@@ -1787,11 +1787,11 @@ m←45 60 33 50 66 19⋄m=50 # ⍳≢m   ⍝ [3]ₓ
 ⍝ ngn:583 —
 3#5   ⍝ 5 5 5
 
-⍝ ngn:584 —
-2 ¯2 2#⍠¯1(1+2 3⍴⍳6)   ⍝ [1 1 0 0 3 3 ⋄ 4 4 0 0 6 6]
+⍝ ngn:584 — Dyalog's count `¯n` replaces its item with `n` fills. `#` writes that as `¯n 0`
+2 ¯2 0 2#⍠¯1(1+2 3⍴⍳6)   ⍝ [1 1 0 0 3 3 ⋄ 4 4 0 0 6 6]
 
-⍝ ngn:585 —
-1 1 ¯2 1 1#[1 2 (2 2⍴⍳4) 3 4]   ⍝ 1 2 0 0 3 4
+⍝ ngn:585 — Dyalog's count `¯n` replaces its item with `n` fills. `#` writes that as `¯n 0`
+1 1 ¯2 0 1 1#[1 2 (2 2⍴⍳4) 3 4]   ⍝ 1 2 0 0 3 4
 
 ⍝ ngn:586 —
 2 3 2#"abc"   ⍝ "aabbbcc"
@@ -1960,10 +1960,10 @@ a←3 3⍴⍳9⋄a.[⍬;1 2]←789⋄a   ⍝ 3 3⍴⍳9
 a←1 2 3⋄(⌷a)←4 5 6⋄a   ⍝ 4 5 6
 
 ⍝ ngn:640 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-2↑•a   ⍝ "AB"
+2↑$a   ⍝ "AB"
 
 ⍝ ngn:641 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-¯3↑•a   ⍝ "XYZ"
+¯3↑$a   ⍝ "XYZ"
 
 ⍝ ngn:642 —
 5↑"abc"   ⍝ "abc  "
@@ -2060,7 +2060,7 @@ a←1 2 3⋄(⌷a)←4 5 6⋄a   ⍝ 4 5 6
 ⍝ error: RANK ERROR
 
 ⍝ ngn:672 — Fixed origin/constants; omit irrelevant PP assignment and constant rebinding; glyph-only formatting where needed
-2 0 1⍉2 3 4⍴•a   ⍝ 3 4 2⍴"AMBNCODPEQFRGSHTIUJVKWLX"
+2 0 1⍉2 3 4⍴$a   ⍝ 3 4 2⍴"AMBNCODPEQFRGSHTIUJVKWLX"
 
 ⍝ ngn:673 —
 1 1 3⍉2 3 4⍴⍳24
@@ -2076,7 +2076,7 @@ a←1 2 3⋄(⌷a)←4 5 6⋄a   ⍝ 4 5 6
 0 0 0⍉3 3 3⍴⍳27   ⍝ 0 13 26
 
 ⍝ ngn:677 — Fixed origin/constants; omit irrelevant PP assignment and constant rebinding; glyph-only formatting where needed
-0 1 0⍉3 3 3⍴•a   ⍝ ["ADG" ⋄ "KNQ" ⋄ "UXA"]
+0 1 0⍉3 3 3⍴$a   ⍝ ["ADG" ⋄ "KNQ" ⋄ "UXA"]
 
 ⍝ ngn:678 —
 ⍉⍬   ⍝ ⍬
@@ -2091,7 +2091,7 @@ a←1 2 3⋄(⌷a)←4 5 6⋄a   ⍝ 4 5 6
 ⍉2 3⍴⍳6   ⍝ [0 3 ⋄ 1 4 ⋄ 2 5]
 
 ⍝ ngn:682 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
-⍉2 3 4⍴•a   ⍝ 4 3 2⍴"AMEQIUBNFRJVCOGSKWDPHTLX"
+⍉2 3 4⍴$a   ⍝ 4 3 2⍴"AMEQIUBNFRJVCOGSKWDPHTLX"
 
 ⍝ ngn:685 —
 x⋄x←0
@@ -2296,4 +2296,7 @@ p←•r "B(c+)d" ⋄ p.position "abcd"
 ⍝ ngn:506 — Malformed regex
 •r "a(b"
 ⍝ error: DOMAIN ERROR
+
+⍝ ngn:119 — BPL gives `¯∞` for `⍟0`, as ngn expects
+⍟0   ⍝ ¯∞
 

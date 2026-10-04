@@ -63,14 +63,14 @@ i {(⍋𝕨⊏˘𝕩)⊏𝕩} ym
 
 ### Lookup table
 
-Source: APLcart. The `1+` goes, because positions count from 0. Dyalog writes the inverse as `⊥⍣¯1⊢`, where `⊢` separates the count `¯1` from the argument. BPL's `⊥⁻¹` has no count and needs no `⊢`. `⌷` takes the table `•d,•a` on its right. In `[16⊥⁻¹⍵]`, the digits are one item of positions. BQN has no encode primitive. Its line computes the base conversion directly.
+Source: APLcart. The `1+` goes, because positions count from 0. Dyalog writes the inverse as `⊥⍣¯1⊢`, where `⊢` separates the count `¯1` from the argument. BPL's `⊥⁻¹` has no count and needs no `⊢`. `⌷` takes the table `$d,$a` on its right. In `[16⊥⁻¹⍵]`, the digits are one item of positions. BQN has no encode primitive. Its line computes the base conversion directly.
 
 ```dyalog
 {(⎕D,⎕A)[1+16⊥⍣¯1⊢⍵]}
 ```
 
 ```bpl
-{[16⊥⁻¹⍵]⌷•d,•a} 255    ⍝ "FF"
+{[16⊥⁻¹⍵]⌷$d,$a} 255    ⍝ "FF"
 ```
 
 ```bqn
@@ -597,6 +597,18 @@ names⍳⊂"ab"            ⍝ 1ₓ
 
 ```bqn
 names⊸⊐⌾<"ab"
+```
+
+### Expanding with counts
+
+[`#`](glyphs/hash.qmd) explains how Dyalog's expand counts carry over.
+
+```dyalog
+1 0 2\4 5
+```
+
+```bpl
+1 ¯1 2#4 5             ⍝ 4 0 5 5
 ```
 
 ## Counting from 0

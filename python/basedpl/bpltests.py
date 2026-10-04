@@ -190,7 +190,7 @@ def _check(case, timeout=2):
     return json.loads(_check_reference(json.dumps(case), timeout))
 
 
-def add(ids, output='tests/reference', directory='tests/reference/inventory'):
+def add(ids, output='tests/reference', directory='provenance'):
     "Append reviewed cases, then mark their inventory records active."
     output = Path(output)
     existing = {case.id for path in output.glob('*.bpl') for case in _load(path) if case.id}

@@ -471,7 +471,7 @@ impl Function {
 
     #[cfg(feature = "python")]
     pub(crate) fn builtin(name: &str) -> Option<Self> {
-        if name.starts_with('•') { return match crate::system::lookup(name)? { Operand::Function(f) => Some(f), _ => None }; }
+        if name.starts_with('•') { return crate::system::lookup(name); }
         name.parse::<char>().ok().and_then(Primitive::from_glyph).map(Self::primitive)
     }
 
@@ -847,6 +847,7 @@ fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value, cx: &mut 
                 _ => Err(cx.span.domain_error("this axis-qualified function has no known inverse")),
             }
         }
+        System(f) if first => crate::system::inverse(f, left, right, cx),
         _ => Err(cx.span.domain_error("this function has no known inverse")),
     }?;
     Ok(Bound::from(array))
@@ -1543,7 +1544,7 @@ impl Session {
     pub fn name_class(&self, name: &str) -> i64 {
         match crate::inspection::item(name) {
             Some(NodeKind::Name(_)) => self.lookup(name).map_or(0, Binding::class),
-            Some(NodeKind::System(_)) => crate::system::lookup(name).map_or(0, |v| v.value().class()),
+            Some(NodeKind::System(_)) => crate::system::lookup(name).map_or(0, |_| FUNCTION_CLASS),
             _ => -1,
         }
     }
@@ -1554,7 +1555,7 @@ impl Session {
         let info = match crate::inspection::item(name) {
             Some(NodeKind::Name(_)) => self.lookup(name).and_then(|binding| binding.inspection(self)),
             Some(NodeKind::System(_)) => {
-                let mut info = crate::system::lookup(name)?.value().inspection(self)?;
+                let mut info = crate::system::lookup(name)?.inspect(self);
                 if let Some(help) = crate::inspection::documentation(name) { info.help = help.to_owned(); }
                 Some(info)
             }
@@ -2002,7 +2003,7 @@ impl Session {
                 if self::OperatorNode::Primitive(*op).is_dyadic() { DyadicOperator } else { Operator }
             }
             NodeKind::Name(name) => self.lookup(name).map_or(Value, Category::of),
-            NodeKind::System(name) => crate::system::lookup(name).map_or(Value, |v| Category::of(&v.value())),
+            NodeKind::System(_) => Function,
             NodeKind::Dfn(d) => match d.kind {
                 DefinitionKind::Function => Function,
                 DefinitionKind::MonadicOperator => Operator,
@@ -2377,7 +2378,7 @@ impl Session {
                 None => return Err(node.span.error(ErrorKind::Value, format!("undefined name: {name}"))),
             },
             NodeKind::System(name) => {
-                crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?.value()
+                Binding::Function(crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?)
             }
             NodeKind::Group(nodes) => self.bind(nodes)?.value,
             // A dot path such as `m.op` names an operator as a name does, so its run can reduce to one.

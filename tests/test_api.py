@@ -18,8 +18,8 @@ def test_builtin_attributes():
     for api in (basedpl, bpl):
         teq(api.add([1, 2], 10).py, [11, 12])
         teq((api.plus(2)(3).py, api.times(2)(3).py, api.divide(2)(3).py), (5, 6, Fraction(3, 2)))
-        teq(getattr(api, '•binomial')([2, 0.5])['quantile'](1.).py, 2)
-        assert {'add', 'plus', 'normal', 'π'} <= set(dir(api))
+        teq(getattr(api, '•distribution')([2, 0.5], 'binomial')['quantile'](1.).py, 2)
+        assert {'add', 'plus', 'distribution', 'π'} <= set(dir(api))
         for name in ('plu', 'userfn', 'nonexistent', 'minus'):
             with pytest.raises(AttributeError): getattr(api, name)
     bpl('plus←99 ⋄ userfn←{⍵+1}')
@@ -133,7 +133,8 @@ def test_regex_functions():
 
 
 def test_distribution_functions():
-    normal, binomial = bpl.fn('•normal')([3., 2.]), bpl.fn('•binomial')([10, 0.5])
+    distribution = bpl.fn('•distribution')
+    normal, binomial = distribution([3., 2.], 'normal'), distribution([10, 0.5], 'binomial')
     sample = normal['sample']
     x, y = sample(10000).np, binomial['sample'](10000).np
     assert x.dtype == np.float64 and np.issubdtype(y.dtype, np.integer)
@@ -219,6 +220,7 @@ def test_based_values():
     assert bpl('1⊃v').is_atom
     assert Array([3, 4])[1].is_atom and not Array([3, 4])[np.array(1)].is_atom
     assert bpl('fs←[+ ×]')[1](3, 4).py == 12
+    teq(list(bpl('•ucs "a\r\nb\rc"').py), [97, 10, 98, 10, 99])
 
 
 def test_words_binding_and_operators():

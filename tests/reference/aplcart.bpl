@@ -291,8 +291,8 @@ f←- ⋄ g←× ⋄ Y←3 ⋄ f↣g Y   ⍝ ¯9
 ⍝ aplcart/table.tsv:95 — N-wise Reduce: f between all items of Y in groups of Is on last axis
 +/2↕ 1 2 3 4 5   ⍝ 3 5 7 9
 
-⍝ aplcart/table.tsv:96 — Replicate along last axis of Y
-3 1 ¯2 2 # 6 7 8 9   ⍝ 6 6 6 7 0 0 9 9
+⍝ aplcart/table.tsv:96 — Replicate along last axis of Y; Dyalog's count `¯n` replaces its item with `n` fills. `#` writes that as `¯n 0`
+3 1 ¯2 0 2#6 7 8 9   ⍝ 6 6 6 7 0 0 9 9
 
 ⍝ aplcart/table.tsv:97 — Filtering columns of Y according to mask Av
 1 0 1 0 1 # "Heart"   ⍝ "Hat"
@@ -664,13 +664,13 @@ var←20 30 40 ⋄ plus←+ ⋄ {var.[[0 0 2]]plus↢⊢←2}⍬ ⋄ var   ⍝ 2
 var←20 30 40 ⋄ plus←+ ⋄ {(2 0 1#var)plus↢⊢←2}⍬ ⋄ var   ⍝ 24 30 42
 
 ⍝ aplcart/table.tsv:227 — The letters from A to Z; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-•a   ⍝ "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+$a   ⍝ "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 ⍝ aplcart/table.tsv:228 — Casefold
 Y←42 "Pete" "Πέτρος"  ⋄ •c Y   ⍝ 42 "pete" "πέτροσ"
 
 ⍝ aplcart/table.tsv:230 — The digits from 0 to 9; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-•d   ⍝ "0123456789"
+$d   ⍝ "0123456789"
 
 ⍝ aplcart/table.tsv:238 — Uppercase
 Y←42 "Pete" "Πέτρος"  ⋄ 1↣•c Y   ⍝ 42 "PETE" "ΠΈΤΡΟΣ"
@@ -1523,7 +1523,7 @@ Xv←1 2 3 ⋄ Ym←2 3⍴⍳6 ⋄ Xv ,⍤1 Ym   ⍝ [1 2 3 0 1 2 ⋄ 1 2 3 3 4 
 Xm←2 3⍴⍳6 ⋄ Yv←4 5 6 ⋄ Xm ,⍤1 Yv   ⍝ [0 1 2 4 5 6 ⋄ 3 4 5 4 5 6]
 
 ⍝ aplcart/table.tsv:814 — Increment rank by inserting a new dimension after the trailing one
-[⍴ (,⍤0) "abc";⍴ (,⍤0) 3 4⍴•a]   ⍝ [3 1;3 4 1]ₓ
+[⍴ (,⍤0) "abc";⍴ (,⍤0) 3 4⍴$a]   ⍝ [3 1;3 4 1]ₓ
 
 ⍝ aplcart/table.tsv:815 — Append a row of 1s
 Y←3 1 3 2 ⋄ ⍪↢1 Y   ⍝ 3 1 3 2 1
@@ -2185,7 +2185,7 @@ Y←3 1 3 2 ⋄ ↑⌽∘, Y   ⍝ 2
 3 (⊃⍴↢⊂) "abc"   ⍝ ["abc" ⋄ "abc" ⋄ "abc"]
 
 ⍝ aplcart/table.tsv:1045 — Increment rank by inserting a new dimension before the leading one
-[⍴ (⊃,∘⊂) "abc";⍴ (⊃,∘⊂) 3 4⍴•a]   ⍝ [[1 3] [1 3 4]]ₓ
+[⍴ (⊃,∘⊂) "abc";⍴ (⊃,∘⊂) 3 4⍴$a]   ⍝ [[1 3] [1 3 4]]ₓ
 
 ⍝ aplcart/table.tsv:1046 — Select: each element of Iv selects a cell from Y
 Iv←[[0 1] [1 2]] ⋄ Y←2 3⍴⍳6 ⋄ Iv ⊃↣⌷⍤0 99 Y   ⍝ 1 5
@@ -2301,7 +2301,7 @@ Is←10 ⋄ J←123 450 7 ⋄ Is +/⊥⁻¹ J   ⍝ 6 9 7
 Iv←1 3 2 ⋄ J←123456 987654 ⋄ Iv 10↣*↣⊤ J   ⍝ [1 234 56 ⋄ 9 876 54]
 
 ⍝ aplcart/table.tsv:1086 — Convert letters to their positions in the alphabet
-D←"Abc 19 Σς!"  ⋄ (•a⍳1↣•c)D   ⍝ [0 1 2 26 26 26 26 26 26 26]ₓ
+D←"Abc 19 Σς!"  ⋄ ($a⍳1↣•c)D   ⍝ [0 1 2 26 26 26 26 26 26 26]ₓ
 
 ⍝ aplcart/table.tsv:1087 — Sum Nv by buckets Xv (⍴Nv ↔ ⍴Xv)
 Xv←1 2 1 2 ⋄ Nv←10 20 30 40 ⋄ Xv{+/⍵}⌸Nv   ⍝ 40 60
@@ -2422,7 +2422,7 @@ Bs←1 ⋄ Yv←[[1 2] [3 4 5]] ⋄ Bs ⊢⊃⍨⊣ Yv   ⍝ 3 4 5
 Is←2 ⋄ Y←3 1 3 2 ⋄ Is ↑,⍥⊂↓ Y   ⍝ [[3 1] [3 2]]
 
 ⍝ aplcart/table.tsv:1128 — Increment rank by inserting a new dimension before the trailing one
-⍴ (⊃,∘⊂⍤1) 2 3 4⍴•a   ⍝ [2 3 1 4]ₓ
+⍴ (⊃,∘⊂⍤1) 2 3 4⍴$a   ⍝ [2 3 1 4]ₓ
 
 ⍝ aplcart/table.tsv:1129 — Prototype (converts characters to spaces, numbers to zeros)
 Y← ["ab";1 2]  ⋄ ↑0⍴,Y   ⍝ "  "
@@ -2517,7 +2517,7 @@ Js←10 ⋄ 2⊥1⊖2⊥⁻¹⊢ Js   ⍝ 5
 Nm←[0 0j1 ⋄ 0j1 0] ⋄ ⌹≡⍉∘+ Nm   ⍝ $t
 
 ⍝ aplcart/table.tsv:1158 — Safe conversion of string into integer; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-10⊥•d↣⍳ "2718"   ⍝ 2718
+10⊥$d↣⍳ "2718"   ⍝ 2718
 
 ⍝ aplcart/table.tsv:1160 — Do characters in D have no case?
 D←"Abc 19 Σς!"  ⋄ (¯1↣•c=1↣•c)D   ⍝ $f $f $f $t $t $t $t $f $f $t
@@ -2591,7 +2591,7 @@ Js←4 ⋄ ,⍨⍴(0,⍴↢1) Js   ⍝ [0 1 1 1 ⋄ 1 0 1 1 ⋄ 1 1 0 1 ⋄ 1 1 
 Is←¯2 ⋄ Js←3 ⋄ Is ↑>⍥|⌽, Js   ⍝ ¯2
 
 ⍝ aplcart/table.tsv:1184 — Increment rank by inserting a new dimension after the leading one
-⍴ (⊃∘,∘⊂⍤¯1) 2 3 4⍴•a   ⍝ [2 1 3 4]ₓ
+⍴ (⊃∘,∘⊂⍤¯1) 2 3 4⍴$a   ⍝ [2 1 3 4]ₓ
 
 ⍝ aplcart/table.tsv:1185 — Membership (∊) on major cells for any rank
 X←[1 2 ⋄ 3 4 ⋄ 1 2] ⋄ Y←[3 4 ⋄ 5 6] ⋄ X ⊢↢≢>⍳⍨ Y   ⍝ $f $t $f
@@ -3065,7 +3065,7 @@ Dm←["   " ⋄ "abc" ⋄ "   "]  ⋄ ∧\∧.=↢' ' Dm   ⍝ $t $f $f
 N←0 2 4 ⋄ ⊃'⎕'⍴¨⍨⌊ N   ⍝ ["    " ⋄ "⎕⎕  " ⋄ "⎕⎕⎕⎕"]
 
 ⍝ aplcart/table.tsv:1349 — Translate characters to digits (bases 2 through 36); Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-(•d,•a)⍳⊢ "09AZ"   ⍝ [0 9 10 35]ₓ
+($d,$a)⍳⊢ "09AZ"   ⍝ [0 9 10 35]ₓ
 
 ⍝ aplcart/table.tsv:1351 — Matrix to segmented string using Cs or linefeed as delimiter (includes initial delimiter)
 Cs←'|'  ⋄ Dm←["ABCD" ⋄ "abcd"]  ⋄ Cs{⍺←•ucs 10 ⋄ ,⍺,⍵}Dm
@@ -3185,7 +3185,7 @@ Jv←2 3 2 ⋄ ⊢⊤⍳∘ ×/ Jv
 [0 0 0 ⋄ 0 0 1 ⋄ 0 1 0 ⋄ 0 1 1 ⋄ 0 2 0 ⋄ 0 2 1 ⋄ 1 0 0 ⋄ 1 0 1 ⋄ 1 1 0 ⋄ 1 1 1 ⋄ 1 2 0 ⋄ 1 2 1]
 
 ⍝ aplcart/table.tsv:1388 — Vertical column headings for character matrix of width Js; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-•d⌷⍨↢⊂⍉∘ 10⊥⁻¹⍳ 12   ⍝ ["000000000011" ⋄ "012345678901"]
+$d⌷⍨↢⊂⍉∘ 10⊥⁻¹⍳ 12   ⍝ ["000000000011" ⋄ "012345678901"]
 
 ⍝ aplcart/table.tsv:1389 — Detect case of characters (1:uppercase, ¯1:lowercase, 0:neither)
 D←"Abc 19 Σς!"  ⋄ ¯1↣•c↣≠-1↣•c↣≠ D   ⍝ [1 ¯1 ¯1 0 0 0 0 1 ¯1 0]ₓ
@@ -3239,7 +3239,7 @@ I←2 3 4 ⋄ J←4 9 16 ⋄ I 2⊥((⍲⌿⍤2)2⊥⁻¹,⍤0) J   ⍝ 31 30 31
 Jv←2026 9 18 ⋄ ('-'@4 7∘⍕1000⊥3↣↑)Jv   ⍝ "2026-09-18"
 
 ⍝ aplcart/table.tsv:1408 — Translate digits to characters (bases 2 through 36); Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-(•d,•a)⌷⍨⊂ 0 9 10 35   ⍝ "09AZ"
+($d,$a)⌷⍨⊂ 0 9 10 35   ⍝ "09AZ"
 
 ⍝ aplcart/table.tsv:1409 — Conditional in text
 Bs←0 ⋄ "correct",⍨"in"#⍨~ Bs   ⍝ "incorrect"
@@ -3337,7 +3337,7 @@ Js←20 ⋄ (⊢~,∘(×⊗⍨))(2↓⍳) Js   ⍝ 2 3 5 7 11 13 17 19
 Dm← ["ab  " ⋄ "c   "]  ⋄ ⊢⌽⍨(1-1⊥⍨=↢' ') Dm   ⍝ ["  ab" ⋄ "   c"]
 
 ⍝ aplcart/table.tsv:1443 — Remove non-alphanumeric ASCII characters
-Dv←"Hello, world! 123"  ⋄ ∩↢ •d,•a,•c•a Dv   ⍝ "Helloworld123"
+Dv←"Hello, world! 123"  ⋄ ∩↢ $d,$a,•c$a Dv   ⍝ "Helloworld123"
 
 ⍝ aplcart/table.tsv:1444 — Remove punctuation
 Dv← "Hello, world! Why?"  ⋄ ~↢".,:;?!" Dv   ⍝ "Hello world Why"
@@ -3541,7 +3541,7 @@ Mv←0 2 2 0 ⋄ Nv←0 0 3 3 ⋄ Mv |+.×↢(¯1↣⌽-1↣⌽)÷2⍨ Nv   ⍝ 
 Ms←10 ⋄ Nm←[1 2 ⋄ 3 4 ⋄ 5 6] ⋄ Ms (0j1⊥⍉∘(1↓⊢↢⊖))×⊣÷⊣-⊢⌿∘⊢ Nm   ⍝ 2j6 5j10
 
 ⍝ aplcart/table.tsv:1508 — Rot-13; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1. Corrected ROT13 to 1+26|12+index so M does not select index zero; sample covers M/N and nonletters
-{[26|13+•a⍳⍵]⌷•a}@ ∊↢•a "AMNZ 123 abc!"   ⍝ "NZAM 123 abc!"
+{[26|13+$a⍳⍵]⌷$a}@ (∊↢$a) "AMNZ 123 abc!"   ⍝ "NZAM 123 abc!"
 
 ⍝ aplcart/table.tsv:1509 — Cyclic compression of successive blanks
 Dv← "  ab  c  "  ⋄ ⊢#⍨(1(⊢∨⌽)' '↣≠) Dv   ⍝ " ab c"
@@ -3671,7 +3671,7 @@ Js←3 ⋄ 2↣*↑(⌽2*1+⍳)⊖⍴↢2⊤(2#↢(1+⍳)2↣*) Js
 [1 1 0 ⋄ 1 1 0 ⋄ 1 0 1 ⋄ 1 0 1 ⋄ 1 0 0 ⋄ 1 0 0 ⋄ 0 1 1 ⋄ 0 1 1]
 
 ⍝ aplcart/table.tsv:1557 — Is Dv a valid Finnish social security number? (10=≢Dv); Concrete checksum recipe with matching and mismatching check characters; independent modulo-31 checksum T and Dyalog result 1 0. No external identity lookup
-valid←⊢/=((•d,•a~"GIOQ")⊃⍨(31|↢⍎9↣↑)) ⋄ valid¨"131052308T" "131052308A"
+valid←⊢/=(($d,$a~"GIOQ")⊃⍨(31|↢⍎9↣↑)) ⋄ valid¨"131052308T" "131052308A"
 $t $f
 
 ⍝ aplcart/table.tsv:1558 — Ordinal suffix for positive integer Js
@@ -3858,7 +3858,7 @@ stdists g span 2
 
 ⍝ aplcart/table.tsv:1628 — Bijective base-⍺ numeration; Concrete APLcart recipe; setup from april/libraries/dfns/numeric/demo.lisp:13; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
 [adic]←•load "lib/numeric.bpl"
-•a adic 703
+$a adic 703
 ⍝ =>
 "AAA"
 
@@ -4244,8 +4244,8 @@ Yv←[1 2 3;["ab" ⋄ "cd" ⋄ "ef"]] ⋄ {⍉⊃{1=≢⍴⍵?⍵;↓⍵}¨⍵}Y
 ⍝ aplcart/table.tsv:1818 — Bit-wise NOT for positive integers
 J←1 2 3 7 8 ⋄ {2⊥~2⊥⁻¹⍵}J   ⍝ 14 13 12 8 7
 
-⍝ aplcart/table.tsv:1820 — Locate fill elements formed by replicating Y by Iv
-Iv←2 ¯1 1 ⋄ Y←10 20 30 ⋄ Iv{~⍺#1⍨¨⍵}Y   ⍝ $f $f $t $f
+⍝ aplcart/table.tsv:1820 — Locate fill elements formed by replicating Y by Iv; Dyalog's count `¯n` replaces its item with `n` fills. `#` writes that as `¯n 0`
+Iv←2 ¯1 0 1 ⋄ Y←10 20 30 ⋄ Iv{~⍺#1⍨¨⍵}Y   ⍝ $f $f $t $f
 
 ⍝ aplcart/table.tsv:1821 — First Js figurate numbers of order Is
 Is←2 ⋄ Js←5 ⋄ Is{+\⍣⍺ 1+⍳⍵}Js   ⍝ 1 4 10 20 35
@@ -4321,7 +4321,7 @@ Js←5 ⋄ {1,×\⌽↣÷1+⍳⍵}Js   ⍝ 1 5 10 10 5 1
 N←0 1 2 3 4 5 ⋄ {⌊0.5+⍵!↣÷*1}N   ⍝ [0 0 1 2 9 44]ₓ
 
 ⍝ aplcart/table.tsv:1856 — Convert from hexadecimal; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-{16⊥⍵⍳⍨•d,•a}"ABCD"   ⍝ 43981
+{16⊥⍵⍳⍨$d,$a}"ABCD"   ⍝ 43981
 
 ⍝ aplcart/table.tsv:1857 — Sum of polynomials with descending coefficients
 Mv←1 2 3 ⋄ Nv←4 5 ⋄ Mv{⌽+⌿⊃⌽¨[⍺ ⍵]}Nv   ⍝ 1 6 8
@@ -4357,7 +4357,7 @@ Is←1 ⋄ N←[5 6 ⋄ 3 4 ⋄ 1 2] ⋄ Is{~0∊2>/⍠⍺ ⍵}N   ⍝ $t
 Is←5 ⋄ Y←[1 2 ⋄ 3 4] ⋄ Is{⍺↑⍵⍪⍺#¯1↑⍵}Y   ⍝ [1 2 ⋄ 3 4 ⋄ 3 4 ⋄ 3 4 ⋄ 3 4]
 
 ⍝ aplcart/table.tsv:1874 — Zero-padded character matrix from vector of integers; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-{[10⊥⁻¹⍵]⌷•d}31 0 2718   ⍝ ["0031" ⋄ "0000" ⋄ "2718"]
+{[10⊥⁻¹⍵]⌷$d}31 0 2718   ⍝ ["0031" ⋄ "0000" ⋄ "2718"]
 
 ⍝ aplcart/table.tsv:1875 — Remove consecutive duplicate rows from ordered matrix Ym
 Ym←[1 2 ⋄ 1 2 ⋄ 3 4 ⋄ 3 4] ⋄ {⍵#⍨1,∨/ ≢/⍠1∘ 2↣↕ ⍵}Ym   ⍝ [1 2 ⋄ 3 4]
@@ -4470,8 +4470,8 @@ Is←2 ⋄ {,⊃+⊗/⍵⍴⊂⍳10}Is
 ⍝ aplcart/table.tsv:1923 — Join vector of vectors Yv using separator Xv
 Xv←", " ⋄ Yv←"ab" "" "cd" ⋄ Xv{⍪/1↓,⍺⊂↣,⍪⍵}Yv   ⍝ "ab, , cd"
 
-⍝ aplcart/table.tsv:1924 — Caesar's cipher for uppercase D (Is:encryption, -Is:decryption); Concrete APLcart Caesar cipher; rewritten for positions from 0 as 26|⍺+•a⍳⍵, which also wraps correctly after Z; HELLO shifted by 3 is KHOOR, independently checked in Dyalog 20.0.53963.0 with IO=1 CT=1E¯14 DIV=0 ML=1
-3{[26|⍺+•a⍳⍵]⌷•a}"HELLO"   ⍝ "KHOOR"
+⍝ aplcart/table.tsv:1924 — Caesar's cipher for uppercase D (Is:encryption, -Is:decryption); Concrete APLcart Caesar cipher; rewritten for positions from 0 as 26|⍺+$a⍳⍵, which also wraps correctly after Z; HELLO shifted by 3 is KHOOR, independently checked in Dyalog 20.0.53963.0 with IO=1 CT=1E¯14 DIV=0 ML=1
+3{[26|⍺+$a⍳⍵]⌷$a}"HELLO"   ⍝ "KHOOR"
 
 ⍝ aplcart/table.tsv:1925 — Are circular lists Xv and Yv identical (excluding phase)
 Xv←1 2 3 ⋄ Yv←2 3 1 ⋄ Xv{⍺⊂↣∊⌽↢⍵¨⍳≢⍵}Yv   ⍝ $t
@@ -4554,7 +4554,7 @@ Av←1 0 1 0 0 ⋄ Y←3 1 5 2 4 ⋄ Av{⍵⌷⍨⊂⌈\⍺×⍳≢⍺}Y   ⍝ 3
 Mv←3 3 3 3 ⋄ Nv←1 5 2 6 ⋄ Mv{⍺+ -/⍠1∘ 2↣↕ ⌈⍀0⍪+⍀⍺-⍵}Nv   ⍝ 1 3 3 3
 
 ⍝ aplcart/table.tsv:1957 — Convert to hexadecimal; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-{[16⊥⁻¹⍵]⌷•d,•a}65535   ⍝ "FFFF"
+{[16⊥⁻¹⍵]⌷$d,$a}65535   ⍝ "FFFF"
 
 ⍝ aplcart/table.tsv:1958 — Maxima of elements of subsets of Nv specified by A (one mask per column)
 A←[1 0 ⋄ 0 1 ⋄ 1 1] ⋄ Nv←2 7 4 ⋄ A{m+⍺⌈.×⍨⍵-m←⌊/⍵}Nv   ⍝ 4 7
@@ -4692,7 +4692,7 @@ Av←1 0 1 0 0 ⋄ Bv←1 1 1 0 1 ⋄ Av{~≠\z#⁻¹(≠/∘(2↣↕))0,~⍵#�
 $t $t $t $f $f
 
 ⍝ aplcart/table.tsv:2007 — Mesh major cells of elements of Yv
-[{[⍋∊⍳∘≢¨⍵]⌷⊃⍪/⍵} ["abc" •d "ABCDEF"];{[⍋∊⍳∘≢¨⍵]⌷⊃⍪/⍵} [["aa" ⋄ "bb" ⋄ "cc" ⋄ "dd"];["AA" ⋄ "BB"]]]
+[{[⍋∊⍳∘≢¨⍵]⌷⊃⍪/⍵} ["abc" $d "ABCDEF"];{[⍋∊⍳∘≢¨⍵]⌷⊃⍪/⍵} [["aa" ⋄ "bb" ⋄ "cc" ⋄ "dd"];["AA" ⋄ "BB"]]]
 ["a0Ab1Bc2C3D4E5F6789";["aa" ⋄ "AA" ⋄ "bb" ⋄ "BB" ⋄ "cc" ⋄ "dd"]]
 
 ⍝ aplcart/table.tsv:2008 — Determinant of three-row matrix
@@ -4821,7 +4821,7 @@ Is←3 ⋄ N←1 1.2 1.23 1.234 ⋄ Is{0+.≠(10*⌽⍳1+⍺)|⊗⌊⍵×10*⍺}
 [0 1 2 3]ₓ
 
 ⍝ aplcart/table.tsv:2046 — Conversion of characters to hexadecimal byte representation
-Dv←"Hello, world! 123"  ⋄ {,(3↑⍤1)[(16 16⊤¯1+"UTF-8"•ucs ⍵)]⌷•d,•a}Dv
+Dv←"Hello, world! 123"  ⋄ {,(3↑⍤1)[(16 16⊤¯1+"UTF-8"•ucs ⍵)]⌷$d,$a}Dv
 "47 64 6B 6B 6E 2B 1F 76 6E 71 6B 63 20 1F 30 31 32 "
 
 ⍝ aplcart/table.tsv:2047 — Increasing rank of Y to rank of X
@@ -5047,7 +5047,7 @@ D← ["a b " ⋄ " cd "]  ⋄ {⍵⍴↣⍴(,(+/b)>⊗⍳¯1↑⍴⍵)#⁻¹⍵#
 ["ab  " ⋄ "cd  "]
 
 ⍝ aplcart/table.tsv:2132 — Tesselate: Cut Y into tiles of size Iv (padding Y if necessary); dfns display import/wrappers omitted to test underlying arrays
-2 3 {⊂⍠ 1+2×⍳k (,s,⍪r)⍴⍵↑⍨r×s←⌈R÷r←1+(-k←≢R←⍴⍵)↑⍺-1} 4 5⍴•a
+2 3 {⊂⍠ 1+2×⍳k (,s,⍪r)⍴⍵↑⍨r×s←⌈R÷r←1+(-k←≢R←⍴⍵)↑⍺-1} 4 5⍴$a
 2 2⍴[["ABC" ⋄ "FGH"];["DE " ⋄ "IJ "];["KLM" ⋄ "PQR"];["NO " ⋄ "ST "]]
 
 ⍝ aplcart/table.tsv:2133 — ASCII frame a matrix
@@ -5055,7 +5055,7 @@ Dm← ["abc" ⋄ "def"]  ⋄ {'+'@(⊂0 0)∘⌽∘⍉⍣4⊃(⍪↢⌽↢⍉)/"
 ["+---+" ⋄ "|abc|" ⋄ "|def|" ⋄ "+---+"]
 
 ⍝ aplcart/table.tsv:2134 — Tesselate: Distribute Y's elements into evenly-sized tiles in an array of shape Iv (padding Y if necessary); dfns display import/wrappers omitted to test underlying arrays
-2 3 {⊂⍠ 2×⍳k (,s,⍪r)⍴⍵↑⍨r×s←⌈R÷r←1+(-k←≢R←⍴⍵)↑⍺-1} 4 5⍴•a
+2 3 {⊂⍠ 2×⍳k (,s,⍪r)⍴⍵↑⍨r×s←⌈R÷r←1+(-k←≢R←⍴⍵)↑⍺-1} 4 5⍴$a
 2 3⍴[["AD" ⋄ "KN"];["BE" ⋄ "LO"];["C " ⋄ "M "];["FI" ⋄ "PS"];["GJ" ⋄ "QT"];["H " ⋄ "R "]]
 
 ⍝ aplcart/table.tsv:2135 — Unicode frame a matrix
@@ -5898,7 +5898,7 @@ D←["  ab" ⋄ " c d"]  ⋄ +/∧\' '=D   ⍝ [2 1]ₓ
 1⌽,⍨9⍴"""1⌽,⍨9⍴"""   ⍝ "1⌽,⍨9⍴""""""1⌽,⍨9⍴"""""""
 
 ⍝ aplcart/table.tsv:3775 — Generate random UUIDv4; Original UUIDv4 generator; assert length, hyphen positions, version 4, variant bits and lowercase hexadecimal alphabet, not a random sample; Independent expected truth and Dyalog check
-u←'-'@ 8+5×⍳4 [4(8+|)@19(4@14¿36⍴16)]⌷•d,•c•a ⋄ 36=≢u ∧ ∧/'-'=[[8 13 18 23]]⌷u ∧ '4'=u₁₄ ∧ u₁₉∊"89ab" ∧ ∧/(u~"-")∊•d,•c•a
+u←'-'@ 8+5×⍳4 [4(8+|)@19(4@14¿36⍴16)]⌷$d,•c$a ⋄ 36=≢u ∧ ∧/'-'=[[8 13 18 23]]⌷u ∧ '4'=u₁₄ ∧ u₁₉∊"89ab" ∧ ∧/(u~"-")∊$d,•c$a
 $t
 
 ⍝ aplcart/tt.tsv:2 — *N×0j1; Reuse concrete inputs from aplcart/table.tsv:574; execute this alternate recipe independently
@@ -6796,7 +6796,7 @@ Y←1+2 3⍴⍳6 ⋄ ⊃∘,∘⊂⍤¯1 Y   ⍝ 2 1 3⍴1 2 3 4 5 6
 Y←1+2 3⍴⍳6 ⋄ ,⍤0 Y   ⍝ 2 3 1⍴1 2 3 4 5 6
 
 ⍝ aplcart/tt.tsv:767 — Increment rank by inserting a new dimension before the leading one
-[⍴ (⊃,∘⊂) "abc";⍴ (⊃,∘⊂) 3 4⍴•a]   ⍝ [1 3;1 3 4]ₓ
+[⍴ (⊃,∘⊂) "abc";⍴ (⊃,∘⊂) 3 4⍴$a]   ⍝ [1 3;1 3 4]ₓ
 
 ⍝ aplcart/tt.tsv:768 — Increment rank by inserting a new dimension before the leading one
 Y←1+2 3⍴⍳6 ⋄ ⊃,∘⊂ Y   ⍝ 1 2 3⍴1 2 3 4 5 6
@@ -6926,7 +6926,7 @@ Bm←[0 1 0 ⋄ 0 0 1 ⋄ 1 0 0] ⋄ ~0∊,∘ ×∘|≤<⊗⍨∘⍳∘≢ Bm  
 Dv←"racecar" ⋄ ⌽≡⊢ Dv   ⍝ $t
 
 ⍝ aplcart/tt.tsv:903 — Is Dv a valid Finnish social security number? (10=≢Dv); Concrete checksum recipe with matching and mismatching check characters; independent modulo-31 checksum T and Dyalog result 1 0. No external identity lookup
-valid←⊢/=((•d,•a~"GIOQ")⊃⍨31|↢⍎9↣↑) ⋄ valid¨"131052308T" "131052308A"
+valid←⊢/=(($d,$a~"GIOQ")⊃⍨31|↢⍎9↣↑) ⋄ valid¨"131052308T" "131052308A"
 $t $f
 
 ⍝ aplcart/tt.tsv:919 — Is J (YYYY) a leap year?
@@ -8967,58 +8967,58 @@ p←•r "[,;]" ⋄ s←"a,,b;c" ⋄ b←0,(p.position s)+p.length s ⋄ e←(p.
 "sum 5"
 
 ⍝ aplcart/table.tsv:2715 — Distribution sampler output shape
-d←•normal 0 1 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,∞>|y   ⍝ $t
+d←0 1 •distribution "normal" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,∞>|y   ⍝ $t
 
 ⍝ aplcart/table.tsv:2800 — Bernoulli draws
-d←•bernoulli 0.3 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y∊0 1   ⍝ $t
+d←0.3 •distribution "bernoulli" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y∊0 1   ⍝ $t
 
 ⍝ aplcart/table.tsv:2801 — Chi-squared draws
-d←•chisquared 3 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y≥0   ⍝ $t
+d←3 •distribution "chisquared" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y≥0   ⍝ $t
 
 ⍝ aplcart/table.tsv:2802 — Exponential draws
-d←•exponential 2 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y≥0   ⍝ $t
+d←2 •distribution "exponential" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y≥0   ⍝ $t
 
 ⍝ aplcart/table.tsv:2803 — Poisson draws
-d←•poisson 3 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,(y≥0)∧y=⌊y   ⍝ $t
+d←3 •distribution "poisson" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,(y≥0)∧y=⌊y   ⍝ $t
 
 ⍝ aplcart/table.tsv:2804 — Student t draws
-d←•student 5 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,∞>|y   ⍝ $t
+d←5 •distribution "student" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,∞>|y   ⍝ $t
 
 ⍝ aplcart/table.tsv:2805 — Normal draws
-d←•normal 3 2 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,∞>|y   ⍝ $t
+d←3 2 •distribution "normal" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,∞>|y   ⍝ $t
 
 ⍝ aplcart/table.tsv:2806 — Inverse gamma draws: shape, scale
-d←•inversegamma 3 2 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y>0   ⍝ $t
+d←3 2 •distribution "inversegamma" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y>0   ⍝ $t
 
 ⍝ aplcart/table.tsv:2807 — Beta draws
-d←•beta 2 3 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,(y≥0)∧y≤1   ⍝ $t
+d←2 3 •distribution "beta" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,(y≥0)∧y≤1   ⍝ $t
 
 ⍝ aplcart/table.tsv:2808 — Binomial draws
-d←•binomial 7 0.4 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y∊⍳8   ⍝ $t
+d←7 0.4 •distribution "binomial" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y∊⍳8   ⍝ $t
 
 ⍝ aplcart/table.tsv:2809 — Cauchy draws: unrestricted location
-d←•cauchy ¯2 1 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,∞>|y   ⍝ $t
+d←¯2 1 •distribution "cauchy" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,∞>|y   ⍝ $t
 
 ⍝ aplcart/table.tsv:2810 — F draws
-d←•fisher 3 5 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y≥0   ⍝ $t
+d←3 5 •distribution "fisher" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y≥0   ⍝ $t
 
 ⍝ aplcart/table.tsv:2811 — Gamma draws: shape, scale
-d←•gamma 3 2 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y≥0   ⍝ $t
+d←3 2 •distribution "gamma" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y≥0   ⍝ $t
 
 ⍝ aplcart/table.tsv:2812 — Laplace draws
-d←•laplace ¯2 1 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,∞>|y   ⍝ $t
+d←¯2 1 •distribution "laplace" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,∞>|y   ⍝ $t
 
 ⍝ aplcart/table.tsv:2813 — Log-normal draws
-d←•lognormal 0 1 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y>0   ⍝ $t
+d←0 1 •distribution "lognormal" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y>0   ⍝ $t
 
 ⍝ aplcart/table.tsv:2814 — Logistic draws
-d←•logistic ¯2 1 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,∞>|y   ⍝ $t
+d←¯2 1 •distribution "logistic" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,∞>|y   ⍝ $t
 
 ⍝ aplcart/table.tsv:2815 — Uniform draws
-d←•uniform ¯2 3 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,(y≥¯2)∧y≤3   ⍝ $t
+d←¯2 3 •distribution "uniform" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,(y≥¯2)∧y≤3   ⍝ $t
 
 ⍝ aplcart/table.tsv:2816 — Weibull draws: shape, scale
-d←•weibull 2 3 ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y≥0   ⍝ $t
+d←2 3 •distribution "weibull" ⋄ y←d.sample 2 3 ⋄ 2 3≡⍴y ∧ ∧/,y≥0   ⍝ $t
 
 ⍝ aplcart/table.tsv:296 — The source code of an object; Reviewed introspection recipe; ready for activation; Concrete name-inspection recipe using BasedPL lexical names, prefix filtering, integer classes and text source
 fn←{⍵+1} ⋄ •src "fn"   ⍝ "{⍵+1}"
@@ -9040,7 +9040,7 @@ alpha←1 ⋄ also←+ ⋄ "al" •nl 3   ⍝ ,⊂"also"
 apply←{⍶⍵} ⋄ plus←+ ⋄ •nl 4   ⍝ ,⊂"apply"
 
 ⍝ aplcart/table.tsv:408 — Delete named objects from the active workspace (1 if each name is now free for use, else 0); Reviewed introspection recipe; ready for activation; Concrete name-inspection recipe using BasedPL lexical names, prefix filtering, integer classes and text source
-alpha←1 ⋄ flags←•ex "alpha" "missing" "•a" ⋄ [flags;•nc "alpha"]
+alpha←1 ⋄ flags←•ex "alpha" "missing" "$a" ⋄ [flags;•nc "alpha"]
 [1 1 0;0]ₓ
 
 ⍝ aplcart/table.tsv:2691 — List names of existing members; Reviewed introspection recipe; ready for activation; Concrete name-inspection recipe using BasedPL lexical names, prefix filtering, integer classes and text source
@@ -9065,3 +9065,52 @@ testpath •nput 0 65 127 128 255 ⋄ b←["binary":1] •nget testpath ⋄ •u
 ⍝ aplcart/table.tsv:1442 — Read raw bytes of file Dv as 8-bit signed integers
 testpath •nput 0 65 127 128 255 ⋄ b←["binary":1] •nget testpath ⋄ b-256ₓ×b≥128ₓ
 [0 65 127 ¯128 ¯1]ₓ
+
+⍝ aplcart/table.tsv:163 — Execute Dv within namespace X (name or reference); BPL's `⍎` takes no left argument, because `X⍎Y` is keyed lookup. `''⍎'1+2'` becomes `⍎"1+2"`
+⍎"1+2"   ⍝ 3
+
+⍝ aplcart/table.tsv:667 — Replicate along last axis of Y (forces / to be a function even with a function on its left); Replicate written with `#`, which replaces `/` and `⌿`. Dyalog's count `¯n` replaces its item with `n` fills. `#` writes that as `¯n 0`
+3 1 ¯2 0 2#6 7 8 9   ⍝ [6 6 6 7 0 0 9 9]
+
+⍝ aplcart/table.tsv:668 — Filtering columns of Y according to mask Av (forces / to be a function even with a function on its left); Replicate written with `#`, which replaces `/` and `⌿`
+1 0 1 0 1#"Heart"   ⍝ "Hat"
+
+⍝ aplcart/table.tsv:669 — Replicate along leading axis of Y (forces ⌿ to be a function even with a function on its left); Replicate written with `#`, which replaces `/` and `⌿`. Positions count from 0, so `⍳n` became `1+⍳n`
+mat←3 4⍴1+⍳12 ⋄ 1 0 2#mat   ⍝ [1 2 3 4 ⋄ 9 10 11 12 ⋄ 9 10 11 12]
+
+⍝ aplcart/table.tsv:670 — Filtering major cells of Y according to mask Av (forces ⌿ to be a function even with a function on its left); Replicate written with `#`, which replaces `/` and `⌿`. Positions count from 0, so `⍳n` became `1+⍳n`
+mat←3 4⍴1+⍳12 ⋄ 1 0 1#mat   ⍝ [1 2 3 4 ⋄ 9 10 11 12]
+
+⍝ aplcart/table.tsv:691 — Expand last axis of Y (forces \ to be a function even with a function on its left); Expand written with `#`. Dyalog's `N\Y` is `N#Y` with each 0 count written as `¯1`
+[(3 ¯2 4#7 8) (1 0 1 0 1#⁻¹"Hat")]
+[[7 7 7 0 0 8 8 8 8] "H a t"]
+
+⍝ aplcart/table.tsv:692 — Expand leading axis of Y (forces ⍀ to be a function even with a function on its left); Expand written with `#`. Dyalog's `N\Y` is `N#Y` with each 0 count written as `¯1`. Positions count from 0, so `⍳n` became `1+⍳n`
+1 ¯1 2 1#3 4⍴1+⍳12
+[1 2 3 4 ⋄ 0 0 0 0 ⋄ 5 6 7 8 ⋄ 5 6 7 8 ⋄ 9 10 11 12]
+
+⍝ aplcart/tt.tsv:550 — Expand last axis of Y (forces \ to be a function even with a function on its left); Expand written with `#⁻¹`, which replaces `\` and `⍀`. Positions count from 0, so `⍳n` became `1+⍳n`
+Iv←1 0 1 0 1 1 ⋄ Y←2 4⍴1+⍳8 ⋄ Iv#⁻¹⍠¯1 Y
+[1 0 2 0 3 4 ⋄ 5 0 6 0 7 8]
+
+⍝ aplcart/tt.tsv:552 — Expand leading axis of Y (forces ⍀ to be a function even with a function on its left); Expand written with `#⁻¹`, which replaces `\` and `⍀`. Positions count from 0, so `⍳n` became `1+⍳n`
+Iv←1 0 1 ⋄ Y←2 3⍴1+⍳6 ⋄ Iv#⁻¹Y   ⍝ [1 2 3 ⋄ 0 0 0 ⋄ 4 5 6]
+
+⍝ aplcart/tt.tsv:602 — Filtering columns of Y according to mask Av (forces / to be a function even with a function on its left); Replicate written with `#`, which replaces `/` and `⌿`. Positions count from 0, so `⍳n` became `1+⍳n`
+Av←1 0 1 ⋄ Y←2 3⍴1+⍳6 ⋄ Av#⍠¯1 Y   ⍝ [1 3 ⋄ 4 6]
+
+⍝ aplcart/tt.tsv:604 — Filtering major cells of Y according to mask Av (forces ⌿ to be a function even with a function on its left); Replicate written with `#`, which replaces `/` and `⌿`. Positions count from 0, so `⍳n` became `1+⍳n`
+Av←1 0 ⋄ Y←2 3⍴1+⍳6 ⋄ Av#Y   ⍝ [1 2 3 ⋄]
+
+⍝ aplcart/tt.tsv:1528 — Replicate along last axis of Y (forces / to be a function even with a function on its left); Replicate written with `#`, which replaces `/` and `⌿`. Positions count from 0, so `⍳n` became `1+⍳n`
+Iv←1 0 2 ⋄ Y←2 3⍴1+⍳6 ⋄ Iv#⍠¯1 Y   ⍝ [1 3 3 ⋄ 4 6 6]
+
+⍝ aplcart/tt.tsv:1530 — Replicate along leading axis of Y (forces ⌿ to be a function even with a function on its left); Replicate written with `#`, which replaces `/` and `⌿`. Positions count from 0, so `⍳n` became `1+⍳n`
+Iv←1 2 ⋄ Y←2 3⍴1+⍳6 ⋄ Iv#Y   ⍝ [1 2 3 ⋄ 4 5 6 ⋄ 4 5 6]
+
+⍝ aplcart/table.tsv:2945 — Meaning of life (modern); Puzzle that builds 42 by reversing the text of 24. Written with `π` for monadic `○` and `¿` for `?`. BPL's `⍕` writes an exact integer with its mark, as in `⍕⌈2.5` giving `3ₓ`, and `1×` makes the integer approximate before `⍕`
+⍎⌽⍕1×⌈*π≡⍬   ⍝ 42
+
+⍝ aplcart/table.tsv:3774 — Meaning of life (traditional); Puzzle that builds 42 by reversing the text of 24. Written with `π` for monadic `○` and `¿` for `?`. BPL's `⍕` writes an exact integer with its mark, as in `⍕⌈2.5` giving `3ₓ`, and `1×` makes the integer approximate before `⍕`
+⍎⊖⍕⊃⊂|1×⌊-*+π⌈×÷!⌽⍉⌹~⍴⍋⍒,⍟¿⍳0   ⍝ 42
+

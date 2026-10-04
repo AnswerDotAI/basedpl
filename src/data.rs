@@ -2,11 +2,14 @@ use crate::{
     array::{Ints, Items, Storage, Width},
     execution::Context,
     keyed,
-    primitive::real,
+    primitive::{numeric, real},
     DomainAt, Error, ErrorAt, ErrorKind, Number, Value,
 };
 use foldhash::{HashMap, HashMapExt};
-use std::{fs::OpenOptions, io::Write};
+use std::{
+    fs::OpenOptions,
+    io::{Read, Write},
+};
 
 pub(crate) fn text(value: &Value, span: &Context<'_>) -> Result<String, Error> {
     keyed::name(value).map(|s| s.to_string()).ok_or_else(|| span.domain_error("expected text"))
@@ -115,6 +118,84 @@ pub(crate) fn bytes(value: &Value, span: &Context<'_>) -> Result<Vec<u8>, Error>
     value.as_items().nonnegative_integers().map_err(|_| invalid())?.into_iter().map(|n| u8::try_from(n).map_err(|_| invalid())).collect()
 }
 
+/// `value` as bytes, taking integers from 0 to 255 as they are and text as UTF-8.
+pub(crate) fn payload(value: &Value, span: &Context<'_>) -> Result<Vec<u8>, Error> {
+    if value.prototype().as_number().is_some() { bytes(value, span) } else { Ok(text(value, span)?.into_bytes()) }
+}
+
+/// The algorithm that the optional left argument names, in lower case, or `default` without one.
+fn algorithm(left: Option<&Value>, default: &str, span: &Context<'_>) -> Result<String, Error> {
+    left.map_or(Ok(default.into()), |name| text(name, span).map(|s| s.to_lowercase()))
+}
+
+/// `•zip` compresses bytes or text with `"gzip"`, `"zlib"` or `"deflate"`, gzip by default. `•zip⁻¹` decompresses. Both give bytes.
+fn deflate(left: Option<&Value>, right: &Value, span: &Context<'_>, inverse: bool) -> Result<Value, Error> {
+    use flate2::{read, Compression};
+    let (data, level) = (payload(right, span)?, Compression::default());
+    let mut reader: Box<dyn Read + '_> = match (algorithm(left, "gzip", span)?.as_str(), inverse) {
+        ("gzip", false) => Box::new(read::GzEncoder::new(&data[..], level)),
+        ("gzip", true) => Box::new(read::GzDecoder::new(&data[..])),
+        ("zlib", false) => Box::new(read::ZlibEncoder::new(&data[..], level)),
+        ("zlib", true) => Box::new(read::ZlibDecoder::new(&data[..])),
+        ("deflate", false) => Box::new(read::DeflateEncoder::new(&data[..], level)),
+        ("deflate", true) => Box::new(read::DeflateDecoder::new(&data[..])),
+        _ => return Err(span.domain_error("•zip takes \"gzip\", \"zlib\" or \"deflate\"")),
+    };
+    let mut out = Vec::new();
+    reader.read_to_end(&mut out).map_err(|e| span.domain_error(format!("invalid compressed data: {e}")))?;
+    byte_vector(out).error_at(span, "invalid byte vector")
+}
+pub(crate) fn zip(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> { deflate(left, right, span, false) }
+pub(crate) fn unzip(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> { deflate(left, right, span, true) }
+
+/// `•hash` gives the SHA-2 digest of bytes or text in hex, by `"sha224"`, `"sha256"`, `"sha384"` or `"sha512"`, SHA-256 by default.
+pub(crate) fn hash(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    use sha2::{Digest, Sha224, Sha256, Sha384, Sha512};
+    let data = payload(right, span)?;
+    let digest = match algorithm(left, "sha256", span)?.as_str() {
+        "sha224" => Sha224::digest(&data).to_vec(),
+        "sha256" => Sha256::digest(&data).to_vec(),
+        "sha384" => Sha384::digest(&data).to_vec(),
+        "sha512" => Sha512::digest(&data).to_vec(),
+        _ => return Err(span.domain_error("•hash takes \"sha224\", \"sha256\", \"sha384\" or \"sha512\"")),
+    };
+    Ok(keyed::text(&digest.iter().map(|b| format!("{b:02x}")).collect::<String>()))
+}
+
+/// `•uuid v` gives a new UUID of version `v` as text. Versions 1, 4, 6 and 7 take no left argument. Versions 3 and 5 take a namespace and
+/// a name on the left, and version 8 takes 16 bytes.
+pub(crate) fn uuid(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    use uuid::Uuid;
+    // The standard allows a random node in place of a MAC address, with the multicast bit set.
+    let node = || {
+        let mut node: [u8; 6] = rand::random();
+        node[0] |= 1;
+        node
+    };
+    let version = numeric(right, span)?.integer().error_at(span, "•uuid needs a version number")?;
+    let id = match (version, left) {
+        (1, None) => Uuid::now_v1(&node()),
+        (4, None) => Uuid::new_v4(),
+        (6, None) => Uuid::now_v6(&node()),
+        (7, None) => Uuid::now_v7(),
+        (3 | 5, Some(names)) => {
+            let names: Vec<_> = names.elements().map(|v| text(&v, span)).collect::<Result<_, _>>()?;
+            let [space, name] = names.as_slice() else { return Err(span.domain_error("UUID versions 3 and 5 take a namespace and a name")) };
+            let space = match space.to_lowercase().as_str() {
+                "dns" => Uuid::NAMESPACE_DNS,
+                "url" => Uuid::NAMESPACE_URL,
+                "oid" => Uuid::NAMESPACE_OID,
+                "x500" => Uuid::NAMESPACE_X500,
+                _ => Uuid::parse_str(space).map_err(|_| span.domain_error("unknown UUID namespace"))?,
+            };
+            if version == 3 { Uuid::new_v3(&space, name.as_bytes()) } else { Uuid::new_v5(&space, name.as_bytes()) }
+        }
+        (8, Some(data)) => Uuid::new_v8(bytes(data, span)?.try_into().map_err(|_| span.domain_error("UUID version 8 takes 16 bytes"))?),
+        _ => return Err(span.domain_error("•uuid takes version 1, 4, 6 or 7 alone, 3 or 5 with a namespace and a name, or 8 with 16 bytes")),
+    };
+    Ok(keyed::text(&id.hyphenated().to_string()))
+}
+
 pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let opts = file_options("•nget", left, None, &["encoding", "binary"], span)?;
     let binary = opts.boolean("binary", false, span)?;
@@ -131,7 +212,7 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
 pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let opts = file_options("•nput", left, Some("path"), &["path", "encoding", "overwrite"], span)?;
     let path = opts.text("path", None, span)?;
-    let data = if right.prototype().as_number().is_some() { bytes(right, span)? } else { text(right, span)?.into_bytes() };
+    let data = payload(right, span)?;
     let overwrite = opts.boolean("overwrite", false, span)?;
     span.check()?;
     let mut file = OpenOptions::new()

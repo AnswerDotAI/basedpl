@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-const USAGE: &str = "Usage: bpl [-e EXPR | FILE | - | --worker | --kernel -f CONNECTION_FILE]\n\nNo arguments: persistent BPL REPL (Ctrl-D to exit, Ctrl-C to cancel input).\nType `name then Tab or a non-letter to enter a symbol, e.g. `iota5 becomes ⍳5.\nUse - to execute all of stdin as one source.\nUse --worker for JSON-lines requests with deadlines and interruption.\nUse --kernel -f CONNECTION_FILE to run a Jupyter kernel.\n";
+const USAGE: &str = "Usage: bpl [-e EXPR [ARG...] | FILE [ARG...] | - [ARG...] | --worker | --kernel -f CONNECTION_FILE]\n\nNo arguments: persistent BPL REPL (Ctrl-D to exit, Ctrl-C to cancel input).\nType `name then Tab or a non-letter to enter a symbol, e.g. `iota5 becomes ⍳5.\nUse - to execute all of stdin as one source.\n`•host \"args\"` gives the ARGs.\nUse --worker for JSON-lines requests with deadlines and interruption.\nUse --kernel -f CONNECTION_FILE to run a Jupyter kernel.\n";
 
 /// Writes each output to stdout as the evaluation produces it. A failed write interrupts the evaluation, and `finish` then gives the
 /// write's error. Evaluations can also read standard input, when the program didn't come from it.
@@ -130,6 +130,9 @@ pub fn run(args: &[String]) -> i32 {
             };
         }
     }
+    let program = match args { [flag, _, ..] if flag == "-e" => 2, [file, ..] if file == "-" || !file.starts_with('-') => 1, _ => args.len() };
+    let (args, program_args) = args.split_at(program);
+    let _ = crate::system::ARGS.set(program_args.to_vec());
     let stdin = io::stdin();
     let stdout = io::stdout();
     let stderr = io::stderr();

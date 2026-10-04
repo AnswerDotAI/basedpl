@@ -12,6 +12,7 @@
         <RegExpr String="¯?∞|¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?([jJⱼ]¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?|ₓ|[rᵣ]¯?\d+)?" attribute="Number"/>
         <RegExpr String="⍬ₓ?" attribute="Number"/>
         <RegExpr String="\$[tfn]" attribute="Number"/>
+        <RegExpr String="\$[ad]" attribute="String"/>
         <RegExpr String="[\])](?=ₓ)" attribute="Normal Text" context="Mark"/>
         <AnyChar String="+-×÷⌈⌊|*⍟○π√!∧∨⍲⍱~=≠&lt;≤&gt;≥⍳:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹#↕⍭⨸⌻⍸⍷⊢⊣¿" attribute="Function"/>
         <AnyChar String="¨⍨⊗⌸∂/⌿\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘ" attribute="MonadicOperator"/>

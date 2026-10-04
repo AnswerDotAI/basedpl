@@ -7,6 +7,7 @@ syntax match bplSystem /\v•[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*/
 syntax match bplNumber /\v¯?∞|¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?([jJⱼ]¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?|ₓ|[rᵣ]¯?\d+)?|⍬ₓ?/
 syntax match bplNumber /\v([\])])@<=ₓ/
 syntax match bplNumber /\v\$[tfn]/
+syntax match bplString /\v\$[ad]/
 syntax match bplFunction /[+×÷⌈⌊|*⍟○π√!∧∨⍲⍱~=≠<≤>≥⍳:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹#↕⍭⨸⌻⍸⍷⊢⊣¿-]/
 syntax match bplMonadicOperator #[¨⍨⊗⌸∂/⌿\\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘ]#
 syntax match bplDyadicOperator /[↣⍤∘⍠⍥↢.⍣⇄⊘⌾⍚@⌺]/

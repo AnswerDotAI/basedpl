@@ -1283,8 +1283,8 @@ v←10 20 30 ⋄ 9,v.[1],3   ⍝ 9 20 3
 ⍝ — Dot indexing follows a literal
 "abc".[[2 0]]   ⍝ "ca"
 
-⍝ — Dot indexing follows a system name
-•a.[[2 0]]   ⍝ "CA"
+⍝ — Dot indexing follows a constant
+$a.[[2 0]]   ⍝ "CA"
 
 ⍝ — A decimal point needs a digit after it, so a dot after a number is not part of it
 2.
@@ -2922,16 +2922,16 @@ f←{•missing ⍵} ⋄ 1   ⍝ 1
 fs←[•ucs •c] ⋄ (↑fs)'A'   ⍝ 65ₓ
 
 ⍝ —
-•a   ⍝ "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+$a   ⍝ "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 ⍝ —
-•d   ⍝ "0123456789"
+$d   ⍝ "0123456789"
 
 ⍝ —
-3↑•a   ⍝ "ABC"
+3↑$a   ⍝ "ABC"
 
 ⍝ — Alphabet constants are read-only
-•a←"abc"
+$a←"abc"
 ⍝ error: SYNTAX ERROR
 
 ⍝ — basedpl has fixed origin zero, not a mutable index-origin variable
@@ -2942,11 +2942,11 @@ fs←[•ucs •c] ⋄ (↑fs)'A'   ⍝ 65ₓ
 'abc
 ⍝ error: SYNTAX ERROR
 
-⍝ — String literals cannot span source lines
-"a
-b"
+⍝ — A double-quoted string spans lines, with one newline for each line ending and its indentation kept
+•ucs "a
+  b"
 ⍝ =>
-⍝ error: SYNTAX ERROR
+[97 10 32 32 98]ₓ
 
 ⍝ — Pervasive ordering is numeric; character sorting uses grade
 'a'<'b'
@@ -3240,11 +3240,11 @@ s←+/ ⋄ s⍠0 [1 2 3 ⋄ 4 5 6]   ⍝ 5 7 9
 ⍝ — Repeated transpose axes select the diagonal of a rectangular matrix
 0 0⍉[1 2 3 ⋄ 4 5 6]   ⍝ 1 5
 
-⍝ — Negative replicate counts replace that item with fill
-2 ¯1 1#10 20 30   ⍝ 10 10 0 30
+⍝ — Negative replicate counts insert fills and use up no item
+2 ¯1 1#10 20   ⍝ 10 10 0 20
 
-⍝ — Inverse replicate skips a negative count's fills and gives a fill for its cell
-2 ¯1 1#⁻¹10 10 0 20   ⍝ 10 0 20
+⍝ — Inverse replicate skips a negative count's fills, and a zero count gives a fill
+2 0 ¯1 1#⁻¹10 10 0 20   ⍝ 10 0 20
 
 ⍝ — Expansion uses character fill for inserted positions
 1 0 1#⁻¹"ab"   ⍝ "a b"
@@ -5328,12 +5328,14 @@ fill •tojson fill •json "{""x"":[null,2]}"
 •json "{""name"":1,""name"":2}"   ⍝ "name":2ₓ
 
 ⍝ — Malformed JSON gives a located error
-•json "[1,]"
+•json "[1 2]"
 ⍝ error: DOMAIN ERROR
 
-⍝ — Out-of-range float input cannot silently become a missing sentinel
-•json "1e999"
-⍝ error: DOMAIN ERROR
+⍝ — Out-of-range float input reads as an infinity, not as a missing value
+•json "1e999"   ⍝ ∞
+
+⍝ — JSON5 adds comments, trailing commas, single quotes, unquoted keys, hexadecimal numbers and Infinity
+•json "{a: [1, 0x1F,], b: 'x', c: -Infinity}  // done"   ⍝ ["a":[1 31]ₓ "b":"x" "c":¯∞]
 
 ⍝ — Infinity requires explicit fill on export
 •tojson ∞
@@ -5418,7 +5420,7 @@ x←1 ⋄ f←{x←2 ⋄ erased←•ex "x" ⋄ x} ⋄ kept←f ⋄ •ex "f" �
 1
 
 ⍝ — Erasure is idempotent and protects implicit/system names
-x←1 ⋄ •ex "x" "x" "bad name" "•a" "⍵"
+x←1 ⋄ •ex "x" "x" "bad name" "$a" "⍵"
 [1 1 0 0 0]ₓ
 
 ⍝ — Source retains the definition, while derived functions use APL display

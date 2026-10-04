@@ -1382,8 +1382,8 @@ v←1 2 3 ⋄ ⊂v ≡ ⊂1 2 3   ⍝ $t
 ⍝ april:1244 —
 ""≡0#∊'a'   ⍝ $t
 
-⍝ april:1245 —
-1 ¯2 3 ¯4 5#⍠¯1 [3 5]⍴⍳5
+⍝ april:1245 — Dyalog's count `¯n` replaces its item with `n` fills. `#` writes that as `¯n 0`
+1 ¯2 0 3 ¯4 0 5#⍠¯1 [3 5]⍴⍳5
 [0 0 0 2 2 2 0 0 0 0 4 4 4 4 4 ⋄ 0 0 0 2 2 2 0 0 0 0 4 4 4 4 4 ⋄ 0 0 0 2 2 2 0 0 0 0 4 4 4 4 4]
 
 ⍝ april:1248 —
@@ -1440,12 +1440,12 @@ v←1 2 3 ⋄ ⊂v ≡ ⊂1 2 3   ⍝ $t
 3#3 3⍴⍳9
 [0 1 2 ⋄ 0 1 2 ⋄ 0 1 2 ⋄ 3 4 5 ⋄ 3 4 5 ⋄ 3 4 5 ⋄ 6 7 8 ⋄ 6 7 8 ⋄ 6 7 8]
 
-⍝ april:1289 —
-1 ¯2 3#3 5⍴⍳9
+⍝ april:1289 — Dyalog's count `¯n` replaces its item with `n` fills. `#` writes that as `¯n 0`
+1 ¯2 0 3#3 5⍴⍳9
 [0 1 2 3 4 ⋄ 0 0 0 0 0 ⋄ 0 0 0 0 0 ⋄ 1 2 3 4 5 ⋄ 1 2 3 4 5 ⋄ 1 2 3 4 5]
 
-⍝ april:1291 —
-1 ¯2 3 ¯4 5#⍠1 (3 5⍴⍳5)
+⍝ april:1291 — Dyalog's count `¯n` replaces its item with `n` fills. `#` writes that as `¯n 0`
+1 ¯2 0 3 ¯4 0 5#⍠1 (3 5⍴⍳5)
 [0 0 0 2 2 2 0 0 0 0 4 4 4 4 4 ⋄ 0 0 0 2 2 2 0 0 0 0 4 4 4 4 4 ⋄ 0 0 0 2 2 2 0 0 0 0 4 4 4 4 4]
 
 ⍝ april:1294 —
@@ -3024,7 +3024,7 @@ key←⌸ ⋄ {(2|⍳≢⍵)⊢key ⍵}10 2⍴⍳20
 1⌽,⍨9⍴"""1⌽,⍨9⍴"""   ⍝ "1⌽,⍨9⍴""""""1⌽,⍨9⍴"""""""
 
 ⍝ april:2237 — Alphabetical and numeric vectors; Fixed origin/constants; omit irrelevant PP assignment and constant rebinding; glyph-only formatting where needed
-•a,•d   ⍝ "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+$a,$d   ⍝ "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 ⍝ april:2239 — Character to Unicode index; Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
 •ucs 'z'   ⍝ 122ₓ
@@ -3576,7 +3576,7 @@ fuzzy↢months¨ "dcmbr" "marching" "febury"
 
 ⍝ april/libraries/dfns/array/demo.lisp:104 — Upstream tape zipper and boxed display setup; glyph-only formatting helper; original expected text
 [Rgt Tape dsp]←•load "lib/array.bpl"
-↓ 0 dsp Rgt⁵ (2 Tape 2#¨12↑•a)
+↓ 0 dsp Rgt⁵ (2 Tape 2#¨12↑$a)
 ⍝ =>
 "────────────────│FF│GG│────────────────" "─────────────│EE       HH│─────────────" "──────────│DD             II│──────────" "───────│CC                   JJ│───────" "────│BB                         KK│────" "∘│AA                               LL│∘"
 
@@ -3909,7 +3909,7 @@ list "hello"
 
 ⍝ april/libraries/dfns/array/demo.lisp:180 — Upstream library dependencies included
 [list listLength]←•load "lib/array.bpl"
-listLength list •a
+listLength list $a
 ⍝ =>
 26ₓ
 
@@ -3951,13 +3951,13 @@ vectFromList listRmDups list "Mississippi"
 
 ⍝ april/libraries/dfns/array/demo.lisp:197 — Upstream library dependencies included
 [showmatch]←•load "lib/array.bpl"
-↓ "12*56*9" showmatch •d
+↓ "12*56*9" showmatch $d
 ⍝ =>
 "0123456789" " ¯        "
 
 ⍝ april/libraries/dfns/array/demo.lisp:199 — Upstream showmatch setup; character-row prototype captured independently in Dyalog
 [showmatch]←•load "lib/array.bpl"
-↓⍕ (2⍴¨¨["12*56*9" '*']) showmatch 2⍴¨•d
+↓⍕ (2⍴¨¨["12*56*9" '*']) showmatch 2⍴¨$d
 ⍝ =>
 " 00  11  22  33  44  55  66  77  88  99 " "     ¯                                  "
 
@@ -4271,7 +4271,7 @@ dscan ⍳10
 
 ⍝ april/libraries/dfns/array/demo.lisp:353 — Upstream library dependencies included
 [shannon]←•load "lib/array.bpl"
-⌊10000×shannon •a
+⌊10000×shannon $a
 ⍝ =>
 47004ₓ
 
@@ -5420,7 +5420,7 @@ $f $t $t $f $f
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:200 —
 [alt]←•load "lib/numeric.bpl"
-,alt,3 3⍴•a
+,alt,3 3⍴$a
 ⍝ =>
 "AEIHFDBIHCGBFEC"
 
@@ -6479,7 +6479,7 @@ vtol "fooling around" "with barrels" "in alleys"
 
 ⍝ april/libraries/dfns/string/demo.lisp:224 — 0-origin wrap/xtabs offsets; original April expectation retained
 [wrap]←•load "lib/string.bpl"
-26 wrap •a
+26 wrap $a
 ⍝ =>
 "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
@@ -6510,7 +6510,7 @@ tabText←"whistles        far     and wee"
 
 ⍝ april/libraries/dfns/string/demo.lisp:231 — 0-origin wrap/xtabs offsets; original April expectation retained
 [subs]←•load "lib/array.bpl" ⋄ [wrap]←•load "lib/string.bpl"
-⍕" ·"subs 10 wrap •a
+⍕" ·"subs 10 wrap $a
 ⍝ =>
 •ucs 65 66 67 68 69 70 71 72 73 74 10 75 76 77 78 79 80 81 82 83 84 10 85 86 87 88 89 90
 
@@ -6529,7 +6529,7 @@ tabText←"whistles        far     and wee"
 ⍝ april/libraries/dfns/string/demo.lisp:238 — Upstream string library dependencies and demo setup; 0-origin positions
 [subs]←•load "lib/array.bpl" ⋄ [wrap]←•load "lib/string.bpl"
 tabText←"whistles        far     and wee" 
-n←1↓,⍉⊃[⍬ 1+⍳26] ⋄ ⍕" ·"subs 20 wrap (1⌈n)#(n>0)#⁻¹•a
+n←1↓,⍉⊃[⍬ 1+⍳26] ⋄ ⍕" ·"subs 20 wrap (1⌈n)#(n>0)#⁻¹$a
 ⍝ =>
 •ucs 65 183 66 66 183 67 67 67 183 68 68 68 68 183 69 69 69 69 69 10 70 70 70 70 70 70 183 71 71 71 71 71 71 71 10 72 72 72 72 72 72 72 72 183 73 73 73 73 73 73 73 73 73 10 74 74 74 74 74 74 74 74 74 74 10 75 75 75 75 75 75 75 75 75 75 75 10 76 76 76 76 76 76 76 76 76 76 76 76 10 77 77 77 77 77 77 77 77 77 77 77 77 77 10 78 78 78 78 78 78 78 78 78 78 78 78 78 78 10 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 10 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 10 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 10 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 10 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 10 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 10 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 10 85 10 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 10 86 86 10 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 10 87 87 87 10 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 10 88 88 88 88 10 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 10 89 89 89 89 89 10 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 10 90 90 90 90 90 90
 
@@ -6728,7 +6728,7 @@ cmat←["  twas  ever  thus  " ⋄ "  heart with  clay  "]
 
 ⍝ april/libraries/dfns/tree/demo.lisp:16 — Self-contained library example with full setup and glyph-only matrix display; expectation from Dyalog with ⎕IO←0
 [disp foldl]←•load "lib/array.bpl" ⋄ [put tree]←•load "tests/reference/support/avl.bpl"
-kseq←1↓¨,\' ',12↑•a
+kseq←1↓¨,\' ',12↑$a
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
 ↓disp tree ⍳7
 ⍝ =>
@@ -6742,7 +6742,7 @@ tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6
 
 ⍝ april/libraries/dfns/tree/demo.lisp:35 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 [disp foldl]←•load "lib/array.bpl" ⋄ [put]←•load "tests/reference/support/avl.bpl"
-kseq←1↓¨,\' ',12↑•a
+kseq←1↓¨,\' ',12↑$a
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
 ↓disp kseq
 ⍝ =>
@@ -6750,7 +6750,7 @@ tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6
 
 ⍝ april/libraries/dfns/tree/demo.lisp:39 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 [disp foldl]←•load "lib/array.bpl" ⋄ [fmt put tree]←•load "tests/reference/support/avl.bpl"
-kseq←1↓¨,\' ',12↑•a
+kseq←1↓¨,\' ',12↑$a
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
 ↓disp 4 3⍴1↓fmt∘tree¨kseq
 ⍝ =>
@@ -6758,25 +6758,25 @@ tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6
 
 ⍝ april/libraries/dfns/tree/demo.lisp:75 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 [disp foldl]←•load "lib/array.bpl" ⋄ [fmt put rem tree]←•load "tests/reference/support/avl.bpl"
-kseq←1↓¨,\' ',12↑•a
+kseq←1↓¨,\' ',12↑$a
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
-↓disp 4 3⍴(tree 12↑•a){fmt ⍶ rem foldl ⍵}¨kseq
+↓disp 4 3⍴(tree 12↑$a){fmt ⍶ rem foldl ⍵}¨kseq
 ⍝ =>
 "┌──────────────────┬──────────────────┬──────────────────┐" "│             ┌─A=A│        ┌─B=B┐    │        ┌<C=C     │" "│        ┌─B=B┤    │        │    └>C=C│   ┌─D=D┤         │" "│        │    └─C=C│   ┌─D=D┤         │   │    │    ┌─E=E│" "│   ┌─D=D┤         │   │    │    ┌─E=E│   │    └>F=F┤    │" "│   │    │    ┌─E=E│   │    └─F=F┤    │   │         └─G=G│" "│   │    └─F=F┤    │   │         └─G=G│H=H┤              │" "│   │         └─G=G│H=H┤              │   │    ┌<I=I     │" "│H=H┤              │   │    ┌<I=I     │   └─J=J┤         │" "│   │    ┌<I=I     │   └─J=J┤         │        └>K=K┐    │" "│   └─J=J┤         │        └>K=K┐    │             └>L=L│" "│        └>K=K┐    │             └>L=L│                  │" "│             └>L=L│                  │                  │" "├──────────────────┼──────────────────┼──────────────────┤" "│        ┌>D=D┐    │        ┌─E=E     │   ┌<F=F┐         │" "│        │    └>E=E│   ┌<F=F┤         │   │    └>G=G     │" "│   ┌─F=F┤         │   │    └─G=G     │H=H┤              │" "│   │    └<G=G     │H=H┤              │   │    ┌<I=I     │" "│H=H┤              │   │    ┌<I=I     │   └>J=J┤         │" "│   │    ┌<I=I     │   └>J=J┤         │        └>K=K┐    │" "│   └─J=J┤         │        └>K=K┐    │             └>L=L│" "│        └>K=K┐    │             └>L=L│                  │" "│             └>L=L│                  │                  │" "├──────────────────┼──────────────────┼──────────────────┤" "│        ┌─G=G     │   ┌─H=H┐         │   ┌<I=I          │" "│   ┌─H=H┤         │   │    └>I=I     │J=J┤              │" "│   │    └─I=I     │J=J┤              │   └>K=K┐         │" "│J=J┤              │   └─K=K┐         │        └>L=L     │" "│   └─K=K┐         │        └>L=L     │                  │" "│        └>L=L     │                  │                  │" "├──────────────────┼──────────────────┼──────────────────┤" "│   ┌─J=J          │K=K┐              │L=L               │" "│K=K┤              │   └>L=L          │                  │" "│   └─L=L          │                  │                  │" "└──────────────────┴──────────────────┴──────────────────┘"
 
 ⍝ april/libraries/dfns/tree/demo.lisp:111 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 [disp foldl]←•load "lib/array.bpl" ⋄ [fmt put rem tree]←•load "tests/reference/support/avl.bpl"
-kseq←1↓¨,\' ',12↑•a
+kseq←1↓¨,\' ',12↑$a
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
-↓disp 4 3⍴(tree 12↑•a){fmt ⍶ rem foldl ⍵}¨,\" HIJDEFGKBCLA"
+↓disp 4 3⍴(tree 12↑$a){fmt ⍶ rem foldl ⍵}¨,\" HIJDEFGKBCLA"
 ⍝ =>
 "┌──────────────────┬──────────────────┬──────────────────┐" "│             ┌─A=A│             ┌─A=A│             ┌─A=A│" "│        ┌─B=B┤    │        ┌─B=B┤    │        ┌─B=B┤    │" "│        │    └─C=C│        │    └─C=C│        │    └─C=C│" "│   ┌─D=D┤         │   ┌>D=D┤         │   ┌>D=D┤         │" "│   │    │    ┌─E=E│   │    │    ┌─E=E│   │    │    ┌─E=E│" "│   │    └─F=F┤    │   │    └─F=F┤    │   │    └─F=F┤    │" "│   │         └─G=G│   │         └─G=G│   │         └─G=G│" "│H=H┤              │I=I┤              │J=J┤              │" "│   │    ┌<I=I     │   │    ┌─J=J     │   └<K=K┐         │" "│   └─J=J┤         │   └<K=K┤         │        └>L=L     │" "│        └>K=K┐    │        └─L=L     │                  │" "│             └>L=L│                  │                  │" "├──────────────────┼──────────────────┼──────────────────┤" "│        ┌─A=A     │        ┌─A=A     │        ┌─A=A     │" "│   ┌<B=B┤         │   ┌<B=B┤         │   ┌─B=B┤         │" "│   │    └─C=C     │   │    └─C=C     │   │    └─C=C     │" "│D=D┤              │E=E┤              │F=F┤              │" "│   │         ┌─E=E│   │    ┌>F=F┐    │   │    ┌─G=G     │" "│   │    ┌>F=F┤    │   │    │    └>G=G│   └─K=K┤         │" "│   │    │    └─G=G│   └>K=K┤         │        └─L=L     │" "│   └>K=K┤         │        └<L=L     │                  │" "│        └<L=L     │                  │                  │" "├──────────────────┼──────────────────┼──────────────────┤" "│        ┌─A=A     │        ┌─A=A     │   ┌<A=A          │" "│   ┌─B=B┤         │   ┌>B=B┤         │B=B┤              │" "│   │    └─C=C     │   │    └─C=C     │   │    ┌>C=C     │" "│G=G┤              │K=K┤              │   └>L=L┘         │" "│   └─K=K┐         │   └<L=L          │                  │" "│        └>L=L     │                  │                  │" "├──────────────────┼──────────────────┼──────────────────┤" "│   ┌─A=A          │   ┌>A=A          │A=A               │" "│C=C┤              │L=L┘              │                  │" "│   └─L=L          │                  │                  │" "└──────────────────┴──────────────────┴──────────────────┘"
 
 ⍝ april/libraries/dfns/tree/demo.lisp:147 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 [display foldl]←•load "lib/array.bpl" ⋄ [fmt put tree]←•load "tests/reference/support/avl.bpl"
-kseq←1↓¨,\' ',12↑•a
+kseq←1↓¨,\' ',12↑$a
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
-↓display fmt tree •a
+↓display fmt tree $a
 ⍝ =>
 "┌→──────────────────────┐" "↓                  ┌─A=A│" "│             ┌─B=B┤    │" "│             │    └─C=C│" "│        ┌─D=D┤         │" "│        │    │    ┌─E=E│" "│        │    └─F=F┤    │" "│        │         └─G=G│" "│   ┌─H=H┤              │" "│   │    │         ┌─I=I│" "│   │    │    ┌─J=J┤    │" "│   │    │    │    └─K=K│" "│   │    └─L=L┤         │" "│   │         │    ┌─M=M│" "│   │         └─N=N┤    │" "│   │              └─O=O│" "│P=P┤                   │" "│   │         ┌─Q=Q     │" "│   │    ┌<R=R┤         │" "│   │    │    └─S=S     │" "│   └─T=T┤              │" "│        │         ┌─U=U│" "│        │    ┌─V=V┤    │" "│        │    │    └─W=W│" "│        └>X=X┤         │" "│             └─Y=Y┐    │" "│                  └>Z=Z│" "└───────────────────────┘"
 
@@ -6788,7 +6788,7 @@ tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6
 
 ⍝ april/libraries/dfns/tree/demo.lisp:184 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 [display foldl]←•load "lib/array.bpl" ⋄ [fmt put]←•load "tests/reference/support/avl.bpl"
-kseq←1↓¨,\' ',12↑•a
+kseq←1↓¨,\' ',12↑$a
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
 ↓display fmt tt
 ⍝ =>
@@ -6796,7 +6796,7 @@ tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6
 
 ⍝ april/libraries/dfns/tree/demo.lisp:193 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 [disp foldl]←•load "lib/array.bpl" ⋄ [put vec]←•load "tests/reference/support/avl.bpl"
-kseq←1↓¨,\' ',12↑•a
+kseq←1↓¨,\' ',12↑$a
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
 ↓disp vec tt
 ⍝ =>
@@ -6804,7 +6804,7 @@ tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6
 
 ⍝ april/libraries/dfns/tree/demo.lisp:200 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 [display foldl]←•load "lib/array.bpl" ⋄ [fmt put]←•load "tests/reference/support/avl.bpl"
-kseq←1↓¨,\' ',12↑•a
+kseq←1↓¨,\' ',12↑$a
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]] ⋄ tt←tt put foldl [["one" 11] ["two" 22] ["three" 33]]
 ↓display fmt tt
 ⍝ =>
@@ -6876,7 +6876,7 @@ chk tt
 
 ⍝ april/libraries/dfns/tree/demo.lisp:370 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 [disp foldl]←•load "lib/array.bpl" ⋄ [bal fmt put]←•load "tests/reference/support/sbst.bpl"
-↓disp 7 4⍴{fmt bal 0 put foldl ⍵}¨ 1↓¨,\' ',•a
+↓disp 7 4⍴{fmt bal 0 put foldl ⍵}¨ 1↓¨,\' ',$a
 ⍝ =>
 "┌───────────────────┬───────────────────┬───────────────────┬───────────────────┐" "│                   │A=A                │A=A┐               │   ┌A=A            │" "│                   │                   │   └B=B            │B=B┤               │" "│                   │                   │                   │   └C=C            │" "├───────────────────┼───────────────────┼───────────────────┼───────────────────┤" "│   ┌A=A            │   ┌A=A            │   ┌A=A┐           │       ┌A=A        │" "│B=B┤               │B=B┤               │   │   └B=B        │   ┌B=B┤           │" "│   └C=C┐           │   │   ┌C=C        │C=C┤               │   │   └C=C        │" "│       └D=D        │   └D=D┤           │   │   ┌D=D        │D=D┤               │" "│                   │       └E=E        │   └E=E┤           │   │   ┌E=E        │" "│                   │                   │       └F=F        │   └F=F┤           │" "│                   │                   │                   │       └G=G        │" "├───────────────────┼───────────────────┼───────────────────┼───────────────────┤" "│       ┌A=A        │       ┌A=A        │       ┌A=A        │       ┌A=A        │" "│   ┌B=B┤           │   ┌B=B┤           │   ┌B=B┤           │   ┌B=B┤           │" "│   │   └C=C        │   │   └C=C        │   │   └C=C        │   │   └C=C        │" "│D=D┤               │D=D┤               │D=D┤               │D=D┤               │" "│   │   ┌E=E        │   │   ┌E=E        │   │   ┌E=E┐       │   │       ┌E=E    │" "│   └F=F┤           │   └F=F┤           │   │   │   └F=F    │   │   ┌F=F┤       │" "│       └G=G┐       │       │   ┌G=G    │   └G=G┤           │   │   │   └G=G    │" "│           └H=H    │       └H=H┤       │       │   ┌H=H    │   └H=H┤           │" "│                   │           └I=I    │       └I=I┤       │       │   ┌I=I    │" "│                   │                   │           └J=J    │       └J=J┤       │" "│                   │                   │                   │           └K=K    │" "├───────────────────┼───────────────────┼───────────────────┼───────────────────┤" "│       ┌A=A        │       ┌A=A        │       ┌A=A┐       │           ┌A=A    │" "│   ┌B=B┤           │   ┌B=B┤           │       │   └B=B    │       ┌B=B┤       │" "│   │   └C=C┐       │   │   │   ┌C=C    │   ┌C=C┤           │       │   └C=C    │" "│   │       └D=D    │   │   └D=D┤       │   │   │   ┌D=D    │   ┌D=D┤           │" "│E=E┤               │   │       └E=E    │   │   └E=E┤       │   │   │   ┌E=E    │" "│   │       ┌F=F    │F=F┤               │   │       └F=F    │   │   └F=F┤       │" "│   │   ┌G=G┤       │   │       ┌G=G    │G=G┤               │   │       └G=G    │" "│   │   │   └H=H    │   │   ┌H=H┤       │   │       ┌H=H    │H=H┤               │" "│   └I=I┤           │   │   │   └I=I    │   │   ┌I=I┤       │   │       ┌I=I    │" "│       │   ┌J=J    │   └J=J┤           │   │   │   └J=J    │   │   ┌J=J┤       │" "│       └K=K┤       │       │   ┌K=K    │   └K=K┤           │   │   │   └K=K    │" "│           └L=L    │       └L=L┤       │       │   ┌L=L    │   └L=L┤           │" "│                   │           └M=M    │       └M=M┤       │       │   ┌M=M    │" "│                   │                   │           └N=N    │       └N=N┤       │" "│                   │                   │                   │           └O=O    │" "├───────────────────┼───────────────────┼───────────────────┼───────────────────┤" "│           ┌A=A    │           ┌A=A    │           ┌A=A    │           ┌A=A    │" "│       ┌B=B┤       │       ┌B=B┤       │       ┌B=B┤       │       ┌B=B┤       │" "│       │   └C=C    │       │   └C=C    │       │   └C=C    │       │   └C=C    │" "│   ┌D=D┤           │   ┌D=D┤           │   ┌D=D┤           │   ┌D=D┤           │" "│   │   │   ┌E=E    │   │   │   ┌E=E    │   │   │   ┌E=E    │   │   │   ┌E=E    │" "│   │   └F=F┤       │   │   └F=F┤       │   │   └F=F┤       │   │   └F=F┤       │" "│   │       └G=G    │   │       └G=G    │   │       └G=G    │   │       └G=G    │" "│H=H┤               │H=H┤               │H=H┤               │H=H┤               │" "│   │       ┌I=I    │   │       ┌I=I    │   │       ┌I=I    │   │       ┌I=I    │" "│   │   ┌J=J┤       │   │   ┌J=J┤       │   │   ┌J=J┤       │   │   ┌J=J┤       │" "│   │   │   └K=K    │   │   │   └K=K    │   │   │   └K=K    │   │   │   └K=K    │" "│   └L=L┤           │   └L=L┤           │   └L=L┤           │   └L=L┤           │" "│       │   ┌M=M    │       │   ┌M=M    │       │   ┌M=M┐   │       │       ┌M=M│" "│       └N=N┤       │       └N=N┤       │       │   │   └N=N│       │   ┌N=N┤   │" "│           └O=O┐   │           │   ┌O=O│       └O=O┤       │       │   │   └O=O│" "│               └P=P│           └P=P┤   │           │   ┌P=P│       └P=P┤       │" "│                   │               └Q=Q│           └Q=Q┤   │           │   ┌Q=Q│" "│                   │                   │               └R=R│           └R=R┤   │" "│                   │                   │                   │               └S=S│" "├───────────────────┼───────────────────┼───────────────────┼───────────────────┤" "│           ┌A=A    │           ┌A=A    │           ┌A=A    │           ┌A=A    │" "│       ┌B=B┤       │       ┌B=B┤       │       ┌B=B┤       │       ┌B=B┤       │" "│       │   └C=C    │       │   └C=C    │       │   └C=C    │       │   └C=C    │" "│   ┌D=D┤           │   ┌D=D┤           │   ┌D=D┤           │   ┌D=D┤           │" "│   │   │   ┌E=E    │   │   │   ┌E=E    │   │   │   ┌E=E    │   │   │   ┌E=E    │" "│   │   └F=F┤       │   │   └F=F┤       │   │   └F=F┤       │   │   └F=F┤       │" "│   │       └G=G    │   │       └G=G    │   │       └G=G    │   │       └G=G    │" "│H=H┤               │H=H┤               │H=H┤               │H=H┤               │" "│   │       ┌I=I    │   │       ┌I=I    │   │       ┌I=I┐   │   │           ┌I=I│" "│   │   ┌J=J┤       │   │   ┌J=J┤       │   │       │   └J=J│   │       ┌J=J┤   │" "│   │   │   └K=K┐   │   │   │   │   ┌K=K│   │   ┌K=K┤       │   │       │   └K=K│" "│   │   │       └L=L│   │   │   └L=L┤   │   │   │   │   ┌L=L│   │   ┌L=L┤       │" "│   └M=M┤           │   │   │       └M=M│   │   │   └M=M┤   │   │   │   │   ┌M=M│" "│       │       ┌N=N│   └N=N┤           │   │   │       └N=N│   │   │   └N=N┤   │" "│       │   ┌O=O┤   │       │       ┌O=O│   └O=O┤           │   │   │       └O=O│" "│       │   │   └P=P│       │   ┌P=P┤   │       │       ┌P=P│   └P=P┤           │" "│       └Q=Q┤       │       │   │   └Q=Q│       │   ┌Q=Q┤   │       │       ┌Q=Q│" "│           │   ┌R=R│       └R=R┤       │       │   │   └R=R│       │   ┌R=R┤   │" "│           └S=S┤   │           │   ┌S=S│       └S=S┤       │       │   │   └S=S│" "│               └T=T│           └T=T┤   │           │   ┌T=T│       └T=T┤       │" "│                   │               └U=U│           └U=U┤   │           │   ┌U=U│" "│                   │                   │               └V=V│           └V=V┤   │" "│                   │                   │                   │               └W=W│" "├───────────────────┼───────────────────┼───────────────────┼───────────────────┤" "│           ┌A=A    │           ┌A=A    │           ┌A=A    │                   │" "│       ┌B=B┤       │       ┌B=B┤       │       ┌B=B┤       │                   │" "│       │   └C=C    │       │   └C=C    │       │   └C=C    │                   │" "│   ┌D=D┤           │   ┌D=D┤           │   ┌D=D┤           │                   │" "│   │   │   ┌E=E    │   │   │   ┌E=E    │   │   │   ┌E=E┐   │                   │" "│   │   └F=F┤       │   │   └F=F┤       │   │   │   │   └F=F│                   │" "│   │       └G=G┐   │   │       │   ┌G=G│   │   └G=G┤       │                   │" "│   │           └H=H│   │       └H=H┤   │   │       │   ┌H=H│                   │" "│I=I┤               │   │           └I=I│   │       └I=I┤   │                   │" "│   │           ┌J=J│J=J┤               │   │           └J=J│                   │" "│   │       ┌K=K┤   │   │           ┌K=K│K=K┤               │                   │" "│   │       │   └L=L│   │       ┌L=L┤   │   │           ┌L=L│                   │" "│   │   ┌M=M┤       │   │       │   └M=M│   │       ┌M=M┤   │                   │" "│   │   │   │   ┌N=N│   │   ┌N=N┤       │   │       │   └N=N│                   │" "│   │   │   └O=O┤   │   │   │   │   ┌O=O│   │   ┌O=O┤       │                   │" "│   │   │       └P=P│   │   │   └P=P┤   │   │   │   │   ┌P=P│                   │" "│   └Q=Q┤           │   │   │       └Q=Q│   │   │   └Q=Q┤   │                   │" "│       │       ┌R=R│   └R=R┤           │   │   │       └R=R│                   │" "│       │   ┌S=S┤   │       │       ┌S=S│   └S=S┤           │                   │" "│       │   │   └T=T│       │   ┌T=T┤   │       │       ┌T=T│                   │" "│       └U=U┤       │       │   │   └U=U│       │   ┌U=U┤   │                   │" "│           │   ┌V=V│       └V=V┤       │       │   │   └V=V│                   │" "│           └W=W┤   │           │   ┌W=W│       └W=W┤       │                   │" "│               └X=X│           └X=X┤   │           │   ┌X=X│                   │" "│                   │               └Y=Y│           └Y=Y┤   │                   │" "│                   │                   │               └Z=Z│                   │" "└───────────────────┴───────────────────┴───────────────────┴───────────────────┘"
 
@@ -6947,7 +6947,7 @@ pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven
 ⍝ april/libraries/dfns/tree/demo.lisp:535 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 [disp]←•load "lib/array.bpl" ⋄ [tree vec]←•load "tests/reference/support/redblack.bpl"
 pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]] ⋄ tt←tree pairs
-kseq←1↓¨,\' ',12↑•a
+kseq←1↓¨,\' ',12↑$a
 ↓disp vec tt
 ⍝ =>
 "┌────────┬────────┬───────┬─────────┬───────┬─────────┬───────┐" "│┌────┬─┐│┌────┬─┐│┌───┬─┐│┌─────┬─┐│┌───┬─┐│┌─────┬─┐│┌───┬─┐│" "││five│5│││four│4│││one│1│││seven│7│││six│6│││three│3│││two│2││" "│└────┴─┘│└────┴─┘│└───┴─┘│└─────┴─┘│└───┴─┘│└─────┴─┘│└───┴─┘│" "└────────┴────────┴───────┴─────────┴───────┴─────────┴───────┘"
@@ -6989,7 +6989,7 @@ pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven
 ⍝ april/libraries/dfns/tree/demo.lisp:579 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 [disp]←•load "lib/array.bpl" ⋄ [fmt tree]←•load "tests/reference/support/redblack.bpl"
 pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]] ⋄ tt←tree pairs
-kseq←1↓¨,\' ',12↑•a
+kseq←1↓¨,\' ',12↑$a
 ↓disp 4 3⍴fmt∘tree¨kseq
 ⍝ =>
 "┌───────────────────────────┬─────────────────────────────────┬─────────────────────────────────┐" "│[∘]                        │     ┌[∘]                        │     ┌[∘]                        │" "│                           │[A=A]┤                           │[A=A]┤                           │" "│                           │     └[∘]                        │     │     ┌[∘]                  │" "│                           │                                 │     └<B=B>┤                     │" "│                           │                                 │           └[∘]                  │" "├───────────────────────────┼─────────────────────────────────┼─────────────────────────────────┤" "│           ┌[∘]            │           ┌[∘]                  │           ┌[∘]                  │" "│     ┌<A=A>┤               │     ┌[A=A]┤                     │     ┌[A=A]┤                     │" "│     │     └[∘]            │     │     └[∘]                  │     │     └[∘]                  │" "│[B=B]┤                     │[B=B]┤                           │[B=B]┤                           │" "│     │     ┌[∘]            │     │     ┌[∘]                  │     │           ┌[∘]            │" "│     └<C=C>┤               │     └[C=C]┤                     │     │     ┌<C=C>┤               │" "│           └[∘]            │           │     ┌[∘]            │     │     │     └[∘]            │" "│                           │           └<D=D>┤               │     └[D=D]┤                     │" "│                           │                 └[∘]            │           │     ┌[∘]            │" "│                           │                                 │           └<E=E>┤               │" "│                           │                                 │                 └[∘]            │" "├───────────────────────────┼─────────────────────────────────┼─────────────────────────────────┤" "│           ┌[∘]            │           ┌[∘]                  │                 ┌[∘]            │" "│     ┌[A=A]┤               │     ┌[A=A]┤                     │           ┌[A=A]┤               │" "│     │     └[∘]            │     │     └[∘]                  │           │     └[∘]            │" "│[B=B]┤                     │[B=B]┤                           │     ┌<B=B>┤                     │" "│     │           ┌[∘]      │     │           ┌[∘]            │     │     │     ┌[∘]            │" "│     │     ┌[C=C]┤         │     │     ┌[C=C]┤               │     │     └[C=C]┤               │" "│     │     │     └[∘]      │     │     │     └[∘]            │     │           └[∘]            │" "│     └<D=D>┤               │     └<D=D>┤                     │[D=D]┤                           │" "│           │     ┌[∘]      │           │           ┌[∘]      │     │           ┌[∘]            │" "│           └[E=E]┤         │           │     ┌<E=E>┤         │     │     ┌[E=E]┤               │" "│                 │     ┌[∘]│           │     │     └[∘]      │     │     │     └[∘]            │" "│                 └<F=F>┤   │           └[F=F]┤               │     └<F=F>┤                     │" "│                       └[∘]│                 │     ┌[∘]      │           │     ┌[∘]            │" "│                           │                 └<G=G>┤         │           └[G=G]┤               │" "│                           │                       └[∘]      │                 │     ┌[∘]      │" "│                           │                                 │                 └<H=H>┤         │" "│                           │                                 │                       └[∘]      │" "├───────────────────────────┼─────────────────────────────────┼─────────────────────────────────┤" "│                 ┌[∘]      │                 ┌[∘]            │                 ┌[∘]            │" "│           ┌[A=A]┤         │           ┌[A=A]┤               │           ┌[A=A]┤               │" "│           │     └[∘]      │           │     └[∘]            │           │     └[∘]            │" "│     ┌<B=B>┤               │     ┌[B=B]┤                     │     ┌[B=B]┤                     │" "│     │     │     ┌[∘]      │     │     │     ┌[∘]            │     │     │     ┌[∘]            │" "│     │     └[C=C]┤         │     │     └[C=C]┤               │     │     └[C=C]┤               │" "│     │           └[∘]      │     │           └[∘]            │     │           └[∘]            │" "│[D=D]┤                     │[D=D]┤                           │[D=D]┤                           │" "│     │           ┌[∘]      │     │           ┌[∘]            │     │           ┌[∘]            │" "│     │     ┌[E=E]┤         │     │     ┌[E=E]┤               │     │     ┌[E=E]┤               │" "│     │     │     └[∘]      │     │     │     └[∘]            │     │     │     └[∘]            │" "│     └<F=F>┤               │     └[F=F]┤                     │     └[F=F]┤                     │" "│           │           ┌[∘]│           │           ┌[∘]      │           │           ┌[∘]      │" "│           │     ┌<G=G>┤   │           │     ┌[G=G]┤         │           │     ┌[G=G]┤         │" "│           │     │     └[∘]│           │     │     └[∘]      │           │     │     └[∘]      │" "│           └[H=H]┤         │           └<H=H>┤               │           └<H=H>┤               │" "│                 │     ┌[∘]│                 │     ┌[∘]      │                 │           ┌[∘]│" "│                 └<I=I>┤   │                 └[I=I]┤         │                 │     ┌<I=I>┤   │" "│                       └[∘]│                       │     ┌[∘]│                 │     │     └[∘]│" "│                           │                       └<J=J>┤   │                 └[J=J]┤         │" "│                           │                             └[∘]│                       │     ┌[∘]│" "│                           │                                 │                       └<K=K>┤   │" "│                           │                                 │                             └[∘]│" "└───────────────────────────┴─────────────────────────────────┴─────────────────────────────────┘"
@@ -6997,8 +6997,8 @@ kseq←1↓¨,\' ',12↑•a
 ⍝ april/libraries/dfns/tree/demo.lisp:642 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 [disp foldl]←•load "lib/array.bpl" ⋄ [fmt rem tree]←•load "tests/reference/support/redblack.bpl"
 pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]] ⋄ tt←tree pairs
-kseq←1↓¨,\' ',12↑•a
-↓disp 4 3⍴fmt¨(tree 12↑•a)↣(rem foldl)¨kseq
+kseq←1↓¨,\' ',12↑$a
+↓disp 4 3⍴fmt¨(tree 12↑$a)↣(rem foldl)¨kseq
 ⍝ =>
 "┌─────────────────────────────────┬───────────────────────────┬───────────────────────────┐" "│                 ┌[∘]            │                 ┌[∘]      │                 ┌[∘]      │" "│           ┌[A=A]┤               │           ┌[B=B]┤         │           ┌[C=C]┤         │" "│           │     └[∘]            │           │     │     ┌[∘]│           │     └[∘]      │" "│     ┌[B=B]┤                     │           │     └<C=C>┤   │     ┌[D=D]┤               │" "│     │     │     ┌[∘]            │           │           └[∘]│     │     │           ┌[∘]│" "│     │     └[C=C]┤               │     ┌[D=D]┤               │     │     │     ┌[E=E]┤   │" "│     │           └[∘]            │     │     │           ┌[∘]│     │     │     │     └[∘]│" "│[D=D]┤                           │     │     │     ┌[E=E]┤   │     │     └<F=F>┤         │" "│     │                 ┌[∘]      │     │     │     │     └[∘]│     │           │     ┌[∘]│" "│     │           ┌[E=E]┤         │     │     └<F=F>┤         │     │           └[G=G]┤   │" "│     │           │     └[∘]      │     │           │     ┌[∘]│     │                 └[∘]│" "│     │     ┌<F=F>┤               │     │           └[G=G]┤   │[H=H]┤                     │" "│     │     │     │     ┌[∘]      │     │                 └[∘]│     │           ┌[∘]      │" "│     │     │     └[G=G]┤         │[H=H]┤                     │     │     ┌[I=I]┤         │" "│     │     │           └[∘]      │     │           ┌[∘]      │     │     │     └[∘]      │" "│     └[H=H]┤                     │     │     ┌[I=I]┤         │     └[J=J]┤               │" "│           │           ┌[∘]      │     │     │     └[∘]      │           │     ┌[∘]      │" "│           │     ┌[I=I]┤         │     └[J=J]┤               │           └[K=K]┤         │" "│           │     │     └[∘]      │           │     ┌[∘]      │                 │     ┌[∘]│" "│           └<J=J>┤               │           └[K=K]┤         │                 └<L=L>┤   │" "│                 │     ┌[∘]      │                 │     ┌[∘]│                       └[∘]│" "│                 └[K=K]┤         │                 └<L=L>┤   │                           │" "│                       │     ┌[∘]│                       └[∘]│                           │" "│                       └<L=L>┤   │                           │                           │" "│                             └[∘]│                           │                           │" "├─────────────────────────────────┼───────────────────────────┼───────────────────────────┤" "│                 ┌[∘]            │                 ┌[∘]      │           ┌[∘]            │" "│           ┌[D=D]┤               │           ┌[E=E]┤         │     ┌[F=F]┤               │" "│           │     │     ┌[∘]      │           │     └[∘]      │     │     │     ┌[∘]      │" "│           │     └<E=E>┤         │     ┌[F=F]┤               │     │     └<G=G>┤         │" "│           │           └[∘]      │     │     │     ┌[∘]      │     │           └[∘]      │" "│     ┌[F=F]┤                     │     │     └[G=G]┤         │[H=H]┤                     │" "│     │     │     ┌[∘]            │     │           └[∘]      │     │           ┌[∘]      │" "│     │     └[G=G]┤               │[H=H]┤                     │     │     ┌[I=I]┤         │" "│     │           └[∘]            │     │           ┌[∘]      │     │     │     └[∘]      │" "│[H=H]┤                           │     │     ┌[I=I]┤         │     └<J=J>┤               │" "│     │           ┌[∘]            │     │     │     └[∘]      │           │     ┌[∘]      │" "│     │     ┌[I=I]┤               │     └[J=J]┤               │           └[K=K]┤         │" "│     │     │     └[∘]            │           │     ┌[∘]      │                 │     ┌[∘]│" "│     └[J=J]┤                     │           └[K=K]┤         │                 └<L=L>┤   │" "│           │     ┌[∘]            │                 │     ┌[∘]│                       └[∘]│" "│           └[K=K]┤               │                 └<L=L>┤   │                           │" "│                 │     ┌[∘]      │                       └[∘]│                           │" "│                 └<L=L>┤         │                           │                           │" "│                       └[∘]      │                           │                           │" "├─────────────────────────────────┼───────────────────────────┼───────────────────────────┤" "│           ┌[∘]                  │           ┌[∘]            │           ┌[∘]            │" "│     ┌[G=G]┤                     │     ┌[H=H]┤               │     ┌[I=I]┤               │" "│     │     └[∘]                  │     │     │     ┌[∘]      │     │     └[∘]            │" "│[H=H]┤                           │     │     └<I=I>┤         │[J=J]┤                     │" "│     │           ┌[∘]            │     │           └[∘]      │     │     ┌[∘]            │" "│     │     ┌[I=I]┤               │[J=J]┤                     │     └[K=K]┤               │" "│     │     │     └[∘]            │     │     ┌[∘]            │           │     ┌[∘]      │" "│     └<J=J>┤                     │     └[K=K]┤               │           └<L=L>┤         │" "│           │     ┌[∘]            │           │     ┌[∘]      │                 └[∘]      │" "│           └[K=K]┤               │           └<L=L>┤         │                           │" "│                 │     ┌[∘]      │                 └[∘]      │                           │" "│                 └<L=L>┤         │                           │                           │" "│                       └[∘]      │                           │                           │" "├─────────────────────────────────┼───────────────────────────┼───────────────────────────┤" "│           ┌[∘]                  │     ┌[∘]                  │     ┌[∘]                  │" "│     ┌[J=J]┤                     │[K=K]┤                     │[L=L]┤                     │" "│     │     └[∘]                  │     │     ┌[∘]            │     └[∘]                  │" "│[K=K]┤                           │     └<L=L>┤               │                           │" "│     │     ┌[∘]                  │           └[∘]            │                           │" "│     └[L=L]┤                     │                           │                           │" "│           └[∘]                  │                           │                           │" "└─────────────────────────────────┴───────────────────────────┴───────────────────────────┘"
 
@@ -7142,37 +7142,37 @@ tnest ,∘⊂¨0 "tea"
 
 ⍝ april/libraries/dfns/tree/demo.lisp:928 — Upstream tree-nesting setup; 0-origin glyph-only disp helper
 [disp]←•load "lib/array.bpl" ⋄ [tnest]←•load "lib/tree.bpl"
-↓disp tnest[0 1 1 1 1 1 1 1;↓8 3⍴•a]
+↓disp tnest[0 1 1 1 1 1 1 1;↓8 3⍴$a]
 ⍝ =>
 "┌───┬───┬───┬───┬───┬───┬───┬───┐" "│ABC│DEF│GHI│JKL│MNO│PQR│STU│VWX│" "└───┴───┴───┴───┴───┴───┴───┴───┘"
 
 ⍝ april/libraries/dfns/tree/demo.lisp:931 — Upstream tree-nesting setup; 0-origin glyph-only disp helper
 [disp]←•load "lib/array.bpl" ⋄ [tnest]←•load "lib/tree.bpl"
-↓disp tnest[0 1 2 1 1 1 1 1;↓8 3⍴•a]
+↓disp tnest[0 1 2 1 1 1 1 1;↓8 3⍴$a]
 ⍝ =>
 "┌───┬─────────┬───┬───┬───┬───┬───┐" "│ABC│┌───┬───┐│JKL│MNO│PQR│STU│VWX│" "│   ││DEF│GHI││   │   │   │   │   │" "│   │└───┴───┘│   │   │   │   │   │" "└───┴─────────┴───┴───┴───┴───┴───┘"
 
 ⍝ april/libraries/dfns/tree/demo.lisp:936 — Upstream tree-nesting setup; 0-origin glyph-only disp helper
 [disp]←•load "lib/array.bpl" ⋄ [tnest]←•load "lib/tree.bpl"
-↓disp tnest[0 1 2 1 2 1 1 1;↓8 3⍴•a]
+↓disp tnest[0 1 2 1 2 1 1 1;↓8 3⍴$a]
 ⍝ =>
 "┌───┬─────────┬─────────┬───┬───┬───┐" "│ABC│┌───┬───┐│┌───┬───┐│PQR│STU│VWX│" "│   ││DEF│GHI│││JKL│MNO││   │   │   │" "│   │└───┴───┘│└───┴───┘│   │   │   │" "└───┴─────────┴─────────┴───┴───┴───┘"
 
 ⍝ april/libraries/dfns/tree/demo.lisp:941 — Upstream tree-nesting setup; 0-origin glyph-only disp helper
 [disp]←•load "lib/array.bpl" ⋄ [tnest]←•load "lib/tree.bpl"
-↓disp tnest[0 1 2 2 2 1 1 1;↓8 3⍴•a]
+↓disp tnest[0 1 2 2 2 1 1 1;↓8 3⍴$a]
 ⍝ =>
 "┌───┬─────────────────┬───┬───┬───┐" "│ABC│┌───┬───┬───┬───┐│PQR│STU│VWX│" "│   ││DEF│GHI│JKL│MNO││   │   │   │" "│   │└───┴───┴───┴───┘│   │   │   │" "└───┴─────────────────┴───┴───┴───┘"
 
 ⍝ april/libraries/dfns/tree/demo.lisp:946 — Upstream tree-nesting setup; 0-origin glyph-only disp helper
 [disp]←•load "lib/array.bpl" ⋄ [tnest]←•load "lib/tree.bpl"
-↓disp tnest[0 1 1 2 2 1 2 1;↓8 3⍴•a]
+↓disp tnest[0 1 1 2 2 1 2 1;↓8 3⍴$a]
 ⍝ =>
 "┌───┬───┬─────────────┬─────────┬───┐" "│ABC│DEF│┌───┬───┬───┐│┌───┬───┐│VWX│" "│   │   ││GHI│JKL│MNO│││PQR│STU││   │" "│   │   │└───┴───┴───┘│└───┴───┘│   │" "└───┴───┴─────────────┴─────────┴───┘"
 
 ⍝ april/libraries/dfns/tree/demo.lisp:951 — Upstream tree-nesting setup; 0-origin glyph-only disp helper
 [disp]←•load "lib/array.bpl" ⋄ [tnest]←•load "lib/tree.bpl"
-↓disp tnest[0 1 2 3 1 2 3 1;↓8 3⍴•a]
+↓disp tnest[0 1 2 3 1 2 3 1;↓8 3⍴$a]
 ⍝ =>
 "┌───┬───────────────┬───────────────┬───┐" "│ABC│┌───┬─────────┐│┌───┬─────────┐│VWX│" "│   ││DEF│┌───┬───┐│││MNO│┌───┬───┐││   │" "│   ││   ││GHI│JKL││││   ││PQR│STU│││   │" "│   ││   │└───┴───┘│││   │└───┴───┘││   │" "│   │└───┴─────────┘│└───┴─────────┘│   │" "└───┴───────────────┴───────────────┴───┘"
 
@@ -7418,3 +7418,52 @@ r_1←"a" "b" "d" "c" "e":[2 0 d 5 e]
 r_2←"a" "b" "d" "c" "e":[3 2 d 5 e]
 r_3←"a" "b" "d" "c" "e":[4 4 d 5 e]
 "a" "b" "c":[1 2 [r_1 r_2 r_3]]
+
+⍝ april:487 — `⎕RL←s 1` before each deal becomes a fresh generator `•rand s`. `d₀` takes the first deal, because BPL's `⊃` mixes
+d←{g←•rand 5 ⋄ 10 g.deal ⍵}¨10⍴1000 ⋄ ∧/d≡¨⊂d₀   ⍝ $t
+
+⍝ april:488 — `⎕RL←s 1` before each deal becomes a fresh generator `•rand s`. `d₀` takes the first deal, because BPL's `⊃` mixes
+d←{g←•rand 7 ⋄ 10 g.deal ⍵}¨10⍴1000 ⋄ ∧/d≡¨⊂d₀   ⍝ $t
+
+⍝ april:489 — `⎕RL←⍬ 2`, a fresh random seed, becomes an unseeded deal with `¿`. `d₀` takes the first deal, because BPL's `⊃` mixes
+d←{10¿⍵}¨10⍴1000 ⋄ ∧/d≡¨⊂d₀   ⍝ $f
+
+⍝ april:1300 — Expand with only positive counts is replicate: `N\Y` is `N#Y`
+4#2   ⍝ [2 2 2 2]
+
+⍝ april:1301 — Expand with only positive counts is replicate: `N\Y` is `N#Y`
+3#7   ⍝ [7 7 7]
+
+⍝ april:1302 — Expand written with `#`. Dyalog's `N\Y` is `N#Y` with each 0 count written as `¯1`
+1 ¯2 3 ¯4 5#'.'   ⍝ ".  ...    ....."
+
+⍝ april:1303 — Expand written with `#`. Dyalog's `N\Y` is `N#Y` with each 0 count written as `¯1`. Positions count from 0, so `⍳n` became `1+⍳n`
+1 ¯2 2 ¯1 1#⍠¯1(3+2 3⍴1+⍳6)
+[4 0 0 5 5 0 6 ⋄ 7 0 0 8 8 0 9]
+
+⍝ april:1304 — Expand written with `#`. Dyalog's `N\Y` is `N#Y` with each 0 count written as `¯1`. Positions count from 0, so `⍳n` became `1+⍳n`
+1 ¯2 2 ¯1 1#1+⍳3   ⍝ [1 0 0 2 2 0 3]
+
+⍝ april:1306 — Expand written with `#`. Dyalog's `N\Y` is `N#Y` with each 0 count written as `¯1`. Positions count from 0, so `⍳n` became `1+⍳n`
+1 ¯2 3 4#3 5⍴1+⍳9
+[1 2 3 4 5 ⋄ 0 0 0 0 0 ⋄ 0 0 0 0 0 ⋄ 6 7 8 9 1 ⋄ 6 7 8 9 1 ⋄ 6 7 8 9 1 ⋄ 2 3 4 5 6 ⋄ 2 3 4 5 6 ⋄ 2 3 4 5 6 ⋄ 2 3 4 5 6]
+
+⍝ april:1310 — Expand written with `#⁻¹`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻¹Y`. Positions count from 0, so `⍳n` became `1+⍳n`
+N←¯3 ⋄ (1⌈|N)#(N>0)#⁻¹0⍴⊂2 2⍴[(⊂3 3⍴1+⍳6) 9 8 7]
+[[⊂[0 0 0 ⋄ 0 0 0 ⋄ 0 0 0] 0 ⋄ 0 0] [⊂[0 0 0 ⋄ 0 0 0 ⋄ 0 0 0] 0 ⋄ 0 0] [⊂[0 0 0 ⋄ 0 0 0 ⋄ 0 0 0] 0 ⋄ 0 0]]
+
+⍝ april:1328 — Expand with only positive counts is replicate: `N\Y` is `N#Y`
+2#5   ⍝ [5 5]
+
+⍝ april:1329 — Expand with only positive counts is replicate: `N\Y` is `N#Y`
+2#1   ⍝ [1 1]
+
+⍝ april:1330 — Expand written with `#`. Dyalog's `N\Y` is `N#Y` with each 0 count written as `¯1`
+1 ¯2 3 ¯4 5#3   ⍝ [3 0 0 3 3 3 0 0 0 0 3 3 3 3 3]
+
+⍝ april:1945 — Selection from within an array with spaces in axis specification; Bracket indexing written with `⌷`, with `∞` for the elided axis; Positions count from 0, so `⍳n` became `1+⍳n`
+[∞;3 2]⌷3 4⍴1+⍳12   ⍝ [4 3 ⋄ 8 7 ⋄ 12 11]
+
+⍝ april:2055 — Index of variable with value assigned inside its own index; Bracket indexing written with `⌷`. The assignment is on the right, which BPL evaluates first
+[⍋y]⌷y←1 8 4 2   ⍝ [1 2 4 8]
+

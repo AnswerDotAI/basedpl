@@ -1116,9 +1116,9 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
         let scale = 10_f64.powi(places);
         let scaled = y * scale;
         let y = if scale.is_finite() && scale != 0.0 && scaled.abs() < 1e16 { scaled.round() / scale } else { y };
-        if precision >= 0 { if y == 0.0 && y.is_sign_negative() { format!(" {:.*}", digits, 0.0) } else { format!("{y:.digits$}") } } else {
-            crate::number::scientific(&format!("{:.*e}", digits - 1, y))
-        }
+        if precision >= 0 {
+            if y == 0.0 && y.is_sign_negative() { format!(" {:.*}", digits, 0.0) } else { format!("{y:.digits$}") }
+        } else { crate::number::scientific(&format!("{:.*e}", digits - 1, y)) }
     };
     if !n.is_exact() {
         let mut significant = 0;
@@ -1914,9 +1914,11 @@ fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, 
     // Validate even an unused singleton count (e.g. fractional count / empty vector).
     let counts = counts.as_items().integers().error_at(span, "replication count must be a representable integer")?;
     let single = counts.len() == 1;
+    // How many counts use up a cell. A negative count uses up none.
+    let items = counts.iter().filter(|&&n| n >= 0).count();
     let len = match (inverse, single) {
         (false, true) => traversal.len,
-        (false, false) if traversal.len == 1 || counts.len() == traversal.len => counts.len(),
+        (false, false) if traversal.len == 1 || items == traversal.len => counts.len(),
         (false, false) => return Err(span.error(ErrorKind::Length, "replication counts and data do not agree")),
         (true, true) if counts[0].unsigned_abs() as usize == traversal.len => 1,
         (true, true) if counts[0] > 0 && traversal.len % counts[0] as usize == 0 => traversal.len / counts[0] as usize,
@@ -1927,7 +1929,7 @@ fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, 
     // The or of the counts is negative when any count is, and at most 1 when they are Boolean.
     let (any, sum) = or_and_sum(&counts);
     let boolean = !single && any as u64 <= 1;
-    shape[axis] = if inverse { len } else if boolean { sum as usize } else {
+    shape[axis] = if inverse { if single { len } else { items } } else if boolean { sum as usize } else {
         (0..len)
             .try_fold(0usize, |total, j| total.checked_add(count(j).unsigned_abs() as usize))
             .ok_or_else(|| span.error(ErrorKind::Limit, "replication count overflow"))?
@@ -1948,10 +1950,11 @@ fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, 
     let (mut table, mut positions, mut consumed) = (Vec::with_capacity(shape[axis]), Vec::new(), 0usize);
     for j in 0..len {
         let n = count(j);
-        let source = if traversal.len == 1 { 0 } else if inverse { consumed } else { j };
+        let source = if traversal.len == 1 { 0 } else { consumed };
         let pos = (n > 0).then_some(source);
-        consumed = consumed.saturating_add(n.unsigned_abs() as usize);
-        let repeats = if inverse { 1 } else { n.unsigned_abs() as usize };
+        // A negative count inserts fills and uses up no item. The inverse uses up the cells each count made, and gives nothing back for a negative count.
+        consumed = consumed.saturating_add(if inverse { n.unsigned_abs() as usize } else { usize::from(n >= 0) });
+        let repeats = if inverse { usize::from(single || n >= 0) } else { n.unsigned_abs() as usize };
         let offset = pos.map(|p| p * traversal.inner);
         if repeats == 1 { table.push(offset) }
         else { table.extend(std::iter::repeat_n(offset, repeats)) }

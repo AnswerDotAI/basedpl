@@ -27,6 +27,7 @@ impl Inspection {
 
 /// Help for a system name, syntax token or glyph.
 pub(crate) fn documentation(symbol: &str) -> Option<&'static str> {
+    if symbol.starts_with('$') { return page(symbol); }
     if let Some(help) = crate::system::help(symbol) { return Some(help); }
     page(match symbol {
         "::" => "error-guard",
@@ -38,7 +39,7 @@ pub(crate) fn documentation(symbol: &str) -> Option<&'static str> {
     })
 }
 
-/// The glyph page `name` from `nbs/glyphs`, or the block `•x` of `nbs/system-functions.qmd`.
+/// The glyph page `name` from `nbs/glyphs`, or a named block of `nbs/system-functions.qmd`.
 pub(crate) fn page(name: &str) -> Option<&'static str> { HELP.iter().find(|(page, _)| *page == name).map(|(_, text)| *text) }
 
 pub(crate) fn item(text: &str) -> Option<NodeKind> {
@@ -56,7 +57,7 @@ pub(crate) fn help_command(code: &str) -> Option<(&str, bool)> {
     words.next().is_none().then_some((name, detail))
 }
 
-pub(crate) fn word_char(c: char) -> bool { crate::syntax::name_char(c) || c == '•' || c.is_ascii_digit() }
+pub(crate) fn word_char(c: char) -> bool { crate::syntax::name_char(c) || matches!(c, '•' | '$') || c.is_ascii_digit() }
 
 pub(crate) fn at_cursor(code: &str, cursor: usize) -> Option<&str> {
     if documentation(code.trim()).is_some() { return Some(code.trim()); }

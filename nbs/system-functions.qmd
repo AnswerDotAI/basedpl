@@ -1,33 +1,37 @@
 # System functions
 
-A system function is a built-in function whose name starts with [`•`](glyphs/bullet.qmd), as in `•ucs` or `•json`. Type `•` with Alt-y. Names are case-insensitive. `•a` and `•d` are constant arrays, and every other name is a function. Many system functions take their options as a left argument. `]help •name` shows the full help for one name.
+A system function is a built-in function whose name starts with [`•`](glyphs/bullet.qmd), as in `•ucs` or `•json`. Type `•` with Alt-y. Names are case-insensitive. Many system functions take their options as a left argument. `]help •name` shows the full help for one name. Built-in values use `$`.
 
 In Python, the workspace object `bpl` has each system function under its name without `•`. Options become keyword arguments, as in `bpl.json('{"a": null}', fill=0)`. [Python](python.ipynb) covers the calling conventions.
 
 <!-- help -->
 
+## Constants
+
+<!-- help $a -->
+
+### `$a` — Alphabet {#a}
+
+`$a` is the uppercase Latin alphabet.
+
+```bpl
+3↑$a               ⍝ "ABC"
+$a⍳"CAB"           ⍝ [2 0 1]ₓ
+```
+
+<!-- help $d -->
+
+### `$d` — Digits {#d}
+
+`$d` is `"0123456789"`.
+
+```bpl
+"a2b"∊$d           ⍝ $f $t $f
+```
+
+<!-- help -->
+
 ## Text
-
-<!-- help •a -->
-
-### `•a` — Alphabet {#a}
-
-`•a` is the uppercase Latin alphabet. It's read-only.
-
-```bpl
-3↑•a               ⍝ "ABC"
-•a⍳"CAB"           ⍝ [2 0 1]ₓ
-```
-
-<!-- help •d -->
-
-### `•d` — Digits {#d}
-
-`•d` is `"0123456789"`. It's read-only.
-
-```bpl
-"a2b"∊•d           ⍝ $f $t $f
-```
 
 <!-- help •c -->
 
@@ -91,7 +95,7 @@ Errors: `DOMAIN` for nonintegral rationals, complex numbers, functions or nested
 
 ### `•json` — Read JSON {#json}
 
-`•json text` parses JSON. Objects become keyed vectors. Arrays become vectors. Strings become character vectors. Integers stay exact. `true` and `false` become `$t` and `$f`.
+`•json text` parses JSON or JSON5. JSON5 adds comments, trailing commas, single-quoted strings, unquoted keys, hexadecimal numbers, `Infinity` and `NaN`. `NaN` reads as `null`. Objects become keyed vectors. Arrays become vectors. Strings become character vectors. Integers stay exact. `true` and `false` become `$t` and `$f`.
 
 `["fill":v] •json text` replaces `null` with `v`. The default is NaN. An integer array with a `null` stays exact. [JSON](data.ipynb#json) covers the conversions.
 
@@ -137,6 +141,45 @@ Errors: `VALUE` for missing files, invalid UTF-8, other file errors and standard
 
 Errors: `VALUE` for an existing file without `overwrite`, and for other file errors; `DOMAIN` for invalid options or byte values.
 
+<!-- help •zip -->
+
+### `•zip` — Compression {#zip}
+
+`•zip data` compresses `data` with gzip and returns the bytes. Text is compressed as UTF-8, and numbers as bytes from 0 to 255, as [`•nput`](#nput) writes them. `alg •zip data` uses the format `"gzip"`, `"zlib"` or `"deflate"` (raw DEFLATE). `•zip⁻¹` decompresses, and takes the same format names.
+
+```bpl
+•ucs •zip⁻¹ •zip "hello"          ⍝ "hello"
+"zlib" •zip⁻¹ "zlib" •zip 1 2 3   ⍝ [1 2 3]ₓ
+```
+
+Errors: `DOMAIN` for an unknown format, byte values outside 0 to 255, or data that doesn't decompress.
+
+<!-- help •hash -->
+
+### `•hash` — Hashing {#hash}
+
+`•hash data` gives the SHA-256 digest of `data` as 64 hexadecimal digits, as tools such as `sha256sum` print it. Text is hashed as UTF-8, and numbers as bytes. `alg •hash data` uses `"sha224"`, `"sha256"`, `"sha384"` or `"sha512"`.
+
+```bpl
+•hash "abc"   ⍝ "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+```
+
+Errors: `DOMAIN` for an unknown algorithm, or byte values outside 0 to 255.
+
+<!-- help •uuid -->
+
+### `•uuid` — UUIDs {#uuid}
+
+`•uuid v` returns a new UUID of version `v` as text. Version 4 is random. Version 7 UUIDs begin with their creation time and sort in creation order. Versions 1 and 6 also hold the time, with a random node in place of a MAC address.
+
+`[ns name] •uuid 5` derives a UUID from a name with SHA-1, and `[ns name] •uuid 3` with MD5. `ns` is `"dns"`, `"url"`, `"oid"`, `"x500"` or a UUID. The same namespace and name always give the same UUID. `bytes •uuid 8` makes a UUID from 16 bytes, and sets its version and variant.
+
+```bpl
+["dns" "python.org"] •uuid 5   ⍝ "886313e1-3b8a-5372-9b90-0c9aee199e5d"
+```
+
+Errors: `DOMAIN` for any other version, or a left argument that doesn't fit the version.
+
 <!-- help -->
 
 ## Display
@@ -155,7 +198,13 @@ Errors: `DOMAIN` for invalid tag or attribute names.
 
 `•xml tree` returns the XML text of an element tree. It escapes `&`, `<`, `>` and `"` in text and attribute values. A numeric vector attribute becomes space-separated numbers. Children are text, elements or vectors of children. An element with no children closes itself. [XML and SVG](xml.ipynb) covers element trees.
 
-Errors: `DOMAIN` for invalid names or attribute values.
+`•xml⁻¹ text` reads XML into an element tree with the same meaning. Attribute values become text. Names keep their prefixes, and namespace declarations become `xmlns` attributes. Comments, processing instructions and text that is only whitespace are dropped.
+
+```bpl
+•xml •xml⁻¹ "<a href=""x"">hi</a>"   ⍝ "<a href=""x"">hi</a>"
+```
+
+Errors: `DOMAIN` for invalid names or attribute values, and for malformed XML given to `•xml⁻¹`.
 
 <!-- help •svg -->
 
@@ -235,8 +284,9 @@ Errors: `DOMAIN` for an unknown `kind`, invalid image bytes, or values that aren
 | `fns` | `$f` leaves output made inside functions unboxed | as `box` |
 | `limit` | The most items display shows in full. `∞` shows every item | `1000` |
 | `edges` | Positions shown at each end of a long axis | `3` |
+| `prec` | Significant digits shown for each float. `∞` shows every digit | `∞` |
 
-Display shows part of an array of more than `limit` items: the first and last `edges` positions of each axis longer than twice `edges`. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. A nested array follows the same rule on its own. `⎕←`, [`⍕`](glyphs/format.qmd) and source text always hold every item.
+Display shows part of an array of more than `limit` items: the first and last `edges` positions of each axis longer than twice `edges`. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. A nested array follows the same rule on its own. `⎕←`, [`⍕`](glyphs/format.qmd) and source text always hold every item and every digit.
 
 Errors: `DOMAIN` for an unknown setting or an invalid value.
 <!-- help -->
@@ -256,38 +306,45 @@ A distribution's `sample` takes a generator on its left, as in `g d.sample 3`. C
 
 Errors: `DOMAIN` for a seed that is not a nonnegative integer, or a left argument to `sample` that is not a generator; `LENGTH` or `RANK` for more than one seed; `SYNTAX` for a dyadic call to `•rand`.
 
-<!-- help •normal •uniform •beta •bernoulli •binomial •cauchy •chisquared •exponential •fisher •gamma •inversegamma •laplace •lognormal •logistic •poisson •student •weibull -->
+<!-- help •distribution -->
 
-### Distributions {#distributions}
+### `•distribution` — Distributions {#distribution}
 
-A distribution constructor, such as `•normal 0 1`, returns a keyed vector of four functions:
+`params •distribution name` returns the distribution called `name`, with parameters `params`. `•distribution name` uses the distribution's standard parameters, listed in the table below. A distribution is a keyed vector of four functions:
 
 - `sample shape` draws random values. `g sample shape` draws them from a generator made by `•rand`.
 - `density x` gives the probability density, or the probability mass for a discrete distribution.
 - `cdf x` gives P(X ≤ x).
 - `quantile p` inverts the CDF.
 
+```bpl
+d←•distribution "normal"
+d.cdf 0                         ⍝ 0.5
+b←10 0.5 •distribution "binomial"
+b.quantile 0.5                  ⍝ 5ₓ
+```
+
 Parameters are finite real units or vectors. Scale, shape, rate and degrees of freedom are positive, except where stated. [Distributions](distributions.ipynb) shows them in use.
 
-| Constructor | Parameters |
-|---|---|
-| `•normal` | μ σ: mean, standard deviation |
-| `•uniform` | a b: lower and upper bounds, a < b |
-| `•bernoulli` | p ∈ [0,1] |
-| `•binomial` | n p: integer trials n ≥ 0, p ∈ [0,1] |
-| `•poisson` | λ ≥ 0: mean |
-| `•beta` | α β: shapes |
-| `•gamma` | k θ: shape, scale, with mean kθ |
-| `•inversegamma` | α β: shape, scale, with density ∝ x⁻⁽ᵅ⁺¹⁾ exp(−β/x) |
-| `•exponential` | λ: rate, with mean 1/λ |
-| `•chisquared` | ν: degrees of freedom |
-| `•student` | ν: degrees of freedom, with location 0 and scale 1 |
-| `•fisher` | ν₁ ν₂: degrees of freedom |
-| `•cauchy`, `•laplace`, `•logistic` | location, scale |
-| `•lognormal` | μ σ: mean and standard deviation of log(X) |
-| `•weibull` | k λ: shape, scale |
+| Name | Parameters | Standard |
+|---|---|---|
+| `"normal"` | μ σ: mean, standard deviation | 0 1 |
+| `"uniform"` | a b: lower and upper bounds, a < b | 0 1 |
+| `"bernoulli"` | p ∈ [0,1] | |
+| `"binomial"` | n p: integer trials n ≥ 0, p ∈ [0,1] | |
+| `"poisson"` | λ ≥ 0: mean | |
+| `"beta"` | α β: shapes | |
+| `"gamma"` | k θ: shape, scale, with mean kθ | |
+| `"inversegamma"` | α β: shape, scale, with density ∝ x⁻⁽ᵅ⁺¹⁾ exp(−β/x) | |
+| `"exponential"` | λ: rate, with mean 1/λ | 1 |
+| `"chisquared"` | ν: degrees of freedom | |
+| `"student"` | ν: degrees of freedom, with location 0 and scale 1 | |
+| `"fisher"` | ν₁ ν₂: degrees of freedom | |
+| `"cauchy"`, `"laplace"`, `"logistic"` | location, scale | 0 1 |
+| `"lognormal"` | μ σ: mean and standard deviation of log(X) | 0 1 |
+| `"weibull"` | k λ: shape, scale | |
 
-Errors: `DOMAIN` for invalid parameters, non-real inputs or p ∉ [0,1]; `LENGTH` for the wrong number of parameters; `RANK` for matrix parameters or shapes; `SYNTAX` for dyadic calls other than `sample`; `LIMIT` for oversized shapes or sampler ranges.
+Errors: `DOMAIN` for an unknown name, a name that isn't a string, a monadic call for a distribution with no standard parameters, invalid parameters, non-real inputs or p ∉ [0,1]; `LENGTH` for the wrong number of parameters; `RANK` for matrix parameters or shapes; `SYNTAX` for a dyadic call to `density`, `cdf` or `quantile`; `LIMIT` for oversized shapes or sampler ranges.
 
 <!-- help -->
 
@@ -335,6 +392,29 @@ The argument is one of these uppercase names: `SYNTAX ERROR`, `INDEX ERROR`, `RA
 `F •time x` calls each function in `F` on `x` for about 0.1 s. The result is each function's fastest time per call in seconds, with the shape and keys of `F`. With `F←["sum":+/ "max":⌈/]`, `F •time x` labels each time. Time a dyadic function with its left argument bound, as in `2↣⍴`. [Timing](repl.qmd#timing) has examples.
 
 Errors: `DOMAIN` for a left argument that holds anything but functions, or a `t` that isn't a number. An error from a timed function stops the timing.
+
+<!-- help •host -->
+
+### `•host` — Host facts {#host}
+
+`•host name` gives the host fact called `name`.
+
+| Name | Gives |
+|---|---|
+| `"args"` | The arguments after the program on the command line, as a vector of strings. `bpl prog.bpl a b` gives `"a" "b"` |
+| `"version"` | BPL's version |
+| `"env"` | The environment variables, as a record of strings |
+| `"width"` | The width of the terminal that output goes to, or `⍬` without one |
+
+Errors: `DOMAIN` for any other name.
+
+<!-- help •delay -->
+
+### `•delay` — Delay {#delay}
+
+`•delay s` pauses for `s` seconds and returns the seconds it actually waited. An interrupt stops it, and `•delay ∞` waits for one.
+
+Errors: `DOMAIN` for a negative number of seconds, or an `s` that isn't a number.
 
 <!-- help -->
 

@@ -172,7 +172,7 @@ f←[1 2 3]ₓ⌻ ⋄ f∂2ₓ
 [Probability distributions](distributions.ipynb) provide sampling, density, CDF and quantiles. Two fair coin tosses give these probabilities for 0, 1 and 2 heads:
 
 ``` bpl
-coin←•binomial 2 0.5
+coin←2 0.5 •distribution "binomial"
 coin.density 0 1 2
 ```
 

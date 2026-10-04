@@ -19,7 +19,6 @@ Links are relative to https://answerdotai.github.io/basedpl/.
 - [Modules](modules.html.md)
 - Per-glyph: `glyphs/<canonical-name>.html.md`, using names from the glyphs reference, e.g. `glyphs/slash.html.md`.
 - System functions: `system-functions.html.md#<name>` without `•`
-- Distribution constructors share `#distributions`.
 
 ## Glyph differences
 
@@ -37,7 +36,7 @@ BQN's based arrays: numbers, characters and functions are atoms, distinct from r
 
 `[a b]` is always a vector, even `[a]`. Spaces separate unspaced item expressions; `;` separates expressions containing spaces. `⋄`/newlines stack rows along a new leading axis. In parentheses, rows instead form a nested vector: `(4 ⋄ 4 5)` is `[[4] [4 5]]`. Parentheses without rows only group. Newlines normally mean `⋄`, not continuation.
 
-`"abc"` is a character vector; `'a'` is one character atom. `""` is the empty string. Double a double quote inside a string; `'''` is the single-quote character.
+`"abc"` is a character vector; `'a'` is one character atom. `""` is the empty string. A double-quoted string can span lines, keeping its indentation. Double a double quote inside a string; `'''` is the single-quote character.
 
 Bare numbers are approximate floats. `3ₓ` is an exact integer; `1ᵣ3`/`1r3` an exact rational; `2ⱼ3`/`2j3` complex; `1ₑ¯3`/`1e¯3` an exponent. `[…]ₓ` marks exact literal arrays. Exact integers/rationals grow as needed; mixing with floats becomes approximate. `$t $f $n` are true/false/NaN; `∞ ¯∞` are infinities. IEEE NaN/infinity arithmetic; comparison tolerance `1E¯14`, but grade is exact. Positions, shape, tally and predicates are exact.
 
@@ -45,7 +44,7 @@ Bare numbers are approximate floats. `3ₓ` is an exact integer; `1ᵣ3`/`1r3` a
 
 ## Grouping, selection and keys
 
-Spaces group: each unspaced run evaluates first, then runs combine RTL. `a+b × c+d` is `(a+b)×(c+d)`. Literal strands form before runs; names don't join them. A run ending in a function is an APL-style train: `+/÷≢ x` is mean, but `+/÷≢x` is not. A subject before a function binds it: `2×` doubles. An operator takes the whole function on its left and one item on its right; a trailing dyadic operator takes the next run as operand: `⌊⌾ 10× x`. Keep literal arguments out of literal operands: `f⍣3(5)`, `f⍤1[2 3]`.
+Spaces group: each unspaced run evaluates first, then runs combine RTL. `a+b × c+d` is `(a+b)×(c+d)`. Literal strands form before runs; names don't join them. A run ending in a function is an APL-style train: `+/÷≢ x` is mean, but `+/÷≢x` is not. A subject before a function binds it: `2×` doubles. An operator takes the whole function on its left and one item on its right; a trailing dyadic operator takes the next run as operand: `⌊⌾ 10× x`. Only spaces build strands: in `f⍣3'b'` and `f⍤1[2 3]`, the touching literal is the argument. Parenthesise a number argument after a number operand: `f⍣3(5)`.
 
 Names use letters, `∆`, `⍙`; `_` escapes the next character (and following digits). `f2` calls `f`; `f_2` is a name. No BQN casing rules; names take their runtime value's role. Lone `_` discards an assignment.
 
@@ -63,11 +62,10 @@ Plain assignment is local; modified/selective updates change the nearest binding
 
 ## System names
 
-Use case-insensitive `•name`, not `⎕NAME`. `•a •d` are read-only alphabet/digit arrays. Options are generally keyed left arguments.
+`$a` is the uppercase Latin alphabet; `$d` is `"0123456789"`. System functions use case-insensitive `•name`, not `⎕NAME`. Options are generally keyed left arguments.
 
 - Text: `•c •ucs •r`.
-- Data/files: `•csv •tocsv •json •tojson •vfi •nget •nput`.
+- Data/files: `•csv •tocsv •json •tojson •vfi •nget •nput •zip •hash •uuid`. `•json` reads JSON5. `•xml⁻¹` reads XML, and `•zip⁻¹` decompresses.
 - Display: `•element •xml •svg •mime •plot •image •prefs`.
-- Programs/introspection: `•load •signal •storage •time •nc •nl •src •ex`.
-- Random: `•rand` makes a seeded generator. Distributions: `•normal •uniform •bernoulli •binomial •poisson •beta •gamma •inversegamma •exponential •chisquared •student •fisher •cauchy •laplace •logistic •lognormal •weibull`. Each returns a record with `sample density cdf quantile` functions.
-
+- Programs/introspection: `•load •signal •storage •time •host •delay •nc •nl •src •ex`.
+- Random: `•rand` makes a seeded generator. `params •distribution name` returns a distribution, as in `0 1 •distribution "normal"`, and `•distribution name` uses standard parameters where the distribution has them. Names: `normal uniform bernoulli binomial poisson beta gamma inversegamma exponential chisquared student fisher cauchy laplace logistic lognormal weibull`. Each distribution is a record with `sample density cdf quantile` functions.

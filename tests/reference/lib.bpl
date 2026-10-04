@@ -28,7 +28,7 @@
 ⍝⍝ Numbers
 
 ⍝ — adic decodes bijective base-26 names, as spreadsheet columns count: A is 1, Z is 26 and AA is 27
-[adic]←•load "lib/numeric.bpl" ⋄ [•a adic "A";•a adic "Z";•a adic "AA";•a adic "AZ"]
+[adic]←•load "lib/numeric.bpl" ⋄ [$a adic "A";$a adic "Z";$a adic "AA";$a adic "AZ"]
 1 26 27 52
 
 ⍝ — dec reads an empty string as 0 and ignores trailing blanks

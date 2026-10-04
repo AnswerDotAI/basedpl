@@ -33,7 +33,7 @@ const SMALL_PRIMES: [u32; 12] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
 // uniform Miller–Rabin rounds give a false-positive bound of 2^-64.
 fn is_prime(n: &BigUint, span: &Context<'_>) -> Result<bool, Error> {
     if *n < BigUint::from(2u8) { return Ok(false); }
-    for p in SMALL_PRIMES { if *n == BigUint::from(p) { return Ok(true); } if (n % p).is_zero() { return Ok(false); } }
+    for p in SMALL_PRIMES { if *n == BigUint::from(p) { return Ok(true); } else if (n % p).is_zero() { return Ok(false); } }
     let last = n - 1u8;
     let s = last.trailing_zeros().unwrap();
     let d = &last >> s;

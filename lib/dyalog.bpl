@@ -344,9 +344,9 @@ mac←{  ⍝ Macro expansion over linked token lists.
   }
   number←{
     [dd d]←⍺
-    ~d∊•d?[⍺ 0];
+    ~d∊$d?[⍺ 0];
     [ddd n]←dd ∇ ⍵×10
-    [ddd n+⍵×•d⍳d]
+    [ddd n+⍵×$d⍳d]
   }
   copy←{
     ⍺≡'('?⍵;
@@ -599,7 +599,7 @@ ary←{  ⍝ Radix representation, including recurring fractional digits.
   }
   ofmt←{
     [sig exp fix rep rat]←⍵
-    fmt←{[⍵]⌷•d,•a}
+    fmt←{[⍵]⌷$d,$a}
     [lft pad]←0⌈1 ¯1×exp
     zro←{⍵,(≢⍵)↓0}
     neg←(sig<0)#'¯'
@@ -756,7 +756,7 @@ packH←{                      ⍝ Huffman packing.
          ⍵≥≢⍺?[1 ⍵ "unexpected eof"];
          ' '≡⍵⌷⍺?⍺ ∇ ⍵+1;
          '('≡⍵⌷⍺?⍺ parseList ⍵+1;
-         ⍺.(⍵)∊•d?⍺ parseNum ⍵;
+         ⍺.(⍵)∊$d?⍺ parseNum ⍵;
          '''≡⍵⌷⍺?⍺ parseQuote ⍵;
          ⍺ parseAtom ⍵
      }
@@ -773,14 +773,14 @@ packH←{                      ⍝ Huffman packing.
 
      parseNum←{
          l←20 ⍝ 1 + the maximum length of a numeric literal
-         n←+/∧\•d∊⍨l↑⍵↓⍺ ⍝ actual length of the literal
+         n←+/∧\$d∊⍨l↑⍵↓⍺ ⍝ actual length of the literal
          n≡l?[1 ⍵ "numeric literal too long"];
          [0 ⍵+n ⍎n↑⍵↓⍺]
      }
 
      parseAtom←{
          la←20 ⍝ 1 + the maximum length of an atom
-         na←•d,"() '" ⍝ non-atom characters
+         na←$d,"() '" ⍝ non-atom characters
          l←+/∧\~na∊⍨la↑⍵↓⍺
          l≡la?[1 ⍵ "atom too long"];
          [0 ⍵+l l↑⍵↓⍺]
@@ -877,7 +877,7 @@ dfnsLetters←"_abcdefghijklmnopqrstuvwxyz∆ABCDEFGHIJKLMNOPQRSTUVWXYZ⍙ÁÂÃ
 
 ⍝ From https://dfns.dyalog.com/c_words.htm
 words←{  ⍝ Split a string into words and intervening text.
-  ⍺←[dfnsLetters •d]
+  ⍺←[dfnsLetters $d]
   1=≡,⍺?[⍺ ""]∇⍵;
   [alph supp]←⍺
   w←0{(⍵∊alph)∨⍺∧⍵∊supp}\⍵
@@ -924,10 +924,10 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
      size←{                                  ⍝ Length of the token at the start of ⍵.
          hd←↑⍵
          hd=' '?⍵ all ' ';                   ⍝ White Space.
-         hd∊alph?⍵ all alph,•d;              ⍝ Name
+         hd∊alph?⍵ all alph,$d;              ⍝ Name
          hd='⎕'?1 + (1↓⍵) all alph;          ⍝ System Name
          hd='''?+/∧\{⍵∨¯1⌽⍵}≠\hd=⍵;          ⍝ Char literal
-         hd∊•d,'¯'?max←⍵ all •d,".¯EJ",nv#' ' ⋄ max-+/∧\' '=⌽max↑⍵;  ⍝ Numeric literal, without trailing blanks.
+         hd∊$d,'¯'?max←⍵ all $d,".¯EJ",nv#' ' ⋄ max-+/∧\' '=⌽max↑⍵;  ⍝ Numeric literal, without trailing blanks.
          hd∊"⍺⍵∇:"?⍵ all hd;                 ⍝ ⍺⍺ or ⍵⍵ or ∇∇ or ::
          hd='⍝'?⍴⍵;                          ⍝ Comment
          1                                   ⍝ Single char token.
@@ -940,7 +940,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
  ssword←{                   ⍝ Approx alternative to xutils' ss.
      [srce find repl]←,¨⍵        ⍝ source, find and replace vectors
      alph←dfnsLetters ⍝ primary alphabet: initial letters for names
-     supp←•d                     ⍝ supplementary: 0-9
+     supp←$d                     ⍝ supplementary: 0-9
      ⍺←[alph supp]               ⍝ default left argument
      ∊(⊂repl)@{                  ⍝ replace find with repl
          ⍵∊[find]                 ⍝ matches

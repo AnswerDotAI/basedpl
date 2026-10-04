@@ -29,7 +29,7 @@ async def kernel_story():
         assert displayed(messages) == [('execute_result', '4 5')]
         expressions = reply['content']['user_expressions']
         assert expressions['total']['data']['text/plain'] == '9' and expressions['bad']['ename'] == 'DOMAIN ERROR'
-        for code, status in [('f←{', 'incomplete'), (')', 'invalid'), ('v←99', 'complete')]:
+        for code, status in [('f←{', 'incomplete'), ('s←"one', 'incomplete'), (')', 'invalid'), ('v←99', 'complete')]:
             assert (await kc.shell_request('is_complete_request', code=code))['content']['status'] == status
         _, messages = await kc.exec_ok('v')
         assert displayed(messages) == [('execute_result', '4 5')]
@@ -59,7 +59,7 @@ async def kernel_story():
             assert ('+/⍵' if detail else 'Sum without running') in displayed(messages)[0][1]
         result = (await kc.shell_request('inspect_request', code='+', cursor_pos=1, detail_level=0))['content']
         assert result['found'] and 'adds' in result['data']['text/plain']
-        result = (await kc.shell_request('inspect_request', code='•A', cursor_pos=2, detail_level=0))['content']
+        result = (await kc.shell_request('inspect_request', code='$a', cursor_pos=2, detail_level=0))['content']
         assert result['found'] and 'Latin alphabet' in result['data']['text/plain']
         result = (await kc.shell_request('inspect_request', code='⍵', cursor_pos=1, detail_level=0))['content']
         assert result['found']

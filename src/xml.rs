@@ -92,6 +92,40 @@ pub(crate) fn serialize(_: Option<&Value>, right: &Value, span: &Context<'_>) ->
     Ok(keyed::text(&output))
 }
 
+/// `•xml⁻¹ text` reads XML into the elements that `•xml` writes, with the same meaning. Comments, processing instructions and text that
+/// is only whitespace are dropped.
+pub(crate) fn parse(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let text = crate::data::text(right, span)?;
+    let document = roxmltree::Document::parse(&text).map_err(|e| span.domain_error(format!("XML {e}")))?;
+    read(document.root_element(), span)
+}
+
+/// The element `node`, with names written with their prefixes, and the namespaces it declares as `xmlns` attributes.
+fn read(node: roxmltree::Node<'_, '_>, span: &Context<'_>) -> Result<Value, Error> {
+    span.check()?;
+    let named = |space: Option<&str>, name: &str| match space.and_then(|uri| node.lookup_prefix(uri)).filter(|p| !p.is_empty()) {
+        Some(prefix) => format!("{prefix}:{name}"),
+        None => name.to_string(),
+    };
+    let inherited: Vec<_> = node.parent_element().map_or(vec![], |parent| parent.namespaces().collect());
+    let declared = node.namespaces().filter(|ns| ns.uri() != roxmltree::NS_XML_URI && !inherited.contains(ns));
+    let attrs = declared
+        .map(|ns| (ns.name().map_or("xmlns".into(), |p| format!("xmlns:{p}")), ns.uri()))
+        .chain(node.attributes().map(|a| (named(a.namespace(), a.name()), a.value())));
+    let (names, values) = attrs.map(|(name, value)| (name.into(), keyed::text(value))).unzip();
+    let children = node
+        .children()
+        .filter_map(|child| match child.text() {
+            _ if child.is_element() => Some(read(child, span)),
+            Some(text) if child.is_text() && !text.trim().is_empty() => Some(Ok(keyed::text(text))),
+            _ => None,
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let children = Value::from_parts(vec![children.len()], children, keyed::text("")).error_at(span, "XML element exceeds array limits")?;
+    let attrs = keyed::vector(names, values).error_at(span, "invalid XML attributes")?;
+    element(&named(node.tag_name().namespace(), node.tag_name().name()), Some(&attrs), &children, span)
+}
+
 pub(crate) fn svg(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let defaults = keyed::vector(vec!["xmlns".into(), "viewBox".into()], vec![keyed::text("http://www.w3.org/2000/svg"), keyed::text("0 0 100 100")]).unwrap();
     let attrs = left.map_or(Ok(defaults.clone()), |a| keyed::merge(&defaults, a)).error_at(span, "invalid SVG attributes")?;
