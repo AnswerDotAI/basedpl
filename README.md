@@ -5,15 +5,7 @@
 
 BasedPL, the Based-array Programming Language, is an array language derived from APL, with ideas from J and BQN. Its notation aims to be simple and consistent. Most of this documentation calls it BPL. BPL is written in Rust and comes as a native executable, a Jupyter kernel and a Python API.
 
-For APL users, the main choices are:
-
-- [Based arrays](arrays.ipynb), as in BQN: numbers, characters and functions are atoms; enclosure always adds a layer.
-- **Vectors in brackets, and grouping by spaces.** `[a b c]` is a vector, and `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train. For example, `+/÷≢ x` is the mean of `x`, and `2×` doubles its argument. `0⌷v` and `v₀` both select the first item of `v`.
-- **Leading-axis broadcasting**, including expansion of length-1 axes, plus string keys and names on axes.
-- **Exact integers and rationals** alongside approximate real and complex numbers.
-- Dfns, trains and operators, with additions such as Under, iteration histories, windows and function arrays.
-
-Positions and axes count from 0, as in BQN and Python. Approximate comparisons use tolerance `1E¯14`. See the [language principles](principles.ipynb) for why BPL works this way, the [glyph reference](glyphs.qmd) for Dyalog differences and [Arrays](arrays.ipynb) for the array model.
+LLMs: read [llms.txt](llms.txt) first. It is the primary reference index and concise overview.
 
 ## Install and try it
 
@@ -21,6 +13,15 @@ Positions and axes count from 0, as in BQN and Python. Approximate comparisons u
 pip install basedpl
 bpl
 ```
+
+Each release also has a standalone `bpl` that needs no Python, for macOS on Apple silicon and for Linux on x86-64 and arm64. On a Mac:
+
+``` sh
+curl -Lo bpl https://github.com/AnswerDotAI/basedpl/releases/latest/download/bpl-macos-arm64
+chmod +x bpl
+```
+
+On Linux, download `bpl-linux-x86_64` or `bpl-linux-arm64` instead.
 
 At the prompt, define a mean and apply it:
 
@@ -78,6 +79,16 @@ To see how these ideas express an algorithm, start from “a prime has exactly t
 [Getting started](getting-started.ipynb#example-algorithms) builds a primes function from the same divisor count, step by step, and displays the divisibility matrix along the way.
 
 ## What’s distinctive?
+
+For APL users, some key differences are:
+
+- [Based arrays](arrays.ipynb), as in BQN: numbers, characters and functions are atoms; enclosure always adds a layer.
+- **Vectors in brackets, and grouping by spaces.** `[a b c]` is a vector, and `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train. For example, `+/÷≢ x` is the mean of `x`, and `2×` doubles its argument. `0⌷v` and `v₀` both select the first item of `v`.
+- **Leading-axis broadcasting**, including expansion of length-1 axes, plus string keys and names on axes.
+- **Exact integers and rationals** alongside approximate real and complex numbers.
+- Dfns, trains and operators, with additions such as Under, iteration histories, windows and function arrays.
+
+Positions and axes count from 0, as in BQN and Python. Approximate comparisons use tolerance `1E¯14`. See the [language principles](principles.ipynb) for why BPL works this way, the [glyph reference](glyphs.qmd) for Dyalog differences and [Arrays](arrays.ipynb) for the array model.
 
 ### Numbers
 
@@ -229,42 +240,3 @@ mean([1, 2, 3])
 Arrays have `.py`, `.np` and `.df` conversions for Python values, NumPy and pandas. Functions also have Python names and composition operators. See the [Python tutorial](python.ipynb).
 
 For other frontends, the [process interfaces](processes.qmd) provide JSON messages and interruptible workers. The [BPL library](https://github.com/AnswerDotAI/basedpl/tree/main/lib) contains more algorithms, codecs, interpreters and puzzles.
-
-## Install from source
-
-Requires Python 3.10 or later and Rust 1.98 or later. On x86-64, it also requires a CPU with AVX2 (x86-64-v3). In your Python environment:
-
-``` bash
-git clone https://github.com/AnswerDotAI/basedpl.git
-cd basedpl
-pip install .
-```
-
-For a standalone executable without Python, run `cargo install --path .`. Cargo installs it in its `bin` directory, normally `~/.cargo/bin`. Put that directory on your PATH.
-
-## Contributing
-
-Install the development and documentation tools with `pip install -e '.[dev]'`. That also builds the extension and installs it in the editable package. The main commands are:
-
-``` bash
-cargo t
-python scripts/develop.py
-bpl -e '2×3+4'
-cargo fastfmt
-pytest
-ship-rs-build
-```
-
-After Rust changes, run `cargo t` for the Rust tests, then `python scripts/develop.py` to install the extension that `cargo t` built. Both use one compilation of the crate. The `bpl` command then runs the new build. `cargo t` stands for `cargo test --features python`. Run `pip install -e '.[dev]'` again only when the package metadata changes. Use `cargo fastfmt`, not `cargo fmt`.
-
-Before a release, run `python scripts/prep.py` from the repository root. It writes the syntax highlighters’ glyph lists and the macOS keyboard layout bundle. It then runs nbdev’s `prepare` to export, test and clean the notebooks and render this README.
-
-Use lowercase `j` in complex literals throughout tests and examples, including adapted reference cases. Reserve uppercase `J` for explicit input-alias tests. Keep archived upstream source unchanged.
-
-Write literal matrices in array notation, `[10 20 30 ⋄ 40 50 60]`, not as a reshape, `2 3⍴10 20 30 40 50 60`. Keep `⍴` where the example is about reshape.
-
-Brackets are the usual way to write a list. A bare literal list, such as `1 2 3`, is a shorthand. Write a list of names in brackets, as in `[a b]`, even where `a b` would also work. End an operand with a space, not with parentheses or `⊢`. After a dyadic operator and a space, the whole next run is the operand. For example, `⌊⌾ 10× x` needs no parentheses. Where a literal operand would run into the argument, a vector argument goes in touching brackets: `f⍤1[2 3]`. A single number goes in parentheses: `f⍣¯2(5)`. Judge each line by how it reads. Report any case where none of these forms works.
-
-A name applied to a literal touches it, as a glyph does: `fib10` and `1+⌽f5`. Write it that way where it’s shorter and needs no new parentheses. Keep the space where the literal would join the next part of the expression, or where a subject before the name is its left argument.
-
-Read a selection with `⌷`, as in `[⍋v]⌷v`. Write one literal position with a subscript, as in `v₁` and `v₁←0`. Use `.` for other assignment targets, such as `v.[i]←0`, for record fields, such as `T.name`, and wherever `⌷` would be longer.

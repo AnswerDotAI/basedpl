@@ -43,6 +43,18 @@ fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
     crate::keyed::with_key_lists(result, keys.extract()?).map_err(PyValueError::new_err)
 }
 
+/// The NumPy dtype and bytes of storage that NumPy holds as it is.
+fn numpy(a: &Value) -> Option<(&'static str, &[u8])> {
+    /// Integers of one width as their NumPy dtype and their bytes.
+    fn whole<T: Whole>(v: &[T]) -> (&'static str, &[u8]) { (T::DTYPE, bytemuck::cast_slice(v)) }
+    Some(match a.as_items() {
+        Items::Booleans(v) => ("?", bytemuck::cast_slice(v)),
+        Items::Integers(ints) => with_ints!(ints, |v| whole(v)),
+        Items::Floats(v) => ("f8", bytemuck::cast_slice(v)),
+        _ => return None,
+    })
+}
+
 fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
     fn element(py: Python<'_>, e: &Value) -> PyResult<Py<PyAny>> {
         Ok(match e {
@@ -67,6 +79,7 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
     result.set_item("shape", a.shape())?;
     result.set_item("data", data)?;
     result.set_item("prototype", element(py, &a.prototype())?)?;
+    if let Some((dtype, _)) = numpy(a) { result.set_item("dtype", dtype)?; }
     if !a.axis_names().is_empty() { result.set_item("axis_names", a.axis_names().iter().map(|n| n.as_deref()).collect::<Vec<_>>())?; }
     if a.has_keys() { result.set_item("axis_keys", crate::keyed::key_lists(a))?; }
     Ok(result.unbind())
@@ -110,15 +123,7 @@ impl PyArray {
     fn is_atom(&self) -> bool { self.inner.is_atom() }
     fn parts(&self, py: Python<'_>) -> PyResult<Py<PyDict>> { array(py, &self.inner) }
     fn buffer<'py>(&self, py: Python<'py>) -> PyResult<Option<(&'static str, Bound<'py, PyByteArray>)>> {
-        /// Integers of one width as their NumPy dtype and their bytes.
-        fn whole<T: Whole>(v: &[T]) -> (&'static str, &[u8]) { (T::DTYPE, bytemuck::cast_slice(v)) }
-        let (dtype, bytes): (&'static str, &[u8]) = match self.inner.as_items() {
-            Items::Booleans(v) => ("?", bytemuck::cast_slice(v)),
-            Items::Integers(ints) => with_ints!(ints, |v| whole(v)),
-            Items::Floats(v) => ("f8", bytemuck::cast_slice(v)),
-            _ => return Ok(None),
-        };
-        Ok(Some((dtype, PyByteArray::new(py, bytes))))
+        Ok(numpy(&self.inner).map(|(dtype, bytes)| (dtype, PyByteArray::new(py, bytes))))
     }
     fn __repr__(&self) -> String { self.inner.to_string() }
     fn literal(&self) -> String { self.inner.literal() }
@@ -230,47 +235,33 @@ struct PySession { session: Mutex<Session>, active: Mutex<Option<InterruptHandle
 impl PySession {
     #[new]
     fn new() -> Self { Self { session: Mutex::new(Session::new()), active: Mutex::new(None) } }
-    /// Runs `source`, BPL code or a function called with `args`, after binding `bindings`.
-    #[pyo3(signature = (*, source=None, args=Vec::new(), bindings=Vec::new(), timeout=None, echo=false))]
-    fn request(
+    /// Runs BPL `code` after binding `bindings`. `show` is called with each output event as BPL produces it, so output and input
+    /// prompts appear in order.
+    #[pyo3(signature = (*, code=None, bindings=Vec::new(), timeout=None, echo=false, show=None))]
+    fn eval(
         &self,
         py: Python<'_>,
-        source: Option<Bound<'_, PyAny>>,
-        args: Vec<PyRef<'_, PyArray>>,
+        code: Option<String>,
         bindings: Vec<(String, Bound<'_, PyAny>)>,
         timeout: Option<f64>,
         echo: bool,
+        show: Option<Py<PyAny>>,
     ) -> PyResult<Py<PyDict>> {
-        let run = source
-            .map(|source| match source.cast::<PyFunction>() {
-                Ok(f) => Ok(Run::Call(f.get().inner.clone(), args.iter().map(|a| a.inner.clone()).collect())),
-                Err(_) => source.extract().map(Run::Code),
-            })
-            .transpose()?;
-        let signal = Arc::new(Mutex::new(None));
-        let mut request = EvalRequest {
-            run,
-            bindings: bindings.into_iter().map(|(n, a)| Ok((n, operand(&a)?))).collect::<PyResult<_>>()?,
-            options: EvalOptions {
-                poll: Some(ctrl_c(signal.clone())),
-                input: Some(Arc::new(PythonInput { caught: signal.clone() })),
-                ..options(timeout, echo)?
-            },
-        };
-        let result = {
-            let mut guard = self.session.lock_py_attached(py).unwrap();
-            let session = &mut *guard;
-            *self.active.lock().unwrap() = Some(request.options.interrupt.clone());
-            let result = py.detach(move || request.run(session));
-            *self.active.lock().unwrap() = None;
-            result.map_err(PyValueError::new_err)?
-        };
-        if let Some(e) = signal.lock().unwrap().take() {
-            e.value(py).setattr("output", result.output_text())?;
-            e.value(py).setattr("events", output(py, &result.output)?)?;
-            return Err(e);
-        }
-        response(py, result)
+        let bindings = bindings.into_iter().map(|(n, a)| Ok((n, operand(&a)?))).collect::<PyResult<_>>()?;
+        self.request(py, EvalRequest { run: code.map(Run::Code), bindings, options: options(timeout, echo)? }, show)
+    }
+    /// Calls `function` with `args`, as `eval` runs code.
+    #[pyo3(signature = (function, args, *, timeout=None, show=None))]
+    fn call(
+        &self,
+        py: Python<'_>,
+        function: PyRef<'_, PyFunction>,
+        args: Vec<PyRef<'_, PyArray>>,
+        timeout: Option<f64>,
+        show: Option<Py<PyAny>>,
+    ) -> PyResult<Py<PyDict>> {
+        let run = Run::Call(function.inner.clone(), args.iter().map(|a| a.inner.clone()).collect());
+        self.request(py, EvalRequest { run: Some(run), bindings: Vec::new(), options: options(timeout, false)? }, show)
     }
     #[pyo3(signature = (*, name=None, function=None))]
     fn inspect(&self, py: Python<'_>, name: Option<String>, function: Option<PyRef<'_, PyFunction>>) -> PyResult<Option<Py<PyDict>>> {
@@ -295,12 +286,50 @@ impl PySession {
     fn interrupt(&self) { if let Some(active) = &*self.active.lock().unwrap() { active.interrupt(); } }
 }
 
-/// A poll that interrupts the evaluation when Python has a pending signal, such as Ctrl-C. It keeps the signal's error to raise.
+impl PySession {
+    /// Runs `request` with Python's Ctrl-C, `input()` and the `show` callback attached, and gives its result as a dict.
+    fn request(&self, py: Python<'_>, mut request: EvalRequest, show: Option<Py<PyAny>>) -> PyResult<Py<PyDict>> {
+        let signal = Arc::new(Mutex::new(None));
+        let shown = Arc::new(Mutex::new(Vec::new()));
+        request.options.poll = Some(ctrl_c(signal.clone()));
+        request.options.input = Some(Arc::new(PythonInput { caught: signal.clone() }));
+        request.options.output = show.map(|show| stream(show, shown.clone(), signal.clone()));
+        let mut result = {
+            let mut guard = self.session.lock_py_attached(py).unwrap();
+            let session = &mut *guard;
+            *self.active.lock().unwrap() = Some(request.options.interrupt.clone());
+            let result = py.detach(move || request.run(session));
+            *self.active.lock().unwrap() = None;
+            result.map_err(PyValueError::new_err)?
+        };
+        result.output.append(&mut shown.lock().unwrap());
+        if let Some(e) = signal.lock().unwrap().take() {
+            e.value(py).setattr("output", result.output_text())?;
+            e.value(py).setattr("events", output(py, &result.output)?)?;
+            return Err(e);
+        }
+        response(py, result)
+    }
+}
+
+/// A poll that interrupts the evaluation when Python has a pending signal, such as Ctrl-C, or when an output callback raised. It keeps the
+/// error to raise.
 fn ctrl_c(caught: Arc<Mutex<Option<PyErr>>>) -> crate::Poll {
     Arc::new(move || {
+        if caught.lock().unwrap().is_some() { return true; }
         let Err(e) = Python::attach(|py| py.check_signals()) else { return false };
         *caught.lock().unwrap() = Some(e);
         true
+    })
+}
+
+/// An output sink that keeps each event in `shown` and calls `show` with it. An error that `show` raises goes to `caught`, which stops
+/// the evaluation through `ctrl_c`.
+fn stream(show: Py<PyAny>, shown: Arc<Mutex<Vec<crate::Output>>>, caught: Arc<Mutex<Option<PyErr>>>) -> crate::OutputSink {
+    Arc::new(move |event| {
+        shown.lock().unwrap().push(event.clone());
+        let called = Python::attach(|py| python(py, &event.json()).and_then(|e| show.call1(py, (e,))).map(drop));
+        if let Err(e) = called { caught.lock().unwrap().get_or_insert(e); }
     })
 }
 

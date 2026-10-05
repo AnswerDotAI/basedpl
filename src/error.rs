@@ -24,7 +24,7 @@ pub enum ErrorKind {
     Rank,
     Index,
     Value,
-    File,
+    Io,
     Unsupported,
     Interrupt,
     Timeout,
@@ -41,7 +41,7 @@ impl ErrorKind {
         Self::Rank,
         Self::Index,
         Self::Value,
-        Self::File,
+        Self::Io,
         Self::Unsupported,
         Self::Interrupt,
         Self::Timeout,
@@ -56,7 +56,7 @@ impl ErrorKind {
             Self::Rank => "RANK",
             Self::Index => "INDEX",
             Self::Value => "VALUE",
-            Self::File => "FILE",
+            Self::Io => "IO",
             Self::Unsupported => "UNSUPPORTED",
             Self::Interrupt => "INTERRUPT",
             Self::Timeout => "TIMEOUT",
@@ -100,10 +100,10 @@ impl Span {
         let relative = path.starts_with("./") || path.starts_with("../");
         match std::path::Path::new(&self.source.name).parent() { Some(dir) if relative && self.source.file => dir.join(path), _ => path.into() }
     }
-    /// A FILE error that names the file `path`.
-    pub(crate) fn file_error(&self, path: &str, e: impl std::fmt::Display) -> Error { self.error(ErrorKind::File, format!("{path}: {e}")) }
+    /// An IO error about `what`, such as a file's path, a URL or standard input.
+    pub(crate) fn io_error(&self, what: &str, e: impl std::fmt::Display) -> Error { self.error(ErrorKind::Io, format!("{what}: {e}")) }
     /// The bytes of the file `path` names.
-    pub(crate) fn read(&self, path: &str) -> Result<Vec<u8>, Error> { std::fs::read(self.path(path)).map_err(|e| self.file_error(path, e)) }
+    pub(crate) fn read(&self, path: &str) -> Result<Vec<u8>, Error> { std::fs::read(self.path(path)).map_err(|e| self.io_error(path, e)) }
 }
 
 /// Places an error from array building, which carries only its kind, at a source span.

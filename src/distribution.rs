@@ -2,7 +2,7 @@ use crate::{
     array::generated_len,
     execution::Context,
     keyed,
-    primitive::{integer, numeric, pervade, real, EmptyFill},
+    primitive::{integer, numeric, pervade, real},
     system::{
         natives, Call,
         Valence::{Ambivalent, Dyadic, Monadic},
@@ -128,7 +128,7 @@ fn bernoulli(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
 fn binomial(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
     let [_, p] = parameters(right, span)?;
     let n = numeric(&right.at(0), span)?.nonnegative_integer().error_at(span, "binomial trials must be a nonnegative integer")?;
-    if n > 1usize << 53 { return Err(span.error(ErrorKind::Limit, "binomial trials exceed the sampler's integer range")); }
+    if n as u64 > 1 << 53 { return Err(span.error(ErrorKind::Limit, "binomial trials exceed the sampler's integer range")); }
     valid(Binomial::new(p, n as u64), span).map(Distribution::Binomial)
 }
 
@@ -225,7 +225,7 @@ fn logistic_value(op: Operation, location: f64, scale: f64, x: f64) -> f64 {
 }
 
 pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if !matches!(op, Operation::Sample) { return pervade(right, &|e| d.evaluate(op, real(&e, span)?, span), &EmptyFill::Zeros, span); }
+    if !matches!(op, Operation::Sample) { return pervade(right, &|e| d.evaluate(op, real(&e, span)?, span), span); }
     if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "sample shape must be a unit or vector")); }
     let shape = right.as_items().nonnegative_integers().error_at(span, "invalid sample dimension")?;
     let len = generated_len(&shape).error_at(span, "sample shape exceeds array limits")?;

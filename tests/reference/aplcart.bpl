@@ -666,8 +666,8 @@ var←20 30 40 ⋄ plus←+ ⋄ {(2 0 1#var)plus↢⊢←2}⍬ ⋄ var   ⍝ 24 
 ⍝ aplcart/table.tsv:227 — The letters from A to Z; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
 $a   ⍝ "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-⍝ aplcart/table.tsv:228 — Casefold
-Y←42 "Pete" "Πέτρος"  ⋄ •c Y   ⍝ 42 "pete" "πέτροσ"
+⍝ aplcart/table.tsv:228 — Casefold; BPL folds a string with full case mappings, which keep the final sigma
+Y←42 "Pete" "Πέτρος"  ⋄ •c Y   ⍝ 42 "pete" "πέτρος"
 
 ⍝ aplcart/table.tsv:230 — The digits from 0 to 9; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
 $d   ⍝ "0123456789"
@@ -7976,7 +7976,7 @@ testpath •nput "{""a"":1}",(•ucs 10 10),"{""a"":2}",•ucs 10 ⋄ {•json¨
 ⍝ error: DOMAIN ERROR
 
 ⍝ aplcart/table.tsv:2619 — Catch a missing-file error
-{"FILE"::1 ⋄ •nget testpath}0   ⍝ 1
+{"IO"::1 ⋄ •nget testpath}0   ⍝ 1
 
 ⍝ aplcart/table.tsv:2181 — Repeating-unit rational sum
 [ratsum]←•load "lib/dyalog.bpl" ⋄ "<0|1|0>"("0123456789"ratsum)"<0|2|0>"
@@ -8638,8 +8638,8 @@ assert←{⍺←"assertion failure" ⋄ 0∊,⍵?⍺ •signal "DOMAIN";shy←0}
 ⍝ aplcart/table.tsv:2605 — Execution stopped by strong interrupt; A guard that names INTERRUPT catches an interrupt; The case raises it with •signal, because a test can't press Ctrl-C
 {"INTERRUPT"::"caught" ⋄ •signal "INTERRUPT"}0   ⍝ "caught"
 
-⍝ aplcart/table.tsv:2623 — Input/output error during file read/write — use ⎕FCHK when file becomes available; File system errors are BPL's FILE kind; The `testpath` fixture names a directory that doesn't exist
-{"FILE"::$e.kind ⋄ •readdir testpath}0   ⍝ "FILE"
+⍝ aplcart/table.tsv:2623 — Input/output error during file read/write — use ⎕FCHK when file becomes available; File system errors are BPL's IO kind; The `testpath` fixture names a directory that doesn't exist
+{"IO"::$e.kind ⋄ •readdir testpath}0   ⍝ "IO"
 
 ⍝ aplcart/table.tsv:3777 — Re-signal last caught error to caller (works with any ⎕IO and ⎕ML); Ported with `•signal $e`, which raises the caught error again with its kind and message
 {∞::$e.kind $e.message ⋄ {∞::•signal $e ⋄ "first" •signal "LENGTH"}0}0
@@ -8648,4 +8648,40 @@ assert←{⍺←"assertion failure" ⋄ 0∊,⍵?⍺ •signal "DOMAIN";shy←0}
 ⍝ aplcart/table.tsv:3778 — Construct first line of printed error message (works with any ⎕IO and ⎕ML); Ported with `$e`'s kind and message
 {∞::$e.kind," ERROR: ",$e.message ⋄ "bad input" •signal "DOMAIN"}0
 "DOMAIN ERROR: bad input"
+
+⍝ aplcart/table.tsv:2001 — Create and tie temporary file with pattern Dv (returns tie number); Ported with `•nput`'s `unique` option, which writes a new file with a unique name in a directory and returns its path; The case uses a `testpath` fixture in place of the temporary directory, and checks the file's contents; BPL has no tied files
+•mkdir testpath ⋄ p←["path":testpath "unique":1] •nput "abc" ⋄ "abc"≡•nget p
+$t
+
+⍝ aplcart/table.tsv:2346 — Generate UUID version Js (4 or 7, 0 for null); Ported as `•uuid`, with version 0 for the nil UUID. The case checks the nil UUID and the version digit of versions 4 and 7, because those are random
+((•uuid 0)≡"00000000-0000-0000-0000-000000000000")∧"47"≡{14⌷•uuid ⍵}¨4 7
+$t
+
+⍝ aplcart/table.tsv:2405 — Temporary Directory; Ported as `•host "temp"`. The case checks that the path names a directory, because the path depends on the machine
+["dir"]≡(•metadata •host "temp").kind   ⍝ $t
+
+⍝ aplcart/table.tsv:2408 — Singular Value Decomposition; Ported as `"svd" •decompose`. The case checks that the factors multiply back to the matrix, rounded to integers
+r←"svd" •decompose m←3 2⍴1 2 3 4 5 6 ⋄ m≡⌊0.5+(r.u×⍤1 r.s)+.×+⍉r.v
+$t
+
+⍝ aplcart/table.tsv:2703 — Deserialise Array; Ported as `•literal`, which reads data from BPL source text; Dyalog's serialised form is binary, and BPL's is text
+•literal "[1 [2 3ₓ] ""ab""]"   ⍝ [1 [2 3ₓ] "ab"]
+
+⍝ aplcart/table.tsv:2710 — Serialise Array; Ported as `•literal⁻¹`, which writes data as BPL source text; The case checks that `•literal` reads the text back; Dyalog's serialised form is binary, and BPL's is text
+x≡•literal •literal⁻¹ x←[1 [2 3ₓ] "ab" ["k":1ᵣ3] (2 2⍴⍳4)]   ⍝ $t
+
+⍝ aplcart/table.tsv:2717 — Hash Array; Ported as `•hash •literal⁻¹ Y`, which hashes an array's BPL source text with SHA-256. Dyalog's hash values differ; The case checks that equal arrays hash equally and different arrays differently
+h←{•hash •literal⁻¹ ⍵} ⋄ ((h 1 2 3)≡h 1 2 3)∧(h 1 2 3)≢h 1 2 4   ⍝ $t
+
+⍝ aplcart/table.tsv:2825 — Unicode Normalise via canonical decomposition; Ported as `"NFD" •normalize`, with é as a concrete input
+•ucs "NFD" •normalize •ucs 233   ⍝ [101 769]ₓ
+
+⍝ aplcart/table.tsv:2938 — Unicode Normalise via canonical decomposition followed by canonical composition; Ported as `"NFC" •normalize`, with e and a combining acute accent as a concrete input
+•ucs "NFC" •normalize •ucs 101 769   ⍝ [233]ₓ
+
+⍝ aplcart/table.tsv:2939 — Unicode Normalise via compatibility decomposition followed by canonical composition; Ported as `"NFKC" •normalize`, with the ligature ﬁ and a decomposed é as a concrete input
+•ucs "NFKC" •normalize •ucs 64257 101 769   ⍝ [102 105 233]ₓ
+
+⍝ aplcart/table.tsv:2940 — Unicode Normalise via compatibility decomposition; Ported as `"NFKD" •normalize`, with the ligature ﬁ and a composed é as a concrete input
+•ucs "NFKD" •normalize •ucs 64257 233   ⍝ [102 105 101 769]ₓ
 

@@ -448,7 +448,7 @@ impl Function {
                 f.check(left, cx.span)?;
                 match &f.call {
                     crate::system::Call::Value(call) => call(left, right, cx),
-                    crate::system::Call::Effect(call) => return call(left, right, cx).map(|value| Bound { shy: true, ..Bound::from(value) }),
+                    crate::system::Call::Effect(call) => return call(left, right, cx).map(|(value, shy)| Bound { shy, ..Bound::from(value) }),
                     crate::system::Call::Element(tag) => crate::xml::element(tag, left, right, cx),
                     crate::system::Call::Mime => cx.session.mime(left, right, cx.span),
                     crate::system::Call::Session(call) => call(cx.session, left, right, cx.span),
@@ -1643,6 +1643,20 @@ impl Session {
     pub(crate) fn system_src(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         self.map_names(right, span, crate::keyed::text(""), |s, name| s.name_source(name).map(|text| crate::keyed::text(&text)))
     }
+    /// `•literal text` reads a value from BPL source, as `•literal⁻¹` writes it, without running code. The text may hold literals and the
+    /// functions that `•literal⁻¹` writes: `⍴`, `⊂`, `,`, `:` and `•ucs`.
+    pub(crate) fn system_literal(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+        let parsed = crate::parse(Source::new("<•literal>", Self::source_text(right, span)?)).complete()?;
+        let [statement] = parsed.statements.as_slice() else { return Err(span.domain_error("•literal reads one value")) };
+        let written = |kind: &NodeKind| {
+            matches!(kind, NodeKind::Function(Primitive::Shape | Primitive::Enclose | Primitive::Ravel))
+                || matches!(kind, NodeKind::System(name) if name.eq_ignore_ascii_case("•ucs"))
+        };
+        if let Some(node) = crate::syntax::non_literal(&statement.nodes, &written) {
+            return Err(span.domain_error(format!("•literal reads data, not code: {}", &node.span.source.text[node.span.range.clone()])));
+        }
+        self.bind(&statement.nodes)?.array(span)
+    }
     /// `•time t` gives the seconds since `t`, counting from the Unix epoch. `F •time x` gives each function's fastest time per call
     /// on `x`, in the layout of `F`.
     fn system_time(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
@@ -1825,7 +1839,9 @@ impl Session {
         if command.eq_ignore_ascii_case("]help") {
             let Some((name, detail)) = crate::inspection::help_command(code) else { return failed(ErrorKind::Syntax, "usage: ]help name [-source]".into()) };
             let Some(info) = self.inspect(name) else { return failed(ErrorKind::Value, format!("name not found: {name}")) };
-            let data = [("text/plain".to_string(), info.text(detail)), ("text/markdown".to_string(), info.markdown(detail))].into_iter().collect();
+            let data = [("text/plain", info.text(detail)), ("text/markdown", info.markdown(detail))]
+                .map(|(kind, text)| (kind.to_string(), crate::MimeData::Text(text)))
+                .into();
             self.execution.emit(crate::Output { kind: crate::OutputKind::Display, data });
             return Evaluation::default();
         }
@@ -1872,7 +1888,7 @@ impl Session {
         let rendered = renderer.call_array(None, right, &mut self.at(span));
         self.execution.echo = echo;
         let bundle = crate::keyed::merge(&fallback, &rendered?).error_at(span, "MIME renderer must return a keyed vector")?;
-        crate::display::bundle(&bundle).error_at(span, "MIME bundle must map MIME types to text")?;
+        crate::display::bundle(&bundle).error_at(span, "MIME bundle must map MIME types to text or bytes")?;
         Ok(bundle)
     }
 
@@ -1919,7 +1935,7 @@ impl Session {
     fn load(&mut self, right: &Value, span: &Span) -> Result<Bound, Error> {
         let text = Self::source_text(right, span)?;
         let path = span.path(&text);
-        let code = std::fs::read_to_string(&path).map_err(|e| span.file_error(&text, e))?;
+        let code = std::fs::read_to_string(&path).map_err(|e| span.io_error(&text, e))?;
         let file = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
         if self.loading.contains(&file) { return Err(span.domain_error(format!("load cycle: {text} is already loading"))); }
         self.modules.push(HashMap::new());

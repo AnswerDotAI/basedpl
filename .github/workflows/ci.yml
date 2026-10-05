@@ -26,18 +26,33 @@ jobs:
     needs: test
     strategy:
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+        include:
+          - {os: ubuntu-latest, binary: bpl-linux-x86_64}
+          - {os: ubuntu-24.04-arm, binary: bpl-linux-arm64}
+          - {os: macos-latest, binary: bpl-macos-arm64}
     runs-on: ${{ matrix.os }}
+    env:
+      # The standalone `bpl`, built without Python, for the GitHub release.
+      BUILD_BPL: cargo build --profile dist --bin bpl && mkdir -p bin && cp target/dist/bpl bin/${{ matrix.binary }}
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - if: runner.os != 'Linux'
+        run: ${{ env.BUILD_BPL }}
       - uses: PyO3/maturin-action@v1
         with:
           args: --profile dist --out dist -i python3.10 -i python3.11 -i python3.12 -i python3.13
           manylinux: auto
+          # This runs inside the manylinux container, whose old glibc lets the binary run on older Linux distributions.
+          before-script-linux: ${{ env.BUILD_BPL }}
       - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}
           path: dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bpl-${{ matrix.os }}
+          path: bin
 
   sdist:
     runs-on: ubuntu-latest
@@ -63,11 +78,19 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
+          pattern: wheels-*
           path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: bpl-*
+          path: bin
           merge-multiple: true
       - uses: softprops/action-gh-release@v3
         with:
-          files: dist/*
+          files: |
+            dist/*
+            bin/*
           generate_release_notes: true
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:

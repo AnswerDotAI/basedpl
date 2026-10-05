@@ -1197,32 +1197,18 @@ fn format_array(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Resu
     Value::from_parts(shape, data, Value::Character(' ')).error_at(span, "invalid formatted result")
 }
 
-/// Where [`pervade`] finds the prototype of an empty result.
-pub(crate) enum EmptyFill {
-    /// The argument's prototype, mapped as any item is.
-    Mapped,
-    /// The argument's prototype with a float zero for each number, character or function.
-    Zeros,
-}
-
-/// `f` applied to each number, character or function in `value`, at any depth. Each array keeps its layout.
-pub(crate) fn pervade(value: &Value, f: &dyn Fn(Value) -> Result<Value, Error>, empty: &EmptyFill, span: &Context<'_>) -> Result<Value, Error> {
+/// `f` applied to each number, character or function in `value`, at any depth. Each array keeps its layout. An empty result's
+/// prototype is the argument's, with a float zero for each number, character or function.
+pub(crate) fn pervade(value: &Value, f: &dyn Fn(Value) -> Result<Value, Error>, span: &Context<'_>) -> Result<Value, Error> {
     span.check()?;
     if value.is_atom() { return f(value.clone()); }
-    let result = if value.is_empty() {
-        let prototype = value.prototype();
-        let prototype = match empty {
-            EmptyFill::Mapped => pervade(&prototype, f, empty, span)?,
-            EmptyFill::Zeros => pervade(&prototype, &|_| Ok(float(0.0)), empty, span)?,
-        };
-        Value::empty(value.shape().to_vec(), prototype)
-    } else { Value::new(value.shape().to_vec(), value.elements().map(|e| pervade(&e, f, empty, span)).collect::<Result<_, _>>()?) };
+    let result = if value.is_empty() { Value::empty(value.shape().to_vec(), pervade(&value.prototype(), &|_| Ok(float(0.0)), span)?) } else { Value::new(value.shape().to_vec(), value.elements().map(|e| pervade(&e, f, span)).collect::<Result<_, _>>()?) };
     result.and_then(|v| v.with_layout(value.layout().clone())).error_at(span, "invalid result")
 }
 
 pub(crate) fn lambert_w(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let w = |e: Value| numeric(&e, span)?.lambert_w().map(Value::Number).domain_at(span);
-    pervade(right, &w, &EmptyFill::Zeros, span)
+    pervade(right, &w, span)
 }
 
 pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value, axis: Option<&Value>, span: &Context<'_>) -> Result<Value, Error> {
@@ -1427,12 +1413,8 @@ fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Res
     };
     generated_len(&[n, k]).map_err(|e| span.error(e, "matrix result is too large"))?;
     let positions = left.map(|x| Mapping::contract(right.layout(), 0, x.layout(), 0)).transpose().error_at(span, "matrix row keys must agree")?;
-    let numbers = |a: &Value, positions: Option<&Mapping>, columns: usize| -> Result<Vec<Number>, Error> {
-        numeric(&a.prototype(), span)?;
-        (0..a.len()).map(|i| numeric(&a.at(positions.map_or(i, |p| p.index(i / columns) * columns + i % columns)), span).cloned()).collect()
-    };
-    let a = numbers(right, None, n)?;
-    let b = left.map(|x| numbers(x, positions.as_ref(), k)).transpose()?;
+    let a = matrix_numbers(right, None, n, span)?;
+    let b = left.map(|x| matrix_numbers(x, positions.as_ref(), k, span)).transpose()?;
     let exact = a.iter().chain(b.iter().flatten()).all(Number::is_exact);
     let prototype = if exact { right.prototype().clone() } else { float(0.) };
     if n == 0 { return layout.collect(vec![], prototype).map_err(|e| span.error(e, "invalid matrix shape")); }
@@ -1459,6 +1441,78 @@ fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Res
     }
     layout.collect(values.into_iter().map(Value::Number), prototype).map_err(|e| span.error(e, "invalid matrix result"))
 }
+
+/// The numbers of the matrix `a`, row by row, with its rows taken in the order `positions` gives when there is one.
+fn matrix_numbers(a: &Value, positions: Option<&Mapping>, columns: usize, span: &Context<'_>) -> Result<Vec<Number>, Error> {
+    numeric(&a.prototype(), span)?;
+    (0..a.len()).map(|i| numeric(&a.at(positions.map_or(i, |p| p.index(i / columns) * columns + i % columns)), span).cloned()).collect()
+}
+
+/// `kind •decompose m` factors the matrix `m`, and gives the factors as a record. `kind` is `"svd"`, `"qr"`, `"eigen"` or
+/// `"cholesky"`. A real matrix gives real factors, apart from complex eigenvalues and their eigenvectors.
+pub(crate) fn decompose(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let kind = crate::data::text(left.expect("•decompose is dyadic"), span)?.to_lowercase();
+    let &[m, n] = right.shape() else { return Err(span.error(ErrorKind::Rank, "•decompose needs a matrix")) };
+    if m == 0 || n == 0 { return Err(span.domain_error("•decompose needs a nonempty matrix")); }
+    if matches!(kind.as_str(), "eigen" | "cholesky") && m != n { return Err(span.error(ErrorKind::Length, "eigen and cholesky need a square matrix")); }
+    let z = matrix_numbers(right, None, n, span)?.iter().map(|x| x.to_complex().domain_at(span)).collect::<Result<Vec<_>, _>>()?;
+    let hermitian = m == n && (0..n).all(|i| (0..n).all(|j| z[i * n + j] == z[j * n + i].conj()));
+    let (names, factors) = if z.iter().all(|z| z.im == 0.0) { factors(&kind, faer::Mat::from_fn(m, n, |i, j| z[i * n + j].re), hermitian, span)? } else { factors(&kind, faer::Mat::from_fn(m, n, |i, j| z[i * n + j]), hermitian, span)? };
+    crate::keyed::record(names.into_iter().map(Into::into).collect(), factors).error_at(span, "invalid factors")
+}
+
+/// The factors of `a` that `kind` names, and their names. A `hermitian` matrix has real eigenvalues, in ascending order, and
+/// orthonormal eigenvectors.
+fn factors<T>(kind: &str, a: faer::Mat<T>, hermitian: bool, span: &Context<'_>) -> Result<(Vec<&'static str>, Vec<Value>), Error>
+where
+    T: faer::traits::ComplexField<Real = f64> + Copy,
+    Number: From<T>,
+{
+    let failed = || span.domain_error(format!("{kind} factorization failed"));
+    let (names, factors) = match kind {
+        "svd" => {
+            let svd = a.thin_svd().map_err(|_| failed())?;
+            (vec!["u", "s", "v"], vec![matrix(svd.U()), vector(svd.S().column_vector().iter().copied()), matrix(svd.V())])
+        }
+        "qr" => {
+            let qr = a.qr();
+            (vec!["q", "r"], vec![matrix(qr.compute_thin_Q().as_ref()), matrix(qr.thin_R())])
+        }
+        "eigen" if hermitian => {
+            let eigen = a.self_adjoint_eigen(faer::Side::Lower).map_err(|_| failed())?;
+            (vec!["values", "vectors"], vec![vector(eigen.S().column_vector().iter().copied()), matrix(eigen.U())])
+        }
+        "eigen" => {
+            let eigen = a.eigen().map_err(|_| failed())?;
+            // The complex type is named here because inference would take `T` from the where clause.
+            (
+                vec!["values", "vectors"],
+                vec![vector::<num_complex::Complex64>(eigen.S().column_vector().iter().copied()), matrix::<num_complex::Complex64>(eigen.U())],
+            )
+        }
+        "cholesky" => {
+            let llt = a.llt(faer::Side::Lower).map_err(|_| span.domain_error("cholesky needs a Hermitian positive definite matrix"))?;
+            (vec!["l"], vec![matrix(llt.L())])
+        }
+        _ => return Err(span.domain_error("•decompose takes \"svd\", \"qr\", \"eigen\" or \"cholesky\"")),
+    };
+    Ok((names, factors.into_iter().collect::<Result<_, _>>().error_at(span, "factors exceed array limits")?))
+}
+
+/// A faer matrix as an array.
+fn matrix<E: Copy>(x: faer::MatRef<'_, E>) -> Result<Value, ErrorKind>
+where
+    Number: From<E>,
+{
+    let items = (0..x.nrows()).flat_map(|i| (0..x.ncols()).map(move |j| Value::Number(x[(i, j)].into()))).collect();
+    Value::from_parts(vec![x.nrows(), x.ncols()], items, float(0.))
+}
+
+/// Numbers from faer as a vector.
+fn vector<E>(items: impl Iterator<Item = E>) -> Result<Value, ErrorKind>
+where
+    Number: From<E>,
+{ let items: Vec<_> = items.map(|e| Value::Number(e.into())).collect(); Value::from_parts(vec![items.len()], items, float(0.)) }
 
 // Normal equations are exact here; the approximate path never forms AᵀA.
 fn exact_solve(a: &[Number], b: Option<&[Number]>, m: usize, n: usize, k: usize, span: &Context<'_>) -> Result<Vec<Number>, Error> {

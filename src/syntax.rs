@@ -687,23 +687,20 @@ fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
 fn exact_literal(kind: NodeKind, span: &Span) -> Result<NodeKind, ParseFailure> {
     if matches!(&kind, NodeKind::ArrayLiteral { cells, .. } if cells.is_empty()) { return Ok(NodeKind::Literal(zilde(true))); }
     let node = Node { kind, span: span.clone() };
-    literal_items(std::slice::from_ref(&node))?;
+    if let Some(item) = non_literal(std::slice::from_ref(&node), &|_| false) { return Err(invalid(&item.span, "ₓ needs every item to be a literal")); }
     Ok(node.kind)
 }
 
-/// Checks that every item is a literal, at any depth.
-fn literal_items(nodes: &[Node]) -> Result<(), ParseFailure> {
-    for node in nodes {
-        match &node.kind {
-            NodeKind::Literal(_) | NodeKind::Function(Primitive::Keys) => (),
-            NodeKind::ArrayLiteral { cells, .. } => {
-                for cell in cells { literal_items(cell)?; }
-            }
-            NodeKind::Group(nodes) | NodeKind::Run(nodes) => literal_items(nodes)?,
-            _ => return Err(invalid(&node.span, "ₓ needs every item to be a literal")),
-        }
-    }
-    Ok(())
+/// The first item, at any depth, that isn't a literal, a key's colon or a node that `allowed` accepts. Lists, parentheses and runs
+/// are searched through.
+pub(crate) fn non_literal<'a>(nodes: &'a [Node], allowed: &impl Fn(&NodeKind) -> bool) -> Option<&'a Node> {
+    nodes.iter().find_map(|node| match &node.kind {
+        NodeKind::Literal(_) | NodeKind::Function(Primitive::Keys) => None,
+        NodeKind::ArrayLiteral { cells, .. } => cells.iter().find_map(|cell| non_literal(cell, allowed)),
+        NodeKind::Group(nodes) | NodeKind::Run(nodes) => non_literal(nodes, allowed),
+        kind if allowed(kind) => None,
+        _ => Some(node),
+    })
 }
 
 /// Items separated by spaces: each run of nodes with no space between them is one item.

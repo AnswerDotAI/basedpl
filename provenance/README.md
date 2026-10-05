@@ -55,7 +55,7 @@ Library recipes use the shared ports in `lib/`: start a case by taking the names
 
 Additional Dyalog workspace ports live in `lib/dyalog.bpl`. Their APLcart inventory entries retain `original_definition`, `definition_source` and `definition_version`. Unported definitions keep `pending` status and a reason naming the remaining work. Licence confirmation for these workspace sources is pending; the Dyalog documentation licence below covers documentation examples.
 
-Rebuild the extension with `python scripts/develop.py` after Rust changes, then scan from Python:
+Rebuild the extension with `cargo develop` after Rust changes, then scan from Python:
 
 ```python
 from basedpl.reference import scan, review, activate

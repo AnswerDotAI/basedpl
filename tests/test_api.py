@@ -1,4 +1,4 @@
-import operator
+import http.server, operator, threading
 from fractions import Fraction
 from pathlib import Path
 import numpy as np, pytest
@@ -79,7 +79,7 @@ def test_load(tmp_path, monkeypatch):
     bpl.timeout = .001
     with pytest.raises(BplError, match='TIMEOUT'): bpl('•load "lib/defs.bpl"')
     bpl.timeout = None
-    with pytest.raises(BplError, match='FILE'): bpl('•load "missing.bpl"')
+    with pytest.raises(BplError, match='IO ERROR'): bpl('•load "missing.bpl"')
 
 
 def test_data_io(tmp_path, monkeypatch, capsys):
@@ -90,15 +90,15 @@ def test_data_io(tmp_path, monkeypatch, capsys):
     encoded = bpl.csv.undo(table).py
     teq(write(encoded, path=str(dest)).py, len(encoded.encode('utf-8')))
     teq(bpl.fn('≡')(bpl.csv(read(str(dest))), table).py, 1)
-    with pytest.raises(BplError, match='FILE'): write('replacement', path=str(dest))
+    with pytest.raises(BplError, match='IO ERROR'): write('replacement', path=str(dest))
     teq(dest.read_text(), encoded)
     teq(write('é\r\n', path=str(dest), overwrite=1).py, 4)
     teq(read(str(dest)).py, 'é\r\n')
     with pytest.raises(BplError, match='encoding'): write('bad', path=str(dest), overwrite=1, encoding='UTF-16')
     teq(dest.read_bytes(), 'é\r\n'.encode())
     dest.write_bytes(b'\xff')
-    with pytest.raises(BplError, match='FILE'): read(str(dest))
-    with pytest.raises(BplError, match='FILE'): read(str(tmp_path/'absent'))
+    with pytest.raises(BplError, match='IO ERROR'): read(str(dest))
+    with pytest.raises(BplError, match='IO ERROR'): read(str(tmp_path/'absent'))
     prompts = []
     monkeypatch.setattr('builtins.input', lambda prompt: prompts.append(prompt) or 'bob')
     teq(bpl('"-" •nput "Name? " ⋄ "Hi ",⎕').py, 'Hi bob')
@@ -118,7 +118,7 @@ def test_binary_files(tmp_path):
     opts = dict(path=str(dest))
     teq(write(values, **opts).py, 256)
     teq(dest.read_bytes(), data)
-    with pytest.raises(BplError, match='FILE'): write(values, **opts)
+    with pytest.raises(BplError, match='IO ERROR'): write(values, **opts)
     opts['overwrite'] = 1
     for bad in ([256], [-1], [0.5], [float('inf')]):
         with pytest.raises(BplError, match='DOMAIN'): write(bad, **opts)
@@ -127,6 +127,38 @@ def test_binary_files(tmp_path):
     teq(write([], **opts).py, 0)
     teq(dest.read_bytes(), b'')
     teq(read(str(dest), binary=1).shape, (0,))
+
+
+def test_fetch():
+    "`•fetch` reads curl's output: the final response's status and headers after redirects, then the body."
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def reply(self, code, body, headers=()):
+            self.send_response(code)
+            for name, value in headers: self.send_header(name, value)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        def do_GET(self):
+            if self.path == '/old': self.reply(302, b'moved', [('Location', '/new')])
+            elif self.path == '/new': self.reply(200, b'a\r\n\r\nb', [('X-Two', '1'), ('X-Two', '2')])
+            else: self.reply(404, b'none')
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers['Content-Length']))
+            self.reply(201, body + b' ' + self.headers['X-Sent'].encode())
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f'http://127.0.0.1:{server.server_address[1]}'
+    try:
+        r = bpl.fetch(url + '/old').py
+        teq((r['status'], r['body'], r['headers']['x-two']), (200, 'a\r\n\r\nb', '1, 2'))
+        teq(bpl.fetch(url + '/gone').py['status'], 404)
+        teq(bpl.fetch(url, body='hi', headers={'X-Sent': 'yes'}).py['body'], 'hi yes')
+        teq(bpl.fetch(url + '/new', binary=1).py['body'], list(b'a\r\n\r\nb'))
+    finally:
+        server.shutdown()
+        server.server_close()
+    with pytest.raises(BplError, match='IO ERROR'): bpl.fetch(url)
 
 
 def test_regex_functions():
@@ -200,13 +232,13 @@ def test_axis_keys_dataframe():
     assert m.axis_keys == (('alice', 'bob'), ('price', 'qty'))
     assert m['alice'].py == dict(price=10, qty=2)
     assert m[:, 'qty'].py == dict(alice=2, bob=4)
-    pd.testing.assert_frame_equal(m.py, pd.DataFrame([[10, 2], [20, 4]], index=['alice', 'bob'], columns=['price', 'qty']))
+    pd.testing.assert_frame_equal(m.py, pd.DataFrame(np.array([[10, 2], [20, 4]], dtype=np.uint8), index=['alice', 'bob'], columns=['price', 'qty']))
     np.testing.assert_array_equal(m.np, [[10, 2], [20, 4]])
     h = Array(np.arange(8).reshape(2, 2, 2), axis_keys=[['aa', 'bb'], None, ['xx', 'yy']])
-    pd.testing.assert_frame_equal(h.py, pd.DataFrame(np.arange(8).reshape(4, 2),
+    pd.testing.assert_frame_equal(h.py, pd.DataFrame(np.arange(8, dtype=np.uint8).reshape(4, 2),
         index=pd.MultiIndex.from_product([['aa', 'bb'], [0, 1]]), columns=['xx', 'yy']))
     pd.testing.assert_frame_equal(Array(3).df, pd.DataFrame([[3]], index=[0], columns=[0]))
-    pd.testing.assert_frame_equal(Array([3, 4]).df, pd.DataFrame([3, 4], index=[0, 1], columns=[0]))
+    pd.testing.assert_frame_equal(Array([3, 4]).df, pd.DataFrame(np.array([3, 4], dtype=np.uint8), index=[0, 1], columns=[0]))
     assert Array([[1, 2]]).axis_keys == (None, None)
     for keys in ([None], [['a', 'a'], None], [None, ['a']]):
         with pytest.raises(ValueError): Array([[1, 2], [3, 4]], axis_keys=keys)

@@ -1,4 +1,4 @@
-import base64, xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET
 import pytest
 from fastcore.test import test_eq as teq
 from basedpl import bpl, BplError
@@ -26,7 +26,7 @@ def test_svg_display_and_renderers():
     teq(int(bpl('2+3')), 5)
     teq(ET.fromstring(pic._repr_mimebundle_()['image/svg+xml'])[0].attrib['r'], '20')
     png = bpl('•image 2 3⍴0 0.5 1')._repr_mimebundle_()['image/png']
-    teq(base64.b64decode(png)[:8], b'\x89PNG\r\n\x1a\n')
+    teq(png[:8], b'\x89PNG\r\n\x1a\n')
 
 
 def test_plot_labels():

@@ -44,11 +44,13 @@ $a⍳"CAB"           ⍝ [2 0 1]ₓ
 
 ### `•c` — Case {#c}
 
-`•c Y` folds case. `1•c Y` converts to upper case, and `¯1•c Y` to lower case. `•c` uses Unicode's simple case mappings. It keeps the argument's shape and nesting, and leaves items that aren't characters unchanged.
+`•c Y` folds case. `1•c Y` converts to upper case, and `¯1•c Y` to lower case. A character vector converts as text, with Unicode's full case mappings: `ß` becomes `SS`, and a `Σ` that ends a word lowercases to `ς`. Any other character converts on its own, and stays unchanged when its mapping has more than one character. Folding converts to upper case, then to lower case. `•c` keeps the argument's nesting and leaves items that aren't characters unchanged.
 
 ```bpl
 •c "AbC"           ⍝ "abc"
 1•c "AbC"          ⍝ "ABC"
+1•c "straße"       ⍝ "STRASSE"
+¯1•c "ΟΔΟΣ"        ⍝ "οδος"
 ```
 
 <!-- help •ucs -->
@@ -64,6 +66,18 @@ $a⍳"CAB"           ⍝ [2 0 1]ₓ
 "UTF-8"•ucs 195 169 ⍝ "é"
 ```
 
+<!-- help •normalize -->
+
+### `•normalize` — Unicode normalization {#normalize}
+
+`•normalize text` puts text into Unicode normalization form NFC. NFC uses one code point for a letter and its accent wherever Unicode has one. `form •normalize text` names the form: `"NFC"`, `"NFD"`, `"NFKC"` or `"NFKD"`. NFD writes each accented letter as a base letter followed by combining marks. The K forms also replace compatibility characters, such as the ligature `ﬁ`, with ordinary ones. An array of strings gives normalized strings in the same shape.
+
+```bpl
+•ucs "NFD" •normalize "é"   ⍝ [101 769]ₓ
+"NFKC" •normalize "ﬁ"       ⍝ "fi"
+```
+
+Errors: `DOMAIN` for an unknown form, or an argument that isn't text.
 <!-- help •r -->
 
 ### `•r` — Regular expressions {#r}
@@ -102,6 +116,18 @@ Errors: `DOMAIN` for invalid options, duplicate headers, and cells that CSV can'
 
 Errors: `DOMAIN` for malformed JSON, with its line and column, and for values that JSON can't hold: an infinity that isn't `fill`, out-of-range floats, nonintegral rationals, complex numbers and other functions.
 
+<!-- help •literal -->
+
+### `•literal` — Literals {#literal}
+
+`•literal⁻¹ Y` writes `Y` as BPL source text, in the notation that display uses. `•literal text` reads such text back into its value without running code. The text may hold literals and the functions that `•literal⁻¹` writes: `⍴`, `⊂`, `,`, `:` and `•ucs`. Nested, keyed and exact values read back unchanged. `•hash •literal⁻¹ Y` hashes any array.
+
+```bpl
+•literal⁻¹ 2 3⍴⍳6              ⍝ "[0 1 2 ⋄ 3 4 5]"
+•literal "[1 [2 3ₓ] ""ab""]"   ⍝ [1 [2 3ₓ] "ab"]
+```
+
+Errors: `DOMAIN` when the argument of `•literal⁻¹` holds a function or an operator, and when the text given to `•literal` holds a name, another function or more than one value; `SYNTAX` for text that doesn't parse.
 <!-- help •vfi -->
 
 ### `•vfi` — Numeric input {#vfi}
@@ -140,7 +166,7 @@ Errors: `DOMAIN` for text that the pattern doesn't match, an invalid date, an un
 
 `X •nget path` takes options on the left: `binary` (`1` reads a vector of byte values) and `encoding` (`"UTF-8"`). [Files](data.ipynb#files) covers bytes and options.
 
-Errors: `FILE` for missing files, invalid UTF-8 and other file errors; `VALUE` for standard input that the frontend doesn't provide; `DOMAIN` for invalid options.
+Errors: `IO` for missing files, invalid UTF-8, other file errors, and standard input that fails or that the frontend doesn't provide; `DOMAIN` for invalid options.
 
 <!-- help •nput -->
 
@@ -150,9 +176,19 @@ Errors: `FILE` for missing files, invalid UTF-8 and other file errors; `VALUE` f
 
 `"-" •nput data` writes `data` to standard output, with no line ending added. Text written this way just before a read of `⎕` is that read's prompt. See [`⎕`](glyphs/quad.qmd#input).
 
-`X •nput data` takes options on the left: `path`, `overwrite` (`1` replaces an existing file) and `encoding` (`"UTF-8"`, for text). Plain text on the left is the path. [Files](data.ipynb#files) covers bytes and options.
+`X •nput data` takes options on the left: `path`, `overwrite` (`1` replaces an existing file) and `encoding` (`"UTF-8"`, for text). With the option `unique`, `•nput` writes a new file with a unique name inside the directory `path`. It returns the new file's path, which is displayed. The option `prefix` sets the start of the name, as for [`•mkdir`](#mkdir). Plain text on the left is the path. [Files](data.ipynb#files) covers bytes and options.
 
-Errors: `FILE` for an existing file without `overwrite`, and for other file errors; `DOMAIN` for invalid options or byte values, and for bytes written to standard output that aren't UTF-8.
+Errors: `IO` for an existing file without `overwrite`, and for other file errors; `DOMAIN` for invalid options or byte values, and for bytes written to standard output that aren't UTF-8.
+
+<!-- help •fetch -->
+
+### `•fetch` — Fetch a URL {#fetch}
+
+`•fetch url` requests `url` and returns a record of the response: `status`, a number; `headers`, a record of text; and `body`, the response's text. A missing page gives a result with `status` 404, not an error. Header names are in lower case, and a repeated header's values are joined with `, `. `•fetch` follows redirects. It runs the system's `curl`, which must be installed. `•json (•fetch url).body` reads a JSON response.
+
+`X •fetch url` takes options on the left: `method`, which is `"GET"`, or `"POST"` with a body; `headers`, a record of text; `body`, text or bytes to send; and `binary` (`1` gives the body as a vector of byte values).
+
+Errors: `IO` for getting no response, such as for an unknown host or a refused connection, for a missing `curl`, and for a body that isn't UTF-8 without `binary`; `DOMAIN` for invalid options.
 
 <!-- help •path -->
 
@@ -195,7 +231,7 @@ Errors: `DOMAIN` when a path isn't text.
 
 `•readdir dir` gives the table of [`•metadata`](#metadata) with a row for each entry of `dir`, sorted by path. Each row's `path` is `dir` joined with the entry's path within `dir`. A glob on the left keeps the entries whose path within `dir` matches it, as in `"*.csv" •readdir "data"`. As in a shell, `*` stays within one directory and `**` crosses them. Options on the left: `glob`, and `recurse` (`1` also lists the entries of subdirectories).
 
-Errors: `FILE` for a directory that can't be read; `DOMAIN` for an invalid glob or option.
+Errors: `IO` for a directory that can't be read; `DOMAIN` for an invalid glob or option.
 
 <!-- help •copy -->
 
@@ -203,7 +239,7 @@ Errors: `FILE` for a directory that can't be read; `DOMAIN` for an invalid glob 
 
 `to •copy from` copies the file `from` to `to`, or the directory `from` with everything in it. It returns `to`, which isn't displayed. A copied file replaces an existing file at `to`.
 
-Errors: `FILE` for file errors, such as a missing `from` or a missing parent directory of `to`.
+Errors: `IO` for file errors, such as a missing `from` or a missing parent directory of `to`.
 
 <!-- help •rename -->
 
@@ -211,7 +247,7 @@ Errors: `FILE` for file errors, such as a missing `from` or a missing parent dir
 
 `to •rename from` moves `from` to `to` and returns `to`, which isn't displayed. Both must be on the same filesystem.
 
-Errors: `FILE` for file errors.
+Errors: `IO` for file errors.
 
 <!-- help •remove -->
 
@@ -219,15 +255,15 @@ Errors: `FILE` for file errors.
 
 `•remove path` removes a file or an empty directory, and returns `path`, which isn't displayed. With the option `recurse`, as in `["recurse":1] •remove path`, it removes a directory and everything in it.
 
-Errors: `FILE` for a missing path, a directory that isn't empty without `recurse`, and other file errors; `DOMAIN` for an invalid option.
+Errors: `IO` for a missing path, a directory that isn't empty without `recurse`, and other file errors; `DOMAIN` for an invalid option.
 
 <!-- help •mkdir -->
 
 ### `•mkdir` — Make a directory {#mkdir}
 
-`•mkdir path` makes the directory `path` and any missing parents, and returns `path`, which isn't displayed. With the option `unique`, it then makes a directory with a new, unique name inside `path`, and returns that directory's path, as in `["unique":1] •mkdir •host "temp"`. The option `prefix` sets the start of the name, as in `["unique":1 "prefix":"run"] •mkdir dir`. The directory stays until removed.
+`•mkdir path` makes the directory `path` and any missing parents, and returns `path`, which isn't displayed. With the option `unique`, it then makes a directory with a new, unique name inside `path`, and returns that directory's path, which is displayed, as in `["unique":1] •mkdir •host "temp"`. The option `prefix` sets the start of the name, as in `["unique":1 "prefix":"run"] •mkdir dir`. The directory stays until removed.
 
-Errors: `FILE` for file errors; `DOMAIN` for an invalid option, or `prefix` without `unique`.
+Errors: `IO` for file errors; `DOMAIN` for an invalid option, or `prefix` without `unique`.
 
 <!-- help •deflate -->
 
@@ -258,7 +294,7 @@ Errors: `DOMAIN` for an unknown algorithm, or byte values outside 0 to 255.
 
 ### `•uuid` — UUIDs {#uuid}
 
-`•uuid v` returns a new UUID of version `v` as text. Version 4 is random. Version 7 UUIDs begin with their creation time and sort in creation order. Versions 1 and 6 also hold the time, with a random node in place of a MAC address.
+`•uuid v` returns a new UUID of version `v` as text. Version 4 is random. Version 7 UUIDs begin with their creation time and sort in creation order. Version 0 is the nil UUID, with every digit zero. Versions 1 and 6 also hold the time, with a random node in place of a MAC address.
 
 `[ns name] •uuid 5` derives a UUID from a name with SHA-1, and `[ns name] •uuid 3` with MD5. `ns` is `"dns"`, `"url"`, `"oid"`, `"x500"` or a UUID. The same namespace and name always give the same UUID. `bytes •uuid 8` makes a UUID from 16 bytes, and sets its version and variant.
 
@@ -304,7 +340,7 @@ Errors: `DOMAIN` for malformed XML, and for invalid names or attribute values gi
 
 ### `•mime` — Rich display {#mime}
 
-`•mime Y` returns the MIME bundle that display uses for `Y`. The bundle is a keyed vector from MIME types to text. It always has `text/plain`. If `Y` has a renderer, `•mime` calls it with `Y` as `⍵` and adds its entries.
+`•mime Y` returns the MIME bundle that display uses for `Y`. The bundle is a keyed vector from MIME types to text, or to bytes for a binary type such as `image/png`. It always has `text/plain`. If `Y` has a renderer, `•mime` calls it with `Y` as `⍵` and adds its entries.
 
 `F •mime Y` returns `Y` with the renderer that `F` holds, as in `{["text/html":"<b>",(⍕⍵),"</b>"]}ᵘ •mime Y`. A MIME type on the left displays `Y` itself as that type, as in `"text/markdown" •mime "*hi*"`. An atom becomes a scalar, because only an array can hold a renderer.
 
@@ -357,7 +393,7 @@ A direct [`•mime`](#mime) call on a spec reports these errors: `DOMAIN` for un
 
 `•image⁻¹ Y` encodes the picture `Y` as PNG bytes, and `"jpeg" •image⁻¹ Y` as JPEG bytes. JPEG drops alpha. [`•nput`](#nput) writes the bytes to a file, as in `"out.png" •nput •image⁻¹ Y`.
 
-Errors: `DOMAIN` for an unknown `kind`, invalid image bytes, or values that aren't real numbers; `RANK` for a shape that isn't a picture; `FILE` for file errors.
+Errors: `DOMAIN` for an unknown `kind`, invalid image bytes, or values that aren't real numbers; `RANK` for a shape that isn't a picture; `IO` for file errors.
 
 <!-- help •prefs -->
 
@@ -378,6 +414,32 @@ Errors: `DOMAIN` for an unknown `kind`, invalid image bytes, or values that aren
 Display shows part of an array of more than `limit` items: the first and last `edges` positions of each axis longer than twice `edges`. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. A nested array follows the same rule on its own. A line wider than `width` hides columns in the same way, keeping as many at each end as fit. `⎕←`, [`⍕`](glyphs/format.qmd) and source text always hold every item and every digit.
 
 Errors: `DOMAIN` for an unknown setting or an invalid value.
+
+<!-- help -->
+
+## Linear algebra
+
+<!-- help •decompose -->
+
+### `•decompose` — Matrix decompositions {#decompose}
+
+`kind •decompose m` factors the matrix `m` and returns the factors as a record. `kind` names the decomposition:
+
+| `kind` | Fields | Factors |
+|---|---|---|
+| `"svd"` | `u`, `s`, `v` | `m` is `(u×⍤1 s)+.×+⍉v`, with the singular values `s` in descending order |
+| `"qr"` | `q`, `r` | `m` is `q+.×r`, with orthonormal columns in `q`, and `r` upper triangular |
+| `"eigen"` | `values`, `vectors` | each column of `vectors` is an eigenvector of `m`, for the eigenvalue at the same position in `values` |
+| `"cholesky"` | `l` | `m` is `l+.×+⍉l`, with `l` lower triangular |
+
+The SVD and the QR decomposition are thin. For an `r`-by-`c` matrix, `u` and `q` have `r⌊c` columns. The factors are floats. A real matrix gives real factors, apart from complex eigenvalues and their eigenvectors. A Hermitian matrix, one equal to its conjugate transpose, has real eigenvalues in ascending order and orthonormal eigenvectors. [`⌹`](glyphs/domino.qmd) solves linear systems.
+
+```bpl
+("svd" •decompose 3 2⍴1 2 3 4 5 6).s     ⍝ 9.525518091565104 0.5143005806586441
+("eigen" •decompose 2 2⍴2 1 1 2).values  ⍝ [1 3]
+```
+
+Errors: `RANK` for an argument that isn't a matrix; `LENGTH` for `"eigen"` or `"cholesky"` of a matrix that isn't square; `DOMAIN` for an unknown decomposition, an empty or nonnumeric matrix, or `"cholesky"` of a matrix that isn't Hermitian positive definite.
 
 <!-- help -->
 
@@ -450,7 +512,7 @@ Destructure the record to take names, as in `[a b]←•load path`, or keep it a
 
 A path that starts with `./` or `../` is relative to the file holding the code. Other relative paths are relative to the working directory. `•nget` and `•nput` follow the same rule.
 
-Errors: `FILE` for a file that can't be read; `DOMAIN` for a file that loads itself, directly or through other files.
+Errors: `IO` for a file that can't be read; `DOMAIN` for a file that loads itself, directly or through other files.
 
 <!-- help •signal -->
 
@@ -465,7 +527,7 @@ safe¯3    ⍝ 0
 safe4     ⍝ 4
 ```
 
-`kind` is the name of one of BPL's kinds, which the error guard page lists, or any other one-word name, which makes a kind of the program's own. Names are read in any case. `kind` can also be a caught error, as `$e` gives in a handler, and `•signal` then raises its kind and message again.
+`kind` is the name of one of BPL's kinds, which the error guard page lists, or any other one-word name, which makes a kind of the program's own. Names are read in any case. `kind` can also be a caught error, such as `$e`, and `•signal` raises its kind and message again at the `•signal` call.
 
 Errors: `DOMAIN` for a number, or a name that isn't one word of letters, digits and underscores.
 

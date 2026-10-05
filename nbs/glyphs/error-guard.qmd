@@ -7,7 +7,7 @@
 {"DOMAIN"::0 ⋄ ÷⍵}'a'     ⍝ 0
 ```
 
-BPL raises the kinds SYNTAX, DOMAIN, LENGTH, LIMIT, RANK, INDEX, VALUE, FILE, INTERRUPT, TIMEOUT and UNSUPPORTED. A program can raise a kind of its own with [`•signal`][1], and a guard catches it by name.
+BPL raises the kinds SYNTAX, DOMAIN, LENGTH, LIMIT, RANK, INDEX, VALUE, IO, INTERRUPT, TIMEOUT and UNSUPPORTED. A program can raise a kind of its own with [`•signal`][1], and a guard catches it by name.
 
 In the handler, `$e` is the caught error: a record with `kind`, `message`, and the `source`, `line` and `column` where the error happened.
 
@@ -15,7 +15,7 @@ In the handler, `$e` is the caught error: a record with `kind`, `message`, and t
 {∞::$e.kind ⋄ ÷⍵}'a'      ⍝ "DOMAIN"
 ```
 
-`•signal $e` raises the caught error again, with its kind and message.
+`•signal $e` raises the caught error's kind and message again at the `•signal` call. `$e.line` and `$e.column` still give the position where the error first happened.
 
 The handler sees local bindings as they were when the error happened. Nothing is rolled back, including outer writes and output. The selected guard is inactive in its handler.
 

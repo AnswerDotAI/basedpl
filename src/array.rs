@@ -1568,6 +1568,18 @@ impl Value {
     /// Source text that reads back as the value. Strings are quoted, and arrays use bracket notation.
     pub(crate) fn literal(&self) -> String { self.source(Elide::NONE) }
 
+    /// Whether the value is a function or an operator, or holds one at any depth, including as an empty array's prototype.
+    pub(crate) fn holds_function(&self) -> bool {
+        match self {
+            Self::Function(_) | Self::Operator(_) => true,
+            Self::Array(_) => match self.as_items() {
+                Items::Values(items) => items.iter().any(Self::holds_function) || (items.is_empty() && self.prototype().holds_function()),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     /// Source text for the value, with large arrays elided as `el` says. Elided text doesn't read back.
     pub(crate) fn source(&self, el: Elide) -> String {
         match self {

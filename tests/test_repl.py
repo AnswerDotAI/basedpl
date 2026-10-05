@@ -1,11 +1,13 @@
 import os, json
 from importlib.resources import files
-import pty, re, select, subprocess, termios, time
+import fcntl, pty, re, select, subprocess, termios, time
 
 def test_terminal_symbol_entry_and_exit():
     master, slave = pty.openpty()
     termios.tcsetwinsize(slave, (24, 100))
-    child = subprocess.Popen(['bpl'], stdin=slave, stdout=slave, stderr=slave, env={**os.environ, 'TERM': 'xterm-256color'})
+    # The pty is bpl's controlling terminal, as a shell's is, so Ctrl-C during an evaluation sends SIGINT.
+    child = subprocess.Popen(['bpl'], stdin=slave, stdout=slave, stderr=slave, env={**os.environ, 'TERM': 'xterm-256color'},
+                             start_new_session=True, preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0))
     os.close(slave)
     pending = b''
 
@@ -68,6 +70,9 @@ def test_terminal_symbol_entry_and_exit():
         enter('(2+\r', '\r\n')
         enter('\x03', '\r\n')  # Ctrl-C discards the whole unfinished expression
         enter('2+3\r', '\r\n5\r\n')
+        os.write(master, '⎕←"go" ⋄ •delay ∞\r'.encode())
+        read_until(b'go\r\n')  # the evaluation is running
+        enter('\x03', 'INTERRUPT')  # Ctrl-C interrupts the running evaluation, and the session continues
         os.write(master, '⌽⎕\r'.encode())
         read_until(b'\x1b[?2004l')  # readline has returned the terminal to line mode
         enter('ab\r', 'ba\r\n')  # ⎕ reads a line typed at the terminal

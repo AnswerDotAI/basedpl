@@ -2671,20 +2671,20 @@ nl←•ucs 10 ⋄ •storage¨•csv "i,f,m",nl,"1,2.5,9007199254740993",nl,"2,
 
 ⍝⍝ Unicode conversion
 
-⍝ — Case folding pervades nested text and leaves numbers unchanged
-•c 42 "Pete" "Πέτρος"   ⍝ 42 "pete" "πέτροσ"
+⍝ — Case folding pervades nested text, keeps a final sigma and leaves numbers unchanged
+•c 42 "Pete" "Πέτρος"   ⍝ 42 "pete" "πέτρος"
 
-⍝ — Simple uppercase preserves shape and never expands one character to several
+⍝ — A matrix converts each character on its own, and keeps one whose uppercase has several characters
 1•c ["aBc" ⋄ "Σςß"]   ⍝ ["ABC" ⋄ "ΣΣß"]
 
-⍝ — Simple lowercase maps Unicode characters without expanding them
-¯1•c "İẞᾈΣ"   ⍝ "ißᾀσ"
+⍝ — Strings convert with full mappings, which can change their length
+1•c "straße"   ⍝ "STRASSE"
 
-⍝ — Simple case folding differs from full folding for dotted I and ligatures
-•c "ẞİﬀᾀ"   ⍝ "ßİﬀᾀ"
+⍝ — Folding makes strings that differ only in case equal
+•c "Straße" "STRASSE" "οδοσ" "ΟΔΟΣ"   ⍝ "strasse" "strasse" "οδος" "οδος"
 
 ⍝ — A singleton selector of any rank is accepted for case folding
-[[¯3] ⋄]•c "ίσως"   ⍝ "ίσωσ"
+[[¯3] ⋄]•c "ίσως"   ⍝ "ίσως"
 
 ⍝ — Case conversion preserves an empty nested character prototype
 •c 2 0⍴⊂"Ab"   ⍝ 2 0⍴⊂"  "
@@ -5578,14 +5578,14 @@ u←["unique":1 "prefix":"run"] •mkdir testpath ⋄ "run"≡3↑(•path u).na
 
 ⍝ — Removing a directory that isn't empty needs recurse
 •mkdir testpath,"/s" ⋄ •remove testpath
-⍝ error: FILE ERROR
+⍝ error: IO ERROR
 
 ⍝⍝ Standard input
 
 ⍝ — Reference sessions have no standard input, so reading ⎕ or •nget "-" is an error
 ⎕
-⍝ error: VALUE ERROR
+⍝ error: IO ERROR
 
 ⍝ —
 •nget "-"
-⍝ error: VALUE ERROR
+⍝ error: IO ERROR

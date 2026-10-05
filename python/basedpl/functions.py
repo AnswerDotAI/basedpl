@@ -2,7 +2,7 @@
 import builtins
 from keyword import iskeyword
 from unicodedata import normalize
-from . import _Operators, _Function, _array, bpl, symbols
+from . import _Operators, _Function, _array, _show, bpl, symbols
 from ._core import _system_functions
 
 _HOLE = object()
@@ -69,7 +69,7 @@ class Function(_Combinators):
             args = (kwargs, args[0] if len(args) == 1 else list(args))
         elif len(args) == 1 and self._valence == 2: return _build('↢', self, args[0], valence=1)
         if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this BPL function')
-        return bpl._request(dict(source=self._inner, args=[_array(o) for o in args]), True).value
+        return bpl._call(self._inner, [_array(o) for o in args], _show).value
 
 class Operator:
     "A BPL operator held as a value, as a module record holds it. Call it with its operand, or both operands of a dyadic operator, to get a `Function`."

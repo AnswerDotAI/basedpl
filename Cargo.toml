@@ -18,14 +18,18 @@ name = "bpl"
 path = "src/main.rs"
 test = false
 
-[profile.dev]
+[profile.test]
+inherits = "release"
+
+[profile.release]
 opt-level = 2
 overflow-checks = false
 debug-assertions = false
+incremental = true
 debug = "line-tables-only"
 
 [profile.dist]
-inherits = "dev"
+inherits = "release"
 incremental = false
 strip = true
 
@@ -40,9 +44,10 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 serde = ">=1.0.229, <2"
 serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order"] }
 unicode-width = { version = ">=0.2.2, <1", default-features = false }
-icu_casemap = ">=2, <3"
+icu_normalizer = ">=2, <3"
 # Custom bindings override Emacs Alt-digit prefixes in this fork.
 rustyline = { git = "https://github.com/AnswerDotAI/rustyline.git", branch = "master", default-features = false, features = ["custom-bindings"] }
+ctrlc = ">=3.5.2, <4"
 pyo3 = { version = ">=0.29.2, <1", optional = true, features = ["num-bigint"] }
 libloading = { version = ">=0.8, <1", optional = true }
 num-rational = ">=0.4.2, <1"

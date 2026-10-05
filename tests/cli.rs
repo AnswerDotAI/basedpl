@@ -115,5 +115,5 @@ fn programs_read_standard_input() {
     assert_eq!(run(&["-e", "⎕ ⋄ ⍴⎕ ⋄ ⎕ ⋄ ⍬≡⎕"], "first\n\nlast"), ("first\n[0]ₓ\nlast\n$t\n".into(), String::new()));
     assert_eq!(run(&["-e", "⎕ ⋄ ≢•nget \"-\""], "head\nab\ncd\n"), ("head\n6ₓ\n".into(), String::new()));
     // Standard input holds the program itself here.
-    for args in [&["-"][..], &[]] { assert!(run(args, "⎕\n").1.contains("VALUE ERROR: standard input is unavailable here")); }
+    for args in [&["-"][..], &[]] { assert!(run(args, "⎕\n").1.contains("IO ERROR: standard input is unavailable here")); }
 }

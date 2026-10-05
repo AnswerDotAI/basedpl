@@ -1,6 +1,5 @@
 use crate::{data, display, element::read_as, execution::Context, keyed, Error, ErrorAt, ErrorKind, Value};
 use ::image::{DynamicImage, ImageBuffer, ImageFormat};
-use base64::{engine::general_purpose::STANDARD, Engine};
 use std::io::Cursor;
 
 /// `•image Y` returns a picture: the PNG or JPEG file that `Y` names, the bytes of one, or the numbers in `Y`. A picture is numbers from
@@ -28,8 +27,8 @@ pub(crate) fn encode(left: Option<&Value>, right: &Value, span: &Context<'_>) ->
 }
 
 fn render(_: Option<&Value>, picture: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let png = STANDARD.encode(encoded(picture, ImageFormat::Png, span)?);
-    display::mime("image/png", keyed::text(&png)).error_at(span, "invalid image MIME bundle")
+    let png = data::byte_vector(encoded(picture, ImageFormat::Png, span)?).error_at(span, "image exceeds array limits")?;
+    display::mime("image/png", png).error_at(span, "invalid image MIME bundle")
 }
 
 /// The picture in the encoded image `bytes`.

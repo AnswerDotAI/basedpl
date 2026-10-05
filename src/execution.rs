@@ -22,7 +22,7 @@ pub struct EvalOptions {
     pub echo: bool,
     /// Stream output instead of collecting it in Evaluation.output.
     pub output: Option<OutputSink>,
-    /// Standard input for `⎕` and `•nget "-"`. Without one, reading either is a VALUE error.
+    /// Standard input for `⎕` and `•nget "-"`. Without one, reading either is an IO error.
     pub input: Option<Arc<dyn Input>>,
     /// Called at most every 10 ms while the evaluation checks for interruption. Returning true interrupts the evaluation.
     pub poll: Option<Poll>,
@@ -31,12 +31,22 @@ pub struct EvalOptions {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum OutputKind { Explicit, Display, Text }
 impl OutputKind { pub(crate) fn name(self) -> &'static str { match self { Self::Explicit => "explicit", Self::Display => "display", Self::Text => "text" } } }
-pub type MimeBundle = std::collections::BTreeMap<String, String>;
+/// One entry of a MIME bundle: text, or bytes for a binary type such as `image/png`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum MimeData { Text(String), Bytes(Vec<u8>) }
+/// JSON carries bytes as base64 text, as Jupyter messages do.
+impl serde::Serialize for MimeData {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        match self { Self::Text(text) => s.serialize_str(text), Self::Bytes(bytes) => s.serialize_str(&STANDARD.encode(bytes)) }
+    }
+}
+pub type MimeBundle = std::collections::BTreeMap<String, MimeData>;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Output { pub kind: OutputKind, pub data: MimeBundle }
 impl Output {
-    pub(crate) fn plain(kind: OutputKind, text: String) -> Self { Self { kind, data: [("text/plain".into(), text)].into_iter().collect() } }
-    pub fn text(&self) -> &str { self.data.get("text/plain").map_or("", String::as_str) }
+    pub(crate) fn plain(kind: OutputKind, text: String) -> Self { Self { kind, data: [("text/plain".into(), MimeData::Text(text))].into_iter().collect() } }
+    pub fn text(&self) -> &str { if let Some(MimeData::Text(text)) = self.data.get("text/plain") { text } else { "" } }
     /// The text as a terminal shows it, with a line ending after any output but `Text`.
     pub fn written(&self) -> String { if self.kind == OutputKind::Text { self.text().into() } else { format!("{}\n", self.text()) } }
     pub fn json(&self) -> serde_json::Value { serde_json::json!({"kind": self.kind.name(), "data": self.data}) }
@@ -58,7 +68,7 @@ impl Default for EvalOptions {
 
 /// Calls to `Execution::check` between clock reads. A loop whose steps each take a millisecond still stops within about 64 ms.
 const CHECKS_PER_CLOCK: u32 = 64;
-/// The shortest time between two calls of a poll.
+/// The shortest time between two calls of a poll, and the longest sleep in one `pause`.
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 #[derive(Default)]
@@ -112,14 +122,14 @@ impl Execution {
     pub(crate) fn line(&self, span: &Span) -> Result<Option<String>, Error> { self.read(span, |input| input.line(&self.pending.take())) }
     /// The rest of the input, read after the pending text is sent.
     pub(crate) fn rest(&self, span: &Span) -> Result<Vec<u8>, Error> { self.flush(); self.read(span, |input| input.rest()) }
-    /// The result of `read` on the frontend's input. A frontend with no input, or a read that fails, is a VALUE error. A read that
+    /// The result of `read` on the frontend's input. A frontend with no input, or a read that fails, is an IO error. A read that
     /// fails as interrupted, or during an interrupt, is an interrupt.
     fn read<T>(&self, span: &Span, read: impl FnOnce(&dyn Input) -> io::Result<T>) -> Result<T, Error> {
-        let input = self.input.as_deref().ok_or_else(|| span.error(ErrorKind::Value, "standard input is unavailable here"))?;
+        let input = self.input.as_deref().ok_or_else(|| span.error(ErrorKind::Io, "standard input is unavailable here"))?;
         read(input).map_err(|e| {
             if e.kind() == io::ErrorKind::Interrupted || self.interrupt.0.load(Ordering::Relaxed) {
                 span.error(ErrorKind::Interrupt, "evaluation interrupted")
-            } else { span.error(ErrorKind::Value, format!("standard input: {e}")) }
+            } else { span.io_error("standard input", e) }
         })
     }
     /// Stops the evaluation when it's interrupted or past its deadline. Most calls only count down. Every `CHECKS_PER_CLOCK`th call reads
@@ -136,6 +146,14 @@ impl Execution {
         if self.timeout.is_some_and(|(start, limit)| now - start >= limit) { return Err(span.error(ErrorKind::Timeout, "evaluation deadline exceeded")); }
         Ok(())
     }
+    /// One step of waiting: a full check, then a sleep of `limit` or `POLL_INTERVAL`, whichever is shorter. A loop of these notices
+    /// an interrupt or a passed deadline within one interval.
+    pub(crate) fn pause(&self, span: &Span, limit: Duration) -> Result<(), Error> {
+        self.countdown.set(0);
+        self.check(span)?;
+        std::thread::sleep(limit.min(POLL_INTERVAL));
+        Ok(())
+    }
     /// Ends an interrupt that a guard caught, so that its handler runs. Another interrupt stops the handler.
     pub(crate) fn clear_interrupt(&self) { self.interrupt.0.store(false, Ordering::Relaxed); }
 }
@@ -144,6 +162,7 @@ impl Execution {
 pub(crate) struct Context<'a> { pub span: &'a Span, pub session: &'a mut crate::Session }
 impl Context<'_> {
     pub(crate) fn check(&self) -> Result<(), Error> { self.session.execution.check(self.span) }
+    pub(crate) fn pause(&self, limit: Duration) -> Result<(), Error> { self.session.execution.pause(self.span, limit) }
     pub(crate) fn rest(&self) -> Result<Vec<u8>, Error> { self.session.execution.rest(self.span) }
     pub(crate) fn write(&self, text: &str) { self.session.execution.write(text) }
 }

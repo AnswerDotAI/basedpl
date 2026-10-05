@@ -453,13 +453,15 @@ impl Tree {
     }
 }
 
-/// Convert a keyed vector from MIME types to text into the bundle sent to frontends.
+/// Convert a keyed vector from MIME types to text, or to bytes for binary types such as `image/png`, into the bundle sent to
+/// frontends. A value whose prototype is a number holds bytes.
 pub(crate) fn bundle(value: &Value) -> Result<crate::MimeBundle, crate::ErrorKind> {
     crate::keyed::pairs(value)?
         .into_iter()
-        .map(|(name, value)| match crate::keyed::name(&value) {
-            Some(text) if name.contains('/') && !name.contains(char::is_whitespace) => Ok((name.to_string(), text.to_string())),
-            _ => Err(crate::ErrorKind::Domain),
+        .map(|(name, value)| {
+            if !name.contains('/') || name.contains(char::is_whitespace) { return Err(crate::ErrorKind::Domain); }
+            let data = if value.prototype().as_number().is_some() { crate::data::byte_items(&value).map(crate::MimeData::Bytes) } else { keyed::name(&value).map(|text| crate::MimeData::Text(text.to_string())) };
+            Ok((name.to_string(), data.ok_or(crate::ErrorKind::Domain)?))
         })
         .collect()
 }
@@ -469,5 +471,5 @@ pub(crate) fn renderer(name: &'static str, render: crate::system::Native) -> cra
     crate::system::native(name, crate::system::Call::Value(render), crate::system::Valence::Monadic)
 }
 
-/// A MIME bundle holding `text` as the type `kind`.
-pub(crate) fn mime(kind: &str, text: Value) -> Result<Value, crate::ErrorKind> { crate::keyed::vector(vec![kind.into()], vec![text]) }
+/// A MIME bundle holding `data` as the type `kind`.
+pub(crate) fn mime(kind: &str, data: Value) -> Result<Value, crate::ErrorKind> { crate::keyed::vector(vec![kind.into()], vec![data]) }

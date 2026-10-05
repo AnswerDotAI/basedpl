@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["fastship>=0.0.11", "maturin>=1.9.4,<2.0", "pytest", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "jlanguage", "pillow"]
+dev = ["fastship>=0.0.11", "fastws-cli>=0.0.20", "maturin>=1.9.4,<2.0", "pytest", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "jlanguage", "pillow"]
 
 [project.scripts]
 bpl = "basedpl._cli:main"
@@ -35,12 +35,12 @@ Documentation = "https://answerdotai.github.io/basedpl"
 [tool.maturin]
 data = "wheel"
 features = ["python"]
-profile = "dev"
+profile = "release"
 python-source = "python"
 module-name = "basedpl._core"
 
 [tool.uv]
-cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.rs" }, { file = "build.rs" }, { file = "nbs/**/*.qmd" }, { file = "python/basedpl/layout.json" }, { file = "Cargo.toml" }, { file = ".git/fastws-cargo-key" }]
+cache-keys = [{ file = "pyproject.toml" }, { file = "Cargo.toml" }]
 
 [tool.fastship]
 branch = "main"

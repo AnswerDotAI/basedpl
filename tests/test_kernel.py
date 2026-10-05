@@ -100,9 +100,9 @@ async def kernel_story():
         messages = [m async for m in kc.run('⎕←"Name?" ⋄ ⌽⎕', on_stdin=lambda msg: 'Jo', timeout=10)]
         assert displayed(messages) == [('stream', 'Name?\n'), ('execute_result', 'oJ')]
         reply, _ = await kc.exec_drain('⎕', allow_stdin=False)
-        assert reply['content']['ename'] == 'VALUE ERROR'
+        assert reply['content']['ename'] == 'IO ERROR'
         reply, _ = await kc.exec_drain('•nget "-"', allow_stdin=True)
-        assert reply['content']['ename'] == 'VALUE ERROR'
+        assert reply['content']['ename'] == 'IO ERROR'
 
         # Ctrl-C while `⎕` waits for the notebook's reply interrupts the evaluation.
         asked = asyncio.Event()

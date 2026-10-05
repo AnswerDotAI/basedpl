@@ -62,6 +62,6 @@ d = { 'settings': { 'branch': 'main',
                                    'basedpl.notebooks.BPLMagic.complete': ('magics.html#bplmagic.complete', 'basedpl/notebooks.py'),
                                    'basedpl.notebooks.create_ipython_config': ('magics.html#create_ipython_config', 'basedpl/notebooks.py'),
                                    'basedpl.notebooks.create_magic': ('magics.html#create_magic', 'basedpl/notebooks.py'),
-                                   'basedpl.notebooks.display_events': ('magics.html#display_events', 'basedpl/notebooks.py'),
+                                   'basedpl.notebooks.display_event': ('magics.html#display_event', 'basedpl/notebooks.py'),
                                    'basedpl.notebooks.load_ipython_extension': ( 'magics.html#load_ipython_extension',
                                                                                  'basedpl/notebooks.py')}}}

@@ -49,7 +49,7 @@ def _value(raw, as_array=False):
     if not as_array:
         if len(shape) == 1 and all(isinstance(o, str) for o in items): return ''.join(data)
     import numpy as np
-    dtype = object if nested else _dtype(data or [item(raw['prototype'])])
+    dtype = object if nested else raw.get('dtype') or _dtype(data or [item(raw['prototype'])])
     if dtype is not object: return np.array(data, dtype=dtype).reshape(shape)
     result = np.empty(len(data), dtype=object)
     for i,o in enumerate(data): result[i] = o
@@ -242,7 +242,7 @@ class Array(_Operators):
     def _repr_mimebundle_(self, include=None, exclude=None):
         try: data = _builtin('•mime')(self).py
         except BplError: data = {'text/plain': self.bpl}
-        return {k:v for k,v in data.items() if (include is None or k in include) and (exclude is None or k not in exclude)}
+        return {k: v if isinstance(v, str) else bytes(v) for k,v in data.items() if (include is None or k in include) and (exclude is None or k not in exclude)}
 
 @dataclass(frozen=True)
 class Result:
@@ -267,10 +267,11 @@ def _written(events):
     "The text of `events` as a terminal shows it: a line ending follows each event except a `text` event, which BPL writes as it is."
     return ''.join(e['data']['text/plain'] + ('' if e['kind']=='text' else '\n') for e in events)
 
-def _print(events): print(_written(events), end='')
+def _show(event):
+    "Print one output event as a terminal shows it."
+    print(_written([event]), end='')
 
-def _result(raw, display=False):
-    if display: _print(raw['output'])
+def _result(raw):
     if error := raw['error']: raise BplError(error, raw['output'])
     value = raw['value']
     if isinstance(value, _Function): value = Function(value)
@@ -283,25 +284,21 @@ class _Workspace:
     __pyskill_sigs__ = False
     def __init__(self): self.timeout, self._session = None, _Session()
 
-    def _request(self, payload, display, echo=False):
-        try: raw = self._session.request(**payload, echo=echo, timeout=self.timeout)
-        except KeyboardInterrupt as e:
-            if display: _print(getattr(e, 'events', []))
-            raise
-        return _result(raw, display)
+    def _eval(self, source, bindings, show=None, echo=False):
+        "Bind `bindings`, then run `source`, calling `show` with each output event as BPL produces it."
+        if source is not None and not isinstance(source, str): raise TypeError('BPL source must be a string')
+        bindings = [(k, v._inner if isinstance(v, Function) else _array(v)) for k,v in bindings.items()]
+        return _result(self._session.eval(code=source, bindings=bindings, timeout=self.timeout, echo=echo, show=show))
 
-    def _eval(self, source, bindings, display, echo=False):
-        payload = dict(bindings=[(k, v._inner if isinstance(v, Function) else _array(v)) for k,v in bindings.items()])
-        if source is not None:
-            if not isinstance(source, str): raise TypeError('BPL source must be a string')
-            payload['source'] = source
-        return self._request(payload, display, echo)
+    def _call(self, function, args, show=None):
+        "Call the native `function` with the native `args`, calling `show` with each output event as BPL produces it."
+        return _result(self._session.call(function, args, timeout=self.timeout, show=show))
 
     def __call__(self, source=None, capture=None, /, **bindings):
         "Bind keyword arguments, then evaluate source. Print explicit output and return the value. With `capture` of 'explicit' or 'repl', return a `Result` without printing."
-        if capture is None: return self._eval(source, bindings, True).value
+        if capture is None: return self._eval(source, bindings, _show).value
         if capture not in ('explicit', 'repl'): raise ValueError(f"capture must be 'explicit' or 'repl', not {capture!r}")
-        return self._eval(source, bindings, False, echo=capture == 'repl')
+        return self._eval(source, bindings, echo=capture == 'repl')
 
     def __getitem__(self, source): return self(source)
 

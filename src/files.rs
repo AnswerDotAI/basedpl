@@ -153,7 +153,7 @@ pub(crate) fn readdir(left: Option<&Value>, right: &Value, span: &Context<'_>) -
     let mut rows = Vec::new();
     for entry in walkdir::WalkDir::new(&root).min_depth(1).max_depth(depth).sort_by_file_name() {
         span.check()?;
-        let entry = entry.map_err(|e| span.file_error(&dir, e))?;
+        let entry = entry.map_err(|e| span.io_error(&dir, e))?;
         let within = entry.path().strip_prefix(&root).expect("walkdir gives paths within its root");
         if glob.as_ref().is_some_and(|g| !g.is_match(within)) { continue; }
         rows.push(row(entry.path(), &Path::new(&dir).join(within).to_string_lossy()));
@@ -169,31 +169,30 @@ fn argument(value: &Value, span: &Context<'_>) -> Result<(String, std::path::Pat
 }
 
 /// `to •copy from`: copies the file or directory `from` to `to`, and gives `to`.
-pub(crate) fn copy(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(crate) fn copy(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<(Value, bool), Error> {
     let ((to, dest), (from, source)) = (argument(left.expect("•copy is dyadic"), span)?, argument(right, span)?);
-    if !source.is_dir() {
-        fs::copy(&source, &dest).map_err(|e| span.file_error(&format!("{from} to {to}"), e))?;
-        return Ok(keyed::text(&to));
+    if source.is_dir() {
+        for entry in walkdir::WalkDir::new(&source) {
+            span.check()?;
+            let entry = entry.map_err(|e| span.io_error(&from, e))?;
+            let copied = dest.join(entry.path().strip_prefix(&source).expect("walkdir gives paths within its root"));
+            let done = if entry.file_type().is_dir() { fs::create_dir_all(&copied) } else { fs::copy(entry.path(), &copied).map(drop) };
+            done.map_err(|e| span.io_error(&copied.to_string_lossy(), e))?;
+        }
     }
-    for entry in walkdir::WalkDir::new(&source) {
-        span.check()?;
-        let entry = entry.map_err(|e| span.file_error(&from, e))?;
-        let copied = dest.join(entry.path().strip_prefix(&source).expect("walkdir gives paths within its root"));
-        let done = if entry.file_type().is_dir() { fs::create_dir_all(&copied) } else { fs::copy(entry.path(), &copied).map(drop) };
-        done.map_err(|e| span.file_error(&copied.to_string_lossy(), e))?;
-    }
-    Ok(keyed::text(&to))
+    else { fs::copy(&source, &dest).map_err(|e| span.io_error(&format!("{from} to {to}"), e))?; }
+    Ok((keyed::text(&to), true))
 }
 
 /// `to •rename from`: moves `from` to `to`, and gives `to`.
-pub(crate) fn rename(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(crate) fn rename(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<(Value, bool), Error> {
     let ((to, dest), (from, source)) = (argument(left.expect("•rename is dyadic"), span)?, argument(right, span)?);
-    fs::rename(&source, &dest).map_err(|e| span.file_error(&format!("{from} to {to}"), e))?;
-    Ok(keyed::text(&to))
+    fs::rename(&source, &dest).map_err(|e| span.io_error(&format!("{from} to {to}"), e))?;
+    Ok((keyed::text(&to), true))
 }
 
 /// `•remove Y`: removes the file or empty directory `Y`, and gives `Y`. The `recurse` option removes a directory and everything in it.
-pub(crate) fn remove(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(crate) fn remove(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<(Value, bool), Error> {
     let recurse = Options::new("•remove", left, None, &["recurse"], span)?.boolean("recurse", false, span)?;
     let (path, file) = argument(right, span)?;
     let removed = match (file.symlink_metadata().is_ok_and(|m| m.is_dir()), recurse) {
@@ -201,24 +200,45 @@ pub(crate) fn remove(left: Option<&Value>, right: &Value, span: &Context<'_>) ->
         (true, false) => fs::remove_dir(&file),
         (false, _) => fs::remove_file(&file),
     };
-    removed.map_err(|e| span.file_error(&path, e))?;
-    Ok(keyed::text(&path))
+    removed.map_err(|e| span.io_error(&path, e))?;
+    Ok((keyed::text(&path), true))
 }
 
-/// `•mkdir Y`: makes the directory `Y` and any missing parents, and gives `Y`. The `unique` option then makes a directory with a new,
-/// unique name inside `Y`, starting with the `prefix` option, and gives its path. It stays until removed.
-pub(crate) fn mkdir(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let opts = Options::new("•mkdir", left, None, &["unique", "prefix"], span)?;
-    let prefix = opts.values.get("prefix").map(|p| text(p, span)).transpose()?;
+/// `•mkdir Y`: makes the directory `Y` and any missing parents, and gives `Y`, which isn't displayed. The `unique` option then makes a
+/// directory with a new, unique name inside `Y`, starting with the `prefix` option, and gives its path, which is displayed. It stays
+/// until removed.
+pub(crate) fn mkdir(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<(Value, bool), Error> {
+    let unique = Unique::new(&Options::new("•mkdir", left, None, &["unique", "prefix"], span)?, "•mkdir", span)?;
     let (path, file) = argument(right, span)?;
-    fs::create_dir_all(&file).map_err(|e| span.file_error(&path, e))?;
-    if !opts.boolean("unique", false, span)? {
-        if prefix.is_some() { return Err(span.domain_error("the •mkdir prefix option needs unique")); }
-        return Ok(keyed::text(&path));
+    fs::create_dir_all(&file).map_err(|e| span.io_error(&path, e))?;
+    match unique {
+        Some(unique) => Ok((unique.make(&path, span, |builder, dir| builder.tempdir_in(dir).map(|made| made.keep()))?, false)),
+        None => Ok((keyed::text(&path), true)),
     }
-    let mut builder = tempfile::Builder::new();
-    if let Some(prefix) = &prefix { builder.prefix(prefix); }
-    let made = builder.tempdir_in(&file).map_err(|e| span.file_error(&path, e))?.keep();
-    let name = made.file_name().expect("a new directory has a name");
-    Ok(keyed::text(&Path::new(&path).join(name).to_string_lossy()))
+}
+
+/// A uniquely named file or directory, which the `unique` option asks for. Its name starts with the `prefix` option.
+pub(crate) struct Unique { prefix: Option<String> }
+
+impl Unique {
+    /// `None` without the `unique` option. The `prefix` option without `unique` is a DOMAIN error.
+    pub(crate) fn new(opts: &Options, function: &str, span: &Context<'_>) -> Result<Option<Self>, Error> {
+        let prefix = opts.values.get("prefix").map(|p| text(p, span)).transpose()?;
+        if opts.boolean("unique", false, span)? { return Ok(Some(Self { prefix })); }
+        if prefix.is_some() { return Err(span.domain_error(format!("the {function} prefix option needs unique"))); }
+        Ok(None)
+    }
+    /// Makes the entry in the directory `dir` names through `make`, and gives the entry's path: `dir` joined to its new name.
+    pub(crate) fn make(
+        &self,
+        dir: &str,
+        span: &Context<'_>,
+        make: impl FnOnce(&tempfile::Builder<'_, '_>, &Path) -> std::io::Result<std::path::PathBuf>,
+    ) -> Result<Value, Error> {
+        let mut builder = tempfile::Builder::new();
+        if let Some(prefix) = &self.prefix { builder.prefix(prefix); }
+        let made = make(&builder, &span.path(dir)).map_err(|e| span.io_error(dir, e))?;
+        let name = made.file_name().expect("a new entry has a name");
+        Ok(keyed::text(&Path::new(dir).join(name).to_string_lossy()))
+    }
 }

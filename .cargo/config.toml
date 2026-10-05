@@ -2,7 +2,7 @@
 [target.'cfg(target_arch = "x86_64")']
 rustflags = ["-C", "target-cpu=x86-64-v3"]
 
-# `cargo t` runs the Rust tests on the build that `python scripts/develop.py` installs as the extension, so the crate compiles once.
+# `cargo t` runs the Rust tests on the build that `cargo develop` installs as the extension, so the crate compiles once.
 [alias]
 t = "test --features python"
 

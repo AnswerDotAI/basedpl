@@ -1,19 +1,21 @@
 use crate::{
     array::{generated_len, Items},
     execution::Context,
-    primitive::{integer, numeric, pervade, EmptyFill},
+    primitive::{integer, numeric},
     Error, ErrorAt, ErrorKind, Function, Value,
 };
 use std::borrow::Cow;
 
 /// A system function implemented natively, taking an optional left argument and a right argument.
 pub(crate) type Native = fn(Option<&Value>, &Value, &Context<'_>) -> Result<Value, Error>;
+/// A native called for its effect. It returns its result, and whether the result is shy, as an assignment's is.
+pub(crate) type Effect = fn(Option<&Value>, &Value, &Context<'_>) -> Result<(Value, bool), Error>;
 
 #[derive(Clone, Debug)]
 pub(crate) enum Call {
     Value(Native),
-    /// A native called for its effect. Its result is shy, as an assignment's is.
-    Effect(Native),
+    /// A native called for its effect.
+    Effect(Effect),
     Session(fn(&mut crate::Session, Option<&Value>, &Value, &crate::Span) -> Result<Value, Error>),
     Regex(std::sync::Arc<::regex::Regex>, crate::regex::Operation),
     Distribution(std::sync::Arc<crate::distribution::Distribution>, crate::distribution::Operation),
@@ -83,9 +85,12 @@ const BUILTINS: &[(&str, Call, Valence)] = &[
     ("•rand", Call::Value(crate::distribution::generator), Monadic),
     ("•nget", Call::Value(crate::data::read), Ambivalent),
     ("•nput", Call::Effect(crate::data::write), Dyadic),
+    ("•fetch", Call::Value(crate::data::fetch), Ambivalent),
     ("•deflate", Call::Value(crate::data::inflate), Ambivalent),
     ("•hash", Call::Value(crate::data::hash), Ambivalent),
     ("•uuid", Call::Value(crate::data::uuid), Ambivalent),
+    ("•normalize", Call::Value(normalize), Ambivalent),
+    ("•decompose", Call::Value(crate::primitive::decompose), Dyadic),
     ("•ucs", Call::Value(unicode_convert), Ambivalent),
     ("•load", Call::Load, Monadic),
     ("•signal", Call::Value(signal), Ambivalent),
@@ -106,6 +111,7 @@ const BUILTINS: &[(&str, Call, Valence)] = &[
     ("•nl", Call::Session(crate::Session::system_nl), Ambivalent),
     ("•src", Call::Session(crate::Session::system_src), Monadic),
     ("•ex", Call::Session(crate::Session::system_ex), Monadic),
+    ("•literal", Call::Session(crate::Session::system_literal), Monadic),
 ];
 
 pub(crate) fn names() -> impl Iterator<Item = &'static str> { BUILTINS.iter().map(|(name, ..)| *name) }
@@ -128,6 +134,7 @@ const INVERSES: &[(&str, Native, Valence)] = &[
     ("•deflate", crate::data::deflate, Ambivalent),
     ("•date", crate::date::write, Ambivalent),
     ("•path", crate::files::join, Monadic),
+    ("•literal", write_literal, Monadic),
 ];
 
 /// `f⁻¹` for a system function `f` that has an inverse.
@@ -176,25 +183,24 @@ pub(crate) fn terminal_size() -> Option<(usize, usize)> {
 pub(crate) fn terminal_size() -> Option<(usize, usize)> { None }
 
 /// `•delay s` pauses for `s` seconds and gives the seconds it waited. `•delay ∞` waits until interrupted. Interrupts stop any delay.
-fn delay(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+fn delay(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<(Value, bool), Error> {
     use std::time::{Duration, Instant};
     let seconds = crate::primitive::real(right, span)?;
     if seconds.is_nan() || seconds < 0.0 { return Err(span.domain_error("•delay needs a nonnegative number of seconds")); }
     let start = Instant::now();
     let end = Duration::try_from_secs_f64(seconds).ok().and_then(|d| start.checked_add(d));
     loop {
-        span.check()?;
         let now = Instant::now();
         if end.is_some_and(|end| now >= end) { break; }
-        std::thread::sleep(end.map_or(Duration::MAX, |end| end - now).min(Duration::from_millis(10)));
+        span.pause(end.map_or(Duration::MAX, |end| end - now))?;
     }
-    Ok(Value::Number(start.elapsed().as_secs_f64().into()))
+    Ok((Value::Number(start.elapsed().as_secs_f64().into()), true))
 }
 
 fn storage(_: Option<&Value>, right: &Value, _: &Context<'_>) -> Result<Value, Error> { Ok(crate::keyed::text(right.storage_name())) }
 
 /// `•signal kind` raises an error of the kind that `kind` names, and `message •signal kind` gives it a message. `kind` can also be a
-/// caught error, as `$e` gives in a handler, which raises its kind and message again.
+/// caught error, such as `$e`, which raises its kind and message again.
 fn signal(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let invalid = || span.domain_error("•signal needs an error kind such as \"DOMAIN\", or a caught error");
     let (name, message) = match crate::keyed::name(right) {
@@ -217,18 +223,50 @@ fn case_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Resu
         _ => return Err(span.domain_error("•c needs one case mode")),
     };
     if !matches!(mode, -3 | -1 | 1) { return Err(span.domain_error("•c mode must be 1, ¯1 or ¯3")); }
-    let mapper = icu_casemap::CaseMapper::new();
-    let case = |e: Value| {
-        Ok(match e {
-            Value::Character(c) => Value::Character(match mode {
-                1 => mapper.simple_uppercase(c),
-                -1 => mapper.simple_lowercase(c),
-                _ => mapper.simple_fold(c),
-            }),
-            e => e,
-        })
+    let text: fn(&str) -> String = match mode { 1 => str::to_uppercase, -1 => str::to_lowercase, _ => |s| s.to_uppercase().to_lowercase() };
+    cased(right, text, span)
+}
+
+/// `value` with each character vector mapped as a string by `text`, and each other character mapped on its own. A character whose
+/// mapping has more than one character stays as it is.
+fn cased(value: &Value, text: fn(&str) -> String, span: &Context<'_>) -> Result<Value, Error> {
+    span.check()?;
+    let mapped = match value {
+        Value::Character(c) => {
+            let s = text(&c.to_string());
+            let mut chars = s.chars();
+            return Ok(Value::Character(match (chars.next(), chars.next()) { (Some(m), None) => m, _ => *c }));
+        }
+        Value::Array(_) if !value.is_empty() => match crate::keyed::name(value) {
+            Some(s) => crate::keyed::text(&text(&s)),
+            None => Value::new(value.shape().to_vec(), value.elements().map(|e| cased(&e, text, span)).collect::<Result<_, _>>()?)
+                .error_at(span, "invalid result")?,
+        },
+        _ => return Ok(value.clone()),
     };
-    pervade(right, &case, &EmptyFill::Mapped, span)
+    if mapped.shape() != value.shape() { return Ok(mapped); }
+    mapped.with_layout(value.layout().clone()).error_at(span, "invalid result")
+}
+
+/// `form •normalize text` puts each string of `text` into a Unicode normalization form: `"NFC"`, the default, `"NFD"`, `"NFKC"` or
+/// `"NFKD"`.
+fn normalize(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    use icu_normalizer::{ComposingNormalizerBorrowed as Composing, DecomposingNormalizerBorrowed as Decomposing};
+    let form: fn(&str) -> String = match crate::data::algorithm(left, "nfc", span)?.as_str() {
+        "nfc" => |t| Composing::new_nfc().normalize(t).into_owned(),
+        "nfd" => |t| Decomposing::new_nfd().normalize(t).into_owned(),
+        "nfkc" => |t| Composing::new_nfkc().normalize(t).into_owned(),
+        "nfkd" => |t| Decomposing::new_nfkd().normalize(t).into_owned(),
+        _ => return Err(span.domain_error("•normalize takes \"NFC\", \"NFD\", \"NFKC\" or \"NFKD\"")),
+    };
+    let (shape, texts) = crate::keyed::text_items(right).ok_or_else(|| span.domain_error("•normalize needs text"))?;
+    crate::keyed::texts(&shape, texts.iter().map(|t| crate::keyed::text(&form(t))).collect()).error_at(span, "normalized text exceeds array limits")
+}
+
+/// `•literal⁻¹ Y` writes `Y` as BPL source, which `•literal` reads back. A value that holds a function or an operator is a DOMAIN error.
+fn write_literal(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    if right.holds_function() { return Err(span.domain_error("•literal⁻¹ writes data, not functions")); }
+    Ok(crate::keyed::text(&right.literal()))
 }
 
 fn unicode_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {

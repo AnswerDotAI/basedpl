@@ -68,9 +68,10 @@ Plain assignment is local; modified/selective updates change the nearest binding
 
 `$a` is the uppercase Latin alphabet; `$d` is `"0123456789"`. System functions use case-insensitive `•name`, not `⎕NAME`. Options are generally keyed left arguments.
 
-- Text: `•c •ucs •r`.
-- Data/files: `•csv •json •xml •image •deflate •date •vfi •nget •nput •hash •uuid`. Filesystem: `•path •metadata •readdir •copy •rename •remove •mkdir`. A format function reads its format, and its inverse writes it. `•json` reads JSON5.
+- Text: `•c •ucs •normalize •r`.
+- Data/files: `•csv •json •literal •xml •image •deflate •date •vfi •nget •nput •fetch •hash •uuid`. Filesystem: `•path •metadata •readdir •copy •rename •remove •mkdir`. A format function reads its format, and its inverse writes it. `•json` reads JSON5.
 - Display: `•element •svg •mime •plot •prefs`.
+- Linear algebra: `•decompose`.
 - Programs/introspection: `•load •signal •storage •time •host •delay •nc •nl •src •ex`. `•time 0` is the current Unix time.
 - Random: `•rand` makes a seeded generator. `params •distribution name` returns a distribution, and `•distribution name` uses standard parameters where the distribution has them. Each distribution is a record with `sample density cdf quantile` functions.
 

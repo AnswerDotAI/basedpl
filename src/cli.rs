@@ -5,28 +5,35 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-const USAGE: &str = "Usage: bpl [-e EXPR [ARG...] | FILE [ARG...] | - [ARG...] | --worker | --kernel -f CONNECTION_FILE]\n\nNo arguments: persistent BPL REPL (Ctrl-D to exit, Ctrl-C to cancel input).\nType `name then Tab or a non-letter to enter a symbol, e.g. `iota5 becomes ⍳5.\nUse - to execute all of stdin as one source.\n`•host \"args\"` gives the ARGs.\nUse --worker for JSON-lines requests with deadlines and interruption.\nUse --kernel -f CONNECTION_FILE to run a Jupyter kernel.\n";
+const USAGE: &str = "Usage: bpl [-e EXPR [ARG...] | FILE [ARG...] | - [ARG...] | --worker | --kernel -f CONNECTION_FILE]\n\nNo arguments: persistent BPL REPL (Ctrl-D to exit, Ctrl-C to cancel input or interrupt an evaluation).\nType `name then Tab or a non-letter to enter a symbol, e.g. `iota5 becomes ⍳5.\nUse - to execute all of stdin as one source.\n`•host \"args\"` gives the ARGs.\nUse --worker for JSON-lines requests with deadlines and interruption.\nUse --kernel -f CONNECTION_FILE to run a Jupyter kernel.\n";
 
 /// Writes each output to stdout as the evaluation produces it. A failed write interrupts the evaluation, and `finish` then gives the
-/// write's error. Evaluations can also read standard input, when the program didn't come from it.
-struct Printer { interrupt: InterruptHandle, failure: Arc<Mutex<Option<io::Error>>>, input: Option<Arc<dyn Input>> }
+/// write's error. Evaluations can also read standard input, when the program didn't come from it. Ctrl-C interrupts the evaluation
+/// that is running.
+struct Printer { interrupt: Arc<Mutex<InterruptHandle>>, failure: Arc<Mutex<Option<io::Error>>>, input: Option<Arc<dyn Input>> }
 impl Printer {
-    /// A printer whose evaluations read standard input when `input` is set.
-    fn new(input: bool) -> Self {
-        Self { interrupt: InterruptHandle::default(), failure: Arc::default(), input: input.then(|| Arc::new(StandardInput) as Arc<dyn Input>) }
+    /// A printer whose evaluations read standard input when `input` is set. It installs the process's Ctrl-C handler.
+    fn new(input: bool) -> io::Result<Self> {
+        let interrupt: Arc<Mutex<InterruptHandle>> = Arc::default();
+        let current = interrupt.clone();
+        ctrlc::set_handler(move || current.lock().unwrap().interrupt()).map_err(io::Error::other)?;
+        Ok(Self { interrupt, failure: Arc::default(), input: input.then(|| Arc::new(StandardInput) as Arc<dyn Input>) })
     }
+    /// The options for one evaluation. Its interrupt handle is new, and Ctrl-C reaches it until the next call.
     fn options(&self) -> EvalOptions {
-        let (interrupt, failure) = (self.interrupt.clone(), self.failure.clone());
+        let interrupt = InterruptHandle::default();
+        *self.interrupt.lock().unwrap() = interrupt.clone();
+        let (stop, failure) = (interrupt.clone(), self.failure.clone());
         let sink = move |output: &Output| {
             let mut failure = failure.lock().unwrap();
             if failure.is_some() { return; }
             let mut out = io::stdout();
             if let Err(e) = out.write_all(output.written().as_bytes()).and_then(|()| out.flush()) {
                 *failure = Some(e);
-                interrupt.interrupt();
+                stop.interrupt();
             }
         };
-        EvalOptions { interrupt: self.interrupt.clone(), output: Some(Arc::new(sink)), input: self.input.clone(), ..EvalOptions::default() }
+        EvalOptions { interrupt, output: Some(Arc::new(sink)), input: self.input.clone(), ..EvalOptions::default() }
     }
     /// Writes the evaluation's error to `err`, and gives whether the evaluation succeeded. A failed write of its output is the error
     /// instead.
@@ -60,14 +67,14 @@ impl Input for StandardInput {
 
 /// Evaluates `source`. When `input` is set, the program can read standard input.
 fn expression(source: std::sync::Arc<Source>, input: bool, err: &mut impl Write) -> io::Result<i32> {
-    let printer = Printer::new(input);
+    let printer = Printer::new(input)?;
     let result = Session::new().eval_source(source, printer.options());
     Ok(if printer.finish(result, err)? { 0 } else { 1 })
 }
 
 fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
     // Piped input holds the program. At a terminal, `⎕` reads a line typed while the program runs.
-    let printer = Printer::new(interactive);
+    let printer = Printer::new(interactive)?;
     let mut editor = if interactive { Some(crate::editor::LineEditor::new().map_err(io::Error::other)?) } else { None };
     let mut session = if interactive { Session::interactive() } else { Session::new() };
     let mut code = String::new();
