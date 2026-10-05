@@ -1,7 +1,5 @@
 # REPL
 
-[Home](index.ipynb) · [Command line](cli.qmd)
-
 Run `bpl`. An expression displays its result. An assignment keeps its names for later lines. After an error, the REPL shows the error's source location and returns to the prompt.
 
 ```text

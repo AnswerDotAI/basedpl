@@ -1,7 +1,5 @@
 # Command line
 
-[Home](index.ipynb) · [Install](getting-started.ipynb#install) · [REPL](repl.qmd)
-
 ## Expressions and files
 
 `-e` evaluates one expression. Quote it to protect spaces and glyphs from the shell.

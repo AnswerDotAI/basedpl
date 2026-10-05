@@ -1,7 +1,5 @@
 # Process interfaces
 
-[Home](index.ipynb) · [Command line](cli.qmd) · [Python](python.ipynb)
-
 ## JSON lines
 
 Run `bpl --worker`. Send one JSON request per line. Each request gets one flushed JSON reply, in order. Names persist between requests.
