@@ -569,7 +569,7 @@ impl Primitive {
             Self::Windows => row("↕", "windows", "", None, dyad("windows", [1, W])),
             Self::Prime => row("⍭", "prime", "", monad("prime", 0), dyad("prime-mode", [0, 0])),
             Self::Factor => row("⨸", "factor", "", monad("factors", 0), dyad("factor-spec", [0, 0])),
-            Self::Polynomial => row("⌻", "polynomial", "", monad("polynomial", 1), dyad("polyval", [1, 0])),
+            Self::Polynomial => row("⌻", "polynomial", "", monad("roots", 1), dyad("polyval", [1, 0])),
             Self::Where => row("⍸", "where", "", monad("where", W), dyad("interval-index", [W, W])),
             Self::Find => row("⍷", "find", "", None, dyad("find", [W, W])),
             Self::Identity(false) => row("⊢", "right", "", monad("same", W), dyad("right", [W, W])),

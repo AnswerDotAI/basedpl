@@ -11,7 +11,7 @@ Each JSONL inventory row has a stable `id`, `code`, and `status`. `code` records
 | Status | Meaning |
 |---|---|
 | `active` | Exported to the `.bpl` corpus. |
-| `duplicate` | Same code and expectation as the active case named in `duplicate_of`. Not exported. |
+| `duplicate` | Same code and expectation as the record named in `duplicate_of`. Only that record is exported, once it's active. |
 | `setup` | Upstream initialization retained for self-contained cases; no standalone assertion. |
 | `pending` | Intended coverage that still needs implementation, an origin/dialect adaptation, concrete inputs, or an expectation. |
 | `question` | Retain until the scope/semantic decision is resolved. The question list is in `meta/reference-questions.md`. |

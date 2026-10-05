@@ -1202,7 +1202,7 @@ cal←{ ⍝ Calendar for absolute year or (year month).
     ⍺←1
     cntr←{(⌈0.5×+/∧\' '=⍵)⌽⍵}
     1=≢,⍵?{
-        12≥|⍵?•signal "DOMAIN ERROR";
+        12≥|⍵?•signal "DOMAIN";
         year←4 3⍴(0 cal¨ ⍵,¨1+⍳12)
         join←{⍉⊃(↓⍺ᵀ),"   ",↓⍵ᵀ}
         head←cntr ¯66↑⍕0+⍵
@@ -1237,7 +1237,7 @@ packZ←{ ⍝ LZW: positive bit limit compresses; zero expands; negative returns
     }⍵;
     shape←⍴⍵ ⋄ src←,⍵ ⋄ alph←∪src
     limit←2*|⍺
-    limit<≢alph?•signal "DOMAIN ERROR";
+    limit<≢alph?•signal "DOMAIN";
     compress←{
         [rest dict word codes]←⍵
         0=≢rest?[codes,(0<≢word)#dict⍳⊂word dict];
@@ -1259,8 +1259,8 @@ unify←{ ⍝ Unify expressions; ⍺ lists variable symbols.
         ⍺≡⍵?⍬;
         isvar ⍺?[⍺ ⍵];
         isvar ⍵?[⍵ ⍺];
-        0∊≡¨[⍺ ⍵]?•signal "DOMAIN ERROR";
-        ~(⍴⍺)≡⍴⍵?•signal "LENGTH ERROR";
+        0∊≡¨[⍺ ⍵]?•signal "DOMAIN";
+        ~(⍴⍺)≡⍴⍵?•signal "LENGTH";
         i←(,⍺≡¨⍵)⍳0
         (i⊃,⍺)∇(i⊃,⍵)
     }
@@ -1270,7 +1270,7 @@ unify←{ ⍝ Unify expressions; ⍺ lists variable symbols.
         0=≢pair?x;
         [var val]←pair
         occurs←{⍵≡var?1;0=≡⍵?0;∨/,∇¨⍵}
-        occurs val?•signal "DOMAIN ERROR";
+        occurs val?•signal "DOMAIN";
         subst←{⍵≡var?val;0=≡⍵?⍵;∇¨⍵}
         ∇ [(subst x) (subst y)]
     }
@@ -1382,7 +1382,7 @@ ratsum←{
     comp←{[(digs,⍵)⍳⍵]⌷(⌽digs),⍵}
     fmt←{'|' ".|"repl('|'join ⍵)join"<>"}
     ext←{⌽2↑¯1⌽⍵}
-    err←{•signal "DOMAIN ERROR"}
+    err←{•signal "DOMAIN"}
     digs←⊃↓/(1 ¯1×"{}"≡ext ⍶),⊂⍶
     optl←'0',('0'∊ext digs)#comp'0'
     cdigs←{

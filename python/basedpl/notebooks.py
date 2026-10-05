@@ -28,10 +28,11 @@ class AplOut(str):
 
 # %% ../../nbs/magics.ipynb #3cdb5893
 def display_events(events):
-    "Display captured output in order, using MIME bundles for rich results."
+    "Display captured output in order, using MIME bundles for rich results. Text written with no line ending prints as it is."
     for e in events:
         data = e['data']
-        if set(data) == {'text/plain'}: display(AplOut(data['text/plain']))
+        if e['kind'] == 'text': print(data['text/plain'], end='')
+        elif set(data) == {'text/plain'}: display(AplOut(data['text/plain']))
         else: display(data, raw=True)
 
 # %% ../../nbs/magics.ipynb #04f56c87

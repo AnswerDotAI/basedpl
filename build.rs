@@ -6,10 +6,10 @@ use std::{env, fs, path::Path};
 fn main() {
     println!("cargo:rerun-if-changed=nbs/glyphs");
     println!("cargo:rerun-if-changed=nbs/system-functions.qmd");
-    let paths: Vec<_> = fs::read_dir("nbs/glyphs").unwrap().map(|entry| entry.unwrap().path())
-        .filter(|path| path.extension().is_some_and(|s| s == "qmd"))
-        .collect();
-    let mut entries: Vec<_> = paths.iter()
+    let paths: Vec<_> =
+        fs::read_dir("nbs/glyphs").unwrap().map(|entry| entry.unwrap().path()).filter(|path| path.extension().is_some_and(|s| s == "qmd")).collect();
+    let mut entries: Vec<_> = paths
+        .iter()
         .map(|path| {
             let mut help = fs::read_to_string(path).unwrap().replace("](../", "](");
             for target in &paths {

@@ -1000,22 +1000,22 @@ x←0 0 0 ⋄ y←x ⋄ x.[[1 1]]+←1 ⋄ y.[[1 1]]{⍺+⍵}←1 ⋄ x,y   ⍝ 
 x←1 2 3 ⋄ x₀{x,←5 ⋄ ⍺+⍵}←10 ⋄ y←1 2 3 ⋄ y₀{•ex "y" ⋄ ⍺+⍵}←10 ⋄ x,y   ⍝ 11 2 3 11 2 3
 
 ⍝ — An error in the modifier leaves the target unchanged
-x←1 2 3 ⋄ {11::x ⋄ x.[[0 1]]{⍵=2?÷'a';⍺+⍵}←1 2}0   ⍝ 1 2 3
+x←1 2 3 ⋄ {"DOMAIN"::x ⋄ x.[[0 1]]{⍵=2?÷'a';⍺+⍵}←1 2}0   ⍝ 1 2 3
 
 ⍝ — An index error leaves the target unchanged
-x←1 2 3 ⋄ {3::x ⋄ x.[[0 5]]←9}0   ⍝ 1 2 3
+x←1 2 3 ⋄ {"INDEX"::x ⋄ x.[[0 5]]←9}0   ⍝ 1 2 3
 
 ⍝ — A replacement of the wrong length leaves the target unchanged
-x←1 2 3 ⋄ {5::x ⋄ x.[[0 1]]←1 2 3}0   ⍝ 1 2 3
+x←1 2 3 ⋄ {"LENGTH"::x ⋄ x.[[0 1]]←1 2 3}0   ⍝ 1 2 3
 
 ⍝ — A rejected local closure leaves the target unchanged
-x←1 2 3 ⋄ {11::x ⋄ x₀←{⍵} ⋄ 0}0   ⍝ 1 2 3
+x←1 2 3 ⋄ {"DOMAIN"::x ⋄ x₀←{⍵} ⋄ 0}0   ⍝ 1 2 3
 
 ⍝ — A local error guard does not roll back writes to an outer binding
-a←10 ⋄ f←{0::a ⋄ a+←⍵ ⋄ 1÷'a'} ⋄ z←f3 ⋄ z,a   ⍝ 13 13
+a←10 ⋄ f←{∞::a ⋄ a+←⍵ ⋄ 1÷'a'} ⋄ z←f3 ⋄ z,a   ⍝ 13 13
 
 ⍝ — A handler sees local bindings as they were when the error happened
-{a←2 ⋄ 0::a ⋄ a+←3 ⋄ 1÷'a'}0   ⍝ 5
+{a←2 ⋄ ∞::a ⋄ a+←3 ⋄ 1÷'a'}0   ⍝ 5
 
 ⍝ —
 1+a←3   ⍝ 4
@@ -4382,8 +4382,8 @@ f←{a←1} ⋄ [f 0;1+f 0;{f ⍵ ⋄ 2}0]   ⍝ 1 2 2
 7
 ⍝ ⎕: 7
 
-⍝ — A numbered guard catches only its own error numbers
-[{11::7 ⋄ 1÷⍵}'a';{6 11::8 ⋄ missingname}0;{11::7 ⋄ 6::8 ⋄ 1÷⍵}'a';{11::a←7 ⋄ 1÷⍵}'a']   ⍝ 7 8 7 7
+⍝ — A guard catches only the kinds it names
+[{"DOMAIN"::7 ⋄ 1÷⍵}'a';{"VALUE" "DOMAIN"::8 ⋄ missingname}0;{"DOMAIN"::7 ⋄ "VALUE"::8 ⋄ 1÷⍵}'a';{"DOMAIN"::a←7 ⋄ 1÷⍵}'a']   ⍝ 7 8 7 7
 
 ⍝ — A default left argument can be a function
 {⍺←+ ⋄ ⍺ 4}0   ⍝ 4
@@ -4405,8 +4405,8 @@ x←{}0
 1+{}0
 ⍝ error: VALUE ERROR
 
-⍝ — An error guard for other error numbers passes the error on
-{6::7 ⋄ 1÷⍵}'a'
+⍝ — An error guard for other error kinds passes the error on
+{"VALUE"::7 ⋄ 1÷⍵}'a'
 ⍝ error: DOMAIN ERROR
 
 ⍝ — A body can hold several predicates, and runs on only while each holds
@@ -4443,57 +4443,75 @@ x←{}0
 {x←⍺}3
 ⍝ error: VALUE ERROR
 
-⍝ — A numbered guard catches an error that •signal raises by name
-[{2::7 ⋄ •signal "SYNTAX ERROR"}0;{3::7 ⋄ •signal "INDEX ERROR"}0;{4::7 ⋄ •signal "RANK ERROR"}0;{5::7 ⋄ •signal "LENGTH ERROR"}0;
- {6::7 ⋄ •signal "VALUE ERROR"}0;{10::7 ⋄ •signal "LIMIT ERROR"}0;{11::7 ⋄ •signal "DOMAIN ERROR"}0]
+⍝ — A guard catches an error that •signal raises
+[{"SYNTAX"::7 ⋄ •signal "SYNTAX"}0;{"INDEX"::7 ⋄ •signal "INDEX"}0;{"RANK"::7 ⋄ •signal "RANK"}0;{"LENGTH"::7 ⋄ •signal "LENGTH"}0;
+ {"VALUE"::7 ⋄ •signal "VALUE"}0;{"LIMIT"::7 ⋄ •signal "LIMIT"}0;{"DOMAIN"::7 ⋄ •signal "DOMAIN"}0]
 ⍝ =>
 7⍴7
 
 ⍝ — A handler can call a function
-f←{•signal "LENGTH ERROR"} ⋄ g←{⍵+1} ⋄ {0::g ⍵ ⋄ f ⍵}3   ⍝ 4
+f←{•signal "LENGTH"} ⋄ g←{⍵+1} ⋄ {∞::g ⍵ ⋄ f ⍵}3   ⍝ 4
 
-⍝ — A signalled error that no guard numbers passes on
-{11::7 ⋄ •signal "LENGTH ERROR"}0
+⍝ — A signalled error that no guard names passes on
+{"DOMAIN"::7 ⋄ •signal "LENGTH"}0
 ⍝ error: LENGTH ERROR
 
 ⍝ — An error in a handler passes on
-{0::•signal "LENGTH ERROR" ⋄ ÷'a'}0
+{∞::•signal "LENGTH" ⋄ ÷'a'}0
 ⍝ error: LENGTH ERROR
 
 ⍝ —
-{0::1÷'a' ⋄ 1÷⍵}'a'
+{∞::1÷'a' ⋄ 1÷⍵}'a'
 ⍝ error: DOMAIN ERROR
 
-⍝ — •signal takes the name of an error that code can raise
+⍝ — •signal takes a kind's name, not a number
 •signal 11
 ⍝ error: DOMAIN ERROR
 
-⍝ —
+⍝ — Any other one-word name is a kind of its own, in upper case
 •signal "unknown"
+⍝ error: UNKNOWN ERROR
+
+⍝ — A kind is one word, without ERROR
+•signal "DOMAIN ERROR"
 ⍝ error: DOMAIN ERROR
 
-⍝ —
-•signal "INTERRUPT"
+⍝ — The left argument is the message, as text
+0 •signal "DOMAIN"
 ⍝ error: DOMAIN ERROR
 
-⍝ —
-•signal "TIMEOUT"
+⍝ — $e is the caught error, with its kind and message
+{∞::$e.kind $e.message ⋄ "too big" •signal "LENGTH"}0   ⍝ "LENGTH" "too big"
+
+⍝ — $e gives the line and column where the error happened
+{∞::[$e.line $e.column] ⋄ 2+1÷⍵}'a'   ⍝ [1 30]ₓ
+
+⍝ — $e exists only in a handler
+$e
+⍝ error: VALUE ERROR
+
+⍝ — A dfn in a handler sees its $e, and its own guard binds its own
+[{∞::{$e.kind}0 ⋄ ÷'a'}0;{∞::{∞::$e.kind ⋄ •signal "RANK"}0 ⋄ ÷'a'}0]   ⍝ "DOMAIN" "RANK"
+
+⍝ — A guard catches a kind of the program's own, named in any case
+{"NOTFOUND"::$e.message ⋄ "no user" •signal "notfound"}0   ⍝ "no user"
+
+⍝ — Signalling $e again keeps its kind and message, and a left argument replaces the message
+[{∞::$e.message ⋄ {∞::•signal $e ⋄ "first" •signal "LENGTH"}0}0;{∞::$e.message ⋄ {∞::"second" •signal $e ⋄ ÷'a'}0}0]   ⍝ "first" "second"
+
+⍝ — ∞ doesn't catch an unsupported feature
+{∞::0 ⋄ •signal "UNSUPPORTED"}0
+⍝ error: UNSUPPORTED
+
+⍝ — A guard that names INTERRUPT catches it
+{"INTERRUPT"::$e.kind ⋄ •signal "INTERRUPT"}0   ⍝ "INTERRUPT"
+
+⍝ — A guard takes names or ∞, not numbers
+{11::0 ⋄ ÷'a'}0
 ⍝ error: DOMAIN ERROR
-
-⍝ —
-•signal "UNSUPPORTED"
-⍝ error: DOMAIN ERROR
-
-⍝ — The name is a string
-•signal ["DOMAIN ERROR" ⋄]
-⍝ error: RANK ERROR
-
-⍝ — •signal takes no left argument
-0 •signal "DOMAIN ERROR"
-⍝ error: SYNTAX ERROR
 
 ⍝ — A handler sees names assigned after its guard
-{0::fresh ⋄ fresh←1 ⋄ 1÷⍵}'a'   ⍝ 1
+{∞::fresh ⋄ fresh←1 ⋄ 1÷⍵}'a'   ⍝ 1
 
 ⍝ — A predicate must be 0 or 1
 {2?1;0}0
@@ -4507,7 +4525,7 @@ f←{•signal "LENGTH ERROR"} ⋄ g←{⍵+1} ⋄ {0::g ⍵ ⋄ f ⍵}3   ⍝ 4
 f←{1?+;0}0 ⋄ 2 f 3   ⍝ 5
 
 ⍝ — A handler is an expression, including an output assignment, and runs only on an error
-f←{0::⎕←1} ⋄ f0   ⍝ {}0
+f←{∞::⎕←1} ⋄ f0   ⍝ {}0
 
 ⍝⍝ Lexical frames, recursion, predicates and error guards
 
@@ -4540,22 +4558,22 @@ outer←{even←{⍵=0?1;odd ⍵-1} ⋄ odd←{⍵=0?0;even ⍵-1} ⋄ even ⍵}
 1.0
 
 ⍝ — A callee's error reaches the caller's guard, and the handler sees the caller's locals as they were at the error
-bad←{1÷⍵} ⋄ guarded←{x←10 ⋄ 0::x ⋄ x←20 ⋄ bad ⍵} ⋄ guarded 'a'   ⍝ 20.0
+bad←{1÷⍵} ⋄ guarded←{x←10 ⋄ ∞::x ⋄ x←20 ⋄ bad ⍵} ⋄ guarded 'a'   ⍝ 20.0
 
 ⍝ — A failing handler is inactive while it runs, allowing the earlier guard to catch it
-guarded←{0::7 ⋄ 0::1÷'a' ⋄ 1÷⍵} ⋄ guarded 'a'   ⍝ 7.0
+guarded←{∞::7 ⋄ ∞::1÷'a' ⋄ 1÷⍵} ⋄ guarded 'a'   ⍝ 7.0
 
 ⍝ — A true predicate that ends its body returns no result
 {⍵=0?;3}0   ⍝ {}0
 
 ⍝ — An empty error handler catches the error and returns no result
-{0:: ⋄ 1÷'a'}0   ⍝ {}0
+{∞:: ⋄ 1÷'a'}0   ⍝ {}0
 
 ⍝ — A final predicate that ends its body also returns no result
 {⍵=0?}0   ⍝ {}0
 
 ⍝ — Output is not rolled back by a guard.
-guarded←{0::7 ⋄ ⎕←2 ⋄ 1÷⍵} ⋄ guarded 'a'
+guarded←{∞::7 ⋄ ⎕←2 ⋄ 1÷⍵} ⋄ guarded 'a'
 7
 ⍝ ⎕: 2
 
@@ -5495,6 +5513,72 @@ F←["sum":+/ "max":⌈/] ⋄ T←F •time ⍳10 ⋄ [0≤T.max;•storage T;�
 ⍝ — The left argument holds functions
 1 2 •time 3
 ⍝ error: DOMAIN ERROR
+
+⍝⍝ Dates
+
+⍝ — •time 0 is the current moment, in seconds since the Unix epoch
+1714990830<•time 0   ⍝ $t
+
+⍝ — •date reads RFC 3339, a date and time with no offset, and a date alone
+•date "2024-05-06T10:20:30+02:00" "1970-01-01T00:00:01.5" "1970-01-02"   ⍝ 1714983630 1.5 86400
+
+⍝ — •date⁻¹ writes each moment's fields, which •date reads back
+R←•date⁻¹ 0 1714990830 ⋄ [R.year;R.weekday;R.iso_week;•date R]   ⍝ [[1970 2024]ₓ;[4 1]ₓ;[1 19]ₓ;0 1714990830]
+
+⍝ — A pattern reads and writes text, and a locale names months and days
+["pattern":"%A %e %B" "locale":"de_DE"] •date⁻¹ 1714990830   ⍝ "Montag  6 Mai"
+
+⍝ — A pattern also reads text
+"%d/%m/%Y" •date "06/05/2024"   ⍝ 1714953600
+
+⍝ — The zone option places text with no offset
+["zone":3600] •date "2024-05-06T10:20:30"   ⍝ 1714987230
+
+⍝ — Under a bound pattern, a moment changes in its own text
+(86400+)⌾("%Y-%m-%d"↣•date) "2024-12-31"   ⍝ "2025-01-01"
+
+⍝ — Text that no pattern matches
+•date "May 6"
+⍝ error: DOMAIN ERROR
+
+⍝ — A record needs a year
+•date ["month":5]
+⍝ error: DOMAIN ERROR
+
+⍝⍝ Paths and the filesystem
+
+⍝ — •path splits paths into parts, and •path⁻¹ joins them
+P←•path "a/b.tsv" "c" ⋄ [P.parent;P.extension;•path⁻¹ P]   ⍝ [["a" ""];["tsv" ""];"a/b.tsv" "c"]
+
+⍝ — The absolute option joins a relative path to the working directory
+(["absolute":1] •path "a/b").parent≡•path⁻¹ ["parent":(•host "cwd") "stem":"a"]   ⍝ $t
+
+⍝ — •readdir lists a directory, its subdirectories with recurse, and entries that match a glob
+•mkdir testpath,"/s" ⋄ (testpath,"/a.txt") •nput "hi" ⋄ (testpath,"/s/b.txt") •copy testpath,"/a.txt" ⋄ [(•readdir testpath).name;(["recurse":1] •readdir testpath).name;(["recurse":1 "glob":"*.txt"] •readdir testpath).name]
+[["a.txt" "s"];["a.txt" "s" "b.txt"];["a.txt"]]
+
+⍝ — •metadata describes each path, including a missing one
+testpath •nput "hello" ⋄ M←•metadata testpath (testpath,"x") ⋄ [M.kind;M.len;M.readable;M.target]   ⍝ [["file" "none"];[5 0];[$t $f];["" ""]]
+
+⍝ — •copy copies a directory with everything in it
+•mkdir testpath,"/s" ⋄ (testpath,"/s/b") •nput "x" ⋄ (testpath,"/t") •copy testpath,"/s" ⋄ (•readdir testpath,"/t").name   ⍝ ["b"]
+
+⍝ — •rename moves an entry, and •remove removes it
+d←•mkdir testpath ⋄ (d,"/a") •nput "x" ⋄ (d,"/b") •rename d,"/a" ⋄ n←(•readdir d).name ⋄ •remove d,"/b" ⋄ [n;≢(•readdir d).path]   ⍝ [["b"];0ₓ]
+
+⍝ — A unique directory stays until removed, and recurse removes a directory's contents
+u←["unique":1] •mkdir testpath ⋄ k←(•metadata u).kind ⋄ ["recurse":1] •remove testpath ⋄ [k;(•metadata testpath).kind]   ⍝ [["dir"];["none"]]
+
+⍝ — A unique directory's name starts with the prefix option
+u←["unique":1 "prefix":"run"] •mkdir testpath ⋄ "run"≡3↑(•path u).name   ⍝ $t
+
+⍝ — The prefix option needs unique
+["prefix":"run"] •mkdir testpath
+⍝ error: DOMAIN ERROR
+
+⍝ — Removing a directory that isn't empty needs recurse
+•mkdir testpath,"/s" ⋄ •remove testpath
+⍝ error: FILE ERROR
 
 ⍝⍝ Standard input
 

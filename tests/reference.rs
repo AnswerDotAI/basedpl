@@ -37,6 +37,18 @@ fn inline(line: &str) -> Option<(&str, &str)> {
     None
 }
 
+/// `text` with its `\n` and `\\` escapes replaced.
+fn unescaped(text: &str, location: &str) -> String {
+    let mut result = String::new();
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        result.push(if c == '\\' {
+            match chars.next() { Some('n') => '\n', Some('\\') => '\\', _ => panic!("{location}: input and output escapes are \\n and \\\\") }
+        } else { c });
+    }
+    result
+}
+
 fn cases(text: &str) -> Vec<Value> {
     if text.is_empty() { return Vec::new(); }
     let lines: Vec<_> = text.split_terminator('\n').collect();
@@ -69,18 +81,16 @@ fn cases(text: &str) -> Vec<Value> {
             let mut body = &lines[start + 1..end];
             if body.last() == Some(&"") { body = &body[..body.len() - 1]; }
             else { assert_eq!(end, lines.len(), "{location}: missing blank record separator"); }
-            if let Some(text) = body.last().and_then(|s| s.strip_prefix("⍝ ⎕:")) {
-                let mut output = String::new();
-                let mut chars = text.strip_prefix(' ').unwrap_or(text).chars();
-                while let Some(c) = chars.next() {
-                    output.push(if c == '\\' {
-                        match chars.next() { Some('n') => '\n', Some('\\') => '\\', _ => panic!("{location}: output escapes are \\n and \\\\") }
-                    } else { c });
+            for (marker, key) in [("⍝ ⎕:", "expected_output"), ("⍝ input:", "input")] {
+                if let Some(text) = body.last().and_then(|s| s.strip_prefix(marker)) {
+                    case[key] = json!(unescaped(text.strip_prefix(' ').unwrap_or(text), &location));
+                    body = &body[..body.len() - 1];
                 }
-                case["expected_output"] = json!(output);
-                body = &body[..body.len() - 1];
             }
-            assert!(!body.iter().any(|s| s.starts_with("⍝ ⎕:")), "{location}: output expectation must be last");
+            assert!(
+                !body.iter().any(|s| s.starts_with("⍝ ⎕:") || s.starts_with("⍝ input:")),
+                "{location}: input and output lines must end the case, input first"
+            );
             let splits: Vec<_> = body.iter().enumerate().filter_map(|(i, s)| (*s == "⍝ =>").then_some(i)).collect();
             let (code, expect) = match splits.as_slice() {
                 [] if body.len() == 2 => (body[0].to_owned(), body[1].to_owned()),
@@ -110,9 +120,10 @@ fn reference_format_and_comparison() {
     for source in ["⍝ —\n1\n1", "⍝ —\n{\n⍵\n}1\n⍝ =>\n1", "⍝ —\n⎕←1\n1\n⍝ ⎕: 1"] {
         for ending in ["", "\n", "\n\n"] { assert_eq!(cases(&format!("{source}{ending}")), cases(&format!("{source}\n\n"))); }
     }
-    let parsed_output = cases("⍝⍝ Output\n\n⍝ —\n⎕←9 ⋄ ⎕←2 ⋄ 7\n7\n⍝ ⎕: 9\\n2\n\n⍝ —\n3\n3\n⍝ ⎕:\n\n");
+    let parsed_output = cases("⍝⍝ Output\n\n⍝ —\n⎕←9 ⋄ ⎕←2 ⋄ 7\n7\n⍝ ⎕: 9\\n2\n\n⍝ —\n3\n3\n⍝ ⎕:\n\n⍝ —\n⍎¨[⎕ ⎕]\n3 4\n⍝ input: 3\\n4\n⍝ ⎕:\n\n");
     assert_eq!(parsed_output[0]["section"], "Output");
     assert_eq!(parsed_output[0]["expected_output"], "9\n2");
+    assert_eq!(parsed_output[2]["input"], "3\n4");
     for case in parsed_output { assert_eq!(reference::check(&case, EvalOptions::default())["status"], "pass"); }
     let mut output_error = json!({"code":"⎕←9 ⋄ 1÷'a'", "expected_error":"DOMAIN ERROR", "expected_output":"9"});
     assert_eq!(reference::check(&output_error, EvalOptions::default())["status"], "pass");

@@ -216,7 +216,9 @@ pub(crate) fn coefficients(right: &Value, span: &Context<'_>) -> Result<Value, E
 
 /// Each cell as a polynomial, or the prototype's when there are no cells.
 fn parsed(cells: &Cells<'_>, span: &Context<'_>) -> Result<Vec<Polynomial>, Error> {
-    (0..cells.len().max(1)).map(|i| Polynomial::parse(&if cells.len() == 0 { cells.prototype() } else { cells.get(i) }.error_at(span, "invalid polynomial cell")?, span)).collect()
+    (0..cells.len().max(1))
+        .map(|i| Polynomial::parse(&if cells.len() == 0 { cells.prototype() } else { cells.get(i) }.error_at(span, "invalid polynomial cell")?, span))
+        .collect()
 }
 /// `f` applied to each polynomial in `source`, with each result as a cell.
 fn each(source: &Value, span: &Context<'_>, f: impl Fn(&Polynomial) -> Result<Value, Error>) -> Result<Value, Error> {

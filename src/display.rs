@@ -118,7 +118,7 @@ const KEYS: [&str; 7] = ["box", "trees", "fns", "limit", "edges", "prec", "width
 impl Settings {
     /// The REPL's settings: boxed, with lines elided to the terminal's width.
     pub fn interactive() -> Self {
-        let elide = Elide { width: crate::system::terminal_width().unwrap_or(usize::MAX), ..Elide::default() };
+        let elide = Elide { width: crate::system::terminal_size().map(|(_, columns)| columns).unwrap_or(usize::MAX), ..Elide::default() };
         Self { boxed: true, trees: true, functions: true, elide }
     }
     /// Display text for `a`, boxed unless boxing is off, or `inside` a function while boxing there is off. A line wider than `width`

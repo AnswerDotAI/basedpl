@@ -246,7 +246,9 @@ pub(crate) fn call(factor: bool, left: Option<&Value>, right: &Value, span: &Con
 /// `⍭⁻¹`: the number of primes below each item, which is a prime's index.
 pub(crate) fn index(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     each_cell(None, right, span, |_, n| {
-        let Some(target) = n.to_u64() else { return if n < BigInt::zero() { Ok(exact(0)) } else { Err(span.error(ErrorKind::Limit, "prime enumeration exceeds machine range")) } };
+        let Some(target) = n.to_u64() else {
+            return if n < BigInt::zero() { Ok(exact(0)) } else { Err(span.error(ErrorKind::Limit, "prime enumeration exceeds machine range")) };
+        };
         let mut primes = Primes::default();
         for index in 0u64.. { if primes.next(span)? >= target { return Ok(exact(index)); } }
         unreachable!()

@@ -36,7 +36,7 @@ printf 'v←⍳10\n+/v\n' | bpl -
 
 When the program that reads the output closes the pipe, `bpl` stops the evaluation and exits with status 0.
 
-A program run with `-e` or from a file can read standard input. Each read of `⎕` gives the next line, or `⍬` at the end of the input. `•nget "-"` gives the rest of the input as one string. This program parses piped CSV:
+A program run with `-e` or from a file can read standard input through [`⎕`](glyphs/quad.qmd#input) and `•nget "-"`. This program parses piped CSV:
 
 ```bash
 printf 'name,qty\npen,2\ncup,5\n' | bpl -e '+/(•csv •nget "-").qty'   # 7ₓ

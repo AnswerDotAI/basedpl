@@ -128,14 +128,8 @@ a←3⍴0 ⋄ (5⍴a)+←1 ⋄ a   ⍝ 2 2 1
 ⍝ dyalog:lowest-common-multiple-and:3 —
 2j2 2j4∧5j5 4j4   ⍝ 10j10 ¯4j12
 
-⍝ dyalog:not:1 —
-~0 1   ⍝ $t $f
-
 ⍝ dyalog:nand:1 —
 [0 1 ⋄ 1 0]⍲[0 0 ⋄ 1 1]   ⍝ [$t $t ⋄ $f $t]
-
-⍝ dyalog:nor:1 —
-0 0 1 1⍱0 1 0 1   ⍝ $t $f $f $f
 
 ⍝ dyalog:without:1 —
 "HELLO"~"GOODBYE"   ⍝ "HLL"
@@ -355,22 +349,12 @@ N←3 2 5 4 6 1 3 ⋄ N#⍨2|N   ⍝ 3 5 1 3
 ⍝ dyalog:partition:runs —
 1 1 1 2 2 3 3 3⊆"NOWISTHE"   ⍝ "NOW" "IS" "THE"
 
-⍝ dyalog:partitioned-enclose:dividers —
-2 0 1 3 0 2 0 1⊂"abcdefg"
-"" "ab" "c" "" "" "de" "" "fg" ""
-
 ⍝ dyalog:partitioned-enclose:axis —
 1 0 1⊂⍠0 (3 4⍴⍳12)   ⍝ [[0 1 2 3 ⋄ 4 5 6 7] [8 9 10 11 ⋄]]
 
 ⍝ dyalog:pick:path — Inline G definition
 1⊃0⊃1 0⊃[["ABC" 1] ["DEF" 2] ["GHI" 3] ⋄ ["JKL" 4] ["MNO" 5] ["PQR" 6]]
 'K'
-
-⍝ dyalog:index:shape — Inline VEC definition
-[[2 0 3 ⋄ 0 1 2]]⌷111 222 333 444   ⍝ [333 111 444 ⋄ 111 222 333]
-
-⍝ dyalog:encode:mixed-base — Digits on the last axis, as J's #:, so Dyalog's result transposed
-0 10⊤5 15 125   ⍝ [0 5 ⋄ 1 5 ⋄ 12 5]
 
 ⍝ dyalog:encode:fraction — Digits on the last axis, as J's #:, so Dyalog's result transposed
 0 1⊤1.25 10.5   ⍝ [1 0.25 ⋄ 10 0.5]

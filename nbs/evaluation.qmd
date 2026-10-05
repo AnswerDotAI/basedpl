@@ -149,5 +149,6 @@ Empty Each, Rank, Outer and Inner product call the operand on prototypes. Empty 
 | `INDEX` | Invalid position |
 | `SYNTAX` | Invalid syntax or call form |
 | `VALUE` | Undefined name or missing value |
+| `FILE` | A file or directory that can't be read, written or found |
 
 Each error report gives the error's location in the source. Unsupported features and resource limits have their own errors.

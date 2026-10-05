@@ -29,6 +29,13 @@ $a⍳"CAB"           ⍝ [2 0 1]ₓ
 "a2b"∊$d           ⍝ $f $t $f
 ```
 
+
+<!-- help $e -->
+
+### `$e` — Caught error {#e}
+
+`$e` is the error that an [error guard](glyphs/error-guard.qmd)'s handler caught, as a record. The error guard page lists its fields. Anywhere else, `$e` is a `VALUE` error.
+
 <!-- help -->
 
 ## Text
@@ -105,6 +112,26 @@ Errors: `DOMAIN` for malformed JSON, with its line and column, and for values th
 
 Errors: `DOMAIN` when either argument is not text.
 
+<!-- help •date -->
+
+### `•date` — Dates {#date}
+
+`•date text` reads a date and time as a moment: the seconds since the Unix epoch, midnight UTC on 1 January 1970. Without a pattern it reads ISO 8601: RFC 3339 text such as `"2024-05-06T10:20:30Z"`, a date and time with no offset, or a date alone. An array of texts gives an array of moments. `•time 0` is the current moment.
+
+`•date⁻¹ t` writes the moment `t` as a record of fields named after chrono's: `year`, `month`, `day`, `hour`, `minute`, `second`, `nanosecond`, `weekday` (1 for Monday), `ordinal` (the day of the year) and `iso_week`. For an array of moments, each field is an array. `•date` reads such a record back from its first seven fields. A missing month or day is 1, and a missing time field is 0. `•date` ignores `weekday`, `ordinal` and `iso_week`.
+
+A pattern on the left reads or writes text in another layout, with chrono's strftime specifiers, such as `%Y-%m-%d`. The options are `pattern`, `zone` and, for `•date⁻¹` only, `locale`. `zone` is `"local"` or a whole number of seconds east of UTC. It applies to text and fields without an offset, and is UTC by default. `locale` is a POSIX locale, such as `"fr_FR"`, for month and weekday names.
+
+```bpl
+•date "2024-05-06T10:20:30Z"                     ⍝ 1714990830
+"%d %B %Y" •date⁻¹ 1714990830                     ⍝ "06 May 2024"
+["pattern":"%A" "locale":"fr_FR"] •date⁻¹ 0       ⍝ "jeudi"
+(•date⁻¹ 0).weekday                               ⍝ 4ₓ
+(86400+)⌾("%Y-%m-%d"↣•date) "2024-05-06"          ⍝ "2024-05-07"
+```
+
+Errors: `DOMAIN` for text that the pattern doesn't match, an invalid date, an unknown field or locale, or an invalid pattern.
+
 <!-- help •nget -->
 
 ### `•nget` — Read a file {#nget}
@@ -113,17 +140,94 @@ Errors: `DOMAIN` when either argument is not text.
 
 `X •nget path` takes options on the left: `binary` (`1` reads a vector of byte values) and `encoding` (`"UTF-8"`). [Files](data.ipynb#files) covers bytes and options.
 
-Errors: `VALUE` for missing files, invalid UTF-8, other file errors and standard input that the frontend doesn't provide; `DOMAIN` for invalid options.
+Errors: `FILE` for missing files, invalid UTF-8 and other file errors; `VALUE` for standard input that the frontend doesn't provide; `DOMAIN` for invalid options.
 
 <!-- help •nput -->
 
 ### `•nput` — Write a file {#nput}
 
-`path •nput data` writes `data` to a new file. It returns the number of bytes written. Text is written as UTF-8. An array of numbers is written as bytes, each from 0 to 255, in ravel order. A path that starts with `./` or `../` is relative to the file holding the code, as for [`•load`](#load).
+`path •nput data` writes `data` to a new file. It returns the number of bytes written, which isn't displayed, as with an assignment. Text is written as UTF-8. An array of numbers is written as bytes, each from 0 to 255, in ravel order. A path that starts with `./` or `../` is relative to the file holding the code, as for [`•load`](#load).
+
+`"-" •nput data` writes `data` to standard output, with no line ending added. Text written this way just before a read of `⎕` is that read's prompt. See [`⎕`](glyphs/quad.qmd#input).
 
 `X •nput data` takes options on the left: `path`, `overwrite` (`1` replaces an existing file) and `encoding` (`"UTF-8"`, for text). Plain text on the left is the path. [Files](data.ipynb#files) covers bytes and options.
 
-Errors: `VALUE` for an existing file without `overwrite`, and for other file errors; `DOMAIN` for invalid options or byte values.
+Errors: `FILE` for an existing file without `overwrite`, and for other file errors; `DOMAIN` for invalid options or byte values, and for bytes written to standard output that aren't UTF-8.
+
+<!-- help •path -->
+
+### `•path` — Paths {#path}
+
+`•path text` splits a path into a record of its parts, named after Rust's: `parent`, `stem`, `extension` and `name`. It never reads the disk. The option `absolute` first joins a relative path to the working directory, as Rust's `std::path::absolute` does, without resolving links. `•path⁻¹` joins `parent`, `stem` and `extension` into a path, and ignores `name`. An array of paths gives a record of arrays.
+
+```bpl
+•path "data/sales.csv"                            ⍝ ["parent":"data" "stem":"sales" "extension":"csv" "name":"sales.csv"]
+{⍵.extension←"tsv" ⋄ ⍵}⌾•path "data/sales.csv"   ⍝ "data/sales.tsv"
+```
+
+Errors: `DOMAIN` when a path isn't text, for an unknown part, or for an `absolute` path that is empty or has no working directory to join.
+
+<!-- help •metadata -->
+
+### `•metadata` — File metadata {#metadata}
+
+`•metadata paths` gives a table with a row for each path, as a record of columns. The columns follow Rust's `std::fs::Metadata`:
+
+| Column | Gives |
+|---|---|
+| `path`, `name` | The path as given, and its last part |
+| `kind` | `"file"`, `"dir"`, `"symlink"` or `"other"`, or `"none"` for a path that doesn't exist |
+| `target` | For a symbolic link, the path it points to, as Rust's `std::fs::read_link` gives it. Empty for any other entry |
+| `len` | The size in bytes |
+| `modified`, `accessed`, `created` | Moments, in seconds since the Unix epoch, as [`•date`](#date) reads them. NaN where the system records none |
+| `readonly` | Whether the permissions forbid writing |
+| `hidden` | Whether the name starts with `.` |
+| `readable`, `writable`, `executable` | Whether this process may read, write or execute the entry |
+| `uid`, `mode`, `owner` | On Unix only: the owner's numeric ID, the mode bits and the owner's name |
+
+A symbolic link's kind is `"symlink"`. Its other columns describe the entry it points to.
+
+Errors: `DOMAIN` when a path isn't text.
+
+<!-- help •readdir -->
+
+### `•readdir` — List a directory {#readdir}
+
+`•readdir dir` gives the table of [`•metadata`](#metadata) with a row for each entry of `dir`, sorted by path. Each row's `path` is `dir` joined with the entry's path within `dir`. A glob on the left keeps the entries whose path within `dir` matches it, as in `"*.csv" •readdir "data"`. As in a shell, `*` stays within one directory and `**` crosses them. Options on the left: `glob`, and `recurse` (`1` also lists the entries of subdirectories).
+
+Errors: `FILE` for a directory that can't be read; `DOMAIN` for an invalid glob or option.
+
+<!-- help •copy -->
+
+### `•copy` — Copy {#copy}
+
+`to •copy from` copies the file `from` to `to`, or the directory `from` with everything in it. It returns `to`, which isn't displayed. A copied file replaces an existing file at `to`.
+
+Errors: `FILE` for file errors, such as a missing `from` or a missing parent directory of `to`.
+
+<!-- help •rename -->
+
+### `•rename` — Rename {#rename}
+
+`to •rename from` moves `from` to `to` and returns `to`, which isn't displayed. Both must be on the same filesystem.
+
+Errors: `FILE` for file errors.
+
+<!-- help •remove -->
+
+### `•remove` — Remove {#remove}
+
+`•remove path` removes a file or an empty directory, and returns `path`, which isn't displayed. With the option `recurse`, as in `["recurse":1] •remove path`, it removes a directory and everything in it.
+
+Errors: `FILE` for a missing path, a directory that isn't empty without `recurse`, and other file errors; `DOMAIN` for an invalid option.
+
+<!-- help •mkdir -->
+
+### `•mkdir` — Make a directory {#mkdir}
+
+`•mkdir path` makes the directory `path` and any missing parents, and returns `path`, which isn't displayed. With the option `unique`, it then makes a directory with a new, unique name inside `path`, and returns that directory's path, as in `["unique":1] •mkdir •host "temp"`. The option `prefix` sets the start of the name, as in `["unique":1 "prefix":"run"] •mkdir dir`. The directory stays until removed.
+
+Errors: `FILE` for file errors; `DOMAIN` for an invalid option, or `prefix` without `unique`.
 
 <!-- help •deflate -->
 
@@ -253,7 +357,7 @@ A direct [`•mime`](#mime) call on a spec reports these errors: `DOMAIN` for un
 
 `•image⁻¹ Y` encodes the picture `Y` as PNG bytes, and `"jpeg" •image⁻¹ Y` as JPEG bytes. JPEG drops alpha. [`•nput`](#nput) writes the bytes to a file, as in `"out.png" •nput •image⁻¹ Y`.
 
-Errors: `DOMAIN` for an unknown `kind`, invalid image bytes, or values that aren't real numbers; `RANK` for a shape that isn't a picture; `VALUE` for file errors.
+Errors: `DOMAIN` for an unknown `kind`, invalid image bytes, or values that aren't real numbers; `RANK` for a shape that isn't a picture; `FILE` for file errors.
 
 <!-- help •prefs -->
 
@@ -274,6 +378,7 @@ Errors: `DOMAIN` for an unknown `kind`, invalid image bytes, or values that aren
 Display shows part of an array of more than `limit` items: the first and last `edges` positions of each axis longer than twice `edges`. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. A nested array follows the same rule on its own. A line wider than `width` hides columns in the same way, keeping as many at each end as fit. `⎕←`, [`⍕`](glyphs/format.qmd) and source text always hold every item and every digit.
 
 Errors: `DOMAIN` for an unknown setting or an invalid value.
+
 <!-- help -->
 
 ## Random numbers and distributions
@@ -345,22 +450,24 @@ Destructure the record to take names, as in `[a b]←•load path`, or keep it a
 
 A path that starts with `./` or `../` is relative to the file holding the code. Other relative paths are relative to the working directory. `•nget` and `•nput` follow the same rule.
 
-Errors: `VALUE` for a file that can't be read; `DOMAIN` for a file that loads itself, directly or through other files.
+Errors: `FILE` for a file that can't be read; `DOMAIN` for a file that loads itself, directly or through other files.
 
 <!-- help •signal -->
 
 ### `•signal` — Signal {#signal}
 
-`•signal "DOMAIN ERROR"` raises an ordinary BPL error. It is monadic and returns no value. An [error guard](glyphs/error-guard.qmd) catches it in the same way as an error from a primitive.
+`•signal kind` raises an error of the kind that `kind` names, and `message •signal kind` gives it a message. Without one, the message is "explicitly signalled". An [error guard](glyphs/error-guard.qmd) catches the error in the same way as an error from a primitive.
 
 ```bpl
-positive←{⍵≤0?•signal "DOMAIN ERROR";⍵}
-safe←{11::0 ⋄ positive ⍵}
+positive←{⍵≤0?"must be positive" •signal "DOMAIN";⍵}
+safe←{"DOMAIN"::0 ⋄ positive ⍵}
 safe¯3    ⍝ 0
 safe4     ⍝ 4
 ```
 
-The argument is one of these uppercase names: `SYNTAX ERROR`, `INDEX ERROR`, `RANK ERROR`, `LENGTH ERROR`, `VALUE ERROR`, `LIMIT ERROR` or `DOMAIN ERROR`. Their guard numbers are 2, 3, 4, 5, 6, 10 and 11. Numeric codes and other names are a `DOMAIN` error. Interrupts, timeouts and unsupported-feature errors can't be signalled.
+`kind` is the name of one of BPL's kinds, which the error guard page lists, or any other one-word name, which makes a kind of the program's own. Names are read in any case. `kind` can also be a caught error, as `$e` gives in a handler, and `•signal` then raises its kind and message again.
+
+Errors: `DOMAIN` for a number, or a name that isn't one word of letters, digits and underscores.
 
 <!-- help •storage -->
 
@@ -372,7 +479,7 @@ The argument is one of these uppercase names: `SYNTAX ERROR`, `INDEX ERROR`, `RA
 
 ### `•time` — Timing {#time}
 
-`•time t` gives the seconds since the time `t`. Time counts from the session's start on a monotonic clock. `•time 0` is the current reading. `t←•time 0` starts a timer, and `•time t` then gives the seconds since it started.
+`•time t` gives the seconds since the moment `t`. Moments count seconds from the Unix epoch, as [`•date`](#date) reads and writes them. `•time 0` is the current moment. `t←•time 0` starts a timer, and `•time t` then gives the seconds since it started.
 
 `F •time x` calls each function in `F` on `x` for about 0.1 s. The result is each function's fastest time per call in seconds, with the shape and keys of `F`. With `F←["sum":+/ "max":⌈/]`, `F •time x` labels each time. Time a dyadic function with its left argument bound, as in `2↣⍴`. [Timing](repl.qmd#timing) has examples.
 
@@ -390,6 +497,9 @@ Errors: `DOMAIN` for a left argument that holds anything but functions, or a `t`
 | `"version"` | BPL's version |
 | `"env"` | The environment variables, as a record of strings |
 | `"width"` | The width of the terminal that output goes to, or `⍬` without one |
+| `"height"` | The height in lines of the terminal that output goes to, or `⍬` without one |
+| `"cwd"` | The working directory |
+| `"temp"` | The directory for temporary files |
 
 Errors: `DOMAIN` for any other name.
 
@@ -397,7 +507,7 @@ Errors: `DOMAIN` for any other name.
 
 ### `•delay` — Delay {#delay}
 
-`•delay s` pauses for `s` seconds and returns the seconds it actually waited. An interrupt stops it, and `•delay ∞` waits for one.
+`•delay s` pauses for `s` seconds and returns the seconds it actually waited, which aren't displayed. An interrupt stops it, and `•delay ∞` waits for one.
 
 Errors: `DOMAIN` for a negative number of seconds, or an `s` that isn't a number.
 

@@ -24,9 +24,9 @@ def test_worker_bindings_calls_and_echo():
             dict(call='+'), dict(args=[a]),
             dict(code='1', call='+', args=[a]),
             dict(bindings=dict(x=dict(shape=[], data=[{'infinity': 0}], prototype=0))),
-        ]: assert w.request(payload, timeout=2)['error']['kind'] == 'REQUEST ERROR'
+        ]: assert w.request(payload, timeout=2)['error']['kind'] == 'REQUEST'
         r = w.request(dict(call='{⎕←⍵ ⋄ 1÷"a"}', args=[a], echo=False), timeout=2)
-        assert r['output'] == [dict(kind='explicit', data={'text/plain':'[1 2 3]ₓ'})] and r['error']['kind'] == 'DOMAIN ERROR'
+        assert r['output'] == [dict(kind='explicit', data={'text/plain':'[1 2 3]ₓ'})] and r['error']['kind'] == 'DOMAIN'
         assert r['error']['calls'][-1]['source']['text'] == '{⎕←⍵ ⋄ 1÷"a"}'
         assert w.request(dict(call='{∇⍵}', args=[a]), timeout=.01)['error']['kind'] == 'TIMEOUT'
         for value in [float('inf'), float('-inf'), float('nan')]:
@@ -34,7 +34,7 @@ def test_worker_bindings_calls_and_echo():
         assert w.eval('x', timeout=2)['value'] == a
     assert fresh('⎕←1 ⋄ 2') == '1\n2'
     with pytest.raises(BplError) as e: fresh('1÷"a"')
-    assert e.value.kind == 'DOMAIN ERROR'
+    assert e.value.kind == 'DOMAIN'
 
 def test_worker_keyed_arrays():
     with Worker() as w:
@@ -52,7 +52,7 @@ def test_worker_keyed_arrays():
         assert w.request(dict(bindings=dict(m=m), code='+/⍠"col" m'), timeout=2)['value']['axis_names'] == ['row']
         for keys in ([], [None, None], [['a']], [['a', 'a']], [[1, 2]], ['ab']):
             bad = dict(shape=[2], data=[1, 2], prototype=0, axis_keys=keys)
-            assert w.request(dict(bindings=dict(k=bad)), timeout=2)['error']['kind'] == 'REQUEST ERROR'
+            assert w.request(dict(bindings=dict(k=bad)), timeout=2)['error']['kind'] == 'REQUEST'
 
 def test_worker_cancellation_and_reference_sessions():
     case = dict(code='a←3', expected_code='3')

@@ -251,7 +251,11 @@ impl PySession {
         let mut request = EvalRequest {
             run,
             bindings: bindings.into_iter().map(|(n, a)| Ok((n, operand(&a)?))).collect::<PyResult<_>>()?,
-            options: EvalOptions { poll: Some(ctrl_c(signal.clone())), ..options(timeout, echo)? },
+            options: EvalOptions {
+                poll: Some(ctrl_c(signal.clone())),
+                input: Some(Arc::new(PythonInput { caught: signal.clone() })),
+                ..options(timeout, echo)?
+            },
         };
         let result = {
             let mut guard = self.session.lock_py_attached(py).unwrap();
@@ -298,6 +302,28 @@ fn ctrl_c(caught: Arc<Mutex<Option<PyErr>>>) -> crate::Poll {
         *caught.lock().unwrap() = Some(e);
         true
     })
+}
+
+/// Python's standard input. Each line comes from `input()`, which shows a notebook's input box under IPython. A Ctrl-C while `input()`
+/// waits goes to `caught`, as a signal does in `ctrl_c`.
+struct PythonInput { caught: Arc<Mutex<Option<PyErr>>> }
+impl crate::Input for PythonInput {
+    fn line(&self, prompt: &str) -> std::io::Result<Option<String>> {
+        Python::attach(|py| match py.import("builtins").and_then(|b| b.call_method1("input", (prompt,))).and_then(|line| line.extract::<String>()) {
+            Ok(line) => Ok(Some(line)),
+            Err(e) if e.is_instance_of::<pyo3::exceptions::PyEOFError>(py) => Ok(None),
+            Err(e) if e.is_instance_of::<pyo3::exceptions::PyKeyboardInterrupt>(py) => {
+                *self.caught.lock().unwrap() = Some(e);
+                Err(std::io::ErrorKind::Interrupted.into())
+            }
+            Err(e) => Err(std::io::Error::other(e.to_string())),
+        })
+    }
+    fn rest(&self) -> std::io::Result<Vec<u8>> {
+        Python::attach(|py| -> PyResult<String> { py.import("sys")?.getattr("stdin")?.call_method0("read")?.extract() })
+            .map(String::into_bytes)
+            .map_err(|e| std::io::Error::other(e.to_string()))
+    }
 }
 
 fn options(timeout: Option<f64>, echo: bool) -> PyResult<crate::EvalOptions> {

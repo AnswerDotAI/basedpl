@@ -181,7 +181,7 @@ fn calls_with_array_arguments() {
 fn cancellation_preserves_session_and_unwinds_calls() {
     use std::time::Duration;
     let mut s = Session::new();
-    let r = s.eval_timeout("keep←42 ⋄ ⎕←7 ⋄ {0::99 ⋄ (+⍣{0})⍵}0", Duration::from_millis(10));
+    let r = s.eval_timeout("keep←42 ⋄ ⎕←7 ⋄ {∞::99 ⋄ (+⍣{0})⍵}0", Duration::from_millis(10));
     assert_eq!(r.error.as_ref().unwrap().kind, Timeout);
     assert_eq!(r.output_text(), ["7"]);
     equiv_in(&mut s, "keep+1", "43");
@@ -283,7 +283,7 @@ fn shy_results_and_signal_messages() {
         ("f←{a←1} ⋄ f 0", vec![]),
         ("(f 0)", vec!["1"]),
         ("{2 ⋄ f ⍵}0", vec![]),
-        ("{11::a←7 ⋄ 1÷⍵}'a'", vec![]),
+        ("{\"DOMAIN\"::a←7 ⋄ 1÷⍵}'a'", vec![]),
         ("{f←{a←1} ⋄ (+f+)3}0", vec![]),
         ("{⎕←7}0", vec!["7"]),
     ] {
@@ -292,7 +292,7 @@ fn shy_results_and_signal_messages() {
         assert_eq!(r.output_text(), output, "{code}");
     }
     for kind in [Syntax, Index, Rank, Length, Value, Limit, Domain] {
-        let error = run(&format!(r#"•signal "{kind}""#)).unwrap_err();
+        let error = run(&format!(r#"•signal "{}""#, kind.name())).unwrap_err();
         assert_eq!((error.kind, error.message.as_str()), (kind, "explicitly signalled"));
     }
 }
@@ -528,7 +528,7 @@ fn lexical_frames_are_reclaimed() {
         ("keep←{x←42 ⋄ loop←{⍵=0?x;∇⍵-1} ⋄ loop ⍵} ⋄ keep 25000", 42.),
         ("pass←{x←42 ⋄ op←{⍵=0?⍶ ⍵;∇⍵-1} ⋄ ({x}op)⍵} ⋄ pass 25000", 42.),
         ("loop←{⍵=0?a←7;(∇⍵-1)} ⋄ loop 25000", 7.),
-        ("f←{11::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 2000", 7.),
+        ("f←{\"DOMAIN\"::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 2000", 7.),
     ] { check_in(&mut s, code, number(expected)); }
     assert_eq!(s.eval("f 20000").error.unwrap().kind, Limit);
     check_in(&mut s, "deep 15000", number(15000.));

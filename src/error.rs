@@ -15,7 +15,7 @@ impl Source {
 #[derive(Clone, Debug)]
 pub struct Span { pub source: Arc<Source>, pub range: Range<usize> }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
     Syntax,
     Domain,
@@ -24,40 +24,58 @@ pub enum ErrorKind {
     Rank,
     Index,
     Value,
+    File,
     Unsupported,
     Interrupt,
     Timeout,
+    /// A kind that a program names when it signals an error, in upper case.
+    Custom(Arc<str>),
 }
 
 impl ErrorKind {
-    pub(crate) fn number(self) -> Option<usize> {
-        Some(match self {
-            Self::Syntax => 2,
-            Self::Index => 3,
-            Self::Rank => 4,
-            Self::Length => 5,
-            Self::Value => 6,
-            Self::Limit => 10,
-            Self::Domain => 11,
-            Self::Unsupported | Self::Interrupt | Self::Timeout => return None,
-        })
-    }
-}
-
-impl fmt::Display for ErrorKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Syntax => "SYNTAX ERROR",
-            Self::Domain => "DOMAIN ERROR",
-            Self::Length => "LENGTH ERROR",
-            Self::Limit => "LIMIT ERROR",
-            Self::Rank => "RANK ERROR",
-            Self::Index => "INDEX ERROR",
-            Self::Value => "VALUE ERROR",
+    const BUILTIN: [Self; 11] = [
+        Self::Syntax,
+        Self::Domain,
+        Self::Length,
+        Self::Limit,
+        Self::Rank,
+        Self::Index,
+        Self::Value,
+        Self::File,
+        Self::Unsupported,
+        Self::Interrupt,
+        Self::Timeout,
+    ];
+    /// The name that guards and `•signal` use, such as `DOMAIN`.
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Syntax => "SYNTAX",
+            Self::Domain => "DOMAIN",
+            Self::Length => "LENGTH",
+            Self::Limit => "LIMIT",
+            Self::Rank => "RANK",
+            Self::Index => "INDEX",
+            Self::Value => "VALUE",
+            Self::File => "FILE",
             Self::Unsupported => "UNSUPPORTED",
             Self::Interrupt => "INTERRUPT",
             Self::Timeout => "TIMEOUT",
-        })
+            Self::Custom(name) => name,
+        }
+    }
+    /// The kind that `name` names, in any case. A name that isn't BPL's is a custom kind. `None` unless `name` is one word of letters,
+    /// digits and underscores.
+    pub(crate) fn named(name: &str) -> Option<Self> {
+        if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '_') { return None; }
+        let name = name.to_uppercase();
+        Some(Self::BUILTIN.into_iter().find(|k| k.name() == name).unwrap_or_else(|| Self::Custom(name.into())))
+    }
+}
+
+/// `DOMAIN ERROR` and so on. Interrupts, timeouts and unsupported features show their names alone.
+impl fmt::Display for ErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self { Self::Unsupported | Self::Interrupt | Self::Timeout => f.write_str(self.name()), _ => write!(f, "{} ERROR", self.name()) }
     }
 }
 
@@ -82,8 +100,8 @@ impl Span {
         let relative = path.starts_with("./") || path.starts_with("../");
         match std::path::Path::new(&self.source.name).parent() { Some(dir) if relative && self.source.file => dir.join(path), _ => path.into() }
     }
-    /// A VALUE error that names the file `path`.
-    pub(crate) fn file_error(&self, path: &str, e: impl std::fmt::Display) -> Error { self.error(ErrorKind::Value, format!("{path}: {e}")) }
+    /// A FILE error that names the file `path`.
+    pub(crate) fn file_error(&self, path: &str, e: impl std::fmt::Display) -> Error { self.error(ErrorKind::File, format!("{path}: {e}")) }
     /// The bytes of the file `path` names.
     pub(crate) fn read(&self, path: &str) -> Result<Vec<u8>, Error> { std::fs::read(self.path(path)).map_err(|e| self.file_error(path, e)) }
 }
@@ -109,22 +127,26 @@ fn display_text(text: &str) -> String {
 }
 
 impl Span {
+    /// The line and column where the span starts, counting from 1. The column counts display width, as a terminal shows it.
+    pub(crate) fn position(&self) -> (usize, usize) {
+        let text = &self.source.text[..self.range.start];
+        let line_start = text.rfind('\n').map_or(0, |i| i + 1);
+        (text.bytes().filter(|&b| b == b'\n').count() + 1, display_text(&text[line_start..]).width() + 1)
+    }
     fn render(&self, label: &str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let text = &self.source.text;
         let start = self.range.start;
         let line_start = text[..start].rfind('\n').map_or(0, |i| i + 1);
         let line_end = text[start..].find('\n').map_or(text.len(), |i| start + i);
-        let line = text[..start].bytes().filter(|&b| b == b'\n').count() + 1;
-        let prefix = display_text(&text[line_start..start]).width();
+        let (line, column) = self.position();
         let end = display_text(&text[line_start..self.range.end.min(line_end)]).width();
         write!(
             f,
-            " {label} {}:{line}:{}\n{}\n{}{}",
+            " {label} {}:{line}:{column}\n{}\n{}{}",
             display_text(&self.source.name),
-            prefix + 1,
             display_text(&text[line_start..line_end]),
-            " ".repeat(prefix),
-            "^".repeat(end.saturating_sub(prefix).max(1))
+            " ".repeat(column - 1),
+            "^".repeat((end + 1).saturating_sub(column).max(1))
         )
     }
 }

@@ -58,11 +58,13 @@ File cases can use `testpath`. When mentioned in the source, the runner binds it
 
 ```
 
-An optional final `⍝ ⎕: text` checks explicit output. Write `\n` for a newline and `\\` for a literal backslash. Output events are joined with newlines; implicit display is disabled. The marker also checks output preceding an expected error. An empty `⍝ ⎕:` asserts silence. Omit it when output is not the subject of the test. Case headers, section headings, `⍝ =>` and `⍝ ⎕:` lines are reserved fixture syntax.
+An optional final `⍝ ⎕: text` checks explicit output. Write `\n` for a newline and `\\` for a literal backslash. Output appears as a terminal shows it, without the final line ending: each `⎕←` ends a line, and text written with `"-" •nput` doesn't. Implicit display is disabled. The marker also checks output preceding an expected error. An empty `⍝ ⎕:` asserts silence. Omit it when output is not the subject of the test.
+
+An optional `⍝ input: text` line, just before any `⍝ ⎕:` line, gives the lines that `⎕` reads, with the same escapes. `•nget "-"` reads the lines that remain. Without it, reading `⎕` is a `VALUE` error. Case headers, section headings, `⍝ =>`, `⍝ input:` and `⍝ ⎕:` lines are reserved fixture syntax.
 
 During conversion, comments are extracted from descriptions, unchanged ngn assertions, or leading comments in example programs. Known import/review boilerplate is removed from reasons and adaptations. Other clauses are retained on the same header line. Comments are not paraphrased or corrected. Converted comments can therefore contain inaccurate source wording or lack a description where none can be extracted.
 
-Use `basedpl.bpltests.parse(text)` to read records as `Case` objects with `id`, `comment`, `code`, `expect`, `rtol`, `atol`, `section`, optional `output` text and the header's `line`. `render(cases)` writes them back. The conversion checks preserve source text and reproduce captured values, shapes and recursive prototypes; they do not infer new expectations from the program under test.
+Use `basedpl.bpltests.parse(text)` to read records as `Case` objects with `id`, `comment`, `code`, `expect`, `rtol`, `atol`, `section`, optional `input` and `output` text and the header's `line`. `render(cases)` writes them back. The conversion checks preserve source text and reproduce captured values, shapes and recursive prototypes; they do not infer new expectations from the program under test.
 
 Use `check_file(path)` from `basedpl.bpltests` to run a reference file through the installed extension and list its failures. It applies the same comparison and tolerances as `tests/reference.rs`. `check_page(path)` does the same for the BPL examples in a `.qmd` page.
 

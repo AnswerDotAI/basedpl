@@ -111,7 +111,7 @@ fn location(s: &crate::Span) -> JsonValue { json!({"source": {"name": s.source.n
 
 pub(crate) fn error(e: &Error) -> JsonValue {
     let mut encoded = location(&e.span);
-    encoded["kind"] = json!(e.kind.to_string());
+    encoded["kind"] = json!(e.kind.name());
     encoded["message"] = json!(e.message);
     encoded["display"] = json!(e.to_string());
     encoded["calls"] = e.calls.iter().map(location).collect();
@@ -128,4 +128,4 @@ pub(crate) fn response(mut result: Evaluation) -> JsonValue {
 }
 
 /// The reply to a request that can't run.
-pub(crate) fn request_error(message: &str) -> JsonValue { json!({"value": null, "output": [], "error": {"kind": "REQUEST ERROR", "message": message}}) }
+pub(crate) fn request_error(message: &str) -> JsonValue { json!({"value": null, "output": [], "error": {"kind": "REQUEST", "message": message}}) }

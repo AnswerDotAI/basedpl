@@ -1,6 +1,10 @@
 //! Development-only reference checking, shared by tests and the worker frontend.
 use crate::{EvalOptions, Session, Value};
 use serde_json::{json, Value as JsonValue};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
 
 /// A value captured from another interpreter. Its numbers carry no exactness. A capture encodes a simple atom as a scalar array, and BPL
 /// expectations use based values directly.
@@ -38,15 +42,30 @@ pub fn difference(x: &Value, y: &Value, relative: f64, absolute: f64, exactness:
     x.elements().zip(y.elements()).position(|(a, b)| !same(&a, &b)).map(|i| format!("data[{i}]"))
 }
 
+/// The text at `key` in `case`, or `None` without one. Anything else makes the case invalid, as `what` describes.
+fn optional_text<'a>(case: &'a JsonValue, key: &str, what: &str) -> Result<Option<&'a str>, JsonValue> {
+    match case.get(key) {
+        None => Ok(None),
+        Some(JsonValue::String(s)) => Ok(Some(s)),
+        _ => Err(json!({"status":"invalid", "message":format!("{what} must be text")})),
+    }
+}
+
+/// The input lines a case supplies, which `⎕` reads in order.
+struct Lines(Mutex<VecDeque<String>>);
+impl crate::Input for Lines {
+    fn line(&self, _prompt: &str) -> std::io::Result<Option<String>> { Ok(self.0.lock().unwrap().pop_front()) }
+    fn rest(&self) -> std::io::Result<Vec<u8>> { Ok(self.0.lock().unwrap().drain(..).map(|line| line + "\n").collect::<String>().into_bytes()) }
+}
+
 /// Check an independent captured value or BPL expectation. Each side receives a fresh session. A BPL expectation must match each
 /// number's exactness. A value captured from another interpreter carries none, so its numbers compare by value.
 pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
     let Some(code) = case["code"].as_str() else { return json!({"status":"invalid", "message":"missing code"}); };
     let error_kind = case["expected_error"].as_str().filter(|s| !s.is_empty());
-    let output = match case.get("expected_output") {
-        None => None,
-        Some(JsonValue::String(s)) => Some(s.as_str()),
-        _ => return json!({"status":"invalid", "message":"output expectation must be text"}),
+    let (output, input) = match (optional_text(case, "expected_output", "output expectation"), optional_text(case, "input", "input")) {
+        (Ok(output), Ok(input)) => (output, input),
+        (Err(invalid), _) | (_, Err(invalid)) => return invalid,
     };
     let (expected, no_result) = if let Some(source) = case["expected_code"].as_str() {
         let expected = Session::new()
@@ -70,7 +89,8 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
         session.set("testpath", crate::keyed::text(&path.to_string_lossy())).expect("valid fixture name");
         Some(dir)
     } else { None };
-    let result = session.eval_with(code, EvalOptions { echo: false, ..options });
+    let input = input.map(|text| Arc::new(Lines(Mutex::new(text.lines().map(String::from).collect()))) as Arc<dyn crate::Input>);
+    let result = session.eval_with(code, EvalOptions { echo: false, input, ..options });
     if let Some(error) = &result.error {
         let kind = error.kind.to_string();
         if matches!(error.kind, crate::ErrorKind::Timeout | crate::ErrorKind::Interrupt) {
@@ -92,7 +112,8 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
     };
     let mismatch = mismatch.or_else(|| {
         output.and_then(|expected| {
-            let actual = result.output.iter().map(crate::Output::text).collect::<Vec<_>>().join("\n");
+            let written: String = result.output.iter().map(crate::Output::written).collect();
+            let actual = written.strip_suffix('\n').unwrap_or(&written);
             (actual != expected).then(|| format!("output: {actual:?} != {expected:?}"))
         })
     });

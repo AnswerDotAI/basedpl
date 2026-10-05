@@ -20,7 +20,7 @@ T←["q1":5] ⋄ T.q1             ⍝ 5
 
 ## Literals and strands
 
-Numbers, `∞`, `¯∞`, `⍬`, characters, strings and the constants `$t`, `$f`, `$n`, `$a` and `$d` are [literals](terms.qmd#term-literal). A constant is `$` followed by one lowercase letter. `$a` is the uppercase Latin alphabet and `$d` the digits. [Numbers](numbers.qmd) and [Characters and strings](strings.ipynb) give the written forms of numbers and text.
+Numbers, `∞`, `¯∞`, `⍬`, characters, strings and the constants `$t`, `$f`, `$n`, `$a` and `$d` are [literals](terms.qmd#term-literal). A constant is `$` followed by one lowercase letter. `$a` is the uppercase Latin alphabet and `$d` the digits. `$e` names the error that an [error guard](glyphs/error-guard.qmd)'s handler caught. [Numbers](numbers.qmd) and [Characters and strings](strings.ipynb) give the written forms of numbers and text.
 
 A double-quoted string can span lines. Every line ending inside it reads as one newline, and its indentation stays as written.
 

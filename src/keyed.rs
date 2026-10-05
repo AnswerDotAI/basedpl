@@ -72,6 +72,14 @@ pub(crate) fn name(value: &Value) -> Option<Arc<str>> {
 }
 
 pub(crate) fn text(name: &str) -> Value { Value::characters(vec![name.chars().count()], name.chars().collect()).unwrap() }
+/// An array of `shape` holding the text items `items`, with empty text as its prototype.
+pub(crate) fn texts(shape: &[usize], items: Vec<Value>) -> Result<Value, ErrorKind> { Value::shaped(shape, items, text("")) }
+/// The texts in `value`, the reverse of `texts`: the text itself with an empty shape, or each text in an array of them with the array's
+/// shape. `None` when an item isn't text.
+pub(crate) fn text_items(value: &Value) -> Option<(Vec<usize>, Vec<Arc<str>>)> {
+    if let Some(t) = name(value) { return Some((vec![], vec![t])); }
+    Some((value.shape().to_vec(), value.elements().map(|e| name(&e)).collect::<Option<_>>()?))
+}
 
 /// Each axis's key list, or `None` for an axis without keys. A position without a key is `None`.
 pub(crate) fn key_lists(value: &Value) -> Vec<Option<Vec<Option<&str>>>> {
@@ -119,6 +127,44 @@ pub(crate) fn partial_vector(names: Vec<Option<Arc<str>>>, values: Vec<Value>) -
 /// A keyed vector whose entries keep their own kinds, as an imported JSON object's do. Its storage stays mixed.
 pub(crate) fn record(names: Vec<Arc<str>>, values: Vec<Value>) -> Result<Value, ErrorKind> {
     Value::mixed(vec![names.len()], values, Value::number(0.)?)?.with_keys(vec![Some(Keys::partial(names.into_iter().map(Some).collect())?)])
+}
+
+/// A record of columns: the field `names[j]` holds item `j` of each row, as an array of `shape`, or as that row's item when `shape` is
+/// empty. Without rows, each field is an empty array of `empty[j]`.
+pub(crate) fn table(names: &[&str], shape: &[usize], rows: Vec<Vec<Value>>, empty: Vec<Value>) -> Result<Value, ErrorKind> {
+    let mut columns: Vec<Vec<Value>> = vec![Vec::with_capacity(rows.len()); names.len()];
+    for row in rows { for (column, item) in columns.iter_mut().zip(row) { column.push(item); } }
+    let values = columns.into_iter().zip(empty).map(|(column, empty)| Value::shaped(shape, column, empty));
+    record(names.iter().map(|&n| n.into()).collect(), values.collect::<Result<_, _>>()?)
+}
+
+/// A record field's name, with one item for each position.
+pub(crate) type Field = (Arc<str>, Vec<Value>);
+
+/// The fields of the record `value`, item by item: the shape its array fields share, and each field's name with one item per position.
+/// An atom or a text is a single item, which every position shares.
+pub(crate) fn fields(value: &Value) -> Result<(Vec<usize>, Vec<Field>), ErrorKind> {
+    let pairs = pairs(value)?;
+    let single = |v: &Value| v.is_atom() || name(v).is_some();
+    let shape = pairs.iter().find(|(_, v)| !single(v)).map_or(vec![], |(_, v)| v.shape().to_vec());
+    let len = shape.iter().product();
+    let fields = pairs.into_iter().map(|(name, v)| match single(&v) {
+        true => Ok((name, vec![v; len])),
+        false if v.shape() == shape => Ok((name, v.elements().collect())),
+        false => Err(ErrorKind::Length),
+    });
+    let fields = fields.collect::<Result<_, _>>()?;
+    Ok((shape, fields))
+}
+
+/// The items of the fields in `fields` that `names[..used]` name, in that order, with `None` for one that is missing. Fields named in
+/// `names[used..]` follow from the others and are ignored. Any other field is an error that gives its name.
+pub(crate) fn slots(fields: Vec<Field>, names: &[&str], used: usize) -> Result<Vec<Option<Vec<Value>>>, Arc<str>> {
+    let mut slots = vec![None; used];
+    for (name, items) in fields {
+        match names.iter().position(|n| *n == &*name) { Some(i) if i < used => slots[i] = Some(items), Some(_) => {} None => return Err(name) }
+    }
+    Ok(slots)
 }
 
 /// The entries of a keyed vector, in order. An empty vector has none. Every entry needs a name.

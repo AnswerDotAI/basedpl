@@ -162,9 +162,7 @@ fn import(source: &str, opts: &Options, span: &Context<'_>) -> Result<Value, Err
                 }));
             }
             crate::data::imported(vec![cells.len()], numbers, |i| absent[i], Value::Number(Number::from_integer(0)))
-        } else {
-            Value::from_parts(vec![cells.len()], cells.iter().zip(&absent).map(|(s, &a)| keyed::text(if a { "" } else { s })).collect(), keyed::text(""))
-        };
+        } else { keyed::texts(&[cells.len()], cells.iter().zip(&absent).map(|(s, &a)| keyed::text(if a { "" } else { s })).collect()) };
         result.push(column.error_at(span, "invalid CSV column")?);
     }
     match headers { Some(names) => keyed::vector(names, result), None => Value::from_parts(vec![result.len()], result, keyed::text("")) }

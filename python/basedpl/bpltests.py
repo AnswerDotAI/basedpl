@@ -8,6 +8,7 @@ from .reference import Corpus, _dyalog_string
 
 HEADER = re.compile(r'^⍝ (?:(\S*) )?—(?: (.*))?$')
 SEPARATOR = '⍝ =>'
+INPUT = '⍝ input:'
 OUTPUT = '⍝ ⎕:'
 OPTIONS = re.compile(r'(?:^| )\[((?:r|a)tol=.*)\]$')
 
@@ -23,11 +24,15 @@ class Case:
     line: int = field(default=0, compare=False, repr=False)
     section: str = ''
     output: str | None = None
+    input: str | None = None
 
 
-def _output(text):
+def _unescaped(text):
     try: return re.sub(r'\\(.)?', lambda m: {'n': '\n', '\\': '\\'}[m[1]], text)
-    except KeyError as e: raise ValueError(r'output escapes are \n and \\') from e
+    except KeyError as e: raise ValueError(r'input and output escapes are \n and \\') from e
+
+
+def _escaped(text): return text.replace('\\', '\\\\').replace('\n', '\\n')
 
 
 def _comment(text):
@@ -67,9 +72,10 @@ def parse(text):
         body = lines[start+1:end]
         if body and body[-1]=='': body.pop()
         elif end<len(lines): raise ValueError(f'line {start+1}: missing blank record separator')
-        output = None
-        if body and body[-1].startswith(OUTPUT): output = _output(body.pop()[len(OUTPUT):].removeprefix(' '))
-        if any(line.startswith(OUTPUT) for line in body): raise ValueError(f'line {start+1}: output expectation must be last')
+        output = input = None
+        if body and body[-1].startswith(OUTPUT): output = _unescaped(body.pop()[len(OUTPUT):].removeprefix(' '))
+        if body and body[-1].startswith(INPUT): input = _unescaped(body.pop()[len(INPUT):].removeprefix(' '))
+        if any(line.startswith((INPUT, OUTPUT)) for line in body): raise ValueError(f'line {start+1}: input and output lines must end the case, input first')
         count = body.count(SEPARATOR)
         if count==1:
             split = body.index(SEPARATOR)
@@ -78,7 +84,7 @@ def parse(text):
         elif count==0 and len(body)==1 and (pair := _comment(body[0])): code,expect = pair
         else: raise ValueError(f'line {start+1}: use one {SEPARATOR!r} between multiline expressions')
         if not expect: raise ValueError(f'line {start+1}: missing expectation')
-        result.append(Case(code, expect, id, comment, line=start+1, section=section, output=output, **options))
+        result.append(Case(code, expect, id, comment, line=start+1, section=section, output=output, input=input, **options))
     return result
 
 
@@ -93,17 +99,17 @@ def render(cases):
             section = case.section
         if re.search(r'\s', case.id) or '\n' in case.comment: raise ValueError('ID and comment must fit the header')
         for source in (case.code, case.expect):
-            if any(HEADER.fullmatch(line) or line==SEPARATOR or line.startswith(('⍝⍝ ', OUTPUT)) for line in source.split('\n')):
+            if any(HEADER.fullmatch(line) or line==SEPARATOR or line.startswith(('⍝⍝ ', INPUT, OUTPUT)) for line in source.split('\n')):
                 raise ValueError(f'{case.id}: source contains a reserved fixture marker')
         options = ' '.join(f'{key}={getattr(case, key)}' for key in ('rtol', 'atol') if getattr(case, key))
         comment = case.comment + (f' [{options}]' if options else '')
         header = '⍝ ' + (case.id+' ' if case.id else '') + '—' + (f' {comment.lstrip()}' if comment else '')
         separator = f'\n{SEPARATOR}\n' if '\n' in case.code or '\n' in case.expect else '\n'
-        if (separator=='\n' and len(case.code)+len(case.expect)+5<70 and case.output is None
+        if (separator=='\n' and len(case.code)+len(case.expect)+5<70 and case.output is None and case.input is None
             and case.code==case.code.rstrip() and case.expect==case.expect.lstrip()
             and not case.expect.startswith('⍝') and _comment(case.code) is None): separator = '   ⍝ '
-        output = '' if case.output is None else '\n'+OUTPUT+(' '+case.output.replace('\\', '\\\\').replace('\n', '\\n') if case.output else '')
-        result.append(header+'\n'+case.code+separator+case.expect+output+'\n\n')
+        fixtures = ''.join('' if text is None else '\n'+marker+(' '+_escaped(text) if text else '') for marker,text in ((INPUT, case.input), (OUTPUT, case.output)))
+        result.append(header+'\n'+case.code+separator+case.expect+fixtures+'\n\n')
     return ''.join(result)
 
 
@@ -179,7 +185,7 @@ def convert(row):
     elif 'expected_code' in row: expect = row['expected_code']
     elif 'expected' in row: expect = literal(row['expected'])
     else: raise ValueError(f"{row['id']}: missing independent expectation")
-    return Case(row['code'], expect, row['id'], description(row), row.get('relative_tolerance', 0), row.get('absolute_tolerance', 0))
+    return Case(row['code'], expect, row['id'], description(row), row.get('relative_tolerance', 0), row.get('absolute_tolerance', 0), output=row.get('expected_output'), input=row.get('input'))
 
 
 def _load(path): return parse(path.read_text())
@@ -227,6 +233,7 @@ def check_file(
         if c.expect.startswith('⍝ error: '): case['expected_error'] = c.expect.removeprefix('⍝ error: ')
         else: case['expected_code'] = c.expect
         if c.output is not None: case['expected_output'] = c.output
+        if c.input is not None: case['input'] = c.input
         if c.rtol: case['relative_tolerance'] = c.rtol
         if c.atol: case['absolute_tolerance'] = c.atol
         r = _check(case, timeout)

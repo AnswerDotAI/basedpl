@@ -1,18 +1,30 @@
 # `::` — Error guard
 
-`codes::handler` catches matching later errors in a dfn, including errors in its later bodies. `0::` catches all ordinary BPL errors. A vector of codes catches the errors with those numbers.
+`kinds::handler` catches later errors of the named kinds in a dfn, including errors in its later bodies, and gives the handler's value as the dfn's result. A kind's name is text in any case, such as `"DOMAIN"`. A vector of names catches each of those kinds. `∞::` catches every kind except INTERRUPT, TIMEOUT and UNSUPPORTED.
 
 ```bpl
-{0::42 ⋄ 1÷⍵}'a'   ⍝ 42
-{11::0 ⋄ ÷⍵}'a'    ⍝ 0
+{∞::42 ⋄ 1÷⍵}'a'          ⍝ 42
+{"DOMAIN"::0 ⋄ ÷⍵}'a'     ⍝ 0
 ```
+
+BPL raises the kinds SYNTAX, DOMAIN, LENGTH, LIMIT, RANK, INDEX, VALUE, FILE, INTERRUPT, TIMEOUT and UNSUPPORTED. A program can raise a kind of its own with [`•signal`][1], and a guard catches it by name.
+
+In the handler, `$e` is the caught error: a record with `kind`, `message`, and the `source`, `line` and `column` where the error happened.
+
+```bpl
+{∞::$e.kind ⋄ ÷⍵}'a'      ⍝ "DOMAIN"
+```
+
+`•signal $e` raises the caught error again, with its kind and message.
 
 The handler sees local bindings as they were when the error happened. Nothing is rolled back, including outer writes and output. The selected guard is inactive in its handler.
 
 ```bpl
-{x←1 ⋄ 0::x ⋄ x←2 ⋄ 1÷⍵}'a' ⍝ 2
+{x←1 ⋄ ∞::x ⋄ x←2 ⋄ 1÷⍵}'a' ⍝ 2
 ```
 
-Cancellation and unsupported-feature errors bypass guards.
+A guard that names INTERRUPT ends the interrupt, and its handler runs until another interrupt. A guard can name TIMEOUT, but the deadline has still passed, and the handler stops at its next check.
 
-[`•signal`](../system-functions.qmd#signal) raises an ordinary error. A guard catches it as it catches an error from a primitive.
+APL difference: Dyalog's guards take error numbers. BPL's take names.
+
+[1]: ../system-functions.qmd#signal

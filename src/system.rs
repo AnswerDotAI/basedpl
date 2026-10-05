@@ -12,6 +12,8 @@ pub(crate) type Native = fn(Option<&Value>, &Value, &Context<'_>) -> Result<Valu
 #[derive(Clone, Debug)]
 pub(crate) enum Call {
     Value(Native),
+    /// A native called for its effect. Its result is shy, as an assignment's is.
+    Effect(Native),
     Session(fn(&mut crate::Session, Option<&Value>, &Value, &crate::Span) -> Result<Value, Error>),
     Regex(std::sync::Arc<::regex::Regex>, crate::regex::Operation),
     Distribution(std::sync::Arc<crate::distribution::Distribution>, crate::distribution::Operation),
@@ -80,17 +82,25 @@ const BUILTINS: &[(&str, Call, Valence)] = &[
     ("•distribution", Call::Value(crate::distribution::distribution), Ambivalent),
     ("•rand", Call::Value(crate::distribution::generator), Monadic),
     ("•nget", Call::Value(crate::data::read), Ambivalent),
-    ("•nput", Call::Value(crate::data::write), Dyadic),
+    ("•nput", Call::Effect(crate::data::write), Dyadic),
     ("•deflate", Call::Value(crate::data::inflate), Ambivalent),
     ("•hash", Call::Value(crate::data::hash), Ambivalent),
     ("•uuid", Call::Value(crate::data::uuid), Ambivalent),
     ("•ucs", Call::Value(unicode_convert), Ambivalent),
     ("•load", Call::Load, Monadic),
-    ("•signal", Call::Value(signal), Monadic),
+    ("•signal", Call::Value(signal), Ambivalent),
     ("•storage", Call::Value(storage), Monadic),
     ("•time", Call::Time, Ambivalent),
     ("•host", Call::Value(host), Monadic),
-    ("•delay", Call::Value(delay), Monadic),
+    ("•delay", Call::Effect(delay), Monadic),
+    ("•date", Call::Value(crate::date::read), Ambivalent),
+    ("•path", Call::Value(crate::files::path), Ambivalent),
+    ("•metadata", Call::Value(crate::files::metadata), Monadic),
+    ("•readdir", Call::Value(crate::files::readdir), Ambivalent),
+    ("•copy", Call::Effect(crate::files::copy), Dyadic),
+    ("•rename", Call::Effect(crate::files::rename), Dyadic),
+    ("•remove", Call::Effect(crate::files::remove), Ambivalent),
+    ("•mkdir", Call::Effect(crate::files::mkdir), Ambivalent),
     ("•prefs", Call::Session(crate::display::prefs), Monadic),
     ("•nc", Call::Session(crate::Session::system_nc), Monadic),
     ("•nl", Call::Session(crate::Session::system_nl), Ambivalent),
@@ -116,6 +126,8 @@ const INVERSES: &[(&str, Native, Valence)] = &[
     ("•xml", crate::xml::serialize, Monadic),
     ("•image", crate::image::encode, Ambivalent),
     ("•deflate", crate::data::deflate, Ambivalent),
+    ("•date", crate::date::write, Ambivalent),
+    ("•path", crate::files::join, Monadic),
 ];
 
 /// `f⁻¹` for a system function `f` that has an inverse.
@@ -128,31 +140,40 @@ pub(crate) fn inverse(f: &SystemFunction, left: Option<&Value>, right: &Value, c
 /// The arguments that follow the program on the command line.
 pub(crate) static ARGS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
 
-/// `•host name` gives the host fact called `name`, one of `"args"`, `"version"`, `"env"` and `"width"`.
+const HOST_FACTS: [&str; 7] = ["args", "version", "env", "width", "height", "cwd", "temp"];
+
+/// `•host name` gives the host fact called `name`: the command-line `"args"`, BPL's `"version"`, the `"env"` record, the terminal's
+/// `"width"` and `"height"`, the working directory `"cwd"`, and `"temp"`, the directory for temporary files.
 fn host(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let fact = match crate::keyed::name(right).as_deref() {
         Some("args") => {
             let args = ARGS.get().map_or(&[][..], Vec::as_slice);
-            Value::from_parts(vec![args.len()], args.iter().map(|a| crate::keyed::text(a)).collect(), crate::keyed::text(""))
+            crate::keyed::texts(&[args.len()], args.iter().map(|a| crate::keyed::text(a)).collect())
         }
         Some("version") => Ok(crate::keyed::text(env!("CARGO_PKG_VERSION"))),
         Some("env") => {
             let (names, values) = std::env::vars_os().map(|(k, v)| (k.to_string_lossy().into(), crate::keyed::text(&v.to_string_lossy()))).unzip();
             crate::keyed::record(names, values)
         }
-        Some("width") => terminal_width().map_or_else(|| Value::integers(vec![0], vec![]), |w| Value::number(w as f64)),
-        _ => return Err(span.domain_error("•host takes \"args\", \"version\", \"env\" or \"width\"")),
+        Some(fact @ ("width" | "height")) => match terminal_size() {
+            Some((rows, columns)) => Value::number((if fact == "height" { rows } else { columns }) as f64),
+            None => Value::integers(vec![0], vec![]),
+        },
+        Some("cwd") => Ok(crate::keyed::text(&std::env::current_dir().map_err(|e| span.domain_error(format!("working directory: {e}")))?.to_string_lossy())),
+        Some("temp") => Ok(crate::keyed::text(&std::env::temp_dir().to_string_lossy())),
+        _ => return Err(span.domain_error(format!("•host takes {}", HOST_FACTS.map(|f| format!("\"{f}\"")).join(", ")))),
     };
     fact.error_at(span, "invalid host fact")
 }
 
-/// The width of the terminal that standard output writes to. `None` without one.
+/// The rows and columns of the terminal that standard output writes to. `None` without one.
 #[cfg(unix)]
-pub(crate) fn terminal_width() -> Option<usize> {
-    rustix::termios::tcgetwinsize(std::io::stdout()).ok().map(|size| usize::from(size.ws_col)).filter(|&w| w > 0)
+pub(crate) fn terminal_size() -> Option<(usize, usize)> {
+    let size = rustix::termios::tcgetwinsize(std::io::stdout()).ok()?;
+    (size.ws_row > 0 && size.ws_col > 0).then(|| (usize::from(size.ws_row), usize::from(size.ws_col)))
 }
 #[cfg(not(unix))]
-pub(crate) fn terminal_width() -> Option<usize> { None }
+pub(crate) fn terminal_size() -> Option<(usize, usize)> { None }
 
 /// `•delay s` pauses for `s` seconds and gives the seconds it waited. `•delay ∞` waits until interrupted. Interrupts stop any delay.
 fn delay(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -172,20 +193,21 @@ fn delay(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, 
 
 fn storage(_: Option<&Value>, right: &Value, _: &Context<'_>) -> Result<Value, Error> { Ok(crate::keyed::text(right.storage_name())) }
 
-fn signal(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "•signal needs an error name vector")); }
-    let invalid = || span.domain_error("•signal needs an ordinary error name such as \"DOMAIN ERROR\"");
-    let kind = match crate::keyed::name(right).ok_or_else(invalid)?.as_ref() {
-        "SYNTAX ERROR" => ErrorKind::Syntax,
-        "INDEX ERROR" => ErrorKind::Index,
-        "RANK ERROR" => ErrorKind::Rank,
-        "LENGTH ERROR" => ErrorKind::Length,
-        "VALUE ERROR" => ErrorKind::Value,
-        "LIMIT ERROR" => ErrorKind::Limit,
-        "DOMAIN ERROR" => ErrorKind::Domain,
-        _ => return Err(invalid()),
+/// `•signal kind` raises an error of the kind that `kind` names, and `message •signal kind` gives it a message. `kind` can also be a
+/// caught error, as `$e` gives in a handler, which raises its kind and message again.
+fn signal(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let invalid = || span.domain_error("•signal needs an error kind such as \"DOMAIN\", or a caught error");
+    let (name, message) = match crate::keyed::name(right) {
+        Some(name) => (name, "explicitly signalled".into()),
+        None => {
+            let fields = crate::keyed::pairs(right).map_err(|_| invalid())?;
+            let field = |key: &str| fields.iter().find(|(k, _)| &**k == key).and_then(|(_, v)| crate::keyed::name(v)).ok_or_else(invalid);
+            (field("kind")?, field("message")?.to_string())
+        }
     };
-    Err(span.error(kind, "explicitly signalled"))
+    let kind = ErrorKind::named(&name).ok_or_else(invalid)?;
+    let message = match left { Some(m) => crate::data::text(m, span)?, None => message };
+    Err(span.error(kind, message))
 }
 
 fn case_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {

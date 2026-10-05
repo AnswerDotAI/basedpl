@@ -79,10 +79,10 @@ def test_load(tmp_path, monkeypatch):
     bpl.timeout = .001
     with pytest.raises(BplError, match='TIMEOUT'): bpl('•load "lib/defs.bpl"')
     bpl.timeout = None
-    with pytest.raises(BplError, match='VALUE'): bpl('•load "missing.bpl"')
+    with pytest.raises(BplError, match='FILE'): bpl('•load "missing.bpl"')
 
 
-def test_data_io(tmp_path):
+def test_data_io(tmp_path, monkeypatch, capsys):
     source, dest = tmp_path/'sales.json', tmp_path/'sales.csv'
     source.write_text('{"price":[10.5,20.0],"qty":[2,4]}', encoding='utf-8')
     read, write = bpl.nget, bpl.nput
@@ -90,15 +90,21 @@ def test_data_io(tmp_path):
     encoded = bpl.csv.undo(table).py
     teq(write(encoded, path=str(dest)).py, len(encoded.encode('utf-8')))
     teq(bpl.fn('≡')(bpl.csv(read(str(dest))), table).py, 1)
-    with pytest.raises(BplError, match='VALUE'): write('replacement', path=str(dest))
+    with pytest.raises(BplError, match='FILE'): write('replacement', path=str(dest))
     teq(dest.read_text(), encoded)
     teq(write('é\r\n', path=str(dest), overwrite=1).py, 4)
     teq(read(str(dest)).py, 'é\r\n')
     with pytest.raises(BplError, match='encoding'): write('bad', path=str(dest), overwrite=1, encoding='UTF-16')
     teq(dest.read_bytes(), 'é\r\n'.encode())
     dest.write_bytes(b'\xff')
-    with pytest.raises(BplError, match='VALUE'): read(str(dest))
-    with pytest.raises(BplError, match='VALUE'): read(str(tmp_path/'absent'))
+    with pytest.raises(BplError, match='FILE'): read(str(dest))
+    with pytest.raises(BplError, match='FILE'): read(str(tmp_path/'absent'))
+    prompts = []
+    monkeypatch.setattr('builtins.input', lambda prompt: prompts.append(prompt) or 'bob')
+    teq(bpl('"-" •nput "Name? " ⋄ "Hi ",⎕').py, 'Hi bob')
+    teq(prompts, ['Name? '])
+    bpl('"-" •nput "a" ⋄ ⎕←1')
+    teq(capsys.readouterr().out, 'a1\n')
 
 
 def test_binary_files(tmp_path):
@@ -112,7 +118,7 @@ def test_binary_files(tmp_path):
     opts = dict(path=str(dest))
     teq(write(values, **opts).py, 256)
     teq(dest.read_bytes(), data)
-    with pytest.raises(BplError, match='VALUE'): write(values, **opts)
+    with pytest.raises(BplError, match='FILE'): write(values, **opts)
     opts['overwrite'] = 1
     for bad in ([256], [-1], [0.5], [float('inf')]):
         with pytest.raises(BplError, match='DOMAIN'): write(bad, **opts)
@@ -267,7 +273,7 @@ def test_words_binding_and_operators():
 
 
 def test_math_construction():
-    from basedpl import prime, prime_mode, factors, factor_spec, polynomial, polyval, windows
+    from basedpl import prime, prime_mode, factors, factor_spec, roots, polyval, windows
     f = plus.left(1).inverse_pair(subtract(1))
     np.testing.assert_array_equal(f.power([2, -1, 0])(10), [12, 9, 10])
     np.testing.assert_array_equal(f.history(-2)(10), [10, 9, 8])
@@ -277,7 +283,7 @@ def test_math_construction():
     assert prime(9).py == 29 and prime_mode(1, 29).py == 1
     np.testing.assert_array_equal(factors(700), [2, 2, 5, 5, 7])
     np.testing.assert_array_equal(factor_spec(float('inf'), 700), [2, 0, 2, 1])
-    np.testing.assert_array_equal(polynomial.undo([2, [1, 3]]), [6, -8, 2])
+    np.testing.assert_array_equal(roots.undo([2, [1, 3]]), [6, -8, 2])
     p = polyval.left([1, 2, 3])
     assert p.derivative(2).py == 14 and p.derivative.derivative(2).py == 6
     np.testing.assert_array_equal(p.derivative([10, 20], [1, 2]), [80, 280])

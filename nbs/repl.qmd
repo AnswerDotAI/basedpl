@@ -127,7 +127,7 @@ Both display modes show scalars as source: `⊂4ₓ`, `⊂⊂4ₓ` or `⊂[1 2]`
 
 ## Timing
 
-`•time t` gives the seconds since time `t`. `•time 0` is the current reading. `t←•time 0` starts a timer. `•time t` then gives the seconds since it started.
+`•time t` gives the seconds since the moment `t`. `•time 0` is the current moment, in seconds since the Unix epoch. `t←•time 0` starts a timer. `•time t` then gives the seconds since it started.
 
 `F •time x` compares functions. It calls each function in `F` on `x` for about 0.1 s. The result is each function's fastest time per call in seconds, with the shape and keys of `F`:
 

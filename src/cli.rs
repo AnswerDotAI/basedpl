@@ -20,7 +20,8 @@ impl Printer {
         let sink = move |output: &Output| {
             let mut failure = failure.lock().unwrap();
             if failure.is_some() { return; }
-            if let Err(e) = writeln!(io::stdout(), "{}", output.text()) {
+            let mut out = io::stdout();
+            if let Err(e) = out.write_all(output.written().as_bytes()).and_then(|()| out.flush()) {
                 *failure = Some(e);
                 interrupt.interrupt();
             }
@@ -40,7 +41,10 @@ impl Printer {
 /// Standard input, for a program whose source comes from elsewhere.
 struct StandardInput;
 impl Input for StandardInput {
-    fn line(&self) -> io::Result<Option<String>> {
+    fn line(&self, prompt: &str) -> io::Result<Option<String>> {
+        let mut out = io::stdout();
+        out.write_all(prompt.as_bytes())?;
+        out.flush()?;
         let mut line = String::new();
         if io::stdin().read_line(&mut line)? == 0 { return Ok(None); }
         if line.ends_with('\n') { line.pop(); }

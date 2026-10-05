@@ -21,7 +21,7 @@ The second reply is:
 
 Build each request with a JSON encoder, such as Python's `json.dumps` or JavaScript's `JSON.stringify`, and end it with a newline. The encoder escapes newlines in the source. Stdout contains only replies. EOF ends the session.
 
-Malformed JSON, an invalid field or an invalid encoded array gives a `REQUEST ERROR` in that request's result. The session continues.
+Malformed JSON, an invalid field or an invalid encoded array gives an error of kind `REQUEST` in that request's result. The session continues.
 
 ### Requests
 

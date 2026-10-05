@@ -263,11 +263,14 @@ class BplError(RuntimeError):
 
 def _output_text(events): return [e['data']['text/plain'] for e in events]
 
-def _print(output):
-    for text in output: print(text)
+def _written(events):
+    "The text of `events` as a terminal shows it: a line ending follows each event except a `text` event, which BPL writes as it is."
+    return ''.join(e['data']['text/plain'] + ('' if e['kind']=='text' else '\n') for e in events)
+
+def _print(events): print(_written(events), end='')
 
 def _result(raw, display=False):
-    if display: _print(_output_text(raw['output']))
+    if display: _print(raw['output'])
     if error := raw['error']: raise BplError(error, raw['output'])
     value = raw['value']
     if isinstance(value, _Function): value = Function(value)
@@ -283,7 +286,7 @@ class _Workspace:
     def _request(self, payload, display, echo=False):
         try: raw = self._session.request(**payload, echo=echo, timeout=self.timeout)
         except KeyboardInterrupt as e:
-            if display: _print(getattr(e, 'output', []))
+            if display: _print(getattr(e, 'events', []))
             raise
         return _result(raw, display)
 

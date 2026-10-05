@@ -121,7 +121,7 @@ def test_errors_capture_output_and_recover(capsys):
     for call in [bpl, lambda src: bpl(src, 'explicit')]:
         with pytest.raises(BplError) as caught: call('x←7 ⋄ ⎕←1ₓ ⋄ 1÷"a"')
         e = caught.value
-        assert e.kind == 'DOMAIN ERROR' and e.output == ['1ₓ'] and '÷' in e.source and len(e.span) == 2
+        assert e.kind == 'DOMAIN' and e.output == ['1ₓ'] and '÷' in e.source and len(e.span) == 2
         assert ' --> <input>:1:' in str(e)
         assert capsys.readouterr().out == ('1ₓ\n' if call is bpl else '')
         assert bpl('x+1').py == 8
@@ -187,7 +187,7 @@ def test_installed_worker_command():
     replies = [json.loads(line)['result'] for line in res.stdout.splitlines()]
     assert replies[1]['value'] == dict(shape=[3], data=[9007199254740993, 0.5, {'rational': ['1', '3']}], prototype=0)
     assert replies[2]['value'] == dict(shape=[0], data=[], prototype=0)
-    assert replies[3]['error']['kind'] == 'DOMAIN ERROR'
+    assert replies[3]['error']['kind'] == 'DOMAIN'
     assert replies[4]['value'] == {'rational': ['1', '2']}
     assert replies[5]['value'] == 2**100
     assert replies[6]['value']['data'] == [{'complex': [1, 2]}, {'complex': [3, 4]}]

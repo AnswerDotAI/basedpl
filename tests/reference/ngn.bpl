@@ -2300,3 +2300,7 @@ p←•r "B(c+)d" ⋄ p.position "abcd"
 ⍝ ngn:119 — BPL gives `¯∞` for `⍟0`, as ngn expects
 ⍟0   ⍝ ¯∞
 
+⍝ ngn:525 — ngn's `↗` raises an error that its argument names; BPL's `•signal` raises a kind of the program's own, which displays as CUSTOM ERROR
+•signal "CUSTOM"
+⍝ error: CUSTOM ERROR
+

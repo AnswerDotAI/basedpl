@@ -448,6 +448,7 @@ impl Function {
                 f.check(left, cx.span)?;
                 match &f.call {
                     crate::system::Call::Value(call) => call(left, right, cx),
+                    crate::system::Call::Effect(call) => return call(left, right, cx).map(|value| Bound { shy: true, ..Bound::from(value) }),
                     crate::system::Call::Element(tag) => crate::xml::element(tag, left, right, cx),
                     crate::system::Call::Mime => cx.session.mime(left, right, cx.span),
                     crate::system::Call::Session(call) => call(cx.session, left, right, cx.span),
@@ -1526,10 +1527,6 @@ impl Evaluation {
     pub(crate) fn failed(error: Error) -> Self { Self { error: Some(error), ..Self::default() } }
 }
 
-/// When a session started. `•time` counts seconds from it on a monotonic clock.
-struct Started(std::time::Instant);
-impl Default for Started { fn default() -> Self { Self(std::time::Instant::now()) } }
-
 #[derive(Default)]
 pub struct Session {
     pub(crate) execution: crate::execution::Execution,
@@ -1546,7 +1543,6 @@ pub struct Session {
     current: Option<usize>,
     depth: usize,
     prototype: bool,
-    started: Started,
 }
 
 impl Context<'_> {
@@ -1647,11 +1643,11 @@ impl Session {
     pub(crate) fn system_src(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         self.map_names(right, span, crate::keyed::text(""), |s, name| s.name_source(name).map(|text| crate::keyed::text(&text)))
     }
-    /// `•time t` gives the seconds since `t`, counting from the session's start. `F •time x` gives each function's fastest time per call
+    /// `•time t` gives the seconds since `t`, counting from the Unix epoch. `F •time x` gives each function's fastest time per call
     /// on `x`, in the layout of `F`.
     fn system_time(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         let Some(functions) = left else {
-            let now = Value::Number(self.started.0.elapsed().as_secs_f64().into());
+            let now = Value::Number(crate::date::now().into());
             return Primitive::Arithmetic(crate::number::Arithmetic::Minus).call(Some(&now), right, &self.at(span));
         };
         let times = functions
@@ -1684,7 +1680,7 @@ impl Session {
         let classes = right.as_items().integers().error_at(span, "invalid name class")?;
         if classes.iter().any(|n| !(SUBJECT_CLASS..=OPERATOR_CLASS).contains(n)) { return Err(span.domain_error("name classes are 2, 3 and 4")); }
         let values = self.name_list(&classes, &prefix).iter().map(|n| crate::keyed::text(n)).collect::<Vec<_>>();
-        Value::from_parts(vec![values.len()], values, crate::keyed::text("")).error_at(span, "invalid name list")
+        crate::keyed::texts(&[values.len()], values).error_at(span, "invalid name list")
     }
     pub fn set(&mut self, name: &str, value: Value) -> Result<(), ErrorKind> { self.set_value(name, Binding::from_element(value)) }
     pub fn set_function(&mut self, name: &str, value: Function) -> Result<(), ErrorKind> { self.set_value(name, Binding::Function(value)) }
@@ -1701,6 +1697,7 @@ impl Session {
     fn evaluation(&mut self, options: crate::EvalOptions, evaluate: impl FnOnce(&mut Self) -> Evaluation) -> Evaluation {
         self.execution.begin(options);
         let result = evaluate(self);
+        self.execution.flush();
         Evaluation { output: self.execution.take_output(), ..result }
     }
     pub fn eval_timeout(&mut self, code: &str, timeout: std::time::Duration) -> Evaluation {
@@ -1904,10 +1901,7 @@ impl Session {
 
     fn execute(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
         let source = Source::new("<execute>", Self::source_text(right, span)?);
-        match left {
-            Some(record) => self.scoped(record, span, |session| session.execute_source(source, span)),
-            None => self.execute_source(source, span),
-        }
+        match left { Some(record) => self.scoped(record, span, |session| session.execute_source(source, span)), None => self.execute_source(source, span) }
     }
 
     fn source_text(right: &Value, span: &Span) -> Result<String, Error> {
@@ -1981,11 +1975,17 @@ impl Session {
                     NodeKind::Group(_) => self.holds_array(root),
                     _ => false,
                 });
-                let path = |key: Node, function, root: &Node| NodeKind::Group(vec![key, Node { kind: NodeKind::Function(function), span: nodes[i].span.clone() }, root.clone()]);
+                let path = |key: Node, function, root: &Node| {
+                    NodeKind::Group(vec![key, Node { kind: NodeKind::Function(function), span: nodes[i].span.clone() }, root.clone()])
+                };
                 let kind = root.and_then(|root| match &next.kind {
-                    NodeKind::Name(name) => Some(path(Node { kind: NodeKind::Literal(crate::keyed::text(name)), span: next.span.clone() }, Primitive::Mix, root)),
+                    NodeKind::Name(name) => {
+                        Some(path(Node { kind: NodeKind::Literal(crate::keyed::text(name)), span: next.span.clone() }, Primitive::Mix, root))
+                    }
                     NodeKind::ArrayLiteral { form: ListForm::Items | ListForm::Cells, .. } => Some(path(next.clone(), Primitive::Index, root)),
-                    NodeKind::Group(_) | NodeKind::ArrayLiteral { form: ListForm::Rows, .. } => Some(NodeKind::Scope(Box::new(root.clone()), Box::new(next.clone()))),
+                    NodeKind::Group(_) | NodeKind::ArrayLiteral { form: ListForm::Rows, .. } => {
+                        Some(NodeKind::Scope(Box::new(root.clone()), Box::new(next.clone())))
+                    }
                     _ => None,
                 });
                 if let Some(kind) = kind {
@@ -2415,6 +2415,7 @@ impl Session {
             NodeKind::Name(name) => match self.lookup(name) {
                 Some(value) => value.clone(),
                 None if name == "⍺" && self.current.is_some() => Binding::Absent,
+                None if name == "$e" => return Err(node.span.error(ErrorKind::Value, "$e is the error a handler caught, and exists only in a handler")),
                 None => return Err(node.span.error(ErrorKind::Value, format!("undefined name: {name}"))),
             },
             NodeKind::System(name) => {
@@ -2477,7 +2478,7 @@ impl Session {
                     DefinitionKind::MonadicOperator | DefinitionKind::DyadicOperator => Binding::Operator(OperatorNode::Defined(closure)),
                 }
             }
-            NodeKind::Output => match self.execution.input(&node.span, |input| input.line())? {
+            NodeKind::Output => match self.execution.line(&node.span)? {
                 Some(line) => Binding::Value(crate::keyed::text(&line)),
                 None => Binding::Value(crate::syntax::zilde(false)),
             },
@@ -2643,10 +2644,8 @@ impl Session {
                             }
                         }
                         StatementKind::ErrorGuard { index: i } => {
-                            let numbers = self.array_result(&nodes[..i])?;
-                            if numbers.shape().len() > 1 { return Err(nodes[i].span.error(ErrorKind::Rank, "error numbers must be a unit or vector")); }
-                            let numbers = numbers.as_items().nonnegative_integers().error_at(&nodes[i].span, "invalid error number")?;
-                            handlers.push((&nodes[i + 1..], numbers));
+                            let catch = Catch::new(&self.array_result(&nodes[..i])?, &nodes[i].span)?;
+                            handlers.push((&nodes[i + 1..], catch));
                         }
                         StatementKind::Predicate => {
                             let span = crate::syntax::cover(nodes);
@@ -2664,14 +2663,41 @@ impl Session {
         })();
         let mut result = result;
         while let Err(error) = &result {
-            // Unsupported subset features must not turn into plausible successful results.
-            let Some(number) = error.kind.number() else { break; };
-            let Some((handler, numbers)) = handlers.pop() else { break; };
-            if !numbers.contains(&0) && !numbers.contains(&number) { continue; }
+            let Some((handler, catch)) = handlers.pop() else { break };
+            if !catch.catches(&error.kind) { continue; }
+            if error.kind == ErrorKind::Interrupt { self.execution.clear_interrupt(); }
+            self.frames[frame].names.insert("$e".into(), Binding::Value(caught(error)));
             result = self.return_expression(handler, false);
         }
         result
     }
+}
+
+/// The errors a guard catches: the kinds it names, or with `∞` every kind but an interrupt, a timeout or an unsupported feature.
+/// Unsupported features must not turn into plausible results.
+enum Catch { All, Kinds(Vec<ErrorKind>) }
+impl Catch {
+    fn new(value: &Value, span: &Span) -> Result<Self, Error> {
+        if value.as_number().is_some_and(|n| n.is_infinite() && n.as_float().is_some_and(|x| x > 0.)) { return Ok(Self::All); }
+        let invalid = || span.domain_error("a guard names error kinds, as in \"DOMAIN\"::, or catches every kind with ∞::");
+        let (_, names) = crate::keyed::text_items(value).ok_or_else(invalid)?;
+        Ok(Self::Kinds(names.iter().map(|n| ErrorKind::named(n)).collect::<Option<_>>().ok_or_else(invalid)?))
+    }
+    fn catches(&self, kind: &ErrorKind) -> bool {
+        match self {
+            Self::All => !matches!(kind, ErrorKind::Interrupt | ErrorKind::Timeout | ErrorKind::Unsupported),
+            Self::Kinds(kinds) => kinds.contains(kind),
+        }
+    }
+}
+
+/// `$e` in a handler: the caught error's kind and message, and the source, line and column where it happened.
+fn caught(error: &Error) -> Value {
+    let (line, column) = error.span.position();
+    let number = |n: usize| Value::Number(crate::Number::from_integer(n as i64));
+    let text = crate::keyed::text;
+    let values = vec![text(error.kind.name()), text(&error.message), text(&error.span.source.name), number(line), number(column)];
+    crate::keyed::record(["kind", "message", "source", "line", "column"].map(Into::into).to_vec(), values).expect("an error fits in a record")
 }
 
 // Only the binder has unfinished trains and bound left arguments.

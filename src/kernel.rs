@@ -21,11 +21,12 @@ fn language_error(error: crate::Error) -> LanguageError {
     }
 }
 
-/// Standard input in a notebook. Each line is an `input_request` to the frontend. The input never ends, so `rest` is an error.
+/// Standard input in a notebook. Each line is an `input_request` to the frontend, which shows the prompt beside its input box. The input
+/// never ends, so `rest` is an error.
 struct NotebookInput(ExecutionContext);
 impl Input for NotebookInput {
-    fn line(&self) -> std::io::Result<Option<String>> {
-        self.0.input("", false).map(Some).map_err(|e| {
+    fn line(&self, prompt: &str) -> std::io::Result<Option<String>> {
+        self.0.input(prompt, false).map(Some).map_err(|e| {
             let kind = if e.kind() == kernmini::ErrorKind::Interrupted { std::io::ErrorKind::Interrupted } else { std::io::ErrorKind::Other };
             std::io::Error::new(kind, e)
         })
@@ -59,7 +60,7 @@ impl LanguageSession for BplSession {
                 let input = request.allow_stdin.then(|| Arc::new(NotebookInput(context.clone())) as Arc<dyn Input>);
                 let output = Arc::new(move |output: &crate::Output| {
                     let event = match output.kind {
-                        OutputKind::Explicit => LanguageEvent::Stream { name: "stdout".into(), text: format!("{}\n", output.text()) },
+                        OutputKind::Explicit | OutputKind::Text => LanguageEvent::Stream { name: "stdout".into(), text: output.written() },
                         OutputKind::Display => LanguageEvent::Message {
                             msg_type: "execute_result".into(),
                             content: json!({"execution_count": count, "data": output.data, "metadata": {}}),

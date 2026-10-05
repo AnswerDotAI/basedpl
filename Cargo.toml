@@ -67,9 +67,13 @@ json5 = ">=1.3.1, <2"
 roxmltree = { version = ">=0.21.1, <1", default-features = false, features = ["std"] }
 sha2 = ">=0.10.9, <1"
 uuid = { version = ">=1.26.1, <2", features = ["v1", "v3", "v4", "v5", "v6", "v7", "v8"] }
+chrono = { version = ">=0.4.45, <0.5", features = ["unstable-locales"] }
+walkdir = ">=2.5.0, <3"
+globset = ">=0.4.20, <1"
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = ">=1.1.5, <2", features = ["termios"] }
+rustix = { version = ">=1.1.5, <2", features = ["termios", "fs"] }
+nix = { version = ">=0.31.3, <1", default-features = false, features = ["user"] }
 
 [build-dependencies]
 pyo3-build-config = { version = ">=0.29.2, <1", optional = true }

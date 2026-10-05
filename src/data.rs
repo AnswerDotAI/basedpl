@@ -203,17 +203,23 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
     if binary && opts.values.contains_key("encoding") { return Err(span.domain_error("binary files do not take an encoding")); }
     let path = text(right, span)?;
     span.check()?;
-    let data = if path == "-" { span.input(|input| input.rest())? } else { span.read(&path)? };
+    let data = if path == "-" { span.rest()? } else { span.read(&path)? };
     span.check()?;
     if binary { return byte_vector(data).error_at(span, "invalid byte vector"); }
     let data = String::from_utf8(data).map_err(|e| span.file_error(&path, e))?;
     Ok(keyed::text(&data))
 }
 
+/// `path •nput data` writes `data` to a new file, or to standard output with no line ending added when `path` is `"-"`.
 pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let opts = file_options("•nput", left, Some("path"), &["path", "encoding", "overwrite"], span)?;
     let path = opts.text("path", None, span)?;
     let data = payload(right, span)?;
+    let count = Value::Number(Number::from_integer(data.len() as i64));
+    if path == "-" {
+        span.write(&String::from_utf8(data).map_err(|_| span.domain_error("standard output takes UTF-8 text"))?);
+        return Ok(count);
+    }
     let overwrite = opts.boolean("overwrite", false, span)?;
     span.check()?;
     let mut file = OpenOptions::new()
@@ -224,5 +230,5 @@ pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
         .open(span.path(&path))
         .map_err(|e| span.file_error(&path, e))?;
     file.write_all(&data).map_err(|e| span.file_error(&path, e))?;
-    Ok(Value::Number(Number::from_integer(data.len() as i64)))
+    Ok(count)
 }

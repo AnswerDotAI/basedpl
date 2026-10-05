@@ -1193,6 +1193,10 @@ impl Value {
     pub fn from_parts(shape: Vec<usize>, data: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
         if data.is_empty() { Self::empty(shape, empty_prototype) } else { Self::new(shape, data) }
     }
+    /// One item for each position of `shape`: the item itself when `shape` is empty, otherwise an array of them.
+    pub(crate) fn shaped(shape: &[usize], mut data: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
+        if shape.is_empty() { data.pop().ok_or(ErrorKind::Length) } else { Self::from_parts(shape.to_vec(), data, empty_prototype) }
+    }
 
     /// Nonempty construction of items gathered one at a time, such as an operation's results or a literal list. Each number keeps its
     /// exactness. Exact and approximate numbers together stay mixed. Characters share character storage. Other items stay mixed. The

@@ -285,6 +285,7 @@ fn script_integer(c: char, chars: &mut Peekable<CharIndices<'_>>, digits: &str, 
 }
 
 const UNQUOTED: &str = "_ quotes the next character into a name, and there is none";
+const DOLLAR: &str = "$ and one letter is a constant ($t, $f, $n, $a or $d) or a handler's error ($e)";
 
 /// Reads the rest of a name. A letter, `∆` or `⍙` continues it, and a digit ends it, as it ends a glyph. `_` quotes the next
 /// character into the name, and a quoted digit takes the digits after it, so `x_12` is one name. After a dot, digits continue a
@@ -394,20 +395,21 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, ParseFailure> {
                     TokenKind::Literal(crate::keyed::text(&text))
                 }
                 '⍬' => TokenKind::Literal(zilde(suffix(&mut chars, EXACT))),
-                // A literal constant: `$` and one letter.
+                // `$` and one letter: a literal constant, or `$e`, the error a handler caught.
                 '$' => {
-                    let value = match chars.next() {
-                        Some((_, 't')) => Value::Number(Number::from_bool(true)),
-                        Some((_, 'f')) => Value::Number(Number::from_bool(false)),
-                        Some((_, 'n')) => Value::Number(Number::from(f64::NAN)),
-                        Some((_, 'a')) => crate::keyed::text("ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
-                        Some((_, 'd')) => crate::keyed::text("0123456789"),
-                        _ => return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, "$ needs t, f, n, a or d").into()),
+                    let token = match chars.next() {
+                        Some((_, 't')) => TokenKind::Literal(Value::Number(Number::from_bool(true))),
+                        Some((_, 'f')) => TokenKind::Literal(Value::Number(Number::from_bool(false))),
+                        Some((_, 'n')) => TokenKind::Literal(Value::Number(Number::from(f64::NAN))),
+                        Some((_, 'a')) => TokenKind::Literal(crate::keyed::text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
+                        Some((_, 'd')) => TokenKind::Literal(crate::keyed::text("0123456789")),
+                        Some((_, 'e')) => TokenKind::Name("$e".into()),
+                        _ => return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, DOLLAR).into()),
                     };
                     if chars.peek().is_some_and(|&(_, c)| name_char(c) || c.is_ascii_digit()) {
-                        return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, "a constant is $ and one letter: $t, $f, $n, $a or $d").into());
+                        return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, DOLLAR).into());
                     }
-                    TokenKind::Literal(value)
+                    token
                 }
                 '⍛' => {
                     return Err(span(start + c.len_utf8()).error(ErrorKind::Syntax, "⍛ is retired: use ↣ or ↢ to bind or preprocess, and ∘ for Atop").into())
