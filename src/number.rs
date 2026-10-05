@@ -109,6 +109,9 @@ fn log_gamma(z: Complex64) -> Complex64 {
 #[inline]
 fn near_integer(y: f64) -> Option<f64> { let n = y.round(); ((y - n).abs() <= COMPARISON_TOLERANCE * y.abs().max(n.abs())).then_some(n) }
 
+/// `n` as a count of type `T`, such as a length, a bound or a seed. A count that `T` can't hold is LIMIT.
+pub(crate) fn count_as<T: TryFrom<u64>>(n: u64) -> Result<T, ErrorKind> { T::try_from(n).map_err(|_| ErrorKind::Limit) }
+
 /// `⌊y` with tolerance. The result is `n`, the nearest integer, unless `y` lies below `n` by more than the tolerance. Then it's `n-1`.
 #[inline]
 fn real_floor(y: f64) -> f64 { let n = y.round(); if (n > y) & (n - y > COMPARISON_TOLERANCE * y.abs().max(n.abs())) { n - 1.0 } else { n } }
@@ -152,16 +155,16 @@ impl From<Complex64> for Number { fn from(n: Complex64) -> Self { if n.im == 0.0
 /// Real cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`. They follow IEEE 754. `None` means the
 /// result is complex, so the general path must give it.
 pub(crate) mod real {
-    use super::{float_equal, near_integer, real_floor, Arithmetic, ErrorKind};
+    use super::{count_as, float_equal, near_integer, real_floor, Arithmetic, ErrorKind};
     use num_traits::ToPrimitive;
     use std::cmp::Ordering;
 
     /// A float within comparison tolerance of an integer, as that integer. A fraction, an infinity or NaN is DOMAIN, and a value outside
     /// `i64` is LIMIT.
     pub(crate) fn integer(n: f64) -> Result<i64, ErrorKind> { near_integer(n).ok_or(ErrorKind::Domain)?.to_i64().ok_or(ErrorKind::Limit) }
-    /// A float within comparison tolerance of an integer, as a count. A negative value is also DOMAIN.
-    pub(crate) fn nonnegative_integer(n: f64) -> Result<usize, ErrorKind> {
-        near_integer(n).filter(|&n| n >= 0.0).ok_or(ErrorKind::Domain)?.to_usize().ok_or(ErrorKind::Limit)
+    /// A float within comparison tolerance of an integer, as a count of type `T`. A negative value is also DOMAIN.
+    pub(crate) fn nonnegative_integer<T: TryFrom<u64>>(n: f64) -> Result<T, ErrorKind> {
+        near_integer(n).filter(|&n| n >= 0.0).ok_or(ErrorKind::Domain)?.to_u64().ok_or(ErrorKind::Limit).and_then(count_as)
     }
     pub(crate) fn arithmetic(op: Arithmetic, x: f64, y: f64) -> f64 {
         match op {
@@ -227,7 +230,7 @@ pub(crate) mod real {
     pub(crate) fn factorial(y: f64) -> f64 { libm::tgamma(y + 1.0) }
     /// The function circle code `code` applies to a real argument, or its inverse. Each gives `None` where its result is complex.
     /// Code 0 is its own inverse.
-    pub(crate) fn circle(code: isize, inverse: bool) -> Option<fn(f64) -> Option<f64>> {
+    pub(crate) fn circle(code: i64, inverse: bool) -> Option<fn(f64) -> Option<f64>> {
         Some(match (code, inverse) {
             (0, _) => |x: f64| (x.abs() <= 1.0).then(|| (1.0 - x * x).sqrt()),
             (1, false) => |x: f64| Some(x.sin()),
@@ -583,27 +586,26 @@ impl Number {
     pub(crate) fn to_complex(&self) -> Result<Complex64, &'static str> { match self.0 { Complex(n) => Ok(n), _ => Ok(Complex64::new(self.to_float()?, 0.0)) } }
 
     /// Structural conversion only; allocation limits belong to the consuming operation.
-    pub(crate) fn nonnegative_integer(&self) -> Result<usize, ErrorKind> {
-        match &self.0 {
-            Boolean(b) => Ok((*b).into()),
-            Integer(n) => {
-                if *n < 0 { Err(ErrorKind::Domain) } else { usize::try_from(*n).map_err(|_| ErrorKind::Limit) }
-            }
-            Float(n) => real::nonnegative_integer(*n),
+    pub(crate) fn nonnegative_integer<T: TryFrom<u64>>(&self) -> Result<T, ErrorKind> {
+        let n = match &self.0 {
+            Boolean(b) => u64::from(*b),
+            Integer(n) => u64::try_from(*n).map_err(|_| ErrorKind::Domain)?,
+            Float(n) => return real::nonnegative_integer(*n),
             Exact(n) => {
                 if n.is_negative() || !n.is_integer() { return Err(ErrorKind::Domain); }
-                n.numer().to_usize().ok_or(ErrorKind::Limit)
+                n.numer().to_u64().ok_or(ErrorKind::Limit)?
             }
-            Complex(_) => Err(ErrorKind::Domain),
-        }
+            Complex(_) => return Err(ErrorKind::Domain),
+        };
+        count_as(n)
     }
 
-    pub(crate) fn integer(&self) -> Result<isize, ErrorKind> {
+    pub(crate) fn integer(&self) -> Result<i64, ErrorKind> {
         match &self.0 {
-            Integer(n) => isize::try_from(*n).map_err(|_| ErrorKind::Limit),
+            Integer(n) => Ok(*n),
             Boolean(b) => Ok((*b).into()),
-            Float(n) => real::integer(*n).map(|n| n as isize),
-            Exact(n) if n.is_integer() => n.numer().to_isize().ok_or(ErrorKind::Limit),
+            Float(n) => real::integer(*n),
+            Exact(n) if n.is_integer() => n.numer().to_i64().ok_or(ErrorKind::Limit),
             _ => Err(ErrorKind::Domain),
         }
     }

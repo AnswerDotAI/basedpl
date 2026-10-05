@@ -113,7 +113,7 @@ impl LanguageSession for BplSession {
 
     async fn complete(&self, request: CompleteRequest) -> kernmini::Result<Value> {
         self.worker.call(move |session| {
-            let end = request.code.char_indices().nth(request.cursor_pos as usize).map_or(request.code.len(), |(i, _)| i);
+            let end = request.code.char_indices().nth(crate::array::saturated(request.cursor_pos)).map_or(request.code.len(), |(i, _)| i);
             let before = &request.code[..end];
             let (start, mut matches) = if let Some((start, query)) = crate::editor::entry(before, end) {
                 (start, crate::editor::matches(query).into_iter().map(|(glyph, _)| glyph.to_owned()).collect::<Vec<_>>())
@@ -129,7 +129,7 @@ impl LanguageSession for BplSession {
     async fn inspect(&self, request: InspectRequest) -> kernmini::Result<Value> {
         self.worker
             .call(move |session| {
-                let info = crate::inspection::at_cursor(&request.code, request.cursor_pos as usize).and_then(|name| session.inspect(name));
+                let info = crate::inspection::at_cursor(&request.code, crate::array::saturated(request.cursor_pos)).and_then(|name| session.inspect(name));
                 let data = info.as_ref().map(|i| json!({"text/plain":i.text(request.detail_level>0), "text/markdown":i.markdown(request.detail_level>0)}));
                 json!({"status":"ok", "found":info.is_some(), "data":data.unwrap_or(json!({})), "metadata":{}})
             })

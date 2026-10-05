@@ -72,7 +72,7 @@ impl Polynomial {
                 if *variables != 1 { return Err(span.domain_error("coefficient conversion requires a univariate polynomial")); }
                 let degrees = exponents
                     .iter()
-                    .map(|e| e[0].nonnegative_integer().error_at(span, "coefficient conversion needs nonnegative integral exponents"))
+                    .map(|e| e[0].nonnegative_integer::<usize>().error_at(span, "coefficient conversion needs nonnegative integral exponents"))
                     .collect::<Result<Vec<_>, _>>()?;
                 let len =
                     degrees.iter().max().copied().unwrap_or(0).checked_add(1).ok_or_else(|| span.error(ErrorKind::Limit, "polynomial degree is too large"))?;

@@ -1,6 +1,6 @@
 use crate::{
     agreement::Agreement,
-    array::{generated_len, Frame},
+    array::{generated_len, saturated, Frame},
     execution::Context,
     Error, ErrorAt, ErrorKind, Number, Value,
 };
@@ -173,14 +173,14 @@ fn factor_result(selector: Option<&Number>, n: BigUint, span: &Context<'_>) -> R
     let inf = x.as_float().filter(|x| x.is_infinite());
     let count = if inf.is_some() { 0 } else { x.integer().error_at(span, "factor count must be integral or infinite")? };
     if count < 0 || inf == Some(f64::NEG_INFINITY) {
-        let start = if count < 0 { factors.len().saturating_sub(count.unsigned_abs()) } else { 0 };
+        let start = if count < 0 { factors.len().saturating_sub(saturated(count.unsigned_abs())) } else { 0 };
         let factors = &factors[start..];
         let data = factors.iter().map(|(p, _)| exact(p.clone())).chain(factors.iter().map(|(_, n)| exact(*n))).collect();
         return array(vec![2, factors.len()], data, span);
     }
     let mut primes = Primes::default();
     let (mut data, mut i) = (Vec::new(), 0);
-    while if inf.is_some() { i < factors.len() } else { data.len() < count as usize } {
+    while if inf.is_some() { i < factors.len() } else { data.len() < saturated(count.unsigned_abs()) } {
         generated_len(&[data.len() + 1]).error_at(span, "exponent vector is too long")?;
         let p = BigUint::from(primes.next(span)?);
         let e = if factors.get(i).is_some_and(|(f, _)| *f == p) { i += 1; factors[i - 1].1 } else { 0 };
@@ -196,7 +196,7 @@ fn nth_primes(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
         .enumerate()
         .map(|(i, e)| {
             // Prime indices count from 0: `⍭ 0` is 2.
-            let n = number(&e, span)?.nonnegative_integer().error_at(span, "prime indices must be nonnegative integers")?;
+            let n = number(&e, span)?.nonnegative_integer::<usize>().error_at(span, "prime indices must be nonnegative integers")?;
             Ok((n, i))
         })
         .collect::<Result<Vec<_>, _>>()?;

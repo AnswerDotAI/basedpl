@@ -305,7 +305,7 @@ fn unicode_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
         Value::integers(shape(codes.len())?, codes)
     } else {
         if !matches!(right.prototype(), Value::Number(_)) { return Err(invalid()); }
-        let codes = right.as_items().nonnegative_integers().map_err(|_| invalid())?;
+        let codes = right.as_items().nonnegative_integers::<u32>().map_err(|_| invalid())?;
         let chars: Vec<char> = match encoding.as_deref() {
             Some("UTF-8") => {
                 let bytes: Vec<_> = codes.into_iter().map(u8::try_from).collect::<Result<_, _>>().map_err(|_| invalid())?;
@@ -315,7 +315,7 @@ fn unicode_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
                 let units: Vec<_> = codes.into_iter().map(u16::try_from).collect::<Result<_, _>>().map_err(|_| invalid())?;
                 char::decode_utf16(units).collect::<Result<_, _>>().map_err(|_| invalid())?
             }
-            _ => codes.into_iter().map(|n| u32::try_from(n).ok().and_then(char::from_u32)).collect::<Option<_>>().ok_or_else(invalid)?,
+            _ => codes.into_iter().map(char::from_u32).collect::<Option<_>>().ok_or_else(invalid)?,
         };
         if encoding.is_none() && right.is_atom() { return Ok(Value::Character(chars[0])); }
         Value::characters(shape(chars.len())?, chars)

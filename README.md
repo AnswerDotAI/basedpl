@@ -5,7 +5,7 @@
 
 BasedPL, the Based-array Programming Language, is an array language derived from APL, with ideas from J and BQN. Its notation aims to be simple and consistent. Most of this documentation calls it BPL. BPL is written in Rust and comes as a native executable, a Jupyter kernel and a Python API.
 
-LLMs: read [llms.txt](llms.txt) first. It is the primary reference index and concise overview.
+LLMs: read [llms.txt](https://answerdotai.github.io/basedpl/llms.txt) first. It is the primary reference index and concise overview.
 
 ## Install and try it
 
@@ -32,13 +32,13 @@ avg 2 4 9
 
     5
 
-Use `bpl -e 'avg←+/÷≢ ⋄ avg 2 4 9'` for a shell command. The [command-line guide](cli.qmd) covers source files and pipes.
+Use `bpl -e 'avg←+/÷≢ ⋄ avg 2 4 9'` for a shell command. The [command-line guide](https://answerdotai.github.io/basedpl/cli.html) covers source files and pipes.
 
 ## Interactive use
 
-In the REPL, type a backtick followed by a glyph name. For example, `` `iota `` becomes `⍳` when you press Tab or type a non-letter. Abbreviations and Alt-key shortcuts are available. `]help +` shows help for `+`. [`•prefs`](system-functions.qmd#prefs) changes display settings, such as boxes and how much of a large array shows. See [REPL](repl.qmd) and the [glyph reference](glyphs.qmd), which lists each glyph’s key.
+In the REPL, type a backtick followed by a glyph name. For example, `` `iota `` becomes `⍳` when you press Tab or type a non-letter. Abbreviations and Alt-key shortcuts are available. `]help +` shows help for `+`. [`•prefs`](https://answerdotai.github.io/basedpl/system-functions.html#prefs) changes display settings, such as boxes and how much of a large array shows. See [REPL](https://answerdotai.github.io/basedpl/repl.html) and the [glyph reference](https://answerdotai.github.io/basedpl/glyphs.html), which lists each glyph’s key.
 
-In Jupyter, select the installed **BasedPL** kernel. Cells share definitions and support completion, Shift-Tab help and interruption. You can also use `%%bpl` cells in a Python notebook. See [Using BPL notebooks](notebooks.ipynb).
+In Jupyter, select the installed **BasedPL** kernel. Cells share definitions and support completion, Shift-Tab help and interruption. You can also use `%%bpl` cells in a Python notebook. See [Using BPL notebooks](https://answerdotai.github.io/basedpl/notebooks.html).
 
 ## New to APL?
 
@@ -76,19 +76,19 @@ To see how these ideas express an algorithm, start from “a prime has exactly t
 
     2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
 
-[Getting started](getting-started.ipynb#example-algorithms) builds a primes function from the same divisor count, step by step, and displays the divisibility matrix along the way.
+[Getting started](https://answerdotai.github.io/basedpl/getting-started.html#example-algorithms) builds a primes function from the same divisor count, step by step, and displays the divisibility matrix along the way.
 
 ## What’s distinctive?
 
 For APL users, some key differences are:
 
-- [Based arrays](arrays.ipynb), as in BQN: numbers, characters and functions are atoms; enclosure always adds a layer.
+- [Based arrays](https://answerdotai.github.io/basedpl/arrays.html), as in BQN: numbers, characters and functions are atoms; enclosure always adds a layer.
 - **Vectors in brackets, and grouping by spaces.** `[a b c]` is a vector, and `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train. For example, `+/÷≢ x` is the mean of `x`, and `2×` doubles its argument. `0⌷v` and `v₀` both select the first item of `v`.
 - **Leading-axis broadcasting**, including expansion of length-1 axes, plus string keys and names on axes.
 - **Exact integers and rationals** alongside approximate real and complex numbers.
 - Dfns, trains and operators, with additions such as Under, iteration histories, windows and function arrays.
 
-Positions and axes count from 0, as in BQN and Python. Approximate comparisons use tolerance `1E¯14`. See the [language principles](principles.ipynb) for why BPL works this way, the [glyph reference](glyphs.qmd) for Dyalog differences and [Arrays](arrays.ipynb) for the array model.
+Positions and axes count from 0, as in BQN and Python. Approximate comparisons use tolerance `1E¯14`. See the [language principles](https://answerdotai.github.io/basedpl/principles.html) for why BPL works this way, the [glyph reference](https://answerdotai.github.io/basedpl/glyphs.html) for Dyalog differences and [Arrays](https://answerdotai.github.io/basedpl/arrays.html) for the array model.
 
 ### Numbers
 
@@ -108,7 +108,7 @@ Complex numbers use `j` between real and imaginary parts. Functions such as squa
 
     0ⱼ2
 
-See [Numbers](numbers.qmd) for conversion and mixed arithmetic.
+See [Numbers](https://answerdotai.github.io/basedpl/numbers.html) for conversion and mixed arithmetic.
 
 ### Array literals and broadcasting
 
@@ -123,7 +123,7 @@ m+10 20
     11 12 13
     24 25 26
 
-See [array notation](glyphs/brackets.qmd) and [broadcasting](evaluation.qmd#agreement-and-pervasion).
+See [array notation](https://answerdotai.github.io/basedpl/glyphs/brackets.html) and [broadcasting](https://answerdotai.github.io/basedpl/evaluation.html#agreement-and-pervasion).
 
 ### Keys and named axes
 
@@ -140,7 +140,7 @@ sales←axes:[10 20 30 ⋄ 40 50 60]
 
     ["city":2]⍴["NY":60 "LA":150]
 
-Keys and names travel with axes through operations such as transpose. Arithmetic aligns matching names and keys. See [Axis keys](keyed.ipynb).
+Keys and names travel with axes through operations such as transpose. Arithmetic aligns matching names and keys. See [Axis keys](https://answerdotai.github.io/basedpl/keyed.html).
 
 ### Function operators
 
@@ -160,11 +160,11 @@ Under (`⌾`) transforms the argument, applies a function, then reverses the tra
 
     1.2 2.7
 
-Explore [iteration and inverses](glyphs/power.qmd), [Under](glyphs/under.qmd), [windows](glyphs/windows.qmd) and [function selection](glyphs/agenda.qmd).
+Explore [iteration and inverses](https://answerdotai.github.io/basedpl/glyphs/power.html), [Under](https://answerdotai.github.io/basedpl/glyphs/under.html), [windows](https://answerdotai.github.io/basedpl/glyphs/windows.html) and [function selection](https://answerdotai.github.io/basedpl/glyphs/agenda.html).
 
 ### Mathematical tools
 
-[Primes](glyphs/prime.qmd) and [factorisation](glyphs/factor.qmd) are built in:
+[Primes](https://answerdotai.github.io/basedpl/glyphs/prime.html) and [factorisation](https://answerdotai.github.io/basedpl/glyphs/factor.html) are built in:
 
 ``` bpl
 ⨸360ₓ
@@ -172,7 +172,7 @@ Explore [iteration and inverses](glyphs/power.qmd), [Under](glyphs/under.qmd), [
 
     [2 2 2 3 3 5]ₓ
 
-[Polynomials](glyphs/polynomial.qmd) support coefficients, roots and evaluation. Polynomial functions can be [differentiated](glyphs/derivative.qmd): for f(x) = 1 + 2x + 3x², f′(2) = 14.
+[Polynomials](https://answerdotai.github.io/basedpl/glyphs/polynomial.html) support coefficients, roots and evaluation. Polynomial functions can be [differentiated](https://answerdotai.github.io/basedpl/glyphs/derivative.html): for f(x) = 1 + 2x + 3x², f′(2) = 14.
 
 ``` bpl
 f←[1 2 3]ₓ⌻ ⋄ f∂2ₓ
@@ -180,7 +180,7 @@ f←[1 2 3]ₓ⌻ ⋄ f∂2ₓ
 
     14ₓ
 
-[Probability distributions](distributions.ipynb) provide sampling, density, CDF and quantiles. Two fair coin tosses give these probabilities for 0, 1 and 2 heads:
+[Probability distributions](https://answerdotai.github.io/basedpl/distributions.html) provide sampling, density, CDF and quantiles. Two fair coin tosses give these probabilities for 0, 1 and 2 heads:
 
 ``` bpl
 coin←2 0.5 •distribution "binomial"
@@ -189,7 +189,7 @@ coin.density 0 1 2
 
     0.25 0.5 0.25
 
-[Matrix division](glyphs/domino.qmd) handles linear systems and least squares.
+[Matrix division](https://answerdotai.github.io/basedpl/glyphs/domino.html) handles linear systems and least squares.
 
 ### Data and text
 
@@ -202,11 +202,11 @@ order.price×order.qty
 
     21
 
-CSV headers likewise name column vectors. [Files, CSV and JSON](data.ipynb) covers reading, transforming and writing data. [Regex](regex.ipynb) supplies matching, captures and replacement through Rust’s regex engine.
+CSV headers likewise name column vectors. [Files, CSV and JSON](https://answerdotai.github.io/basedpl/data.html) covers reading, transforming and writing data. [Regex](https://answerdotai.github.io/basedpl/regex.html) supplies matching, captures and replacement through Rust’s regex engine.
 
 ### Drawing
 
-`•plot` draws charts from arrays. Keys label the axes and name the lines. See [Plots](plot.ipynb).
+`•plot` draws charts from arrays. Keys label the axes and name the lines. See [Plots](https://answerdotai.github.io/basedpl/plot.html).
 
 ``` bpl
 ["legend":"end"]•plot sales
@@ -214,7 +214,7 @@ CSV headers likewise name column vectors. [Files, CSV and JSON](data.ipynb) cove
 
 ![](index_files/figure-commonmark/cell-17-output-1.svg)
 
-Build SVG from element functions and keyed attributes. Notebooks display the picture directly. The same element trees serialize to XML. See [XML and SVG](xml.ipynb).
+Build SVG from element functions and keyed attributes. Notebooks display the picture directly. The same element trees serialize to XML. See [XML and SVG](https://answerdotai.github.io/basedpl/xml.html).
 
 ``` bpl
 circle←•element "circle"
@@ -237,6 +237,6 @@ mean = fn('+/÷≢')
 mean([1, 2, 3])
 ```
 
-Arrays have `.py`, `.np` and `.df` conversions for Python values, NumPy and pandas. Functions also have Python names and composition operators. See the [Python tutorial](python.ipynb).
+Arrays have `.py`, `.np` and `.df` conversions for Python values, NumPy and pandas. Functions also have Python names and composition operators. See the [Python tutorial](https://answerdotai.github.io/basedpl/python.html).
 
-For other frontends, the [process interfaces](processes.qmd) provide JSON messages and interruptible workers. The [BPL library](https://github.com/AnswerDotAI/basedpl/tree/main/lib) contains more algorithms, codecs, interpreters and puzzles.
+For other frontends, the [process interfaces](https://answerdotai.github.io/basedpl/processes.html) provide JSON messages and interruptible workers. The [BPL library](https://github.com/AnswerDotAI/basedpl/tree/main/lib) contains more algorithms, codecs, interpreters and puzzles.

@@ -60,7 +60,10 @@ impl Options {
             for v in selectors {
                 let i = if let Some(name) = keyed::name(&v) { headers.and_then(|h| h.iter().position(|s| s == &name)) } else {
                     // Positions count from 0, and negative ones count from the end.
-                    v.as_number().and_then(|n| n.integer().ok()).and_then(|n| if n < 0 { width.checked_sub(n.unsigned_abs()) } else { Some(n as usize) })
+                    v.as_number().and_then(|n| n.integer().ok()).and_then(|n| {
+                        let i = crate::array::saturated(n.unsigned_abs());
+                        if n < 0 { width.checked_sub(i) } else { Some(i) }
+                    })
                 };
                 let i = i.filter(|&i| i < width).ok_or_else(|| span.error(ErrorKind::Index, "unknown CSV column"))?;
                 selected[i] = true;

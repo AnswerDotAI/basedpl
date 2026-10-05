@@ -1,6 +1,6 @@
 use crate::{
     agreement::{Agreement, Mapping},
-    array::{agreed, compress, generated_len, or_and_sum, with_ints, with_width, Axis, Frame, Gather, Items, Layout, Steps, Storage, Width},
+    array::{agreed, compress, generated_len, or_and_sum, saturated, with_ints, with_width, Axis, Frame, Gather, Items, Layout, Steps, Storage, Width},
     element::Key,
     execution::Context,
     keyed::Selector,
@@ -281,13 +281,13 @@ pub(crate) fn real(value: &Value, span: &Span) -> Result<f64, Error> {
 }
 fn float(n: f64) -> Value { Value::Number(n.into()) }
 pub(crate) fn integer(n: i64) -> Value { Value::Number(Number::from_integer(n)) }
-fn generated(n: usize, exact: bool) -> Value {
+fn generated(n: u64, exact: bool) -> Value {
     if !exact { return float(n as f64); }
     match i64::try_from(n) { Ok(n) => integer(n), Err(_) => Value::Number(num_bigint::BigInt::from(n).into()) }
 }
 /// Counts or positions in `shape`. They're floats unless `exact`, and exact integers otherwise. A value beyond `i64` is a big integer,
 /// as `generated` gives it, and makes the array mixed.
-fn generated_items(shape: Vec<usize>, values: Vec<usize>, exact: bool) -> Result<Value, ErrorKind> {
+fn generated_items(shape: Vec<usize>, values: Vec<u64>, exact: bool) -> Result<Value, ErrorKind> {
     if !exact { return Value::floats(shape, values.into_iter().map(|n| n as f64).collect()); }
     if values.iter().all(|&n| i64::try_from(n).is_ok()) { return Value::integers(shape, values.into_iter().map(|n| n as i64).collect()); }
     Value::new(shape, values.into_iter().map(|n| generated(n, true)).collect())
@@ -349,10 +349,10 @@ impl Windows {
             .map(|(a, &size)| {
                 let step = match moves.get(a) {
                     None => 1,
-                    Some(&m) if m > 0 => m as usize,
+                    Some(&m) if m > 0 => saturated(m.unsigned_abs()),
                     Some(_) => return Err(span.domain_error("window movements must be positive")),
                 };
-                let axis = WindowAxis { size: size.unsigned_abs() as usize, step, padded: padded(size) };
+                let axis = WindowAxis { size: saturated(size.unsigned_abs()), step, padded: padded(size) };
                 if axis.fits(right.shape()[a]) { Ok(axis) } else { Err(span.domain_error("padded window is too large for the argument")) }
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -688,7 +688,7 @@ impl Primitive {
             (Self::Depth, Some(x)) => Ok(Value::Number(Number::from_bool(x.matches(right, span)?))),
             (Self::Depth, None) => Ok(integer(depth(right) as i64)),
             (Self::Tally, Some(x)) => Ok(Value::Number(Number::from_bool(!x.matches(right, span)?))),
-            (Self::Tally, None) => Ok(generated(right.shape().first().copied().unwrap_or(1), true)),
+            (Self::Tally, None) => Ok(generated(right.shape().first().copied().unwrap_or(1) as u64, true)),
             (Self::Iota, Some(x)) => index_of(x, right, span),
             (Self::Iota, None) => iota(right, span),
             (Self::Where, Some(x)) => interval_index(x, right, span),
@@ -713,7 +713,7 @@ impl Primitive {
             }
             (Self::Shape, Some(x)) => reshape(x, right, span),
             (Self::Shape, None) => {
-                let dimensions = right.shape().iter().map(|&n| generated(n, true)).collect();
+                let dimensions = right.shape().iter().map(|&n| generated(n as u64, true)).collect();
                 let shape = if right.axis_names().is_empty() { Value::from_parts(vec![right.shape().len()], dimensions, integer(0)) } else { crate::keyed::partial_vector(right.axis_names().to_vec(), dimensions) };
                 shape.error_at(span, "invalid shape")
             }
@@ -959,7 +959,7 @@ fn unique_mask(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
 /// The coordinates of flat position `flat`. An axis with a negative length counts down.
 fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, exact: bool) -> Value {
     let mut data = vec![0; lengths.len()];
-    for (axis, c) in digits(flat, shape) { data[axis] = if lengths[axis] < 0 { shape[axis] - 1 - c } else { c }; }
+    for (axis, c) in digits(flat, shape) { data[axis] = (if lengths[axis] < 0 { shape[axis] - 1 - c } else { c }) as u64; }
     generated_items(vec![data.len()], data, exact).unwrap()
 }
 
@@ -967,7 +967,7 @@ fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, exact: bool) -> Va
 fn iota(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "iota needs a unit or vector shape")); }
     let lengths = right.as_items().integers().error_at(span, "invalid iota dimension")?;
-    let shape: Vec<usize> = lengths.iter().map(|n| n.unsigned_abs() as usize).collect();
+    let shape: Vec<usize> = lengths.iter().map(|n| saturated(n.unsigned_abs())).collect();
     let len = generated_len(&shape).error_at(span, "iota exceeds array limits")?;
     let exact = right.is_exact();
     if right.is_singleton() {
@@ -988,7 +988,7 @@ fn where_vector(counts: &[i64], span: &Context<'_>) -> Result<Value, Error> {
     let (any, sum) = or_and_sum(counts);
     if any < 0 { return Err(span.domain_error("where needs nonnegative integer counts")); }
     let boolean = any <= 1;
-    let total = if boolean { Some(sum as usize) } else { counts.iter().try_fold(0usize, |total, &n| total.checked_add(n as usize)) };
+    let total = if boolean { Some(sum as usize) } else { counts.iter().try_fold(0usize, |total, &n| total.checked_add(saturated(n.unsigned_abs()))) };
     let total = total.ok_or(ErrorKind::Limit).and_then(|t| generated_len(&[t])).error_at(span, "where exceeds array limits")?;
     let mut data = vec![0; total];
     if boolean { compress(&mut data, counts, |j| j as i64) }
@@ -1109,7 +1109,7 @@ fn index_of(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Er
 
 fn position_value(array: &Value, axis: usize, position: usize) -> Value {
     if let Some(key) = array.keys(axis).and_then(|k| k.names().get(position)?.clone()) { return crate::keyed::text(&key); }
-    generated(position, true)
+    generated(position as u64, true)
 }
 
 fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<String, Error> {
@@ -1155,7 +1155,12 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
 fn format_array(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let Some(spec) = left else { return right.formatted().error_at(span, "formatted array is too large"); };
     if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "format specification must be a unit or vector")); }
-    let spec = spec.elements().map(|e| numeric(&e, span)?.integer().error_at(span, "format specification must be integral")).collect::<Result<Vec<_>, _>>()?;
+    let spec = spec
+        .elements()
+        .map(|e| {
+            numeric(&e, span)?.integer().and_then(|n| isize::try_from(n).map_err(|_| ErrorKind::Limit)).error_at(span, "format specification must be integral")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let columns = right.shape().last().copied().unwrap_or(1);
     if !matches!(spec.len(), 1 | 2) && spec.len() != 2 * columns {
         return Err(span.error(ErrorKind::Length, "format needs precision, a width/precision pair, or pairs per column"));
@@ -1371,7 +1376,8 @@ fn inverse_where(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     for e in right.elements() {
         let a = e.clone();
         if a.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "inverse where coordinates must be vectors")); }
-        let coordinate = a.elements().map(|e| numeric(&e, span)?.nonnegative_integer().error_at(span, "invalid position")).collect::<Result<Vec<_>, _>>()?;
+        let coordinate =
+            a.elements().map(|e| numeric(&e, span)?.nonnegative_integer::<usize>().error_at(span, "invalid position")).collect::<Result<Vec<_>, _>>()?;
         if coordinates.is_empty() { shape.resize(coordinate.len(), 0); }
         if coordinate.len() != shape.len() { return Err(span.error(ErrorKind::Length, "coordinate lengths differ")); }
         for (size, &c) in shape.iter_mut().zip(&coordinate) { *size = (*size).max(c + 1); }
@@ -1567,7 +1573,7 @@ fn binary_encode(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
         span.check()?;
         let n = numeric(&item, span)?;
         let value = n.big_integer().ok().filter(|v| !v.is_negative()).ok_or_else(invalid)?;
-        width = width.max(value.bits() as usize);
+        width = width.max(saturated(value.bits()));
         numbers.push((value, n.clone()));
     }
     let layout = right.layout().concat(&Layout::from(vec![width]));
@@ -1775,7 +1781,7 @@ pub(crate) fn roll_array<R: rand::Rng + ?Sized>(right: &Value, rng: &mut R, span
 }
 
 /// One number below `n`, or a float between 0 and 1 when `n` is 0.
-fn draw<R: rand::Rng + ?Sized>(n: usize, exact: bool, rng: &mut R) -> Value {
+fn draw<R: rand::Rng + ?Sized>(n: u64, exact: bool, rng: &mut R) -> Value {
     if n == 0 { float(rng.sample(rand::distr::Open01)) } else { generated(rng.random_range(0..n), exact) }
 }
 
@@ -1785,7 +1791,7 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Context<'_>, fill: bool, rn
         if let a @ Value::Array(_) = e { return roll(&a, span, fill, rng); }
         let exact = e.is_exact();
         if fill { return Ok(generated(0, exact)); }
-        Ok(draw(numeric(&e, span)?.nonnegative_integer().error_at(span, "roll needs a nonnegative integer")?, exact, rng))
+        Ok(draw(numeric(&e, span)?.nonnegative_integer::<u64>().error_at(span, "roll needs a nonnegative integer")?, exact, rng))
     };
     if right.is_atom() { return item(right.clone(), rng); }
     let prototype = if right.is_empty() { item(right.prototype(), rng)? } else { integer(0) };
@@ -1796,7 +1802,7 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Context<'_>, fill: bool, rn
             for e in items { data.add(item(e.clone(), rng)?); }
         }
         bounds if !fill => {
-            let bounds = bounds.nonnegative_integers().error_at(span, "roll needs a nonnegative integer")?;
+            let bounds = bounds.nonnegative_integers::<u64>().error_at(span, "roll needs a nonnegative integer")?;
             // A bound of 0 draws a float between 0 and 1. The other draws keep their exactness beside it.
             if !bounds.contains(&0) {
                 let draws = bounds.into_iter().map(|n| rng.random_range(0..n)).collect();
@@ -1823,7 +1829,7 @@ pub(crate) fn deal<R: rand::Rng + ?Sized>(left: &Value, right: &Value, rng: &mut
     if n > total { return Err(span.domain_error("cannot deal more items than the population")); }
     generated_len(&[n]).error_at(span, "deal exceeds array limits")?;
     let exact = count_exact && total_exact;
-    generated_items(vec![n], rand::seq::index::sample(rng, total, n).into_vec(), exact).error_at(span, "invalid deal result")
+    generated_items(vec![n], rand::seq::index::sample(rng, total, n).into_iter().map(|i| i as u64).collect(), exact).error_at(span, "invalid deal result")
 }
 
 fn pervasive_axes(p: Primitive, left: &Value, right: &Value, spec: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -1944,7 +1950,7 @@ fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>, 
     for (i, &count) in counts.as_items().integers().error_at(span, "invalid take/drop count")?.iter().enumerate() {
         let axis = axes.map_or(i, |a| a[i]);
         if axis >= old.len() { return Err(span.domain_error("axis is outside array rank")); }
-        let n = count.unsigned_abs() as usize;
+        let n = saturated(count.unsigned_abs());
         let len = if take { n } else { old[axis].saturating_sub(n) };
         starts[axis] = if take && count < 0 { old[axis] as i128 - n as i128 } else if !take && count > 0 { n.min(old[axis]) as i128 } else { 0 };
         let positions = Steps::Clipped { start: starts[axis], len, size: old[axis], stride: 1 };
@@ -1981,7 +1987,7 @@ fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, 
         (false, true) => traversal.len,
         (false, false) if traversal.len == 1 || counts.len() == traversal.len => counts.len(),
         (false, false) => return Err(span.error(ErrorKind::Length, "replication counts and data do not agree")),
-        (true, true) => match counts[0].unsigned_abs() as usize {
+        (true, true) => match saturated(counts[0].unsigned_abs()) {
             0 if traversal.len == 0 => 1,
             n if n > 0 && traversal.len % n == 0 => traversal.len / n,
             _ => return Err(span.domain_error("one count must divide the number of cells to invert")),
@@ -1994,7 +2000,7 @@ fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, 
     let boolean = !single && any as u64 <= 1;
     shape[axis] = if inverse { len } else if boolean { sum as usize } else {
         (0..len)
-            .try_fold(0usize, |total, j| total.checked_add(count(j).unsigned_abs() as usize))
+            .try_fold(0usize, |total, j| total.checked_add(saturated(count(j).unsigned_abs())))
             .ok_or_else(|| span.error(ErrorKind::Limit, "replication count overflow"))?
     };
     generated_len(&shape).error_at(span, "replication result exceeds array limits")?;
@@ -2017,8 +2023,8 @@ fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, 
         let pos = (n > 0).then_some(source);
         // Each count uses up one cell, and a negative count gives that cell's place to fills. The inverse uses up the cells each count
         // made, and gives back one cell for each count: a fill for a count that kept nothing.
-        consumed = consumed.saturating_add(if inverse { n.unsigned_abs() as usize } else { 1 });
-        let repeats = if inverse { 1 } else { n.unsigned_abs() as usize };
+        consumed = consumed.saturating_add(if inverse { saturated(n.unsigned_abs()) } else { 1 });
+        let repeats = if inverse { 1 } else { saturated(n.unsigned_abs()) };
         let offset = pos.map(|p| p * traversal.inner);
         if repeats == 1 { table.push(offset) }
         else { table.extend(std::iter::repeat_n(offset, repeats)) }
@@ -2043,6 +2049,8 @@ fn rotate(counts: Option<&Value>, right: &Value, axis: usize, span: &Context<'_>
             a.as_items().integers().error_at(span, "invalid rotation count")
         })
         .transpose()?;
+    let (outer, len, inner) = (traversal.outer, traversal.len, traversal.inner);
+    let source = |j: usize, n: i64| ((j as i64 + n.rem_euclid(len as i64)) % len as i64) as usize;
     let mut keys = right.layout().all_keys();
     if right.keys(axis).is_some() {
         let same = counts.as_ref().is_none_or(|ns| {
@@ -2052,19 +2060,12 @@ fn rotate(counts: Option<&Value>, right: &Value, axis: usize, span: &Context<'_>
             crate::keyed::selected_keys(
                 right,
                 axis,
-                (0..traversal.len).map(|j| {
-                    Some(match &counts {
-                        None => traversal.len - 1 - j,
-                        Some(ns) => (j as i64 + ns[0].rem_euclid(traversal.len as i64)) as usize % traversal.len,
-                    })
-                }),
+                (0..traversal.len).map(|j| { Some(match &counts { None => traversal.len - 1 - j, Some(ns) => source(j, ns[0]) }) }),
             )
             .error_at(span, "invalid rotation keys")?
         } else { None };
     }
     let layout = right.layout().clone().with_keys(keys).error_at(span, "invalid rotation keys")?;
-    let (outer, len, inner) = (traversal.outer, traversal.len, traversal.inner);
-    let source = |j: usize, n: i64| (j as i64 + n.rem_euclid(len as i64)) as usize % len;
     let Some(ns) = counts.as_ref().filter(|ns| ns.len() != 1) else {
         let axis = match &counts {
             None => Steps::Stride { start: len.saturating_sub(1) * inner, len, step: -(inner as isize) },
@@ -2219,15 +2220,15 @@ fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: bool, span:
     let items = left.as_items();
     let counts = match items.integers() {
         Ok(d) if d.iter().all(|&n| n >= 0) => d,
-        _ => Cow::Owned(items.nonnegative_integers().error_at(span, "partition marks must be nonnegative integers")?.into_iter().map(|n| n as i64).collect()),
+        _ => Cow::Owned(items.nonnegative_integers::<i64>().error_at(span, "partition marks must be nonnegative integers")?),
     };
     let extend = left.is_unit() || runs && left.is_singleton();
     if !extend && (if runs { counts.len() != traversal.len } else { counts.len() > traversal.len.saturating_add(1) }) {
         return Err(span.error(ErrorKind::Length, "partition marks do not agree with the axis length"));
     }
     let len = if extend { traversal.len } else { counts.len() };
-    let mark = |j: usize| counts[if extend { 0 } else { j }] as usize;
-    let dividers = |count: usize, previous: usize| if runs { usize::from(count > previous) } else { count };
+    let mark = |j: usize| counts[if extend { 0 } else { j }] as u64;
+    let dividers = |count: u64, previous: u64| if runs { usize::from(count > previous) } else { saturated(count) };
     let (mut total, mut previous) = (0usize, 0);
     for j in 0..len {
         let count = mark(j);
@@ -2303,7 +2304,7 @@ fn coordinate_offset(coords: &Value, right: &Value, prototype: bool, span: &Cont
     for (axis, (n, &size)) in fields.iter().zip(right.shape()).enumerate() {
         let n = axis_selector(n, right, axis, span)?;
         let n = numeric(&n, span)?.integer().error_at(span, "index must be an integer")?;
-        let i = signed(n as i64, size);
+        let i = signed(n, size);
         if i.is_none() && !prototype { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
         offset = offset.zip(i).map(|(o, i)| o * size + i);
     }
@@ -2347,11 +2348,11 @@ pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, span: &Context<
 }
 
 /// The offset of a position in an axis of `size` items. Positive positions count from the start, and negative ones from the end.
-fn signed(n: i64, size: usize) -> Option<usize> { let i = if n < 0 { size as i64 + n } else { n }; (i >= 0 && (i as usize) < size).then_some(i as usize) }
+fn signed(n: i64, size: usize) -> Option<usize> { let i = if n < 0 { size as i64 + n } else { n }; usize::try_from(i).ok().filter(|&i| i < size) }
 
 pub(crate) fn position(n: &Number, size: usize, span: &Span) -> Result<usize, Error> {
     let n = n.integer().error_at(span, "index must be an integer")?;
-    signed(n as i64, size).ok_or_else(|| span.error(ErrorKind::Index, "index is outside the array"))
+    signed(n, size).ok_or_else(|| span.error(ErrorKind::Index, "index is outside the array"))
 }
 
 /// An atomic `∞` selects a whole axis in order, and `¯∞` selects it in reverse. Returns whether it is reversed.

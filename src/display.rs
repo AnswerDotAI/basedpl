@@ -159,7 +159,7 @@ impl Settings {
     fn update(mut self, changes: &Value) -> Result<Self, crate::ErrorKind> {
         let count = |v: &Value| match v.as_number() {
             Some(n) if n.as_float() == Some(f64::INFINITY) => Ok(usize::MAX),
-            Some(n) => n.nonnegative_integer(),
+            Some(n) => n.nonnegative_integer().map(crate::array::saturated),
             None => Err(crate::ErrorKind::Domain),
         };
         let positive = |v: &Value| count(v).and_then(|d| if d == 0 { Err(crate::ErrorKind::Domain) } else { Ok(d) });

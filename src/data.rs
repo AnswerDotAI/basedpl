@@ -114,7 +114,7 @@ pub(crate) fn byte_vector(data: Vec<u8>) -> Result<Value, ErrorKind> { Value::fr
 /// The bytes in an array of integers from 0 to 255, in ravel order. `None` for any other array.
 pub(crate) fn byte_items(value: &Value) -> Option<Vec<u8>> {
     if let Items::Integers(Ints::U8(v)) = value.as_items() { return Some(v.to_vec()); }
-    value.as_items().nonnegative_integers().ok()?.into_iter().map(|n| u8::try_from(n).ok()).collect()
+    value.as_items().nonnegative_integers().ok()
 }
 
 /// The bytes in an array of integers from 0 to 255, in ravel order.

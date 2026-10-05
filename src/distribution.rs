@@ -127,9 +127,9 @@ fn bernoulli(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
 
 fn binomial(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
     let [_, p] = parameters(right, span)?;
-    let n = numeric(&right.at(0), span)?.nonnegative_integer().error_at(span, "binomial trials must be a nonnegative integer")?;
-    if n as u64 > 1 << 53 { return Err(span.error(ErrorKind::Limit, "binomial trials exceed the sampler's integer range")); }
-    valid(Binomial::new(p, n as u64), span).map(Distribution::Binomial)
+    let n = numeric(&right.at(0), span)?.nonnegative_integer::<u64>().error_at(span, "binomial trials must be a nonnegative integer")?;
+    if n > 1 << 53 { return Err(span.error(ErrorKind::Limit, "binomial trials exceed the sampler's integer range")); }
+    valid(Binomial::new(p, n), span).map(Distribution::Binomial)
 }
 
 fn poisson(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
@@ -245,8 +245,8 @@ pub(crate) enum Draw { Roll, Deal }
 pub(crate) fn generator(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "•rand needs a unit or vector seed")); }
     if !right.is_singleton() { return Err(span.error(ErrorKind::Length, "•rand needs one seed")); }
-    let seed = numeric(&right.at(0), span)?.nonnegative_integer().error_at(span, "•rand needs a nonnegative integer seed")?;
-    let rng: Generator = Arc::new(Mutex::new(Xoshiro256PlusPlus::seed_from_u64(seed as u64)));
+    let seed = numeric(&right.at(0), span)?.nonnegative_integer::<u64>().error_at(span, "•rand needs a nonnegative integer seed")?;
+    let rng: Generator = Arc::new(Mutex::new(Xoshiro256PlusPlus::seed_from_u64(seed)));
     Ok(natives([("roll", Call::Generator(rng.clone(), Draw::Roll), Monadic), ("deal", Call::Generator(rng, Draw::Deal), Dyadic)]))
 }
 

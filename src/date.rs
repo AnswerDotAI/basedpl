@@ -91,7 +91,7 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
         let field = |i: usize, p: usize| -> Result<i64, Error> {
             // A missing month or day is 1, and a missing time field is 0.
             let Some(items) = &columns[i] else { return Ok([0, 1, 1, 0, 0, 0, 0][i]) };
-            match &items[p] { Value::Number(n) => n.integer().ok().and_then(|n| i64::try_from(n).ok()), _ => None }
+            match &items[p] { Value::Number(n) => n.integer().ok(), _ => None }
             .ok_or_else(|| span.domain_error(format!("date field {} must be an integer", FIELDS[i])))
         };
         let moments = (0..shape.iter().product()).map(|p| {

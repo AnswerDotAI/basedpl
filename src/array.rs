@@ -725,15 +725,15 @@ impl<'a> Items<'a> {
     /// `i64` is LIMIT.
     pub(crate) fn integers(&self) -> Result<Cow<'a, [i64]>, ErrorKind> {
         if let Self::Integers(ints) = *self { return Ok(ints.widened()); }
-        self.each(Ok, real::integer, |n| n.integer().map(|n| n as i64)).map(Cow::Owned)
+        self.each(Ok, real::integer, Number::integer).map(Cow::Owned)
     }
     /// The integers of integer storage of any width, with flagged storage's reserved values as they are stored.
     pub(crate) fn raw_integers(self) -> Option<Ints<'a>> {
         match self { Self::Integers(ints) => Some(ints), Self::Extended(v) => Some(Ints::I64(v)), _ => None }
     }
-    /// Each item as a count. A negative item is also DOMAIN.
-    pub(crate) fn nonnegative_integers(&self) -> Result<Vec<usize>, ErrorKind> {
-        self.each(|n| usize::try_from(n).map_err(|_| ErrorKind::Domain), real::nonnegative_integer, Number::nonnegative_integer)
+    /// Each item as a count of type `T`. A negative item is also DOMAIN.
+    pub(crate) fn nonnegative_integers<T: TryFrom<u64>>(&self) -> Result<Vec<T>, ErrorKind> {
+        self.each(|n| u64::try_from(n).map_err(|_| ErrorKind::Domain).and_then(crate::number::count_as), real::nonnegative_integer, Number::nonnegative_integer)
     }
 }
 
@@ -1085,6 +1085,9 @@ pub(crate) fn generated_len(shape: &[usize]) -> Result<usize, ErrorKind> {
     if len > MAX_GENERATED_ELEMENTS { return Err(ErrorKind::Limit); }
     Ok(len)
 }
+
+/// The count `n` as a size, or `usize::MAX` when `usize` can't hold it, which every limit on sizes then rejects.
+pub(crate) fn saturated(n: u64) -> usize { usize::try_from(n).unwrap_or(usize::MAX) }
 
 pub(crate) struct Axis { pub outer: usize, pub len: usize, pub inner: usize }
 impl Axis {

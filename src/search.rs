@@ -169,7 +169,7 @@ fn key_positions<K: Key>(x: &[K], y: &[K]) -> Vec<i64> {
     let miss = x.len();
     if let Some((min, mut table)) = key_table(x, miss) {
         let first = write_first(x, min, &mut table);
-        return y.iter().map(|&n| first.get(n.key().wrapping_sub(min) as usize).map_or(miss, |&f| f) as i64).collect();
+        return y.iter().map(|&n| usize::try_from(n.key().wrapping_sub(min)).ok().and_then(|i| first.get(i)).map_or(miss, |&f| f) as i64).collect();
     }
     let mut first = HashMap::with_capacity(x.len());
     for (i, &n) in x.iter().enumerate().rev() { first.insert(n.key(), i); }

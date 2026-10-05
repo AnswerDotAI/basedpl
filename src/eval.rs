@@ -55,6 +55,9 @@ const MAX_RESOLUTION_DEPTH: usize = 128;
 const MAX_CALL_DEPTH: usize = 20_000;
 const STACK_RED_ZONE: usize = 1 << 20;
 const STACK_SEGMENT: usize = 16 << 20;
+/// The LIMIT error for evaluation deeper than `MAX_CALL_DEPTH`.
+#[cold]
+fn depth_error(span: &Span) -> Error { span.error(ErrorKind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}")) }
 /// The name classes that `•nl` and `name_class` report, as in Dyalog.
 const SUBJECT_CLASS: i64 = 2;
 const FUNCTION_CLASS: i64 = 3;
@@ -155,7 +158,7 @@ impl Function {
             N::Composed(Atop, [F(f), F(g)]) => f.selects(false) && g.selects(dyadic),
             N::Composed(Over, [F(f), F(g)]) => f.selects(dyadic) && g.selects(false),
             N::Composed(Before, [V(_), F(f)]) => !dyadic && f.selects(true),
-            N::Composed(Power, [F(f), V(n)]) => matches!(n.as_number().as_ref().and_then(power_count), Some((false, 0..usize::MAX))) && f.selects(dyadic),
+            N::Composed(Power, [F(f), V(n)]) => matches!(n.as_number().as_ref().and_then(power_count), Some((false, n)) if n != u64::MAX) && f.selects(dyadic),
             // Expand, the inverse of replicate, gives each cell of its argument or a fill.
             N::Inverse(f) => match f.node() { N::Composed(Before, [V(_), F(r)]) => !dyadic && replicate(r), _ => dyadic && replicate(f) },
             _ => false,
@@ -204,7 +207,7 @@ impl Function {
                 return g.select(outer.as_ref(), &labels, actual.as_ref(), kind, cx);
             }
             FunctionNode::Composed(OperatorKind::Power, [Operand::Function(g), Operand::Value(n)]) => {
-                let Some((false, n @ 0..usize::MAX)) = n.as_number().as_ref().and_then(power_count) else { return Ok(None) };
+                let Some((false, n)) = n.as_number().as_ref().and_then(power_count).filter(|&(_, n)| n != u64::MAX) else { return Ok(None) };
                 let (mut labels, mut actual, mut kind) = (labels.clone(), actual.cloned(), kind);
                 for _ in 0..n {
                     let Some(step) = g.select(left, &labels, actual.as_ref(), kind, cx)? else { return Ok(None) };
@@ -353,17 +356,40 @@ impl Function {
         };
         Ok(Self { node: Arc::new(FunctionData { kind: node, environment, late }) })
     }
+    /// Calls the function, first growing the stack when it's nearly full. `call`, `dispatch` and `call_array` are always inlined, so
+    /// that each BPL call adds fewer frames to the host stack. In the browser that stack limits the depth of recursion.
+    #[inline(always)]
     fn call(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         cx.check()?;
-        if cx.session.depth == MAX_CALL_DEPTH { return Err(cx.span.error(ErrorKind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}"))); }
+        if cx.session.depth == MAX_CALL_DEPTH { return Err(depth_error(cx.span)); }
         cx.session.depth += 1;
-        let result = stacker::maybe_grow(STACK_RED_ZONE, STACK_SEGMENT, || {
-            if self.late() { self.resolve(cx.session, &mut HashMap::new(), 0).and_then(|f| f.apply(left, right, cx)) } else { self.apply(left, right, cx) }
-        });
+        // This is `stacker::maybe_grow`, without its closure's frame. An unknown stack limit grows the stack, as there.
+        let room = stacker::remaining_stack().is_some_and(|r| r >= STACK_RED_ZONE);
+        let result = if room { self.dispatch(left, right, cx) } else { self.grown(left, right, cx) };
         cx.session.depth -= 1;
         cx.check()?;
         result
     }
+    // Inlined into `call`, this would add `stacker::grow`'s setup to the stack frame of every BPL call.
+    #[inline(never)]
+    fn grown(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+        stacker::grow(STACK_SEGMENT, || self.dispatch(left, right, cx))
+    }
+    /// Sends compositions and dfns straight to their handlers, and other functions to `apply`.
+    #[inline(always)]
+    fn dispatch(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+        let resolved;
+        let f = if self.late() { resolved = self.resolve(cx.session, &mut HashMap::new(), 0)?; &resolved } else { self };
+        match f.node() {
+            FunctionNode::Composed(op, operands) => composition(*op, operands, left, right, cx),
+            FunctionNode::Defined(_) | FunctionNode::Derived(..) => cx.session.call_defined(f, left, right).map_err(|mut e| {
+                e.calls.push(cx.span.clone());
+                e
+            }),
+            _ => f.apply(left, right, cx),
+        }
+    }
+    #[inline(always)]
     fn call_array(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> { self.call(left, right, cx)?.array(cx.span) }
     fn call_prototype(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         cx.prototype_mode(true, |cx| self.call(left, right, cx))
@@ -414,10 +440,10 @@ impl Function {
     fn apply(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         use FunctionNode::{Defined, Derived, Fold, Fork};
         let array = match self.node() {
-            FunctionNode::LateBound(..) => unreachable!(),
+            // `dispatch` calls these itself.
+            FunctionNode::LateBound(..) | FunctionNode::Composed(..) | Defined(_) | Derived(..) => unreachable!(),
             FunctionNode::Primitive(Primitive::Execute) => return cx.session.execute(left, right, cx.span),
             FunctionNode::Inverse(f) => return inverse(f, left.map(|a| (a, true)), right, cx),
-            FunctionNode::Composed(op, operands) => return composition(*op, operands, left, right, cx),
             FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => return each(f, left, right, cx),
             FunctionNode::Modified(OperatorKind::Outer, Operand::Function(f)) => return outer(f, left, right, cx),
             FunctionNode::Modified(OperatorKind::Key, Operand::Function(f)) => return key(f, left, right, cx),
@@ -458,9 +484,6 @@ impl Function {
                     crate::system::Call::Generator(g, draw) => crate::distribution::generator_call(g, *draw, left, right, cx),
                     crate::system::Call::Load => return cx.session.load(right, cx.span),
                 }
-            }
-            Defined(_) | Derived(..) => {
-                return cx.session.call_defined(self, left, right).map_err(|mut e| { e.calls.push(cx.span.clone()); e })
             }
             Fork(fns) => {
                 let y = fns[2].call_array(left, right, cx)?;
@@ -533,6 +556,8 @@ impl Function {
     }
 }
 
+// Inlined into `dispatch`, this would add its locals to the stack frame of every BPL call, limiting recursion in the browser.
+#[inline(never)]
 fn composition(op: OperatorKind, operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     use OperatorKind::*;
     if matches!(op, At) { return at(operands, left, right, cx); }
@@ -690,7 +715,7 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut 
             let (negative, n) = checked_count(count, cx.span)?;
             let inverse;
             let f = if negative { inverse = f.inverse(cx.span)?; &inverse } else { f };
-            if n == usize::MAX { converge(f, &mut value, cx)?; } else {
+            if n == u64::MAX { converge(f, &mut value, cx)?; } else {
                 for i in 0..n {
                     let result = f.call(left, &value, cx)?;
                     if i + 1 == n { return Ok(result); }
@@ -712,7 +737,7 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut 
                     inverse = Some(f.inverse(cx.span)?);
                 }
                 let step = inverse.as_ref().unwrap_or(f);
-                if c.1 == usize::MAX { converge(step, &mut value, cx)?; }
+                if c.1 == u64::MAX { converge(step, &mut value, cx)?; }
                 else { for _ in steps..c.1 { value = step.call_array(left, &value, cx)?; } }
                 steps = c.1;
                 states.insert(c, value.clone());
@@ -742,26 +767,26 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut 
     Ok(Bound::from(value))
 }
 
-/// A count's direction and its number of steps, with `usize::MAX` for `∞`, or `None` for a count that is neither whole nor infinite.
-fn power_count(n: &crate::Number) -> Option<(bool, usize)> {
-    if n.is_infinite() { return Some((n.as_float().is_some_and(|x| x < 0.), usize::MAX)); }
+/// A count's direction and its number of steps, with `u64::MAX` for `∞`, or `None` for a count that is neither whole nor infinite.
+fn power_count(n: &crate::Number) -> Option<(bool, u64)> {
+    if n.is_infinite() { return Some((n.as_float().is_some_and(|x| x < 0.), u64::MAX)); }
     n.integer().ok().map(|n| (n < 0, n.unsigned_abs()))
 }
 
 /// The count that the atom `e` holds.
-fn checked_count(e: &Value, span: &Span) -> Result<(bool, usize), Error> {
+fn checked_count(e: &Value, span: &Span) -> Result<(bool, u64), Error> {
     let Value::Number(n) = e else { return Err(span.domain_error("power counts must be numeric")) };
     power_count(n).ok_or_else(|| span.domain_error("power counts must be integral or infinite"))
 }
 
 /// The counts in a count array, through any nesting.
-fn power_counts(count: &Value, span: &Span, counts: &mut Vec<(bool, usize)>) -> Result<(), Error> {
+fn power_counts(count: &Value, span: &Span, counts: &mut Vec<(bool, u64)>) -> Result<(), Error> {
     for e in count.elements() { match &e { Value::Array(_) => power_counts(&e, span, counts)?, _ => counts.push(checked_count(&e, span)?) } }
     Ok(())
 }
 
 /// `count` with each count replaced by the state after that many steps, as one item. A nested count array gives a nested item.
-fn power_states(count: &Value, states: &HashMap<(bool, usize), Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+fn power_states(count: &Value, states: &HashMap<(bool, u64), Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     let items = count
         .elements()
         .map(|e| {
@@ -1053,7 +1078,9 @@ fn rank(operand: &Function, ranks: &Value, left: Option<&Value>, right: &Value, 
         .map(|e| match e {
             // Infinite ranks rely on the clamping in `cell_rank`: ∞ gives the whole argument and ¯∞ rank 0.
             Value::Number(n) if n.is_infinite() => Ok(if n.as_float().is_some_and(f64::is_sign_positive) { isize::MAX } else { isize::MIN }),
-            Value::Number(n) => n.integer().error_at(cx.span, "cell ranks must be integers"),
+            Value::Number(n) => {
+                n.integer().map(|n| isize::try_from(n).unwrap_or(if n < 0 { isize::MIN } else { isize::MAX })).error_at(cx.span, "cell ranks must be integers")
+            }
             _ => Err(cx.span.domain_error("cell ranks must be numeric")),
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -1861,7 +1888,7 @@ impl Session {
     }
     fn bind(&mut self, nodes: &[Node]) -> Result<Bound, Error> {
         self.execution.check(&nodes[0].span)?;
-        if self.depth == MAX_CALL_DEPTH { return Err(nodes[0].span.error(ErrorKind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}"))); }
+        if self.depth == MAX_CALL_DEPTH { return Err(depth_error(&nodes[0].span)); }
         self.depth += 1;
         let result = stacker::maybe_grow(STACK_RED_ZONE, STACK_SEGMENT, || self.bind_expression(nodes));
         self.depth -= 1;
@@ -2539,6 +2566,8 @@ impl Session {
         self.table(self.module()).get(name).map(|value| (None, value))
     }
 
+    // Inlined into `dispatch`, this would add its locals to the stack frame of every BPL call, limiting recursion in the browser.
+    #[inline(never)]
     fn call_defined(&mut self, function: &Function, left: Option<&Value>, right: &Value) -> Result<Bound, Error> {
         let return_span = match function.node() { FunctionNode::Defined(c) | FunctionNode::Derived(c, ..) => c.definition.span.clone(), _ => unreachable!() };
         let caller = self.current;
