@@ -28,7 +28,7 @@ def test_builtin_attributes():
     teq(bpl.userfn(1).py, 2)
     assert 'userfn' in dir(bpl)
     teq(bpl.execute('plus').py, 99)
-    teq(bpl.lookup([10, 20], 1).py, 20)
+    teq(bpl.execute_in({'a': 1, 'b': 2}, 'a+b').py, 3)
     teq(bpl.not_(0).py, 1)
     assert bpl.names.__func__ is type(bpl).names
     from basedpl import add

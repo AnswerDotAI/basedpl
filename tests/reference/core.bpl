@@ -315,7 +315,7 @@ T.data.["r3" "zz"]←9 ⋄ ("r4"⊃T.data)←10 11 12 ⋄ T.data
 ["r1" "r2" "r3" "r4";"xx" "yy" "zz"]:[1 2 0 ⋄ 3 4 0 ⋄ 0 0 9 ⋄ 10 11 12]
 
 ⍝ axis-selector-once — Preparing named insertion evaluates a computed selector once
-T←"data":"aa":1 ⋄ calls←0 ⋄ T.data.({calls+←1 ⋄ "bb"}0)←2 ⋄ calls
+T←"data":"aa":1 ⋄ calls←0 ⋄ (({calls+←1 ⋄ "bb"}0)⌷T.data)←2 ⋄ calls
 1
 
 ⍝ axis-key-groups — Key returns named positions monadically and slices labelled value cells dyadically
@@ -1265,8 +1265,21 @@ inner←"bb" "cc":1 2 ⋄ x←["aa":inner "zz":0] ⋄ (x.aa).bb←5 ⋄ x.aa   �
 
 ⍝⍝ Dot indexing
 
-⍝ — A group after the dot is the left argument of ⌷
-m←3 4⍴⍳12 ⋄ i←1 2 ⋄ m.(i)   ⍝ 6
+⍝ — A group after the dot evaluates with the array's keys as names, beside the caller's names
+T←["a":1 "b":2] ⋄ c←100 ⋄ T.(a+b+c)   ⍝ 103
+
+⍝ — Assignment inside a scope is local to it
+T←["a":1] ⋄ r←T.(a←5) ⋄ [r T.a]   ⍝ 5 1
+
+⍝ — A key holding a function binds as a function
+T←["f":{⍵×2} "a":3] ⋄ T.(f a)   ⍝ 6
+
+⍝ — A scope inside a dfn sees the dfn's ⍺
+5 {⍵.(a+⍺)} ["a":1]   ⍝ 6
+
+⍝ — A scope must be a keyed vector
+m←3 4⍴⍳12 ⋄ m.(1 2)
+⍝ error: DOMAIN ERROR
 
 ⍝ — Brackets after the dot hold one index item for each axis, so a one-item vector of positions selects rows
 m←3 4⍴⍳12 ⋄ m.[[2 0]]   ⍝ [8 9 10 11 ⋄ 0 1 2 3]
@@ -1404,13 +1417,15 @@ T←["a":1] ⋄ (⎕←T).[⎕←"b"]←2
 ⍝ — Execute sees the active local binding without changing the global
 a←4 ⋄ f←{a←10 ⋄ ⍎"a+⍵"} ⋄ b←f3 ⋄ [b a]   ⍝ 13 4
 
-⍝ — Dyadic execute selects values without executing character data
-T←["a":"1+2" "b":4] ⋄ [T⍎"a";T⍎"b";T⍎⊂"b" "a"]
-["1+2" 4 [4 "1+2"]]
+⍝ — Dyadic execute evaluates text with the keys of a keyed vector as names, beside the caller's names
+T←["a":1 "b":2] ⋄ c←100 ⋄ T⍎"a+b+c"   ⍝ 103
 
-⍝ — A string selector requires keys on that axis
+⍝ — Assignments in dyadic execute stay local, and the record is unchanged
+T←["a":1] ⋄ r←T⍎"a←5 ⋄ a+1" ⋄ [r T.a]   ⍝ 6 1
+
+⍝ — The left argument of execute must be a keyed vector
 ""⍎"1+2"
-⍝ error: INDEX ERROR
+⍝ error: DOMAIN ERROR
 
 ⍝ — Execute can return a primitive function
 g←⍎'+' ⋄ 2 g 3   ⍝ 5

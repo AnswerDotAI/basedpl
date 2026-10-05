@@ -1,4 +1,4 @@
-# Modules
+# Modules and namespaces
 
 [Glyph index](glyphs.qmd)
 
@@ -30,6 +30,45 @@ a←•load "lib/array.bpl"
 ```
 
 Each `•load` runs the file again and returns a new record. Load a file again after you edit it to get the new version.
+
+## Records as namespaces
+
+Any record also works as a namespace. Inside `T.(expr)`, each key of `T` is a name for its item:
+
+```bpl
+order←["price":2 3 5;"qty":10 20 1]
+order.(+/price×qty)            ⍝ 85
+```
+
+Names that aren't keys come from the code around the expression. A key hides an outer name it shares.
+
+```bpl
+order←["price":2 3 5;"qty":10 20 1]
+rate←0.5 ⋄ order.(price×1+rate)    ⍝ 3 4.5 7.5
+```
+
+Assignments inside the parentheses stay there, as assignments in a dfn do. To change a field, assign to its dot path, as in `order.qty←5 5 5`.
+
+```bpl
+order←["price":2 3 5;"qty":10 20 1]
+r←order.(qty←0) ⋄ order.qty    ⍝ 10 20 1
+```
+
+`T⍎text` does the same for code held as text, like Dyalog's `ns⍎text`:
+
+```bpl
+order←["price":2 3 5;"qty":10 20 1]
+order⍎"+/price×qty"            ⍝ 85
+```
+
+A key that holds a function binds as a function. A module's record therefore works as a namespace too:
+
+```bpl
+n←•load "lib/numeric.bpl"
+n.(factors 360)                ⍝ 2 2 2 3 3 5
+```
+
+A scope applies to one record. For an array of records, `{⍵.(expr)}¨records` evaluates `expr` in each.
 
 ## Writing a module
 

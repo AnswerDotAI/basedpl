@@ -4,7 +4,7 @@ use crate::{
     execution::Context,
     primitive::{integer, push_window, FoldKind, OperandKind, OperatorKind, Primitive, Selection, Superscript, Targets, Windows},
     selection::SelectionKind,
-    syntax::{Definition, DefinitionKind, Node, NodeKind, StatementKind},
+    syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind},
     DomainAt, Error, ErrorAt, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value,
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
@@ -1903,8 +1903,11 @@ impl Session {
     }
 
     fn execute(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
-        if let Some(x) = left { return Ok(Bound::from(crate::primitive::pick(right, x, false, &self.at(span))?)); }
-        self.execute_source(Source::new("<execute>", Self::source_text(right, span)?), span)
+        let source = Source::new("<execute>", Self::source_text(right, span)?);
+        match left {
+            Some(record) => self.scoped(record, span, |session| session.execute_source(source, span)),
+            None => self.execute_source(source, span),
+        }
     }
 
     fn source_text(right: &Value, span: &Span) -> Result<String, Error> {
@@ -1964,31 +1967,30 @@ impl Session {
             })
     }
 
-    // After a value, `.name` is `'name'⊃value`, and `.(I)` or `.[I]` is `(I)⌷value` or `[I]⌷value`. Between functions the dot stays inner product.
-    // A subscript then selects from the item before it, so `T.a₁` is `1⌷'a'⊃T`.
+    // After a value, `.name` is `'name'⊃value` and `.[I]` is `[I]⌷value`. `.(expr)` evaluates `expr` with the value's keys as names.
+    // Between functions the dot stays inner product. A subscript then selects from the item before it, so `T.a₁` is `1⌷'a'⊃T`.
     fn members<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
         if !Self::has_members(nodes) { return Cow::Borrowed(nodes); }
         let mut out: Vec<Node> = Vec::with_capacity(nodes.len());
         let mut i = 0;
         while i < nodes.len() {
             if let (NodeKind::Operator(OperatorKind::Product), Some(next)) = (&nodes[i].kind, nodes.get(i + 1)) {
-                let selector = match &next.kind {
-                    NodeKind::Name(name) => Some((Node { kind: NodeKind::Literal(crate::keyed::text(name)), span: next.span.clone() }, Primitive::Mix)),
-                    NodeKind::Group(_) | NodeKind::ArrayLiteral { .. } => Some((next.clone(), Primitive::Index)),
-                    _ => None,
-                };
-                let root = out.len().checked_sub(1).filter(|&r| match &out[r].kind {
-                    NodeKind::Name(_) | NodeKind::System(_) => matches!(self.node_category(&out[r]), Category::Value),
-                    NodeKind::Literal(_) | NodeKind::ArrayLiteral { .. } => true,
-                    NodeKind::Group(_) => self.holds_array(&out[r]),
+                let root = out.last().filter(|root| match &root.kind {
+                    NodeKind::Name(_) | NodeKind::System(_) => matches!(self.node_category(root), Category::Value),
+                    NodeKind::Literal(_) | NodeKind::ArrayLiteral { .. } | NodeKind::Scope(..) => true,
+                    NodeKind::Group(_) => self.holds_array(root),
                     _ => false,
                 });
-                if let (Some((index, function)), Some(root)) = (selector, root) {
-                    let operand = out.split_off(root);
-                    let span = Span { source: next.span.source.clone(), range: operand[0].span.range.start..next.span.range.end };
-                    let mut inner = vec![index, Node { kind: NodeKind::Function(function), span: nodes[i].span.clone() }];
-                    inner.extend(operand);
-                    out.push(Node { kind: NodeKind::Group(inner), span });
+                let path = |key: Node, function, root: &Node| NodeKind::Group(vec![key, Node { kind: NodeKind::Function(function), span: nodes[i].span.clone() }, root.clone()]);
+                let kind = root.and_then(|root| match &next.kind {
+                    NodeKind::Name(name) => Some(path(Node { kind: NodeKind::Literal(crate::keyed::text(name)), span: next.span.clone() }, Primitive::Mix, root)),
+                    NodeKind::ArrayLiteral { form: ListForm::Items | ListForm::Cells, .. } => Some(path(next.clone(), Primitive::Index, root)),
+                    NodeKind::Group(_) | NodeKind::ArrayLiteral { form: ListForm::Rows, .. } => Some(NodeKind::Scope(Box::new(root.clone()), Box::new(next.clone()))),
+                    _ => None,
+                });
+                if let Some(kind) = kind {
+                    let root = out.pop().expect("a root was found");
+                    out.push(Node { kind, span: Span { source: next.span.source.clone(), range: root.span.range.start..next.span.range.end } });
                     i += 2;
                     continue;
                 }
@@ -2019,7 +2021,7 @@ impl Session {
             }
             NodeKind::Group(inner) => self.assignment_names(inner),
             // Inside brackets every name is a target, whatever it holds.
-            NodeKind::ArrayLiteral { cells, block: false, record: false } => {
+            NodeKind::ArrayLiteral { cells, form: ListForm::Items | ListForm::Rows, record: false } => {
                 cells.iter().all(|c| matches!(&c[..], [Node { kind: NodeKind::Name(_), .. }]) || self.assignment_names(c))
             }
             _ => false,
@@ -2419,6 +2421,10 @@ impl Session {
                 Binding::Function(crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?)
             }
             NodeKind::Group(nodes) => self.bind(nodes)?.value,
+            NodeKind::Scope(root, body) => {
+                let record = self.resolve(root)?.into_value(&root.span)?;
+                self.scoped(&record, &node.span, |session| session.resolve(body).map(Bound::new))?.value
+            }
             // A dot path such as `m.op` names an operator as a name does, so its run can reduce to one.
             NodeKind::Run(nodes) => {
                 let path = matches!(&self.members(nodes)[..], [Node { kind: NodeKind::Group(_), .. }]);
@@ -2454,11 +2460,11 @@ impl Session {
                 let (names, values) = entries.into_iter().unzip();
                 Binding::Value(crate::keyed::partial_vector(names, values).error_at(&node.span, "keys must be unique")?)
             }
-            NodeKind::ArrayLiteral { cells, block, .. } => {
+            NodeKind::ArrayLiteral { cells, form, .. } => {
                 let mut arrays = Vec::with_capacity(cells.len());
                 for nodes in cells { arrays.extend(self.item_result(nodes)?); }
                 if arrays.is_empty() { return Ok(Binding::Value(crate::syntax::zilde(false))); }
-                let result = if *block {
+                let result = if *form == ListForm::Cells {
                     // Each row is a major cell, so unit rows give a vector: `[1 ⋄ 2]` is `1 2`.
                     Value::assemble_written(&[arrays.len()], &arrays, &arrays[0])
                 } else { Value::new(vec![arrays.len()], arrays) };
@@ -2529,9 +2535,6 @@ impl Session {
                 FunctionNode::Derived(c, operand, right) => (c, Some(operand), right.as_ref()),
                 _ => unreachable!(),
             };
-            if self.frames.len() == MAX_CALL_DEPTH {
-                break Err(closure.definition.span.error(ErrorKind::Limit, format!("lexical frame depth exceeds {MAX_CALL_DEPTH}")));
-            }
             let mut names = HashMap::from_iter([("⍵".into(), Binding::Value(right)), ("∇".into(), Binding::Function(function.clone()))]);
             if let Some(a) = left { names.insert("⍺".into(), Binding::Value(a)); }
             if let Some(f) = operand {
@@ -2539,8 +2542,7 @@ impl Session {
                 names.insert("⍢".into(), Binding::Operator(OperatorNode::Defined(closure.clone())));
             }
             if let Some(f) = right_operand { names.insert("⍹".into(), f.value()); }
-            self.current = Some(self.frames.len());
-            self.frames.push(Frame { names, parent: closure.environment, module: closure.module });
+            if let Err(error) = self.enter(Frame { names, parent: closure.environment, module: closure.module }, &closure.definition.span) { break Err(error); }
             match self.run_definition(&closure.definition) {
                 Ok(Step::Done(bound)) => break Ok(bound),
                 Err(error) => break Err(error),
@@ -2559,12 +2561,40 @@ impl Session {
         };
         if let (Err(error), Some(span)) = (&mut result, tail_span) { error.calls.push(span); }
         if let Ok(bound) = &mut result { if unshy { bound.shy = false; } }
-        if let Ok(bound) = &result {
-            if bound.value.environment().is_some_and(|i| i >= base) { result = Err(return_span.domain_error("result would return a local closure")); }
-        }
+        self.leave(base, caller, result, &return_span)
+    }
+
+    /// Pushes `frame` and makes it current. Fails at the depth limit, before pushing.
+    fn enter(&mut self, frame: Frame, span: &Span) -> Result<(), Error> {
+        if self.frames.len() == MAX_CALL_DEPTH { return Err(span.error(ErrorKind::Limit, format!("lexical frame depth exceeds {MAX_CALL_DEPTH}"))); }
+        self.current = Some(self.frames.len());
+        self.frames.push(frame);
+        Ok(())
+    }
+
+    /// Drops the frames from `base` on, makes `caller` current and gives back `result`. A result that refers to a dropped frame is
+    /// an error.
+    fn leave(&mut self, base: usize, caller: Option<usize>, result: Result<Bound, Error>, span: &Span) -> Result<Bound, Error> {
+        let result = match result {
+            Ok(bound) if bound.value.environment().is_some_and(|i| i >= base) => Err(span.domain_error("result would return a local closure")),
+            result => result,
+        };
         self.frames.truncate(base);
         self.current = caller;
         result
+    }
+
+    /// Runs `f` in a new frame in which each key of the keyed vector `record` names its item. Other names resolve in the caller's
+    /// scope, and assignments stay in the new frame. `T.(expr)` and `T⍎text` evaluate this way.
+    fn scoped(&mut self, record: &Value, span: &Span, f: impl FnOnce(&mut Self) -> Result<Bound, Error>) -> Result<Bound, Error> {
+        let entries = record.keys(0).ok_or(ErrorKind::Domain).and_then(|_| crate::keyed::entries(record)).error_at(span, "a scope must be a keyed vector")?;
+        let mut names: HashMap<String, Binding> = entries.into_iter().filter_map(|(key, item)| Some((key?.to_string(), Binding::from_element(item)))).collect();
+        // Lookup finds `⍺` only in the current frame, so the scope holds the caller's.
+        if let Some(a) = self.current.and_then(|i| self.frames[i].names.get("⍺")) { names.entry("⍺".into()).or_insert_with(|| a.clone()); }
+        let (caller, base) = (self.current, self.frames.len());
+        self.enter(Frame { names, parent: caller, module: self.module() }, span)?;
+        let result = f(self);
+        self.leave(base, caller, result, span)
     }
 
     fn array_result(&mut self, nodes: &[Node]) -> Result<Value, Error> { self.bind(nodes)?.array(&nodes[0].span) }

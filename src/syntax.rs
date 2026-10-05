@@ -22,9 +22,22 @@ pub(crate) enum NodeKind {
     Run(Vec<Node>),
     /// A subscript, as in `v₁`: `(1⌷v)` for the item just before it, which binding finds after dot access.
     Subscript(i64),
-    /// Items of a bracketed list, or with `block` the major cells of an array. `record`: at least one item is `key:value`, and the items build one keyed vector.
-    ArrayLiteral { cells: Vec<Vec<Node>>, block: bool, record: bool },
+    /// `T.(expr)`, which dot access builds: the second node evaluated with the keys of the first as names.
+    Scope(Box<Node>, Box<Node>),
+    /// An array literal. `record`: at least one item is `key:value`, and the items build one keyed vector.
+    ArrayLiteral { cells: Vec<Vec<Node>>, form: ListForm, record: bool },
     Dfn(Arc<Definition>),
+}
+
+/// How an array literal is written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ListForm {
+    /// `[a b]`: each cell is one item.
+    Items,
+    /// `[1 2 ⋄ 3 4]`: each cell is a major cell of the result.
+    Cells,
+    /// `(4 ⋄ 4 5)`: each cell is a row, and each row is one item.
+    Rows,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -630,13 +643,13 @@ fn diamond_rows(mut parts: Vec<Vec<Node>>, span: &Span) -> Result<Vec<Vec<Node>>
 fn row(nodes: Vec<Node>) -> Result<Node, ParseFailure> {
     let span = cover(&nodes);
     let cells = items(nodes)?;
-    Ok(Node { kind: NodeKind::ArrayLiteral { record: cells.iter().any(|c| key_colon(c).is_some()), cells, block: false }, span })
+    Ok(Node { kind: NodeKind::ArrayLiteral { record: cells.iter().any(|c| key_colon(c).is_some()), cells, form: ListForm::Items }, span })
 }
 
 /// `(4 ⋄ 4 5)` is `[[4] [4 5]]`. Its items are the rows, each read as a bracketed list.
 fn rows(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
     let cells = diamond_rows(split(pieces, false)?, span)?.into_iter().map(|nodes| Ok(vec![row(nodes)?])).collect::<Result<_, ParseFailure>>()?;
-    Ok(NodeKind::ArrayLiteral { cells, block: false, record: false })
+    Ok(NodeKind::ArrayLiteral { cells, form: ListForm::Rows, record: false })
 }
 
 /// Whether nothing comes between two nodes in the source.
@@ -658,14 +671,14 @@ fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
                 Ok(match row.kind { NodeKind::ArrayLiteral { mut cells, .. } if cells.len() == 1 => cells.pop().unwrap(), _ => vec![row] })
             })
             .collect::<Result<_, ParseFailure>>()?;
-        return Ok(NodeKind::ArrayLiteral { cells, block: true, record: false });
+        return Ok(NodeKind::ArrayLiteral { cells, form: ListForm::Cells, record: false });
     }
     let cells = if semicolon {
         if parts.last().is_some_and(Vec::is_empty) { return Err(invalid(span, "a trailing ; leaves an empty item: [x] is already a one-item vector")); }
         if parts.iter().any(Vec::is_empty) { return Err(invalid(span, "empty item between semicolons")); }
         parts.into_iter().map(expression).collect::<Result<Vec<_>, _>>()?
     } else { items(parts.pop().unwrap())? };
-    Ok(NodeKind::ArrayLiteral { record: cells.iter().any(|c| key_colon(c).is_some()), cells, block: false })
+    Ok(NodeKind::ArrayLiteral { record: cells.iter().any(|c| key_colon(c).is_some()), cells, form: ListForm::Items })
 }
 
 /// `[…]ₓ` or `(…)ₓ`, whose numbers the lexer has already read as exact. Every item must be a literal, and `[]ₓ` is `⍬ₓ`.

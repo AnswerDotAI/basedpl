@@ -5091,7 +5091,7 @@ Cv← " /,xy"  ⋄ Dv← "abcd"  ⋄ Cv{((~(≢b↑⍵)↑'/'=⍺)#b↑⍵),(1�
 "axycd"
 
 ⍝ aplcart/table.tsv:2143 — Concatenate same-rank arrays X and Y along axis Is (padding if necessary)
-X←2 2⍴⍳4 ⋄ Is←1 ⋄ Y←3 1⍴5 6 7 ⋄ X Is{(⍺↑⍨a.(⍶)@⍶ s),⍠⍶⍵↑⍨w.(⍶)@⍶ s←(a←⍴⍺)⌈w←⍴⍵} Y
+X←2 2⍴⍳4 ⋄ Is←1 ⋄ Y←3 1⍴5 6 7 ⋄ X Is{(⍺↑⍨(⍶⌷a)@⍶ s),⍠⍶⍵↑⍨(⍶⌷w)@⍶ s←(a←⍴⍺)⌈w←⍴⍵} Y
 [0 1 5 ⋄ 2 3 6 ⋄ 0 0 7]
 
 ⍝ aplcart/table.tsv:2145 — Take first Is (if negative: last |Is) segments from delimited string Dv where the first character is the delimiter
@@ -5455,7 +5455,7 @@ X←2 ⋄ f←+ ⋄ Bs←1 ⋄ Y←1 2 3 ⋄ X f{⍺(⍶⊣⊢)⍣⍹ ⍵}Bs Y  
 f←1+ ⋄ J←0 1 3 ⋄ Y←10 ⋄ (f{⍶{⍶⍣⍵ ⍹}⍵⍤0 ⍹}J)Y   ⍝ 10 11 13
 
 ⍝ aplcart/table.tsv:2296 — Reduction (/) with f in dimension Is (default: last), rank unchanged
-Is←0 ⋄ f←+ ⋄ Y←[1 2 3 ⋄ 4 5 6] ⋄ Is f{⍺←¯1 ⋄ s←⍴⍵ ⋄ s.(⍺)←1 ⋄ s⍴⍶/⍠⍺⍵} Y
+Is←0 ⋄ f←+ ⋄ Y←[1 2 3 ⋄ 4 5 6] ⋄ Is f{⍺←¯1 ⋄ s←⍴⍵ ⋄ (⍺⌷s)←1 ⋄ s⍴⍶/⍠⍺⍵} Y
 [5 7 9 ⋄]
 
 ⍝ aplcart/table.tsv:2297 — Run f on axes of X
@@ -9066,8 +9066,8 @@ testpath •nput 0 65 127 128 255 ⋄ b←["binary":1] •nget testpath ⋄ •u
 testpath •nput 0 65 127 128 255 ⋄ b←["binary":1] •nget testpath ⋄ b-256ₓ×b≥128ₓ
 [0 65 127 ¯128 ¯1]ₓ
 
-⍝ aplcart/table.tsv:163 — Execute Dv within namespace X (name or reference); BPL's `⍎` takes no left argument, because `X⍎Y` is keyed lookup. `''⍎'1+2'` becomes `⍎"1+2"`
-⍎"1+2"   ⍝ 3
+⍝ aplcart/table.tsv:163 — Execute Dv within namespace X (name or reference); A record stands in for the namespace: the example's `'ns' ⎕NS ⍬` with `ns.a←2` and `ns.b←3` becomes `["a":2 "b":3]`.
+X←["a":2 "b":3] ⋄ X⍎"a+b"   ⍝ 5
 
 ⍝ aplcart/table.tsv:667 — Replicate along last axis of Y (forces / to be a function even with a function on its left); Replicate written with `#`, which replaces `/` and `⌿`
 3 1 ¯2 2#6 7 8 9   ⍝ [6 6 6 7 0 0 9 9]

@@ -74,7 +74,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⌹` [domino](glyphs/domino.qmd) | Alt-q u | inverse | matrix-divide | |
 | `⊣` [left](glyphs/left.qmd) | Alt-; | same-left | left | |
 | `⊢` [right](glyphs/right.qmd) | Alt-' | same | right | |
-| `⍎` [execute](glyphs/execute.qmd) | Alt-b t | execute | lookup | `X⍎Y` is `Y⊃X` |
+| `⍎` [execute](glyphs/execute.qmd) | Alt-b t | execute | execute-in | `X` is a keyed vector, where Dyalog takes a namespace |
 | `⍕` [format](glyphs/format.qmd) | Alt-n t | format | format-spec | |
 
 ## Operators
@@ -150,4 +150,4 @@ Index origin: 0. Negative positions and axes count from the end. Comparison tole
 - [Agreement](evaluation.qmd#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes. An axis of length 1 expands to match: `(2 3⍴⍳6)+10 20` is `[10 11 12 ⋄ 23 24 25]`.
 - [Major cells](principles.ipynb#functions-act-on-major-cells): `∊ ~ ∪ ∩` compare major cells, `N#Y` replicates them, `N⊂Y` and `N⊆Y` split along the first axis. `⊤` and `⊥` put digits on the last axis, as J.
 - [System names](system-functions.qmd): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
-- [Axis keys](keyed.ipynb) name data. `K:Y` evaluates its keys. `T.a` is `"a"⊃T`, and `X⍎Y` is `Y⊃X`.
+- [Axis keys](keyed.ipynb) name data. `K:Y` evaluates its keys. `T.a` is `"a"⊃T`. `T.(expr)` and `T⍎Y` evaluate with the keys of `T` as names.

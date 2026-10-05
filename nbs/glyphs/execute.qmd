@@ -1,4 +1,4 @@
-# `⍎` — Execute / Lookup
+# `⍎` — Execute
 
 Keys: `Alt-b t`
 
@@ -9,12 +9,15 @@ Keys: `Alt-b t`
 x←7 ⋄ ⍎"x+1"       ⍝ 8
 ```
 
-`X⍎Y` selects `Y⊃X`, using numeric coordinates or axis keys.
+Assignments and explicit output in `⍎Y` take effect in the current scope.
+
+`T⍎Y` evaluates `Y` with each key of the keyed vector `T` as a name for its item, as [Dot](dot.qmd)'s `T.(expr)` does. Names that aren't keys resolve in the current scope. Assignments stay inside the evaluation, and leave `T` unchanged.
 
 ```bpl
-T←"aa" "bb":10 20
-T⍎"bb"             ⍝ 20
-10 20⍎1            ⍝ 20
+T←["a":1 "b":2] ⋄ T⍎"a+b"      ⍝ 3
+T←["a":1] ⋄ T⍎"a←5 ⋄ a+1"      ⍝ 6
 ```
 
-Assignments and explicit output take effect in the current session.
+## Errors
+
+- `DOMAIN`: `T` isn't a keyed vector

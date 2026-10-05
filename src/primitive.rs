@@ -561,7 +561,7 @@ impl Primitive {
             Self::Transpose => row("⍉", "transpose", "", monad("transpose", W), dyad("reorder-axes", [1, W])),
             Self::Encode => row("⊤", "encode", "", monad("binary-encode", W), dyad("encode", [1, 0]).identity(Identity::Number(0))),
             Self::Decode => row("⊥", "decode", "", monad("binary-decode", 1), dyad("decode", [1, 1])),
-            Self::Execute => row("⍎", "execute", "", monad("execute", 1).bounded(), dyad("lookup", [W, W])),
+            Self::Execute => row("⍎", "execute", "", monad("execute", 1).bounded(), dyad("execute-in", [W, W])),
             Self::Format => row("⍕", "format", "", monad("format", W), dyad("format-spec", [1, 1])),
             Self::Index => row("⌷", "squad", "", monad("materialise", W).axes(), dyad("index", [1, W]).axes()),
             Self::MatrixDivide => row("⌹", "domino", "", monad("inverse", 2).bounded(), dyad("matrix-divide", [W, 2])),

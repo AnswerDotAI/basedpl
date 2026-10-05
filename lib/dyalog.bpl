@@ -390,7 +390,7 @@ baby←{  ⍝ Manchester Small Scale Experimental Machine.
 quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
   extend←{
     (≢Fin)=p←1⍳⍨(Fin=0)∧NPath=⌊/(Fin=0)#NPath?0;
-    (≢Target)=+/NPath.(p)≥(Fin>0)#NPath?0;
+    (≢Target)=+/(p⌷NPath)≥(Fin>0)#NPath?0;
     n←¯1⊃p⊃Path
     ∇ delpath p , ,/ p next¨ ,/ n moves¨ Tiles
   }
@@ -407,7 +407,7 @@ quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
     (≢State)=n←1⍳⍨State∧.=x?(addnode x)addpath[⍺ ⍵] ⋄ ¯1;
     ⍺∊i←⍸n∊¨Path?¯1;
     0=≢i?n addpath [⍺ ⍵] ⋄ ¯1;
-    NPath.(⍺)≥¯1+⌊/Path.[i]⍳¨n?¯1;
+    (⍺⌷NPath)≥¯1+⌊/Path.[i]⍳¨n?¯1;
     (n addpath [⍺ ⍵])modpath¨i
   }
   addnode←{
@@ -424,7 +424,7 @@ quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
     Moves,←⊂(p⊃Moves)⍪m
     Fin,←⍺⊃ENode
     NPath,←n
-    NMoves.(⍺)⌊←n
+    (⍺⌷NMoves)⌊←n
     ¯1+≢Path
   }
   modpath←{
@@ -756,7 +756,7 @@ packH←{                      ⍝ Huffman packing.
          ⍵≥≢⍺?[1 ⍵ "unexpected eof"];
          ' '≡⍵⌷⍺?⍺ ∇ ⍵+1;
          '('≡⍵⌷⍺?⍺ parseList ⍵+1;
-         ⍺.(⍵)∊$d?⍺ parseNum ⍵;
+         (⍵⌷⍺)∊$d?⍺ parseNum ⍵;
          '''≡⍵⌷⍺?⍺ parseQuote ⍵;
          ⍺ parseAtom ⍵
      }
@@ -892,7 +892,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
      AlphaInterval←{⍵=' '?"";         ⍝ ⍳' ' is empty vector.
          a←dfnsAV⍳"a0AÁ"                ⍝ Indices of a0AÁ.
          k←a+.≤i←dfnsAV⍳⍵             ⍝ Find starting point.
-         ⍺←a.(k-1)⌷dfnsAV               ⍝ Default left argument.
+         ⍺←((k-1)⌷a)⌷dfnsAV               ⍝ Default left argument.
          </i,j←dfnsAV⍳⍺?⌽ ⍵ ∇ ⍺;         ⍝ If ⍵ before ⍺, reverse.
          j↓(i+1)↑dfnsAV             ⍝ Truncate dfnsAV.
      }
@@ -1104,7 +1104,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          [zcat [⍺ expr]]                         ⍝ ⍺-bracketed node.
      }                                           ⍝ :: left_bkt ∇ node → node
 
-     ebk←{[bcats.(lbs⍳⍵) ⍵]}                      ⍝ empty brackets. [] {} ...
+     ebk←{[(lbs⍳⍵)⌷bcats ⍵]}                      ⍝ empty brackets. [] {} ...
 
      tfmt←{                                      ⍝ tree-formatted.
          0=≡⍵?1 1⍴⍵;                              ⍝ atom: char matrix single.
