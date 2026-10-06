@@ -43,7 +43,7 @@ Option-j	↓
 Option-'	⊢
 Option-k	take prefix
 Option-;	⊣
-Option-\	stile prefix
+Option-\	⍭
 Option-Shift-\	⌽
 Option-,	↢
 Option-Shift-,	≤

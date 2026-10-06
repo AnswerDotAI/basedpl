@@ -14,7 +14,7 @@ Option-z	enclose prefix
 Option-x	⊃
 Option-c	cap prefix
 Option-v	∪
-Control-Option-º	stile prefix
+Control-Option-º	⍭
 Option-b	decode prefix
 Option-q	quad prefix
 Option-w	omega prefix

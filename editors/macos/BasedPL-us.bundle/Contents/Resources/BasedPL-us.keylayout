@@ -583,7 +583,7 @@
    <key code="39" output="⊢"/>
    <key code="40" action="k40-m4"/>
    <key code="41" output="⊣"/>
-   <key code="42" action="k42-m4"/>
+   <key code="42" output="⍭"/>
    <key code="43" output="↢"/>
    <key code="44" output="¿"/>
    <key code="45" action="k45-m4"/>
@@ -1798,7 +1798,6 @@
    <when state="epsilon" output="∊"/>
    <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="stile" output="|"/>
    <when state="alpha" output="⍺"/>
    <when state="del" output="∇"/>
    <when state="take" output="↑"/>
@@ -1813,7 +1812,6 @@
    <when state="or" output="⍱"/>
    <when state="and" output="⍲"/>
    <when state="quad" output="⌺"/>
-   <when state="stile" output="⍭"/>
   </action>
   <action id="k51-m0">
    <when state="none" output="&#x0008;"/>
@@ -1833,7 +1831,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -1865,7 +1862,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -2076,7 +2072,6 @@
    <when state="epsilon" output="∊"/>
    <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="stile" output="|"/>
    <when state="alpha" output="⍺"/>
    <when state="del" output="∇"/>
    <when state="take" output="↑"/>
@@ -2090,7 +2085,6 @@
    <when state="diaeresis" output="⍨"/>
    <when state="or" output="⍱"/>
    <when state="and" output="⍲"/>
-   <when state="stile" output="⍭"/>
   </action>
   <action id="k51-m1">
    <when state="none" output="&#x0008;"/>
@@ -2110,7 +2104,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -2142,7 +2135,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -2450,7 +2442,6 @@
    <when state="epsilon" output="∊"/>
    <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="stile" output="|"/>
    <when state="alpha" output="⍺"/>
    <when state="del" output="∇"/>
    <when state="take" output="↑"/>
@@ -2465,7 +2456,6 @@
    <when state="or" output="⍱"/>
    <when state="and" output="⍲"/>
    <when state="quad" output="⌺"/>
-   <when state="stile" output="⍭"/>
   </action>
   <action id="k51-m2">
    <when state="none" output="&#x0008;"/>
@@ -2485,7 +2475,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -2517,7 +2506,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -2728,7 +2716,6 @@
    <when state="epsilon" output="∊"/>
    <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="stile" output="|"/>
    <when state="alpha" output="⍺"/>
    <when state="del" output="∇"/>
    <when state="take" output="↑"/>
@@ -2742,7 +2729,6 @@
    <when state="diaeresis" output="⍨"/>
    <when state="or" output="⍱"/>
    <when state="and" output="⍲"/>
-   <when state="stile" output="⍭"/>
   </action>
   <action id="k51-m3">
    <when state="none" output="&#x0008;"/>
@@ -2762,7 +2748,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -2794,7 +2779,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -2999,10 +2983,6 @@
    <when state="none" next="take" output=""/>
    <when state="take" output="↑"/>
   </action>
-  <action id="k42-m4">
-   <when state="none" next="stile" output=""/>
-   <when state="stile" output="|"/>
-  </action>
   <action id="k45-m4">
    <when state="none" next="encode" output=""/>
    <when state="encode" output="⊤"/>
@@ -3025,7 +3005,6 @@
    <when state="epsilon" output="∊"/>
    <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="stile" output="|"/>
    <when state="alpha" output="⍺"/>
    <when state="del" output="∇"/>
    <when state="take" output="↑"/>
@@ -3056,7 +3035,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -3088,7 +3066,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -3220,7 +3197,6 @@
    <when state="epsilon" output="∊"/>
    <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="stile" output="|"/>
    <when state="alpha" output="⍺"/>
    <when state="del" output="∇"/>
    <when state="take" output="↑"/>
@@ -3235,7 +3211,6 @@
    <when state="or" output="⍱"/>
    <when state="and" output="⍲"/>
    <when state="quad" output="⌺"/>
-   <when state="stile" output="⍭"/>
   </action>
   <action id="k51-m5">
    <when state="none" output="&#x0008;"/>
@@ -3255,7 +3230,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -3287,7 +3261,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -3488,7 +3461,6 @@
    <when state="epsilon" output="∊"/>
    <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="stile" output="|"/>
    <when state="alpha" output="⍺"/>
    <when state="del" output="∇"/>
    <when state="take" output="↑"/>
@@ -3515,7 +3487,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -3547,7 +3518,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -3633,7 +3603,6 @@
    <when state="epsilon" output="∊"/>
    <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="stile" output="|"/>
    <when state="alpha" output="⍺"/>
    <when state="del" output="∇"/>
    <when state="take" output="↑"/>
@@ -3660,7 +3629,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -3692,7 +3660,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -3729,7 +3696,6 @@
    <when state="epsilon" output="∊"/>
    <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="stile" output="|"/>
    <when state="alpha" output="⍺"/>
    <when state="del" output="∇"/>
    <when state="take" output="↑"/>
@@ -3756,7 +3722,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -3788,7 +3753,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -3825,7 +3789,6 @@
    <when state="epsilon" output="∊"/>
    <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="stile" output="|"/>
    <when state="alpha" output="⍺"/>
    <when state="del" output="∇"/>
    <when state="take" output="↑"/>
@@ -3852,7 +3815,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -3884,7 +3846,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -3921,7 +3882,6 @@
    <when state="epsilon" output="∊"/>
    <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="stile" output="|"/>
    <when state="alpha" output="⍺"/>
    <when state="del" output="∇"/>
    <when state="take" output="↑"/>
@@ -3948,7 +3908,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -3980,7 +3939,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -4017,7 +3975,6 @@
    <when state="epsilon" output="∊"/>
    <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="stile" output="|"/>
    <when state="alpha" output="⍺"/>
    <when state="del" output="∇"/>
    <when state="take" output="↑"/>
@@ -4044,7 +4001,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -4076,7 +4032,6 @@
    <when state="epsilon" output=""/>
    <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="stile" output=""/>
    <when state="alpha" output=""/>
    <when state="del" output=""/>
    <when state="take" output=""/>
@@ -4108,7 +4063,6 @@
   <when state="epsilon" output="∊"/>
   <when state="iota" output="⍳"/>
   <when state="circle" output="○"/>
-  <when state="stile" output="|"/>
   <when state="alpha" output="⍺"/>
   <when state="del" output="∇"/>
   <when state="take" output="↑"/>

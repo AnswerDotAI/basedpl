@@ -29,7 +29,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `π` [pi](glyphs/pi.qmd) | Alt-p | pi-times | pi-ratio | |
 | `√` [root](glyphs/root.qmd) | Alt-3 | sqrt | root | As BQN's `√` |
 | `!` [factorial](glyphs/factorial.qmd) | | factorial | binomial | |
-| `⍭` [prime](glyphs/prime.qmd) | Alt-Backslash ~ | prime | prime-mode | Like J's `p:`, with different codes |
+| `⍭` [prime](glyphs/prime.qmd) | Alt-Backslash | prime | prime-mode | Like J's `p:`, with different codes |
 | `⨸` [factor](glyphs/factor.qmd) | Alt-o u | factors | factor-spec | As J's `q:` |
 | `⌻` [polynomial](glyphs/polynomial.qmd) | Alt-q t | roots | polyval | As J's `p.`, but coefficients come from `⌻⁻¹` |
 | `¿` [inverted-question](glyphs/inverted-question.qmd) | Alt-/ | roll | deal | Dyalog's `?` |

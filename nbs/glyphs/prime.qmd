@@ -1,6 +1,6 @@
 # `⍭` — Prime
 
-Keys: `Alt-Backslash ~`
+Keys: `Alt-Backslash`
 
 `⍭N`: the prime with `N` primes before it. `⍭0` is 2. Integral inputs; exact integer results, except that the primality test `1⍭` gives Booleans.
 

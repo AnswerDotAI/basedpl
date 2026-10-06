@@ -40,7 +40,7 @@ Option-o	circle prefix
 Option-Shift-u	÷
 Option-i	iota prefix
 Option-p	π
-Control-Option-p	stile prefix
+Control-Option-p	⍭
 Option-Shift-l	→
 Option-j	↓
 Option-k	take prefix

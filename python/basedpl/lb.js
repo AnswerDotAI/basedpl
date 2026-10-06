@@ -108,10 +108,15 @@
         b.type = 'button'; b.textContent = glyph; b.title = (name || glyph) + (shortcuts.get(glyph) || ''); b.dataset.glyph = glyph;
         return b;
     }
-    for (const glyph of new Set([...names.keys(), ...groups.keys()])) {
-        if (variants.has(glyph) && !groups.has(glyph)) continue;
+    // Related glyphs stay together; arrows meet at the boundary between menus and plain buttons.
+    const order = [...new Set([
+        ...'^_⍺⍵∇∆⋄¯¨○⎕∨∧≡∊⍳⊂∩⊥⊤↑↓←→↢↣⇄⊣⊢×÷⌊⌈≤≥≠√π⍭', ...groups.keys(), ...names.keys()
+    ])];
+    for (const glyph of [...order.filter(g => groups.has(g)), ...order.filter(g => !groups.has(g))]) {
+        if (!groups.has(glyph) && (variants.has(glyph) || /^[\x20-\x7e]+$/.test(glyph))) continue;
         const b = button(glyph, names.get(glyph));
         if (groups.has(glyph)) {
+            b.textContent = {'^': '²', '_': '₂'}[glyph] || glyph;
             b.classList.add('bpl_dead');
             b.setAttribute('aria-expanded', 'false');
             b.title += ' (variants)';

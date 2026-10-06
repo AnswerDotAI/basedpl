@@ -37,7 +37,7 @@ Option-o	circle prefix
 Option-u	÷
 Option-i	iota prefix
 Option-p	π
-Control-Option-p	stile prefix
+Control-Option-p	⍭
 Option-l	→
 Control-Option-Shift-l	⌽
 Option-j	↓
