@@ -163,11 +163,11 @@ def test_fetch():
 
 def test_regex_functions():
     p = bpl.fn('•r')(r'([a-z]+)([0-9]+)')
-    match, replace = p['match'], p['replace']
-    teq(match('ab12 cd3').py, ['ab12', 'cd3'])
+    matches, replace = p['matches'], p['replace']
+    teq(matches('ab12 cd3')['text'].py, ['ab12', 'cd3'])
     teq(replace('$2:$1', 'ab12 cd3').py, '12:ab 3:cd')
-    teq(bpl('p.position s', p=p, s='é ab12').py, [2])
-    teq(match('x9').py, ['x9'])
+    teq(bpl('(p.matches s).position', p=p, s='é ab12').py, [2])
+    teq(matches('x9')['groups'].py, [['x', '9']])
 
 
 def test_distribution_functions():

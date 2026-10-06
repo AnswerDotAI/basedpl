@@ -508,6 +508,8 @@ impl<X: Element, Y: Element> Map<'_, X, Y> {
     /// The results of `f` on the pairs of items, in the shape of the frame.
     fn binary<B: Element>(&self, f: impl Fn(X, Y) -> Option<B>) -> Option<Value> {
         let (x, y, len, f) = (self.x, self.y, self.agreement.len, |(a, b)| f(a, b));
+        // The arms copy items in closures, not with `.copied()`: without LTO, `Copied`'s indexed read isn't inlined, and a call for
+        // each item stops vectorization.
         let data = match (&self.agreement.left, &self.agreement.right) {
             (Mapping::Single, Mapping::Linear(1)) => {
                 let a = x[0];
@@ -517,21 +519,22 @@ impl<X: Element, Y: Element> Map<'_, X, Y> {
                 let b = y[0];
                 filled(len, x.iter().map(|&a| (a, b)), f)
             }
-            (Mapping::Linear(1), Mapping::Linear(1)) => filled(len, x.iter().copied().zip(y.iter().copied()), f),
+            (Mapping::Linear(1), Mapping::Linear(1)) => filled(len, x.iter().zip(y).map(|(&a, &b)| (a, b)), f),
             (Mapping::Linear(n), Mapping::Tiled(m)) if n == m => blocks(len, *n, x.iter().map(|&a| y.iter().map(move |&b| (a, b))), f),
             (Mapping::Tiled(n), Mapping::Linear(m)) if n == m => blocks(len, *n, y.iter().map(|&b| x.iter().map(move |&a| (a, b))), f),
             (Mapping::Linear(1), Mapping::Linear(r)) => blocks(len, *r, x.chunks(*r).zip(y).map(|(xs, &b)| xs.iter().map(move |&a| (a, b))), f),
             (Mapping::Linear(r), Mapping::Linear(1)) => blocks(len, *r, x.iter().zip(y.chunks(*r)).map(|(&a, ys)| ys.iter().map(move |&b| (a, b))), f),
-            (Mapping::Linear(1), Mapping::Tiled(n)) => blocks(len, *n, x.chunks(*n).map(|xs| xs.iter().copied().zip(y.iter().copied())), f),
-            (Mapping::Tiled(n), Mapping::Linear(1)) => blocks(len, *n, y.chunks(*n).map(|ys| x.iter().copied().zip(ys.iter().copied())), f),
+            (Mapping::Linear(1), Mapping::Tiled(n)) => blocks(len, *n, x.chunks(*n).map(|xs| xs.iter().zip(y).map(|(&a, &b)| (a, b))), f),
+            (Mapping::Tiled(n), Mapping::Linear(1)) => blocks(len, *n, y.chunks(*n).map(|ys| x.iter().zip(ys).map(|(&a, &b)| (a, b))), f),
             (left, right) => filled(len, (0..len).map(|i| (item(left, x, i), item(right, y, i))), f),
         }?;
         B::build(self.agreement.layout.shape().to_vec(), data)
     }
     fn unary<B: Element>(&self, f: impl Fn(Y) -> Option<B>) -> Option<Value> {
         let (y, len) = (self.y, self.agreement.len);
+        // `y.iter()` rather than `.copied()`, for the reason in `binary`.
         let data = match &self.agreement.right {
-            Mapping::Linear(1) => filled(len, y.iter().copied(), f),
+            Mapping::Linear(1) => filled(len, y.iter(), |&b| f(b)),
             m => filled(len, (0..len).map(|i| item(m, y, i)), f),
         }?;
         B::build(self.agreement.layout.shape().to_vec(), data)
@@ -690,7 +693,8 @@ fn reduce<A: Element>(data: &[A], axis: &Axis, shape: Vec<usize>, unit: A, op: i
     let lane = |lane: &[A]| {
         let (chunks, rest) = lane.as_chunks::<8>();
         let rest = rest.iter().fold(unit, |s, &x| op(s, x));
-        let parts = chunks.iter().fold([unit; 8], |mut parts, chunk| { for (p, &x) in parts.iter_mut().zip(chunk) { *p = op(*p, x) } parts });
+        // An index loop, not `zip`: without LTO, each chunk would call `Zip::new`, which isn't inlined.
+        let parts = chunks.iter().fold([unit; 8], |mut parts, chunk| { for k in 0..8 { parts[k] = op(parts[k], chunk[k]) } parts });
         parts.into_iter().fold(rest, op)
     };
     A::build_narrowed(shape, (0..axis.outer).map(|i| lane(&data[axis.offset(i, 0, 0)..axis.offset(i, axis.len, 0)])).collect())

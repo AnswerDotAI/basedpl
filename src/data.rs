@@ -6,10 +6,7 @@ use crate::{
     DomainAt, Error, ErrorAt, ErrorKind, Number, Value,
 };
 use foldhash::{HashMap, HashMapExt};
-use std::{
-    fs::OpenOptions,
-    io::{Read, Write},
-};
+use std::io::Read;
 
 pub(crate) fn text(value: &Value, span: &Context<'_>) -> Result<String, Error> {
     keyed::name(value).map(|s| s.to_string()).ok_or_else(|| span.domain_error("expected text"))
@@ -223,96 +220,77 @@ pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
     let path = opts.text("path", None, span)?;
     let data = payload(right, span)?;
     let count = Value::Number(Number::from_integer(data.len() as i64));
-    let unique = crate::files::Unique::new(&opts, "•nput", span)?;
-    if path == "-" {
-        if unique.is_some() { return Err(span.domain_error("standard output can't take the unique option")); }
-        span.write(&String::from_utf8(data).map_err(|_| span.domain_error("standard output takes UTF-8 text"))?);
-        return Ok((count, true));
+    if path != "-" { return write_file(&opts, &path, &data, count, span); }
+    if opts.values.contains_key("unique") || opts.values.contains_key("prefix") {
+        return Err(span.domain_error("standard output can't take the unique or prefix options"));
     }
-    if let Some(unique) = unique {
+    span.write(&String::from_utf8(data).map_err(|_| span.domain_error("standard output takes UTF-8 text"))?);
+    Ok((count, true))
+}
+
+/// Writes `data` to the file `path` names, as `•nput` does for any path but `"-"`. `count` is the result.
+#[cfg(not(web))]
+fn write_file(opts: &Options, path: &str, data: &[u8], count: Value, span: &Context<'_>) -> Result<(Value, bool), Error> {
+    use std::io::Write;
+    if let Some(unique) = crate::files::Unique::new(opts, "•nput", span)? {
         span.check()?;
-        let path = unique.make(&path, span, |builder, dir| {
+        let path = unique.make(path, span, |builder, dir| {
             let mut file = builder.tempfile_in(dir)?;
-            file.write_all(&data)?;
+            file.write_all(data)?;
             file.keep().map(|(_, made)| made).map_err(|e| e.error)
         })?;
         return Ok((path, false));
     }
     let overwrite = opts.boolean("overwrite", false, span)?;
     span.check()?;
-    let mut file = OpenOptions::new()
+    let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(!overwrite)
         .create(overwrite)
         .truncate(overwrite)
-        .open(span.path(&path))
-        .map_err(|e| span.io_error(&path, e))?;
-    file.write_all(&data).map_err(|e| span.io_error(&path, e))?;
+        .open(span.path(path))
+        .map_err(|e| span.io_error(path, e))?;
+    file.write_all(data).map_err(|e| span.io_error(path, e))?;
     Ok((count, true))
 }
 
-/// `X •fetch url` requests `url` and returns a record of the response's `status`, `headers` and `body`. Header names are in lower
-/// case, and a repeated header's values are joined with `, `, as browsers give them. Any response is a result, whatever its status.
-/// Getting no response is an IO error.
+/// The browser can't write files.
+#[cfg(web)]
+fn write_file(_: &Options, path: &str, _: &[u8], _: Value, span: &Context<'_>) -> Result<(Value, bool), Error> {
+    Err(span.io_error(path, "the browser can't write files"))
+}
+
+/// A request for `•fetch`'s host: no `method` means GET, or POST with a `body`.
+pub(crate) struct Request {
+    pub url: String,
+    pub method: Option<String>,
+    pub headers: Vec<(String, String)>,
+    pub body: Option<Vec<u8>>,
+}
+/// The final response to a `Request`, after any redirects. Header names are in lower case, and a repeated header's values are joined
+/// with `, `, as browsers give them.
+pub(crate) struct Response { pub status: i64, pub headers: Vec<(String, String)>, pub body: Vec<u8> }
+
+/// `X •fetch url` requests `url` and returns a record of the response's `status`, `headers` and `body`. Any response is a result,
+/// whatever its status. Getting no response is an IO error.
 pub(crate) fn fetch(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let opts = Options::new("•fetch", left, None, &["method", "headers", "body", "binary"], span)?;
     let url = text(right, span)?;
-    let mut args: Vec<String> = ["--silent", "--show-error", "--location", "--include", "--write-out", "\\n%{size_header}"].map(String::from).into();
-    if let Some(method) = opts.values.get("method") { args.extend(["--request".into(), text(method, span)?]); }
-    if let Some(headers) = opts.values.get("headers") {
-        let pairs = keyed::pairs(headers).map_err(|_| span.domain_error("•fetch headers must be a record"))?;
-        for (name, value) in pairs { args.extend(["--header".into(), format!("{name}: {}", text(&value, span)?)]); }
-    }
+    let method = opts.values.get("method").map(|m| text(m, span)).transpose()?;
+    let headers = match opts.values.get("headers") {
+        Some(h) => keyed::pairs(h)
+            .map_err(|_| span.domain_error("•fetch headers must be a record"))?
+            .into_iter()
+            .map(|(n, v)| Ok((n.to_string(), text(&v, span)?)))
+            .collect::<Result<_, Error>>()?,
+        None => Vec::new(),
+    };
     let body = opts.values.get("body").map(|b| payload(b, span)).transpose()?;
-    if body.is_some() { args.extend(["--data-binary".into(), "@-".into()]); }
-    args.extend(["--url".into(), url.clone()]);
-    let out = curl(&args, body, &url, span)?;
-    // The headers of every response come first, then the body, then the headers' total size.
-    let unreadable = || span.io_error(&url, "curl gave a response BPL can't read");
-    let end = out.iter().rposition(|&b| b == b'\n').ok_or_else(unreadable)?;
-    let size = std::str::from_utf8(&out[end + 1..]).ok().and_then(|s| s.parse::<usize>().ok()).filter(|&n| n <= end).ok_or_else(unreadable)?;
-    let head = String::from_utf8_lossy(&out[..size]);
-    let mut lines = head.split("\r\n\r\n").filter(|block| !block.is_empty()).last().unwrap_or("").lines();
-    let status = lines.next().and_then(|line| line.split_whitespace().nth(1)?.parse::<i64>().ok()).ok_or_else(unreadable)?;
-    let mut headers: Vec<(String, String)> = Vec::new();
-    for (name, value) in lines.filter_map(|line| line.split_once(':')) {
-        let (name, value) = (name.trim().to_ascii_lowercase(), value.trim());
-        match headers.iter_mut().find(|(n, _)| *n == name) {
-            Some((_, values)) => *values = format!("{values}, {value}"),
-            None => headers.push((name, value.into())),
-        }
-    }
-    let body = out[size..end].to_vec();
+    let response = crate::host::fetch(Request { url: url.clone(), method, headers, body }, span)?;
+    let body = response.body;
     let body = if opts.boolean("binary", false, span)? { byte_vector(body).error_at(span, "invalid byte vector")? } else { keyed::text(&String::from_utf8(body).map_err(|e| span.io_error(&url, e))?) };
-    let (names, values) = headers.into_iter().map(|(n, v)| (n.into(), keyed::text(&v))).unzip();
+    let (names, values) = response.headers.into_iter().map(|(n, v)| (n.into(), keyed::text(&v))).unzip();
     let headers = keyed::record(names, values).error_at(span, "invalid headers")?;
-    keyed::record(vec!["status".into(), "headers".into(), "body".into()], vec![Value::Number(Number::from_integer(status)), headers, body])
+    keyed::record(vec!["status".into(), "headers".into(), "body".into()], vec![Value::Number(Number::from_integer(response.status)), headers, body])
         .error_at(span, "invalid response")
-}
-
-/// What the system's `curl` writes when run with `args`, given `body` as its input. An interrupt stops it.
-fn curl(args: &[String], body: Option<Vec<u8>>, url: &str, span: &Context<'_>) -> Result<Vec<u8>, Error> {
-    use std::process::{Command, Stdio};
-    let mut child = Command::new("curl")
-        .args(args)
-        .stdin(if body.is_some() { Stdio::piped() } else { Stdio::null() })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| span.io_error("•fetch needs curl", e))?;
-    if let (Some(body), Some(mut input)) = (body, child.stdin.take()) { std::thread::spawn(move || input.write_all(&body)); }
-    let mut output = child.stdout.take().expect("stdout is piped");
-    let reader = std::thread::spawn(move || { let mut out = Vec::new(); output.read_to_end(&mut out).map(|_| out) });
-    while !reader.is_finished() {
-        if let Err(e) = span.pause(std::time::Duration::MAX) {
-            let _ = child.kill();
-            return Err(e);
-        }
-    }
-    let out = reader.join().expect("the reader doesn't panic").map_err(|e| span.io_error(url, e))?;
-    let status = child.wait().map_err(|e| span.io_error(url, e))?;
-    if status.success() { return Ok(out); }
-    let mut message = String::new();
-    child.stderr.take().expect("stderr is piped").read_to_string(&mut message).map_err(|e| span.io_error(url, e))?;
-    Err(span.io_error(url, message.trim().trim_start_matches("curl: ")))
 }

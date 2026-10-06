@@ -1,31 +1,31 @@
 ⍝⍝ Regex
 
-⍝ regex:matches — Bound functions share a compiled pattern
-p←•r "[0-9]+" ⋄ [p.match "abc123def45";p.position "abc123def45";p.length "abc123def45";'#' p.replace "abc123def45"]
+⍝ regex:matches — A table of each match's text, position and groups, with replacement from the same pattern
+p←•r "[0-9]+" ⋄ m←p.matches "abc123def45" ⋄ [m.text;m.position;≢¨m.text;'#' p.replace "abc123def45"]
 ["123" "45";3 9;3 2;"abc#def#"]ₓ
 
 ⍝ regex:groups — Captures exclude the whole match; absent captures are empty strings
-p←•r "(a)?(b+)" ⋄ p.groups "abbb b"
-[["a" "bbb"] ["" "b"]]
+(•r "(a)?(b+)").matches "abbb b"
+["text":["abbb" "b"] "position":[0 5]ₓ "groups":("a" "bbb" ⋄ "" "b")]
 
 ⍝ regex:unicode — Positions count characters, not UTF-8 bytes
-p←•r "é|🐈+" ⋄ [p.position "aé🐈🐈z";p.length "aé🐈🐈z"]
+p←•r "é|🐈+" ⋄ m←p.matches "aé🐈🐈z" ⋄ [m.position;≢¨m.text]
 [1 2;1 2]ₓ
 
 ⍝ regex:empty — Empty matches occur at character boundaries
-p←•r "" ⋄ [p.position "é🐈";'-' p.replace "é🐈"]
+p←•r "" ⋄ [(p.matches "é🐈").position;'-' p.replace "é🐈"]
 [0 1 2;"-é-🐈-"]ₓ
 
 ⍝ regex:nomatch — Typed empty results and unchanged replacement
-p←•r "(z)" ⋄ [p.match "abc";p.position "abc";p.groups "abc";'x' p.replace "abc"]
+p←•r "(z)" ⋄ m←p.matches "abc" ⋄ [m.text;m.position;m.groups;'x' p.replace "abc"]
 [0⍴⊂"";⍬ₓ;0⍴⊂,⊂"";"abc"]
 
-⍝ regex:replacement — Rust capture expansion and literal dollar
+⍝ regex:replacement — The regex crate's capture expansion and literal dollar
 p←•r "(?P<word>[a-z]+)([0-9]+)" ⋄ "${word}:$2:$$" p.replace "ab12 cd3"
 "ab:12:$ cd:3:$"
 
 ⍝ regex:each — Bound functions compose and work with Each
-p←•r "(?i)cat" ⋄ f←≢∘p.match ⋄ f¨"Cat cat" "dog"
+p←•r "(?i)cat" ⋄ f←≢∘("text"↣⊃)∘p.matches ⋄ f¨"Cat cat" "dog"
 [2 0]ₓ
 
 ⍝ regex:badpattern — Compile errors are located DOMAIN errors
@@ -37,15 +37,15 @@ p←•r "(?i)cat" ⋄ f←≢∘p.match ⋄ f¨"Cat cat" "dog"
 ⍝ error: DOMAIN ERROR
 
 ⍝ regex:input — Text required
-p←•r 'a' ⋄ p.match 1 2
+p←•r 'a' ⋄ p.matches 1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ regex:valence — Replacement requires a left argument
 p←•r 'a' ⋄ p.replace "abc"
 ⍝ error: SYNTAX ERROR
 
-⍝ regex:searchvalence — Search is monadic
-p←•r 'a' ⋄ 'x' p.match "abc"
+⍝ regex:searchvalence — Matching is monadic
+p←•r 'a' ⋄ 'x' p.matches "abc"
 ⍝ error: SYNTAX ERROR
 
 ⍝ regex:callback-empty — No match does not call the APL operand

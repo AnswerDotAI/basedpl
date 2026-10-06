@@ -2,6 +2,7 @@ website:
   sidebar:
     contents:
       - getting-started.ipynb
+      - playground.qmd
       - python.ipynb
       - notebooks.ipynb
       - repl.qmd

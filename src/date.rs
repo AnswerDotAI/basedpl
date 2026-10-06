@@ -7,7 +7,7 @@ use crate::{
     primitive::real,
     Error, ErrorAt, Number, Value,
 };
-use chrono::{DateTime, Datelike, FixedOffset, Local, Locale, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Timelike, Utc};
 use std::fmt::Write;
 
 /// Seconds since the Unix epoch, from the system clock.
@@ -107,19 +107,24 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
     Value::shaped(&shape, seconds.into_iter().map(|s| Value::Number(s.into())).collect(), Value::Number(0.0.into())).error_at(span, "invalid date")
 }
 
+/// `•date⁻¹`'s options. The browser build has no `locale`, which keeps chrono's locale data out of it.
+const WRITE_OPTIONS: &[&str] = if cfg!(web) { &["pattern", "zone"] } else { &["pattern", "zone", "locale"] };
+
 /// `•date⁻¹ T`: a record of the fields of each moment in `T`. With a pattern, the text of each moment. The `zone` option gives the time
 /// zone, and the `locale` option the language of names in the text.
 pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let opts = Options::new("•date⁻¹", left, Some("pattern"), &["pattern", "zone", "locale"], span)?;
+    let opts = Options::new("•date⁻¹", left, Some("pattern"), WRITE_OPTIONS, span)?;
     let zone = Zone::new(&opts, span)?;
+    #[cfg(not(web))]
     let locale = match opts.values.get("locale") {
-        Some(l) => Some(Locale::try_from(text(l, span)?.as_str()).map_err(|_| span.domain_error("unknown •date⁻¹ locale"))?),
+        Some(l) => Some(chrono::Locale::try_from(text(l, span)?.as_str()).map_err(|_| span.domain_error("unknown •date⁻¹ locale"))?),
         None => None,
     };
     let moments = right.elements().map(|e| real(&e, span).and_then(|x| moment(x).map(|t| zone.at(t)).ok_or_else(|| span.domain_error("invalid date"))));
     let moments = moments.collect::<Result<Vec<_>, _>>()?;
     let shape = right.shape();
     let Some(pattern) = opts.values.get("pattern").map(|p| text(p, span)).transpose()? else {
+        #[cfg(not(web))]
         if locale.is_some() { return Err(span.domain_error("a •date⁻¹ locale needs a pattern")); }
         let rows = moments.iter().map(|t| {
             let fields = [t.year(), t.month() as i32, t.day() as i32, t.hour() as i32, t.minute() as i32, t.second() as i32, t.nanosecond() as i32];
@@ -130,9 +135,11 @@ pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
     };
     let texts = moments.iter().map(|t| {
         let mut s = String::new();
-        match locale { Some(locale) => write!(s, "{}", t.format_localized(&pattern, locale)), None => write!(s, "{}", t.format(&pattern)) }
-        .map(|()| keyed::text(&s))
-        .map_err(|_| span.domain_error("invalid •date⁻¹ pattern"))
+        #[cfg(not(web))]
+        let written = match locale { Some(locale) => write!(s, "{}", t.format_localized(&pattern, locale)), None => write!(s, "{}", t.format(&pattern)) };
+        #[cfg(web)]
+        let written = write!(s, "{}", t.format(&pattern));
+        written.map(|()| keyed::text(&s)).map_err(|_| span.domain_error("invalid •date⁻¹ pattern"))
     });
     keyed::texts(shape, texts.collect::<Result<_, _>>()?).error_at(span, "invalid date text")
 }

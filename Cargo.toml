@@ -1,5 +1,5 @@
 [workspace]
-members = ["cli", "py"]
+members = ["cli", "py", "wasm", "xtask"]
 default-members = [".", "cli", "py"]
 
 [workspace.package]
@@ -26,6 +26,8 @@ inherits = "release"
 
 [profile.release]
 opt-level = 2
+# Without LTO, an edit recompiles only the codegen units whose code changed.
+lto = "off"
 overflow-checks = false
 debug-assertions = false
 incremental = true
@@ -34,16 +36,25 @@ debug = "line-tables-only"
 [profile.dist]
 inherits = "release"
 incremental = false
+# Cargo's default LTO: thin LTO across the crate's codegen units, which inlines between them.
+lto = false
 strip = true
+
+# The browser build: basedpl at opt-level 2, the lowest level that vectorises its kernels, and its dependencies at `z`.
+[profile.wasm]
+inherits = "dist"
+lto = "fat"
+codegen-units = 1
+
+[profile.wasm.package."*"]
+opt-level = "z"
 
 [dependencies]
 csv = "1"
-regex = "1"
 tempfile = "3"
 serde = ">=1.0.229, <2"
 serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order"] }
 unicode-width = { version = ">=0.2.2, <1", default-features = false }
-icu_normalizer = ">=2, <3"
 num-rational = ">=0.4.2, <1"
 num-complex = ">=0.4.6, <1"
 num-bigint = ">=0.4.6, <0.5"
@@ -55,7 +66,8 @@ lambert_w = ">=1.2.34, <2"
 rand = ">=0.10.2, <1"
 statrs = { version = ">=0.19.1, <1", default-features = false, features = ["std", "rand"] }
 faer = { version = ">=0.24.4, <1", default-features = false, features = ["std", "linalg"] }
-plotters = { version = ">=0.3.7, <1", default-features = false, features = ["svg_backend", "colormaps", "full_palette"] }
+# AnswerDotAI's fork measures text with a canvas, which works in a Web Worker: plotters-rs/plotters#746.
+plotters = { git = "https://github.com/AnswerDotAI/plotters.git", branch = "master", default-features = false, features = ["svg_backend", "colormaps", "full_palette"] }
 image = { version = ">=0.25.6, <1", default-features = false, features = ["png", "jpeg"] }
 base64 = ">=0.22.1, <1"
 stacker = ">=0.1.25, <1"
@@ -66,10 +78,24 @@ json5 = ">=1.3.1, <2"
 roxmltree = { version = ">=0.21.1, <1", default-features = false, features = ["std"] }
 sha2 = ">=0.10.9, <1"
 uuid = { version = ">=1.26.1, <2", features = ["v1", "v3", "v4", "v5", "v6", "v7", "v8"] }
-chrono = { version = ">=0.4.45, <0.5", features = ["unstable-locales"] }
-walkdir = ">=2.5.0, <3"
-globset = ">=0.4.20, <1"
+chrono = ">=0.4.45, <0.5"
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = ">=1.1.5, <2", features = ["termios", "fs"] }
 nix = { version = ">=0.31.3, <1", default-features = false, features = ["user"] }
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+chrono = { version = ">=0.4.45, <0.5", features = ["unstable-locales"] }
+icu_normalizer = ">=2, <3"
+regex = "1"
+walkdir = ">=2.5.0, <3"
+globset = ">=0.4.20, <1"
+
+# The browser build. `build.rs` sets `cfg(web)` for the same target.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { version = ">=0.4.3, <0.5", features = ["wasm_js"] }
+uuid = { version = ">=1.26.1, <2", features = ["js"] }
+web-time = ">=1.1.0, <2"
+js-sys = ">=0.3.106, <0.4"
+web-sys = { version = ">=0.3.106, <0.4", features = ["Url", "XmlHttpRequest", "XmlHttpRequestResponseType"] }
+wasm-bindgen = ">=0.2.129, <0.3"

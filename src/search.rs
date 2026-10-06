@@ -209,14 +209,15 @@ fn key_firsts<K: Key>(x: &[K]) -> Vec<bool> {
 
 /// Copies the items of `source` into `target` grouped by bucket, keeping their order within each bucket. `counts` holds the number of
 /// items in each bucket, and `target` holds exactly as many items as `source`.
-pub(crate) fn scatter<T: Copy>(source: impl IntoIterator<Item = T>, target: &mut [T], counts: &[usize], bucket: impl Fn(&T) -> usize) {
+/// `source` is a slice because, without LTO, iterating through `Copied` would make a call for each item.
+pub(crate) fn scatter<T: Copy>(source: &[T], target: &mut [T], counts: &[usize], bucket: impl Fn(&T) -> usize) {
     let mut next = Vec::with_capacity(counts.len());
     let mut total = 0;
     for &count in counts {
         next.push(total);
         total += count;
     }
-    for item in source {
+    for &item in source {
         let b = bucket(&item);
         target[next[b]] = item;
         next[b] += 1;
@@ -314,8 +315,10 @@ impl Buckets {
         }
     }
     /// The positions with `key`, from the one pushed first.
+    #[inline]
     fn chain(&self, key: u64) -> impl Iterator<Item = usize> + '_ { self.ends.get(&key).into_iter().flat_map(|&(first, _)| links(&self.next, first)) }
     /// The positions near real `y`, when the keys are buckets: those in its bucket and in the neighbour on the side of its half.
+    #[inline]
     fn near(&self, y: f64) -> impl Iterator<Item = usize> + '_ {
         let (b, upper) = (bucket(y), float_key(y) & 256 != 0);
         [Some(b), if upper { b.checked_add(1) } else { b.checked_sub(1) }].into_iter().flatten().flat_map(|b| self.chain(b))
@@ -408,7 +411,7 @@ pub(crate) fn sort_rows(n: usize, width: usize, key: impl Fn(usize, usize) -> u6
         }
         for (b, count) in counts.iter().enumerate() {
             if count.contains(&n) { continue; }
-            scatter(items.iter().copied(), &mut spare, count, |&(k, _)| (k >> (8 * b)) as usize & 255);
+            scatter(&items, &mut spare, count, |&(k, _)| (k >> (8 * b)) as usize & 255);
             std::mem::swap(&mut items, &mut spare);
         }
     }

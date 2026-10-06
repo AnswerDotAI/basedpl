@@ -80,6 +80,13 @@ fn import_array(value: &JsonValue, approximate: bool) -> Result<Value, String> {
 /// floats.
 pub(crate) fn import(value: &JsonValue, approximate: bool) -> Result<Value, String> { import_array(value, approximate) }
 
+/// The evaluation options a request sets: `timeout_ms`, and `echo`, which defaults to true.
+pub fn options(request: &JsonValue) -> Result<EvalOptions, String> {
+    let timeout =
+        request.get("timeout_ms").map(|v| v.as_u64().map(std::time::Duration::from_millis).ok_or("timeout_ms must be a nonnegative integer")).transpose()?;
+    let echo = request.get("echo").map(|v| v.as_bool().ok_or("echo must be a boolean")).transpose()?.unwrap_or(true);
+    Ok(EvalOptions { timeout, echo, ..EvalOptions::default() })
+}
 /// Worker operations use the same array encoding in both directions.
 pub fn request(session: &mut Session, request: &JsonValue, options: EvalOptions) -> Result<Evaluation, String> {
     let code = request.get("code").map(|v| v.as_str().ok_or("code must be a string")).transpose()?;

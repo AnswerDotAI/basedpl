@@ -17,7 +17,7 @@ pub(crate) enum Call {
     /// A native called for its effect.
     Effect(Effect),
     Session(fn(&mut crate::Session, Option<&Value>, &Value, &crate::Span) -> Result<Value, Error>),
-    Regex(std::sync::Arc<::regex::Regex>, crate::regex::Operation),
+    Regex(std::sync::Arc<crate::host::Regex>, crate::regex::Operation),
     Distribution(std::sync::Arc<crate::distribution::Distribution>, crate::distribution::Operation),
     Generator(crate::distribution::Generator, crate::distribution::Draw),
     Load,
@@ -97,14 +97,22 @@ const BUILTINS: &[(&str, Call, Valence)] = &[
     ("•storage", Call::Value(storage), Monadic),
     ("•time", Call::Time, Ambivalent),
     ("•host", Call::Value(host), Monadic),
+    #[cfg(not(web))]
     ("•delay", Call::Effect(delay), Monadic),
     ("•date", Call::Value(crate::date::read), Ambivalent),
+    #[cfg(not(web))]
     ("•path", Call::Value(crate::files::path), Ambivalent),
+    #[cfg(not(web))]
     ("•metadata", Call::Value(crate::files::metadata), Monadic),
+    #[cfg(not(web))]
     ("•readdir", Call::Value(crate::files::readdir), Ambivalent),
+    #[cfg(not(web))]
     ("•copy", Call::Effect(crate::files::copy), Dyadic),
+    #[cfg(not(web))]
     ("•rename", Call::Effect(crate::files::rename), Dyadic),
+    #[cfg(not(web))]
     ("•remove", Call::Effect(crate::files::remove), Ambivalent),
+    #[cfg(not(web))]
     ("•mkdir", Call::Effect(crate::files::mkdir), Ambivalent),
     ("•prefs", Call::Session(crate::display::prefs), Monadic),
     ("•nc", Call::Session(crate::Session::system_nc), Monadic),
@@ -133,6 +141,7 @@ const INVERSES: &[(&str, Native, Valence)] = &[
     ("•image", crate::image::encode, Ambivalent),
     ("•deflate", crate::data::deflate, Ambivalent),
     ("•date", crate::date::write, Ambivalent),
+    #[cfg(not(web))]
     ("•path", crate::files::join, Monadic),
     ("•literal", write_literal, Monadic),
 ];
@@ -144,7 +153,17 @@ pub(crate) fn inverse(f: &SystemFunction, left: Option<&Value>, right: &Value, c
     call(left, right, cx)
 }
 
-const HOST_FACTS: [&str; 7] = ["args", "version", "env", "width", "height", "cwd", "temp"];
+const HOST_FACTS: &[&str] = &[
+    "args",
+    "version",
+    "env",
+    "width",
+    "height",
+    #[cfg(not(web))]
+    "cwd",
+    #[cfg(not(web))]
+    "temp",
+];
 
 /// `•host name` gives the host fact called `name`: the command-line `"args"`, BPL's `"version"`, the `"env"` record, the terminal's
 /// `"width"` and `"height"`, the working directory `"cwd"`, and `"temp"`, the directory for temporary files.
@@ -156,16 +175,18 @@ fn host(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, E
         }
         Some("version") => Ok(crate::keyed::text(env!("CARGO_PKG_VERSION"))),
         Some("env") => {
-            let (names, values) = std::env::vars_os().map(|(k, v)| (k.to_string_lossy().into(), crate::keyed::text(&v.to_string_lossy()))).unzip();
+            let (names, values) = crate::host::environment().into_iter().map(|(k, v)| (k.into(), crate::keyed::text(&v))).unzip();
             crate::keyed::record(names, values)
         }
         Some(fact @ ("width" | "height")) => match terminal_size() {
             Some((rows, columns)) => Value::number((if fact == "height" { rows } else { columns }) as f64),
             None => Value::integers(vec![0], vec![]),
         },
+        #[cfg(not(web))]
         Some("cwd") => Ok(crate::keyed::text(&std::env::current_dir().map_err(|e| span.domain_error(format!("working directory: {e}")))?.to_string_lossy())),
+        #[cfg(not(web))]
         Some("temp") => Ok(crate::keyed::text(&std::env::temp_dir().to_string_lossy())),
-        _ => return Err(span.domain_error(format!("•host takes {}", HOST_FACTS.map(|f| format!("\"{f}\"")).join(", ")))),
+        _ => return Err(span.domain_error(format!("•host takes {}", HOST_FACTS.iter().map(|f| format!("\"{f}\"")).collect::<Vec<_>>().join(", ")))),
     };
     fact.error_at(span, "invalid host fact")
 }
@@ -180,8 +201,9 @@ pub(crate) fn terminal_size() -> Option<(usize, usize)> {
 pub(crate) fn terminal_size() -> Option<(usize, usize)> { None }
 
 /// `•delay s` pauses for `s` seconds and gives the seconds it waited. `•delay ∞` waits until interrupted. Interrupts stop any delay.
+#[cfg(not(web))]
 fn delay(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<(Value, bool), Error> {
-    use std::time::{Duration, Instant};
+    use {crate::host::Instant, std::time::Duration};
     let seconds = crate::primitive::real(right, span)?;
     if seconds.is_nan() || seconds < 0.0 { return Err(span.domain_error("•delay needs a nonnegative number of seconds")); }
     let start = Instant::now();
@@ -248,16 +270,11 @@ fn cased(value: &Value, text: fn(&str) -> String, span: &Context<'_>) -> Result<
 /// `form •normalize text` puts each string of `text` into a Unicode normalization form: `"NFC"`, the default, `"NFD"`, `"NFKC"` or
 /// `"NFKD"`.
 fn normalize(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    use icu_normalizer::{ComposingNormalizerBorrowed as Composing, DecomposingNormalizerBorrowed as Decomposing};
-    let form: fn(&str) -> String = match crate::data::algorithm(left, "nfc", span)?.as_str() {
-        "nfc" => |t| Composing::new_nfc().normalize(t).into_owned(),
-        "nfd" => |t| Decomposing::new_nfd().normalize(t).into_owned(),
-        "nfkc" => |t| Composing::new_nfkc().normalize(t).into_owned(),
-        "nfkd" => |t| Decomposing::new_nfkd().normalize(t).into_owned(),
-        _ => return Err(span.domain_error("•normalize takes \"NFC\", \"NFD\", \"NFKC\" or \"NFKD\"")),
-    };
+    let form = crate::data::algorithm(left, "nfc", span)?.to_uppercase();
+    if !["NFC", "NFD", "NFKC", "NFKD"].contains(&form.as_str()) { return Err(span.domain_error("•normalize takes \"NFC\", \"NFD\", \"NFKC\" or \"NFKD\"")); }
     let (shape, texts) = crate::keyed::text_items(right).ok_or_else(|| span.domain_error("•normalize needs text"))?;
-    crate::keyed::texts(&shape, texts.iter().map(|t| crate::keyed::text(&form(t))).collect()).error_at(span, "normalized text exceeds array limits")
+    crate::keyed::texts(&shape, texts.iter().map(|t| crate::keyed::text(&crate::host::normalize(&form, t))).collect())
+        .error_at(span, "normalized text exceeds array limits")
 }
 
 /// `•literal⁻¹ Y` writes `Y` as BPL source, which `•literal` reads back. A value that holds a function or an operator is a DOMAIN error.

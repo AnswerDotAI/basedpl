@@ -8010,49 +8010,49 @@ le←{0=↑⍋[⍺ ⍵]} ⋄ 1 2 le 1 3   ⍝ $t
 p←•r "[0-9]+" ⋄ '#' p.replace "a12 b3"   ⍝ "a# b#"
 
 ⍝ aplcart/table.tsv:462 — Matched strings
-p←•r "[0-9]+" ⋄ p.match "a12 b3"   ⍝ "12" "3"
+p←•r "[0-9]+" ⋄ (p.matches "a12 b3").text   ⍝ "12" "3"
 
 ⍝ aplcart/table.tsv:507 — Case-insensitive replacement
 p←•r "(?i)cat" ⋄ "dog" p.replace "Cat cat"   ⍝ "dog dog"
 
 ⍝ aplcart/table.tsv:508 — Case-insensitive search
-p←•r "(?i)cat" ⋄ p.match "Cat cat"   ⍝ "Cat" "cat"
+p←•r "(?i)cat" ⋄ (p.matches "Cat cat").text   ⍝ "Cat" "cat"
 
 ⍝ aplcart/table.tsv:1464 — Capture groups
-p←•r "([a-z]+)([0-9]+)" ⋄ p.groups "ab12 cd3"
+p←•r "([a-z]+)([0-9]+)" ⋄ (p.matches "ab12 cd3").groups
 [["ab" "12"] ["cd" "3"]]
 
 ⍝ aplcart/table.tsv:1513 — Escape transformation punctuation
 p←•r "[%&\\]" ⋄ "\$0" p.replace "a&b%c\d"   ⍝ "a\&b\%c\\d"
 
 ⍝ aplcart/table.tsv:1579 — APL identifiers
-p←•r "[\wÀ-ÖØ-Ýßà-öø-üþ∆⍙Ⓐ-Ⓩ&&\D][\wÀ-ÖØ-Ýßà-öø-üþ∆⍙Ⓐ-Ⓩ]*" ⋄ p.match "x←3 ⋄ y2←x+1"
+p←•r "[\wÀ-ÖØ-Ýßà-öø-üþ∆⍙Ⓐ-Ⓩ&&\D][\wÀ-ÖØ-Ýßà-öø-üþ∆⍙Ⓐ-Ⓩ]*" ⋄ (p.matches "x←3 ⋄ y2←x+1").text
 "x" "y2" "x"
 
 ⍝ aplcart/table.tsv:1808 — Count matches
-p←•r "[0-9]+" ⋄ ≢p.match "a12 b3"   ⍝ 2ₓ
+p←•r "[0-9]+" ⋄ ≢(p.matches "a12 b3").text   ⍝ 2ₓ
 
 ⍝ aplcart/table.tsv:1871 — Any match
-p←•r "[0-9]+" ⋄ 0<≢p.match"a12 b3"   ⍝ $t
+p←•r "[0-9]+" ⋄ 0<≢(p.matches "a12 b3").text   ⍝ $t
 
 ⍝ aplcart/table.tsv:1921 — Select matching text
-p←•r "[0-9]+" ⋄ 0<≢p.match"a12 b3" # ,⊂"a12 b3"   ⍝ ["a12 b3"]
+p←•r "[0-9]+" ⋄ (0<≢(p.matches "a12 b3").text) # ,⊂"a12 b3"   ⍝ ["a12 b3"]
 
 ⍝ aplcart/table.tsv:1949 — Matching lines
-p←•r "[0-9]+" ⋄ (0<≢)∘p.match¨"abc" "a12"   ⍝ $f $t
+p←•r "[0-9]+" ⋄ {0<≢(p.matches ⍵).text}¨"abc" "a12"   ⍝ $f $t
 
 ⍝ aplcart/table.tsv:2118 — Unicode character properties
-p←•r "\p{L}" ⋄ (0<≢)∘p.match¨"Ab2!"   ⍝ $t $t $f $f
+p←•r "\p{L}" ⋄ {0<≢(p.matches ⍵).text}¨"Ab2!"   ⍝ $t $t $f $f
 
 ⍝ aplcart/table.tsv:1576 — Glob to regex
 p←•r "\W" ⋄ glob←{⍵='*'?".*";⍵='?'?'.';"\$0" p.replace ,⍵} ⋄ '^' , ∊glob¨"ab*.txt" , '$'
 "^ab.*\.txt$"
 
 ⍝ aplcart/table.tsv:1920 — Overlapping literal matches via suffixes
-p←•r "^ana" ⋄ ,/p.match¨{⍵↓"banana"}¨⍳6   ⍝ "ana" "ana"
+p←•r "^ana" ⋄ ,/{(p.matches ⍵).text}¨{⍵↓"banana"}¨⍳6   ⍝ "ana" "ana"
 
 ⍝ aplcart/table.tsv:2121 — Split, retaining empty segments
-p←•r "[,;]" ⋄ s←"a,,b;c" ⋄ b←0,(p.position s)+p.length s ⋄ e←(p.position s),≢s ⋄ b{(⍵-⍺)↑⍺↓s}¨e
+p←•r "[,;]" ⋄ s←"a,,b;c" ⋄ m←p.matches s ⋄ b←0,m.position+≢¨m.text ⋄ e←m.position,≢s ⋄ b{(⍵-⍺)↑⍺↓s}¨e
 "a" "" "b" "c"
 
 ⍝ aplcart/table.tsv:1520 — Control-character sequences

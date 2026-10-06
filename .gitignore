@@ -22,3 +22,5 @@ _docs/
 Cargo.lock
 # `cargo stage` writes the native binaries for the wheel here.
 wheel/scripts/
+# `cargo wasm` writes the npm package `basedpl` here.
+wasm/pkg/

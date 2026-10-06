@@ -112,6 +112,13 @@ pub fn chord(glyph: &str) -> String {
     String::new()
 }
 
+/// Every glyph's row, as `basedpl.symbols` and the browser's language bar read it: the fields of `Symbol`, and `shortcut`, the
+/// glyph's `chord`.
+pub fn rows() -> serde_json::Value {
+    let row = |s: &Symbol| serde_json::json!({"glyph": s.glyph, "name": s.name, "kind": s.kind, "monad": s.monad, "dyad": s.dyad, "aliases": s.aliases, "shortcut": chord(s.glyph)});
+    symbols().iter().map(row).collect()
+}
+
 // At each level (exact, prefix, prefixes of hyphen-separated parts) a name outranks a search word.
 pub fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
     let query = query.to_ascii_lowercase();

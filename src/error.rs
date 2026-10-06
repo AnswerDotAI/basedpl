@@ -103,7 +103,7 @@ impl Span {
     /// An IO error about `what`, such as a file's path, a URL or standard input.
     pub(crate) fn io_error(&self, what: &str, e: impl std::fmt::Display) -> Error { self.error(ErrorKind::Io, format!("{what}: {e}")) }
     /// The bytes of the file `path` names.
-    pub(crate) fn read(&self, path: &str) -> Result<Vec<u8>, Error> { std::fs::read(self.path(path)).map_err(|e| self.io_error(path, e)) }
+    pub(crate) fn read(&self, path: &str) -> Result<Vec<u8>, Error> { crate::host::read(&self.path(path)).map_err(|e| self.io_error(path, e)) }
 }
 
 /// Places an error from array building, which carries only its kind, at a source span.

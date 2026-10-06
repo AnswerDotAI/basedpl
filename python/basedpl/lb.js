@@ -3,7 +3,8 @@
 // BPL name completion, editor adapters, dark mode and overlay layout by Jeremy Howard.
 ((symbols, input, layout) => {
     const d = document;
-    if (d.querySelector('.ngn_lb') || d.querySelector('meta[name=generator][content^=quarto]')) return;
+    // Docs pages have no bar, except a page with a `data-bpl` editor, such as the playground.
+    if (d.querySelector('.ngn_lb') || d.querySelector('meta[name=generator][content^=quarto]') && !d.querySelector('[data-bpl]')) return;
 
     const {inCode, bplStart, entry, press, reset} = input(symbols, layout);
     const shortcuts = new Map(symbols.map(({glyph, shortcut}) => [glyph, shortcut]));
@@ -58,7 +59,7 @@
                 }};
         }
         if (target.tagName !== 'TEXTAREA' || target.readOnly || target.disabled) return;
-        return {id: target, text: target.value, pos: target.selectionStart, empty: target.selectionStart === target.selectionEnd,
+        return {id: target, text: target.value, pos: target.selectionStart, empty: target.selectionStart === target.selectionEnd, bpl: target.hasAttribute('data-bpl'),
             rect: () => textareaRect(target),
             insert: (text, from = target.selectionStart) => {
                 target.focus();

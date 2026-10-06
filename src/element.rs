@@ -68,7 +68,7 @@ whole!(u8: U8, i16: I16, i32: I32, i64: I64);
 /// An item that a kernel reads as type `A`: a Boolean as a number, an integer as a float or a complex number, or a float as a complex
 /// number.
 pub(crate) trait Source<A>: Element { fn read(self) -> A; }
-impl<A: Element> Source<A> for A { fn read(self) -> A { self } }
+impl<A: Element> Source<A> for A { #[inline] fn read(self) -> A { self } }
 macro_rules! truth {
     ($($a:ty),+) => {$(
         impl Source<$a> for bool { #[inline] fn read(self) -> $a { self.into() } }
@@ -112,9 +112,9 @@ pub(crate) fn truth_bytes(truths: &[bool]) -> &[u8] { bytemuck::cast_slice(truth
 /// An item as a whole number: a Boolean's 0 or 1, an integer, or a character's code point. Search tables index by it, and masks count
 /// by it.
 pub(crate) trait Key: Copy { fn key(self) -> i64; }
-impl Key for bool { fn key(self) -> i64 { self.into() } }
-impl<T: Int> Key for T { fn key(self) -> i64 { self.to_i64() } }
-impl Key for char { fn key(self) -> i64 { i64::from(u32::from(self)) } }
+impl Key for bool { #[inline] fn key(self) -> i64 { self.into() } }
+impl<T: Int> Key for T { #[inline] fn key(self) -> i64 { self.to_i64() } }
+impl Key for char { #[inline] fn key(self) -> i64 { i64::from(u32::from(self)) } }
 
 /// `value`'s compact numbers as `A`s: borrowed when they are `A`s already, otherwise read through `Source`, or through `read_flagged` from
 /// flagged integer storage. `None` when `A` can't hold them.

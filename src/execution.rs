@@ -1,4 +1,4 @@
-use crate::{Error, ErrorKind, Span};
+use crate::{host::Instant, Error, ErrorKind, Span};
 use std::{
     cell::{Cell, RefCell},
     io,
@@ -7,7 +7,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 /// Cancellation for one evaluation; may be sent to another thread.
@@ -148,6 +148,7 @@ impl Execution {
     }
     /// One step of waiting: a full check, then a sleep of `limit` or `POLL_INTERVAL`, whichever is shorter. A loop of these notices
     /// an interrupt or a passed deadline within one interval.
+    #[cfg(not(web))]
     pub(crate) fn pause(&self, span: &Span, limit: Duration) -> Result<(), Error> {
         self.countdown.set(0);
         self.check(span)?;
@@ -162,6 +163,7 @@ impl Execution {
 pub(crate) struct Context<'a> { pub span: &'a Span, pub session: &'a mut crate::Session }
 impl Context<'_> {
     pub(crate) fn check(&self) -> Result<(), Error> { self.session.execution.check(self.span) }
+    #[cfg(not(web))]
     pub(crate) fn pause(&self, limit: Duration) -> Result<(), Error> { self.session.execution.pause(self.span, limit) }
     pub(crate) fn rest(&self) -> Result<Vec<u8>, Error> { self.session.execution.rest(self.span) }
     pub(crate) fn write(&self, text: &str) { self.session.execution.write(text) }

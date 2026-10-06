@@ -396,19 +396,6 @@ fn _captured_literal(value: &str) -> PyResult<String> {
     basedpl::reference::expected_array(&value).map(|v| v.literal()).ok_or_else(|| PyValueError::new_err("invalid captured array"))
 }
 
-/// A row of `basedpl.symbols`, which Python receives as a dict. `shortcut` is the glyph's keys after Alt as a display suffix, such as
-/// `" o *"` for Alt-o then `*`.
-#[derive(IntoPyObject)]
-struct SymbolRow {
-    glyph: &'static str,
-    name: &'static str,
-    kind: &'static str,
-    monad: &'static str,
-    dyad: &'static str,
-    aliases: &'static str,
-    shortcut: String,
-}
-
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySession>()?;
@@ -418,19 +405,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_check_reference, m)?)?;
     m.add_function(wrap_pyfunction!(_captured_literal, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    let symbols: Vec<_> = basedpl::symbols::symbols()
-        .iter()
-        .map(|s| SymbolRow {
-            glyph: s.glyph,
-            name: s.name,
-            kind: s.kind,
-            monad: s.monad,
-            dyad: s.dyad,
-            aliases: s.aliases,
-            shortcut: basedpl::symbols::chord(s.glyph),
-        })
-        .collect();
-    m.add("symbols", symbols)?;
+    m.add("symbols", python(m.py(), &basedpl::symbols::rows())?)?;
     m.add("_system_functions", basedpl::system::names().collect::<Vec<_>>())?;
     m.add("_superscripts", basedpl::superscripts())?;
     m.add("_subscripts", basedpl::subscripts())?;

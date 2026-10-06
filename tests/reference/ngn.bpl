@@ -2286,11 +2286,11 @@ H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ +H÷2   ⍝ 2.5
 H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ 7+H÷2   ⍝ 7.5
 
 ⍝ ngn:504 — Zero-origin offset, match and capture
-p←•r "b(c+)d" ⋄ (↑p.position "abcd"),(p.match "abcd"),(↑p.groups "abcd")
+p←•r "b(c+)d" ⋄ m←p.matches "abcd" ⋄ (↑m.position),(m.text),(↑m.groups)
 1ₓ "bcd" "c"
 
 ⍝ ngn:505 — No match
-p←•r "B(c+)d" ⋄ p.position "abcd"
+p←•r "B(c+)d" ⋄ (p.matches "abcd").position
 ⍬ₓ
 
 ⍝ ngn:506 — Malformed regex

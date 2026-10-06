@@ -52,7 +52,11 @@ impl Function {
 impl PartialEq for Function { fn eq(&self, other: &Self) -> bool { let Ok(equal) = self.equal_by(other, &mut same_values); equal } }
 
 const MAX_RESOLUTION_DEPTH: usize = 128;
-const MAX_CALL_DEPTH: usize = 20_000;
+/// Nested function calls allowed. In the browser the engine's stack is the limit: a Chrome worker held 300 levels of plain recursion.
+/// Plain recursion makes two calls a level and gets 200 levels from 410 calls. Recursion through outer product makes three, for 135.
+const MAX_CALL_DEPTH: usize = if cfg!(web) { 410 } else { 20_000 };
+/// Lexical frames allowed. They live on the heap, so the browser allows as many as native builds.
+const MAX_FRAME_DEPTH: usize = 20_000;
 const STACK_RED_ZONE: usize = 1 << 20;
 const STACK_SEGMENT: usize = 16 << 20;
 /// The LIMIT error for evaluation deeper than `MAX_CALL_DEPTH`.
@@ -1706,7 +1710,7 @@ impl Session {
     }
     /// The fastest time per call of `f` on `x`, in seconds. Calls repeat for about 0.1 s, in batches that double until one takes 1 ms.
     fn fastest(&mut self, f: &Function, x: &Value, span: &Span) -> Result<f64, Error> {
-        use std::time::{Duration, Instant};
+        use {crate::host::Instant, std::time::Duration};
         let start = Instant::now();
         let (mut batch, mut best) = (1u32, f64::INFINITY);
         loop {
@@ -1968,8 +1972,8 @@ impl Session {
     fn load(&mut self, right: &Value, span: &Span) -> Result<Bound, Error> {
         let text = Self::source_text(right, span)?;
         let path = span.path(&text);
-        let code = std::fs::read_to_string(&path).map_err(|e| span.io_error(&text, e))?;
-        let file = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        let code = crate::host::read(&path).and_then(|bytes| String::from_utf8(bytes).map_err(std::io::Error::other)).map_err(|e| span.io_error(&text, e))?;
+        let file = crate::host::canonical(&path);
         if self.loading.contains(&file) { return Err(span.domain_error(format!("load cycle: {text} is already loading"))); }
         self.modules.push(HashMap::new());
         let module = self.modules.len();
@@ -2618,7 +2622,7 @@ impl Session {
 
     /// Pushes `frame` and makes it current. Fails at the depth limit, before pushing.
     fn enter(&mut self, frame: Frame, span: &Span) -> Result<(), Error> {
-        if self.frames.len() == MAX_CALL_DEPTH { return Err(span.error(ErrorKind::Limit, format!("lexical frame depth exceeds {MAX_CALL_DEPTH}"))); }
+        if self.frames.len() == MAX_FRAME_DEPTH { return Err(span.error(ErrorKind::Limit, format!("lexical frame depth exceeds {MAX_FRAME_DEPTH}"))); }
         self.current = Some(self.frames.len());
         self.frames.push(frame);
         Ok(())

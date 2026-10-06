@@ -4,7 +4,6 @@ use serde_json::{json, Value};
 use std::{
     io::{self, BufRead, Write},
     sync::{mpsc, Arc, Mutex},
-    time::Duration,
 };
 
 pub(crate) fn run(output: &mut impl Write) -> io::Result<()> {
@@ -42,9 +41,7 @@ pub(crate) fn run(output: &mut impl Write) -> io::Result<()> {
 /// The result of one request, or why it can't run.
 fn reply(session: &mut Session, request: &Value, interrupt: InterruptHandle) -> Result<Value, String> {
     if request.get("id").is_some_and(|id| !id.is_u64()) { return Err("id must be a nonnegative integer".into()); }
-    let timeout = request.get("timeout_ms").map(|v| v.as_u64().map(Duration::from_millis).ok_or("timeout_ms must be a nonnegative integer")).transpose()?;
-    let echo = request.get("echo").map(|v| v.as_bool().ok_or("echo must be a boolean")).transpose()?.unwrap_or(true);
-    let options = EvalOptions { interrupt, timeout, echo, ..EvalOptions::default() };
+    let options = EvalOptions { interrupt, ..basedpl::protocol::options(request)? };
     if let Some(case) = request.get("case") { return Ok(basedpl::reference::check(case, options)); }
     basedpl::protocol::request(session, request, options).map(basedpl::protocol::response)
 }
