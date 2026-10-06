@@ -27,7 +27,7 @@ function start() {
     worker = new Worker(new URL('worker.js', import.meta.url), { type: 'module' });
     worker.onmessage = ({ data }) => {
         if (data.type === 'ready') {
-            if (!bar) addBar(data.pkg, data.symbols);
+            if (!bar) addBar(data.symbols);
             run.disabled = false;
         } else if (data.type === 'output') render(data.output);
         else if (data.type === 'reply') {
@@ -46,10 +46,10 @@ function restart(message) {
     start();
 }
 
-// The language bar from `lb.js`, which needs the glyph rows, `input.js` and the key layout. All three are in the npm package.
-async function addBar(pkg, symbols) {
+// The language bar from `lb.js`, which needs the glyph rows, `input.js` and the key layout.
+async function addBar(symbols) {
     bar = true;
-    const text = name => fetch(pkg + name).then(r => r.text());
+    const text = name => fetch(new URL(name, import.meta.url)).then(r => r.text());
     const [lb, input, layout] = await Promise.all([text('lb.js'), text('input.js'), text('layout.json')]);
     (0, eval)(lb)(symbols, (0, eval)(input), JSON.parse(layout));
 }

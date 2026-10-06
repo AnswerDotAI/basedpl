@@ -80,6 +80,9 @@
         .bpl_choices{position:fixed;max-height:240px;max-width:calc(100vw - 16px);overflow:auto;border:1px solid #888;border-radius:4px;box-shadow:0 3px 12px #0003;padding:4px}
         .bpl_choices button{display:block;width:100%;text-align:left;white-space:nowrap}
         .bpl_choices small{display:block;padding:4px}
+        .ngn_lb .bpl_dead::after{content:'▾';font-size:9px;margin-left:1px}
+        .bpl_choices.bpl_menu{max-width:min(320px,calc(100vw - 16px))}
+        .bpl_menu button{display:inline-block;width:auto;min-width:28px;text-align:center}
         @media(prefers-color-scheme:dark){.ngn_lb,.bpl_choices{background:#222;color:#ddd}.ngn_lb button:hover,.bpl_choices button:hover{background:#bbb;color:#111}}
         </style>`;
     d.body.append(host);
@@ -91,32 +94,55 @@
         toggle.textContent = overlay ? '▼' : '▲';
         d.body.style.paddingTop = overlay || bar.hidden ? originalPadding : `${bar.offsetHeight}px`;
     }
+    const names = new Map(symbols.map(({glyph, name, monad, dyad, aliases}) =>
+        [glyph, [...new Set([name, monad, dyad, aliases].join(' ').split(' ').filter(Boolean))].join(' ')]));
+    function stateGlyphs(state) {
+        const {terminator, keys} = layout.states[state];
+        return [terminator, ...Object.values(keys).flatMap(value => typeof value === 'string' ? [value] : stateGlyphs(value.state))];
+    }
+    const groups = new Map(Object.values(layout.option).filter(value => value.state).map(({state}) =>
+        [layout.states[state].terminator, [...new Set(stateGlyphs(state))]]));
+    const variants = new Set([...groups.values()].flatMap(glyphs => glyphs.slice(1)));
     function button(glyph, name) {
         const b = d.createElement('button');
-        b.type = 'button'; b.textContent = glyph; b.title = name + shortcuts.get(glyph); b.dataset.glyph = glyph;
+        b.type = 'button'; b.textContent = glyph; b.title = (name || glyph) + (shortcuts.get(glyph) || ''); b.dataset.glyph = glyph;
         return b;
     }
-    for (const {glyph, name, monad, dyad, aliases} of symbols)
-        bar.append(button(glyph, [...new Set([name, monad, dyad, aliases].join(' ').split(' ').filter(Boolean))].join(' ')));
+    for (const glyph of new Set([...names.keys(), ...groups.keys()])) {
+        if (variants.has(glyph) && !groups.has(glyph)) continue;
+        const b = button(glyph, names.get(glyph));
+        if (groups.has(glyph)) {
+            b.classList.add('bpl_dead');
+            b.setAttribute('aria-expanded', 'false');
+            b.title += ' (variants)';
+        }
+        bar.append(b);
+    }
     new ResizeObserver(reflow).observe(bar);
     reflow();
 
-    function cancel() { active = undefined; choice = undefined; tip.hidden = true; }
-    function show(e, item) {
-        if (choice?.item.query !== item.query) {
+    function cancel() {
+        choice?.anchor?.setAttribute('aria-expanded', 'false');
+        active = undefined; choice = undefined; tip.hidden = true;
+    }
+    function show(e, item, anchor) {
+        tip.classList.toggle('bpl_menu', !!anchor);
+        tip.setAttribute('aria-label', anchor ? 'BPL symbol variants' : 'BPL symbol completions');
+        anchor?.setAttribute('aria-expanded', 'true');
+        if (choice?.item.query !== item.query || choice?.anchor !== anchor) {
             tip.replaceChildren();
             for (const [glyph, name] of item.found) {
                 const b = button(glyph, name);
-                b.textContent = `${glyph} ${b.title}`;
+                if (!anchor) b.textContent = `${glyph} ${b.title}`;
                 tip.append(b);
             }
             if (!item.found.length) {
                 const note = d.createElement('small'); note.textContent = 'Unknown symbol'; tip.append(note);
             }
         }
-        choice = {e, item};
+        choice = {e, item, anchor};
         tip.hidden = false;
-        const r = e.rect();
+        const r = anchor ? anchor.getBoundingClientRect() : e.rect();
         tip.style.left = `${Math.max(4, Math.min(r.left, innerWidth - tip.offsetWidth - 8))}px`;
         tip.style.top = `${Math.max(bar.hidden || overlay ? 4 : bar.offsetHeight, Math.min(r.bottom + 4, innerHeight - tip.offsetHeight - 8))}px`;
     }
@@ -128,13 +154,19 @@
     bar.addEventListener('mousedown', ev => {
         ev.preventDefault();
         const b = ev.target.closest('button');
+        const opened = choice?.anchor === b;
+        cancel();
         if (b?.classList.contains('ngn_x')) { bar.hidden = true; reflow(); }
         else if (b === toggle) {
             overlay = !overlay;
             try { localStorage.setItem('ngn_lb_overlay', overlay ? '1' : '0'); } catch {}
             reflow();
-        } else if (b?.dataset.glyph && lastEditor) lastEditor.insert(b.dataset.glyph);
-        cancel();
+        } else if (b?.dataset.glyph && lastEditor) {
+            const glyph = b.dataset.glyph, group = groups.get(glyph);
+            if (group) {
+                if (!opened) show(lastEditor, {query: glyph, found: group.map(g => [g, names.get(g)])}, b);
+            } else lastEditor.insert(glyph);
+        }
     });
     tip.addEventListener('mousedown', ev => {
         ev.preventDefault();
@@ -159,6 +191,9 @@
         keyInput = false; lastEditor = editor(ev.target); if (active) refresh(ev.target);
     }, true);
     window.addEventListener('keydown', ev => {
+        if (ev.key === 'Escape' && choice?.anchor) {
+            cancel(); ev.preventDefault(); ev.stopImmediatePropagation(); return;
+        }
         keyInput = false;
         if (ev.code === 'AltLeft') leftAlt = true;
         if (ev.code === 'AltRight') rightAlt = true;
