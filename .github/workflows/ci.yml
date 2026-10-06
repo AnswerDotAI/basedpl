@@ -13,6 +13,9 @@ jobs:
       - uses: actions/checkout@v7
       - run: node tests/input.mjs
       - uses: dtolnay/rust-toolchain@stable
+      # The repository has no `Cargo.lock`. Creating one first makes rust-cache's key change when a dependency publishes a new version.
+      - run: cargo generate-lockfile
+      - uses: Swatinem/rust-cache@v2
       - run: cargo test
       - uses: actions/setup-python@v7
         with:
@@ -29,11 +32,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+      - run: cargo generate-lockfile
+      - uses: Swatinem/rust-cache@v2
       - run: cargo wasm
       - run: node --test tests/wasm.mjs
 
   build:
-    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       matrix:
         include:
@@ -69,6 +74,7 @@ jobs:
           path: bin
 
   sdist:
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -83,7 +89,7 @@ jobs:
 
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, sdist]
+    needs: [test, build, sdist]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -109,3 +115,24 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+
+  npm:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, wasm]
+    runs-on: ubuntu-latest
+    # npm accepts this job's upload through trusted publishing. The `basedpl` package's settings on npmjs.com name this workflow as its trusted publisher.
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo wasm --profile wasm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          registry-url: https://registry.npmjs.org
+      - run: npm publish
+        working-directory: wasm/pkg

@@ -32,12 +32,13 @@ fn main() -> anyhow::Result<()> {
     wasm_bindgen_cli_support::Bindgen::new().input_path(module).web(true)?.typescript(false).omit_default_module_path(false).generate(&pkg)?;
     let pyproject: toml::Table = fs::read_to_string(root.join("pyproject.toml"))?.parse()?;
     let project = &pyproject["project"];
+    let repository = project["urls"]["Repository"].as_str().expect("pyproject.toml's Repository is a URL");
     let package = serde_json::json!({
         "name": project["name"],
         "version": env!("CARGO_PKG_VERSION"),
         "description": project["description"],
         "license": project["license"],
-        "repository": project["urls"]["Repository"],
+        "repository": { "type": "git", "url": format!("git+{repository}.git") },
         "type": "module",
         "main": format!("{MODULE}.js"),
     });
