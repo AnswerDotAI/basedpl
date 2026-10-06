@@ -24,7 +24,7 @@ async def kernel_story():
             assert displayed(messages) == expected
         reply, messages = await kc.exec_ok('⎕←8 ⋄ v←4 5', silent=True)
         assert not displayed(messages)
-        assert reply['content']['execution_count'] == 5
+        assert reply['content']['execution_count'] == 6
         reply, messages = await kc.exec_ok('v', user_expressions={'total': '+/v', 'bad': '1÷"a"'})
         assert displayed(messages) == [('execute_result', '4 5')]
         expressions = reply['content']['user_expressions']

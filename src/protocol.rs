@@ -29,7 +29,7 @@ fn array(a: &Value) -> Option<JsonValue> {
 }
 
 /// A one-character string is a character.
-pub(crate) fn character(s: &str) -> Option<char> { let mut chars = s.chars(); chars.next().filter(|_| chars.next().is_none()) }
+pub fn character(s: &str) -> Option<char> { let mut chars = s.chars(); chars.next().filter(|_| chars.next().is_none()) }
 
 fn import_element(value: &JsonValue, approximate: bool) -> Result<Value, String> {
     let number = match value {
@@ -81,7 +81,7 @@ fn import_array(value: &JsonValue, approximate: bool) -> Result<Value, String> {
 pub(crate) fn import(value: &JsonValue, approximate: bool) -> Result<Value, String> { import_array(value, approximate) }
 
 /// Worker operations use the same array encoding in both directions.
-pub(crate) fn request(session: &mut Session, request: &JsonValue, options: EvalOptions) -> Result<Evaluation, String> {
+pub fn request(session: &mut Session, request: &JsonValue, options: EvalOptions) -> Result<Evaluation, String> {
     let code = request.get("code").map(|v| v.as_str().ok_or("code must be a string")).transpose()?;
     let function = request.get("call").map(|v| v.as_str().ok_or("call must be a function expression string")).transpose()?;
     if code.is_some() && function.is_some() { return Err("choose code or call, not both".into()); }
@@ -109,7 +109,7 @@ pub(crate) fn request(session: &mut Session, request: &JsonValue, options: EvalO
 /// A span as its source and byte range.
 fn location(s: &crate::Span) -> JsonValue { json!({"source": {"name": s.source.name, "text": s.source.text}, "span": [s.range.start, s.range.end]}) }
 
-pub(crate) fn error(e: &Error) -> JsonValue {
+pub fn error(e: &Error) -> JsonValue {
     let mut encoded = location(&e.span);
     encoded["kind"] = json!(e.kind.name());
     encoded["message"] = json!(e.message);
@@ -118,7 +118,7 @@ pub(crate) fn error(e: &Error) -> JsonValue {
     encoded
 }
 
-pub(crate) fn response(mut result: Evaluation) -> JsonValue {
+pub fn response(mut result: Evaluation) -> JsonValue {
     let value = result.value.as_ref().map(|v| array(&crate::json::exportable(v)));
     if result.function.is_some() || matches!(value, Some(None)) {
         let span = crate::Span { source: crate::Source::new("<json>", ""), range: 0..0 };
@@ -128,4 +128,4 @@ pub(crate) fn response(mut result: Evaluation) -> JsonValue {
 }
 
 /// The reply to a request that can't run.
-pub(crate) fn request_error(message: &str) -> JsonValue { json!({"value": null, "output": [], "error": {"kind": "REQUEST", "message": message}}) }
+pub fn request_error(message: &str) -> JsonValue { json!({"value": null, "output": [], "error": {"kind": "REQUEST", "message": message}}) }

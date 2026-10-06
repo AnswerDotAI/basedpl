@@ -4,7 +4,6 @@ Modules:
 
 - `basedpl.dyalog`: Run Dyalog APL through RIDE for reference checks.
 - `basedpl.editors`: Write editor highlighters, regional macOS keyboards, and glyph-page key lines.
-- `basedpl.j`: Run the J language from Python and Jupyter through libj: sessions, magics and a Jupyter kernel.
 - `basedpl.keyboards`: Generate regional BPL keyboards from macOS layouts."""
 
 import math, operator, sys

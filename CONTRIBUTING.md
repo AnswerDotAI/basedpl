@@ -10,14 +10,14 @@ cd basedpl
 pip install .
 ```
 
-For a standalone executable without Python, run `cargo install --path .`. Cargo installs it in its `bin` directory, normally `~/.cargo/bin`. Put that directory on your PATH.
+For a standalone executable without Python, run `cargo install --path cli`. Cargo installs it in its `bin` directory, normally `~/.cargo/bin`. Put that directory on your PATH.
 
 ## Contributing
 
 Install the development and documentation tools with `pip install -e '.[dev]'`. That also builds the extension and installs it in the editable package. The main commands are:
 
 ```bash
-cargo t
+cargo test
 cargo develop
 bpl -e '2×3+4'
 cargo fastfmt
@@ -25,7 +25,7 @@ pytest
 ship-rs-build
 ```
 
-After Rust changes, run `cargo t` for the Rust tests, then `cargo develop` to install the extension that `cargo t` built. Both use one compilation of the crate. The `bpl` command then runs the new build. `cargo t` stands for `cargo test --features python`. `cargo develop` comes from `fastws-cli`, one of the development tools. Run `pip install -e '.[dev]'` again only when the package metadata changes. Use `cargo fastfmt`, not `cargo fmt`.
+After Rust changes, run `cargo test` for the Rust tests, then `cargo develop` to install what `cargo test` built: the extension, and the native `bpl` command in your environment. Both use one compilation of each crate. `cargo develop` comes from `fastws-cli`, one of the development tools. Run `pip install -e '.[dev]'` again only when the package metadata changes. Use `cargo fastfmt`, not `cargo fmt`.
 
 Before a release, run `python scripts/prep.py` from the repository root. It writes the syntax highlighters' glyph lists and the macOS keyboard layout bundle. It then runs nbdev's `prepare` to export, test and clean the notebooks and render this README.
 

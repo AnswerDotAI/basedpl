@@ -1,6 +1,6 @@
 [build-system]
-requires = ["maturin>=1.9.4,<2.0"]
-build-backend = "maturin"
+requires = ["maturin>=1.9.4,<2.0", "fastws-cli>=0.0.22"]
+build-backend = "fastws.build_backend"
 
 [project]
 name = "basedpl"
@@ -19,10 +19,9 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["fastship>=0.0.11", "fastws-cli>=0.0.20", "maturin>=1.9.4,<2.0", "pytest", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "jlanguage", "pillow"]
+dev = ["fastship>=0.0.11", "fastws-cli>=0.0.22", "maturin>=1.9.4,<2.0", "pytest", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "pillow"]
 
 [project.scripts]
-bpl = "basedpl._cli:main"
 bpl-nb = "basedpl.notebook_runner:main"
 bpl-install-magic = "basedpl.notebooks:create_ipython_config"
 
@@ -34,13 +33,16 @@ Documentation = "https://answerdotai.github.io/basedpl"
 
 [tool.maturin]
 data = "wheel"
-features = ["python"]
+manifest-path = "py/Cargo.toml"
 profile = "release"
 python-source = "python"
 module-name = "basedpl._core"
 
 [tool.uv]
-cache-keys = [{ file = "pyproject.toml" }, { file = "Cargo.toml" }]
+cache-keys = [{ file = "pyproject.toml" }, { file = "Cargo.toml" }, { file = "cli/Cargo.toml" }, { file = "py/Cargo.toml" }]
+
+[tool.fastws]
+native-binaries = true
 
 [tool.fastship]
 branch = "main"

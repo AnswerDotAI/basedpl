@@ -1,5 +1,5 @@
 //! Glyph completion and terminal input. Source execution never rewrites aliases.
-use crate::symbols::{chord, find, layout, symbols, Action, Symbol};
+use basedpl::symbols::{chord, entry, find, in_code, layout, matches, symbols, Action};
 use rustyline::{
     completion::{Completer, Pair},
     highlight::Highlighter,
@@ -16,68 +16,6 @@ use std::{
 };
 
 fn label((glyph, name): &(&str, &str)) -> String { format!("{glyph} {name}{}", chord(glyph)) }
-
-// At each level (exact, prefix, prefixes of hyphen-separated parts) a name outranks a search word.
-pub(crate) fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
-    let query = query.to_ascii_lowercase();
-    let mut found = Vec::new();
-    let mut best = usize::MAX;
-    for &Symbol { glyph, name, monad, dyad, aliases: words, .. } in symbols() {
-        let rank = std::iter::once(name)
-            .chain([monad, dyad])
-            .chain(words.split_whitespace())
-            .filter(|word| !word.is_empty())
-            .enumerate()
-            .filter_map(|(i, word)| {
-                let letters = word.replace('-', "");
-                let rank = if letters == query { 0 } else if letters.starts_with(&query) { 1 } else {
-                    let mut rest = query.as_str();
-                    for part in word.split('-') {
-                        let n = part.bytes().zip(rest.bytes()).take_while(|(a, b)| a == b).count();
-                        if n == 0 { break; }
-                        rest = &rest[n..];
-                        if rest.is_empty() { break; }
-                    }
-                    if !rest.is_empty() { return None; }
-                    2
-                };
-                Some(2 * rank + usize::from(i > 0))
-            })
-            .min();
-        if let Some(rank) = rank {
-            if rank < best {
-                found.clear();
-                best = rank;
-            }
-            if rank == best { found.push((glyph, name)); }
-        }
-    }
-    // A name that is a prefix of every other match wins: `om gives omega, `omu gives omega-underbar.
-    let letters = |name: &str| name.replace('-', "");
-    let shortest = found.iter().copied().find(|a| found.iter().all(|b| letters(b.1).starts_with(&letters(a.1))));
-    match shortest { Some(shortest) if found.len() > 1 => vec![shortest], _ => found }
-}
-
-// Strings and comments are literal even before their language implementation is complete.
-pub(crate) fn in_code(text: &str) -> bool {
-    let mut chars = text.chars();
-    while let Some(c) = chars.next() {
-        let closed = match c {
-            '⍝' => chars.by_ref().any(|c| c == '\n'),
-            '"' => chars.by_ref().any(|c| c == '"'),
-            '\'' => chars.nth(1).is_some(),
-            _ => true,
-        };
-        if !closed { return false; }
-    }
-    true
-}
-
-pub(crate) fn entry(line: &str, pos: usize) -> Option<(usize, &str)> {
-    let start = line[..pos].rfind('`')?;
-    let prefix = &line[start + 1..pos];
-    (prefix.bytes().all(|c| c.is_ascii_alphabetic()) && in_code(&line[..start])).then_some((start, prefix))
-}
 
 #[derive(Default)]
 struct Input {

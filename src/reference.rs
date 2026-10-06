@@ -8,7 +8,7 @@ use std::{
 
 /// A value captured from another interpreter. Its numbers carry no exactness. A capture encodes a simple atom as a scalar array, and BPL
 /// expectations use based values directly.
-pub(crate) fn expected_array(value: &JsonValue) -> Option<Value> {
+pub fn expected_array(value: &JsonValue) -> Option<Value> {
     let result = crate::protocol::import(value, true).ok()?;
     let prototype = crate::protocol::import(&value["prototype"], true).ok()?;
     let result = if result.shape().is_empty() && !result.is_atom() && result.at(0).is_atom() { result.at(0) } else { result };

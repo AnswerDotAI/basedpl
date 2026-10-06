@@ -163,7 +163,7 @@ impl Layout {
 }
 
 /// A prototype, or a function that makes one. A builder calls the function only when its result is empty.
-pub(crate) trait Prototype { fn value(self) -> Value; }
+pub trait Prototype { fn value(self) -> Value; }
 impl Prototype for Value { fn value(self) -> Value { self } }
 impl<F: FnOnce() -> Value> Prototype for F { fn value(self) -> Value { self() } }
 
@@ -266,6 +266,16 @@ macro_rules! buffers {
     };
 }
 buffers!(IntBuf, Ints, Width: U8(u8), I16(i16), I32(i32), I64(i64));
+
+/// Items of compact storage that other libraries, such as NumPy, hold as they are: Booleans, integers of one width, or floats.
+pub enum Buffer<'a> {
+    Booleans(Cow<'a, [bool]>),
+    U8(Cow<'a, [u8]>),
+    I16(Cow<'a, [i16]>),
+    I32(Cow<'a, [i32]>),
+    I64(Cow<'a, [i64]>),
+    Floats(Cow<'a, [f64]>),
+}
 
 /// Runs `$body` with `$x` bound to the integers of `$ints`, whatever their width.
 macro_rules! with_ints {
@@ -1210,7 +1220,7 @@ impl Value {
     }
 
     /// Mixed storage, which keeps each item's kind. An empty array takes `empty_prototype`.
-    pub(crate) fn mixed(shape: Vec<usize>, data: Vec<Value>, empty_prototype: impl Prototype) -> Result<Self, ErrorKind> {
+    pub fn mixed(shape: Vec<usize>, data: Vec<Value>, empty_prototype: impl Prototype) -> Result<Self, ErrorKind> {
         if data.is_empty() { Self::empty_of(shape, empty_prototype.value(), true) } else { Self::from_storage(shape, Storage::mixed(data)) }
     }
 
@@ -1233,6 +1243,35 @@ impl Value {
     }
     /// Integers at the narrowest width that holds them.
     pub fn integers(shape: Vec<usize>, data: Vec<i64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::narrowed(data)) }
+    /// The items as a buffer, borrowed, when the storage is one that `Buffer` holds.
+    pub fn buffer(&self) -> Option<Buffer<'_>> {
+        Some(match self.as_items() {
+            Items::Booleans(v) => Buffer::Booleans(v.into()),
+            Items::Integers(Ints::U8(v)) => Buffer::U8(v.into()),
+            Items::Integers(Ints::I16(v)) => Buffer::I16(v.into()),
+            Items::Integers(Ints::I32(v)) => Buffer::I32(v.into()),
+            Items::Integers(Ints::I64(v)) => Buffer::I64(v.into()),
+            Items::Floats(v) => Buffer::Floats(v.into()),
+            _ => return None,
+        })
+    }
+    /// An array of shape `shape` holding the items of `buffer`. Integers take the narrowest width that holds them.
+    pub fn from_buffer(shape: Vec<usize>, buffer: Buffer<'_>) -> Result<Self, ErrorKind> {
+        let storage = match buffer {
+            Buffer::Booleans(v) => Storage::Boolean(v.into_owned()),
+            Buffer::U8(v) => Storage::narrowed(v.into_owned()),
+            Buffer::I16(v) => Storage::narrowed(v.into_owned()),
+            Buffer::I32(v) => Storage::narrowed(v.into_owned()),
+            Buffer::I64(v) => Storage::narrowed(v.into_owned()),
+            Buffer::Floats(v) => Storage::Float(v.into_owned()),
+        };
+        Self::from_storage(shape, storage)
+    }
+    /// An array of shape `shape` holding `items`, as data imported from another language. Numbers become floats when any is a finite
+    /// float and every one converts exactly, and otherwise each item keeps its own kind.
+    pub fn imported(shape: Vec<usize>, items: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
+        crate::data::imported(shape, items, |_| false, empty_prototype)
+    }
     /// This new integer array with its flag for non-finite values set, so that the reserved values read as `∞`, `¯∞` and NaN.
     pub(crate) fn flagged(mut self) -> Self {
         if let Self::Array(a) = &mut self {
@@ -1450,6 +1489,8 @@ impl Value {
         Self::Array(Arc::new(ArrayData { layout: a.layout.clone().with_keys(vec![]).unwrap(), ..ArrayData::clone(a) }))
     }
 
+    /// The major cells, in order. A unit, which has no leading axis, is a RANK error.
+    pub fn major_cells(&self) -> Result<Vec<Value>, ErrorKind> { self.cells(self.shape().len().checked_sub(1).ok_or(ErrorKind::Rank)?)?.collect() }
     pub(crate) fn cells(&self, rank: usize) -> Result<Cells<'_>, ErrorKind> {
         let split = self.shape().len().checked_sub(rank).ok_or(ErrorKind::Rank)?;
         let count = generated_len(&self.shape()[..split])?;
@@ -1569,7 +1610,7 @@ impl Value {
     pub(crate) fn disclose(&self) -> Value { self.elements().next().unwrap_or_else(|| self.prototype().clone()) }
 
     /// Source text that reads back as the value. Strings are quoted, and arrays use bracket notation.
-    pub(crate) fn literal(&self) -> String { self.source(Elide::NONE) }
+    pub fn literal(&self) -> String { self.source(Elide::NONE) }
 
     /// Whether the value is a function or an operator, or holds one at any depth, including as an empty array's prototype.
     pub(crate) fn holds_function(&self) -> bool {

@@ -3,7 +3,7 @@
 //! item once should therefore cost about one copy. Each case has a budget in copies, set from the work that the function must do.
 //! Plain Rust loops that do the same work fit inside each budget. The test prints every case's cost, shown with `--nocapture`, and fails listing every case over its budget.
 //!
-//! Timings come from the development build, which `cargo t` and `cargo develop` share. Each time is the fastest of several runs. The test divides each case's time by a copy timed just before it. A change in the machine's speed during the run then affects both times.
+//! Timings come from the development build, which `cargo test` and `cargo develop` share. Each time is the fastest of several runs. The test divides each case's time by a copy timed just before it. A change in the machine's speed during the run then affects both times.
 use basedpl::{EvalOptions, Session};
 use std::{
     hint::black_box,

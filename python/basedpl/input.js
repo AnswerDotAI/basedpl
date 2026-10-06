@@ -34,7 +34,7 @@
     }
     const reset = () => { pending = null; };
 
-    // At each level (exact, prefix, prefixes of hyphen-separated parts) a name outranks a search word, as in `editor.rs`.
+    // At each level (exact, prefix, prefixes of hyphen-separated parts) a name outranks a search word, as in `matches` in `symbols.rs`.
     function matches(query) {
         query = query.toLowerCase();
         const letters = word => word.replaceAll('-', '');

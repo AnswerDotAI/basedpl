@@ -40,4 +40,3 @@ website:
           - introspection.ipynb
           - processes.qmd
           - dyalog.ipynb
-          - j.ipynb

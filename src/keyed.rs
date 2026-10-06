@@ -82,12 +82,12 @@ pub(crate) fn text_items(value: &Value) -> Option<(Vec<usize>, Vec<Arc<str>>)> {
 }
 
 /// Each axis's key list, or `None` for an axis without keys. A position without a key is `None`.
-pub(crate) fn key_lists(value: &Value) -> Vec<Option<Vec<Option<&str>>>> {
+pub fn key_lists(value: &Value) -> Vec<Option<Vec<Option<&str>>>> {
     (0..value.shape().len()).map(|a| value.keys(a).map(|k| k.names().iter().map(|n| n.as_deref()).collect())).collect()
 }
 
 /// `value` with a key list, or `None`, for each axis.
-pub(crate) fn with_key_lists(value: Value, lists: Vec<Option<Vec<Option<String>>>>) -> Result<Value, String> {
+pub fn with_key_lists(value: Value, lists: Vec<Option<Vec<Option<String>>>>) -> Result<Value, String> {
     if lists.len() != value.shape().len() { return Err("axis_keys must have one entry per axis".into()); }
     let keys = lists
         .into_iter()
@@ -98,7 +98,7 @@ pub(crate) fn with_key_lists(value: Value, lists: Vec<Option<Vec<Option<String>>
 }
 
 /// `value` with a name, or `None`, for each axis.
-pub(crate) fn with_names(value: Value, names: Vec<Option<String>>) -> Result<Value, String> {
+pub fn with_names(value: Value, names: Vec<Option<String>>) -> Result<Value, String> {
     if names.len() != value.shape().len() { return Err("axis_names must have one entry per axis".into()); }
     value.with_axis_names(names.into_iter().map(|n| n.map(Into::into)).collect()).map_err(|k| k.to_string())
 }

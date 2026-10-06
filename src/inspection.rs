@@ -57,12 +57,12 @@ pub(crate) fn help_command(code: &str) -> Option<(&str, bool)> {
     words.next().is_none().then_some((name, detail))
 }
 
-pub(crate) fn word_char(c: char) -> bool { crate::syntax::name_char(c) || matches!(c, '•' | '$') || c.is_ascii_digit() }
+pub fn word_char(c: char) -> bool { crate::syntax::name_char(c) || matches!(c, '•' | '$') || c.is_ascii_digit() }
 
-pub(crate) fn at_cursor(code: &str, cursor: usize) -> Option<&str> {
+pub fn at_cursor(code: &str, cursor: usize) -> Option<&str> {
     if documentation(code.trim()).is_some() { return Some(code.trim()); }
     let cursor = code.char_indices().nth(cursor).map_or(code.len(), |(i, _)| i);
-    if !crate::editor::in_code(&code[..cursor]) { return None; }
+    if !crate::symbols::in_code(&code[..cursor]) { return None; }
     let (mut start, mut end) = (cursor, cursor);
     while let Some(c) = code[..start].chars().next_back().filter(|c| word_char(*c)) { start -= c.len_utf8(); }
     while let Some(c) = code[end..].chars().next().filter(|c| word_char(*c)) { end += c.len_utf8(); }

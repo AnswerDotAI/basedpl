@@ -512,8 +512,8 @@ impl Function {
     pub fn bpl(&self) -> String { self.text(&mut 1000) }
     /// The native call behind a system function.
     pub(crate) fn system_call(&self) -> Option<&crate::system::Call> { match self.node() { FunctionNode::System(f) => Some(&f.call), _ => None } }
-    #[cfg(feature = "python")]
-    pub(crate) fn parts(&self) -> Option<(String, Vec<Operand>)> {
+    /// The name of the operator, train or composition that builds this function, and its operands. `None` for a dfn or a name.
+    pub fn parts(&self) -> Option<(String, Vec<Operand>)> {
         let node = self.node();
         let label = match node {
             FunctionNode::Defined(_) | FunctionNode::Derived(..) | FunctionNode::LateBound(..) => return None,
@@ -531,14 +531,14 @@ impl Function {
         crate::Inspection::new("function", self.bpl())
     }
 
-    #[cfg(feature = "python")]
-    pub(crate) fn builtin(name: &str) -> Option<Self> {
+    /// The primitive function with glyph `name`, or the system function `name`, which starts with `•`.
+    pub fn builtin(name: &str) -> Option<Self> {
         if name.starts_with('•') { return crate::system::lookup(name); }
         name.parse::<char>().ok().and_then(Primitive::from_glyph).map(Self::primitive)
     }
 
-    #[cfg(feature = "python")]
-    pub(crate) fn build(kind: &str, operands: Vec<Operand>) -> Result<Self, Error> {
+    /// The function that operator `kind` derives from `operands`, or a primitive's train or composition that `kind` names.
+    pub fn build(kind: &str, operands: Vec<Operand>) -> Result<Self, Error> {
         let span = Span::whole(Source::new("<function>", kind));
         let fun = |a: &Operand| Self::from_value(a.value(), &span);
         let constant = |a: &Operand| match a { Operand::Value(v) => Self::constant(v.clone(), &span), _ => fun(a) };
@@ -1347,7 +1347,8 @@ struct Frame { names: HashMap<String, Binding>, parent: Option<usize>, module: u
 struct ArrayBinding { name: String, owner: Option<usize>, value: Value }
 
 #[derive(Clone, Debug)]
-pub(crate) enum Operand { Value(Value), Function(Function) }
+/// An operand of an operator: an array or a function.
+pub enum Operand { Value(Value), Function(Function) }
 impl Operand {
     fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
         match (self, other) {
@@ -1441,8 +1442,9 @@ impl OperatorNode {
 impl Operator {
     pub(crate) fn environment(&self) -> Option<usize> { self.0.environment() }
     /// The function `f op` or `f op g` derives, with `left` as `f` and `right` as `g`.
-    #[cfg(feature = "python")]
-    pub(crate) fn derive(&self, left: Operand, right: Option<Operand>, span: &Span) -> Result<Function, Error> {
+    pub fn derive(&self, left: Operand, right: Option<Operand>) -> Result<Function, Error> {
+        let span = Span::whole(Source::new("<operator>", self.to_string()));
+        let span = &span;
         let node = match right {
             Some(right) if self.0.is_dyadic() => OperatorNode::Bound(Box::new((*self.0).clone()), right),
             None if !self.0.is_dyadic() => (*self.0).clone(),
@@ -1570,6 +1572,8 @@ pub struct Session {
     current: Option<usize>,
     depth: usize,
     prototype: bool,
+    /// The program's command-line arguments.
+    pub(crate) args: Vec<String>,
 }
 
 impl Context<'_> {
@@ -1584,12 +1588,14 @@ impl Context<'_> {
 }
 impl Session {
     pub fn new() -> Self { Self::default() }
+    /// This session with `args` as the program's command-line arguments, which `•host "args"` gives.
+    pub fn with_args(self, args: Vec<String>) -> Self { Self { args, ..self } }
     /// This session at `span`, for a call that takes a `Context`.
     pub(crate) fn at<'a>(&'a mut self, span: &'a Span) -> Context<'a> { Context { span, session: self } }
-    pub(crate) fn interactive() -> Self {
-        let display = crate::display::Settings::interactive();
-        Self { display, display_defaults: display, ..Self::default() }
-    }
+    /// A session for a person at a terminal, with boxed display elided to the terminal's width.
+    pub fn interactive() -> Self { let display = crate::display::Settings::interactive(); Self { display, display_defaults: display, ..Self::default() } }
+    /// `value` as this session's implicit display shows it, as text.
+    pub fn show(&self, value: &Value) -> String { self.display.array(value, false) }
     pub fn names(&self) -> impl Iterator<Item = &str> {
         let mut names = HashSet::new();
         let mut scope = self.current;
@@ -1909,7 +1915,7 @@ impl Session {
         right.clone().with_renderer(renderer).error_at(span, "invalid •mime result")
     }
     fn mime_value(&mut self, right: &Value, span: &Span) -> Result<Value, Error> {
-        let fallback = crate::keyed::vector(vec!["text/plain".into()], vec![crate::keyed::text(&self.display.array(right, false))]).unwrap();
+        let fallback = crate::keyed::vector(vec!["text/plain".into()], vec![crate::keyed::text(&self.show(right))]).unwrap();
         let Some(renderer) = right.renderer().cloned() else { return Ok(fallback); };
         let echo = std::mem::replace(&mut self.execution.echo, false);
         let rendered = renderer.call_array(None, right, &mut self.at(span));
@@ -1932,7 +1938,7 @@ impl Session {
                 Err(_) => (),
             }
         }
-        self.execution.output(crate::OutputKind::Display, self.display.array(value, false));
+        self.execution.output(crate::OutputKind::Display, self.show(value));
         Ok(())
     }
 

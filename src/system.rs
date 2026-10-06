@@ -114,7 +114,7 @@ const BUILTINS: &[(&str, Call, Valence)] = &[
     ("•literal", Call::Session(crate::Session::system_literal), Monadic),
 ];
 
-pub(crate) fn names() -> impl Iterator<Item = &'static str> { BUILTINS.iter().map(|(name, ..)| *name) }
+pub fn names() -> impl Iterator<Item = &'static str> { BUILTINS.iter().map(|(name, ..)| *name) }
 
 /// The table entry for system name `name`, ignoring case.
 fn builtin(name: &str) -> Option<&'static (&'static str, Call, Valence)> { BUILTINS.iter().find(|(key, ..)| key.eq_ignore_ascii_case(name)) }
@@ -144,9 +144,6 @@ pub(crate) fn inverse(f: &SystemFunction, left: Option<&Value>, right: &Value, c
     call(left, right, cx)
 }
 
-/// The arguments that follow the program on the command line.
-pub(crate) static ARGS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
-
 const HOST_FACTS: [&str; 7] = ["args", "version", "env", "width", "height", "cwd", "temp"];
 
 /// `•host name` gives the host fact called `name`: the command-line `"args"`, BPL's `"version"`, the `"env"` record, the terminal's
@@ -154,7 +151,7 @@ const HOST_FACTS: [&str; 7] = ["args", "version", "env", "width", "height", "cwd
 fn host(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let fact = match crate::keyed::name(right).as_deref() {
         Some("args") => {
-            let args = ARGS.get().map_or(&[][..], Vec::as_slice);
+            let args = &span.session.args;
             crate::keyed::texts(&[args.len()], args.iter().map(|a| crate::keyed::text(a)).collect())
         }
         Some("version") => Ok(crate::keyed::text(env!("CARGO_PKG_VERSION"))),

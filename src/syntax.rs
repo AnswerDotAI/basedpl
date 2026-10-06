@@ -262,11 +262,9 @@ pub(crate) fn name_char(c: char) -> bool {
 const SUPERSCRIPT_DIGITS: &str = "⁰¹²³⁴⁵⁶⁷⁸⁹";
 const SUBSCRIPT_DIGITS: &str = "₀₁₂₃₄₅₆₇₈₉";
 /// The characters that write a superscript, for the editors' glyph lists.
-#[cfg(feature = "python")]
-pub(crate) fn superscripts() -> String { [SUPERSCRIPT_DIGITS, "⁻ᵀᵘ"].concat() }
+pub fn superscripts() -> String { [SUPERSCRIPT_DIGITS, "⁻ᵀᵘ"].concat() }
 /// The characters that write a subscript, for the editors' glyph lists.
-#[cfg(feature = "python")]
-pub(crate) fn subscripts() -> String { [SUBSCRIPT_DIGITS, "₋"].concat() }
+pub fn subscripts() -> String { [SUBSCRIPT_DIGITS, "₋"].concat() }
 
 /// The value of `c` among `digits`, such as `²` among the superscript digits.
 fn script_digit(digits: &str, c: char) -> Option<i64> { digits.chars().position(|d| d == c).map(|i| i as i64) }

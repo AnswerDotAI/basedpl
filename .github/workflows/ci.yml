@@ -32,19 +32,23 @@ jobs:
           - {os: macos-latest, binary: bpl-macos-arm64}
     runs-on: ${{ matrix.os }}
     env:
-      # The standalone `bpl`, built without Python, for the GitHub release.
-      BUILD_BPL: cargo build --profile dist --bin bpl && mkdir -p bin && cp target/dist/bpl bin/${{ matrix.binary }}
+      # The Python-free `bpl` goes in the wheel, through `cargo stage`, and in the GitHub release.
+      STAGE_BPL: cargo stage --profile dist && mkdir -p bin && cp wheel/scripts/bpl bin/${{ matrix.binary }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v7
+        if: runner.os != 'Linux'
+        with:
+          python-version: '3.12'
       - if: runner.os != 'Linux'
-        run: ${{ env.BUILD_BPL }}
+        run: pip install 'fastws-cli>=0.0.22' && ${{ env.STAGE_BPL }}
       - uses: PyO3/maturin-action@v1
         with:
           args: --profile dist --out dist -i python3.10 -i python3.11 -i python3.12 -i python3.13
           manylinux: auto
           # This runs inside the manylinux container, whose old glibc lets the binary run on older Linux distributions.
-          before-script-linux: ${{ env.BUILD_BPL }}
+          before-script-linux: export PATH="/opt/python/cp310-cp310/bin:$PATH" && python3.10 -m pip install 'fastws-cli>=0.0.22' && ${{ env.STAGE_BPL }}
       - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}

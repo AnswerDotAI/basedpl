@@ -1,4 +1,4 @@
-use crate::{parse, EvalOptions, Evaluation, Input, InterruptHandle, Output, ParseStatus, Session, Source};
+use basedpl::{parse, EvalOptions, Evaluation, Input, InterruptHandle, Output, ParseStatus, Session, Source};
 use rustyline::error::ReadlineError;
 use std::{
     io::{self, IsTerminal, Read, Write},
@@ -65,10 +65,10 @@ impl Input for StandardInput {
     }
 }
 
-/// Evaluates `source`. When `input` is set, the program can read standard input.
-fn expression(source: std::sync::Arc<Source>, input: bool, err: &mut impl Write) -> io::Result<i32> {
+/// Evaluates `source` with `args` as its command-line arguments. When `input` is set, the program can read standard input.
+fn expression(source: std::sync::Arc<Source>, input: bool, args: &[String], err: &mut impl Write) -> io::Result<i32> {
     let printer = Printer::new(input)?;
-    let result = Session::new().eval_source(source, printer.options());
+    let result = Session::new().with_args(args.to_vec()).eval_source(source, printer.options());
     Ok(if printer.finish(result, err)? { 0 } else { 1 })
 }
 
@@ -128,8 +128,8 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
     }
 }
 
-/// Both the native executable and the installed console script call this runner.
-pub fn run(args: &[String]) -> i32 {
+/// Runs `bpl` with `args`, the command line after the program name, and gives the exit status.
+pub(crate) fn run(args: &[String]) -> i32 {
     if let [mode, flag, file] = args {
         if mode == "--kernel" && flag == "-f" {
             return match crate::kernel::run(file) {
@@ -143,7 +143,6 @@ pub fn run(args: &[String]) -> i32 {
     }
     let program = match args { [flag, _, ..] if flag == "-e" => 2, [file, ..] if file == "-" || !file.starts_with('-') => 1, _ => args.len() };
     let (args, program_args) = args.split_at(program);
-    let _ = crate::system::ARGS.set(program_args.to_vec());
     let stdin = io::stdin();
     let stdout = io::stdout();
     let stderr = io::stderr();
@@ -151,14 +150,14 @@ pub fn run(args: &[String]) -> i32 {
     let result = match args {
         [] => repl(&mut err, stdin.is_terminal() && stdout.is_terminal()),
         [flag] if flag == "--worker" => crate::worker::run(&mut stdout.lock()).map(|_| 0),
-        [flag, code] if flag == "-e" => expression(Source::new("<expression>", code.as_str()), true, &mut err),
+        [flag, code] if flag == "-e" => expression(Source::new("<expression>", code.as_str()), true, program_args, &mut err),
         [flag] if flag == "--help" || flag == "-h" => write!(stdout.lock(), "{USAGE}").map(|_| 0),
         [flag] if flag == "--version" => writeln!(stdout.lock(), "basedpl {}", env!("CARGO_PKG_VERSION")).map(|_| 0),
         [file] if file == "-" => {
             let mut code = String::new();
-            stdin.lock().read_to_string(&mut code).and_then(|_| expression(Source::new("<stdin>", code), false, &mut err))
+            stdin.lock().read_to_string(&mut code).and_then(|_| expression(Source::new("<stdin>", code), false, program_args, &mut err))
         }
-        [file] if !file.starts_with('-') => std::fs::read_to_string(file).and_then(|code| expression(Source::file(file, code), true, &mut err)),
+        [file] if !file.starts_with('-') => std::fs::read_to_string(file).and_then(|code| expression(Source::file(file, code), true, program_args, &mut err)),
         _ => write!(err, "{USAGE}").map(|_| 2),
     };
     match result {

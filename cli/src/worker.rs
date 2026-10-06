@@ -1,4 +1,4 @@
-use crate::{EvalOptions, InterruptHandle, Session};
+use basedpl::{EvalOptions, InterruptHandle, Session};
 use foldhash::{HashMap, HashMapExt};
 use serde_json::{json, Value};
 use std::{
@@ -30,7 +30,7 @@ pub(crate) fn run(output: &mut impl Write) -> io::Result<()> {
     let mut session = Session::new();
     for (request, interrupt) in receive {
         let id = request.as_ref().ok().and_then(|r| r["id"].as_u64());
-        let result = request.and_then(|r| reply(&mut session, &r, interrupt)).unwrap_or_else(|message| crate::protocol::request_error(&message));
+        let result = request.and_then(|r| reply(&mut session, &r, interrupt)).unwrap_or_else(|message| basedpl::protocol::request_error(&message));
         if let Some(id) = id { active.lock().unwrap().remove(&id); }
         serde_json::to_writer(&mut *output, &json!({"id": id, "result": result}))?;
         writeln!(output)?;
@@ -45,6 +45,6 @@ fn reply(session: &mut Session, request: &Value, interrupt: InterruptHandle) -> 
     let timeout = request.get("timeout_ms").map(|v| v.as_u64().map(Duration::from_millis).ok_or("timeout_ms must be a nonnegative integer")).transpose()?;
     let echo = request.get("echo").map(|v| v.as_bool().ok_or("echo must be a boolean")).transpose()?.unwrap_or(true);
     let options = EvalOptions { interrupt, timeout, echo, ..EvalOptions::default() };
-    if let Some(case) = request.get("case") { return Ok(crate::reference::check(case, options)); }
-    crate::protocol::request(session, request, options).map(crate::protocol::response)
+    if let Some(case) = request.get("case") { return Ok(basedpl::reference::check(case, options)); }
+    basedpl::protocol::request(session, request, options).map(basedpl::protocol::response)
 }

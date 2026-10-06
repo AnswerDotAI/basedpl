@@ -44,15 +44,12 @@ impl Element for char {
 /// An integer width of compact storage.
 pub(crate) trait Whole: Element + Int + bytemuck::Pod {
     const WIDTH: Width;
-    /// The NumPy dtype of integers of this width.
-    #[cfg(feature = "python")]
-    const DTYPE: &'static str;
     /// The integers, when they have this width.
     fn of(ints: Ints<'_>) -> Option<&[Self]>;
     fn buffer(data: Vec<Self>) -> IntBuf;
 }
 macro_rules! whole {
-    ($($t:ty: $width:ident $dtype:literal),+) => {$(
+    ($($t:ty: $width:ident),+) => {$(
         impl Element for $t {
             const FILL: Self = 0;
             fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Integers(ints) => Self::of(ints), _ => None } }
@@ -61,14 +58,12 @@ macro_rules! whole {
         }
         impl Whole for $t {
             const WIDTH: Width = Width::$width;
-            #[cfg(feature = "python")]
-            const DTYPE: &'static str = $dtype;
             fn of(ints: Ints<'_>) -> Option<&[Self]> { match ints { Ints::$width(v) => Some(v), _ => None } }
             fn buffer(data: Vec<Self>) -> IntBuf { IntBuf::$width(data) }
         }
     )+};
 }
-whole!(u8: U8 "u1", i16: I16 "i2", i32: I32 "i4", i64: I64 "i8");
+whole!(u8: U8, i16: I16, i32: I32, i64: I64);
 
 /// An item that a kernel reads as type `A`: a Boolean as a number, an integer as a float or a complex number, or a float as a complex
 /// number.

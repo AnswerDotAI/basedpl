@@ -1,9 +1,4 @@
-use crate::{
-    array::{with_ints, Items, Storage},
-    element::Whole,
-    eval::Operand,
-    EvalOptions, Evaluation, Function, InterruptHandle, Number, Session, Source, Span, Value,
-};
+use basedpl::{Buffer, EvalOptions, Evaluation, Function, InterruptHandle, Number, Operand, Session, Value};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use pyo3::{
@@ -14,6 +9,7 @@ use pyo3::{
     types::{PyBool, PyBoolMethods, PyByteArray, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple},
     IntoPyObjectExt,
 };
+use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
 
 fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
@@ -23,7 +19,7 @@ fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
         if let Ok(op) = o.extract::<PyRef<'_, PyOperator>>() { return Ok(Value::Operator(op.inner.clone())); }
         if let Ok(d) = o.cast::<PyDict>() { return import_array(d); }
         if let Ok(s) = o.cast::<PyString>() {
-            return crate::protocol::character(s.to_str()?).map(Value::Character).ok_or_else(|| PyValueError::new_err("expected one character"));
+            return basedpl::protocol::character(s.to_str()?).map(Value::Character).ok_or_else(|| PyValueError::new_err("expected one character"));
         }
         let number = if let Ok(b) = o.cast::<PyBool>() { Ok(Number::from_bool(b.is_true())) } else if o.is_instance_of::<PyFloat>() { Ok(o.extract::<f64>()?.into()) } else if let Ok(z) = o.cast::<PyComplex>() { Ok(num_complex::Complex64::new(z.real(), z.imag()).into()) } else if o.is_instance_of::<PyInt>() { Ok(o.extract::<BigInt>()?.into()) } else if o.is_instance_of::<PyTuple>() { let (n, d) = o.extract::<(BigInt, BigInt)>()?; Number::try_from(BigRational::new_raw(n, d)) } else { return Err(PyTypeError::new_err("unsupported BPL element")); };
         number.map(Value::Number).map_err(|k| PyValueError::new_err(k.to_string()))
@@ -36,22 +32,26 @@ fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
     // Python data takes the import rules. A dict keeps each value's kind, as a JSON object does. Other data becomes floats only when
     // every number converts exactly.
     let record = raw.get_item("axis_keys")?.is_some();
-    let mut result = if record { Value::mixed(shape, data, prototype) } else { crate::data::imported(shape, data, |_| false, prototype) }
+    let mut result = if record { Value::mixed(shape, data, prototype) } else { Value::imported(shape, data, prototype) }
         .map_err(|k| PyValueError::new_err(k.to_string()))?;
-    if let Some(names) = raw.get_item("axis_names")? { result = crate::keyed::with_names(result, names.extract()?).map_err(PyValueError::new_err)?; }
+    if let Some(names) = raw.get_item("axis_names")? { result = basedpl::keyed::with_names(result, names.extract()?).map_err(PyValueError::new_err)?; }
     let Some(keys) = raw.get_item("axis_keys")? else { return Ok(result); };
-    crate::keyed::with_key_lists(result, keys.extract()?).map_err(PyValueError::new_err)
+    basedpl::keyed::with_key_lists(result, keys.extract()?).map_err(PyValueError::new_err)
 }
 
 /// The NumPy dtype and bytes of storage that NumPy holds as it is.
-fn numpy(a: &Value) -> Option<(&'static str, &[u8])> {
-    /// Integers of one width as their NumPy dtype and their bytes.
-    fn whole<T: Whole>(v: &[T]) -> (&'static str, &[u8]) { (T::DTYPE, bytemuck::cast_slice(v)) }
-    Some(match a.as_items() {
-        Items::Booleans(v) => ("?", bytemuck::cast_slice(v)),
-        Items::Integers(ints) => with_ints!(ints, |v| whole(v)),
-        Items::Floats(v) => ("f8", bytemuck::cast_slice(v)),
-        _ => return None,
+fn numpy(a: &Value) -> Option<(&'static str, Cow<'_, [u8]>)> {
+    /// The bytes of `v`, borrowed when `v` is.
+    fn bytes<T: bytemuck::NoUninit>(v: Cow<'_, [T]>) -> Cow<'_, [u8]> {
+        match v { Cow::Borrowed(v) => Cow::Borrowed(bytemuck::cast_slice(v)), Cow::Owned(v) => Cow::Owned(bytemuck::cast_slice(&v).to_vec()) }
+    }
+    Some(match a.buffer()? {
+        Buffer::Booleans(v) => ("?", bytes(v)),
+        Buffer::U8(v) => ("u1", bytes(v)),
+        Buffer::I16(v) => ("i2", bytes(v)),
+        Buffer::I32(v) => ("i4", bytes(v)),
+        Buffer::I64(v) => ("i8", bytes(v)),
+        Buffer::Floats(v) => ("f8", bytes(v)),
     })
 }
 
@@ -81,7 +81,7 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
     result.set_item("prototype", element(py, &a.prototype())?)?;
     if let Some((dtype, _)) = numpy(a) { result.set_item("dtype", dtype)?; }
     if !a.axis_names().is_empty() { result.set_item("axis_names", a.axis_names().iter().map(|n| n.as_deref()).collect::<Vec<_>>())?; }
-    if a.has_keys() { result.set_item("axis_keys", crate::keyed::key_lists(a))?; }
+    if a.has_keys() { result.set_item("axis_keys", basedpl::keyed::key_lists(a))?; }
     Ok(result.unbind())
 }
 
@@ -94,17 +94,15 @@ impl PyArray {
     fn new(raw: &Bound<'_, PyDict>) -> PyResult<Self> { Ok(Self { inner: import_array(raw)? }) }
     #[staticmethod]
     fn numeric(shape: Vec<usize>, boolean: bool, data: &Bound<'_, PyAny>) -> PyResult<Self> {
-        fn ints<T: Whole + pyo3::buffer::Element>(data: &Bound<'_, PyAny>) -> Option<PyResult<Storage>> {
-            PyBuffer::<T>::get(data).ok().map(|b| Ok(Storage::narrowed(b.to_vec(data.py())?)))
+        fn ints<T: pyo3::buffer::Element>(data: &Bound<'_, PyAny>, buffer: fn(Cow<'static, [T]>) -> Buffer<'static>) -> Option<PyResult<Buffer<'static>>> {
+            PyBuffer::<T>::get(data).ok().map(|b| Ok(buffer(b.to_vec(data.py())?.into())))
         }
         // A NumPy Boolean array arrives as its bytes, one for each item.
-        let inner = if boolean { Value::booleans(shape, PyBuffer::<u8>::get(data)?.to_vec(data.py())?.into_iter().map(|x| x != 0).collect()) } else {
-            let storage = ints::<u8>(data).or_else(|| ints::<i16>(data)).or_else(|| ints::<i32>(data)).or_else(|| ints::<i64>(data));
-            match storage {
-                Some(storage) => Value::from_storage(shape, storage?),
-                None => Value::floats(shape, PyBuffer::<f64>::get(data)?.to_vec(data.py())?),
-            }
+        let buffer = if boolean { Buffer::Booleans(PyBuffer::<u8>::get(data)?.to_vec(data.py())?.into_iter().map(|x| x != 0).collect()) } else {
+            let ints = ints(data, Buffer::U8).or_else(|| ints(data, Buffer::I16)).or_else(|| ints(data, Buffer::I32)).or_else(|| ints(data, Buffer::I64));
+            match ints { Some(ints) => ints?, None => Buffer::Floats(PyBuffer::<f64>::get(data)?.to_vec(data.py())?.into()) }
         };
+        let inner = Value::from_buffer(shape, buffer);
         inner.map(|inner| Self { inner }).map_err(|k| PyValueError::new_err(k.to_string()))
     }
     #[getter]
@@ -112,18 +110,18 @@ impl PyArray {
     #[getter]
     fn axis_names(&self) -> Vec<Option<String>> { (0..self.inner.shape().len()).map(|a| self.inner.axis_name(a).map(|n| n.to_string())).collect() }
     fn with_axis_names(&self, names: Vec<Option<String>>) -> PyResult<Self> {
-        Ok(Self { inner: crate::keyed::with_names(self.inner.clone(), names).map_err(PyValueError::new_err)? })
+        Ok(Self { inner: basedpl::keyed::with_names(self.inner.clone(), names).map_err(PyValueError::new_err)? })
     }
     #[getter]
-    fn axis_keys(&self) -> Vec<Option<Vec<Option<&str>>>> { crate::keyed::key_lists(&self.inner) }
+    fn axis_keys(&self) -> Vec<Option<Vec<Option<&str>>>> { basedpl::keyed::key_lists(&self.inner) }
     fn with_axis_keys(&self, keys: Vec<Option<Vec<Option<String>>>>) -> PyResult<Self> {
-        Ok(Self { inner: crate::keyed::with_key_lists(self.inner.clone(), keys).map_err(PyValueError::new_err)? })
+        Ok(Self { inner: basedpl::keyed::with_key_lists(self.inner.clone(), keys).map_err(PyValueError::new_err)? })
     }
     #[getter]
     fn is_atom(&self) -> bool { self.inner.is_atom() }
     fn parts(&self, py: Python<'_>) -> PyResult<Py<PyDict>> { array(py, &self.inner) }
     fn buffer<'py>(&self, py: Python<'py>) -> PyResult<Option<(&'static str, Bound<'py, PyByteArray>)>> {
-        Ok(numpy(&self.inner).map(|(dtype, bytes)| (dtype, PyByteArray::new(py, bytes))))
+        Ok(numpy(&self.inner).map(|(dtype, bytes)| (dtype, PyByteArray::new(py, &bytes))))
     }
     fn __repr__(&self) -> String { self.inner.to_string() }
     fn literal(&self) -> String { self.inner.literal() }
@@ -133,19 +131,14 @@ impl PyArray {
         array(py, &self.inner.at(0))
     }
     fn cells(&self) -> PyResult<Vec<Self>> {
-        let rank = self.inner.shape().len().checked_sub(1).ok_or_else(|| PyTypeError::new_err("a unit has no major cells"))?;
-        self.inner
-            .cells(rank)
-            .and_then(|c| c.collect())
-            .map(|a| a.into_iter().map(|inner| Self { inner }).collect())
-            .map_err(|e| PyValueError::new_err(e.to_string()))
+        if self.inner.shape().is_empty() { return Err(PyTypeError::new_err("a unit has no major cells")); }
+        let cells = self.inner.major_cells().map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(cells.into_iter().map(|inner| Self { inner }).collect())
     }
     fn select(&self, py: Python<'_>, parts: Vec<Option<PyRef<'_, PyArray>>>) -> PyResult<Py<PyDict>> {
-        let span = Span { source: Source::new("<index>", "[]"), range: 0..2 };
-        let mut session = Session::new();
         let parts = parts.into_iter().map(|a| a.map(|a| a.inner.clone())).collect::<Vec<_>>();
         let mut result = Evaluation::default();
-        match crate::primitive::select(&self.inner, &parts, &session.at(&span)) {
+        match self.inner.select(&parts) {
             Ok(Value::Function(f)) => result.function = Some(f),
             Ok(a) => result.value = Some(a),
             Err(e) => result.error = Some(e),
@@ -197,16 +190,15 @@ impl PyFunction {
 
 /// An operator held as a value, as a module record holds it.
 #[pyclass(frozen, name = "_Operator")]
-struct PyOperator { inner: crate::Operator }
+struct PyOperator { inner: basedpl::Operator }
 
 #[pymethods]
 impl PyOperator {
     /// The function this operator derives from its operand, or from both operands of a dyadic operator.
     #[pyo3(signature = (left, right=None))]
     fn derive(&self, left: &Bound<'_, PyAny>, right: Option<&Bound<'_, PyAny>>) -> PyResult<PyFunction> {
-        let span = Span::whole(Source::new("<operator>", self.inner.to_string()));
         let right = right.map(operand).transpose()?;
-        self.inner.derive(operand(left)?, right, &span).map(|inner| PyFunction { inner }).map_err(|e| PyValueError::new_err(e.to_string()))
+        self.inner.derive(operand(left)?, right).map(|inner| PyFunction { inner }).map_err(|e| PyValueError::new_err(e.to_string()))
     }
     fn __repr__(&self) -> String { self.inner.to_string() }
 }
@@ -314,7 +306,7 @@ impl PySession {
 
 /// A poll that interrupts the evaluation when Python has a pending signal, such as Ctrl-C, or when an output callback raised. It keeps the
 /// error to raise.
-fn ctrl_c(caught: Arc<Mutex<Option<PyErr>>>) -> crate::Poll {
+fn ctrl_c(caught: Arc<Mutex<Option<PyErr>>>) -> basedpl::Poll {
     Arc::new(move || {
         if caught.lock().unwrap().is_some() { return true; }
         let Err(e) = Python::attach(|py| py.check_signals()) else { return false };
@@ -325,7 +317,7 @@ fn ctrl_c(caught: Arc<Mutex<Option<PyErr>>>) -> crate::Poll {
 
 /// An output sink that keeps each event in `shown` and calls `show` with it. An error that `show` raises goes to `caught`, which stops
 /// the evaluation through `ctrl_c`.
-fn stream(show: Py<PyAny>, shown: Arc<Mutex<Vec<crate::Output>>>, caught: Arc<Mutex<Option<PyErr>>>) -> crate::OutputSink {
+fn stream(show: Py<PyAny>, shown: Arc<Mutex<Vec<basedpl::Output>>>, caught: Arc<Mutex<Option<PyErr>>>) -> basedpl::OutputSink {
     Arc::new(move |event| {
         shown.lock().unwrap().push(event.clone());
         let called = Python::attach(|py| python(py, &event.json()).and_then(|e| show.call1(py, (e,))).map(drop));
@@ -336,7 +328,7 @@ fn stream(show: Py<PyAny>, shown: Arc<Mutex<Vec<crate::Output>>>, caught: Arc<Mu
 /// Python's standard input. Each line comes from `input()`, which shows a notebook's input box under IPython. A Ctrl-C while `input()`
 /// waits goes to `caught`, as a signal does in `ctrl_c`.
 struct PythonInput { caught: Arc<Mutex<Option<PyErr>>> }
-impl crate::Input for PythonInput {
+impl basedpl::Input for PythonInput {
     fn line(&self, prompt: &str) -> std::io::Result<Option<String>> {
         Python::attach(|py| match py.import("builtins").and_then(|b| b.call_method1("input", (prompt,))).and_then(|line| line.extract::<String>()) {
             Ok(line) => Ok(Some(line)),
@@ -355,11 +347,11 @@ impl crate::Input for PythonInput {
     }
 }
 
-fn options(timeout: Option<f64>, echo: bool) -> PyResult<crate::EvalOptions> {
+fn options(timeout: Option<f64>, echo: bool) -> PyResult<basedpl::EvalOptions> {
     let timeout = timeout
         .map(|seconds| std::time::Duration::try_from_secs_f64(seconds).map_err(|_| PyValueError::new_err("timeout must be finite and nonnegative")))
         .transpose()?;
-    Ok(crate::EvalOptions { timeout, echo, ..crate::EvalOptions::default() })
+    Ok(basedpl::EvalOptions { timeout, echo, ..basedpl::EvalOptions::default() })
 }
 
 /// A JSON value as the matching Python object.
@@ -385,62 +377,23 @@ fn response(py: Python<'_>, result: Evaluation) -> PyResult<Py<PyDict>> {
     let d = PyDict::new(py);
     d.set_item("value", value)?;
     d.set_item("output", output(py, &result.output)?)?;
-    d.set_item("error", result.error.as_ref().map(|e| python(py, &crate::protocol::error(e))).transpose()?)?;
+    d.set_item("error", result.error.as_ref().map(|e| python(py, &basedpl::protocol::error(e))).transpose()?)?;
     Ok(d.unbind())
 }
 
-fn output(py: Python<'_>, events: &[crate::Output]) -> PyResult<Py<PyAny>> { python(py, &events.iter().map(crate::Output::json).collect()) }
-
-#[pyfunction]
-fn run_cli(args: Vec<String>) -> i32 { crate::cli::run(&args) }
+fn output(py: Python<'_>, events: &[basedpl::Output]) -> PyResult<Py<PyAny>> { python(py, &events.iter().map(basedpl::Output::json).collect()) }
 
 #[pyfunction]
 fn _check_reference(case: &str, timeout: f64) -> PyResult<String> {
     let case = serde_json::from_str(case).map_err(|e| PyValueError::new_err(e.to_string()))?;
-    Ok(crate::reference::check(&case, options(Some(timeout), false)?).to_string())
+    Ok(basedpl::reference::check(&case, options(Some(timeout), false)?).to_string())
 }
 
 /// BPL source for a value captured from another interpreter, given as JSON.
 #[pyfunction]
 fn _captured_literal(value: &str) -> PyResult<String> {
     let value = serde_json::from_str(value).map_err(|e| PyValueError::new_err(e.to_string()))?;
-    crate::reference::expected_array(&value).map(|v| v.literal()).ok_or_else(|| PyValueError::new_err("invalid captured array"))
-}
-
-pyo3::create_exception!(_core, JError, pyo3::exceptions::PyException, "A J error, carrying the session's output, including the error display, as its message.");
-
-#[pyclass(frozen, name = "_J")]
-struct PyJ { engine: Mutex<crate::j::Engine>, interrupter: crate::j::Interrupter }
-
-#[pymethods]
-impl PyJ {
-    #[new]
-    fn new(lib: std::path::PathBuf) -> PyResult<Self> {
-        let engine = crate::j::Engine::new(&lib).map_err(JError::new_err)?;
-        Ok(Self { interrupter: engine.interrupter(), engine: Mutex::new(engine) })
-    }
-    fn run(&self, py: Python<'_>, code: &str) -> PyResult<String> { py.detach(|| self.engine.lock().unwrap().run(code)).map_err(JError::new_err) }
-    fn get(&self, name: &str) -> PyResult<(Vec<i64>, crate::j::Data)> { self.engine.lock().unwrap().get(name).map_err(JError::new_err) }
-    fn set(&self, name: &str, shape: Vec<i64>, data: crate::j::Data) -> PyResult<()> {
-        self.engine.lock().unwrap().set(name, &shape, &data).map_err(JError::new_err)
-    }
-    fn interrupt(&self) { self.interrupter.interrupt() }
-    #[getter]
-    fn exited(&self) -> Option<i64> { self.engine.lock().unwrap().exited }
-}
-
-#[pyfunction]
-fn _run_j_kernel(file: &str, lib: std::path::PathBuf, startup: Option<&str>) -> PyResult<()> {
-    crate::j::run_kernel(file, &lib, startup).map_err(|e| JError::new_err(e.to_string()))
-}
-
-/// Install a kernelspec for `argv` with message interrupts, under `prefix` or in the user Jupyter directory. Returns its directory.
-#[pyfunction]
-#[pyo3(signature = (name, argv, display_name, language, prefix=None))]
-fn _install_kernelspec(name: &str, argv: Vec<String>, display_name: &str, language: &str, prefix: Option<std::path::PathBuf>) -> PyResult<std::path::PathBuf> {
-    let extra = serde_json::Map::from_iter([("interrupt_mode".into(), "message".into())]);
-    kernmini::install_kernelspec(name, &argv, display_name, language, extra, prefix.as_deref())
-        .map_err(|e| pyo3::exceptions::PyOSError::new_err(format!("{e:#}")))
+    basedpl::reference::expected_array(&value).map(|v| v.literal()).ok_or_else(|| PyValueError::new_err("invalid captured array"))
 }
 
 /// A row of `basedpl.symbols`, which Python receives as a dict. `shortcut` is the glyph's keys after Alt as a display suffix, such as
@@ -462,15 +415,10 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyArray>()?;
     m.add_class::<PyFunction>()?;
     m.add_class::<PyOperator>()?;
-    m.add_function(wrap_pyfunction!(run_cli, m)?)?;
     m.add_function(wrap_pyfunction!(_check_reference, m)?)?;
     m.add_function(wrap_pyfunction!(_captured_literal, m)?)?;
-    m.add_class::<PyJ>()?;
-    m.add("JError", m.py().get_type::<JError>())?;
-    m.add_function(wrap_pyfunction!(_run_j_kernel, m)?)?;
-    m.add_function(wrap_pyfunction!(_install_kernelspec, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    let symbols: Vec<_> = crate::symbols::symbols()
+    let symbols: Vec<_> = basedpl::symbols::symbols()
         .iter()
         .map(|s| SymbolRow {
             glyph: s.glyph,
@@ -479,12 +427,12 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
             monad: s.monad,
             dyad: s.dyad,
             aliases: s.aliases,
-            shortcut: crate::symbols::chord(s.glyph),
+            shortcut: basedpl::symbols::chord(s.glyph),
         })
         .collect();
     m.add("symbols", symbols)?;
-    m.add("_system_functions", crate::system::names().collect::<Vec<_>>())?;
-    m.add("_superscripts", crate::syntax::superscripts())?;
-    m.add("_subscripts", crate::syntax::subscripts())?;
+    m.add("_system_functions", basedpl::system::names().collect::<Vec<_>>())?;
+    m.add("_superscripts", basedpl::superscripts())?;
+    m.add("_subscripts", basedpl::subscripts())?;
     Ok(())
 }

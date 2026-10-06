@@ -1,5 +1,6 @@
 "Persistent JSON-lines worker with cooperative interruption and a hard timeout fallback."
-import json, math, queue, subprocess, sys, threading
+import json, math, queue, subprocess, sysconfig, threading
+from pathlib import Path
 from collections import deque
 from decimal import Decimal
 from . import BplError, _output_text, _written
@@ -7,7 +8,8 @@ from . import BplError, _output_text, _written
 class Worker:
     "One request at a time. Interrupt from another thread; never retry a request automatically."
     def __init__(self, command=None):
-        if command is None: command = (sys.executable, '-m', 'basedpl._cli', '--worker')
+        # The wheel installs the native `bpl` beside the environment's other scripts.
+        if command is None: command = (Path(sysconfig.get_path('scripts'))/'bpl', '--worker')
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             encoding='utf-8', bufsize=1, start_new_session=True)
         self._replies, self._stderr = queue.Queue(), deque(maxlen=30)

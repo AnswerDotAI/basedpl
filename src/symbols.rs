@@ -5,12 +5,10 @@ use std::sync::OnceLock;
 
 /// A glyph's kind and names. `name` is its page in `nbs/glyphs`. An empty operation name means that valence has no typed name.
 /// Aliases are extra completion words, separated by spaces.
-pub(crate) struct Symbol {
+pub struct Symbol {
     pub glyph: &'static str,
     pub name: &'static str,
     /// `"function"`, `"monadic-operator"`, `"dyadic-operator"`, or a syntax kind: `"argument"`, `"literal"`, `"comment"`, `"system"` or `"syntax"`.
-    /// Only `basedpl.symbols` reads it.
-    #[cfg_attr(not(feature = "python"), allow(dead_code))]
     pub kind: &'static str,
     pub monad: &'static str,
     pub dyad: &'static str,
@@ -38,7 +36,7 @@ const SYNTAX: &[(&str, &str, &str, &str)] = &[
 ];
 
 /// Every glyph: syntax, then primitives and operators from their rows in `primitive.rs`.
-pub(crate) fn symbols() -> &'static [Symbol] {
+pub fn symbols() -> &'static [Symbol] {
     static SYMBOLS: OnceLock<Vec<Symbol>> = OnceLock::new();
     SYMBOLS.get_or_init(|| {
         let syntax = SYNTAX.iter().map(|&(glyph, name, kind, aliases)| Symbol { glyph, name, kind, monad: "", dyad: "", aliases });
@@ -58,23 +56,23 @@ pub(crate) fn symbols() -> &'static [Symbol] {
 }
 
 /// What a key does: type text, or move to a dead-key state, which types nothing until the next key.
-pub(crate) enum Action { Text(String), State(String) }
+pub enum Action { Text(String), State(String) }
 
 /// A dead-key state: what each listed key does next, and the terminator an unlisted key types first.
-pub(crate) struct DeadState { pub terminator: String, pub keys: Vec<(char, Action)> }
+pub struct DeadState { pub terminator: String, pub keys: Vec<(char, Action)> }
 
 /// The shared key mapping in `python/basedpl/layout.json`, which the macOS layout and the browser also read. Keys are US characters
 /// after Shift. `option` holds unshifted keys typed with Option.
-pub(crate) struct KeyLayout { pub option: Vec<(char, Action)>, pub alt_aliases: Vec<(char, Action)>, pub states: HashMap<String, DeadState> }
+pub struct KeyLayout { pub option: Vec<(char, Action)>, pub alt_aliases: Vec<(char, Action)>, pub states: HashMap<String, DeadState> }
 
 impl KeyLayout {
-    pub(crate) fn state(&self, name: &str) -> &DeadState { &self.states[name] }
-    pub(crate) fn alt(&self, c: char) -> Option<&Action> { find(&self.alt_aliases, c).or_else(|| find(&self.option, c)) }
+    pub fn state(&self, name: &str) -> &DeadState { &self.states[name] }
+    pub fn alt(&self, c: char) -> Option<&Action> { find(&self.alt_aliases, c).or_else(|| find(&self.option, c)) }
 }
 
-pub(crate) fn find(keys: &[(char, Action)], key: char) -> Option<&Action> { keys.iter().find(|(k, _)| *k == key).map(|(_, a)| a) }
+pub fn find(keys: &[(char, Action)], key: char) -> Option<&Action> { keys.iter().find(|(k, _)| *k == key).map(|(_, a)| a) }
 
-pub(crate) fn layout() -> &'static KeyLayout {
+pub fn layout() -> &'static KeyLayout {
     static LAYOUT: OnceLock<KeyLayout> = OnceLock::new();
     LAYOUT.get_or_init(|| {
         let json: serde_json::Value = serde_json::from_str(include_str!("../python/basedpl/layout.json")).expect("valid key layout");
@@ -96,7 +94,7 @@ pub(crate) fn layout() -> &'static KeyLayout {
 /// The keys that type `glyph`, shown beside each listed name: ` a` for Option-A, or ` c t` for Option-C then T. The shortest
 /// sequence wins. A dead key's terminator, such as `○` for Option-O, shows the key alone. An ASCII glyph, such as `+` or `|`, gives
 /// nothing, because it has a key of its own.
-pub(crate) fn chord(glyph: &str) -> String {
+pub fn chord(glyph: &str) -> String {
     if glyph.is_ascii() { return String::new(); }
     let layout = layout();
     let mut queue: std::collections::VecDeque<(String, &[(char, Action)])> = [(String::new(), layout.option.as_slice())].into();
@@ -112,4 +110,66 @@ pub(crate) fn chord(glyph: &str) -> String {
         }
     }
     String::new()
+}
+
+// At each level (exact, prefix, prefixes of hyphen-separated parts) a name outranks a search word.
+pub fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
+    let query = query.to_ascii_lowercase();
+    let mut found = Vec::new();
+    let mut best = usize::MAX;
+    for &Symbol { glyph, name, monad, dyad, aliases: words, .. } in symbols() {
+        let rank = std::iter::once(name)
+            .chain([monad, dyad])
+            .chain(words.split_whitespace())
+            .filter(|word| !word.is_empty())
+            .enumerate()
+            .filter_map(|(i, word)| {
+                let letters = word.replace('-', "");
+                let rank = if letters == query { 0 } else if letters.starts_with(&query) { 1 } else {
+                    let mut rest = query.as_str();
+                    for part in word.split('-') {
+                        let n = part.bytes().zip(rest.bytes()).take_while(|(a, b)| a == b).count();
+                        if n == 0 { break; }
+                        rest = &rest[n..];
+                        if rest.is_empty() { break; }
+                    }
+                    if !rest.is_empty() { return None; }
+                    2
+                };
+                Some(2 * rank + usize::from(i > 0))
+            })
+            .min();
+        if let Some(rank) = rank {
+            if rank < best {
+                found.clear();
+                best = rank;
+            }
+            if rank == best { found.push((glyph, name)); }
+        }
+    }
+    // A name that is a prefix of every other match wins: `om gives omega, `omu gives omega-underbar.
+    let letters = |name: &str| name.replace('-', "");
+    let shortest = found.iter().copied().find(|a| found.iter().all(|b| letters(b.1).starts_with(&letters(a.1))));
+    match shortest { Some(shortest) if found.len() > 1 => vec![shortest], _ => found }
+}
+
+// Strings and comments are literal even before their language implementation is complete.
+pub fn in_code(text: &str) -> bool {
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        let closed = match c {
+            '⍝' => chars.by_ref().any(|c| c == '\n'),
+            '"' => chars.by_ref().any(|c| c == '"'),
+            '\'' => chars.nth(1).is_some(),
+            _ => true,
+        };
+        if !closed { return false; }
+    }
+    true
+}
+
+pub fn entry(line: &str, pos: usize) -> Option<(usize, &str)> {
+    let start = line[..pos].rfind('`')?;
+    let prefix = &line[start + 1..pos];
+    (prefix.bytes().all(|c| c.is_ascii_alphabetic()) && in_code(&line[..start])).then_some((start, prefix))
 }

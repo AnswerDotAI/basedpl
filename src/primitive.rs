@@ -2529,6 +2529,14 @@ pub(crate) fn at_indices(right: &Value, indices: &Value, span: &Context<'_>) -> 
     selection(right, &[Some(indices.clone())], span)
 }
 
+impl Value {
+    /// The selection that `parts` make from this array, one part for each leading axis, as indexing does. A missing part selects the
+    /// whole axis. The result is a function when the array holds one at the selected position.
+    pub fn select(&self, parts: &[Option<Value>]) -> Result<Value, Error> {
+        let span = Span { source: crate::Source::new("<index>", "[]"), range: 0..2 };
+        select(self, parts, &crate::Session::new().at(&span))
+    }
+}
 pub(crate) fn select(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> Result<Value, Error> {
     if parts.is_empty() { return Ok(right.clone()); }
     if let Some(value) = select_vector(right, parts, span)? { return Ok(value); }

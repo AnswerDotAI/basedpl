@@ -1,21 +1,18 @@
-use crate::{EvalOptions, Input, InterruptHandle, OutputKind, ParseStatus, Session, Source};
+use basedpl::{EvalOptions, Input, InterruptHandle, OutputKind, ParseStatus, Session, Source};
 use kernmini::{
-    CompleteRequest, ExecuteOutcome, ExecuteRequest, ExecutionContext, InspectRequest, KernelInfo, Language, LanguageError, LanguageEvent, LanguageSession,
-    ThreadWorker,
+    CompleteRequest, ExecuteOutcome, ExecuteRequest, ExecutionContext, InspectRequest, KernelInfo, LanguageError, LanguageEvent, LanguageSession, ThreadWorker,
 };
 use serde_json::{json, Value};
-use std::future::Future;
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc, Mutex,
-};
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
-struct BplSession { worker: ThreadWorker<Session>, count: Arc<AtomicU64> }
+struct BplSession { worker: ThreadWorker<Session> }
 
-fn language_error(error: crate::Error) -> LanguageError {
+/// A request's cursor position, as an index into its code's characters.
+fn cursor(pos: u64) -> usize { usize::try_from(pos).unwrap_or(usize::MAX) }
+fn language_error(error: basedpl::Error) -> LanguageError {
     LanguageError {
-        ename: if error.kind == crate::ErrorKind::Interrupt { "KeyboardInterrupt".into() } else { error.kind.to_string() },
+        ename: if error.kind == basedpl::ErrorKind::Interrupt { "KeyboardInterrupt".into() } else { error.kind.to_string() },
         evalue: error.message.clone(),
         traceback: vec![error.to_string()],
     }
@@ -45,10 +42,8 @@ impl LanguageSession for BplSession {
         })
     }
 
-    fn execution_count(&self) -> u64 { self.count.load(Ordering::Acquire) }
-
     async fn execute(&self, request: ExecuteRequest, context: ExecutionContext) -> kernmini::Result<ExecuteOutcome> {
-        let count = next_count(&self.count, &request);
+        let count = context.execution_count();
         let interrupt = InterruptHandle::default();
         let cancel = interrupt.clone();
         context.set_interrupt_handler(Arc::new(move || { cancel.interrupt(); Ok(()) }))?;
@@ -58,7 +53,7 @@ impl LanguageSession for BplSession {
                 let failure = Arc::new(Mutex::new(None));
                 let output_failure = failure.clone();
                 let input = request.allow_stdin.then(|| Arc::new(NotebookInput(context.clone())) as Arc<dyn Input>);
-                let output = Arc::new(move |output: &crate::Output| {
+                let output = Arc::new(move |output: &basedpl::Output| {
                     let event = match output.kind {
                         OutputKind::Explicit | OutputKind::Text => LanguageEvent::Stream { name: "stdout".into(), text: output.written() },
                         OutputKind::Display => LanguageEvent::Message {
@@ -89,7 +84,7 @@ impl LanguageSession for BplSession {
                                 EvalOptions { interrupt: interrupt.clone(), echo: false, output: Some(Arc::new(|_| {})), ..EvalOptions::default() },
                             );
                             let value = if let Some(e) = result.error {
-                                let cancelled = e.kind == crate::ErrorKind::Interrupt;
+                                let cancelled = e.kind == basedpl::ErrorKind::Interrupt;
                                 let e = language_error(e);
                                 let value = json!({"status": "error", "ename": e.ename, "evalue": e.evalue, "traceback": e.traceback});
                                 if cancelled {
@@ -98,7 +93,7 @@ impl LanguageSession for BplSession {
                                 }
                                 value
                             } else {
-                                let text = result.value.map(|a| session.display.array(&a, false)).or_else(|| result.function.map(|f| f.bpl()));
+                                let text = result.value.map(|a| session.show(&a)).or_else(|| result.function.map(|f| f.bpl()));
                                 json!({"status": "ok", "data": text.map_or(json!({}), |text| json!({"text/plain": text})), "metadata": {}})
                             };
                             expressions.insert(name.clone(), value);
@@ -106,19 +101,19 @@ impl LanguageSession for BplSession {
                     }
                 }
                 if let Some(error) = failure.lock().unwrap().take() { return Err(error); }
-                Ok(outcome(count, error, Value::Object(expressions)))
+                Ok(ExecuteOutcome { error, user_expressions: Value::Object(expressions), ..Default::default() })
             })
             .await?
     }
 
     async fn complete(&self, request: CompleteRequest) -> kernmini::Result<Value> {
         self.worker.call(move |session| {
-            let end = request.code.char_indices().nth(crate::array::saturated(request.cursor_pos)).map_or(request.code.len(), |(i, _)| i);
+            let end = request.code.char_indices().nth(cursor(request.cursor_pos)).map_or(request.code.len(), |(i, _)| i);
             let before = &request.code[..end];
-            let (start, mut matches) = if let Some((start, query)) = crate::editor::entry(before, end) {
-                (start, crate::editor::matches(query).into_iter().map(|(glyph, _)| glyph.to_owned()).collect::<Vec<_>>())
-            } else if crate::editor::in_code(before) {
-                let start = before.char_indices().rev().find(|(_, c)| !crate::inspection::word_char(*c)).map_or(0, |(i, c)| i + c.len_utf8());
+            let (start, mut matches) = if let Some((start, query)) = basedpl::symbols::entry(before, end) {
+                (start, basedpl::symbols::matches(query).into_iter().map(|(glyph, _)| glyph.to_owned()).collect::<Vec<_>>())
+            } else if basedpl::symbols::in_code(before) {
+                let start = before.char_indices().rev().find(|(_, c)| !basedpl::inspection::word_char(*c)).map_or(0, |(i, c)| i + c.len_utf8());
                 (start, session.complete(&before[start..]))
             } else { (end, vec![]) };
             matches.sort();
@@ -129,7 +124,7 @@ impl LanguageSession for BplSession {
     async fn inspect(&self, request: InspectRequest) -> kernmini::Result<Value> {
         self.worker
             .call(move |session| {
-                let info = crate::inspection::at_cursor(&request.code, crate::array::saturated(request.cursor_pos)).and_then(|name| session.inspect(name));
+                let info = basedpl::inspection::at_cursor(&request.code, cursor(request.cursor_pos)).and_then(|name| session.inspect(name));
                 let data = info.as_ref().map(|i| json!({"text/plain":i.text(request.detail_level>0), "text/markdown":i.markdown(request.detail_level>0)}));
                 json!({"status":"ok", "found":info.is_some(), "data":data.unwrap_or(json!({})), "metadata":{}})
             })
@@ -138,7 +133,7 @@ impl LanguageSession for BplSession {
 
     async fn is_complete(&self, code: String) -> kernmini::Result<Value> {
         if code.trim_start().starts_with(']') { return Ok(json!({"status": "complete"})); }
-        Ok(match crate::parse(Source::new("<cell>", code)) {
+        Ok(match basedpl::parse(Source::new("<cell>", code)) {
             ParseStatus::Complete(_) => json!({"status": "complete"}),
             ParseStatus::Incomplete(_) => json!({"status": "incomplete", "indent": "    "}),
             ParseStatus::Invalid(_) => json!({"status": "invalid"}),
@@ -148,34 +143,8 @@ impl LanguageSession for BplSession {
     async fn shutdown(&self) -> kernmini::Result<()> { self.worker.shutdown().await }
 }
 
-/// A kernmini language with one session and no subshells.
-struct Solo<S>(S);
-
-#[async_trait::async_trait]
-impl<S: LanguageSession> Language for Solo<S> {
-    type Session = S;
-    fn parent(&self) -> S { self.0.clone() }
-    async fn create_child(&self) -> kernmini::Result<S> { Err(kernmini::Error::new(kernmini::ErrorKind::Unavailable, "subshells are not supported")) }
-}
-
-/// Serve the session that `start` builds on the kernel connection in `file`.
-pub(crate) fn serve<S: LanguageSession>(file: &str, start: impl Future<Output = kernmini::Result<S>>) -> kernmini::Result<()> {
-    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(async { kernmini::run_kernel(file, Solo(start.await?)).await })
-}
-
-/// The execution count for `request`, counting it when it is stored in history.
-pub(crate) fn next_count(count: &AtomicU64, request: &ExecuteRequest) -> u64 {
-    if request.store_history && !request.silent { count.fetch_add(1, Ordering::AcqRel) + 1 } else { count.load(Ordering::Acquire) }
-}
-
-/// The outcome of an execution, with no result bundle or payload.
-pub(crate) fn outcome(execution_count: u64, error: Option<LanguageError>, user_expressions: Value) -> ExecuteOutcome {
-    ExecuteOutcome { execution_count, result: None, result_metadata: json!({}), error, user_expressions, payload: json!([]) }
-}
-
 pub(crate) fn run(file: &str) -> kernmini::Result<()> {
-    serve(file, async {
-        let worker = ThreadWorker::start(std::thread::Builder::new().name("basedpl".into()), || Ok(Session::interactive())).await?;
-        Ok(BplSession { worker, count: Arc::new(AtomicU64::new(0)) })
+    kernmini::run_kernel_blocking(file, async {
+        Ok(BplSession { worker: ThreadWorker::start(std::thread::Builder::new().name("basedpl".into()), || Ok(Session::interactive())).await? })
     })
 }

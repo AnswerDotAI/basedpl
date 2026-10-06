@@ -1,21 +1,24 @@
-[package]
-name = "basedpl"
+[workspace]
+members = ["cli", "py"]
+default-members = [".", "cli", "py"]
+
+[workspace.package]
 version = "0.1.23"
 edition = "2021"
 rust-version = "1.98"
 license = "Apache-2.0"
+
+[package]
+name = "basedpl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 description = "BasedPL, the Based-array Programming Language, is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation."
 
 [lib]
-name = "basedpl"
-crate-type = ["cdylib", "rlib"]
 doctest = false
 # Without a unit-test build, `cargo test` compiles the library only once.
-test = false
-
-[[bin]]
-name = "bpl"
-path = "src/main.rs"
 test = false
 
 [profile.test]
@@ -37,19 +40,10 @@ strip = true
 csv = "1"
 regex = "1"
 tempfile = "3"
-kernmini = ">=0.1.17, <1"
-anyhow = "1"
-async-trait = ">=0.1, <1"
-tokio = { version = "1", features = ["rt-multi-thread"] }
 serde = ">=1.0.229, <2"
 serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order"] }
 unicode-width = { version = ">=0.2.2, <1", default-features = false }
 icu_normalizer = ">=2, <3"
-# Custom bindings override Emacs Alt-digit prefixes in this fork.
-rustyline = { git = "https://github.com/AnswerDotAI/rustyline.git", branch = "master", default-features = false, features = ["custom-bindings"] }
-ctrlc = ">=3.5.2, <4"
-pyo3 = { version = ">=0.29.2, <1", optional = true, features = ["num-bigint"] }
-libloading = { version = ">=0.8, <1", optional = true }
 num-rational = ">=0.4.2, <1"
 num-complex = ">=0.4.6, <1"
 num-bigint = ">=0.4.6, <0.5"
@@ -79,9 +73,3 @@ globset = ">=0.4.20, <1"
 [target.'cfg(unix)'.dependencies]
 rustix = { version = ">=1.1.5, <2", features = ["termios", "fs"] }
 nix = { version = ">=0.31.3, <1", default-features = false, features = ["user"] }
-
-[build-dependencies]
-pyo3-build-config = { version = ">=0.29.2, <1", optional = true }
-
-[features]
-python = ["dep:pyo3", "dep:libloading", "dep:pyo3-build-config"]
