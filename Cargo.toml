@@ -31,7 +31,8 @@ lto = "off"
 overflow-checks = false
 debug-assertions = false
 incremental = true
-debug = "line-tables-only"
+# Line tables change with every shifted line and recompile the code below it.
+debug = false
 
 [profile.dist]
 inherits = "release"
