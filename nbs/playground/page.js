@@ -1,5 +1,15 @@
 // The playground page. It runs the textarea's code in a worker, shows each output as it arrives, and adds the language bar. Stop ends
 // the worker and starts a new one, as a trap does.
+import {createHighlighterCore} from 'https://esm.sh/shiki@4.5.0/core?bundle';
+import {createJavaScriptRegexEngine} from 'https://esm.sh/shiki@4.5.0/engine/javascript?bundle';
+const grammar = await (await fetch(new URL('bpl.tmLanguage.json', import.meta.url))).json();
+const classes = [['comment', 'co'], ['string.quoted.double', 'st'], ['string.quoted.single', 'ch'], ['constant.numeric', 'dv'],
+    ['support.function', 'fu'], ['support.function.system', 'bu'], ['keyword.operator.monadic', 'op'],
+    ['keyword.operator.dyadic', 'ex'], ['variable.parameter', 'va'], ['keyword.control', 'kw']];
+const highlight = await createHighlighterCore({langs: [grammar], engine: createJavaScriptRegexEngine(), themes: [{
+    name: 'quarto', fg: 'var(--quarto-hl-kw-color)', bg: 'transparent',
+    settings: classes.map(([scope, cls]) => ({scope, settings: {foreground: `var(--quarto-hl-${cls}-color)`, fontStyle: cls === 'kw' ? 'bold' : ''}}))
+}]});
 const code = document.querySelector('#code'), history = document.querySelector('#history');
 const run = document.querySelector('#run'), stop = document.querySelector('#stop');
 let worker, busy = false, bar = false, out = history;
@@ -7,7 +17,7 @@ let worker, busy = false, bar = false, out = history;
 function show(tag, text, cls) {
     const el = out.appendChild(document.createElement(tag));
     if (cls) el.className = cls;
-    if (text !== undefined) el.textContent = text;
+    if (text !== undefined) (tag === 'pre' ? el.appendChild(document.createElement('code')) : el).textContent = text;
     return el;
 }
 
@@ -17,7 +27,7 @@ function render({ kind, data }) {
     else if (data['image/png'] || data['image/jpeg']) {
         const type = data['image/png'] ? 'image/png' : 'image/jpeg';
         show('img').src = `data:${type};base64,${data[type]}`;
-    } else if (kind === 'text' && out.lastElementChild?.matches('pre.text')) out.lastElementChild.textContent += data['text/plain'];
+    } else if (kind === 'text' && out.lastElementChild?.matches('pre.text')) out.lastElementChild.firstElementChild.textContent += data['text/plain'];
     else show('pre', data['text/plain'], kind === 'text' ? 'text' : '');
 }
 
@@ -58,6 +68,8 @@ async function addBar(symbols) {
 
 function go() {
     if (busy || run.disabled) return;
+    const text = code.value;
+    code.value = '';
     busy = true;
     run.disabled = true;
     stop.disabled = false;
@@ -65,14 +77,13 @@ function go() {
     cell.className = 'cell';
     const source = cell.appendChild(document.createElement('div'));
     source.className = 'sourceCode';
-    const pre = source.appendChild(document.createElement('pre'));
-    pre.className = 'sourceCode bpl';
-    const submitted = pre.appendChild(document.createElement('code'));
-    submitted.className = 'sourceCode bpl';
-    submitted.textContent = code.value;
+    source.innerHTML = highlight.codeToHtml(text, {lang: 'bpl', theme: 'quarto', transformers: [{
+        pre(node) { this.addClassToHast(node, 'sourceCode bpl'); delete node.properties.style; },
+        code(node) { this.addClassToHast(node, 'sourceCode bpl'); }
+    }]});
     out = cell.appendChild(document.createElement('div'));
     out.className = 'cell-output cell-output-display';
-    worker.postMessage(code.value);
+    worker.postMessage(text);
     code.scrollIntoView({block: 'nearest'});
 }
 

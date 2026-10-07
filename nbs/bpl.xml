@@ -6,7 +6,7 @@
       <context name="Normal" attribute="Normal Text" lineEndContext="#stay">
         <DetectChar char="⍝" attribute="Comment" context="Comment"/>
         <DetectChar char="&quot;" attribute="String" context="String"/>
-        <RegExpr String="'.'" attribute="Char"/>
+        <RegExpr String="'.?'" attribute="Char"/>
         <RegExpr String="[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*(\.[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*)*" attribute="Normal Text"/>
         <RegExpr String="•[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*" attribute="System"/>
         <RegExpr String="¯?∞|¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?([jJⱼ]¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?|ₓ|[rᵣ]¯?\d+)?" attribute="Number"/>

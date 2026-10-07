@@ -22,7 +22,7 @@ T←["q1":5] ⋄ T.q1             ⍝ 5
 
 Numbers, `∞`, `¯∞`, `⍬`, characters, strings and the constants `$t`, `$f`, `$n`, `$a` and `$d` are [literals](terms.qmd#term-literal). A constant is `$` followed by one lowercase letter. `$a` is the uppercase Latin alphabet and `$d` the digits. `$e` names the error that an [error guard](glyphs/error-guard.qmd)'s handler caught. [Numbers](numbers.qmd) and [Characters and strings](strings.ipynb) give the written forms of numbers and text.
 
-A double-quoted string can span lines. Every line ending inside it reads as one newline, and its indentation stays as written.
+`''` and `""` are the same empty character vector. A double-quoted string can span lines. Every line ending inside it reads as one newline, and its indentation stays as written.
 
 `ₓ` straight after a number, `⍬`, `]` or `)` makes every number it covers exact, as in `5ₓ`, `[1 2]ₓ` and `(0 1 ⋄ 2 3)ₓ`.
 
@@ -131,3 +131,7 @@ Spaces change grouping only at the first two levels.
 ```bpl
 total←1+2×3 → 2× ⋄ total   ⍝ 14
 ```
+
+## Syntax highlighting
+
+The [BPL TextMate grammar](playground/bpl.tmLanguage.json) works with TextMate-compatible editors and Shiki. It is generated from the Quarto XML definition by `scripts/prep.py` and is also included in the Python and npm packages as `bpl.tmLanguage.json`.

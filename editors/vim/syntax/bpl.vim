@@ -13,7 +13,7 @@ syntax match bplMonadicOperator #[¨⍨⊗⌸∂/⌿\\⍀⁰¹²³⁴⁵⁶⁷�
 syntax match bplDyadicOperator /[↣⍤∘⍠⍥↢.⍣⇄⊘⌾⍚@⌺]/
 syntax match bplArgument /[⍺⍵⍶⍹∇⍢]/
 syntax match bplKeyword /[←→⎕⋄?₀₁₂₃₄₅₆₇₈₉₋]/
-syntax match bplCharacter /'.'/
+syntax match bplCharacter /'.\?'/
 syntax region bplString oneline start=/"/ skip=/""/ end=/"/
 syntax match bplComment /⍝.*$/
 syntax match bplComment /\%^#!.*/

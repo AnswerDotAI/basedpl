@@ -38,7 +38,7 @@ BQN's based arrays: numbers, characters and functions are atoms, distinct from r
 
 `[a b]` is always a vector, even `[a]`. Spaces separate unspaced item expressions; `;` separates expressions containing spaces. `⋄`/newlines stack rows along a new leading axis. In parentheses, rows instead form a nested vector: `(4 ⋄ 4 5)` is `[[4] [4 5]]`. Parentheses without rows only group. Newlines normally mean `⋄`, not continuation.
 
-`"abc"` is a character vector; `'a'` is one character atom. `""` is the empty string. A double-quoted string can span lines, keeping its indentation. Double a double quote inside a string; `'''` is the single-quote character.
+`"abc"` is a character vector; `'a'` is one character atom. `""` and `''` are the empty string. A double-quoted string can span lines, keeping its indentation. Double a double quote inside a string; `'''` is the single-quote character.
 
 Bare numbers are approximate floats. `3ₓ` is an exact integer; `1ᵣ3`/`1r3` an exact rational; `2ⱼ3`/`2j3` complex; `1ₑ¯3`/`1e¯3` an exponent. `[…]ₓ` marks exact literal arrays. Exact integers/rationals grow as needed; mixing with floats becomes approximate. `$t $f $n` are true/false/NaN; `∞ ¯∞` are infinities. IEEE NaN/infinity arithmetic; comparison tolerance `1E¯14`, but grade is exact. Positions, shape, tally and predicates are exact.
 

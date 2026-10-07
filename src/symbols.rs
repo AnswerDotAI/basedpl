@@ -171,12 +171,16 @@ pub fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
 
 // Strings and comments are literal even before their language implementation is complete.
 pub fn in_code(text: &str) -> bool {
-    let mut chars = text.chars();
+    let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
         let closed = match c {
             '⍝' => chars.by_ref().any(|c| c == '\n'),
             '"' => chars.by_ref().any(|c| c == '"'),
-            '\'' => chars.nth(1).is_some(),
+            '\'' => match chars.next() {
+                Some('\'') if chars.peek() != Some(&'\'') => true,
+                Some(_) => chars.next().is_some(),
+                None => false,
+            },
             _ => true,
         };
         if !closed { return false; }

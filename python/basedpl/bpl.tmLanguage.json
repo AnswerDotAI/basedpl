@@ -1,0 +1,108 @@
+{
+  "name": "bpl",
+  "scopeName": "source.bpl",
+  "fileTypes": [
+    "bpl"
+  ],
+  "patterns": [
+    {
+      "begin": "⍝",
+      "beginCaptures": {
+        "0": {
+          "name": "comment.line.bpl"
+        }
+      },
+      "end": "$",
+      "contentName": "comment.line.bpl",
+      "patterns": [],
+      "applyEndPatternLast": true
+    },
+    {
+      "begin": "\"",
+      "beginCaptures": {
+        "0": {
+          "name": "string.quoted.double.bpl"
+        }
+      },
+      "end": "\"|$",
+      "contentName": "string.quoted.double.bpl",
+      "patterns": [
+        {
+          "match": "\"\"",
+          "name": "string.quoted.double.bpl"
+        }
+      ],
+      "applyEndPatternLast": true,
+      "endCaptures": {
+        "0": {
+          "name": "string.quoted.double.bpl"
+        }
+      }
+    },
+    {
+      "match": "'.?'",
+      "name": "string.quoted.single.bpl"
+    },
+    {
+      "match": "[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*(\\.[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*)*",
+      "name": "source.bpl"
+    },
+    {
+      "match": "•[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*",
+      "name": "support.function.system.bpl"
+    },
+    {
+      "match": "¯?∞|¯?(\\d+(\\.\\d+)?|\\.\\d+)([eEₑ]¯?\\d+)?([jJⱼ]¯?(\\d+(\\.\\d+)?|\\.\\d+)([eEₑ]¯?\\d+)?|ₓ|[rᵣ]¯?\\d+)?",
+      "name": "constant.numeric.bpl"
+    },
+    {
+      "match": "⍬ₓ?",
+      "name": "constant.numeric.bpl"
+    },
+    {
+      "match": "\\$[tfn]",
+      "name": "constant.numeric.bpl"
+    },
+    {
+      "match": "\\$[ad]",
+      "name": "string.quoted.double.bpl"
+    },
+    {
+      "begin": "[\\])](?=ₓ)",
+      "beginCaptures": {
+        "0": {
+          "name": "source.bpl"
+        }
+      },
+      "end": "[ₓ]|$",
+      "contentName": "constant.numeric.bpl",
+      "patterns": [],
+      "applyEndPatternLast": true,
+      "endCaptures": {
+        "0": {
+          "name": "constant.numeric.bpl"
+        }
+      }
+    },
+    {
+      "match": "[\\+\\-×÷⌈⌊\\|\\*⍟○π√!∧∨⊼⊽\\~=≠<≤>≥⍳:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹\\#↕⍭⨸⌻⍸⍷⊢⊣¿]",
+      "name": "support.function.bpl"
+    },
+    {
+      "match": "[¨⍨⊗⌸∂/⌿\\\\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘ]",
+      "name": "keyword.operator.monadic.bpl"
+    },
+    {
+      "match": "[↣⍤∘⍠⍥↢\\.⍣⇄⊘⌾⍚@⌺]",
+      "name": "keyword.operator.dyadic.bpl"
+    },
+    {
+      "match": "[⍺⍵⍶⍹∇⍢]",
+      "name": "variable.parameter.bpl"
+    },
+    {
+      "match": "[←→⎕⋄\\?₀₁₂₃₄₅₆₇₈₉₋]",
+      "name": "keyword.control.bpl"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # `'` `"` — Character and string literals
 
-`'c'` is one character. `"text"` is a string, a vector of characters of any length.
+`'c'` is one character. `"text"` is a string, a vector of characters of any length. `''` and `""` are the empty string.
 
 ```bpl
 ⍴'a'               ⍝ ⍬ₓ
@@ -19,4 +19,4 @@ Literals separated by spaces form one vector: `'a' 'b'` is `"ab"`, and `"aa" "bb
 
 ## Errors
 
-- `SYNTAX`: single quotes around more or fewer than one character, an unclosed literal
+- `SYNTAX`: single quotes around more than one character, an unclosed literal

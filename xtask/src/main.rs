@@ -44,6 +44,6 @@ fn main() -> anyhow::Result<()> {
     });
     fs::write(pkg.join("package.json"), serde_json::to_string_pretty(&package)?)?;
     fs::copy(root.join(project["readme"].as_str().expect("pyproject.toml's readme is a path")), pkg.join("README.md"))?;
-    for file in ["lb.js", "input.js", "layout.json"] { fs::copy(root.join("python/basedpl").join(file), pkg.join(file))?; }
+    for file in ["lb.js", "input.js", "layout.json", "bpl.tmLanguage.json"] { fs::copy(root.join("python/basedpl").join(file), pkg.join(file))?; }
     Ok(())
 }

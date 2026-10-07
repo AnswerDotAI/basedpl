@@ -2,9 +2,10 @@
 
 BPL glyph lists come from its symbol metadata. Dyalog APL and BQN lists for the comparison page are defined here. `keyboards` generates the macOS bundles. Paths are relative to the repository root.
 
-`write()` updates all generated editor files during release preparation. `icon()` rebuilds the common input-menu icon when its design changes; it needs Pillow and macOS's `iconutil`. Keyboard generation copies the icon without rebuilding it."""
-import re, subprocess, tempfile
+`write()` updates all generated editor files during release preparation, including `bpl.tmLanguage.json` beside this module, exported from `nbs/bpl.xml`. `icon()` rebuilds the common input-menu icon when its design changes; it needs Pillow and macOS's `iconutil`. Keyboard generation copies the icon without rebuilding it."""
+import json, re, subprocess, tempfile
 from pathlib import Path
+from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
 from . import symbols, keyboards
 from ._core import _superscripts, _subscripts
@@ -24,6 +25,11 @@ DYALOG = {'Function': '+-×÷⌈⌊|*⍟○!?~∧∨⍲⍱<≤=≥>≠≡≢⍴,
 BQN = {'Function': '+-×÷⋆√⌊⌈|¬∧∨<>≠=≤≥≡≢⊣⊢⥊∾≍⋈↑↓↕«»⌽⍉/⍋⍒⊏⊑⊐⊒∊⍷⊔!', 'MonadicOperator': '˙˜˘¨⌜⁼´˝`',
        'DyadicOperator': '∘○⊸⟜⌾⊘◶⎉⚇⍟⎊', 'Argument': '𝕨𝕩𝕗𝕘𝕤𝕣𝕎𝕏𝔽𝔾𝕊', 'Keyword': '←↩⇐⋄,‿·?:;'}
 HIGHLIGHTERS = {Path('nbs/bpl.xml'): BPL, Path('nbs/dyalog.xml'): DYALOG, Path('nbs/bqn.xml'): BQN}
+TEXTMATE = Path(__file__).with_name('bpl.tmLanguage.json')
+SCOPES = {'Normal Text': 'source.bpl', 'Comment': 'comment.line.bpl', 'String': 'string.quoted.double.bpl',
+          'Char': 'string.quoted.single.bpl', 'Number': 'constant.numeric.bpl', 'System': 'support.function.system.bpl',
+          'Function': 'support.function.bpl', 'MonadicOperator': 'keyword.operator.monadic.bpl',
+          'DyadicOperator': 'keyword.operator.dyadic.bpl', 'Argument': 'variable.parameter.bpl', 'Keyword': 'keyword.control.bpl'}
 
 
 def _replace(text, pattern, line):
@@ -47,6 +53,28 @@ def quarto(text, glyphs):
         text = _replace(text, f'<AnyChar String="[^"]*" attribute="{cls}"/>', f'<AnyChar String="{escape(glyphs[cls], {chr(34): "&quot;"})}" attribute="{cls}"/>')
         text = _replace(text, f'<itemData name="{cls}" defStyleNum="[^"]*"/>', f'<itemData name="{cls}" defStyleNum="{style}"/>')
     return text
+
+
+def textmate(xml):
+    r"Export BPL's line-local XML rules as a TextMate grammar."
+    contexts = {c.get('name'): c for c in ET.fromstring(xml).findall('./highlighting/contexts/context')}
+    def pattern(rule):
+        if rule.tag == 'RegExpr': return rule.get('String')
+        if rule.tag == 'AnyChar': return '[' + re.escape(rule.get('String')) + ']'
+        if rule.tag in ('DetectChar', 'Detect2Chars'): return re.escape(rule.get('char') + rule.get('char1', ''))
+        raise ValueError(f'unsupported XML rule: {rule.tag}')
+    def convert(rule):
+        scope, target = SCOPES[rule.get('attribute')], rule.get('context', '#stay')
+        if target == '#stay': return {'match': pattern(rule), 'name': scope}
+        context = contexts[target]
+        if context.get('lineEndContext') != '#pop': raise ValueError(f'{target} must end at the line boundary')
+        pops = [r for r in context if r.get('context') == '#pop']
+        result = {'begin': pattern(rule), 'beginCaptures': {'0': {'name': scope}},
+                  'end': '|'.join([*(pattern(r) for r in pops), '$']), 'contentName': SCOPES[context.get('attribute')],
+                  'patterns': [convert(r) for r in context if r not in pops], 'applyEndPatternLast': True}
+        if pops: result['endCaptures'] = {'0': {'name': SCOPES[pops[0].get('attribute')]}}
+        return result
+    return {'name': 'bpl', 'scopeName': 'source.bpl', 'fileTypes': ['bpl'], 'patterns': [convert(r) for r in contexts['Normal']]}
 
 
 def vim(text):
@@ -91,8 +119,9 @@ def icon():
 
 
 def write():
-    "Write the highlighters, regional keyboard bundles, and glyph-page key lines."
+    "Write the XML and TextMate highlighters, regional keyboard bundles, and glyph-page key lines."
     for path, glyphs in HIGHLIGHTERS.items(): keyboards.write_changed(path, quarto(path.read_text(), glyphs))
+    keyboards.write_changed(TEXTMATE, json.dumps(textmate(Path('nbs/bpl.xml').read_text()), ensure_ascii=False, indent=2) + '\n')
     keyboards.write_changed(VIM, vim(VIM.read_text()))
     keyboards.write()
     for s in symbols:

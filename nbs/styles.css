@@ -26,16 +26,22 @@ pre.bpl ~ .cell-output pre,
   font-size: calc(0.875em + 1pt);
 }
 
+:is(pre.bpl, .bpl code, pre.apl, pre.dyalog, pre.bqn) {
+  --quarto-hl-op-color: #8B3FA0;
+  --quarto-hl-ex-color: #127A6E;
+  --quarto-hl-va-color: #8f5902;
+}
+
 :is(pre.bpl, .bpl code, pre.apl, pre.dyalog, pre.bqn) span.op {
-  color: #8B3FA0;
+  color: var(--quarto-hl-op-color);
 }
 
 :is(pre.bpl, .bpl code, pre.apl, pre.dyalog, pre.bqn) span.ex {
-  color: #127A6E;
+  color: var(--quarto-hl-ex-color);
 }
 
 :is(pre.bpl, .bpl code, pre.apl, pre.dyalog, pre.bqn) span.va {
-  color: #8f5902;
+  color: var(--quarto-hl-va-color);
 }
 
 /* Language labels on the APL-family blocks, placed left of Quarto's copy button. A block gets a label when its language sets `content`. */
@@ -111,6 +117,8 @@ pre.bqn::before { content: "BQN"; }
 
 #playground .playground-editor { display: flex; align-items: start; gap: 0.4rem; }
 #playground .playground-buttons { display: flex; flex-direction: column; gap: 0.3rem; }
+#playground pre.sourceCode { margin-bottom: 0; }
+#playground .cell-output > pre > code { white-space: pre; }
 
 #playground textarea {
   width: 100%;

@@ -362,18 +362,22 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, ParseFailure> {
                 '\'' => {
                     let unclosed = |at| Err(span(at).error(ErrorKind::Syntax, "unclosed character literal").into());
                     let c = match chars.next() { Some((_, c)) if c != '\n' => c, next => return unclosed(next.map_or(len, |(i, _)| i)) };
-                    match chars.peek() {
-                        Some((_, '\'')) => {
-                            chars.next();
+                    if c == '\'' && chars.peek().is_none_or(|&(_, c)| c != '\'') {
+                        TokenKind::Literal(crate::keyed::text(""))
+                    } else {
+                        match chars.peek() {
+                            Some((_, '\'')) => {
+                                chars.next();
+                            }
+                            None | Some((_, '\n')) => return unclosed(position(&mut chars, len)),
+                            Some(&(i, c)) => {
+                                return Err(span(i + c.len_utf8())
+                                    .error(ErrorKind::Syntax, "a character literal holds one character (strings use double quotes)")
+                                    .into())
+                            }
                         }
-                        None | Some((_, '\n')) => return unclosed(position(&mut chars, len)),
-                        Some(&(i, c)) => {
-                            return Err(span(i + c.len_utf8())
-                                .error(ErrorKind::Syntax, "a character literal holds one character (strings use double quotes)")
-                                .into())
-                        }
+                        TokenKind::Literal(Value::Character(c))
                     }
-                    TokenKind::Literal(Value::Character(c))
                 }
                 '"' => {
                     let mut text = String::new();

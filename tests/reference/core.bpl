@@ -3113,7 +3113,7 @@ u←•UcS ⋄ u ["A⍳" ⋄ "λ😀"]   ⍝ [65 9075 ⋄ 955 128512]ₓ
 
 ⍝⍝ Character and string literals
 
-⍝ — Single quotes hold exactly one character
+⍝ — A single-quoted character is an atom
 ⍴'a'   ⍝ ⍬ₓ
 
 ⍝ — Double quotes make a vector, even for one character
@@ -3144,9 +3144,8 @@ u←•UcS ⋄ u ["A⍳" ⋄ "λ😀"]   ⍝ [65 9075 ⋄ 955 128512]ₓ
 'ab'
 ⍝ error: SYNTAX ERROR
 
-⍝ — Empty single quotes
-''
-⍝ error: SYNTAX ERROR
+⍝ — Empty single quotes make the same empty character vector
+''   ⍝ ""
 
 ⍝ — An unclosed string
 "abc

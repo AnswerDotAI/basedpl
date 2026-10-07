@@ -39,7 +39,9 @@ def _comment(text):
     chars = iter(enumerate(text))
     for i,c in chars:
         if c=='"': next((j for j,d in chars if d=='"'), None)
-        elif c=="'": next(chars, None); next(chars, None)
+        elif c=="'":
+            next(chars, None)
+            if not text.startswith("''", i) or text.startswith("'''", i): next(chars, None)
         elif c=='⍝': return text[:i].rstrip(), text[i+1:].lstrip()
 
 

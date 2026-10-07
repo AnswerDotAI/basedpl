@@ -28,7 +28,8 @@ fn inline(line: &str) -> Option<(&str, &str)> {
         match c {
             '"' => string = !string,
             '\'' if !string => {
-                chars.nth(1);
+                chars.next();
+                if !line[i..].starts_with("''") || line[i..].starts_with("'''") { chars.next(); }
             }
             '⍝' if !string => return Some((line[..i].trim_end(), line[i + c.len_utf8()..].trim_start())),
             _ => (),
