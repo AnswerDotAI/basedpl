@@ -1,6 +1,6 @@
 # `⍋` — Grade up
 
-Keys: `Alt-7 |`
+Keys: `Alt-Backslash 7`
 
 `⍋Y` gives indices that sort major cells ascending. Stable; uses [structural ordering](../evaluation.qmd#equality-and-ordering), without tolerance. NaN sorts after every other number.
 

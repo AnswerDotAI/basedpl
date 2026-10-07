@@ -8,7 +8,8 @@ attrs←["data-X":"a&""b" "x":¯2ₓ]
 "<text data-X=""a&amp;&quot;b"" x=""-2"">x&lt;y &amp; y&gt;z</text>"
 
 ⍝ xml-prefix — Prefixed names pass through unchanged
-root←•element "x:root" ⋄ leaf←•element "x:leaf"
+root←•element "x:root"
+leaf←•element "x:leaf"
 •xml⁻¹ ["xmlns:x":"urn:example"] root leaf "Hi"
 ⍝ =>
 "<x:root xmlns:x=""urn:example""><x:leaf>Hi</x:leaf></x:root>"
@@ -28,9 +29,7 @@ $t
 ⍝ mime-renderer — A renderer attached with •mime displays the current value
 total←{["text/html":"<b>",(⍕+/⍵.items),"</b>"]}ᵘ •mime ["items":[1 2 3]]
 total.items₁←10
-"text/html"⊃•mime total
-⍝ =>
-"<b>14</b>"
+"text/html"⊃•mime total   ⍝ "<b>14</b>"
 
 ⍝ mime-keep — Pervasive and structural functions keep a renderer, and other functions drop it
 im←•image 0.5×[0 1 ⋄ 1 0]
@@ -54,10 +53,9 @@ im←•image 0.5×[0 1 ⋄ 1 0]
 $t
 
 ⍝ mime-type — Values given one MIME type by separate calls share its renderer, so catenation keeps it
-a←"text/markdown" •mime "*a*" ⋄ b←"text/markdown" •mime "b"
-≢•mime a,b
-⍝ =>
-2ₓ
+a←"text/markdown" •mime "*a*"
+b←"text/markdown" •mime "b"
+≢•mime a,b   ⍝ 2ₓ
 
 ⍝ json-hooks — JSON export omits keyed entries that hold functions
 •json⁻¹ ["a":"x" "f":{⍵}]
@@ -68,7 +66,8 @@ a←"text/markdown" •mime "*a*" ⋄ b←"text/markdown" •mime "b"
 
 ⍝ plot-spec — •plot keeps its data and options, and edits create nested settings
 p←["mark":"bar"] •plot 1 2 3
-p.y.scale←"log" ⋄ p.series.a.color←"red"
+p.y.scale←"log"
+p.series.a.color←"red"
 [p.data p.mark p.y p.series]
 ⍝ =>
 [[1 2 3] "bar" ["scale":"log"] ["a":["color":"red"]]]
@@ -79,5 +78,8 @@ p.y.scale←"log" ⋄ p.series.a.color←"red"
 $t
 
 ⍝ plot-unknown — Rendering reports unknown fields
-p←•plot 1 2 3 ⋄ p.titel←'x' ⋄ •mime p
+p←•plot 1 2 3
+p.titel←'x'
+•mime p
+⍝ =>
 ⍝ error: DOMAIN ERROR

@@ -1,6 +1,6 @@
 import json, re
 import xml.etree.ElementTree as ET
-from basedpl.keyboards import LAYOUT, PLAIN, SHIFT, OPTION, OPTION_SHIFT, CONTROL_OPTION, attribute, keylayout, bases, shortcuts
+from basedpl.keyboards import LAYOUT, PLAIN, SHIFT, OPTION, OPTION_SHIFT, CONTROL_OPTION, attribute, keylayout, bases, shortcuts, dead_key_table
 
 layout = json.loads(LAYOUT.read_text())
 KEYS = {char: (int(code), i) for code, values in bases()['us']['keys'].items() if int(code) <= 50
@@ -55,6 +55,13 @@ def codes(presses):
     return [press(*p) for p in presses]
 
 
+def test_dead_key_table_hides_only_equivalent_shifted_keys():
+    sample = {'option': {'o': {'state': 'circle'}}, 'unshifted': {'*': '8', ':': ';'},
+              'states': {'circle': {'terminator': '○', 'keys': {'*': '⍟', '8': '⍟', ':': '⍠'}}}}
+    shown = dead_key_table(sample)
+    assert '<code>8</code>' in shown and '<code>*</code>' not in shown
+    assert '<code>:</code>' in shown
+
 def test_macos_follows_the_mapping_rules():
     assert attribute('"&<>') == '"&#x0022;&#x0026;&#x003C;&#x003E;"'
     parsed = parse(keylayout(layout))
@@ -92,7 +99,7 @@ def test_regional_layouts_preserve_native_typing_and_bpl():
              ('de', [(10, PLAIN), (24, PLAIN), (0, PLAIN)], '^á'),
              ('de', [(23, OPTION_SHIFT), (18, PLAIN), (22, CONTROL_OPTION), (18, PLAIN)], '₁¹'),
              ('de', [(50, OPTION_SHIFT)], '≥'),
-             ('de', [(6, OPTION)], '•'), ('fr', [(12, OPTION), (49, PLAIN)], '⍺'),
+             ('de', [(6, OPTION)], '•'), ('fr', [(12, OPTION)], '⍺'),
              ('fr', [(18, SHIFT), (20, PLAIN)], '1"'), ('fr', [(23, OPTION_SHIFT), (27, OPTION_SHIFT)], '[]'),
              ('fr', [(33, PLAIN), (14, PLAIN)], 'ê'), ('es', [(41, SHIFT), (39, PLAIN), (0, PLAIN)], 'Ñá')]
     for lang, presses, wanted in cases: assert simulate(parse(keylayout(layout, lang)), presses) == wanted, lang

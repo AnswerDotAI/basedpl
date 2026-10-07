@@ -1,15 +1,15 @@
-# `⍲` — NAND
+# `⊼` — NAND
 
-Keys: `Alt-0 ~`
+Keys: `Alt-Minus 0`
 
-`⍲Y`: Y<sup>2</sup>. Pervasive.
+`⊼Y`: Y<sup>2</sup>. Pervasive.
 
 ```bpl
-⍲[2 3]ₓ           ⍝ [4 9]ₓ
+⊼[2 3]ₓ           ⍝ [4 9]ₓ
 ```
 
-`X⍲Y` is Boolean NAND. Pervasive.
+`X⊼Y` is Boolean NAND. Pervasive.
 
 ```bpl
-0 0 1 1⍲0 1 0 1   ⍝ $t $t $t $f
+0 0 1 1⊼0 1 0 1   ⍝ $t $t $t $f
 ```

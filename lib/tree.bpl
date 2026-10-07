@@ -314,7 +314,7 @@ redblack ← {  ⍝ Red-black trees.
   }  ⍝ :: t ∇ r → t p
   balB←{  ⍝ sibling black                 [balB]
     [near far]←⍺↣isred¨⍵×1,¨¯1 1  ⍝ nephew colours.
-    near⍱far?⍺ balBbb ⍵;  ⍝ both nephews black: [balBbb]
+    near⊽far?⍺ balBbb ⍵;  ⍝ both nephews black: [balBbb]
     far?⍺ balB_r ⍵;  ⍝ far nephew red: [balB_r]
     ⍺ balBrb ⍵  ⍝ far nephew black: [balBrb]
   }  ⍝ :: t ∇ r → t p

@@ -246,6 +246,7 @@ def dead_key_table(layout):
         digits = all(isinstance(keys.get(str(i)), str) for i in range(10))
         if digits: yield prefix + '0–9', keys['0'] + '–' + keys['9']
         for key, value in keys.items():
+            if keys.get(layout['unshifted'].get(key)) == value: continue
             if digits and key in '0123456789': continue
             if isinstance(value, dict): yield from followups(value['state'], prefix + key)
             else: yield prefix + key, value
@@ -305,15 +306,20 @@ In System Settings, open Keyboard → Text Input → Edit, add `BasedPL-us` (or 
 '''
 
 
+def write_changed(path, data):
+    if isinstance(data, str): data = data.encode()
+    if path.exists() and path.read_bytes() == data: return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+
 def write():
     "Generate regional bundles, shortcut tables, and the docs keyboard map, reusing the US icon."
     layout, image = json.loads(LAYOUT.read_text()), ICON.read_bytes()
-    KEYBOARD_PAGE.write_text(keyboard_page(layout))
+    write_changed(KEYBOARD_PAGE, keyboard_page(layout))
     for lang in SOURCES:
         name = f'BasedPL-{lang}'
         resources = bundle(lang)/'Resources'
         outputs = {resources/f'{name}.keylayout': keylayout(layout, lang).encode(), resources/f'{name}.icns': image,
                    OUTPUT/f'{name}.txt': keyboard_help(layout, lang).encode(), **metadata(lang)}
-        for path, data in outputs.items():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
+        for path, data in outputs.items(): write_changed(path, data)

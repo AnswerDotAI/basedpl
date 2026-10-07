@@ -1,6 +1,6 @@
 # `⊆` — Nest / Partition
 
-Keys: `Alt-z _`
+Keys: `Alt-Minus z`
 
 `⊆Y` encloses atoms and simple arrays. Already-nested arrays stay unchanged.
 

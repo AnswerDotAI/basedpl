@@ -10,9 +10,9 @@ Run `bpl`. An expression displays its result. An assignment keeps its names for 
 
 ## Typing glyphs
 
-Hold Alt and press the key that the [glyph reference](glyphs.qmd#typing-glyphs) lists. For example, Alt-m gives `×`, Alt-u gives `÷`, and Alt-h, Alt-j, Alt-k and Alt-l give `←`, `↓`, `↑` and `→`. Some glyphs take a second key. Alt-a then `_` gives `⍶`, and Alt-c then `t` gives `⍝`. Hold Alt and tap the same dead key twice to type its own character: Alt-backtick twice gives `⋄`, and Alt-a twice gives `⍺`. The sequence ends after the second tap. Space or an unlisted key also types the dead key's character. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence. Superscripts start with Alt-6: Alt-6 then `2` gives `²`, and Alt-6 then `-1` gives `⁻¹`. Subscripts start with Alt-5: Alt-5 then `1` gives `₁`. Alt keys also insert glyphs inside strings and comments.
+Hold Alt and press the key that the [glyph reference](glyphs.qmd#typing-glyphs) lists. For example, Alt-m gives `×`, Alt-u gives `÷`, and Alt-h, Alt-j, Alt-k and Alt-l give `←`, `↓`, `↑` and `→`. Some glyphs take a second key. Alt-Minus then `a` gives `⍶`, and Alt-c then `t` gives `⍝`. Hold Alt and tap the same dead key twice to type its own character: Alt-o twice gives `○`, and Alt-Backslash twice gives `⍭`. The sequence ends after the second tap. Space or an unlisted key also types the dead key's character. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence. Superscripts start with Alt-6: Alt-6 then `2` gives `²`, and Alt-6 then `-1` gives `⁻¹`. Subscripts start with Alt-5: Alt-5 then `1` gives `₁`. Alt keys also insert glyphs inside strings and comments.
 
-While a dead key is pending, a compact hint shows its character and valid next keys. For example, Alt-a shows `⍺:_-`.
+While a dead key is pending, a compact hint shows its character and valid next keys. For example, Alt-= shows `≡:/`. Shifted backups are accepted but omitted from hints.
 
 On macOS, configure your terminal to send left Option as Alt. In Ghostty:
 
@@ -57,8 +57,8 @@ import json
 from importlib.resources import files
 
 layout = json.loads(files('basedpl').joinpath('layout.json').read_text())
-assert layout['option']['h'] == '←' and layout['option']['a'] == {'state': 'alpha'}
-assert layout['states']['alpha']['keys']['_'] == '⍶'
+assert layout['option']['h'] == '←' and layout['option']['a'] == '⍺'
+assert layout['states']['bar']['keys']['a'] == '⍶'
 ```
 
 Monaco/CodeMirror adapters can import the same JSON. Check `alt_aliases` against `KeyboardEvent.key` first. Otherwise derive the US character from `KeyboardEvent.code` and Shift: macOS Option may already have changed `event.key`. Track `AltLeft`/`AltRight` keydown/up to select one Option key, and clear modifier state on blur. For a mapped key, prevent the browser's default action and insert the text through the editor's normal edit transaction. Keep a pending dead-key state until the next key, and clear it on blur or a focus change. Leave composition events to the input method.

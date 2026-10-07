@@ -4,20 +4,20 @@ Chords use the unshifted key label.
 Repeat a prefix chord to type its character, or release modifiers before its next key.
 
 Chord	Output or prefix
-Option-a	alpha prefix
+Option-a	⍺
 Option-s	⌈
 Option-d	⌊
 Option-f	∂
 Option-h	←
-Option-g	del prefix
-Option-z	enclose prefix
+Option-g	∇
+Option-z	⊂
 Option-x	⊃
 Option-c	cap prefix
 Option-v	∪
 Option-b	decode prefix
 Option-q	quad prefix
-Option-w	omega prefix
-Option-e	epsilon prefix
+Option-w	⍵
+Option-e	∊
 Option-r	⍴
 Option-y	•
 Option-t	∘
@@ -28,22 +28,22 @@ Option-6	superscript prefix
 Option-5	subscript prefix
 Option-=	match prefix
 Option-Shift-=	≠
-Option-9	or prefix
-Option-7	delta prefix
+Option-9	∨
+Option-7	∆
 Option--	bar prefix
 Option-8	∞
-Option-0	and prefix
+Option-0	∧
 Option-Shift-0	⍬
 Option-o	circle prefix
 Option-u	÷
-Option-i	iota prefix
+Option-i	⍳
 Option-p	π
 Option-l	→
 Option-j	↓
 Option-'	⊢
 Option-k	take prefix
 Option-;	⊣
-Option-\	⍭
+Option-\	stile prefix
 Option-Shift-\	⌽
 Option-,	↢
 Option-Shift-,	≤
@@ -52,4 +52,4 @@ Option-n	encode prefix
 Option-m	×
 Option-.	↣
 Option-Shift-.	≥
-Option-`	diamond prefix
+Option-`	⋄

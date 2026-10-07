@@ -1,8 +1,8 @@
 // The playground page. It runs the textarea's code in a worker, shows each output as it arrives, and adds the language bar. Stop ends
 // the worker and starts a new one, as a trap does.
-const code = document.querySelector('#code'), out = document.querySelector('#output');
+const code = document.querySelector('#code'), history = document.querySelector('#history');
 const run = document.querySelector('#run'), stop = document.querySelector('#stop');
-let worker, busy = false, bar = false;
+let worker, busy = false, bar = false, out = history;
 
 function show(tag, text, cls) {
     const el = out.appendChild(document.createElement(tag));
@@ -26,6 +26,7 @@ function finish() { busy = false; run.disabled = false; stop.disabled = true; }
 function start() {
     worker = new Worker(new URL('worker.js', import.meta.url), { type: 'module' });
     worker.onmessage = ({ data }) => {
+        const rect = code.getBoundingClientRect(), following = rect.top >= 0 && rect.bottom <= innerHeight;
         if (data.type === 'ready') {
             if (!bar) addBar(data.symbols);
             run.disabled = false;
@@ -35,6 +36,7 @@ function start() {
             finish();
         } else if (data.type === 'panic') show('pre', `BPL panicked: ${data.message}`, 'error');
         else if (data.type === 'crash') restart(`The interpreter stopped (${data.message}). Started a new session.`);
+        if (following) code.scrollIntoView({block: 'nearest'});
     };
 }
 
@@ -59,8 +61,19 @@ function go() {
     busy = true;
     run.disabled = true;
     stop.disabled = false;
-    out.replaceChildren();
+    const cell = history.appendChild(document.createElement('div'));
+    cell.className = 'cell';
+    const source = cell.appendChild(document.createElement('div'));
+    source.className = 'sourceCode';
+    const pre = source.appendChild(document.createElement('pre'));
+    pre.className = 'sourceCode bpl';
+    const submitted = pre.appendChild(document.createElement('code'));
+    submitted.className = 'sourceCode bpl';
+    submitted.textContent = code.value;
+    out = cell.appendChild(document.createElement('div'));
+    out.className = 'cell-output cell-output-display';
     worker.postMessage(code.value);
+    code.scrollIntoView({block: 'nearest'});
 }
 
 run.onclick = go;

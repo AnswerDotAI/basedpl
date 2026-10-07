@@ -80,16 +80,16 @@ def parse(text):
         if count==1:
             split = body.index(SEPARATOR)
             code, expect = '\n'.join(body[:split]), '\n'.join(body[split+1:])
+        elif count==0 and body and (pair := _comment('\n'.join(body))) and '\n' not in pair[1] and (len(body)==1 or pair[0].count('\n')==len(body)-1): code,expect = pair
         elif count==0 and len(body)==2: code,expect = body
-        elif count==0 and len(body)==1 and (pair := _comment(body[0])): code,expect = pair
-        else: raise ValueError(f'line {start+1}: use one {SEPARATOR!r} between multiline expressions')
+        else: raise ValueError(f'line {start+1}: use one {SEPARATOR!r} between multiline expressions, or an inline expectation on the last line')
         if not expect: raise ValueError(f'line {start+1}: missing expectation')
         result.append(Case(code, expect, id, comment, line=start+1, section=section, output=output, input=input, **options))
     return result
 
 
 def render(cases):
-    "Write compact pairs or explicitly separated multiline expressions."
+    "Write each case inline, as a pair of lines, or with `⍝ =>` between multiline expressions."
     result, section = [], ''
     for case in cases:
         if '\n' in case.section: raise ValueError('section must fit one line')
@@ -105,7 +105,9 @@ def render(cases):
         comment = case.comment + (f' [{options}]' if options else '')
         header = '⍝ ' + (case.id+' ' if case.id else '') + '—' + (f' {comment.lstrip()}' if comment else '')
         separator = f'\n{SEPARATOR}\n' if '\n' in case.code or '\n' in case.expect else '\n'
-        if (separator=='\n' and len(case.code)+len(case.expect)+5<70 and case.output is None and case.input is None
+        last = case.code.rsplit('\n', 1)[-1]
+        short = len(last)+len(case.expect)<40 if '\n' in case.code else len(case.code)+len(case.expect)+5<70
+        if ('\n' not in case.expect and short and case.output is None and case.input is None
             and case.code==case.code.rstrip() and case.expect==case.expect.lstrip()
             and not case.expect.startswith('⍝') and _comment(case.code) is None): separator = '   ⍝ '
         fixtures = ''.join('' if text is None else '\n'+marker+(' '+_escaped(text) if text else '') for marker,text in ((INPUT, case.input), (OUTPUT, case.output)))

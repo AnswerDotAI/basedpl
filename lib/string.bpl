@@ -246,8 +246,8 @@ dtb ← {  ⍝ Drop Trailing Blanks.
 
 deb ← {  ⍝ Drop Ending Blanks.
   b←⍵∊⍺  ⍝ mask
-  1≥⍴⍴⍵?(∧\b ⍱ ⌽∧\⌽b)#⍵;  ⍝ vector
-  b←∧⌿b ⋄ (∧\b ⍱ ⌽∧\⌽b)#⍠¯1 ⍵  ⍝ matrix
+  1≥⍴⍴⍵?(∧\b ⊽ ⌽∧\⌽b)#⍵;  ⍝ vector
+  b←∧⌿b ⋄ (∧\b ⊽ ⌽∧\⌽b)#⍠¯1 ⍵  ⍝ matrix
 }deblank
 
 ⍝ From http://dfns.dyalog.com/c_dmb.htm
@@ -261,8 +261,8 @@ dmb ← {  ⍝ Drop Multiple Blanks.
 
 dxb ← {  ⍝ Drop eXtraneous Blanks.
   b←⍵∊⍺  ⍝ mask
-  1≥⍴⍴⍵?1↑b ↓ b⍲1↓b,1 # ⍵;  ⍝ vector
-  b←∧⌿b ⋄ 0,1↑b ↓ b⍲1↓b,1 #⍠¯1 ⍵  ⍝ matrix
+  1≥⍴⍴⍵?1↑b ↓ b⊼1↓b,1 # ⍵;  ⍝ vector
+  b←∧⌿b ⋄ 0,1↑b ↓ b⊼1↓b,1 #⍠¯1 ⍵  ⍝ matrix
 }deblank
 
 ⍝ From http://dfns.dyalog.com/c_dab.htm

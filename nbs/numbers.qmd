@@ -157,7 +157,7 @@ x←3 1 4 1 5
 (4>2)⌷"no" "yes"     ⍝ "yes"
 ```
 
-Arithmetic on Booleans gives integers. `∧`, `∨`, `⍱`, `⍲`, `⌊` and `⌈` on two Booleans give a Boolean:
+Arithmetic on Booleans gives integers. `∧`, `∨`, `⊽`, `⊼`, `⌊` and `⌈` on two Booleans give a Boolean:
 
 ```bpl
 $t+$t                ⍝ 2ₓ

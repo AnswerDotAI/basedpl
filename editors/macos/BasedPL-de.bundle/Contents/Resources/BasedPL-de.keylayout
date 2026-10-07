@@ -34,10 +34,10 @@
    <key code="10" action="k10-m0"/>
    <key code="11" output="b"/>
    <key code="12" output="q"/>
-   <key code="13" output="w"/>
+   <key code="13" action="k13-m0"/>
    <key code="14" action="k14-m0"/>
    <key code="15" action="k15-m0"/>
-   <key code="16" output="z"/>
+   <key code="16" action="k16-m0"/>
    <key code="17" action="k17-m0"/>
    <key code="18" action="k18-m0"/>
    <key code="19" action="k19-m0"/>
@@ -195,7 +195,7 @@
    <key code="41" output="Ö"/>
    <key code="42" output="'"/>
    <key code="43" action="k43-m1"/>
-   <key code="44" action="k44-m1"/>
+   <key code="44" output="_"/>
    <key code="45" action="k45-m1"/>
    <key code="46" output="M"/>
    <key code="47" action="k47-m1"/>
@@ -455,7 +455,7 @@
    <key code="41" output="Ö"/>
    <key code="42" output="'"/>
    <key code="43" action="k43-m3"/>
-   <key code="44" action="k44-m3"/>
+   <key code="44" output="_"/>
    <key code="45" action="k45-m3"/>
    <key code="46" output="M"/>
    <key code="47" action="k47-m3"/>
@@ -541,12 +541,12 @@
    <key code="127" output=""/>
   </keyMap>
   <keyMap index="4">
-   <key code="0" action="k0-m4"/>
+   <key code="0" output="⍺"/>
    <key code="1" output="⌈"/>
    <key code="2" output="⌊"/>
    <key code="3" output="∂"/>
    <key code="4" output="←"/>
-   <key code="5" action="k5-m4"/>
+   <key code="5" output="∇"/>
    <key code="6" output="•"/>
    <key code="7" output="⊃"/>
    <key code="8" action="k8-m4"/>
@@ -554,10 +554,10 @@
    <key code="10" output="„"/>
    <key code="11" action="k11-m4"/>
    <key code="12" action="k12-m4"/>
-   <key code="13" action="k13-m4"/>
-   <key code="14" action="k14-m4"/>
+   <key code="13" output="⍵"/>
+   <key code="14" output="∊"/>
    <key code="15" output="⍴"/>
-   <key code="16" action="k16-m4"/>
+   <key code="16" output="⊂"/>
    <key code="17" output="∘"/>
    <key code="18" action="k18-m4"/>
    <key code="19" output="“"/>
@@ -570,12 +570,12 @@
    <key code="26" action="k26-m4"/>
    <key code="27" output="¿"/>
    <key code="28" output="{"/>
-   <key code="29" action="k29-m4"/>
+   <key code="29" output="∧"/>
    <key code="30" output="±"/>
    <key code="31" action="k31-m4"/>
    <key code="32" action="k32-m4"/>
    <key code="33" output="•"/>
-   <key code="34" action="k34-m4"/>
+   <key code="34" output="⍳"/>
    <key code="35" output="π"/>
    <key code="36" output="&#x000D;"/>
    <key code="37" output="@"/>
@@ -695,8 +695,8 @@
    <key code="21" output="£"/>
    <key code="22" action="k22-m5"/>
    <key code="23" action="k23-m5"/>
-   <key code="24" action="k24-m5"/>
-   <key code="25" action="k25-m5"/>
+   <key code="24" output="⋄"/>
+   <key code="25" output="∨"/>
    <key code="26" action="k26-m5"/>
    <key code="27" output="˙"/>
    <key code="28" output="∞"/>
@@ -1323,7 +1323,7 @@
   <keyMap index="10">
    <key code="0" output="å"/>
    <key code="1" output="‚"/>
-   <key code="2" action="k2-m10"/>
+   <key code="2" output="∆"/>
    <key code="3" output="ƒ"/>
    <key code="4" output="ª"/>
    <key code="5" output="©"/>
@@ -1356,7 +1356,7 @@
    <key code="32" output="¨"/>
    <key code="33" output="•"/>
    <key code="34" output="⁄"/>
-   <key code="35" output="⍭"/>
+   <key code="35" action="k35-m10"/>
    <key code="36" output="&#x000D;"/>
    <key code="37" output="@"/>
    <key code="38" output="º"/>
@@ -1589,10 +1589,12 @@
    <when state="native-3" output="à"/>
    <when state="native-4" output="ä"/>
    <when state="native-5" output="ã"/>
+   <when state="bar" output="⍶"/>
   </action>
   <action id="k5-m0">
    <when state="none" output="g"/>
    <when state="diaeresis" output="⍢"/>
+   <when state="stile" output="⍒"/>
   </action>
   <action id="k6-m0">
    <when state="none" output="y"/>
@@ -1605,6 +1607,10 @@
   <action id="k10-m0">
    <when state="none" next="native-1" output=""/>
   </action>
+  <action id="k13-m0">
+   <when state="none" output="w"/>
+   <when state="bar" output="⍹"/>
+  </action>
   <action id="k14-m0">
    <when state="none" output="e"/>
    <when state="native-1" output="ê"/>
@@ -1612,10 +1618,15 @@
    <when state="native-3" output="è"/>
    <when state="native-4" output="ë"/>
    <when state="subscript" output="ₑ"/>
+   <when state="bar" output="⍷"/>
   </action>
   <action id="k15-m0">
    <when state="none" output="r"/>
    <when state="subscript" output="ᵣ"/>
+  </action>
+  <action id="k16-m0">
+   <when state="none" output="z"/>
+   <when state="bar" output="⊆"/>
   </action>
   <action id="k17-m0">
    <when state="none" output="t"/>
@@ -1678,6 +1689,7 @@
    <when state="superscript-minus" output="⁻⁹"/>
    <when state="subscript" output="₉"/>
    <when state="subscript-minus" output="₋₉"/>
+   <when state="bar" output="⊽"/>
   </action>
   <action id="k26-m0">
    <when state="none" output="7"/>
@@ -1685,6 +1697,8 @@
    <when state="superscript-minus" output="⁻⁷"/>
    <when state="subscript" output="₇"/>
    <when state="subscript-minus" output="₋₇"/>
+   <when state="bar" output="⍙"/>
+   <when state="stile" output="⍋"/>
   </action>
   <action id="k28-m0">
    <when state="none" output="8"/>
@@ -1701,6 +1715,7 @@
    <when state="superscript-minus" output="⁻⁰"/>
    <when state="subscript" output="₀"/>
    <when state="subscript-minus" output="₋₀"/>
+   <when state="bar" output="⊼"/>
   </action>
   <action id="k31-m0">
    <when state="none" output="o"/>
@@ -1727,6 +1742,7 @@
    <when state="native-2" output="í"/>
    <when state="native-3" output="ì"/>
    <when state="native-4" output="ï"/>
+   <when state="bar" output="⍸"/>
   </action>
   <action id="k38-m0">
    <when state="none" output="j"/>
@@ -1741,14 +1757,7 @@
    <when state="none" output="-"/>
    <when state="superscript" next="superscript-minus" output=""/>
    <when state="subscript" next="subscript-minus" output=""/>
-   <when state="diamond" output="⍚"/>
-   <when state="delta" output="⍙"/>
-   <when state="omega" output="⍹"/>
-   <when state="epsilon" output="⍷"/>
-   <when state="iota" output="⍸"/>
    <when state="circle" output="⊖"/>
-   <when state="alpha" output="⍶"/>
-   <when state="enclose" output="⊆"/>
   </action>
   <action id="k45-m0">
    <when state="none" output="n"/>
@@ -1770,21 +1779,12 @@
    <when state="superscript-minus" output="⁻"/>
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
-   <when state="diamond" output="⋄"/>
-   <when state="delta" output="∆"/>
-   <when state="or" output="∨"/>
-   <when state="and" output="∧"/>
    <when state="bar" output="¯"/>
    <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
-   <when state="omega" output="⍵"/>
-   <when state="epsilon" output="∊"/>
-   <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="alpha" output="⍺"/>
-   <when state="del" output="∇"/>
+   <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="enclose" output="⊂"/>
    <when state="cap" output="∩"/>
    <when state="decode" output="⊥"/>
    <when state="encode" output="⊤"/>
@@ -1796,21 +1796,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -1827,21 +1818,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -1870,14 +1852,7 @@
    <when state="none" output="-"/>
    <when state="superscript" next="superscript-minus" output=""/>
    <when state="subscript" next="subscript-minus" output=""/>
-   <when state="diamond" output="⍚"/>
-   <when state="delta" output="⍙"/>
-   <when state="omega" output="⍹"/>
-   <when state="epsilon" output="⍷"/>
-   <when state="iota" output="⍸"/>
    <when state="circle" output="⊖"/>
-   <when state="alpha" output="⍶"/>
-   <when state="enclose" output="⊆"/>
   </action>
   <action id="k81-m0">
    <when state="none" output="="/>
@@ -1889,6 +1864,7 @@
    <when state="superscript-minus" output="⁻⁰"/>
    <when state="subscript" output="₀"/>
    <when state="subscript-minus" output="₋₀"/>
+   <when state="bar" output="⊼"/>
   </action>
   <action id="k83-m0">
    <when state="none" output="1"/>
@@ -1938,6 +1914,8 @@
    <when state="superscript-minus" output="⁻⁷"/>
    <when state="subscript" output="₇"/>
    <when state="subscript-minus" output="₋₇"/>
+   <when state="bar" output="⍙"/>
+   <when state="stile" output="⍋"/>
   </action>
   <action id="k91-m0">
    <when state="none" output="8"/>
@@ -1954,6 +1932,7 @@
    <when state="superscript-minus" output="⁻⁹"/>
    <when state="subscript" output="₉"/>
    <when state="subscript-minus" output="₋₉"/>
+   <when state="bar" output="⊽"/>
   </action>
   <action id="k93-m0">
    <when state="none" next="native-1" output=""/>
@@ -1980,8 +1959,7 @@
   <action id="k24-m1">
    <when state="none" next="native-3" output=""/>
    <when state="diaeresis" output="⍨"/>
-   <when state="or" output="⍱"/>
-   <when state="and" output="⍲"/>
+   <when state="bar" output="⍚"/>
    <when state="quad" output="⌺"/>
   </action>
   <action id="k26-m1">
@@ -2025,16 +2003,6 @@
    <when state="none" output=";"/>
    <when state="quad" output="⍠"/>
   </action>
-  <action id="k44-m1">
-   <when state="none" output="_"/>
-   <when state="diamond" output="⍚"/>
-   <when state="delta" output="⍙"/>
-   <when state="omega" output="⍹"/>
-   <when state="epsilon" output="⍷"/>
-   <when state="iota" output="⍸"/>
-   <when state="alpha" output="⍶"/>
-   <when state="enclose" output="⊆"/>
-  </action>
   <action id="k45-m1">
    <when state="none" output="N"/>
    <when state="native-5" output="Ñ"/>
@@ -2055,21 +2023,12 @@
    <when state="superscript-minus" output="⁻"/>
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
-   <when state="diamond" output="⋄"/>
-   <when state="delta" output="∆"/>
-   <when state="or" output="∨"/>
-   <when state="and" output="∧"/>
    <when state="bar" output="¯"/>
    <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
-   <when state="omega" output="⍵"/>
-   <when state="epsilon" output="∊"/>
-   <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="alpha" output="⍺"/>
-   <when state="del" output="∇"/>
+   <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="enclose" output="⊂"/>
    <when state="cap" output="∩"/>
    <when state="decode" output="⊥"/>
    <when state="encode" output="⊤"/>
@@ -2081,21 +2040,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -2112,21 +2062,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -2170,14 +2111,7 @@
    <when state="none" output="-"/>
    <when state="superscript" next="superscript-minus" output=""/>
    <when state="subscript" next="subscript-minus" output=""/>
-   <when state="diamond" output="⍚"/>
-   <when state="delta" output="⍙"/>
-   <when state="omega" output="⍹"/>
-   <when state="epsilon" output="⍷"/>
-   <when state="iota" output="⍸"/>
    <when state="circle" output="⊖"/>
-   <when state="alpha" output="⍶"/>
-   <when state="enclose" output="⊆"/>
   </action>
   <action id="k81-m1">
    <when state="none" output="="/>
@@ -2189,6 +2123,7 @@
    <when state="superscript-minus" output="⁻⁰"/>
    <when state="subscript" output="₀"/>
    <when state="subscript-minus" output="₋₀"/>
+   <when state="bar" output="⊼"/>
   </action>
   <action id="k83-m1">
    <when state="none" output="1"/>
@@ -2238,6 +2173,8 @@
    <when state="superscript-minus" output="⁻⁷"/>
    <when state="subscript" output="₇"/>
    <when state="subscript-minus" output="₋₇"/>
+   <when state="bar" output="⍙"/>
+   <when state="stile" output="⍋"/>
   </action>
   <action id="k91-m1">
    <when state="none" output="8"/>
@@ -2254,6 +2191,7 @@
    <when state="superscript-minus" output="⁻⁹"/>
    <when state="subscript" output="₉"/>
    <when state="subscript-minus" output="₋₉"/>
+   <when state="bar" output="⊽"/>
   </action>
   <action id="k0-m2">
    <when state="none" output="A"/>
@@ -2328,6 +2266,7 @@
    <when state="superscript-minus" output="⁻⁹"/>
    <when state="subscript" output="₉"/>
    <when state="subscript-minus" output="₋₉"/>
+   <when state="bar" output="⊽"/>
   </action>
   <action id="k26-m2">
    <when state="none" output="7"/>
@@ -2335,6 +2274,8 @@
    <when state="superscript-minus" output="⁻⁷"/>
    <when state="subscript" output="₇"/>
    <when state="subscript-minus" output="₋₇"/>
+   <when state="bar" output="⍙"/>
+   <when state="stile" output="⍋"/>
   </action>
   <action id="k28-m2">
    <when state="none" output="8"/>
@@ -2351,6 +2292,7 @@
    <when state="superscript-minus" output="⁻⁰"/>
    <when state="subscript" output="₀"/>
    <when state="subscript-minus" output="₋₀"/>
+   <when state="bar" output="⊼"/>
   </action>
   <action id="k31-m2">
    <when state="none" output="O"/>
@@ -2382,14 +2324,7 @@
    <when state="none" output="-"/>
    <when state="superscript" next="superscript-minus" output=""/>
    <when state="subscript" next="subscript-minus" output=""/>
-   <when state="diamond" output="⍚"/>
-   <when state="delta" output="⍙"/>
-   <when state="omega" output="⍹"/>
-   <when state="epsilon" output="⍷"/>
-   <when state="iota" output="⍸"/>
    <when state="circle" output="⊖"/>
-   <when state="alpha" output="⍶"/>
-   <when state="enclose" output="⊆"/>
   </action>
   <action id="k45-m2">
    <when state="none" output="N"/>
@@ -2407,21 +2342,12 @@
    <when state="superscript-minus" output="⁻"/>
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
-   <when state="diamond" output="⋄"/>
-   <when state="delta" output="∆"/>
-   <when state="or" output="∨"/>
-   <when state="and" output="∧"/>
    <when state="bar" output="¯"/>
    <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
-   <when state="omega" output="⍵"/>
-   <when state="epsilon" output="∊"/>
-   <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="alpha" output="⍺"/>
-   <when state="del" output="∇"/>
+   <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="enclose" output="⊂"/>
    <when state="cap" output="∩"/>
    <when state="decode" output="⊥"/>
    <when state="encode" output="⊤"/>
@@ -2433,21 +2359,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -2464,21 +2381,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -2507,14 +2415,7 @@
    <when state="none" output="-"/>
    <when state="superscript" next="superscript-minus" output=""/>
    <when state="subscript" next="subscript-minus" output=""/>
-   <when state="diamond" output="⍚"/>
-   <when state="delta" output="⍙"/>
-   <when state="omega" output="⍹"/>
-   <when state="epsilon" output="⍷"/>
-   <when state="iota" output="⍸"/>
    <when state="circle" output="⊖"/>
-   <when state="alpha" output="⍶"/>
-   <when state="enclose" output="⊆"/>
   </action>
   <action id="k81-m2">
    <when state="none" output="="/>
@@ -2526,6 +2427,7 @@
    <when state="superscript-minus" output="⁻⁰"/>
    <when state="subscript" output="₀"/>
    <when state="subscript-minus" output="₋₀"/>
+   <when state="bar" output="⊼"/>
   </action>
   <action id="k83-m2">
    <when state="none" output="1"/>
@@ -2575,6 +2477,8 @@
    <when state="superscript-minus" output="⁻⁷"/>
    <when state="subscript" output="₇"/>
    <when state="subscript-minus" output="₋₇"/>
+   <when state="bar" output="⍙"/>
+   <when state="stile" output="⍋"/>
   </action>
   <action id="k91-m2">
    <when state="none" output="8"/>
@@ -2591,6 +2495,7 @@
    <when state="superscript-minus" output="⁻⁹"/>
    <when state="subscript" output="₉"/>
    <when state="subscript-minus" output="₋₉"/>
+   <when state="bar" output="⊽"/>
   </action>
   <action id="k93-m2">
    <when state="none" next="native-1" output=""/>
@@ -2617,8 +2522,7 @@
   <action id="k24-m3">
    <when state="none" next="native-3" output=""/>
    <when state="diaeresis" output="⍨"/>
-   <when state="or" output="⍱"/>
-   <when state="and" output="⍲"/>
+   <when state="bar" output="⍚"/>
    <when state="quad" output="⌺"/>
   </action>
   <action id="k26-m3">
@@ -2662,16 +2566,6 @@
    <when state="none" output=";"/>
    <when state="quad" output="⍠"/>
   </action>
-  <action id="k44-m3">
-   <when state="none" output="_"/>
-   <when state="diamond" output="⍚"/>
-   <when state="delta" output="⍙"/>
-   <when state="omega" output="⍹"/>
-   <when state="epsilon" output="⍷"/>
-   <when state="iota" output="⍸"/>
-   <when state="alpha" output="⍶"/>
-   <when state="enclose" output="⊆"/>
-  </action>
   <action id="k45-m3">
    <when state="none" output="N"/>
    <when state="native-5" output="Ñ"/>
@@ -2692,21 +2586,12 @@
    <when state="superscript-minus" output="⁻"/>
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
-   <when state="diamond" output="⋄"/>
-   <when state="delta" output="∆"/>
-   <when state="or" output="∨"/>
-   <when state="and" output="∧"/>
    <when state="bar" output="¯"/>
    <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
-   <when state="omega" output="⍵"/>
-   <when state="epsilon" output="∊"/>
-   <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="alpha" output="⍺"/>
-   <when state="del" output="∇"/>
+   <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="enclose" output="⊂"/>
    <when state="cap" output="∩"/>
    <when state="decode" output="⊥"/>
    <when state="encode" output="⊤"/>
@@ -2718,21 +2603,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -2749,21 +2625,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -2807,14 +2674,7 @@
    <when state="none" output="-"/>
    <when state="superscript" next="superscript-minus" output=""/>
    <when state="subscript" next="subscript-minus" output=""/>
-   <when state="diamond" output="⍚"/>
-   <when state="delta" output="⍙"/>
-   <when state="omega" output="⍹"/>
-   <when state="epsilon" output="⍷"/>
-   <when state="iota" output="⍸"/>
    <when state="circle" output="⊖"/>
-   <when state="alpha" output="⍶"/>
-   <when state="enclose" output="⊆"/>
   </action>
   <action id="k81-m3">
    <when state="none" output="="/>
@@ -2826,6 +2686,7 @@
    <when state="superscript-minus" output="⁻⁰"/>
    <when state="subscript" output="₀"/>
    <when state="subscript-minus" output="₋₀"/>
+   <when state="bar" output="⊼"/>
   </action>
   <action id="k83-m3">
    <when state="none" output="1"/>
@@ -2875,6 +2736,8 @@
    <when state="superscript-minus" output="⁻⁷"/>
    <when state="subscript" output="₇"/>
    <when state="subscript-minus" output="₋₇"/>
+   <when state="bar" output="⍙"/>
+   <when state="stile" output="⍋"/>
   </action>
   <action id="k91-m3">
    <when state="none" output="8"/>
@@ -2891,14 +2754,7 @@
    <when state="superscript-minus" output="⁻⁹"/>
    <when state="subscript" output="₉"/>
    <when state="subscript-minus" output="₋₉"/>
-  </action>
-  <action id="k0-m4">
-   <when state="none" next="alpha" output=""/>
-   <when state="alpha" output="⍺"/>
-  </action>
-  <action id="k5-m4">
-   <when state="none" next="del" output=""/>
-   <when state="del" output="∇"/>
+   <when state="bar" output="⊽"/>
   </action>
   <action id="k8-m4">
    <when state="none" next="cap" output=""/>
@@ -2912,31 +2768,13 @@
    <when state="none" next="quad" output=""/>
    <when state="quad" output="⎕"/>
   </action>
-  <action id="k13-m4">
-   <when state="none" next="omega" output=""/>
-   <when state="omega" output="⍵"/>
-  </action>
-  <action id="k14-m4">
-   <when state="none" next="epsilon" output=""/>
-   <when state="epsilon" output="∊"/>
-  </action>
-  <action id="k16-m4">
-   <when state="none" next="enclose" output=""/>
-   <when state="enclose" output="⊂"/>
-  </action>
   <action id="k18-m4">
    <when state="none" next="diaeresis" output=""/>
    <when state="diaeresis" output="¨"/>
   </action>
   <action id="k26-m4">
    <when state="none" output="|"/>
-   <when state="delta" output="⍋"/>
    <when state="quad" output="⌷"/>
-   <when state="del" output="⍒"/>
-  </action>
-  <action id="k29-m4">
-   <when state="none" next="and" output=""/>
-   <when state="and" output="∧"/>
   </action>
   <action id="k31-m4">
    <when state="none" next="circle" output=""/>
@@ -2944,10 +2782,6 @@
   </action>
   <action id="k32-m4">
    <when state="none" next="native-4" output=""/>
-  </action>
-  <action id="k34-m4">
-   <when state="none" next="iota" output=""/>
-   <when state="iota" output="⍳"/>
   </action>
   <action id="k40-m4">
    <when state="none" next="take" output=""/>
@@ -2960,8 +2794,6 @@
   <action id="k45-m4">
    <when state="none" next="native-5" output=""/>
    <when state="diaeresis" output="⍨"/>
-   <when state="or" output="⍱"/>
-   <when state="and" output="⍲"/>
   </action>
   <action id="k49-m4">
    <when state="none" output=" "/>
@@ -2970,21 +2802,12 @@
    <when state="superscript-minus" output="⁻"/>
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
-   <when state="diamond" output="⋄"/>
-   <when state="delta" output="∆"/>
-   <when state="or" output="∨"/>
-   <when state="and" output="∧"/>
    <when state="bar" output="¯"/>
    <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
-   <when state="omega" output="⍵"/>
-   <when state="epsilon" output="∊"/>
-   <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="alpha" output="⍺"/>
-   <when state="del" output="∇"/>
+   <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="enclose" output="⊂"/>
    <when state="cap" output="∩"/>
    <when state="decode" output="⊥"/>
    <when state="encode" output="⊤"/>
@@ -2996,21 +2819,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -3027,21 +2841,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -3066,14 +2871,7 @@
    <when state="none" output="-"/>
    <when state="superscript" next="superscript-minus" output=""/>
    <when state="subscript" next="subscript-minus" output=""/>
-   <when state="diamond" output="⍚"/>
-   <when state="delta" output="⍙"/>
-   <when state="omega" output="⍹"/>
-   <when state="epsilon" output="⍷"/>
-   <when state="iota" output="⍸"/>
    <when state="circle" output="⊖"/>
-   <when state="alpha" output="⍶"/>
-   <when state="enclose" output="⊆"/>
   </action>
   <action id="k81-m4">
    <when state="none" output="="/>
@@ -3085,6 +2883,7 @@
    <when state="superscript-minus" output="⁻⁰"/>
    <when state="subscript" output="₀"/>
    <when state="subscript-minus" output="₋₀"/>
+   <when state="bar" output="⊼"/>
   </action>
   <action id="k83-m4">
    <when state="none" output="1"/>
@@ -3134,6 +2933,8 @@
    <when state="superscript-minus" output="⁻⁷"/>
    <when state="subscript" output="₇"/>
    <when state="subscript-minus" output="₋₇"/>
+   <when state="bar" output="⍙"/>
+   <when state="stile" output="⍋"/>
   </action>
   <action id="k91-m4">
    <when state="none" output="8"/>
@@ -3150,6 +2951,7 @@
    <when state="superscript-minus" output="⁻⁹"/>
    <when state="subscript" output="₉"/>
    <when state="subscript-minus" output="₋₉"/>
+   <when state="bar" output="⊽"/>
   </action>
   <action id="k22-m5">
    <when state="none" next="native-1" output=""/>
@@ -3158,21 +2960,11 @@
    <when state="none" next="subscript" output=""/>
    <when state="subscript" output="_"/>
   </action>
-  <action id="k24-m5">
-   <when state="none" next="diamond" output=""/>
-   <when state="diamond" output="⋄"/>
-  </action>
-  <action id="k25-m5">
-   <when state="none" next="or" output=""/>
-   <when state="or" output="∨"/>
-  </action>
   <action id="k26-m5">
    <when state="none" output="\"/>
-   <when state="delta" output="⍋"/>
    <when state="bar" output="⍀"/>
    <when state="quad" output="⌷"/>
    <when state="circle" output="⍉"/>
-   <when state="del" output="⍒"/>
   </action>
   <action id="k45-m5">
    <when state="none" next="encode" output=""/>
@@ -3185,21 +2977,12 @@
    <when state="superscript-minus" output="⁻"/>
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
-   <when state="diamond" output="⋄"/>
-   <when state="delta" output="∆"/>
-   <when state="or" output="∨"/>
-   <when state="and" output="∧"/>
    <when state="bar" output="¯"/>
    <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
-   <when state="omega" output="⍵"/>
-   <when state="epsilon" output="∊"/>
-   <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="alpha" output="⍺"/>
-   <when state="del" output="∇"/>
+   <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="enclose" output="⊂"/>
    <when state="cap" output="∩"/>
    <when state="decode" output="⊥"/>
    <when state="encode" output="⊤"/>
@@ -3211,21 +2994,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -3242,21 +3016,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -3296,14 +3061,7 @@
    <when state="none" output="-"/>
    <when state="superscript" next="superscript-minus" output=""/>
    <when state="subscript" next="subscript-minus" output=""/>
-   <when state="diamond" output="⍚"/>
-   <when state="delta" output="⍙"/>
-   <when state="omega" output="⍹"/>
-   <when state="epsilon" output="⍷"/>
-   <when state="iota" output="⍸"/>
    <when state="circle" output="⊖"/>
-   <when state="alpha" output="⍶"/>
-   <when state="enclose" output="⊆"/>
   </action>
   <action id="k81-m5">
    <when state="none" output="="/>
@@ -3315,6 +3073,7 @@
    <when state="superscript-minus" output="⁻⁰"/>
    <when state="subscript" output="₀"/>
    <when state="subscript-minus" output="₋₀"/>
+   <when state="bar" output="⊼"/>
   </action>
   <action id="k83-m5">
    <when state="none" output="1"/>
@@ -3364,6 +3123,8 @@
    <when state="superscript-minus" output="⁻⁷"/>
    <when state="subscript" output="₇"/>
    <when state="subscript-minus" output="₋₇"/>
+   <when state="bar" output="⍙"/>
+   <when state="stile" output="⍋"/>
   </action>
   <action id="k91-m5">
    <when state="none" output="8"/>
@@ -3380,6 +3141,7 @@
    <when state="superscript-minus" output="⁻⁹"/>
    <when state="subscript" output="₉"/>
    <when state="subscript-minus" output="₋₉"/>
+   <when state="bar" output="⊽"/>
   </action>
   <action id="k0-m6">
    <when state="none" output="a"/>
@@ -3438,21 +3200,12 @@
    <when state="superscript-minus" output="⁻"/>
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
-   <when state="diamond" output="⋄"/>
-   <when state="delta" output="∆"/>
-   <when state="or" output="∨"/>
-   <when state="and" output="∧"/>
    <when state="bar" output="¯"/>
    <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
-   <when state="omega" output="⍵"/>
-   <when state="epsilon" output="∊"/>
-   <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="alpha" output="⍺"/>
-   <when state="del" output="∇"/>
+   <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="enclose" output="⊂"/>
    <when state="cap" output="∩"/>
    <when state="decode" output="⊥"/>
    <when state="encode" output="⊤"/>
@@ -3464,21 +3217,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -3495,21 +3239,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -3576,21 +3311,12 @@
    <when state="superscript-minus" output="⁻"/>
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
-   <when state="diamond" output="⋄"/>
-   <when state="delta" output="∆"/>
-   <when state="or" output="∨"/>
-   <when state="and" output="∧"/>
    <when state="bar" output="¯"/>
    <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
-   <when state="omega" output="⍵"/>
-   <when state="epsilon" output="∊"/>
-   <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="alpha" output="⍺"/>
-   <when state="del" output="∇"/>
+   <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="enclose" output="⊂"/>
    <when state="cap" output="∩"/>
    <when state="decode" output="⊥"/>
    <when state="encode" output="⊤"/>
@@ -3602,21 +3328,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -3633,21 +3350,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -3669,21 +3377,12 @@
    <when state="superscript-minus" output="⁻"/>
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
-   <when state="diamond" output="⋄"/>
-   <when state="delta" output="∆"/>
-   <when state="or" output="∨"/>
-   <when state="and" output="∧"/>
    <when state="bar" output="¯"/>
    <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
-   <when state="omega" output="⍵"/>
-   <when state="epsilon" output="∊"/>
-   <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="alpha" output="⍺"/>
-   <when state="del" output="∇"/>
+   <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="enclose" output="⊂"/>
    <when state="cap" output="∩"/>
    <when state="decode" output="⊥"/>
    <when state="encode" output="⊤"/>
@@ -3695,21 +3394,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -3726,21 +3416,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -3762,21 +3443,12 @@
    <when state="superscript-minus" output="⁻"/>
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
-   <when state="diamond" output="⋄"/>
-   <when state="delta" output="∆"/>
-   <when state="or" output="∨"/>
-   <when state="and" output="∧"/>
    <when state="bar" output="¯"/>
    <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
-   <when state="omega" output="⍵"/>
-   <when state="epsilon" output="∊"/>
-   <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="alpha" output="⍺"/>
-   <when state="del" output="∇"/>
+   <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="enclose" output="⊂"/>
    <when state="cap" output="∩"/>
    <when state="decode" output="⊥"/>
    <when state="encode" output="⊤"/>
@@ -3788,21 +3460,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -3819,21 +3482,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -3843,13 +3497,13 @@
    <when state="native-4" output=""/>
    <when state="native-5" output=""/>
   </action>
-  <action id="k2-m10">
-   <when state="none" next="delta" output=""/>
-   <when state="delta" output="∆"/>
-  </action>
   <action id="k22-m10">
    <when state="none" next="superscript" output=""/>
    <when state="superscript" output="^"/>
+  </action>
+  <action id="k35-m10">
+   <when state="none" next="stile" output=""/>
+   <when state="stile" output="⍭"/>
   </action>
   <action id="k49-m10">
    <when state="none" output=" "/>
@@ -3858,21 +3512,12 @@
    <when state="superscript-minus" output="⁻"/>
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
-   <when state="diamond" output="⋄"/>
-   <when state="delta" output="∆"/>
-   <when state="or" output="∨"/>
-   <when state="and" output="∧"/>
    <when state="bar" output="¯"/>
    <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
-   <when state="omega" output="⍵"/>
-   <when state="epsilon" output="∊"/>
-   <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="alpha" output="⍺"/>
-   <when state="del" output="∇"/>
+   <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="enclose" output="⊂"/>
    <when state="cap" output="∩"/>
    <when state="decode" output="⊥"/>
    <when state="encode" output="⊤"/>
@@ -3884,21 +3529,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -3915,21 +3551,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -3950,21 +3577,12 @@
    <when state="superscript-minus" output="⁻"/>
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
-   <when state="diamond" output="⋄"/>
-   <when state="delta" output="∆"/>
-   <when state="or" output="∨"/>
-   <when state="and" output="∧"/>
    <when state="bar" output="¯"/>
    <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
-   <when state="omega" output="⍵"/>
-   <when state="epsilon" output="∊"/>
-   <when state="iota" output="⍳"/>
    <when state="circle" output="○"/>
-   <when state="alpha" output="⍺"/>
-   <when state="del" output="∇"/>
+   <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="enclose" output="⊂"/>
    <when state="cap" output="∩"/>
    <when state="decode" output="⊥"/>
    <when state="encode" output="⊤"/>
@@ -3976,21 +3594,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -4007,21 +3616,12 @@
    <when state="superscript-minus" output=""/>
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
-   <when state="diamond" output=""/>
-   <when state="delta" output=""/>
-   <when state="or" output=""/>
-   <when state="and" output=""/>
    <when state="bar" output=""/>
    <when state="match" output=""/>
    <when state="quad" output=""/>
-   <when state="omega" output=""/>
-   <when state="epsilon" output=""/>
-   <when state="iota" output=""/>
    <when state="circle" output=""/>
-   <when state="alpha" output=""/>
-   <when state="del" output=""/>
+   <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="enclose" output=""/>
    <when state="cap" output=""/>
    <when state="decode" output=""/>
    <when state="encode" output=""/>
@@ -4038,21 +3638,12 @@
   <when state="superscript-minus" output="⁻"/>
   <when state="subscript" output="_"/>
   <when state="subscript-minus" output="₋"/>
-  <when state="diamond" output="⋄"/>
-  <when state="delta" output="∆"/>
-  <when state="or" output="∨"/>
-  <when state="and" output="∧"/>
   <when state="bar" output="¯"/>
   <when state="match" output="≡"/>
   <when state="quad" output="⎕"/>
-  <when state="omega" output="⍵"/>
-  <when state="epsilon" output="∊"/>
-  <when state="iota" output="⍳"/>
   <when state="circle" output="○"/>
-  <when state="alpha" output="⍺"/>
-  <when state="del" output="∇"/>
+  <when state="stile" output="⍭"/>
   <when state="take" output="↑"/>
-  <when state="enclose" output="⊂"/>
   <when state="cap" output="∩"/>
   <when state="decode" output="⊥"/>
   <when state="encode" output="⊤"/>

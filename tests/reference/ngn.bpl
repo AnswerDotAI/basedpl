@@ -453,7 +453,7 @@ M←[1 2 3 ⋄ 4 5 6]⋄+\⍠0 M   ⍝ [1 2 3 ⋄ 5 7 9]
 T←"ONE(TWO) BOOK(S)"⋄≠\T∊"()"   ⍝ $f $f $f $t $t $t $t $f $f $f $f $f $f $t $t $f
 
 ⍝ ngn:150 —
-T←"ONE(TWO) BOOK(S)"⋄(T∊"()")⍱≠\T∊"()" # T   ⍝ "ONE BOOK"
+T←"ONE(TWO) BOOK(S)"⋄(T∊"()")⊽≠\T∊"()" # T   ⍝ "ONE BOOK"
 
 ⍝ ngn:151 —
 1 0 1#⁻¹"ab"   ⍝ "a b"
@@ -1209,7 +1209,11 @@ T←"ONE(TWO) BOOK(S)"⋄(T∊"()")⍱≠\T∊"()" # T   ⍝ "ONE BOOK"
 1 +,-,×,÷ 2   ⍝ 3 ¯1 2 0.5
 
 ⍝ ngn:388 — ordinary identifier for quadratic-root helper
-a←1⋄b←¯22⋄c←85⋄sqrt←√⋄(-b)(+,-)sqrt(b²)-4×a×c ÷ 2×a   ⍝ 17 5
+a←1
+b←¯22
+c←85
+sqrt←√
+(-b)(+,-)sqrt(b²)-4×a×c ÷ 2×a   ⍝ 17 5
 
 ⍝ ngn:389 —
 ⍕123   ⍝ "123"
@@ -1296,11 +1300,15 @@ a←3 2 5⍴"joe  doe  bob  jonesbob  zwart"⋄[⍋a]⌷a
 ⌽$a ⍋ ["BOB" ⋄ "ALF" ⋄ "ZAK"]   ⍝ [2 0 1]ₓ
 
 ⍝ ngn:416 —
-a←["ABLE" ⋄ "aBLE" ⋄ "ACRE" ⋄ "ABEL" ⋄ "aBEL" ⋄ "ACES"]⋄[["ABCDEFGHIJKLMNOPQRSTUVWXYZ" ⋄ "abcdefghijklmnopqrstuvwxyz"]⍋a]⌷a
+a←["ABLE" ⋄ "aBLE" ⋄ "ACRE" ⋄ "ABEL" ⋄ "aBEL" ⋄ "ACES"]
+[["ABCDEFGHIJKLMNOPQRSTUVWXYZ" ⋄ "abcdefghijklmnopqrstuvwxyz"]⍋a]⌷a
+⍝ =>
 ["ABEL" ⋄ "aBEL" ⋄ "ABLE" ⋄ "aBLE" ⋄ "ACES" ⋄ "ACRE"]
 
 ⍝ ngn:417 —
-a←["ABLE" ⋄ "aBLE" ⋄ "ACRE" ⋄ "ABEL" ⋄ "aBEL" ⋄ "ACES"]⋄["AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz"⍋a]⌷a
+a←["ABLE" ⋄ "aBLE" ⋄ "ACRE" ⋄ "ABEL" ⋄ "aBEL" ⋄ "ACES"]
+["AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz"⍋a]⌷a
+⍝ =>
 ["ABEL" ⋄ "ABLE" ⋄ "ACES" ⋄ "ACRE" ⋄ "aBEL" ⋄ "aBLE"]
 
 ⍝ ngn:418 —
@@ -1517,17 +1525,17 @@ $a⍳"NGN/"   ⍝ [13 6 13 26]ₓ
 2j2 2j4∧5j5 4j4   ⍝ 10j10 ¯4j12
 
 ⍝ ngn:490 —
-0 0 1 1⍱0 1 0 1   ⍝ $t $f $f $f
+0 0 1 1⊽0 1 0 1   ⍝ $t $f $f $f
 
 ⍝ ngn:491 —
-0⍱2
+0⊽2
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:492 —
-0 0 1 1⍲0 1 0 1   ⍝ $t $t $t $f
+0 0 1 1⊼0 1 0 1   ⍝ $t $t $t $f
 
 ⍝ ngn:493 —
-0⍲2
+0⊼2
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:494 —
@@ -1562,7 +1570,9 @@ $a⍳"NGN/"   ⍝ [13 6 13 26]ₓ
 •ucs 2 2⍴97+⍳4   ⍝ ["ab" ⋄ "cd"]
 
 ⍝ ngn:510 —
-n←6⋄r←¿n⋄0≤r ∧ r<n   ⍝ $t
+n←6
+r←¿n
+0≤r ∧ r<n   ⍝ $t
 
 ⍝ ngn:511 — Fixed origin 0 single possible result
 ¿1   ⍝ 0
@@ -1590,7 +1600,9 @@ r←¿0⋄0≤r ∧ r<1   ⍝ $t
 n←100⋄+/n¿n = +/⍳n   ⍝ $t
 
 ⍝ ngn:518 —
-n←100⋄A←n÷2 ¿ n⋄∧/(0≤A),A<n   ⍝ $t
+n←100
+A←n÷2 ¿ n
+∧/(0≤A),A<n   ⍝ $t
 
 ⍝ ngn:519 —
 0¿100   ⍝ ⍬
@@ -1854,13 +1866,17 @@ m←45 60 33 50 66 19⋄m=50 # ⍳≢m   ⍝ [3]ₓ
 [2;1 0]⌷[11 12 13 14 ⋄ 21 22 23 24 ⋄ 31 32 33 34]   ⍝ 32 31
 
 ⍝ ngn:606 —
-a←2 2⍴0⋄a.[∞ 0]←1⋄a   ⍝ [1 0 ⋄ 1 0]
+a←2 2⍴0
+a.[∞ 0]←1
+a   ⍝ [1 0 ⋄ 1 0]
 
 ⍝ ngn:607 —
 [1 2;0]⌷[11 12 13 14 ⋄ 21 22 23 24 ⋄ 31 32 33 34]   ⍝ 21 31
 
 ⍝ ngn:608 —
-a←2 3⍴0⋄a.[1;0 2]←1⋄a   ⍝ [0 0 0 ⋄ 1 0 1]
+a←2 3⍴0
+a.[1;0 2]←1
+a   ⍝ [0 0 0 ⋄ 1 0 1]
 
 ⍝ ngn:609 —
 0⌷23 54 38   ⍝ 23
@@ -1922,26 +1938,40 @@ a←2 3⍴0⋄a.[1;0 2]←1⋄a   ⍝ [0 0 0 ⋄ 1 0 1]
 ⍴⍬ ⍬⌷3 3⍴⍳9   ⍝ [0 0]ₓ
 
 ⍝ ngn:628 —
-a←⍳5⋄a.[[1 3]]←7 8⋄a   ⍝ 0 7 2 8 4
+a←⍳5
+a.[[1 3]]←7 8
+a   ⍝ 0 7 2 8 4
 
 ⍝ ngn:629 —
-a←1 2 3⋄a₁←4⋄a   ⍝ 1 4 3
+a←1 2 3
+a₁←4
+a   ⍝ 1 4 3
 
 ⍝ ngn:630 —
-a←⍳5⋄a.[[1 3]]←7⋄a   ⍝ 0 7 2 7 4
+a←⍳5
+a.[[1 3]]←7
+a   ⍝ 0 7 2 7 4
 
 ⍝ ngn:631 —
-a←2 2⍴⍳4⋄a.[0 0]←4⋄a   ⍝ [4 1 ⋄ 2 3]
+a←2 2⍴⍳4
+a.[0 0]←4
+a   ⍝ [4 1 ⋄ 2 3]
 
 ⍝ ngn:632 —
-a←⍳5⋄a.[[1]]←7 8⋄a
+a←⍳5
+a.[[1]]←7 8
+a
+⍝ =>
 ⍝ error: LENGTH ERROR
 
 ⍝ ngn:633 —
 a←3 4⍴⍳12⋄a.[∞;1 2]←99   ⍝ 99
 
 ⍝ ngn:634 —
-a←5 5⍴0⋄a.[1 3;2 4]←2 2⍴1+⍳4⋄a
+a←5 5⍴0
+a.[1 3;2 4]←2 2⍴1+⍳4
+a
+⍝ =>
 [0 0 0 0 0 ⋄ 0 0 1 0 2 ⋄ 0 0 0 0 0 ⋄ 0 0 3 0 4 ⋄ 0 0 0 0 0]
 
 ⍝ ngn:635 —
@@ -1951,13 +1981,19 @@ a←"this is a test"⋄a.[[0 5]]←"TI"   ⍝ "TI"
 a←0 4 8⋄10+(a.[[0 2]]←7 9)   ⍝ 17 19
 
 ⍝ ngn:637 —
-a←1 2 3⋄a.[⍬]←4⋄a   ⍝ 1 2 3
+a←1 2 3
+a.[⍬]←4
+a   ⍝ 1 2 3
 
 ⍝ ngn:638 —
-a←3 3⍴⍳9⋄a.[⍬;1 2]←789⋄a   ⍝ 3 3⍴⍳9
+a←3 3⍴⍳9
+a.[⍬;1 2]←789
+a   ⍝ 3 3⍴⍳9
 
 ⍝ ngn:639 —
-a←1 2 3⋄(⌷a)←4 5 6⋄a   ⍝ 4 5 6
+a←1 2 3
+(⌷a)←4 5 6
+a   ⍝ 4 5 6
 
 ⍝ ngn:640 — Uses already implemented ⎕A/⎕UCS with ordinary array operations; original independent expectation passes unchanged
 2↑$a   ⍝ "AB"
@@ -2223,7 +2259,10 @@ tw←{⍶⍶⍵}⋄*tw 2   ⍝ 1618.177991912654
 [0 0 0 0 0 0 0 0 0 0 ⋄ 0 1 2 3 4 5 6 7 8 9 ⋄ 0 2 4 6 8 10 12 14 16 18 ⋄ 0 3 6 9 12 15 18 21 24 27 ⋄ 0 4 8 12 16 20 24 28 32 36 ⋄ 0 5 10 15 20 25 30 35 40 45 ⋄ 0 6 12 18 24 30 36 42 48 54 ⋄ 0 7 14 21 28 35 42 49 56 63 ⋄ 0 8 16 24 32 40 48 56 64 72 ⋄ 0 9 18 27 36 45 54 63 72 81]
 
 ⍝ ngn/examples/2-sierpinski:1 — Sierpinski's triangle; Pure glyph program with explicit-output wrapper removed; Dyalog and Rust agree; Remove shebang/comments and return the final value; Translate character subscripts and Life seed positions to origin 0; Insert spaces before negative vector items
-f←{⍵,(⍴⍵)⍴0 ⍪ ⍵,⍵} ⋄ S←{[((f⍣⍵)1 1⍴1)]⌷" #"} ⋄ S5
+f←{⍵,(⍴⍵)⍴0 ⍪ ⍵,⍵}
+S←{[((f⍣⍵)1 1⍴1)]⌷" #"}
+S5
+⍝ =>
 ["#                               " ⋄ "##                              " ⋄ "# #                             " ⋄ "####                            " ⋄ "#   #                           " ⋄ "##  ##                          " ⋄ "# # # #                         " ⋄ "########                        " ⋄ "#       #                       " ⋄ "##      ##                      " ⋄ "# #     # #                     " ⋄ "####    ####                    " ⋄ "#   #   #   #                   " ⋄ "##  ##  ##  ##                  " ⋄ "# # # # # # # #                 " ⋄ "################                " ⋄ "#               #               " ⋄ "##              ##              " ⋄ "# #             # #             " ⋄ "####            ####            " ⋄ "#   #           #   #           " ⋄ "##  ##          ##  ##          " ⋄ "# # # #         # # # #         " ⋄ "########        ########        " ⋄ "#       #       #       #       " ⋄ "##      ##      ##      ##      " ⋄ "# #     # #     # #     # #     " ⋄ "####    ####    ####    ####    " ⋄ "#   #   #   #   #   #   #   #   " ⋄ "##  ##  ##  ##  ##  ##  ##  ##  " ⋄ "# # # # # # # # # # # # # # # # " ⋄ "################################"]
 
 ⍝ ngn/examples/3-primes:1 —
@@ -2231,15 +2270,27 @@ f←{⍵,(⍴⍵)⍴0 ⍪ ⍵,⍵} ⋄ S←{[((f⍣⍵)1 1⍴1)]⌷" #"} ⋄ S5
 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97
 
 ⍝ ngn/examples/4-life:1 — Conway's game of life This example was inspired by the impressive demo at https://www.youtube.com/watch?v=a9xAKttWgP4 0 1 1 1 1 0 0 1 0; Pure glyph program with explicit-output wrapper removed; Dyalog and Rust agree; Remove shebang/comments and return the final value; Translate character subscripts and Life seed positions to origin 0; Insert spaces before negative vector items
-c←3 3⍴⍳9 ∊ 1 2 3 4 7 ⋄ c←3 3⍴⍳9 ∊ 1 3 6 7 8 ⋄ b←¯1⊖¯2⌽5 7↑c ⋄ life←{[1 ⍵]∨.∧3 4=⊂+/+⌿1 0 ¯1⊖⊗1 0 ¯1⌽¨⊂⍵} ⋄ gen←{[(life⍣⍵)b]⌷" #"} ⋄ gen¨1+⍳3
+c←3 3⍴⍳9 ∊ 1 2 3 4 7
+c←3 3⍴⍳9 ∊ 1 3 6 7 8
+b←¯1⊖¯2⌽5 7↑c
+life←{[1 ⍵]∨.∧3 4=⊂+/+⌿1 0 ¯1⊖⊗1 0 ¯1⌽¨⊂⍵}
+gen←{[(life⍣⍵)b]⌷" #"}
+gen¨1+⍳3
+⍝ =>
 [["       " ⋄ "       " ⋄ "  # #  " ⋄ "  ##   " ⋄ "   #   "];["       " ⋄ "       " ⋄ "  #    " ⋄ "  # #  " ⋄ "  ##   "];["       " ⋄ "       " ⋄ "   #   " ⋄ " ##    " ⋄ "  ##   "]]
 
 ⍝ ngn/examples/5-rule30:1 — See https://en.wikipedia.org/wiki/Rule_30; Use eight generations; ⊥ decodes each window along the last axis
-r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ [⊃⌽{⍵,⍨⊂[⊥3↕0,0,⍨↑⍵]⌷t}⍣n⊂z,1,z←n⍴0]⌷" #"
+r←30
+n←8
+t←⌽r⊤⍨8⍴2
+[⊃⌽{⍵,⍨⊂[⊥3↕0,0,⍨↑⍵]⌷t}⍣n⊂z,1,z←n⍴0]⌷" #"
+⍝ =>
 ["        #        " ⋄ "       ###       " ⋄ "      ##  #      " ⋄ "     ## ####     " ⋄ "    ##  #   #    " ⋄ "   ## #### ###   " ⋄ "  ##  #    #  #  " ⋄ " ## ####  ###### " ⋄ "##  #   ###     #"]
 
 ⍝ ngn/examples/6-queens:1 — Rotate and reflect the accumulator in basedpl's left scan
-queens←{ search←{ (⊂⍬)∊⍵?0⍴⊂⍬;0=⍴⍵?rmdups ⍺;[hd tl]←[↑⍵ 1↓⍵] ⋄ next←⍺↣,¨hd ⋄ rems←hd free¨ ⊂tl ⋄ ,/ next ∇¨ rems } ⋄ cvex←1+⍳⍵ × ⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4#⊂⍵} ⋄ refs←{{⍋⍺}\2#⊂⍵} ⋄ best←{↑⍋⊃⍵ ⊃ ⍵} ⋄ syms←, ⊃ refs¨ rots ⍵ ⋄ (⍵≡best syms)⊃[⍬ ,⊂⍵] } ⋄ fmt←{ chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟" ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd#⁻¹⍠¯1chars } ⋄ squares←⊂⍳⌈⍵÷2 , 1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares } ⋄ queens5
+queens←{ search←{ (⊂⍬)∊⍵?0⍴⊂⍬;0=⍴⍵?rmdups ⍺;[hd tl]←[↑⍵ 1↓⍵] ⋄ next←⍺↣,¨hd ⋄ rems←hd free¨ ⊂tl ⋄ ,/ next ∇¨ rems } ⋄ cvex←1+⍳⍵ × ⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4#⊂⍵} ⋄ refs←{{⍋⍺}\2#⊂⍵} ⋄ best←{↑⍋⊃⍵ ⊃ ⍵} ⋄ syms←, ⊃ refs¨ rots ⍵ ⋄ (⍵≡best syms)⊃[⍬ ,⊂⍵] } ⋄ fmt←{ chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟" ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd#⁻¹⍠¯1chars } ⋄ squares←⊂⍳⌈⍵÷2 , 1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares }
+queens5
+⍝ =>
 [["⍟ · · · ·" ⋄ "· · ⍟ · ·" ⋄ "· · · · ⍟" ⋄ "· ⍟ · · ·" ⋄ "· · · ⍟ ·"];["· ⍟ · · ·" ⋄ "· · · · ⍟" ⋄ "· · ⍟ · ·" ⋄ "⍟ · · · ·" ⋄ "· · · ⍟ ·"]]
 
 ⍝ ngn/examples/7-mandelbrot:1 — Use a 13 by 13 grid
@@ -2247,7 +2298,9 @@ queens←{ search←{ (⊂⍬)∊⍵?0⍴⊂⍬;0=⍴⍵?rmdups ⍺;[hd tl]←[�
 ["             " ⋄ "             " ⋄ "        #    " ⋄ "        #    " ⋄ "      ####   " ⋄ "    #######  " ⋄ " #########   " ⋄ "    #######  " ⋄ "      ####   " ⋄ "        #    " ⋄ "        #    " ⋄ "             " ⋄ "             "]
 
 ⍝ ngn:501 — ngn accepts count/function operands to power in either order (apl.js, voc[⍣]); port to function⍣count; Explicit modified assignment updates the outer counter under basedpl scope rules; Original expected 5 retained and checked in Dyalog 20.0.53963.0
-c←0 ⋄ {c+←1}⍣5(0) ⋄ c   ⍝ 5
+c←0
+{c+←1}⍣5(0)
+c   ⍝ 5
 
 ⍝ ngn:421 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Use an explicit whole seed; a seeded wrapper leaves the unseeded function unchanged
 f←{⍺+2×⍵} ⋄ 123 f/ ⍬   ⍝ 123
@@ -2256,7 +2309,10 @@ f←{⍺+2×⍵} ⋄ 123 f/ ⍬   ⍝ 123
 f←{⍺+2×⍵} ⋄ 456 f/ ⍬   ⍝ 456
 
 ⍝ ngn:423 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Use an explicit whole seed; a seeded wrapper leaves the unseeded function unchanged
-f←{⍺+2×⍵} ⋄ g←{789 f/⍵} ⋄ f/⍬
+f←{⍺+2×⍵}
+g←{789 f/⍵}
+f/⍬
+⍝ =>
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:683 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; ngn's ambivalent pairing is Valences ⊘
@@ -2266,8 +2322,13 @@ f←{⍺+2×⍵} ⋄ g←{789 f/⍵} ⋄ f/⍬
 0 {1}⊘{2} 0   ⍝ 2
 
 ⍝ ngn:690 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Call the circumference/area functions explicitly; π replaces the old circle monad; Both observe the updated radius
-r←3 ⋄ c←{2×πr} ⋄ S←{πr²} ⋄ bef←.01×⌊100×[r;c 0;S 0] ⋄ r←r+1 ⋄ aft←.01×⌊100×[r;c 0;S 0] ⋄ [bef aft]
-[3 18.84 28.27;4 25.13 50.26]
+r←3
+c←{2×πr}
+S←{πr²}
+bef←.01×⌊100×[r;c 0;S 0]
+r←r+1
+aft←.01×⌊100×[r;c 0;S 0]
+[bef aft]   ⍝ [3 18.84 28.27;4 25.13 50.26]
 
 ⍝ ngn:705 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Replace ngn two-body syntax with ordinary default-left assignment/valence dispatch
 f←{⍺←¯1 ⋄ ⍺×⍵} ⋄ [f 5;3 f 5]   ⍝ ¯5 15
@@ -2286,7 +2347,10 @@ H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ +H÷2   ⍝ 2.5
 H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ 7+H÷2   ⍝ 7.5
 
 ⍝ ngn:504 — Zero-origin offset, match and capture
-p←•r "b(c+)d" ⋄ m←p.matches "abcd" ⋄ (↑m.position),(m.text),(↑m.groups)
+p←•r "b(c+)d"
+m←p.matches "abcd"
+(↑m.position),(m.text),(↑m.groups)
+⍝ =>
 1ₓ "bcd" "c"
 
 ⍝ ngn:505 — No match

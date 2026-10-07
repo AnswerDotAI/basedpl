@@ -10,10 +10,15 @@ The interpreter runs in your browser. It is the latest release of the npm packag
 
 ```{=html}
 <div id="playground">
-<textarea id="code" data-bpl spellcheck="false">avg←+/÷≢
+<div id="history"></div>
+<div class="playground-editor">
+<textarea id="code" rows="4" data-bpl spellcheck="false">avg←+/÷≢
 avg 2 4 9</textarea>
-<p><button id="run" class="btn btn-primary" disabled>Run</button> <button id="stop" class="btn btn-outline-secondary" disabled>Stop</button></p>
-<div id="output"></div>
+<div class="playground-buttons">
+<button id="run" class="btn btn-sm btn-primary" disabled>Run</button>
+<button id="stop" class="btn btn-sm btn-outline-secondary" disabled>Stop</button>
+</div>
+</div>
 </div>
 <script type="module" src="playground/page.js"></script>
 ```

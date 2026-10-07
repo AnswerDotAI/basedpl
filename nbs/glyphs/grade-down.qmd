@@ -1,6 +1,6 @@
 # `⍒` — Grade down
 
-Keys: `Alt-g |`
+Keys: `Alt-Backslash g`
 
 `⍒Y` gives indices that sort major cells descending. Stable, with the same [ordering](grade-up.qmd) as Grade up.
 

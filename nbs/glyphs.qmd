@@ -8,7 +8,7 @@ The [keyboard map](keyboard.qmd) shows the Option and Option-Shift bindings, wit
 
 Hold Alt, which is Option on a Mac, and press the key in the Key column. Keys refer to a US layout. `≤` is Alt-<, `≥` is Alt->, and `⌽` is Alt-|, each with Shift held. Where the column shows a second key, release Alt, then press the second key. For example, `Alt-c t` means Alt-c, then `t`. You can type a shifted second key without Shift. For example, `Alt-q ;` types `⍠`, the same as `Alt-q :`. An Alt key that takes a second key types its own glyph when Space or an unlisted key follows. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence.
 
-Superscripts start with Alt-6. The second key is a digit, `-` then a digit, `t` for `ᵀ`, or `u` for `ᵘ`. Subscripts start with Alt-5. The second key is a digit, `-` then a digit, or `x`, `j`, `e` or `r` for the number suffixes `ₓ`, `ⱼ`, `ₑ` and `ᵣ`. A glyph with no key, such as `+`, is on an ordinary ASCII key. The arrows are on hjkl. Alt-[ types nothing, because terminals send it as the start of a control sequence. The identifier characters `∆` and `⍙` are Alt-7, and Alt-7 then `_`.
+Superscripts start with Alt-6. The second key is a digit, `-` then a digit, `t` for `ᵀ`, or `u` for `ᵘ`. Subscripts start with Alt-5. The second key is a digit, `-` then a digit, or `x`, `j`, `e` or `r` for the number suffixes `ₓ`, `ⱼ`, `ₑ` and `ᵣ`. A glyph with no key, such as `+`, is on an ordinary ASCII key. The arrows are on hjkl. Alt-[ types nothing, because terminals send it as the start of a control sequence. The identifier characters `∆` and `⍙` are Alt-7, and Alt-Minus then `7`.
 
 The names are the ones you type. In the REPL, a backtick and any glyph, monad or dyad name, then Tab, enters the glyph, as [named entry](repl.qmd#named-entry) describes. Python exports the function names, with `_` in place of `-` and a trailing `_` on Python keywords, as in `index_of` and `and_`.
 
@@ -24,7 +24,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⌈` [ceiling](glyphs/ceiling.qmd) | Alt-s | ceiling | max | `⌈/⍬` is `¯∞` |
 | `\|` [stile](glyphs/stile.qmd) | | magnitude | residue | |
 | `*` [star](glyphs/star.qmd) | | exponential | exponent | |
-| `⍟` [log](glyphs/log.qmd) | Alt-o * | logarithm | log | |
+| `⍟` [log](glyphs/log.qmd) | Alt-o 8 | logarithm | log | |
 | `○` [circle](glyphs/circle.qmd) | Alt-o | cis | circle | Pi-times is `π`. Codes 0 to 8, inverted by `k○⁻¹` |
 | `π` [pi](glyphs/pi.qmd) | Alt-p | pi-times | pi-ratio | |
 | `√` [root](glyphs/root.qmd) | Alt-3 | sqrt | root | As BQN's `√` |
@@ -35,8 +35,8 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `¿` [inverted-question](glyphs/inverted-question.qmd) | Alt-/ | roll | deal | Dyalog's `?` |
 | `∨` [or](glyphs/or.qmd) | Alt-9 | real-imag | gcd | Monad as J's `+.` |
 | `∧` [and](glyphs/and.qmd) | Alt-0 | polar | lcm | Monad as J's `*.` |
-| `⍲` [nand](glyphs/nand.qmd) | Alt-0 ~ | square | nand | Monad as J's `*:` |
-| `⍱` [nor](glyphs/nor.qmd) | Alt-9 ~ | double | nor | Monad as J's `+:` |
+| `⊼` [nand](glyphs/nand.qmd) | Alt-Minus 0 | square | nand | Monad as J's `*:` |
+| `⊽` [nor](glyphs/nor.qmd) | Alt-Minus 9 | double | nor | Monad as J's `+:` |
 | `~` [tilde](glyphs/tilde.qmd) | | not | without | Major cells, as BQN |
 | `=` [equal](glyphs/equal.qmd) | | classify | equal | Monad as J |
 | `≠` [not-equal](glyphs/not-equal.qmd) | Alt-Shift-= | unique-mask | not-equal | |
@@ -56,18 +56,18 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `↓` [drop](glyphs/drop.qmd) | Alt-j | split | drop | |
 | `↕` [windows](glyphs/windows.qmd) | Alt-k j | — | windows | As BQN's `↕`, plus movement/padding |
 | `⊂` [enclose](glyphs/enclose.qmd) | Alt-z | enclose | partitioned-enclose | Encloses atoms; partitions first axis |
-| `⊆` [nest](glyphs/nest.qmd) | Alt-z _ | nest | partition | Partitions first axis |
+| `⊆` [nest](glyphs/nest.qmd) | Alt-Minus z | nest | partition | Partitions first axis |
 | `⊃` [mix](glyphs/mix.qmd) | Alt-x | mix | pick | Monad as Dyalog `⎕ML≥2`; pick cells or keys |
-| `⌷` [squad](glyphs/squad.qmd) | Alt-q \| | materialise | index | Negative indices; `∞`/`¯∞` select/reverse axis |
+| `⌷` [squad](glyphs/squad.qmd) | Alt-q Backslash | materialise | index | Negative indices; `∞`/`¯∞` select/reverse axis |
 | `⍳` [iota](glyphs/iota.qmd) | Alt-i | iota | index-of | Axis selectors; negative lengths count down |
 | `:` [colon](glyphs/colon.qmd) | | unkey | keyed | [Axis keys](keyed.ipynb) |
-| `⍸` [where](glyphs/where.qmd) | Alt-i _ | where | interval-index | Dyad as BQN's `⍋` |
+| `⍸` [where](glyphs/where.qmd) | Alt-Minus i | where | interval-index | Dyad as BQN's `⍋` |
 | `∊` [member](glyphs/member.qmd) | Alt-e | enlist | member | Major cells, as BQN |
 | `∪` [union](glyphs/union.qmd) | Alt-v | unique | union | Major cells, as BQN |
 | `∩` [intersection](glyphs/intersection.qmd) | Alt-c | — | intersection | Major cells, as BQN |
-| `⍷` [find](glyphs/find.qmd) | Alt-e _ | — | find | |
-| `⍋` [grade-up](glyphs/grade-up.qmd) | Alt-7 \| | grade-up | grade-up-by | |
-| `⍒` [grade-down](glyphs/grade-down.qmd) | Alt-g \| | grade-down | grade-down-by | |
+| `⍷` [find](glyphs/find.qmd) | Alt-Minus e | — | find | |
+| `⍋` [grade-up](glyphs/grade-up.qmd) | Alt-Backslash 7 | grade-up | grade-up-by | |
+| `⍒` [grade-down](glyphs/grade-down.qmd) | Alt-Backslash g | grade-down | grade-down-by | |
 | `#` [hash](glyphs/hash.qmd) | | — | replicate | As Dyalog's `⌿` |
 | `⊤` [encode](glyphs/encode.qmd) | Alt-n | binary-encode | encode | Digits on last axis, as J |
 | `⊥` [decode](glyphs/decode.qmd) | Alt-b | binary-decode | decode | Digits on last axis, as J |
@@ -88,22 +88,22 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `\` [backslash](glyphs/backslash.qmd) | | `f\` | Scan / seeded scan last | Accumulate LTR as BQN |
 | `⍀` [backslash-bar](glyphs/backslash-bar.qmd) | Alt-Minus Backslash | `f⍀` | Scan / seeded scan first | Accumulate LTR as BQN |
 | `¨` [each](glyphs/each.qmd) | Alt-1 | `f¨` | Each | |
-| `⍨` [commute](glyphs/commute.qmd) | Alt-1 ~ | `f⍨`, `a⍨` | Self / commute / constant | |
+| `⍨` [commute](glyphs/commute.qmd) | Alt-1 Backtick | `f⍨`, `a⍨` | Self / commute / constant | |
 | `↣` [before](glyphs/before.qmd) | Alt-. | `f↣g`, `a↣f` | Before / bind left | As BQN's `⊸` |
 | `↢` [after](glyphs/after.qmd) | Alt-, | `f↢g`, `f↢a` | After / bind right | As BQN's `⟜` |
 | `⍤` [rank](glyphs/rank.qmd) | Alt-1 t | `f⍤r` | Rank | Rank 0 preserves atom/scalar distinction |
 | `∘` [atop](glyphs/atop.qmd) | Alt-t | `f∘g` | Atop | As BQN's `∘` |
-| `⍠` [axis](glyphs/axis.qmd) | Alt-q : | `f⍠A` | Apply along axes | Named or numbered axes |
+| `⍠` [axis](glyphs/axis.qmd) | Alt-q ; | `f⍠A` | Apply along axes | Named or numbered axes |
 | `⍥` [over](glyphs/over.qmd) | Alt-1 o | `f⍥g` | Over | |
 | `.` [dot](glyphs/dot.qmd) | | `f.g` | Inner product | Also array fields/indexing |
 | `⊗` [outer-product](glyphs/outer-product.qmd) | Alt-o m | `g⊗` | Outer product | As BQN's `⌜` |
 | `⌸` [key](glyphs/key.qmd) | Alt-q = | `f⌸` | Key | |
-| `⍣` [power](glyphs/power.qmd) | Alt-1 * | `f⍣n`, `f⍣∞`, `f⍣g`, `f⍣[g]` | Iterate / invert / fixed point / repeat until / history until | List counts give history, as J/BQN |
+| `⍣` [power](glyphs/power.qmd) | Alt-1 8 | `f⍣n`, `f⍣∞`, `f⍣g`, `f⍣[g]` | Iterate / invert / fixed point / repeat until / history until | List counts give history, as J/BQN |
 | `⇄` [inverse-pair](glyphs/inverse-pair.qmd) | Alt-4 | `f⇄g` | Attach an explicit inverse | As J's `:.` |
 | `⊘` [valences](glyphs/valences.qmd) | Alt-o / | `f⊘g` | Call `f` with one argument, `g` with two | As BQN's `⊘` |
 | `⌾` [under](glyphs/under.qmd) | Alt-o t | `f⌾g` | Apply under a selection or transform | As BQN's `⌾` |
 | `∂` [derivative](glyphs/derivative.qmd) | Alt-f | `f∂` | Gradient / vector–Jacobian product | |
-| `⍚` [agenda](glyphs/agenda.qmd) | Alt-Backtick _ | `selector⍚cases` | Select and call one function | As BQN's `◶` |
+| `⍚` [agenda](glyphs/agenda.qmd) | Alt-Minus Backtick | `selector⍚cases` | Select and call one function | As BQN's `◶` |
 | `@` [at](glyphs/at.qmd) | | `f@a`, `a@g` | Functional amend | |
 | `⌺` [stencil](glyphs/stencil.qmd) | Alt-q Backtick | `f⌺a` | Stencil | |
 
@@ -117,7 +117,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `[…]` [brackets](glyphs/brackets.qmd) | | Vectors and arrays: `[a b c]`, `[a;b c]`, `[1 2 ⋄ 3 4]`. One item makes a one-item vector: `[x]` is `,⊂x` |
 | `{…}` [braces](glyphs/braces.qmd) | | Defined function or operator. `;` separates its bodies |
 | `⍺` [alpha](glyphs/alpha.qmd), `⍵` [omega](glyphs/omega.qmd) | Alt-a, Alt-w | Left / right argument |
-| `⍶` [alpha-underbar](glyphs/alpha-underbar.qmd), `⍹` [omega-underbar](glyphs/omega-underbar.qmd) | Alt-a _, Alt-w _ | Left / right operand |
+| `⍶` [alpha-underbar](glyphs/alpha-underbar.qmd), `⍹` [omega-underbar](glyphs/omega-underbar.qmd) | Alt-Minus a, Alt-Minus w | Left / right operand |
 | `∇` [del](glyphs/del.qmd), `⍢` [del-diaeresis](glyphs/del-diaeresis.qmd) | Alt-g, Alt-1 g | Function / operator self-reference |
 | `?` [question](glyphs/question.qmd), `::` [error-guard](glyphs/error-guard.qmd) | | Predicate / error guard inside dfns |
 | `⋄` [diamond](glyphs/diamond.qmd) | Alt-Backtick | Separates statements, rows inside brackets, and rows of a vector inside parentheses |

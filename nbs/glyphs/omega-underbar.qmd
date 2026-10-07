@@ -1,6 +1,6 @@
 # `⍹` — Right operand
 
-Keys: `Alt-w _`
+Keys: `Alt-Minus w`
 
 `⍹` is the right operand of a defined operator. An operator that uses `⍹` is dyadic.
 

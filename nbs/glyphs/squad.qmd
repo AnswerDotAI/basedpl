@@ -1,6 +1,6 @@
 # `⌷` — Index
 
-Keys: `Alt-q |`
+Keys: `Alt-q Backslash`
 
 `I⌷Y` indexes `Y`. The left argument has one item for each leading axis of `Y`. Axes that it omits are taken whole. `⌷Y` is identity. A [subscript](../scripts.ipynb#subscripts) writes a single position: `m₁` is `1⌷m`. After an array, [Dot](dot.qmd) indexing is `⌷`: `x.[I]` is `[I]⌷x`.
 

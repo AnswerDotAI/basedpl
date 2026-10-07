@@ -56,7 +56,7 @@ def vim(text):
 
 
 def key(shortcut):
-    "The keys that type a glyph, from its `shortcut` in `basedpl.symbols`. For example, `' o *'` is `Alt-o *`."
+    "The keys that type a glyph, from its `shortcut` in `basedpl.symbols`. For example, `' o 8'` is `Alt-o 8`."
     keys = [KEY_NAMES.get(k, k) for k in shortcut.split()]
     return ' '.join(['Alt-' + keys[0], *keys[1:]]) if keys else ''
 
@@ -92,9 +92,9 @@ def icon():
 
 def write():
     "Write the highlighters, regional keyboard bundles, and glyph-page key lines."
-    for path, glyphs in HIGHLIGHTERS.items(): path.write_text(quarto(path.read_text(), glyphs))
-    VIM.write_text(vim(VIM.read_text()))
+    for path, glyphs in HIGHLIGHTERS.items(): keyboards.write_changed(path, quarto(path.read_text(), glyphs))
+    keyboards.write_changed(VIM, vim(VIM.read_text()))
     keyboards.write()
     for s in symbols:
         path = GLYPH_PAGES/f"{s['name']}.qmd"
-        path.write_text(glyph_page(path.read_text(), s['shortcut']))
+        keyboards.write_changed(path, glyph_page(path.read_text(), s['shortcut']))

@@ -33,7 +33,9 @@ def test_records_and_boundaries():
     cases = [Case('⎕←9 ⋄ ⎕←2 ⋄ 7', '7', section='Agenda', output='9\n2'),
         Case('1', '1', section='Silence', output=''), Case("⎕←'\\'", "'\\'", section='Silence', output='\\')]
     for ending in ['', '\n', '\n\n']: assert parse(render(cases).rstrip('\n')+ending) == cases
-    assert parse('⍝ —\n{\n⍵\n}1\n⍝ =>\n1') == [Case('{\n⍵\n}1', '1')]
+    multiline = Case('{\n⍵\n}1', '1')
+    assert parse('⍝ —\n{\n⍵\n}1\n⍝ =>\n1') == parse('⍝ —\n{\n⍵\n}1   ⍝ 1') == [multiline]
+    assert '}1   ⍝ 1' in render([multiline])
     assert r'⍝ ⎕: 9\n2' in render(cases)
     with pytest.raises(ValueError, match='escapes'): parse('⍝ —\n1\n1\n⍝ ⎕: \\t\n\n')
 

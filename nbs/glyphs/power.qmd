@@ -1,6 +1,6 @@
 # `⍣` — Iterate / Invert / Fixed point
 
-Keys: `Alt-1 *`
+Keys: `Alt-1 8`
 
 `f⍣N Y` applies `f` `N` times. `N=0` returns `Y`. In dyadic calls the left argument stays fixed.
 

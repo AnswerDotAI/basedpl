@@ -1,6 +1,6 @@
 # `⍷` — Find
 
-Keys: `Alt-e _`
+Keys: `Alt-Minus e`
 
 `X⍷Y` marks starting positions where the whole pattern `X` occurs in `Y`. The result has `Y`'s shape. Overlaps count.
 

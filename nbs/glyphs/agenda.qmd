@@ -1,6 +1,6 @@
 # `⍚` — Agenda
 
-Keys: `Alt-Backtick _`
+Keys: `Alt-Minus Backtick`
 
 `selector⍚cases` derives a function that selects a branch on each call. `cases` is a nonempty vector of functions. An array among them acts as a constant function. The selector can be a unit index or a function returning one. Indices are integral and count from 0, and negative indices count from the end. A Boolean selector picks case 0 for `$f` and case 1 for `$t`.
 

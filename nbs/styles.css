@@ -109,15 +109,15 @@ pre.bqn::before { content: "BQN"; }
 .bpl-keyboard .key-label { position: absolute; bottom: 0.1rem; left: 0.3rem; font-size: 0.7rem; }
 .bpl-keyboard .key-name { font-size: 0.8rem; }
 
+#playground .playground-editor { display: flex; align-items: start; gap: 0.4rem; }
+#playground .playground-buttons { display: flex; flex-direction: column; gap: 0.3rem; }
+
 #playground textarea {
   width: 100%;
-  height: 10rem;
+  min-width: 0;
   font-family: var(--bpl-font), monospace;
   font-size: calc(0.875em + 1pt);
   line-height: 1.1;
 }
 
-#playground #output:empty { display: none; }
-#playground #output { border-left: 2px solid lightsalmon; padding-left: 0.8rem; }
-#playground #output pre { margin: 0.25rem 0; white-space: pre-wrap; background: none; font-family: var(--bpl-font), monospace; line-height: 1.05; }
-#playground #output pre.error { color: var(--bs-danger); }
+#playground pre.error { color: var(--bs-danger); }

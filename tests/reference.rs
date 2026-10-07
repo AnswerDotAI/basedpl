@@ -92,14 +92,13 @@ fn cases(text: &str) -> Vec<Value> {
                 "{location}: input and output lines must end the case, input first"
             );
             let splits: Vec<_> = body.iter().enumerate().filter_map(|(i, s)| (*s == "⍝ =>").then_some(i)).collect();
-            let (code, expect) = match splits.as_slice() {
-                [] if body.len() == 2 => (body[0].to_owned(), body[1].to_owned()),
-                [] if body.len() == 1 => {
-                    let (code, expect) = inline(body[0]).expect("inline case needs ⍝ before its expectation");
-                    (code.to_owned(), expect.to_owned())
-                }
-                [i] => (body[..*i].join("\n"), body[i + 1..].join("\n")),
-                _ => panic!("{location}: use one ⍝ => between multiline expressions"),
+            let joined = body.join("\n");
+            let pair = inline(&joined).filter(|(code, expect)| !expect.contains('\n') && (body.len() == 1 || code.matches('\n').count() + 1 == body.len()));
+            let (code, expect) = match (splits.as_slice(), pair) {
+                ([], Some((code, expect))) => (code.to_owned(), expect.to_owned()),
+                ([], None) if body.len() == 2 => (body[0].to_owned(), body[1].to_owned()),
+                ([i], _) => (body[..*i].join("\n"), body[i + 1..].join("\n")),
+                _ => panic!("{location}: use one ⍝ => between multiline expressions, or an inline expectation on the last line"),
             };
             assert!(!expect.is_empty(), "{location}: missing expectation");
             case["code"] = json!(code);
@@ -120,6 +119,7 @@ fn reference_format_and_comparison() {
     for source in ["⍝ —\n1\n1", "⍝ —\n{\n⍵\n}1\n⍝ =>\n1", "⍝ —\n⎕←1\n1\n⍝ ⎕: 1"] {
         for ending in ["", "\n", "\n\n"] { assert_eq!(cases(&format!("{source}{ending}")), cases(&format!("{source}\n\n"))); }
     }
+    assert_eq!(cases("⍝ —\n{\n⍵\n}1   ⍝ 1"), cases("⍝ —\n{\n⍵\n}1\n⍝ =>\n1"));
     let parsed_output = cases("⍝⍝ Output\n\n⍝ —\n⎕←9 ⋄ ⎕←2 ⋄ 7\n7\n⍝ ⎕: 9\\n2\n\n⍝ —\n3\n3\n⍝ ⎕:\n\n⍝ —\n⍎¨[⎕ ⎕]\n3 4\n⍝ input: 3\\n4\n⍝ ⎕:\n\n");
     assert_eq!(parsed_output[0]["section"], "Output");
     assert_eq!(parsed_output[0]["expected_output"], "9\n2");

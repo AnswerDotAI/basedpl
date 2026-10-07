@@ -38,9 +38,9 @@ Pending cases do not count as passing tests. New failures in active cases fail t
 
 Each record starts with `⍝ ID — description`, or `⍝ — description` without an ID. The description is optional. Add a short description when the purpose would not be obvious to a quick reader.
 
-Write `code   ⍝ expected` when the whole line is under 70 characters and reads clearly. Readers accept inline records of any length. The first comment outside a quoted string separates code from expectation. Expressions with existing code comments or significant separator whitespace retain two lines. Errors and explicit-output assertions also retain two lines.
+Write `code   ⍝ expected` when the whole line is under 70 characters and reads clearly. A multiline case puts its expectation on its last line in the same way, when that line and the expectation total under 40 characters. Readers accept inline expectations of any length. The first comment outside a quoted string separates code from expectation if it is on the last line. Expressions with existing code comments or significant separator whitespace keep the expectation on its own line. So do errors, multiline expectations and explicit-output assertions.
 
-Longer single-line expressions use one line each. If either expression is multiline, an exact `⍝ =>` line separates code from expectation. An empty line separates records. A record ends at the next case header, section heading or EOF. At EOF the separator and final newline are optional. Other blank lines belong to the expressions.
+Longer single-line expressions use one line each. A case with more than two top-level statements, or with two on a line wider than 60 characters, puts each statement on its own line instead of separating them with `⋄`. When either expression is multiline and the expectation isn't inline, an exact `⍝ =>` line separates code from expectation. An empty line separates records. A record ends at the next case header, section heading or EOF. At EOF the separator and final newline are optional. Other blank lines belong to the expressions.
 
 Errors use `⍝ error: DOMAIN ERROR` on the expectation line. A no-result expectation is the BPL expression `{}0`. A case overrides the default tolerances with an optional suffix on the header, such as `[rtol=1e-10]`. These are comparison tolerances, not APL `⎕CT`.
 

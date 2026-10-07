@@ -1,6 +1,6 @@
 # `⍨` — Self / Commute / Constant
 
-Keys: `Alt-1 ~`
+Keys: `Alt-1 Backtick`
 
 `f⍨Y` is `Y f Y`.
 

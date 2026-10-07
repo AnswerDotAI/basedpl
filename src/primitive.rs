@@ -423,8 +423,8 @@ impl Primitive {
             Self::Math(Factorial) => row("!", "factorial", "", pervasive_monad("factorial"), pervasive_dyad("binomial").identity(Identity::Number(1))),
             Self::Math(Lcm) => row("∧", "and", "", monad("polar", 0), pervasive_dyad("lcm").identity(Identity::Number(1))),
             Self::Math(Gcd) => row("∨", "or", "", monad("real-imag", 0), pervasive_dyad("gcd").identity(Identity::Number(0))),
-            Self::Math(Nand) => row("⍲", "nand", "", pervasive_monad("square"), pervasive_dyad("nand")),
-            Self::Math(Nor) => row("⍱", "nor", "", pervasive_monad("double"), pervasive_dyad("nor")),
+            Self::Math(Nand) => row("⊼", "nand", "", pervasive_monad("square"), pervasive_dyad("nand")),
+            Self::Math(Nor) => row("⊽", "nor", "", pervasive_monad("double"), pervasive_dyad("nor")),
             Self::Math(Not) => row("~", "tilde", "", pervasive_monad("not"), dyad("without", [W, W])),
             Self::Compare(Equal) => row("=", "equal", "", monad("classify", W), pervasive_dyad("equal").identity(Boolean(true))),
             Self::Compare(NotEqual) => row("≠", "not-equal", "", monad("unique-mask", W), pervasive_dyad("not-equal").identity(Boolean(false))),
@@ -948,4 +948,3 @@ pub(crate) fn digits(mut flat: usize, shape: &[usize]) -> impl Iterator<Item = (
         (axis, c)
     })
 }
-

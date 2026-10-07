@@ -56,6 +56,7 @@ pub fn symbols() -> &'static [Symbol] {
 }
 
 /// What a key does: type text, or move to a dead-key state, which types nothing until the next key.
+#[derive(PartialEq)]
 pub enum Action { Text(String), State(String) }
 
 /// A dead-key state: what each listed key does next, and the terminator an unlisted key types first.
@@ -63,11 +64,17 @@ pub struct DeadState { pub terminator: String, pub keys: Vec<(char, Action)> }
 
 /// The shared key mapping in `python/basedpl/layout.json`, which the macOS layout and the browser also read. Keys are US characters
 /// after Shift. `option` holds unshifted keys typed with Option.
-pub struct KeyLayout { pub option: Vec<(char, Action)>, pub alt_aliases: Vec<(char, Action)>, pub states: HashMap<String, DeadState> }
+pub struct KeyLayout {
+    pub option: Vec<(char, Action)>, pub alt_aliases: Vec<(char, Action)>, pub states: HashMap<String, DeadState>,
+    pub unshifted: HashMap<char, char>,
+}
 
 impl KeyLayout {
     pub fn state(&self, name: &str) -> &DeadState { &self.states[name] }
     pub fn alt(&self, c: char) -> Option<&Action> { find(&self.alt_aliases, c).or_else(|| find(&self.option, c)) }
+    pub fn display_keys<'a>(&'a self, keys: &'a [(char, Action)]) -> impl Iterator<Item = &'a (char, Action)> {
+        keys.iter().filter(move |(key, action)| self.unshifted.get(key).and_then(|key| find(keys, *key)).is_none_or(|a| a != action))
+    }
 }
 
 pub fn find(keys: &[(char, Action)], key: char) -> Option<&Action> { keys.iter().find(|(k, _)| *k == key).map(|(_, a)| a) }
@@ -87,7 +94,9 @@ pub fn layout() -> &'static KeyLayout {
             .expect("states")
             .iter()
             .map(|(name, s)| (name.clone(), DeadState { terminator: s["terminator"].as_str().expect("a terminator").into(), keys: keys(&s["keys"]) }));
-        KeyLayout { option: keys(&json["option"]), alt_aliases: keys(&json["alt_aliases"]), states: states.collect() }
+        let unshifted = json["unshifted"].as_object().expect("unshifted keys").iter()
+            .map(|(shifted, plain)| (shifted.chars().next().unwrap(), plain.as_str().unwrap().chars().next().unwrap())).collect();
+        KeyLayout { option: keys(&json["option"]), alt_aliases: keys(&json["alt_aliases"]), states: states.collect(), unshifted }
     })
 }
 
@@ -99,7 +108,7 @@ pub fn chord(glyph: &str) -> String {
     let layout = layout();
     let mut queue: std::collections::VecDeque<(String, &[(char, Action)])> = [(String::new(), layout.option.as_slice())].into();
     while let Some((typed, keys)) = queue.pop_front() {
-        for (key, action) in keys {
+        for (key, action) in layout.display_keys(keys) {
             let sequence = format!("{typed} {key}");
             match action {
                 Action::Text(text) if text == glyph => return sequence,

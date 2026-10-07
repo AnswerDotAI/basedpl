@@ -1,6 +1,6 @@
 # `⍟` — Natural log / Logarithm
 
-Keys: `Alt-o *`
+Keys: `Alt-o 8`
 
 `⍟Y`: ln Y. Pervasive.
 

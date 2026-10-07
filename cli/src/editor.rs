@@ -146,7 +146,7 @@ impl Hinter for Symbols {
     fn hint(&self, line: &str, pos: usize, _: &Context) -> Option<Suggestion> {
         if let Some(name) = &self.0.lock().unwrap().dead {
             let state = layout().state(name);
-            let keys: String = state.keys.iter().map(|(key, _)| key).collect();
+            let keys: String = layout().display_keys(&state.keys).map(|(key, _)| key).collect();
             return Some(Suggestion(format!("  {}:{keys}", state.terminator)));
         }
         let (_, prefix) = entry(line, pos)?;

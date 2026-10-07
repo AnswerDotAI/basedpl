@@ -149,7 +149,9 @@ a←[0 1 2 ⋄ 3 4 5 ⋄ 6 7 8 ⋄ 9 10 11] ⋄ (1⌽)⌾(↑⍤1) a
 "(w)Fa" "((w)Fa)Fb" "(((w)Fa)Fb)Fc" "((((w)Fa)Fb)Fc)Fd"
 
 ⍝ bqn:scan:80 — Scan calls its operand once for each item after the first
-c←0 ⋄ {c+←1 ⋄ ⍺+⍵}\⍳10 ⋄ c   ⍝ 9
+c←0
+{c+←1 ⋄ ⍺+⍵}\⍳10
+c   ⍝ 9
 
 ⍝ bqn:scan:91 — A Less Than scan
 <\0 0 1 1 1 0 0 1 1 1 1   ⍝ 0 0 1 0 1 0 0 1 0 1 0
@@ -206,7 +208,10 @@ a←["ab" ⋄ "cd" ⋄ "ef"] ⋄ ⊣⍀a   ⍝ ["ab" ⋄ "ab" ⋄ "ab"]
 ⍴3 2↓7 7 7 7⍴"abc"   ⍝ [4 5 7 7]ₓ
 
 ⍝ bqn:leading:110 — Leading-axis agreement pairs a matrix with a rank-3 array
-x←3 2 4⍴⍳60 ⋄ c←100×(⍳3)=⊗⍳2 ⋄ c+x
+x←3 2 4⍴⍳60
+c←100×(⍳3)=⊗⍳2
+c+x
+⍝ =>
 [[100 101 102 103 ⋄ 4 5 6 7] ⋄ [8 9 10 11 ⋄ 112 113 114 115] ⋄ [16 17 18 19 ⋄ 20 21 22 23]]
 
 ⍝⍝ Blocks

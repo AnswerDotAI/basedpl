@@ -9,15 +9,15 @@ Option-s	⌈
 Option-d	⌊
 Option-f	∂
 Option-h	←
-Option-g	del prefix
-Option-w	omega prefix
+Option-g	∇
+Option-w	⍵
 Option-x	⊃
 Option-c	cap prefix
 Option-v	∪
 Option-b	decode prefix
-Option-a	alpha prefix
-Option-z	enclose prefix
-Option-e	epsilon prefix
+Option-a	⍺
+Option-z	⊂
+Option-e	∊
 Option-r	⍴
 Option-y	•
 Option-t	∘
@@ -28,22 +28,22 @@ Option-Shift-'	⇄
 Option-Shift-§	superscript prefix
 Control-Option-Shift-(	subscript prefix
 Option--	bar prefix
-Option-Shift-ç	or prefix
-Option-Shift-è	delta prefix
+Option-Shift-ç	∨
+Option-Shift-è	∆
 Option-Shift-!	∞
 Option-Shift-à	⍬
-Control-Option-Shift-à	and prefix
+Control-Option-Shift-à	∧
 Option-o	circle prefix
 Option-u	÷
-Option-i	iota prefix
+Option-i	⍳
 Option-p	π
-Control-Option-p	⍭
+Control-Option-p	stile prefix
 Option-l	→
 Control-Option-Shift-l	⌽
 Option-j	↓
 Option-k	take prefix
 Option-m	×
-Control-Option-`	diamond prefix
+Control-Option-`	⋄
 Option-;	⊣
 Option-Shift-;	↣
 Option-=	match prefix
