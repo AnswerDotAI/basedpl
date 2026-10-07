@@ -50,7 +50,7 @@ Predicates, positions, tally, shape, and monadic `⌊`, `⌈` and `×` return ex
 Iota and random integer generation keep an exact argument exact. An argument that must be an integer, such as an index or a count, accepts a float within comparison tolerance of one:
 
 ```bpl
-⍳(0.1×3)×10          ⍝ 0 1 2
+⍳10×0.1×3          ⍝ 0 1 2
 ```
 
 ## Numbers in one array
@@ -58,9 +58,9 @@ Iota and random integer generation keep an exact argument exact. An argument tha
 Numbers that an operation puts in one array share a kind. A float among exact integers makes them all floats, and a complex number makes every number complex:
 
 ```bpl
-(⍳3ₓ),0.5            ⍝ 0 1 2 0.5
-(⍳2ₓ),1j2            ⍝ 0 1 1j2
-(1ₓ,0.5)÷2ₓ          ⍝ 0.5 0.25
+⍳3ₓ , 0.5            ⍝ 0 1 2 0.5
+⍳2ₓ , 1j2            ⍝ 0 1 1j2
+1ₓ,0.5 ÷ 2ₓ          ⍝ 0.5 0.25
 ```
 
 Each number written in a literal list or in brackets keeps its own exactness, even beside numbers of the other kind. Floats written beside complex numbers become complex. Their values don't change:
@@ -124,8 +124,8 @@ Complex arithmetic follows the `num_complex` crate. A complex number can have in
 Joining infinities or NaN to exact integers keeps the integers exact. Exact integers, infinities and NaN share integer storage:
 
 ```bpl
-(⍳3ₓ),∞              ⍝ [0 1 2 ∞]ₓ
-•storage (⍳3ₓ),∞     ⍝ "integer"
+⍳3ₓ , ∞              ⍝ [0 1 2 ∞]ₓ
+•storage ⍳3ₓ , ∞     ⍝ "integer"
 ```
 
 CSV and JSON imports give NaN for a missing number. An integer column with gaps then stays exact.
@@ -153,8 +153,8 @@ Wherever a number is expected, `$t` is 1 and `$f` is 0. `+/` counts the true ite
 ```bpl
 x←3 1 4 1 5
 +/x>2                ⍝ 3ₓ
-(x>2)#x              ⍝ 3 4 5
-(4>2)⌷"no" "yes"     ⍝ "yes"
+x>2 # x              ⍝ 3 4 5
+4>2 ⌷ "no" "yes"     ⍝ "yes"
 ```
 
 Arithmetic on Booleans gives integers. `∧`, `∨`, `⊽`, `⊼`, `⌊` and `⌈` on two Booleans give a Boolean:

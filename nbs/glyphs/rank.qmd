@@ -27,7 +27,7 @@ By these rules, `⊢⍤0` returns its argument unchanged. On an array of atoms, 
 v←[[1 2] [3 4 5]]
 ≢⍤0 v              ⍝ [1 1]ₓ
 ≢¨v                ⍝ [2 3]ₓ
-(⊢⍤0 v)≡v          ⍝ $t
+⊢⍤0v ≡ v          ⍝ $t
 {⍵ ⍵}⍤0[1 2]      ⍝ [1 1 ⋄ 2 2]
 -⍤0(5)             ⍝ ¯5
 ```

@@ -12,9 +12,10 @@ use std::{borrow::Cow, convert::Infallible, sync::Arc};
 
 mod assign;
 mod binder;
+mod dissect;
 mod operators;
 mod session;
-use {binder::*, operators::*};
+use {binder::*, dissect::*, operators::*};
 
 #[derive(Clone, Debug)]
 pub struct Function { node: Arc<FunctionData> }
@@ -379,9 +380,11 @@ impl Function {
         cx.check()?;
         if cx.session.depth == MAX_CALL_DEPTH { return Err(depth_error(cx.span)); }
         cx.session.depth += 1;
+        let capture = std::mem::replace(&mut cx.session.capture, false);
         // This is `stacker::maybe_grow`, without its closure's frame. An unknown stack limit grows the stack, as there.
         let room = stacker::remaining_stack().is_some_and(|r| r >= STACK_RED_ZONE);
         let result = if room { self.dispatch(left, right, cx) } else { self.grown(left, right, cx) };
+        cx.session.capture = capture;
         cx.session.depth -= 1;
         cx.check()?;
         result
@@ -759,7 +762,7 @@ impl Binding {
         }
     }
 }
-struct Bound { value: Binding, shy: bool }
+struct Bound { value: Binding, shy: bool, expression: Option<Expression> }
 struct Application {
     function: Function,
     left: Option<Value>,
@@ -767,13 +770,14 @@ struct Application {
     span: Span,
     unshy: bool,
     selection: Option<SelectionKind>,
+    expression: Option<Expression>,
 }
 enum Step { Done(Bound), Tail(Application) }
 
 /// An element as a binding: a function stays a function, and anything else is a value.
 impl From<Value> for Bound { fn from(element: Value) -> Self { Self::new(Binding::from_element(element)) } }
 impl Bound {
-    fn new(value: Binding) -> Self { Self { value, shy: false } }
+    fn new(value: Binding) -> Self { Self { value, shy: false, expression: None } }
     fn array(self, span: &Span) -> Result<Value, Error> { self.value.into_value(span) }
     fn result(self, span: &Span) -> Result<Self, Error> {
         match self.value {
@@ -814,6 +818,7 @@ pub struct Session {
     current: Option<usize>,
     depth: usize,
     prototype: bool,
+    capture: bool,
     /// The program's command-line arguments.
     pub(crate) args: Vec<String>,
 }

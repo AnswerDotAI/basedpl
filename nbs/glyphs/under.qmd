@@ -9,18 +9,18 @@ When `g` only selects or rearranges, `f⌾g Y` puts the result of `f(g Y)` back 
 - a fork whose middle function selects from its right tine. The left tine runs on `Y` itself, and can depend on its values.
 
 ```bpl
--⌾(1 0 1#)1 2 3            ⍝ ¯1 2 ¯3
+-⌾ 1 0 1# 1 2 3            ⍝ ¯1 2 ¯3
 +\⌾∊ [3 1 0] [2 5]         ⍝ [[3 4 4] [6 11]]
-9⌾(0⌷) 1 2 3               ⍝ 9 2 3
--⌾(1↓⍣2) 1 2 3 4           ⍝ 1 2 ¯3 ¯4
-{⍳≢⍵}⌾((⊂∘⍋)⌷⊢) 30 10 20   ⍝ 2 0 1
+9⌾ 0⌷ 1 2 3               ⍝ 9 2 3
+-⌾ 1↓⍣2 [1 2 3 4]           ⍝ 1 2 ¯3 ¯4
+{⍳≢⍵}⌾ ⊂∘⍋⌷⊢ 30 10 20   ⍝ 2 0 1
 ```
 
 Each position that `g` selects more than once must get matching values. A value at a fill, such as overtaking `↑` adds, is dropped.
 
 ```bpl
-{1+⍵}⌾(2↕) 1 2 3           ⍝ 2 3 4
--⌾(5↑) 1 2 3               ⍝ ¯1 ¯2 ¯3
+{1+⍵}⌾ 2↕ 1 2 3           ⍝ 2 3 4
+-⌾ 5↑ 1 2 3               ⍝ ¯1 ¯2 ¯3
 ```
 
 For any other `g`, `f⌾g Y` is `g⁻¹(f(g Y))`. `X f⌾g Y` is `g⁻¹((g X)f(g Y))`. The inverse can't restore items that `g` drops, and Under uses it only for a `g` that keeps every item.

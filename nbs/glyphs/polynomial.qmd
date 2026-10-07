@@ -36,7 +36,7 @@ Enclosed matrix: one row per term, coefficient then exponents. Enclose one coord
 t←⊂[1 2 0 ⋄ 1 0 2]ₓ
 t⌻⊂[3 4]ₓ                               ⍝ 25ₓ
 t⌻[3 4;5 12]ₓ                           ⍝ [25 169]ₓ
-(⊂[2 1r2 ⋄ 3 1r4]ₓ)⌻16ₓ                 ⍝ 14
+⊂[2 1r2 ⋄ 3 1r4]ₓ ⌻ 16ₓ                 ⍝ 14
 ⌻⁻¹⊂[1 5 ⋄ ¯1 0]ₓ                         ⍝ [¯1 0 0 0 0 1]ₓ
 ```
 

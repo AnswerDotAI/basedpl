@@ -79,14 +79,14 @@ Source: APLcart. The `1+` goes, because positions count from 0. Dyalog writes th
 
 ### Translate characters
 
-Source: the translation in `lcase` in the dfns workspace, here with tables that complement a DNA strand. The table is `"TGCA",,⍵`, and the positions are `("ACGT",,⍵)⍳⍵`. A selection has the shape of its positions. Here that is the shape of `⍵`. The BPL spelling leaves out the original's `(⍴⍵)⍴`.
+Source: the translation in `lcase` in the dfns workspace, here with tables that complement a DNA strand. The table is `"TGCA",,⍵`, and the positions are `⍵⍳⍨"ACGT",,⍵`. A selection has the shape of its positions. Here that is the shape of `⍵`. The BPL spelling leaves out the original's `(⍴⍵)⍴`.
 
 ```dyalog
 (⍴⍵)⍴('TGCA',,⍵)[('ACGT',,⍵)⍳⍵]
 ```
 
 ```bpl
-{[("ACGT",,⍵)⍳⍵]⌷"TGCA",,⍵} "GATTACA"   ⍝ "CTAATGT"
+{[⍵⍳⍨"ACGT",,⍵]⌷"TGCA",,⍵} "GATTACA"   ⍝ "CTAATGT"
 ```
 
 ```bqn
@@ -128,7 +128,7 @@ v₀²+v₁²                 ⍝ 25
 
 ### Indexing inside a longer expression
 
-Source: `path` in the dfns workspace. `⍺` is the wave front, a vector of vertices, and `[⍺]⌷graph` selects their lists of neighbours. In `[⍺]`, `⍺` is one item, the positions along the only axis. The selection needs parentheses. Without them, `⌷` would select from the whole of `graph∩¨⊂⍸⍵=¯2`.
+Source: `path` in the dfns workspace. `⍺` is the wave front, a vector of vertices, and `[⍺]⌷graph` selects their lists of neighbours. In `[⍺]`, `⍺` is one item, the positions along the only axis. Spaces keep the selection in its own run, before the intersection.
 
 ```dyalog
 next←graph[⍺]∩¨⊂⍸⍵=¯2
@@ -136,7 +136,7 @@ next←graph[⍺]∩¨⊂⍸⍵=¯2
 
 ```bpl
 graph←[[1 2] [2] [0] [1]]
-0 1 {([⍺]⌷graph)∩¨⊂⍸⍵=¯2} ¯2 0 ¯2 5   ⍝ (2 ⋄ 2)
+0 1 {[⍺]⌷graph ∩¨ ⊂⍸⍵=¯2} ¯2 0 ¯2 5   ⍝ (2 ⋄ 2)
 ```
 
 ```bqn
@@ -608,14 +608,14 @@ names⊸⊐⌾<"ab"
 ```
 
 ```bpl
-N←1 0 2 ⋄ (1⌈|N)#(N>0)#⁻¹4 5   ⍝ 4 0 5 5
+N←1 0 2 ⋄ 1⌈|N # N>0 #⁻¹ 4 5   ⍝ 4 0 5 5
 ```
 
 ## Counting from 0
 
 ### Selecting by a Boolean
 
-`(x>0)⌷"no" "yes"` selects one string from the strand. The Boolean `x>0` is the position, with no `1+`. For an array of Booleans, BQN uses `⊏` in place of `⊑`.
+`x>0 ⌷ "no" "yes"` selects one string from the strand. The Boolean `x>0` is the position, with no `1+`. For an array of Booleans, BQN uses `⊏` in place of `⊑`.
 
 ```dyalog
 ('no' 'yes')[1+x>0]
@@ -623,7 +623,7 @@ N←1 0 2 ⋄ (1⌈|N)#(N>0)#⁻¹4 5   ⍝ 4 0 5 5
 
 ```bpl
 x←5
-(x>0)⌷"no" "yes"       ⍝ "yes"
+x>0 ⌷ "no" "yes"       ⍝ "yes"
 ```
 
 ```bqn
@@ -659,8 +659,8 @@ S←{' #'[(f⍣⍵)1 1⍴1]}
 ```
 
 ```bpl
-f←{⍵,(⍴⍵)⍴0 ⍪ ⍵,⍵}
-S←{[(f⍣⍵)⍪1]⌷" #"}
+f←{⍵,0⍴⍨⍴⍵ ⍪ ⍵,⍵}
+S←{[f⍣⍵⍪1]⌷" #"}
 ⍴S 5                   ⍝ [32 32]ₓ
 ```
 

@@ -183,21 +183,41 @@ impl Highlighter for Symbols {
 }
 impl Helper for Symbols {}
 
-pub(crate) struct LineEditor(Editor<Symbols, DefaultHistory>);
+pub(crate) struct LineEditor { editor: Editor<Symbols, DefaultHistory>, history: Option<std::path::PathBuf> }
 impl LineEditor {
     pub fn new() -> rustyline::Result<Self> {
-        let mut editor = Editor::with_config(Config::builder().completion_type(CompletionType::List).build())?;
+        let mut editor = Editor::with_config(Config::builder().max_history_size(1000)?.completion_type(CompletionType::List).build())?;
         let symbols = Symbols::default();
         editor.bind_sequence(Event::Any, EventHandler::Conditional(Box::new(symbols.clone())));
         editor.set_helper(Some(symbols));
-        Ok(Self(editor))
+        let config = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from).filter(|dir| dir.is_absolute())
+            .or_else(|| std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config")));
+        let history = config.map(|dir| dir.join("basedpl/history"));
+        if let Some(path) = &history {
+            match editor.load_history(path) {
+                Ok(()) => {},
+                Err(rustyline::error::ReadlineError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {},
+                Err(e) => eprintln!("History: {e}"),
+            }
+        }
+        Ok(Self { editor, history })
     }
 
     pub fn readline(&mut self, prompt: &str) -> rustyline::Result<String> {
-        *self.0.helper().unwrap().0.lock().unwrap() = Input::default();
-        let mut line = self.0.readline(prompt)?;
-        if let Some((range, glyph)) = self.0.helper().unwrap().0.lock().unwrap().pending.take() { line.replace_range(range, &glyph); }
-        self.0.add_history_entry(line.as_str())?;
+        *self.editor.helper().unwrap().0.lock().unwrap() = Input::default();
+        let mut line = self.editor.readline(prompt)?;
+        if let Some((range, glyph)) = self.editor.helper().unwrap().0.lock().unwrap().pending.take() { line.replace_range(range, &glyph); }
         Ok(line)
+    }
+    pub fn remember(&mut self, code: &str) -> rustyline::Result<()> { self.editor.add_history_entry(code.trim_end()).map(|_| ()) }
+}
+
+impl Drop for LineEditor {
+    fn drop(&mut self) {
+        if let Some(path) = &self.history {
+            let result = std::fs::create_dir_all(path.parent().unwrap()).map_err(rustyline::error::ReadlineError::Io)
+                .and_then(|_| self.editor.append_history(path));
+            if let Err(e) = result { eprintln!("History: {e}"); }
+        }
     }
 }

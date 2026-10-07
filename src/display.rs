@@ -110,16 +110,17 @@ pub(crate) struct Settings {
     pub boxed: bool,
     pub trees: bool,
     pub functions: bool,
+    pub dissect: bool,
     pub elide: Elide,
 }
 
-const KEYS: [&str; 7] = ["box", "trees", "fns", "limit", "edges", "prec", "width"];
+const KEYS: [&str; 8] = ["box", "trees", "fns", "dissect", "limit", "edges", "prec", "width"];
 
 impl Settings {
     /// The REPL's settings: boxed, with lines elided to the terminal's width.
     pub fn interactive() -> Self {
         let elide = Elide { width: crate::system::terminal_size().map(|(_, columns)| columns).unwrap_or(usize::MAX), ..Elide::default() };
-        Self { boxed: true, trees: true, functions: true, elide }
+        Self { boxed: true, trees: true, functions: true, elide, ..Self::default() }
     }
     /// Display text for `a`, boxed unless boxing is off, or `inside` a function while boxing there is off. A line wider than `width`
     /// elides columns, keeping as many at each end of the last axes as fit.
@@ -148,6 +149,7 @@ impl Settings {
             flag(self.boxed),
             flag(self.trees),
             flag(self.functions),
+            flag(self.dissect),
             count(self.elide.limit),
             count(self.elide.edges),
             count(self.elide.prec),
@@ -168,6 +170,7 @@ impl Settings {
                 "box" => self.boxed = value.boolean()?,
                 "trees" => self.trees = value.boolean()?,
                 "fns" => self.functions = value.boolean()?,
+                "dissect" => self.dissect = value.boolean()?,
                 "limit" => self.elide.limit = count(&value)?,
                 "edges" => self.elide.edges = count(&value)?,
                 "prec" => self.elide.prec = positive(&value)?,

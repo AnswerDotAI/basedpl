@@ -161,7 +161,7 @@ The browser build has no `locale` option.
 "%d %B %Y" •date⁻¹ 1714990830                     ⍝ "06 May 2024"
 ["pattern":"%A" "locale":"fr_FR"] •date⁻¹ 0       ⍝ "jeudi"
 (•date⁻¹ 0).weekday                               ⍝ 4ₓ
-(86400+)⌾("%Y-%m-%d"↣•date) "2024-05-06"          ⍝ "2024-05-07"
+86400+ ⌾ "%Y-%m-%d"↣•date "2024-05-06"          ⍝ "2024-05-07"
 ```
 
 Errors: `DOMAIN` for text that the pattern doesn't match, an invalid date, an unknown field or locale, or an invalid pattern.
@@ -350,7 +350,7 @@ Errors: `DOMAIN` for malformed XML, and for invalid names or attribute values gi
 
 `•mime Y` returns the MIME bundle that display uses for `Y`. The bundle is a keyed vector from MIME types to text, or to bytes for a binary type such as `image/png`. It always has `text/plain`. If `Y` has a renderer, `•mime` calls it with `Y` as `⍵` and adds its entries.
 
-`F •mime Y` returns `Y` with the renderer that `F` holds, as in `{["text/html":"<b>",(⍕⍵),"</b>"]}ᵘ •mime Y`. A MIME type on the left displays `Y` itself as that type, as in `"text/markdown" •mime "*hi*"`. An atom becomes a scalar, because only an array can hold a renderer.
+`F •mime Y` returns `Y` with the renderer that `F` holds, as in `{["text/html":"</b>",⍨"<b>",⍕⍵]}ᵘ •mime Y`. A MIME type on the left displays `Y` itself as that type, as in `"text/markdown" •mime "*hi*"`. An atom becomes a scalar, because only an array can hold a renderer.
 
 A result keeps a renderer when it has an item for each item of its argument, as pervasive functions, Each and scans do. Rearranging or selecting from an array without removing an axis also keeps it, as reversal, transpose, take, replicate and catenation do. Changes in place keep it. Other functions drop it, as reductions and `⍴` do. When two arguments have different renderers, the result has none. Match ignores renderers.
 
@@ -412,8 +412,9 @@ Errors: `DOMAIN` for an unknown `kind`, invalid image bytes, or values that aren
 | Setting | Holds | Default |
 |---|---|---|
 | `box` | `$t` draws arrays in boxes | `$t` in the REPL and the BPL Jupyter kernel, `$f` elsewhere |
-| `trees` | `$t` shows a function as a tree while `box` is on | as `box` |
+| `trees` | `$t` shows functions and dissected expressions as trees; `$f` uses linear notation. Independent of `box` | as `box` |
 | `fns` | `$f` leaves output made inside functions unboxed | as `box` |
+| `dissect` | `$t` shows the bound expression before each normal result, using `trees` | `$f` |
 | `limit` | The most items display shows in full. `∞` shows every item | `1000` |
 | `edges` | Positions shown at each end of a long axis | `3` |
 | `prec` | Significant digits shown for each float. `∞` shows every digit | `∞` |
@@ -435,7 +436,7 @@ Errors: `DOMAIN` for an unknown setting or an invalid value.
 
 | `kind` | Fields | Factors |
 |---|---|---|
-| `"svd"` | `u`, `s`, `v` | `m` is `(u×⍤1 s)+.×+⍉v`, with the singular values `s` in descending order |
+| `"svd"` | `u`, `s`, `v` | `m` is `u×⍤1s +.× +⍉v`, with the singular values `s` in descending order |
 | `"qr"` | `q`, `r` | `m` is `q+.×r`, with orthonormal columns in `q`, and `r` upper triangular |
 | `"eigen"` | `values`, `vectors` | each column of `vectors` is an eigenvector of `m`, for the eigenvalue at the same position in `values` |
 | `"cholesky"` | `l` | `m` is `l+.×+⍉l`, with `l` lower triangular |

@@ -5,7 +5,7 @@ Keys: `Alt-/`
 `¿N`: uniform draw from `⍳N`. `¿0`: U(0,1). Pervasive.
 
 ```bpl
-(¿6)∊⍳6           ⍝ $t
+¿6 ∊ ⍳6           ⍝ $t
 ```
 
 `M¿N`: `M` draws without replacement from `⍳N`.

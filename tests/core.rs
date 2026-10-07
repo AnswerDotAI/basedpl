@@ -235,6 +235,42 @@ fn boxed_display_and_function_trees() {
 }
 
 #[test]
+fn expression_dissection() {
+    let mut s = Session::new();
+    s.eval(r#"•prefs ["trees":$t]"#);
+    let r = s.eval("]dissect -⌾ 1 0 1# 1 2 3");
+    assert!(r.error.is_none(), "{:?}", r.error);
+    let tree = r.output_text()[0];
+    for part in ["call", "⌾", "↣", "[1 0 1]", "[1 2 3]"] { assert!(tree.contains(part), "{tree}"); }
+    assert_same(r.value, &vector(&[-1., 2., -3.]));
+    assert_eq!(s.eval("1+2").output_text(), ["3"]);
+    assert!(s.eval("+/÷≢").output_text()[0].contains("fork\n"));
+    assert_eq!(s.eval(r#"•prefs ["trees":$f "dissect":$t] ⋄ f←{⎕←⍵ ⋄ ⍵+1}"#).output_text().len(), 1);
+    let r = s.eval("f 2");
+    assert_eq!(r.output_text().len(), 3);
+    assert_eq!(r.output_text()[0], "2");
+    assert_eq!(r.output_text()[2], "3");
+    assert_same(r.value, &number(3.));
+    assert_eq!(s.eval("f").output_text().len(), 1);
+    let r = s.eval("↑[+]");
+    assert!(r.function.is_some());
+    assert_eq!(r.output_text().len(), 2);
+    for code in ["1+⍳3", "(1+⍳3)ᵀ", "⍳3→+/", "(+/⍳3) (≢⍳4)"] {
+        let r = s.eval(code);
+        assert_eq!(r.output_text().len(), 2, "{code}: {:?}", r.error);
+        assert!(r.output_text()[0].contains('⍳'));
+        assert_same(run(r.output_text()[0]).unwrap(), &r.value.unwrap());
+    }
+    assert!(s.eval("a←1+⍳3").output_text().is_empty());
+    assert!(s.eval("{}0").output_text().is_empty());
+    let quiet = || EvalOptions { echo: false, ..EvalOptions::default() };
+    assert!(s.eval_with("1+2", quiet()).output_text().is_empty());
+    assert_eq!(s.eval_with("]dissect 1+2", quiet()).output_text().len(), 1);
+    assert!(s.eval("1÷'a'").error.is_some());
+    assert_eq!(s.eval("1+2").output_text().len(), 2);
+}
+
+#[test]
 fn execute_source_and_session() {
     let mut s = Session::new();
     let r = s.eval(r#"a←⍎"1+1 ⋄ 2+2""#);

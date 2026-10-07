@@ -192,7 +192,7 @@ impl Session {
                 result.value = Some(a);
             }
             Ok(Bound { value: Binding::Function(f), shy, .. }) => {
-                if self.execution.echo && !shy { self.display_function(&f); }
+                if self.execution.echo && !shy { self.display_function(&f, None); }
                 result.function = Some(f);
             }
             Ok(_) => (),
@@ -233,16 +233,25 @@ impl Session {
         result
     }
     fn evaluate_code(&mut self, source: Arc<Source>) -> Evaluation {
-        match crate::parse(source).complete() { Ok(parsed) => self.eval_display(&parsed, false), Err(e) => Evaluation::failed(e) }
+        match crate::parse(source).complete() { Ok(parsed) => self.eval_display(&parsed, false, false), Err(e) => Evaluation::failed(e) }
     }
-    pub fn eval_parsed(&mut self, parsed: &Parsed, options: crate::EvalOptions) -> Evaluation { self.evaluation(options, |s| s.eval_display(parsed, false)) }
-    fn eval_display(&mut self, parsed: &Parsed, diagram: bool) -> Evaluation {
+    pub fn eval_parsed(&mut self, parsed: &Parsed, options: crate::EvalOptions) -> Evaluation { self.evaluation(options, |s| s.eval_display(parsed, false, false)) }
+    fn eval_display(&mut self, parsed: &Parsed, diagram: bool, dissect: bool) -> Evaluation {
         let mut result = Evaluation::default();
         for (i, statement) in parsed.statements.iter().enumerate() {
             (result.function, result.operator) = (None, None);
             let nodes = &statement.nodes;
-            match self.bind(nodes) {
+            let previous = self.capture;
+            let dissecting = self.depth == 0 && (dissect || self.display.dissect && self.execution.echo);
+            self.capture = dissecting;
+            let bound = self.bind(nodes);
+            self.capture = previous;
+            match bound {
                 Ok(bound) => {
+                    let dissected = if dissecting && (dissect || !bound.shy && !matches!(bound.value, Binding::NoResult | Binding::Absent)) {
+                        bound.expression.or_else(|| Expression::binding(&bound.value)).map(|e| e.display(self.display.trees))
+                    } else { None };
+                    if let Some(text) = &dissected { self.execution.output(crate::OutputKind::Display, text.clone()); }
                     result.value = match bound.value {
                         Binding::NoResult | Binding::Absent => None,
                         Binding::Value(a) => {
@@ -259,7 +268,7 @@ impl Session {
                         }
                         _ if bound.shy => None,
                         Binding::Function(f) => {
-                            if self.execution.echo { self.display_function(&f); }
+                            if self.execution.echo { self.display_function(&f, dissected.as_deref()); }
                             if i + 1 == parsed.statements.len() { result.function = Some(f); }
                             None
                         }
@@ -302,7 +311,14 @@ impl Session {
         }
         if command.eq_ignore_ascii_case("]display") {
             return match crate::parse(Source::new("<display>", args)).complete() {
-                Ok(parsed) => self.eval_display(&parsed, true),
+                Ok(parsed) => self.eval_display(&parsed, true, false),
+                Err(e) => Evaluation::failed(e),
+            };
+        }
+        if command.eq_ignore_ascii_case("]dissect") {
+            if args.trim().is_empty() { return failed(ErrorKind::Syntax, "usage: ]dissect expression".into()); }
+            return match crate::parse(Source::new("<dissect>", args)).complete() {
+                Ok(parsed) => self.eval_display(&parsed, false, true),
                 Err(e) => Evaluation::failed(e),
             };
         }
@@ -358,10 +374,10 @@ impl Session {
         Ok(())
     }
 
-    /// A function displays as a tree when boxed display shows trees, and as text otherwise.
-    fn display_function(&self, f: &Function) {
-        let text = if self.display.boxed && self.display.trees { f.tree(&mut 1000).render() } else { f.text(&mut 1000) };
-        self.execution.output(crate::OutputKind::Display, text);
+    /// Displays a function using the trees setting, unless that view has already been shown.
+    fn display_function(&self, f: &Function, shown: Option<&str>) {
+        let text = if self.display.trees { f.tree(&mut 1000).render() } else { f.text(&mut 1000) };
+        if shown != Some(&text) { self.execution.output(crate::OutputKind::Display, text); }
     }
 
     pub(super) fn execute(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
@@ -420,8 +436,8 @@ impl Session {
 
     // Resolving one structural item may execute a group, but never derives an operator
     // or consumes a neighbouring item. The binder alone chooses grammatical reductions.
-    pub(super) fn resolve(&mut self, node: &Node) -> Result<Binding, Error> {
-        Ok(match &node.kind {
+    pub(super) fn resolve(&mut self, node: &Node) -> Result<Bound, Error> {
+        Ok(Bound::new(match &node.kind {
             NodeKind::Literal(a) => Binding::Value(a.clone()),
             NodeKind::Function(p) => Binding::Function(Function::primitive(*p)),
             NodeKind::Operator(op) => Binding::Operator(OperatorNode::Primitive(*op)),
@@ -434,29 +450,32 @@ impl Session {
             NodeKind::System(name) => {
                 Binding::Function(crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?)
             }
-            NodeKind::Group(nodes) => self.bind(nodes)?.value,
+            NodeKind::Group(nodes) => return self.bind(nodes),
             NodeKind::Scope(root, body) => {
-                let record = self.resolve(root)?.into_value(&root.span)?;
-                self.scoped(&record, &node.span, |session| session.resolve(body).map(Bound::new))?.value
+                let record = self.resolve(root)?.array(&root.span)?;
+                return self.scoped(&record, &node.span, |session| session.resolve(body));
             }
             // A dot path such as `m.op` names an operator as a name does, so its run can reduce to one.
             NodeKind::Run(nodes) => {
                 let path = matches!(&self.members(nodes)[..], [Node { kind: NodeKind::Group(_), .. }]);
-                match self.bind(nodes)?.value {
+                let bound = self.bind(nodes)?;
+                match bound.value {
                     Binding::Operator(_) if !path => {
                         return Err(node.span.error(ErrorKind::Syntax, "a run must reduce to one value: an array, a function or an operator glyph"))
                     }
-                    value => value,
+                    _ => return Ok(bound),
                 }
             }
             NodeKind::Pipeline(stages) => {
                 let mut result = self.bind(&stages[0])?;
                 for stage in &stages[1..] {
+                    let expression = result.expression.take();
                     let right = result.array(&node.span)?;
                     let function = Function::from_value(self.bind(stage)?.value, &stage[0].span)?;
                     result = function.call(None, &right, &mut self.at(&stage[0].span))?;
+                    if self.capture { result.expression = Some(Expression::call(&function, None, expression.unwrap_or_else(|| Expression::array(&right)))); }
                 }
-                result.value
+                return Ok(result);
             }
             NodeKind::ArrayLiteral { cells, record: true, .. } => {
                 let mut entries = Vec::new();
@@ -477,7 +496,7 @@ impl Session {
             NodeKind::ArrayLiteral { cells, form, .. } => {
                 let mut arrays = Vec::with_capacity(cells.len());
                 for nodes in cells { arrays.extend(self.item_result(nodes)?); }
-                if arrays.is_empty() { return Ok(Binding::Value(crate::syntax::zilde(false))); }
+                if arrays.is_empty() { return Ok(Bound::from(crate::syntax::zilde(false))); }
                 let result = if *form == ListForm::Cells {
                     // Each row is a major cell, so unit rows give a vector: `[1 ⋄ 2]` is `1 2`.
                     Value::assemble_written(&[arrays.len()], &arrays, &arrays[0])
@@ -496,7 +515,7 @@ impl Session {
                 None => Binding::Value(crate::syntax::zilde(false)),
             },
             _ => return Err(node.span.error(ErrorKind::Syntax, "unexpected assignment symbol")),
-        })
+        }))
     }
 
     pub(super) fn lookup(&self, name: &str) -> Option<&Binding> { self.binding(name).map(|(_, value)| value) }

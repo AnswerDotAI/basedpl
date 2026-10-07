@@ -68,9 +68,11 @@ Monaco/CodeMirror adapters can import the same JSON. Check `alt_aliases` against
 | Key | Action |
 |---|---|
 | Left / Right | Move within input |
-| Up / Down | Recall this session's history |
+| Up / Down | Recall input history |
 | Ctrl-C | Cancel the current input, including unfinished multiline input |
 | Ctrl-D on an empty line | Exit |
+
+The REPL loads `$XDG_CONFIG_HOME/basedpl/history` at startup, falling back to `~/.config/basedpl/history` when `XDG_CONFIG_HOME` is unset or not an absolute path. It appends this session's inputs on exit and keeps the newest 1,000 entries. A complete multiline input is one entry; cancelled input is not saved.
 
 An unclosed delimiter gives a continuation prompt. Closing it evaluates the complete input once.
 
@@ -110,6 +112,7 @@ An array of more than 1000 items shows only the first and last 3 positions of ea
 | `]help +` | Help for a name or glyph |
 | `]help mean -source` | Definition source |
 | `]Display [[1 2] [3 4]]` | Draw one array in a box, whatever the settings |
+| `]dissect expression` | Show the bound expression before its result |
 | `]clear` | Remove every name and restore the starting display settings |
 
 Both display modes show scalars as source: `⊂4ₓ`, `⊂⊂4ₓ` or `⊂[1 2]`.
@@ -122,6 +125,33 @@ Both display modes show scalars as source: `⊂4ₓ`, `⊂⊂4ₓ` or `⊂[1 2]`
 │0 1 2│
 └~────┘
 ```
+
+## Expression grouping
+
+`]dissect` evaluates an expression once and shows its functions and arguments before the result. It uses the existing function display, including explicit bindings such as `↣`:
+
+```text
+      ]dissect -⌾ 1 0 1# 1 2 3
+call
+├─ ⌾
+│  ├─ -
+│  └─ ↣
+│     ├─ [1 0 1]
+│     └─ #
+└─ [1 2 3]
+¯1 2 ¯3
+```
+
+`•prefs ["trees":$f]` selects linear display:
+
+```text
+(-⌾([1 0 1]↣#))[1 2 3]
+¯1 2 ¯3
+```
+
+`trees` controls function and expression display independently of array boxes. Names and array operands show their bound values. Calls inside functions are not shown.
+
+`•prefs ["dissect":$t]` enables this view for subsequent statements. Silent assignments stay silent. Turn it off with `•prefs ["dissect":$f]`. The one-off command does not change the preference. An identical function view and response appear once.
 
 ## Timing
 

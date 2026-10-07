@@ -2,11 +2,15 @@ import os, json
 from importlib.resources import files
 import fcntl, pty, re, select, subprocess, termios, time
 
-def test_terminal_symbol_entry_and_exit():
+def test_terminal_symbol_entry_and_exit(tmp_path):
+    history = tmp_path/'.config/basedpl/history'
+    history.parent.mkdir(parents=True)
+    history.write_text('#V2\n8+9\n')
     master, slave = pty.openpty()
     termios.tcsetwinsize(slave, (24, 100))
     # The pty is bpl's controlling terminal, as a shell's is, so Ctrl-C during an evaluation sends SIGINT.
-    child = subprocess.Popen(['bpl'], stdin=slave, stdout=slave, stderr=slave, env={**os.environ, 'TERM': 'xterm-256color'},
+    child = subprocess.Popen(['bpl'], stdin=slave, stdout=slave, stderr=slave,
+                             env={**os.environ, 'TERM': 'xterm-256color', 'HOME': str(tmp_path/'unused-home'), 'XDG_CONFIG_HOME': str(history.parent.parent)},
                              start_new_session=True, preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0))
     os.close(slave)
     pending = b''
@@ -33,8 +37,9 @@ def test_terminal_symbol_entry_and_exit():
 
     try:
         read_until(b'\x1b[?2004h')
+        enter('\x1b[A\r', '\r\n17\r\n')
         enter('1 2\r', '│1 2│\r\n└~──┘\r\n')
-        enter('•prefs ["box":$f]\r', '["box":$f "trees":$t "fns":$t "limit":1000ₓ "edges":3ₓ "prec":∞ "width":100ₓ]\r\n')
+        enter('•prefs ["box":$f]\r', '["box":$f "trees":$t')
         os.write(master, b'"\x1b\\')
         read_until('⍭:7g'.encode())
         enter('7"\r', '\r\n⍋\r\n')
@@ -70,6 +75,9 @@ def test_terminal_symbol_entry_and_exit():
         enter('\x1b[200~`iota\x1b[201~\r', 'UNSUPPORTED')  # pasted names do not auto-expand
         enter('(2+\r', '\r\n')
         enter('\x03', '\r\n')  # Ctrl-C discards the whole unfinished expression
+        enter('h←[3\r', '\r\n')
+        enter('4]\r', '\r\n')
+        enter('h\r', '\r\n3 4\r\n')
         enter('2+3\r', '\r\n5\r\n')
         os.write(master, '⎕←"go" ⋄ •delay ∞\r'.encode())
         read_until(b'go\r\n')  # the evaluation is running
@@ -82,6 +90,10 @@ def test_terminal_symbol_entry_and_exit():
         assert child.wait(timeout=5) == 0
         visible = re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', tail)
         assert visible.endswith(b'\r\n')  # EOF must not leave the shell prompt indented
+        saved = history.read_text().splitlines()
+        assert saved.count('8+9') == 1
+        assert r'h←[3\n4]' in saved
+        assert '(2+' not in saved
     finally:
         if child.poll() is None: child.kill()
         child.wait(timeout=5)

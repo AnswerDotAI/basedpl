@@ -34,7 +34,7 @@ A negative size pads its axis. Each window is centred on a position, as in [Sten
 ⍴¯3 2↕3 4⍴⍳12        ⍝ [3 3 3 2]ₓ
 ```
 
-An axis of length `n` has `0⌈1+⌊(n-S)÷M` full windows, or `⌈(n-0=2|S)÷M` padded windows. Movements default to 1.
+An axis of length `n` has `0⌈1+⌊M÷⍨n-S` full windows, or `⌈M÷⍨n-0=2|S` padded windows. Movements default to 1.
 
 ## Errors
 

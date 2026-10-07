@@ -16,7 +16,7 @@ Keys: `Alt-n`
 [0 60 60]ₓ⊤3661ₓ   ⍝ [1 1 1]ₓ
 ```
 
-A unit `B` gives residues. A vector `B` adds a new last axis of digits. The result's shape is `(⍴Y),⍴B`. Exact operands retain exact arithmetic.
+A unit `B` gives residues. A vector `B` adds a new last axis of digits. The result's shape is `⍴Y , ⍴B`. Exact operands retain exact arithmetic.
 
 ```bpl
 9⊤15               ⍝ 6

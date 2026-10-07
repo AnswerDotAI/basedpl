@@ -107,10 +107,8 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
         }
         if code.trim_start().starts_with(']') {
             failed |= !printer.finish(session.eval_with(&code, printer.options()), err)?;
-            code.clear();
-            continue;
         }
-        match parse(Source::new("<repl>", code.as_str())) {
+        else { match parse(Source::new("<repl>", code.as_str())) {
             ParseStatus::Incomplete(e) => {
                 incomplete = Some(e);
                 continue;
@@ -122,7 +120,8 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
             ParseStatus::Complete(parsed) => {
                 failed |= !printer.finish(session.eval_parsed(&parsed, printer.options()), err)?;
             }
-        }
+        } }
+        if let Some(editor) = &mut editor { editor.remember(&code).map_err(io::Error::other)?; }
         code.clear();
         incomplete = None;
     }

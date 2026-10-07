@@ -23,7 +23,7 @@ As the right operand, a Boolean array is a mask, and an array of integers is a l
 
 ```bpl
 0@ 1=2| ⍳5        ⍝ 0 0 2 0 4
-x←3 8 2 ⋄ (10+)@(x<5) x   ⍝ 13 8 12
+x←3 8 2 ⋄ 10+ @ x<5 x   ⍝ 13 8 12
 ```
 
 A keyed replacement aligns by key with the selected positions, as it does in assignment.

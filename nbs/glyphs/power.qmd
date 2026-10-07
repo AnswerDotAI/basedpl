@@ -24,7 +24,7 @@ Inverses propagate through Atop, dyadic After and Before, bound arguments, Each,
 1+⍣{⍺>4}0          ⍝ 5
 ```
 
-A vector of counts gives one item for each count, holding the state after that many steps. Counts `⍳N` give the first `N` states, starting with `Y`. A nested vector of counts gives a nested result, with one item for each inner vector. A scalar count gives a scalar. Computed counts need parentheses, because an operator takes one item to its right.
+A vector of counts gives one item for each count, holding the state after that many steps. Counts `⍳N` give the first `N` states, starting with `Y`. A nested vector of counts gives a nested result, with one item for each inner vector. A scalar count gives a scalar. Computed counts go in parentheses or in the run after `⍣`.
 
 ```bpl
 2×⍣(⍳5) 1              ⍝ 1 2 4 8 16
