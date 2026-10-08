@@ -1,6 +1,6 @@
 # `√` — Root
 
-Keys: `Alt-3`
+Keys: `Alt-3`. Ranks: `0` monadic, `0 0` dyadic
 
 `√Y`: square root. Pervasive. Perfect roots of exact values stay exact.
 
@@ -15,6 +15,16 @@ Keys: `Alt-3`
 3√¯8              ⍝ ¯2
 ¯3ₓ√¯8ₓ           ⍝ ¯1r2
 2√3j4             ⍝ 2j1
+```
+
+## Inverse
+
+`√⁻¹` is `⊼`, which squares. `X √⁻¹ Y` is `Y*X`. With the right argument fixed, `(√↢X)⁻¹ Y` is `Y⍟X`.
+
+```bpl
+√⁻¹ 3       ⍝ 9
+3 √⁻¹ 2     ⍝ 8
+(√↢8)⁻¹ 2   ⍝ 3
 ```
 
 ## Errors

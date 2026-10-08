@@ -66,6 +66,10 @@ An empty axis vector makes singleton cells. A seed is passed whole to each cell.
 
 Float sum and product reductions can reassociate their operands. Other reductions keep operand order.
 
+## Inverse
+
+A reduction has no inverse.
+
 ## Errors
 
 - `RANK`: higher-rank axis specification

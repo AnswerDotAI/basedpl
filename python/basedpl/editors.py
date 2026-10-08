@@ -1,4 +1,4 @@
-"""Write editor highlighters, regional macOS keyboards, and glyph-page key lines.
+"""Write editor highlighters, regional macOS keyboards, and the key and rank line of each glyph page.
 
 BPL glyph lists come from its symbol metadata. Dyalog APL and BQN lists for the comparison page are defined here. `keyboards` generates the macOS bundles. Paths are relative to the repository root.
 
@@ -89,11 +89,19 @@ def key(shortcut):
     return ' '.join(['Alt-' + keys[0], *keys[1:]]) if keys else ''
 
 
-def glyph_page(text, shortcut):
-    "The glyph page `text` with the keys line after its title regenerated. A glyph typed without Alt has no keys line."
+def ranks(s):
+    "The ranks of glyph row `s` from `basedpl.symbols`, such as ``Ranks: `1` monadic, `1 0` dyadic``. Only functions have ranks."
+    forms = [f"`{s['monad_rank']}` monadic" if s['monad_rank'] else '',
+             f"`{s['dyad_ranks']}` dyadic" if s['dyad_ranks'] else '']
+    return 'Ranks: ' + ', '.join(filter(None, forms)) if any(forms) else ''
+
+
+def glyph_page(text, s):
+    "The page `text` of glyph row `s` with the line after its title regenerated. The line gives the glyph's keys, if it's typed with Alt, and its ranks."
     title, rest = text.split('\n\n', 1)
-    rest = re.sub(r'\AKeys: .*\n\n', '', rest)
-    return f'{title}\n\n' + (f'Keys: `{key(shortcut)}`\n\n' if shortcut.strip() else '') + rest
+    rest = re.sub(r'\A(?:Keys|Ranks): .*\n\n', '', rest)
+    line = '. '.join(filter(None, [f"Keys: `{key(s['shortcut'])}`" if s['shortcut'].strip() else '', ranks(s)]))
+    return f'{title}\n\n' + (f'{line}\n\n' if line else '') + rest
 
 
 def _image(size):
@@ -119,11 +127,11 @@ def icon():
 
 
 def write():
-    "Write the XML and TextMate highlighters, regional keyboard bundles, and glyph-page key lines."
+    "Write the XML and TextMate highlighters, regional keyboard bundles, and the key and rank line of each glyph page."
     for path, glyphs in HIGHLIGHTERS.items(): keyboards.write_changed(path, quarto(path.read_text(), glyphs))
     keyboards.write_changed(TEXTMATE, json.dumps(textmate(Path('nbs/bpl.xml').read_text()), ensure_ascii=False, indent=2) + '\n')
     keyboards.write_changed(VIM, vim(VIM.read_text()))
     keyboards.write()
     for s in symbols:
         path = GLYPH_PAGES/f"{s['name']}.qmd"
-        keyboards.write_changed(path, glyph_page(path.read_text(), s['shortcut']))
+        keyboards.write_changed(path, glyph_page(path.read_text(), s))

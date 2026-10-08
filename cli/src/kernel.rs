@@ -112,7 +112,7 @@ impl LanguageSession for BplSession {
             let before = &request.code[..end];
             let (start, mut matches) = if let Some((start, query)) = basedpl::symbols::entry(before, end) {
                 (start, basedpl::symbols::matches(query).into_iter().map(|(glyph, _)| glyph.to_owned()).collect::<Vec<_>>())
-            } else if basedpl::symbols::in_code(before) {
+            } else if basedpl::in_code(before) {
                 let start = before.char_indices().rev().find(|(_, c)| !basedpl::inspection::word_char(*c)).map_or(0, |(i, c)| i + c.len_utf8());
                 (start, session.complete(&before[start..]))
             } else { (end, vec![]) };

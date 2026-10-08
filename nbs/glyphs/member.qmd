@@ -1,6 +1,6 @@
 # `∊` — Enlist / Membership
 
-Keys: `Alt-e`
+Keys: `Alt-e`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `∊Y` recursively ravels all nested leaves.
 
@@ -25,6 +25,10 @@ m←[10 20 ⋄ 30 40]
 30 40∊m            ⍝ $t
 [30 40 ⋄ 50 60]∊m  ⍝ $t $f
 ```
+
+## Inverse
+
+Neither form has an inverse.
 
 ## Errors
 

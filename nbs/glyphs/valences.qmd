@@ -20,3 +20,11 @@ An array operand acts as a constant function. `⍺ 0⊘1 ⍵` uses that to test 
 ```
 
 APL difference: Dyalog has no Valences operator. BQN writes it as `⊘` too.
+
+## Inverse
+
+`(f⊘g)⁻¹` inverts `f` with one argument and `g` with two.
+
+```bpl
+(÷⊘-)⁻¹ 4   ⍝ 0.25
+```

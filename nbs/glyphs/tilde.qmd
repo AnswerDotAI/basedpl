@@ -1,5 +1,7 @@
 # `~` — NOT / Without
 
+Ranks: `0` monadic, `∞ ∞` dyadic
+
 `~Y` negates Booleans, pervasively.
 
 ```bpl
@@ -18,6 +20,14 @@
 
 ```bpl
 "a b c"~" "         ⍝ "abc"
+```
+
+## Inverse
+
+`~⁻¹` is `~`. Without has no inverse.
+
+```bpl
+~⁻¹ 1 0   ⍝ $f $t
 ```
 
 ## Errors

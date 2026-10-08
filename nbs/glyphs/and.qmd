@@ -1,6 +1,6 @@
 # `∧` — AND / LCM
 
-Keys: `Alt-0`
+Keys: `Alt-0`. Ranks: `0` monadic, `0 0` dyadic
 
 `∧Y` gives a magnitude and an angle for each number in `Y`, along a new last axis. Angles are in radians.
 
@@ -18,3 +18,11 @@ Keys: `Alt-0`
 ```
 
 Includes rational and complex LCM. Inputs are finite. Empty reduction identity: one.
+
+## Inverse
+
+`∧⁻¹ Y` rebuilds complex numbers from the magnitude and angle pairs on the last axis of `Y`. Lcm has no inverse.
+
+```bpl
+∧⁻¹ 2 (π0.5)   ⍝ 0j2
+```

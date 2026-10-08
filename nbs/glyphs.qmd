@@ -40,9 +40,9 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `~` [tilde](glyphs/tilde.qmd) | | not | without | Major cells, as BQN |
 | `=` [equal](glyphs/equal.qmd) | | classify | equal | Monad as J |
 | `≠` [not-equal](glyphs/not-equal.qmd) | Alt-Shift-= | unique-mask | not-equal | |
-| `<` [less](glyphs/less.qmd) | | — | less | |
+| `<` [less](glyphs/less.qmd) | | sort-up | less | Monad sorts major cells |
 | `≤` [less-or-equal](glyphs/less-or-equal.qmd) | Alt-< | decrement | less-equal | Monad as J's `<:` |
-| `>` [greater](glyphs/greater.qmd) | | — | greater | |
+| `>` [greater](glyphs/greater.qmd) | | sort-down | greater | Monad sorts major cells |
 | `≥` [greater-or-equal](glyphs/greater-or-equal.qmd) | Alt-> | increment | greater-equal | Monad as J's `>:` |
 | `≡` [match](glyphs/match.qmd) | Alt-= | depth | match | Unsigned depth, as APL2/BQN |
 | `≢` [tally](glyphs/tally.qmd) | Alt-= / | tally | not-match | |
@@ -54,7 +54,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⍉` [transpose](glyphs/transpose.qmd) | Alt-o Backslash | transpose | reorder-axes | |
 | `↑` [take](glyphs/take.qmd) | Alt-k | first | take | Monad takes first major cell |
 | `↓` [drop](glyphs/drop.qmd) | Alt-j | split | drop | |
-| `↕` [windows](glyphs/windows.qmd) | Alt-k j | — | windows | As BQN's `↕`, plus movement/padding |
+| `↕` [windows](glyphs/windows.qmd) | Alt-k j | pairs | windows | Monad is `2↕`; dyad as BQN's `↕`, plus movement/padding |
 | `⊂` [enclose](glyphs/enclose.qmd) | Alt-z | enclose | partitioned-enclose | Encloses atoms; partitions first axis |
 | `⊆` [nest](glyphs/nest.qmd) | Alt-Minus z | nest | partition | Partitions first axis |
 | `⊃` [mix](glyphs/mix.qmd) | Alt-x | mix | pick | Monad as Dyalog `⎕ML≥2`; pick cells or keys |
@@ -64,11 +64,11 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⍸` [where](glyphs/where.qmd) | Alt-Minus i | where | interval-index | Dyad as BQN's `⍋` |
 | `∊` [member](glyphs/member.qmd) | Alt-e | enlist | member | Major cells, as BQN |
 | `∪` [union](glyphs/union.qmd) | Alt-v | unique | union | Major cells, as BQN |
-| `∩` [intersection](glyphs/intersection.qmd) | Alt-c | — | intersection | Major cells, as BQN |
-| `⍷` [find](glyphs/find.qmd) | Alt-Minus e | — | find | |
+| `∩` [intersection](glyphs/intersection.qmd) | Alt-c | duplicates | intersection | Major cells, as BQN |
+| `⍷` [find](glyphs/find.qmd) | Alt-Minus e | groups | find | Monad as Dyalog's `{⊂⍵}⌸` |
 | `⍋` [grade-up](glyphs/grade-up.qmd) | Alt-Backslash 7 | grade-up | grade-up-by | |
 | `⍒` [grade-down](glyphs/grade-down.qmd) | Alt-Backslash g | grade-down | grade-down-by | |
-| `#` [hash](glyphs/hash.qmd) | | — | replicate | As Dyalog's `⌿` |
+| `#` [hash](glyphs/hash.qmd) | | runs | replicate | Dyad as Dyalog's `⌿`; monad run-length encodes, and `#⁻¹` decodes |
 | `⊤` [encode](glyphs/encode.qmd) | Alt-n | binary-encode | encode | Digits on last axis, as J |
 | `⊥` [decode](glyphs/decode.qmd) | Alt-b | binary-decode | decode | Digits on last axis, as J |
 | `⌹` [domino](glyphs/domino.qmd) | Alt-q u | inverse | matrix-divide | |

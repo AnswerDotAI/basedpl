@@ -42,6 +42,14 @@ m +⌿∘×⍤1 ∞ [1 10 ⋄ 2 20 ⋄ 3 30]      ⍝ [14 140 ⋄ 32 320]
 
 To apply a function along chosen axes, see [Axis](axis.qmd).
 
+## Inverse
+
+`(f⍤k)⁻¹` is `f⁻¹⍤k`.
+
+```bpl
+(⌽⍤1)⁻¹ [1 2 ⋄ 3 4]   ⍝ [2 1 ⋄ 4 3]
+```
+
 ## Errors
 
 - `RANK`: a rank operand that is not a unit or vector

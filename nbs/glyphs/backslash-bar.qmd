@@ -15,3 +15,11 @@ Keys: `Alt-Minus Backslash`
 ```
 
 Seeds, `⍠K` and errors follow [`\`](backslash.qmd).
+
+## Inverse
+
+`f⍀⁻¹` undoes a scan along the first axis when `f` has an inverse.
+
+```bpl
+×⍀⁻¹ [1 2 ⋄ 3 8]   ⍝ [1 2 ⋄ 3 4]
+```

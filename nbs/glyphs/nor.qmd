@@ -1,6 +1,6 @@
 # `⊽` — NOR
 
-Keys: `Alt-Minus 9`
+Keys: `Alt-Minus 9`. Ranks: `0` monadic, `0 0` dyadic
 
 `⊽Y`: 2Y. Pervasive.
 
@@ -12,4 +12,12 @@ Keys: `Alt-Minus 9`
 
 ```bpl
 0 0 1 1⊽0 1 0 1   ⍝ $t $f $f $f
+```
+
+## Inverse
+
+`⊽⁻¹` halves, undoing double. Nor has no inverse.
+
+```bpl
+⊽⁻¹ 8   ⍝ 4
 ```

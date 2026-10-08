@@ -1,6 +1,6 @@
 # `⍸` — Where / Interval index
 
-Keys: `Alt-Minus i`
+Keys: `Alt-Minus i`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `⍸Y` lists exact positions, repeated according to their nonnegative integer counts. Higher-rank arguments give coordinate vectors.
 
@@ -18,3 +18,11 @@ For each item of `Y`, `X⍸Y` counts the boundaries in `X` less than or equal to
 ```
 
 Query cells and batch axes follow [Index Of](iota.qmd).
+
+## Inverse
+
+`⍸⁻¹ Y` counts how often each position appears in `Y`, so `⍸` of the result is `Y`. Interval-index has no inverse.
+
+```bpl
+⍸⁻¹ 0 2 2   ⍝ [1 0 2]ₓ
+```

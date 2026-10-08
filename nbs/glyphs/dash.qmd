@@ -1,5 +1,7 @@
 # `-` — Negate / Subtract
 
+Ranks: `0` monadic, `0 0` dyadic
+
 `-Y` negates. Pervasive.
 
 ```bpl
@@ -20,3 +22,12 @@ Characters shift by code point. Character differences are exact integers.
 ```
 
 [`¯`](overbar.qmd) marks negative literals.
+
+## Inverse
+
+`-⁻¹` is `-`. `X -⁻¹ Y` is `X-Y`. With the right argument fixed, `(-↢X)⁻¹ Y` is `Y+X`.
+
+```bpl
+10 -⁻¹ 3    ⍝ 7
+(-↢3)⁻¹ 7   ⍝ 10
+```

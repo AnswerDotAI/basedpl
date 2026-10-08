@@ -1,6 +1,6 @@
 # `⊤` — Encode
 
-Keys: `Alt-n`
+Keys: `Alt-n`. Ranks: `∞` monadic, `1 0` dyadic
 
 `⊤Y` encodes nonnegative integers in binary, choosing enough digits for the largest value. Each number's digits lie along a new last axis. Zero needs zero digits.
 
@@ -26,3 +26,12 @@ A unit `B` gives residues. A vector `B` adds a new last axis of digits. The resu
 ```
 
 See [Decode](decode.qmd).
+
+## Inverse
+
+`⊤⁻¹` is `⊥`, binary-decode. `X ⊤⁻¹ Y` decodes the digits `Y` in the bases `X`.
+
+```bpl
+⊤⁻¹ 1 0 1        ⍝ 5
+24 60 ⊤⁻¹ 1 30   ⍝ 90
+```

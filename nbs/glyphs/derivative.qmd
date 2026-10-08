@@ -21,6 +21,10 @@ f←⊂[1 2 0 ⋄ 1 0 2]ₓ ⌻ ⋄ f∂3ₓ           ⍝ 12ₓ
 
 Repeated `∂` requires unit input and output and one variable.
 
+## Inverse
+
+The derived function has no inverse.
+
 ## Errors
 
 - `RANK`: monadic array output

@@ -74,23 +74,19 @@ impl Session {
         names.sort_unstable();
         names
     }
-    fn map_names(&mut self, right: &Value, span: &Span, prototype: Value, f: impl Fn(&mut Self, &str) -> Result<Value, ErrorKind>) -> Result<Value, Error> {
-        let apply = |session: &mut Self, value: &Value| {
-            let name = crate::keyed::name(value).ok_or_else(|| span.domain_error("expected a name string"))?;
-            f(session, &name).map_err(|kind| span.error(kind, format!("cannot inspect name: {name}")))
-        };
-        if crate::keyed::name(right).is_some() { return apply(self, right); }
-        let values = right.elements().map(|a| apply(self, &a)).collect::<Result<Vec<_>, _>>()?;
-        right.layout().collect(values, prototype).error_at(span, "invalid name results")
+    /// `f` applied to the name that `right` holds. The system table maps `•nc`, `•ex` and `•src` over an array of names.
+    fn named(&mut self, right: &Value, span: &Span, f: impl FnOnce(&mut Self, &str) -> Result<Value, ErrorKind>) -> Result<Value, Error> {
+        let name = crate::keyed::name(right).ok_or_else(|| span.domain_error("expected a name string"))?;
+        f(self, &name).map_err(|kind| span.error(kind, format!("cannot inspect name: {name}")))
     }
     pub(crate) fn system_nc(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-        self.map_names(right, span, crate::primitive::integer(0), |s, name| Ok(crate::primitive::integer(s.name_class(name))))
+        self.named(right, span, |s, name| Ok(crate::primitive::integer(s.name_class(name))))
     }
     pub(crate) fn system_ex(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-        self.map_names(right, span, crate::primitive::integer(0), |s, name| Ok(crate::primitive::integer(s.erase(name) as i64)))
+        self.named(right, span, |s, name| Ok(crate::primitive::integer(s.erase(name) as i64)))
     }
     pub(crate) fn system_src(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-        self.map_names(right, span, crate::keyed::text(""), |s, name| s.name_source(name).map(|text| crate::keyed::text(&text)))
+        self.named(right, span, |s, name| s.name_source(name).map(|text| crate::keyed::text(&text)))
     }
     /// `•literal text` reads a value from BPL source, as `•literal⁻¹` writes it, without running code. The text may hold literals and the
     /// functions that `•literal⁻¹` writes: `⍴`, `⊂`, `,`, `:` and `•ucs`.

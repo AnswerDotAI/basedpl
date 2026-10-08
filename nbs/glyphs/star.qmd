@@ -1,5 +1,7 @@
 # `*` — Exponential / Exponent
 
+Ranks: `0` monadic, `0 0` dyadic
+
 `*Y`: e<sup>Y</sup>. Pervasive.
 
 ```bpl
@@ -20,3 +22,12 @@ Other powers use principal complex branches where needed.
 ```
 
 See also function [power `⍣`](power.qmd).
+
+## Inverse
+
+`*⁻¹` is `⍟`. `X *⁻¹ Y` is `X⍟Y`. With the right argument fixed, `(*↢X)⁻¹ Y` is `Y*÷X`.
+
+```bpl
+2 *⁻¹ 8     ⍝ 3
+(*↢2)⁻¹ 9   ⍝ 3
+```

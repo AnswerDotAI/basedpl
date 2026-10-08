@@ -9,9 +9,12 @@ fn valid_name(name: &str) -> bool {
     name.starts_with(|c: char| c.is_alphabetic() || c == '_') && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ':'))
 }
 
+/// The function that builds elements tagged `tag`, as `•element` returns it.
+pub(crate) fn element_function(tag: std::sync::Arc<str>) -> Value { Value::Function(native("•element", Call::Element(tag), Ambivalent)) }
+
 pub(crate) fn factory(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let tag = keyed::name(right).filter(|s| valid_name(s)).ok_or_else(|| span.domain_error("invalid XML element name"))?;
-    Ok(Value::Function(native("•element", Call::Element(tag), Ambivalent)))
+    Ok(element_function(tag))
 }
 
 pub(crate) fn element(tag: &str, attrs: Option<&Value>, children: &Value, span: &Context<'_>) -> Result<Value, Error> {

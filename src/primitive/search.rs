@@ -77,6 +77,64 @@ pub(super) fn unique_mask(right: &Value, span: &Context<'_>) -> Result<Value, Er
     major_axis(right).booleans(firsts(&major_cells(right, span)?, span)?).error_at(span, "invalid unique mask")
 }
 
+/// Each major cell's group, numbering the distinct cells in order of first appearance as `∪` finds them, and each group's size.
+fn distinct(right: &Value, span: &Context<'_>) -> Result<(Vec<usize>, Vec<usize>), Error> {
+    let (first, _) = classes(right, span)?;
+    let (mut group, mut sizes) = (vec![0; first.len()], Vec::new());
+    for (i, &f) in first.iter().enumerate() {
+        group[i] = if f == i { sizes.push(0); sizes.len() - 1 } else { group[f] };
+        sizes[group[i]] += 1;
+    }
+    Ok((group, sizes))
+}
+
+/// The distinct major cells that occur more than once, in order of first appearance.
+pub(super) fn duplicates(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let (group, sizes) = distinct(right, span)?;
+    let mut next = 0;
+    let mask = group.iter().map(|&g| { let first = g == next; next += usize::from(first); first && sizes[g] > 1 }).collect();
+    replicate(&major_axis(right).booleans(mask).error_at(span, "invalid duplicates mask")?, right, None, false, span)
+}
+
+/// The runs of adjacent matching major cells: the length of each run, as exact integers, and its first cell. Cells match as `∪`
+/// matches them. `#⁻¹` decodes the result back to `right`. `#/` does too, unless `right` is a unit or has leading keys. A unit gives the
+/// rank-0 length 1 and the unit itself. A keyed leading axis moves into a third item, the keys of every position, because a run's
+/// cells can have different keys.
+pub(super) fn runs(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    if right.is_unit() { return Value::new(vec![2], vec![integer(1), right.clone()]).error_at(span, "invalid runs"); }
+    let (first, axis) = classes(right, span)?;
+    let starts: Vec<bool> = first.iter().enumerate().map(|(i, &f)| i == 0 || f != first[i - 1]).collect();
+    let mut lengths: Vec<u64> = Vec::new();
+    for &start in &starts {
+        if start { lengths.push(0); }
+        *lengths.last_mut().expect("the first cell starts a run") += 1;
+    }
+    let lengths = generated_items(vec![lengths.len()], lengths, true).error_at(span, "invalid run lengths")?;
+    let values = replicate(&axis.booleans(starts).error_at(span, "invalid run starts")?, right, None, false, span)?;
+    if right.keys(0).is_none() { return Value::new(vec![2], vec![lengths, values]).error_at(span, "invalid runs"); }
+    let mut keys = values.layout().all_keys();
+    keys[0] = None;
+    let values = values.with_keys(keys).error_at(span, "invalid runs")?;
+    let all = positions(right, (0..right.shape()[0]).collect()).error_at(span, "invalid run keys")?;
+    Value::new(vec![3], vec![lengths, values, all]).error_at(span, "invalid runs")
+}
+
+/// The positions of each distinct major cell, in the order of `∪`.
+pub(super) fn groups(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let (group, sizes) = distinct(right, span)?;
+    let (order, _) = crate::search::grouped(&group, sizes.len());
+    let mut rest = order.as_slice();
+    let groups = sizes.iter().map(|&n| { let (these, more) = rest.split_at(n); rest = more; positions(right, these.to_vec()) });
+    let groups = groups.collect::<Result<Vec<_>, _>>().error_at(span, "invalid groups")?;
+    Value::from_parts(vec![groups.len()], groups, positions(right, Vec::new()).error_at(span, "invalid groups")?).error_at(span, "invalid groups")
+}
+
+/// The positions `indices` along `right`'s leading axis: its keys when it has them, otherwise exact integers.
+fn positions(right: &Value, indices: Vec<usize>) -> Result<Value, ErrorKind> {
+    if right.keys(0).is_none() { return Value::positions(vec![indices.len()], indices.len(), indices.into_iter()); }
+    Value::from_parts(vec![indices.len()], indices.into_iter().map(|i| position_value(right, 0, i)).collect(), integer(0))
+}
+
 /// The coordinates of flat position `flat`. An axis with a negative length counts down.
 fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, exact: bool) -> Value {
     let mut data = vec![0; lengths.len()];
@@ -315,9 +373,14 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
         indices.sort_by(|&a, &b| { direction(array_order(&cells[a], &cells[b]).unwrap_or_else(|| { unordered = true; Ordering::Equal })) });
         if unordered { return Err(span.domain_error("functions have no ordering")); }
     }
-    if right.keys(0).is_none() { return Value::positions(vec![indices.len()], indices.len(), indices.into_iter()).error_at(span, "invalid grade result"); }
-    Value::from_parts(vec![indices.len()], indices.into_iter().map(|i| position_value(right, 0, i)).collect(), integer(0))
-        .error_at(span, "invalid grade result")
+    positions(right, indices).error_at(span, "invalid grade result")
+}
+
+/// `right`'s major cells in the order that `grade` gives, as `[⍋v]⌷v` or `[⍒v]⌷v`. A unit has one item, so it is already sorted.
+pub(super) fn sort(right: &Value, down: bool, span: &Context<'_>) -> Result<Value, Error> {
+    if right.is_unit() { return Ok(right.clone()); }
+    let order = Value::new(vec![1], vec![grade(None, right, down, span)?]).error_at(span, "invalid sort")?;
+    squad(&order, right, None, span)
 }
 
 pub(super) fn interval_index(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {

@@ -1,6 +1,6 @@
 # `⊃` — Mix / Pick
 
-Keys: `Alt-x`
+Keys: `Alt-x`. Ranks: `0` monadic, `1 ∞` dyadic
 
 `⊃Y` assembles items into rectangular cells, padding to a common shape with fill.
 
@@ -27,12 +27,20 @@ Array-valued coordinate fields pair using leading-axis agreement:
 Coordinate fields may use strings on [keyed axes](../keyed.ipynb).
 
 ```bpl
-T←["price":[1 2 3] "qty":[4 5 6]]
+T←["price":1 2 3;"qty":4 5 6]
 "qty"⊃T             ⍝ 4 5 6
 [["qty" "price"]]⊃T ⍝ [[4 5 6] [1 2 3]]
 ```
 
 With axes, `⊃⍠A Y` places the cell axes of Mix among the frame axes. See [Axis](axis.qmd). On Pick, negative positions count from the end. Position 0 or ¯1 on an empty axis gives fill, as does [First](take.qmd).
+
+## Inverse
+
+`⊃⁻¹` splits an array into its major cells, undoing mix. Pick has no inverse.
+
+```bpl
+⊃⁻¹ [1 2 ⋄ 3 4]   ⍝ [1 2;3 4]
+```
 
 ## Errors
 

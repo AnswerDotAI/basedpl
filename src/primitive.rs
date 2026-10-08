@@ -230,7 +230,8 @@ pub(crate) enum Identity {
     Empty(bool),
 }
 
-/// A primitive's monadic form. It gives the same results as its Rank at `rank` wherever it is defined. A form that `extends` is defined on arguments of any rank.
+/// A primitive's monadic form. It gives the same results as its Rank at `rank`. A form that `extends` handles arguments of any rank in its
+/// own code. A call on any other form, with an argument above its rank, applies the form to each cell of its rank through Rank.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Monad {
     pub name: &'static str,
@@ -244,8 +245,8 @@ pub(crate) struct Monad {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Dyad {
     pub name: &'static str,
-    // A dyadic Rank call can't skip its cell loop in general, so no code reads these ranks. They record each form's ranks for the glyph pages.
-    #[allow(dead_code)]
+    // A dyadic Rank call can't skip its cell loop in general, so Rank doesn't read these ranks. The glyph pages show them, and a test
+    // checks them against Rank.
     pub ranks: [Rank; 2],
     pub pervasive: bool,
     pub axes: bool,
@@ -267,8 +268,10 @@ const fn pervasive_monad(name: &'static str) -> Monad { Monad { name, rank: 0, e
 const fn dyad(name: &'static str, ranks: [Rank; 2]) -> Dyad { Dyad { name, ranks, pervasive: false, axes: false, identity: None } }
 const fn pervasive_dyad(name: &'static str) -> Dyad { Dyad { name, ranks: [0, 0], pervasive: true, axes: true, identity: None } }
 impl Monad {
-    /// A form that raises an error on arguments above its rank.
-    const fn bounded(self) -> Self { Self { extends: false, ..self } }
+    /// A form whose own code handles only arguments up to its rank.
+    const fn cellwise(self) -> Self { Self { extends: false, ..self } }
+    /// The rank of the cells that a call applies this form to: its rank, when the form doesn't extend and `right`'s rank is higher.
+    pub(crate) fn cells(&self, right: &Value) -> Option<Rank> { (!self.extends && right.shape().len() > usize::from(self.rank)).then_some(self.rank) }
     const fn axes(self) -> Self { Self { axes: true, ..self } }
 }
 impl Dyad {
@@ -428,27 +431,27 @@ impl Primitive {
             Self::Math(Not) => row("~", "tilde", "", pervasive_monad("not"), dyad("without", [W, W])),
             Self::Compare(Equal) => row("=", "equal", "", monad("classify", W), pervasive_dyad("equal").identity(Boolean(true))),
             Self::Compare(NotEqual) => row("≠", "not-equal", "", monad("unique-mask", W), pervasive_dyad("not-equal").identity(Boolean(false))),
-            Self::Compare(Less) => row("<", "less", "", None, pervasive_dyad("less").identity(Boolean(false))),
+            Self::Compare(Less) => row("<", "less", "", monad("sort-up", W), pervasive_dyad("less").identity(Boolean(false))),
             Self::Compare(LessEqual) => row("≤", "less-or-equal", "", pervasive_monad("decrement"), pervasive_dyad("less-equal").identity(Boolean(true))),
-            Self::Compare(Greater) => row(">", "greater", "", None, pervasive_dyad("greater").identity(Boolean(false))),
+            Self::Compare(Greater) => row(">", "greater", "", monad("sort-down", W), pervasive_dyad("greater").identity(Boolean(false))),
             Self::Compare(GreaterEqual) => {
                 row("≥", "greater-or-equal", "", pervasive_monad("increment"), pervasive_dyad("greater-equal").identity(Boolean(true)))
             }
-            Self::Iota => row("⍳", "iota", "", monad("iota", 1).bounded().axes(), dyad("index-of", [W, W])),
+            Self::Iota => row("⍳", "iota", "", monad("iota", 1).cellwise().axes(), dyad("index-of", [W, W])),
             Self::Keys => row(":", "colon", "", monad("unkey", W).axes(), dyad("keyed", [1, W]).axes()),
             Self::Shape => row("⍴", "rho", "", monad("shape", W), dyad("reshape", [1, W])),
             Self::Tally => row("≢", "tally", "", monad("tally", W), dyad("not-match", [W, W])),
             Self::Depth => row("≡", "match", "", monad("depth", W), dyad("match", [W, W])),
-            Self::Ravel => row(",", "comma", "", monad("ravel", W).axes(), dyad("catenate", [1, 1]).axes().identity(Empty(false))),
+            Self::Ravel => row(",", "comma", "", monad("ravel", W).axes(), dyad("catenate", [W, W]).axes().identity(Empty(false))),
             Self::CatenateFirst => row("⍪", "table", "", monad("table", W), dyad("catenate-first", [W, W]).axes().identity(Empty(true))),
             Self::Enclose => row("⊂", "enclose", "", monad("enclose", W).axes(), dyad("partitioned-enclose", [1, W]).axes()),
             Self::Mix => row("⊃", "mix", "", monad("mix", 0).axes(), dyad("pick", [1, W])),
             Self::Nest => row("⊆", "nest", "", monad("nest", W).axes(), dyad("partition", [1, W]).axes()),
             Self::Member => row("∊", "member", "epsilon", monad("enlist", W), dyad("member", [W, W])),
             Self::Union => row("∪", "union", "", monad("unique", W), dyad("union", [W, W]).identity(Empty(false))),
-            Self::Intersection => row("∩", "intersection", "", None, dyad("intersection", [W, W])),
-            Self::Grade(false) => row("⍋", "grade-up", "", monad("grade-up", W), dyad("grade-up-by", [1, W])),
-            Self::Grade(true) => row("⍒", "grade-down", "", monad("grade-down", W), dyad("grade-down-by", [1, W])),
+            Self::Intersection => row("∩", "intersection", "", monad("duplicates", W), dyad("intersection", [W, W])),
+            Self::Grade(false) => row("⍋", "grade-up", "", monad("grade-up", W), dyad("grade-up-by", [W, W])),
+            Self::Grade(true) => row("⍒", "grade-down", "", monad("grade-down", W), dyad("grade-down-by", [W, W])),
             Self::Take => row("↑", "take", "disclose", monad("first", W), dyad("take", [1, W]).axes()),
             Self::Drop => row("↓", "drop", "", monad("split", 1).axes(), dyad("drop", [1, W]).axes()),
             Self::Reverse(false) => row("⌽", "reverse", "", monad("reverse", 1).axes(), dyad("rotate", [0, 1]).axes().identity(Identity::Number(0))),
@@ -458,17 +461,17 @@ impl Primitive {
             Self::Transpose => row("⍉", "transpose", "", monad("transpose", W), dyad("reorder-axes", [1, W])),
             Self::Encode => row("⊤", "encode", "", monad("binary-encode", W), dyad("encode", [1, 0]).identity(Identity::Number(0))),
             Self::Decode => row("⊥", "decode", "", monad("binary-decode", 1), dyad("decode", [1, 1])),
-            Self::Execute => row("⍎", "execute", "", monad("execute", 1).bounded(), dyad("execute-in", [W, W])),
-            Self::Format => row("⍕", "format", "", monad("format", W), dyad("format-spec", [1, 1])),
+            Self::Execute => row("⍎", "execute", "", monad("execute", 1).cellwise(), dyad("execute-in", [W, W])),
+            Self::Format => row("⍕", "format", "", monad("format", W), dyad("format-spec", [1, W])),
             Self::Index => row("⌷", "squad", "", monad("materialise", W).axes(), dyad("index", [1, W]).axes()),
-            Self::MatrixDivide => row("⌹", "domino", "", monad("inverse", 2).bounded(), dyad("matrix-divide", [W, 2])),
-            Self::Replicate => row("#", "hash", "replicate compress", None, dyad("replicate", [1, W]).axes().identity(Identity::Number(1))),
-            Self::Windows => row("↕", "windows", "", None, dyad("windows", [1, W])),
+            Self::MatrixDivide => row("⌹", "domino", "", monad("inverse", 2).cellwise(), dyad("matrix-divide", [W, 2])),
+            Self::Replicate => row("#", "hash", "replicate compress", monad("runs", W), dyad("replicate", [1, W]).axes().identity(Identity::Number(1))),
+            Self::Windows => row("↕", "windows", "", monad("pairs", W), dyad("windows", [W, W])),
             Self::Prime => row("⍭", "prime", "", monad("prime", 0), dyad("prime-mode", [0, 0])),
             Self::Factor => row("⨸", "factor", "", monad("factors", 0), dyad("factor-spec", [0, 0])),
             Self::Polynomial => row("⌻", "polynomial", "", monad("roots", 1), dyad("polyval", [1, 0])),
             Self::Where => row("⍸", "where", "", monad("where", W), dyad("interval-index", [W, W])),
-            Self::Find => row("⍷", "find", "", None, dyad("find", [W, W])),
+            Self::Find => row("⍷", "find", "", monad("groups", W), dyad("find", [W, W])),
             Self::Identity(false) => row("⊢", "right", "", monad("same", W), dyad("right", [W, W])),
             Self::Identity(true) => row("⊣", "left", "", monad("same-left", W), dyad("left", [W, W])),
             Self::Random => row("¿", "inverted-question", "", monad("roll", 0), dyad("deal", [0, 0])),
@@ -544,7 +547,7 @@ impl Primitive {
         }
     }
     pub(crate) fn call_axis(self, left: Option<&Value>, right: &Value, axis: Option<usize>, span: &Context<'_>) -> Result<Value, Error> {
-        use Comparison::{Equal, GreaterEqual, LessEqual, NotEqual};
+        use Comparison::{Equal, Greater, GreaterEqual, Less, LessEqual, NotEqual};
         span.check()?;
         if axis.is_some() && !self.takes_axes(left.is_some()) { return Err(span.error(ErrorKind::Syntax, "axis is not supported by this primitive")); }
         let info = self.info();
@@ -566,6 +569,7 @@ impl Primitive {
                 let op = if matches!(op, LessEqual) { Arithmetic::Minus } else { Arithmetic::Plus };
                 Self::Arithmetic(op).call(Some(right), &if right.as_floats().is_some() { float(1.0) } else { integer(1) }, span)
             }
+            (Self::Compare(op @ (Less | Greater)), None) => sort(right, matches!(op, Greater), span),
             (Self::Prime | Self::Factor, _) => crate::number_theory::call(matches!(self, Self::Factor), left, right, span),
             (Self::Polynomial, _) => crate::polynomial::call(left, right, span),
             (Self::Member, Some(x)) => membership(x, right, span),
@@ -573,7 +577,9 @@ impl Primitive {
             (Self::Union, Some(x)) => union(x, right, span),
             (Self::Union, None) => unique(right, span),
             (Self::Intersection, Some(x)) => intersection(x, right, span),
+            (Self::Intersection, None) => duplicates(right, span),
             (Self::Find, Some(x)) => find(x, right, span),
+            (Self::Find, None) => groups(right, span),
             (Self::Grade(down), _) => grade(left, right, down, span),
             (Self::MatrixDivide, _) => matrix_divide(left, right, span),
             (Self::Format, _) => format_array(left, right, span),
@@ -592,9 +598,11 @@ impl Primitive {
             (Self::Where, None) => where_indices(right, span),
             (Self::Random, Some(x)) => deal(x, right, &mut rand::rng(), span),
             (Self::Replicate, Some(x)) => replicate(x, right, axis, false, span),
+            (Self::Replicate, None) => runs(right, span),
             (Self::Reverse(first), _) => rotate(left, right, axis.unwrap_or(if first { 0 } else { right.shape().len().saturating_sub(1) }), span),
             (Self::Transpose, _) => transpose(left, right, span),
             (Self::Windows, Some(x)) => windows(x, right, span),
+            (Self::Windows, None) => windows(&integer(2), right, span),
             (Self::Ravel | Self::CatenateFirst, Some(x)) => catenate(x, right, axis, matches!(self, Self::CatenateFirst), span),
             (Self::Ravel, None) => {
                 if let Some(axis) = axis { return self.call_axes(None, right, &axis_value(axis), span); }
@@ -734,7 +742,8 @@ fn character_arithmetic(op: Arithmetic, left: &Value, right: &Value, fill: bool)
     }
 }
 
-fn depth(right: &Value) -> usize {
+/// The depth of `right`: 0 for an atom, and for an array one more than its deepest element. An empty array counts its prototype.
+pub(crate) fn depth(right: &Value) -> usize {
     if right.is_atom() { return 0; }
     1 + match right.as_items() { Items::Values([]) => depth(&right.prototype()), Items::Values(items) => items.iter().map(depth).max().unwrap_or(0), _ => 0 }
 }
@@ -751,7 +760,7 @@ pub(crate) fn pervade(value: &Value, f: &dyn Fn(Value) -> Result<Value, Error>, 
 pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value, axis: Option<&Value>, span: &Context<'_>) -> Result<Value, Error> {
     use crate::number::{
         Arithmetic::*,
-        Math::{Arc, Circle, Log, Nand, Nor, Not, Pi, Power, Root},
+        Math::{Arc, Circle, Gcd, Lcm, Log, Nand, Nor, Not, Pi, Power, Root},
     };
     use Primitive::*;
     if let Some(axis) = axis {
@@ -789,6 +798,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
             Arithmetic(Divide) if first => call(p, Some(a), right),
             Arithmetic(Divide) => call(Arithmetic(Times), Some(right), a),
             Compare(Comparison::NotEqual) if boolean_array(a) && boolean_array(right) => call(p, Some(a), right),
+            Compare(Comparison::Equal) if boolean_array(a) && boolean_array(right) => call(p, Some(a), right),
             Math(Power) if first => call(Math(Log), Some(a), right),
             Math(Power) => call(p, Some(right), &Arithmetic(Divide).call(None, a, span)?),
             Math(Root) if first => call(Math(Power), Some(right), a),
@@ -817,6 +827,14 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
                 let axis = axis.map(|x| single_axis(&resolve_axes(x, right, span)?, right.shape().len(), span)).transpose()?;
                 inverse_catenate(a, first, right, axis, matches!(p, CatenateFirst), span)
             }
+            Shape if first => checked(p, Some(a), Ravel.call(None, right, span), right, span),
+            Iota if first => {
+                let positions = Value::new(vec![1], vec![right.clone()]).error_at(span, "invalid positions")?;
+                checked(p, Some(a), Index.call(Some(&positions), a, span), right, span)
+            }
+            Keys if first => checked(p, Some(a), Keys.call(None, right, span), right, span),
+            Windows if first => inverse_windows(a, right, span),
+            Enclose | Nest if first => checked(p, Some(a), joined(right, span), right, span),
             _ => Err(span.domain_error("this bound function has no known inverse")),
         };
     }
@@ -854,12 +872,70 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
         Mix => split(right, None, span),
         Drop => Mix.call(None, right, span),
         Where => inverse_where(right, span),
+        Replicate => match right.shape() {
+            [2] | [3] => {
+                let mut items = right.elements();
+                let (lengths, values) = (items.next().expect("lengths"), items.next().expect("values"));
+                // `#` writes the atom `1ₓ` as the length only for a unit, which then needs no replicate.
+                let decoded = if lengths.same(&integer(1)) { values } else { replicate(&lengths, &values, None, false, span)? };
+                match items.next() { Some(keys) => Primitive::Keys.call(Some(&keys), &decoded, span), None => Ok(decoded) }
+            }
+            _ => Err(span.error(ErrorKind::Length, "run-length decoding needs lengths and values, and optionally keys")),
+        },
+        Math(Lcm | Gcd) => {
+            // The two parts are on the last axis, which reversing the axes brings to the front.
+            let parts = Transpose.call(None, right, span)?;
+            if parts.shape().first() != Some(&2) { return Err(span.error(ErrorKind::Length, "the last axis must hold two parts")); }
+            let (x, y) = (Index.call(Some(&integer(0)), &parts, span)?, Index.call(Some(&integer(1)), &parts, span)?);
+            let y = if matches!(p, Math(Lcm)) { Math(Circle).call(None, &y, span)? } else {
+                Arithmetic(Times).call(Some(&Value::number(num_complex::Complex64::new(0., 1.)).unwrap()), &y, span)?
+            };
+            let number = if matches!(p, Math(Lcm)) { Arithmetic(Times) } else { Arithmetic(Plus) }.call(Some(&x), &y, span)?;
+            Transpose.call(None, &number, span)
+        }
+        Grade(down) => {
+            let ranks = Grade(false).call(None, right, span);
+            let candidate = if down { ranks.and_then(|r| Arithmetic(Minus).call(Some(&integer(right.len() as i64 - 1)), &r, span)) } else { ranks };
+            checked(p, None, candidate, right, span)
+        }
+        Execute => crate::system::write_literal(None, right, span),
+        Ravel => checked(p, None, Ok(right.clone()), right, span),
+        CatenateFirst => checked(p, None, if matches!(right.shape(), [_, 1]) { Ravel.call(None, right, span) } else { Ok(right.clone()) }, right, span),
+        Windows => inverse_windows(&integer(2), right, span),
         _ => Err(span.domain_error("this primitive has no known inverse")),
     }
 }
 
 fn boolean_array(a: &Value) -> bool {
     a.elements().all(|e| match e { Value::Number(n) => n.boolean().is_ok(), a @ Value::Array(_) => boolean_array(&a), _ => false })
+}
+
+/// `candidate` if it can be built and `p` maps it back to `right`, with the fixed left argument `a` if there is one. Otherwise no argument
+/// gives `right`.
+fn checked(p: Primitive, a: Option<&Value>, candidate: Result<Value, Error>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let back = |c: &Value| p.call(a, c, span).and_then(|back| back.matches(right, span));
+    candidate.ok().filter(|c| matches!(back(c), Ok(true))).ok_or_else(|| span.domain_error("no argument gives this result"))
+}
+
+/// The parts of a partition joined along their leading axis.
+fn joined(parts: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let mut items = parts.elements();
+    let Some(first) = items.next() else { return Primitive::Take.call(Some(&integer(0)), &parts.prototype(), span) };
+    items.try_fold(first, |joined, part| Primitive::CatenateFirst.call(Some(&joined), &part, span))
+}
+
+/// The array whose windows of size `a`, moving one cell at a time, are `right`: each window's first cell, then the rest of the last
+/// window.
+fn inverse_windows(a: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    use Primitive::*;
+    let candidate = || {
+        let whole_first = Value::new(vec![2], vec![float(f64::INFINITY), integer(0)]).error_at(span, "invalid window selector")?;
+        let firsts = Index.call(Some(&whole_first), right, span)?;
+        if right.shape().first() == Some(&0) { return Ok(firsts); }
+        let rest = Drop.call(Some(&integer(1)), &Index.call(Some(&integer(-1)), right, span)?, span)?;
+        CatenateFirst.call(Some(&firsts), &rest, span)
+    };
+    checked(Windows, Some(a), candidate(), right, span)
 }
 
 /// The argument that catenates with the fixed `a` to give `right`, checked by catenating again.

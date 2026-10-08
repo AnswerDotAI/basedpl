@@ -1,6 +1,6 @@
 # `≤` — Less or equal
 
-Keys: `Alt-<`
+Keys: `Alt-<`. Ranks: `0` monadic, `0 0` dyadic
 
 `≤Y` is `Y-1`. Pervasive.
 
@@ -12,4 +12,12 @@ Keys: `Alt-<`
 
 ```bpl
 1 2 3≤2            ⍝ $t $t $f
+```
+
+## Inverse
+
+`≤⁻¹` increments, undoing decrement. Less-or-equal has no inverse.
+
+```bpl
+≤⁻¹ 4   ⍝ 5
 ```

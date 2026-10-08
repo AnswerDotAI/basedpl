@@ -413,6 +413,19 @@ impl Function {
     fn call_prototype(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         cx.prototype_mode(true, |cx| self.call(left, right, cx))
     }
+    /// `self` called on each element of `right`, with `left` whole for each, as a system function does with a right argument that holds
+    /// several of its items. An element that still holds several maps again. The result is shy when every call's result is.
+    /// An empty argument gives an empty result with `prototype`, without a call, because a system function can have effects.
+    fn each_item(&self, left: Option<&Value>, right: &Value, prototype: fn() -> Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+        let (mut items, mut shy) = (Vec::with_capacity(right.len()), !right.is_empty());
+        for element in right.elements() {
+            let bound = self.call(left, &element, cx)?;
+            shy &= bound.shy;
+            items.push(bound.array(cx.span)?);
+        }
+        let value = right.layout().collect(items, prototype).error_at(cx.span, "invalid result")?;
+        Ok(Bound { shy, ..Bound::from(value) })
+    }
     fn inverse(&self, span: &Span) -> Result<Self, Error> {
         match self.node() {
             FunctionNode::Inverse(f) => Ok(f.clone()),
@@ -458,6 +471,9 @@ impl Function {
     }
     fn apply(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         use FunctionNode::{Defined, Derived, Fold, Fork};
+        if let (FunctionNode::Primitive(p), None) = (self.node(), left) {
+            if let Some(cells) = p.info().monad.and_then(|m| m.cells(right)) { return rank(self, &integer(cells.into()), None, right, cx); }
+        }
         let array = match self.node() {
             // `dispatch` calls these itself.
             FunctionNode::LateBound(..) | FunctionNode::Composed(..) | Defined(_) | Derived(..) => unreachable!(),
@@ -491,6 +507,8 @@ impl Function {
             FunctionNode::Primitive(p) => p.call(left, right, cx),
             FunctionNode::System(f) => {
                 f.check(left, cx.span)?;
+                if f.item.maps(right) { return self.each_item(left, right, f.prototype.expect("a mapped system function has a result prototype"), cx); }
+                if let (true, Some(prototype)) = (cx.session.prototype, f.prototype) { return Ok(Bound::from(prototype())); }
                 match &f.call {
                     crate::system::Call::Value(call) => call(left, right, cx),
                     crate::system::Call::Effect(call) => return call(left, right, cx).map(|(value, shy)| Bound { shy, ..Bound::from(value) }),

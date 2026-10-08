@@ -333,143 +333,195 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, ParseFailure> {
     let (mut tokens, mut line_break) = (Vec::new(), None);
     while let Some(&(start, c)) = chars.peek() {
         let span = |end| Span { source: source.clone(), range: start..end };
-        let kind = if c.is_ascii_digit() || matches!(c, '¯' | '∞') || (c == '.' && chars.clone().nth(1).is_some_and(|(_, c)| c.is_ascii_digit())) {
-            real_literal(&mut chars).map_err(|message| span(position(&mut chars, len)).error(ErrorKind::Syntax, message))?;
-            if suffix(&mut chars, IMAGINARY) {
-                real_literal(&mut chars).map_err(|message| span(position(&mut chars, len)).error(ErrorKind::Syntax, message))?;
-                if let Some(end) = run_on(&mut chars, false) { return Err(span(end).error(ErrorKind::Syntax, "invalid complex numeric literal").into()); }
-            }
-            else {
-                let rational = suffix(&mut chars, DENOMINATOR);
-                if rational {
-                    chars.next_if(|&(_, c)| c == '¯');
-                    if digits(&mut chars) == 0 { return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, "expected integer denominator").into()); }
-                }
-                if rational || suffix(&mut chars, EXACT) {
-                    if let Some(end) = run_on(&mut chars, true) { return Err(span(end).error(ErrorKind::Syntax, "invalid exact numeric literal").into()); }
-                }
-            }
-            let end = position(&mut chars, len);
-            let n = literal_number(&source.text[start..end])
-                .error_at(&span(end), "invalid numeric literal (real values, finite complex components or integer components with ₓ and r required)")?;
-            TokenKind::Literal(Value::number(n).unwrap())
-        } else if name_char(c) {
-            name(&mut chars, source.text[..start].ends_with('.')).map_err(|end| span(end).error(ErrorKind::Syntax, UNQUOTED))?;
-            TokenKind::Name(source.text[start..position(&mut chars, len)].to_owned())
-        } else {
+        if c == '\n' {
             chars.next();
-            match c {
-                '\'' => {
-                    let unclosed = |at| Err(span(at).error(ErrorKind::Syntax, "unclosed character literal").into());
-                    let c = match chars.next() { Some((_, c)) if c != '\n' => c, next => return unclosed(next.map_or(len, |(i, _)| i)) };
-                    if c == '\'' && chars.peek().is_none_or(|&(_, c)| c != '\'') {
-                        TokenKind::Literal(crate::keyed::text(""))
-                    } else {
-                        match chars.peek() {
-                            Some((_, '\'')) => {
-                                chars.next();
-                            }
-                            None | Some((_, '\n')) => return unclosed(position(&mut chars, len)),
-                            Some(&(i, c)) => {
-                                return Err(span(i + c.len_utf8())
-                                    .error(ErrorKind::Syntax, "a character literal holds one character (strings use double quotes)")
-                                    .into())
-                            }
-                        }
-                        TokenKind::Literal(Value::Character(c))
-                    }
-                }
-                '"' => {
-                    let mut text = String::new();
-                    loop {
-                        match chars.next() {
-                            Some((_, '"')) if chars.next_if(|&(_, c)| c == '"').is_some() => text.push('"'),
-                            Some((_, '"')) => break,
-                            // Each line ending, whatever its form, reads as one newline. Indentation stays as written.
-                            Some((_, '\r')) => {
-                                chars.next_if(|&(_, c)| c == '\n');
-                                text.push('\n');
-                            }
-                            Some((_, c)) => text.push(c),
-                            None => return Err(ParseFailure::Incomplete(span(len).error(ErrorKind::Syntax, "unclosed string"))),
-                        }
-                    }
-                    TokenKind::Literal(crate::keyed::text(&text))
-                }
-                '⍬' => TokenKind::Literal(zilde(suffix(&mut chars, EXACT))),
-                // `$` and one letter: a literal constant, or `$e`, the error a handler caught.
-                '$' => {
-                    let token = match chars.next() {
-                        Some((_, 't')) => TokenKind::Literal(Value::Number(Number::from_bool(true))),
-                        Some((_, 'f')) => TokenKind::Literal(Value::Number(Number::from_bool(false))),
-                        Some((_, 'n')) => TokenKind::Literal(Value::Number(Number::from(f64::NAN))),
-                        Some((_, 'a')) => TokenKind::Literal(crate::keyed::text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
-                        Some((_, 'd')) => TokenKind::Literal(crate::keyed::text("0123456789")),
-                        Some((_, 'e')) => TokenKind::Name("$e".into()),
-                        _ => return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, DOLLAR).into()),
-                    };
-                    if chars.peek().is_some_and(|&(_, c)| name_char(c) || c.is_ascii_digit()) {
-                        return Err(span(position(&mut chars, len)).error(ErrorKind::Syntax, DOLLAR).into());
-                    }
-                    token
-                }
-                '⍛' => {
-                    return Err(span(start + c.len_utf8()).error(ErrorKind::Syntax, "⍛ is retired: use ↣ or ↢ to bind or preprocess, and ∘ for Atop").into())
-                }
-                '(' => TokenKind::Open,
-                ')' => TokenKind::Close(suffix(&mut chars, EXACT)),
-                '[' => TokenKind::BracketOpen,
-                ']' => TokenKind::BracketClose(suffix(&mut chars, EXACT)),
-                ';' => TokenKind::Semicolon,
-                '\n' => {
-                    if tokens.last().is_some_and(|t: &Token| !absorbs_line_break(&t.kind, true)) { line_break = Some(span(start + 1)); }
-                    continue;
-                }
-                '⋄' => TokenKind::Separator,
-                '←' => TokenKind::Assign,
-                '→' => TokenKind::Pipe,
-                '•' if chars.peek().is_some_and(|&(_, c)| name_char(c)) => {
-                    name(&mut chars, false).map_err(|end| span(end).error(ErrorKind::Syntax, UNQUOTED))?;
-                    TokenKind::System(source.text[start..position(&mut chars, len)].to_owned())
-                }
-                '⎕' => TokenKind::Output,
-                ':' if chars.peek().is_some_and(|(_, c)| *c == ':') => {
-                    chars.next();
-                    TokenKind::ErrorGuard
-                }
-                ':' => TokenKind::Function(Primitive::Keys),
-                '?' => TokenKind::Predicate,
-                '{' => TokenKind::BraceOpen,
-                '}' => TokenKind::BraceClose,
-                '⍺' | '⍵' | '⍶' | '⍹' | '∇' | '⍢' => TokenKind::Name(c.to_string()),
-                '⍝' => {
-                    while chars.peek().is_some_and(|(_, c)| *c != '\n') { chars.next(); }
-                    continue;
-                }
-                'ᵀ' => TokenKind::Operator(OperatorKind::Super(Superscript::Transpose)),
-                'ᵘ' => TokenKind::Operator(OperatorKind::Super(Superscript::Unit)),
-                c if c == '⁻' || script_digit(SUPERSCRIPT_DIGITS, c).is_some() => {
-                    let power =
-                        script_integer(c, &mut chars, SUPERSCRIPT_DIGITS, "superscript").map_err(|(k, m)| span(position(&mut chars, len)).error(k, m))?;
-                    TokenKind::Operator(OperatorKind::Super(Superscript::Power(power)))
-                }
-                c if c == '₋' || script_digit(SUBSCRIPT_DIGITS, c).is_some() => TokenKind::Subscript(
-                    script_integer(c, &mut chars, SUBSCRIPT_DIGITS, "subscript").map_err(|(k, m)| span(position(&mut chars, len)).error(k, m))?,
-                ),
-                c if c.is_whitespace() => continue,
-                c => match (OperatorKind::from_glyph(c), Primitive::from_glyph(c)) {
-                    (Some(op), _) => TokenKind::Operator(op),
-                    (_, Some(f)) => TokenKind::Function(f),
-                    _ => return Err(span(start + c.len_utf8()).error(ErrorKind::Unsupported, format!("{c:?} is not supported yet")).into()),
-                },
-            }
-        };
-        let end = position(&mut chars, len);
+            if tokens.last().is_some_and(|t: &Token| !absorbs_line_break(&t.kind, true)) { line_break = Some(span(start + 1)); }
+            continue;
+        }
+        let Some(kind) = token(source, &mut chars)? else { continue };
         if let Some(at) = line_break.take().filter(|_| !absorbs_line_break(&kind, false)) { tokens.push(Token { kind: TokenKind::Separator, span: at }); }
-        tokens.push(Token { kind, span: span(end) });
+        tokens.push(Token { kind, span: span(position(&mut chars, len)) });
     }
     mark_exact(&mut tokens)?;
     Ok(tokens)
+}
+
+/// Reads the token that starts `chars`, or `None` after white space or a comment.
+fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>) -> Result<Option<TokenKind>, ParseFailure> {
+    let len = source.text.len();
+    let Some(&(start, c)) = chars.peek() else { return Ok(None) };
+    let span = |end| Span { source: source.clone(), range: start..end };
+    Ok(Some(if c.is_ascii_digit() || matches!(c, '¯' | '∞') || (c == '.' && chars.clone().nth(1).is_some_and(|(_, c)| c.is_ascii_digit())) {
+        real_literal(chars).map_err(|message| span(position(chars, len)).error(ErrorKind::Syntax, message))?;
+        if suffix(chars, IMAGINARY) {
+            real_literal(chars).map_err(|message| span(position(chars, len)).error(ErrorKind::Syntax, message))?;
+            if let Some(end) = run_on(chars, false) { return Err(span(end).error(ErrorKind::Syntax, "invalid complex numeric literal").into()); }
+        }
+        else {
+            let rational = suffix(chars, DENOMINATOR);
+            if rational {
+                chars.next_if(|&(_, c)| c == '¯');
+                if digits(chars) == 0 { return Err(span(position(chars, len)).error(ErrorKind::Syntax, "expected integer denominator").into()); }
+            }
+            if rational || suffix(chars, EXACT) {
+                if let Some(end) = run_on(chars, true) { return Err(span(end).error(ErrorKind::Syntax, "invalid exact numeric literal").into()); }
+            }
+        }
+        let end = position(chars, len);
+        let n = literal_number(&source.text[start..end])
+            .error_at(&span(end), "invalid numeric literal (real values, finite complex components or integer components with ₓ and r required)")?;
+        TokenKind::Literal(Value::number(n).unwrap())
+    } else if name_char(c) {
+        name(chars, source.text[..start].ends_with('.')).map_err(|end| span(end).error(ErrorKind::Syntax, UNQUOTED))?;
+        TokenKind::Name(source.text[start..position(chars, len)].to_owned())
+    } else {
+        chars.next();
+        match c {
+            '\'' => {
+                let unclosed = |at| Err(span(at).error(ErrorKind::Syntax, "unclosed character literal").into());
+                let c = match chars.next() { Some((_, c)) if c != '\n' => c, next => return unclosed(next.map_or(len, |(i, _)| i)) };
+                if c == '\'' && chars.peek().is_none_or(|&(_, c)| c != '\'') {
+                    TokenKind::Literal(crate::keyed::text(""))
+                } else {
+                    match chars.peek() {
+                        Some((_, '\'')) => {
+                            chars.next();
+                        }
+                        None | Some((_, '\n')) => return unclosed(position(chars, len)),
+                        Some(&(i, c)) => {
+                            return Err(span(i + c.len_utf8())
+                                .error(ErrorKind::Syntax, "a character literal holds one character (strings use double quotes)")
+                                .into())
+                        }
+                    }
+                    TokenKind::Literal(Value::Character(c))
+                }
+            }
+            '"' => {
+                let mut text = String::new();
+                loop {
+                    match chars.next() {
+                        Some((_, '"')) if chars.next_if(|&(_, c)| c == '"').is_some() => text.push('"'),
+                        Some((_, '"')) => break,
+                        // Each line ending, whatever its form, reads as one newline. Indentation stays as written.
+                        Some((_, '\r')) => {
+                            chars.next_if(|&(_, c)| c == '\n');
+                            text.push('\n');
+                        }
+                        Some((_, c)) => text.push(c),
+                        None => return Err(ParseFailure::Incomplete(span(len).error(ErrorKind::Syntax, "unclosed string"))),
+                    }
+                }
+                TokenKind::Literal(crate::keyed::text(&text))
+            }
+            '⍬' => TokenKind::Literal(zilde(suffix(chars, EXACT))),
+            // `$` and one letter: a literal constant, or `$e`, the error a handler caught.
+            '$' => {
+                let token = match chars.next() {
+                    Some((_, 't')) => TokenKind::Literal(Value::Number(Number::from_bool(true))),
+                    Some((_, 'f')) => TokenKind::Literal(Value::Number(Number::from_bool(false))),
+                    Some((_, 'n')) => TokenKind::Literal(Value::Number(Number::from(f64::NAN))),
+                    Some((_, 'a')) => TokenKind::Literal(crate::keyed::text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
+                    Some((_, 'd')) => TokenKind::Literal(crate::keyed::text("0123456789")),
+                    Some((_, 'e')) => TokenKind::Name("$e".into()),
+                    _ => return Err(span(position(chars, len)).error(ErrorKind::Syntax, DOLLAR).into()),
+                };
+                if chars.peek().is_some_and(|&(_, c)| name_char(c) || c.is_ascii_digit()) {
+                    return Err(span(position(chars, len)).error(ErrorKind::Syntax, DOLLAR).into());
+                }
+                token
+            }
+            '⍛' => {
+                return Err(span(start + c.len_utf8()).error(ErrorKind::Syntax, "⍛ is retired: use ↣ or ↢ to bind or preprocess, and ∘ for Atop").into())
+            }
+            '(' => TokenKind::Open,
+            ')' => TokenKind::Close(suffix(chars, EXACT)),
+            '[' => TokenKind::BracketOpen,
+            ']' => TokenKind::BracketClose(suffix(chars, EXACT)),
+            ';' => TokenKind::Semicolon,
+            '⋄' => TokenKind::Separator,
+            '←' => TokenKind::Assign,
+            '→' => TokenKind::Pipe,
+            '•' if chars.peek().is_some_and(|&(_, c)| name_char(c)) => {
+                name(chars, false).map_err(|end| span(end).error(ErrorKind::Syntax, UNQUOTED))?;
+                TokenKind::System(source.text[start..position(chars, len)].to_owned())
+            }
+            '⎕' => TokenKind::Output,
+            ':' if chars.peek().is_some_and(|(_, c)| *c == ':') => {
+                chars.next();
+                TokenKind::ErrorGuard
+            }
+            ':' => TokenKind::Function(Primitive::Keys),
+            '?' => TokenKind::Predicate,
+            '{' => TokenKind::BraceOpen,
+            '}' => TokenKind::BraceClose,
+            '⍺' | '⍵' | '⍶' | '⍹' | '∇' | '⍢' => TokenKind::Name(c.to_string()),
+            '⍝' => {
+                while chars.peek().is_some_and(|(_, c)| *c != '\n') { chars.next(); }
+                return Ok(None);
+            }
+            'ᵀ' => TokenKind::Operator(OperatorKind::Super(Superscript::Transpose)),
+            'ᵘ' => TokenKind::Operator(OperatorKind::Super(Superscript::Unit)),
+            c if c == '⁻' || script_digit(SUPERSCRIPT_DIGITS, c).is_some() => {
+                let power =
+                    script_integer(c, chars, SUPERSCRIPT_DIGITS, "superscript").map_err(|(k, m)| span(position(chars, len)).error(k, m))?;
+                TokenKind::Operator(OperatorKind::Super(Superscript::Power(power)))
+            }
+            c if c == '₋' || script_digit(SUBSCRIPT_DIGITS, c).is_some() => TokenKind::Subscript(
+                script_integer(c, chars, SUBSCRIPT_DIGITS, "subscript").map_err(|(k, m)| span(position(chars, len)).error(k, m))?,
+            ),
+            c if c.is_whitespace() => return Ok(None),
+            c => match (OperatorKind::from_glyph(c), Primitive::from_glyph(c)) {
+                (Some(op), _) => TokenKind::Operator(op),
+                (_, Some(f)) => TokenKind::Function(f),
+                _ => return Err(span(start + c.len_utf8()).error(ErrorKind::Unsupported, format!("{c:?} is not supported yet")).into()),
+            },
+        }
+    }))
+}
+
+/// Each token and comment of `text` with its highlight class, as byte ranges in order. The class is the kind that `symbols` gives a
+/// glyph, or `"literal"` for a number, `"string"` for a character or string literal, `"system"` for a system name and `"comment"`
+/// for a comment. Names and brackets have no class. Text that fails to lex has none either, except an unclosed literal, which is a
+/// `"string"` up to where lexing stopped.
+pub fn highlight(text: &str) -> Vec<(std::ops::Range<usize>, &'static str)> {
+    let source = Source::new("<highlight>", text);
+    let mut chars = source.text.char_indices().peekable();
+    let mut classes = Vec::new();
+    while let Some(&(start, c)) = chars.peek() {
+        let class = match token(&source, &mut chars) {
+            Ok(Some(kind)) => class(&kind, &text[start..position(&mut chars, text.len())]),
+            Ok(None) => (c == '⍝').then_some("comment"),
+            Err(ParseFailure::Incomplete(e) | ParseFailure::Invalid(e)) => {
+                let end = e.span.range.end.max(start + c.len_utf8());
+                while chars.next_if(|&(i, _)| i < end).is_some() {}
+                matches!(c, '"' | '\'').then_some("string")
+            }
+        };
+        if let Some(class) = class { classes.push((start..position(&mut chars, text.len()), class)); }
+    }
+    classes
+}
+
+/// A token's highlight class: its glyph's kind in `symbols`, or the class its kind of token implies.
+fn class(kind: &TokenKind, text: &str) -> Option<&'static str> {
+    if let Some(symbol) = crate::symbols::symbols().iter().find(|s| s.glyph == text) { return Some(symbol.kind); }
+    match kind {
+        TokenKind::Literal(_) => Some(if text.starts_with(['"', '\'']) { "string" } else { "literal" }),
+        TokenKind::Operator(OperatorKind::Super(_)) => Some("monadic-operator"),
+        TokenKind::Subscript(_) | TokenKind::ErrorGuard => Some("syntax"),
+        TokenKind::System(_) => Some("system"),
+        _ => None,
+    }
+}
+
+/// Whether the end of `text` is in code, not inside a comment or an unclosed string or character literal.
+pub fn in_code(text: &str) -> bool {
+    match highlight(text).pop() {
+        Some((range, "comment")) => range.end < text.len(),
+        Some((range, "string")) if range.end == text.len() => lex(&Source::new("<literal>", &text[range])).is_ok(),
+        _ => true,
+    }
 }
 
 enum ParseFailure { Incomplete(Error), Invalid(Error) }

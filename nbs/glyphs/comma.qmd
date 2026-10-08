@@ -1,5 +1,7 @@
 # `,` — Ravel / Catenate
 
+Ranks: `∞` monadic, `∞ ∞` dyadic
+
 `,Y` makes a vector of the items. With [axes](axis.qmd), `,⍠K Y` ravels consecutive axes and `,⍠⍬ Y` appends an axis of length 1.
 
 ```bpl
@@ -20,4 +22,14 @@ There is no laminate. `[x ⋄ y]` has `x` and `y` as its major cells, along a ne
 x←1 2 ⋄ y←3 4
 [x ⋄ y]            ⍝ [1 2 ⋄ 3 4]
 x,⍤0 y             ⍝ [1 3 ⋄ 2 4]
+```
+
+## Inverse
+
+`,⁻¹ Y` gives back `Y` when it's a vector. `X ,⁻¹ Y` removes the fixed `X` from the front of `Y`. With the right argument fixed, `(,↢X)⁻¹ Y` removes it from the end.
+
+```bpl
+,⁻¹ 1 2 3           ⍝ 1 2 3
+1 2 ,⁻¹ 1 2 3 4     ⍝ 3 4
+(,↢3 4)⁻¹ 1 2 3 4   ⍝ 1 2
 ```

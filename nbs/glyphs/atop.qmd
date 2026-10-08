@@ -8,3 +8,11 @@ Keys: `Alt-t`
 2 -∘+ 3            ⍝ ¯5
 ```
 See [Rank](rank.qmd) for applying a function to cells of a chosen rank.
+
+## Inverse
+
+`(f∘g)⁻¹` applies `f⁻¹`, then inverts `g`. With an argument fixed, it inverts `g` with that argument fixed.
+
+```bpl
+(-∘÷)⁻¹ ¯0.5   ⍝ 2
+```

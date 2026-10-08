@@ -1,6 +1,6 @@
 # `⍒` — Grade down
 
-Keys: `Alt-Backslash g`
+Keys: `Alt-Backslash g`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `⍒Y` gives indices that sort major cells descending. Stable, with the same [ordering](grade-up.qmd) as Grade up.
 
@@ -13,4 +13,14 @@ Keys: `Alt-Backslash g`
 
 ```bpl
 "cba"⍒"abc"        ⍝ [0 1 2]ₓ
+```
+
+See [`>`](greater.qmd) to sort.
+
+## Inverse
+
+`⍒⁻¹ P` gives an array whose descending grade is the permutation `P`. Any other `P` is a `DOMAIN` error. Grade-down-by has no inverse.
+
+```bpl
+⍒⁻¹ 2 0 1   ⍝ [1 0 2]ₓ
 ```

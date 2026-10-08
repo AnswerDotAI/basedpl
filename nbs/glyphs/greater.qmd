@@ -1,7 +1,22 @@
-# `>` — Greater
+# `>` — Sort down / Greater
+
+Ranks: `∞` monadic, `0 0` dyadic
+
+`>Y` sorts the major cells of `Y` descending, as `[⍒Y]⌷Y` does. Ties keep their order.
+
+```bpl
+>30 10 20           ⍝ 30 20 10
+>"b" "a" "c"        ⍝ "c" "b" "a"
+```
 
 `X>Y` tests X > Y for reals. Pervasive; tolerant.
 
 ```bpl
 1 2 3>2            ⍝ $f $f $t
 ```
+
+See [`<`](less.qmd) to sort up, and [`⍒`](grade-down.qmd) for the indices that sort.
+
+## Inverse
+
+Neither form has an inverse.

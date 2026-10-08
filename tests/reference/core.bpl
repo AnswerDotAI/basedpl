@@ -1612,6 +1612,9 @@ T←["a":1] ⋄ (⎕←T).[⎕←"b"]←2
 ⍝ — Decimal formatting rounds halfway cases away from zero
 2⍕3.125 ¯3.125 2.675 ¯2.675   ⍝ " 3.13 ¯3.13 2.68 ¯2.68"
 
+⍝ — Execute applies to each row of a character matrix
+⍎["1+1" ⋄ "2×3"]   ⍝ 2 6
+
 ⍝ — Integer formatting also rounds halves away from zero
 0⍕2.5 ¯2.5 1.5 ¯1.5   ⍝ " 3 ¯3 2 ¯2"
 
@@ -1948,6 +1951,9 @@ $t $f $t
 
 ⍝ — Full vector windows overlap without padding
 3↕⍳5   ⍝ [0 1 2 ⋄ 1 2 3 ⋄ 2 3 4]
+
+⍝ — Monadic `↕` gives the adjacent pairs, as `2↕` does
+↕1 4 9 16   ⍝ [1 4 ⋄ 4 9 ⋄ 9 16]
 
 ⍝ — Window-position axes precede the two-dimensional window axes
 2 2↕2 3⍴⍳6   ⍝ 1 2 2 2⍴0 1 3 4 1 2 4 5
@@ -2343,6 +2349,91 @@ x←¯1j0.1 1j¯1
 1 2 3 (+\⁻¹)⍤0 1 [2 3]⍴⍳6
 ⍝ error: LENGTH ERROR
 
+⍝ — Inverse polar form rebuilds complex numbers
+∧⁻¹ ∧ 3j4 1j1   ⍝ 3j4 1j1
+
+⍝ — Inverse real and imaginary parts read the pairs on the last axis
+∨⁻¹ [3 4 ⋄ 1 0]   ⍝ 3j4 1
+
+⍝ — Inverse grade gives an array whose grade is the permutation
+⍋⁻¹ 2 0 1   ⍝ [1 2 0]ₓ
+
+⍝ — Inverse grade down
+⍒ ⍒⁻¹ 2 0 1   ⍝ [2 0 1]ₓ
+
+⍝ — Only a permutation is a grade
+⍋⁻¹ 2 2 1
+⍝ error: DOMAIN ERROR
+
+⍝ — Inverse execute writes source that execute reads back
+⍎⁻¹ [1 2.5;"ab"]   ⍝ "[[1 2.5] ""ab""]"
+
+⍝ — Inverse ravel and table give back a vector
+[,⁻¹ 1 2 3;⍪⁻¹ ⍪1 2 3]   ⍝ [1 2 3;1 2 3]
+
+⍝ — Inverse pairs and windows rebuild the array
+[↕⁻¹ ↕⍳4;3↕⁻¹ 3↕"abcde"]   ⍝ [0 1 2 3;"abcde"]
+
+⍝ — Inverse reshape with the shape fixed ravels
+2 3⍴⁻¹ 2 3⍴⍳6   ⍝ 0 1 2 3 4 5
+
+⍝ — Inverse index-of with the table fixed selects from it
+"abc"⍳⁻¹ 2 0   ⍝ "ca"
+
+⍝ — An index that wasn't found has no argument
+"abc"⍳⁻¹ 3
+⍝ error: DOMAIN ERROR
+
+⍝ — Inverse keyed with the keys fixed removes them
+"a" "b":⁻¹ ["a":1;"b":2]   ⍝ 1 2
+
+⍝ — Equal on Booleans is its own inverse
+1 0=⁻¹ 1 1   ⍝ $t $f
+
+⍝ — Inverse partitioned enclose and partition join the parts
+[1 2 0⊂⁻¹ 1 2 0⊂1 2 3;1 1 2⊆⁻¹ 1 1 2⊆1 2 3]   ⍝ [1 2 3;1 2 3]
+
+⍝ — A partition that dropped items has no argument
+0 1 1⊂⁻¹ (2 ⋄ 3)
+⍝ error: DOMAIN ERROR
+
+⍝ — Inverse •ucs converts back, with or without an encoding
+[•ucs⁻¹ 97 98;"UTF-8" •ucs⁻¹ 195 169]   ⍝ ["ab";"é"]
+
+⍝ — A distribution's cdf and quantile invert each other
+d←•distribution "normal" ⋄ [d.cdf⁻¹ 0.5;d.quantile⁻¹ 0]   ⍝ 0 0.5
+
+⍝ — Inverse •decompose multiplies SVD factors back into the matrix
+"svd" •decompose⁻¹ "svd" •decompose 3 2⍴1 2 3 4 5 6
+⍝ =>
+[1 2 ⋄ 3 4 ⋄ 5 6]
+
+⍝ — Inverse •decompose multiplies thin QR factors of a wide matrix back
+"qr" •decompose⁻¹ "qr" •decompose 2 3⍴1 2 3 4 5 6
+⍝ =>
+[1 2 3 ⋄ 4 5 6]
+
+⍝ — Inverse •decompose multiplies a complex Cholesky factor by its conjugate transpose
+"cholesky" •decompose⁻¹ "cholesky" •decompose 2 2⍴4 1j1 1j¯1 3
+⍝ =>
+[4 1j1 ⋄ 1j¯1 3]
+
+⍝ — Inverse •decompose rebuilds a matrix from complex eigenvalues and eigenvectors
+"eigen" •decompose⁻¹ "eigen" •decompose 2 2⍴0 ¯1 1 0
+⍝ =>
+[0 ¯1 ⋄ 1 0]
+
+⍝ — Eigenvectors that aren't independent can't give back a defective matrix
+"eigen" •decompose⁻¹ "eigen" •decompose 2 2⍴1 1 0 1
+⍝ error: DOMAIN ERROR
+
+⍝ — Inverse •decompose needs factors whose sizes agree
+"qr" •decompose⁻¹ ["q":2 2⍴1 0 0 1;"r":3 3⍴1]
+⍝ error: LENGTH ERROR
+
+⍝ — Under applies through inverse pairs
+{⍵×10}⌾↕ 1 2 3   ⍝ 10 20 30
+
 ⍝⍝ Compact integers and promotion
 
 ⍝ — Exact tally keeps the mean of exact values rational
@@ -2519,9 +2610,8 @@ x←[(9223372036854775807ₓ+[1 0]ₓ)-1ₓ;9223372036854775808r1-[1 2]ₓ]
 1 2⌹3 2⍴1
 ⍝ error: LENGTH ERROR
 
-⍝ —
-⌹1 1 1⍴1
-⍝ error: RANK ERROR
+⍝ — Inverse applies to each matrix of a higher-rank argument
+⌹1 1 1⍴1   ⍝ 1 1 1⍴1
 
 ⍝⍝ At and stencil
 
@@ -2795,6 +2885,21 @@ x   ⍝ 10 20 9
 
 ⍝ — Equal-rank nested arrays compare ravelled contents before shape
 ⍋[[1 2 ⋄ 3 4] [1 2 0 0 ⋄]]   ⍝ [1 0]ₓ
+
+⍝ — Monadic `<` sorts major cells up, keeping ties in their original order
+<3 1 2 1   ⍝ 1 1 2 3
+
+⍝ — Sorting a matrix reorders its rows
+<[3 1 ⋄ 1 2 ⋄ 2 0]   ⍝ [1 2 ⋄ 2 0 ⋄ 3 1]
+
+⍝ — Monadic `>` sorts down
+>"b" "a" "c"   ⍝ "c" "b" "a"
+
+⍝ — Sorting a record moves each key with its value
+<["x":3 "y":1 "z":2]   ⍝ ["y":1 "z":2 "x":3]
+
+⍝ — A unit has one item, so it is already sorted
+<5   ⍝ 5
 
 ⍝ — Nested rank takes precedence over contents
 ⍋[[1 2 ⋄] [1 2]]   ⍝ [1 0]ₓ
@@ -3079,9 +3184,8 @@ u←•UcS ⋄ u ["A⍳" ⋄ "λ😀"]   ⍝ [65 9075 ⋄ 955 128512]ₓ
 •ucs 65 'B'
 ⍝ error: DOMAIN ERROR
 
-⍝ — A nested prototype does not make empty input a simple character array
-•ucs 0⍴⊂"ab"
-⍝ error: DOMAIN ERROR
+⍝ — An empty array of strings gives an empty list of code-point vectors
+•ucs 0⍴⊂"ab"   ⍝ 0⍴⊂⍬ₓ
 
 ⍝ — Encoding labels are case-sensitive
 "utf-8"•ucs 'a'
@@ -3721,6 +3825,48 @@ z←1+16E¯15
 ⍝ — Unique-mask compares against retained representatives, not every earlier item
 ≠[1 1+8E¯15 1+16E¯15]   ⍝ $t $f $t
 
+⍝ — Monadic `∩` keeps each distinct major cell that occurs more than once, in order of first appearance
+∩"mississippi"   ⍝ "isp"
+
+⍝ — Duplicate rows of a matrix are its duplicate items
+∩[1 2 ⋄ 3 4 ⋄ 1 2]   ⍝ 1 2⍴1 2
+
+⍝ — Monadic `#` gives each run's length and the cell that repeats
+#"aaabcc"   ⍝ [[3 1 2]ₓ "abc"]
+
+⍝ — The runs of a matrix are runs of equal rows
+#[1 2 ⋄ 1 2 ⋄ 3 4]   ⍝ [[2 1]ₓ [1 2 ⋄ 3 4]]
+
+⍝ — `#/` rebuilds the argument from its runs
+#/#"mississippi"   ⍝ "mississippi"
+
+⍝ — `#⁻¹` decodes runs, so it inverts `#`
+#⁻¹#"mississippi"   ⍝ "mississippi"
+
+⍝ — A unit encodes with a rank-0 length, so `#⁻¹` gives the unit back
+#⁻¹#5   ⍝ 5
+
+⍝ — Any other one-number length replicates
+#⁻¹ 3 5   ⍝ 5 5 5
+
+⍝ — A keyed leading axis adds the key of every position, which `#⁻¹` attaches again
+#⁻¹#["x":1 "y":1 "z":2]   ⍝ ["x":1 "y":1 "z":2]
+
+⍝ — Under `#` changes the runs and decodes them again
+{2×⍵}⌾(0⊃)⌾# "aab"   ⍝ "aaaabb"
+
+⍝ — An empty argument has no runs
+#⍬   ⍝ [⍬ₓ ⍬]
+
+⍝ — Monadic `⍷` gives each distinct major cell's positions, in the order of `∪`
+⍷"abca"   ⍝ (0 3 ⋄ 1 ⋄ 2)ₓ
+
+⍝ — On a keyed axis, the positions are keys
+⍷["x":1 "y":2 "z":1]   ⍝ ("x" "z" ⋄ "y")
+
+⍝ — An empty argument has no groups
+⍷⍬   ⍝ 0⍴⊂⍬ₓ
+
 ⍝ — A large index-of takes the first position within tolerance, not the nearest value
 (300⍴5 , [1+16E¯15 1])⍳1+8E¯15   ⍝ 300ₓ
 
@@ -3790,6 +3936,9 @@ z←1+16E¯15
 ⍝ — Rank-zero iota contains one enclosed empty coordinate
 ⍳⍬   ⍝ ⊂⍬
 
+⍝ — Iota applies to each row of a matrix, padding the results with fill to a common shape
+⍳[2 3 ⋄ 1 1]   ⍝ ⊃[⍳2 3;2 3↑⍳1 1]
+
 ⍝ — Where on the number 0 retains an empty-coordinate prototype
 ⍸0   ⍝ 0⍴⊂⍬ₓ
 
@@ -3835,6 +3984,16 @@ z←1+16E¯15
 x←¿100⍴0 ⋄ ∧/(0<x)∧x<1   ⍝ $t
 
 ⍝⍝ Each commute and reduction
+
+⍝ — Each on an empty argument gives a system function's result prototype without running it
+≢•signal¨0⍴⊂"DOMAIN"   ⍝ 0ₓ
+
+⍝ — Each on an empty argument draws nothing from a generator
+g←•rand 1
+a←g.roll 6
+g←•rand 1
+_←g.roll¨0⍴⊂6
+a=g.roll 6   ⍝ $t
 
 ⍝ — Empty each calls Pick on prototypes to determine numeric fill
 ⍬⊃¨⊂1 2 3   ⍝ ⍬
@@ -5715,6 +5874,9 @@ opts •csv csv   ⍝ "note":,⊂"a\b""c"
 •json "{""name"":""Ann"",""values"":[1,2.5,[3,4]]}"
 ["name":"Ann" "values":[1ₓ 2.5 [3 4]ₓ]]
 
+⍝ — A vector of JSON texts gives a vector of values
+•json ["1" "[2]"]   ⍝ [1ₓ [2]ₓ]
+
 ⍝ — Booleans are exact numbers and null defaults to NaN
 •json "[true,false,null]"   ⍝ [$t $f $n]
 
@@ -5881,9 +6043,15 @@ f←{⍵+1}
 plus←+
 •src "f" "plus"   ⍝ "{⍵+1}" "+"
 
-⍝ — Batch inspection retains its frame and empty result domain
+⍝ — Batch inspection retains its frame and its empty result type
 [⍴•nc ["aa" "bb" ⋄ "cc" "dd"];•nc 0⍴⊂"";•src 0⍴⊂""]
 [[2 2]ₓ;⍬ₓ;0⍴⊂""]
+
+⍝ — Inspection maps over names at any depth
+•nc ["a" ["b" "c"]]   ⍝ [0ₓ [0 0]ₓ]
+
+⍝ — An empty list of names gives an empty result
+•nc ⍬   ⍝ ⍬ₓ
 
 ⍝ — Values have no function source
 x←1 ⋄ •src "x"

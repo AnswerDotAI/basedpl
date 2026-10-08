@@ -12,7 +12,7 @@ The BPL blocks set sample values and show each result after `⍝`. The page test
 
 ### Sort
 
-BPL selects with Index, `⌷`, which takes the positions on its left. A bracket list is always a vector. `[⍋⍵]` holds one item, the positions along the one axis of `⍵`. BQN sorts with one glyph, `∧`.
+BPL sorts with one glyph, `<`, as BQN does with `∧`.
 
 ```dyalog
 {⍵[⍋⍵]}
@@ -20,7 +20,7 @@ BPL selects with Index, `⌷`, which takes the positions on its left. A bracket 
 
 ```bpl
 v←3 1 2
-{[⍋⍵]⌷⍵} v             ⍝ 1 2 3
+<v   ⍝ 1 2 3
 ```
 
 ```bqn
@@ -29,7 +29,7 @@ v←3 1 2
 
 ### Sort by a computed key
 
-Source: APLcart. BPL's `⌷` and BQN's `⊏` both take the positions on the left.
+Source: APLcart. BPL's `⌷` and BQN's `⊏` both take the positions on the left. A bracket list is always a vector. `[⍋⍺++\⍺]` holds one item, the positions along the one axis of `⍵`.
 
 ```dyalog
 Av{⍵[⍋⍺++\⍺]}Bv
@@ -102,7 +102,7 @@ Source: the ngn/apl tests. The assignment `x←6¿49` moves to the right of `⌷
 ```
 
 ```bpl
-⍴[⍋x]⌷x←6¿49           ⍝ [6]ₓ
+⍴<6¿49                 ⍝ [6]ₓ
 ```
 
 ```bqn
@@ -184,7 +184,7 @@ Source: the dfns string examples. In BPL, the pair is written in brackets. APL b
 ```
 
 ```bpl
-{[[⍋•c⍵]⌷⍵ [⍋⍵]⌷⍵]} "baC"   ⍝ "abC" "Cab"
+{[[⍋•c⍵]⌷⍵ <⍵]} "baC"   ⍝ "abC" "Cab"
 ```
 
 ```bqn
@@ -255,7 +255,7 @@ Dyalog and BQN have no keyed arrays. Most entries here show BPL alone. See [axis
 Keys on an axis name its positions. `⌷` takes one key for each axis.
 
 ```bpl
-sales←["city":["NY" "LA"] "month":["Jan" "Feb" "Mar"]]:[10 20 30 ⋄ 40 50 60]
+sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30 ⋄ 40 50 60]
 "LA" "Feb"⌷sales       ⍝ 50
 ```
 
@@ -264,7 +264,7 @@ sales←["city":["NY" "LA"] "month":["Jan" "Feb" "Mar"]]:[10 20 30 ⋄ 40 50 60]
 `⍠` applies a function along the axes its operand names. The result keeps the keys and the name of the remaining axis. BQN has no axis names. It reduces by position, as `+´˘` does along the last axis.
 
 ```bpl
-sales←["city":["NY" "LA"] "month":["Jan" "Feb" "Mar"]]:[10 20 30 ⋄ 40 50 60]
+sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30 ⋄ 40 50 60]
 +/⍠"month" sales       ⍝ ["city":2]⍴["NY":60 "LA":150]
 ```
 
@@ -273,7 +273,7 @@ sales←["city":["NY" "LA"] "month":["Jan" "Feb" "Mar"]]:[10 20 30 ⋄ 40 50 60]
 `"NY"⌷+/sales` totals each row, then selects the row for NY. The sum needs no parentheses, because Index takes its positions on the left. Pandas writes the selection after the sum: `sales.sum(axis=1)["NY"]`.
 
 ```bpl
-sales←["city":["NY" "LA"] "month":["Jan" "Feb" "Mar"]]:[10 20 30 ⋄ 40 50 60]
+sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30 ⋄ 40 50 60]
 "NY"⌷+/sales           ⍝ 60
 ```
 
@@ -318,7 +318,7 @@ Source: `lisp` in the dfns workspace. The Dyalog code keeps the list as a two-co
 Source: the [home page](index.ipynb). Each row is one series. The column keys label the x axis. With `"legend":"end"`, each line is labelled with its row key. See [plots](plot.ipynb).
 
 ```bpl
-sales←["city":["NY" "LA"] "month":["Jan" "Feb" "Mar"]]:[10 20 30 ⋄ 40 50 60]
+sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30 ⋄ 40 50 60]
 ["legend":"end"] •plot sales
 ```
 
@@ -559,7 +559,7 @@ step←{mid←3 ⋄ hi←9 ⋄ lo←0
   ifelse [⍵<mid⊃⍺
     {hi⊢←mid}
     {lo⊢←mid}]
-  [lo hi]}
+  lo hi}
 0 1 2 3 4 5 step 1     ⍝ 0 3
 0 1 2 3 4 5 step 4     ⍝ 3 9
 ```

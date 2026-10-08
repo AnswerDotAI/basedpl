@@ -35,6 +35,14 @@ Call order: `g Y`, `g X`, `f`, then `g` on the positions of `Y`, or `g`'s invers
 
 See [Inverse pair](inverse-pair.qmd).
 
+## Inverse
+
+`(f⌾g)⁻¹` is `f⁻¹⌾g`.
+
+```bpl
+((2×)⌾⌽)⁻¹ 2 4 6   ⍝ 1 2 3
+```
+
 ## Errors
 
 - `DOMAIN`: `g` neither selects nor has a known inverse

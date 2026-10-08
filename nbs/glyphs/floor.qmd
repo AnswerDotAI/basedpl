@@ -1,6 +1,6 @@
 # `⌊` — Floor / Minimum
 
-Keys: `Alt-d`
+Keys: `Alt-d`. Ranks: `0` monadic, `0 0` dyadic
 
 `⌊Y` rounds down to an exact integer. Pervasive; tolerant near integers. An infinity or NaN stays a float.
 
@@ -20,3 +20,7 @@ Complex floor uses APL's Gaussian-integer rule.
 ```bpl
 3⌊1 5             ⍝ 1 3
 ```
+
+## Inverse
+
+Neither form has an inverse, because many arguments give each result.

@@ -1,6 +1,6 @@
 # `⌷` — Index
 
-Keys: `Alt-q Backslash`
+Keys: `Alt-q Backslash`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 `I⌷Y` indexes `Y`. The left argument has one item for each leading axis of `Y`. Axes that it omits are taken whole. `⌷Y` is identity. A [subscript](../scripts.ipynb#subscripts) writes a single position: `m₁` is `1⌷m`. After an array, [Dot](dot.qmd) indexing is `⌷`: `x.[I]` is `[I]⌷x`.
 
@@ -64,6 +64,14 @@ With an axis, `⌷⍠K` applies the left argument's items to the axes `K`.
 
 ```bpl
 1⌷⍠1 (3 4⍴⍳12)      ⍝ 1 5 9
+```
+
+## Inverse
+
+`⌷⁻¹` is `⌷`. Index has no inverse.
+
+```bpl
+⌷⁻¹ 1 2   ⍝ 1 2
 ```
 
 ## Errors

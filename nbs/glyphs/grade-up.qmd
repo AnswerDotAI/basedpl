@@ -1,6 +1,6 @@
 # `⍋` — Grade up
 
-Keys: `Alt-Backslash 7`
+Keys: `Alt-Backslash 7`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `⍋Y` gives indices that sort major cells ascending. Stable; uses [structural ordering](../evaluation.qmd#equality-and-ordering), without tolerance. NaN sorts after every other number.
 
@@ -16,4 +16,12 @@ v←30 10 20 ⋄ [⍋v]⌷v ⍝ 10 20 30
 "cba"⍋"abc"        ⍝ [2 1 0]ₓ
 ```
 
-See [`⍒`](grade-down.qmd).
+See [`⍒`](grade-down.qmd), and [`<`](less.qmd) to sort.
+
+## Inverse
+
+`⍋⁻¹ P` gives an array whose grade is the permutation `P`. Any other `P` is a `DOMAIN` error. Grade-up-by has no inverse.
+
+```bpl
+⍋⁻¹ 2 0 1   ⍝ [1 2 0]ₓ
+```

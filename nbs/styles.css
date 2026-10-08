@@ -26,7 +26,7 @@ pre.bpl ~ .cell-output pre,
   font-size: calc(0.875em + 1pt);
 }
 
-:is(pre.bpl, .bpl code, pre.apl, pre.dyalog, pre.bqn) {
+:is(.bpl, pre.apl, pre.dyalog, pre.bqn) {
   --quarto-hl-op-color: #8B3FA0;
   --quarto-hl-ex-color: #127A6E;
   --quarto-hl-va-color: #8f5902;
@@ -116,13 +116,17 @@ pre.bqn::before { content: "BQN"; }
 .bpl-keyboard .key-name { font-size: 0.8rem; }
 
 #playground .playground-editor { display: flex; align-items: start; gap: 0.4rem; }
-#playground .playground-buttons { display: flex; flex-direction: column; gap: 0.3rem; }
+#playground .playground-buttons { display: flex; gap: 0.3rem; }
+#playground .playground-buttons button { line-height: 1; }
 #playground pre.sourceCode { margin-bottom: 0; }
 #playground .cell-output > pre > code { white-space: pre; }
 
-#playground textarea {
-  width: 100%;
+#playground #code {
+  flex: 1;
   min-width: 0;
+  box-sizing: content-box;
+  height: 1.5em;
+  border: 1px solid var(--bs-border-color);
   font-family: var(--bpl-font), monospace;
   font-size: calc(0.875em + 1pt);
   line-height: 1.1;

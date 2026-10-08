@@ -15,3 +15,11 @@ Keys: `Alt-1 o`
 ```
 
 Compare [After](after.qmd), which transforms only the right argument.
+
+## Inverse
+
+With an argument fixed, `X (f⍥g)⁻¹ Y` inverts `f` with `g X` fixed, then applies `g⁻¹`.
+
+```bpl
+1 (+⍥(2×))⁻¹ 8   ⍝ 3
+```

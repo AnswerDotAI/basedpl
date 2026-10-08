@@ -1,6 +1,6 @@
 # `⌽` — Reverse / Rotate last
 
-Keys: `Alt-|`
+Keys: `Alt-|`. Ranks: `1` monadic, `0 1` dyadic
 
 `⌽Y` reverses the last axis. `⌽⍠K` selects the axis.
 
@@ -17,3 +17,11 @@ Keys: `Alt-|`
 ```
 
 A count array supplies counts for the unrotated axes. See [`⊖`](reverse-first.qmd).
+
+## Inverse
+
+`⌽⁻¹` is `⌽`. `X ⌽⁻¹ Y` rotates `Y` back by `X`.
+
+```bpl
+1 ⌽⁻¹ 2 3 1   ⍝ 1 2 3
+```

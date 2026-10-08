@@ -1,6 +1,6 @@
 # `≠` — Unique mask / Not equal
 
-Keys: `Alt-Shift-=`
+Keys: `Alt-Shift-=`. Ranks: `∞` monadic, `0 0` dyadic
 
 `≠Y` marks first occurrences of major cells. Uses tolerant comparison and first matching representatives.
 
@@ -12,4 +12,12 @@ Keys: `Alt-Shift-=`
 
 ```bpl
 1 2 3≠2            ⍝ $t $f $t
+```
+
+## Inverse
+
+Unique-mask has no inverse. On Booleans, `≠` is its own inverse with either argument fixed.
+
+```bpl
+1 0 ≠⁻¹ 1 1   ⍝ $f $t
 ```

@@ -1,6 +1,6 @@
 # `⊆` — Nest / Partition
 
-Keys: `Alt-Minus z`
+Keys: `Alt-Minus z`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 `⊆Y` encloses atoms and simple arrays. Already-nested arrays stay unchanged.
 
@@ -20,4 +20,13 @@ Marks are nonnegative integers. Unit and singleton marks extend. `N⊆⍠K Y` pa
 
 ```bpl
 1 1 0 1 1⊆⍤1 ["abcde" ⋄ "fghij"] ⍝ ["ab" "de" ⋄ "fg" "ij"]
+```
+
+## Inverse
+
+`⊆⁻¹` discloses a unit and gives back any other array. `X ⊆⁻¹ Y` joins the parts `Y`. Partitioning the result by `X` must give `Y` again, so `X` can't hold a zero.
+
+```bpl
+⊆⁻¹ ⊂1 2              ⍝ 1 2
+1 1 2 ⊆⁻¹ (1 2 ⋄ 3)   ⍝ 1 2 3
 ```

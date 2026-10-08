@@ -1,6 +1,6 @@
 # `⊼` — NAND
 
-Keys: `Alt-Minus 0`
+Keys: `Alt-Minus 0`. Ranks: `0` monadic, `0 0` dyadic
 
 `⊼Y`: Y<sup>2</sup>. Pervasive.
 
@@ -12,4 +12,12 @@ Keys: `Alt-Minus 0`
 
 ```bpl
 0 0 1 1⊼0 1 0 1   ⍝ $t $t $t $f
+```
+
+## Inverse
+
+`⊼⁻¹` is `√`, the square root. Nand has no inverse.
+
+```bpl
+⊼⁻¹ 9   ⍝ 3
 ```

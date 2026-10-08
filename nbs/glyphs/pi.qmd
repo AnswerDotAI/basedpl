@@ -1,6 +1,6 @@
 # `π` — Pi
 
-Keys: `Alt-p`
+Keys: `Alt-p`. Ranks: `0` monadic, `0 0` dyadic
 
 `πY`: πY. Pervasive.
 
@@ -17,3 +17,13 @@ Keys: `Alt-p`
 ```
 
 Use [`○`](circle.qmd) to turn an angle into a unit-circle point.
+
+## Inverse
+
+`π⁻¹` divides by π. Pi-ratio is its own inverse with `X` fixed, so `X π⁻¹ Y` is `XπY`. With the right argument fixed, `(π↢X)⁻¹ Y` is `Y×X÷π1`.
+
+```bpl
+π⁻¹ π2      ⍝ 2
+2 π⁻¹ 4     ⍝ π0.5
+(π↢2)⁻¹ 4   ⍝ 8÷π1
+```

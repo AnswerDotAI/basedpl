@@ -1,6 +1,6 @@
 # `⨸` — Factor
 
-Keys: `Alt-o u`
+Keys: `Alt-o u`. Ranks: `0` monadic, `0 0` dyadic
 
 `⨸N`: sorted prime factors, with multiplicity. J's `q:` family. Positive integral input; exact integer results.
 

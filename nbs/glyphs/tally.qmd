@@ -1,6 +1,6 @@
 # `≢` — Tally / Not match
 
-Keys: `Alt-= /`
+Keys: `Alt-= /`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `≢Y` counts major cells: first-axis length, or 1 for a unit.
 
@@ -15,3 +15,7 @@ Keys: `Alt-= /`
 ```bpl
 1≢,1               ⍝ $t
 ```
+
+## Inverse
+
+Neither form has an inverse.

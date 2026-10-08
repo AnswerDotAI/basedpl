@@ -1,6 +1,6 @@
 # `↑` — First / Take
 
-Keys: `Alt-k`
+Keys: `Alt-k`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 `↑Y` returns the first major item, like `0⊃Y`. On an enclosure it returns the contained value. An empty leading axis gives a cell of fill.
 
@@ -22,4 +22,12 @@ Vector counts apply to successive leading axes. `N↑⍠K Y` applies the counts 
 
 ```bpl
 1 2↑2 3⍴⍳6         ⍝ 1 2⍴0 1
+```
+
+## Inverse
+
+`↑⁻¹` encloses, undoing first. Take has no inverse.
+
+```bpl
+↑⁻¹ 5   ⍝ ⊂5
 ```

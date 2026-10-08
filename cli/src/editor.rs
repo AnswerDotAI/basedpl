@@ -1,8 +1,11 @@
 //! Glyph completion and terminal input. Source execution never rewrites aliases.
-use basedpl::symbols::{chord, entry, find, in_code, layout, matches, symbols, Action};
+use basedpl::{
+    in_code,
+    symbols::{chord, entry, find, layout, matches, symbols, Action},
+};
 use rustyline::{
     completion::{Completer, Pair},
-    highlight::Highlighter,
+    highlight::{CmdKind, Highlighter},
     hint::{Hint, Hinter},
     history::DefaultHistory,
     validate::{ValidationContext, ValidationResult, Validator},
@@ -174,12 +177,36 @@ fn styled(entry: &str) -> String {
     format!("\x1b[1;36m{glyph}\x1b[0m {name}{}", key.map_or(String::new(), |key| format!(" \x1b[2m{key}\x1b[0m")))
 }
 
+/// The ANSI colour of each highlight class the REPL colours. Numbers, names, system names and syntax keep the terminal's colour.
+fn colour(class: &str) -> Option<&'static str> {
+    Some(match class {
+        "function" => "32",
+        "monadic-operator" => "35",
+        "dyadic-operator" => "33",
+        "argument" => "34",
+        "string" => "36",
+        "comment" => "2",
+        _ => return None,
+    })
+}
+
 impl Highlighter for Symbols {
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
         let Some(inner) = hint.strip_prefix("  [").and_then(|hint| hint.strip_suffix(']')) else { return hint.into() };
         format!("  [{}]", inner.split(", ").map(styled).collect::<Vec<_>>().join(", ")).into()
     }
     fn highlight_candidate<'c>(&self, candidate: &'c str, _: CompletionType) -> Cow<'c, str> { styled(candidate).into() }
+    // Every edit repaints the line, so it always shows its classes, including the final repaint when Enter submits it.
+    fn highlight<'l>(&self, line: &'l str, _: usize) -> Cow<'l, str> {
+        let (mut out, mut at) = (String::new(), 0);
+        for (range, colour) in basedpl::highlight(line).into_iter().filter_map(|(range, class)| Some((range, colour(class)?))) {
+            out.push_str(&format!("{}\x1b[{colour}m{}\x1b[0m", &line[at..range.start], &line[range.start..range.end]));
+            at = range.end;
+        }
+        out.push_str(&line[at..]);
+        out.into()
+    }
+    fn highlight_char(&self, _: &str, _: usize, _: CmdKind) -> bool { true }
 }
 impl Helper for Symbols {}
 

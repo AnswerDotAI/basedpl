@@ -237,6 +237,60 @@ where
     Number: From<E>,
 { let items: Vec<_> = items.map(|e| Value::Number(e.into())).collect(); Value::from_parts(vec![items.len()], items, float(0.)) }
 
+/// `kind •decompose⁻¹ factors` multiplies a record of factors from `•decompose` back into its matrix. Eigenvectors that aren't
+/// independent, such as a defective matrix's, can't determine the matrix. They raise a `DOMAIN` error.
+pub(crate) fn recompose(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    use faer::{linalg::solvers::DenseSolveCore, Mat};
+    use num_complex::Complex64;
+    let kind = crate::data::text(left.expect("•decompose⁻¹ is dyadic"), span)?.to_lowercase();
+    let factor = |name: &str, rank: usize| -> Result<Mat<Complex64>, Error> {
+        let f = crate::keyed::field(right, name).ok_or_else(|| span.domain_error(format!("{kind} factors need {name}")))?;
+        let (rows, columns) = match (f.shape(), rank) {
+            (&[m, n], 2) => (m, n),
+            (&[m], 1) => (m, 1),
+            _ => return Err(span.error(ErrorKind::Rank, format!("{name} must have rank {rank}"))),
+        };
+        let z = matrix_numbers(&f, None, columns, span)?.iter().map(|x| x.to_complex().domain_at(span)).collect::<Result<Vec<_>, _>>()?;
+        Ok(Mat::from_fn(rows, columns, |i, j| z[i * columns + j]))
+    };
+    // `a` with each column multiplied by the item of `d` at the same position.
+    let scaled = |a: &Mat<Complex64>, d: &Mat<Complex64>| Mat::from_fn(a.nrows(), a.ncols(), |i, j| a[(i, j)] * d[(j, 0)]);
+    let disagree = || span.error(ErrorKind::Length, format!("{kind} factors have sizes that don't agree"));
+    let m = match kind.as_str() {
+        "svd" => {
+            let (u, s, v) = (factor("u", 2)?, factor("s", 1)?, factor("v", 2)?);
+            if u.ncols() != s.nrows() || v.ncols() != s.nrows() { return Err(disagree()); }
+            scaled(&u, &s) * v.adjoint()
+        }
+        "qr" => {
+            let (q, r) = (factor("q", 2)?, factor("r", 2)?);
+            if q.ncols() != r.nrows() { return Err(disagree()); }
+            q * r
+        }
+        "cholesky" => {
+            let l = factor("l", 2)?;
+            if l.nrows() != l.ncols() { return Err(disagree()); }
+            &l * l.adjoint()
+        }
+        "eigen" => {
+            let (values, vectors) = (factor("values", 1)?, factor("vectors", 2)?);
+            let n = values.nrows();
+            if vectors.nrows() != n || vectors.ncols() != n { return Err(disagree()); }
+            // The normalised eigenvectors' smallest singular value, against their largest, measures how independent they are.
+            // Below √ε, the rebuilt matrix loses about half its digits. A defective matrix's eigenvectors give about ε.
+            let dependent = || span.domain_error("eigenvectors that aren't independent can't give back the matrix");
+            let norms: Vec<f64> = (0..n).map(|j| vectors.col(j).norm_l2()).collect();
+            if norms.iter().any(|&x| !(x > 0.0)) { return Err(dependent()); }
+            let unit = Mat::from_fn(n, n, |i, j| vectors[(i, j)] / norms[j]);
+            let s = unit.singular_values().map_err(|_| dependent())?;
+            if !(s[n - 1] >= f64::EPSILON.sqrt() * s[0]) { return Err(dependent()); }
+            scaled(&vectors, &values) * vectors.partial_piv_lu().inverse()
+        }
+        _ => return Err(span.domain_error("•decompose⁻¹ takes \"svd\", \"qr\", \"eigen\" or \"cholesky\"")),
+    };
+    matrix(m.as_ref()).error_at(span, "invalid matrix")
+}
+
 // Normal equations are exact here; the approximate path never forms AᵀA.
 fn exact_solve(a: &[Number], b: Option<&[Number]>, m: usize, n: usize, k: usize, span: &Context<'_>) -> Result<Vec<Number>, Error> {
     use num_rational::BigRational;

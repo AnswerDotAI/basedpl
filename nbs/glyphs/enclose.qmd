@@ -1,6 +1,6 @@
 # `⊂` — Enclose / Partitioned enclose
 
-Keys: `Alt-z`
+Keys: `Alt-z`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 `⊂Y` is a scalar holding `Y`.
 
@@ -33,3 +33,12 @@ A mark greater than 1 starts extra empty partitions. Unit marks extend. `N⊂⍠
 ```
 
 See also [`⊆`](nest.qmd).
+
+## Inverse
+
+`⊂⁻¹` is `↑`, first. `X ⊂⁻¹ Y` joins the parts `Y`. Partitioning the result by `X` must give `Y` again, so `X` can't drop leading items.
+
+```bpl
+⊂⁻¹ ⊂1 2              ⍝ 1 2
+1 0 1 ⊂⁻¹ (1 2 ⋄ 3)   ⍝ 1 2 3
+```

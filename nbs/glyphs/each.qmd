@@ -21,3 +21,11 @@ On empty arguments, Each calls `f` once using prototypes. Prototype mode permits
 ```
 
 Other errors and explicit output remain observable in that call.
+
+## Inverse
+
+`f¨⁻¹` is `f⁻¹¨`.
+
+```bpl
+(2×)¨⁻¹ [2 4;6]   ⍝ [1 2;3]
+```

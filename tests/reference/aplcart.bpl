@@ -236,11 +236,11 @@ mat ← 3 4⍴⍳12 ⋄ [⍴ mat;⍴⍴ mat;⍴ "your boat";⍴ 7;⍴⍴ 7]
 * 0 1 2   ⍝ 1 2.718281828459045 7.38905609893065
 
 ⍝ aplcart/table.tsv:75 — M raised to the power N
-49 5 ¯4 * 0.5 2 0.5   ⍝ 6.999999999999999 25 0j2
+49 5 ¯4 * 0.5 2 0.5   ⍝ 7 25 0j2
 
 ⍝ aplcart/table.tsv:76 — Natural logarithm of N
 ⍟ 1 2 3 2.7182818285
-0 0.6931471805599453 1.09861228866811 1.000000000015066
+0 0.6931471805599453 1.09861228866811 1.0000000000151
 
 ⍝ aplcart/table.tsv:77 — Base-M logarithm of N
 2 10 ⍟ 32 1000   ⍝ 5 3
@@ -250,7 +250,7 @@ mat ← 3 4⍴⍳12 ⋄ [⍴ mat;⍴⍴ mat;⍴ "your boat";⍴ 7;⍴⍴ 7]
 
 ⍝ aplcart/table.tsv:79 — Circular functions
 [1 ○ 0 1.5707963 3.1415927;2 ○ 0 1.5707963 3.1415927;3 ○ 0 1.5707963 3.1415927]
-[0 0.9999999999999997 ¯4.641020666628482e¯08;1 2.679489658502863e¯08 ¯0.9999999999999989;0 37320539.63435482 4.641020666628487e¯08]
+[0 1 ¯4.641020666628482e¯08;1 2.679489658502863e¯08 ¯1;0 37320539.63435482 4.641020666628487e¯08]
 
 ⍝ aplcart/table.tsv:80 — Logical inverse (NOT): 0=B
 ~ 0 1 0 1   ⍝ $t $f $t $f
@@ -794,7 +794,7 @@ Y←3 1 3 2 ⋄ ¯1↣⌽Y   ⍝ 2 3 1 3
 
 ⍝ aplcart/table.tsv:541 — Fractional part of number; dfns display import/wrappers omitted to test underlying arrays
 [1↣| 0.55 1.23 8.76 0;1↣| [3.3 ¯3.3;100.2 200.1;¯5.3 ¯6];1↣| 1.1×1+3 3⍴⍳9]
-[0.55 0.23 0.7599999999999998 0;[0.2999999999999998 0.7000000000000002;0.2000000000000028 0.09999999999999432;0.7000000000000002 0];[0.1000000000000001 0.2000000000000002 0.3000000000000003 ⋄ 0.4000000000000004 0.5 0.6000000000000005 ⋄ 0.7000000000000011 0.8000000000000007 0.9000000000000004]]
+[0.55 0.23 0.76 0;[0.3 0.7;0.2 0.1;0.7 0];[0.1 0.2 0.3 ⋄ 0.4 0.5 0.6 ⋄ 0.7 0.8 0.9]]
 
 ⍝ aplcart/table.tsv:542 — Last part (last three digits) of packed numeric code with digits ABBB
 J←1234 5099 ⋄ 1000↣|J   ⍝ 234 99
@@ -842,7 +842,7 @@ J←¯128 ¯1 0 127 ⋄ 256↣|J   ⍝ 128 255 0 127
 
 ⍝ aplcart/table.tsv:555 — Common logarithm
 [10↣⍟ 1 10 100 1000 10000 1e5 1e6;10↣⍟ 132 15454 17501 199999]
-[0 1 2 3 4 5 5.999999999999999;2.12057393120585 4.18904090790901 4.243062864804807 5.301027824186143]
+[0 1 2 3 4 5 6;2.12057393120585 4.18904090790901 4.243062864804807 5.301027824186143]
 
 ⍝ aplcart/table.tsv:556 — cos ↔ sin: (1-N*2)*.5 (more precise cos arcsin N or sin arccos N)
 N←0.25 0.5 0.75 ⋄ 0↣○N
@@ -2071,7 +2071,7 @@ N←4 9 16 ⋄ ÷6↣○ N
 
 ⍝ aplcart/table.tsv:902 — Hyperbolic cotangent; optional {X} instantiated as dyadic use
 N←4 9 16 ⋄ ÷7↣○ N
-1.0006711504016825 1.0000000304599599 1.0000000000000253
+1.0006711504016825 1.00000003046 1
 
 ⍝ aplcart/table.tsv:903 — Area of circle with radius N; optional {X} instantiated as dyadic use
 N←4 9 16 ⋄ π*↢2 N
@@ -2899,7 +2899,7 @@ Y←3 1 3 2 ⋄ ⍳⍨∪↣⍳ Y   ⍝ [0 1 0 3]ₓ
 
 ⍝ aplcart/table.tsv:1137 — Main branch of the Lambert W function (N≥-*¯1)
 (×↢*⍨⁻¹) [0 1 (*1) (*1+*1) (2÷⍨*÷2)]
-0 0.567143290409784 1 2.718281828459045 0.4999999999999999
+0 0.567143290409784 1 2.718281828459045 0.5
 
 ⍝ aplcart/table.tsv:1138 — Is-smallest (default: the smallest) major cell of Y
 names ← "Bob" "Dan" "Cal" "Abe"
@@ -3029,7 +3029,7 @@ M ×↢×⍨↢| N   ⍝ ¯2 0 4
 (⊢÷⌈⌿∘|) 3 4   ⍝ 0.75 1
 
 ⍝ aplcart/table.tsv:1175 — Geometric mean
-N←1 4 16 ⋄ ×⌿*↢÷≢ N   ⍝ 3.9999999999999996
+N←1 4 16 ⋄ ×⌿*↢÷≢ N   ⍝ 4
 
 ⍝ aplcart/table.tsv:1176 — Row-wise percentage per row
 N←[1 2 3 ⋄ 4 5 6] ⋄ 100×(⊢÷⍤1 0+/) N
@@ -3220,7 +3220,7 @@ Mv←0 1 2 3
 Nv←1 3 5 7
 Mv ⊢⌹(1,↢⍪⊣) Nv
 ⍝ =>
-0.9999999999999991 2.0000000000000004
+1 2
 
 ⍝ aplcart/table.tsv:1223 — Is D entirely ASCII-only
 D←"Abc 19 Σς!"  ⋄ ∧/127≥•ucs∘∊ D   ⍝ $f
@@ -3813,7 +3813,7 @@ D←"Abc 19 Σς!"  ⋄ ¯1↣•c↣≠-1↣•c↣≠ D   ⍝ [1 ¯1 ¯1 0 0 0
 D←"Abc 19 Σς!"  ⋄ ¯1↣•c↣≠∧1↣•c↣≠ D   ⍝ $f $f $f $f $f $f $f $f $f $f
 
 ⍝ aplcart/table.tsv:1391 — Mean squared error
-1 2 3 (+⌿÷≢)2*⍨- 0.9 2.1 3.1   ⍝ 0.01000000000000001
+1 2 3 (+⌿÷≢)2*⍨- 0.9 2.1 3.1   ⍝ 0.01
 
 ⍝ aplcart/table.tsv:1392 — Expansion mask (left argument for ⍀) for fields of length Jv to uniform field of length |Is
 Is←4
@@ -3969,7 +3969,7 @@ Mv←0 1 2 3
 Nv←2 6 18 54
 Mv *@0(⊢↢⍟⌹1,↢⍪⊣) Nv
 ⍝ =>
-1.9999999999999991 1.0986122886681098
+2 1.0986122886681098
 
 ⍝ aplcart/table.tsv:1433 — Enlist (∊Y) but keep leaf simple arrays intact
 {,/,¨⊆¨⍵}⍣≡ [["aaa" "bbb"] [["ccc" "ccc" "ccc"] "ddd"] (⊂"eee")]
@@ -4142,7 +4142,7 @@ Mv←0 1 2 3
 Nv←1 3 5 7
 Mv ⊢(⊢+.×⌹)(1,↢⍪⊣) Nv
 ⍝ =>
-0.9999999999999991 2.9999999999999996 5 7.000000000000001
+1 3 5 7
 
 ⍝ aplcart/table.tsv:1480 — Conway's Game of Life: next generation
 Bm←[0 0 0 0 0 ⋄ 0 0 1 0 0 ⋄ 0 0 1 0 0 ⋄ 0 0 1 0 0 ⋄ 0 0 0 0 0]
@@ -4157,7 +4157,7 @@ Iv ↓↑⍨⍴∘⊢×(×∘⊣+0=⊣) Y   ⍝ [0 3 4 ⋄ 0 0 0]
 
 ⍝ aplcart/table.tsv:1483 — Compound interest for principals N[1] at rates N[2] in times N[3]
 N←[[100 200] [0.05 0.1] [1 2 3]] ⋄ ↑×⊗(2↣⊃*⊗⍨(1+1↣⊃)) N
-[[105 110.25 115.76250000000002 ⋄ 110.00000000000001 121.00000000000001 133.10000000000005] ⋄ [210 220.5 231.52500000000003 ⋄ 220.00000000000003 242.00000000000003 266.2000000000001]]
+[[105 110.25 115.7625 ⋄ 110 121 133.1] ⋄ [210 220.5 231.525 ⋄ 220 242 266.2]]
 
 ⍝ aplcart/table.tsv:1484 — Area of triangle with side lengths N
 N←3 4 5 ⋄ 0.5↣ ⊣*⍨(+.××.-0,⊢) N   ⍝ 6
@@ -4289,7 +4289,7 @@ Mv←0 1 2 3
 Nv←2 6 18 54
 Mv *⊢↢⍟(⊢+.×⌹)(1,↢⍪⊣) Nv
 ⍝ =>
-1.9999999999999991 5.999999999999997 17.999999999999996 53.999999999999986
+2 6 18 54
 
 ⍝ aplcart/table.tsv:1518 — Distribution of Y into intervals with cut-offs X
 X←2 4
@@ -4403,7 +4403,7 @@ Mv←1 2 3
 Nv←1 1 0
 Mv(⊢×+.×)↢ ⊢÷2*↢÷⍨+.×⍨ Nv
 ⍝ =>
-1.4999999999999998 1.4999999999999998 0
+1.5 1.5 0
 
 ⍝ aplcart/table.tsv:1550 — Arithmetic-geometric mean
 Nv←1 4 ⋄ ↑((+⌿÷≢),×⌿*↢÷≢)⍣≡ Nv   ⍝ 2.2430285802876027
@@ -4755,7 +4755,7 @@ ss "Banana" "an" "AN"   ⍝ "BANANa"
 [gauss_jordan]←•load "lib/numeric.bpl"
 gauss_jordan [2 1 0 ⋄ 1 2 1 ⋄ 0 1 2]
 ⍝ =>
-[0.75 ¯0.4999999999999999 0.2499999999999999 ⋄ ¯0.4999999999999999 0.9999999999999999 ¯0.4999999999999999 ⋄ 0.25 ¯0.4999999999999999 0.7499999999999999]
+[0.75 ¯0.5 0.25 ⋄ ¯0.5 1 ¯0.5 ⋄ 0.25 ¯0.5 0.75]
 
 ⍝ aplcart/table.tsv:1708 — Nested vector to lines; Concrete APLcart library call; setup from april/libraries/dfns/string/demo.lisp:209
 [vtol]←•load "lib/string.bpl"
@@ -6386,7 +6386,7 @@ Is f{⍶⍣⍺ ⍵} Y   ⍝ 4 5 6
 
 ⍝ aplcart/table.tsv:2222 — Inverse of real-valued function; Concrete APLcart library call; setup from april/libraries/dfns/power/demo.lisp:19
 [invr]←•load "lib/power.bpl"
-{⍵²}invr 49   ⍝ 7.000000000000002
+{⍵²}invr 49   ⍝ 7
 
 ⍝ aplcart/table.tsv:2224 — The number of elements where X f Y (f returns Boolean result)
 X←1 2 3 4
@@ -7151,7 +7151,7 @@ x←42 ⋄ ⎕←x   ⍝ 42
 {"INDEX"::3 ⋄ 4⊃1 2 3}0   ⍝ 3
 
 ⍝ aplcart/table.tsv:2631 — Array rank invalid for function/operator, or ranks of arguments do not conform; Concrete executable example for the APLcart error-guard catalogue; trigger the named language error and return from its handler
-{"RANK"::4 ⋄ ⍳2 2⍴3}0   ⍝ 4
+{"RANK"::4 ⋄ (2 2⍴3)⍴1}0   ⍝ 4
 
 ⍝ aplcart/table.tsv:2632 — The shape of the arguments of a function do not conform, but the ranks do conform; Concrete executable example for the APLcart error-guard catalogue; trigger the named language error and return from its handler
 {"LENGTH"::5 ⋄ 1 2+1 2 3}0   ⍝ 5
@@ -7748,7 +7748,7 @@ N←4 2⍴⍳8 ⋄ -⌿N   ⍝ ¯4 ¯4
 N←¯1 0 1 2 ⋄ 10↣*N   ⍝ 0.1 1 10 100
 
 ⍝ aplcart/tt.tsv:258 — Common logarithm
-N←0.1 1 10 100 ⋄ 10↣⍟N   ⍝ ¯0.9999999999999998 0 1 2
+N←0.1 1 10 100 ⋄ 10↣⍟N   ⍝ ¯1 0 1 2
 
 ⍝ aplcart/tt.tsv:260 — Comparing vector Yv with rows of array X
 X←[1 2 ⋄ 3 4 ⋄ 1 2]

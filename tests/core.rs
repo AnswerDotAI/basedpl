@@ -378,6 +378,18 @@ fn structural_completeness_and_source_lifetime() {
 }
 
 #[test]
+fn highlight_classes_and_code_context() {
+    let classes = |text: &'static str| basedpl::highlight(text).into_iter().map(|(range, class)| (&text[range], class)).collect::<Vec<_>>();
+    let expected = [("⍵", "argument"), ("∘", "dyadic-operator"), ("+", "function"), ("¨", "monadic-operator"), ("\"a+b\"", "string"), ("⍝ c+d", "comment")];
+    assert_eq!(classes("⍵∘+¨\"a+b\" ⍝ c+d"), expected);
+    // An unclosed string, as while typing, runs to the end of the text.
+    assert_eq!(classes("x←1+\"a+"), [("←", "syntax"), ("1", "literal"), ("+", "function"), ("\"a+", "string")]);
+    // The end of the text is in code unless it is inside a comment or an unclosed literal.
+    assert!(basedpl::in_code("\"a\"+") && basedpl::in_code("1 ⍝ c\n"));
+    assert!(!basedpl::in_code("1+\"a") && !basedpl::in_code("1 ⍝ c") && !basedpl::in_code("'"));
+}
+
+#[test]
 fn based_values() {
     let n = number(3.0);
     let unit = n.enclose().unwrap();
@@ -411,6 +423,35 @@ fn array_invariants() {
     assert_same(text.prototype(), &Character(' '));
     let normalized = AplValue::new(vec![1], vec![seven]).unwrap();
     assert_same(normalized, &singleton);
+}
+
+#[test]
+fn declared_ranks_match_rank() {
+    // Wherever a primitive form succeeds, it gives what Rank gives at the form's declared ranks. A form may also reject arguments that
+    // Rank would extend over. No argument is empty, because Rank calls a function on a prototype cell when the frame is empty. `¿` is left
+    // out, because it's random. The dfn stops Rank calling the primitive on the whole argument.
+    use basedpl::symbols::symbols;
+    let mut s = Session::new();
+    s.eval(r#"n←2 ⋄ v←1 2 3 ⋄ w←3 1 2 ⋄ u←1 0 1 ⋄ m←2 3⍴⍳6 ⋄ q←3 3⍴2 7 6 9 5 1 4 3 8 ⋄ t←2 2 3⍴⍳12 ⋄ c←"abc" ⋄ k←2 3⍴"abcdef" ⋄ e←[1 2;3 4 5]"#);
+    let args = ["n", "v", "w", "u", "m", "q", "t", "c", "k", "e"];
+    let mut differ = Vec::new();
+    let mut compare = |direct: String, ranked: String| {
+        if s.eval(&direct).error.is_some() { return; }
+        let same = s.eval(&format!("({direct})≡({ranked})")).value.and_then(|v| v.as_number()).and_then(|n| n.as_bool());
+        if same != Some(true) { differ.push(direct); }
+    };
+    for symbol in symbols().iter().filter(|s| s.kind == "function" && s.glyph != "¿") {
+        let f = symbol.glyph;
+        if !["", "∞"].contains(&symbol.monad_rank.as_str()) {
+            for y in args { compare(format!("{f} {y}"), format!("{{{f} ⍵}}⍤({}) {y}", symbol.monad_rank)); }
+        }
+        if !["", "∞ ∞"].contains(&symbol.dyad_ranks.as_str()) {
+            for x in args {
+                for y in args { compare(format!("{x} {f} {y}"), format!("{x} {{⍺ {f} ⍵}}⍤({}) {y}", symbol.dyad_ranks)); }
+            }
+        }
+    }
+    assert!(differ.is_empty(), "these differ from Rank at their declared ranks: {differ:?}");
 }
 
 #[test]

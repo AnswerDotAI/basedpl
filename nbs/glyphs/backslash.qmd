@@ -30,6 +30,14 @@ An empty scan, or an unseeded scan of one item, doesn't call `f`. [Axis](axis.qm
 
 APL difference: every scan left-accumulates, including dfns.
 
+## Inverse
+
+`f\⁻¹` undoes a scan when `f` has an inverse.
+
+```bpl
++\⁻¹ 1 3 6   ⍝ 1 2 3
+```
+
 ## Errors
 
 - `DOMAIN`: a subject operand. Expand with [`#⁻¹`](hash.qmd#expand)

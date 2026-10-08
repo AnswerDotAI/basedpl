@@ -1,4 +1,20 @@
-# `#` — Replicate
+# `#` — Runs / Replicate
+
+Ranks: `∞` monadic, `1 ∞` dyadic
+
+`#Y` gives the runs of adjacent matching major cells of `Y`: the length of each run, as exact integers, and the cell that repeats. It matches cells as [`∪`](union.qmd) does. `#/` rebuilds `Y`, because `N#Y` repeats each cell by its count. `#⁻¹` decodes too, so [Under](under.qmd) can change the runs. Here it doubles each length:
+
+```bpl
+#"aaabcc"               ⍝ [[3 1 2]ₓ "abc"]
+#/#"aaabcc"             ⍝ "aaabcc"
+{2×⍵}⌾(0⊃)⌾# "aab"     ⍝ "aaaabb"
+```
+
+A unit gives the rank-0 length 1 and the unit itself. When `Y`'s leading axis has keys, a third item holds the key of every position, and `#⁻¹` attaches them again. `#/` doesn't use that item.
+
+```bpl
+#["x":1 "y":1 "z":2]    ⍝ (2ₓ 1ₓ ⋄ 1 2 ⋄ "x" "y" "z")
+```
 
 `N#Y` repeats each major cell of `Y` by its count in `N`. Boolean counts filter.
 
@@ -54,7 +70,6 @@ APL difference: `#` replaces `/`, `⌿`, `\` and `⍀`. Dyalog's expand with cou
 
 ## Errors
 
-- `SYNTAX`: no counts
 - `RANK`: counts of rank 2 or more
 - `LENGTH`: counts that don't match the cells, or an inverse that doesn't use every cell
 - `DOMAIN`: counts that aren't integers, or one inverse count that doesn't divide the number of cells

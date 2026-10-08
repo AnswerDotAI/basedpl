@@ -1,5 +1,7 @@
 # `+` — Conjugate / Add
 
+Ranks: `0` monadic, `0 0` dyadic
+
 `+Y` conjugates. Pervasive.
 
 ```bpl
@@ -17,4 +19,12 @@ Character offsets are integral Unicode code-point offsets.
 
 ```bpl
 'a'+3             ⍝ 'd'
+```
+
+## Inverse
+
+`+⁻¹` is `+`, because conjugating twice gives back the number. With either argument fixed, `+⁻¹` subtracts the fixed argument.
+
+```bpl
+3 +⁻¹ 10   ⍝ 7
 ```

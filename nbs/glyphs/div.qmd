@@ -1,6 +1,6 @@
 # `÷` — Reciprocal / Divide
 
-Keys: `Alt-u`
+Keys: `Alt-u`. Ranks: `0` monadic, `0 0` dyadic
 
 `÷Y`: 1/Y. Pervasive.
 
@@ -14,6 +14,15 @@ Keys: `Alt-u`
 1ₓ÷3ₓ             ⍝ 1r3
 ¯1÷0              ⍝ ¯∞
 0÷0               ⍝ $n
+```
+
+## Inverse
+
+`÷⁻¹` is `÷`. `X ÷⁻¹ Y` is `X÷Y`. With the right argument fixed, `(÷↢X)⁻¹ Y` is `Y×X`.
+
+```bpl
+12 ÷⁻¹ 4    ⍝ 3
+(÷↢4)⁻¹ 3   ⍝ 12
 ```
 
 ## Errors

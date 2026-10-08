@@ -516,7 +516,7 @@ fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &m
     Ok(Bound::from(result.error_at(cx.span, "invalid inner product result")?))
 }
 
-fn rank(operand: &Function, ranks: &Value, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+pub(super) fn rank(operand: &Function, ranks: &Value, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     if ranks.shape().len() > 1 { return Err(cx.span.error(ErrorKind::Rank, "rank operand must be a unit or vector")); }
     if !(1..=3).contains(&ranks.len()) { return Err(cx.span.error(ErrorKind::Length, "rank operand needs one to three items")); }
     let ranks = ranks

@@ -1,5 +1,7 @@
 # `=` — Equal
 
+Ranks: `∞` monadic, `0 0` dyadic
+
 `=Y` self-classifies the major cells of `Y`. The result has a row for each distinct cell, in order of first occurrence, and a column for each cell of `Y`. An entry is `$t` where its column's cell equals its row's cell.
 
 ```bpl
@@ -15,3 +17,11 @@
 ```
 
 See [tolerance](../evaluation.qmd#equality-and-ordering) and whole-array [match `≡`](match.qmd).
+
+## Inverse
+
+Classify has no inverse. On Booleans, `=` is its own inverse with either argument fixed.
+
+```bpl
+1 0 =⁻¹ 1 1   ⍝ $t $f
+```

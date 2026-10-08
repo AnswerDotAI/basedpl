@@ -1,6 +1,6 @@
 # `⊢` — Right
 
-Keys: `Alt-'`
+Keys: `Alt-'`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `⊢Y` and `X⊢Y` return `Y`.
 
@@ -10,3 +10,11 @@ Keys: `Alt-'`
 ```
 
 Both arguments evaluate.
+
+## Inverse
+
+`⊢⁻¹` is `⊢`. `X ⊢⁻¹ Y` is `Y`.
+
+```bpl
+3 ⊢⁻¹ 5   ⍝ 5
+```

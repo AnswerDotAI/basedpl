@@ -1,6 +1,13 @@
-# `↕` — Windows
+# `↕` — Pairs / Windows
 
-Keys: `Alt-k j`
+Keys: `Alt-k j`. Ranks: `∞` monadic, `∞ ∞` dyadic
+
+`↕Y` gives the adjacent pairs of major cells, as `2↕Y` does. `-/⍠1` then subtracts within each pair.
+
+```bpl
+↕1 4 9 16            ⍝ [1 4 ⋄ 4 9 ⋄ 9 16]
+-/⍠1 ↕1 4 9 16       ⍝ ¯3 ¯5 ¯7
+```
 
 `S↕Y`: windows of sizes `S` on leading axes. Trailing axes stay inside each window.
 
@@ -35,6 +42,15 @@ A negative size pads its axis. Each window is centred on a position, as in [Sten
 ```
 
 An axis of length `n` has `0⌈1+⌊M÷⍨n-S` full windows, or `⌈M÷⍨n-0=2|S` padded windows. Movements default to 1.
+
+## Inverse
+
+`↕⁻¹` rebuilds an array from its pairs. `N ↕⁻¹ Y` rebuilds it from its windows of size `N`.
+
+```bpl
+↕⁻¹ ↕1 4 9        ⍝ 1 4 9
+3 ↕⁻¹ 3↕"abcde"   ⍝ "abcde"
+```
 
 ## Errors
 

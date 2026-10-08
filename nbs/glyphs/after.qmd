@@ -23,3 +23,12 @@ y←3 ⋄ -↢10 y       ⍝ ¯7
 ```
 
 See [Before](before.qmd), [Atop / Rank](rank.qmd) and [Over](over.qmd).
+
+## Inverse
+
+With an array operand, `(f↢X)⁻¹ Y` inverts `f` with `X` fixed on the right. With two functions, `X (f↢g)⁻¹ Y` inverts `f` with `X` fixed, then applies `g⁻¹`. The hook `(×↢*)⁻¹` gives the Lambert W function.
+
+```bpl
+(-↢3)⁻¹ 7   ⍝ 10
+(×↢*)⁻¹ 1   ⍝ 0.567143290409784
+```

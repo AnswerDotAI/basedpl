@@ -60,6 +60,14 @@ n←{0.5×⍵+2÷⍵} ⋄ ≢n⍣[≡]1   ⍝ 7ₓ
 
 See [Inverse pair](inverse-pair.qmd).
 
+## Inverse
+
+`(f⍣n)⁻¹` is `f⍣(-n)`.
+
+```bpl
+((2×)⍣3)⁻¹ 16   ⍝ 2
+```
+
 ## Errors
 
 - `DOMAIN`: a count that is neither an integer nor infinite, non-Boolean predicate, unknown inverse

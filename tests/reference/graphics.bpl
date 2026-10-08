@@ -18,6 +18,13 @@ leaf←•element "x:leaf"
 •xml⁻¹ ["points":[¯2ₓ 1r2 1E3]] (•element "path") ⍬
 "<path points=""-2 0.5 1000""/>"
 
+⍝ xml-roundtrip — Writing what •xml read gives back the same text
+•xml⁻¹ •xml "<a href=""x"">hi</a>"   ⍝ "<a href=""x"">hi</a>"
+
+⍝ xml-names — A vector of names gives a vector of element functions
+[text circle]←•element ["text" "circle"]
+•nc "text" "circle"   ⍝ [3 3]ₓ
+
 ⍝ svg-tree — SVG renders its current tree
 c←•element "circle"
 pic←•svg ["cx":50 "cy":50 "r":20] c ⍬

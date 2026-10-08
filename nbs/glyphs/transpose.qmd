@@ -1,6 +1,6 @@
 # `⍉` — Transpose
 
-Keys: `Alt-o Backslash`
+Keys: `Alt-o Backslash`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 `⍉Y` reverses axis order.
 
@@ -18,4 +18,12 @@ Repeated labels select diagonals, taking the smallest participating dimension.
 
 ```bpl
 0 0⍉3 3⍴⍳9         ⍝ 0 4 8
+```
+
+## Inverse
+
+`⍉⁻¹` is `⍉`. `X ⍉⁻¹ Y` puts the axes of `Y` back in their order before `X⍉`.
+
+```bpl
+2 0 1 ⍉⁻¹ 2 0 1⍉2 3 4⍴⍳24   ⍝ 2 3 4⍴⍳24
 ```

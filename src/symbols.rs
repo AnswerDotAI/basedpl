@@ -1,5 +1,5 @@
-//! Every glyph's kind and names, shared by completion, help and Python.
-use crate::primitive::{OperatorKind, Primitive};
+//! Every glyph's kind, names and ranks, shared by completion, help and Python.
+use crate::primitive::{OperatorKind, Primitive, Rank, WHOLE};
 use foldhash::HashMap;
 use std::sync::OnceLock;
 
@@ -12,6 +12,10 @@ pub struct Symbol {
     pub kind: &'static str,
     pub monad: &'static str,
     pub dyad: &'static str,
+    /// The monadic form's natural rank, and the dyadic form's left and right ranks, as BPL text such as `1` or `1 ∞`. `∞` is the whole
+    /// argument. Each is empty when the glyph has no such form.
+    pub monad_rank: String,
+    pub dyad_ranks: String,
     pub aliases: &'static str,
 }
 
@@ -39,17 +43,19 @@ const SYNTAX: &[(&str, &str, &str, &str)] = &[
 pub fn symbols() -> &'static [Symbol] {
     static SYMBOLS: OnceLock<Vec<Symbol>> = OnceLock::new();
     SYMBOLS.get_or_init(|| {
-        let syntax = SYNTAX.iter().map(|&(glyph, name, kind, aliases)| Symbol { glyph, name, kind, monad: "", dyad: "", aliases });
+        let syntax = SYNTAX.iter().map(|&(glyph, name, kind, aliases)| Symbol { glyph, name, kind, monad: "", dyad: "", monad_rank: String::new(), dyad_ranks: String::new(), aliases });
         let primitives = Primitive::all().map(|p| {
             let info = p.info();
             let (monad, dyad) = (info.monad.map_or("", |m| m.name), info.dyad.map_or("", |d| d.name));
-            Symbol { glyph: info.glyph, name: info.name, kind: "function", monad, dyad, aliases: info.aliases }
+            let rank = |r: Rank| if r == WHOLE { "∞".to_string() } else { r.to_string() };
+            let (monad_rank, dyad_ranks) = (info.monad.map_or(String::new(), |m| rank(m.rank)), info.dyad.map_or(String::new(), |d| d.ranks.map(rank).join(" ")));
+            Symbol { glyph: info.glyph, name: info.name, kind: "function", monad, dyad, monad_rank, dyad_ranks, aliases: info.aliases }
         });
         let operators = OperatorKind::all().map(|op| {
             let info = op.info();
             let (name, aliases) = info.names;
             let kind = if info.dyadic() { "dyadic-operator" } else { "monadic-operator" };
-            Symbol { glyph: info.glyph, name, kind, monad: "", dyad: "", aliases }
+            Symbol { glyph: info.glyph, name, kind, monad: "", dyad: "", monad_rank: String::new(), dyad_ranks: String::new(), aliases }
         });
         syntax.chain(primitives).chain(operators).collect()
     })
@@ -124,7 +130,10 @@ pub fn chord(glyph: &str) -> String {
 /// Every glyph's row, as `basedpl.symbols` and the browser's language bar read it: the fields of `Symbol`, and `shortcut`, the
 /// glyph's `chord`.
 pub fn rows() -> serde_json::Value {
-    let row = |s: &Symbol| serde_json::json!({"glyph": s.glyph, "name": s.name, "kind": s.kind, "monad": s.monad, "dyad": s.dyad, "aliases": s.aliases, "shortcut": chord(s.glyph)});
+    let row = |s: &Symbol| {
+        serde_json::json!({"glyph": s.glyph, "name": s.name, "kind": s.kind, "monad": s.monad, "dyad": s.dyad, "monad_rank": s.monad_rank,
+            "dyad_ranks": s.dyad_ranks, "aliases": s.aliases, "shortcut": chord(s.glyph)})
+    };
     symbols().iter().map(row).collect()
 }
 
@@ -169,27 +178,8 @@ pub fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
     match shortest { Some(shortest) if found.len() > 1 => vec![shortest], _ => found }
 }
 
-// Strings and comments are literal even before their language implementation is complete.
-pub fn in_code(text: &str) -> bool {
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        let closed = match c {
-            '⍝' => chars.by_ref().any(|c| c == '\n'),
-            '"' => chars.by_ref().any(|c| c == '"'),
-            '\'' => match chars.next() {
-                Some('\'') if chars.peek() != Some(&'\'') => true,
-                Some(_) => chars.next().is_some(),
-                None => false,
-            },
-            _ => true,
-        };
-        if !closed { return false; }
-    }
-    true
-}
-
 pub fn entry(line: &str, pos: usize) -> Option<(usize, &str)> {
     let start = line[..pos].rfind('`')?;
     let prefix = &line[start + 1..pos];
-    (prefix.bytes().all(|c| c.is_ascii_alphabetic()) && in_code(&line[..start])).then_some((start, prefix))
+    (prefix.bytes().all(|c| c.is_ascii_alphabetic()) && crate::syntax::in_code(&line[..start])).then_some((start, prefix))
 }

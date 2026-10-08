@@ -18,6 +18,10 @@ Negative sizes in [Windows](windows.qmd) return the same windows as one array.
 
 Results assemble with fill.
 
+## Inverse
+
+The derived function has no inverse.
+
 ## Errors
 
 - `RANK`: specification not a unit, vector or two-row matrix, or more axes than `Y`

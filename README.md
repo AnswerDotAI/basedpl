@@ -130,7 +130,7 @@ See [array notation](https://answerdotai.github.io/basedpl/glyphs/brackets.html)
 Axes can have names, and positions along them can have string keys. Describe the axes once, then select by key or reduce by axis name:
 
 ``` bpl
-axes←["city":["NY" "LA"] "month":["Jan" "Feb" "Mar"]]
+axes←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]
 sales←axes:[10 20 30 ⋄ 40 50 60]
 "LA" "Feb"⌷sales
 +/⍠"month" sales
@@ -217,11 +217,10 @@ CSV headers likewise name column vectors. [Files, CSV and JSON](https://answerdo
 Build SVG from element functions and keyed attributes. Notebooks display the picture directly. The same element trees serialize to XML. See [XML and SVG](https://answerdotai.github.io/basedpl/xml.html).
 
 ``` bpl
-circle←•element "circle"
-text←•element "text"
+[circle text]←•element "circle" "text"
 c←["cx":50 "cy":40 "r":25 "fill":"orange"]circle ""
 t←["x":50 "y":85 "text-anchor":"middle"]text "Hello, SVG"
-["width":240 "height":240]•svg [c t]
+["width":240 "height":240]•svg c t
 ```
 
 ![](index_files/figure-commonmark/cell-18-output-1.svg)

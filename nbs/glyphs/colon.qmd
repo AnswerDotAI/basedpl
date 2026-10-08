@@ -1,5 +1,7 @@
 # `:` — Unkey / Key
 
+Ranks: `∞` monadic, `1 ∞` dyadic
+
 `:Y` removes axis keys. `K:Y` labels leading axes. `K:⍠A Y` labels the axes `A`. A bracket list with any `key:value` item is one keyed vector. The list's other items are entries without keys. See [axis keys](../keyed.ipynb).
 
 ```bpl
@@ -19,7 +21,15 @@ M←["city":2 "month":3]⍴⍳6
 A keyed `K` supplies axis names and position keys together.
 
 ```bpl
-axes←["city":["NY" "LA"] "month":["Jan" "Feb" "Mar"]]
+axes←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]
 M←axes:[1 2 3 ⋄ 4 5 6]
 "LA" "Feb"⌷M       ⍝ 5
+```
+
+## Inverse
+
+Unkey has no inverse. `K :⁻¹ Y` removes the keys `K` from `Y`, which must have exactly those keys.
+
+```bpl
+"a" "b" :⁻¹ ["a":1;"b":2]   ⍝ 1 2
 ```

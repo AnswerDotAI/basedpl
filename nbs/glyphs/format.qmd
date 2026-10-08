@@ -1,6 +1,6 @@
 # `⍕` — Format
 
-Keys: `Alt-n t`
+Keys: `Alt-n t`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 `⍕Y` returns character text. Matrix rows remain rows.
 
@@ -22,3 +22,7 @@ Keys: `Alt-n t`
 ```
 
 Formatting is independent of REPL boxing.
+
+## Inverse
+
+Neither form has an inverse.
