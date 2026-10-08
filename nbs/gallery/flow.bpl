@@ -7,10 +7,8 @@ options←["background":0.97;"fade":0]
 place←{500×∨⁻¹¿[⍵ 2]⍴0}
 n←1500
 p←place n
-waves←50+¿3⍴150
-phases←⌊¿3⍴628 ÷ 100
-⎕←"waves←",⍎⁻¹ waves
-⎕←"phases←",⍎⁻¹ phases
+⎕←"waves←",⍎⁻¹ waves←50+¿3⍴150
+⎕←"phases←",⍎⁻¹ phases←100÷⍨¿3⍴628
 angle←{[x y]←⍉∨⍵ ⋄ [u v w]←phases+[x y x+y]÷waves ⋄ π 1○u + 2○v + 1○w}
 style←0.6 0.1 0.15 0.3 0.12
 frame←{
