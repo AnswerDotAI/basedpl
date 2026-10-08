@@ -15,8 +15,8 @@ f←[1 2 3]ₓ⌻ ⋄ [10 20]ₓ f∂ [1 2]ₓ  ⍝ [80 280]ₓ
 Multivariate gradients retain the coordinate enclosure. A shared unit coordinate sums partials.
 
 ```bpl
-f←⊂[1 2 0 ⋄ 1 0 2]ₓ ⌻ ⋄ f∂⊂[3 4]ₓ      ⍝ ⊂[6 8]ₓ
-f←⊂[1 2 0 ⋄ 1 0 2]ₓ ⌻ ⋄ f∂3ₓ           ⍝ 12ₓ
+f←⊂[1 2 0⋄1 0 2]ₓ ⌻ ⋄ f∂⊂[3 4]ₓ      ⍝ ⊂[6 8]ₓ
+f←⊂[1 2 0⋄1 0 2]ₓ ⌻ ⋄ f∂3ₓ           ⍝ 12ₓ
 ```
 
 Repeated `∂` requires unit input and output and one variable.

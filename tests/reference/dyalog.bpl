@@ -11,15 +11,15 @@
 0 60 60↣⊥⍣¯1(3661)   ⍝ 1 1 1
 
 ⍝ dyalog:axes:laminate — Laminate is removed, so Mix adds the new leading axis
-⊃[1 2;3 4]   ⍝ [1 2 ⋄ 3 4]
+⊃[1 2;3 4]   ⍝ [1 2⋄3 4]
 
 ⍝ dyalog:axes:mix — Fractional axes are removed, so Transpose moves Mix's new axis last
-⍉⊃[1 2;3 4]   ⍝ [1 3 ⋄ 2 4]
+⍉⊃[1 2;3 4]   ⍝ [1 3⋄2 4]
 
 ⍝ dyalog:assignment:indexed-modified —
 B←3 5⍴0
 B.[0 0 2;0 2 2 4]+←1
-B   ⍝ [2 0 4 0 2 ⋄ 0 0 0 0 0 ⋄ 1 0 2 0 1]
+B   ⍝ [2 0 4 0 2⋄0 0 0 0 0⋄1 0 2 0 1]
 
 ⍝ dyalog:assignment:selective —
 A←"HELLO"
@@ -78,8 +78,8 @@ a   ⍝ 2 2 1
 ⍟1 2   ⍝ 0 0.6931471805599453
 
 ⍝ dyalog:natural-logarithm:2 —
-⍟[0j1 1j2 ⋄ 2j3 3j4]
-[0j1.570796326794897 0.8047189562170503j1.10714871779409 ⋄ 1.282474678730768j0.982793723247329 1.6094379124341j0.9272952180016122]
+⍟[0j1 1j2⋄2j3 3j4]
+[0j1.570796326794897 0.8047189562170503j1.10714871779409⋄1.282474678730768j0.982793723247329 1.6094379124341j0.9272952180016122]
 
 ⍝ dyalog:logarithm:1 —
 10⍟100 2   ⍝ 2 0.3010299956639811
@@ -134,7 +134,7 @@ a   ⍝ 2 2 1
 2j2 2j4∧5j5 4j4   ⍝ 10j10 ¯4j12
 
 ⍝ dyalog:nand:1 —
-[0 1 ⋄ 1 0]⊼[0 0 ⋄ 1 1]   ⍝ [$t $t ⋄ $f $t]
+[0 1⋄1 0]⊼[0 0⋄1 1]   ⍝ [$t $t⋄$f $t]
 
 ⍝ dyalog:without:1 —
 "HELLO"~"GOODBYE"   ⍝ "HLL"
@@ -168,13 +168,13 @@ a   ⍝ 2 2 1
 "CAT" "DOG" "MOUSE"⍳"DOG" "BIRD"   ⍝ [1 3]ₓ
 
 ⍝ dyalog:index-of:3 —
-3 4⍴⍳12 ⍳ [0 1 2 3 ⋄ 8 9 10 11]   ⍝ [0 2]ₓ
+3 4⍴⍳12 ⍳ [0 1 2 3⋄8 9 10 11]   ⍝ [0 2]ₓ
 
 ⍝ dyalog:index-generator:1 —
-⍳2 3   ⍝ [[0 0] [0 1] [0 2] ⋄ [1 0] [1 1] [1 2]]
+⍳2 3   ⍝ [[0 0] [0 1] [0 2]⋄[1 0] [1 1] [1 2]]
 
 ⍝ dyalog:index-generator:2 — Combined setup and indexed expression
-A←["MAIN" ⋄ "EXIT"] ⋄ [⍳⍴A]⌷A   ⍝ ["MAIN" ⋄ "EXIT"]
+A←["MAIN"⋄"EXIT"] ⋄ [⍳⍴A]⌷A   ⍝ ["MAIN"⋄"EXIT"]
 
 ⍝ dyalog:exponential:3 —
 1+*π0j1   ⍝ 0
@@ -187,7 +187,7 @@ A←["MAIN" ⋄ "EXIT"] ⋄ [⍳⍴A]⌷A   ⍝ ["MAIN" ⋄ "EXIT"]
 ∪22 10 22 22 21 10 5 10   ⍝ 22 10 21 5
 
 ⍝ dyalog:unique:2 —
-∪⊃"CAT" "DOG" "CAT" "DUCK" "DOG" "DUCK"   ⍝ ["CAT " ⋄ "DOG " ⋄ "DUCK"]
+∪⊃"CAT" "DOG" "CAT" "DUCK" "DOG" "DUCK"   ⍝ ["CAT "⋄"DOG "⋄"DUCK"]
 
 ⍝ dyalog:union:1 —
 "WASH"∪"SHOUT"   ⍝ "WASHOUT"
@@ -199,10 +199,10 @@ A←["MAIN" ⋄ "EXIT"] ⋄ [⍳⍴A]⌷A   ⍝ ["MAIN" ⋄ "EXIT"]
 1 "PLUS" 2∩⍳5   ⍝ 1 2
 
 ⍝ dyalog:enlist:1 —
-∊["MISS" "IS" ⋄ "SIP" "PI"]   ⍝ "MISSISSIPPI"
+∊["MISS" "IS"⋄"SIP" "PI"]   ⍝ "MISSISSIPPI"
 
 ⍝ dyalog:enlist:2 —
-∊[1 [2 3 ⋄ 4 5] [6 [7 8]]]   ⍝ 1 2 3 4 5 6 7 8
+∊[1 [2 3⋄4 5] [6 [7 8]]]   ⍝ 1 2 3 4 5 6 7 8
 
 ⍝ dyalog:membership:1 —
 "THIS NOUN"∊"THAT WORD"   ⍝ $t $t $f $f $t $f $t $f $f
@@ -266,7 +266,7 @@ N←3 2 5 4 6 1 3 ⋄ N#⍨2|N   ⍝ 3 5 1 3
 ⍸1 0 1 0 0 0 0 1 0   ⍝ [0 2 7]ₓ
 
 ⍝ dyalog:where:2 —
-⍸[0 1 ⋄ 2 3]   ⍝ [[0 1] [1 0] [1 0] [1 1] [1 1] [1 1]]ₓ
+⍸[0 1⋄2 3]   ⍝ [[0 1] [1 0] [1 0] [1 1] [1 1] [1 1]]ₓ
 
 ⍝ dyalog:interval-index:1 —
 10 20 30⍸11 1 31 21   ⍝ [1 0 3 2]ₓ
@@ -295,10 +295,10 @@ N←3 2 5 4 6 1 3 ⋄ N#⍨2|N   ⍝ 3 5 1 3
 
 ⍝ dyalog:rank:1 —
 10 20 30 +⍤0 1 [3 4]⍴⍳12
-[10 11 12 13 ⋄ 24 25 26 27 ⋄ 38 39 40 41]
+[10 11 12 13⋄24 25 26 27⋄38 39 40 41]
 
 ⍝ dyalog:rank:2 — Smaller iota array replaces the displayed Y
-⊂⍤1 [2 2 3]⍴⍳12   ⍝ [[0 1 2] [3 4 5] ⋄ [6 7 8] [9 10 11]]
+⊂⍤1 [2 2 3]⍴⍳12   ⍝ [[0 1 2] [3 4 5]⋄[6 7 8] [9 10 11]]
 
 ⍝ dyalog:right:1 —
 ⊢÷+/ 4 3 0 1   ⍝ 0.5 0.375 0 0.125
@@ -325,16 +325,16 @@ N←3 2 5 4 6 1 3 ⋄ N#⍨2|N   ⍝ 3 5 1 3
 1 2 3+.×10 12 14   ⍝ 76
 
 ⍝ dyalog:outer-product:1 —
-1 2 3 ×⊗ 10 20 30 40   ⍝ [10 20 30 40 ⋄ 20 40 60 80 ⋄ 30 60 90 120]
+1 2 3 ×⊗ 10 20 30 40   ⍝ [10 20 30 40⋄20 40 60 80⋄30 60 90 120]
 
 ⍝ dyalog:outer-product:2 —
-1 2 ,⊗ 1 2 3   ⍝ [[1 1] [1 2] [1 3] ⋄ [2 1] [2 2] [2 3]]
+1 2 ,⊗ 1 2 3   ⍝ [[1 1] [1 2] [1 3]⋄[2 1] [2 2] [2 3]]
 
 ⍝ dyalog:outer-product:3 —
-(⍳3) =⊗ ⍳3   ⍝ [$t $f $f ⋄ $f $t $f ⋄ $f $f $t]
+(⍳3) =⊗ ⍳3   ⍝ [$t $f $f⋄$f $t $f⋄$f $f $t]
 
 ⍝ dyalog:key:1 — Inline letters definition
-{[⍺ ≢⍵]}⌸"zabayza"   ⍝ ['z' 2 ⋄ 'a' 3 ⋄ 'b' 1 ⋄ 'y' 1]ₓ
+{[⍺ ≢⍵]}⌸"zabayza"   ⍝ ['z' 2⋄'a' 3⋄'b' 1⋄'y' 1]ₓ
 
 ⍝ dyalog:power:successor — Inline successor definition
 1+⍣4(10)   ⍝ 14
@@ -349,20 +349,20 @@ N←3 2 5 4 6 1 3 ⋄ N#⍨2|N   ⍝ 3 5 1 3
 ⍋3 2 3⍴2 3 5 1 4 7 2 3 4 5 2 4 2 3 5 1 2 6   ⍝ [1 2 0]ₓ
 
 ⍝ dyalog:grade-down:collation — Inline explanation's left and right matrices
-["abc" ⋄ "ABA"]⍒["ab" ⋄ "ac" ⋄ "Aa" ⋄ "Ac"]   ⍝ [3 1 0 2]ₓ
+["abc"⋄"ABA"]⍒["ab"⋄"ac"⋄"Aa"⋄"Ac"]   ⍝ [3 1 0 2]ₓ
 
 ⍝ dyalog:partition:runs —
 1 1 1 2 2 3 3 3⊆"NOWISTHE"   ⍝ "NOW" "IS" "THE"
 
 ⍝ dyalog:partitioned-enclose:axis —
-1 0 1⊂⍠0 (3 4⍴⍳12)   ⍝ [[0 1 2 3 ⋄ 4 5 6 7] [8 9 10 11 ⋄]]
+1 0 1⊂⍠0 (3 4⍴⍳12)   ⍝ [[0 1 2 3⋄4 5 6 7] [8 9 10 11⋄]]
 
 ⍝ dyalog:pick:path — Inline G definition
-1⊃0⊃1 0⊃[["ABC" 1] ["DEF" 2] ["GHI" 3] ⋄ ["JKL" 4] ["MNO" 5] ["PQR" 6]]
+1⊃0⊃1 0⊃[["ABC" 1] ["DEF" 2] ["GHI" 3]⋄["JKL" 4] ["MNO" 5] ["PQR" 6]]
 'K'
 
 ⍝ dyalog:encode:fraction — Digits on the last axis, as J's #:, so Dyalog's result transposed
-0 1⊤1.25 10.5   ⍝ [1 0.25 ⋄ 10 0.5]
+0 1⊤1.25 10.5   ⍝ [1 0.25⋄10 0.5]
 
 ⍝ dyalog:decode:complex —
 1j1⊥1 2 3 4   ⍝ 5j9
@@ -371,79 +371,79 @@ N←3 2 5 4 6 1 3 ⋄ N#⍨2|N   ⍝ 3 5 1 3
 10 20@1 3⍳5   ⍝ 0 10 2 20 4
 
 ⍝ dyalog:stencil:sum —
-{+/,⍵}⌺3 3 [3 3]⍴⍳12   ⍝ [8 15 12 ⋄ 21 36 27 ⋄ 20 33 24]
+{+/,⍵}⌺3 3 [3 3]⍴⍳12   ⍝ [8 15 12⋄21 36 27⋄20 33 24]
 
 ⍝ dyalog:stencil:even — Shorter input
 {⊂⍵}⌺2⍳4   ⍝ [[0 1] [1 2] [2 3]]
 
 ⍝ dyalog:matrix-inverse:1 —
-⌹[2 ¯3 ⋄ 4 10]   ⍝ [0.3125 0.09375 ⋄ ¯0.125 0.0625]
+⌹[2 ¯3⋄4 10]   ⍝ [0.3125 0.09375⋄¯0.125 0.0625]
 
 ⍝ dyalog:matrix-inverse:2 —
 ⌹1j1 2   ⍝ 0.1666666666666667j¯0.1666666666666667 0.3333333333333333
 
 ⍝ dyalog:matrix-divide:1 —
-3 5 7⌹[1 1 ⋄ 1 2 ⋄ 1 3]   ⍝ 1 2
+3 5 7⌹[1 1⋄1 2⋄1 3]   ⍝ 1 2
 
 ⍝ — Dyalog dfns: compression round trip
 [packN]←•load "lib/dyalog.bpl"
-0 packN packN [0 0 3 ⋄ 0 0 4]
+0 packN packN [0 0 3⋄0 0 4]
 ⍝ =>
-[0 0 3 ⋄ 0 0 4]
+[0 0 3⋄0 0 4]
 
 ⍝ — Dyalog dfns: compression round trip
 [packR]←•load "lib/dyalog.bpl"
-0 packR packR ["abb" ⋄ "ccc"]
+0 packR packR ["abb"⋄"ccc"]
 ⍝ =>
-["abb" ⋄ "ccc"]
+["abb"⋄"ccc"]
 
 ⍝ — Dyalog dfns: compression round trip
 [packU]←•load "lib/dyalog.bpl"
-0 packU packU ["abb" ⋄ "ccc"]
+0 packU packU ["abb"⋄"ccc"]
 ⍝ =>
-["abb" ⋄ "ccc"]
+["abb"⋄"ccc"]
 
 ⍝ — Dyalog dfns: compression round trip
 [packB]←•load "lib/dyalog.bpl"
-0 packB packB [0 1 1 ⋄ 0 1 0]
+0 packB packB [0 1 1⋄0 1 0]
 ⍝ =>
-[0 1 1 ⋄ 0 1 0]
+[0 1 1⋄0 1 0]
 
 ⍝ — Dyalog dfns: compression round trip
 [packX]←•load "lib/dyalog.bpl"
-0 packX packX ["abb" ⋄ "ccc"]
+0 packX packX ["abb"⋄"ccc"]
 ⍝ =>
-["abb" ⋄ "ccc"]
+["abb"⋄"ccc"]
 
 ⍝ — Dyalog dfns: compression round trip
 [packQ]←•load "lib/dyalog.bpl"
-0 packQ packQ ["abb" ⋄ "ccc"]
+0 packQ packQ ["abb"⋄"ccc"]
 ⍝ =>
-["abb" ⋄ "ccc"]
+["abb"⋄"ccc"]
 
 ⍝ — Dyalog dfns: compression round trip
 [packS]←•load "lib/dyalog.bpl"
-0 packS packS [3 1 4 1 5 9 ⋄ 2 6 5 3 5 8]
+0 packS packS [3 1 4 1 5 9⋄2 6 5 3 5 8]
 ⍝ =>
-[3 1 4 1 5 9 ⋄ 2 6 5 3 5 8]
+[3 1 4 1 5 9⋄2 6 5 3 5 8]
 
 ⍝ — Dyalog dfns: compression round trip
 [pack_4]←•load "lib/dyalog.bpl"
-0 pack_4 pack_4 ["abb" ⋄ "ccc"]
+0 pack_4 pack_4 ["abb"⋄"ccc"]
 ⍝ =>
-["abb" ⋄ "ccc"]
+["abb"⋄"ccc"]
 
 ⍝ — Dyalog dfns: compression round trip
 [packH]←•load "lib/dyalog.bpl"
-0 packH packH ["abb" ⋄ "ccc"]
+0 packH packH ["abb"⋄"ccc"]
 ⍝ =>
-["abb" ⋄ "ccc"]
+["abb"⋄"ccc"]
 
 ⍝ — Dyalog dfns: queens up to symmetry
 [queens]←•load "lib/dyalog.bpl"
 queens4
 ⍝ =>
-1⍴⊂["· ⍟ · ·" ⋄ "· · · ⍟" ⋄ "⍟ · · ·" ⋄ "· · ⍟ ·"]
+1⍴⊂["· ⍟ · ·"⋄"· · · ⍟"⋄"⍟ · · ·"⋄"· · ⍟ ·"]
 
 ⍝ — Dyalog dfns: nested macro definitions
 [mac]←•load "lib/dyalog.bpl"
@@ -451,9 +451,9 @@ mac "A=++ B=(2A) B"   ⍝ "++"
 
 ⍝ — Dyalog dfns: internal box borders
 [box]←•load "lib/dyalog.bpl"
-[1 2;1 2]box ["abc" ⋄ "def"]
+[1 2;1 2]box ["abc"⋄"def"]
 ⍝ =>
-["┌─┬─┬─┐" ⋄ "│a│b│c│" ⋄ "├─┼─┼─┤" ⋄ "│d│e│f│" ⋄ "└─┴─┴─┘"]
+["┌─┬─┬─┐"⋄"│a│b│c│"⋄"├─┼─┼─┤"⋄"│d│e│f│"⋄"└─┴─┴─┘"]
 
 ⍝ — Dyalog dfns: lisp
 [lisp]←•load "lib/dyalog.bpl"
@@ -489,7 +489,7 @@ lisp "(+ 2"   ⍝ "unexpected eof"
 
 ⍝ — Dyalog dfns: Cut
 [Cut]←•load "lib/dyalog.bpl"
-[1 1 ⋄ 2 2](⊢Cut 0)3 4⍴⍳12   ⍝ [5 6 ⋄ 9 10]
+[1 1⋄2 2](⊢Cut 0)3 4⍴⍳12   ⍝ [5 6⋄9 10]
 
 ⍝ — Dyalog dfns: Cut
 [Cut]←•load "lib/dyalog.bpl"
@@ -503,7 +503,7 @@ lisp "(+ 2"   ⍝ "unexpected eof"
 [Cut]←•load "lib/dyalog.bpl"
 [1 0 1;1 0 1 0] (+/,)Cut 1 (3 4⍴⍳12)
 ⍝ =>
-[10 18 ⋄ 17 21]
+[10 18⋄17 21]
 
 ⍝ — Dyalog dfns: Cut
 [Cut]←•load "lib/dyalog.bpl"
@@ -519,7 +519,7 @@ lisp "(+ 2"   ⍝ "unexpected eof"
 [iotag]←•load "lib/dyalog.bpl"
 iotag2 3
 ⍝ =>
-[[0 0] [0 1] [0 2] ⋄ [1 0] [1 1] [1 2]]
+[[0 0] [0 1] [0 2]⋄[1 0] [1 1] [1 2]]
 
 ⍝ — Dyalog dfns: iotag
 [iotag]←•load "lib/dyalog.bpl"
@@ -535,7 +535,7 @@ iotag 'c'   ⍝ "abc"
 
 ⍝ — Dyalog dfns: row search
 [iotag]←•load "lib/dyalog.bpl"
-[1 2 3 ⋄ 4 5 6]iotag [4 5 6 ⋄ 1 2 3]
+[1 2 3⋄4 5 6]iotag [4 5 6⋄1 2 3]
 ⍝ =>
 [1 0]ₓ
 
@@ -565,9 +565,9 @@ words¨"" "123" "abc12 + 34def" "abc_def"
 
 ⍝ — Dyalog dfns: compression round trip
 [packD]←•load "lib/dyalog.bpl"
-0 packD packD ["abb" ⋄ "ccc"]
+0 packD packD ["abb"⋄"ccc"]
 ⍝ =>
-["abb" ⋄ "ccc"]
+["abb"⋄"ccc"]
 
 ⍝ — Dyalog dfns: run boundaries and escaped characters
 [packT]←•load "lib/dyalog.bpl"
@@ -585,7 +585,7 @@ m←⌽(32⍴2)⊤32↑0 16389 49152 24582 57344 13 0
 g←"A 1 2 3" "F + ×" 'B' "" "F:A→B" "A:B→A"
 g parse "1+(2×3)"
 ⍝ =>
-[" A         " ⋄ "┌┴─┐       " ⋄ "1 ┌┴─┐     " ⋄ "  + ┌┴─┐   " ⋄ "    ( ┌┴─┐ " ⋄ "      2 ┌┴┐" ⋄ "        × 3"]
+[" A         "⋄"┌┴─┐       "⋄"1 ┌┴─┐     "⋄"  + ┌┴─┐   "⋄"    ( ┌┴─┐ "⋄"      2 ┌┴┐"⋄"        × 3"]
 
 ⍝ — Dyalog dfns: parse
 [parse]←•load "lib/dyalog.bpl"
@@ -593,26 +593,26 @@ g←"A 1 2 3" "F + ×" 'B' "" "F:A→B" "A:B→A"
 c←[0 g]parse ""
 c parse "1+2×3"
 ⍝ =>
-["    A    " ⋄ " ┌──┴──┐ " ⋄ "┌┴─┐  ┌┴┐" ⋄ "1 ┌┴┐ × 3" ⋄ "  + 2    "]
+["    A    "⋄" ┌──┴──┐ "⋄"┌┴─┐  ┌┴┐"⋄"1 ┌┴┐ × 3"⋄"  + 2    "]
 
 ⍝ — Dyalog dfns: parse
 [parse]←•load "lib/dyalog.bpl"
 g←"A 1 2 3" "F + ×" 'B' "" "F:A→B" "A:B→A"
 g parse ""
 ⍝ =>
-["  ┌───┬───┐" ⋄ "  │A  │B  │" ⋄ "┌─┼───┼───┤" ⋄ "│A│   │1 A│" ⋄ "├─┼───┼───┤" ⋄ "│F│1 B│   │" ⋄ "└─┴───┴───┘"]
+["  ┌───┬───┐"⋄"  │A  │B  │"⋄"┌─┼───┼───┤"⋄"│A│   │1 A│"⋄"├─┼───┼───┤"⋄"│F│1 B│   │"⋄"└─┴───┴───┘"]
 
 ⍝ — Dyalog dfns: parse
 [parse]←•load "lib/dyalog.bpl"
 g←"A 1 2 3" "F + ×" 'B' "" "F:A→B" "A:B→A"
 g parse "1+z"
 ⍝ =>
-["┌─┬─┬─┐" ⋄ "│A│F│z│" ⋄ "│1│+│ │" ⋄ "└─┴─┴─┘"]
+["┌─┬─┬─┐"⋄"│A│F│z│"⋄"│1│+│ │"⋄"└─┴─┴─┘"]
 
 ⍝ — Dyalog dfns: parse
 [parse]←•load "lib/dyalog.bpl"
 g←"N=A" "N 1 2 3" "F + ×" 'B' "" "F:N→B" "N:B→N"
 g parse "1+2×3"
 ⍝ =>
-["    A    " ⋄ " ┌──┴──┐ " ⋄ "┌┴─┐  ┌┴┐" ⋄ "1 ┌┴┐ × 3" ⋄ "  + 2    "]
+["    A    "⋄" ┌──┴──┐ "⋄"┌┴─┐  ┌┴┐"⋄"1 ┌┴┐ × 3"⋄"  + 2    "]
 

@@ -6,7 +6,7 @@ Keys: `Alt-n`. Ranks: `∞` monadic, `1 0` dyadic
 
 ```bpl
 ⊤5                ⍝ 1 0 1
-⊤[2 5]ₓ           ⍝ [0 1 0 ⋄ 1 0 1]ₓ
+⊤[2 5]ₓ           ⍝ [0 1 0⋄1 0 1]ₓ
 ```
 
 `B⊤Y` represents numbers in bases `B`. A zero base retains the remaining quotient.
@@ -22,7 +22,7 @@ A unit `B` gives residues. A vector `B` adds a new last axis of digits. The resu
 9⊤15               ⍝ 6
 9⊤⊂15              ⍝ ⊂6
 10⊤12 34           ⍝ 2 4
-2 2 2⊤3 5          ⍝ [0 1 1 ⋄ 1 0 1]
+2 2 2⊤3 5          ⍝ [0 1 1⋄1 0 1]
 ```
 
 See [Decode](decode.qmd).

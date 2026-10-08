@@ -6,7 +6,7 @@ Keys: `Alt-9`. Ranks: `0` monadic, `0 0` dyadic
 
 ```bpl
 ∨3j4              ⍝ 3 4
-∨3j4 1j2          ⍝ [3 4 ⋄ 1 2]
+∨3j4 1j2          ⍝ [3 4⋄1 2]
 ∨1r3              ⍝ 1r3 0ₓ
 ```
 

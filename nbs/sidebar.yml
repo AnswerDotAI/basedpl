@@ -3,6 +3,7 @@ website:
     contents:
       - getting-started.ipynb
       - playground.qmd
+      - gallery.qmd
       - python.ipynb
       - notebooks.ipynb
       - repl.qmd

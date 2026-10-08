@@ -9,12 +9,11 @@ Press **▶ Run**, or Ctrl-Enter (Cmd-Enter on a Mac), to run the code. Type a b
 The interpreter runs in your browser. It is the latest release of the npm package [`basedpl`](https://www.npmjs.com/package/basedpl). Names you create are persistent between runs. **⏹ Stop** ends the session and starts a new one.
 
 ```{=html}
-<link rel="stylesheet" href="https://esm.sh/monaco-editor-core@0.57.0/es2022/monaco-editor-core.css">
 <div id="playground">
 <div id="history"></div>
 <div class="playground-editor">
-<div id="code" class="bpl" data-bpl></div>
-<div class="playground-buttons">
+<div id="code" class="bpl-editor" data-bpl></div>
+<div class="bpl-buttons">
 <button id="run" class="btn btn-sm btn-primary" title="Run" aria-label="Run" disabled>▶</button>
 <button id="stop" class="btn btn-sm btn-outline-secondary" title="Stop" aria-label="Stop" disabled>⏹</button>
 </div>

@@ -29,16 +29,6 @@ After Rust changes, run `cargo test` for the Rust tests, then `cargo develop` to
 
 Before a release, run `python scripts/prep.py` from the repository root. It writes the syntax highlighters' glyph lists and the macOS keyboard layout bundle. It then runs nbdev's `prepare` to export, test and clean the notebooks and render this README.
 
-Use lowercase `j` in complex literals throughout tests and examples, including adapted reference cases. Reserve uppercase `J` for explicit input-alias tests. Keep archived upstream source unchanged.
-
-Write literal matrices in array notation, `[10 20 30 ⋄ 40 50 60]`, not as a reshape, `2 3⍴10 20 30 40 50 60`. Keep `⍴` where the example is about reshape.
-
-Brackets are the usual way to write a list. A bare literal list, such as `1 2 3`, is a shorthand. Write a list of names in brackets, as in `[a b]`, even where `a b` would also work. End an operand with a space, not with parentheses or `⊢`. After a dyadic operator and a space, the whole next run is the operand. For example, `⌊⌾ 10× x` needs no parentheses. Where a literal operand would run into the argument, a vector argument goes in touching brackets: `f⍤1[2 3]`. A single number goes in parentheses: `f⍣¯2(5)`. Judge each line by how it reads. Report any case where none of these forms works.
-
-A name applied to a literal touches it, as a glyph does: `fib10` and `1+⌽f5`. Write it that way where it's shorter and needs no new parentheses. Keep the space where the literal would join the next part of the expression, or where a subject before the name is its left argument.
-
-Read a selection with `⌷`, as in `[⍋v]⌷v`. Write one literal position with a subscript, as in `v₁` and `v₁←0`. Use `.` for other assignment targets, such as `v.[i]←0`, for record fields, such as `T.name`, and wherever `⌷` would be longer.
-
 ## Did you find a bug?
 
 * Ensure the bug was not already reported by searching on GitHub under Issues.
@@ -55,7 +45,6 @@ Read a selection with `⌷`, as in `[⍋v]⌷v`. Write one literal position with
 
 * Keep each PR focused. While it's more convenient, do not combine several unrelated fixes together. Create as many branches as needing to keep each PR focused.
 * Do not mix style changes/fixes with "functional" changes. It's very difficult to review such PRs and it most likely get rejected.
-* Do not add/remove vertical whitespace. Preserve the original style of the file you edit as much as you can.
 * Do not turn an already submitted PR into your development playground. If after you submitted PR, you discovered that more work is needed - close the PR, do the required work and then submit a new PR. Otherwise each of your commits requires attention from maintainers of the project.
 * If, however, you submitted a PR and received a request for changes, you should proceed with commits inside that PR, so that the maintainer can see the incremental fixes and won't need to review the whole PR again. In the exception case where you realize it'll take many many commits to complete the requests, then it's probably best to close the PR, do the work and then submit it again. Use common sense where you'd choose one way over another.
 

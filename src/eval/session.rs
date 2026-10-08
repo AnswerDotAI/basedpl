@@ -231,7 +231,9 @@ impl Session {
     fn evaluate_code(&mut self, source: Arc<Source>) -> Evaluation {
         match crate::parse(source).complete() { Ok(parsed) => self.eval_display(&parsed, false, false), Err(e) => Evaluation::failed(e) }
     }
-    pub fn eval_parsed(&mut self, parsed: &Parsed, options: crate::EvalOptions) -> Evaluation { self.evaluation(options, |s| s.eval_display(parsed, false, false)) }
+    pub fn eval_parsed(&mut self, parsed: &Parsed, options: crate::EvalOptions) -> Evaluation {
+        self.evaluation(options, |s| s.eval_display(parsed, false, false))
+    }
     fn eval_display(&mut self, parsed: &Parsed, diagram: bool, dissect: bool) -> Evaluation {
         let mut result = Evaluation::default();
         for (i, statement) in parsed.statements.iter().enumerate() {
@@ -294,15 +296,11 @@ impl Session {
             let usage = "usage: ]help name [-source], or ]help llms for the language reference";
             let Some((name, detail)) = crate::inspection::help_command(code) else { return failed(ErrorKind::Syntax, usage.into()) };
             // `llms` is a topic, not a name. A variable called `llms` can't hide the reference.
-            let (text, markdown) = if name == "llms" {
-                (crate::inspection::LLMS.to_owned(), crate::inspection::LLMS.to_owned())
-            } else {
+            let (text, markdown) = if name == "llms" { (crate::inspection::LLMS.to_owned(), crate::inspection::LLMS.to_owned()) } else {
                 let Some(info) = self.inspect(name) else { return failed(ErrorKind::Value, format!("name not found: {name}")) };
                 (info.text(detail), info.markdown(detail))
             };
-            let data = [("text/plain", text), ("text/markdown", markdown)]
-                .map(|(kind, text)| (kind.to_string(), crate::MimeData::Text(text)))
-                .into();
+            let data = [("text/plain", text), ("text/markdown", markdown)].map(|(kind, text)| (kind.to_string(), crate::MimeData::Text(text))).into();
             self.execution.emit(crate::Output { kind: crate::OutputKind::Display, data });
             return Evaluation::default();
         }
@@ -501,7 +499,7 @@ impl Session {
                 for nodes in cells { arrays.extend(self.item_result(nodes)?); }
                 if arrays.is_empty() { return Ok(Bound::from(crate::syntax::zilde(false))); }
                 let result = if *form == ListForm::Cells {
-                    // Each row is a major cell, so unit rows give a vector: `[1 ⋄ 2]` is `1 2`.
+                    // Each row is a major cell, so unit rows give a vector: `[1⋄2]` is `1 2`.
                     Value::assemble_written(&[arrays.len()], &arrays, &arrays[0])
                 } else { Value::new(vec![arrays.len()], arrays) };
                 Binding::Value(result.error_at(&node.span, "invalid array literal")?)

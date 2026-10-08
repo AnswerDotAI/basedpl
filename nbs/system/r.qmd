@@ -6,7 +6,7 @@ Natively the pattern is a Rust regex, with [the regex crate's syntax](https://do
 
 ```bpl
 p←•r "([a-z]+)([0-9]+)"
-p.matches "ab12 cd3"           ⍝ ["text":["ab12" "cd3"] "position":[0 5]ₓ "groups":("ab" "12" ⋄ "cd" "3")]
+p.matches "ab12 cd3"           ⍝ ["text":["ab12" "cd3"] "position":[0 5]ₓ "groups":("ab" "12"⋄"cd" "3")]
 "$2:$1" p.replace "ab12 cd3"   ⍝ "12:ab 3:cd"
 ```
 

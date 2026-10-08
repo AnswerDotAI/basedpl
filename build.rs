@@ -13,8 +13,11 @@ fn main() {
     let mut entries = Vec::new();
     for dir in ["glyphs", "system"] {
         println!("cargo::rerun-if-changed=nbs/{dir}");
-        let paths: Vec<_> =
-            fs::read_dir(format!("nbs/{dir}")).unwrap().map(|entry| entry.unwrap().path()).filter(|path| path.extension().is_some_and(|s| s == "qmd")).collect();
+        let paths: Vec<_> = fs::read_dir(format!("nbs/{dir}"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|s| s == "qmd"))
+            .collect();
         for path in &paths {
             let mut help = fs::read_to_string(path).unwrap();
             for target in &paths {
@@ -22,14 +25,9 @@ fn main() {
                 help = help.replace(&format!("]({name}"), &format!("]({dir}/{name}"));
             }
             let help = help.replace("](../", "](");
-            let keys: Vec<&str> = if dir == "glyphs" {
-                vec![path.file_stem().unwrap().to_str().unwrap()]
-            } else {
+            let keys: Vec<&str> = if dir == "glyphs" { vec![path.file_stem().unwrap().to_str().unwrap()] } else {
                 let mut fenced = false;
-                let headings = help.lines().filter(|line| {
-                    fenced ^= line.starts_with("```");
-                    !fenced && line.starts_with('#')
-                });
+                let headings = help.lines().filter(|line| { fenced ^= line.starts_with("```"); !fenced && line.starts_with('#') });
                 headings.flat_map(|line| line.split('`').skip(1).step_by(2)).filter(|name| name.starts_with(['•', '$'])).collect()
             };
             for key in keys { entries.push(format!("({key:?}, {help:?})")); }

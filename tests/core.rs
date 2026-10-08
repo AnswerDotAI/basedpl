@@ -36,12 +36,19 @@ fn equiv(code: &str, expected: &str) { equiv_in(&mut Session::new(), code, expec
 fn language_examples() {
     let mut failures = Vec::new();
     let page = std::env::var("BASEDPL_PAGE").ok();
-    for dir in ["nbs", "nbs/glyphs", "nbs/system"] {
+    for dir in ["nbs", "nbs/glyphs", "nbs/system", "nbs/gallery"] {
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
-            if path.extension().is_none_or(|ext| ext != "qmd") { continue; }
+            let Some(ext) = path.extension().filter(|ext| *ext == "qmd" || *ext == "bpl") else { continue; };
             if page.as_deref().is_some_and(|p| !path.to_string_lossy().contains(p)) { continue; }
             let text = std::fs::read_to_string(&path).unwrap();
+            // A gallery demo is a whole program. A demo that defines `frame` also draws its first frame.
+            if ext == "bpl" {
+                let mut session = Session::new();
+                let error = session.eval(&text).error.or_else(|| session.eval(r#"{3=•nc "frame"?frame 0;0}0"#).error);
+                if let Some(error) = error { failures.push(format!("{}: {error}", path.display())); }
+                continue;
+            }
             let mut fenced = false;
             for line in text.lines() {
                 if line.starts_with("```") {
@@ -144,7 +151,7 @@ fn calls_with_array_arguments() {
     for (function, codes, expected) in [
         ("mean", vec!["1 2 3"], "2"),
         ("-", vec!["10ₓ", "[1 2]ₓ"], "[9 8]ₓ"),
-        ("#⍠0", vec!["1 0", "2 2⍴⍳4"], "[0 1 ⋄]"),
+        ("#⍠0", vec!["1 0", "2 2⍴⍳4"], "[0 1⋄]"),
         ("⊢", vec![r#"[1r3 2ₓ;"ab";0 3⍴0ₓ]"#], r#"[1r3 2ₓ;"ab";0 3⍴0ₓ]"#),
         ("{k←⍵ ⋄ {k+⍵}⍵}", vec!["3ₓ"], "6ₓ"),
         ("{x←⍵}", vec!["7"], "7"),
@@ -185,7 +192,7 @@ fn cancellation_preserves_session_and_unwinds_calls() {
     assert_eq!(r.error.as_ref().unwrap().kind, Timeout);
     assert_eq!(r.output_text(), ["7"]);
     equiv_in(&mut s, "keep+1", "43");
-    s.set("u", AplValue::floats(vec![1_000_000], (0..1_000_000).map(f64::from).collect()).unwrap()).unwrap();
+    s.set("u", AplValue::floats(vec![1_000_000], (0..1_000_000).map(|i| f64::from(i) + 0.5).collect()).unwrap()).unwrap();
     assert_eq!(s.eval_timeout("∪u", Duration::from_millis(2)).error.unwrap().kind, Timeout);
     assert_eq!(s.eval_timeout("⍭1000000000000ₓ", Duration::from_millis(2)).error.unwrap().kind, Timeout);
     let interrupt = basedpl::InterruptHandle::default();
@@ -446,9 +453,7 @@ fn declared_ranks_match_rank() {
             for y in args { compare(format!("{f} {y}"), format!("{{{f} ⍵}}⍤({}) {y}", symbol.monad_rank)); }
         }
         if !["", "∞ ∞"].contains(&symbol.dyad_ranks.as_str()) {
-            for x in args {
-                for y in args { compare(format!("{x} {f} {y}"), format!("{x} {{⍺ {f} ⍵}}⍤({}) {y}", symbol.dyad_ranks)); }
-            }
+            for x in args { for y in args { compare(format!("{x} {f} {y}"), format!("{x} {{⍺ {f} ⍵}}⍤({}) {y}", symbol.dyad_ranks)); } }
         }
     }
     assert!(differ.is_empty(), "these differ from Rank at their declared ranks: {differ:?}");

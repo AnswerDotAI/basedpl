@@ -131,7 +131,7 @@ Axes can have names, and positions along them can have string keys. Describe the
 
 ``` bpl
 axes←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]
-sales←axes:[10 20 30 ⋄ 40 50 60]
+sales←axes:[10 20 30⋄40 50 60]
 "LA" "Feb"⌷sales
 +/⍠"month" sales
 ```

@@ -228,6 +228,21 @@ pub(crate) mod real {
     }
     #[inline]
     pub(crate) fn factorial(y: f64) -> f64 { libm::tgamma(y + 1.0) }
+    /// `x!y` when `x` lies within tolerance of an integer `k` of at least 0, as the general path computes it: `k` steps that multiply
+    /// by `y-i` and divide by `i+1`, with `k` taken as the smaller of `k` and `n-k` when `y` lies within tolerance of an integer `n` of
+    /// at least `k`. `None` for other arguments.
+    pub(crate) fn binomial(x: f64, y: f64) -> Option<f64> {
+        let k = integer(x).ok().filter(|&k| k >= 0)?;
+        let k = match integer(y) {
+            Ok(n) if n >= 0 => {
+                if k > n { return Some(0.0); }
+                k.min(n - k)
+            }
+            _ => k,
+        };
+        if k > 100_000 { return None; }
+        Some((0..k).fold(1.0, |v, i| v * (y - i as f64) / (i as f64 + 1.0)))
+    }
     /// The function circle code `code` applies to a real argument, or its inverse. Each gives `None` where its result is complex.
     /// Code 0 is its own inverse.
     pub(crate) fn circle(code: i64, inverse: bool) -> Option<fn(f64) -> Option<f64>> {
@@ -390,6 +405,14 @@ pub(crate) mod int {
         x.checked_abs()
     }
     pub(crate) fn lcm(x: i64, y: i64) -> Option<i64> { let g = gcd(x, y)?; if g == 0 { Some(0) } else { divide(x, g)?.checked_mul(y) } }
+    /// `k!n`, the binomial coefficient, for `k` of at least 0, as the general path computes it: `k` exact steps that multiply by `n-i`
+    /// and divide by `i+1`, with `k` taken as the smaller of `k` and `n-k` when `n` is at least `k`. `None` for a negative `k`, a `k`
+    /// above 100,000, or a step that leaves `i64`.
+    pub(crate) fn binomial(k: i64, n: i64) -> Option<i64> {
+        let k = if n >= 0 && k >= 0 { if k > n { return Some(0); } k.min(n - k) } else { k };
+        if !(0..=100_000).contains(&k) { return None; }
+        (0..k).try_fold(1i64, |v, i| v.checked_mul(n.checked_sub(i)?)?.checked_div(i + 1))
+    }
     fn boolean(y: i64) -> Option<bool> { matches!(y, 0 | 1).then_some(y == 1) }
     #[inline]
     pub(crate) fn nand(x: i64, y: i64) -> Option<bool> { let (x, y) = (boolean(x)?, boolean(y)?); Some(!(x && y)) }
@@ -429,8 +452,14 @@ pub(crate) mod complex {
         if !x.is_finite() || !y.is_finite() { return x == y; }
         (x - y).norm() <= (x * COMPARISON_TOLERANCE).norm().max((y * COMPARISON_TOLERANCE).norm())
     }
+    /// `√(re²+im²)` when the larger part's square can neither overflow nor underflow, and `hypot` otherwise.
+    /// Wasm has no `hypot` instruction. It runs `hypot` in software, many times slower than this.
     #[inline]
-    pub(crate) fn magnitude(z: Complex64) -> f64 { if z.im == 0.0 { z.re.abs() } else { z.norm() } }
+    pub(crate) fn magnitude(z: Complex64) -> f64 {
+        if z.im == 0.0 { return z.re.abs(); }
+        let m = z.re.abs().max(z.im.abs());
+        if (1e-150..1e150).contains(&m) { (z.re * z.re + z.im * z.im).sqrt() } else { z.norm() }
+    }
     pub(crate) fn exp(y: Complex64) -> Complex64 {
         use std::f64::consts::{FRAC_PI_2, PI, TAU};
         let angle = y.im.rem_euclid(TAU);

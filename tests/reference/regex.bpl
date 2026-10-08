@@ -9,7 +9,7 @@ m←p.matches "abc123def45"
 
 ⍝ regex:groups — Captures exclude the whole match; absent captures are empty strings
 (•r "(a)?(b+)").matches "abbb b"
-["text":["abbb" "b"] "position":[0 5]ₓ "groups":("a" "bbb" ⋄ "" "b")]
+["text":["abbb" "b"] "position":[0 5]ₓ "groups":("a" "bbb"⋄"" "b")]
 
 ⍝ regex:unicode — Positions count characters, not UTF-8 bytes
 p←•r "é|🐈+"

@@ -117,6 +117,8 @@ impl Selector {
 }
 
 pub(crate) fn vector(names: Vec<Arc<str>>, values: Vec<Value>) -> Result<Value, ErrorKind> { partial_vector(names.into_iter().map(Some).collect(), values) }
+/// A record with no entries.
+pub(crate) fn empty_record() -> Value { vector(Vec::new(), Vec::new()).expect("an empty record") }
 
 /// A vector whose entries with a name are keyed by it. Each entry keeps its kind, as items written in brackets do.
 pub(crate) fn partial_vector(names: Vec<Option<Arc<str>>>, values: Vec<Value>) -> Result<Value, ErrorKind> {
@@ -291,7 +293,7 @@ pub(crate) fn missing(target: &Value, selectors: &[Option<Value>]) -> Result<Vec
 /// mixed. New keys on the leading axis alone append in place. New keys on another axis rebuild the array.
 pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: bool) -> Result<(), ErrorKind> {
     let rank = target.shape().len();
-    let fill = if descend && rank == 1 { vector(vec![], vec![])? } else { target.prototype() };
+    let fill = if descend && rank == 1 { empty_record() } else { target.prototype() };
     let mut shape = target.shape().to_vec();
     if added[1..].iter().all(Vec::is_empty) {
         shape[0] += added[0].len();

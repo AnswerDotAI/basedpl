@@ -24,7 +24,7 @@ For coefficient vector `C`, `X⊥C` evaluates the polynomial in descending power
 Each row of `Y` holds the digits of one number, as [Encode](encode.qmd) writes them. `B⊥B⊤N` gives back `N` when `B` has enough digits.
 
 ```bpl
-2⊥[1 0 1 ⋄ 0 1 1]   ⍝ 5 3
+2⊥[1 0 1⋄0 1 1]   ⍝ 5 3
 2 2 2⊥2 2 2⊤3 5     ⍝ 3 5
 ```
 

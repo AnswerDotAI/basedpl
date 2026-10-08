@@ -251,7 +251,7 @@ class Result:
     def output(self): return _output_text(self.events)
 
 class BplError(RuntimeError):
-    "A BPL diagnostic, with retained source, UTF-8 byte spans, calls and captured output."
+    "A BPL diagnostic, with retained source, character spans, calls and captured output."
     def __init__(self, error, events):
         super().__init__(error['display'])
         self.kind, self.message = error['kind'], error['message']
@@ -340,7 +340,8 @@ fn = bpl.fn
 
 from .functions import Function, Operator, fork, atop, __all__ as _function_names, _binary, _unary, _builtin, _builtins
 from .printing import to_python
-__all__ += ['to_python']
+from .syntax import parse
+__all__ += ['to_python', 'parse']
 __all__ += _function_names
 
 def __getattr__(name): return _builtin(name)

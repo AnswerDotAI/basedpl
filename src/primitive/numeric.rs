@@ -5,6 +5,15 @@ use super::*;
 
 pub(super) fn complex_parts(right: &Value, polar: bool, span: &Context<'_>) -> Result<Value, Error> {
     let layout = right.layout().concat(&Layout::from(vec![2]));
+    // Float and complex storage give floats in one pass. The general loop below keeps exact numbers exact.
+    let pairs: Option<Vec<[f64; 2]>> = match right.as_items() {
+        Items::Complex(z) if polar => Some(z.iter().map(|&z| [crate::number::complex::magnitude(z), z.arg()]).collect()),
+        Items::Complex(z) => Some(z.iter().map(|z| [z.re, z.im]).collect()),
+        Items::Floats(x) if polar => Some(x.iter().map(|&x| [x.abs(), num_complex::Complex64::new(x, 0.0).arg()]).collect()),
+        Items::Floats(x) => Some(x.iter().map(|&x| [x, 0.0]).collect()),
+        _ => None,
+    };
+    if let Some(pairs) = pairs { return layout.floats(pairs.into_flattened()).error_at(span, "invalid decomposition"); }
     let mut data = Vec::with_capacity(generated_len(layout.shape()).error_at(span, "decomposition is too large")?);
     for item in right.elements() {
         span.check()?;
@@ -360,7 +369,6 @@ pub(super) fn binary_encode(right: &Value, span: &Context<'_>) -> Result<Value, 
 /// Bases are vectors along the last axis of `left`. Its leading axes form a frame that agrees with the values' frame, as with J's ranks: 1 0 to encode and 1 1 to decode.
 pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_>) -> Result<Value, Error> {
     let numbers = |a: &Value| a.elements().map(|e| numeric(&e, span).cloned()).collect::<Result<Vec<_>, _>>();
-    let (xs, ys) = (numbers(left)?, numbers(right)?);
     let zero = numeric(&right.prototype(), span)?.result_zero(Some(numeric(&left.prototype(), span)?));
     let error = |m| span.domain_error(m);
     let leading = |a: &Value| a.layout().axes(0..a.shape().len().saturating_sub(1));
@@ -376,6 +384,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
         if let (Mapping::Single, Mapping::Linear(1)) = (&agreement.left, &agreement.right) {
             if let Some(result) = encode_whole(left.checked_items(), right.checked_items(), &layout) { return Ok(result); }
         }
+        let (xs, ys) = (numbers(left)?, numbers(right)?);
         let mut data = Vec::with_capacity(len);
         for i in 0..if xlen == 0 { 0 } else { agreement.len } {
             span.check()?;
@@ -406,6 +415,13 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
         .error_at(span, "decode contraction keys must agree")?;
     if xlen != ylen && xlen != 1 && ylen != 1 { return Err(span.error(ErrorKind::Length, "decode axes do not agree")); }
     let len = if xlen == 1 { ylen } else { xlen };
+    // The general path gives a cell of one digit that digit unchanged, exact or not.
+    if let (Mapping::Single, Mapping::Linear(1)) = (&agreement.left, &agreement.right) {
+        if len > 1 && !agreement.layout.shape().is_empty() && (0..ylen).all(|k| positions.index(k) == k) {
+            if let Some(result) = decode_compact(left, right, xlen, ylen, len, agreement.len, &agreement.layout) { return Ok(result); }
+        }
+    }
+    let (xs, ys) = (numbers(left)?, numbers(right)?);
     let mut data = Vec::with_capacity(agreement.len);
     for i in 0..agreement.len {
         span.check()?;
@@ -435,6 +451,23 @@ fn encode_whole<'a>(bases: Items<'a>, values: Items<'a>, layout: &Layout) -> Opt
         for (digit, divisor) in digits.iter_mut().zip(&divisors).rev() { (value, *digit) = match divisor { Some(d) => d.div_mod(value)?, None => (0, value) }; }
     }
     if exact { layout.integers(data) } else { layout.floats(data.into_iter().map(|n| n as f64).collect()) }.ok()
+}
+
+/// `bases⊥digits` when both hold numbers in compact storage, with each of the `cells` digit cells of `len` digits together and in
+/// order. The value is floats when either argument holds floats, and exact when both hold integers. `None` for other arguments, or
+/// when an exact step leaves `i64`.
+fn decode_compact(bases: &Value, digits: &Value, xlen: usize, ylen: usize, len: usize, cells: usize, layout: &Layout) -> Option<Value> {
+    let (x, y) = (|k: usize| if xlen == 1 { 0 } else { k }, |c: usize, k: usize| c * ylen + if ylen == 1 { 0 } else { k });
+    if matches!(bases.as_items(), Items::Floats(_)) || matches!(digits.as_items(), Items::Floats(_)) {
+        let (b, d) = (crate::element::read_as::<f64>(bases)?, crate::element::read_as::<f64>(digits)?);
+        return layout.floats((0..cells).map(|c| (1..len).fold(d[y(c, 0)], |v, k| v * b[x(k)] + d[y(c, k)])).collect()).ok();
+    }
+    fn whole(a: &Value) -> Option<Cow<'_, [i64]>> {
+        match a.as_items() { items @ (Items::Booleans(_) | Items::Integers(_)) => items.integers().ok(), _ => None }
+    }
+    let (b, d) = (whole(bases)?, whole(digits)?);
+    let data = (0..cells).map(|c| (1..len).try_fold(d[y(c, 0)], |v, k| v.checked_mul(b[x(k)])?.checked_add(d[y(c, k)]))).collect::<Option<_>>()?;
+    layout.integers(data).ok()
 }
 
 /// Roll every item of `right`, keeping its layout. Each result is exact when its bound is.
@@ -471,6 +504,10 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Context<'_>, fill: bool, rn
                 return generated_items(right.shape().to_vec(), draws, exact)
                     .and_then(|v| v.with_layout(right.layout().clone()))
                     .error_at(span, "invalid roll result");
+            }
+            if bounds.iter().all(|&n| n == 0) {
+                let draws = bounds.iter().map(|_| rng.sample(rand::distr::Open01)).collect();
+                return right.layout().floats(draws).error_at(span, "invalid roll result");
             }
             for n in bounds { data.add(draw(n, exact, rng)); }
         }

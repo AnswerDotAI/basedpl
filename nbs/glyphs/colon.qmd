@@ -22,7 +22,7 @@ A keyed `K` supplies axis names and position keys together.
 
 ```bpl
 axes←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]
-M←axes:[1 2 3 ⋄ 4 5 6]
+M←axes:[1 2 3⋄4 5 6]
 "LA" "Feb"⌷M       ⍝ 5
 ```
 

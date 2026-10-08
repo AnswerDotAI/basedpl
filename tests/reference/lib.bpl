@@ -2,33 +2,33 @@
 
 ⍝ — disp with a centring left argument centres each item in its cell
 [disp]←•load "lib/array.bpl"
-X←["a" "ccc" ⋄ "bb" "d"]
+X←["a" "ccc"⋄"bb" "d"]
 [0 0 disp X;0 1 disp X]
 ⍝ =>
-[["┌──┬───┐" ⋄ "│a │ccc│" ⋄ "├──┼───┤" ⋄ "│bb│d  │" ⋄ "└──┴───┘"] ["┌──┬───┐" ⋄ "│a │ccc│" ⋄ "├──┼───┤" ⋄ "│bb│ d │" ⋄ "└──┴───┘"]]
+[["┌──┬───┐"⋄"│a │ccc│"⋄"├──┼───┤"⋄"│bb│d  │"⋄"└──┴───┘"] ["┌──┬───┐"⋄"│a │ccc│"⋄"├──┼───┤"⋄"│bb│ d │"⋄"└──┴───┘"]]
 
 ⍝ — disp and dsp draw each plane of a nested rank-3 array, and disp leaves a blank row between rank-4 hyperplanes
 [disp dsp]←•load "lib/array.bpl"
 v←'a' "bb" 'c' "dd"
 [disp 2 1 2⍴v;dsp 2 1 2⍴v;disp 2 2 1 1⍴v]
 ⍝ =>
-[["┌─┬──┐" ⋄ "│a│bb│" ⋄ "└─┴──┘" ⋄ "┌─┬──┐" ⋄ "│c│dd│" ⋄ "└─┴──┘"] ["────" ⋄ "a│bb" ⋄ "    " ⋄ "c│dd"] ["┌──┐" ⋄ "│a │" ⋄ "└──┘" ⋄ "┌──┐" ⋄ "│bb│" ⋄ "└──┘" ⋄ "    " ⋄ "┌──┐" ⋄ "│c │" ⋄ "└──┘" ⋄ "┌──┐" ⋄ "│dd│" ⋄ "└──┘"]]
+[["┌─┬──┐"⋄"│a│bb│"⋄"└─┴──┘"⋄"┌─┬──┐"⋄"│c│dd│"⋄"└─┴──┘"] ["────"⋄"a│bb"⋄"    "⋄"c│dd"] ["┌──┐"⋄"│a │"⋄"└──┘"⋄"┌──┐"⋄"│bb│"⋄"└──┘"⋄"    "⋄"┌──┐"⋄"│c │"⋄"└──┘"⋄"┌──┐"⋄"│dd│"⋄"└──┘"]]
 
 ⍝⍝ Blank removal
 
 ⍝ — On a matrix, blank removal acts on columns that are blank in every row
 [dab deb dlb dmb dtb dxb]←•load "lib/string.bpl"
-M←["  a  b  " ⋄ " c   d  "]
+M←["  a  b  "⋄" c   d  "]
 [dlb M;dtb M;deb M;dmb M;dxb M;dab M]
 ⍝ =>
-[[" a  b  " ⋄ "c   d  "] ["  a  b" ⋄ " c   d"] [" a  b" ⋄ "c   d"] ["  a b " ⋄ " c  d "] [" a b" ⋄ "c  d"] ["ab" ⋄ "cd"]]
+[[" a  b  "⋄"c   d  "] ["  a  b"⋄" c   d"] [" a  b"⋄"c   d"] ["  a b "⋄" c  d "] [" a b"⋄"c  d"] ["ab"⋄"cd"]]
 
 ⍝ — A higher-rank array is trimmed as the matrix of its rows, keeping its leading shape
 [dab deb dlb dmb dtb dxb]←•load "lib/string.bpl"
-A←[["  ab  " ⋄ " c    "] ⋄ ["   d  " ⋄ "  e   "]]
+A←[["  ab  "⋄" c    "]⋄["   d  "⋄"  e   "]]
 [dlb A;dtb A;deb A;dmb A;dxb A;dab A]
 ⍝ =>
-[[[" ab  " ⋄ "c    "] ⋄ ["  d  " ⋄ " e   "]] [["  ab" ⋄ " c  "] ⋄ ["   d" ⋄ "  e "]] [[" ab" ⋄ "c  "] ⋄ ["  d" ⋄ " e "]] [["  ab " ⋄ " c   "] ⋄ ["   d " ⋄ "  e  "]] [[" ab" ⋄ "c  "] ⋄ ["  d" ⋄ " e "]] [["ab" ⋄ "c "] ⋄ ["d " ⋄ "e "]]]
+[[[" ab  "⋄"c    "]⋄["  d  "⋄" e   "]] [["  ab"⋄" c  "]⋄["   d"⋄"  e "]] [[" ab"⋄"c  "]⋄["  d"⋄" e "]] [["  ab "⋄" c   "]⋄["   d "⋄"  e  "]] [[" ab"⋄"c  "]⋄["  d"⋄" e "]] [["ab"⋄"c "]⋄["d "⋄"e "]]]
 
 ⍝ — A nested argument is trimmed item by item
 [dab deb dlb dmb dtb dxb]←•load "lib/string.bpl"
@@ -143,17 +143,17 @@ e←base_64¨•ucs¨v
 
 ⍝ — box frames text in ASCII when its third option is 1, and a simple left argument lists row dividers
 [box]←•load "lib/dyalog.bpl"
-M←["abc" ⋄ "def"]
+M←["abc"⋄"def"]
 [box M;[⍬ ⍬ 1] box M;[1] box M]
 ⍝ =>
-[["┌───┐" ⋄ "│abc│" ⋄ "│def│" ⋄ "└───┘"] ["+---+" ⋄ "|abc|" ⋄ "|def|" ⋄ "+---+"] ["┌───┐" ⋄ "│abc│" ⋄ "├───┤" ⋄ "│def│" ⋄ "└───┘"]]
+[["┌───┐"⋄"│abc│"⋄"│def│"⋄"└───┘"] ["+---+"⋄"|abc|"⋄"|def|"⋄"+---+"] ["┌───┐"⋄"│abc│"⋄"├───┤"⋄"│def│"⋄"└───┘"]]
 
 ⍝ — box accepts a unit border position: [1 ⍬] draws a row divider and [⍬ 1] a column divider
 [box]←•load "lib/dyalog.bpl"
-M←["abc" ⋄ "def"]
+M←["abc"⋄"def"]
 [[1 ⍬] box M;[⍬ 1] box M]
 ⍝ =>
-[["┌───┐" ⋄ "│abc│" ⋄ "├───┤" ⋄ "│def│" ⋄ "└───┘"] ["┌─┬──┐" ⋄ "│a│bc│" ⋄ "│d│ef│" ⋄ "└─┴──┘"]]
+[["┌───┐"⋄"│abc│"⋄"├───┤"⋄"│def│"⋄"└───┘"] ["┌─┬──┐"⋄"│a│bc│"⋄"│d│ef│"⋄"└─┴──┘"]]
 
 ⍝ — case applies the function for the first true selector, or returns its argument when none is true
 [case]←•load "lib/dyalog.bpl"
@@ -174,10 +174,10 @@ M←["abc" ⋄ "def"]
 [Cut]←•load "lib/dyalog.bpl"
 [[1 0 1;1 0](⊂Cut 1)3 2⍴⍳6;[1 0 1;0 1](⊂Cut 2)3 2⍴⍳6]
 ⍝ =>
-[2 1⍴[[0 1 ⋄ 2 3] [4 5 ⋄]];2 1⍴[[0 1 ⋄] [2 3 ⋄ 4 5]]]
+[2 1⍴[[0 1⋄2 3] [4 5⋄]];2 1⍴[[0 1⋄] [2 3⋄4 5]]]
 
 ⍝ — days counts each row of a matrix of dates: 1900-01-01 is day 1, and 1900 is not a leap year
-[days]←•load "lib/dyalog.bpl" ⋄ days [2000 1 1 ⋄ 1900 1 1]   ⍝ 36525 1
+[days]←•load "lib/dyalog.bpl" ⋄ days [2000 1 1⋄1900 1 1]   ⍝ 36525 1
 
 ⍝ — dice names every kind of throw
 [dice]←•load "lib/dyalog.bpl" ⋄ dice¨[6 6;1 1;3 3;3 4;2 3]
@@ -203,7 +203,7 @@ M←["abc" ⋄ "def"]
 
 ⍝ — mayan draws zero as a shell, each five as a bar and each one as a dot: 1445225 is 9 0 13 1 5 in base 20
 [mayan]←•load "lib/dyalog.bpl" ⋄ 0 mayan 1445225
-5 1⍴[["     " ⋄ "⍟⍟⍟⍟ " ⋄ "⌹⌹⌹⌹⌹"] ["     " ⋄ " _@/ "] ["     " ⋄ " ⍟⍟⍟ " ⋄ "⌹⌹⌹⌹⌹" ⋄ "⌹⌹⌹⌹⌹"] ["     " ⋄ "  ⍟  "] ["     " ⋄ "⌹⌹⌹⌹⌹"]]
+5 1⍴[["     "⋄"⍟⍟⍟⍟ "⋄"⌹⌹⌹⌹⌹"] ["     "⋄" _@/ "] ["     "⋄" ⍟⍟⍟ "⋄"⌹⌹⌹⌹⌹"⋄"⌹⌹⌹⌹⌹"] ["     "⋄"  ⍟  "] ["     "⋄"⌹⌹⌹⌹⌹"]]
 
 ⍝ — morse decodes Morse, where / separates words
 [morse]←•load "lib/dyalog.bpl"
@@ -225,7 +225,7 @@ M←4 4⍴7
 $t $t $t
 
 ⍝ — quzzle reports that a board with no space has no solutions
-[quzzle]←•load "lib/dyalog.bpl" ⋄ quzzle ["ab" ⋄ "cd"]
+[quzzle]←•load "lib/dyalog.bpl" ⋄ quzzle ["ab"⋄"cd"]
 "There are no solutions"
 
 ⍝ — ratsum normalises a left repeating unit other than 0 or 9: ...333 is ¯1/3
@@ -294,7 +294,7 @@ bt←"T01"ratsum
 
 ⍝ — sudoku finds no solution when a cell's row, column and box already hold every digit
 [sudoku]←•load "lib/dyalog.bpl"
-sudoku [0 1 0 0 ⋄ 0 4 0 0 ⋄ 2 0 0 0 ⋄ 3 0 0 0]
+sudoku [0 1 0 0⋄0 4 0 0⋄2 0 0 0⋄3 0 0 0]
 ⍝ =>
 ⍬
 
@@ -318,13 +318,13 @@ sudoku [0 1 0 0 ⋄ 0 4 0 0 ⋄ 2 0 0 0 ⋄ 3 0 0 0]
 [dots]←•load "lib/dyalog.bpl"
 '.' dots ⊃"f←{" "    g←{" "        ⍵+1" "    }" "    g ⍵" "}"
 ⍝ =>
-["f←{        " ⋄ ".   g←{    " ⋄ ".   .   ⍵+1" ⋄ ".   }      " ⋄ ".   g ⍵    " ⋄ "}          "]
+["f←{        "⋄".   g←{    "⋄".   .   ⍵+1"⋄".   }      "⋄".   g ⍵    "⋄"}          "]
 
 ⍝ — dots marks the indentation above :Else and :EndIf
 [dots]←•load "lib/dyalog.bpl"
 dots ⊃" r←f x" " :If x" "     r←1" " :Else" "     r←2" " :EndIf"
 ⍝ =>
-[" r←f x  " ⋄ " :If x  " ⋄ " ·   r←1" ⋄ " :Else  " ⋄ " ·   r←2" ⋄ " :EndIf "]
+[" r←f x  "⋄" :If x  "⋄" ·   r←1"⋄" :Else  "⋄" ·   r←2"⋄" :EndIf "]
 
 ⍝ — mac: a backslash stops the next character expanding, and / repeats a character by the count before the macro name
 [mac]←•load "lib/dyalog.bpl"
@@ -354,9 +354,9 @@ m←⌽(32⍴2)⊤32↑0 16404 49152 57344 32789 24598 8215 57344 57344 16406 49
 ⍝ — Cut 3 tiles a matrix by the given movements and sizes, keeping partial tiles; ¯3 keeps only whole tiles, and a negative size reverses each tile
 [Cut]←•load "lib/dyalog.bpl"
 x←5 7⍴1+⍳35
-[[2 1 ⋄ 3 2]({+/,⍵}Cut 3)x;¯3 2({↑,⍵}Cut ¯3)x]
+[[2 1⋄3 2]({+/,⍵}Cut 3)x;¯3 2({↑,⍵}Cut ¯3)x]
 ⍝ =>
-[[51 57 63 69 75 81 42 ⋄ 135 141 147 153 159 165 84 ⋄ 59 61 63 65 67 69 35] [15 16 17 18 19 20 ⋄ 22 23 24 25 26 27 ⋄ 29 30 31 32 33 34]]
+[[51 57 63 69 75 81 42⋄135 141 147 153 159 165 84⋄59 61 63 65 67 69 35] [15 16 17 18 19 20⋄22 23 24 25 26 27⋄29 30 31 32 33 34]]
 
 ⍝ — lisp reports a missing end of input at the top level, inside a list and after a quote, and literals of 20 characters; - and * apply to their arguments
 [lisp]←•load "lib/dyalog.bpl"

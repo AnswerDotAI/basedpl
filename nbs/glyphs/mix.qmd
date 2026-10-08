@@ -6,7 +6,7 @@ Keys: `Alt-x`. Ranks: `0` monadic, `1 ∞` dyadic
 
 ```bpl
 ⊃1 2 3             ⍝ 1 2 3
-⊃[[1 2] [3 4 5]]   ⍝ [1 2 0 ⋄ 3 4 5]
+⊃[[1 2] [3 4 5]]   ⍝ [1 2 0⋄3 4 5]
 ```
 
 `P⊃Y` selects at coordinates `P` along the leading axes. With fewer coordinates than axes, the result is the cell made of the remaining axes. With a coordinate for every axis, the result is the stored value. Successive Picks traverse nesting. Empty coordinates return `Y`.
@@ -39,7 +39,7 @@ With axes, `⊃⍠A Y` places the cell axes of Mix among the frame axes. See [Ax
 `⊃⁻¹Y` splits `Y` into its major cells.
 
 ```bpl
-⊃⁻¹[1 2 ⋄ 3 4]   ⍝ [1 2;3 4]
+⊃⁻¹[1 2⋄3 4]   ⍝ [1 2;3 4]
 ```
 
 ## Errors

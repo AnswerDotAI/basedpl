@@ -217,13 +217,15 @@ impl LineEditor {
         let symbols = Symbols::default();
         editor.bind_sequence(Event::Any, EventHandler::Conditional(Box::new(symbols.clone())));
         editor.set_helper(Some(symbols));
-        let config = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from).filter(|dir| dir.is_absolute())
+        let config = std::env::var_os("XDG_CONFIG_HOME")
+            .map(std::path::PathBuf::from)
+            .filter(|dir| dir.is_absolute())
             .or_else(|| std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config")));
         let history = config.map(|dir| dir.join("basedpl/history"));
         if let Some(path) = &history {
             match editor.load_history(path) {
-                Ok(()) => {},
-                Err(rustyline::error::ReadlineError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {},
+                Ok(()) => {}
+                Err(rustyline::error::ReadlineError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(e) => eprintln!("History: {e}"),
             }
         }
@@ -242,8 +244,8 @@ impl LineEditor {
 impl Drop for LineEditor {
     fn drop(&mut self) {
         if let Some(path) = &self.history {
-            let result = std::fs::create_dir_all(path.parent().unwrap()).map_err(rustyline::error::ReadlineError::Io)
-                .and_then(|_| self.editor.append_history(path));
+            let result =
+                std::fs::create_dir_all(path.parent().unwrap()).map_err(rustyline::error::ReadlineError::Io).and_then(|_| self.editor.append_history(path));
             if let Err(e) = result { eprintln!("History: {e}"); }
         }
     }

@@ -34,9 +34,9 @@ pub(crate) enum NodeKind {
 pub(crate) enum ListForm {
     /// `[a b]`: each cell is one item.
     Items,
-    /// `[1 2 ⋄ 3 4]`: each cell is a major cell of the result.
+    /// `[1 2⋄3 4]`: each cell is a major cell of the result.
     Cells,
-    /// `(4 ⋄ 4 5)`: each cell is a row, and each row is one item.
+    /// `(4⋄4 5)`: each cell is a row, and each row is one item.
     Rows,
 }
 
@@ -380,9 +380,7 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>) -> Result<
             '\'' => {
                 let unclosed = |at| Err(span(at).error(ErrorKind::Syntax, "unclosed character literal").into());
                 let c = match chars.next() { Some((_, c)) if c != '\n' => c, next => return unclosed(next.map_or(len, |(i, _)| i)) };
-                if c == '\'' && chars.peek().is_none_or(|&(_, c)| c != '\'') {
-                    TokenKind::Literal(crate::keyed::text(""))
-                } else {
+                if c == '\'' && chars.peek().is_none_or(|&(_, c)| c != '\'') { TokenKind::Literal(crate::keyed::text("")) } else {
                     match chars.peek() {
                         Some((_, '\'')) => {
                             chars.next();
@@ -431,9 +429,7 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>) -> Result<
                 }
                 token
             }
-            '⍛' => {
-                return Err(span(start + c.len_utf8()).error(ErrorKind::Syntax, "⍛ is retired: use ↣ or ↢ to bind or preprocess, and ∘ for Atop").into())
-            }
+            '⍛' => return Err(span(start + c.len_utf8()).error(ErrorKind::Syntax, "⍛ is retired: use ↣ or ↢ to bind or preprocess, and ∘ for Atop").into()),
             '(' => TokenKind::Open,
             ')' => TokenKind::Close(suffix(chars, EXACT)),
             '[' => TokenKind::BracketOpen,
@@ -463,13 +459,12 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>) -> Result<
             'ᵀ' => TokenKind::Operator(OperatorKind::Super(Superscript::Transpose)),
             'ᵘ' => TokenKind::Operator(OperatorKind::Super(Superscript::Unit)),
             c if c == '⁻' || script_digit(SUPERSCRIPT_DIGITS, c).is_some() => {
-                let power =
-                    script_integer(c, chars, SUPERSCRIPT_DIGITS, "superscript").map_err(|(k, m)| span(position(chars, len)).error(k, m))?;
+                let power = script_integer(c, chars, SUPERSCRIPT_DIGITS, "superscript").map_err(|(k, m)| span(position(chars, len)).error(k, m))?;
                 TokenKind::Operator(OperatorKind::Super(Superscript::Power(power)))
             }
-            c if c == '₋' || script_digit(SUBSCRIPT_DIGITS, c).is_some() => TokenKind::Subscript(
-                script_integer(c, chars, SUBSCRIPT_DIGITS, "subscript").map_err(|(k, m)| span(position(chars, len)).error(k, m))?,
-            ),
+            c if c == '₋' || script_digit(SUBSCRIPT_DIGITS, c).is_some() => {
+                TokenKind::Subscript(script_integer(c, chars, SUBSCRIPT_DIGITS, "subscript").map_err(|(k, m)| span(position(chars, len)).error(k, m))?)
+            }
             c if c.is_whitespace() => return Ok(None),
             c => match (OperatorKind::from_glyph(c), Primitive::from_glyph(c)) {
                 (Some(op), _) => TokenKind::Operator(op),
@@ -688,7 +683,7 @@ fn parenthesised(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailu
     Ok(NodeKind::Group(expression(nodes)?))
 }
 
-/// Parts separated by `⋄`, where a trailing `⋄` ends the last row: `(1 2 ⋄)` is `[[1 2]]`, and `[1 2 ⋄]` is a 1×2 matrix.
+/// Parts separated by `⋄`, where a trailing `⋄` ends the last row: `(1 2⋄)` is `[[1 2]]`, and `[1 2⋄]` is a 1×2 matrix.
 fn diamond_rows(mut parts: Vec<Vec<Node>>, span: &Span) -> Result<Vec<Vec<Node>>, ParseFailure> {
     if parts.len() > 1 && parts.last().is_some_and(Vec::is_empty) { parts.pop(); }
     if parts.iter().any(Vec::is_empty) { return Err(invalid(span, "empty row between diamonds")); }
@@ -702,7 +697,7 @@ fn row(nodes: Vec<Node>) -> Result<Node, ParseFailure> {
     Ok(Node { kind: NodeKind::ArrayLiteral { record: cells.iter().any(|c| key_colon(c).is_some()), cells, form: ListForm::Items }, span })
 }
 
-/// `(4 ⋄ 4 5)` is `[[4] [4 5]]`. Its items are the rows, each read as a bracketed list.
+/// `(4⋄4 5)` is `[[4] [4 5]]`. Its items are the rows, each read as a bracketed list.
 fn rows(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
     let cells = diamond_rows(split(pieces, false)?, span)?.into_iter().map(|nodes| Ok(vec![row(nodes)?])).collect::<Result<_, ParseFailure>>()?;
     Ok(NodeKind::ArrayLiteral { cells, form: ListForm::Rows, record: false })
@@ -962,5 +957,121 @@ pub fn parse(source: Arc<Source>) -> ParseStatus {
             ParseStatus::Complete(Parsed { statements: statements.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression }).collect() })
         }
         Err(failure) => failure.into(),
+    }
+}
+
+/// A parse tree node for source tools: its kind, its byte range in the source, its children, and the syntax error of an `Error` node.
+pub struct SyntaxNode {
+    pub kind: &'static str,
+    pub range: std::ops::Range<usize>,
+    pub children: Vec<SyntaxNode>,
+    pub error: Option<Error>,
+}
+
+impl SyntaxNode {
+    fn new(kind: &'static str, range: std::ops::Range<usize>, children: Vec<SyntaxNode>) -> Self { Self { kind, range, children, error: None } }
+
+    fn shifted(mut self, by: usize) -> Self {
+        self.range = self.range.start + by..self.range.end + by;
+        self.children = self.children.into_iter().map(|c| c.shifted(by)).collect();
+        self
+    }
+
+    /// Insert `node` under the deepest node whose range holds it, in source order.
+    fn insert(&mut self, node: SyntaxNode) {
+        if let Some(child) = self.children.iter_mut().find(|c| c.range.start <= node.range.start && node.range.end <= c.range.end) {
+            return child.insert(node);
+        }
+        let i = self.children.partition_point(|c| c.range.start < node.range.start);
+        self.children.insert(i, node);
+    }
+}
+
+/// The parse tree of `text`. Kinds are `NodeKind` variant names, plus `Program`, `Statement`, `Body` for each dfn body, `Cell` for each array-literal cell, `Stage` for each pipeline stage, `Comment`, and `Error` for lines that don't parse. Separators have no nodes.
+pub fn syntax_tree(text: &str) -> SyntaxNode {
+    let source = Source::new("<syntax>", text);
+    let children = match parse(source.clone()) {
+        ParseStatus::Complete(parsed) => parsed.statements.iter().map(statement_node).collect(),
+        _ => recovered(&source),
+    };
+    let mut tree = SyntaxNode::new("Program", 0..text.len(), children);
+    for (range, class) in highlight(text) { if class == "comment" { tree.insert(SyntaxNode::new("Comment", range, Vec::new())) } }
+    tree
+}
+
+/// The statements of `source`, parsed in chunks of whole lines. A chunk grows a line at a time while it's incomplete. A chunk that is invalid, or incomplete at the end of the text, becomes an `Error` node, whose error span is a range of the whole text.
+fn recovered(source: &Arc<Source>) -> Vec<SyntaxNode> {
+    let text = source.text.as_str();
+    let mut ends: Vec<usize> = text.match_indices('\n').map(|(i, _)| i + 1).chain([text.len()]).collect();
+    ends.dedup();
+    let (mut nodes, mut start) = (Vec::new(), 0);
+    while start < text.len() {
+        let mut lines = ends.iter().copied().filter(|&end| end > start).peekable();
+        let (end, status) = loop {
+            let end = lines.next().expect("a line ends after `start`");
+            match parse(Source::new("<syntax>", &text[start..end])) {
+                ParseStatus::Incomplete(_) if lines.peek().is_some() => continue,
+                status => break (end, status),
+            }
+        };
+        match status {
+            ParseStatus::Complete(parsed) => nodes.extend(parsed.statements.iter().map(|s| statement_node(s).shifted(start))),
+            ParseStatus::Incomplete(mut error) | ParseStatus::Invalid(mut error) => {
+                let range = error.span.range.start + start..error.span.range.end + start;
+                error.span = Span { source: source.clone(), range };
+                let stop = if text[..end].ends_with('\n') { end - 1 } else { end };
+                nodes.push(SyntaxNode { error: Some(error), ..SyntaxNode::new("Error", start..stop, Vec::new()) });
+            }
+        }
+        start = end;
+    }
+    nodes
+}
+
+fn list_node(kind: &'static str, nodes: &[Node]) -> SyntaxNode { SyntaxNode::new(kind, cover(nodes).range, nodes.iter().map(syntax_node).collect()) }
+
+fn statement_node(statement: &Statement) -> SyntaxNode { list_node("Statement", &statement.nodes) }
+
+fn syntax_node(node: &Node) -> SyntaxNode {
+    let children = match &node.kind {
+        NodeKind::Pipeline(stages) => stages.iter().map(|s| list_node("Stage", s)).collect(),
+        NodeKind::Group(nodes) | NodeKind::Run(nodes) => nodes.iter().map(syntax_node).collect(),
+        NodeKind::Scope(target, body) => vec![syntax_node(target), syntax_node(body)],
+        NodeKind::ArrayLiteral { cells, .. } => cells.iter().map(|c| list_node("Cell", c)).collect(),
+        NodeKind::Dfn(definition) => definition.bodies.iter().map(|body| body_node(body, &definition.span)).collect(),
+        _ => Vec::new(),
+    };
+    SyntaxNode::new(node.kind.name(), node.span.range.clone(), children)
+}
+
+/// A dfn body. Only `{}` has an empty body, which spans the text between its braces.
+fn body_node(body: &[Statement], dfn: &Span) -> SyntaxNode {
+    let range = match (body.first(), body.last()) {
+        (Some(first), Some(last)) => cover(&first.nodes).range.start..cover(&last.nodes).range.end,
+        _ => dfn.range.start + 1..dfn.range.end - 1,
+    };
+    SyntaxNode::new("Body", range, body.iter().map(statement_node).collect())
+}
+
+impl NodeKind {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Literal(_) => "Literal",
+            Self::Function(_) => "Function",
+            Self::Operator(_) => "Operator",
+            Self::Name(_) => "Name",
+            Self::System(_) => "System",
+            Self::Assign => "Assign",
+            Self::Pipe => "Pipe",
+            Self::Pipeline(_) => "Pipeline",
+            Self::Output => "Output",
+            Self::ErrorGuard => "ErrorGuard",
+            Self::Group(_) => "Group",
+            Self::Run(_) => "Run",
+            Self::Subscript(_) => "Subscript",
+            Self::Scope(..) => "Scope",
+            Self::ArrayLiteral { .. } => "ArrayLiteral",
+            Self::Dfn(_) => "Dfn",
+        }
     }
 }

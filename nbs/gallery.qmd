@@ -1,0 +1,42 @@
+---
+title: Gallery
+description: Demos that draw with BPL in your browser.
+resources: [playground/*, gallery/*, driver.js]
+toc: false
+---
+
+Choose a demo to run it. The **Code** tab holds its BPL, which you can edit and run again with **▶ Run**, or Ctrl-Enter (Cmd-Enter on a Mac). **Reset** brings back the demo's own code and runs it. Each run starts a new session. The interpreter runs in your browser, as in the [playground](playground.qmd).
+
+::: {.column-screen-inset-right}
+```{=html}
+<div id="gallery">
+<nav id="demos" class="nav nav-pills flex-column">
+<a class="nav-link" href="#attractor"></a>
+<a class="nav-link" href="#dragon"></a>
+<a class="nav-link" href="#flow"></a>
+<a class="nav-link" href="#boids"></a>
+<a class="nav-link" href="#reaction"></a>
+<a class="nav-link" href="#phyllotaxis"></a>
+<a class="nav-link" href="#mandelbrot"></a>
+<a class="nav-link" href="#orbits"></a>
+</nav>
+<div class="gallery-main">
+<div class="gallery-bar">
+<ul class="nav nav-tabs" role="tablist">
+<li class="nav-item" role="presentation"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#gallery-output" type="button" role="tab">Output</button></li>
+<li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#gallery-code" type="button" role="tab">Code</button></li>
+</ul>
+<div class="bpl-buttons">
+<button id="run" class="btn btn-sm btn-primary" title="Run" aria-label="Run">▶</button>
+<button id="reset" class="btn btn-sm btn-outline-secondary">Reset</button>
+</div>
+</div>
+<div class="tab-content">
+<div id="gallery-output" class="tab-pane active" role="tabpanel"><div id="output" class="cell-output cell-output-display"></div><p id="about"></p></div>
+<div id="gallery-code" class="tab-pane" role="tabpanel"><div id="code" class="bpl-editor" data-bpl></div></div>
+</div>
+</div>
+</div>
+<script type="module" src="playground/gallery.js"></script>
+```
+:::

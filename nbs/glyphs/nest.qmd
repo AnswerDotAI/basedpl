@@ -13,13 +13,13 @@ Keys: `Alt-Minus z`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 ```bpl
 1 1 0 1 1⊆"abcde" ⍝ "ab" "de"
-1 1 0 2⊆4 2⍴⍳8    ⍝ [[0 1 ⋄ 2 3] [6 7 ⋄]]
+1 1 0 2⊆4 2⍴⍳8    ⍝ [[0 1⋄2 3] [6 7⋄]]
 ```
 
 Marks are nonnegative integers. Unit and singleton marks extend. `N⊆⍠K Y` partitions along axis `K` instead. `N⊆⍤1 Y` partitions each row. Unlike [`⊂`](enclose.qmd), positive marks need not start a partition at every position.
 
 ```bpl
-1 1 0 1 1⊆⍤1 ["abcde" ⋄ "fghij"] ⍝ ["ab" "de" ⋄ "fg" "ij"]
+1 1 0 1 1⊆⍤1 ["abcde"⋄"fghij"] ⍝ ["ab" "de"⋄"fg" "ij"]
 ```
 
 ## Inverse
@@ -28,5 +28,5 @@ Marks are nonnegative integers. Unit and singleton marks extend. `N⊆⍠K Y` pa
 
 ```bpl
 ⊆⁻¹⊂1 2             ⍝ 1 2
-1 1 2⊆⁻¹(1 2 ⋄ 3)   ⍝ 1 2 3
+1 1 2⊆⁻¹(1 2⋄3)   ⍝ 1 2 3
 ```

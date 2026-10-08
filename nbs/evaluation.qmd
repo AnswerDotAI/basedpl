@@ -67,9 +67,9 @@ Two names next to each other need a space between them. A literal can touch a na
 [Pervasive functions](terms.qmd#term-pervasive-function) align the leading axes of their arguments. Missing trailing axes count as length 1. Axes of equal length agree. An axis of length 1 expands to the other length, including to zero. Axes of length 1 in both arguments remain. Any other mismatch is a `LENGTH` error.
 
 ```bpl
-[1 2 3 ⋄ 4 5 6]+10 20 ⍝ [11 12 13 ⋄ 24 25 26]
-[[10] ⋄ [20]]+[1 2 3 ⋄] ⍝ [11 12 13 ⋄ 21 22 23]
-⍴[[10] ⋄]+1 2 3       ⍝ [3 1]ₓ
+[1 2 3⋄4 5 6]+10 20 ⍝ [11 12 13⋄24 25 26]
+[[10]⋄[20]]+[1 2 3⋄] ⍝ [11 12 13⋄21 22 23]
+⍴[[10]⋄]+1 2 3       ⍝ [3 1]ₓ
 ```
 
 Pervasion repeats these rules inside nested items. Each and Rank frames also use leading agreement. Products, replication, indexing and assignment have their own rules. BPL's agreement extends APL's. NumPy aligns trailing axes instead.
@@ -85,8 +85,8 @@ v←10 20 30 40 ⋄ [[2 0]]⌷v       ⍝ 30 10
 v←10 20 30 40 ⋄ [⊂1]⌷v          ⍝ ⊂20
 v←10 20 30 40 ⋄ [[1]]⌷v         ⍝ [20]
 v←10 20 30 40 ⋄ v₋₁             ⍝ 40
-m←[1 2 3 ⋄ 4 5 6] ⋄ 1⌷m         ⍝ 4 5 6
-m←[1 2 3 ⋄ 4 5 6] ⋄ ∞ 1⌷m       ⍝ 2 5
+m←[1 2 3⋄4 5 6] ⋄ 1⌷m         ⍝ 4 5 6
+m←[1 2 3⋄4 5 6] ⋄ ∞ 1⌷m       ⍝ 2 5
 ```
 
 [Axis](glyphs/axis.qmd) `⍠` applies a function along axes given as numbers or names, as in `+/⍠0` and `+/⍠"month"`. [Rank](glyphs/rank.qmd) `⍤` applies a function to trailing cells. `⍤0` passes an atom item as itself, and an array item as a scalar holding it.
@@ -101,7 +101,7 @@ Some functions have a default axis:
 Structural functions also accept lists of axes.
 
 ```bpl
-+/⍠0 [1 2 3 ⋄ 4 5 6]           ⍝ 5 7 9
++/⍠0 [1 2 3⋄4 5 6]           ⍝ 5 7 9
 ```
 
 ## Equality and ordering

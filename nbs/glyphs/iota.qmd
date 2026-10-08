@@ -13,14 +13,14 @@ Keys: `Alt-i`. Ranks: `1` monadic, `∞ ∞` dyadic
 A shape vector generates an array of coordinate vectors. A negative length reverses its axis.
 
 ```bpl
-⍳2 2               ⍝ [[0 0] [0 1] ⋄ [1 0] [1 1]]
-⍳2 ¯2              ⍝ [[0 1] [0 0] ⋄ [1 1] [1 0]]
+⍳2 2               ⍝ [[0 0] [0 1]⋄[1 0] [1 1]]
+⍳2 ¯2              ⍝ [[0 1] [0 0]⋄[1 1] [1 0]]
 ```
 
 On a matrix, `⍳` applies to each row, as [Rank](rank.qmd) does. Fill pads the results to a common shape.
 
 ```bpl
-⍴⍳[2 3 ⋄ 1 1]       ⍝ [2 2 3]ₓ
+⍴⍳[2 3⋄1 1]       ⍝ [2 2 3]ₓ
 ```
 
 `⍳⍠A Y` returns the keys of axis `A`, or `0…length-1` on an unkeyed axis. Several axes return a vector of selector vectors.
@@ -50,10 +50,10 @@ A single query returns an atom. Batch axes supply the result shape. To search fo
 C←"cat" "dog"
 C⍳⊂"dog"           ⍝ 1ₓ
 C⍳["dog"]          ⍝ [1]ₓ
-m←[10 20 ⋄ 30 40 ⋄ 50 60]
+m←[10 20⋄30 40⋄50 60]
 m⍳30 40            ⍝ 1ₓ
-m⍳[30 40 ⋄]        ⍝ [1]ₓ
-m⍳[30 40 ⋄ 10 20]  ⍝ [1 0]ₓ
+m⍳[30 40⋄]        ⍝ [1]ₓ
+m⍳[30 40⋄10 20]  ⍝ [1 0]ₓ
 ```
 
 ## Inverse

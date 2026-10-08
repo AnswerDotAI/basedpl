@@ -497,7 +497,7 @@ tnest ← {  ⍝ Array from TreeView style tree.
   1=≢dvec?↑ivec;
   node←1↑ivec  ⍝ tree: node value.
   [dsub isub]←(1=dvec)↣⊂¨⍵  ⍝ sub treeviews.
-  node,∇¨↓⍉⊃[dsub-1 isub]
+  node,∇¨↓⍉[dsub-1⋄isub]
 }
 
 ⍝ From http://dfns.dyalog.com/c_trav.htm

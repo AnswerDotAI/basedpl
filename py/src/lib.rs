@@ -377,7 +377,7 @@ fn response(py: Python<'_>, result: Evaluation) -> PyResult<Py<PyDict>> {
     let d = PyDict::new(py);
     d.set_item("value", value)?;
     d.set_item("output", output(py, &result.output)?)?;
-    d.set_item("error", result.error.as_ref().map(|e| python(py, &basedpl::protocol::error(e))).transpose()?)?;
+    d.set_item("error", result.error.as_ref().map(|e| error(py, e)).transpose()?)?;
     Ok(d.unbind())
 }
 
@@ -396,6 +396,34 @@ fn _captured_literal(value: &str) -> PyResult<String> {
     basedpl::reference::expected_array(&value).map(|v| v.literal()).ok_or_else(|| PyValueError::new_err("invalid captured array"))
 }
 
+/// The character offset of each byte offset in `text` that starts a character or ends the text. Python indexes strings by character.
+fn char_offsets(text: &str) -> Vec<usize> {
+    let mut chars = vec![0; text.len() + 1];
+    for (i, (byte, _)) in text.char_indices().enumerate() { chars[byte] = i; }
+    chars[text.len()] = text.chars().count();
+    chars
+}
+
+/// `protocol::error` with character spans. The JSON worker protocol keeps byte spans.
+fn error(py: Python<'_>, e: &basedpl::Error) -> PyResult<Py<PyAny>> {
+    let span = |s: &basedpl::Span| { let chars = char_offsets(&s.source.text); serde_json::json!([chars[s.range.start], chars[s.range.end]]) };
+    let mut encoded = basedpl::protocol::error(e);
+    encoded["span"] = span(&e.span);
+    if let Some(calls) = encoded["calls"].as_array_mut() { for (call, s) in calls.iter_mut().zip(&e.calls) { call["span"] = span(s); } }
+    python(py, &encoded)
+}
+
+/// The parse tree of `text` as nested `(kind, start, end, children, error)` tuples, with character offsets. `error` is the syntax error of an `Error` node.
+#[pyfunction]
+fn _parse(py: Python<'_>, text: &str) -> PyResult<Py<PyAny>> {
+    fn node(py: Python<'_>, n: &basedpl::SyntaxNode, chars: &[usize]) -> PyResult<Py<PyAny>> {
+        let children = n.children.iter().map(|c| node(py, c, chars)).collect::<PyResult<Vec<_>>>()?;
+        let error = n.error.as_ref().map(|e| error(py, e)).transpose()?;
+        (n.kind, chars[n.range.start], chars[n.range.end], children, error).into_py_any(py)
+    }
+    node(py, &basedpl::syntax_tree(text), &char_offsets(text))
+}
+
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySession>()?;
@@ -404,6 +432,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyOperator>()?;
     m.add_function(wrap_pyfunction!(_check_reference, m)?)?;
     m.add_function(wrap_pyfunction!(_captured_literal, m)?)?;
+    m.add_function(wrap_pyfunction!(_parse, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add("symbols", python(m.py(), &basedpl::symbols::rows())?)?;
     m.add("_system_functions", basedpl::system::names().collect::<Vec<_>>())?;

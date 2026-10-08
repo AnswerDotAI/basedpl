@@ -216,7 +216,7 @@ dsp ← {  ⍝ Reduced version of disp.
   1≥⍴⍴⍵?{  ⍝ vector or unit:
     bars←{⍪(⌊/≢¨[⍺ ⍵])#'│'}/2↕⍵,0
     join←{⊃,/(⌈/≢¨⍵)↑¨⍵}
-    0 ¯1↓join top¨join¨↓⍉⊃[⍵ bars]
+    0 ¯1↓join top¨join¨↓⍉[⍵⋄bars]
   } 1 ∇¨ ⍵;  ⍝ vector: formatted items
   subs←⍺ ∇¨ ⍵  ⍝ higher rank: formatted items
   [rs cs]←+/¨1⊂⍠¯1 ⊃⍴¨subs
@@ -325,7 +325,7 @@ match ← {  ⍝ Wildcard match.
 
 ⍝ From http://dfns.dyalog.com/s_match.htm
 
-showmatch ← {marks←[(⍺ match ⍵)]⌷" ¯" ⋄ ,⍠ ⍳⍴⍴⍵ ⍵ {[⍺ ⋄ ⍵]}⍤1 marks}
+showmatch ← {marks←[(⍺ match ⍵)]⌷" ¯" ⋄ ,⍠ ⍳⍴⍴⍵ ⍵ {[⍺⋄⍵]}⍤1 marks}
 
 ⍝ From http://dfns.dyalog.com/n_nlines.htm
 
@@ -397,7 +397,8 @@ dscan ← {  ⍝ Divide scan
 
 ascan ← {  ⍝ Associative scan.
   2>0⊥⍴⍵?⍵;  ⍝ few items: done.
-  ⌽⊃⍶{(⊂ ↑⍵ ⍶ ⍺),⍵}/⌽(⊂∘↑¨↓⍵),⊃1↓¨↓⍵
+  lane←⍶{⌽⍶{[(↑⍵)⍶⍺],⍵}/⌽[⊂↑⍵],1↓⍵}  ⍝ one lane: builds the results newest first, then reverses them.
+  lane⍤1 ⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_ascana.htm

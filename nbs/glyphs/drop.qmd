@@ -24,7 +24,7 @@ With [axes](axis.qmd), `⍠K` selects the split axis or the drop axes.
 Vector counts apply to successive leading axes. Overdrop gives an empty axis.
 
 ```bpl
-1 1↓2 3⍴⍳6         ⍝ [4 5 ⋄]
+1 1↓2 3⍴⍳6         ⍝ [4 5⋄]
 5↓1 2              ⍝ ⍬
 ```
 
@@ -35,5 +35,5 @@ See [Mix / Take](take.qmd).
 `↓⁻¹Y` mixes the items of `Y` into one array.
 
 ```bpl
-↓⁻¹[1 2;3 4]   ⍝ [1 2 ⋄ 3 4]
+↓⁻¹[1 2;3 4]   ⍝ [1 2⋄3 4]
 ```

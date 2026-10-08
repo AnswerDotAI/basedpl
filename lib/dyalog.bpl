@@ -37,7 +37,7 @@ lsys←{  ⍝ Lindenmayer L-system expansion.
 ⍝ From https://dfns.dyalog.com/c_rr.htm
 rr←{  ⍝ Round-robin tournament.
   v←⍳n←0⌈⍵-1
-  1+(⍵÷2)↑⍠¯1 m{[⍺ ⋄ ⍵]}⍤1⌽m←0,v⌽1+[n n]⍴v
+  1+(⍵÷2)↑⍠¯1 m{[⍺⋄⍵]}⍤1⌽m←0,v⌽1+[n n]⍴v
 }
 
 ⍝ From https://dfns.dyalog.com/c_easter.htm
@@ -166,14 +166,14 @@ case←{  ⍝ Select statement.
 }
 ⍝ From https://dfns.dyalog.com/c_morse.htm
 morse←{  ⍝ Conversion to/from Morse code. A blank is the inter-word separator /.
-  [P M]←↓⍉['A' ".-" ⋄ 'B' "-..." ⋄ 'C' "-.-." ⋄ 'D' "-.." ⋄ 'E' "." ⋄ 'F' "..-." ⋄ 'G' "--." ⋄ 'H' "...."
-    'I' ".." ⋄ 'J' ".---" ⋄ 'K' "-.-" ⋄ 'L' ".-.." ⋄ 'M' "--" ⋄ 'N' "-." ⋄ 'O' "---" ⋄ 'P' ".--."
-    'Q' "--.-" ⋄ 'R' ".-." ⋄ 'S' "..." ⋄ 'T' "-" ⋄ 'U' "..-" ⋄ 'V' "...-" ⋄ 'W' ".--" ⋄ 'X' "-..-"
-    'Y' "-.--" ⋄ 'Z' "--.."
-    '0' "-----" ⋄ '1' ".----" ⋄ '2' "..---" ⋄ '3' "...--" ⋄ '4' "....-"
-    '5' "....." ⋄ '6' "-...." ⋄ '7' "--..." ⋄ '8' "---.." ⋄ '9' "----."
-    '.' ".-.-.-" ⋄ ',' "--..--" ⋄ ':' "---..." ⋄ '?' "..--.." ⋄ ''' ".----." ⋄ '-' "-....-"
-    '/' "-..-." ⋄ '(' "-.--." ⋄ ')' "-.--.-" ⋄ '"' ".-..-." ⋄ '@' ".--.-." ⋄ '=' "-...-"
+  [P M]←↓⍉['A' ".-"⋄'B' "-..."⋄'C' "-.-."⋄'D' "-.."⋄'E' "."⋄'F' "..-."⋄'G' "--."⋄'H' "...."
+    'I' ".."⋄'J' ".---"⋄'K' "-.-"⋄'L' ".-.."⋄'M' "--"⋄'N' "-."⋄'O' "---"⋄'P' ".--."
+    'Q' "--.-"⋄'R' ".-."⋄'S' "..."⋄'T' "-"⋄'U' "..-"⋄'V' "...-"⋄'W' ".--"⋄'X' "-..-"
+    'Y' "-.--"⋄'Z' "--.."
+    '0' "-----"⋄'1' ".----"⋄'2' "..---"⋄'3' "...--"⋄'4' "....-"
+    '5' "....."⋄'6' "-...."⋄'7' "--..."⋄'8' "---.."⋄'9' "----."
+    '.' ".-.-.-"⋄',' "--..--"⋄':' "---..."⋄'?' "..--.."⋄''' ".----."⋄'-' "-....-"
+    '/' "-..-."⋄'(' "-.--."⋄')' "-.--.-"⋄'"' ".-..-."⋄'@' ".--.-."⋄'=' "-...-"
     ' ' "/"]
   1=≡,⍵?[P⍳⍵∩P]⌷M;  ⍝ plain text to Morse.
   2=≡,⍵?[M⍳⍵∩M]⌷P  ⍝ Morse to plain text.
@@ -451,7 +451,7 @@ quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
   ∧/Fin=0?"There are no solutions";
   i←∨/{i#⁻¹n=⌊/n←(i←Fin=⍵)#NPath}¨1+⍳≢Target
   x←[[¯1+i#Fin]⌷Target]⌷"Top-right" "Bottom-left" "Bottom-right"
-  x←[x ⋄ (⊂"in "),¨({1↓0⍕⍵}¨i#NPath),¨⊂" moves"]
+  x←[x⋄(⊂"in "),¨({1↓0⍕⍵}¨i#NPath),¨⊂" moves"]
   x⍪i#Moves
 }
 
@@ -459,13 +459,13 @@ quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
 refmt←{  ⍝ Indent code and align comments.
   ⍺←4 ⋄ [dent csep]←⍺
   unqt←{~≠\⍵='''}
-  [code coms]←↓⍉⊃{
+  [code coms]←⍉{
     umsk←unqt ⍵ ⋄ cmsk←∨\umsk∧⍵='⍝'
     [code coms]←(0 1=⊂cmsk)#¨⊂⍵
     rlb←{(∨\' '≠⍵)#⍵}
     clean←⌽ rlb ⌽ rlb code
     [clean coms]
-  }¨↓⊃⍵
+  }⍤1 ⊃⍵
   dents←{
     toks←(unqt ⍵){⍺#⁻¹⍺#⍵}⍵
     dvec←-⌿0 1⌽+\"{}"=⊗toks
@@ -577,7 +577,7 @@ queens←{  ⍝ N-queens solutions up to rotation and reflection.
   fmt←{
     chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟"
     expd←1↓,⊃⍺⍴⊂0 1
-    ⊃¨↓↓expd#⁻¹⍠¯1chars
+    ⊂⍤2 expd#⁻¹⍠¯1chars
   }
   squares←(⊂⍳⌈⍵÷2),1↓⍵⍴⊂⍳⍵
   ⍵ fmt ⍬ search squares
@@ -808,7 +808,7 @@ packH←{                      ⍝ Huffman packing.
      }
 
      apply←{ ⍝ ⍺: procedure, ⍵: arguments
-         "closure"≡↑⍺?([⍺₂ ⋄ ⍵]ᵀ ⍪ ⍺₁) eval ⍺₃;
+         "closure"≡↑⍺?([⍺₂⋄⍵]ᵀ ⍪ ⍺₁) eval ⍺₃;
          ⍎(↑⍺),'⍵'
      }
 
@@ -1181,7 +1181,7 @@ tc←{  ⍝ Trace function application.
      }
 
      reshape←{                       ⍝ ⍺-col reshape of ⍵.
-         ⍺=0?⊃max↑¨↓(col ⍵);          ⍝ item too wide: truncated single col.
+         ⍺=0?max↑⍤1 col ⍵;           ⍝ item too wide: truncated single col.
          nr←⌈ni÷⍺                    ⍝ number of rows.
          matr←[⍺ nr]⍴(⍺×nr)↑⍵,⍺#' '  ⍝ matrix blank-padded to whole no of cols.
          pads←⊃nr#↓gap#' '           ⍝ inter-column padding.
@@ -1311,10 +1311,11 @@ ratsum←{
         [↑↑⌽'0'∇⊃co,⊂1↑cov tot]
     }
     compile←{
-        [lmrs wids reps]←↓⍉⊃trans¨[⍺ ⍵]
+        [lmrs wids reps]←⍉⊃trans¨[⍺ ⍵]
         mpads←-wids-⊂⌈/wids
         rpads←2#⊂∧¨/reps
-        ⊃¨↓⍉⊃pad¨↓⍉⊃[lmrs mpads rpads]
+        padded←pad⍤1 ⍉[lmrs⋄mpads⋄rpads]
+        ⊃¨↓⍉padded
     }
     trans←{
         ~∧/⍵∊digs,"<|.>"?err"bad char";
@@ -1345,8 +1346,8 @@ ratsum←{
         _man←". "repl(man≠'.')#⁻¹mw⍴_lru
         _rru←rw⍴mw⌽_lru
         _lmr←[_lru _man _rru]
-        lmrr←[lru man],⊂rw⍴rru
-        ∇ '0' sum ⊃¨↓⍉⊃[_lmr lmrr]
+        lmrr←[lru man rw⍴rru]
+        ∇ '0' sum _lmr {[⍺⋄⍵]}¨ lmrr
     }
     icon←{[lru man rru]←⍵
         [⌽minrep⌽lru man (minrep rru)]
@@ -1374,7 +1375,7 @@ ratsum←{
         sig←×-/digs⍳rru,'0'
         inc←(digs⍳'0')⊃sig⌽digs
         zero←'0'¨¨⍵
-        inc sum ⊃¨↓⍉⊃[⍵ zero]
+        inc sum ⍵ {[⍺⋄⍵]}¨ zero
     }
     sepr←{⍺{≢⍺ ↓¨ ⍺⍷⍵ ⊂ ⍵}⍺,⍵}
     join←{⊃⍺{⍺,⍶,⍵}/⍵}

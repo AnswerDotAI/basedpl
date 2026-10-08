@@ -16,11 +16,11 @@ The SVD and the QR decomposition are thin. For an `r`-by-`c` matrix, `u` and `q`
 ("eigen" •decompose 2 2⍴2 1 1 2).values  ⍝ [1 3]
 ```
 
-`kind •decompose⁻¹ factors` multiplies a record of factors back into the matrix, as the table shows. For `"eigen"`, the matrix is `(vectors×⍤1 values)+.×⌹vectors`. Eigenvectors that aren't independent, such as those of the defective matrix `[1 1 ⋄ 0 1]`, can't determine the matrix.
+`kind •decompose⁻¹ factors` multiplies a record of factors back into the matrix, as the table shows. For `"eigen"`, the matrix is `(vectors×⍤1 values)+.×⌹vectors`. Eigenvectors that aren't independent, such as those of the defective matrix `[1 1⋄0 1]`, can't determine the matrix.
 
 ```bpl
 f←"cholesky" •decompose 2 2⍴4 2 2 3
-"cholesky" •decompose⁻¹ f   ⍝ [4 2 ⋄ 2 3]
+"cholesky" •decompose⁻¹ f   ⍝ [4 2⋄2 3]
 ```
 
 Errors: `RANK` for an argument that isn't a matrix, or a factor of the wrong rank; `LENGTH` for `"eigen"` or `"cholesky"` of a matrix that isn't square, or factors whose sizes don't agree; `DOMAIN` for an unknown decomposition, an empty or nonnumeric matrix, `"cholesky"` of a matrix that isn't Hermitian positive definite, a missing factor, or eigenvectors that aren't independent.

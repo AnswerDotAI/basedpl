@@ -212,8 +212,8 @@ impl Value {
             positions(cells.len(), edges).map(|i| i.map_or(Ok("…".into()), |i| Ok(cells.get(i)?.row(item, el, edges)))).collect();
         match rows {
             // One major cell needs a trailing `⋄`, or it reads back as that cell alone.
-            Ok(rows) if rows.len() == 1 => format!("[{} ⋄]", rows[0]),
-            Ok(rows) => format!("[{}]", rows.join(" ⋄ ")),
+            Ok(rows) if rows.len() == 1 => format!("[{}⋄]", rows[0]),
+            Ok(rows) => format!("[{}]", rows.join("⋄")),
             Err(_) => crate::display::plain(self, el),
         }
     }
@@ -303,7 +303,7 @@ impl Value {
         if self.keys(0).is_none() && self.len() >= 2 && self.elements().all(|e| e.is_row()) {
             let exact = self.elements().all(|e| e.marks_exact());
             let item = if exact { Self::unmarked_item } else { Self::item };
-            let rows = self.shown_items(edges, |e| e.bracket_items(item, el, el.edges(e.shape()))).join(" ⋄ ");
+            let rows = self.shown_items(edges, |e| e.bracket_items(item, el, el.edges(e.shape()))).join("⋄");
             return if exact { format!("({rows})ₓ") } else { format!("({rows})") };
         }
         format!("[{}]", self.bracket_items(Self::item, el, edges))
@@ -318,7 +318,7 @@ impl Value {
         items.join(" ")
     }
 
-    /// Whether the value prints as one row of `(a ⋄ b)`: a vector with items, other than a string.
+    /// Whether the value prints as one row of `(a⋄b)`: a vector with items, other than a string.
     fn is_row(&self) -> bool {
         matches!(self, Self::Array(_))
             && self.shape().len() == 1

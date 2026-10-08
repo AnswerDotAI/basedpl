@@ -44,7 +44,7 @@ def test_python_printer():
         '+/÷≢': 'plus.reduce / tally', '+.×': 'plus @ times', '×⊗': 'times.outer_product',
         '+/⍠1': 'plus.reduce[1.]', '1↣+⍣[≡]': 'plus.left(1.).history(match)', '+⌿': 'plus.reduce[0]', '-⍨': 'subtract.commute',
         '+∘×': 'conjugate.atop(sign)', '+⍥×': 'conjugate.over(sign)', '-↣+': 'negate.before(plus)', '+↢-': 'plus.after(negate)', '-⊘+': 'negate.valences(plus)',
-        '{⍵<0}⍚[⊢ -]': 'fn("{⍵<0}").agenda(bpl("[⊢ -]"))', '[1 2 ⋄ 3 4]↣+': 'plus.left(bpl("[1 2 ⋄ 3 4]"))',
+        '{⍵<0}⍚[⊢ -]': 'fn("{⍵<0}").agenda(bpl("[⊢ -]"))', '[1 2⋄3 4]↣+': 'plus.left(bpl("[1 2⋄3 4]"))',
         '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each', '(×↢2)⁻¹': 'times(2.).undo',
     }.items(): teq(to_python(bpl(code)), expected)
     teq(to_python(bpl('×'), dyad=True), 'times')

@@ -10,9 +10,9 @@
 | `dissect` | `$t` shows the bound expression before each normal result, using `trees` | `$f` |
 | `limit` | The most items display shows in full. `∞` shows every item | `1000` |
 | `edges` | Positions shown at each end of a long axis | `3` |
-| `prec` | Significant digits shown for each float. `∞` shows every digit | `∞` |
+| `prec` | Significant digits shown for each float. `∞` shows every digit | `10` |
 | `width` | The widest line display shows. `∞` allows any width | The terminal's width in the REPL, `∞` elsewhere |
 
-Display shows part of an array of more than `limit` items: the first and last `edges` positions of each axis longer than twice `edges`. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. A nested array follows the same rule on its own. A line wider than `width` hides columns in the same way, keeping as many at each end as fit. `⎕←`, [`⍕`](../glyphs/format.qmd) and source text always hold every item and every digit.
+Display shows part of an array of more than `limit` items: the first and last `edges` positions of each axis longer than twice `edges`. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. A nested array follows the same rule on its own. A line wider than `width` hides columns in the same way, keeping as many at each end as fit. `⎕←` always shows every item, and rounds floats to `prec` as display does. [`⍕`](../glyphs/format.qmd) and source text always hold every item and every digit.
 
 Errors: `DOMAIN` for an unknown setting or an invalid value.

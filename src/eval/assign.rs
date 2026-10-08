@@ -177,25 +177,26 @@ impl Session {
         }
     }
 
-    /// Pair each name in `[a b]←` with its item of `right`. A singleton goes to every name.
-    /// Pair each name in `[a b]←` with its item of `right`. A vector with a key for every item gives each name the item with that
-    /// key, and can hold items that no name takes. Other values pair items by position, and a singleton goes to every name.
+    /// Pair each name in `[a b]←` with its part of `right`: an item of a vector, or a major cell of a higher-rank array. When
+    /// `right`'s leading axis has a key for every position, each name takes the part with that key. Parts that no name takes stay
+    /// unused. Otherwise names take parts by position. A singleton goes to every name.
     fn destructure<'a>(cells: &'a [Vec<Node>], right: &Value, span: &Span) -> Result<Vec<(&'a [Node], Value)>, Error> {
-        if right.shape().len() == 1 && right.keys(0).is_some_and(|keys| keys.complete()) {
-            let item = |cell: &'a Vec<Node>| {
-                let [Node { kind: NodeKind::Name(name), span }] = &cell[..] else {
-                    return Err(cell[0].span.error(ErrorKind::Syntax, "a keyed value destructures into names"));
-                };
-                crate::keyed::field(right, name)
-                    .map(|item| (&cell[..], item))
-                    .ok_or_else(|| span.error(ErrorKind::Value, format!("no item has the key {name}")))
+        let keys = right.keys(0).filter(|keys| keys.complete());
+        if keys.is_none() && right.is_singleton() { return Ok(cells.iter().map(|cell| (&cell[..], right.at(0))).collect()); }
+        let parts: Vec<Value> =
+            if right.shape().len() == 1 { right.elements().collect() } else { right.major_cells().error_at(span, "array exceeds limits")? };
+        let Some(keys) = keys else {
+            if parts.len() != cells.len() { return Err(span.error(ErrorKind::Length, "destructuring needs one item for each name")); }
+            return Ok(cells.iter().zip(parts).map(|(cell, part)| (&cell[..], part)).collect());
+        };
+        let keyed = |cell: &'a Vec<Node>| {
+            let [Node { kind: NodeKind::Name(name), span }] = &cell[..] else {
+                return Err(cell[0].span.error(ErrorKind::Syntax, "a keyed value destructures into names"));
             };
-            return cells.iter().map(item).collect();
-        }
-        if !right.is_singleton() && (right.shape().len() != 1 || right.len() != cells.len()) {
-            return Err(span.error(ErrorKind::Length, "destructuring needs one item for each name"));
-        }
-        Ok(cells.iter().enumerate().map(|(i, cell)| (&cell[..], right.at(if right.is_singleton() { 0 } else { i }))).collect())
+            let i = keys.position(name).ok_or_else(|| span.error(ErrorKind::Value, format!("no item has the key {name}")))?;
+            Ok((&cell[..], parts[i].clone()))
+        };
+        cells.iter().map(keyed).collect()
     }
 
     fn modifier(&mut self, nodes: &[Node]) -> Result<Option<Function>, Error> {

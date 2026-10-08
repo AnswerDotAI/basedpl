@@ -30,17 +30,29 @@ This logs `5`, and `error` is `null`.
 - `text/html`: markup from element functions.
 - `image/svg+xml`: markup from `•svg` and `•plot`.
 - `image/x-rgba;width=N`: RGBA pixels from `•image`, `N` pixels wide. `new ImageData(new Uint8ClampedArray(bytes.buffer), N)` makes a canvas image from them.
-- `image/png` and `image/jpeg`: encoded images.
+- `image/png` and `image/jpeg`: encoded images. An animation from `•image` is an animated PNG.
+- `application/x-bpl-canvas+json` and `application/x-bpl-canvas-data`: a canvas from `•canvas`. `canvas.js` is a script whose value is a function that draws it: `(0, eval)(script)(canvas, data['application/x-bpl-canvas+json'], data['application/x-bpl-canvas-data'])`, where `canvas` is a `<canvas>` element.
 
-`run` returns only when the code finishes. To keep the page responsive, run BPL in a Web Worker. The playground's [`worker.js`](https://github.com/AnswerDotAI/basedpl/blob/main/nbs/playground/worker.js) and [`page.js`](https://github.com/AnswerDotAI/basedpl/blob/main/nbs/playground/page.js) show a complete page.
+`run` returns only when the code finishes. To keep the page responsive, run BPL in a Web Worker. The docs' [`worker.js`](https://github.com/AnswerDotAI/basedpl/blob/main/nbs/playground/worker.js) runs BPL in a worker, and [`bpl.js`](https://github.com/AnswerDotAI/basedpl/blob/main/nbs/playground/bpl.js) starts the worker and shows each output on the page.
+
+## Values and JavaScript functions
+
+`session.eval(code)` returns the value of `code` as a JavaScript value, or `undefined` when the code gives no value. A BPL error throws the error object. `session.bind(names)` binds each property of the object `names` as a BPL name. A JavaScript function becomes a BPL function that calls it, with the right argument, or the left then the right. Inside BPL, `•js source` makes such a function from JavaScript source. Values cross as the [`•js`](https://answerdotai.github.io/basedpl/system/js.html) page describes: a number is a number, a string a string and a record an object. Any other array is `{shape, data}`, with `data` a typed array when every item is a number.
+
+```js
+session.bind({ scale: 2, log: x => console.log(x) });
+session.eval('scale×1 2 3');   // {shape: [3], data: Float64Array [2, 4, 6]}
+session.run('log "hi"', () => {});   // logs "hi"
+```
 
 ## Differences from native BPL
 
+- `•js` exists only here.
 - `•readdir`, `•metadata`, `•copy`, `•rename`, `•remove`, `•mkdir`, `•path` and `•delay` don't exist. `•nput` writes only to `"-"`.
 - File reads and `•fetch` are synchronous `XMLHttpRequest`s, relative to the URL given to `configure`.
 - `•r` uses JavaScript's `RegExp`, with its syntax and replacement templates.
 - `•date⁻¹` has no `locale` option.
-- Function calls nest at most 410 deep. A deeper call is a `LIMIT` error.
+- Function calls nest at most 380 deep. A deeper call is a `LIMIT` error.
 
 ## Language bar
 

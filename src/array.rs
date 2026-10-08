@@ -19,8 +19,8 @@ use std::{
 
 mod storage;
 mod text;
-pub(crate) use {storage::*, text::*};
 pub use storage::Buffer;
+pub(crate) use {storage::*, text::*};
 
 /// What `x` and `y` agree on: the one that is present, or either when they're equal. Different values give none.
 pub(crate) fn agreed<T: PartialEq + Clone>(x: Option<&T>, y: Option<&T>) -> Option<T> {

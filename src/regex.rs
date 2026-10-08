@@ -16,17 +16,10 @@ use crate::{
 use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum Operation {
-    Matches,
-    Replace,
-}
+pub(crate) enum Operation { Matches, Replace }
 
 /// One match: its text, its position in characters from 0, and each group's text, which is empty for a group that took no part.
-pub(crate) struct Match {
-    pub text: String,
-    pub position: usize,
-    pub groups: Vec<String>,
-}
+pub(crate) struct Match { pub text: String, pub position: usize, pub groups: Vec<String> }
 
 pub(crate) fn compile(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let pattern = text(right, span)?;

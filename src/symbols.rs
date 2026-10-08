@@ -43,12 +43,22 @@ const SYNTAX: &[(&str, &str, &str, &str)] = &[
 pub fn symbols() -> &'static [Symbol] {
     static SYMBOLS: OnceLock<Vec<Symbol>> = OnceLock::new();
     SYMBOLS.get_or_init(|| {
-        let syntax = SYNTAX.iter().map(|&(glyph, name, kind, aliases)| Symbol { glyph, name, kind, monad: "", dyad: "", monad_rank: String::new(), dyad_ranks: String::new(), aliases });
+        let syntax = SYNTAX.iter().map(|&(glyph, name, kind, aliases)| Symbol {
+            glyph,
+            name,
+            kind,
+            monad: "",
+            dyad: "",
+            monad_rank: String::new(),
+            dyad_ranks: String::new(),
+            aliases,
+        });
         let primitives = Primitive::all().map(|p| {
             let info = p.info();
             let (monad, dyad) = (info.monad.map_or("", |m| m.name), info.dyad.map_or("", |d| d.name));
             let rank = |r: Rank| if r == WHOLE { "∞".to_string() } else { r.to_string() };
-            let (monad_rank, dyad_ranks) = (info.monad.map_or(String::new(), |m| rank(m.rank)), info.dyad.map_or(String::new(), |d| d.ranks.map(rank).join(" ")));
+            let (monad_rank, dyad_ranks) =
+                (info.monad.map_or(String::new(), |m| rank(m.rank)), info.dyad.map_or(String::new(), |d| d.ranks.map(rank).join(" ")));
             Symbol { glyph: info.glyph, name: info.name, kind: "function", monad, dyad, monad_rank, dyad_ranks, aliases: info.aliases }
         });
         let operators = OperatorKind::all().map(|op| {
@@ -71,7 +81,9 @@ pub struct DeadState { pub terminator: String, pub keys: Vec<(char, Action)> }
 /// The shared key mapping in `python/basedpl/layout.json`, which the macOS layout and the browser also read. Keys are US characters
 /// after Shift. `option` holds unshifted keys typed with Option.
 pub struct KeyLayout {
-    pub option: Vec<(char, Action)>, pub alt_aliases: Vec<(char, Action)>, pub states: HashMap<String, DeadState>,
+    pub option: Vec<(char, Action)>,
+    pub alt_aliases: Vec<(char, Action)>,
+    pub states: HashMap<String, DeadState>,
     pub unshifted: HashMap<char, char>,
 }
 
@@ -100,8 +112,12 @@ pub fn layout() -> &'static KeyLayout {
             .expect("states")
             .iter()
             .map(|(name, s)| (name.clone(), DeadState { terminator: s["terminator"].as_str().expect("a terminator").into(), keys: keys(&s["keys"]) }));
-        let unshifted = json["unshifted"].as_object().expect("unshifted keys").iter()
-            .map(|(shifted, plain)| (shifted.chars().next().unwrap(), plain.as_str().unwrap().chars().next().unwrap())).collect();
+        let unshifted = json["unshifted"]
+            .as_object()
+            .expect("unshifted keys")
+            .iter()
+            .map(|(shifted, plain)| (shifted.chars().next().unwrap(), plain.as_str().unwrap().chars().next().unwrap()))
+            .collect();
         KeyLayout { option: keys(&json["option"]), alt_aliases: keys(&json["alt_aliases"]), states: states.collect(), unshifted }
     })
 }

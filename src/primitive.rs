@@ -476,7 +476,9 @@ impl Primitive {
             Self::Format => row("⍕", "format", "", monad("format", W), dyad("format-spec", [1, W]).cellwise()),
             Self::Index => row("⌷", "squad", "", monad("materialise", W).axes(), dyad("index", [1, W]).cellwise().axes()),
             Self::MatrixDivide => row("⌹", "domino", "", monad("inverse", 2).cellwise(), dyad("matrix-divide", [W, 2]).cellwise()),
-            Self::Replicate => row("#", "hash", "replicate compress", monad("runs", W), dyad("replicate", [1, W]).cellwise().axes().identity(Identity::Number(1))),
+            Self::Replicate => {
+                row("#", "hash", "replicate compress", monad("runs", W), dyad("replicate", [1, W]).cellwise().axes().identity(Identity::Number(1)))
+            }
             Self::Windows => row("↕", "windows", "", monad("pairs", W), dyad("windows", [W, W])),
             Self::Prime => row("⍭", "prime", "", monad("prime", 0), dyad("prime-mode", [0, 0])),
             Self::Factor => row("⨸", "factor", "", monad("factors", 0), dyad("factor-spec", [0, 0])),
@@ -900,9 +902,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
             let parts = Transpose.call(None, right, span)?;
             if parts.shape().first() != Some(&2) { return Err(span.error(ErrorKind::Length, "the last axis must hold two parts")); }
             let (x, y) = (Index.call(Some(&integer(0)), &parts, span)?, Index.call(Some(&integer(1)), &parts, span)?);
-            let y = if matches!(p, Math(Lcm)) { Math(Circle).call(None, &y, span)? } else {
-                Arithmetic(Times).call(Some(&Value::number(num_complex::Complex64::new(0., 1.)).unwrap()), &y, span)?
-            };
+            let y = if matches!(p, Math(Lcm)) { Math(Circle).call(None, &y, span)? } else { Arithmetic(Times).call(Some(&Value::number(num_complex::Complex64::new(0., 1.)).unwrap()), &y, span)? };
             let number = if matches!(p, Math(Lcm)) { Arithmetic(Times) } else { Arithmetic(Plus) }.call(Some(&x), &y, span)?;
             Transpose.call(None, &number, span)
         }

@@ -1,7 +1,7 @@
 //! `cargo wasm` builds the browser module and writes the npm package `basedpl` into `wasm/pkg/`. The package holds the module, its
-//! JavaScript glue, the language bar (`lb.js`, `input.js` and `layout.json`), the TextMate grammar, `package.json` and `README.md`.
-//! It also copies the module, the glue, the language bar and the grammar into `nbs/playground/`, where the docs playground loads them
-//! on `localhost`. By default it builds with the incremental `release` profile.
+//! JavaScript glue, the language bar (`lb.js`, `input.js` and `layout.json`), the TextMate grammar, `canvas.js`, which draws `•canvas`
+//! outputs, `package.json` and `README.md`. It also copies everything but `package.json` and `README.md` into `nbs/playground/`, where
+//! the docs playground loads them on `localhost`. By default it builds with the incremental `release` profile.
 //! `cargo wasm --profile wasm` builds the smaller module, which is the one published to npm.
 //!
 //! The glue comes from `wasm-bindgen-cli-support`, wasm-bindgen's generator as a library. It and the `wasm-bindgen` crate each pin an
@@ -45,10 +45,10 @@ fn main() -> anyhow::Result<()> {
     });
     fs::write(pkg.join("package.json"), serde_json::to_string_pretty(&package)?)?;
     fs::copy(root.join("wasm/README.md"), pkg.join("README.md"))?;
-    let assets = ["lb.js", "input.js", "layout.json", "bpl.tmLanguage.json"];
-    for file in assets { fs::copy(root.join("python/basedpl").join(file), pkg.join(file))?; }
-    for file in [format!("{MODULE}.js").as_str(), format!("{MODULE}_bg.wasm").as_str()].into_iter().chain(assets) {
-        fs::copy(pkg.join(file), root.join("nbs/playground").join(file))?;
-    }
+    let assets = ["python/basedpl/lb.js", "python/basedpl/input.js", "python/basedpl/layout.json", "python/basedpl/bpl.tmLanguage.json", "src/canvas.js"]
+        .map(|a| root.join(a));
+    for asset in &assets { fs::copy(asset, pkg.join(asset.file_name().expect("an asset is a file")))?; }
+    let module = [format!("{MODULE}.js"), format!("{MODULE}_bg.wasm")].map(|m| pkg.join(m));
+    for file in module.iter().chain(&assets) { fs::copy(file, root.join("nbs/playground").join(file.file_name().expect("a file")))?; }
     Ok(())
 }

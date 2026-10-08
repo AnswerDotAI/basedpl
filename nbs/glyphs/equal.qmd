@@ -5,7 +5,7 @@ Ranks: `∞` monadic, `0 0` dyadic
 `=Y` self-classifies the major cells of `Y`. The result has a row for each distinct cell, in order of first occurrence, and a column for each cell of `Y`. An entry is `$t` where its column's cell equals its row's cell.
 
 ```bpl
-="aba"            ⍝ [$t $f $t ⋄ $f $t $f]
+="aba"            ⍝ [$t $f $t⋄$f $t $f]
 ```
 
 `X=Y` tests equality, pervasively. NaN equals nothing, as IEEE 754 defines.

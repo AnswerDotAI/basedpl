@@ -657,7 +657,14 @@ fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Cont
     }
 }
 
-pub(super) fn fold(operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+pub(super) fn fold(
+    operand: &Function,
+    kind: FoldKind,
+    axis: Option<&Value>,
+    left: Option<&Value>,
+    right: &Value,
+    cx: &mut Context<'_>,
+) -> Result<Value, Error> {
     let axis = axis.map(|a| crate::primitive::resolve_axes(a, right, cx.span)).transpose()?;
     if !kind.scan {
         if let Some(axes) = axis.as_ref().filter(|a| !a.is_singleton()) {

@@ -53,8 +53,8 @@ I{⍵[⍋⍵[;⍺];]}Ym
 ```
 
 ```bpl
-I←1 ⋄ Ym←[5 3 ⋄ 1 9 ⋄ 4 2]
-I{[⍋[∞ ⍺]⌷⍵]⌷⍵}Ym      ⍝ [4 2 ⋄ 5 3 ⋄ 1 9]
+I←1 ⋄ Ym←[5 3⋄1 9⋄4 2]
+I{[⍋[∞ ⍺]⌷⍵]⌷⍵}Ym      ⍝ [4 2⋄5 3⋄1 9]
 ```
 
 ```bqn
@@ -136,7 +136,7 @@ next←graph[⍺]∩¨⊂⍸⍵=¯2
 
 ```bpl
 graph←[[1 2] [2] [0] [1]]
-0 1 {[⍺]⌷graph ∩¨ ⊂⍸⍵=¯2} ¯2 0 ¯2 5   ⍝ (2 ⋄ 2)
+0 1 {[⍺]⌷graph ∩¨ ⊂⍸⍵=¯2} ¯2 0 ¯2 5   ⍝ (2⋄2)
 ```
 
 ```bqn
@@ -152,7 +152,7 @@ Source: the April tests. `⌷` takes one item for each axis, like APL's index fi
 ```
 
 ```bpl
-[0;1 3 4]⌷[0 3;∞;1 0]⌷6 8 5⍴⍳9     ⍝ [6 5 ⋄ 7 6 ⋄ 3 2]
+[0;1 3 4]⌷[0 3;∞;1 0]⌷6 8 5⍴⍳9     ⍝ [6 5⋄7 6⋄3 2]
 ```
 
 ```bqn
@@ -200,8 +200,8 @@ mat←swap[⍺;⍺]÷⍨@⍺⊢swap
 ```
 
 ```bpl
-swap←[2 4 ⋄ 6 8]
-0 {[⍺ ⍺]⌷swap ÷⍨@⍺ swap} 0   ⍝ [1 2 ⋄ 6 8]
+swap←[2 4⋄6 8]
+0 {[⍺ ⍺]⌷swap ÷⍨@⍺ swap} 0   ⍝ [1 2⋄6 8]
 ```
 
 ```bqn
@@ -221,7 +221,7 @@ q[1,h;1,w]←2 2⍴ch
 ```bpl
 q←5 5⍴0 ⋄ h←4 ⋄ w←4 ⋄ ch←1 2 3 4
 q.[0,h 0,w]←2 2⍴ch
-q   ⍝ [1 0 0 0 2 ⋄ 0 0 0 0 0 ⋄ 0 0 0 0 0 ⋄ 0 0 0 0 0 ⋄ 3 0 0 0 4]
+q   ⍝ [1 0 0 0 2⋄0 0 0 0 0⋄0 0 0 0 0⋄0 0 0 0 0⋄3 0 0 0 4]
 ```
 
 ```bqn
@@ -230,7 +230,7 @@ q↩(2‿2⥊ch)⌾(⟨0∾h,0∾w⟩⊸⊏)q
 
 ### Updating selected items from other items
 
-Source: `sudoku` in the dfns workspace. `[j]⌷q` selects the items at the positions `j`. Assigning to `q.[j]` changes those items. The run `[j]⌷q` ends at a space. Without the space, `⌷` would take everything to its right as its argument. The target needs no parentheses, because the target of `←` is the run before it. BQN writes "without" as `¬∘∊/⊣`. A vector of vectors prints in parentheses, with `⋄` between its items: `(4 ⋄ 1 2)` is `[[4] [1 2]]`.
+Source: `sudoku` in the dfns workspace. `[j]⌷q` selects the items at the positions `j`. Assigning to `q.[j]` changes those items. The run `[j]⌷q` ends at a space. Without the space, `⌷` would take everything to its right as its argument. The target needs no parentheses, because the target of `←` is the run before it. BQN writes "without" as `¬∘∊/⊣`. A vector of vectors prints in parentheses, with `⋄` between its items: `(4⋄1 2)` is `[[4] [1 2]]`.
 
 ```dyalog
 q[j]←q[j]~¨⊂,/q[i~j]
@@ -239,7 +239,7 @@ q[j]←q[j]~¨⊂,/q[i~j]
 ```bpl
 q←[[1 2 3] [1 2] [2 4] [3 4 5]] ⋄ i←0 1 2 ⋄ j←0 2
 q.[j]←[j]⌷q ~¨ ⊂,/[i~j]⌷q
-q   ⍝ (3 ⋄ 1 2 ⋄ 4 ⋄ 3 4 5)
+q   ⍝ (3⋄1 2⋄4⋄3 4 5)
 ```
 
 ```bqn
@@ -255,7 +255,7 @@ Dyalog and BQN have no keyed arrays. Most entries here show BPL alone. See [axis
 Keys on an axis name its positions. `⌷` takes one key for each axis.
 
 ```bpl
-sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30 ⋄ 40 50 60]
+sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30⋄40 50 60]
 "LA" "Feb"⌷sales       ⍝ 50
 ```
 
@@ -264,7 +264,7 @@ sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30 ⋄ 40 50 60]
 `⍠` applies a function along the axes its operand names. The result keeps the keys and the name of the remaining axis. BQN has no axis names. It reduces by position, as `+´˘` does along the last axis.
 
 ```bpl
-sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30 ⋄ 40 50 60]
+sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30⋄40 50 60]
 +/⍠"month" sales       ⍝ ["city":2]⍴["NY":60 "LA":150]
 ```
 
@@ -273,7 +273,7 @@ sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30 ⋄ 40 50 60]
 `"NY"⌷+/sales` totals each row, then selects the row for NY. The sum needs no parentheses, because Index takes its positions on the left. Pandas writes the selection after the sum: `sales.sum(axis=1)["NY"]`.
 
 ```bpl
-sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30 ⋄ 40 50 60]
+sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30⋄40 50 60]
 "NY"⌷+/sales           ⍝ 60
 ```
 
@@ -318,7 +318,7 @@ Source: `lisp` in the dfns workspace. The Dyalog code keeps the list as a two-co
 Source: the [home page](index.ipynb). Each row is one series. The column keys label the x axis. With `"legend":"end"`, each line is labelled with its row key. See [plots](plot.ipynb).
 
 ```bpl
-sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30 ⋄ 40 50 60]
+sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30⋄40 50 60]
 ["legend":"end"] •plot sales
 ```
 
@@ -326,14 +326,14 @@ sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30 ⋄ 40 50 60]
 
 ### Rank with a numeric operand
 
-An operator takes one item to its right. In APL, `⊢` separates the operand `1` from the argument, because arrays side by side strand into one operand. BPL has the same problem only with literals separated by spaces: `1 2 3` is one strand. A space ends the operand. Write a literal argument in brackets to keep it out of the operand. With a name as the argument, the space is enough: `+/⍤1 m`.
+An operator takes one item to its right. In APL, `⊢` separates the operand `1` from the argument, because arrays side by side strand into one operand. BPL has the same problem only with literals separated by spaces: `1 2 3` is one strand. Brackets touching the operand keep a literal argument out of it. With a name as the argument, a space is enough: `+/⍤1 m`.
 
 ```dyalog
 +/⍤1⊢2 3⍴⍳6
 ```
 
 ```bpl
-+/⍤1 [2 3]⍴⍳6          ⍝ 3 12
++/⍤1[2 3]⍴⍳6           ⍝ 3 12
 ```
 
 ```bqn
@@ -468,7 +468,7 @@ a +˝∘×⎉1‿∞ b
 
 ```bpl
 a←2 3⍴⍳6 ⋄ b←3 2⍴⍳6
-a +⌿∘×⍤1 ∞ b           ⍝ [10 13 ⋄ 28 40]
+a +⌿∘×⍤1 ∞ b           ⍝ [10 13⋄28 40]
 ```
 
 ### A vector bound into a composition
@@ -566,16 +566,16 @@ step←{mid←3 ⋄ hi←9 ⋄ lo←0
 
 ### A new leading axis
 
-Rows in array notation can be computed as well as literal. `[x ⋄ y]` is a matrix whose rows are `x` and `y`. BPL has no laminate.
+Rows in array notation can be computed as well as literal. `[x⋄y]` is a matrix whose rows are `x` and `y`. BPL has no laminate.
 
 ```dyalog
 1 2,[0.5]3 4
 ```
 
 ```bpl
-[1 2 ⋄ 3 4]            ⍝ 2 2⍴1 2 3 4
+[1 2⋄3 4]            ⍝ 2 2⍴1 2 3 4
 x←1 2 ⋄ y←3 4
-[x ⋄ y]                ⍝ [1 2 ⋄ 3 4]
+[x⋄y]                ⍝ [1 2⋄3 4]
 ```
 
 ```bqn

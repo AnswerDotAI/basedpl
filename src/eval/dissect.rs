@@ -21,11 +21,7 @@ impl Expression {
         Self::Call { function: function.clone(), left: left.map(Box::new), right: Box::new(right) }
     }
     pub(super) fn items(expression: Option<Self>, items: &[Value]) -> Vec<Self> {
-        match expression {
-            Some(Self::Strand(items)) => items,
-            Some(item) => vec![item],
-            None => items.iter().map(Self::array).collect(),
-        }
+        match expression { Some(Self::Strand(items)) => items, Some(item) => vec![item], None => items.iter().map(Self::array).collect() }
     }
     fn tree(&self, budget: &mut usize) -> crate::display::Tree {
         use crate::display::Tree;

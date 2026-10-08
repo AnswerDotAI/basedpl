@@ -105,22 +105,22 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
             }
             return Ok(i32::from(failed && !interactive));
         }
-        if code.trim_start().starts_with(']') {
-            failed |= !printer.finish(session.eval_with(&code, printer.options()), err)?;
+        if code.trim_start().starts_with(']') { failed |= !printer.finish(session.eval_with(&code, printer.options()), err)?; }
+        else {
+            match parse(Source::new("<repl>", code.as_str())) {
+                ParseStatus::Incomplete(e) => {
+                    incomplete = Some(e);
+                    continue;
+                }
+                ParseStatus::Invalid(e) => {
+                    writeln!(err, "{e}")?;
+                    failed = true;
+                }
+                ParseStatus::Complete(parsed) => {
+                    failed |= !printer.finish(session.eval_parsed(&parsed, printer.options()), err)?;
+                }
+            }
         }
-        else { match parse(Source::new("<repl>", code.as_str())) {
-            ParseStatus::Incomplete(e) => {
-                incomplete = Some(e);
-                continue;
-            }
-            ParseStatus::Invalid(e) => {
-                writeln!(err, "{e}")?;
-                failed = true;
-            }
-            ParseStatus::Complete(parsed) => {
-                failed |= !printer.finish(session.eval_parsed(&parsed, printer.options()), err)?;
-            }
-        } }
         if let Some(editor) = &mut editor { editor.remember(&code).map_err(io::Error::other)?; }
         code.clear();
         incomplete = None;

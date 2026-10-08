@@ -113,8 +113,8 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 |---|---|---|
 | `←` [assign](glyphs/assign.qmd) | Alt-h | Assignment, including modified and selective forms |
 | `→` [pipe](glyphs/pipe.qmd) | Alt-l | Left-to-right function application |
-| `(…)` [parentheses](glyphs/parentheses.qmd) | | Grouping. With `⋄`, a vector of rows: `(4 ⋄ 4 5)` is `[[4] [4 5]]` |
-| `[…]` [brackets](glyphs/brackets.qmd) | | Vectors and arrays: `[a b c]`, `[a;b c]`, `[1 2 ⋄ 3 4]`. One item makes a one-item vector: `[x]` is `,⊂x` |
+| `(…)` [parentheses](glyphs/parentheses.qmd) | | Grouping. With `⋄`, a vector of rows: `(4⋄4 5)` is `[[4] [4 5]]` |
+| `[…]` [brackets](glyphs/brackets.qmd) | | Vectors and arrays: `[a b c]`, `[a;b c]`, `[1 2⋄3 4]`. One item makes a one-item vector: `[x]` is `,⊂x` |
 | `{…}` [braces](glyphs/braces.qmd) | | Defined function or operator. `;` separates its bodies |
 | `⍺` [alpha](glyphs/alpha.qmd), `⍵` [omega](glyphs/omega.qmd) | Alt-a, Alt-w | Left / right argument |
 | `⍶` [alpha-underbar](glyphs/alpha-underbar.qmd), `⍹` [omega-underbar](glyphs/omega-underbar.qmd) | Alt-Minus a, Alt-Minus w | Left / right operand |
@@ -143,12 +143,12 @@ Index origin: 0. Negative positions and axes count from the end. Comparison tole
 
 ## Language-wide differences from Dyalog APL
 
-- [Vectors](glyphs/brackets.qmd): a bracket list such as `[a b c]` is a vector. A strand of literals, such as `1 2 3`, needs no brackets. `[5]` is a one-item vector, the same as `,5`. [Parentheses](glyphs/parentheses.qmd) group: `(5)` is `5`. A scalar holding `5` is `⊂5`. Arrays side by side also form a vector: `a b` is `[a b]`. `(1 2 ⋄ 3)` is the vector of rows `[[1 2] [3]]`.
+- [Vectors](glyphs/brackets.qmd): a bracket list such as `[a b c]` is a vector. A strand of literals, such as `1 2 3`, needs no brackets. `[5]` is a one-item vector, the same as `,5`. [Parentheses](glyphs/parentheses.qmd) group: `(5)` is `5`. A scalar holding `5` is `⊂5`. Arrays side by side also form a vector: `a b` is `[a b]`. `(1 2⋄3)` is the vector of rows `[[1 2] [3]]`.
 - [Runs](syntax.qmd#runs): outside brackets, spaces separate runs. Each run is evaluated first: `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train: `+/÷≢` is the mean, and `2×` is `2↣×`. A run that ends in a dyadic operator takes the next run as its right operand: `f⍤ 1` is `f⍤1`.
 - [Indexing](glyphs/squad.qmd): brackets are used to write vectors, never to index. Index selects: `0⌷v` is the first item of `v`.
 - [Atoms](arrays.ipynb): numbers, characters and functions are atoms, distinct from scalars, as BQN. Enclosing always adds a layer: `⊂3 ≡ 3` is `$f`.
 - [Numbers](numbers.qmd): bare numbers are approximate. `ₓ` marks an exact integer, and `r` or `ᵣ` an exact rational, as in J: `1ₓ÷3ₓ` is `1ᵣ3`. Predicates, positions, tally and shape are exact.
-- [Agreement](evaluation.qmd#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes. An axis of length 1 expands to match: `2 3⍴⍳6 + 10 20` is `[10 11 12 ⋄ 23 24 25]`.
+- [Agreement](evaluation.qmd#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes. An axis of length 1 expands to match: `2 3⍴⍳6 + 10 20` is `[10 11 12⋄23 24 25]`.
 - [Major cells](principles.ipynb#functions-act-on-major-cells): `∊ ~ ∪ ∩` compare major cells, `N#Y` replicates them, `N⊂Y` and `N⊆Y` split along the first axis. `⊤` and `⊥` put digits on the last axis, as J.
 - [System names](system-functions.qmd): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
 - [Axis keys](keyed.ipynb) name data. `K:Y` evaluates its keys. `T.a` is `"a"⊃T`. `T.(expr)` and `T⍎Y` evaluate with the keys of `T` as names.

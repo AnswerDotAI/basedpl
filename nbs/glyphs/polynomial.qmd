@@ -33,11 +33,11 @@ J's `p.` family.
 Enclosed matrix: one row per term, coefficient then exponents. Enclose one coordinate vector to evaluate one point. A single coordinate extends to all variables. Batch axes collect answers.
 
 ```bpl
-t←⊂[1 2 0 ⋄ 1 0 2]ₓ
+t←⊂[1 2 0⋄1 0 2]ₓ
 t⌻⊂[3 4]ₓ                               ⍝ 25ₓ
 t⌻[3 4;5 12]ₓ                           ⍝ [25 169]ₓ
-⊂[2 1r2 ⋄ 3 1r4]ₓ ⌻ 16ₓ                 ⍝ 14
-⌻⁻¹⊂[1 5 ⋄ ¯1 0]ₓ                         ⍝ [¯1 0 0 0 0 1]ₓ
+⊂[2 1r2⋄3 1r4]ₓ ⌻ 16ₓ                 ⍝ 14
+⌻⁻¹⊂[1 5⋄¯1 0]ₓ                         ⍝ [¯1 0 0 0 0 1]ₓ
 ```
 
 Evaluation accepts fractional and negative exponents. Conversion to coefficients requires one variable and nonnegative integral exponents. Conversion also adds together terms of the same degree.

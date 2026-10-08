@@ -52,7 +52,10 @@ pub(crate) fn fetch(request: Request, cx: &Context<'_>) -> Result<Response, Erro
     let mut headers: Vec<(String, String)> = Vec::new();
     for (name, value) in lines.filter_map(|line| line.split_once(':')) {
         let (name, value) = (name.trim().to_ascii_lowercase(), value.trim());
-        match headers.iter_mut().find(|(n, _)| *n == name) { Some((_, values)) => *values = format!("{values}, {value}"), None => headers.push((name, value.into())) }
+        match headers.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, values)) => *values = format!("{values}, {value}"),
+            None => headers.push((name, value.into())),
+        }
     }
     Ok(Response { status, headers, body: out[size..end].to_vec() })
 }

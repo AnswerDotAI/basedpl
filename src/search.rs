@@ -7,6 +7,8 @@
 //! - Integers and characters index the first position of each value. A character's value is its code point. Integers match integers,
 //!   whether or not their storage is flagged for infinities. An infinity then shares its value with `i64::MAX` or `i64::MIN`. Characters
 //!   match only characters.
+//! - Booleans, integers and floats index as integers when every float lies within tolerance of a whole number below 2^43 in magnitude.
+//!   Each float then indexes as that whole number. A search does this when both its arguments qualify.
 //! - Exact data is hashed. Numbers must be exact, and arrays must have no keys and no functions. A hash bucket is only a candidate
 //!   list, so `Value::matches` confirms each candidate.
 //! - Reals are hashed with tolerance. Each goes into a bucket of 512 neighbouring `float_key`s, and each of its matches lies in its own
@@ -69,6 +71,7 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_
     if let Some(found) = scanned(haystack, needles) { return Ok(found); }
     if needles.len() > 1 && haystack.len() >= 8 && haystack.len().saturating_mul(needles.len()) >= 256 {
         if let Some(found) = with_keys!([haystack.items(), needles.items()], |x, y| key_positions(x, y)) { return Ok(found); }
+        if let (Some(x), Some(y)) = (whole_keys(haystack), whole_keys(needles)) { return Ok(key_positions(&x, &y)); }
         let seed = RandomState::default();
         if let Some(x) = hashes(haystack, &seed) { if let Some(y) = hashes(needles, &seed) { return hashed_first(haystack, &x, needles, &y, span); } }
         if let (Some(x), Some(y)) = (reals(haystack), reals(needles)) {
@@ -127,6 +130,7 @@ fn scanned(haystack: &Cells, needles: &Cells) -> Option<Vec<i64>> {
 pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<usize>, Error> {
     if cells.len() >= 16 {
         if let Some(classes) = with_keys!([cells.items()], |x| key_classes(x)) { return Ok(classes); }
+        if let Some(x) = whole_keys(cells) { return Ok(key_classes(&x)); }
         if let Some(x) = hashes(cells, &RandomState::default()) { return hashed_classes(cells, &x, span); }
         if let Some(x) = reals(cells) { return tolerant_classes(&x, span, |r, i| Ok(float_match(x[r], x[i]))); }
         if let Some(x) = leading_reals(cells) { return tolerant_classes(&x, span, |r, i| cells.get(r).matches(&cells.get(i), span)); }
@@ -164,6 +168,13 @@ fn write_first<'t, K: Key>(x: &[K], min: i64, first: &'t mut [usize]) -> &'t [us
     first
 }
 
+/// The items as integers, when they are Booleans, integers, or floats each within tolerance of a whole number below 2^43 in
+/// magnitude. Tolerance never makes two different whole numbers in that range equal, so the integers match as the items do.
+fn whole_keys<'a>(cells: &Cells<'a>) -> Option<Cow<'a, [i64]>> {
+    let items = cells.items()?;
+    let keys = match items { Items::Booleans(_) | Items::Integers(_) | Items::Floats(_) => items.integers().ok()?, _ => return None };
+    (!matches!(items, Items::Floats(_)) || keys.iter().all(|n| n.unsigned_abs() < 1 << 43)).then_some(keys)
+}
 /// For each of `y`, the first position of its key in `x`, or the length of `x` when it has none.
 fn key_positions<K: Key>(x: &[K], y: &[K]) -> Vec<i64> {
     let miss = x.len();
@@ -189,7 +200,10 @@ fn key_classes<K: Key>(x: &[K]) -> Vec<usize> {
 
 /// Whether each cell is the first of its class.
 pub(crate) fn firsts(cells: &Cells, span: &Context<'_>) -> Result<Vec<bool>, Error> {
-    if cells.len() >= 16 { if let Some(mask) = with_keys!([cells.items()], |x| key_firsts(x)) { return Ok(mask); } }
+    if cells.len() >= 16 {
+        if let Some(mask) = with_keys!([cells.items()], |x| key_firsts(x)) { return Ok(mask); }
+        if let Some(x) = whole_keys(cells) { return Ok(key_firsts(&x)); }
+    }
     Ok(classify(cells, span)?.into_iter().enumerate().map(|(i, f)| f == i).collect())
 }
 

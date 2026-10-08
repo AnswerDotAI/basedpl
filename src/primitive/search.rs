@@ -92,7 +92,14 @@ fn distinct(right: &Value, span: &Context<'_>) -> Result<(Vec<usize>, Vec<usize>
 pub(super) fn duplicates(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let (group, sizes) = distinct(right, span)?;
     let mut next = 0;
-    let mask = group.iter().map(|&g| { let first = g == next; next += usize::from(first); first && sizes[g] > 1 }).collect();
+    let mask = group
+        .iter()
+        .map(|&g| {
+            let first = g == next;
+            next += usize::from(first);
+            first && sizes[g] > 1
+        })
+        .collect();
     replicate(&major_axis(right).booleans(mask).error_at(span, "invalid duplicates mask")?, right, None, false, span)
 }
 
@@ -124,7 +131,11 @@ pub(super) fn groups(right: &Value, span: &Context<'_>) -> Result<Value, Error> 
     let (group, sizes) = distinct(right, span)?;
     let (order, _) = crate::search::grouped(&group, sizes.len());
     let mut rest = order.as_slice();
-    let groups = sizes.iter().map(|&n| { let (these, more) = rest.split_at(n); rest = more; positions(right, these.to_vec()) });
+    let groups = sizes.iter().map(|&n| {
+        let (these, more) = rest.split_at(n);
+        rest = more;
+        positions(right, these.to_vec())
+    });
     let groups = groups.collect::<Result<Vec<_>, _>>().error_at(span, "invalid groups")?;
     Value::from_parts(vec![groups.len()], groups, positions(right, Vec::new()).error_at(span, "invalid groups")?).error_at(span, "invalid groups")
 }

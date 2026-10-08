@@ -30,7 +30,7 @@ pub(crate) struct Elide {
     pub width: usize,
     pub columns: usize,
 }
-impl Default for Elide { fn default() -> Self { Self { limit: 1000, edges: 3, ..Self::NONE } } }
+impl Default for Elide { fn default() -> Self { Self { limit: 1000, edges: 3, prec: 10, ..Self::NONE } } }
 impl Elide {
     /// Shows every item and every digit, as source text and `⍕` do.
     pub const NONE: Self = Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX };
@@ -139,8 +139,8 @@ impl Settings {
         text(fit)
     }
     pub fn diagram(&self, a: &Value) -> String { array(a, self.elide).text() }
-    /// Text for `⎕←`: the display text, with every item.
-    pub fn explicit(&self, a: &Value, inside: bool) -> String { Self { elide: Elide::NONE, ..*self }.array(a, inside) }
+    /// Text for `⎕←`: the display text, with every item, and floats rounded to `prec` as display rounds them.
+    pub fn explicit(&self, a: &Value, inside: bool) -> String { Self { elide: Elide { prec: self.elide.prec, ..Elide::NONE }, ..*self }.array(a, inside) }
     /// The settings as a record. An unlimited count is `∞`.
     fn record(&self) -> Value {
         let flag = |b| Value::Number(Number::from_bool(b));
@@ -469,9 +469,9 @@ pub(crate) fn bundle(value: &Value) -> Result<crate::MimeBundle, crate::ErrorKin
         .collect()
 }
 
-/// A native renderer, called with the value to display.
+/// A native renderer, called with the value to display, and with the left argument that `before` binds to it, if any.
 pub(crate) fn renderer(name: &'static str, render: crate::system::Native) -> crate::Function {
-    crate::system::native(name, crate::system::Call::Value(render), crate::system::Valence::Monadic)
+    crate::system::native(name, crate::system::Call::Value(render), crate::system::Valence::Ambivalent)
 }
 
 /// A MIME bundle holding `data` as the type `kind`.

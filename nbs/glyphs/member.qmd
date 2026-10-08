@@ -21,9 +21,9 @@ C←"cat" "dog"
 Against a matrix, each row of `X` is one query.
 
 ```bpl
-m←[10 20 ⋄ 30 40]
+m←[10 20⋄30 40]
 30 40∊m            ⍝ $t
-[30 40 ⋄ 50 60]∊m  ⍝ $t $f
+[30 40⋄50 60]∊m  ⍝ $t $f
 ```
 
 ## Errors

@@ -67,10 +67,7 @@ pub(crate) fn normalize(form: &str, text: &str) -> String { js_sys::JsString::fr
 /// A compiled `•r` pattern, in JavaScript's `RegExp` syntax. It holds text, because a BPL value must be `Send + Sync` and a `RegExp`
 /// isn't: each call compiles the pattern again.
 #[derive(Debug)]
-pub(crate) struct Regex {
-    pattern: String,
-    groups: usize,
-}
+pub(crate) struct Regex { pattern: String, groups: usize }
 impl Regex {
     pub(crate) fn new(pattern: &str) -> Result<Self, String> {
         // An empty alternative matches at once, and the match has one item for each group.
@@ -110,7 +107,5 @@ fn regexp(source: &str) -> Result<js_sys::RegExp, String> {
     use js_sys::{Array, Function, Reflect};
     use wasm_bindgen::JsCast;
     let constructor: Function = Reflect::get(&js_sys::global(), &"RegExp".into()).ok().and_then(|c| c.dyn_into().ok()).ok_or("this host has no RegExp")?;
-    Reflect::construct(&constructor, &Array::of2(&source.into(), &"gu".into()))
-        .map(JsCast::unchecked_into)
-        .map_err(|e| e.dyn_into::<js_sys::Error>().map_or_else(|_| "invalid pattern".into(), |e| e.message().into()))
+    Reflect::construct(&constructor, &Array::of2(&source.into(), &"gu".into())).map(JsCast::unchecked_into).map_err(|e| crate::js::message(&e))
 }

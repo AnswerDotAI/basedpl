@@ -254,8 +254,13 @@ impl Binder {
                         let (Step::Done(bound), _) = Self::evaluate_marked(inner, session, false, None, Some(right))? else { unreachable!() };
                         bound
                     } else { session.resolve(node)? };
-                    Some(Entity { term: Term::Binding(bound.value), expression: bound.expression, span: node.span.clone(), shy: false,
-                                  selection: selected.map(|(_, _, kind)| *kind) })
+                    Some(Entity {
+                        term: Term::Binding(bound.value),
+                        expression: bound.expression,
+                        span: node.span.clone(),
+                        shy: false,
+                        selection: selected.map(|(_, _, kind)| *kind),
+                    })
                 }
             } else { None };
             let n = binder.stack.len();
@@ -307,7 +312,13 @@ impl Binder {
                             .function
                             .select(call.left.as_ref(), &call.right, None, kind, &mut session.at(&call.span))?
                             .ok_or_else(|| call.span.domain_error("function is not valid for selective assignment"))?;
-                        Entity { term: Term::Binding(Binding::Value(selected)), span: call.span, shy: false, selection: Some(kind), expression: call.expression }
+                        Entity {
+                            term: Term::Binding(Binding::Value(selected)),
+                            span: call.span,
+                            shy: false,
+                            selection: Some(kind),
+                            expression: call.expression,
+                        }
                     }
                     None => {
                         let bound = call.function.call(call.left.as_ref(), &call.right, &mut session.at(&call.span))?;
@@ -384,8 +395,7 @@ impl Binder {
                         let function = self::Function::primitive(function);
                         let expression = capture.then(|| {
                             let operand = left_expression.unwrap_or_else(|| Expression::array(array));
-                            if left.is_some() { Expression::call(&function, Some(operand), Expression::array(&right)) }
-                            else { Expression::call(&function, None, operand) }
+                            if left.is_some() { Expression::call(&function, Some(operand), Expression::array(&right)) } else { Expression::call(&function, None, operand) }
                         });
                         return Ok(Some(Application { function, left, right, span, unshy: false, selection, expression }));
                     }
@@ -396,14 +406,21 @@ impl Binder {
                 let Binding::Operator(operator) = left.value()? else { unreachable!() };
                 Term::Binding(Binding::Operator(self::OperatorNode::Bound(Box::new(operator), Operand::from_value(right.value()?))))
             }
-            Rule::Attach => { expression = left_expression; Term::Left(left.array()?, right.function()?) }
+            Rule::Attach => {
+                expression = left_expression;
+                Term::Left(left.array()?, right.function()?)
+            }
             Rule::Call if matches!(right.term, Term::Binding(Binding::Absent)) => Term::Binding(Binding::Absent),
             Rule::Call => {
                 let (x, f) = if let Term::Left(x, f) = left.term { (Some(x), f) } else { (None, left.function()?) };
                 let y = right.array()?;
-                let expression = capture.then(|| Expression::call(&f,
-                    x.as_ref().map(|a| left_expression.unwrap_or_else(|| Expression::array(a))),
-                    right_expression.unwrap_or_else(|| Expression::array(&y))));
+                let expression = capture.then(|| {
+                    Expression::call(
+                        &f,
+                        x.as_ref().map(|a| left_expression.unwrap_or_else(|| Expression::array(a))),
+                        right_expression.unwrap_or_else(|| Expression::array(&y)),
+                    )
+                });
                 return Ok(Some(Application { function: f, left: x, right: y, span, unshy: false, selection, expression }));
             }
             Rule::Train => {
@@ -424,6 +441,6 @@ pub(super) fn atop(f: Function, g: Function, span: &Span) -> Result<Function, Er
     Function::new(FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(f), Operand::Function(g)]), span)
 }
 
-pub(super) fn before(a: Value, f: Function, span: &Span) -> Result<Function, Error> {
+pub(crate) fn before(a: Value, f: Function, span: &Span) -> Result<Function, Error> {
     Function::new(FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(f)]), span)
 }

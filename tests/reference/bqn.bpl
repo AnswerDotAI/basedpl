@@ -24,11 +24,11 @@ fn←("rtd"⍳↑)⍚[⌽ 1↑ 1↓ ⊢] ⋄ [fn "r123";fn "d123";fn "123"]
 3 +⌾(×⍨) 4   ⍝ 5
 
 ⍝ bqn:under:47 — Prefix sum through Join keeps the nesting
-+\⌾∊ [3 1 0] [2 5] [0 0 6]   ⍝ (3 4 4 ⋄ 6 11 ⋄ 11 11 17)
++\⌾∊ [3 1 0] [2 5] [0 0 6]   ⍝ (3 4 4⋄6 11⋄11 11 17)
 
 ⍝ bqn:under:61 — Rotate the first column
-a←[0 1 2 ⋄ 3 4 5 ⋄ 6 7 8 ⋄ 9 10 11] ⋄ (1⌽)⌾(↑⍤1) a
-[3 1 2 ⋄ 6 4 5 ⋄ 9 7 8 ⋄ 0 10 11]
+a←[0 1 2⋄3 4 5⋄6 7 8⋄9 10 11] ⋄ (1⌽)⌾(↑⍤1) a
+[3 1 2⋄6 4 5⋄9 7 8⋄0 10 11]
 
 ⍝ bqn:under:69 — Reverse the first half of a list
 ⌽⌾((2÷⍨≢)↑⊢) "abcdef"   ⍝ "cbadef"
@@ -50,7 +50,7 @@ a←[0 1 2 ⋄ 3 4 5 ⋄ 6 7 8 ⋄ 9 10 11] ⋄ (1⌽)⌾(↑⍤1) a
 
 ⍝ bqn:under:113 — Replace the last element of the first two lists
 ["ab" "cde" "fg"] ⊣⌾((¯1⌷)¨2↑⊢) ⍳¨3 2 1 1
-(0 1 'b' ⋄ 0 'e' ⋄ 0 ⋄ 0)
+(0 1 'b'⋄0 'e'⋄0⋄0)
 
 ⍝ bqn:under:117 — Regroup characters into the structure of the right argument
 ["ab" "cde" "fg"] ⊣⌾∊ ["---" "----"]   ⍝ "abc" "defg"
@@ -89,7 +89,7 @@ a←[0 1 2 ⋄ 3 4 5 ⋄ 6 7 8 ⋄ 9 10 11] ⋄ (1⌽)⌾(↑⍤1) a
 ⍝⍝ Windows
 
 ⍝ bqn:windows:49 — Windows of length 5
-5↕"abcdefg"   ⍝ ["abcde" ⋄ "bcdef" ⋄ "cdefg"]
+5↕"abcdefg"   ⍝ ["abcde"⋄"bcdef"⋄"cdefg"]
 
 ⍝ bqn:windows:55 — A window is a take after a drop
 (2⌷5↕"abcdefg")≡5↑2↓"abcdefg"   ⍝ $t
@@ -107,20 +107,20 @@ a←[0 1 2 ⋄ 3 4 5 ⋄ 6 7 8 ⋄ 9 10 11] ⋄ (1⌽)⌾(↑⍤1) a
 {(5↕⍵)≡⍉3↕⍵}"abcdefg"   ⍝ $t
 
 ⍝ bqn:windows:99 — Windows along the first axis of a matrix
-(⊂⍤2) 2↕["0123" ⋄ "abcd" ⋄ "ABCD"]
-[["0123" ⋄ "abcd"] ["abcd" ⋄ "ABCD"]]
+(⊂⍤2) 2↕["0123"⋄"abcd"⋄"ABCD"]
+[["0123"⋄"abcd"] ["abcd"⋄"ABCD"]]
 
 ⍝ bqn:windows:103 — Windows along two axes of a matrix
-(⊂⍤2) [2 2]↕["0123" ⋄ "abcd" ⋄ "ABCD"]
-[["01" ⋄ "ab"] ["12" ⋄ "bc"] ["23" ⋄ "cd"] ⋄ ["ab" ⋄ "AB"] ["bc" ⋄ "BC"] ["cd" ⋄ "CD"]]
+(⊂⍤2) [2 2]↕["0123"⋄"abcd"⋄"ABCD"]
+[["01"⋄"ab"] ["12"⋄"bc"] ["23"⋄"cd"]⋄["ab"⋄"AB"] ["bc"⋄"BC"] ["cd"⋄"CD"]]
 
 ⍝⍝ Swap
 
 ⍝ bqn:swap:22 — Select characters with a matrix of indices
-[[0 1 1 0 0 ⋄ 1 0 1 0 1]]⌷" +"   ⍝ [" ++  " ⋄ "+ + +"]
+[[0 1 1 0 0⋄1 0 1 0 1]]⌷" +"   ⍝ [" ++  "⋄"+ + +"]
 
 ⍝ bqn:swap:28 — An identity matrix from an outer product with the argument on both sides
-=⊗⍨⍳3   ⍝ [$t $f $f ⋄ $f $t $f ⋄ $f $f $t]
+=⊗⍨⍳3   ⍝ [$t $f $f⋄$f $t $f⋄$f $f $t]
 
 ⍝⍝ Constant
 
@@ -167,15 +167,15 @@ c   ⍝ 9
 ⍝⍝ Rank
 
 ⍝ bqn:rank:92 — Join the strings in each row
-s←["words" "go" "here" ⋄ "some" "other" "words"] ⋄ ⊂∘∊⍤1 s
+s←["words" "go" "here"⋄"some" "other" "words"] ⋄ ⊂∘∊⍤1 s
 "wordsgohere" "someotherwords"
 
 ⍝ bqn:rank:146 — Rank 2 on an array with empty cells keeps the frame and the cell shape
-x←⊂⍤2⍳4 3 2 1 0 ⋄ [⍴x;⍴↑,x]   ⍝ (4ₓ 3ₓ 2ₓ ⋄ 1ₓ 0ₓ)
+x←⊂⍤2⍳4 3 2 1 0 ⋄ [⍴x;⍴↑,x]   ⍝ (4ₓ 3ₓ 2ₓ⋄1ₓ 0ₓ)
 
 ⍝ bqn:rank:183 — A matrix product through Rank with an infinite rank for the right argument
-m←[0 1 0 ⋄ ¯1 0 0 ⋄ 0 0 1] ⋄ m (+⌿∘×)⍤[1 ∞] 1 2 3×⊗1 10
-[2 20 ⋄ ¯1 ¯10 ⋄ 3 30]
+m←[0 1 0⋄¯1 0 0⋄0 0 1] ⋄ m (+⌿∘×)⍤[1 ∞] 1 2 3×⊗1 10
+[2 20⋄¯1 ¯10⋄3 30]
 
 ⍝ bqn:rank:193 — Rank 1 joins cells, with leading-axis agreement between the frames
 ⍴(⍳3 2 5),⍤1 ⍳3 4   ⍝ [3 2 9]ₓ
@@ -198,11 +198,11 @@ m←[0 1 0 ⋄ ¯1 0 0 ⋄ 0 0 1] ⋄ m (+⌿∘×)⍤[1 ∞] 1 2 3×⊗1 10
 ⍝⍝ Leading axis
 
 ⍝ bqn:leading:19 — A Left scan along the first axis copies the first major cell
-a←["ab" ⋄ "cd" ⋄ "ef"] ⋄ ⊣⍀a   ⍝ ["ab" ⋄ "ab" ⋄ "ab"]
+a←["ab"⋄"cd"⋄"ef"] ⋄ ⊣⍀a   ⍝ ["ab"⋄"ab"⋄"ab"]
 
 ⍝ bqn:leading:90 — Rotate the first axis by 2 and the second by 1
 2⊖1⌽⍳3 5
-[[2 1] [2 2] [2 3] [2 4] [2 0] ⋄ [0 1] [0 2] [0 3] [0 4] [0 0] ⋄ [1 1] [1 2] [1 3] [1 4] [1 0]]
+[[2 1] [2 2] [2 3] [2 4] [2 0]⋄[0 1] [0 2] [0 3] [0 4] [0 0]⋄[1 1] [1 2] [1 3] [1 4] [1 0]]
 
 ⍝ bqn:leading:94 — Drop applies to the leading axes
 ⍴3 2↓7 7 7 7⍴"abc"   ⍝ [4 5 7 7]ₓ
@@ -212,7 +212,7 @@ x←3 2 4⍴⍳60
 c←100×(⍳3)=⊗⍳2
 c+x
 ⍝ =>
-[[100 101 102 103 ⋄ 4 5 6 7] ⋄ [8 9 10 11 ⋄ 112 113 114 115] ⋄ [16 17 18 19 ⋄ 20 21 22 23]]
+[[100 101 102 103⋄4 5 6 7]⋄[8 9 10 11⋄112 113 114 115]⋄[16 17 18 19⋄20 21 22 23]]
 
 ⍝⍝ Blocks
 
@@ -223,7 +223,7 @@ c+x
 [3{(2×⍺)-⍵}1;{(2×⍺)-⍵}1]   ⍝ 5 ¯1
 
 ⍝ bqn:block:60 — An absent left argument in a train leaves an atop
-[3{(⍺-⌽)⍵}1 2;{(⍺-⌽)⍵}1 2]   ⍝ (1 2 ⋄ ¯2 ¯1)
+[3{(⍺-⌽)⍵}1 2;{(⍺-⌽)⍵}1 2]   ⍝ (1 2⋄¯2 ¯1)
 
 ⍝ bqn:block:66 — An absent left argument with Before
 {⍺ *↣- ⍵}5   ⍝ 143.4131591025766
@@ -233,7 +233,7 @@ c+x
 
 ⍝ bqn:block:177 — Different functions for one and two arguments
 ambiv←{[1 ⍵]}⊘{[2 ⍺ ⍵]} ⋄ [ambiv 'a';'a' ambiv 'b']
-(1 'a' ⋄ 2 'a' 'b')
+(1 'a'⋄2 'a' 'b')
 
 ⍝ bqn:block:231 — A predicate after a setup statement
 {r←⌽⍵ ⋄ 't'=↑r? r;⍵}¨"test" "this"   ⍝ "tset" "this"
@@ -281,13 +281,13 @@ a←1 ⋄ (~a)⍚[- ⊢] 5   ⍝ ¯5
 {⍵<0}⍚[{⍵>10} 1]¨ ¯1 5 20   ⍝ 1 $f $t
 
 ⍝ bqncrate/table.tsv:415 — Replace the first major cell
-[0 0 0]⌾↑ [1 2 3 ⋄ 4 5 6]   ⍝ [0 0 0 ⋄ 4 5 6]
+[0 0 0]⌾↑ [1 2 3⋄4 5 6]   ⍝ [0 0 0⋄4 5 6]
 
 ⍝ bqncrate/table.tsv:572 — Reverse along every axis
-⌽⌾, [1 2 3 ⋄ 4 5 6]   ⍝ [6 5 4 ⋄ 3 2 1]
+⌽⌾, [1 2 3⋄4 5 6]   ⍝ [6 5 4⋄3 2 1]
 
 ⍝ bqncrate/table.tsv:738 — Apply a function to the last major cell
--⌾(¯1⌷) [1 2 ⋄ 3 4]   ⍝ [1 2 ⋄ ¯3 ¯4]
+-⌾(¯1⌷) [1 2⋄3 4]   ⍝ [1 2⋄¯3 ¯4]
 
 ⍝ bqncrate/table.tsv:792 — Blend two lists by a mask
 "abcd" ⊣⌾(1 0 1 0#) "wxyz"   ⍝ "axcz"

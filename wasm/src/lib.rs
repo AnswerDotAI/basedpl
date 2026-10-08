@@ -1,7 +1,8 @@
-//! The browser's interface to BPL. A `Session` runs code and passes each output to a JavaScript function as the program produces it.
-//! `nbs/playground/worker.js` loads the module and runs it in a Web Worker.
+//! The browser's interface to BPL. A `Session` runs code and passes each output to a JavaScript function as the program produces it,
+//! gives the value of code as a JavaScript value, and binds JavaScript values and functions as BPL names. `nbs/playground/worker.js`
+//! loads the module and runs it in a Web Worker.
 #![cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-use basedpl::{protocol, EvalOptions, MimeData, Output, OutputSink};
+use basedpl::{js, protocol, EvalOptions, MimeData, Output, OutputSink};
 use js_sys::{Function, Object, Reflect, Uint8Array};
 use std::{cell::RefCell, sync::Arc};
 use wasm_bindgen::prelude::*;
@@ -57,6 +58,29 @@ impl Session {
         let sink: OutputSink = Arc::new(|o: &Output| OUTPUT.with(|f| send(f, &object(o))));
         let error = self.0.eval_with(code, EvalOptions { output: Some(sink), ..EvalOptions::default() }).error;
         OUTPUT.set(None);
-        error.map_or(JsValue::NULL, |e| js_sys::JSON::parse(&protocol::error(&e).to_string()).expect("serde_json writes valid JSON"))
+        error.as_ref().map_or(JsValue::NULL, error_object)
+    }
+    /// The value of `code` as a JavaScript value, which `basedpl::js` describes, or `undefined` when the code gives no value. A BPL error
+    /// throws its error object. The code's outputs are dropped, and `run` shows them.
+    pub fn eval(&mut self, code: &str) -> Result<JsValue, JsValue> {
+        let result = self.0.eval_with(code, EvalOptions { echo: false, ..EvalOptions::default() });
+        if let Some(e) = &result.error { return Err(error_object(e)); }
+        let crossing = || JsValue::from(js_sys::Error::new("a function or operator can't cross into JavaScript"));
+        if result.function.is_some() || result.operator.is_some() { return Err(crossing()); }
+        result.value.map_or(Ok(JsValue::UNDEFINED), |v| js::export(&v).map(js::to_js).map_err(|_| crossing()))
+    }
+    /// Binds each property of `names` as a BPL name, to the BPL value that `basedpl::js` converts it to. A JavaScript function becomes a
+    /// BPL function that calls it. Throws when a property's name isn't a BPL name, or its value has no BPL form.
+    pub fn bind(&mut self, names: &JsValue) -> Result<(), JsValue> {
+        let Ok(js::Js::Object(fields)) = js::from_js(names) else { return Err(js_sys::Error::new("bind needs an object").into()) };
+        for (name, value) in fields {
+            let fail = |why: &str| JsValue::from(js_sys::Error::new(&format!("can't bind {name}: {why}")));
+            let value = js::import(value).map_err(|_| fail("its value has no BPL form"))?.ok_or_else(|| fail("it has no value"))?;
+            self.0.set(&name, value).map_err(|_| fail("it isn't a BPL name"))?;
+        }
+        Ok(())
     }
 }
+
+/// A BPL error as a JavaScript object, with the fields of `protocol::error`.
+fn error_object(e: &basedpl::Error) -> JsValue { js_sys::JSON::parse(&protocol::error(e).to_string()).expect("serde_json writes valid JSON") }

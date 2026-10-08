@@ -37,7 +37,7 @@ Links are relative to https://answerdotai.github.io/basedpl/.
 
 BQN's based arrays: numbers, characters and functions are atoms, distinct from rank-0 arrays. Enclose always adds a layer, including around atoms; `⍬⍴Y` makes a rank-0 array. Rank 0 passes atoms as themselves and array items enclosed. APL-style prototypes/fill remain; function fill is the function itself.
 
-`[a b]` is always a vector, even `[a]`. Spaces separate unspaced item expressions; `;` separates expressions containing spaces. `⋄`/newlines stack rows along a new leading axis. In parentheses, rows instead form a nested vector: `(4 ⋄ 4 5)` is `[[4] [4 5]]`. Parentheses without rows only group. Newlines normally mean `⋄`, not continuation.
+`[a b]` is always a vector, even `[a]`. Spaces separate unspaced item expressions; `;` separates expressions containing spaces. `⋄`/newlines stack rows along a new leading axis. In parentheses, rows instead form a nested vector: `(4⋄4 5)` is `[[4] [4 5]]`. Parentheses without rows only group. Newlines normally mean `⋄`, not continuation. Brackets are the usual way to build an array from names or expressions. Write `[n 2]⍴0`, `[x],y`, `[a⋄b]` and `f⍤1 m`, not APL's `(n,2)⍴0`, `(⊂x),y`, `⊃[a b]` and `⊃f¨↓m`.
 
 `"abc"` is a character vector; `'a'` is one character atom. `""` and `''` are the empty string. A double-quoted string can span lines, keeping its indentation. Double a double quote inside a string; `'''` is the single-quote character.
 
@@ -61,7 +61,7 @@ Pervasion, Each and Rank align leading axes and expand length-1 axes. `K:Y` atta
 
 Dfns return their last statement, not the first unassigned one. `{condition?body;fallback}` uses BQN-style predicates/bodies with one shared scope. Absent `⍺` drops out of expressions as BQN's `𝕨`; `⍺←default` supplies a default. `⍶ ⍹` mark monadic/dyadic operators; `∇` recurses the function, `⍢` the operator. `kinds::handler` guards later errors, naming kinds as text (`"DOMAIN"::`) or `∞::` for all; `$e` is the caught error.
 
-Plain assignment is local; modified/selective updates change the nearest binding. Arrays have value semantics. `T.k←v` replaces or adds key `k`. `[a b]←Y` destructures by position, or by name against a fully keyed record. Local capturing functions cannot outlive their defining call. Bracket items evaluate LTR; function arguments/fork arms RTL.
+Plain assignment is local; modified/selective updates change the nearest binding. Arrays have value semantics. `T.k←v` replaces or adds key `k`. `[a b]←Y` destructures the items of `Y`, or its major cells at rank 2 or more: by name when its leading axis is fully keyed, otherwise by position. Local capturing functions cannot outlive their defining call. Bracket items evaluate LTR; function arguments/fork arms RTL.
 
 `•load "file.bpl"` runs a module and returns its public names as a record; `_`-prefixed names are private. `[f]←•load path` imports by name. Each load runs again. `./` and `../` paths are relative to the source file; other relative paths use the working directory.
 
@@ -71,10 +71,20 @@ Plain assignment is local; modified/selective updates change the nearest binding
 
 - Text: `•c •ucs •normalize •r`.
 - Data/files: `•csv •json •literal •xml •image •deflate •date •vfi •nget •nput •fetch •hash •uuid`. Filesystem: `•path •metadata •readdir •copy •rename •remove •mkdir`. A format function reads its format, and its inverse writes it. `•json` reads JSON5.
-- Display: `•element •svg •mime •plot •prefs`.
+- Display: `•element •svg •mime •plot •prefs •canvas`. `•canvas` makes a function that draws its data with JavaScript.
 - Linear algebra: `•decompose`.
-- Programs/introspection: `•load •signal •storage •time •host •delay •nc •nl •src •ex`. `•time 0` is the current Unix time.
+- Programs/introspection: `•load •signal •storage •time •host •delay •nc •nl •src •ex`. The browser build adds `•js`, which makes a BPL function from JavaScript source. `•time 0` is the current Unix time.
 - Random: `•rand` makes a seeded generator. `params •distribution name` returns a distribution, and `•distribution name` uses standard parameters where the distribution has them. Each distribution is a record with `sample density cdf quantile` functions.
+
+## Style
+
+Use lowercase `j` in complex literals throughout tests and examples, including adapted reference cases. Reserve uppercase `J` for explicit input-alias tests. Keep archived upstream source unchanged. Write literal matrices in array notation, `[10 20 30⋄40 50 60]`, not as a reshape, `2 3⍴10 20 30 40 50 60`. Keep `⍴` where the example is about reshape. A `⋄` that separates rows has no spaces around it. A `⋄` that separates statements has a space on each side.
+
+Brackets are the usual way to write a list. A bare literal list, such as `1 2 3`, is a shorthand. Write a list of names in brackets, as in `[a b]`, even where `a b` would also work. End an operand with a space, not with parentheses or `⊢`. After a dyadic operator and a space, the whole next run is the operand. For example, `⌊⌾ 10× x` needs no parentheses. Where a literal operand would run into the argument, a vector argument goes in touching brackets: `f⍤1[2 3]`. A single number goes in parentheses: `f⍣¯2(5)`. Judge each line by how it reads. Report any case where none of these forms works.
+
+A name applied to a literal touches it, as a glyph does: `fib10` and `1+⌽f5`. Write it that way where it's shorter and needs no new parentheses. Keep the space where the literal would join the next part of the expression, or where a subject before the name is its left argument.
+
+Read a selection with `⌷`, as in `[⍋v]⌷v`. Write one literal position with a subscript, as in `v₁` and `v₁←0`. Use `.` for other assignment targets, such as `v.[i]←0`, for record fields, such as `T.name`, and wherever `⌷` would be longer.
 
 ## Python
 

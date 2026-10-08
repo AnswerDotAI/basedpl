@@ -121,7 +121,7 @@ def test_errors_capture_output_and_recover(capsys):
     for call in [bpl, lambda src: bpl(src, 'explicit')]:
         with pytest.raises(BplError) as caught: call('x←7 ⋄ ⎕←1ₓ ⋄ 1÷"a"')
         e = caught.value
-        assert e.kind == 'DOMAIN' and e.output == ['1ₓ'] and '÷' in e.source and len(e.span) == 2
+        assert e.kind == 'DOMAIN' and e.output == ['1ₓ'] and e.source[slice(*e.span)] == '÷'
         assert ' --> <input>:1:' in str(e)
         assert capsys.readouterr().out == ('1ₓ\n' if call is bpl else '')
         assert bpl('x+1').py == 8

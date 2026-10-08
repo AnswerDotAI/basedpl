@@ -28,16 +28,16 @@ v←[[1 2] [3 4 5]]
 ≢⍤0 v              ⍝ [1 1]ₓ
 ≢¨v                ⍝ [2 3]ₓ
 ⊢⍤0v ≡ v          ⍝ $t
-{⍵ ⍵}⍤0[1 2]      ⍝ [1 1 ⋄ 2 2]
+{⍵ ⍵}⍤0[1 2]      ⍝ [1 1⋄2 2]
 -⍤0(5)             ⍝ ¯5
 ```
 
 With rank `∞`, the cell is the whole argument, and rank `¯∞` is rank 0. For example, `⍤1 ∞` pairs each row on the left with the whole right argument. In the examples below, `+⌿∘×⍤1 ∞` is the matrix-vector product. With a matrix on the right, the same function multiplies matrices.
 
 ```bpl
-m←[1 2 3 ⋄ 4 5 6]
+m←[1 2 3⋄4 5 6]
 m +⌿∘×⍤1 ∞ [1 2 3]                   ⍝ 14 32
-m +⌿∘×⍤1 ∞ [1 10 ⋄ 2 20 ⋄ 3 30]      ⍝ [14 140 ⋄ 32 320]
+m +⌿∘×⍤1 ∞ [1 10⋄2 20⋄3 30]      ⍝ [14 140⋄32 320]
 ```
 
 To apply a function along chosen axes, see [Axis](axis.qmd).
@@ -47,7 +47,7 @@ To apply a function along chosen axes, see [Axis](axis.qmd).
 `(f⍤k)⁻¹` is `f⁻¹⍤k`.
 
 ```bpl
-(⌽⍤1)⁻¹[1 2 ⋄ 3 4]   ⍝ [2 1 ⋄ 4 3]
+(⌽⍤1)⁻¹[1 2⋄3 4]   ⍝ [2 1⋄4 3]
 ```
 
 ## Errors

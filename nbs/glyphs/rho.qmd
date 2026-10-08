@@ -19,7 +19,7 @@ M←["city":2 "month":3]⍴⍳6
 `S⍴Y` reshapes, cycling or truncating the ravel of `Y`. Dimensions are nonnegative integers. Empty `Y` supplies fill.
 
 ```bpl
-2 3⍴1 2            ⍝ [1 2 1 ⋄ 2 1 2]
+2 3⍴1 2            ⍝ [1 2 1⋄2 1 2]
 3⍴""               ⍝ "   "
 ```
 

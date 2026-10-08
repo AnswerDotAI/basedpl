@@ -15,6 +15,7 @@ mod binder;
 mod dissect;
 mod operators;
 mod session;
+pub(crate) use binder::before;
 use {binder::*, dissect::*, operators::*};
 
 #[derive(Clone, Debug)]
@@ -60,8 +61,9 @@ impl PartialEq for Function { fn eq(&self, other: &Self) -> bool { let Ok(equal)
 
 const MAX_RESOLUTION_DEPTH: usize = 128;
 /// Nested function calls allowed. In the browser the engine's stack is the limit: a Chrome worker held 300 levels of plain recursion.
-/// Plain recursion makes two calls a level and gets 200 levels from 410 calls. Recursion through outer product makes three, for 135.
-const MAX_CALL_DEPTH: usize = if cfg!(web) { 410 } else { 20_000 };
+/// Plain recursion makes two calls a level and gets 188 levels from 380 calls. Recursion through outer product makes three, for 125.
+/// The limit leaves about a tenth of a Chrome worker's stack spare, because each build's inlining changes how much stack a call uses.
+const MAX_CALL_DEPTH: usize = if cfg!(web) { 380 } else { 20_000 };
 /// Lexical frames allowed. They live on the heap, so the browser allows as many as native builds.
 const MAX_FRAME_DEPTH: usize = 20_000;
 const STACK_RED_ZONE: usize = 1 << 20;
@@ -527,6 +529,11 @@ impl Function {
                     crate::system::Call::Value(call) => call(left, right, cx),
                     crate::system::Call::Effect(call) => return call(left, right, cx).map(|(value, shy)| Bound { shy, ..Bound::from(value) }),
                     crate::system::Call::Element(tag) => crate::xml::element(tag, left, right, cx),
+                    crate::system::Call::Canvas(source) => crate::canvas::draw(source, left, right, cx),
+                    #[cfg(web)]
+                    crate::system::Call::Js(f) => {
+                        return crate::js::call(f, left, right, cx).map(|v| v.map_or_else(|| Bound::new(Binding::NoResult), Bound::from))
+                    }
                     crate::system::Call::Mime => cx.session.mime(left, right, cx.span),
                     crate::system::Call::Session(call) => call(cx.session, left, right, cx.span),
                     crate::system::Call::Time => cx.session.system_time(left, right, cx.span),

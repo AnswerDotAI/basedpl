@@ -1,0 +1,17 @@
+# `•js` — JavaScript functions
+
+`•js source` returns a BPL function that calls the JavaScript function `source` evaluates to. `f Y` calls it with `Y`, and `X f Y` with `X` then `Y`. For example, after `h←•js "Math.hypot"`, `3 h 4` is `5`. Only the browser build has `•js`. A page that runs BPL can also give it JavaScript functions and values by name, with `Session.bind`.
+
+Arguments cross into JavaScript, and results come back, as this table shows. [`•canvas`](canvas.qmd), `Session.eval` and `Session.bind` follow it too.
+
+| BPL | JavaScript |
+|---|---|
+| Number | Number. A Boolean is `true` or `false`. |
+| String | String |
+| Record | Object |
+| Array of numbers | `{shape, data}`. `data` is a `Float64Array` for approximate and fractional numbers. For integers, it's a `Uint8Array`, `Int16Array`, `Int32Array` or `BigInt64Array`, at the width BPL stores them. Complex numbers are their real and imaginary parts in turn, with a last axis of length 2. |
+| Any other array | `{shape, data}`, with `data` an `Array` of items |
+
+An array with axis names or keys also has `axis_names` or `axis_keys`. A function or operator can't cross into JavaScript. Coming back, a JavaScript number becomes an approximate number, and a `BigInt` an exact one. An `Array` becomes a vector. An object with `shape` and `data` becomes an array, and any other object a record. A JavaScript function becomes a BPL function. `undefined` and `null` give no result.
+
+Errors: `DOMAIN` for source that doesn't give a function, an exception thrown by the JavaScript, or a value that can't cross.
