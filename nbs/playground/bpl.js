@@ -8,8 +8,13 @@ import {createHighlighterCore} from 'https://esm.sh/shiki@4.5.0/core';
 import {createJavaScriptRegexEngine} from 'https://esm.sh/shiki@4.5.0/engine/javascript';
 
 // The npm package's files come from the copies of your `cargo wasm` build beside this script on localhost, and from the latest
-// release elsewhere. The worker takes this base URL as its `pkg` parameter.
-const pkg = location.hostname === 'localhost' ? new URL('./', import.meta.url).href : 'https://cdn.jsdelivr.net/npm/basedpl/';
+// release elsewhere, resolved once so every asset uses the same version. The worker takes this base URL as its `pkg` parameter.
+let pkg = new URL('./', import.meta.url).href;
+if (location.hostname !== 'localhost') {
+    const response = await fetch('https://cdn.jsdelivr.net/npm/basedpl/package.json', {cache: 'no-cache'});
+    const {version} = await response.json();
+    pkg = `https://cdn.jsdelivr.net/npm/basedpl@${version}/`;
+}
 // The text of the package file `name`, and the value of the script in it.
 const text = name => fetch(new URL(name, pkg)).then(r => r.text());
 const script = async name => (0, eval)(await text(name));
