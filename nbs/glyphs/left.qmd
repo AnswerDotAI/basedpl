@@ -18,8 +18,8 @@ See [trains](parentheses.qmd).
 
 ## Inverse
 
-`⊣⁻¹` is `⊣`. `X ⊣⁻¹ Y` is `Y`, which must match `X`.
+`⊣⁻¹` is `⊣`. `X⊣⁻¹Y` is `Y`, which must match `X`.
 
 ```bpl
-3 ⊣⁻¹ 3   ⍝ 3
+3⊣⁻¹3   ⍝ 3
 ```

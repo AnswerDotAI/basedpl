@@ -29,9 +29,9 @@ See [Decode](decode.qmd).
 
 ## Inverse
 
-`⊤⁻¹` is `⊥`, binary-decode. `X ⊤⁻¹ Y` decodes the digits `Y` in the bases `X`.
+`⊤⁻¹` is `⊥`.
 
 ```bpl
-⊤⁻¹ 1 0 1        ⍝ 5
-24 60 ⊤⁻¹ 1 30   ⍝ 90
+⊤⁻¹1 0 1       ⍝ 5
+24 60⊤⁻¹1 30   ⍝ 90
 ```

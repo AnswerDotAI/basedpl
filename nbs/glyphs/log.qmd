@@ -19,9 +19,9 @@ Uses complex logarithms where needed. `⍟0` is `¯∞`, as IEEE 754 gives it. W
 
 ## Inverse
 
-`⍟⁻¹` is `*`. `X ⍟⁻¹ Y` is `X*Y`. With the right argument fixed, `(⍟↢X)⁻¹ Y` is `X*÷Y`.
+`⍟⁻¹` is `*`. With the right argument fixed, `(⍟↢X)⁻¹Y` is `X*÷Y`.
 
 ```bpl
-2 ⍟⁻¹ 3     ⍝ 8
-(⍟↢8)⁻¹ 3   ⍝ 2
+2⍟⁻¹3      ⍝ 8
+(⍟↢8)⁻¹3   ⍝ 2
 ```

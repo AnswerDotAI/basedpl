@@ -30,9 +30,9 @@ Each row of `Y` holds the digits of one number, as [Encode](encode.qmd) writes t
 
 ## Inverse
 
-`⊥⁻¹` is `⊤`, binary-encode. `X ⊥⁻¹ Y` gives the digits of `Y` in the bases `X`.
+`⊥⁻¹` is `⊤`.
 
 ```bpl
-⊥⁻¹ 5          ⍝ 1 0 1
-24 60 ⊥⁻¹ 90   ⍝ 1 30
+⊥⁻¹5         ⍝ 1 0 1
+24 60⊥⁻¹90   ⍝ 1 30
 ```

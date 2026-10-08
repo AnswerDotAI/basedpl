@@ -15,7 +15,3 @@ Keys: `Alt-= /`. Ranks: `∞` monadic, `∞ ∞` dyadic
 ```bpl
 1≢,1               ⍝ $t
 ```
-
-## Inverse
-
-Neither form has an inverse.

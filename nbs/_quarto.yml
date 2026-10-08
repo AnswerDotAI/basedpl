@@ -1,6 +1,5 @@
 project:
   type: website
-  pre-render: ../scripts/playground_assets.py
 
 format:
   html:
@@ -14,6 +13,8 @@ website:
   twitter-card: true
   open-graph: true
   repo-actions: [issue]
+  search:
+    keyboard-shortcut: []
   navbar:
     background: primary
     search: true

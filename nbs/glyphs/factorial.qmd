@@ -17,7 +17,3 @@ Ranks: `0` monadic, `0 0` dyadic
 ```
 
 Extends through Gamma to non-integral and complex arguments. At a pole, a negative integer, the result is an infinity or NaN, as the gamma function gives it.
-
-## Inverse
-
-Neither form has an inverse.

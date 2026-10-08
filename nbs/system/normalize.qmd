@@ -1,0 +1,10 @@
+# `•normalize` — Unicode normalization
+
+`•normalize text` puts text into Unicode normalization form NFC. NFC uses one code point for a letter and its accent wherever Unicode has one. `form •normalize text` names the form: `"NFC"`, `"NFD"`, `"NFKC"` or `"NFKD"`. NFD writes each accented letter as a base letter followed by combining marks. The K forms also replace compatibility characters, such as the ligature `ﬁ`, with ordinary ones.
+
+```bpl
+•ucs "NFD" •normalize "é"   ⍝ [101 769]ₓ
+"NFKC" •normalize "ﬁ"       ⍝ "fi"
+```
+
+Errors: `DOMAIN` for an unknown form, or an argument that isn't text.

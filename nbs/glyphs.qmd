@@ -1,6 +1,6 @@
 # Glyph reference
 
-Each glyph has a name, which links to its definitions and examples. A function glyph also has a name for its monad, which takes one argument, and for its dyad, which takes two. Operators take functions or arrays and derive functions. Notes flag unusual differences from Dyalog APL. Follow each glyph's link for details and examples.
+Each glyph has a name, which links to its definitions and examples. A function glyph also has a name for its monad, which takes one argument, and for its dyad, which takes two. Operators take functions or arrays and derive functions. Notes flag unusual differences from Dyalog APL. Follow each glyph's link for details and examples. Each function's page gives its ranks. An argument of higher rank applies the function to each cell of that rank, as [Rank](glyphs/rank.qmd) does.
 
 ## Typing glyphs
 
@@ -128,8 +128,8 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `'…'` `"…"` [quote](glyphs/quote.qmd) | | Character and string literals |
 | `¯` [overbar](glyphs/overbar.qmd) | Alt-Minus | Negative literal sign |
 | `∞` [infinity](glyphs/infinity.qmd) | Alt-8 | Real infinity |
-| `$t` `$f` `$n` [constants](numbers.qmd#writing-numbers) | | True, false and NaN |
-| `$e` [caught error](glyphs/error-guard.qmd) | | The error a guard's handler caught |
+| `$t` `$f` `$n` [constants](system/constants.qmd) | | True, false and NaN |
+| `$e` [caught error](system/constants.qmd) | | The error a guard's handler caught |
 | `²` `⁻¹` `ᵀ` `ᵘ` [superscript](scripts.ipynb#superscripts) | Alt-6 | Postfix on the item before it, or after a space on the run before it: `x²` is `x*2`, `f²` is `f⍣2`, `f⁻¹` is the inverse of `f`, `mᵀ` is `⍉m`, and `fᵘ` is a scalar holding `f` |
 | `₁` `₋₁` [subscript](scripts.ipynb#subscripts) | Alt-5 | Postfix on the array before it, or after a space on the run before it: `v₁` is `1⌷v`, `v₋₁` is the last major cell, and `v₁←5` assigns to that cell |
 

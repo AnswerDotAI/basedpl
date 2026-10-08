@@ -1,0 +1,10 @@
+# `•c` — Case
+
+`•c Y` folds case. `1•c Y` converts to upper case, and `¯1•c Y` to lower case. A character vector converts as text, with Unicode's full case mappings: `ß` becomes `SS`, and a `Σ` that ends a word lowercases to `ς`. Any other character converts on its own, and stays unchanged when its mapping has more than one character. Folding converts to upper case, then to lower case. `•c` keeps the argument's nesting and leaves items that aren't characters unchanged.
+
+```bpl
+•c "AbC"           ⍝ "abc"
+1•c "AbC"          ⍝ "ABC"
+1•c "straße"       ⍝ "STRASSE"
+¯1•c "ΟΔΟΣ"        ⍝ "οδος"
+```

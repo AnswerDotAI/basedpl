@@ -20,8 +20,8 @@ A count array supplies counts for the unrotated axes. See [`⊖`](reverse-first.
 
 ## Inverse
 
-`⌽⁻¹` is `⌽`. `X ⌽⁻¹ Y` rotates `Y` back by `X`.
+`⌽⁻¹Y` is `⌽Y`. `X⌽⁻¹Y` rotates `Y` back by `X`.
 
 ```bpl
-1 ⌽⁻¹ 2 3 1   ⍝ 1 2 3
+1⌽⁻¹2 3 1   ⍝ 1 2 3
 ```

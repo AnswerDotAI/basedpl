@@ -1,0 +1,5 @@
+# `•rename` — Rename
+
+`to •rename from` moves `from` to `to` and returns `to`, which isn't displayed. Both must be on the same filesystem.
+
+Errors: `IO` for file errors.

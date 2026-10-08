@@ -27,4 +27,4 @@ A guard that names INTERRUPT ends the interrupt, and its handler runs until anot
 
 APL difference: Dyalog's guards take error numbers. BPL's take names.
 
-[1]: ../system-functions.qmd#signal
+[1]: ../system/signal.qmd

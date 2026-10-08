@@ -7151,7 +7151,7 @@ x←42 ⋄ ⎕←x   ⍝ 42
 {"INDEX"::3 ⋄ 4⊃1 2 3}0   ⍝ 3
 
 ⍝ aplcart/table.tsv:2631 — Array rank invalid for function/operator, or ranks of arguments do not conform; Concrete executable example for the APLcart error-guard catalogue; trigger the named language error and return from its handler
-{"RANK"::4 ⋄ (2 2⍴3)⍴1}0   ⍝ 4
+{"RANK"::4 ⋄ +⍤(2 2⍴1) 1}0   ⍝ 4
 
 ⍝ aplcart/table.tsv:2632 — The shape of the arguments of a function do not conform, but the ranks do conform; Concrete executable example for the APLcart error-guard catalogue; trigger the named language error and return from its handler
 {"LENGTH"::5 ⋄ 1 2+1 2 3}0   ⍝ 5

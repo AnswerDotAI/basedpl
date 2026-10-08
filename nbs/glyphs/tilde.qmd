@@ -24,10 +24,10 @@ Ranks: `0` monadic, `∞ ∞` dyadic
 
 ## Inverse
 
-`~⁻¹` is `~`. Without has no inverse.
+`~⁻¹Y` is `~Y`.
 
 ```bpl
-~⁻¹ 1 0   ⍝ $f $t
+~⁻¹1 0   ⍝ $f $t
 ```
 
 ## Errors

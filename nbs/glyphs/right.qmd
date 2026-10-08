@@ -13,8 +13,8 @@ Both arguments evaluate.
 
 ## Inverse
 
-`⊢⁻¹` is `⊢`. `X ⊢⁻¹ Y` is `Y`.
+`⊢⁻¹` is `⊢`.
 
 ```bpl
-3 ⊢⁻¹ 5   ⍝ 5
+3⊢⁻¹5   ⍝ 5
 ```

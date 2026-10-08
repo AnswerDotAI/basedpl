@@ -16,8 +16,8 @@ Keys: `Alt-Minus 9`. Ranks: `0` monadic, `0 0` dyadic
 
 ## Inverse
 
-`⊽⁻¹` halves, undoing double. Nor has no inverse.
+`⊽⁻¹Y` halves `Y`.
 
 ```bpl
-⊽⁻¹ 8   ⍝ 4
+⊽⁻¹8   ⍝ 4
 ```

@@ -20,7 +20,7 @@ J's `p.` family.
 
 ## Multiplier and roots
 
-`[M R]⌻X`: `M××/X-R`. `⊂R` assumes `M=1`; use `⊂,R` for one root. `⌻⁻¹` gives the coefficients.
+`[M R]⌻X`: `M××/X-R`. `⊂R` assumes `M=1`; use `⊂,R` for one root. `⌻⁻¹[M R]` gives the coefficients.
 
 ```bpl
 [2;1 3]ₓ⌻[0 1 2 3]ₓ        ⍝ [6 0 ¯2 0]ₓ

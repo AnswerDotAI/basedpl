@@ -1,0 +1,5 @@
+# `•remove` — Remove
+
+`•remove path` removes a file or an empty directory, and returns `path`, which isn't displayed. With the option `recurse`, as in `["recurse":1] •remove path`, it removes a directory and everything in it.
+
+Errors: `IO` for a missing path, a directory that isn't empty without `recurse`, and other file errors; `DOMAIN` for an invalid option.

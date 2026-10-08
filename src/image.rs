@@ -26,9 +26,14 @@ pub(crate) fn encode(left: Option<&Value>, right: &Value, span: &Context<'_>) ->
     data::byte_vector(encoded(right, format, span)?).error_at(span, "image exceeds array limits")
 }
 
+/// Native builds send a PNG. The browser build sends `image/x-rgba` bytes, with the width as a parameter, for its page to draw on a canvas.
 fn render(_: Option<&Value>, picture: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let png = data::byte_vector(encoded(picture, ImageFormat::Png, span)?).error_at(span, "image exceeds array limits")?;
-    display::mime("image/png", png).error_at(span, "invalid image MIME bundle")
+    let (kind, bytes) = if cfg!(web) {
+        let image = pixels(picture, span)?;
+        (format!("image/x-rgba;width={}", image.width()), image.to_rgba8().into_raw())
+    } else { ("image/png".into(), encoded(picture, ImageFormat::Png, span)?) };
+    let bytes = data::byte_vector(bytes).error_at(span, "image exceeds array limits")?;
+    display::mime(&kind, bytes).error_at(span, "invalid image MIME bundle")
 }
 
 /// The picture in the encoded image `bytes`.

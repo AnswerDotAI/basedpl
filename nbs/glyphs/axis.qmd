@@ -68,7 +68,7 @@ Wrapping a primitive in a dfn gives the general rule:
 `f⁻¹⍠a` inverts `f` along the same axes. The arithmetic and math functions, comparisons, rotations, replicate and the catenates have such inverses, and so do enclose, split, mix and reverse.
 
 ```bpl
-10 20 +⁻¹⍠0 [11 12 13 ⋄ 24 25 26]   ⍝ [1 2 3 ⋄ 4 5 6]
+10 20+⁻¹⍠0[11 12 13 ⋄ 24 25 26]   ⍝ [1 2 3 ⋄ 4 5 6]
 ```
 
 ## Errors

@@ -826,6 +826,33 @@ m←[1 2 3 ⋄ 4 5 6]
 ⍝ — A vector frame aligns with the leading matrix axis
 1 2 +⍤0 [2 3]⍴0   ⍝ [1 1 1 ⋄ 2 2 2]
 
+⍝ — An empty frame whose call on the prototype cell fails gives an empty result, as in J
+⍬ ({⍺√⍵}⍤0) ⍬   ⍝ ⍬
+
+⍝ — That empty result keeps the frame's shape
+m←(0 3)⍴0
+⍴ m ({⍺√⍵}⍤0) m   ⍝ [0 3]ₓ
+
+⍝ — Frames that don't agree still raise an error when one is empty
+⍬ ({⍺√⍵}⍤0) ⍳3
+⍝ error: LENGTH ERROR
+
+⍝ — A dyad applies to the cells of its declared ranks when an argument's rank is higher
+(2 1⍴1 2)↑⍳5   ⍝ [0 0 ⋄ 0 1]
+
+⍝ —
+(2 1⍴0 2)⌷"abc"   ⍝ "ac"
+
+⍝ — The results of different shapes pad to a common shape
+(2 2⍴2 3 1 2)⍴⍳6
+2 2 3⍴0 1 2 3 4 5 0 1 0 0 0 0
+
+⍝ — A right argument of rank 3 divides by each matrix
+y←(2 2 2)⍴1 0 0 1 2 0 0 2
+(2 2⍴1 0 0 1)⌹y
+⍝ =>
+2 2 2⍴1 0 0 1 0.5 0 0 0.5
+
 ⍝ — Each and rank 0 align leading axes as pervasive functions do
 x←2 3⍴⍳6 ⋄ [x+10 20;x+¨10 20;x+⍤0[10 20]]
 3⍴⊂[10 11 12 ⋄ 23 24 25]
@@ -1611,6 +1638,15 @@ T←["a":1] ⋄ (⎕←T).[⎕←"b"]←2
 
 ⍝ — Decimal formatting rounds halfway cases away from zero
 2⍕3.125 ¯3.125 2.675 ¯2.675   ⍝ " 3.13 ¯3.13 2.68 ¯2.68"
+
+⍝ — Execute evaluates each string of an array of strings, with a left record applying to each
+⍎"1+1" "2×3"   ⍝ 2 6
+
+⍝ —
+["a":5] ⍎ "a+1" "a×2"   ⍝ 6 10
+
+⍝ — A string that gives no result contributes `⍬`
+⍎"" "2"   ⍝ ⍬ 2
 
 ⍝ — Execute applies to each row of a character matrix
 ⍎["1+1" ⋄ "2×3"]   ⍝ 2 6
@@ -3675,6 +3711,13 @@ s←+/ ⋄ s⍠0 [1 2 3 ⋄ 4 5 6]   ⍝ 5 7 9
 ⍝ — Repeated transpose axes select the diagonal of a rectangular matrix
 0 0⍉[1 2 3 ⋄ 4 5 6]   ⍝ 1 5
 
+⍝ — A short transpose list leaves the remaining axes in order after the named ones, as in BQN
+2⍉2 3 4⍴⍳24
+3 4 2⍴0 12 1 13 2 14 3 15 4 16 5 17 6 18 7 19 8 20 9 21 10 22 11 23
+
+⍝ — The inverse of a short transpose list restores the argument
+2⍉⁻¹2⍉2 3 4⍴⍳24   ⍝ 2 3 4⍴⍳24
+
 ⍝ — A negative replicate count replaces its item with fills
 2 ¯1 1#10 20 30   ⍝ 10 10 0 30
 
@@ -3985,6 +4028,12 @@ x←¿100⍴0 ⋄ ∧/(0<x)∧x<1   ⍝ $t
 
 ⍝⍝ Each commute and reduction
 
+⍝ — When no call gives a result, every item is `⍬`
+{}¨1 2   ⍝ ⍬ ⍬
+
+⍝ — Rank assembles the same `⍬` results
+({}⍤0) 1 2   ⍝ 2 0⍴0
+
 ⍝ — Each on an empty argument gives a system function's result prototype without running it
 ≢•signal¨0⍴⊂"DOMAIN"   ⍝ 0ₓ
 
@@ -4056,13 +4105,11 @@ sum e [[1 2] [3 4 5]]   ⍝ 3 12
 ⍝ — Empty minimum reduction has positive infinity as identity
 ⌊/⍬   ⍝ ∞
 
-⍝ — Empty Each calls a dfn operand on the zero prototype, so an error in the operand still happens
-{⍵÷'a'}¨⍬
-⍝ error: DOMAIN ERROR
+⍝ — Empty Each calls a dfn operand on the zero prototype. When that call fails, the result is empty with prototype 0, as in J
+{⍵÷'a'}¨⍬   ⍝ ⍬
 
-⍝ — Dyadic empty each also evaluates its prototype call
-1{⍺÷'a'}¨⍬
-⍝ error: DOMAIN ERROR
+⍝ — Dyadic empty Each does the same
+1{⍺÷'a'}¨⍬   ⍝ ⍬
 
 ⍝ — Each with a pervasive function gives the same result as the function, here `÷⍬`
 ÷¨⍬   ⍝ ⍬
@@ -4124,17 +4171,17 @@ r←{⎕←7 ⋄ ⍵}¨⍬
 ⍬
 ⍝ ⎕: 1 0
 
-⍝ — A no-result operand call makes the whole each return no result
-{⍵=2?;⍵}¨1 2 3   ⍝ {}0
+⍝ — A call under Each that gives no result contributes `⍬` beside the other results
+{⍵=2?;⍵}¨1 2 3   ⍝ 1 ⍬ 3
 
 ⍝ — Pick in an empty Each's prototype call selects by structure, so a missing position gives no error. The call's output shows.
 f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 0ₓ
 ⍝ ⎕: 7
 
-⍝ — Other errors in the prototype call still happen, after its output
+⍝ — A failing prototype call's output still shows
 {⎕←8 ⋄ 1÷'a'}¨⍬
-⍝ error: DOMAIN ERROR
+⍬
 ⍝ ⎕: 8
 
 ⍝⍝ Composition rank and dyadic operators

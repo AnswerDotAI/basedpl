@@ -4,3 +4,5 @@
 /playground/input.js
 /playground/layout.json
 /playground/bpl.tmLanguage.json
+/playground/basedpl_wasm.js
+/playground/basedpl_wasm_bg.wasm

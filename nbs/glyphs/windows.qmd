@@ -45,11 +45,11 @@ An axis of length `n` has `0⌈1+⌊M÷⍨n-S` full windows, or `⌈M÷⍨n-0=2|
 
 ## Inverse
 
-`↕⁻¹` rebuilds an array from its pairs. `N ↕⁻¹ Y` rebuilds it from its windows of size `N`.
+`↕⁻¹Y` rebuilds an array from its pairs `Y`. `N↕⁻¹Y` rebuilds it from its windows of size `N`.
 
 ```bpl
-↕⁻¹ ↕1 4 9        ⍝ 1 4 9
-3 ↕⁻¹ 3↕"abcde"   ⍝ "abcde"
+↕⁻¹↕1 4 9       ⍝ 1 4 9
+3↕⁻¹3↕"abcde"   ⍝ "abcde"
 ```
 
 ## Errors

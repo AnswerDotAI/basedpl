@@ -20,8 +20,8 @@ See [tolerance](../evaluation.qmd#equality-and-ordering) and whole-array [match 
 
 ## Inverse
 
-Classify has no inverse. On Booleans, `=` is its own inverse with either argument fixed.
+On Booleans, `=` is its own inverse with either argument fixed.
 
 ```bpl
-1 0 =⁻¹ 1 1   ⍝ $t $f
+1 0=⁻¹1 1   ⍝ $t $f
 ```

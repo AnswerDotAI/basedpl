@@ -320,7 +320,7 @@ fn ctrl_c(caught: Arc<Mutex<Option<PyErr>>>) -> basedpl::Poll {
 fn stream(show: Py<PyAny>, shown: Arc<Mutex<Vec<basedpl::Output>>>, caught: Arc<Mutex<Option<PyErr>>>) -> basedpl::OutputSink {
     Arc::new(move |event| {
         shown.lock().unwrap().push(event.clone());
-        let called = Python::attach(|py| python(py, &event.json()).and_then(|e| show.call1(py, (e,))).map(drop));
+        let called = Python::attach(|py| python(py, &basedpl::protocol::output(event)).and_then(|e| show.call1(py, (e,))).map(drop));
         if let Err(e) = called { caught.lock().unwrap().get_or_insert(e); }
     })
 }
@@ -381,7 +381,7 @@ fn response(py: Python<'_>, result: Evaluation) -> PyResult<Py<PyDict>> {
     Ok(d.unbind())
 }
 
-fn output(py: Python<'_>, events: &[basedpl::Output]) -> PyResult<Py<PyAny>> { python(py, &events.iter().map(basedpl::Output::json).collect()) }
+fn output(py: Python<'_>, events: &[basedpl::Output]) -> PyResult<Py<PyAny>> { python(py, &events.iter().map(basedpl::protocol::output).collect()) }
 
 #[pyfunction]
 fn _check_reference(case: &str, timeout: f64) -> PyResult<String> {

@@ -36,7 +36,7 @@ fn equiv(code: &str, expected: &str) { equiv_in(&mut Session::new(), code, expec
 fn language_examples() {
     let mut failures = Vec::new();
     let page = std::env::var("BASEDPL_PAGE").ok();
-    for dir in ["nbs", "nbs/glyphs"] {
+    for dir in ["nbs", "nbs/glyphs", "nbs/system"] {
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
             if path.extension().is_none_or(|ext| ext != "qmd") { continue; }

@@ -22,7 +22,3 @@ Keys: `Alt-n t`. Ranks: `∞` monadic, `1 ∞` dyadic
 ```
 
 Formatting is independent of REPL boxing.
-
-## Inverse
-
-Neither form has an inverse.

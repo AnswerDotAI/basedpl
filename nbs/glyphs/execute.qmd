@@ -9,10 +9,11 @@ Keys: `Alt-b t`. Ranks: `1` monadic, `∞ ∞` dyadic
 x←7 ⋄ ⍎"x+1"       ⍝ 8
 ```
 
-On a character matrix, `⍎` evaluates each row.
+On a character matrix, `⍎` evaluates each row. On an array of strings, it evaluates each string.
 
 ```bpl
 ⍎["1+1" ⋄ "2×3"]    ⍝ 2 6
+⍎"1+1" "2×3"        ⍝ 2 6
 ```
 
 Assignments and explicit output in `⍎Y` take effect in the current scope.
@@ -26,10 +27,10 @@ T←["a":1] ⋄ T⍎"a←5 ⋄ a+1"      ⍝ 6
 
 ## Inverse
 
-`⍎⁻¹ Y` writes `Y` as BPL source that `⍎` reads back, as `•literal⁻¹` does. Execute-in has no inverse.
+`⍎⁻¹Y` writes `Y` as BPL source that `⍎` reads back, as `•literal⁻¹` does.
 
 ```bpl
-⍎⁻¹ 1 2.5   ⍝ "[1 2.5]"
+⍎⁻¹1 2.5   ⍝ "[1 2.5]"
 ```
 
 ## Errors

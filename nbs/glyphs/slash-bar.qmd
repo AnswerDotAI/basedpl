@@ -15,7 +15,3 @@ Keys: `Alt-Minus /`
 ```
 
 Identities, `⍠K` and errors follow [`/`](slash.qmd).
-
-## Inverse
-
-A reduction has no inverse.

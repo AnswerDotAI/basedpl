@@ -24,9 +24,9 @@ Marks are nonnegative integers. Unit and singleton marks extend. `N⊆⍠K Y` pa
 
 ## Inverse
 
-`⊆⁻¹` discloses a unit and gives back any other array. `X ⊆⁻¹ Y` joins the parts `Y`. Partitioning the result by `X` must give `Y` again, so `X` can't hold a zero.
+`⊆⁻¹Y` discloses a unit and gives back any other array. `X⊆⁻¹Y` joins the parts `Y`. Partitioning the result by `X` must give `Y` again, so `X` can't hold a zero.
 
 ```bpl
-⊆⁻¹ ⊂1 2              ⍝ 1 2
-1 1 2 ⊆⁻¹ (1 2 ⋄ 3)   ⍝ 1 2 3
+⊆⁻¹⊂1 2             ⍝ 1 2
+1 1 2⊆⁻¹(1 2 ⋄ 3)   ⍝ 1 2 3
 ```

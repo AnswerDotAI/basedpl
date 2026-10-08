@@ -1,0 +1,9 @@
+# `•nput` — Write a file
+
+`path •nput data` writes `data` to a new file. It returns the number of bytes written, which isn't displayed, as with an assignment. Text is written as UTF-8. An array of numbers is written as bytes, each from 0 to 255, in ravel order. A path that starts with `./` or `../` is relative to the file holding the code, as for [`•load`](load.qmd).
+
+`"-" •nput data` writes `data` to standard output, with no line ending added. Text written this way just before a read of `⎕` is that read's prompt. See [`⎕`](../glyphs/quad.qmd#input).
+
+`X •nput data` takes options on the left: `path`, `overwrite` (`1` replaces an existing file) and `encoding` (`"UTF-8"`, for text). With the option `unique`, `•nput` writes a new file with a unique name inside the directory `path`. It returns the new file's path, which is displayed. The option `prefix` sets the start of the name, as for [`•mkdir`](mkdir.qmd). Plain text on the left is the path. [Files](../data.ipynb#files) covers bytes and options.
+
+Errors: `IO` for an existing file without `overwrite`, and for other file errors; `DOMAIN` for invalid options or byte values, and for bytes written to standard output that aren't UTF-8.

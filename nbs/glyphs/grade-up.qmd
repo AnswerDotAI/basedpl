@@ -20,8 +20,8 @@ See [`⍒`](grade-down.qmd), and [`<`](less.qmd) to sort.
 
 ## Inverse
 
-`⍋⁻¹ P` gives an array whose grade is the permutation `P`. Any other `P` is a `DOMAIN` error. Grade-up-by has no inverse.
+`⍋⁻¹P` gives an array whose grade is the permutation `P`. Any other `P` is a `DOMAIN` error.
 
 ```bpl
-⍋⁻¹ 2 0 1   ⍝ [1 2 0]ₓ
+⍋⁻¹2 0 1   ⍝ [1 2 0]ₓ
 ```

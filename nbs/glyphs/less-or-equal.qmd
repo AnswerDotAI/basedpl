@@ -16,8 +16,8 @@ Keys: `Alt-<`. Ranks: `0` monadic, `0 0` dyadic
 
 ## Inverse
 
-`≤⁻¹` increments, undoing decrement. Less-or-equal has no inverse.
+`≤⁻¹Y` increments `Y`.
 
 ```bpl
-≤⁻¹ 4   ⍝ 5
+≤⁻¹4   ⍝ 5
 ```

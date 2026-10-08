@@ -1,0 +1,9 @@
+# `•hash` — Hashing
+
+`•hash data` gives the SHA-256 digest of `data` as 64 hexadecimal digits, as tools such as `sha256sum` print it. Text is hashed as UTF-8, and numbers as bytes. `alg •hash data` uses `"sha224"`, `"sha256"`, `"sha384"` or `"sha512"`.
+
+```bpl
+•hash "abc"   ⍝ "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+```
+
+Errors: `DOMAIN` for an unknown algorithm, or byte values outside 0 to 255.

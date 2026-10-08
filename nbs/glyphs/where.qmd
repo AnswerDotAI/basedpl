@@ -21,8 +21,8 @@ Query cells and batch axes follow [Index Of](iota.qmd).
 
 ## Inverse
 
-`⍸⁻¹ Y` counts how often each position appears in `Y`, so `⍸` of the result is `Y`. Interval-index has no inverse.
+`⍸⁻¹Y` counts how often each position appears in `Y`.
 
 ```bpl
-⍸⁻¹ 0 2 2   ⍝ [1 0 2]ₓ
+⍸⁻¹0 2 2   ⍝ [1 0 2]ₓ
 ```

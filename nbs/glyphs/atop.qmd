@@ -11,8 +11,8 @@ See [Rank](rank.qmd) for applying a function to cells of a chosen rank.
 
 ## Inverse
 
-`(f∘g)⁻¹` applies `f⁻¹`, then inverts `g`. With an argument fixed, it inverts `g` with that argument fixed.
+`(f∘g)⁻¹Y` is `g⁻¹ f⁻¹ Y`. `X(f∘g)⁻¹Y` is `X g⁻¹ f⁻¹ Y`.
 
 ```bpl
-(-∘÷)⁻¹ ¯0.5   ⍝ 2
+(-∘÷)⁻¹¯0.5   ⍝ 2
 ```

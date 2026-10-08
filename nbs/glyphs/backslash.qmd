@@ -32,10 +32,10 @@ APL difference: every scan left-accumulates, including dfns.
 
 ## Inverse
 
-`f\⁻¹` undoes a scan when `f` has an inverse.
+`f\⁻¹` undoes `f\` when `f` has an inverse.
 
 ```bpl
-+\⁻¹ 1 3 6   ⍝ 1 2 3
++\⁻¹1 3 6   ⍝ 1 2 3
 ```
 
 ## Errors

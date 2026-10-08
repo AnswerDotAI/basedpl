@@ -16,8 +16,8 @@ Keys: `Alt-Shift-=`. Ranks: `∞` monadic, `0 0` dyadic
 
 ## Inverse
 
-Unique-mask has no inverse. On Booleans, `≠` is its own inverse with either argument fixed.
+On Booleans, `≠` is its own inverse with either argument fixed.
 
 ```bpl
-1 0 ≠⁻¹ 1 1   ⍝ $f $t
+1 0≠⁻¹1 1   ⍝ $f $t
 ```

@@ -17,9 +17,9 @@ Keys: `Alt-Minus ,`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 ## Inverse
 
-`⍪⁻¹ Y` gives the vector that a one-column matrix holds, and gives back any other matrix. `X ⍪⁻¹ Y` removes the fixed major cells `X` from the front of `Y`. With the right argument fixed, `(⍪↢X)⁻¹ Y` removes them from the end.
+`⍪⁻¹Y` gives the vector that a one-column matrix holds, and gives back any other matrix. `X⍪⁻¹Y` removes the fixed major cells `X` from the front of `Y`. With the right argument fixed, `(⍪↢X)⁻¹Y` removes them from the end.
 
 ```bpl
-⍪⁻¹ ⍪1 2 3              ⍝ 1 2 3
-[1 2] ⍪⁻¹ [1 2 ⋄ 3 4]   ⍝ [3 4 ⋄]
+⍪⁻¹⍪1 2 3             ⍝ 1 2 3
+[1 2]⍪⁻¹[1 2 ⋄ 3 4]   ⍝ [3 4 ⋄]
 ```

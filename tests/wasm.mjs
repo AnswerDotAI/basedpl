@@ -12,7 +12,7 @@ configure('http://localhost/', message => { throw new Error(message); });
 // The text of each output, and the error's kind, when `code` runs in a new session.
 const run = code => {
     const outputs = [];
-    const { error } = JSON.parse(new Session().request(JSON.stringify({ code }), o => outputs.push(JSON.parse(o).data['text/plain'])));
+    const error = new Session().run(code, o => outputs.push(o.data['text/plain']));
     return { outputs, error: error?.kind };
 };
 
@@ -33,6 +33,11 @@ if (isMainThread) {
     test('matches with JavaScript regular expressions and templates, at character positions', () => {
         const { outputs } = run('r←•r "(?<=é|\\s)(?<x>[bB])(\\d)?" ⋄ m←r.matches "éb1 B" ⋄ ⎕←m.position ⋄ ⎕←"<$<x>$2>" r.replace "éb1 B" ⋄ m.groups');
         assert.deepEqual(outputs, ['[1 4]ₓ', 'é<b1> <B>', '("b" "1" ⋄ "B" "")']);
+    });
+    test('shows a picture as RGBA bytes, with its width in the MIME type', () => {
+        let data;
+        new Session().run('•image 1 2⍴0 1', o => data = o.data);
+        assert.deepEqual(data['image/x-rgba;width=2'], Uint8Array.of(0, 0, 0, 255, 255, 255, 255, 255));
     });
     test('each recursion shape reaches its depth, and deeper recursion is a LIMIT error', async () => {
         // Node keeps 192 KB of a worker's stack in reserve. The rest, about 470 KB, is what a Chrome worker gives.

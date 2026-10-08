@@ -26,4 +26,4 @@ printf 'bob\n' | bpl -e '"-" •nput "Name? " ⋄ "Hi ",⎕'   # Name? Hi bob
 
 `bpl -e`, script files and the interactive REPL read standard input. In a notebook, `⎕` asks for a line in a text box, but `•nget "-"` is an `IO` error. The Python API reads each line with Python's `input()`, and `•nget "-"` reads `sys.stdin`. `bpl -` and piped REPL input read the program itself from standard input. In those two modes and in `bpl --worker`, reading `⎕` or `•nget "-"` is an `IO` error.
 
-Dyalog's `⎕A` and `⎕D` are BPL's [`$a` and `$d`](../system-functions.qmd#constants). `⎕C` and `⎕UCS` are [`•c` and `•ucs`](../system-functions.qmd#text).
+Dyalog's `⎕A` and `⎕D` are BPL's [`$a` and `$d`](../system/constants.qmd). `⎕C` and `⎕UCS` are [`•c`](../system/c.qmd) and [`•ucs`](../system/ucs.qmd).

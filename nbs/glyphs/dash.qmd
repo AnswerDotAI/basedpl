@@ -25,9 +25,9 @@ Characters shift by code point. Character differences are exact integers.
 
 ## Inverse
 
-`-⁻¹` is `-`. `X -⁻¹ Y` is `X-Y`. With the right argument fixed, `(-↢X)⁻¹ Y` is `Y+X`.
+`-⁻¹` is `-`. With the right argument fixed, `(-↢X)⁻¹Y` is `Y+X`.
 
 ```bpl
-10 -⁻¹ 3    ⍝ 7
-(-↢3)⁻¹ 7   ⍝ 10
+10-⁻¹3     ⍝ 7
+(-↢3)⁻¹7   ⍝ 10
 ```

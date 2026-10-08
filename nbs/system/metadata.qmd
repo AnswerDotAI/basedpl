@@ -1,0 +1,19 @@
+# `•metadata` — File metadata
+
+`•metadata paths` gives a table with a row for each path, as a record of columns. The columns follow Rust's `std::fs::Metadata`:
+
+| Column | Gives |
+|---|---|
+| `path`, `name` | The path as given, and its last part |
+| `kind` | `"file"`, `"dir"`, `"symlink"` or `"other"`, or `"none"` for a path that doesn't exist |
+| `target` | For a symbolic link, the path it points to, as Rust's `std::fs::read_link` gives it. Empty for any other entry |
+| `len` | The size in bytes |
+| `modified`, `accessed`, `created` | Moments, in seconds since the Unix epoch, as [`•date`](date.qmd) reads them. NaN where the system records none |
+| `readonly` | Whether the permissions forbid writing |
+| `hidden` | Whether the name starts with `.` |
+| `readable`, `writable`, `executable` | Whether this process may read, write or execute the entry |
+| `uid`, `mode`, `owner` | On Unix only: the owner's numeric ID, the mode bits and the owner's name |
+
+A symbolic link's kind is `"symlink"`. Its other columns describe the entry it points to.
+
+Errors: `DOMAIN` when a path isn't text.

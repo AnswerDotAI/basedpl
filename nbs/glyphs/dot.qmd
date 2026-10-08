@@ -42,7 +42,3 @@ A dot followed by a digit is a decimal point: `.2` is a number. To index positio
 v←10 20 30
 v.[[2 0]]←7 8 ⋄ v  ⍝ 8 20 7
 ```
-
-## Inverse
-
-The derived function has no inverse.

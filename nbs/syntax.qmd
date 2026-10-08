@@ -134,4 +134,4 @@ total←1+2×3 → 2× ⋄ total   ⍝ 14
 
 ## Syntax highlighting
 
-The [BPL TextMate grammar](playground/bpl.tmLanguage.json) works with TextMate-compatible editors and Shiki. It is generated from the Quarto XML definition by `scripts/prep.py` and is also included in the Python and npm packages as `bpl.tmLanguage.json`.
+The [BPL TextMate grammar](https://cdn.jsdelivr.net/npm/basedpl/bpl.tmLanguage.json) works with TextMate-compatible editors and Shiki. It is generated from the Quarto XML definition by `scripts/prep.py` and is also included in the Python and npm packages as `bpl.tmLanguage.json`.

@@ -21,8 +21,8 @@ Includes rational and complex LCM. Inputs are finite. Empty reduction identity: 
 
 ## Inverse
 
-`∧⁻¹ Y` rebuilds complex numbers from the magnitude and angle pairs on the last axis of `Y`. Lcm has no inverse.
+`∧⁻¹Y` rebuilds complex numbers from the magnitude and angle pairs on the last axis of `Y`.
 
 ```bpl
-∧⁻¹ 2 (π0.5)   ⍝ 0j2
+∧⁻¹[2 π0.5]   ⍝ 0j2
 ```

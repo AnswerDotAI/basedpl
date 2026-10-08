@@ -291,9 +291,16 @@ impl Session {
         let code = span.source.text.trim();
         let (command, args) = code.split_once(char::is_whitespace).unwrap_or((code, ""));
         if command.eq_ignore_ascii_case("]help") {
-            let Some((name, detail)) = crate::inspection::help_command(code) else { return failed(ErrorKind::Syntax, "usage: ]help name [-source]".into()) };
-            let Some(info) = self.inspect(name) else { return failed(ErrorKind::Value, format!("name not found: {name}")) };
-            let data = [("text/plain", info.text(detail)), ("text/markdown", info.markdown(detail))]
+            let usage = "usage: ]help name [-source], or ]help llms for the language reference";
+            let Some((name, detail)) = crate::inspection::help_command(code) else { return failed(ErrorKind::Syntax, usage.into()) };
+            // `llms` is a topic, not a name. A variable called `llms` can't hide the reference.
+            let (text, markdown) = if name == "llms" {
+                (crate::inspection::LLMS.to_owned(), crate::inspection::LLMS.to_owned())
+            } else {
+                let Some(info) = self.inspect(name) else { return failed(ErrorKind::Value, format!("name not found: {name}")) };
+                (info.text(detail), info.markdown(detail))
+            };
+            let data = [("text/plain", text), ("text/markdown", markdown)]
                 .map(|(kind, text)| (kind.to_string(), crate::MimeData::Text(text)))
                 .into();
             self.execution.emit(crate::Output { kind: crate::OutputKind::Display, data });
@@ -680,7 +687,7 @@ impl Session {
 
 /// The errors a guard catches: the kinds it names, or with `∞` every kind but an interrupt, a timeout or an unsupported feature.
 /// Unsupported features must not turn into plausible results.
-enum Catch { All, Kinds(Vec<ErrorKind>) }
+pub(super) enum Catch { All, Kinds(Vec<ErrorKind>) }
 impl Catch {
     fn new(value: &Value, span: &Span) -> Result<Self, Error> {
         if value.as_number().is_some_and(|n| n.is_infinite() && n.as_float().is_some_and(|x| x > 0.)) { return Ok(Self::All); }
@@ -688,7 +695,7 @@ impl Catch {
         let (_, names) = crate::keyed::text_items(value).ok_or_else(invalid)?;
         Ok(Self::Kinds(names.iter().map(|n| ErrorKind::named(n)).collect::<Option<_>>().ok_or_else(invalid)?))
     }
-    fn catches(&self, kind: &ErrorKind) -> bool {
+    pub(super) fn catches(&self, kind: &ErrorKind) -> bool {
         match self {
             Self::All => !matches!(kind, ErrorKind::Interrupt | ErrorKind::Timeout | ErrorKind::Unsupported),
             Self::Kinds(kinds) => kinds.contains(kind),

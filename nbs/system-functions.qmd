@@ -1,626 +1,84 @@
 # System functions
 
-A system function is a built-in function whose name starts with [`•`](glyphs/bullet.qmd), as in `•ucs` or `•json`. Type `•` with Alt-y. Names are case-insensitive. Many system functions take their options as a left argument. A function named for a format reads that format, and its [inverse](scripts.ipynb#superscripts) writes it: `•json` reads JSON, and `•json⁻¹` writes it. `]help •name` shows the full help for one name. Built-in values use `$`.
+A system function is a built-in function whose name starts with [`•`](glyphs/bullet.qmd), as in `•ucs` or `•json`. Type `•` with Alt-y. Names are case-insensitive. Many system functions take their options as a left argument. A function named for a format reads that format, and its [inverse](scripts.ipynb#superscripts) writes it: `•json` reads JSON, and `•json⁻¹` writes it. Each name below links to its page. `]help •name` shows the same page. Built-in values have names that start with `$`, as [Constants and `$` names](system/constants.qmd) describes.
 
-A function that takes one string, such as `•json` or `•element`, applies to each string of an array of strings. A function that takes one number, such as `•uuid`, applies to each number of an array. The results form an array of the argument's shape. An empty argument gives an empty array of the function's usual result, such as an empty list of strings from `•src`. A left argument applies whole to each item. `•c`, `•date`, `•path` and `•metadata` have their own rules for arrays, which their entries give.
-
-Each and Rank don't run a `•` function, a generator's `roll` or `deal`, or a distribution's `sample` on an empty argument. For example, `•remove¨` on an empty list removes nothing.
+A function that takes one string, such as `•json` or `•element`, applies to each string of an array of strings. A function that takes one number, such as `•uuid`, applies to each number of an array. The results form an array of the argument's shape. An empty argument gives an empty array of the function's usual result, such as an empty list of strings from `•src`. A left argument applies whole to each item. `•c`, `•date`, `•path` and `•metadata` have their own rules for arrays, which their pages give.
 
 In Python, the workspace object `bpl` has each system function under its name without `•`. Options become keyword arguments, as in `bpl.json('{"a": null}', fill=0)`. `.undo` gives the inverse, as in `bpl.json.undo(Y)` for `•json⁻¹`. [Python](python.ipynb) covers the calling conventions.
 
-<!-- help -->
-
-## Constants
-
-<!-- help $a -->
-
-### `$a` — Alphabet {#a}
-
-`$a` is the uppercase Latin alphabet.
-
-```bpl
-3↑$a               ⍝ "ABC"
-$a⍳"CAB"           ⍝ [2 0 1]ₓ
-```
-
-<!-- help $d -->
-
-### `$d` — Digits {#d}
-
-`$d` is `"0123456789"`.
-
-```bpl
-"a2b"∊$d           ⍝ $f $t $f
-```
-
-
-<!-- help $e -->
-
-### `$e` — Caught error {#e}
-
-`$e` is the error that an [error guard](glyphs/error-guard.qmd)'s handler caught, as a record. The error guard page lists its fields. Anywhere else, `$e` is a `VALUE` error.
-
-<!-- help -->
-
 ## Text
 
-<!-- help •c -->
-
-### `•c` — Case {#c}
-
-`•c Y` folds case. `1•c Y` converts to upper case, and `¯1•c Y` to lower case. A character vector converts as text, with Unicode's full case mappings: `ß` becomes `SS`, and a `Σ` that ends a word lowercases to `ς`. Any other character converts on its own, and stays unchanged when its mapping has more than one character. Folding converts to upper case, then to lower case. `•c` keeps the argument's nesting and leaves items that aren't characters unchanged.
-
-```bpl
-•c "AbC"           ⍝ "abc"
-1•c "AbC"          ⍝ "ABC"
-1•c "straße"       ⍝ "STRASSE"
-¯1•c "ΟΔΟΣ"        ⍝ "οδος"
-```
-
-<!-- help •ucs -->
-
-### `•ucs` — Unicode {#ucs}
-
-`•ucs Y` converts characters to exact integer code points, and code points to characters, keeping the shape of `Y`. `E•ucs Y` encodes characters, or decodes integer code units, where `E` is `"UTF-8"`, `"UTF-16"` or `"UTF-32"`. The encoding forms take vectors. An invalid code point or a malformed encoding is a `DOMAIN` error.
-
-```bpl
-•ucs "ABC"         ⍝ [65 66 67]ₓ
-•ucs 65 66 67      ⍝ "ABC"
-"UTF-8"•ucs 'é'    ⍝ [195 169]ₓ
-"UTF-8"•ucs 195 169 ⍝ "é"
-```
-
-`•ucs⁻¹` is `•ucs`, with the same `E` if there is one.
-
-<!-- help •normalize -->
-
-### `•normalize` — Unicode normalization {#normalize}
-
-`•normalize text` puts text into Unicode normalization form NFC. NFC uses one code point for a letter and its accent wherever Unicode has one. `form •normalize text` names the form: `"NFC"`, `"NFD"`, `"NFKC"` or `"NFKD"`. NFD writes each accented letter as a base letter followed by combining marks. The K forms also replace compatibility characters, such as the ligature `ﬁ`, with ordinary ones.
-
-```bpl
-•ucs "NFD" •normalize "é"   ⍝ [101 769]ₓ
-"NFKC" •normalize "ﬁ"       ⍝ "fi"
-```
-
-Errors: `DOMAIN` for an unknown form, or an argument that isn't text.
-<!-- help •r -->
-
-### `•r` — Regular expressions {#r}
-
-`•r pattern` compiles a regular expression. It returns a keyed vector of two functions that share the pattern. `p.matches text` gives a table of the matches, as a record of columns: `text`, the matched text; `position`, its position in characters from 0; and `groups`, the text of each group, which is empty for a group that took no part. `template p.replace text` replaces each match with `template`, expanded with the match's groups.
-
-Natively the pattern is a Rust regex, with [the regex crate's syntax](https://docs.rs/regex/latest/regex/#syntax). Flags go in the pattern, as in `(?i)`, and templates use `$1`, `${name}` and `$$`. In the browser the pattern is a JavaScript regular expression, with [JavaScript's syntax](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions), and templates use `$1`, `$<name>` and `$$`. [Regular expressions](regex.ipynb) covers each function.
-
-```bpl
-p←•r "([a-z]+)([0-9]+)"
-p.matches "ab12 cd3"           ⍝ ["text":["ab12" "cd3"] "position":[0 5]ₓ "groups":("ab" "12" ⋄ "cd" "3")]
-"$2:$1" p.replace "ab12 cd3"   ⍝ "12:ab 3:cd"
-```
-
-Errors: `DOMAIN` for invalid patterns and non-text arguments; `SYNTAX` for the wrong valence; `LIMIT` for oversized results.
-
-<!-- help -->
+| Name | Description |
+|---|---|
+| [`•c`](system/c.qmd) | Case |
+| [`•ucs`](system/ucs.qmd) | Unicode |
+| [`•normalize`](system/normalize.qmd) | Unicode normalization |
+| [`•r`](system/r.qmd) | Regular expressions |
 
 ## Data and files
 
-<!-- help •csv -->
-
-### `•csv` — CSV {#csv}
-
-`•csv text` parses CSV into a vector of columns. Headers become keys. Numeric columns become numbers. Missing numeric cells become NaN. An integer column with missing cells stays exact. Missing text cells become `""`.
-
-`•csv⁻¹ T` writes CSV text for a vector of columns. Keys supply the header. Column lengths must agree. NaN writes as an empty cell, and so does the exact value given as `fill`.
-
-Both directions take options on the left: `header`, `separator`, `quotechar`, `doublequote`, `escapechar`, `decimal`, `thousands`, `trim` and `fill`. Reading also takes `text_columns`, `numeric_columns` and `missing`, and writing takes `forcequotes` and `lineending`. `"forcequotes":2` quotes every field. [CSV](data.ipynb#csv) describes the options.
-
-Errors: `DOMAIN` for invalid options, duplicate headers, and cells that CSV can't hold: nonintegral rationals, complex numbers, functions or nested cells; `LENGTH` for unequal record widths or columns.
-
-<!-- help •json -->
-
-### `•json` — JSON {#json}
-
-`•json text` reads JSON5, which includes all JSON. JSON5 adds comments, trailing commas, single-quoted strings, unquoted keys, hexadecimal numbers, `Infinity` and `NaN`. Objects become keyed vectors. Arrays become vectors. Strings become character vectors. Integers of up to 128 bits stay exact. `true` and `false` become `$t` and `$f`.
-
-`•json⁻¹ Y` writes JSON text. Keyed axes become objects. Unkeyed axes become arrays. Character vectors become strings. Keyed entries that hold functions are left out. NaN writes as `null`.
-
-`["fill":v] •json text` reads `null` as `v`. The default is NaN. An integer array with a `null` stays exact. `["fill":v] •json⁻¹ Y` writes `v` as `null`. [JSON](data.ipynb#json) covers the conversions.
-
-Errors: `DOMAIN` for malformed JSON, with its line and column, and for values that JSON can't hold: an infinity that isn't `fill`, out-of-range floats, nonintegral rationals, complex numbers and other functions.
-
-<!-- help •literal -->
-
-### `•literal` — Literals {#literal}
-
-`•literal⁻¹ Y` writes `Y` as BPL source text, in the notation that display uses. `•literal text` reads such text back into its value without running code. The text may hold literals and the functions that `•literal⁻¹` writes: `⍴`, `⊂`, `,`, `:` and `•ucs`. Nested, keyed and exact values read back unchanged. `•hash •literal⁻¹ Y` hashes any array.
-
-```bpl
-•literal⁻¹ 2 3⍴⍳6              ⍝ "[0 1 2 ⋄ 3 4 5]"
-•literal "[1 [2 3ₓ] ""ab""]"   ⍝ [1 [2 3ₓ] "ab"]
-```
-
-Errors: `DOMAIN` when the argument of `•literal⁻¹` holds a function or an operator, and when the text given to `•literal` holds a name, another function or more than one value; `SYNTAX` for text that doesn't parse.
-<!-- help •vfi -->
-
-### `•vfi` — Numeric input {#vfi}
-
-`•vfi text` returns two vectors, `[valid numbers]`, for the whitespace-separated fields of `text`. An invalid field has the flag `0ₓ` and the value `0`. Fields are parsed as numbers, never executed.
-
-`separators •vfi text` splits on each character in `separators` instead. It trims whitespace around fields. An empty field is a valid `0`. [Numeric input](data.ipynb#numeric-input) covers it.
-
-Errors: `DOMAIN` when either argument is not text.
-
-<!-- help •date -->
-
-### `•date` — Dates {#date}
-
-`•date text` reads a date and time as a moment: the seconds since the Unix epoch, midnight UTC on 1 January 1970. Without a pattern it reads ISO 8601: RFC 3339 text such as `"2024-05-06T10:20:30Z"`, a date and time with no offset, or a date alone. An array of texts gives an array of moments. `•time 0` is the current moment.
-
-`•date⁻¹ t` writes the moment `t` as a record of fields named after chrono's: `year`, `month`, `day`, `hour`, `minute`, `second`, `nanosecond`, `weekday` (1 for Monday), `ordinal` (the day of the year) and `iso_week`. For an array of moments, each field is an array. `•date` reads such a record back from its first seven fields. A missing month or day is 1, and a missing time field is 0. `•date` ignores `weekday`, `ordinal` and `iso_week`.
-
-A pattern on the left reads or writes text in another layout, with chrono's strftime specifiers, such as `%Y-%m-%d`. The options are `pattern`, `zone` and, for `•date⁻¹` only, `locale`. `zone` is `"local"` or a whole number of seconds east of UTC. It applies to text and fields without an offset, and is UTC by default. `locale` is a POSIX locale, such as `"fr_FR"`, for month and weekday names.
-
-The browser build has no `locale` option.
-
-```bpl
-•date "2024-05-06T10:20:30Z"                     ⍝ 1714990830
-"%d %B %Y" •date⁻¹ 1714990830                     ⍝ "06 May 2024"
-["pattern":"%A" "locale":"fr_FR"] •date⁻¹ 0       ⍝ "jeudi"
-(•date⁻¹ 0).weekday                               ⍝ 4ₓ
-86400+ ⌾ "%Y-%m-%d"↣•date "2024-05-06"          ⍝ "2024-05-07"
-```
-
-Errors: `DOMAIN` for text that the pattern doesn't match, an invalid date, an unknown field or locale, or an invalid pattern.
-
-<!-- help •nget -->
-
-### `•nget` — Read a file {#nget}
-
-`•nget path` reads a UTF-8 text file. `•nget "-"` reads the rest of standard input. A path that starts with `./` or `../` is relative to the file holding the code, as for [`•load`](#load).
-
-`X •nget path` takes options on the left: `binary` (`1` reads a vector of byte values) and `encoding` (`"UTF-8"`). [Files](data.ipynb#files) covers bytes and options.
-
-Errors: `IO` for missing files, invalid UTF-8, other file errors, and standard input that fails or that the frontend doesn't provide; `DOMAIN` for invalid options.
-
-<!-- help •nput -->
-
-### `•nput` — Write a file {#nput}
-
-`path •nput data` writes `data` to a new file. It returns the number of bytes written, which isn't displayed, as with an assignment. Text is written as UTF-8. An array of numbers is written as bytes, each from 0 to 255, in ravel order. A path that starts with `./` or `../` is relative to the file holding the code, as for [`•load`](#load).
-
-`"-" •nput data` writes `data` to standard output, with no line ending added. Text written this way just before a read of `⎕` is that read's prompt. See [`⎕`](glyphs/quad.qmd#input).
-
-`X •nput data` takes options on the left: `path`, `overwrite` (`1` replaces an existing file) and `encoding` (`"UTF-8"`, for text). With the option `unique`, `•nput` writes a new file with a unique name inside the directory `path`. It returns the new file's path, which is displayed. The option `prefix` sets the start of the name, as for [`•mkdir`](#mkdir). Plain text on the left is the path. [Files](data.ipynb#files) covers bytes and options.
-
-Errors: `IO` for an existing file without `overwrite`, and for other file errors; `DOMAIN` for invalid options or byte values, and for bytes written to standard output that aren't UTF-8.
-
-<!-- help •fetch -->
-
-### `•fetch` — Fetch a URL {#fetch}
-
-`•fetch url` requests `url` and returns a record of the response: `status`, a number; `headers`, a record of text; and `body`, the response's text. A missing page gives a result with `status` 404, not an error. Header names are in lower case, and a repeated header's values are joined with `, `. `•fetch` follows redirects. Natively it runs the system's `curl`, which must be installed. In the browser it makes the request from the page, and the server's CORS rules apply. `•json (•fetch url).body` reads a JSON response.
-
-`X •fetch url` takes options on the left: `method`, which is `"GET"`, or `"POST"` with a body; `headers`, a record of text; `body`, text or bytes to send; and `binary` (`1` gives the body as a vector of byte values).
-
-Errors: `IO` for getting no response, such as for an unknown host or a refused connection, for a missing `curl`, and for a body that isn't UTF-8 without `binary`; `DOMAIN` for invalid options.
-
-<!-- help •path -->
-
-### `•path` — Paths {#path}
-
-`•path text` splits a path into a record of its parts, named after Rust's: `parent`, `stem`, `extension` and `name`. It never reads the disk. The option `absolute` first joins a relative path to the working directory, as Rust's `std::path::absolute` does, without resolving links. `•path⁻¹` joins `parent`, `stem` and `extension` into a path, and ignores `name`. An array of paths gives a record of arrays.
-
-```bpl
-•path "data/sales.csv"                            ⍝ ["parent":"data" "stem":"sales" "extension":"csv" "name":"sales.csv"]
-{⍵.extension←"tsv" ⋄ ⍵}⌾•path "data/sales.csv"   ⍝ "data/sales.tsv"
-```
-
-Errors: `DOMAIN` when a path isn't text, for an unknown part, or for an `absolute` path that is empty or has no working directory to join.
-
-<!-- help •metadata -->
-
-### `•metadata` — File metadata {#metadata}
-
-`•metadata paths` gives a table with a row for each path, as a record of columns. The columns follow Rust's `std::fs::Metadata`:
-
-| Column | Gives |
+| Name | Description |
 |---|---|
-| `path`, `name` | The path as given, and its last part |
-| `kind` | `"file"`, `"dir"`, `"symlink"` or `"other"`, or `"none"` for a path that doesn't exist |
-| `target` | For a symbolic link, the path it points to, as Rust's `std::fs::read_link` gives it. Empty for any other entry |
-| `len` | The size in bytes |
-| `modified`, `accessed`, `created` | Moments, in seconds since the Unix epoch, as [`•date`](#date) reads them. NaN where the system records none |
-| `readonly` | Whether the permissions forbid writing |
-| `hidden` | Whether the name starts with `.` |
-| `readable`, `writable`, `executable` | Whether this process may read, write or execute the entry |
-| `uid`, `mode`, `owner` | On Unix only: the owner's numeric ID, the mode bits and the owner's name |
-
-A symbolic link's kind is `"symlink"`. Its other columns describe the entry it points to.
-
-Errors: `DOMAIN` when a path isn't text.
-
-<!-- help •readdir -->
-
-### `•readdir` — List a directory {#readdir}
-
-`•readdir dir` gives the table of [`•metadata`](#metadata) with a row for each entry of `dir`, sorted by path. Each row's `path` is `dir` joined with the entry's path within `dir`. A glob on the left keeps the entries whose path within `dir` matches it, as in `"*.csv" •readdir "data"`. As in a shell, `*` stays within one directory and `**` crosses them. Options on the left: `glob`, and `recurse` (`1` also lists the entries of subdirectories).
-
-Errors: `IO` for a directory that can't be read; `DOMAIN` for an invalid glob or option.
-
-<!-- help •copy -->
-
-### `•copy` — Copy {#copy}
-
-`to •copy from` copies the file `from` to `to`, or the directory `from` with everything in it. It returns `to`, which isn't displayed. A copied file replaces an existing file at `to`.
-
-Errors: `IO` for file errors, such as a missing `from` or a missing parent directory of `to`.
-
-<!-- help •rename -->
-
-### `•rename` — Rename {#rename}
-
-`to •rename from` moves `from` to `to` and returns `to`, which isn't displayed. Both must be on the same filesystem.
-
-Errors: `IO` for file errors.
-
-<!-- help •remove -->
-
-### `•remove` — Remove {#remove}
-
-`•remove path` removes a file or an empty directory, and returns `path`, which isn't displayed. With the option `recurse`, as in `["recurse":1] •remove path`, it removes a directory and everything in it.
-
-Errors: `IO` for a missing path, a directory that isn't empty without `recurse`, and other file errors; `DOMAIN` for an invalid option.
-
-<!-- help •mkdir -->
-
-### `•mkdir` — Make a directory {#mkdir}
-
-`•mkdir path` makes the directory `path` and any missing parents, and returns `path`, which isn't displayed. With the option `unique`, it then makes a directory with a new, unique name inside `path`, and returns that directory's path, which is displayed, as in `["unique":1] •mkdir •host "temp"`. The option `prefix` sets the start of the name, as in `["unique":1 "prefix":"run"] •mkdir dir`. The directory stays until removed.
-
-Errors: `IO` for file errors; `DOMAIN` for an invalid option, or `prefix` without `unique`.
-
-<!-- help •deflate -->
-
-### `•deflate` — Compression {#deflate}
-
-`•deflate bytes` decompresses gzip data and returns the bytes. `•deflate⁻¹ data` compresses `data` with gzip. It compresses text as UTF-8, and numbers as bytes from 0 to 255, as [`•nput`](#nput) writes them. Both directions take a format name on the left: `"gzip"`, `"zlib"` or `"deflate"` (raw DEFLATE).
-
-```bpl
-•ucs •deflate •deflate⁻¹ "hello"          ⍝ "hello"
-"zlib" •deflate "zlib" •deflate⁻¹ 1 2 3   ⍝ [1 2 3]ₓ
-```
-
-Errors: `DOMAIN` for an unknown format, byte values outside 0 to 255, or data that doesn't decompress.
-
-<!-- help •hash -->
-
-### `•hash` — Hashing {#hash}
-
-`•hash data` gives the SHA-256 digest of `data` as 64 hexadecimal digits, as tools such as `sha256sum` print it. Text is hashed as UTF-8, and numbers as bytes. `alg •hash data` uses `"sha224"`, `"sha256"`, `"sha384"` or `"sha512"`.
-
-```bpl
-•hash "abc"   ⍝ "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-```
-
-Errors: `DOMAIN` for an unknown algorithm, or byte values outside 0 to 255.
-
-<!-- help •uuid -->
-
-### `•uuid` — UUIDs {#uuid}
-
-`•uuid v` returns a new UUID of version `v` as text. Version 4 is random. Version 7 UUIDs begin with their creation time and sort in creation order. Version 0 is the nil UUID, with every digit zero. Versions 1 and 6 also hold the time, with a random node in place of a MAC address.
-
-`[ns name] •uuid 5` derives a UUID from a name with SHA-1, and `[ns name] •uuid 3` with MD5. `ns` is `"dns"`, `"url"`, `"oid"`, `"x500"` or a UUID. The same namespace and name always give the same UUID. `bytes •uuid 8` makes a UUID from 16 bytes, and sets its version and variant.
-
-```bpl
-"dns" "python.org" •uuid 5   ⍝ "886313e1-3b8a-5372-9b90-0c9aee199e5d"
-```
-
-Errors: `DOMAIN` for any other version, or a left argument that doesn't fit the version.
-
-<!-- help -->
+| [`•csv`](system/csv.qmd) | CSV |
+| [`•json`](system/json.qmd) | JSON |
+| [`•literal`](system/literal.qmd) | Literals |
+| [`•vfi`](system/vfi.qmd) | Numeric input |
+| [`•date`](system/date.qmd) | Dates |
+| [`•nget`](system/nget.qmd) | Read a file |
+| [`•nput`](system/nput.qmd) | Write a file |
+| [`•fetch`](system/fetch.qmd) | Fetch a URL |
+| [`•path`](system/path.qmd) | Paths |
+| [`•metadata`](system/metadata.qmd) | File metadata |
+| [`•readdir`](system/readdir.qmd) | List a directory |
+| [`•copy`](system/copy.qmd) | Copy |
+| [`•rename`](system/rename.qmd) | Rename |
+| [`•remove`](system/remove.qmd) | Remove |
+| [`•mkdir`](system/mkdir.qmd) | Make a directory |
+| [`•deflate`](system/deflate.qmd) | Compression |
+| [`•hash`](system/hash.qmd) | Hashing |
+| [`•uuid`](system/uuid.qmd) | UUIDs |
 
 ## Display
 
-<!-- help •element -->
-
-### `•element` — XML elements {#element}
-
-`•element tag` returns an element function for the XML tag `tag`. Call it with attributes on the left and children on the right, as in `["r":10] circle ""`. An empty right argument, `""` or `⍬`, gives no children. The result is a keyed vector with `tag`, `attrs` and `children` entries. Notebooks display it as HTML. [XML and SVG](xml.ipynb) covers element trees.
-
-Errors: `DOMAIN` for invalid tag or attribute names.
-
-<!-- help •xml -->
-
-### `•xml` — XML text {#xml}
-
-`•xml text` reads XML into an element tree with the same meaning. Attribute values become text. Names keep their prefixes, and namespace declarations become `xmlns` attributes. Comments, processing instructions and text that is only whitespace are dropped. [XML and SVG](xml.ipynb) covers element trees.
-
-`•xml⁻¹ tree` writes the XML text of an element tree. It escapes `&`, `<`, `>` and `"` in text and attribute values. A numeric vector attribute becomes space-separated numbers. Children are text, elements or vectors of children. An element with no children closes itself.
-
-Errors: `DOMAIN` for malformed XML, and for invalid names or attribute values given to `•xml⁻¹`.
-
-<!-- help •svg -->
-
-### `•svg` — SVG pictures {#svg}
-
-`X •svg children` returns an `svg` element with attributes `X`. It adds `xmlns` for the SVG namespace and `viewBox="0 0 100 100"`. Attributes in `X` replace these. Notebooks display it as a picture. [XML and SVG](xml.ipynb) covers element trees.
-
-<!-- help •mime -->
-
-### `•mime` — Rich display {#mime}
-
-`•mime Y` returns the MIME bundle that display uses for `Y`. The bundle is a keyed vector from MIME types to text, or to bytes for a binary type such as `image/png`. It always has `text/plain`. If `Y` has a renderer, `•mime` calls it with `Y` as `⍵` and adds its entries.
-
-`F •mime Y` returns `Y` with the renderer that `F` holds, as in `{["text/html":"</b>",⍨"<b>",⍕⍵]}ᵘ •mime Y`. A MIME type on the left displays `Y` itself as that type, as in `"text/markdown" •mime "*hi*"`. An atom becomes a scalar, because only an array can hold a renderer.
-
-A result keeps a renderer when it has an item for each item of its argument, as pervasive functions, Each and scans do. Rearranging or selecting from an array without removing an axis also keeps it, as reversal, transpose, take, replicate and catenation do. Changes in place keep it. Other functions drop it, as reductions and `⍴` do. When two arguments have different renderers, the result has none. Match ignores renderers.
-
-Display shows the text form when a renderer fails. Only a direct `•mime` call reports the error. [Rich display](xml.ipynb#rich-display) covers renderers.
-
-Errors: `DOMAIN` for a left argument that holds neither a function nor text.
-
-<!-- help •plot -->
-
-### `•plot` — Plots {#plot}
-
-`X •plot Y` returns a plot spec: a keyed vector holding the data `Y` and the settings `X`. Its renderer displays the spec as an SVG chart. Plain text on the left is shorthand for `mark`. [Plots](plot.ipynb) shows each mark and setting with examples.
-
-The structure of `Y` chooses the series and axes:
-
-- A vector plots its values against `0…n-1`.
-- A keyed vector of numbers uses its keys as x labels.
-- A matrix plots one series per row. Row keys name the series. Column keys label x.
-- With the `cell` mark, each row of a matrix is a row of cells, coloured by value. Row keys label the rows, and row 0 is at the top.
-- A table, a keyed vector of equal-length columns, plots each column as a series. A column named `x` supplies the x values.
-- A vector or matrix of plots draws a figure.
-
-| Setting | Holds | Default |
-|---|---|---|
-| `mark` | `"line"`, `"point"`, `"bar"` or `"cell"` | `"line"` |
-| `title` | Chart title | none |
-| `width`, `height` | Size in pixels | `600`, `400` |
-| `x`, `y` | `title`, `scale` (`"linear"` or `"log"`), `ticks`, and `axis` (`$f` hides that axis) | |
-| `legend` | `position` (`"end"` or a corner) and `border` | none |
-| `grid` | `$f` hides the grid lines | `$t`, or `$f` for cells |
-| `axes` | `$f` hides both axes, with their ticks and titles. An `axis` setting in `x` or `y` overrides it for that axis | `$t` |
-| `flip` | `$t` swaps the axes | `$f` |
-| `palette` | Colours for numbers: `"viridis"`, `"gray"`, or a list of colours | `"viridis"` |
-| `colorbar` | `$t` shows the colour scale beside the plot | `$f` |
-| `color`, `size`, `labels` | Styles for every series | |
-| `series` | Styles for one series, keyed by its name | |
-| `widths`, `heights`, `share` | Figure cell sizes and shared axis ranges | |
-
-`color` also takes one number per point. `palette` turns these numbers into colours, over the range of every series in the plot. A cell takes its colour from its own value unless `color` is set.
-
-A direct [`•mime`](#mime) call on a spec reports these errors: `DOMAIN` for unknown settings or values, and for cells mixed with other marks; `LENGTH` when series, colours, sizes or labels don't match the x values; `RANK` for data that isn't a vector, matrix or table.
-
-<!-- help •image -->
-
-### `•image` — Images {#image}
-
-`•image Y` returns a picture: numbers from 0 to 1, with axes for rows, columns and up to four channels, that notebooks display as an image. One channel is grey, and three are red, green and blue. A second or fourth channel is alpha. `Y` is the path of a PNG or JPEG file, the bytes of one, or the numbers themselves. Values outside 0 to 1 are clipped when the picture is displayed or encoded.
-
-`•image⁻¹ Y` encodes the picture `Y` as PNG bytes, and `"jpeg" •image⁻¹ Y` as JPEG bytes. JPEG drops alpha. [`•nput`](#nput) writes the bytes to a file, as in `"out.png" •nput •image⁻¹ Y`.
-
-Errors: `DOMAIN` for an unknown `kind`, invalid image bytes, or values that aren't real numbers; `RANK` for a shape that isn't a picture; `IO` for file errors.
-
-<!-- help •prefs -->
-
-### `•prefs` — Display settings {#prefs}
-
-`•prefs Y` applies the settings in the record `Y` to this session's display, and returns every setting. `•prefs ⍬` changes nothing.
-
-| Setting | Holds | Default |
-|---|---|---|
-| `box` | `$t` draws arrays in boxes | `$t` in the REPL and the BPL Jupyter kernel, `$f` elsewhere |
-| `trees` | `$t` shows functions and dissected expressions as trees; `$f` uses linear notation. Independent of `box` | as `box` |
-| `fns` | `$f` leaves output made inside functions unboxed | as `box` |
-| `dissect` | `$t` shows the bound expression before each normal result, using `trees` | `$f` |
-| `limit` | The most items display shows in full. `∞` shows every item | `1000` |
-| `edges` | Positions shown at each end of a long axis | `3` |
-| `prec` | Significant digits shown for each float. `∞` shows every digit | `∞` |
-| `width` | The widest line display shows. `∞` allows any width | The terminal's width in the REPL, `∞` elsewhere |
-
-Display shows part of an array of more than `limit` items: the first and last `edges` positions of each axis longer than twice `edges`. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. A nested array follows the same rule on its own. A line wider than `width` hides columns in the same way, keeping as many at each end as fit. `⎕←`, [`⍕`](glyphs/format.qmd) and source text always hold every item and every digit.
-
-Errors: `DOMAIN` for an unknown setting or an invalid value.
-
-<!-- help -->
+| Name | Description |
+|---|---|
+| [`•element`](system/element.qmd) | XML elements |
+| [`•xml`](system/xml.qmd) | XML text |
+| [`•svg`](system/svg.qmd) | SVG pictures |
+| [`•mime`](system/mime.qmd) | Rich display |
+| [`•plot`](system/plot.qmd) | Plots |
+| [`•image`](system/image.qmd) | Images |
+| [`•prefs`](system/prefs.qmd) | Display settings |
 
 ## Linear algebra
 
-<!-- help •decompose -->
-
-### `•decompose` — Matrix decompositions {#decompose}
-
-`kind •decompose m` factors the matrix `m` and returns the factors as a record. `kind` names the decomposition:
-
-| `kind` | Fields | Factors |
-|---|---|---|
-| `"svd"` | `u`, `s`, `v` | `m` is `u×⍤1s +.× +⍉v`, with the singular values `s` in descending order |
-| `"qr"` | `q`, `r` | `m` is `q+.×r`, with orthonormal columns in `q`, and `r` upper triangular |
-| `"eigen"` | `values`, `vectors` | each column of `vectors` is an eigenvector of `m`, for the eigenvalue at the same position in `values` |
-| `"cholesky"` | `l` | `m` is `l+.×+⍉l`, with `l` lower triangular |
-
-The SVD and the QR decomposition are thin. For an `r`-by-`c` matrix, `u` and `q` have `r⌊c` columns. The factors are floats. A real matrix gives real factors, apart from complex eigenvalues and their eigenvectors. A Hermitian matrix, one equal to its conjugate transpose, has real eigenvalues in ascending order and orthonormal eigenvectors. [`⌹`](glyphs/domino.qmd) solves linear systems.
-
-```bpl
-("svd" •decompose 3 2⍴1 2 3 4 5 6).s     ⍝ 9.525518091565104 0.5143005806586441
-("eigen" •decompose 2 2⍴2 1 1 2).values  ⍝ [1 3]
-```
-
-`kind •decompose⁻¹ factors` multiplies a record of factors back into the matrix, as the table shows. For `"eigen"`, the matrix is `(vectors×⍤1 values)+.×⌹vectors`. Eigenvectors that aren't independent, such as those of the defective matrix `[1 1 ⋄ 0 1]`, can't determine the matrix.
-
-```bpl
-f←"cholesky" •decompose 2 2⍴4 2 2 3
-"cholesky" •decompose⁻¹ f   ⍝ [4 2 ⋄ 2 3]
-```
-
-Errors: `RANK` for an argument that isn't a matrix, or a factor of the wrong rank; `LENGTH` for `"eigen"` or `"cholesky"` of a matrix that isn't square, or factors whose sizes don't agree; `DOMAIN` for an unknown decomposition, an empty or nonnumeric matrix, `"cholesky"` of a matrix that isn't Hermitian positive definite, a missing factor, or eigenvectors that aren't independent.
-
-<!-- help -->
+| Name | Description |
+|---|---|
+| [`•decompose`](system/decompose.qmd) | Matrix decompositions |
 
 ## Random numbers and distributions
 
-<!-- help •rand -->
-
-### `•rand` — Generator {#rand}
-
-`•rand seed` returns a generator: a keyed vector of two functions that draw from one stream of random numbers. The seed is a nonnegative integer. The same seed gives the same draws.
-
-- `roll Y` works like `¿Y`.
-- `X deal Y` works like `X¿Y`.
-
-A distribution's `sample` takes a generator on its left, as in `g d.sample 3`. Copies of a generator share its stream. Drawing from one copy moves every copy on.
-
-Errors: `DOMAIN` for a seed that is not a nonnegative integer, or a left argument to `sample` that is not a generator; `LENGTH` or `RANK` for more than one seed; `SYNTAX` for a dyadic call to `•rand`.
-
-<!-- help •distribution -->
-
-### `•distribution` — Distributions {#distribution}
-
-`params •distribution name` returns the distribution called `name`, with parameters `params`. `•distribution name` uses the distribution's standard parameters, listed in the table below. A distribution is a keyed vector of four functions:
-
-- `sample shape` draws random values. `g sample shape` draws them from a generator made by `•rand`.
-- `density x` gives the probability density, or the probability mass for a discrete distribution.
-- `cdf x` gives P(X ≤ x).
-- `quantile p` inverts the CDF. `cdf⁻¹` is `quantile`. `quantile⁻¹` is `cdf`.
-
-```bpl
-d←•distribution "normal"
-d.cdf 0                         ⍝ 0.5
-b←10 0.5 •distribution "binomial"
-b.quantile 0.5                  ⍝ 5ₓ
-```
-
-Parameters are finite real units or vectors. Scale, shape, rate and degrees of freedom are positive, except where stated. [Distributions](distributions.ipynb) shows them in use.
-
-| Name | Parameters | Standard |
-|---|---|---|
-| `"normal"` | μ σ: mean, standard deviation | 0 1 |
-| `"uniform"` | a b: lower and upper bounds, a < b | 0 1 |
-| `"bernoulli"` | p ∈ [0,1] | |
-| `"binomial"` | n p: integer trials n ≥ 0, p ∈ [0,1] | |
-| `"poisson"` | λ ≥ 0: mean | |
-| `"beta"` | α β: shapes | |
-| `"gamma"` | k θ: shape, scale, with mean kθ | |
-| `"inversegamma"` | α β: shape, scale, with density ∝ x⁻⁽ᵅ⁺¹⁾ exp(−β/x) | |
-| `"exponential"` | λ: rate, with mean 1/λ | 1 |
-| `"chisquared"` | ν: degrees of freedom | |
-| `"student"` | ν: degrees of freedom, with location 0 and scale 1 | |
-| `"fisher"` | ν₁ ν₂: degrees of freedom | |
-| `"cauchy"`, `"laplace"`, `"logistic"` | location, scale | 0 1 |
-| `"lognormal"` | μ σ: mean and standard deviation of log(X) | 0 1 |
-| `"weibull"` | k λ: shape, scale | |
-
-Errors: `DOMAIN` for an unknown name, a name that isn't a string, a monadic call for a distribution with no standard parameters, invalid parameters, non-real inputs or p ∉ [0,1]; `LENGTH` for the wrong number of parameters; `RANK` for matrix parameters or shapes; `SYNTAX` for a dyadic call to `density`, `cdf` or `quantile`; `LIMIT` for oversized shapes or sampler ranges.
-
-<!-- help -->
+| Name | Description |
+|---|---|
+| [`•rand`](system/rand.qmd) | Generator |
+| [`•distribution`](system/distribution.qmd) | Distributions |
 
 ## Programs
 
-<!-- help •load -->
-
-### `•load` — Load {#load}
-
-`•load path` runs the BPL file at `path` as a [module](modules.qmd), with names of its own. It returns a record of the module's public names: the names its top level assigns that don't start with `_`. The file adds no names to the caller, and shows nothing except explicit output. Each call runs the file again.
-
-Destructure the record to take names, as in `[a b]←•load path`, or keep it and read names with a dot, as in `m←•load path` and then `m.a`.
-
-A path that starts with `./` or `../` is relative to the file holding the code. Other relative paths are relative to the working directory. `•nget` and `•nput` follow the same rule.
-
-Errors: `IO` for a file that can't be read; `DOMAIN` for a file that loads itself, directly or through other files.
-
-<!-- help •signal -->
-
-### `•signal` — Signal {#signal}
-
-`•signal kind` raises an error of the kind that `kind` names, and `message •signal kind` gives it a message. Without one, the message is "explicitly signalled". An [error guard](glyphs/error-guard.qmd) catches the error in the same way as an error from a primitive.
-
-```bpl
-positive←{⍵≤0?"must be positive" •signal "DOMAIN";⍵}
-safe←{"DOMAIN"::0 ⋄ positive ⍵}
-safe¯3    ⍝ 0
-safe4     ⍝ 4
-```
-
-`kind` is the name of one of BPL's kinds, which the error guard page lists, or any other one-word name, which makes a kind of the program's own. Names are read in any case. `kind` can also be a caught error, such as `$e`, and `•signal` raises its kind and message again at the `•signal` call.
-
-Errors: `DOMAIN` for a number, or a name that isn't one word of letters, digits and underscores.
-
-<!-- help •storage -->
-
-### `•storage` — Storage {#storage}
-
-`•storage Y` names the storage that holds the items of `Y`: `"boolean"`, `"integer"`, `"float"`, `"complex"`, `"character"` or `"mixed"`. An atom gives its own kind, which can also be `"rational"` or `"function"`. Compact storage holds items of one kind. `"integer"` covers integers of every width. Mixed storage keeps each item's kind. Boxed display marks the same storage on its bottom edge. [Storage](numbers.qmd#storage) describes each storage.
-
-<!-- help •time -->
-
-### `•time` — Timing {#time}
-
-`•time t` gives the seconds since the moment `t`. Moments count seconds from the Unix epoch, as [`•date`](#date) reads and writes them. `•time 0` is the current moment. `t←•time 0` starts a timer, and `•time t` then gives the seconds since it started.
-
-`F •time x` calls each function in `F` on `x` for about 0.1 s. The result is each function's fastest time per call in seconds, with the shape and keys of `F`. With `F←["sum":+/ "max":⌈/]`, `F •time x` labels each time. Time a dyadic function with its left argument bound, as in `2↣⍴`. [Timing](repl.qmd#timing) has examples.
-
-Errors: `DOMAIN` for a left argument that holds anything but functions, or a `t` that isn't a number. An error from a timed function stops the timing.
-
-<!-- help •host -->
-
-### `•host` — Host facts {#host}
-
-`•host name` gives the host fact called `name`.
-
-| Name | Gives |
+| Name | Description |
 |---|---|
-| `"args"` | The arguments after the program on the command line, as a vector of strings. `bpl prog.bpl a b` gives `"a" "b"` |
-| `"version"` | BPL's version |
-| `"env"` | The environment variables, as a record of strings |
-| `"width"` | The width of the terminal that output goes to, or `⍬` without one |
-| `"height"` | The height in lines of the terminal that output goes to, or `⍬` without one |
-| `"cwd"` | The working directory |
-| `"temp"` | The directory for temporary files |
-
-Errors: `DOMAIN` for any other name.
-
-<!-- help •delay -->
-
-### `•delay` — Delay {#delay}
-
-`•delay s` pauses for `s` seconds and returns the seconds it actually waited, which aren't displayed. An interrupt stops it, and `•delay ∞` waits for one.
-
-Errors: `DOMAIN` for a negative number of seconds, or an `s` that isn't a number.
-
-The browser build has no `•delay`.
-
-<!-- help -->
+| [`•load`](system/load.qmd) | Load |
+| [`•signal`](system/signal.qmd) | Signal |
+| [`•storage`](system/storage.qmd) | Storage |
+| [`•time`](system/time.qmd) | Timing |
+| [`•host`](system/host.qmd) | Host facts |
+| [`•delay`](system/delay.qmd) | Delay |
 
 ## Introspection
 
-<!-- help •nc -->
-
-### `•nc` — Name class {#nc}
-
-`•nc names` gives the class of each name: `¯1` invalid, `0` undefined, `2` value, `3` function, `4` operator. A character vector names one binding. [Introspection](introspection.ipynb) has examples.
-
-<!-- help •nl -->
-
-### `•nl` — Name list {#nl}
-
-`prefix •nl classes` lists the visible user names in `classes` that begin with `prefix`, as a sorted vector of strings. `•nl classes` lists them all. [Introspection](introspection.ipynb) has examples.
-
-Errors: `DOMAIN` for unsupported classes; `RANK` for a class matrix.
-
-<!-- help •src -->
-
-### `•src` — Source {#src}
-
-`•src name` returns the definition text of a function or operator, including comments. [Introspection](introspection.ipynb) has examples.
-
-Errors: `VALUE` for an undefined name; `DOMAIN` for an argument that isn't a name.
-
-<!-- help •ex -->
-
-### `•ex` — Erase {#ex}
-
-`•ex names` erases the nearest binding of each name. An outer binding can then become visible. It returns `1` when the name is gone, and `0` for an invalid or protected name. [Introspection](introspection.ipynb) has examples.
+| Name | Description |
+|---|---|
+| [`•nc`](system/nc.qmd) | Name class |
+| [`•nl`](system/nl.qmd) | Name list |
+| [`•src`](system/src.qmd) | Source |
+| [`•ex`](system/ex.qmd) | Erase |

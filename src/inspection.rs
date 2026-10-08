@@ -2,6 +2,9 @@ use crate::{syntax::NodeKind, ParseStatus, Source};
 
 include!(concat!(env!("OUT_DIR"), "/help.rs"));
 
+/// The language reference for LLMs, `nbs/llms.txt`, which `]help llms` shows.
+pub(crate) const LLMS: &str = include_str!("../nbs/llms.txt");
+
 #[derive(Clone, Debug)]
 pub struct Inspection { pub kind: &'static str, pub source: String, pub help: String }
 
@@ -39,7 +42,7 @@ pub(crate) fn documentation(symbol: &str) -> Option<&'static str> {
     })
 }
 
-/// The glyph page `name` from `nbs/glyphs`, or a named block of `nbs/system-functions.qmd`.
+/// The glyph page `name` from `nbs/glyphs`, or the system page for name `name` from `nbs/system`.
 pub(crate) fn page(name: &str) -> Option<&'static str> { HELP.iter().find(|(page, _)| *page == name).map(|(_, text)| *text) }
 
 pub(crate) fn item(text: &str) -> Option<NodeKind> {

@@ -27,9 +27,9 @@ See [After](after.qmd), [Atop / Rank](rank.qmd) and [Over](over.qmd).
 
 ## Inverse
 
-With an array operand, `(X↣f)⁻¹ Y` is `X f⁻¹ Y`. With two functions, `X (f↣g)⁻¹ Y` inverts `g` with `f X` fixed on the left.
+With an array operand, `(X↣f)⁻¹Y` is `X f⁻¹ Y`. With two functions, `X(f↣g)⁻¹Y` inverts `g` with `f X` fixed on the left.
 
 ```bpl
-(2↣×)⁻¹ 6     ⍝ 3
-3 (-↣+)⁻¹ 7   ⍝ 10
+(2↣×)⁻¹6    ⍝ 3
+3(-↣+)⁻¹7   ⍝ 10
 ```

@@ -1,6 +1,7 @@
 // The playground page. It runs the editor's code in a worker, shows each output as it arrives, and adds the language bar. Stop ends
 // the worker and starts a new one, as a trap does.
-import * as monaco from 'https://esm.sh/monaco-editor-core@0.57.0?bundle';
+// esm.sh's Node process shim masks the browser's OS; jsDelivr preserves Monaco's platform detection.
+import * as monaco from 'https://cdn.jsdelivr.net/npm/monaco-editor-core@0.57.0/+esm';
 // Unbundled Shiki imports share TextMate's state singleton with the Monaco integration.
 import {shikiToMonaco} from 'https://esm.sh/@shikijs/monaco@4.5.0';
 import {createHighlighterCore} from 'https://esm.sh/shiki@4.5.0/core';
@@ -11,7 +12,10 @@ const css = getComputedStyle(code), color = cls => {
     const value = css.getPropertyValue(`--quarto-hl-${cls}-color`).trim();
     return value === 'inherit' ? color('kw') : value;
 };
-const grammar = await (await fetch(new URL('bpl.tmLanguage.json', import.meta.url))).json();
+// The npm package's files come from the copies of your `cargo wasm` build beside this script on localhost, and from the latest
+// release elsewhere. The worker takes this base URL as its `pkg` parameter.
+const pkg = location.hostname === 'localhost' ? new URL('./', import.meta.url).href : 'https://cdn.jsdelivr.net/npm/basedpl/';
+const grammar = await (await fetch(new URL('bpl.tmLanguage.json', pkg))).json();
 const classes = [['comment', 'co'], ['string.quoted.double', 'st'], ['string.quoted.single', 'ch'], ['constant.numeric', 'dv'],
     ['support.function', 'fu'], ['support.function.system', 'bu'], ['keyword.operator.monadic', 'op'],
     ['keyword.operator.dyadic', 'ex'], ['variable.parameter', 'va'], ['keyword.control', 'kw']];
@@ -44,12 +48,17 @@ function show(tag, text, cls) {
     return el;
 }
 
-// One output: a MIME bundle, shown in its richest form. Binary types arrive as base64.
+// One output: a MIME bundle, shown in its richest form. Binary types arrive as `Uint8Array`s. `image/x-rgba` holds RGBA pixels, with
+// the width as a parameter.
 function render({ kind, data }) {
+    const rgba = Object.keys(data).find(type => type.startsWith('image/x-rgba;'));
     if (data['image/svg+xml'] || data['text/html']) show('div').innerHTML = data['image/svg+xml'] ?? data['text/html'];
-    else if (data['image/png'] || data['image/jpeg']) {
+    else if (rgba) {
+        const image = new ImageData(new Uint8ClampedArray(data[rgba].buffer), +rgba.split('width=')[1]);
+        Object.assign(show('canvas'), { width: image.width, height: image.height }).getContext('2d').putImageData(image, 0, 0);
+    } else if (data['image/png'] || data['image/jpeg']) {
         const type = data['image/png'] ? 'image/png' : 'image/jpeg';
-        show('img').src = `data:${type};base64,${data[type]}`;
+        Object.assign(show('img'), { onload() { URL.revokeObjectURL(this.src); }, src: URL.createObjectURL(new Blob([data[type]], { type })) });
     } else if (kind === 'text' && out.lastElementChild?.matches('pre.text')) out.lastElementChild.firstElementChild.textContent += data['text/plain'];
     else show('pre', data['text/plain'], kind === 'text' ? 'text' : '');
 }
@@ -57,7 +66,7 @@ function render({ kind, data }) {
 function finish() { busy = false; run.disabled = false; stop.disabled = true; }
 
 function start() {
-    worker = new Worker(new URL('worker.js', import.meta.url), { type: 'module' });
+    worker = new Worker(new URL(`worker.js?pkg=${encodeURIComponent(pkg)}`, import.meta.url), { type: 'module' });
     worker.onmessage = ({ data }) => {
         const rect = code.getBoundingClientRect(), following = rect.top >= 0 && rect.bottom <= innerHeight;
         if (data.type === 'ready') {
@@ -65,7 +74,7 @@ function start() {
             run.disabled = false;
         } else if (data.type === 'output') render(data.output);
         else if (data.type === 'reply') {
-            if (data.reply.error) show('pre', data.reply.error.display, 'error');
+            if (data.error) show('pre', data.error.display, 'error');
             finish();
         } else if (data.type === 'panic') show('pre', `BPL panicked: ${data.message}`, 'error');
         else if (data.type === 'crash') restart(`The interpreter stopped (${data.message}). Started a new session.`);
@@ -84,7 +93,7 @@ function restart(message) {
 // The language bar from `lb.js`, which needs the glyph rows, `input.js` and the key layout.
 async function addBar(symbols) {
     bar = true;
-    const text = name => fetch(new URL(name, import.meta.url)).then(r => r.text());
+    const text = name => fetch(new URL(name, pkg)).then(r => r.text());
     const [lb, input, layout] = await Promise.all([text('lb.js'), text('input.js'), text('layout.json')]);
     (0, eval)(lb)(symbols, (0, eval)(input), JSON.parse(layout));
 }

@@ -15,10 +15,6 @@ nonneg←0≤ ⍚ [0 ⊢] ⋄ nonneg¨ ¯3 4               ⍝ 0 4
 
 A function selector runs once with the original arguments. Only the selected branch runs, with those same arguments. Index arrays do not map over branches or construct trains.
 
-## Inverse
-
-The derived function has no inverse.
-
 ## Errors
 
 - `RANK`: an index that is not a unit

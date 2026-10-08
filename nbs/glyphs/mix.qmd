@@ -36,10 +36,10 @@ With axes, `⊃⍠A Y` places the cell axes of Mix among the frame axes. See [Ax
 
 ## Inverse
 
-`⊃⁻¹` splits an array into its major cells, undoing mix. Pick has no inverse.
+`⊃⁻¹Y` splits `Y` into its major cells.
 
 ```bpl
-⊃⁻¹ [1 2 ⋄ 3 4]   ⍝ [1 2;3 4]
+⊃⁻¹[1 2 ⋄ 3 4]   ⍝ [1 2;3 4]
 ```
 
 ## Errors

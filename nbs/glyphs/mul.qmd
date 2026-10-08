@@ -17,9 +17,9 @@ Keys: `Alt-m`. Ranks: `0` monadic, `0 0` dyadic
 
 ## Inverse
 
-`×⁻¹ Y` gives back `Y` when `Y` is a possible sign: `¯1`, `0`, `1` or a unit complex number. With either argument fixed, `×⁻¹` divides by the fixed argument, which must hold no zero.
+`×⁻¹Y` gives back `Y` when `Y` is a possible sign: `¯1`, `0`, `1` or a unit complex number. With either argument fixed, `×⁻¹` divides by the fixed argument, which must hold no zero.
 
 ```bpl
-×⁻¹ ¯1     ⍝ ¯1
-4 ×⁻¹ 12   ⍝ 3
+×⁻¹¯1    ⍝ ¯1
+4×⁻¹12   ⍝ 3
 ```

@@ -172,7 +172,7 @@ pub fn names() -> impl Iterator<Item = &'static str> { BUILTINS.iter().map(|(nam
 /// The table entry for system name `name`, ignoring case.
 fn builtin(name: &str) -> Option<&'static (&'static str, Call, Valence, Item, fn() -> Value)> { BUILTINS.iter().find(|(key, ..)| key.eq_ignore_ascii_case(name)) }
 
-/// The help block for system name `name`, ignoring case, from `nbs/system-functions.qmd`.
+/// The help page for system name `name`, ignoring case, from `nbs/system`.
 pub(crate) fn help(name: &str) -> Option<&'static str> { let (name, ..) = builtin(name)?; crate::inspection::page(name) }
 
 pub(crate) fn lookup(name: &str) -> Option<Function> {

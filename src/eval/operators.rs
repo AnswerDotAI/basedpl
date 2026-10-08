@@ -593,7 +593,9 @@ fn move_axes(x: &Value, destination: &[usize], span: &crate::execution::Context<
 }
 
 /// Calls `operand` on the argument pairs `pair(0)`, `pair(1)` and so on up to `len`, and assembles the results in `layout`.
-/// With no pairs it calls the operand once in prototype mode, on `pair(0)`, for the result's prototype.
+/// With no pairs it calls the operand once in prototype mode, on `pair(0)`, for the result's prototype. If that call fails, the result is
+/// empty with prototype 0, as in J.
+/// A call that gives no result contributes `⍬`.
 fn each_pair(
     operand: &Function,
     len: usize,
@@ -603,22 +605,25 @@ fn each_pair(
 ) -> Result<Bound, Error> {
     let empty = len == 0;
     let mut data = Gather::items(len);
-    let (mut missing, mut first) = (false, None);
+    let mut first = None;
     for i in 0..len.max(1) {
         let (x, y) = pair(i);
         let result = if empty { operand.call_prototype(x.as_ref(), &y, cx) } else { operand.call(x.as_ref(), &y, cx) };
-        let item = match result?.value {
+        let result = match result {
+            Err(e) if empty && super::session::Catch::All.catches(&e.kind) => {
+                return Ok(Bound::new(Binding::Value(layout.collect(Vec::new(), Value::Number(0.0.into())).map_err(|k| cx.span.error(k, "invalid result"))?)));
+            }
+            result => result?,
+        };
+        let item = match result.value {
             Binding::Value(a) => a,
             Binding::Function(f) => Value::Function(f),
-            Binding::NoResult => {
-                missing = true;
-                continue;
-            }
+            Binding::NoResult => crate::syntax::zilde(false),
             _ => return Err(cx.span.error(ErrorKind::Syntax, "the operand must return an array, function or no result")),
         };
         if empty { first = Some(item) } else { data.add(item) }
     }
-    let value = if missing { Binding::NoResult } else { Binding::Value(data.finish(layout, || first.unwrap().fill()).map_err(|k| cx.span.error(k, "invalid result"))?) };
+    let value = Binding::Value(data.finish(layout, || first.unwrap().fill()).map_err(|k| cx.span.error(k, "invalid result"))?);
     Ok(Bound::new(value))
 }
 

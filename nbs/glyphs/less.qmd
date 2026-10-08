@@ -17,7 +17,3 @@ Ranks: `∞` monadic, `0 0` dyadic
 ```
 
 See [`>`](greater.qmd) to sort down, and [`⍋`](grade-up.qmd) for the indices that sort.
-
-## Inverse
-
-Neither form has an inverse.

@@ -1,0 +1,10 @@
+# `•deflate` — Compression
+
+`•deflate bytes` decompresses gzip data and returns the bytes. `•deflate⁻¹ data` compresses `data` with gzip. It compresses text as UTF-8, and numbers as bytes from 0 to 255, as [`•nput`](nput.qmd) writes them. Both directions take a format name on the left: `"gzip"`, `"zlib"` or `"deflate"` (raw DEFLATE).
+
+```bpl
+•ucs •deflate •deflate⁻¹ "hello"          ⍝ "hello"
+"zlib" •deflate "zlib" •deflate⁻¹ 1 2 3   ⍝ [1 2 3]ₓ
+```
+
+Errors: `DOMAIN` for an unknown format, byte values outside 0 to 255, or data that doesn't decompress.

@@ -2,7 +2,7 @@
 
 [Glyph index](glyphs.qmd)
 
-A BPL file that [`•load`](system-functions.qmd#load) runs is a module. A module has names of its own. `•load` returns a record of its public names, and adds no names to the code that loads it.
+A BPL file that [`•load`](system/load.qmd) runs is a module. A module has names of its own. `•load` returns a record of its public names, and adds no names to the code that loads it.
 
 ```bpl
 n←•load "lib/numeric.bpl"
@@ -85,7 +85,7 @@ var←{mean _sq ⍵-mean ⍵}
 
 ## Modules that use other modules
 
-A path that starts with `./` or `../` is relative to the file that holds the code. A module finds the files beside it this way, whatever the working directory is. Other relative paths are relative to the working directory. [`•nget`](system-functions.qmd#files) and `•nput` follow the same rule. A module reads a data file beside it with `•nget "./table.csv"`.
+A path that starts with `./` or `../` is relative to the file that holds the code. A module finds the files beside it this way, whatever the working directory is. Other relative paths are relative to the working directory. [`•nget`](system/nget.qmd) and `•nput` follow the same rule. A module reads a data file beside it with `•nget "./table.csv"`.
 
 A module that uses another module usually keeps it under a private name. The other module's names then stay out of its record:
 

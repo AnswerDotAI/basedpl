@@ -1,0 +1,11 @@
+# `•uuid` — UUIDs
+
+`•uuid v` returns a new UUID of version `v` as text. Version 4 is random. Version 7 UUIDs begin with their creation time and sort in creation order. Version 0 is the nil UUID, with every digit zero. Versions 1 and 6 also hold the time, with a random node in place of a MAC address.
+
+`[ns name] •uuid 5` derives a UUID from a name with SHA-1, and `[ns name] •uuid 3` with MD5. `ns` is `"dns"`, `"url"`, `"oid"`, `"x500"` or a UUID. The same namespace and name always give the same UUID. `bytes •uuid 8` makes a UUID from 16 bytes, and sets its version and variant.
+
+```bpl
+"dns" "python.org" •uuid 5   ⍝ "886313e1-3b8a-5372-9b90-0c9aee199e5d"
+```
+
+Errors: `DOMAIN` for any other version, or a left argument that doesn't fit the version.

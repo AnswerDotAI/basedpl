@@ -30,17 +30,10 @@ pub struct EvalOptions {
 /// `Explicit` output and `Display` results each end a line. `Text` is written as it is.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum OutputKind { Explicit, Display, Text }
-impl OutputKind { pub(crate) fn name(self) -> &'static str { match self { Self::Explicit => "explicit", Self::Display => "display", Self::Text => "text" } } }
+impl OutputKind { pub fn name(self) -> &'static str { match self { Self::Explicit => "explicit", Self::Display => "display", Self::Text => "text" } } }
 /// One entry of a MIME bundle: text, or bytes for a binary type such as `image/png`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum MimeData { Text(String), Bytes(Vec<u8>) }
-/// JSON carries bytes as base64 text, as Jupyter messages do.
-impl serde::Serialize for MimeData {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        use base64::{engine::general_purpose::STANDARD, Engine};
-        match self { Self::Text(text) => s.serialize_str(text), Self::Bytes(bytes) => s.serialize_str(&STANDARD.encode(bytes)) }
-    }
-}
 pub type MimeBundle = std::collections::BTreeMap<String, MimeData>;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Output { pub kind: OutputKind, pub data: MimeBundle }
@@ -49,7 +42,6 @@ impl Output {
     pub fn text(&self) -> &str { if let Some(MimeData::Text(text)) = self.data.get("text/plain") { text } else { "" } }
     /// The text as a terminal shows it, with a line ending after any output but `Text`.
     pub fn written(&self) -> String { if self.kind == OutputKind::Text { self.text().into() } else { format!("{}\n", self.text()) } }
-    pub fn json(&self) -> serde_json::Value { serde_json::json!({"kind": self.kind.name(), "data": self.data}) }
 }
 pub type OutputSink = Arc<dyn Fn(&Output) + Send + Sync>;
 pub type Poll = Arc<dyn Fn() -> bool + Send + Sync>;

@@ -18,11 +18,11 @@ Keys: `Alt-u`. Ranks: `0` monadic, `0 0` dyadic
 
 ## Inverse
 
-`÷⁻¹` is `÷`. `X ÷⁻¹ Y` is `X÷Y`. With the right argument fixed, `(÷↢X)⁻¹ Y` is `Y×X`.
+`÷⁻¹` is `÷`. With the right argument fixed, `(÷↢X)⁻¹Y` is `Y×X`.
 
 ```bpl
-12 ÷⁻¹ 4    ⍝ 3
-(÷↢4)⁻¹ 3   ⍝ 12
+12÷⁻¹4     ⍝ 3
+(÷↢4)⁻¹3   ⍝ 12
 ```
 
 ## Errors

@@ -21,6 +21,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -e '.[dev]'
+      - run: cargo develop
       - run: pytest
       - run: bpl-nb
       - run: nbdev-test
@@ -139,5 +140,6 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm publish
         working-directory: wasm/pkg
-      # The playground loads these files from unversioned jsDelivr URLs. Without a purge, jsDelivr can serve the previous release's files from its cache for up to 7 days.
-      - run: curl -fsS https://purge.jsdelivr.net/npm/basedpl/{basedpl_wasm.js,basedpl_wasm_bg.wasm,lb.js,input.js,layout.json}
+      # Pages load this package's files from unversioned jsDelivr URLs. Without a purge, jsDelivr can serve the previous release's files there for up to 7 days.
+      - run: for file in *; do curl -fsS "https://purge.jsdelivr.net/npm/basedpl/$file"; done
+        working-directory: wasm/pkg

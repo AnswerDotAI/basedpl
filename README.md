@@ -5,7 +5,7 @@
 
 BasedPL, the Based-array Programming Language, is an array language derived from APL, with ideas from J and BQN. Its notation aims to be simple and consistent. Most of this documentation calls it BPL. BPL is written in Rust and comes as a native executable, a Jupyter kernel and a Python API.
 
-LLMs: read [llms.txt](https://answerdotai.github.io/basedpl/llms.txt) first. It is the primary reference index and concise overview.
+LLMs: read [llms.txt](https://answerdotai.github.io/basedpl/llms.txt) first. It is the primary reference index and concise overview. In a BPL session, `]help llms` shows the same file.
 
 ## Install and try it
 
@@ -36,7 +36,7 @@ Use `bpl -e 'avg←+/÷≢ ⋄ avg 2 4 9'` for a shell command. The [command-lin
 
 ## Interactive use
 
-In the REPL, type a backtick followed by a glyph name. For example, `` `iota `` becomes `⍳` when you press Tab or type a non-letter. Abbreviations and Alt-key shortcuts are available. `]help +` shows help for `+`. [`•prefs`](https://answerdotai.github.io/basedpl/system-functions.html#prefs) changes display settings, such as boxes and how much of a large array shows. See [REPL](https://answerdotai.github.io/basedpl/repl.html) and the [glyph reference](https://answerdotai.github.io/basedpl/glyphs.html), which lists each glyph’s key.
+In the REPL, type a backtick followed by a glyph name. For example, `` `iota `` becomes `⍳` when you press Tab or type a non-letter. Abbreviations and Alt-key shortcuts are available. `]help +` shows help for `+`. [`•prefs`](https://answerdotai.github.io/basedpl/system/prefs.html) changes display settings, such as boxes and how much of a large array shows. See [REPL](https://answerdotai.github.io/basedpl/repl.html) and the [glyph reference](https://answerdotai.github.io/basedpl/glyphs.html), which lists each glyph’s key.
 
 In Jupyter, select the installed **BasedPL** kernel. Cells share definitions and support completion, Shift-Tab help and interruption. You can also use `%%bpl` cells in a Python notebook. See [Using BPL notebooks](https://answerdotai.github.io/basedpl/notebooks.html).
 

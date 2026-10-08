@@ -68,15 +68,14 @@ With an axis, `⌷⍠K` applies the left argument's items to the axes `K`.
 
 ## Inverse
 
-`⌷⁻¹` is `⌷`. Index has no inverse.
+`⌷⁻¹Y` is `⌷Y`.
 
 ```bpl
-⌷⁻¹ 1 2   ⍝ 1 2
+⌷⁻¹1 2   ⍝ 1 2
 ```
 
 ## Errors
 
-- `RANK`: left argument not a unit or vector
 - `LENGTH`: more items than axes
 - `INDEX`: position outside its axis, missing key
 - `DOMAIN`: non-integral position, `∞` or `¯∞` inside an array of positions

@@ -70,6 +70,5 @@ APL difference: `#` replaces `/`, `⌿`, `\` and `⍀`. Dyalog's expand with cou
 
 ## Errors
 
-- `RANK`: counts of rank 2 or more
 - `LENGTH`: counts that don't match the cells, or an inverse that doesn't use every cell
 - `DOMAIN`: counts that aren't integers, or one inverse count that doesn't divide the number of cells

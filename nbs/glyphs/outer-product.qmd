@@ -19,5 +19,5 @@ Array frames collect pair results as items. See [inner product](dot.qmd).
 With either argument fixed, `X f⊗⁻¹ Y` gives the argument whose outer product with `X` is `Y`.
 
 ```bpl
-1 2 +⊗⁻¹ 1 2+⊗10 20   ⍝ 10 20
+1 2+⊗⁻¹1 2+⊗10 20   ⍝ 10 20
 ```

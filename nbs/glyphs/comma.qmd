@@ -26,10 +26,10 @@ x,⍤0 y             ⍝ [1 3 ⋄ 2 4]
 
 ## Inverse
 
-`,⁻¹ Y` gives back `Y` when it's a vector. `X ,⁻¹ Y` removes the fixed `X` from the front of `Y`. With the right argument fixed, `(,↢X)⁻¹ Y` removes it from the end.
+`,⁻¹Y` gives back `Y` when it's a vector. `X,⁻¹Y` removes the fixed `X` from the front of `Y`. With the right argument fixed, `(,↢X)⁻¹Y` removes it from the end.
 
 ```bpl
-,⁻¹ 1 2 3           ⍝ 1 2 3
-1 2 ,⁻¹ 1 2 3 4     ⍝ 3 4
-(,↢3 4)⁻¹ 1 2 3 4   ⍝ 1 2
+,⁻¹1 2 3           ⍝ 1 2 3
+1 2,⁻¹1 2 3 4      ⍝ 3 4
+(,↢3 4)⁻¹1 2 3 4   ⍝ 1 2
 ```

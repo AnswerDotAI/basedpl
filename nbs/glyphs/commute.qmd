@@ -22,9 +22,9 @@ A subject operand makes a constant function: `A⍨Y` and `X A⍨Y` return `A`.
 
 ## Inverse
 
-With one argument fixed, `f⍨⁻¹` inverts `f` with that argument on the other side. With no fixed argument, `+⍨⁻¹` halves, `×⍨⁻¹` takes the square root, and `⌊⍨⁻¹`, `⌈⍨⁻¹` and `⊢⍨⁻¹` give back their argument. For an array `k`, `k⍨⁻¹ Y` gives back `Y`, which must match `k`.
+With one argument fixed, `f⍨⁻¹` inverts `f` with that argument on the other side. `+⍨⁻¹Y` halves `Y`, `×⍨⁻¹Y` takes its square root, and `⌊⍨⁻¹Y`, `⌈⍨⁻¹Y` and `⊢⍨⁻¹Y` give back `Y`. For an array `k`, `k⍨⁻¹Y` gives back `Y`, which must match `k`.
 
 ```bpl
-+⍨⁻¹ 10   ⍝ 5
-×⍨⁻¹ 9    ⍝ 3
++⍨⁻¹10   ⍝ 5
+×⍨⁻¹9    ⍝ 3
 ```

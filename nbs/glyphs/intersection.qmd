@@ -17,10 +17,6 @@ Keys: `Alt-c`. Ranks: `∞` monadic, `∞ ∞` dyadic
 [1 2 ⋄ 3 4 ⋄ 1 2]∩[1 2 ⋄ 5 6] ⍝ [1 2 ⋄ 1 2]
 ```
 
-## Inverse
-
-Neither form has an inverse.
-
 ## Errors
 
 - `RANK`: `Y` is a unit

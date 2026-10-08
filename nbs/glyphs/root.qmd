@@ -19,12 +19,12 @@ Keys: `Alt-3`. Ranks: `0` monadic, `0 0` dyadic
 
 ## Inverse
 
-`√⁻¹` is `⊼`, which squares. `X √⁻¹ Y` is `Y*X`. With the right argument fixed, `(√↢X)⁻¹ Y` is `Y⍟X`.
+`√⁻¹Y` squares `Y`. `X√⁻¹Y` is `Y*X`. With the right argument fixed, `(√↢X)⁻¹Y` is `Y⍟X`.
 
 ```bpl
-√⁻¹ 3       ⍝ 9
-3 √⁻¹ 2     ⍝ 8
-(√↢8)⁻¹ 2   ⍝ 3
+√⁻¹3       ⍝ 9
+3√⁻¹2      ⍝ 8
+(√↢8)⁻¹2   ⍝ 3
 ```
 
 ## Errors

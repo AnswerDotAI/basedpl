@@ -25,9 +25,9 @@ See also function [power `⍣`](power.qmd).
 
 ## Inverse
 
-`*⁻¹` is `⍟`. `X *⁻¹ Y` is `X⍟Y`. With the right argument fixed, `(*↢X)⁻¹ Y` is `Y*÷X`.
+`*⁻¹` is `⍟`. With the right argument fixed, `(*↢X)⁻¹Y` is `Y*÷X`.
 
 ```bpl
-2 *⁻¹ 8     ⍝ 3
-(*↢2)⁻¹ 9   ⍝ 3
+2*⁻¹8      ⍝ 3
+(*↢2)⁻¹9   ⍝ 3
 ```

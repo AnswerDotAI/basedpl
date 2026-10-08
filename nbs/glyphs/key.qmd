@@ -15,7 +15,3 @@ Keys: `Alt-q =`
 ```
 
 Keys use tolerant matching against first representatives. Results assemble with fill. Empty input calls `f` once for its prototype.
-
-## Inverse
-
-The derived function has no inverse.

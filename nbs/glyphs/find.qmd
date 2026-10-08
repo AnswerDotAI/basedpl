@@ -16,7 +16,3 @@ Keys: `Alt-Minus e`. Ranks: `∞` monadic, `∞ ∞` dyadic
 ```
 
 Works with multidimensional patterns and tolerant element matching.
-
-## Inverse
-
-Neither form has an inverse.

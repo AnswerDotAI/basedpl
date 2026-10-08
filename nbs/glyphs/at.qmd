@@ -34,7 +34,3 @@ x←["a":1 "b":2 "c":3]
 ```
 
 Indices include nested paths. Dyadic calls pass the left argument to the replacement function. With repeated indices, the last replacement wins.
-
-## Inverse
-
-The derived function has no inverse.

@@ -40,7 +40,7 @@ See [Inverse pair](inverse-pair.qmd).
 `(f⌾g)⁻¹` is `f⁻¹⌾g`.
 
 ```bpl
-((2×)⌾⌽)⁻¹ 2 4 6   ⍝ 1 2 3
+((2×)⌾⌽)⁻¹2 4 6   ⍝ 1 2 3
 ```
 
 ## Errors

@@ -14,7 +14,3 @@ Keys: `Alt-s`. Ranks: `0` monadic, `0 0` dyadic
 ```bpl
 3⌈1 5             ⍝ 3 5
 ```
-
-## Inverse
-
-Neither form has an inverse, because many arguments give each result.

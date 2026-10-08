@@ -456,18 +456,20 @@ pub(super) fn transpose(axes: Option<&Value>, right: &Value, span: &Context<'_>)
     let axes = match axes {
         None => (0..rank).rev().collect::<Vec<_>>(),
         Some(a) => {
-            if a.len() != rank { return Err(span.error(ErrorKind::Length, "transpose needs one axis per dimension")); }
-            a.as_items()
-                .nonnegative_integers()
-                .error_at(span, "invalid transpose axis")?
-                .into_iter()
-                .map(|n| if n >= rank { Err(span.error(ErrorKind::Rank, "transpose axis exceeds argument rank")) } else { Ok(n) })
-                .collect::<Result<_, _>>()?
+            if a.len() > rank { return Err(span.error(ErrorKind::Length, "transpose has more axes than its argument")); }
+            let named = a.as_items().nonnegative_integers().error_at(span, "invalid transpose axis")?;
+            // As in BQN, the source axes after the named ones fill the unnamed result axes in order.
+            let mut distinct = named.clone();
+            distinct.sort_unstable();
+            distinct.dedup();
+            let result_rank = distinct.len() + rank - named.len();
+            if named.iter().any(|&n| n >= result_rank) { return Err(span.error(ErrorKind::Rank, "transpose axes must be consecutive from 0")); }
+            let unnamed = (0..result_rank).filter(|r| distinct.binary_search(r).is_err());
+            named.iter().copied().chain(unnamed).collect::<Vec<_>>()
         }
     };
     let mut shape = vec![usize::MAX; axes.iter().max().map_or(0, |n| n + 1)];
     for (i, &axis) in axes.iter().enumerate() { shape[axis] = shape[axis].min(right.shape()[i]); }
-    if shape.contains(&usize::MAX) { return Err(span.error(ErrorKind::Rank, "transpose axes must be consecutive from 0")); }
     let keys = (0..shape.len())
         .map(|a| {
             let sources = axes.iter().enumerate().filter(|(_, dst)| **dst == a).map(|(src, _)| src).collect::<Vec<_>>();

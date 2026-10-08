@@ -16,7 +16,3 @@ Keys: `Alt-/`. Ranks: `0` monadic, `0 0` dyadic
 ```
 
 Bounds are nonnegative integers; `M≤N`. Exact arguments give exact integer draws. Dyalog APL writes Roll and Deal as `?`, which BPL uses for [predicates](question.qmd).
-
-## Inverse
-
-Neither form has an inverse.

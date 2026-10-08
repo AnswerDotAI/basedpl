@@ -8,6 +8,7 @@ Links are relative to https://answerdotai.github.io/basedpl/.
 
 - [Glyphs reference](glyphs.html.md)
 - [System functions](system-functions.html.md)
+- [Constants and `$` names](system/constants.html.md)
 - [Syntax](syntax.html.md)
 - [Evaluation](evaluation.html.md)
 - [Arrays](arrays.html.md)
@@ -19,7 +20,7 @@ Links are relative to https://answerdotai.github.io/basedpl/.
 - [Modules and namespaces](modules.html.md)
 - [Python](python.html.md)
 - Per-glyph: `glyphs/<canonical-name>.html.md`, using names from the glyphs reference.
-- System functions: `system-functions.html.md#<name>` without `•`
+- Per system function: `system/<name>.html.md`, with the name's `•` left off.
 
 ## Glyph differences
 

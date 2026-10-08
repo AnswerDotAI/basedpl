@@ -1,0 +1,15 @@
+# `•host` — Host facts
+
+`•host name` gives the host fact called `name`.
+
+| Name | Gives |
+|---|---|
+| `"args"` | The arguments after the program on the command line, as a vector of strings. `bpl prog.bpl a b` gives `"a" "b"` |
+| `"version"` | BPL's version |
+| `"env"` | The environment variables, as a record of strings |
+| `"width"` | The width of the terminal that output goes to, or `⍬` without one |
+| `"height"` | The height in lines of the terminal that output goes to, or `⍬` without one |
+| `"cwd"` | The working directory |
+| `"temp"` | The directory for temporary files |
+
+Errors: `DOMAIN` for any other name.

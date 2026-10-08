@@ -1,0 +1,7 @@
+# `•image` — Images
+
+`•image Y` returns a picture: numbers from 0 to 1, with axes for rows, columns and up to four channels, that notebooks display as an image. One channel is grey, and three are red, green and blue. A second or fourth channel is alpha. `Y` is the path of a PNG or JPEG file, the bytes of one, or the numbers themselves. Values outside 0 to 1 are clipped when the picture is displayed or encoded.
+
+`•image⁻¹ Y` encodes the picture `Y` as PNG bytes, and `"jpeg" •image⁻¹ Y` as JPEG bytes. JPEG drops alpha. [`•nput`](nput.qmd) writes the bytes to a file, as in `"out.png" •nput •image⁻¹ Y`.
+
+Errors: `DOMAIN` for an unknown `kind`, invalid image bytes, or values that aren't real numbers; `RANK` for a shape that isn't a picture; `IO` for file errors.

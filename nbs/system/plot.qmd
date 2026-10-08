@@ -1,0 +1,32 @@
+# `•plot` — Plots
+
+`X •plot Y` returns a plot spec: a keyed vector holding the data `Y` and the settings `X`. Its renderer displays the spec as an SVG chart. Plain text on the left is shorthand for `mark`. [Plots](../plot.ipynb) shows each mark and setting with examples.
+
+The structure of `Y` chooses the series and axes:
+
+- A vector plots its values against `0…n-1`.
+- A keyed vector of numbers uses its keys as x labels.
+- A matrix plots one series per row. Row keys name the series. Column keys label x.
+- With the `cell` mark, each row of a matrix is a row of cells, coloured by value. Row keys label the rows, and row 0 is at the top.
+- A table, a keyed vector of equal-length columns, plots each column as a series. A column named `x` supplies the x values.
+- A vector or matrix of plots draws a figure.
+
+| Setting | Holds | Default |
+|---|---|---|
+| `mark` | `"line"`, `"point"`, `"bar"` or `"cell"` | `"line"` |
+| `title` | Chart title | none |
+| `width`, `height` | Size in pixels | `600`, `400` |
+| `x`, `y` | `title`, `scale` (`"linear"` or `"log"`), `ticks`, and `axis` (`$f` hides that axis) | |
+| `legend` | `position` (`"end"` or a corner) and `border` | none |
+| `grid` | `$f` hides the grid lines | `$t`, or `$f` for cells |
+| `axes` | `$f` hides both axes, with their ticks and titles. An `axis` setting in `x` or `y` overrides it for that axis | `$t` |
+| `flip` | `$t` swaps the axes | `$f` |
+| `palette` | Colours for numbers: `"viridis"`, `"gray"`, or a list of colours | `"viridis"` |
+| `colorbar` | `$t` shows the colour scale beside the plot | `$f` |
+| `color`, `size`, `labels` | Styles for every series | |
+| `series` | Styles for one series, keyed by its name | |
+| `widths`, `heights`, `share` | Figure cell sizes and shared axis ranges | |
+
+`color` also takes one number per point. `palette` turns these numbers into colours, over the range of every series in the plot. A cell takes its colour from its own value unless `color` is set.
+
+A direct [`•mime`](mime.qmd) call on a spec reports these errors: `DOMAIN` for unknown settings or values, and for cells mixed with other marks; `LENGTH` when series, colours, sizes or labels don't match the x values; `RANK` for data that isn't a vector, matrix or table.

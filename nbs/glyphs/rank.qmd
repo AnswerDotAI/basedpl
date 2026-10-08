@@ -19,7 +19,7 @@ m←2 3⍴⍳6
 | `q r` | `r` | `q r` |
 | `p q r` | `p` | `q r` |
 
-A negative rank counts back from the argument's rank. With a rank at least as large as the argument's rank, the whole argument is one cell. With an empty frame, `f` is called on a prototype cell.
+A negative rank counts back from the argument's rank. With a rank at least as large as the argument's rank, the whole argument is one cell. With an empty frame, `f` is called on a prototype cell. If that call fails, the result is empty, with the frame's shape and prototype 0, as in J.
 
 By these rules, `⊢⍤0` returns its argument unchanged. On an array of atoms, `f⍤0` is `⊃f¨`. [Each](each.qmd) passes the items themselves, never enclosed. Every call's result becomes one item of Each's result, with no assembly.
 
@@ -47,7 +47,7 @@ To apply a function along chosen axes, see [Axis](axis.qmd).
 `(f⍤k)⁻¹` is `f⁻¹⍤k`.
 
 ```bpl
-(⌽⍤1)⁻¹ [1 2 ⋄ 3 4]   ⍝ [2 1 ⋄ 4 3]
+(⌽⍤1)⁻¹[1 2 ⋄ 3 4]   ⍝ [2 1 ⋄ 4 3]
 ```
 
 ## Errors

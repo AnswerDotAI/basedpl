@@ -16,8 +16,8 @@ Keys: `Alt-Minus 0`. Ranks: `0` monadic, `0 0` dyadic
 
 ## Inverse
 
-`⊼⁻¹` is `√`, the square root. Nand has no inverse.
+`⊼⁻¹Y` is `√Y`.
 
 ```bpl
-⊼⁻¹ 9   ⍝ 3
+⊼⁻¹9   ⍝ 3
 ```

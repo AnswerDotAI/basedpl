@@ -17,7 +17,3 @@ Ranks: `0` monadic, `0 0` dyadic
 ```
 
 Complex residue uses complex floor.
-
-## Inverse
-
-Neither form has an inverse, because many arguments give each result.

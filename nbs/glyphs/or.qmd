@@ -24,8 +24,8 @@ For approximate real inputs, GCD reconstructs the ratio of their magnitudes usin
 
 ## Inverse
 
-`∨⁻¹ Y` rebuilds complex numbers from the real and imaginary pairs on the last axis of `Y`. Gcd has no inverse.
+`∨⁻¹Y` rebuilds complex numbers from the real and imaginary pairs on the last axis of `Y`.
 
 ```bpl
-∨⁻¹ 3 4   ⍝ 3j4
+∨⁻¹3 4   ⍝ 3j4
 ```

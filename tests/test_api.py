@@ -447,6 +447,8 @@ def test_function_inspection():
     assert bpl.inspect('mean 1 2 3') is None
     assert 'Mean of a vector' in '\n'.join(bpl(']help mean', 'explicit').output)
     assert source in '\n'.join(bpl(']help mean -source', 'explicit').output)
+    bpl('llms←1')
+    assert '# BasedPL' in '\n'.join(bpl(']help llms', 'explicit').output)
     for command in [']help', ']help mean -other', ']help mean -source extra']:
         with pytest.raises(BplError, match='SYNTAX'): bpl(command, 'explicit')
     with pytest.raises(BplError, match='VALUE'): bpl(']help absent', 'explicit')

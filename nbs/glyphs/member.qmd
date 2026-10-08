@@ -26,10 +26,6 @@ m←[10 20 ⋄ 30 40]
 [30 40 ⋄ 50 60]∊m  ⍝ $t $f
 ```
 
-## Inverse
-
-Neither form has an inverse.
-
 ## Errors
 
 - `RANK`: `Y` is a unit, or `X` has lower rank than a major cell of `Y`

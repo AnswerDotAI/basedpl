@@ -7,5 +7,5 @@ rustflags = ["-C", "target-cpu=x86-64-v3"]
 rustflags = ["-C", "target-feature=+simd128"]
 
 [alias]
-# Builds the browser module and its JavaScript glue into `web/pkg/`.
-wasm = "run -p xtask --"
+# Builds the npm package into `wasm/pkg/`. `xtask` builds optimised, because its wasm-bindgen pass runs on every call.
+wasm = "run --release -p xtask --"

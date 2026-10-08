@@ -241,13 +241,16 @@ pub(crate) struct Monad {
     pub axes: bool,
 }
 
-/// A primitive's dyadic form. `ranks` are the left and right cell ranks, and `identity` serves reductions.
+/// A primitive's dyadic form. `ranks` are the left and right cell ranks, and `identity` serves reductions. A form that `extends` handles
+/// arguments of any rank in its own code. A call on any other form, with an argument above its rank, applies the form to cells of its
+/// ranks through Rank.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Dyad {
     pub name: &'static str,
-    // A dyadic Rank call can't skip its cell loop in general, so Rank doesn't read these ranks. The glyph pages show them, and a test
-    // checks them against Rank.
+    // Rank's shortcut reads only monadic ranks, because a dyadic Rank call can't skip its cell loop in general. A call on a form that
+    // doesn't extend reads these ranks, and so do the glyph pages and a test that checks them against Rank.
     pub ranks: [Rank; 2],
+    pub extends: bool,
     pub pervasive: bool,
     pub axes: bool,
     pub identity: Option<Identity>,
@@ -265,8 +268,8 @@ pub(crate) struct Info {
 
 const fn monad(name: &'static str, rank: Rank) -> Monad { Monad { name, rank, extends: true, pervasive: false, axes: false } }
 const fn pervasive_monad(name: &'static str) -> Monad { Monad { name, rank: 0, extends: true, pervasive: true, axes: false } }
-const fn dyad(name: &'static str, ranks: [Rank; 2]) -> Dyad { Dyad { name, ranks, pervasive: false, axes: false, identity: None } }
-const fn pervasive_dyad(name: &'static str) -> Dyad { Dyad { name, ranks: [0, 0], pervasive: true, axes: true, identity: None } }
+const fn dyad(name: &'static str, ranks: [Rank; 2]) -> Dyad { Dyad { name, ranks, extends: true, pervasive: false, axes: false, identity: None } }
+const fn pervasive_dyad(name: &'static str) -> Dyad { Dyad { name, ranks: [0, 0], pervasive: true, extends: true, axes: true, identity: None } }
 impl Monad {
     /// A form whose own code handles only arguments up to its rank.
     const fn cellwise(self) -> Self { Self { extends: false, ..self } }
@@ -275,6 +278,14 @@ impl Monad {
     const fn axes(self) -> Self { Self { axes: true, ..self } }
 }
 impl Dyad {
+    /// A form whose own code handles only arguments up to its ranks.
+    const fn cellwise(self) -> Self { Self { extends: false, ..self } }
+    /// The left and right ranks of the cells that a call applies this form to: its ranks, when the form doesn't extend and an argument's
+    /// rank is higher.
+    pub(crate) fn cells(&self, left: &Value, right: &Value) -> Option<[Rank; 2]> {
+        let above = |a: &Value, rank: Rank| a.shape().len() > usize::from(rank);
+        (!self.extends && (above(left, self.ranks[0]) || above(right, self.ranks[1]))).then_some(self.ranks)
+    }
     const fn axes(self) -> Self { Self { axes: true, ..self } }
     const fn identity(self, identity: Identity) -> Self { Self { identity: Some(identity), ..self } }
 }
@@ -438,34 +449,34 @@ impl Primitive {
                 row("≥", "greater-or-equal", "", pervasive_monad("increment"), pervasive_dyad("greater-equal").identity(Boolean(true)))
             }
             Self::Iota => row("⍳", "iota", "", monad("iota", 1).cellwise().axes(), dyad("index-of", [W, W])),
-            Self::Keys => row(":", "colon", "", monad("unkey", W).axes(), dyad("keyed", [1, W]).axes()),
-            Self::Shape => row("⍴", "rho", "", monad("shape", W), dyad("reshape", [1, W])),
+            Self::Keys => row(":", "colon", "", monad("unkey", W).axes(), dyad("keyed", [1, W]).cellwise().axes()),
+            Self::Shape => row("⍴", "rho", "", monad("shape", W), dyad("reshape", [1, W]).cellwise()),
             Self::Tally => row("≢", "tally", "", monad("tally", W), dyad("not-match", [W, W])),
             Self::Depth => row("≡", "match", "", monad("depth", W), dyad("match", [W, W])),
             Self::Ravel => row(",", "comma", "", monad("ravel", W).axes(), dyad("catenate", [W, W]).axes().identity(Empty(false))),
             Self::CatenateFirst => row("⍪", "table", "", monad("table", W), dyad("catenate-first", [W, W]).axes().identity(Empty(true))),
-            Self::Enclose => row("⊂", "enclose", "", monad("enclose", W).axes(), dyad("partitioned-enclose", [1, W]).axes()),
-            Self::Mix => row("⊃", "mix", "", monad("mix", 0).axes(), dyad("pick", [1, W])),
-            Self::Nest => row("⊆", "nest", "", monad("nest", W).axes(), dyad("partition", [1, W]).axes()),
+            Self::Enclose => row("⊂", "enclose", "", monad("enclose", W).axes(), dyad("partitioned-enclose", [1, W]).cellwise().axes()),
+            Self::Mix => row("⊃", "mix", "", monad("mix", 0).axes(), dyad("pick", [1, W]).cellwise()),
+            Self::Nest => row("⊆", "nest", "", monad("nest", W).axes(), dyad("partition", [1, W]).cellwise().axes()),
             Self::Member => row("∊", "member", "epsilon", monad("enlist", W), dyad("member", [W, W])),
             Self::Union => row("∪", "union", "", monad("unique", W), dyad("union", [W, W]).identity(Empty(false))),
             Self::Intersection => row("∩", "intersection", "", monad("duplicates", W), dyad("intersection", [W, W])),
             Self::Grade(false) => row("⍋", "grade-up", "", monad("grade-up", W), dyad("grade-up-by", [W, W])),
             Self::Grade(true) => row("⍒", "grade-down", "", monad("grade-down", W), dyad("grade-down-by", [W, W])),
-            Self::Take => row("↑", "take", "disclose", monad("first", W), dyad("take", [1, W]).axes()),
-            Self::Drop => row("↓", "drop", "", monad("split", 1).axes(), dyad("drop", [1, W]).axes()),
+            Self::Take => row("↑", "take", "disclose", monad("first", W), dyad("take", [1, W]).cellwise().axes()),
+            Self::Drop => row("↓", "drop", "", monad("split", 1).axes(), dyad("drop", [1, W]).cellwise().axes()),
             Self::Reverse(false) => row("⌽", "reverse", "", monad("reverse", 1).axes(), dyad("rotate", [0, 1]).axes().identity(Identity::Number(0))),
             Self::Reverse(true) => {
                 row("⊖", "reverse-first", "", monad("reverse-first", W).axes(), dyad("rotate-first", [W, W]).axes().identity(Identity::Number(0)))
             }
-            Self::Transpose => row("⍉", "transpose", "", monad("transpose", W), dyad("reorder-axes", [1, W])),
+            Self::Transpose => row("⍉", "transpose", "", monad("transpose", W), dyad("reorder-axes", [1, W]).cellwise()),
             Self::Encode => row("⊤", "encode", "", monad("binary-encode", W), dyad("encode", [1, 0]).identity(Identity::Number(0))),
             Self::Decode => row("⊥", "decode", "", monad("binary-decode", 1), dyad("decode", [1, 1])),
             Self::Execute => row("⍎", "execute", "", monad("execute", 1).cellwise(), dyad("execute-in", [W, W])),
-            Self::Format => row("⍕", "format", "", monad("format", W), dyad("format-spec", [1, W])),
-            Self::Index => row("⌷", "squad", "", monad("materialise", W).axes(), dyad("index", [1, W]).axes()),
-            Self::MatrixDivide => row("⌹", "domino", "", monad("inverse", 2).cellwise(), dyad("matrix-divide", [W, 2])),
-            Self::Replicate => row("#", "hash", "replicate compress", monad("runs", W), dyad("replicate", [1, W]).axes().identity(Identity::Number(1))),
+            Self::Format => row("⍕", "format", "", monad("format", W), dyad("format-spec", [1, W]).cellwise()),
+            Self::Index => row("⌷", "squad", "", monad("materialise", W).axes(), dyad("index", [1, W]).cellwise().axes()),
+            Self::MatrixDivide => row("⌹", "domino", "", monad("inverse", 2).cellwise(), dyad("matrix-divide", [W, 2]).cellwise()),
+            Self::Replicate => row("#", "hash", "replicate compress", monad("runs", W), dyad("replicate", [1, W]).cellwise().axes().identity(Identity::Number(1))),
             Self::Windows => row("↕", "windows", "", monad("pairs", W), dyad("windows", [W, W])),
             Self::Prime => row("⍭", "prime", "", monad("prime", 0), dyad("prime-mode", [0, 0])),
             Self::Factor => row("⨸", "factor", "", monad("factors", 0), dyad("factor-spec", [0, 0])),
@@ -813,8 +824,10 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
             Math(Circle) if first => call(Math(Arc), Some(a), right),
             Reverse(_) if first => call(p, Some(&Arithmetic(Minus).call(None, a, span)?), right),
             Transpose if first => {
-                let perm = axes(a, right.shape().len(), span)?;
-                if perm.len() != right.shape().len() { return Err(span.error(ErrorKind::Length, "inverse transpose needs an axis permutation")); }
+                // The named axes become the leading axes again, and the unnamed axes follow in order, as in BQN.
+                let rank = right.shape().len();
+                let named = axes(a, rank, span)?;
+                let perm: Vec<_> = named.iter().copied().chain((0..rank).filter(|r| !named.contains(r))).collect();
                 reorder(right, &perm, span)
             }
             Decode if first => inverse_decode(a, right, span),

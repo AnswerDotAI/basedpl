@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from fastcore.script import call_parse
 from fastcore.xtras import working_directory
+from fastcore.nbio import write_nb
 from . import bpl
 
 
@@ -12,7 +13,6 @@ def run_notebook(path, save=False):
     path = Path(path)
     nb = json.loads(path.read_text())
     if nb['metadata']['kernelspec']['language'] != 'bpl': raise ValueError(f'{path}: expected a BPL notebook')
-    count = 0
     bpl(']clear')
     with working_directory(path.parent):
         for i, cell in enumerate(nb['cells'], 1):
@@ -22,9 +22,7 @@ def run_notebook(path, save=False):
             if save:
                 cell['outputs'] = [dict(output_type='stream', name='stdout', text=e['data']['text/plain']+'\n') if e['kind'] == 'explicit'
                     else dict(output_type='display_data', data=e['data'], metadata={}) for e in result.events]
-            count += 1
-    if save: path.write_text(json.dumps(nb, ensure_ascii=False, indent=1)+'\n')
-    return count
+    if save: write_nb(nb, path)
 
 
 @call_parse(pos=['path'])
@@ -36,7 +34,7 @@ def main(
     paths = sorted(path.rglob('*.ipynb')) if path.is_dir() else [path]
     for p in paths:
         if path.is_dir() and json.loads(p.read_text())['metadata'].get('kernelspec', {}).get('language') != 'bpl': continue
-        print(f'{p}: {run_notebook(p, save)} cells passed')
+        run_notebook(p, save)
 
 
 if __name__ == '__main__': main()

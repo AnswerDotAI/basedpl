@@ -65,7 +65,7 @@ See [Inverse pair](inverse-pair.qmd).
 `(f⍣n)⁻¹` is `f⍣(-n)`.
 
 ```bpl
-((2×)⍣3)⁻¹ 16   ⍝ 2
+((2×)⍣3)⁻¹16   ⍝ 2
 ```
 
 ## Errors

@@ -32,8 +32,8 @@ See [Mix / Take](take.qmd).
 
 ## Inverse
 
-`↓⁻¹` mixes the items back into one array, undoing split. Drop has no inverse.
+`↓⁻¹Y` mixes the items of `Y` into one array.
 
 ```bpl
-↓⁻¹ [1 2;3 4]   ⍝ [1 2 ⋄ 3 4]
+↓⁻¹[1 2;3 4]   ⍝ [1 2 ⋄ 3 4]
 ```

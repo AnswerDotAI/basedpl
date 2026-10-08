@@ -415,13 +415,14 @@ impl Function {
     }
     /// `self` called on each element of `right`, with `left` whole for each, as a system function does with a right argument that holds
     /// several of its items. An element that still holds several maps again. The result is shy when every call's result is.
-    /// An empty argument gives an empty result with `prototype`, without a call, because a system function can have effects.
+    /// An empty argument gives an empty result with `prototype`, without a call, because a system function can have effects. A call that
+    /// gives no result contributes `⍬`.
     fn each_item(&self, left: Option<&Value>, right: &Value, prototype: fn() -> Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         let (mut items, mut shy) = (Vec::with_capacity(right.len()), !right.is_empty());
         for element in right.elements() {
             let bound = self.call(left, &element, cx)?;
             shy &= bound.shy;
-            items.push(bound.array(cx.span)?);
+            items.push(if matches!(bound.value, Binding::NoResult) { crate::syntax::zilde(false) } else { bound.array(cx.span)? });
         }
         let value = right.layout().collect(items, prototype).error_at(cx.span, "invalid result")?;
         Ok(Bound { shy, ..Bound::from(value) })
@@ -471,12 +472,25 @@ impl Function {
     }
     fn apply(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         use FunctionNode::{Defined, Derived, Fold, Fork};
-        if let (FunctionNode::Primitive(p), None) = (self.node(), left) {
-            if let Some(cells) = p.info().monad.and_then(|m| m.cells(right)) { return rank(self, &integer(cells.into()), None, right, cx); }
+        // A form whose own code handles only arguments up to its ranks applies to cells of those ranks through Rank.
+        if let FunctionNode::Primitive(p) = self.node() {
+            let info = p.info();
+            let cells = match left {
+                None => info.monad.and_then(|m| m.cells(right)).map(|r| vec![r]),
+                Some(x) => info.dyad.and_then(|d| d.cells(x, right)).map(Vec::from),
+            };
+            if let Some(cells) = cells {
+                let ranks = Value::integers(vec![cells.len()], cells.into_iter().map(i64::from).collect()).error_at(cx.span, "invalid cell ranks")?;
+                return rank(self, &ranks, left, right, cx);
+            }
         }
         let array = match self.node() {
             // `dispatch` calls these itself.
             FunctionNode::LateBound(..) | FunctionNode::Composed(..) | Defined(_) | Derived(..) => unreachable!(),
+            // Like a system function that takes text, `⍎` maps over an array that holds several strings.
+            FunctionNode::Primitive(Primitive::Execute) if crate::system::Item::Text.maps(right) => {
+                return self.each_item(left, right, || Value::Number(0.0.into()), cx);
+            }
             FunctionNode::Primitive(Primitive::Execute) => return cx.session.execute(left, right, cx.span),
             FunctionNode::Inverse(f) => return inverse(f, left.map(|a| (a, true)), right, cx),
             FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => return each(f, left, right, cx),
