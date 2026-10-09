@@ -1,6 +1,6 @@
 # `⍎` — Execute
 
-Keys: `Alt-b t`. Ranks: `1` monadic, `∞ ∞` dyadic
+Keys: `Alt-o b`. Ranks: `1` monadic, `∞ ∞` dyadic
 
 `⍎Y` evaluates character code in the current lexical scope.
 

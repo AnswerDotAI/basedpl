@@ -10,7 +10,7 @@ Run `bpl`. An expression displays its result. An assignment keeps its names for 
 
 ## Typing glyphs
 
-Hold Alt and press the key that the [glyph reference](glyphs.qmd#typing-glyphs) lists. For example, Alt-m gives `×`, Alt-u gives `÷`, and Alt-h, Alt-j, Alt-k and Alt-l give `←`, `↓`, `↑` and `→`. Some glyphs take a second key. Alt-Minus then `a` gives `⍶`, and Alt-c then `t` gives `⍝`. Hold Alt and tap the same dead key twice to type its own character: Alt-o twice gives `○`, and Alt-Backslash twice gives `⍭`. The sequence ends after the second tap. Space or an unlisted key also types the dead key's character. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence. Superscripts start with Alt-6: Alt-6 then `2` gives `²`, and Alt-6 then `-1` gives `⁻¹`. Subscripts start with Alt-5: Alt-5 then `1` gives `₁`. Alt keys also insert glyphs inside strings and comments.
+Hold Alt and press the key that the [glyph reference](glyphs.qmd#typing-glyphs) lists. For example, Alt-m gives `×`, Alt-u gives `÷`, and Alt-h, Alt-j, Alt-k and Alt-l give `←`, `↓`, `↑` and `→`. Some glyphs take a second key. Alt-Minus then `a` gives `⍶`, and Alt-o then `c` gives `⍝`. Hold Alt and tap the same dead key twice to type its own character: Alt-o twice gives `○`, and Alt-Backslash twice gives `⍭`. The sequence ends after the second tap. Space or an unlisted key also types the dead key's character. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence. Superscripts start with Alt-6: Alt-6 then `2` gives `²`, and Alt-6 then `-1` gives `⁻¹`. Subscripts start with Alt-5: Alt-5 then `1` gives `₁`. Alt keys also insert glyphs inside strings and comments.
 
 While a dead key is pending, a compact hint shows its character and valid next keys. For example, Alt-= shows `≡:/`. Shifted backups are accepted but omitted from hints.
 
@@ -44,7 +44,7 @@ Each glyph has one name, the one the [glyph reference](glyphs.qmd) links. The RE
 
 Names are case-insensitive. Exact matches win, then prefixes, then abbreviations formed from prefixes of successive hyphen-separated parts. At each level a name beats a search word. A name that is a prefix of every other match wins: `` `om `` gives `⍵`, and `` `omu `` gives `⍹`. `grup` matches `grade-up`. `lar` matches the search word `left-arrow`, not `logarithm`, and lists `← assign h`. Type letters only: `` `lar- `` becomes `←-`.
 
-Matches appear as you type. Each listed name ends with the keys that type its glyph, such as `a` for Alt-a or `c t` for Alt-c then `t`. Input that matches several names stays as typed. Press Tab twice to list the matches. Backtick then Tab twice lists every name. Enter accepts a unique match and submits the line.
+Matches appear as you type. Each listed name ends with the keys that type its glyph, such as `a` for Alt-a or `o c` for Alt-o then `c`. Input that matches several names stays as typed. Press Tab twice to list the matches. Backtick then Tab twice lists every name. Enter accepts a unique match and submits the line.
 
 Expansion applies only to typed REPL input, outside strings and comments. Pasted BPL, source files, Python and process requests use actual glyphs.
 

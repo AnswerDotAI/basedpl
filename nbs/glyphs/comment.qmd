@@ -1,6 +1,6 @@
 # `⍝` — Comment
 
-Keys: `Alt-c t`
+Keys: `Alt-o c`
 
 `⍝` comments to end of line.
 

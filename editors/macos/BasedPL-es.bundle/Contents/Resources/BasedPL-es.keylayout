@@ -29,10 +29,10 @@
    <key code="5" action="k5-m0"/>
    <key code="6" action="k6-m0"/>
    <key code="7" action="k7-m0"/>
-   <key code="8" output="c"/>
+   <key code="8" action="k8-m0"/>
    <key code="9" output="v"/>
    <key code="10" output="º"/>
-   <key code="11" output="b"/>
+   <key code="11" action="k11-m0"/>
    <key code="12" output="q"/>
    <key code="13" action="k13-m0"/>
    <key code="14" action="k14-m0"/>
@@ -549,10 +549,10 @@
    <key code="5" output="∇"/>
    <key code="6" output="⊂"/>
    <key code="7" output="⊃"/>
-   <key code="8" action="k8-m4"/>
+   <key code="8" output="∩"/>
    <key code="9" output="∪"/>
    <key code="10" action="k10-m4"/>
-   <key code="11" action="k11-m4"/>
+   <key code="11" output="⊥"/>
    <key code="12" action="k12-m4"/>
    <key code="13" output="⍵"/>
    <key code="14" output="∊"/>
@@ -586,7 +586,7 @@
    <key code="42" output="}"/>
    <key code="43" output="↢"/>
    <key code="44" action="k44-m4"/>
-   <key code="45" action="k45-m4"/>
+   <key code="45" output="⊤"/>
    <key code="46" output="×"/>
    <key code="47" output="↣"/>
    <key code="48" output="&#x0009;"/>
@@ -1604,6 +1604,14 @@
    <when state="none" output="x"/>
    <when state="subscript" output="ₓ"/>
   </action>
+  <action id="k8-m0">
+   <when state="none" output="c"/>
+   <when state="circle" output="⍝"/>
+  </action>
+  <action id="k11-m0">
+   <when state="none" output="b"/>
+   <when state="circle" output="⍎"/>
+  </action>
   <action id="k13-m0">
    <when state="none" output="w"/>
    <when state="bar" output="⍹"/>
@@ -1631,9 +1639,6 @@
    <when state="superscript" output="ᵀ"/>
    <when state="quad" output="⌻"/>
    <when state="circle" output="⌾"/>
-   <when state="cap" output="⍝"/>
-   <when state="decode" output="⍎"/>
-   <when state="encode" output="⍕"/>
   </action>
   <action id="k18-m0">
    <when state="none" output="1"/>
@@ -1765,6 +1770,7 @@
   <action id="k45-m0">
    <when state="none" output="n"/>
    <when state="native-5" output="ñ"/>
+   <when state="circle" output="⍕"/>
   </action>
   <action id="k46-m0">
    <when state="none" output="m"/>
@@ -1788,9 +1794,6 @@
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="cap" output="∩"/>
-   <when state="decode" output="⊥"/>
-   <when state="encode" output="⊤"/>
   </action>
   <action id="k51-m0">
    <when state="none" output="&#x0008;"/>
@@ -1805,9 +1808,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -1827,9 +1827,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2029,9 +2026,6 @@
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="cap" output="∩"/>
-   <when state="decode" output="⊥"/>
-   <when state="encode" output="⊤"/>
   </action>
   <action id="k51-m1">
    <when state="none" output="&#x0008;"/>
@@ -2046,9 +2040,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2068,9 +2059,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2351,9 +2339,6 @@
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="cap" output="∩"/>
-   <when state="decode" output="⊥"/>
-   <when state="encode" output="⊤"/>
   </action>
   <action id="k51-m2">
    <when state="none" output="&#x0008;"/>
@@ -2368,9 +2353,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2390,9 +2372,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2592,9 +2571,6 @@
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="cap" output="∩"/>
-   <when state="decode" output="⊥"/>
-   <when state="encode" output="⊤"/>
   </action>
   <action id="k51-m3">
    <when state="none" output="&#x0008;"/>
@@ -2609,9 +2585,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2631,9 +2604,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2756,19 +2726,11 @@
    <when state="subscript-minus" output="₋₉"/>
    <when state="bar" output="⊽"/>
   </action>
-  <action id="k8-m4">
-   <when state="none" next="cap" output=""/>
-   <when state="cap" output="∩"/>
-  </action>
   <action id="k10-m4">
    <when state="none" output="\"/>
    <when state="bar" output="⍀"/>
    <when state="quad" output="⌷"/>
    <when state="circle" output="⍉"/>
-  </action>
-  <action id="k11-m4">
-   <when state="none" next="decode" output=""/>
-   <when state="decode" output="⊥"/>
   </action>
   <action id="k12-m4">
    <when state="none" next="quad" output=""/>
@@ -2802,10 +2764,6 @@
    <when state="none" next="bar" output=""/>
    <when state="bar" output="¯"/>
   </action>
-  <action id="k45-m4">
-   <when state="none" next="encode" output=""/>
-   <when state="encode" output="⊤"/>
-  </action>
   <action id="k49-m4">
    <when state="none" output=" "/>
    <when state="diaeresis" output="¨"/>
@@ -2819,9 +2777,6 @@
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="cap" output="∩"/>
-   <when state="decode" output="⊥"/>
-   <when state="encode" output="⊤"/>
   </action>
   <action id="k51-m4">
    <when state="none" output="&#x0008;"/>
@@ -2836,9 +2791,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2858,9 +2810,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3055,9 +3004,6 @@
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="cap" output="∩"/>
-   <when state="decode" output="⊥"/>
-   <when state="encode" output="⊤"/>
   </action>
   <action id="k51-m5">
    <when state="none" output="&#x0008;"/>
@@ -3072,9 +3018,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3094,9 +3037,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3288,9 +3228,6 @@
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="cap" output="∩"/>
-   <when state="decode" output="⊥"/>
-   <when state="encode" output="⊤"/>
   </action>
   <action id="k51-m6">
    <when state="none" output="&#x0008;"/>
@@ -3305,9 +3242,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3327,9 +3261,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3405,9 +3336,6 @@
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="cap" output="∩"/>
-   <when state="decode" output="⊥"/>
-   <when state="encode" output="⊤"/>
   </action>
   <action id="k51-m7">
    <when state="none" output="&#x0008;"/>
@@ -3422,9 +3350,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3444,9 +3369,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3471,9 +3393,6 @@
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="cap" output="∩"/>
-   <when state="decode" output="⊥"/>
-   <when state="encode" output="⊤"/>
   </action>
   <action id="k51-m8">
    <when state="none" output="&#x0008;"/>
@@ -3488,9 +3407,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3510,9 +3426,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3537,9 +3450,6 @@
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="cap" output="∩"/>
-   <when state="decode" output="⊥"/>
-   <when state="encode" output="⊤"/>
   </action>
   <action id="k51-m9">
    <when state="none" output="&#x0008;"/>
@@ -3554,9 +3464,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3576,9 +3483,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3607,9 +3511,6 @@
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="cap" output="∩"/>
-   <when state="decode" output="⊥"/>
-   <when state="encode" output="⊤"/>
   </action>
   <action id="k51-m10">
    <when state="none" output="&#x0008;"/>
@@ -3624,9 +3525,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3646,9 +3544,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3677,9 +3572,6 @@
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
    <when state="take" output="↑"/>
-   <when state="cap" output="∩"/>
-   <when state="decode" output="⊥"/>
-   <when state="encode" output="⊤"/>
   </action>
   <action id="k51-m11">
    <when state="none" output="&#x0008;"/>
@@ -3694,9 +3586,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3716,9 +3605,6 @@
    <when state="circle" output=""/>
    <when state="stile" output=""/>
    <when state="take" output=""/>
-   <when state="cap" output=""/>
-   <when state="decode" output=""/>
-   <when state="encode" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3738,9 +3624,6 @@
   <when state="circle" output="○"/>
   <when state="stile" output="⍭"/>
   <when state="take" output="↑"/>
-  <when state="cap" output="∩"/>
-  <when state="decode" output="⊥"/>
-  <when state="encode" output="⊤"/>
   <when state="native-1" output="`"/>
   <when state="native-2" output="´"/>
   <when state="native-3" output="^"/>

@@ -12,9 +12,9 @@ Option-h	←
 Option-g	∇
 Option-z	⊂
 Option-x	⊃
-Option-c	cap prefix
+Option-c	∩
 Option-v	∪
-Option-b	decode prefix
+Option-b	⊥
 Option-q	quad prefix
 Option-w	⍵
 Option-e	∊
@@ -48,7 +48,7 @@ Option-Shift-\	⌽
 Option-,	↢
 Option-Shift-,	≤
 Option-/	¿
-Option-n	encode prefix
+Option-n	⊤
 Option-m	×
 Option-.	↣
 Option-Shift-.	≥

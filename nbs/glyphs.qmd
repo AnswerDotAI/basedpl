@@ -6,7 +6,7 @@ Each glyph has a name, which links to its definitions and examples. A function g
 
 The [keyboard map](keyboard.qmd) shows the Option and Option-Shift bindings, with dead keys outlined in orange.
 
-Hold Alt, which is Option on a Mac, and press the key in the Key column. Keys refer to a US layout. `≤` is Alt-<, `≥` is Alt->, and `⌽` is Alt-|, each with Shift held. Where the column shows a second key, release Alt, then press the second key. For example, `Alt-c t` means Alt-c, then `t`. You can type a shifted second key without Shift. For example, `Alt-q ;` types `⍠`, the same as `Alt-q :`. An Alt key that takes a second key types its own glyph when Space or an unlisted key follows. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence.
+Hold Alt, which is Option on a Mac, and press the key in the Key column. Keys refer to a US layout. `≤` is Alt-<, `≥` is Alt->, and `⌽` is Alt-|, each with Shift held. Where the column shows a second key, release Alt, then press the second key. For example, `Alt-o c` means Alt-o, then `c`. You can type a shifted second key without Shift. For example, `Alt-q ;` types `⍠`, the same as `Alt-q :`. An Alt key that takes a second key types its own glyph when Space or an unlisted key follows. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence.
 
 Superscripts start with Alt-6. The second key is a digit, `-` then a digit, `t` for `ᵀ`, or `u` for `ᵘ`. Subscripts start with Alt-5. The second key is a digit, `-` then a digit, or `x`, `j`, `e` or `r` for the number suffixes `ₓ`, `ⱼ`, `ₑ` and `ᵣ`. A glyph with no key, such as `+`, is on an ordinary ASCII key. The arrows are on hjkl. Alt-[ types nothing, because terminals send it as the start of a control sequence. The identifier characters `∆` and `⍙` are Alt-7, and Alt-Minus then `7`.
 
@@ -74,8 +74,8 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⌹` [domino](glyphs/domino.qmd) | Alt-q u | inverse | matrix-divide | |
 | `⊣` [left](glyphs/left.qmd) | Alt-; | same-left | left | |
 | `⊢` [right](glyphs/right.qmd) | Alt-' | same | right | |
-| `⍎` [execute](glyphs/execute.qmd) | Alt-b t | execute | execute-in | `X` is a keyed vector, where Dyalog takes a namespace |
-| `⍕` [format](glyphs/format.qmd) | Alt-n t | format | format-spec | |
+| `⍎` [execute](glyphs/execute.qmd) | Alt-o b | execute | execute-in | `X` is a keyed vector, where Dyalog takes a namespace |
+| `⍕` [format](glyphs/format.qmd) | Alt-o n | format | format-spec | |
 
 ## Operators
 
@@ -121,7 +121,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `∇` [del](glyphs/del.qmd), `⍢` [del-diaeresis](glyphs/del-diaeresis.qmd) | Alt-g, Alt-1 g | Function / operator self-reference |
 | `?` [question](glyphs/question.qmd), `::` [error-guard](glyphs/error-guard.qmd) | | Predicate / error guard inside dfns |
 | `⋄` [diamond](glyphs/diamond.qmd) | Alt-Backtick | Separates statements, rows inside brackets, and rows of a vector inside parentheses |
-| `⍝` [comment](glyphs/comment.qmd) | Alt-c t | Comment |
+| `⍝` [comment](glyphs/comment.qmd) | Alt-o c | Comment |
 | `⎕←` [quad](glyphs/quad.qmd) | Alt-q | Explicit output. Read alone, the next line of input |
 | `•` [bullet](glyphs/bullet.qmd) | Alt-y | [System function](system-functions.qmd) prefix |
 | `⍬` [zilde](glyphs/zilde.qmd) | Alt-Shift-0 | Empty numeric vector |
