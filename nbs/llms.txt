@@ -19,6 +19,7 @@ Links are relative to https://answerdotai.github.io/basedpl/.
 - [Assignment](assignment.html.md)
 - [Modules and namespaces](modules.html.md)
 - [Python](python.html.md)
+- [BPL on the web](web.html.md)
 - Per-glyph: `glyphs/<canonical-name>.html.md`, using names from the glyphs reference.
 - Per system function: `system/<name>.html.md`, with the name's `•` left off.
 
@@ -37,7 +38,7 @@ Links are relative to https://answerdotai.github.io/basedpl/.
 
 BQN's based arrays: numbers, characters and functions are atoms, distinct from rank-0 arrays. Enclose always adds a layer, including around atoms; `⍬⍴Y` makes a rank-0 array. Rank 0 passes atoms as themselves and array items enclosed. APL-style prototypes/fill remain; function fill is the function itself.
 
-`[a b]` is always a vector, even `[a]`. Spaces separate unspaced item expressions; `;` separates expressions containing spaces. `⋄`/newlines stack rows along a new leading axis. In parentheses, rows instead form a nested vector: `(4⋄4 5)` is `[[4] [4 5]]`. Parentheses without rows only group. Newlines normally mean `⋄`, not continuation. Brackets are the usual way to build an array from names or expressions. Write `[n 2]⍴0`, `[x],y`, `[a⋄b]` and `f⍤1 m`, not APL's `(n,2)⍴0`, `(⊂x),y`, `⊃[a b]` and `⊃f¨↓m`.
+`[a b]` is always a vector, even `[a]`, and each item is one element, functions included. Spaces separate unspaced item expressions; `;` separates expressions containing spaces, and within each such item spaces group as they do outside brackets. `⋄`/newlines stack rows along a new leading axis. `"k":v` items make a record: `["a":1 "b":2]`. Items evaluate LTR, unlike function arguments and fork arms, which evaluate RTL. In parentheses, rows instead form a nested vector: `(4⋄4 5)` is `[[4] [4 5]]`. Parentheses without rows only group. Newlines normally mean `⋄`, not continuation.
 
 `"abc"` is a character vector; `'a'` is one character atom. `""` and `''` are the empty string. A double-quoted string can span lines, keeping its indentation. Double a double quote inside a string; `'''` is the single-quote character.
 
@@ -49,19 +50,19 @@ Undo and Under follow BQN's inferred-properties spec. Inverse operations are wri
 
 ## Grouping, selection and keys
 
-Spaces group: each unspaced run evaluates first, then runs combine RTL. `a+b × c+d` is `(a+b)×(c+d)`. Literal strands form before runs; names don't join them. A run ending in a function is an APL-style train: `+/÷≢ x` is mean, but `+/÷≢x` is not. A subject before a function binds it: `2×` doubles. An operator takes the whole function on its left and one item on its right; a trailing dyadic operator takes the next run as operand: `⌊⌾ 10× x`. Only spaces build strands: in `f⍣3'b'` and `f⍤1[2 3]`, the touching literal is the argument. Parenthesise a number argument after a number operand.
+Spaces group as if each unspaced run were parenthesised, after literal strands join: `a+b × c+d` is `(a+b)(×)(c+d)`, and `1 2+3` is `(1 2)+3`. Names don't join strands. A run ending in a function is an APL-style train: `+/÷≢ x` is mean, but `+/÷≢x` is not. A subject before a function binds it: `2×` doubles. An operator takes the whole function on its left and one item on its right; a trailing dyadic operator takes the next run as operand: `⌊⌾ 10× x`. Only spaces build strands: in `f⍣3'b'` and `f⍤1[2 3]`, the touching literal is the argument. Parenthesise a number argument after a number operand.
 
 Names use letters, `∆`, `⍙`; `_` escapes the next character (and following digits). `f2` calls `f`; `f_2` is a name. No BQN casing rules; names take their runtime value's role. Lone `_` discards an assignment.
 
 Positions/axes are fixed 0-origin; negatives count from the end. `I⌷A` takes one selector per leading axis; `[I]⌷v` selects a list of positions on one axis. `∞` selects a whole axis, `¯∞` reverses it. `A.[I J]` is `[I J]⌷A`. Subscripts/dot indexing/selective expressions can be assignment targets.
 
-Pervasion, Each and Rank align leading axes and expand length-1 axes. `K:Y` attaches axis keys; `["a":1 "b":2]` is a record; `T.a` is `"a"⊃T`. Records are BPL's namespaces: `T.(expr)` and `T⍎text` evaluate with the keys of `T` as names, beside the caller's names, and assignments in them stay local. Axes can have names; shape holds those names as keys. Arithmetic pairs named axes and aligns position keys, filling missing entries with prototypes. Unnamed axes align in leading order.
+Pervasion, Each and Rank align leading axes and expand length-1 axes. `K:Y` attaches axis keys; for a record `T`, `T.a` is `"a"⊃T`. Records are BPL's namespaces: `T.(expr)` and `T⍎text` evaluate with the keys of `T` as names, beside the caller's names, and assignments in them stay local. Axes can have names; shape holds those names as keys. Arithmetic pairs named axes and aligns position keys, filling missing entries with prototypes. Unnamed axes align in leading order.
 
 ## Dfns, assignment and modules
 
 Dfns return their last statement, not the first unassigned one. `{condition?body;fallback}` uses BQN-style predicates/bodies with one shared scope. Absent `⍺` drops out of expressions as BQN's `𝕨`; `⍺←default` supplies a default. `⍶ ⍹` mark monadic/dyadic operators; `∇` recurses the function, `⍢` the operator. `kinds::handler` guards later errors, naming kinds as text (`"DOMAIN"::`) or `∞::` for all; `$e` is the caught error.
 
-Plain assignment is local; modified/selective updates change the nearest binding. Arrays have value semantics. `T.k←v` replaces or adds key `k`. `[a b]←Y` destructures the items of `Y`, or its major cells at rank 2 or more: by name when its leading axis is fully keyed, otherwise by position. Local capturing functions cannot outlive their defining call. Bracket items evaluate LTR; function arguments/fork arms RTL.
+Plain assignment is local; modified/selective updates change the nearest binding. Arrays have value semantics. `T.k←v` replaces or adds key `k`. `[a b]←Y` destructures the items of `Y`, or its major cells at rank 2 or more: by name when its leading axis is fully keyed, otherwise by position. Local capturing functions cannot outlive their defining call.
 
 `•load "file.bpl"` runs a module and returns its public names as a record; `_`-prefixed names are private. `[f]←•load path` imports by name. Each load runs again. `./` and `../` paths are relative to the source file; other relative paths use the working directory.
 
@@ -80,7 +81,7 @@ Plain assignment is local; modified/selective updates change the nearest binding
 
 Use lowercase `j` in complex literals throughout tests and examples, including adapted reference cases. Reserve uppercase `J` for explicit input-alias tests. Keep archived upstream source unchanged. Write literal matrices in array notation, `[10 20 30⋄40 50 60]`, not as a reshape, `2 3⍴10 20 30 40 50 60`. Keep `⍴` where the example is about reshape. A `⋄` that separates rows has no spaces around it. A `⋄` that separates statements has a space on each side.
 
-Brackets are the usual way to write a list. A bare literal list, such as `1 2 3`, is a shorthand. Write a list of names in brackets, as in `[a b]`, even where `a b` would also work. End an operand with a space, not with parentheses or `⊢`. After a dyadic operator and a space, the whole next run is the operand. For example, `⌊⌾ 10× x` needs no parentheses. Where a literal operand would run into the argument, a vector argument goes in touching brackets: `f⍤1[2 3]`. A single number goes in parentheses: `f⍣¯2(5)`. Judge each line by how it reads. Report any case where none of these forms works.
+Brackets are the usual way to write a list, and to build an array from names or expressions. A bare literal list, such as `1 2 3`, is a shorthand. Write a list of names in brackets, as in `[a b]`, even where `a b` would also work. Write `[n 2]⍴0`, `[x],y`, `[a⋄b]` and `f⍤1 m`, not APL's `(n,2)⍴0`, `(⊂x),y`, `⊃[a b]` and `⊃f¨↓m`. End an operand with a space, not with parentheses or `⊢`. After a dyadic operator and a space, the whole next run is the operand. For example, `⌊⌾ 10× x` needs no parentheses. Where a literal operand would run into the argument, a vector argument goes in touching brackets: `f⍤1[2 3]`. A single number goes in parentheses: `f⍣¯2(5)`. Judge each line by how it reads. Report any case where none of these forms works.
 
 A name applied to a literal touches it, as a glyph does: `fib10` and `1+⌽f5`. Write it that way where it's shorter and needs no new parentheses. Keep the space where the literal would join the next part of the expression, or where a subject before the name is its left argument.
 

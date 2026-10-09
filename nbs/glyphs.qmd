@@ -144,7 +144,7 @@ Index origin: 0. Negative positions and axes count from the end. Comparison tole
 ## Language-wide differences from Dyalog APL
 
 - [Vectors](glyphs/brackets.qmd): a bracket list such as `[a b c]` is a vector. A strand of literals, such as `1 2 3`, needs no brackets. `[5]` is a one-item vector, the same as `,5`. [Parentheses](glyphs/parentheses.qmd) group: `(5)` is `5`. A scalar holding `5` is `⊂5`. Arrays side by side also form a vector: `a b` is `[a b]`. `(1 2⋄3)` is the vector of rows `[[1 2] [3]]`.
-- [Runs](syntax.qmd#runs): outside brackets, spaces separate runs. Each run is evaluated first: `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train: `+/÷≢` is the mean, and `2×` is `2↣×`. A run that ends in a dyadic operator takes the next run as its right operand: `f⍤ 1` is `f⍤1`.
+- [Runs](syntax.qmd#runs): outside brackets, spaces group an expression into runs. A run that ends in a function is a train: `+/÷≢` is the mean, and `2×` is `2↣×`. A run that ends in a dyadic operator takes the next run as its right operand: `f⍤ 1` is `f⍤1`.
 - [Indexing](glyphs/squad.qmd): brackets are used to write vectors, never to index. Index selects: `0⌷v` is the first item of `v`.
 - [Atoms](arrays.ipynb): numbers, characters and functions are atoms, distinct from scalars, as BQN. Enclosing always adds a layer: `⊂3 ≡ 3` is `$f`.
 - [Numbers](numbers.qmd): bare numbers are approximate. `ₓ` marks an exact integer, and `r` or `ᵣ` an exact rational, as in J: `1ₓ÷3ₓ` is `1ᵣ3`. Predicates, positions, tally and shape are exact.

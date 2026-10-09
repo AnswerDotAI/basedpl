@@ -93,6 +93,10 @@ d←•canvas "(ctx, data) => ctx.fillRect(0, 0, 9, 9)"
 c←["width":40] d 2 2⍴⍳4
 c.options.width (∨/"<canvas>"⍷"text/html"⊃•mime c)   ⍝ 40 $t
 
+⍝ canvas-text — A canvas's text form is one line, which counts frames when the options give fps
+d←•canvas "x => x"
+("text/plain"⊃•mime d 1 2) ("text/plain"⊃•mime ["fps":24] d 0 1 2)   ⍝ "canvas" "canvas: 3 frames"
+
 ⍝ mime-match — Match ignores renderers
 (•image 2 2⍴0.5)≡2 2⍴0.5
 ⍝ =>

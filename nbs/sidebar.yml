@@ -4,6 +4,7 @@ website:
       - getting-started.ipynb
       - playground.qmd
       - gallery.qmd
+      - web.ipynb
       - python.ipynb
       - notebooks.ipynb
       - repl.qmd

@@ -32,19 +32,23 @@ pub(crate) fn draw(source: &str, options: Option<&Value>, data: &Value, span: &C
 }
 
 /// The browser build sends the canvas as JSON, with its typed arrays as bytes, for the page to draw with `canvas.js`. The native build
-/// sends HTML that holds the same JSON and bytes, and runs `canvas.js` itself.
+/// sends HTML that holds the same JSON and bytes, and runs `canvas.js` itself. Both send the text `canvas: N frames` when the options
+/// give `fps` and the data is a vector of `N` frames, and `canvas` otherwise.
 fn render(_: Option<&Value>, canvas: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let (json, bytes) = js::serialize(&js::export(canvas).error_at(span, "canvas data must not hold functions")?);
     let json = json.to_string();
+    // The default text form would show the whole data.
+    let frames = keyed::field(canvas, "options").and_then(|o| keyed::field(&o, "fps")).and(keyed::field(canvas, "data")).filter(|d| d.shape().len() == 1);
+    let text = keyed::text(&frames.map_or_else(|| "canvas".into(), |d| format!("canvas: {} frames", d.len())));
     let bundle = if cfg!(web) {
         let bytes = data::byte_vector(bytes).error_at(span, "canvas data exceeds array limits")?;
-        keyed::vector(vec![JSON_TYPE.into(), BYTES_TYPE.into()], vec![keyed::text(&json), bytes])
+        keyed::vector(vec!["text/plain".into(), JSON_TYPE.into(), BYTES_TYPE.into()], vec![text, keyed::text(&json), bytes])
     } else {
         // A JSON string is a JavaScript string literal. Escaping `<` keeps `</script>` out of the script.
         let json = serde_json::to_string(&json).expect("a string serializes").replace('<', "\\u003c");
         let bytes = STANDARD.encode(bytes);
         let html = format!("<canvas></canvas><script>({SCRIPT})(document.currentScript.previousElementSibling, {json}, Uint8Array.from(atob('{bytes}'), c => c.charCodeAt(0)))</script>");
-        display::mime("text/html", keyed::text(&html))
+        keyed::vector(vec!["text/plain".into(), "text/html".into()], vec![text, keyed::text(&html)])
     };
     bundle.error_at(span, "invalid canvas MIME bundle")
 }
