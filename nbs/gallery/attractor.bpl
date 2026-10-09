@@ -8,7 +8,7 @@ map←{[a b c d]←⍺ ⋄ [x y]←⍵
   [(1○a×y)+c×2○a×x
    (1○b×x)+d×2○b×y]}
 start←{¯2+4×¿[2 ⍵]⍴0}
-spread←{xy←⍵ map⍣300 start 400 ⋄ ≢∪⍉⌊20×1+xy÷1+|2↓⍵}
+spread←{xy←⍵ map⍣300 start 400 ⋄ ≢∪⍉⌊20×≥xy÷≥|2↓⍵}
 ⎕←"params←",⍎⁻¹ params←{⌊0.5+100×¯2+4×¿4⍴0 ÷ 100}⍣{150≤spread ⍺}⍬
 xy←params map⍣100 start 3000
 [lo hi]←[⌊/xy⋄⌈/xy]

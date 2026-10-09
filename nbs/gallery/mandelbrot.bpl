@@ -2,7 +2,7 @@
 ⍝ Each frame zooms 3% further into Seahorse Valley and computes every pixel afresh at 250 × 250. After 400 frames, at about
 ⍝ 30,000 times, it zooms back out the same way, then starts again. Only the points that haven't escaped yet keep iterating.
 centre←¯0.7436438870371587ⱼ0.1318259042053120
-g←¯1+2×(⍳250)÷250
+g←≤2×(⍳250)÷250
 grid←,(0ⱼ1×⌽g)+⊗g
 step←{
   [z c i I V s]←⍵
@@ -11,7 +11,7 @@ step←{
   I,←e#i
   V,←s+1-2⍟⍟|e#z
   [z c i]←live↣#¨[z c i]
-  [z c i I V s+1]
+  [z c i I V ≥s]
 }
 frame←{
   zoom←1.03*400-|400-800|⍵

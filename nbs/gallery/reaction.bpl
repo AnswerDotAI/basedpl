@@ -4,7 +4,7 @@
 ⍝ to keep a pattern you like. From the squares, a pattern grows until it fills the 250 × 250 grid as a labyrinth. Each frame runs
 ⍝ 60 more steps of the simulation as you watch, and the animation stops after 400 frames.
 n←250
-⎕←"centres←",⍎⁻¹ centres←40+¿[1+¿4 2]⍴170
+⎕←"centres←",⍎⁻¹ centres←40+¿[≥¿4 2]⍴170
 seed←∨⌿{(8>|⍵₀-⍳n)∧⊗8>|⍵₁-⍳n}⍤1 centres
 lap←{1⌽⍵ + ¯1⌽⍵ + 1⊖⍵ + ¯1⊖⍵ - 4×⍵}
 [feed kill]←0.0545 0.062

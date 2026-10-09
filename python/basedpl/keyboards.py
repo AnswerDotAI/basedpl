@@ -300,7 +300,7 @@ This is the US-based map used in the browser and REPL, and by the native BasedPL
 
 ## macOS installation
 
-From a BasedPL repository checkout, run `scripts/install-keyboard.sh` for the US layout. Pass `uk`, `de`, `fr` or `es` for British, German QWERTZ, French AZERTY or Spanish: for example, `scripts/install-keyboard.sh de`.
+From a BasedPL repository checkout, run `scripts/install-macos.sh` to install SAX2B and the US keyboard layout. Pass `uk`, `de`, `fr` or `es` for British, German QWERTZ, French AZERTY or Spanish: for example, `scripts/install-macos.sh de`.
 
 In System Settings, open Keyboard → Text Input → Edit, add `BasedPL-us` (or your chosen code), then select it from the input menu. If the layout isn't listed, log out and back in. `editors/macos/BasedPL-{code}.txt` lists each native layout's shortcuts.
 '''

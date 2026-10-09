@@ -57,7 +57,7 @@ htx ← {  ⍝ Extract html segments.
   seg←{(0=2|⍳⍴⍵)#⍵}
   sep←{(fm⍷⍵ ∨ to⍷⍵)⊂⍵}  ⍝ html separated at tags.
   vec←{(~⍵∊•ucs 8 10 13){⍺#⁻¹⍺#⍵}⍵}
-  rlt←{(1++/∧\'>'≠⍵)↓⍵}  ⍝ remove leading tag.
+  rlt←{(≥+/∧\'>'≠⍵)↓⍵}  ⍝ remove leading tag.
   att←{⍵,to,'>'}  ⍝ append trailing tag.
   [fm to]←'<' "</",¨⊂⍺~"<>"  ⍝ opening and closing html tags.
   '<'=↑⍺?att¨xtags,⍵;
@@ -88,7 +88,7 @@ vtol ← {  ⍝ Nested vector to lines.
 wrap ← {  ⍝ Wrap word vector at ⍺ cols.
   ⍺←102  ⍝ default 102-wrap.
   ⍺≥⍴⍵?⍵;  ⍝ short enough vector: finished.
-  gaps←⍸' '=(⍺+1)↑⍵
+  gaps←⍸' '=(≥⍺)↑⍵
   take←¯1↑⍺,(⍺≥gaps)#gaps  ⍝ chars to take.
   drop←take+' '=take⊃⍵
   head←(take↑⍵),•ucs 10
@@ -100,7 +100,7 @@ wrap ← {  ⍝ Wrap word vector at ⍺ cols.
 wrap_2 ← {⍺←102  ⍝ ⍺-wrap (Bob Smith).
   v←' ',⍵,' '  ⍝ blanks required at start and end
   j←(v=' ')#⍳⍴v  ⍝ indices of blanks
-  p←(j+⍺+1)<⊗j
+  p←(j+≥⍺)<⊗j
   m←p<1⌽p  ⍝ mark last blank that fits on the line
   i←(⍴m)⍴1,(1↓⍴m)⍴0
   c←⌹i-m  ⍝ compute transitive closure of m
@@ -112,7 +112,7 @@ wrap_2 ← {⍺←102  ⍝ ⍺-wrap (Bob Smith).
 
 wrap_3 ← {⍺←102  ⍝ ⍺-wrap (John Daintree).
   ⍺≥⍴,⍵?,⊂⍵;  ⍝ out if short enough
-  sze←(⍵∊"-?., ")#1+⍳⍴⍵  ⍝ length of each choice
+  sze←(⍵∊"-?., ")#≥⍳⍴⍵  ⍝ length of each choice
   len←↑⌽(⍺≥sze)#sze
   len←↑(len∊sze)⌽[⍺ len]
   (⊂len↑⍵),⍺∇len↓⍵  ⍝ at valid wrap point
@@ -125,7 +125,7 @@ unwrap ← {(~⍵∊•ucs 10 13 133){⍺#⁻¹⍺#⍵}⍵}  ⍝ Replace <LF> wi
 ⍝ From http://dfns.dyalog.com/c_justify.htm
 
 justify ← {  ⍝ Justify line-vector to width ⍺.
-  segs←{¯1+⍵{(⍵,⍴⍺)-¯1,⍵}⍸⍵}
+  segs←{≤⍵{(⍵,⍴⍺)-¯1,⍵}⍸⍵}
   split←{(⍵|⍺ > ⍳⍵)+⌊⍺÷1⌈⍵}
   [lf sp]←(•ucs 10 32)=⊂⍵
   sizes←segs lf  ⍝ line sizes.
@@ -133,7 +133,7 @@ justify ← {  ⍝ Justify line-vector to width ⍺.
   blanks←segs~(lf∨sp)#sp  ⍝ original number of blanks per line.
   required←blanks+⍺-sizes  ⍝ required      ..      ..      ..
   breps←required split¨ blanks  ⍝ blank replication vectors.
-  last←1⌈¯1+⍴sizes  ⍝ last line split point.
+  last←1⌈≤⍴sizes  ⍝ last line split point.
   brep←∊(last↑breps),×last↓breps  ⍝ blank replication vector.
   (~sp + sp#⁻¹∊brep)#⍵  ⍝ ⍺-justified line-vector.
 }
@@ -165,7 +165,7 @@ wrapnote ← {                                 ⍝ Wrap text paragraphs in note 
   pics←{1∊"┌┬┐├┼┤└┴┘│─"∊⍵}                   ⍝ line contains box-drawing chars?
   and←{(⍶⍵)∧⍹⍵}                              ⍝ test combiner.
   test←~∘pics and jlft and jrgt              ⍝ test for flowtext.
-  first←{(1+⍵⍳0)⊃⍵}∘ ≢¨                     ⍝ length of first non-blank line.
+  first←{(≥⍵⍳0)⊃⍵}∘ ≢¨                     ⍝ length of first non-blank line.
   spill←{⍵∨¯1⌽⍵}                             ⍝ include next item to right.
   list←{squeeze dehyph' 'join ⍵}             ⍝ first enlist, then
   fold←{split to wrap ⍵}                     ⍝ re-wrap paragraph.
@@ -197,7 +197,7 @@ xtabs ← {  ⍝ Expand/compress HT chars.
   ⍺>0?⍺{  ⍝ +ive ⍺: expand tabs → blanks.
     [tabs nabs]←1 0=⊂⍵∊•ucs[9]
     sync←tabs≥chs  ⍝ sync at tab and end of line.
-    segs←¯1+{⍵-¯1,¯1↓⍵}⍸sync
+    segs←≤{⍵-¯1,¯1↓⍵}⍸sync
     pads←0⌈⍺-⍺|(sync#tabs)#segs  ⍝ padding lengths.
     (nabs+tabs#⁻¹pads)#nabs#⁻¹nabs#⍵  ⍝ padded char vector.
   }⍵;
@@ -247,7 +247,7 @@ dtb ← {  ⍝ Drop Trailing Blanks.
 deb ← {  ⍝ Drop Ending Blanks.
   b←⍵∊⍺  ⍝ mask
   1≥⍴⍴⍵?(∧\b ⊽ ⌽∧\⌽b)#⍵;  ⍝ vector
-  b←∧⌿b ⋄ (∧\b ⊽ ⌽∧\⌽b)#⍠¯1 ⍵  ⍝ matrix
+  b∧⌿← ⋄ (∧\b ⊽ ⌽∧\⌽b)#⍠¯1 ⍵  ⍝ matrix
 }deblank
 
 ⍝ From http://dfns.dyalog.com/c_dmb.htm
@@ -262,7 +262,7 @@ dmb ← {  ⍝ Drop Multiple Blanks.
 dxb ← {  ⍝ Drop eXtraneous Blanks.
   b←⍵∊⍺  ⍝ mask
   1≥⍴⍴⍵?1↑b ↓ b⊼1↓b,1 # ⍵;  ⍝ vector
-  b←∧⌿b ⋄ 0,1↑b ↓ b⊼1↓b,1 #⍠¯1 ⍵  ⍝ matrix
+  b∧⌿← ⋄ 0,1↑b ↓ b⊼1↓b,1 #⍠¯1 ⍵  ⍝ matrix
 }deblank
 
 ⍝ From http://dfns.dyalog.com/c_dab.htm

@@ -1275,6 +1275,20 @@ a←1 2
 r←0
 1+a+⍤r←3 4   ⍝ 4 5
 
+⍝ — Inside the parentheses of a modifier, spaces group as they do in a value
+m←[0 1 2⋄3 4 5]
+m(⌽⌾ 1⌷)←
+m   ⍝ [0 1 2⋄5 4 3]
+
+⍝ —
+a←1 2 3
+a(+⍤ 0)←1
+a   ⍝ 2 3 4
+
+⍝ — A parenthesised array after the target is still a strand, even with a space inside
+a←1 ⋄ b←2 ⋄ a(b+ 1)←3
+⍝ error: SYNTAX ERROR
+
 ⍝ —
 a←1
 b←2
@@ -1286,6 +1300,32 @@ a←1
 b←2
 [a b]+←3
 [a b]   ⍝ 4 5
+
+⍝ — With nothing after the arrow, modified assignment applies the function monadically
+a←1 2 3
+a⌽←
+a   ⍝ 3 2 1
+
+⍝ —
+a←1 2 3
+f←{⍵×10}
+a(f)←
+a   ⍝ 10 20 30
+
+⍝ — Monadic modified assignment updates the selected positions
+v←1 2 3 4
+v.[[0 2]]-←
+v   ⍝ ¯1 2 ¯3 4
+
+⍝ — Monadic modified assignment applies the function to each destructured name
+a←1 2
+b←3 4 5
+[a b]⌽←
+a,b   ⍝ 2 1 5 4 3
+
+⍝ — A plain name with nothing after the arrow is still an error
+a←
+⍝ error: SYNTAX ERROR
 
 ⍝ — Repeated names receive successive modified assignments
 a←1
@@ -2022,7 +2062,7 @@ $t $f $t
 ⍝⍝ Paired inverse under and trajectories
 
 ⍝ — Negative power uses an explicitly declared inverse
-f←{⍵+1}⇄{⍵-1} ⋄ f⍣¯2(5)   ⍝ 3
+f←{⍵+1}⇄{⍵-1} ⋄ f⍣¯2⊢5   ⍝ 3
 
 ⍝ — A dyadic declared inverse recovers the right argument with the left fixed
 f←{⍺+⍵}⇄{⍵-⍺} ⋄ 3 f⁻¹ 8   ⍝ 5
@@ -2064,13 +2104,13 @@ f←{⍵+1}⇄{⍵-1} ⋄ (f⁻¹)⁻¹5   ⍝ 6
 ⊢⍣[≡] 4   ⍝ 4 4
 
 ⍝ — An infinite count runs until the state stops changing, the same test as ⍣≡
-{0.5×⍵+2÷⍵}⍣∞(1)   ⍝ {0.5×⍵+2÷⍵}⍣≡(1)
+{0.5×⍵+2÷⍵}⍣∞⊢1   ⍝ {0.5×⍵+2÷⍵}⍣≡(1)
 
 ⍝ — An infinite count can sit in a list of counts
 {⌊⍵÷2}⍣[0 1 ∞] 100   ⍝ 100 50 0
 
 ⍝ — A negative infinite count runs the inverse until it converges
-({2×⍵}⇄{⌊⍵÷2})⍣¯∞(100)   ⍝ 0ₓ
+({2×⍵}⇄{⌊⍵÷2})⍣¯∞⊢100   ⍝ 0ₓ
 
 ⍝ — A zero count in a list keeps the initial value without calling the operand
 {1÷0}⍣[0] "ab"   ⍝ ["ab"]
@@ -2100,7 +2140,7 @@ stop←[{⍺≥limit}]
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Repeated power counts reuse iterates rather than calling the operand again
-f←{⎕←⍵+1}⇄{⎕←⍵-1} ⋄ f⍣3 ¯2 3 0(0)
+f←{⎕←⍵+1}⇄{⎕←⍵-1} ⋄ f⍣3 ¯2 3 0⊢0
 3 ¯2 3 0
 ⍝ ⎕: 1\n2\n3\n¯1\n¯2
 
@@ -2188,7 +2228,7 @@ x←¯1j0.1 1j¯1
 ⍳⁻¹⍳2 3   ⍝ [2 3]ₓ
 
 ⍝ —
-1+⍣¯3(10)   ⍝ 7
+1+⍣¯3⊢10   ⍝ 7
 
 ⍝ — Invert a Celsius-to-Fahrenheit section in reverse function order
 (32+1.8×)⁻¹32 212   ⍝ 0 100
@@ -4207,10 +4247,10 @@ f←{k←3 ⋄ g←{k+⍵} ⋄ op←{⍶ ⍹ ⍵} ⋄ (+ op g)⍵} ⋄ f4   ⍝ 
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Rank ∞ gives the operand the whole argument
-m←[1 2 3⋄4 5 6] ⋄ m +⌿∘×⍤1 ∞ [1 2 3]   ⍝ 14 32
+m←[1 2 3⋄4 5 6] ⋄ m (+⌿×)⍤1 ∞ [1 2 3]   ⍝ 14 32
 
 ⍝ — With ranks 1 ∞, the matrix-vector product also multiplies matrices
-m←[1 2 3⋄4 5 6] ⋄ m +⌿∘×⍤1 ∞ [1 10⋄2 20⋄3 30]   ⍝ [14 140⋄32 320]
+m←[1 2 3⋄4 5 6] ⋄ m (+⌿×)⍤1 ∞ [1 10⋄2 20⋄3 30]   ⍝ [14 140⋄32 320]
 
 ⍝ — Rank ∞ clamps to the argument's rank, and ¯∞ to rank 0
 m←[1 2⋄3 4] ⋄ [(⊂⍤∞ m) ≡ ⊂m;(⊂⍤¯∞ m) ≡ ⊂⍤0 m]   ⍝ $t $t
@@ -4243,7 +4283,7 @@ f←{⎕←⍵ ⋄ ⍵} ⋄ 2 +⍥f 3
 (+↢1)⍣{1 1⍴⍺=3}0   ⍝ 3
 
 ⍝ —
-2↣×⍣0(3)   ⍝ 3
+2↣×⍣0⊢3   ⍝ 3
 
 ⍝ — Tolerant Key groups by representatives, not transitive closure
 {≢⍵}⌸[1 1+8E¯15 1+16E¯15]   ⍝ [2 1]ₓ
@@ -4270,12 +4310,12 @@ r←⍬ {⎕←⍴⍵ ⋄ ⍳3}⌸ 0 2⍴0
 ⍝ ⎕: [0 2]ₓ
 
 ⍝ — Zero iterations never call the operand
-{⎕←7 ⋄ ⍵}⍣0(3)
+{⎕←7 ⋄ ⍵}⍣0⊢3
 3
 ⍝ ⎕:
 
 ⍝ — Power propagates an operand's no-result return
-{}⍣1(3)   ⍝ {}0
+{}⍣1⊢3   ⍝ {}0
 
 ⍝⍝ Products
 
@@ -4588,47 +4628,47 @@ add←{⍺+⍵}
 ⍝⍝ Range
 
 ⍝ — A range counts up from its start to its end
-2⍈5   ⍝ 2 3 4 5
+2↦5   ⍝ 2 3 4 5
 
 ⍝ — A lower end counts down
-5⍈2   ⍝ 5 4 3 2
+5↦2   ⍝ 5 4 3 2
 
 ⍝ — Equal ends give one item
-3⍈3   ⍝ [3]
+3↦3   ⍝ [3]
 
 ⍝ — Steps of 1 stop before passing an end that isn't whole
-0.5⍈3   ⍝ 0.5 1.5 2.5
+0.5↦3   ⍝ 0.5 1.5 2.5
 
 ⍝ — The number of steps is whole within tolerance
-0⍈0.3÷0.1   ⍝ 0 1 2 3
+0↦0.3÷0.1   ⍝ 0 1 2 3
 
 ⍝ — Each item is the start plus an exact count, so an exact start gives exact items
-•storage 1ₓ⍈5   ⍝ "integer"
+•storage 1ₓ↦5   ⍝ "integer"
 
 ⍝ — An approximate start gives floats whatever the end
-•storage 1⍈5ₓ   ⍝ "float"
+•storage 1↦5ₓ   ⍝ "float"
 
 ⍝ — Characters count through code points
-'e'⍈'a'   ⍝ "edcba"
+'e'↦'a'   ⍝ "edcba"
 
 ⍝ — Monadic range counts from 1 to its argument
-⍈4ₓ   ⍝ [1 2 3 4]ₓ
+↦4ₓ   ⍝ [1 2 3 4]ₓ
 
 ⍝ — A negative argument counts down from ¯1
-⍈¯3   ⍝ ¯1 ¯2 ¯3
+↦¯3   ⍝ ¯1 ¯2 ¯3
 
 ⍝ — Zero gives an empty range
-⍈0   ⍝ ⍬
+↦0   ⍝ ⍬
 
 ⍝ — Each item of a vector gives a range, and shorter ranges are padded
-⍈2 3   ⍝ [1 2 0⋄1 2 3]
+↦2 3   ⍝ [1 2 0⋄1 2 3]
 
 ⍝ — A range can't mix a character and a number
-'a'⍈5
+'a'↦5
 ⍝ error: DOMAIN ERROR
 
 ⍝ — A range needs a finite end
-1⍈∞
+1↦∞
 ⍝ error: DOMAIN ERROR
 
 ⍝⍝ Exact and tolerant comparisons

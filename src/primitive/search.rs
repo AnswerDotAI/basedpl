@@ -173,9 +173,9 @@ pub(super) fn iota(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     Value::from_parts(shape, data, prototype).error_at(span, "invalid coordinate array")
 }
 
-/// `a⍈b` counts from `a` towards `b` in steps of 1, as far as `b` without passing it, and floors the number of steps within
+/// `a↦b` counts from `a` towards `b` in steps of 1, as far as `b` without passing it, and floors the number of steps within
 /// comparison tolerance. Each item is `a+i` or `a-i` for an exact count `i`, so the result's type follows `a`. Two characters
-/// count through the code points between them. `⍈n` is the first `⌊|n|` counting numbers, negated when `n` is negative, with the
+/// count through the code points between them. `↦n` is the first `⌊|n|` counting numbers, negated when `n` is negative, with the
 /// type of `n`.
 pub(super) fn range(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let real = |v: Value| match v {

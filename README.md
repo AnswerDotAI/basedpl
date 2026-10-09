@@ -68,13 +68,13 @@ avg 1 2 3 4
 
     2.5
 
-To see how these ideas express an algorithm, start from “a prime has exactly two positive divisors”. Form all remainders of 1 to 50 (`|⊗⍨⍈50`), count the zeros down each column (`+⌿0=`), and find the positions (`⍸`) whose count is two. Positions count from 0. `1+` turns each position back into its number:
+To see how these ideas express an algorithm, start from “a prime has exactly two positive divisors”. Form all remainders of 1 to 50 (`|⊗⍨↦50`), count the zeros down each column (`+⌿0=`), and find the positions (`⍸`) whose count is two. Positions count from 0. `≥` increments each position to recover its number:
 
 ``` bpl
-1+⍸2=+⌿0=|⊗⍨⍈50
+≥⍸2=+⌿0=|⊗⍨↦50
 ```
 
-    2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
+    [2 3 5 7 11 13 17 19 23 29 31 37 41 43 47]ₓ
 
 [Getting started](https://answerdotai.github.io/basedpl/getting-started.html#example-algorithms) builds a primes function from the same divisor count, step by step, and displays the divisibility matrix along the way.
 

@@ -15,10 +15,10 @@ Keys: `Alt-,`
 "abc" ,↢⌽ "de"     ⍝ "abced"
 ```
 
-`f↢A` binds the right argument. The bound function takes one argument. A literal argument after a space joins a literal operand's strand: `-↢10 3` binds the vector `10 3` and has no argument. Put the argument in parentheses, as in `-↢10(3)`, or use a name.
+`f↢A` binds the right argument. The bound function takes one argument. A literal argument after a space joins a literal operand's strand: `-↢10 3` binds the vector `10 3` and has no argument. Use `-↢10⊢3`, `-↢10(3)`, or a named argument.
 
 ```bpl
--↢10(3)            ⍝ ¯7
+-↢10⊢3            ⍝ ¯7
 y←3 ⋄ -↢10 y       ⍝ ¯7
 ```
 

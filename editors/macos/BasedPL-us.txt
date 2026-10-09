@@ -38,7 +38,7 @@ Option-o	circle prefix
 Option-u	÷
 Option-i	⍳
 Option-p	π
-Option-l	⍈
+Option-l	↦
 Option-j	↓
 Option-'	⊢
 Option-k	take prefix

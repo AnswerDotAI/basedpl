@@ -11,7 +11,7 @@ Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): 
 | [number]{#term-number} | an approximate real or complex number, or an exact integer or rational, as [Numbers](numbers.qmd) describes |
 | [character]{#term-character} | one Unicode character, written in single quotes: `'a'` |
 | [function]{#term-function} | a primitive, dfn, train or derived function, which applies to arguments |
-| [pervasive function]{#term-pervasive-function} | a function that applies to each atom of its arguments, through any nesting: `1+[2 ⊂3]` is `[3 ⊂4]` |
+| [pervasive function]{#term-pervasive-function} | a function that applies to each atom of its arguments, through any nesting: `≥[2 ⊂3]` is `[3 ⊂4]` |
 | [array]{#term-array} | a rectangular collection of values along zero or more axes |
 | [rank]{#term-rank} | the number of axes: a vector has rank 1, and atoms and scalars have rank 0 |
 | [scalar]{#term-scalar} | an array of rank 0, holding one value: `⊂5` is a scalar holding the number 5, and `5` is a number |

@@ -42,7 +42,7 @@ Use [full windows](windows.qmd) for moving reductions.
 
 `f/⍠K` selects the axis. [`⌿`](slash-bar.qmd) defaults to the first.
 
-Several axes form one reduction cell. `f/⍠A Y` ravels each selected cell before reducing, equivalent to `(f/∘,)¨⊂⍠A Y`. This is an exception to the general rule in [Axis](axis.qmd). A single axis retains ordinary reduction behavior.
+Several axes form one reduction cell. `f/⍠A Y` ravels each selected cell before reducing, equivalent to `(f/,)¨⊂⍠A Y`. This is an exception to the general rule in [Axis](axis.qmd). A single axis retains ordinary reduction behavior.
 
 ```bpl
 n←2 2 3⍴⍳6

@@ -48,16 +48,16 @@ ArcTan ← {
   next←{  ⍝ next term in sequence.
     (+/÷≢ ⍵),GM(+/÷≢ ⍵),1↓⍵
   }
-  start←(1+⍵²)*-÷2
+  start←(≥⍵²)*-÷2
   finish←↑ next⍣∞ start,1
   ⍵×start÷finish
 }
 
 ⍝ From http://dfns.dyalog.com/s_pow.htm
 
-rl   ← {(¯1+2*31)|⍵×7*5}  ⍝ next random link  LCG(7*5, ¯1+2*31)
+rl   ← {(≤2*31)|⍵×7*5}  ⍝ next random link  LCG(7*5, ¯1+2*31)
 
-roll ← {⌊⍵×⍺÷¯1+2*31}  ⍝ roll ⍵ with random link ⍺.
+roll ← {⌊⍵×⍺÷≤2*31}  ⍝ roll ⍵ with random link ⍺.
 
 ⍝ From http://dfns.dyalog.com/c_traj.htm
 

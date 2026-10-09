@@ -11,10 +11,10 @@ _graph←•load "./graph.bpl"
 
 adic ← {  ⍝ Bijective base-⍺ numeration.
   b←≢a←,⍺  ⍝ base and alphabet
-  1=⍴⍴⍵?b⊥1+a⍳⍵;
+  1=⍴⍴⍵?b⊥≥a⍳⍵;
   1=b?⍵#⍺;  ⍝ unary: special case
-  n←⌊b⍟1+⍵×b-1  ⍝ number of digits
-  z←(¯1+b*n)÷b-1  ⍝ smallest integer with length n
+  n←⌊b⍟≥⍵×≤b  ⍝ number of digits
+  z←(≤b*n)÷≤b  ⍝ smallest integer with length n
   [(n#b ⊤ ⍵-z)]⌷a
 }
 
@@ -23,7 +23,7 @@ adic ← {  ⍝ Bijective base-⍺ numeration.
 apportion ← {  ⍝ Huntington-Hill apportionment.
   ⍺←435  ⍝ default number of seats
   ⍵{  ⍝ population per state
-    d←√⍵×⍵+1  ⍝ divisor
+    d←√⍵×≥⍵  ⍝ divisor
     cs←⍺÷d  ⍝ priority value
     ⍵+cs=⌈/cs  ⍝ next seat allocation
   }⍣ ⍺-≢⍵ ,1  ⍝ iterated per remaining seat.
@@ -61,22 +61,22 @@ efract ← {  ⍝ Egyptian fractions: Fibonacci-Sylvester algorithm
     [p q]←⍵÷∨/⍵
     p=1?⍺,q;
     r←p|q ⋄ s←(q-r)÷p
-    (⍺,s+1)∇[p-r q×s+1]
+    (⍺,≥s)∇[p-r q×≥s]
   }[⍺ ⍵]
 }
 
 ⍝ From http://dfns.dyalog.com/c_factorial.htm
 
-factorial←{⍺←1 ⋄ ⍵=0?⍺;(⍺×⍵)∇⍵-1}  ⍝ Tail recursive factorial.
+factorial←{⍺←1 ⋄ ⍵=0?⍺;(⍺×⍵)∇≤⍵}  ⍝ Tail recursive factorial.
 
 ⍝ From http://dfns.dyalog.com/c_fibonacci.htm
 
 fibonacci ← { ⍺←0 1  ⍝ Tail-recursive Fibonacci.
-  ⍵=0?↑⍺;(1↓⍺,+/⍺)∇ ⍵-1
+  ⍵=0?↑⍺;(1↓⍺,+/⍺)∇ ≤⍵
 }
 
 sulFib ← {  ⍝ Sullivan Fibonacci
-  z←0.5×1+s←√5
+  z←0.5×≥s←√5
   (z*⍵ - 2○π⍵ × z*-⍵)÷s
 }
 
@@ -85,7 +85,7 @@ sulFib ← {  ⍝ Sullivan Fibonacci
 factors ← { ⍵{  ⍝ Prime factors of ⍵.
     ⍵,(⍺÷×/⍵)~[1]  ⍝ append factor > sqrt(⍵).
   }∊⍵{  ⍝ concatenated,
-    (0 = ⍵*1+⍳⌊⍵⍟⍺ | ⍺)#⍵  ⍝ powers of each prime factor.
+    (0 = ⍵*≥⍳⌊⍵⍟⍺ | ⍺)#⍵  ⍝ powers of each prime factor.
   }¨⍬{  ⍝ remove multiples:
     nxt←↑⍵
     msk←0≠nxt|⍵  ⍝ ... mask of non-multiples.
@@ -114,7 +114,7 @@ k_6174 ← {  ⍝ Kaprekar's operation.
 hex ← {  ⍝ Hexadecimal from decimal.
   1≠≡,⍵?⍺∇¨⍵;  ⍝ simple-array-wise:
   0∊,⍵-1+⍵?"Too big";
-  n←↑⍺,2*⌈2⍟2⌈16⍟1+⌈/|⍵  ⍝ default width.
+  n←↑⍺,2*⌈2⍟2⌈16⍟≥⌈/|⍵  ⍝ default width.
   ↓[(n#16 ⊤ ⍵)]⌷"0123456789abcdef"
 }
 
@@ -128,14 +128,14 @@ dec ← {  ⍝ Decimal from hexadecimal
   ws←∊↢(•ucs 9 10 13 32 133 160)
   ws↑⍵?⍺ ∇ 1↓⍵;
   ws↑⌽⍵?⍺ ∇ ¯1↓⍵;
-  ∨/ws ⍵?⍺∇¨(1+ws ⍵)⊆⍵;  ⍝ white-space-separated:
+  ∨/ws ⍵?⍺∇¨(≥ws ⍵)⊆⍵;  ⍝ white-space-separated:
   v←16|"0123456789abcdef0123456789ABCDEF"⍳⍵
   16⊥v - ⍺ × 8≤↑v × 16*≢v
 }
 
 ⍝ From http://dfns.dyalog.com/c_int.htm
 
-int ← {m←2*⍺-1 ⋄ (2×m | m+⍵)-m}  ⍝ Signed from unsigned integer.
+int ← {m←2*≤⍺ ⋄ (2×m | m+⍵)-m}  ⍝ Signed from unsigned integer.
 
 ⍝ From http://dfns.dyalog.com/c_uns.htm
 
@@ -154,7 +154,7 @@ nicediv ← {  ⍝ ⍵ similar integers with sum ⍺.
 
 stack ← {⍉⊃(⍺ nicediv ⍵)#¨'⎕'}
 
-osc ← {1=⍵?1;2|⍵?∇ 1+3×⍵;∇ ⍵÷2}  ⍝ Oscillate - probably returns 1.
+osc ← {1=⍵?1;2|⍵?∇ ≥3×⍵;∇ ⍵÷2}  ⍝ Oscillate - probably returns 1.
 
 ⍝ From http://dfns.dyalog.com/c_rational.htm
 
@@ -196,14 +196,14 @@ sieve ← {  ⍝ Sieve of Eratosthenes.
 
 to ← {  ⍝ Sequence ⍺ .. ⍵
   [from step]←1 ¯1×-\2↑⍺,⍺+×⍵-⍺  ⍝ step default is +/- 1.
-  from+step×⍳0⌈1+⌊(⍵-from)÷step+step=0
+  from+step×⍳0⌈≥⌊(⍵-from)÷step+step=0
 }
 
 ⍝ From http://dfns.dyalog.com/s_to.htm
 
 xTo ← {  ⍝ Sequence ⍺ .. ⍵
   [from step]←⊂¨1 ¯1×-\2↑⍺,⍺+×⍵-⍺  ⍝ step default is +/- 1.
-  size←0⌈1+⌊⊃(⍵-from)÷step+step=0  ⍝ shape of result
+  size←0⌈≥⌊⊃(⍵-from)÷step+step=0  ⍝ shape of result
   from+step×⍳size
 }
 
@@ -292,14 +292,14 @@ kball ← { ⍺←1  ⍝ Relationship between point and k-ball.
 ⍝ ⍝ From http://dfns.dyalog.com/c_ksphere.htm
 
 ksphere ← {  ⍝ Surface area of k-sphere.
-  n←⍺+1  ⍝ dimension of enclosed k-ball.
+  n←≥⍺  ⍝ dimension of enclosed k-ball.
   pi←(π1)*n÷2
   n×(⍵*⍺)×pi÷!n÷2  ⍝ k-sphere surface area.
 }
 
 ⍝ From http://dfns.dyalog.com/s_ksphere.htm
 
-kvol ← {⍵×(⍺-1 ksphere ⍵)÷⍺}
+kvol ← {⍵×(≤⍺ ksphere ⍵)÷⍺}
 
 ⍝ From http://dfns.dyalog.com/s_mean.htm
 
@@ -309,14 +309,14 @@ stdev ← {√(+/÷≢ ⍵²)-(+/÷≢ ⍵)²}  ⍝ Standard deviation.
 
 NormRand ← {                                 ⍝ Random numbers with a normal distribution
   depth←10*9                                 ⍝ randomness depth
-  [x y]←⊂⍤¯1 (1+¿depth⍴⍨2,⍵)÷depth          ⍝ two random variables within ]0;1]
+  [x y]←⊂⍤¯1 (≥¿depth⍴⍨2,⍵)÷depth          ⍝ two random variables within ]0;1]
   (¯2×⍟x * 0.5)×1○π2×y                       ⍝ Box-Muller distribution
 }
 
 ⍝ From http://dfns.dyalog.com/c_phinary.htm
 phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
   ⍺←1
-  Ø←(1+√5)÷2
+  Ø←(≥√5)÷2
   ""≡0#∊⍵?{
     1<≡⍵?∇¨⍵;
     '¯'=↑⍵?-∇ 1↓⍵;
@@ -330,7 +330,7 @@ phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
     ⍺=0?⍵;
     ⍵≡⍬?"0";
     fmt←{[⍵]⌷"01"}
-    lft←(⌽⍳0⌈1+⌈/⍵)∊⍵
+    lft←(⌽⍳0⌈≥⌈/⍵)∊⍵
     rgt←(-1+⍳0⌈|⌊/⍵)∊⍵
     rgt∧.=0?fmt lft;
     lft∧.=0?"0.",fmt rgt;
@@ -406,11 +406,11 @@ poly ← {2 1 ○⊗ (π2÷⍵)×⍳⍵}
 xtimes ← { m←0  ⍝ Fast multi-digit product using FFT.
   xroots    ← {×\1,1↓(⍵÷2)⍴¯1*2÷⍵}
   cube      ← {⍵⍴⍨2⍴⍨⌊2⍟⍴⍵}
-  extend    ← {(2*⌈2⍟¯1+⍺+⍥⍴⍵)↑¨[⍺ ⍵]}
+  extend    ← {(2*⌈2⍟≤⍺+⍥⍴⍵)↑¨[⍺ ⍵]}
   floop     ← {(⊣/⍺)∇⍣(×m) (+⌿⍵){⊃[⍺ ⍵]}⍤(≢⍴⍵ - m+1) ⍺×⍠(⍳m←≢⍴⍺)-⌿⍵}
   FFT       ← {,(cube xroots⍴⍵)floop cube ⍵}
   iFFT      ← {(⍴⍵)÷⍨, (cube+xroots⍴⍵)floop cube ⍵}
-  rconvolve ← {(¯1+⍺+⍥⍴⍵)↑iFFT×/FFT¨(⍺ extend ⍵)}
+  rconvolve ← {(≤⍺+⍥⍴⍵)↑iFFT×/FFT¨(⍺ extend ⍵)}
   carry     ← {1↓+⌿1 0⌽0,⍉0 10⊤⍵}
   (+/∧\0=t)↓t←carry⍣≡0,⌊0.5+⊣/∨(⍺ rconvolve ⍵)
 }

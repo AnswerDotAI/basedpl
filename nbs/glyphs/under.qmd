@@ -19,7 +19,7 @@ When `g` only selects or rearranges, `f⌾g Y` puts the result of `f(g Y)` back 
 Each position that `g` selects more than once must get matching values. A value at a fill, such as overtaking `↑` adds, is dropped.
 
 ```bpl
-{1+⍵}⌾ 2↕ 1 2 3           ⍝ 2 3 4
+≥⌾ 2↕ 1 2 3           ⍝ 2 3 4
 -⌾ 5↑ 1 2 3               ⍝ ¯1 ¯2 ¯3
 ```
 
@@ -27,7 +27,7 @@ For any other `g`, `f⌾g Y` is `g⁻¹(f(g Y))`. `X f⌾g Y` is `g⁻¹((g X)f(
 
 ```bpl
 3+⌾ 2× 4           ⍝ 7
-⌽⌾ 1+ 1 2 3        ⍝ 3 2 1
+⌽⌾ ≥ 1 2 3        ⍝ 3 2 1
 ⌊⌾ 10× 1.25        ⍝ 1.2
 ```
 

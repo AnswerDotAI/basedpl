@@ -37,7 +37,7 @@ acc ← {⍶{(⊂⍺⍶↑⍬⍴⍵),⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵}  ⍝ 
 ⍝ Helpers shared by disp, display, displays, displayr and dsp.
 format ← {t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Simple array as a character matrix.
 open ← {(1⌈⍴⍵)⍴⍵}  ⍝ Exposure of null axes.
-axes ← {(-2⌈⍴⍴⍵)↑1+×⍴⍵}  ⍝ Array axis types.
+axes ← {(-2⌈⍴⍴⍵)↑≥×⍴⍵}  ⍝ Array axis types.
 char ← {⍬≡⍴⍵?'─';(↑⍵∊'¯',$d)⊃"#~"}∘⍕  ⍝ Type character of an atom.
 type ← {{(1=⍴⍵)⊃['+' ⍵]}∪,char¨⍵}  ⍝ Type characters of an array.
 deco ← {⍺←type open ⍵ ⋄ ⍺,axes ⍵}  ⍝ Type and axes vector.
@@ -65,7 +65,7 @@ disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
   }
   gaps←{  ⍝ Gap-separated sub-planes.
     ⍺≤2?⍵;  ⍝ lowish rank: done.
-    subs←(⍺-1)∇¨⍵  ⍝ sub-hyperplanes.
+    subs←(≤⍺)∇¨⍵  ⍝ sub-hyperplanes.
     width←↑⌽⍴↑subs
     fill←([⍺ width]-3 0)⍴' '  ⍝ inter-plane gap.
     ⊃{⍺⍪fill⍪⍵}/ 1 open subs
@@ -98,7 +98,7 @@ disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
     lft,top⍪⍪⌿,/boxes
   }
   right←{  ⍝ Border right each subarray.
-    types←2⊥¨(⍳⍴⍵)=⊂¯1+⍴⍵
+    types←2⊥¨(⍳⍴⍵)=⊂≤⍴⍵
     chars←[types]⌷"┼┤┴┘"
     rgt←{⍵,(-≢⍵)↑[≢⍵ 1 1]#'│',⍺}  ⍝ form right border.
     (matr 1 open ⍺),¨chars rgt¨ ⍵  ⍝ cells bordered right.
@@ -122,7 +122,7 @@ disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
     dec≤0=⍴⍴⍵?⍺#¨"│─";  ⍝ no decoration or unit.
     cols←(×¯1↑⍴⍵)⊃"⊖→"
     rsig←(××/¯1↓⍴⍵)⊃"⌽↓"
-    rows←(¯1+3⌊⍴⍴⍵)⊃['│' rsig '⍒']
+    rows←(≤3⌊⍴⍴⍵)⊃['│' rsig '⍒']
     [rows cols]  ⍝ shape decorators.
   }
   matr←{⊃,↓⍵}
@@ -139,7 +139,7 @@ disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
 
 display ← {  ⍝ Boxed display of array.
   box←{  ⍝ box with type and axes
-    [vrt hrz]←(¯1+⍴⍵)⍴¨"│─"  ⍝ vert. and horiz. lines
+    [vrt hrz]←(≤⍴⍵)⍴¨"│─"  ⍝ vert. and horiz. lines
     top←"─⊖→".[¯1↑⍺],hrz
     bot←(↑⍺),hrz
     rgt←"┐│",vrt,'┘'  ⍝ right side with corners
@@ -159,7 +159,7 @@ display ← {  ⍝ Boxed display of array.
 displays ← {  ⍝ Boxed display of array.
   box←{  ⍝ Box with type and axes.
     [shp w]←open\⍵
-    [vrt hrz]←(¯1+⍴w)⍴¨"│─"  ⍝ Vert. and horiz. lines.
+    [vrt hrz]←(≤⍴w)⍴¨"│─"  ⍝ Vert. and horiz. lines.
     top←"─⊖→".[¯1↑⍺],hrz
     ok←(⍴shp)<⍴hrz
     top←⍴top ↑ 2↑top , ok#shp , (2+ok×⍴shp)↓top
@@ -181,12 +181,12 @@ displays ← {  ⍝ Boxed display of array.
 
 displayr ← {  ⍝ Boxed display of array
   box←{  ⍝ box with type and axes
-    [vrt hrz]←(¯1+⍴⍵)⍴¨"│─"  ⍝ vert. and horiz. lines
-    top←(1+⍴hrz)↑(↑ ¯1↑⍺ ⌷ "─⊖",⊂⍕¯1↑⍺₁),hrz
+    [vrt hrz]←(≤⍴⍵)⍴¨"│─"  ⍝ vert. and horiz. lines
+    top←(≥⍴hrz)↑(↑ ¯1↑⍺ ⌷ "─⊖",⊂⍕¯1↑⍺₁),hrz
     bot←⍴top ↑ ↑2↓⍺ , hrz
     rgt←"┐│",vrt,'┘'  ⍝ right side with corners
-    lax←(↑¨ ¯1↓3↓⍺ ⌷¨ -1⌈¯1+⍴⍺₁ ↑ ⊂"│⌽" ,¨ ⊂∘⍕¨¯1↓0,⍺₁),¨⊂vrt
-    lax←⊂1+⍴vrt ↑¨ lax~¨⊂" " ,¨ '│'  ⍝ pad and trim
+    lax←(↑¨ ¯1↓3↓⍺ ⌷¨ -1⌈≤⍴⍺₁ ↑ ⊂"│⌽" ,¨ (⊂⍕)¨¯1↓0,⍺₁),¨⊂vrt
+    lax←⊂≥⍴vrt ↑¨ lax~¨⊂" " ,¨ '│'  ⍝ pad and trim
     lft←⍉'┌',(⊃lax),'└'
     lft,(top⍪⍵⍪bot),rgt  ⍝ fully boxed array
   }
@@ -200,8 +200,8 @@ displayr ← {  ⍝ Boxed display of array
 ⍝ From http://dfns.dyalog.com/c_dist.htm
 
 dist ← {  ⍝ Levenshtein distance.
-  a←(n+1)⍴(⍴⍺)+n←⍴⍵  ⍝ first row of matrix
-  f←⍵{⌊\⍵⌊(↑⍵),(¯1↓⍵)-1ₓ+⍺=⍶}
+  a←(≥n)⍴(⍴⍺)+n←⍴⍵  ⍝ first row of matrix
+  f←⍵{⌊\⍵⌊(↑⍵),(¯1↓⍵)-≥⍺=⍶}
   z←a f/ ⌽⍺
   ↑⌽z
 }
@@ -225,7 +225,7 @@ dsp ← {  ⍝ Reduced version of disp.
   rows←(mrs#¨'│')join¨↓dims↑¨subs  ⍝ complete rows with '│'-separated items
   hzs←'┼'join mcs#¨'─'  ⍝ inter-row horizontal "─┼─" separators
   cells←{⍺⍪hzs⍪⍵}/rows  ⍝ joined rows: array of 2D planes
-  gaps←(⌽1+⍳¯2+⍴⍴⍵)#¨' '  ⍝ increasing cell gaps for higher ranks
+  gaps←(⌽≥⍳¯2+⍴⍴⍵)#¨' '  ⍝ increasing cell gaps for higher ranks
   cjoin←{⍪/(⊂⍺),⍶,⊂⍵}
   top{(⍺ cjoin)⌿⍵}/gaps,⊂cells
 }
@@ -239,7 +239,7 @@ Rgt ← {⊂2↑⍵ , 2↓¯1↓⍵ , ↑⌽⍵}  ⍝ tape-head moves right 1 it
 
 enlist ← {  ⍝ List ⍺-leaves of nested array.
   ⍺←0  ⍝ default: list 0-leaves.
-  ⍺≥¯1+≡⍵?,⍵;  ⍝ all shallow leaves: finished.
+  ⍺≥≤≡⍵?,⍵;  ⍝ all shallow leaves: finished.
   1↓,/(⊂⊂↑↑⍵),⍺∇¨,⍵
 }
 
@@ -270,7 +270,7 @@ in ← {  ⍝ Locations of item ⍺ in array ⍵.
   ⍬{  ⍝ ⍺ is pick-path
     item≡⍵?,⊂⍺;  ⍝ match: path
     D≥≡⍵?⍬;  ⍝ give up
-    paths←⍺↣,∘⊂¨⍳⍴⍵  ⍝ extended paths
+    paths←(⍺↣,⊂)¨⍳⍴⍵  ⍝ extended paths
     ,/, paths ∇¨ ⍵
   }⍵  ⍝ ⍵ is searched-in array
 }
@@ -288,7 +288,7 @@ ltrav ← {  ⍝ List traversal.
 
 ⍝ From http://dfns.dyalog.com/s_list.htm
 
-listLength ← 0ₓ↣({⍺+1ₓ} ltrav)
+listLength ← 0ₓ↣({≥⍺} ltrav)
 
 vectFromList ← ⍬↣({⍺,⊂⍵} ltrav)
 
@@ -354,7 +354,7 @@ pmat ← {  ⍝ Permutation matrix of ⍳⍵.
 
 ⍝ From http://dfns.dyalog.com/c_pred.htm
 
-pred ← {⊃⍶/¨(⍺#1+⍳⍴⍺)⊆⍵}  ⍝ Partitioned reduction.
+pred ← {⊃⍶/¨(⍺#≥⍳⍴⍺)⊆⍵}  ⍝ Partitioned reduction.
 
 ⍝ From http://dfns.dyalog.com/c_rows.htm
 
@@ -420,7 +420,7 @@ shannon ← {-+/(2↣⍟×⊣)¨({≢⍵}⌸÷≢)⍵}  ⍝ Shannon entropy of m
 
 subvec ← {0∊⍴⍺?1;  ⍝ Is ⍺ a subvector of ⍵?
   0∊⍴⍵?0;  ⍝ null ⍵: failure.
-  (1↓⍺)∇(1+⍵⍳1↑⍺)↓⍵  ⍝ otherwise, check remaining items.
+  (1↓⍺)∇(≥⍵⍳1↑⍺)↓⍵  ⍝ otherwise, check remaining items.
 }
 
 ⍝ From http://dfns.dyalog.com/c_subs.htm

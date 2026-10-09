@@ -31,7 +31,7 @@ Links are relative to https://answerdotai.github.io/basedpl/.
 - Changed operators: `∘` atop as BQN; `⍤` rank only; `⍠` axis by number/name.
 - Added operators: `↣` before/bind-left (BQN `⊸`), `↢` after/bind-right (BQN `⟜`), `⊗` outer product (BQN `⌜`), `⊘` valences (BQN), `⌾` under (BQN `⌾`), `selector⍚cases` agenda (BQN `◶`), `⇄` explicit inverse pair (J `:.`), `∂` gradient/vector–Jacobian product.
 - Different details: `+ -` support character offsets/differences; `∊ ~ ∪ ∩` compare major cells; `⊂ ⊆` partition first axis; `⊤ ⊥` put digits on last axis; depth is unsigned; negative `⍳` counts down; dyadic `⍸` as BQN `⍋`. Reduce supports BQN-style seeds; scans accumulate LTR. Power supports list counts, inverses, `f⍣∞` fixed point and `f⍣[g]` history until.
-- `⍈` is range: `X⍈Y` counts from `X` to `Y` by 1, up or down, and `⍈N` counts from `1` (or `¯1`) to `N`. Each item is the start plus an exact count, so its type follows the start.
+- `↦` is range: `X↦Y` counts from `X` to `Y` by 1, up or down, and `↦N` counts from `1` (or `¯1`) to `N`. Each item is the start plus an exact count, so its type follows the start.
 - Reading `⎕` gives a line of text, and `⍎⎕` evaluates it.
 
 ## Values and notation
@@ -50,7 +50,7 @@ Undo and Under follow BQN's inferred-properties spec. Inverse operations are wri
 
 ## Grouping, selection and keys
 
-Spaces group as if each unspaced run were parenthesised, after literal strands join: `a+b × c+d` is `(a+b)(×)(c+d)`, and `1 2+3` is `(1 2)+3`. Names don't join strands. A run ending in a function is an APL-style train: `+/÷≢ x` is mean, but `+/÷≢x` is not. A subject before a function binds it: `2×` doubles. An operator takes the whole function on its left and one item on its right; a trailing dyadic operator takes the next run as operand: `⌊⌾ 10× x`. Only spaces build strands: in `f⍣3'b'` and `f⍤1[2 3]`, the touching literal is the argument. Parenthesise a number argument after a number operand.
+Spaces group as if each unspaced run were parenthesised, after literal strands join: `a+b × c+d` is `(a+b)(×)(c+d)`, and `1 2+3` is `(1 2)+3`. Names don't join strands. A run ending in a function is an APL-style train: `+/÷≢ x` is mean, but `+/÷≢x` is not. A subject before a function binds it: `2×` doubles. An operator takes the whole function on its left and one item on its right; a trailing dyadic operator takes the next run as operand: `⌊⌾ 10× x`. Only spaces build strands: in `f⍣3'b'` and `f⍤1[2 3]`, the touching literal is the argument. Separate a numeric argument from a numeric operand with parentheses or `⊢`.
 
 Names use letters, `∆`, `⍙`; `_` escapes the next character (and following digits). `f2` calls `f`; `f_2` is a name. No BQN casing rules; names take their runtime value's role. Lone `_` discards an assignment.
 
@@ -62,7 +62,7 @@ Pervasion, Each and Rank align leading axes and expand length-1 axes. `K:Y` atta
 
 Dfns return their last statement, not the first unassigned one. `{condition?body;fallback}` uses BQN-style predicates/bodies with one shared scope. Absent `⍺` drops out of expressions as BQN's `𝕨`; `⍺←default` supplies a default. `⍶ ⍹` mark monadic/dyadic operators; `∇` recurses the function, `⍢` the operator. `kinds::handler` guards later errors, naming kinds as text (`"DOMAIN"::`) or `∞::` for all; `$e` is the caught error.
 
-Plain assignment is local; modified/selective updates change the nearest binding. Arrays have value semantics. `T.k←v` replaces or adds key `k`. `[a b]←Y` destructures the items of `Y`, or its major cells at rank 2 or more: by name when its leading axis is fully keyed, otherwise by position. Local capturing functions cannot outlive their defining call.
+Plain assignment is local; modified/selective updates change the nearest binding. `a(f)←` with nothing after it sets `a` to `f a`. Arrays have value semantics. `T.k←v` replaces or adds key `k`. `[a b]←Y` destructures the items of `Y`, or its major cells at rank 2 or more: by name when its leading axis is fully keyed, otherwise by position. Local capturing functions cannot outlive their defining call.
 
 `•load "file.bpl"` runs a module and returns its public names as a record; `_`-prefixed names are private. `[f]←•load path` imports by name. Each load runs again. `./` and `../` paths are relative to the source file; other relative paths use the working directory.
 
@@ -81,7 +81,7 @@ Plain assignment is local; modified/selective updates change the nearest binding
 
 Use lowercase `j` in complex literals throughout tests and examples, including adapted reference cases. Reserve uppercase `J` for explicit input-alias tests. Keep archived upstream source unchanged. Write literal matrices in array notation, `[10 20 30⋄40 50 60]`, not as a reshape. Keep `⍴` where the example is about reshape. A `⋄` that separates rows has no spaces around it. A `⋄` that separates statements has a space on each side.
 
-Brackets are the usual way to write a list, and to build an array from names or expressions. A bare literal list, such as `1 2 3`, is a shorthand. Write a list of names in brackets, as in `[a b]`, even where `a b` would also work. Write `[n 2]⍴0`, `[x],y`, `[a⋄b]` and `f⍤1 m`, not APL's `(n,2)⍴0`, `(⊂x),y`, `⊃[a b]` and `⊃f¨↓m`. End an operand with a space, not with parentheses or `⊢`. After a dyadic operator and a space, the whole next run is the operand. For example, `⌊⌾ 10× x` needs no parentheses. Where a literal operand would run into the argument, a vector argument goes in touching brackets: `f⍤1[2 3]`. A single number goes in parentheses: `f⍣¯2(5)`. Judge each line by how it reads. Report any case where none of these forms works.
+Brackets are the usual way to write a list, and to build an array from names or expressions. A bare literal list, such as `1 2 3`, is a shorthand. Write a list of names in brackets, as in `[a b]`, even where `a b` would also work. Write `[n 2]⍴0`, `[x],y`, `[a⋄b]` and `f⍤1 m`, not APL's `(n,2)⍴0`, `(⊂x),y`, `⊃[a b]` and `⊃f¨↓m`. End an operand with a space where possible. After a dyadic operator and a space, the whole next run is the operand. For example, `⌊⌾ 10× x` needs no parentheses. Where a literal operand would run into the argument, a vector argument goes in touching brackets: `f⍤1[2 3]`. For a simple numeric argument, `f⍣¯2⊢5` can read more clearly than `f⍣¯2(5)`. Keep parentheses when they clarify grouping. Judge each line by how it reads. Report any case where none of these forms works.
 
 A name applied to a literal touches it, as a glyph does: `fib10` and `1+⌽f5`. Write it that way where it's shorter and needs no new parentheses. Keep the space where the literal would join the next part of the expression, or where a subject before the name is its left argument.
 

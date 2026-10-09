@@ -19,12 +19,8 @@ impl Session {
         }
     }
 
-    /// Whether a node holds an array. A group holds whatever its expression reduces to, so `(M←-)` is a function.
-    pub(super) fn holds_array(&self, node: &Node) -> bool {
-        let NodeKind::Group(inner) = &node.kind else { return matches!(self.node_category(node), Category::Value) };
-        let inner = self.members(inner);
-        !inner.is_empty() && matches!(self.assignment_operand(&inner, inner.len()), Ok((_, Category::Value)))
-    }
+    /// Whether a node holds an array.
+    pub(super) fn holds_array(&self, node: &Node) -> bool { matches!(self.node_category(node), Category::Value) }
 
     pub(super) fn node_category(&self, node: &Node) -> Category {
         use Category::*;
@@ -40,6 +36,8 @@ impl Session {
                 DefinitionKind::MonadicOperator => Operator,
                 DefinitionKind::DyadicOperator => DyadicOperator,
             },
+            // A group or run has the category of its expression, so `(M←-)` and `(⌽⌾ 1⌷)` are functions.
+            NodeKind::Group(_) | NodeKind::Run(_) => self.assignment_operand(std::slice::from_ref(node), 1).map_or(NoResult, |(_, c)| c),
             _ => Value,
         }
     }
@@ -49,7 +47,7 @@ impl Session {
         if end == 0 { return Err(nodes[0].span.error(ErrorKind::Syntax, "missing assignment operand")); }
         let mut start = end - 1;
         let mut category = match &nodes[start].kind {
-            NodeKind::Group(inner) => {
+            NodeKind::Group(inner) | NodeKind::Run(inner) => {
                 if inner.is_empty() { return Err(nodes[start].span.error(ErrorKind::Syntax, "empty assignment operand")); }
                 // Rewrite the group's own dot access first, so that `(x.a).b` classifies `(x.a)` as a value.
                 let inner = self.members(inner);
@@ -64,7 +62,11 @@ impl Session {
             // `ᵘ` always gives an array, and the other superscripts give one on an array.
             category = match superscript { Some(Superscript::Unit) => Value, Some(_) if matches!(operand_category, Value) => Value, _ => Function };
         }
-        if start > 0 && matches!(Rule::get(self.node_category(&nodes[start - 1]), category), Rule::BindRight) {
+        if start > 0 && matches!(&nodes[start - 1].kind, NodeKind::Run(inner) if self.ends_in_dyadic_operator(inner)) {
+            // A run that ends in a dyadic operator holds its left operand, and takes this operand as its right one, as in `(⌽⌾ 1⌷)`.
+            start -= 1;
+            category = Function;
+        } else if start > 0 && matches!(Rule::get(self.node_category(&nodes[start - 1]), category), Rule::BindRight) {
             start = self.assignment_operand(nodes, start - 1)?.0;
             category = Function;
         }
@@ -142,14 +144,36 @@ impl Session {
                 _ => (),
             }
         }
+        let Some((array, modifier)) = self.modified_target(target)? else {
+            return Err(span.error(ErrorKind::Syntax, "assignment needs a name or selection"));
+        };
+        self.modify(array, modifier, value)
+    }
+
+    /// Splits a modified assignment's target into its array part and its function, as `a` and `f` in `a(f)←`.
+    fn modified_target<'a>(&mut self, target: &'a [Node]) -> Result<Option<(&'a [Node], Function)>, Error> {
         let (operand, category) = self.assignment_operand(target, target.len())?;
-        let modified = operand > 0 && matches!(category, Category::Function);
-        let (array, modifier) = if modified { (&target[..operand], self.modifier(&target[operand..])?) } else { (target, None) };
-        if let Some(modifier) = &modifier { if self.assignment_names(array) { return self.modify_names(array, &value.clone().into_value(span)?, modifier); } }
+        if operand == 0 || !matches!(category, Category::Function) { return Ok(None); }
+        Ok(self.modifier(&target[operand..])?.map(|f| (&target[..operand], f)))
+    }
+
+    /// Updates the array part of a modified assignment's target with `modifier`, taking `value` as its right argument.
+    fn modify(&mut self, array: &[Node], modifier: Function, value: &Binding) -> Result<(), Error> {
+        let span = &array[0].span;
+        if self.assignment_names(array) { return self.modify_names(array, &value.clone().into_value(span)?, &modifier); }
         match array {
-            [Node { kind: NodeKind::Group(nodes), .. }] => self.assign_selected(nodes, modifier, value),
+            [Node { kind: NodeKind::Group(nodes), .. }] => self.assign_selected(nodes, Some(modifier), value),
             _ => Err(span.error(ErrorKind::Syntax, "assignment needs a name or selection")),
         }
+    }
+
+    /// `a(f)←` with no value sets `a` to `f a`, and gives whether `target` has that form. It runs as the dyadic form with `f∘⊣`,
+    /// which ignores its right argument of 0.
+    pub(super) fn modify_monadic(&mut self, target: &[Node]) -> Result<bool, Error> {
+        let Some((array, f)) = self.modified_target(target)? else { return Ok(false) };
+        let f = atop(f, Function::primitive(Primitive::Identity(true)), &target[0].span)?;
+        self.modify(array, f, &Binding::Value(integer(0)))?;
+        Ok(true)
     }
 
     fn modify_names(&mut self, nodes: &[Node], right: &Value, modifier: &Function) -> Result<(), Error> {

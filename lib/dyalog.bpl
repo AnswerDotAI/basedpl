@@ -36,21 +36,21 @@ lsys←{  ⍝ Lindenmayer L-system expansion.
 
 ⍝ From https://dfns.dyalog.com/c_rr.htm
 rr←{  ⍝ Round-robin tournament.
-  v←⍳n←0⌈⍵-1
-  1+(⍵÷2)↑⍠¯1 m{[⍺⋄⍵]}⍤1⌽m←0,v⌽1+[n n]⍴v
+  v←⍳n←0⌈≤⍵
+  ≥(⍵÷2)↑⍠¯1 m{[⍺⋄⍵]}⍤1⌽m←0,v⌽≥[n n]⍴v
 }
 
 ⍝ From https://dfns.dyalog.com/c_easter.htm
 easter←{  ⍝ Easter Sunday, yyyymmdd.
-  G←1+19|⍵
-  C←1+⌊⍵÷100
+  G←≥19|⍵
+  C←≥⌊⍵÷100
   X←¯12+⌊C×3÷4
   Z←¯5+⌊(5+8×C)÷25
   S←(⌊ 5×⍵ ÷ 4)-X+10
   E←30|(11×G)+20+Z-X
   F←E+(E=24)∨(E=25)∧G>11
   N←(30×F>23)+44-F
-  N←N+7-7|S+N
+  N+←7-7|S+N
   M←3+N>31
   D←N-31×N>31
   10000 100 1+.×[⍵ M D]
@@ -97,7 +97,7 @@ date←{  ⍝ Timestamp from day number (Meeus).
   qr←{⊂⍠ ⍳≢⍴⍵ (0,⍺)⊤⍵}
   [Z F]←1 qr ⍵+2415020
   a←⌊(Z-1867216.25)÷36524.25
-  A←Z+(Z≥⍺+2415021)×1+a-⌊a÷4
+  A←Z+(Z≥⍺+2415021)×≥a-⌊a÷4
   B←A+1524
   C←⌊(B-122.1)÷365.25
   D←⌊C×365.25
@@ -129,7 +129,7 @@ draw←{  ⍝ Box-drawing characters over a marker.
   z←,' '⍪(' ' , rh⍴⍵ , ' ')⍪' '
   bv←z∊⍺ ⋄ ix←⍸bv
   in←{2⊥[ix+⊗[-⍵ ¯1 1 ⍵]]⌷bv}2+rh₁
-  z.[(×in # ix)]←[¯1+in~[0]]⌷ch
+  z.[(×in # ix)]←[≤in~[0]]⌷ch
   (⍴⍵)⍴1 1↓¯1 ¯1↓(rh+2)⍴z
 }
 
@@ -205,7 +205,7 @@ packB←{  ⍝ Unique indices packed as run lengths and bits.
   }
   exp←{
     [q b j]←⍵ ⋄ s←↑q
-    r←s⍴1↓q ⋄ u←(s+1)↓q
+    r←s⍴1↓q ⋄ u←(≥s)↓q
     w←⌈2⍟⍴u
     e←-⍨/2↕⍸b,1
     i←2⊥⍉w{(⍺,⌊⍺÷⍨⍴⍵)⍴⍵}j
@@ -243,7 +243,7 @@ byfreq ← {[⍒{≢⍵}⌸⍵]⌷∪⍵}  ⍝ Uniques of ⍵, most frequent fir
 
 ⍝ From https://dfns.dyalog.com/c_packQ.htm
 packQ←{  ⍝ Frequency-ranked uniques with variable-width keys.
-  key←,/{↓(⍳⍵)>⊗⍳⍵}¨1+⍳23
+  key←,/{↓(⍳⍵)>⊗⍳⍵}¨≥⍳23
   cmp←{
     dt←,⍵
     u←byfreq dt
@@ -273,10 +273,10 @@ packS←{  ⍝ Shannon-Fano packing.
   }
   exp←{
     [r uv lv d]←⍵
-    bv←lv#1+⍳⍴lv ⊆ (+/lv)↑d
+    bv←lv#≥⍳⍴lv ⊆ (+/lv)↑d
     r⍴""{
       0∊⍴⍵?⍺;
-      i←0{q←⍺⊃bv ⋄ q≡(⍴q)↑⍵?⍺;(⍺+1)∇⍵}⍵
+      i←0{q←⍺⊃bv ⋄ q≡(⍴q)↑⍵?⍺;(≥⍺)∇⍵}⍵
       (⍺,i⊃uv)∇(⍴i⊃bv)↓⍵
     }(+/lv)↓d
   }
@@ -295,7 +295,7 @@ cmat←{  ⍝ ⍺-combinations of ⍳⍵: include the first item, then omit it.
 mayan←{  ⍝ Mayan numbers; left 0 uses base 20, left 1 uses the calendar base.
   ⍺←1
   [snail dot bar]←"_@/" '⍟' '⌹'
-  n←1+⌈18⍟1⌈⍵
+  n←≥⌈18⍟1⌈⍵
   base←20-2⌽n↑2×⍺
   ⍪' '⍪↢{
     ⍵=0?1 5⍴' ',snail,' ';
@@ -395,7 +395,7 @@ quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
     ∇ delpath p , ,/ p next¨ ,/ n moves¨ Tiles
   }
   moves←{
-    m←(,1 ¯1×⊗1,1+Shape₁)(,'_'⍪'∣',Shape⍴⍺⌷State){∧/(⍵=⍺⌽⍶ # ⍶)∊⍵,' '}¨⍵
+    m←(,1 ¯1×⊗1,≥Shape₁)(,'_'⍪'∣',Shape⍴⍺⌷State){∧/(⍵=⍺⌽⍶ # ⍶)∊⍵,' '}¨⍵
     ⍵,¨m#"←↑→↓"
   }
   next←{
@@ -407,15 +407,15 @@ quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
     (≢State)=n←1⍳⍨State∧.=x?(addnode x)addpath[⍺ ⍵] ⋄ ¯1;
     ⍺∊i←⍸n∊¨Path?¯1;
     0=≢i?n addpath [⍺ ⍵] ⋄ ¯1;
-    (⍺⌷NPath)≥¯1+⌊/Path.[i]⍳¨n?¯1;
+    (⍺⌷NPath)≥≤⌊/Path.[i]⍳¨n?¯1;
     (n addpath [⍺ ⍵])modpath¨i
   }
   addnode←{
     State⍪←⍵
-    i←⍵.[[Target]⌷(i-1),(≢⍵)-(i←Shape₁),1]⍳↑Tiles
-    ENode,←(1+i)×i<≢Target
+    i←⍵.[[Target]⌷(≤i),(≢⍵)-(i←Shape₁),1]⍳↑Tiles
+    ENode,←(≥i)×i<≢Target
     NMoves,←∞
-    ¯1+≢ENode
+    ≤≢ENode
   }
   addpath←{
     [p m]←⍵ ⋄ e←⍺⊃ENode ⋄ n←≢p⊃Path
@@ -425,14 +425,14 @@ quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
     Fin,←⍺⊃ENode
     NPath,←n
     (⍺⌷NMoves)⌊←n
-    ¯1+≢Path
+    ≤≢Path
   }
   modpath←{
     ⍺=¯1?¯1;
-    (i←1+x⍳¯1⊃⍺⊃Path)=≢x←⍵⊃Path?⍺;
+    (i←≥x⍳¯1⊃⍺⊃Path)=≢x←⍵⊃Path?⍺;
     (⍵⊃Path)←(⍺⊃Path),i↓x
     (⍵⊃Moves)←(⍺⊃Moves)⍪i↓⍵⊃Moves
-    (⍵⊃NPath)←¯1+≢⍵⊃Path
+    (⍵⊃NPath)←≤≢⍵⊃Path
     ¯1
   }
   delpath←{
@@ -449,8 +449,8 @@ quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
   State←(1,≢,⍵)⍴⍵ ⋄ NMoves←,0 ⋄ ENode←,0
   x←extend0
   ∧/Fin=0?"There are no solutions";
-  i←∨/{i#⁻¹n=⌊/n←(i←Fin=⍵)#NPath}¨1+⍳≢Target
-  x←[[¯1+i#Fin]⌷Target]⌷"Top-right" "Bottom-left" "Bottom-right"
+  i←∨/{i#⁻¹n=⌊/n←(i←Fin=⍵)#NPath}¨≥⍳≢Target
+  x←[[≤i#Fin]⌷Target]⌷"Top-right" "Bottom-left" "Bottom-right"
   x←[x⋄(⊂"in "),¨({1↓0⍕⍵}¨i#NPath),¨⊂" moves"]
   x⍪i#Moves
 }
@@ -485,12 +485,12 @@ box←{  ⍝ Frame a text array, with optional internal row and column borders.
   ch←{⍵?"++++++++-|+";"┌┐└┘┬┤├┴─│┼"}1=ar₂
   rh←(×/¯1↓⍴⍵),¯1↑1,⍴⍵ ⋄ z←rh⍴⍵
   0∊⍴∊2↑ar?q←ch₈⍪(ch₉,z,ch₉)⍪ch₈ ⋄ q.[0 ¯1;0 ¯1]←2 2⍴ch ⋄ q;
-  [r c]←rh{∪⍺{(⍵∊⍳⍺+1)#⍵}⍵,(~¯1∊⍵)#0,⍺}¨,¨2↑ar
+  [r c]←rh{∪⍺{(⍵∊⍳≥⍺)#⍵}⍵,(~¯1∊⍵)#0,⍺}¨,¨2↑ar
   [rw cl]←rh{{[⍋⍵]⌷⍵}⍵∪0,⍺}¨[r c]
   (~ 0,rh₁ ∊ c){
-    (↑⍺)↓⍠1(-⍺₁)↓⍠1[∞;⍋(1+⍳rh₁),cl]⌷⍵
+    (↑⍺)↓⍠1(-⍺₁)↓⍠1[∞;⍋(≥⍳rh₁),cl]⌷⍵
   }(~ 0,rh₀ ∊ r){
-    (↑⍺)↓⍠0(-⍺₁)↓⍠0[⍋(1+⍳rh₀),rw]⌷⍵
+    (↑⍺)↓⍠0(-⍺₁)↓⍠0[⍋(≥⍳rh₀),rw]⌷⍵
   }{
     [h w]←(≢rw),≢cl ⋄ q←[h w]⍴ch₁₀
     hz←(h,rh₁)⍴ch₈
@@ -503,7 +503,7 @@ box←{  ⍝ Frame a text array, with optional internal row and column borders.
 
 ⍝ From https://dfns.dyalog.com/c_sudoku.htm
 sudoku←{  ⍝ All solutions, with square or ⍺-shaped groups.
-  wid←≢⍵ ⋄ ⍺←√wid ⋄ grp←2⍴⍺ ⋄ set←1+⍳wid
+  wid←≢⍵ ⋄ ⍺←√wid ⋄ grp←2⍴⍺ ⋄ set←≥⍳wid
   inx←↓(,wid⊥¨grp↣×¨⍳⌽grp)+⊗,wid⊥¨⍳grp
   inx,←{(↓⍵),↓⍵ᵀ}(⍴⍵)⍴⍳wid²
   bas←(≢,⍵)⍴⊂set
@@ -565,7 +565,7 @@ queens←{  ⍝ N-queens solutions up to rotation and reflection.
     rems←hd free¨ ⊂tl
     ,/ next ∇¨ rems
   }
-  cvex←(1+⍳⍵)×⊂¯1 0 1
+  cvex←(≥⍳⍵)×⊂¯1 0 1
   free←{⍵~¨⍺+(≢⍵)↑cvex}
   rmdups←{
     rots←⍒⍣ ⍳4
@@ -604,7 +604,7 @@ ary←{  ⍝ Radix representation, including recurring fractional digits.
     zro←{⍵,(≢⍵)↓0}
     neg←(sig<0)#'¯'
     nnn←fmt zro lft↑fix,lft⍴rep
-    fff←fmt(pad#0),lft↓fix⌊base-1
+    fff←fmt(pad#0),lft↓fix⌊≤base
     rrr←fmt(0⌈exp-≢fix)⌽rep
     fffrrr←fff opt rrr
     dot←(""≡fffrrr)↓'.'
@@ -616,7 +616,7 @@ ary←{  ⍝ Radix representation, including recurring fractional digits.
   rnd←{(¯2↓⍵),+↢(5↣≤)/¯2↑⍵}
   rep←{(0 1=⊂∨\⍵=⍺)#¨1↑↓⍉[0 q]⊤⍺}
   opt←{(-+/∧\=⌿⊃⌽¨[⍺ ⍵])↓⍺,⍵,⍵}
-  q=1?ofmt [sign exp+1 ,1 ⍬ 1];
+  q=1?ofmt [sign ≥exp ,1 ⍬ 1];
   ofmt [sign exp],(⍬ digs p×base)
 }
 
@@ -636,9 +636,9 @@ pack_4←{  ⍝ Quad-tree packing; ⍺=0 expands, ⍺>1 allows lossy packing.
   }
   exp←{
     [uniq shape stream]←⍵
-    split←{{[⌊⍵ ⌈⍵]}⍵÷1+(maxk ⍵)}
+    split←{{[⌊⍵ ⌈⍵]}⍵÷≥(maxk ⍵)}
     maxk←{⍳≢⍵ = maxx ⍵}
-    exp←{(1+|0⌊1+⍵⌊0)#¯1⌈⍵}
+    exp←{(≥|0⌊≥⍵⌊0)#¯1⌈⍵}
     i←↑shape{
       [head tail]←⍵
       0≤head?[⍺⍴head tail];
@@ -700,7 +700,7 @@ packH←{                      ⍝ Huffman packing.
 
         [leaves depths]←↓⍉⊃tree{        ⍝ tree leaves and depths.
             ⍬≡⍴⍺?⊂[⍺ ⍵];                 ⍝ leaf: leaf and depth.
-            ,/ ⍺ ∇¨ 1ₓ+⍵                ⍝ branch: traverse deeper sub-branches.
+            ,/ ⍺ ∇¨ ≥⍵                ⍝ branch: traverse deeper sub-branches.
         }0ₓ                             ⍝ starting at depth 0 for the root.
 
         [shape leaves depths bits]      ⍝ compressed structure.
@@ -711,7 +711,7 @@ packH←{                      ⍝ Huffman packing.
 
         tree←1⊃↑{                       ⍝ reconstituted Huffman tree.
             (↑⍺)≠↑↑⍵?(⊂⍺),⍵;             ⍝ distinct adjacent depths: continue.
-            [(↑⍺)-1 [⍺₁ 1⊃↑⍵]] ∇ 1↓⍵      ⍝ identical   ..      ..  : coalesce.
+            [≤↑⍺ [⍺₁ 1⊃↑⍵]] ∇ 1↓⍵      ⍝ identical   ..      ..  : coalesce.
         }/(↓⍉⊃[depths leaves]),¯1       ⍝ depths, leaves with trailing dummy.
 
         picks←⍬{                        ⍝ tree index vectors.
@@ -754,8 +754,8 @@ packH←{                      ⍝ Huffman packing.
 
      parse←{
          ⍵≥≢⍺?[1 ⍵ "unexpected eof"];
-         ' '≡⍵⌷⍺?⍺ ∇ ⍵+1;
-         '('≡⍵⌷⍺?⍺ parseList ⍵+1;
+         ' '≡⍵⌷⍺?⍺ ∇ ≥⍵;
+         '('≡⍵⌷⍺?⍺ parseList ≥⍵;
          (⍵⌷⍺)∊$d?⍺ parseNum ⍵;
          '''≡⍵⌷⍺?⍺ parseQuote ⍵;
          ⍺ parseAtom ⍵
@@ -763,7 +763,7 @@ packH←{                      ⍝ Huffman packing.
 
      parseList←{ ⍝ parse the inside of a list and consume the ')'
          ⍵≥≢⍺?[1 ⍵ "unexpected eof"];
-         ')'≡⍵⌷⍺?[0 ⍵+1 ⍬];
+         ')'≡⍵⌷⍺?[0 ≥⍵ ⍬];
          [e p h]←⍺ parse ⍵
          e≠0?[e p h];
          [e p t]←⍺ ∇ p
@@ -787,7 +787,7 @@ packH←{                      ⍝ Huffman packing.
      }
 
      parseQuote←{
-         [e p r]←⍺ parse ⍵+1
+         [e p r]←⍺ parse ≥⍵
          e≠0?[e p r];
          [e p ["quote" r]]
      }
@@ -854,9 +854,9 @@ packH←{                      ⍝ Huffman packing.
          Blk_1←{0=≢⍺?⍵;0=≢↑⍺?(1↓⍺) (1+⍶)⍢ ⍵;(1↓⍺) (1+⍶)⍢ ⊃(⊂↑⍺)⊂⍠⍶¨⍵}
          Blk_2←{0=≢⍺?⍵;0=≢↑⍺?(1↓⍺) (1+⍶)⍢ ⍵;(1↓⍺) (1+⍶)⍢ ⊃(⊂↑⍺)(⍶ p_2)¨⍵}
          ifv←{(⍉⍺,⍪)⍣ 2>≢⍴⍵ ⍵}          ⍝ laminate ⍺ if ⍵ is vector or unit
-         ci←{[i s]←↓(1 ifv ⍺) ⋄ (0>s){⌽⍣⍺ ⍵}¨(⍳¨|s)+(i |⍨ ⍴i ↑ ⍴⍵)-(0>i)×¯1+|s}
+         ci←{[i s]←↓(1 ifv ⍺) ⋄ (0>s){⌽⍣⍺ ⍵}¨(⍳¨|s)+(i |⍨ ⍴i ↑ ⍴⍵)-(0>i)×≤|s}
          ti←{[m s]←↓(1 ifv ⍺) ⋄ ⊃{⊃[⍵ (×s)×(|s)⌊r-⍵]}¨m↣×¨⍳⌈r÷m+(0=m)×r←(⍴m)⍴⍴⍵}
-         tj←{[m s]←↓(1 ifv ⍺) ⋄ ⊃{⊃[⍵ s]}¨m↣×¨⍳⌈(1+r-|s)÷m+(0=m)×r←(⍴m)⍴⍴⍵}
+         tj←{[m s]←↓(1 ifv ⍺) ⋄ ⊃{⊃[⍵ s]}¨m↣×¨⍳⌈(≥r-|s)÷m+(0=m)×r←(⍴m)⍴⍴⍵}
 
          1=|⍹ ∧ ⍬≡⍺ ∨ 1≠≡⍺?⊃⍶¨(⊂ 0>⍹ × ×≢¨⍺)↓¨⍺(0 Blk_1)⊂⍵;
          2=|⍹ ∧ ⍬≡⍺ ∨ 1≠≡⍺?⊃⍶¨(⊂ 0>⍹ × -×≢¨⍺)↓¨⍺(0 Blk_2)⊂⍵;
@@ -881,7 +881,7 @@ words←{  ⍝ Split a string into words and intervening text.
   1=≡,⍺?[⍺ ""]∇⍵;
   [alph supp]←⍺
   w←0{(⍵∊alph)∨⍺∧⍵∊supp}\⍵
-  (1++\w≠¯1⌽w)⊆⍵
+  (≥+\w≠¯1⌽w)⊆⍵
 }
 
 ⍝ From https://dfns.dyalog.com/c_eis.htm
@@ -892,9 +892,9 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
      AlphaInterval←{⍵=' '?"";         ⍝ ⍳' ' is empty vector.
          a←dfnsAV⍳"a0AÁ"                ⍝ Indices of a0AÁ.
          k←a+.≤i←dfnsAV⍳⍵             ⍝ Find starting point.
-         ⍺←((k-1)⌷a)⌷dfnsAV               ⍝ Default left argument.
+         ⍺←((≤k)⌷a)⌷dfnsAV               ⍝ Default left argument.
          </i,j←dfnsAV⍳⍺?⌽ ⍵ ∇ ⍺;         ⍝ If ⍵ before ⍺, reverse.
-         j↓(i+1)↑dfnsAV             ⍝ Truncate dfnsAV.
+         j↓(≥i)↑dfnsAV             ⍝ Truncate dfnsAV.
      }
    ⍝Interval←{⍺+0,+\(|d)⍴×d←⍵-⍺}    ⍝ Interval Function.
      Interval←{s←×/1↓⍵,(⍺>↑⍵)#¯1     ⍝ Calculate step size
@@ -950,17 +950,17 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
 ⍝ From https://dfns.dyalog.com/c_packD.htm
  packD←{                                 ⍝ Pack char array to boolean vector.
 
-     key←,/{↓(⍳⍵)>⊗⍳⍵}¨1+⍳23             ⍝ generate the keys (up to 276), they
+     key←,/{↓(⍳⍵)>⊗⍳⍵}¨≥⍳23             ⍝ generate the keys (up to 276), they
                                         ⍝ start with ones and end with zeros.
      cmp←{                               ⍝ compress:
          dt←,⍵ ⋄ k←1,¨key                ⍝ vectorise items, separators to keys
          u←byfreq dt                     ⍝ sort uniques according to frequencies.
-         uq←,(8⍴2)⊤(¯1+⍴u),dfnsAV⍳u        ⍝ shape then uniques fit to eight bits.
+         uq←,(8⍴2)⊤(≤⍴u),dfnsAV⍳u        ⍝ shape then uniques fit to eight bits.
          rk←,(4⍴2)⊤⍴⍴⍵                   ⍝ rank fits in four bytes
 
          sh←⍬{                           ⍝ shape is a trickier one
              0∊⍴⍵?⍺;                      ⍝ all done?
-             n←1+⌊2⍟1⌈↑⍵                 ⍝ how many bits are needed for representing the integer?
+             n←≥⌊2⍟1⌈↑⍵                 ⍝ how many bits are needed for representing the integer?
              q←(, 5⍴2 ⊤ n),,(n⍴2)⊤↑⍵      ⍝ n should fit to five bits (2*2*5 -> 4GB dimensions supported ;) )
              (⍺,q) ∇ 1↓⍵                 ⍝ add binarised figure to the result
          }⍴⍵
@@ -976,12 +976,12 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
              r=0?[s n];                   ⍝ all done: return shape and offset
              q←2⊥5⍴⍵                     ⍝ how many bits?
              d←2⊥q⍴5↓⍵                   ⍝ -> dimension length
-             [s,d n+q+5 r-1] ∇ (q+5)↓⍵   ⍝ next
+             [s,d n+q+5 ≤r] ∇ (q+5)↓⍵   ⍝ next
          }4↓⍵
 
-         n←1+2⊥8⍴x↓⍵                     ⍝ how many uniques?
+         n←≥2⊥8⍴x↓⍵                     ⍝ how many uniques?
          u←[(,2⊥[n 8]⍴ n×8 ↑ x+8 ↓ ⍵)]⌷dfnsAV ⍝  -> make the list
-         dt←(x+8×n+1)↓⍵                  ⍝ rip the data part
+         dt←(x+8×≥n)↓⍵                  ⍝ rip the data part
          p←dt≤¯1↓0,dt                    ⍝ binary partitioner (first 1's)
          sh⍴[key⍳p⊆dt]⌷u                  ⍝ reconstruct
      }
@@ -998,9 +998,9 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          lv←1,≠/2↕,⍵ ⋄ e←ec=,⍵                ⍝ repeat lengths
          mask←e<¯1↓1 0 0 1⍷lv,1 ⋄ (mask#1⌽lv)←1        ⍝ remove 2's and 3's
          mask←e<¯1↓1 0 1⍷lv,1 ⋄ (mask#1⌽lv)←1
-         ln←{-⍨/2↕(⍵,1)#⍳1+⍴⍵}lv              ⍝ packables
+         ln←{-⍨/2↕(⍵,1)#⍳≥⍴⍵}lv              ⍝ packables
 
-         (lv#lv)←1+⌊ln÷256                   ⍝ adjust for 256 length
+         (lv#lv)←≥⌊ln÷256                   ⍝ adjust for 256 length
 
          ln←∊{⍵<257?⍵;                        ⍝ now we have to adjust the long
              q←256|⍵ ⋄ n←⌊⍵÷256              ⍝ sequences so that the last
@@ -1012,7 +1012,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
 
          q←lv#,⍵                             ⍝ reduce data
          b←(ln>3)∨{(↑⍵),</2↕⍵}q=ec            ⍝ find places where
-         (b#q)←(b#q){ec,⍺,⍵}¨[¯1+b#ln]⌷dfnsAV       ⍝  to put pack sequences
+         (b#q)←(b#q){ec,⍺,⍵}¨[≤b#ln]⌷dfnsAV       ⍝  to put pack sequences
          ec,∊q                               ⍝ remove nesting
      }
 
@@ -1021,7 +1021,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          ~ec∊1↓⍵?1↓⍵;                         ⍝ packed?
 
          bv←{(↑⍵),</2↕⍵}1↓⍵=ec                ⍝ reduce vector
-         ln←0@(¯2⌽bv)(1+dfnsAV⍳ ¯2⌽bv # 1↓⍵)@(¯1⌽bv)~bv  ⍝ lengths: 0 for escapes and counts, the count for each packed character
+         ln←0@(¯2⌽bv)(≥dfnsAV⍳ ¯2⌽bv # 1↓⍵)@(¯1⌽bv)~bv  ⍝ lengths: 0 for escapes and counts, the count for each packed character
          ln#1↓⍵                              ⍝ do it!
      }
 
@@ -1041,15 +1041,15 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          bsegs←bindx⊃csect,⊂,⊂"()"               ⍝ bracket pairs: () [] <> ...
          [bkts blabs]←↓⍉⊃{[⌽2↑⍵ 2↓⍵]}¨¯1⌽¨bsegs  ⍝ brackets and their cat labels.
          [cats reps]←↓⍉⊃pop¨csect~[bsegs]         ⍝ categories & representatives.
-         bonds←⌽1+⍳≢defs                         ⍝ binding strengths
+         bonds←⌽≥⍳≢defs                         ⍝ binding strengths
          bmat←cats{0}⊗cats                      ⍝ initialised binding table
-         defn←{1+cats↣⍳¨(⊂".")segs¨(":→"segs ⍵)}   ⍝ split a.b:c.d→z defn
+         defn←{≥cats↣⍳¨(⊂".")segs¨(":→"segs ⍵)}   ⍝ split a.b:c.d→z defn
          dist←{(,,⊗/2↑⍵),¨↑⌽⍵}                 ⍝ distribution of productions
          lmat←dist∘defn¨¨¨defs                   ⍝ loading matrix
          bftz←,/bonds,¨¨(,/)²¨lmat           ⍝ bond-from-to-rslt tuples
          [cats reps bkts blabs],⊂⍠[0 1]⊃{        ⍝ binding structure.
              [bond fm to rslt]←⍺                 ⍝ binding and resulting cats.
-             (⊂[bond rslt])@ ⊂¯1+[fm to] ⍵       ⍝ populate cell
+             (⊂[bond rslt])@ ⊂≤[fm to] ⍵       ⍝ populate cell
          }/bftz,⊂bmat                            ⍝ loaded binding matrix.
      }∘{                                         ⍝ pre-process alias=... lines.
          lines←↓' ',⊃⍵                       ⍝ lines from char array.
@@ -1063,7 +1063,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          [cats bmat zmat]←⍵                      ⍝ categories and binding matrix.
          fmt←{×⍺ # (⍕⍺),' ',⍵⊃cats,'?'}          ⍝ bond and category.
          ttl←{[' ' ⍺],.⍪[⍺ ⍵]}                   ⍝ row and column headers.
-         cats ttl bmat fmt¨ (1+≢cats)|zmat-1     ⍝ formatted bonds & categories.
+         cats ttl bmat fmt¨ (≥≢cats)|≤zmat     ⍝ formatted bonds & categories.
      }
 
      [cats reps bkts blabs bmat zmat]←defn defs  ⍝ definition structure.
@@ -1075,7 +1075,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
              r#c#⍠¯1 ⍵                               ⍝ masked out empties.
          }                                       ⍝ :: ∇ cells → cells
          snip←{                                  ⍝ snip out top corner.
-             t←1+(,⍵)⍳'┬'                        ⍝ width up to the uppermost, leftmost ┬
+             t←≥(,⍵)⍳'┬'                        ⍝ width up to the uppermost, leftmost ┬
              cnr←⊃[1 t-2 1]↣#¨"  ┌" "  │" "┌─┼"    ⍝ empty corner.
              cnr@(⍳3 ,⊗ ⍳t) ⍵                 ⍝ snipped formatted matrix.
          }                                       ⍝ cmat ← ∇ cmat
@@ -1092,7 +1092,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          (⊂[a c])∊bkts?∇ rgt [∆l L (a bkt Bb) R ∆r];    ⍝ bracketed single value Bb.
          (⊂a)∊rbs?∇ lft lft ⍵;                    ⍝ right bracket: skip left.
          ≥/([[[A B] [B C]]]⌷xmat)?∇ lft ⍵;          ⍝ A:B ≥ B:C → skip left.
-         BbCc←zmat.[B-1;C-1],⊂[b c]              ⍝ B bound with C.
+         BbCc←zmat.[≤B;≤C],⊂[b c]              ⍝ B bound with C.
          ∇ show [[∆l L] Aa BbCc R ∆r]            ⍝ binds with token to the right?
      }                                           ⍝ :: ∇ stream → stream
 
@@ -1108,7 +1108,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
 
      tfmt←{                                      ⍝ tree-formatted.
          0=≡⍵?1 1⍴⍵;                              ⍝ atom: char matrix single.
-         subs←⍉⊃{⍺,' ',⍵}/↓⍠0∘∇¨⍵                ⍝ formatted sub-expressions.
+         subs←⍉⊃{⍺,' ',⍵}/(↓⍠0∇)¨⍵                ⍝ formatted sub-expressions.
          mask←~(↑↓subs)∊"┌─┐ "                   ⍝ sub-exprs connection points.
          mid←⍳⍴mask = ⌊(+/⍸mask)÷2               ⍝ mid-point for '┴' char.
          inx←mask+2×+\mask                       ⍝ indices for box-draw chars.
@@ -1119,7 +1119,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
      atop←cats{                                  ⍝ category atop tree.
          ⍺=0?⍵;                                  ⍝ ignore bad cat.
          dent←+/∧\(↑↓⍵)∊"┌─┐ "                   ⍝ indent for category.
-         top←dent#' ' , (⍺-1)⊃⍶⊣0               ⍝ indented category.
+         top←dent#' ' , (≤⍺)⊃⍶⊣0               ⍝ indented category.
          ⊃(⊂top),↓⍵                              ⍝ categorised tree.
      }
 
@@ -1131,7 +1131,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
      }
 
      class←{                                     ⍝ classification of expr tokens.
-         pairs←,/⍺,¨¨1+⍳⍴⍺                      ⍝ token-category pairs.
+         pairs←,/⍺,¨¨≥⍳⍴⍺                      ⍝ token-category pairs.
          [toks cats]←↓⍉⊃pairs                    ⍝ category of each token.
          (toks⍳⍵)⊃¨⊂cats,0                      ⍝ token categories.
      }
@@ -1143,7 +1143,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
      rgt←{[∆l A B C [R ∆r]]←⍵ ⋄ [[∆l A] B C R ∆r]}     ⍝ skip right.
 
      [lbs rbs]←↓⍉⊃bkts                           ⍝ left and right brackets.
-     bcats←1+cats⍳blabs                          ⍝ bracket categories.
+     bcats←≥cats⍳blabs                          ⍝ bracket categories.
      xmat←0,0⍪bmat                               ⍝ extended bmat.
      pairs←{↓⍉⊃[(reps class ⍵) ⍵]}⍵~" "           ⍝ cat-token pairs.
      eos←0                                      ⍝ end of stream marker.
@@ -1173,11 +1173,11 @@ tc←{  ⍝ Trace function application.
      maxcols←{                       ⍝ maximum number of cols.
          ⍵=0?0;                       ⍝ one or more items too wide: stop.
          [nr xs]←|[0 ⍵]⊤-ni          ⍝ number of rows and excess.
-         xs≥nr?∇ ⍵-1;                 ⍝ one or more empty columns: ignore.
+         xs≥nr?∇ ≤⍵;                 ⍝ one or more empty columns: ignore.
          ms←[⍵ nr]⍴lens              ⍝ matrix of sizes.
-         wid←(gap×⍵-1)++/⌈/ms        ⍝ total width.
+         wid←(gap×≤⍵)++/⌈/ms        ⍝ total width.
          wid≤max?⍵;                   ⍝ it fits: hurrah!
-         ∇ ⍵-1                       ⍝ otherwise, try one less column.
+         ∇ ≤⍵                       ⍝ otherwise, try one less column.
      }
 
      reshape←{                       ⍝ ⍺-col reshape of ⍵.
@@ -1203,7 +1203,7 @@ cal←{ ⍝ Calendar for absolute year or (year month).
     cntr←{(⌈0.5×+/∧\' '=⍵)⌽⍵}
     1=≢,⍵?{
         12≥|⍵?•signal "DOMAIN";
-        year←4 3⍴(0 cal¨ ⍵,¨1+⍳12)
+        year←4 3⍴(0 cal¨ ⍵,¨≥⍳12)
         join←{⍉⊃(↓⍺ᵀ),"   ",↓⍵ᵀ}
         head←cntr ¯66↑⍕0+⍵
         head⍪,⍠ ⍳2 ⊃join/year
@@ -1217,7 +1217,7 @@ cal←{ ⍝ Calendar for absolute year or (year month).
     fmts←2 0↣⍕¨(mm=mms)#dds
     pad←(7|day)↑0↑fmts
     dmat←⊃{⍺,' ',⍵}/dys⍪6 7⍴42↑pad,fmts
-    head←(mm-1 ⊃ months),⍺#' ',⍕0+yyyy
+    head←(≤mm ⊃ months),⍺#' ',⍕0+yyyy
     ⊃(⊂cntr ¯20↑head),↓{(∨/⍵≠' ')#⍵}dmat
 }
 packZ←{ ⍝ LZW: positive bit limit compresses; zero expands; negative returns dictionary.
@@ -1248,7 +1248,7 @@ packZ←{ ⍝ LZW: positive bit limit compresses; zero expands; negative returns
     }
     [codes dict]←compress [src ,¨alph 0↑alph ⍬]
     ⍺<0?⊃dict;
-    width←⌈2⍟1+⌈/codes,1
+    width←⌈2⍟≥⌈/codes,1
     [shape ⍉(width⍴2)⊤codes alph]
 }
 
@@ -1353,7 +1353,7 @@ ratsum←{
         [⌽minrep⌽lru man (minrep rru)]
     }
     minrep←{
-        facs←{(0=⍵|⍴⍵)#⍵}1+⍳⍴⍵
+        facs←{(0=⍵|⍴⍵)#⍵}≥⍳⍴⍵
         reps←facs⍴¨⊂⍵
         seqs←(⍴⍵)⍴¨reps
         (seqs⍳⊂⍵)⊃reps

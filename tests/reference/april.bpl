@@ -2099,7 +2099,7 @@ fn←⍴∘⍴ ⋄ fn 2 3 4⍴⍳9   ⍝ [3]ₓ
 ⍴∘⍴∘⍴ 2 3 4⍴⍳9   ⍝ [1]ₓ
 
 ⍝ april:1689 —
-÷↢5(30)   ⍝ 6
+÷↢5⊢30   ⍝ 6
 
 ⍝ april:1690 — remove April numeric separators
 ⌊10000×(+↢*↢0.5) 4 16 25   ⍝ [56487 176487 266487]ₓ
@@ -2206,10 +2206,10 @@ w←15 35 22
 fn←{2+⍵}⍣3 ⋄ fn5   ⍝ 11
 
 ⍝ april:1747 —
-{2+⍵}⍣3(9)   ⍝ 15
+{2+⍵}⍣3⊢9   ⍝ 15
 
 ⍝ april:1748 —
-2{⍺×2+⍵}⍣3(9)   ⍝ 100
+2{⍺×2+⍵}⍣3⊢9   ⍝ 100
 
 ⍝ april:1749 —
 {3×⍵}⍣(gg←3) 5   ⍝ 135
@@ -2221,7 +2221,7 @@ fn←{2+⍵}⍣{10<⍺} ⋄ fn2   ⍝ 12
 fn←{2+⍵}⍣{10<⍵} ⋄ fn2   ⍝ 14
 
 ⍝ april:1752 —
-fn←{⍵×2} ⋄ fn⍣3(4)   ⍝ 32
+fn←{⍵×2} ⋄ fn⍣3⊢4   ⍝ 32
 
 ⍝ april:1753 —
 ↓⍣2 [2 2]⍴⍳4   ⍝ ⊂[[0 1] [2 3]]
@@ -2993,7 +2993,7 @@ filter←{⍶¨⍵ # ⍵} ⋄ {2|⍵} filter ⍳20   ⍝ 1 3 5 7 9 11 13 15 17 1
 {,/⍵}/3⍴⊂⍳3   ⍝ 0 1 2
 
 ⍝ april:2172 — Compose operator composition within defined lateral operator
-÷{⍶∘⌽⍵}⍈9
+÷{⍶∘⌽⍵}↦9
 0.1111111111111111 0.125 0.14285714285714285 0.16666666666666666 0.2 0.25 0.3333333333333333 0.5 1
 
 ⍝ april:2174 — Pivotal inline operator containing variable function/value ⍺ assignment
@@ -3019,7 +3019,7 @@ filter←{⍶¨⍵ # ⍵} ⋄ {2|⍵} filter ⍳20   ⍝ 1 3 5 7 9 11 13 15 17 1
 {1+1 ⋄ 2+2 ⋄ ⍵=1?2;3⋄4⋄⍵=2?3;⍵=3?4;5}¨1 2 3   ⍝ 2 3 4
 
 ⍝ april:2187 — Fibonacci sequence generated using [∇ self] within guard for self-reference within a function
-{(⍵=1)∨⍵=2 ? 1;(∇ ⍵-2)+∇ ⍵-1}¨⍈12
+{(⍵=1)∨⍵=2 ? 1;(∇ ⍵-2)+∇ ⍵-1}¨↦12
 1 1 2 3 5 8 13 21 34 55 89 144
 
 ⍝ april:2189 — Locally-scoped function used with lateral operator within if-statement; Pure algorithm port uses dfn guards; Translate April $ conditional syntax to standard dfn guards; For top-level modified assignment, select the increment in a dfn and assign in the original scope
@@ -3041,7 +3041,7 @@ filter←{⍶¨⍵ # ⍵} ⋄ {2|⍵} filter ⍳20   ⍝ 1 3 5 7 9 11 13 15 17 1
 {aa←{⍵+5} ⋄ bb←{cc←{⍺,aa ⍵} ⋄ ⍺ cc ⍵} ⋄ 9 bb ⍵} 100   ⍝ 9 105
 
 ⍝ april:2202 — Operator composition assigned as function with a right-value composition on the right
-fn←÷@ ≤↢4 ⋄ fn ⍈9   ⍝ 1 0.5 0.3333333333333333 0.25 5 6 7 8 9
+fn←÷@ ≤↢4 ⋄ fn ↦9   ⍝ 1 0.5 0.3333333333333333 0.25 5 6 7 8 9
 
 ⍝ april:2204 — Dynamic aliasing of operator at top level
 key←⌸ ⋄ {(2|⍳≢⍵)⊢key ⍵}10 2⍴⍳20
@@ -3093,10 +3093,10 @@ key←⌸ ⋄ {(2|⍳≢⍵)⊢key ⍵}10 2⍴⍳20
 0 1 {o←⍎⍺⊃'∘' '⍥' ⋄ 1 +o- ⍵}¨ 2   ⍝ ¯1 ¯3
 
 ⍝ april:2225 — Glider 1
-3 3⍴⍈9 ∊ 1 2 3 4 8   ⍝ [$t $t $t⋄$t $f $f⋄$f $t $f]
+3 3⍴↦9 ∊ 1 2 3 4 8   ⍝ [$t $t $t⋄$t $f $f⋄$f $t $f]
 
 ⍝ april:2226 — Glider 2
-3 3⍴⌽⊃∨/1 2 3 4 8=⊂⍈9   ⍝ [$f $t $f⋄$f $f $t⋄$t $t $t]
+3 3⍴⌽⊃∨/1 2 3 4 8=⊂↦9   ⍝ [$f $t $f⋄$f $f $t⋄$t $t $t]
 
 ⍝ april:2227 — Quine
 1⌽,⍨9⍴"""1⌽,⍨9⍴"""   ⍝ "1⌽,⍨9⍴""""""1⌽,⍨9⍴"""""""
@@ -3252,7 +3252,7 @@ vr←3↣× ⋄ vr⁻¹24   ⍝ 8
 ⍕¯5   ⍝ "¯5"
 
 ⍝ april:2354 — Rational numbers; Monadic Format independently checked in Dyalog and through the Rust reference worker; Test monadic Format rather than April implicit display; capture shape and characters independently in Dyalog; Original April output is retained as provenance
-⍕÷⍈5   ⍝ "1 0.5 0.3333333333333333 0.25 0.2"
+⍕÷↦5   ⍝ "1 0.5 0.3333333333333333 0.25 0.2"
 
 ⍝ april:2356 — String; Monadic Format independently checked in Dyalog and through the Rust reference worker; Test monadic Format rather than April implicit display; capture shape and characters independently in Dyalog; Original April output is retained as provenance
 ⍕"abcd"   ⍝ "abcd"
@@ -3901,14 +3901,14 @@ $t
 ⍝ april/libraries/dfns/array/demo.lisp:171 — Upstream from selection helper; chained monadic operators bind through shared category reduction
 [from]←•load "lib/array.bpl"
 [ta_1 ta_2 ta_3 ta_4]←{10⊥¨1+⍳⌽⍵}¨,\5 4 3 2
-⍴ (¯1+⍴⍨¨/3#⊂⍈4) from ta_4
+⍴ (¯1+⍴⍨¨/3#⊂↦4) from ta_4
 ⍝ =>
 [1 2 2 3 3 3 4 4 4 4]ₓ
 
 ⍝ april/libraries/dfns/array/demo.lisp:172 — Upstream from selection helper; chained monadic operators bind through shared category reduction
 [from]←•load "lib/array.bpl"
 [ta_1 ta_2 ta_3 ta_4]←{10⊥¨1+⍳⌽⍵}¨,\5 4 3 2
-⍴ (¯1+⍴⍨¨/1 2#{⌽⍵}\2#⊂⍈4) from ta_4
+⍴ (¯1+⍴⍨¨/1 2#{⌽⍵}\2#⊂↦4) from ta_4
 ⍝ =>
 [4 4 4 4 3 3 3 2 2 1]ₓ
 
@@ -4665,7 +4665,7 @@ X =/¨⍳3 3   ⍝ 1 1 1
 [sudokuX]←•load "lib/graph.bpl"
 sudokuX 4 4⍴ 0 0 0 0,0 0 2 1,3 0 0 4,0 0 0 0
 ⍝ =>
-[2 1 4 3⋄4 3 2 1⋄3 2 1 4⋄1 4 3 2]
+[2 1 4 3⋄4 3 2 1⋄3 2 1 4⋄1 4 3 2]ₓ
 
 ⍝ april/libraries/dfns/graph/demo.lisp:89 — First-true masks use cumulative counts under basedpl left scan
 [queensX]←•load "lib/graph.bpl"
@@ -4900,31 +4900,31 @@ hex12 34 56   ⍝ "0c" "22" "38"
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:85 — Upstream hex/dec/to setup; Detect x=x+1 by zero difference, avoiding configurable CT; original expected result
 [hex]←•load "lib/numeric.bpl"
-hex 100×⍈6
+hex 100×↦6
 ⍝ =>
 "0064" "00c8" "012c" "0190" "01f4" "0258"
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:86 — Upstream hex/dec/to setup; Detect x=x+1 by zero difference, avoiding configurable CT; original expected result
 [hex]←•load "lib/numeric.bpl"
-hex 100000×⍈4
+hex 100000×↦4
 ⍝ =>
 "000186a0" "00030d40" "000493e0" "00061a80"
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:87 — Upstream hex/dec/to setup; Detect x=x+1 by zero difference, avoiding configurable CT; original expected result
 [hex]←•load "lib/numeric.bpl"
-hex 4 5⍴⍈20
+hex 4 5⍴↦20
 ⍝ =>
 ["01" "02" "03" "04" "05"⋄"06" "07" "08" "09" "0a"⋄"0b" "0c" "0d" "0e" "0f"⋄"10" "11" "12" "13" "14"]
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:91 — Upstream hex/dec/to setup; Detect x=x+1 by zero difference, avoiding configurable CT; original expected result
 [hex]←•load "lib/numeric.bpl"
-4 hex 4 5⍴⍈20
+4 hex 4 5⍴↦20
 ⍝ =>
 ["0001" "0002" "0003" "0004" "0005"⋄"0006" "0007" "0008" "0009" "000a"⋄"000b" "000c" "000d" "000e" "000f"⋄"0010" "0011" "0012" "0013" "0014"]
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:95 — Upstream hex/dec/to setup; Detect x=x+1 by zero difference, avoiding configurable CT; original expected result
 [dec hex]←•load "lib/numeric.bpl"
-dec hex 2 4 5⍴⍈40
+dec hex 2 4 5⍴↦40
 ⍝ =>
 2 4 5⍴1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40
 
@@ -5014,11 +5014,11 @@ dec'f'   ⍝ 15
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:128 —
 [nicediv]←•load "lib/numeric.bpl"
-{∧/⍵∧.= ⍵ {+/ ⍺ nicediv ⍵}⊗ ⍵} ⍈50   ⍝ $t
+{∧/⍵∧.= ⍵ {+/ ⍺ nicediv ⍵}⊗ ⍵} ↦50   ⍝ $t
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:129 —
 [osc]←•load "lib/numeric.bpl"
-osc¨⍈30
+osc¨↦30
 ⍝ =>
 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
 
@@ -5052,7 +5052,7 @@ rational0.75   ⍝ 3 4
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:139 — Upstream Roman conversion; default-left assignment moved to its own statement; Original April expectation retained
 [roman]←•load "lib/numeric.bpl"
-⍈roman 'X'
+↦roman 'X'
 ⍝ =>
 "I" "II" "III" "IV" "V" "VI" "VII" "VIII" "IX" "X"
 
@@ -5064,7 +5064,7 @@ rational0.75   ⍝ 3 4
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:141 — Upstream Roman conversion; default-left assignment moved to its own statement; Original April expectation retained
 [roman]←•load "lib/numeric.bpl"
-"II" "III" "IV" {⍺⍴⍈⍵}roman "XXIV"
+"II" "III" "IV" {⍺⍴↦⍵}roman "XXIV"
 ⍝ =>
 2 3 4⍴"I" "II" "III" "IV" "V" "VI" "VII" "VIII" "IX" "X" "XI" "XII" "XIII" "XIV" "XV" "XVI" "XVII" "XVIII" "XIX" "XX" "XXI" "XXII" "XXIII" "XXIV"
 
@@ -5084,7 +5084,7 @@ rational0.75   ⍝ 3 4
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:147 — Upstream Roman operator with standalone default-left assignment; Dyalog formatting includes the trailing padding column
 [roman]←•load "lib/numeric.bpl"
-↓⍕ ×⊗⍨∘⍈roman 'X'
+↓⍕ ×⊗⍨∘↦roman 'X'
 ⍝ =>
 " I     II     III    IV      V     VI      VII     VIII    IX     X    " " II    IV     VI     VIII    X     XII     XIV     XVI     XVIII  XX   " " III   VI     IX     XII     XV    XVIII   XXI     XXIV    XXVII  XXX  " " IV    VIII   XII    XVI     XX    XXIV    XXVIII  XXXII   XXXVI  XL   " " V     X      XV     XX      XXV   XXX     XXXV    XL      XLV    L    " " VI    XII    XVIII  XXIV    XXX   XXXVI   XLII    XLVIII  LIV    LX   " " VII   XIV    XXI    XXVIII  XXXV  XLII    XLIX    LVI     LXIII  LXX  " " VIII  XVI    XXIV   XXXII   XL    XLVIII  LVI     LXIV    LXXII  LXXX " " IX    XVIII  XXVII  XXXVI   XLV   LIV     LXIII   LXXII   LXXXI  XC   " " X     XX     XXX    XL      L     LX      LXX     LXXX    XC     C    "
 
@@ -5544,7 +5544,7 @@ realroots2 1 ¯3   ⍝ 1 ¯1.5
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:302 —
 [roots]←•load "lib/numeric.bpl"
-⌊roots ⍈3   ⍝ ¯1j1 ¯1j¯2
+⌊roots ↦3   ⍝ ¯1j1 ¯1j¯2
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:303 —
 [polar]←•load "lib/numeric.bpl"
@@ -5672,7 +5672,7 @@ enlist ← {1↓,/'·',,,¨⍵}⍣∞
 enlist ,↢⊂/⍳5   ⍝ 0 1 2 3 4
 
 ⍝ april/libraries/dfns/power/demo.lisp:29 —
-⌊1000× 0.5↣×⍣∞(2)
+⌊1000× 0.5↣×⍣∞⊢2
 ⍝ =>
 0ₓ
 
@@ -5719,7 +5719,7 @@ enlist ,↢⊂/⍳5   ⍝ 0 1 2 3 4
 
 ⍝ april/libraries/dfns/power/demo.lisp:39 —
 [rl roll]←•load "lib/power.bpl"
-1↓{rl⍣⍺ ⍵}↢1¨⍈35 roll¨ ⍈34
+1↓{rl⍣⍺ ⍵}↢1¨↦35 roll¨ ↦34
 ⍝ =>
 [0 1 1 2 1 0 4 5 8 3 5 9 0 0 7 10 0 6 1 8 14 12 21 20 13 2 17 11 20 27 23 8 1 25]ₓ
 
@@ -6603,7 +6603,7 @@ tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6
 [foldl]←•load "lib/array.bpl"
 [bal fmt put]←•load "tests/reference/support/sbst.bpl"
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
-tt←bal tt
+tt(bal)←
 ↓fmt tt
 ⍝ =>
 "              ┌five=5" "       ┌four=4┤      " "       │      └one=1 " "seven=7┤             " "       │       ┌six=6" "       └three=3┤     " "               └two=2"
@@ -6612,14 +6612,14 @@ tt←bal tt
 [foldl]←•load "lib/array.bpl"
 [bal get put]←•load "tests/reference/support/sbst.bpl"
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
-tt←bal tt
+tt(bal)←
 "six" get tt   ⍝ 6
 
 ⍝ april/libraries/dfns/tree/demo.lisp:501 — Self-contained SBST library and complete setup history; original April expectation; 0-origin offsets and standard operand aliases
 [foldl]←•load "lib/array.bpl"
 [bal fmt put rem]←•load "tests/reference/support/sbst.bpl"
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
-tt←bal tt
+tt(bal)←
 tt←tt rem "four"
 ↓fmt tt
 ⍝ =>
@@ -6629,7 +6629,7 @@ tt←tt rem "four"
 [disp foldl]←•load "lib/array.bpl"
 [bal put rem vec]←•load "tests/reference/support/sbst.bpl"
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
-tt←bal tt
+tt(bal)←
 tt←tt rem "four"
 ↓disp vec tt
 ⍝ =>
@@ -6639,7 +6639,7 @@ tt←tt rem "four"
 [foldl]←•load "lib/array.bpl"
 [bal chk put rem]←•load "tests/reference/support/sbst.bpl"
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
-tt←bal tt
+tt(bal)←
 tt←tt rem "four"
 chk tt   ⍝ [$t 6 1 3]ₓ
 
@@ -6763,7 +6763,7 @@ tt←tree pairs
 ⍝ april/libraries/dfns/tree/demo.lisp:741 — Self-contained library example with full setup and glyph-only matrix display; original independent April expectation retained
 [disp]←•load "lib/array.bpl"
 [try]←•load "tests/reference/support/splay.bpl"
-↓disp 10 try ⍈10
+↓disp 10 try ↦10
 ⍝ =>
 "┌──┬─────────────────────────────────────────┐" "│10│1=1┐                                     │" "│  │   └2=2┐                                 │" "│  │       └3=3┐                             │" "│  │           └4=4┐                         │" "│  │               └5=5┐                     │" "│  │                   └6=6┐                 │" "│  │                       └7=7┐             │" "│  │                           └8=8┐         │" "│  │                               └9=9┐     │" "│  │                                   └10=10│" "├──┼─────────────────────────────────────────┤" "│10│1=1┐                                     │" "│  │   └2=2┐                                 │" "│  │       └3=3┐                             │" "│  │           └4=4┐                         │" "│  │               └5=5┐                     │" "│  │                   └6=6┐                 │" "│  │                       └7=7┐             │" "│  │                           │         ┌8=8│" "│  │                           │     ┌9=9┘   │" "│  │                           └10=10┘       │" "├──┼─────────────────────────────────────────┤" "│10│1=1┐                                     │" "│  │   └2=2┐                                 │" "│  │       └3=3┐                             │" "│  │           └4=4┐                         │" "│  │               └5=5┐                     │" "│  │                   │         ┌6=6        │" "│  │                   │     ┌7=7┤           │" "│  │                   │     │   │   ┌8=8    │" "│  │                   │     │   └9=9┘       │" "│  │                   └10=10┘               │" "├──┼─────────────────────────────────────────┤" "│10│1=1┐                                     │" "│  │   └2=2┐                                 │" "│  │       └3=3┐                             │" "│  │           │         ┌4=4                │" "│  │           │     ┌5=5┤                   │" "│  │           │     │   │   ┌6=6            │" "│  │           │     │   └7=7┤               │" "│  │           │     │       │   ┌8=8        │" "│  │           │     │       └9=9┘           │" "│  │           └10=10┘                       │" "├──┼─────────────────────────────────────────┤" "│10│1=1┐                                     │" "│  │   │         ┌2=2                        │" "│  │   │     ┌3=3┤                           │" "│  │   │     │   │   ┌4=4                    │" "│  │   │     │   └5=5┤                       │" "│  │   │     │       │   ┌6=6                │" "│  │   │     │       └7=7┤                   │" "│  │   │     │           │   ┌8=8            │" "│  │   │     │           └9=9┘               │" "│  │   └10=10┘                               │" "├──┼─────────────────────────────────────────┤" "│10│     ┌1=1┐                               │" "│  │     │   │   ┌2=2                        │" "│  │     │   └3=3┤                           │" "│  │     │       │   ┌4=4                    │" "│  │     │       └5=5┤                       │" "│  │     │           │   ┌6=6                │" "│  │     │           └7=7┤                   │" "│  │     │               │   ┌8=8            │" "│  │     │               └9=9┘               │" "│  │10=10┘                                   │" "└──┴─────────────────────────────────────────┘"
 
@@ -7012,7 +7012,7 @@ a←1 2 3
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:136 — Load shared library; allow floating-point roundoff
 [rational]←•load "lib/numeric.bpl"
-rational (+↢÷)/¨0<⍳¨⍈10
+rational (+↢÷)/¨0<⍳¨↦10
 ⍝ =>
 [0 1 1 2 3 5 8 13 21 34⋄1 1 2 3 5 8 13 21 34 55]
 

@@ -5,8 +5,8 @@ Keys: `Alt-4`
 `f⇄g` calls `f`. `(f⇄g)⁻¹` is `g⇄f`.
 
 ```bpl
-f←{⍵+1}⇄{⍵-1} ⋄ f5            ⍝ 6
-f←{⍵+1}⇄{⍵-1} ⋄ f⁻² 5        ⍝ 3
+f←{≥⍵}⇄{≤⍵} ⋄ f5            ⍝ 6
+f←{≥⍵}⇄{≤⍵} ⋄ f⁻² 5        ⍝ 3
 ```
 
 Dyadic inversion holds `X` fixed: `X g (X f Y)` must recover `Y`.

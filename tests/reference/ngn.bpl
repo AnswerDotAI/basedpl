@@ -759,7 +759,7 @@ T←"ONE(TWO) BOOK(S)"⋄(T∊"()")⊽≠\T∊"()" # T   ⍝ "ONE BOOK"
 3↣-1   ⍝ 2
 
 ⍝ ngn:246 —
--↢2(9)   ⍝ 7
+-↢2⊢9   ⍝ 7
 
 ⍝ ngn:247 —
 1 2∪2 3   ⍝ 1 2 3
@@ -893,13 +893,13 @@ T←"ONE(TWO) BOOK(S)"⋄(T∊"()")⊽≠\T∊"()" # T   ⍝ "ONE BOOK"
 [1 1 1 1 1⋄0 1 2 3 4⋄0 0 1 3 6⋄0 0 0 1 4⋄0 0 0 0 1]
 
 ⍝ ngn:288 —
-1 2,⊗⍈3   ⍝ 2 3⍴[1 1;1 2;1 3;2 1;2 2;2 3]
+1 2,⊗↦3   ⍝ 2 3⍴[1 1;1 2;1 3;2 1;2 2;2 3]
 
 ⍝ ngn:289 —
 2 3↑⊗1 2   ⍝ 2 2⍴[1 0;2 0;1 0 0;2 0 0]
 
 ⍝ ngn:290 —
-⍴1 2,⊗⍈3   ⍝ [2 3]ₓ
+⍴1 2,⊗↦3   ⍝ [2 3]ₓ
 
 ⍝ ngn:291 —
 ⍴2 3↑⊗1 2   ⍝ [2 2]ₓ
@@ -1050,7 +1050,7 @@ T←"ONE(TWO) BOOK(S)"⋄(T∊"()")⊽≠\T∊"()" # T   ⍝ "ONE BOOK"
 2!6 12 20   ⍝ 15 66 190
 
 ⍝ ngn:339 —
-2 3⍴⍈6 ! [3 6 9⋄12 15 18]   ⍝ [3 15 84⋄495 3003 18564]
+2 3⍴↦6 ! [3 6 9⋄12 15 18]   ⍝ [3 15 84⋄495 3003 18564]
 
 ⍝ ngn:340 —
 0.5!1   ⍝ 1.273239544735163
@@ -1544,10 +1544,10 @@ $a⍳"NGN/"   ⍝ [13 6 13 26]ₓ
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:496 —
-{⍵+1}⍣5(3)   ⍝ 8
+{⍵+1}⍣5⊢3   ⍝ 8
 
 ⍝ ngn:497 —
-{⍵+1}⍣0(3)   ⍝ 3
+{⍵+1}⍣0⊢3   ⍝ 3
 
 ⍝ ngn:498 —
 ⍴⍣3 [2 2]⍴⍳4   ⍝ [1]ₓ
@@ -1747,19 +1747,19 @@ A←n÷2 ¿ n
 ,/3↕"ab" "cd" "ef" "hi"   ⍝ "abcdef" "cdefhi"
 
 ⍝ ngn:567 —
-+/2↕⍈5   ⍝ 3 5 7 9
++/2↕↦5   ⍝ 3 5 7 9
 
 ⍝ ngn:568 —
-+/5↕⍈8   ⍝ 15 20 25 30
++/5↕↦8   ⍝ 15 20 25 30
 
 ⍝ ngn:569 —
-+/10↕⍈10   ⍝ 1⍴55
++/10↕↦10   ⍝ 1⍴55
 
 ⍝ ngn:570 —
-+/11↕⍈10   ⍝ ⍬
++/11↕↦10   ⍝ ⍬
 
 ⍝ ngn:571 — Oversized windows have an empty frame
-+/12↕⍈10   ⍝ ⍬
++/12↕↦10   ⍝ ⍬
 
 ⍝ ngn:572 —
 -/2↕3 4 9 7   ⍝ ¯1 ¯5 2
@@ -1967,7 +1967,7 @@ a←3 4⍴⍳12⋄a.[∞;1 2]←99   ⍝ 99
 
 ⍝ ngn:634 —
 a←5 5⍴0
-a.[1 3;2 4]←2 2⍴⍈4
+a.[1 3;2 4]←2 2⍴↦4
 a
 ⍝ =>
 [0 0 0 0 0⋄0 0 1 0 2⋄0 0 0 0 0⋄0 0 3 0 4⋄0 0 0 0 0]
@@ -2273,7 +2273,7 @@ c←3 3⍴⍳9 ∊ 1 3 6 7 8
 b←¯1⊖¯2⌽5 7↑c
 life←{[1 ⍵]∨.∧3 4=⊂+/+⌿1 0 ¯1⊖⊗1 0 ¯1⌽¨⊂⍵}
 gen←{[(life⍣⍵)b]⌷" #"}
-gen¨⍈3
+gen¨↦3
 ⍝ =>
 [["       "⋄"       "⋄"  # #  "⋄"  ##   "⋄"   #   "];["       "⋄"       "⋄"  #    "⋄"  # #  "⋄"  ##   "];["       "⋄"       "⋄"   #   "⋄" ##    "⋄"  ##   "]]
 
@@ -2286,7 +2286,7 @@ t←⌽r⊤⍨8⍴2
 ["        #        "⋄"       ###       "⋄"      ##  #      "⋄"     ## ####     "⋄"    ##  #   #    "⋄"   ## #### ###   "⋄"  ##  #    #  #  "⋄" ## ####  ###### "⋄"##  #   ###     #"]
 
 ⍝ ngn/examples/6-queens:1 — Rotate and reflect the accumulator in basedpl's left scan
-queens←{ search←{ (⊂⍬)∊⍵?0⍴⊂⍬;0=⍴⍵?rmdups ⍺;[hd tl]←[↑⍵ 1↓⍵] ⋄ next←⍺↣,¨hd ⋄ rems←hd free¨ ⊂tl ⋄ ,/ next ∇¨ rems } ⋄ cvex←⍈⍵ × ⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4#⊂⍵} ⋄ refs←{{⍋⍺}\2#⊂⍵} ⋄ best←{↑⍋⊃⍵ ⊃ ⍵} ⋄ syms←, ⊃ refs¨ rots ⍵ ⋄ (⍵≡best syms)⊃[⍬ ,⊂⍵] } ⋄ fmt←{ chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟" ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd#⁻¹⍠¯1chars } ⋄ squares←⊂⍳⌈⍵÷2 , 1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares }
+queens←{ search←{ (⊂⍬)∊⍵?0⍴⊂⍬;0=⍴⍵?rmdups ⍺;[hd tl]←[↑⍵ 1↓⍵] ⋄ next←⍺↣,¨hd ⋄ rems←hd free¨ ⊂tl ⋄ ,/ next ∇¨ rems } ⋄ cvex←↦⍵ × ⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4#⊂⍵} ⋄ refs←{{⍋⍺}\2#⊂⍵} ⋄ best←{↑⍋⊃⍵ ⊃ ⍵} ⋄ syms←, ⊃ refs¨ rots ⍵ ⋄ (⍵≡best syms)⊃[⍬ ,⊂⍵] } ⋄ fmt←{ chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟" ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd#⁻¹⍠¯1chars } ⋄ squares←⊂⍳⌈⍵÷2 , 1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares }
 queens5
 ⍝ =>
 [["⍟ · · · ·"⋄"· · ⍟ · ·"⋄"· · · · ⍟"⋄"· ⍟ · · ·"⋄"· · · ⍟ ·"];["· ⍟ · · ·"⋄"· · · · ⍟"⋄"· · ⍟ · ·"⋄"⍟ · · · ·"⋄"· · · ⍟ ·"]]
@@ -2297,7 +2297,7 @@ queens5
 
 ⍝ ngn:501 — ngn accepts count/function operands to power in either order (apl.js, voc[⍣]); port to function⍣count; Explicit modified assignment updates the outer counter under basedpl scope rules; Original expected 5 retained and checked in Dyalog 20.0.53963.0
 c←0
-{c+←1}⍣5(0)
+{c+←1}⍣5⊢0
 c   ⍝ 5
 
 ⍝ ngn:421 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Use an explicit whole seed; a seeded wrapper leaves the unseeded function unchanged

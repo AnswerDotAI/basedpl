@@ -20,9 +20,8 @@ impl Session {
         while i < nodes.len() {
             if let (NodeKind::Operator(OperatorKind::Product), Some(next)) = (&nodes[i].kind, nodes.get(i + 1)) {
                 let root = out.last().filter(|root| match &root.kind {
-                    NodeKind::Name(_) | NodeKind::System(_) => matches!(self.node_category(root), Category::Value),
+                    NodeKind::Name(_) | NodeKind::System(_) | NodeKind::Group(_) => self.holds_array(root),
                     NodeKind::Literal(_) | NodeKind::ArrayLiteral { .. } | NodeKind::Scope(..) => true,
-                    NodeKind::Group(_) => self.holds_array(root),
                     _ => false,
                 });
                 let path = |key: Node, function, root: &Node| {
@@ -63,7 +62,7 @@ impl Session {
     }
 
     /// Whether a run ends in a dyadic operator, which then takes the next item as its right operand.
-    fn ends_in_dyadic_operator(&self, nodes: &[Node]) -> bool {
+    pub(super) fn ends_in_dyadic_operator(&self, nodes: &[Node]) -> bool {
         let nodes = self.members(nodes);
         match nodes.last().map(|n| &n.kind) {
             Some(NodeKind::Operator(op)) => OperatorNode::Primitive(*op).is_dyadic(),
@@ -286,8 +285,15 @@ impl Binder {
             else if n < 2 {
                 if let Some(i) = assignment.take() {
                     let begin = nodes[..i].iter().rposition(|n| matches!(n.kind, NodeKind::Assign)).map_or(0, |j| j + 1);
-                    if begin == i || n == 0 { return Err(nodes[i].span.error(ErrorKind::Syntax, "assignment needs a target and value")); }
-                    let entity = binder.stack.pop().unwrap();
+                    let missing = || nodes[i].span.error(ErrorKind::Syntax, "assignment needs a target and value");
+                    if begin == i { return Err(missing()); }
+                    // With nothing after `←`, `a(f)←` sets `a` to `f a` and gives no result.
+                    let Some(entity) = binder.stack.pop() else {
+                        cursor = begin + session.assignment_start(&nodes[begin..i])?;
+                        if !session.modify_monadic(&nodes[cursor..i])? { return Err(missing()); }
+                        pending.push(Entity { term: Term::Binding(Binding::NoResult), span: nodes[i].span.clone(), shy: true, selection: None, expression: None });
+                        continue;
+                    };
                     let value = entity.value()?;
                     if matches!(value, Binding::NoResult) { return Err(nodes[i].span.error(ErrorKind::Value, "assignment requires a value")); }
                     if matches!(value, Binding::Absent) { return Err(nodes[i].span.error(ErrorKind::Value, ABSENT)); }

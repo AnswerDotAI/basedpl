@@ -1,4 +1,4 @@
-"""Build SAX2B with BPL's script glyphs and tailed arrows. Requires fonttools and brotli."""
+"""Build SAX2B with BPL's script glyphs and arrows. Requires fonttools and brotli."""
 import io
 from copy import deepcopy
 from pathlib import Path
@@ -37,13 +37,24 @@ def add_scripts(font):
         # Subscript letters occupy a full box-drawing cell.
         font['hmtx'][name] = font['hmtx'][cmap[ord(source)]][0], glyf[name].xMin
 
-def add_tailed_arrows(font):
-    "Add right and left tailed arrows using SAX2's right-arrow outline."
+def add_arrows(font):
+    "Add tailed arrows and a right arrow from bar using SAX2's right-arrow outline."
     cmap, glyf = font.getBestCmap(), font['glyf']
     src = cmap[ord('→')]
     right = deepcopy(glyf[src])
     right.removeHinting()
     points = list(right.coordinates)
+    advance = font['hmtx'][src][0]
+    if ord('↦') not in cmap:
+        glyph = deepcopy(right)
+        x, y, top = right.xMin, right.yMin, right.yMax
+        # Points 18 and 24 bound the shaft's thickness in the pinned outline.
+        edge = x + points[24][1] - points[18][1]
+        glyph.coordinates.extend([(x, y), (x, top), (edge, top), (edge, y)])
+        glyph.flags.extend([1]*4)
+        glyph.endPtsOfContours.append(len(glyph.coordinates)-1)
+        glyph.numberOfContours += 1
+        add_glyph(font, '↦', glyph, advance)
     # In the pinned SAX2 outline, points 19–23 form the shaft's left end.
     head = points[:19] + points[24:]
     offset = right.xMin - min(x for x, y in head)
@@ -53,7 +64,6 @@ def add_tailed_arrows(font):
     right.flags.extend(right.flags[:19] + right.flags[24:])
     right.endPtsOfContours.append(len(right.coordinates)-1)
     right.numberOfContours += 1
-    advance = font['hmtx'][src][0]
     for char, mirror in [('↣', False), ('↢', True)]:
         if ord(char) in cmap: continue
         glyph = deepcopy(right)
@@ -66,7 +76,7 @@ def build(dest='nbs/fonts'):
     dest.mkdir(parents=True, exist_ok=True)
     font = TTFont(io.BytesIO(urlread(SAX2_URL + 'SAX2.ttf', decode=False, timeout=30)))
     add_scripts(font)
-    add_tailed_arrows(font)
+    add_arrows(font)
     names = {1: 'SAX2B', 3: 'SAX2B-2.001', 4: 'SAX2B', 6: 'SAX2B'}
     for record in font['name'].names:
         if record.nameID in names:

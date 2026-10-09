@@ -10,10 +10,10 @@ x←2 4 9
 f←- ⋄ (f)3         ⍝ ¯3
 ```
 
-A literal argument after a literal operand goes in parentheses, as in `f⍣2(3)`. Without parentheses, `f⍣2 3` takes `2 3` as the operand.
+Parentheses separate a numeric argument from a numeric operand, as in `f⍣2(3)`. Without a separator, `f⍣2 3` takes `2 3` as the operand. `⊢` also works: `f⍣2⊢3`.
 
 ```bpl
-1+⍣3(5)            ⍝ 8
+≥⍣3(5)            ⍝ 8
 ```
 
 `(A⋄B)` is a vector of the rows `A` and `B`. Each row is a vector, even a row with one item, and rows can differ in length. `(A⋄)` is a one-item vector holding the row `A`. In `(…)ₓ`, every number is exact, and each item must be a whole-number literal.

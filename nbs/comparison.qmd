@@ -376,14 +376,14 @@ n←2 3 4⍴⍳24
 
 ### Stencil with a numeric operand
 
-The operand ends at the space. `1 2 3 4` is in brackets to keep it out of the operand. `+/∘⊢` reduces each window and ignores the padding counts that Stencil passes as its left argument. The second line gets the same result without Stencil, because `↕` with a negative size pads the ends. BQN has no Stencil. Its line pads with zeros.
+The operand ends at the space. `1 2 3 4` is in brackets to keep it out of the operand. `(+/⊢)` reduces each window and ignores the padding counts that Stencil passes as its left argument. The second line gets the same result without Stencil, because `↕` with a negative size pads the ends. BQN has no Stencil. Its line pads with zeros.
 
 ```dyalog
 {+/,⍵}⌺3⊢1 2 3 4
 ```
 
 ```bpl
-+/∘⊢⌺3 [1 2 3 4]       ⍝ 3 6 9 7
+(+/⊢)⌺3 [1 2 3 4]       ⍝ 3 6 9 7
 +/¯3↕1 2 3 4           ⍝ 3 6 9 7
 ```
 
@@ -468,7 +468,7 @@ a +˝∘×⎉1‿∞ b
 
 ```bpl
 a←2 3⍴⍳6 ⋄ b←3 2⍴⍳6
-a +⌿∘×⍤1 ∞ b           ⍝ [10 13⋄28 40]
+a (+⌿×)⍤1 ∞ b           ⍝ [10 13⋄28 40]
 ```
 
 ### A vector bound into a composition
@@ -691,7 +691,7 @@ Source: the ngn/apl examples. Outer product is `+⊗`, in place of `∘.+`. Redu
 ```
 
 ```bpl
-picture←[9>|{⍺+⍵*2}/9⍴⊂¯3×.7j.5-⍉a+⊗0j1×a←(⍳n+1)÷n←98]⌷" #"
+picture←[9>|{⍺+⍵*2}/9⍴⊂¯3×.7j.5-⍉a+⊗0j1×a←(⍳≥n)÷n←98]⌷" #"
 ⍴picture               ⍝ [99 99]ₓ
 ```
 

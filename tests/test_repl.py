@@ -49,7 +49,7 @@ def test_terminal_symbol_entry_and_exit(tmp_path):
         layout = json.loads(files('basedpl').joinpath('layout.json').read_text())
         typed = {k: v for k, v in layout['option'].items() if isinstance(v, str)}
         enter('"' + ''.join('\x1b'+k for k in typed) + '"\r', '\r\n' + ''.join(typed.values()) + '\r\n')
-        enter('r\x1bh2\x1b.× +/1\x1bl2\r', '\r\n')  # r←2↣× +/1⍈2
+        enter('r\x1bh2\x1b.× +/1\x1bl2\r', '\r\n')  # r←2↣× +/1↦2
         enter('\x1bq \x1bhr\r', '\r\n6\r\n')  # explicit output: Alt-q, then Space, types ⎕
         enter('3\x1b62\r', '\r\n9\r\n')  # Alt-6, then 2, types ²
         enter('"a^b"\r', '\r\na^b\r\n')  # in a string, ^ types itself

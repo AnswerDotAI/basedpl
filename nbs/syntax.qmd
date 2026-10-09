@@ -124,12 +124,13 @@ The target of `←` is the run just before it. The value is everything to the ri
 - a list of names, such as `[a b]`
 - any of these followed by a function, for [modified assignment](glyphs/assign.qmd)
 
-A space would end the target's run. Put a named function in parentheses to keep it in the target: `a(f)←3` is `a←a f 3`, at top level and in dfns. A value can itself contain an assignment. In `a←1 b←2`, the value of `a` is the strand `1 b←2`, which assigns 2 to `b` and gives `1 2`. Separate independent assignments with `⋄`. [Assignment](assignment.ipynb) describes each kind of target.
+A space would end the target's run. Put a named function in parentheses to keep it in the target: `a(f)←3` is `a←a f 3`, at top level and in dfns. With nothing after the arrow, `a(f)←` is `a←f a`. A value can itself contain an assignment. In `a←1 b←2`, the value of `a` is the strand `1 b←2`, which assigns 2 to `b` and gives `1 2`. Separate independent assignments with `⋄`. [Assignment](assignment.ipynb) describes each kind of target.
 
 ```bpl
 v←10 20 30 ⋄ v₁←7 ⋄ v            ⍝ 10 7 30
 [a b]←3 4 ⋄ a×b                  ⍝ 12
 a←1 ⋄ f←+ ⋄ a(f)←3 ⋄ a           ⍝ 4
+a←1 2 3 ⋄ a⌽← ⋄ a                 ⍝ 3 2 1
 a←1 b←2 ⋄ a                      ⍝ 1 2
 ```
 

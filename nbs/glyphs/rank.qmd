@@ -2,7 +2,7 @@
 
 Keys: `Alt-1 t`
 
-`f⍤R` applies `f` to the [cells](../terms.qmd#term-cell) of rank `R`. With two arguments, `f⍤R` pairs cells using leading agreement of the [frames](../terms.qmd#term-frame). Write a literal argument after the rank in brackets or [parentheses](parentheses.qmd), as in `-⍤0(5)`. Without brackets or parentheses, `0 5` in `-⍤0 5` is the rank. Three rules give the result:
+`f⍤R` applies `f` to the [cells](../terms.qmd#term-cell) of rank `R`. With two arguments, `f⍤R` pairs cells using leading agreement of the [frames](../terms.qmd#term-frame). Separate a numeric argument from the rank with `⊢` or [parentheses](parentheses.qmd), as in `-⍤0⊢5` or `-⍤0(5)`. A vector argument goes in touching brackets, as in `-⍤0[2 3]`. In `-⍤0 5`, `0 5` is the rank. Three rules give the result:
 
 1. Inside a frame, the 0-cell at a position holding an atom is that atom. The 0-cell at a position holding an array is a scalar holding the array.
 2. [Assembly](../terms.qmd#term-assembly) works as for `⊃`. Shorter results are padded with fill to a common shape. The shape of the whole result is the frame followed by that common shape. Each position in the frame holds the items of its result.
@@ -29,15 +29,15 @@ v←[[1 2] [3 4 5]]
 ≢¨v                ⍝ [2 3]ₓ
 ⊢⍤0v ≡ v          ⍝ $t
 {⍵ ⍵}⍤0[1 2]      ⍝ [1 1⋄2 2]
--⍤0(5)             ⍝ ¯5
+-⍤0⊢5             ⍝ ¯5
 ```
 
-With rank `∞`, the cell is the whole argument, and rank `¯∞` is rank 0. For example, `⍤1 ∞` pairs each row on the left with the whole right argument. In the examples below, `+⌿∘×⍤1 ∞` is the matrix-vector product. With a matrix on the right, the same function multiplies matrices.
+With rank `∞`, the cell is the whole argument, and rank `¯∞` is rank 0. For example, `⍤1 ∞` pairs each row on the left with the whole right argument. In the examples below, `(+⌿×)⍤1 ∞` is the matrix-vector product. With a matrix on the right, the same function multiplies matrices.
 
 ```bpl
 m←[1 2 3⋄4 5 6]
-m +⌿∘×⍤1 ∞ [1 2 3]                   ⍝ 14 32
-m +⌿∘×⍤1 ∞ [1 10⋄2 20⋄3 30]      ⍝ [14 140⋄32 320]
+m (+⌿×)⍤1 ∞ [1 2 3]                   ⍝ 14 32
+m (+⌿×)⍤1 ∞ [1 10⋄2 20⋄3 30]      ⍝ [14 140⋄32 320]
 ```
 
 To apply a function along chosen axes, see [Axis](axis.qmd).

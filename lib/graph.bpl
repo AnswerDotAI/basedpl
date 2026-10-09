@@ -68,7 +68,7 @@ gperm ← {⊂⍵ ⍳¨ [⍵]⌷⍺}  ⍝ ⍵-permutation of vertices of graph �
 ⍝ From http://dfns.dyalog.com/n_insnode.htm
 
 insnode ← {  ⍝ Insert vertex ⍵ in graph ⍺.
-  n←1+⍵  ⍝ vertex ⍵ is item ⍵, so the graph needs ⍵+1 items.
+  n←≥⍵  ⍝ vertex ⍵ is item ⍵, so the graph needs ⍵+1 items.
   (n⌈≢⍺)↑⍺,n⍴⊂⍬  ⍝ extend graph with sufficient nulls.
 }
 
@@ -162,12 +162,12 @@ scc ← {  ⍝ Strongly connected components (Tarjan).
   put←{(⍹⊃⍵)@ ⊂[⍶ ⍺] ⍵}  ⍝ ⍹ at ⍺ in field ⍶ of ⍵
   Lx←L put x  ⍝ ⍺ at x in lowlink vec :: T ← ⍺ ∇ T
   Xx←X put x  ⍝ ⍺ at x in indices vec :: T ← ⍺ ∇ T
-  succ←{1+@x ⍵}  ⍝ successor of index x  :: T ←   ∇ T
+  succ←{≥@x ⍵}  ⍝ successor of index x  :: T ←   ∇ T
   push←,@S
   ⍺←$f ⋄ trace←{⎕←0 _array.dsp ⍺,⍵ ⋄ ⍵}⍣⍺  ⍝ ⍺: optional tracing   :: T ←   ∇ T
   comp←{v←⍺  ⍝ strongly connected component
-    pops←1++/∧\v≠stk←S⊃⍵  ⍝ number of connected comps on stack
-    C∆←(1+⌈/C⊃⍵)@ pops↑stk C⊃⍵  ⍝ extended strongly connected comps
+    pops←≥+/∧\v≠stk←S⊃⍵  ⍝ number of connected comps on stack
+    C∆←(≥⌈/C⊃⍵)@ pops↑stk C⊃⍵  ⍝ extended strongly connected comps
     [(pops↓stk) C∆]@[S C]⍵  ⍝ reduced stack; extended comps
   }  ⍝ :: T ← v ∇ T
   conn←{v←⍺  ⍝ connection of vertex v
@@ -209,7 +209,7 @@ stdists ← {  ⍝ Spanning-tree path lengths.
     next≡⍬?dvec;  ⍝ no children: finished
     ∆dvec←⍺@next dvec  ⍝ extended distance vector
     ∆next←⍸tree∊,next  ⍝ grandchildren
-    (⍺+1ₓ)∇ [∆next ∆dvec]  ⍝ examine rest of tree
+    (≥⍺)∇ [∆next ∆dvec]  ⍝ examine rest of tree
   }[⍵⍳¯1 ¯1ₓ¨⍵]  ⍝ starting vertex and initial distances
 }
 
@@ -278,11 +278,11 @@ sudokuMatrix ← {  ⍝ Matrix for ⍵ ⍵-Sudoku puzzle.
 
 sudokuX ← {[n n]←⍴⍵  ⍝ Exact cover Sudoku solver.
   ⍺←sudokuMatrix n  ⍝ generic ⍵×⍵ constraint matrix.
-  r←∊(⍵≠0)>(⊂1+⍳n)=¨⍵  ⍝ already placed rows.
+  r←∊(⍵≠0)>(⊂≥⍳n)=¨⍵  ⍝ already placed rows.
   m←(~r)#⍺  ⍝ reduced matrix.
   f←X m  ⍝ exact cover.
   z←(~r)#⁻¹f  ⍝ merge of placements.
-  [n n]⍴z#(⍴z)⍴1+⍳n  ⍝ solution matrix.
+  [n n]⍴z#(⍴z)⍴≥⍳n  ⍝ solution matrix.
 }
 
 queensX ← {  ⍝ Exact cover N-Queens.

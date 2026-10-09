@@ -260,7 +260,7 @@ thing←{⍵≥3? ⍵≤8? 2|⍵; ⍵=0? '@'; ∞} ⋄ thing¨⍳10
 {⌊0.5+⍵}⌾(100×) 3.14159 2.71828 ¯0.125   ⍝ 3.14 2.72 ¯0.12
 
 ⍝ bqncrate/table.tsv:930 — Number of derangements of length 5
-1-/×\⌾⌽⍈5   ⍝ 44
+1-/×\⌾⌽↦5   ⍝ 44
 
 ⍝ bqncrate/table.tsv:976 — Mask that selects values between the first and last 1
 (∨\∧∨\⌾⌽) 0 0 1 0 1 1 0 0   ⍝ 0 0 1 1 1 1 0 0
