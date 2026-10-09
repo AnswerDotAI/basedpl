@@ -451,7 +451,7 @@ impl Primitive {
                 row("≥", "greater-or-equal", "", pervasive_monad("increment"), pervasive_dyad("greater-equal").identity(Boolean(true)))
             }
             Self::Iota => row("⍳", "iota", "", monad("iota", 1).cellwise().axes(), dyad("index-of", [W, W])),
-            Self::Range => row("→", "range", "right-arrow", monad("range", 0).cellwise(), dyad("to", [0, 0]).cellwise()),
+            Self::Range => row("⍈", "range", "quad-right-arrow", monad("range", 0).cellwise(), dyad("to", [0, 0]).cellwise()),
             Self::Keys => row(":", "colon", "", monad("unkey", W).axes(), dyad("keyed", [1, W]).cellwise().axes()),
             Self::Shape => row("⍴", "rho", "", monad("shape", W), dyad("reshape", [1, W]).cellwise()),
             Self::Tally => row("≢", "tally", "", monad("tally", W), dyad("not-match", [W, W])),

@@ -1,6 +1,6 @@
 # BasedPL
 
-Assume Dyalog APL with `⎕ML≥2` (`↑` first/take, `⊃` mix/pick), except below. BPL borrows from BQN and J. Use dfns, not tradfns or colon control structures.
+Assume Dyalog APL with `⎕ML≥2` (`↑` first/take, `⊃` mix/pick), except below. BPL borrows from BQN and J. It supports dfns, not tradfns or colon control structures. BPL's differences to APL are substantive enough that most APL idioms do not apply directly, and BPL's differences aim to provide more readable and concise syntax. So never try to write APL in BPL.
 
 ## Docs
 
@@ -28,23 +28,23 @@ Links are relative to https://answerdotai.github.io/basedpl/.
 - Removed forms: bracket indexing `Y[I]`, bracket axes `f[A]`, laminate, windowed reduce, outer product `∘.f`, and replicate/expand as functions `/ ⌿ \ ⍀`. These four remain reduction/scan operators.
 - Changed functions (monad/dyad): `○` cis/circle; `=` classify/equal (monad as J); `≠` unique-mask/not-equal. Added monads: `∨` real-imag, `∧` polar, `⊼` square, `⊽` double, `≤` decrement, `≥` increment, `⊤` binary-encode, `⊥` binary-decode, `<` sort-up, `>` sort-down, `↕` pairs (`2↕`), `∩` duplicates, `#` runs (run-length encoding: `#/` and `#⁻¹` decode), `⍷` groups (Dyalog `{⊂⍵}⌸`).
 - Added/renamed functions: `⊼` NAND (Dyalog `⍲`); `⊽` NOR (Dyalog `⍱`); `¿` roll/deal (Dyalog `?`); `π` pi-times/pi-ratio; `√` sqrt/root (BQN); `#` replicate first-axis cells, `#⁻¹` expand; `↕` windows (BQN, plus movements/padding); `⍭` primes (like J `p:`, different codes); `⨸` factors (J `q:`); `⌻` roots/polyval (J `p.`, but coefficients come from `⌻⁻¹`); `:` unkey/keyed.
-- Changed operators: `∘` atop as BQN, not bind; `⍤` rank only; `⍠` axis by number/name, not Variant.
+- Changed operators: `∘` atop as BQN; `⍤` rank only; `⍠` axis by number/name.
 - Added operators: `↣` before/bind-left (BQN `⊸`), `↢` after/bind-right (BQN `⟜`), `⊗` outer product (BQN `⌜`), `⊘` valences (BQN), `⌾` under (BQN `⌾`), `selector⍚cases` agenda (BQN `◶`), `⇄` explicit inverse pair (J `:.`), `∂` gradient/vector–Jacobian product.
 - Different details: `+ -` support character offsets/differences; `∊ ~ ∪ ∩` compare major cells; `⊂ ⊆` partition first axis; `⊤ ⊥` put digits on last axis; depth is unsigned; negative `⍳` counts down; dyadic `⍸` as BQN `⍋`. Reduce supports BQN-style seeds; scans accumulate LTR. Power supports list counts, inverses, `f⍣∞` fixed point and `f⍣[g]` history until.
-- `→` is range, not branch: `X→Y` counts from `X` to `Y` by 1, up or down, and `→N` counts from `1` (or `¯1`) to `N`. Each item is the start plus an exact count, so its type follows the start.
+- `⍈` is range: `X⍈Y` counts from `X` to `Y` by 1, up or down, and `⍈N` counts from `1` (or `¯1`) to `N`. Each item is the start plus an exact count, so its type follows the start.
 - Reading `⎕` gives a line of text, and `⍎⎕` evaluates it.
 
 ## Values and notation
 
 BQN's based arrays: numbers, characters and functions are atoms, distinct from rank-0 arrays. Enclose always adds a layer, including around atoms; `⍬⍴Y` makes a rank-0 array. Rank 0 passes atoms as themselves and array items enclosed. APL-style prototypes/fill remain; function fill is the function itself.
 
-`[a b]` is always a vector, even `[a]`, and each item is one element, functions included. Spaces separate unspaced item expressions; `;` separates expressions containing spaces, and within each such item spaces group as they do outside brackets. `⋄`/newlines stack rows along a new leading axis. `"k":v` items make a record: `["a":1 "b":2]`. Items evaluate LTR, unlike function arguments and fork arms, which evaluate RTL. In parentheses, rows instead form a nested vector: `(4⋄4 5)` is `[[4] [4 5]]`. Parentheses without rows only group. Newlines normally mean `⋄`, not continuation.
+`[a b]` is always a vector, even `[a]`, and each item is one element, functions included. Spaces separate unspaced item expressions; `;` separates expressions containing spaces, and within each such item spaces group as they do outside brackets. `⋄`/newlines stack rows along a new leading axis. `"k":v` items make a record: `["a":1 "b":2]`. Items evaluate LTR, unlike function arguments and fork arms, which evaluate RTL. In parentheses, rows instead form a nested vector: `(4⋄4 5)` is `[[4] [4 5]]`. Parentheses without rows only group. Newlines normally mean `⋄`.
 
 `"abc"` is a character vector; `'a'` is one character atom. `""` and `''` are the empty string. A double-quoted string can span lines, keeping its indentation. Double a double quote inside a string; `'''` is the single-quote character.
 
 Bare numbers are approximate floats. `3ₓ` is an exact integer; `1ᵣ3`/`1r3` an exact rational; `2ⱼ3`/`2j3` complex; `1ₑ¯3`/`1e¯3` an exponent. `[…]ₓ` marks exact literal arrays. Exact integers/rationals grow as needed; mixing with floats becomes approximate. `$t $f $n` are true/false/NaN; `∞ ¯∞` are infinities. IEEE NaN/infinity arithmetic; comparison tolerance `1E¯14`, but grade is exact. Positions, shape, tally and predicates are exact.
 
-`x²` is `x*2`; `f²` is `f⍣2`; `f⁻¹` inverts; `mᵀ` transposes; `fᵘ` encloses a function. `v₁` is `1⌷v`, `v₋₁` selects the last major cell. These postfix marks touch an item, or stand alone after a space to apply to the preceding run. Numeric `ₓ ᵣ ⱼ ₑ` are number markers, not indexing.
+`x²` is `x*2`; `f²` is `f⍣2`; `f⁻¹` inverts; `mᵀ` transposes; `fᵘ` encloses a function. `v₁` is `1⌷v`, `v₋₁` selects the last major cell. These postfix marks touch an item, or stand alone after a space to apply to the preceding run. Numeric `ₓ ᵣ ⱼ ₑ` are number markers.
 
 Undo and Under follow BQN's inferred-properties spec. Inverse operations are written `f⁻¹`: `1○⁻¹` is arcsine, `⍭⁻¹` counts primes and `•json⁻¹` writes JSON. `f⌾g` writes results back through a `g` that selects. For any other `g` it applies `g⁻¹`.
 
@@ -68,7 +68,7 @@ Plain assignment is local; modified/selective updates change the nearest binding
 
 ## System names
 
-`$a` is the uppercase Latin alphabet; `$d` is `"0123456789"`. System functions use case-insensitive `•name`, not `⎕NAME`. Options are generally keyed left arguments. A system function that takes one string or one number maps over an array of them, with any left argument applied whole to each item.
+`$a` is the uppercase Latin alphabet; `$d` is `"0123456789"`. System functions use case-insensitive `•name`. Options are generally keyed left arguments. A system function that takes one string or one number maps over an array of them, with any left argument applied whole to each item.
 
 - Text: `•c •ucs •normalize •r`.
 - Data/files: `•csv •json •literal •xml •image •deflate •date •vfi •nget •nput •fetch •hash •uuid`. Filesystem: `•path •metadata •readdir •copy •rename •remove •mkdir`. A format function reads its format, and its inverse writes it. `•json` reads JSON5.
@@ -79,7 +79,7 @@ Plain assignment is local; modified/selective updates change the nearest binding
 
 ## Style
 
-Use lowercase `j` in complex literals throughout tests and examples, including adapted reference cases. Reserve uppercase `J` for explicit input-alias tests. Keep archived upstream source unchanged. Write literal matrices in array notation, `[10 20 30⋄40 50 60]`, not as a reshape, `2 3⍴10 20 30 40 50 60`. Keep `⍴` where the example is about reshape. A `⋄` that separates rows has no spaces around it. A `⋄` that separates statements has a space on each side.
+Use lowercase `j` in complex literals throughout tests and examples, including adapted reference cases. Reserve uppercase `J` for explicit input-alias tests. Keep archived upstream source unchanged. Write literal matrices in array notation, `[10 20 30⋄40 50 60]`, not as a reshape. Keep `⍴` where the example is about reshape. A `⋄` that separates rows has no spaces around it. A `⋄` that separates statements has a space on each side.
 
 Brackets are the usual way to write a list, and to build an array from names or expressions. A bare literal list, such as `1 2 3`, is a shorthand. Write a list of names in brackets, as in `[a b]`, even where `a b` would also work. Write `[n 2]⍴0`, `[x],y`, `[a⋄b]` and `f⍤1 m`, not APL's `(n,2)⍴0`, `(⊂x),y`, `⊃[a b]` and `⊃f¨↓m`. End an operand with a space, not with parentheses or `⊢`. After a dyadic operator and a space, the whole next run is the operand. For example, `⌊⌾ 10× x` needs no parentheses. Where a literal operand would run into the argument, a vector argument goes in touching brackets: `f⍤1[2 3]`. A single number goes in parentheses: `f⍣¯2(5)`. Judge each line by how it reads. Report any case where none of these forms works.
 

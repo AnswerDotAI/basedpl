@@ -74,7 +74,8 @@ function render(out, { kind, data }) {
     const rgba = Object.keys(data).find(type => type.startsWith('image/x-rgba;'));
     const canvas = data['application/x-bpl-canvas+json'];
     if (canvas) drawCanvas(out, show(out, 'canvas'), canvas, data['application/x-bpl-canvas-data']);
-    else if (data['image/svg+xml'] || data['text/html']) show(out, 'div').innerHTML = data['image/svg+xml'] ?? data['text/html'];
+    // A parsed fragment runs the scripts in the markup, which `innerHTML` doesn't.
+    else if (data['image/svg+xml'] || data['text/html']) show(out, 'div').replaceChildren(document.createRange().createContextualFragment(data['image/svg+xml'] ?? data['text/html']));
     else if (rgba) {
         const image = new ImageData(new Uint8ClampedArray(data[rgba].buffer), +rgba.split('width=')[1]);
         Object.assign(show(out, 'canvas'), { width: image.width, height: image.height }).getContext('2d').putImageData(image, 0, 0);

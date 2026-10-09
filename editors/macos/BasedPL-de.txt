@@ -41,7 +41,7 @@ Option-Shift-u	÷
 Option-i	⍳
 Option-p	π
 Control-Option-p	stile prefix
-Option-Shift-l	→
+Option-Shift-l	⍈
 Option-j	↓
 Option-k	take prefix
 Option-Shift-#	⊢

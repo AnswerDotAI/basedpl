@@ -10,11 +10,11 @@ Keys: `Alt-i`. Ranks: `1` monadic, `∞ ∞` dyadic
 ⍳¯3                ⍝ 2 1 0
 ```
 
-[Range](range.qmd), `→`, counts from 1 instead, or between any two ends.
+[Range](range.qmd), `⍈`, counts from 1 instead, or between any two ends.
 
 ```bpl
-→4                 ⍝ 1 2 3 4
-3→6                ⍝ 3 4 5 6
+⍈4                 ⍝ 1 2 3 4
+3⍈6                ⍝ 3 4 5 6
 ```
 
 A shape vector generates an array of coordinate vectors. A negative length reverses its axis.

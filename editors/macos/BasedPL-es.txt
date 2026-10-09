@@ -42,7 +42,7 @@ Option-u	÷
 Option-Shift-`	⋄
 Option-i	⍳
 Option-p	π
-Option-l	→
+Option-l	⍈
 Option-j	↓
 Option-k	take prefix
 Option-,	↢

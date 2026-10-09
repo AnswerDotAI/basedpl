@@ -8,11 +8,11 @@ syntax match bplNumber /\v¯?∞|¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?([jJⱼ]�
 syntax match bplNumber /\v([\])])@<=ₓ/
 syntax match bplNumber /\v\$[tfn]/
 syntax match bplString /\v\$[ad]/
-syntax match bplFunction /[+×÷⌈⌊|*⍟○π√!∧∨⊼⊽~=≠<≤>≥⍳:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹#↕⍭⨸⌻⍸⍷⊢⊣¿-]/
+syntax match bplFunction /[+×÷⌈⌊|*⍟○π√!∧∨⊼⊽~=≠<≤>≥⍳⍈:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹#↕⍭⨸⌻⍸⍷⊢⊣¿-]/
 syntax match bplMonadicOperator #[¨⍨⊗⌸∂/⌿\\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘ]#
 syntax match bplDyadicOperator /[↣⍤∘⍠⍥↢.⍣⇄⊘⌾⍚@⌺]/
 syntax match bplArgument /[⍺⍵⍶⍹∇⍢]/
-syntax match bplKeyword /[←→⎕⋄?₀₁₂₃₄₅₆₇₈₉₋]/
+syntax match bplKeyword /[←⎕⋄?₀₁₂₃₄₅₆₇₈₉₋]/
 syntax match bplCharacter /'.\?'/
 syntax region bplString oneline start=/"/ skip=/""/ end=/"/
 syntax match bplComment /⍝.*$/

@@ -4588,47 +4588,47 @@ add←{⍺+⍵}
 ⍝⍝ Range
 
 ⍝ — A range counts up from its start to its end
-2→5   ⍝ 2 3 4 5
+2⍈5   ⍝ 2 3 4 5
 
 ⍝ — A lower end counts down
-5→2   ⍝ 5 4 3 2
+5⍈2   ⍝ 5 4 3 2
 
 ⍝ — Equal ends give one item
-3→3   ⍝ [3]
+3⍈3   ⍝ [3]
 
 ⍝ — Steps of 1 stop before passing an end that isn't whole
-0.5→3   ⍝ 0.5 1.5 2.5
+0.5⍈3   ⍝ 0.5 1.5 2.5
 
 ⍝ — The number of steps is whole within tolerance
-0→0.3÷0.1   ⍝ 0 1 2 3
+0⍈0.3÷0.1   ⍝ 0 1 2 3
 
 ⍝ — Each item is the start plus an exact count, so an exact start gives exact items
-•storage 1ₓ→5   ⍝ "integer"
+•storage 1ₓ⍈5   ⍝ "integer"
 
 ⍝ — An approximate start gives floats whatever the end
-•storage 1→5ₓ   ⍝ "float"
+•storage 1⍈5ₓ   ⍝ "float"
 
 ⍝ — Characters count through code points
-'e'→'a'   ⍝ "edcba"
+'e'⍈'a'   ⍝ "edcba"
 
 ⍝ — Monadic range counts from 1 to its argument
-→4ₓ   ⍝ [1 2 3 4]ₓ
+⍈4ₓ   ⍝ [1 2 3 4]ₓ
 
 ⍝ — A negative argument counts down from ¯1
-→¯3   ⍝ ¯1 ¯2 ¯3
+⍈¯3   ⍝ ¯1 ¯2 ¯3
 
 ⍝ — Zero gives an empty range
-→0   ⍝ ⍬
+⍈0   ⍝ ⍬
 
 ⍝ — Each item of a vector gives a range, and shorter ranges are padded
-→2 3   ⍝ [1 2 0⋄1 2 3]
+⍈2 3   ⍝ [1 2 0⋄1 2 3]
 
 ⍝ — A range can't mix a character and a number
-'a'→5
+'a'⍈5
 ⍝ error: DOMAIN ERROR
 
 ⍝ — A range needs a finite end
-1→∞
+1⍈∞
 ⍝ error: DOMAIN ERROR
 
 ⍝⍝ Exact and tolerant comparisons

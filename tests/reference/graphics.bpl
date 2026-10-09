@@ -21,6 +21,12 @@ leaf←•element "x:leaf"
 ⍝ xml-roundtrip — Writing what •xml read gives back the same text
 •xml⁻¹ •xml "<a href=""x"">hi</a>"   ⍝ "<a href=""x"">hi</a>"
 
+⍝ html-raw — HTML display writes script text unescaped, closes only void elements itself, and keeps XML rules inside svg
+[script div br svg]←•element "script" "div" "br" "svg"
+"text/html"⊃•mime div [script "a<b && c";div ⍬;br ⍬;svg script "a<b"]
+⍝ =>
+"<div><script>a<b && c</script><div></div><br/><svg><script>a&lt;b</script></svg></div>"
+
 ⍝ xml-names — A vector of names gives a vector of element functions
 [text circle]←•element ["text" "circle"]
 •nc "text" "circle"   ⍝ [3 3]ₓ

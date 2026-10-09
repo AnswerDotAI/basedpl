@@ -60,7 +60,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⊃` [mix](glyphs/mix.qmd) | Alt-x | mix | pick | Monad as Dyalog `⎕ML≥2`; pick cells or keys |
 | `⌷` [squad](glyphs/squad.qmd) | Alt-q Backslash | materialise | index | Negative indices; `∞`/`¯∞` select/reverse axis |
 | `⍳` [iota](glyphs/iota.qmd) | Alt-i | iota | index-of | Axis selectors; negative lengths count down |
-| `→` [range](glyphs/range.qmd) | Alt-l | range | to | Counts up or down from `1`, `¯1` or `X` to `Y`; not Dyalog's branch |
+| `⍈` [range](glyphs/range.qmd) | Alt-l | range | to | Counts up or down from `1`, `¯1` or `X` to `Y`; not Dyalog's branch |
 | `:` [colon](glyphs/colon.qmd) | | unkey | keyed | [Axis keys](keyed.ipynb) |
 | `⍸` [where](glyphs/where.qmd) | Alt-Minus i | where | interval-index | Dyad as BQN's `⍋` |
 | `∊` [member](glyphs/member.qmd) | Alt-e | enlist | member | Major cells, as BQN |

@@ -578,7 +578,7 @@
    <key code="34" output="⍳"/>
    <key code="35" output="π"/>
    <key code="36" output="&#x000D;"/>
-   <key code="37" output="→"/>
+   <key code="37" output="⍈"/>
    <key code="38" output="↓"/>
    <key code="39" output="⊢"/>
    <key code="40" action="k40-m4"/>

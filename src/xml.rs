@@ -53,15 +53,23 @@ fn escape(text: &str, output: &mut String) {
     }
 }
 
-fn write(value: &Value, output: &mut String, span: &Context<'_>) -> Result<(), Error> {
+/// How `write` writes markup. `Xml` escapes all text, and any element without children closes itself. `Html` follows HTML's parsing
+/// rules: the text of a `script` or `style` element is `Raw`, the contents of an `svg` or `math` element are `Xml`, and only the void
+/// elements in `VOID` close themselves.
+#[derive(Clone, Copy, PartialEq)]
+enum Markup { Xml, Html, Raw }
+
+const VOID: &[&str] = &["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"];
+
+fn write(value: &Value, output: &mut String, mode: Markup, span: &Context<'_>) -> Result<(), Error> {
     span.check()?;
     if let Some(text) = keyed::name(value) {
-        escape(&text, output);
+        if mode == Markup::Raw { output.push_str(&text) } else { escape(&text, output) }
         return Ok(());
     }
     if value.keys(0).is_none() {
         if value.is_atom() { return Err(span.domain_error("XML children must be text or elements")); }
-        for child in value.elements() { write(&child, output, span)?; }
+        for child in value.elements() { write(&child, output, mode, span)?; }
         return Ok(());
     }
     let tag = keyed::field(value, "tag").and_then(|v| keyed::name(&v)).filter(|s| valid_name(s)).ok_or_else(|| span.domain_error("invalid XML element"))?;
@@ -77,21 +85,29 @@ fn write(value: &Value, output: &mut String, span: &Context<'_>) -> Result<(), E
         escape(&attribute(&value, span)?, output);
         output.push('"');
     }
-    if children.is_empty() {
+    let html = (mode != Markup::Xml).then(|| tag.to_ascii_lowercase());
+    let inner = match html.as_deref() {
+        None | Some("svg" | "math") => Markup::Xml,
+        Some("script" | "style") => Markup::Raw,
+        Some(_) => Markup::Html,
+    };
+    if children.is_empty() && html.as_deref().is_none_or(|t| VOID.contains(&t)) {
         output.push_str("/>");
         return Ok(());
     }
     output.push('>');
-    write(&children, output, span)?;
+    write(&children, output, inner, span)?;
     output.push_str("</");
     output.push_str(&tag);
     output.push('>');
     Ok(())
 }
 
-pub(crate) fn serialize(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(crate) fn serialize(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> { text(right, Markup::Xml, span) }
+
+fn text(tree: &Value, mode: Markup, span: &Context<'_>) -> Result<Value, Error> {
     let mut output = String::new();
-    write(right, &mut output, span)?;
+    write(tree, &mut output, mode, span)?;
     Ok(keyed::text(&output))
 }
 
@@ -135,9 +151,9 @@ pub(crate) fn svg(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Re
     element("svg", Some(&attrs), right, span)?.with_renderer(display::renderer("svg-renderer", render_svg)).error_at(span, "SVG exceeds array limits")
 }
 
-fn render_html(_: Option<&Value>, tree: &Value, span: &Context<'_>) -> Result<Value, Error> { markup("text/html", tree, span) }
-fn render_svg(_: Option<&Value>, tree: &Value, span: &Context<'_>) -> Result<Value, Error> { markup("image/svg+xml", tree, span) }
-/// The XML text of `tree` as a MIME bundle of type `kind`.
-fn markup(kind: &str, tree: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    display::mime(kind, serialize(None, tree, span)?).error_at(span, "invalid XML MIME bundle")
+fn render_html(_: Option<&Value>, tree: &Value, span: &Context<'_>) -> Result<Value, Error> { markup("text/html", tree, Markup::Html, span) }
+fn render_svg(_: Option<&Value>, tree: &Value, span: &Context<'_>) -> Result<Value, Error> { markup("image/svg+xml", tree, Markup::Xml, span) }
+/// The markup of `tree` as a MIME bundle of type `kind`.
+fn markup(kind: &str, tree: &Value, mode: Markup, span: &Context<'_>) -> Result<Value, Error> {
+    display::mime(kind, text(tree, mode, span)?).error_at(span, "invalid XML MIME bundle")
 }
