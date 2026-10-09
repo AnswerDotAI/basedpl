@@ -139,19 +139,12 @@ From tightest to loosest:
 
 1. within a run, right to left
 2. across runs, right to left
-3. the pipe `→`, whose stages run left to right
-4. assignment `←`
-5. the error guard `::`
-6. `⋄`, which separates statements, and `?`, which ends a predicate
-7. `;`, which separates a dfn's bodies
+3. assignment `←`
+4. the error guard `::`
+5. `⋄`, which separates statements, and `?`, which ends a predicate
+6. `;`, which separates a dfn's bodies
 
 Spaces change grouping only at the first two levels.
-
-`→` separates pipeline stages. Each stage applies its function to the previous result, as the right argument. `←` takes the whole pipeline as its value.
-
-```bpl
-total←1+2×3 → 2× ⋄ total   ⍝ 14
-```
 
 ## Syntax highlighting
 

@@ -262,7 +262,7 @@ fn expression_dissection() {
     let r = s.eval("↑[+]");
     assert!(r.function.is_some());
     assert_eq!(r.output_text().len(), 2);
-    for code in ["1+⍳3", "(1+⍳3)ᵀ", "⍳3→+/", "(+/⍳3) (≢⍳4)"] {
+    for code in ["1+⍳3", "(1+⍳3)ᵀ", "(+/⍳3) (≢⍳4)"] {
         let r = s.eval(code);
         assert_eq!(r.output_text().len(), 2, "{code}: {:?}", r.error);
         assert!(r.output_text()[0].contains('⍳'));

@@ -22,7 +22,6 @@ pub struct Symbol {
 // Glyphs that are syntax, not functions or operators: glyph, name, kind, aliases.
 const SYNTAX: &[(&str, &str, &str, &str)] = &[
     ("←", "assign", "syntax", "left-arrow"),
-    ("→", "pipe", "syntax", "right-arrow"),
     ("⎕", "quad", "syntax", ""),
     ("•", "bullet", "system", "system"),
     ("⍺", "alpha", "argument", ""),

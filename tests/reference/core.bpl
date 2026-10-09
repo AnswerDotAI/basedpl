@@ -344,39 +344,6 @@ V←"aa" "bb" "cc":1 2 1
 
 ⍝⍝ Operand glyphs
 
-⍝ — Pipeline stages use ordinary APL binding, then apply left to right
-1+2×3 → 2× → -↢1   ⍝ 13
-
-⍝ — Assignment encloses the whole pipeline
-r←s←⍳4 → +/ → √ ⋄ [r s]   ⍝ [√6 √6]
-
-⍝ — Parentheses select pipeline boundaries
-1+(⍳4 → +/)   ⍝ 7
-
-⍝ — Pipe bodies still classify defined operators
-op←{⍵→⍶→⍹} ⋄ -op| 3   ⍝ 3
-
-⍝ — A pipeline may supply a predicate or a result
-{⍵→0<?⍵→⊼;0}3   ⍝ 9
-
-⍝ — Stages see earlier effects and run exactly once
-v←0 ⋄ 3 → {v+←1 ⋄ ⍵+v} → {v+←10 ⋄ ⍵+v}   ⍝ 15
-
-⍝ — A stage is a function, not another value
-3→4
-⍝ error: SYNTAX ERROR
-
-⍝ — Empty stages are structurally invalid
-3→→+
-⍝ error: SYNTAX ERROR
-
-⍝ — Stage assignment requires grouping
-3→f←+
-⍝ error: SYNTAX ERROR
-
-⍝ — Parenthesized assignments may construct stages
-3→(f←2×)→f   ⍝ 12
-
 ⍝ — Left and right operands bind without spaces
 2{⍶+⍹×⍵}3(4)   ⍝ 14
 
@@ -4617,6 +4584,52 @@ add←{⍺+⍵}
 
 ⍝ — Replicate copies a rational
 2ₓ#1r3   ⍝ 1r3 1r3
+
+⍝⍝ Range
+
+⍝ — A range counts up from its start to its end
+2→5   ⍝ 2 3 4 5
+
+⍝ — A lower end counts down
+5→2   ⍝ 5 4 3 2
+
+⍝ — Equal ends give one item
+3→3   ⍝ [3]
+
+⍝ — Steps of 1 stop before passing an end that isn't whole
+0.5→3   ⍝ 0.5 1.5 2.5
+
+⍝ — The number of steps is whole within tolerance
+0→0.3÷0.1   ⍝ 0 1 2 3
+
+⍝ — Each item is the start plus an exact count, so an exact start gives exact items
+•storage 1ₓ→5   ⍝ "integer"
+
+⍝ — An approximate start gives floats whatever the end
+•storage 1→5ₓ   ⍝ "float"
+
+⍝ — Characters count through code points
+'e'→'a'   ⍝ "edcba"
+
+⍝ — Monadic range counts from 1 to its argument
+→4ₓ   ⍝ [1 2 3 4]ₓ
+
+⍝ — A negative argument counts down from ¯1
+→¯3   ⍝ ¯1 ¯2 ¯3
+
+⍝ — Zero gives an empty range
+→0   ⍝ ⍬
+
+⍝ — Each item of a vector gives a range, and shorter ranges are padded
+→2 3   ⍝ [1 2 0⋄1 2 3]
+
+⍝ — A range can't mix a character and a number
+'a'→5
+⍝ error: DOMAIN ERROR
+
+⍝ — A range needs a finite end
+1→∞
+⍝ error: DOMAIN ERROR
 
 ⍝⍝ Exact and tolerant comparisons
 

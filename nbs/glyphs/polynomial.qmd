@@ -42,7 +42,7 @@ t⌻[3 4;5 12]ₓ                           ⍝ [25 169]ₓ
 
 Evaluation accepts fractional and negative exponents. Conversion to coefficients requires one variable and nonnegative integral exponents. Conversion also adds together terms of the same degree.
 
-Derivative coefficients: `1↓C × 1+⍳¯1+≢C`. Integral: `K,C÷1+⍳≢C`. See [Derivative](derivative.qmd).
+Derivative coefficients: `1↓C×⍳≢C`. Integral: `K,C÷→≢C`. See [Derivative](derivative.qmd).
 
 ## Errors
 

@@ -467,17 +467,6 @@ impl Session {
                     _ => return Ok(bound),
                 }
             }
-            NodeKind::Pipeline(stages) => {
-                let mut result = self.bind(&stages[0])?;
-                for stage in &stages[1..] {
-                    let expression = result.expression.take();
-                    let right = result.array(&node.span)?;
-                    let function = Function::from_value(self.bind(stage)?.value, &stage[0].span)?;
-                    result = function.call(None, &right, &mut self.at(&stage[0].span))?;
-                    if self.capture { result.expression = Some(Expression::call(&function, None, expression.unwrap_or_else(|| Expression::array(&right)))); }
-                }
-                return Ok(result);
-            }
             NodeKind::ArrayLiteral { cells, record: true, .. } => {
                 let mut entries = Vec::new();
                 for nodes in cells {

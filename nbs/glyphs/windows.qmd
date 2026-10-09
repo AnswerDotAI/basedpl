@@ -37,7 +37,7 @@ A negative size pads its axis. Each window is centred on a position, as in [Sten
 
 ```bpl
 ¯3↕1 2 3 4           ⍝ [0 1 2⋄1 2 3⋄2 3 4⋄3 4 0]
-[[¯3]⋄[2]]↕1+⍳8    ⍝ [0 1 2⋄2 3 4⋄4 5 6⋄6 7 8]
+[[¯3]⋄[2]]↕→8       ⍝ [0 1 2⋄2 3 4⋄4 5 6⋄6 7 8]
 ⍴¯3 2↕3 4⍴⍳12        ⍝ [3 3 3 2]ₓ
 ```
 

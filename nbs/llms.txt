@@ -31,7 +31,7 @@ Links are relative to https://answerdotai.github.io/basedpl/.
 - Changed operators: `∘` atop as BQN, not bind; `⍤` rank only; `⍠` axis by number/name, not Variant.
 - Added operators: `↣` before/bind-left (BQN `⊸`), `↢` after/bind-right (BQN `⟜`), `⊗` outer product (BQN `⌜`), `⊘` valences (BQN), `⌾` under (BQN `⌾`), `selector⍚cases` agenda (BQN `◶`), `⇄` explicit inverse pair (J `:.`), `∂` gradient/vector–Jacobian product.
 - Different details: `+ -` support character offsets/differences; `∊ ~ ∪ ∩` compare major cells; `⊂ ⊆` partition first axis; `⊤ ⊥` put digits on last axis; depth is unsigned; negative `⍳` counts down; dyadic `⍸` as BQN `⍋`. Reduce supports BQN-style seeds; scans accumulate LTR. Power supports list counts, inverses, `f⍣∞` fixed point and `f⍣[g]` history until.
-- `→` is a left-to-right function pipeline, not branch.
+- `→` is range, not branch: `X→Y` counts from `X` to `Y` by 1, up or down, and `→N` counts from `1` (or `¯1`) to `N`. Each item is the start plus an exact count, so its type follows the start.
 - Reading `⎕` gives a line of text, and `⍎⎕` evaluates it.
 
 ## Values and notation

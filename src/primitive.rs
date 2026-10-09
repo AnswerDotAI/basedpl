@@ -181,6 +181,7 @@ pub(crate) enum Primitive {
     Identity(bool),
     Compare(Comparison),
     Iota,
+    Range,
     Keys,
     Depth,
     Where,
@@ -349,7 +350,7 @@ pub(crate) fn axes(axis: &Value, rank: usize, span: &Context<'_>) -> Result<Vec<
 }
 /// Singleton extension is shared selection, not a universal broadcasting policy.
 impl Primitive {
-    const ALL: [Self; 60] = {
+    const ALL: [Self; 61] = {
         use {Arithmetic::*, Comparison::*, Math::*};
         [
             Self::Arithmetic(Plus),
@@ -377,6 +378,7 @@ impl Primitive {
             Self::Compare(Greater),
             Self::Compare(GreaterEqual),
             Self::Iota,
+            Self::Range,
             Self::Keys,
             Self::Shape,
             Self::Tally,
@@ -449,6 +451,7 @@ impl Primitive {
                 row("≥", "greater-or-equal", "", pervasive_monad("increment"), pervasive_dyad("greater-equal").identity(Boolean(true)))
             }
             Self::Iota => row("⍳", "iota", "", monad("iota", 1).cellwise().axes(), dyad("index-of", [W, W])),
+            Self::Range => row("→", "range", "right-arrow", monad("range", 0).cellwise(), dyad("to", [0, 0]).cellwise()),
             Self::Keys => row(":", "colon", "", monad("unkey", W).axes(), dyad("keyed", [1, W]).cellwise().axes()),
             Self::Shape => row("⍴", "rho", "", monad("shape", W), dyad("reshape", [1, W]).cellwise()),
             Self::Tally => row("≢", "tally", "", monad("tally", W), dyad("not-match", [W, W])),
@@ -607,6 +610,7 @@ impl Primitive {
             (Self::Tally, None) => Ok(generated(right.shape().first().copied().unwrap_or(1) as u64, true)),
             (Self::Iota, Some(x)) => index_of(x, right, span),
             (Self::Iota, None) => iota(right, span),
+            (Self::Range, _) => range(left, right, span),
             (Self::Where, Some(x)) => interval_index(x, right, span),
             (Self::Where, None) => where_indices(right, span),
             (Self::Random, Some(x)) => deal(x, right, &mut rand::rng(), span),

@@ -1,5 +1,5 @@
-//! Search and ordering primitives: index of, membership, without, union, intersection, unique, find, classification, iota, where,
-//! grade and interval index. Their search kernels are in `crate::search`.
+//! Search and ordering primitives: index of, membership, without, union, intersection, unique, duplicates, find, classification,
+//! run-length encoding, groups, iota, range, where, grade, sort and interval index. Their search kernels are in `crate::search`.
 
 use super::*;
 
@@ -171,6 +171,36 @@ pub(super) fn iota(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let prototype = generated_items(vec![shape.len()], vec![0; shape.len()], exact).unwrap();
     let data = (0..len).map(|i| coordinates(&lengths, &shape, i, exact)).collect();
     Value::from_parts(shape, data, prototype).error_at(span, "invalid coordinate array")
+}
+
+/// `a→b` counts from `a` towards `b` in steps of 1, as far as `b` without passing it, and floors the number of steps within
+/// comparison tolerance. Each item is `a+i` or `a-i` for an exact count `i`, so the result's type follows `a`. Two characters
+/// count through the code points between them. `→n` is the first `⌊|n|` counting numbers, negated when `n` is negative, with the
+/// type of `n`.
+pub(super) fn range(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let real = |v: Value| match v {
+        Value::Number(n) if n.to_float().is_ok() => Ok(n),
+        _ => Err(span.domain_error("range needs real numbers or two characters")),
+    };
+    let steps = |distance: &Number| -> Result<usize, Error> {
+        let whole = distance.math_monad(Math::Magnitude).and_then(|d| d.math_monad(Math::Floor)).domain_at(span)?;
+        whole.nonnegative_integer().error_at(span, "range needs a finite length")
+    };
+    let counts = |items: std::ops::Range<usize>| {
+        generated_len(&[items.len()]).and_then(|len| Value::positions(vec![len], items.end, items)).error_at(span, "range exceeds array limits")
+    };
+    let Some(left) = left else {
+        let n = real(right.at(0))?;
+        let sign = Value::Number(n.like(if n.grade_order(&n.zero()).is_lt() { -1 } else { 1 }));
+        return Primitive::Arithmetic(Arithmetic::Times).call(Some(&sign), &counts(1..steps(&n)?.saturating_add(1))?, span);
+    };
+    let start = left.at(0);
+    let distance = match (&start, right.at(0)) {
+        (Value::Character(a), Value::Character(b)) => Number::from_integer(i64::from(u32::from(b)) - i64::from(u32::from(*a))),
+        (_, end) => real(end)?.dyad(Arithmetic::Minus, &real(start.clone())?).domain_at(span)?,
+    };
+    let op = if distance.grade_order(&distance.zero()).is_lt() { Arithmetic::Minus } else { Arithmetic::Plus };
+    Primitive::Arithmetic(op).call(Some(&start), &counts(0..steps(&distance)?.saturating_add(1))?, span)
 }
 
 /// `⍸` of an unkeyed vector of integer counts. One pass checks the counts, and a second writes each position.

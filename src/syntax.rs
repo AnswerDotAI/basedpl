@@ -13,8 +13,6 @@ pub(crate) enum NodeKind {
     Name(String),
     System(String),
     Assign,
-    Pipe,
-    Pipeline(Vec<Vec<Node>>),
     Output,
     ErrorGuard,
     Group(Vec<Node>),
@@ -54,7 +52,6 @@ fn definition_kind(nodes: &[Node]) -> DefinitionKind {
             NodeKind::Name(name) if name == "⍶" => DefinitionKind::MonadicOperator,
             NodeKind::Group(nodes) | NodeKind::Run(nodes) => definition_kind(nodes),
             NodeKind::ArrayLiteral { cells, .. } => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
-            NodeKind::Pipeline(stages) => stages.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
             _ => DefinitionKind::Function, // Nested definitions classify their own bodies.
         })
         .max()
@@ -109,7 +106,6 @@ impl ParseStatus {
 
 #[derive(Debug)]
 enum TokenKind {
-    Pipe,
     BraceOpen,
     BraceClose,
     Literal(Value),
@@ -437,7 +433,6 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>) -> Result<
             ';' => TokenKind::Semicolon,
             '⋄' => TokenKind::Separator,
             '←' => TokenKind::Assign,
-            '→' => TokenKind::Pipe,
             '•' if chars.peek().is_some_and(|&(_, c)| name_char(c)) => {
                 name(chars, false).map_err(|end| span(end).error(ErrorKind::Syntax, UNQUOTED))?;
                 TokenKind::System(source.text[start..position(chars, len)].to_owned())
@@ -596,7 +591,6 @@ impl Parser<'_> {
                 TokenKind::Name(name) => NodeKind::Name(name.clone()),
                 TokenKind::System(name) => NodeKind::System(name.clone()),
                 TokenKind::Assign => NodeKind::Assign,
-                TokenKind::Pipe => NodeKind::Pipe,
                 TokenKind::Output => NodeKind::Output,
                 TokenKind::ErrorGuard => {
                     if !open.is_some_and(|o| matches!(o.kind, TokenKind::BraceOpen)) { return Err(invalid(&token.span, "error guards belong to dfns")); }
@@ -759,9 +753,9 @@ fn items(nodes: Vec<Node>) -> Result<Vec<Vec<Node>>, ParseFailure> {
     runs.into_iter().map(expression).collect()
 }
 
-/// An expression outside brackets, or one item between semicolons: strands, then runs, then pipelines.
+/// An expression outside brackets, or one item between semicolons: strands, then runs.
 fn expression(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
-    let nodes = pipelines(runs(strands(nodes)?)?)?;
+    let nodes = runs(strands(nodes)?);
     subscripts_follow_items(&nodes)?;
     Ok(nodes)
 }
@@ -772,11 +766,7 @@ fn subscripts_follow_items(nodes: &[Node]) -> Result<(), ParseFailure> {
         return Err(invalid(&n.span, "a subscript selects from the item just before it, or after a space from the run before it"));
     }
     for n in nodes {
-        match &n.kind {
-            NodeKind::Run(inner) => subscripts_follow_items(inner)?,
-            NodeKind::Pipeline(stages) => stages.iter().try_for_each(|s| subscripts_follow_items(s))?,
-            _ => (),
-        }
+        if let NodeKind::Run(inner) = &n.kind { subscripts_follow_items(inner)? }
     }
     Ok(())
 }
@@ -826,64 +816,55 @@ fn close_strand(strand: &mut Vec<Node>, out: &mut Vec<Node>) -> Result<(), Parse
     Ok(())
 }
 
-/// Spaces separate runs, and pipes and error guards separate them too. The run holding an assignment's target takes in
-/// the `←` and its value, which runs to the next error guard. The target stays flat within that run, because assignment chooses
-/// its own target. A run alone between separators needs no wrapper.
-fn runs(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
+/// Spaces separate runs, and so do error guards. The run holding an assignment's target takes in the `←` and its value, which
+/// runs to the next error guard. The target stays flat within that run, because assignment chooses its own target. A run alone
+/// needs no wrapper.
+fn runs(nodes: Vec<Node>) -> Vec<Node> {
     let (mut result, mut part) = (Vec::with_capacity(nodes.len()), Vec::new());
     for node in nodes {
         if matches!(node.kind, NodeKind::ErrorGuard) {
-            result.extend(assignments(std::mem::take(&mut part))?);
+            result.extend(assignments(std::mem::take(&mut part)));
             result.push(node);
         } else { part.push(node) }
     }
-    result.extend(assignments(part)?);
-    Ok(result)
+    result.extend(assignments(part));
+    result
 }
 
 /// Assignments bind from the right, so this works back from the last `←`. A chain such as `a←b←0` stays flat.
-fn assignments(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
+fn assignments(nodes: Vec<Node>) -> Vec<Node> {
     let mut segments = vec![Vec::new()];
     for node in nodes {
         let assign = matches!(node.kind, NodeKind::Assign);
         segments.last_mut().unwrap().push(node);
         if assign { segments.push(Vec::new()); }
     }
-    let mut value: std::collections::VecDeque<Node> = pipelines(finish(spaced(segments.pop().unwrap())))?.into();
+    let mut value: std::collections::VecDeque<Node> = finish(spaced(segments.pop().unwrap())).into();
     while let Some(mut segment) = segments.pop() {
         let assign = segment.pop().unwrap();
         let (mut out, mut target) = spaced(segment);
         // A space before `←` leaves the target in the previous run.
-        if target.is_empty() && out.last().is_some_and(|n| !matches!(n.kind, NodeKind::Pipe)) {
+        if target.is_empty() && !out.is_empty() {
             target = match out.pop() { Some(Node { kind: NodeKind::Run(inner), .. }) => inner, Some(n) => vec![n], None => unreachable!() };
         }
         value.push_front(assign);
         for node in target.into_iter().rev() { value.push_front(node); }
         if out.is_empty() { continue; }
-        let mut nodes = Vec::from(value);
-        // Runs before the target in its stage stay separate from it.
-        if out.iter().rposition(|n| matches!(n.kind, NodeKind::Pipe)).map_or(0, |i| i + 1) < out.len() {
-            let span = cover(&nodes);
-            nodes = vec![Node { kind: NodeKind::Run(nodes), span }];
-        }
-        out.extend(nodes);
-        value = pipelines(out)?.into();
+        // Runs before the target stay separate from it.
+        let nodes = Vec::from(value);
+        let span = cover(&nodes);
+        out.push(Node { kind: NodeKind::Run(nodes), span });
+        value = out.into();
     }
-    Ok(value.into())
+    value.into()
 }
 
-/// Nodes with no space between them form runs, and pipes separate them. Returns the finished runs and the last
-/// run, which is still open.
+/// Nodes with no space between them form runs. Returns the finished runs and the last run, which is still open.
 fn spaced(nodes: Vec<Node>) -> (Vec<Node>, Vec<Node>) {
     let (mut out, mut run): (Vec<Node>, Vec<Node>) = (Vec::with_capacity(nodes.len()), Vec::new());
     for node in nodes {
-        if matches!(node.kind, NodeKind::Pipe) {
-            flush(&mut run, &mut out);
-            out.push(node);
-        } else {
-            if run.last().is_some_and(|last| !touching(last, &node)) { flush(&mut run, &mut out); }
-            run.push(node);
-        }
+        if run.last().is_some_and(|last| !touching(last, &node)) { flush(&mut run, &mut out); }
+        run.push(node);
     }
     (out, run)
 }
@@ -895,49 +876,11 @@ fn flush(run: &mut Vec<Node>, out: &mut Vec<Node>) {
     }
 }
 
-/// Close the last run. A run alone between pipes needs no wrapper.
+/// Close the last run. A run that is the whole expression needs no wrapper.
 fn finish((mut out, mut run): (Vec<Node>, Vec<Node>)) -> Vec<Node> {
     flush(&mut run, &mut out);
-    let (mut result, mut stage) = (Vec::with_capacity(out.len()), Vec::new());
-    let close = |stage: &mut Vec<Node>, result: &mut Vec<Node>| {
-        if let [Node { kind: NodeKind::Run(inner), .. }] = stage.as_mut_slice() {
-            result.append(inner);
-            stage.clear();
-        } else { result.append(stage) }
-    };
-    for node in out {
-        if matches!(node.kind, NodeKind::Pipe) {
-            close(&mut stage, &mut result);
-            result.push(node);
-        } else { stage.push(node) }
-    }
-    close(&mut stage, &mut result);
-    result
-}
-
-// Assignment encloses the pipeline; error guards separate independent expressions.
-fn pipelines(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
-    if !nodes.iter().any(|n| matches!(n.kind, NodeKind::Pipe)) { return Ok(nodes); }
-    let mut result = Vec::new();
-    for part in nodes.split_inclusive(|n| matches!(n.kind, NodeKind::ErrorGuard)) {
-        let (expression, guard) =
-            if part.last().is_some_and(|n| matches!(n.kind, NodeKind::ErrorGuard)) { (&part[..part.len() - 1], part.last()) } else { (part, None) };
-        if let Some(pipe) = expression.iter().position(|n| matches!(n.kind, NodeKind::Pipe)) {
-            let start = expression[..pipe].iter().rposition(|n| matches!(n.kind, NodeKind::Assign)).map_or(0, |i| i + 1);
-            let stages: Vec<_> = expression[start..].split(|n| matches!(n.kind, NodeKind::Pipe)).map(<[Node]>::to_vec).collect();
-            if stages.iter().any(Vec::is_empty) { return Err(invalid(&expression[pipe].span, "pipe needs an expression on each side")); }
-            if stages.iter().skip(1).flatten().any(|n| matches!(n.kind, NodeKind::Assign)) {
-                return Err(invalid(&expression[pipe].span, "parenthesize assignment inside a pipe stage"));
-            }
-            let mut span = expression[start].span.clone();
-            span.range.end = expression.last().unwrap().span.range.end;
-            result.extend_from_slice(&expression[..start]);
-            result.push(Node { kind: NodeKind::Pipeline(stages), span });
-        }
-        else { result.extend_from_slice(expression); }
-        if let Some(guard) = guard { result.push(guard.clone()); }
-    }
-    Ok(result)
+    if let [Node { kind: NodeKind::Run(inner), .. }] = out.as_mut_slice() { return std::mem::take(inner); }
+    out
 }
 
 /// The position of the `:` in a bracketed `key:value` item: its first `:`, which follows keys, with no function before them.
@@ -987,7 +930,7 @@ impl SyntaxNode {
     }
 }
 
-/// The parse tree of `text`. Kinds are `NodeKind` variant names, plus `Program`, `Statement`, `Body` for each dfn body, `Cell` for each array-literal cell, `Stage` for each pipeline stage, `Comment`, and `Error` for lines that don't parse. Separators have no nodes.
+/// The parse tree of `text`. Kinds are `NodeKind` variant names, plus `Program`, `Statement`, `Body` for each dfn body, `Cell` for each array-literal cell, `Comment`, and `Error` for lines that don't parse. Separators have no nodes.
 pub fn syntax_tree(text: &str) -> SyntaxNode {
     let source = Source::new("<syntax>", text);
     let children = match parse(source.clone()) {
@@ -1034,7 +977,6 @@ fn statement_node(statement: &Statement) -> SyntaxNode { list_node("Statement", 
 
 fn syntax_node(node: &Node) -> SyntaxNode {
     let children = match &node.kind {
-        NodeKind::Pipeline(stages) => stages.iter().map(|s| list_node("Stage", s)).collect(),
         NodeKind::Group(nodes) | NodeKind::Run(nodes) => nodes.iter().map(syntax_node).collect(),
         NodeKind::Scope(target, body) => vec![syntax_node(target), syntax_node(body)],
         NodeKind::ArrayLiteral { cells, .. } => cells.iter().map(|c| list_node("Cell", c)).collect(),
@@ -1062,8 +1004,6 @@ impl NodeKind {
             Self::Name(_) => "Name",
             Self::System(_) => "System",
             Self::Assign => "Assign",
-            Self::Pipe => "Pipe",
-            Self::Pipeline(_) => "Pipeline",
             Self::Output => "Output",
             Self::ErrorGuard => "ErrorGuard",
             Self::Group(_) => "Group",

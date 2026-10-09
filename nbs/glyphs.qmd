@@ -60,6 +60,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⊃` [mix](glyphs/mix.qmd) | Alt-x | mix | pick | Monad as Dyalog `⎕ML≥2`; pick cells or keys |
 | `⌷` [squad](glyphs/squad.qmd) | Alt-q Backslash | materialise | index | Negative indices; `∞`/`¯∞` select/reverse axis |
 | `⍳` [iota](glyphs/iota.qmd) | Alt-i | iota | index-of | Axis selectors; negative lengths count down |
+| `→` [range](glyphs/range.qmd) | Alt-l | range | to | Counts up or down from `1`, `¯1` or `X` to `Y`; not Dyalog's branch |
 | `:` [colon](glyphs/colon.qmd) | | unkey | keyed | [Axis keys](keyed.ipynb) |
 | `⍸` [where](glyphs/where.qmd) | Alt-Minus i | where | interval-index | Dyad as BQN's `⍋` |
 | `∊` [member](glyphs/member.qmd) | Alt-e | enlist | member | Major cells, as BQN |
@@ -112,7 +113,6 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | Form | Key | Meaning |
 |---|---|---|
 | `←` [assign](glyphs/assign.qmd) | Alt-h | Assignment, including modified and selective forms |
-| `→` [pipe](glyphs/pipe.qmd) | Alt-l | Left-to-right function application |
 | `(…)` [parentheses](glyphs/parentheses.qmd) | | Grouping. With `⋄`, a vector of rows: `(4⋄4 5)` is `[[4] [4 5]]` |
 | `[…]` [brackets](glyphs/brackets.qmd) | | Vectors and arrays: `[a b c]`, `[a;b c]`, `[1 2⋄3 4]`. One item makes a one-item vector: `[x]` is `,⊂x` |
 | `{…}` [braces](glyphs/braces.qmd) | | Defined function or operator. `;` separates its bodies |

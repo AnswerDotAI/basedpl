@@ -353,7 +353,7 @@ m←⌽(32⍴2)⊤32↑0 16404 49152 57344 32789 24598 8215 57344 57344 16406 49
 
 ⍝ — Cut 3 tiles a matrix by the given movements and sizes, keeping partial tiles; ¯3 keeps only whole tiles, and a negative size reverses each tile
 [Cut]←•load "lib/dyalog.bpl"
-x←5 7⍴1+⍳35
+x←5 7⍴→35
 [[2 1⋄3 2]({+/,⍵}Cut 3)x;¯3 2({↑,⍵}Cut ¯3)x]
 ⍝ =>
 [[51 57 63 69 75 81 42⋄135 141 147 153 159 165 84⋄59 61 63 65 67 69 35] [15 16 17 18 19 20⋄22 23 24 25 26 27⋄29 30 31 32 33 34]]
