@@ -3,7 +3,7 @@ members = ["cli", "py", "wasm", "xtask"]
 default-members = [".", "cli", "py"]
 
 [workspace.package]
-version = "0.1.34"
+version = "0.1.35"
 edition = "2021"
 rust-version = "1.98"
 license = "Apache-2.0"
