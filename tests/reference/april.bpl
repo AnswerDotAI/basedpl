@@ -5257,39 +5257,39 @@ stamps¨15 16 17 18
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:203 — Fixed CT=1E¯14 port; original April expectation retained
 [cfract]←•load "lib/numeric.bpl"
-cfract 5÷8   ⍝ 0 1 1 1 2
+cfract 5÷8   ⍝ [0 1 1 1 2]ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:204 — Fixed CT=1E¯14 port; original April expectation retained
 [cfract]←•load "lib/numeric.bpl"
-cfract 67÷29   ⍝ 2 3 4 2
+cfract 67÷29   ⍝ [2 3 4 2]ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:205 — Fixed CT=1E¯14 port; original April expectation retained
 [cfract to]←•load "lib/numeric.bpl"
 cfract¨ ¯4 to 4
 ⍝ =>
-[,¯4 ,¯3 ,¯2 ,¯1 ,0 ,1 ,2 ,3 ,4]
+[,¯4ₓ ,¯3ₓ ,¯2ₓ ,¯1ₓ ,0ₓ ,1ₓ ,2ₓ ,3ₓ ,4ₓ]
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:206 — Euclidean continued fractions terminate at denominator zero, including non-coprime integer approximations; no change to approximate GCD or recursion limits
 [cfract]←•load "lib/numeric.bpl"
-10↑cfract *1   ⍝ 2 1 2 1 1 4 1 1 6 1
+10↑cfract *1   ⍝ [2 1 2 1 1 4 1 1 6 1]ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:207 — Fixed CT=1E¯14 port; original April expectation retained
 [cfract]←•load "lib/numeric.bpl"
-10↑cfract π1   ⍝ 3 7 15 1 292 1 1 1 2 1
+10↑cfract π1   ⍝ [3 7 15 1 292 1 1 1 2 1]ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:208 — Fixed CT=1E¯14 port; original April expectation retained
 [cfract]←•load "lib/numeric.bpl"
 20↑cfract 0.5×1+√5
 ⍝ =>
-1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+[1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1]ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:209 — Fixed CT=1E¯14 port; original April expectation retained
 [cfract]←•load "lib/numeric.bpl"
-cfract¯2.3   ⍝ ¯3 1 2 3
+cfract¯2.3   ⍝ [¯3 1 2 3]ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:210 — Euclidean continued fractions terminate at denominator zero, including non-coprime integer approximations; no change to approximate GCD or recursion limits
 [cfract]←•load "lib/numeric.bpl"
-10↑cfract 0.5×3+√13   ⍝ 3 3 3 3 3 3 3 3 3 3
+10↑cfract 0.5×3+√13   ⍝ [3 3 3 3 3 3 3 3 3 3]ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:214 —
 [bayes]←•load "lib/numeric.bpl"
@@ -7010,9 +7010,9 @@ a←1 2 3
 1 2 3
 ⍝ ⎕: 1 2 3
 
-⍝ april/libraries/dfns/numeric/demo.lisp:136 — Load shared library; allow floating-point roundoff
+⍝ april/libraries/dfns/numeric/demo.lisp:136 — Recover fractions from approximate convergents
 [rational]←•load "lib/numeric.bpl"
-rational (+↢÷)/¨0<⍳¨↦10
+rational (÷≥)⍣(⍳10)0.0
 ⍝ =>
 [0 1 1 2 3 5 8 13 21 34⋄1 1 2 3 5 8 13 21 34 55]
 
@@ -7128,9 +7128,9 @@ scg_3 ← [3;4;3 4;0 2 4;1 2 3]
 g←scg_3
 ⊃∪scc¨(⊂g)gperm¨↓pmat≢g   ⍝ 1 5⍴[0 0 0 0 0]ₓ
 
-⍝ april/libraries/dfns/numeric/demo.lisp:211 — Real rational recovery uses the first continued-fraction convergent within relative error 1e-14. Pi recovers 5419351/1725033, whose canonical continued fraction ends in 4. April's 14-column float-round-trip expectation is retained separately
+⍝ april/libraries/dfns/numeric/demo.lisp:211 — Real rational recovery uses the first continued-fraction convergent within relative error 1e-14. Pi recovers 5419351/1725033, whose canonical continued fraction ends in 4. April's 14-column float-round-trip expectation is retained separately; 0+ makes coefficients approximate
 [cfract rational]←•load "lib/numeric.bpl"
-rational (+↢÷)/¨,\ 0 cfract π1
+rational (+↢÷)/¨,\ 0+(0 cfract π1)
 ⍝ =>
 [3 22 333 355 103993 104348 208341 312689 833719 1146408 5419351⋄1 7 106 113 33102 33215 66317 99532 265381 364913 1725033]
 

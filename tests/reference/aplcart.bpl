@@ -8928,7 +8928,7 @@ Yv←[1 3 4;"abc"]
 
 ⍝ aplcart/table.tsv:1786 — Continued fraction approximation of real ⍵; Concrete recipe with independent Dyalog expectation; Use fixed comparison tolerance and shared library
 [cfract]←•load "lib/numeric.bpl"
-cfract1.5   ⍝ 1 2
+cfract1.5   ⍝ [1 2]ₓ
 
 ⍝ aplcart/table.tsv:1787 — Rational approximation to real ⍵; Concrete recipe with independent Dyalog expectation; Use fixed comparison tolerance and shared library
 [rational]←•load "lib/numeric.bpl"

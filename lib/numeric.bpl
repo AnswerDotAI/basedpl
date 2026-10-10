@@ -43,9 +43,9 @@ bsearch ← {  ⍝ Binary search: least n in range ⍵ with ⍶ n.
 cfract ← {  ⍝ Continued fraction approximation of real ⍵.
   ,{
     ⍵=0?⍬;
-    [n r]←[0 ⍵]⊤⍺  ⍝ next term and remainder.
+    [n r]←[0ₓ ⍵]⊤⍺  ⍝ next term and remainder.
     n,⍵∇r  ⍝ next term and cf of remainder.
-  }/⌊1E¯14+[⍵ 1]÷1∨⍵
+  }/⌊1r10¹⁴+[⍵ 1ₓ]÷1ₓ∨⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_colsum.htm
@@ -159,7 +159,7 @@ osc ← {1=⍵?1;2|⍵?∇ ≥3×⍵;∇ ⍵÷2}  ⍝ Oscillate - probably retur
 ⍝ From http://dfns.dyalog.com/c_rational.htm
 
 rational ← {  ⍝ Rational approximation to real ⍵.
-  ⊃[⍵ 1]÷⊂1∨⍵
+  ⊃[⍵ 1ₓ]÷⊂1ₓ∨⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_roman.htm

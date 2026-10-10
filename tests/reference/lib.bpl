@@ -363,3 +363,9 @@ x←5 7⍴↦35
 [lisp "";lisp "  ";lisp 20⍴"1";lisp 20⍴"a";lisp "'";lisp "(a '";lisp "(a 'b";lisp "(- 10 (* 2 3))"]
 ⍝ =>
 "unexpected eof" "unexpected eof" "numeric literal too long" "atom too long" "unexpected eof" "unexpected eof" "unexpected eof" 4
+
+⍝ — Fraction helpers preserve exact rationals beyond float precision
+[cfract rational]←•load "lib/numeric.bpl"
+[rational9007199254740993r29;cfract9007199254740993r29]
+⍝ =>
+[[9007199254740993 29]ₓ [310593077749689 2 2 2 2]ₓ]
