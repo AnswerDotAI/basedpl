@@ -118,7 +118,12 @@ Comparison between exact numbers is exact. Approximate comparison uses relative 
 
 Search functions compare major cells. `⍳` and `⍸` search their left argument. `∊ ~ ∩` search their right argument. The other argument's cells have the same rank as the major cells of the searched argument. A unit can't be searched, because it has no major cells: `s~" "` removes spaces, but `s~' '` is a `RANK` error.
 
-Search, membership, match and grouping use tolerant comparison. Tolerance isn't transitive. Search and grouping therefore compare each item with the first item it matches.
+Search, membership, match and the functions that find distinct major cells use tolerant comparison. Tolerance isn't transitive. A search finds the first match of each cell it looks for. Monadic `∪ ≠ = ∩ ⍷ #` and Key treat real numbers as one value when, in ascending order, each matches the next. The first and last of these numbers needn't match. A major cell that is an array counts as a copy of the first earlier distinct cell that it matches.
+
+```bpl
+≠[1 1+8E¯15 1+16E¯15]   ⍝ $t $f $f
+[1]⍳1+16E¯15            ⍝ 1ₓ
+```
 
 Grade and interval index ignore tolerance. They order values like this:
 

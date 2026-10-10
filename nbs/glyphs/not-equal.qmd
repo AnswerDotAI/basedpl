@@ -2,7 +2,7 @@
 
 Keys: `Alt-Shift-=`. Ranks: `∞` monadic, `0 0` dyadic
 
-`≠Y` marks first occurrences of major cells. Uses tolerant comparison and first matching representatives.
+`≠Y` marks the first occurrence of each distinct major cell. [Tolerance](../evaluation.qmd#equality-and-ordering) decides which cells are distinct.
 
 ```bpl
 ≠3 1 3 2 1         ⍝ $t $t $f $t $f

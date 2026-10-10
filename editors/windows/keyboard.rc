@@ -1,0 +1,5 @@
+#include <windows.h>
+STRINGTABLE
+BEGIN
+    1000 "BasedPL-us"
+END

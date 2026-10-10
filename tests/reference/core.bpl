@@ -3881,8 +3881,11 @@ y←1+8E¯15
 z←1+16E¯15
 [x y]⍳z   ⍝ 1ₓ
 
-⍝ — Unique-mask compares against retained representatives, not every earlier item
-≠[1 1+8E¯15 1+16E¯15]   ⍝ $t $f $t
+⍝ — Unique-mask puts a chain of tolerant matches in one class
+≠[1 1+8E¯15 1+16E¯15]   ⍝ $t $f $f
+
+⍝ — A row is a copy of the first earlier distinct row that it matches, so rows don't chain
+≠[1 2⋄1+8E¯15 2⋄1+16E¯15 2]   ⍝ $t $f $t
 
 ⍝ — Monadic `∩` keeps each distinct major cell that occurs more than once, in order of first appearance
 ∩"mississippi"   ⍝ "isp"
@@ -3932,14 +3935,8 @@ z←1+16E¯15
 ⍝ — A large index-of finds nothing outside tolerance
 (300⍴5 , 1)⍳1+2E¯14   ⍝ 301ₓ
 
-⍝ — A large unique-mask compares against retained representatives
-¯3↑≠(20⍴5),[1 1+8E¯15 1+16E¯15]   ⍝ $t $f $t
-
 ⍝ — A large search never matches a character with its code point
 (97+⍳8ₓ)⍳36⍴"abcdefgh"   ⍝ 36⍴8ₓ
-
-⍝ — A large Key groups by representatives, not transitive closure
-¯2↑{≢⍵}⌸(20⍴5),[1 1+8E¯15 1+16E¯15]   ⍝ [2 1]ₓ
 
 ⍝ — Large membership compares exact integers with floats within tolerance
 [1+8E¯15 1+2E¯14]∊⍳300ₓ   ⍝ $t $f
@@ -4281,8 +4278,8 @@ f←{⎕←⍵ ⋄ ⍵} ⋄ 2 +⍥f 3
 ⍝ —
 2↣×⍣0⊢3   ⍝ 3
 
-⍝ — Tolerant Key groups by representatives, not transitive closure
-{≢⍵}⌸[1 1+8E¯15 1+16E¯15]   ⍝ [2 1]ₓ
+⍝ — Tolerant Key puts a chain of matches in one group
+{≢⍵}⌸[1 1+8E¯15 1+16E¯15]   ⍝ [3]ₓ
 
 ⍝ —
 {[⍺ ⍵]}⌸7

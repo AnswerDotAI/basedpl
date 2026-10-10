@@ -2,8 +2,8 @@
 //!
 //! Two cells match when `Value::matches` says they do. A search for up to 16 needles among compact integers, floats or characters scans
 //! the items once for each needle. A real needle among floats or integers is compared with the range of floats tolerantly equal to it.
-//! Other small searches compare every pair, as do other searches for one needle. Larger ones build an
-//! index:
+//! Other small searches compare every pair, as do other searches for one needle. Larger searches, and classifications of any size,
+//! build an index:
 //! - Integers and characters index the first position of each value. A character's value is its code point. Integers match integers,
 //!   whether or not their storage is flagged for infinities. An infinity then shares its value with `i64::MAX` or `i64::MIN`. Characters
 //!   match only characters.
@@ -11,9 +11,11 @@
 //!   Each float then indexes as that whole number. A search does this when both its arguments qualify.
 //! - Exact data is hashed. Numbers must be exact, and arrays must have no keys and no functions. A hash bucket is only a candidate
 //!   list, so `Value::matches` confirms each candidate.
-//! - Reals are hashed with tolerance. Each goes into a bucket of 512 neighbouring `float_key`s, and each of its matches lies in its own
-//!   bucket or the neighbour on the side of its half. Cells that are arrays go into the bucket of their first number, and
+//! - A search hashes reals with tolerance. Each goes into a bucket of 512 neighbouring `float_key`s, and each of its matches lies in
+//!   its own bucket or the neighbour on the side of its half. Cells that are arrays go into the bucket of their first number, and
 //!   `Value::matches` confirms each candidate.
+//! - Classification sorts reals and splits them into runs where each matches the next. Each run is one class. Cells that are arrays
+//!   sort by their first number. Each is compared with the earlier representatives in its run.
 //!
 //! Other data takes the pairwise comparison.
 use crate::{
@@ -125,19 +127,46 @@ fn scanned(haystack: &Cells, needles: &Cells) -> Option<Vec<i64>> {
     }
 }
 
-/// The representative of each cell's class. Each cell is compared only with earlier representatives, so tolerant matches don't
-/// chain. A cell that matches none represents a new class.
+/// The representative of each cell's class. A class of real atoms is a run that `each_run` gives, and the run's earliest position
+/// represents it. Two reals in one class therefore needn't match each other. Other cells are compared only with earlier
+/// representatives. A cell that matches none represents a new class.
 pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<usize>, Error> {
-    if cells.len() >= 16 {
-        if let Some(classes) = with_keys!([cells.items()], |x| key_classes(x)) { return Ok(classes); }
-        if let Some(x) = whole_keys(cells) { return Ok(key_classes(&x)); }
-        if let Some(x) = hashes(cells, &RandomState::default()) { return hashed_classes(cells, &x, span); }
-        if let Some(x) = reals(cells) { return tolerant_classes(&x, span, |r, i| Ok(float_match(x[r], x[i]))); }
-        if let Some(x) = leading_reals(cells) { return tolerant_classes(&x, span, |r, i| cells.get(r).matches(&cells.get(i), span)); }
+    if let Some(classes) = with_keys!([cells.items()], |x| key_classes(x)) { return Ok(classes); }
+    if let Some(x) = whole_keys(cells) { return Ok(key_classes(&x)); }
+    if let Some(x) = hashes(cells, &RandomState::default()) { return hashed_classes(cells, &x, span); }
+    let mut classes = vec![0; cells.len()];
+    if let Some(x) = reals(cells) {
+        each_run(&x, span, |run| {
+            for &i in run { classes[i] = run[0]; }
+            Ok(())
+        })?;
+    } else if let Some(x) = leading_reals(cells) {
+        each_run(&x, span, |run| earliest(cells, run.iter().copied(), &mut classes, span))?;
+    } else {
+        earliest(cells, 0..cells.len(), &mut classes, span)?;
     }
+    Ok(classes)
+}
+
+/// Calls `run` with the positions of each run of `x`, in ascending order. A run is a longest sequence of reals, in ascending order,
+/// where each matches the next. Every real that a real matches lies in one interval (`equal_range`). A run therefore holds every
+/// match of each of its reals. An interrupt or a timeout stops the walk through the runs, but not the sort before it.
+fn each_run(x: &[f64], span: &Context<'_>, mut run: impl FnMut(&[usize]) -> Result<(), Error>) -> Result<(), Error> {
+    let mut order = sort_rows(x.len(), 1, |i, _| float_key(x[i]));
+    for positions in order.chunk_by_mut(|&a, &b| float_match(x[a], x[b])) {
+        span.check()?;
+        positions.sort_unstable();
+        run(positions)?;
+    }
+    Ok(())
+}
+
+/// Gives each cell at `positions`, which ascend, the earliest representative among them that matches it. A cell that matches none
+/// represents a new class.
+fn earliest(cells: &Cells, positions: impl IntoIterator<Item = usize>, classes: &mut [usize], span: &Context<'_>) -> Result<(), Error> {
     let mut representatives = Vec::new();
-    let mut classes = Vec::with_capacity(cells.len());
-    for i in 0..cells.len() {
+    for i in positions {
+        span.check()?;
         let cell = cells.get(i);
         let mut class = i;
         for &r in &representatives {
@@ -147,9 +176,9 @@ pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<usize>, 
             }
         }
         if class == i { representatives.push(i); }
-        classes.push(class);
+        classes[i] = class;
     }
-    Ok(classes)
+    Ok(())
 }
 
 /// The least key of `x`, and a table with an entry for each key from it to the greatest, each `empty`, when that range is at most
@@ -200,10 +229,8 @@ fn key_classes<K: Key>(x: &[K]) -> Vec<usize> {
 
 /// Whether each cell is the first of its class.
 pub(crate) fn firsts(cells: &Cells, span: &Context<'_>) -> Result<Vec<bool>, Error> {
-    if cells.len() >= 16 {
-        if let Some(mask) = with_keys!([cells.items()], |x| key_firsts(x)) { return Ok(mask); }
-        if let Some(x) = whole_keys(cells) { return Ok(key_firsts(&x)); }
-    }
+    if let Some(mask) = with_keys!([cells.items()], |x| key_firsts(x)) { return Ok(mask); }
+    if let Some(x) = whole_keys(cells) { return Ok(key_firsts(&x)); }
     Ok(classify(cells, span)?.into_iter().enumerate().map(|(i, f)| f == i).collect())
 }
 
@@ -460,18 +487,4 @@ fn tolerant_first(
             Ok(first as i64)
         })
         .collect()
-}
-
-/// The representative of each cell's class: the earliest representative that `matches` it, or the cell itself. Cell `i` is filed
-/// under the bucket of `x[i]`, as `tolerant_first` files them.
-fn tolerant_classes(x: &[f64], span: &Context<'_>, matches: impl Fn(usize, usize) -> Result<bool, Error>) -> Result<Vec<usize>, Error> {
-    let mut representatives = Buckets::new(x.len());
-    let mut classes = Vec::with_capacity(x.len());
-    for (i, &v) in x.iter().enumerate() {
-        span.check()?;
-        let mut class = None;
-        for r in representatives.near(v) { if class.is_none_or(|c| r < c) && matches(r, i)? { class = Some(r); } }
-        classes.push(class.unwrap_or_else(|| { representatives.push(bucket(v), i); i }));
-    }
-    Ok(classes)
 }

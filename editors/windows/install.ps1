@@ -1,6 +1,7 @@
 #Requires -RunAsAdministrator
 $ErrorActionPreference = 'Stop'
-if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Run 64-bit PowerShell on x64 Windows.' }
+$architecture = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITECTURE', 'Machine').ToLower()
+if (![Environment]::Is64BitProcess -or $architecture -notin @('amd64', 'arm64')) { throw 'Run 64-bit PowerShell on x64 or ARM64 Windows.' }
 $registry = 'HKLM:\SYSTEM\CurrentControlSet\Control\Keyboard Layouts'
 $entries = @(Get-ChildItem $registry | Get-ItemProperty)
 $existing = $entries | Where-Object { $_.'Layout File' -eq 'bplus.dll' } | Select-Object -First 1
@@ -14,12 +15,13 @@ if ($existing) {
         Where-Object { $_ -notin $entries.'Layout Id' } | Select-Object -First 1
     if (!$klid -or !$layoutId) { throw 'No free keyboard layout ID.' }
 }
-Copy-Item "$PSScriptRoot\amd64\bplus.dll" "$env:WINDIR\System32\bplus.dll" -Force
-Copy-Item "$PSScriptRoot\wow64\bplus.dll" "$env:WINDIR\SysWOW64\bplus.dll" -Force
+Copy-Item "$PSScriptRoot\$architecture\bplus.dll" "$env:WINDIR\System32\bplus.dll" -Force
 $key = New-Item "$registry\$klid" -Force
 New-ItemProperty $key.PSPath -Name 'Layout File' -Value 'bplus.dll' -PropertyType String -Force | Out-Null
 New-ItemProperty $key.PSPath -Name 'Layout Text' -Value 'BasedPL-us' -PropertyType String -Force | Out-Null
 New-ItemProperty $key.PSPath -Name 'Layout Id' -Value $layoutId -PropertyType String -Force | Out-Null
 New-ItemProperty $key.PSPath -Name 'Layout Display Name' -Value '@%SystemRoot%\system32\bplus.dll,-1000' -PropertyType ExpandString -Force | Out-Null
 Write-Host 'Installed BasedPL-us. Add it under English (United States) in Settings > Time & language > Language & region.'
-Write-Host 'Install SAX2B.ttf with the Windows font installer, then sign out and in. Switch layouts with Win+Space.'
+Copy-Item "$PSScriptRoot\SAX2B.ttf" "$env:WINDIR\Fonts\SAX2B.ttf" -Force
+New-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts' -Name 'SAX2B (TrueType)' -Value 'SAX2B.ttf' -PropertyType String -Force | Out-Null
+Write-Host 'SAX2B font installed. Switch layouts with Win+Space; sign out and in if BasedPL-us is not listed.'
