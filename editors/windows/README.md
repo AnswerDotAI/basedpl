@@ -4,7 +4,7 @@ BasedPL-us is a native US keyboard layout for x64 Windows 10 and 11. Normal US t
 
 ## Install
 
-Download `basedpl-keyboard-us-windows-x64.zip` from the **Windows keyboard** GitHub Actions build and extract it. Open 64-bit PowerShell as administrator in the extracted folder, then run:
+Download `basedpl-keyboard-us-windows-x64.zip` from the [latest release](https://github.com/AnswerDotAI/basedpl/releases/latest) and extract it. Open 64-bit PowerShell as administrator in the extracted folder, then run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1
