@@ -89,6 +89,10 @@ def _rectangular(value, seen):
     if any(shape != parts[0][0] for shape,_ in parts): return (len(value),), list(value)
     return (len(value),)+parts[0][0], [o for _,data in parts for o in data]
 
+def _float_bits():
+    "The bits of the workspace's default float width, which Python floats take."
+    return bpl._session.float_bits()
+
 def _array(value, seen=None):
     if isinstance(value, Array): return value._inner
     if isinstance(value, _Array): return value
@@ -100,27 +104,27 @@ def _array(value, seen=None):
         keys = [None if type(k) is int and k == i else k for i,k in enumerate(value)]
         if not all(k is None or isinstance(k, str) for k in keys): raise TypeError('keyed arrays need string keys, or an integer key equal to its position')
         seen.add(id(value))
-        try: return _Array(dict(shape=[len(value)], data=[_element(o, seen) for o in value.values()], prototype=prototype, axis_keys=[keys]))
+        try: return _Array(dict(shape=[len(value)], data=[_element(o, seen) for o in value.values()], prototype=prototype, axis_keys=[keys], width=_float_bits()))
         finally: seen.remove(id(value))
     if isinstance(value, str): return _Array(dict(shape=[len(value)], data=list(value), prototype=' '))
     if np is not None and isinstance(value, np.ndarray):
         kind, size = value.dtype.kind, value.dtype.itemsize
         if kind not in 'biufcUO' or kind == 'f' and size > 8 or kind == 'c' and size > 16: raise TypeError('unsupported NumPy dtype')
         if kind == 'u' and size == 8 and value.size and value.max() >= 1<<63: raise ValueError('uint64 values above the int64 range; convert with .astype(object) for exact integers')
-        if kind == 'b': return _Array.numeric(list(value.shape), True, np.ascontiguousarray(value).view(np.uint8))
-        # Unsigned bytes and signed integers of 16 bits or more cross at their own width. Signed bytes cross as `int16`, and wider unsigned
-        # integers as `int64`, which holds them after the check above.
-        if kind in 'iu':
-            dtype = np.int16 if kind == 'i' and size == 1 else np.int64 if kind == 'u' and size > 1 else value.dtype
-            return _Array.numeric(list(value.shape), False, np.ascontiguousarray(value, dtype=dtype))
-        if kind == 'f': return _Array.numeric(list(value.shape), False, np.ascontiguousarray(value, dtype=np.float64))
+        if kind == 'b': return _Array.numeric(list(value.shape), '?', np.ascontiguousarray(value).view(np.uint8))
+        # Unsigned bytes, signed integers of 16 bits or more and floats cross at their own width. Signed bytes cross as `int16`, and wider
+        # unsigned integers as `int64`, which holds them after the check above. A `float16` crosses as its bits.
+        if kind in 'iuf':
+            code = 'i2' if kind == 'i' and size == 1 else 'i8' if kind == 'u' and size > 1 else f'{kind}{size}'
+            data = np.ascontiguousarray(value, dtype=code)
+            return _Array.numeric(list(value.shape), code, data.view(np.uint16) if code == 'f2' else data)
         shape, data = value.shape, value.ravel().tolist()
         if kind == 'U': prototype = ' '
     else:
         shape, data = _rectangular(value, seen)
-        if not shape: return _Array(dict(atom=_element(value, seen)))
+        if not shape: return _Array(dict(atom=_element(value, seen), width=_float_bits()))
     seen.add(id(value))
-    try: return _Array(dict(shape=list(shape), data=[_element(o, seen) for o in data], prototype=prototype))
+    try: return _Array(dict(shape=list(shape), data=[_element(o, seen) for o in data], prototype=prototype, width=_float_bits()))
     finally: seen.remove(id(value))
 
 class _Operators:
@@ -317,7 +321,7 @@ class _Workspace:
     def fn(self, source):
         "A composable late-bound Function: one argument is omega; two are alpha, omega."
         if not isinstance(source, str): raise TypeError('function expression must be a string')
-        return _result(_Function.late_bound(source)).value
+        return _result(self._session.late_bound(source)).value
 
     def names(self, prefix='', classes=(2,3,4)):
         "Sorted visible names, filtered by prefix and name class."

@@ -2418,7 +2418,7 @@ x←¯1j0.1 1j¯1
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Inverse execute writes source that execute reads back
-⍎⁻¹ [1 2.5;"ab"]   ⍝ "[[1 2.5] ""ab""]"
+⍎⁻¹ [1 2.5;"ab"]   ⍝ "[[1 2.5]ₚ ""ab""]"
 
 ⍝ — Inverse ravel and table give back a vector
 [,⁻¹ 1 2 3;⍪⁻¹ ⍪1 2 3]   ⍝ [1 2 3;1 2 3]
@@ -2607,7 +2607,7 @@ x←[(9223372036854775807ₓ+[1 0]ₓ)-1ₓ;9223372036854775808r1-[1 2]ₓ]
 [2⍴⊂[9223372036854775807 9223372036854775806]ₓ;"integer" "integer"]
 
 ⍝ — Roll gives each result the exactness of its bound. Iota gives exact results only for exact arguments
-•storage¨[¿0ₓ;¿3ₓ 3;↑↑⍳[2 3]ₓ;↑↑⍳2ₓ 3]   ⍝ "float" "mixed" "integer" "float"
+•storage¨[¿0ₓ;¿3ₓ 3;↑↑⍳[2 3]ₓ;↑↑⍳2ₓ 3]   ⍝ "float64" "mixed" "integer" "float64"
 
 ⍝ — An exact number beside an approximate one gives an approximate result
 [0∨3ₓ;3ₓ∨0;1ₓ×3;3ₓ+0]   ⍝ 3 3 3 3
@@ -2773,7 +2773,7 @@ H←("" '*'@[[[0 1] 0] [[1 2] 1]])G
 [7 ¯1]ₓ⊤[¯9223372036854775808 5]ₓ   ⍝ [1 0⋄2 0]ₓ
 
 ⍝ — Approximate bases give approximate digits
-x←10 10⊤[12 34]ₓ ⋄ [x;•storage x]   ⍝ [[1 2⋄3 4];"float"]
+x←10 10⊤[12 34]ₓ ⋄ [x;•storage x]   ⍝ [[1 2⋄3 4];"float64"]
 
 ⍝ — Decode the same digits in binary and decimal
 [[2]⋄[10]]⊥1 0 1   ⍝ 5 101
@@ -3038,23 +3038,23 @@ v←⍳1000 ⋄ +/v+v   ⍝ 999000
 0 1÷0 2   ⍝ [$n 0.5]
 
 ⍝ — Structure keeps float storage, and an empty array takes its prototype's storage
-•storage¨[⌽⍳3;2 3⍴⍳6;0 3⍴0;0⍴1ₓ]   ⍝ "float" "float" "float" "integer"
+•storage¨[⌽⍳3;2 3⍴⍳6;0 3⍴0;0⍴1ₓ]   ⍝ "float64" "float64" "float64" "integer"
 
 ⍝⍝ Numeric storage
 
 ⍝ — •storage names the storage that holds an array's items
 •storage¨[⍳3ₓ;⍳3;1j2 3;"abc";1ₓ 0.5;[1 2;3]]
-"integer" "float" "complex" "character" "mixed" "mixed"
+"integer" "float64" "complex" "character" "mixed" "mixed"
 
 ⍝ — An atom gives its own kind, including a rational, a big exact integer and a function
 •storage¨[1ₓ;0.5;1j2;'a';1r3;9223372036854775808ₓ;+]
-"integer" "float" "complex" "character" "rational" "rational" "function"
+"integer" "float64" "complex" "character" "rational" "rational" "function"
 
 ⍝ — An empty array has the storage its prototype gives
-•storage¨[⍬;⍬ₓ;"";0⍴⊂1 2]   ⍝ "float" "integer" "character" "mixed"
+•storage¨[⍬;⍬ₓ;"";0⍴⊂1 2]   ⍝ "float64" "integer" "character" "mixed"
 
 ⍝ — Joining compact arrays, or writing into them, widens exact integers to floats
-•storage¨[0.5,⍳3ₓ;⊃[[1 2]ₓ;0.5 1.5];0.5@1 ⍳3ₓ]   ⍝ "float" "float" "float"
+•storage¨[0.5,⍳3ₓ;⊃[[1 2]ₓ;0.5 1.5];0.5@1 ⍳3ₓ]   ⍝ "float64" "float64" "float64"
 
 ⍝ — A complex number makes every number complex
 •storage¨[1j2,0.5;1j2,⍳2ₓ]   ⍝ "complex" "complex"
@@ -3065,12 +3065,82 @@ v←⍳1000 ⋄ +/v+v   ⍝ 999000
 ⍝ — Writing a float into integer storage converts the whole array
 x←⍳3ₓ
 x₁←0.5
-•storage x   ⍝ "float"
+•storage x   ⍝ "float64"
 
 ⍝ — Writing an exact integer into float storage makes it a float
 x←0.5 1.5
 x₀←2ₓ
-•storage x   ⍝ "float"
+•storage x   ⍝ "float64"
+
+⍝⍝ Float widths
+
+⍝ — •float converts to 32-bit floats, which keep their width through arithmetic with exact numbers and with each other
+v←32 •float 0.1 0.2
+•storage¨[v;v+1ₓ;v×v;*v;⌊v;v<0.2]   ⍝ "float32" "float32" "float32" "float32" "integer" "boolean"
+
+⍝ — Floats of two widths compute at the wider
+v←32 •float 0.1 0.2
+•storage¨[v+0.5;v,0.5;64 •float v]   ⍝ "float64" "float64" "float64"
+
+⍝ — An exact operand rounds to the float width before the operation
+(32 •float 1.5)×16777217ₓ   ⍝ 25165824
+
+⍝ — Comparison at 32 bits is exact, after an exact operand rounds to the width
+[(32 •float 0.1)=1r10;(32 •float 0.1)=0.1]   ⍝ $t $f
+
+⍝ — A search at 32 bits reads an exact needle at that width
+x←32 •float 16777216
+(x,x)⍳16777217ₓ   ⍝ 0ₓ
+
+⍝ — Infinite power stops when two 32-bit results lie within 4 units in the last place, and keeps the width
+•storage (2○⍣∞) 32 •float 1   ⍝ "float32"
+
+⍝ — Writing an exact number into 32-bit storage keeps the width
+x←32 •float 0.5 1.5
+x₀←2ₓ
+•storage x   ⍝ "float32"
+
+⍝ — Writing a 64-bit float into 32-bit storage widens it
+x←32 •float 0.5 1.5
+x₀←0.25
+•storage x   ⍝ "float64"
+
+⍝ — •float converts nested arrays too
+•storage¨(32 •float [1ₓ 0.5;⊂1 2])   ⍝ "float32" "mixed"
+
+⍝ — ₛ and ₚ mark a float's width, and after a list's closing bracket they mark every number in it
+•storage¨[1.5ₛ;1.5ₚ;[1 2]ₛ;[1ₓ 2]ₚ;⍬ₛ;[]ₛ]   ⍝ "float32" "float64" "float32" "float64" "float32" "float32"
+
+⍝ — A width marker after a list needs real numbers
+[1j2]ₛ
+⍝ error: DOMAIN ERROR
+
+⍝ — •literal⁻¹ marks every float with its width, so the text reads back at either default width
+•literal⁻¹ [1.5 2.5]ₛ   ⍝ "[1.5 2.5]ₛ"
+
+⍝ — •float keeps complex numbers at 64 bits
+•storage 64 •float 1j2   ⍝ "complex"
+
+⍝ — •float can't give complex numbers 32-bit parts
+32 •float 1j2
+⍝ error: DOMAIN ERROR
+
+⍝ — ₕ and 16 •float give 16-bit floats
+•storage¨[1.5ₕ;[1 2]ₕ;⍬ₕ;16 •float 0.5]   ⍝ "float16" "float16" "float16" "float16"
+
+⍝ — 16-bit floats keep their width beside exact numbers and widen beside 32-bit floats
+v←16 •float 0.1 0.2
+•storage¨[v+1ₓ;v×v;*v;v+(32 •float 1)]   ⍝ "float16" "float16" "float16" "float32"
+
+⍝ — Each 16-bit operation rounds its result to 16 bits
+(16 •float 0.1)+(16 •float 0.2)   ⍝ 0.2998047ₕ
+
+⍝ — +/, +\ and +.× on 16-bit floats keep 32-bit totals, where a 16-bit total would stop growing at 256
+x←16 •float 4096⍴0.1
+[+/x;¯1⌷+\x;x+.×(16 •float 4096⍴1)]   ⍝ [409.5 409.5 409.5]ₕ
+
+⍝ — A 16-bit matrix product stays 16-bit
+,(16 •float [1 2⋄3 4])+.×(16 •float [5 6⋄7 8])   ⍝ [19 22 43 50]ₕ
 
 ⍝ — Writing into mixed storage keeps it mixed
 x←'a' 1ₓ 2ₓ
@@ -3092,6 +3162,18 @@ m←1ₓ 0.5 2ₓ
 ⍝ — Monadic ⌊ and × give exact integers
 •storage¨[⌊0.5 1.5;×¯2.5 0 3.5]   ⍝ "integer" "integer"
 
+⍝ — Monadic ⌊ on 32-bit floats gives exact integers, which widen past 32 bits when they need to
+⌊32•float 1.5 3E9 ¯2.5   ⍝ [1 3000000000 ¯3]ₓ
+
+⍝ — An infinity in integer storage keeps the width of the float it came from
+((⍳3ₓ),32•float∞)₃   ⍝ ∞ₛ
+
+⍝ — Infinities of two widths join as floats of the wider width
+•storage (32•float∞),∞   ⍝ "float64"
+
+⍝ — Matrix division on 32-bit floats computes and gives 32-bit floats
+(32•float 3 4)⌹32•float[1 1⋄0 2]   ⍝ [1 2]ₛ
+
 ⍝ — An infinity never makes exact integers approximate, and shares integer storage with them
 •storage¨[⌊1.5 ∞;(⍳3ₓ),∞;∞,⍳3ₓ;(⍳3ₓ),2⍴∞;{⍵=1?∞;⍵}¨⍳3ₓ]
 "integer" "integer" "integer" "integer" "integer"
@@ -3102,7 +3184,7 @@ x₁←∞
 •storage x   ⍝ "integer"
 
 ⍝ — Arithmetic with an infinity gives floats
-•storage¨[0.5,∞ ¯∞;(⍳3ₓ)+∞]   ⍝ "float" "float"
+•storage¨[0.5,∞ ¯∞;(⍳3ₓ)+∞]   ⍝ "float64" "float64"
 
 ⍝ — A structural result of integer storage with infinities stays integer storage, whatever it keeps
 •storage¨[2↑[∞ 1 2]ₓ;1↓[∞ 1 2]ₓ;1↑[∞ 1]ₓ]   ⍝ "integer" "integer" "integer"
@@ -3137,17 +3219,17 @@ b←0.5
 x←1ₓ 0.5
 •storage¨[1×x;1ₓ×x;{⍵}¨x;¿6ₓ 7;{⍵=0?0.5;⍵}¨⍳3ₓ;1ₓ×⍳3ₓ]
 ⍝ =>
-"float" "mixed" "mixed" "mixed" "mixed" "integer"
+"float64" "mixed" "mixed" "mixed" "mixed" "integer"
 
 ⍝ — JSON arrays take the import rule, and JSON objects stay mixed
 •storage¨[•json "[1,1.5]";•json "[1.5,9007199254740993]";•json "{""a"":1,""b"":2}"]
-"float" "mixed" "mixed"
+"float64" "mixed" "mixed"
 
 ⍝ — CSV columns take the same import rule
 nl←•ucs 10
 •storage¨•csv "i,f,m",nl,"1,2.5,9007199254740993",nl,"2,3,1.5"
 ⍝ =>
-"i" "f" "m":"integer" "float" "mixed"
+"i" "f" "m":"integer" "float64" "mixed"
 
 ⍝⍝ Unicode conversion
 
@@ -4030,11 +4112,11 @@ z←1+16E¯15
 
 ⍝ — Roll gives whole numbers below its argument, exact only for an exact argument
 {[⍴⍵;∧/(⍵<9)∧⍵=⌊⍵;•storage ⍵]}¨[¿100⍴9;¿100⍴9ₓ]
-[[[100]ₓ;$t;"float"];[[100]ₓ;$t;"integer"]]
+[[[100]ₓ;$t;"float64"];[[100]ₓ;$t;"integer"]]
 
 ⍝ — Deal gives distinct whole numbers below its right argument
 {[⍴⍵;≢∪⍵;∧/(⍵<52)∧⍵=⌊⍵;•storage ⍵]}¨[13¿52;13ₓ¿52ₓ]
-[[[13]ₓ;13ₓ;$t;"float"];[[13]ₓ;13ₓ;$t;"integer"]]
+[[[13]ₓ;13ₓ;$t;"float64"];[[13]ₓ;13ₓ;$t;"integer"]]
 
 ⍝ — Roll of zero gives floats strictly between 0 and 1
 x←¿100⍴0 ⋄ ∧/(0<x)∧x<1   ⍝ $t
@@ -4388,13 +4470,13 @@ f←{⍵×+⍵}
 ⍕¨[1j2×1j¯2;¯0j2;1j2+3j4;+1j2]   ⍝ "5" "¯0ⱼ2" "4ⱼ6" "1ⱼ¯2"
 
 ⍝ — Written items keep their own kinds
-•storage¨1ₓ 0.5 1j2   ⍝ "integer" "float" "complex"
+•storage¨1ₓ 0.5 1j2   ⍝ "integer" "float64" "complex"
 
 ⍝ — Empty complex results have a float fill
 [↑0#1j2;↑1j2+0#1ₓ;+/0#1j2]   ⍝ 0 0 0
 
 ⍝ — A complex result with no imaginary part in any item has float storage
-•storage¨[1j2 2×1j¯2 2;1j2 2×1j2 2]   ⍝ "float" "complex"
+•storage¨[1j2 2×1j¯2 2;1j2 2×1j2 2]   ⍝ "float64" "complex"
 
 ⍝ — Complex storage holds infinities as reals, and an infinity equals only itself
 [1j2 2 ∞ ∞=5 2 5 ∞;1j2 ∞=∞ 1j2]   ⍝ [[$f $t $f $t];[$f $f]]
@@ -4562,7 +4644,7 @@ add←{⍺+⍵}
 ⍕42r1   ⍝ "42ₓ"
 
 ⍝ — An approximate number makes the result approximate
-•storage¨[1r3+1÷6;1÷6+0;1ₓ÷2;1÷2ₓ]   ⍝ "float" "float" "float" "float"
+•storage¨[1r3+1÷6;1÷6+0;1ₓ÷2;1÷2ₓ]   ⍝ "float64" "float64" "float64" "float64"
 
 ⍝⍝ Exact arrays prototypes and counts
 
@@ -4607,7 +4689,7 @@ add←{⍺+⍵}
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Written items keep their own kinds, including a big exact integer
-•storage¨9007199254740993ₓ 0.5 1r3   ⍝ "integer" "float" "rational"
+•storage¨9007199254740993ₓ 0.5 1r3   ⍝ "integer" "float64" "rational"
 
 ⍝ — An empty result of exact numbers has an exact fill
 [0ₓ#1r3;1ₓ+0#1r3]   ⍝ [⍬ₓ;⍬ₓ]
@@ -4639,7 +4721,7 @@ add←{⍺+⍵}
 •storage 1ₓ↦5   ⍝ "integer"
 
 ⍝ — An approximate start gives floats whatever the end
-•storage 1↦5ₓ   ⍝ "float"
+•storage 1↦5ₓ   ⍝ "float64"
 
 ⍝ — Characters count through code points
 'e'↦'a'   ⍝ "edcba"
@@ -6211,14 +6293,14 @@ x←1 ⋄ •src "x"
 ⍝⍝ Timing
 
 ⍝ — •time t gives the seconds since t, for each item
-t←•time 0 ⋄ [0≤•time t;⍴•time 2 3⍴t;•storage •time t]   ⍝ [$t;[2 3]ₓ;"float"]
+t←•time 0 ⋄ [0≤•time t;⍴•time 2 3⍴t;•storage •time t]   ⍝ [$t;[2 3]ₓ;"float64"]
 
 ⍝ — F •time x gives each function's fastest time per call, in the shape and keys of F
 F←["sum":+/ "max":⌈/]
 T←F •time ⍳10
 [0≤T.max;•storage T;⍴ [[+/]⋄[⌈/]] •time ⍳10;⍴ ⍬ •time 1]
 ⍝ =>
-[$t;"float";[2 1]ₓ;[0]ₓ]
+[$t;"float64";[2 1]ₓ;[0]ₓ]
 
 ⍝ — The left argument holds functions
 1 2 •time 3
@@ -6279,7 +6361,7 @@ testpath •nput "hello"
 M←•metadata testpath (testpath,"x")
 [M.kind;M.len;M.readable;M.target]
 ⍝ =>
-[["file" "none"];[5 0];[$t $f];["" ""]]
+[["file" "none"];[5 0]ₓ;[$t $f];["" ""]]
 
 ⍝ — •copy copies a directory with everything in it
 •mkdir testpath,"/s"

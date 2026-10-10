@@ -1,6 +1,6 @@
 use crate::{
-    array::{Gather, Items, Layout, Steps},
-    ErrorKind, Value,
+    array::{FloatWidth, Gather, Items, Layout, Steps},
+    ErrorKind, Number, Value,
 };
 use foldhash::{HashMap, HashSet, HashSetExt};
 use std::sync::Arc;
@@ -122,13 +122,13 @@ pub(crate) fn empty_record() -> Value { vector(Vec::new(), Vec::new()).expect("a
 
 /// A vector whose entries with a name are keyed by it. Each entry keeps its kind, as items written in brackets do.
 pub(crate) fn partial_vector(names: Vec<Option<Arc<str>>>, values: Vec<Value>) -> Result<Value, ErrorKind> {
-    let vector = if values.is_empty() { Value::empty(vec![0], Value::number(0.)?)? } else { Value::new(vec![values.len()], values)? };
+    let vector = if values.is_empty() { Value::empty(vec![0], Value::Number(Number::float(0.0, FloatWidth::F64)))? } else { Value::new(vec![values.len()], values)? };
     vector.with_keys(vec![Some(Keys::partial(names)?)])
 }
 
 /// A keyed vector whose entries keep their own kinds, as an imported JSON object's do. Its storage stays mixed.
 pub(crate) fn record(names: Vec<Arc<str>>, values: Vec<Value>) -> Result<Value, ErrorKind> {
-    Value::mixed(vec![names.len()], values, Value::number(0.)?)?.with_keys(vec![Some(Keys::partial(names.into_iter().map(Some).collect())?)])
+    Value::mixed(vec![names.len()], values, Value::Number(Number::float(0.0, FloatWidth::F64)))?.with_keys(vec![Some(Keys::partial(names.into_iter().map(Some).collect())?)])
 }
 
 /// A record of columns: the field `names[j]` holds item `j` of each row, as an array of `shape`, or as that row's item when `shape` is

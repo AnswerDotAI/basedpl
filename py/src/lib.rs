@@ -1,4 +1,4 @@
-use basedpl::{Buffer, EvalOptions, Evaluation, Function, InterruptHandle, Number, Operand, Session, Value};
+use basedpl::{Buffer, EvalOptions, FloatWidth, Evaluation, Function, InterruptHandle, Number, Operand, Session, Value};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use pyo3::{
@@ -13,6 +13,11 @@ use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
 
 fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
+    // Python floats take the width that `_array` gives, the workspace's default width.
+    let width = match raw.get_item("width")? {
+        Some(bits) => FloatWidth::of_bits(bits.extract()?).ok_or_else(|| PyValueError::new_err("invalid float width"))?,
+        None => FloatWidth::F64,
+    };
     let element = |o: Bound<'_, PyAny>| -> PyResult<Value> {
         if let Ok(a) = o.extract::<PyRef<'_, PyArray>>() { return Ok(a.inner.clone()); }
         if let Ok(f) = o.extract::<PyRef<'_, PyFunction>>() { return Ok(Value::Function(f.inner.clone())); }
@@ -21,7 +26,7 @@ fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
         if let Ok(s) = o.cast::<PyString>() {
             return basedpl::protocol::character(s.to_str()?).map(Value::Character).ok_or_else(|| PyValueError::new_err("expected one character"));
         }
-        let number = if let Ok(b) = o.cast::<PyBool>() { Ok(Number::from_bool(b.is_true())) } else if o.is_instance_of::<PyFloat>() { Ok(o.extract::<f64>()?.into()) } else if let Ok(z) = o.cast::<PyComplex>() { Ok(num_complex::Complex64::new(z.real(), z.imag()).into()) } else if o.is_instance_of::<PyInt>() { Ok(o.extract::<BigInt>()?.into()) } else if o.is_instance_of::<PyTuple>() { let (n, d) = o.extract::<(BigInt, BigInt)>()?; Number::try_from(BigRational::new_raw(n, d)) } else { return Err(PyTypeError::new_err("unsupported BPL element")); };
+        let number = if let Ok(b) = o.cast::<PyBool>() { Ok(Number::from_bool(b.is_true())) } else if o.is_instance_of::<PyFloat>() { Ok(Number::float(o.extract::<f64>()?, width)) } else if let Ok(z) = o.cast::<PyComplex>() { Ok(num_complex::Complex64::new(z.real(), z.imag()).into()) } else if o.is_instance_of::<PyInt>() { Ok(o.extract::<BigInt>()?.into()) } else if o.is_instance_of::<PyTuple>() { let (n, d) = o.extract::<(BigInt, BigInt)>()?; Number::try_from(BigRational::new_raw(n, d)) } else { return Err(PyTypeError::new_err("unsupported BPL element")); };
         number.map(Value::Number).map_err(|k| PyValueError::new_err(k.to_string()))
     };
     let field = |key| raw.get_item(key)?.ok_or_else(|| PyValueError::new_err("missing array field"));
@@ -51,7 +56,9 @@ fn numpy(a: &Value) -> Option<(&'static str, Cow<'_, [u8]>)> {
         Buffer::I16(v) => ("i2", bytes(v)),
         Buffer::I32(v) => ("i4", bytes(v)),
         Buffer::I64(v) => ("i8", bytes(v)),
-        Buffer::Floats(v) => ("f8", bytes(v)),
+        Buffer::F16(v) => ("f2", bytes(v)),
+        Buffer::F32(v) => ("f4", bytes(v)),
+        Buffer::F64(v) => ("f8", bytes(v)),
     })
 }
 
@@ -92,15 +99,21 @@ struct PyArray { inner: Value }
 impl PyArray {
     #[new]
     fn new(raw: &Bound<'_, PyDict>) -> PyResult<Self> { Ok(Self { inner: import_array(raw)? }) }
+    /// Compact storage from `data`, a contiguous NumPy array whose dtype `dtype` names as `numpy` does. Booleans arrive as a `uint8` view
+    /// and 16-bit floats as a `uint16` view, because the buffer protocol has no type for them.
     #[staticmethod]
-    fn numeric(shape: Vec<usize>, boolean: bool, data: &Bound<'_, PyAny>) -> PyResult<Self> {
-        fn ints<T: pyo3::buffer::Element>(data: &Bound<'_, PyAny>, buffer: fn(Cow<'static, [T]>) -> Buffer<'static>) -> Option<PyResult<Buffer<'static>>> {
-            PyBuffer::<T>::get(data).ok().map(|b| Ok(buffer(b.to_vec(data.py())?.into())))
-        }
-        // A NumPy Boolean array arrives as its bytes, one for each item.
-        let buffer = if boolean { Buffer::Booleans(PyBuffer::<u8>::get(data)?.to_vec(data.py())?.into_iter().map(|x| x != 0).collect()) } else {
-            let ints = ints(data, Buffer::U8).or_else(|| ints(data, Buffer::I16)).or_else(|| ints(data, Buffer::I32)).or_else(|| ints(data, Buffer::I64));
-            match ints { Some(ints) => ints?, None => Buffer::Floats(PyBuffer::<f64>::get(data)?.to_vec(data.py())?.into()) }
+    fn numeric(shape: Vec<usize>, dtype: &str, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        fn items<T: pyo3::buffer::Element>(data: &Bound<'_, PyAny>) -> PyResult<Vec<T>> { Ok(PyBuffer::<T>::get(data)?.to_vec(data.py())?) }
+        let buffer = match dtype {
+            "?" => Buffer::Booleans(items::<u8>(data)?.into_iter().map(|x| x != 0).collect()),
+            "u1" => Buffer::U8(items(data)?.into()),
+            "i2" => Buffer::I16(items(data)?.into()),
+            "i4" => Buffer::I32(items(data)?.into()),
+            "i8" => Buffer::I64(items(data)?.into()),
+            "f2" => Buffer::F16(items::<u16>(data)?.into_iter().map(half::f16::from_bits).collect::<Vec<_>>().into()),
+            "f4" => Buffer::F32(items(data)?.into()),
+            "f8" => Buffer::F64(items(data)?.into()),
+            _ => return Err(PyTypeError::new_err(format!("unsupported NumPy dtype {dtype}"))),
         };
         let inner = Value::from_buffer(shape, buffer);
         inner.map(|inner| Self { inner }).map_err(|k| PyValueError::new_err(k.to_string()))
@@ -160,14 +173,6 @@ impl PyFunction {
     #[staticmethod]
     fn builtin(name: &str) -> PyResult<Self> {
         Function::builtin(name).map(|inner| Self { inner }).ok_or_else(|| PyValueError::new_err("unknown builtin function"))
-    }
-    #[staticmethod]
-    fn late_bound(py: Python<'_>, expression: &str) -> PyResult<Py<PyDict>> {
-        let result = match Function::late_bound(expression) {
-            Ok(function) => Evaluation { function: Some(function), ..Evaluation::default() },
-            Err(error) => Evaluation { error: Some(error), ..Evaluation::default() },
-        };
-        response(py, result)
     }
     #[staticmethod]
     fn build(kind: &str, values: Vec<Bound<'_, PyAny>>) -> PyResult<Self> {
@@ -270,6 +275,16 @@ impl PySession {
         })
         .transpose()
     }
+    /// The function that `expression` writes, late-bound, with its numbers read at the session's default width.
+    fn late_bound(&self, py: Python<'_>, expression: &str) -> PyResult<Py<PyDict>> {
+        let result = match self.session.lock_py_attached(py).unwrap().late_bound(expression) {
+            Ok(function) => Evaluation { function: Some(function), ..Evaluation::default() },
+            Err(error) => Evaluation { error: Some(error), ..Evaluation::default() },
+        };
+        response(py, result)
+    }
+    /// The bits of the session's default float width, which Python floats take.
+    fn float_bits(&self, py: Python<'_>) -> i64 { self.session.lock_py_attached(py).unwrap().float_width().bits() }
     #[pyo3(signature = (prefix="", classes=vec![2, 3, 4], complete=false))]
     fn names(&self, py: Python<'_>, prefix: &str, classes: Vec<i64>, complete: bool) -> Vec<String> {
         let session = self.session.lock_py_attached(py).unwrap();

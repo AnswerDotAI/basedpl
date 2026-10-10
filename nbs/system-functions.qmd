@@ -49,7 +49,7 @@ In Python, the workspace object `bpl` has each system function under its name wi
 | [`•plot`](system/plot.qmd) | Plots |
 | [`•image`](system/image.qmd) | Images |
 | [`•canvas`](system/canvas.qmd) | Drawing with JavaScript |
-| [`•prefs`](system/prefs.qmd) | Display settings |
+| [`•prefs`](system/prefs.qmd) | Session settings |
 
 ## Linear algebra
 
@@ -71,6 +71,7 @@ In Python, the workspace object `bpl` has each system function under its name wi
 | [`•load`](system/load.qmd) | Load |
 | [`•signal`](system/signal.qmd) | Signal |
 | [`•storage`](system/storage.qmd) | Storage |
+| [`•float`](system/float.qmd) | Float width |
 | [`•time`](system/time.qmd) | Timing |
 | [`•host`](system/host.qmd) | Host facts |
 | [`•delay`](system/delay.qmd) | Delay |

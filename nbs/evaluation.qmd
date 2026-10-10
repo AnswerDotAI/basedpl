@@ -79,7 +79,7 @@ Pervasion repeats these rules inside nested items. Each and Rank frames also use
 
 ## Axes and indices
 
-Positions and axes count from 0. Negative positions and axes count from the end. A count or position must be an integer, or a float within comparison tolerance of an integer.
+Positions and axes count from 0. Negative positions and axes count from the end. A count or position must be an integer, or a float within `1E¯14` of an integer, whatever the tolerance setting.
 
 [Index](glyphs/squad.qmd) `⌷` selects along leading axes. Its result has the shape of the positions, followed by the shape of each selected cell. `∞` selects a whole axis. [Dot indexing](glyphs/dot.qmd) writes the same selection after an array: `m.[∞ 1]` is `[∞ 1]⌷m`. A [subscript](scripts.ipynb#subscripts) selects one position on the leading axis.
 
@@ -109,7 +109,7 @@ Structural functions also accept lists of axes.
 
 ## Equality and ordering
 
-Comparison between exact numbers is exact. Approximate comparison uses relative tolerance `1E¯14`. Infinity equals itself. Infinity never equals a finite number.
+Comparison between exact numbers is exact. Approximate comparison uses relative tolerance `1E¯14`, which the `tolerance` setting of [`•prefs`](system/prefs.qmd) can lower to 0. Infinity equals itself. Infinity never equals a finite number.
 
 ```bpl
 0.3=0.1+0.2          ⍝ $t

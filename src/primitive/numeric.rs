@@ -2,18 +2,25 @@
 //! formatting, the Lambert W function and random numbers.
 
 use super::*;
+use crate::{array::with_float_width, element::read_as};
 
 pub(super) fn complex_parts(right: &Value, polar: bool, span: &Context<'_>) -> Result<Value, Error> {
+    use crate::element::{Element, Float};
+    /// The parts of floats of width `F`: each item and 0, or with `polar`, its magnitude and its angle, 0 or π, at that width.
+    fn float_parts<F: Float>(x: &[F], polar: bool, shape: Vec<usize>) -> Option<Value> {
+        let angle = |v: F| F::narrow(num_complex::Complex64::new(v.into(), 0.0).arg());
+        F::build(shape, x.iter().flat_map(|&v| if polar { [v.abs(), angle(v)] } else { [v, F::zero()] }).collect())
+    }
     let layout = right.layout().concat(&Layout::from(vec![2]));
-    // Float and complex storage give floats in one pass. The general loop below keeps exact numbers exact.
-    let pairs: Option<Vec<[f64; 2]>> = match right.as_items() {
-        Items::Complex(z) if polar => Some(z.iter().map(|&z| [crate::number::complex::magnitude(z), z.arg()]).collect()),
-        Items::Complex(z) => Some(z.iter().map(|z| [z.re, z.im]).collect()),
-        Items::Floats(x) if polar => Some(x.iter().map(|&x| [x.abs(), num_complex::Complex64::new(x, 0.0).arg()]).collect()),
-        Items::Floats(x) => Some(x.iter().map(|&x| [x, 0.0]).collect()),
+    let shape = layout.shape().to_vec();
+    // Float and complex storage give floats in one pass, at the floats' width. The general loop below keeps exact numbers exact.
+    let parts = match right.as_items() {
+        Items::Complex(z) if polar => f64::build(shape, z.iter().flat_map(|&z| [crate::number::complex::magnitude(z), z.arg()]).collect()),
+        Items::Complex(z) => f64::build(shape, z.iter().flat_map(|z| [z.re, z.im]).collect()),
+        Items::Floats(x) => crate::array::with_floats!(x, |x| float_parts(x, polar, shape)),
         _ => None,
     };
-    if let Some(pairs) = pairs { return layout.floats(pairs.into_flattened()).error_at(span, "invalid decomposition"); }
+    if let Some(parts) = parts { return parts.with_layout(layout).error_at(span, "invalid decomposition"); }
     let mut data = Vec::with_capacity(generated_len(layout.shape()).error_at(span, "decomposition is too large")?);
     for item in right.elements() {
         span.check()?;
@@ -119,10 +126,6 @@ pub(crate) fn lambert_w(right: &Value, span: &Context<'_>) -> Result<Value, Erro
 }
 
 pub(super) fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    use faer::{
-        linalg::solvers::{DenseSolveCore, Solve, SolveLstsq},
-        Mat,
-    };
     let dimensions = |a: &Value| match a.shape() {
         [] => Ok((1, 1)),
         &[m] => Ok((m, 1)),
@@ -145,33 +148,65 @@ pub(super) fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<
     };
     generated_len(&[n, k]).map_err(|e| span.error(e, "matrix result is too large"))?;
     let positions = left.map(|x| Mapping::contract(right.layout(), 0, x.layout(), 0)).transpose().error_at(span, "matrix row keys must agree")?;
+    let scalar = layout.shape().is_empty() && (right.is_atom() || !right.is_unit()) && left.is_none_or(|x| x.is_atom() || !x.is_unit());
+    // Compact real arguments with floats among them solve at the widest float width, or in f32 for 16-bit floats.
+    let float = [Some(right), left].into_iter().flatten().filter_map(|a| if let Items::Floats(f) = a.as_items() { Some(f.tag()) } else { None }).max();
+    if let (Some(width), true) = (float, n > 0) {
+        let solved = with_float_width!(width, F => {
+            type T = <F as crate::element::Float>::Total;
+            let b = match left { Some(x) => read_as::<T>(x).map(Some), None => Some(None) };
+            read_as::<T>(right).zip(b).map(|(a, b)| {
+                let x = solve(row_major(&a, None, m, n), b.map(|b| row_major(&b, positions.as_ref(), m, k)), span)?;
+                Ok::<_, Error>((0..n).flat_map(|i| (0..k).map(move |j| (i, j))).map(|(i, j)| x[(i, j)].into()).collect::<Vec<f64>>())
+            })
+        });
+        if let Some(values) = solved {
+            let values = values?;
+            if scalar { return Ok(Value::Number(Number::float(values[0], width))); }
+            return layout.floats(width, values).map_err(|e| span.error(e, "invalid matrix result"));
+        }
+    }
     let a = matrix_numbers(right, None, n, span)?;
     let b = left.map(|x| matrix_numbers(x, positions.as_ref(), k, span)).transpose()?;
     let exact = a.iter().chain(b.iter().flatten()).all(Number::is_exact);
-    let prototype = if exact { right.prototype().clone() } else { float(0.) };
+    let width = span.numeric().width_of(a.iter().chain(b.iter().flatten()).map(Number::float_width));
+    let prototype = if exact { right.prototype().clone() } else { Value::Number(Number::float(0.0, width)) };
     if n == 0 { return layout.collect(vec![], prototype).map_err(|e| span.error(e, "invalid matrix shape")); }
     let values = if exact { exact_solve(&a, b.as_deref(), m, n, k, span)? } else {
-        let convert = |v: &[Number]| v.iter().map(|x| x.to_complex().domain_at(span)).collect::<Result<Vec<_>, _>>();
-        let a = convert(&a)?;
-        let matrix = Mat::from_fn(m, n, |i, j| a[i * n + j]);
-        let rhs = b.as_ref().map(|b| convert(b).map(|b| Mat::from_fn(m, k, |i, j| b[i * k + j]))).transpose()?;
-        let result = if m == n {
-            let lu = matrix.partial_piv_lu();
-            let cutoff = f64::EPSILON * n as f64 * a.iter().map(|z| z.norm()).fold(0.0, f64::max);
-            if (0..n).any(|i| lu.U()[(i, i)].norm() <= cutoff) { return Err(span.domain_error("matrix is rank deficient")); }
-            match rhs { Some(b) => lu.solve(b), None => lu.inverse() }
-        } else {
-            let svd = matrix.thin_svd().map_err(|_| span.domain_error("matrix factorization failed"))?;
-            let cutoff = f64::EPSILON * m as f64 * svd.S()[0].re;
-            if svd.S()[n - 1].re <= cutoff { return Err(span.domain_error("matrix is rank deficient")); }
-            match rhs { Some(b) => svd.solve_lstsq(b), None => svd.pseudoinverse() }
-        };
-        (0..n).flat_map(|i| (0..k).map(move |j| (i, j))).map(|(i, j)| Number::from(result[(i, j)])).collect::<Vec<_>>()
+        let complex = |v: &[Number], columns| v.iter().map(|x| x.to_complex().domain_at(span)).collect::<Result<Vec<_>, _>>().map(|v| row_major(&v, None, m, columns));
+        let x = solve(complex(&a, n)?, b.as_deref().map(|b| complex(b, k)).transpose()?, span)?;
+        (0..n).flat_map(|i| (0..k).map(move |j| (i, j))).map(|(i, j)| Number::from(x[(i, j)]).at_width(width)).collect::<Vec<_>>()
     };
-    if layout.shape().is_empty() && (right.is_atom() || !right.is_unit()) && left.is_none_or(|x| x.is_atom() || !x.is_unit()) {
-        return Ok(Value::Number(values[0].clone()));
-    }
+    if scalar { return Ok(Value::Number(values[0].clone())); }
     layout.collect(values.into_iter().map(Value::Number), prototype).map_err(|e| span.error(e, "invalid matrix result"))
+}
+
+/// The `x` that solves `a x = b`, or the inverse of `a` without `b`: LU for a square `a`, and least squares through the SVD otherwise.
+/// A pivot or singular value no greater than `T`'s epsilon times the largest, scaled by the size, makes `a` rank deficient.
+fn solve<T: faer::traits::ComplexField>(a: faer::Mat<T>, b: Option<faer::Mat<T>>, span: &Context<'_>) -> Result<faer::Mat<T>, Error> {
+    use faer::{
+        linalg::solvers::{DenseSolveCore, Solve, SolveLstsq},
+        traits::math_utils::{abs, eps, from_f64, real},
+    };
+    let (m, n) = (a.nrows(), a.ncols());
+    let deficient = || span.domain_error("matrix is rank deficient");
+    if m == n {
+        let largest = (0..m).flat_map(|i| (0..n).map(move |j| (i, j))).map(|(i, j)| abs(&a[(i, j)])).fold(from_f64::<T::Real>(0.0), |s, x| if x > s { x } else { s });
+        let cutoff = eps::<T::Real>() * from_f64::<T::Real>(n as f64) * largest;
+        let lu = a.partial_piv_lu();
+        if (0..n).any(|i| abs(&lu.U()[(i, i)]) <= cutoff) { return Err(deficient()); }
+        Ok(match b { Some(b) => lu.solve(b), None => lu.inverse() })
+    } else {
+        let svd = a.thin_svd().map_err(|_| span.domain_error("matrix factorization failed"))?;
+        let cutoff = eps::<T::Real>() * from_f64::<T::Real>(m as f64) * real(&svd.S()[0]);
+        if real(&svd.S()[n - 1]) <= cutoff { return Err(deficient()); }
+        Ok(match b { Some(b) => svd.solve_lstsq(b), None => svd.pseudoinverse() })
+    }
+}
+
+/// The `m`×`columns` matrix that `x` holds row by row, with row `i` taken from row `positions[i]` when there are positions.
+fn row_major<T: Copy>(x: &[T], positions: Option<&Mapping>, m: usize, columns: usize) -> faer::Mat<T> {
+    faer::Mat::from_fn(m, columns, |i, j| x[positions.map_or(i, |p| p.index(i)) * columns + j])
 }
 
 /// The numbers of the matrix `a`, row by row, with its rows taken in the order `positions` gives when there is one.
@@ -181,123 +216,177 @@ fn matrix_numbers(a: &Value, positions: Option<&Mapping>, columns: usize, span: 
 }
 
 /// `kind •decompose m` factors the matrix `m`, and gives the factors as a record. `kind` is `"svd"`, `"qr"`, `"eigen"` or
-/// `"cholesky"`. A real matrix gives real factors, apart from complex eigenvalues and their eigenvectors.
+/// `"cholesky"`. A real matrix gives real factors, apart from complex eigenvalues and their eigenvectors. Compact real storage factors at
+/// its float width, or the default width for exact numbers, and in f32 for 16-bit floats. Other matrices factor in 64-bit floats.
 pub(crate) fn decompose(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let kind = crate::data::text(left.expect("•decompose is dyadic"), span)?.to_lowercase();
     let &[m, n] = right.shape() else { return Err(span.error(ErrorKind::Rank, "•decompose needs a matrix")) };
     if m == 0 || n == 0 { return Err(span.domain_error("•decompose needs a nonempty matrix")); }
     if matches!(kind.as_str(), "eigen" | "cholesky") && m != n { return Err(span.error(ErrorKind::Length, "eigen and cholesky need a square matrix")); }
-    let z = matrix_numbers(right, None, n, span)?.iter().map(|x| x.to_complex().domain_at(span)).collect::<Result<Vec<_>, _>>()?;
-    let hermitian = m == n && (0..n).all(|i| (0..n).all(|j| z[i * n + j] == z[j * n + i].conj()));
-    let (names, factors) = if z.iter().all(|z| z.im == 0.0) { factors(&kind, faer::Mat::from_fn(m, n, |i, j| z[i * n + j].re), hermitian, span)? } else { factors(&kind, faer::Mat::from_fn(m, n, |i, j| z[i * n + j]), hermitian, span)? };
+    let width = span.numeric().width_of([right.float_width()]);
+    let real = with_float_width!(width, F => read_as::<<F as crate::element::Float>::Total>(right).map(|a| {
+        let symmetric = m == n && (0..n).all(|i| (0..n).all(|j| a[i * n + j] == a[j * n + i]));
+        factors(&kind, faer::Mat::from_fn(m, n, |i, j| a[i * n + j]), symmetric, width, span)
+    }));
+    let (names, factors) = match real {
+        Some(real) => real?,
+        None => {
+            let numbers = matrix_numbers(right, None, n, span)?;
+            let width = span.numeric().width_of(numbers.iter().map(Number::float_width));
+            let z = numbers.iter().map(|x| x.to_complex().domain_at(span)).collect::<Result<Vec<_>, _>>()?;
+            let hermitian = m == n && (0..n).all(|i| (0..n).all(|j| z[i * n + j] == z[j * n + i].conj()));
+            if z.iter().all(|z| z.im == 0.0) { factors(&kind, faer::Mat::from_fn(m, n, |i, j| z[i * n + j].re), hermitian, width, span)? } else { factors(&kind, faer::Mat::from_fn(m, n, |i, j| z[i * n + j]), hermitian, width, span)? }
+        }
+    };
     crate::keyed::record(names.into_iter().map(Into::into).collect(), factors).error_at(span, "invalid factors")
 }
 
-/// The factors of `a` that `kind` names, and their names. A `hermitian` matrix has real eigenvalues, in ascending order, and
-/// orthonormal eigenvectors.
-fn factors<T>(kind: &str, a: faer::Mat<T>, hermitian: bool, span: &Context<'_>) -> Result<(Vec<&'static str>, Vec<Value>), Error>
+/// The factors of `a` that `kind` names, and their names, with real numbers rounded to `width`. A `hermitian` matrix has real
+/// eigenvalues, in ascending order, and orthonormal eigenvectors.
+fn factors<T>(kind: &str, a: faer::Mat<T>, hermitian: bool, width: FloatWidth, span: &Context<'_>) -> Result<(Vec<&'static str>, Vec<Value>), Error>
 where
-    T: faer::traits::ComplexField<Real = f64> + Copy,
-    Number: From<T>,
+    T: faer::traits::ComplexField + Entry,
+    T::Real: Entry + Into<f64>,
 {
     let failed = || span.domain_error(format!("{kind} factorization failed"));
     let (names, factors) = match kind {
         "svd" => {
             let svd = a.thin_svd().map_err(|_| failed())?;
-            (vec!["u", "s", "v"], vec![matrix(svd.U()), vector(svd.S().column_vector().iter().copied()), matrix(svd.V())])
+            (vec!["u", "s", "v"], vec![matrix(svd.U(), width), vector(svd.S().column_vector().iter().copied(), width), matrix(svd.V(), width)])
         }
         "qr" => {
             let qr = a.qr();
-            (vec!["q", "r"], vec![matrix(qr.compute_thin_Q().as_ref()), matrix(qr.thin_R())])
+            (vec!["q", "r"], vec![matrix(qr.compute_thin_Q().as_ref(), width), matrix(qr.thin_R(), width)])
         }
         "eigen" if hermitian => {
             let eigen = a.self_adjoint_eigen(faer::Side::Lower).map_err(|_| failed())?;
-            (vec!["values", "vectors"], vec![vector(eigen.S().column_vector().iter().copied()), matrix(eigen.U())])
+            (vec!["values", "vectors"], vec![vector(eigen.S().column_vector().iter().copied(), width), matrix(eigen.U(), width)])
         }
         "eigen" => {
             let eigen = a.eigen().map_err(|_| failed())?;
-            // The complex type is named here because inference would take `T` from the where clause.
-            (
-                vec!["values", "vectors"],
-                vec![vector::<num_complex::Complex64>(eigen.S().column_vector().iter().copied()), matrix::<num_complex::Complex64>(eigen.U())],
-            )
+            (vec!["values", "vectors"], vec![vector(eigen.S().column_vector().iter().copied(), width), matrix(eigen.U(), width)])
         }
         "cholesky" => {
             let llt = a.llt(faer::Side::Lower).map_err(|_| span.domain_error("cholesky needs a Hermitian positive definite matrix"))?;
-            (vec!["l"], vec![matrix(llt.L())])
+            (vec!["l"], vec![matrix(llt.L(), width)])
         }
         _ => return Err(span.domain_error("•decompose takes \"svd\", \"qr\", \"eigen\" or \"cholesky\"")),
     };
     Ok((names, factors.into_iter().collect::<Result<_, _>>().error_at(span, "factors exceed array limits")?))
 }
 
-/// A faer matrix as an array.
-fn matrix<E: Copy>(x: faer::MatRef<'_, E>) -> Result<Value, ErrorKind>
-where
-    Number: From<E>,
-{
-    let items = (0..x.nrows()).flat_map(|i| (0..x.ncols()).map(move |j| Value::Number(x[(i, j)].into()))).collect();
-    Value::from_parts(vec![x.nrows(), x.ncols()], items, float(0.))
+/// An entry of a matrix from faer, as a number of the result's width. A complex number with no imaginary part becomes a float, and
+/// other complex numbers keep 64-bit parts.
+trait Entry: Copy {
+    fn number(self, width: FloatWidth) -> Number;
+}
+impl Entry for f32 {
+    fn number(self, width: FloatWidth) -> Number { Number::float(self.into(), width) }
+}
+impl Entry for f64 {
+    fn number(self, width: FloatWidth) -> Number { Number::float(self, width) }
+}
+impl<R: Copy + Into<f64>> Entry for num_complex::Complex<R> {
+    fn number(self, width: FloatWidth) -> Number { Number::from(num_complex::Complex64::new(self.re.into(), self.im.into())).at_width(width) }
+}
+
+/// A faer matrix as an array, with real numbers rounded to `width`.
+fn matrix<E: Entry>(x: faer::MatRef<'_, E>, width: FloatWidth) -> Result<Value, ErrorKind> {
+    let items = (0..x.nrows()).flat_map(|i| (0..x.ncols()).map(move |j| Value::Number(x[(i, j)].number(width)))).collect();
+    Value::from_parts(vec![x.nrows(), x.ncols()], items, Value::Number(Number::float(0.0, width)))
 }
 
 /// Numbers from faer as a vector.
-fn vector<E>(items: impl Iterator<Item = E>) -> Result<Value, ErrorKind>
-where
-    Number: From<E>,
-{ let items: Vec<_> = items.map(|e| Value::Number(e.into())).collect(); Value::from_parts(vec![items.len()], items, float(0.)) }
+fn vector<E: Entry>(items: impl Iterator<Item = E>, width: FloatWidth) -> Result<Value, ErrorKind> {
+    let items: Vec<_> = items.map(|e| Value::Number(e.number(width))).collect();
+    Value::from_parts(vec![items.len()], items, Value::Number(Number::float(0.0, width)))
+}
 
 /// `kind •decompose⁻¹ factors` multiplies a record of factors from `•decompose` back into its matrix. Eigenvectors that aren't
-/// independent, such as a defective matrix's, can't determine the matrix. They raise a `DOMAIN` error.
+/// independent, such as a defective matrix's, can't determine the matrix. They raise a `DOMAIN` error. Compact real factors multiply at
+/// their widest float width, or the default width for exact numbers, and in f32 for 16-bit floats. Other factors multiply as complex
+/// 64-bit floats. The result takes the widest float width among the factors.
 pub(crate) fn recompose(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    use faer::{linalg::solvers::DenseSolveCore, Mat};
-    use num_complex::Complex64;
     let kind = crate::data::text(left.expect("•decompose⁻¹ is dyadic"), span)?.to_lowercase();
-    let factor = |name: &str, rank: usize| -> Result<Mat<Complex64>, Error> {
-        let f = crate::keyed::field(right, name).ok_or_else(|| span.domain_error(format!("{kind} factors need {name}")))?;
-        let (rows, columns) = match (f.shape(), rank) {
-            (&[m, n], 2) => (m, n),
-            (&[m], 1) => (m, 1),
-            _ => return Err(span.error(ErrorKind::Rank, format!("{name} must have rank {rank}"))),
-        };
-        let z = matrix_numbers(&f, None, columns, span)?.iter().map(|x| x.to_complex().domain_at(span)).collect::<Result<Vec<_>, _>>()?;
-        Ok(Mat::from_fn(rows, columns, |i, j| z[i * columns + j]))
+    let names: &[(&str, usize)] = match kind.as_str() {
+        "svd" => &[("u", 2), ("s", 1), ("v", 2)],
+        "qr" => &[("q", 2), ("r", 2)],
+        "cholesky" => &[("l", 2)],
+        "eigen" => &[("values", 1), ("vectors", 2)],
+        _ => return Err(span.domain_error("•decompose⁻¹ takes \"svd\", \"qr\", \"eigen\" or \"cholesky\"")),
+    };
+    // Each factor, with its rows and columns.
+    let factors = names
+        .iter()
+        .map(|&(name, rank)| {
+            let f = crate::keyed::field(right, name).ok_or_else(|| span.domain_error(format!("{kind} factors need {name}")))?;
+            let size = match (f.shape(), rank) {
+                (&[m, n], 2) => (m, n),
+                (&[m], 1) => (m, 1),
+                _ => return Err(span.error(ErrorKind::Rank, format!("{name} must have rank {rank}"))),
+            };
+            Ok((f, size))
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+    let width = span.numeric().width_of(factors.iter().map(|(f, _)| f.float_width()));
+    let real = with_float_width!(width, F => {
+        type T = <F as crate::element::Float>::Total;
+        let real = factors.iter().map(|(f, (m, n))| Some(row_major(&read_as::<T>(f)?, None, *m, *n))).collect::<Option<Vec<_>>>();
+        real.map(|f| rebuild(&kind, f, span).and_then(|x| matrix(x.as_ref(), width).error_at(span, "invalid matrix")))
+    });
+    if let Some(result) = real { return result; }
+    let mut width = None;
+    let factors = factors
+        .iter()
+        .map(|(f, (m, n))| {
+            let numbers = matrix_numbers(f, None, *n, span)?;
+            width = width.max(numbers.iter().filter_map(Number::float_width).max());
+            let z = numbers.iter().map(|x| x.to_complex().domain_at(span)).collect::<Result<Vec<_>, _>>()?;
+            Ok(row_major(&z, None, *m, *n))
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+    let m = rebuild(&kind, factors, span)?;
+    matrix(m.as_ref(), span.numeric().width_of([width])).error_at(span, "invalid matrix")
+}
+
+/// The matrix that `kind`'s factors `f` multiply back into, with the factors in the order `recompose` names them.
+fn rebuild<T: faer::traits::ComplexField>(kind: &str, f: Vec<faer::Mat<T>>, span: &Context<'_>) -> Result<faer::Mat<T>, Error> {
+    use faer::{
+        linalg::solvers::DenseSolveCore,
+        traits::math_utils::{eps, from_f64, mul_real, recip, sqrt},
+        Mat,
     };
     // `a` with each column multiplied by the item of `d` at the same position.
-    let scaled = |a: &Mat<Complex64>, d: &Mat<Complex64>| Mat::from_fn(a.nrows(), a.ncols(), |i, j| a[(i, j)] * d[(j, 0)]);
+    let scaled = |a: &Mat<T>, d: &Mat<T>| Mat::from_fn(a.nrows(), a.ncols(), |i, j| &a[(i, j)] * &d[(j, 0)]);
     let disagree = || span.error(ErrorKind::Length, format!("{kind} factors have sizes that don't agree"));
-    let m = match kind.as_str() {
-        "svd" => {
-            let (u, s, v) = (factor("u", 2)?, factor("s", 1)?, factor("v", 2)?);
+    Ok(match (kind, f.as_slice()) {
+        ("svd", [u, s, v]) => {
             if u.ncols() != s.nrows() || v.ncols() != s.nrows() { return Err(disagree()); }
-            scaled(&u, &s) * v.adjoint()
+            scaled(u, s) * v.adjoint()
         }
-        "qr" => {
-            let (q, r) = (factor("q", 2)?, factor("r", 2)?);
+        ("qr", [q, r]) => {
             if q.ncols() != r.nrows() { return Err(disagree()); }
             q * r
         }
-        "cholesky" => {
-            let l = factor("l", 2)?;
+        ("cholesky", [l]) => {
             if l.nrows() != l.ncols() { return Err(disagree()); }
-            &l * l.adjoint()
+            l * l.adjoint()
         }
-        "eigen" => {
-            let (values, vectors) = (factor("values", 1)?, factor("vectors", 2)?);
+        ("eigen", [values, vectors]) => {
             let n = values.nrows();
             if vectors.nrows() != n || vectors.ncols() != n { return Err(disagree()); }
             // The normalised eigenvectors' smallest singular value, against their largest, measures how independent they are.
             // Below √ε, the rebuilt matrix loses about half its digits. A defective matrix's eigenvectors give about ε.
             let dependent = || span.domain_error("eigenvectors that aren't independent can't give back the matrix");
-            let norms: Vec<f64> = (0..n).map(|j| vectors.col(j).norm_l2()).collect();
-            if norms.iter().any(|&x| !(x > 0.0)) { return Err(dependent()); }
-            let unit = Mat::from_fn(n, n, |i, j| vectors[(i, j)] / norms[j]);
+            let norms: Vec<T::Real> = (0..n).map(|j| vectors.col(j).norm_l2()).collect();
+            if norms.iter().any(|x| !(x > &from_f64(0.0))) { return Err(dependent()); }
+            let unit = Mat::from_fn(n, n, |i, j| mul_real(&vectors[(i, j)], &recip(&norms[j])));
             let s = unit.singular_values().map_err(|_| dependent())?;
-            if !(s[n - 1] >= f64::EPSILON.sqrt() * s[0]) { return Err(dependent()); }
-            scaled(&vectors, &values) * vectors.partial_piv_lu().inverse()
+            if !(s[n - 1] >= sqrt(&eps::<T::Real>()) * s[0].clone()) { return Err(dependent()); }
+            scaled(vectors, values) * vectors.partial_piv_lu().inverse()
         }
-        _ => return Err(span.domain_error("•decompose⁻¹ takes \"svd\", \"qr\", \"eigen\" or \"cholesky\"")),
-    };
-    matrix(m.as_ref()).error_at(span, "invalid matrix")
+        _ => unreachable!("`recompose` names the factors of each kind"),
+    })
 }
 
 // Normal equations are exact here; the approximate path never forms AᵀA.
@@ -385,6 +474,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
             if let Some(result) = encode_whole(left.checked_items(), right.checked_items(), &layout) { return Ok(result); }
         }
         let (xs, ys) = (numbers(left)?, numbers(right)?);
+        let width = span.numeric().width_of(xs.iter().chain(&ys).map(Number::float_width));
         let mut data = Vec::with_capacity(len);
         for i in 0..if xlen == 0 { 0 } else { agreement.len } {
             span.check()?;
@@ -400,11 +490,11 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
                     value = Number::from(v);
                     &integral
                 } else { base };
-                let digit = base.math_dyad(Math::Magnitude, &value).map_err(error)?;
+                let digit = base.residue(&value, span.numeric()).map_err(error)?;
                 if k != 0 {
                     value = if base.grade_order(&base.zero()).is_eq() { zero.clone() } else { value.dyad(Arithmetic::Minus, &digit).and_then(|v| v.dyad(Arithmetic::Divide, base)).map_err(error)? };
                 }
-                digits[k] = Value::Number(if !exact && digit.is_exact() { Number::from(digit.to_complex().map_err(error)?) } else { digit });
+                digits[k] = Value::Number(if !exact && digit.is_exact() { Number::from(digit.to_complex().map_err(error)?).at_width(width) } else { digit });
             }
             data.extend(digits);
         }
@@ -440,7 +530,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
 /// `bases⊤values` when both hold whole numbers in compact storage, with each value's digits together and in order. Each base divides
 /// by multiplication. The digits are floats when either argument is. `None` for other arguments, or when a quotient leaves `i64`.
 fn encode_whole<'a>(bases: Items<'a>, values: Items<'a>, layout: &Layout) -> Option<Value> {
-    let exact = !matches!(bases, Items::Floats(_)) && !matches!(values, Items::Floats(_));
+    let float = [bases, values].into_iter().filter_map(|items| if let Items::Floats(f) = items { Some(f.tag()) } else { None }).max();
     let whole = |items: Items<'a>| match items { Items::Booleans(_) | Items::Integers(_) | Items::Floats(_) => items.integers().ok(), _ => None };
     let (bases, values) = (whole(bases)?, whole(values)?);
     if bases.is_empty() { return None; }
@@ -450,7 +540,7 @@ fn encode_whole<'a>(bases: Items<'a>, values: Items<'a>, layout: &Layout) -> Opt
         let mut value = value;
         for (digit, divisor) in digits.iter_mut().zip(&divisors).rev() { (value, *digit) = match divisor { Some(d) => d.div_mod(value)?, None => (0, value) }; }
     }
-    if exact { layout.integers(data) } else { layout.floats(data.into_iter().map(|n| n as f64).collect()) }.ok()
+    match float { None => layout.integers(data), Some(width) => layout.floats(width, data.into_iter().map(|n| n as f64).collect()) }.ok()
 }
 
 /// `bases⊥digits` when both hold numbers in compact storage, with each of the `cells` digit cells of `len` digits together and in
@@ -458,9 +548,9 @@ fn encode_whole<'a>(bases: Items<'a>, values: Items<'a>, layout: &Layout) -> Opt
 /// when an exact step leaves `i64`.
 fn decode_compact(bases: &Value, digits: &Value, xlen: usize, ylen: usize, len: usize, cells: usize, layout: &Layout) -> Option<Value> {
     let (x, y) = (|k: usize| if xlen == 1 { 0 } else { k }, |c: usize, k: usize| c * ylen + if ylen == 1 { 0 } else { k });
-    if matches!(bases.as_items(), Items::Floats(_)) || matches!(digits.as_items(), Items::Floats(_)) {
+    if let Some(width) = bases.float_width().max(digits.float_width()) {
         let (b, d) = (crate::element::read_as::<f64>(bases)?, crate::element::read_as::<f64>(digits)?);
-        return layout.floats((0..cells).map(|c| (1..len).fold(d[y(c, 0)], |v, k| v * b[x(k)] + d[y(c, k)])).collect()).ok();
+        return layout.floats(width, (0..cells).map(|c| (1..len).fold(d[y(c, 0)], |v, k| v * b[x(k)] + d[y(c, k)])).collect()).ok();
     }
     fn whole(a: &Value) -> Option<Cow<'_, [i64]>> {
         match a.as_items() { items @ (Items::Booleans(_) | Items::Integers(_)) => items.integers().ok(), _ => None }
@@ -475,22 +565,23 @@ pub(crate) fn roll_array<R: rand::Rng + ?Sized>(right: &Value, rng: &mut R, span
     roll(right, span, false, rng)?.with_layout(right.layout().clone()).error_at(span, "invalid roll result")
 }
 
-/// One number below `n`, or a float between 0 and 1 when `n` is 0.
-fn draw<R: rand::Rng + ?Sized>(n: u64, exact: bool, rng: &mut R) -> Value {
-    if n == 0 { float(rng.sample(rand::distr::Open01)) } else { generated(rng.random_range(0..n), exact) }
+/// One number below `n`, as `generated` gives it, or a float of width `unit` between 0 and 1 when `n` is 0.
+fn draw<R: rand::Rng + ?Sized>(n: u64, float: Option<FloatWidth>, unit: FloatWidth, rng: &mut R) -> Value {
+    if n == 0 { Value::Number(Number::float(rng.sample(rand::distr::Open01), unit)) } else { generated(rng.random_range(0..n), float) }
 }
 
 fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Context<'_>, fill: bool, rng: &mut R) -> Result<Value, Error> {
     let fill = fill || right.is_empty();
     let item = |e: Value, rng: &mut R| {
         if let a @ Value::Array(_) = e { return roll(&a, span, fill, rng); }
-        let exact = e.is_exact();
-        if fill { return Ok(generated(0, exact)); }
-        Ok(draw(numeric(&e, span)?.nonnegative_integer::<u64>().error_at(span, "roll needs a nonnegative integer")?, exact, rng))
+        let float = counted_width(&e, span);
+        if fill { return Ok(generated(0, float)); }
+        Ok(draw(numeric(&e, span)?.nonnegative_integer::<u64>().error_at(span, "roll needs a nonnegative integer")?, float, float.unwrap_or(span.numeric().width), rng))
     };
     if right.is_atom() { return item(right.clone(), rng); }
     let prototype = if right.is_empty() { item(right.prototype(), rng)? } else { integer(0) };
-    let exact = matches!(right.as_items(), Items::Integers(_) | Items::Extended(_));
+    let float = match right.as_items() { Items::Integers(_) | Items::Extended(..) => None, Items::Floats(f) => Some(f.tag()), _ => Some(span.numeric().width) };
+    let unit = float.unwrap_or(span.numeric().width);
     let mut data = Gather::items(right.len());
     match right.as_items() {
         Items::Values(items) => {
@@ -501,17 +592,17 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Context<'_>, fill: bool, rn
             // A bound of 0 draws a float between 0 and 1. The other draws keep their exactness beside it.
             if !bounds.contains(&0) {
                 let draws = bounds.into_iter().map(|n| rng.random_range(0..n)).collect();
-                return generated_items(right.shape().to_vec(), draws, exact)
+                return generated_items(right.shape().to_vec(), draws, float)
                     .and_then(|v| v.with_layout(right.layout().clone()))
                     .error_at(span, "invalid roll result");
             }
             if bounds.iter().all(|&n| n == 0) {
                 let draws = bounds.iter().map(|_| rng.sample(rand::distr::Open01)).collect();
-                return right.layout().floats(draws).error_at(span, "invalid roll result");
+                return right.layout().floats(unit, draws).error_at(span, "invalid roll result");
             }
-            for n in bounds { data.add(draw(n, exact, rng)); }
+            for n in bounds { data.add(draw(n, float, unit, rng)); }
         }
-        _ => data.fill(&generated(0, exact), right.len()),
+        _ => data.fill(&generated(0, float), right.len()),
     }
     data.finish(right.layout().clone(), prototype).error_at(span, "invalid roll result")
 }
@@ -522,11 +613,11 @@ pub(crate) fn deal<R: rand::Rng + ?Sized>(left: &Value, right: &Value, rng: &mut
         if !a.is_singleton() { return Err(span.error(ErrorKind::Length, "deal needs one count per argument")); }
         let item = a.at(0);
         let n = numeric(&item, span)?;
-        Ok((n.nonnegative_integer().error_at(span, "deal needs nonnegative integer counts")?, n.is_exact()))
+        Ok((n.nonnegative_integer().error_at(span, "deal needs nonnegative integer counts")?, counted_width(&item, span)))
     };
-    let ((n, count_exact), (total, total_exact)) = (count(left)?, count(right)?);
+    let ((n, count_float), (total, total_float)) = (count(left)?, count(right)?);
     if n > total { return Err(span.domain_error("cannot deal more items than the population")); }
     generated_len(&[n]).error_at(span, "deal exceeds array limits")?;
-    let exact = count_exact && total_exact;
-    generated_items(vec![n], rand::seq::index::sample(rng, total, n).into_iter().map(|i| i as u64).collect(), exact).error_at(span, "invalid deal result")
+    let float = count_float.max(total_float);
+    generated_items(vec![n], rand::seq::index::sample(rng, total, n).into_iter().map(|i| i as u64).collect(), float).error_at(span, "invalid deal result")
 }

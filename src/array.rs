@@ -3,7 +3,7 @@ use crate::{
     element::{cast, read_flagged, Element, Key, Source, Whole},
     execution::Context,
     keyed::Keys,
-    number::{extended, int::Int, real},
+    number::{extended, int::Int, real, with_tolerance, Numeric, Tolerant},
     DomainAt, Error, ErrorKind, Number,
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
@@ -12,14 +12,14 @@ use std::{
     borrow::Cow,
     fmt,
     sync::{
-        atomic::{AtomicBool, Ordering::Relaxed},
+        atomic::Ordering::Relaxed,
         Arc, OnceLock,
     },
 };
 
 mod storage;
 mod text;
-pub use storage::Buffer;
+pub use storage::{Buffer, FloatWidth};
 pub(crate) use {storage::*, text::*};
 
 /// What `x` and `y` agree on: the one that is present, or either when they're equal. Different values give none.
@@ -118,7 +118,7 @@ impl Layout {
     /// The array with this layout holding the integers `data`, in integer storage.
     pub fn integers(&self, data: Vec<i64>) -> Result<Value, ErrorKind> { Value::integers(self.shape.clone(), data)?.with_layout(self.clone()) }
     pub fn booleans(&self, data: Vec<bool>) -> Result<Value, ErrorKind> { Value::booleans(self.shape.clone(), data)?.with_layout(self.clone()) }
-    pub fn floats(&self, data: Vec<f64>) -> Result<Value, ErrorKind> { Value::floats(self.shape.clone(), data)?.with_layout(self.clone()) }
+    pub fn floats(&self, width: FloatWidth, data: Vec<f64>) -> Result<Value, ErrorKind> { Value::floats(self.shape.clone(), width, data)?.with_layout(self.clone()) }
     pub fn replace(&self, axes: std::ops::Range<usize>, other: &Self) -> Self {
         self.axes(0..axes.start).concat(other).concat(&self.axes(axes.end..self.shape.len()))
     }
@@ -265,16 +265,19 @@ impl Value {
             _ => false,
         }
     }
-    /// Whether the values match, as `≡` and search compare them. Numbers match within tolerance, whatever their exactness, and NaN
-    /// matches NaN. Keyed arrays match by key. Functions and operators match when built from matching parts. Renderers take no part.
-    pub(crate) fn matches(&self, other: &Self, cx: &Context<'_>) -> Result<bool, Error> {
+    /// Whether the values match, as `≡` and search compare them, within the session's tolerance.
+    pub(crate) fn matches(&self, other: &Self, cx: &Context<'_>) -> Result<bool, Error> { self.matches_within(other, cx.numeric(), cx) }
+    /// Whether the values match, with each pair of numbers within the tolerance of the width they compare at. Numbers match whatever
+    /// their exactness, and NaN matches NaN. Keyed arrays match by key. Functions and operators match when built from matching parts.
+    /// Renderers take no part.
+    pub(crate) fn matches_within(&self, other: &Self, t: Numeric, cx: &Context<'_>) -> Result<bool, Error> {
         cx.check()?;
         match (self, other) {
             (Self::Array(_), Self::Array(_)) => (),
-            (Self::Number(x), Self::Number(y)) => return x.matches(y).domain_at(cx),
+            (Self::Number(x), Self::Number(y)) => return x.matches(y, t).domain_at(cx),
             (Self::Character(x), Self::Character(y)) => return Ok(x == y),
-            (Self::Function(x), Self::Function(y)) => return x.matches(y, cx),
-            (Self::Operator(x), Self::Operator(y)) => return x.matches(y, cx),
+            (Self::Function(x), Self::Function(y)) => return x.matches(y, t, cx),
+            (Self::Operator(x), Self::Operator(y)) => return x.matches(y, t, cx),
             _ => return Ok(false),
         }
         if self.shape() != other.shape() { return Ok(false); }
@@ -291,19 +294,22 @@ impl Value {
                 maps.push(map);
             }
         }
-        if self.is_empty() { return self.prototype().matches(&other.prototype(), cx); }
+        if self.is_empty() { return self.prototype().matches_within(&other.prototype(), t, cx); }
         if !keyed {
             let (x, y) = (self.as_items(), other.as_items());
             if let (Some(x), Some(y)) = (x.raw_integers(), y.raw_integers()) { return Ok(x == y); }
             match (x, y) {
-                (Items::Floats(x), Items::Floats(y)) => return Ok(x.iter().zip(y).all(|(&a, &b)| crate::number::float_match(a, b))),
+                (Items::Floats(x), Items::Floats(y)) => {
+                    let t = t.tolerance_at(x.tag().max(y.tag()));
+                    return Ok(with_tolerance!(t, |t| with_floats!(x, |x| with_floats!(y, |y| x.iter().zip(y).all(|(&a, &b)| t.matches::<f64>(a.into(), b.into()))))));
+                }
                 (Items::Characters(x), Items::Characters(y)) => return Ok(x == y),
                 _ => (),
             }
         }
         for (i, x) in self.elements().enumerate() {
             let j = if keyed { crate::keyed::mapped_index(i, self.shape(), other.shape(), &maps).unwrap() } else { i };
-            if !x.matches(&other.at(j), cx)? { return Ok(false); }
+            if !x.matches_within(&other.at(j), t, cx)? { return Ok(false); }
         }
         Ok(true)
     }
@@ -357,7 +363,7 @@ impl Value {
     }
     pub fn booleans(shape: Vec<usize>, data: Vec<bool>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Boolean(data)) }
 
-    pub fn floats(shape: Vec<usize>, data: Vec<f64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Float(data)) }
+    pub fn floats(shape: Vec<usize>, width: FloatWidth, data: Vec<f64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Floats(FloatBuf::collect(width, data.into_iter()))) }
     pub(crate) fn characters(shape: Vec<usize>, data: Vec<char>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Character(data)) }
     /// The positions `items`, each below `bound`, written straight to the narrowest width that holds them.
     pub(crate) fn positions(shape: Vec<usize>, bound: usize, items: impl Iterator<Item = usize>) -> Result<Self, ErrorKind> {
@@ -373,7 +379,9 @@ impl Value {
             Items::Integers(Ints::I16(v)) => Buffer::I16(v.into()),
             Items::Integers(Ints::I32(v)) => Buffer::I32(v.into()),
             Items::Integers(Ints::I64(v)) => Buffer::I64(v.into()),
-            Items::Floats(v) => Buffer::Floats(v.into()),
+            Items::Floats(Floats::F16(v)) => Buffer::F16(v.into()),
+            Items::Floats(Floats::F32(v)) => Buffer::F32(v.into()),
+            Items::Floats(Floats::F64(v)) => Buffer::F64(v.into()),
             _ => return None,
         })
     }
@@ -385,7 +393,9 @@ impl Value {
             Buffer::I16(v) => Storage::narrowed(v.into_owned()),
             Buffer::I32(v) => Storage::narrowed(v.into_owned()),
             Buffer::I64(v) => Storage::narrowed(v.into_owned()),
-            Buffer::Floats(v) => Storage::Float(v.into_owned()),
+            Buffer::F16(v) => Storage::Floats(FloatBuf::F16(v.into_owned())),
+            Buffer::F32(v) => Storage::Floats(FloatBuf::F32(v.into_owned())),
+            Buffer::F64(v) => Storage::Floats(FloatBuf::F64(v.into_owned())),
         };
         Self::from_storage(shape, storage)
     }
@@ -394,10 +404,10 @@ impl Value {
     pub fn imported(shape: Vec<usize>, items: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
         crate::data::imported(shape, items, |_| false, empty_prototype)
     }
-    /// This new integer array with its flag for non-finite values set, so that the reserved values read as `∞`, `¯∞` and NaN.
-    pub(crate) fn flagged(mut self) -> Self {
+    /// This new integer array flagged for non-finite values of `width`, so that the reserved values read as `∞`, `¯∞` and NaN of that width.
+    pub(crate) fn flagged(mut self, width: FloatWidth) -> Self {
         if let Self::Array(a) = &mut self {
-            if let Some(Storage::Integers(IntBuf::I64(_), flag)) = Arc::get_mut(a).and_then(|a| Arc::get_mut(&mut a.data)) { *flag.get_mut() = true; }
+            if let Some(Storage::Integers(IntBuf::I64(_), flag)) = Arc::get_mut(a).and_then(|a| Arc::get_mut(&mut a.data)) { flag.set(width); }
         }
         self
     }
@@ -470,7 +480,7 @@ impl Value {
     }
     /// Complex results of an operation. When no item has an imaginary part, the array holds floats, as `Number` gives them.
     pub(crate) fn complex(shape: Vec<usize>, data: Vec<Complex64>) -> Result<Self, ErrorKind> {
-        if data.iter().all(|z| z.im == 0.0) { return Self::floats(shape, data.into_iter().map(|z| z.re).collect()); }
+        if data.iter().all(|z| z.im == 0.0) { return Self::floats(shape, FloatWidth::F64, data.into_iter().map(|z| z.re).collect()); }
         Self::from_storage(shape, Storage::Complex(data))
     }
     /// Whether every number, including those in nested arrays, is exact. Non-finite values in integer storage count as exact.
@@ -504,7 +514,7 @@ impl Value {
                 .bool_slice()
                 .map(Items::Booleans)
                 .or_else(|| n.integer_slice().map(|n| Items::Integers(Ints::I64(n))))
-                .or_else(|| n.float_slice().map(Items::Floats))
+                .or_else(|| n.float_items().map(Items::Floats))
                 .or_else(|| n.complex_slice().map(Items::Complex))
                 .unwrap_or(Items::Values(std::slice::from_ref(self))),
             Self::Character(c) => Items::Characters(std::slice::from_ref(c)),
@@ -517,19 +527,35 @@ impl Value {
     pub(crate) fn checked_items(&self) -> Items<'_> {
         if let Self::Array(a) = self {
             if let Storage::Integers(IntBuf::I64(v), flag) = a.data.as_ref() {
-                if flag.load(Relaxed) && !extended::any_nonfinite(v) { flag.store(false, Relaxed); }
+                if flag.get().is_some() && !extended::any_nonfinite(v) { flag.clear(); }
             }
         }
         self.as_items()
     }
     /// The compact kind of the items, as a kernel reads them. An atom takes the narrowest kind that holds it.
     pub(crate) fn compact_kind(&self) -> Option<Kind> { if self.is_atom() { item_kind(self).map(Kind::stored) } else { self.checked_items().kind() } }
+    /// The width of the floats that hold the items, when compact float storage holds them or the value is a float atom.
+    pub(crate) fn float_width(&self) -> Option<FloatWidth> { match self.compact_kind()? { Kind::Float(width) | Kind::Nonfinite(width) => Some(width), _ => None } }
+    /// The numbers of this value as floats of `width`, each rounded once, with the arrays nested in it converted too. Complex numbers
+    /// are 64-bit, so a narrower width is DOMAIN for them, as are characters and functions at any width.
+    pub(crate) fn to_float_width(&self, width: FloatWidth) -> Result<Self, ErrorKind> {
+        if let Self::Number(n) = self { return n.to_float_width(width).map(Self::Number).map_err(|_| ErrorKind::Domain); }
+        if !matches!(self, Self::Array(_)) { return Err(ErrorKind::Domain); }
+        match self.as_items() {
+            Items::Booleans(_) | Items::Integers(_) | Items::Extended(..) | Items::Floats(_) => {
+                let floats = with_float_width!(width, F => F::build(self.shape().to_vec(), crate::element::read_as::<F>(self).ok_or(ErrorKind::Domain)?.into_owned()));
+                floats.ok_or(ErrorKind::Domain)?.with_layout(self.layout().clone())
+            }
+            Items::Complex(_) if width == FloatWidth::F64 => Ok(self.clone()),
+            _ => self.layout().collect(self.elements().map(|e| e.to_float_width(width)).collect::<Result<Vec<_>, _>>()?, self.prototype().to_float_width(width)?),
+        }
+    }
     /// The name of the storage that holds the items, as `•storage` gives it and boxed display marks it. An atom gives its own kind.
     pub(crate) fn storage_name(&self) -> &'static str {
         match (self, self.as_items()) {
             (_, Items::Booleans(_)) => "boolean",
-            (_, Items::Integers(_) | Items::Extended(_)) => "integer",
-            (_, Items::Floats(_)) => "float",
+            (_, Items::Integers(_) | Items::Extended(..)) => "integer",
+            (_, Items::Floats(f)) => match f.tag() { FloatWidth::F16 => "float16", FloatWidth::F32 => "float32", FloatWidth::F64 => "float64" },
             (_, Items::Complex(_)) => "complex",
             (_, Items::Characters(_)) => "character",
             (Self::Number(_), _) => "rational",
@@ -537,7 +563,7 @@ impl Value {
             _ => "mixed",
         }
     }
-    pub fn as_floats(&self) -> Option<&[f64]> { match self.as_items() { Items::Floats(v) => Some(v), _ => None } }
+    pub fn as_floats(&self) -> Option<&[f64]> { match self.as_items() { Items::Floats(Floats::F64(v)) => Some(v), _ => None } }
     pub fn as_integers(&self) -> Option<&[i64]> { match self.as_items() { Items::Integers(Ints::I64(v)) => Some(v), _ => None } }
     pub fn as_booleans(&self) -> Option<&[bool]> { match self.as_items() { Items::Booleans(v) => Some(v), _ => None } }
     pub fn as_complex(&self) -> Option<&[Complex64]> { match self.as_items() { Items::Complex(v) => Some(v), _ => None } }
@@ -690,8 +716,9 @@ impl Value {
                 (Storage::Mixed(v, memo), _) if v.is_empty() => Storage::Mixed(vec![], memo.clone()),
                 (Storage::Mixed(v, _), _) => Storage::compact(v.iter().map(Value::fill).collect(), Widening::Items),
                 (data, Items::Booleans(_)) => Storage::Boolean(vec![false; data.len()]),
-                (data, Items::Integers(_) | Items::Extended(_)) => Storage::integers(IntBuf::U8(vec![0; data.len()]), false),
-                (data, Items::Floats(_) | Items::Complex(_)) => Storage::Float(vec![0.0; data.len()]),
+                (data, Items::Integers(_) | Items::Extended(..)) => Storage::integers(IntBuf::U8(vec![0; data.len()]), None),
+                (data, Items::Floats(v)) => Storage::Floats(FloatBuf::collect(v.tag(), std::iter::repeat_n(0.0, data.len()))),
+                (data, Items::Complex(_)) => Storage::Floats(FloatBuf::F64(vec![0.0; data.len()])),
                 (data, Items::Characters(_)) => Storage::Character(vec![' '; data.len()]),
                 (_, Items::Values(_)) => unreachable!("mixed storage fills above"),
             }),

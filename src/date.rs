@@ -1,6 +1,7 @@
 //! `•date` reads a moment, in seconds since the Unix epoch, from text or from a record of fields. `•date⁻¹` writes a moment as a record,
 //! or as text with a pattern. Patterns, field names and ISO 8601 text follow chrono.
 use crate::{
+    array::FloatWidth,
     data::{text, Options},
     execution::Context,
     keyed,
@@ -104,7 +105,9 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
         (shape, texts.iter().map(|t| read(t)).collect())
     };
     let seconds = moments.into_iter().map(|m| m.map(seconds).ok_or_else(|| span.domain_error("invalid date"))).collect::<Result<Vec<_>, _>>()?;
-    Value::shaped(&shape, seconds.into_iter().map(|s| Value::Number(s.into())).collect(), Value::Number(0.0.into())).error_at(span, "invalid date")
+    // Seconds since 1970 stay 64-bit, because a 32-bit float holds them only to within about two minutes.
+    let second = |s| Value::Number(Number::float(s, FloatWidth::F64));
+    Value::shaped(&shape, seconds.into_iter().map(second).collect(), second(0.0)).error_at(span, "invalid date")
 }
 
 /// `•date⁻¹`'s options. The browser build has no `locale`, which keeps chrono's locale data out of it.

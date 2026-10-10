@@ -1,5 +1,5 @@
 use crate::{
-    array::generated_len,
+    array::{generated_len, FloatWidth},
     execution::Context,
     keyed,
     primitive::{integer, numeric, pervade, real},
@@ -7,7 +7,7 @@ use crate::{
         natives, Call,
         Valence::{Ambivalent, Dyadic, Monadic},
     },
-    Error, ErrorAt, ErrorKind, Value,
+    Error, ErrorAt, ErrorKind, Number, Value,
 };
 use rand::{
     distr::{Distribution as Sample, Open01},
@@ -44,8 +44,8 @@ macro_rules! continuous {
         impl Distribution {
             fn samples<R: rand::Rng + ?Sized>(&self, shape: Vec<usize>, len: usize, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
                 match self {
-                    $(Self::$variant(d) => Value::floats(shape, draw(len, || d.sample(&mut *rng), span)?),)+
-                    Self::Logistic(location, scale) => Value::floats(shape, draw(len, || {
+                    $(Self::$variant(d) => Value::floats(shape, span.numeric().width, draw(len, || d.sample(&mut *rng), span)?),)+
+                    Self::Logistic(location, scale) => Value::floats(shape, span.numeric().width, draw(len, || {
                         logistic_value(Operation::Quantile, *location, *scale, Open01.sample(&mut *rng))
                     }, span)?),
                     Self::Binomial(d) => return discrete_samples(d, shape, len, rng, span),
@@ -53,7 +53,7 @@ macro_rules! continuous {
                 }.error_at(span, "invalid distribution sample")
             }
 
-            fn evaluate(&self, op: Operation, x: f64, span: &Context<'_>) -> Result<Value, Error> {
+            fn evaluate(&self, op: Operation, x: f64, width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> {
                 if matches!(op, Operation::Quantile) && !(0.0..=1.0).contains(&x) {
                     return Err(span.domain_error("probability must be in [0,1]"));
                 }
@@ -65,14 +65,14 @@ macro_rules! continuous {
                             if d.p() == 0.0 { return Ok(integer(0)); }
                             if d.p() == 1.0 { return Ok(exact(d.n())); }
                         }
-                        return Ok(discrete_value(d, op, x));
+                        return Ok(discrete_value(d, op, x, width));
                     }
                     Self::Poisson(d) => {
                         if matches!(op, Operation::Quantile) && x == 1.0 { f64::INFINITY }
-                        else { return Ok(discrete_value(d, op, x)); }
+                        else { return Ok(discrete_value(d, op, x, width)); }
                     }
                 };
-                Ok(Value::Number(y.into()))
+                Ok(Value::Number(Number::float(y, width)))
             }
         }
     };
@@ -154,7 +154,7 @@ pub(crate) fn distribution(left: Option<&Value>, right: &Value, span: &Context<'
     let params = match left {
         Some(params) => params.clone(),
         None if standard.is_empty() => return Err(span.domain_error(format!("the {name} distribution has no standard parameters"))),
-        None => Value::floats(vec![standard.len()], standard.to_vec()).error_at(span, "invalid standard parameters")?,
+        None => Value::floats(vec![standard.len()], FloatWidth::F64, standard.to_vec()).error_at(span, "invalid standard parameters")?,
     };
     Ok(bundle(construct(&params, span)?))
 }
@@ -197,7 +197,7 @@ fn continuous_value<D: Continuous<f64, f64> + ContinuousCDF<f64, f64>>(d: &D, op
     }
 }
 
-fn discrete_value<D: Discrete<u64, f64> + DiscreteCDF<u64, f64>>(d: &D, op: Operation, x: f64) -> Value {
+fn discrete_value<D: Discrete<u64, f64> + DiscreteCDF<u64, f64>>(d: &D, op: Operation, x: f64, width: FloatWidth) -> Value {
     if matches!(op, Operation::Quantile) { return exact(d.inverse_cdf(x)); }
     let y = match op {
         Operation::Density => {
@@ -208,7 +208,7 @@ fn discrete_value<D: Discrete<u64, f64> + DiscreteCDF<u64, f64>>(d: &D, op: Oper
         }
         _ => unreachable!(),
     };
-    Value::Number(y.into())
+    Value::Number(Number::float(y, width))
 }
 
 fn logistic_value(op: Operation, location: f64, scale: f64, x: f64) -> f64 {
@@ -225,7 +225,7 @@ fn logistic_value(op: Operation, location: f64, scale: f64, x: f64) -> f64 {
 }
 
 pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if !matches!(op, Operation::Sample) { return pervade(right, &|e| d.evaluate(op, real(&e, span)?, span), span); }
+    if !matches!(op, Operation::Sample) { return pervade(right, &|e| d.evaluate(op, real(&e, span)?, e.float_width().unwrap_or(span.numeric().width), span), span); }
     if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "sample shape must be a unit or vector")); }
     let shape = right.as_items().nonnegative_integers().error_at(span, "invalid sample dimension")?;
     let len = generated_len(&shape).error_at(span, "sample shape exceeds array limits")?;

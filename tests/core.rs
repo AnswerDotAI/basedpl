@@ -7,7 +7,8 @@ fn run(code: &str) -> Result<Option<AplValue>, Error> {
 }
 
 fn number(n: impl TryInto<basedpl::Number>) -> AplValue { AplValue::number(n).unwrap() }
-fn vector(values: &[f64]) -> AplValue { AplValue::from_parts(vec![values.len()], values.iter().copied().map(number).collect(), number(0.0)).unwrap() }
+fn float(n: f64) -> AplValue { AplValue::Number(basedpl::Number::float(n, basedpl::FloatWidth::F64)) }
+fn vector(values: &[f64]) -> AplValue { AplValue::from_parts(vec![values.len()], values.iter().copied().map(float).collect(), float(0.0)).unwrap() }
 
 #[track_caller]
 fn check_in(session: &mut Session, code: &str, expected: AplValue) {
@@ -121,7 +122,7 @@ fn explicit_output_without_echo() {
     let r = s.eval_with(code, quiet());
     assert!(r.error.is_none());
     assert_eq!(r.output_text(), ["2", "4"]);
-    assert_same(r.value, &number(6.0));
+    assert_same(r.value, &float(6.0));
     assert_eq!(s.eval(code).output_text(), ["1", "2", "3", "4", "5", "6"]);
     for code in ["x←7", "+", "f←{⎕←⍵ ⋄ ⍵+1} ⋄ f 8"] {
         let r = s.eval_with(code, quiet());
@@ -162,16 +163,16 @@ fn calls_with_array_arguments() {
         assert!(r.output_text().is_empty());
         assert_same(r.value, &run(expected).unwrap().unwrap());
     }
-    assert_eq!(s.call("+", &[number(3.0)]).output_text(), ["3"]);
-    let r = s.call("{}", &[number(3.0)]);
+    assert_eq!(s.call("+", &[float(3.0)]).output_text(), ["3"]);
+    let r = s.call("{}", &[float(3.0)]);
     assert!(r.value.is_none() && r.error.is_none() && r.output_text().is_empty());
     for (function, args, kind) in [
         ("+", vec![], Length),
-        ("+", vec![number(1.0); 3], Length),
-        ("", vec![number(1.0)], Syntax),
-        ("1", vec![number(1.0)], Syntax),
-        ("¨", vec![number(1.0)], Syntax),
-        ("+ ⋄ -", vec![number(1.0)], Syntax),
+        ("+", vec![float(1.0); 3], Length),
+        ("", vec![float(1.0)], Syntax),
+        ("1", vec![float(1.0)], Syntax),
+        ("¨", vec![float(1.0)], Syntax),
+        ("+ ⋄ -", vec![float(1.0)], Syntax),
     ] { assert_eq!(s.call(function, &args).error.unwrap().kind, kind); }
     let r = s.call("bad", &[AplValue::Character('a')]);
     assert_eq!(r.output_text(), ["'a'"]);
@@ -179,7 +180,7 @@ fn calls_with_array_arguments() {
     assert_eq!(e.kind, Domain);
     assert_eq!(e.calls.last().unwrap().source.text, "bad");
     assert!(e.span.source.text.contains("bad←"));
-    let r = s.call_with("{∇⍵}", &[number(0.0)], basedpl::EvalOptions { timeout: Some(std::time::Duration::ZERO), ..basedpl::EvalOptions::default() });
+    let r = s.call_with("{∇⍵}", &[float(0.0)], basedpl::EvalOptions { timeout: Some(std::time::Duration::ZERO), ..basedpl::EvalOptions::default() });
     assert_eq!(r.error.as_ref().unwrap().kind, Timeout);
     equiv_in(&mut s, "x", "42");
 }
@@ -192,7 +193,7 @@ fn cancellation_preserves_session_and_unwinds_calls() {
     assert_eq!(r.error.as_ref().unwrap().kind, Timeout);
     assert_eq!(r.output_text(), ["7"]);
     equiv_in(&mut s, "keep+1", "43");
-    s.set("u", AplValue::floats(vec![1_000_000], (0..1_000_000).map(|i| f64::from(i) + 0.5).collect()).unwrap()).unwrap();
+    s.set("u", AplValue::floats(vec![1_000_000], basedpl::FloatWidth::F64, (0..1_000_000).map(|i| f64::from(i) + 0.5).collect()).unwrap()).unwrap();
     assert_eq!(s.eval_timeout("∪u", Duration::from_millis(2)).error.unwrap().kind, Timeout);
     assert_eq!(s.eval_timeout("⍭1000000000000ₓ", Duration::from_millis(2)).error.unwrap().kind, Timeout);
     let interrupt = basedpl::InterruptHandle::default();
@@ -257,7 +258,7 @@ fn expression_dissection() {
     assert_eq!(r.output_text().len(), 3);
     assert_eq!(r.output_text()[0], "2");
     assert_eq!(r.output_text()[2], "3");
-    assert_same(r.value, &number(3.));
+    assert_same(r.value, &float(3.));
     assert_eq!(s.eval("f").output_text().len(), 1);
     let r = s.eval("↑[+]");
     assert!(r.function.is_some());
@@ -282,7 +283,7 @@ fn execute_source_and_session() {
     let mut s = Session::new();
     let r = s.eval(r#"a←⍎"1+1 ⋄ 2+2""#);
     assert_eq!(r.output_text(), ["2"]);
-    assert_same(r.value, &number(4.));
+    assert_same(r.value, &float(4.));
     equiv_in(&mut s, "a", "4");
     let failed = s.eval(r#"⍎"⎕←7 ⋄ 1÷'a'""#);
     assert!(failed.value.is_none());
@@ -292,23 +293,23 @@ fn execute_source_and_session() {
 
 #[test]
 fn numeric_constructors() {
-    assert_eq!(AplValue::floats(vec![2], vec![1.]).err(), Some(Length));
-    assert_eq!(AplValue::floats(vec![1], vec![-0.]).unwrap().as_floats().unwrap()[0].to_bits(), (-0f64).to_bits());
+    assert_eq!(AplValue::floats(vec![2], basedpl::FloatWidth::F64, vec![1.]).err(), Some(Length));
+    assert_eq!(AplValue::floats(vec![1], basedpl::FloatWidth::F64, vec![-0.]).unwrap().as_floats().unwrap()[0].to_bits(), (-0f64).to_bits());
     assert_eq!(AplValue::number(num_rational::BigRational::new_raw(1.into(), 0.into())).err(), Some(Domain));
     assert_same(number(num_rational::BigRational::new_raw(2.into(), (-4).into())), &exact(-1, 2));
 }
 
 #[test]
 fn exact_results_and_readback() {
-    for code in ["0.1|0.3", "3|6.000000000000001"] { assert!(run(code).unwrap().unwrap().same(&number(0.0)), "{code}"); }
+    for code in ["0.1|0.3", "3|6.000000000000001"] { assert!(run(code).unwrap().unwrap().same(&float(0.0)), "{code}"); }
     for code in ["1j2÷3j4", "×3j4", "÷1j2", "¯.5j2E¯1", "1E2j¯4E¯1", "1.7E308÷0.5j0.5", "5E¯324 ¯1.2345678901234567E200 1E¯100j2E100"] {
         let a = run(code).unwrap().unwrap();
         assert!(run(&a.to_string()).unwrap().unwrap().same(&a), "{code}");
     }
     let huge = format!("1{}", "0".repeat(400));
     assert_same(run(&format!("{huge}ₓ÷{huge}ₓ")).unwrap().unwrap(), &exact(1, 1));
-    assert_same(run(&format!("{huge}1r{huge}0+0.5")).unwrap().unwrap(), &number(1.5));
-    assert_same(run(&format!("{huge}ₓ+0")).unwrap().unwrap(), &number(f64::INFINITY));
+    assert_same(run(&format!("{huge}1r{huge}0+0.5")).unwrap().unwrap(), &float(1.5));
+    assert_same(run(&format!("{huge}ₓ+0")).unwrap().unwrap(), &float(f64::INFINITY));
     assert_same(run(&format!("{huge}ₓ+0j1")).unwrap().unwrap(), &number(num_complex::Complex64::new(f64::INFINITY, 1.0)));
 }
 #[test]
@@ -345,7 +346,7 @@ fn exact(n: i64, d: i64) -> AplValue { AplValue::number(num_rational::BigRationa
 #[test]
 fn huge_shapes_count_exactly() {
     let mut session = Session::new();
-    session.set("a", AplValue::empty(vec![usize::MAX, 0], number(0.)).unwrap()).unwrap();
+    session.set("a", AplValue::empty(vec![usize::MAX, 0], float(0.)).unwrap()).unwrap();
     equiv_in(&mut session, "≢a", &format!("{}ₓ", usize::MAX));
     equiv_in(&mut session, "⍴a", &format!("[{} 0]ₓ", usize::MAX));
 }
@@ -398,7 +399,7 @@ fn highlight_classes_and_code_context() {
 
 #[test]
 fn based_values() {
-    let n = number(3.0);
+    let n = float(3.0);
     let unit = n.enclose().unwrap();
     check("3", n.clone());
     check("⊂3", unit.clone());
@@ -410,21 +411,21 @@ fn based_values() {
 
 #[test]
 fn array_invariants() {
-    let seven = number(7.0);
+    let seven = float(7.0);
     let singleton = vector(&[7.0]);
     assert!(!seven.same(&singleton));
     assert!(seven.shape().is_empty());
     assert_eq!(singleton.shape(), &[1]);
-    assert_eq!(AplValue::new(vec![2, 2], vec![number(1.0); 3]).err(), Some(Length));
+    assert_eq!(AplValue::new(vec![2, 2], vec![float(1.0); 3]).err(), Some(Length));
     assert_eq!(AplValue::new(vec![], vec![]).err(), Some(Length));
-    assert_eq!(AplValue::new(vec![usize::MAX, 2], vec![number(1.0)]).err(), Some(Limit));
-    let rows = AplValue::empty(vec![0, 3], number(0.0)).unwrap();
-    let cols = AplValue::empty(vec![3, 0], number(0.0)).unwrap();
+    assert_eq!(AplValue::new(vec![usize::MAX, 2], vec![float(1.0)]).err(), Some(Limit));
+    let rows = AplValue::empty(vec![0, 3], float(0.0)).unwrap();
+    let cols = AplValue::empty(vec![3, 0], float(0.0)).unwrap();
     assert!(!rows.same(&cols));
     assert!(rows.is_empty());
     assert_eq!(rows.shape(), &[0, 3]);
-    assert!(AplValue::empty(vec![usize::MAX, 2, 0], number(0.0)).is_ok());
-    assert_eq!(AplValue::empty(vec![], number(0.0)).err(), Some(Length));
+    assert!(AplValue::empty(vec![usize::MAX, 2, 0], float(0.0)).is_ok());
+    assert_eq!(AplValue::empty(vec![], float(0.0)).err(), Some(Length));
     let text = AplValue::empty(vec![0, 3], Character('x')).unwrap();
     assert!(!rows.same(&text));
     assert_same(text.prototype(), &Character(' '));
@@ -467,13 +468,13 @@ fn nested_prototypes_and_value_semantics() {
     assert_same(nested.prototype(), &vector(&[0.0, 0.0]));
     let empty = AplValue::empty(vec![0], nested.prototype().clone()).unwrap();
     assert_same(empty.prototype(), &nested.prototype());
-    let mixed = AplValue::new(vec![2], vec![number(88.0), Character('X')]).unwrap();
+    let mixed = AplValue::new(vec![2], vec![float(88.0), Character('X')]).unwrap();
     let a = AplValue::new(vec![], vec![mixed]).unwrap();
-    let expected = AplValue::new(vec![2], vec![number(0.0), Character(' ')]).unwrap();
+    let expected = AplValue::new(vec![2], vec![float(0.0), Character(' ')]).unwrap();
     assert_same(a.prototype(), &expected);
     let saved = nested.clone();
     let mut detached: Vec<AplValue> = nested.elements().collect();
-    detached[0] = number(9.0);
+    detached[0] = float(9.0);
     let changed = AplValue::new(vec![2], detached).unwrap();
     assert!(!changed.same(&saved));
     drop(nested);
@@ -557,7 +558,7 @@ fn operator_categories_and_singleton_replicate() {
     for code in ["r←/ ⋄ +r 1 2 3", "r←/ ⋄ sum←+r ⋄ sum 1 2 3", "r←/ ⋄ alias←r ⋄ +(alias)1 2 3"] {
         let r = s.eval(code);
         assert!(r.error.is_none(), "{code}: {:?}", r.error);
-        assert_same(r.value, &number(6.0));
+        assert_same(r.value, &float(6.0));
     }
     for (code, expected) in [("(,2)#3 4", vec![3.0, 3.0, 4.0, 4.0]), ("1 0 1#,3", vec![3.0, 3.0])] {
         let r = s.eval(code);
@@ -567,7 +568,7 @@ fn operator_categories_and_singleton_replicate() {
 }
 
 #[test]
-fn long_assignment_chains() { assert_same(Session::new().eval(&format!("{}7", "a←".repeat(10_000))).value, &number(7.0)); }
+fn long_assignment_chains() { assert_same(Session::new().eval(&format!("{}7", "a←".repeat(10_000))).value, &float(7.0)); }
 
 #[test]
 fn tolerant_equality_agrees_between_array_and_item_paths() {
@@ -587,8 +588,8 @@ fn tolerant_equality_agrees_between_array_and_item_paths() {
     for c in numbers {
         let ends = [c * (1.0 - 1e-14), c / (1.0 - 1e-14), c];
         let xs: Vec<f64> = ends.into_iter().flat_map(|end| steps(end, f64::next_up).chain(steps(end, f64::next_down)).chain([end])).collect();
-        s.set("xs", AplValue::floats(vec![xs.len()], xs).unwrap()).unwrap();
-        s.set("c", number(c)).unwrap();
+        s.set("xs", AplValue::floats(vec![xs.len()], basedpl::FloatWidth::F64, xs).unwrap()).unwrap();
+        s.set("c", float(c)).unwrap();
         let (array, items) = (s.eval("xs=c").value.unwrap(), s.eval("xs{⍺=⍵}¨c").value.unwrap());
         assert!(array.same(&items), "c = {c:e}");
     }
@@ -611,9 +612,9 @@ fn lexical_frames_are_reclaimed() {
         ("pass←{x←42 ⋄ op←{⍵=0?⍶ ⍵;∇⍵-1} ⋄ ({x}op)⍵} ⋄ pass 25000", 42.),
         ("loop←{⍵=0?a←7;(∇⍵-1)} ⋄ loop 25000", 7.),
         ("f←{\"DOMAIN\"::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 2000", 7.),
-    ] { check_in(&mut s, code, number(expected)); }
+    ] { check_in(&mut s, code, float(expected)); }
     assert_eq!(s.eval("f 20000").error.unwrap().kind, Limit);
-    check_in(&mut s, "deep 15000", number(15000.));
+    check_in(&mut s, "deep 15000", float(15000.));
     let source = Source::new("calls", "outer 25000");
     let weak = Arc::downgrade(&source);
     assert!(s.eval_source(source, EvalOptions::default()).error.is_none());

@@ -1,5 +1,5 @@
 use crate::{
-    array::{Ints, Items, Storage, Width},
+    array::{FloatBuf, FloatWidth, Ints, Items, Storage, Width},
     execution::Context,
     keyed,
     primitive::{numeric, real},
@@ -12,13 +12,16 @@ pub(crate) fn text(value: &Value, span: &Context<'_>) -> Result<String, Error> {
     keyed::name(value).map(|s| s.to_string()).ok_or_else(|| span.domain_error("expected text"))
 }
 
-/// Imported items, where `filled` marks the fills for missing values. When any other item is a finite float, numbers become floats if
-/// every one converts exactly. Otherwise, or when one wouldn't, each item keeps its own kind. A fill or an infinity never makes exact
-/// numbers approximate.
+/// Imported items, where `filled` marks the fills for missing values. When any other item is a finite float, numbers become floats of
+/// the widest float width among them if every one converts exactly. Otherwise, or when one wouldn't, each item keeps its own kind. A
+/// fill or an infinity never makes exact numbers approximate.
 pub(crate) fn imported(shape: Vec<usize>, items: Vec<Value>, filled: impl Fn(usize) -> bool, empty_prototype: Value) -> Result<Value, ErrorKind> {
-    if items.iter().enumerate().any(|(i, v)| !filled(i) && matches!(v, Value::Number(n) if n.as_float().is_some_and(f64::is_finite))) {
-        if let Some(floats) = items.iter().map(|v| if let Value::Number(n) = v { n.lossless_float() } else { None }).collect::<Option<Vec<_>>>() {
-            return Value::floats(shape, floats);
+    let number = |v: &Value| if let Value::Number(n) = v { Some(n.clone()) } else { None };
+    if items.iter().enumerate().any(|(i, v)| !filled(i) && number(v).is_some_and(|n| n.as_float().is_some_and(f64::is_finite))) {
+        let width = items.iter().filter_map(|v| number(v)?.float_width()).max().unwrap_or(FloatWidth::F64);
+        let exactly = |n: Number| n.lossless_float().filter(|&f| f.is_nan() || Number::float(f, width).as_float() == Some(f));
+        if let Some(floats) = items.iter().map(|v| number(v).and_then(exactly)).collect::<Option<Vec<_>>>() {
+            return Value::from_storage(shape, Storage::Floats(FloatBuf::collect(width, floats.into_iter())));
         }
     }
     Value::keeping_kinds(shape, items, empty_prototype)
@@ -66,7 +69,7 @@ impl Options {
 
     pub fn fill(&self, span: &Context<'_>) -> Result<Number, Error> {
         match self.values.get("fill") {
-            None => Ok(Number::from(f64::NAN)),
+            None => Ok(Number::float(f64::NAN, span.numeric().width)),
             Some(Value::Number(n)) if n.as_complex().is_none() => Ok(n.clone()),
             _ => Err(span.domain_error(format!("{} fill must be a real number", self.name))),
         }
@@ -78,11 +81,12 @@ pub(crate) fn vfi(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Re
     let separators = left.map(|a| text(a, span)).transpose()?;
     let mut valid = Vec::new();
     let mut numbers = Vec::new();
-    let zero = Number::from(0.0);
+    let width = span.numeric().width;
+    let zero = Number::float(0.0, width);
     let mut field = |s: &str| -> Result<(), Error> {
         span.check()?;
         let s = s.trim();
-        let n = if s.is_empty() { Ok(zero.clone()) } else { Number::parse(s) };
+        let n = if s.is_empty() { Ok(zero.clone()) } else { Number::parse(s, width) };
         valid.push(i64::from(n.is_ok()));
         numbers.push(Value::Number(n.unwrap_or_else(|_| zero.clone())));
         Ok(())

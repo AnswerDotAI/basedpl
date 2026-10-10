@@ -2,14 +2,15 @@
 //! browser build converts trees to and from JavaScript values. `•canvas` writes one as JSON, with its typed arrays as bytes.
 //!
 //! - A number is a JavaScript number, and a Boolean is `true` or `false`. A string is a JavaScript string, and a record is an object.
-//! - Any other array is `{shape, data}`. `data` is a typed array when every item is a number: `Float64Array` for approximate and
-//!   fractional numbers, and for integers the width BPL stores them at, `Uint8Array`, `Int16Array`, `Int32Array` or `BigInt64Array`,
+//! - Any other array is `{shape, data}`. `data` is a typed array when every item is a number: `Float32Array` for 32-bit floats,
+//!   `Float64Array` for other approximate and fractional numbers, and for integers the width BPL stores them at, `Uint8Array`,
+//!   `Int16Array`, `Int32Array` or `BigInt64Array`,
 //!   as Python's `.np` does. Complex numbers are their real and imaginary parts in turn, with a last axis of length 2. Otherwise `data`
 //!   is an `Array` of items. Axis names and keys, when an array has them, are `axis_names` and `axis_keys`, as in `protocol.rs`.
-//! - A JavaScript number becomes an approximate number, a `BigInt` an exact one, an `Array` a vector and a function a BPL function.
+//! - A JavaScript number becomes a float of the session's default width, a `BigInt` an exact one, an `Array` a vector and a function a BPL function.
 //!   An object with `shape` and `data` becomes an array, and any other object a record. `undefined` and `null` give no value.
 use crate::{
-    array::{Ints, Items},
+    array::{FloatWidth, Floats, Ints, Items},
     element::read_as,
     keyed, ErrorKind, Number, Value,
 };
@@ -33,6 +34,7 @@ pub enum Js {
 /// A typed array.
 #[derive(Debug)]
 pub enum Typed {
+    Float32(Vec<f32>),
     Float64(Vec<f64>),
     Uint8(Vec<u8>),
     Int16(Vec<i16>),
@@ -44,6 +46,7 @@ impl Typed {
     /// The name of the array's JavaScript constructor.
     fn name(&self) -> &'static str {
         match self {
+            Self::Float32(_) => "Float32Array",
             Self::Float64(_) => "Float64Array",
             Self::Uint8(_) => "Uint8Array",
             Self::Int16(_) => "Int16Array",
@@ -53,6 +56,7 @@ impl Typed {
     }
     fn len(&self) -> usize {
         match self {
+            Self::Float32(v) => v.len(),
             Self::Float64(v) => v.len(),
             Self::Uint8(v) => v.len(),
             Self::Int16(v) => v.len(),
@@ -63,6 +67,7 @@ impl Typed {
     /// The items' bytes, little-endian, as JavaScript's typed arrays hold them on every current platform.
     fn bytes(&self) -> Vec<u8> {
         match self {
+            Self::Float32(v) => v.iter().flat_map(|x| x.to_le_bytes()).collect(),
             Self::Float64(v) => v.iter().flat_map(|x| x.to_le_bytes()).collect(),
             Self::Uint8(v) => v.clone(),
             Self::Int16(v) => v.iter().flat_map(|x| x.to_le_bytes()).collect(),
@@ -117,7 +122,8 @@ fn array(value: &Value) -> Result<Js, ErrorKind> {
         Items::Integers(Ints::I16(v)) => Js::Typed(Typed::Int16(v.to_vec())),
         Items::Integers(Ints::I32(v)) => Js::Typed(Typed::Int32(v.to_vec())),
         Items::Integers(Ints::I64(v)) => Js::Typed(Typed::BigInt64(v.to_vec())),
-        Items::Extended(_) | Items::Floats(_) => Js::Typed(Typed::Float64(read_as::<f64>(value).expect("real storage").into_owned())),
+        Items::Floats(Floats::F32(v)) => Js::Typed(Typed::Float32(v.to_vec())),
+        Items::Extended(..) | Items::Floats(_) => Js::Typed(Typed::Float64(read_as::<f64>(value).expect("real storage").into_owned())),
         Items::Complex(v) => complex(&mut shape, &mut names, &mut keys, v.iter().flat_map(|z| [z.re, z.im]).collect()),
         Items::Characters(c) => Js::List(c.iter().map(|c| Js::Text(c.to_string())).collect()),
         Items::Values(items) => match items.iter().map(|v| if let Value::Number(n) = v { Some(n) } else { None }).collect::<Option<Vec<_>>>() {
@@ -140,23 +146,26 @@ fn shaped(shape: Vec<usize>, data: Js, names: Vec<Js>, keys: Vec<Js>) -> Js {
     Js::Object(fields)
 }
 
-/// The value that `js` describes, or `None` for `undefined` and `null`.
-pub fn import(js: Js) -> Result<Option<Value>, ErrorKind> {
+/// The value that `js` describes, or `None` for `undefined` and `null`. Its numbers become floats of `session`'s default width.
+pub fn import(js: Js, session: &crate::Session) -> Result<Option<Value>, ErrorKind> { imported(js, session.numeric.width) }
+
+/// The value that `js` describes, with its numbers as floats of `width`. A typed array keeps its own width.
+fn imported(js: Js, width: FloatWidth) -> Result<Option<Value>, ErrorKind> {
     Ok(Some(match js {
         Js::Undefined => return Ok(None),
         Js::Bool(b) => Value::Number(Number::from_bool(b)),
-        Js::Number(x) => Value::Number(x.into()),
+        Js::Number(x) => Value::Number(Number::float(x, width)),
         Js::BigInt(n) => Value::Number(Number::from_integer(n)),
         Js::Text(s) => keyed::text(&s),
         Js::Typed(t) => typed(vec![t.len()], t)?,
         Js::List(items) => {
-            let items = items.into_iter().map(item).collect::<Result<Vec<_>, _>>()?;
-            Value::from_parts(vec![items.len()], items, Value::Number(0.0.into()))?
+            let items = items.into_iter().map(|v| item(v, width)).collect::<Result<Vec<_>, _>>()?;
+            Value::from_parts(vec![items.len()], items, Value::Number(Number::float(0.0, width)))?
         }
-        Js::Object(fields) if is_array(&fields) => shaped_array(fields)?,
+        Js::Object(fields) if is_array(&fields) => shaped_array(fields, width)?,
         Js::Object(fields) => {
             let (keys, values): (Vec<_>, Vec<_>) =
-                fields.into_iter().map(|(k, v)| Ok((k.into(), item(v)?))).collect::<Result<Vec<_>, ErrorKind>>()?.into_iter().unzip();
+                fields.into_iter().map(|(k, v)| Ok((k.into(), item(v, width)?))).collect::<Result<Vec<_>, ErrorKind>>()?.into_iter().unzip();
             keyed::record(keys, values)?
         }
         #[cfg(web)]
@@ -165,11 +174,12 @@ pub fn import(js: Js) -> Result<Option<Value>, ErrorKind> {
 }
 
 /// An item of an array or record, which must have a value.
-fn item(js: Js) -> Result<Value, ErrorKind> { import(js)?.ok_or(ErrorKind::Domain) }
+fn item(js: Js, width: FloatWidth) -> Result<Value, ErrorKind> { imported(js, width)?.ok_or(ErrorKind::Domain) }
 
 fn typed(shape: Vec<usize>, t: Typed) -> Result<Value, ErrorKind> {
     match t {
-        Typed::Float64(v) => Value::floats(shape, v),
+        Typed::Float32(v) => Value::from_buffer(shape, crate::array::Buffer::F32(v.into())),
+        Typed::Float64(v) => Value::floats(shape, FloatWidth::F64, v),
         Typed::Uint8(v) => Value::integers(shape, v.into_iter().map(i64::from).collect()),
         Typed::Int16(v) => Value::integers(shape, v.into_iter().map(i64::from).collect()),
         Typed::Int32(v) => Value::integers(shape, v.into_iter().map(i64::from).collect()),
@@ -184,7 +194,7 @@ fn is_array(fields: &[(String, Js)]) -> bool {
     ["shape", "data"].iter().all(|f| fields.iter().any(|(k, _)| k == f)) && fields.iter().all(|(k, _)| ARRAY_FIELDS.contains(&k.as_str()))
 }
 
-fn shaped_array(fields: Vec<(String, Js)>) -> Result<Value, ErrorKind> {
+fn shaped_array(fields: Vec<(String, Js)>, width: FloatWidth) -> Result<Value, ErrorKind> {
     let [mut shape, mut data, mut names, mut keys] = [None, None, None, None];
     for (k, v) in fields {
         let slot = match k.as_str() {
@@ -202,7 +212,7 @@ fn shaped_array(fields: Vec<(String, Js)>) -> Result<Value, ErrorKind> {
         .collect::<Result<Vec<_>, _>>()?;
     let value = match data.expect("is_array checked for data") {
         Js::Typed(t) => typed(shape, t)?,
-        Js::List(items) => Value::from_parts(shape, items.into_iter().map(item).collect::<Result<_, _>>()?, Value::Number(0.0.into()))?,
+        Js::List(items) => Value::from_parts(shape, items.into_iter().map(|v| item(v, width)).collect::<Result<_, _>>()?, Value::Number(Number::float(0.0, width)))?,
         _ => return Err(ErrorKind::Domain),
     };
     let texts = |list: Js| match list {
@@ -257,7 +267,7 @@ pub use web::{from_js, to_js, JsFunction};
 /// The browser build's side: JavaScript values, and the JavaScript functions that BPL calls.
 #[cfg(web)]
 mod web {
-    use super::{export, import, Js, Typed};
+    use super::{export, imported, Js, Typed};
     use crate::{execution::Context, Error, Value};
     use js_sys::{
         Array, BigInt64Array, Float32Array, Float64Array, Function, Int16Array, Int32Array, Int8Array, Object, Reflect, Uint16Array, Uint32Array, Uint8Array,
@@ -306,6 +316,7 @@ mod web {
                 for (k, v) in fields { _ = Reflect::set(&object, &k.into(), &to_js(v)); }
                 object.into()
             }
+            Js::Typed(Typed::Float32(v)) => Float32Array::from(&v[..]).into(),
             Js::Typed(Typed::Float64(v)) => Float64Array::from(&v[..]).into(),
             Js::Typed(Typed::Uint8(v)) => Uint8Array::from(&v[..]).into(),
             Js::Typed(Typed::Int16(v)) => Int16Array::from(&v[..]).into(),
@@ -326,7 +337,7 @@ mod web {
         if let Some(f) = value.dyn_ref::<Function>() { return Ok(Js::Function(Arc::new(JsFunction::new(f.clone())))); }
         if Array::is_array(value) { return Array::from(value).iter().map(|v| from_js(&v)).collect::<Result<_, _>>().map(Js::List); }
         if let Some(a) = value.dyn_ref::<Float64Array>() { return typed(Typed::Float64(a.to_vec())); }
-        if let Some(a) = value.dyn_ref::<Float32Array>() { return typed(Typed::Float64(a.to_vec().into_iter().map(f64::from).collect())); }
+        if let Some(a) = value.dyn_ref::<Float32Array>() { return typed(Typed::Float32(a.to_vec())); }
         if let Some(a) = value.dyn_ref::<Uint8Array>() { return typed(Typed::Uint8(a.to_vec())); }
         if let Some(a) = value.dyn_ref::<Uint8ClampedArray>() { return typed(Typed::Uint8(a.to_vec())); }
         if let Some(a) = value.dyn_ref::<Int8Array>() { return typed(Typed::Int16(a.to_vec().into_iter().map(i16::from).collect())); }
@@ -359,7 +370,7 @@ mod web {
     }
 
     /// `•js`'s result prototype: a function that does nothing.
-    pub(crate) fn prototype() -> Value { value(Arc::new(JsFunction::new(Function::new_no_args("")))) }
+    pub(crate) fn prototype(_: &Context<'_>) -> Value { value(Arc::new(JsFunction::new(Function::new_no_args("")))) }
 
     /// Calls `f` with `right`, or with `left` then `right`. `None` when it returns `undefined` or `null`.
     pub(crate) fn call(f: &JsFunction, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Option<Value>, Error> {
@@ -367,6 +378,6 @@ mod web {
         let f = f.get();
         let result = match left { Some(left) => f.call2(&JsValue::UNDEFINED, &arg(left)?, &arg(right)?), None => f.call1(&JsValue::UNDEFINED, &arg(right)?) };
         let result = from_js(&result.map_err(|e| cx.domain_error(message(&e)))?).map_err(|e| cx.domain_error(e))?;
-        import(result).map_err(|_| cx.domain_error("the JavaScript result has no BPL form"))
+        imported(result, cx.numeric().width).map_err(|_| cx.domain_error("the JavaScript result has no BPL form"))
     }
 }

@@ -131,6 +131,8 @@ impl Polynomial {
 
     fn roots(&self, span: &Context<'_>) -> Result<Value, Error> {
         let mut c = self.coefficients(span)?;
+        // Real roots take the coefficients' float width, or the default width when the coefficients are exact.
+        let width = span.numeric().width_of(c.iter().map(Number::float_width));
         while c.last().is_some_and(Number::is_zero) { c.pop(); }
         let m = c.last().cloned().unwrap_or_else(|| int(0));
         let degree = c.len().saturating_sub(1);
@@ -149,7 +151,7 @@ impl Polynomial {
             }
             .map_err(|_| span.domain_error("polynomial root solver did not converge"))?;
             span.check()?;
-            roots = values.into_iter().map(Number::from).collect();
+            roots = values.into_iter().map(|z| Number::from(z).at_width(width)).collect();
         }
         let roots = vector(roots, span)?;
         Value::new(vec![2], vec![Value::Number(m), roots]).error_at(span, "invalid polynomial roots")

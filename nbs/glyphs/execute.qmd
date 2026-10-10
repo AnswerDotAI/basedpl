@@ -30,7 +30,7 @@ T←["a":1] ⋄ T⍎"a←5 ⋄ a+1"      ⍝ 6
 `⍎⁻¹Y` writes `Y` as BPL source that `⍎` reads back, as `•literal⁻¹` does.
 
 ```bpl
-⍎⁻¹1 2.5   ⍝ "[1 2.5]"
+⍎⁻¹1 2.5   ⍝ "[1 2.5]ₚ"
 ```
 
 ## Errors

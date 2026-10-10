@@ -9,10 +9,10 @@ use num_bigint::BigInt;
 use num_rational::BigRational;
 use serde_json::Value as Json;
 
-/// A JSON number, exact when written without a point or exponent and otherwise a float. A float too large for `f64` is a DOMAIN error.
-pub(crate) fn number(n: &serde_json::Number) -> Result<Number, ErrorKind> {
+/// A JSON number, exact when written without a point or exponent and otherwise a float of `width`. A float too large for `f64` is a DOMAIN error.
+pub(crate) fn number(n: &serde_json::Number, width: crate::array::FloatWidth) -> Result<Number, ErrorKind> {
     if let Some(i) = n.as_i64() { return Ok(Number::from_integer(i)); }
-    if n.as_str().contains(['.', 'e', 'E']) { return n.as_str().parse::<f64>().ok().filter(|x| x.is_finite()).map(Number::from).ok_or(ErrorKind::Domain); }
+    if n.as_str().contains(['.', 'e', 'E']) { return n.as_str().parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| Number::float(x, width)).ok_or(ErrorKind::Domain); }
     exact(n.as_str().parse::<BigInt>().map_err(|_| ErrorKind::Domain)?)
 }
 
@@ -115,7 +115,7 @@ fn import(value: &Read, fill: &Number, span: &Context<'_>) -> Result<Value, Erro
         Read::Bool(b) => Value::Number(Number::from_bool(*b)),
         Read::Text(s) => keyed::text(s),
         Read::Integer(n) => Value::Number(exact(n.clone()).error_at(span, "JSON number is outside the supported range")?),
-        Read::Float(x) => Value::Number((*x).into()),
+        Read::Float(x) => Value::Number(Number::float(*x, span.numeric().width)),
         Read::List(items) => {
             let data = items.iter().map(|v| import(v, fill, span)).collect::<Result<Vec<_>, _>>()?;
             imported(vec![data.len()], data, |i| matches!(items[i], Read::Null), Value::Number(Number::from_integer(0))).error_at(span, "invalid JSON array")?

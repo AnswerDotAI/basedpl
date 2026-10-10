@@ -36,7 +36,7 @@ mod syntax;
 pub mod system;
 mod xml;
 
-pub use array::{Buffer, Prototype, Value};
+pub use array::{Buffer, FloatWidth, Prototype, Value};
 pub(crate) use error::{DomainAt, ErrorAt};
 pub use error::{Error, ErrorKind, Source, Span};
 pub use eval::{Evaluation, Function, Operand, Operator, Session};

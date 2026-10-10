@@ -74,7 +74,8 @@ const COLUMNS: &[&str] =
 
 /// The row of a table of entries for `path`, shown as `shown`. A missing entry has kind `"none"`, and NaN for its times.
 fn row(path: &Path, shown: &str) -> Vec<Value> {
-    let number = |n: f64| Value::Number(n.into());
+    // Times stay 64-bit, as `•date` gives them.
+    let time_value = |n: f64| Value::Number(Number::float(n, crate::array::FloatWidth::F64));
     let flag = |b: bool| Value::Number(Number::from_bool(b));
     let link = fs::symlink_metadata(path).ok();
     let meta = fs::metadata(path).ok().or_else(|| link.clone());
@@ -85,14 +86,14 @@ fn row(path: &Path, shown: &str) -> Vec<Value> {
         (_, Some(_)) => "other",
         _ => "none",
     };
-    let time = |t: Option<std::io::Result<std::time::SystemTime>>| number(t.and_then(Result::ok).map_or(f64::NAN, |t| crate::date::seconds(t.into())));
+    let time = |t: Option<std::io::Result<std::time::SystemTime>>| time_value(t.and_then(Result::ok).map_or(f64::NAN, |t| crate::date::seconds(t.into())));
     let name = Path::new(shown).file_name().map_or(String::new(), |n| n.to_string_lossy().into_owned());
     let mut row = vec![
         keyed::text(shown),
         keyed::text(&name),
         keyed::text(kind),
         keyed::text(&fs::read_link(path).map_or(String::new(), |t| t.to_string_lossy().into_owned())),
-        number(meta.as_ref().map_or(0.0, |m| m.len() as f64)),
+        Value::Number(Number::from_integer(meta.as_ref().map_or(0, |m| m.len() as i64))),
         time(meta.as_ref().map(fs::Metadata::modified)),
         time(meta.as_ref().map(fs::Metadata::accessed)),
         time(meta.as_ref().map(fs::Metadata::created)),
@@ -105,7 +106,7 @@ fn row(path: &Path, shown: &str) -> Vec<Value> {
         use std::os::unix::fs::MetadataExt;
         let uid = meta.as_ref().map(MetadataExt::uid);
         let owner = uid.and_then(|u| nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(u)).ok().flatten()).map_or(String::new(), |u| u.name);
-        row.extend([number(uid.map_or(0.0, f64::from)), number(meta.as_ref().map_or(0.0, |m| f64::from(m.mode()))), keyed::text(&owner)]);
+        row.extend([Value::Number(Number::from_integer(uid.map_or(0, i64::from))), Value::Number(Number::from_integer(meta.as_ref().map_or(0, |m| i64::from(m.mode())))), keyed::text(&owner)]);
     }
     row
 }

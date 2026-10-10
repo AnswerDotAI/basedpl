@@ -1,4 +1,4 @@
-use crate::{keyed, ErrorAt, Number, Value};
+use crate::{array::FloatWidth, keyed, number::{Tolerance, Tolerant}, ErrorAt, Number, Value};
 use unicode_width::UnicodeWidthStr;
 
 /// A column of numbers aligned on their decimal points: its widest text before the point, and its widest from the point on.
@@ -29,11 +29,13 @@ pub(crate) struct Elide {
     pub prec: usize,
     pub width: usize,
     pub columns: usize,
+    /// The float width that numbers show without a marker: the session's default width. `None` marks every width, as `•literal⁻¹` does.
+    pub plain: Option<FloatWidth>,
 }
 impl Default for Elide { fn default() -> Self { Self { limit: 1000, edges: 3, prec: 10, ..Self::NONE } } }
 impl Elide {
-    /// Shows every item and every digit, as source text and `⍕` do.
-    pub const NONE: Self = Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX };
+    /// Shows every item and every digit, as source text and `⍕` do, with 64-bit floats plain.
+    pub const NONE: Self = Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64) };
     /// The positions kept at each end of a long axis of an array of `shape`, or `None` when display shows every item.
     pub fn edges(self, shape: &[usize]) -> Option<usize> {
         let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);
@@ -44,8 +46,14 @@ impl Elide {
         let columns = (self.columns != usize::MAX).then_some(self.columns);
         self.edges(shape).map_or(columns, |e| Some(columns.map_or(e, |c| c.min(e))))
     }
-    /// The text of `n` with each float rounded to `prec` significant digits.
-    pub fn number(self, n: &Number) -> String { n.rounded(self.prec).to_string() }
+    /// The text of `n` with each float rounded to `prec` significant digits, and the marker of a float width that isn't `plain`.
+    pub fn number(self, n: &Number) -> String { format!("{}{}", n.rounded(self.prec), self.marker(n).map_or(String::new(), String::from)) }
+    /// The text of `n` rounded as `number` rounds it, without a marker, for an array that writes one marker for all its numbers.
+    pub fn unmarked(self, n: &Number) -> String { format!("{:#}", n.rounded(self.prec)) }
+    /// The marker of a float of `width`, when the width isn't `plain`.
+    pub fn width_marker(self, width: FloatWidth) -> Option<char> { (Some(width) != self.plain).then(|| crate::syntax::width_marker(width)) }
+    /// The width marker that `n` writes: that of its float width, when it isn't `plain`.
+    pub fn marker(self, n: &Number) -> Option<char> { n.float_width().and_then(|w| self.width_marker(w)) }
 }
 
 /// The positions display shows along an axis of `len` items: all of them, or the first and last `edges` with `None` for
@@ -114,8 +122,6 @@ pub(crate) struct Settings {
     pub elide: Elide,
 }
 
-const KEYS: [&str; 8] = ["box", "trees", "fns", "dissect", "limit", "edges", "prec", "width"];
-
 impl Settings {
     /// The REPL's settings: boxed, with lines elided to the terminal's width.
     pub fn interactive() -> Self {
@@ -139,53 +145,68 @@ impl Settings {
         text(fit)
     }
     pub fn diagram(&self, a: &Value) -> String { array(a, self.elide).text() }
-    /// Text for `⎕←`: the display text, with every item, and floats rounded to `prec` as display rounds them.
-    pub fn explicit(&self, a: &Value, inside: bool) -> String { Self { elide: Elide { prec: self.elide.prec, ..Elide::NONE }, ..*self }.array(a, inside) }
-    /// The settings as a record. An unlimited count is `∞`.
-    fn record(&self) -> Value {
+    /// Text for `⎕←`: the display text, with every item, and floats rounded to `prec` as display rounds them and with its float width plain.
+    pub fn explicit(&self, a: &Value, inside: bool) -> String { Self { elide: Elide { prec: self.elide.prec, plain: self.elide.plain, ..Elide::NONE }, ..*self }.array(a, inside) }
+    /// Each setting's key and value. An unlimited count is `∞`, a float of `width`.
+    fn entries(&self, width: FloatWidth) -> [(&'static str, Value); 8] {
         let flag = |b| Value::Number(Number::from_bool(b));
-        let count = |n: usize| Value::Number(if n == usize::MAX { Number::from(f64::INFINITY) } else { Number::from_integer(n as i64) });
-        let values = vec![
-            flag(self.boxed),
-            flag(self.trees),
-            flag(self.functions),
-            flag(self.dissect),
-            count(self.elide.limit),
-            count(self.elide.edges),
-            count(self.elide.prec),
-            count(self.elide.width),
-        ];
-        keyed::record(KEYS.map(Into::into).to_vec(), values).expect("the settings fit in a record")
+        let count = |n: usize| Value::Number(if n == usize::MAX { Number::float(f64::INFINITY, width) } else { Number::from_integer(n as i64) });
+        [
+            ("box", flag(self.boxed)),
+            ("trees", flag(self.trees)),
+            ("fns", flag(self.functions)),
+            ("dissect", flag(self.dissect)),
+            ("limit", count(self.elide.limit)),
+            ("edges", count(self.elide.edges)),
+            ("prec", count(self.elide.prec)),
+            ("width", count(self.elide.width)),
+        ]
     }
-    /// The settings with the entries of the record `changes` applied.
-    fn update(mut self, changes: &Value) -> Result<Self, crate::ErrorKind> {
+    /// Sets the setting `key` to `value`. `Ok(false)` when no display setting has that key.
+    fn set(&mut self, key: &str, value: &Value) -> Result<bool, crate::ErrorKind> {
         let count = |v: &Value| match v.as_number() {
             Some(n) if n.as_float() == Some(f64::INFINITY) => Ok(usize::MAX),
             Some(n) => n.nonnegative_integer().map(crate::array::saturated),
             None => Err(crate::ErrorKind::Domain),
         };
         let positive = |v: &Value| count(v).and_then(|d| if d == 0 { Err(crate::ErrorKind::Domain) } else { Ok(d) });
-        for (key, value) in keyed::pairs(changes)? {
-            match &*key {
-                "box" => self.boxed = value.boolean()?,
-                "trees" => self.trees = value.boolean()?,
-                "fns" => self.functions = value.boolean()?,
-                "dissect" => self.dissect = value.boolean()?,
-                "limit" => self.elide.limit = count(&value)?,
-                "edges" => self.elide.edges = count(&value)?,
-                "prec" => self.elide.prec = positive(&value)?,
-                "width" => self.elide.width = positive(&value)?,
-                _ => return Err(crate::ErrorKind::Domain),
-            }
+        match key {
+            "box" => self.boxed = value.boolean()?,
+            "trees" => self.trees = value.boolean()?,
+            "fns" => self.functions = value.boolean()?,
+            "dissect" => self.dissect = value.boolean()?,
+            "limit" => self.elide.limit = count(value)?,
+            "edges" => self.elide.edges = count(value)?,
+            "prec" => self.elide.prec = positive(value)?,
+            "width" => self.elide.width = positive(value)?,
+            _ => return Ok(false),
         }
-        Ok(self)
+        Ok(true)
     }
 }
 
-/// `•prefs Y` applies the settings in the record `Y` to the session's display, and returns all of them.
+/// `•prefs Y` applies the settings in the record `Y` to the session, and returns all of them. Besides the display settings, `tolerance`
+/// is the comparison tolerance of 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new
+/// floats in bits, 16, 32 or 64. Code parsed after a change reads its literals at the new width.
 pub(crate) fn prefs(session: &mut crate::Session, _: Option<&Value>, right: &Value, span: &crate::Span) -> Result<Value, crate::Error> {
-    session.display = session.display.update(right).error_at(span, "•prefs takes a record of display settings")?;
-    Ok(session.display.record())
+    let (mut display, mut numeric) = (session.display, session.numeric);
+    let tolerance = |v: &Value| v.as_number().and_then(|n| n.to_float().ok()).and_then(Tolerance::new).ok_or(crate::ErrorKind::Domain);
+    for (key, value) in keyed::pairs(right).error_at(span, "•prefs takes a record of settings")? {
+        match &*key {
+            "tolerance" => numeric.tolerance = tolerance(&value).error_at(span, "tolerance must be from 0 to 1E¯14")?,
+            "float" => {
+                let bits = value.as_number().and_then(|n| n.integer().ok());
+                numeric.width = bits.and_then(FloatWidth::of_bits).ok_or(crate::ErrorKind::Domain).error_at(span, "float must be 16, 32 or 64")?;
+            }
+            key => if !display.set(key, &value).error_at(span, "invalid display setting")? { return Err(span.domain_error("unknown setting")); },
+        }
+    }
+    (session.display, session.numeric) = (display, numeric);
+    let (mut keys, mut values): (Vec<std::sync::Arc<str>>, Vec<Value>) = display.entries(numeric.width).into_iter().map(|(k, v)| (k.into(), v)).unzip();
+    keys.extend(["tolerance".into(), "float".into()]);
+    values.push(Value::Number(Number::float(numeric.tolerance.value(), FloatWidth::F64)));
+    values.push(Value::Number(Number::from_integer(numeric.width.bits())));
+    keyed::record(keys, values).error_at(span, "invalid settings record")
 }
 
 /// Lines of text and their width. Display measures text in terminal columns, and `⍕` in characters.
@@ -306,12 +327,12 @@ pub(crate) fn grid(columns: usize, rows: Vec<(usize, Vec<Cell>)>, style: Style) 
     (width, lines)
 }
 
-/// The bottom-edge marker for an array's storage.
-fn marker(a: &Value) -> char {
+/// The bottom-edge marker for an array's storage. Floats of a width that `el` doesn't leave plain show that width's marker.
+fn marker(a: &Value, el: Elide) -> char {
     match a.storage_name() {
         "boolean" => '$',
         "integer" => 'ₓ',
-        "float" => '~',
+        "float16" | "float32" | "float64" => a.float_width().and_then(|w| el.width_marker(w)).unwrap_or('~'),
         "complex" => 'j',
         "character" => '─',
         _ => '+',
@@ -321,11 +342,11 @@ fn marker(a: &Value) -> char {
 /// A boxed diagram of `a`: its items in a frame that marks its shape and storage, with nested arrays boxed in turn.
 fn array(a: &Value, el: Elide) -> Block {
     if a.is_unit() || (a.has_keys() && a.shape() == [0]) { return Block::new(plain(a, el)); }
-    if a.has_keys() && a.shape().len() > 1 { return Block::new(plain(a, el)).framed(a.shape(), marker(a), false); }
+    if a.has_keys() && a.shape().len() > 1 { return Block::new(plain(a, el)).framed(a.shape(), marker(a, el), false); }
     // An empty axis shows its prototype.
     let shape: Vec<_> = a.shape().iter().map(|&d| d.max(1)).collect();
     let nested = !a.is_simple();
-    let kind = if nested { '∊' } else { marker(a) };
+    let kind = if nested { '∊' } else { marker(a, el) };
     let mut chars = true;
     let mut grid_rows: Vec<(usize, Vec<Cell>)> = Vec::new();
     for (breaks, _, spots) in rows(&shape, el.edges(&shape), el.last(&shape)) {
@@ -336,8 +357,8 @@ fn array(a: &Value, el: Elide) -> Block {
                     let item = if a.is_empty() { a.prototype() } else { a.at(i) };
                     chars &= matches!(item, Value::Character(_));
                     let block = match &item {
-                        // An `ₓ` box already says its numbers are exact.
-                        Value::Number(n) if kind == 'ₓ' => Block::new(format!("{n:#}")),
+                        // An `ₓ` box already says its numbers are exact, and a width's marker gives their width.
+                        Value::Number(n) if Some(kind) == a.mark(el) => Block::new(el.unmarked(n)),
                         Value::Number(n) => Block::new(el.number(n)),
                         Value::Character(c) => Block::new(if c.is_control() { c.escape_default().to_string() } else { c.to_string() }),
                         Value::Array(_) => array(&item, el),
@@ -372,7 +393,7 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
             && a.axis_names().iter().all(Option::is_none)
             && !a.is_empty()
             && a.elements().all(|e| matches!(e, Value::Character(_)));
-        return if string { a.elided_text(el.last(a.shape())) } else if a.is_strand() { a.shown_items(el.last(a.shape()), |e| e.source(el)).join(" ") } else { a.source(el) };
+        return if string { a.elided_text(el.last(a.shape())) } else if a.is_strand() && a.mark(el).is_none() { a.shown_items(el.last(a.shape()), |e| e.source(el)).join(" ") } else { a.source(el) };
     }
     if a.is_empty() { return a.literal(); }
     let mut spaced = false;

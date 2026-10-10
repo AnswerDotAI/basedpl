@@ -60,7 +60,7 @@ impl Value {
             let mut shape = self.shape().to_vec();
             *shape.last_mut().unwrap() = width;
             (shape, lines.concat().concat())
-        } else if !keyed && self.len() >= 2 && matches!(self.as_items(), Items::Integers(_) | Items::Extended(_)) {
+        } else if !keyed && self.len() >= 2 && matches!(self.as_items(), Items::Integers(_) | Items::Extended(..)) {
             // An exact vector writes as it displays, with one `ₓ` after its brackets.
             let text = self.literal();
             (vec![text.chars().count()], text)
@@ -176,13 +176,13 @@ impl Value {
                     return format!(",•ucs {}", s.chars().map(|c| (c as u32).to_string()).collect::<Vec<_>>().join(" "));
                 }
                 if self.is_empty() && !self.has_keys() { return self.empty_literal(el); }
-                let exact = self.marks_exact();
+                let mark = self.mark(el);
                 match self.shape().len() {
                     0 => Self::enclosed_literal(&self.at(0), el),
-                    1 if exact => format!("[{}]ₓ", self.bracket_items(Self::unmarked_item, el, edges)),
+                    1 if let Some(m) = mark => format!("[{}]{m}", self.bracket_items(Self::unmarked_item, el, edges)),
                     1 => self.vector_literal(el, edges),
                     _ if self.has_keys() => self.keyed_literal(el),
-                    _ if exact => format!("{}ₓ", self.block_literal(Self::unmarked_item, el, edges)),
+                    _ if let Some(m) = mark => format!("{}{m}", self.block_literal(Self::unmarked_item, el, edges)),
                     _ => self.block_literal(Self::item, el, edges),
                 }
             }
@@ -218,11 +218,18 @@ impl Value {
         }
     }
 
-    /// Whether the value is a nonempty array in integer storage, which writes one `ₓ` after its notation in place of one for
-    /// each number.
-    fn marks_exact(&self) -> bool { !self.is_empty() && matches!(self.as_items(), Items::Integers(_) | Items::Extended(_)) }
-    /// An item of integer storage without its `ₓ`. One `ₓ` after the whole notation marks every number exact.
-    fn unmarked_item(&self, _: Elide) -> String { let Self::Number(n) = self else { unreachable!("integer storage holds numbers") }; format!("{n:#}") }
+    /// The marker that a nonempty array writes once after its notation, in place of one for each number: `ₓ` for integer storage, and a
+    /// width's marker for floats of a width that `el` doesn't leave plain.
+    pub(crate) fn mark(&self, el: Elide) -> Option<char> {
+        if self.is_empty() { return None; }
+        match self.as_items() {
+            Items::Integers(_) | Items::Extended(..) => Some('ₓ'),
+            Items::Floats(f) => el.width_marker(f.tag()),
+            _ => None,
+        }
+    }
+    /// A number of an array that `mark` marks, without its own marker.
+    fn unmarked_item(&self, el: Elide) -> String { let Self::Number(n) = self else { unreachable!("compact storage holds numbers") }; el.unmarked(n) }
     /// The value as one item inside brackets. Text with a space between its runs, or with a `:` that would read as a key,
     /// needs parentheses.
     pub(crate) fn item(&self, el: Elide) -> String { let text = self.source(el); if needs_group(&text) { format!("({text})") } else { text } }
@@ -277,7 +284,7 @@ impl Value {
                     items.iter().all(|e| matches!(e, Self::Number(_)) || matches!(e, Self::Character(c) if !c.is_control()) || e.string_literal().is_some())
                 }
                 Items::Characters(cs) => cs.iter().all(|c| !c.is_control()),
-                Items::Integers(_) | Items::Extended(_) => false,
+                Items::Integers(_) | Items::Extended(..) => false,
                 _ => true,
             }
     }
@@ -288,7 +295,7 @@ impl Value {
         match (self.shape(), &prototype) {
             ([_], Self::Number(n)) if n.as_bool().is_some() => "0⍴$f".into(),
             ([_], Self::Number(n)) if n.is_exact() => "⍬ₓ".into(),
-            ([_], Self::Number(_)) => "⍬".into(),
+            ([_], Self::Number(n)) => format!("⍬{}", el.marker(n).map_or(String::new(), String::from)),
             ([_], Self::Character(_)) => "\"\"".into(),
             (shape, _) => {
                 let shape: Vec<_> = shape.iter().map(ToString::to_string).collect();
@@ -301,10 +308,10 @@ impl Value {
         // An empty record keeps its keyed axis, which `[]` would lose.
         if self.keys(0).is_some() && self.is_empty() { return "⍬:⍬".into(); }
         if self.keys(0).is_none() && self.len() >= 2 && self.elements().all(|e| e.is_row()) {
-            let exact = self.elements().all(|e| e.marks_exact());
-            let item = if exact { Self::unmarked_item } else { Self::item };
+            let mark = self.elements().map(|e| e.mark(el)).reduce(|a, b| if a == b { a } else { None }).flatten();
+            let item = if mark.is_some() { Self::unmarked_item } else { Self::item };
             let rows = self.shown_items(edges, |e| e.bracket_items(item, el, el.edges(e.shape()))).join("⋄");
-            return if exact { format!("({rows})ₓ") } else { format!("({rows})") };
+            return format!("({rows}){}", mark.map_or(String::new(), String::from));
         }
         format!("[{}]", self.bracket_items(Self::item, el, edges))
     }

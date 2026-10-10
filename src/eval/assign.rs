@@ -125,7 +125,7 @@ impl Session {
                 NodeKind::Output => {
                     return match value {
                         Binding::Value(a) => {
-                            self.execution.output(crate::OutputKind::Explicit, self.display.explicit(a, self.current.is_some()));
+                            self.execution.output(crate::OutputKind::Explicit, self.display_settings().explicit(a, self.current.is_some()));
                             Ok(())
                         }
                         _ => return Err(target.span.domain_error("output requires a subject")),

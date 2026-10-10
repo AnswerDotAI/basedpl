@@ -1,6 +1,7 @@
 //! The session's evaluation API, names, display, file loading and name lookup, and calls of dfns with their error guards.
 
 use super::*;
+use crate::array::FloatWidth;
 
 impl Session {
     pub fn new() -> Self { Self::default() }
@@ -11,7 +12,13 @@ impl Session {
     /// A session for a person at a terminal, with boxed display elided to the terminal's width.
     pub fn interactive() -> Self { let display = crate::display::Settings::interactive(); Self { display, display_defaults: display, ..Self::default() } }
     /// `value` as this session's implicit display shows it, as text.
-    pub fn show(&self, value: &Value) -> String { self.display.array(value, false) }
+    pub fn show(&self, value: &Value) -> String { self.display_settings().array(value, false) }
+    /// The display settings, with floats of the default width shown without a marker.
+    pub(crate) fn display_settings(&self) -> crate::display::Settings {
+        let mut settings = self.display;
+        settings.elide.plain = Some(self.numeric.width);
+        settings
+    }
     pub fn names(&self) -> impl Iterator<Item = &str> {
         let mut names = HashSet::new();
         let mut scope = self.current;
@@ -91,7 +98,7 @@ impl Session {
     /// `•literal text` reads a value from BPL source, as `•literal⁻¹` writes it, without running code. The text may hold literals and the
     /// functions that `•literal⁻¹` writes: `⍴`, `⊂`, `,`, `:` and `•ucs`.
     pub(crate) fn system_literal(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-        let parsed = crate::parse(Source::new("<•literal>", Self::source_text(right, span)?)).complete()?;
+        let parsed = self.parse(Source::new("<•literal>", Self::source_text(right, span)?)).complete()?;
         let [statement] = parsed.statements.as_slice() else { return Err(span.domain_error("•literal reads one value")) };
         let written = |kind: &NodeKind| {
             matches!(kind, NodeKind::Function(Primitive::Shape | Primitive::Enclose | Primitive::Ravel))
@@ -105,16 +112,18 @@ impl Session {
     /// `•time t` gives the seconds since `t`, counting from the Unix epoch. `F •time x` gives each function's fastest time per call
     /// on `x`, in the layout of `F`.
     pub(super) fn system_time(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+        // Times stay 64-bit, as `•date` gives them, because a 32-bit float holds seconds since 1970 only to within about two minutes.
+        let second = |s| Value::Number(crate::Number::float(s, FloatWidth::F64));
         let Some(functions) = left else {
-            let now = Value::Number(crate::date::now().into());
+            let now = second(crate::date::now());
             return Primitive::Arithmetic(crate::number::Arithmetic::Minus).call(Some(&now), right, &self.at(span));
         };
         let times = functions
             .elements()
             .map(|f| match f { Value::Function(f) => self.fastest(&f, right, span), _ => Err(span.domain_error("•time needs functions on its left")) })
             .collect::<Result<Vec<_>, _>>()?;
-        if functions.is_atom() { return Value::number(times[0]).error_at(span, "invalid •time result"); }
-        Value::floats(functions.shape().to_vec(), times).and_then(|t| t.with_layout(functions.layout().clone())).error_at(span, "invalid •time result")
+        if functions.is_atom() { return Ok(second(times[0])); }
+        Value::floats(functions.shape().to_vec(), FloatWidth::F64, times).and_then(|t| t.with_layout(functions.layout().clone())).error_at(span, "invalid •time result")
     }
     /// The fastest time per call of `f` on `x`, in seconds. Calls repeat for about 0.1 s, in batches that double until one takes 1 ms.
     fn fastest(&mut self, f: &Function, x: &Value, span: &Span) -> Result<f64, Error> {
@@ -166,7 +175,14 @@ impl Session {
     /// No function or lexical-frame handle escapes the call, and no temporary names are bound.
     pub fn call(&mut self, function: &str, args: &[Value]) -> Evaluation { self.call_with(function, args, crate::EvalOptions::default()) }
     pub fn call_with(&mut self, function: &str, args: &[Value], options: crate::EvalOptions) -> Evaluation {
-        match Function::late_bound(function) { Ok(f) => self.call_function_with(&f, args, options), Err(error) => Evaluation::failed(error) }
+        match self.late_bound(function) { Ok(f) => self.call_function_with(&f, args, options), Err(error) => Evaluation::failed(error) }
+    }
+    /// The function that `expression` writes, late-bound, with its numbers read at the session's default width.
+    pub fn late_bound(&self, expression: &str) -> Result<Function, Error> {
+        let span = Span::whole(Source::new("<call>", expression));
+        let parsed = self.parse(span.source.clone()).complete()?;
+        if parsed.statements.len() != 1 { return Err(span.error(ErrorKind::Syntax, "call requires one function expression")); }
+        Function::new(FunctionNode::LateBound(Arc::new(parsed), span.clone()), &span)
     }
     pub fn call_function_with(&mut self, function: &Function, args: &[Value], options: crate::EvalOptions) -> Evaluation {
         self.evaluation(options, |s| s.call_function(function, args))
@@ -228,9 +244,28 @@ impl Session {
         }
         result
     }
+    /// Code at the top level of an evaluation, such as a script, a notebook cell or a REPL turn. Its leading `•prefs` statements, each on
+    /// a literal record, run before the rest is parsed. The rest then reads its numbers at the width they set. A syntax error anywhere in
+    /// the code stops it before anything runs. `•load` and `⍎` run no header.
     fn evaluate_code(&mut self, source: Arc<Source>) -> Evaluation {
-        match crate::parse(source).complete() { Ok(parsed) => self.eval_display(&parsed, false, false), Err(e) => Evaluation::failed(e) }
+        let mut parsed = match self.parse(source.clone()).complete() { Ok(parsed) => parsed, Err(e) => return Evaluation::failed(e) };
+        let header = parsed.statements.iter().take_while(|s| prefs_header(&s.nodes)).count();
+        if header == 0 || header == parsed.statements.len() { return self.eval_display(&parsed, false, false); }
+        parsed.statements.truncate(header);
+        let result = self.eval_display(&parsed, false, false);
+        if result.error.is_some() { return result; }
+        match self.parse(source).complete() {
+            Ok(mut rest) => {
+                rest.statements.drain(..header);
+                self.eval_display(&rest, false, false)
+            }
+            Err(e) => Evaluation::failed(e),
+        }
     }
+    /// The program in `source`, with numbers that have no marker read as floats of the session's default width.
+    pub fn parse(&self, source: Arc<Source>) -> crate::ParseStatus { crate::syntax::parse_at(source, self.numeric.width) }
+    /// The default width of floats, which the `float` pref sets.
+    pub fn float_width(&self) -> FloatWidth { self.numeric.width }
     pub fn eval_parsed(&mut self, parsed: &Parsed, options: crate::EvalOptions) -> Evaluation {
         self.evaluation(options, |s| s.eval_display(parsed, false, false))
     }
@@ -254,7 +289,7 @@ impl Session {
                         Binding::NoResult | Binding::Absent => None,
                         Binding::Value(a) => {
                             if diagram && i + 1 == parsed.statements.len() {
-                                self.execution.output(crate::OutputKind::Display, self.display.diagram(&a));
+                                self.execution.output(crate::OutputKind::Display, self.display_settings().diagram(&a));
                             }
                             else if self.execution.echo && !bound.shy {
                                 if let Err(e) = self.display_value(&a, &nodes[0].span) {
@@ -311,14 +346,14 @@ impl Session {
             return Evaluation::default();
         }
         if command.eq_ignore_ascii_case("]display") {
-            return match crate::parse(Source::new("<display>", args)).complete() {
+            return match self.parse(Source::new("<display>", args)).complete() {
                 Ok(parsed) => self.eval_display(&parsed, true, false),
                 Err(e) => Evaluation::failed(e),
             };
         }
         if command.eq_ignore_ascii_case("]dissect") {
             if args.trim().is_empty() { return failed(ErrorKind::Syntax, "usage: ]dissect expression".into()); }
-            return match crate::parse(Source::new("<dissect>", args)).complete() {
+            return match self.parse(Source::new("<dissect>", args)).complete() {
                 Ok(parsed) => self.eval_display(&parsed, false, true),
                 Err(e) => Evaluation::failed(e),
             };
@@ -421,7 +456,7 @@ impl Session {
     }
 
     fn execute_source(&mut self, source: Arc<Source>, span: &Span) -> Result<Bound, Error> {
-        let parsed = crate::parse(source).complete()?;
+        let parsed = self.parse(source).complete()?;
         let mut result = Bound::new(Binding::NoResult);
         for statement in &parsed.statements {
             if let Binding::Value(a) = &result.value { if self.execution.echo && !result.shy { self.display_value(a, span)?; } }
@@ -486,7 +521,7 @@ impl Session {
             NodeKind::ArrayLiteral { cells, form, .. } => {
                 let mut arrays = Vec::with_capacity(cells.len());
                 for nodes in cells { arrays.extend(self.item_result(nodes)?); }
-                if arrays.is_empty() { return Ok(Bound::from(crate::syntax::zilde(false))); }
+                if arrays.is_empty() { return Ok(Bound::from(crate::syntax::zilde(crate::Number::float(0.0, self.numeric.width)))); }
                 let result = if *form == ListForm::Cells {
                     // Each row is a major cell, so unit rows give a vector: `[1⋄2]` is `1 2`.
                     Value::assemble_written(&[arrays.len()], &arrays, &arrays[0])
@@ -502,7 +537,7 @@ impl Session {
             }
             NodeKind::Output => match self.execution.line(&node.span)? {
                 Some(line) => Binding::Value(crate::keyed::text(&line)),
-                None => Binding::Value(crate::syntax::zilde(false)),
+                None => Binding::Value(crate::syntax::zilde(crate::Number::float(0.0, self.numeric.width))),
             },
             _ => return Err(node.span.error(ErrorKind::Syntax, "unexpected assignment symbol")),
         }))
@@ -697,4 +732,11 @@ fn caught(error: &Error) -> Value {
     let text = crate::keyed::text;
     let values = vec![text(error.kind.name()), text(&error.message), text(&error.span.source.name), number(line), number(column)];
     crate::keyed::record(["kind", "message", "source", "line", "column"].map(Into::into).to_vec(), values).expect("an error fits in a record")
+}
+
+/// Whether `nodes` are a header statement: `•prefs` applied to a literal record.
+fn prefs_header(nodes: &[Node]) -> bool {
+    let nodes = match nodes { [Node { kind: NodeKind::Run(inner), .. }] => inner.as_slice(), _ => nodes };
+    matches!(nodes, [Node { kind: NodeKind::System(name), .. }, record @ Node { kind: NodeKind::ArrayLiteral { record: true, .. }, .. }]
+        if name.eq_ignore_ascii_case("•prefs") && crate::syntax::non_literal(std::slice::from_ref(record), &|_| false).is_none())
 }

@@ -69,11 +69,15 @@ def test_numpy_inputs_and_copies():
     np.testing.assert_array_equal(bpl('+/m'), [2, 10, 18])
     for a in [np.array(True), np.array(3, dtype=np.float32), np.array([1., 2j]), np.array([2**64-1], dtype=np.uint64).astype(object),
         np.empty((0, 3), dtype=int), np.empty((2, 0)), np.array([np.inf, -np.inf]), np.array([['a', 'b'], ['c', 'd']]), np.array([[1, Fraction(2, 3)]], dtype=object),
-        np.arange(6, dtype=np.int8).reshape(2, 3).T, np.array([0.5, -0.], dtype=np.float32), np.array([2**63-1], dtype=np.uint64), np.array([1., np.nan])]:
+        np.arange(6, dtype=np.int8).reshape(2, 3).T, np.array([0.5, -0.], dtype=np.float32), np.array([2**63-1], dtype=np.uint64), np.array([1., np.nan]), np.array([0.1, -65504], dtype=np.float16)]:
         result = bpl('x', x=a)
         np.testing.assert_array_equal(result, a)
         assert np.shape(result) == a.shape
-    assert bpl('x', x=np.arange(3, dtype=np.int8)).np.dtype == np.uint8 and bpl('x', x=np.ones(2, np.float32)).np.dtype == np.float64
+    assert bpl('x', x=np.arange(3, dtype=np.int8)).np.dtype == np.uint8 and bpl('x', x=np.ones(2, np.float32)).np.dtype == np.float32
+    assert bpl('x', x=np.array([0.5, 65504], np.float16)).np.dtype == np.float16
+    bpl('_←•prefs ["float":32]')
+    assert bpl('•storage x', x=[1.5, 2.5]).py == 'float32' and bpl('•storage x', x=np.ones(2)).py == 'float64'
+    bpl('_←•prefs ["float":64]')
     assert bpl('x', x=np.float32(1.5)).py == 1.5
     assert bpl('x', x=np.int64(3)).py == 3
     assert bpl('x+1', x=float('inf')).py == float('inf')

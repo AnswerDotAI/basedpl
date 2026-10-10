@@ -2,6 +2,7 @@
 //! run-length encoding, groups, iota, range, where, grade, sort and interval index. Their search kernels are in `crate::search`.
 
 use super::*;
+use crate::{array::with_floats, number::Tolerant};
 
 /// A mask over the major cells of `x`. With `found`, it marks the cells among the major cells of `y`, and otherwise the cells that aren't.
 fn found_mask(x: &Value, y: &Value, found: bool, span: &Context<'_>) -> Result<Value, Error> {
@@ -40,10 +41,11 @@ pub(super) fn find(left: &Value, right: &Value, span: &Context<'_>) -> Result<Va
         let pattern: Vec<usize> = (0..left.len()).map(|i| digits(i, &pattern_shape).map(|(axis, c)| c * strides[axis]).sum()).collect();
         let (x, y) = (left.as_items(), right.as_items());
         let integers = x.raw_integers().zip(y.raw_integers());
+        let t = span.numeric();
         let same = |i: usize, o: usize| match (&x, &y, integers) {
             (_, _, Some((x, y))) => Ok(x.get(i) == y.get(o)),
             (Items::Booleans(x), Items::Booleans(y), _) => Ok(x[i] == y[o]),
-            (Items::Floats(x), Items::Floats(y), _) => Ok(crate::number::float_match(x[i], y[o])),
+            (Items::Floats(x), Items::Floats(y), _) => Ok(t.tolerance_at(x.tag().max(y.tag())).matches(x.get(i), y.get(o))),
             (Items::Characters(x), Items::Characters(y), _) => Ok(x[i] == y[o]),
             _ => left.at(i).matches(&right.at(o), span),
         };
@@ -116,7 +118,7 @@ pub(super) fn runs(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
         if start { lengths.push(0); }
         *lengths.last_mut().expect("the first cell starts a run") += 1;
     }
-    let lengths = generated_items(vec![lengths.len()], lengths, true).error_at(span, "invalid run lengths")?;
+    let lengths = generated_items(vec![lengths.len()], lengths, None).error_at(span, "invalid run lengths")?;
     let values = replicate(&axis.booleans(starts).error_at(span, "invalid run starts")?, right, None, false, span)?;
     if right.keys(0).is_none() { return Value::new(vec![2], vec![lengths, values]).error_at(span, "invalid runs"); }
     let mut keys = values.layout().all_keys();
@@ -147,10 +149,10 @@ fn positions(right: &Value, indices: Vec<usize>) -> Result<Value, ErrorKind> {
 }
 
 /// The coordinates of flat position `flat`. An axis with a negative length counts down.
-fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, exact: bool) -> Value {
+fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, float: Option<FloatWidth>) -> Value {
     let mut data = vec![0; lengths.len()];
     for (axis, c) in digits(flat, shape) { data[axis] = (if lengths[axis] < 0 { shape[axis] - 1 - c } else { c }) as u64; }
-    generated_items(vec![data.len()], data, exact).unwrap()
+    generated_items(vec![data.len()], data, float).unwrap()
 }
 
 /// A negative length counts down, as J's `i.` does: `⍳¯3` is `2 1 0`.
@@ -159,17 +161,17 @@ pub(super) fn iota(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let lengths = right.as_items().integers().error_at(span, "invalid iota dimension")?;
     let shape: Vec<usize> = lengths.iter().map(|n| saturated(n.unsigned_abs())).collect();
     let len = generated_len(&shape).error_at(span, "iota exceeds array limits")?;
-    let exact = right.is_exact();
+    let float = counted_width(right, span);
     if right.is_singleton() {
         let down = lengths[0] < 0;
-        if !exact {
-            return Value::floats(shape, if down { (0..len).rev().map(|i| i as f64).collect() } else { (0..len).map(|i| i as f64).collect() })
+        if let Some(width) = float {
+            return Value::floats(shape, width, if down { (0..len).rev().map(|i| i as f64).collect() } else { (0..len).map(|i| i as f64).collect() })
                 .error_at(span, "invalid iota");
         }
         return if down { Value::positions(shape, len, (0..len).rev()) } else { Value::positions(shape, len, 0..len) }.error_at(span, "invalid iota");
     }
-    let prototype = generated_items(vec![shape.len()], vec![0; shape.len()], exact).unwrap();
-    let data = (0..len).map(|i| coordinates(&lengths, &shape, i, exact)).collect();
+    let prototype = generated_items(vec![shape.len()], vec![0; shape.len()], float).unwrap();
+    let data = (0..len).map(|i| coordinates(&lengths, &shape, i, float)).collect();
     Value::from_parts(shape, data, prototype).error_at(span, "invalid coordinate array")
 }
 
@@ -183,7 +185,7 @@ pub(super) fn range(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
         _ => Err(span.domain_error("range needs real numbers or two characters")),
     };
     let steps = |distance: &Number| -> Result<usize, Error> {
-        let whole = distance.math_monad(Math::Magnitude).and_then(|d| d.math_monad(Math::Floor)).domain_at(span)?;
+        let whole = distance.math_monad(Math::Magnitude).and_then(|d| d.floor(span.numeric())).domain_at(span)?;
         whole.nonnegative_integer().error_at(span, "range needs a finite length")
     };
     let counts = |items: std::ops::Range<usize>| {
@@ -302,7 +304,7 @@ pub(super) fn index_of(left: &Value, right: &Value, span: &Context<'_>) -> Resul
 
 fn position_value(array: &Value, axis: usize, position: usize) -> Value {
     if let Some(key) = array.keys(axis).and_then(|k| k.names().get(position)?.clone()) { return crate::keyed::text(&key); }
-    generated(position as u64, true)
+    generated(position as u64, None)
 }
 
 /// The order of two items. `None` when the comparison reaches a function, which has no ordering.
@@ -328,21 +330,22 @@ fn array_order(left: &Value, right: &Value) -> Option<Ordering> {
 }
 
 /// The grade of `right`'s `count` major cells by radix sort, when its items are all floats, all integers or all characters, in at most
-/// 16 columns. `float_key` orders floats as `array_order` does.
+/// 16 columns. `Float::order_key` orders floats as `array_order` does, with a key as wide as the float.
 fn radix_grade(right: &Value, count: usize, down: bool) -> Option<Vec<usize>> {
-    use crate::search::{float_key, sort_rows};
+    use crate::{element::Float, search::{sort_rows, RadixKey}};
+    /// `k`, or its complement when grading down, which reverses the order of keys.
+    fn ordered<K: RadixKey>(k: K, down: bool) -> K { if down { !k } else { k } }
     let width = right.len().checked_div(count).unwrap_or(0);
     if width > 16 { return None; }
-    let flip = |k: u64| if down { !k } else { k };
     Some(match right.as_items() {
-        Items::Floats(x) => sort_rows(count, width, |r, c| flip(float_key(x[r * width + c]))),
-        Items::Integers(x) => with_ints!(x, |x| sort_rows(count, width, |r, c| flip(x[r * width + c].to_i64() as u64 ^ 1 << 63))),
+        Items::Floats(x) => with_floats!(x, |x| sort_rows(count, width, |r, c| ordered(x[r * width + c].order_key(), down))),
+        Items::Integers(x) => with_ints!(x, |x| sort_rows(count, width, |r, c| ordered(x[r * width + c].to_i64() as u64 ^ 1 << 63, down))),
         // NaN follows `∞` here too, as it follows every float.
-        Items::Extended(x) => sort_rows(count, width, |r, c| {
+        Items::Extended(x, _) => sort_rows(count, width, |r, c| {
             let n = x[r * width + c];
-            flip(if crate::number::extended::is_nan(n) { u64::MAX } else if n == crate::number::extended::INFINITY { u64::MAX - 1 } else { n as u64 ^ 1 << 63 })
+            ordered(if crate::number::extended::is_nan(n) { u64::MAX } else if n == crate::number::extended::INFINITY { u64::MAX - 1 } else { n as u64 ^ 1 << 63 }, down)
         }),
-        Items::Characters(x) => sort_rows(count, width, |r, c| flip(u64::from(x[r * width + c]))),
+        Items::Characters(x) => sort_rows(count, width, |r, c| ordered(u64::from(x[r * width + c]), down)),
         _ => return None,
     })
 }

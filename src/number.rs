@@ -1,4 +1,4 @@
-use crate::ErrorKind;
+use crate::{array::{with_float_width, FloatWidth, Floats}, element::Float, ErrorKind};
 use num_bigint::BigInt;
 use num_complex::Complex64;
 use num_rational::BigRational;
@@ -9,50 +9,220 @@ use std::{cmp::Ordering, fmt};
 /// displays as `$f` or `$t`. Ordinary literals are floats; exact arithmetic is explicitly selected with x or r.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Number(Repr);
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 enum Repr {
     /// A truth value. It acts as the integer 0 or 1 wherever a number is expected.
     Boolean(bool),
     Integer(i64),
     Float(f64),
+    /// A float of 32 bits. Arithmetic reads it as the `f64` it converts to exactly.
+    Single(f32),
+    /// A float of 16 bits. Arithmetic reads it as the `f64` it converts to exactly.
+    Half(half::f16),
     Exact(Box<BigRational>),
     Complex(Complex64),
 }
 use Repr::*;
+impl Repr {
+    /// A float's value, which converts to `f64` exactly, and its width. `None` for any other number.
+    fn float(&self) -> Option<(f64, FloatWidth)> {
+        match *self { Half(n) => Some((n.into(), FloatWidth::F16)), Single(n) => Some((n.into(), FloatWidth::F32)), Float(n) => Some((n, FloatWidth::F64)), _ => None }
+    }
+}
+// Floats are equal when their values are, whatever their widths.
+impl PartialEq for Repr {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Boolean(x), Boolean(y)) => x == y,
+            (Integer(x), Integer(y)) => x == y,
+            (Float(x), Float(y)) => x == y,
+            (x, y) if let (Some((x, _)), Some((y, _))) = (x.float(), y.float()) => x == y,
+            (Exact(x), Exact(y)) => x == y,
+            (Complex(x), Complex(y)) => x == y,
+            _ => false,
+        }
+    }
+}
 
-const COMPARISON_TOLERANCE: f64 = 1e-14;
 /// The source spellings of NaN, true and false. A `$` and one letter make a literal constant, which strands like a number. Display
 /// writes these spellings, and they read back.
 pub(crate) const NAN_NAME: &str = "$n";
 pub(crate) const TRUE_NAME: &str = "$t";
 pub(crate) const FALSE_NAME: &str = "$f";
 
-/// Whether `x` and `y` are equal within tolerance. The test uses `&` and `|` rather than `&&` and `||`, so it has no branch and a loop of
-/// comparisons vectorizes.
-#[inline]
-pub(crate) fn float_equal(x: f64, y: f64) -> bool {
-    (x == y) | (x.is_finite() & y.is_finite() & ((x - y).abs() <= COMPARISON_TOLERANCE * x.abs().max(y.abs())))
-}
-/// Whether `x` and `y` match, as `≡` and search compare them. NaN matches NaN here. `float_equal` follows IEEE, where NaN equals nothing.
-#[inline]
-pub(crate) fn float_match(x: f64, y: f64) -> bool { float_equal(x, y) | (x.is_nan() & y.is_nan()) }
+/// The relative tolerance within which approximate numbers are equal: `x` equals `y` when `|x-y|` is at most the tolerance times the
+/// larger magnitude. A tolerance of 0 compares exactly.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Tolerance(f64);
 
-/// The floats tolerantly equal to `c`, as the range `lo..=hi`: `float_equal(x, c)` holds exactly when `lo <= x && x <= hi`. A
-/// comparison against one number works out the range once, so each item needs only plain comparisons. `None` for NaN, which equals
-/// nothing.
-pub(crate) fn equal_range(c: f64) -> Option<(f64, f64)> {
-    if c.is_nan() { return None; }
-    if !c.is_finite() || c == 0.0 { return Some((c, c)); }
-    let (near, far) = (c * (1.0 - COMPARISON_TOLERANCE), c / (1.0 - COMPARISON_TOLERANCE));
-    let (lo, hi) = if c > 0.0 { (near, far) } else { (far, near) };
-    Some((range_end(lo, c, f64::next_down, f64::next_up), range_end(hi, c, f64::next_up, f64::next_down)))
+impl Tolerance {
+    pub(crate) const EXACT: Self = Self(0.0);
+    /// Dyalog's default `⎕CT`: the default of the `tolerance` pref, which sets the tolerance of 64-bit floats, and the most it accepts.
+    pub(crate) const DEFAULT: Self = Self(1e-14);
+    /// The magnitude below which no float equals two whole numbers, within any tolerance the pref accepts: 2^43.
+    pub(crate) const WHOLE_LIMIT: f64 = 8_796_093_022_208.0;
+    /// The tolerance `t` when it lies from 0 to `DEFAULT`. Search and comparison against one number rely on this limit. Up to it, no
+    /// float below `WHOLE_LIMIT` equals two whole numbers.
+    pub(crate) fn new(t: f64) -> Option<Self> { (0.0..=Self::DEFAULT.0).contains(&t).then_some(Self(t)) }
+    pub(crate) fn is_exact(self) -> bool { self.0 == 0.0 }
+    /// The floats equal to `c`, as the range `lo..=hi`: `self.equal(x, c)` holds exactly when `lo <= x && x <= hi`. A comparison
+    /// against one number works out the range once, so each item needs only plain comparisons. `None` for NaN, which equals nothing.
+    pub(crate) fn range(self, c: f64) -> Option<(f64, f64)> {
+        if c.is_nan() { return None; }
+        if !c.is_finite() || c == 0.0 { return Some((c, c)); }
+        let (near, far) = (c * (1.0 - self.0), c / (1.0 - self.0));
+        let (lo, hi) = if c > 0.0 { (near, far) } else { (far, near) };
+        Some((self.range_end(lo, c, f64::next_down, f64::next_up), self.range_end(hi, c, f64::next_up, f64::next_down)))
+    }
+    /// The last float equal to `c` in the direction `out`, found from the estimate `x`. `back` steps towards `c`.
+    fn range_end(self, mut x: f64, c: f64, out: fn(f64) -> f64, back: fn(f64) -> f64) -> f64 {
+        while !self.equal(x, c) { x = back(x); }
+        while self.equal(out(x), c) { x = out(x); }
+        x
+    }
+    /// The whole number equal to `y`, when there is one.
+    pub(crate) fn whole(self, y: f64) -> Option<f64> { let n = y.round(); ((y - n).abs() <= self.0 * y.abs().max(n.abs())).then_some(n) }
+    /// The gcd of reals: `x` divided by the numerator of the first convergent of `x÷y` equal to it.
+    pub(crate) fn gcd(self, x: f64, y: f64) -> f64 {
+        let (x, y) = (x.abs().max(y.abs()), x.abs().min(y.abs()));
+        if y == 0.0 { return x; }
+        let scale = BigRational::from_float(x).unwrap();
+        let ratio = &scale / BigRational::from_float(y).unwrap();
+        let tolerance = BigRational::from_float(self.0).unwrap() * &ratio;
+        let (mut n, mut d) = ratio.clone().into_raw();
+        let (mut p0, mut p1) = (BigInt::from(0), BigInt::from(1));
+        let (mut q0, mut q1) = (BigInt::from(1), BigInt::from(0));
+        loop {
+            let a = &n / &d;
+            (p0, p1) = (p1.clone(), &a * &p1 + p0);
+            (q0, q1) = (q1.clone(), &a * &q1 + q0);
+            let convergent = BigRational::new(p1.clone(), q1.clone());
+            if (convergent - &ratio).abs() <= tolerance { return (scale / BigRational::from_integer(p1)).to_f64().unwrap(); }
+            (n, d) = (d.clone(), n % d);
+        }
+    }
 }
 
-/// The last float equal to `c` in the direction `out`, found from the estimate `x`. `back` steps towards `c`.
-fn range_end(mut x: f64, c: f64, out: fn(f64) -> f64, back: fn(f64) -> f64) -> f64 {
-    while !float_equal(x, c) { x = back(x); }
-    while float_equal(out(x), c) { x = out(x); }
-    x
+/// Comparison of approximate numbers: `Exactly`, or within a `Tolerance`. Kernels are written once over this trait, and
+/// `with_tolerance!` picks the instance once per call. The exact instance compiles to plain IEEE comparisons and `floor`. The real
+/// methods compute at the width of their arguments.
+pub(crate) trait Tolerant: Copy {
+    /// The tolerance, 0 for `Exactly`.
+    fn value(self) -> f64;
+    /// Whether `x` and `y` are equal. NaN equals nothing, as in IEEE.
+    fn equal<F: Float>(self, x: F, y: F) -> bool;
+    /// `⌊y`: the nearest whole number, unless `y` lies below it and isn't equal to it. Then the one below.
+    fn floor<F: Float>(self, y: F) -> F;
+    #[inline]
+    fn ceiling<F: Float>(self, y: F) -> F { -self.floor(-y) }
+    /// Whether `x` and `y` match, as `≡` and search compare them. NaN matches NaN.
+    #[inline]
+    fn matches<F: Float>(self, x: F, y: F) -> bool { self.equal(x, y) | (x.is_nan() & y.is_nan()) }
+    /// The order of `x` and `y`. `None` when either is NaN.
+    #[inline]
+    fn compare<F: Float>(self, x: F, y: F) -> Option<Ordering> { if self.equal(x, y) { Some(Ordering::Equal) } else { x.partial_cmp(&y) } }
+    /// `x|y` takes the sign of `x`, as `y-x×⌊y÷x` does. A quotient equal to a whole number leaves no remainder.
+    #[inline]
+    fn residue<F: Float>(self, x: F, y: F) -> F {
+        let q = y / x;
+        let r = if self.equal(x * q.round(), y) { F::zero() } else { y - x * self.floor(q) };
+        if x == F::zero() { y } else { r }
+    }
+    /// Dyalog's rule compares the magnitude of the difference, not each component. A number with an infinite or NaN part equals only
+    /// itself, as IEEE compares it. Two real numbers compare as reals, because complex storage also holds floats that widened into it.
+    #[inline]
+    fn complex_equal(self, x: Complex64, y: Complex64) -> bool {
+        if x.im == 0.0 && y.im == 0.0 { return self.equal(x.re, y.re); }
+        if !x.is_finite() || !y.is_finite() { return x == y; }
+        (x - y).norm() <= (x * self.value()).norm().max((y * self.value()).norm())
+    }
+    /// McDonnell's complex floor: the floors of both parts, plus 1 on the part with the larger fraction when the fractions add up to 1.
+    #[inline]
+    fn complex_floor(self, y: Complex64) -> Complex64 {
+        let (a, b) = (self.floor(y.re), self.floor(y.im));
+        let (x, z) = (y.re - a, y.im - b);
+        if x + z < 1.0 - self.value() { Complex64::new(a, b) } else if x <= z { Complex64::new(a, b + 1.0) } else { Complex64::new(a + 1.0, b) }
+    }
+    #[inline]
+    fn complex_ceiling(self, y: Complex64) -> Complex64 { -self.complex_floor(-y) }
+    /// `x|y` for complex numbers. A quotient equal to a Gaussian integer leaves no remainder.
+    #[inline]
+    fn complex_residue(self, x: Complex64, y: Complex64) -> Complex64 {
+        if x.is_zero() { return y; }
+        let q = y / x;
+        if self.complex_equal(x * Complex64::new(q.re.round(), q.im.round()), y) { Complex64::zero() } else { y - x * self.complex_floor(q) }
+    }
+}
+
+/// Exact comparison, standing for a tolerance of 0 in kernels.
+#[derive(Clone, Copy)]
+pub(crate) struct Exactly;
+impl Tolerant for Exactly {
+    #[inline]
+    fn value(self) -> f64 { 0.0 }
+    #[inline]
+    fn equal<F: Float>(self, x: F, y: F) -> bool { x == y }
+    #[inline]
+    fn floor<F: Float>(self, y: F) -> F { y.floor() }
+}
+impl Tolerant for Tolerance {
+    #[inline]
+    fn value(self) -> f64 { self.0 }
+    /// The test uses `&` and `|` rather than `&&` and `||`, so it has no branch and a loop of comparisons vectorizes.
+    #[inline]
+    fn equal<F: Float>(self, x: F, y: F) -> bool {
+        let t = F::narrow(self.0);
+        (x == y) | (x.is_finite() & y.is_finite() & ((x - y).abs() <= t * x.abs().max(y.abs())))
+    }
+    #[inline]
+    fn floor<F: Float>(self, y: F) -> F {
+        let (n, t) = (y.round(), F::narrow(self.0));
+        if (n > y) & (n - y > t * y.abs().max(n.abs())) { n - F::one() } else { n }
+    }
+}
+
+/// Runs `$body` with `$t` bound to `Exactly` when the tolerance `$tolerance` is 0, and to the tolerance otherwise. Each instance of
+/// `$body` is compiled for its case, so the choice is made once, outside any loop in `$body`.
+macro_rules! with_tolerance {
+    ($tolerance:expr, |$t:ident| $body:expr) => {{
+        let tolerance: $crate::number::Tolerance = $tolerance;
+        if tolerance.is_exact() {
+            let $t = $crate::number::Exactly;
+            $body
+        } else {
+            let $t = tolerance;
+            $body
+        }
+    }};
+}
+pub(crate) use with_tolerance;
+
+/// The session's numeric settings, which `•prefs` changes. Comparisons and kernels take their tolerance from them, and operations that
+/// create floats from exact numbers take their width.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Numeric {
+    /// The comparison tolerance of 64-bit floats, which the `tolerance` pref sets.
+    pub tolerance: Tolerance,
+    /// The units in the last place within which narrower floats compare: 0, so that they compare exactly, except in `f⍣∞`.
+    units: f64,
+    /// The width of new floats: literals parsed from now on, numbers read from data, and float results of exact arguments.
+    pub width: FloatWidth,
+}
+impl Default for Numeric { fn default() -> Self { Self { tolerance: Tolerance::DEFAULT, units: 0.0, width: FloatWidth::F64 } } }
+impl Numeric {
+    /// Exact comparison at every width, for kernels that compare no floats.
+    pub(crate) const EXACT: Self = Self { tolerance: Tolerance::EXACT, units: 0.0, width: FloatWidth::F64 };
+    /// These settings with the tolerances within which `f⍣∞` takes two results as the same, whatever the pref: `Tolerance::DEFAULT` at
+    /// f64, and 4 units in the last place at a narrower width. An iteration can settle into a cycle between adjacent floats, which then
+    /// counts as converged.
+    pub(crate) fn convergence(self) -> Self { Self { tolerance: Tolerance::DEFAULT, units: 4.0, ..self } }
+    /// The tolerance of a comparison at `width`, after promotion.
+    pub(crate) fn tolerance_at(self, width: FloatWidth) -> Tolerance {
+        if width == FloatWidth::F64 { self.tolerance } else { Tolerance(self.units * width.epsilon()) }
+    }
+    /// The width of a float computed from values whose float widths are `widths`, with `None` for an exact value. It's the widest float
+    /// width, or the default width when every value is exact.
+    pub(crate) fn width_of(self, widths: impl IntoIterator<Item = Option<FloatWidth>>) -> FloatWidth { widths.into_iter().flatten().max().unwrap_or(self.width) }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -105,37 +275,15 @@ fn log_gamma(z: Complex64) -> Complex64 {
     (2.0 * pi).ln() / 2.0 + (z + 0.5) * t.ln() - t + x.ln()
 }
 
-/// The integer within comparison tolerance of `y`, when there is one. `⌊`, `⌈` and integer arguments share this test.
+
+/// The whole number that `y` stands for where one is needed, as a count, an index or a Boolean. The f64 default tolerance decides,
+/// whatever the pref. An f32 value lies within it of a whole number only when it is one.
 #[inline]
-fn near_integer(y: f64) -> Option<f64> { let n = y.round(); ((y - n).abs() <= COMPARISON_TOLERANCE * y.abs().max(n.abs())).then_some(n) }
+fn near_integer(y: f64) -> Option<f64> { Tolerance::DEFAULT.whole(y) }
 
 /// `n` as a count of type `T`, such as a length, a bound or a seed. A count that `T` can't hold is LIMIT.
 pub(crate) fn count_as<T: TryFrom<u64>>(n: u64) -> Result<T, ErrorKind> { T::try_from(n).map_err(|_| ErrorKind::Limit) }
 
-/// `⌊y` with tolerance. The result is `n`, the nearest integer, unless `y` lies below `n` by more than the tolerance. Then it's `n-1`.
-#[inline]
-fn real_floor(y: f64) -> f64 { let n = y.round(); if (n > y) & (n - y > COMPARISON_TOLERANCE * y.abs().max(n.abs())) { n - 1.0 } else { n } }
-
-fn real_gcd(x: f64, y: f64) -> f64 {
-    let (x, y) = (x.abs().max(y.abs()), x.abs().min(y.abs()));
-    if y == 0.0 { return x; }
-    let scale = BigRational::from_float(x).unwrap();
-    let ratio = &scale / BigRational::from_float(y).unwrap();
-    let tolerance = BigRational::from_float(COMPARISON_TOLERANCE).unwrap() * &ratio;
-    let (mut n, mut d) = ratio.clone().into_raw();
-    let (mut p0, mut p1) = (BigInt::from(0), BigInt::from(1));
-    let (mut q0, mut q1) = (BigInt::from(1), BigInt::from(0));
-    loop {
-        let a = &n / &d;
-        (p0, p1) = (p1.clone(), &a * &p1 + p0);
-        (q0, q1) = (q1.clone(), &a * &q1 + q0);
-        let convergent = BigRational::new(p1.clone(), q1.clone());
-        if (convergent - &ratio).abs() <= tolerance { return (scale / BigRational::from_integer(p1)).to_f64().unwrap(); }
-        (n, d) = (d.clone(), n % d);
-    }
-}
-
-impl From<f64> for Number { fn from(n: f64) -> Self { Self(Float(n)) } }
 
 impl TryFrom<BigRational> for Number {
     type Error = ErrorKind;
@@ -150,23 +298,24 @@ impl TryFrom<BigRational> for Number {
 impl From<BigInt> for Number { fn from(n: BigInt) -> Self { Self::exact(BigRational::from_integer(n)) } }
 
 /// A complex number with no imaginary part is a float.
-impl From<Complex64> for Number { fn from(n: Complex64) -> Self { if n.im == 0.0 { n.re.into() } else { Self(Complex(n)) } } }
+impl From<Complex64> for Number { fn from(n: Complex64) -> Self { if n.im == 0.0 { Self(Float(n.re)) } else { Self(Complex(n)) } } }
 
-/// Real cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`. They follow IEEE 754. `None` means the
-/// result is complex, so the general path must give it.
+/// Real cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`, at each float width. They follow
+/// IEEE 754. `None` means the result is complex, so the general path must give it.
 pub(crate) mod real {
-    use super::{count_as, float_equal, near_integer, real_floor, Arithmetic, ErrorKind};
+    use super::{count_as, near_integer, Arithmetic, ErrorKind};
+    use crate::element::Float;
     use num_traits::ToPrimitive;
     use std::cmp::Ordering;
 
-    /// A float within comparison tolerance of an integer, as that integer. A fraction, an infinity or NaN is DOMAIN, and a value outside
+    /// The integer that a float stands for, as `near_integer` decides. A fraction, an infinity or NaN is DOMAIN, and a value outside
     /// `i64` is LIMIT.
     pub(crate) fn integer(n: f64) -> Result<i64, ErrorKind> { near_integer(n).ok_or(ErrorKind::Domain)?.to_i64().ok_or(ErrorKind::Limit) }
-    /// A float within comparison tolerance of an integer, as a count of type `T`. A negative value is also DOMAIN.
+    /// The integer that a float stands for, as a count of type `T`. A negative value is also DOMAIN.
     pub(crate) fn nonnegative_integer<T: TryFrom<u64>>(n: f64) -> Result<T, ErrorKind> {
         near_integer(n).filter(|&n| n >= 0.0).ok_or(ErrorKind::Domain)?.to_u64().ok_or(ErrorKind::Limit).and_then(count_as)
     }
-    pub(crate) fn arithmetic(op: Arithmetic, x: f64, y: f64) -> f64 {
+    pub(crate) fn arithmetic<F: Float>(op: Arithmetic, x: F, y: F) -> F {
         match op {
             Arithmetic::Plus => x + y,
             Arithmetic::Minus => x - y,
@@ -177,91 +326,79 @@ pub(crate) mod real {
     /// The sign of `y`: 0 for either zero, and NaN for NaN.
     #[inline]
     pub(crate) fn signum(y: f64) -> f64 { if y == 0.0 { 0.0 } else { y.signum() } }
-    /// The order of `x` and `y`, with tolerance. `None` when either is NaN.
-    pub(crate) fn compare(x: f64, y: f64) -> Option<Ordering> { if float_equal(x, y) { Some(Ordering::Equal) } else { x.partial_cmp(&y) } }
     /// The order of `x` and `y` for grading: `¯0` equals `0`, and NaN equals itself and follows everything else.
     pub(crate) fn grade(x: f64, y: f64) -> Ordering { x.partial_cmp(&y).unwrap_or_else(|| x.is_nan().cmp(&y.is_nan())) }
-    /// `x|y` takes the sign of `x`, as `y-x×⌊y÷x` does. A quotient within tolerance of an integer leaves no remainder.
-    #[inline]
-    pub(crate) fn residue(x: f64, y: f64) -> f64 {
-        let q = y / x;
-        let r = if float_equal(x * q.round(), y) { 0.0 } else { y - x * real_floor(q) };
-        if x == 0.0 { y } else { r }
-    }
-    /// A whole float within `i64`, as that integer. NaN and floats outside `i64` give `None`. Callers pass results of `⌊`, `⌈` or `×`,
-    /// which are whole.
-    #[inline]
-    pub(crate) fn whole(n: f64) -> Option<i64> { (-9_223_372_036_854_775_808.0..9_223_372_036_854_775_808.0).contains(&n).then_some(n as i64) }
     /// `f` on whole `x` and `y` as integers. While `|x×y|` is below 1e14, tolerant gcd gives the same result as integer gcd. Other
     /// arguments give `None`.
     #[inline]
-    pub(crate) fn integral(x: f64, y: f64, f: fn(i64, i64) -> Option<i64>) -> Option<f64> {
-        let fits = x.fract() == 0.0 && y.fract() == 0.0 && x.abs().max(y.abs()) < 1e14 && (x * y).abs() < 1e14;
-        if fits { f(x as i64, y as i64).map(|n| n as f64) } else { None }
+    pub(crate) fn integral<F: Float>(x: F, y: F, f: fn(i64, i64) -> Option<i64>) -> Option<F> {
+        let (x, y, limit): (f64, f64, f64) = (x.into(), y.into(), 1e14);
+        let fits = x.fract() == 0.0 && y.fract() == 0.0 && x.abs().max(y.abs()) < limit && (x * y).abs() < limit;
+        if fits { f(x as i64, y as i64).map(|n| F::narrow(n as f64)) } else { None }
     }
     /// A negative base with a fractional exponent has a complex power.
     #[inline]
-    pub(crate) fn power(x: f64, y: f64) -> Option<f64> { if x < 0.0 && y.is_finite() && y.fract() != 0.0 { None } else { Some(x.powf(y)) } }
+    pub(crate) fn power<F: Float>(x: F, y: F) -> Option<F> { if x < F::zero() && y.is_finite() && y.fract() != F::zero() { None } else { Some(x.powf(y)) } }
     #[inline]
-    pub(crate) fn log(x: f64, y: f64) -> Option<f64> { Some(ln(y)? / ln(x)?) }
-    #[inline]
-    pub(crate) fn floor(y: f64) -> f64 { real_floor(y) }
-    #[inline]
-    pub(crate) fn ceiling(y: f64) -> f64 { -real_floor(-y) }
+    pub(crate) fn log<F: Float>(x: F, y: F) -> Option<F> { Some(ln(y)? / ln(x)?) }
     /// A negative number has a complex logarithm.
     #[inline]
-    pub(crate) fn ln(y: f64) -> Option<f64> { (y >= 0.0 || y.is_nan()).then_some(y.ln()) }
+    pub(crate) fn ln<F: Float>(y: F) -> Option<F> { (y >= F::zero() || y.is_nan()).then_some(y.ln()) }
     #[inline]
-    pub(crate) fn pi_times(y: f64) -> f64 { y * std::f64::consts::PI }
+    pub(crate) fn pi_times<F: Float>(y: F) -> F { y * F::narrow(std::f64::consts::PI) }
     /// A negative number has a complex square root.
     #[inline]
-    pub(crate) fn sqrt(y: f64) -> Option<f64> { root(2.0, y) }
+    pub(crate) fn sqrt<F: Float>(y: F) -> Option<F> { root(F::narrow(2.0), y) }
     /// The real `n`th root of `y`. A negative `y` has one only for an odd integer degree. A degree of zero or an infinite degree has none.
     #[inline]
-    pub(crate) fn root(n: f64, y: f64) -> Option<f64> {
-        if n == 0.0 || !n.is_finite() { return None; }
-        let odd = n.fract() == 0.0 && n % 2.0 != 0.0;
-        if y < 0.0 && !odd { return None; }
+    pub(crate) fn root<F: Float>(n: F, y: F) -> Option<F> {
+        let (zero, one, two) = (F::zero(), F::one(), F::narrow(2.0));
+        if n == zero || !n.is_finite() { return None; }
+        let odd = n.fract() == zero && n % two != zero;
+        if y < zero && !odd { return None; }
         let k = n.abs();
-        let value = if k == 2.0 { y.sqrt() } else if k == 3.0 { y.cbrt() } else { y.abs().powf(1.0 / k).copysign(y) };
-        Some(if n < 0.0 { 1.0 / value } else { value })
+        let value = if k == two { y.sqrt() } else if k == F::narrow(3.0) { y.cbrt() } else { y.abs().powf(one / k).copysign(y) };
+        Some(if n < zero { one / value } else { value })
     }
     #[inline]
-    pub(crate) fn factorial(y: f64) -> f64 { libm::tgamma(y + 1.0) }
+    pub(crate) fn factorial<F: Float>(y: F) -> F { (y + F::one()).gamma() }
     /// `x!y` when `x` lies within tolerance of an integer `k` of at least 0, as the general path computes it: `k` steps that multiply
     /// by `y-i` and divide by `i+1`, with `k` taken as the smaller of `k` and `n-k` when `y` lies within tolerance of an integer `n` of
     /// at least `k`. `None` for other arguments.
-    pub(crate) fn binomial(x: f64, y: f64) -> Option<f64> {
-        let k = integer(x).ok().filter(|&k| k >= 0)?;
-        let k = match integer(y) {
+    pub(crate) fn binomial<F: Float>(x: F, y: F) -> Option<F> {
+        let k = integer(x.into()).ok().filter(|&k| k >= 0)?;
+        let k = match integer(y.into()) {
             Ok(n) if n >= 0 => {
-                if k > n { return Some(0.0); }
+                if k > n { return Some(F::zero()); }
                 k.min(n - k)
             }
             _ => k,
         };
         if k > 100_000 { return None; }
-        Some((0..k).fold(1.0, |v, i| v * (y - i as f64) / (i as f64 + 1.0)))
+        Some((0..k).fold(F::one(), |v, i| {
+            let i = F::narrow(i as f64);
+            v * (y - i) / (i + F::one())
+        }))
     }
     /// The function circle code `code` applies to a real argument, or its inverse. Each gives `None` where its result is complex.
     /// Code 0 is its own inverse.
-    pub(crate) fn circle(code: i64, inverse: bool) -> Option<fn(f64) -> Option<f64>> {
+    pub(crate) fn circle<F: Float>(code: i64, inverse: bool) -> Option<fn(F) -> Option<F>> {
         Some(match (code, inverse) {
-            (0, _) => |x: f64| (x.abs() <= 1.0).then(|| (1.0 - x * x).sqrt()),
-            (1, false) => |x: f64| Some(x.sin()),
-            (2, false) => |x: f64| Some(x.cos()),
-            (3, false) => |x: f64| Some(x.tan()),
-            (4, false) => |x: f64| Some(x.hypot(1.0)),
-            (5, false) => |x: f64| Some(x.sinh()),
-            (6, false) => |x: f64| Some(x.cosh()),
-            (7, false) => |x: f64| Some(x.tanh()),
-            (1, true) => |x: f64| (x.abs() <= 1.0).then(|| x.asin()),
-            (2, true) => |x: f64| (x.abs() <= 1.0).then(|| x.acos()),
-            (3, true) => |x: f64| Some(x.atan()),
-            (4, true) => |x: f64| (x.abs() >= 1.0).then(|| x * (1.0 - (1.0 / x).powi(2)).sqrt()),
-            (5, true) => |x: f64| Some(x.asinh()),
-            (6, true) => |x: f64| (x >= 1.0).then(|| x.acosh()),
-            (7, true) => |x: f64| (x.abs() < 1.0).then(|| x.atanh()),
+            (0, _) => |x: F| (x.abs() <= F::one()).then(|| (F::one() - x * x).sqrt()),
+            (1, false) => |x: F| Some(x.sin()),
+            (2, false) => |x: F| Some(x.cos()),
+            (3, false) => |x: F| Some(x.tan()),
+            (4, false) => |x: F| Some(x.hypot(F::one())),
+            (5, false) => |x: F| Some(x.sinh()),
+            (6, false) => |x: F| Some(x.cosh()),
+            (7, false) => |x: F| Some(x.tanh()),
+            (1, true) => |x: F| (x.abs() <= F::one()).then(|| x.asin()),
+            (2, true) => |x: F| (x.abs() <= F::one()).then(|| x.acos()),
+            (3, true) => |x: F| Some(x.atan()),
+            (4, true) => |x: F| (x.abs() >= F::one()).then(|| x * (F::one() - (F::one() / x).powi(2)).sqrt()),
+            (5, true) => |x: F| Some(x.asinh()),
+            (6, true) => |x: F| (x >= F::one()).then(|| x.acosh()),
+            (7, true) => |x: F| (x.abs() < F::one()).then(|| x.atanh()),
             _ => return None,
         })
     }
@@ -424,12 +561,11 @@ pub(crate) mod int {
 
 /// Complex cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`. Arithmetic is `num_complex`'s.
 /// Complex storage also holds floats that widened into it. `Number` reads such an item as a float, because its imaginary part is zero.
-/// So `times`, `divide`, `equal` and `magnitude` take the real case when no argument has an imaginary part. Addition and subtraction give
-/// the same results either way.
+/// So `times`, `divide` and `magnitude` take the real case when no argument has an imaginary part, as `Tolerant::complex_equal` does.
+/// Addition and subtraction give the same results either way.
 pub(crate) mod complex {
-    use super::{float_equal, real, real_floor, Arithmetic, COMPARISON_TOLERANCE};
+    use super::{real, Arithmetic};
     use num_complex::Complex64;
-    use num_traits::Zero;
 
     fn reals(x: Complex64, y: Complex64) -> bool { x.im == 0.0 && y.im == 0.0 }
     pub(crate) fn arithmetic(op: Arithmetic, x: Complex64, y: Complex64) -> Complex64 {
@@ -444,14 +580,6 @@ pub(crate) mod complex {
     pub(crate) fn times(x: Complex64, y: Complex64) -> Complex64 { if reals(x, y) { (x.re * y.re).into() } else { x * y } }
     #[inline]
     pub(crate) fn divide(x: Complex64, y: Complex64) -> Complex64 { if reals(x, y) { (x.re / y.re).into() } else { x / y } }
-    /// Dyalog's rule compares the magnitude of the difference, not each component. A number with an infinite or NaN part equals only
-    /// itself, as IEEE compares it.
-    #[inline]
-    pub(crate) fn equal(x: Complex64, y: Complex64) -> bool {
-        if reals(x, y) { return float_equal(x.re, y.re); }
-        if !x.is_finite() || !y.is_finite() { return x == y; }
-        (x - y).norm() <= (x * COMPARISON_TOLERANCE).norm().max((y * COMPARISON_TOLERANCE).norm())
-    }
     /// `√(re²+im²)` when the larger part's square can neither overflow nor underflow, and `hypot` otherwise.
     /// Wasm has no `hypot` instruction. It runs `hypot` in software, many times slower than this.
     #[inline]
@@ -466,18 +594,6 @@ pub(crate) mod complex {
         let direction = if angle == 0.0 { Complex64::new(1.0, 0.0) } else if angle == FRAC_PI_2 { Complex64::i() } else if angle == PI { Complex64::new(-1.0, 0.0) } else if angle == 3.0 * FRAC_PI_2 { -Complex64::i() } else { return y.exp(); };
         direction * y.re.exp()
     }
-    /// `x|y` for complex numbers. A quotient that is an integer within tolerance leaves no remainder.
-    pub(crate) fn residue(x: Complex64, y: Complex64) -> Complex64 {
-        if x.is_zero() { return y; }
-        let q = y / x;
-        if equal(x * Complex64::new(q.re.round(), q.im.round()), y) { Complex64::zero() } else { y - x * floor(q) }
-    }
-    pub(crate) fn floor(y: Complex64) -> Complex64 {
-        let (a, b) = (real_floor(y.re), real_floor(y.im));
-        let (x, z) = (y.re - a, y.im - b);
-        if x + z < 1.0 - COMPARISON_TOLERANCE { Complex64::new(a, b) } else if x <= z { Complex64::new(a, b + 1.0) } else { Complex64::new(a + 1.0, b) }
-    }
-    pub(crate) fn ceiling(y: Complex64) -> Complex64 { -floor(-y) }
     /// `y` divided by its magnitude. A real `y` gives its sign, and zero gives zero.
     pub(crate) fn direction(y: Complex64) -> Complex64 { if y.im == 0.0 { return Complex64::new(real::signum(y.re), 0.0); } y / y.norm() }
 }
@@ -530,6 +646,17 @@ pub(crate) mod extended {
     }
 }
 
+/// Runs `$body` with each `$y` bound to its real `$n` as the type `$t`, the float width that the numbers compute at: the wider of their
+/// float widths, or f64 when none is a float. An exact real rounds to that width, as an operand converts before an operation.
+macro_rules! reals {
+    ($($n:expr),+ => |$($y:ident),+: $t:ident| $body:expr) => {
+        with_float_width!(None$(.max($n.float_width()))+.unwrap_or(FloatWidth::F64), $t => {
+            $(let $y = $n.to_real::<$t>()?;)+
+            $body
+        })
+    };
+}
+
 impl Number {
     pub fn from_integer(n: i64) -> Self { Self(Integer(n)) }
     pub fn from_bool(b: bool) -> Self { Self(Boolean(b)) }
@@ -549,16 +676,39 @@ impl Number {
     fn exact(n: BigRational) -> Self { if n.is_integer() { if let Some(i) = n.numer().to_i64() { return Self(Integer(i)); } } Self(Exact(Box::new(n))) }
     /// A whole float as an exact integer of any size. An infinity or NaN stays a float.
     fn exact_integer(n: f64) -> Self {
-        if !n.is_finite() { return n.into(); }
+        if !n.is_finite() { return Self(Float(n)); }
         n.to_i64().map_or_else(|| Self::exact(BigRational::from_float(n).unwrap()), Self::from_integer)
     }
     /// This number written with `ₓ`: exact as it is, or a whole float made exact. An infinity or NaN stays as it is. `None` for a
     /// fraction or a complex number.
     pub(crate) fn marked_exact(&self) -> Option<Self> {
-        match self.0 { Float(n) if !n.is_finite() || n.fract() == 0.0 => Some(Self::exact_integer(n)), Float(_) | Complex(_) => None, _ => Some(self.clone()) }
+        match (&self.0, self.as_float()) {
+            (_, Some(n)) if !n.is_finite() || n.fract() == 0.0 => Some(Self::exact_integer(n)),
+            (Half(_) | Single(_) | Float(_) | Complex(_), _) => None,
+            _ => Some(self.clone()),
+        }
     }
-    pub fn as_float(&self) -> Option<f64> { match self.0 { Float(n) => Some(n), _ => None } }
-    pub(crate) fn float_slice(&self) -> Option<&[f64]> { match &self.0 { Float(n) => Some(std::slice::from_ref(n)), _ => None } }
+    /// This float's value, which a narrower float converts to exactly.
+    pub fn as_float(&self) -> Option<f64> { self.0.float().map(|(n, _)| n) }
+    /// This float as one item of float storage, at its width.
+    pub(crate) fn float_items(&self) -> Option<Floats<'_>> {
+        match &self.0 {
+            Half(n) => Some(Floats::F16(std::slice::from_ref(n))),
+            Single(n) => Some(Floats::F32(std::slice::from_ref(n))),
+            Float(n) => Some(Floats::F64(std::slice::from_ref(n))),
+            _ => None,
+        }
+    }
+    /// A float of `width`, holding `value` rounded to it.
+    pub fn float(value: f64, width: FloatWidth) -> Self {
+        match width { FloatWidth::F16 => Self(Half(half::f16::from_f64(value))), FloatWidth::F32 => Self(Single(value as f32)), FloatWidth::F64 => Self(Float(value)) }
+    }
+    /// The float `y`, at its own width. Code outside this module states the width of every float it makes, through `float`.
+    fn from_float<F: Float>(y: F) -> Self { Self::float(y.into(), F::WIDTH) }
+    /// This number, with a 64-bit float rounded to `width`. Other numbers stay as they are.
+    pub(crate) fn at_width(self, width: FloatWidth) -> Self { match self.0 { Float(n) => Self::float(n, width), _ => self } }
+    /// The width of this float. `None` for any other number.
+    pub(crate) fn float_width(&self) -> Option<FloatWidth> { self.0.float().map(|(_, width)| width) }
     pub(crate) fn is_infinite(&self) -> bool { self.as_float().is_some_and(f64::is_infinite) }
     pub(crate) fn is_nan(&self) -> bool { self.as_float().is_some_and(f64::is_nan) }
     /// Whether this is an infinity or NaN. These never make an exact number approximate.
@@ -585,7 +735,8 @@ impl Number {
         (BigRational::from_float(f)? == rational).then_some(f)
     }
 
-    pub(crate) fn parse(text: &str) -> Result<Self, ErrorKind> {
+    /// The number that `text` writes, with plain letters for its suffixes. A float takes `width`.
+    pub(crate) fn parse(text: &str, width: FloatWidth) -> Result<Self, ErrorKind> {
         let text = text.replace('¯', "-").replace('∞', "inf");
         let integer = |s: &str| s.parse::<BigInt>().map_err(|_| ErrorKind::Syntax);
         if let Some((re, im)) = text.split_once(['J', 'j']) {
@@ -594,37 +745,47 @@ impl Number {
         }
         if let Some(n) = text.strip_suffix(['x', 'ₓ']) { return Ok(integer(n)?.into()); }
         if let Some((n, d)) = text.split_once('r') { return Self::try_from(BigRational::new_raw(integer(n)?, integer(d)?)); }
-        Ok(text.parse::<f64>().map_err(|_| ErrorKind::Syntax)?.into())
+        with_float_width!(width, F => Ok(Self::from_float(text.parse::<F>().map_err(|_| ErrorKind::Syntax)?)))
     }
 
     /// `n` as an exact integer if this number is exact, and as a float otherwise.
-    pub(crate) fn like(&self, n: i32) -> Self { if self.is_exact() { Self(Integer(n as i64)) } else { Self(Float(n as f64)) } }
+    pub(crate) fn like(&self, n: i32) -> Self { if self.is_exact() { Self(Integer(n as i64)) } else { Self::float(n.into(), self.float_width().unwrap_or(FloatWidth::F64)) } }
     pub(crate) fn zero(&self) -> Self { self.like(0) }
     pub(crate) fn one(&self) -> Self { self.like(1) }
 
     pub(crate) fn to_float(&self) -> Result<f64, &'static str> {
+        if let Some((n, _)) = self.0.float() { return Ok(n); }
         match &self.0 {
-            Float(n) => Ok(*n),
             Integer(n) => Ok(*n as f64),
             Boolean(b) => Ok(f64::from(u8::from(*b))),
             Exact(n) => n.to_f64().ok_or("value is outside floating-point range"),
-            Complex(_) => Err("expected a real number"),
+            _ => Err("expected a real number"),
         }
     }
+    /// This number as a float of `width`. A complex number is 64-bit, so a narrower width is an error.
+    pub(crate) fn to_float_width(&self, width: FloatWidth) -> Result<Self, &'static str> {
+        match (&self.0, width) {
+            (Complex(_), FloatWidth::F64) => Ok(self.clone()),
+            (Complex(_), _) => Err("complex numbers have 64-bit parts"),
+            _ => Ok(Self::float(self.to_float()?, width)),
+        }
+    }
+    /// This real as a float of type `F`, rounded to it.
+    fn to_real<F: Float>(&self) -> Result<F, &'static str> { self.to_float().map(F::narrow) }
 
     pub(crate) fn to_complex(&self) -> Result<Complex64, &'static str> { match self.0 { Complex(n) => Ok(n), _ => Ok(Complex64::new(self.to_float()?, 0.0)) } }
 
     /// Structural conversion only; allocation limits belong to the consuming operation.
     pub(crate) fn nonnegative_integer<T: TryFrom<u64>>(&self) -> Result<T, ErrorKind> {
+        if let Some((n, _)) = self.0.float() { return real::nonnegative_integer(n); }
         let n = match &self.0 {
             Boolean(b) => u64::from(*b),
             Integer(n) => u64::try_from(*n).map_err(|_| ErrorKind::Domain)?,
-            Float(n) => return real::nonnegative_integer(*n),
             Exact(n) => {
                 if n.is_negative() || !n.is_integer() { return Err(ErrorKind::Domain); }
                 n.numer().to_u64().ok_or(ErrorKind::Limit)?
             }
-            Complex(_) => return Err(ErrorKind::Domain),
+            _ => return Err(ErrorKind::Domain),
         };
         count_as(n)
     }
@@ -633,7 +794,7 @@ impl Number {
         match &self.0 {
             Integer(n) => Ok(*n),
             Boolean(b) => Ok((*b).into()),
-            Float(n) => real::integer(*n),
+            repr if let Some((n, _)) = repr.float() => real::integer(n),
             Exact(n) if n.is_integer() => n.numer().to_i64().ok_or(ErrorKind::Limit),
             _ => Err(ErrorKind::Domain),
         }
@@ -643,33 +804,39 @@ impl Number {
         match &self.0 {
             Integer(n) => Ok((*n).into()),
             Boolean(b) => Ok(i64::from(*b).into()),
-            Float(n) => near_integer(*n).and_then(BigInt::from_f64).ok_or(ErrorKind::Domain),
+            Half(_) | Single(_) | Float(_) => self.as_float().and_then(near_integer).and_then(BigInt::from_f64).ok_or(ErrorKind::Domain),
             Exact(n) if n.is_integer() => Ok(n.to_integer()),
             _ => Err(ErrorKind::Domain),
         }
     }
 
+    /// The zero of a pervasive result on `left` and this number, as an empty result's prototype. Beside an approximate `left` it's a
+    /// float, at the wider of their float widths.
     pub(crate) fn result_zero(&self, left: Option<&Self>) -> Self {
-        if matches!(left.map(|n| &n.0), Some(Float(_) | Complex(_))) { Self(Float(0.0)) } else { self.zero() }
+        match left {
+            Some(x) if x.float_width().is_some() || x.as_complex().is_some() => Self::float(0.0, x.float_width().max(self.float_width()).unwrap_or(FloatWidth::F64)),
+            _ => self.zero(),
+        }
     }
 
-    /// Whether the numbers are equal, with tolerance. NaN equals nothing, as in IEEE.
-    pub(crate) fn equal(&self, right: &Self) -> Result<bool, &'static str> {
+    /// Whether the numbers are equal, within the tolerance of the width they compare at. NaN equals nothing, as in IEEE.
+    pub(crate) fn equal(&self, right: &Self, t: Numeric) -> Result<bool, &'static str> {
         if self.is_nonfinite() || right.is_nonfinite() { return Ok(self == right); }
-        if self.as_complex().is_none() && right.as_complex().is_none() { return Ok(self.compare(right)? == Some(Ordering::Equal)); }
-        Ok(complex::equal(self.to_complex()?, right.to_complex()?))
+        if self.as_complex().is_none() && right.as_complex().is_none() { return Ok(self.compare(right, t)? == Some(Ordering::Equal)); }
+        Ok(t.tolerance_at(FloatWidth::F64).complex_equal(self.to_complex()?, right.to_complex()?))
     }
-    /// Whether the numbers match, as `≡` and search compare them. NaN matches NaN.
-    pub(crate) fn matches(&self, right: &Self) -> Result<bool, &'static str> { if self.is_nan() && right.is_nan() { Ok(true) } else { self.equal(right) } }
+    /// Whether the numbers match, as `≡` and search compare them, within the tolerance of the width they compare at. NaN matches NaN.
+    pub(crate) fn matches(&self, right: &Self, t: Numeric) -> Result<bool, &'static str> { if self.is_nan() && right.is_nan() { Ok(true) } else { self.equal(right, t) } }
 
     pub(crate) fn lambert_w(&self) -> Result<Self, &'static str> {
         let Some(z) = self.as_complex() else {
-            let z = self.to_float()?;
-            if z == f64::INFINITY { return Ok(self.clone()); }
-            let w = lambert_w::lambert_w0(z);
-            // W = z exp(-W) restores relative accuracy near zero.
-            let w = if z.abs() < 0.1 { z * (-w).exp() } else { w };
-            return Ok(w.into());
+            return reals!(self => |y: F| {
+                let z: f64 = y.into();
+                if z == f64::INFINITY { return Ok(self.clone()); }
+                let w = lambert_w::lambert_w0(z);
+                // W = z exp(-W) restores relative accuracy near zero.
+                Ok(Self::from_float(F::narrow(if z.abs() < 0.1 { z * (-w).exp() } else { w })))
+            });
         };
         let (re, im) = lambert_w::lambert_w(0, z.re, z.im);
         let w = Complex64::new(re, im);
@@ -679,6 +846,7 @@ impl Number {
         Ok(w.into())
     }
 
+    /// The math functions of one number that need no tolerance. `⌊` and `⌈` take one, through `floor` and `ceiling`.
     pub(crate) fn math_monad(&self, op: Math) -> Result<Self, &'static str> {
         use Math::*;
         if matches!(op, Not) { return Ok(Self::from_bool(!self.boolean()?)); }
@@ -687,41 +855,23 @@ impl Number {
         if matches!(op, Nand | Nor) { return self.dyad(if matches!(op, Nand) { Arithmetic::Times } else { Arithmetic::Plus }, self); }
         if matches!(op, Root) { return Self::from_integer(2).root(self); }
         if matches!(op, Factorial) { return self.factorial(); }
-        if let Integer(y) = self.0 {
-            match op {
-                Floor | Ceiling => return Ok(self.clone()),
-                Magnitude => {
-                    if let Some(n) = y.checked_abs() { return Ok(Self(Integer(n))); }
-                }
-                _ => (),
-            }
-        }
-        if let Some(y) = self.as_exact() {
-            match op {
-                Magnitude => return Ok(Self::exact(y.abs())),
-                Floor => return Ok(Self::exact(y.floor())),
-                Ceiling => return Ok(Self::exact(y.ceil())),
-                _ => (),
-            }
+        if matches!(op, Magnitude) {
+            if let Integer(y) = self.0 { if let Some(n) = y.checked_abs() { return Ok(Self(Integer(n))); } }
+            if let Some(y) = self.as_exact() { return Ok(Self::exact(y.abs())); }
         }
         if self.as_complex().is_none() {
-            let y = self.to_float()?;
-            let real = match op {
-                Magnitude => Some(y.abs()),
-                Floor => return Ok(Self::exact_integer(real::floor(y))),
-                Ceiling => return Ok(Self::exact_integer(real::ceiling(y))),
-                Power => Some(y.exp()),
-                Log => real::ln(y),
-                Pi => Some(real::pi_times(y)),
+            let real = reals!(self => |y: F| match op {
+                Magnitude => Some(Self::from_float(y.abs())),
+                Power => Some(Self::from_float(num_traits::Float::exp(y))),
+                Log => real::ln(y).map(Self::from_float),
+                Pi => Some(Self::from_float(real::pi_times(y))),
                 _ => None,
-            };
-            if let Some(n) = real { return Ok(n.into()); }
+            });
+            if let Some(n) = real { return Ok(n); }
         }
         let y = self.to_complex()?;
-        if matches!(op, Magnitude) { return Ok(complex::magnitude(y).into()); }
+        if matches!(op, Magnitude) { return Ok(Self(Float(complex::magnitude(y)))); }
         let result = match op {
-            Floor => complex::floor(y),
-            Ceiling => complex::ceiling(y),
             Power => complex::exp(y),
             Log => y.ln(),
             Pi => y * std::f64::consts::PI,
@@ -731,83 +881,96 @@ impl Number {
         Ok(result.into())
     }
 
+    /// `⌊y`, within the tolerance of its float width. An exact number floors exactly. A real result is a whole number, so it becomes
+    /// exact. An infinity or NaN stays as it is.
+    pub(crate) fn floor(&self, t: Numeric) -> Result<Self, &'static str> {
+        Ok(match &self.0 {
+            _ if self.is_nonfinite() => self.clone(),
+            Boolean(b) => Self(Integer((*b).into())),
+            Integer(_) => self.clone(),
+            Exact(y) => Self::exact(y.floor()),
+            Complex(y) => t.tolerance_at(FloatWidth::F64).complex_floor(*y).into(),
+            repr => {
+                let (y, width) = repr.float().expect("the other numbers are floats");
+                Self::exact_integer(t.tolerance_at(width).floor(y))
+            }
+        })
+    }
+    /// `⌈y`, within the tolerance of its float width: `-⌊-y`.
+    pub(crate) fn ceiling(&self, t: Numeric) -> Result<Self, &'static str> { self.monad(Arithmetic::Minus)?.floor(t)?.monad(Arithmetic::Minus) }
+
+    /// The math functions of two numbers that need no tolerance. `|`, `∨` and `∧` take one, through `residue`, `gcd` and `lcm`. The code of
+    /// `○` selects its function and takes no part in the width.
     pub(crate) fn math_dyad(&self, op: Math, right: &Self) -> Result<Self, &'static str> {
         use Math::*;
-        // `∧`, `∨`, `⌊` and `⌈` on two Booleans give a Boolean. Other functions read a Boolean as 0 or 1.
+        // `⌊` and `⌈` on two Booleans give a Boolean. Other functions read a Boolean as 0 or 1.
         if let (Boolean(x), Boolean(y)) = (&self.0, &right.0) {
-            match op { Gcd | Ceiling => return Ok(Self::from_bool(x | y)), Lcm | Floor => return Ok(Self::from_bool(x & y)), _ => () }
+            match op { Ceiling => return Ok(Self::from_bool(x | y)), Floor => return Ok(Self::from_bool(x & y)), _ => () }
         }
         if self.has_boolean(right) && !matches!(op, Nand | Nor) { return self.numeric().math_dyad(op, &right.numeric()); }
-        if let (Integer(x), Integer(y)) = (&self.0, &right.0) {
-            let (x, y) = (*x, *y);
-            let n = match op { Gcd => int::gcd(x, y), Lcm => int::lcm(x, y), _ => None };
-            if let Some(n) = n { return Ok(Self(Integer(n))); }
+        if op == Log && self.as_complex().is_none() && right.as_complex().is_none() {
+            if let Some(n) = reals!(self, right => |x, y: F| real::log(x, y).map(Self::from_float)) { return Ok(n); }
         }
-        if let (Log, Float(x), Float(y)) = (op, &self.0, &right.0) { if let Some(n) = real::log(*x, *y) { return Ok(n.into()); } }
         match op {
             Factorial => self.binomial(right),
-            Magnitude => self.residue(right),
             Power => self.power(right),
             Circle | Arc => self.circle(right, op == Arc),
             Pi => self.dyad(Arithmetic::Divide, right)?.math_monad(Pi),
             Root => self.root(right),
-            Gcd => self.gcd(right),
-            Lcm => {
-                let gcd = self.gcd(right)?;
-                if gcd.is_zero() { Ok(gcd) } else { self.dyad(Arithmetic::Divide, &gcd)?.dyad(Arithmetic::Times, right) }
-            }
             Floor | Ceiling => self.minimum(right, matches!(op, Ceiling)),
             Log => right.math_monad(Log)?.dyad(Arithmetic::Divide, &self.math_monad(Log)?),
             Nand | Nor => {
                 let (x, y) = (self.boolean()?, right.boolean()?);
                 Ok(Self::from_bool(if matches!(op, Nand) { !(x && y) } else { !(x || y) }))
             }
+            Magnitude | Gcd | Lcm => unreachable!("`residue`, `gcd` and `lcm` take a tolerance"),
             Not => Err("without operates on arrays"),
         }
     }
 
     fn minimum(&self, right: &Self, maximum: bool) -> Result<Self, &'static str> {
-        match (&self.0, &right.0) {
-            (Integer(x), Integer(y)) => return Ok(Self(Integer(if maximum { *x.max(y) } else { *x.min(y) }))),
-            (Float(x), Float(y)) => return Ok((if maximum { x.max(*y) } else { x.min(*y) }).into()),
-            _ => (),
-        }
-        // As in Rust's `f64::max` and `f64::min`, NaN gives way to the other argument.
+        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { return Ok(Self(Integer(if maximum { *x.max(y) } else { *x.min(y) }))); }
+        // As in Rust's `max` and `min`, NaN gives way to the other argument. An exact number stays exact beside an infinity, and beside
+        // another exact number.
         if self.is_nan() { return Ok(right.clone()); }
         if right.is_nan() { return Ok(self.clone()); }
-        let order = self.order(right)?;
-        let selected = if maximum == order.is_lt() { right } else { self };
-        if (self.is_exact() && right.is_exact()) || self.is_infinite() || right.is_infinite() { Ok(selected.clone()) } else { Ok(selected.to_float()?.into()) }
+        if (self.is_exact() && right.is_exact()) || self.is_infinite() || right.is_infinite() {
+            return Ok((if maximum == self.order(right)?.is_lt() { right } else { self }).clone());
+        }
+        reals!(self, right => |x, y: F| Ok(Self::from_float(if maximum { x.max(y) } else { x.min(y) })))
     }
 
     /// The result at the first of four levels that gives one for `self` and `right`: both 64-bit integers, both exact, both real, and
-    /// otherwise complex. A level gives `None` to pass to the next.
+    /// otherwise complex. A level gives `None` to pass to the next. The real level reads the numbers at their float width itself.
     fn by_level(
         &self,
         right: &Self,
         int: impl FnOnce(i64, i64) -> Option<i64>,
         exact: impl FnOnce(BigRational, BigRational) -> Result<Option<Self>, &'static str>,
-        real: impl FnOnce(f64, f64) -> Result<Option<Self>, &'static str>,
+        real: impl FnOnce() -> Result<Option<Self>, &'static str>,
         complex: impl FnOnce(Complex64, Complex64) -> Result<Self, &'static str>,
     ) -> Result<Self, &'static str> {
         if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = int(*x, *y) { return Ok(Self(Integer(n))); } }
         if let (Some(x), Some(y)) = (self.as_exact(), right.as_exact()) { if let Some(n) = exact(x, y)? { return Ok(n); } }
-        if self.as_complex().is_none() && right.as_complex().is_none() { if let Some(n) = real(self.to_float()?, right.to_float()?)? { return Ok(n); } }
+        if self.as_complex().is_none() && right.as_complex().is_none() { if let Some(n) = real()? { return Ok(n); } }
         complex(self.to_complex()?, right.to_complex()?)
     }
 
-    fn residue(&self, right: &Self) -> Result<Self, &'static str> {
+    /// `x|y`, within the tolerance of the width they compute at.
+    pub(crate) fn residue(&self, right: &Self, t: Numeric) -> Result<Self, &'static str> {
+        if self.has_boolean(right) { return self.numeric().residue(&right.numeric(), t); }
         self.by_level(
             right,
             int::residue,
             |x, y| Ok(Some(Self::exact(if x.is_zero() { y } else { &y - &x * (&y / &x).floor() }))),
-            |x, y| Ok(Some(real::residue(x, y).into())),
-            |x, y| Ok(complex::residue(x, y).into()),
+            || Ok(Some(reals!(self, right => |x, y: F| Self::from_float(t.tolerance_at(F::WIDTH).residue(x, y))))),
+            |x, y| Ok(t.tolerance_at(FloatWidth::F64).complex_residue(x, y).into()),
         )
     }
 
     pub(crate) fn parts(&self, polar: bool) -> Result<[Self; 2], &'static str> {
-        if polar { return Ok([self.math_monad(Math::Magnitude)?, self.to_complex()?.arg().into()]); }
+        let width = self.float_width().unwrap_or(FloatWidth::F64);
+        if polar { return Ok([self.math_monad(Math::Magnitude)?, Self::float(self.to_complex()?.arg(), width)]); }
         match self.as_complex() { Some(z) => Ok([Self(Float(z.re)), Self(Float(z.im))]), None => Ok([self.clone(), self.zero()]) }
     }
 
@@ -825,7 +988,7 @@ impl Number {
                 let result = Self::exact(BigRational::new(if y.is_negative() { -a } else { a }, b));
                 Ok(Some(if n < 0 { result.monad(Arithmetic::Divide)? } else { result }))
             },
-            |n, y| if n.is_finite() { Ok(real::root(n, y).map(Into::into)) } else { Err("root degree must be finite") },
+            || reals!(self, right => |n, y: F| if n.is_finite() { Ok(real::root(n, y).map(Self::from_float)) } else { Err("root degree must be finite") }),
             |_, y| if self.grade_order(&Self::from_integer(2)).is_eq() { Ok(y.sqrt().into()) } else { right.power(&self.monad(Arithmetic::Divide)?) },
         )
     }
@@ -837,11 +1000,11 @@ impl Number {
             |x, y| {
                 if !y.is_integer() { return Ok(None); }
                 let n = y.to_i32().ok_or("exact exponent is too large")?;
-                if x.is_zero() && n < 0 { return Ok(Some(f64::INFINITY.into())); }
+                if x.is_zero() && n < 0 { return Ok(Some(Self(Float(f64::INFINITY)))); }
                 if n.unsigned_abs() > 1_000_000 { return Err("exact exponent is too large"); }
                 Ok(Some(Self::exact(x.pow(n))))
             },
-            |x, y| Ok(real::power(x, y).map(Into::into)),
+            || Ok(reals!(self, right => |x, y: F| real::power(x, y).map(Self::from_float))),
             |x, y| {
                 let result = if y.is_zero() { Complex64::new(1.0, 0.0) } else if x.is_zero() && y.im == 0.0 && y.re > 0.0 {
                     Complex64::zero()
@@ -851,15 +1014,21 @@ impl Number {
         )
     }
 
-    fn gcd(&self, right: &Self) -> Result<Self, &'static str> {
+    /// `x∨y`: the greatest common divisor, within the tolerance of the width they compute at. On two Booleans it is `or`.
+    pub(crate) fn gcd(&self, right: &Self, t: Numeric) -> Result<Self, &'static str> {
+        if let (Boolean(x), Boolean(y)) = (&self.0, &right.0) { return Ok(Self::from_bool(x | y)); }
+        if self.has_boolean(right) { return self.numeric().gcd(&right.numeric(), t); }
+        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = int::gcd(*x, *y) { return Ok(Self(Integer(n))); } }
         if self.is_infinite() || right.is_infinite() { return Err("gcd requires finite arguments"); }
         if !self.is_exact() || !right.is_exact() {
-            if self.as_complex().is_none() && right.as_complex().is_none() { return Ok(Self(Float(real_gcd(self.to_float()?, right.to_float()?)))); }
+            if self.as_complex().is_none() && right.as_complex().is_none() {
+                return Ok(reals!(self, right => |x, y: F| Self::from_float(F::narrow(t.tolerance_at(F::WIDTH).gcd(x.into(), y.into())))));
+            }
             let (mut x, mut y) = (self.to_complex()?, right.to_complex()?);
             let original = if x.norm() >= y.norm() { x } else { y };
             let scale = x.norm().max(y.norm());
             if !scale.is_finite() { return Err("gcd magnitude is too large"); }
-            let tolerance = COMPARISON_TOLERANCE * scale;
+            let tolerance = t.tolerance_at(FloatWidth::F64).value() * scale;
             while y.norm() > tolerance {
                 let q = x / y;
                 let r = x - y * Complex64::new(q.re.round(), q.im.round());
@@ -869,7 +1038,7 @@ impl Number {
             }
             if x.re.abs() <= tolerance { x.re = 0.0; }
             if x.im.abs() <= tolerance { x.im = 0.0; }
-            if x.is_zero() { return Ok(0.0.into()); }
+            if x.is_zero() { return Ok(Self(Float(0.0))); }
             while x.re <= 0.0 || x.im < 0.0 { x *= Complex64::i(); }
             let q = original / x;
             x = original / Complex64::new(q.re.round(), q.im.round());
@@ -879,11 +1048,19 @@ impl Number {
         }
         let (mut x, mut y) = (self.clone(), right.clone());
         while !y.is_zero() {
-            let r = y.residue(&x)?;
+            let r = y.residue(&x, t)?;
             x = y;
             y = r;
         }
         x.math_monad(Math::Magnitude)
+    }
+    /// `x∧y`: the least common multiple, within the tolerance of the width they compute at. On two Booleans it is `and`.
+    pub(crate) fn lcm(&self, right: &Self, t: Numeric) -> Result<Self, &'static str> {
+        if let (Boolean(x), Boolean(y)) = (&self.0, &right.0) { return Ok(Self::from_bool(x & y)); }
+        if self.has_boolean(right) { return self.numeric().lcm(&right.numeric(), t); }
+        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = int::lcm(*x, *y) { return Ok(Self(Integer(n))); } }
+        let gcd = self.gcd(right, t)?;
+        if gcd.is_zero() { Ok(gcd) } else { self.dyad(Arithmetic::Divide, &gcd)?.dyad(Arithmetic::Times, right) }
     }
 
     fn factorial(&self) -> Result<Self, &'static str> {
@@ -895,14 +1072,16 @@ impl Number {
             }
         }
         if self.as_complex().is_some() { return Ok(log_gamma(self.to_complex()? + 1.0).exp().into()); }
-        Ok(real::factorial(self.to_float()?).into())
+        Ok(reals!(self => |y: F| Self::from_float(real::factorial(y))))
     }
 
     /// `self○right`, or the inverse of `self○` on `right`.
     fn circle(&self, right: &Self, inverse: bool) -> Result<Self, &'static str> {
-        let y = right.to_complex()?;
         let code = self.integer().map_err(|_| "circle code must be an integer")?;
-        if y.im == 0.0 { let x = y.re; if let Some(real) = real::circle(code, inverse).and_then(|f| f(x)) { return Ok(real.into()); } }
+        if right.as_complex().is_none() {
+            if let Some(n) = reals!(right => |x: F| real::circle::<F>(code, inverse).and_then(|f| f(x)).map(Self::from_float)) { return Ok(n); }
+        }
+        let y = right.to_complex()?;
         let one = Complex64::new(1.0, 0.0);
         let result = match (code, inverse) {
             (8, _) if y.im == 0.0 => Complex64::new(0.0, if inverse { -y.re.hypot(1.0) } else { y.re.hypot(1.0) }),
@@ -955,16 +1134,17 @@ impl Number {
             (Complex(x), _) => Self(Float(x.re)).grade_order(right).then(real::grade(x.im, 0.0)),
             (_, Complex(_)) => right.grade_order(self).reverse(),
             (Exact(x), Exact(y)) => x.cmp(y),
-            (Exact(x), Float(y)) => x.as_ref().cmp(&BigRational::from_float(*y).unwrap()),
-            (Float(_), Exact(_)) => right.grade_order(self).reverse(),
-            (Float(x), Float(y)) => real::grade(*x, *y),
-            _ => unreachable!(),
+            (Exact(x), _) => x.as_ref().cmp(&BigRational::from_float(right.as_float().unwrap()).unwrap()),
+            (_, Exact(_)) => right.grade_order(self).reverse(),
+            _ => real::grade(self.as_float().unwrap(), right.as_float().unwrap()),
         }
     }
 
+    /// The Boolean that a number stands for. The f64 default tolerance decides, whatever the pref, as for whole numbers.
     pub(crate) fn boolean(&self) -> Result<bool, &'static str> {
         if let Boolean(b) = self.0 { return Ok(b); }
-        if self.equal(&self.zero())? { Ok(false) } else if self.equal(&self.one())? { Ok(true) } else { Err("expected a Boolean") }
+        let t = Numeric::default();
+        if self.equal(&self.zero(), t)? { Ok(false) } else if self.equal(&self.one(), t)? { Ok(true) } else { Err("expected a Boolean") }
     }
 
     fn binomial(&self, right: &Self) -> Result<Self, &'static str> {
@@ -998,16 +1178,17 @@ impl Number {
         let (x, y) = (self.to_complex()?, right.to_complex()?);
         if y.im == 0.0 && y.re < 0.0 && y.re.fract() == 0.0 { return Err("negative integer upper argument needs an integer selection"); }
         let result = (log_gamma(y + 1.0) - log_gamma(x + 1.0) - log_gamma(y - x + 1.0)).exp();
-        Ok(if x.im == 0.0 && y.im == 0.0 { result.re.into() } else { result.into() })
+        let width = self.float_width().max(right.float_width()).unwrap_or(FloatWidth::F64);
+        Ok(if x.im == 0.0 && y.im == 0.0 { Self::float(result.re, width) } else { result.into() })
     }
 
-    /// The order of the numbers, with tolerance. `None` when either is NaN, which IEEE leaves unordered.
-    pub(crate) fn compare(&self, right: &Self) -> Result<Option<Ordering>, &'static str> {
-        if self.has_boolean(right) { return self.numeric().compare(&right.numeric()); }
+    /// The order of the numbers, within the tolerance of the width they compare at. `None` when either is NaN, which IEEE leaves
+    /// unordered. The tolerance is relative, with none absolute near zero, as Dyalog's `⎕CT` is.
+    pub(crate) fn compare(&self, right: &Self, t: Numeric) -> Result<Option<Ordering>, &'static str> {
+        if self.has_boolean(right) { return self.numeric().compare(&right.numeric(), t); }
         if self.is_nan() || right.is_nan() { return Ok(None); }
         if self.is_infinite() || right.is_infinite() || (self.is_exact() && right.is_exact()) { return self.order(right).map(Some); }
-        // Dyalog 20 relative ⎕CT=1E¯14; no absolute tolerance near zero.
-        Ok(real::compare(self.to_float()?, right.to_float()?))
+        reals!(self, right => |x, y: F| Ok(t.tolerance_at(F::WIDTH).compare(x, y)))
     }
 
     pub(crate) fn monad(&self, op: Arithmetic) -> Result<Self, &'static str> {
@@ -1027,18 +1208,18 @@ impl Number {
                 Plus => y,
                 Minus => -y,
                 Times => y.signum(),
-                Divide if y.is_zero() => return Ok(f64::INFINITY.into()),
+                Divide if y.is_zero() => return Ok(Self(Float(f64::INFINITY))),
                 Divide => y.recip(),
             }));
         }
         match &self.0 {
-            Float(y) => Ok(match op {
-                Plus => (*y).into(),
-                Minus => (-y).into(),
-                Times if y.is_nan() => (*y).into(),
-                Times => Self::from_integer(real::signum(*y) as i64),
-                Divide => (1.0 / y).into(),
-            }),
+            Half(_) | Single(_) | Float(_) => reals!(self => |y: F| Ok(match op {
+                Plus => Self::from_float(y),
+                Minus => Self::from_float(-y),
+                Times if y.is_nan() => Self::from_float(y),
+                Times => Self::from_integer(real::signum(y.into()) as i64),
+                Divide => Self::from_float(F::narrow(1.0) / y),
+            })),
             Complex(y) => Ok(match op {
                 Plus => y.conj(),
                 Minus => -y,
@@ -1056,7 +1237,8 @@ impl Number {
         // Beside an infinity, an exact number acts as its sign.
         if (self.is_infinite() || right.is_infinite()) && (self.is_exact() || right.is_exact()) {
             let sign = |n: &Self| if n.is_exact() { n.monad(Times) } else { Ok(n.clone()) };
-            return Ok(real::arithmetic(op, sign(self)?.to_float()?, sign(right)?.to_float()?).into());
+            let (a, b) = (sign(self)?, sign(right)?);
+            return reals!(a, b => |x, y: F| Ok(Self::from_float(real::arithmetic(op, x, y))));
         }
         self.by_level(
             right,
@@ -1066,12 +1248,12 @@ impl Number {
                     Plus => Self::exact(x + y),
                     Minus => Self::exact(x - y),
                     Times => Self::exact(x * y),
-                    Divide if y.is_zero() => (if x.is_zero() { f64::NAN } else if x.is_negative() { f64::NEG_INFINITY } else { f64::INFINITY })
-                    .into(),
+                    Divide if y.is_zero() => Self(Float(if x.is_zero() { f64::NAN } else if x.is_negative() { f64::NEG_INFINITY } else { f64::INFINITY })
+                    ),
                     Divide => Self::exact(x / y),
                 }))
             },
-            |x, y| Ok(Some(real::arithmetic(op, x, y).into())),
+            || Ok(Some(reals!(self, right => |x, y: F| Self::from_float(real::arithmetic(op, x, y))))),
             |x, y| Ok(complex::arithmetic(op, x, y).into()),
         )
     }
@@ -1082,14 +1264,20 @@ impl Number {
     /// exact numbers and Booleans stay as they are.
     pub(crate) fn rounded(&self, digits: usize) -> Self {
         let round = |x: f64| if digits >= 17 || !x.is_finite() { x } else { format!("{x:.*e}", digits - 1).parse().unwrap_or(x) };
-        match &self.0 { Float(x) => Self(Float(round(*x))), Complex(z) => Self(Complex(Complex64::new(round(z.re), round(z.im)))), _ => self.clone() }
+        match &self.0 {
+            repr if let Some((x, width)) = repr.float() => Self::float(round(x), width),
+            Complex(z) => Self(Complex(Complex64::new(round(z.re), round(z.im)))),
+            _ => self.clone(),
+        }
     }
 }
 
-fn write_float(out: &mut impl fmt::Write, n: f64) -> fmt::Result {
-    if n.is_nan() { return out.write_str(NAN_NAME); }
-    if n.is_infinite() { return out.write_str(if n.is_sign_positive() { "∞" } else { "-∞" }); }
-    if n != 0.0 && !(1e-6..1e17).contains(&n.abs()) { out.write_str(&scientific(&format!("{n:E}"))) } else { write!(out, "{n}") }
+/// The shortest digits that read back as `n` at its own width, in scientific notation outside `1E¯6` to `1E17`.
+fn write_float<F: Copy + Into<f64> + fmt::Display + fmt::UpperExp>(out: &mut impl fmt::Write, n: F) -> fmt::Result {
+    let wide: f64 = n.into();
+    if wide.is_nan() { return out.write_str(NAN_NAME); }
+    if wide.is_infinite() { return out.write_str(if wide.is_sign_positive() { "∞" } else { "-∞" }); }
+    if wide != 0.0 && !(1e-6..1e17).contains(&wide.abs()) { out.write_str(&scientific(&format!("{n:E}"))) } else { write!(out, "{n}") }
 }
 
 /// `text`, which Rust wrote in exponent notation, with the exponent subscript in place of Rust's `e` or `E`.
@@ -1119,6 +1307,8 @@ impl fmt::Display for Number {
         match &self.0 {
             Boolean(b) => out.write_str(if *b { TRUE_NAME } else { FALSE_NAME }),
             Integer(n) => write!(out, "{n}{mark}"),
+            Half(n) => write_float(&mut out, *n),
+            Single(n) => write_float(&mut out, *n),
             Float(n) => write_float(&mut out, *n),
             Exact(n) if n.is_integer() => write!(out, "{}{mark}", n.numer()),
             Exact(n) => write!(out, "{}ᵣ{}", n.numer(), n.denom()),

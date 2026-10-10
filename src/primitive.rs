@@ -1,6 +1,6 @@
 use crate::{
     agreement::{Agreement, Mapping},
-    array::{agreed, compress, generated_len, or_and_sum, saturated, with_ints, with_width, Axis, Frame, Gather, Items, Layout, Steps, Storage, Width},
+    array::{agreed, compress, generated_len, or_and_sum, saturated, with_ints, with_width, Axis, FloatWidth, Frame, Gather, Items, Layout, Steps, Storage, Width},
     execution::Context,
     keyed::Selector,
     number::{
@@ -297,18 +297,25 @@ pub(crate) fn real(value: &Value, span: &Span) -> Result<f64, Error> {
     if n.im != 0.0 { return Err(span.domain_error("expected real numbers")); }
     Ok(n.re)
 }
-fn float(n: f64) -> Value { Value::Number(n.into()) }
+/// The float `n` at the float width of `like`, as a constant that a function combines with `like` takes. It doesn't widen `like`. Beside
+/// an exact `like`, it takes the default width.
+pub(crate) fn float_like(n: f64, like: &Value, span: &Context<'_>) -> Value { Value::Number(Number::float(n, span.numeric().width_of([like.float_width()]))) }
 pub(crate) fn integer(n: i64) -> Value { Value::Number(Number::from_integer(n)) }
-fn generated(n: u64, exact: bool) -> Value {
-    if !exact { return float(n as f64); }
+/// The width of the floats that a count or bound such as `value` gives. `None` when `value` is exact. Otherwise it's the float width of
+/// `value`, or the default width when `value` has none.
+pub(crate) fn counted_width(value: &Value, span: &Context<'_>) -> Option<FloatWidth> {
+    (!value.is_exact()).then(|| span.numeric().width_of([value.float_width()]))
+}
+/// The count `n` as a float of width `float`, or as an exact integer when `float` is `None`. An exact value beyond `i64` is a big integer.
+fn generated(n: u64, float: Option<FloatWidth>) -> Value {
+    if let Some(width) = float { return Value::Number(Number::float(n as f64, width)); }
     match i64::try_from(n) { Ok(n) => integer(n), Err(_) => Value::Number(num_bigint::BigInt::from(n).into()) }
 }
-/// Counts or positions in `shape`. They're floats unless `exact`, and exact integers otherwise. A value beyond `i64` is a big integer,
-/// as `generated` gives it, and makes the array mixed.
-fn generated_items(shape: Vec<usize>, values: Vec<u64>, exact: bool) -> Result<Value, ErrorKind> {
-    if !exact { return Value::floats(shape, values.into_iter().map(|n| n as f64).collect()); }
+/// Counts or positions in `shape`, as `generated` gives each one. A value beyond `i64` makes the array mixed.
+fn generated_items(shape: Vec<usize>, values: Vec<u64>, float: Option<FloatWidth>) -> Result<Value, ErrorKind> {
+    if let Some(width) = float { return Value::floats(shape, width, values.into_iter().map(|n| n as f64).collect()); }
     if values.iter().all(|&n| i64::try_from(n).is_ok()) { return Value::integers(shape, values.into_iter().map(|n| n as i64).collect()); }
-    Value::new(shape, values.into_iter().map(|n| generated(n, true)).collect())
+    Value::new(shape, values.into_iter().map(|n| generated(n, None)).collect())
 }
 fn selected(a: &Value, i: usize) -> Value { a.at(if a.is_singleton() { 0 } else { i }) }
 
@@ -580,7 +587,7 @@ impl Primitive {
             (Self::Compare(NotEqual), None) => unique_mask(right, span),
             (Self::Compare(op @ (LessEqual | GreaterEqual)), None) => {
                 let op = if matches!(op, LessEqual) { Arithmetic::Minus } else { Arithmetic::Plus };
-                Self::Arithmetic(op).call(Some(right), &if right.as_floats().is_some() { float(1.0) } else { integer(1) }, span)
+                Self::Arithmetic(op).call(Some(right), &integer(1), span)
             }
             (Self::Compare(op @ (Less | Greater)), None) => sort(right, matches!(op, Greater), span),
             (Self::Prime | Self::Factor, _) => crate::number_theory::call(matches!(self, Self::Factor), left, right, span),
@@ -604,7 +611,7 @@ impl Primitive {
             (Self::Depth, Some(x)) => Ok(Value::Number(Number::from_bool(x.matches(right, span)?))),
             (Self::Depth, None) => Ok(integer(depth(right) as i64)),
             (Self::Tally, Some(x)) => Ok(Value::Number(Number::from_bool(!x.matches(right, span)?))),
-            (Self::Tally, None) => Ok(generated(right.shape().first().copied().unwrap_or(1) as u64, true)),
+            (Self::Tally, None) => Ok(generated(right.shape().first().copied().unwrap_or(1) as u64, None)),
             (Self::Iota, Some(x)) => index_of(x, right, span),
             (Self::Iota, None) => iota(right, span),
             (Self::Range, _) => range(left, right, span),
@@ -632,7 +639,7 @@ impl Primitive {
             }
             (Self::Shape, Some(x)) => reshape(x, right, span),
             (Self::Shape, None) => {
-                let dimensions = right.shape().iter().map(|&n| generated(n as u64, true)).collect();
+                let dimensions = right.shape().iter().map(|&n| generated(n as u64, None)).collect();
                 let shape = if right.axis_names().is_empty() { Value::from_parts(vec![right.shape().len()], dimensions, integer(0)) } else { crate::keyed::partial_vector(right.axis_names().to_vec(), dimensions) };
                 shape.error_at(span, "invalid shape")
             }
@@ -682,7 +689,7 @@ impl Primitive {
                 .error_at(span, "invalid empty result");
         }
         if !fill {
-            if let Some(result) = crate::pervasive::map(self, left, right, &agreement) {
+            if let Some(result) = crate::pervasive::map(self, left, right, &agreement, span.numeric()) {
                 return result.with_layout(agreement.layout).error_at(span, "invalid keyed result");
             }
         }
@@ -708,31 +715,39 @@ impl Primitive {
                 (Self::Compare(_) | Self::Math(Math::Not), _, _) | (Self::Math(Math::Nand | Math::Nor), Some(_), _) => Value::Number(Number::from_bool(false)),
                 (Self::Math(Math::Floor | Math::Ceiling) | Self::Arithmetic(Arithmetic::Times), None, _) => integer(0),
                 (Self::Random, _, Value::Number(y)) => Value::Number(y.zero()),
-                (Self::Math(Math::Circle | Math::Arc | Math::Pi | Math::Log), _, _) | (Self::Math(Math::Power), None, _) => float(0.0),
+                (Self::Math(Math::Circle | Math::Arc | Math::Pi | Math::Log), _, _) | (Self::Math(Math::Power), None, _) => float_like(0.0, right, span),
                 (Self::Math(_) | Self::Arithmetic(_), None, Value::Number(y)) => Value::Number(y.result_zero(None)),
                 (Self::Math(_) | Self::Arithmetic(_), Some(Value::Number(x)), Value::Number(y)) => Value::Number(y.result_zero(Some(x))),
-                _ => float(0.0),
+                _ => float_like(0.0, right, span),
             });
         }
         match self {
             Self::Math(_) | Self::Arithmetic(_) => {
-                let y = numeric(right, span)?;
+                let (y, t) = (numeric(right, span)?, span.numeric());
                 let n = match (self, left) {
+                    (Self::Math(Math::Floor), None) => y.floor(t),
+                    (Self::Math(Math::Ceiling), None) => y.ceiling(t),
+                    (Self::Math(Math::Magnitude), Some(x)) => numeric(x, span)?.residue(y, t),
+                    (Self::Math(Math::Gcd), Some(x)) => numeric(x, span)?.gcd(y, t),
+                    (Self::Math(Math::Lcm), Some(x)) => numeric(x, span)?.lcm(y, t),
                     (Self::Math(op), Some(x)) => numeric(x, span)?.math_dyad(op, y),
                     (Self::Math(op), None) => y.math_monad(op),
                     (Self::Arithmetic(op), Some(x)) => numeric(x, span)?.dyad(op, y),
                     (Self::Arithmetic(op), None) => y.monad(op),
                     _ => unreachable!(),
                 };
-                n.map(Value::Number).domain_at(span)
+                // A float that an operation on exact numbers gives takes the default width. The code of `○` takes no part.
+                let operands_exact = left.is_none_or(|x| matches!(x, Value::Number(x) if x.is_exact()));
+                let exact = y.is_exact() && (matches!(self, Self::Math(Math::Circle | Math::Arc)) || operands_exact);
+                n.map(|n| Value::Number(if exact { n.at_width(t.width) } else { n })).domain_at(span)
             }
             // `=` follows IEEE, where NaN equals nothing. Match, which `=` uses for other items, treats NaN as one value.
             Self::Compare(op @ (Comparison::Equal | Comparison::NotEqual)) => {
-                let equal = match (left.unwrap(), right) { (Value::Number(x), Value::Number(y)) => x.equal(y).domain_at(span)?, (x, y) => x.matches(y, span)? };
+                let equal = match (left.unwrap(), right) { (Value::Number(x), Value::Number(y)) => x.equal(y, span.numeric()).domain_at(span)?, (x, y) => x.matches(y, span)? };
                 Ok(Value::Number(Number::from_bool(equal == matches!(op, Comparison::Equal))))
             }
             Self::Compare(op) => {
-                let order = numeric(left.unwrap(), span)?.compare(numeric(right, span)?).domain_at(span)?;
+                let order = numeric(left.unwrap(), span)?.compare(numeric(right, span)?, span.numeric()).domain_at(span)?;
                 Ok(Value::Number(Number::from_bool(order.is_some_and(|order| op.ordered(order)))))
             }
             _ => unreachable!(),
@@ -763,11 +778,11 @@ pub(crate) fn depth(right: &Value) -> usize {
 }
 
 /// `f` applied to each number, character or function in `value`, at any depth. Each array keeps its layout. An empty result's
-/// prototype is the argument's, with a float zero for each number, character or function.
+/// prototype is the argument's, with a float zero for each number, character or function, at its float width or the default width.
 pub(crate) fn pervade(value: &Value, f: &dyn Fn(Value) -> Result<Value, Error>, span: &Context<'_>) -> Result<Value, Error> {
     span.check()?;
     if value.is_atom() { return f(value.clone()); }
-    let result = if value.is_empty() { Value::empty(value.shape().to_vec(), pervade(&value.prototype(), &|_| Ok(float(0.0)), span)?) } else { Value::new(value.shape().to_vec(), value.elements().map(|e| pervade(&e, f, span)).collect::<Result<_, _>>()?) };
+    let result = if value.is_empty() { Value::empty(value.shape().to_vec(), pervade(&value.prototype(), &|e| Ok(float_like(0.0, &e, span)), span)?) } else { Value::new(value.shape().to_vec(), value.elements().map(|e| pervade(&e, f, span)).collect::<Result<_, _>>()?) };
     result.and_then(|v| v.with_layout(value.layout().clone())).error_at(span, "invalid result")
 }
 
@@ -797,7 +812,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
     }
     let call = |p: Primitive, x: Option<&Value>, y: &Value| match axis { Some(axis) => p.call_axes(x, y, axis, span), None => p.call(x, y, span) };
     if let Some((a, first)) = bound {
-        if matches!(p, Arithmetic(Times | Divide)) && a.elements().any(|e| matches!(e, Value::Number(n) if n.equal(&n.zero()).unwrap_or(false))) {
+        if matches!(p, Arithmetic(Times | Divide)) && a.elements().any(|e| matches!(e, Value::Number(n) if n.is_zero())) {
             return Err(span.domain_error("zero multiplier/divisor has no inverse"));
         }
         return match p {
@@ -820,7 +835,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
             Math(Pi) if first => call(p, Some(a), right),
             Math(Pi) => {
                 let product = call(Arithmetic(Times), Some(right), a)?;
-                call(Arithmetic(Divide), Some(&product), &float(std::f64::consts::PI))
+                call(Arithmetic(Divide), Some(&product), &float_like(std::f64::consts::PI, &product, span))
             }
             Math(Log) if first => call(Math(Power), Some(a), right),
             Math(Log) => call(Math(Power), Some(a), &Arithmetic(Divide).call(None, right, span)?),
@@ -865,7 +880,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
         }
         Math(Power) => Math(Log).call(None, right, span),
         Math(Log) => Math(Power).call(None, right, span),
-        Math(Pi) => Arithmetic(Divide).call(Some(right), &float(std::f64::consts::PI), span),
+        Math(Pi) => Arithmetic(Divide).call(Some(right), &float_like(std::f64::consts::PI, right, span), span),
         Math(Circle) => {
             let log = Math(Log).call(None, right, span)?;
             Arithmetic(Times).call(Some(&Value::number(num_complex::Complex64::new(0., -1.)).unwrap()), &log, span)
@@ -943,7 +958,7 @@ fn joined(parts: &Value, span: &Context<'_>) -> Result<Value, Error> {
 fn inverse_windows(a: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     use Primitive::*;
     let candidate = || {
-        let whole_first = Value::new(vec![2], vec![float(f64::INFINITY), integer(0)]).error_at(span, "invalid window selector")?;
+        let whole_first = Value::new(vec![2], vec![Value::Number(Number::float(f64::INFINITY, FloatWidth::F64)), integer(0)]).error_at(span, "invalid window selector")?;
         let firsts = Index.call(Some(&whole_first), right, span)?;
         if right.shape().first() == Some(&0) { return Ok(firsts); }
         let rest = Drop.call(Some(&integer(1)), &Index.call(Some(&integer(-1)), right, span)?, span)?;
@@ -978,10 +993,10 @@ fn inverse_decode(base: &Value, right: &Value, span: &Context<'_>) -> Result<Val
         let mut n = numeric(&e, span)?.clone();
         if n.order(&n.zero()).domain_at(span)?.is_lt() { return Err(span.domain_error("inverse decode requires nonnegative values")); }
         let mut count = 0;
-        while !n.equal(&n.zero()).domain_at(span)? {
+        while !n.is_zero() {
             span.check()?;
             if n.order(&n.one()).domain_at(span)?.is_lt() { return Err(span.domain_error("inverse decode cannot represent this value")); }
-            n = n.dyad(Arithmetic::Divide, &b).and_then(|n| n.math_monad(Math::Floor)).domain_at(span)?;
+            n = n.dyad(Arithmetic::Divide, &b).and_then(|n| n.floor(span.numeric())).domain_at(span)?;
             count += 1;
             generated_len(&[count]).error_at(span, "inverse decode is too large")?;
         }

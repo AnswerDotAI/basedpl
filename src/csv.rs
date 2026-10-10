@@ -11,6 +11,8 @@ struct Options {
     trim: bool,
     decimal: char,
     thousands: Option<char>,
+    /// The width of the floats that fields read as, the session's default width.
+    width: crate::array::FloatWidth,
 }
 
 impl Options {
@@ -18,7 +20,8 @@ impl Options {
         let mut allowed = vec!["separator", "quotechar", "escapechar", "doublequote", "decimal", "thousands", "trim", "header", "fill"];
         allowed.extend(if import { &["text_columns", "numeric_columns", "missing"][..] } else { &["forcequotes", "lineending"][..] });
         let common = crate::data::Options::new(if import { "•csv" } else { "•csv⁻¹" }, left, None, &allowed, span)?;
-        let mut opts = Self { common, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.', thousands: None };
+        let width = span.numeric().width;
+        let mut opts = Self { common, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.', thousands: None, width };
         let byte = |c: Option<char>| -> Result<Option<u8>, Error> {
             c.map(|c| {
                 if c.is_ascii() && !matches!(c, '\r' | '\n' | '\0') { Ok(c as u8) } else { Err(span.domain_error("CSV separator, quote and escape must be non-newline ASCII characters")) }
@@ -97,9 +100,9 @@ impl Options {
             if let Ok(n) = field.parse::<i64>() { return Some(Number::from_integer(n)); }
             return Some(field.parse::<BigInt>().ok()?.into());
         }
-        let n = field.parse::<f64>().ok()?;
+        let n = Number::float(field.parse::<f64>().ok()?, self.width);
         if n.is_infinite() && !matches!(digits.to_ascii_lowercase().as_str(), "inf" | "infinity") { return None; }
-        Some(n.into())
+        Some(n)
     }
 }
 

@@ -42,9 +42,9 @@ BQN's based arrays: numbers, characters and functions are atoms, distinct from r
 
 `"abc"` is a character vector; `'a'` is one character atom. `""` and `''` are the empty string. A double-quoted string can span lines, keeping its indentation. Double a double quote inside a string; `'''` is the single-quote character.
 
-Bare numbers are approximate floats. `3ₓ` is an exact integer; `1ᵣ3`/`1r3` an exact rational; `2ⱼ3`/`2j3` complex; `1ₑ¯3`/`1e¯3` an exponent. `[…]ₓ` marks exact literal arrays. Exact integers/rationals grow as needed; mixing with floats becomes approximate. `$t $f $n` are true/false/NaN; `∞ ¯∞` are infinities. IEEE NaN/infinity arithmetic; comparison tolerance `1E¯14`, but grade is exact. Positions, shape, tally and predicates are exact.
+Bare numbers are approximate floats of the default width: 64-bit, or 32- or 16-bit in code parsed after `•prefs ["float":32]` or `["float":16]`, which also sets the width of floats read from data or computed from exact numbers. Leading `•prefs` calls on a literal record run before the rest of their input is parsed, so a script or cell can set its own width; `•load` runs no such header. `1.5ₛ`/`[…]ₛ` are 32-bit, `ₕ` 16-bit and `ₚ` 64-bit. `3ₓ` is an exact integer; `1ᵣ3`/`1r3` an exact rational; `2ⱼ3`/`2j3` complex; `1ₑ¯3`/`1e¯3` an exponent. `[…]ₓ` marks exact literal arrays. Exact integers/rationals grow as needed; mixing with floats becomes approximate. `$t $f $n` are true/false/NaN; `∞ ¯∞` are infinities. IEEE NaN/infinity arithmetic; comparison tolerance `1E¯14` for 64-bit floats, which `•prefs` can set from 0 to `1E¯14`; narrower floats and grade compare exactly. `f⍣∞` stops within `1E¯14`, or 4 units in the last place of a narrower float. `32 •float x` gives 32-bit floats (16 and 64 likewise) and `•float x` the default width, which keep their width; an exact operand rounds to the width first, and floats of two widths compute at the wider. 16-bit floats compute each operation in 32 bits, and `+/ ×/ +\ ×\ +.×` keep 32-bit totals. Positions, shape, tally and predicates are exact.
 
-`x²` is `x*2`; `f²` is `f⍣2`; `f⁻¹` inverts; `mᵀ` transposes; `fᵘ` encloses a function. `v₁` is `1⌷v`, `v₋₁` selects the last major cell. These postfix marks touch a token, or stand alone after a space to apply to the preceding run. Numeric `ₓ ᵣ ⱼ ₑ` are number markers.
+`x²` is `x*2`; `f²` is `f⍣2`; `f⁻¹` inverts; `mᵀ` transposes; `fᵘ` encloses a function. `v₁` is `1⌷v`, `v₋₁` selects the last major cell. These postfix marks touch a token, or stand alone after a space to apply to the preceding run. Numeric `ₓ ᵣ ⱼ ₑ ₕ ₛ ₚ` are number markers.
 
 Undo and Under follow BQN's inferred-properties spec. Inverse operations are written `f⁻¹`: `1○⁻¹` is arcsine, `⍭⁻¹` counts primes and `•json⁻¹` writes JSON. `f@g` writes results back through a `g` that selects. For any other `g` it applies `g⁻¹`.
 
@@ -74,7 +74,7 @@ Plain assignment is local; modified/selective updates change the nearest binding
 - Data/files: `•csv •json •literal •xml •image •deflate •date •vfi •nget •nput •fetch •hash •uuid`. Filesystem: `•path •metadata •readdir •copy •rename •remove •mkdir`. A format function reads its format, and its inverse writes it. `•json` reads JSON5.
 - Display: `•element •svg •mime •plot •prefs •canvas`. `•canvas` makes a function that draws its data with JavaScript.
 - Linear algebra: `•decompose`.
-- Programs/introspection: `•load •signal •storage •time •host •delay •nc •nl •src •ex`. The browser build adds `•js`, which makes a BPL function from JavaScript source. `•time 0` is the current Unix time.
+- Programs/introspection: `•load •signal •storage •float •time •host •delay •nc •nl •src •ex`. The browser build adds `•js`, which makes a BPL function from JavaScript source. `•time 0` is the current Unix time.
 - Random: `•rand` makes a seeded generator. `params •distribution name` returns a distribution, and `•distribution name` uses standard parameters where the distribution has them. Each distribution is a record with `sample density cdf quantile` functions.
 
 ## Style
@@ -83,7 +83,7 @@ Use lowercase `j` in complex literals throughout tests and examples, including a
 
 Brackets are the usual way to write a list, and to build an array from names or expressions. A bare literal list, such as `1 2 3`, is a shorthand. Write a list of names in brackets, as in `[a b]`, even where `a b` would also work. Write `[n 2]⍴0`, `[x],y`, `[a⋄b]` and `f⍤1 m`, not APL's `(n,2)⍴0`, `(⊂x),y`, `⊃[a b]` and `⊃f¨↓m`. End an operand with a space where possible. After a dyadic operator and a space, the whole next run is the operand. For example, `⌊@ 10× x` needs no parentheses. Where a literal operand would run into the argument, a vector argument goes in touching brackets: `f⍤1[2 3]`. For a simple numeric argument, `f⍣¯2⊢5` can read more clearly than `f⍣¯2(5)`. Keep parentheses when they clarify grouping. Judge each line by how it reads. Report any case where none of these forms works.
 
-A name applied to a literal touches it, as a glyph does: `fib10` and `1+⌽f5`. Write it that way where it's shorter and needs no new parentheses. Keep the space where the literal would join the next part of the expression, or where a subject before the name is its left argument.
+A name applied to a literal touches it, as a glyph does: `fib10` and `1+⌽f5`. Write it that way where it's shorter and needs no new parentheses. Keep the space where the literal would join the next part of the expression. A left argument must be in the same run as its function: prefer `32•float∞` to `32 •float ∞`. `32 •float∞` gives the two items `32 ∞`. Between two names, keep both spaces: `x f 5`, not `x f5`.
 
 Read a selection with `⌷`, as in `[⍋v]⌷v`. Write one literal position with a subscript, as in `v₁` and `v₁←0`. Use `.` for other assignment targets, such as `v.[i]←0`, for record fields, such as `T.name`, and wherever `⌷` would be longer.
 

@@ -1,4 +1,4 @@
-use basedpl::{parse, EvalOptions, Evaluation, Input, InterruptHandle, Output, ParseStatus, Session, Source};
+use basedpl::{EvalOptions, Evaluation, Input, InterruptHandle, Output, ParseStatus, Session, Source};
 use rustyline::error::ReadlineError;
 use std::{
     io::{self, IsTerminal, Read, Write},
@@ -107,7 +107,7 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
         }
         if code.trim_start().starts_with(']') { failed |= !printer.finish(session.eval_with(&code, printer.options()), err)?; }
         else {
-            match parse(Source::new("<repl>", code.as_str())) {
+            match session.parse(Source::new("<repl>", code.as_str())) {
                 ParseStatus::Incomplete(e) => {
                     incomplete = Some(e);
                     continue;

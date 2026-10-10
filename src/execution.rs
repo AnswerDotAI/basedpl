@@ -159,6 +159,8 @@ impl Context<'_> {
     pub(crate) fn pause(&self, limit: Duration) -> Result<(), Error> { self.session.execution.pause(self.span, limit) }
     pub(crate) fn rest(&self) -> Result<Vec<u8>, Error> { self.session.execution.rest(self.span) }
     pub(crate) fn write(&self, text: &str) { self.session.execution.write(text) }
+    /// The session's numeric settings for this step: the comparison tolerance and the default float width.
+    pub(crate) fn numeric(&self) -> crate::number::Numeric { self.session.numeric }
 }
 impl Deref for Context<'_> {
     type Target = Span;

@@ -1,4 +1,4 @@
-use crate::{keyed, Error, ErrorKind, EvalOptions, Evaluation, Number, Session, Value};
+use crate::{array::FloatWidth, keyed, Error, ErrorKind, EvalOptions, Evaluation, Number, Session, Value};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use serde_json::{json, Value as JsonValue};
@@ -31,17 +31,18 @@ fn array(a: &Value) -> Option<JsonValue> {
 /// A one-character string is a character.
 pub fn character(s: &str) -> Option<char> { let mut chars = s.chars(); chars.next().filter(|_| chars.next().is_none()) }
 
+/// An element of the JSON protocol. Its floats are 64-bit, because the protocol carries no width.
 fn import_element(value: &JsonValue, approximate: bool) -> Result<Value, String> {
     let number = match value {
-        JsonValue::Number(n) if approximate => n.as_f64().map(Number::from).ok_or(ErrorKind::Domain),
-        JsonValue::Number(n) => crate::json::number(n),
+        JsonValue::Number(n) if approximate => n.as_f64().map(|x| Number::float(x, FloatWidth::F64)).ok_or(ErrorKind::Domain),
+        JsonValue::Number(n) => crate::json::number(n, FloatWidth::F64),
         JsonValue::Bool(b) => Ok(Number::from_bool(*b)),
         JsonValue::String(s) => return character(s).map(Value::Character).ok_or_else(|| "expected one character".into()),
         JsonValue::Object(o) if o.contains_key("infinity") => {
             let sign = o["infinity"].as_i64().filter(|n| matches!(n, -1 | 1)).ok_or("infinity sign must be 1 or -1")?;
-            Ok(Number::from(sign as f64 * f64::INFINITY))
+            Ok(Number::float(sign as f64 * f64::INFINITY, FloatWidth::F64))
         }
-        JsonValue::Object(o) if o.contains_key("nan") => Ok(Number::from(f64::NAN)),
+        JsonValue::Object(o) if o.contains_key("nan") => Ok(Number::float(f64::NAN, FloatWidth::F64)),
         JsonValue::Object(o) if o.contains_key("rational") => {
             let parts = o["rational"].as_array().filter(|a| a.len() == 2).ok_or("expected rational numerator and denominator")?;
             let integer = |i: usize| parts[i].as_str().ok_or("expected decimal integer string")?.parse::<BigInt>().map_err(|_| "invalid integer");

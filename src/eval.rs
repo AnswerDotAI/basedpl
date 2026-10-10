@@ -54,8 +54,11 @@ impl Function {
             _ => false,
         })
     }
-    /// Whether the functions match, as `≡` compares them: built from matching parts, with `≡`'s rule for the values in them.
-    pub(crate) fn matches(&self, other: &Self, cx: &Context<'_>) -> Result<bool, Error> { self.equal_by(other, &mut |x, y| x.matches(y, cx)) }
+    /// Whether the functions match within tolerance `t`, as `≡` compares them: built from matching parts, with `≡`'s rule for the values
+    /// in them.
+    pub(crate) fn matches(&self, other: &Self, t: crate::number::Numeric, cx: &Context<'_>) -> Result<bool, Error> {
+        self.equal_by(other, &mut |x, y| x.matches_within(y, t, cx))
+    }
 }
 impl PartialEq for Function { fn eq(&self, other: &Self) -> bool { let Ok(equal) = self.equal_by(other, &mut same_values); equal } }
 
@@ -440,14 +443,14 @@ impl Function {
     /// several of its items. An element that still holds several maps again. The result is shy when every call's result is.
     /// An empty argument gives an empty result with `prototype`, without a call, because a system function can have effects. A call that
     /// gives no result contributes `⍬`.
-    fn each_item(&self, left: Option<&Value>, right: &Value, prototype: fn() -> Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+    fn each_item(&self, left: Option<&Value>, right: &Value, prototype: fn(&Context<'_>) -> Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         let (mut items, mut shy) = (Vec::with_capacity(right.len()), !right.is_empty());
         for element in right.elements() {
             let bound = self.call(left, &element, cx)?;
             shy &= bound.shy;
-            items.push(if matches!(bound.value, Binding::NoResult) { crate::syntax::zilde(false) } else { bound.array(cx.span)? });
+            items.push(if matches!(bound.value, Binding::NoResult) { crate::syntax::zilde(crate::Number::float(0.0, cx.numeric().width)) } else { bound.array(cx.span)? });
         }
-        let value = right.layout().collect(items, prototype).error_at(cx.span, "invalid result")?;
+        let value = right.layout().collect(items, prototype(cx)).error_at(cx.span, "invalid result")?;
         Ok(Bound { shy, ..Bound::from(value) })
     }
     fn inverse(&self, span: &Span) -> Result<Self, Error> {
@@ -512,7 +515,7 @@ impl Function {
             FunctionNode::LateBound(..) | FunctionNode::Composed(..) | Defined(_) | Derived(..) => unreachable!(),
             // Like a system function that takes text, `⍎` maps over an array that holds several strings.
             FunctionNode::Primitive(Primitive::Execute) if crate::system::Item::Text.maps(right) => {
-                return self.each_item(left, right, || Value::Number(0.0.into()), cx);
+                return self.each_item(left, right, |cx| Value::Number(crate::Number::float(0.0, cx.numeric().width)), cx);
             }
             FunctionNode::Primitive(Primitive::Execute) => return cx.session.execute(left, right, cx.span),
             FunctionNode::Inverse(f) => return inverse(f, left.map(|a| (a, true)), right, cx),
@@ -545,7 +548,7 @@ impl Function {
             FunctionNode::System(f) => {
                 f.check(left, cx.span)?;
                 if f.item.maps(right) { return self.each_item(left, right, f.prototype.expect("a mapped system function has a result prototype"), cx); }
-                if let (true, Some(prototype)) = (cx.session.prototype, f.prototype) { return Ok(Bound::from(prototype())); }
+                if let (true, Some(prototype)) = (cx.session.prototype, f.prototype) { return Ok(Bound::from(prototype(cx))); }
                 match &f.call {
                     crate::system::Call::Value(call) => call(left, right, cx),
                     crate::system::Call::Effect(call) => return call(left, right, cx).map(|(value, shy)| Bound { shy, ..Bound::from(value) }),
@@ -577,13 +580,6 @@ impl Function {
 }
 
 impl Function {
-    pub fn late_bound(expression: &str) -> Result<Self, Error> {
-        let span = Span::whole(Source::new("<call>", expression));
-        let parsed = crate::parse(span.source.clone()).complete()?;
-        if parsed.statements.len() != 1 { return Err(span.error(ErrorKind::Syntax, "call requires one function expression")); }
-        Self::new(FunctionNode::LateBound(Arc::new(parsed), span.clone()), &span)
-    }
-
     pub fn bpl(&self) -> String { self.text(&mut 1000) }
     /// The native call behind a system function.
     pub(crate) fn system_call(&self) -> Option<&crate::system::Call> { match self.node() { FunctionNode::System(f) => Some(&f.call), _ => None } }
@@ -680,8 +676,11 @@ impl Operator {
     fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
         Ok(Arc::ptr_eq(&self.0, &other.0) || self.0.equal_by(&other.0, values)?)
     }
-    /// Whether the operators match, as `≡` compares them: built from matching parts, with `≡`'s rule for the values in them.
-    pub(crate) fn matches(&self, other: &Self, cx: &Context<'_>) -> Result<bool, Error> { self.equal_by(other, &mut |x, y| x.matches(y, cx)) }
+    /// Whether the operators match within tolerance `t`, as `≡` compares them: built from matching parts, with `≡`'s rule for the values
+    /// in them.
+    pub(crate) fn matches(&self, other: &Self, t: crate::number::Numeric, cx: &Context<'_>) -> Result<bool, Error> {
+        self.equal_by(other, &mut |x, y| x.matches_within(y, t, cx))
+    }
 }
 impl PartialEq for Operator { fn eq(&self, other: &Self) -> bool { let Ok(equal) = self.equal_by(other, &mut same_values); equal } }
 
@@ -862,6 +861,7 @@ impl Evaluation {
 pub struct Session {
     pub(crate) execution: crate::execution::Execution,
     pub(crate) display: crate::display::Settings,
+    pub(crate) numeric: crate::number::Numeric,
     display_defaults: crate::display::Settings,
     names: HashMap<String, Binding>,
     /// The names of each loaded file. Module `m` is `modules[m-1]`.

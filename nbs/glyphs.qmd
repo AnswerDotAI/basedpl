@@ -138,7 +138,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 
 System names start with `•`. [System functions](system-functions.qmd) lists them.
 
-Index origin: 0. Negative positions and axes count from the end. Comparison tolerance: `1E¯14`.
+Index origin: 0. Negative positions and axes count from the end. Comparison tolerance of 64-bit floats: `1E¯14`, which [`•prefs`](system/prefs.qmd) can lower to 0. Narrower floats compare exactly.
 
 ## Language-wide differences from Dyalog APL
 

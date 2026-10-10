@@ -139,7 +139,7 @@ const BUDGETS: &[(&str, f64, usize)] = &[
 /// The bytes that the result of `code` holds: its number of items times the size of one item in its storage.
 fn result_bytes(session: &mut Session, code: &str) -> usize {
     let sizes = format!("[1 8 8 16 4 {}]ₓ", std::mem::size_of::<basedpl::Value>());
-    let names = r#""boolean" "integer" "float" "complex" "character" "mixed""#;
+    let names = r#""boolean" "integer" "float64" "complex" "character" "mixed""#;
     let result = session.eval(&format!("r←{code} ⋄ s←•storage r ⋄ (≢,r)×({names}⍳⊂s)⌷{sizes}"));
     assert!(result.error.is_none(), "{code}: {:?}", result.error);
     result.value.and_then(|v| v.as_number()).and_then(|n| n.as_integer()).unwrap() as usize

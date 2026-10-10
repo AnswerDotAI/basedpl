@@ -1,4 +1,5 @@
 use crate::{
+    array::FloatWidth,
     number::Math,
     primitive::{OperatorKind, Primitive, Superscript},
     Error, ErrorAt, ErrorKind, Number, Source, Span, Value,
@@ -114,11 +115,11 @@ enum TokenKind {
     /// A subscript integer, such as `₁` or `₋₁`, which selects a major cell of the item just before it.
     Subscript(i64),
     Open,
-    /// A closing parenthesis, and whether `ₓ` follows it.
-    Close(bool),
+    /// A closing parenthesis, and the number marker after it.
+    Close(Option<Mark>),
     BracketOpen,
-    /// A closing bracket, and whether `ₓ` follows it.
-    BracketClose(bool),
+    /// A closing bracket, and the number marker after it.
+    BracketClose(Option<Mark>),
     /// `⋄`, or a line break between two items.
     Separator,
     Semicolon,
@@ -166,10 +167,37 @@ pub(crate) const EXPONENT: Suffix = (&['e', 'E'], 'ₑ');
 const IMAGINARY: Suffix = (&['J', 'j'], 'ⱼ');
 const DENOMINATOR: Suffix = (&['r'], 'ᵣ');
 const EXACT: Suffix = (&[], 'ₓ');
-const SUFFIXES: [Suffix; 4] = [EXPONENT, IMAGINARY, DENOMINATOR, EXACT];
+/// The markers of float widths: `ₕ` for 16-bit ("half"), `ₛ` for 32-bit ("single") and `ₚ` for 64-bit ("precise"). Unicode has no
+/// subscript `d`.
+const WIDTHS: [(Suffix, FloatWidth); 3] = [((&[], 'ₕ'), FloatWidth::F16), ((&[], 'ₛ'), FloatWidth::F32), ((&[], 'ₚ'), FloatWidth::F64)];
+const SUFFIXES: [Suffix; 7] = [EXPONENT, IMAGINARY, DENOMINATOR, EXACT, WIDTHS[0].0, WIDTHS[1].0, WIDTHS[2].0];
 
 /// Whether `c` is the subscript of a numeric suffix.
 pub(crate) fn subscript(c: char) -> bool { SUFFIXES.iter().any(|s| s.1 == c) }
+
+/// The marker that writes floats of `width`.
+pub(crate) fn width_marker(width: FloatWidth) -> char { WIDTHS.iter().find(|w| w.1 == width).expect("every width has a marker").0.1 }
+
+/// What a number marker after a literal makes its numbers: exact, or floats of one width.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Mark { Exact, Width(FloatWidth) }
+impl Mark {
+    /// The marker's subscript.
+    fn marker(self) -> char { match self { Self::Exact => EXACT.1, Self::Width(w) => width_marker(w) } }
+    /// The zero of the marked numbers, the prototype of an empty marked list.
+    fn zero(self) -> Number { match self { Self::Exact => Number::from_integer(0), Self::Width(w) => Number::float(0.0, w) } }
+}
+
+/// Consumes a number marker when one comes next.
+fn mark(chars: &mut Peekable<CharIndices<'_>>) -> Option<Mark> {
+    if suffix(chars, EXACT) { return Some(Mark::Exact); }
+    width_mark(chars).map(Mark::Width)
+}
+
+/// Consumes a float width's marker when one comes next, and gives the width.
+fn width_mark(chars: &mut Peekable<CharIndices<'_>>) -> Option<FloatWidth> {
+    WIDTHS.iter().find(|&&(s, _)| suffix(chars, s)).map(|&(_, w)| w)
+}
 
 /// Whether `chars` starts a part of a number: a digit, `¯`, `∞`, or a point before a digit.
 fn number_part(mut chars: impl Iterator<Item = (usize, char)>) -> bool {
@@ -194,40 +222,46 @@ fn suffix(chars: &mut Peekable<CharIndices<'_>>, suffix: Suffix) -> bool {
     follows
 }
 
-/// The number that literal text writes, read by `Number::parse` after each subscript suffix becomes its plain letter. `•vfi`
-/// shares `Number::parse` and reads only the plain letters.
-fn literal_number(text: &str) -> Result<Number, ErrorKind> {
-    Number::parse(&text.chars().map(|c| SUFFIXES.iter().find(|s| s.1 == c).and_then(|s| s.0.first()).copied().unwrap_or(c)).collect::<String>())
+/// The number that literal text writes, read by `Number::parse` after each subscript suffix becomes its plain letter. A float with no
+/// width marker takes `width`. `•vfi` shares `Number::parse` and reads only the plain letters.
+fn literal_number(text: &str, width: FloatWidth) -> Result<Number, ErrorKind> {
+    let (text, width) = WIDTHS.iter().find_map(|&(s, w)| text.strip_suffix(s.1).map(|t| (t, w))).unwrap_or((text, width));
+    Number::parse(&text.chars().map(|c| SUFFIXES.iter().find(|s| s.1 == c).and_then(|s| s.0.first()).copied().unwrap_or(c)).collect::<String>(), width)
 }
 
 /// A number written inside `[…]ₓ`. An integer's digits read exactly, and a whole float becomes exact.
 fn exact_number(text: &str) -> Result<Number, ErrorKind> {
-    if text.chars().all(|c| c.is_ascii_digit() || c == '¯') { return Number::parse(&format!("{text}ₓ")); }
-    literal_number(text)?.marked_exact().ok_or(ErrorKind::Domain)
+    if text.chars().all(|c| c.is_ascii_digit() || c == '¯') { return Number::parse(&format!("{text}ₓ"), FloatWidth::F64); }
+    literal_number(text, FloatWidth::F64)?.marked_exact().ok_or(ErrorKind::Domain)
 }
 
-/// The empty numeric vector: `⍬ₓ` when `exact`, and `⍬` otherwise.
-pub(crate) fn zilde(exact: bool) -> Value {
-    let fill = if exact { Number::from_integer(0) } else { Number::from(0.0) };
-    Value::empty(vec![0], Value::Number(fill)).unwrap()
-}
+/// The empty numeric vector whose prototype is `fill`.
+pub(crate) fn zilde(fill: Number) -> Value { Value::empty(vec![0], Value::Number(fill)).unwrap() }
 
-/// Reads the numbers and `⍬`s inside each `[…]ₓ` and `(…)ₓ` again, as exact, from their own source text, at any depth.
-fn mark_exact(tokens: &mut [Token]) -> Result<(), Error> {
+/// Reads the numbers and `⍬`s inside each `[…]` and `(…)` that has a number marker again, from their own source text, at any depth:
+/// as exact after `ₓ`, and as floats of the marked width after `ₛ` or `ₚ`. Booleans stay as they are.
+fn mark_literals(tokens: &mut [Token]) -> Result<(), Error> {
     let mut open = Vec::new();
     for i in 0..tokens.len() {
         match tokens[i].kind {
             TokenKind::Open | TokenKind::BracketOpen => open.push(i),
-            TokenKind::Close(marked) | TokenKind::BracketClose(marked) => {
+            TokenKind::Close(mark) | TokenKind::BracketClose(mark) => {
                 let Some(start) = open.pop() else { continue };
-                if !marked { continue; }
+                let Some(mark) = mark else { continue };
                 for token in &mut tokens[start + 1..i] {
                     let text = &token.span.source.text[token.span.range.clone()];
-                    let value = match &token.kind {
-                        TokenKind::Literal(Value::Number(_)) if !text.starts_with('$') => {
+                    let value = match (&token.kind, mark) {
+                        (TokenKind::Literal(Value::Number(n)), _) if n.as_bool().is_some() => continue,
+                        (TokenKind::Literal(Value::Number(_)), Mark::Exact) if text.starts_with('$') => continue,
+                        (TokenKind::Literal(Value::Number(_)), Mark::Exact) => {
                             Value::Number(exact_number(text).error_at(&token.span, "ₓ marks whole numbers exact")?)
                         }
-                        TokenKind::Literal(_) if text == "⍬" => zilde(true),
+                        (TokenKind::Literal(Value::Number(n)), Mark::Width(w)) => {
+                            let n = if text.starts_with('$') { Ok(n.clone()) } else { literal_number(text, w) };
+                            let n = n.and_then(|n| n.to_float_width(w).map_err(|_| ErrorKind::Domain));
+                            Value::Number(n.error_at(&token.span, &format!("{} marks real numbers", mark.marker()))?)
+                        }
+                        (TokenKind::Literal(_), _) if text == "⍬" => zilde(mark.zero()),
                         _ => continue,
                     };
                     token.kind = TokenKind::Literal(value);
@@ -321,7 +355,7 @@ fn absorbs_line_break(kind: &TokenKind, before: bool) -> bool {
     }
 }
 
-fn lex(source: &Arc<Source>) -> Result<Vec<Token>, ParseFailure> {
+fn lex(source: &Arc<Source>, width: FloatWidth) -> Result<Vec<Token>, ParseFailure> {
     let len = source.text.len();
     let mut chars = source.text.char_indices().peekable();
     // A script's first line can name its interpreter.
@@ -334,16 +368,16 @@ fn lex(source: &Arc<Source>) -> Result<Vec<Token>, ParseFailure> {
             if tokens.last().is_some_and(|t: &Token| !absorbs_line_break(&t.kind, true)) { line_break = Some(span(start + 1)); }
             continue;
         }
-        let Some(kind) = token(source, &mut chars)? else { continue };
+        let Some(kind) = token(source, &mut chars, width)? else { continue };
         if let Some(at) = line_break.take().filter(|_| !absorbs_line_break(&kind, false)) { tokens.push(Token { kind: TokenKind::Separator, span: at }); }
         tokens.push(Token { kind, span: span(position(&mut chars, len)) });
     }
-    mark_exact(&mut tokens)?;
+    mark_literals(&mut tokens)?;
     Ok(tokens)
 }
 
 /// Reads the token that starts `chars`, or `None` after white space or a comment.
-fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>) -> Result<Option<TokenKind>, ParseFailure> {
+fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: FloatWidth) -> Result<Option<TokenKind>, ParseFailure> {
     let len = source.text.len();
     let Some(&(start, c)) = chars.peek() else { return Ok(None) };
     let span = |end| Span { source: source.clone(), range: start..end };
@@ -359,12 +393,12 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>) -> Result<
                 chars.next_if(|&(_, c)| c == '¯');
                 if digits(chars) == 0 { return Err(span(position(chars, len)).error(ErrorKind::Syntax, "expected integer denominator").into()); }
             }
-            if rational || suffix(chars, EXACT) {
+            if rational || mark(chars).is_some() {
                 if let Some(end) = run_on(chars, true) { return Err(span(end).error(ErrorKind::Syntax, "invalid exact numeric literal").into()); }
             }
         }
         let end = position(chars, len);
-        let n = literal_number(&source.text[start..end])
+        let n = literal_number(&source.text[start..end], width)
             .error_at(&span(end), "invalid numeric literal (real values, finite complex components or integer components with ₓ and r required)")?;
         TokenKind::Literal(Value::number(n).unwrap())
     } else if name_char(c) {
@@ -408,13 +442,13 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>) -> Result<
                 }
                 TokenKind::Literal(crate::keyed::text(&text))
             }
-            '⍬' => TokenKind::Literal(zilde(suffix(chars, EXACT))),
+            '⍬' => TokenKind::Literal(zilde(mark(chars).map_or(Number::float(0.0, width), Mark::zero))),
             // `$` and one letter: a literal constant, or `$e`, the error a handler caught.
             '$' => {
                 let token = match chars.next() {
                     Some((_, 't')) => TokenKind::Literal(Value::Number(Number::from_bool(true))),
                     Some((_, 'f')) => TokenKind::Literal(Value::Number(Number::from_bool(false))),
-                    Some((_, 'n')) => TokenKind::Literal(Value::Number(Number::from(f64::NAN))),
+                    Some((_, 'n')) => TokenKind::Literal(Value::Number(Number::float(f64::NAN, width_mark(chars).unwrap_or(width)))),
                     Some((_, 'a')) => TokenKind::Literal(crate::keyed::text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
                     Some((_, 'd')) => TokenKind::Literal(crate::keyed::text("0123456789")),
                     Some((_, 'e')) => TokenKind::Name("$e".into()),
@@ -427,9 +461,9 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>) -> Result<
             }
             '⍛' => return Err(span(start + c.len_utf8()).error(ErrorKind::Syntax, "⍛ is retired: use ↣ or ↢ to bind or preprocess, and ∘ for Atop").into()),
             '(' => TokenKind::Open,
-            ')' => TokenKind::Close(suffix(chars, EXACT)),
+            ')' => TokenKind::Close(mark(chars)),
             '[' => TokenKind::BracketOpen,
-            ']' => TokenKind::BracketClose(suffix(chars, EXACT)),
+            ']' => TokenKind::BracketClose(mark(chars)),
             ';' => TokenKind::Semicolon,
             '⋄' => TokenKind::Separator,
             '←' => TokenKind::Assign,
@@ -479,7 +513,7 @@ pub fn highlight(text: &str) -> Vec<(std::ops::Range<usize>, &'static str)> {
     let mut chars = source.text.char_indices().peekable();
     let mut classes = Vec::new();
     while let Some(&(start, c)) = chars.peek() {
-        let class = match token(&source, &mut chars) {
+        let class = match token(&source, &mut chars, FloatWidth::F64) {
             Ok(Some(kind)) => class(&kind, &text[start..position(&mut chars, text.len())]),
             Ok(None) => (c == '⍝').then_some("comment"),
             Err(ParseFailure::Incomplete(e) | ParseFailure::Invalid(e)) => {
@@ -509,7 +543,7 @@ fn class(kind: &TokenKind, text: &str) -> Option<&'static str> {
 pub fn in_code(text: &str) -> bool {
     match highlight(text).pop() {
         Some((range, "comment")) => range.end < text.len(),
-        Some((range, "string")) if range.end == text.len() => lex(&Source::new("<literal>", &text[range])).is_ok(),
+        Some((range, "string")) if range.end == text.len() => lex(&Source::new("<literal>", &text[range]), FloatWidth::F64).is_ok(),
         _ => true,
     }
 }
@@ -571,16 +605,16 @@ impl Parser<'_> {
                 TokenKind::Open | TokenKind::BracketOpen | TokenKind::BraceOpen => {
                     let inner = self.pieces(Some(token))?;
                     span.range.end = self.tokens[self.pos - 1].span.range.end;
-                    let marked = matches!(self.tokens[self.pos - 1].kind, TokenKind::Close(true) | TokenKind::BracketClose(true));
+                    let mark = match self.tokens[self.pos - 1].kind { TokenKind::Close(mark) | TokenKind::BracketClose(mark) => mark, _ => None };
                     match token.kind {
                         TokenKind::BraceOpen => {
                             let bodies = bodies(inner, &span)?;
                             let kind = bodies.iter().flatten().map(|s| definition_kind(&s.nodes)).max().unwrap_or(DefinitionKind::Function);
                             NodeKind::Dfn(Arc::new(Definition { bodies, span: span.clone(), kind }))
                         }
-                        TokenKind::Open if marked => exact_literal(parenthesised(inner, &span)?, &span)?,
+                        TokenKind::Open if let Some(mark) = mark => marked_literal(parenthesised(inner, &span)?, &span, mark)?,
                         TokenKind::Open => parenthesised(inner, &span)?,
-                        _ if marked => exact_literal(brackets(inner, &span)?, &span)?,
+                        _ if let Some(mark) = mark => marked_literal(brackets(inner, &span)?, &span, mark)?,
                         _ => brackets(inner, &span)?,
                     }
                 }
@@ -726,11 +760,14 @@ fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
     Ok(NodeKind::ArrayLiteral { record: cells.iter().any(|c| key_colon(c).is_some()), cells, form: ListForm::Items })
 }
 
-/// `[…]ₓ` or `(…)ₓ`, whose numbers the lexer has already read as exact. Every item must be a literal, and `[]ₓ` is `⍬ₓ`.
-fn exact_literal(kind: NodeKind, span: &Span) -> Result<NodeKind, ParseFailure> {
-    if matches!(&kind, NodeKind::ArrayLiteral { cells, .. } if cells.is_empty()) { return Ok(NodeKind::Literal(zilde(true))); }
+/// `[…]` or `(…)` with a number marker, whose numbers the lexer has already read as the marker says. Every item must be a literal,
+/// and an empty `[]` is the empty vector of the marked numbers.
+fn marked_literal(kind: NodeKind, span: &Span, mark: Mark) -> Result<NodeKind, ParseFailure> {
+    if matches!(&kind, NodeKind::ArrayLiteral { cells, .. } if cells.is_empty()) { return Ok(NodeKind::Literal(zilde(mark.zero()))); }
     let node = Node { kind, span: span.clone() };
-    if let Some(item) = non_literal(std::slice::from_ref(&node), &|_| false) { return Err(invalid(&item.span, "ₓ needs every item to be a literal")); }
+    if let Some(item) = non_literal(std::slice::from_ref(&node), &|_| false) {
+        return Err(invalid(&item.span, &format!("{} needs every item to be a literal", mark.marker())));
+    }
     Ok(node.kind)
 }
 
@@ -892,9 +929,13 @@ pub(crate) fn key_colon(nodes: &[Node]) -> Option<usize> {
 /// Whether a node can stand before `:` as a key: a literal, a name, a group or brackets.
 pub(crate) fn key_node(n: &Node) -> bool { matches!(n.kind, NodeKind::Literal(_) | NodeKind::Name(_) | NodeKind::Group(_) | NodeKind::ArrayLiteral { .. }) }
 
-/// Check structure without evaluation. A complete input can still have a binding or domain error.
-pub fn parse(source: Arc<Source>) -> ParseStatus {
-    let tokens = match lex(&source) { Ok(tokens) => tokens, Err(failure) => return failure.into() };
+/// The program in `source`, for a check of its structure without evaluation. A complete input can still have a binding or domain error.
+/// Numbers without a marker read as 64-bit floats. `Session::parse` reads them at the session's default width.
+pub fn parse(source: Arc<Source>) -> ParseStatus { parse_at(source, FloatWidth::F64) }
+
+/// The program in `source`. Numbers without a marker read as floats of `width`, the default width when the code is parsed.
+pub(crate) fn parse_at(source: Arc<Source>, width: FloatWidth) -> ParseStatus {
+    let tokens = match lex(&source, width) { Ok(tokens) => tokens, Err(failure) => return failure.into() };
     match (Parser { tokens: &tokens, pos: 0 }).pieces(None).and_then(statements) {
         Ok(statements) => {
             ParseStatus::Complete(Parsed { statements: statements.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression }).collect() })

@@ -75,7 +75,7 @@ impl Session {
         let Ok(js::Js::Object(fields)) = js::from_js(names) else { return Err(js_sys::Error::new("bind needs an object").into()) };
         for (name, value) in fields {
             let fail = |why: &str| JsValue::from(js_sys::Error::new(&format!("can't bind {name}: {why}")));
-            let value = js::import(value).map_err(|_| fail("its value has no BPL form"))?.ok_or_else(|| fail("it has no value"))?;
+            let value = js::import(value, &self.0).map_err(|_| fail("its value has no BPL form"))?.ok_or_else(|| fail("it has no value"))?;
             self.0.set(&name, value).map_err(|_| fail("it isn't a BPL name"))?;
         }
         Ok(())

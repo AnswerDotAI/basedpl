@@ -19,7 +19,7 @@ pub(crate) fn image(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
     frames(&picture, delays.clone(), span)?;
     let renderer = display::renderer("image-renderer", render);
     let renderer = match delays {
-        Some(d) => crate::eval::before(Value::floats(vec![d.len()], d).error_at(span, "invalid delays")?, renderer, span.span)?,
+        Some(d) => crate::eval::before(Value::floats(vec![d.len()], span.numeric().width, d).error_at(span, "invalid delays")?, renderer, span.span)?,
         None => renderer,
     };
     picture.with_renderer(renderer).error_at(span, "invalid image")
@@ -92,7 +92,7 @@ fn decoded(bytes: &[u8], span: &Context<'_>) -> Result<Value, Error> {
         _ => image.to_rgba16().into_raw(),
     });
     let shape = match images.len() { 1 if channels == 1 => vec![height, width], 1 => vec![height, width, channels], n => vec![n, height, width, channels] };
-    Value::floats(shape, data.map(|v| f64::from(v) / 65535.).collect()).error_at(span, "image exceeds array limits")
+    Value::floats(shape, span.numeric().width, data.map(|v| f64::from(v) / 65535.).collect()).error_at(span, "image exceeds array limits")
 }
 
 /// `frames` encoded in `format`. Only PNG holds an animation.

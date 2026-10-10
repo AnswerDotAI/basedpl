@@ -137,7 +137,7 @@ fn stencil(f: &Function, spec: &Value, right: &Value, cx: &mut Context<'_>) -> R
         let layout =
             crate::array::Layout::from(shape.clone()).with_keys(keys).error_at(cx.span, "invalid stencil window")?.inherit_names(right.axis_names().to_vec());
         let window = data.finish(layout, || right.prototype()).error_at(cx.span, "invalid stencil window")?;
-        let border = Value::floats(vec![axes], padding).unwrap();
+        let border = Value::floats(vec![axes], cx.numeric().width, padding).unwrap();
         results.push(f.call_array(Some(&border), &window, cx)?);
     }
     let mut layout = right.layout().axes(0..axes);
@@ -145,7 +145,7 @@ fn stencil(f: &Function, spec: &Value, right: &Value, cx: &mut Context<'_>) -> R
         let positions = (0..len).map(|i| Some(i * windows.axes[a].step));
         layout = layout.select(a, positions).error_at(cx.span, "invalid stencil frame keys")?;
     }
-    let result = layout.assemble(&results, &Value::number(0.).unwrap()).error_at(cx.span, "invalid stencil result")?;
+    let result = layout.assemble(&results, &Value::Number(crate::Number::float(0.0, cx.numeric().width))).error_at(cx.span, "invalid stencil result")?;
     Ok(Bound::from(result))
 }
 
@@ -158,12 +158,12 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut 
     };
     let history = listed.is_some();
     let operand = listed.as_ref().unwrap_or(operand);
-    // `∞` runs until the state stops changing, the same test as `⍣≡`.
-    let matched = Function::primitive(Primitive::Depth);
+    // `∞` runs until the state stops changing: until a state matches the one before within the convergence tolerance of each float
+    // width, whatever the pref. An iteration that settles into a cycle between adjacent floats then stops.
     let converge = |step: &Function, value: &mut Value, cx: &mut Context<'_>| -> Result<(), Error> {
         loop {
             let next = step.call_array(left, value, cx)?;
-            let same = matched.call_array(Some(&next), value, cx)?.boolean().error_at(cx.span, "invalid match")?;
+            let same = next.matches_within(value, cx.numeric().convergence(), cx)?;
             *value = next;
             if same { return Ok(()); }
         }
@@ -292,7 +292,7 @@ pub(super) fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value
                 P::Arithmetic(Arithmetic::Plus) => {
                     P::Arithmetic(Arithmetic::Divide).call(Some(right), &Value::number(crate::Number::from_integer(2)).unwrap(), cx)
                 }
-                P::Arithmetic(Arithmetic::Times) => P::Math(Math::Power).call(Some(right), &Value::number(0.5).unwrap(), cx),
+                P::Arithmetic(Arithmetic::Times) => P::Math(Math::Power).call(Some(right), &crate::primitive::float_like(0.5, right, cx), cx),
                 P::Math(Math::Floor | Math::Ceiling) | P::Identity(_) => Ok(right.clone()),
                 P::Math(Math::Lcm | Math::Gcd) => {
                     if !p.call(Some(right), right, cx)?.matches(right, cx)? { return Err(cx.span.domain_error("no argument gives this result")); }
@@ -412,7 +412,7 @@ fn inverse_scan(f: &Function, h: FoldKind, axis: Option<&Value>, seed: Option<&V
     let inverse = f.inverse(cx.span)?;
     if right.is_atom() { return inverse.call_array(seed, right, cx); }
     if let FunctionNode::Primitive(p) = f.node() {
-        if let Some(result) = crate::pervasive::inverse_scan(*p, right, seed, &axis) {
+        if let Some(result) = crate::pervasive::inverse_scan(*p, right, seed, &axis, cx.numeric()) {
             return result.with_layout(right.layout().clone()).error_at(cx.span, "invalid inverse scan");
         }
     }
@@ -495,7 +495,7 @@ fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &m
     generated_len(&[n.max(1), cols.max(1)]).error_at(cx.span, "product contraction is too large")?;
     if let (FunctionNode::Primitive(pf), FunctionNode::Primitive(pg)) = (f.node(), g.node()) {
         if nx == ny && n > 0 && size > 0 && !left.is_unit() && !right.is_unit() && matches!(positions, Mapping::Linear(1)) {
-            if let Some(result) = crate::pervasive::inner(*pf, *pg, left, right, [rows, n, cols], layout.shape().to_vec()) {
+            if let Some(result) = crate::pervasive::inner(*pf, *pg, left, right, [rows, n, cols], layout.shape().to_vec(), cx.numeric()) {
                 if layout.shape().is_empty() { return Ok(Bound::from(result.at(0))); }
                 return Ok(Bound::from(result.with_layout(layout).error_at(cx.span, "invalid inner product result")?));
             }
@@ -633,14 +633,14 @@ fn each_pair(
         let result = if empty { operand.call_prototype(x.as_ref(), &y, cx) } else { operand.call(x.as_ref(), &y, cx) };
         let result = match result {
             Err(e) if empty && super::session::Catch::All.catches(&e.kind) => {
-                return Ok(Bound::new(Binding::Value(layout.collect(Vec::new(), Value::Number(0.0.into())).map_err(|k| cx.span.error(k, "invalid result"))?)));
+                return Ok(Bound::new(Binding::Value(layout.collect(Vec::new(), Value::Number(crate::Number::float(0.0, cx.numeric().width))).map_err(|k| cx.span.error(k, "invalid result"))?)));
             }
             result => result?,
         };
         let item = match result.value {
             Binding::Value(a) => a,
             Binding::Function(f) => Value::Function(f),
-            Binding::NoResult => crate::syntax::zilde(false),
+            Binding::NoResult => crate::syntax::zilde(crate::Number::float(0.0, cx.numeric().width)),
             _ => return Err(cx.span.error(ErrorKind::Syntax, "the operand must return an array, function or no result")),
         };
         if empty { first = Some(item) } else { data.add(item) }
@@ -660,7 +660,7 @@ fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Cont
     use crate::primitive::Identity::*;
     let id = match operand.node() { FunctionNode::Primitive(p) => p.info().dyad.and_then(|d| d.identity), _ => None };
     let id = id.ok_or_else(|| span.domain_error("this function has no reduction identity"))?;
-    let number = |n: f64| Ok(Value::Number(n.into()));
+    let number = |n: f64| Ok(crate::primitive::float_like(n, prototype, span));
     match (id, prototype) {
         (Empty(first), _) => {
             let axis = (!first).then(|| prototype.shape().len().saturating_sub(1));
@@ -726,8 +726,8 @@ fn fold_array(operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Op
     if let (None, FunctionNode::Primitive(p)) = (left, operand.node()) {
         use crate::number::Arithmetic::{Plus, Times};
         // Float sums and products take the kernel for any number of items, because they fold in any order.
-        if traversal.len >= 2 || (right.as_floats().is_some() && matches!(p, Primitive::Arithmetic(Plus | Times))) {
-            if let Some(result) = crate::pervasive::fold(*p, right, &traversal, shape.clone()) { return Ok(result); }
+        if traversal.len >= 2 || (matches!(right.as_items(), crate::array::Items::Floats(_)) && matches!(p, Primitive::Arithmetic(Plus | Times))) {
+            if let Some(result) = crate::pervasive::fold(*p, right, &traversal, shape.clone(), cx.numeric()) { return Ok(result); }
         }
         if let Primitive::Arithmetic(op) = p { if right.all_numbers() { return number_lanes(*op, false, right, None, &traversal, shape, cx); } }
     }
@@ -800,7 +800,7 @@ fn scan(operand: &Function, kind: FoldKind, axis: Option<&Value>, seed: Option<&
     let axis = scan_axis(kind, axis, right, cx.span)?;
     if right.is_atom() { return match seed { Some(seed) => operand.call_array(Some(seed), right, cx), None => Ok(right.clone()) }; }
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
-    if let FunctionNode::Primitive(p) = operand.node() { if let Some(result) = crate::pervasive::scan(*p, right, seed, &axis) { return Ok(result); } }
+    if let FunctionNode::Primitive(p) = operand.node() { if let Some(result) = crate::pervasive::scan(*p, right, seed, &axis, cx.numeric()) { return Ok(result); } }
     if let FunctionNode::Primitive(Primitive::Arithmetic(op)) = operand.node() {
         if right.all_numbers() && seed.is_none_or(|a| matches!(a, Value::Number(_))) {
             return number_lanes(*op, true, right, seed, &axis, right.shape().to_vec(), cx);

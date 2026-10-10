@@ -10209,7 +10209,7 @@ testpath •nput "x"
 ,$t
 
 ⍝ aplcart/table.tsv:358 — Return size (in bytes) for tns/files; Ported with the filesystem functions on a `testpath` fixture; The expectation follows from the fixture
-testpath •nput "hello" ⋄ (•metadata testpath).len   ⍝ ,5
+testpath •nput "hello" ⋄ (•metadata testpath).len   ⍝ [5]ₓ
 
 ⍝ aplcart/table.tsv:359 — Return last local modification time (⎕TS-style) for tns/files; Ported with the filesystem functions on a `testpath` fixture; The expectation follows from the fixture
 testpath •nput "x"
@@ -10296,7 +10296,7 @@ testpath •nput "x"
 (testpath,"/a") •nput "xyz"
 (testpath,"/s/b") •nput "hello"
 E←["recurse":1] •readdir testpath
-+/E.len×E.kind≡¨⊂"file"   ⍝ 8
++/E.len×E.kind≡¨⊂"file"   ⍝ 8ₓ
 
 ⍝ aplcart/table.tsv:1916 — Create randomely named directory in directory Dv; Ported with the filesystem functions on a `testpath` fixture; The expectation follows from the fixture
 u←["unique":1] •mkdir testpath ⋄ (•metadata u).kind   ⍝ ["dir"]
