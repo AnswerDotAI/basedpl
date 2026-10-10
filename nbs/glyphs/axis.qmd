@@ -43,6 +43,12 @@ n←["row":2 "col":3]⍴⍳6
 {+/,⍵}⍠"row" "col" n      ⍝ 15
 ```
 
+A function right operand computes the axes from the arguments: `f⍠g Y` is `f⍠(g Y) Y`, and `X f⍠g Y` is `X f⍠(X g Y) Y`. [Rank](rank.qmd) and [Stencil](stencil.qmd) take a function right operand in the same way. Here the cells run along the longest axis:
+
+```bpl
+m←2 3⍴⍳6 ⋄ {+/⍵}⍠{↑⍒⍴⍵} m   ⍝ 3 12
+```
+
 ## Exceptions
 
 A primitive with its own axis meaning keeps it:

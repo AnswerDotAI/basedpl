@@ -245,10 +245,10 @@ fn boxed_display_and_function_trees() {
 fn expression_dissection() {
     let mut s = Session::new();
     s.eval(r#"•prefs ["trees":$t]"#);
-    let r = s.eval("]dissect -⌾ 1 0 1# 1 2 3");
+    let r = s.eval("]dissect -@ 1 0 1# 1 2 3");
     assert!(r.error.is_none(), "{:?}", r.error);
     let tree = r.output_text()[0];
-    for part in ["call", "⌾", "↣", "[1 0 1]", "[1 2 3]"] { assert!(tree.contains(part), "{tree}"); }
+    for part in ["call", "@", "↣", "[1 0 1]", "[1 2 3]"] { assert!(tree.contains(part), "{tree}"); }
     assert_same(r.value, &vector(&[-1., 2., -3.]));
     assert_eq!(s.eval("1+2").output_text(), ["3"]);
     assert!(s.eval("+/÷≢").output_text()[0].contains("fork\n"));

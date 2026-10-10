@@ -10,7 +10,7 @@ syntax match bplNumber /\v\$[tfn]/
 syntax match bplString /\v\$[ad]/
 syntax match bplFunction /[+×÷⌈⌊|*⍟○π√!∧∨⊼⊽~=≠<≤>≥⍳↦:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹#↕⍭⨸⌻⍸⍷⊢⊣¿-]/
 syntax match bplMonadicOperator #[¨⍨⊗⌸∂/⌿\\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘ]#
-syntax match bplDyadicOperator /[↣⍤∘⍠⍥↢.⍣⇄⊘⌾⍚@⌺]/
+syntax match bplDyadicOperator /[↣⍤∘⍠⍥↢.⍣⇄⊘@⍚⌺]/
 syntax match bplArgument /[⍺⍵⍶⍹∇⍢]/
 syntax match bplKeyword /[←⎕⋄?₀₁₂₃₄₅₆₇₈₉₋]/
 syntax match bplCharacter /'.\?'/

@@ -690,12 +690,12 @@
    <key code="16" output="Ÿ"/>
    <key code="17" output="™"/>
    <key code="18" action="k18-m5"/>
-   <key code="19" output="„"/>
+   <key code="19" output="²"/>
    <key code="20" output="√"/>
    <key code="21" output="⇄"/>
    <key code="22" action="k22-m5"/>
    <key code="23" output="["/>
-   <key code="24" output="–"/>
+   <key code="24" output="⁻"/>
    <key code="25" output="∨"/>
    <key code="26" output="∆"/>
    <key code="27" output="]"/>
@@ -1638,7 +1638,6 @@
    <when state="diaeresis" output="⍤"/>
    <when state="superscript" output="ᵀ"/>
    <when state="quad" output="⌻"/>
-   <when state="circle" output="⌾"/>
   </action>
   <action id="k24-m0">
    <when state="none" output="-"/>

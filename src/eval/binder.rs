@@ -61,7 +61,7 @@ impl Session {
         Cow::Owned(out)
     }
 
-    /// Whether a run ends in a dyadic operator, which then takes the next item as its right operand.
+    /// Whether a run ends in a dyadic operator, which then takes the next run as its right operand.
     pub(super) fn ends_in_dyadic_operator(&self, nodes: &[Node]) -> bool {
         let nodes = self.members(nodes);
         match nodes.last().map(|n| &n.kind) {
@@ -245,7 +245,7 @@ impl Binder {
                     let bound = if let Some((_, array, _)) = selected {
                         Bound::new(Binding::Value(array.clone()))
                     } else if matches!(&node.kind, NodeKind::Run(inner) if session.ends_in_dyadic_operator(inner)) {
-                        // A run that ends in a dyadic operator takes the next item as its right operand, as if no space came between them.
+                        // A run that ends in a dyadic operator takes the next run as its right operand, because each run acts as one token.
                         let NodeKind::Run(inner) = &node.kind else { unreachable!() };
                         let Some(right) = binder.stack.pop() else {
                             return Err(node.span.error(ErrorKind::Syntax, "an operator at the end of a run needs a right operand after it"));

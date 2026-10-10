@@ -18,7 +18,7 @@
         const key = usKey(ev), plain = !ev.altKey && !ev.ctrlKey && !ev.metaKey;
         // Native Option can hide the alias character; accept its US physical chord too.
         const action = option && ev.altKey && !ev.ctrlKey && !ev.metaKey
-            ? layout.alt_aliases[ev.key] ?? layout.option[key] ?? (Object.values(layout.alt_aliases).includes(key) ? key : null) : null;
+            ? layout.alt_aliases[ev.key] ?? (Object.values(layout.alt_aliases).includes(key) ? key : layout.option[key]) : null;
         if (pending) {
             const state = layout.states[pending], repeated = action?.state === pending;
             pending = null;

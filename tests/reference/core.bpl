@@ -1277,7 +1277,7 @@ r←0
 
 ⍝ — Inside the parentheses of a modifier, spaces group as they do in a value
 m←[0 1 2⋄3 4 5]
-m(⌽⌾ 1⌷)←
+m(⌽@ 1⌷)←
 m   ⍝ [0 1 2⋄5 4 3]
 
 ⍝ —
@@ -2074,10 +2074,10 @@ f←{⍺+⍵}⇄{⍵-⍺} ⋄ (3↣f)⁻¹8   ⍝ 5
 f←{⍵+1}⇄{⍵-1} ⋄ (f⁻¹)⁻¹5   ⍝ 6
 
 ⍝ — Dyadic under transforms both arguments, then inverts the result
-3 +⌾ 2× 4   ⍝ 7
+3 +@ 2× 4   ⍝ 7
 
 ⍝ — Monadic under changes coordinates before and after reversal
-⌽⌾ 1+ 1 2 3   ⍝ 3 2 1
+⌽@ 1+ 1 2 3   ⍝ 3 2 1
 
 ⍝ — Power preserves the count array's shape, including negative and repeated counts
 (1+)⍣[3 ¯2⋄0 3] 10   ⍝ [13 8⋄10 13]
@@ -2145,7 +2145,7 @@ f←{⎕←⍵+1}⇄{⎕←⍵-1} ⋄ f⍣3 ¯2 3 0⊢0
 ⍝ ⎕: 1\n2\n3\n¯1\n¯2
 
 ⍝ — Under transforms right then left, calls the operand, then applies the inverse
-g←{⎕←⍵ ⋄ 2×⍵}⇄{⎕←⍵ ⋄ ⍵÷2} ⋄ 3(+⌾g)4
+g←{⎕←⍵ ⋄ 2×⍵}⇄{⎕←⍵ ⋄ ⍵÷2} ⋄ 3(+@g)4
 7
 ⍝ ⎕: 4\n3\n14
 
@@ -2484,7 +2484,7 @@ d←•distribution "normal" ⋄ [d.cdf⁻¹ 0.5;d.quantile⁻¹ 0]   ⍝ 0 0.5
 ⍝ error: LENGTH ERROR
 
 ⍝ — Under applies through inverse pairs
-{⍵×10}⌾↕ 1 2 3   ⍝ 10 20 30
+{⍵×10}@↕ 1 2 3   ⍝ 10 20 30
 
 ⍝⍝ Compact integers and promotion
 
@@ -2665,7 +2665,7 @@ x←[(9223372036854775807ₓ+[1 0]ₓ)-1ₓ;9223372036854775808r1-[1 2]ₓ]
 ⍝ — Inverse applies to each matrix of a higher-rank argument
 ⌹1 1 1⍴1   ⍝ 1 1 1⍴1
 
-⍝⍝ At and stencil
+⍝⍝ Under with positions, and stencil
 
 ⍝ — At applies reverse to the selected subarray, not each item separately
 ⌽@1 3⍳5   ⍝ 0 3 2 1 4
@@ -2676,8 +2676,8 @@ x←["a":1 "b":2 "c":3] ⋄ ["b":20 "a":10]@0 1 x   ⍝ ["a":10 "b":20 "c":3]
 ⍝ —
 10×@1 3⍳5   ⍝ 0 10 2 30 4
 
-⍝ — A selection function's Boolean result is a mask, as a Boolean array is
-0@ 1=2| ⍳5   ⍝ 0 0 2 0 4
+⍝ — `[p]` picks out the positions where `p` of the argument is true
+0@[1=2|] ⍳5   ⍝ 0 0 2 0 4
 
 ⍝ — Repeated replacement indices use the last supplied value
 10 20@1 1⍳3   ⍝ 0 20 2
@@ -2726,8 +2726,8 @@ a   ⍝ 0 1 2
 {⍵}⌺1 1⍳3
 ⍝ error: RANK ERROR
 
-⍝ — A selection function's integer result gives positions, as an array of integers does
-0@{2 0 1}⍳3   ⍝ 0 0 0
+⍝ — An array of integers gives positions
+0@[2 0 1]⍳3   ⍝ 0 0 0
 
 ⍝ — Nested index paths select fields inside matrix items
 G←2 3⍴[["ABC" 1] ["DEF" 2] ["GHI" 3] ["JKL" 4] ["MNO" 5] ["PQR" 6]]
@@ -3912,7 +3912,7 @@ z←1+16E¯15
 #⁻¹#["x":1 "y":1 "z":2]   ⍝ ["x":1 "y":1 "z":2]
 
 ⍝ — Under `#` changes the runs and decodes them again
-{2×⍵}⌾(0⊃)⌾# "aab"   ⍝ "aaaabb"
+{2×⍵}@(0⊃)@# "aab"   ⍝ "aaaabb"
 
 ⍝ — An empty argument has no runs
 #⍬   ⍝ [⍬ₓ ⍬]
@@ -4144,10 +4144,6 @@ f←2↣3 ⋄ f 1   ⍝ 3
 
 ⍝ —
 f←+⍥3 ⋄ f 10   ⍝ 3
-
-⍝ —
-f←+⌺×
-⍝ error: DOMAIN ERROR
 
 ⍝ — Prototype mode accepts negative Pick positions
 ¯1⊃¨0⍴⊂1 2 3   ⍝ ⍬
@@ -6255,7 +6251,7 @@ R←•date⁻¹ 0 1714990830
 ["zone":3600] •date "2024-05-06T10:20:30"   ⍝ 1714987230
 
 ⍝ — Under a bound pattern, a moment changes in its own text
-(86400+)⌾("%Y-%m-%d"↣•date) "2024-12-31"   ⍝ "2025-01-01"
+(86400+)@("%Y-%m-%d"↣•date) "2024-12-31"   ⍝ "2025-01-01"
 
 ⍝ — Text that no pattern matches
 •date "May 6"

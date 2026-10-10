@@ -4,7 +4,7 @@
 ⍝ headings. The second sums unit steps into positions.
 options←["background":0.05;"fade":0]
 turns←{⍵,1,~⌽⍵}⍣13⍬
-heading←+\0,≤2×turns
+heading←+\0,≤⊽turns
 p←∨0,+\○(π 0.5×heading)
 [lo hi]←[⌊⌿p⋄⌈⌿p]
 scale←440÷⌈/hi-lo

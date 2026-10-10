@@ -92,9 +92,9 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⍨` [commute](glyphs/commute.qmd) | Alt-1 Backtick | `f⍨`, `a⍨` | Self / commute / constant | |
 | `↣` [before](glyphs/before.qmd) | Alt-. | `f↣g`, `a↣f` | Before / bind left | As BQN's `⊸` |
 | `↢` [after](glyphs/after.qmd) | Alt-, | `f↢g`, `f↢a` | After / bind right | As BQN's `⟜` |
-| `⍤` [rank](glyphs/rank.qmd) | Alt-1 t | `f⍤r` | Rank | Rank 0 preserves atom/scalar distinction |
+| `⍤` [rank](glyphs/rank.qmd) | Alt-1 t | `f⍤r`, `f⍤g` | Rank | Rank 0 preserves atom/scalar distinction |
 | `∘` [atop](glyphs/atop.qmd) | Alt-t | `f∘g` | Atop | As BQN's `∘` |
-| `⍠` [axis](glyphs/axis.qmd) | Alt-q ; | `f⍠A` | Apply along axes | Named or numbered axes |
+| `⍠` [axis](glyphs/axis.qmd) | Alt-q ; | `f⍠A`, `f⍠g` | Apply along axes | Named or numbered axes |
 | `⍥` [over](glyphs/over.qmd) | Alt-1 o | `f⍥g` | Over | |
 | `.` [dot](glyphs/dot.qmd) | | `f.g` | Inner product | Also array fields/indexing |
 | `⊗` [outer-product](glyphs/outer-product.qmd) | Alt-o m | `g⊗` | Outer product | As BQN's `⌜` |
@@ -102,11 +102,10 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `⍣` [power](glyphs/power.qmd) | Alt-1 8 | `f⍣n`, `f⍣∞`, `f⍣g`, `f⍣[g]` | Iterate / invert / fixed point / repeat until / history until | List counts give history, as J/BQN |
 | `⇄` [inverse-pair](glyphs/inverse-pair.qmd) | Alt-4 | `f⇄g` | Attach an explicit inverse | As J's `:.` |
 | `⊘` [valences](glyphs/valences.qmd) | Alt-o / | `f⊘g` | Call `f` with one argument, `g` with two | As BQN's `⊘` |
-| `⌾` [under](glyphs/under.qmd) | Alt-o t | `f⌾g` | Apply under a selection or transform | As BQN's `⌾` |
 | `∂` [derivative](glyphs/derivative.qmd) | Alt-f | `f∂` | Gradient / vector–Jacobian product | |
 | `⍚` [agenda](glyphs/agenda.qmd) | Alt-Minus Backtick | `selector⍚cases` | Select and call one function | As BQN's `◶` |
-| `@` [at](glyphs/at.qmd) | | `f@a`, `a@g` | Functional amend | |
-| `⌺` [stencil](glyphs/stencil.qmd) | Alt-q Backtick | `f⌺a` | Stencil | |
+| `@` [under](glyphs/under.qmd) | | `f@g`, `f@a`, `f@[p]` | Apply under a selection, positions, mask or transform | As BQN's `⌾`, not Dyalog's `@` |
+| `⌺` [stencil](glyphs/stencil.qmd) | Alt-q Backtick | `f⌺a`, `f⌺g` | Stencil | |
 
 ## Syntax and literals
 
@@ -130,7 +129,7 @@ The names are the ones you type. In the REPL, a backtick and any glyph, monad or
 | `∞` [infinity](glyphs/infinity.qmd) | Alt-8 | Real infinity |
 | `$t` `$f` `$n` [constants](system/constants.qmd) | | True, false and NaN |
 | `$e` [caught error](system/constants.qmd) | | The error a guard's handler caught |
-| `²` `⁻¹` `ᵀ` `ᵘ` [superscript](scripts.ipynb#superscripts) | Alt-6 | Postfix on the item before it, or after a space on the run before it: `x²` is `x*2`, `f²` is `f⍣2`, `f⁻¹` is the inverse of `f`, `mᵀ` is `⍉m`, and `fᵘ` is a scalar holding `f` |
+| `²` `⁻¹` `ᵀ` `ᵘ` [superscript](scripts.ipynb#superscripts) | Alt-6 | Postfix on the token before it, or after a space on the run before it: `x²` is `x*2`, `f²` is `f⍣2`, `f⁻¹` is the inverse of `f`, `mᵀ` is `⍉m`, and `fᵘ` is a scalar holding `f` |
 | `₁` `₋₁` [subscript](scripts.ipynb#subscripts) | Alt-5 | Postfix on the array before it, or after a space on the run before it: `v₁` is `1⌷v`, `v₋₁` is the last major cell, and `v₁←5` assigns to that cell |
 
 [Numbers](numbers.qmd) covers numeric notation, such as `ₓ`, `r`, `j` and `e`.
@@ -144,7 +143,7 @@ Index origin: 0. Negative positions and axes count from the end. Comparison tole
 ## Language-wide differences from Dyalog APL
 
 - [Vectors](glyphs/brackets.qmd): a bracket list such as `[a b c]` is a vector. A strand of literals, such as `1 2 3`, needs no brackets. `[5]` is a one-item vector, the same as `,5`. [Parentheses](glyphs/parentheses.qmd) group: `(5)` is `5`. A scalar holding `5` is `⊂5`. Arrays side by side also form a vector: `a b` is `[a b]`. `(1 2⋄3)` is the vector of rows `[[1 2] [3]]`.
-- [Runs](syntax.qmd#runs): outside brackets, spaces group an expression into runs. A run that ends in a function is a train: `+/÷≢` is the mean, and `2×` is `2↣×`. A run that ends in a dyadic operator takes the next run as its right operand: `f⍤ 1` is `f⍤1`.
+- [Runs](syntax.qmd#runs): outside brackets, spaces group an expression into runs, and each run acts as one token. A run that ends in a function is a train: `+/÷≢` is the mean, and `2×` is `2↣×`. An operator takes the token next to it, so after a run that ends in a dyadic operator, the next run is its right operand: in `⌊@ 10× x`, it is `10×`.
 - [Indexing](glyphs/squad.qmd): brackets are used to write vectors, never to index. Index selects: `0⌷v` is the first item of `v`.
 - [Atoms](arrays.ipynb): numbers, characters and functions are atoms, distinct from scalars, as BQN. Enclosing always adds a layer: `⊂3 ≡ 3` is `$f`.
 - [Numbers](numbers.qmd): bare numbers are approximate. `ₓ` marks an exact integer, and `r` or `ᵣ` an exact rational, as in J: `1ₓ÷3ₓ` is `1ᵣ3`. Predicates, positions, tally and shape are exact.

@@ -27,5 +27,5 @@ Other errors and explicit output remain observable in that call.
 `f¨⁻¹` is `f⁻¹¨`.
 
 ```bpl
-(2×)¨⁻¹[2 4;6]   ⍝ [1 2;3]
+⊽¨⁻¹[2 4;6]   ⍝ [1 2;3]
 ```

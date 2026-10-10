@@ -16,7 +16,7 @@ life←{[1 ⍵]∨.∧3 4=¨⊂+/,¯1 0 1⊖⊗¯1 0 1⌽⊗⊂⍵}
 ⍝ From https://dfns.dyalog.com/c_rmcm.htm
 rmcm←{  ⍝ Replace comments with blanks.
   cm←∨\(⍵='⍝')>≠\⍵='''
-  ' '@cm ⍵
+  ' '@(⍸cm) ⍵
 }
 
 ⍝ From https://dfns.dyalog.com/c_ripple.htm
@@ -76,8 +76,8 @@ packN←{  ⍝ Null packing: shape, non-null mask, non-null items.
 packR←{  ⍝ Run-length encoding: shape, counts, items.
   cmp←{
     shape←⍴⍵ ⋄ vect←,⍵
-    runs←1,≠/2↕vect
-    repls←-⍨/2↕⍸runs,1
+    runs←1,≠/↕vect
+    repls←-⍨/↕⍸runs,1
     [shape repls runs#vect]
   }
   exp←{[shape repls solos]←⍵ ⋄ shape⍴repls#solos}
@@ -128,7 +128,7 @@ draw←{  ⍝ Box-drawing characters over a marker.
   ch←"│─┌─┐─┬││└├┘┤┴┼"
   z←,' '⍪(' ' , rh⍴⍵ , ' ')⍪' '
   bv←z∊⍺ ⋄ ix←⍸bv
-  in←{2⊥[ix+⊗[-⍵ ¯1 1 ⍵]]⌷bv}2+rh₁
+  in←{⊥[ix+⊗[-⍵ ¯1 1 ⍵]]⌷bv}2+rh₁
   z.[(×in # ix)]←[≤in~[0]]⌷ch
   (⍴⍵)⍴1 1↓¯1 ¯1↓(rh+2)⍴z
 }
@@ -140,12 +140,12 @@ dots←{  ⍝ Show indentation with white dots.
   ends←⊃∨/kwds,⊂⍵='}'
   spcs←∧\' '=⍵
   xdents←ends∧1,0 ¯1↓spcs
-  flood←(⍪1 2){hits←⍺⍷⍵ ⋄ ~1∊,hits?⍵;⍺ ∇ hits+⍵}spcs+2×xdents
-  ⍺@(2=flood-xdents) ⍵
+  flood←(⍪1 2){hits←⍺⍷⍵ ⋄ ~1∊,hits?⍵;⍺ ∇ hits+⍵}spcs+⊽xdents
+  ⍺@(⍸2=flood-xdents) ⍵
 }
 
 ⍝ From https://dfns.dyalog.com/c_logic.htm
-logic←{+/(⍵+2×⍺ =⊗ 0 1 2 3)×2 2 2 2⊤⍺⍶⍵}
+logic←{+/(⍵+⊽⍺ =⊗ 0 1 2 3)×2 2 2 2⊤⍺⍶⍵}
 
 ⍝ From https://dfns.dyalog.com/c_Depth.htm
 Depth←{  ⍝ Apply ⍶ at depths ⍹.
@@ -199,7 +199,7 @@ packB←{  ⍝ Unique indices packed as run lengths and bits.
   cmp←{
     u←∪,⍵
     i←u⍳,⍵ ⋄ w←⌈2⍟⍴u
-    b←1,≠/2↕i
+    b←1,≠/↕i
     j←0∨,⍉(w⍴2)⊤b#i
     [(⍴⍴⍵),(⍴⍵),u b j]
   }
@@ -207,8 +207,8 @@ packB←{  ⍝ Unique indices packed as run lengths and bits.
     [q b j]←⍵ ⋄ s←↑q
     r←s⍴1↓q ⋄ u←(≥s)↓q
     w←⌈2⍟⍴u
-    e←-⍨/2↕⍸b,1
-    i←2⊥⍉w{(⍺,⌊⍺÷⍨⍴⍵)⍴⍵}j
+    e←-⍨/↕⍸b,1
+    i←⊥⍉w{(⍺,⌊⍺÷⍨⍴⍵)⍴⍵}j
     r⍴[e#i]⌷u
   }
   ⍺←$t ⋄ ⍺?cmp ⍵;exp ⍵
@@ -233,7 +233,7 @@ packX←{  ⍝ Text packed through pairs of unique items.
     p←(⍴j ↑ a)#j
     q←(⍴j)↓a
     w←⌈2⍟⍴p
-    i←2⊥⍉w{(⍺,⌊⍺÷⍨⍴⍵)⍴⍵}q
+    i←⊥⍉w{(⍺,⌊⍺÷⍨⍴⍵)⍴⍵}q
     r⍴∊[i]⌷p
   }
   ⍺←$t ⋄ ⍺?cmp ⍵;unc ⍵
@@ -266,7 +266,7 @@ packS←{  ⍝ Shannon-Fano packing.
     bv←{(⍵≠2)⊆⍵}∊⍬{
       1=≢⍵?2,⍺;a←⊂⍺ ,¨ 0 1
       2=⍴⍵?a ∇¨ ⍵;
-      n←{1⌈+/0=(+/⍵)<2×+\⍵}⍵ ⋄ a ∇¨ [n↑⍵ n↓⍵]
+      n←{1⌈+/0=(+/⍵)<⊽+\⍵}⍵ ⋄ a ∇¨ [n↑⍵ n↓⍵]
     }b
     z←[uv⍳,⍵]⌷bv
     [⍴⍵ uv ∊⍴¨bv 0∨(∊bv),∊z]
@@ -288,7 +288,7 @@ cmat←{  ⍝ ⍺-combinations of ⍳⍵: include the first item, then omit it.
   ⍺=0?1 0⍴0;
   ⍺>⍵?[0 ⍺]⍴0;
   ⍺=⍵?[1 ⍺]⍴⍳⍵;
-  (0 , 1 + ⍺-1 ∇ ⍵-1)⍪1+⍺∇⍵-1
+  (0,≥(≤⍺)∇≤⍵)⍪≥⍺∇≤⍵
 }
 
 ⍝ From https://dfns.dyalog.com/c_mayan.htm
@@ -296,7 +296,7 @@ mayan←{  ⍝ Mayan numbers; left 0 uses base 20, left 1 uses the calendar base
   ⍺←1
   [snail dot bar]←"_@/" '⍟' '⌹'
   n←≥⌈18⍟1⌈⍵
-  base←20-2⌽n↑2×⍺
+  base←20-2⌽n↑⊽⍺
   ⍪' '⍪↢{
     ⍵=0?1 5⍴' ',snail,' ';
     [comp part]←0 5⊤⍵
@@ -401,7 +401,7 @@ quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
   next←{
     ' '=t←↑⍵?¯1;
     y←(¯1⊃⍺⊃Path)⌷State
-    x←' '@ =↢t y
+    x←' '@[=↢t] y
     r←("←↑→↓"⍳⍵₁)⌷,1 ¯1×⊗1,Shape₁
     (r⌽,t=y # x)←t
     (≢State)=n←1⍳⍨State∧.=x?(addnode x)addpath[⍺ ⍵] ⋄ ¯1;
@@ -486,7 +486,7 @@ box←{  ⍝ Frame a text array, with optional internal row and column borders.
   rh←(×/¯1↓⍴⍵),¯1↑1,⍴⍵ ⋄ z←rh⍴⍵
   0∊⍴∊2↑ar?q←ch₈⍪(ch₉,z,ch₉)⍪ch₈ ⋄ q.[0 ¯1;0 ¯1]←2 2⍴ch ⋄ q;
   [r c]←rh{∪⍺{(⍵∊⍳≥⍺)#⍵}⍵,(~¯1∊⍵)#0,⍺}¨,¨2↑ar
-  [rw cl]←rh{{[⍋⍵]⌷⍵}⍵∪0,⍺}¨[r c]
+  [rw cl]←rh{<⍵∪0,⍺}¨[r c]
   (~ 0,rh₁ ∊ c){
     (↑⍺)↓⍠1(-⍺₁)↓⍠1[∞;⍋(≥⍳rh₁),cl]⌷⍵
   }(~ 0,rh₀ ∊ r){
@@ -664,16 +664,16 @@ von←{  ⍝ Capitalise names, preserving prefixes and user-supplied exceptions.
   q←{' ',¨(⍵≠' ' ⊆ ⍵),¨' '}q
   not,←" al-" " c/o" " d'" " de'" " el-" " l'" " s'" " t'"
   ∆pre←{(-≢⍺){⍵∨⍺⌽⍵}⍺⍷⍵}
-  ∆not←{∨⌿⊃(-1+⍳¯1+≢⍺)⌽¨⊂⍺⍷⍵}
+  ∆not←{∨⌿⊃(-≥⍳≤≢⍺)⌽¨⊂⍺⍷⍵}
   ∆fix←{
     0=≢⍺?0;
     q←¯1•c{2>≡⍵?,⊂,⍵;⍵}⍺
     1↓∊∨/q⍶¨⊂' ',⍵
   }
-  b←(¯1↓∊∨/q⍷¨⊂' ',tx)<1,>/⌽⍤1(2↕~tx∊" -:;.,!?'""/)(")
+  b←(¯1↓∊∨/q⍷¨⊂' ',tx)<1,>/⌽⍤1(↕~tx∊" -:;.,!?'""/)(")
   b∨←pre(∆pre ∆fix)tx
   b>←not(∆not ∆fix)tx
-  ¯1↓(1↣•c)@b tx
+  ¯1↓(1↣•c)@(⍸b) tx
 }
 
 ⍝ From https://dfns.dyalog.com/c_packH.htm
@@ -733,7 +733,7 @@ packH←{                      ⍝ Huffman packing.
         shape⍴(,shape⍴leaves){          ⍝ restore original shape.
             [ix ox]←⍵                   ⍝ input and output indices.
             ox=≢⍺?⍺;                     ⍝ end of output, done
-            nxt←2⊥[ix+iwin]⌷ibuff        ⍝ next dictionary index.
+            nxt←⊥[ix+iwin]⌷ibuff        ⍝ next dictionary index.
             [skip item]←nxt⊃dict        ⍝ number of bits and output item.
             (item@ox ⍺) ∇ ⍵+[skip 1]    ⍝ traverse input and output buffers.
         }0 0                              ⍝ initial input/output buffer indices.
@@ -851,8 +851,8 @@ packH←{                      ⍝ Huffman packing.
 
          Under←{⍹⁻¹(⍹ ⍺)⍶(⍹ ⍵)}    ⍝ dyadic case of "under" operator
          p_2←{(¯1⌽k↓⍺)⊂⍠⍶(⍶⍴0 , k←-1⍳⍨⌽⍺)↓⍵}
-         Blk_1←{0=≢⍺?⍵;0=≢↑⍺?(1↓⍺) (1+⍶)⍢ ⍵;(1↓⍺) (1+⍶)⍢ ⊃(⊂↑⍺)⊂⍠⍶¨⍵}
-         Blk_2←{0=≢⍺?⍵;0=≢↑⍺?(1↓⍺) (1+⍶)⍢ ⍵;(1↓⍺) (1+⍶)⍢ ⊃(⊂↑⍺)(⍶ p_2)¨⍵}
+         Blk_1←{0=≢⍺?⍵;0=≢↑⍺?(1↓⍺) (≥⍶)⍢ ⍵;(1↓⍺) (≥⍶)⍢ ⊃(⊂↑⍺)⊂⍠⍶¨⍵}
+         Blk_2←{0=≢⍺?⍵;0=≢↑⍺?(1↓⍺) (≥⍶)⍢ ⍵;(1↓⍺) (≥⍶)⍢ ⊃(⊂↑⍺)(⍶ p_2)¨⍵}
          ifv←{(⍉⍺,⍪)⍣ 2>≢⍴⍵ ⍵}          ⍝ laminate ⍺ if ⍵ is vector or unit
          ci←{[i s]←↓(1 ifv ⍺) ⋄ (0>s){⌽⍣⍺ ⍵}¨(⍳¨|s)+(i |⍨ ⍴i ↑ ⍴⍵)-(0>i)×≤|s}
          ti←{[m s]←↓(1 ifv ⍺) ⋄ ⊃{⊃[⍵ (×s)×(|s)⌊r-⍵]}¨m↣×¨⍳⌈r÷m+(0=m)×r←(⍴m)⍴⍴⍵}
@@ -942,9 +942,9 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
      alph←dfnsLetters ⍝ primary alphabet: initial letters for names
      supp←$d                     ⍝ supplementary: 0-9
      ⍺←[alph supp]               ⍝ default left argument
-     ∊(⊂repl)@{                  ⍝ replace find with repl
+     ∊(⊂repl)@[{                  ⍝ replace find with repl
          ⍵∊[find]                 ⍝ matches
-     }(⍺ words srce)             ⍝ source into words.
+     }](⍺ words srce)             ⍝ source into words.
  }
 
 ⍝ From https://dfns.dyalog.com/c_packD.htm
@@ -969,18 +969,18 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
      }
 
      unc←{                               ⍝ uncompress:
-         rk←2⊥4⍴⍵                        ⍝ rank's easy
+         rk←⊥4⍴⍵                        ⍝ rank's easy
 
          [sh x]←[⍬ 4 rk]{                ⍝ shape needs more treatment
              [s n r]←⍺                   ⍝ deliver args
              r=0?[s n];                   ⍝ all done: return shape and offset
-             q←2⊥5⍴⍵                     ⍝ how many bits?
-             d←2⊥q⍴5↓⍵                   ⍝ -> dimension length
+             q←⊥5⍴⍵                     ⍝ how many bits?
+             d←⊥q⍴5↓⍵                   ⍝ -> dimension length
              [s,d n+q+5 ≤r] ∇ (q+5)↓⍵   ⍝ next
          }4↓⍵
 
-         n←≥2⊥8⍴x↓⍵                     ⍝ how many uniques?
-         u←[(,2⊥[n 8]⍴ n×8 ↑ x+8 ↓ ⍵)]⌷dfnsAV ⍝  -> make the list
+         n←≥⊥8⍴x↓⍵                     ⍝ how many uniques?
+         u←[,⊥[n 8]⍴(n×8)↑(x+8)↓⍵]⌷dfnsAV   ⍝  -> make the list
          dt←(x+8×≥n)↓⍵                  ⍝ rip the data part
          p←dt≤¯1↓0,dt                    ⍝ binary partitioner (first 1's)
          sh⍴[key⍳p⊆dt]⌷u                  ⍝ reconstruct
@@ -995,10 +995,10 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
      cmp←{
          ec←{c←3↑dfnsAV ⋄ (↑⍋+/c=⊗⍵)⌷c},⍵           ⍝ escape: the least frequent of the first three dfnsAV chars
 
-         lv←1,≠/2↕,⍵ ⋄ e←ec=,⍵                ⍝ repeat lengths
+         lv←1,≠/↕,⍵ ⋄ e←ec=,⍵                ⍝ repeat lengths
          mask←e<¯1↓1 0 0 1⍷lv,1 ⋄ (mask#1⌽lv)←1        ⍝ remove 2's and 3's
          mask←e<¯1↓1 0 1⍷lv,1 ⋄ (mask#1⌽lv)←1
-         ln←{-⍨/2↕(⍵,1)#⍳≥⍴⍵}lv              ⍝ packables
+         ln←{-⍨/↕(⍵,1)#⍳≥⍴⍵}lv              ⍝ packables
 
          (lv#lv)←≥⌊ln÷256                   ⍝ adjust for 256 length
 
@@ -1011,7 +1011,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          }¨ln
 
          q←lv#,⍵                             ⍝ reduce data
-         b←(ln>3)∨{(↑⍵),</2↕⍵}q=ec            ⍝ find places where
+         b←(ln>3)∨{(↑⍵),</↕⍵}q=ec            ⍝ find places where
          (b#q)←(b#q){ec,⍺,⍵}¨[≤b#ln]⌷dfnsAV       ⍝  to put pack sequences
          ec,∊q                               ⍝ remove nesting
      }
@@ -1020,8 +1020,8 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          ec←↑⍵                               ⍝ "esc"
          ~ec∊1↓⍵?1↓⍵;                         ⍝ packed?
 
-         bv←{(↑⍵),</2↕⍵}1↓⍵=ec                ⍝ reduce vector
-         ln←0@(¯2⌽bv)(≥dfnsAV⍳ ¯2⌽bv # 1↓⍵)@(¯1⌽bv)~bv  ⍝ lengths: 0 for escapes and counts, the count for each packed character
+         bv←{(↑⍵),</↕⍵}1↓⍵=ec                ⍝ reduce vector
+         ln←0@(⍸¯2⌽bv)(≥dfnsAV⍳ ¯2⌽bv # 1↓⍵)@(⍸¯1⌽bv)~bv  ⍝ lengths: 0 for escapes and counts, the count for each packed character
          ln#1↓⍵                              ⍝ do it!
      }
 
@@ -1111,7 +1111,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          subs←⍉⊃{⍺,' ',⍵}/(↓⍠0∇)¨⍵                ⍝ formatted sub-expressions.
          mask←~(↑↓subs)∊"┌─┐ "                   ⍝ sub-exprs connection points.
          mid←⍳⍴mask = ⌊(+/⍸mask)÷2               ⍝ mid-point for '┴' char.
-         inx←mask+2×+\mask                       ⍝ indices for box-draw chars.
+         inx←mask+⊽+\mask                       ⍝ indices for box-draw chars.
          top←[inx+4×mid]⌷" ?─┌ ┐┴"                 ⍝ "  ┌─┴─┐  "
          top⍪subs                                ⍝ formatted expression.
      }
@@ -1192,7 +1192,7 @@ tc←{  ⍝ Trace function application.
 
      [gap max]←2↑⍺,102               ⍝ inter-column-gap and max-width.
      ni←≢⍵                           ⍝ number of items.
-     lens←(2×≢⍵)↑,⊃⍴¨⍕¨⍵             ⍝ item-lengths.
+     lens←(⊽≢⍵)↑,⊃⍴¨⍕¨⍵             ⍝ item-lengths.
      ulim←⌈max÷1⌈gap+⌊/ni↑lens       ⍝ cols: upper limit for search.
 
      (maxcols ulim) reshape ⍵        ⍝ multi-column display.
@@ -1224,7 +1224,7 @@ packZ←{ ⍝ LZW: positive bit limit compresses; zero expands; negative returns
     ⍺←12
     ⍺=0?{
         [shape bits alph]←⍵
-        codes←2⊥bitsᵀ
+        codes←⊥bitsᵀ
         expand←{
             [codes dict prev out]←⍵
             0=≢codes?out;
@@ -1388,7 +1388,7 @@ ratsum←{
     optl←'0',('0'∊ext digs)#comp'0'
     cdigs←{
         '0'∊(ext ⍵)?comp ⍵;
-        (¯1-2×⍵⍳'0')⌽⌽⍵
+        (¯1-⊽⍵⍳'0')⌽⌽⍵
     }digs
     xchars←" {}[]()<>\|/,:."
     1∊xchars∊digs?err"bad digit";

@@ -40,6 +40,12 @@ m (+⌿×)⍤1 ∞ [1 2 3]                   ⍝ 14 32
 m (+⌿×)⍤1 ∞ [1 10⋄2 20⋄3 30]      ⍝ [14 140⋄32 320]
 ```
 
+A function right operand computes the ranks from the arguments, as BQN's `⎉` does: `f⍤g Y` is `f⍤(g Y) Y`, and `X f⍤g Y` is `X f⍤(X g Y) Y`. [Axis](axis.qmd) and [Stencil](stencil.qmd) take a function right operand in the same way. Here each cell of `Y` with the rank of `X` pairs with `X`:
+
+```bpl
+[1 2] +⍤{≢⍴⍺} [10 20⋄30 40]   ⍝ [11 22⋄31 42]
+```
+
 To apply a function along chosen axes, see [Axis](axis.qmd).
 
 ## Inverse

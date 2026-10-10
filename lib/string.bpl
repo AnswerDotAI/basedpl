@@ -205,9 +205,9 @@ xtabs ← {  ⍝ Expand/compress HT chars.
     [bks nks]←1 0=⊂⍵=' '  ⍝ blanks and non-blanks
     runs←{⍵{⍵-⌈\⍵×~⍺}+\⍵}  ⍝ runs of adjacent 1s.
     tabs←bks∧chs∧0=⍺|runs chs  ⍝ tab positions.
-    onoff←{(⍺≠⍵){≠\⍺#⁻¹≠/2↕¯1,⍺#⍵}⍺-⍵}
+    onoff←{(⍺≠⍵){≠\⍺#⁻¹≠/↕¯1,⍺#⍵}⍺-⍵}
     pretab←⌽(⌽tabs)onoff⌽nks  ⍝ blanks that precede tabs.
-    pretab≤tabs # (•ucs 9)@tabs ⍵
+    pretab≤tabs # (•ucs 9)@(⍸tabs) ⍵
   }⍵
 }
 
@@ -253,8 +253,8 @@ deb ← {  ⍝ Drop Ending Blanks.
 ⍝ From http://dfns.dyalog.com/c_dmb.htm
 
 dmb ← {  ⍝ Drop Multiple Blanks.
-  2>⍴⍴⍵?(∨/2↕1,⍨~⍵∊⍺)#⍵;
-  (∨/2↕1,⍨,∨⌿~⍵∊⍺)#⍠¯1 ⍵
+  2>⍴⍴⍵?(∨/↕1,⍨~⍵∊⍺)#⍵;
+  (∨/↕1,⍨,∨⌿~⍵∊⍺)#⍠¯1 ⍵
 }deblank
 
 ⍝ From http://dfns.dyalog.com/c_dxb.htm

@@ -10,7 +10,7 @@ frame←{
   r←|d←p-⊗p
   count←+/near←(r<40)∧r>0
   [mv mp]←⍉(near+.×⍉[v⋄p])÷1⌈count
-  v+←0.03×mv-v + 0.002×(count>0)×mp-p + 1.5×+/(r<20)×d÷1⌈r*2
+  v+←0.03×mv-v + 0.002×(count>0)×mp-p + 1.5×+/(r<20)×d÷1⌈r²
   turn←○0.3×¯0.5+¿n⍴0
   speed←|v
   v×←turn×(1.5⌈3⌊speed)÷speed

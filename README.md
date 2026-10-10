@@ -44,7 +44,7 @@ In Jupyter, select the installed **BasedPL** kernel. Cells share definitions and
 
 APL is a language built around operations on whole arrays and notation for combining functions. Here is a taste of that style in BPL.
 
-Numbers separated by spaces form a vector. Arithmetic applies to every element:
+Numbers separated by spaces form a vector. Arithmetic applies to every item:
 
 ``` bpl
 10+1 2 3
@@ -152,10 +152,10 @@ A vector of counts keeps the history: one state for each count, where count 0 is
 
     1 2 4 8 16
 
-Under (`⌾`) transforms the argument, applies a function, then reverses the transformation. Scale by ten, floor, and scale back to round down to tenths:
+Under (`@`) transforms the argument, applies a function, then reverses the transformation. Scale by ten, floor, and scale back to round down to tenths:
 
 ``` bpl
-⌊⌾ 10× 1.25 2.78
+⌊@ 10× 1.25 2.78
 ```
 
     1.2 2.7

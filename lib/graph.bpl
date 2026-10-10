@@ -24,7 +24,7 @@ assign ← {  ⍝ Hungarian method cost assignment.
   }
   step_3←{[costs zeros]←⍵  ⍝ 3: cover cols with starred zeros.
     stars←zeros=2  ⍝ starred zeros.
-    covers←2×cols stars  ⍝ covered cols.
+    covers←⊽cols stars  ⍝ covered cols.
     ~0∊,covers?stars;  ⍝ all cols covered: solution.
     step_4 [costs zeros covers]  ⍝ next step: 4.
   }
@@ -37,15 +37,15 @@ assign ← {  ⍝ Hungarian method cost assignment.
     star←2=zeros×prow  ⍝ star in row containing prime.
     ~1∊,star?prime step_5 {  ⍝ no star in row, next step :5,
       [costs ⍵ prime]  ⍝ adjusted zeros matrix,
-    }zeros+2×prime;  ⍝ new primed zero (3).
-    cnext←covers+prow-2×(cols star)  ⍝ adjusted covers.
+    }zeros+⊽prime;  ⍝ new primed zero (3).
+    cnext←covers+prow-⊽(cols star)  ⍝ adjusted covers.
     znext←zeros⌈3×prime  ⍝ primed zero.
     ∇ [costs znext cnext]  ⍝ adjusted zeros and covers
   }
   step_5←{[costs zeros prime]←⍵  ⍝ 5: exchange starred zeros.
     star←(cols prime)∧zeros=2  ⍝ next star.
     ~1∊,star?step_3 ⍺{  ⍝ no stars: next step :3.
-      {[costs ⍵]}{⍵-2×⍵=3}⍵-⍺∧⍵>1  ⍝ unstarred stars; starred primes.
+      {[costs ⍵]}{⍵-⊽⍵=3}⍵-⍺∧⍵>1  ⍝ unstarred stars; starred primes.
     }zeros;  ⍝ adjusted zero markers.
     pnext←(rows star)∧zeros=3  ⍝ next prime.
     (⍺∨pnext∨star)∇ [costs zeros pnext]  ⍝ ⍺-accumulated prime-star-··· path.
@@ -192,7 +192,7 @@ scc ← {  ⍝ Strongly connected components (Tarjan).
 
 cond ← {  ⍝ Condensation of graph ⍵.
   c←scc ⍵  ⍝ strongly connected components
-  v←{⊂⍵}⌸c  ⍝ component-grouped vertex indices
+  v←⍷c  ⍝ component-grouped vertex indices
   e←c{⊂⍵}⌸⍵  ⍝ ..      ..      edges
   x←∪¨(∊¨e)~¨v  ⍝ out-of-component edges
   m←↓∨/¨x∊⊗v
@@ -290,11 +290,11 @@ queensX ← {  ⍝ Exact cover N-Queens.
   r←=/¨1 0 1↣#¨m  ⍝ each rank must contain one queen.
   f←=/¨0 1 1↣#¨m  ⍝ ..  file  ..     ..      ..
   dm←-/¨⍳2#⍵  ⍝ diagonals.
-  du←{[⍋⍵]⌷⍵}∪,dm  ⍝ unique diagnonals.
+  du←<∪,dm  ⍝ unique diagonals.
   x←dm =⊗ du
   y←(⊖dm) =⊗ du
   m←,⍠0 1 x,y,r,f  ⍝ constraints matrix.
-  d←~(⍳1↓⍴m)∊⍳2×⍴du  ⍝ mask of required cols.
+  d←~(⍳1↓⍴m)∊⍳⊽⍴du  ⍝ mask of required cols.
   [⍵ ⍵]⍴ d X m  ⍝ exact cover - matrix of queens.
 }
 
@@ -308,7 +308,7 @@ wcost ← {  ⍝ Cost vector for path ⍵ through weighted graph ⍺.
     node←,⍺⊃graph  ⍝ exits from vertex.
     indx←node⍳⍵  ⍝ index of (⍺ ⍵) vertex.
     indx⊃,⍺⊃costs  ⍝ ... associated cost.
-  }/2↕⍵
+  }/↕⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_wpath.htm
@@ -335,7 +335,7 @@ wpath ← {  ⍝ Quickest path fm/to ⍵ in weighted graph ⍺.
     cvec←,/mask#¨accm
     decr←{(⍒cvec)I ⍵}  ⍝ in decreasing order of cost
     wave←decr,/next
-    new←[back cvec] decr⍨@wave¨ ⍵  ⍝ successor tree & cost
+    new←[back cvec] {(decr ⍺)@wave ⍵}¨ ⍵  ⍝ successor tree & cost
     (∪wave)∇ new  ⍝ wave spreads to adjacent vertices
   }[tree cost]  ⍝ initial spanning tree and cost vectors
 }
@@ -358,7 +358,7 @@ wspan ← {  ⍝ Spanning tree for weighted graph ⍺ from ⍵.
     back←,/⍺+0×next
     decr←(⍒cvec)I⊢  ⍝ in decreasing order of cost
     wave←decr,/next
-    new←[back cvec] decr⍨@wave¨ ⍵  ⍝ successor tree & cost
+    new←[back cvec] {(decr ⍺)@wave ⍵}¨ ⍵  ⍝ successor tree & cost
     (∪wave)∇ new  ⍝ wave spreads to adjacent vertices
   }[tree cost]  ⍝ initial spanning tree and cost vectors
 }

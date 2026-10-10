@@ -13,7 +13,7 @@ hang ← {  ⍝ node label ⍺ with formatted subtrees ⍵ hung below it.
     ⍉⌽⊃(⊂⌽⍺,mask#'│'),↓⌽⍵ᵀ
   }¨{⊖⍵}\⍵  ⍝ formatted subtrees.
   case←~[null null]≡¨fmts  ⍝ non-null subtree cases.
-  join←(2⊥case)⊃"∘┐┘┤"
+  join←(⊥case)⊃"∘┐┘┤"
   join≡'∘'?⊃,↓key_val;
   dent←' '¨key_val  ⍝ subtree padding.
   pads←{↓,/dent,⊂⍵}¨fmts
@@ -53,7 +53,7 @@ chk ← {  ⍝ tree stats / integrity check.
 }  ⍝ :: ∇ t → y s d h {r}
 
 ⍝ Shared by sbst, redblack and splay.
-wise ← {(2×⍶)↑3⍴⍵}  ⍝ parameterise direction.
+wise ← {(⊽⍶)↑3⍴⍵}  ⍝ parameterise direction.
 
 ⍝ From http://dfns.dyalog.com/c_avl.htm
 
@@ -206,7 +206,7 @@ sbst ← {  ⍝ Simple Binary Search Trees.
   }                      ⍝ p   q       q   r
   search←{  ⍝ search subtree ⍺ for key ⊃⍵.
     [inf [lft rgt]]←⍺  ⍝ parts of node.
-    dir←1-2×>/⍋⊃↑¨[inf ⍵]
+    dir←1-⊽>/⍋⊃↑¨[inf ⍵]
     [_ nxt]←dir wise [lft rgt]  ⍝ nxt subtree to search.
     [sub val]←nxt ⍶ ⍵
     subs←dir wise [lft sub rgt]  ⍝ lft and rgth subtrees.
@@ -217,7 +217,7 @@ sbst ← {  ⍝ Simple Binary Search Trees.
     log←⌊2⍟≥size  ⍝ largest complete tree ≤ ⍵.
     rem←≥size-2*log  ⍝ no of surplus nodes.
     cmps←¯2+2*≥⍳log
-    vine cmp/ 1↓cmps,2×rem
+    vine cmp/ 1↓cmps,⊽rem
   }  ⍝ :: ∇ t → t
   cmp←{  ⍝ compress of alternate vine sections.
     ⍺=0?⍵;  ⍝ far enough: terminal leaf.
@@ -370,7 +370,7 @@ redblack ← {  ⍝ Red-black trees.
   }  ⍝ ok size tot_dep ht rng blks blk ← ∇ t
   search←{  ⍝ search subtree ⍺ for key ⊃⍵.
     [inf red [lft rgt]]←⍺  ⍝ parts of node.
-    dir←1-2×>/⍋⊃↑¨[inf ⍵]
+    dir←1-⊽>/⍋⊃↑¨[inf ⍵]
     [_ nxt]←dir wise [lft rgt]  ⍝ nxt subtree to search.
     [sub path]←nxt ⍶ ⍵
     subs←dir wise [lft sub rgt]  ⍝ new subtrees.
@@ -425,7 +425,7 @@ splay ← {  ⍝ Splay trees.
   }  ⍝ :: t ∇ k → t
   search←{  ⍝ search subtree ⍺ for key ⊃⍵.
     [inf [lft rgt]]←⍺  ⍝ parts of node.
-    dir←1-2×>/⍋⊃↑¨[inf ⍵]
+    dir←1-⊽>/⍋⊃↑¨[inf ⍵]
     [_ nxt]←dir wise [lft rgt]  ⍝ nxt subtree to search.
     sub←nxt ⍶ ⍵
     [inf (dir wise [lft sub rgt])]  ⍝ new node.
@@ -434,7 +434,7 @@ splay ← {  ⍝ Splay trees.
     ⍺≡0?0 0 0;  ⍝ null: no value.
     [[key val] [lft rgt]]←⍺  ⍝ parts of node.
     key≡⍵?[val ⍺ ⍬];  ⍝ match: value tree path.
-    dir←1-2×>/⍋⊃[key ⍵]
+    dir←1-⊽>/⍋⊃[key ⍵]
     [_ nxt]←dir wise [lft rgt]  ⍝ next subtree to search.
     [rslt sub path]←nxt ∇ ⍵  ⍝ value, subtree and path to value.
     ∆path←dir,path  ⍝ extended path to target.
@@ -467,7 +467,7 @@ splay ← {  ⍝ Splay trees.
     ⍺≡0?0ₓ;  ⍝ key not found: failure.
     [[key val] subs]←⍺  ⍝ parts of tree.
     key≡⍵?1ₓ;  ⍝ key found: at depth 1.
-    dir←1-2×>/⍋⊃[key ⍵]
+    dir←1-⊽>/⍋⊃[key ⍵]
     [_ sub]←dir wise subs  ⍝ next subtree to search.
     {⍵+×⍵} sub ∇ ⍵  ⍝ incremental depth.
   }  ⍝ :: t ∇ k → d

@@ -132,9 +132,9 @@ Both display modes show scalars as source: `⊂4ₓ`, `⊂⊂4ₓ` or `⊂[1 2]`
 `]dissect` evaluates an expression once and shows its functions and arguments before the result. It uses the existing function display, including explicit bindings such as `↣`:
 
 ```text
-      ]dissect -⌾ 1 0 1# 1 2 3
+      ]dissect -@ 1 0 1# 1 2 3
 call
-├─ ⌾
+├─ @
 │  ├─ -
 │  └─ ↣
 │     ├─ [1 0 1]
@@ -146,7 +146,7 @@ call
 `•prefs ["trees":$f]` selects linear display:
 
 ```text
-(-⌾([1 0 1]↣#))[1 2 3]
+(-@([1 0 1]↣#))[1 2 3]
 ¯1 2 ¯3
 ```
 

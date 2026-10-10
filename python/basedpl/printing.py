@@ -84,7 +84,7 @@ class _Printer:
             if raw.get('shape') == [1] and isinstance(raw['data'][0], _Function): return f'{r(a, dyad, 100)}.history({r(raw["data"][0], True)})', 100
             return f'{r(a, dyad, 41)} ** {r(b)}', 40
         valences = {'⍤': (dyad, dyad), '∘': (False, dyad), '⍥': (dyad, False), '↣': (False, True), '↢': (True, False),
-                    '⌾': (dyad, False), '⇄': (dyad, dyad), '⊘': (False, True), '@': (dyad, False), '⌺': (True, False), '⍚': (dyad, False)}
+                    '⇄': (dyad, dyad), '⊘': (False, True), '@': (dyad, False), '⌺': (True, False), '⍚': (dyad, False)}
         if kind in valences and af:
             av, bv = valences[kind]
             return f'{r(a, av, 100)}.{_methods[kind]}({r(b, bv)})', 100

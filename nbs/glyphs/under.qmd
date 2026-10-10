@@ -1,51 +1,91 @@
-# `⌾` — Under
+# `@` — Under
 
-Keys: `Alt-o t`
+`f@g Y` applies `f` to the [selection](../terms.qmd#term-selection) of `Y` that `g` makes, and writes the result back in its place. The rest of `Y` is unchanged. An array `f` is a constant function, so it replaces the selection.
 
-When `g` only selects or rearranges, `f⌾g Y` puts the result of `f(g Y)` back where `g` took it from. The rest of `Y` is unchanged. An array `f` is a constant function. These functions select, and [selective assignment](assign.qmd) accepts them as targets:
+## Positions
+
+An array `g` lists positions along the leading axis, as `[g]⌷Y` reads them. Negative positions count from the end. The shape of `g` comes before the axes of each cell. An item that is itself a list of positions reaches into nested items. A keyed replacement aligns by key with the selected positions, as it does in assignment.
+
+```bpl
+-@[0 2] 1 2 3                                          ⍝ ¯1 2 ¯3
+⌽@1 3 ⍳5                                               ⍝ 0 3 2 1 4
+0@[[1 2]] [1 2 3] [4 5 6]                              ⍝ (1 2 3⋄4 5 0)
+v←10 20 30 40 ⋄ i←[0 3⋄1 2] ⋄ {⍵+[100 200⋄300 400]}@i v   ⍝ 110 320 430 240
+x←["a":1 "b":2 "c":3] ⋄ ["b":20 "a":10]@0 1 x         ⍝ ["a":10 "b":20 "c":3]
+```
+
+`f@[p] Y` selects the positions where `p Y` is true: it is `f@(⍸p Y) Y`. A mask array `m` also goes through `⍸`, as in `f@(⍸m)`, because `@` reads any array of numbers as positions.
+
+```bpl
+0@[2|] ⍳5                  ⍝ 0 0 2 0 4
+x←3 8 2 ⋄ 10+@[5>] x       ⍝ 13 8 12
+'x'@[∊↢"AEIOU"] "HELLO"    ⍝ "HxLLx"
+```
+
+## Selecting functions
+
+When a function `g` only selects or rearranges, `f@g Y` writes the result of `f(g Y)` back where `g` took it from. These functions select, and [selective assignment](assign.qmd) accepts the first two kinds as targets:
 
 - Take, First, Drop, Replicate, Expand, Reshape, Reverse, Rotate, Transpose, Ravel, Table, Enlist, Pick, Partition, Windows and `⌷`
 - Each, Rank, Axis, Atop, Over and a whole-number Power of selecting functions
-- a fork whose middle function selects from its right tine. The left tine runs on `Y` itself, and can depend on its values.
+- a fork whose middle function selects from its right tine. The left tine runs on `Y` itself, and can depend on its values. With one argument, `f↣g` is the fork `f g ⊢`, and `f↢g` is `⊢ f g`.
+- Sort up `<` and sort down `>`, which are the forks `⊂∘⍋⌷⊢` and `⊂∘⍒⌷⊢`
 
 ```bpl
--⌾ 1 0 1# 1 2 3            ⍝ ¯1 2 ¯3
-+\⌾∊ [3 1 0] [2 5]         ⍝ [[3 4 4] [6 11]]
-9⌾ 0⌷ 1 2 3               ⍝ 9 2 3
--⌾ 1↓⍣2 [1 2 3 4]           ⍝ 1 2 ¯3 ¯4
-{⍳≢⍵}⌾ ⊂∘⍋⌷⊢ 30 10 20   ⍝ 2 0 1
+-@ 1 0 1# 1 2 3            ⍝ ¯1 2 ¯3
++\@∊ [3 1 0] [2 5]         ⍝ [[3 4 4] [6 11]]
+9@↑ 1 2 3                  ⍝ 9 2 3
+-@ 1↓⍣2 [1 2 3 4]          ⍝ 1 2 ¯3 ¯4
+{⍳≢⍵}@< 30 10 20           ⍝ 2 0 1
 ```
 
-Each position that `g` selects more than once must get matching values. A value at a fill, such as overtaking `↑` adds, is dropped.
+When `g` selects a position more than once, the last value wins. A value at a fill, such as overtaking `↑` adds, is dropped.
 
 ```bpl
-≥⌾ 2↕ 1 2 3           ⍝ 2 3 4
--⌾ 5↑ 1 2 3               ⍝ ¯1 ¯2 ¯3
+≥@↕ 1 2 3                  ⍝ 2 3 4
+{⍵+10 20}@0 0 ⊢1 2 3       ⍝ 21 2 3
+-@ 5↑ 1 2 3                ⍝ ¯1 ¯2 ¯3
 ```
 
-For any other `g`, `f⌾g Y` is `g⁻¹(f(g Y))`. `X f⌾g Y` is `g⁻¹((g X)f(g Y))`. The inverse can't restore items that `g` drops, and Under uses it only for a `g` that keeps every item.
+## Other functions
+
+For any other `g`, `f@g Y` is `g⁻¹(f(g Y))`, and `X f@g Y` is `g⁻¹((g X)f(g Y))`. The inverse can't restore items that `g` drops, so Under uses it only for a `g` that keeps every item.
 
 ```bpl
-3+⌾ 2× 4           ⍝ 7
-⌽⌾ ≥ 1 2 3        ⍝ 3 2 1
-⌊⌾ 10× 1.25        ⍝ 1.2
+3+@ 2× 4                   ⍝ 7
+⌽@≥ 1 2 3                  ⍝ 3 2 1
+⌊@ 10× 1.25                ⍝ 1.2
 ```
 
-Call order: `g Y`, `g X`, `f`, then `g` on the positions of `Y`, or `g`'s inverse.
+## Left argument
+
+With a function `g`, `X` goes through `g`, as it does for [Over](over.qmd) and in BQN. With positions or `[p]`, `X` goes to `f` whole, as for Dyalog's `@`, and `f` pairs it with the selection as it pairs any two arguments.
+
+```bpl
+10 +@[0] 1 2 3                         ⍝ 11 2 3
+10 20 +@[0 2] 1 2 3                    ⍝ 11 2 23
+10 ⌽@[0 1 3] 1 2 3 4                   ⍝ 2 4 3 1
+10 20 30 +@(0⌷) 1 2 3                  ⍝ 11 2 3
+["ab" "cde" "fg"] ⊣@∊ ["---" "----"]   ⍝ "abc" "defg"
+```
+
+Dyalog's `@` reads a function right operand as a mask. Under's function right operand makes the selection.
+
+Call order: `g Y`, `g X`, `f`, then `g` on the positions of `Y`, or the inverse of `g`. With `[p]`, `p Y` comes first.
 
 See [Inverse pair](inverse-pair.qmd).
 
 ## Inverse
 
-`(f⌾g)⁻¹` is `f⁻¹⌾g`.
+`(f@g)⁻¹` is `f⁻¹@g`.
 
 ```bpl
-((2×)⌾⌽)⁻¹2 4 6   ⍝ 1 2 3
+(⊽@⌽)⁻¹2 4 6   ⍝ 1 2 3
 ```
 
 ## Errors
 
 - `DOMAIN`: `g` neither selects nor has a known inverse
-- `DOMAIN`: `g` can drop items but doesn't only select, as in `-⌾(+/1 0 1#)`
-- `DOMAIN`: a position that `g` selects more than once gets values that don't match
+- `DOMAIN`: `g` can drop items but doesn't only select, as in `-@(+/1 0 1#)`
+- `INDEX`: a position is outside `Y`
 - `LENGTH`: the result of `f` doesn't fit the selection

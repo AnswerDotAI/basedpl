@@ -4,7 +4,7 @@
 
 ```bpl
 •path "data/sales.csv"                            ⍝ ["parent":"data" "stem":"sales" "extension":"csv" "name":"sales.csv"]
-{⍵.extension←"tsv" ⋄ ⍵}⌾•path "data/sales.csv"   ⍝ "data/sales.tsv"
+{⍵.extension←"tsv" ⋄ ⍵}@•path "data/sales.csv"   ⍝ "data/sales.tsv"
 ```
 
 Errors: `DOMAIN` when a path isn't text, for an unknown part, or for an `absolute` path that is empty or has no working directory to join.

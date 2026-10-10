@@ -1,3 +1,5 @@
+.quarto-title-block .description { font-style: italic; }
+
 pre.bpl,
 .bpl pre,
 .bpl code {

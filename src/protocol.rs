@@ -136,13 +136,11 @@ impl serde::Serialize for crate::MimeData {
 /// An output as JSON: its kind, and its MIME bundle.
 pub fn output(o: &crate::Output) -> JsonValue { json!({"kind": o.kind.name(), "data": o.data}) }
 
-pub fn response(mut result: Evaluation) -> JsonValue {
-    let value = result.value.as_ref().map(|v| array(&crate::json::exportable(v)));
-    if result.function.is_some() || matches!(value, Some(None)) {
-        let span = crate::Span { source: crate::Source::new("<json>", ""), range: 0..0 };
-        if result.error.is_none() { result.error = Some(span.error(crate::ErrorKind::Domain, "functions cannot be exported through JSON")); }
-    }
-    json!({"value": value.flatten(), "output": result.output.iter().map(output).collect::<Vec<_>>(), "error": result.error.as_ref().map(error)})
+/// The reply to a request. A function, or an array that holds one, has no JSON value: `value` is `null`, and `output` holds its
+/// display.
+pub fn response(result: Evaluation) -> JsonValue {
+    let value = result.value.as_ref().and_then(|v| array(&crate::json::exportable(v)));
+    json!({"value": value, "output": result.output.iter().map(output).collect::<Vec<_>>(), "error": result.error.as_ref().map(error)})
 }
 
 /// The reply to a request that can't run.

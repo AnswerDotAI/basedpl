@@ -326,7 +326,7 @@ sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30⋄40 50 60]
 
 ### Rank with a numeric operand
 
-An operator takes one item to its right. In APL, `⊢` separates the operand `1` from the argument, because arrays side by side strand into one operand. BPL has the same problem only with literals separated by spaces: `1 2 3` is one strand. Brackets touching the operand keep a literal argument out of it. With a name as the argument, a space is enough: `+/⍤1 m`.
+An operator takes one token to its right. In APL, `⊢` separates the operand `1` from the argument, because arrays side by side strand into one operand. BPL has the same problem only with literals separated by spaces: `1 2 3` is one strand. Brackets touching the operand keep a literal argument out of it. With a name as the argument, a space is enough: `+/⍤1 m`.
 
 ```dyalog
 +/⍤1⊢2 3⍴⍳6
@@ -393,14 +393,14 @@ The operand ends at the space. `1 2 3 4` is in brackets to keep it out of the op
 
 ### Power with a list of counts
 
-A list of counts gives the result for each count, as BQN's Repeat does. `⍳5` is in parentheses because an operator takes one item to its right. `2` needs no Bind. Dyadic Power passes its left argument to `×` at each step. Dyalog has no list form, and its line applies Power once for each count.
+A list of counts gives the result for each count, as BQN's Repeat does. `⍳5` is in parentheses because an operator takes one token to its right. `2` needs no Bind. Dyadic Power passes its left argument to `×` at each step. Dyalog has no list form, and its line applies Power once for each count.
 
 ```dyalog
 {(2∘×⍣⍵)1}¨0,⍳4
 ```
 
 ```bpl
-2×⍣(⍳5) 1              ⍝ 1 2 4 8 16
+⊽⍣(⍳5) 1               ⍝ 1 2 4 8 16
 ```
 
 ```bqn
@@ -427,7 +427,7 @@ x←2 4 9
 
 ### A train that binds arrays
 
-A subject directly before a function in a train binds to it: `1.8×` is `1.8↣×`. `32` is the left part of the fork `32 + 1.8↣×`, as in Dyalog. Dyalog and BQN need `∘` and `↣` to bind `1.8`.
+A subject before a function binds the one part after it: `1.8×` is `1.8↣×`, and `32+` is `32↣+`. The two bound parts form an atop, which gives the same result as Dyalog's fork `32+1.8∘×`. Dyalog and BQN need `∘` and `↣` to bind `1.8`.
 
 ```dyalog
 f←32+1.8∘× ⋄ f 100
@@ -691,20 +691,20 @@ Source: the ngn/apl examples. Outer product is `+⊗`, in place of `∘.+`. Redu
 ```
 
 ```bpl
-picture←[9>|{⍺+⍵*2}/9⍴⊂¯3×.7j.5-⍉a+⊗0j1×a←(⍳≥n)÷n←98]⌷" #"
+picture←[9>|{⍺+⍵²}/9⍴⊂¯3×.7j.5-⍉a+⊗0j1×a←(⍳≥n)÷n←98]⌷" #"
 ⍴picture               ⍝ [99 99]ₓ
 ```
 
 ### Value of a Roman numeral
 
-Source: APLcart. The table `×\1,6⍴5 2` is the right argument of `⌷`, where it needs no parentheses. BPL uses windows, `</2↕`, in place of `2</`.
+Source: APLcart. The table `×\1,6⍴5 2` is the right argument of `⌷`, where it needs no parentheses. BPL uses pairs, `</↕`, in place of `2</`.
 
 ```dyalog
 {(⊢+.×¯1*2</,∘0)(×\1,6⍴5 2)['IVXLCDM'⍳⍵]}
 ```
 
 ```bpl
-{v←["IVXLCDM"⍳⍵]⌷×\1,6⍴5 2 ⋄ v+.×¯1*</2↕v,0} "MCMXCIV"   ⍝ 1994
+{v←["IVXLCDM"⍳⍵]⌷×\1,6⍴5 2 ⋄ v+.×¯1*</↕v,0} "MCMXCIV"   ⍝ 1994
 ```
 
 ```bqn

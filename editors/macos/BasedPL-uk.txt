@@ -22,16 +22,25 @@ Option-r	⍴
 Option-y	•
 Option-t	∘
 Option-1	diaeresis prefix
+Option-Shift-1	¹
+Option-Shift-2	²
 Option-Shift-3	√
 Option-4	⇄
+Option-Shift-4	⁴
 Option-6	superscript prefix
+Option-Shift-6	⁶
 Option-5	subscript prefix
+Option-Shift-5	⁵
 Option-=	match prefix
 Option-Shift-=	≠
 Option-9	∨
+Option-Shift-9	⁹
 Option-7	∆
+Option-Shift-7	⁷
 Option--	bar prefix
+Option-Shift--	⁻
 Option-8	∞
+Option-Shift-8	⁸
 Option-0	∧
 Option-Shift-0	⍬
 Option-o	circle prefix

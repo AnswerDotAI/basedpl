@@ -15,4 +15,4 @@ Keys: `Alt-Minus e`. Ranks: `∞` monadic, `∞ ∞` dyadic
 1 1⍷1 1 1          ⍝ $t $t $f
 ```
 
-Works with multidimensional patterns and tolerant element matching.
+Works with multidimensional patterns and tolerant comparison of items.

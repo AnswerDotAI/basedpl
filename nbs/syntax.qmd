@@ -1,6 +1,6 @@
 # Syntax
 
-BPL divides each statement into runs and items before it evaluates anything. The rules on this page don't depend on what any name holds. [Evaluation](evaluation.qmd) covers how the runs then bind. [Types of brackets](bracket-types.ipynb) and the [Language overview](overview.ipynb) explain the same rules with more examples.
+BPL divides each statement into runs and [tokens](terms.qmd#term-token) before it evaluates anything. The rules on this page don't depend on what any name holds. [Evaluation](evaluation.qmd) covers how the runs then bind. [Types of brackets](bracket-types.ipynb) and the [Language overview](overview.ipynb) explain the same rules with more examples.
 
 ## Names
 
@@ -42,7 +42,7 @@ BPL reads a statement in three steps:
 2. Each remaining run is wrapped in parentheses.
 3. The result reads as ordinary APL, right to left.
 
-So `a+b × c+d` is `(a+b)(×)(c+d)`, and `1 2+3` is `(1 2)+3`, not `(1)(2+3)`. A run that ends in a dyadic operator is the one exception. It takes the next run as its right operand, as [Evaluation](evaluation.qmd) explains.
+So `a+b × c+d` is `(a+b)(×)(c+d)`, and `1 2+3` is `(1 2)+3`, not `(1)(2+3)`. A run that ends in a dyadic operator still needs a right operand, so it takes the run after it, which acts as one token: `⌊@ 10× x` is `(⌊@)(10×)(x)`, where `10×` is the operand of `@`. [Evaluation](evaluation.qmd) explains operands.
 
 ```bpl
 a←1 ⋄ b←2 ⋄ c←3 ⋄ d←4 ⋄ a+b × c+d   ⍝ 21
@@ -60,7 +60,7 @@ A [bracket list](glyphs/brackets.qmd) is a vector, whatever the number of items.
 1. Without `;`, each space separates two items, and each item is one run.
 2. With `;`, only `;` separates items. Within each item, spaces divide runs as they do outside brackets.
 3. `⋄` stacks rows into an array of higher rank, with each row as one major cell. Each row follows the first two rules. A row of one number has rank 0. Write a column with a one-item vector in each row.
-4. Each item is one element, whatever it holds, including an array or a function. Items evaluate left to right.
+4. Each item stays one item of the vector, whatever it holds, including an array or a function. Items evaluate left to right.
 5. Items written `"key":value` make a record.
 
 ```bpl
@@ -100,7 +100,7 @@ Outside brackets, parentheses and braces, `⋄` separates statements. A `;` outs
 
 ## Superscripts and subscripts
 
-A [superscript or subscript](scripts.ipynb) written straight after an item applies to that item. After an array item, a superscript binds more tightly than anything else. After a function, a superscript takes the whole function to its left, as a monadic operator does. A superscript or subscript that stands alone after a space applies to the run before it.
+A [superscript or subscript](scripts.ipynb) written straight after a [token](terms.qmd#term-token) applies to that token. After a subject, a superscript binds more tightly than anything else. After a function, a superscript takes the whole function to its left, as a monadic operator does. A superscript or subscript that stands alone after a space applies to the run before it.
 
 A subscript selects one position on the leading axis: `x₁` is `(1⌷x)`.
 

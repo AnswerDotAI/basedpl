@@ -27,7 +27,7 @@ v←10 20 30
 [[¯1 0]]⌷v         ⍝ 30 10
 ```
 
-An array of positions whose elements are vectors does choose indexing. Each vector is one coordinate, with one position for each axis of `Y`.
+An array of positions whose items are vectors does choose indexing. Each vector is one coordinate, with one position for each axis of `Y`.
 
 ```bpl
 m←3 4⍴⍳12

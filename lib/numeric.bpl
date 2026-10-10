@@ -93,7 +93,7 @@ factors ← { ⍵{  ⍝ Prime factors of ⍵.
     (⍺,nxt)∇ msk#⍵  ⍝ sieve remainder.
   }⍵{  ⍝ from,
     (0=⍵|⍺)#⍵  ⍝ divisors of ⍵ in:
-  }2,(3+2×⍳⌊0.5×√⍵),⍵  ⍝ 2,3 5 .. sqrt(⍵),⍵
+  }2,(3+⊽⍳⌊0.5×√⍵),⍵  ⍝ 2,3 5 .. sqrt(⍵),⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_k6174.htm
@@ -104,7 +104,7 @@ k_6174 ← {  ⍝ Kaprekar's operation.
   1=⍴∪enco(⍵)?"error";  ⍝ all digits the same: no go.
   ⍬{  ⍝ starting with null sequence.
     ⍵=↑⌽⍺?⍺;
-    v←{[⍒⍵]⌷⍵}enco ⍵  ⍝ digits in descending order.
+    v←>enco ⍵  ⍝ digits in descending order.
     (⍺,⍵)∇(deco v)-deco⌽v  ⍝ smaller to larger difference.
   }⍵  ⍝ :: [#] ∇ # → [#]
 }
@@ -113,7 +113,7 @@ k_6174 ← {  ⍝ Kaprekar's operation.
 
 hex ← {  ⍝ Hexadecimal from decimal.
   1≠≡,⍵?⍺∇¨⍵;  ⍝ simple-array-wise:
-  0∊,⍵-1+⍵?"Too big";
+  0∊,⍵-≥⍵?"Too big";
   n←↑⍺,2*⌈2⍟2⌈16⍟≥⌈/|⍵  ⍝ default width.
   ↓[(n#16 ⊤ ⍵)]⌷"0123456789abcdef"
 }
@@ -135,7 +135,7 @@ dec ← {  ⍝ Decimal from hexadecimal
 
 ⍝ From http://dfns.dyalog.com/c_int.htm
 
-int ← {m←2*≤⍺ ⋄ (2×m | m+⍵)-m}  ⍝ Signed from unsigned integer.
+int ← {m←2*≤⍺ ⋄ (⊽m | m+⍵)-m}  ⍝ Signed from unsigned integer.
 
 ⍝ From http://dfns.dyalog.com/c_uns.htm
 
@@ -146,7 +146,7 @@ uns ← {(2*⍺)|⍵}  ⍝ Unsigned from signed integer.
 nicediv ← {  ⍝ ⍵ similar integers with sum ⍺.
   q←⍵⍴⌊⍺÷⍵  ⍝ quotient.
   d←+\(⍵|⍺)÷⍵⍴⍵  ⍝ residue spread in ⍵ decimal steps.
-  i←</2↕0,⌊0.5+d
+  i←</↕0,⌊0.5+d
   q+i
 }
 
@@ -165,7 +165,7 @@ rational ← {  ⍝ Rational approximation to real ⍵.
 ⍝ From http://dfns.dyalog.com/c_roman.htm
 
 roman ← {  ⍝ Roman numeral arithmetic.
-  num←{{⍵+.××0.5+×-/2↕⍵,0}[7|"IVXLCDMivxlcdm"⍳⍵]⌷,⍉1 5×⊗10*⍳4}
+  num←{{⍵+.××0.5+×-/↕⍵,0}[7|"IVXLCDMivxlcdm"⍳⍵]⌷,⍉1 5×⊗10*⍳4}
   fmt←{~↢" ",0 1 0⍉(⊂[⍵⊤⍨4⍴10]⌷0 4 2 2⊤0 16 20 22 24 32 36 38 39 28)⌷' '⍪3 4⍴"MCXI DLV "}
   depth←{⍹≥≡⍵?⍶ ⍵;∇¨⍵}
   nums←num depth 1  ⍝ arabic from roman.
@@ -179,7 +179,7 @@ stamps ← {  ⍝ Postage stamps to the value of ⍵.
   ⍺←1 5 6 10 26 39 43  ⍝ Default UK stamp denominations.
   graph←⍺{⍵↣∩¨⍵+⊂⍺}⍳⍵+|⌊/⍺  ⍝ values: 0 ·· ⍵.
   spath←graph _graph.path [0 ⍵]
-  -/⌽2↕spath
+  -/⌽↕spath
 }
 
 ⍝ From http://dfns.dyalog.com/c_sieve.htm
@@ -321,7 +321,7 @@ phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
     1<≡⍵?∇¨⍵;
     '¯'=↑⍵?-∇ 1↓⍵;
     a←Ø⊥$d⍳⍵~"."
-    a÷Ø*(≢⍵∪'.')-1+(,⍵)⍳'.'
+    a÷Ø*(≢⍵∪'.')-≥(,⍵)⍳'.'
   }⍵;
   0≠≡⍵?⍺∇¨⍵;
   ⍵<0?'¯',⍺∇-⍵;
@@ -331,7 +331,7 @@ phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
     ⍵≡⍬?"0";
     fmt←{[⍵]⌷"01"}
     lft←(⌽⍳0⌈≥⌈/⍵)∊⍵
-    rgt←(-1+⍳0⌈|⌊/⍵)∊⍵
+    rgt←(-≥⍳0⌈|⌊/⍵)∊⍵
     rgt∧.=0?fmt lft;
     lft∧.=0?"0.",fmt rgt;
     (fmt lft),'.',fmt rgt
@@ -420,6 +420,6 @@ convolve ← {+⌿(-⍳⍴⍺)⌽⍺×⊗⍵,0×1↓⍺}
 ⍝ From http://dfns.dyalog.com/c_xpower.htm
 
 xpower ← {  ⍝ Fast multi-digit power using FFT.
-  xt←{(0,⍺)xtimes 0,⍵} ⋄ b←⌽2⊥⁻¹10⊥⍵  ⍝ boolean showing which powers needed
+  xt←{(0,⍺)xtimes 0,⍵} ⋄ b←⌽⊤10⊥⍵  ⍝ boolean showing which powers needed
   ⊃,/xt/b#{xt⍨⍺}\(⊂,10⊥⁻¹⍺)⍴⍨⍴b
 }

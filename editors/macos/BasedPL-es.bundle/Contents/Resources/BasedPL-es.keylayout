@@ -690,16 +690,16 @@
    <key code="16" action="k16-m5"/>
    <key code="17" output="‡"/>
    <key code="18" action="k18-m5"/>
-   <key code="19" output="˝"/>
+   <key code="19" output="²"/>
    <key code="20" output="√"/>
-   <key code="21" output="£"/>
-   <key code="22" action="k22-m5"/>
-   <key code="23" output="‰"/>
+   <key code="21" output="⁴"/>
+   <key code="22" output="⁶"/>
+   <key code="23" output="⁵"/>
    <key code="24" output="˛"/>
-   <key code="25" output="’"/>
+   <key code="25" output="⁹"/>
    <key code="26" output="¿"/>
    <key code="27" output="¸"/>
-   <key code="28" output="‘"/>
+   <key code="28" output="⁸"/>
    <key code="29" output="⍬"/>
    <key code="30" output="≠"/>
    <key code="31" output="Ø"/>
@@ -715,7 +715,7 @@
    <key code="41" output="˜"/>
    <key code="42" output="»"/>
    <key code="43" output="⊣"/>
-   <key code="44" output="—"/>
+   <key code="44" output="⁻"/>
    <key code="45" output="˙"/>
    <key code="46" output="˚"/>
    <key code="47" output="…"/>
@@ -1638,7 +1638,6 @@
    <when state="diaeresis" output="⍤"/>
    <when state="superscript" output="ᵀ"/>
    <when state="quad" output="⌻"/>
-   <when state="circle" output="⌾"/>
   </action>
   <action id="k18-m0">
    <when state="none" output="1"/>
@@ -2966,14 +2965,6 @@
   <action id="k18-m5">
    <when state="none" next="diaeresis" output=""/>
    <when state="diaeresis" output="¨"/>
-  </action>
-  <action id="k22-m5">
-   <when state="none" output=" "/>
-   <when state="native-1" output="`"/>
-   <when state="native-2" output="´"/>
-   <when state="native-3" output="^"/>
-   <when state="native-4" output="¨"/>
-   <when state="native-5" output="~"/>
   </action>
   <action id="k32-m5">
    <when state="none" output=" "/>

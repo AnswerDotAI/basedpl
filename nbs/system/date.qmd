@@ -13,7 +13,7 @@ The browser build has no `locale` option.
 "%d %B %Y" •date⁻¹ 1714990830                     ⍝ "06 May 2024"
 ["pattern":"%A" "locale":"fr_FR"] •date⁻¹ 0       ⍝ "jeudi"
 (•date⁻¹ 0).weekday                               ⍝ 4ₓ
-86400+ ⌾ "%Y-%m-%d"↣•date "2024-05-06"          ⍝ "2024-05-07"
+86400+ @ "%Y-%m-%d"↣•date "2024-05-06"          ⍝ "2024-05-07"
 ```
 
 Errors: `DOMAIN` for text that the pattern doesn't match, an invalid date, an unknown field or locale, or an invalid pattern.

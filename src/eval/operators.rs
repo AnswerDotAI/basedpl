@@ -6,14 +6,12 @@ use super::*;
 #[inline(never)]
 pub(super) fn composition(op: OperatorKind, operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     use OperatorKind::*;
-    if matches!(op, At) { return at(operands, left, right, cx); }
+    if matches!(op, Under) { return under(operands, left, right, cx); }
     if matches!(op, Agenda) { return agenda(operands, left, right, cx); }
     if matches!(op, Stencil) {
-        let [Operand::Function(f), Operand::Value(spec)] = operands else {
-            return Err(cx.span.domain_error("stencil needs a function and window specification"));
-        };
         if left.is_some() { return Err(cx.span.error(ErrorKind::Syntax, "stencil is monadic")); }
-        return stencil(f, spec, right, cx);
+        let [Operand::Function(f), spec] = operands else { unreachable!() };
+        return stencil(f, &computed(spec, None, right, cx)?, right, cx);
     }
     if matches!(op, Power) { return power(operands, left, right, cx); }
     match (&operands[0], &operands[1]) {
@@ -25,7 +23,8 @@ pub(super) fn composition(op: OperatorKind, operands: &[Operand; 2], left: Optio
             if left.is_some() { return Err(cx.span.error(ErrorKind::Syntax, "a bound function takes one argument")); }
             f.call(Some(right), a, cx)
         }
-        (Operand::Function(f), Operand::Value(ranks)) if matches!(op, Rank) => rank(f, ranks, left, right, cx),
+        (Operand::Function(f), ranks) if matches!(op, Rank) => rank(f, &computed(ranks, left, right, cx)?, left, right, cx),
+        (Operand::Function(f), spec) if matches!(op, Axis) => along_axes(f, &computed(spec, left, right, cx)?, left, right, cx),
         (Operand::Function(f), Operand::Function(g)) => match op {
             PairInverse => f.call(left, right, cx),
             Valences => {
@@ -40,24 +39,7 @@ pub(super) fn composition(op: OperatorKind, operands: &[Operand; 2], left: Optio
                 let y = g.call_array(left, right, cx)?;
                 f.call(None, &y, cx)
             }
-            Over | Under => {
-                let y = g.call_array(None, right, cx)?;
-                let x = left.map(|x| g.call_array(None, x, cx)).transpose()?;
-                let result = f.call(x.as_ref(), &y, cx)?;
-                if !matches!(op, Under) { return Ok(result); }
-                // A structural `g` puts the result back where it took it from. Otherwise its inverse undoes it.
-                let result = result.array(cx.span)?;
-                let (labels, labelled) = crate::selection::Labels::new(right, cx.span)?;
-                match g.select(None, &labelled, Some(right), SelectionKind::Item, cx)? {
-                    Some((selected, kind)) => {
-                        let (selection, values) = labels.replacements(&selected, &result, kind, cx.span)?;
-                        selection.check_repeats(&values, cx)?;
-                        Ok(Bound::from(selection.write(right, &values, cx)?))
-                    }
-                    None if g.discards(false) => Err(cx.span.domain_error("Under can't use the inverse of a function that drops items")),
-                    None => g.inverse(cx.span)?.call(None, &result, cx),
-                }
-            }
+            Over => over(f, g, left, right, cx),
             Before => {
                 let x = f.call_array(None, left.unwrap_or(right), cx)?;
                 g.call(Some(&x), right, cx)
@@ -76,25 +58,56 @@ pub(super) fn agenda_index(index: &Value, len: usize, span: &Span) -> Result<usi
 
 fn agenda(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let [selector, Operand::Value(fs)] = operands else { unreachable!() };
-    let index = match selector { Operand::Value(a) => a.clone(), Operand::Function(f) => f.call_array(left, right, cx)? };
+    let index = computed(selector, left, right, cx)?;
     let Value::Function(f) = fs.at(agenda_index(&index, fs.len(), cx.span)?) else { unreachable!() };
     f.call(left, right, cx)
 }
 
-/// The positions a Boolean mask selects. The mask has the argument's shape.
-fn mask_selection(mask: &Value, right: &Value, cx: &Context<'_>) -> Result<Selection, Error> {
-    if mask.shape() != right.shape() { return Err(cx.error(ErrorKind::Length, "at mask must match argument shape")); }
-    let offsets = crate::primitive::mask_offsets(mask, cx)?;
-    Ok(Selection { frame: ResultFrame::Array(vec![offsets.len()].into()), targets: Targets::Offsets(offsets) })
+/// An operand that gives an array: the array itself, or a function's result on the arguments, as `⍤`, `⍠`, `⌺` and `⍚` take them.
+fn computed(operand: &Operand, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+    match operand { Operand::Value(a) => Ok(a.clone()), Operand::Function(g) => g.call_array(left, right, cx) }
 }
 
-fn at(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
-    // A Boolean array is a mask. Other arrays give positions. A selector function's result follows the same rule.
-    let selector = match &operands[1] { Operand::Value(a) => a.clone(), Operand::Function(f) => f.call_array(None, right, cx)? };
-    let selection = if selector.as_booleans().is_some() { mask_selection(&selector, right, cx)? } else { crate::primitive::at_indices(right, &selector, cx)? };
-    let values = match &operands[0] { Operand::Value(a) => a.clone(), Operand::Function(f) => f.call_array(left, &selection.read(right, cx)?, cx)? };
-    let array = selection.write(right, &values, cx)?;
-    Ok(Bound::from(array))
+/// `f@g`: `f` applied to the selection that `g` makes from the argument, then written back in its place. An array `f` replaces
+/// the selection. An array `g` lists positions along the leading axis, as `[g]⌷` reads them, and `[p]` selects where `p` of the
+/// argument is true. With positions, a left argument goes to `f` whole, as for Dyalog's `@`.
+fn under(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+    let [Operand::Function(f), g] = operands else { unreachable!() };
+    let positions = match g {
+        Operand::Function(g) => return under_function(f, g, left, right, cx),
+        Operand::Value(a) => match predicate(a) { Some(p) => Primitive::Where.call(None, &p.call_array(None, right, cx)?, cx)?, None => a.clone() },
+    };
+    let selection = crate::primitive::at_indices(right, &positions, cx)?;
+    let values = f.call_array(left, &selection.read(right, cx)?, cx)?;
+    Ok(Bound::from(selection.write(right, &values, cx)?))
+}
+
+/// The function of `[p]`, a one-item vector that holds a function.
+fn predicate(a: &Value) -> Option<Function> {
+    if a.shape() != [1] { return None; }
+    match a.at(0) { Value::Function(p) => Some(p), _ => None }
+}
+
+/// `f@g` for a function `g`: `f⍥g`, with the result written back. A `g` that selects writes it back where it took it from. Any
+/// other `g` is undone by its inverse.
+fn under_function(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+    let result = over(f, g, left, right, cx)?.array(cx.span)?;
+    let (labels, labelled) = crate::selection::Labels::new(right, cx.span)?;
+    match g.select(None, &labelled, Some(right), SelectionKind::Item, cx)? {
+        Some((selected, kind)) => {
+            let (selection, values) = labels.replacements(&selected, &result, kind, cx.span)?;
+            Ok(Bound::from(selection.write(right, &values, cx)?))
+        }
+        None if g.discards(false) => Err(cx.span.domain_error("Under can't use the inverse of a function that drops items")),
+        None => g.inverse(cx.span)?.call(None, &result, cx),
+    }
+}
+
+/// `f⍥g`: `f` applied to `g` of each argument.
+fn over(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+    let y = g.call_array(None, right, cx)?;
+    let x = left.map(|x| g.call_array(None, x, cx)).transpose()?;
+    f.call(x.as_ref(), &y, cx)
 }
 
 fn stencil(f: &Function, spec: &Value, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
@@ -550,6 +563,15 @@ pub(super) fn rank(operand: &Function, ranks: &Value, left: Option<&Value>, righ
     let results = each(operand, xs.as_ref(), &ys, cx)?;
     let Binding::Value(results) = results.value else { return Ok(results) };
     Ok(Bound::from(Primitive::Mix.call(None, &results, cx)?))
+}
+
+/// `f⍠spec`: a primitive with its own axis form, a reduce or scan along an axis, or `f` on the cells that the axes make.
+pub(super) fn along_axes(f: &Function, spec: &Value, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+    match f.node() {
+        FunctionNode::Primitive(p) if p.takes_axes(left.is_some()) => Ok(Bound::from(p.call_axes(left, right, spec, cx)?)),
+        FunctionNode::Fold(operand, kind) => Ok(Bound::from(fold(operand, *kind, Some(spec), left, right, cx)?)),
+        _ => cell_axes(f, spec, left, right, cx),
+    }
 }
 
 /// Apply `f` to the cells made of the selected axes. The other axes form the frame.

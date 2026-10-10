@@ -221,33 +221,6 @@ fn where_vector(counts: &[i64], span: &Context<'_>) -> Result<Value, Error> {
     }
     Value::integers(vec![total], data).error_at(span, "invalid where result")
 }
-/// The positions of the `total` 1s in `mask`.
-fn ones<M: Key>(mask: &[M], total: usize) -> Vec<usize> {
-    let mut data = vec![0; total];
-    compress(&mut data, mask, |j| j);
-    data
-}
-/// The flat offsets of the 1s in `mask`, whatever its shape. Boolean storage, and integer storage whose items are all 0 or 1, are read
-/// directly. Any other item must be a number equal to 0 or 1.
-pub(crate) fn mask_offsets(mask: &Value, span: &Context<'_>) -> Result<Vec<usize>, Error> {
-    match mask.as_items() {
-        Items::Booleans(m) => return Ok(ones(m, m.iter().map(|&b| usize::from(b)).sum())),
-        Items::Integers(m) => {
-            let offsets = with_ints!(m, |m| {
-                let (any, sum) = or_and_sum(m);
-                (0..=1).contains(&any).then(|| ones(m, sum as usize))
-            });
-            if let Some(offsets) = offsets { return Ok(offsets); }
-        }
-        _ => (),
-    }
-    let mut offsets = Vec::new();
-    for (i, e) in mask.elements().enumerate() {
-        let Value::Number(n) = e else { return Err(span.domain_error("at mask must be Boolean")) };
-        if n.boolean().domain_at(span)? { offsets.push(i) }
-    }
-    Ok(offsets)
-}
 pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if let (Items::Booleans(mask), [_]) = (right.as_items(), right.shape()) {
         if right.keys(0).is_none() {

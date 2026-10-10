@@ -98,7 +98,7 @@ disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
     lft,top⍪⍪⌿,/boxes
   }
   right←{  ⍝ Border right each subarray.
-    types←2⊥¨(⍳⍴⍵)=⊂≤⍴⍵
+    types←⊥¨(⍳⍴⍵)=⊂≤⍴⍵
     chars←[types]⌷"┼┤┴┘"
     rgt←{⍵,(-≢⍵)↑[≢⍵ 1 1]#'│',⍺}  ⍝ form right border.
     (matr 1 open ⍺),¨chars rgt¨ ⍵  ⍝ cells bordered right.
@@ -214,7 +214,7 @@ dsp ← {  ⍝ Reduced version of disp.
   (1=≡,⍵)∨0∊⍴⍵?format ⍵;
   ⍺←1 ⋄ top←'─'⍪⍣⍺  ⍝ top '─' bar if ⍺
   1≥⍴⍴⍵?{  ⍝ vector or unit:
-    bars←{⍪(⌊/≢¨[⍺ ⍵])#'│'}/2↕⍵,0
+    bars←{⍪(⌊/≢¨[⍺ ⍵])#'│'}/↕⍵,0
     join←{⊃,/(⌈/≢¨⍵)↑¨⍵}
     0 ¯1↓join top¨join¨↓⍉[⍵⋄bars]
   } 1 ∇¨ ⍵;  ⍝ vector: formatted items
@@ -427,7 +427,7 @@ subvec ← {0∊⍴⍺?1;  ⍝ Is ⍺ a subvector of ⍵?
 
 subs ← {  ⍝ Vector substitution.
   [fs ts]←≢¨[fm to]←⍺  ⍝ old and new vectors and sizes
-  1≡≡⍺?to@ fm= ⍵;  ⍝ special case: atom subs
+  1≡≡⍺?to@[fm=] ⍵;  ⍝ special case: atom subs
   0=⍴⍴⍵?↑(⍵≡fm)⌽[⍵ ⊂to];
   lead←fs↑1  ⍝ leading mask
   (fm⍷⍵){  ⍝ hits mask

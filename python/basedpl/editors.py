@@ -1,16 +1,17 @@
-"""Write editor highlighters, regional macOS keyboards, and the key and rank line of each glyph page.
+"""Write editor highlighters, glyph-entry templates, regional macOS keyboards, and glyph-page keys and ranks.
 
 BPL glyph lists come from its symbol metadata. Dyalog APL and BQN lists for the comparison page are defined here. `keyboards` generates the macOS bundles. Paths are relative to the repository root.
 
-`write()` updates all generated editor files during release preparation, including `bpl.tmLanguage.json` beside this module, exported from `nbs/bpl.xml`. `icon()` rebuilds the common input-menu icon when its design changes; it needs Pillow and macOS's `iconutil`. Keyboard generation copies the icon without rebuilding it."""
+`write()` updates all generated editor files during release preparation, including `bpl.tmLanguage.json` beside this module, exported from `nbs/bpl.xml`, and the JetBrains bundle and templates. `icon()` rebuilds the common input-menu icon when its design changes; it needs Pillow and macOS's `iconutil`. Keyboard generation copies the icon without rebuilding it."""
 import json, re, subprocess, tempfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
-from . import symbols, keyboards
+from . import symbols, keyboards, windows_keyboard
 from ._core import _superscripts, _subscripts
 
 VIM = Path('editors/vim/syntax/bpl.vim')
+JETBRAINS = Path('editors/jetbrains')
 GLYPH_PAGES = Path('nbs/glyphs')
 KEY_NAMES = {char: f'Shift-{label}' for char, label in keyboards.SHIFT_KEYS.items()} | {'-': 'Minus', '\\': 'Backslash', '`': 'Backtick'}
 FONT, MENLO_BOLD, PURPLE = '/System/Library/Fonts/Menlo.ttc', 1, (61, 31, 107)
@@ -83,6 +84,17 @@ def vim(text):
     return text
 
 
+def jetbrains():
+    "Glyph-name and alias live templates, available in every file."
+    root = ET.Element('templateSet', group='BPL')
+    names = {name: s['glyph'] for s in symbols for name in [s['name'], s['monad'], s['dyad'], *s['aliases'].split()] if name}
+    for name, glyph in sorted(names.items()):
+        template = ET.SubElement(root, 'template', name=name, value=glyph, description=glyph, shortcut='TAB')
+        ET.SubElement(ET.SubElement(template, 'context'), 'option', name='OTHER', value='true')
+    ET.indent(root, space='  ')
+    return ET.tostring(root, encoding='unicode') + '\n'
+
+
 def key(shortcut):
     "The keys that type a glyph, from its `shortcut` in `basedpl.symbols`. For example, `' o 8'` is `Alt-o 8`."
     keys = [KEY_NAMES.get(k, k) for k in shortcut.split()]
@@ -127,11 +139,14 @@ def icon():
 
 
 def write():
-    "Write the XML and TextMate highlighters, regional keyboard bundles, and the key and rank line of each glyph page."
+    "Write highlighters, glyph-entry templates, regional keyboard bundles, and glyph-page keys and ranks."
     for path, glyphs in HIGHLIGHTERS.items(): keyboards.write_changed(path, quarto(path.read_text(), glyphs))
     keyboards.write_changed(TEXTMATE, json.dumps(textmate(Path('nbs/bpl.xml').read_text()), ensure_ascii=False, indent=2) + '\n')
+    keyboards.write_changed(JETBRAINS/'BPL.tmbundle/Syntaxes/bpl.tmLanguage.json', TEXTMATE.read_bytes())
+    keyboards.write_changed(JETBRAINS/'BPL.xml', jetbrains())
     keyboards.write_changed(VIM, vim(VIM.read_text()))
     keyboards.write()
+    windows_keyboard.write()
     for s in symbols:
         path = GLYPH_PAGES/f"{s['name']}.qmd"
         keyboards.write_changed(path, glyph_page(path.read_text(), s))

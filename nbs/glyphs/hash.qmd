@@ -7,7 +7,7 @@ Ranks: `∞` monadic, `1 ∞` dyadic
 ```bpl
 #"aaabcc"               ⍝ [[3 1 2]ₓ "abc"]
 #/#"aaabcc"             ⍝ "aaabcc"
-{2×⍵}⌾(0⊃)⌾# "aab"     ⍝ "aaaabb"
+⊽@(0⊃)@# "aab"          ⍝ "aaaabb"
 ```
 
 A unit gives the rank-0 length 1 and the unit itself. When `Y`'s leading axis has keys, a third item holds the key of every position, and `#⁻¹` attaches them again. `#/` doesn't use that item.
@@ -60,7 +60,7 @@ The counts must use every cell once, unless `Y` has one cell. A single count und
 [Under](under.qmd) and [selective assignment](assign.qmd) both keep the cells that `N` drops.
 
 ```bpl
--⌾ 1 0 1# 1 2 3         ⍝ ¯1 2 ¯3
+-@ 1 0 1# 1 2 3         ⍝ ¯1 2 ¯3
 x←1 2 3
 (1 0 1#x)←0
 x                       ⍝ 0 2 0

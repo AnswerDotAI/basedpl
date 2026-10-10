@@ -22,12 +22,14 @@ Option-r	⍴
 Option-y	•
 Option-t	∘
 Control-Option-Shift-&	diaeresis prefix
+Option-Shift-é	²
 Option-Shift-"	√
 Option-'	⊢
 Option-Shift-'	⇄
 Option-Shift-§	superscript prefix
 Control-Option-Shift-(	subscript prefix
 Option--	bar prefix
+Option-Shift--	⁻
 Option-Shift-ç	∨
 Option-Shift-è	∆
 Option-Shift-!	∞

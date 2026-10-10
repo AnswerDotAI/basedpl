@@ -21,42 +21,42 @@ fn←("rtd"⍳↑)⍚[⌽ 1↑ 1↓ ⊢] ⋄ [fn "r123";fn "d123";fn "123"]
 ⍝⍝ Under
 
 ⍝ bqn:under:43 — Square root of the sum of squares
-3 +⌾(×⍨) 4   ⍝ 5
+3 +@(×⍨) 4   ⍝ 5
 
 ⍝ bqn:under:47 — Prefix sum through Join keeps the nesting
-+\⌾∊ [3 1 0] [2 5] [0 0 6]   ⍝ (3 4 4⋄6 11⋄11 11 17)
++\@∊ [3 1 0] [2 5] [0 0 6]   ⍝ (3 4 4⋄6 11⋄11 11 17)
 
 ⍝ bqn:under:61 — Rotate the first column
-a←[0 1 2⋄3 4 5⋄6 7 8⋄9 10 11] ⋄ (1⌽)⌾(↑⍤1) a
+a←[0 1 2⋄3 4 5⋄6 7 8⋄9 10 11] ⋄ (1⌽)@(↑⍤1) a
 [3 1 2⋄6 4 5⋄9 7 8⋄0 10 11]
 
 ⍝ bqn:under:69 — Reverse the first half of a list
-⌽⌾((2÷⍨≢)↑⊢) "abcdef"   ⍝ "cbadef"
+⌽@((2÷⍨≢)↑⊢) "abcdef"   ⍝ "cbadef"
 
 ⍝ bqn:under:73 — Add 10 to the elements below 5, with the mask computed from the argument
-{10+⌾((⍵<5)#)⍵} 3 8 2 2 6   ⍝ 13 8 12 12 6
+{10+@((⍵<5)#)⍵} 3 8 2 2 6   ⍝ 13 8 12 12 6
 
 ⍝ bqn:under:81 — Scan from the end
-∧\⌾⌽ 1 0 1 0 1 1 1   ⍝ 0 0 0 0 1 1 1
+∧\@⌽ 1 0 1 0 1 1 1   ⍝ 0 0 0 0 1 1 1
 
 ⍝ bqn:under:89 — Root-mean-square
-(+/÷≢)⌾(×⍨) 2 3 4 5   ⍝ 3.6742346141747673
+(+/÷≢)@(×⍨) 2 3 4 5   ⍝ 3.6742346141747673
 
 ⍝ bqn:under:99 — An arithmetic progression up to a limit, through an inverted transformation
-⍳∘⌈⌾((4+3×⊢)⁻¹) 20   ⍝ 4 7 10 13 16 19
+⍳∘⌈@((4+3×⊢)⁻¹) 20   ⍝ 4 7 10 13 16 19
 
 ⍝ bqn:under:109 — Replace selected positions with the same positions of the left argument
-"abcd" ⊣⌾([[1 2]]⌷) "0123"   ⍝ "0bc3"
+"abcd" ⊣@([[1 2]]⌷) "0123"   ⍝ "0bc3"
 
 ⍝ bqn:under:113 — Replace the last element of the first two lists
-["ab" "cde" "fg"] ⊣⌾((¯1⌷)¨2↑⊢) ⍳¨3 2 1 1
+["ab" "cde" "fg"] ⊣@((¯1⌷)¨2↑⊢) ⍳¨3 2 1 1
 (0 1 'b'⋄0 'e'⋄0⋄0)
 
 ⍝ bqn:under:117 — Regroup characters into the structure of the right argument
-["ab" "cde" "fg"] ⊣⌾∊ ["---" "----"]   ⍝ "abc" "defg"
+["ab" "cde" "fg"] ⊣@∊ ["---" "----"]   ⍝ "abc" "defg"
 
 ⍝ bqn:under:123 — Add to the selected elements, keeping the others
-(1 2 3+)⌾(1 1 0 1#) 10 20 30 40   ⍝ 11 22 30 43
+(1 2 3+)@(1 1 0 1#) 10 20 30 40   ⍝ 11 22 30 43
 
 ⍝⍝ Undo
 
@@ -128,7 +128,7 @@ a←[0 1 2⋄3 4 5⋄6 7 8⋄9 10 11] ⋄ (1⌽)⌾(↑⍤1) a
 3 (+÷2⍨) 7   ⍝ 5
 
 ⍝ bqn:constant:21 — Under with an array operand replaces the selected element
-∞ {⍺⌾(2⌷) ⍵} 1 2 3 4   ⍝ 1 2 ∞ 4
+∞ {⍺@(2⌷) ⍵} 1 2 3 4   ⍝ 1 2 ∞ 4
 
 ⍝⍝ Based arrays
 
@@ -157,11 +157,11 @@ c   ⍝ 9
 <\0 0 1 1 1 0 0 1 1 1 1   ⍝ 0 0 1 0 1 0 0 1 0 1 0
 
 ⍝ bqn:scan:105 — A scan from the end, through Reverse
-{"(",⍺,")F",⍵}\⌾⌽"a" "b" "c" "d"
+{"(",⍺,")F",⍵}\@⌽"a" "b" "c" "d"
 "(((d)Fc)Fb)Fa" "((d)Fc)Fb" "(d)Fc" "d"
 
 ⍝ bqn:scan:109 — A right fold over each suffix, swapping the arguments
-{"(",⍺,")F",⍵}⍨\⌾⌽"a" "b" "c" "d"
+{"(",⍺,")F",⍵}⍨\@⌽"a" "b" "c" "d"
 "(a)F(b)F(c)Fd" "(b)F(c)Fd" "(c)Fd" "d"
 
 ⍝⍝ Rank
@@ -245,31 +245,31 @@ thing←{⍵≥3? ⍵≤8? 2|⍵; ⍵=0? '@'; ∞} ⋄ thing¨⍳10
 ⍝⍝ BQNcrate
 
 ⍝ bqncrate/table.tsv:695 — Ohm's law: resistance of parallel resistors
-+/⌾÷ 2 3 6   ⍝ 1
++/@÷ 2 3 6   ⍝ 1
 
 ⍝ bqncrate/table.tsv:866 — Length of a vector
-+/⌾(×⍨) 3 4   ⍝ 5
++/@(×⍨) 3 4   ⍝ 5
 
 ⍝ bqncrate/table.tsv:922 — Harmonic mean
-(≢×+/⌾÷) 1 2 4   ⍝ 1.7142857142857142
+(≢×+/@÷) 1 2 4   ⍝ 1.7142857142857142
 
 ⍝ bqncrate/table.tsv:1050 — Geometric mean, using logarithm
-(+/÷≢)⌾⍟ 1 2 4   ⍝ 2
+(+/÷≢)@⍟ 1 2 4   ⍝ 2
 
 ⍝ bqncrate/table.tsv:1063 — Round to the nearest hundredth, ties towards ∞
-{⌊0.5+⍵}⌾(100×) 3.14159 2.71828 ¯0.125   ⍝ 3.14 2.72 ¯0.12
+{⌊0.5+⍵}@(100×) 3.14159 2.71828 ¯0.125   ⍝ 3.14 2.72 ¯0.12
 
 ⍝ bqncrate/table.tsv:930 — Number of derangements of length 5
-1-/×\⌾⌽↦5   ⍝ 44
+1-/×\@⌽↦5   ⍝ 44
 
 ⍝ bqncrate/table.tsv:976 — Mask that selects values between the first and last 1
-(∨\∧∨\⌾⌽) 0 0 1 0 1 1 0 0   ⍝ 0 0 1 1 1 1 0 0
+(∨\∧∨\@⌽) 0 0 1 0 1 1 0 0   ⍝ 0 0 1 1 1 1 0 0
 
 ⍝ bqncrate/table.tsv:1098 — Remove trailing spaces
-(∨\⌾⌽' '≠⊢)↣# "ab c  "   ⍝ "ab c"
+(∨\@⌽' '≠⊢)↣# "ab c  "   ⍝ "ab c"
 
 ⍝ bqncrate/table.tsv:1174 — Remove leading and trailing spaces
-{(∨\∧∨\⌾⌽)' '≠⍵}↣# "  ab c  "   ⍝ "ab c"
+{(∨\∧∨\@⌽)' '≠⍵}↣# "  ab c  "   ⍝ "ab c"
 
 ⍝ bqncrate/table.tsv:713 — Ternary: apply F if a0, otherwise G
 a←1 ⋄ (~a)⍚[- ⊢] 5   ⍝ ¯5
@@ -281,20 +281,20 @@ a←1 ⋄ (~a)⍚[- ⊢] 5   ⍝ ¯5
 {⍵<0}⍚[{⍵>10} 1]¨ ¯1 5 20   ⍝ 1 $f $t
 
 ⍝ bqncrate/table.tsv:415 — Replace the first major cell
-[0 0 0]⌾↑ [1 2 3⋄4 5 6]   ⍝ [0 0 0⋄4 5 6]
+[0 0 0]@↑ [1 2 3⋄4 5 6]   ⍝ [0 0 0⋄4 5 6]
 
 ⍝ bqncrate/table.tsv:572 — Reverse along every axis
-⌽⌾, [1 2 3⋄4 5 6]   ⍝ [6 5 4⋄3 2 1]
+⌽@, [1 2 3⋄4 5 6]   ⍝ [6 5 4⋄3 2 1]
 
 ⍝ bqncrate/table.tsv:738 — Apply a function to the last major cell
--⌾(¯1⌷) [1 2⋄3 4]   ⍝ [1 2⋄¯3 ¯4]
+-@(¯1⌷) [1 2⋄3 4]   ⍝ [1 2⋄¯3 ¯4]
 
 ⍝ bqncrate/table.tsv:792 — Blend two lists by a mask
-"abcd" ⊣⌾(1 0 1 0#) "wxyz"   ⍝ "axcz"
+"abcd" ⊣@(1 0 1 0#) "wxyz"   ⍝ "axcz"
 
 ⍝ bqncrate/table.tsv:859 — Swap the first and last major cells
-⌽⌾([[0 ¯1]]⌷) 1 2 3 4   ⍝ 4 2 3 1
+⌽@([[0 ¯1]]⌷) 1 2 3 4   ⍝ 4 2 3 1
 
 ⍝ bqncrate/table.tsv:1191 — Replace all spaces with dashes
-{('-'⍨)¨⌾((' '=⍵)#)⍵} "a b c"   ⍝ "a-b-c"
+{('-'⍨)¨@((' '=⍵)#)⍵} "a b c"   ⍝ "a-b-c"
 

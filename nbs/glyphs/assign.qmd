@@ -18,7 +18,7 @@ f←× ⋄ x←3 ⋄ x(f)←4 ⋄ x ⍝ 12
 x←1 2 3 ⋄ x⌽← ⋄ x ⍝ 3 2 1
 ```
 
-A target can also be a [subscript](../scripts.ipynb#subscripts) such as `x₁`, a [dot](dot.qmd) path such as `T.a` or `x.[i]`, or a selection in parentheses, `(f N)`, where `f` only selects or rearranges, as for structural [Under](under.qmd). Modified assignment applies its function to each selected item. To apply a function to a selection as a whole, use Under, as in `m(⌽⌾ 1⌷)←` or `m←⌽⌾ 1⌷ m`. `[a b]←Y` destructures: each name gets the matching item.
+A target can also be a [subscript](../scripts.ipynb#subscripts) such as `x₁`, a [dot](dot.qmd) path such as `T.a` or `x.[i]`, or a selection in parentheses, `(f N)`, where `f` only selects or rearranges, as for structural [Under](under.qmd). Modified assignment applies its function to each selected item. To apply a function to a selection as a whole, use Under, as in `m(⌽@ 1⌷)←` or `m←⌽@ 1⌷ m`. `[a b]←Y` destructures: each name gets the matching item.
 
 ```bpl
 x←1 2 3 ⋄ x₁←9 ⋄ x ⍝ 1 9 3

@@ -689,10 +689,10 @@
    <key code="15" output="¸"/>
    <key code="16" output="ˇ"/>
    <key code="17" output="˝"/>
-   <key code="18" output="¬"/>
-   <key code="19" output="”"/>
+   <key code="18" output="¹"/>
+   <key code="19" output="²"/>
    <key code="20" output="#"/>
-   <key code="21" output="£"/>
+   <key code="21" output="⁴"/>
    <key code="22" action="k22-m5"/>
    <key code="23" action="k23-m5"/>
    <key code="24" output="⋄"/>
@@ -715,7 +715,7 @@
    <key code="41" output="Œ"/>
    <key code="42" output="⊢"/>
    <key code="43" output="⊣"/>
-   <key code="44" output="—"/>
+   <key code="44" output="⁻"/>
    <key code="45" output="⊤"/>
    <key code="46" output="˘"/>
    <key code="47" output="÷"/>
@@ -1641,7 +1641,6 @@
    <when state="diaeresis" output="⍤"/>
    <when state="superscript" output="ᵀ"/>
    <when state="quad" output="⌻"/>
-   <when state="circle" output="⌾"/>
   </action>
   <action id="k18-m0">
    <when state="none" output="1"/>

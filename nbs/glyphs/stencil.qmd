@@ -18,6 +18,12 @@ Negative sizes in [Windows](windows.qmd) return the same windows as one array.
 
 Results assemble with fill.
 
+A function right operand computes the specification from the argument: `f⌺g Y` is `f⌺(g Y) Y`. [Rank](rank.qmd) and [Axis](axis.qmd) take a function right operand in the same way. Here the window size is the square root of the length, rounded up:
+
+```bpl
+(+/⊢)⌺{⌈√≢⍵} ⍳9   ⍝ 1 3 6 9 12 15 18 21 15
+```
+
 ## Errors
 
 - `RANK`: specification not a unit, vector or two-row matrix, or more axes than `Y`

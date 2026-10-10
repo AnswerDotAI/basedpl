@@ -83,6 +83,10 @@ def test_macos_follows_the_mapping_rules():
 def test_regional_layouts_preserve_native_typing_and_bpl():
     native = bases()
     for lang, base in native.items():
+        required = layout | {'option': {k: v for k, v in layout['option'].items() if k not in layout['optional_shift']}}
+        bindings = shortcuts(layout, lang, base)
+        assert bindings.items() >= shortcuts(required, lang, base).items()
+        assert all(index == OPTION_SHIFT for k, (_, index) in bindings.items() if k in layout['optional_shift'])
         parsed = parse(keylayout(layout, lang))
         assert simulate(parsed, [(29, OPTION_SHIFT)]) == '⍬', lang
         for char, chord in shortcuts(layout, lang, base).items():

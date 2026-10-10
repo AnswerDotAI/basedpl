@@ -36,7 +36,7 @@ impl Session {
                 DefinitionKind::MonadicOperator => Operator,
                 DefinitionKind::DyadicOperator => DyadicOperator,
             },
-            // A group or run has the category of its expression, so `(M←-)` and `(⌽⌾ 1⌷)` are functions.
+            // A group or run has the category of its expression, so `(M←-)` and `(⌽@ 1⌷)` are functions.
             NodeKind::Group(_) | NodeKind::Run(_) => self.assignment_operand(std::slice::from_ref(node), 1).map_or(NoResult, |(_, c)| c),
             _ => Value,
         }
@@ -63,7 +63,7 @@ impl Session {
             category = match superscript { Some(Superscript::Unit) => Value, Some(_) if matches!(operand_category, Value) => Value, _ => Function };
         }
         if start > 0 && matches!(&nodes[start - 1].kind, NodeKind::Run(inner) if self.ends_in_dyadic_operator(inner)) {
-            // A run that ends in a dyadic operator holds its left operand, and takes this operand as its right one, as in `(⌽⌾ 1⌷)`.
+            // A run that ends in a dyadic operator holds its left operand, and takes this operand as its right one, as in `(⌽@ 1⌷)`.
             start -= 1;
             category = Function;
         } else if start > 0 && matches!(Rule::get(self.node_category(&nodes[start - 1]), category), Rule::BindRight) {

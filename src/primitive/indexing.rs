@@ -115,6 +115,8 @@ impl Targets {
     }
 }
 
+/// The item of `array` at `path`. A path stops at an atom, so a simple item stands for the nested items below it.
+pub(crate) fn reach(array: &Value, path: &[usize]) -> Value { path.iter().fold(array.clone(), |item, &i| if item.is_atom() { item } else { item.at(i) }) }
 pub(crate) struct Selection { pub frame: Frame, pub targets: Targets }
 
 impl Selection {
@@ -136,10 +138,9 @@ impl Selection {
 
     pub(crate) fn read(&self, array: &Value, span: &Context<'_>) -> Result<Value, Error> {
         let invalid = |k| span.error(k, "invalid selection");
-        let item = |path: &[usize]| path.iter().fold(array.clone(), |item, &i| item.at(i));
         let layout = match (&self.targets, &self.frame) {
             (Targets::Offsets(offsets), Frame::Direct) => return Ok(array.at(offsets[0])),
-            (Targets::Paths(paths), Frame::Direct) => return Frame::Direct.collect(paths.iter().map(|p| item(p)), || array.prototype()).map_err(invalid),
+            (Targets::Paths(paths), Frame::Direct) => return Frame::Direct.collect(paths.iter().map(|p| reach(array, p)), || array.prototype()).map_err(invalid),
             (_, Frame::Array(layout)) => layout,
         };
         let data = match &self.targets {
@@ -148,10 +149,16 @@ impl Selection {
                 data.rows(array, offsets, 1);
                 data
             }
-            // Each item comes from the array that holds it.
+            // Each item comes from the array that holds it. A path that reaches an atom stops there.
             Targets::Paths(paths) => {
                 let mut data = Gather::items(paths.len());
-                for path in paths { match path.split_last() { Some((&last, outer)) => data.push(&item(outer), last), None => data.add(array.clone()) } }
+                for path in paths {
+                    match path.split_last().map(|(&last, outer)| (last, reach(array, outer))) {
+                        Some((last, outer)) if !outer.is_atom() => data.push(&outer, last),
+                        Some((_, atom)) => data.add(atom),
+                        None => data.add(array.clone()),
+                    }
+                }
                 data
             }
         };
@@ -164,19 +171,6 @@ impl Selection {
         self.write_into(&mut array, values, span)?;
         Ok(array)
     }
-    /// Fails when a target repeats with a value that doesn't match its first value. Under needs one value for each position.
-    /// Assignment lets the last value win.
-    pub(crate) fn check_repeats(&self, values: &Value, span: &Context<'_>) -> Result<(), Error> {
-        let mut firsts: HashMap<&[usize], usize> = HashMap::with_capacity(self.targets.len());
-        for i in 0..self.targets.len() {
-            let first = *firsts.entry(self.targets.path(i)).or_insert(i);
-            if first != i && !self.item(values, first).matches(&self.item(values, i), span)? {
-                return Err(span.domain_error("a position selected twice gets different values"));
-            }
-        }
-        Ok(())
-    }
-
     /// Replaces each target of `array` with its value, in place. Every check comes before the first write, so an error leaves
     /// `array` unchanged. A later target at the same position wins. Compact storage widens for wider numbers, and mixed storage
     /// stays mixed.

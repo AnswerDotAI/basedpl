@@ -217,6 +217,7 @@ impl Function {
         kind: SelectionKind,
         cx: &mut Context<'_>,
     ) -> Result<Option<(Value, SelectionKind)>, Error> {
+        if left.is_none() { if let Some(fork) = self.monadic_fork(cx.span)? { return fork.select(None, labels, actual, kind, cx); } }
         match self.node() {
             FunctionNode::Composed(op @ (OperatorKind::Atop | OperatorKind::Over), [Operand::Function(g), Operand::Function(h)]) => {
                 // Atop passes `left` to `h`. Over applies `h` to `left` as well, and passes that to `g`.
@@ -247,6 +248,21 @@ impl Function {
         }
         let Some(kind) = self.selection_kind(left, labels, kind) else { return Ok(None) };
         Ok(Some((self.call_array(left, labels, cx)?, kind)))
+    }
+    /// The fork this function equals with one argument, which selection follows: `f↣g` is `f g ⊢`, `f↢g` is `⊢ f g`, and
+    /// sorting is `⊂∘⍋⌷⊢`, or `⊂∘⍒⌷⊢` for `>`.
+    fn monadic_fork(&self, span: &Span) -> Result<Option<Self>, Error> {
+        use {crate::primitive::Comparison, FunctionNode as N, Operand::Function as F, Primitive as P};
+        let p = Self::primitive;
+        let tines = match self.node() {
+            N::Composed(OperatorKind::Before, [F(f), F(g)]) => [f.clone(), g.clone(), p(P::Identity(false))],
+            N::Composed(OperatorKind::After, [F(f), F(g)]) => [p(P::Identity(false)), f.clone(), g.clone()],
+            N::Primitive(P::Compare(c @ (Comparison::Less | Comparison::Greater))) => {
+                [atop(p(P::Enclose), p(P::Grade(*c == Comparison::Greater)), span)?, p(P::Index), p(P::Identity(false))]
+            }
+            _ => return Ok(None),
+        };
+        Self::new(N::Fork(tines), span).map(Some)
     }
     fn tree(&self, budget: &mut usize) -> crate::display::Tree {
         use crate::display::Tree;
@@ -292,7 +308,7 @@ impl Function {
         let text = self.left_text(budget);
         if text.contains(' ') || text.ends_with(|c: char| c.is_ascii_digit() || matches!(c, '∞' | 'ₓ')) { format!("({text}){mark}") } else { format!("{text}{mark}") }
     }
-    /// An operator takes one item to its right, so anything larger than one token needs parentheses there.
+    /// An operator takes one token to its right, so anything larger than one token needs parentheses there.
     fn right_text(&self, budget: &mut usize) -> String {
         let text = self.text(budget);
         let token = match self.node() {
@@ -302,19 +318,24 @@ impl Function {
         };
         if token { text } else { format!("({text})") }
     }
-    /// A train, built from its last function leftwards. A subject directly before what's built binds to it. A function
-    /// makes a fork with the item before it, which can be a subject. A function left over at the start
-    /// makes an atop. So `32+1.8×` is `(32↣+)∘(1.8↣×)`, and `2×-⌽` is `2↣(×-⌽)`.
-    fn train(mut tines: Vec<Tine>, span: &Span) -> Result<Self, Error> {
-        let Some(Tine::Function(mut result)) = tines.pop() else { unreachable!("a train ends in a function") };
-        while let Some(tine) = tines.pop() {
-            result = match tine {
-                Tine::Array(a) => before(a, result, span)?,
-                Tine::Function(f) => match tines.pop() {
-                    None => atop(f, result, span)?,
-                    Some(Tine::Array(a)) => atop(before(a, f, span)?, result, span)?,
-                    Some(Tine::Function(g)) => Self::new(FunctionNode::Fork([g, f, result]), span)?,
-                },
+    /// A train. Each subject first binds the part after it, so `2×` is `2↣×`. The train then builds from its last part leftwards.
+    /// A bound part takes one argument, so it makes an atop with what's built. Any other part makes a fork with the part before
+    /// it, or an atop when it comes first. So `32+1.8×` is `(32↣+)∘(1.8↣×)`, `⊢-2×⊢` is `⊢-(2↣×)∘⊢`, and `2|#⊢` is `(2↣|)#⊢`.
+    fn train(tines: Vec<Tine>, span: &Span) -> Result<Self, Error> {
+        let mut parts = Vec::with_capacity(tines.len());
+        for tine in tines.into_iter().rev() {
+            let part = match tine {
+                Tine::Function(f) => (f, false),
+                Tine::Array(a) => (before(a, parts.pop().map(|(f, _)| f).expect("a train ends in a function"), span)?, true),
+            };
+            parts.push(part);
+        }
+        let mut parts = parts.into_iter().peekable();
+        let (mut result, _) = parts.next().expect("a train ends in a function");
+        while let Some((f, bound)) = parts.next() {
+            result = match parts.next_if(|_| !bound) {
+                Some((g, _)) => Self::new(FunctionNode::Fork([g, f, result]), span)?,
+                None => atop(f, result, span)?,
             };
         }
         Ok(result)
@@ -549,11 +570,7 @@ impl Function {
                 return fns[1].call(Some(&x), &y, cx);
             }
             Fold(operand, kind) => fold(operand, *kind, None, left, right, cx),
-            FunctionNode::Axis(f, axis) => match f.node() {
-                FunctionNode::Primitive(p) if p.takes_axes(left.is_some()) => p.call_axes(left, right, axis, cx),
-                Fold(operand, h) => fold(operand, *h, Some(axis), left, right, cx),
-                _ => return cell_axes(f, axis, left, right, cx),
-            },
+            FunctionNode::Axis(f, spec) => return along_axes(f, spec, left, right, cx),
         }?;
         Ok(Bound::from(array))
     }

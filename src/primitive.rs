@@ -1,7 +1,6 @@
 use crate::{
     agreement::{Agreement, Mapping},
     array::{agreed, compress, generated_len, or_and_sum, saturated, with_ints, with_width, Axis, Frame, Gather, Items, Layout, Steps, Storage, Width},
-    element::Key,
     execution::Context,
     keyed::Selector,
     number::{
@@ -19,7 +18,8 @@ mod indexing;
 mod numeric;
 mod search;
 mod structural;
-pub(crate) use {indexing::*, numeric::*, search::*, structural::*};
+pub(crate) use {indexing::*, numeric::*, structural::*};
+use search::*;
 
 /// A reduce or scan along the last or first axis. Its glyphs are `/ ⌿ \ ⍀`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -46,7 +46,6 @@ pub(crate) enum OperatorKind {
     Under,
     Differentiate,
     Agenda,
-    At,
     Stencil,
     Fold(FoldKind),
     /// A superscript after an item: `²` or `⁻¹` repeats or inverts a function and raises an array to a power. `ᵀ` transposes an
@@ -92,7 +91,7 @@ pub(crate) struct OperatorInfo {
 impl OperatorInfo { pub(crate) fn dyadic(&self) -> bool { self.right.is_some() } }
 
 impl OperatorKind {
-    const ALL: [Self; 23] = {
+    const ALL: [Self; 22] = {
         use OperatorKind::*;
         [
             Each,
@@ -112,7 +111,6 @@ impl OperatorKind {
             Under,
             Differentiate,
             Agenda,
-            At,
             Stencil,
             Fold(FoldKind { scan: false, first: false }),
             Fold(FoldKind { scan: false, first: true }),
@@ -126,9 +124,9 @@ impl OperatorKind {
             Each => ("¨", ("each", "dieresis"), Function, None),
             Commute => ("⍨", ("commute", ""), Any, None),
             Before => ("↣", ("before", "bind"), Any, Some(Function)),
-            Rank => ("⍤", ("rank", ""), Function, Some(Array)),
+            Rank => ("⍤", ("rank", ""), Function, Some(Any)),
             Atop => ("∘", ("atop", ""), Function, Some(Function)),
-            Axis => ("⍠", ("axis", ""), Function, Some(Array)),
+            Axis => ("⍠", ("axis", ""), Function, Some(Any)),
             Over => ("⍥", ("over", ""), Function, Some(Function)),
             After => ("↢", ("after", "hook bind-right"), Function, Some(Any)),
             Product => (".", ("dot", ""), Function, Some(Function)),
@@ -138,11 +136,10 @@ impl OperatorKind {
             Super(_) => ("", ("superscript", ""), Any, None),
             PairInverse => ("⇄", ("inverse-pair", ""), Function, Some(Function)),
             Valences => ("⊘", ("valences", ""), Function, Some(Function)),
-            Under => ("⌾", ("under", ""), Function, Some(Function)),
+            Under => ("@", ("under", ""), Function, Some(Any)),
             Differentiate => ("∂", ("derivative", ""), Function, None),
             Agenda => ("⍚", ("agenda", "choose"), Any, Some(Array)),
-            At => ("@", ("at", ""), Any, Some(Any)),
-            Stencil => ("⌺", ("stencil", ""), Function, Some(Array)),
+            Stencil => ("⌺", ("stencil", ""), Function, Some(Any)),
             Fold(kind) => (kind.glyph(), kind.names(), Function, None),
         };
         OperatorInfo { glyph, names, left, right }

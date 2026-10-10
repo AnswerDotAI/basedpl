@@ -2,31 +2,55 @@
 
 The [Language overview](overview.ipynb) introduces these terms informally, as they come up.
 
-Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): atoms are [numbers](#term-number), [characters](#term-character) and [functions](#term-function), [scalars](#term-scalar) are arrays of [rank](#term-rank) 0, [units](#term-unit) are atoms and scalars, and [subjects](#term-subject) are all values except functions.
+Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): atoms are [numbers](#term-number), [characters](#term-character), [functions](#term-function) and [operators](#term-operator), [scalars](#term-scalar) are arrays of [rank](#term-rank) 0, [units](#term-unit) are atoms and scalars, and [subjects](#term-subject) are all values except functions and operators.
 
 | Term | Meaning |
 |---|---|
-| [value]{#term-value} | a number, character, function or array |
-| [atom]{#term-atom} | a value that isn't an array: a number, character or function |
+| [value]{#term-value} | a number, character, function, operator or array |
+| [atom]{#term-atom} | a value that isn't an array: a number, character, function or operator |
 | [number]{#term-number} | an approximate real or complex number, or an exact integer or rational, as [Numbers](numbers.qmd) describes |
 | [character]{#term-character} | one Unicode character, written in single quotes: `'a'` |
-| [function]{#term-function} | a primitive, dfn, train or derived function, which applies to arguments |
+| [primitive]{#term-primitive} | a built-in function or operator, written as one glyph: `+` or `/` |
+| [dfn]{#term-dfn} | a function or operator written in braces, as [Dfns](dfns.ipynb) describes: `{⍵+1}` |
+| [function]{#term-function} | a primitive, train, derived function, or dfn that doesn't use `⍶` or `⍹`, which applies to arguments |
+| [operator]{#term-operator} | a primitive, or a dfn that uses `⍶` or `⍹`, which takes operands and derives a function: `/` derives `+/` from `+` |
+| [derived function]{#term-derived-function} | a function that an operator derives: `+/`, or `2↣×` |
 | [pervasive function]{#term-pervasive-function} | a function that applies to each atom of its arguments, through any nesting: `≥[2 ⊂3]` is `[3 ⊂4]` |
 | [array]{#term-array} | a rectangular collection of values along zero or more axes |
 | [rank]{#term-rank} | the number of axes: a vector has rank 1, and atoms and scalars have rank 0 |
+| [vector]{#term-vector} | an array of rank 1 |
+| [matrix]{#term-matrix} | an array of rank 2 |
+| [string]{#term-string} | a vector of characters, written in double quotes: `"abc"` |
 | [scalar]{#term-scalar} | an array of rank 0, holding one value: `⊂5` is a scalar holding the number 5, and `5` is a number |
-| [unit]{#term-unit} | a rank-0 value: a number, character, function or scalar |
-| [subject]{#term-subject} | a value that isn't a function: a number, character or array |
+| [unit]{#term-unit} | a rank-0 value: a number, character, function, operator or scalar |
+| [subject]{#term-subject} | a value that isn't a function or operator: a number, character or array |
+| [item]{#term-item} | the value at one position of an array: `[1 [2 3]]` has the items `1` and `[2 3]` |
+| [position]{#term-position} | an index along an axis, counting from 0. Negative positions count from the end |
+| [axis]{#term-axis} | one of the dimensions of an array, numbered from 0. Each axis has a length, and can have a name and keys |
+| [key]{#term-key} | a string that labels a position along an axis, as [Keyed arrays](keyed.ipynb) describes |
+| [record]{#term-record} | a vector with keys, written as `key:value` items in brackets: `["a":1 "b":2]` |
 | [cell]{#term-cell} | a sub-array made of an array's last k axes, called a k-cell: a matrix's rows are its 1-cells. A 0-cell is the unit at one position, the atom there or the array there enclosed. When k is at least the array's rank, the whole array is its one cell |
+| [major cell]{#term-major-cell} | a cell made of every axis but the first: a matrix's rows are its major cells |
 | [frame]{#term-frame} | the axes before the cells, with one cell at each position |
 | [assembly]{#term-assembly} | building one array from results, one for each position of a frame: the shape is the frame followed by the results' shape, each result fills its position with its items, and shorter results are padded with fill |
+| [fill]{#term-fill} | the value an operation uses where an array has no item, as when `5↑1 2` gives `1 2 0 0 0`. It comes from the array's prototype: its first item with each number made 0, each character made a space, and each function kept |
+| [selection]{#term-selection} | values read from an argument together with their places in it, as a list of positions or a function such as `1↓` reads them |
+| [glyph]{#term-glyph} | a symbol for a primitive or for syntax, as the [glyph reference](glyphs.qmd) lists |
+| [name]{#term-name} | a word that refers to a value, as [Syntax](syntax.qmd#names) describes: `x` or `avg` |
+| [statement]{#term-statement} | the code between two newlines or `⋄` separators. Inside brackets and parentheses, these separate rows instead |
 | [literal]{#term-literal} | a number, character, string, `∞`, `⍬`, or a constant: `$t` true, `$f` false or `$n` NaN |
-| [strand]{#term-strand} | subjects side by side, read as a vector without brackets: `1 2 3` is `[1 2 3]`, and `a b` is `[a b]` |
+| [group]{#term-group} | brackets, parentheses or braces with what they hold: `(1+2)`, `[a b]` or `{⍵}` |
+| [token]{#term-token} | a glyph, name, literal or group |
 | [run]{#term-run} | a sequence of tokens with no spaces between them |
+| [strand]{#term-strand} | subjects side by side, read as a vector without brackets: `1 2 3` is `[1 2 3]`, and `a b` is `[a b]` |
 | [argument]{#term-argument} | a subject a function applies to |
 | [operand]{#term-operand} | a value an operator applies to |
+| [monadic]{#term-monadic} | taking one argument, or for an operator, one operand: `-5` is a monadic call |
+| [dyadic]{#term-dyadic} | taking two arguments, or for an operator, two operands: `3-5` is a dyadic call |
 | [expression]{#term-expression} | a run, group or statement that ends in a subject |
 | [train]{#term-train} | a run, group or statement that ends in a function |
-| [fork]{#term-fork} | three parts of a train, `f g h`, giving `(f ⍵) g (h ⍵)`, or `A g h` with a subject on the left, giving `A g (h ⍵)` |
+| [part]{#term-part} | one of the pieces a train is built from: a literal strand, or a token with the operators bound to it, such as `2`, `+/` or `(+×-)` |
+| [fork]{#term-fork} | three parts of a train, `f g h`, giving `(f ⍵) g (h ⍵)` |
+| [tine]{#term-tine} | one of the two outer parts of a fork |
 | [atop]{#term-atop} | two parts of a train, `f g`, giving `f (g ⍵)` |
-| [bind]{#term-bind} | a subject directly before a function in a train, fixing its left argument: `2×` is `2↣×` |
+| [bind]{#term-bind} | a subject directly before a part, fixing that part's left argument: `2×` is `2↣×`, and in `2\|#⊢` the `2` binds `\|` |

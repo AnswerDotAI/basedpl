@@ -23,16 +23,16 @@ x←5 ⋄ x 1 2                ⍝ [5 [1 2]]
 
 ## Operators and operands
 
-Operators bind before functions apply. An operator's left [operand](terms.qmd#term-operand) is the whole function to its left. Its right operand is the one item to its right, which ends at the next space. A literal strand counts as one item: in `f⍤1 2 M`, the rank is `1 2`. Put a vector argument after a literal operand in brackets, as in `f⍤1[2 3]`. An argument that touches the operand stays out of it: `+/⍤1m` applies `+/⍤1` to `m`, and `'a',⍣3'b'` applies `'a',⍣3` to `'b'`.
+Operators bind before functions apply. An operator's left [operand](terms.qmd#term-operand) is the whole function to its left. Its right operand is the one [token](terms.qmd#term-token) to its right. A literal strand counts as one token: in `f⍤1 2 M`, the rank is `1 2`. Put a vector argument after a literal operand in brackets, as in `f⍤1[2 3]`. An argument that touches the operand stays out of it: `+/⍤1m` applies `+/⍤1` to `m`, and `'a',⍣3'b'` applies `'a',⍣3` to `'b'`.
 
 A numeric operand and numeric argument need an explicit separator. `f⍣¯25` has operand `¯25`, while `f⍣¯2 5` has operand `¯2 5`. Use `f⍣¯2(5)` or `f⍣¯2⊢5` to give operand `¯2` and argument `5`.
 
-A run that ends in a dyadic operator takes the next run as its right operand, as if no space came between them. A name that holds a dyadic operator counts. In `⌊⌾ 10× x`, the right operand of `⌾` is `10×`.
+Each run acts as a parenthesised group, which is one token, so an operator at the end of a run takes the next run as its right operand, as it takes a touching token. A name that holds a dyadic operator counts. In `⌊@ 10× x`, the right operand of `@` is the run `10×`.
 
 ```bpl
 m←2 3⍴⍳6 ⋄ +/⍤1 m               ⍝ 3 12
 m←2 3⍴⍳6 ⋄ +/⍤1m                ⍝ 3 12
-m←2 3⍴⍳6 ⋄ +/⍤ 1 m              ⍝ 3 12
+⌊@ 10× 1.25 2.78                 ⍝ 1.2 2.7
 x←5 ⋄ ≥⍣3 x                     ⍝ 8
 ≥⍣3(5)                          ⍝ 8
 ≥⍣3⊢5                           ⍝ 8
@@ -46,18 +46,18 @@ Where an operator takes a function, an array operand acts as a constant function
 
 ## Trains
 
-A run, group or statement that ends in a function is a [train](terms.qmd#term-train). BPL builds a train from its last function leftwards, as APL does:
+A run, group or statement that ends in a function is a [train](terms.qmd#term-train). BPL builds a train in two steps:
 
-- A function and the item before it form a [fork](terms.qmd#term-fork) with the part already built. `f g h` gives `(f ⍵) g (h ⍵)`. With a subject `A` in place of `f`, `A g h` gives `A g (h ⍵)`.
-- A subject directly before the part already built [binds](terms.qmd#term-bind) to it. `2×` is `2↣×`.
-- A function left over at the start forms an [atop](terms.qmd#term-atop). `f g` gives `f (g ⍵)`.
+1. Each subject [binds](terms.qmd#term-bind) the one [part](terms.qmd#term-part) after it. `2×` is `2↣×`, and the parts of `2|#⊢` are `2|`, `#` and `⊢`. To bind a whole train, put it in parentheses, as in `2(+×-)`.
+2. BPL builds the train from its last part leftwards, as APL does. A bound part takes one argument, so it forms an [atop](terms.qmd#term-atop) with the train built so far. Any other part forms a [fork](terms.qmd#term-fork) with the part before it and the train built so far, or an atop when it comes first.
 
-With two arguments, a fork `f g h` gives `(⍺ f ⍵) g (⍺ h ⍵)`. `A g h` gives `A g (⍺ h ⍵)`. An atop `f g` gives `f (⍺ g ⍵)`. A bound function takes one argument only: `3 (2×) 4` is a `SYNTAX` error.
+A fork `f g h` gives `(f ⍵) g (h ⍵)`, and an atop `f g` gives `f (g ⍵)`. So `2|#⊢` is the fork `(2|)#⊢`, and `⊢-2×⊢` is `⊢-(2×)∘⊢`, as in APL. With two arguments, a fork gives `(⍺ f ⍵) g (⍺ h ⍵)`, and an atop gives `f (⍺ g ⍵)`. A bound function takes one argument only: `3 (2×) 4` is a `SYNTAX` error.
 
 ```bpl
 f←32+1.8× ⋄ f100     ⍝ 212
 (+/÷≢) 1 2 3 6       ⍝ 3
 (0.5×⊢+÷) 2          ⍝ 1.25
+(2|#⊢) 5 6 7         ⍝ 5 7
 2 (1-×) 5            ⍝ ¯9
 ```
 
@@ -139,7 +139,7 @@ a←1 2 ⋄ b←a ⋄ a₀←9 ⋄ b ⍝ 1 2
 
 Every statement in a dfn body runs. The body's last statement gives the result. A final assignment returns its value without displaying it. An assignment at top level displays nothing either. [Dfns](dfns.ipynb) covers bodies, predicates and arguments.
 
-Evaluation is right to left, including fork arms. Items inside brackets evaluate left to right, as statements do.
+Evaluation is right to left, including tines. Items inside brackets evaluate left to right, as statements do.
 
 Empty Each, Rank, Outer and Inner product call the operand on prototypes. Empty scan makes no calls. Generic reduction associates to the right. Float sum and product may reassociate. All scans accumulate left to right.
 
