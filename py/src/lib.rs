@@ -398,12 +398,6 @@ fn response(py: Python<'_>, result: Evaluation) -> PyResult<Py<PyDict>> {
 
 fn output(py: Python<'_>, events: &[basedpl::Output]) -> PyResult<Py<PyAny>> { python(py, &events.iter().map(basedpl::protocol::output).collect()) }
 
-#[pyfunction]
-fn _check_reference(case: &str, timeout: f64) -> PyResult<String> {
-    let case = serde_json::from_str(case).map_err(|e| PyValueError::new_err(e.to_string()))?;
-    Ok(basedpl::reference::check(&case, options(Some(timeout), false)?).to_string())
-}
-
 /// BPL source for a value captured from another interpreter, given as JSON.
 #[pyfunction]
 fn _captured_literal(value: &str) -> PyResult<String> {
@@ -445,7 +439,6 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyArray>()?;
     m.add_class::<PyFunction>()?;
     m.add_class::<PyOperator>()?;
-    m.add_function(wrap_pyfunction!(_check_reference, m)?)?;
     m.add_function(wrap_pyfunction!(_captured_literal, m)?)?;
     m.add_function(wrap_pyfunction!(_parse, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;

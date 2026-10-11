@@ -66,7 +66,7 @@ During conversion, comments are extracted from descriptions, unchanged ngn asser
 
 Use `basedpl.bpltests.parse(text)` to read records as `Case` objects with `id`, `comment`, `code`, `expect`, `rtol`, `atol`, `section`, optional `input` and `output` text and the header's `line`. `render(cases)` writes them back. The conversion checks preserve source text and reproduce captured values, shapes and recursive prototypes; they do not infer new expectations from the program under test.
 
-Use `check_file(path)` from `basedpl.bpltests` to run a reference file through the installed extension and list its failures. It applies the same comparison and tolerances as `tests/reference.rs`. `check_page(path)` does the same for the BPL examples in a `.qmd` page.
+Use `check_file(path)` from `basedpl.bpltests` to run a reference file in a fresh worker and list its failures. It runs the same code from `src/reference.rs` as `tests/reference.rs`. `check_page(path)` does the same for the BPL examples in a `.qmd` page.
 
 ## Attribution
 

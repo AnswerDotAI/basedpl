@@ -197,11 +197,6 @@ def convert(row):
 def _load(path): return parse(path.read_text())
 
 
-def _check(case, timeout=2):
-    from ._core import _check_reference
-    return json.loads(_check_reference(json.dumps(case), timeout))
-
-
 def add(ids, output='tests/reference', directory='provenance'):
     "Append reviewed cases, then mark their inventory records active."
     output = Path(output)
@@ -225,47 +220,26 @@ def add(ids, output='tests/reference', directory='provenance'):
     return list(rows)
 
 
+def _failures(request):
+    "The failures that a fresh worker gives for `request`, a `reference` or `page` request."
+    with Worker() as w: r = w.request(request)
+    if e := r['error']: raise ValueError(e['message'])
+    return r['failures']
+
+
 def check_file(
     path, # A `.bpl` reference file
-    ids=None, # Check only the cases whose id or header line is in `ids`
-    timeout=2 # Seconds allowed for each case
+    ids=None # Check only the cases whose id or header line is in `ids`
 ):
-    "Check the cases in `path` through the installed extension, as `tests/reference.rs` does, and return the failures."
-    path = Path(path)
-    fails = []
-    for c in _load(path):
-        if ids and c.id not in ids and c.line not in ids: continue
-        case = dict(code=c.code)
-        if c.expect.startswith('⍝ error: '): case['expected_error'] = c.expect.removeprefix('⍝ error: ')
-        else: case['expected_code'] = c.expect
-        if c.output is not None: case['expected_output'] = c.output
-        if c.input is not None: case['input'] = c.input
-        if c.rtol: case['relative_tolerance'] = c.rtol
-        if c.atol: case['absolute_tolerance'] = c.atol
-        r = _check(case, timeout)
-        if r['status']!='pass': fails.append(dict(line=c.line, id=c.id, status=r['status'], message=r.get('message'), code=c.code, expect=c.expect))
-    return fails
+    "Check the cases in `path` in a fresh worker, as `tests/reference.rs` does, and return the failures."
+    return _failures(dict(reference=dict(text=Path(path).read_text(), ids=ids)))
 
 
-def check_page(path):
-    "Run the BPL examples in `.qmd` page `path` as `tests/core.rs` does, and return the failures."
-    # `_check_reference` compares values but runs each case in a fresh session, so each check replays its block from the start.
-    fails, block = [], None
-    for i,text in enumerate(Path(path).read_text().splitlines(), 1):
-        if text=='```bpl':
-            block = []
-            continue
-        if block is None: continue
-        closing = text.startswith('```')
-        source, _, expected = text.partition(' ⍝ ')
-        if not closing: block.append(source)
-        if expected or closing:
-            r = _check(dict(code='\n'.join(block), expected_code=expected or '{}0', relative_tolerance=1e-13, absolute_tolerance=1e-13))
-            error = (r.get('actual') or {}).get('error')
-            if (expected and r['status']!='pass') or (not expected and error):
-                fails.append(dict(line=i, code=source, expected=expected, status=r['status'], message=r.get('message')))
-        if closing: block = None
-    return fails
+def check_page(
+    path # A `.qmd` page
+):
+    "Run the BPL examples in `.qmd` page `path` in a fresh worker, as `tests/core.rs` does, and return the failures."
+    return _failures(dict(page=dict(text=Path(path).read_text())))
 
 _SPEED = Path(__file__).parents[2]/'tests'/'speed.txt'
 

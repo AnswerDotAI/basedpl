@@ -420,17 +420,14 @@ V←"aa" "bb" "cc":1 2 1
 ⍝ — Square root extends into complex numbers
 √0 9 ¯4 3j4   ⍝ 0 3 0j2 2j1
 
-⍝ — Exact perfect rational roots
-√1r9 18446744073709551616ₓ   ⍝ 1r3 4294967296ₓ
+⍝ — Roots of exact rationals and big integers are approximate too
+√1r9 18446744073709551616ₓ   ⍝ 0.3333333333333333 4294967296
 
-⍝ — Irrational roots become approximate
-√2ₓ   ⍝ 1.4142135623730951
+⍝ — Roots of exact numbers are approximate, perfect squares included
+√[2 4 9]ₓ   ⍝ 1.4142135623730951 2 3
 
 ⍝ — Odd integral roots of negative reals use the real branch
 3 ¯3√¯8   ⍝ ¯2 ¯0.5
-
-⍝ — Negative exact degrees reciprocate
-¯3ₓ√¯8ₓ   ⍝ ¯1r2
 
 ⍝ — Non-integral degree uses principal power
 0.5√¯2   ⍝ 4
@@ -2171,8 +2168,8 @@ W←×↢*⍨⁻¹
 x←¯1j0.1 1j¯1
 ∧/1E¯12>|1-(W x)×(*W x)÷x   ⍝ $t
 
-⍝ — A real Lambert W argument below -1/e gives NaN
-×↢*⍨⁻¹ ¯1   ⍝ $n
+⍝ — A real Lambert W argument below -1/e gives the complex principal value
+×↢*⍨⁻¹ ¯1   ⍝ ¯0.31813150520476396j1.3372357014306895
 
 ⍝ —
 ×↢*⍨⁻¹ 'a'
@@ -4489,6 +4486,9 @@ f←{⍵×+⍵}
 
 ⍝ — A complex result with no imaginary part in any item has float storage
 •storage¨[1j2 2×1j¯2 2;1j2 2×1j2 2]   ⍝ "float64" "complex"
+
+⍝ — Reals whose results are complex for some items give what each item gives alone
+[⍟¯1 2.5;2√¯4 9.5;1○⁻¹2 0.5]≡[(⍟¯1),⍟2.5;(2√¯4),2√9.5;(1○⁻¹2),1○⁻¹0.5]   ⍝ $t
 
 ⍝ — Complex storage holds infinities as reals, and an infinity equals only itself
 [1j2 2 ∞ ∞=5 2 5 ∞;1j2 ∞=∞ 1j2]   ⍝ [[$f $t $f $t];[$f $f]]

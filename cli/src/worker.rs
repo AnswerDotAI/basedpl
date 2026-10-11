@@ -44,5 +44,7 @@ fn reply(session: &mut Session, request: &Value, interrupt: InterruptHandle) -> 
     let options = EvalOptions { interrupt, ..basedpl::protocol::options(request)? };
     if let Some(case) = request.get("case") { return Ok(basedpl::reference::check(case, options)); }
     if let Some(spec) = request.get("timing") { return basedpl::timing::request(spec, &options.interrupt); }
+    if let Some(spec) = request.get("reference") { return basedpl::reference::file_request(spec, &options.interrupt); }
+    if let Some(spec) = request.get("page") { return basedpl::reference::page_request(spec, &options.interrupt); }
     basedpl::protocol::request(session, request, options).map(basedpl::protocol::response)
 }

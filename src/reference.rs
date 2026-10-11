@@ -1,5 +1,5 @@
-//! Development-only reference checking, shared by tests and the worker frontend.
-use crate::{EvalOptions, Session, Value};
+//! Development-only checks, shared by the tests and the worker: reference cases, `.bpl` reference files and the examples in `.qmd` pages.
+use crate::{EvalOptions, InterruptHandle, Session, Value};
 use serde_json::{json, Value as JsonValue};
 use std::{
     collections::VecDeque,
@@ -121,4 +121,178 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
         Some(message) => json!({"status":"mismatch", "message":message, "actual":crate::protocol::response(result)}),
         None => json!({"status":"pass"}),
     }
+}
+
+/// How long each evaluation of a case or a page example may run.
+pub const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The id and comment of a case header, `⍝ id — comment`, or `⍝ — comment` with no id.
+fn header(line: &str) -> Option<(&str, &str)> {
+    let line = line.strip_prefix("⍝ ")?;
+    let (id, comment) = match line.strip_prefix('—') { Some(comment) => ("", comment), None => line.split_once(" —")? };
+    if id.chars().any(char::is_whitespace) { return None; }
+    Some((id, if comment.is_empty() { "" } else { comment.strip_prefix(' ')? }))
+}
+
+/// The code and expectation of `code ⍝ expectation`, split at the first `⍝` outside a string or character.
+fn inline(line: &str) -> Option<(&str, &str)> {
+    let mut chars = line.char_indices();
+    let mut string = false;
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '"' => string = !string,
+            '\'' if !string => {
+                chars.next();
+                if !line[i..].starts_with("''") || line[i..].starts_with("'''") { chars.next(); }
+            }
+            '⍝' if !string => return Some((line[..i].trim_end(), line[i + c.len_utf8()..].trim_start())),
+            _ => (),
+        }
+    }
+    None
+}
+
+/// `text` with its `\n` and `\\` escapes replaced.
+fn unescaped(text: &str, location: &str) -> Result<String, String> {
+    let mut result = String::new();
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        result.push(if c == '\\' {
+            match chars.next() { Some('n') => '\n', Some('\\') => '\\', _ => return Err(format!("{location}: input and output escapes are \\n and \\\\")) }
+        } else { c });
+    }
+    Ok(result)
+}
+
+/// The cases of `text`, in the format of a `.bpl` reference file, as `check` takes them. Each case also gives its `id`, its header's
+/// `line` and its `section`. `tests/reference/README.md` describes the format.
+pub fn cases(text: &str) -> Result<Vec<JsonValue>, String> {
+    if text.is_empty() { return Ok(Vec::new()); }
+    let lines: Vec<_> = text.split_terminator('\n').collect();
+    let mut starts: Vec<_> = lines.iter().enumerate().filter_map(|(i, s)| (header(s).is_some() || s.starts_with("⍝⍝ ")).then_some(i)).collect();
+    if starts.first() != Some(&0) { return Err("expected a case or section header on line 1".into()); }
+    starts.push(lines.len());
+    let (mut section, mut cases) = ("", Vec::new());
+    for range in starts.windows(2) {
+        let (start, end) = (range[0], range[1]);
+        if let Some(title) = lines[start].strip_prefix("⍝⍝ ") {
+            if !lines[start + 1..end].iter().all(|s| s.is_empty()) { return Err(format!("line {}: expected a case after section heading", start + 1)); }
+            section = title;
+            continue;
+        }
+        let (id, comment) = header(lines[start]).expect("each start is a header");
+        let location = format!("line {} ({id})", start + 1);
+        let fail = |message: String| format!("{location}: {message}");
+        let mut case = json!({"id":id, "line":start + 1, "section":section});
+        let suffix = comment.strip_prefix('[').or_else(|| comment.rsplit_once(" [").map(|(_, s)| s));
+        if let Some(options) = suffix.and_then(|s| s.strip_suffix(']')).filter(|s| s.starts_with("rtol=") || s.starts_with("atol=")) {
+            for option in options.split_whitespace() {
+                let invalid = || fail(format!("invalid tolerance {option}"));
+                let (key, value) = option.split_once('=').ok_or_else(invalid)?;
+                let key = match key { "rtol" => "relative_tolerance", "atol" => "absolute_tolerance", _ => return Err(fail(format!("unknown tolerance {key}"))) };
+                let value: f64 = value.parse().map_err(|_| invalid())?;
+                if !value.is_finite() || value < 0. || case.get(key).is_some() { return Err(invalid()); }
+                case[key] = json!(value);
+            }
+        }
+        let mut body = &lines[start + 1..end];
+        if body.last() == Some(&"") { body = &body[..body.len() - 1]; }
+        else if end != lines.len() { return Err(fail("missing blank record separator".into())); }
+        for (marker, key) in [("⍝ ⎕:", "expected_output"), ("⍝ input:", "input")] {
+            if let Some(text) = body.last().and_then(|s| s.strip_prefix(marker)) {
+                case[key] = json!(unescaped(text.strip_prefix(' ').unwrap_or(text), &location)?);
+                body = &body[..body.len() - 1];
+            }
+        }
+        if body.iter().any(|s| s.starts_with("⍝ ⎕:") || s.starts_with("⍝ input:")) {
+            return Err(fail("input and output lines must end the case, input first".into()));
+        }
+        let splits: Vec<_> = body.iter().enumerate().filter_map(|(i, s)| (*s == "⍝ =>").then_some(i)).collect();
+        let joined = body.join("\n");
+        let pair = inline(&joined).filter(|(code, expect)| !expect.contains('\n') && (body.len() == 1 || code.matches('\n').count() + 1 == body.len()));
+        let (code, expect) = match (splits.as_slice(), pair) {
+            ([], Some((code, expect))) => (code.to_owned(), expect.to_owned()),
+            ([], None) if body.len() == 2 => (body[0].to_owned(), body[1].to_owned()),
+            ([i], _) => (body[..*i].join("\n"), body[i + 1..].join("\n")),
+            _ => return Err(fail("use one ⍝ => between multiline expressions, or an inline expectation on the last line".into())),
+        };
+        if expect.is_empty() { return Err(fail("missing expectation".into())); }
+        case["code"] = json!(code);
+        if let Some(kind) = expect.strip_prefix("⍝ error: ") { case["expected_error"] = json!(kind); }
+        else { case["expected_code"] = json!(expect); }
+        cases.push(case);
+    }
+    Ok(cases)
+}
+
+/// The cases of `cases` that fail `check`, each with `check`'s `status` and `message` added, and the `kind` of the error that a case
+/// gave. Each case has `TIMEOUT` to run. An interrupt stops the checks at the case it interrupts.
+pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, interrupt: &InterruptHandle) -> Vec<JsonValue> {
+    let mut failures = Vec::new();
+    for case in cases {
+        let result = check(case, EvalOptions { timeout: Some(TIMEOUT), interrupt: interrupt.clone(), ..EvalOptions::default() });
+        if result["status"] == "pass" { continue; }
+        let mut failure = case.clone();
+        for key in ["status", "message", "kind"] {
+            if let Some(value) = result.get(key) { failure[key] = value.clone(); }
+        }
+        failures.push(failure);
+        if result["status"] == "interrupt" { break; }
+    }
+    failures
+}
+
+/// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a session of its own. The lines up to each
+/// line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must match the
+/// comment's value within 1e-13, with the same exactness. Lines with no comment must run without an error. Each failure gives the
+/// `line` of its comment or of the block's end, the `code` that ran, its `expected` comment and a `message`.
+pub fn page(text: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
+    let options = || EvalOptions { timeout: Some(TIMEOUT), echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
+    let (mut failures, mut session, mut code) = (Vec::new(), None, String::new());
+    for (i, line) in text.lines().enumerate() {
+        if line == "```bpl" {
+            session = Some(Session::new());
+            continue;
+        }
+        let Some(bpl) = session.as_mut() else { continue };
+        let closing = line.starts_with("```");
+        let (source, expected) = line.split_once(" ⍝ ").map_or((line, None), |(c, e)| (c, Some(e)));
+        if !closing {
+            code.push_str(source);
+            code.push('\n');
+        }
+        if expected.is_none() && !closing { continue; }
+        let result = bpl.eval_with(&code, options());
+        let message = match (result.error, result.value, expected) {
+            (Some(error), _, _) => Some(error.to_string()),
+            (None, _, None) => None,
+            (None, actual, Some(expected)) => {
+                let wanted = Session::new().eval_with(expected, options());
+                match (actual, wanted.value, wanted.error) {
+                    (_, _, Some(error)) => Some(format!("expectation: {error}")),
+                    (Some(actual), Some(wanted), None) => difference(&actual, &wanted, 1e-13, 1e-13, true),
+                    _ => Some("no result".into()),
+                }
+            }
+        };
+        if let Some(message) = message { failures.push(json!({"line": i + 1, "code": code.trim_end(), "expected": expected, "message": message})); }
+        code.clear();
+        if closing { session = None; }
+    }
+    failures
+}
+
+/// The reply to the worker's `reference` request. It gives `text` in a `.bpl` reference file's format and, optionally, the `ids` to
+/// check, each a case's id or its header's line. The reply gives the cases that fail, as `failures` gives them.
+pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
+    let cases = cases(spec["text"].as_str().ok_or("reference needs text as a string")?)?;
+    let ids = spec.get("ids").and_then(JsonValue::as_array);
+    let selected = cases.iter().filter(|case| ids.is_none_or(|ids| ids.iter().any(|id| *id == case["id"] || *id == case["line"])));
+    Ok(json!({"failures": failures(selected, interrupt), "error": null}))
+}
+
+/// The reply to the worker's `page` request, which gives the `text` of a `.qmd` page. The reply gives the examples that fail, as `page`
+/// gives them.
+pub fn page_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
+    Ok(json!({"failures": page(spec["text"].as_str().ok_or("page needs text as a string")?, interrupt), "error": null}))
 }

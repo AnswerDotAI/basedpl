@@ -6,16 +6,16 @@ use crate::{array::with_float_width, element::read_as};
 
 pub(super) fn complex_parts(right: &Value, polar: bool, span: &Context<'_>) -> Result<Value, Error> {
     use crate::element::{Element, Float};
+    use rustymath::{Abs, Angle, Unary};
     /// The parts of floats of width `F`: each item and 0, or with `polar`, its magnitude and its angle, 0 or π, at that width.
-    fn float_parts<F: Float>(x: &[F], polar: bool, shape: Vec<usize>) -> Option<Value> {
-        let angle = |v: F| F::narrow(num_complex::Complex64::new(v.wide(), 0.0).arg());
-        F::build(shape, x.iter().flat_map(|&v| if polar { [v.abs(), angle(v)] } else { [v, F::zero()] }).collect())
+    fn float_parts<F: Float>(x: &[F], polar: bool, shape: Vec<usize>) -> Option<Value> where Angle: Unary<F, Out = F> {
+        F::build(shape, x.iter().flat_map(|&v| if polar { [v.abs(), Angle.one(v)] } else { [v, F::zero()] }).collect())
     }
     let layout = right.layout().concat(&Layout::from(vec![2]));
     let shape = layout.shape().to_vec();
     // Float and complex storage give floats in one pass, at the floats' width. The general loop below keeps exact numbers exact.
     let parts = match right.as_items() {
-        Items::Complex(z) if polar => f64::build(shape, z.iter().flat_map(|&z| [crate::number::complex::magnitude(z), z.arg()]).collect()),
+        Items::Complex(z) if polar => f64::build(shape, z.iter().flat_map(|&z| [Abs.one(z), Angle.one(z)]).collect()),
         Items::Complex(z) => f64::build(shape, z.iter().flat_map(|z| [z.re, z.im]).collect()),
         Items::Floats(x) => crate::array::with_floats!(x, |x| float_parts(x, polar, shape)),
         _ => None,
@@ -120,7 +120,16 @@ pub(super) fn format_array(left: Option<&Value>, right: &Value, span: &Context<'
     Value::from_parts(shape, data, Value::Character(' ')).error_at(span, "invalid formatted result")
 }
 
+/// Lambert W of every item. A compact array runs through `LambertW`'s slice forms, and other items through `Number`.
 pub(crate) fn lambert_w(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    if !right.is_atom() {
+        let agreement = Agreement::new(&Default::default(), right.layout()).error_at(span, "array shapes do not agree")?;
+        if agreement.len > 0 {
+            if let Some(result) = crate::pervasive::object(rustymath::LambertW, right, &agreement, span.numeric()) {
+                return result.with_layout(agreement.layout).error_at(span, "invalid keyed result");
+            }
+        }
+    }
     let w = |e: Value| numeric(&e, span)?.lambert_w().map(Value::Number).domain_at(span);
     pervade(right, &w, span)
 }
@@ -534,7 +543,7 @@ fn encode_whole<'a>(bases: Items<'a>, values: Items<'a>, layout: &Layout) -> Opt
     let whole = |items: Items<'a>| match items { Items::Booleans(_) | Items::Integers(_) | Items::Floats(_) => items.integers().ok(), _ => None };
     let (bases, values) = (whole(bases)?, whole(values)?);
     if bases.is_empty() { return None; }
-    let divisors: Vec<_> = bases.iter().map(|&b| int::Divisor::new(b)).collect();
+    let divisors: Vec<_> = bases.iter().map(|&b| rustymath::integer::Divisor::new(b)).collect();
     let mut data = vec![0; bases.len() * values.len()];
     for (digits, &value) in data.chunks_mut(bases.len()).zip(values.iter()) {
         let mut value = value;
@@ -591,7 +600,8 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Context<'_>, fill: bool, rn
             let bounds = bounds.nonnegative_integers::<u64>().error_at(span, "roll needs a nonnegative integer")?;
             // A bound of 0 draws a float between 0 and 1. The other draws keep their exactness beside it.
             if !bounds.contains(&0) {
-                let draws = bounds.into_iter().map(|n| rng.random_range(0..n)).collect();
+                let mut draws = Vec::with_capacity(bounds.len());
+                rustymath::random::roll(rustymath::Arg::Many(&bounds), bounds.len(), rng, &mut draws);
                 return generated_items(right.shape().to_vec(), draws, float)
                     .and_then(|v| v.with_layout(right.layout().clone()))
                     .error_at(span, "invalid roll result");
@@ -619,5 +629,7 @@ pub(crate) fn deal<R: rand::Rng + ?Sized>(left: &Value, right: &Value, rng: &mut
     if n > total { return Err(span.domain_error("cannot deal more items than the population")); }
     generated_len(&[n]).error_at(span, "deal exceeds array limits")?;
     let float = count_float.max(total_float);
-    generated_items(vec![n], rand::seq::index::sample(rng, total, n).into_iter().map(|i| i as u64).collect(), float).error_at(span, "invalid deal result")
+    let mut draws = Vec::new();
+    rustymath::random::deal(n as u64, total as u64, rng, &mut draws);
+    generated_items(vec![n], draws, float).error_at(span, "invalid deal result")
 }

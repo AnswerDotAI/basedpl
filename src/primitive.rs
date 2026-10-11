@@ -4,7 +4,7 @@ use crate::{
     execution::Context,
     keyed::Selector,
     number::{
-        int::{self, Int},
+        int::Int,
         Arithmetic, Math,
     },
     search::{classify, first_matches, firsts, Cells},

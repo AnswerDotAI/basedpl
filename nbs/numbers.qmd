@@ -42,6 +42,15 @@ Exact arithmetic grows as needed. Mixing exact and approximate numbers gives an 
 9223372036854775807ₓ+1ₓ ⍝ 9223372036854775808ₓ
 ```
 
+A function keeps exact integers exact only if every finite result it gives for them is rational. Arithmetic, `!`, and `*` with an integer exponent keep them exact. `√`, `⍟`, `π`, `○` and monadic `*` give approximate results, whole ones included. An exact function gives the float `∞` at a pole, such as `÷0ₓ`:
+
+```bpl
+2ₓ*¯2ₓ               ⍝ 1r4
+!20ₓ                 ⍝ 2432902008176640000ₓ
+√4ₓ                  ⍝ 2
+÷0ₓ                  ⍝ ∞
+```
+
 Predicates, positions, tally, shape, and monadic `⌊`, `⌈` and `×` return exact integers. A float beyond the `i64` range floors to an exact big integer:
 
 ```bpl

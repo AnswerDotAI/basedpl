@@ -2,21 +2,23 @@
 //!
 //! Each dispatch matches a primitive once and hands its element kernel to a loop. The loops are generic over the kernel, so each is
 //! compiled for its function and nothing is chosen per element. No loop stops early. A kernel that fails on an item marks the loop, and
-//! the loop gives up once it ends. That lets the compiler vectorize the loops. The element kernels are the `real`, `int` and `complex`
-//! cases that `Number` also uses, so both paths give the same results. Floats follow IEEE 754.
+//! the loop gives up once it ends. That lets the compiler vectorize the loops. The element kernels are rustymath's function objects and
+//! the `real`, `int` and `complex` cases, which `Number` also uses, so both paths give the same results. Floats follow IEEE 754.
 //!
 //! A Boolean, an integer or a 32-bit float beside a wider float, and any real beside a complex number, reads at the wider type as the
 //! loop reads it, as `Number` converts it. Kernels compile only for pairs that can occur, so a 32-bit kernel never meets 64-bit data.
-//! A kernel returns `None` where its case can't give the result. The
-//! caller then takes the `Number` path for the whole call, which gives the error or the exact or complex result. Kernels read their
+//! A kernel returns `None` where its case can't give the result, and a function object fails an item where it gives NaN from arguments
+//! that aren't NaN. The caller then takes the `Number` path for the whole call, which gives the error or the exact or complex result. Kernels read their
 //! arguments through `Value::checked_items`. Integer storage flagged for non-finite values that holds none reads as plain integers there.
 //!
 //! Integers run at the narrowest of the four widths that holds both arguments' items. Booleans beside integers read in place as unsigned
 //! bytes. Integers of different widths convert to the wider one before the loop. A result that doesn't fit runs again at the next width
 //! up, and at 64 bits takes the `Number` path. Results keep the width they ran at.
 //!
-//! Floats run at the wider of their two widths, and an exact operand reads at that width. The float kernels are one generic body, which
-//! computes at the width. Only 32- and 64-bit floats have kernels. `halves` runs a call with 16-bit floats on 32-bit copies of them,
+//! Floats run at the wider of their two widths, and an exact operand reads at that width. The float kernels compute at the width.
+//! `float_arithmetic` and `float_comparisons` are generic over it. The `Kernels` impls of `f32` and `f64` call rustymath's function
+//! objects. An object implements its traits only at concrete types. `at_widths!` therefore writes those impls once, for both widths,
+//! in `float_kernels`. Only 32- and 64-bit floats have kernels. `halves` runs a call with 16-bit floats on 32-bit copies of them,
 //! because the CPU runs 16-bit floats only for testing. Such a call rounds a function of several steps, such as `|`, once, where
 //! `Number` rounds each step.
 //!
@@ -31,15 +33,15 @@ use crate::{
     number::{
         complex, extended,
         int::{self, Int},
-        real, Arithmetic, Math, Numeric, WHOLE_LIMIT,
+        real, with_circle, Arithmetic, Math, Numeric, WHOLE_LIMIT,
     },
     primitive::{Comparison, Primitive},
     Value,
 };
 use num_complex::Complex64;
-use rustymath::{pairs, tolerant::{Tolerance, Tolerant, TolerantComplex}, with_tolerance, Arg, Float as _, Native, CHUNK};
+use rustymath::{pairs, reduce, tolerant::{Tolerance, Tolerant, TolerantComplex}, with_tolerance, Arg, Float as _, Native, CHUNK};
 use std::{borrow::Cow, cell::Cell};
-use {float_arithmetic::float_dyad, float_comparisons::compare, float_maths::float_maths, float_monads::float_monad};
+use {float_arithmetic::float_dyad, float_comparisons::compare};
 
 /// A loop that applies a dyadic kernel. A kernel either keeps its argument type or gives Booleans.
 pub(crate) trait Dyad<A> {
@@ -51,16 +53,41 @@ pub(crate) trait Dyad<A> {
     fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy) -> Self::Output;
     /// `f` on each pair of items, through its slice form where the loop has slices of items, and its scalar form elsewhere. A NaN result
     /// from arguments that aren't NaN fails the item, because rustymath gives NaN for an argument outside a function's real domain.
-    fn many(self, f: impl rustymath::Binary) -> Self::Output
+    fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy) -> Self::Output
     where
         Self: Sized,
-        A: Float,
     {
         self.same(move |x, y| f.checked(x, y))
     }
     /// The left and the right argument, each when it is one number that every item pairs with. A kernel can then run a loop of its own
     /// for that number, as `x*2` squares each item.
     fn constants(&self) -> (Option<A>, Option<A>) { (None, None) }
+}
+
+/// A function of two items with its arguments swapped, for a function whose arguments come in the other order: `k!n` is C(n, k).
+#[derive(Clone, Copy)]
+struct Flipped<K>(K);
+impl<A, K: rustymath::Binary<A>> rustymath::Binary<A> for Flipped<K> {
+    type Out = K::Out;
+    #[inline]
+    fn one(&self, x: A, y: A) -> K::Out { self.0.one(y, x) }
+    #[inline]
+    fn many(&self, x: Arg<'_, A>, y: Arg<'_, A>, n: usize, out: &mut Vec<K::Out>) -> bool { self.0.many(y, x, n, out) }
+    #[inline]
+    fn checked(&self, x: A, y: A) -> Option<K::Out> { self.0.checked(y, x) }
+}
+
+/// A function of the right argument alone, for a left argument that is the one constant the function stands for: `2⍟y` is `log2(y)`.
+#[derive(Clone, Copy)]
+struct Right<K>(K);
+impl<A: Copy, K: rustymath::Unary<A>> rustymath::Binary<A> for Right<K> {
+    type Out = K::Out;
+    #[inline]
+    fn one(&self, _: A, y: A) -> K::Out { self.0.one(y) }
+    #[inline]
+    fn many(&self, _: Arg<'_, A>, y: Arg<'_, A>, n: usize, out: &mut Vec<K::Out>) -> bool { self.0.many(y, n, out) }
+    #[inline]
+    fn checked(&self, _: A, y: A) -> Option<K::Out> { self.0.checked(y) }
 }
 
 /// A loop that applies a monadic kernel. A kernel keeps its argument type, or gives integers or Booleans.
@@ -73,8 +100,17 @@ pub(crate) trait Monad<A> {
     /// `f`'s results, which are whole numbers or NaN, as integers of `width`. When one doesn't fit, the loop runs again at the next width
     /// up. NaN, an infinity or a result that no width holds fails it.
     fn integer(self, width: Width, f: impl Fn(A) -> Option<A> + Copy) -> Self::Output;
-    /// `f`'s results, of another element type, such as Booleans from a predicate or floats from the magnitude of a complex number.
+    /// `f`'s results, of another element type, such as Booleans from a predicate.
     fn other<B: Element>(self, f: impl Fn(A) -> Option<B> + Copy) -> Self::Output;
+    /// `f` on each item, through its slice form where the loop has a slice of items, and its scalar form elsewhere. Its results can be
+    /// of another element type, as the magnitude of a complex number is a float. A NaN result from an argument that isn't NaN fails the
+    /// item, as `Dyad::many` says.
+    fn many<B: Element>(self, f: impl rustymath::Unary<A, Out = B> + Copy) -> Self::Output
+    where
+        Self: Sized,
+    {
+        self.other(move |y| f.checked(y))
+    }
 }
 
 /// Picks the element kernel of a primitive for one element type, and hands it to a loop.
@@ -109,16 +145,23 @@ mod booleans {
         }
     }
 }
-/// Kernels for each float width that has them, which `float_dyad` and `float_monad` give.
-macro_rules! floats {
-    ($($t:ty),+) => {$(
-        impl Kernels for $t {
-            fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> { float_dyad(p, run) }
-            fn monad<R: Monad<Self>>(p: Primitive, run: R) -> Option<R::Output> { float_monad(p, run) }
+/// Writes `$items` once for each kernel width: in a module `single`, where `F` is `f32`, and in a module `double`, where `F` is `f64`.
+/// It writes the `Kernels` impls of the float widths, whose tables call rustymath's function objects at concrete types. Each module's
+/// instances compile in a codegen unit of their own.
+macro_rules! at_widths {
+    ($($items:item)+) => {
+        pub(super) mod single {
+            use super::*;
+            type F = f32;
+            $($items)+
         }
-    )+};
+        pub(super) mod double {
+            use super::*;
+            type F = f64;
+            $($items)+
+        }
+    };
 }
-floats!(f32, f64);
 
 /// Runs `$body` with `$t` standing for the element type of the kernel width `$width`, or gives `None` at 16 bits, which has no kernels.
 macro_rules! with_kernel_width {
@@ -151,7 +194,8 @@ macro_rules! with_kernel_floats {
 mod float_arithmetic {
     use super::*;
 
-    /// The dyadic kernels of floats of width `F`, which compute at the width. Comparisons and `|` use its tolerance.
+    /// The dyadic kernels of floats of width `F` that need no function object, which compute at the width. Comparisons and `|` use its
+    /// tolerance. The float `Kernels` impls fall back to them.
     pub(super) fn float_dyad<F: Float, R: Dyad<F>>(p: Primitive, run: R) -> Option<R::Output> {
         use {Arithmetic::*, Math::*};
         let t = run.numeric().tolerance_at(F::WIDTH);
@@ -164,80 +208,82 @@ mod float_arithmetic {
             Primitive::Math(Floor) => run.same(|x: F, y| Some(x.min(y))),
             Primitive::Math(Magnitude) => with_tolerance!(t, |t| run.same(move |x: F, y: F| Some(t.residue(x, y)))),
             Primitive::Compare(op) => with_tolerance!(t, |t| compare(op, run, t)),
-            _ => return float_maths(p, run),
-        })
-    }
-}
-
-mod float_maths {
-    use super::*;
-
-    /// The dyadic kernels of floats that `real` computes. A constant exponent of 2, base of 2 or 10, or degree of 2 or 3 has a loop of
-    /// its own. `real` gives the same results item by item.
-    pub(super) fn float_maths<F: Float, R: Dyad<F>>(p: Primitive, run: R) -> Option<R::Output> {
-        use Math::*;
-        Some(match p {
-            Primitive::Math(Power) => match run.constants() {
-                (_, Some(y)) if y == F::narrow(2.0) => run.same(|x, _| real::square(x)),
-                _ => run.many(rustymath::Pow),
-            },
-            Primitive::Math(Log) => match run.constants() {
-                (Some(x), _) if x == F::narrow(2.0) => run.same(|_, y| real::log2(y)),
-                (Some(x), _) if x == F::narrow(10.0) => run.same(|_, y| real::log10(y)),
-                _ => run.same(real::log),
-            },
-            Primitive::Math(Pi) => run.same(|x, y| Some(real::pi_times(x / y))),
-            Primitive::Math(Root) => match run.constants() {
-                (Some(n), _) if n == F::narrow(2.0) => run.same(|_, y| real::sqrt(y)),
-                (Some(n), _) if n == F::narrow(3.0) => run.same(#[inline(always)] |_, y| real::cbrt(y)),
-                _ => run.same(#[inline(always)] |n, y| real::root(n, y)),
-            },
-            Primitive::Math(Gcd) => run.same(|x, y| real::integral(x, y, int::gcd)),
-            Primitive::Math(Lcm) => run.same(|x, y| real::integral(x, y, int::lcm)),
-            Primitive::Math(Factorial) => run.same(real::binomial),
             _ => return None,
         })
     }
 }
 
-mod float_monads {
+mod float_kernels {
     use super::*;
 
-    /// The monadic kernels of floats of width `F`, which compute at the width. `⌊` and `⌈` use its tolerance.
-    pub(super) fn float_monad<F: Float, R: Monad<F>>(p: Primitive, run: R) -> Option<R::Output> {
-        use {Arithmetic::*, Math::*};
-        let t = run.numeric().tolerance_at(F::WIDTH);
-        Some(match p {
-            Primitive::Arithmetic(Plus) => run.same(Some),
-            Primitive::Arithmetic(Minus) => run.same(|y| Some(-y)),
-            Primitive::Arithmetic(Times) => run.integer(Width::I16, |y: F| Some(if y == F::zero() { y } else { y.signum() })),
-            Primitive::Arithmetic(Divide) => run.same(|y| Some(F::one() / y)),
-            Primitive::Math(Magnitude) => run.same(|y: F| Some(y.abs())),
-            Primitive::Math(Floor) => with_tolerance!(t, |t| run.integer(F::INTEGERS, move |y: F| Some(t.floor(y)))),
-            Primitive::Math(Ceiling) => with_tolerance!(t, |t| run.integer(F::INTEGERS, move |y: F| Some(t.ceil(y)))),
-            Primitive::Math(Power) => run.same(|y: F| Some(rustymath::exp(y))),
-            Primitive::Math(Log) => run.same(real::ln),
-            Primitive::Math(Pi) => run.same(|y| Some(real::pi_times(y))),
-            Primitive::Math(Root) => run.same(real::sqrt),
-            Primitive::Math(Factorial) => run.same(#[inline(always)] |y| Some(real::factorial(y))),
-            _ => return None,
-        })
+    at_widths! {
+        impl Kernels for F {
+            /// The dyadic kernels of floats of width `F` that rustymath's function objects compute, with `float_dyad` for the others.
+            /// A constant exponent of 2, base of 2 or 10, or degree of 2 or 3 has a loop of its own. `Number` calls the same objects
+            /// item by item.
+            fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
+                use Math::*;
+                let t = run.numeric().tolerance_at(F::WIDTH);
+                Some(match p {
+                    Primitive::Math(Power) => match run.constants() {
+                        (_, Some(y)) if y == 2.0 => run.same(|x, _| Some(x * x)),
+                        _ => run.many(rustymath::Pow),
+                    },
+                    Primitive::Math(Log) => match run.constants() {
+                        (Some(x), _) if x == 2.0 => run.many(Right(rustymath::Log2)),
+                        (Some(x), _) if x == 10.0 => run.many(Right(rustymath::Log10)),
+                        _ => run.many(rustymath::Logb),
+                    },
+                    Primitive::Math(Pi) => run.same(|x, y| Some(real::pi_times(x / y))),
+                    Primitive::Math(Root) => match run.constants() {
+                        (Some(n), _) if n == 2.0 => run.many(Right(rustymath::Sqrt)),
+                        (Some(n), _) if n == 3.0 => run.many(Right(rustymath::Cbrt)),
+                        _ => run.many(rustymath::Root),
+                    },
+                    Primitive::Math(Gcd) => run.many(rustymath::tolerant::Gcd(t)),
+                    Primitive::Math(Lcm) => run.many(rustymath::tolerant::Lcm(t)),
+                    Primitive::Math(Factorial) => run.many(Flipped(rustymath::Binom)),
+                    _ => return float_dyad(p, run),
+                })
+            }
+
+            /// The monadic kernels of floats of width `F`, which compute at the width. `⌊` and `⌈` use its tolerance.
+            fn monad<R: Monad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
+                use {Arithmetic::*, Math::*};
+                let t = run.numeric().tolerance_at(F::WIDTH);
+                Some(match p {
+                    Primitive::Arithmetic(Plus) => run.same(Some),
+                    Primitive::Arithmetic(Minus) => run.same(|y| Some(-y)),
+                    Primitive::Arithmetic(Times) => run.integer(Width::I16, |y: F| Some(if y == 0.0 { y } else { y.signum() })),
+                    Primitive::Arithmetic(Divide) => run.same(|y| Some(1.0 / y)),
+                    Primitive::Math(Magnitude) => run.same(|y: F| Some(y.abs())),
+                    Primitive::Math(Floor) => with_tolerance!(t, |t| run.integer(F::INTEGERS, move |y: F| Some(t.floor(y)))),
+                    Primitive::Math(Ceiling) => with_tolerance!(t, |t| run.integer(F::INTEGERS, move |y: F| Some(t.ceil(y)))),
+                    Primitive::Math(Power) => run.many(rustymath::Exp),
+                    Primitive::Math(Log) => run.many(rustymath::Ln),
+                    Primitive::Math(Pi) => run.same(|y| Some(real::pi_times(y))),
+                    Primitive::Math(Root) => run.many(rustymath::Sqrt),
+                    Primitive::Math(Factorial) => run.many(rustymath::Factorial),
+                    _ => return None,
+                })
+            }
+        }
     }
 }
 
 mod float_comparisons {
     use super::*;
 
-    /// `op` between floats, with `t` deciding which are equal.
+    /// `op` between floats, by rustymath's tolerant comparisons at `t`.
     pub(super) fn compare<F: Float, R: Dyad<F>>(op: Comparison, run: R, t: impl Tolerant) -> R::Output {
         use Comparison::*;
         match op {
             Equal => run.boolean(move |x, y| Some(t.equal(x, y))),
             NotEqual => run.boolean(move |x, y| Some(!t.equal(x, y))),
-            Less => run.boolean(move |x, y| Some((x < y) & !t.equal(x, y))),
-            LessEqual => run.boolean(move |x, y| Some((x <= y) | t.equal(x, y))),
-            Greater => run.boolean(move |x, y| Some((x > y) & !t.equal(x, y))),
-            GreaterEqual => run.boolean(move |x, y| Some((x >= y) | t.equal(x, y))),
+            Less => run.boolean(move |x, y| Some(t.less(x, y))),
+            LessEqual => run.boolean(move |x, y| Some(t.less_equal(x, y))),
+            Greater => run.boolean(move |x, y| Some(t.greater(x, y))),
+            GreaterEqual => run.boolean(move |x, y| Some(t.greater_equal(x, y))),
         }
     }
 }
@@ -257,11 +303,11 @@ mod wholes {
                 Primitive::Arithmetic(Divide) => run.same(wide(int::divide)),
                 Primitive::Math(Ceiling) => run.same(|x: T, y| Some(x.max(y))),
                 Primitive::Math(Floor) => run.same(|x: T, y| Some(x.min(y))),
-                Primitive::Math(Magnitude) => run.same(wide(int::residue)),
-                Primitive::Math(Power) => run.same(wide(int::power)),
-                Primitive::Math(Gcd) => run.same(wide(int::gcd)),
-                Primitive::Math(Lcm) => run.same(wide(int::lcm)),
-                Primitive::Math(Factorial) => run.same(wide(int::binomial)),
+                Primitive::Math(Magnitude) => run.same(wide(|x, y| Some(rustymath::integer::residue(x, y)))),
+                Primitive::Math(Power) => run.same(wide(rustymath::integer::power)),
+                Primitive::Math(Gcd) => run.same(wide(rustymath::integer::gcd)),
+                Primitive::Math(Lcm) => run.same(wide(rustymath::integer::lcm)),
+                Primitive::Math(Factorial) => run.same(wide(|k, n| rustymath::integer::binom(n, k))),
                 Primitive::Math(Nand) => run.boolean(|x: T, y: T| int::nand(x.to_i64(), y.to_i64())),
                 Primitive::Math(Nor) => run.boolean(|x: T, y: T| int::nor(x.to_i64(), y.to_i64())),
                 Primitive::Compare(Equal) => run.boolean(|x, y| Some(x == y)),
@@ -304,31 +350,49 @@ impl Kernels for char {
 
 mod complex_kernels {
     use super::*;
+    use rustymath::Unary as _;
 
     impl Kernels for Complex64 {
         fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
-            use {Arithmetic::*, Comparison::*};
+            use {Arithmetic::*, Comparison::*, Math::*};
+            let t = run.numeric().tolerance_at(FloatWidth::F64);
             Some(match p {
                 Primitive::Arithmetic(Plus) => run.same(|x, y| Some(x + y)),
                 Primitive::Arithmetic(Minus) => run.same(|x, y| Some(x - y)),
                 Primitive::Arithmetic(Times) => run.same(|x, y| Some(complex::times(x, y))),
                 Primitive::Arithmetic(Divide) => run.same(|x, y| Some(complex::divide(x, y))),
-                Primitive::Compare(Equal) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.boolean(move |x, y| Some(t.complex_equal(x, y)))),
-                Primitive::Compare(NotEqual) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.boolean(move |x, y| Some(!t.complex_equal(x, y)))),
+                Primitive::Compare(Equal) => with_tolerance!(t, |t| run.boolean(move |x, y| Some(t.complex_equal(x, y)))),
+                Primitive::Compare(NotEqual) => with_tolerance!(t, |t| run.boolean(move |x, y| Some(!t.complex_equal(x, y)))),
+                Primitive::Math(Power) => run.same(|x, y| Some(complex::power(x, y))),
+                Primitive::Math(Log) => run.many(rustymath::Logb),
+                Primitive::Math(Pi) => run.same(|x, y| Some(complex::divide(x, y) * std::f64::consts::PI)),
+                Primitive::Math(Root) => run.same(|n: Complex64, y| {
+                    if n == Complex64::new(0.0, 0.0) { None } else if n == Complex64::new(2.0, 0.0) { Some(rustymath::Sqrt.one(y)) } else { Some(complex::power(y, n.inv())) }
+                }),
+                Primitive::Math(Magnitude) => run.many(rustymath::tolerant::Residue(t)),
+                Primitive::Math(Gcd) => run.many(rustymath::tolerant::Gcd(t)),
+                Primitive::Math(Lcm) => run.many(rustymath::tolerant::Lcm(t)),
+                Primitive::Math(Factorial) => run.many(Flipped(rustymath::Binom)),
                 _ => return None,
             })
         }
         fn monad<R: Monad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
-            use Arithmetic::*;
+            use {Arithmetic::*, Math::*};
             Some(match p {
                 Primitive::Arithmetic(Plus) => run.same(|z| Some(z.conj())),
                 Primitive::Arithmetic(Minus) => run.same(|z| Some(-z)),
                 Primitive::Arithmetic(Divide) => run.same(|z| Some(complex::divide(Complex64::new(1.0, 0.0), z))),
                 // Each item's direction, floor and ceiling are complex numbers, real items included. The result keeps one kind.
-                Primitive::Arithmetic(Times) => run.same(|z| Some(complex::direction(z))),
-                Primitive::Math(Math::Floor) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.same(move |z| Some(t.complex_floor(z)))),
-                Primitive::Math(Math::Ceiling) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.same(move |z| Some(t.complex_ceil(z)))),
-                Primitive::Math(Math::Magnitude) => run.other(|z| Some(complex::magnitude(z))),
+                Primitive::Arithmetic(Times) => run.many(rustymath::Sign),
+                Primitive::Math(Floor) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.same(move |z| Some(t.complex_floor(z)))),
+                Primitive::Math(Ceiling) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.same(move |z| Some(t.complex_ceil(z)))),
+                Primitive::Math(Magnitude) => run.many(rustymath::Abs),
+                Primitive::Math(Power) => run.same(|z| Some(complex::exp(z))),
+                Primitive::Math(Log) => run.many(rustymath::Ln),
+                Primitive::Math(Pi) => run.same(|z| Some(z * std::f64::consts::PI)),
+                Primitive::Math(Root) => run.many(rustymath::Sqrt),
+                Primitive::Math(Factorial) => run.many(rustymath::Factorial),
+                Primitive::Math(Circle) => run.same(|z: Complex64| Some(complex::exp(Complex64::new(-z.im, z.re)))),
                 _ => return None,
             })
         }
@@ -395,8 +459,10 @@ pub(crate) fn map(p: Primitive, left: Option<&Value>, right: &Value, agreement: 
     if let Primitive::Math(op @ (Math::Circle | Math::Arc)) = p { return circle(left, right, agreement, op == Math::Arc, numeric); }
     if let Primitive::Compare(op) = p { if let Some(result) = against_number(op, left, right, agreement, numeric) { return Some(result); } }
     if let Primitive::Math(Math::Magnitude) = p { if let Some(result) = residues(left, right, agreement) { return Some(result); } }
+    let reals_or_complex = |width| reals(p, left, right, agreement, numeric, width).or_else(|| complex_results(p, Some(left), right, agreement, numeric));
     match left.compact_kind()?.join(right.compact_kind()?, Widening::Arrays)? {
-        Kind::Float(width) => reals(p, left, right, agreement, numeric, width),
+        Kind::Float(width) => reals_or_complex(width),
+        Kind::Boolean | Kind::Integer(_) if approximate(p, true) => reals_or_complex(numeric.width),
         Kind::Complex => complexes(p, left, right, agreement, numeric),
         Kind::Extended(width) => {
             let (x, y) = (integers(left)?, integers(right)?);
@@ -412,16 +478,27 @@ pub(crate) fn map(p: Primitive, left: Option<&Value>, right: &Value, agreement: 
 
 /// A pervasive function applied to one compact argument.
 fn monadic_map(p: Primitive, right: &Value, agreement: &Agreement, numeric: Numeric) -> Option<Value> {
+    let complex = || complex_results(p, None, right, agreement, numeric);
     match right.checked_items() {
-        Items::Floats(y) => with_kernel_floats!(y, |y| float_map(p, y, agreement, numeric)),
-        y @ (Items::Booleans(_) | Items::Integers(_)) if matches!(p, Primitive::Math(Math::Pi)) => {
-            with_kernel_width!(numeric.width, F => with_exact!(y, |y| monadic::<F, _>(p, y, agreement, numeric), None))
+        Items::Floats(y) => with_kernel_floats!(y, |y| float_map(p, y, agreement, numeric)).or_else(complex),
+        y @ (Items::Booleans(_) | Items::Integers(_)) if approximate(p, false) => {
+            with_kernel_width!(numeric.width, F => with_exact!(y, |y| monadic::<F, _>(p, y, agreement, numeric), None)).or_else(complex)
         }
         Items::Booleans(_) => whole(p, None, right, Kind::Boolean, agreement),
         Items::Integers(ints) => whole(p, None, right, Kind::Integer(ints.tag()), agreement),
         Items::Extended(y, width) => with_nonfinite(width, |seen| i64::monad(p, Nonfinite { run: Map::exact(&[] as &[i64], y, agreement), p, seen })),
         Items::Complex(y) => monadic::<Complex64, _>(p, y, agreement, numeric),
         _ => None,
+    }
+}
+
+/// Whether `p` gives floats for exact arguments, as `⍟`, `π`, `√` and monadic `*` do. Its kernels then read Booleans and integers as
+/// floats.
+fn approximate(p: Primitive, dyadic: bool) -> bool {
+    match p {
+        Primitive::Math(Math::Log | Math::Pi | Math::Root) => true,
+        Primitive::Math(Math::Power) => !dyadic,
+        _ => false,
     }
 }
 
@@ -437,9 +514,10 @@ fn monadic<A: Kernels, Y: Source<A>>(p: Primitive, y: &[Y], agreement: &Agreemen
     A::monad(p, Map { x: &[] as &[Y], y, agreement, numeric })?
 }
 
-/// Reals, at least one argument of them floats, at `width`, the wider of their float widths. The loop reads Booleans and integers
-/// beside floats, and 32-bit floats beside 64-bit floats, at that width as it goes. Flagged integers convert first. `⌊` and `⌈` don't
-/// pair exact numbers with non-finite floats, because `Number` keeps an exact number exact beside them.
+/// Reals at `width`: the wider of their float widths, or the session's width where both are exact, for a function whose results are
+/// always approximate. The loop reads Booleans and integers beside floats, and 32-bit floats beside 64-bit floats, at that width as
+/// it goes. Two exact arguments read the left one as floats first. Flagged integers convert first. `⌊` and `⌈` don't pair exact
+/// numbers with non-finite floats, because `Number` keeps an exact number exact beside them.
 fn reals(p: Primitive, left: &Value, right: &Value, agreement: &Agreement, t: Numeric, width: FloatWidth) -> Option<Value> {
     let exact = |items: &Items| matches!(items, Items::Booleans(_) | Items::Integers(_) | Items::Extended(..));
     let (x, y) = (left.checked_items(), right.checked_items());
@@ -447,15 +525,14 @@ fn reals(p: Primitive, left: &Value, right: &Value, agreement: &Agreement, t: Nu
     with_kernel_width!(width, F => match (x, y) {
         (Items::Floats(Floats::F32(x)), Items::Floats(Floats::F64(_))) => dyadic::<F, _, F>(p, x, &read_as::<F>(right)?, agreement, t),
         (Items::Floats(Floats::F64(_)), Items::Floats(Floats::F32(y))) => dyadic::<F, F, _>(p, &read_as::<F>(left)?, y, agreement, t),
-        (Items::Floats(_), y) => {
-            let x = read_as::<F>(left)?;
-            with_exact!(y, |y| dyadic::<F, F, _>(p, &x, y, agreement, t), dyadic::<F, F, F>(p, &x, &read_as::<F>(right)?, agreement, t))
-        }
-        (x, Items::Floats(_)) => {
+        (x, Items::Floats(_)) if !matches!(x, Items::Floats(_)) => {
             let y = read_as::<F>(right)?;
             with_exact!(x, |x| dyadic::<F, _, F>(p, x, &y, agreement, t), dyadic::<F, F, F>(p, &read_as::<F>(left)?, &y, agreement, t))
         }
-        _ => None,
+        (_, y) => {
+            let x = read_as::<F>(left)?;
+            with_exact!(y, |y| dyadic::<F, F, _>(p, &x, y, agreement, t), dyadic::<F, F, F>(p, &x, &read_as::<F>(right)?, agreement, t))
+        }
     })
 }
 
@@ -468,6 +545,33 @@ fn complexes(p: Primitive, left: &Value, right: &Value, agreement: &Agreement, t
         (x, Items::Complex(y)) => with_reals!(x, |x| dyadic::<Complex64, _, _>(p, x, y, agreement, t), dyadic::<Complex64, _, _>(p, &read_as::<Complex64>(left)?, y, agreement, t)),
         _ => None,
     }
+}
+
+/// A call on reals whose kernel failed, run again on complex numbers, for the functions whose real arguments can have complex
+/// results: `*`, `⍟` and `√`. Their complex kernels compute each item as `Number` does.
+fn complex_results(p: Primitive, left: Option<&Value>, right: &Value, agreement: &Agreement, numeric: Numeric) -> Option<Value> {
+    if !matches!(p, Primitive::Math(Math::Power | Math::Log | Math::Root)) { return None; }
+    let y = read_as::<Complex64>(right)?;
+    match left {
+        Some(left) => dyadic::<Complex64, _, _>(p, &read_as::<Complex64>(left)?, &y, agreement, numeric),
+        None => monadic::<Complex64, _>(p, &y, agreement, numeric),
+    }
+}
+
+/// `k` on every item of `right`, for a function that no glyph names, such as Lambert W. Exact numbers read as floats of the session's
+/// width. A call on reals that gives a complex result for some item runs again on complex numbers, as `complex_results` does for
+/// glyphs.
+pub(crate) fn object<K>(k: K, right: &Value, agreement: &Agreement, numeric: Numeric) -> Option<Value>
+where
+    K: rustymath::Unary<f32, Out = f32> + rustymath::Unary<f64, Out = f64> + rustymath::Unary<Complex64, Out = Complex64> + Copy,
+{
+    if let Some(result) = halves(&[Some(right)], numeric, |v, numeric| object(k, v[0]?, agreement, numeric)) { return result; }
+    let complex = |y: &[Complex64]| Monad::<Complex64>::many(Map::exact(&[] as &[Complex64], y, agreement), k);
+    if let Items::Complex(y) = right.checked_items() { return complex(y); }
+    let real = with_kernel_width!(right.float_width().unwrap_or(numeric.width), F => {
+        Monad::<F>::many(Map::exact(&[] as &[F], &read_as::<F>(right)?, agreement), k)
+    });
+    real.or_else(|| complex(&read_as::<Complex64>(right)?))
 }
 
 /// `×` between a Boolean mask and integers at width `A`. The loop selects each integer or 0 in place of multiplying, and no result can
@@ -604,15 +708,15 @@ fn mask<T: Copy>(x: &[T], f: impl Fn(T) -> bool) -> Vec<bool> {
 /// `x|Y` for one integer `x`, dividing by multiplication. `x` of 0 takes the general kernel. Each residue lies between 0 and `x`, so it
 /// keeps the width of `Y` when that width holds `x`.
 fn residues(left: &Value, right: &Value, agreement: &Agreement) -> Option<Value> {
-    fn at<T: Whole>(divisor: int::Divisor, x: i64, y: &[T], agreement: &Agreement) -> Option<Value> {
+    fn at<T: Whole>(divisor: rustymath::integer::Divisor, x: i64, y: &[T], agreement: &Agreement) -> Option<Value> {
         let xs = [x];
-        let (map, residue) = (Map::exact(&xs, y, agreement), move |b: T| divisor.div_mod(b.to_i64()).map(|(_, r)| r));
-        if T::narrowed(x).is_some() { map.binary(|_, b| residue(b).map(T::from_i64)) } else { map.binary(|_, b| residue(b)) }
+        let (map, residue) = (Map::exact(&xs, y, agreement), move |b: T| divisor.residue(b.to_i64()));
+        if T::narrowed(x).is_some() { map.binary(|_, b| Some(T::from_i64(residue(b)))) } else { map.binary(|_, b| Some(residue(b))) }
     }
     let (Mapping::Single, Items::Integers(Ints::I64(&[x])), Items::Integers(y)) = (&agreement.left, left.checked_items(), right.checked_items()) else {
         return None;
     };
-    let divisor = int::Divisor::new(x)?;
+    let divisor = rustymath::integer::Divisor::new(x)?;
     with_ints!(y, |y| at(divisor, x, y, agreement))
 }
 
@@ -669,15 +773,25 @@ fn integers(value: &Value) -> Option<Cow<'_, [i64]>> {
 
 /// The characters of compact character storage.
 fn chars(value: &Value) -> Option<&[char]> { match value.checked_items() { Items::Characters(c) => Some(c), _ => None } }
-/// `X○Y` with one code applies that code's function, or its inverse, to every item, at the float width of `Y`. The code selects the
-/// function and takes no part in the width. Other codes, complex results, and sines and cosines beyond the magnitude where rustymath's
-/// `checked_sin` and `checked_cos` hold take the `Number` path.
+/// `X○Y` with one code applies that code's function, or its inverse, to every item: reals through `with_circle!` at the float width
+/// of `Y`, and complex numbers through `complex::circle`. The code selects the function and takes no part in the width. A call on
+/// reals that gives a complex result for some item runs again on complex numbers. Other codes take the `Number` path.
 fn circle(codes: &Value, right: &Value, agreement: &Agreement, inverse: bool, numeric: Numeric) -> Option<Value> {
     let Value::Number(code) = codes.at(0) else { return None };
     if !matches!(agreement.left, Mapping::Single) { return None; }
     let code = code.integer().ok()?;
-    let width = match right.checked_items() { Items::Floats(y) => y.tag(), _ => numeric.width };
-    with_kernel_width!(width, F => real::circle::<F, Map<F, F>, true>(code, inverse, Map::exact(&[], &read_as(right)?, agreement))?)
+    let complex = |y: &[Complex64]| Monad::<Complex64>::same(Map::exact(&[] as &[Complex64], y, agreement), move |z| complex::circle(code, inverse, z));
+    let width = match right.checked_items() {
+        Items::Complex(y) => return complex(y),
+        Items::Floats(y) => y.tag(),
+        _ => numeric.width,
+    };
+    let real = with_kernel_width!(width, F => {
+        let y = read_as::<F>(right)?;
+        let map = || Map::exact(&[] as &[F], &y, agreement);
+        with_circle!(code, inverse, |f| Monad::<F>::many(map(), f))?
+    });
+    real.or_else(|| complex(&read_as::<Complex64>(right)?))
 }
 
 /// Item `i` of the frame, read from `data` through `mapping`.
@@ -821,14 +935,11 @@ impl<A: Element, X: Source<A>, Y: Source<A>> Dyad<A> for Map<'_, X, Y> {
     type Output = Option<Value>;
     fn numeric(&self) -> Numeric { self.numeric }
     #[inline]
-    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy) -> Option<Value> { self.binary(#[inline(always)] |x, y| f(x.read(), y.read())) }
+    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy) -> Option<Value> { self.binary(|x, y| f(x.read(), y.read())) }
     #[inline]
     fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy) -> Option<Value> { self.binary(|x, y| f(x.read(), y.read())) }
     #[inline]
-    fn many(self, f: impl rustymath::Binary) -> Option<Value>
-    where
-        A: Float,
-    {
+    fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy) -> Option<Value> {
         let (mut xs, mut ys) = (Vec::new(), Vec::new());
         self.built(|out| blocks(self.x, self.y, self.agreement, out, |x, y, n, o| read_chunks(x, y, n, o, (&mut xs, &mut ys), |x, y, m, o| f.many(x, y, m, o))))
     }
@@ -841,7 +952,7 @@ impl<A: Element, X: Element, Y: Source<A>> Monad<A> for Map<'_, X, Y> {
     type Output = Option<Value>;
     fn numeric(&self) -> Numeric { self.numeric }
     #[inline]
-    fn same(self, f: impl Fn(A) -> Option<A> + Copy) -> Option<Value> { self.unary(#[inline(always)] |y| f(y.read())) }
+    fn same(self, f: impl Fn(A) -> Option<A> + Copy) -> Option<Value> { self.unary(|y| f(y.read())) }
     #[inline]
     fn integer(self, mut width: Width, f: impl Fn(A) -> Option<A> + Copy) -> Option<Value> {
         loop {
@@ -851,11 +962,13 @@ impl<A: Element, X: Element, Y: Source<A>> Monad<A> for Map<'_, X, Y> {
     }
     #[inline]
     fn other<B: Element>(self, f: impl Fn(A) -> Option<B> + Copy) -> Option<Value> { self.unary(|y| f(y.read())) }
-}
-impl<A: Float, X: Element, Y: Source<A>> real::Apply<A> for Map<'_, X, Y> {
-    type Output = Option<Value>;
     #[inline]
-    fn apply(self, f: impl Fn(A) -> Option<A> + Copy) -> Option<Value> { Monad::<A>::same(self, f) }
+    fn many<B: Element>(self, f: impl rustymath::Unary<A, Out = B> + Copy) -> Option<Value> {
+        let (y, right, mut cycled, mut read) = (self.y, &self.agreement.right, Vec::new(), Vec::new());
+        self.built(|out| {
+            each(self.agreement.len, CHUNK, |k, n| f.many(read_chunk(expanded(right, y, k * CHUNK, n, &mut cycled), 0, n, &mut read), n, out))
+        })
+    }
 }
 
 /// A loop over integers where an argument holds a non-finite value, read as `extended` defines them. Beside such a value, arithmetic
@@ -960,16 +1073,17 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: &Axis, shape: Vec<usize>, 
 
 /// A reduction of floats of width `F`. `+/` and `×/` use algebraic operations, which may combine the items in any order. NaN gives way
 /// in `max` and `min`, so each lane of `⌈/` or `⌊/` can start from it.
-fn float_fold<F: Float + Native + Kernels>(p: Primitive, data: &[F], axis: &Axis, shape: Vec<usize>, numeric: Numeric) -> Option<Value>
+fn float_fold<F: Float + Native + Kernels + reduce::Fold<Sum = F>>(p: Primitive, data: &[F], axis: &Axis, shape: Vec<usize>, numeric: Numeric) -> Option<Value>
 where
     bool: Source<F>,
 {
     use {Arithmetic::*, Math::*};
+    let total = |s: Option<F>| s.expect("a float sum or product always exists");
     match p {
-        Primitive::Arithmetic(Plus) => reduce(data, axis, shape, num_traits::zero(), F::algebraic_add),
-        Primitive::Arithmetic(Times) => reduce(data, axis, shape, num_traits::one(), F::algebraic_mul),
-        Primitive::Math(Ceiling) => reduce(data, axis, shape, F::nan(), F::max),
-        Primitive::Math(Floor) => reduce(data, axis, shape, F::nan(), F::min),
+        Primitive::Arithmetic(Plus) => F::build_narrowed(shape, lanes(data, axis, F::zero(), F::algebraic_add, |l| total(reduce::sum(l)))),
+        Primitive::Arithmetic(Times) => F::build_narrowed(shape, lanes(data, axis, F::one(), F::algebraic_mul, |l| total(reduce::prod(l)))),
+        Primitive::Math(Ceiling) => F::build_narrowed(shape, lanes(data, axis, F::nan(), F::max, reduce::max)),
+        Primitive::Math(Floor) => F::build_narrowed(shape, lanes(data, axis, F::nan(), F::min, reduce::min)),
         _ => F::dyad(p, Fold { data, axis, shape, numeric })?,
     }
 }
@@ -979,8 +1093,8 @@ fn integer_fold(p: Primitive, data: &[i64], axis: &Axis, shape: Vec<usize>) -> O
     use {Arithmetic::*, Math::*};
     match p {
         Primitive::Arithmetic(Plus) => integer_sum(data, axis, shape),
-        Primitive::Math(Ceiling) => reduce(data, axis, shape, i64::MIN, i64::max),
-        Primitive::Math(Floor) => reduce(data, axis, shape, i64::MAX, i64::min),
+        Primitive::Math(Ceiling) => i64::build_narrowed(shape, lanes(data, axis, i64::MIN, i64::max, reduce::max)),
+        Primitive::Math(Floor) => i64::build_narrowed(shape, lanes(data, axis, i64::MAX, i64::min, reduce::min)),
         Primitive::Math(Lcm | Gcd) => boolean_fold(p, data, axis, shape.clone()).or_else(|| i64::dyad(p, Fold::exact(data, axis, shape))?),
         p => i64::dyad(p, Fold::exact(data, axis, shape))?,
     }
@@ -988,12 +1102,15 @@ fn integer_fold(p: Primitive, data: &[i64], axis: &Axis, shape: Vec<usize>) -> O
 
 /// A reduction of narrow integers. Sums run at 64 bits, where they can't overflow, and `⌊` and `⌈` at the items' width. Other functions
 /// read the items as 64-bit integers.
-fn narrow_fold<T: Whole>(p: Primitive, data: &[T], axis: &Axis, shape: Vec<usize>) -> Option<Value> {
+fn narrow_fold<T: Whole + reduce::Fold<Sum = i64>>(p: Primitive, data: &[T], axis: &Axis, shape: Vec<usize>) -> Option<Value> {
     use {Arithmetic::*, Math::*};
     match p {
-        Primitive::Arithmetic(Plus) => i64::build_narrowed(shape, accumulate(data, axis, 0i64, |s, n| s + n.to_i64())),
-        Primitive::Math(Ceiling) => reduce(data, axis, shape, T::LOWEST, |x, y| x.max(y)),
-        Primitive::Math(Floor) => reduce(data, axis, shape, T::HIGHEST, |x, y| x.min(y)),
+        Primitive::Arithmetic(Plus) => {
+            let sum = |l: &[T]| reduce::sum(l).expect("a sum of fewer than 2^31 narrow integers fits 64 bits");
+            i64::build_narrowed(shape, lanes(data, axis, 0i64, |s, n| s + n.to_i64(), sum))
+        }
+        Primitive::Math(Ceiling) => T::build_narrowed(shape, lanes(data, axis, T::LOWEST, |x, y| x.max(y), reduce::max)),
+        Primitive::Math(Floor) => T::build_narrowed(shape, lanes(data, axis, T::HIGHEST, |x, y| x.min(y), reduce::min)),
         _ => integer_fold(p, &data.iter().map(|n| n.to_i64()).collect::<Vec<_>>(), axis, shape),
     }
 }
@@ -1013,33 +1130,16 @@ fn accumulate<A: Copy, S: Copy>(data: &[A], axis: &Axis, unit: S, add: impl Fn(S
     result
 }
 
-/// Each lane of `data` along `axis`, folded by `op` from `unit`. `op` may combine the items in any order. Running results along each lane
-/// let the compiler vectorize an `op` that it can't reorder itself, such as `f64::max`.
+/// Lane `i` of `data` along an `axis` whose lanes hold consecutive items.
 #[inline]
-fn lanes_folded<A: Copy>(data: &[A], axis: &Axis, unit: A, op: impl Fn(A, A) -> A + Copy) -> Vec<A> {
-    if axis.inner > 1 { return accumulate(data, axis, unit, op); }
-    (0..axis.outer).map(|i| folded(&data[axis.offset(i, 0, 0)..axis.offset(i, axis.len, 0)], unit, op)).collect()
-}
+fn lane<'a, A>(data: &'a [A], axis: &Axis, i: usize) -> &'a [A] { &data[axis.offset(i, 0, 0)..axis.offset(i, axis.len, 0)] }
 
-/// The number of running results that `folded` keeps: 32 for every element type, which measured faster on the Mac than 8 or 16.
-const RUNNING: usize = 32;
-
-/// `lane` folded by `op` from `unit` through `RUNNING` running results. The loop updates them in one local array, which compiles to
-/// vector instructions. Passed through `fold` by value, the array compiled to one scalar accumulator for each result.
+/// Each lane of `data` along `axis`: folded by `slice`, one of rustymath's reductions of a slice, where its items are consecutive, and
+/// otherwise by `add` from `unit` in one pass down the rows.
 #[inline]
-fn folded<A: Copy>(lane: &[A], unit: A, op: impl Fn(A, A) -> A) -> A {
-    let (chunks, rest) = lane.as_chunks::<RUNNING>();
-    let rest = rest.iter().fold(unit, |s, &x| op(s, x));
-    let mut parts = [unit; RUNNING];
-    // An index loop, not `zip`: without LTO, each chunk would call `Zip::new`, which isn't inlined.
-    for chunk in chunks { for k in 0..RUNNING { parts[k] = op(parts[k], chunk[k]) } }
-    parts.into_iter().fold(rest, op)
-}
-
-/// A fold by `op` that keeps the items' type, as `lanes_folded` folds.
-#[inline]
-fn reduce<A: Element>(data: &[A], axis: &Axis, shape: Vec<usize>, unit: A, op: impl Fn(A, A) -> A + Copy) -> Option<Value> {
-    A::build_narrowed(shape, lanes_folded(data, axis, unit, op))
+fn lanes<A: Copy, S: Copy>(data: &[A], axis: &Axis, unit: S, add: impl Fn(S, A) -> S, slice: impl Fn(&[A]) -> S) -> Vec<S> {
+    if axis.inner > 1 { return accumulate(data, axis, unit, add); }
+    (0..axis.outer).map(|i| slice(lane(data, axis, i))).collect()
 }
 
 /// `∧/ ∨/ ⌊/ ⌈/ ≠/ =/` on Booleans, each worked out from the count of 1s in its lane. Counting vectorizes where a running `and` or
@@ -1055,12 +1155,19 @@ fn truth_fold(p: Primitive, data: &[bool], axis: &Axis, shape: Vec<usize>) -> Op
     let counts = accumulate(data, axis, 0usize, |s, b| s + usize::from(b));
     bool::build(shape, counts.into_iter().map(|ones| rule(ones, axis.len)).collect())
 }
-/// `+/` on integers, exact. Each item splits into its high and low 32 bits. Neither half's sum can overflow `i64` for fewer than 2^31
-/// items, and both sums vectorize. A total outside `i64` takes the `Number` path.
+/// `+/` on integers, exact. A lane of consecutive items sums through rustymath. Lanes down the rows split each item into its high and
+/// low 32 bits, whose sums can't overflow `i64` for fewer than 2^31 items, and both vectorize. A total outside `i64` takes the `Number`
+/// path.
 fn integer_sum(data: &[i64], axis: &Axis, shape: Vec<usize>) -> Option<Value> {
-    let halves = accumulate(data, axis, (0i64, 0i64), |(high, low), n| (high + (n >> 32), low + (n & 0xFFFF_FFFF)));
-    let sums = halves.into_iter().map(|(high, low)| i64::try_from((i128::from(high) << 32) + i128::from(low)).ok()).collect::<Option<_>>()?;
-    i64::build_narrowed(shape, sums)
+    let sums: Vec<Option<i64>> = if axis.inner == 1 {
+        (0..axis.outer).map(|i| reduce::sum(lane(data, axis, i))).collect()
+    } else {
+        accumulate(data, axis, (0i64, 0i64), |(high, low), n| (high + (n >> 32), low + (n & 0xFFFF_FFFF)))
+            .into_iter()
+            .map(|(high, low)| i64::try_from((i128::from(high) << 32) + i128::from(low)).ok())
+            .collect()
+    };
+    i64::build_narrowed(shape, sums.into_iter().collect::<Option<_>>()?)
 }
 
 /// `∧/` or `∨/` on Booleans, which is `and` or `or`. `None` when an item isn't Boolean, so that the gcd fold runs instead.
@@ -1168,17 +1275,17 @@ fn scanned(p: Primitive, right: &Value, seed: Option<&Value>, axis: &Axis, numer
     }
 }
 
-/// The scan of floats of width `F`. `+\`, `×\`, `⌈\` and `⌊\` group their items through `Scan::grouped`.
-fn float_scan<'a, F: Float + Kernels>(p: Primitive, lanes: Lanes<'a>, data: &'a [F]) -> Option<Value>
+/// The scan of floats of width `F`. `+\`, `×\`, `⌈\` and `⌊\` run through `rustymath::reduce`'s scans, by `Scan::sliced`.
+fn float_scan<'a, F: Float + Kernels + reduce::Fold<Sum = F>>(p: Primitive, lanes: Lanes<'a>, data: &'a [F]) -> Option<Value>
 where
     bool: Source<F>,
 {
     let scan = lanes.of(data)?;
     match p {
-        Primitive::Arithmetic(Arithmetic::Plus) => scan.grouped(|x, y| x + y),
-        Primitive::Arithmetic(Arithmetic::Times) => scan.grouped(|x, y| x * y),
-        Primitive::Math(Math::Ceiling) => scan.grouped(num_traits::Float::max),
-        Primitive::Math(Math::Floor) => scan.grouped(num_traits::Float::min),
+        Primitive::Arithmetic(Arithmetic::Plus) => scan.sliced(|x, y| x + y, |l, s, o| { reduce::cumsum(l, s, o); }),
+        Primitive::Arithmetic(Arithmetic::Times) => scan.sliced(|x, y| x * y, |l, s, o| { reduce::cumprod(l, s, o); }),
+        Primitive::Math(Math::Ceiling) => scan.sliced(num_traits::Float::max, reduce::cummax),
+        Primitive::Math(Math::Floor) => scan.sliced(num_traits::Float::min, reduce::cummin),
         _ => F::dyad(p, scan)?,
     }
 }
@@ -1280,29 +1387,13 @@ impl<A: Element> Scan<'_, A> {
         }
         if ok { A::build_narrowed(self.shape, result) } else { None }
     }
-    /// The scan by `f`, which may combine items in any order. Along a lane of consecutive items, each group of four scans within itself
-    /// in two steps and then combines with the total before it. Only one operation in each group then waits for the group before. Other
-    /// lanes take `running`.
+    /// The scan by `f` through `slice`, rustymath's scan of a slice of consecutive items from an optional start, along each lane of
+    /// consecutive items. Other lanes, and inverses, take `running` with `f`.
     #[inline]
-    fn grouped(self, f: impl Fn(A, A) -> A + Copy) -> Option<Value> {
-        let len = self.axis.len;
+    fn sliced(self, f: impl Fn(A, A) -> A + Copy, slice: impl Fn(&[A], Option<A>, &mut Vec<A>)) -> Option<Value> {
         if self.inverse || self.axis.inner != 1 { return self.running(move |x, y| Some(f(x, y))); }
-        let mut result = vec![A::FILL; self.data.len()];
-        for (out, lane) in result.chunks_mut(len).zip(self.data.chunks(len)) {
-            let mut total = self.seed.map_or(lane[0], |s| f(s, lane[0]));
-            out[0] = total;
-            let ((groups, rest), (outs, last)) = (lane[1..].as_chunks::<4>(), out[1..].as_chunks_mut::<4>());
-            for (slots, &[a, b, c, d]) in outs.iter_mut().zip(groups) {
-                let (ab, cd) = (f(a, b), f(c, d));
-                let (abc, abcd) = (f(ab, c), f(ab, cd));
-                *slots = [f(total, a), f(total, ab), f(total, abc), f(total, abcd)];
-                total = f(total, abcd);
-            }
-            for (slot, &x) in last.iter_mut().zip(rest) {
-                total = f(total, x);
-                *slot = total;
-            }
-        }
+        let mut result = Vec::with_capacity(self.data.len());
+        for lane in self.data.chunks(self.axis.len) { slice(lane, self.seed, &mut result); }
         A::build_narrowed(self.shape, result)
     }
 }

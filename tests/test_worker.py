@@ -1,7 +1,6 @@
-import json, os, signal, threading
+import os, signal, threading
 import pytest
 from basedpl import bpl, BplError
-from basedpl._core import _check_reference
 from basedpl.worker import Worker, fresh
 
 def test_worker_bindings_calls_and_echo():
@@ -56,7 +55,6 @@ def test_worker_keyed_arrays():
 
 def test_worker_cancellation_and_reference_sessions():
     case = dict(code='a←3', expected_code='3')
-    assert json.loads(_check_reference(json.dumps(case), 1))['status'] == 'pass'
     with Worker() as w:
         assert w.eval('keep←42')['value'] == 42
         result = w.eval('(+⍣{0})1', timeout=.01)

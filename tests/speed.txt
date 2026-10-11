@@ -103,6 +103,11 @@ v*w	130.0	210
 2⍟v	33.0	49
 10⍟v	34.0	49
 3√v	27.0	58
+# Exact integers read as floats for a function whose results are always approximate.
+⍟jv	35	49
+*jv	23	41
+jv⍟2ₓ	140	125
+√jv	7.5	8.1
 # `!` calls rustymath's `gamma`, which sums its Lanczos series in double words. A distribution's density, cdf and quantile each
 # run over the array as one slice. The quantile refines Giles's approximation of erfcinv with Halley steps. `⌻` evaluates a
 # polynomial of degree 7 by Horner's rule.

@@ -12,7 +12,7 @@ use crate::{
 };
 use rand::{rngs::Xoshiro256PlusPlus, SeedableRng};
 pub(crate) use rustymath::distribution::Distribution;
-use rustymath::distribution::{standard, Invalid};
+use rustymath::{distribution::{standard, Cdf, Invalid, Pdf, Quantile}, Arg, Unary as _};
 use std::sync::{Arc, Mutex, PoisonError};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -136,12 +136,12 @@ fn evaluate(d: &Distribution, op: Operation, right: &Value, span: &Context<'_>) 
     if !right.is_atom() && !(quantile && d.is_discrete()) {
         if let Some(x) = read_as::<f64>(right) {
             if quantile && !x.iter().all(|p| (0.0..=1.0).contains(p)) { return Err(span.domain_error("probability must be in [0,1]")); }
-            let mut out = vec![0.0; x.len()];
+            let mut out = Vec::with_capacity(x.len());
             match op {
-                Operation::Density => d.pdfs(&x, &mut out),
-                Operation::Cdf => d.cdfs(&x, &mut out),
-                _ => d.quantiles(&x, &mut out),
-            }
+                Operation::Density => Pdf(*d).many(Arg::Many(&x), x.len(), &mut out),
+                Operation::Cdf => Cdf(*d).many(Arg::Many(&x), x.len(), &mut out),
+                _ => Quantile(*d).many(Arg::Many(&x), x.len(), &mut out),
+            };
             let width = right.float_width().unwrap_or(span.numeric().width);
             return right.layout().floats(width, out).error_at(span, "invalid distribution result");
         }

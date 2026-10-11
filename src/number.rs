@@ -3,7 +3,7 @@ use num_bigint::BigInt;
 use num_complex::Complex64;
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Signed, ToPrimitive, Zero};
-use rustymath::{tolerant::{Tolerance, Tolerant, TolerantComplex}, Float as _};
+use rustymath::{tolerant::{Tolerance, Tolerant, TolerantComplex}, Binary as _, Float as _, Unary as _};
 use std::{cmp::Ordering, fmt};
 
 /// Numbers. Floats and complex numbers follow IEEE 754, so they include infinities, NaN and `¯0`. A Boolean is the integer 0 or 1, and
@@ -117,28 +117,6 @@ pub(crate) enum Math {
     Not,
 }
 
-fn log_gamma(z: Complex64) -> Complex64 {
-    let pi = std::f64::consts::PI;
-    if z.re < 0.5 { return Complex64::new(pi, 0.0).ln() - (pi * z).sin().ln() - log_gamma(1.0 - z); }
-    let z = z - 1.0;
-    let mut x = Complex64::new(0.9999999999998099, 0.0);
-    for (i, c) in [
-        676.5203681218851,
-        -1259.1392167224028,
-        771.3234287776531,
-        -176.6150291621406,
-        12.507343278686905,
-        -0.13857109526572012,
-        9.984369578019572e-6,
-        1.5056327351493116e-7,
-    ]
-    .iter()
-    .enumerate()
-    { x += c / (z + i as f64 + 1.0); }
-    let t = z + 7.5;
-    (2.0 * pi).ln() / 2.0 + (z + 0.5) * t.ln() - t + x.ln()
-}
-
 
 /// The whole number that `y` stands for where one is needed, as a count, an index or a Boolean. The f64 default tolerance decides,
 /// whatever the pref. An f32 value lies within it of a whole number only when it is one.
@@ -164,12 +142,11 @@ impl From<BigInt> for Number { fn from(n: BigInt) -> Self { Self::exact(BigRatio
 /// A complex number with no imaginary part is a float.
 impl From<Complex64> for Number { fn from(n: Complex64) -> Self { if n.im == 0.0 { Self(Float(n.re)) } else { Self(Complex(n)) } } }
 
-/// Real cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`, at each float width. They follow
-/// IEEE 754. `None` means the result is complex, so the general path must give it.
+/// Real cases of the pervasive functions that rustymath doesn't hold, shared by `Number` and the compact kernels in `pervasive.rs`:
+/// conversions to integers, arithmetic, signs and grade order. They follow IEEE 754.
 pub(crate) mod real {
     use super::{count_as, near_integer, Arithmetic, ErrorKind};
     use crate::element::Float;
-    use rustymath::Binary as _;
     use num_traits::ToPrimitive;
     use std::cmp::Ordering;
 
@@ -193,103 +170,36 @@ pub(crate) mod real {
     pub(crate) fn signum(y: f64) -> f64 { if y == 0.0 { 0.0 } else { y.signum() } }
     /// The order of `x` and `y` for grading: `¯0` equals `0`, and NaN equals itself and follows everything else.
     pub(crate) fn grade(x: f64, y: f64) -> Ordering { x.partial_cmp(&y).unwrap_or_else(|| x.is_nan().cmp(&y.is_nan())) }
-    /// `f` on whole `x` and `y` as integers. While `|x×y|` is below 1e14, tolerant gcd gives the same result as integer gcd. Other
-    /// arguments give `None`.
-    #[inline]
-    pub(crate) fn integral<F: Float>(x: F, y: F, f: fn(i64, i64) -> Option<i64>) -> Option<F> {
-        let (x, y, limit): (f64, f64, f64) = (x.wide(), y.wide(), 1e14);
-        let fits = x.fract() == 0.0 && y.fract() == 0.0 && x.abs().max(y.abs()) < limit && (x * y).abs() < limit;
-        if fits { f(x as i64, y as i64).map(|n| F::narrow(n as f64)) } else { None }
-    }
-    /// `x*y`, or `None` where rustymath's `pow` gives NaN from arguments that aren't NaN, as for a negative base with a fractional
-    /// exponent, whose power is complex. rustymath's `pow`, `cbrt` and `root` give an exact result wherever it's a float, as in `15*4`.
-    #[inline]
-    pub(crate) fn power<F: Float>(x: F, y: F) -> Option<F> { rustymath::Pow.checked(x, y) }
-    #[inline]
-    pub(crate) fn square<F: Float>(x: F) -> Option<F> { Some(x * x) }
-    /// The logarithm of `y` to base `x`. Bases 2 and 10 take their own functions.
-    #[inline]
-    pub(crate) fn log<F: Float>(x: F, y: F) -> Option<F> {
-        if x == F::narrow(2.0) { log2(y) } else if x == F::narrow(10.0) { log10(y) } else { Some(ln(y)? / ln(x)?) }
-    }
-    /// A negative number has a complex logarithm.
-    #[inline]
-    pub(crate) fn ln<F: Float>(y: F) -> Option<F> { (y >= F::zero() || y.is_nan()).then_some(rustymath::ln(y)) }
-    #[inline]
-    pub(crate) fn log2<F: Float>(y: F) -> Option<F> { (y >= F::zero() || y.is_nan()).then_some(rustymath::log2(y)) }
-    #[inline]
-    pub(crate) fn log10<F: Float>(y: F) -> Option<F> { (y >= F::zero() || y.is_nan()).then_some(rustymath::log10(y)) }
     #[inline]
     pub(crate) fn pi_times<F: Float>(y: F) -> F { y * F::narrow(std::f64::consts::PI) }
-    /// A negative number has a complex square root.
-    #[inline]
-    pub(crate) fn sqrt<F: Float>(y: F) -> Option<F> { (y >= F::zero() || y.is_nan()).then_some(y.sqrt()) }
-    #[inline(always)]
-    pub(crate) fn cbrt<F: Float>(y: F) -> Option<F> { Some(rustymath::cbrt(y)) }
-    /// The real `n`th root of `y`. A negative `y` has one only for an odd integer degree. A degree of zero or an infinite degree has none.
-    /// Degrees 2 and 3 take the square and cube roots.
-    #[inline(always)]
-    pub(crate) fn root<F: Float>(n: F, y: F) -> Option<F> {
-        if n == F::zero() || !n.is_finite() { return None; }
-        let odd = n.fract() == F::zero() && n % F::narrow(2.0) != F::zero();
-        if y < F::zero() && !odd { return None; }
-        if n == F::narrow(2.0) { sqrt(y) } else if n == F::narrow(3.0) { cbrt(y) } else { Some(rustymath::root(n, y)) }
-    }
-    #[inline(always)]
-    pub(crate) fn factorial<F: Float>(y: F) -> F { rustymath::gamma(y + F::one()) }
-    /// `x!y` when `x` lies within tolerance of an integer `k` of at least 0, as the general path computes it: `k` steps that multiply
-    /// by `y-i` and divide by `i+1`, with `k` taken as the smaller of `k` and `n-k` when `y` lies within tolerance of an integer `n` of
-    /// at least `k`. `None` for other arguments.
-    pub(crate) fn binomial<F: Float>(x: F, y: F) -> Option<F> {
-        let k = integer(x.wide()).ok().filter(|&k| k >= 0)?;
-        let k = match integer(y.wide()) {
-            Ok(n) if n >= 0 => {
-                if k > n { return Some(F::zero()); }
-                k.min(n - k)
-            }
-            _ => k,
-        };
-        if k > 100_000 { return None; }
-        Some((0..k).fold(F::one(), |v, i| {
-            let i = F::narrow(i as f64);
-            v * (y - i) / (i + F::one())
-        }))
-    }
-    /// A loop over an array, or one real, that applies a function to reals of type `F`.
-    pub(crate) trait Apply<F> {
-        type Output;
-        fn apply(self, f: impl Fn(F) -> Option<F> + Copy) -> Self::Output;
-    }
-    impl<F: Float> Apply<F> for F {
-        type Output = Option<F>;
-        #[inline]
-        fn apply(self, f: impl Fn(F) -> Option<F> + Copy) -> Option<F> { f(self) }
-    }
-    /// `apply` with the function that circle code `code` applies to a real, or its inverse. Each function gives `None` where its result
-    /// is complex. Each is a closure of its own type, so a loop in `apply` is compiled for each code. When `CHECKED`, sine, cosine and
-    /// tangent also give `None` beyond the magnitude where rustymath's versions without a branch hold, as a loop needs. `None` for a code with
-    /// no real function. Code 0 is its own inverse.
-    pub(crate) fn circle<F: Float, A: Apply<F>, const CHECKED: bool>(code: i64, inverse: bool, a: A) -> Option<A::Output> {
-        Some(match (code, inverse) {
-            (0, _) => a.apply(|x: F| (x.abs() <= F::one()).then(|| (F::one() - x * x).sqrt())),
-            (1, false) => a.apply(|x: F| if CHECKED { rustymath::checked_sin(x) } else { Some(rustymath::sin(x)) }),
-            (2, false) => a.apply(|x: F| if CHECKED { rustymath::checked_cos(x) } else { Some(rustymath::cos(x)) }),
-            (3, false) => a.apply(|x: F| if CHECKED { rustymath::checked_tan(x) } else { Some(rustymath::tan(x)) }),
-            (4, false) => a.apply(|x: F| Some(rustymath::hypot(x, F::one()))),
-            (5, false) => a.apply(|x: F| Some(rustymath::sinh(x))),
-            (6, false) => a.apply(|x: F| Some(rustymath::cosh(x))),
-            (7, false) => a.apply(|x: F| Some(rustymath::tanh(x))),
-            (1, true) => a.apply(|x: F| (x.abs() <= F::one()).then(|| rustymath::asin(x))),
-            (2, true) => a.apply(|x: F| (x.abs() <= F::one()).then(|| rustymath::acos(x))),
-            (3, true) => a.apply(|x: F| Some(rustymath::atan(x))),
-            (4, true) => a.apply(|x: F| (x.abs() >= F::one()).then(|| x * (F::one() - (F::one() / x).powi(2)).sqrt())),
-            (5, true) => a.apply(|x: F| Some(rustymath::asinh(x))),
-            (6, true) => a.apply(|x: F| (x >= F::one()).then(|| rustymath::acosh(x))),
-            (7, true) => a.apply(|x: F| (x.abs() < F::one()).then(|| rustymath::atanh(x))),
-            _ => return None,
-        })
-    }
 }
+
+/// Runs `$object` with `$f` bound to the function object of circle code `$code` on reals, or of its inverse. The object gives NaN for
+/// a real argument whose result is complex, which fails the item. The whole expression is `None` for a code with no real function.
+/// Code 0 is its own inverse. Kernels and `Number` share this one table.
+macro_rules! with_circle {
+    ($code:expr, $inverse:expr, |$f:ident| $object:expr) => {
+        match ($code, $inverse) {
+            (0, _) => { let $f = rustymath::Sqrt1mx2; Some($object) }
+            (1, false) => { let $f = rustymath::Sin; Some($object) }
+            (2, false) => { let $f = rustymath::Cos; Some($object) }
+            (3, false) => { let $f = rustymath::Tan; Some($object) }
+            (4, false) => { let $f = rustymath::Sqrt1px2; Some($object) }
+            (5, false) => { let $f = rustymath::Sinh; Some($object) }
+            (6, false) => { let $f = rustymath::Cosh; Some($object) }
+            (7, false) => { let $f = rustymath::Tanh; Some($object) }
+            (1, true) => { let $f = rustymath::Asin; Some($object) }
+            (2, true) => { let $f = rustymath::Acos; Some($object) }
+            (3, true) => { let $f = rustymath::Atan; Some($object) }
+            (4, true) => { let $f = rustymath::Sqrtx2m1; Some($object) }
+            (5, true) => { let $f = rustymath::Asinh; Some($object) }
+            (6, true) => { let $f = rustymath::Acosh; Some($object) }
+            (7, true) => { let $f = rustymath::Atanh; Some($object) }
+            _ => None,
+        }
+    };
+}
+pub(crate) use with_circle;
 
 /// Integer cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`.
 /// `None` means the exact or error path must give the result: an overflow, a fraction, or an argument outside the domain.
@@ -397,46 +307,6 @@ pub(crate) mod int {
     /// A quotient that isn't an integer is exact. Division by zero gives an infinity or NaN. Both take the general path.
     #[inline]
     pub(crate) fn divide(x: i64, y: i64) -> Option<i64> { if x.checked_rem(y) == Some(0) { x.checked_div(y) } else { None } }
-    /// `x|y` takes the sign of `x`, as `y-x×⌊y÷x` does.
-    #[inline]
-    pub(crate) fn residue(x: i64, y: i64) -> Option<i64> {
-        if x == 0 { return Some(y); }
-        let r = y.checked_rem(x)?;
-        Some(if r != 0 && (r < 0) != (x < 0) { r + x } else { r })
-    }
-    /// A fixed nonzero divisor for dividing many numbers. Each division uses multiplications and shifts, not a division instruction.
-    /// Setting one up costs more than a single division.
-    #[derive(Clone, Copy)]
-    pub(crate) struct Divisor { x: i64, magnitude: strength_reduce::StrengthReducedU64 }
-    impl Divisor {
-        pub(crate) fn new(x: i64) -> Option<Self> { (x != 0).then(|| Self { x, magnitude: strength_reduce::StrengthReducedU64::new(x.unsigned_abs()) }) }
-        /// The floored quotient `⌊y÷x` and the residue `x|y`. The residue takes the sign of `x`. `None` when the quotient is outside `i64`.
-        #[inline]
-        pub(crate) fn div_mod(self, y: i64) -> Option<(i64, i64)> {
-            let (q, r) = strength_reduce::StrengthReducedU64::div_rem(y.unsigned_abs(), self.magnitude);
-            let (q, r) = (i64::try_from(q).ok()?, r as i64);
-            let q = if (y < 0) != (self.x < 0) { -q } else { q };
-            let r = if y < 0 { -r } else { r };
-            Some(if r != 0 && (r < 0) != (self.x < 0) { (q - 1, r + self.x) } else { (q, r) })
-        }
-    }
-    /// Exact powers share the exponent limit of the general exact path.
-    #[inline]
-    pub(crate) fn power(x: i64, y: i64) -> Option<i64> { if (0..=1_000_000).contains(&y) { x.checked_pow(y as u32) } else { None } }
-    pub(crate) fn gcd(x: i64, y: i64) -> Option<i64> {
-        let (mut x, mut y) = (x, y);
-        while y != 0 { (x, y) = (y, residue(y, x)?); }
-        x.checked_abs()
-    }
-    pub(crate) fn lcm(x: i64, y: i64) -> Option<i64> { let g = gcd(x, y)?; if g == 0 { Some(0) } else { divide(x, g)?.checked_mul(y) } }
-    /// `k!n`, the binomial coefficient, for `k` of at least 0, as the general path computes it: `k` exact steps that multiply by `n-i`
-    /// and divide by `i+1`, with `k` taken as the smaller of `k` and `n-k` when `n` is at least `k`. `None` for a negative `k`, a `k`
-    /// above 100,000, or a step that leaves `i64`.
-    pub(crate) fn binomial(k: i64, n: i64) -> Option<i64> {
-        let k = if n >= 0 && k >= 0 { if k > n { return Some(0); } k.min(n - k) } else { k };
-        if !(0..=100_000).contains(&k) { return None; }
-        (0..k).try_fold(1i64, |v, i| v.checked_mul(n.checked_sub(i)?)?.checked_div(i + 1))
-    }
     fn boolean(y: i64) -> Option<bool> { matches!(y, 0 | 1).then_some(y == 1) }
     #[inline]
     pub(crate) fn nand(x: i64, y: i64) -> Option<bool> { let (x, y) = (boolean(x)?, boolean(y)?); Some(!(x && y)) }
@@ -451,8 +321,10 @@ pub(crate) mod int {
 /// So `times`, `divide` and `magnitude` take the real case when no argument has an imaginary part, as
 /// `TolerantComplex::complex_equal` does. Addition and subtraction give the same results either way.
 pub(crate) mod complex {
-    use super::{real, Arithmetic};
+    use super::Arithmetic;
     use num_complex::Complex64;
+    use num_traits::Zero;
+    use rustymath::{Binary as _, Unary as _};
 
     #[inline]
     fn reals(x: Complex64, y: Complex64) -> bool { x.im == 0.0 && y.im == 0.0 }
@@ -468,16 +340,55 @@ pub(crate) mod complex {
     pub(crate) fn times(x: Complex64, y: Complex64) -> Complex64 { if reals(x, y) { (x.re * y.re).into() } else { x * y } }
     #[inline]
     pub(crate) fn divide(x: Complex64, y: Complex64) -> Complex64 { if reals(x, y) { (x.re / y.re).into() } else { x / y } }
-    #[inline]
-    pub(crate) fn magnitude(z: Complex64) -> f64 { rustymath::hypot(z.re, z.im) }
     pub(crate) fn exp(y: Complex64) -> Complex64 {
         use std::f64::consts::{FRAC_PI_2, PI, TAU};
         let angle = y.im.rem_euclid(TAU);
-        let direction = if angle == 0.0 { Complex64::new(1.0, 0.0) } else if angle == FRAC_PI_2 { Complex64::i() } else if angle == PI { Complex64::new(-1.0, 0.0) } else if angle == 3.0 * FRAC_PI_2 { -Complex64::i() } else { return y.exp(); };
-        direction * y.re.exp()
+        let direction = if angle == 0.0 { Complex64::new(1.0, 0.0) } else if angle == FRAC_PI_2 { Complex64::i() } else if angle == PI { Complex64::new(-1.0, 0.0) } else if angle == 3.0 * FRAC_PI_2 { -Complex64::i() } else { return rustymath::Exp.one(y); };
+        direction * rustymath::Exp.one(y.re)
     }
-    /// `y` divided by its magnitude. A real `y` gives its sign, and zero gives zero.
-    pub(crate) fn direction(y: Complex64) -> Complex64 { if y.im == 0.0 { return Complex64::new(real::signum(y.re), 0.0); } y / magnitude(y) }
+    /// `x*y`. A real power of a real base, where one exists, is real, as the real kernels give it. Other powers are e^(y ln x), whose
+    /// exponential keeps the exact quarter turns that `exp` gives.
+    pub(crate) fn power(x: Complex64, y: Complex64) -> Complex64 {
+        if y.is_zero() {
+            Complex64::new(1.0, 0.0)
+        } else if x.is_zero() && y.im == 0.0 && y.re > 0.0 {
+            Complex64::zero()
+        } else if reals(x, y) && (x.re >= 0.0 || y.re.fract() == 0.0) {
+            rustymath::Pow.one(x.re, y.re).into()
+        } else {
+            exp(y * rustymath::Ln.one(x))
+        }
+    }
+    /// `code○y`, or the inverse of `code○` on `y`. `None` for a code outside 0 to 8. On a real `y`, code 8 gives an imaginary result,
+    /// and beyond magnitude 1 the inverse of code 7 takes the imaginary part π/2 with the sign of `y`, as APL's results do.
+    pub(crate) fn circle(code: i64, inverse: bool, y: Complex64) -> Option<Complex64> {
+        let one = Complex64::new(1.0, 0.0);
+        // A real `y` beyond magnitude 1 lies on the branch cuts of codes 0, ¯1 and ¯2. As in APL, a positive one takes the side below the
+        // cut and a negative one the side above, which the sign of a zero imaginary part chooses.
+        let cut = |y: Complex64| if y.im == 0.0 { Complex64::new(y.re, if y.re > 0.0 { -0.0 } else { 0.0 }) } else { y };
+        Some(match (code, inverse) {
+            (8, _) if y.im == 0.0 => Complex64::new(0.0, if inverse { -rustymath::hypot(y.re, 1.0) } else { rustymath::hypot(y.re, 1.0) }),
+            (7, true) if y.im == 0.0 && y.re.abs() > 1.0 => Complex64::new(rustymath::atanh(1.0 / y.re), std::f64::consts::FRAC_PI_2.copysign(y.re)),
+            (0, _) => rustymath::Sqrt1mx2.one(cut(y)),
+            (1, false) => rustymath::Sin.one(y),
+            (2, false) => rustymath::Cos.one(y),
+            (3, false) => rustymath::Tan.one(y),
+            (4, false) => rustymath::Sqrt1px2.one(y),
+            (5, false) => rustymath::Sinh.one(y),
+            (6, false) => rustymath::Cosh.one(y),
+            (7, false) => rustymath::Tanh.one(y),
+            (8, false) => rustymath::Sqrt.one(-one - y * y),
+            (1, true) => rustymath::Asin.one(cut(y)),
+            (2, true) => rustymath::Acos.one(cut(y)),
+            (3, true) => rustymath::Atan.one(y),
+            (4, true) => rustymath::Sqrtx2m1.one(y),
+            (5, true) => rustymath::Asinh.one(y),
+            (6, true) => rustymath::Acosh.one(y),
+            (7, true) => rustymath::Atanh.one(y),
+            (8, true) => -rustymath::Sqrt.one(-one - y * y),
+            _ => return None,
+        })
+    }
 }
 
 /// Integers extended with `∞`, `¯∞` and NaN, as flagged integer storage holds them. `i64::MAX` stands for `∞`, `i64::MIN` for `¯∞` and
@@ -711,21 +622,11 @@ impl Number {
     pub(crate) fn matches(&self, right: &Self, t: Numeric) -> Result<bool, &'static str> { if self.is_nan() && right.is_nan() { Ok(true) } else { self.equal(right, t) } }
 
     pub(crate) fn lambert_w(&self) -> Result<Self, &'static str> {
-        let Some(z) = self.as_complex() else {
-            return reals!(self => |y: F| {
-                let z: f64 = y.into();
-                if z == f64::INFINITY { return Ok(self.clone()); }
-                let w = lambert_w::lambert_w0(z);
-                // W = z exp(-W) restores relative accuracy near zero.
-                Ok(Self::from_float(F::narrow(if z.abs() < 0.1 { z * (-w).exp() } else { w })))
-            });
-        };
-        let (re, im) = lambert_w::lambert_w(0, z.re, z.im);
-        let w = Complex64::new(re, im);
-        let scale = z.re.abs().max(z.im.abs());
-        let residual = (w * w.exp() / scale - z / scale).norm();
-        if !residual.is_finite() || residual > 1e-12 { return Err("Lambert W did not converge"); }
-        Ok(w.into())
+        if self.as_complex().is_none() {
+            if let Some(w) = reals!(self => |y: F| rustymath::LambertW.checked(y).map(Self::from_float)) { return Ok(w); }
+        }
+        let w = rustymath::LambertW.one(self.to_complex()?);
+        if w.re.is_nan() || w.im.is_nan() { Err("Lambert W did not converge") } else { Ok(w.into()) }
     }
 
     /// The math functions of one number that need no tolerance. `⌊` and `⌈` take one, through `floor` and `ceiling`.
@@ -744,18 +645,18 @@ impl Number {
         if self.as_complex().is_none() {
             let real = reals!(self => |y: F| match op {
                 Magnitude => Some(Self::from_float(y.abs())),
-                Power => Some(Self::from_float(rustymath::exp(y))),
-                Log => real::ln(y).map(Self::from_float),
+                Power => Some(Self::from_float(rustymath::Exp.one(y))),
+                Log => rustymath::Ln.checked(y).map(Self::from_float),
                 Pi => Some(Self::from_float(real::pi_times(y))),
                 _ => None,
             });
             if let Some(n) = real { return Ok(n); }
         }
         let y = self.to_complex()?;
-        if matches!(op, Magnitude) { return Ok(Self(Float(complex::magnitude(y)))); }
+        if matches!(op, Magnitude) { return Ok(Self(Float(rustymath::Abs.one(y)))); }
         let result = match op {
             Power => complex::exp(y),
-            Log => y.ln(),
+            Log => rustymath::Ln.one(y),
             Pi => y * std::f64::consts::PI,
             Circle => complex::exp(Complex64::new(-y.im, y.re)),
             _ => unreachable!(),
@@ -791,7 +692,7 @@ impl Number {
         }
         if self.has_boolean(right) && !matches!(op, Nand | Nor) { return self.numeric().math_dyad(op, &right.numeric()); }
         if op == Log && self.as_complex().is_none() && right.as_complex().is_none() {
-            if let Some(n) = reals!(self, right => |x, y: F| real::log(x, y).map(Self::from_float)) { return Ok(n); }
+            if let Some(n) = reals!(self, right => |x, y: F| rustymath::Logb.checked(x, y).map(Self::from_float)) { return Ok(n); }
         }
         match op {
             Factorial => self.binomial(right),
@@ -843,16 +744,16 @@ impl Number {
         if self.has_boolean(right) { return self.numeric().residue(&right.numeric(), t); }
         self.by_level(
             right,
-            int::residue,
+            |x, y| Some(rustymath::integer::residue(x, y)),
             |x, y| Ok(Some(Self::exact(if x.is_zero() { y } else { &y - &x * (&y / &x).floor() }))),
-            || Ok(Some(reals!(self, right => |x, y: F| Self::from_float(t.tolerance_at(F::WIDTH).residue(x, y))))),
-            |x, y| Ok(t.tolerance_at(FloatWidth::F64).complex_residue(x, y).into()),
+            || Ok(Some(reals!(self, right => |x, y: F| Self::from_float(rustymath::tolerant::Residue(t.tolerance_at(F::WIDTH)).one(x, y))))),
+            |x, y| Ok(rustymath::tolerant::Residue(t.tolerance_at(FloatWidth::F64)).one(x, y).into()),
         )
     }
 
     pub(crate) fn parts(&self, polar: bool) -> Result<[Self; 2], &'static str> {
         let width = self.float_width().unwrap_or(FloatWidth::F64);
-        if polar { return Ok([self.math_monad(Math::Magnitude)?, Self::float(self.to_complex()?.arg(), width)]); }
+        if polar { return Ok([self.math_monad(Math::Magnitude)?, Self::float(rustymath::Angle.one(self.to_complex()?), width)]); }
         match self.as_complex() { Some(z) => Ok([Self(Float(z.re)), Self(Float(z.im))]), None => Ok([self.clone(), self.zero()]) }
     }
 
@@ -861,24 +762,16 @@ impl Number {
         self.by_level(
             right,
             |_, _| None,
-            |n, y| {
-                let Some(n) = n.is_integer().then(|| n.to_i32()).flatten().filter(|n| n.unsigned_abs() <= 1_000_000) else { return Ok(None) };
-                if y.is_negative() && n % 2 == 0 { return Ok(None); }
-                let k = n.unsigned_abs();
-                let (a, b) = (y.numer().abs().nth_root(k), y.denom().nth_root(k));
-                if a.pow(k) != y.numer().abs() || b.pow(k) != *y.denom() { return Ok(None); }
-                let result = Self::exact(BigRational::new(if y.is_negative() { -a } else { a }, b));
-                Ok(Some(if n < 0 { result.monad(Arithmetic::Divide)? } else { result }))
-            },
-            || reals!(self, right => |n, y: F| if n.is_finite() { Ok(real::root(n, y).map(Self::from_float)) } else { Err("root degree must be finite") }),
-            |_, y| if self.grade_order(&Self::from_integer(2)).is_eq() { Ok(y.sqrt().into()) } else { right.power(&self.monad(Arithmetic::Divide)?) },
+            |_, _| Ok(None),
+            || reals!(self, right => |n, y: F| if n.is_infinite() { Err("root degree must be finite") } else { Ok(rustymath::Root.checked(n, y).map(Self::from_float)) }),
+            |_, y| if self.grade_order(&Self::from_integer(2)).is_eq() { Ok(rustymath::Sqrt.one(y).into()) } else { right.power(&self.monad(Arithmetic::Divide)?) },
         )
     }
 
     fn power(&self, right: &Self) -> Result<Self, &'static str> {
         self.by_level(
             right,
-            int::power,
+            rustymath::integer::power,
             |x, y| {
                 if !y.is_integer() { return Ok(None); }
                 let n = y.to_i32().ok_or("exact exponent is too large")?;
@@ -886,13 +779,8 @@ impl Number {
                 if n.unsigned_abs() > 1_000_000 { return Err("exact exponent is too large"); }
                 Ok(Some(Self::exact(x.pow(n))))
             },
-            || Ok(reals!(self, right => |x, y: F| real::power(x, y).map(Self::from_float))),
-            |x, y| {
-                let result = if y.is_zero() { Complex64::new(1.0, 0.0) } else if x.is_zero() && y.im == 0.0 && y.re > 0.0 {
-                    Complex64::zero()
-                } else if x.im == 0.0 && y.im == 0.0 && (x.re >= 0.0 || y.re.fract() == 0.0) { Complex64::new(rustymath::Binary::one(rustymath::Pow, x.re, y.re), 0.0) } else { complex::exp(y * x.ln()) };
-                Ok(result.into())
-            },
+            || Ok(reals!(self, right => |x, y: F| rustymath::Pow.checked(x, y).map(Self::from_float))),
+            |x, y| Ok(complex::power(x, y).into()),
         )
     }
 
@@ -900,33 +788,14 @@ impl Number {
     pub(crate) fn gcd(&self, right: &Self, t: Numeric) -> Result<Self, &'static str> {
         if let (Boolean(x), Boolean(y)) = (&self.0, &right.0) { return Ok(Self::from_bool(x | y)); }
         if self.has_boolean(right) { return self.numeric().gcd(&right.numeric(), t); }
-        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = int::gcd(*x, *y) { return Ok(Self(Integer(n))); } }
+        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = rustymath::integer::gcd(*x, *y) { return Ok(Self(Integer(n))); } }
         if self.is_infinite() || right.is_infinite() { return Err("gcd requires finite arguments"); }
         if !self.is_exact() || !right.is_exact() {
             if self.as_complex().is_none() && right.as_complex().is_none() {
-                return Ok(reals!(self, right => |x, y: F| Self::from_float(t.tolerance_at(F::WIDTH).gcd(x, y))));
+                return Ok(reals!(self, right => |x, y: F| Self::from_float(rustymath::tolerant::Gcd(t.tolerance_at(F::WIDTH)).one(x, y))));
             }
-            let (mut x, mut y) = (self.to_complex()?, right.to_complex()?);
-            let original = if x.norm() >= y.norm() { x } else { y };
-            let scale = x.norm().max(y.norm());
-            if !scale.is_finite() { return Err("gcd magnitude is too large"); }
-            let tolerance = t.tolerance_at(FloatWidth::F64).value() * scale;
-            while y.norm() > tolerance {
-                let q = x / y;
-                let r = x - y * Complex64::new(q.re.round(), q.im.round());
-                if r.norm() >= y.norm() { return Err("gcd did not converge"); }
-                x = y;
-                y = r;
-            }
-            if x.re.abs() <= tolerance { x.re = 0.0; }
-            if x.im.abs() <= tolerance { x.im = 0.0; }
-            if x.is_zero() { return Ok(Self(Float(0.0))); }
-            while x.re <= 0.0 || x.im < 0.0 { x *= Complex64::i(); }
-            let q = original / x;
-            x = original / Complex64::new(q.re.round(), q.im.round());
-            if x.re.abs() <= tolerance { x.re = 0.0; }
-            if x.im.abs() <= tolerance { x.im = 0.0; }
-            return Ok(x.into());
+            let g = rustymath::tolerant::Gcd(t.tolerance_at(FloatWidth::F64)).one(self.to_complex()?, right.to_complex()?);
+            return if g.re.is_nan() || g.im.is_nan() { Err("gcd did not converge") } else { Ok(g.into()) };
         }
         let (mut x, mut y) = (self.clone(), right.clone());
         while !y.is_zero() {
@@ -940,7 +809,7 @@ impl Number {
     pub(crate) fn lcm(&self, right: &Self, t: Numeric) -> Result<Self, &'static str> {
         if let (Boolean(x), Boolean(y)) = (&self.0, &right.0) { return Ok(Self::from_bool(x & y)); }
         if self.has_boolean(right) { return self.numeric().lcm(&right.numeric(), t); }
-        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = int::lcm(*x, *y) { return Ok(Self(Integer(n))); } }
+        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = rustymath::integer::lcm(*x, *y) { return Ok(Self(Integer(n))); } }
         let gcd = self.gcd(right, t)?;
         if gcd.is_zero() { Ok(gcd) } else { self.dyad(Arithmetic::Divide, &gcd)?.dyad(Arithmetic::Times, right) }
     }
@@ -953,42 +822,17 @@ impl Number {
                 return Ok(Self::exact(BigRational::from_integer((1..=n).map(BigInt::from).product())));
             }
         }
-        if self.as_complex().is_some() { return Ok(log_gamma(self.to_complex()? + 1.0).exp().into()); }
-        Ok(reals!(self => |y: F| Self::from_float(real::factorial(y))))
+        if self.as_complex().is_some() { return Ok(rustymath::Factorial.one(self.to_complex()?).into()); }
+        Ok(reals!(self => |y: F| Self::from_float(rustymath::Factorial.one(y))))
     }
 
     /// `self○right`, or the inverse of `self○` on `right`.
     fn circle(&self, right: &Self, inverse: bool) -> Result<Self, &'static str> {
         let code = self.integer().map_err(|_| "circle code must be an integer")?;
         if right.as_complex().is_none() {
-            if let Some(n) = reals!(right => |x: F| real::circle::<F, _, false>(code, inverse, x).flatten().map(Self::from_float)) { return Ok(n); }
+            if let Some(n) = reals!(right => |x: F| with_circle!(code, inverse, |f| f.checked(x)).flatten().map(Self::from_float)) { return Ok(n); }
         }
-        let y = right.to_complex()?;
-        let one = Complex64::new(1.0, 0.0);
-        let result = match (code, inverse) {
-            (8, _) if y.im == 0.0 => Complex64::new(0.0, if inverse { -y.re.hypot(1.0) } else { y.re.hypot(1.0) }),
-            (7, true) if y.im == 0.0 && y.re.abs() > 1.0 => Complex64::new((1.0 / y.re).atanh(), std::f64::consts::FRAC_PI_2.copysign(y.re)),
-            (0, _) => (one - y * y).sqrt(),
-            (1, false) => y.sin(),
-            (2, false) => y.cos(),
-            (3, false) => y.tan(),
-            (4, false) => (one + y * y).sqrt(),
-            (5, false) => y.sinh(),
-            (6, false) => y.cosh(),
-            (7, false) => y.tanh(),
-            (8, false) => (-one - y * y).sqrt(),
-            (1, true) => y.asin(),
-            (2, true) => y.acos(),
-            (3, true) => y.atan(),
-            (4, true) if y == -one => Complex64::zero(),
-            (4, true) => (y + one) * ((y - one) / (y + one)).sqrt(),
-            (5, true) => y.asinh(),
-            (6, true) => y.acosh(),
-            (7, true) => y.atanh(),
-            (8, true) => -(-one - y * y).sqrt(),
-            _ => return Err("circle code must be from 0 to 8"),
-        };
-        Ok(result.into())
+        complex::circle(code, inverse, right.to_complex()?).map(Into::into).ok_or("circle code must be from 0 to 8")
     }
 
     pub(crate) fn order(&self, right: &Self) -> Result<Ordering, &'static str> {
@@ -1031,6 +875,9 @@ impl Number {
 
     fn binomial(&self, right: &Self) -> Result<Self, &'static str> {
         let one = right.result_zero(Some(self)).one();
+        if !(self.is_exact() && right.is_exact()) && self.as_complex().is_none() && right.as_complex().is_none() {
+            if let Some(n) = reals!(self, right => |k, n: F| rustymath::Binom.checked(n, k).map(Self::from_float)) { return Ok(n); }
+        }
         if let Ok(k) = self.integer() {
             if k < 0 {
                 let Ok(n) = right.integer() else { return Ok(one.zero()); };
@@ -1059,7 +906,7 @@ impl Number {
         }
         let (x, y) = (self.to_complex()?, right.to_complex()?);
         if y.im == 0.0 && y.re < 0.0 && y.re.fract() == 0.0 { return Err("negative integer upper argument needs an integer selection"); }
-        let result = (log_gamma(y + 1.0) - log_gamma(x + 1.0) - log_gamma(y - x + 1.0)).exp();
+        let result = rustymath::Binom.one(y, x);
         let width = self.float_width().max(right.float_width()).unwrap_or(FloatWidth::F64);
         Ok(if x.im == 0.0 && y.im == 0.0 { Self::float(result.re, width) } else { result.into() })
     }
@@ -1105,7 +952,7 @@ impl Number {
             Complex(y) => Ok(match op {
                 Plus => y.conj(),
                 Minus => -y,
-                Times => complex::direction(*y),
+                Times => rustymath::Sign.one(*y),
                 Divide => Complex64::new(1.0, 0.0) / y,
             }
             .into()),

@@ -376,7 +376,7 @@ def test_axis_names():
 
 def test_mathematical_monads():
     from basedpl import sqrt, root, square, double, decrement, increment, pi_ratio, cis, real_imag, polar, classify, binary_encode, binary_decode
-    assert sqrt(Fraction(1, 9)).py == Fraction(1, 3) and root(3, -8).py == -2
+    assert sqrt(Fraction(1, 4)).py == 0.5 and root(3, -8).py == -2
     assert square(3).py == 9 and double(3).py == 6 and decrement(increment(3)).py == 3
     assert complex(cis(pi_ratio(1, 2)).py) == pytest.approx(1j)
     np.testing.assert_array_equal(real_imag(3+4j), [3., 4.])

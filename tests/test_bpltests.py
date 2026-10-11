@@ -2,7 +2,8 @@ import json
 from pathlib import Path
 import pytest
 from basedpl.reference import Corpus
-from basedpl.bpltests import Case, parse, render, convert, add, description, literal, _check
+from basedpl.bpltests import Case, parse, render, convert, add, description, literal
+from basedpl.worker import Worker
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -49,9 +50,10 @@ def test_comment_extraction():
 
 
 def test_captured_literals():
-    for line in (ROOT/'provenance/ngn.jsonl').read_text().splitlines():
-        expected = json.loads(line).get('expected')
-        if isinstance(expected, dict): assert _check(dict(code=literal(expected), expected=expected))['status']=='pass', literal(expected)
+    with Worker() as w:
+        for line in (ROOT/'provenance/ngn.jsonl').read_text().splitlines():
+            expected = json.loads(line).get('expected')
+            if isinstance(expected, dict): assert w.request(dict(case=dict(code=literal(expected), expected=expected)), 2)['status']=='pass', literal(expected)
 
 
 def test_incremental_export(tmp_path):

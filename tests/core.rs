@@ -66,32 +66,8 @@ fn language_examples() {
                     }
                 }
             }
-            let mut session = None;
-            let mut code = String::new();
-            for (line, text) in text.lines().enumerate() {
-                if text == "```bpl" {
-                    session = Some(Session::new());
-                    continue;
-                }
-                let Some(bpl) = session.as_mut() else { continue; };
-                let closing = text.starts_with("```");
-                let (source, expected) = text.split_once(" ⍝ ").map_or((text, None), |(c, e)| (c, Some(e)));
-                if !closing {
-                    code.push_str(source);
-                    code.push('\n');
-                }
-                if expected.is_none() && !closing { continue; }
-                let result = bpl.eval(&code);
-                let actual = match result.error { Some(e) => Err(e), None => Ok(result.value) };
-                if let Some(expected) = expected {
-                    match (actual, run(expected)) {
-                        (Ok(Some(actual)), Ok(Some(expected))) if basedpl::reference::difference(&actual, &expected, 1e-13, 1e-13, true).is_none() => (),
-                        pair => failures.push(format!("{}:{}: {code}\n{pair:?}", path.display(), line + 1)),
-                    }
-                }
-                else if let Err(error) = actual { failures.push(format!("{}:{}: {error}", path.display(), line + 1)); }
-                code.clear();
-                if closing { session = None; }
+            for f in basedpl::reference::page(&text, &Default::default()) {
+                failures.push(format!("{}:{}: {}\n{}", path.display(), f["line"], f["code"].as_str().unwrap(), f["message"].as_str().unwrap()));
             }
         }
     }

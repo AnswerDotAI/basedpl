@@ -1,4 +1,4 @@
-use basedpl::{reference, EvalOptions};
+use basedpl::{reference, EvalOptions, InterruptHandle};
 use serde_json::{json, Value};
 
 const SOURCES: &[(&str, &str)] = &[
@@ -14,101 +14,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("bqn", include_str!("reference/bqn.bpl")),
 ];
 
-fn header(line: &str) -> Option<(&str, &str)> {
-    let line = line.strip_prefix("⍝ ")?;
-    let (id, comment) = match line.strip_prefix('—') { Some(comment) => ("", comment), None => line.split_once(" —")? };
-    if id.chars().any(char::is_whitespace) { return None; }
-    Some((id, if comment.is_empty() { "" } else { comment.strip_prefix(' ')? }))
-}
-
-fn inline(line: &str) -> Option<(&str, &str)> {
-    let mut chars = line.char_indices();
-    let mut string = false;
-    while let Some((i, c)) = chars.next() {
-        match c {
-            '"' => string = !string,
-            '\'' if !string => {
-                chars.next();
-                if !line[i..].starts_with("''") || line[i..].starts_with("'''") { chars.next(); }
-            }
-            '⍝' if !string => return Some((line[..i].trim_end(), line[i + c.len_utf8()..].trim_start())),
-            _ => (),
-        }
-    }
-    None
-}
-
-/// `text` with its `\n` and `\\` escapes replaced.
-fn unescaped(text: &str, location: &str) -> String {
-    let mut result = String::new();
-    let mut chars = text.chars();
-    while let Some(c) = chars.next() {
-        result.push(if c == '\\' {
-            match chars.next() { Some('n') => '\n', Some('\\') => '\\', _ => panic!("{location}: input and output escapes are \\n and \\\\") }
-        } else { c });
-    }
-    result
-}
-
-fn cases(text: &str) -> Vec<Value> {
-    if text.is_empty() { return Vec::new(); }
-    let lines: Vec<_> = text.split_terminator('\n').collect();
-    let mut starts: Vec<_> = lines.iter().enumerate().filter_map(|(i, s)| (header(s).is_some() || s.starts_with("⍝⍝ ")).then_some(i)).collect();
-    assert_eq!(starts.first(), Some(&0), "expected a case or section header on line 1");
-    starts.push(lines.len());
-    let mut section = "";
-    starts
-        .windows(2)
-        .filter_map(|range| {
-            let (start, end) = (range[0], range[1]);
-            if let Some(title) = lines[start].strip_prefix("⍝⍝ ") {
-                assert!(lines[start + 1..end].iter().all(|s| s.is_empty()), "expected a case after section heading");
-                section = title;
-                return None;
-            }
-            let (id, comment) = header(lines[start]).unwrap();
-            let location = format!("line {} ({id})", start + 1);
-            let mut case = json!({"id":id, "line":start + 1, "section":section});
-            let suffix = comment.strip_prefix('[').or_else(|| comment.rsplit_once(" [").map(|(_, s)| s));
-            if let Some(options) = suffix.and_then(|s| s.strip_suffix(']')).filter(|s| s.starts_with("rtol=") || s.starts_with("atol=")) {
-                for option in options.split_whitespace() {
-                    let (key, value) = option.split_once('=').expect("tolerance key=value");
-                    let key = match key { "rtol" => "relative_tolerance", "atol" => "absolute_tolerance", _ => panic!("{location}: unknown tolerance {key}") };
-                    let value: f64 = value.parse().expect("numeric tolerance");
-                    assert!(value.is_finite() && value >= 0. && case.get(key).is_none(), "{location}: invalid tolerance {option}");
-                    case[key] = json!(value);
-                }
-            }
-            let mut body = &lines[start + 1..end];
-            if body.last() == Some(&"") { body = &body[..body.len() - 1]; }
-            else { assert_eq!(end, lines.len(), "{location}: missing blank record separator"); }
-            for (marker, key) in [("⍝ ⎕:", "expected_output"), ("⍝ input:", "input")] {
-                if let Some(text) = body.last().and_then(|s| s.strip_prefix(marker)) {
-                    case[key] = json!(unescaped(text.strip_prefix(' ').unwrap_or(text), &location));
-                    body = &body[..body.len() - 1];
-                }
-            }
-            assert!(
-                !body.iter().any(|s| s.starts_with("⍝ ⎕:") || s.starts_with("⍝ input:")),
-                "{location}: input and output lines must end the case, input first"
-            );
-            let splits: Vec<_> = body.iter().enumerate().filter_map(|(i, s)| (*s == "⍝ =>").then_some(i)).collect();
-            let joined = body.join("\n");
-            let pair = inline(&joined).filter(|(code, expect)| !expect.contains('\n') && (body.len() == 1 || code.matches('\n').count() + 1 == body.len()));
-            let (code, expect) = match (splits.as_slice(), pair) {
-                ([], Some((code, expect))) => (code.to_owned(), expect.to_owned()),
-                ([], None) if body.len() == 2 => (body[0].to_owned(), body[1].to_owned()),
-                ([i], _) => (body[..*i].join("\n"), body[i + 1..].join("\n")),
-                _ => panic!("{location}: use one ⍝ => between multiline expressions, or an inline expectation on the last line"),
-            };
-            assert!(!expect.is_empty(), "{location}: missing expectation");
-            case["code"] = json!(code);
-            if let Some(kind) = expect.strip_prefix("⍝ error: ") { case["expected_error"] = json!(kind); }
-            else { case["expected_code"] = json!(expect); }
-            Some(case)
-        })
-        .collect()
-}
+fn cases(text: &str) -> Vec<Value> { reference::cases(text).unwrap() }
 
 #[test]
 fn reference_format_and_comparison() {
@@ -174,21 +80,14 @@ fn enabled_reference_cases() {
     let file = std::env::var("BASEDPL_SOURCE").ok();
     for &(name, source) in SOURCES {
         if file.as_deref().is_some_and(|f| f != name) { continue; }
-        for case in cases(source) {
-            let id = case["id"].as_str().unwrap();
-            assert!(id.is_empty() || ids.insert(id.to_owned()), "duplicate source id: {id}");
-            if selected.as_deref().is_some_and(|s| !id.starts_with(s)) { continue; }
-            let result = reference::check(&case, EvalOptions { timeout: Some(std::time::Duration::from_secs(2)), echo: false, ..EvalOptions::default() });
-            if result["status"] != "pass" {
-                failures.push(format!(
-                    "{name}.bpl:{} [{}] {id}: {} ({})",
-                    case["line"],
-                    case["section"].as_str().unwrap(),
-                    result["message"],
-                    result["actual"]["error"]["kind"]
-                ));
-            }
-            count += 1;
+        let all = reference::cases(source).unwrap_or_else(|e| panic!("{name}.bpl: {e}"));
+        for id in all.iter().filter_map(|case| case["id"].as_str()).filter(|id| !id.is_empty()) {
+            assert!(ids.insert(id.to_owned()), "duplicate source id: {id}");
+        }
+        let chosen: Vec<_> = all.iter().filter(|case| selected.as_deref().is_none_or(|s| case["id"].as_str().unwrap().starts_with(s))).collect();
+        count += chosen.len();
+        for f in reference::failures(chosen, &InterruptHandle::default()) {
+            failures.push(format!("{name}.bpl:{} [{}] {}: {} ({})", f["line"], f["section"].as_str().unwrap(), f["id"].as_str().unwrap(), f["message"], f["kind"]));
         }
     }
     assert!(count > 0, "no reference cases selected");
