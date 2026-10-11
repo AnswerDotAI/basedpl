@@ -1,0 +1,20 @@
+name: Speed
+
+on: workflow_dispatch
+
+jobs:
+  costs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo generate-lockfile
+      - uses: Swatinem/rust-cache@v2
+      - run: BASEDPL_COSTS=1 cargo test --test speed -- --nocapture
+      # The wasm costs print even when a native case goes over budget.
+      - if: ${{ !cancelled() }}
+        run: cargo wasm --strip
+      - if: ${{ !cancelled() }}
+        run: BASEDPL_COSTS=1 node --no-liftoff tests/wasm-speed.mjs
