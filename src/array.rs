@@ -1,6 +1,6 @@
 use crate::{
     display::{positions, Elide},
-    element::{cast, read_flagged, Element, Key, Source, Whole},
+    element::{cast, read_flagged, Element, Source, Whole},
     execution::Context,
     keyed::Keys,
     number::{extended, int::Int, real, Numeric},
@@ -8,7 +8,7 @@ use crate::{
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use num_complex::Complex64;
-use rustymath::{tolerant::Tolerant, with_tolerance};
+use rustymath::{search::Key, tolerant::Tolerant, with_tolerance};
 use std::{
     borrow::Cow,
     fmt,
@@ -481,8 +481,25 @@ impl Value {
     }
     /// Complex results of an operation. When no item has an imaginary part, the array holds floats, as `Number` gives them.
     pub(crate) fn complex(shape: Vec<usize>, data: Vec<Complex64>) -> Result<Self, ErrorKind> {
-        if data.iter().all(|z| z.im == 0.0) { return Self::floats(shape, FloatWidth::F64, data.into_iter().map(|z| z.re).collect()); }
-        Self::from_storage(shape, Storage::Complex(data))
+        /// The real parts of `data` when no item has an imaginary part, else `data`. While every imaginary part is +0, the real parts
+        /// move to the front of the same buffer, in one pass with no allocation. At the first other imaginary part, the items before
+        /// it go back, and the rest are checked as `Number` checks them, where -0 also counts as no imaginary part.
+        fn real_parts(data: Vec<Complex64>) -> Result<Vec<f64>, Vec<Complex64>> {
+            let n = data.len();
+            let mut v: Vec<f64> = bytemuck::allocation::cast_vec(data);
+            let Some(k) = (0..n).find(|&i| v[2 * i + 1].to_bits() != 0 || { v[i] = v[2 * i]; false }) else {
+                v.truncate(n);
+                v.shrink_to_fit();
+                return Ok(v);
+            };
+            for j in (0..k).rev() { (v[2 * j], v[2 * j + 1]) = (v[j], 0.0); }
+            let data: Vec<Complex64> = bytemuck::allocation::cast_vec(v);
+            if data[k..].iter().all(|z| z.im == 0.0) { Ok(data.into_iter().map(|z| z.re).collect()) } else { Err(data) }
+        }
+        match real_parts(data) {
+            Ok(reals) => Self::floats(shape, FloatWidth::F64, reals),
+            Err(data) => Self::from_storage(shape, Storage::Complex(data)),
+        }
     }
     /// Whether every number, including those in nested arrays, is exact. Non-finite values in integer storage count as exact.
     pub fn is_exact(&self) -> bool { self.exact_domain() == Some(true) }

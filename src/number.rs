@@ -78,6 +78,12 @@ impl Numeric {
     pub(crate) fn tolerance_at(self, width: FloatWidth) -> Tolerance {
         if width == FloatWidth::F64 { self.tolerance } else { Tolerance::new(self.units * width.epsilon()).expect("a few units in the last place lie far below 1") }
     }
+    /// These settings for a computation at `width` that runs at 32 bits or more. 16-bit floats run this way, because they have no
+    /// kernels of their own. Comparisons keep the tolerance of `width`. New floats take at least 32 bits.
+    pub(crate) fn widened(self, width: FloatWidth) -> Self {
+        let run = width.max(FloatWidth::F32);
+        Self { units: self.units * width.epsilon() / run.epsilon(), width: self.width.max(FloatWidth::F32), ..self }
+    }
     /// The width of a float computed from values whose float widths are `widths`, with `None` for an exact value. It's the widest float
     /// width, or the default width when every value is exact.
     pub(crate) fn width_of(self, widths: impl IntoIterator<Item = Option<FloatWidth>>) -> FloatWidth { widths.into_iter().flatten().max().unwrap_or(self.width) }
@@ -194,32 +200,44 @@ pub(crate) mod real {
         let fits = x.fract() == 0.0 && y.fract() == 0.0 && x.abs().max(y.abs()) < limit && (x * y).abs() < limit;
         if fits { f(x as i64, y as i64).map(|n| F::narrow(n as f64)) } else { None }
     }
-    /// A negative base with a fractional exponent has a complex power.
+    /// `x*y`. A negative base with a fractional exponent has a complex power. An exponent of 2 squares, as `x²` asks. rustymath's
+    /// `pow`, `cbrt` and `root` give an exact result wherever it's a float, as in `15*4`.
+    #[inline(always)]
+    pub(crate) fn power<F: Float>(x: F, y: F) -> Option<F> {
+        if x < F::zero() && y.is_finite() && y.fract() != F::zero() { None } else if y == F::narrow(2.0) { square(x) } else { Some(rustymath::pow(x, y)) }
+    }
     #[inline]
-    pub(crate) fn power<F: Float>(x: F, y: F) -> Option<F> { if x < F::zero() && y.is_finite() && y.fract() != F::zero() { None } else { Some(x.powf(y)) } }
+    pub(crate) fn square<F: Float>(x: F) -> Option<F> { Some(x * x) }
+    /// The logarithm of `y` to base `x`. Bases 2 and 10 take their own functions.
     #[inline]
-    pub(crate) fn log<F: Float>(x: F, y: F) -> Option<F> { Some(ln(y)? / ln(x)?) }
+    pub(crate) fn log<F: Float>(x: F, y: F) -> Option<F> {
+        if x == F::narrow(2.0) { log2(y) } else if x == F::narrow(10.0) { log10(y) } else { Some(ln(y)? / ln(x)?) }
+    }
     /// A negative number has a complex logarithm.
     #[inline]
     pub(crate) fn ln<F: Float>(y: F) -> Option<F> { (y >= F::zero() || y.is_nan()).then_some(rustymath::ln(y)) }
     #[inline]
+    pub(crate) fn log2<F: Float>(y: F) -> Option<F> { (y >= F::zero() || y.is_nan()).then_some(rustymath::log2(y)) }
+    #[inline]
+    pub(crate) fn log10<F: Float>(y: F) -> Option<F> { (y >= F::zero() || y.is_nan()).then_some(rustymath::log10(y)) }
+    #[inline]
     pub(crate) fn pi_times<F: Float>(y: F) -> F { y * F::narrow(std::f64::consts::PI) }
     /// A negative number has a complex square root.
     #[inline]
-    pub(crate) fn sqrt<F: Float>(y: F) -> Option<F> { root(F::narrow(2.0), y) }
+    pub(crate) fn sqrt<F: Float>(y: F) -> Option<F> { (y >= F::zero() || y.is_nan()).then_some(y.sqrt()) }
+    #[inline(always)]
+    pub(crate) fn cbrt<F: Float>(y: F) -> Option<F> { Some(rustymath::cbrt(y)) }
     /// The real `n`th root of `y`. A negative `y` has one only for an odd integer degree. A degree of zero or an infinite degree has none.
-    #[inline]
+    /// Degrees 2 and 3 take the square and cube roots.
+    #[inline(always)]
     pub(crate) fn root<F: Float>(n: F, y: F) -> Option<F> {
-        let (zero, one, two) = (F::zero(), F::one(), F::narrow(2.0));
-        if n == zero || !n.is_finite() { return None; }
-        let odd = n.fract() == zero && n % two != zero;
-        if y < zero && !odd { return None; }
-        let k = n.abs();
-        let value = if k == two { y.sqrt() } else if k == F::narrow(3.0) { y.cbrt() } else { y.abs().powf(one / k).copysign(y) };
-        Some(if n < zero { one / value } else { value })
+        if n == F::zero() || !n.is_finite() { return None; }
+        let odd = n.fract() == F::zero() && n % F::narrow(2.0) != F::zero();
+        if y < F::zero() && !odd { return None; }
+        if n == F::narrow(2.0) { sqrt(y) } else if n == F::narrow(3.0) { cbrt(y) } else { Some(rustymath::root(n, y)) }
     }
-    #[inline]
-    pub(crate) fn factorial<F: Float>(y: F) -> F { (y + F::one()).gamma() }
+    #[inline(always)]
+    pub(crate) fn factorial<F: Float>(y: F) -> F { rustymath::gamma(y + F::one()) }
     /// `x!y` when `x` lies within tolerance of an integer `k` of at least 0, as the general path computes it: `k` steps that multiply
     /// by `y-i` and divide by `i+1`, with `k` taken as the smaller of `k` and `n-k` when `y` lies within tolerance of an integer `n` of
     /// at least `k`. `None` for other arguments.
@@ -249,26 +267,26 @@ pub(crate) mod real {
         fn apply(self, f: impl Fn(F) -> Option<F> + Copy) -> Option<F> { f(self) }
     }
     /// `apply` with the function that circle code `code` applies to a real, or its inverse. Each function gives `None` where its result
-    /// is complex. Each is a closure of its own type, so a loop in `apply` is compiled for each code. When `CHECKED`, sine and cosine
-    /// also give `None` beyond the magnitude where rustymath's versions without a branch hold, as a loop needs. `None` for a code with
+    /// is complex. Each is a closure of its own type, so a loop in `apply` is compiled for each code. When `CHECKED`, sine, cosine and
+    /// tangent also give `None` beyond the magnitude where rustymath's versions without a branch hold, as a loop needs. `None` for a code with
     /// no real function. Code 0 is its own inverse.
     pub(crate) fn circle<F: Float, A: Apply<F>, const CHECKED: bool>(code: i64, inverse: bool, a: A) -> Option<A::Output> {
         Some(match (code, inverse) {
             (0, _) => a.apply(|x: F| (x.abs() <= F::one()).then(|| (F::one() - x * x).sqrt())),
             (1, false) => a.apply(|x: F| if CHECKED { rustymath::checked_sin(x) } else { Some(rustymath::sin(x)) }),
             (2, false) => a.apply(|x: F| if CHECKED { rustymath::checked_cos(x) } else { Some(rustymath::cos(x)) }),
-            (3, false) => a.apply(|x: F| Some(x.tan())),
-            (4, false) => a.apply(|x: F| Some(x.hypot(F::one()))),
-            (5, false) => a.apply(|x: F| Some(x.sinh())),
-            (6, false) => a.apply(|x: F| Some(x.cosh())),
-            (7, false) => a.apply(|x: F| Some(x.tanh())),
-            (1, true) => a.apply(|x: F| (x.abs() <= F::one()).then(|| x.asin())),
-            (2, true) => a.apply(|x: F| (x.abs() <= F::one()).then(|| x.acos())),
-            (3, true) => a.apply(|x: F| Some(x.atan())),
+            (3, false) => a.apply(|x: F| if CHECKED { rustymath::checked_tan(x) } else { Some(rustymath::tan(x)) }),
+            (4, false) => a.apply(|x: F| Some(rustymath::hypot(x, F::one()))),
+            (5, false) => a.apply(|x: F| Some(rustymath::sinh(x))),
+            (6, false) => a.apply(|x: F| Some(rustymath::cosh(x))),
+            (7, false) => a.apply(|x: F| Some(rustymath::tanh(x))),
+            (1, true) => a.apply(|x: F| (x.abs() <= F::one()).then(|| rustymath::asin(x))),
+            (2, true) => a.apply(|x: F| (x.abs() <= F::one()).then(|| rustymath::acos(x))),
+            (3, true) => a.apply(|x: F| Some(rustymath::atan(x))),
             (4, true) => a.apply(|x: F| (x.abs() >= F::one()).then(|| x * (F::one() - (F::one() / x).powi(2)).sqrt())),
-            (5, true) => a.apply(|x: F| Some(x.asinh())),
-            (6, true) => a.apply(|x: F| (x >= F::one()).then(|| x.acosh())),
-            (7, true) => a.apply(|x: F| (x.abs() < F::one()).then(|| x.atanh())),
+            (5, true) => a.apply(|x: F| Some(rustymath::asinh(x))),
+            (6, true) => a.apply(|x: F| (x >= F::one()).then(|| rustymath::acosh(x))),
+            (7, true) => a.apply(|x: F| (x.abs() < F::one()).then(|| rustymath::atanh(x))),
             _ => return None,
         })
     }
@@ -437,6 +455,7 @@ pub(crate) mod complex {
     use super::{real, Arithmetic};
     use num_complex::Complex64;
 
+    #[inline]
     fn reals(x: Complex64, y: Complex64) -> bool { x.im == 0.0 && y.im == 0.0 }
     pub(crate) fn arithmetic(op: Arithmetic, x: Complex64, y: Complex64) -> Complex64 {
         match op {
@@ -450,14 +469,8 @@ pub(crate) mod complex {
     pub(crate) fn times(x: Complex64, y: Complex64) -> Complex64 { if reals(x, y) { (x.re * y.re).into() } else { x * y } }
     #[inline]
     pub(crate) fn divide(x: Complex64, y: Complex64) -> Complex64 { if reals(x, y) { (x.re / y.re).into() } else { x / y } }
-    /// `√(re²+im²)` when the larger part's square can neither overflow nor underflow, and `hypot` otherwise.
-    /// Wasm has no `hypot` instruction. It runs `hypot` in software, many times slower than this.
     #[inline]
-    pub(crate) fn magnitude(z: Complex64) -> f64 {
-        if z.im == 0.0 { return z.re.abs(); }
-        let m = z.re.abs().max(z.im.abs());
-        if (1e-150..1e150).contains(&m) { (z.re * z.re + z.im * z.im).sqrt() } else { z.norm() }
-    }
+    pub(crate) fn magnitude(z: Complex64) -> f64 { rustymath::hypot(z.re, z.im) }
     pub(crate) fn exp(y: Complex64) -> Complex64 {
         use std::f64::consts::{FRAC_PI_2, PI, TAU};
         let angle = y.im.rem_euclid(TAU);
@@ -465,7 +478,7 @@ pub(crate) mod complex {
         direction * y.re.exp()
     }
     /// `y` divided by its magnitude. A real `y` gives its sign, and zero gives zero.
-    pub(crate) fn direction(y: Complex64) -> Complex64 { if y.im == 0.0 { return Complex64::new(real::signum(y.re), 0.0); } y / y.norm() }
+    pub(crate) fn direction(y: Complex64) -> Complex64 { if y.im == 0.0 { return Complex64::new(real::signum(y.re), 0.0); } y / magnitude(y) }
 }
 
 /// Integers extended with `∞`, `¯∞` and NaN, as flagged integer storage holds them. `i64::MAX` stands for `∞`, `i64::MIN` for `¯∞` and
@@ -641,7 +654,7 @@ impl Number {
         }
     }
     /// This real as a float of type `F`, rounded to it.
-    fn to_real<F: Float>(&self) -> Result<F, &'static str> { self.to_float().map(F::narrow) }
+    pub(crate) fn to_real<F: Float>(&self) -> Result<F, &'static str> { self.to_float().map(F::narrow) }
 
     pub(crate) fn to_complex(&self) -> Result<Complex64, &'static str> { match self.0 { Complex(n) => Ok(n), _ => Ok(Complex64::new(self.to_float()?, 0.0)) } }
 
@@ -878,7 +891,7 @@ impl Number {
             |x, y| {
                 let result = if y.is_zero() { Complex64::new(1.0, 0.0) } else if x.is_zero() && y.im == 0.0 && y.re > 0.0 {
                     Complex64::zero()
-                } else if x.im == 0.0 && y.im == 0.0 && (x.re >= 0.0 || y.re.fract() == 0.0) { Complex64::new(x.re.powf(y.re), 0.0) } else { complex::exp(y * x.ln()) };
+                } else if x.im == 0.0 && y.im == 0.0 && (x.re >= 0.0 || y.re.fract() == 0.0) { Complex64::new(rustymath::pow(x.re, y.re), 0.0) } else { complex::exp(y * x.ln()) };
                 Ok(result.into())
             },
         )

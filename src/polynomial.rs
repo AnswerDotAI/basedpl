@@ -1,11 +1,11 @@
 use crate::{
     agreement::Agreement,
-    array::{generated_len, Cells, Frame, Layout},
+    array::{generated_len, with_float_width, Cells, FloatWidth, Frame, Layout},
+    element::{read_as, Float},
     execution::Context,
     number::{Arithmetic, Math},
     DomainAt, Error, ErrorAt, ErrorKind, Number, Value,
 };
-use num_complex::Complex64;
 
 fn int(n: usize) -> Number { Number::from_integer(n as i64) }
 fn numbers(a: &Value, span: &Context<'_>) -> Result<Vec<Number>, Error> {
@@ -137,23 +137,11 @@ impl Polynomial {
         let m = c.last().cloned().unwrap_or_else(|| int(0));
         let degree = c.len().saturating_sub(1);
         generated_len(&[degree, degree]).error_at(span, "polynomial companion matrix is too large")?;
-        let mut roots = Vec::new();
-        if degree > 0 {
-            let normalized = c[..degree]
-                .iter()
-                .map(|n| Ok(-n.dyad(Arithmetic::Divide, &m).domain_at(span)?.to_complex().domain_at(span)?))
-                .collect::<Result<Vec<_>, _>>()?;
-            span.check()?;
-            let values = if normalized.iter().all(|z| z.im == 0.) {
-                faer::Mat::from_fn(degree, degree, |i, j| if j == degree - 1 { normalized[i].re } else { f64::from(i == j + 1) }).eigenvalues()
-            } else {
-                faer::Mat::from_fn(degree, degree, |i, j| if j == degree - 1 { normalized[i] } else { Complex64::new(f64::from(i == j + 1), 0.) }).eigenvalues()
-            }
-            .map_err(|_| span.domain_error("polynomial root solver did not converge"))?;
-            span.check()?;
-            roots = values.into_iter().map(|z| Number::from(z).at_width(width)).collect();
-        }
-        let roots = vector(roots, span)?;
+        let c = c.iter().map(|n| n.to_complex().domain_at(span)).collect::<Result<Vec<_>, _>>()?;
+        span.check()?;
+        let roots = rustymath::polynomial::roots(&c).ok_or_else(|| span.domain_error("polynomial root solver did not converge"))?;
+        span.check()?;
+        let roots = vector(roots.into_iter().map(|z| Number::from(z).at_width(width)).collect(), span)?;
         Value::new(vec![2], vec![Value::Number(m), roots]).error_at(span, "invalid polynomial roots")
     }
 
@@ -194,9 +182,69 @@ fn polynomial_cells<'a>(source: &'a Value, layout: &Layout, span: &Context<'_>) 
     let agreement = Agreement::new(&cells.frame_layout(), layout).error_at(span, "polynomial frames must agree")?;
     Ok((cells, agreement))
 }
+
+/// One polynomial of real coefficients `c`, without its trailing zeros, with the float width of its derivative of order `order` at
+/// points beside the values in `others`. It's `None` unless that result is a float: the derivative has degree 1 or more, and a float is
+/// among `others` or among the coefficients up to the last nonzero one. In the other cases the `Number` path gives the result, which
+/// keeps exact results exact.
+fn float_polynomial(c: &Value, order: usize, others: &[Option<&Value>], span: &Context<'_>) -> Result<Option<(Vec<Number>, FloatWidth)>, Error> {
+    if c.shape().len() > 1 || !c.all_numbers() { return Ok(None); }
+    let mut c = numbers(c, span)?;
+    while c.last().is_some_and(Number::is_zero) { c.pop(); }
+    if c.len() < order + 2 || c.iter().any(|n| n.as_complex().is_some()) { return Ok(None); }
+    let width = c.iter().map(Number::float_width).chain(others.iter().flatten().map(|v| v.float_width())).flatten().max();
+    Ok(width.map(|width| (c, width)))
+}
+
+/// The coefficients `c` as floats of type `F`.
+fn floats<F: Float>(c: &[Number], span: &Context<'_>) -> Result<Vec<F>, Error> {
+    c.iter().map(Number::to_real).collect::<Result<_, _>>().domain_at(span)
+}
+
+/// The float results `y` at the points `x`, with `x`'s shape and layout.
+fn shaped<F: Float>(x: &Value, y: Vec<F>, width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> {
+    if x.is_unit() { return Ok(Value::Number(Number::float(y[0].into(), width))); }
+    let y = F::build(x.shape().to_vec(), y).ok_or(ErrorKind::Limit).error_at(span, "polynomial result exceeds array limits")?;
+    y.with_layout(x.layout().clone()).error_at(span, "invalid polynomial result")
+}
+
+/// `C⌻X` for one polynomial of real coefficients at the compact real points `X`, when the result is a float. rustymath evaluates it
+/// over the points' slice.
+fn evaluated(left: &Value, right: &Value, span: &Context<'_>) -> Result<Option<Value>, Error> {
+    if right.is_empty() { return Ok(None); }
+    let Some((c, width)) = float_polynomial(left, 0, &[Some(right)], span)? else { return Ok(None) };
+    with_float_width!(width, F => {
+        let Some(x) = read_as::<F>(right) else { return Ok(None) };
+        let mut y = x.into_owned();
+        rustymath::polynomial::evaluate(&floats(&c, span)?, &mut y);
+        shaped(right, y, width, span).map(Some)
+    })
+}
+
+/// `f∂X` or `U f∂X` for one polynomial of real coefficients at compact real points, when the gradient is a float. rustymath
+/// differentiates the coefficients and evaluates the derivative over the points' slice. Infinite data takes the `Number` path, which
+/// reports it, and so does a rank-0 array of points, whose gradient is a rank-0 array.
+fn differentiated(source: &Value, order: usize, cotangent: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Option<Value>, Error> {
+    if right.is_empty() || right.is_unit() && !right.is_atom() { return Ok(None); }
+    let Some((c, width)) = float_polynomial(source, order, &[Some(right), cotangent], span)? else { return Ok(None) };
+    if c.iter().any(Number::is_infinite) { return Ok(None); }
+    with_float_width!(width, F => {
+        let Some(x) = read_as::<F>(right) else { return Ok(None) };
+        let u = match cotangent.map(read_as::<F>) { Some(None) => return Ok(None), u => u.flatten() };
+        if x.iter().any(|v| v.is_infinite()) { return Ok(None); }
+        let mut c = floats::<F>(&c, span)?;
+        for _ in 0..order { c = rustymath::polynomial::derivative(&c); }
+        let mut y = x.into_owned();
+        rustymath::polynomial::evaluate(&c, &mut y);
+        if y.iter().chain(u.as_deref().unwrap_or(&[])).any(|v| v.is_infinite()) { return Ok(None); }
+        if let Some(u) = u { for (y, &u) in y.iter_mut().zip(u.iter()) { *y = *y * u; } }
+        shaped(right, y, width, span).map(Some)
+    })
+}
 /// `⌻Y` finds the roots of each polynomial in `Y`, and `C⌻X` evaluates each polynomial in `C` at `X`.
 pub(crate) fn call(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let Some(left) = left else { return each(right, span, |p| p.roots(span)) };
+    if let Some(y) = evaluated(left, right, span)? { return Ok(y); }
     let (cells, agreement) = polynomial_cells(left, right.layout(), span)?;
     let polynomials = parsed(&cells, span)?;
     let mut results = Vec::with_capacity(agreement.len.max(1));
@@ -244,6 +292,7 @@ pub(crate) fn derivative(source: &Value, order: usize, cotangent: Option<&Value>
     if order > 1 && (!right.is_unit() || !agreement.layout.shape().is_empty()) {
         return Err(span.error(ErrorKind::Rank, "repeated differentiation currently requires unit input and output"));
     }
+    if let Some(gradient) = differentiated(source, order, cotangent.as_ref(), right, span)? { return Ok(gradient); }
     let mut partials = Vec::new();
     for i in 0..cells.len() {
         let polynomial = Polynomial::parse(&cells.get(i).error_at(span, "invalid polynomial cell")?, span)?;

@@ -1,5 +1,6 @@
 use crate::{
     array::{generated_len, FloatWidth},
+    element::read_as,
     execution::Context,
     keyed,
     primitive::{integer, numeric, pervade, real},
@@ -9,12 +10,9 @@ use crate::{
     },
     Error, ErrorAt, ErrorKind, Number, Value,
 };
-use rand::{
-    distr::{Distribution as Sample, Open01},
-    rngs::Xoshiro256PlusPlus,
-    SeedableRng,
-};
-use statrs::distribution::*;
+use rand::{rngs::Xoshiro256PlusPlus, SeedableRng};
+pub(crate) use rustymath::distribution::Distribution;
+use rustymath::distribution::{standard, Invalid};
 use std::sync::{Arc, Mutex, PoisonError};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -25,86 +23,40 @@ pub(crate) enum Operation {
     Quantile,
 }
 
-// One list gives each distribution's name, standard parameters, constructor and dispatch; the numerical work stays in statrs. The
-// distributions after the `;` have constructors written by hand.
-macro_rules! continuous {
-    ($($variant:ident($name:ident, [$($arg:ident),+] = [$($standard:expr),*] => $new:expr)),+; $($other:ident = [$($other_standard:expr),*]),+ $(,)?) => {
-        #[derive(Debug, PartialEq)]
-        pub(crate) enum Distribution { $($variant($variant),)+ Binomial(Binomial), Poisson(Poisson), Logistic(f64, f64) }
-
-        $(fn $name(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
-            let [$($arg),+] = parameters(right, span)?;
-            valid($new, span).map(Distribution::$variant)
-        })+
-
-        /// Each distribution's name, its standard parameters (empty when it has none), and the constructor that takes its parameters.
-        const DISTRIBUTIONS: &[(&str, &[f64], fn(&Value, &Context<'_>) -> Result<Distribution, Error>)] =
-            &[$((stringify!($name), &[$($standard),*], $name),)+ $((stringify!($other), &[$($other_standard),*], $other),)+];
-
-        impl Distribution {
-            fn samples<R: rand::Rng + ?Sized>(&self, shape: Vec<usize>, len: usize, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
-                match self {
-                    $(Self::$variant(d) => Value::floats(shape, span.numeric().width, draw(len, || d.sample(&mut *rng), span)?),)+
-                    Self::Logistic(location, scale) => Value::floats(shape, span.numeric().width, draw(len, || {
-                        logistic_value(Operation::Quantile, *location, *scale, Open01.sample(&mut *rng))
-                    }, span)?),
-                    Self::Binomial(d) => return discrete_samples(d, shape, len, rng, span),
-                    Self::Poisson(d) => return discrete_samples(d, shape, len, rng, span),
-                }.error_at(span, "invalid distribution sample")
-            }
-
-            fn evaluate(&self, op: Operation, x: f64, width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> {
-                if matches!(op, Operation::Quantile) && !(0.0..=1.0).contains(&x) {
-                    return Err(span.domain_error("probability must be in [0,1]"));
-                }
-                let y = match self {
-                    $(Self::$variant(d) => continuous_value(d, op, x),)+
-                    Self::Logistic(location, scale) => logistic_value(op, *location, *scale, x),
-                    Self::Binomial(d) => {
-                        if matches!(op, Operation::Quantile) {
-                            if d.p() == 0.0 { return Ok(integer(0)); }
-                            if d.p() == 1.0 { return Ok(exact(d.n())); }
-                        }
-                        return Ok(discrete_value(d, op, x, width));
-                    }
-                    Self::Poisson(d) => {
-                        if matches!(op, Operation::Quantile) && x == 1.0 { f64::INFINITY }
-                        else { return Ok(discrete_value(d, op, x, width)); }
-                    }
-                };
-                Ok(Value::Number(Number::float(y, width)))
-            }
-        }
-    };
+/// How a distribution's parameters construct it.
+enum Constructor {
+    One(fn(f64) -> Result<Distribution, Invalid>),
+    Two(fn(f64, f64) -> Result<Distribution, Invalid>),
+    /// The probability of success in one trial.
+    Bernoulli,
+    /// A whole number of trials, and the probability of success in each.
+    Binomial,
+    Poisson,
 }
 
-continuous! {
-    Normal(normal, [mean, sd] = [0.0, 1.0] => Normal::new(mean, sd)),
-    Uniform(uniform, [min, max] = [0.0, 1.0] => uniform_checked(min, max)),
-    Beta(beta, [a, b] = [] => Beta::new(a, b)),
-    Cauchy(cauchy, [location, scale] = [0.0, 1.0] => Cauchy::new(location, scale)),
-    ChiSquared(chisquared, [df] = [] => ChiSquared::new(df)),
-    Exp(exponential, [rate] = [1.0] => Exp::new(rate)),
-    FisherSnedecor(fisher, [df1, df2] = [] => FisherSnedecor::new(df1, df2)),
-    Gamma(gamma, [shape, scale] = [] => gamma_with_scale(shape, scale)),
-    InverseGamma(inversegamma, [shape, scale] = [] => InverseGamma::new(shape, scale)),
-    Laplace(laplace, [location, scale] = [0.0, 1.0] => Laplace::new(location, scale)),
-    LogNormal(lognormal, [location, scale] = [0.0, 1.0] => LogNormal::new(location, scale)),
-    StudentsT(student, [df] = [] => StudentsT::new(0.0, 1.0, df)),
-    Weibull(weibull, [shape, scale] = [] => Weibull::new(shape, scale));
-    bernoulli = [], binomial = [], poisson = [], logistic = [0.0, 1.0]
-}
+/// Each distribution's name, its standard parameters (empty when it has none), and how its parameters construct it.
+const DISTRIBUTIONS: &[(&str, &[f64], Constructor)] = &[
+    ("normal", &standard::NORMAL, Constructor::Two(Distribution::normal)),
+    ("uniform", &standard::UNIFORM, Constructor::Two(Distribution::uniform)),
+    ("beta", &[], Constructor::Two(Distribution::beta)),
+    ("cauchy", &standard::CAUCHY, Constructor::Two(Distribution::cauchy)),
+    ("chisquared", &[], Constructor::One(Distribution::chi_squared)),
+    ("exponential", &standard::EXPONENTIAL, Constructor::One(Distribution::exponential)),
+    ("fisher", &[], Constructor::Two(Distribution::fisher)),
+    ("gamma", &[], Constructor::Two(Distribution::gamma)),
+    ("inversegamma", &[], Constructor::Two(Distribution::inverse_gamma)),
+    ("laplace", &standard::LAPLACE, Constructor::Two(Distribution::laplace)),
+    ("lognormal", &standard::LOG_NORMAL, Constructor::Two(Distribution::log_normal)),
+    ("student", &[], Constructor::One(Distribution::student_t)),
+    ("weibull", &[], Constructor::Two(Distribution::weibull)),
+    ("bernoulli", &[], Constructor::Bernoulli),
+    ("binomial", &[], Constructor::Binomial),
+    ("poisson", &[], Constructor::Poisson),
+    ("logistic", &standard::LOGISTIC, Constructor::Two(Distribution::logistic)),
+];
 
-fn gamma_with_scale(shape: f64, scale: f64) -> Result<Gamma, GammaError> {
-    if scale <= 0.0 || !(1.0 / scale).is_finite() { return Err(GammaError::RateInvalid); }
-    Gamma::new(shape, 1.0 / scale)
-}
-
-fn uniform_checked(min: f64, max: f64) -> Result<Uniform, String> {
-    // statrs defers this check to sample(), where an oversized interval would panic.
-    rand::distr::Uniform::new_inclusive(min, max).map_err(|e| e.to_string())?;
-    Uniform::new(min, max).map_err(|e| e.to_string())
-}
+/// The largest trial count or Poisson rate. A sampler's whole numbers stay exact up to it.
+const WHOLE: u64 = 1 << 53;
 
 fn parameters<const N: usize>(right: &Value, span: &Context<'_>) -> Result<[f64; N], Error> {
     if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "parameters must be a unit or vector")); }
@@ -117,46 +69,38 @@ fn parameters<const N: usize>(right: &Value, span: &Context<'_>) -> Result<[f64;
     Ok(result)
 }
 
-/// A statrs constructor's result, with its error as DOMAIN.
-fn valid<T>(result: Result<T, impl ToString>, span: &Context<'_>) -> Result<T, Error> { result.map_err(|e| span.domain_error(e.to_string())) }
-
-fn bernoulli(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
-    let [p] = parameters(right, span)?;
-    valid(Binomial::new(p, 1), span).map(Distribution::Binomial)
-}
-
-fn binomial(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
-    let [_, p] = parameters(right, span)?;
-    let n = numeric(&right.at(0), span)?.nonnegative_integer::<u64>().error_at(span, "binomial trials must be a nonnegative integer")?;
-    if n > 1 << 53 { return Err(span.error(ErrorKind::Limit, "binomial trials exceed the sampler's integer range")); }
-    valid(Binomial::new(p, n), span).map(Distribution::Binomial)
-}
-
-fn poisson(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
-    let [rate] = parameters(right, span)?;
-    // The sampler uses floating-point integer arithmetic internally.
-    if rate > (1u64 << 53) as f64 { return Err(span.error(ErrorKind::Limit, "Poisson rate exceeds the sampler's integer range")); }
-    if rate == 0.0 { return Ok(Distribution::Binomial(Binomial::new(0.0, 0).unwrap())); }
-    valid(Poisson::new(rate), span).map(Distribution::Poisson)
-}
-
-fn logistic(right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
-    let [location, scale] = parameters(right, span)?;
-    if scale <= 0.0 { return Err(span.domain_error("logistic scale must be positive")); }
-    Ok(Distribution::Logistic(location, scale))
+/// The distribution that `constructor` makes from the parameters `right`. Parameters outside its domain are DOMAIN.
+fn construct(constructor: &Constructor, right: &Value, span: &Context<'_>) -> Result<Distribution, Error> {
+    let made = match constructor {
+        Constructor::One(f) => { let [a] = parameters(right, span)?; f(a) }
+        Constructor::Two(f) => { let [a, b] = parameters(right, span)?; f(a, b) }
+        Constructor::Bernoulli => { let [p] = parameters(right, span)?; Distribution::binomial(1, p) }
+        Constructor::Binomial => {
+            let [_, p] = parameters(right, span)?;
+            let n = numeric(&right.at(0), span)?.nonnegative_integer::<u64>().error_at(span, "binomial trials must be a nonnegative integer")?;
+            if n > WHOLE { return Err(span.error(ErrorKind::Limit, "binomial trials exceed the sampler's integer range")); }
+            Distribution::binomial(n, p)
+        }
+        Constructor::Poisson => {
+            let [rate] = parameters(right, span)?;
+            if rate > WHOLE as f64 { return Err(span.error(ErrorKind::Limit, "Poisson rate exceeds the sampler's integer range")); }
+            Distribution::poisson(rate)
+        }
+    };
+    made.map_err(|e| span.domain_error(e.to_string()))
 }
 
 /// `params •distribution name`: the distribution called `name`, with `params`. Without `params`, a distribution takes its standard
 /// parameters, and one without standard parameters is DOMAIN.
 pub(crate) fn distribution(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let name = keyed::name(right).ok_or_else(|| span.domain_error("a distribution name must be a string"))?;
-    let Some(&(_, standard, construct)) = DISTRIBUTIONS.iter().find(|(n, ..)| **n == *name) else { return Err(span.domain_error("unknown distribution")) };
+    let Some((_, standard, constructor)) = DISTRIBUTIONS.iter().find(|(n, ..)| **n == *name) else { return Err(span.domain_error("unknown distribution")) };
     let params = match left {
         Some(params) => params.clone(),
         None if standard.is_empty() => return Err(span.domain_error(format!("the {name} distribution has no standard parameters"))),
         None => Value::floats(vec![standard.len()], FloatWidth::F64, standard.to_vec()).error_at(span, "invalid standard parameters")?,
     };
-    Ok(bundle(construct(&params, span)?))
+    Ok(bundle(construct(constructor, &params, span)?))
 }
 
 fn bundle(d: Distribution) -> Value {
@@ -170,69 +114,62 @@ fn bundle(d: Distribution) -> Value {
     ])
 }
 
-fn draw<T>(len: usize, mut sample: impl FnMut() -> T, span: &Context<'_>) -> Result<Vec<T>, Error> {
-    (0..len)
-        .map(|_| { span.check()?; Ok(sample()) })
-        .collect()
-}
-
 fn exact(n: u64) -> Value { match i64::try_from(n) { Ok(n) => integer(n), Err(_) => Value::Number(num_bigint::BigInt::from(n).into()) } }
 
-fn discrete_samples<R: rand::Rng + ?Sized>(d: &impl Sample<u64>, shape: Vec<usize>, len: usize, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
-    // Return through the checked constructor, which packs ordinary draws into i64 storage.
-    let values = draw(len, || exact(d.sample(&mut *rng)), span)?;
-    Value::from_parts(shape, values, integer(0)).error_at(span, "invalid distribution sample")
-}
-
-fn continuous_value<D: Continuous<f64, f64> + ContinuousCDF<f64, f64>>(d: &D, op: Operation, x: f64) -> f64 {
-    match op {
-        Operation::Density => {
-            if x.is_infinite() { 0.0 } else { d.pdf(x) }
-        }
-        Operation::Cdf => {
-            if x == f64::NEG_INFINITY { 0.0 } else if x == f64::INFINITY { 1.0 } else { d.cdf(x) }
-        }
-        Operation::Quantile => d.inverse_cdf(x),
-        Operation::Sample => unreachable!(),
+/// `len` draws from `d`, as an array of `shape`: whole numbers in integer storage for a discrete distribution, and floats of the
+/// session's width otherwise. Draws come in blocks, with an interrupt check before each.
+fn samples<R: rand::Rng + ?Sized>(d: &Distribution, shape: Vec<usize>, len: usize, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
+    let mut out = vec![0.0; len];
+    for block in out.chunks_mut(1 << 14) {
+        span.check()?;
+        d.samples(rng, block);
     }
+    let made = if d.is_discrete() { Value::integers(shape, out.into_iter().map(|k| k as i64).collect()) } else { Value::floats(shape, span.numeric().width, out) };
+    made.error_at(span, "invalid distribution sample")
 }
 
-fn discrete_value<D: Discrete<u64, f64> + DiscreteCDF<u64, f64>>(d: &D, op: Operation, x: f64, width: FloatWidth) -> Value {
-    if matches!(op, Operation::Quantile) { return exact(d.inverse_cdf(x)); }
+/// The density, cdf or quantile of `d` at each number in `right`. An array of compact numbers goes to rustymath as one slice, and its
+/// result keeps the array's layout. A discrete quantile is an exact integer, so it goes one number at a time, as atoms and nested
+/// arrays do.
+fn evaluate(d: &Distribution, op: Operation, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let quantile = op == Operation::Quantile;
+    if !right.is_atom() && !(quantile && d.is_discrete()) {
+        if let Some(x) = read_as::<f64>(right) {
+            if quantile && !x.iter().all(|p| (0.0..=1.0).contains(p)) { return Err(span.domain_error("probability must be in [0,1]")); }
+            let mut out = vec![0.0; x.len()];
+            match op {
+                Operation::Density => d.pdfs(&x, &mut out),
+                Operation::Cdf => d.cdfs(&x, &mut out),
+                _ => d.quantiles(&x, &mut out),
+            }
+            let width = right.float_width().unwrap_or(span.numeric().width);
+            return right.layout().floats(width, out).error_at(span, "invalid distribution result");
+        }
+    }
+    pervade(right, &|e| point(d, op, real(&e, span)?, e.float_width().unwrap_or(span.numeric().width), span), span)
+}
+
+/// The density, cdf or quantile of `d` at one number x, as a float of `width`, or as an exact integer for a finite discrete quantile.
+fn point(d: &Distribution, op: Operation, x: f64, width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> {
+    let quantile = op == Operation::Quantile;
+    if quantile && !(0.0..=1.0).contains(&x) { return Err(span.domain_error("probability must be in [0,1]")); }
     let y = match op {
-        Operation::Density => {
-            if x < 0.0 || x >= u64::MAX as f64 || x.fract() != 0.0 { 0.0 } else { d.pmf(x as u64) }
-        }
-        Operation::Cdf => {
-            if x < 0.0 { 0.0 } else if x >= u64::MAX as f64 { 1.0 } else { d.cdf(x.floor() as u64) }
-        }
-        _ => unreachable!(),
+        Operation::Density => d.pdf(x),
+        Operation::Cdf => d.cdf(x),
+        _ => d.quantile(x),
     };
-    Value::Number(Number::float(y, width))
-}
-
-fn logistic_value(op: Operation, location: f64, scale: f64, x: f64) -> f64 {
-    let z = (x - location) / scale;
-    let e = (-z.abs()).exp();
-    match op {
-        Operation::Density => e / (1.0 + e).powi(2) / scale,
-        Operation::Cdf => {
-            if z >= 0.0 { 1.0 / (1.0 + e) } else { e / (1.0 + e) }
-        }
-        Operation::Quantile => location + scale * (x.ln() - (-x).ln_1p()),
-        Operation::Sample => unreachable!(),
-    }
+    Ok(if quantile && d.is_discrete() && y.is_finite() { exact(y as u64) } else { Value::Number(Number::float(y, width)) })
 }
 
 pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if !matches!(op, Operation::Sample) { return pervade(right, &|e| d.evaluate(op, real(&e, span)?, e.float_width().unwrap_or(span.numeric().width), span), span); }
+    if op != Operation::Sample { return evaluate(d, op, right, span); }
     if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "sample shape must be a unit or vector")); }
     let shape = right.as_items().nonnegative_integers().error_at(span, "invalid sample dimension")?;
     let len = generated_len(&shape).error_at(span, "sample shape exceeds array limits")?;
-    let Some(left) = left else { return d.samples(shape, len, &mut rand::rng(), span); };
+    let Some(left) = left else { return samples(d, shape, len, &mut rand::rng(), span); };
     let generator = generator_of(left).ok_or_else(|| span.domain_error("sample takes a •rand generator on the left"))?;
     let mut rng = generator.lock().unwrap_or_else(PoisonError::into_inner);
-    d.samples(shape, len, &mut *rng, span)
+    samples(d, shape, len, &mut *rng, span)
 }
 
 /// A seeded stream of random numbers. Every copy of its record draws from the same stream.

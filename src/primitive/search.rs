@@ -9,7 +9,7 @@ use rustymath::tolerant::Tolerant;
 fn found_mask(x: &Value, y: &Value, found: bool, span: &Context<'_>) -> Result<Value, Error> {
     let (matches, frame) = search(y, x, span)?;
     if frame.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "set functions need cells of the same rank")); }
-    let miss = y.shape()[0] as i64;
+    let miss = y.shape()[0];
     Layout::from(vec![matches.len()]).booleans(matches.into_iter().map(|p| (p < miss) == found).collect()).error_at(span, "invalid set mask")
 }
 
@@ -19,7 +19,7 @@ pub(super) fn without(left: &Value, right: &Value, span: &Context<'_>) -> Result
 
 pub(super) fn membership(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let (matches, frame) = search(right, left, span)?;
-    let miss = right.shape()[0] as i64;
+    let miss = right.shape()[0];
     frame.booleans(matches.into_iter().map(|p| p < miss).collect()).error_at(span, "invalid membership result")
 }
 
@@ -132,7 +132,7 @@ pub(super) fn runs(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
 /// The positions of each distinct major cell, in the order of `∪`.
 pub(super) fn groups(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let (group, sizes) = distinct(right, span)?;
-    let (order, _) = crate::search::grouped(&group, sizes.len());
+    let (order, _) = rustymath::search::grouped(&group, sizes.len());
     let mut rest = order.as_slice();
     let groups = sizes.iter().map(|&n| {
         let (these, more) = rest.split_at(n);
@@ -279,7 +279,7 @@ fn search_cells<'a>(array: &'a Value, rank: usize, span: &Context<'_>) -> Result
 
 /// Where each cell of `needles` first matches a major cell of `haystack`, or the number of major cells when none does, and the frame
 /// that the needles form around those cells.
-fn search(haystack: &Value, needles: &Value, span: &Context<'_>) -> Result<(Vec<i64>, Frame), Error> {
+fn search(haystack: &Value, needles: &Value, span: &Context<'_>) -> Result<(Vec<usize>, Frame), Error> {
     let (rank, frame) = search_frame(haystack, needles, span)?;
     Ok((first_matches(&search_cells(haystack, rank, span)?, &search_cells(needles, rank, span)?, span)?, frame))
 }
@@ -296,11 +296,11 @@ fn major_axis(right: &Value) -> Layout { if right.is_unit() { vec![1].into() } e
 pub(super) fn index_of(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let (positions, frame) = search(left, right, span)?;
     if left.keys(0).is_some() {
-        return frame.collect(positions.into_iter().map(|p| position_value(left, 0, p as usize)), integer(0)).error_at(span, "invalid index-of result");
+        return frame.collect(positions.into_iter().map(|p| position_value(left, 0, p)), integer(0)).error_at(span, "invalid index-of result");
     }
     // A miss gives the number of haystack cells, so every position is at most that.
     let bound = left.shape().first().map_or(1, |&n| n + 1);
-    frame.positions(positions.into_iter().map(|p| p as usize), bound).error_at(span, "invalid index-of result")
+    frame.positions(positions.into_iter(), bound).error_at(span, "invalid index-of result")
 }
 
 fn position_value(array: &Value, axis: usize, position: usize) -> Value {
@@ -333,7 +333,7 @@ fn array_order(left: &Value, right: &Value) -> Option<Ordering> {
 /// The grade of `right`'s `count` major cells by radix sort, when its items are all floats, all integers or all characters, in at most
 /// 16 columns. `Float::order_key` orders floats as `array_order` does, with a key as wide as the float.
 fn radix_grade(right: &Value, count: usize, down: bool) -> Option<Vec<usize>> {
-    use crate::{element::Float, search::{sort_rows, RadixKey}};
+    use rustymath::{search::{sort_rows, RadixKey}, Float as _};
     /// `k`, or its complement when grading down, which reverses the order of keys.
     fn ordered<K: RadixKey>(k: K, down: bool) -> K { if down { !k } else { k } }
     let width = right.len().checked_div(count).unwrap_or(0);

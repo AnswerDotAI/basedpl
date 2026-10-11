@@ -1,7 +1,7 @@
 // The gallery page. The nav links' fragments name the demos, in display order. The page reads each demo's BPL from `gallery/`,
 // labels its link with the demo's title, and shows the chosen demo's description under the output and its code in the editor.
 // Choosing a demo runs it. Run runs the edited code, and Reset brings back the demo's own code and runs it. Each run starts a new
-// session.
+// session, which first evaluates the settings in `gallery/prefs.bpl`.
 //
 // A demo that defines a function `frame` is an animation. Once the demo has run, each animation tick draws `frame 0`, `frame 1` and
 // so on with the canvas driver, `driver.js`, on a 500 × 500 canvas. An `fps` option in the demo's `options` record sets the rate,
@@ -11,9 +11,11 @@ import {display, editor, interpreter, show} from './bpl.js';
 const code = document.querySelector('#code'), out = document.querySelector('#output'), about = document.querySelector('#about');
 const links = [...document.querySelectorAll('#demos a')], outputTab = document.querySelector('[data-bs-target="#gallery-output"]');
 const input = await editor(code, go, {lineNumbersMinChars: 3});
+const source = async name => (await fetch(`gallery/${name}.bpl`, {cache: 'no-cache'})).text();
+const prefs = await source('prefs');
 // Each demo file starts with `⍝` lines. The first is the demo's title, which labels its link. The rest describe it.
 const demos = Object.fromEntries(await Promise.all(links.map(async a => {
-    const lines = (await (await fetch(`gallery/${a.hash.slice(1)}.bpl`, {cache: 'no-cache'})).text()).split('\n');
+    const lines = (await source(a.hash.slice(1))).split('\n');
     const n = lines.findIndex(line => !line.startsWith('⍝'));
     const [title, ...text] = lines.slice(0, n).map(line => line.replace(/^⍝ ?/, ''));
     a.textContent = title;
@@ -30,6 +32,7 @@ function go() {
     if (runs++) bpl.restart();
     out.replaceChildren();
     outputTab.click();
+    bpl.eval(prefs);
     bpl.run(input.getValue());
 }
 

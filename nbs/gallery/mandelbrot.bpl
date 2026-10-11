@@ -7,7 +7,7 @@ grid←,(0ⱼ1×⌽g)+⊗g
 step←{
   [z c i I V s]←⍵
   z←c+z×z
-  live←~e←65536<z×+z
+  live←~e←256<|z
   I,←e#i
   V,←s+1-2⍟⍟|e#z
   [z c i]←live↣#¨[z c i]

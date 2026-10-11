@@ -444,7 +444,7 @@ pub(super) fn key(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Co
         let first = group[i];
         group[i] = if first == i { representatives.push(i); representatives.len() - 1 } else { group[first] };
     }
-    let (positions, sizes) = crate::search::grouped(&group, representatives.len());
+    let (positions, sizes) = rustymath::search::grouped(&group, representatives.len());
     let count = representatives.len();
     let width = generated_len(&values.shape()[1..]).error_at(cx.span, "key cell is too large")?;
     let mut results = Vec::with_capacity(count.max(1));

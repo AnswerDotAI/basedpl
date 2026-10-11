@@ -37,16 +37,18 @@ fn equiv(code: &str, expected: &str) { equiv_in(&mut Session::new(), code, expec
 fn language_examples() {
     let mut failures = Vec::new();
     let page = std::env::var("BASEDPL_PAGE").ok();
+    let prefs = std::fs::read_to_string("nbs/gallery/prefs.bpl").unwrap();
     for dir in ["nbs", "nbs/glyphs", "nbs/system", "nbs/gallery"] {
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
             let Some(ext) = path.extension().filter(|ext| *ext == "qmd" || *ext == "bpl") else { continue; };
             if page.as_deref().is_some_and(|p| !path.to_string_lossy().contains(p)) { continue; }
             let text = std::fs::read_to_string(&path).unwrap();
-            // A gallery demo is a whole program. A demo that defines `frame` also draws its first frame.
+            // A gallery demo is a whole program, run after the gallery's settings, as the gallery runs it. A demo that defines `frame` also
+            // draws its first frame.
             if ext == "bpl" {
                 let mut session = Session::new();
-                let error = session.eval(&text).error.or_else(|| session.eval(r#"{3=•nc "frame"?frame 0;0}0"#).error);
+                let error = [prefs.as_str(), &text, r#"{3=•nc "frame"?frame 0;0}0"#].into_iter().find_map(|code| session.eval(code).error);
                 if let Some(error) = error { failures.push(format!("{}: {error}", path.display())); }
                 continue;
             }

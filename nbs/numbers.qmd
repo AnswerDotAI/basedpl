@@ -125,7 +125,7 @@ v←32 •float 1.5 2.5
 (32 •float 1.5)×16777217ₓ    ⍝ 25165824
 ```
 
-Each operation on 16-bit floats computes in 32 bits and rounds its result to 16 bits. For `+ - × ÷` and `√`, that gives the result of 16-bit arithmetic. `+/`, `×/`, `+\`, `×\` and `+.×` keep their running totals in 32 bits. Only their results round to 16 bits. A 16-bit total of these numbers would stop growing at 256:
+Each operation on 16-bit floats computes in 32 bits and rounds its result to 16 bits. For `+ - × ÷` and `√`, that gives the result of 16-bit arithmetic. Folds, scans and inner products keep their running totals in 32 bits. Only their results round to 16 bits. A 16-bit total of these numbers would stop growing at 256:
 
 ```bpl
 +/(16 •float 4096⍴0.1)   ⍝ 409.5ₕ

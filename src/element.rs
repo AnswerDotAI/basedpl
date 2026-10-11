@@ -2,7 +2,6 @@
 use crate::{
     array::{with_float_width, with_floats, with_ints, FloatBuf, FloatWidth, Floats, IntBuf, Ints, Items, Storage, Width},
     number::{extended, int::Int},
-    search::RadixKey,
     Value,
 };
 use num_complex::Complex64;
@@ -70,34 +69,17 @@ macro_rules! whole {
 whole!(u8: U8, i16: I16, i32: I32, i64: I64);
 
 
-/// A float width of compact storage. Kernels and the `Number` path compute at the width itself, with rustymath's `exp`, `ln`, `sin`
-/// and `cos`, `num_traits::Float`'s other functions and `gamma`. A function with no version at the width, such as tolerant gcd,
-/// computes at `f64` and rounds. `rustymath::Float` gives the type that sums such as `+/` and `+.×` keep their running totals in: f32
-/// for f16, whose own sums would round at every step, and the type itself otherwise.
+/// A float width of compact storage. Kernels and the `Number` path compute at the width itself, with rustymath's functions, such
+/// as `exp`, `ln` and `gamma`, and `num_traits::Float`'s others. Kernels exist only for f32 and f64. `pervasive::halves` runs 16-bit
+/// floats at 32 bits. A function with no version at the width, such as tolerant gcd, computes at `f64` and rounds. `rustymath::Float`
+/// gives the type that `⌹` and `•decompose` compute in: f32 for f16, and the type itself otherwise.
 pub(crate) trait Float: Element + rustymath::Float<Total: Element> + Into<f64> {
     const WIDTH: FloatWidth;
     /// The signed integer width with this float's bytes, which monadic `⌊` and `⌈` write their results at first.
     const INTEGERS: Width;
-    /// The unsigned type, of this float's width, that `order_key` gives.
-    type OrderKey: RadixKey + Key;
-    fn gamma(self) -> Self;
-    /// A key whose unsigned order is the order of `total_cmp`, after `¯0` becomes `0` and every NaN becomes one NaN. So `¯0` and `0`
-    /// share a key, NaN's key follows every other, and two floats match exactly when their keys are equal.
-    fn order_key(self) -> Self::OrderKey;
-}
-/// The order key of float `$x`, whose bits have type `$k`: the bits with every sign bit flipped, and a negative float's other bits
-/// flipped too. `¯0` adds to `0` first, and every NaN takes the greatest key.
-macro_rules! order_key {
-    ($x:expr, $k:ty) => {{
-        let x = $x;
-        if x.is_nan() { <$k>::MAX } else {
-            let bits = (x + num_traits::zero::<Self>()).to_bits();
-            if bits >> (<$k>::BITS - 1) == 1 { !bits } else { bits | 1 << (<$k>::BITS - 1) }
-        }
-    }};
 }
 macro_rules! float {
-    ($($t:ident: $width:ident, $integers:ident, $key:ty, $gamma:path),+) => {$(
+    ($($t:ident: $width:ident, $integers:ident),+) => {$(
         impl Element for $t {
             const FILL: Self = 0.0;
             fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Floats(Floats::$width(v)) => Some(v), _ => None } }
@@ -108,15 +90,10 @@ macro_rules! float {
         impl Float for $t {
             const WIDTH: FloatWidth = FloatWidth::$width;
             const INTEGERS: Width = Width::$integers;
-            type OrderKey = $key;
-            #[inline]
-            fn gamma(self) -> Self { $gamma(self) }
-            #[inline]
-            fn order_key(self) -> $key { order_key!(self, $key) }
         }
     )+};
 }
-float!(f32: F32, I32, u32, libm::tgammaf, f64: F64, I64, u64, libm::tgamma);
+float!(f32: F32, I32, f64: F64, I64);
 impl Element for half::f16 {
     const FILL: Self = half::f16::ZERO;
     fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Floats(Floats::F16(v)) => Some(v), _ => None } }
@@ -124,17 +101,13 @@ impl Element for half::f16 {
     #[inline]
     fn whole<T: Whole>(self) -> Option<T> { T::from_float(self) }
 }
-/// `half` computes each operation on 16-bit floats in f32 and rounds the result. It converts one value at a time, through inline
-/// assembly that LLVM can't vectorize, so loops over 16-bit floats run one item at a time on the CPU. Eight-lane `fcvtl` and `fcvtn`
-/// assembly would vectorize them, as Rust's own `f16` would once it's stable. 16-bit floats needn't be fast on the CPU.
+/// `half` computes each operation on 16-bit floats in f32 and rounds the result. Its conversions take one value at a time, through inline
+/// assembly that LLVM can't vectorize. Loops that convert 16-bit floats, such as the copies that `pervasive::halves` makes, therefore run
+/// one item at a time on the CPU. Eight-lane `fcvtl` and `fcvtn` assembly would vectorize them, as Rust's own `f16` would once it's
+/// stable. 16-bit floats needn't be fast on the CPU.
 impl Float for half::f16 {
     const WIDTH: FloatWidth = FloatWidth::F16;
     const INTEGERS: Width = Width::I16;
-    type OrderKey = u16;
-    #[inline]
-    fn gamma(self) -> Self { half::f16::from_f32(libm::tgammaf(self.to_f32())) }
-    #[inline]
-    fn order_key(self) -> u16 { order_key!(self, u16) }
 }
 impl FloatWidth {
     /// The gap between 1 and the next float of this width.
@@ -162,7 +135,17 @@ macro_rules! real {
         impl Source<f64> for $s { #[inline] fn read(self) -> f64 { f64::from(self) } }
     )+};
 }
-real!(bool, u8, i16, i32, half::f16, f32);
+real!(i16, i32, half::f16, f32);
+/// A byte reads as a float through its bits: 2^23 plus the byte, minus 2^23, which is exact in `f32` and widens exactly. On AArch64,
+/// LLVM's own conversion from bytes builds each vector of two floats from single lanes, at about half the speed of an `i16` read.
+impl Source<f64> for u8 {
+    #[inline]
+    fn read(self) -> f64 { f64::from(f32::from_bits(0x4B00_0000 | u32::from(self)) - 8_388_608.0) }
+}
+impl Source<f64> for bool {
+    #[inline]
+    fn read(self) -> f64 { Source::<f64>::read(u8::from(self)) }
+}
 impl Source<f64> for i64 {
     #[inline]
     fn read(self) -> f64 { self as f64 }
@@ -209,31 +192,6 @@ pub(crate) fn cast<A: Whole>(ints: Ints<'_>) -> Cow<'_, [A]> {
 
 /// Booleans as unsigned bytes of 0 and 1, read in place with no copy.
 pub(crate) fn truth_bytes(truths: &[bool]) -> &[u8] { bytemuck::cast_slice(truths) }
-/// An item as a whole number: a Boolean's 0 or 1, an integer, or a character's code point. Search tables index by it, and masks count
-/// by it.
-pub(crate) trait Key: Copy + Eq + std::hash::Hash { fn key(self) -> i64; }
-impl Key for bool {
-    #[inline]
-    fn key(self) -> i64 { self.into() }
-}
-impl<T: Int + std::hash::Hash> Key for T {
-    #[inline]
-    fn key(self) -> i64 { self.to_i64() }
-}
-impl Key for char {
-    #[inline]
-    fn key(self) -> i64 { i64::from(u32::from(self)) }
-}
-/// The order keys of floats, which `Float::order_key` gives. A 64-bit key's value wraps to a negative `i64`, which keeps keys distinct.
-macro_rules! order_keys {
-    ($($t:ty),+) => {$(
-        impl Key for $t {
-            #[inline]
-            fn key(self) -> i64 { self as i64 }
-        }
-    )+};
-}
-order_keys!(u16, u32, u64);
 
 /// `value`'s compact numbers as `A`s: borrowed when they are `A`s already, otherwise read through `Source`, or through `read_flagged` from
 /// flagged integer storage. `None` when `A` can't hold them.

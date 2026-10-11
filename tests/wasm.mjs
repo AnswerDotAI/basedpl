@@ -1,14 +1,15 @@
 // Checks the browser module, built by `cargo wasm`, in Node. The depth checks run in a worker with a stack about the size of a Chrome
-// worker's. The call limit allows 188 levels of recursion that makes two calls a level, and 125 of recursion that makes three. Each
-// shape must reach its depth, and recursion to 300 levels must stop with a LIMIT error before the stack runs out.
+// worker's, once with each of V8's compilers. The call limit allows 188 levels of recursion that makes two calls a level, and 125 of
+// recursion that makes three. Each shape must reach its depth, and recursion to 300 levels must stop with a LIMIT error before the
+// stack runs out.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
-import init, { Session, configure } from '../wasm/pkg/basedpl_wasm.js';
+import { Session, pkg } from './wasm-pkg.mjs';
 
-await init({ module_or_path: readFileSync(new URL('../wasm/pkg/basedpl_wasm_bg.wasm', import.meta.url)) });
-configure('http://localhost/', message => { throw new Error(message); });
 // The text of each output, and the error's kind, when `code` runs in a new session.
 const run = code => {
     const outputs = [];
@@ -32,7 +33,7 @@ const shapes = {
     outer: ['{⍵=0?0;1+↑(0 f⊗ ⍵-1)}', 125],
 };
 
-if (isMainThread) {
+if (isMainThread && process.argv[2] !== 'depths') {
     test('runs code and streams its output', () => {
         assert.deepEqual(run('⎕←"hi" ⋄ +/⍳4'), { outputs: ['hi', '6'], error: undefined });
     });
@@ -64,20 +65,31 @@ if (isMainThread) {
     });
     test('a canvas output carries JSON and bytes, which canvas.js draws', () => {
         const data = display('d←•canvas "(ctx, data, options) => ctx.fillRect(options.x, 0, data.data[1], data.shape[0])" ⋄ ["x":5] d 3 2⍴⍳6');
-        const calls = [], show = (0, eval)(readFileSync(new URL('../wasm/pkg/canvas.js', import.meta.url), 'utf8'));
+        const calls = [], show = (0, eval)(readFileSync(new URL('canvas.js', pkg), 'utf8'));
         show({ getContext: () => ({ fillRect: (...a) => calls.push(a) }) }, data['application/x-bpl-canvas+json'], data['application/x-bpl-canvas-data']);
         assert.deepEqual(calls, [[5, 0, 1, 3]]);
     });
-    test('each recursion shape reaches its depth, and deeper recursion is a LIMIT error', async () => {
-        // Node keeps 192 KB of a worker's stack in reserve. The rest, about 470 KB, is what a Chrome worker gives.
-        const worker = new Worker(new URL(import.meta.url), { resourceLimits: { stackSizeMb: 0.65 } });
-        const results = await new Promise((done, failed) => { worker.on('message', done); worker.on('error', failed); });
-        for (const [name, [reached, deep]] of Object.entries(results)) {
-            assert.equal(reached, shapes[name][1], name);
-            assert.equal(deep, 'LIMIT', name);
+    test('each recursion shape reaches its depth, and deeper recursion is a LIMIT error, under both V8 compilers', () => {
+        // V8 compiles each function first with Liftoff, then recompiles hot functions with TurboFan, whose frames can be larger. V8's
+        // flags apply to a whole process, so each compiler runs the checks in a process of its own.
+        for (const flags of [[], ['--no-liftoff']]) {
+            const out = execFileSync(process.execPath, [...flags, fileURLToPath(import.meta.url), 'depths'], { encoding: 'utf8' });
+            for (const [name, [reached, deep]] of Object.entries(JSON.parse(out))) {
+                assert.equal(reached, shapes[name][1], `${name} ${flags}`);
+                assert.equal(deep, 'LIMIT', `${name} ${flags}`);
+            }
         }
     });
+} else if (isMainThread) {
+    // Node keeps 192 KB of a worker's stack in reserve. The rest, about 470 KB, is what a Chrome worker gives.
+    new Worker(new URL(import.meta.url), { resourceLimits: { stackSizeMb: 0.65 } }).on('message', results => console.log(JSON.stringify(results)));
 } else {
     const depth = (shape, n) => { const { outputs, error } = run(`m←{⍶ ⍵} ⋄ f←${shape} ⋄ f ${n}`); return error ?? Number(outputs.at(-1)); };
-    parentPort.postMessage(Object.fromEntries(Object.entries(shapes).map(([name, [shape, n]]) => [name, [depth(shape, n), depth(shape, 300)]])));
+    const results = {};
+    for (const [name, [shape, n]] of Object.entries(shapes)) {
+        try { results[name] = [depth(shape, n), depth(shape, 300)]; }
+        // A stack overflow leaves the module's own stack pointer where it was, so no check can follow it.
+        catch (e) { if (!(e instanceof RangeError)) throw e; results[name] = ['OVERFLOW', 'OVERFLOW']; break; }
+    }
+    parentPort.postMessage(results);
 }

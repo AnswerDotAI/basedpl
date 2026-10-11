@@ -917,11 +917,28 @@ fn replicate_into<S: Element, D: Clone>(d: &mut Vec<D>, s: &[S], f: &impl Fn(S) 
     }
 }
 
-/// Appends the items of `s` whose count in the Boolean `mask` is 1, each converted by `f`. `total` counts are 1.
+/// Appends the items of `s` whose count in the Boolean `mask` is 1, each converted by `f`. `total` counts are 1. A block of 64 counts
+/// that are all 0 is skipped, and one whose counts are all 1 is copied, so long runs cost little. Consecutive blocks that mix both go
+/// through one `compress` call, which on a random mask covers the whole array.
 fn compress_into<S: Element, D: Clone, M: Key>(d: &mut Vec<D>, s: &[S], f: &impl Fn(S) -> D, mask: &[M], total: usize) {
-    let start = d.len();
-    d.resize(start + total, f(S::FILL));
-    compress(&mut d[start..], mask, |j| f(s[j]));
+    d.reserve(total);
+    let mixed = |d: &mut Vec<D>, from: usize, to: usize, count: usize| {
+        let at = d.len();
+        d.resize(at + count, f(S::FILL));
+        compress(&mut d[at..], &mask[from..to], |j| f(s[from + j]));
+    };
+    let (mut from, mut count) = (0, 0);
+    for (start, m) in (0..).step_by(64).zip(mask.chunks(64)) {
+        // A block's count is at most 64, which fits in a byte. Byte additions vectorize in the widest lanes.
+        let mut n = 0u8;
+        for x in m { n += x.key() as u8; }
+        let n = n as usize;
+        if n != 0 && n != m.len() { count += n; continue; }
+        if count > 0 { mixed(d, from, start, count); }
+        if n > 0 { d.extend(s[start..start + n].iter().map(|&x| f(x))); }
+        (from, count) = (start + m.len(), 0);
+    }
+    if count > 0 { mixed(d, from, mask.len(), count); }
 }
 
 /// Fills `d` with `item(j)` for each `j` whose count in the Boolean `mask` is 1, in order. Each item is written where it goes if its
