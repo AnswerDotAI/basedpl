@@ -3,11 +3,12 @@ use crate::{
     element::{cast, read_flagged, Element, Key, Source, Whole},
     execution::Context,
     keyed::Keys,
-    number::{extended, int::Int, real, with_tolerance, Numeric, Tolerant},
+    number::{extended, int::Int, real, Numeric},
     DomainAt, Error, ErrorKind, Number,
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use num_complex::Complex64;
+use rustymath::{tolerant::Tolerant, with_tolerance};
 use std::{
     borrow::Cow,
     fmt,

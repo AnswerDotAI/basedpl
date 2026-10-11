@@ -70,32 +70,20 @@ macro_rules! whole {
 whole!(u8: U8, i16: I16, i32: I32, i64: I64);
 
 
-/// A float width of compact storage. Kernels and the `Number` path compute at the width itself, with `num_traits::Float`'s functions
-/// and `gamma`. A function with no version at the width, such as tolerant gcd, computes at `f64` and rounds.
-pub(crate) trait Float: Element + num_traits::Float + Into<f64> {
+/// A float width of compact storage. Kernels and the `Number` path compute at the width itself, with rustymath's `exp`, `ln`, `sin`
+/// and `cos`, `num_traits::Float`'s other functions and `gamma`. A function with no version at the width, such as tolerant gcd,
+/// computes at `f64` and rounds. `rustymath::Float` gives the type that sums such as `+/` and `+.×` keep their running totals in: f32
+/// for f16, whose own sums would round at every step, and the type itself otherwise.
+pub(crate) trait Float: Element + rustymath::Float<Total: Element> + Into<f64> {
     const WIDTH: FloatWidth;
     /// The signed integer width with this float's bytes, which monadic `⌊` and `⌈` write their results at first.
     const INTEGERS: Width;
-    /// The type that sums such as `+/` and `+.×` keep their running totals in. It's f32 for f16, whose own sums would round at every
-    /// step, and this type itself otherwise.
-    type Total: Accumulator;
     /// The unsigned type, of this float's width, that `order_key` gives.
     type OrderKey: RadixKey + Key;
-    fn total(self) -> Self::Total;
-    /// The total `t`, rounded to this type.
-    fn from_total(t: Self::Total) -> Self;
-    /// `x` rounded to the nearest float of this width.
-    fn narrow(x: f64) -> Self;
     fn gamma(self) -> Self;
     /// A key whose unsigned order is the order of `total_cmp`, after `¯0` becomes `0` and every NaN becomes one NaN. So `¯0` and `0`
     /// share a key, NaN's key follows every other, and two floats match exactly when their keys are equal.
     fn order_key(self) -> Self::OrderKey;
-}
-/// A float type that running totals are kept in.
-pub(crate) trait Accumulator: Float {
-    /// `+` and `×` that a fold may reorder, which lets it vectorize.
-    fn algebraic_add(self, other: Self) -> Self;
-    fn algebraic_mul(self, other: Self) -> Self;
 }
 /// The order key of float `$x`, whose bits have type `$k`: the bits with every sign bit flipped, and a negative float's other bits
 /// flipped too. `¯0` adds to `0` first, and every NaN takes the greatest key.
@@ -120,24 +108,11 @@ macro_rules! float {
         impl Float for $t {
             const WIDTH: FloatWidth = FloatWidth::$width;
             const INTEGERS: Width = Width::$integers;
-            type Total = Self;
             type OrderKey = $key;
-            #[inline]
-            fn total(self) -> Self { self }
-            #[inline]
-            fn from_total(t: Self) -> Self { t }
-            #[inline]
-            fn narrow(x: f64) -> Self { x as $t }
             #[inline]
             fn gamma(self) -> Self { $gamma(self) }
             #[inline]
             fn order_key(self) -> $key { order_key!(self, $key) }
-        }
-        impl Accumulator for $t {
-            #[inline]
-            fn algebraic_add(self, other: Self) -> Self { $t::algebraic_add(self, other) }
-            #[inline]
-            fn algebraic_mul(self, other: Self) -> Self { $t::algebraic_mul(self, other) }
         }
     )+};
 }
@@ -155,14 +130,7 @@ impl Element for half::f16 {
 impl Float for half::f16 {
     const WIDTH: FloatWidth = FloatWidth::F16;
     const INTEGERS: Width = Width::I16;
-    type Total = f32;
     type OrderKey = u16;
-    #[inline]
-    fn total(self) -> f32 { self.to_f32() }
-    #[inline]
-    fn from_total(t: f32) -> Self { half::f16::from_f32(t) }
-    #[inline]
-    fn narrow(x: f64) -> Self { half::f16::from_f64(x) }
     #[inline]
     fn gamma(self) -> Self { half::f16::from_f32(libm::tgammaf(self.to_f32())) }
     #[inline]

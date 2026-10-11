@@ -1,0 +1,19 @@
+[package]
+name = "rustymath"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Fast maths functions for f16, f32 and f64 in plain Rust, written so that the compiler vectorises the loops that call them."
+readme = "README.md"
+
+[dependencies]
+half = { version = ">=2.7.1, <3", features = ["num-traits"] }
+num-bigint = ">=0.4.6, <0.5"
+num-complex = ">=0.4.6, <1"
+num-rational = ">=0.4.2, <1"
+num-traits = ">=0.2.19, <1"
+
+[dev-dependencies]
+# Correctly rounded references for the accuracy tests.
+pxfm = ">=0.1.30, <1"

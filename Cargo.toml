@@ -1,6 +1,6 @@
 [workspace]
-members = ["cli", "py", "wasm", "xtask"]
-default-members = [".", "cli", "py"]
+members = ["cli", "py", "rustymath", "wasm", "xtask"]
+default-members = [".", "cli", "py", "rustymath"]
 
 [workspace.package]
 version = "0.1.39"
@@ -61,6 +61,7 @@ num-complex = ">=0.4.6, <1"
 num-bigint = ">=0.4.6, <0.5"
 num-traits = ">=0.2.19, <1"
 half = { version = ">=2.7.1, <3", features = ["num-traits", "bytemuck"] }
+rustymath = { path = "rustymath" }
 num-integer = ">=0.1.46, <1"
 strength_reduce = ">=0.2.4, <1"
 libm = ">=0.2, <1"

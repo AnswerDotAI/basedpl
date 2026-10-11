@@ -1,4 +1,5 @@
-use crate::{array::FloatWidth, keyed, number::{Tolerance, Tolerant}, ErrorAt, Number, Value};
+use crate::{array::FloatWidth, keyed, ErrorAt, Number, Value};
+use rustymath::tolerant::{Tolerance, Tolerant};
 use unicode_width::UnicodeWidthStr;
 
 /// A column of numbers aligned on their decimal points: its widest text before the point, and its widest from the point on.
@@ -190,7 +191,10 @@ impl Settings {
 /// floats in bits, 16, 32 or 64. Code parsed after a change reads its literals at the new width.
 pub(crate) fn prefs(session: &mut crate::Session, _: Option<&Value>, right: &Value, span: &crate::Span) -> Result<Value, crate::Error> {
     let (mut display, mut numeric) = (session.display, session.numeric);
-    let tolerance = |v: &Value| v.as_number().and_then(|n| n.to_float().ok()).and_then(Tolerance::new).ok_or(crate::ErrorKind::Domain);
+    let tolerance = |v: &Value| {
+        let t = v.as_number().and_then(|n| n.to_float().ok()).and_then(Tolerance::new);
+        t.filter(|&t| t <= Tolerance::DEFAULT).ok_or(crate::ErrorKind::Domain)
+    };
     for (key, value) in keyed::pairs(right).error_at(span, "•prefs takes a record of settings")? {
         match &*key {
             "tolerance" => numeric.tolerance = tolerance(&value).error_at(span, "tolerance must be from 0 to 1E¯14")?,

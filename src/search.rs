@@ -7,7 +7,7 @@
 //! - Integers and characters index the first position of each value. A character's value is its code point. Integers match integers,
 //!   whether or not their storage is flagged for infinities. An infinity then shares its value with `i64::MAX` or `i64::MIN`. Characters
 //!   match only characters.
-//! - Booleans, integers and floats index as integers when every float equals a whole number below `Tolerance::WHOLE_LIMIT`, 2^43, in
+//! - Booleans, integers and floats index as integers when every float equals a whole number below `WHOLE_LIMIT`, 2^43, in
 //!   magnitude. Each float then indexes as that whole number. A search does this when both its arguments qualify.
 //! - Exact data is hashed. Numbers must be exact, and arrays must have no keys and no functions. A hash bucket is only a candidate
 //!   list, so `Value::matches` confirms each candidate.
@@ -23,10 +23,11 @@ use crate::{
     array::{with_float_width, with_floats, with_int_pair, with_ints, FloatWidth, Floats, Items},
     element::{read_as, Float, Key, Source},
     execution::Context,
-    number::{int::Int, Tolerance, Tolerant},
+    number::{int::Int, WHOLE_LIMIT},
     Error, ErrorKind, Value,
 };
 use foldhash::{fast::RandomState, HashMap, HashMapExt};
+use rustymath::tolerant::{Tolerance, Tolerant};
 use std::{
     borrow::Cow,
     collections::hash_map::Entry,
@@ -133,7 +134,7 @@ fn scanned(haystack: &Cells, needles: &Cells, t: Tolerance, width: FloatWidth) -
         Items::Integers(x) => with_float_width!(width, F => with_ints!(x, |x| Some(
             y.iter()
                 .map(|&n| {
-                    if width == FloatWidth::F64 && n.fract() == 0.0 && n.abs() < Tolerance::WHOLE_LIMIT {
+                    if width == FloatWidth::F64 && n.fract() == 0.0 && n.abs() < WHOLE_LIMIT {
                         x.iter().position(|&h| h.to_i64() == n as i64).unwrap_or(x.len()) as i64
                     } else {
                         ranged(x, |h| Source::<F>::read(h).into(), n, t)
@@ -169,7 +170,7 @@ pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<usize>, 
 }
 
 /// Calls `run` with each run of `x`, as `sorted_reals` pairs in order of position. A run is a longest sequence of reals, in ascending
-/// order, where each matches the next within tolerance `t`. Every real that a real matches lies in one interval (`Tolerance::range`).
+/// order, where each matches the next within tolerance `t`. Every real that a real matches lies in one interval (`Tolerant::range`).
 /// A run therefore holds every match of each of its reals. An interrupt or a timeout stops the walk through the runs, but not the sort
 /// before it.
 fn each_run(x: &[f64], t: Tolerance, span: &Context<'_>, mut run: impl FnMut(&[(u64, u32)]) -> Result<(), Error>) -> Result<(), Error> {
@@ -224,7 +225,7 @@ fn write_first<'t, K: Key>(x: &[K], min: i64, first: &'t mut [usize]) -> &'t [us
 fn whole_keys<'a>(cells: &Cells<'a>, t: Tolerance, width: FloatWidth) -> Option<Cow<'a, [i64]>> {
     match cells.items()? {
         Items::Floats(x) => {
-            with_floats!(x, |x| x.iter().map(|&f| t.whole(f.into()).filter(|n| n.abs() < Tolerance::WHOLE_LIMIT).map(|n| n as i64)).collect::<Option<_>>().map(Cow::Owned))
+            with_floats!(x, |x| x.iter().map(|&f| t.whole::<f64>(f.into()).filter(|n| n.abs() < WHOLE_LIMIT).map(|n| n as i64)).collect::<Option<_>>().map(Cow::Owned))
         }
         items @ (Items::Booleans(_) | Items::Integers(_)) if width == FloatWidth::F64 => items.integers().ok(),
         items @ (Items::Booleans(_) | Items::Integers(_)) => {

@@ -3095,6 +3095,15 @@ x←32 •float 16777216
 ⍝ — Infinite power stops when two 32-bit results lie within 4 units in the last place, and keeps the width
 •storage (2○⍣∞) 32 •float 1   ⍝ "float32"
 
+⍝ — Sines and cosines beyond the reach of the kernels' fast reduction take the exact reduction, even beside smaller arguments
+(1○1e22 ¯1e22 0.5),2○1e22   ⍝ ¯0.8522008497671888 0.8522008497671888 0.479425538604203 0.523214785395139
+
+⍝ — A 32-bit sine beyond that reach keeps its width
+1○32•float 3e6   ⍝ ¯0.87849003ₛ
+
+⍝ — The sine of ¯0 is ¯0, and the cosine of 0 is exactly 1
+[÷1○¯0;0=1-2○0]   ⍝ ¯∞ $t
+
 ⍝ — Writing an exact number into 32-bit storage keeps the width
 x←32 •float 0.5 1.5
 x₀←2ₓ
@@ -3954,6 +3963,9 @@ y←[103993÷33102;π1;¯103993÷33102;¯0.75;0;1.000000000000005;3E¯200;3E200;
 
 ⍝ — Reals outside comparison tolerance of a rational ratio have a tiny gcd
 1E¯12>1∨1.00000000000005   ⍝ $t
+
+⍝ — The gcd of NaN and any real is NaN
+[$n∨3.5;3.5∨$n;$n∨$n;0∨$n;$n∧2.5]   ⍝ $n $n $n $n $n
 
 ⍝⍝ Search depth and random
 

@@ -2,7 +2,8 @@
 //! run-length encoding, groups, iota, range, where, grade, sort and interval index. Their search kernels are in `crate::search`.
 
 use super::*;
-use crate::{array::with_floats, number::Tolerant};
+use crate::array::with_floats;
+use rustymath::tolerant::Tolerant;
 
 /// A mask over the major cells of `x`. With `found`, it marks the cells among the major cells of `y`, and otherwise the cells that aren't.
 fn found_mask(x: &Value, y: &Value, found: bool, span: &Context<'_>) -> Result<Value, Error> {

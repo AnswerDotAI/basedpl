@@ -3,6 +3,7 @@ use num_bigint::BigInt;
 use num_complex::Complex64;
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Signed, ToPrimitive, Zero};
+use rustymath::{tolerant::{Tolerance, Tolerant, TolerantComplex}, Float as _};
 use std::{cmp::Ordering, fmt};
 
 /// Numbers. Floats and complex numbers follow IEEE 754, so they include infinities, NaN and `¯0`. A Boolean is the integer 0 or 1, and
@@ -50,152 +51,9 @@ pub(crate) const NAN_NAME: &str = "$n";
 pub(crate) const TRUE_NAME: &str = "$t";
 pub(crate) const FALSE_NAME: &str = "$f";
 
-/// The relative tolerance within which approximate numbers are equal: `x` equals `y` when `|x-y|` is at most the tolerance times the
-/// larger magnitude. A tolerance of 0 compares exactly.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Tolerance(f64);
-
-impl Tolerance {
-    pub(crate) const EXACT: Self = Self(0.0);
-    /// Dyalog's default `⎕CT`: the default of the `tolerance` pref, which sets the tolerance of 64-bit floats, and the most it accepts.
-    pub(crate) const DEFAULT: Self = Self(1e-14);
-    /// The magnitude below which no float equals two whole numbers, within any tolerance the pref accepts: 2^43.
-    pub(crate) const WHOLE_LIMIT: f64 = 8_796_093_022_208.0;
-    /// The tolerance `t` when it lies from 0 to `DEFAULT`. Search and comparison against one number rely on this limit. Up to it, no
-    /// float below `WHOLE_LIMIT` equals two whole numbers.
-    pub(crate) fn new(t: f64) -> Option<Self> { (0.0..=Self::DEFAULT.0).contains(&t).then_some(Self(t)) }
-    pub(crate) fn is_exact(self) -> bool { self.0 == 0.0 }
-    /// The floats equal to `c`, as the range `lo..=hi`: `self.equal(x, c)` holds exactly when `lo <= x && x <= hi`. A comparison
-    /// against one number works out the range once, so each item needs only plain comparisons. `None` for NaN, which equals nothing.
-    pub(crate) fn range(self, c: f64) -> Option<(f64, f64)> {
-        if c.is_nan() { return None; }
-        if !c.is_finite() || c == 0.0 { return Some((c, c)); }
-        let (near, far) = (c * (1.0 - self.0), c / (1.0 - self.0));
-        let (lo, hi) = if c > 0.0 { (near, far) } else { (far, near) };
-        Some((self.range_end(lo, c, f64::next_down, f64::next_up), self.range_end(hi, c, f64::next_up, f64::next_down)))
-    }
-    /// The last float equal to `c` in the direction `out`, found from the estimate `x`. `back` steps towards `c`.
-    fn range_end(self, mut x: f64, c: f64, out: fn(f64) -> f64, back: fn(f64) -> f64) -> f64 {
-        while !self.equal(x, c) { x = back(x); }
-        while self.equal(out(x), c) { x = out(x); }
-        x
-    }
-    /// The whole number equal to `y`, when there is one.
-    pub(crate) fn whole(self, y: f64) -> Option<f64> { let n = y.round(); ((y - n).abs() <= self.0 * y.abs().max(n.abs())).then_some(n) }
-    /// The gcd of reals: `x` divided by the numerator of the first convergent of `x÷y` equal to it.
-    pub(crate) fn gcd(self, x: f64, y: f64) -> f64 {
-        let (x, y) = (x.abs().max(y.abs()), x.abs().min(y.abs()));
-        if y == 0.0 { return x; }
-        let scale = BigRational::from_float(x).unwrap();
-        let ratio = &scale / BigRational::from_float(y).unwrap();
-        let tolerance = BigRational::from_float(self.0).unwrap() * &ratio;
-        let (mut n, mut d) = ratio.clone().into_raw();
-        let (mut p0, mut p1) = (BigInt::from(0), BigInt::from(1));
-        let (mut q0, mut q1) = (BigInt::from(1), BigInt::from(0));
-        loop {
-            let a = &n / &d;
-            (p0, p1) = (p1.clone(), &a * &p1 + p0);
-            (q0, q1) = (q1.clone(), &a * &q1 + q0);
-            let convergent = BigRational::new(p1.clone(), q1.clone());
-            if (convergent - &ratio).abs() <= tolerance { return (scale / BigRational::from_integer(p1)).to_f64().unwrap(); }
-            (n, d) = (d.clone(), n % d);
-        }
-    }
-}
-
-/// Comparison of approximate numbers: `Exactly`, or within a `Tolerance`. Kernels are written once over this trait, and
-/// `with_tolerance!` picks the instance once per call. The exact instance compiles to plain IEEE comparisons and `floor`. The real
-/// methods compute at the width of their arguments.
-pub(crate) trait Tolerant: Copy {
-    /// The tolerance, 0 for `Exactly`.
-    fn value(self) -> f64;
-    /// Whether `x` and `y` are equal. NaN equals nothing, as in IEEE.
-    fn equal<F: Float>(self, x: F, y: F) -> bool;
-    /// `⌊y`: the nearest whole number, unless `y` lies below it and isn't equal to it. Then the one below.
-    fn floor<F: Float>(self, y: F) -> F;
-    #[inline]
-    fn ceiling<F: Float>(self, y: F) -> F { -self.floor(-y) }
-    /// Whether `x` and `y` match, as `≡` and search compare them. NaN matches NaN.
-    #[inline]
-    fn matches<F: Float>(self, x: F, y: F) -> bool { self.equal(x, y) | (x.is_nan() & y.is_nan()) }
-    /// The order of `x` and `y`. `None` when either is NaN.
-    #[inline]
-    fn compare<F: Float>(self, x: F, y: F) -> Option<Ordering> { if self.equal(x, y) { Some(Ordering::Equal) } else { x.partial_cmp(&y) } }
-    /// `x|y` takes the sign of `x`, as `y-x×⌊y÷x` does. A quotient equal to a whole number leaves no remainder.
-    #[inline]
-    fn residue<F: Float>(self, x: F, y: F) -> F {
-        let q = y / x;
-        let r = if self.equal(x * q.round(), y) { F::zero() } else { y - x * self.floor(q) };
-        if x == F::zero() { y } else { r }
-    }
-    /// Dyalog's rule compares the magnitude of the difference, not each component. A number with an infinite or NaN part equals only
-    /// itself, as IEEE compares it. Two real numbers compare as reals, because complex storage also holds floats that widened into it.
-    #[inline]
-    fn complex_equal(self, x: Complex64, y: Complex64) -> bool {
-        if x.im == 0.0 && y.im == 0.0 { return self.equal(x.re, y.re); }
-        if !x.is_finite() || !y.is_finite() { return x == y; }
-        (x - y).norm() <= (x * self.value()).norm().max((y * self.value()).norm())
-    }
-    /// McDonnell's complex floor: the floors of both parts, plus 1 on the part with the larger fraction when the fractions add up to 1.
-    #[inline]
-    fn complex_floor(self, y: Complex64) -> Complex64 {
-        let (a, b) = (self.floor(y.re), self.floor(y.im));
-        let (x, z) = (y.re - a, y.im - b);
-        if x + z < 1.0 - self.value() { Complex64::new(a, b) } else if x <= z { Complex64::new(a, b + 1.0) } else { Complex64::new(a + 1.0, b) }
-    }
-    #[inline]
-    fn complex_ceiling(self, y: Complex64) -> Complex64 { -self.complex_floor(-y) }
-    /// `x|y` for complex numbers. A quotient equal to a Gaussian integer leaves no remainder.
-    #[inline]
-    fn complex_residue(self, x: Complex64, y: Complex64) -> Complex64 {
-        if x.is_zero() { return y; }
-        let q = y / x;
-        if self.complex_equal(x * Complex64::new(q.re.round(), q.im.round()), y) { Complex64::zero() } else { y - x * self.complex_floor(q) }
-    }
-}
-
-/// Exact comparison, standing for a tolerance of 0 in kernels.
-#[derive(Clone, Copy)]
-pub(crate) struct Exactly;
-impl Tolerant for Exactly {
-    #[inline]
-    fn value(self) -> f64 { 0.0 }
-    #[inline]
-    fn equal<F: Float>(self, x: F, y: F) -> bool { x == y }
-    #[inline]
-    fn floor<F: Float>(self, y: F) -> F { y.floor() }
-}
-impl Tolerant for Tolerance {
-    #[inline]
-    fn value(self) -> f64 { self.0 }
-    /// The test uses `&` and `|` rather than `&&` and `||`, so it has no branch and a loop of comparisons vectorizes.
-    #[inline]
-    fn equal<F: Float>(self, x: F, y: F) -> bool {
-        let t = F::narrow(self.0);
-        (x == y) | (x.is_finite() & y.is_finite() & ((x - y).abs() <= t * x.abs().max(y.abs())))
-    }
-    #[inline]
-    fn floor<F: Float>(self, y: F) -> F {
-        let (n, t) = (y.round(), F::narrow(self.0));
-        if (n > y) & (n - y > t * y.abs().max(n.abs())) { n - F::one() } else { n }
-    }
-}
-
-/// Runs `$body` with `$t` bound to `Exactly` when the tolerance `$tolerance` is 0, and to the tolerance otherwise. Each instance of
-/// `$body` is compiled for its case, so the choice is made once, outside any loop in `$body`.
-macro_rules! with_tolerance {
-    ($tolerance:expr, |$t:ident| $body:expr) => {{
-        let tolerance: $crate::number::Tolerance = $tolerance;
-        if tolerance.is_exact() {
-            let $t = $crate::number::Exactly;
-            $body
-        } else {
-            let $t = tolerance;
-            $body
-        }
-    }};
-}
-pub(crate) use with_tolerance;
+/// The magnitude below which no float equals two whole numbers, within any tolerance the `tolerance` pref accepts: 2^43. Search and
+/// comparison against one number rely on it. It holds because the pref accepts tolerances only up to `Tolerance::DEFAULT`.
+pub(crate) const WHOLE_LIMIT: f64 = 8_796_093_022_208.0;
 
 /// The session's numeric settings, which `•prefs` changes. Comparisons and kernels take their tolerance from them, and operations that
 /// create floats from exact numbers take their width.
@@ -218,7 +76,7 @@ impl Numeric {
     pub(crate) fn convergence(self) -> Self { Self { tolerance: Tolerance::DEFAULT, units: 4.0, ..self } }
     /// The tolerance of a comparison at `width`, after promotion.
     pub(crate) fn tolerance_at(self, width: FloatWidth) -> Tolerance {
-        if width == FloatWidth::F64 { self.tolerance } else { Tolerance(self.units * width.epsilon()) }
+        if width == FloatWidth::F64 { self.tolerance } else { Tolerance::new(self.units * width.epsilon()).expect("a few units in the last place lie far below 1") }
     }
     /// The width of a float computed from values whose float widths are `widths`, with `None` for an exact value. It's the widest float
     /// width, or the default width when every value is exact.
@@ -343,7 +201,7 @@ pub(crate) mod real {
     pub(crate) fn log<F: Float>(x: F, y: F) -> Option<F> { Some(ln(y)? / ln(x)?) }
     /// A negative number has a complex logarithm.
     #[inline]
-    pub(crate) fn ln<F: Float>(y: F) -> Option<F> { (y >= F::zero() || y.is_nan()).then_some(y.ln()) }
+    pub(crate) fn ln<F: Float>(y: F) -> Option<F> { (y >= F::zero() || y.is_nan()).then_some(rustymath::ln(y)) }
     #[inline]
     pub(crate) fn pi_times<F: Float>(y: F) -> F { y * F::narrow(std::f64::consts::PI) }
     /// A negative number has a complex square root.
@@ -380,25 +238,37 @@ pub(crate) mod real {
             v * (y - i) / (i + F::one())
         }))
     }
-    /// The function circle code `code` applies to a real argument, or its inverse. Each gives `None` where its result is complex.
-    /// Code 0 is its own inverse.
-    pub(crate) fn circle<F: Float>(code: i64, inverse: bool) -> Option<fn(F) -> Option<F>> {
+    /// A loop over an array, or one real, that applies a function to reals of type `F`.
+    pub(crate) trait Apply<F> {
+        type Output;
+        fn apply(self, f: impl Fn(F) -> Option<F> + Copy) -> Self::Output;
+    }
+    impl<F: Float> Apply<F> for F {
+        type Output = Option<F>;
+        #[inline]
+        fn apply(self, f: impl Fn(F) -> Option<F> + Copy) -> Option<F> { f(self) }
+    }
+    /// `apply` with the function that circle code `code` applies to a real, or its inverse. Each function gives `None` where its result
+    /// is complex. Each is a closure of its own type, so a loop in `apply` is compiled for each code. When `CHECKED`, sine and cosine
+    /// also give `None` beyond the magnitude where rustymath's versions without a branch hold, as a loop needs. `None` for a code with
+    /// no real function. Code 0 is its own inverse.
+    pub(crate) fn circle<F: Float, A: Apply<F>, const CHECKED: bool>(code: i64, inverse: bool, a: A) -> Option<A::Output> {
         Some(match (code, inverse) {
-            (0, _) => |x: F| (x.abs() <= F::one()).then(|| (F::one() - x * x).sqrt()),
-            (1, false) => |x: F| Some(x.sin()),
-            (2, false) => |x: F| Some(x.cos()),
-            (3, false) => |x: F| Some(x.tan()),
-            (4, false) => |x: F| Some(x.hypot(F::one())),
-            (5, false) => |x: F| Some(x.sinh()),
-            (6, false) => |x: F| Some(x.cosh()),
-            (7, false) => |x: F| Some(x.tanh()),
-            (1, true) => |x: F| (x.abs() <= F::one()).then(|| x.asin()),
-            (2, true) => |x: F| (x.abs() <= F::one()).then(|| x.acos()),
-            (3, true) => |x: F| Some(x.atan()),
-            (4, true) => |x: F| (x.abs() >= F::one()).then(|| x * (F::one() - (F::one() / x).powi(2)).sqrt()),
-            (5, true) => |x: F| Some(x.asinh()),
-            (6, true) => |x: F| (x >= F::one()).then(|| x.acosh()),
-            (7, true) => |x: F| (x.abs() < F::one()).then(|| x.atanh()),
+            (0, _) => a.apply(|x: F| (x.abs() <= F::one()).then(|| (F::one() - x * x).sqrt())),
+            (1, false) => a.apply(|x: F| if CHECKED { rustymath::checked_sin(x) } else { Some(rustymath::sin(x)) }),
+            (2, false) => a.apply(|x: F| if CHECKED { rustymath::checked_cos(x) } else { Some(rustymath::cos(x)) }),
+            (3, false) => a.apply(|x: F| Some(x.tan())),
+            (4, false) => a.apply(|x: F| Some(x.hypot(F::one()))),
+            (5, false) => a.apply(|x: F| Some(x.sinh())),
+            (6, false) => a.apply(|x: F| Some(x.cosh())),
+            (7, false) => a.apply(|x: F| Some(x.tanh())),
+            (1, true) => a.apply(|x: F| (x.abs() <= F::one()).then(|| x.asin())),
+            (2, true) => a.apply(|x: F| (x.abs() <= F::one()).then(|| x.acos())),
+            (3, true) => a.apply(|x: F| Some(x.atan())),
+            (4, true) => a.apply(|x: F| (x.abs() >= F::one()).then(|| x * (F::one() - (F::one() / x).powi(2)).sqrt())),
+            (5, true) => a.apply(|x: F| Some(x.asinh())),
+            (6, true) => a.apply(|x: F| (x >= F::one()).then(|| x.acosh())),
+            (7, true) => a.apply(|x: F| (x.abs() < F::one()).then(|| x.atanh())),
             _ => return None,
         })
     }
@@ -561,8 +431,8 @@ pub(crate) mod int {
 
 /// Complex cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`. Arithmetic is `num_complex`'s.
 /// Complex storage also holds floats that widened into it. `Number` reads such an item as a float, because its imaginary part is zero.
-/// So `times`, `divide` and `magnitude` take the real case when no argument has an imaginary part, as `Tolerant::complex_equal` does.
-/// Addition and subtraction give the same results either way.
+/// So `times`, `divide` and `magnitude` take the real case when no argument has an imaginary part, as
+/// `TolerantComplex::complex_equal` does. Addition and subtraction give the same results either way.
 pub(crate) mod complex {
     use super::{real, Arithmetic};
     use num_complex::Complex64;
@@ -862,7 +732,7 @@ impl Number {
         if self.as_complex().is_none() {
             let real = reals!(self => |y: F| match op {
                 Magnitude => Some(Self::from_float(y.abs())),
-                Power => Some(Self::from_float(num_traits::Float::exp(y))),
+                Power => Some(Self::from_float(rustymath::exp(y))),
                 Log => real::ln(y).map(Self::from_float),
                 Pi => Some(Self::from_float(real::pi_times(y))),
                 _ => None,
@@ -1022,7 +892,7 @@ impl Number {
         if self.is_infinite() || right.is_infinite() { return Err("gcd requires finite arguments"); }
         if !self.is_exact() || !right.is_exact() {
             if self.as_complex().is_none() && right.as_complex().is_none() {
-                return Ok(reals!(self, right => |x, y: F| Self::from_float(F::narrow(t.tolerance_at(F::WIDTH).gcd(x.into(), y.into())))));
+                return Ok(reals!(self, right => |x, y: F| Self::from_float(t.tolerance_at(F::WIDTH).gcd(x, y))));
             }
             let (mut x, mut y) = (self.to_complex()?, right.to_complex()?);
             let original = if x.norm() >= y.norm() { x } else { y };
@@ -1079,7 +949,7 @@ impl Number {
     fn circle(&self, right: &Self, inverse: bool) -> Result<Self, &'static str> {
         let code = self.integer().map_err(|_| "circle code must be an integer")?;
         if right.as_complex().is_none() {
-            if let Some(n) = reals!(right => |x: F| real::circle::<F>(code, inverse).and_then(|f| f(x)).map(Self::from_float)) { return Ok(n); }
+            if let Some(n) = reals!(right => |x: F| real::circle::<F, _, false>(code, inverse, x).flatten().map(Self::from_float)) { return Ok(n); }
         }
         let y = right.to_complex()?;
         let one = Complex64::new(1.0, 0.0);

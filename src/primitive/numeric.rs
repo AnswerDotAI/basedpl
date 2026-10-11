@@ -153,7 +153,7 @@ pub(super) fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<
     let float = [Some(right), left].into_iter().flatten().filter_map(|a| if let Items::Floats(f) = a.as_items() { Some(f.tag()) } else { None }).max();
     if let (Some(width), true) = (float, n > 0) {
         let solved = with_float_width!(width, F => {
-            type T = <F as crate::element::Float>::Total;
+            type T = <F as rustymath::Float>::Total;
             let b = match left { Some(x) => read_as::<T>(x).map(Some), None => Some(None) };
             read_as::<T>(right).zip(b).map(|(a, b)| {
                 let x = solve(row_major(&a, None, m, n), b.map(|b| row_major(&b, positions.as_ref(), m, k)), span)?;
@@ -224,7 +224,7 @@ pub(crate) fn decompose(left: Option<&Value>, right: &Value, span: &Context<'_>)
     if m == 0 || n == 0 { return Err(span.domain_error("•decompose needs a nonempty matrix")); }
     if matches!(kind.as_str(), "eigen" | "cholesky") && m != n { return Err(span.error(ErrorKind::Length, "eigen and cholesky need a square matrix")); }
     let width = span.numeric().width_of([right.float_width()]);
-    let real = with_float_width!(width, F => read_as::<<F as crate::element::Float>::Total>(right).map(|a| {
+    let real = with_float_width!(width, F => read_as::<<F as rustymath::Float>::Total>(right).map(|a| {
         let symmetric = m == n && (0..n).all(|i| (0..n).all(|j| a[i * n + j] == a[j * n + i]));
         factors(&kind, faer::Mat::from_fn(m, n, |i, j| a[i * n + j]), symmetric, width, span)
     }));
@@ -330,7 +330,7 @@ pub(crate) fn recompose(left: Option<&Value>, right: &Value, span: &Context<'_>)
         .collect::<Result<Vec<_>, Error>>()?;
     let width = span.numeric().width_of(factors.iter().map(|(f, _)| f.float_width()));
     let real = with_float_width!(width, F => {
-        type T = <F as crate::element::Float>::Total;
+        type T = <F as rustymath::Float>::Total;
         let real = factors.iter().map(|(f, (m, n))| Some(row_major(&read_as::<T>(f)?, None, *m, *n))).collect::<Option<Vec<_>>>();
         real.map(|f| rebuild(&kind, f, span).and_then(|x| matrix(x.as_ref(), width).error_at(span, "invalid matrix")))
     });

@@ -88,10 +88,12 @@ const CASES: &[(&str, f64)] = &[
     ("[i]⌷v", 16.0),
     // An approximate divisor reads the integers as floats. Each item then needs a float division and a floor within tolerance.
     ("3|jv", 21.0),
-    // Each item needs a call to the maths library. Half the arguments of `*` are negative, where Apple's `exp` takes about three times
-    // as long.
-    ("*s", 90.0),
-    ("⍟v", 65.0),
+    // rustymath's `exp` evaluates a polynomial of 12 terms for each item, and `ln` one of 7 terms and a division.
+    ("*s", 23.0),
+    ("⍟v", 31.0),
+    // rustymath's sine and cosine reduce each item by π in three fused multiply-adds, and evaluate a polynomial of 7 terms.
+    ("1○v", 17.0),
+    ("2○v", 20.0),
     // Each item goes into a hash table, and each item of the other argument is looked up in it. A tolerant search looks in two
     // buckets for each item, where an exact search looks in one.
     ("v⍳w", 710.0),
@@ -134,6 +136,12 @@ const WIDTH_CASES: &[(&str, f64)] = &[
     ("⌊v", 0.8),
     // An LU decomposition in 32 bits.
     ("⌹a", 0.8),
+    // rustymath's `exp` and `ln` run shorter polynomials at f32, with twice the lanes in each SIMD instruction.
+    ("*s", 0.5),
+    ("⍟v", 0.7),
+    // rustymath's sine and cosine reduce in f32 with fused multiply-adds, and run a polynomial of 4 terms in place of 7.
+    ("1○v", 0.6),
+    ("2○v", 0.6),
     // Grade sorts keys and positions of half the bytes.
     ("⍋v", 0.75),
     // A hash lookup costs about the same at either width. These budgets catch a 32-bit search that costs much more than a 64-bit one.

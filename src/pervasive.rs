@@ -19,16 +19,17 @@
 use crate::{
     agreement::{Agreement, Mapping},
     array::{with_float_width, with_floats, with_ints, with_width, Axis, FloatWidth, Floats, Ints, Items, Kind, Widening, Width},
-    element::{cast, read_all, read_as, truth_bytes, Accumulator, Element, Float, Source, Whole},
+    element::{cast, read_all, read_as, truth_bytes, Element, Float, Source, Whole},
     number::{
         complex, extended,
         int::{self, Int},
-        real, with_tolerance, Arithmetic, Math, Tolerance, Numeric, Tolerant,
+        real, Arithmetic, Math, Numeric, WHOLE_LIMIT,
     },
     primitive::{Comparison, Primitive},
     Value,
 };
 use num_complex::Complex64;
+use rustymath::{tolerant::{Tolerance, Tolerant, TolerantComplex}, with_tolerance, Float as _, Native as _};
 use std::{borrow::Cow, cell::Cell};
 
 /// A loop that applies a dyadic kernel. A kernel either keeps its argument type or gives Booleans.
@@ -130,8 +131,8 @@ fn float_monad<F: Float, R: Monad<F>>(p: Primitive, run: R) -> Option<R::Output>
         Primitive::Arithmetic(Divide) => run.same(|y| Some(F::one() / y)),
         Primitive::Math(Magnitude) => run.same(|y: F| Some(y.abs())),
         Primitive::Math(Floor) => with_tolerance!(t, |t| run.integer(F::INTEGERS, move |y: F| Some(t.floor(y)))),
-        Primitive::Math(Ceiling) => with_tolerance!(t, |t| run.integer(F::INTEGERS, move |y: F| Some(t.ceiling(y)))),
-        Primitive::Math(Power) => run.same(|y: F| Some(y.exp())),
+        Primitive::Math(Ceiling) => with_tolerance!(t, |t| run.integer(F::INTEGERS, move |y: F| Some(t.ceil(y)))),
+        Primitive::Math(Power) => run.same(|y: F| Some(rustymath::exp(y))),
         Primitive::Math(Log) => run.same(real::ln),
         Primitive::Math(Pi) => run.same(|y| Some(real::pi_times(y))),
         Primitive::Math(Root) => run.same(real::sqrt),
@@ -231,7 +232,7 @@ impl Kernels for Complex64 {
             // Each item's direction, floor and ceiling are complex numbers, real items included. The result keeps one kind.
             Primitive::Arithmetic(Times) => run.same(|z| Some(complex::direction(z))),
             Primitive::Math(Math::Floor) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.same(move |z| Some(t.complex_floor(z)))),
-            Primitive::Math(Math::Ceiling) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.same(move |z| Some(t.complex_ceiling(z)))),
+            Primitive::Math(Math::Ceiling) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.same(move |z| Some(t.complex_ceil(z)))),
             Primitive::Math(Math::Magnitude) => run.same(|z| Some(complex::magnitude(z).into())),
             _ => return None,
         })
@@ -400,7 +401,7 @@ fn against_number(op: Comparison, left: &Value, right: &Value, agreement: &Agree
     let data = match (items.checked_items(), number.checked_items()) {
         (Items::Integers(x), Items::Floats(c)) if c.len() == 1 => {
             let (width, c) = (c.tag(), c.get(0));
-            if width == FloatWidth::F64 && c.fract() == 0.0 && c.abs() < Tolerance::WHOLE_LIMIT {
+            if width == FloatWidth::F64 && c.fract() == 0.0 && c.abs() < WHOLE_LIMIT {
                 with_ints!(x, |x| exactly(op, x, c as i64))
             } else {
                 with_float_width!(width, F => with_ints!(x, |x| within(op, x, Source::<F>::read, F::narrow(c), t.tolerance_at(width))))?
@@ -437,12 +438,10 @@ fn exactly<T: Int>(op: Comparison, x: &[T], n: i64) -> Vec<bool> {
     match T::narrowed(n) { Some(n) => at(op, x, |a| a, n), None => at(op, x, T::to_i64, n) }
 }
 
-/// `op` between the numbers `x`, read as floats of type `F`, and `c`, within tolerance `t`. `None` when `c` is NaN. A tolerance applies
-/// only to 64-bit floats, so the ends of the range are always floats of type `F`.
+/// `op` between the numbers `x`, read as floats of type `F`, and `c`, within tolerance `t`. `None` when `c` is NaN.
 fn within<T: Copy, F: Float>(op: Comparison, x: &[T], read: impl Fn(T) -> F + Copy, c: F, t: Tolerance) -> Option<Vec<bool>> {
     use Comparison::*;
-    let (lo, hi) = t.range(c.into())?;
-    let (lo, hi) = (F::narrow(lo), F::narrow(hi));
+    let (lo, hi) = t.range(c)?;
     let inside = move |a: T| { let y = read(a); (lo <= y) & (y <= hi) };
     Some(match op {
         Equal => mask(x, inside),
@@ -530,13 +529,14 @@ fn integers(value: &Value) -> Option<Cow<'_, [i64]>> {
 /// The characters of compact character storage.
 fn chars(value: &Value) -> Option<&[char]> { match value.checked_items() { Items::Characters(c) => Some(c), _ => None } }
 /// `X○Y` with one code applies that code's function, or its inverse, to every item, at the float width of `Y`. The code selects the
-/// function and takes no part in the width. Other codes, and complex results, take the `Number` path.
+/// function and takes no part in the width. Other codes, complex results, and sines and cosines beyond the magnitude where rustymath's
+/// `checked_sin` and `checked_cos` hold take the `Number` path.
 fn circle(codes: &Value, right: &Value, agreement: &Agreement, inverse: bool, numeric: Numeric) -> Option<Value> {
     let Value::Number(code) = codes.at(0) else { return None };
     if !matches!(agreement.left, Mapping::Single) { return None; }
     let code = code.integer().ok()?;
     let width = match right.checked_items() { Items::Floats(y) => y.tag(), _ => numeric.width };
-    with_float_width!(width, F => <Map<F, F> as Monad<F>>::same(Map::exact(&[], &read_as(right)?, agreement), real::circle::<F>(code, inverse)?))
+    with_float_width!(width, F => real::circle::<F, Map<F, F>, true>(code, inverse, Map::exact(&[], &read_as(right)?, agreement))?)
 }
 
 /// Item `i` of the frame, read from `data` through `mapping`.
@@ -637,6 +637,10 @@ impl<A: Element, X: Element, Y: Source<A>> Monad<A> for Map<'_, X, Y> {
     }
     fn boolean(self, f: impl Fn(A) -> Option<bool> + Copy) -> Option<Value> { self.unary(|y| f(y.read())) }
 }
+impl<A: Float, X: Element, Y: Source<A>> real::Apply<A> for Map<'_, X, Y> {
+    type Output = Option<Value>;
+    fn apply(self, f: impl Fn(A) -> Option<A> + Copy) -> Option<Value> { Monad::<A>::same(self, f) }
+}
 
 /// A loop over integers where an argument holds a non-finite value, read as `extended` defines them. Beside such a value, arithmetic
 /// gives `extended::arithmetic`. Comparisons, `⌊` and `⌈` follow IEEE: NaN is unordered and gives way to the other argument. Monadic
@@ -702,7 +706,7 @@ fn nonfinite_whole<F: Float>(p: Primitive, y: &[F], agreement: &Agreement, numer
     let map = Map { x: &[] as &[F], y, agreement, numeric };
     let result = with_tolerance!(numeric.tolerance_at(F::WIDTH), |t| match p {
         Primitive::Math(Math::Floor) => map.unary(move |v: F| extended::whole(t.floor(v).into())),
-        Primitive::Math(Math::Ceiling) => map.unary(move |v: F| extended::whole(t.ceiling(v).into())),
+        Primitive::Math(Math::Ceiling) => map.unary(move |v: F| extended::whole(t.ceil(v).into())),
         Primitive::Arithmetic(Arithmetic::Times) => map.unary(|v: F| extended::whole(real::signum(v.into()))),
         _ => return None,
     });
