@@ -1,6 +1,6 @@
 # `•prefs` — Session settings
 
-`•prefs Y` applies the settings in the record `Y` to this session, and returns every setting. `•prefs ⍬` changes nothing.
+`•prefs Y` applies the settings in the record `Y` to this session, and returns every setting. The result is shy when `Y` sets something, as an assignment's is. `•prefs ⍬` changes nothing, and shows every setting.
 
 | Setting | Holds | Default |
 |---|---|---|
@@ -22,9 +22,9 @@ Display shows part of an array of more than `limit` items: the first and last `e
 `float` sets the default width of floats, in bits: the width of bare numbers in code parsed after the change, of numbers that `•csv`, `•json`, `•vfi` and `•image` read, of random numbers, and of floats that a function gives from exact arguments. Code already parsed keeps its numbers. A change partway through some code therefore applies from the next input, or from text that [`⍎`](../glyphs/execute.qmd) parses later. Leading `•prefs` calls on a literal record are the exception. They run before the rest of their code is parsed, as in the examples below. A script, a notebook cell or a line typed at the REPL can set its own width this way. In a module that [`•load`](load.qmd) runs, they run in order with the rest of its code. See [Numbers](../numbers.qmd#float-widths).
 
 ```bpl
-_←•prefs ["tolerance":0] ⋄ 0.3=0.1+0.2    ⍝ $f
-_←•prefs ["tolerance":1E¯14] ⋄ 0.3=0.1+0.2    ⍝ $t
-_←•prefs ["tolerance":1E¯14] ⋄ 1ₛ=1.0000001ₛ    ⍝ $f
+•prefs ["tolerance":0] ⋄ 0.3=0.1+0.2    ⍝ $f
+•prefs ["tolerance":1E¯14] ⋄ 0.3=0.1+0.2    ⍝ $t
+•prefs ["tolerance":1E¯14] ⋄ 1ₛ=1.0000001ₛ    ⍝ $f
 •prefs ["float":32] ⋄ •storage 1.5    ⍝ "float32"
 •prefs ["float":64] ⋄ •storage 1.5    ⍝ "float64"
 ```

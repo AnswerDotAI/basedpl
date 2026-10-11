@@ -30,16 +30,29 @@ class Worker:
     @property
     def diagnostics(self): return ''.join(self._stderr)
 
-    def eval(self, code, timeout=None, grace=1): return self.request(dict(code=code), timeout, grace)
+    def eval(
+        self,
+        code, # BPL source
+        timeout=None, # Seconds before the worker interrupts the evaluation
+        grace=1 # Seconds to wait for the reply after `timeout`, or after a Ctrl-C, before closing the worker
+    ):
+        "Evaluate `code` in this worker's session and return the result, as `request` does."
+        return self.request(dict(code=code), timeout, grace)
 
     def interrupt(self):
+        "Ask the worker to stop the active request. It does nothing when no request is active."
         with self._write_lock:
             if self._active is None: return
             self.process.stdin.write(json.dumps(dict(interrupt=self._active))+'\n')
             self.process.stdin.flush()
 
-    def request(self, payload, timeout=None, grace=1):
-        "Return one result. A hard timeout closes the worker and raises TimeoutError (session lost)."
+    def request(
+        self,
+        payload, # Request fields, such as `code`, `reference`, `page` or `timing`
+        timeout=None, # Seconds before the worker interrupts the request
+        grace=1 # Seconds to wait for the reply after `timeout`, or after a Ctrl-C, before closing the worker
+    ):
+        "Send one request to the worker and return its result. A Ctrl-C interrupts the request and re-raises with its partial `output` and `events`. If no reply arrives within `timeout` plus `grace`, the worker closes and its session is lost. The call then raises `TimeoutError`."
         for name, seconds in [('timeout', timeout), ('grace', grace)]:
             if seconds is not None and (not math.isfinite(seconds) or seconds < 0): raise ValueError(f'{name} must be finite and nonnegative')
         with self._request_lock:

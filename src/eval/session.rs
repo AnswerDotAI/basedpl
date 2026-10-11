@@ -166,6 +166,7 @@ impl Session {
         self.execution.begin(options);
         let result = evaluate(self);
         self.execution.flush();
+        self.stacks = Vec::new();
         Evaluation { output: self.execution.take_output(), ..result }
     }
     pub fn eval_timeout(&mut self, code: &str, timeout: std::time::Duration) -> Evaluation {

@@ -26,7 +26,7 @@ fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
         if let Ok(s) = o.cast::<PyString>() {
             return basedpl::protocol::character(s.to_str()?).map(Value::Character).ok_or_else(|| PyValueError::new_err("expected one character"));
         }
-        let number = if let Ok(b) = o.cast::<PyBool>() { Ok(Number::from_bool(b.is_true())) } else if o.is_instance_of::<PyFloat>() { Ok(Number::float(o.extract::<f64>()?, width)) } else if let Ok(z) = o.cast::<PyComplex>() { Ok(num_complex::Complex64::new(z.real(), z.imag()).into()) } else if o.is_instance_of::<PyInt>() { Ok(o.extract::<BigInt>()?.into()) } else if o.is_instance_of::<PyTuple>() { let (n, d) = o.extract::<(BigInt, BigInt)>()?; Number::try_from(BigRational::new_raw(n, d)) } else { return Err(PyTypeError::new_err("unsupported BPL element")); };
+        let number = if let Ok(b) = o.cast::<PyBool>() { Ok(Number::from_bool(b.is_true())) } else if o.is_instance_of::<PyFloat>() { Ok(Number::float(o.extract::<f64>()?, width)) } else if let Ok(z) = o.cast::<PyComplex>() { Ok(Number::complex(num_complex::Complex64::new(z.real(), z.imag()), width)) } else if o.is_instance_of::<PyInt>() { Ok(o.extract::<BigInt>()?.into()) } else if o.is_instance_of::<PyTuple>() { let (n, d) = o.extract::<(BigInt, BigInt)>()?; Number::try_from(BigRational::new_raw(n, d)) } else { return Err(PyTypeError::new_err("unsupported BPL element")); };
         number.map(Value::Number).map_err(|k| PyValueError::new_err(k.to_string()))
     };
     let field = |key| raw.get_item(key)?.ok_or_else(|| PyValueError::new_err("missing array field"));
@@ -59,6 +59,8 @@ fn numpy(a: &Value) -> Option<(&'static str, Cow<'_, [u8]>)> {
         Buffer::F16(v) => ("f2", bytes(v)),
         Buffer::F32(v) => ("f4", bytes(v)),
         Buffer::F64(v) => ("f8", bytes(v)),
+        Buffer::C32(v) => ("c8", bytes(v)),
+        Buffer::C64(v) => ("c16", bytes(v)),
     })
 }
 
@@ -99,8 +101,9 @@ struct PyArray { inner: Value }
 impl PyArray {
     #[new]
     fn new(raw: &Bound<'_, PyDict>) -> PyResult<Self> { Ok(Self { inner: import_array(raw)? }) }
-    /// Compact storage from `data`, a contiguous NumPy array whose dtype `dtype` names as `numpy` does. Booleans arrive as a `uint8` view
-    /// and 16-bit floats as a `uint16` view, because the buffer protocol has no type for them.
+    /// Compact storage from `data`, a contiguous NumPy array whose dtype `dtype` names as `numpy` does. Booleans arrive as a `uint8` view,
+    /// 16-bit floats as a `uint16` view and complex numbers as a view of their float parts, because the buffer protocol has no type for
+    /// them.
     #[staticmethod]
     fn numeric(shape: Vec<usize>, dtype: &str, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         fn items<T: pyo3::buffer::Element>(data: &Bound<'_, PyAny>) -> PyResult<Vec<T>> { Ok(PyBuffer::<T>::get(data)?.to_vec(data.py())?) }
@@ -113,6 +116,8 @@ impl PyArray {
             "f2" => Buffer::F16(items::<u16>(data)?.into_iter().map(half::f16::from_bits).collect::<Vec<_>>().into()),
             "f4" => Buffer::F32(items(data)?.into()),
             "f8" => Buffer::F64(items(data)?.into()),
+            "c8" => Buffer::C32(items::<f32>(data)?.chunks_exact(2).map(|z| num_complex::Complex32::new(z[0], z[1])).collect::<Vec<_>>().into()),
+            "c16" => Buffer::C64(items::<f64>(data)?.chunks_exact(2).map(|z| num_complex::Complex64::new(z[0], z[1])).collect::<Vec<_>>().into()),
             _ => return Err(PyTypeError::new_err(format!("unsupported NumPy dtype {dtype}"))),
         };
         let inner = Value::from_buffer(shape, buffer);

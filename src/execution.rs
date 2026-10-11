@@ -124,13 +124,23 @@ impl Execution {
             } else { span.io_error("standard input", e) }
         })
     }
-    /// Stops the evaluation when it's interrupted or past its deadline. Most calls only count down. Every `CHECKS_PER_CLOCK`th call reads
-    /// the clock. It calls the poll when `POLL_INTERVAL` has passed since the poll last ran.
+    /// Stops the evaluation when it's interrupted or past its deadline. Most calls only count down, inlined into the caller. Every
+    /// `CHECKS_PER_CLOCK`th call runs `checked`.
+    #[inline]
     pub(crate) fn check(&self, span: &Span) -> Result<(), Error> {
-        if let Some(n) = self.countdown.get().checked_sub(1) {
-            self.countdown.set(n);
-            return Ok(());
+        match self.countdown.get().checked_sub(1) {
+            Some(n) => {
+                self.countdown.set(n);
+                Ok(())
+            }
+            None => self.checked(span),
         }
+    }
+    /// Reads the clock, calls the poll when `POLL_INTERVAL` has passed since the poll last ran, and stops the evaluation when it's
+    /// interrupted or past its deadline.
+    #[cold]
+    #[inline(never)]
+    fn checked(&self, span: &Span) -> Result<(), Error> {
         self.countdown.set(CHECKS_PER_CLOCK - 1);
         let now = Instant::now();
         if let Some((poll, last)) = &self.poll { if now - last.get() >= POLL_INTERVAL { last.set(now); if poll() { self.interrupt.interrupt(); } } }

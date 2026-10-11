@@ -10,7 +10,7 @@
 //! - A JavaScript number becomes a float of the session's default width, a `BigInt` an exact one, an `Array` a vector and a function a BPL function.
 //!   An object with `shape` and `data` becomes an array, and any other object a record. `undefined` and `null` give no value.
 use crate::{
-    array::{FloatWidth, Floats, Ints, Items},
+    array::{Complexes, FloatWidth, Floats, Ints, Items},
     element::read_as,
     keyed, ErrorKind, Number, Value,
 };
@@ -95,7 +95,11 @@ pub fn export(value: &Value) -> Result<Js, ErrorKind> {
 
 fn number(n: &Number) -> Result<Js, ErrorKind> {
     if let Some(b) = n.as_bool() { return Ok(Js::Bool(b)); }
-    if let Some(z) = n.as_complex() { return Ok(shaped(vec![2], Js::Typed(Typed::Float64(vec![z.re, z.im])), Vec::new(), Vec::new())); }
+    match n.complex_items() {
+        Some(Complexes::F32(&[z])) => return Ok(shaped(vec![2], Js::Typed(Typed::Float32(vec![z.re, z.im])), Vec::new(), Vec::new())),
+        Some(Complexes::F64(&[z])) => return Ok(shaped(vec![2], Js::Typed(Typed::Float64(vec![z.re, z.im])), Vec::new(), Vec::new())),
+        _ => (),
+    }
     n.to_float().map(Js::Number).map_err(|_| ErrorKind::Domain)
 }
 
@@ -109,11 +113,11 @@ fn array(value: &Value) -> Result<Js, ErrorKind> {
             .map(|k| k.map_or(Js::Undefined, |k| Js::List(k.into_iter().map(|k| k.map_or(Js::Undefined, |k| Js::Text(k.into()))).collect())))
             .collect()
     } else { Vec::new() };
-    let complex = |shape: &mut Vec<usize>, names: &mut Vec<Js>, keys: &mut Vec<Js>, parts: Vec<f64>| {
+    let complex = |shape: &mut Vec<usize>, names: &mut Vec<Js>, keys: &mut Vec<Js>, parts: Js| {
         shape.push(2);
         if !names.is_empty() { names.push(Js::Undefined); }
         if !keys.is_empty() { keys.push(Js::Undefined); }
-        Js::Typed(Typed::Float64(parts))
+        parts
     };
     // Reading as a kernel does clears a flag on integer storage that holds no infinity. `Extended` then holds infinities.
     let data = match value.checked_items() {
@@ -124,13 +128,14 @@ fn array(value: &Value) -> Result<Js, ErrorKind> {
         Items::Integers(Ints::I64(v)) => Js::Typed(Typed::BigInt64(v.to_vec())),
         Items::Floats(Floats::F32(v)) => Js::Typed(Typed::Float32(v.to_vec())),
         Items::Extended(..) | Items::Floats(_) => Js::Typed(Typed::Float64(read_as::<f64>(value).expect("real storage").into_owned())),
-        Items::Complex(v) => complex(&mut shape, &mut names, &mut keys, v.iter().flat_map(|z| [z.re, z.im]).collect()),
+        Items::Complex(Complexes::F32(v)) => complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float32(v.iter().flat_map(|z| [z.re, z.im]).collect()))),
+        Items::Complex(Complexes::F64(v)) => complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float64(v.iter().flat_map(|z| [z.re, z.im]).collect()))),
         Items::Characters(c) => Js::List(c.iter().map(|c| Js::Text(c.to_string())).collect()),
         Items::Values(items) => match items.iter().map(|v| if let Value::Number(n) = v { Some(n) } else { None }).collect::<Option<Vec<_>>>() {
             Some(numbers) if !numbers.is_empty() || matches!(value.prototype(), Value::Number(_)) => {
                 if numbers.iter().any(|n| n.as_complex().is_some()) {
                     let parts = numbers.iter().map(|n| n.to_complex().map(|z| [z.re, z.im])).collect::<Result<Vec<_>, _>>().map_err(|_| ErrorKind::Domain)?;
-                    complex(&mut shape, &mut names, &mut keys, parts.concat())
+                    complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float64(parts.concat())))
                 } else { Js::Typed(Typed::Float64(numbers.iter().map(|n| n.to_float()).collect::<Result<_, _>>().map_err(|_| ErrorKind::Domain)?)) }
             }
             _ => Js::List(items.iter().map(export).collect::<Result<_, _>>()?),

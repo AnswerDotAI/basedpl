@@ -1,6 +1,6 @@
-use crate::{array::{with_float_width, FloatWidth, Floats}, element::Float, ErrorKind};
+use crate::{array::{with_float_width, ComplexWidth, Complexes, FloatWidth, Floats}, element::Float, ErrorKind};
 use num_bigint::BigInt;
-use num_complex::Complex64;
+use num_complex::{Complex32, Complex64};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Signed, ToPrimitive, Zero};
 use rustymath::{tolerant::{Tolerance, Tolerant, TolerantComplex}, Binary as _, Float as _, Unary as _};
@@ -22,6 +22,8 @@ enum Repr {
     Half(half::f16),
     Exact(Box<BigRational>),
     Complex(Complex64),
+    /// A complex number with 32-bit parts. Arithmetic reads it as the `Complex64` it converts to exactly.
+    Complex32(Complex32),
 }
 use Repr::*;
 impl Repr {
@@ -29,8 +31,12 @@ impl Repr {
     fn float(&self) -> Option<(f64, FloatWidth)> {
         match *self { Half(n) => Some((n.into(), FloatWidth::F16)), Single(n) => Some((n.into(), FloatWidth::F32)), Float(n) => Some((n, FloatWidth::F64)), _ => None }
     }
+    /// A complex number's value, which converts to `Complex64` exactly, and the width of its parts. `None` for any other number.
+    fn complex(&self) -> Option<(Complex64, FloatWidth)> {
+        match *self { Complex32(n) => Some((Complex64::new(n.re.into(), n.im.into()), FloatWidth::F32)), Complex(n) => Some((n, FloatWidth::F64)), _ => None }
+    }
 }
-// Floats are equal when their values are, whatever their widths.
+// Floats are equal when their values are, whatever their widths, and so are complex numbers.
 impl PartialEq for Repr {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -39,7 +45,7 @@ impl PartialEq for Repr {
             (Float(x), Float(y)) => x == y,
             (x, y) if let (Some((x, _)), Some((y, _))) = (x.float(), y.float()) => x == y,
             (Exact(x), Exact(y)) => x == y,
-            (Complex(x), Complex(y)) => x == y,
+            (x, y) if let (Some((x, _)), Some((y, _))) = (x.complex(), y.complex()) => x == y,
             _ => false,
         }
     }
@@ -140,7 +146,8 @@ impl TryFrom<BigRational> for Number {
 impl From<BigInt> for Number { fn from(n: BigInt) -> Self { Self::exact(BigRational::from_integer(n)) } }
 
 /// A complex number with no imaginary part is a float.
-impl From<Complex64> for Number { fn from(n: Complex64) -> Self { if n.im == 0.0 { Self(Float(n.re)) } else { Self(Complex(n)) } } }
+impl From<Complex64> for Number { fn from(n: Complex64) -> Self { Self::complex(n, FloatWidth::F64) } }
+impl From<Complex32> for Number { fn from(n: Complex32) -> Self { if n.im == 0.0 { Self(Single(n.re)) } else { Self(Complex32(n)) } } }
 
 /// Real cases of the pervasive functions that rustymath doesn't hold, shared by `Number` and the compact kernels in `pervasive.rs`:
 /// conversions to integers, arithmetic, signs and grade order. They follow IEEE 754.
@@ -319,16 +326,17 @@ pub(crate) mod int {
 /// Complex cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`. Arithmetic is `num_complex`'s.
 /// Complex storage also holds floats that widened into it. `Number` reads such an item as a float, because its imaginary part is zero.
 /// So `times`, `divide` and `magnitude` take the real case when no argument has an imaginary part, as
-/// `TolerantComplex::complex_equal` does. Addition and subtraction give the same results either way.
+/// `TolerantComplex::complex_equal` does. Addition and subtraction give the same results either way. Each function but `circle` works
+/// at both widths of parts. `circle` works with 64-bit parts, and a caller with 32-bit parts rounds its result.
 pub(crate) mod complex {
     use super::Arithmetic;
-    use num_complex::Complex64;
-    use num_traits::Zero;
-    use rustymath::{Binary as _, Unary as _};
+    use num_complex::{Complex, Complex64};
+    use num_traits::{Float, Zero};
+    use rustymath::{Binary, Native, Unary};
 
     #[inline]
-    fn reals(x: Complex64, y: Complex64) -> bool { x.im == 0.0 && y.im == 0.0 }
-    pub(crate) fn arithmetic(op: Arithmetic, x: Complex64, y: Complex64) -> Complex64 {
+    fn reals<R: Float>(x: Complex<R>, y: Complex<R>) -> bool { x.im.is_zero() && y.im.is_zero() }
+    pub(crate) fn arithmetic<R: Float>(op: Arithmetic, x: Complex<R>, y: Complex<R>) -> Complex<R> {
         match op {
             Arithmetic::Plus => x + y,
             Arithmetic::Minus => x - y,
@@ -337,24 +345,44 @@ pub(crate) mod complex {
         }
     }
     #[inline]
-    pub(crate) fn times(x: Complex64, y: Complex64) -> Complex64 { if reals(x, y) { (x.re * y.re).into() } else { x * y } }
+    pub(crate) fn times<R: Float>(x: Complex<R>, y: Complex<R>) -> Complex<R> { if reals(x, y) { Complex::new(x.re * y.re, R::zero()) } else { x * y } }
     #[inline]
-    pub(crate) fn divide(x: Complex64, y: Complex64) -> Complex64 { if reals(x, y) { (x.re / y.re).into() } else { x / y } }
-    pub(crate) fn exp(y: Complex64) -> Complex64 {
+    pub(crate) fn divide<R: Float>(x: Complex<R>, y: Complex<R>) -> Complex<R> { if reals(x, y) { Complex::new(x.re / y.re, R::zero()) } else { x / y } }
+    /// e^y. A whole number of quarter turns gives an exact direction, so e^(iπ/2) is i.
+    pub(crate) fn exp<R: Native>(y: Complex<R>) -> Complex<R>
+    where
+        rustymath::Exp: Unary<Complex<R>, Out = Complex<R>> + Unary<R, Out = R>,
+    {
         use std::f64::consts::{FRAC_PI_2, PI, TAU};
-        let angle = y.im.rem_euclid(TAU);
-        let direction = if angle == 0.0 { Complex64::new(1.0, 0.0) } else if angle == FRAC_PI_2 { Complex64::i() } else if angle == PI { Complex64::new(-1.0, 0.0) } else if angle == 3.0 * FRAC_PI_2 { -Complex64::i() } else { return rustymath::Exp.one(y); };
+        let (quarter, half, tau) = (R::narrow(FRAC_PI_2), R::narrow(PI), R::narrow(TAU));
+        let angle = { let a = y.im % tau; if a < R::zero() { a + tau } else { a } };
+        let direction = if angle.is_zero() {
+            Complex::new(R::one(), R::zero())
+        } else if angle == quarter {
+            Complex::i()
+        } else if angle == half {
+            Complex::new(-R::one(), R::zero())
+        } else if angle == R::narrow(3.0 * FRAC_PI_2) {
+            -Complex::i()
+        } else {
+            return rustymath::Exp.one(y);
+        };
         direction * rustymath::Exp.one(y.re)
     }
     /// `x*y`. A real power of a real base, where one exists, is real, as the real kernels give it. Other powers are e^(y ln x), whose
     /// exponential keeps the exact quarter turns that `exp` gives.
-    pub(crate) fn power(x: Complex64, y: Complex64) -> Complex64 {
+    pub(crate) fn power<R: Native>(x: Complex<R>, y: Complex<R>) -> Complex<R>
+    where
+        rustymath::Exp: Unary<Complex<R>, Out = Complex<R>> + Unary<R, Out = R>,
+        rustymath::Ln: Unary<Complex<R>, Out = Complex<R>>,
+        rustymath::Pow: Binary<R, Out = R>,
+    {
         if y.is_zero() {
-            Complex64::new(1.0, 0.0)
-        } else if x.is_zero() && y.im == 0.0 && y.re > 0.0 {
-            Complex64::zero()
-        } else if reals(x, y) && (x.re >= 0.0 || y.re.fract() == 0.0) {
-            rustymath::Pow.one(x.re, y.re).into()
+            Complex::new(R::one(), R::zero())
+        } else if x.is_zero() && y.im.is_zero() && y.re > R::zero() {
+            Complex::zero()
+        } else if reals(x, y) && (x.re >= R::zero() || y.re.fract().is_zero()) {
+            Complex::new(rustymath::Pow.one(x.re, y.re), R::zero())
         } else {
             exp(y * rustymath::Ln.one(x))
         }
@@ -419,19 +447,16 @@ pub(crate) mod extended {
             INFINITY => f64::INFINITY,
             NEG_INFINITY => f64::NEG_INFINITY,
             n if is_nonfinite(n) => f64::NAN,
-            n => n as f64,
+            n => rustymath::convert::float(n),
         }
     }
     /// A non-finite float as flagged storage holds it.
     #[inline]
     pub(crate) fn from_float(x: f64) -> i64 { if x.is_nan() { NAN } else if x > 0.0 { INFINITY } else { NEG_INFINITY } }
-    /// A whole float as the integer it holds, or a non-finite float as the value that stands for it. `None` for a finite float outside
-    /// `i64`. A cast already turns `∞` and `¯∞` into their values, so only NaN needs its own case.
+    /// A whole float as the integer it holds, or a non-finite float as the value that stands for it. `None` for a finite float beyond
+    /// what `rustymath::convert::int` converts.
     #[inline]
-    pub(crate) fn whole(n: f64) -> Option<i64> {
-        let value = if n.is_nan() { NAN } else { n as i64 };
-        (n.is_nan() || n.abs() < 9_223_372_036_854_775_808.0 || n.is_infinite()).then_some(value)
-    }
+    pub(crate) fn whole(n: f64) -> Option<i64> { rustymath::convert::int(n).or_else(|| (!n.is_finite()).then(|| from_float(n))) }
     /// `x op y` when `x` or `y` is non-finite, computed as floats. `None` for a finite result, which is a float.
     pub(crate) fn arithmetic(op: Arithmetic, x: i64, y: i64) -> Option<i64> {
         let result = real::arithmetic(op, float(x), float(y));
@@ -498,10 +523,26 @@ impl Number {
     }
     /// The float `y`, at its own width. Code outside this module states the width of every float it makes, through `float`.
     fn from_float<F: Float>(y: F) -> Self { Self::float(y.wide(), F::WIDTH) }
-    /// This number, with a 64-bit float rounded to `width`. Other numbers stay as they are.
-    pub(crate) fn at_width(self, width: FloatWidth) -> Self { match self.0 { Float(n) => Self::float(n, width), _ => self } }
-    /// The width of this float. `None` for any other number.
-    pub(crate) fn float_width(&self) -> Option<FloatWidth> { self.0.float().map(|(_, width)| width) }
+    /// A complex number with parts of `width`, or 32-bit parts for 16 bits, holding `z` rounded to them. With no imaginary part left, it
+    /// is a float of `width`.
+    pub fn complex(z: Complex64, width: FloatWidth) -> Self {
+        let n = Complex32::new(z.re as f32, z.im as f32);
+        match ComplexWidth::from(width) {
+            _ if z.im == 0.0 => Self::float(z.re, width),
+            ComplexWidth::F64 => Self(Complex(z)),
+            ComplexWidth::F32 if n.im == 0.0 => Self::float(z.re, width),
+            ComplexWidth::F32 => Self(Complex32(n)),
+        }
+    }
+    /// This number, with a 64-bit float or complex number rounded to `width`. Other numbers stay as they are.
+    pub(crate) fn at_width(self, width: FloatWidth) -> Self {
+        match self.0 { Float(n) => Self::float(n, width), Complex(z) => Self::complex(z, width), _ => self }
+    }
+    /// The width of this float, or of the parts of this complex number. `None` for any other number.
+    pub(crate) fn float_width(&self) -> Option<FloatWidth> { self.0.float().map(|(_, width)| width).or_else(|| self.0.complex().map(|(_, width)| width)) }
+    /// The width that a result of this number and `right` takes: the wider of their float widths, or 64 bits when both are exact. The
+    /// caller rounds a result of exact numbers to the default width.
+    fn width_with(&self, right: Option<&Self>) -> FloatWidth { self.float_width().max(right.and_then(Self::float_width)).unwrap_or(FloatWidth::F64) }
     pub(crate) fn is_infinite(&self) -> bool { self.as_float().is_some_and(f64::is_infinite) }
     pub(crate) fn is_nan(&self) -> bool { self.as_float().is_some_and(f64::is_nan) }
     /// Whether this is an infinity or NaN. These never make an exact number approximate.
@@ -514,8 +555,12 @@ impl Number {
             _ => None,
         }
     }
-    pub fn as_complex(&self) -> Option<Complex64> { match self.0 { Complex(n) => Some(n), _ => None } }
-    pub(crate) fn complex_slice(&self) -> Option<&[Complex64]> { match &self.0 { Complex(n) => Some(std::slice::from_ref(n)), _ => None } }
+    /// This complex number, with its parts widened to 64 bits.
+    pub fn as_complex(&self) -> Option<Complex64> { self.0.complex().map(|(z, _)| z) }
+    /// This complex number as one item of complex storage, at its width.
+    pub(crate) fn complex_items(&self) -> Option<Complexes<'_>> {
+        match &self.0 { Complex(n) => Some(Complexes::F64(std::slice::from_ref(n))), Complex32(n) => Some(Complexes::F32(std::slice::from_ref(n))), _ => None }
+    }
     /// The float equal to this number, when one is.
     pub(crate) fn lossless_float(&self) -> Option<f64> {
         if let Some(f) = self.as_float() { return Some(f); }
@@ -528,13 +573,13 @@ impl Number {
         (BigRational::from_float(f)? == rational).then_some(f)
     }
 
-    /// The number that `text` writes, with plain letters for its suffixes. A float takes `width`.
+    /// The number that `text` writes, with plain letters for its suffixes. A float takes `width`, and a complex number parts of `width`.
     pub(crate) fn parse(text: &str, width: FloatWidth) -> Result<Self, ErrorKind> {
         let text = text.replace('¯', "-").replace('∞', "inf");
         let integer = |s: &str| s.parse::<BigInt>().map_err(|_| ErrorKind::Syntax);
         if let Some((re, im)) = text.split_once(['J', 'j']) {
-            let float = |s: &str| s.parse::<f64>().map_err(|_| ErrorKind::Syntax);
-            return Ok(Complex64::new(float(re)?, float(im)?).into());
+            let part = |s: &str| if width == FloatWidth::F64 { s.parse::<f64>() } else { s.parse::<f32>().map(f64::from) }.map_err(|_| ErrorKind::Syntax);
+            return Ok(Self::complex(Complex64::new(part(re)?, part(im)?), width));
         }
         if let Some(n) = text.strip_suffix(['x', 'ₓ']) { return Ok(integer(n)?.into()); }
         if let Some((n, d)) = text.split_once('r') { return Self::try_from(BigRational::new_raw(integer(n)?, integer(d)?)); }
@@ -555,18 +600,14 @@ impl Number {
             _ => Err("expected a real number"),
         }
     }
-    /// This number as a float of `width`. A complex number is 64-bit, so a narrower width is an error.
+    /// This number as a float of `width`, or a complex number with parts of `width`, which are 32-bit for 16 bits.
     pub(crate) fn to_float_width(&self, width: FloatWidth) -> Result<Self, &'static str> {
-        match (&self.0, width) {
-            (Complex(_), FloatWidth::F64) => Ok(self.clone()),
-            (Complex(_), _) => Err("complex numbers have 64-bit parts"),
-            _ => Ok(Self::float(self.to_float()?, width)),
-        }
+        match self.as_complex() { Some(z) => Ok(Self::complex(z, width)), None => Ok(Self::float(self.to_float()?, width)) }
     }
     /// This real as a float of type `F`, rounded to it.
     pub(crate) fn to_real<F: Float>(&self) -> Result<F, &'static str> { self.to_float().map(F::narrow) }
 
-    pub(crate) fn to_complex(&self) -> Result<Complex64, &'static str> { match self.0 { Complex(n) => Ok(n), _ => Ok(Complex64::new(self.to_float()?, 0.0)) } }
+    pub(crate) fn to_complex(&self) -> Result<Complex64, &'static str> { match self.as_complex() { Some(z) => Ok(z), None => Ok(Complex64::new(self.to_float()?, 0.0)) } }
 
     /// Structural conversion only; allocation limits belong to the consuming operation.
     pub(crate) fn nonnegative_integer<T: TryFrom<u64>>(&self) -> Result<T, ErrorKind> {
@@ -616,7 +657,7 @@ impl Number {
     pub(crate) fn equal(&self, right: &Self, t: Numeric) -> Result<bool, &'static str> {
         if self.is_nonfinite() || right.is_nonfinite() { return Ok(self == right); }
         if self.as_complex().is_none() && right.as_complex().is_none() { return Ok(self.compare(right, t)? == Some(Ordering::Equal)); }
-        Ok(t.tolerance_at(FloatWidth::F64).complex_equal(self.to_complex()?, right.to_complex()?))
+        Ok(t.tolerance_at(self.width_with(Some(right))).complex_equal(self.to_complex()?, right.to_complex()?))
     }
     /// Whether the numbers match, as `≡` and search compare them, within the tolerance of the width they compare at. NaN matches NaN.
     pub(crate) fn matches(&self, right: &Self, t: Numeric) -> Result<bool, &'static str> { if self.is_nan() && right.is_nan() { Ok(true) } else { self.equal(right, t) } }
@@ -626,7 +667,7 @@ impl Number {
             if let Some(w) = reals!(self => |y: F| rustymath::LambertW.checked(y).map(Self::from_float)) { return Ok(w); }
         }
         let w = rustymath::LambertW.one(self.to_complex()?);
-        if w.re.is_nan() || w.im.is_nan() { Err("Lambert W did not converge") } else { Ok(w.into()) }
+        if w.re.is_nan() || w.im.is_nan() { Err("Lambert W did not converge") } else { Ok(Self::complex(w, self.width_with(None))) }
     }
 
     /// The math functions of one number that need no tolerance. `⌊` and `⌈` take one, through `floor` and `ceiling`.
@@ -653,7 +694,7 @@ impl Number {
             if let Some(n) = real { return Ok(n); }
         }
         let y = self.to_complex()?;
-        if matches!(op, Magnitude) { return Ok(Self(Float(rustymath::Abs.one(y)))); }
+        if matches!(op, Magnitude) { return Ok(Self::float(rustymath::Abs.one(y), self.width_with(None))); }
         let result = match op {
             Power => complex::exp(y),
             Log => rustymath::Ln.one(y),
@@ -661,7 +702,7 @@ impl Number {
             Circle => complex::exp(Complex64::new(-y.im, y.re)),
             _ => unreachable!(),
         };
-        Ok(result.into())
+        Ok(Self::complex(result, self.width_with(None)))
     }
 
     /// `⌊y`, within the tolerance of its float width. An exact number floors exactly. A real result is a whole number, so it becomes
@@ -672,7 +713,7 @@ impl Number {
             Boolean(b) => Self(Integer((*b).into())),
             Integer(_) => self.clone(),
             Exact(y) => Self::exact(y.floor()),
-            Complex(y) => t.tolerance_at(FloatWidth::F64).complex_floor(*y).into(),
+            repr if let Some((y, width)) = repr.complex() => Self::complex(t.tolerance_at(width).complex_floor(y), width),
             repr => {
                 let (y, width) = repr.float().expect("the other numbers are floats");
                 Self::exact_integer(t.tolerance_at(width).floor(y))
@@ -736,7 +777,7 @@ impl Number {
         if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = int(*x, *y) { return Ok(Self(Integer(n))); } }
         if let (Some(x), Some(y)) = (self.as_exact(), right.as_exact()) { if let Some(n) = exact(x, y)? { return Ok(n); } }
         if self.as_complex().is_none() && right.as_complex().is_none() { if let Some(n) = real()? { return Ok(n); } }
-        complex(self.to_complex()?, right.to_complex()?)
+        complex(self.to_complex()?, right.to_complex()?).map(|n| n.at_width(self.width_with(Some(right))))
     }
 
     /// `x|y`, within the tolerance of the width they compute at.
@@ -747,14 +788,14 @@ impl Number {
             |x, y| Some(rustymath::integer::residue(x, y)),
             |x, y| Ok(Some(Self::exact(if x.is_zero() { y } else { &y - &x * (&y / &x).floor() }))),
             || Ok(Some(reals!(self, right => |x, y: F| Self::from_float(rustymath::tolerant::Residue(t.tolerance_at(F::WIDTH)).one(x, y))))),
-            |x, y| Ok(rustymath::tolerant::Residue(t.tolerance_at(FloatWidth::F64)).one(x, y).into()),
+            |x, y| Ok(rustymath::tolerant::Residue(t.tolerance_at(self.width_with(Some(right)))).one(x, y).into()),
         )
     }
 
     pub(crate) fn parts(&self, polar: bool) -> Result<[Self; 2], &'static str> {
-        let width = self.float_width().unwrap_or(FloatWidth::F64);
+        let width = self.width_with(None);
         if polar { return Ok([self.math_monad(Math::Magnitude)?, Self::float(rustymath::Angle.one(self.to_complex()?), width)]); }
-        match self.as_complex() { Some(z) => Ok([Self(Float(z.re)), Self(Float(z.im))]), None => Ok([self.clone(), self.zero()]) }
+        match self.as_complex() { Some(z) => Ok([Self::float(z.re, width), Self::float(z.im, width)]), None => Ok([self.clone(), self.zero()]) }
     }
 
     fn root(&self, right: &Self) -> Result<Self, &'static str> {
@@ -794,8 +835,9 @@ impl Number {
             if self.as_complex().is_none() && right.as_complex().is_none() {
                 return Ok(reals!(self, right => |x, y: F| Self::from_float(rustymath::tolerant::Gcd(t.tolerance_at(F::WIDTH)).one(x, y))));
             }
-            let g = rustymath::tolerant::Gcd(t.tolerance_at(FloatWidth::F64)).one(self.to_complex()?, right.to_complex()?);
-            return if g.re.is_nan() || g.im.is_nan() { Err("gcd did not converge") } else { Ok(g.into()) };
+            let width = self.width_with(Some(right));
+            let g = rustymath::tolerant::Gcd(t.tolerance_at(width)).one(self.to_complex()?, right.to_complex()?);
+            return if g.re.is_nan() || g.im.is_nan() { Err("gcd did not converge") } else { Ok(Self::complex(g, width)) };
         }
         let (mut x, mut y) = (self.clone(), right.clone());
         while !y.is_zero() {
@@ -822,7 +864,7 @@ impl Number {
                 return Ok(Self::exact(BigRational::from_integer((1..=n).map(BigInt::from).product())));
             }
         }
-        if self.as_complex().is_some() { return Ok(rustymath::Factorial.one(self.to_complex()?).into()); }
+        if self.as_complex().is_some() { return Ok(Self::complex(rustymath::Factorial.one(self.to_complex()?), self.width_with(None))); }
         Ok(reals!(self => |y: F| Self::from_float(rustymath::Factorial.one(y))))
     }
 
@@ -832,7 +874,7 @@ impl Number {
         if right.as_complex().is_none() {
             if let Some(n) = reals!(right => |x: F| with_circle!(code, inverse, |f| f.checked(x)).flatten().map(Self::from_float)) { return Ok(n); }
         }
-        complex::circle(code, inverse, right.to_complex()?).map(Into::into).ok_or("circle code must be from 0 to 8")
+        complex::circle(code, inverse, right.to_complex()?).map(|z| Self::complex(z, right.width_with(None))).ok_or("circle code must be from 0 to 8")
     }
 
     pub(crate) fn order(&self, right: &Self) -> Result<Ordering, &'static str> {
@@ -856,9 +898,9 @@ impl Number {
         if let Integer(x) = self.0 { return Self(Exact(Box::new(BigRational::from_integer(x.into())))).grade_order(right); }
         if matches!(right.0, Integer(_)) { return right.grade_order(self).reverse(); }
         match (&self.0, &right.0) {
-            (Complex(x), Complex(y)) => real::grade(x.re, y.re).then(real::grade(x.im, y.im)),
-            (Complex(x), _) => Self(Float(x.re)).grade_order(right).then(real::grade(x.im, 0.0)),
-            (_, Complex(_)) => right.grade_order(self).reverse(),
+            (x, y) if let (Some((x, _)), Some((y, _))) = (x.complex(), y.complex()) => real::grade(x.re, y.re).then(real::grade(x.im, y.im)),
+            (x, _) if let Some((x, _)) = x.complex() => Self(Float(x.re)).grade_order(right).then(real::grade(x.im, 0.0)),
+            (_, y) if y.complex().is_some() => right.grade_order(self).reverse(),
             (Exact(x), Exact(y)) => x.cmp(y),
             (Exact(x), _) => x.as_ref().cmp(&BigRational::from_float(right.as_float().unwrap()).unwrap()),
             (_, Exact(_)) => right.grade_order(self).reverse(),
@@ -907,8 +949,8 @@ impl Number {
         let (x, y) = (self.to_complex()?, right.to_complex()?);
         if y.im == 0.0 && y.re < 0.0 && y.re.fract() == 0.0 { return Err("negative integer upper argument needs an integer selection"); }
         let result = rustymath::Binom.one(y, x);
-        let width = self.float_width().max(right.float_width()).unwrap_or(FloatWidth::F64);
-        Ok(if x.im == 0.0 && y.im == 0.0 { Self::float(result.re, width) } else { result.into() })
+        let width = self.width_with(Some(right));
+        Ok(if x.im == 0.0 && y.im == 0.0 { Self::float(result.re, width) } else { Self::complex(result, width) })
     }
 
     /// The order of the numbers, within the tolerance of the width they compare at. `None` when either is NaN, which IEEE leaves
@@ -949,14 +991,11 @@ impl Number {
                 Times => Self::from_integer(real::signum(y.into()) as i64),
                 Divide => Self::from_float(F::narrow(1.0) / y),
             })),
-            Complex(y) => Ok(match op {
-                Plus => y.conj(),
-                Minus => -y,
-                Times => rustymath::Sign.one(*y),
-                Divide => Complex64::new(1.0, 0.0) / y,
+            repr => {
+                let (y, width) = repr.complex().expect("the other numbers are complex");
+                let result = match op { Plus => y.conj(), Minus => -y, Times => rustymath::Sign.one(y), Divide => Complex64::new(1.0, 0.0) / y };
+                Ok(Self::complex(result, width))
             }
-            .into()),
-            _ => unreachable!(),
         }
     }
 
@@ -995,7 +1034,7 @@ impl Number {
         let round = |x: f64| if digits >= 17 || !x.is_finite() { x } else { format!("{x:.*e}", digits - 1).parse().unwrap_or(x) };
         match &self.0 {
             repr if let Some((x, width)) = repr.float() => Self::float(round(x), width),
-            Complex(z) => Self(Complex(Complex64::new(round(z.re), round(z.im)))),
+            repr if let Some((z, width)) = repr.complex() => Self::complex(Complex64::new(round(z.re), round(z.im)), width),
             _ => self.clone(),
         }
     }
@@ -1007,6 +1046,13 @@ fn write_float<F: Copy + Into<f64> + fmt::Display + fmt::UpperExp>(out: &mut imp
     if wide.is_nan() { return out.write_str(NAN_NAME); }
     if wide.is_infinite() { return out.write_str(if wide.is_sign_positive() { "∞" } else { "-∞" }); }
     if wide != 0.0 && !(1e-6..1e17).contains(&wide.abs()) { out.write_str(&scientific(&format!("{n:E}"))) } else { write!(out, "{n}") }
+}
+
+/// The complex number `z`: its real part, `ⱼ` and its imaginary part, each written as `write_float` writes it.
+fn write_complex<F: Copy + Into<f64> + fmt::Display + fmt::UpperExp>(out: &mut impl fmt::Write, z: num_complex::Complex<F>) -> fmt::Result {
+    write_float(out, z.re)?;
+    out.write_str("ⱼ")?;
+    write_float(out, z.im)
 }
 
 /// `text`, which Rust wrote in exponent notation, with the exponent subscript in place of Rust's `e` or `E`.
@@ -1041,11 +1087,8 @@ impl fmt::Display for Number {
             Float(n) => write_float(&mut out, *n),
             Exact(n) if n.is_integer() => write!(out, "{}{mark}", n.numer()),
             Exact(n) => write!(out, "{}ᵣ{}", n.numer(), n.denom()),
-            Complex(n) => {
-                write_float(&mut out, n.re)?;
-                out.write_str("ⱼ")?;
-                write_float(&mut out, n.im)
-            }
+            Complex(n) => write_complex(&mut out, *n),
+            Complex32(n) => write_complex(&mut out, *n),
         }
     }
 }

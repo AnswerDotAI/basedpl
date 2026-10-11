@@ -3041,11 +3041,11 @@ v←⍳1000 ⋄ +/v+v   ⍝ 999000
 
 ⍝ — •storage names the storage that holds an array's items
 •storage¨[⍳3ₓ;⍳3;1j2 3;"abc";1ₓ 0.5;[1 2;3]]
-"integer" "float64" "complex" "character" "mixed" "mixed"
+"integer" "float64" "complex128" "character" "mixed" "mixed"
 
 ⍝ — An atom gives its own kind, including a rational, a big exact integer and a function
 •storage¨[1ₓ;0.5;1j2;'a';1r3;9223372036854775808ₓ;+]
-"integer" "float64" "complex" "character" "rational" "rational" "function"
+"integer" "float64" "complex128" "character" "rational" "rational" "function"
 
 ⍝ — An empty array has the storage its prototype gives
 •storage¨[⍬;⍬ₓ;"";0⍴⊂1 2]   ⍝ "float64" "integer" "character" "mixed"
@@ -3054,7 +3054,7 @@ v←⍳1000 ⋄ +/v+v   ⍝ 999000
 •storage¨[0.5,⍳3ₓ;⊃[[1 2]ₓ;0.5 1.5];0.5@1 ⍳3ₓ]   ⍝ "float64" "float64" "float64"
 
 ⍝ — A complex number makes every number complex
-•storage¨[1j2,0.5;1j2,⍳2ₓ]   ⍝ "complex" "complex"
+•storage¨[1j2,0.5;1j2,⍳2ₓ]   ⍝ "complex128" "complex128"
 
 ⍝ — A rational has no compact form, so its array stays mixed
 •storage¨[0.5,1r3;1j2,1r3]   ⍝ "mixed" "mixed"
@@ -3117,19 +3117,47 @@ x₀←0.25
 ⍝ — ₛ and ₚ mark a float's width, and after a list's closing bracket they mark every number in it
 •storage¨[1.5ₛ;1.5ₚ;[1 2]ₛ;[1ₓ 2]ₚ;⍬ₛ;[]ₛ]   ⍝ "float32" "float64" "float32" "float64" "float32" "float32"
 
-⍝ — A width marker after a list needs real numbers
-[1j2]ₛ
-⍝ error: DOMAIN ERROR
-
 ⍝ — •literal⁻¹ marks every float with its width, so the text reads back at either default width
 •literal⁻¹ [1.5 2.5]ₛ   ⍝ "[1.5 2.5]ₛ"
 
-⍝ — •float keeps complex numbers at 64 bits
-•storage 64 •float 1j2   ⍝ "complex"
+⍝ — ₛ, ₚ and ₕ mark the width of a complex number's parts, after the number or after a list. ₕ gives 32-bit parts
+•storage¨[[2j3]ₛ;[2j3]ₚ;[2j3]ₕ;[1j2 3]ₛ]   ⍝ "complex64" "complex128" "complex64" "complex64"
 
-⍝ — •float can't give complex numbers 32-bit parts
-32 •float 1j2
-⍝ error: DOMAIN ERROR
+⍝ — ₓ doesn't mark a complex number
+2j3ₓ
+⍝ error: SYNTAX ERROR
+
+⍝ — Display marks complex numbers whose parts aren't of the default width once after the list
+⎕←[1j2 3]ₛ
+[1j2 3]ₛ
+⍝ ⎕: [1ⱼ2 3]ₛ
+
+⍝ — •literal⁻¹ marks the width of complex numbers' parts once after the list
+•literal⁻¹¨[[1j2 3]ₛ;1j2 3]   ⍝ "[1ⱼ2 3]ₛ" "[1ⱼ2 3]ₚ"
+
+⍝ — •float rounds complex numbers' parts to the width, and 16 bits gives 32-bit parts
+•storage¨[64•float [1j2]ₛ;32•float [1j2];16•float [1j2]]   ⍝ "complex128" "complex64" "complex64"
+
+⍝ — Complex numbers beside floats compute at the wider width, and exact numbers take the complex numbers' width
+•storage¨[[2j3]ₛ×1.5;[2j3]ₛ×1.5ₛ;[2j3]ₛ×1.5ₕ;[2j3]ₛ×2ₓ]   ⍝ "complex128" "complex64" "complex64" "complex64"
+
+⍝ — Joining complex numbers to floats gives the wider width
+•storage¨[[1j2]ₛ,0.5ₛ;[1j2]ₛ,0.5;[1j2]ₛ,⍳2ₓ;[1j2]ₛ,[1j2]]   ⍝ "complex64" "complex128" "complex64" "complex128"
+
+⍝ — A complex result from reals displays its parts' width
+√¯4ₛ   ⍝ 0j2ₛ
+
+⍝ — A complex result from reals has parts of the reals' width
+•storage¨[√[¯4]ₛ;√[¯4];√[¯4]ₕ]   ⍝ "complex64" "complex128" "complex64"
+
+⍝ — Complex functions keep the width of the parts
+•storage¨[1○[1j2]ₛ;*[0j1]ₛ;⍟[0j1]ₛ;[2j1]ₛ*[0.5j1]ₛ;+\[1j2 3j4]ₛ]   ⍝ "complex64" "complex64" "complex64" "complex64" "complex64"
+
+⍝ — A real result from complex numbers takes their parts' width
+•storage¨[|[3j4]ₛ;[1j2]ₛ×[1j¯2]ₛ]   ⍝ "float32" "float32"
+
+⍝ — A fold keeps the width of complex numbers
++/[1j2 3j4]ₛ   ⍝ 4j6ₛ
 
 ⍝ — ₕ and 16 •float give 16-bit floats
 •storage¨[1.5ₕ;[1 2]ₕ;⍬ₕ;16 •float 0.5]   ⍝ "float16" "float16" "float16" "float16"
@@ -3211,7 +3239,7 @@ x₁←∞
 
 ⍝ — Written items keep each number's exactness, and only floats widen, to complex
 •storage¨[1ₓ 2ₓ;1ₓ 0.5;1j2 0.5;1ₓ 1j2;1ₓ 1r2;[1ₓ;0.5];[1 0 1]ₓ;[1 ∞]ₓ;[0.5;1j2]]
-"integer" "mixed" "complex" "mixed" "mixed" "mixed" "integer" "integer" "complex"
+"integer" "mixed" "complex128" "mixed" "mixed" "mixed" "integer" "integer" "complex128"
 
 ⍝ —
 •storage¨[[1ₓ 2ₓ⋄0.5 1.5];["a":1ₓ;"b":0.5]]   ⍝ "mixed" "mixed"
@@ -4479,13 +4507,13 @@ f←{⍵×+⍵}
 ⍕¨[1j2×1j¯2;¯0j2;1j2+3j4;+1j2]   ⍝ "5" "¯0ⱼ2" "4ⱼ6" "1ⱼ¯2"
 
 ⍝ — Written items keep their own kinds
-•storage¨1ₓ 0.5 1j2   ⍝ "integer" "float64" "complex"
+•storage¨1ₓ 0.5 1j2   ⍝ "integer" "float64" "complex128"
 
 ⍝ — Empty complex results have a float fill
 [↑0#1j2;↑1j2+0#1ₓ;+/0#1j2]   ⍝ 0 0 0
 
 ⍝ — A complex result with no imaginary part in any item has float storage
-•storage¨[1j2 2×1j¯2 2;1j2 2×1j2 2]   ⍝ "float64" "complex"
+•storage¨[1j2 2×1j¯2 2;1j2 2×1j2 2]   ⍝ "float64" "complex128"
 
 ⍝ — Reals whose results are complex for some items give what each item gives alone
 [⍟¯1 2.5;2√¯4 9.5;1○⁻¹2 0.5]≡[(⍟¯1),⍟2.5;(2√¯4),2√9.5;(1○⁻¹2),1○⁻¹0.5]   ⍝ $t

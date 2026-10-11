@@ -29,6 +29,8 @@ pub(crate) enum Call {
     Js(std::sync::Arc<crate::js::JsFunction>),
     Mime,
     Time,
+    /// `•prefs`, whose result is shy when it sets something.
+    Prefs,
 }
 
 /// How many arguments a system function takes.
@@ -180,7 +182,7 @@ const BUILTINS: &[(&str, Call, Valence, Item, fn(&Context<'_>) -> Value)] = &[
     ("•remove", Call::Effect(crate::files::remove), Ambivalent, Text, text),
     #[cfg(not(web))]
     ("•mkdir", Call::Effect(crate::files::mkdir), Ambivalent, Text, text),
-    ("•prefs", Call::Session(crate::display::prefs), Monadic, Whole, record),
+    ("•prefs", Call::Prefs, Monadic, Whole, record),
     ("•nc", Call::Session(crate::Session::system_nc), Monadic, Text, number),
     ("•nl", Call::Session(crate::Session::system_nl), Ambivalent, Whole, texts),
     ("•src", Call::Session(crate::Session::system_src), Monadic, Text, text),
@@ -302,7 +304,7 @@ fn to_float(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<V
         None => span.numeric().width,
         Some(w) => w.as_number().and_then(|n| n.integer().ok()).and_then(FloatWidth::of_bits).ok_or(ErrorKind::Domain).error_at(span, "•float takes a width of 16, 32 or 64")?,
     };
-    right.to_float_width(width).error_at(span, "•float takes numbers, and complex numbers only at 64 bits")
+    right.to_float_width(width).error_at(span, "•float takes numbers")
 }
 
 /// `•signal kind` raises an error of the kind that `kind` names, and `message •signal kind` gives it a message. `kind` can also be a

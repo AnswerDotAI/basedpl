@@ -560,6 +560,7 @@ impl Function {
                     }
                     crate::system::Call::Mime => cx.session.mime(left, right, cx.span),
                     crate::system::Call::Session(call) => call(cx.session, left, right, cx.span),
+                    crate::system::Call::Prefs => return crate::display::prefs(cx.session, right, cx.span).map(|(value, shy)| Bound { shy, ..Bound::from(value) }),
                     crate::system::Call::Time => cx.session.system_time(left, right, cx.span),
                     crate::system::Call::Regex(regex, operation) => crate::regex::call(regex, *operation, left, right, cx),
                     crate::system::Call::Distribution(d, operation) => crate::distribution::call(d, *operation, left, right, cx),
@@ -871,6 +872,9 @@ pub struct Session {
     /// The files being loaded. Loading one of them again is a cycle.
     loading: Vec<std::path::PathBuf>,
     frames: Vec<Frame>,
+    /// Empty vectors that the binder reuses for its stacks within one evaluation, so that an expression allocates none for them.
+    /// `evaluation` frees them when it ends.
+    stacks: Vec<Vec<binder::Entity>>,
     current: Option<usize>,
     depth: usize,
     prototype: bool,

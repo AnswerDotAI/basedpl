@@ -7,7 +7,7 @@ use crate::{
     DomainAt, Error, ErrorKind, Number,
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
-use num_complex::Complex64;
+use num_complex::{Complex, Complex32, Complex64};
 use rustymath::{search::Key, tolerant::Tolerant, with_tolerance};
 use std::{
     borrow::Cow,
@@ -84,7 +84,7 @@ impl Layout {
     fn key_list(&self) -> &[Option<Arc<Keys>>] { self.meta.as_ref().map_or(&[], |l| &l.keys) }
     pub fn has_keys(&self) -> bool { !self.key_list().is_empty() }
     /// Whether the layout holds no `Meta`.
-    fn plain(&self) -> bool { self.meta.is_none() }
+    pub fn plain(&self) -> bool { self.meta.is_none() }
     pub fn keys(&self, axis: usize) -> Option<&Arc<Keys>> { self.key_list().get(axis).and_then(Option::as_ref) }
     /// The keys of every axis, with `None` for an axis without them.
     pub fn all_keys(&self) -> Vec<Option<Arc<Keys>>> { (0..self.shape.len()).map(|a| self.keys(a).cloned()).collect() }
@@ -383,6 +383,8 @@ impl Value {
             Items::Floats(Floats::F16(v)) => Buffer::F16(v.into()),
             Items::Floats(Floats::F32(v)) => Buffer::F32(v.into()),
             Items::Floats(Floats::F64(v)) => Buffer::F64(v.into()),
+            Items::Complex(Complexes::F32(v)) => Buffer::C32(v.into()),
+            Items::Complex(Complexes::F64(v)) => Buffer::C64(v.into()),
             _ => return None,
         })
     }
@@ -397,6 +399,8 @@ impl Value {
             Buffer::F16(v) => Storage::Floats(FloatBuf::F16(v.into_owned())),
             Buffer::F32(v) => Storage::Floats(FloatBuf::F32(v.into_owned())),
             Buffer::F64(v) => Storage::Floats(FloatBuf::F64(v.into_owned())),
+            Buffer::C32(v) => Storage::Complex(ComplexBuf::F32(v.into_owned())),
+            Buffer::C64(v) => Storage::Complex(ComplexBuf::F64(v.into_owned())),
         };
         Self::from_storage(shape, storage)
     }
@@ -479,27 +483,30 @@ impl Value {
         gather.append(cells);
         *data = gather.data;
     }
-    /// Complex results of an operation. When no item has an imaginary part, the array holds floats, as `Number` gives them.
-    pub(crate) fn complex(shape: Vec<usize>, data: Vec<Complex64>) -> Result<Self, ErrorKind> {
+    /// Complex results of an operation. When no item has an imaginary part, the array holds floats of the parts' width, as `Number`
+    /// gives them.
+    pub(crate) fn complex(shape: Vec<usize>, data: ComplexBuf) -> Result<Self, ErrorKind> {
         /// The real parts of `data` when no item has an imaginary part, else `data`. While every imaginary part is +0, the real parts
         /// move to the front of the same buffer, in one pass with no allocation. At the first other imaginary part, the items before
         /// it go back, and the rest are checked as `Number` checks them, where -0 also counts as no imaginary part.
-        fn real_parts(data: Vec<Complex64>) -> Result<Vec<f64>, Vec<Complex64>> {
+        fn real_parts<F: num_traits::Float + bytemuck::Pod>(data: Vec<Complex<F>>) -> Result<Vec<F>, Vec<Complex<F>>> {
             let n = data.len();
-            let mut v: Vec<f64> = bytemuck::allocation::cast_vec(data);
-            let Some(k) = (0..n).find(|&i| v[2 * i + 1].to_bits() != 0 || { v[i] = v[2 * i]; false }) else {
+            let positive_zero = |x: F| x == F::zero() && x.is_sign_positive();
+            let mut v: Vec<F> = bytemuck::allocation::cast_vec(data);
+            let Some(k) = (0..n).find(|&i| !positive_zero(v[2 * i + 1]) || { v[i] = v[2 * i]; false }) else {
                 v.truncate(n);
                 v.shrink_to_fit();
                 return Ok(v);
             };
-            for j in (0..k).rev() { (v[2 * j], v[2 * j + 1]) = (v[j], 0.0); }
-            let data: Vec<Complex64> = bytemuck::allocation::cast_vec(v);
-            if data[k..].iter().all(|z| z.im == 0.0) { Ok(data.into_iter().map(|z| z.re).collect()) } else { Err(data) }
+            for j in (0..k).rev() { (v[2 * j], v[2 * j + 1]) = (v[j], F::zero()); }
+            let data: Vec<Complex<F>> = bytemuck::allocation::cast_vec(v);
+            if data[k..].iter().all(|z| z.im == F::zero()) { Ok(data.into_iter().map(|z| z.re).collect()) } else { Err(data) }
         }
-        match real_parts(data) {
-            Ok(reals) => Self::floats(shape, FloatWidth::F64, reals),
-            Err(data) => Self::from_storage(shape, Storage::Complex(data)),
-        }
+        let storage = match data {
+            ComplexBuf::F32(v) => real_parts(v).map_or_else(|v| Storage::Complex(ComplexBuf::F32(v)), |r| Storage::Floats(FloatBuf::F32(r))),
+            ComplexBuf::F64(v) => real_parts(v).map_or_else(|v| Storage::Complex(ComplexBuf::F64(v)), |r| Storage::Floats(FloatBuf::F64(r))),
+        };
+        Self::from_storage(shape, storage)
     }
     /// Whether every number, including those in nested arrays, is exact. Non-finite values in integer storage count as exact.
     pub fn is_exact(&self) -> bool { self.exact_domain() == Some(true) }
@@ -533,7 +540,7 @@ impl Value {
                 .map(Items::Booleans)
                 .or_else(|| n.integer_slice().map(|n| Items::Integers(Ints::I64(n))))
                 .or_else(|| n.float_items().map(Items::Floats))
-                .or_else(|| n.complex_slice().map(Items::Complex))
+                .or_else(|| n.complex_items().map(Items::Complex))
                 .unwrap_or(Items::Values(std::slice::from_ref(self))),
             Self::Character(c) => Items::Characters(std::slice::from_ref(c)),
             Self::Function(_) | Self::Operator(_) => Items::Values(std::slice::from_ref(self)),
@@ -552,10 +559,13 @@ impl Value {
     }
     /// The compact kind of the items, as a kernel reads them. An atom takes the narrowest kind that holds it.
     pub(crate) fn compact_kind(&self) -> Option<Kind> { if self.is_atom() { item_kind(self).map(Kind::stored) } else { self.checked_items().kind() } }
-    /// The width of the floats that hold the items, when compact float storage holds them or the value is a float atom.
-    pub(crate) fn float_width(&self) -> Option<FloatWidth> { match self.compact_kind()? { Kind::Float(width) | Kind::Nonfinite(width) => Some(width), _ => None } }
+    /// The width of the floats that hold the items, or of the parts of the complex numbers that do, when compact storage holds them or
+    /// the value is such an atom.
+    pub(crate) fn float_width(&self) -> Option<FloatWidth> {
+        match self.compact_kind()? { Kind::Float(width) | Kind::Nonfinite(width) => Some(width), Kind::Complex(width) => Some(width.into()), _ => None }
+    }
     /// The numbers of this value as floats of `width`, each rounded once, with the arrays nested in it converted too. Complex numbers
-    /// are 64-bit, so a narrower width is DOMAIN for them, as are characters and functions at any width.
+    /// take parts of `width`, and 32-bit parts for 16 bits. Characters and functions are DOMAIN.
     pub(crate) fn to_float_width(&self, width: FloatWidth) -> Result<Self, ErrorKind> {
         if let Self::Number(n) = self { return n.to_float_width(width).map(Self::Number).map_err(|_| ErrorKind::Domain); }
         if !matches!(self, Self::Array(_)) { return Err(ErrorKind::Domain); }
@@ -564,7 +574,10 @@ impl Value {
                 let floats = with_float_width!(width, F => F::build(self.shape().to_vec(), crate::element::read_as::<F>(self).ok_or(ErrorKind::Domain)?.into_owned()));
                 floats.ok_or(ErrorKind::Domain)?.with_layout(self.layout().clone())
             }
-            Items::Complex(_) if width == FloatWidth::F64 => Ok(self.clone()),
+            Items::Complex(z) => {
+                let z = Self::complex(self.shape().to_vec(), ComplexBuf::collect(width.into(), z.widened().iter().copied()))?;
+                z.with_layout(self.layout().clone())
+            }
             _ => self.layout().collect(self.elements().map(|e| e.to_float_width(width)).collect::<Result<Vec<_>, _>>()?, self.prototype().to_float_width(width)?),
         }
     }
@@ -574,7 +587,7 @@ impl Value {
             (_, Items::Booleans(_)) => "boolean",
             (_, Items::Integers(_) | Items::Extended(..)) => "integer",
             (_, Items::Floats(f)) => match f.tag() { FloatWidth::F16 => "float16", FloatWidth::F32 => "float32", FloatWidth::F64 => "float64" },
-            (_, Items::Complex(_)) => "complex",
+            (_, Items::Complex(z)) => match z.tag() { ComplexWidth::F32 => "complex64", ComplexWidth::F64 => "complex128" },
             (_, Items::Characters(_)) => "character",
             (Self::Number(_), _) => "rational",
             (Self::Function(_), _) => "function",
@@ -584,7 +597,6 @@ impl Value {
     pub fn as_floats(&self) -> Option<&[f64]> { match self.as_items() { Items::Floats(Floats::F64(v)) => Some(v), _ => None } }
     pub fn as_integers(&self) -> Option<&[i64]> { match self.as_items() { Items::Integers(Ints::I64(v)) => Some(v), _ => None } }
     pub fn as_booleans(&self) -> Option<&[bool]> { match self.as_items() { Items::Booleans(v) => Some(v), _ => None } }
-    pub fn as_complex(&self) -> Option<&[Complex64]> { match self.as_items() { Items::Complex(v) => Some(v), _ => None } }
     pub fn at(&self, i: usize) -> Value {
         match self.storage() {
             Some(s) => s.item(i),
@@ -736,7 +748,7 @@ impl Value {
                 (data, Items::Booleans(_)) => Storage::Boolean(vec![false; data.len()]),
                 (data, Items::Integers(_) | Items::Extended(..)) => Storage::integers(IntBuf::U8(vec![0; data.len()]), None),
                 (data, Items::Floats(v)) => Storage::Floats(FloatBuf::collect(v.tag(), std::iter::repeat_n(0.0, data.len()))),
-                (data, Items::Complex(_)) => Storage::Floats(FloatBuf::F64(vec![0.0; data.len()])),
+                (data, Items::Complex(z)) => Storage::Floats(FloatBuf::collect(z.tag().into(), std::iter::repeat_n(0.0, data.len()))),
                 (data, Items::Characters(_)) => Storage::Character(vec![' '; data.len()]),
                 (_, Items::Values(_)) => unreachable!("mixed storage fills above"),
             }),

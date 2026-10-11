@@ -18,6 +18,7 @@ Choose a demo to run it. The **Code** tab holds its BPL, which you can edit and 
 <a class="nav-link" href="#reaction"></a>
 <a class="nav-link" href="#phyllotaxis"></a>
 <a class="nav-link" href="#mandelbrot"></a>
+<a class="nav-link" href="#mandelbrot32"></a>
 <a class="nav-link" href="#orbits"></a>
 </nav>
 <div class="gallery-main">

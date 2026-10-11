@@ -3,7 +3,7 @@
 //! loads the module and runs it in a Web Worker.
 #![cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use basedpl::{js, protocol, EvalOptions, MimeData, Output, OutputSink};
-use js_sys::{Function, Object, Reflect, Uint8Array};
+use js_sys::{Array, Function, Object, Reflect, Uint8Array};
 use std::{cell::RefCell, sync::Arc};
 use wasm_bindgen::prelude::*;
 
@@ -42,6 +42,23 @@ pub fn configure(base: String, panic: Function) {
 /// Every glyph's row, as JSON, for the language bar.
 #[wasm_bindgen]
 pub fn symbols() -> String { basedpl::symbols::rows().to_string() }
+
+/// Every case in `speed`, text in `speed.txt`'s format, with its cost, as `basedpl::timing::costs` times it: an array of
+/// `{section, code, budgets, cost}`. Throws when the setup or a case fails.
+#[wasm_bindgen]
+pub fn costs(speed: &str) -> Result<JsValue, JsValue> {
+    let cases = basedpl::timing::costs(speed, &Default::default()).map_err(|e| JsValue::from(js_sys::Error::new(&e)))?;
+    let rows = Array::new();
+    for c in cases {
+        let row = Object::new();
+        _ = Reflect::set(&row, &"section".into(), &c.section.into());
+        _ = Reflect::set(&row, &"code".into(), &c.code.into());
+        _ = Reflect::set(&row, &"budgets".into(), &c.budgets.into_iter().map(JsValue::from).collect::<Array>());
+        _ = Reflect::set(&row, &"cost".into(), &c.cost.into());
+        rows.push(&row);
+    }
+    Ok(rows.into())
+}
 
 #[wasm_bindgen]
 #[derive(Default)]

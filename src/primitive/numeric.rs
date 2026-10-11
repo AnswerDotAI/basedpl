@@ -5,7 +5,7 @@ use super::*;
 use crate::{array::with_float_width, element::read_as};
 
 pub(super) fn complex_parts(right: &Value, polar: bool, span: &Context<'_>) -> Result<Value, Error> {
-    use crate::element::{Element, Float};
+    use crate::{array::with_complexes, element::{Element, Float}};
     use rustymath::{Abs, Angle, Unary};
     /// The parts of floats of width `F`: each item and 0, or with `polar`, its magnitude and its angle, 0 or π, at that width.
     fn float_parts<F: Float>(x: &[F], polar: bool, shape: Vec<usize>) -> Option<Value> where Angle: Unary<F, Out = F> {
@@ -13,10 +13,10 @@ pub(super) fn complex_parts(right: &Value, polar: bool, span: &Context<'_>) -> R
     }
     let layout = right.layout().concat(&Layout::from(vec![2]));
     let shape = layout.shape().to_vec();
-    // Float and complex storage give floats in one pass, at the floats' width. The general loop below keeps exact numbers exact.
+    // Float and complex storage give floats in one pass, at the floats' or parts' width. The general loop below keeps exact numbers exact.
     let parts = match right.as_items() {
-        Items::Complex(z) if polar => f64::build(shape, z.iter().flat_map(|&z| [Abs.one(z), Angle.one(z)]).collect()),
-        Items::Complex(z) => f64::build(shape, z.iter().flat_map(|z| [z.re, z.im]).collect()),
+        Items::Complex(z) if polar => with_complexes!(z, |z| Element::build(shape, z.iter().flat_map(|&z| [Abs.one(z), Angle.one(z)]).collect::<Vec<_>>())),
+        Items::Complex(z) => with_complexes!(z, |z| Element::build(shape, z.iter().flat_map(|z| [z.re, z.im]).collect::<Vec<_>>())),
         Items::Floats(x) => crate::array::with_floats!(x, |x| float_parts(x, polar, shape)),
         _ => None,
     };

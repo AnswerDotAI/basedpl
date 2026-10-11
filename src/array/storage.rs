@@ -40,8 +40,19 @@ buffers!(IntBuf, Ints, Width: U8(u8), I16(i16), I32(i32), I64(i64));
 // Floats come in three widths, which sort from narrowest to widest. A narrower width takes less memory. The CPU computes each operation
 // on 16-bit floats in f32 and rounds the result, through `half`.
 buffers!(FloatBuf, Floats, FloatWidth: F16(half::f16), F32(f32), F64(f64));
+// Complex numbers come in two widths, named by the width of their parts. A 16-bit float that becomes complex takes 32-bit parts.
+buffers!(ComplexBuf, Complexes, ComplexWidth: F32(Complex32), F64(Complex64));
 
-/// Items of compact storage that other libraries, such as NumPy, hold as they are: Booleans, or integers or floats of one width.
+/// The narrowest complex width whose parts hold floats of `width`.
+impl From<FloatWidth> for ComplexWidth {
+    fn from(width: FloatWidth) -> Self { *Self::ALL.iter().find(|&&c| FloatWidth::from(c) >= width).expect("64-bit parts hold every float") }
+}
+impl From<ComplexWidth> for FloatWidth {
+    fn from(width: ComplexWidth) -> Self { match width { ComplexWidth::F32 => Self::F32, ComplexWidth::F64 => Self::F64 } }
+}
+
+/// Items of compact storage that other libraries, such as NumPy, hold as they are: Booleans, or integers, floats or complex numbers of
+/// one width.
 pub enum Buffer<'a> {
     Booleans(Cow<'a, [bool]>),
     U8(Cow<'a, [u8]>),
@@ -51,6 +62,8 @@ pub enum Buffer<'a> {
     F16(Cow<'a, [half::f16]>),
     F32(Cow<'a, [f32]>),
     F64(Cow<'a, [f64]>),
+    C32(Cow<'a, [Complex32]>),
+    C64(Cow<'a, [Complex64]>),
 }
 
 /// Runs `$body` with `$x` bound to the integers of `$ints`, whatever their width.
@@ -78,6 +91,17 @@ macro_rules! with_floats {
 }
 pub(crate) use with_floats;
 
+/// Runs `$body` with `$x` bound to the complex numbers of `$complexes`, whatever their width.
+macro_rules! with_complexes {
+    ($complexes:expr, |$x:ident| $body:expr) => {
+        match $complexes {
+            $crate::array::Complexes::F32($x) => $body,
+            $crate::array::Complexes::F64($x) => $body,
+        }
+    };
+}
+pub(crate) use with_complexes;
+
 /// Runs `$body` with the type `$t` standing for the element type of the float width `$width`.
 macro_rules! with_float_width {
     ($width:expr, $t:ident => $body:expr) => {
@@ -98,6 +122,23 @@ macro_rules! with_float_width {
     };
 }
 pub(crate) use with_float_width;
+
+/// Runs `$body` with the type `$t` standing for the element type of the complex width `$width`.
+macro_rules! with_complex_width {
+    ($width:expr, $t:ident => $body:expr) => {
+        match $width {
+            $crate::array::ComplexWidth::F32 => {
+                type $t = num_complex::Complex32;
+                $body
+            }
+            $crate::array::ComplexWidth::F64 => {
+                type $t = num_complex::Complex64;
+                $body
+            }
+        }
+    };
+}
+pub(crate) use with_complex_width;
 
 /// Runs `$body` with `$x` and `$y` bound to the integers of `$a` and `$b` at one width: their own when they share it, and otherwise both
 /// widened to 64 bits.
@@ -170,7 +211,7 @@ pub(crate) enum Storage {
     Boolean(Vec<bool>),
     Integers(IntBuf, Flag),
     Floats(FloatBuf),
-    Complex(Vec<Complex64>),
+    Complex(ComplexBuf),
     Character(Vec<char>),
     Mixed(Vec<Value>, Memo),
 }
@@ -217,7 +258,7 @@ impl PartialEq for Storage {
             (Self::Boolean(x), Self::Boolean(y)) => x == y,
             (Self::Integers(x, f), Self::Integers(y, g)) if f.get() == g.get() => x.view() == y.view(),
             (Self::Floats(x), Self::Floats(y)) => x.view() == y.view(),
-            (Self::Complex(x), Self::Complex(y)) => x == y,
+            (Self::Complex(x), Self::Complex(y)) => x.view() == y.view(),
             (Self::Character(x), Self::Character(y)) => x == y,
             (Self::Mixed(x, _), Self::Mixed(y, _)) if !x.is_empty() => x.len() == y.len() && x.iter().zip(y).all(|(a, b)| a.same(b)),
             _ if self.len() != other.len() => false,
@@ -227,9 +268,10 @@ impl PartialEq for Storage {
     }
 }
 
-/// A kind of compact storage. Numbers widen from Boolean through the integer widths to float to complex. Floats have three widths. An
-/// infinity or NaN has its own kind, because it never makes an exact integer approximate. Beside exact integers, it makes extended
-/// integers, which 64-bit integer storage holds, flagged with the width of the float that the infinity or NaN had.
+/// A kind of compact storage. Numbers widen from Boolean through the integer widths to float to complex. Floats have three widths and
+/// complex numbers two. An infinity or NaN has its own kind, because it never makes an exact integer approximate. Beside exact
+/// integers, it makes extended integers, which 64-bit integer storage holds, flagged with the width of the float that the infinity or
+/// NaN had.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Kind {
     Boolean,
@@ -237,7 +279,7 @@ pub(crate) enum Kind {
     Extended(FloatWidth),
     Nonfinite(FloatWidth),
     Float(FloatWidth),
-    Complex,
+    Complex(ComplexWidth),
     Character,
 }
 
@@ -263,14 +305,15 @@ impl Kind {
             let number = if self == Boolean { other } else { self };
             return Some(if let Nonfinite(width) = number { Extended(width) } else { number });
         }
-        let width = |k| match k { Float(w) | Nonfinite(w) | Extended(w) => Some(w), _ => None };
+        let width = |k| match k { Float(w) | Nonfinite(w) | Extended(w) => Some(w), Complex(w) => Some(w.into()), _ => None };
         // Exact integers beside non-finite values, or extended integers, are extended integers at the wider float width among them.
         let extended = |k: Kind| k.is_exact() || matches!(k, Nonfinite(_));
         if extended(self) && extended(other) && (self.is_exact() || other.is_exact()) { return width(self).max(width(other)).map(Extended); }
         if widening == Widening::Items && (self.is_exact() || other.is_exact()) { return None; }
-        // Complex numbers outrank floats, and floats outrank non-finite values. Two float widths share the wider.
+        // Complex numbers outrank floats, and floats outrank non-finite values. Two widths share the wider. A complex number's width is
+        // the width of its parts.
         let rank = |k| match k {
-            Complex => 3,
+            Complex(_) => 3,
             Float(_) => 2,
             Nonfinite(_) => 1,
             _ => 0,
@@ -278,6 +321,7 @@ impl Kind {
         Some(match (if rank(self) >= rank(other) { self } else { other }, width(self).max(width(other))) {
             (Float(_), Some(w)) => Float(w),
             (Nonfinite(_), Some(w)) => Nonfinite(w),
+            (Complex(_), Some(w)) => Complex(w.into()),
             (kind, _) => kind,
         })
     }
@@ -311,7 +355,7 @@ pub(super) fn item_kind(item: &Value) -> Option<Kind> {
             Some(i) => Some(Kind::Integer(Width::narrowest(i, i))),
             None if n.is_nonfinite() => n.float_width().map(Kind::Nonfinite),
             None if n.as_float().is_some() => n.float_width().map(Kind::Float),
-            None if n.as_complex().is_some() => Some(Kind::Complex),
+            None if n.as_complex().is_some() => n.float_width().map(|w| Kind::Complex(w.into())),
             None => None,
         },
         Value::Character(_) => Some(Kind::Character),
@@ -321,16 +365,18 @@ pub(super) fn item_kind(item: &Value) -> Option<Kind> {
 
 /// Runs `$body` with `$d` bound to the target buffer, `$s` to the source items and `$f` to the conversion of a source item for the
 /// target, when the target's compact kind holds the source's items. Gives whether it ran. Each line lists the sources that one target
-/// takes and how it converts them. Numbers widen from Boolean through the integer widths to the float widths to complex. A narrower
-/// float buffer receives wider floats only when a conversion asks for that width. Flagged integer storage converts its reserved values
-/// to the floats they stand for. Integer storage receives floats only when they're non-finite, and then has its flag set. A narrower
-/// integer line takes a 64-bit source only for an atom, whose value `Gather::follow` makes sure the buffer's width holds.
+/// takes and how it converts them. Numbers widen from Boolean through the integer widths to the float widths to the complex widths. A
+/// narrower float or complex buffer receives wider items only when a conversion asks for that width. Flagged integer storage converts
+/// its reserved values to the floats they stand for. Integer storage receives floats only when they're non-finite, and then has its
+/// flag set. A narrower integer line takes a 64-bit source only for an atom, whose value `Gather::follow` makes sure the buffer's width
+/// holds.
 macro_rules! copy_into {
     (@to Boolean $d:ident) => { Storage::Boolean($d) };
     (@to F16 $d:ident) => { Storage::Floats(FloatBuf::F16($d)) };
     (@to F32 $d:ident) => { Storage::Floats(FloatBuf::F32($d)) };
     (@to F64 $d:ident) => { Storage::Floats(FloatBuf::F64($d)) };
-    (@to Complex $d:ident) => { Storage::Complex($d) };
+    (@to C32 $d:ident) => { Storage::Complex(ComplexBuf::F32($d)) };
+    (@to C64 $d:ident) => { Storage::Complex(ComplexBuf::F64($d)) };
     (@to Character $d:ident) => { Storage::Character($d) };
     (@to $width:ident $d:ident) => { Storage::Integers(IntBuf::$width($d), _) };
     (@from Booleans $s:ident) => { Items::Booleans($s) };
@@ -338,7 +384,8 @@ macro_rules! copy_into {
     (@from F16 $s:ident) => { Items::Floats(Floats::F16($s)) };
     (@from F32 $s:ident) => { Items::Floats(Floats::F32($s)) };
     (@from F64 $s:ident) => { Items::Floats(Floats::F64($s)) };
-    (@from Complex $s:ident) => { Items::Complex($s) };
+    (@from C32 $s:ident) => { Items::Complex(Complexes::F32($s)) };
+    (@from C64 $s:ident) => { Items::Complex(Complexes::F64($s)) };
     (@from Characters $s:ident) => { Items::Characters($s) };
     (@from $width:ident $s:ident) => { Items::Integers(Ints::$width($s)) };
     (@run $body:expr, $f:ident, $conversion:expr) => {{
@@ -366,8 +413,10 @@ macro_rules! copy_into {
             F32: Extended => read_flagged::<f32>;
             F16: Booleans, U8, I16, I32, I64, F16, F32, F64 => Source::<half::f16>::read;
             F16: Extended => read_flagged::<half::f16>;
-            Complex: Booleans, U8, I16, I32, I64, F16, F32, F64, Complex => Source::<Complex64>::read;
-            Complex: Extended => read_flagged::<Complex64>;
+            C64: Booleans, U8, I16, I32, I64, F16, F32, F64, C32, C64 => Source::<Complex64>::read;
+            C64: Extended => read_flagged::<Complex64>;
+            C32: Booleans, U8, I16, I32, I64, F16, F32, F64, C32, C64 => Source::<Complex32>::read;
+            C32: Extended => read_flagged::<Complex32>;
             Character: Characters => Source::<char>::read;
         )
     };
@@ -394,7 +443,7 @@ impl Storage {
             (Self::Boolean(d), Items::Booleans(s)) => d.extend_from_slice(&s[range]),
             (Self::Integers(d, _), source) => return source.raw_integers().is_some_and(|s| d.extend_from(s, range)),
             (Self::Floats(d), Items::Floats(s)) => return d.extend_from(s, range),
-            (Self::Complex(d), Items::Complex(s)) => d.extend_from_slice(&s[range]),
+            (Self::Complex(d), Items::Complex(s)) => return d.extend_from(s, range),
             (Self::Character(d), Items::Characters(s)) => d.extend_from_slice(&s[range]),
             _ => return false,
         }
@@ -406,7 +455,7 @@ impl Storage {
             Some(Kind::Integer(width)) => Self::integers(IntBuf::with_capacity(width, capacity), None),
             Some(Kind::Extended(width)) => Self::integers(IntBuf::with_capacity(Width::I64, capacity), Some(width)),
             Some(Kind::Float(width) | Kind::Nonfinite(width)) => Self::Floats(FloatBuf::with_capacity(width, capacity)),
-            Some(Kind::Complex) => Self::Complex(Vec::with_capacity(capacity)),
+            Some(Kind::Complex(width)) => Self::Complex(ComplexBuf::with_capacity(width, capacity)),
             Some(Kind::Character) => Self::Character(Vec::with_capacity(capacity)),
             None => Self::mixed(Vec::with_capacity(capacity)),
         }
@@ -417,7 +466,7 @@ impl Storage {
             Self::Integers(IntBuf::I64(v), flag) if let Some(width) = flag.get() => Items::Extended(v, width),
             Self::Integers(v, _) => Items::Integers(v.view()),
             Self::Floats(v) => Items::Floats(v.view()),
-            Self::Complex(v) => Items::Complex(v),
+            Self::Complex(v) => Items::Complex(v.view()),
             Self::Character(v) => Items::Characters(v),
             Self::Mixed(v, _) => Items::Values(v),
         }
@@ -441,7 +490,7 @@ impl Storage {
             Items::Extended(v, _) => Value::Number(Number::from_integer(v[i])),
             Items::Floats(v) => Value::Number(Number::float(with_floats!(v, |x| f64::from(x[i])), v.tag())),
             // An item with no imaginary part is a widened real.
-            Items::Complex(v) => Value::Number(v[i].into()),
+            Items::Complex(v) => Value::Number(with_complexes!(v, |x| x[i].into())),
             Items::Characters(v) => Value::Character(v[i]),
             Items::Values(v) => v[i].clone(),
         }
@@ -454,7 +503,7 @@ impl Storage {
             Items::Booleans(_) => Value::Number(Number::from_bool(false)),
             Items::Integers(_) | Items::Extended(..) => Value::Number(Number::from_integer(0)),
             Items::Floats(v) => Value::Number(Number::float(0.0, v.tag())),
-            Items::Complex(_) => Value::Number(Number::float(0.0, FloatWidth::F64)),
+            Items::Complex(v) => Value::Number(Number::float(0.0, v.tag().into())),
             Items::Characters(_) => Value::Character(' '),
             Items::Values(_) => unreachable!("mixed storage gives its prototype above"),
         }
@@ -498,7 +547,7 @@ impl Storage {
                 Some(width),
             ),
             Kind::Float(width) | Kind::Nonfinite(width) => Self::Floats(FloatBuf::collect(width, data.iter().map(|e| number(e).unwrap().to_float().unwrap()))),
-            Kind::Complex => Self::Complex(data.iter().map(|e| number(e).unwrap().to_complex().unwrap()).collect()),
+            Kind::Complex(width) => Self::Complex(ComplexBuf::collect(width, data.iter().map(|e| number(e).unwrap().to_complex().unwrap()))),
             Kind::Character => Self::Character(data.iter().map(|e| if let Value::Character(c) = e { *c } else { unreachable!() }).collect()),
         }
     }
@@ -512,7 +561,7 @@ pub(crate) enum Items<'a> {
     Integers(Ints<'a>),
     Extended(&'a [i64], FloatWidth),
     Floats(Floats<'a>),
-    Complex(&'a [Complex64]),
+    Complex(Complexes<'a>),
     Characters(&'a [char]),
     Values(&'a [Value]),
 }
@@ -551,9 +600,32 @@ impl FloatBuf {
         }
     }
 }
+impl ComplexBuf {
+    /// The complex numbers `values` at `width`, each part rounded to it.
+    pub(crate) fn collect(width: ComplexWidth, values: impl Iterator<Item = Complex64>) -> Self {
+        match width {
+            ComplexWidth::F32 => Self::F32(values.map(|z| Complex32::new(z.re as f32, z.im as f32)).collect()),
+            ComplexWidth::F64 => Self::F64(values.collect()),
+        }
+    }
+}
+impl<'a> Complexes<'a> {
+    /// The complex numbers with 64-bit parts, borrowed when they have them. Narrower parts convert exactly.
+    pub(crate) fn widened(self) -> Cow<'a, [Complex64]> {
+        match self { Self::F64(v) => Cow::Borrowed(v), Self::F32(v) => Cow::Owned(v.iter().map(|z| Complex64::new(z.re.into(), z.im.into())).collect()) }
+    }
+}
+// Complex numbers are equal when they hold the same values, whatever their widths.
+impl PartialEq for Complexes<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (*self, *other) { (Self::F32(x), Self::F32(y)) => x == y, (Self::F64(x), Self::F64(y)) => x == y, (x, y) => x.widened() == y.widened() }
+    }
+}
 
 /// The real number `z` holds, when its imaginary part is zero.
-fn real_part(z: &Complex64) -> Result<f64, ErrorKind> { if z.im == 0.0 { Ok(z.re) } else { Err(ErrorKind::Domain) } }
+fn real_part<R: Copy + Into<f64>>(z: &Complex<R>) -> Result<f64, ErrorKind> {
+    if z.im.into() == 0.0 { Ok(z.re.into()) } else { Err(ErrorKind::Domain) }
+}
 
 impl<'a> Items<'a> {
     /// The compact kind of these items, or `None` for mixed ones.
@@ -563,7 +635,7 @@ impl<'a> Items<'a> {
             Self::Integers(ints) => Some(Kind::Integer(ints.tag())),
             Self::Extended(_, width) => Some(Kind::Extended(*width)),
             Self::Floats(floats) => Some(Kind::Float(floats.tag())),
-            Self::Complex(_) => Some(Kind::Complex),
+            Self::Complex(z) => Some(Kind::Complex(z.tag())),
             Self::Characters(_) => Some(Kind::Character),
             Self::Values(_) => None,
         }
@@ -592,7 +664,7 @@ impl<'a> Items<'a> {
             Self::Integers(ints) => with_ints!(ints, |d| d.iter().map(|&n| int(n.to_i64())).collect()),
             Self::Extended(d, _) => d.iter().map(|&n| if extended::is_nonfinite(n) { real(extended::float(n)) } else { int(n) }).collect(),
             Self::Floats(d) => with_floats!(d, |d| d.iter().map(|&n| real(n.into())).collect()),
-            Self::Complex(d) => d.iter().map(|z| real_part(z).and_then(&real)).collect(),
+            Self::Complex(d) => with_complexes!(d, |d| d.iter().map(|z| real_part(z).and_then(&real)).collect()),
             Self::Characters(_) => Err(ErrorKind::Domain),
             Self::Values(d) => d.iter().map(|v| other(number(v)?)).collect(),
         }

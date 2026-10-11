@@ -231,7 +231,7 @@ fn expression_dissection() {
     assert_same(r.value, &vector(&[-1., 2., -3.]));
     assert_eq!(s.eval("1+2").output_text(), ["3"]);
     assert!(s.eval("+/÷≢").output_text()[0].contains("fork\n"));
-    assert_eq!(s.eval(r#"•prefs ["trees":$f "dissect":$t] ⋄ f←{⎕←⍵ ⋄ ⍵+1}"#).output_text().len(), 1);
+    assert!(s.eval(r#"•prefs ["trees":$f "dissect":$t] ⋄ f←{⎕←⍵ ⋄ ⍵+1}"#).output_text().is_empty());
     let r = s.eval("f 2");
     assert_eq!(r.output_text().len(), 3);
     assert_eq!(r.output_text()[0], "2");

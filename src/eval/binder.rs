@@ -230,10 +230,11 @@ impl Binder {
     ) -> Result<(Step, Option<SelectionKind>), Error> {
         let members = if marked.is_none() { session.members(nodes) } else { Cow::Borrowed(nodes) };
         let nodes = &members[..];
-        let mut binder = Self { stack: seed.into_iter().collect() };
+        let mut binder = Self { stack: session.stacks.pop().unwrap_or_default() };
+        binder.stack.extend(seed);
         let mut cursor = nodes.len();
         let mut assignment = None;
-        let mut pending = Vec::new();
+        let mut pending = session.stacks.pop().unwrap_or_default();
         loop {
             session.execution.check(&nodes[0].span)?;
             let next = if let Some(entity) = pending.pop() { Some(entity) } else if assignment.is_none() && cursor > 0 {
@@ -311,7 +312,10 @@ impl Binder {
                     && pending.is_empty()
                     && binder.stack.is_empty()
                     && matches!(call.function.node(), FunctionNode::Defined(_) | FunctionNode::Derived(..))
-                { return Ok((Step::Tail(call), None)); }
+                {
+                    session.stacks.extend([binder.stack, pending]);
+                    return Ok((Step::Tail(call), None));
+                }
                 let entity = match call.selection {
                     Some(kind) => {
                         let (selected, kind) = call
@@ -336,11 +340,9 @@ impl Binder {
             // Bound operators still need their left operand before rebinding on the right.
             if !matches!(binder.stack.last().unwrap().category(), Category::Operator) { pending.push(binder.stack.pop().unwrap()); }
         }
-        let entity = binder.stack.pop().expect("nonempty expression");
-        let shy = entity.shy;
-        let selection = entity.selection;
-        let mut entity = entity;
-        let expression = entity.expression.take();
+        let mut entity = binder.stack.pop().expect("nonempty expression");
+        session.stacks.extend([binder.stack, pending]);
+        let (shy, selection, expression) = (entity.shy, entity.selection, entity.expression.take());
         Ok((Step::Done(Bound { value: entity.value()?, shy, expression }), selection))
     }
     fn reduce(&mut self, capture: bool) -> Result<Option<Application>, Error> {

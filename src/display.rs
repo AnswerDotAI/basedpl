@@ -186,16 +186,19 @@ impl Settings {
     }
 }
 
-/// `•prefs Y` applies the settings in the record `Y` to the session, and returns all of them. Besides the display settings, `tolerance`
-/// is the comparison tolerance of 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new
-/// floats in bits, 16, 32 or 64. Code parsed after a change reads its literals at the new width.
-pub(crate) fn prefs(session: &mut crate::Session, _: Option<&Value>, right: &Value, span: &crate::Span) -> Result<Value, crate::Error> {
+/// `•prefs Y` applies the settings in the record `Y` to the session, and returns all of them. The result is shy when `Y` sets something,
+/// as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `tolerance` is the comparison tolerance of
+/// 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new floats in bits, 16, 32 or 64.
+/// Code parsed after a change reads its literals at the new width.
+pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::Span) -> Result<(Value, bool), crate::Error> {
     let (mut display, mut numeric) = (session.display, session.numeric);
     let tolerance = |v: &Value| {
         let t = v.as_number().and_then(|n| n.to_float().ok()).and_then(Tolerance::new);
         t.filter(|&t| t <= Tolerance::DEFAULT).ok_or(crate::ErrorKind::Domain)
     };
-    for (key, value) in keyed::pairs(right).error_at(span, "•prefs takes a record of settings")? {
+    let pairs = keyed::pairs(right).error_at(span, "•prefs takes a record of settings")?;
+    let shy = !pairs.is_empty();
+    for (key, value) in pairs {
         match &*key {
             "tolerance" => numeric.tolerance = tolerance(&value).error_at(span, "tolerance must be from 0 to 1E¯14")?,
             "float" => {
@@ -210,7 +213,7 @@ pub(crate) fn prefs(session: &mut crate::Session, _: Option<&Value>, right: &Val
     keys.extend(["tolerance".into(), "float".into()]);
     values.push(Value::Number(Number::float(numeric.tolerance.value(), FloatWidth::F64)));
     values.push(Value::Number(Number::from_integer(numeric.width.bits())));
-    keyed::record(keys, values).error_at(span, "invalid settings record")
+    Ok((keyed::record(keys, values).error_at(span, "invalid settings record")?, shy))
 }
 
 /// Lines of text and their width. Display measures text in terminal columns, and `⍕` in characters.
@@ -337,7 +340,7 @@ fn marker(a: &Value, el: Elide) -> char {
         "boolean" => '$',
         "integer" => 'ₓ',
         "float16" | "float32" | "float64" => a.float_width().and_then(|w| el.width_marker(w)).unwrap_or('~'),
-        "complex" => 'j',
+        "complex64" | "complex128" => 'j',
         "character" => '─',
         _ => '+',
     }

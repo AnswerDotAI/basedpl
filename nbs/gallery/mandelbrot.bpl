@@ -1,6 +1,8 @@
-⍝ Mandelbrot
+⍝ Mandelbrot, 64-bit
 ⍝ Each frame zooms 3% further into Seahorse Valley and computes every pixel afresh at 250 × 250. After 400 frames, at about
-⍝ 30,000 times, it zooms back out the same way, then starts again. Only the points that haven't escaped yet keep iterating.
+⍝ 30,000 times, it zooms back out the same way, then starts again. Only the points that haven't escaped yet keep iterating. It
+⍝ computes with 64-bit floats, which hold the detail to that depth. The 32-bit version stops at about 1,000 times.
+•prefs ["float":64]
 centre←¯0.7436438870371587ⱼ0.1318259042053120
 g←≤⊽(⍳250)÷250
 grid←,(0ⱼ1×⌽g)+⊗g

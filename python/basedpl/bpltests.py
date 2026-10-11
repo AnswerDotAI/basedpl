@@ -244,8 +244,8 @@ def check_page(
 _SPEED = Path(__file__).parents[2]/'tests'/'speed.txt'
 
 class Costs(list):
-    "Each case's cost, as `(code, picoseconds per item, copies)` rows."
-    def __repr__(self): return '\n'.join(f'{ps:>10,.0f} ps {copies:>9.2f} copies  {code}' for code, ps, copies in self)
+    "Each case's cost, as `(code, picoseconds per item, copies)` rows. Copies is `None` where one copy of the data is too quick to time."
+    def __repr__(self): return '\n'.join(f'{ps:>10,.0f} ps {("-" if copies is None else f"{copies:.2f}"):>9} copies  {code}' for code, ps, copies in self)
 
 def time_cases(
     cases, # A BPL expression to time, or a list of them

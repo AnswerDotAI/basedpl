@@ -50,6 +50,7 @@ if (isMainThread && process.argv[2] !== 'depths') {
         assert.deepEqual(s.eval('[2.5 "ab" ["x":1 "y":$t]]'), { shape: [3], data: [2.5, 'ab', { x: 1, y: true }] });
         assert.deepEqual(s.eval('3 2⍴⍳6ₓ'), { shape: [3, 2], data: Uint8Array.of(0, 1, 2, 3, 4, 5) });
         assert.deepEqual(s.eval('1j2 3'), { shape: [2, 2], data: Float64Array.of(1, 2, 3, 0) });
+        assert.deepEqual(s.eval('[1j2 3]ₛ'), { shape: [2, 2], data: Float32Array.of(1, 2, 3, 0) });
         assert.equal(s.eval('{}0'), undefined);
         assert.throws(() => s.eval('1÷"a"'), { kind: 'DOMAIN' });
     });

@@ -219,12 +219,13 @@ impl Value {
     }
 
     /// The marker that a nonempty array writes once after its notation, in place of one for each number: `ₓ` for integer storage, and a
-    /// width's marker for floats of a width that `el` doesn't leave plain.
+    /// width's marker for floats, or complex numbers with parts, of a width that `el` doesn't leave plain.
     pub(crate) fn mark(&self, el: Elide) -> Option<char> {
         if self.is_empty() { return None; }
         match self.as_items() {
             Items::Integers(_) | Items::Extended(..) => Some('ₓ'),
             Items::Floats(f) => el.width_marker(f.tag()),
+            Items::Complex(z) => el.width_marker(z.tag().into()),
             _ => None,
         }
     }

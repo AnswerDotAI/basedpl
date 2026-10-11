@@ -239,7 +239,7 @@ fn exact_number(text: &str) -> Result<Number, ErrorKind> {
 pub(crate) fn zilde(fill: Number) -> Value { Value::empty(vec![0], Value::Number(fill)).unwrap() }
 
 /// Reads the numbers and `⍬`s inside each `[…]` and `(…)` that has a number marker again, from their own source text, at any depth:
-/// as exact after `ₓ`, and as floats of the marked width after `ₛ` or `ₚ`. Booleans stay as they are.
+/// as exact after `ₓ`, and as floats or complex numbers of the marked width after `ₕ`, `ₛ` or `ₚ`. Booleans stay as they are.
 fn mark_literals(tokens: &mut [Token]) -> Result<(), Error> {
     let mut open = Vec::new();
     for i in 0..tokens.len() {
@@ -259,7 +259,7 @@ fn mark_literals(tokens: &mut [Token]) -> Result<(), Error> {
                         (TokenKind::Literal(Value::Number(n)), Mark::Width(w)) => {
                             let n = if text.starts_with('$') { Ok(n.clone()) } else { literal_number(text, w) };
                             let n = n.and_then(|n| n.to_float_width(w).map_err(|_| ErrorKind::Domain));
-                            Value::Number(n.error_at(&token.span, &format!("{} marks real numbers", mark.marker()))?)
+                            Value::Number(n.error_at(&token.span, &format!("{} marks numbers", mark.marker()))?)
                         }
                         (TokenKind::Literal(_), _) if text == "⍬" => zilde(mark.zero()),
                         _ => continue,
@@ -385,6 +385,7 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
         real_literal(chars).map_err(|message| span(position(chars, len)).error(ErrorKind::Syntax, message))?;
         if suffix(chars, IMAGINARY) {
             real_literal(chars).map_err(|message| span(position(chars, len)).error(ErrorKind::Syntax, message))?;
+            width_mark(chars);
             if let Some(end) = run_on(chars, false) { return Err(span(end).error(ErrorKind::Syntax, "invalid complex numeric literal").into()); }
         }
         else {

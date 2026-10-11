@@ -15,9 +15,10 @@ BPL has two kinds of number. A bare number such as `0.5` is approximate: a float
 | `$n` | NaN |
 | `$t`, `$f` | True and false |
 | `1.5ₕ`, `1.5ₛ`, `1.5ₚ` | A 16-bit, 32-bit or 64-bit float, whatever the default width |
+| `2j3ₛ`, `2j3ₚ` | A complex number with 32-bit or 64-bit parts. `2j3ₕ` has 32-bit parts too |
 | `⍬`, `⍬ₓ`, `⍬ₕ`, `⍬ₛ`, `⍬ₚ` | The approximate, the exact, and the 16-bit, 32-bit and 64-bit [empty vector](glyphs/zilde.qmd) |
 | `[…]ₓ`, `(…)ₓ` | A list, or rows, in which every number is exact |
-| `[…]ₕ`, `[…]ₛ`, `[…]ₚ` | A list, or rows, in which every number is a 16-bit, 32-bit or 64-bit float |
+| `[…]ₕ`, `[…]ₛ`, `[…]ₚ` | A list, or rows, in which every real number is a 16-bit, 32-bit or 64-bit float, and every complex number has parts of that width, or 32-bit parts after `ₕ` |
 
 A plain `e`, `j` or `r` starts a name unless the rest of a number follows it, as in `1e5`, `1r3` and `2j3`. The subscript forms are always part of the number, and results display with them, as in `1ᵣ3`, `2ⱼ3` and `1ₑ20`.
 
@@ -93,7 +94,7 @@ In `[…]ₓ` and `(…)ₓ`, every number is exact, at any depth. Each item mus
 
 ## Storage
 
-An array keeps its items in one of eight storages: `boolean`, `integer`, `float64`, `float32`, `float16`, `complex`, `character` or `mixed`. `•storage` names it. Mixed storage keeps each item's own kind. A literal list of exact and approximate numbers uses it:
+An array keeps its items in one of nine storages: `boolean`, `integer`, `float64`, `float32`, `float16`, `complex128`, `complex64`, `character` or `mixed`. `•storage` names it. Mixed storage keeps each item's own kind. A literal list of exact and approximate numbers uses it:
 
 ```bpl
 x←1ₓ 0.5 2ₓ
@@ -132,6 +133,13 @@ An operation on floats computes at their width. An exact operand rounds to that 
 v←32 •float 1.5 2.5
 •storage¨[v×2ₓ;v×v;*v;v×2]   ⍝ "float32" "float32" "float32" "float64"
 (32 •float 1.5)×16777217ₓ    ⍝ 25165824
+```
+
+Complex numbers have 64-bit or 32-bit parts. `•storage` names their storage `"complex128"` and `"complex64"`, after their whole size. They follow the rules for floats. A complex number takes the width of the floats it comes from, and a 16-bit float that becomes complex takes 32-bit parts. A complex number beside a float computes at the wider of their widths. A complex result with no imaginary part is a float of its parts' width. `ₛ`, `ₚ` and `ₕ` mark the width of the parts, and display marks parts that aren't of the default width:
+
+```bpl
+•storage¨[[2j3]ₛ;[2j3]ₕ;√[¯4]ₛ;[2j3]ₛ×1.5]   ⍝ "complex64" "complex64" "complex64" "complex128"
+√¯4ₛ                                       ⍝ 0j2ₛ
 ```
 
 Each operation on 16-bit floats computes in 32 bits and rounds its result to 16 bits. For `+ - × ÷` and `√`, that gives the result of 16-bit arithmetic. Folds, scans and inner products keep their running totals in 32 bits. Only their results round to 16 bits. A 16-bit total of these numbers would stop growing at 256:

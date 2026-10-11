@@ -8,4 +8,4 @@ export const pkg = process.env.BASEDPL_WASM ? pathToFileURL(`${resolve(process.e
 const glue = await import(new URL('basedpl_wasm.js', pkg));
 await glue.default({ module_or_path: readFileSync(new URL('basedpl_wasm_bg.wasm', pkg)) });
 glue.configure('http://localhost/', message => { throw new Error(message); });
-export const { Session } = glue;
+export const { Session, costs } = glue;

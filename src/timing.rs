@@ -1,9 +1,10 @@
 //! The speed test's measurements, shared by `tests/speed.rs` and the worker's `timing` request, which serves
-//! `basedpl.bpltests.time_cases`. A time is the fastest of five runs, after one run to warm up. Its unit is one copy: allocating a
-//! vector of `n` 8-byte numbers and copying `n` numbers into it, where `n` is the number of items in the setup's data.
-use crate::{protocol::response, EvalOptions, Evaluation, InterruptHandle, Session};
+//! `basedpl.bpltests.time_cases`. A time is the fastest of five evaluations of a case, after one to warm up. The case is parsed
+//! once, before them. Its unit is one copy: allocating a vector of `n` 8-byte numbers and copying `n` numbers into it, where `n` is
+//! the number of items in the setup's data.
+use crate::{host::Instant, protocol::response, EvalOptions, Evaluation, InterruptHandle, Session, Source};
 use serde_json::{json, Value as JsonValue};
-use std::{hint::black_box, time::Instant};
+use std::{collections::HashMap, hint::black_box};
 
 /// One section of a file in `speed.txt`'s format: its name, the prefs its session starts with, and its lines.
 pub type Section<'a> = (&'a str, &'a str, Vec<&'a str>);
@@ -50,9 +51,10 @@ pub fn items(session: &mut Session) -> Option<usize> {
 
 /// The time of `code` in `session`, in seconds, or the evaluation that failed.
 pub fn time(session: &mut Session, code: &str, interrupt: &InterruptHandle) -> Result<f64, Evaluation> {
+    let parsed = session.parse(Source::new("<input>", code)).complete().map_err(Evaluation::failed)?;
     let mut failed = None;
     let seconds = fastest(|| {
-        let result = session.eval_with(code, EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() });
+        let result = session.eval_parsed(&parsed, EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() });
         if result.error.is_some() { failed.get_or_insert(result); }
     });
     failed.map_or(Ok(seconds), Err)
@@ -62,6 +64,45 @@ pub fn time(session: &mut Session, code: &str, interrupt: &InterruptHandle) -> R
 pub fn copy(n: usize) -> f64 {
     let data: Vec<f64> = (0..n).map(|i| i as f64).collect();
     fastest(|| drop(black_box(black_box(&data).clone())))
+}
+
+/// One case of a file in `speed.txt`'s format, with its cost: the section it's in, its code, its budgets in the file's order, and
+/// the cost those budgets limit.
+pub struct Case<'a> {
+    pub section: &'a str,
+    pub code: &'a str,
+    pub budgets: Vec<&'a str>,
+    pub cost: f64,
+}
+
+/// Every case in `text`, in `speed.txt`'s format, with its cost. Each section's cases run in a session that has run the section's
+/// prefs and then `[setup]`, the first section. A cost is in copies, timed just before the case, except in `[widths]`. There it is the
+/// case's time as a fraction of its time in `[exact]`.
+pub fn costs<'a>(text: &'a str, interrupt: &InterruptHandle) -> Result<Vec<Case<'a>>, String> {
+    let failure = |code: &str, failed: Evaluation| format!("{code}: {}", failed.error.map(|e| e.to_string()).unwrap_or_default());
+    let sections = sections(text)?;
+    let Some((&("setup", _, ref setup), cases)) = sections.split_first() else { return Err("the first section must be [setup]".into()) };
+    let setup = setup.join("\n");
+    let mut sessions = HashMap::new();
+    for &(name, prefs, _) in cases { sessions.insert(name, session(prefs, &setup).map_err(|failed| failure(prefs, failed))?); }
+    let n = cases.first().and_then(|(name, ..)| items(sessions.get_mut(name)?)).ok_or("the setup must define n, its number of items")?;
+    let mut timed = |name: &str, code: &str| {
+        let session = sessions.get_mut(name).ok_or_else(|| format!("speed's {name} section is missing"))?;
+        time(session, code, interrupt).map_err(|failed| failure(code, failed))
+    };
+    let mut result = Vec::new();
+    for &(section, _, ref lines) in cases {
+        for line in lines {
+            let mut fields = line.split('\t');
+            let code = fields.next().unwrap_or_default();
+            let cost = if section == "widths" { timed(section, code)? / timed("exact", code)? } else {
+                let unit = copy(n);
+                timed(section, code)? / unit
+            };
+            result.push(Case { section, code, budgets: fields.collect(), cost });
+        }
+    }
+    Ok(result)
 }
 
 /// The reply to the worker's `timing` request, which gives `speed`, text in `speed.txt`'s format whose first section is `[setup]`, the

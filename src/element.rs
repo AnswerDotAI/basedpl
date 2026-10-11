@@ -1,14 +1,17 @@
 //! The element types of compact storage, and how an item of one type reads as another.
 use crate::{
-    array::{with_float_width, with_floats, with_ints, FloatBuf, FloatWidth, Floats, IntBuf, Ints, Items, Storage, Width},
+    array::{
+        with_complexes, with_float_width, with_floats, with_ints, ComplexBuf, Complexes, FloatBuf, FloatWidth, Floats, IntBuf, Ints, Items,
+        Storage, Width,
+    },
     number::{extended, int::Int},
     Value,
 };
-use num_complex::Complex64;
+use num_complex::{Complex32, Complex64};
 use std::borrow::Cow;
 
 /// Compact element storage: `bool` for Booleans, the widths `u8`, `i16`, `i32` and `i64` for integers, the widths `half::f16`, `f32` and
-/// `f64` for floats, `Complex64` for complex numbers and `char` for characters.
+/// `f64` for floats, `Complex32` and `Complex64` for complex numbers and `char` for characters.
 pub(crate) trait Element: Copy {
     /// The item a missing keyed entry reads as: the fill of its own array, which has this type.
     const FILL: Self;
@@ -20,6 +23,8 @@ pub(crate) trait Element: Copy {
     fn build_narrowed(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Self::build(shape, data) }
     /// This whole number as an integer of type `T`, when `T` holds it. Only the numbers that kernels give as integers have one.
     fn whole<T: Whole>(self) -> Option<T> { None }
+    /// `items` read as this element type, which only the complex element types can do.
+    fn from_complexes(_items: Complexes<'_>) -> Option<Vec<Self>> { None }
 }
 
 impl Element for bool {
@@ -27,11 +32,18 @@ impl Element for bool {
     fn slice(value: &Value) -> Option<&[Self]> { value.as_booleans() }
     fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::booleans(shape, data).ok() }
 }
-impl Element for Complex64 {
-    const FILL: Self = Complex64::new(0.0, 0.0);
-    fn slice(value: &Value) -> Option<&[Self]> { value.as_complex() }
-    fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::complex(shape, data).ok() }
+/// Complex numbers of each width.
+macro_rules! complex_elements {
+    ($($t:ty: $width:ident),+) => {$(
+        impl Element for $t {
+            const FILL: Self = <$t>::new(0.0, 0.0);
+            fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Complex(Complexes::$width(v)) => Some(v), _ => None } }
+            fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::complex(shape, ComplexBuf::$width(data)).ok() }
+            fn from_complexes(items: Complexes<'_>) -> Option<Vec<Self>> { Some(with_complexes!(items, |z| read_all(z))) }
+        }
+    )+};
 }
+complex_elements!(Complex32: F32, Complex64: F64);
 impl Element for char {
     const FILL: Self = ' ';
     fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Characters(v) => Some(v), _ => None } }
@@ -39,13 +51,11 @@ impl Element for char {
 }
 
 /// An integer width of compact storage.
-pub(crate) trait Whole: Element + Int + bytemuck::Pod {
+pub(crate) trait Whole: Element + Int + rustymath::convert::Int + bytemuck::Pod {
     const WIDTH: Width;
     /// The integers, when they have this width.
     fn of(ints: Ints<'_>) -> Option<&[Self]>;
     fn buffer(data: Vec<Self>) -> IntBuf;
-    /// The whole float `x` as this type, when this type holds it. NaN and the infinities have none.
-    fn from_float<F: Float>(x: F) -> Option<Self>;
 }
 macro_rules! whole {
     ($($t:ty: $width:ident),+) => {$(
@@ -61,8 +71,6 @@ macro_rules! whole {
             const WIDTH: Width = Width::$width;
             fn of(ints: Ints<'_>) -> Option<&[Self]> { match ints { Ints::$width(v) => Some(v), _ => None } }
             fn buffer(data: Vec<Self>) -> IntBuf { IntBuf::$width(data) }
-            #[inline]
-            fn from_float<F: Float>(x: F) -> Option<Self> { <$t as num_traits::NumCast>::from(x) }
         }
     )+};
 }
@@ -85,7 +93,7 @@ macro_rules! float {
             fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Floats(Floats::$width(v)) => Some(v), _ => None } }
             fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::Floats(FloatBuf::$width(data))).ok() }
             #[inline]
-            fn whole<T: Whole>(self) -> Option<T> { T::from_float(self) }
+            fn whole<T: Whole>(self) -> Option<T> { rustymath::convert::int(self) }
         }
         impl Float for $t {
             const WIDTH: FloatWidth = FloatWidth::$width;
@@ -99,7 +107,7 @@ impl Element for half::f16 {
     fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Floats(Floats::F16(v)) => Some(v), _ => None } }
     fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::Floats(FloatBuf::F16(data))).ok() }
     #[inline]
-    fn whole<T: Whole>(self) -> Option<T> { T::from_float(self) }
+    fn whole<T: Whole>(self) -> Option<T> { rustymath::convert::int(self) }
 }
 /// `half` computes each operation on 16-bit floats in f32 and rounds the result. Its conversions take one value at a time, through inline
 /// assembly that LLVM can't vectorize. Loops that convert 16-bit floats, such as the copies that `pervasive::halves` makes, therefore run
@@ -136,50 +144,43 @@ macro_rules! truth {
     )+};
 }
 truth!(u8, i16, i32, i64);
-macro_rules! real {
+/// An integer reads as a float through `rustymath::convert`, whose conversions vectorize on every target.
+macro_rules! numbers {
     ($($s:ty),+) => {$(
-        impl Source<f64> for $s { #[inline] fn read(self) -> f64 { f64::from(self) } }
+        impl Source<f64> for $s { #[inline] fn read(self) -> f64 { rustymath::convert::float(self) } }
+        impl Source<f32> for $s { #[inline] fn read(self) -> f32 { rustymath::convert::float(self) } }
+        impl Source<half::f16> for $s { #[inline] fn read(self) -> half::f16 { rustymath::convert::float(self) } }
     )+};
 }
-real!(i16, i32, half::f16, f32);
-/// A byte reads as a float through its bits: 2^23 plus the byte, minus 2^23, which is exact in `f32` and widens exactly. On AArch64,
-/// LLVM's own conversion from bytes builds each vector of two floats from single lanes, at about half the speed of an `i16` read.
-impl Source<f64> for u8 {
-    #[inline]
-    fn read(self) -> f64 { f64::from(f32::from_bits(0x4B00_0000 | u32::from(self)) - 8_388_608.0) }
-}
-impl Source<f64> for bool {
-    #[inline]
-    fn read(self) -> f64 { Source::<f64>::read(u8::from(self)) }
-}
-impl Source<f64> for i64 {
-    #[inline]
-    fn read(self) -> f64 { self as f64 }
-}
-/// A number read as an `f32` rounds to the nearest. These types convert to `f64` on the way, exactly except for an `i64` beyond 2^53.
-macro_rules! single {
-    ($($s:ty),+) => {$(
-        impl Source<f32> for $s { #[inline] fn read(self) -> f32 { Source::<f64>::read(self) as f32 } }
+numbers!(u8, i16, i32, i64);
+/// A Boolean reads as a float through its byte.
+macro_rules! truths {
+    ($($a:ty),+) => {$(
+        impl Source<$a> for bool { #[inline] fn read(self) -> $a { Source::<$a>::read(u8::from(self)) } }
     )+};
 }
-single!(bool, u8, i16, i32, i64, f64);
-impl Source<f32> for half::f16 {
-    #[inline]
-    fn read(self) -> f32 { self.to_f32() }
+truths!(f64, f32, half::f16);
+/// A float reads as a wider float exactly, and as a narrower one rounded to the nearest.
+macro_rules! floats {
+    ($($s:ty => $a:ty: |$x:ident| $read:expr),+) => {$(
+        impl Source<$a> for $s { #[inline] fn read(self) -> $a { let $x = self; $read } }
+    )+};
 }
+floats!(
+    half::f16 => f64: |x| x.into(), f32 => f64: |x| x.into(), half::f16 => f32: |x| x.into(),
+    f64 => f32: |x| x as f32, f32 => half::f16: |x| half::f16::from_f32(x), f64 => half::f16: |x| half::f16::from_f64(x)
+);
+/// A real number reads as a complex number with no imaginary part.
 macro_rules! complex {
     ($($s:ty),+) => {$(
         impl Source<Complex64> for $s { #[inline] fn read(self) -> Complex64 { Complex64::new(Source::<f64>::read(self), 0.0) } }
+        impl Source<Complex32> for $s { #[inline] fn read(self) -> Complex32 { Complex32::new(Source::<f32>::read(self), 0.0) } }
     )+};
 }
 complex!(bool, u8, i16, i32, i64, half::f16, f32, f64);
-/// A number read as an `f16` rounds to the nearest. These types convert to `f64` on the way, exactly except for an `i64` beyond 2^53.
-macro_rules! half {
-    ($($s:ty),+) => {$(
-        impl Source<half::f16> for $s { #[inline] fn read(self) -> half::f16 { half::f16::from_f64(Source::<f64>::read(self)) } }
-    )+};
-}
-half!(bool, u8, i16, i32, i64, f32, f64);
+/// A complex number reads as one of the other width through its parts.
+impl Source<Complex64> for Complex32 { #[inline] fn read(self) -> Complex64 { Complex64::new(self.re.into(), self.im.into()) } }
+impl Source<Complex32> for Complex64 { #[inline] fn read(self) -> Complex32 { Complex32::new(self.re as f32, self.im as f32) } }
 
 /// Every item of `items`, read as type `A`.
 pub(crate) fn read_all<A, S: Source<A>>(items: &[S]) -> Vec<A> { items.iter().map(|&x| x.read()).collect() }
@@ -200,7 +201,7 @@ pub(crate) fn cast<A: Whole>(ints: Ints<'_>) -> Cow<'_, [A]> {
 pub(crate) fn truth_bytes(truths: &[bool]) -> &[u8] { bytemuck::cast_slice(truths) }
 
 /// `value`'s compact numbers as `A`s: borrowed when they are `A`s already, otherwise read through `Source`, or through `read_flagged` from
-/// flagged integer storage. `None` when `A` can't hold them.
+/// flagged integer storage. Complex numbers read only as complex numbers. `None` when `A` can't hold them.
 pub(crate) fn read_as<A: Element>(value: &Value) -> Option<Cow<'_, [A]>>
 where
     bool: Source<A>,
@@ -218,6 +219,7 @@ where
         Items::Integers(ints) => with_ints!(ints, |y| read_all(y)),
         Items::Extended(y, _) => y.iter().map(|&n| read_flagged(n)).collect(),
         Items::Floats(y) => with_floats!(y, |y| read_all(y)),
-        Items::Complex(_) | Items::Characters(_) | Items::Values(_) => return None,
+        Items::Complex(z) => A::from_complexes(z)?,
+        Items::Characters(_) | Items::Values(_) => return None,
     }))
 }

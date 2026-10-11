@@ -8,8 +8,9 @@
 //! A Boolean, an integer or a 32-bit float beside a wider float, and any real beside a complex number, reads at the wider type as the
 //! loop reads it, as `Number` converts it. Kernels compile only for pairs that can occur, so a 32-bit kernel never meets 64-bit data.
 //! A kernel returns `None` where its case can't give the result, and a function object fails an item where it gives NaN from arguments
-//! that aren't NaN. The caller then takes the `Number` path for the whole call, which gives the error or the exact or complex result. Kernels read their
-//! arguments through `Value::checked_items`. Integer storage flagged for non-finite values that holds none reads as plain integers there.
+//! that aren't NaN. The caller then takes the `Number` path for the whole call, which gives the error or the exact or complex result.
+//! Kernels read their arguments through `Value::checked_items`. Integer storage flagged for non-finite values that holds none reads as
+//! plain integers there.
 //!
 //! Integers run at the narrowest of the four widths that holds both arguments' items. Booleans beside integers read in place as unsigned
 //! bytes. Integers of different widths convert to the wider one before the loop. A result that doesn't fit runs again at the next width
@@ -18,9 +19,10 @@
 //! Floats run at the wider of their two widths, and an exact operand reads at that width. The float kernels compute at the width.
 //! `float_arithmetic` and `float_comparisons` are generic over it. The `Kernels` impls of `f32` and `f64` call rustymath's function
 //! objects. An object implements its traits only at concrete types. `at_widths!` therefore writes those impls once, for both widths,
-//! in `float_kernels`. Only 32- and 64-bit floats have kernels. `halves` runs a call with 16-bit floats on 32-bit copies of them,
-//! because the CPU runs 16-bit floats only for testing. Such a call rounds a function of several steps, such as `|`, once, where
-//! `Number` rounds each step.
+//! in `float_kernels`, and the impls of complex numbers with parts of each width in `complex_kernels`. Complex numbers run at the wider
+//! of their parts' width and the other argument's float width. Only 32- and 64-bit floats have kernels. `halves` runs a call with
+//! 16-bit floats on 32-bit copies of them, because the CPU runs 16-bit floats only for testing. Such a call rounds a function of
+//! several steps, such as `|`, once, where `Number` rounds each step.
 //!
 //! rustc compiles every instance of a module's generic functions in one codegen unit, on one core. The kernel tables therefore sit in
 //! modules of their own, such as `float_arithmetic` and `wholes`, whose units compile in parallel. Every loop that a kernel passes
@@ -28,7 +30,10 @@
 //! table that calls it. `tests/units.rs` fails when the largest unit grows to about twice its healthy size.
 use crate::{
     agreement::{Agreement, Mapping},
-    array::{with_float_width, with_floats, with_ints, with_width, Axis, FloatWidth, Floats, Ints, Items, Kind, Widening, Width},
+    array::{
+        with_complex_width, with_float_width, with_floats, with_ints, with_width, Axis, ComplexWidth, Complexes, FloatWidth, Floats, Ints, Items,
+        Kind, Widening, Width,
+    },
     element::{cast, read_all, read_as, truth_bytes, Element, Float, Source, Whole},
     number::{
         complex, extended,
@@ -38,7 +43,7 @@ use crate::{
     primitive::{Comparison, Primitive},
     Value,
 };
-use num_complex::Complex64;
+use num_complex::{Complex, Complex32, Complex64};
 use rustymath::{pairs, reduce, tolerant::{Tolerance, Tolerant, TolerantComplex}, with_tolerance, Arg, Float as _, Native, CHUNK};
 use std::{borrow::Cow, cell::Cell};
 use {float_arithmetic::float_dyad, float_comparisons::compare};
@@ -352,49 +357,53 @@ mod complex_kernels {
     use super::*;
     use rustymath::Unary as _;
 
-    impl Kernels for Complex64 {
-        fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
-            use {Arithmetic::*, Comparison::*, Math::*};
-            let t = run.numeric().tolerance_at(FloatWidth::F64);
-            Some(match p {
-                Primitive::Arithmetic(Plus) => run.same(|x, y| Some(x + y)),
-                Primitive::Arithmetic(Minus) => run.same(|x, y| Some(x - y)),
-                Primitive::Arithmetic(Times) => run.same(|x, y| Some(complex::times(x, y))),
-                Primitive::Arithmetic(Divide) => run.same(|x, y| Some(complex::divide(x, y))),
-                Primitive::Compare(Equal) => with_tolerance!(t, |t| run.boolean(move |x, y| Some(t.complex_equal(x, y)))),
-                Primitive::Compare(NotEqual) => with_tolerance!(t, |t| run.boolean(move |x, y| Some(!t.complex_equal(x, y)))),
-                Primitive::Math(Power) => run.same(|x, y| Some(complex::power(x, y))),
-                Primitive::Math(Log) => run.many(rustymath::Logb),
-                Primitive::Math(Pi) => run.same(|x, y| Some(complex::divide(x, y) * std::f64::consts::PI)),
-                Primitive::Math(Root) => run.same(|n: Complex64, y| {
-                    if n == Complex64::new(0.0, 0.0) { None } else if n == Complex64::new(2.0, 0.0) { Some(rustymath::Sqrt.one(y)) } else { Some(complex::power(y, n.inv())) }
-                }),
-                Primitive::Math(Magnitude) => run.many(rustymath::tolerant::Residue(t)),
-                Primitive::Math(Gcd) => run.many(rustymath::tolerant::Gcd(t)),
-                Primitive::Math(Lcm) => run.many(rustymath::tolerant::Lcm(t)),
-                Primitive::Math(Factorial) => run.many(Flipped(rustymath::Binom)),
-                _ => return None,
-            })
-        }
-        fn monad<R: Monad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
-            use {Arithmetic::*, Math::*};
-            Some(match p {
-                Primitive::Arithmetic(Plus) => run.same(|z| Some(z.conj())),
-                Primitive::Arithmetic(Minus) => run.same(|z| Some(-z)),
-                Primitive::Arithmetic(Divide) => run.same(|z| Some(complex::divide(Complex64::new(1.0, 0.0), z))),
-                // Each item's direction, floor and ceiling are complex numbers, real items included. The result keeps one kind.
-                Primitive::Arithmetic(Times) => run.many(rustymath::Sign),
-                Primitive::Math(Floor) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.same(move |z| Some(t.complex_floor(z)))),
-                Primitive::Math(Ceiling) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.same(move |z| Some(t.complex_ceil(z)))),
-                Primitive::Math(Magnitude) => run.many(rustymath::Abs),
-                Primitive::Math(Power) => run.same(|z| Some(complex::exp(z))),
-                Primitive::Math(Log) => run.many(rustymath::Ln),
-                Primitive::Math(Pi) => run.same(|z| Some(z * std::f64::consts::PI)),
-                Primitive::Math(Root) => run.many(rustymath::Sqrt),
-                Primitive::Math(Factorial) => run.many(rustymath::Factorial),
-                Primitive::Math(Circle) => run.same(|z: Complex64| Some(complex::exp(Complex64::new(-z.im, z.re)))),
-                _ => return None,
-            })
+    at_widths! {
+        /// The kernels of complex numbers whose parts have width `F`. Comparisons and `|` use the tolerance of that width.
+        impl Kernels for Complex<F> {
+            fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
+                use {Arithmetic::*, Comparison::*, Math::*};
+                let t = run.numeric().tolerance_at(F::WIDTH);
+                Some(match p {
+                    Primitive::Arithmetic(Plus) => run.same(|x, y| Some(x + y)),
+                    Primitive::Arithmetic(Minus) => run.same(|x, y| Some(x - y)),
+                    Primitive::Arithmetic(Times) => run.same(|x, y| Some(complex::times(x, y))),
+                    Primitive::Arithmetic(Divide) => run.same(|x, y| Some(complex::divide(x, y))),
+                    Primitive::Compare(Equal) => with_tolerance!(t, |t| run.boolean(move |x, y| Some(t.complex_equal(x, y)))),
+                    Primitive::Compare(NotEqual) => with_tolerance!(t, |t| run.boolean(move |x, y| Some(!t.complex_equal(x, y)))),
+                    Primitive::Math(Power) => run.same(|x, y| Some(complex::power(x, y))),
+                    Primitive::Math(Log) => run.many(rustymath::Logb),
+                    Primitive::Math(Pi) => run.same(|x, y| Some(complex::divide(x, y) * std::f64::consts::PI as F)),
+                    Primitive::Math(Root) => run.same(|n: Self, y| {
+                        if n == Self::new(0.0, 0.0) { None } else if n == Self::new(2.0, 0.0) { Some(rustymath::Sqrt.one(y)) } else { Some(complex::power(y, n.inv())) }
+                    }),
+                    Primitive::Math(Magnitude) => run.many(rustymath::tolerant::Residue(t)),
+                    Primitive::Math(Gcd) => run.many(rustymath::tolerant::Gcd(t)),
+                    Primitive::Math(Lcm) => run.many(rustymath::tolerant::Lcm(t)),
+                    Primitive::Math(Factorial) => run.many(Flipped(rustymath::Binom)),
+                    _ => return None,
+                })
+            }
+            fn monad<R: Monad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
+                use {Arithmetic::*, Math::*};
+                let t = run.numeric().tolerance_at(F::WIDTH);
+                Some(match p {
+                    Primitive::Arithmetic(Plus) => run.same(|z| Some(z.conj())),
+                    Primitive::Arithmetic(Minus) => run.same(|z| Some(-z)),
+                    Primitive::Arithmetic(Divide) => run.same(|z| Some(complex::divide(Self::new(1.0, 0.0), z))),
+                    // Each item's direction, floor and ceiling are complex numbers, real items included. The result keeps one kind.
+                    Primitive::Arithmetic(Times) => run.many(rustymath::Sign),
+                    Primitive::Math(Floor) => with_tolerance!(t, |t| run.same(move |z| Some(t.complex_floor(z)))),
+                    Primitive::Math(Ceiling) => with_tolerance!(t, |t| run.same(move |z| Some(t.complex_ceil(z)))),
+                    Primitive::Math(Magnitude) => run.many(rustymath::Abs),
+                    Primitive::Math(Power) => run.same(|z| Some(complex::exp(z))),
+                    Primitive::Math(Log) => run.many(rustymath::Ln),
+                    Primitive::Math(Pi) => run.same(|z| Some(z * std::f64::consts::PI as F)),
+                    Primitive::Math(Root) => run.many(rustymath::Sqrt),
+                    Primitive::Math(Factorial) => run.many(rustymath::Factorial),
+                    Primitive::Math(Circle) => run.same(|z: Self| Some(complex::exp(Self::new(-z.im, z.re)))),
+                    _ => return None,
+                })
+            }
         }
     }
 }
@@ -463,7 +472,7 @@ pub(crate) fn map(p: Primitive, left: Option<&Value>, right: &Value, agreement: 
     match left.compact_kind()?.join(right.compact_kind()?, Widening::Arrays)? {
         Kind::Float(width) => reals_or_complex(width),
         Kind::Boolean | Kind::Integer(_) if approximate(p, true) => reals_or_complex(numeric.width),
-        Kind::Complex => complexes(p, left, right, agreement, numeric),
+        Kind::Complex(width) => complexes(p, left, right, agreement, numeric, width),
         Kind::Extended(width) => {
             let (x, y) = (integers(left)?, integers(right)?);
             with_nonfinite(width, |seen| i64::dyad(p, Nonfinite { run: Map::exact(&x, &y, agreement), p, seen }))
@@ -487,7 +496,8 @@ fn monadic_map(p: Primitive, right: &Value, agreement: &Agreement, numeric: Nume
         Items::Booleans(_) => whole(p, None, right, Kind::Boolean, agreement),
         Items::Integers(ints) => whole(p, None, right, Kind::Integer(ints.tag()), agreement),
         Items::Extended(y, width) => with_nonfinite(width, |seen| i64::monad(p, Nonfinite { run: Map::exact(&[] as &[i64], y, agreement), p, seen })),
-        Items::Complex(y) => monadic::<Complex64, _>(p, y, agreement, numeric),
+        Items::Complex(Complexes::F32(y)) => monadic::<Complex32, _>(p, y, agreement, numeric),
+        Items::Complex(Complexes::F64(y)) => monadic::<Complex64, _>(p, y, agreement, numeric),
         _ => None,
     }
 }
@@ -536,42 +546,46 @@ fn reals(p: Primitive, left: &Value, right: &Value, agreement: &Agreement, t: Nu
     })
 }
 
-/// Numbers, at least one argument of them complex. A real argument reads as complex numbers as the loop reads it. Flagged integers
-/// convert first.
-fn complexes(p: Primitive, left: &Value, right: &Value, agreement: &Agreement, t: Numeric) -> Option<Value> {
-    match (left.checked_items(), right.checked_items()) {
-        (Items::Complex(x), Items::Complex(y)) => dyadic::<Complex64, _, _>(p, x, y, agreement, t),
-        (Items::Complex(x), y) => with_reals!(y, |y| dyadic::<Complex64, _, _>(p, x, y, agreement, t), dyadic::<Complex64, _, _>(p, x, &read_as::<Complex64>(right)?, agreement, t)),
-        (x, Items::Complex(y)) => with_reals!(x, |x| dyadic::<Complex64, _, _>(p, x, y, agreement, t), dyadic::<Complex64, _, _>(p, &read_as::<Complex64>(left)?, y, agreement, t)),
-        _ => None,
-    }
+/// Numbers, at least one argument of them complex, at complex `width`. An argument of that width is read in place. A real argument
+/// reads as complex numbers as the loop reads it. Flagged integers, and complex numbers of the other width, convert first.
+fn complexes(p: Primitive, left: &Value, right: &Value, agreement: &Agreement, t: Numeric, width: ComplexWidth) -> Option<Value> {
+    with_complex_width!(width, C => match (C::slice(left), C::slice(right)) {
+        (Some(x), Some(y)) => dyadic::<C, _, _>(p, x, y, agreement, t),
+        (Some(x), None) => with_reals!(right.checked_items(), |y| dyadic::<C, _, _>(p, x, y, agreement, t), dyadic::<C, _, _>(p, x, &read_as::<C>(right)?, agreement, t)),
+        (None, Some(y)) => with_reals!(left.checked_items(), |x| dyadic::<C, _, _>(p, x, y, agreement, t), dyadic::<C, _, _>(p, &read_as::<C>(left)?, y, agreement, t)),
+        (None, None) => dyadic::<C, C, C>(p, &read_as::<C>(left)?, &read_as::<C>(right)?, agreement, t),
+    })
 }
 
 /// A call on reals whose kernel failed, run again on complex numbers, for the functions whose real arguments can have complex
-/// results: `*`, `⍟` and `√`. Their complex kernels compute each item as `Number` does.
+/// results: `*`, `⍟` and `√`. The complex numbers take the reals' width, as their parts' width. Their complex kernels compute each item
+/// as `Number` does.
 fn complex_results(p: Primitive, left: Option<&Value>, right: &Value, agreement: &Agreement, numeric: Numeric) -> Option<Value> {
     if !matches!(p, Primitive::Math(Math::Power | Math::Log | Math::Root)) { return None; }
-    let y = read_as::<Complex64>(right)?;
-    match left {
-        Some(left) => dyadic::<Complex64, _, _>(p, &read_as::<Complex64>(left)?, &y, agreement, numeric),
-        None => monadic::<Complex64, _>(p, &y, agreement, numeric),
-    }
+    let width = ComplexWidth::from(numeric.width_of([left.and_then(Value::float_width), right.float_width()]));
+    with_complex_width!(width, C => {
+        let y = read_as::<C>(right)?;
+        match left {
+            Some(left) => dyadic::<C, _, _>(p, &read_as::<C>(left)?, &y, agreement, numeric),
+            None => monadic::<C, _>(p, &y, agreement, numeric),
+        }
+    })
 }
 
 /// `k` on every item of `right`, for a function that no glyph names, such as Lambert W. Exact numbers read as floats of the session's
-/// width. A call on reals that gives a complex result for some item runs again on complex numbers, as `complex_results` does for
-/// glyphs.
+/// width. A call on reals that gives a complex result for some item runs again on complex numbers of that width, as
+/// `complex_results` does for glyphs.
 pub(crate) fn object<K>(k: K, right: &Value, agreement: &Agreement, numeric: Numeric) -> Option<Value>
 where
-    K: rustymath::Unary<f32, Out = f32> + rustymath::Unary<f64, Out = f64> + rustymath::Unary<Complex64, Out = Complex64> + Copy,
+    K: rustymath::Unary<f32, Out = f32> + rustymath::Unary<f64, Out = f64> + Copy,
+    K: rustymath::Unary<Complex32, Out = Complex32> + rustymath::Unary<Complex64, Out = Complex64>,
 {
     if let Some(result) = halves(&[Some(right)], numeric, |v, numeric| object(k, v[0]?, agreement, numeric)) { return result; }
-    let complex = |y: &[Complex64]| Monad::<Complex64>::many(Map::exact(&[] as &[Complex64], y, agreement), k);
-    if let Items::Complex(y) = right.checked_items() { return complex(y); }
-    let real = with_kernel_width!(right.float_width().unwrap_or(numeric.width), F => {
-        Monad::<F>::many(Map::exact(&[] as &[F], &read_as::<F>(right)?, agreement), k)
-    });
-    real.or_else(|| complex(&read_as::<Complex64>(right)?))
+    let complex = |width: ComplexWidth| with_complex_width!(width, C => Monad::<C>::many(Map::exact(&[] as &[C], &read_as::<C>(right)?, agreement), k));
+    if let Items::Complex(y) = right.checked_items() { return complex(y.tag()); }
+    let width = right.float_width().unwrap_or(numeric.width);
+    let real = with_kernel_width!(width, F => Monad::<F>::many(Map::exact(&[] as &[F], &read_as::<F>(right)?, agreement), k));
+    real.or_else(|| complex(width.into()))
 }
 
 /// `×` between a Boolean mask and integers at width `A`. The loop selects each integer or 0 in place of multiplying, and no result can
@@ -741,7 +755,8 @@ enum Pair<'a> {
     Integers(Cow<'a, [i64]>, Cow<'a, [i64]>),
     /// Floats, which compute at the wider of their widths. Both arguments read at that width.
     Floats(FloatWidth),
-    Complex(Cow<'a, [Complex64]>, Cow<'a, [Complex64]>),
+    /// Complex numbers, which compute at the wider of their widths, beside a real argument's float width. Both arguments read at it.
+    Complex(ComplexWidth),
     Characters(&'a [char], &'a [char]),
 }
 
@@ -752,7 +767,6 @@ fn pair<'a>(p: Primitive, x: &'a Value, y: &'a Value) -> Option<Pair<'a>> {
     Some(match (x.checked_items(), y.checked_items()) {
         (Items::Booleans(a), Items::Booleans(b)) => Pair::Booleans(a, b),
         (Items::Floats(a), Items::Floats(b)) => Pair::Floats(a.tag().max(b.tag())),
-        (Items::Complex(a), Items::Complex(b)) => Pair::Complex(Cow::Borrowed(a), Cow::Borrowed(b)),
         (Items::Characters(a), Items::Characters(b)) => Pair::Characters(a, b),
         (a, b) if whole(&a) && whole(&b) => Pair::Integers(integers(x)?, integers(y)?),
         // Flagged integers have no inner product kernel.
@@ -761,7 +775,7 @@ fn pair<'a>(p: Primitive, x: &'a Value, y: &'a Value) -> Option<Pair<'a>> {
             if keeps_exact(p, f) { return None; }
             Pair::Floats(f.tag())
         }
-        (Items::Complex(_), _) | (_, Items::Complex(_)) => Pair::Complex(read_as(x)?, read_as(y)?),
+        (Items::Complex(_), _) | (_, Items::Complex(_)) => Pair::Complex(x.float_width().max(y.float_width())?.into()),
         _ => return None,
     })
 }
@@ -774,15 +788,20 @@ fn integers(value: &Value) -> Option<Cow<'_, [i64]>> {
 /// The characters of compact character storage.
 fn chars(value: &Value) -> Option<&[char]> { match value.checked_items() { Items::Characters(c) => Some(c), _ => None } }
 /// `X○Y` with one code applies that code's function, or its inverse, to every item: reals through `with_circle!` at the float width
-/// of `Y`, and complex numbers through `complex::circle`. The code selects the function and takes no part in the width. A call on
-/// reals that gives a complex result for some item runs again on complex numbers. Other codes take the `Number` path.
+/// of `Y`, and complex numbers through `complex::circle`, with 64-bit parts rounded to the width of `Y`'s. The code selects the
+/// function and takes no part in the width. A call on reals that gives a complex result for some item runs again on complex numbers.
+/// Other codes take the `Number` path.
 fn circle(codes: &Value, right: &Value, agreement: &Agreement, inverse: bool, numeric: Numeric) -> Option<Value> {
     let Value::Number(code) = codes.at(0) else { return None };
     if !matches!(agreement.left, Mapping::Single) { return None; }
     let code = code.integer().ok()?;
-    let complex = |y: &[Complex64]| Monad::<Complex64>::same(Map::exact(&[] as &[Complex64], y, agreement), move |z| complex::circle(code, inverse, z));
+    let complex = |width: FloatWidth| {
+        let y = read_as::<Complex64>(right)?;
+        let z = Monad::<Complex64>::same(Map::exact(&[] as &[Complex64], &y, agreement), move |z| complex::circle(code, inverse, z))?;
+        if width == FloatWidth::F64 { Some(z) } else { z.to_float_width(width).ok() }
+    };
     let width = match right.checked_items() {
-        Items::Complex(y) => return complex(y),
+        Items::Complex(y) => return complex(y.tag().into()),
         Items::Floats(y) => y.tag(),
         _ => numeric.width,
     };
@@ -791,7 +810,7 @@ fn circle(codes: &Value, right: &Value, agreement: &Agreement, inverse: bool, nu
         let map = || Map::exact(&[] as &[F], &y, agreement);
         with_circle!(code, inverse, |f| Monad::<F>::many(map(), f))?
     });
-    real.or_else(|| complex(&read_as::<Complex64>(right)?))
+    real.or_else(|| complex(width))
 }
 
 /// Item `i` of the frame, read from `data` through `mapping`.
@@ -1066,7 +1085,8 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: &Axis, shape: Vec<usize>, 
         Items::Integers(ints) => with_ints!(ints, |data| narrow_fold(p, data, axis, shape)),
         Items::Extended(data, width) if matches!(p, Primitive::Arithmetic(Plus)) => nonfinite_sum(data, axis, shape, width),
         Items::Extended(data, width) => with_nonfinite(width, |seen| i64::dyad(p, Nonfinite { run: Fold::exact(data, axis, shape), p, seen })),
-        Items::Complex(data) => Complex64::dyad(p, Fold { data, axis, shape, numeric })?,
+        Items::Complex(Complexes::F32(data)) => Complex32::dyad(p, Fold { data, axis, shape, numeric })?,
+        Items::Complex(Complexes::F64(data)) => Complex64::dyad(p, Fold { data, axis, shape, numeric })?,
         _ => None,
     }
 }
@@ -1270,7 +1290,8 @@ fn scanned(p: Primitive, right: &Value, seed: Option<&Value>, axis: &Axis, numer
         Items::Integers(ints) => integers(ints),
         // A scan keeps each lane's first item, which may be non-finite. Its result stays flagged.
         Items::Extended(data, width) => Some(i64::dyad(p, Nonfinite { run: lanes(Numeric::EXACT).of(data)?, p, seen: &Cell::new(false) })??.flagged(width)),
-        Items::Complex(data) => Complex64::dyad(p, lanes(numeric).of(data)?)?,
+        Items::Complex(Complexes::F32(data)) => Complex32::dyad(p, lanes(numeric).of(data)?)?,
+        Items::Complex(Complexes::F64(data)) => Complex64::dyad(p, lanes(numeric).of(data)?)?,
         _ => None,
     }
 }
@@ -1450,7 +1471,7 @@ pub(crate) fn inner(f: Primitive, g: Primitive, x: &Value, y: &Value, size: [usi
             .or_else(|| typed(f, g, &Ints::U8(truth_bytes(a)).widened(), &Ints::U8(truth_bytes(b)).widened(), size, numeric))?,
         Pair::Integers(a, b) => typed(f, g, &a, &b, size, numeric)?,
         Pair::Characters(a, b) => typed(f, g, a, b, size, numeric)?,
-        Pair::Complex(a, b) => typed(f, g, &a, &b, size, numeric)?,
+        Pair::Complex(width) => with_complex_width!(width, C => typed(f, g, &read_as::<C>(x)?, &read_as::<C>(y)?, size, numeric))?,
     };
     let floats = |width| with_float_width!(width, F => joined::<F>(&shape, &parts));
     if let Some(result) = joined::<bool>(&shape, &parts).or_else(|| parts.first()?.float_width().and_then(floats)) {
@@ -1463,7 +1484,8 @@ pub(crate) fn inner(f: Primitive, g: Primitive, x: &Value, y: &Value, size: [usi
         .collect();
     if let Some(rows) = rows { return i64::build_narrowed(shape, rows.into_iter().flat_map(|ints| ints.widened().into_owned()).collect()); }
     if parts.iter().all(|r| matches!(r.as_items(), Items::Complex(_) | Items::Floats(_))) {
-        return Complex64::build(shape, parts.iter().flat_map(|r| read_as::<Complex64>(r).unwrap().into_owned()).collect());
+        let width = ComplexWidth::from(parts.iter().filter_map(Value::float_width).max()?);
+        return with_complex_width!(width, C => C::build(shape, parts.iter().flat_map(|r| read_as::<C>(r).unwrap().into_owned()).collect()));
     }
     None
 }

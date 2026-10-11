@@ -2,6 +2,9 @@ name: Speed
 
 on: workflow_dispatch
 
+permissions:
+  contents: read
+
 jobs:
   costs:
     runs-on: ubuntu-latest

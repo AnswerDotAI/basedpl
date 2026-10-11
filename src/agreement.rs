@@ -67,6 +67,13 @@ pub(crate) struct Agreement {
 }
 impl Agreement {
     pub fn new(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> {
+        // Plain layouts of one shape, or a plain scalar beside a plain array, need no axis maps. Each side reads item i, or its one item.
+        if left.plain() && right.plain() && (left.shape() == right.shape() || left.shape().is_empty() || right.shape().is_empty()) {
+            let shape = if left.shape().is_empty() { right.shape() } else { left.shape() };
+            let len = generated_len(shape)?;
+            let map = |l: &Layout| if len > 1 && l.shape() == shape { Mapping::Linear(1) } else { Mapping::Single };
+            return Ok(Self { layout: Layout::from(shape.to_vec()), len, left: map(left), right: map(right) });
+        }
         let (nx, ny) = (left.shape().len(), right.shape().len());
         let xa: Vec<_> = (0..nx).collect();
         if left.names().is_empty() && right.names().is_empty() { return Self::mapped(left, right, &xa, &(0..ny).collect::<Vec<_>>()); }

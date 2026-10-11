@@ -112,12 +112,14 @@ def _array(value, seen=None):
         if kind not in 'biufcUO' or kind == 'f' and size > 8 or kind == 'c' and size > 16: raise TypeError('unsupported NumPy dtype')
         if kind == 'u' and size == 8 and value.size and value.max() >= 1<<63: raise ValueError('uint64 values above the int64 range; convert with .astype(object) for exact integers')
         if kind == 'b': return _Array.numeric(list(value.shape), '?', np.ascontiguousarray(value).view(np.uint8))
-        # Unsigned bytes, signed integers of 16 bits or more and floats cross at their own width. Signed bytes cross as `int16`, and wider
-        # unsigned integers as `int64`, which holds them after the check above. A `float16` crosses as its bits.
-        if kind in 'iuf':
+        # Unsigned bytes, signed integers of 16 bits or more, floats and complex numbers cross at their own width. Signed bytes cross as
+        # `int16`, and wider unsigned integers as `int64`, which holds them after the check above. A `float16` crosses as its bits, and a
+        # complex number as its two float parts.
+        if kind in 'iufc':
             code = 'i2' if kind == 'i' and size == 1 else 'i8' if kind == 'u' and size > 1 else f'{kind}{size}'
             data = np.ascontiguousarray(value, dtype=code)
-            return _Array.numeric(list(value.shape), code, data.view(np.uint16) if code == 'f2' else data)
+            view = {'f2': np.uint16, 'c8': np.float32, 'c16': np.float64}.get(code)
+            return _Array.numeric(list(value.shape), code, data if view is None else data.view(view))
         shape, data = value.shape, value.ravel().tolist()
         if kind == 'U': prototype = ' '
     else:

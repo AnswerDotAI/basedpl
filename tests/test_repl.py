@@ -39,7 +39,7 @@ def test_terminal_symbol_entry_and_exit(tmp_path):
         read_until(b'\x1b[?2004h')
         enter('\x1b[A\r', '\r\n17\r\n')
         enter('1 2\r', '│1 2│\r\n└~──┘\r\n')
-        enter('•prefs ["box":$f]\r', '["box":$f "trees":$t')
+        enter('•prefs ["box":$f]\r', '\r\n')
         os.write(master, b'"\x1b\\')
         read_until('⍭:7g'.encode())
         enter('7"\r', '\r\n⍋\r\n')
