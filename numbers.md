@@ -1,0 +1,333 @@
+
+
+# Numbers
+
+BPL has two kinds of number. A bare number such as `0.5` is approximate:
+a float of the default width, 64 bits unless
+[`•prefs`](system/prefs.qmd) sets 16 or 32. A number marked with `ₓ`,
+such as `3ₓ`, is an exact integer, and `1r3` is an exact rational.
+Comparisons give Booleans, written `$t` and `$f`.
+
+## Writing numbers
+
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Written</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>3</code>, <code>0.5</code>, <code>1E¯3</code>,
+<code>1ₑ¯3</code></td>
+<td>Approximate numbers. <code>e</code>, <code>E</code> or
+<code>ₑ</code> writes an exponent</td>
+</tr>
+<tr>
+<td><code>¯2</code></td>
+<td>A negative number. <a href="glyphs/overbar.qmd"><code>¯</code></a>
+is part of the number, and <a href="glyphs/dash.qmd"><code>-</code></a>
+is a function</td>
+</tr>
+<tr>
+<td><code>3ₓ</code></td>
+<td>An exact integer</td>
+</tr>
+<tr>
+<td><code>1r3</code>, <code>1ᵣ3</code></td>
+<td>An exact rational</td>
+</tr>
+<tr>
+<td><code>2j3</code>, <code>2J3</code>, <code>2ⱼ3</code></td>
+<td>A complex number, 2 + 3i, with approximate parts</td>
+</tr>
+<tr>
+<td><code>∞</code>, <code>¯∞</code></td>
+<td><a href="glyphs/infinity.qmd">Infinities</a></td>
+</tr>
+<tr>
+<td><code>$n</code></td>
+<td>NaN</td>
+</tr>
+<tr>
+<td><code>$t</code>, <code>$f</code></td>
+<td>True and false</td>
+</tr>
+<tr>
+<td><code>1.5ₕ</code>, <code>1.5ₛ</code>, <code>1.5ₚ</code></td>
+<td>A 16-bit, 32-bit or 64-bit float, whatever the default width</td>
+</tr>
+<tr>
+<td><code>⍬</code>, <code>⍬ₓ</code>, <code>⍬ₕ</code>, <code>⍬ₛ</code>,
+<code>⍬ₚ</code></td>
+<td>The approximate, the exact, and the 16-bit, 32-bit and 64-bit <a
+href="glyphs/zilde.qmd">empty vector</a></td>
+</tr>
+<tr>
+<td><code>[…]ₓ</code>, <code>(…)ₓ</code></td>
+<td>A list, or rows, in which every number is exact</td>
+</tr>
+<tr>
+<td><code>[…]ₕ</code>, <code>[…]ₛ</code>, <code>[…]ₚ</code></td>
+<td>A list, or rows, in which every number is a 16-bit, 32-bit or 64-bit
+float</td>
+</tr>
+</tbody>
+</table>
+
+A plain `e`, `j` or `r` starts a name unless the rest of a number
+follows it, as in `1e5`, `1r3` and `2j3`. The subscript forms are always
+part of the number, and results display with them, as in `1ᵣ3`, `2ⱼ3`
+and `1ₑ20`.
+
+``` bpl
+1j2+3j4              ⍝ 4j6
+1E¯3                 ⍝ 0.001
+¯2+5                 ⍝ 3
+2J3≡2j3              ⍝ $t
+1ᵣ3≡1r3              ⍝ $t
+edges←3 ⋄ 2edges     ⍝ 2 3
+```
+
+## Exact and approximate
+
+Exact arithmetic grows as needed. Mixing exact and approximate numbers
+gives an approximate result. Examples on these pages write `ₓ` for exact
+input.
+
+``` bpl
+1÷3                  ⍝ 0.3333333333333333
+1ₓ÷3ₓ                ⍝ 1r3
+1r3+1r6              ⍝ 1r2
+1r2+0.5              ⍝ 1
+9223372036854775807ₓ+1ₓ ⍝ 9223372036854775808ₓ
+```
+
+Predicates, positions, tally, shape, and monadic `⌊`, `⌈` and `×` return
+exact integers. A float beyond the `i64` range floors to an exact big
+integer:
+
+``` bpl
+⌊2.5 ¯2.5            ⍝ [2 ¯3]ₓ
+⌊2*70                ⍝ 1180591620717411303424ₓ
+```
+
+Iota and random integer generation keep an exact argument exact. An
+argument that must be an integer, such as an index or a count, accepts a
+float within `1E¯14` of one, whatever the [tolerance
+setting](system/prefs.qmd):
+
+``` bpl
+⍳10×0.1×3          ⍝ 0 1 2
+```
+
+## Numbers in one array
+
+Numbers that an operation puts in one array share a kind. A float among
+exact integers makes them all floats, and a complex number makes every
+number complex:
+
+``` bpl
+⍳3ₓ , 0.5            ⍝ 0 1 2 0.5
+⍳2ₓ , 1j2            ⍝ 0 1 1j2
+1ₓ,0.5 ÷ 2ₓ          ⍝ 0.5 0.25
+```
+
+Each number written in a literal list or in brackets keeps its own
+exactness, even beside numbers of the other kind. Floats written beside
+complex numbers become complex. Their values don’t change:
+
+``` bpl
+1ₓ 0.5÷2ₓ            ⍝ 1r2 0.25
+[1ₓ;0.5]÷2ₓ          ⍝ 1r2 0.25
+```
+
+In `[…]ₓ` and `(…)ₓ`, every number is exact, at any depth. Each item
+must be a literal, and each number must be whole. A vector of exact
+integers displays as `[…]ₓ`, and rows of them as `(…)ₓ`. `⍕` writes them
+the same way:
+
+``` bpl
+[1 0 1]ₓ≡1ₓ 0ₓ 1ₓ    ⍝ $t
+[[1 2] 3]ₓ≡[1ₓ 2ₓ;3ₓ]   ⍝ $t
+(0 1⋄2 3)ₓ≡[[0 1]ₓ [2 3]ₓ]  ⍝ $t
+1↑⍬ₓ                 ⍝ [0]ₓ
+⍕1ₓ ¯2ₓ              ⍝ "[1 ¯2]ₓ"
+```
+
+## Storage
+
+An array keeps its items in one of eight storages: `boolean`, `integer`,
+`float64`, `float32`, `float16`, `complex`, `character` or `mixed`.
+`•storage` names it. Mixed storage keeps each item’s own kind. A literal
+list of exact and approximate numbers uses it:
+
+``` bpl
+x←1ₓ 0.5 2ₓ
+•storage x           ⍝ "mixed"
+```
+
+An array also uses mixed storage when it holds a rational, because
+rationals have no compact storage, or when it holds numbers together
+with characters, nested arrays or functions. An imported JSON object is
+mixed too.
+
+Selecting from, catenating or assigning into mixed storage keeps each
+item’s kind. Arithmetic builds fresh storage from its results, and each
+result keeps its own kind. Every result of `1×x` is approximate, which
+makes it a float array. `1ₓ×x` keeps the exact results exact:
+
+``` bpl
+x←1ₓ 0.5 2ₓ
+•storage 1×x         ⍝ "float64"
+•storage 1ₓ×x        ⍝ "mixed"
+```
+
+Boxed display marks mixed storage with `+`, and exact integers with `ₓ`.
+
+Integer storage keeps each item in 1, 2, 4 or 8 bytes. One byte holds 0
+to 255. Literals, imported data, reductions and positions take the
+fewest bytes that hold every item. Pervasive arithmetic keeps its
+arguments’ size, and moves to the next size up when a result doesn’t
+fit. The size never changes a result, and `•storage` doesn’t show it.
+
+## Float widths
+
+Floats come in three widths: 64, 32 and 16 bits. `•storage` names their
+storage `"float64"`, `"float32"` and `"float16"`.
+[`•float`](system/float.qmd) converts an array to any of them. A 64-bit
+float holds about 16 significant digits, a 32-bit float about 7 and a
+16-bit float about 3. They take 8, 4 and 2 bytes. The largest finite
+16-bit float is 65504.
+
+Bare numbers are floats of the default width: 64 bits, or 16 or 32 after
+[`•prefs`](system/prefs.qmd) `["float":16]` or `["float":32]`. Code
+parsed after the change reads its numbers at the new width. In a REPL or
+a notebook, that is the next input. Leading `•prefs` calls on a literal
+record run before the rest of their code is parsed. A script or a
+notebook cell that starts with `•prefs ["float":32]` therefore reads its
+own numbers at 32 bits. Numbers that `•csv`, `•json` and `•vfi` read
+also take the default width. So do random numbers, the numbers that
+`•image` reads, and floats that a function gives from exact arguments,
+such as `√2ₓ`. Times from `•time` and `•date` are always 64-bit, because
+a 32-bit float holds seconds since 1970 only to within about two
+minutes. `ₕ` marks a 16-bit float, `ₛ` a 32-bit float and `ₚ` a 64-bit
+float, whatever the default. Display marks floats of the other widths,
+once after an array’s notation. `•literal⁻¹` marks every float. Its text
+therefore reads back the same at any default.
+
+``` bpl
+•storage¨[1.5ₕ;1.5ₛ;[1.5 2.5]ₚ;⍬ₛ]   ⍝ "float16" "float32" "float64" "float32"
+[1.5 2.5]ₛ                          ⍝ [1.5 2.5]ₛ
+•literal⁻¹ 0.5                     ⍝ "0.5ₚ"
+```
+
+An operation on floats computes at their width. An exact operand rounds
+to that width first. Floats of two widths compute at the wider. No
+operation widens floats on its own.
+
+``` bpl
+v←32 •float 1.5 2.5
+•storage¨[v×2ₓ;v×v;*v;v×2]   ⍝ "float32" "float32" "float32" "float64"
+(32 •float 1.5)×16777217ₓ    ⍝ 25165824
+```
+
+Each operation on 16-bit floats computes in 32 bits and rounds its
+result to 16 bits. For `+ - × ÷` and `√`, that gives the result of
+16-bit arithmetic. `+/`, `×/`, `+\`, `×\` and `+.×` keep their running
+totals in 32 bits. Only their results round to 16 bits. A 16-bit total
+of these numbers would stop growing at 256:
+
+``` bpl
++/(16 •float 4096⍴0.1)   ⍝ 409.5ₕ
+```
+
+Comparisons of 16-bit and 32-bit floats are always exact. The tolerance
+that [`•prefs`](system/prefs.qmd) sets applies to 64-bit floats.
+[`⍣∞`](glyphs/power.qmd) takes two 16-bit or 32-bit results as the same
+when they lie within 4 units in the last place of each other.
+
+## Infinities and NaN
+
+Floats follow IEEE 754. Besides finite numbers, they include `∞`, `¯∞`,
+NaN and `¯0`. An undefined result is NaN rather than an error. `1÷0` is
+`∞`, and `⍟0` is `¯∞`. NaN is written `$n`:
+
+``` bpl
+[0÷0;∞-∞]            ⍝ $n $n
+[1÷0;⍟0]             ⍝ ∞ ¯∞
+```
+
+Under `=`, NaN equals nothing, as in IEEE. `≡`, search, grade and Key
+treat NaN as one value, and grade puts it after every other number:
+
+``` bpl
+$n=$n                ⍝ $f
+$n≡$n                ⍝ $t
+```
+
+Complex arithmetic follows the `num_complex` crate. A complex number can
+have infinite or NaN parts.
+
+Joining infinities or NaN to exact integers keeps the integers exact.
+Exact integers, infinities and NaN share integer storage:
+
+``` bpl
+⍳3ₓ , ∞              ⍝ [0 1 2 ∞]ₓ
+•storage ⍳3ₓ , ∞     ⍝ "integer"
+```
+
+CSV and JSON imports give NaN for a missing number. An integer column
+with gaps then stays exact.
+
+`⌊` and `⌈` return an exact argument unchanged beside an infinity, and
+return the other argument beside NaN:
+
+``` bpl
+3ₓ⌊∞                 ⍝ 3ₓ
+3ₓ⌊$n                ⍝ 3ₓ
+```
+
+Arithmetic with an infinity gives floats.
+
+## Booleans
+
+Comparisons give Booleans. So does every function whose result is a
+truth value, such as `~`, `∊`, `⍷` and `≡`. `$t` is true and `$f` is
+false:
+
+``` bpl
+x←3 1 4 1 5
+x>2                  ⍝ $t $f $t $f $t
+```
+
+Wherever a number is expected, `$t` is 1 and `$f` is 0. `+/` counts the
+true items, `#` keeps the items a Boolean mask marks, and a Boolean used
+as an index selects position 0 or 1:
+
+``` bpl
+x←3 1 4 1 5
++/x>2                ⍝ 3ₓ
+x>2 # x              ⍝ 3 4 5
+4>2 ⌷ "no" "yes"     ⍝ "yes"
+```
+
+Arithmetic on Booleans gives integers. `∧`, `∨`, `⊽`, `⊼`, `⌊` and `⌈`
+on two Booleans give a Boolean:
+
+``` bpl
+$t+$t                ⍝ 2ₓ
+$t∧$f                ⍝ $f
+```
+
+Boolean storage takes one byte for each item. Boxed display marks it
+with `$`:
+
+``` bpl
+•storage $t $f       ⍝ "boolean"
+```

@@ -1,0 +1,23 @@
+
+
+# `?` — Predicate
+
+In a dfn, `C?` ends a predicate. When `C` is true, the rest of the body
+runs. When it’s false, the dfn moves on to its next body, after `;`.
+
+``` bpl
+{⍵<0?-⍵;⍵}¯3      ⍝ 3
+{⍵<0?-⍵;⍵}4       ⍝ 4
+```
+
+Statements before a predicate run first. After it, a body can run
+several statements, or hold more predicates.
+
+``` bpl
+{⍵<0?a←-⍵ ⋄ a×2;⍵}¯3   ⍝ 6
+{⍵>0?⍵<10?⍵;0}15       ⍝ 0
+```
+
+`C` must be a Boolean singleton. A body that ends after its predicate
+returns no result. If every predicate fails, the call is a `DOMAIN`
+error. See [Dfns](../dfns.ipynb).

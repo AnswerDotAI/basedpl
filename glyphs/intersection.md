@@ -1,0 +1,27 @@
+
+
+# `∩` — Duplicates / Intersection
+
+Keys: `Alt-c`. Ranks: `∞` monadic, `∞ ∞` dyadic
+
+`∩Y` keeps the distinct major cells of `Y` that occur more than once, in
+order of first appearance. It matches cells as [`∪`](union.qmd) does.
+
+``` bpl
+∩"mississippi"      ⍝ "isp"
+∩3 1 3 3 2 1        ⍝ 3 1
+```
+
+`X∩Y` keeps the major cells of `X` found among the major cells of `Y`.
+Order and repetitions are retained. Uses tolerant matching.
+
+``` bpl
+1 2 1 3∩1 3        ⍝ 1 1 3
+"abcd"∩"bdf"        ⍝ "bd"
+[1 2⋄3 4⋄1 2]∩[1 2⋄5 6] ⍝ [1 2⋄1 2]
+```
+
+## Errors
+
+- `RANK`: `Y` is a unit
+- `LENGTH`: the major cells of `X` and `Y` differ in shape

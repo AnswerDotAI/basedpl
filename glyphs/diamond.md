@@ -1,0 +1,32 @@
+
+
+# `⋄` — Separator
+
+Keys: `Alt-Backtick`
+
+At statement level, `⋄` separates expressions. Everywhere, a line break
+means `⋄`, unless it’s next to a bracket, `;`, `⋄` or `?`.
+
+``` bpl
+x←2 ⋄ y←3 ⋄ x+y    ⍝ 5
+```
+
+Inside [brackets](brackets.qmd), `⋄` separates major cells. With a
+trailing `⋄`, the result is an array of one major cell. A single number
+is a cell of rank 0: `[42⋄]` is a one-item vector.
+
+``` bpl
+[1 2⋄3 4]        ⍝ 2 2⍴1 2 3 4
+⍴[1 2⋄]           ⍝ [1 2]ₓ
+⍴[42⋄]            ⍝ [1]ₓ
+```
+
+Inside [parentheses](parentheses.qmd), `⋄` separates the rows of a
+vector. Each row is itself a vector, even a row with one item.
+
+``` bpl
+(1 2⋄3)          ⍝ [[1 2] [3]]
+```
+
+[Types of brackets](../bracket-types.ipynb) compares `⋄` in brackets,
+parentheses and braces.

@@ -1,0 +1,30 @@
+
+
+# `×` — Direction / Multiply
+
+Keys: `Alt-m`. Ranks: `0` monadic, `0 0` dyadic
+
+`×Y` gives direction: zero, or `Y÷|Y`. The direction of a real number is
+an exact integer. Pervasive.
+
+``` bpl
+×¯3 0 4           ⍝ [¯1 0 1]ₓ
+×0j2              ⍝ 0j1
+```
+
+`X×Y` multiplies. Pervasive.
+
+``` bpl
+2ₓ×[1 2 3]ₓ       ⍝ [2 4 6]ₓ
+```
+
+## Inverse
+
+`×⁻¹Y` gives back `Y` when `Y` is a possible sign: `¯1`, `0`, `1` or a
+unit complex number. With either argument fixed, `×⁻¹` divides by the
+fixed argument, which must hold no zero.
+
+``` bpl
+×⁻¹¯1    ⍝ ¯1
+4×⁻¹12   ⍝ 3
+```

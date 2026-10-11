@@ -1,0 +1,24 @@
+
+
+# `•signal` — Signal
+
+`•signal kind` raises an error of the kind that `kind` names, and
+`message •signal kind` gives it a message. Without one, the message is
+“explicitly signalled”. An [error guard](../glyphs/error-guard.qmd)
+catches the error in the same way as an error from a primitive.
+
+``` bpl
+positive←{⍵≤0?"must be positive" •signal "DOMAIN";⍵}
+safe←{"DOMAIN"::0 ⋄ positive ⍵}
+safe¯3    ⍝ 0
+safe4     ⍝ 4
+```
+
+`kind` is the name of one of BPL’s kinds, which the error guard page
+lists, or any other one-word name, which makes a kind of the program’s
+own. Names are read in any case. `kind` can also be a caught error, such
+as `$e`, and `•signal` raises its kind and message again at the
+`•signal` call.
+
+Errors: `DOMAIN` for a number, or a name that isn’t one word of letters,
+digits and underscores.

@@ -1,0 +1,55 @@
+
+
+# `↦` — Range
+
+Keys: `Alt-l`. Ranks: `0` monadic, `0 0` dyadic
+
+`X↦Y` counts from `X` to `Y` in steps of 1. It counts down when `Y` is
+less than `X`. Two characters count through the code points between
+them.
+
+``` bpl
+2↦5          ⍝ 2 3 4 5
+5↦2          ⍝ 5 4 3 2
+'a'↦'e'      ⍝ "abcde"
+```
+
+The last item is the last step that doesn’t pass `Y`. The number of
+steps counts as whole within comparison tolerance.
+
+``` bpl
+0.5↦3        ⍝ 0.5 1.5 2.5
+0↦0.3÷0.1    ⍝ 0 1 2 3
+```
+
+Each item is `X` plus or minus an exact count: `0ₓ`, `1ₓ`, `2ₓ` and so
+on. The result’s type therefore follows `X`. `Y` sets only how many
+items there are.
+
+``` bpl
+1ₓ↦5         ⍝ [1 2 3 4 5]ₓ
+1↦5ₓ         ⍝ 1 2 3 4 5
+```
+
+`↦N` counts from `1` up to `N`, or from `¯1` down to `N` when `N` is
+negative. It has `⌊|N` items. `↦0` is empty. The result’s type follows
+`N`.
+
+``` bpl
+↦4           ⍝ 1 2 3 4
+↦¯3          ⍝ ¯1 ¯2 ¯3
+↦0           ⍝ ⍬
+```
+
+On a vector, `↦` applies to each item, as [Rank](rank.qmd) does. Fill
+pads the results to a common length.
+
+``` bpl
+↦2 3         ⍝ [1 2 0⋄1 2 3]
+```
+
+## Errors
+
+- `DOMAIN`: a complex number, a character with a number, or an infinite
+  end
+- `LIMIT`: more items than an array can hold

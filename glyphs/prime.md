@@ -1,0 +1,73 @@
+
+
+# `⍭` — Prime
+
+Keys: `Alt-Backslash`. Ranks: `0` monadic, `0 0` dyadic
+
+`⍭N`: the prime with `N` primes before it. `⍭0` is 2. Integral inputs;
+exact integer results, except that the primality test `1⍭` gives
+Booleans.
+
+`⍭⁻¹N`: the number of primes below `N`, which is the index of a prime
+`N`.
+
+``` bpl
+⍭⍳8               ⍝ [2 3 5 7 11 13 17 19]ₓ
+⍭⁻¹⍭⍳4            ⍝ [0 1 2 3]ₓ
+⍭⁻¹1 2 3 4 5 6     ⍝ [0 0 1 2 2 3]ₓ
+```
+
+`K⍭N` selects an operation by the code `K`. The operations are like J’s
+`p:`, with different codes. [Factor](factor.qmd) gives factors and
+factor tables.
+
+<table>
+<thead>
+<tr>
+<th>K</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>¯2</code></td>
+<td>Previous prime, strictly below N</td>
+</tr>
+<tr>
+<td><code>1</code></td>
+<td>N is prime</td>
+</tr>
+<tr>
+<td><code>2</code></td>
+<td>Next prime, strictly above N</td>
+</tr>
+<tr>
+<td><code>3</code></td>
+<td>Euler’s totient</td>
+</tr>
+</tbody>
+</table>
+
+``` bpl
+1⍭¯1 0 1 2 3 4     ⍝ $f $f $f $t $t $f
+2⍭1 2 3 4 5        ⍝ [2 3 5 5 7]ₓ
+¯2⍭3 4 5 6         ⍝ [2 3 3 5]ₓ
+3⍭1 2 3 4 5 6      ⍝ [1 1 2 2 4 2]ₓ
+```
+
+Euler’s totient of `N` is `N` times the product of `1-÷p` over the
+distinct prime factors `p` of `N`. For one exact `N`, `3⍭N` gives the
+same result as `N××/1ₓ-÷∪⨸N`. The `ₓ` on `1` keeps the result exact.
+
+``` bpl
+N←700ₓ ⋄ N××/1ₓ-÷∪⨸N     ⍝ 240ₓ
+3⍭700                    ⍝ 240ₓ
+```
+
+Unit cells; results assemble with fill. Primality testing is
+deterministic through 64 bits, probabilistic above that (false-positive
+bound `2⁻⁶⁴`).
+
+## Errors
+
+- `DOMAIN`: invalid selector/input; previous prime at/below 2

@@ -1,0 +1,22 @@
+
+
+# `⊢` — Right
+
+Keys: `Alt-'`. Ranks: `∞` monadic, `∞ ∞` dyadic
+
+`⊢Y` and `X⊢Y` return `Y`.
+
+``` bpl
+⊢1 2               ⍝ 1 2
+1 2⊢3 4            ⍝ 3 4
+```
+
+Both arguments evaluate.
+
+## Inverse
+
+`⊢⁻¹` is `⊢`.
+
+``` bpl
+3⊢⁻¹5   ⍝ 5
+```

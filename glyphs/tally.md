@@ -1,0 +1,19 @@
+
+
+# `≢` — Tally / Not match
+
+Keys: `Alt-= /`. Ranks: `∞` monadic, `∞ ∞` dyadic
+
+`≢Y` counts major cells: first-axis length, or 1 for a unit.
+
+``` bpl
+≢2 3⍴0             ⍝ 2ₓ
+≢42                ⍝ 1ₓ
+≢⍬                 ⍝ 0ₓ
+```
+
+`X≢Y` negates [match](match.qmd).
+
+``` bpl
+1≢,1               ⍝ $t
+```

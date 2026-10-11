@@ -1,0 +1,26 @@
+
+
+# `⍬` — Empty vector
+
+Keys: `Alt-Shift-0`
+
+`⍬` is an empty approximate numeric vector: `0⍴0`. `[]` is the same
+value.
+
+`⍬ₓ` is the exact empty vector, `0⍴0ₓ`, and so is `[]ₓ`.
+
+``` bpl
+⍴⍬                 ⍝ [0]ₓ
+⍬,1 2              ⍝ 1 2
+[]≡⍬               ⍝ $t
+1↑⍬ₓ               ⍝ [0]ₓ
+```
+
+Other empty types retain their prototypes.
+
+``` bpl
+3↑0⍴0ₓ             ⍝ [0 0 0]ₓ
+3↑""               ⍝ "   "
+```
+
+[Numbers](../numbers.qmd) covers exact and approximate numbers.

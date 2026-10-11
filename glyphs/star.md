@@ -1,0 +1,35 @@
+
+
+# `*` — Exponential / Exponent
+
+Ranks: `0` monadic, `0 0` dyadic
+
+`*Y`: e<sup>Y</sup>. Pervasive.
+
+``` bpl
+*0                ⍝ 1
+```
+
+`X*Y`: X<sup>Y</sup>. Integral powers of exact operands stay exact.
+
+``` bpl
+2*3               ⍝ 8
+2ₓ*¯3ₓ            ⍝ 1r8
+```
+
+Other powers use principal complex branches where needed.
+
+``` bpl
+¯1*0.5            ⍝ 0j1
+```
+
+See also function [power `⍣`](power.qmd).
+
+## Inverse
+
+`*⁻¹` is `⍟`. With the right argument fixed, `(*↢X)⁻¹Y` is `Y*÷X`.
+
+``` bpl
+2*⁻¹8      ⍝ 3
+(*↢2)⁻¹9   ⍝ 3
+```

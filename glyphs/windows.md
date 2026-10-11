@@ -1,0 +1,70 @@
+
+
+# `↕` — Pairs / Windows
+
+Keys: `Alt-k j`. Ranks: `∞` monadic, `∞ ∞` dyadic
+
+`↕Y` gives the adjacent pairs of major cells, as `2↕Y` does. `-/⍠1` then
+subtracts within each pair.
+
+``` bpl
+↕1 4 9 16            ⍝ [1 4⋄4 9⋄9 16]
+-/⍠1 ↕1 4 9 16       ⍝ ¯3 ¯5 ¯7
+```
+
+`S↕Y`: windows of sizes `S` on leading axes. Trailing axes stay inside
+each window.
+
+``` bpl
+3↕⍳5                ⍝ [0 1 2⋄1 2 3⋄2 3 4]
+2 2↕2 3⍴⍳6          ⍝ 1 2 2 2⍴0 1 3 4 1 2 4 5
+2↕3 2⍴⍳6            ⍝ 2 2 2⍴0 1 2 3 2 3 4 5
+```
+
+Shape: position frame, window sizes, trailing axes.
+
+``` bpl
+4↕"ab"               ⍝ 0 4⍴' '
+0↕"ab"               ⍝ 3 0⍴' '
+⍬↕2 3⍴⍳6            ⍝ 2 3⍴⍳6
+```
+
+Oversized full windows give empty frames. Zero sizes give `n+1` empty
+windows. `⍬↕Y` is `Y`.
+
+A two-row left argument gives sizes, then movements. A window starts
+every `M` positions.
+
+``` bpl
+[[3]⋄[2]]↕⍳8       ⍝ [0 1 2⋄2 3 4⋄4 5 6]
+```
+
+A negative size pads its axis. Each window is centred on a position, as
+in [Stencil](stencil.qmd), with prototype fill beyond the edges. Each
+axis follows the sign of its own size.
+
+``` bpl
+¯3↕1 2 3 4           ⍝ [0 1 2⋄1 2 3⋄2 3 4⋄3 4 0]
+[[¯3]⋄[2]]↕↦8       ⍝ [0 1 2⋄2 3 4⋄4 5 6⋄6 7 8]
+⍴¯3 2↕3 4⍴⍳12        ⍝ [3 3 3 2]ₓ
+```
+
+An axis of length `n` has `0⌈≥⌊M÷⍨n-S` full windows, or `⌈M÷⍨n-0=2|S`
+padded windows. Movements default to 1.
+
+## Inverse
+
+`↕⁻¹Y` rebuilds an array from its pairs `Y`. `N↕⁻¹Y` rebuilds it from
+its windows of size `N`.
+
+``` bpl
+↕⁻¹↕1 4 9       ⍝ 1 4 9
+3↕⁻¹3↕"abcde"   ⍝ "abcde"
+```
+
+## Errors
+
+- `RANK`: sizes not a unit, vector or two-row matrix, or too many axes
+- `LENGTH`: a matrix without two rows
+- `DOMAIN`: non-integral size, nonpositive movement, or a padded size of
+  at least twice its axis length

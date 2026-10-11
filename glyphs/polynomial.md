@@ -1,0 +1,61 @@
+
+
+# `⌻` — Polynomial
+
+Keys: `Alt-q t`. Ranks: `1` monadic, `1 0` dyadic
+
+J’s `p.` family.
+
+## Coefficients
+
+`C⌻X` evaluates the polynomial with coefficients `C` at `X`, constant
+term first. [Decode](decode.qmd) uses the opposite order.
+
+``` bpl
+[1 2 3]ₓ⌻[0 1 2]ₓ   ⍝ [1 6 17]ₓ
+```
+
+`⌻C`: leading coefficient and numerical roots, as a nested pair. Ignores
+trailing zeros. Constants have no roots.
+
+``` bpl
+≢1⊃⌻1 0 1           ⍝ 2ₓ
+```
+
+## Multiplier and roots
+
+`[M R]⌻X`: `M××/X-R`. `⊂R` assumes `M=1`; use `⊂,R` for one root.
+`⌻⁻¹[M R]` gives the coefficients.
+
+``` bpl
+[2;1 3]ₓ⌻[0 1 2 3]ₓ        ⍝ [6 0 ¯2 0]ₓ
+⌻⁻¹[2;1 3]ₓ               ⍝ [6 ¯8 2]ₓ
+⌻⁻¹⊂[1 3]ₓ                ⍝ [3 ¯4 1]ₓ
+```
+
+## Coefficient/exponent tables
+
+Enclosed matrix: one row per term, coefficient then exponents. Enclose
+one coordinate vector to evaluate one point. A single coordinate extends
+to all variables. Batch axes collect answers.
+
+``` bpl
+t←⊂[1 2 0⋄1 0 2]ₓ
+t⌻⊂[3 4]ₓ                               ⍝ 25ₓ
+t⌻[3 4;5 12]ₓ                           ⍝ [25 169]ₓ
+⊂[2 1r2⋄3 1r4]ₓ ⌻ 16ₓ                 ⍝ 14
+⌻⁻¹⊂[1 5⋄¯1 0]ₓ                         ⍝ [¯1 0 0 0 0 1]ₓ
+```
+
+Evaluation accepts fractional and negative exponents. Conversion to
+coefficients requires one variable and nonnegative integral exponents.
+Conversion also adds together terms of the same degree.
+
+Derivative coefficients: `1↓C×⍳≢C`. Integral: `K,C÷↦≢C`. See
+[Derivative](derivative.qmd).
+
+## Errors
+
+- `LENGTH`: wrong coordinate count
+- `DOMAIN`: nonnumeric data, invalid conversion exponents or failed root
+  solve

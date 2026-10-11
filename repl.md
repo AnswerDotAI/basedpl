@@ -1,0 +1,334 @@
+
+
+# REPL
+
+Run `bpl`. An expression displays its result. An assignment keeps its
+names for later lines. After an error, the REPL shows the error’s source
+location and returns to the prompt.
+
+``` text
+      v←⍳5
+      +/v
+10
+```
+
+## Typing glyphs
+
+Hold Alt and press the key that the [glyph
+reference](glyphs.qmd#typing-glyphs) lists. For example, Alt-m gives
+`×`, Alt-u gives `÷`, and Alt-h, Alt-j, Alt-k and Alt-l give `←`, `↓`,
+`↑` and `↦`. Some glyphs take a second key. Alt-Minus then `a` gives
+`⍶`, and Alt-o then `c` gives `⍝`. Hold Alt and tap the same dead key
+twice to type its own character: Alt-o twice gives `○`, and
+Alt-Backslash twice gives `⍭`. The sequence ends after the second tap.
+Space or an unlisted key also types the dead key’s character. For
+example, Alt-o then Space gives `○`. Backspace or Escape cancels the
+sequence. Superscripts start with Alt-6: Alt-6 then `2` gives `²`, and
+Alt-6 then `-1` gives `⁻¹`. Subscripts start with Alt-5: Alt-5 then `1`
+gives `₁`. Alt keys also insert glyphs inside strings and comments.
+
+While a dead key is pending, a compact hint shows its character and
+valid next keys. For example, Alt-= shows `≡:/`. Shifted backups are
+accepted but omitted from hints.
+
+On macOS, configure your terminal to send left Option as Alt. In
+Ghostty:
+
+``` text
+macos-option-as-alt = left
+```
+
+Right Option still types the usual Mac characters. In iTerm2, set the
+left Option key to “Esc+”. In Terminal.app, turn on “Use Option as Meta
+key”. Alt keys type glyphs instead of running the line editor’s Alt
+shortcuts. Cursor keys and Ctrl shortcuts still work.
+
+On a UK Mac keyboard, Shift-3 types `£`. Hold Alt or left Option while
+pressing Shift-3 to type `#`. This is the layout-independent alias
+Alt-£. It also works in the notebook keyboard. Plain `£` is unchanged.
+
+### Named entry
+
+Type a backtick followed by a name. Tab replaces it with the glyph. A
+non-letter accepts the glyph and enters that character too.
+
+Use `` `bullet `` then Tab for the system prefix `•`, and `` `quad ``
+for `⎕`.
+
+Before `↣` is Alt-`.`, or `` `before `` then Tab. After `↢` is Alt-`,`,
+or `` `after `` then Tab. Use `` `pi `` for `π` and `` `sqrt `` for `√`.
+
+<table>
+<thead>
+<tr>
+<th>Input</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>`io</code> then Tab</td>
+<td><code>⍳</code></td>
+</tr>
+<tr>
+<td><code>`iota5</code></td>
+<td><code>⍳5</code></td>
+</tr>
+<tr>
+<td><code>2`times3</code></td>
+<td><code>2×3</code></td>
+</tr>
+<tr>
+<td><code>v`assign</code> then Space</td>
+<td><code>v←</code></td>
+</tr>
+<tr>
+<td><code>`scan</code> then Tab</td>
+<td><code>\</code></td>
+</tr>
+</tbody>
+</table>
+
+Each glyph has one name, the one the [glyph reference](glyphs.qmd)
+links. The REPL also matches the monad and dyad names the reference
+lists, such as `reshape` for `⍴`, and a few other search words, such as
+`left-arrow` for `←`. It always shows the name: `` `resh `` lists
+`⍴ rho r`.
+
+Names are case-insensitive. Exact matches win, then prefixes, then
+abbreviations formed from prefixes of successive hyphen-separated parts.
+At each level a name beats a search word. A name that is a prefix of
+every other match wins: `` `om `` gives `⍵`, and `` `omu `` gives `⍹`.
+`grup` matches `grade-up`. `lar` matches the search word `left-arrow`,
+not `logarithm`, and lists `← assign h`. Type letters only: `` `lar- ``
+becomes `←-`.
+
+Matches appear as you type. Each listed name ends with the keys that
+type its glyph, such as `a` for Alt-a or `o c` for Alt-o then `c`. Input
+that matches several names stays as typed. Press Tab twice to list the
+matches. Backtick then Tab twice lists every name. Enter accepts a
+unique match and submits the line.
+
+Expansion applies only to typed REPL input, outside strings and
+comments. Pasted BPL, source files, Python and process requests use
+actual glyphs.
+
+### Other editors
+
+The shared table is `python/basedpl/layout.json`, shipped in the Python
+package and embedded in the Rust REPL. `option` gives what each Alt key
+types: a glyph, or a dead-key state that the next key completes. Each
+state in `states` lists its keys, and the terminator that Space or an
+unlisted key types. Repeating the chord that starts the current state
+types its terminator and ends the sequence. Keys are US characters after
+Shift. `alt_aliases` maps actual Alt characters such as `£` to text for
+the REPL and notebook keyboard. Native macOS layouts ignore these
+aliases. `basedpl.editors.write()` builds the regional macOS layout
+bundles in `editors/macos` from the same file and the native maps in
+`keyboards.json`.
+
+``` python
+import json
+from importlib.resources import files
+
+layout = json.loads(files('basedpl').joinpath('layout.json').read_text())
+assert layout['option']['h'] == '←' and layout['option']['a'] == '⍺'
+assert layout['states']['bar']['keys']['a'] == '⍶'
+```
+
+Monaco/CodeMirror adapters can import the same JSON. Check `alt_aliases`
+against `KeyboardEvent.key` first. Otherwise derive the US character
+from `KeyboardEvent.code` and Shift: macOS Option may already have
+changed `event.key`. Track `AltLeft`/`AltRight` keydown/up to select one
+Option key, and clear modifier state on blur. For a mapped key, prevent
+the browser’s default action and insert the text through the editor’s
+normal edit transaction. Keep a pending dead-key state until the next
+key, and clear it on blur or a focus change. Leave composition events to
+the input method.
+
+## Editing and multiline input
+
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Left / Right</td>
+<td>Move within input</td>
+</tr>
+<tr>
+<td>Up / Down</td>
+<td>Recall input history</td>
+</tr>
+<tr>
+<td>Ctrl-C</td>
+<td>Cancel the current input, including unfinished multiline input</td>
+</tr>
+<tr>
+<td>Ctrl-D on an empty line</td>
+<td>Exit</td>
+</tr>
+</tbody>
+</table>
+
+The REPL loads `$XDG_CONFIG_HOME/basedpl/history` at startup, falling
+back to `~/.config/basedpl/history` when `XDG_CONFIG_HOME` is unset or
+not an absolute path. It appends this session’s inputs on exit and keeps
+the newest 1,000 entries. A complete multiline input is one entry;
+cancelled input is not saved.
+
+An unclosed delimiter gives a continuation prompt. Closing it evaluates
+the complete input once.
+
+``` text
+      double←{
+    · ⍵×2
+    · }
+      double 3
+6
+```
+
+Inside brackets and parentheses, a line break means `⋄`, so each line of
+a bracket list is a row of the array.
+
+## Array and function display
+
+Interactive sessions draw arrays in boxes, show functions as trees, and
+box output made inside functions. [`•prefs`](system/prefs.qmd) reads and
+changes these settings: `•prefs ["box":$f]` turns boxes off, and
+`•prefs ⍬` shows every setting. Batch, Python and JSON sessions start
+without boxes.
+
+Arrays with axes have boxes, axis arrows and a type marker on the bottom
+edge. The marker names the storage: `ₓ` for exact integers, `~` for
+floats, `j` for complex numbers, `─` for characters, `∊` for nested
+arrays and `+` for mixed storage, whose items keep their own kinds.
+Numbers inside an `ₓ` box carry no mark of their own. Enter a function
+name to see its tree.
+
+An array of more than 1000 items shows only the first and last 3
+positions of each long axis. `…` replaces the hidden columns, `⋮` the
+hidden rows, and `⋱` sits where they cross. The `limit` and `edges`
+settings of `•prefs` change these numbers. `⎕←` prints every item.
+
+``` text
+      100 100⍴⍳10000
+┌→──────────────────────────────┐
+↓   0    1    2 …   97   98   99│
+│ 100  101  102 …  197  198  199│
+│ 200  201  202 …  297  298  299│
+│   ⋮    ⋮    ⋮ ⋱    ⋮    ⋮    ⋮│
+│9700 9701 9702 … 9797 9798 9799│
+│9800 9801 9802 … 9897 9898 9899│
+│9900 9901 9902 … 9997 9998 9999│
+└~──────────────────────────────┘
+```
+
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Command</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>]help +</code></td>
+<td>Help for a name or glyph</td>
+</tr>
+<tr>
+<td><code>]help mean -source</code></td>
+<td>Definition source</td>
+</tr>
+<tr>
+<td><code>]help llms</code></td>
+<td>The language reference for LLMs, <a
+href="llms.txt">llms.txt</a></td>
+</tr>
+<tr>
+<td><code>]Display [[1 2] [3 4]]</code></td>
+<td>Draw one array in a box, whatever the settings</td>
+</tr>
+<tr>
+<td><code>]dissect expression</code></td>
+<td>Show the bound expression before its result</td>
+</tr>
+<tr>
+<td><code>]clear</code></td>
+<td>Remove every name and restore the starting display settings</td>
+</tr>
+</tbody>
+</table>
+
+Both display modes show scalars as source: `⊂4ₓ`, `⊂⊂4ₓ` or `⊂[1 2]`.
+
+`⎕←` explicitly prints a value, including an assignment’s result.
+
+``` text
+      ⎕←v←⍳3
+┌→────┐
+│0 1 2│
+└~────┘
+```
+
+## Expression grouping
+
+`]dissect` evaluates an expression once and shows its functions and
+arguments before the result. It uses the existing function display,
+including explicit bindings such as `↣`:
+
+``` text
+      ]dissect -@ 1 0 1# 1 2 3
+call
+├─ @
+│  ├─ -
+│  └─ ↣
+│     ├─ [1 0 1]
+│     └─ #
+└─ [1 2 3]
+¯1 2 ¯3
+```
+
+`•prefs ["trees":$f]` selects linear display:
+
+``` text
+(-@([1 0 1]↣#))[1 2 3]
+¯1 2 ¯3
+```
+
+`trees` controls function and expression display independently of array
+boxes. Names and array operands show their bound values. Calls inside
+functions are not shown.
+
+`•prefs ["dissect":$t]` enables this view for subsequent statements.
+Silent assignments stay silent. Turn it off with
+`•prefs ["dissect":$f]`. The one-off command does not change the
+preference. An identical function view and response appear once.
+
+## Timing
+
+`•time t` gives the seconds since the moment `t`. `•time 0` is the
+current moment, in seconds since the Unix epoch. `t←•time 0` starts a
+timer. `•time t` then gives the seconds since it started.
+
+`F •time x` compares functions. It calls each function in `F` on `x` for
+about 0.1 s. The result is each function’s fastest time per call in
+seconds, with the shape and keys of `F`:
+
+``` text
+      F←["sum":+/ "max":⌈/]
+      F •time ⍳1000000
+["sum":0.001085375 "max":0.00057625]
+```

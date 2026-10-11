@@ -1,0 +1,92 @@
+# BasedPL
+
+Assume Dyalog APL with `⎕ML≥2` (`↑` first/take, `⊃` mix/pick), except below. BPL borrows from BQN and J. It supports dfns, not tradfns or colon control structures. BPL's differences to APL are substantive enough that most APL idioms do not apply directly, and BPL's differences aim to provide more readable and concise syntax. So never try to write APL in BPL.
+
+## Docs
+
+Links are relative to https://answerdotai.github.io/basedpl/.
+
+- [Glyphs reference](glyphs.html.md)
+- [System functions](system-functions.html.md)
+- [Constants and `$` names](system/constants.html.md)
+- [Syntax](syntax.html.md)
+- [Evaluation](evaluation.html.md)
+- [Arrays](arrays.html.md)
+- [Numbers](numbers.html.md)
+- [Superscripts and subscripts](scripts.html.md)
+- [Dfns](dfns.html.md)
+- [Keyed arrays](keyed.html.md)
+- [Assignment](assignment.html.md)
+- [Modules and namespaces](modules.html.md)
+- [Python](python.html.md)
+- [BPL on the web](web.html.md)
+- Per-glyph: `glyphs/<canonical-name>.html.md`, using names from the glyphs reference.
+- Per system function: `system/<name>.html.md`, with the name's `•` left off.
+
+## Glyph differences
+
+- Removed forms: bracket indexing `Y[I]`, bracket axes `f[A]`, laminate, windowed reduce, outer product `∘.f`, and replicate/expand as functions `/ ⌿ \ ⍀`. These four remain reduction/scan operators.
+- Changed functions (monad/dyad): `○` cis/circle; `=` classify/equal (monad as J); `≠` unique-mask/not-equal. Added monads: `∨` real-imag, `∧` polar, `⊼` square, `⊽` double, `≤` decrement, `≥` increment, `⊤` binary-encode, `⊥` binary-decode, `<` sort-up, `>` sort-down, `↕` pairs (`2↕`), `∩` duplicates, `#` runs (run-length encoding: `#/` and `#⁻¹` decode), `⍷` groups (Dyalog `{⊂⍵}⌸`).
+- Added/renamed functions: `⊼` NAND (Dyalog `⍲`); `⊽` NOR (Dyalog `⍱`); `¿` roll/deal (Dyalog `?`); `π` pi-times/pi-ratio; `√` sqrt/root (BQN); `#` replicate first-axis cells, `#⁻¹` expand; `↕` windows (BQN, plus movements/padding); `⍭` primes (like J `p:`, different codes); `⨸` factors (J `q:`); `⌻` roots/polyval (J `p.`, but coefficients come from `⌻⁻¹`); `:` unkey/keyed.
+- Changed operators: `∘` atop as BQN; `⍤` rank only; `⍠` axis by number/name. `⍤ ⍠ ⌺` also take a function right operand, which computes the ranks, axes or window from the arguments, as BQN `⎉`. `@` is under (BQN `⌾`): `f@g` applies `f` to the selection that `g` makes, then writes the result back. An array `g` lists positions, and `f@[p]` selects where `p` is true. Unlike Dyalog's `@`, a function `g` makes the selection, not a mask. A left argument goes through a function `g`, as in BQN, and to `f` whole with positions, as in Dyalog.
+- Added operators: `↣` before/bind-left (BQN `⊸`), `↢` after/bind-right (BQN `⟜`), `⊗` outer product (BQN `⌜`), `⊘` valences (BQN), `selector⍚cases` agenda (BQN `◶`), `⇄` explicit inverse pair (J `:.`), `∂` gradient/vector–Jacobian product.
+- Different details: `+ -` support character offsets/differences; `∊ ~ ∪ ∩` compare major cells; `⊂ ⊆` partition first axis; `⊤ ⊥` put digits on last axis; depth is unsigned; negative `⍳` counts down; dyadic `⍸` as BQN `⍋`. Reduce supports BQN-style seeds; scans accumulate LTR. Power supports list counts, inverses, `f⍣∞` fixed point and `f⍣[g]` history until.
+- `↦` is range: `X↦Y` counts from `X` to `Y` by 1, up or down, and `↦N` counts from `1` (or `¯1`) to `N`. Each item is the start plus an exact count, so its type follows the start.
+- Reading `⎕` gives a line of text, and `⍎⎕` evaluates it.
+
+## Values and notation
+
+BQN's based arrays: numbers, characters and functions are atoms, distinct from rank-0 arrays. Enclose always adds a layer, including around atoms; `⍬⍴Y` makes a rank-0 array. Rank 0 passes atoms as themselves and array items enclosed. APL-style prototypes/fill remain; function fill is the function itself.
+
+`[a b]` is always a vector, even `[a]`, with one item for each expression, functions included. Spaces separate unspaced expressions; `;` separates expressions containing spaces, and within each such expression spaces group as they do outside brackets. `⋄`/newlines stack rows along a new leading axis. `"k":v` items make a record: `["a":1 "b":2]`. Items evaluate LTR, unlike function arguments and tines, which evaluate RTL. In parentheses, rows instead form a nested vector: `(4⋄4 5)` is `[[4] [4 5]]`. Parentheses without rows only group. Newlines normally mean `⋄`.
+
+`"abc"` is a character vector; `'a'` is one character atom. `""` and `''` are the empty string. A double-quoted string can span lines, keeping its indentation. Double a double quote inside a string; `'''` is the single-quote character.
+
+Bare numbers are approximate floats of the default width: 64-bit, or 32- or 16-bit in code parsed after `•prefs ["float":32]` or `["float":16]`, which also sets the width of floats read from data or computed from exact numbers. Leading `•prefs` calls on a literal record run before the rest of their input is parsed, so a script or cell can set its own width; `•load` runs no such header. `1.5ₛ`/`[…]ₛ` are 32-bit, `ₕ` 16-bit and `ₚ` 64-bit. `3ₓ` is an exact integer; `1ᵣ3`/`1r3` an exact rational; `2ⱼ3`/`2j3` complex; `1ₑ¯3`/`1e¯3` an exponent. `[…]ₓ` marks exact literal arrays. Exact integers/rationals grow as needed; mixing with floats becomes approximate. `$t $f $n` are true/false/NaN; `∞ ¯∞` are infinities. IEEE NaN/infinity arithmetic; comparison tolerance `1E¯14` for 64-bit floats, which `•prefs` can set from 0 to `1E¯14`; narrower floats and grade compare exactly. `f⍣∞` stops within `1E¯14`, or 4 units in the last place of a narrower float. `32 •float x` gives 32-bit floats (16 and 64 likewise) and `•float x` the default width, which keep their width; an exact operand rounds to the width first, and floats of two widths compute at the wider. 16-bit floats compute each operation in 32 bits, and `+/ ×/ +\ ×\ +.×` keep 32-bit totals. Positions, shape, tally and predicates are exact.
+
+`x²` is `x*2`; `f²` is `f⍣2`; `f⁻¹` inverts; `mᵀ` transposes; `fᵘ` encloses a function. `v₁` is `1⌷v`, `v₋₁` selects the last major cell. These postfix marks touch a token, or stand alone after a space to apply to the preceding run. Numeric `ₓ ᵣ ⱼ ₑ ₕ ₛ ₚ` are number markers.
+
+Undo and Under follow BQN's inferred-properties spec. Inverse operations are written `f⁻¹`: `1○⁻¹` is arcsine, `⍭⁻¹` counts primes and `•json⁻¹` writes JSON. `f@g` writes results back through a `g` that selects. For any other `g` it applies `g⁻¹`.
+
+## Grouping, selection and keys
+
+Spaces group as if each unspaced run were parenthesised, after literal strands join: `a+b × c+d` is `(a+b)(×)(c+d)`, and `1 2+3` is `(1 2)+3`. Names don't join strands. A run ending in a function is an APL-style train: `+/÷≢ x` is mean, but `+/÷≢x` is not. A subject before a function binds the one part after it: `2×` doubles, `2|#⊢` is `(2|)#⊢`, `2+/` binds `+/`, and `2(+×-)` binds the whole train. An operator takes the whole function on its left and one token on its right, and a literal strand counts as one token. Each run acts as a parenthesised group, so an operator that ends a run takes the next run: in `⌊@ 10× x`, the operand is `10×`. Only spaces build strands: in `f⍣3'b'` and `f⍤1[2 3]`, the touching literal is the argument. Separate a numeric argument from a numeric operand with parentheses or `⊢`.
+
+Names use letters, `∆`, `⍙`; `_` escapes the next character (and following digits). `f2` calls `f`; `f_2` is a name. No BQN casing rules; names take their runtime value's role. Lone `_` discards an assignment.
+
+Positions/axes are fixed 0-origin; negatives count from the end. `I⌷A` takes one selector per leading axis; `[I]⌷v` selects a list of positions on one axis. `∞` selects a whole axis, `¯∞` reverses it. `A.[I J]` is `[I J]⌷A`. Subscripts/dot indexing/selective expressions can be assignment targets.
+
+Pervasion, Each and Rank align leading axes and expand length-1 axes. `K:Y` attaches axis keys; for a record `T`, `T.a` is `"a"⊃T`. Records are BPL's namespaces: `T.(expr)` and `T⍎text` evaluate with the keys of `T` as names, beside the caller's names, and assignments in them stay local. Axes can have names; shape holds those names as keys. Arithmetic pairs named axes and aligns position keys, filling missing entries with prototypes. Unnamed axes align in leading order.
+
+## Dfns, assignment and modules
+
+Dfns return their last statement, not the first unassigned one. `{condition?body;fallback}` uses BQN-style predicates/bodies with one shared scope. Absent `⍺` drops out of expressions as BQN's `𝕨`; `⍺←default` supplies a default. `⍶ ⍹` mark monadic/dyadic operators; `∇` recurses the function, `⍢` the operator. `kinds::handler` guards later errors, naming kinds as text (`"DOMAIN"::`) or `∞::` for all; `$e` is the caught error.
+
+Plain assignment is local; modified/selective updates change the nearest binding. `a(f)←` with nothing after it sets `a` to `f a`. Arrays have value semantics. `T.k←v` replaces or adds key `k`. `[a b]←Y` destructures the items of `Y`, or its major cells at rank 2 or more: by name when its leading axis is fully keyed, otherwise by position. Local capturing functions cannot outlive their defining call.
+
+`•load "file.bpl"` runs a module and returns its public names as a record; `_`-prefixed names are private. `[f]←•load path` imports by name. Each load runs again. `./` and `../` paths are relative to the source file; other relative paths use the working directory.
+
+## System names
+
+`$a` is the uppercase Latin alphabet; `$d` is `"0123456789"`. System functions use case-insensitive `•name`. Options are generally keyed left arguments. A system function that takes one string or one number maps over an array of them, with any left argument applied whole to each item.
+
+- Text: `•c •ucs •normalize •r`.
+- Data/files: `•csv •json •literal •xml •image •deflate •date •vfi •nget •nput •fetch •hash •uuid`. Filesystem: `•path •metadata •readdir •copy •rename •remove •mkdir`. A format function reads its format, and its inverse writes it. `•json` reads JSON5.
+- Display: `•element •svg •mime •plot •prefs •canvas`. `•canvas` makes a function that draws its data with JavaScript.
+- Linear algebra: `•decompose`.
+- Programs/introspection: `•load •signal •storage •float •time •host •delay •nc •nl •src •ex`. The browser build adds `•js`, which makes a BPL function from JavaScript source. `•time 0` is the current Unix time.
+- Random: `•rand` makes a seeded generator. `params •distribution name` returns a distribution, and `•distribution name` uses standard parameters where the distribution has them. Each distribution is a record with `sample density cdf quantile` functions.
+
+## Style
+
+Use lowercase `j` in complex literals throughout tests and examples, including adapted reference cases. Reserve uppercase `J` for explicit input-alias tests. Keep archived upstream source unchanged. Write literal matrices in array notation, `[10 20 30⋄40 50 60]`, not as a reshape. Keep `⍴` where the example is about reshape. A `⋄` that separates rows has no spaces around it. A `⋄` that separates statements has a space on each side.
+
+Brackets are the usual way to write a list, and to build an array from names or expressions. A bare literal list, such as `1 2 3`, is a shorthand. Write a list of names in brackets, as in `[a b]`, even where `a b` would also work. Write `[n 2]⍴0`, `[x],y`, `[a⋄b]` and `f⍤1 m`, not APL's `(n,2)⍴0`, `(⊂x),y`, `⊃[a b]` and `⊃f¨↓m`. End an operand with a space where possible. After a dyadic operator and a space, the whole next run is the operand. For example, `⌊@ 10× x` needs no parentheses. Where a literal operand would run into the argument, a vector argument goes in touching brackets: `f⍤1[2 3]`. For a simple numeric argument, `f⍣¯2⊢5` can read more clearly than `f⍣¯2(5)`. Keep parentheses when they clarify grouping. Judge each line by how it reads. Report any case where none of these forms works.
+
+A name applied to a literal touches it, as a glyph does: `fib10` and `1+⌽f5`. Write it that way where it's shorter and needs no new parentheses. Keep the space where the literal would join the next part of the expression. A left argument must be in the same run as its function: prefer `32•float∞` to `32 •float ∞`. `32 •float∞` gives the two items `32 ∞`. Between two names, keep both spaces: `x f 5`, not `x f5`.
+
+Read a selection with `⌷`, as in `[⍋v]⌷v`. Write one literal position with a subscript, as in `v₁` and `v₁←0`. Use `.` for other assignment targets, such as `v.[i]←0`, for record fields, such as `T.name`, and wherever `⌷` would be longer.
+
+## Python
+
+The `basedpl` package exposes all of BPL to Python: evaluation, arrays, and every function and operator by name.

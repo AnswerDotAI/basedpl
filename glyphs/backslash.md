@@ -1,0 +1,51 @@
+
+
+# `\` — Scan
+
+`f\Y` scans the last axis from left to right. Each result combines the
+previous result, as `f`’s left argument, with the next item: `-\1 2 3`
+is `1`, `1-2` and `(1-2)-3`.
+
+``` bpl
++\1 2 3            ⍝ 1 3 6
+-\1 2 3            ⍝ 1 ¯1 ¯4
+```
+
+`S f\ Y` uses the seed `S` as the previous result for the first item.
+The result doesn’t include the seed.
+
+``` bpl
+10-\1 2 3          ⍝ 9 7 4
+100+\10 20         ⍝ 110 130
+```
+
+Each lane starts from the whole seed. Use Rank for separate seeds per
+cell.
+
+``` bpl
+M←[1 2 3⋄4 5 6]
+10 20+\⍤0 1 M      ⍝ [11 13 16⋄24 29 35]
+[10]+\1 2 3        ⍝ [[11] [13] [16]]
+```
+
+An empty scan, or an unseeded scan of one item, doesn’t call `f`.
+[Axis](axis.qmd) `⍠K` chooses the axis to scan. [`⍀`](backslash-bar.qmd)
+scans the first axis.
+
+``` bpl
++\⍠0 [1 2 3⋄4 5 6]  ⍝ [1 2 3⋄5 7 9]
+```
+
+APL difference: every scan left-accumulates, including dfns.
+
+## Inverse
+
+`f\⁻¹` undoes `f\` when `f` has an inverse.
+
+``` bpl
++\⁻¹1 3 6   ⍝ 1 2 3
+```
+
+## Errors
+
+- `DOMAIN`: a subject operand. Expand with [`#⁻¹`](hash.qmd#expand)

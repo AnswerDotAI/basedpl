@@ -1,0 +1,58 @@
+
+
+# `⊃` — Mix / Pick
+
+Keys: `Alt-x`. Ranks: `0` monadic, `1 ∞` dyadic
+
+`⊃Y` assembles items into rectangular cells, padding to a common shape
+with fill.
+
+``` bpl
+⊃1 2 3             ⍝ 1 2 3
+⊃[[1 2] [3 4 5]]   ⍝ [1 2 0⋄3 4 5]
+```
+
+`P⊃Y` selects at coordinates `P` along the leading axes. With fewer
+coordinates than axes, the result is the cell made of the remaining
+axes. With a coordinate for every axis, the result is the stored value.
+Successive Picks traverse nesting. Empty coordinates return `Y`.
+
+``` bpl
+1⊃2 3⍴⍳6           ⍝ 3 4 5
+1 1⊃2 3⍴⍳6         ⍝ 4
+0⊃1⊃[[1 2] [3 4]]  ⍝ 3
+⍬⊃1 2              ⍝ 1 2
+```
+
+Array-valued coordinate fields pair using leading-axis agreement:
+
+``` bpl
+[0 2;1 3]⊃3 4⍴⍳12  ⍝ 1 11
+```
+
+Coordinate fields may use strings on [keyed axes](../keyed.ipynb).
+
+``` bpl
+T←["price":1 2 3;"qty":4 5 6]
+"qty"⊃T             ⍝ 4 5 6
+[["qty" "price"]]⊃T ⍝ [[4 5 6] [1 2 3]]
+```
+
+With axes, `⊃⍠A Y` places the cell axes of Mix among the frame axes. See
+[Axis](axis.qmd). On Pick, negative positions count from the end.
+Position 0 or ¯1 on an empty axis gives fill, as does [First](take.qmd).
+
+## Inverse
+
+`⊃⁻¹Y` splits `Y` into its major cells.
+
+``` bpl
+⊃⁻¹[1 2⋄3 4]   ⍝ [1 2;3 4]
+```
+
+## Errors
+
+- `RANK`: Mix axes not a unit or vector
+- `LENGTH`: Mix axis count not the cell rank
+- `INDEX`: position outside the array, or Mix axis outside the result
+- `DOMAIN`: repeated or fractional Mix axes

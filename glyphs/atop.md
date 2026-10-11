@@ -1,0 +1,21 @@
+
+
+# `∘` — Atop
+
+Keys: `Alt-t`
+
+`f∘g Y` is `f(g Y)`, and `X f∘g Y` is `f(X g Y)`.
+
+``` bpl
+2 -∘+ 3            ⍝ ¯5
+```
+
+See [Rank](rank.qmd) for applying a function to cells of a chosen rank.
+
+## Inverse
+
+`(f∘g)⁻¹Y` is `g⁻¹ f⁻¹ Y`. `X(f∘g)⁻¹Y` is `X g⁻¹ f⁻¹ Y`.
+
+``` bpl
+(-∘÷)⁻¹¯0.5   ⍝ 2
+```

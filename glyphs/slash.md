@@ -1,0 +1,88 @@
+
+
+# `/` — Reduce
+
+`f/Y` inserts `f` between the items along the last axis, then evaluates
+that expression as usual, from the right. `-/1 2 3` is `1-2-3`, which is
+2. An empty axis reduces to `f`’s identity.
+
+``` bpl
++/1 2 3            ⍝ 6
+-/1 2 3            ⍝ 2
++/⍬                ⍝ 0
+```
+
+Reduction returns the accumulator. An unseeded one-item reduction
+returns that item. Unreduced axes supply the result frame.
+
+``` bpl
+,/⊂2 3            ⍝ 2 3
+,/,⊂2 3           ⍝ 2 3
++/⊂⊂3             ⍝ ⊂3
+```
+
+`S f/ Y` starts from seed `S` on the right. With `Y` holding `[a b c]`,
+it is `a f b f c f S`. Empty reductions return the seed. Each lane uses
+the whole seed. The seed can share a run with the reduction, as in
+`10-/1 2 3`. With a space, `10 -/1 2 3` is the strand `10 2`.
+
+``` bpl
+10-/1 2 3          ⍝ ¯8
+10+/2 3⍴⍳6         ⍝ 13 22
+⊂10 +/ 1 2 3       ⍝ ⊂16
+10 20 +/⍤0 1 [2 3]⍴⍳6 ⍝ 13 32
+```
+
+Nested paths use seeded Pick reduction.
+
+``` bpl
+tree←[[10 20] [30 [40 50]]]
+tree⊃/⌽1 1 0       ⍝ 40
+```
+
+Use [full windows](windows.qmd) for moving reductions.
+
+``` bpl
++/↕1 2 3 4         ⍝ 3 5 7
+-/⌽↕1 2 3          ⍝ 1 1
++/0↕1 2            ⍝ 0 0 0
+```
+
+`f/⍠K` selects the axis. [`⌿`](slash-bar.qmd) defaults to the first.
+
+Several axes form one reduction cell. `f/⍠A Y` ravels each selected cell
+before reducing, equivalent to `(f/,)¨⊂⍠A Y`. This is an exception to
+the general rule in [Axis](axis.qmd). A single axis retains ordinary
+reduction behavior.
+
+``` bpl
+n←2 2 3⍴⍳6
++/⍠1 2 n             ⍝ 15 15
++/⍠0 2 n             ⍝ 6 24
+```
+
+Axis order determines the ravel order. Unselected axes retain their
+order and keys. Selecting every axis gives the reduced value itself, as
+a dfn along the same axes does.
+
+``` bpl
+-/⍠0 1 (2 2⍴⍳4)      ⍝ ¯2
+-/⍠1 0 (2 2⍴⍳4)      ⍝ ¯4
+```
+
+An empty axis vector makes singleton cells. A seed is passed whole to
+each cell.
+
+``` bpl
++/⍠⍬ [1 2 3]          ⍝ 1 2 3
+10+/⍠1 2 (2 2 3⍴⍳6)   ⍝ 25 25
+```
+
+Float sum and product reductions can reassociate their operands. Other
+reductions keep operand order.
+
+## Errors
+
+- `RANK`: higher-rank axis specification
+- `DOMAIN`: axis vector with repeated or invalid axes, or a subject
+  operand. Replicate with [`#`](hash.qmd)

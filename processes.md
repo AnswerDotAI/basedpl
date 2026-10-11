@@ -1,0 +1,133 @@
+
+
+# Process interfaces
+
+## JSON lines
+
+Run `bpl --worker`. Send one JSON request per line. Each request gets
+one flushed JSON reply, in order. Names persist between requests.
+
+``` json
+{"code":"v←⍳10"}
+{"id":2,"code":"+/v"}
+```
+
+The second reply is:
+
+``` json
+{"id":2,"result":{"value":45.0,"output":[{"kind":"display","data":{"text/plain":"45"}}],"error":null}}
+```
+
+`id` is optional. A reply carries its request’s `id`, or `null` for a
+request without one. Give an `id` to any request you might interrupt:
+`{"interrupt":2}` cancels request 2 and gets no reply of its own. Keep
+one evaluation outstanding.
+
+Build each request with a JSON encoder, such as Python’s `json.dumps` or
+JavaScript’s `JSON.stringify`, and end it with a newline. The encoder
+escapes newlines in the source. Stdout contains only replies. EOF ends
+the session.
+
+Malformed JSON, an invalid field or an invalid encoded array gives an
+error of kind `REQUEST` in that request’s result. The session continues.
+
+### Requests
+
+`code` evaluates BPL source. `timeout_ms` sets a deadline.
+`"echo":false` suppresses implicit display, but not explicit output.
+
+``` json
+{"id":1,"code":"+/⍳10","timeout_ms":2000,"echo":false}
+```
+
+`bindings` maps names to encoded values. `call` applies a function to
+one or two encoded `args`, without generating BPL source.
+
+``` json
+{"id":2,"call":"+","args":[2,3],"echo":false}
+```
+
+### Results
+
+`output` holds the events in order. Each event’s `kind` is `display` or
+`explicit`, and its `data` is a MIME bundle with `text/plain`. A value
+with a renderer adds the renderer’s types, such as `image/svg+xml`.
+Returned values carry contents and axis labels, without renderers. Keyed
+entries that hold functions are omitted. Any other function in a result
+gives a `null` value, and `output` holds its display.
+
+Atoms are encoded directly. Arrays carry shape, row-major data and
+prototype, including rank-zero arrays. Nested items use the same
+encoding. A [keyed array](keyed.ipynb) adds `axis_keys`: one string list
+or `null` per axis. All-unkeyed arrays omit it.
+
+Named dimensions add `axis_names`: one string or `null` per axis,
+e.g. `["city", "month"]`. Arrays with no named axes omit it. Encoded
+arrays in requests take both fields too.
+
+<table>
+<thead>
+<tr>
+<th>Atom</th>
+<th>JSON</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Exact integer</td>
+<td>Integer, including arbitrary precision</td>
+</tr>
+<tr>
+<td>Approximate real</td>
+<td>Number with decimal point or exponent</td>
+</tr>
+<tr>
+<td>Character</td>
+<td>String</td>
+</tr>
+<tr>
+<td>Rational</td>
+<td><code>{"rational":["1","3"]}</code></td>
+</tr>
+<tr>
+<td>Complex</td>
+<td><code>{"complex":[1.0,2.0]}</code></td>
+</tr>
+<tr>
+<td>Infinity</td>
+<td><code>{"infinity":1}</code> or <code>{"infinity":-1}</code></td>
+</tr>
+<tr>
+<td>NaN</td>
+<td><code>{"nan":1}</code></td>
+</tr>
+</tbody>
+</table>
+
+Use the tags for infinities and NaN, never raw `NaN` or `Infinity`
+tokens. Integer inputs stay exact. JavaScript’s `JSON.parse` rounds
+integers larger than 2⁵³. Use a parser that keeps integers exact. Error
+spans are UTF-8 byte ranges into the supplied source. Call sites
+accompany the original location.
+
+## Python worker
+
+Python’s `Worker` manages a persistent `bpl --worker` subprocess with
+deadlines and a hard-kill fallback.
+
+``` python
+from basedpl.worker import Worker
+
+with Worker() as w:
+    w.eval('v←⍳10')
+    r = w.eval('+/v', timeout=2)
+    assert r['value'] == 45
+```
+
+`w.interrupt()` cancels from another thread. Ctrl-C requests
+cancellation too. Cooperative cancellation preserves the session and
+completed assignments. If the process doesn’t respond within the grace
+period, one second by default, `Worker` kills it and the session is
+lost. `Worker` never replays a request. `w.diagnostics` holds recent
+stderr. `Worker.request(payload, timeout=...)` sends any request and
+supplies its `id`.

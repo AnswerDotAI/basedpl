@@ -1,0 +1,23 @@
+# Playground
+
+
+Press **▶ Run**, or Ctrl-Enter (Cmd-Enter on a Mac), to run the code.
+Type a backtick and a glyph’s name for a glyph, such as `` `iota ``, or
+click a glyph in the language bar.
+
+The interpreter runs in your browser. It is the latest release of the
+npm package [`basedpl`](https://www.npmjs.com/package/basedpl). Names
+you create are persistent between runs. **⏹ Stop** ends the session and
+starts a new one.
+
+<div id="playground">
+<div id="history"></div>
+<div class="playground-editor">
+<div id="code" class="bpl-editor" data-bpl></div>
+<div class="bpl-buttons">
+<button id="run" class="btn btn-sm btn-primary" title="Run" aria-label="Run" disabled>▶</button>
+<button id="stop" class="btn btn-sm btn-outline-secondary" title="Stop" aria-label="Stop" disabled>⏹</button>
+</div>
+</div>
+</div>
+<script type="module" src="playground/page.js"></script>

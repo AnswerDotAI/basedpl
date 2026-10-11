@@ -1,0 +1,26 @@
+
+
+# `≥` — Greater or equal
+
+Keys: `Alt->`. Ranks: `0` monadic, `0 0` dyadic
+
+`≥Y` is `Y+1`. Pervasive.
+
+``` bpl
+≥[1 2 3]ₓ         ⍝ [2 3 4]ₓ
+```
+
+`X≥Y` tests whether `X` is greater than or equal to `Y`, for real
+numbers. Pervasive; tolerant.
+
+``` bpl
+1 2 3≥2            ⍝ $f $t $t
+```
+
+## Inverse
+
+`≥⁻¹Y` decrements `Y`.
+
+``` bpl
+≥⁻¹5   ⍝ 4
+```

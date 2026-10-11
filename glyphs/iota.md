@@ -1,0 +1,84 @@
+
+
+# `⍳` — Index generator / Index of
+
+Keys: `Alt-i`. Ranks: `1` monadic, `∞ ∞` dyadic
+
+`⍳N` generates `0…N-1`. A negative `N` counts down, as J’s `i.` does.
+Exact input gives exact coordinates.
+
+``` bpl
+⍳4                 ⍝ 0 1 2 3
+⍳3ₓ                ⍝ [0 1 2]ₓ
+⍳¯3                ⍝ 2 1 0
+```
+
+[Range](range.qmd), `↦`, counts from 1 instead, or between any two ends.
+
+``` bpl
+↦4                 ⍝ 1 2 3 4
+3↦6                ⍝ 3 4 5 6
+```
+
+A shape vector generates an array of coordinate vectors. A negative
+length reverses its axis.
+
+``` bpl
+⍳2 2               ⍝ [[0 0] [0 1]⋄[1 0] [1 1]]
+⍳2 ¯2              ⍝ [[0 1] [0 0]⋄[1 1] [1 0]]
+```
+
+On a matrix, `⍳` applies to each row, as [Rank](rank.qmd) does. Fill
+pads the results to a common shape.
+
+``` bpl
+⍴⍳[2 3⋄1 1]       ⍝ [2 2 3]ₓ
+```
+
+`⍳⍠A Y` returns the keys of axis `A`, or `0…length-1` on an unkeyed
+axis. Several axes return a vector of selector vectors.
+
+``` bpl
+⍳⍠0 ["price":1 "qty":2] ⍝ "price" "qty"
+⍳⍠1 (2 3⍴0)         ⍝ [0 1 2]ₓ
+```
+
+On an axis where only some positions have keys, `⍳⍠A Y` gives the keys
+where present and positions elsewhere.
+
+``` bpl
+⍳⍠0 ["aa":10 20]    ⍝ "aa" 1ₓ
+```
+
+`X⍳Y` finds the first matching major cell in `X` for each cell of `Y`.
+Not found: `≢X`. Uses tolerant matching and returns exact positions.
+
+``` bpl
+"abc"⍳"cabz"        ⍝ [2 0 1 3]ₓ
+"abc"⍳'b'           ⍝ 1ₓ
+"abc"⍳⊂'b'          ⍝ 1ₓ
+```
+
+A single query returns an atom. Batch axes supply the result shape. To
+search for an array as one item, enclose it with `⊂`.
+
+``` bpl
+C←"cat" "dog"
+C⍳⊂"dog"           ⍝ 1ₓ
+C⍳["dog"]          ⍝ [1]ₓ
+m←[10 20⋄30 40⋄50 60]
+m⍳30 40            ⍝ 1ₓ
+m⍳[30 40⋄]        ⍝ [1]ₓ
+m⍳[30 40⋄10 20]  ⍝ [1 0]ₓ
+```
+
+## Inverse
+
+`⍳⁻¹Y` gives the argument that generates `Y`: the count for a vector of
+positions, otherwise the shape. `X⍳⁻¹Y` gives the items of `X` at the
+positions `Y`. A position that wasn’t found is a `DOMAIN` error.
+
+``` bpl
+⍳⁻¹⍳5         ⍝ [5]ₓ
+"abc"⍳⁻¹2 0   ⍝ "ca"
+```

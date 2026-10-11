@@ -1,0 +1,27 @@
+
+
+# `≠` — Unique mask / Not equal
+
+Keys: `Alt-Shift-=`. Ranks: `∞` monadic, `0 0` dyadic
+
+`≠Y` marks the first occurrence of each distinct major cell.
+[Tolerance](../evaluation.qmd#equality-and-ordering) decides which cells
+are distinct.
+
+``` bpl
+≠3 1 3 2 1         ⍝ $t $t $f $t $f
+```
+
+`X≠Y` tests inequality, pervasively.
+
+``` bpl
+1 2 3≠2            ⍝ $t $f $t
+```
+
+## Inverse
+
+On Booleans, `≠` is its own inverse with either argument fixed.
+
+``` bpl
+1 0≠⁻¹1 1   ⍝ $f $t
+```

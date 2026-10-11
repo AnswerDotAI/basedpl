@@ -1,0 +1,34 @@
+
+
+# `÷` — Reciprocal / Divide
+
+Keys: `Alt-u`. Ranks: `0` monadic, `0 0` dyadic
+
+`÷Y`: 1/Y. Pervasive.
+
+``` bpl
+÷4                ⍝ 0.25
+```
+
+`X÷Y`: X/Y. Pervasive. Division by zero follows IEEE 754. A nonzero `X`
+divided by zero gives an infinity with the sign of `X`. Zero divided by
+zero gives NaN.
+
+``` bpl
+1ₓ÷3ₓ             ⍝ 1r3
+¯1÷0              ⍝ ¯∞
+0÷0               ⍝ $n
+```
+
+## Inverse
+
+`÷⁻¹` is `÷`. With the right argument fixed, `(÷↢X)⁻¹Y` is `Y×X`.
+
+``` bpl
+12÷⁻¹4     ⍝ 3
+(÷↢4)⁻¹3   ⍝ 12
+```
+
+## Errors
+
+- `DOMAIN`: a character argument

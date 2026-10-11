@@ -1,0 +1,43 @@
+
+
+# `:` — Unkey / Key
+
+Ranks: `∞` monadic, `1 ∞` dyadic
+
+`:Y` removes axis keys. `K:Y` labels leading axes. `K:⍠A Y` labels the
+axes `A`. A bracket list with any `key:value` item is one keyed vector.
+The list’s other items are entries without keys. See [axis
+keys](../keyed.ipynb).
+
+``` bpl
+:"aa" "bb":1 2    ⍝ 1 2
+"bb"⊃"aa" "bb":1 2 ⍝ 2
+["aa":1 "bb":2]≡"aa" "bb":1 2 ⍝ $t
+```
+
+In `K`, a position’s own number leaves that position without a key. Axis
+names are the keys of the shape. `N:⍴M ⍴ M` renames the axes. See
+[shape](rho.qmd).
+
+``` bpl
+"aa" 1:10 20        ⍝ ["aa":10 20]
+M←["city":2 "month":3]⍴⍳6
+⍴M⍴⍨:⍴M            ⍝ [2 3]ₓ
+```
+
+A keyed `K` supplies axis names and position keys together.
+
+``` bpl
+axes←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]
+M←axes:[1 2 3⋄4 5 6]
+"LA" "Feb"⌷M       ⍝ 5
+```
+
+## Inverse
+
+`K:⁻¹Y` removes the keys `K` from `Y`, which must have exactly those
+keys.
+
+``` bpl
+"a" "b":⁻¹["a":1;"b":2]   ⍝ 1 2
+```

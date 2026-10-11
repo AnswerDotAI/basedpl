@@ -1,0 +1,10 @@
+
+
+# `•copy` — Copy
+
+`to •copy from` copies the file `from` to `to`, or the directory `from`
+with everything in it. It returns `to`, which isn’t displayed. A copied
+file replaces an existing file at `to`.
+
+Errors: `IO` for file errors, such as a missing `from` or a missing
+parent directory of `to`.

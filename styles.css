@@ -1,0 +1,142 @@
+.quarto-title-block .description { font-style: italic; }
+
+pre.bpl,
+.bpl pre,
+.bpl code {
+  font-family: var(--bpl-font), monospace;
+  line-height: 1.05;
+}
+
+.cell-output pre,
+.cell-output code,
+.cell-output .bpl_out {
+  font-family: var(--apl-font), monospace !important;
+  line-height: 1.05;
+}
+
+pre.apl,
+pre.dyalog,
+pre.bqn {
+  font-family: var(--apl-font), monospace;
+  line-height: 1.05;
+}
+
+pre.bpl,
+.bpl pre,
+pre.bpl ~ .cell-output pre,
+.bpl_out {
+  font-size: calc(0.875em + 1pt);
+}
+
+:is(.bpl, pre.apl, pre.dyalog, pre.bqn) {
+  --quarto-hl-op-color: #8B3FA0;
+  --quarto-hl-ex-color: #127A6E;
+  --quarto-hl-va-color: #8f5902;
+}
+
+:is(pre.bpl, .bpl code, pre.apl, pre.dyalog, pre.bqn) span.op {
+  color: var(--quarto-hl-op-color);
+}
+
+:is(pre.bpl, .bpl code, pre.apl, pre.dyalog, pre.bqn) span.ex {
+  color: var(--quarto-hl-ex-color);
+}
+
+:is(pre.bpl, .bpl code, pre.apl, pre.dyalog, pre.bqn) span.va {
+  color: var(--quarto-hl-va-color);
+}
+
+/* Language labels on the APL-family blocks, placed left of Quarto's copy button. A block gets a label when its language sets `content`. */
+pre.sourceCode::before {
+  position: absolute;
+  top: 0.3rem;
+  right: 2.4rem;
+  font: 0.75rem var(--bs-body-font-family);
+  color: var(--bs-secondary-color);
+}
+
+pre.apl::before { content: "APL"; }
+pre.dyalog::before { content: "Dyalog"; }
+pre.bqn::before { content: "BQN"; }
+
+.cell {
+  margin-bottom: 1rem;
+}
+
+.cell > .sourceCode,
+.cell-output > pre {
+  margin-bottom: 0;
+}
+
+.cell-output > pre,
+.cell-output > .sourceCode > pre {
+  margin-left: 0.8rem;
+  margin-top: 0;
+  background: none;
+  border-left: 2px solid lightsalmon;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.cell-output > .sourceCode {
+  border: none;
+  background: none;
+  margin-top: 0;
+}
+
+.bpl-keyboard-wrap { overflow-x: auto; }
+
+.bpl-keyboard {
+  width: 100%;
+  min-width: 42rem;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0.25rem;
+}
+
+.bpl-keyboard td {
+  position: relative;
+  height: 4.2rem;
+  padding: 0.2rem;
+  text-align: center;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.3rem;
+  background: var(--bs-tertiary-bg);
+}
+
+.bpl-keyboard td.dead { border: 2px solid #ed9227; }
+
+.bpl-keyboard .key-shift,
+.bpl-keyboard .key-option {
+  display: block;
+  font-family: var(--bpl-font), monospace;
+}
+
+.bpl-keyboard .key-shift { height: 1.1rem; font-size: 0.9rem; }
+.bpl-keyboard .key-option { height: 2rem; font-size: 1.7rem; line-height: 1.1; }
+.bpl-keyboard .key-label { position: absolute; bottom: 0.1rem; left: 0.3rem; font-size: 0.7rem; }
+.bpl-keyboard .key-name { font-size: 0.8rem; }
+
+.bpl-editor {
+  border: 1px solid var(--bs-border-color);
+  font-family: var(--bpl-font), monospace;
+  font-size: calc(0.875em + 1pt);
+  line-height: 1.1;
+}
+.bpl-buttons { display: flex; gap: 0.3rem; }
+.bpl-buttons button { line-height: 1; }
+:is(#playground, #gallery) pre.error { color: var(--bs-danger); }
+
+#playground .playground-editor { display: flex; align-items: start; gap: 0.4rem; }
+#playground pre.sourceCode { margin-bottom: 0; }
+#playground .cell-output > pre > code { white-space: pre; }
+#playground #code { flex: 1; min-width: 0; box-sizing: content-box; height: 1.5em; }
+
+#gallery { display: flex; align-items: start; gap: 1rem; }
+#gallery #demos { flex: 0 0 9rem; }
+#gallery .gallery-main { flex: 1; min-width: 0; }
+#gallery .gallery-bar { display: flex; align-items: center; gap: 0.3rem; }
+#gallery .gallery-bar .nav-tabs { flex: 1; }
+#gallery #code { height: 60vh; }
+#gallery #output { padding-top: 0.5rem; }
+#gallery #output :is(svg, img, canvas) { max-width: 100%; height: auto; }

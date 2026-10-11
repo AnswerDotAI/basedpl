@@ -1,0 +1,42 @@
+
+
+# `↓` — Split / Drop
+
+Keys: `Alt-j`. Ranks: `1` monadic, `1 ∞` dyadic
+
+`↓Y` nests vectors along the last axis.
+
+``` bpl
+↓2 3⍴⍳6            ⍝ [[0 1 2] [3 4 5]]
+```
+
+`N↓Y` drops from the front; negative `N` drops from the end.
+
+``` bpl
+2↓1 2 3 4          ⍝ 3 4
+¯2↓1 2 3 4         ⍝ 1 2
+```
+
+With [axes](axis.qmd), `⍠K` selects the split axis or the drop axes.
+
+``` bpl
+↓⍠0 (2 3⍴⍳6)       ⍝ [[0 3] [1 4] [2 5]]
+```
+
+Vector counts apply to successive leading axes. Overdrop gives an empty
+axis.
+
+``` bpl
+1 1↓2 3⍴⍳6         ⍝ [4 5⋄]
+5↓1 2              ⍝ ⍬
+```
+
+See [Mix / Take](take.qmd).
+
+## Inverse
+
+`↓⁻¹Y` mixes the items of `Y` into one array.
+
+``` bpl
+↓⁻¹[1 2;3 4]   ⍝ [1 2⋄3 4]
+```

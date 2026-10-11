@@ -1,0 +1,1586 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.19">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>glyphs – BasedPL</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-f2788e636de456f6409e966386820849.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [],
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="BasedPL">
+<meta property="og:description" content="BasedPL, the Based-array Programming Language, is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation.">
+<meta property="og:site_name" content="BasedPL">
+<meta name="twitter:title" content="BasedPL">
+<meta name="twitter:description" content="BasedPL, the Based-array Programming Language, is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation.">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">BasedPL</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="./getting-started.html" aria-current="page"> 
+<span class="menu-text">Get started</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./glyphs.html"> 
+<span class="menu-text">Glyph reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./python.html"> 
+<span class="menu-text">Python</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/AnswerDotAI/basedpl"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./glyphs.html">Reference</a></li><li class="breadcrumb-item"><a href="./glyphs.html">Glyph reference</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./playground.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Playground</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./gallery.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gallery</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./web.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BPL on the web</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./python.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Python</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./notebooks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Using BPL notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./repl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">REPL</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Command line</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./glyphs.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Glyph reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./keyboard.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Keyboard map</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./syntax.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Syntax</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./evaluation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Evaluation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./terms.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Terms</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./system-functions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">System functions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./comparison.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BPL, APL and BQN side by side</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">Explanations</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./overview.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language overview</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./principles.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language principles</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./arrays.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Arrays</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./numbers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Numbers</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./strings.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Characters and strings</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./bracket-types.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Types of brackets</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./scripts.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Superscripts and subscripts</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./assignment.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Assignment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dfns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dfns</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./modules.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modules and namespaces</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./keyed.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Axis keys</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">Working with data</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Files, CSV and JSON</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./regex.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regex</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./distributions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Probability distributions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./xml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">XML, SVG and images</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./plot.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Plots</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">Tooling</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./introspection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Names and help</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./processes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Process interfaces</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dyalog.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dyalog sessions</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#glyph-reference" id="toc-glyph-reference" class="nav-link active" data-scroll-target="#glyph-reference">Glyph reference</a>
+  <ul class="collapse">
+  <li><a href="#typing-glyphs" id="toc-typing-glyphs" class="nav-link" data-scroll-target="#typing-glyphs">Typing glyphs</a></li>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a></li>
+  <li><a href="#operators" id="toc-operators" class="nav-link" data-scroll-target="#operators">Operators</a></li>
+  <li><a href="#syntax-and-literals" id="toc-syntax-and-literals" class="nav-link" data-scroll-target="#syntax-and-literals">Syntax and literals</a></li>
+  <li><a href="#system-names" id="toc-system-names" class="nav-link" data-scroll-target="#system-names">System names</a></li>
+  <li><a href="#language-wide-differences-from-dyalog-apl" id="toc-language-wide-differences-from-dyalog-apl" class="nav-link" data-scroll-target="#language-wide-differences-from-dyalog-apl">Language-wide differences from Dyalog APL</a></li>
+  </ul></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="glyphs.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./glyphs.html">Reference</a></li><li class="breadcrumb-item"><a href="./glyphs.html">Glyph reference</a></li></ol></nav></header>
+
+
+
+
+<section id="glyph-reference" class="level1">
+<h1>Glyph reference</h1>
+<p>Each glyph has a name, which links to its definitions and examples. A function glyph also has a name for its monad, which takes one argument, and for its dyad, which takes two. Operators take functions or arrays and derive functions. Notes flag unusual differences from Dyalog APL. Follow each glyph’s link for details and examples. Each function’s page gives its ranks. An argument of higher rank applies the function to each cell of that rank, as <a href="./glyphs/rank.html">Rank</a> does.</p>
+<section id="typing-glyphs" class="level2">
+<h2 class="anchored" data-anchor-id="typing-glyphs">Typing glyphs</h2>
+<p>The <a href="./keyboard.html">keyboard map</a> shows the Option and Option-Shift bindings, with dead keys outlined in orange.</p>
+<p>Hold Alt, which is Option on a Mac, and press the key in the Key column. Keys refer to a US layout. <code>≤</code> is Alt-&lt;, <code>≥</code> is Alt-&gt;, and <code>⌽</code> is Alt-|, each with Shift held. Where the column shows a second key, release Alt, then press the second key. For example, <code>Alt-o c</code> means Alt-o, then <code>c</code>. You can type a shifted second key without Shift. For example, <code>Alt-q ;</code> types <code>⍠</code>, the same as <code>Alt-q :</code>. An Alt key that takes a second key types its own glyph when Space or an unlisted key follows. For example, Alt-o then Space gives <code>○</code>. Backspace or Escape cancels the sequence.</p>
+<p>Superscripts start with Alt-6. The second key is a digit, <code>-</code> then a digit, <code>t</code> for <code>ᵀ</code>, or <code>u</code> for <code>ᵘ</code>. Subscripts start with Alt-5. The second key is a digit, <code>-</code> then a digit, or <code>x</code>, <code>j</code>, <code>e</code> or <code>r</code> for the number suffixes <code>ₓ</code>, <code>ⱼ</code>, <code>ₑ</code> and <code>ᵣ</code>. A glyph with no key, such as <code>+</code>, is on an ordinary ASCII key. The arrows are on hjkl. Alt-[ types nothing, because terminals send it as the start of a control sequence. The identifier characters <code>∆</code> and <code>⍙</code> are Alt-7, and Alt-Minus then <code>7</code>.</p>
+<p>The names are the ones you type. In the REPL, a backtick and any glyph, monad or dyad name, then Tab, enters the glyph, as <a href="./repl.html#named-entry">named entry</a> describes. Python exports the function names, with <code>_</code> in place of <code>-</code> and a trailing <code>_</code> on Python keywords, as in <code>index_of</code> and <code>and_</code>.</p>
+</section>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Glyph</th>
+<th>Key</th>
+<th>Monad</th>
+<th>Dyad</th>
+<th>Note</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>+</code> <a href="./glyphs/add.html">add</a></td>
+<td></td>
+<td>conjugate</td>
+<td>plus</td>
+<td>Character offsets as BQN</td>
+</tr>
+<tr class="even">
+<td><code>-</code> <a href="./glyphs/dash.html">dash</a></td>
+<td></td>
+<td>negate</td>
+<td>subtract</td>
+<td>Character difference as BQN</td>
+</tr>
+<tr class="odd">
+<td><code>×</code> <a href="./glyphs/mul.html">mul</a></td>
+<td>Alt-m</td>
+<td>sign</td>
+<td>times</td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>÷</code> <a href="./glyphs/div.html">div</a></td>
+<td>Alt-u</td>
+<td>reciprocal</td>
+<td>divide</td>
+<td>Exact rationals as J</td>
+</tr>
+<tr class="odd">
+<td><code>⌊</code> <a href="./glyphs/floor.html">floor</a></td>
+<td>Alt-d</td>
+<td>floor</td>
+<td>min</td>
+<td><code>⌊/⍬</code> is <code>∞</code></td>
+</tr>
+<tr class="even">
+<td><code>⌈</code> <a href="./glyphs/ceiling.html">ceiling</a></td>
+<td>Alt-s</td>
+<td>ceiling</td>
+<td>max</td>
+<td><code>⌈/⍬</code> is <code>¯∞</code></td>
+</tr>
+<tr class="odd">
+<td><code>\|</code> <a href="./glyphs/stile.html">stile</a></td>
+<td></td>
+<td>magnitude</td>
+<td>residue</td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>*</code> <a href="./glyphs/star.html">star</a></td>
+<td></td>
+<td>exponential</td>
+<td>exponent</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td><code>⍟</code> <a href="./glyphs/log.html">log</a></td>
+<td>Alt-o 8</td>
+<td>logarithm</td>
+<td>log</td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>○</code> <a href="./glyphs/circle.html">circle</a></td>
+<td>Alt-o</td>
+<td>cis</td>
+<td>circle</td>
+<td>Pi-times is <code>π</code>. Codes 0 to 8, inverted by <code>k○⁻¹</code></td>
+</tr>
+<tr class="odd">
+<td><code>π</code> <a href="./glyphs/pi.html">pi</a></td>
+<td>Alt-p</td>
+<td>pi-times</td>
+<td>pi-ratio</td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>√</code> <a href="./glyphs/root.html">root</a></td>
+<td>Alt-3</td>
+<td>sqrt</td>
+<td>root</td>
+<td>As BQN’s <code>√</code></td>
+</tr>
+<tr class="odd">
+<td><code>!</code> <a href="./glyphs/factorial.html">factorial</a></td>
+<td></td>
+<td>factorial</td>
+<td>binomial</td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>⍭</code> <a href="./glyphs/prime.html">prime</a></td>
+<td>Alt-Backslash</td>
+<td>prime</td>
+<td>prime-mode</td>
+<td>Like J’s <code>p:</code>, with different codes</td>
+</tr>
+<tr class="odd">
+<td><code>⨸</code> <a href="./glyphs/factor.html">factor</a></td>
+<td>Alt-o u</td>
+<td>factors</td>
+<td>factor-spec</td>
+<td>As J’s <code>q:</code></td>
+</tr>
+<tr class="even">
+<td><code>⌻</code> <a href="./glyphs/polynomial.html">polynomial</a></td>
+<td>Alt-q t</td>
+<td>roots</td>
+<td>polyval</td>
+<td>As J’s <code>p.</code>, but coefficients come from <code>⌻⁻¹</code></td>
+</tr>
+<tr class="odd">
+<td><code>¿</code> <a href="./glyphs/inverted-question.html">inverted-question</a></td>
+<td>Alt-/</td>
+<td>roll</td>
+<td>deal</td>
+<td>Dyalog’s <code>?</code></td>
+</tr>
+<tr class="even">
+<td><code>∨</code> <a href="./glyphs/or.html">or</a></td>
+<td>Alt-9</td>
+<td>real-imag</td>
+<td>gcd</td>
+<td>Monad as J’s <code>+.</code></td>
+</tr>
+<tr class="odd">
+<td><code>∧</code> <a href="./glyphs/and.html">and</a></td>
+<td>Alt-0</td>
+<td>polar</td>
+<td>lcm</td>
+<td>Monad as J’s <code>*.</code></td>
+</tr>
+<tr class="even">
+<td><code>⊼</code> <a href="./glyphs/nand.html">nand</a></td>
+<td>Alt-Minus 0</td>
+<td>square</td>
+<td>nand</td>
+<td>Monad as J’s <code>*:</code></td>
+</tr>
+<tr class="odd">
+<td><code>⊽</code> <a href="./glyphs/nor.html">nor</a></td>
+<td>Alt-Minus 9</td>
+<td>double</td>
+<td>nor</td>
+<td>Monad as J’s <code>+:</code></td>
+</tr>
+<tr class="even">
+<td><code>~</code> <a href="./glyphs/tilde.html">tilde</a></td>
+<td></td>
+<td>not</td>
+<td>without</td>
+<td>Major cells, as BQN</td>
+</tr>
+<tr class="odd">
+<td><code>=</code> <a href="./glyphs/equal.html">equal</a></td>
+<td></td>
+<td>classify</td>
+<td>equal</td>
+<td>Monad as J</td>
+</tr>
+<tr class="even">
+<td><code>≠</code> <a href="./glyphs/not-equal.html">not-equal</a></td>
+<td>Alt-Shift-=</td>
+<td>unique-mask</td>
+<td>not-equal</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td><code>&lt;</code> <a href="./glyphs/less.html">less</a></td>
+<td></td>
+<td>sort-up</td>
+<td>less</td>
+<td>Monad sorts major cells</td>
+</tr>
+<tr class="even">
+<td><code>≤</code> <a href="./glyphs/less-or-equal.html">less-or-equal</a></td>
+<td>Alt-&lt;</td>
+<td>decrement</td>
+<td>less-equal</td>
+<td>Monad as J’s <code>&lt;:</code></td>
+</tr>
+<tr class="odd">
+<td><code>&gt;</code> <a href="./glyphs/greater.html">greater</a></td>
+<td></td>
+<td>sort-down</td>
+<td>greater</td>
+<td>Monad sorts major cells</td>
+</tr>
+<tr class="even">
+<td><code>≥</code> <a href="./glyphs/greater-or-equal.html">greater-or-equal</a></td>
+<td>Alt-&gt;</td>
+<td>increment</td>
+<td>greater-equal</td>
+<td>Monad as J’s <code>&gt;:</code></td>
+</tr>
+<tr class="odd">
+<td><code>≡</code> <a href="./glyphs/match.html">match</a></td>
+<td>Alt-=</td>
+<td>depth</td>
+<td>match</td>
+<td>Unsigned depth, as APL2/BQN</td>
+</tr>
+<tr class="even">
+<td><code>≢</code> <a href="./glyphs/tally.html">tally</a></td>
+<td>Alt-= /</td>
+<td>tally</td>
+<td>not-match</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td><code>⍴</code> <a href="./glyphs/rho.html">rho</a></td>
+<td>Alt-r</td>
+<td>shape</td>
+<td>reshape</td>
+<td>Rank-0 reshape encloses</td>
+</tr>
+<tr class="even">
+<td><code>,</code> <a href="./glyphs/comma.html">comma</a></td>
+<td></td>
+<td>ravel</td>
+<td>catenate</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td><code>⍪</code> <a href="./glyphs/table.html">table</a></td>
+<td>Alt-Minus ,</td>
+<td>table</td>
+<td>catenate-first</td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>⌽</code> <a href="./glyphs/reverse.html">reverse</a></td>
+<td>Alt-|</td>
+<td>reverse</td>
+<td>rotate</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td><code>⊖</code> <a href="./glyphs/reverse-first.html">reverse-first</a></td>
+<td>Alt-o Minus</td>
+<td>reverse-first</td>
+<td>rotate-first</td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>⍉</code> <a href="./glyphs/transpose.html">transpose</a></td>
+<td>Alt-o Backslash</td>
+<td>transpose</td>
+<td>reorder-axes</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td><code>↑</code> <a href="./glyphs/take.html">take</a></td>
+<td>Alt-k</td>
+<td>first</td>
+<td>take</td>
+<td>Monad takes first major cell</td>
+</tr>
+<tr class="even">
+<td><code>↓</code> <a href="./glyphs/drop.html">drop</a></td>
+<td>Alt-j</td>
+<td>split</td>
+<td>drop</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td><code>↕</code> <a href="./glyphs/windows.html">windows</a></td>
+<td>Alt-k j</td>
+<td>pairs</td>
+<td>windows</td>
+<td>Monad is <code>2↕</code>; dyad as BQN’s <code>↕</code>, plus movement/padding</td>
+</tr>
+<tr class="even">
+<td><code>⊂</code> <a href="./glyphs/enclose.html">enclose</a></td>
+<td>Alt-z</td>
+<td>enclose</td>
+<td>partitioned-enclose</td>
+<td>Encloses atoms; partitions first axis</td>
+</tr>
+<tr class="odd">
+<td><code>⊆</code> <a href="./glyphs/nest.html">nest</a></td>
+<td>Alt-Minus z</td>
+<td>nest</td>
+<td>partition</td>
+<td>Partitions first axis</td>
+</tr>
+<tr class="even">
+<td><code>⊃</code> <a href="./glyphs/mix.html">mix</a></td>
+<td>Alt-x</td>
+<td>mix</td>
+<td>pick</td>
+<td>Monad as Dyalog <code>⎕ML≥2</code>; pick cells or keys</td>
+</tr>
+<tr class="odd">
+<td><code>⌷</code> <a href="./glyphs/squad.html">squad</a></td>
+<td>Alt-q Backslash</td>
+<td>materialise</td>
+<td>index</td>
+<td>Negative indices; <code>∞</code>/<code>¯∞</code> select/reverse axis</td>
+</tr>
+<tr class="even">
+<td><code>⍳</code> <a href="./glyphs/iota.html">iota</a></td>
+<td>Alt-i</td>
+<td>iota</td>
+<td>index-of</td>
+<td>Axis selectors; negative lengths count down</td>
+</tr>
+<tr class="odd">
+<td><code>↦</code> <a href="./glyphs/range.html">range</a></td>
+<td>Alt-l</td>
+<td>range</td>
+<td>to</td>
+<td>Counts up or down from <code>1</code>, <code>¯1</code> or <code>X</code> to <code>Y</code>; not Dyalog’s branch</td>
+</tr>
+<tr class="even">
+<td><code>:</code> <a href="./glyphs/colon.html">colon</a></td>
+<td></td>
+<td>unkey</td>
+<td>keyed</td>
+<td><a href="./keyed.html">Axis keys</a></td>
+</tr>
+<tr class="odd">
+<td><code>⍸</code> <a href="./glyphs/where.html">where</a></td>
+<td>Alt-Minus i</td>
+<td>where</td>
+<td>interval-index</td>
+<td>Dyad as BQN’s <code>⍋</code></td>
+</tr>
+<tr class="even">
+<td><code>∊</code> <a href="./glyphs/member.html">member</a></td>
+<td>Alt-e</td>
+<td>enlist</td>
+<td>member</td>
+<td>Major cells, as BQN</td>
+</tr>
+<tr class="odd">
+<td><code>∪</code> <a href="./glyphs/union.html">union</a></td>
+<td>Alt-v</td>
+<td>unique</td>
+<td>union</td>
+<td>Major cells, as BQN</td>
+</tr>
+<tr class="even">
+<td><code>∩</code> <a href="./glyphs/intersection.html">intersection</a></td>
+<td>Alt-c</td>
+<td>duplicates</td>
+<td>intersection</td>
+<td>Major cells, as BQN</td>
+</tr>
+<tr class="odd">
+<td><code>⍷</code> <a href="./glyphs/find.html">find</a></td>
+<td>Alt-Minus e</td>
+<td>groups</td>
+<td>find</td>
+<td>Monad as Dyalog’s <code>{⊂⍵}⌸</code></td>
+</tr>
+<tr class="even">
+<td><code>⍋</code> <a href="./glyphs/grade-up.html">grade-up</a></td>
+<td>Alt-Backslash 7</td>
+<td>grade-up</td>
+<td>grade-up-by</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td><code>⍒</code> <a href="./glyphs/grade-down.html">grade-down</a></td>
+<td>Alt-Backslash g</td>
+<td>grade-down</td>
+<td>grade-down-by</td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>#</code> <a href="./glyphs/hash.html">hash</a></td>
+<td></td>
+<td>runs</td>
+<td>replicate</td>
+<td>Dyad as Dyalog’s <code>⌿</code>; monad run-length encodes, and <code>#⁻¹</code> decodes</td>
+</tr>
+<tr class="odd">
+<td><code>⊤</code> <a href="./glyphs/encode.html">encode</a></td>
+<td>Alt-n</td>
+<td>binary-encode</td>
+<td>encode</td>
+<td>Digits on last axis, as J</td>
+</tr>
+<tr class="even">
+<td><code>⊥</code> <a href="./glyphs/decode.html">decode</a></td>
+<td>Alt-b</td>
+<td>binary-decode</td>
+<td>decode</td>
+<td>Digits on last axis, as J</td>
+</tr>
+<tr class="odd">
+<td><code>⌹</code> <a href="./glyphs/domino.html">domino</a></td>
+<td>Alt-q u</td>
+<td>inverse</td>
+<td>matrix-divide</td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>⊣</code> <a href="./glyphs/left.html">left</a></td>
+<td>Alt-;</td>
+<td>same-left</td>
+<td>left</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td><code>⊢</code> <a href="./glyphs/right.html">right</a></td>
+<td>Alt-’</td>
+<td>same</td>
+<td>right</td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>⍎</code> <a href="./glyphs/execute.html">execute</a></td>
+<td>Alt-o b</td>
+<td>execute</td>
+<td>execute-in</td>
+<td><code>X</code> is a keyed vector, where Dyalog takes a namespace</td>
+</tr>
+<tr class="odd">
+<td><code>⍕</code> <a href="./glyphs/format.html">format</a></td>
+<td>Alt-o n</td>
+<td>format</td>
+<td>format-spec</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="operators" class="level2">
+<h2 class="anchored" data-anchor-id="operators">Operators</h2>
+<p><code>f</code>, <code>g</code> are functions; <code>a</code>, <code>n</code>, <code>r</code> are arrays or numbers.</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Glyph</th>
+<th>Key</th>
+<th>Form</th>
+<th>Meaning</th>
+<th>Note</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>/</code> <a href="./glyphs/slash.html">slash</a></td>
+<td></td>
+<td><code>f/</code></td>
+<td>Reduce / seeded reduce last</td>
+<td>Seed as BQN’s <code>´</code></td>
+</tr>
+<tr class="even">
+<td><code>⌿</code> <a href="./glyphs/slash-bar.html">slash-bar</a></td>
+<td>Alt-Minus /</td>
+<td><code>f⌿</code></td>
+<td>Reduce / seeded reduce first</td>
+<td>Seed as <code>/</code></td>
+</tr>
+<tr class="odd">
+<td><code>\</code> <a href="./glyphs/backslash.html">backslash</a></td>
+<td></td>
+<td><code>f\</code></td>
+<td>Scan / seeded scan last</td>
+<td>Accumulate LTR as BQN</td>
+</tr>
+<tr class="even">
+<td><code>⍀</code> <a href="./glyphs/backslash-bar.html">backslash-bar</a></td>
+<td>Alt-Minus Backslash</td>
+<td><code>f⍀</code></td>
+<td>Scan / seeded scan first</td>
+<td>Accumulate LTR as BQN</td>
+</tr>
+<tr class="odd">
+<td><code>¨</code> <a href="./glyphs/each.html">each</a></td>
+<td>Alt-1</td>
+<td><code>f¨</code></td>
+<td>Each</td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>⍨</code> <a href="./glyphs/commute.html">commute</a></td>
+<td>Alt-1 Backtick</td>
+<td><code>f⍨</code>, <code>a⍨</code></td>
+<td>Self / commute / constant</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td><code>↣</code> <a href="./glyphs/before.html">before</a></td>
+<td>Alt-.</td>
+<td><code>f↣g</code>, <code>a↣f</code></td>
+<td>Before / bind left</td>
+<td>As BQN’s <code>⊸</code></td>
+</tr>
+<tr class="even">
+<td><code>↢</code> <a href="./glyphs/after.html">after</a></td>
+<td>Alt-,</td>
+<td><code>f↢g</code>, <code>f↢a</code></td>
+<td>After / bind right</td>
+<td>As BQN’s <code>⟜</code></td>
+</tr>
+<tr class="odd">
+<td><code>⍤</code> <a href="./glyphs/rank.html">rank</a></td>
+<td>Alt-1 t</td>
+<td><code>f⍤r</code>, <code>f⍤g</code></td>
+<td>Rank</td>
+<td>Rank 0 preserves atom/scalar distinction</td>
+</tr>
+<tr class="even">
+<td><code>∘</code> <a href="./glyphs/atop.html">atop</a></td>
+<td>Alt-t</td>
+<td><code>f∘g</code></td>
+<td>Atop</td>
+<td>As BQN’s <code>∘</code></td>
+</tr>
+<tr class="odd">
+<td><code>⍠</code> <a href="./glyphs/axis.html">axis</a></td>
+<td>Alt-q ;</td>
+<td><code>f⍠A</code>, <code>f⍠g</code></td>
+<td>Apply along axes</td>
+<td>Named or numbered axes</td>
+</tr>
+<tr class="even">
+<td><code>⍥</code> <a href="./glyphs/over.html">over</a></td>
+<td>Alt-1 o</td>
+<td><code>f⍥g</code></td>
+<td>Over</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td><code>.</code> <a href="./glyphs/dot.html">dot</a></td>
+<td></td>
+<td><code>f.g</code></td>
+<td>Inner product</td>
+<td>Also array fields/indexing</td>
+</tr>
+<tr class="even">
+<td><code>⊗</code> <a href="./glyphs/outer-product.html">outer-product</a></td>
+<td>Alt-o m</td>
+<td><code>g⊗</code></td>
+<td>Outer product</td>
+<td>As BQN’s <code>⌜</code></td>
+</tr>
+<tr class="odd">
+<td><code>⌸</code> <a href="./glyphs/key.html">key</a></td>
+<td>Alt-q =</td>
+<td><code>f⌸</code></td>
+<td>Key</td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>⍣</code> <a href="./glyphs/power.html">power</a></td>
+<td>Alt-1 8</td>
+<td><code>f⍣n</code>, <code>f⍣∞</code>, <code>f⍣g</code>, <code>f⍣[g]</code></td>
+<td>Iterate / invert / fixed point / repeat until / history until</td>
+<td>List counts give history, as J/BQN</td>
+</tr>
+<tr class="odd">
+<td><code>⇄</code> <a href="./glyphs/inverse-pair.html">inverse-pair</a></td>
+<td>Alt-4</td>
+<td><code>f⇄g</code></td>
+<td>Attach an explicit inverse</td>
+<td>As J’s <code>:.</code></td>
+</tr>
+<tr class="even">
+<td><code>⊘</code> <a href="./glyphs/valences.html">valences</a></td>
+<td>Alt-o /</td>
+<td><code>f⊘g</code></td>
+<td>Call <code>f</code> with one argument, <code>g</code> with two</td>
+<td>As BQN’s <code>⊘</code></td>
+</tr>
+<tr class="odd">
+<td><code>∂</code> <a href="./glyphs/derivative.html">derivative</a></td>
+<td>Alt-f</td>
+<td><code>f∂</code></td>
+<td>Gradient / vector–Jacobian product</td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>⍚</code> <a href="./glyphs/agenda.html">agenda</a></td>
+<td>Alt-Minus Backtick</td>
+<td><code>selector⍚cases</code></td>
+<td>Select and call one function</td>
+<td>As BQN’s <code>◶</code></td>
+</tr>
+<tr class="odd">
+<td><code>@</code> <a href="./glyphs/under.html">under</a></td>
+<td></td>
+<td><code>f@g</code>, <code>f@a</code>, <code>f@[p]</code></td>
+<td>Apply under a selection, positions, mask or transform</td>
+<td>As BQN’s <code>⌾</code>, not Dyalog’s <code>@</code></td>
+</tr>
+<tr class="even">
+<td><code>⌺</code> <a href="./glyphs/stencil.html">stencil</a></td>
+<td>Alt-q Backtick</td>
+<td><code>f⌺a</code>, <code>f⌺g</code></td>
+<td>Stencil</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="syntax-and-literals" class="level2">
+<h2 class="anchored" data-anchor-id="syntax-and-literals">Syntax and literals</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Form</th>
+<th>Key</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>←</code> <a href="./glyphs/assign.html">assign</a></td>
+<td>Alt-h</td>
+<td>Assignment, including modified and selective forms</td>
+</tr>
+<tr class="even">
+<td><code>(…)</code> <a href="./glyphs/parentheses.html">parentheses</a></td>
+<td></td>
+<td>Grouping. With <code>⋄</code>, a vector of rows: <code>(4⋄4 5)</code> is <code>[[4] [4 5]]</code></td>
+</tr>
+<tr class="odd">
+<td><code>[…]</code> <a href="./glyphs/brackets.html">brackets</a></td>
+<td></td>
+<td>Vectors and arrays: <code>[a b c]</code>, <code>[a;b c]</code>, <code>[1 2⋄3 4]</code>. One item makes a one-item vector: <code>[x]</code> is <code>,⊂x</code></td>
+</tr>
+<tr class="even">
+<td><code>{…}</code> <a href="./glyphs/braces.html">braces</a></td>
+<td></td>
+<td>Defined function or operator. <code>;</code> separates its bodies</td>
+</tr>
+<tr class="odd">
+<td><code>⍺</code> <a href="./glyphs/alpha.html">alpha</a>, <code>⍵</code> <a href="./glyphs/omega.html">omega</a></td>
+<td>Alt-a, Alt-w</td>
+<td>Left / right argument</td>
+</tr>
+<tr class="even">
+<td><code>⍶</code> <a href="./glyphs/alpha-underbar.html">alpha-underbar</a>, <code>⍹</code> <a href="./glyphs/omega-underbar.html">omega-underbar</a></td>
+<td>Alt-Minus a, Alt-Minus w</td>
+<td>Left / right operand</td>
+</tr>
+<tr class="odd">
+<td><code>∇</code> <a href="./glyphs/del.html">del</a>, <code>⍢</code> <a href="./glyphs/del-diaeresis.html">del-diaeresis</a></td>
+<td>Alt-g, Alt-1 g</td>
+<td>Function / operator self-reference</td>
+</tr>
+<tr class="even">
+<td><code>?</code> <a href="./glyphs/question.html">question</a>, <code>::</code> <a href="./glyphs/error-guard.html">error-guard</a></td>
+<td></td>
+<td>Predicate / error guard inside dfns</td>
+</tr>
+<tr class="odd">
+<td><code>⋄</code> <a href="./glyphs/diamond.html">diamond</a></td>
+<td>Alt-Backtick</td>
+<td>Separates statements, rows inside brackets, and rows of a vector inside parentheses</td>
+</tr>
+<tr class="even">
+<td><code>⍝</code> <a href="./glyphs/comment.html">comment</a></td>
+<td>Alt-o c</td>
+<td>Comment</td>
+</tr>
+<tr class="odd">
+<td><code>⎕←</code> <a href="./glyphs/quad.html">quad</a></td>
+<td>Alt-q</td>
+<td>Explicit output. Read alone, the next line of input</td>
+</tr>
+<tr class="even">
+<td><code>•</code> <a href="./glyphs/bullet.html">bullet</a></td>
+<td>Alt-y</td>
+<td><a href="./system-functions.html">System function</a> prefix</td>
+</tr>
+<tr class="odd">
+<td><code>⍬</code> <a href="./glyphs/zilde.html">zilde</a></td>
+<td>Alt-Shift-0</td>
+<td>Empty numeric vector</td>
+</tr>
+<tr class="even">
+<td><code>'…'</code> <code>"…"</code> <a href="./glyphs/quote.html">quote</a></td>
+<td></td>
+<td>Character and string literals</td>
+</tr>
+<tr class="odd">
+<td><code>¯</code> <a href="./glyphs/overbar.html">overbar</a></td>
+<td>Alt-Minus</td>
+<td>Negative literal sign</td>
+</tr>
+<tr class="even">
+<td><code>∞</code> <a href="./glyphs/infinity.html">infinity</a></td>
+<td>Alt-8</td>
+<td>Real infinity</td>
+</tr>
+<tr class="odd">
+<td><code>$t</code> <code>$f</code> <code>$n</code> <a href="./system/constants.html">constants</a></td>
+<td></td>
+<td>True, false and NaN</td>
+</tr>
+<tr class="even">
+<td><code>$e</code> <a href="./system/constants.html">caught error</a></td>
+<td></td>
+<td>The error a guard’s handler caught</td>
+</tr>
+<tr class="odd">
+<td><code>²</code> <code>⁻¹</code> <code>ᵀ</code> <code>ᵘ</code> <a href="./scripts.html#superscripts">superscript</a></td>
+<td>Alt-6</td>
+<td>Postfix on the token before it, or after a space on the run before it: <code>x²</code> is <code>x*2</code>, <code>f²</code> is <code>f⍣2</code>, <code>f⁻¹</code> is the inverse of <code>f</code>, <code>mᵀ</code> is <code>⍉m</code>, and <code>fᵘ</code> is a scalar holding <code>f</code></td>
+</tr>
+<tr class="even">
+<td><code>₁</code> <code>₋₁</code> <a href="./scripts.html#subscripts">subscript</a></td>
+<td>Alt-5</td>
+<td>Postfix on the array before it, or after a space on the run before it: <code>v₁</code> is <code>1⌷v</code>, <code>v₋₁</code> is the last major cell, and <code>v₁←5</code> assigns to that cell</td>
+</tr>
+</tbody>
+</table>
+<p><a href="./numbers.html">Numbers</a> covers numeric notation, such as <code>ₓ</code>, <code>r</code>, <code>j</code> and <code>e</code>.</p>
+</section>
+<section id="system-names" class="level2">
+<h2 class="anchored" data-anchor-id="system-names">System names</h2>
+<p>System names start with <code>•</code>. <a href="./system-functions.html">System functions</a> lists them.</p>
+<p>Index origin: 0. Negative positions and axes count from the end. Comparison tolerance of 64-bit floats: <code>1E¯14</code>, which <a href="./system/prefs.html"><code>•prefs</code></a> can lower to 0. Narrower floats compare exactly.</p>
+</section>
+<section id="language-wide-differences-from-dyalog-apl" class="level2">
+<h2 class="anchored" data-anchor-id="language-wide-differences-from-dyalog-apl">Language-wide differences from Dyalog APL</h2>
+<ul>
+<li><a href="./glyphs/brackets.html">Vectors</a>: a bracket list such as <code>[a b c]</code> is a vector. A strand of literals, such as <code>1 2 3</code>, needs no brackets. <code>[5]</code> is a one-item vector, the same as <code>,5</code>. <a href="./glyphs/parentheses.html">Parentheses</a> group: <code>(5)</code> is <code>5</code>. A scalar holding <code>5</code> is <code>⊂5</code>. Arrays side by side also form a vector: <code>a b</code> is <code>[a b]</code>. <code>(1 2⋄3)</code> is the vector of rows <code>[[1 2] [3]]</code>.</li>
+<li><a href="./syntax.html#runs">Runs</a>: outside brackets, spaces group an expression into runs, and each run acts as one token. A run that ends in a function is a train: <code>+/÷≢</code> is the mean, and <code>2×</code> is <code>2↣×</code>. An operator takes the token next to it, so after a run that ends in a dyadic operator, the next run is its right operand: in <code>⌊@ 10× x</code>, it is <code>10×</code>.</li>
+<li><a href="./glyphs/squad.html">Indexing</a>: brackets are used to write vectors, never to index. Index selects: <code>0⌷v</code> is the first item of <code>v</code>.</li>
+<li><a href="./arrays.html">Atoms</a>: numbers, characters and functions are atoms, distinct from scalars, as BQN. Enclosing always adds a layer: <code>⊂3 ≡ 3</code> is <code>$f</code>.</li>
+<li><a href="./numbers.html">Numbers</a>: bare numbers are approximate. <code>ₓ</code> marks an exact integer, and <code>r</code> or <code>ᵣ</code> an exact rational, as in J: <code>1ₓ÷3ₓ</code> is <code>1ᵣ3</code>. Predicates, positions, tally and shape are exact.</li>
+<li><a href="./evaluation.html#agreement-and-pervasion">Agreement</a>: pervasive functions, Each and Rank align leading axes. An axis of length 1 expands to match: <code>2 3⍴⍳6 + 10 20</code> is <code>[10 11 12⋄23 24 25]</code>.</li>
+<li><a href="./principles.html#functions-act-on-major-cells">Major cells</a>: <code>∊ ~ ∪ ∩</code> compare major cells, <code>N#Y</code> replicates them, <code>N⊂Y</code> and <code>N⊆Y</code> split along the first axis. <code>⊤</code> and <code>⊥</code> put digits on the last axis, as J.</li>
+<li><a href="./system-functions.html">System names</a>: written <code>•name</code>, as BQN, not <code>⎕NAME</code>. Most Dyalog system functions and variables are not included.</li>
+<li><a href="./keyed.html">Axis keys</a> name data. <code>K:Y</code> evaluates its keys. <code>T.a</code> is <code>"a"⊃T</code>. <code>T.(expr)</code> and <code>T⍎Y</code> evaluate with the keys of <code>T</code> as names.</li>
+</ul>
+
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/answerdotai\.github\.io\/basedpl");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

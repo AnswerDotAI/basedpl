@@ -1,0 +1,33 @@
+
+
+# `+` — Conjugate / Add
+
+Ranks: `0` monadic, `0 0` dyadic
+
+`+Y` conjugates. Pervasive.
+
+``` bpl
++2j3              ⍝ 2j¯3
+```
+
+`X+Y` adds, with leading agreement.
+
+``` bpl
+2+3               ⍝ 5
+10+1 2 3          ⍝ 11 12 13
+```
+
+Character offsets are integral Unicode code-point offsets.
+
+``` bpl
+'a'+3             ⍝ 'd'
+```
+
+## Inverse
+
+`+⁻¹Y` is `+Y`. With either argument fixed, `+⁻¹` subtracts the fixed
+argument.
+
+``` bpl
+3+⁻¹10   ⍝ 7
+```

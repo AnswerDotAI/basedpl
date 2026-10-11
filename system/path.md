@@ -1,0 +1,18 @@
+
+
+# `•path` — Paths
+
+`•path text` splits a path into a record of its parts, named after
+Rust’s: `parent`, `stem`, `extension` and `name`. It never reads the
+disk. The option `absolute` first joins a relative path to the working
+directory, as Rust’s `std::path::absolute` does, without resolving
+links. `•path⁻¹` joins `parent`, `stem` and `extension` into a path, and
+ignores `name`. An array of paths gives a record of arrays.
+
+``` bpl
+•path "data/sales.csv"                            ⍝ ["parent":"data" "stem":"sales" "extension":"csv" "name":"sales.csv"]
+{⍵.extension←"tsv" ⋄ ⍵}@•path "data/sales.csv"   ⍝ "data/sales.tsv"
+```
+
+Errors: `DOMAIN` when a path isn’t text, for an unknown part, or for an
+`absolute` path that is empty or has no working directory to join.

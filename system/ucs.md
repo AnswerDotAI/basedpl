@@ -1,0 +1,18 @@
+
+
+# `•ucs` — Unicode
+
+`•ucs Y` converts characters to exact integer code points, and code
+points to characters, keeping the shape of `Y`. `E•ucs Y` encodes
+characters, or decodes integer code units, where `E` is `"UTF-8"`,
+`"UTF-16"` or `"UTF-32"`. The encoding forms take vectors. An invalid
+code point or a malformed encoding is a `DOMAIN` error.
+
+``` bpl
+•ucs "ABC"         ⍝ [65 66 67]ₓ
+•ucs 65 66 67      ⍝ "ABC"
+"UTF-8"•ucs 'é'    ⍝ [195 169]ₓ
+"UTF-8"•ucs 195 169 ⍝ "é"
+```
+
+`•ucs⁻¹` is `•ucs`, with the same `E` if there is one.

@@ -1,0 +1,24 @@
+
+
+# `⇄` — Inverse pair
+
+Keys: `Alt-4`
+
+`f⇄g` calls `f`. `(f⇄g)⁻¹` is `g⇄f`.
+
+``` bpl
+f←{≥⍵}⇄{≤⍵} ⋄ f5            ⍝ 6
+f←{≥⍵}⇄{≤⍵} ⋄ f⁻² 5        ⍝ 3
+```
+
+Dyadic inversion holds `X` fixed: `X g (X f Y)` must recover `Y`.
+
+``` bpl
+f←{⍺+⍵}⇄{⍵-⍺} ⋄ 3 f⁻¹ 8       ⍝ 5
+f←{⍺+⍵}⇄{⍵-⍺} ⋄ (3↣f)⁻¹8      ⍝ 5
+```
+
+Left binding preserves the pair. For right binding, pair the bound
+monad: `(f↢A)⇄undo`.
+
+See [Power](power.qmd) and [Under](under.qmd).

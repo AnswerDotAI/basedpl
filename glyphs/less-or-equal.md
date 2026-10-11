@@ -1,0 +1,26 @@
+
+
+# `≤` — Less or equal
+
+Keys: `Alt-<`. Ranks: `0` monadic, `0 0` dyadic
+
+`≤Y` is `Y-1`. Pervasive.
+
+``` bpl
+≤[1 2 3]ₓ         ⍝ [0 1 2]ₓ
+```
+
+`X≤Y` tests whether `X` is less than or equal to `Y`, for real numbers.
+Pervasive; tolerant.
+
+``` bpl
+1 2 3≤2            ⍝ $t $t $f
+```
+
+## Inverse
+
+`≤⁻¹Y` increments `Y`.
+
+``` bpl
+≤⁻¹4   ⍝ 5
+```

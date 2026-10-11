@@ -1,0 +1,42 @@
+
+
+# `⊆` — Nest / Partition
+
+Keys: `Alt-Minus z`. Ranks: `∞` monadic, `1 ∞` dyadic
+
+`⊆Y` encloses atoms and simple arrays. Already-nested arrays stay
+unchanged.
+
+``` bpl
+⊆1 2               ⍝ ⊂1 2
+⊆1                 ⍝ ⊂1
+```
+
+`N⊆Y` partitions along the leading axis. Each partition is a block of
+major cells. A zero in `N` leaves out its major cell. A new partition
+starts wherever `N` rises.
+
+``` bpl
+1 1 0 1 1⊆"abcde" ⍝ "ab" "de"
+1 1 0 2⊆4 2⍴⍳8    ⍝ [[0 1⋄2 3] [6 7⋄]]
+```
+
+Marks are nonnegative integers. Unit and singleton marks extend.
+`N⊆⍠K Y` partitions along axis `K` instead. `N⊆⍤1 Y` partitions each
+row. Unlike [`⊂`](enclose.qmd), positive marks need not start a
+partition at every position.
+
+``` bpl
+1 1 0 1 1⊆⍤1 ["abcde"⋄"fghij"] ⍝ ["ab" "de"⋄"fg" "ij"]
+```
+
+## Inverse
+
+`⊆⁻¹Y` discloses a unit and gives back any other array. `X⊆⁻¹Y` joins
+the parts `Y`. Partitioning the result by `X` must give `Y` again, so
+`X` can’t hold a zero.
+
+``` bpl
+⊆⁻¹⊂1 2             ⍝ 1 2
+1 1 2⊆⁻¹(1 2⋄3)   ⍝ 1 2 3
+```
