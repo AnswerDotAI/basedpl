@@ -1,10 +1,12 @@
-"Read BPL test cases, convert reference inventories, and activate reviewed cases."
+"Read BPL test cases, convert reference inventories, activate reviewed cases, and time BPL as the speed test does."
 import json, math, re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from ._core import _captured_literal
 from .reference import Corpus, _dyalog_string
+from . import BplError
+from .worker import Worker
 
 HEADER = re.compile(r'^⍝ (?:(\S*) )?—(?: (.*))?$')
 SEPARATOR = '⍝ =>'
@@ -264,3 +266,22 @@ def check_page(path):
                 fails.append(dict(line=i, code=source, expected=expected, status=r['status'], message=r.get('message')))
         if closing: block = None
     return fails
+
+_SPEED = Path(__file__).parents[2]/'tests'/'speed.txt'
+
+class Costs(list):
+    "Each case's cost, as `(code, picoseconds per item, copies)` rows."
+    def __repr__(self): return '\n'.join(f'{ps:>10,.0f} ps {copies:>9.2f} copies  {code}' for code, ps, copies in self)
+
+def time_cases(
+    cases, # A BPL expression to time, or a list of them
+    setup=None, # BPL that defines the data and its number of items `n`; None: the `[setup]` section of `tests/speed.txt`
+    prefs='', # BPL that runs before `setup`, such as `•prefs ["float":32]`
+    timeout=None # Seconds before the worker is closed
+):
+    "Time `cases` in a fresh worker, as `tests/speed.rs` does: the fastest of five runs, per item and in copies of the data."
+    speed = _SPEED.read_text() if setup is None else f'[setup]\n{setup}'
+    cases = [cases] if isinstance(cases, str) else list(cases)
+    with Worker() as w: r = w.request(dict(timing=dict(speed=speed, prefs=prefs, cases=cases)), timeout)
+    if e := r['error']: raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
+    return Costs((c['code'], c['seconds']*1e12/r['n'], c['copies']) for c in r['costs'])

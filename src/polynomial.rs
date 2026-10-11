@@ -203,7 +203,7 @@ fn floats<F: Float>(c: &[Number], span: &Context<'_>) -> Result<Vec<F>, Error> {
 
 /// The float results `y` at the points `x`, with `x`'s shape and layout.
 fn shaped<F: Float>(x: &Value, y: Vec<F>, width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> {
-    if x.is_unit() { return Ok(Value::Number(Number::float(y[0].into(), width))); }
+    if x.is_unit() { return Ok(Value::Number(Number::float(y[0].wide(), width))); }
     let y = F::build(x.shape().to_vec(), y).ok_or(ErrorKind::Limit).error_at(span, "polynomial result exceeds array limits")?;
     y.with_layout(x.layout().clone()).error_at(span, "invalid polynomial result")
 }

@@ -43,5 +43,6 @@ fn reply(session: &mut Session, request: &Value, interrupt: InterruptHandle) -> 
     if request.get("id").is_some_and(|id| !id.is_u64()) { return Err("id must be a nonnegative integer".into()); }
     let options = EvalOptions { interrupt, ..basedpl::protocol::options(request)? };
     if let Some(case) = request.get("case") { return Ok(basedpl::reference::check(case, options)); }
+    if let Some(spec) = request.get("timing") { return basedpl::timing::request(spec, &options.interrupt); }
     basedpl::protocol::request(session, request, options).map(basedpl::protocol::response)
 }

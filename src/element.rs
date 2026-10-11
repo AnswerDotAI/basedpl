@@ -71,9 +71,9 @@ whole!(u8: U8, i16: I16, i32: I32, i64: I64);
 
 /// A float width of compact storage. Kernels and the `Number` path compute at the width itself, with rustymath's functions, such
 /// as `exp`, `ln` and `gamma`, and `num_traits::Float`'s others. Kernels exist only for f32 and f64. `pervasive::halves` runs 16-bit
-/// floats at 32 bits. A function with no version at the width, such as tolerant gcd, computes at `f64` and rounds. `rustymath::Float`
-/// gives the type that `⌹` and `•decompose` compute in: f32 for f16, and the type itself otherwise.
-pub(crate) trait Float: Element + rustymath::Float<Total: Element> + Into<f64> {
+/// floats at 32 bits. A function with no version at the width, such as tolerant gcd, computes at `f64` and rounds.
+/// `rustymath::Float::Working` is the type that `⌹` and `•decompose` compute in: f32 for f16, and the type itself otherwise.
+pub(crate) trait Float: Element + rustymath::Float<Working: Element> {
     const WIDTH: FloatWidth;
     /// The signed integer width with this float's bytes, which monadic `⌊` and `⌈` write their results at first.
     const INTEGERS: Width;
@@ -119,10 +119,16 @@ impl FloatWidth {
 }
 /// An item that a kernel reads as type `A`: a Boolean as a number, an integer as a float or a complex number, or a float as a complex
 /// number.
-pub(crate) trait Source<A>: Element { fn read(self) -> A; }
+pub(crate) trait Source<A>: Element {
+    fn read(self) -> A;
+    /// `items` as `A` with no copy, where the items already have type `A`.
+    fn borrowed(_items: &[Self]) -> Option<&[A]> { None }
+}
 impl<A: Element> Source<A> for A {
     #[inline]
     fn read(self) -> A { self }
+    #[inline]
+    fn borrowed(items: &[A]) -> Option<&[A]> { Some(items) }
 }
 macro_rules! truth {
     ($($a:ty),+) => {$(

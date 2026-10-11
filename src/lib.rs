@@ -34,6 +34,8 @@ mod selection;
 pub mod symbols;
 mod syntax;
 pub mod system;
+#[doc(hidden)]
+pub mod timing;
 mod xml;
 
 pub use array::{Buffer, FloatWidth, Prototype, Value};

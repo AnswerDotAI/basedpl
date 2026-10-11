@@ -22,7 +22,8 @@
 //!
 //! rustc compiles every instance of a module's generic functions in one codegen unit, on one core. The kernel tables therefore sit in
 //! modules of their own, such as `float_arithmetic` and `wholes`, whose units compile in parallel. Every loop that a kernel passes
-//! through is `#[inline]`. rustc then compiles the loop's instances in the unit of the table that calls it.
+//! through is `#[inline]`, including a helper nested inside a loop function. rustc then compiles the loop's instances in the unit of the
+//! table that calls it. `tests/units.rs` fails when the largest unit grows to about twice its healthy size.
 use crate::{
     agreement::{Agreement, Mapping},
     array::{with_float_width, with_floats, with_ints, with_width, Axis, FloatWidth, Floats, Ints, Items, Kind, Widening, Width},
@@ -36,7 +37,7 @@ use crate::{
     Value,
 };
 use num_complex::Complex64;
-use rustymath::{tolerant::{Tolerance, Tolerant, TolerantComplex}, with_tolerance, Float as _, Native};
+use rustymath::{pairs, tolerant::{Tolerance, Tolerant, TolerantComplex}, with_tolerance, Arg, Float as _, Native, CHUNK};
 use std::{borrow::Cow, cell::Cell};
 use {float_arithmetic::float_dyad, float_comparisons::compare, float_maths::float_maths, float_monads::float_monad};
 
@@ -48,6 +49,15 @@ pub(crate) trait Dyad<A> {
     fn numeric(&self) -> Numeric;
     fn same(self, f: impl Fn(A, A) -> Option<A> + Copy) -> Self::Output;
     fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy) -> Self::Output;
+    /// `f` on each pair of items, through its slice form where the loop has slices of items, and its scalar form elsewhere. A NaN result
+    /// from arguments that aren't NaN fails the item, because rustymath gives NaN for an argument outside a function's real domain.
+    fn many(self, f: impl rustymath::Binary) -> Self::Output
+    where
+        Self: Sized,
+        A: Float,
+    {
+        self.same(move |x, y| f.checked(x, y))
+    }
     /// The left and the right argument, each when it is one number that every item pairs with. A kernel can then run a loop of its own
     /// for that number, as `x*2` squares each item.
     fn constants(&self) -> (Option<A>, Option<A>) { (None, None) }
@@ -73,26 +83,30 @@ pub(crate) trait Kernels: Element {
     fn monad<R: Monad<Self>>(p: Primitive, run: R) -> Option<R::Output>;
 }
 
-impl Kernels for bool {
-    /// The logical functions and comparisons. Other functions read Booleans as the integers 0 and 1.
-    fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
-        use {Comparison::*, Math::*};
-        Some(match p {
-            Primitive::Math(Lcm | Floor) => run.same(|x, y| Some(x & y)),
-            Primitive::Math(Gcd | Ceiling) => run.same(|x, y| Some(x | y)),
-            Primitive::Math(Nand) => run.boolean(|x, y| Some(!(x & y))),
-            Primitive::Math(Nor) => run.boolean(|x, y| Some(!(x | y))),
-            Primitive::Compare(Equal) => run.boolean(|x, y| Some(x == y)),
-            Primitive::Compare(NotEqual) => run.boolean(|x, y| Some(x != y)),
-            Primitive::Compare(Less) => run.boolean(|x: bool, y| Some(!x & y)),
-            Primitive::Compare(LessEqual) => run.boolean(|x: bool, y| Some(!x | y)),
-            Primitive::Compare(Greater) => run.boolean(|x: bool, y: bool| Some(x & !y)),
-            Primitive::Compare(GreaterEqual) => run.boolean(|x: bool, y: bool| Some(x | !y)),
-            _ => return None,
-        })
-    }
-    fn monad<R: Monad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
-        match p { Primitive::Math(Math::Not) => Some(run.same(|y: bool| Some(!y))), _ => None }
+mod booleans {
+    use super::*;
+
+    impl Kernels for bool {
+        /// The logical functions and comparisons. Other functions read Booleans as the integers 0 and 1.
+        fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
+            use {Comparison::*, Math::*};
+            Some(match p {
+                Primitive::Math(Lcm | Floor) => run.same(|x, y| Some(x & y)),
+                Primitive::Math(Gcd | Ceiling) => run.same(|x, y| Some(x | y)),
+                Primitive::Math(Nand) => run.boolean(|x, y| Some(!(x & y))),
+                Primitive::Math(Nor) => run.boolean(|x, y| Some(!(x | y))),
+                Primitive::Compare(Equal) => run.boolean(|x, y| Some(x == y)),
+                Primitive::Compare(NotEqual) => run.boolean(|x, y| Some(x != y)),
+                Primitive::Compare(Less) => run.boolean(|x: bool, y| Some(!x & y)),
+                Primitive::Compare(LessEqual) => run.boolean(|x: bool, y| Some(!x | y)),
+                Primitive::Compare(Greater) => run.boolean(|x: bool, y: bool| Some(x & !y)),
+                Primitive::Compare(GreaterEqual) => run.boolean(|x: bool, y: bool| Some(x | !y)),
+                _ => return None,
+            })
+        }
+        fn monad<R: Monad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
+            match p { Primitive::Math(Math::Not) => Some(run.same(|y: bool| Some(!y))), _ => None }
+        }
     }
 }
 /// Kernels for each float width that has them, which `float_dyad` and `float_monad` give.
@@ -165,7 +179,7 @@ mod float_maths {
         Some(match p {
             Primitive::Math(Power) => match run.constants() {
                 (_, Some(y)) if y == F::narrow(2.0) => run.same(|x, _| real::square(x)),
-                _ => run.same(#[inline(always)] |x, y| real::power(x, y)),
+                _ => run.many(rustymath::Pow),
             },
             Primitive::Math(Log) => match run.constants() {
                 (Some(x), _) if x == F::narrow(2.0) => run.same(|_, y| real::log2(y)),
@@ -288,32 +302,36 @@ impl Kernels for char {
     fn monad<R: Monad<Self>>(_: Primitive, _: R) -> Option<R::Output> { None }
 }
 
-impl Kernels for Complex64 {
-    fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
-        use {Arithmetic::*, Comparison::*};
-        Some(match p {
-            Primitive::Arithmetic(Plus) => run.same(|x, y| Some(x + y)),
-            Primitive::Arithmetic(Minus) => run.same(|x, y| Some(x - y)),
-            Primitive::Arithmetic(Times) => run.same(|x, y| Some(complex::times(x, y))),
-            Primitive::Arithmetic(Divide) => run.same(|x, y| Some(complex::divide(x, y))),
-            Primitive::Compare(Equal) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.boolean(move |x, y| Some(t.complex_equal(x, y)))),
-            Primitive::Compare(NotEqual) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.boolean(move |x, y| Some(!t.complex_equal(x, y)))),
-            _ => return None,
-        })
-    }
-    fn monad<R: Monad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
-        use Arithmetic::*;
-        Some(match p {
-            Primitive::Arithmetic(Plus) => run.same(|z| Some(z.conj())),
-            Primitive::Arithmetic(Minus) => run.same(|z| Some(-z)),
-            Primitive::Arithmetic(Divide) => run.same(|z| Some(complex::divide(Complex64::new(1.0, 0.0), z))),
-            // Each item's direction, floor and ceiling are complex numbers, real items included. The result keeps one kind.
-            Primitive::Arithmetic(Times) => run.same(|z| Some(complex::direction(z))),
-            Primitive::Math(Math::Floor) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.same(move |z| Some(t.complex_floor(z)))),
-            Primitive::Math(Math::Ceiling) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.same(move |z| Some(t.complex_ceil(z)))),
-            Primitive::Math(Math::Magnitude) => run.other(|z| Some(complex::magnitude(z))),
-            _ => return None,
-        })
+mod complex_kernels {
+    use super::*;
+
+    impl Kernels for Complex64 {
+        fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
+            use {Arithmetic::*, Comparison::*};
+            Some(match p {
+                Primitive::Arithmetic(Plus) => run.same(|x, y| Some(x + y)),
+                Primitive::Arithmetic(Minus) => run.same(|x, y| Some(x - y)),
+                Primitive::Arithmetic(Times) => run.same(|x, y| Some(complex::times(x, y))),
+                Primitive::Arithmetic(Divide) => run.same(|x, y| Some(complex::divide(x, y))),
+                Primitive::Compare(Equal) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.boolean(move |x, y| Some(t.complex_equal(x, y)))),
+                Primitive::Compare(NotEqual) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.boolean(move |x, y| Some(!t.complex_equal(x, y)))),
+                _ => return None,
+            })
+        }
+        fn monad<R: Monad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
+            use Arithmetic::*;
+            Some(match p {
+                Primitive::Arithmetic(Plus) => run.same(|z| Some(z.conj())),
+                Primitive::Arithmetic(Minus) => run.same(|z| Some(-z)),
+                Primitive::Arithmetic(Divide) => run.same(|z| Some(complex::divide(Complex64::new(1.0, 0.0), z))),
+                // Each item's direction, floor and ceiling are complex numbers, real items included. The result keeps one kind.
+                Primitive::Arithmetic(Times) => run.same(|z| Some(complex::direction(z))),
+                Primitive::Math(Math::Floor) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.same(move |z| Some(t.complex_floor(z)))),
+                Primitive::Math(Math::Ceiling) => with_tolerance!(run.numeric().tolerance_at(FloatWidth::F64), |t| run.same(move |z| Some(t.complex_ceil(z)))),
+                Primitive::Math(Math::Magnitude) => run.other(|z| Some(complex::magnitude(z))),
+                _ => return None,
+            })
+        }
     }
 }
 
@@ -576,10 +594,10 @@ fn within<T: Copy, F: Float>(op: Comparison, x: &[T], read: impl Fn(T) -> F + Co
     })
 }
 
-/// `f` on each item of `x`, written through `fill`, which vectorizes where `collect` would make a call for each item without LTO.
+/// `f` on each item of `x`, through `rustymath::pairs`, which vectorizes where `collect` would make a call for each item without LTO.
 fn mask<T: Copy>(x: &[T], f: impl Fn(T) -> bool) -> Vec<bool> {
     let mut data = Vec::new();
-    fill(&mut data, x.len(), x.iter(), |&a| Some(f(a)));
+    pairs(Arg::Many(x), Arg::One(()), x.len(), &mut data, |a, ()| (f(a), true));
     data
 }
 
@@ -665,55 +683,110 @@ fn circle(codes: &Value, right: &Value, agreement: &Agreement, inverse: bool, nu
 /// Item `i` of the frame, read from `data` through `mapping`.
 fn item<A: Element>(mapping: &Mapping, data: &[A], i: usize) -> A { mapping.get(i).map_or(A::FILL, |j| data[j]) }
 
-/// The results of `f` on the `len` items of `items`. `None` when any item failed.
+
+/// The shortest broadcast block that runs as one call, where one argument repeats each of its items along the block. A shorter block
+/// expands into a chunk buffer instead, which measured faster than a call for each block of up to 5 items.
+const SHORT_REPEATED: usize = 6;
+/// The shortest broadcast block that runs as one call, where an argument cycles and no argument repeats its items. A shorter block
+/// expands into a chunk buffer, which measured faster than a call for each block of up to 12 items.
+const SHORT_CYCLED: usize = 16;
+
+/// `f` on each block of `n` of a frame's `len` items, with the block's number and length, and whether every call succeeded.
 #[inline]
-fn filled<I, B: Element>(len: usize, items: impl Iterator<Item = I>, f: impl Fn(I) -> Option<B>) -> Option<Vec<B>> {
-    let mut data = Vec::with_capacity(len);
-    fill(&mut data, len, items, f).then_some(data)
+fn each(len: usize, n: usize, mut f: impl FnMut(usize, usize) -> bool) -> bool {
+    (0..len.div_ceil(n)).fold(true, |ok, k| f(k, n.min(len - k * n)) & ok)
 }
 
-/// `left`, `right` and `both` append the results of `f` on contiguous pairs to `data`, and each gives whether every item succeeded.
-/// `left` pairs an item with each item of a slice. `right` pairs each item of a slice with an item. `both` pairs two slices item by item.
-/// A broadcast runs block by block through them, with no division to find each item. Each kernel therefore compiles three loops for
-/// every broadcast. The loops copy items in closures, not with `.copied()`. Without LTO, `Copied`'s indexed read isn't inlined, and a
-/// call for each item would stop vectorization.
+/// Runs `leaf` over the frame of `agreement`, appending its results to `out` in order, and gives whether every call succeeded.
+/// Contiguous arguments and long enough broadcast blocks go to `leaf` whole: an item beside a slice, or two slices. Shorter blocks and
+/// other mappings expand `CHUNK` items at a time into reused buffers.
 #[inline]
-fn left<X: Copy, Y: Copy, B: Element>(data: &mut Vec<B>, a: X, ys: &[Y], f: impl Fn((X, Y)) -> Option<B>) -> bool {
-    fill(data, ys.len(), ys.iter().map(|&b| (a, b)), f)
-}
-#[inline]
-fn right<X: Copy, Y: Copy, B: Element>(data: &mut Vec<B>, xs: &[X], b: Y, f: impl Fn((X, Y)) -> Option<B>) -> bool {
-    fill(data, xs.len(), xs.iter().map(|&a| (a, b)), f)
-}
-#[inline]
-fn both<X: Copy, Y: Copy, B: Element>(data: &mut Vec<B>, xs: &[X], ys: &[Y], f: impl Fn((X, Y)) -> Option<B>) -> bool {
-    fill(data, xs.len(), xs.iter().zip(ys).map(|(&a, &b)| (a, b)), f)
-}
-
-/// Appends the results of `f` on the `n` items of `items` to `data`, and gives whether every item succeeded. The results go straight
-/// into spare capacity, which is never zeroed first. The loop never stops early, and a failed item gives a placeholder. With `ok` a
-/// local, the compiler can vectorize the loop.
-#[inline]
-fn fill<I, B: Element>(data: &mut Vec<B>, n: usize, items: impl Iterator<Item = I>, f: impl Fn(I) -> Option<B>) -> bool {
-    data.reserve(n);
-    let (mut ok, mut written) = (true, 0);
-    for (slot, item) in data.spare_capacity_mut()[..n].iter_mut().zip(items) {
-        let result = f(item);
-        ok &= result.is_some();
-        slot.write(result.unwrap_or(B::FILL));
-        written += 1;
+fn blocks<X: Element, Y: Element, B>(
+    x: &[X], y: &[Y], agreement: &Agreement, out: &mut Vec<B>, mut leaf: impl FnMut(Arg<'_, X>, Arg<'_, Y>, usize, &mut Vec<B>) -> bool,
+) -> bool {
+    use {Arg::*, Mapping::*};
+    let len = agreement.len;
+    match (&agreement.left, &agreement.right) {
+        (Single, Linear(1)) => leaf(One(x[0]), Many(y), len, out),
+        (Linear(1), Single) => leaf(Many(x), One(y[0]), len, out),
+        (Linear(1), Linear(1)) => leaf(Many(x), Many(y), len, out),
+        (Linear(n), Tiled(m)) if n == m && *m >= SHORT_REPEATED => each(len, *m, |k, n| leaf(One(x[k]), Many(y), n, out)),
+        (Tiled(n), Linear(m)) if n == m && *n >= SHORT_REPEATED => each(len, *n, |k, n| leaf(Many(x), One(y[k]), n, out)),
+        (Linear(1), Linear(r)) if *r >= SHORT_REPEATED => each(len, *r, |k, n| leaf(Many(&x[k * r..]), One(y[k]), n, out)),
+        (Linear(r), Linear(1)) if *r >= SHORT_REPEATED => each(len, *r, |k, n| leaf(One(x[k]), Many(&y[k * r..]), n, out)),
+        (Linear(1), Tiled(m)) if *m >= SHORT_CYCLED => each(len, *m, |k, n| leaf(Many(&x[k * m..]), Many(y), n, out)),
+        (Tiled(m), Linear(1)) if *m >= SHORT_CYCLED => each(len, *m, |k, n| leaf(Many(x), Many(&y[k * m..]), n, out)),
+        (left, right) => {
+            let (mut xs, mut ys) = (Vec::new(), Vec::new());
+            each(len, CHUNK, |k, n| leaf(expanded(left, x, k * CHUNK, n, &mut xs), expanded(right, y, k * CHUNK, n, &mut ys), n, out))
+        }
     }
-    // `assert_eq!` would keep `written` in memory, with a store for each item. A scalar loop, as on 16-bit floats, then costs about three
-    // times as much.
-    assert!(written == n, "fill needs one item for each result");
-    // SAFETY: the loop wrote the first `n` slots of the spare capacity.
-    unsafe { data.set_len(data.len() + n) }
-    ok
 }
 
-/// A scan's result for one item, as `filled` gives it. A failure clears `ok`.
+/// Items `start..start + n` of an argument that `mapping` lays out over the frame. A single item and a contiguous run need no copy.
+/// Others copy into `buf`. A repeated item finds its source by a strength-reduced division, which multiplies in place of dividing.
+/// A cycled argument writes one period, then copies what it has written until `buf` is full.
+fn expanded<'a, A: Element>(mapping: &Mapping, data: &'a [A], start: usize, n: usize, buf: &'a mut Vec<A>) -> Arg<'a, A> {
+    match *mapping {
+        Mapping::Single => return Arg::One(data[0]),
+        Mapping::Linear(1) => return Arg::Many(&data[start..start + n]),
+        _ => {}
+    }
+    if buf.len() < n { buf.resize(n, A::FILL) }
+    let out = &mut buf[..n];
+    match *mapping {
+        Mapping::Linear(r) => {
+            let r = strength_reduce::StrengthReducedUsize::new(r);
+            for (i, slot) in out.iter_mut().enumerate() { *slot = data[(start + i) / r] }
+        }
+        Mapping::Tiled(m) => {
+            let period = m.min(n);
+            for (i, slot) in out[..period].iter_mut().enumerate() { *slot = data[(start + i) % m] }
+            let mut filled = period;
+            while filled < n {
+                let more = filled.min(n - filled);
+                out.copy_within(..more, filled);
+                filled += more;
+            }
+        }
+        _ => for (i, slot) in out.iter_mut().enumerate() { *slot = item(mapping, data, start + i) },
+    }
+    Arg::Many(out)
+}
+
+/// `run` on `n` pairs of the items of `x` and `y` read as `A`, `CHUNK` pairs at a time, appending to `out`. Items that already have
+/// type `A` pass through, and others convert into `bufs`. Converting a chunk costs about one copy, far less than a function with a
+/// slice form.
 #[inline]
-fn noted<B: Element>(ok: &mut bool, result: Option<B>) -> B { *ok &= result.is_some(); result.unwrap_or(B::FILL) }
+fn read_chunks<A: Element, X: Source<A>, Y: Source<A>>(
+    x: Arg<'_, X>, y: Arg<'_, Y>, n: usize, out: &mut Vec<A>, (xs, ys): (&mut Vec<A>, &mut Vec<A>),
+    run: impl Fn(Arg<'_, A>, Arg<'_, A>, usize, &mut Vec<A>) -> bool,
+) -> bool {
+    each(n, CHUNK, |k, m| run(read_chunk(x, k * CHUNK, m, xs), read_chunk(y, k * CHUNK, m, ys), m, out))
+}
+
+/// Items `start..start + n` of `a`, read as `A`.
+fn read_chunk<'a, A: Element, X: Source<A>>(a: Arg<'a, X>, start: usize, n: usize, buf: &'a mut Vec<A>) -> Arg<'a, A> {
+    match a {
+        Arg::Many(s) => match X::borrowed(&s[start..start + n]) {
+            Some(s) => Arg::Many(s),
+            None => a.converted(start, n, buf, X::read),
+        },
+        Arg::One(_) => a.converted(start, n, buf, X::read),
+    }
+}
+
+/// One item's result for `rustymath::pairs`: the value, or `B::FILL` and a failure.
+#[inline]
+fn item_result<B: Element>(result: Option<B>) -> (B, bool) { (result.unwrap_or(B::FILL), result.is_some()) }
+
+/// One item's result in the scans. A failure clears `ok` and gives `B::FILL`.
+#[inline]
+fn noted<B: Element>(ok: &mut bool, result: Option<B>) -> B {
+    let (value, good) = item_result(result);
+    *ok &= good;
+    value
+}
 
 /// A loop over the frame of `agreement`. Kernels of approximate numbers compare within the tolerance of their width in `numeric`.
 struct Map<'a, X, Y> { x: &'a [X], y: &'a [Y], agreement: &'a Agreement, numeric: Numeric }
@@ -722,33 +795,26 @@ impl<'a, X: Element, Y: Element> Map<'a, X, Y> {
     fn exact(x: &'a [X], y: &'a [Y], agreement: &'a Agreement) -> Self { Self { x, y, agreement, numeric: Numeric::EXACT } }
     /// The results of `f` on the pairs of items, in the shape of the frame.
     #[inline]
-    fn binary<B: Element>(&self, f: impl Fn(X, Y) -> Option<B>) -> Option<Value> {
-        let (x, y, len, f) = (self.x, self.y, self.agreement.len, #[inline(always)] |(a, b)| f(a, b));
-        let mut data = Vec::with_capacity(len);
-        let ok = match (&self.agreement.left, &self.agreement.right) {
-            (Mapping::Single, Mapping::Linear(1)) => left(&mut data, x[0], y, f),
-            (Mapping::Linear(1), Mapping::Single) => right(&mut data, x, y[0], f),
-            (Mapping::Linear(1), Mapping::Linear(1)) => both(&mut data, x, y, f),
-            (Mapping::Linear(n), Mapping::Tiled(m)) if n == m => x.iter().fold(true, |ok, &a| left(&mut data, a, y, f) & ok),
-            (Mapping::Tiled(n), Mapping::Linear(m)) if n == m => y.iter().fold(true, |ok, &b| right(&mut data, x, b, f) & ok),
-            (Mapping::Linear(1), Mapping::Linear(r)) => x.chunks(*r).zip(y).fold(true, |ok, (xs, &b)| right(&mut data, xs, b, f) & ok),
-            (Mapping::Linear(r), Mapping::Linear(1)) => x.iter().zip(y.chunks(*r)).fold(true, |ok, (&a, ys)| left(&mut data, a, ys, f) & ok),
-            (Mapping::Linear(1), Mapping::Tiled(n)) => x.chunks(*n).fold(true, |ok, xs| both(&mut data, xs, y, f) & ok),
-            (Mapping::Tiled(n), Mapping::Linear(1)) => y.chunks(*n).fold(true, |ok, ys| both(&mut data, x, ys, f) & ok),
-            (left, right) => fill(&mut data, len, (0..len).map(|i| (item(left, x, i), item(right, y, i))), f),
-        };
-        if !ok { return None; }
+    fn binary<B: Element>(&self, f: impl Fn(X, Y) -> Option<B> + Copy) -> Option<Value> {
+        self.built(|out| blocks(self.x, self.y, self.agreement, out, |x, y, n, o| pairs(x, y, n, o, |a, b| item_result(f(a, b)))))
+    }
+    /// The result in the shape of the frame, which `run` appends in full, or `None` when `run` reports a failure.
+    #[inline]
+    fn built<B: Element>(&self, run: impl FnOnce(&mut Vec<B>) -> bool) -> Option<Value> {
+        let mut data = Vec::with_capacity(self.agreement.len);
+        if !run(&mut data) { return None; }
         B::build(self.agreement.layout.shape().to_vec(), data)
     }
     #[inline]
     fn unary<B: Element>(&self, f: impl Fn(Y) -> Option<B>) -> Option<Value> {
-        let (y, len) = (self.y, self.agreement.len);
-        // `y.iter()` rather than `.copied()`, for the reason in `binary`.
-        let data = match &self.agreement.right {
-            Mapping::Linear(1) => filled(len, y.iter(), |&b| f(b)),
-            m => filled(len, (0..len).map(|i| item(m, y, i)), f),
-        }?;
-        B::build(self.agreement.layout.shape().to_vec(), data)
+        let (y, len, g) = (self.y, self.agreement.len, |b, ()| item_result(f(b)));
+        self.built(|out| match &self.agreement.right {
+            Mapping::Linear(1) => pairs(Arg::Many(y), Arg::One(()), len, out, g),
+            m => {
+                let mut ys = Vec::new();
+                each(len, CHUNK, |k, n| pairs(expanded(m, y, k * CHUNK, n, &mut ys), Arg::One(()), n, out, g))
+            }
+        })
     }
 }
 impl<A: Element, X: Source<A>, Y: Source<A>> Dyad<A> for Map<'_, X, Y> {
@@ -758,6 +824,14 @@ impl<A: Element, X: Source<A>, Y: Source<A>> Dyad<A> for Map<'_, X, Y> {
     fn same(self, f: impl Fn(A, A) -> Option<A> + Copy) -> Option<Value> { self.binary(#[inline(always)] |x, y| f(x.read(), y.read())) }
     #[inline]
     fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy) -> Option<Value> { self.binary(|x, y| f(x.read(), y.read())) }
+    #[inline]
+    fn many(self, f: impl rustymath::Binary) -> Option<Value>
+    where
+        A: Float,
+    {
+        let (mut xs, mut ys) = (Vec::new(), Vec::new());
+        self.built(|out| blocks(self.x, self.y, self.agreement, out, |x, y, n, o| read_chunks(x, y, n, o, (&mut xs, &mut ys), |x, y, m, o| f.many(x, y, m, o))))
+    }
     fn constants(&self) -> (Option<A>, Option<A>) {
         let single = |m: &Mapping| matches!(m, Mapping::Single);
         (self.x.first().filter(|_| single(&self.agreement.left)).map(|&x| x.read()), self.y.first().filter(|_| single(&self.agreement.right)).map(|&y| y.read()))
@@ -849,12 +923,12 @@ fn with_nonfinite(width: FloatWidth, run: impl FnOnce(&Cell<bool>) -> Option<Opt
 /// stands for it, and the result is flagged. A float too large for `i64`, or an array of nothing but infinities and NaN, gives `None`,
 /// so the `Number` path gives its exact or float result.
 fn nonfinite_whole<F: Float>(p: Primitive, y: &[F], agreement: &Agreement, numeric: Numeric) -> Option<Value> {
-    if !y.iter().any(|&n| Into::<f64>::into(n).is_finite()) { return None; }
+    if !y.iter().any(|&n| n.wide().is_finite()) { return None; }
     let map = Map { x: &[] as &[F], y, agreement, numeric };
     let result = with_tolerance!(numeric.tolerance_at(F::WIDTH), |t| match p {
-        Primitive::Math(Math::Floor) => map.unary(move |v: F| extended::whole(t.floor(v).into())),
-        Primitive::Math(Math::Ceiling) => map.unary(move |v: F| extended::whole(t.ceil(v).into())),
-        Primitive::Arithmetic(Arithmetic::Times) => map.unary(|v: F| extended::whole(real::signum(v.into()))),
+        Primitive::Math(Math::Floor) => map.unary(move |v: F| extended::whole(t.floor(v).wide())),
+        Primitive::Math(Math::Ceiling) => map.unary(move |v: F| extended::whole(t.ceil(v).wide())),
+        Primitive::Arithmetic(Arithmetic::Times) => map.unary(|v: F| extended::whole(real::signum(v.wide()))),
         _ => return None,
     });
     Some(result?.flagged(F::WIDTH))
@@ -1320,8 +1394,11 @@ struct Block<'a, A> { x: &'a [A], y: &'a [A], cols: usize, numeric: Numeric }
 impl<A: Element> Block<'_, A> {
     #[inline]
     fn apply<B: Element>(&self, f: impl Fn(A, A) -> Option<B>) -> Option<Value> {
-        let pairs = self.x.iter().zip(self.y.chunks(self.cols)).flat_map(|(&a, row)| row.iter().map(move |&b| (a, b)));
-        B::build(vec![self.x.len(), self.cols], filled(self.y.len(), pairs, |(a, b)| f(a, b))?)
+        let mut data = Vec::with_capacity(self.y.len());
+        let rows = self.x.iter().zip(self.y.chunks(self.cols));
+        let ok = rows.fold(true, |ok, (&a, row)| pairs(Arg::One(a), Arg::Many(row), self.cols, &mut data, |a, b| item_result(f(a, b))) & ok);
+        if !ok { return None; }
+        B::build(vec![self.x.len(), self.cols], data)
     }
 }
 impl<A: Element> Dyad<A> for Block<'_, A> {

@@ -169,6 +169,7 @@ impl From<Complex64> for Number { fn from(n: Complex64) -> Self { if n.im == 0.0
 pub(crate) mod real {
     use super::{count_as, near_integer, Arithmetic, ErrorKind};
     use crate::element::Float;
+    use rustymath::Binary as _;
     use num_traits::ToPrimitive;
     use std::cmp::Ordering;
 
@@ -196,16 +197,14 @@ pub(crate) mod real {
     /// arguments give `None`.
     #[inline]
     pub(crate) fn integral<F: Float>(x: F, y: F, f: fn(i64, i64) -> Option<i64>) -> Option<F> {
-        let (x, y, limit): (f64, f64, f64) = (x.into(), y.into(), 1e14);
+        let (x, y, limit): (f64, f64, f64) = (x.wide(), y.wide(), 1e14);
         let fits = x.fract() == 0.0 && y.fract() == 0.0 && x.abs().max(y.abs()) < limit && (x * y).abs() < limit;
         if fits { f(x as i64, y as i64).map(|n| F::narrow(n as f64)) } else { None }
     }
-    /// `x*y`. A negative base with a fractional exponent has a complex power. An exponent of 2 squares, as `x²` asks. rustymath's
-    /// `pow`, `cbrt` and `root` give an exact result wherever it's a float, as in `15*4`.
-    #[inline(always)]
-    pub(crate) fn power<F: Float>(x: F, y: F) -> Option<F> {
-        if x < F::zero() && y.is_finite() && y.fract() != F::zero() { None } else if y == F::narrow(2.0) { square(x) } else { Some(rustymath::pow(x, y)) }
-    }
+    /// `x*y`, or `None` where rustymath's `pow` gives NaN from arguments that aren't NaN, as for a negative base with a fractional
+    /// exponent, whose power is complex. rustymath's `pow`, `cbrt` and `root` give an exact result wherever it's a float, as in `15*4`.
+    #[inline]
+    pub(crate) fn power<F: Float>(x: F, y: F) -> Option<F> { rustymath::Pow.checked(x, y) }
     #[inline]
     pub(crate) fn square<F: Float>(x: F) -> Option<F> { Some(x * x) }
     /// The logarithm of `y` to base `x`. Bases 2 and 10 take their own functions.
@@ -242,8 +241,8 @@ pub(crate) mod real {
     /// by `y-i` and divide by `i+1`, with `k` taken as the smaller of `k` and `n-k` when `y` lies within tolerance of an integer `n` of
     /// at least `k`. `None` for other arguments.
     pub(crate) fn binomial<F: Float>(x: F, y: F) -> Option<F> {
-        let k = integer(x.into()).ok().filter(|&k| k >= 0)?;
-        let k = match integer(y.into()) {
+        let k = integer(x.wide()).ok().filter(|&k| k >= 0)?;
+        let k = match integer(y.wide()) {
             Ok(n) if n >= 0 => {
                 if k > n { return Some(F::zero()); }
                 k.min(n - k)
@@ -587,7 +586,7 @@ impl Number {
         match width { FloatWidth::F16 => Self(Half(half::f16::from_f64(value))), FloatWidth::F32 => Self(Single(value as f32)), FloatWidth::F64 => Self(Float(value)) }
     }
     /// The float `y`, at its own width. Code outside this module states the width of every float it makes, through `float`.
-    fn from_float<F: Float>(y: F) -> Self { Self::float(y.into(), F::WIDTH) }
+    fn from_float<F: Float>(y: F) -> Self { Self::float(y.wide(), F::WIDTH) }
     /// This number, with a 64-bit float rounded to `width`. Other numbers stay as they are.
     pub(crate) fn at_width(self, width: FloatWidth) -> Self { match self.0 { Float(n) => Self::float(n, width), _ => self } }
     /// The width of this float. `None` for any other number.
@@ -891,7 +890,7 @@ impl Number {
             |x, y| {
                 let result = if y.is_zero() { Complex64::new(1.0, 0.0) } else if x.is_zero() && y.im == 0.0 && y.re > 0.0 {
                     Complex64::zero()
-                } else if x.im == 0.0 && y.im == 0.0 && (x.re >= 0.0 || y.re.fract() == 0.0) { Complex64::new(rustymath::pow(x.re, y.re), 0.0) } else { complex::exp(y * x.ln()) };
+                } else if x.im == 0.0 && y.im == 0.0 && (x.re >= 0.0 || y.re.fract() == 0.0) { Complex64::new(rustymath::Binary::one(rustymath::Pow, x.re, y.re), 0.0) } else { complex::exp(y * x.ln()) };
                 Ok(result.into())
             },
         )
