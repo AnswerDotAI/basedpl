@@ -209,8 +209,8 @@ mod float_arithmetic {
             Primitive::Arithmetic(Minus) => run.same(|x, y| Some(x - y)),
             Primitive::Arithmetic(Times) => run.same(|x, y| Some(x * y)),
             Primitive::Arithmetic(Divide) => run.same(|x, y| Some(x / y)),
-            Primitive::Math(Ceiling) => run.same(|x: F, y| Some(x.max(y))),
-            Primitive::Math(Floor) => run.same(|x: F, y| Some(x.min(y))),
+            Primitive::Math(Ceiling) => run.same(|x: F, y| Some(reduce::maximum(x, y))),
+            Primitive::Math(Floor) => run.same(|x: F, y| Some(reduce::minimum(x, y))),
             Primitive::Math(Magnitude) => with_tolerance!(t, |t| run.same(move |x: F, y: F| Some(t.residue(x, y)))),
             Primitive::Compare(op) => with_tolerance!(t, |t| compare(op, run, t)),
             _ => return None,
@@ -991,7 +991,7 @@ impl<A: Element, X: Element, Y: Source<A>> Monad<A> for Map<'_, X, Y> {
 }
 
 /// A loop over integers where an argument holds a non-finite value, read as `extended` defines them. Beside such a value, arithmetic
-/// gives `extended::arithmetic`. Comparisons, `⌊` and `⌈` follow IEEE: NaN is unordered and gives way to the other argument. Monadic
+/// gives `extended::arithmetic`. Comparisons follow IEEE: NaN is unordered. `⌊` and `⌈` give NaN beside NaN, as they do on floats. Monadic
 /// `+ ⌊ ⌈` keep every value, `×` keeps NaN, and `-` and `|` act on the float the value stands for. Other kernels give up there. `seen`
 /// records whether any result is non-finite.
 struct Nonfinite<'a, R> { run: R, p: Primitive, seen: &'a Cell<bool> }
@@ -1006,7 +1006,7 @@ impl<R: Dyad<i64>> Dyad<i64> for Nonfinite<'_, R> {
             Primitive::Math(Math::Floor | Math::Ceiling) => self.run.same(move |x, y| {
                 note(
                     seen,
-                    if extended::is_nan(x) { Some(y) } else if extended::is_nan(y) { Some(x) } else { f(x, y) },
+                    if extended::is_nan(x) { Some(x) } else if extended::is_nan(y) { Some(y) } else { f(x, y) },
                 )
             }),
             Primitive::Arithmetic(op) => self.run.same(move |x, y| note(seen, if special(x, y) { extended::arithmetic(op, x, y) } else { f(x, y) })),
@@ -1091,8 +1091,8 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: &Axis, shape: Vec<usize>, 
     }
 }
 
-/// A reduction of floats of width `F`. `+/` and `×/` use algebraic operations, which may combine the items in any order. NaN gives way
-/// in `max` and `min`, so each lane of `⌈/` or `⌊/` can start from it.
+/// A reduction of floats of width `F`. `+/` and `×/` use algebraic operations, which may combine the items in any order. Each lane of
+/// `⌈/` starts from ¯∞ and each lane of `⌊/` from ∞. A NaN item makes its lane's result NaN.
 fn float_fold<F: Float + Native + Kernels + reduce::Fold<Sum = F>>(p: Primitive, data: &[F], axis: &Axis, shape: Vec<usize>, numeric: Numeric) -> Option<Value>
 where
     bool: Source<F>,
@@ -1102,8 +1102,8 @@ where
     match p {
         Primitive::Arithmetic(Plus) => F::build_narrowed(shape, lanes(data, axis, F::zero(), F::algebraic_add, |l| total(reduce::sum(l)))),
         Primitive::Arithmetic(Times) => F::build_narrowed(shape, lanes(data, axis, F::one(), F::algebraic_mul, |l| total(reduce::prod(l)))),
-        Primitive::Math(Ceiling) => F::build_narrowed(shape, lanes(data, axis, F::nan(), F::max, reduce::max)),
-        Primitive::Math(Floor) => F::build_narrowed(shape, lanes(data, axis, F::nan(), F::min, reduce::min)),
+        Primitive::Math(Ceiling) => F::build_narrowed(shape, lanes(data, axis, F::neg_infinity(), reduce::maximum, reduce::max)),
+        Primitive::Math(Floor) => F::build_narrowed(shape, lanes(data, axis, F::infinity(), reduce::minimum, reduce::min)),
         _ => F::dyad(p, Fold { data, axis, shape, numeric })?,
     }
 }
@@ -1305,8 +1305,8 @@ where
     match p {
         Primitive::Arithmetic(Arithmetic::Plus) => scan.sliced(|x, y| x + y, |l, s, o| { reduce::cumsum(l, s, o); }),
         Primitive::Arithmetic(Arithmetic::Times) => scan.sliced(|x, y| x * y, |l, s, o| { reduce::cumprod(l, s, o); }),
-        Primitive::Math(Math::Ceiling) => scan.sliced(num_traits::Float::max, reduce::cummax),
-        Primitive::Math(Math::Floor) => scan.sliced(num_traits::Float::min, reduce::cummin),
+        Primitive::Math(Math::Ceiling) => scan.sliced(reduce::maximum, reduce::cummax),
+        Primitive::Math(Math::Floor) => scan.sliced(reduce::minimum, reduce::cummin),
         _ => F::dyad(p, scan)?,
     }
 }

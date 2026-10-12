@@ -754,14 +754,13 @@ impl Number {
 
     fn minimum(&self, right: &Self, maximum: bool) -> Result<Self, &'static str> {
         if let (Integer(x), Integer(y)) = (&self.0, &right.0) { return Ok(Self(Integer(if maximum { *x.max(y) } else { *x.min(y) }))); }
-        // As in Rust's `max` and `min`, NaN gives way to the other argument. An exact number stays exact beside an infinity, and beside
+        // NaN beside any number gives NaN, at the width the two compute at. An exact number stays exact beside an infinity, and beside
         // another exact number.
-        if self.is_nan() { return Ok(right.clone()); }
-        if right.is_nan() { return Ok(self.clone()); }
-        if (self.is_exact() && right.is_exact()) || self.is_infinite() || right.is_infinite() {
+        let nan = self.is_nan() || right.is_nan();
+        if !nan && ((self.is_exact() && right.is_exact()) || self.is_infinite() || right.is_infinite()) {
             return Ok((if maximum == self.order(right)?.is_lt() { right } else { self }).clone());
         }
-        reals!(self, right => |x, y: F| Ok(Self::from_float(if maximum { x.max(y) } else { x.min(y) })))
+        reals!(self, right => |x, y: F| Ok(Self::from_float(if maximum { rustymath::reduce::maximum(x, y) } else { rustymath::reduce::minimum(x, y) })))
     }
 
     /// The result at the first of four levels that gives one for `self` and `right`: both 64-bit integers, both exact, both real, and

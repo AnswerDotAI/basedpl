@@ -177,11 +177,11 @@ Joining infinities or NaN to exact integers keeps the integers exact. Exact inte
 
 CSV and JSON imports give NaN for a missing number. An integer column with gaps then stays exact.
 
-`⌊` and `⌈` return an exact argument unchanged beside an infinity, and return the other argument beside NaN:
+`⌊` and `⌈` return an exact argument unchanged beside an infinity. Beside NaN they give NaN:
 
 ```bpl
 3ₓ⌊∞                 ⍝ 3ₓ
-3ₓ⌊$n                ⍝ 3ₓ
+3ₓ⌊$n                ⍝ $n
 ```
 
 Arithmetic with an infinity gives floats.
