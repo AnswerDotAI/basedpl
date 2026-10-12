@@ -85,7 +85,7 @@ const ABSENT: &str = "⍺ is absent in a call with one argument: it can only be 
 /// The error for a selection target that does something other than select from its array, such as assigning the selection.
 const INVALID_SELECTION: &str = "invalid selective-assignment expression";
 
-fn implicit_name(name: &str) -> bool { matches!(name, "⍺" | "⍵" | "⍶" | "⍹" | "∇" | "⍢") }
+fn implicit_name(name: &str) -> bool { matches!(Key::of(name), Key::Implicit(_)) }
 /// Whether no offset repeats.
 fn distinct(offsets: &[usize]) -> bool { let mut seen = HashSet::with_capacity(offsets.len()); offsets.iter().all(|&o| seen.insert(o)) }
 
@@ -640,8 +640,46 @@ impl PartialEq for Closure {
         Arc::ptr_eq(&self.definition, &other.definition) && (self.environment, self.module) == (other.environment, other.module)
     }
 }
-/// A function call's names. `module` is the module whose names the call sees after its frames.
-struct Frame { names: HashMap<String, Binding>, parent: Option<usize>, module: usize }
+/// A name in a frame: one of the six names that a call binds itself, by its slot, or any other name.
+#[derive(Clone, Copy, PartialEq)]
+enum Key<'a> { Implicit(usize), Named(&'a str) }
+impl<'a> Key<'a> {
+    const ALPHA: Self = Self::Implicit(0);
+    const OMEGA: Self = Self::Implicit(1);
+    const LEFT_OPERAND: Self = Self::Implicit(2);
+    const RIGHT_OPERAND: Self = Self::Implicit(3);
+    const RECURSION: Self = Self::Implicit(4);
+    const OPERATOR_RECURSION: Self = Self::Implicit(5);
+    fn of(name: &'a str) -> Self {
+        match name {
+            "⍺" => Self::ALPHA,
+            "⍵" => Self::OMEGA,
+            "⍶" => Self::LEFT_OPERAND,
+            "⍹" => Self::RIGHT_OPERAND,
+            "∇" => Self::RECURSION,
+            "⍢" => Self::OPERATOR_RECURSION,
+            _ => Self::Named(name),
+        }
+    }
+}
+/// A function call's names. The call's arguments, operands and recursion names are in `implicit`, at their `Key` slots. Other names
+/// are in `names`, which allocates only when the call binds one. `module` is the module whose names the call sees after its frames.
+struct Frame { implicit: [Option<Binding>; 6], names: HashMap<String, Binding>, parent: Option<usize>, module: usize }
+impl Frame {
+    fn new(parent: Option<usize>, module: usize) -> Self { Self { implicit: Default::default(), names: HashMap::default(), parent, module } }
+    fn get(&self, key: Key) -> Option<&Binding> {
+        match key { Key::Implicit(k) => self.implicit[k].as_ref(), Key::Named(name) => self.names.get(name) }
+    }
+    fn insert(&mut self, key: Key, value: Binding) {
+        match key {
+            Key::Implicit(k) => self.implicit[k] = Some(value),
+            Key::Named(name) => { self.names.insert(name.to_owned(), value); }
+        }
+    }
+    fn remove(&mut self, key: Key) -> Option<Binding> {
+        match key { Key::Implicit(k) => self.implicit[k].take(), Key::Named(name) => self.names.remove(name) }
+    }
+}
 struct ArrayBinding { name: String, owner: Option<usize>, value: Value }
 
 #[derive(Clone, Debug)]
@@ -818,7 +856,7 @@ impl Binding {
         }
     }
 }
-struct Bound { value: Binding, shy: bool, expression: Option<Expression> }
+struct Bound { value: Binding, shy: bool, expression: Option<Box<Expression>> }
 struct Application {
     function: Function,
     left: Option<Value>,
@@ -826,7 +864,7 @@ struct Application {
     span: Span,
     unshy: bool,
     selection: Option<SelectionKind>,
-    expression: Option<Expression>,
+    expression: Option<Box<Expression>>,
 }
 enum Step { Done(Bound), Tail(Application) }
 
@@ -875,6 +913,8 @@ pub struct Session {
     /// Empty vectors that the binder reuses for its stacks within one evaluation, so that an expression allocates none for them.
     /// `evaluation` frees them when it ends.
     stacks: Vec<Vec<binder::Entity>>,
+    /// The `Function` for each primitive that `resolve` has met. Resolving a glyph clones it, where it would otherwise allocate one.
+    primitives: HashMap<Primitive, Function>,
     current: Option<usize>,
     depth: usize,
     prototype: bool,

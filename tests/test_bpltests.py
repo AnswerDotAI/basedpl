@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import pytest
 from basedpl.reference import Corpus
-from basedpl.bpltests import Case, parse, render, convert, add, description, literal
+from basedpl.bpltests import Case, parse, render, convert, add, description, literal, set_budgets, logged_costs, SpeedCosts
 from basedpl.worker import Worker
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,3 +73,18 @@ def test_incremental_export(tmp_path):
     with pytest.raises(ValueError, match='duplicate'): add(['ngn:518'], tmp_path, inventory)
     assert (tmp_path/'ngn.bpl').read_bytes() == saved
     assert all(row['status']=='active' for row in Corpus(inventory).get_many(rows, '*').values())
+
+
+def test_set_budgets(tmp_path):
+    path = tmp_path/'speed.txt'
+    path.write_text('# The CI figures come from `Speed` run 1. `⌽v` has no CI figure yet.\n[setup]\nn←4\n[copies]\n-v\t2.8\t3.4\n⌽v\t3\t4.8\n[widths] •prefs ["float":32]\n-v\t0.83\t0.79\n')
+    mac = SpeedCosts([('copies', '-v', 1.37, 3.4), ('widths', '-v', 0.55, 0.83)])
+    stamp = '2026-10-12T00:58:18.5848621Z '
+    ci = logged_costs(f'{stamp}model name\t: CPU A\n{stamp}copies -v: 2.04, budget 3.4\n{stamp}widths -v: 0.60, budget 0.83\n')
+    ci_wasm = logged_costs(f'{stamp}model name\t: CPU B\n{stamp}copies ⌽v: 0.10, budget 4.8\n')
+    changes = set_budgets(native=[mac, ci], wasm=[ci_wasm], run=2, path=path)
+    assert path.read_text() == ("# The CI figures come from `Speed` run 2. Its native job's CPU was the CPU A. Its wasm job's CPU was the CPU B.\n"
+                                '[setup]\nn←4\n[copies]\n-v\t4.1\t3.4\n⌽v\t3\t0.5\n[widths] •prefs ["float":32]\n-v\t0.85\t0.79\n')
+    assert len(changes) == 3
+    set_budgets(native=[ci], run=3, path=path)
+    assert path.read_text().startswith('# The CI figures come from `Speed` run 3. Its CPU was the CPU A.\n')

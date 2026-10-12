@@ -1,0 +1,49 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubicloud-standard-4
+    steps:
+      - uses: actions/checkout@v7
+      - run: node tests/input.mjs
+      - uses: dtolnay/rust-toolchain@stable
+      # The repository has no `Cargo.lock`. Creating one first makes rust-cache's key change when a dependency publishes a new version.
+      - run: cargo generate-lockfile
+      # The `Speed` workflow restores this cache and the `wasm` job's, by their `shared-key`.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: native
+      - run: grep -m1 'model name' /proc/cpuinfo
+      - run: cargo test
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install -e '.[dev]'
+      - run: cargo develop
+      - run: pytest
+      - run: bpl-nb
+      - run: nbdev-test
+
+  wasm:
+    runs-on: ubicloud-standard-4
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo generate-lockfile
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm
+      - run: cargo wasm --strip
+      - run: node --test tests/wasm.mjs
+      - run: grep -m1 'model name' /proc/cpuinfo
+      - run: node --no-liftoff --test tests/wasm-speed.mjs

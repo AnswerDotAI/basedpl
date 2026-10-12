@@ -330,9 +330,10 @@ fn array_order(left: &Value, right: &Value) -> Option<Ordering> {
     Some(left.len().cmp(&right.len()).then_with(|| left.shape().cmp(right.shape())))
 }
 
-/// The grade of `right`'s `count` major cells by radix sort, when its items are all floats, all integers or all characters, in at most
-/// 16 columns. `Float::order_key` orders floats as `array_order` does, with a key as wide as the float.
-fn radix_grade(right: &Value, count: usize, down: bool) -> Option<Vec<usize>> {
+/// The grade of `right`'s `count` major cells by rustymath's `sort_rows`, when its items are all Booleans, all floats, all integers or
+/// all characters, in at most 16 columns. `sort_rows` counts keys that span a small range. It radix-sorts other keys.
+/// `Float::order_key` orders floats as `array_order` does, with a key as wide as the float.
+fn key_grade(right: &Value, count: usize, down: bool) -> Option<Vec<usize>> {
     use rustymath::{search::{sort_rows, RadixKey}, Float as _};
     /// `k`, or its complement when grading down, which reverses the order of keys.
     fn ordered<K: RadixKey>(k: K, down: bool) -> K { if down { !k } else { k } }
@@ -347,13 +348,14 @@ fn radix_grade(right: &Value, count: usize, down: bool) -> Option<Vec<usize>> {
             ordered(if crate::number::extended::is_nan(n) { u64::MAX } else if n == crate::number::extended::INFINITY { u64::MAX - 1 } else { n as u64 ^ 1 << 63 }, down)
         }),
         Items::Characters(x) => sort_rows(count, width, |r, c| ordered(u64::from(x[r * width + c]), down)),
+        Items::Booleans(x) => sort_rows(count, width, |r, c| ordered(u16::from(x[r * width + c]), down)),
         _ => return None,
     })
 }
 pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Context<'_>) -> Result<Value, Error> {
     if right.is_unit() || left.is_some_and(Value::is_unit) { return Err(span.error(ErrorKind::Rank, "grade needs arrays of rank at least one")); }
     let count = generated_len(&right.shape()[..1]).error_at(span, "grade result is too large")?;
-    // Only the comparison sorts start from the positions in order. The radix sort builds its own.
+    // Only the comparison sorts start from the positions in order. `sort_rows` builds its own.
     let mut indices: Vec<usize>;
     let direction = |order: Ordering| if down { order.reverse() } else { order };
     if let Some(collation) = left {
@@ -382,7 +384,7 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
             Ordering::Equal
         });
     }
-    else if let Some(order) = radix_grade(right, count, down) { indices = order; }
+    else if let Some(order) = key_grade(right, count, down) { indices = order; }
     else {
         let cells = right.cells(right.shape().len() - 1).and_then(|c| c.collect()).error_at(span, "invalid grade cells")?;
         // A sort comparison can't fail. It notes a function instead, and the error follows the sort.
@@ -397,8 +399,43 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
 /// `right`'s major cells in the order that `grade` gives, as `[⍋v]⌷v` or `[⍒v]⌷v`. A unit has one item, so it is already sorted.
 pub(super) fn sort(right: &Value, down: bool, span: &Context<'_>) -> Result<Value, Error> {
     if right.is_unit() { return Ok(right.clone()); }
+    if let Some(sorted) = counted_sort(right, down) { return Ok(sorted); }
     let order = Value::new(vec![1], vec![grade(None, right, down, span)?]).error_at(span, "invalid sort")?;
     squad(&order, right, None, span)
+}
+
+/// A vector without keys of 256 items or more, sorted by counting its items, when they are integers, Booleans or characters whose
+/// keys `counts` counts. A sort needs no positions. It writes each item as many times as it occurs, in order. Fewer items go through
+/// `grade`. A table of `counts` holds up to 1024 keys, however few the items.
+fn counted_sort(right: &Value, down: bool) -> Option<Value> {
+    use crate::element::Element;
+    use rustymath::search::{counts, Key};
+    /// The items of `x` in order, from the count of each key. `item` turns a key back into an item. Each key writes its item to the
+    /// next four places, then fills the rest of its count. A key with fewer items has its extra places overwritten by the next keys.
+    /// Writing four with no branch avoids a mispredicted branch for each key when most counts are 0 or 1.
+    fn spread<T: Element + Key>(x: &[T], down: bool, item: impl Fn(i64) -> T) -> Option<Value> {
+        let (min, counts) = counts(x)?;
+        let mut sorted = vec![T::FILL; x.len() + 4];
+        let mut at = 0;
+        let mut write = |(k, &c): (usize, &usize)| {
+            let v = item(min + k as i64);
+            sorted[at..at + 4].fill(v);
+            if c > 4 { sorted[at + 4..at + c].fill(v) }
+            at += c;
+        };
+        if down { counts.iter().enumerate().rev().for_each(&mut write) } else { counts.iter().enumerate().for_each(&mut write) }
+        sorted.truncate(x.len());
+        T::build(vec![sorted.len()], sorted)
+    }
+    if right.shape().len() != 1 || right.keys(0).is_some() || right.len() < 256 { return None; }
+    let sorted = match right.as_items() {
+        Items::Integers(x) => with_ints!(x, |x| spread(x, down, |k| k as _)),
+        Items::Booleans(x) => spread(x, down, |k| k != 0),
+        // A key between two characters may not be a character itself. Its count is 0, so what it writes is overwritten.
+        Items::Characters(x) => spread(x, down, |k| char::from_u32(k as u32).unwrap_or(char::FILL)),
+        _ => None,
+    }?;
+    sorted.with_layout(right.layout().clone()).ok()
 }
 
 pub(super) fn interval_index(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {

@@ -23,7 +23,7 @@ impl Session {
         let mut names = HashSet::new();
         let mut scope = self.current;
         while let Some(i) = scope {
-            names.extend(self.frames[i].names.keys().map(String::as_str).filter(|name| !implicit_name(name)));
+            names.extend(self.frames[i].names.keys().map(String::as_str));
             scope = self.frames[i].parent;
         }
         names.extend(self.table(self.module()).keys().map(String::as_str));
@@ -66,13 +66,18 @@ impl Session {
     /// level is running. Module 0 is the session's own names.
     fn module(&self) -> usize { self.current.map_or(self.module, |i| self.frames[i].module) }
     fn table(&self, module: usize) -> &HashMap<String, Binding> { if module == 0 { &self.names } else { &self.modules[module - 1] } }
-    /// The names of the frame that owns a binding, or the names of the current module.
-    pub(super) fn names_mut(&mut self, owner: Option<usize>) -> &mut HashMap<String, Binding> {
-        match (owner, self.module()) { (Some(i), _) => &mut self.frames[i].names, (None, 0) => &mut self.names, (None, m) => &mut self.modules[m - 1] }
+    fn table_mut(&mut self, module: usize) -> &mut HashMap<String, Binding> { if module == 0 { &mut self.names } else { &mut self.modules[module - 1] } }
+    /// Binds `name` in the frame `owner`, or in the running module's names when `owner` is `None`.
+    pub(super) fn insert_name(&mut self, owner: Option<usize>, name: &str, value: Binding) {
+        match owner { Some(i) => self.frames[i].insert(Key::of(name), value), None => { self.table_mut(self.module()).insert(name.to_owned(), value); } }
+    }
+    /// Removes the binding of `name` from the frame `owner`, or from the running module's names when `owner` is `None`.
+    pub(super) fn remove_name(&mut self, owner: Option<usize>, name: &str) -> Option<Binding> {
+        match owner { Some(i) => self.frames[i].remove(Key::of(name)), None => self.table_mut(self.module()).remove(name) }
     }
     pub fn erase(&mut self, name: &str) -> bool {
         if implicit_name(name) || !matches!(crate::inspection::item(name), Some(NodeKind::Name(_))) { return false; }
-        if let Some((owner, _)) = self.binding(name) { self.names_mut(owner).remove(name); }
+        if let Some((owner, _)) = self.binding(name) { self.remove_name(owner, name); }
         true
     }
     pub fn complete(&self, prefix: &str) -> Vec<String> {
@@ -283,7 +288,7 @@ impl Session {
             match bound {
                 Ok(bound) => {
                     let dissected = if dissecting && (dissect || !bound.shy && !matches!(bound.value, Binding::NoResult | Binding::Absent)) {
-                        bound.expression.or_else(|| Expression::binding(&bound.value)).map(|e| e.display(self.display.trees))
+                        bound.expression.map(|e| *e).or_else(|| Expression::binding(&bound.value)).map(|e| e.display(self.display.trees))
                     } else { None };
                     if let Some(text) = &dissected { self.execution.output(crate::OutputKind::Display, text.clone()); }
                     result.value = match bound.value {
@@ -476,7 +481,7 @@ impl Session {
     pub(super) fn resolve(&mut self, node: &Node) -> Result<Bound, Error> {
         Ok(Bound::new(match &node.kind {
             NodeKind::Literal(a) => Binding::Value(a.clone()),
-            NodeKind::Function(p) => Binding::Function(Function::primitive(*p)),
+            NodeKind::Function(p) => Binding::Function(self.primitives.entry(*p).or_insert_with(|| Function::primitive(*p)).clone()),
             NodeKind::Operator(op) => Binding::Operator(OperatorNode::Primitive(*op)),
             NodeKind::Name(name) => match self.lookup(name) {
                 Some(value) => value.clone(),
@@ -547,10 +552,11 @@ impl Session {
     pub(super) fn lookup(&self, name: &str) -> Option<&Binding> { self.binding(name).map(|(_, value)| value) }
 
     pub(super) fn binding(&self, name: &str) -> Option<(Option<usize>, &Binding)> {
-        if name == "⍺" { return self.current.and_then(|i| self.frames[i].names.get(name).map(|value| (Some(i), value))); }
+        let key = Key::of(name);
+        if key == Key::ALPHA { return self.current.and_then(|i| self.frames[i].get(key).map(|value| (Some(i), value))); }
         let mut scope = self.current;
         while let Some(i) = scope {
-            if let Some(value) = self.frames[i].names.get(name) { return Some((scope, value)); }
+            if let Some(value) = self.frames[i].get(key) { return Some((scope, value)); }
             scope = self.frames[i].parent;
         }
         self.table(self.module()).get(name).map(|value| (None, value))
@@ -571,14 +577,16 @@ impl Session {
                 FunctionNode::Derived(c, operand, right) => (c, Some(operand), right.as_ref()),
                 _ => unreachable!(),
             };
-            let mut names = HashMap::from_iter([("⍵".into(), Binding::Value(right)), ("∇".into(), Binding::Function(function.clone()))]);
-            if let Some(a) = left { names.insert("⍺".into(), Binding::Value(a)); }
+            let mut frame = Frame::new(closure.environment, closure.module);
+            frame.insert(Key::OMEGA, Binding::Value(right));
+            frame.insert(Key::RECURSION, Binding::Function(function.clone()));
+            if let Some(a) = left { frame.insert(Key::ALPHA, Binding::Value(a)); }
             if let Some(f) = operand {
-                names.insert("⍶".into(), f.value());
-                names.insert("⍢".into(), Binding::Operator(OperatorNode::Defined(closure.clone())));
+                frame.insert(Key::LEFT_OPERAND, f.value());
+                frame.insert(Key::OPERATOR_RECURSION, Binding::Operator(OperatorNode::Defined(closure.clone())));
             }
-            if let Some(f) = right_operand { names.insert("⍹".into(), f.value()); }
-            if let Err(error) = self.enter(Frame { names, parent: closure.environment, module: closure.module }, &closure.definition.span) { break Err(error); }
+            if let Some(f) = right_operand { frame.insert(Key::RIGHT_OPERAND, f.value()); }
+            if let Err(error) = self.enter(frame, &closure.definition.span) { break Err(error); }
             match self.run_definition(&closure.definition) {
                 Ok(Step::Done(bound)) => break Ok(bound),
                 Err(error) => break Err(error),
@@ -624,11 +632,12 @@ impl Session {
     /// scope, and assignments stay in the new frame. `T.(expr)` and `T⍎text` evaluate this way.
     fn scoped(&mut self, record: &Value, span: &Span, f: impl FnOnce(&mut Self) -> Result<Bound, Error>) -> Result<Bound, Error> {
         let entries = record.keys(0).ok_or(ErrorKind::Domain).and_then(|_| crate::keyed::entries(record)).error_at(span, "a scope must be a keyed vector")?;
-        let mut names: HashMap<String, Binding> = entries.into_iter().filter_map(|(key, item)| Some((key?.to_string(), Binding::from_element(item)))).collect();
-        // Lookup finds `⍺` only in the current frame, so the scope holds the caller's.
-        if let Some(a) = self.current.and_then(|i| self.frames[i].names.get("⍺")) { names.entry("⍺".into()).or_insert_with(|| a.clone()); }
         let (caller, base) = (self.current, self.frames.len());
-        self.enter(Frame { names, parent: caller, module: self.module() }, span)?;
+        let mut frame = Frame::new(caller, self.module());
+        for (key, item) in entries { if let Some(key) = key { frame.insert(Key::of(&key), Binding::from_element(item)); } }
+        // Lookup finds `⍺` only in the current frame, so the scope holds the caller's.
+        if frame.get(Key::ALPHA).is_none() { if let Some(a) = caller.and_then(|i| self.frames[i].get(Key::ALPHA)) { frame.insert(Key::ALPHA, a.clone()); } }
+        self.enter(frame, span)?;
         let result = f(self);
         self.leave(base, caller, result, span)
     }
@@ -670,12 +679,12 @@ impl Session {
                     match statement.kind {
                         StatementKind::DefaultArgument => {
                             if nodes.len() == 2 { return Err(nodes[1].span.error(ErrorKind::Syntax, "default argument needs a value")); }
-                            if !self.frames[frame].names.contains_key("⍺") {
+                            if self.frames[frame].get(Key::ALPHA).is_none() {
                                 let value = self.bind(&nodes[2..])?.value;
                                 if matches!(value, Binding::NoResult | Binding::Absent) {
                                     return Err(nodes[0].span.error(ErrorKind::Value, "default argument requires a value"));
                                 }
-                                self.frames[frame].names.insert("⍺".into(), value);
+                                self.frames[frame].insert(Key::ALPHA, value);
                             }
                         }
                         StatementKind::ErrorGuard { index: i } => {
@@ -701,7 +710,7 @@ impl Session {
             let Some((handler, catch)) = handlers.pop() else { break };
             if !catch.catches(&error.kind) { continue; }
             if error.kind == ErrorKind::Interrupt { self.execution.clear_interrupt(); }
-            self.frames[frame].names.insert("$e".into(), Binding::Value(caught(error)));
+            self.frames[frame].insert(Key::Named("$e"), Binding::Value(caught(error)));
             result = self.return_expression(handler, false);
         }
         result

@@ -95,7 +95,7 @@ impl Numeric {
     pub(crate) fn width_of(self, widths: impl IntoIterator<Item = Option<FloatWidth>>) -> FloatWidth { widths.into_iter().flatten().max().unwrap_or(self.width) }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Arithmetic {
     Plus,
     Minus,
@@ -103,7 +103,7 @@ pub(crate) enum Arithmetic {
     Divide,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Math {
     Magnitude,
     Floor,
@@ -323,11 +323,13 @@ pub(crate) mod int {
     pub(crate) fn not(y: i64) -> Option<bool> { Some(!boolean(y)?) }
 }
 
-/// Complex cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`. Arithmetic is `num_complex`'s.
-/// Complex storage also holds floats that widened into it. `Number` reads such an item as a float, because its imaginary part is zero.
-/// So `times`, `divide` and `magnitude` take the real case when no argument has an imaginary part, as
-/// `TolerantComplex::complex_equal` does. Addition and subtraction give the same results either way. Each function but `circle` works
-/// at both widths of parts. `circle` works with 64-bit parts, and a caller with 32-bit parts rounds its result.
+/// Complex cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`. Arithmetic is
+/// `num_complex`'s. Complex storage also holds floats that widened into it. `Number` reads such an item as a float, because its
+/// imaginary part is zero. `divide` takes the real case when neither argument has an imaginary part, as
+/// `TolerantComplex::complex_equal` does. A real divided by zero then gives an infinity, as it does in float storage.
+/// Multiplication applies `num_complex`'s formula to such items too. An infinite or NaN real part times a real then gives a NaN
+/// imaginary part. Each function but `circle` works at both widths of parts. `circle` works with 64-bit parts. A caller with
+/// 32-bit parts rounds its result.
 pub(crate) mod complex {
     use super::Arithmetic;
     use num_complex::{Complex, Complex64};
@@ -340,12 +342,10 @@ pub(crate) mod complex {
         match op {
             Arithmetic::Plus => x + y,
             Arithmetic::Minus => x - y,
-            Arithmetic::Times => times(x, y),
+            Arithmetic::Times => x * y,
             Arithmetic::Divide => divide(x, y),
         }
     }
-    #[inline]
-    pub(crate) fn times<R: Float>(x: Complex<R>, y: Complex<R>) -> Complex<R> { if reals(x, y) { Complex::new(x.re * y.re, R::zero()) } else { x * y } }
     #[inline]
     pub(crate) fn divide<R: Float>(x: Complex<R>, y: Complex<R>) -> Complex<R> { if reals(x, y) { Complex::new(x.re / y.re, R::zero()) } else { x / y } }
     /// e^y. A whole number of quarter turns gives an exact direction, so e^(iπ/2) is i.

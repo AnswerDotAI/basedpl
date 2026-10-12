@@ -48,7 +48,7 @@ class Worker:
 
     def request(
         self,
-        payload, # Request fields, such as `code`, `reference`, `page` or `timing`
+        payload, # Request fields, such as `code`, `reference`, `page`, `timing` or `costs`
         timeout=None, # Seconds before the worker interrupts the request
         grace=1 # Seconds to wait for the reply after `timeout`, or after a Ctrl-C, before closing the worker
     ):

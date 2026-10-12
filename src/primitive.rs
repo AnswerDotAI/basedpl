@@ -149,7 +149,7 @@ impl OperatorKind {
     pub(crate) fn all() -> impl Iterator<Item = Self> { Self::ALL.into_iter() }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Comparison {
     Equal,
     NotEqual,
@@ -170,7 +170,7 @@ impl Comparison {
         }
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Primitive {
     Arithmetic(Arithmetic),
     Math(Math),

@@ -224,7 +224,7 @@ mod float_kernels {
     at_widths! {
         impl Kernels for F {
             /// The dyadic kernels of floats of width `F` that rustymath's function objects compute, with `float_dyad` for the others.
-            /// A constant exponent of 2, base of 2 or 10, or degree of 2 or 3 has a loop of its own. `Number` calls the same objects
+            /// A constant exponent of 2 and a constant degree of 2 or 3 each have a loop of their own. `Number` calls the same objects
             /// item by item.
             fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
                 use Math::*;
@@ -234,11 +234,7 @@ mod float_kernels {
                         (_, Some(y)) if y == 2.0 => run.same(|x, _| Some(x * x)),
                         _ => run.many(rustymath::Pow),
                     },
-                    Primitive::Math(Log) => match run.constants() {
-                        (Some(x), _) if x == 2.0 => run.many(Right(rustymath::Log2)),
-                        (Some(x), _) if x == 10.0 => run.many(Right(rustymath::Log10)),
-                        _ => run.many(rustymath::Logb),
-                    },
+                    Primitive::Math(Log) => run.many(rustymath::Logb),
                     Primitive::Math(Pi) => run.same(|x, y| Some(real::pi_times(x / y))),
                     Primitive::Math(Root) => match run.constants() {
                         (Some(n), _) if n == 2.0 => run.many(Right(rustymath::Sqrt)),
@@ -366,7 +362,7 @@ mod complex_kernels {
                 Some(match p {
                     Primitive::Arithmetic(Plus) => run.same(|x, y| Some(x + y)),
                     Primitive::Arithmetic(Minus) => run.same(|x, y| Some(x - y)),
-                    Primitive::Arithmetic(Times) => run.same(|x, y| Some(complex::times(x, y))),
+                    Primitive::Arithmetic(Times) => run.same(|x, y| Some(x * y)),
                     Primitive::Arithmetic(Divide) => run.same(|x, y| Some(complex::divide(x, y))),
                     Primitive::Compare(Equal) => with_tolerance!(t, |t| run.boolean(move |x, y| Some(t.complex_equal(x, y)))),
                     Primitive::Compare(NotEqual) => with_tolerance!(t, |t| run.boolean(move |x, y| Some(!t.complex_equal(x, y)))),

@@ -74,6 +74,23 @@ impl Windows {
         for (a, c) in digits(position, &self.frame) { starts[a] = self.axes[a].start(c); }
         starts
     }
+    /// `right` with its fill added before and after each padded axis, or `None` when no axis is padded. The unpadded windows of the
+    /// result are the padded windows of `right`. Each windowed axis holds only the positions its windows read. Call it only when
+    /// every axis has at least one window.
+    pub(crate) fn padded(&self, right: &Value) -> Result<Option<Value>, ErrorKind> {
+        if !self.axes.iter().any(|w| w.padded) { return Ok(None); }
+        let (shape, stride) = (right.shape(), strides(right.shape()));
+        let tables: Vec<_> = (0..shape.len())
+            .map(|a| match self.axes.get(a) {
+                Some(w) => Steps::Clipped { start: w.start(0) as i128, len: (self.frame[a] - 1) * w.step + w.size, size: shape[a], stride: stride[a] },
+                None => Steps::along(shape[a], stride[a]),
+            })
+            .collect();
+        let padded: Vec<_> = tables.iter().map(Steps::len).collect();
+        let mut data = Gather::new(&[right], generated_len(&padded)?);
+        data.walk(right, 0, &tables);
+        data.finish(Layout::from(padded), || right.prototype()).map(Some)
+    }
 }
 pub(super) fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let (sizes, moves) = window_spec(spec, right.shape().len(), span)?;
@@ -84,19 +101,15 @@ pub(super) fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result
     let cell: Vec<_> = axes.iter().map(|w| w.size).chain(right.shape()[count..].iter().copied()).collect();
     let shape = [frame.as_slice(), cell.as_slice()].concat();
     let len = generated_len(&shape).error_at(span, "windows exceed array limits")?;
-    let width = generated_len(&cell).error_at(span, "window is too large")?;
+    generated_len(&cell).error_at(span, "window is too large")?;
     let mut data = Gather::new(&[right], len);
-    if axes.iter().all(|w| !w.padded) {
-        let stride = strides(right.shape());
+    if len > 0 {
+        let padded = windows.padded(right).error_at(span, "invalid windows")?;
+        let source = padded.as_ref().unwrap_or(right);
+        let stride = strides(source.shape());
         let starts = (0..count).map(|a| Steps::Stride { start: 0, len: frame[a], step: (axes[a].step * stride[a]) as isize });
         let tables: Vec<_> = starts.chain(cell.iter().zip(&stride).map(|(&len, &stride)| Steps::along(len, stride))).collect();
-        data.walk(right, 0, &tables);
-    }
-    else {
-        for i in 0..len.checked_div(width).unwrap_or(0) {
-            span.check()?;
-            push_window(right, &cell, &windows.starts(i), &mut data);
-        }
+        data.walk(source, 0, &tables);
     }
     let frame_keys = axes.iter().enumerate().map(|(a, w)| match right.keys(a) {
         Some(k) if w.padded => k.select((0..frame[a]).map(|i| Some(i * w.step))).map(Some),

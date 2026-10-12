@@ -1,8 +1,9 @@
-//! The speed test's measurements, shared by `tests/speed.rs` and the worker's `timing` request, which serves
-//! `basedpl.bpltests.time_cases`. A time is the fastest of five evaluations of a case, after one to warm up. The case is parsed
-//! once, before them. Its unit is one copy: allocating a vector of `n` 8-byte numbers and copying `n` numbers into it, where `n` is
-//! the number of items in the setup's data.
-use crate::{host::Instant, protocol::response, EvalOptions, Evaluation, InterruptHandle, Session, Source};
+//! The speed test's measurements, shared by `tests/speed.rs`, the browser build's `costs` and the worker's `timing` and `costs`
+//! requests, which serve `basedpl.bpltests.time_cases` and `speed_costs`. A time is the fastest of five evaluations of a case, after
+//! one to warm up. The case is parsed once, before them. Its unit is one copy: allocating a vector of `n` 8-byte numbers and copying
+//! `n` numbers into it, where `n` is the number of items in the setup's data.
+//! `costs` and `request` hold the machine's timing lock while they run. `host::timing_lock` describes it.
+use crate::{host::{timing_lock, Instant}, protocol::response, EvalOptions, Evaluation, InterruptHandle, Session, Source};
 use serde_json::{json, Value as JsonValue};
 use std::{collections::HashMap, hint::black_box};
 
@@ -79,6 +80,7 @@ pub struct Case<'a> {
 /// prefs and then `[setup]`, the first section. A cost is in copies, timed just before the case, except in `[widths]`. There it is the
 /// case's time as a fraction of its time in `[exact]`.
 pub fn costs<'a>(text: &'a str, interrupt: &InterruptHandle) -> Result<Vec<Case<'a>>, String> {
+    let _lock = timing_lock()?;
     let failure = |code: &str, failed: Evaluation| format!("{code}: {}", failed.error.map(|e| e.to_string()).unwrap_or_default());
     let sections = sections(text)?;
     let Some((&("setup", _, ref setup), cases)) = sections.split_first() else { return Err("the first section must be [setup]".into()) };
@@ -109,6 +111,7 @@ pub fn costs<'a>(text: &'a str, interrupt: &InterruptHandle) -> Result<Vec<Case<
 /// `prefs` its session starts with, and the `cases` to time. The reply gives the setup's `n` and each case's time in seconds and in
 /// copies, or the evaluation that failed. Each case's copy is timed just before the case.
 pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
+    let _lock = timing_lock()?;
     let text = |key| spec[key].as_str().ok_or_else(|| format!("timing needs {key} as a string"));
     let cases = spec["cases"].as_array().ok_or("timing needs cases as an array")?;
     let sections = sections(text("speed")?)?;
@@ -128,4 +131,12 @@ pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValu
         }
     }
     Ok(json!({"n": n, "costs": costs, "output": [], "error": null}))
+}
+
+/// The reply to the worker's `costs` request, which gives `speed`, text in `speed.txt`'s format. The reply gives every case with its
+/// cost, as `costs` times them: its section, code, budgets and cost.
+pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
+    let cases = costs(spec["speed"].as_str().ok_or("costs needs speed as a string")?, interrupt)?;
+    let cases: Vec<_> = cases.iter().map(|c| json!({"section": c.section, "code": c.code, "budgets": c.budgets, "cost": c.cost})).collect();
+    Ok(json!({"costs": cases, "error": null}))
 }

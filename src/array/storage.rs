@@ -369,7 +369,7 @@ pub(super) fn item_kind(item: &Value) -> Option<Kind> {
 /// narrower float or complex buffer receives wider items only when a conversion asks for that width. Flagged integer storage converts
 /// its reserved values to the floats they stand for. Integer storage receives floats only when they're non-finite, and then has its
 /// flag set. A narrower integer line takes a 64-bit source only for an atom, whose value `Gather::follow` makes sure the buffer's width
-/// holds.
+/// holds. A conversion between items of one type is the identity. `walk_into` copies such items without it.
 macro_rules! copy_into {
     (@to Boolean $d:ident) => { Storage::Boolean($d) };
     (@to F16 $d:ident) => { Storage::Floats(FloatBuf::F16($d)) };
@@ -926,9 +926,27 @@ impl Steps {
 
 /// Appends the items of `s` that `steps` reach from `base`, each converted by `f`. A fill is the zero of the source type, which is the
 /// prototype of compact storage. The last axis copies whole slices where its pattern allows.
-fn walk_into<S: Element, D: Clone>(d: &mut Vec<D>, s: &[S], f: &impl Fn(S) -> D, base: usize, steps: &[Cow<Steps>]) {
+fn walk_into<S: Element + 'static, D: Clone + 'static>(d: &mut Vec<D>, s: &[S], f: &impl Fn(S) -> D, base: usize, steps: &[Cow<Steps>]) {
     let fill = || f(S::FILL);
     let Some((axis, rest)) = steps.split_first() else { return d.push(f(s[base])) };
+    if let [inner] = rest {
+        if let (&Steps::Stride { start: a, len: m, step: 1 }, &Steps::Stride { start: b, len: n, step }) = (&**axis, &**inner) {
+            if step > 1 { return transpose_into(d, &s[base + a + b..], f, fill(), m, n, step as usize); }
+        }
+        // One run of `n` adjacent items for each offset along `axis`, as windows give. A run of more than 8 items copies faster with
+        // `extend_from_slice`, which needs the source and the buffer to hold one type. A shorter run copies faster item by item.
+        if let Steps::Stride { start: b, len: n, step: 1 } = **inner {
+            d.reserve(axis.len() * n);
+            let runs = (0..axis.len()).map(|j| axis.get(j).map(|o| base + b + o));
+            let same = if n > 8 { (d as &mut dyn std::any::Any).downcast_mut::<Vec<S>>() } else { None };
+            if let Some(d) = same {
+                for o in runs { match o { Some(o) => d.extend_from_slice(&s[o..o + n]), None => d.extend(std::iter::repeat_n(S::FILL, n)) } }
+            } else {
+                for o in runs { match o { Some(o) => d.extend(s[o..o + n].iter().map(|&x| f(x))), None => d.extend(std::iter::repeat_n(fill(), n)) } }
+            }
+            return;
+        }
+    }
     if !rest.is_empty() {
         let width = rest.iter().map(|s| s.len()).product();
         for j in 0..axis.len() { match axis.get(j) { Some(o) => walk_into(d, s, f, base + o, rest), None => d.extend(std::iter::repeat_n(fill(), width)) } }
@@ -958,6 +976,31 @@ fn walk_into<S: Element, D: Clone>(d: &mut Vec<D>, s: &[S], f: &impl Fn(S) -> D,
             d.extend(std::iter::repeat_n(fill(), len - before - middle));
         }
         _ => d.extend(axis.offsets().map(move |o| o.map_or_else(fill, |o| f(s[o])))),
+    }
+}
+
+/// Appends `m` rows of `n` items, where item `j` of row `i` is `f(s[i + j * stride])`, as `walk_into` does for a transposed matrix.
+/// It works in tiles of `T` rows by `T` items. A tile reads `T` adjacent items from each of `T` source rows and writes `T` adjacent
+/// items to each of `T` result rows. Each block of `T` result rows is filled first, then overwritten tile by tile.
+fn transpose_into<S: Element, D: Clone>(d: &mut Vec<D>, s: &[S], f: &impl Fn(S) -> D, fill: D, m: usize, n: usize, stride: usize) {
+    const T: usize = 8;
+    for i0 in (0..m).step_by(T) {
+        let rows = T.min(m - i0);
+        let start = d.len();
+        d.resize(start + rows * n, fill.clone());
+        let block = &mut d[start..];
+        for j0 in (0..n).step_by(T) {
+            let cols = T.min(n - j0);
+            if rows < T || cols < T {
+                for r in 0..rows { for c in 0..cols { block[r * n + j0 + c] = f(s[i0 + r + (j0 + c) * stride]) } }
+                continue;
+            }
+            let source: [&[S; T]; T] = std::array::from_fn(|c| s[i0 + (j0 + c) * stride..].first_chunk().expect("a full tile lies inside `s`"));
+            for r in 0..T {
+                let out: &mut [D; T] = block[r * n + j0..].first_chunk_mut().expect("a full tile lies inside the block");
+                for c in 0..T { out[c] = f(source[c][r]) }
+            }
+        }
     }
 }
 

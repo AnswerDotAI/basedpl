@@ -1,61 +1,14 @@
-name: CI
+name: Release
 
 on:
   push:
-    branches: [main]
     tags: ['v*']
-  pull_request:
+
+permissions:
+  contents: read
 
 jobs:
-  test:
-    # A `v*` tag runs this job and `wasm` on GitHub's runner, like the release jobs, without the speed tests. The speed budgets come from Ubicloud's runner.
-    runs-on: ${{ startsWith(github.ref, 'refs/tags/v') && 'ubuntu-latest' || 'ubicloud-standard-4' }}
-    steps:
-      - uses: actions/checkout@v7
-      - run: node tests/input.mjs
-      - uses: dtolnay/rust-toolchain@stable
-      # The repository has no `Cargo.lock`. Creating one first makes rust-cache's key change when a dependency publishes a new version.
-      - run: cargo generate-lockfile
-      # The `Speed` workflow restores this cache and the `wasm` job's, by their `shared-key`.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: native
-      - run: grep -m1 'model name' /proc/cpuinfo
-      - run: cargo test -- ${{ startsWith(github.ref, 'refs/tags/v') && '--skip functions_cost_what_their_work_needs' || '' }}
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - run: pip install -e '.[dev]'
-      - run: cargo develop
-      - run: pytest
-      - run: bpl-nb
-      - run: nbdev-test
-
-  wasm:
-    runs-on: ${{ startsWith(github.ref, 'refs/tags/v') && 'ubuntu-latest' || 'ubicloud-standard-4' }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - run: cargo generate-lockfile
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: wasm
-      - run: cargo wasm --strip
-      - run: node --test tests/wasm.mjs
-      - run: grep -m1 'model name' /proc/cpuinfo
-      - if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        run: node --no-liftoff --test tests/wasm-speed.mjs
-      # The `npm` job publishes this package on a `v*` tag.
-      - if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v7
-        with:
-          name: wasm-pkg
-          path: wasm/pkg
-
   build:
-    if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       matrix:
         include:
@@ -91,7 +44,6 @@ jobs:
           path: bin
 
   windows-keyboard:
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
@@ -104,7 +56,6 @@ jobs:
           path: dist/basedpl-keyboard-us-windows.zip
 
   sdist:
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -118,8 +69,7 @@ jobs:
           path: dist
 
   publish:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test, build, sdist, windows-keyboard]
+    needs: [build, sdist, windows-keyboard]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -143,21 +93,19 @@ jobs:
             bin/*
           generate_release_notes: true
       - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist/
 
   npm:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test, wasm]
     runs-on: ubuntu-latest
     # npm accepts this job's upload through trusted publishing. The `basedpl` package's settings on npmjs.com name this workflow as its trusted publisher.
     permissions:
+      contents: read
       id-token: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          name: wasm-pkg
-          path: wasm/pkg
+          targets: wasm32-unknown-unknown
+      - run: cargo wasm --strip
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*

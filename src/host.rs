@@ -16,6 +16,28 @@ use std::{
 
 pub(crate) use std::time::Instant;
 
+/// The file whose lock keeps timings and builds apart on this machine, as DEV.md describes. Timings take it exclusively. Builds take
+/// it shared.
+const TIMING_LOCK: &str = "/tmp/aai-ws-timing.lock";
+
+/// Takes the timing lock exclusively, and returns the file that holds it until dropped. It waits up to 5 minutes while a build or
+/// another timing holds the lock. The operating system releases the lock when its process ends, even by a crash.
+pub(crate) fn timing_lock() -> Result<std::fs::File, String> {
+    let file = std::fs::File::options().create(true).append(true).open(TIMING_LOCK).map_err(|e| format!("{TIMING_LOCK}: {e}"))?;
+    let (start, mut waiting) = (Instant::now(), false);
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(std::fs::TryLockError::WouldBlock) => {}
+            Err(std::fs::TryLockError::Error(e)) => return Err(format!("{TIMING_LOCK}: {e}")),
+        }
+        if start.elapsed() > Duration::from_secs(300) { return Err(format!("a build or another timing has held {TIMING_LOCK} for 5 minutes")); }
+        if !waiting { eprintln!("waiting for a build or another timing to release {TIMING_LOCK}"); }
+        waiting = true;
+        std::thread::sleep(Duration::from_millis(250));
+    }
+}
+
 pub(crate) fn read(path: &Path) -> io::Result<Vec<u8>> { std::fs::read(path) }
 /// The name that identifies the file at `path`, for `•load`'s cycle check.
 pub(crate) fn canonical(path: &Path) -> PathBuf { std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned()) }

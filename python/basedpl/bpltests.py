@@ -1,6 +1,8 @@
-"Read BPL test cases, convert reference inventories, activate reviewed cases, and time BPL as the speed test does."
-import json, math, re
+"Read BPL test cases, convert reference inventories, activate reviewed cases, time BPL as the speed test does, and set its budgets."
+import fcntl, json, math, os, re, subprocess, sys, time
+from contextlib import contextmanager
 from collections import defaultdict
+from decimal import Context, Decimal, ROUND_CEILING
 from dataclasses import dataclass, field
 from pathlib import Path
 from ._core import _captured_literal
@@ -242,6 +244,7 @@ def check_page(
     return _failures(dict(page=dict(text=Path(path).read_text())))
 
 _SPEED = Path(__file__).parents[2]/'tests'/'speed.txt'
+_PKG = _SPEED.with_name('wasm-pkg.mjs')
 
 class Costs(list):
     "Each case's cost, as `(code, picoseconds per item, copies)` rows. Copies is `None` where one copy of the data is too quick to time."
@@ -259,3 +262,114 @@ def time_cases(
     with Worker() as w: r = w.request(dict(timing=dict(speed=speed, prefs=prefs, cases=cases)), timeout)
     if e := r['error']: raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
     return Costs((c['code'], c['seconds']*1e12/r['n'], c['copies']) for c in r['costs'])
+
+class SpeedCosts(list):
+    "Each case's cost and the budget that limits it, as `(section, code, cost, budget)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. `cpu` is the CPU model that a CI log reports, or `None`."
+    def __init__(self, rows=(), cpu=None):
+        super().__init__(rows)
+        self.cpu = cpu
+    def __repr__(self):
+        rows = ((s, c, cost, '-' if b is None else f'{b:g}', 'over' if b is not None and cost > b else '') for s, c, cost, b in self)
+        return '\n'.join(f'{cost:>9.2f} {b:>9} {over:4}  {s} {c}' for s, c, cost, b, over in rows)
+
+# The file whose lock keeps timings and builds apart on this machine, as DEV.md describes. Timings take it exclusively. Builds take
+# it shared. The native timings take it in Rust, in `basedpl::timing`.
+_TIMING_LOCK = '/tmp/aai-ws-timing.lock'
+
+@contextmanager
+def _timing_lock():
+    "Hold the timing lock exclusively, waiting up to 5 minutes for builds and other timings to release it."
+    with open(_TIMING_LOCK, 'a') as f:
+        deadline, waiting = time.monotonic() + 300, False
+        while True:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() > deadline: raise TimeoutError(f'a build or another timing has held {_TIMING_LOCK} for 5 minutes')
+                if not waiting: print(f'waiting for a build or another timing to release {_TIMING_LOCK}', file=sys.stderr)
+                waiting = True
+                time.sleep(0.25)
+        yield
+def speed_costs(
+    wasm=None, # A directory that `cargo wasm --out` wrote, to time in that browser build, as `tests/wasm-speed.mjs` does; None: a fresh native worker, as `tests/speed.rs` does
+    speed=None, # Text in `speed.txt`'s format; None: `tests/speed.txt`
+    timeout=None # Seconds before the timing stops
+):
+    "Time every case in `speed` as the speed test does, with the budget that limits it in that build."
+    speed = _SPEED.read_text() if speed is None else speed
+    if wasm is None:
+        with Worker() as w: r = w.request(dict(costs=dict(speed=speed)), timeout)
+        if e := r['error']: raise ValueError(e['message'])
+        rows = r['costs']
+    else:
+        script = f'import {{ costs }} from {json.dumps(_PKG.as_uri())}; import {{ readFileSync }} from "node:fs"; process.stdout.write(JSON.stringify(costs(readFileSync(0, "utf8"))))'
+        with _timing_lock():
+            p = subprocess.run(['node', '--no-liftoff', '--input-type=module', '-e', script], input=speed, capture_output=True, text=True,
+                               timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(wasm)))
+        if p.returncode: raise ValueError(p.stderr)
+        rows = json.loads(p.stdout)
+    i = 0 if wasm is None else 1
+    return SpeedCosts((c['section'], c['code'], c['cost'], float(c['budgets'][i]) if len(c['budgets']) > i else None) for c in rows)
+
+_LOGGED = re.compile(r'^(?:\S*Z )?(\w+) (.*): ([\d.]+|inf|NaN|Infinity), budget ([\d.]+)$')
+_CPU = re.compile(r'^(?:\S*Z )?model name\s*:\s*(.+?)\s*$', re.M)
+
+def logged_costs(
+    log # What a speed test prints with `BASEDPL_COSTS` set, such as the log of a job in the `Speed` workflow
+):
+    "The rows that `speed_costs` gives, read from `log`, with the CPU model that the log reports as their `cpu`."
+    cpu = c[1] if (c := _CPU.search(log)) else None
+    return SpeedCosts(((m[1], m[2], float(m[3]), float(m[4])) for m in map(_LOGGED.match, log.splitlines()) if m), cpu)
+
+class Budgets(list):
+    "Each budget that `set_budgets` changed, as `(section, code, build, old, new)` rows."
+    def __repr__(self): return '\n'.join(f'{old:>9} -> {new:<9} {build:6}  {s} {c}' for s, c, build, old, new in self)
+
+def _budget(section, cost):
+    "The budget that `speed.txt`'s rule gives a case in `section` whose worst cost is `cost`, rounded up to two significant figures, or to two decimal places in `[widths]`."
+    if section == 'widths': return Decimal(repr(cost + 0.25)).quantize(Decimal('0.01'), ROUND_CEILING)
+    return Context(prec=2, rounding=ROUND_CEILING).create_decimal(repr(max(0.5, 2*cost)))
+
+_SOURCE = '# The CI figures come from '
+
+def _source(run, native, wasm):
+    "`speed.txt`'s header line naming `Speed` run `run` and the CPU that each build's CI log reports."
+    cpus = {build: sorted({r.cpu for r in runs if r.cpu}) for build, runs in (('native', native), ('wasm', wasm))}
+    line = f'{_SOURCE}`Speed` run {run}.'
+    if len(every := {c for v in cpus.values() for c in v}) == 1: return f'{line} Its CPU was the {every.pop()}.'
+    return line + ''.join(f" Its {build} job's CPU was the {' and the '.join(v)}." for build, v in cpus.items() if v)
+
+def set_budgets(
+    native=(), # `SpeedCosts` from each run that counts for the native budgets, such as `speed_costs()` and `logged_costs(log)`
+    wasm=(), # `SpeedCosts` from each run that counts for the wasm budgets
+    run=None, # The `Speed` run whose logs gave CI's rows, to name in the header with the CPU each log reports; None: leave the header as it is
+    path=_SPEED # The `speed.txt` to rewrite
+):
+    "Rewrite each budget in `path` under the rule in its header, from the case's worst cost in the runs that count. A case with no cost keeps its budget. With `run`, also replace the whole header line that names the CI run. Returns the budgets that changed."
+    worst = {}
+    for i, runs in ((1, native), (2, wasm)):
+        for costs in runs:
+            for s, c, cost, _ in costs:
+                if not math.isfinite(cost): raise ValueError(f'{s} {c} costs {cost}')
+                worst[s, c, i] = max(cost, worst.get((s, c, i), cost))
+    path = Path(path)
+    lines, section, changes = path.read_text().split('\n'), None, Budgets()
+    for k, line in enumerate(lines):
+        if not line or line.startswith('#'): continue
+        if m := re.fullmatch(r'\[([^\] ]+)\](?: .*)?', line):
+            section = m[1]
+            continue
+        fields = line.split('\t')
+        for i, build in ((1, 'native'), (2, 'wasm')):
+            if (cost := worst.get((section, fields[0], i))) is None: continue
+            new = f'{_budget(section, cost).normalize():f}'
+            if new != fields[i]: changes.append((section, fields[0], build, fields[i], new))
+            fields[i] = new
+        lines[k] = '\t'.join(fields)
+    if run is not None:
+        k = next((k for k, line in enumerate(lines) if line.startswith(_SOURCE)), None)
+        if k is None: raise ValueError(f'{path} has no line starting {_SOURCE!r}')
+        lines[k] = _source(run, native, wasm)
+    path.write_text('\n'.join(lines))
+    return changes

@@ -93,7 +93,7 @@ impl Session {
     fn assignable(&self, name: &str) -> bool { !implicit_name(name) || name == "⍵" && self.current.is_some() }
     fn store(&mut self, name: &str, value: Binding, span: &Span) -> Result<(), Error> {
         if !self.assignable(name) { return Err(span.error(ErrorKind::Syntax, "arguments and operands cannot be assigned here")); }
-        self.names_mut(self.current).insert(name.to_owned(), value);
+        self.insert_name(self.current, name, value);
         Ok(())
     }
 
@@ -107,7 +107,7 @@ impl Session {
 
     fn update_array(&mut self, binding: &ArrayBinding, value: Value, span: &Span) -> Result<(), Error> {
         if value.environment() > binding.owner { return Err(span.domain_error("array would export a local closure")); }
-        self.names_mut(binding.owner).insert(binding.name.clone(), Binding::from_element(value));
+        self.insert_name(binding.owner, &binding.name, Binding::from_element(value));
         Ok(())
     }
 
@@ -311,14 +311,14 @@ impl Session {
     ) -> Result<(), Error> {
         let ArrayBinding { name, owner, mut value } = binding;
         // The kept array can be written in place only when the name no longer holds it too.
-        let current = self.names_mut(owner).remove(&name);
+        let current = self.remove_name(owner, &name);
         let same = matches!(&current, Some(Binding::Value(v)) if v.storage_id() == value.storage_id());
         let current = current.filter(|_| !same);
         if let Err(e) = write(&mut value, &self.at(span)) {
-            if let Some(restored) = if same { Some(Binding::Value(value)) } else { current } { self.names_mut(owner).insert(name, restored); }
+            if let Some(restored) = if same { Some(Binding::Value(value)) } else { current } { self.insert_name(owner, &name, restored); }
             return Err(e);
         }
-        self.names_mut(owner).insert(name, Binding::from_element(value));
+        self.insert_name(owner, &name, Binding::from_element(value));
         Ok(())
     }
 
