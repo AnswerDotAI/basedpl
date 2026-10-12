@@ -444,7 +444,7 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
                 TokenKind::Literal(crate::keyed::text(&text))
             }
             '⍬' => TokenKind::Literal(zilde(mark(chars).map_or(Number::float(0.0, width), Mark::zero))),
-            // `$` and one letter: a literal constant, or `$e`, the error a handler caught.
+            // `$` and one letter: a literal constant, or `$e`, the error a handler caught. `$n` and `$m` take a width mark.
             '$' => {
                 let token = match chars.next() {
                     Some((_, 't')) => TokenKind::Literal(Value::Number(Number::from_bool(true))),
@@ -452,6 +452,10 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
                     Some((_, 'n')) => TokenKind::Literal(Value::Number(Number::float(f64::NAN, width_mark(chars).unwrap_or(width)))),
                     Some((_, 'a')) => TokenKind::Literal(crate::keyed::text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
                     Some((_, 'd')) => TokenKind::Literal(crate::keyed::text("0123456789")),
+                    Some((_, 'm')) => {
+                        let width = width_mark(chars).unwrap_or(width);
+                        TokenKind::Literal(Value::Number(Number::float(width.epsilon(), width)))
+                    }
                     Some((_, 'e')) => TokenKind::Name("$e".into()),
                     _ => return Err(span(position(chars, len)).error(ErrorKind::Syntax, DOLLAR).into()),
                 };

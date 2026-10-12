@@ -1,7 +1,7 @@
 //! The speed test's measurements, shared by `tests/speed.rs`, the browser build's `costs` and the worker's `timing` and `costs`
 //! requests, which serve `basedpl.bpltests.time_cases` and `speed_costs`. A time is the fastest of five evaluations of a case, after
 //! one to warm up. The case is parsed once, before them. Its unit is one copy: allocating a vector of `n` 8-byte numbers and copying
-//! `n` numbers into it, where `n` is the number of items in the setup's data.
+//! `n` numbers into it, where `n` is the number of items in the data of the `[setup]` before the case's section.
 //! `costs` and `request` hold the machine's timing lock while they run. `host::timing_lock` describes it.
 use crate::{host::{timing_lock, Instant}, protocol::response, EvalOptions, Evaluation, InterruptHandle, Session, Source};
 use serde_json::{json, Value as JsonValue};
@@ -76,32 +76,38 @@ pub struct Case<'a> {
     pub cost: f64,
 }
 
-/// Every case in `text`, in `speed.txt`'s format, with its cost. Each section's cases run in a session that has run the section's
-/// prefs and then `[setup]`, the first section. A cost is in copies, timed just before the case, except in `[widths]`. There it is the
-/// case's time as a fraction of its time in `[exact]`.
+/// Every case in `text`, in `speed.txt`'s format, with its cost. The first section is `[setup]`. Each later `[setup]` starts a new
+/// group of sections. Each section's cases run in a session that has run the section's prefs and then the `[setup]` before it. Each
+/// group makes its sessions when its turn comes and drops them before the next group starts. A cost is in copies of the group's `n`
+/// items, timed just before the case, except in `[widths]`. There it is the case's time as a fraction of its time in `[exact]`.
 pub fn costs<'a>(text: &'a str, interrupt: &InterruptHandle) -> Result<Vec<Case<'a>>, String> {
     let _lock = timing_lock()?;
     let failure = |code: &str, failed: Evaluation| format!("{code}: {}", failed.error.map(|e| e.to_string()).unwrap_or_default());
     let sections = sections(text)?;
-    let Some((&("setup", _, ref setup), cases)) = sections.split_first() else { return Err("the first section must be [setup]".into()) };
-    let setup = setup.join("\n");
-    let mut sessions = HashMap::new();
-    for &(name, prefs, _) in cases { sessions.insert(name, session(prefs, &setup).map_err(|failed| failure(prefs, failed))?); }
-    let n = cases.first().and_then(|(name, ..)| items(sessions.get_mut(name)?)).ok_or("the setup must define n, its number of items")?;
-    let mut timed = |name: &str, code: &str| {
-        let session = sessions.get_mut(name).ok_or_else(|| format!("speed's {name} section is missing"))?;
-        time(session, code, interrupt).map_err(|failed| failure(code, failed))
-    };
     let mut result = Vec::new();
-    for &(section, _, ref lines) in cases {
-        for line in lines {
-            let mut fields = line.split('\t');
-            let code = fields.next().unwrap_or_default();
-            let cost = if section == "widths" { timed(section, code)? / timed("exact", code)? } else {
-                let unit = copy(n);
-                timed(section, code)? / unit
-            };
-            result.push(Case { section, code, budgets: fields.collect(), cost });
+    for group in sections.chunk_by(|_, next| next.0 != "setup") {
+        let [("setup", _, setup), cases @ ..] = group else { return Err("the first section must be [setup]".into()) };
+        let setup = setup.join("\n");
+        let (mut sessions, mut sizes) = (HashMap::new(), HashMap::new());
+        for &(name, prefs, _) in cases {
+            let mut session = session(prefs, &setup).map_err(|failed| failure(prefs, failed))?;
+            sizes.insert(name, items(&mut session).ok_or("each setup must define n, its number of items")?);
+            sessions.insert(name, session);
+        }
+        let mut timed = |name: &str, code: &str| {
+            let session = sessions.get_mut(name).ok_or_else(|| format!("speed's {name} section is missing"))?;
+            time(session, code, interrupt).map_err(|failed| failure(code, failed))
+        };
+        for &(section, _, ref lines) in cases {
+            for line in lines {
+                let mut fields = line.split('\t');
+                let code = fields.next().unwrap_or_default();
+                let cost = if section == "widths" { timed(section, code)? / timed("exact", code)? } else {
+                    let unit = copy(sizes[section]);
+                    timed(section, code)? / unit
+                };
+                result.push(Case { section, code, budgets: fields.collect(), cost });
+            }
         }
     }
     Ok(result)

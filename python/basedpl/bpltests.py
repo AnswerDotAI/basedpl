@@ -231,7 +231,7 @@ def _failures(request):
 
 def check_file(
     path, # A `.bpl` reference file
-    ids=None # Check only the cases whose id or header line is in `ids`
+    ids=None # Check only these cases, each named by its id or its header's line number
 ):
     "Check the cases in `path` in a fresh worker, as `tests/reference.rs` does, and return the failures."
     return _failures(dict(reference=dict(text=Path(path).read_text(), ids=ids)))
@@ -252,7 +252,7 @@ class Costs(list):
 
 def time_cases(
     cases, # A BPL expression to time, or a list of them
-    setup=None, # BPL that defines the data and its number of items `n`; None: the `[setup]` section of `tests/speed.txt`
+    setup=None, # BPL that defines the data and its number of items `n`; None: the first `[setup]` section of `tests/speed.txt`
     prefs='', # BPL that runs before `setup`, such as `•prefs ["float":32]`
     timeout=None # Seconds before the worker is closed
 ):

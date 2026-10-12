@@ -37,6 +37,22 @@ $a⍳"CAB"           ⍝ [2 0 1]ₓ
 "a2b"∊$d           ⍝ $f $t $f
 ```
 
+## `$m` — Machine epsilon
+
+`$m` is the gap between 1 and the next float at the session's width: `2*¯52` for 64-bit floats, `2*¯23` for 32-bit floats and `2*¯10` for 16-bit floats. A width mark gives another width, as in `$mₛ`.
+
+```bpl
+$m=2*¯52             ⍝ $t
+$mₛ=2*¯23            ⍝ $t
+```
+
+A matrix's rank is the number of its singular values above a cutoff. NumPy's cutoff is `$m` times the larger of the matrix's two lengths times the largest singular value:
+
+```bpl
+m←[1 2⋄2 4⋄3 6]
+s←(["kind":"svd" "vectors":$f]•decompose m).s
++/s>$m×(⌈/⍴m)×⌈/s     ⍝ 1ₓ
+```
 ## `$e` — Caught error
 
 `$e` is the error that an [error guard](../glyphs/error-guard.qmd)'s handler caught, as a record. The error guard page lists its fields. Anywhere else, `$e` is a `VALUE` error.

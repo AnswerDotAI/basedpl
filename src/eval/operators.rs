@@ -479,7 +479,7 @@ pub(super) fn outer(operand: &Function, left: Option<&Value>, right: &Value, cx:
 }
 
 fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
-    let left = left.ok_or_else(|| cx.span.error(ErrorKind::Syntax, "inner product needs a left argument"))?;
+    let Some(left) = left else { return expansion(f, g, right, cx) };
     let nx = left.shape().last().copied().unwrap_or(1);
     let ny = right.shape().first().copied().unwrap_or(1);
     let positions =
@@ -527,6 +527,51 @@ fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &m
     if size == 0 { results.clear(); }
     let result = layout.collect(results, prototype);
     Ok(Bound::from(result.error_at(cx.span, "invalid inner product result")?))
+}
+
+/// Monadic `f.g`, as J defines it: the expansion of a matrix by minors along its first column. A vector is one column, and an atom one
+/// item. `-.×` is the determinant and `+.×` the permanent. `-.×` on a square matrix of numbers takes `primitive::determinant`.
+fn expansion(f: &Function, g: &Function, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+    let [m, n] = match *right.shape() {
+        [] => [1, 1],
+        [m] => [m, 1],
+        [m, n] => [m, n],
+        _ => return Err(cx.span.error(ErrorKind::Rank, "monadic f.g needs a matrix, a vector or a number")),
+    };
+    use crate::number::Arithmetic;
+    let arithmetic = |h: &Function, a: Arithmetic| matches!(h.node(), FunctionNode::Primitive(Primitive::Arithmetic(x)) if *x == a);
+    if arithmetic(f, Arithmetic::Minus) && arithmetic(g, Arithmetic::Times) && m == n && n > 0 {
+        if let Some(d) = crate::primitive::determinant(right, n, cx)? { return Ok(Bound::from(d)); }
+    }
+    if m > 64 { return Err(cx.span.error(ErrorKind::Limit, "monadic f.g expands at most 64 rows")); }
+    let items: Vec<Value> = (0..m * n).map(|i| right.at(i)).collect();
+    let rows = if m == 0 { 0 } else { u64::MAX >> (64 - m) };
+    expand(f, g, &items, [m, n], rows, &right.prototype(), &mut HashMap::new(), cx).map(Bound::from)
+}
+
+/// The expansion of the rows in the set `rows` of the `m`×`n` matrix `items`, from column `m` minus the size of `rows` on. While columns
+/// are left, it is `f.g` between that column's items in `rows` and the expansions without each of those rows. With no columns left, it
+/// is `g/` of no items. `memo` holds the expansion of each set of rows already expanded.
+fn expand(
+    f: &Function, g: &Function, items: &[Value], [m, n]: [usize; 2], rows: u64, prototype: &Value, memo: &mut HashMap<u64, Value>, cx: &mut Context<'_>,
+) -> Result<Value, Error> {
+    if let Some(value) = memo.get(&rows) { return Ok(value.clone()); }
+    cx.check()?;
+    let vector = |items: Vec<Value>, cx: &Context<'_>| {
+        if items.is_empty() { Value::empty(vec![0], prototype.clone()) } else { Value::new(vec![items.len()], items) }.error_at(cx.span, "invalid expansion")
+    };
+    let column = m - rows.count_ones() as usize;
+    let value = if column == n {
+        fold(g, FoldKind { scan: false, first: false }, None, None, &vector(vec![], cx)?, cx)?
+    } else {
+        let set: Vec<usize> = (0..m).filter(|&i| rows >> i & 1 == 1).collect();
+        let first = vector(set.iter().map(|&i| items[i * n + column].clone()).collect(), cx)?;
+        let minors = set.iter().map(|&i| expand(f, g, items, [m, n], rows & !(1 << i), prototype, memo, cx)).collect::<Result<Vec<_>, _>>()?;
+        let minors = vector(minors, cx)?;
+        inner(f, g, Some(&first), &minors, cx)?.array(cx.span)?
+    };
+    memo.insert(rows, value.clone());
+    Ok(value)
 }
 
 pub(super) fn rank(operand: &Function, ranks: &Value, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {

@@ -12,6 +12,7 @@ mod eval;
 mod execution;
 #[cfg(not(web))]
 mod files;
+mod fusion;
 #[cfg_attr(web, path = "host_web.rs")]
 mod host;
 mod image;

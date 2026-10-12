@@ -1,6 +1,7 @@
 //! How long each function takes, compared with copying the same data. The unit is one copy, as `basedpl::timing` measures it. Moving
 //! data takes longer than simple arithmetic. A function that reads and writes each item once should therefore cost about one copy.
-//! The cases, their budgets and the data they use are in `speed.txt`, whose small `n` keeps the whole test to a fraction of a second.
+//! The cases, their budgets and the data they use are in `speed.txt`. Most cases use a small `n` to keep the test fast. The
+//! `[images]` cases use an image of 36 million floats, far more than the caches hold, to measure chains whose cost is memory traffic.
 //! `tests/wasm-speed.mjs` times the same cases in the browser build, against their wasm budgets.
 //!
 //! Each case has a budget in copies: twice the most it has cost on a Mac and on CI's Linux runner, and at least half a copy. Counting

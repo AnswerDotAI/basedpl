@@ -2635,25 +2635,82 @@ x←[(9223372036854775807ₓ+[1 0]ₓ)-1ₓ;9223372036854775808r1-[1 2]ₓ]
 ⍝ — Solving for no unknowns preserves the number of right-hand sides
 (3 2⍴1)⌹3 0⍴0   ⍝ 0 2⍴0
 
-⍝ —
-⌹0
-⍝ error: DOMAIN ERROR
+⍝ — The pseudoinverse of zero is zero
+⌹0   ⍝ 0
 
-⍝ — Singular matrices are rejected rather than assigned an arbitrary solution
+⍝ — A singular matrix gives its pseudoinverse, the solution with the least norm
 ⌹2 2⍴1
+⍝ =>
+[0.25 0.25⋄0.25 0.25]
+
+⍝ — The exact solver gives the pseudoinverse of a singular matrix in rationals
+⌹2 2⍴1ₓ
+⍝ =>
+[1r4 1r4⋄1r4 1r4]
+
+⍝ — A wide exact system gives its solution with the least norm
+[1 2]ₓ⌹[1 0 1⋄0 1 0]ₓ
+⍝ =>
+[1r2 2 1r2]ₓ
+
+⍝ — A rank-deficient tall exact matrix gives its least-squares solution with the least norm
+[3 6 9]ₓ⌹[1 2⋄2 4⋄3 6]ₓ
+⍝ =>
+[3r5 6r5]
+
+⍝ — Monadic -.× is the determinant, exact for exact numbers, and +.× the permanent
+[-.×[1 2 3⋄4 5 6⋄7 8 10]ₓ;+.×[1 2⋄3 4]ₓ;-.×[1j1 2⋄3 4]]
+⍝ =>
+[¯3ₓ 10ₓ ¯2j4]
+
+⍝ — Monadic f.g follows J's expansion on vectors, numbers, empty and tall matrices
+[-.×[1 2 3];-.×5;-.×0 0⍴0;-.×[1 2⋄3 4⋄5 6]]
+⍝ =>
+[2 5 1 0]
+
+⍝ — Monadic f.g needs a matrix
+-.×2 2 2⍴⍳8
+⍝ error: RANK ERROR
+
+⍝ — Monadic f.g other than -.× expands at most 64 rows
++.×65 65⍴1
+⍝ error: LIMIT ERROR
+
+⍝ — Monadic f.g needs g to have an identity, as in J
+{⍺-⍵}.{⍺×⍵}[1 2⋄3 4]
 ⍝ error: DOMAIN ERROR
 
-⍝ — The exact solver also rejects singular matrices
-⌹2 2⍴1ₓ
+⍝ — •decompose's "lu" factors rebuild the matrix, and its options leave out vectors or complete QR
+f←"lu" •decompose [1 2⋄3 4]
+["lu" •decompose⁻¹ f;f.p;⍴(["kind":"qr" "complete":$t]•decompose [1 2⋄3 4⋄5 6]).r;≢(["kind":"eigen" "vectors":$f]•decompose [2 1⋄1 2]).values]
+⍝ =>
+[[1 2⋄3 4];[1 0]ₓ;[3 2]ₓ;2ₓ]
+
+⍝ — Only svd and eigen can leave out their vectors
+["kind":"qr" "vectors":$f]•decompose [1 2⋄3 4]
 ⍝ error: DOMAIN ERROR
+
+⍝ — Only qr has complete factors
+["kind":"svd" "complete":$t]•decompose [1 2⋄3 4]
+⍝ error: DOMAIN ERROR
+
+⍝ — lu's p must hold each position once
+"lu" •decompose⁻¹ ["l":[1 0⋄0 1] "u":[1 0⋄0 1] "p":[0 0]]
+⍝ error: DOMAIN ERROR
+
+⍝ — $m is the machine epsilon of the session's float width, or of a width mark
+[$m=2*¯52;$mₛ=2*¯23;$mₕ=2*¯10]
+⍝ =>
+$t $t $t
 
 ⍝ —
 ⌹"ab"
 ⍝ error: DOMAIN ERROR
 
-⍝ — This solver requires at least as many equations as unknowns
+⍝ — A wide matrix gives its pseudoinverse
 ⌹2 3⍴1
-⍝ error: LENGTH ERROR
+⍝ =>
+3 2⍴÷6
 
 ⍝ —
 1 2⌹3 2⍴1
@@ -3036,6 +3093,25 @@ v←⍳1000 ⋄ +/v+v   ⍝ 999000
 
 ⍝ — Structure keeps float storage, and an empty array takes its prototype's storage
 •storage¨[⌽⍳3;2 3⍴⍳6;0 3⍴0;0⍴1ₓ]   ⍝ "float64" "float64" "float64" "integer"
+
+⍝ — A chain of calls on a large array, across runs and parentheses, gives the result that each row gives, and its fold gives the fold of that result
+x←¿1000000⍴0
+x.[[0 1 2 3]]←[∞ ¯∞ $n 0]
+m←[1000 1000]⍴x
+n←⌽m
+s←32•float m
+y←4↓x
+f←{0⌈1⌊0.5+1.2×⍵-0.5}
+g←{⍺×1-0.5×⍵}
+h←{0ₛ⌈1ₛ⌊0.5ₛ+1.2ₛ×⍵-0.5ₛ}
+k←{0⌈ 1⌊ 0.5+ 1.2× ⍵-0.5}
+p←{((⍵-0.5)×1.2)⌈0}
+q←{(⍵-0.5)×⍵}
+[(f m)≡ f⍤1 m;(m g n)≡ m g⍤1 n;(0.5<m)≡ {0.5<⍵}⍤1 m;(h s)≡ h⍤1 s;(k m)≡ k⍤1 m;(p m)≡ p⍤1 m;(q m)≡ q⍤1 m]
+[(+/0.5<m)≡{+/⍵}0.5<m;(+⌿0.5<m)≡{+⌿⍵}0.5<m;(∨/m>0.999)≡{∨/⍵}m>0.999;(+/0⌈1⌊0.5+1.2×m-0.5)≡{+/⍵}0⌈1⌊0.5+1.2×m-0.5;(⌈⌿m-0.5)≡{⌈⌿⍵}m-0.5;(+/0.5ₛ<s)≡{+/⍵}0.5ₛ<s;(+/y×2)≡{+/⍵}y×2;(+⌿s×2)≡{+⌿⍵}s×2]
+⍝ =>
+$t $t $t $t $t $t $t
+$t $t $t $t $t $t $t $t
 
 ⍝⍝ Numeric storage
 
@@ -5084,9 +5160,10 @@ fold←/
 ⍝ —
 1○∞   ⍝ $n
 
-⍝ — An infinite matrix entry makes the factorization rank deficient
+⍝ — An infinite matrix entry gives NaN, as LU and the SVD do
 ⌹1 1⍴∞
-⍝ error: DOMAIN ERROR
+⍝ =>
+1 1⍴$n
 
 ⍝ — Folds follow IEEE too
 [+/∞ ¯∞;×/0 ∞]   ⍝ [$n $n]

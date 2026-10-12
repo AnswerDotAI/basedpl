@@ -367,10 +367,17 @@ impl Session {
         failed(ErrorKind::Syntax, "unknown user command".into())
     }
     pub(super) fn bind(&mut self, nodes: &[Node]) -> Result<Bound, Error> {
+        self.nested(nodes, |session| {
+            let Step::Done(result) = Binder::evaluate(nodes, session, false)? else { unreachable!() };
+            Ok(result)
+        })
+    }
+    /// `f` evaluating `nodes` one level deeper, after an interrupt check, within the depth limit and on a stack that grows as needed.
+    pub(super) fn nested<T>(&mut self, nodes: &[Node], f: impl FnOnce(&mut Self) -> Result<T, Error>) -> Result<T, Error> {
         self.execution.check(&nodes[0].span)?;
         if self.depth == MAX_CALL_DEPTH { return Err(depth_error(&nodes[0].span)); }
         self.depth += 1;
-        let result = stacker::maybe_grow(STACK_RED_ZONE, STACK_SEGMENT, || self.bind_expression(nodes));
+        let result = stacker::maybe_grow(STACK_RED_ZONE, STACK_SEGMENT, || f(self));
         self.depth -= 1;
         result
     }
@@ -471,11 +478,6 @@ impl Session {
         Ok(result)
     }
 
-    fn bind_expression(&mut self, nodes: &[Node]) -> Result<Bound, Error> {
-        let Step::Done(result) = Binder::evaluate(nodes, self, false)? else { unreachable!() };
-        Ok(result)
-    }
-
     // Resolving one structural item may execute a group, but never derives an operator
     // or consumes a neighbouring item. The binder alone chooses grammatical reductions.
     pub(super) fn resolve(&mut self, node: &Node) -> Result<Bound, Error> {
@@ -492,21 +494,10 @@ impl Session {
             NodeKind::System(name) => {
                 Binding::Function(crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?)
             }
-            NodeKind::Group(nodes) => return self.bind(nodes),
+            NodeKind::Group(_) | NodeKind::Run(_) => return Binder::nested(node, self).map(Nested::bound),
             NodeKind::Scope(root, body) => {
                 let record = self.resolve(root)?.array(&root.span)?;
                 return self.scoped(&record, &node.span, |session| session.resolve(body));
-            }
-            // A dot path such as `m.op` names an operator as a name does, so its run can reduce to one.
-            NodeKind::Run(nodes) => {
-                let path = matches!(&self.members(nodes)[..], [Node { kind: NodeKind::Group(_), .. }]);
-                let bound = self.bind(nodes)?;
-                match bound.value {
-                    Binding::Operator(_) if !path => {
-                        return Err(node.span.error(ErrorKind::Syntax, "a run must reduce to one value: an array, a function or an operator glyph"))
-                    }
-                    _ => return Ok(bound),
-                }
             }
             NodeKind::ArrayLiteral { cells, record: true, .. } => {
                 let mut entries = Vec::new();

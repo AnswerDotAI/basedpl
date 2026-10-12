@@ -214,9 +214,8 @@ a←" this is a test "⋄a≠' ' ⊂ a
 ⍝ ngn:70 — Inverse applies to each matrix of a rank-3 argument; ngn gives RANK ERROR
 ⌹2 2 2⍴⍳8   ⍝ 2 2 2⍴¯1.5 0.5 1 0 ¯3.5 2.5 3 ¯2
 
-⍝ ngn:71 —
-⌹2 3⍴⍳6
-⍝ error: LENGTH ERROR
+⍝ ngn:71 — A wide matrix gives its pseudoinverse; ngn gives LENGTH ERROR
+⌹2 3⍴⍳6   ⍝ [¯42 15⋄¯6 6⋄30 ¯3]÷54
 
 ⍝ ngn:72 —
 [12 1 4 10⋄¯6 ¯5 4 7⋄¯4 9 3 4⋄¯2 ¯6 7 7]⌹93 81 93.5 120.5

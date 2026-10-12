@@ -282,12 +282,19 @@ pub fn page(text: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
     failures
 }
 
-/// The reply to the worker's `reference` request. It gives `text` in a `.bpl` reference file's format and, optionally, the `ids` to
-/// check, each a case's id or its header's line. The reply gives the cases that fail, as `failures` gives them.
+/// The reply to the worker's `reference` request. It gives `text` in a `.bpl` reference file's format and, optionally, a list of the
+/// `ids` to check, each a case's id or its header's line number. An id that matches no case is an error. The reply gives the cases
+/// that fail, as `failures` gives them.
 pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
     let cases = cases(spec["text"].as_str().ok_or("reference needs text as a string")?)?;
-    let ids = spec.get("ids").and_then(JsonValue::as_array);
-    let selected = cases.iter().filter(|case| ids.is_none_or(|ids| ids.iter().any(|id| *id == case["id"] || *id == case["line"])));
+    let ids = match spec.get("ids") {
+        None | Some(JsonValue::Null) => None,
+        Some(ids) => Some(ids.as_array().ok_or("ids must be a list of case ids and header line numbers")?),
+    };
+    let matches = |id: &JsonValue, case: &JsonValue| *id == case["id"] || *id == case["line"];
+    let unknown: Vec<_> = ids.into_iter().flatten().filter(|id| !cases.iter().any(|case| matches(id, case))).map(JsonValue::to_string).collect();
+    if !unknown.is_empty() { return Err(format!("{} match no case. Each id is a case's id or its header's line number.", unknown.join(", "))); }
+    let selected = cases.iter().filter(|case| ids.is_none_or(|ids| ids.iter().any(|id| matches(id, case))));
     Ok(json!({"failures": failures(selected, interrupt), "error": null}))
 }
 

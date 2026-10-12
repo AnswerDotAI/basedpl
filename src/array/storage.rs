@@ -980,27 +980,13 @@ fn walk_into<S: Element + 'static, D: Clone + 'static>(d: &mut Vec<D>, s: &[S], 
 }
 
 /// Appends `m` rows of `n` items, where item `j` of row `i` is `f(s[i + j * stride])`, as `walk_into` does for a transposed matrix.
-/// It works in tiles of `T` rows by `T` items. A tile reads `T` adjacent items from each of `T` source rows and writes `T` adjacent
-/// items to each of `T` result rows. Each block of `T` result rows is filled first, then overwritten tile by tile.
+/// Each block of 8 result rows is filled first, then overwritten by rustymath's tiled `transpose_into`.
 fn transpose_into<S: Element, D: Clone>(d: &mut Vec<D>, s: &[S], f: &impl Fn(S) -> D, fill: D, m: usize, n: usize, stride: usize) {
-    const T: usize = 8;
-    for i0 in (0..m).step_by(T) {
-        let rows = T.min(m - i0);
-        let start = d.len();
+    for i0 in (0..m).step_by(8) {
+        let (start, rows) = (d.len(), 8.min(m - i0));
         d.resize(start + rows * n, fill.clone());
-        let block = &mut d[start..];
-        for j0 in (0..n).step_by(T) {
-            let cols = T.min(n - j0);
-            if rows < T || cols < T {
-                for r in 0..rows { for c in 0..cols { block[r * n + j0 + c] = f(s[i0 + r + (j0 + c) * stride]) } }
-                continue;
-            }
-            let source: [&[S; T]; T] = std::array::from_fn(|c| s[i0 + (j0 + c) * stride..].first_chunk().expect("a full tile lies inside `s`"));
-            for r in 0..T {
-                let out: &mut [D; T] = block[r * n + j0..].first_chunk_mut().expect("a full tile lies inside the block");
-                for c in 0..T { out[c] = f(source[c][r]) }
-            }
-        }
+        // `|x| f(x)` calls `f` directly. Passing `f` calls it through `&F`'s `Fn` shim, which LLVM left out of line, doubling the cost.
+        rustymath::linalg::transpose_into(&s[i0..], stride, &mut d[start..], n, [n, rows], |x| f(x));
     }
 }
 

@@ -57,10 +57,6 @@ pub(crate) const NAN_NAME: &str = "$n";
 pub(crate) const TRUE_NAME: &str = "$t";
 pub(crate) const FALSE_NAME: &str = "$f";
 
-/// The magnitude below which no float equals two whole numbers, within any tolerance the `tolerance` pref accepts: 2^43. Search and
-/// comparison against one number rely on it. It holds because the pref accepts tolerances only up to `Tolerance::DEFAULT`.
-pub(crate) const WHOLE_LIMIT: f64 = 8_796_093_022_208.0;
-
 /// The session's numeric settings, which `•prefs` changes. Comparisons and kernels take their tolerance from them, and operations that
 /// create floats from exact numbers take their width.
 #[derive(Clone, Copy, Debug)]
@@ -212,27 +208,21 @@ pub(crate) use with_circle;
 /// `None` means the exact or error path must give the result: an overflow, a fraction, or an argument outside the domain.
 pub(crate) mod int {
     use super::Arithmetic;
+    use rustymath::Overflowing;
 
     pub(crate) fn arithmetic(op: Arithmetic, x: i64, y: i64) -> Option<i64> {
         match op {
-            Arithmetic::Plus => x.plus(y),
-            Arithmetic::Minus => x.minus(y),
-            Arithmetic::Times => x.times(y),
+            Arithmetic::Plus => fitted(x.plus(y)),
+            Arithmetic::Minus => fitted(x.minus(y)),
+            Arithmetic::Times => fitted(x.times(y)),
             Arithmetic::Divide => divide(x, y),
         }
     }
-    /// An integer width that compact storage holds. Each method gives `None` where the result doesn't fit this width. The tests have
-    /// no branch, so a loop of them vectorizes. The one exception is `i64` multiplication, because no vector instruction gives a
-    /// 128-bit product.
-    pub(crate) trait Int: Copy + Ord + Into<i64> + TryFrom<i64> + 'static {
-        const LOWEST: Self;
-        const HIGHEST: Self;
-        fn plus(self, y: Self) -> Option<Self>;
-        fn minus(self, y: Self) -> Option<Self>;
-        fn times(self, y: Self) -> Option<Self>;
-        fn negate(self) -> Option<Self>;
-        fn magnitude(self) -> Option<Self>;
-        fn signum(self) -> Self;
+    /// The result of rustymath's [`Overflowing`] arithmetic where it fits, or `None` where it overflowed, for the exact path to give.
+    #[inline(always)]
+    pub(crate) fn fitted<T>((r, fits): (T, bool)) -> Option<T> { fits.then_some(r) }
+    /// An integer width that compact storage holds. rustymath's [`Overflowing`] gives its arithmetic at this width.
+    pub(crate) trait Int: Overflowing + Ord + Into<i64> + TryFrom<i64> + 'static {
         /// `n` at this width. The caller knows that it fits.
         fn from_i64(n: i64) -> Self;
         #[inline]
@@ -241,76 +231,15 @@ pub(crate) mod int {
         #[inline]
         fn narrowed(n: i64) -> Option<Self> { Self::try_from(n).ok() }
     }
-    /// A sum overflows when its sign differs from both arguments'. A difference overflows when the arguments' signs differ and its sign
-    /// differs from the first argument's. A product is exact at the next width up, which `$times` gives.
-    macro_rules! signed {
-        ($t:ty, |$x:ident, $y:ident| $times:expr) => {
+    macro_rules! widths {
+        ($($t:ty),+) => {$(
             impl Int for $t {
-                const LOWEST: Self = <$t>::MIN;
-                const HIGHEST: Self = <$t>::MAX;
                 #[inline]
-                fn plus(self, y: Self) -> Option<Self> {
-                    let sum = self.wrapping_add(y);
-                    (((self ^ sum) & (y ^ sum)) >= 0).then_some(sum)
-                }
-                #[inline]
-                fn minus(self, y: Self) -> Option<Self> {
-                    let difference = self.wrapping_sub(y);
-                    (((self ^ y) & (self ^ difference)) >= 0).then_some(difference)
-                }
-                #[inline]
-                fn times(self, $y: Self) -> Option<Self> {
-                    let $x = self;
-                    $times
-                }
-                #[inline]
-                fn negate(self) -> Option<Self> {
-                    (self != <$t>::MIN).then_some(self.wrapping_neg())
-                }
-                #[inline]
-                fn magnitude(self) -> Option<Self> {
-                    (self != <$t>::MIN).then_some(self.wrapping_abs())
-                }
-                #[inline]
-                fn signum(self) -> Self {
-                    self.signum()
-                }
-                #[inline]
-                fn from_i64(n: i64) -> Self {
-                    n as $t
-                }
+                fn from_i64(n: i64) -> Self { n as $t }
             }
-        };
+        )+};
     }
-    /// The product of two narrow integers at width `$wide`, when it fits width `$t`.
-    macro_rules! wide_times {
-        ($t:ty, $wide:ty, $x:ident, $y:ident) => {{
-            let product = <$wide>::from($x) * <$wide>::from($y);
-            ((product >= <$t>::MIN as $wide) & (product <= <$t>::MAX as $wide)).then_some(product as $t)
-        }};
-    }
-    signed!(i16, |x, y| wide_times!(i16, i32, x, y));
-    signed!(i32, |x, y| wide_times!(i32, i64, x, y));
-    signed!(i64, |x, y| x.checked_mul(y));
-    /// Unsigned bytes overflow at either end: a sum when it wraps below an argument, and a difference when it would be negative.
-    impl Int for u8 {
-        const LOWEST: Self = 0;
-        const HIGHEST: Self = u8::MAX;
-        #[inline]
-        fn plus(self, y: Self) -> Option<Self> { let sum = self.wrapping_add(y); (sum >= self).then_some(sum) }
-        #[inline]
-        fn minus(self, y: Self) -> Option<Self> { (self >= y).then_some(self.wrapping_sub(y)) }
-        #[inline]
-        fn times(self, y: Self) -> Option<Self> { wide_times!(u8, u16, self, y) }
-        #[inline]
-        fn negate(self) -> Option<Self> { (self == 0).then_some(0) }
-        #[inline]
-        fn magnitude(self) -> Option<Self> { Some(self) }
-        #[inline]
-        fn signum(self) -> Self { u8::from(self > 0) }
-        #[inline]
-        fn from_i64(n: i64) -> Self { n as u8 }
-    }
+    widths!(u8, i16, i32, i64);
     /// A quotient that isn't an integer is exact. Division by zero gives an infinity or NaN. Both take the general path.
     #[inline]
     pub(crate) fn divide(x: i64, y: i64) -> Option<i64> { if x.checked_rem(y) == Some(0) { x.checked_div(y) } else { None } }
@@ -333,58 +262,14 @@ pub(crate) mod int {
 pub(crate) mod complex {
     use super::Arithmetic;
     use num_complex::{Complex, Complex64};
-    use num_traits::{Float, Zero};
-    use rustymath::{Binary, Native, Unary};
+    use rustymath::{Native, Unary};
 
-    #[inline]
-    fn reals<R: Float>(x: Complex<R>, y: Complex<R>) -> bool { x.im.is_zero() && y.im.is_zero() }
-    pub(crate) fn arithmetic<R: Float>(op: Arithmetic, x: Complex<R>, y: Complex<R>) -> Complex<R> {
+    pub(crate) fn arithmetic<R: Native>(op: Arithmetic, x: Complex<R>, y: Complex<R>) -> Complex<R> {
         match op {
             Arithmetic::Plus => x + y,
             Arithmetic::Minus => x - y,
             Arithmetic::Times => x * y,
-            Arithmetic::Divide => divide(x, y),
-        }
-    }
-    #[inline]
-    pub(crate) fn divide<R: Float>(x: Complex<R>, y: Complex<R>) -> Complex<R> { if reals(x, y) { Complex::new(x.re / y.re, R::zero()) } else { x / y } }
-    /// e^y. A whole number of quarter turns gives an exact direction, so e^(iπ/2) is i.
-    pub(crate) fn exp<R: Native>(y: Complex<R>) -> Complex<R>
-    where
-        rustymath::Exp: Unary<Complex<R>, Out = Complex<R>> + Unary<R, Out = R>,
-    {
-        use std::f64::consts::{FRAC_PI_2, PI, TAU};
-        let (quarter, half, tau) = (R::narrow(FRAC_PI_2), R::narrow(PI), R::narrow(TAU));
-        let angle = { let a = y.im % tau; if a < R::zero() { a + tau } else { a } };
-        let direction = if angle.is_zero() {
-            Complex::new(R::one(), R::zero())
-        } else if angle == quarter {
-            Complex::i()
-        } else if angle == half {
-            Complex::new(-R::one(), R::zero())
-        } else if angle == R::narrow(3.0 * FRAC_PI_2) {
-            -Complex::i()
-        } else {
-            return rustymath::Exp.one(y);
-        };
-        direction * rustymath::Exp.one(y.re)
-    }
-    /// `x*y`. A real power of a real base, where one exists, is real, as the real kernels give it. Other powers are e^(y ln x), whose
-    /// exponential keeps the exact quarter turns that `exp` gives.
-    pub(crate) fn power<R: Native>(x: Complex<R>, y: Complex<R>) -> Complex<R>
-    where
-        rustymath::Exp: Unary<Complex<R>, Out = Complex<R>> + Unary<R, Out = R>,
-        rustymath::Ln: Unary<Complex<R>, Out = Complex<R>>,
-        rustymath::Pow: Binary<R, Out = R>,
-    {
-        if y.is_zero() {
-            Complex::new(R::one(), R::zero())
-        } else if x.is_zero() && y.im.is_zero() && y.re > R::zero() {
-            Complex::zero()
-        } else if reals(x, y) && (x.re >= R::zero() || y.re.fract().is_zero()) {
-            Complex::new(rustymath::Pow.one(x.re, y.re), R::zero())
-        } else {
-            exp(y * rustymath::Ln.one(x))
+            Arithmetic::Divide => rustymath::divide(x, y),
         }
     }
     /// `code○y`, or the inverse of `code○` on `y`. `None` for a code outside 0 to 8. On a real `y`, code 8 gives an imaginary result,
@@ -693,16 +578,25 @@ impl Number {
             });
             if let Some(n) = real { return Ok(n); }
         }
-        let y = self.to_complex()?;
-        if matches!(op, Magnitude) { return Ok(Self::float(rustymath::Abs.one(y), self.width_with(None))); }
+        let (y, width) = (self.to_complex()?, self.width_with(None));
+        if matches!(op, Magnitude) { return Ok(Self::float(rustymath::Abs.one(y), width)); }
+        // e^z at the number's own width, as the compact kernels compute it. At 64 bits, the float nearest a quarter turn at 32 bits
+        // isn't one, and wouldn't give an exact direction.
+        let exp = |z: Complex64| match ComplexWidth::from(width) {
+            ComplexWidth::F32 => {
+                let r = rustymath::Exp.one(Complex32::new(z.re as f32, z.im as f32));
+                Complex64::new(r.re.into(), r.im.into())
+            }
+            ComplexWidth::F64 => rustymath::Exp.one(z),
+        };
         let result = match op {
-            Power => complex::exp(y),
+            Power => exp(y),
             Log => rustymath::Ln.one(y),
             Pi => y * std::f64::consts::PI,
-            Circle => complex::exp(Complex64::new(-y.im, y.re)),
+            Circle => exp(Complex64::new(-y.im, y.re)),
             _ => unreachable!(),
         };
-        Ok(Self::complex(result, self.width_with(None)))
+        Ok(Self::complex(result, width))
     }
 
     /// `⌊y`, within the tolerance of its float width. An exact number floors exactly. A real result is a whole number, so it becomes
@@ -820,7 +714,7 @@ impl Number {
                 Ok(Some(Self::exact(x.pow(n))))
             },
             || Ok(reals!(self, right => |x, y: F| rustymath::Pow.checked(x, y).map(Self::from_float))),
-            |x, y| Ok(complex::power(x, y).into()),
+            |x, y| Ok(rustymath::Pow.one(x, y).into()),
         )
     }
 
