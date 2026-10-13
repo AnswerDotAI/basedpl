@@ -56,11 +56,11 @@ pub(crate) trait Dyad<A> {
     /// The session's numeric settings: the tolerance that kernels of approximate numbers compare within, and the width of the floats
     /// that kernels create from exact numbers.
     fn numeric(&self) -> Numeric;
-    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy) -> Self::Output;
-    fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy) -> Self::Output;
+    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Self::Output;
+    fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy + Sync) -> Self::Output;
     /// `f` on each pair of items, through its slice form where the loop has slices of items, and its scalar form elsewhere. A NaN result
     /// from arguments that aren't NaN fails the item, because rustymath gives NaN for an argument outside a function's real domain.
-    fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy) -> Self::Output
+    fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy + Sync) -> Self::Output
     where
         Self: Sized,
     {
@@ -68,7 +68,7 @@ pub(crate) trait Dyad<A> {
     }
     /// `f`, which gives Booleans, on each pair of items, through its slice form where the loop has slices of items, and its scalar form
     /// elsewhere.
-    fn booleans(self, f: impl rustymath::Binary<A, Out = bool> + Copy) -> Self::Output
+    fn booleans(self, f: impl rustymath::Binary<A, Out = bool> + Copy + Sync) -> Self::Output
     where
         Self: Sized,
     {
@@ -95,19 +95,19 @@ impl<A: Copy, K: rustymath::Unary<A>> rustymath::Binary<A> for Right<K> {
 /// A loop that applies a monadic kernel. A kernel keeps its argument type, or gives integers or Booleans.
 pub(crate) trait Monad<A> {
     type Output;
-    fn same(self, f: impl Fn(A) -> Option<A> + Copy) -> Self::Output;
+    fn same(self, f: impl Fn(A) -> Option<A> + Copy + Sync) -> Self::Output;
     /// The session's numeric settings: the tolerance that kernels of approximate numbers compare within, and the width of the floats
     /// that kernels create from exact numbers.
     fn numeric(&self) -> Numeric;
     /// `f`'s results, which are whole numbers or NaN, as integers of `width`. When one doesn't fit, the loop runs again at the next width
     /// up. NaN, an infinity or a result that no width holds fails it.
-    fn integer(self, width: Width, f: impl Fn(A) -> Option<A> + Copy) -> Self::Output;
+    fn integer(self, width: Width, f: impl Fn(A) -> Option<A> + Copy + Sync) -> Self::Output;
     /// `f`'s results, of another element type, such as Booleans from a predicate.
-    fn other<B: Element>(self, f: impl Fn(A) -> Option<B> + Copy) -> Self::Output;
+    fn other<B: Element>(self, f: impl Fn(A) -> Option<B> + Copy + Sync) -> Self::Output;
     /// `f` on each item, through its slice form where the loop has a slice of items, and its scalar form elsewhere. Its results can be
     /// of another element type, as the magnitude of a complex number is a float. A NaN result from an argument that isn't NaN fails the
     /// item, as `Dyad::many` says.
-    fn many<B: Element>(self, f: impl rustymath::Unary<A, Out = B> + Copy) -> Self::Output
+    fn many<B: Element>(self, f: impl rustymath::Unary<A, Out = B> + Copy + Sync) -> Self::Output
     where
         Self: Sized,
     {
@@ -339,7 +339,7 @@ mod wholes {
     }
     
     /// `f` on two integers of width `T`, computed at 64 bits. `None` where the result doesn't fit `T`.
-    fn wide<T: Int>(f: impl Fn(i64, i64) -> Option<i64> + Copy) -> impl Fn(T, T) -> Option<T> + Copy { move |x, y| f(x.to_i64(), y.to_i64()).and_then(T::narrowed) }
+    fn wide<T: Int>(f: impl Fn(i64, i64) -> Option<i64> + Copy + Sync) -> impl Fn(T, T) -> Option<T> + Copy + Sync { move |x, y| f(x.to_i64(), y.to_i64()).and_then(T::narrowed) }
 }
 
 impl Kernels for char {
@@ -617,7 +617,7 @@ fn complex_results(p: Primitive, left: Option<&Value>, right: &Value, agreement:
 /// `complex_results` does for glyphs.
 pub(crate) fn object<K>(k: K, right: &Value, agreement: &Agreement, numeric: Numeric) -> Option<Value>
 where
-    K: rustymath::Unary<f32, Out = f32> + rustymath::Unary<f64, Out = f64> + Copy,
+    K: rustymath::Unary<f32, Out = f32> + rustymath::Unary<f64, Out = f64> + Copy + Sync,
     K: rustymath::Unary<Complex32, Out = Complex32> + rustymath::Unary<Complex64, Out = Complex64>,
 {
     if let Some(result) = halves(&[Some(right)], numeric, |v, numeric| object(k, v[0]?, agreement, numeric)) { return result; }
@@ -908,15 +908,25 @@ pub(crate) fn expanded<'a, A: Element>(mapping: &Mapping, data: &'a [A], start: 
     Arg::Many(out)
 }
 
-/// `run` on `n` pairs of the items of `x` and `y` read as `A`, `CHUNK` pairs at a time, appending to `out`. Items that already have
-/// type `A` pass through, and others convert into `bufs`. Converting a chunk costs about one copy, far less than a function with a
-/// slice form.
+/// `run` on `n` pairs of the items of `x` and `y` read as `A`, appending to `out`. Where both arguments' items already have type `A`,
+/// one call takes all `n` pairs, which a slice form can split across threads. Otherwise `run` takes `CHUNK` pairs at a time. Items
+/// of another type convert into `bufs`. Converting a chunk costs about one copy, far less than a function with a slice form.
 #[inline]
 fn read_chunks<A: Element, X: Source<A>, Y: Source<A>, B>(
     x: Arg<'_, X>, y: Arg<'_, Y>, n: usize, out: &mut Vec<B>, (xs, ys): (&mut Vec<A>, &mut Vec<A>),
     run: impl Fn(Arg<'_, A>, Arg<'_, A>, usize, &mut Vec<B>) -> bool,
 ) -> bool {
+    if let (Some(x), Some(y)) = (in_place(x, n), in_place(y, n)) { return run(x, y, n, out); }
     each(n, CHUNK, |k, m| run(read_chunk(x, k * CHUNK, m, xs), read_chunk(y, k * CHUNK, m, ys), m, out))
+}
+
+/// The first `n` items of `a` as `A` with no copy, where its items already have type `A`.
+#[inline]
+fn in_place<'a, A: Element, X: Source<A>>(a: Arg<'a, X>, n: usize) -> Option<Arg<'a, A>> {
+    match a {
+        Arg::Many(s) => X::borrowed(&s[..n]).map(Arg::Many),
+        Arg::One(v) => Some(Arg::One(v.read())),
+    }
 }
 
 /// Items `start..start + n` of `a`, read as `A`.
@@ -949,11 +959,11 @@ impl<'a, X: Element, Y: Element> Map<'a, X, Y> {
     fn exact(x: &'a [X], y: &'a [Y], agreement: &'a Agreement) -> Self { Self { x, y, agreement, numeric: Numeric::EXACT } }
     /// The results of `f` on the pairs of items, in the shape of the frame.
     #[inline]
-    fn binary<B: Element>(&self, f: impl Fn(X, Y) -> Option<B> + Copy) -> Option<Value> {
+    fn binary<B: Element>(&self, f: impl Fn(X, Y) -> Option<B> + Copy + Sync) -> Option<Value> {
         built(self.agreement, |out| blocks(self.x, self.y, self.agreement, out, |x, y, n, o| pairs(x, y, n, o, |a, b| item_result(f(a, b)))))
     }
     #[inline]
-    fn unary<B: Element>(&self, f: impl Fn(Y) -> Option<B>) -> Option<Value> {
+    fn unary<B: Element>(&self, f: impl Fn(Y) -> Option<B> + Sync) -> Option<Value> {
         let (y, len, g) = (self.y, self.agreement.len, |b, ()| item_result(f(b)));
         built(self.agreement, |out| match &self.agreement.right {
             Mapping::Linear(1) => pairs(Arg::Many(y), Arg::One(()), len, out, g),
@@ -970,16 +980,16 @@ impl<A: Element, X: Source<A>, Y: Source<A>> Dyad<A> for Map<'_, X, Y> {
     const RIGHT_NAN: bool = Y::NAN;
     fn numeric(&self) -> Numeric { self.numeric }
     #[inline]
-    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy) -> Option<Value> { self.binary(|x, y| f(x.read(), y.read())) }
+    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Option<Value> { self.binary(|x, y| f(x.read(), y.read())) }
     #[inline]
-    fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy) -> Option<Value> { self.binary(|x, y| f(x.read(), y.read())) }
+    fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy + Sync) -> Option<Value> { self.binary(|x, y| f(x.read(), y.read())) }
     #[inline]
-    fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy) -> Option<Value> {
+    fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy + Sync) -> Option<Value> {
         let (mut xs, mut ys) = (Vec::new(), Vec::new());
         built(self.agreement, |out| blocks(self.x, self.y, self.agreement, out, |x, y, n, o| read_chunks(x, y, n, o, (&mut xs, &mut ys), |x, y, m, o| f.many(x, y, m, o))))
     }
     #[inline]
-    fn booleans(self, f: impl rustymath::Binary<A, Out = bool> + Copy) -> Option<Value> {
+    fn booleans(self, f: impl rustymath::Binary<A, Out = bool> + Copy + Sync) -> Option<Value> {
         let (mut xs, mut ys) = (Vec::new(), Vec::new());
         built(self.agreement, |out| blocks(self.x, self.y, self.agreement, out, |x, y, n, o| read_chunks(x, y, n, o, (&mut xs, &mut ys), |x, y, m, o| f.many(x, y, m, o))))
     }
@@ -992,20 +1002,24 @@ impl<A: Element, X: Element, Y: Source<A>> Monad<A> for Map<'_, X, Y> {
     type Output = Option<Value>;
     fn numeric(&self) -> Numeric { self.numeric }
     #[inline]
-    fn same(self, f: impl Fn(A) -> Option<A> + Copy) -> Option<Value> { self.unary(|y| f(y.read())) }
+    fn same(self, f: impl Fn(A) -> Option<A> + Copy + Sync) -> Option<Value> { self.unary(|y| f(y.read())) }
     #[inline]
-    fn integer(self, mut width: Width, f: impl Fn(A) -> Option<A> + Copy) -> Option<Value> {
+    fn integer(self, mut width: Width, f: impl Fn(A) -> Option<A> + Copy + Sync) -> Option<Value> {
         loop {
             if let Some(result) = with_width!(width, T => self.unary(|y| f(y.read()).and_then(A::whole::<T>))) { return Some(result); }
             width = width.wider()?;
         }
     }
     #[inline]
-    fn other<B: Element>(self, f: impl Fn(A) -> Option<B> + Copy) -> Option<Value> { self.unary(|y| f(y.read())) }
+    fn other<B: Element>(self, f: impl Fn(A) -> Option<B> + Copy + Sync) -> Option<Value> { self.unary(|y| f(y.read())) }
     #[inline]
-    fn many<B: Element>(self, f: impl rustymath::Unary<A, Out = B> + Copy) -> Option<Value> {
+    fn many<B: Element>(self, f: impl rustymath::Unary<A, Out = B> + Copy + Sync) -> Option<Value> {
+        let len = self.agreement.len;
+        if let Mapping::Linear(1) = self.agreement.right {
+            if let Some(y) = in_place(Arg::Many(self.y), len) { return built(self.agreement, |out| f.many(y, len, out)); }
+        }
         let (mut y, mut ys) = (Side::new(self.y, &self.agreement.right), Vec::new());
-        built(self.agreement, |out| each(self.agreement.len, CHUNK, |k, n| f.many(y.read(k * CHUNK, n, &mut ys), n, out)))
+        built(self.agreement, |out| each(len, CHUNK, |k, n| f.many(y.read(k * CHUNK, n, &mut ys), n, out)))
     }
 }
 
@@ -1065,13 +1079,13 @@ impl<A: Element> Dyad<A> for Chunked<'_, A> {
     type Output = Option<Value>;
     fn numeric(&self) -> Numeric { self.numeric }
     #[inline]
-    fn same(mut self, f: impl Fn(A, A) -> Option<A> + Copy) -> Option<Value> { self.pair_chunks(|x, y, n, o| pairs(x, y, n, o, |a, b| item_result(f(a, b)))) }
+    fn same(mut self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Option<Value> { self.pair_chunks(|x, y, n, o| pairs(x, y, n, o, |a, b| item_result(f(a, b)))) }
     #[inline]
-    fn boolean(mut self, f: impl Fn(A, A) -> Option<bool> + Copy) -> Option<Value> { self.pair_chunks(|x, y, n, o| pairs(x, y, n, o, |a, b| item_result(f(a, b)))) }
+    fn boolean(mut self, f: impl Fn(A, A) -> Option<bool> + Copy + Sync) -> Option<Value> { self.pair_chunks(|x, y, n, o| pairs(x, y, n, o, |a, b| item_result(f(a, b)))) }
     #[inline]
-    fn many(mut self, f: impl rustymath::Binary<A, Out = A> + Copy) -> Option<Value> { self.pair_chunks(|x, y, n, o| f.many(x, y, n, o)) }
+    fn many(mut self, f: impl rustymath::Binary<A, Out = A> + Copy + Sync) -> Option<Value> { self.pair_chunks(|x, y, n, o| f.many(x, y, n, o)) }
     #[inline]
-    fn booleans(mut self, f: impl rustymath::Binary<A, Out = bool> + Copy) -> Option<Value> { self.pair_chunks(|x, y, n, o| f.many(x, y, n, o)) }
+    fn booleans(mut self, f: impl rustymath::Binary<A, Out = bool> + Copy + Sync) -> Option<Value> { self.pair_chunks(|x, y, n, o| f.many(x, y, n, o)) }
     fn constants(&self) -> (Option<A>, Option<A>) { (self.x.as_ref().and_then(|x| x.constant()), self.y.constant()) }
 }
 
@@ -1079,9 +1093,9 @@ impl<A: Element> Monad<A> for Chunked<'_, A> {
     type Output = Option<Value>;
     fn numeric(&self) -> Numeric { self.numeric }
     #[inline]
-    fn same(self, f: impl Fn(A) -> Option<A> + Copy) -> Option<Value> { self.other(f) }
+    fn same(self, f: impl Fn(A) -> Option<A> + Copy + Sync) -> Option<Value> { self.other(f) }
     #[inline]
-    fn integer(mut self, mut width: Width, f: impl Fn(A) -> Option<A> + Copy) -> Option<Value> {
+    fn integer(mut self, mut width: Width, f: impl Fn(A) -> Option<A> + Copy + Sync) -> Option<Value> {
         loop {
             let run = with_width!(width, T => self.item_chunks(|y, n, o| pairs(y, Arg::One(()), n, o, |b, ()| item_result(f(b).and_then(A::whole::<T>)))));
             if let Some(result) = run { return Some(result); }
@@ -1089,9 +1103,9 @@ impl<A: Element> Monad<A> for Chunked<'_, A> {
         }
     }
     #[inline]
-    fn other<B: Element>(mut self, f: impl Fn(A) -> Option<B> + Copy) -> Option<Value> { self.item_chunks(|y, n, o| pairs(y, Arg::One(()), n, o, |b, ()| item_result(f(b)))) }
+    fn other<B: Element>(mut self, f: impl Fn(A) -> Option<B> + Copy + Sync) -> Option<Value> { self.item_chunks(|y, n, o| pairs(y, Arg::One(()), n, o, |b, ()| item_result(f(b)))) }
     #[inline]
-    fn many<B: Element>(mut self, f: impl rustymath::Unary<A, Out = B> + Copy) -> Option<Value> { self.item_chunks(|y, n, o| f.many(y, n, o)) }
+    fn many<B: Element>(mut self, f: impl rustymath::Unary<A, Out = B> + Copy + Sync) -> Option<Value> { self.item_chunks(|y, n, o| f.many(y, n, o)) }
 }
 
 /// One step of a `fusion::Chain` on a block of `n` items: `p` applied to `x` and `y`. A comparison appends to `bools`, and any other
@@ -1111,13 +1125,13 @@ impl<F: Element> Dyad<F> for Stage<'_, F> {
     type Output = bool;
     fn numeric(&self) -> Numeric { self.numeric }
     #[inline]
-    fn same(self, f: impl Fn(F, F) -> Option<F> + Copy) -> bool { pairs(self.x, self.y, self.n, self.floats, |a, b| item_result(f(a, b))) }
+    fn same(self, f: impl Fn(F, F) -> Option<F> + Copy + Sync) -> bool { pairs(self.x, self.y, self.n, self.floats, |a, b| item_result(f(a, b))) }
     #[inline]
-    fn boolean(self, f: impl Fn(F, F) -> Option<bool> + Copy) -> bool { pairs(self.x, self.y, self.n, self.bools, |a, b| item_result(f(a, b))) }
+    fn boolean(self, f: impl Fn(F, F) -> Option<bool> + Copy + Sync) -> bool { pairs(self.x, self.y, self.n, self.bools, |a, b| item_result(f(a, b))) }
     #[inline]
-    fn many(self, f: impl rustymath::Binary<F, Out = F> + Copy) -> bool { f.many(self.x, self.y, self.n, self.floats) }
+    fn many(self, f: impl rustymath::Binary<F, Out = F> + Copy + Sync) -> bool { f.many(self.x, self.y, self.n, self.floats) }
     #[inline]
-    fn booleans(self, f: impl rustymath::Binary<F, Out = bool> + Copy) -> bool { f.many(self.x, self.y, self.n, self.bools) }
+    fn booleans(self, f: impl rustymath::Binary<F, Out = bool> + Copy + Sync) -> bool { f.many(self.x, self.y, self.n, self.bools) }
     fn constants(&self) -> (Option<F>, Option<F>) {
         let one = |a: Arg<'_, F>| match a { Arg::One(v) => Some(v), Arg::Many(_) => None };
         (one(self.x), one(self.y))
@@ -1127,9 +1141,9 @@ impl<F: Element> Monad<F> for Stage<'_, F> {
     type Output = bool;
     fn numeric(&self) -> Numeric { self.numeric }
     #[inline]
-    fn same(self, f: impl Fn(F) -> Option<F> + Copy) -> bool { pairs(self.y, Arg::One(()), self.n, self.floats, |b, ()| item_result(f(b))) }
-    fn integer(self, _: Width, _: impl Fn(F) -> Option<F> + Copy) -> bool { false }
-    fn other<B: Element>(self, _: impl Fn(F) -> Option<B> + Copy) -> bool { false }
+    fn same(self, f: impl Fn(F) -> Option<F> + Copy + Sync) -> bool { pairs(self.y, Arg::One(()), self.n, self.floats, |b, ()| item_result(f(b))) }
+    fn integer(self, _: Width, _: impl Fn(F) -> Option<F> + Copy + Sync) -> bool { false }
+    fn other<B: Element>(self, _: impl Fn(F) -> Option<B> + Copy + Sync) -> bool { false }
 }
 
 /// A reduction of compact values along `axis`, from the right as the general fold does. `+`, `×`, `⌊` and `⌈` on reals, and `-` and `÷`
@@ -1342,9 +1356,9 @@ where
     type Output = Option<Value>;
     fn numeric(&self) -> Numeric { self.numeric }
     #[inline]
-    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy) -> Option<Value> { A::build_narrowed(self.shape.clone(), self.lanes(f, |b| b)?) }
+    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Option<Value> { A::build_narrowed(self.shape.clone(), self.lanes(f, |b| b)?) }
     #[inline]
-    fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy) -> Option<Value> { bool::build(self.shape.clone(), self.lanes(f, Source::<A>::read)?) }
+    fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy + Sync) -> Option<Value> { bool::build(self.shape.clone(), self.lanes(f, Source::<A>::read)?) }
 }
 
 /// A scan of compact values along `axis` by successive left accumulation, as the general scan does. Kernels of approximate numbers
@@ -1367,35 +1381,68 @@ pub(crate) fn inverse_scan(p: Primitive, right: &Value, seed: Option<&Value>, ax
 
 fn scanned(p: Primitive, right: &Value, seed: Option<&Value>, axis: &Axis, numeric: Numeric, inverse: bool, flip: bool) -> Option<Value> {
     if let Some(result) = halves(&[Some(right), seed], numeric, |v, numeric| scanned(p, v[0]?, v[1], axis, numeric, inverse, flip)) { return result; }
-    let lanes = |numeric: Numeric| Lanes { seed, axis, shape: right.shape().to_vec(), numeric, inverse, flip };
-    // `+\`, and `-\` of narrow integers, bound their running sums by the items' least and greatest values, and scan straight into the
-    // width that holds them. Other scans of integers run at 64 bits, and the result narrows in a pass of its own once the scan ends.
-    // `⌈\`, `⌊\` and inverses scan at the items' own width first: a maximum or minimum never leaves it, and an inverse whose difference
-    // doesn't fit scans again at 64 bits.
+    // `x|\Y`, from a 64-bit float seed that `whole_float` accepts, on integers narrower than 64 bits, is the exact scan from `x` as floats.
+    // Each running result is an item's residue by the result before it, or the item itself after a 0, so none exceeds the seed or an item
+    // in magnitude. Every result is a whole number below `tolerant::whole_limit`, where the exact residues are the tolerant ones.
+    if let (Primitive::Math(Math::Magnitude), Some(s), Items::Integers(ints)) = (p, seed, right.as_items()) {
+        if let (false, Some(x)) = (matches!(ints, Ints::I64(_)), whole_float(s, numeric)) {
+            let exact = Value::Number(crate::number::Number::from_integer(x));
+            return scanned(p, right, Some(&exact), axis, numeric, inverse, flip)?.to_float_width(FloatWidth::F64).ok();
+        }
+    }
+    // A seed joins the items' kind, as the scan's first result does. Where that's a float width that the items or the seed lack, as
+    // for integers or Booleans beside a float seed, the scan runs on floats of that width. A seeded comparison doesn't join, because its
+    // results are Booleans whatever the kinds.
+    if let Some(s) = seed.filter(|_| !matches!(p, Primitive::Compare(_))) {
+        if let Some(Kind::Float(width)) = right.compact_kind().zip(s.compact_kind()).and_then(|(r, k)| r.join(k, Widening::Arrays)) {
+            /// `v`, or its numbers as floats of `width` where it holds another kind.
+            fn floats(v: &Value, width: FloatWidth) -> Option<Cow<'_, Value>> {
+                if v.compact_kind() == Some(Kind::Float(width)) { Some(Cow::Borrowed(v)) } else { v.to_float_width(width).ok().map(Cow::Owned) }
+            }
+            let (r, k) = (floats(right, width)?, floats(s, width)?);
+            if matches!(r, Cow::Owned(_)) || matches!(k, Cow::Owned(_)) { return scanned(p, &r, Some(&*k), axis, numeric, inverse, flip); }
+        }
+    }
+    // A seeded comparison gives Booleans, because each of its results is a comparison's. `seeded` compares the seed with each lane's first
+    // item, whatever their kinds, and the runners scan the rest from those results. Booleans scan through their truth tables instead.
+    let starts = match (p, seed, right.as_items()) {
+        (Primitive::Compare(_), Some(s), Items::Floats(_) | Items::Integers(_) | Items::Complex(_)) if !inverse && s.is_atom() => {
+            Some(seeded(p, right, s, axis, numeric)?)
+        }
+        _ => None,
+    };
+    let lanes = |numeric: Numeric| Lanes { seed: seed.filter(|_| starts.is_none()), starts: starts.as_deref(), axis, shape: right.shape().to_vec(), numeric, inverse, flip };
+    // `+\`, from a seed that fits 64 bits or from none, and `-\` of narrow integers, bound their running sums by the seed and the items'
+    // least and greatest values, and scan straight into the width that holds them. Other scans of integers run at 64 bits, and the
+    // result narrows in a pass of its own once the scan ends.
+    // `⌈\`, `⌊\`, comparisons and inverses scan at the items' own width first: a maximum or minimum never leaves it, a comparison gives
+    // 0 or 1, and an inverse whose difference doesn't fit scans again at 64 bits.
     let integers = |ints: Ints| {
         let simple = seed.is_none() && !inverse && axis.inner == 1;
         let minus = matches!(p, Primitive::Arithmetic(Arithmetic::Minus)) && !inverse;
         // A narrow `-\` subtracts its running sums from `2×x0`, with no widened copy. Another `-\` is `+\` of a copy whose items after
         // each lane's first are negated, or all of them after a seed.
         if minus && simple && !matches!(ints, Ints::I64(_)) {
-            return with_ints!(ints, |data| integer_sums(data, axis, true, right.shape().to_vec()));
+            return with_ints!(ints, |data| integer_sums(data, axis, true, None, right.shape().to_vec()));
         }
         let tail: Vec<i64>;
         let (p, ints) = if minus && !matches!(&ints, Ints::I64(d) if d.contains(&i64::MIN)) {
             tail = with_ints!(ints, |data| negated_tail(data, axis, seed.is_some(), |n| n.into()));
             (Primitive::Arithmetic(Arithmetic::Plus), Ints::I64(&tail))
         } else { (p, ints) };
-        if matches!(p, Primitive::Arithmetic(Arithmetic::Plus)) && seed.is_none() && !inverse {
-            return with_ints!(ints, |data| integer_sums(data, axis, false, right.shape().to_vec()));
+        // A seed that fits 64 bits starts each lane's sums.
+        let start = match seed { None => Some(None), Some(s) if s.is_atom() => i64::slice(s).map(|v| Some(v[0])), Some(_) => None };
+        if let (Primitive::Arithmetic(Arithmetic::Plus), false, Some(start)) = (p, inverse, start) {
+            return with_ints!(ints, |data| integer_sums(data, axis, false, start, right.shape().to_vec()));
         }
-        if inverse || matches!(p, Primitive::Math(Math::Ceiling | Math::Floor)) {
+        if inverse || matches!(p, Primitive::Math(Math::Ceiling | Math::Floor) | Primitive::Compare(_)) {
             let narrow = with_ints!(&ints, |data| lanes(Numeric::EXACT).of(&data[..]).and_then(|scan| narrow_scan(p, scan)));
             if narrow.is_some() { return narrow; }
         }
         i64::dyad(p, lanes(Numeric::EXACT).of(&ints.widened())?)?
     };
     if let (Items::Booleans(data), None, false) = (right.as_items(), seed, inverse) {
-        if matches!(p, Primitive::Arithmetic(Arithmetic::Plus)) { return running_sums(data, [0, 1], axis, false, right.shape().to_vec()); }
+        if matches!(p, Primitive::Arithmetic(Arithmetic::Plus)) { return running_sums(data, [0, 1], axis, false, None, right.shape().to_vec()); }
     }
     match right.as_items() {
         // The logical functions and comparisons keep Booleans, and scan through their truth tables. Other functions read Booleans as
@@ -1409,6 +1456,24 @@ fn scanned(p: Primitive, right: &Value, seed: Option<&Value>, axis: &Axis, numer
         Items::Complex(data) => with_complexes!(data, |data| complex_scan(p, lanes(numeric), data)),
         _ => None,
     }
+}
+
+/// The first results of a seeded comparison scan of the compact numbers `right` along `axis`: `seed` compared with each lane's first
+/// item through `map`, whatever the kinds of the two.
+fn seeded(p: Primitive, right: &Value, seed: &Value, axis: &Axis, numeric: Numeric) -> Option<Vec<bool>> {
+    fn firsts<A: Element>(data: &[A], axis: &Axis) -> Option<Value> {
+        let items = (0..axis.outer).flat_map(|i| (0..axis.inner).map(move |k| data[axis.offset(i, 0, k)])).collect();
+        A::build_narrowed(vec![axis.outer * axis.inner], items)
+    }
+    if axis.len == 0 { return Some(Vec::new()); }
+    let firsts = match right.as_items() {
+        Items::Floats(data) => with_floats!(data, |data| firsts(data, axis)),
+        Items::Integers(ints) => with_ints!(ints, |data| firsts(data, axis)),
+        Items::Complex(data) => with_complexes!(data, |data| firsts(data, axis)),
+        _ => None,
+    }?;
+    let results = map(p, Some(seed), &firsts, &Agreement::new(seed.layout(), firsts.layout()).ok()?, numeric)?;
+    bool::slice(&results).map(<[bool]>::to_vec)
 }
 
 /// The scan of floats of width `F`. `+\`, `×\`, `⌈\` and `⌊\` run through `rustymath::reduce`'s scans, by `Scan::reduced`, and `-\` as
@@ -1444,12 +1509,12 @@ where
 }
 
 /// How a scan runs, whatever its items: the seed, the axis, the result's shape, the numeric settings, and whether it inverts.
-struct Lanes<'a> { seed: Option<&'a Value>, axis: &'a Axis, shape: Vec<usize>, numeric: Numeric, inverse: bool, flip: bool }
+struct Lanes<'a> { seed: Option<&'a Value>, starts: Option<&'a [bool]>, axis: &'a Axis, shape: Vec<usize>, numeric: Numeric, inverse: bool, flip: bool }
 impl<'a> Lanes<'a> {
     /// The scan of `data`. `None` when the seed isn't one item of `data`'s type.
     fn of<A: Element>(self, data: &'a [A]) -> Option<Scan<'a, A>> {
         let seed = match self.seed { None => None, Some(s) if s.is_atom() => Some(A::slice(s)?[0]), Some(_) => return None };
-        Some(Scan { data, seed, axis: self.axis, shape: self.shape, numeric: self.numeric, inverse: self.inverse, flip: self.flip })
+        Some(Scan { data, seed, starts: self.starts, axis: self.axis, shape: self.shape, numeric: self.numeric, inverse: self.inverse, flip: self.flip })
     }
     /// For `-\` when the scan doesn't invert, `data` with each lane's items after its first negated, which `+\` then scans.
     fn minus_tail<A: Copy + std::ops::Neg<Output = A>>(&self, p: Primitive, data: &[A]) -> Option<Vec<A>> {
@@ -1464,7 +1529,7 @@ impl Dyad<bool> for LogicalScan<'_> {
     type Output = Option<Value>;
     fn numeric(&self) -> Numeric { self.0.numeric }
     #[inline]
-    fn same(self, f: impl Fn(bool, bool) -> Option<bool> + Copy) -> Option<Value> {
+    fn same(self, f: impl Fn(bool, bool) -> Option<bool> + Copy + Sync) -> Option<Value> {
         let scan = self.0;
         let row = |r| Some([f(r, false)?, f(r, true)?]);
         let (false, Some(lo), Some(hi)) = (scan.inverse, row(false), row(true)) else { return scan.same(f) };
@@ -1473,7 +1538,7 @@ impl Dyad<bool> for LogicalScan<'_> {
         bool::build(scan.shape, result)
     }
     #[inline]
-    fn boolean(self, f: impl Fn(bool, bool) -> Option<bool> + Copy) -> Option<Value> { self.same(f) }
+    fn boolean(self, f: impl Fn(bool, bool) -> Option<bool> + Copy + Sync) -> Option<Value> { self.same(f) }
 }
 
 /// A scan of integers at their own width: `⌈\` and `⌊\` through rustymath's running maximums and minimums, whose results never leave
@@ -1491,17 +1556,17 @@ where
     }
 }
 
-/// Running sums along each lane of items between `lo` and `hi`. With `minus`, `-\` along lanes of consecutive items instead:
-/// `((x0 - x1) - x2) - …` is `2×x0` less the running sum. `lo`, `hi` and the lanes' length bound every sum and difference, which fixes
-/// the narrowest width that holds them before any is written. The scan wraps at that width, which leaves every sum exact. `None`
-/// where 64 bits might not hold them.
-fn running_sums<T: reduce::Term>(data: &[T], [lo, hi]: [i64; 2], axis: &Axis, minus: bool, shape: Vec<usize>) -> Option<Value> {
-    let (lo, hi, len) = (i128::from(lo), i128::from(hi), axis.len as i128);
-    let (mut least, mut most) = (lo.min(len * lo), hi.max(len * hi));
+/// Running sums along each lane, from `start` or 0, of items between `lo` and `hi`. With `minus`, `-\` along lanes of consecutive items
+/// instead: `((x0 - x1) - x2) - …` is `2×x0` less the running sum. `start`, `lo`, `hi` and the lanes' length bound every sum and
+/// difference, which fixes the narrowest width that holds them before any is written. The scan wraps at that width, which leaves every
+/// sum exact. `None` where 64 bits might not hold them.
+fn running_sums<T: reduce::Term>(data: &[T], [lo, hi]: [i64; 2], axis: &Axis, minus: bool, start: Option<i64>, shape: Vec<usize>) -> Option<Value> {
+    let (lo, hi, len, s) = (i128::from(lo), i128::from(hi), axis.len as i128, i128::from(start.unwrap_or(0)));
+    let (mut least, mut most) = (s + lo.min(len * lo), s + hi.max(len * hi));
     if minus { (least, most) = (least.min(2 * lo - most), most.max(2 * hi - least)); }
     with_width!(Width::narrowest(i64::try_from(least).ok()?, i64::try_from(most).ok()?), U => {
         let mut result: Vec<U> = Vec::with_capacity(data.len());
-        reduce::scan_along::<T, reduce::SumAs<U>>(data, axis.dims(), None, &mut result);
+        reduce::scan_along::<T, reduce::SumAs<U>>(data, axis.dims(), start.map(reduce::Tally::low), &mut result);
         if minus && axis.len > 0 {
             for (lane, totals) in data.chunks(axis.len).zip(result.chunks_mut(axis.len)) {
                 let first: U = reduce::Term::term(lane[0]);
@@ -1512,9 +1577,10 @@ fn running_sums<T: reduce::Term>(data: &[T], [lo, hi]: [i64; 2], axis: &Axis, mi
     })
 }
 
-/// `+\` on integers, or with `minus`, `-\` along lanes of consecutive integers narrower than 64 bits, through `running_sums`. Where
-/// 64 bits might not hold the sums, `+\` runs through rustymath's running sums at 64 bits, which report overflow. `None` on overflow.
-fn integer_sums<T: Whole>(data: &[T], axis: &Axis, minus: bool, shape: Vec<usize>) -> Option<Value>
+/// `+\` on integers, from `start` or 0, or with `minus`, `-\` along lanes of consecutive integers narrower than 64 bits, through
+/// `running_sums`. Where 64 bits might not hold the sums, `+\` runs through rustymath's running sums at 64 bits, which report overflow.
+/// `None` on overflow.
+fn integer_sums<T: Whole>(data: &[T], axis: &Axis, minus: bool, start: Option<i64>, shape: Vec<usize>) -> Option<Value>
 where
     reduce::Sum: Reduction<T, Total = i64>,
     reduce::Max: Reduction<T, Total = T>,
@@ -1522,9 +1588,9 @@ where
 {
     let (lo, hi) = reduce::extremes(data);
     let bounds = [lo.to_i64(), hi.to_i64()];
-    if let Some(result) = running_sums(data, bounds, axis, minus, shape.clone()) { return Some(result); }
+    if let Some(result) = running_sums(data, bounds, axis, minus, start, shape.clone()) { return Some(result); }
     let mut result = Vec::with_capacity(data.len());
-    if minus || !reduce::scan_along::<T, reduce::Sum>(data, axis.dims(), None, &mut result) { return None; }
+    if minus || !reduce::scan_along::<T, reduce::Sum>(data, axis.dims(), start, &mut result) { return None; }
     i64::build_narrowed(shape, result)
 }
 
@@ -1532,6 +1598,7 @@ where
 struct Scan<'a, A> {
     data: &'a [A],
     seed: Option<A>,
+    starts: Option<&'a [bool]>,
     axis: &'a Axis,
     shape: Vec<usize>,
     numeric: Numeric,
@@ -1541,29 +1608,32 @@ struct Scan<'a, A> {
 impl<A: Element> Scan<'_, A> {
     /// The scan by `f`, which adds the next item to a running total.
     #[inline]
-    fn running(self, f: impl Fn(A, A) -> Option<A> + Copy) -> Option<Value> {
+    fn running(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Option<Value> {
         if self.inverse { return None; }
         let (axis, seed, mut ok) = (self.axis, self.seed, true);
         let first = |ok: &mut bool, x: A| match seed { Some(s) => noted(ok, f(s, x)), None => x };
-        let mut result = vec![A::FILL; self.data.len()];
+        let mut result = Vec::with_capacity(self.data.len());
         if axis.inner == 1 {
-            for (out, lane) in result.chunks_mut(axis.len).zip(self.data.chunks(axis.len)) {
+            for lane in self.data.chunks(axis.len) {
                 let mut total = first(&mut ok, lane[0]);
-                out[0] = total;
-                for (slot, &x) in out[1..].iter_mut().zip(&lane[1..]) {
+                result.push(total);
+                for &x in &lane[1..] {
                     total = noted(&mut ok, f(total, x));
-                    *slot = total;
+                    result.push(total);
                 }
             }
         } else {
-            // Each column of a lane keeps its own total.
+            // Each column of a lane keeps its own total. Each row updates them in place, then appends them.
             let mut totals = vec![A::FILL; axis.inner];
             for i in 0..axis.outer {
-                let lane = axis.offset(i, 0, 0)..axis.offset(i, axis.len, 0);
-                let mut rows = self.data[lane.clone()].chunks(axis.inner).zip(result[lane].chunks_mut(axis.inner));
-                let Some((row, out)) = rows.next() else { continue };
-                for ((t, slot), &x) in totals.iter_mut().zip(out).zip(row) { *t = first(&mut ok, x); *slot = *t; }
-                for (row, out) in rows { for ((t, slot), &x) in totals.iter_mut().zip(out).zip(row) { *t = noted(&mut ok, f(*t, x)); *slot = *t; } }
+                let mut rows = self.data[axis.offset(i, 0, 0)..axis.offset(i, axis.len, 0)].chunks(axis.inner);
+                let Some(row) = rows.next() else { continue };
+                for (t, &x) in totals.iter_mut().zip(row) { *t = first(&mut ok, x) }
+                result.extend_from_slice(&totals);
+                for row in rows {
+                    for (t, &x) in totals.iter_mut().zip(row) { *t = noted(&mut ok, f(*t, x)) }
+                    result.extend_from_slice(&totals);
+                }
             }
         }
         if ok { A::build_narrowed(self.shape, result) } else { None }
@@ -1578,19 +1648,86 @@ impl<A: Element> Scan<'_, A> {
     /// The inverse of a scan by `f`: each item after a lane's first row combined with the item one row before it, and the first row
     /// with the seed, as `f(before, item)`, or as `f(item, before)` with `flip`.
     #[inline]
-    fn paired(self, f: impl Fn(A, A) -> Option<A> + Copy) -> Option<Value> {
+    fn paired(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Option<Value> {
         let (step, flip, mut ok) = (self.axis.inner, self.flip, true);
         let g = move |before, x| if flip { f(x, before) } else { f(before, x) };
-        let mut result = self.data.to_vec();
+        let mut result = Vec::with_capacity(self.data.len());
         for i in 0..self.axis.outer {
-            let lane = self.axis.offset(i, 0, 0)..self.axis.offset(i, self.axis.len, 0);
-            let (data, out) = (&self.data[lane.clone()], &mut result[lane]);
+            let data = &self.data[self.axis.offset(i, 0, 0)..self.axis.offset(i, self.axis.len, 0)];
             if data.is_empty() { continue }
-            let (before, current) = (&data[..data.len() - step], &data[step..]);
-            for ((slot, &x), &y) in out[step..].iter_mut().zip(before).zip(current) { *slot = noted(&mut ok, g(x, y)) }
-            if let Some(s) = self.seed { for (slot, &y) in out[..step].iter_mut().zip(data) { *slot = noted(&mut ok, g(s, y)) } }
+            let (first, rest) = (&data[..step], data.len() - step);
+            ok &= match self.seed {
+                Some(s) => pairs(Arg::One(s), Arg::Many(first), step, &mut result, |s, y| item_result(g(s, y))),
+                None => { result.extend_from_slice(first); true }
+            };
+            ok &= pairs(Arg::Many(&data[..rest]), Arg::Many(&data[step..]), rest, &mut result, |x, y| item_result(g(x, y)));
         }
         if ok { A::build_narrowed(self.shape, result) } else { None }
+    }
+}
+impl<A: Element> Scan<'_, A>
+where
+    bool: Source<A>,
+{
+    /// The scan of a comparison `f`. After a lane's first result each total is 0 or 1. `both(t, xs, out)` appends `f(t, x)` for each `x`
+    /// of `xs`, which gives each item's result at a total of 0 and at a total of 1. Along lanes, `reduce::chosen` picks each result by the
+    /// total before it, with no branch for each item. Down columns, each row picks for all its columns at once. A seeded scan's first
+    /// results are `starts`, and the scan gives Booleans. Otherwise each lane's first item is its first result, and the Booleans convert
+    /// back to the item type, as folds convert them.
+    fn compared(self, f: impl Fn(A, A) -> Option<bool>, both: impl Fn(A, &[A], &mut Vec<bool>) -> bool) -> Option<Value> {
+        let read = <bool as Source<A>>::read;
+        let (zero, one, mut ok) = (read(false), read(true), true);
+        let &Axis { outer, len, inner } = self.axis;
+        let (mut bits, mut low, mut high) = (Vec::with_capacity(self.data.len()), Vec::new(), Vec::new());
+        // Each item's results of `xs` at a total of 0, in `low`, and at a total of 1, in `high`.
+        let at_both = |xs: &[A], low: &mut Vec<bool>, high: &mut Vec<bool>| {
+            low.clear();
+            high.clear();
+            both(zero, xs, low) & both(one, xs, high)
+        };
+        if len > 0 && inner == 1 {
+            for (k, lane) in self.data.chunks(len).enumerate() {
+                let (mut total, rest) = match self.starts {
+                    Some(starts) => (starts[k], &lane[1..]),
+                    None if len == 1 => { bits.push(false); continue }
+                    None => { bits.push(false); (noted(&mut ok, f(lane[0], lane[1])), &lane[2..]) }
+                };
+                bits.push(total);
+                for xs in rest.chunks(CHUNK) {
+                    ok &= at_both(xs, &mut low, &mut high);
+                    reduce::chosen(total, &low, &high, &mut bits);
+                    total = bits[bits.len() - 1];
+                }
+            }
+        } else if len > 0 {
+            let mut totals = Vec::with_capacity(inner);
+            for (k, block) in self.data.chunks(len * inner).enumerate() {
+                let mut rows = block.chunks(inner);
+                let head = rows.next().expect("a lane has a first row");
+                totals.clear();
+                match self.starts {
+                    Some(starts) => totals.extend_from_slice(&starts[k * inner..(k + 1) * inner]),
+                    None => {
+                        bits.extend(std::iter::repeat_n(false, inner));
+                        let Some(row) = rows.next() else { continue };
+                        totals.extend(head.iter().zip(row).map(|(&x, &y)| noted(&mut ok, f(x, y))));
+                    }
+                }
+                bits.extend_from_slice(&totals);
+                for row in rows {
+                    ok &= at_both(row, &mut low, &mut high);
+                    for ((t, &l), &h) in totals.iter_mut().zip(&low).zip(&high) { *t = (*t & h) | (!*t & l); }
+                    bits.extend_from_slice(&totals);
+                }
+            }
+        }
+        if !ok { return None; }
+        if self.starts.is_some() { return bool::build(self.shape, bits); }
+        let mut result: Vec<A> = bits.iter().map(|&b| read(b)).collect();
+        if len > 0 {
+            for i in 0..outer { for k in 0..inner { let at = self.axis.offset(i, 0, k); result[at] = self.data[at]; } }
+        }
+        A::build_narrowed(self.shape, result)
     }
 }
 impl<A: Element> Dyad<A> for Scan<'_, A>
@@ -1601,10 +1738,20 @@ where
     fn numeric(&self) -> Numeric { self.numeric }
     /// A scan runs through `running`, and its inverse through `paired`.
     #[inline]
-    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy) -> Option<Value> { if self.inverse { self.paired(f) } else { self.running(f) } }
-    /// A comparison's Booleans convert back to the item type, as folds convert them. So a lane keeps one type, first item included.
+    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Option<Value> { if self.inverse { self.paired(f) } else { self.running(f) } }
+    /// A comparison runs through `compared`. Its inverse, and a scan from a seed of the items' type, which only functions other than
+    /// comparisons get, run through `same`, with the Booleans converted back to the item type.
     #[inline]
-    fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy) -> Option<Value> { self.same(move |x, y| f(x, y).map(Source::<A>::read)) }
+    fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy + Sync) -> Option<Value> {
+        if self.inverse || self.seed.is_some() { return self.same(move |x, y| f(x, y).map(Source::<A>::read)); }
+        self.compared(f, move |t, xs, out| pairs(Arg::One(t), Arg::Many(xs), xs.len(), out, |a, b| item_result(f(a, b))))
+    }
+    /// A comparison through its slice form, as `boolean` runs one.
+    #[inline]
+    fn booleans(self, f: impl rustymath::Binary<A, Out = bool> + Copy + Sync) -> Option<Value> {
+        if self.inverse || self.seed.is_some() { return self.boolean(move |x, y| f.checked(x, y)); }
+        self.compared(move |x, y| f.checked(x, y), move |t, xs, out| f.many(Arg::One(t), Arg::Many(xs), xs.len(), out))
+    }
 }
 
 /// `x f.g y` for compact arguments laid out as `rows`×`n` and `n`×`cols`, with `n` at least 1. rustymath's tiled inner products run
@@ -1730,7 +1877,7 @@ where
 struct Block<'a, A> { x: &'a [A], y: &'a [A], cols: usize, numeric: Numeric }
 impl<A: Element> Block<'_, A> {
     #[inline]
-    fn apply<B: Element>(&self, f: impl Fn(A, A) -> Option<B>) -> Option<Value> {
+    fn apply<B: Element>(&self, f: impl Fn(A, A) -> Option<B> + Sync) -> Option<Value> {
         let mut data = Vec::with_capacity(self.y.len());
         let rows = self.x.iter().zip(self.y.chunks(self.cols));
         let ok = rows.fold(true, |ok, (&a, row)| pairs(Arg::One(a), Arg::Many(row), self.cols, &mut data, |a, b| item_result(f(a, b))) & ok);
@@ -1742,7 +1889,7 @@ impl<A: Element> Dyad<A> for Block<'_, A> {
     type Output = Option<Value>;
     fn numeric(&self) -> Numeric { self.numeric }
     #[inline]
-    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy) -> Option<Value> { self.apply(f) }
+    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Option<Value> { self.apply(f) }
     #[inline]
-    fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy) -> Option<Value> { self.apply(f) }
+    fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy + Sync) -> Option<Value> { self.apply(f) }
 }

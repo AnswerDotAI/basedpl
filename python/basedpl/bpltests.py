@@ -245,6 +245,7 @@ def check_page(
 
 _SPEED = Path(__file__).parents[2]/'tests'/'speed.txt'
 _PKG = _SPEED.with_name('wasm-pkg.mjs')
+_LOCK_JS = _SPEED.with_name('timing-lock.mjs')
 
 class Costs(list):
     "Each case's cost, as `(code, picoseconds per item, copies)` rows. Copies is `None` where one copy of the data is too quick to time."
@@ -254,12 +255,13 @@ def time_cases(
     cases, # A BPL expression to time, or a list of them
     setup=None, # BPL that defines the data and its number of items `n`; None: the first `[setup]` section of `tests/speed.txt`
     prefs='', # BPL that runs before `setup`, such as `•prefs ["float":32]`
+    threads=1, # Threads that each case's rustymath calls split across, for a scaling check; 0: rustymath's default
     timeout=None # Seconds before the worker is closed
 ):
     "Time `cases` in a fresh worker, as `tests/speed.rs` does: the fastest of five runs, per item and in copies of the data."
     speed = _SPEED.read_text() if setup is None else f'[setup]\n{setup}'
     cases = [cases] if isinstance(cases, str) else list(cases)
-    with Worker() as w: r = w.request(dict(timing=dict(speed=speed, prefs=prefs, cases=cases)), timeout)
+    with Worker() as w: r = w.request(dict(timing=dict(speed=speed, prefs=prefs, cases=cases, threads=threads)), timeout)
     if e := r['error']: raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
     return Costs((c['code'], c['seconds']*1e12/r['n'], c['copies']) for c in r['costs'])
 
@@ -272,26 +274,21 @@ class SpeedCosts(list):
         rows = ((s, c, cost, '-' if b is None else f'{b:g}', 'over' if b is not None and cost > b else '') for s, c, cost, b in self)
         return '\n'.join(f'{cost:>9.2f} {b:>9} {over:4}  {s} {c}' for s, c, cost, b, over in rows)
 
-# The file whose lock keeps timings apart from builds and `pytest` on this machine, as DEV.md describes. Timings take it
-# exclusively. Builds and `pytest` take it shared. The native timings take it in Rust, in `basedpl::timing`.
+# The file whose lock keeps timings apart from builds and `pytest` on this machine, as DEV.md describes. Native timings take it
+# exclusively in Rust, in `basedpl::timing`, and wasm timings through `tests/timing-lock.mjs`. Builds and `pytest` take it shared.
 _TIMING_LOCK = '/tmp/aai-ws-timing.lock'
 
 @contextmanager
-def timing_lock(
-    shared=False # Hold it shared, as builds and `pytest` do, rather than exclusively, as timings do?
-):
-    "Hold the timing lock, waiting up to 5 minutes for it. An exclusive hold then raises `TimeoutError`. A shared hold goes ahead without it."
+def timing_lock():
+    "Hold the timing lock shared, as `pytest` does, waiting up to 5 minutes while a timing holds it, then going ahead without it. Never hold the timing lock in the shared kernel process. A timing started from the kernel would wait on that hold for up to 5 minutes. All that time, every agent's kernel calls wait too."
     with open(_TIMING_LOCK, 'a') as f:
-        deadline, waiting = time.monotonic() + 300, False
-        while True:
+        start, waiting = time.monotonic(), False
+        while time.monotonic() - start < 300:
             try:
-                fcntl.flock(f, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
+                fcntl.flock(f, fcntl.LOCK_SH | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
-                if time.monotonic() > deadline:
-                    if shared: break
-                    raise TimeoutError(f'a build or another timing has held {_TIMING_LOCK} for 5 minutes')
-                if not waiting: print(f'waiting for {"a timing" if shared else "a build or another timing"} to release {_TIMING_LOCK}', file=sys.stderr)
+                if not waiting: print(f'waiting for a timing to release {_TIMING_LOCK}', file=sys.stderr)
                 waiting = True
                 time.sleep(0.25)
         yield
@@ -309,11 +306,13 @@ def speed_costs(
         if e := r['error']: raise ValueError(e['message'])
         rows = r['costs']
     else:
-        script = f'import {{ costs }} from {json.dumps(_PKG.as_uri())}; import {{ readFileSync }} from "node:fs"; process.stdout.write(JSON.stringify(costs(readFileSync(0, "utf8"), {json.dumps(cases)})))'
-        with timing_lock():
-            p = subprocess.run(['node', '--no-liftoff', '--input-type=module', '-e', script], input=speed, capture_output=True, text=True,
-                               timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(wasm)))
+        script = (f'import {{ costs }} from {json.dumps(_PKG.as_uri())}; import {{ timingLock }} from {json.dumps(_LOCK_JS.as_uri())}; '
+                  f'import {{ readFileSync }} from "node:fs"; const release = await timingLock(); '
+                  f'try {{ process.stdout.write(JSON.stringify(costs(readFileSync(0, "utf8"), {json.dumps(cases)}))) }} finally {{ release() }}')
+        p = subprocess.run(['node', '--no-liftoff', '--input-type=module', '-e', script], input=speed, capture_output=True, text=True,
+                           timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(wasm)))
         if p.returncode: raise ValueError(p.stderr)
+        if p.stderr: sys.stderr.write(p.stderr)
         rows = json.loads(p.stdout)
     i = 0 if wasm is None else 1
     return SpeedCosts((c['section'], c['code'], c['cost'], float(c['budgets'][i]) if len(c['budgets']) > i else None) for c in rows)

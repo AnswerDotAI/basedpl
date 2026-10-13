@@ -289,8 +289,10 @@ impl Session {
                 (binding, selection, values)
             }
         };
-        let values = match modifier { Some(f) => self.modified_values(&binding.value, &selection, &f, &values, &span)?, None => values };
-        self.write_selection(binding, &selection, &values, &span)
+        match modifier {
+            Some(f) => self.write_modified(binding, &selection, &f, &values, &span),
+            None => self.write_selection(binding, &selection, &values, &span),
+        }
     }
 
     /// Writes `values` at `selection` into the array that `binding` kept, then stores it under the name.
@@ -389,11 +391,10 @@ impl Session {
         Ok((binding, labels, result.array(span)?, kind.unwrap()))
     }
 
-    /// The new value of each target of `selection`. `f` takes the target's item of `original` on its left and its value from `right`
-    /// on its right. A target that repeats a position reads the result of the earlier one, so repeats accumulate. When `f` is a pervasive
-    /// primitive and no position repeats, one call covers every target. The result is laid out for `Selection::write_into`, which
-    /// writes it as a plain assignment would.
-    fn modified_values(&mut self, original: &Value, selection: &Selection, f: &Function, right: &Value, span: &Span) -> Result<Value, Error> {
+    /// Writes the new value of each target of `selection` into `binding`. `f` takes the target's item on its left and its value from
+    /// `right` on its right. A target that repeats a position reads the result of the earlier one, so repeats accumulate. An error
+    /// leaves the array unchanged. When `f` is a pervasive primitive, one call covers all the targets at distinct positions.
+    fn write_modified(&mut self, binding: ArrayBinding, selection: &Selection, f: &Function, right: &Value, span: &Span) -> Result<(), Error> {
         let right = selection.checked(right, &self.at(span))?;
         if let (ResultFrame::Array(_), Targets::Offsets(offsets), FunctionNode::Primitive(p)) = (&selection.frame, &selection.targets, f.node()) {
             if p.pervasive(true) {
@@ -402,29 +403,33 @@ impl Session {
                     let item = right.at(0);
                     Some(if item.is_atom() { item } else { item.enclose().error_at(span, "invalid modified selection")? })
                 } else { None };
-                let rounds = occurrences(offsets);
-                let count = rounds.iter().max().map_or(0, |&r| r as usize + 1);
-                if count <= 1 {
-                    let items = selection.read(original, &self.at(span))?;
+                let Some((counts, rounds)) = occurrences(offsets, binding.value.len()) else {
+                    let items = selection.read(&binding.value, &self.at(span))?;
                     let right = match unit { Some(unit) if right.shape() != items.shape() => unit, _ => right };
-                    return f.call_array(Some(&items), &right, &mut self.at(span));
+                    let values = f.call_array(Some(&items), &right, &mut self.at(span))?;
+                    return self.write_selection(binding, selection, &values, span);
+                };
+                if let Some((positions, results)) = self.column_fold(&binding.value, offsets, (&counts, rounds), f, unit.as_ref().unwrap_or(&right), span)? {
+                    return self.write_selection(binding, &Selection::offsets(positions), &results, span);
                 }
                 // Round r holds the r-th target at each position. Its positions are distinct. One call computes the round from the values
-                // that earlier rounds wrote. Each target then takes its position's last value.
-                let mut by_round = vec![Vec::new(); count];
-                for (t, &r) in rounds.iter().enumerate() { by_round[r as usize].push(t) }
-                let at = |offsets: Vec<usize>| Selection { frame: ResultFrame::Array(vec![offsets.len()].into()), targets: Targets::Offsets(offsets) };
-                let mut current = original.clone();
-                for targets in by_round {
-                    let round = at(targets.iter().map(|&t| offsets[t]).collect());
+                // that earlier rounds wrote into a copy of the array. The copy then replaces the array.
+                let (order, sizes) = rustymath::search::grouped(&counts.iter().map(|&c| c as usize).collect::<Vec<_>>(), rounds);
+                let mut current = binding.value.clone();
+                let mut rest = &order[..];
+                for size in sizes {
+                    let (targets, more) = rest.split_at(size);
+                    rest = more;
+                    let round = Selection::offsets(targets.iter().map(|&t| offsets[t as usize]).collect());
                     let items = round.read(&current, &self.at(span))?;
-                    let values = match &unit { Some(unit) => unit.clone(), None => at(targets).read(&right, &self.at(span))? };
+                    let values = match &unit { Some(unit) => unit.clone(), None => Selection::offsets(targets.iter().map(|&t| t as usize).collect()).read(&right, &self.at(span))? };
                     let results = f.call_array(Some(&items), &values, &mut self.at(span))?;
                     round.write_into(&mut current, &results, &self.at(span))?;
                 }
-                return selection.read(&current, &self.at(span));
+                return self.update_array(&binding, current, span);
             }
         }
+        let original = &binding.value;
         let mut results: Vec<Value> = Vec::with_capacity(selection.targets.len());
         let mut latest: HashMap<&[usize], usize> = HashMap::new();
         for i in 0..selection.targets.len() {
@@ -433,10 +438,52 @@ impl Session {
             results.push(f.call_array(Some(&item), &selection.item(&right, i), &mut self.at(span))?);
             latest.insert(path, i);
         }
-        match &selection.frame {
-            ResultFrame::Direct => Ok(results.pop().unwrap_or(right)),
-            ResultFrame::Array(layout) if !results.is_empty() => Value::new(layout.shape().to_vec(), results).error_at(span, "invalid modified selection"),
-            ResultFrame::Array(_) => Ok(right),
+        let values = match &selection.frame {
+            ResultFrame::Direct => results.pop().unwrap_or(right),
+            ResultFrame::Array(layout) if !results.is_empty() => Value::new(layout.shape().to_vec(), results).error_at(span, "invalid modified selection")?,
+            ResultFrame::Array(_) => right,
+        };
+        self.write_selection(binding, selection, &values, span)
+    }
+
+    /// The positions that the targets at `offsets` reach, and their values once `f` has modified each target in turn by its item of
+    /// `values`. A table has a column for each position. Its first row holds the positions' values, and row r + 1 the r-th target at
+    /// each position. A scan by `f` down the columns applies `f` to the targets in turn, so each column's result is in the row of its
+    /// last target. The cells below that row hold a value that leaves the scan's total as it is: `f`'s identity, or the column's first
+    /// value for `⌈` and `⌊`. `None` for other primitives, and when the table would be much larger than the targets.
+    fn column_fold(
+        &mut self, array: &Value, offsets: &[usize], (counts, rounds): (&[u32], usize), f: &Function, values: &Value, span: &Span,
+    ) -> Result<Option<(Vec<usize>, Value)>, Error> {
+        use crate::number::{Arithmetic, Math};
+        let FunctionNode::Primitive(p) = f.node() else { return Ok(None) };
+        let pad = match p {
+            Primitive::Arithmetic(Arithmetic::Plus | Arithmetic::Minus) => Some(integer(0)),
+            Primitive::Arithmetic(Arithmetic::Times | Arithmetic::Divide) => Some(integer(1)),
+            Primitive::Math(Math::Ceiling | Math::Floor) => None,
+            _ => return Ok(None),
+        };
+        let width = counts.iter().filter(|&&c| c == 0).count();
+        let cells = (rounds + 1) * width;
+        if cells > 2 * offsets.len() || !dense(offsets, array.len()) { return Ok(None); }
+        // A target's count numbers it among the targets at its position. The first one there gives the position its column.
+        let (mut positions, mut column, mut size, mut placed) = (Vec::with_capacity(width), vec![0; array.len()], vec![0; width], Vec::with_capacity(offsets.len()));
+        for (&o, &c) in offsets.iter().zip(counts) {
+            let c = c as usize;
+            if c == 0 { column[o] = positions.len(); positions.push(o); }
+            size[column[o]] = c + 1;
+            placed.push((c + 1) * width + column[o]);
         }
+        let firsts = Selection::offsets(positions.clone()).read(array, &self.at(span))?;
+        let mut table = Gather::new(&[&firsts], cells);
+        table.cycle(&firsts, cells);
+        let mut table = table.finish(vec![rounds + 1, width].into(), || firsts.prototype()).error_at(span, "invalid modified selection")?;
+        if let Some(pad) = pad {
+            let padding: Vec<usize> = size.iter().enumerate().flat_map(|(j, &k)| (k + 1..=rounds).map(move |row| row * width + j)).collect();
+            table.scatter(&padding, &pad);
+        }
+        table.scatter(&placed, values);
+        let last = size.iter().enumerate().map(|(j, &k)| k * width + j).collect();
+        let scanned = scan(f, FoldKind { scan: true, first: true }, None, None, &table, &mut self.at(span))?;
+        Ok(Some((positions, Selection::offsets(last).read(&scanned, &self.at(span))?)))
     }
 }

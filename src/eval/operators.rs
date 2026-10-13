@@ -854,7 +854,7 @@ fn scan_axis(kind: FoldKind, axis: Option<&Value>, right: &Value, span: &Span) -
     Axis::new(right.shape(), index).error_at(span, "invalid scan axis")
 }
 
-fn scan(operand: &Function, kind: FoldKind, axis: Option<&Value>, seed: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+pub(super) fn scan(operand: &Function, kind: FoldKind, axis: Option<&Value>, seed: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
     let axis = scan_axis(kind, axis, right, cx.span)?;
     if right.is_atom() { return match seed { Some(seed) => operand.call_array(Some(seed), right, cx), None => Ok(right.clone()) }; }
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }

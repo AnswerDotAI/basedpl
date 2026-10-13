@@ -331,7 +331,7 @@ fn key_grade(right: &Value, count: usize, down: bool) -> Option<Vec<u32>> {
     use {crate::array::Ints, rustymath::{search::{sort_rows, RadixKey}, Arg, Float as _}};
     /// Each column's keys, from the items `x` of rows of `width` items through `key`, complemented when grading down, which reverses
     /// their order. Each column fills in one pass, through `pairs` for one column, which vectorizes.
-    fn columns<T: Copy, K: RadixKey>(x: &[T], width: usize, down: bool, key: impl Fn(T) -> K) -> Vec<Vec<K>> {
+    fn columns<T: Copy + Sync, K: RadixKey>(x: &[T], width: usize, down: bool, key: impl Fn(T) -> K + Sync) -> Vec<Vec<K>> {
         let key = move |v: T| if down { !key(v) } else { key(v) };
         if width == 1 {
             let mut keys = Vec::with_capacity(x.len());

@@ -11,8 +11,13 @@
 //! `BASEDPL_SIZES` measures what a change costs in machine code. Set it to a regex, and the test prints how many bytes the functions
 //! whose demangled names match hold, against the whole build's, with the biggest of those functions. Run it before and after the
 //! change, as in `BASEDPL_SIZES='primitive::numeric' cargo test --test units -- --nocapture`.
+//!
+//! `BASEDPL_SIZES_DIFF` compares two builds. Set it to two object files or binaries, `old:new`, such as copies of `bpl` from before and
+//! after a change, and the test prints each one's total and the 30 function names whose machine code changed most. Unlike
+//! `BASEDPL_SIZES`, it covers every crate in the binary, rustymath and dependencies included.
 use object::{Object, ObjectSection, ObjectSymbol, SymbolKind};
 use std::{
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     time::SystemTime,
@@ -81,15 +86,64 @@ fn codegen_units_stay_small() {
     assert!(size <= BUDGET, "{}", listing());
 }
 
+/// The regex in `BASEDPL_SIZES`, or `None` where it isn't set.
+fn sizes_pattern() -> Option<regex::Regex> {
+    std::env::var_os("BASEDPL_SIZES").map(|p| regex::Regex::new(&p.to_string_lossy()).expect("`BASEDPL_SIZES` must be a regex"))
+}
+
 /// The machine code of the newest build's functions whose demangled names match the regex in `BASEDPL_SIZES`. Without it, this test
 /// does nothing.
 #[test]
 fn machine_code_by_name() {
-    let Some(pattern) = std::env::var_os("BASEDPL_SIZES") else { return };
-    let pattern = regex::Regex::new(&pattern.to_string_lossy()).expect("`BASEDPL_SIZES` must be a regex");
+    let Some(pattern) = sizes_pattern() else { return };
     let all: Vec<_> = newest_build().iter().flat_map(|p| functions(p)).collect();
     let matched: Vec<_> = all.iter().filter(|(_, name)| pattern.is_match(name)).cloned().collect();
     let (count, bytes) = (matched.len(), matched.iter().map(|(size, _)| size).sum::<u64>());
     let total: u64 = all.iter().map(|(size, _)| size).sum();
     println!("{count} functions matching `{pattern}` hold {bytes} of the build's {total} bytes of machine code. The biggest:\n{}", biggest(matched));
+}
+
+/// With `BASEDPL_SIZES_DIFF` set to two object files or binaries, `old:new`, the total machine code of each and the 30 generic functions
+/// whose bytes changed most between them, with each function's instances counted together. With `BASEDPL_SIZES` set too, only the
+/// functions whose full demangled names match its regex count. Without `BASEDPL_SIZES_DIFF`, this test does nothing.
+#[test]
+fn machine_code_growth() {
+    let Some(paths) = std::env::var_os("BASEDPL_SIZES_DIFF") else { return };
+    let paths = paths.to_string_lossy().into_owned();
+    let (old, new) = paths.split_once(':').expect("`BASEDPL_SIZES_DIFF` must be `old:new`");
+    let only = sizes_pattern();
+    let by_name = |path: &str| {
+        let kept = functions(Path::new(path)).into_iter().filter(|(_, name)| only.as_ref().is_none_or(|p| p.is_match(name)));
+        kept.fold(HashMap::<String, i64>::new(), |mut sizes, (size, name)| {
+            *sizes.entry(generic(&name)).or_default() += size as i64;
+            sizes
+        })
+    };
+    let (old, new) = (by_name(old), by_name(new));
+    let names: HashSet<&String> = old.keys().chain(new.keys()).collect();
+    let mut changes: Vec<_> = names.into_iter().map(|n| (new.get(n).unwrap_or(&0) - old.get(n).unwrap_or(&0), n)).collect();
+    changes.sort_by_key(|&(change, _)| -change.abs());
+    let total = |sizes: &HashMap<String, i64>| sizes.values().sum::<i64>();
+    let rows: Vec<_> = changes.iter().take(30).map(|(change, name)| format!("{change:>+9} {name}")).collect();
+    println!("{} bytes before and {} after. The biggest changes:\n{}", total(&old), total(&new), rows.join("\n"));
+}
+
+/// `name` without its generic argument lists, `::<…>`, so that the instances of one generic function share it.
+fn generic(name: &str) -> String {
+    let (mut out, mut depth, mut previous, mut rest) = (String::new(), 0usize, ' ', name);
+    while let Some(c) = rest.chars().next() {
+        if depth == 0 && rest.starts_with("::<") {
+            (depth, previous, rest) = (1, '<', &rest[3..]);
+            continue;
+        }
+        match c {
+            '<' if depth > 0 => depth += 1,
+            '>' if depth > 0 && previous != '-' => depth -= 1,
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+        previous = c;
+        rest = &rest[c.len_utf8()..];
+    }
+    out
 }

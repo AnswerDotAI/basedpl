@@ -3790,6 +3790,12 @@ gg←2 3 4 5 ⋄ 9,gg₁,3 4   ⍝ 9 3 3 4
 ⍝ —
 +⍀2 3⍴⍳6   ⍝ [0 1 2⋄3 5 7]
 
+⍝ — A column scan keeps negative zeros
+1÷+⍀ -[3 2]⍴0   ⍝ [¯∞ ¯∞⋄¯∞ ¯∞⋄¯∞ ¯∞]
+
+⍝ — A sum of negative zeros stays negative at each float width, and an empty sum is 0
+x←16•float -3⍴0 ⋄ 1÷[+/ -3⍴0; +/x; +/16•float⍬]   ⍝ ¯∞ ¯∞ ∞
+
 ⍝ —
 +\0 3⍴0   ⍝ 0 3⍴0
 

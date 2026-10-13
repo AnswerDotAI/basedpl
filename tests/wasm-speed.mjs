@@ -4,39 +4,10 @@
 // function with TurboFan only once it runs often. The test calls each kernel only a few times. Without the flag, it would time
 // Liftoff's code. To print every case's cost, run `BASEDPL_COSTS=1 node --no-liftoff tests/wasm-speed.mjs`.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { costs } from './wasm-pkg.mjs';
-
-// The file whose lock keeps timings and builds apart on this machine, as DEV.md describes. Node has no `flock`. A Python process takes
-// the lock exclusively, waiting up to 5 minutes for builds and other timings, then holds it until its standard input closes. That
-// happens when this process ends, even by a crash.
-const LOCK = '/tmp/aai-ws-timing.lock';
-const HOLD = `import fcntl, sys, time
-f = open(sys.argv[1], 'a')
-deadline, waiting = time.monotonic() + 300, False
-while True:
-    try:
-        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        break
-    except BlockingIOError:
-        if time.monotonic() > deadline: sys.exit(f'a build or another timing has held {sys.argv[1]} for 5 minutes')
-        if not waiting: print(f'waiting for a build or another timing to release {sys.argv[1]}', file=sys.stderr)
-        waiting = True
-        time.sleep(0.25)
-print('held', flush=True)
-sys.stdin.read()`;
-
-// Resolves to a function that releases the timing lock.
-function timingLock() {
-    const holder = spawn('python3', ['-c', HOLD, LOCK], { stdio: ['pipe', 'pipe', 'inherit'] });
-    return new Promise((resolve, reject) => {
-        holder.stdout.once('data', () => resolve(() => holder.stdin.end()));
-        holder.once('error', reject);
-        holder.once('exit', code => reject(new Error(`the timing lock's holder exited with code ${code}`)));
-    });
-}
+import { timingLock } from './timing-lock.mjs';
 
 assert.ok(process.execArgv.includes('--no-liftoff'), 'run with node --no-liftoff');
 test('each case in speed.txt takes no longer than its wasm budget', async () => {

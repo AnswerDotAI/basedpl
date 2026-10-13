@@ -120,6 +120,8 @@ pub(crate) fn reach(array: &Value, path: &[usize]) -> Value { path.iter().fold(a
 pub(crate) struct Selection { pub frame: Frame, pub targets: Targets }
 
 impl Selection {
+    /// The selection of the items at `offsets`, as a vector.
+    pub(crate) fn offsets(offsets: Vec<usize>) -> Selection { Selection { frame: Frame::Array(vec![offsets.len()].into()), targets: Targets::Offsets(offsets) } }
     /// `values` ready for the targets. A keyed value aligns to the keys of the selection. A singleton goes to every target, and
     /// otherwise the shape must match the selection's.
     pub(crate) fn checked(&self, values: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -277,19 +279,33 @@ pub(crate) fn select(right: &Value, parts: &[Option<Value>], span: &Context<'_>)
     remap(right, layout, &steps, span)
 }
 
-/// The integer indices of a selection of the unkeyed vector `right` by one array of them, and the vector's length. `None` when the
-/// selection isn't of this kind. An index outside the vector is an error.
-fn vector_index<'a>(right: &Value, parts: &'a [Option<Value>], span: &Context<'_>) -> Result<Option<(&'a Value, crate::array::Ints<'a>, i64)>, Error> {
+/// `body` of the indices of a selection of the unkeyed vector `right` by one array of them, those indices as integers, and the vector's
+/// length. Floats that all stand for integers read as integers. `None` when the selection isn't of this kind. An index outside the
+/// vector is an error.
+fn vector_index<R>(
+    right: &Value, parts: &[Option<Value>], span: &Context<'_>, body: impl FnOnce(&Value, crate::array::Ints<'_>, i64) -> R,
+) -> Result<Option<R>, Error> {
     let ([Some(indices)], [size]) = (parts, right.shape()) else { return Ok(None) };
-    let Items::Integers(ix) = indices.as_items() else { return Ok(None) };
     if indices.is_atom() || right.keys(0).is_some() { return Ok(None); }
+    let whole;
+    let ix = match indices.as_items() {
+        Items::Integers(ix) => ix,
+        items @ Items::Floats(_) => match items.integers() {
+            Ok(w) => {
+                whole = w;
+                crate::array::Ints::I64(&whole)
+            }
+            Err(_) => return Ok(None),
+        },
+        _ => return Ok(None),
+    };
     let n = *size as i64;
     let inside = with_ints!(ix, |ix| ix.iter().fold(true, |ok, &i| {
         let i: i64 = i.into();
         ok & (i >= -n) & (i < n)
     }));
     if !inside { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
-    Ok(Some((indices, ix, n)))
+    Ok(Some(body(indices, ix, n)))
 }
 
 /// The layout of a selection of the vector `right` at the array `indices`: the indices' shape, and the vector's axis name where the
@@ -299,24 +315,26 @@ fn vector_layout(right: &Value, indices: &Value) -> Layout {
     Layout::from(indices.shape().to_vec()).inherit_names(names)
 }
 
-/// The items of the unkeyed vector `right` at an array of integer indices, read straight from each index with no table of offsets.
-/// `None` when the selection isn't of this kind.
+/// The items of the unkeyed vector `right` at an array of indices, read straight from each index with no table of offsets. `None`
+/// when the selection isn't of this kind.
 fn select_vector(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> Result<Option<Value>, Error> {
-    let Some((indices, ix, _)) = vector_index(right, parts, span)? else { return Ok(None) };
-    let mut data = Gather::new(&[right], indices.len());
-    with_ints!(ix, |ix| data.items_at(right, ix));
-    data.finish(rearranged(vector_layout(right, indices), right), || right.prototype()).error_at(span, "invalid selection").map(Some)
+    vector_index(right, parts, span, |indices, ix, _| {
+        let mut data = Gather::new(&[right], indices.len());
+        with_ints!(ix, |ix| data.items_at(right, ix));
+        data.finish(rearranged(vector_layout(right, indices), right), || right.prototype()).error_at(span, "invalid selection")
+    })?.transpose()
 }
 
 pub(crate) fn selection(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> Result<Selection, Error> {
     if parts.is_empty() { return Ok(Selection { frame: Frame::Direct, targets: Targets::Paths(vec![vec![]]) }); }
-    if let Some((indices, ix, n)) = vector_index(right, parts, span)? {
+    let vector = vector_index(right, parts, span, |indices, ix, n| {
         let offsets = with_ints!(ix, |ix| ix.iter().map(|&i| {
             let i: i64 = i.into();
             (i + (n & (i >> 63))) as usize
         }).collect());
-        return Ok(Selection { frame: Frame::Array(vector_layout(right, indices)), targets: Targets::Offsets(offsets) });
-    }
+        Selection { frame: Frame::Array(vector_layout(right, indices)), targets: Targets::Offsets(offsets) }
+    })?;
+    if let Some(selection) = vector { return Ok(selection); }
     let (steps, layout, direct) = match axis_positions(right, parts, span)? {
         Positions::Choose(indices) => return choose(right, &indices, span),
         Positions::Axes(steps, layout, direct) => (steps, layout, direct),

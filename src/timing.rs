@@ -131,9 +131,11 @@ pub fn costs<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHand
 
 /// The reply to the worker's `timing` request, which gives `speed`, text in `speed.txt`'s format whose first section is `[setup]`, the
 /// `prefs` its session starts with, and the `cases` to time. The reply gives the setup's `n` and each case's time in seconds and in
-/// copies, or the evaluation that failed. Each case's copy is timed just before the case.
+/// copies, or the evaluation that failed. Each case's copy is timed just before the case. An optional `threads` sets how many threads
+/// each case's rustymath calls split across, for a scaling check. Without it they run on the timing thread alone, as in the speed test.
 pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
     let _lock = timing_lock(false)?;
+    if let Some(threads) = spec["threads"].as_u64() { rustymath::parallel::set_threads(threads as usize); }
     let text = |key| spec[key].as_str().ok_or_else(|| format!("timing needs {key} as a string"));
     let cases = spec["cases"].as_array().ok_or("timing needs cases as an array")?;
     let sections = sections(text("speed")?)?;

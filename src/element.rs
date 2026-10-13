@@ -12,7 +12,7 @@ use std::borrow::Cow;
 
 /// Compact element storage: `bool` for Booleans, the widths `u8`, `i16`, `i32` and `i64` for integers, the widths `half::f16`, `f32` and
 /// `f64` for floats, `Complex32` and `Complex64` for complex numbers and `char` for characters.
-pub(crate) trait Element: Copy {
+pub(crate) trait Element: Copy + Send + Sync {
     /// The item a missing keyed entry reads as: the fill of its own array, which has this type.
     const FILL: Self;
     /// Whether an item of this type can be NaN: floats and complex numbers can, and exact items and characters can't.

@@ -86,21 +86,35 @@ const ABSENT: &str = "⍺ is absent in a call with one argument: it can only be 
 const INVALID_SELECTION: &str = "invalid selective-assignment expression";
 
 fn implicit_name(name: &str) -> bool { matches!(Key::of(name), Key::Implicit(_)) }
-/// For each of `offsets`, how many offsets before it equal it. A table over the positions up to the largest offset counts them when
-/// the offsets are many enough to fill it, and a hash map counts them otherwise.
-fn occurrences(offsets: &[usize]) -> Vec<u32> {
+/// Whether `offsets` are many enough to fill a table over the `size` positions they fall below.
+fn dense(offsets: &[usize], size: usize) -> bool { size <= 8 * offsets.len() }
+/// For each of `offsets`, how many offsets before it equal it, and one more than the largest such count. `None` when no offset
+/// repeats. Every offset is below `size`. When the offsets are many enough to fill a table over the positions below `size`, a table
+/// counts them. Where there are no more offsets than positions, a bit for each position first finds whether any repeats. A hash map
+/// counts them otherwise.
+fn occurrences(offsets: &[usize], size: usize) -> Option<(Vec<u32>, usize)> {
     let next = |seen: &mut u32| {
         *seen += 1;
         *seen - 1
     };
-    let size = offsets.iter().max().map_or(0, |&m| m + 1);
-    if size <= 8 * offsets.len() {
+    let counts: Vec<u32> = if dense(offsets, size) {
+        if offsets.len() <= size {
+            let (mut taken, mut repeated) = (vec![0u64; size.div_ceil(64)], 0);
+            for &o in offsets {
+                let (word, bit) = (&mut taken[o / 64], 1 << (o % 64));
+                repeated |= *word & bit;
+                *word |= bit;
+            }
+            if repeated == 0 { return None; }
+        }
         let mut seen = vec![0u32; size];
         offsets.iter().map(|&o| next(&mut seen[o])).collect()
     } else {
         let mut seen = HashMap::new();
         offsets.iter().map(|&o| next(seen.entry(o).or_insert(0))).collect()
-    }
+    };
+    let rounds = counts.iter().fold(0, |most, &c| most.max(c + 1));
+    (rounds > 1).then_some((counts, rounds as usize))
 }
 
 #[derive(Debug)]

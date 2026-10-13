@@ -17,7 +17,7 @@ use web_sys::{Url, XmlHttpRequest, XmlHttpRequestResponseType};
 pub(crate) use web_time::Instant;
 
 /// The browser build takes no timing lock. `tests/wasm-speed.mjs` and `basedpl.bpltests.speed_costs` take it around the module's
-/// timing.
+/// timing, through `tests/timing-lock.mjs`.
 pub fn timing_lock(_shared: bool) -> Result<(), String> { Ok(()) }
 
 thread_local! {
