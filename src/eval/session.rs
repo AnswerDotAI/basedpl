@@ -166,12 +166,16 @@ impl Session {
     pub fn eval_with(&mut self, code: &str, options: crate::EvalOptions) -> Evaluation {
         self.evaluation(options, |s| s.evaluate_source(Source::new("<input>", code)))
     }
-    /// One evaluation under `options`: `evaluate`'s result, with the output it produced.
+    /// One evaluation under `options`: `evaluate`'s result, with the output it produced. Its rustymath calls split across the session's
+    /// `threads` where `•prefs` set them, and across the thread's own setting otherwise. Afterwards it restores the thread's own setting.
     fn evaluation(&mut self, options: crate::EvalOptions, evaluate: impl FnOnce(&mut Self) -> Evaluation) -> Evaluation {
+        let threads = rustymath::parallel::thread_setting();
+        if let Some(n) = self.threads { rustymath::parallel::set_threads(n); }
         self.execution.begin(options);
         let result = evaluate(self);
         self.execution.flush();
         self.stacks = Vec::new();
+        rustymath::parallel::set_threads(threads);
         Evaluation { output: self.execution.take_output(), ..result }
     }
     pub fn eval_timeout(&mut self, code: &str, timeout: std::time::Duration) -> Evaluation {
@@ -568,7 +572,7 @@ impl Session {
                 FunctionNode::Derived(c, operand, right) => (c, Some(operand), right.as_ref()),
                 _ => unreachable!(),
             };
-            let mut frame = Frame::new(closure.environment, closure.module);
+            let mut frame = Frame::new(closure.environment, closure.module, closure.definition.names());
             frame.insert(Key::OMEGA, Binding::Value(right));
             frame.insert(Key::RECURSION, Binding::Function(function.clone()));
             if let Some(a) = left { frame.insert(Key::ALPHA, Binding::Value(a)); }
@@ -624,7 +628,7 @@ impl Session {
     fn scoped(&mut self, record: &Value, span: &Span, f: impl FnOnce(&mut Self) -> Result<Bound, Error>) -> Result<Bound, Error> {
         let entries = record.keys(0).ok_or(ErrorKind::Domain).and_then(|_| crate::keyed::entries(record)).error_at(span, "a scope must be a keyed vector")?;
         let (caller, base) = (self.current, self.frames.len());
-        let mut frame = Frame::new(caller, self.module());
+        let mut frame = Frame::new(caller, self.module(), entries.len());
         for (key, item) in entries { if let Some(key) = key { frame.insert(Key::of(&key), Binding::from_element(item)); } }
         // Lookup finds `⍺` only in the current frame, so the scope holds the caller's.
         if frame.get(Key::ALPHA).is_none() { if let Some(a) = caller.and_then(|i| self.frames[i].get(Key::ALPHA)) { frame.insert(Key::ALPHA, a.clone()); } }
@@ -704,6 +708,7 @@ impl Session {
             self.frames[frame].insert(Key::Named("$e"), Binding::Value(caught(error)));
             result = self.return_expression(handler, false);
         }
+        definition.bound(self.frames[frame].names.len());
         result
     }
 }

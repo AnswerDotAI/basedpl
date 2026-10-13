@@ -54,8 +54,8 @@ pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, span: &Context<
     if fields.len() > source.len() { return Err(span.error(ErrorKind::Rank, "too many Pick coordinates")); }
     let fields = fields.iter().enumerate().map(|(a, f)| axis_selector(f, right, a, span)).collect::<Result<Vec<_>, _>>()?;
     let mut frame = Layout::default();
-    for field in &fields { frame = Agreement::new(&frame, &field.shape().to_vec().into()).error_at(span, "Pick coordinate fields do not agree")?.layout; }
-    let maps = fields.iter().map(|f| Agreement::new(&f.shape().to_vec().into(), &frame).unwrap().left).collect::<Vec<_>>();
+    for field in &fields { frame = Agreement::new(&frame, &Layout::from(field.shape())).error_at(span, "Pick coordinate fields do not agree")?.layout; }
+    let maps = fields.iter().map(|f| Agreement::new(&Layout::from(f.shape()), &frame).unwrap().left).collect::<Vec<_>>();
     let coordinates = fields.iter().map(|f| f.as_items().integers().error_at(span, "Pick coordinates must be integers")).collect::<Result<Vec<_>, _>>()?;
     let trailing = &source[fields.len()..];
     let cell_len = crate::array::element_count(trailing).error_at(span, "invalid Pick cell")?;
@@ -312,7 +312,7 @@ fn vector_index<R>(
 /// indices are a vector.
 fn vector_layout(right: &Value, indices: &Value) -> Layout {
     let names = if indices.shape().len() == 1 { vec![right.axis_name(0).cloned()] } else { vec![] };
-    Layout::from(indices.shape().to_vec()).inherit_names(names)
+    Layout::from(indices.shape()).inherit_names(names)
 }
 
 /// The items of the unkeyed vector `right` at an array of indices, read straight from each index with no table of offsets. `None`

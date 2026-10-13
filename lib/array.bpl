@@ -270,7 +270,7 @@ in ← {  ⍝ Locations of item ⍺ in array ⍵.
   ⍬{  ⍝ ⍺ is pick-path
     item≡⍵?,⊂⍺;  ⍝ match: path
     D≥≡⍵?⍬;  ⍝ give up
-    paths←(⍺↣,⊂)¨⍳⍴⍵  ⍝ extended paths
+    paths←⍺↣,⊂ ¨⍳⍴⍵  ⍝ extended paths
     ,/, paths ∇¨ ⍵
   }⍵  ⍝ ⍵ is searched-in array
 }
@@ -439,5 +439,5 @@ subs ← {  ⍝ Vector substitution.
 ⍝ From http://dfns.dyalog.com/c_lcase.htm and http://dfns.dyalog.com/c_ucase.htm
 letters ← ["abcdefghijklmnopqrstuvwxyzåäöàæéñøü" "ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖÀÆÉÑØÜ"]  ⍝ Lower and upper case, at matching positions.
 recase ← {[from to]←⍺ ⋄ [(from,,⍵)⍳⍵]⌷to,,⍵}  ⍝ Simple array ⍵, with each letter from ⍺'s first list replaced by its second.
-lcase ← (⌽letters)↣recase  ⍝ Lower-casification.
+lcase ← ⌽letters ↣recase  ⍝ Lower-casification.
 ucase ← letters↣recase  ⍝ Upper-casification.

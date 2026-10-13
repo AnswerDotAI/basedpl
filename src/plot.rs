@@ -44,7 +44,7 @@ fn render(_: Option<&Value>, spec: &Value, span: &Context<'_>) -> Result<Value, 
     let data = keyed::field(spec, "data").ok_or_else(|| span.domain_error("•plot needs data"))?;
     let figure = is_figure(&data);
     let opts = Options::new("•plot", Some(spec), None, if figure { FIGURE } else { PLOT }, span)?;
-    let size = (opts.number("width", 600., span)? as u32, opts.number("height", 400., span)? as u32);
+    let size = (opts.number("width", span)?.unwrap_or(600.) as u32, opts.number("height", span)?.unwrap_or(400.) as u32);
     let mut svg = String::new();
     {
         let root = SVGBackend::with_string(&mut svg, size).into_drawing_area();

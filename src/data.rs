@@ -56,8 +56,8 @@ impl Options {
         }
     }
 
-    pub fn number(&self, key: &str, default: f64, span: &Context<'_>) -> Result<f64, Error> {
-        self.values.get(key).map_or(Ok(default), |v| real(v, span).map_err(|_| span.domain_error(format!("{} {key} must be a real number", self.name))))
+    pub fn number(&self, key: &str, span: &Context<'_>) -> Result<Option<f64>, Error> {
+        self.values.get(key).map(|v| real(v, span).map_err(|_| span.domain_error(format!("{} {key} must be a real number", self.name)))).transpose()
     }
 
     pub fn boolean(&self, key: &str, default: bool, span: &Context<'_>) -> Result<bool, Error> {
@@ -111,7 +111,7 @@ fn file_options(name: &'static str, left: Option<&Value>, shorthand: Option<&str
 }
 
 /// `data` as a vector of byte values, one byte each.
-pub(crate) fn byte_vector(data: Vec<u8>) -> Result<Value, ErrorKind> { Value::from_storage(vec![data.len()], Storage::within(data, Width::U8)) }
+pub(crate) fn byte_vector(data: Vec<u8>) -> Result<Value, ErrorKind> { Value::from_storage([data.len()], Storage::within(data, Width::U8)) }
 
 /// The bytes in an array of integers from 0 to 255, in ravel order. `None` for any other array.
 pub(crate) fn byte_items(value: &Value) -> Option<Vec<u8>> {

@@ -22,7 +22,7 @@ fn positive(n: BigUint, span: &Context<'_>) -> Result<BigUint, Error> {
 fn beyond(span: &Context<'_>) -> Error { span.error(ErrorKind::Limit, "prime enumeration exceeds machine range") }
 
 fn factor_result(selector: Option<&Number>, n: BigUint, span: &Context<'_>) -> Result<Value, Error> {
-    let factors = nt::factor_with(&positive(n, span)?, || span.check())?;
+    let factors = nt::factor_with(&positive(n, span)?, || span.check_now())?;
     let Some(x) = selector else {
         let data: Vec<_> = factors.iter().flat_map(|(p, n)| std::iter::repeat_n(exact(p.clone()), *n as usize)).collect();
         return array(vec![data.len()], data, span);
@@ -39,7 +39,7 @@ fn factor_result(selector: Option<&Number>, n: BigUint, span: &Context<'_>) -> R
     let (mut data, mut i) = (Vec::new(), 0);
     while if inf.is_some() { i < factors.len() } else { data.len() < saturated(count.unsigned_abs()) } {
         generated_len(&[data.len() + 1]).error_at(span, "exponent vector is too long")?;
-        let p = BigUint::from(primes.next_with(|| span.check())?.ok_or_else(|| beyond(span))?);
+        let p = BigUint::from(primes.next_with(|| span.check_now())?.ok_or_else(|| beyond(span))?);
         let e = if factors.get(i).is_some_and(|(f, _)| *f == p) { i += 1; factors[i - 1].1 } else { 0 };
         data.push(exact(e));
     }
@@ -62,7 +62,7 @@ fn nth_primes(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let mut result = vec![exact(0); right.len()];
     for (n, i) in requests {
         if n >= index {
-            p = primes.nth_with((n - index) as u64, || span.check())?.ok_or_else(|| beyond(span))?;
+            p = primes.nth_with((n - index) as u64, || span.check_now())?.ok_or_else(|| beyond(span))?;
             index = n + 1;
         }
         result[i] = exact(p);
@@ -72,15 +72,15 @@ fn nth_primes(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
 
 fn prime(selector: &Number, n: BigInt, span: &Context<'_>) -> Result<Value, Error> {
     let op = selector.integer().error_at(span, "prime selector must be integral")?;
-    if op == 1 { return Ok(Value::Number(Number::from_bool(match n.to_biguint() { Some(n) => nt::is_prime_with(&n, || span.check())?, None => false }))); }
+    if op == 1 { return Ok(Value::Number(Number::from_bool(match n.to_biguint() { Some(n) => nt::is_prime_with(&n, || span.check_now())?, None => false }))); }
     if op == 2 && n < BigInt::from(2) { return Ok(exact(2)); }
     let n = n.to_biguint().ok_or_else(|| span.domain_error("expected a nonnegative integer"))?;
     match op {
         2 | -2 => {
-            let p = if op == 2 { nt::next_prime_with(&n, || span.check())? } else { nt::prev_prime_with(&n, || span.check())? };
+            let p = if op == 2 { nt::next_prime_with(&n, || span.check_now())? } else { nt::prev_prime_with(&n, || span.check_now())? };
             p.map(exact).ok_or_else(|| span.domain_error("no prime below this argument"))
         }
-        3 => Ok(exact(nt::totient_with(&positive(n, span)?, || span.check())?)),
+        3 => Ok(exact(nt::totient_with(&positive(n, span)?, || span.check_now())?)),
         _ => Err(span.domain_error("unknown prime selector")),
     }
 }
@@ -99,7 +99,7 @@ pub(crate) fn index(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
         let Some(target) = n.to_u64() else {
             return if n < BigInt::zero() { Ok(exact(0)) } else { Err(beyond(span)) };
         };
-        Ok(exact(nt::prime_count_with(target, || span.check())?))
+        Ok(exact(nt::prime_count_with(target, || span.check_now())?))
     })
 }
 

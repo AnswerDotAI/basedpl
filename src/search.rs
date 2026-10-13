@@ -106,7 +106,7 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_
     if let Some(found) = with_keys!([haystack.items(), needles.items()], |x, y| search::index_of(x, y)) { return Ok(found); }
     if let Some(found) = whole_needles(haystack, needles, width, t) { return Ok(found); }
     let compact = with_float_width!(width, F => match (haystack, needles) {
-        (Cells::Items(x), Cells::Items(y)) => read_as::<F>(x).zip(read_as::<F>(y)).map(|(x, y)| tolerant::index_of_with(t, &x, &y, || span.check())),
+        (Cells::Items(x), Cells::Items(y)) => read_as::<F>(x).zip(read_as::<F>(y)).map(|(x, y)| tolerant::index_of_with(t, &x, &y, || span.check_now())),
         _ => None,
     });
     if let Some(found) = compact { return found; }
@@ -114,7 +114,7 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_
         let seed = RandomState::default();
         if let Some(x) = hashes(haystack, &seed) { if let Some(y) = hashes(needles, &seed) { return hashed_first(haystack, &x, needles, &y, span); } }
         if let (Some(x), Some(y)) = (reals(haystack, width), reals(needles, width)) {
-            return tolerant::index_of_with(t, &*x, &*y, || span.check());
+            return tolerant::index_of_with(t, &*x, &*y, || span.check_now());
         }
         if let (Some(x), Some(y)) = (leading_reals(haystack, width), leading_reals(needles, width)) {
             let near = Near::new(t, &x, |j, i| haystack.get(j).same(&haystack.get(i)));
@@ -165,13 +165,27 @@ pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<u32>, Er
     Ok(classes)
 }
 
+/// The number of cells in each class, in order of first appearance, as the groups of `grouped` hold them, with no group built.
+pub(crate) fn class_counts(cells: &Cells, span: &Context<'_>) -> Result<Vec<usize>, Error> {
+    if let Some(counts) = with_keys!([cells.items()], |x| search::class_counts(x)) { return Ok(counts); }
+    Ok(search::numbered(&classify(cells, span)?).counts)
+}
+
 /// The classes of `cells`, numbered in order of first appearance, with the positions of each. Booleans, characters and integers whose
 /// values span a table group straight from those values. Other cells group by the representatives that `classify` gives them.
 pub(crate) fn grouped(cells: &Cells, span: &Context<'_>) -> Result<search::Grouped, Error> {
     if let Some(Some(grouped)) = with_keys!([cells.items()], |x| search::grouped_keys(x)) { return Ok(grouped); }
-    let search::Numbered { firsts, numbers, counts } = search::numbered(&classify(cells, span)?);
-    let (positions, _) = search::grouped(&numbers, firsts.len());
-    Ok(search::Grouped { firsts, positions, sizes: counts })
+    let search::Numbered { firsts, numbers, .. } = search::numbered(&classify(cells, span)?);
+    Ok(search::Grouped::new(firsts, &numbers))
+}
+
+/// The positions of each class along an axis of `len` cells, as exact integers at the narrowest width that holds every position below
+/// `len`. A 32-bit result keeps each buffer that a class owns. Otherwise each class copies its positions once, from the buffer it shares.
+pub(crate) fn class_positions(classes: search::Grouped, len: usize) -> Result<Vec<Value>, ErrorKind> {
+    if matches!(crate::array::Width::below(len), crate::array::Width::I32) {
+        return classes.into_classes().into_iter().map(|these| Value::positions_u32([these.len()], len, these)).collect();
+    }
+    classes.each().map(|these| Value::positions([these.len()], len, these.iter().copied())).collect()
 }
 
 /// Gives each cell at `positions`, which ascend, the earliest representative among them that matches it. A cell that matches none

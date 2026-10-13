@@ -16,7 +16,7 @@ life←{[1 ⍵]∨.∧3 4=¨⊂+/,¯1 0 1⊖⊗¯1 0 1⌽⊗⊂⍵}
 ⍝ From https://dfns.dyalog.com/c_rmcm.htm
 rmcm←{  ⍝ Replace comments with blanks.
   cm←∨\(⍵='⍝')>≠\⍵='''
-  ' '@(⍸cm) ⍵
+  ' '@ ⍸cm ⍵
 }
 
 ⍝ From https://dfns.dyalog.com/c_ripple.htm
@@ -141,7 +141,7 @@ dots←{  ⍝ Show indentation with white dots.
   spcs←∧\' '=⍵
   xdents←ends∧1,0 ¯1↓spcs
   flood←(⍪1 2){hits←⍺⍷⍵ ⋄ ~1∊,hits?⍵;⍺ ∇ hits+⍵}spcs+⊽xdents
-  ⍺@(⍸2=flood-xdents) ⍵
+  ⍺@ ⍸2=flood-xdents ⍵
 }
 
 ⍝ From https://dfns.dyalog.com/c_logic.htm
@@ -363,7 +363,7 @@ baby←{  ⍝ Manchester Small Scale Experimental Machine.
   fetch←{,(yshift ⍵)#⍺}
   store←{⍶@ 1⍳⍨yshift⍹ ⍵}
   decode←{(⍳≢⍵ ∊ 0 5 13 16)⊂⍵}
-  yshift←(0=⍳≢⍵)↣{~1∊⍵?⍺;(¯1⌽⍺) ∇ dec ⍵}
+  yshift←0=⍳≢⍵ ↣{~1∊⍵?⍺;(¯1⌽⍺) ∇ dec ⍵}
   addsub←{c←⍺ ⍶ ⍵ ⋄ ~1∊c?⍺ ⍹ ⍵;(⍺≠⍵) ∇ 0,¯1↓c}
   add←∧addsub∨
   sub←<addsub>
@@ -507,7 +507,7 @@ sudoku←{  ⍝ All solutions, with square or ⍺-shaped groups.
   inx←↓(,wid⊥¨grp↣×¨⍳⌽grp)+⊗,wid⊥¨⍳grp
   inx,←{(↓⍵),↓⍵ᵀ}(⍴⍵)⍴⍳wid²
   bas←(≢,⍵)⍴⊂set
-  (,⍵)↣{q←[⍵]⌷⍺ ⋄ (q=0 # q)←⊂set~,/q ⋄ bas.[⍵]∩←,¨q}¨inx
+  ,⍵ ↣{q←[⍵]⌷⍺ ⋄ (q=0 # q)←⊂set~,/q ⋄ bas.[⍵]∩←,¨q}¨inx
   ∆sqz←{
     0=≢⍵?⍺;i←↑⍵ ⋄ q←⍺
     b←1<≢¨[i]⌷⍺ ⋄ ~∨/b?⍺ ∇ 1↓⍵;

@@ -39,7 +39,7 @@ impl Value {
         if self.is_unit() {
             if let Value::Function(f) = self.at(0) {
                 let text = f.to_string();
-                return Self::characters(vec![text.chars().count()], text.chars().collect());
+                return Self::characters([text.chars().count()], text.chars().collect());
             }
         }
         // A keyed array formats as its display text, so its keys stay visible.
@@ -91,7 +91,7 @@ impl Value {
 
     fn formatted_cells(&self) -> Result<Self, ErrorKind> {
         use crate::display::{grid, Cell, Style};
-        if self.is_empty() { return Self::empty(vec![0], Value::Character(' ')); }
+        if self.is_empty() { return Self::empty([0], Value::Character(' ')); }
         let rank = self.shape().len();
         let columns = self.shape().last().copied().unwrap_or(1);
         let (mut size, mut matrix, mut rows) = (0, rank > 1, Vec::new());

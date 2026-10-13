@@ -8,10 +8,10 @@ Keys: `Alt-q =`
 1 1 2{+/⍵}⌸10 20 30 ⍝ 30 30
 ```
 
-`f⌸Y` uses `Y` as keys and their positions as values.
+`f⌸Y` uses `Y` as keys and their positions as values. `≢⊢ ⌸Y` counts the items with each key, without building the groups.
 
 ```bpl
-{≢⍵}⌸"banana"       ⍝ [1 3 2]ₓ
+≢⊢ ⌸"banana"      ⍝ [1 3 2]ₓ
 ```
 
 Keys match with [tolerance](../evaluation.qmd#equality-and-ordering), as in `≠`. Results assemble with fill. Empty input calls `f` once for its prototype.

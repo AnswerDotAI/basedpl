@@ -42,8 +42,10 @@ pub(crate) fn encode(left: Option<&Value>, right: &Value, span: &Context<'_>) ->
 fn timing(options: &data::Options, name: &str, span: &Context<'_>) -> Result<Option<Vec<f64>>, Error> {
     let (key, delays) = match options.values.get("delay") {
         Some(d) => ("delay", (d.shape().len() <= 1).then(|| read_as::<f64>(d)).flatten().map(|d| d.into_owned())),
-        None if options.values.contains_key("fps") => ("fps", Some(vec![1. / options.number("fps", DEFAULT_FPS, span)?])),
-        None => return Ok(None),
+        None => match options.number("fps", span)? {
+            Some(fps) => ("fps", Some(vec![1. / fps])),
+            None => return Ok(None),
+        },
     };
     match delays {
         Some(d) if !d.is_empty() && d.iter().all(|s| *s > 0. && s.is_finite()) => Ok(Some(d)),

@@ -125,7 +125,7 @@ impl Execution {
         })
     }
     /// Stops the evaluation when it's interrupted or past its deadline. Most calls only count down, inlined into the caller. Every
-    /// `CHECKS_PER_CLOCK`th call runs `checked`.
+    /// `CHECKS_PER_CLOCK`th call runs `check_now`.
     #[inline]
     pub(crate) fn check(&self, span: &Span) -> Result<(), Error> {
         match self.countdown.get().checked_sub(1) {
@@ -133,14 +133,14 @@ impl Execution {
                 self.countdown.set(n);
                 Ok(())
             }
-            None => self.checked(span),
+            None => self.check_now(span),
         }
     }
     /// Reads the clock, calls the poll when `POLL_INTERVAL` has passed since the poll last ran, and stops the evaluation when it's
-    /// interrupted or past its deadline.
+    /// interrupted or past its deadline. Callers whose checks are too far apart for `check`'s countdown call this directly.
     #[cold]
     #[inline(never)]
-    fn checked(&self, span: &Span) -> Result<(), Error> {
+    pub(crate) fn check_now(&self, span: &Span) -> Result<(), Error> {
         self.countdown.set(CHECKS_PER_CLOCK - 1);
         let now = Instant::now();
         if let Some((poll, last)) = &self.poll { if now - last.get() >= POLL_INTERVAL { last.set(now); if poll() { self.interrupt.interrupt(); } } }
@@ -152,8 +152,7 @@ impl Execution {
     /// an interrupt or a passed deadline within one interval.
     #[cfg(not(web))]
     pub(crate) fn pause(&self, span: &Span, limit: Duration) -> Result<(), Error> {
-        self.countdown.set(0);
-        self.check(span)?;
+        self.check_now(span)?;
         std::thread::sleep(limit.min(POLL_INTERVAL));
         Ok(())
     }
@@ -165,6 +164,8 @@ impl Execution {
 pub(crate) struct Context<'a> { pub span: &'a Span, pub session: &'a mut crate::Session }
 impl Context<'_> {
     pub(crate) fn check(&self) -> Result<(), Error> { self.session.execution.check(self.span) }
+    /// A check that reads the clock at once, for callers whose checks are too far apart for [`check`](Self::check)'s countdown.
+    pub(crate) fn check_now(&self) -> Result<(), Error> { self.session.execution.check_now(self.span) }
     #[cfg(not(web))]
     pub(crate) fn pause(&self, limit: Duration) -> Result<(), Error> { self.session.execution.pause(self.span, limit) }
     pub(crate) fn rest(&self) -> Result<Vec<u8>, Error> { self.session.execution.rest(self.span) }

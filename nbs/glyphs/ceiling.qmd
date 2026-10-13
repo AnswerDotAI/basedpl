@@ -9,7 +9,7 @@ Keys: `Alt-s`. Ranks: `0` monadic, `0 0` dyadic
 ⌈3r2              ⍝ 2ₓ
 ```
 
-`X⌈Y` takes the real maximum. Pervasive. Beside NaN it gives NaN, as NumPy's `maximum` does. Empty reduction identity: `¯∞`.
+`X⌈Y` takes the real maximum. Pervasive. Beside NaN it gives `Y`'s item. Beside NaN, `⌈/` and `⌈\` give NaN or the greatest other item, depending on the processor. Empty reduction identity: `¯∞`.
 
 ```bpl
 3⌈1 5             ⍝ 3 5

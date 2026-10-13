@@ -79,11 +79,11 @@ pub(super) fn self_classify(right: &Value, span: &Context<'_>) -> Result<Value, 
             return Layout::from(vec![rows]).concat(&major_axis(right)).booleans(data).error_at(span, "invalid classification");
         }
     }
-    let classes = distinct(right, span)?;
-    let n = classes.positions.len();
+    let (classes, major) = (distinct(right, span)?, major_axis(right));
+    let n = major.shape()[0];
     let mut data = vec![false; classes.firsts.len() * n];
     for (row, these) in data.chunks_mut(n.max(1)).zip(classes.each()) { for &p in these { row[p as usize] = true } }
-    Layout::from(vec![classes.firsts.len()]).concat(&major_axis(right)).booleans(data).error_at(span, "invalid classification")
+    Layout::from(vec![classes.firsts.len()]).concat(&major).booleans(data).error_at(span, "invalid classification")
 }
 
 pub(super) fn unique_mask(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -95,10 +95,10 @@ fn distinct(right: &Value, span: &Context<'_>) -> Result<rustymath::search::Grou
 
 /// The distinct major cells that occur more than once, in order of first appearance.
 pub(super) fn duplicates(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let classes = distinct(right, span)?;
-    let mut mask = vec![false; classes.positions.len()];
+    let (classes, major) = (distinct(right, span)?, major_axis(right));
+    let mut mask = vec![false; major.shape()[0]];
     for (&first, &size) in classes.firsts.iter().zip(&classes.sizes) { mask[first] = size > 1 }
-    replicate(&major_axis(right).booleans(mask).error_at(span, "invalid duplicates mask")?, right, None, false, span)
+    replicate(&major.booleans(mask).error_at(span, "invalid duplicates mask")?, right, None, false, span)
 }
 
 /// The runs of adjacent matching major cells: the length of each run, as exact integers, and its first cell. Cells match as `∪`
@@ -126,7 +126,11 @@ pub(super) fn runs(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
 
 /// The positions of each distinct major cell, in the order of `∪`.
 pub(super) fn groups(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let groups = distinct(right, span)?.each().map(|these| positions(right, these.to_vec())).collect::<Result<Vec<_>, _>>();
+    let classes = distinct(right, span)?;
+    let groups = match right.keys(0) {
+        None => crate::search::class_positions(classes, right.shape().first().copied().unwrap_or(1)),
+        Some(_) => classes.each().map(|these| positions(right, these.to_vec())).collect(),
+    };
     let groups = groups.error_at(span, "invalid groups")?;
     Value::from_parts(vec![groups.len()], groups, positions(right, Vec::new()).error_at(span, "invalid groups")?).error_at(span, "invalid groups")
 }
@@ -134,7 +138,7 @@ pub(super) fn groups(right: &Value, span: &Context<'_>) -> Result<Value, Error> 
 /// The positions `indices` along `right`'s leading axis: its keys when it has them, otherwise exact integers.
 fn positions(right: &Value, indices: Vec<u32>) -> Result<Value, ErrorKind> {
     let len = right.shape().first().copied().unwrap_or(1);
-    if right.keys(0).is_none() { return Value::positions_u32(vec![indices.len()], len, indices); }
+    if right.keys(0).is_none() { return Value::positions_u32([indices.len()], len, indices); }
     Value::from_parts(vec![indices.len()], indices.into_iter().map(|i| position_value(right, 0, i as usize)).collect(), integer(0))
 }
 
@@ -180,7 +184,7 @@ pub(super) fn range(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
         whole.nonnegative_integer().error_at(span, "range needs a finite length")
     };
     let counts = |items: std::ops::Range<usize>| {
-        generated_len(&[items.len()]).and_then(|len| Value::positions(vec![len], items.end, items)).error_at(span, "range exceeds array limits")
+        generated_len(&[items.len()]).and_then(|len| Value::positions([len], items.end, items)).error_at(span, "range exceeds array limits")
     };
     let Some(left) = left else {
         let n = real(right.at(0))?;
@@ -205,7 +209,7 @@ fn where_vector(counts: &[i64], span: &Context<'_>) -> Result<Value, Error> {
     let total = total.ok_or(ErrorKind::Limit).and_then(|t| generated_len(&[t])).error_at(span, "where exceeds array limits")?;
     let data = if boolean {
         let mut data = Vec::new();
-        rustymath::gather::compress(&mut data, counts, total, |j| j as i64);
+        rustymath::gather::positions(&mut data, counts, total, |j| j as i64);
         data
     } else {
         let mut data = vec![0; total];
@@ -216,7 +220,7 @@ fn where_vector(counts: &[i64], span: &Context<'_>) -> Result<Value, Error> {
         }
         data
     };
-    Value::integers(vec![total], data).error_at(span, "invalid where result")
+    Value::integers([total], data).error_at(span, "invalid where result")
 }
 pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if let (Items::Booleans(mask), [_]) = (right.as_items(), right.shape()) {
@@ -226,8 +230,8 @@ pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, 
             let width = Width::below(mask.len());
             let built = with_width!(width, T => {
                 let mut data: Vec<T> = Vec::new();
-                rustymath::gather::compress(&mut data, mask, total, |j| T::from_i64(j as i64));
-                Value::from_storage(vec![total], Storage::within(data, width))
+                rustymath::gather::positions(&mut data, mask, total, |j| T::from_i64(j as i64));
+                Value::from_storage([total], Storage::within(data, width))
             });
             return built.error_at(span, "invalid where result");
         }
@@ -243,7 +247,7 @@ pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, 
     if right.shape().len() == 1 && right.keys(0).is_none() {
         let mut data = Vec::with_capacity(total);
         for (i, &n) in counts.iter().enumerate() { data.extend(std::iter::repeat_n(i as i64, n)); }
-        return Value::integers(vec![total], data).error_at(span, "invalid where result");
+        return Value::integers([total], data).error_at(span, "invalid where result");
     }
     let mut data = Vec::with_capacity(total);
     for (i, &n) in counts.iter().enumerate() {
@@ -328,7 +332,7 @@ fn array_order(left: &Value, right: &Value) -> Option<Ordering> {
 /// all characters, in at most 16 columns. `sort_rows` counts keys that span a small range. It radix-sorts other keys.
 /// `Float::order_key` orders floats as `array_order` does, with a key as wide as the float.
 fn key_grade(right: &Value, count: usize, down: bool) -> Option<Vec<u32>> {
-    use {crate::array::Ints, rustymath::{search::{sort_rows, RadixKey}, Arg, Float as _}};
+    use {crate::array::Ints, rustymath::{search::{sort_rows, OrderKey as _, RadixKey}, Arg, Float as _}};
     /// Each column's keys, from the items `x` of rows of `width` items through `key`, complemented when grading down, which reverses
     /// their order. Each column fills in one pass, through `pairs` for one column, which vectorizes.
     fn columns<T: Copy + Sync, K: RadixKey>(x: &[T], width: usize, down: bool, key: impl Fn(T) -> K + Sync) -> Vec<Vec<K>> {
@@ -345,9 +349,9 @@ fn key_grade(right: &Value, count: usize, down: bool) -> Option<Vec<u32>> {
     Some(match right.as_items() {
         Items::Floats(x) => with_floats!(x, |x| sort_rows(count, columns(x, width, down, |v| v.order_key()))),
         Items::Integers(Ints::U8(x)) => sort_rows(count, columns(x, width, down, u16::from)),
-        Items::Integers(Ints::I16(x)) => sort_rows(count, columns(x, width, down, |v| v as u16 ^ 1 << 15)),
-        Items::Integers(Ints::I32(x)) => sort_rows(count, columns(x, width, down, |v| v as u32 ^ 1 << 31)),
-        Items::Integers(Ints::I64(x)) => sort_rows(count, columns(x, width, down, |v| v as u64 ^ 1 << 63)),
+        Items::Integers(Ints::I16(x)) => sort_rows(count, columns(x, width, down, |v| v.order_key())),
+        Items::Integers(Ints::I32(x)) => sort_rows(count, columns(x, width, down, |v| v.order_key())),
+        Items::Integers(Ints::I64(x)) => sort_rows(count, columns(x, width, down, |v| v.order_key())),
         Items::Characters(x) => sort_rows(count, columns(x, width, down, u32::from)),
         Items::Booleans(x) => sort_rows(count, columns(x, width, down, u16::from)),
         _ => return None,

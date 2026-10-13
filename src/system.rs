@@ -347,7 +347,7 @@ fn cased(value: &Value, text: fn(&str) -> String, span: &Context<'_>) -> Result<
         }
         Value::Array(_) if !value.is_empty() => match crate::keyed::name(value) {
             Some(s) => crate::keyed::text(&text(&s)),
-            None => Value::new(value.shape().to_vec(), value.elements().map(|e| cased(&e, text, span)).collect::<Result<_, _>>()?)
+            None => Value::new(value.shape(), value.elements().map(|e| cased(&e, text, span)).collect::<Result<_, _>>()?)
                 .error_at(span, "invalid result")?,
         },
         _ => return Ok(value.clone()),

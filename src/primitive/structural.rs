@@ -337,23 +337,22 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
 }
 
 pub(super) fn rotate(counts: Option<&Value>, right: &Value, axis: usize, span: &Context<'_>) -> Result<Value, Error> {
-    let shape = if right.is_unit() { vec![1] } else { right.shape().to_vec() };
+    let shape: crate::Shape = if right.is_unit() { [1].into() } else { right.shape().into() };
     let traversal = Axis::new(&shape, axis).map_err(|_| span.domain_error("axis is outside array rank"))?;
-    let mut frame = shape.clone();
-    frame.remove(axis);
     let counts = counts
         .map(|a| {
-            if !a.is_singleton() && a.shape() != frame { return Err(span.error(ErrorKind::Length, "rotation counts must match the axis frame")); }
+            if !a.is_singleton() && !a.shape().iter().eq(shape[..axis].iter().chain(&shape[axis + 1..])) { return Err(span.error(ErrorKind::Length, "rotation counts must match the axis frame")); }
             a.as_items().integers().error_at(span, "invalid rotation count")
         })
         .transpose()?;
     let (outer, len, inner) = (traversal.outer, traversal.len, traversal.inner);
     let source = |j: usize, n: i64| ((j as i64 + n.rem_euclid(len as i64)) % len as i64) as usize;
-    let mut keys = right.layout().all_keys();
+    let mut layout = right.layout().clone();
     if right.keys(axis).is_some() {
         let same = counts.as_ref().is_none_or(|ns| {
             traversal.len == 0 || !ns.is_empty() && ns.iter().all(|n| n.rem_euclid(traversal.len as i64) == ns[0].rem_euclid(traversal.len as i64))
         });
+        let mut keys = right.layout().all_keys();
         keys[axis] = if same {
             crate::keyed::selected_keys(
                 right,
@@ -362,8 +361,8 @@ pub(super) fn rotate(counts: Option<&Value>, right: &Value, axis: usize, span: &
             )
             .error_at(span, "invalid rotation keys")?
         } else { None };
+        layout = layout.with_keys(keys).error_at(span, "invalid rotation keys")?;
     }
-    let layout = right.layout().clone().with_keys(keys).error_at(span, "invalid rotation keys")?;
     let Some(ns) = counts.as_ref().filter(|ns| ns.len() != 1) else {
         let axis = match &counts {
             None => Steps::Stride { start: len.saturating_sub(1) * inner, len, step: -(inner as isize) },
@@ -381,16 +380,15 @@ pub(super) fn rotate(counts: Option<&Value>, right: &Value, axis: usize, span: &
 /// axis fewer gains `axis`, with one position.
 fn promoted(a: &Value, other: &Value, rank: usize, axis: usize, span: &Context<'_>) -> Result<Value, Error> {
     if a.shape().len() == rank { return Ok(a.clone()); }
-    let mut shape = a.shape().to_vec();
     if a.is_unit() {
-        shape = if other.is_unit() { vec![1] } else { other.shape().to_vec() };
+        let mut shape: crate::Shape = if other.is_unit() { [1].into() } else { other.shape().into() };
         shape[axis] = 1;
         let len = generated_len(&shape).error_at(span, "catenate exceeds array limits")?;
         return Value::from_parts(shape, vec![a.at(0); len], a.prototype()).error_at(span, "invalid unit extension");
     }
-    if shape.len() + 1 != rank { return Err(span.error(ErrorKind::Rank, "catenate ranks differ by more than one")); }
-    shape.insert(axis, 1);
-    let layout = a.layout().replace(axis..axis, &vec![1].into());
+    if a.shape().len() + 1 != rank { return Err(span.error(ErrorKind::Rank, "catenate ranks differ by more than one")); }
+    let shape: crate::Shape = a.shape()[..axis].iter().chain(&[1]).chain(&a.shape()[axis..]).copied().collect();
+    let layout = a.layout().replace(axis..axis, &Layout::from([1]));
     a.with_shape(shape).and_then(|v| v.with_layout(layout)).error_at(span, "invalid catenate shape")
 }
 
@@ -409,7 +407,7 @@ pub(crate) fn append_plan(left: &Value, right: &Value, first: bool, span: &Conte
     if left.shape()[1..] != right.shape()[1..] { return Err(span.error(ErrorKind::Length, "catenate frames differ")); }
     if (1..rank).any(|a| left.keys(a).is_none() && right.keys(a).is_some()) { return Ok(None); }
     if (0..rank).any(|a| right.axis_name(a).is_some_and(|y| left.axis_name(a) != Some(y))) { return Ok(None); }
-    let mut shape = left.shape().to_vec();
+    let mut shape: crate::Shape = left.shape().into();
     shape[0] = shape[0].checked_add(right.shape()[0]).ok_or_else(|| span.error(ErrorKind::Limit, "catenate axis overflow"))?;
     generated_len(&shape).error_at(span, "catenate exceeds array limits")?;
     let names = match (left.keys(0), right.keys(0)) {
@@ -445,7 +443,7 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
             }
         } else { left.keys(a).or_else(|| right.keys(a)).cloned() };
     }
-    let mut shape = left.shape().to_vec();
+    let mut shape: crate::Shape = left.shape().into();
     shape[axis] = shape[axis].checked_add(right.shape()[axis]).ok_or_else(|| span.error(ErrorKind::Limit, "catenate axis overflow"))?;
     let size = generated_len(&shape).error_at(span, "catenate exceeds array limits")?;
     let traversal = Axis::new(&shape, axis).error_at(span, "invalid catenate axis")?;
@@ -504,7 +502,7 @@ pub(super) fn transpose(axes: Option<&Value>, right: &Value, span: &Context<'_>)
 }
 
 pub(super) fn split(right: &Value, axis: Option<usize>, span: &Context<'_>) -> Result<Value, Error> {
-    if right.is_unit() { return Value::new(vec![], vec![right.clone()]).error_at(span, "invalid split result"); }
+    if right.is_unit() { return right.enclose().error_at(span, "invalid split result"); }
     let axis = axis.unwrap_or(right.shape().len() - 1);
     if axis >= right.shape().len() { return Err(span.domain_error("split axis is outside array rank")); }
     enclose_axes(right, &[axis], span)

@@ -15,14 +15,12 @@ use std::borrow::Cow;
 pub(crate) trait Element: Copy + Send + Sync {
     /// The item a missing keyed entry reads as: the fill of its own array, which has this type.
     const FILL: Self;
-    /// Whether an item of this type can be NaN: floats and complex numbers can, and exact items and characters can't.
-    const NAN: bool = false;
     fn slice(value: &Value) -> Option<&[Self]>;
     /// An array of `data`, stored as this element type. Integers keep their width.
-    fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value>;
+    fn build(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value>;
     /// An array of `data`, with integers moved to the narrowest width that holds them, in a pass over them. Other element types are
     /// stored as `build` stores them.
-    fn build_narrowed(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Self::build(shape, data) }
+    fn build_narrowed(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Self::build(shape, data) }
     /// This whole number as an integer of type `T`, when `T` holds it. Only the numbers that kernels give as integers have one.
     fn whole<T: Whole>(self) -> Option<T> { None }
     /// `items` read as this element type, which only the complex element types can do.
@@ -32,16 +30,15 @@ pub(crate) trait Element: Copy + Send + Sync {
 impl Element for bool {
     const FILL: Self = false;
     fn slice(value: &Value) -> Option<&[Self]> { value.as_booleans() }
-    fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::booleans(shape, data).ok() }
+    fn build(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Value::booleans(shape, data).ok() }
 }
 /// Complex numbers of each width.
 macro_rules! complex_elements {
     ($($t:ty: $width:ident),+) => {$(
         impl Element for $t {
             const FILL: Self = <$t>::new(0.0, 0.0);
-            const NAN: bool = true;
             fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Complex(Complexes::$width(v)) => Some(v), _ => None } }
-            fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::complex(shape, ComplexBuf::$width(data)).ok() }
+            fn build(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Value::complex(shape, ComplexBuf::$width(data)).ok() }
             fn from_complexes(items: Complexes<'_>) -> Option<Vec<Self>> { Some(with_complexes!(items, |z| read_all(z))) }
         }
     )+};
@@ -50,7 +47,7 @@ complex_elements!(Complex32: F32, Complex64: F64);
 impl Element for char {
     const FILL: Self = ' ';
     fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Characters(v) => Some(v), _ => None } }
-    fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::characters(shape, data).ok() }
+    fn build(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Value::characters(shape, data).ok() }
 }
 
 /// An integer width of compact storage.
@@ -65,8 +62,8 @@ macro_rules! whole {
         impl Element for $t {
             const FILL: Self = 0;
             fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Integers(ints) => Self::of(ints), _ => None } }
-            fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::within(data, Width::$width)).ok() }
-            fn build_narrowed(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::narrowed(data)).ok() }
+            fn build(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::within(data, Width::$width)).ok() }
+            fn build_narrowed(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::narrowed(data)).ok() }
             #[inline]
             fn whole<T: Whole>(self) -> Option<T> { T::narrowed(self.to_i64()) }
         }
@@ -93,9 +90,8 @@ macro_rules! float {
     ($($t:ident: $width:ident, $integers:ident),+) => {$(
         impl Element for $t {
             const FILL: Self = 0.0;
-            const NAN: bool = true;
             fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Floats(Floats::$width(v)) => Some(v), _ => None } }
-            fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::Floats(FloatBuf::$width(data))).ok() }
+            fn build(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::Floats(FloatBuf::$width(data))).ok() }
             #[inline]
             fn whole<T: Whole>(self) -> Option<T> { rustymath::convert::int(self) }
         }
@@ -108,9 +104,8 @@ macro_rules! float {
 float!(f32: F32, I32, f64: F64, I64);
 impl Element for half::f16 {
     const FILL: Self = half::f16::ZERO;
-    const NAN: bool = true;
     fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Floats(Floats::F16(v)) => Some(v), _ => None } }
-    fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::Floats(FloatBuf::F16(data))).ok() }
+    fn build(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::Floats(FloatBuf::F16(data))).ok() }
     #[inline]
     fn whole<T: Whole>(self) -> Option<T> { rustymath::convert::int(self) }
 }
@@ -187,8 +182,12 @@ complex!(bool, u8, i16, i32, i64, half::f16, f32, f64);
 impl Source<Complex64> for Complex32 { #[inline] fn read(self) -> Complex64 { Complex64::new(self.re.into(), self.im.into()) } }
 impl Source<Complex32> for Complex64 { #[inline] fn read(self) -> Complex32 { Complex32::new(self.re as f32, self.im as f32) } }
 
-/// Every item of `items`, read as type `A`.
-pub(crate) fn read_all<A, S: Source<A>>(items: &[S]) -> Vec<A> { items.iter().map(|&x| x.read()).collect() }
+/// Every item of `items`, read as type `A`, through the same scheduler as native elementwise calls.
+pub(crate) fn read_all<A: Element, S: Source<A>>(items: &[S]) -> Vec<A> {
+    let mut out = Vec::with_capacity(items.len());
+    rustymath::pairs(rustymath::Arg::Many(items), rustymath::Arg::One(()), items.len(), &mut out, |x, ()| (x.read(), true));
+    out
+}
 
 /// `ints` at width `A`: borrowed when they have it already, otherwise converted. `A` must hold every item.
 pub(crate) fn cast<A: Whole>(ints: Ints<'_>) -> Cow<'_, [A]> {

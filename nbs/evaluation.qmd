@@ -27,12 +27,13 @@ Operators bind before functions apply. An operator's left [operand](terms.qmd#te
 
 A numeric operand and numeric argument need an explicit separator. `f⍣¯25` has operand `¯25`, while `f⍣¯2 5` has operand `¯2 5`. Use `f⍣¯2(5)` or `f⍣¯2⊢5` to give operand `¯2` and argument `5`.
 
-Each run acts as a parenthesised group, which is one token, so an operator at the end of a run takes the next run as its right operand, as it takes a touching token. A name that holds a dyadic operator counts. In `⌊@ 10× x`, the right operand of `@` is the run `10×`.
+Each run counts as one token, as a parenthesised group does. An operator at the end of a run takes the next run as its right operand, as it takes a touching token: in `⌊@ 10× x`, the right operand of `@` is the run `10×`. An operator at the start of a run takes the previous run as its left operand: in `≢⊢ ⌸x`, the left operand of `⌸` is the run `≢⊢`. Names that hold operators count in both places.
 
 ```bpl
 m←2 3⍴⍳6 ⋄ +/⍤1 m               ⍝ 3 12
 m←2 3⍴⍳6 ⋄ +/⍤1m                ⍝ 3 12
 ⌊@ 10× 1.25 2.78                 ⍝ 1.2 2.7
+x←0 1 1 0 1 1 ⋄ ≢⊢ ⌸x            ⍝ [2 4]ₓ
 x←5 ⋄ ≥⍣3 x                     ⍝ 8
 ≥⍣3(5)                          ⍝ 8
 ≥⍣3⊢5                           ⍝ 8

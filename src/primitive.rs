@@ -558,7 +558,7 @@ impl Primitive {
                     let len = crate::array::element_count(&input.shape()[range.clone()]).error_at(span, "ravel shape overflow")?;
                     input.replace(range, &vec![len].into())
                 };
-                right.with_shape(layout.shape().to_vec()).and_then(|a| a.with_layout(layout)).error_at(span, "invalid ravel shape")
+                right.with_shape(layout.shape()).and_then(|a| a.with_layout(layout)).error_at(span, "invalid ravel shape")
             }
             (Self::Enclose, None) => enclose_axes(right, &axes(spec, right.shape().len(), span)?, span),
             (Self::Mix, None) => mix_axes(right, spec, span),
@@ -629,7 +629,7 @@ impl Primitive {
             (Self::Ravel | Self::CatenateFirst, Some(x)) => catenate(x, right, axis, matches!(self, Self::CatenateFirst), span),
             (Self::Ravel, None) => {
                 if let Some(axis) = axis { return self.call_axes(None, right, &axis_value(axis), span); }
-                right.with_shape(vec![right.len()]).error_at(span, "invalid ravel")
+                right.with_shape([right.len()]).error_at(span, "invalid ravel")
             }
             (Self::CatenateFirst, None) => {
                 let rows = right.shape().first().copied().unwrap_or(1);
@@ -637,7 +637,7 @@ impl Primitive {
                 let keys = vec![right.keys(0).cloned(), if right.shape().len() == 2 { right.keys(1).cloned() } else { None }];
                 let names = vec![right.axis_name(0).cloned(), if right.shape().len() == 2 { right.axis_name(1).cloned() } else { None }];
                 let layout = Layout::from(vec![rows, columns]).with_keys(keys).error_at(span, "invalid table")?.inherit_names(names);
-                right.with_shape(vec![rows, columns]).and_then(|a| a.with_layout(layout)).error_at(span, "invalid table")
+                right.with_shape([rows, columns]).and_then(|a| a.with_layout(layout)).error_at(span, "invalid table")
             }
             (Self::Shape, Some(x)) => reshape(x, right, span),
             (Self::Shape, None) => {
@@ -662,7 +662,7 @@ impl Primitive {
                 if matches!(self, Self::Nest) && right.elements().chain(std::iter::once(right.prototype().clone())).any(|e| matches!(e, Value::Array(_))) {
                     return Ok(right.clone());
                 }
-                Value::new(vec![], vec![right.clone()]).error_at(span, "invalid enclosure")
+                right.enclose().error_at(span, "invalid enclosure")
             }
             (Self::Take, None) => pick(&integer(0), right, false, span),
             (Self::Drop, None) => split(right, axis, span),
@@ -686,7 +686,7 @@ impl Primitive {
     fn pervasive_mapped(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool, agreement: Agreement) -> Result<Value, Error> {
         if agreement.len == 0 {
             let prototype = self.pervasive_item(left.map(Value::prototype).as_ref(), &right.prototype(), span, true)?;
-            return Value::empty(agreement.layout.shape().to_vec(), prototype)
+            return Value::empty(agreement.layout.shape(), prototype)
                 .and_then(|v| v.with_layout(agreement.layout))
                 .error_at(span, "invalid empty result");
         }

@@ -35,7 +35,7 @@ pub enum Value {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct Layout { shape: Vec<usize>, meta: Option<Box<Meta>> }
+pub(crate) struct Layout { shape: Shape, meta: Option<Box<Meta>> }
 
 /// The keys and names of a layout's axes, and the function that renders its array for display. An empty list means none on any axis.
 /// A layout with none of these holds no `Meta`. A general `•meta` would earn its place once a second kind of metadata without syntax of
@@ -43,7 +43,57 @@ pub(crate) struct Layout { shape: Vec<usize>, meta: Option<Box<Meta>> }
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Meta { keys: Vec<Option<Arc<Keys>>>, names: Vec<Option<Arc<str>>>, renderer: Option<crate::Function> }
 
-impl From<Vec<usize>> for Layout { fn from(shape: Vec<usize>) -> Self { Self { shape, meta: None } } }
+/// An array's shape: the length of each axis. Ranks 0 to 2 are held inline with no allocation, and higher ranks in one allocation of
+/// exactly their length. Convert a `Vec`, an array or a slice of lengths into one, or collect it from lengths.
+#[derive(Clone)]
+pub struct Shape(Lengths);
+
+#[derive(Clone)]
+enum Lengths { Small(u8, [usize; 2]), Large(Box<[usize]>) }
+
+impl Shape { const EMPTY: Self = Self(Lengths::Small(0, [0; 2])); }
+impl Default for Shape { fn default() -> Self { Self::EMPTY } }
+impl std::ops::Deref for Shape {
+    type Target = [usize];
+    fn deref(&self) -> &[usize] { match &self.0 { Lengths::Small(n, lengths) => &lengths[..usize::from(*n)], Lengths::Large(lengths) => &lengths[..] } }
+}
+impl std::ops::DerefMut for Shape {
+    fn deref_mut(&mut self) -> &mut [usize] {
+        match &mut self.0 { Lengths::Small(n, lengths) => &mut lengths[..usize::from(*n)], Lengths::Large(lengths) => &mut lengths[..] }
+    }
+}
+impl PartialEq for Shape { fn eq(&self, other: &Self) -> bool { **self == **other } }
+impl fmt::Debug for Shape { fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::Debug::fmt(&**self, f) } }
+impl From<&[usize]> for Shape {
+    fn from(lengths: &[usize]) -> Self {
+        match *lengths {
+            [] => Self::EMPTY,
+            [a] => Self(Lengths::Small(1, [a, 0])),
+            [a, b] => Self(Lengths::Small(2, [a, b])),
+            _ => Self(Lengths::Large(lengths.into())),
+        }
+    }
+}
+impl From<Vec<usize>> for Shape {
+    fn from(lengths: Vec<usize>) -> Self { if lengths.len() > 2 { Self(Lengths::Large(lengths.into_boxed_slice())) } else { Self::from(lengths.as_slice()) } }
+}
+impl<const N: usize> From<[usize; N]> for Shape { fn from(lengths: [usize; N]) -> Self { Self::from(lengths.as_slice()) } }
+impl FromIterator<usize> for Shape {
+    fn from_iter<I: IntoIterator<Item = usize>>(lengths: I) -> Self {
+        let mut lengths = lengths.into_iter();
+        let mut small = [0; 2];
+        for n in 0..2 {
+            let Some(len) = lengths.next() else { return Self(Lengths::Small(n, small)) };
+            small[usize::from(n)] = len;
+        }
+        match lengths.next() {
+            None => Self(Lengths::Small(2, small)),
+            Some(third) => Self(Lengths::Large(small.into_iter().chain([third]).chain(lengths).collect())),
+        }
+    }
+}
+
+impl<S: Into<Shape>> From<S> for Layout { fn from(shape: S) -> Self { Self { shape: shape.into(), meta: None } } }
 impl Layout {
     pub fn shape(&self) -> &[usize] { &self.shape }
     pub fn names(&self) -> &[Option<Arc<str>>] { self.meta.as_ref().map_or(&[], |l| &l.names) }
@@ -87,23 +137,20 @@ impl Layout {
     pub fn all_keys(&self) -> Vec<Option<Arc<Keys>>> { (0..self.shape.len()).map(|a| self.keys(a).cloned()).collect() }
     pub fn with_keys(self, keys: Vec<Option<Arc<Keys>>>) -> Result<Self, ErrorKind> {
         if !keys.is_empty() && keys.len() != self.shape.len() { return Err(ErrorKind::Rank); }
-        if keys.iter().zip(&self.shape).any(|(k, &n)| k.as_ref().is_some_and(|k| k.len() != n)) { return Err(ErrorKind::Length); }
+        if keys.iter().zip(self.shape.iter()).any(|(k, &n)| k.as_ref().is_some_and(|k| k.len() != n)) { return Err(ErrorKind::Length); }
         let keys: Vec<_> = keys.into_iter().map(|k| k.filter(|k| !k.blank())).collect();
         let empty = keys.iter().all(Option::is_none);
         Ok(self.edit(empty, |m| m.keys = if empty { vec![] } else { keys }))
     }
     /// A layout with one axis for each of `sources`: a layout and one of its axes, whose length, keys and name the new axis takes.
     fn gathered<'a>(sources: impl Iterator<Item = (&'a Self, usize)> + Clone) -> Self {
-        let shape: Vec<_> = sources.clone().map(|(l, a)| l.shape[a]).collect();
+        let shape: Shape = sources.clone().map(|(l, a)| l.shape[a]).collect();
         if sources.clone().all(|(l, _)| l.plain()) { return Self::from(shape); }
         let keys = sources.clone().map(|(l, a)| l.keys(a).cloned()).collect();
         let names = sources.map(|(l, a)| l.name(a).cloned()).collect();
         Self::from(shape).with_keys(keys).unwrap().inherit_names(names)
     }
-    pub fn axes(&self, axes: impl IntoIterator<Item = usize>) -> Self {
-        let axes: Vec<_> = axes.into_iter().collect();
-        Self::gathered(axes.iter().map(|&a| (self, a)))
-    }
+    pub fn axes(&self, axes: impl Iterator<Item = usize> + Clone) -> Self { Self::gathered(axes.map(|a| (self, a))) }
     pub fn concat(&self, other: &Self) -> Self { Self::gathered((0..self.shape.len()).map(|a| (self, a)).chain((0..other.shape.len()).map(|a| (other, a)))) }
     /// The array with this layout holding `items`. An empty array takes `prototype`.
     pub fn collect(&self, items: impl IntoIterator<Item = Value>, prototype: impl Prototype) -> Result<Value, ErrorKind> {
@@ -159,14 +206,14 @@ impl Frame {
         match (self, items.len()) {
             (Self::Direct, 1) => Ok(Value::Number(Number::from_integer(items.next().unwrap() as i64))),
             (Self::Direct, _) => Err(ErrorKind::Length),
-            (Self::Array(layout), _) => Value::positions(layout.shape().to_vec(), bound, items)?.with_layout(layout),
+            (Self::Array(layout), _) => Value::positions(layout.shape(), bound, items)?.with_layout(layout),
         }
     }
     /// `positions` from a buffer of `u32`s. 32-bit results keep the buffer, with no pass over it.
     pub fn positions_u32(self, data: Vec<u32>, bound: usize) -> Result<Value, ErrorKind> {
         match self {
             Self::Direct => Self::Direct.positions(data.into_iter().map(|p| p as usize), bound),
-            Self::Array(layout) => Value::positions_u32(layout.shape().to_vec(), bound, data)?.with_layout(layout),
+            Self::Array(layout) => Value::positions_u32(layout.shape(), bound, data)?.with_layout(layout),
         }
     }
     pub fn booleans(self, data: Vec<bool>) -> Result<Value, ErrorKind> {
@@ -194,7 +241,7 @@ impl Cells<'_> {
     pub fn get(&self, i: usize) -> Result<Value, ErrorKind> {
         if self.split == 0 { return Ok(self.array.clone()); }
         if self.shape().is_empty() { return self.array.at(i).unit(); }
-        self.array.part(i * self.size..(i + 1) * self.size, self.shape().to_vec())?.with_layout(self.cell_layout())
+        self.array.part(i * self.size..(i + 1) * self.size, self.shape())?.with_layout(self.cell_layout())
     }
     pub fn prototype(&self) -> Result<Value, ErrorKind> {
         if self.shape().is_empty() { return self.array.prototype().unit(); }
@@ -210,9 +257,31 @@ impl Cells<'_> {
 }
 
 #[derive(Clone, Debug)]
-pub struct ArrayData { layout: Layout, data: Arc<Storage> }
+pub struct ArrayData { layout: Layout, data: Data }
 
-impl ArrayData { fn array(shape: Vec<usize>, data: Storage) -> Value { Value::Array(Arc::new(Self { layout: shape.into(), data: Arc::new(data) })) } }
+/// An array's items. `Of` shares a base array's items with no copy. A base always holds `Own`.
+#[derive(Clone, Debug)]
+enum Data { Own(Storage), Of(Arc<ArrayData>) }
+
+impl ArrayData {
+    fn array(shape: Shape, data: Storage) -> Value { Value::Array(Arc::new(Self { layout: shape.into(), data: Data::Own(data) })) }
+    fn storage(&self) -> &Storage { match &self.data { Data::Own(storage) => storage, Data::Of(base) => base.storage() } }
+    fn into_storage(self) -> Storage { match self.data { Data::Own(storage) => storage, Data::Of(base) => base.storage().clone() } }
+    /// This array's storage, to change in place. A view that holds the only reference to its base takes the base's storage. Any other view copies it.
+    fn storage_mut(&mut self) -> &mut Storage {
+        if matches!(self.data, Data::Of(_)) {
+            let Data::Of(base) = std::mem::replace(&mut self.data, Data::Own(Storage::Boolean(Vec::new()))) else { unreachable!() };
+            self.data = Data::Own(Arc::try_unwrap(base).map_or_else(|base| base.storage().clone(), Self::into_storage));
+        }
+        let Data::Own(storage) = &mut self.data else { unreachable!("a view takes its storage above") };
+        storage
+    }
+    /// An array of `layout` that shares `this`'s items, with no copy.
+    fn view(this: &Arc<Self>, layout: Layout) -> Value {
+        let base = match &this.data { Data::Own(_) => this.clone(), Data::Of(base) => base.clone() };
+        Value::Array(Arc::new(Self { layout, data: Data::Of(base) }))
+    }
+}
 
 const MAX_RANK: usize = 128;
 const MAX_GENERATED_ELEMENTS: usize = 1_000_000_000;
@@ -248,7 +317,7 @@ impl Value {
         match self {
             Self::Number(n) => Some(n.is_exact()),
             Self::Character(_) | Self::Function(_) | Self::Operator(_) => None,
-            Self::Array(a) => a.data.exact(),
+            Self::Array(a) => a.storage().exact(),
         }
     }
     pub fn fill(&self) -> Self {
@@ -266,7 +335,7 @@ impl Value {
         match (self, other) {
             (Self::Number(x), Self::Number(y)) => x == y,
             (Self::Character(x), Self::Character(y)) => x == y,
-            (Self::Array(x), Self::Array(y)) => Arc::ptr_eq(x, y) || (x.layout == y.layout && x.data == y.data),
+            (Self::Array(x), Self::Array(y)) => Arc::ptr_eq(x, y) || (x.layout == y.layout && x.storage() == y.storage()),
             (Self::Function(x), Self::Function(y)) => x == y,
             (Self::Operator(x), Self::Operator(y)) => x == y,
             _ => false,
@@ -324,67 +393,68 @@ impl Value {
         match self {
             Self::Function(f) => f.environment(),
             Self::Operator(op) => op.environment(),
-            Self::Array(a) => a.data.environment().map(usize::from),
+            Self::Array(a) => a.storage().environment().map(usize::from),
             _ => None,
         }
     }
     pub fn is_atom(&self) -> bool { !matches!(self, Self::Array(_)) }
-    pub fn enclose(&self) -> Result<Self, ErrorKind> { Self::new(vec![], vec![self.clone()]) }
+    pub fn enclose(&self) -> Result<Self, ErrorKind> { Self::from_storage(Shape::EMPTY, Storage::one(self)) }
     /// This value as a unit: an atom is itself, and an array is enclosed. A 0-cell inside a frame is the unit of its item.
     pub(crate) fn unit(self) -> Result<Self, ErrorKind> { if self.is_atom() { Ok(self) } else { self.enclose() } }
     pub(crate) fn storage_id(&self) -> usize { match self { Self::Array(a) => Arc::as_ptr(a) as usize, _ => 0 } }
-    fn storage(&self) -> Option<&Storage> { match self { Self::Array(a) => Some(&a.data), _ => None } }
+    fn storage(&self) -> Option<&Storage> { match self { Self::Array(a) => Some(a.storage()), _ => None } }
     /// Whether no item is an array. Compact storage holds none. An empty array answers for its prototype.
     pub(crate) fn is_simple(&self) -> bool {
         match self.as_items() { Items::Values([]) => self.prototype().is_atom(), Items::Values(items) => items.iter().all(Value::is_atom), _ => true }
     }
-    pub fn from_parts(shape: Vec<usize>, data: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
+    pub fn from_parts(shape: impl Into<Shape>, data: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
         if data.is_empty() { Self::empty(shape, empty_prototype) } else { Self::new(shape, data) }
     }
     /// One item for each position of `shape`: the item itself when `shape` is empty, otherwise an array of them.
     pub(crate) fn shaped(shape: &[usize], mut data: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
-        if shape.is_empty() { data.pop().ok_or(ErrorKind::Length) } else { Self::from_parts(shape.to_vec(), data, empty_prototype) }
+        if shape.is_empty() { data.pop().ok_or(ErrorKind::Length) } else { Self::from_parts(shape, data, empty_prototype) }
     }
 
     /// Nonempty construction of items gathered one at a time, such as an operation's results or a literal list. Each number keeps its
     /// exactness. Exact and approximate numbers together stay mixed. Characters share character storage. Other items stay mixed. The
     /// prototype comes from the first item when it is first needed.
-    pub fn new(shape: Vec<usize>, data: Vec<Value>) -> Result<Self, ErrorKind> {
+    pub fn new(shape: impl Into<Shape>, data: Vec<Value>) -> Result<Self, ErrorKind> {
         if data.is_empty() { return Err(ErrorKind::Length); }
         Self::from_storage(shape, Storage::compact(data, Widening::Items))
     }
 
     /// Mixed storage, which keeps each item's kind. An empty array takes `empty_prototype`.
-    pub fn mixed(shape: Vec<usize>, data: Vec<Value>, empty_prototype: impl Prototype) -> Result<Self, ErrorKind> {
+    pub fn mixed(shape: impl Into<Shape>, data: Vec<Value>, empty_prototype: impl Prototype) -> Result<Self, ErrorKind> {
         if data.is_empty() { Self::empty_of(shape, empty_prototype.value(), true) } else { Self::from_storage(shape, Storage::mixed(data)) }
     }
 
     /// Items that keep their own kinds. An empty array takes `empty_prototype` in mixed storage.
-    pub(crate) fn keeping_kinds(shape: Vec<usize>, data: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
+    pub(crate) fn keeping_kinds(shape: impl Into<Shape>, data: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
         if data.is_empty() { Self::mixed(shape, data, empty_prototype) } else { Self::new(shape, data) }
     }
 
-    pub(crate) fn from_storage(shape: Vec<usize>, data: Storage) -> Result<Self, ErrorKind> {
+    pub(crate) fn from_storage(shape: impl Into<Shape>, data: Storage) -> Result<Self, ErrorKind> {
+        let shape = shape.into();
         if generated_len(&shape)? != data.len() { return Err(ErrorKind::Length); }
         Ok(ArrayData::array(shape, data))
     }
-    pub fn booleans(shape: Vec<usize>, data: Vec<bool>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Boolean(data)) }
+    pub fn booleans(shape: impl Into<Shape>, data: Vec<bool>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Boolean(data)) }
 
-    pub fn floats(shape: Vec<usize>, width: FloatWidth, data: Vec<f64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Floats(FloatBuf::collect(width, data.into_iter()))) }
-    pub(crate) fn characters(shape: Vec<usize>, data: Vec<char>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Character(data)) }
+    pub fn floats(shape: impl Into<Shape>, width: FloatWidth, data: Vec<f64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Floats(FloatBuf::collect(width, data.into_iter()))) }
+    pub(crate) fn characters(shape: impl Into<Shape>, data: Vec<char>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Character(data)) }
     /// The positions `items`, each below `bound`, written straight to the narrowest width that holds them.
-    pub(crate) fn positions<P: num_traits::AsPrimitive<i64>>(shape: Vec<usize>, bound: usize, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
+    pub(crate) fn positions<P: num_traits::AsPrimitive<i64>>(shape: impl Into<Shape>, bound: usize, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
         with_width!(Width::below(bound), T => T::build(shape, items.map(|i| T::from_i64(i.as_())).collect())).ok_or(ErrorKind::Length)
     }
     /// `positions` from a buffer of them. As 32-bit integers they keep the buffer, with no pass over it.
-    pub(crate) fn positions_u32(shape: Vec<usize>, bound: usize, data: Vec<u32>) -> Result<Self, ErrorKind> {
+    pub(crate) fn positions_u32(shape: impl Into<Shape>, bound: usize, data: Vec<u32>) -> Result<Self, ErrorKind> {
         match Width::below(bound) {
             Width::I32 => Self::from_storage(shape, Storage::Integers(IntBuf::I32(bytemuck::allocation::cast_vec(data)))),
             _ => Self::positions(shape, bound, data.into_iter()),
         }
     }
     /// Integers at the narrowest width that holds them.
-    pub fn integers(shape: Vec<usize>, data: Vec<i64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::narrowed(data)) }
+    pub fn integers(shape: impl Into<Shape>, data: Vec<i64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::narrowed(data)) }
     /// The items as a buffer, borrowed, when the storage is one that `Buffer` holds.
     pub fn buffer(&self) -> Option<Buffer<'_>> {
         Some(match self.as_items() {
@@ -402,7 +472,7 @@ impl Value {
         })
     }
     /// An array of shape `shape` holding the items of `buffer`. Integers take the narrowest width that holds them.
-    pub fn from_buffer(shape: Vec<usize>, buffer: Buffer<'_>) -> Result<Self, ErrorKind> {
+    pub fn from_buffer(shape: impl Into<Shape>, buffer: Buffer<'_>) -> Result<Self, ErrorKind> {
         let storage = match buffer {
             Buffer::Booleans(v) => Storage::Boolean(v.into_owned()),
             Buffer::U8(v) => Storage::narrowed(v.into_owned()),
@@ -425,7 +495,7 @@ impl Value {
     /// The storage of this array for writing. The layout and the storage are copied first when anything else holds them.
     fn storage_mut(&mut self) -> &mut Storage {
         let Self::Array(a) = self else { unreachable!("only an array has storage") };
-        Arc::make_mut(&mut Arc::make_mut(a).data)
+        Arc::make_mut(a).storage_mut()
     }
     /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one, in place. A later
     /// offset wins. Storage that can't hold an item widens as a `Gather` does. Mixed storage forgets its prototype when item 0
@@ -480,7 +550,7 @@ impl Value {
                 slot => *slot = Some(Keys::partial(std::iter::repeat_n(None, old).chain(names.iter().cloned()).collect()).expect("the caller checks keys")),
             }
         }
-        let data = Arc::make_mut(&mut a.data);
+        let data = a.storage_mut();
         if let Storage::Mixed(items, memo) = data {
             if items.is_empty() && !cells.is_empty() { memo.prototype.take(); }
             if cells.environment().is_some() { memo.environment.take(); }
@@ -491,7 +561,7 @@ impl Value {
     }
     /// Complex results of an operation. When no item has an imaginary part, the array holds floats of the parts' width, as `Number`
     /// gives them.
-    pub(crate) fn complex(shape: Vec<usize>, data: ComplexBuf) -> Result<Self, ErrorKind> {
+    pub(crate) fn complex(shape: impl Into<Shape>, data: ComplexBuf) -> Result<Self, ErrorKind> {
         /// The real parts of `data` when no item has an imaginary part, else `data`. While every imaginary part is +0, the real parts
         /// move to the front of the same buffer, in one pass with no allocation. At the first other imaginary part, the items before
         /// it go back, and the rest are checked as `Number` checks them, where -0 also counts as no imaginary part.
@@ -518,10 +588,11 @@ impl Value {
     pub fn is_exact(&self) -> bool { self.exact_domain() == Some(true) }
 
     /// Empty arrays require a prototype item; their shape is never inferred from the buffer.
-    pub fn empty(shape: Vec<usize>, prototype: Value) -> Result<Self, ErrorKind> { Self::empty_of(shape, prototype, false) }
+    pub fn empty(shape: impl Into<Shape>, prototype: Value) -> Result<Self, ErrorKind> { Self::empty_of(shape, prototype, false) }
 
     /// An empty array whose storage is mixed when `mixed` is set or when no compact kind holds the prototype.
-    fn empty_of(shape: Vec<usize>, prototype: Value, mixed: bool) -> Result<Self, ErrorKind> {
+    fn empty_of(shape: impl Into<Shape>, prototype: Value, mixed: bool) -> Result<Self, ErrorKind> {
+        let shape = shape.into();
         if element_count(&shape)? != 0 { return Err(ErrorKind::Length); }
         let prototype = prototype.fill();
         let data = match item_kind(&prototype).filter(|_| !mixed) {
@@ -540,7 +611,7 @@ impl Value {
     /// The items in their storage type. An atom is its own single item.
     pub(crate) fn as_items(&self) -> Items<'_> {
         match self {
-            Self::Array(a) => a.data.items(),
+            Self::Array(a) => a.storage().items(),
             Self::Number(n) => n
                 .bool_slice()
                 .map(Items::Booleans)
@@ -566,11 +637,11 @@ impl Value {
         if !matches!(self, Self::Array(_)) { return Err(ErrorKind::Domain); }
         match self.as_items() {
             Items::Booleans(_) | Items::Integers(_) | Items::Floats(_) => {
-                let floats = with_float_width!(width, F => F::build(self.shape().to_vec(), crate::element::read_as::<F>(self).ok_or(ErrorKind::Domain)?.into_owned()));
+                let floats = with_float_width!(width, F => F::build(self.shape(), crate::element::read_as::<F>(self).ok_or(ErrorKind::Domain)?.into_owned()));
                 floats.ok_or(ErrorKind::Domain)?.with_layout(self.layout().clone())
             }
             Items::Complex(z) => {
-                let z = Self::complex(self.shape().to_vec(), ComplexBuf::collect(width.into(), z.widened().iter().copied()))?;
+                let z = Self::complex(self.shape(), ComplexBuf::collect(width.into(), z.widened().iter().copied()))?;
                 z.with_layout(self.layout().clone())
             }
             _ => self.layout().collect(self.elements().map(|e| e.to_float_width(width)).collect::<Result<Vec<_>, _>>()?, self.prototype().to_float_width(width)?),
@@ -608,20 +679,21 @@ impl Value {
     }
     pub(crate) fn items(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = Value> + '_ { range.map(|i| self.at(i)) }
     /// The items in `range`, as an array of `shape` with no keys or axis names. Mixed storage stays mixed.
-    pub(crate) fn part(&self, range: std::ops::Range<usize>, shape: Vec<usize>) -> Result<Self, ErrorKind> {
+    pub(crate) fn part(&self, range: std::ops::Range<usize>, shape: impl Into<Shape>) -> Result<Self, ErrorKind> {
         let mut data = Gather::new(&[self], range.len());
         data.extend(self, range);
         data.finish(Layout::from(shape), || self.prototype())
     }
     /// An array's prototype. Compact storage gives its kind's zero. An empty mixed array keeps a stored prototype. Other arrays fill their
     /// first item on first request and keep the result.
-    pub fn prototype(&self) -> Value { let Self::Array(a) = self else { return self.fill() }; a.data.prototype() }
+    pub fn prototype(&self) -> Value { let Self::Array(a) = self else { return self.fill() }; a.storage().prototype() }
 
-    pub(crate) fn with_shape(&self, shape: Vec<usize>) -> Result<Self, ErrorKind> {
+    pub(crate) fn with_shape(&self, shape: impl Into<Shape>) -> Result<Self, ErrorKind> {
+        let shape = shape.into();
         if element_count(&shape)? != self.len() { return Err(ErrorKind::Length); }
-        if shape == self.shape() && !self.is_atom() { return Ok(self.clone()); }
+        if *shape == *self.shape() && !self.is_atom() { return Ok(self.clone()); }
         let Self::Array(a) = self else { return Self::new(shape, vec![self.clone()]); };
-        Ok(Self::Array(Arc::new(ArrayData { layout: shape.into(), ..ArrayData::clone(a) })))
+        Ok(ArrayData::view(a, shape.into()))
     }
 
     pub fn axis_names(&self) -> &[Option<Arc<str>>] { self.layout().names() }
@@ -640,7 +712,7 @@ impl Value {
         value.with_layout(layout)
     }
     pub(crate) fn layout(&self) -> &Layout {
-        static ATOM: Layout = Layout { shape: vec![], meta: None };
+        static ATOM: Layout = Layout { shape: Shape::EMPTY, meta: None };
         match self { Self::Array(a) => &a.layout, _ => &ATOM }
     }
     pub(crate) fn with_layout(self, layout: Layout) -> Result<Self, ErrorKind> {
@@ -648,8 +720,8 @@ impl Value {
         if layout.shape() != self.shape() { return Err(ErrorKind::Length); }
         if &layout == self.layout() { return Ok(self); }
         let Self::Array(mut a) = self else { return Err(ErrorKind::Domain); };
-        Arc::make_mut(&mut a).layout = layout;
-        Ok(Self::Array(a))
+        if let Some(data) = Arc::get_mut(&mut a) { data.layout = layout; return Ok(Self::Array(a)); }
+        Ok(ArrayData::view(&a, layout))
     }
     pub(crate) fn with_keys(self, keys: Vec<Option<Arc<Keys>>>) -> Result<Self, ErrorKind> {
         let layout = self.layout().clone().with_keys(keys)?;
@@ -659,7 +731,7 @@ impl Value {
     pub(crate) fn unkeyed(&self) -> Self {
         let Self::Array(a) = self else { return self.clone(); };
         if !a.layout.has_keys() { return self.clone(); }
-        Self::Array(Arc::new(ArrayData { layout: a.layout.clone().with_keys(vec![]).unwrap(), ..ArrayData::clone(a) }))
+        ArrayData::view(a, a.layout.clone().with_keys(vec![]).unwrap())
     }
 
     /// The major cells, in order. A unit, which has no leading axis, is a RANK error.
@@ -737,7 +809,7 @@ impl Value {
     fn fill_array(&self) -> Self {
         let Self::Array(a) = self else { unreachable!() };
         Self::Array(Arc::new(ArrayData {
-            data: Arc::new(match (&*a.data, a.data.items()) {
+            data: Data::Own(match (a.storage(), a.storage().items()) {
                 (Storage::Mixed(v, memo), _) if v.is_empty() => Storage::Mixed(vec![], memo.clone()),
                 (Storage::Mixed(v, _), _) => Storage::compact(v.iter().map(Value::fill).collect(), Widening::Items),
                 (data, Items::Booleans(_)) => Storage::Boolean(vec![false; data.len()]),

@@ -234,7 +234,7 @@ stpaths ← {  ⍝ Spanning tree paths.
     (⊂⍬)∧.≡next?⍺;  ⍝ all null: finished.
     exts←⊂¨⍵⊃¨⊂⍺ ,¨¨ next  ⍝ paths to next tree level.
     indx←,/next
-    paths←(,/exts)@indx ⍺
+    paths←,/exts @indx ⍺
     paths ∇ indx  ⍝ advance to next tree level.
   }root  ⍝ index of starting vertex.
 }
@@ -272,7 +272,7 @@ sudokuMatrix ← {  ⍝ Matrix for ⍵ ⍵-Sudoku puzzle.
   col←↓0 0 1 1 1 1 1 1 1 1#⍠¯1⊃z
   box←↓1 0 1 0 1 1 1 1 1 1#⍠¯1⊃z
   all←↓1 1 1 1 0 0 1 1 1 1#⍠¯1⊃z
-  same←≡/∘(1 0 0 0 1 0 0 0⊂)  ⍝ matching pairs.
+  same←≡/∘ 1 0 0 0 1 0 0 0⊂  ⍝ matching pairs.
   same¨row,col,box,all  ⍝ constraints matrix for ⍵ ⍵-puzzle.
 }
 

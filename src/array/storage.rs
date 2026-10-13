@@ -127,13 +127,15 @@ pub(crate) use with_int_pair;
 impl Width {
     /// The bytes that one integer of this width takes.
     fn bytes(self) -> usize { with_width!(self, T => std::mem::size_of::<T>()) }
-    /// Whether this width holds `n`.
+    /// Whether this width holds `n`. It is `#[inline]`, so that the incremental build doesn't call it for each width `narrowest` tries.
+    #[inline]
     fn holds(self, n: i64) -> bool { with_width!(self, T => T::narrowed(n).is_some()) }
     /// The narrowest width that holds `min`, `max` and every integer between. Every width holds the empty range, where `min` is above
     /// `max`.
     pub(crate) fn narrowest<T: Int>(min: T, max: T) -> Self {
         let (min, max) = (min.to_i64(), max.to_i64());
-        [Self::U8, Self::I16, Self::I32, Self::I64].into_iter().find(|w| min > max || w.holds(min) && w.holds(max)).expect("64 bits hold every integer")
+        for w in [Self::U8, Self::I16, Self::I32] { if min > max || w.holds(min) && w.holds(max) { return w } }
+        Self::I64
     }
     /// The narrowest width that holds every position below `bound`.
     pub(crate) fn below(bound: usize) -> Self { Self::narrowest(0, bound as i64 - 1) }
@@ -236,7 +238,7 @@ impl Kind {
 /// The compact kind of `source`'s items.
 fn source_kind(source: &Value) -> Option<Kind> {
     match source {
-        Value::Array(a) => a.data.items().kind(),
+        Value::Array(a) => a.storage().items().kind(),
         atom => item_kind(atom),
     }
 }
@@ -414,6 +416,14 @@ impl Storage {
         let mut kinds = data.iter().map(item_kind);
         let Some(kind) = kinds.next().flatten().and_then(|first| kinds.try_fold(first, |k, i| k.join(i?, widening))) else { return Self::mixed(data) };
         // Collecting from `data.iter()` sizes the compact buffer exactly. Consuming `data` would reuse its larger allocation.
+        Self::of_kind(kind, &data)
+    }
+    /// One item, in the compact storage of its own kind when it has one, as `compact` would hold it.
+    pub(super) fn one(item: &Value) -> Self {
+        match item_kind(item) { Some(kind) => Self::of_kind(kind, std::slice::from_ref(item)), None => Self::mixed(vec![item.clone()]) }
+    }
+    /// Compact storage of `kind` for `data`, whose items all have that kind or one it holds.
+    fn of_kind(kind: Kind, data: &[Value]) -> Self {
         match kind {
             Kind::Boolean => Self::Boolean(data.iter().map(|e| number(e).unwrap().as_bool().unwrap()).collect()),
             // The widest of the items' own widths holds every item.
@@ -728,7 +738,7 @@ impl Gather {
     }
     /// The gathered array, laid out by `layout`. An empty array takes `prototype`.
     pub(crate) fn finish(self, layout: Layout, prototype: impl Prototype) -> Result<Value, ErrorKind> {
-        let shape = layout.shape().to_vec();
+        let shape = crate::Shape::from(layout.shape());
         let value = match self.data {
             Storage::Mixed(ref d, _) if d.is_empty() && !self.open => Value::empty_of(shape, prototype.value(), true)?,
             data if data.len() == 0 => Value::empty(shape, prototype.value())?,

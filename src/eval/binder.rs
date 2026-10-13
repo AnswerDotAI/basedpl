@@ -62,16 +62,48 @@ impl Session {
         Cow::Owned(out)
     }
 
+    /// Whether `node` is an operator, as `Some` of whether it's dyadic. Names, dfns and dot paths count by what they hold.
+    fn operator_valence(&self, node: &Node) -> Option<bool> {
+        match &node.kind {
+            NodeKind::Operator(op) => Some(OperatorNode::Primitive(*op).is_dyadic()),
+            NodeKind::Name(name) => match self.lookup(name) { Some(Binding::Operator(op)) => Some(op.is_dyadic()), _ => None },
+            NodeKind::Dfn(d) => (d.kind != DefinitionKind::Function).then(|| d.kind == DefinitionKind::DyadicOperator),
+            NodeKind::Group(_) => match self.static_field(node) { Some(Value::Operator(op)) => Some(op.0.is_dyadic()), _ => None },
+            _ => None,
+        }
+    }
+
     /// Whether a run ends in a dyadic operator, which then takes the next run as its right operand.
     pub(super) fn ends_in_dyadic_operator(&self, nodes: &[Node]) -> bool {
-        let nodes = self.members(nodes);
-        match nodes.last().map(|n| &n.kind) {
-            Some(NodeKind::Operator(op)) => OperatorNode::Primitive(*op).is_dyadic(),
-            Some(NodeKind::Name(name)) => matches!(self.lookup(name), Some(Binding::Operator(op)) if op.is_dyadic()),
-            Some(NodeKind::Dfn(d)) => d.kind == DefinitionKind::DyadicOperator,
-            Some(NodeKind::Group(_)) => matches!(self.static_field(&nodes[nodes.len() - 1]), Some(Value::Operator(op)) if op.0.is_dyadic()),
-            _ => false,
+        self.members(nodes).last().and_then(|n| self.operator_valence(n)) == Some(true)
+    }
+
+    /// Whether a run starts with an operator, which then takes the whole run before it as its left operand.
+    fn starts_with_operator(&self, nodes: &[Node]) -> bool {
+        self.members(nodes).first().is_some_and(|n| self.operator_valence(n).is_some())
+    }
+
+    /// Join each run that starts with an operator to the node before it, as the run's first token: `≢⊢ ⌸x` reads as
+    /// `(≢⊢)⌸x`. A run before it joins as a group. A joined run that still starts with an operator joins again: `+ / ¨x`
+    /// reads as `+/¨x`. No join reaches across `←`.
+    fn joined<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
+        let starts = |node: &Node| matches!(&node.kind, NodeKind::Run(inner) if self.starts_with_operator(inner));
+        if !nodes.iter().skip(1).any(starts) { return Cow::Borrowed(nodes); }
+        let mut out: Vec<Node> = Vec::with_capacity(nodes.len());
+        for node in nodes {
+            let mut node = node.clone();
+            while starts(&node) && out.last().is_some_and(|before| !matches!(before.kind, NodeKind::Assign)) {
+                let before = out.pop().expect("a node is before this run");
+                let span = Span { source: before.span.source.clone(), range: before.span.range.start..node.span.range.end };
+                let before = match before.kind { NodeKind::Run(run) => Node { kind: NodeKind::Group(run), span: before.span }, _ => before };
+                let NodeKind::Run(inner) = node.kind else { unreachable!() };
+                node = Node { kind: NodeKind::Run(std::iter::once(before).chain(inner).collect()), span };
+            }
+            out.push(node);
         }
+        // A run that is the whole expression needs no wrapper, as in the parser.
+        if let [Node { kind: NodeKind::Run(inner), .. }] = out.as_mut_slice() { return Cow::Owned(std::mem::take(inner)); }
+        Cow::Owned(out)
     }
     /// The value a dot path such as `m.f` or `m.a.f` names, read without evaluating anything. Dot access writes `m.f` as the
     /// group `"f"⊃m`.
@@ -138,11 +170,23 @@ impl Attached {
 }
 pub(super) struct Entity {
     term: Term,
-    /// Where the entity's text lies in the source of the binder's nodes. A `Span` is rebuilt from it only where one is needed.
-    range: std::ops::Range<usize>,
+    /// The `u32` offsets of the entity's text in the source of the binder's nodes. They keep `Entity` within 64 bytes, which the
+    /// assertion below checks. A `Span` is rebuilt from them only where one is needed.
+    range: std::ops::Range<u32>,
     shy: bool,
     selection: Option<SelectionKind>,
     expression: Option<Box<Expression>>,
+}
+const _: () = assert!(std::mem::size_of::<Entity>() <= 64);
+
+/// `range` as `u32` offsets, clamped for a source longer than 4 GiB.
+fn narrow(range: &std::ops::Range<usize>) -> std::ops::Range<u32> {
+    let at = |i: usize| u32::try_from(i).unwrap_or(u32::MAX);
+    at(range.start)..at(range.end)
+}
+/// The span of `range` in `source`.
+fn span_of(source: &Arc<Source>, range: &std::ops::Range<u32>) -> Span {
+    Span { source: source.clone(), range: range.start as usize..range.end as usize }
 }
 
 impl Entity {
@@ -155,7 +199,7 @@ impl Entity {
         }
     }
     fn value(self, source: &Arc<Source>) -> Result<Binding, Error> {
-        let span = || Span { source: source.clone(), range: self.range.clone() };
+        let span = || span_of(source, &self.range);
         Ok(match self.term {
             Term::Binding(v) => v,
             Term::Train(tines) => Binding::Function(self::Function::train(tines, &span())?),
@@ -168,7 +212,7 @@ impl Entity {
         let range = self.range.clone();
         match self.value(source)? {
             Binding::Function(f) => Ok(f),
-            value => Function::from_value(value, &Span { source: source.clone(), range }),
+            value => Function::from_value(value, &span_of(source, &range)),
         }
     }
     fn array(self, source: &Arc<Source>) -> Result<Value, Error> { match self.value(source)? { Binding::Value(a) => Ok(a), _ => unreachable!() } }
@@ -286,6 +330,23 @@ impl Binder {
         }
         Ok(Nested::Bound(bound))
     }
+    /// Whether `left` goes onto `stack` now, rather than after the top of `stack` reduces.
+    fn shifts(left: &Entity, stack: &[Entity]) -> bool {
+        let n = stack.len();
+        let old = (n >= 2).then(|| Rule::get(stack[n - 1].category(), stack[n - 2].category()));
+        match old {
+            None => true,
+            // An operator still awaiting its operand cannot reduce with its right neighbour.
+            Some(Rule::Wait(_)) => true,
+            // A superscript waits for its operand. On an array it gives an array, which can be the left argument of the function to its right.
+            Some(_) if matches!(&left.term, Term::Binding(Binding::Operator(self::OperatorNode::Primitive(OperatorKind::Super(_))))) => true,
+            Some(old) => match Rule::get(left.category(), stack[n - 1].category()) {
+                // Adjacent arrays group from the right: `v w i` is `v (w i)`.
+                Rule::Adjacent if matches!(old, Rule::Adjacent) => false,
+                new => new.strength() >= old.strength(),
+            },
+        }
+    }
     fn reduced(
         nodes: &[Node],
         session: &mut Session,
@@ -293,7 +354,8 @@ impl Binder {
         marked: Option<(usize, Value, SelectionKind)>,
         seed: Option<Entity>,
     ) -> Result<(Reduced, Option<SelectionKind>), Error> {
-        let members = if marked.is_none() { session.members(nodes) } else { Cow::Borrowed(nodes) };
+        let joined = if marked.is_none() { session.joined(nodes) } else { Cow::Borrowed(nodes) };
+        let members = if marked.is_none() { session.members(&joined) } else { Cow::Borrowed(&joined[..]) };
         let nodes = &members[..];
         let source = &nodes[0].span.source;
         let mut binder = Self { stack: session.stacks.pop().unwrap_or_default() };
@@ -303,7 +365,7 @@ impl Binder {
         let mut pending = session.stacks.pop().unwrap_or_default();
         loop {
             session.execution.check(&nodes[0].span)?;
-            let next = if let Some(entity) = pending.pop() { Some(entity) } else if assignment.is_none() && cursor > 0 {
+            let next = if pending.is_empty() && assignment.is_none() && cursor > 0 {
                 cursor -= 1;
                 let i = cursor;
                 let node = &nodes[i];
@@ -328,30 +390,21 @@ impl Binder {
                         let bound = session.resolve(node)?;
                         (Term::Binding(bound.value), bound.expression)
                     };
-                    Some(Entity { term, expression, range: node.span.range.clone(), shy: false, selection: selected.map(|(_, _, kind)| *kind) })
+                    Some(Entity { term, expression, range: narrow(&node.span.range), shy: false, selection: selected.map(|(_, _, kind)| *kind) })
                 }
             } else { None };
-            let n = binder.stack.len();
-            if let Some(left) = next {
-                let old = (n >= 2).then(|| Rule::get(binder.stack[n - 1].category(), binder.stack[n - 2].category()));
-                if match old {
-                    None => true,
-                    // An operator still awaiting its operand cannot reduce with its right neighbour.
-                    Some(Rule::Wait(_)) => true,
-                    // A superscript waits for its operand. On an array it gives an array, which can be the left argument of the function to its right.
-                    Some(_) if matches!(&left.term, Term::Binding(Binding::Operator(self::OperatorNode::Primitive(OperatorKind::Super(_))))) => true,
-                    Some(old) => match Rule::get(left.category(), binder.stack[n - 1].category()) {
-                        // Adjacent arrays group from the right: `v w i` is `v (w i)`.
-                        Rule::Adjacent if matches!(old, Rule::Adjacent) => false,
-                        new => new.strength() >= old.strength(),
-                    },
-                } {
+            if let Some(left) = pending.last() {
+                if Self::shifts(left, &binder.stack) {
+                    binder.stack.push(pending.pop().unwrap());
+                    continue;
+                }
+            } else if let Some(left) = next {
+                if Self::shifts(&left, &binder.stack) {
                     binder.stack.push(left);
                     continue;
                 }
                 pending.push(left);
-            }
-            else if n < 2 {
+            } else if binder.stack.len() < 2 {
                 if let Some(i) = assignment.take() {
                     let begin = nodes[..i].iter().rposition(|n| matches!(n.kind, NodeKind::Assign)).map_or(0, |j| j + 1);
                     let missing = || nodes[i].span.error(ErrorKind::Syntax, "assignment needs a target and value");
@@ -360,7 +413,7 @@ impl Binder {
                     let Some(entity) = binder.stack.pop() else {
                         cursor = begin + session.assignment_start(&nodes[begin..i])?;
                         if !session.modify_monadic(&nodes[cursor..i])? { return Err(missing()); }
-                        pending.push(Entity { term: Term::Binding(Binding::NoResult), range: nodes[i].span.range.clone(), shy: true, selection: None, expression: None });
+                        pending.push(Entity { term: Term::Binding(Binding::NoResult), range: narrow(&nodes[i].span.range), shy: true, selection: None, expression: None });
                         continue;
                     };
                     let value = entity.value(source)?;
@@ -368,45 +421,50 @@ impl Binder {
                     if matches!(value, Binding::Absent) { return Err(nodes[i].span.error(ErrorKind::Value, ABSENT)); }
                     cursor = begin + session.assignment_start(&nodes[begin..i])?;
                     session.assign(&nodes[cursor..i], &value)?;
-                    pending.push(Entity { term: Term::Binding(value), range: nodes[i].span.range.clone(), shy: true, selection: None, expression: None });
+                    pending.push(Entity { term: Term::Binding(value), range: narrow(&nodes[i].span.range), shy: true, selection: None, expression: None });
                     continue;
                 }
                 break;
             }
-            if let Some(call) = binder.reduce(session.capture, session.numeric, source)? {
-                if tail
-                    && cursor == 0
-                    && assignment.is_none()
-                    && pending.is_empty()
-                    && binder.stack.is_empty()
-                    && matches!(call.function.node(), FunctionNode::Defined(_) | FunctionNode::Derived(..))
-                {
-                    session.stacks.extend([binder.stack, pending]);
-                    return Ok((Reduced::Tail(call), None));
-                }
-                let entity = match call.selection {
-                    Some(kind) => {
-                        let (selected, kind) = call
-                            .function
-                            .select(call.left.as_ref(), &call.right, None, kind, &mut session.at(&call.span))?
-                            .ok_or_else(|| call.span.domain_error("function is not valid for selective assignment"))?;
-                        Entity {
-                            term: Term::Binding(Binding::Value(selected)),
-                            range: call.span.range,
-                            shy: false,
-                            selection: Some(kind),
-                            expression: call.expression,
+            loop {
+                if let Some(call) = binder.reduce(session.capture, session.numeric, source)? {
+                    if tail
+                        && cursor == 0
+                        && assignment.is_none()
+                        && pending.is_empty()
+                        && binder.stack.is_empty()
+                        && matches!(call.function.node(), FunctionNode::Defined(_) | FunctionNode::Derived(..))
+                    {
+                        session.stacks.extend([binder.stack, pending]);
+                        return Ok((Reduced::Tail(call), None));
+                    }
+                    let entity = match call.selection {
+                        Some(kind) => {
+                            let (selected, kind) = call
+                                .function
+                                .select(call.left.as_ref(), &call.right, None, kind, &mut session.at(&call.span))?
+                                .ok_or_else(|| call.span.domain_error("function is not valid for selective assignment"))?;
+                            Entity {
+                                term: Term::Binding(Binding::Value(selected)),
+                                range: narrow(&call.span.range),
+                                shy: false,
+                                selection: Some(kind),
+                                expression: call.expression,
+                            }
                         }
-                    }
-                    None => {
-                        let bound = call.function.call(call.left.as_ref(), &call.right, &mut session.at(&call.span))?;
-                        Entity { term: Term::Binding(bound.value), range: call.span.range, shy: bound.shy, selection: None, expression: call.expression }
-                    }
-                };
-                binder.stack.push(entity);
+                        None => {
+                            let bound = call.function.call(call.left.as_ref(), &call.right, &mut session.at(&call.span))?;
+                            Entity { term: Term::Binding(bound.value), range: narrow(&call.span.range), shy: bound.shy, selection: None, expression: call.expression }
+                        }
+                    };
+                    binder.stack.push(entity);
+                }
+                // Bound operators still need their left operand before rebinding on the right.
+                let m = binder.stack.len();
+                if matches!(binder.stack[m - 1].category(), Category::Operator) || Self::shifts(&binder.stack[m - 1], &binder.stack[..m - 1]) { break; }
+                pending.push(binder.stack.pop().unwrap());
+                session.execution.check(&nodes[0].span)?;
             }
-            // Bound operators still need their left operand before rebinding on the right.
-            if !matches!(binder.stack.last().unwrap().category(), Category::Operator) { pending.push(binder.stack.pop().unwrap()); }
         }
         let entity = binder.stack.pop().expect("nonempty expression");
         session.stacks.extend([binder.stack, pending]);
@@ -418,7 +476,7 @@ impl Binder {
         let mut left = self.stack.pop().unwrap();
         let mut right = self.stack.pop().unwrap();
         let (range, right_range) = (left.range.clone(), right.range.clone());
-        let span = || Span { source: source.clone(), range: range.clone() };
+        let span = || span_of(source, &range);
         let selection = left.selection.or(right.selection);
         let selectable = matches!((left.category(), right.category()), (Function | Train | Left, Value));
         if selection.is_some() && !selectable { return Err(span().error(ErrorKind::Syntax, INVALID_SELECTION)); }

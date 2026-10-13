@@ -1,13 +1,13 @@
 ⍝⍝ Choose
 
 ⍝ bqn:choose:7 — Choose subtracts 1 from negatives and adds 1 otherwise
-(0≤)⍚[-↢1 +↢1]¨ 3 ¯1 5   ⍝ 4 ¯2 6
+0≤ ⍚[-↢1 +↢1]¨ 3 ¯1 5   ⍝ 4 ¯2 6
 
 ⍝ bqn:choose:11 — Choose with two arguments as a minimum
 2 >⍚[⊣ ⊢] 6   ⍝ 2
 
 ⍝ bqn:choose:15 — Choose dispatches on the first character, with a default for no match
-fn←("rtd"⍳↑)⍚[⌽ 1↑ 1↓ ⊢] ⋄ [fn "r123";fn "d123";fn "123"]
+fn←"rtd"⍳↑ ⍚[⌽ 1↑ 1↓ ⊢] ⋄ [fn "r123";fn "d123";fn "123"]
 "321r" "123" "123"
 
 ⍝⍝ Valences
@@ -31,7 +31,7 @@ a←[0 1 2⋄3 4 5⋄6 7 8⋄9 10 11] ⋄ (1⌽)@(↑⍤1) a
 [3 1 2⋄6 4 5⋄9 7 8⋄0 10 11]
 
 ⍝ bqn:under:69 — Reverse the first half of a list
-⌽@((2÷⍨≢)↑⊢) "abcdef"   ⍝ "cbadef"
+⌽@ (2÷⍨≢)↑⊢ "abcdef"   ⍝ "cbadef"
 
 ⍝ bqn:under:73 — Add 10 to the elements below 5, with the mask computed from the argument
 {10+@((⍵<5)#)⍵} 3 8 2 2 6   ⍝ 13 8 12 12 6
@@ -40,7 +40,7 @@ a←[0 1 2⋄3 4 5⋄6 7 8⋄9 10 11] ⋄ (1⌽)@(↑⍤1) a
 ∧\@⌽ 1 0 1 0 1 1 1   ⍝ 0 0 0 0 1 1 1
 
 ⍝ bqn:under:89 — Root-mean-square
-(+/÷≢)@(×⍨) 2 3 4 5   ⍝ 3.6742346141747673
++/÷≢ @(×⍨) 2 3 4 5   ⍝ 3.6742346141747673
 
 ⍝ bqn:under:99 — An arithmetic progression up to a limit, through an inverted transformation
 ⍳∘⌈@((4+3×⊢)⁻¹) 20   ⍝ 4 7 10 13 16 19
@@ -49,7 +49,7 @@ a←[0 1 2⋄3 4 5⋄6 7 8⋄9 10 11] ⋄ (1⌽)@(↑⍤1) a
 "abcd" ⊣@([[1 2]]⌷) "0123"   ⍝ "0bc3"
 
 ⍝ bqn:under:113 — Replace the last element of the first two lists
-["ab" "cde" "fg"] ⊣@((¯1⌷)¨2↑⊢) ⍳¨3 2 1 1
+["ab" "cde" "fg"] ⊣@(¯1⌷ ¨2↑⊢) ⍳¨3 2 1 1
 (0 1 'b'⋄0 'e'⋄0⋄0)
 
 ⍝ bqn:under:117 — Regroup characters into the structure of the right argument
@@ -128,7 +128,7 @@ a←[0 1 2⋄3 4 5⋄6 7 8⋄9 10 11] ⋄ (1⌽)@(↑⍤1) a
 3 (+÷2⍨) 7   ⍝ 5
 
 ⍝ bqn:constant:21 — Under with an array operand replaces the selected element
-∞ {⍺@(2⌷) ⍵} 1 2 3 4   ⍝ 1 2 ∞ 4
+∞ {⍺@ 2⌷ ⍵} 1 2 3 4   ⍝ 1 2 ∞ 4
 
 ⍝⍝ Based arrays
 
@@ -254,10 +254,10 @@ thing←{⍵≥3? ⍵≤8? 2|⍵; ⍵=0? '@'; ∞} ⋄ thing¨⍳10
 (≢×+/@÷) 1 2 4   ⍝ 1.7142857142857142
 
 ⍝ bqncrate/table.tsv:1050 — Geometric mean, using logarithm
-(+/÷≢)@⍟ 1 2 4   ⍝ 2
++/÷≢ @⍟ 1 2 4   ⍝ 2
 
 ⍝ bqncrate/table.tsv:1063 — Round to the nearest hundredth, ties towards ∞
-{⌊0.5+⍵}@(100×) 3.14159 2.71828 ¯0.125   ⍝ 3.14 2.72 ¯0.12
+{⌊0.5+⍵}@ 100× 3.14159 2.71828 ¯0.125   ⍝ 3.14 2.72 ¯0.12
 
 ⍝ bqncrate/table.tsv:930 — Number of derangements of length 5
 1-/×\@⌽↦5   ⍝ 44
@@ -266,13 +266,13 @@ thing←{⍵≥3? ⍵≤8? 2|⍵; ⍵=0? '@'; ∞} ⋄ thing¨⍳10
 (∨\∧∨\@⌽) 0 0 1 0 1 1 0 0   ⍝ 0 0 1 1 1 1 0 0
 
 ⍝ bqncrate/table.tsv:1098 — Remove trailing spaces
-(∨\@⌽' '≠⊢)↣# "ab c  "   ⍝ "ab c"
+∨\@⌽' '≠⊢ ↣# "ab c  "   ⍝ "ab c"
 
 ⍝ bqncrate/table.tsv:1174 — Remove leading and trailing spaces
 {(∨\∧∨\@⌽)' '≠⍵}↣# "  ab c  "   ⍝ "ab c"
 
 ⍝ bqncrate/table.tsv:713 — Ternary: apply F if a0, otherwise G
-a←1 ⋄ (~a)⍚[- ⊢] 5   ⍝ ¯5
+a←1 ⋄ ~a ⍚[- ⊢] 5   ⍝ ¯5
 
 ⍝ bqncrate/table.tsv:478 — Sequential AND, which skips G when F fails
 {⍵>0}⍚[0 {⍵<10}]¨ 5 ¯1 20   ⍝ $t 0 $f
@@ -287,13 +287,13 @@ a←1 ⋄ (~a)⍚[- ⊢] 5   ⍝ ¯5
 ⌽@, [1 2 3⋄4 5 6]   ⍝ [6 5 4⋄3 2 1]
 
 ⍝ bqncrate/table.tsv:738 — Apply a function to the last major cell
--@(¯1⌷) [1 2⋄3 4]   ⍝ [1 2⋄¯3 ¯4]
+-@ ¯1⌷ [1 2⋄3 4]   ⍝ [1 2⋄¯3 ¯4]
 
 ⍝ bqncrate/table.tsv:792 — Blend two lists by a mask
 "abcd" ⊣@(1 0 1 0#) "wxyz"   ⍝ "axcz"
 
 ⍝ bqncrate/table.tsv:859 — Swap the first and last major cells
-⌽@([[0 ¯1]]⌷) 1 2 3 4   ⍝ 4 2 3 1
+⌽@ [[0 ¯1]]⌷ 1 2 3 4   ⍝ 4 2 3 1
 
 ⍝ bqncrate/table.tsv:1191 — Replace all spaces with dashes
 {('-'⍨)¨@((' '=⍵)#)⍵} "a b c"   ⍝ "a-b-c"

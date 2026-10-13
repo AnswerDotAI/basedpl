@@ -58,7 +58,7 @@ impl Polynomial {
                 generated_len(&[roots.len() + 1]).error_at(span, "too many polynomial coefficients")?;
                 Ok(with_field!(std::iter::once(m).chain(roots), span.numeric(), T, width => {
                     let roots: Vec<T> = roots.iter().map(T::of).collect();
-                    rustymath::polynomial::from_roots_with(T::of(m), &roots, || span.check())?.into_iter().map(|c| c.number(width)).collect()
+                    rustymath::polynomial::from_roots_with(T::of(m), &roots, || span.check_now())?.into_iter().map(|c| c.number(width)).collect()
                 }))
             }
             Self::Powers { coefficients, exponents, variables } => {
@@ -90,11 +90,11 @@ impl Polynomial {
         match self {
             Self::Coefficients(c) => Ok(with_field!(c.iter().chain(x), span.numeric(), T, width => {
                 let c: Vec<T> = c.iter().map(T::of).collect();
-                rustymath::polynomial::value_with(&c, &T::of(&x[0]), || span.check())?.number(width)
+                rustymath::polynomial::value_with(&c, &T::of(&x[0]), || span.check_now())?.number(width)
             })),
             Self::Factored(m, roots) => Ok(with_field!(std::iter::once(m).chain(roots).chain(x), span.numeric(), T, width => {
                 let roots: Vec<T> = roots.iter().map(T::of).collect();
-                rustymath::polynomial::factored_with(&T::of(m), &roots, &T::of(&x[0]), || span.check())?.number(width)
+                rustymath::polynomial::factored_with(&T::of(m), &roots, &T::of(&x[0]), || span.check_now())?.number(width)
             })),
             Self::Powers { coefficients, exponents, .. } => {
                 let mut y = int(0);
@@ -134,7 +134,7 @@ impl Polynomial {
             let c = self.coefficients(span)?;
             return Ok(Self::Coefficients(with_field!(c.iter(), span.numeric(), T, width => {
                 let mut c: Vec<T> = c.iter().map(T::of).collect();
-                for _ in 0..order { c = rustymath::polynomial::derivative_with(&c, || span.check())? }
+                for _ in 0..order { c = rustymath::polynomial::derivative_with(&c, || span.check_now())? }
                 c.into_iter().map(|c| c.number(width)).collect()
             })));
         }
@@ -196,7 +196,7 @@ fn floats<F: Float>(c: &[Number], span: &Context<'_>) -> Result<Vec<F>, Error> {
 /// The float results `y` at the points `x`, with `x`'s shape and layout.
 fn shaped<F: Float>(x: &Value, y: Vec<F>, width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> {
     if x.is_unit() { return Ok(Value::Number(Number::float(y[0].wide(), width))); }
-    let y = F::build(x.shape().to_vec(), y).ok_or(ErrorKind::Limit).error_at(span, "polynomial result exceeds array limits")?;
+    let y = F::build(x.shape(), y).ok_or(ErrorKind::Limit).error_at(span, "polynomial result exceeds array limits")?;
     y.with_layout(x.layout().clone()).error_at(span, "invalid polynomial result")
 }
 

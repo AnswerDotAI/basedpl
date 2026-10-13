@@ -281,21 +281,13 @@ pub(crate) mod complex {
             Arithmetic::Divide => rustymath::divide(x, y),
         }
     }
-    /// `y`, with a zero imaginary part signed for the side of the branch cut that APL takes. A real `y` beyond magnitude 1 lies on the
-    /// branch cuts of codes 0, ¯1 and ¯2. As in APL, a positive one takes the side below the cut and a negative one the side above.
-    pub(crate) fn cut(y: Complex64) -> Complex64 { if y.im == 0.0 { Complex64::new(y.re, if y.re > 0.0 { -0.0 } else { 0.0 }) } else { y } }
-
-    /// Whether `code○`, or its inverse, reads its argument through `cut`.
-    pub(crate) fn cuts(code: i64, inverse: bool) -> bool { matches!((code, inverse), (0, _) | (1 | 2, true)) }
-
     /// `code○y`, or the inverse of `code○` on `y`. `None` for a code outside 0 to 8. On a real `y`, code 8 gives an imaginary result,
-    /// and beyond magnitude 1 the inverse of code 7 takes the imaginary part π/2 with the sign of `y`, as APL's results do.
+    /// as APL's results do. On a branch cut, the sign of `y`'s zero imaginary part chooses the side, as in C99.
     pub(crate) fn circle(code: i64, inverse: bool, y: Complex64) -> Option<Complex64> {
         let one = Complex64::new(1.0, 0.0);
         Some(match (code, inverse) {
             (8, _) if y.im == 0.0 => Complex64::new(0.0, if inverse { -rustymath::hypot(y.re, 1.0) } else { rustymath::hypot(y.re, 1.0) }),
-            (7, true) if y.im == 0.0 && y.re.abs() > 1.0 => Complex64::new(rustymath::atanh(1.0 / y.re), std::f64::consts::FRAC_PI_2.copysign(y.re)),
-            (0, _) => rustymath::Sqrt1mx2.one(cut(y)),
+            (0, _) => rustymath::Sqrt1mx2.one(y),
             (1, false) => rustymath::Sin.one(y),
             (2, false) => rustymath::Cos.one(y),
             (3, false) => rustymath::Tan.one(y),
@@ -304,8 +296,8 @@ pub(crate) mod complex {
             (6, false) => rustymath::Cosh.one(y),
             (7, false) => rustymath::Tanh.one(y),
             (8, false) => rustymath::Sqrt.one(-one - y * y),
-            (1, true) => rustymath::Asin.one(cut(y)),
-            (2, true) => rustymath::Acos.one(cut(y)),
+            (1, true) => rustymath::Asin.one(y),
+            (2, true) => rustymath::Acos.one(y),
             (3, true) => rustymath::Atan.one(y),
             (4, true) => rustymath::Sqrtx2m1.one(y),
             (5, true) => rustymath::Asinh.one(y),

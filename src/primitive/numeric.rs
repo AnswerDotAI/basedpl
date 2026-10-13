@@ -182,6 +182,56 @@ pub(crate) fn determinant(a: &Value, n: usize, span: &Context<'_>) -> Result<Opt
     Ok(Some(Value::Number(d)))
 }
 
+/// A matrix function that `f⍤2` applies to a whole stack of matrices in one call: dyadic `+.×` or `⌹`, or monadic `⌹` or `-.×`.
+#[derive(Clone, Copy)]
+pub(crate) enum Stacked { Product, Solve, Inverse, Determinant }
+
+/// `f⍤2` on stacks of 32- or 64-bit float matrices with plain layouts, through the rustymath function that `f` uses on one matrix. The
+/// cells split across rustymath's threads through `stack_with`. `x` is the left stack for `+.×` and `⌹`, and absent for the monads. Two
+/// stacks have equal frames, or one is a single matrix that pairs with each matrix of the other. `None` where `f⍤2` takes its general path.
+pub(crate) fn stacked(op: Stacked, x: Option<&Value>, y: &Value, span: &Context<'_>) -> Option<Result<Value, Error>> {
+    use crate::element::{read_as, Element};
+    let width = |a: &Value| match a.as_items() { Items::Floats(_) if a.layout().plain() && a.shape().len() >= 2 => a.float_width(), _ => None };
+    let w = width(y)?;
+    if x.is_some_and(|x| width(x) != Some(w)) { return None }
+    let matrices = |a: &Value| { let (frame, cell) = a.shape().split_at(a.shape().len() - 2); (frame.to_vec(), cell[0], cell[1]) };
+    let (yf, r, c) = matrices(y);
+    crate::array::with_float_width!(kernel w, F => {
+        let ys = read_as::<F>(y)?;
+        let count = generated_len(&yf).ok()?;
+        if r == 0 || c == 0 || count == 0 { return None }
+        let cell = |i: usize| &ys[i * r * c..][..r * c];
+        match (op, x) {
+            (Stacked::Inverse, None) => cells(count, c * r, |i, out, w: &mut linalg::LuWork<F>| w.pinv_into(cell(i), [r, c], out), span).map(|v| F::build([yf, vec![c, r]].concat(), v)).transpose(),
+            (Stacked::Determinant, None) if r == c => cells(count, 1, |i, out, w: &mut linalg::LuWork<F>| out[0] = w.factor(cell(i), r).determinant(), span).map(|v| F::build(yf, v)).transpose(),
+            (Stacked::Product | Stacked::Solve, Some(x)) => {
+                let (xf, m, k) = matrices(x);
+                let solve = matches!(op, Stacked::Solve);
+                if (if solve { m } else { k }) != r || m == 0 || k == 0 || !(xf == yf || xf.is_empty() || yf.is_empty()) { return None }
+                let xs = read_as::<F>(x)?;
+                let frame = if xf.is_empty() { yf } else { xf };
+                let count = generated_len(&frame).ok()?;
+                if count == 0 { return None }
+                let (xstep, ystep) = (if x.shape().len() == 2 { 0 } else { m * k }, if y.shape().len() == 2 { 0 } else { r * c });
+                let (xcell, ycell) = (|i: usize| &xs[i * xstep..][..m * k], |i: usize| &ys[i * ystep..][..r * c]);
+                let (shape, v) = if solve {
+                    ([c, k], cells(count, c * k, |i, out: &mut [F], w: &mut linalg::LuWork<F>| out.copy_from_slice(&w.solve(ycell(i), xcell(i), [r, c], k)), span))
+                } else {
+                    ([m, c], cells(count, m * c, |i, out: &mut [F], _: &mut ()| PlusTimes.inner_into(xcell(i), ycell(i), [m, k, c], out), span))
+                };
+                v.map(|v| F::build([frame, shape.to_vec()].concat(), v)).transpose()
+            }
+            _ => None,
+        }
+    })
+}
+
+/// `count` cells of `per` items each, where `write(i, cell, scratch)` writes cell `i`. rustymath's `stack_with` runs the calls, and
+/// `span.check_now()` runs between its rounds.
+fn cells<B: Default + Send, S: Default>(count: usize, per: usize, write: impl Fn(usize, &mut [B], &mut S) + Sync, span: &Context<'_>) -> Result<Vec<B>, Error> {
+    Ok(rustymath::parallel::stack_with(count, per, &|i, cell, scratch| { write(i, cell, scratch); true }, || span.check_now())?.0)
+}
+
 /// `kind •decompose m` factors the matrix `m`, and gives the factors as a record. `kind` is `"svd"`, `"qr"`, `"eigen"`, `"cholesky"` or
 /// `"lu"`, as text or in a record of options that `Decomposition` describes. A real matrix gives real factors, apart from complex
 /// eigenvalues and their eigenvectors. The matrix factors in the [`Domain`] of its items, or in floats of the default width where they
@@ -192,25 +242,64 @@ pub(crate) fn decompose(left: Option<&Value>, right: &Value, span: &Context<'_>)
     if m == 0 || n == 0 { return Err(span.domain_error("•decompose needs a nonempty matrix")); }
     if matches!(d.kind.as_str(), "eigen" | "cholesky" | "lu") && m != n { return Err(span.error(ErrorKind::Length, "eigen, cholesky and lu need a square matrix")); }
     let (domain, width) = domain_of(&[right], span)?;
-    let (names, factors) = with_field!(domain.inexact(width), [Single, Double, Complex], T => factors(&d, &read::<T>(right, span)?, [m, n], width, span)?);
-    crate::keyed::record(names.into_iter().map(Into::into).collect(), factors).error_at(span, "invalid factors")
+    with_field!(domain.inexact(width), [Single, Double, Complex], T => factored(&d, &read::<T>(right, span)?, [m, n], width)).and_then(record).map_err(|f| fault(&d, f, span))
 }
 
-/// The error for the Cholesky factorization of a matrix that isn't positive definite.
-fn indefinite(span: &Context<'_>) -> Error { span.domain_error("cholesky needs a Hermitian positive definite matrix") }
+/// `kind •decompose⍤2` on a stack of matrices with compact storage and a plain layout: the array of factors that `⍤2` mixes from each
+/// cell's record, as `•decompose` gives it for that cell alone. Each cell's factors are made on one of rustymath's threads, in [`rounds`]. A stack
+/// with failed cells gives the first one's error. `None` where `•decompose⍤2` takes its general path, which also raises the errors that
+/// the options and the cells' shape give.
+pub(crate) fn stacked_decompositions(left: &Value, right: &Value, span: &Context<'_>) -> Option<Result<Value, Error>> {
+    if right.compact_kind().is_none() || !right.layout().plain() || right.shape().len() < 3 { return None }
+    let d = Decomposition::new(Some(left), span).ok()?;
+    let (frame, cell) = right.shape().split_at(right.shape().len() - 2);
+    let (m, n, count) = (cell[0], cell[1], generated_len(frame).ok()?);
+    if m == 0 || n == 0 || count == 0 || (matches!(d.kind.as_str(), "eigen" | "cholesky" | "lu") && m != n) { return None }
+    let (domain, width) = domain_of(&[right], span).ok()?;
+    fn stack<T>(d: &Decomposition, a: &[T], [m, n, count]: [usize; 3], frame: &[usize], width: FloatWidth, span: &Context<'_>) -> Result<Value, Error>
+    where
+        T: Factor + Field + Sync,
+        T::Real: Field + Into<f64>,
+    {
+        let results = cells(count, 1, |i, slot: &mut [Option<_>], _: &mut ()| slot[0] = Some(factored(d, &a[i * m * n..][..m * n], [m, n], width)), span)?;
+        let (mut items, mut keys) = (Vec::new(), None);
+        for cell in results {
+            let (names, factors) = cell.expect("`cells` writes every cell").map_err(|f| fault(d, f, span))?;
+            if keys.is_none() { keys = Some(record((names, factors.clone())).map_err(|f| fault(d, f, span))?.layout().clone()) }
+            items.extend(factors);
+        }
+        let layout = Layout::from(frame.to_vec()).concat(&keys.expect("a stack has a cell"));
+        Value::new(layout.shape().to_vec(), items).and_then(|v| v.with_layout(layout)).error_at(span, "invalid rank cells")
+    }
+    Some(with_field!(domain.inexact(width), [Single, Double, Complex], T => stack(&d, &read::<T>(right, span).ok()?, [m, n, count], frame, width, span)))
+}
+
+/// Why `•decompose` gave no record: a factorization that failed, or factors or a record that the array limits reject.
+enum Fault { Converge, Indefinite, Limit(ErrorKind), Record(ErrorKind) }
+
+/// The error for `fault` in the decomposition that `d` describes.
+fn fault(d: &Decomposition, fault: Fault, span: &Context<'_>) -> Error {
+    match fault {
+        Fault::Converge => span.domain_error(format!("{} factorization failed", d.kind)),
+        Fault::Indefinite => span.domain_error("cholesky needs a Hermitian positive definite matrix"),
+        Fault::Limit(kind) => span.error(kind, "factors exceed array limits"),
+        Fault::Record(kind) => span.error(kind, "invalid factors"),
+    }
+}
 
 /// `•decompose`'s left argument: the kind of decomposition, as text or as the `kind` of a record of options. Option `vectors`, true by
 /// default, leaves out the vectors of `"svd"` and `"eigen"` where it's false. Option `complete`, false by default, gives `"qr"`'s
-/// complete factors where it's true.
+/// complete factors where it's true. Option `rank` gives `"svd"`'s first `rank` singular values and vectors, by `truncated_svd`.
 struct Decomposition {
     kind: String,
     vectors: bool,
     complete: bool,
+    rank: Option<usize>,
 }
 
 impl Decomposition {
     fn new(left: Option<&Value>, span: &Context<'_>) -> Result<Self, Error> {
-        let options = crate::data::Options::new("•decompose", left, Some("kind"), &["kind", "vectors", "complete"], span)?;
+        let options = crate::data::Options::new("•decompose", left, Some("kind"), &["kind", "vectors", "complete", "rank"], span)?;
         let kind = options.text("kind", None, span)?.to_lowercase();
         if !matches!(kind.as_str(), "svd" | "qr" | "eigen" | "cholesky" | "lu") {
             return Err(span.domain_error("•decompose takes \"svd\", \"qr\", \"eigen\", \"cholesky\" or \"lu\""));
@@ -218,56 +307,64 @@ impl Decomposition {
         let (vectors, complete) = (options.boolean("vectors", true, span)?, options.boolean("complete", false, span)?);
         if !vectors && !matches!(kind.as_str(), "svd" | "eigen") { return Err(span.domain_error("only svd and eigen can leave out their vectors")); }
         if complete && kind != "qr" { return Err(span.domain_error("only qr has complete factors")); }
-        Ok(Self { kind, vectors, complete })
+        let rank = options.number("rank", span)?;
+        if rank.is_some_and(|k| !(k >= 1.0 && k.fract() == 0.0)) { return Err(span.domain_error("•decompose rank must be a positive integer")); }
+        if rank.is_some() && kind != "svd" { return Err(span.domain_error("only svd takes a rank")); }
+        Ok(Self { kind, vectors, complete, rank: rank.map(|k| k as usize) })
     }
 }
 
-/// The factors of the `m`×`n` matrix `a`, held row by row, that `d` names, and their names, with real numbers rounded to `width`. A
-/// Hermitian matrix has real eigenvalues, in ascending order, and orthonormal eigenvectors.
-fn factors<T>(d: &Decomposition, a: &[T], [m, n]: [usize; 2], width: FloatWidth, span: &Context<'_>) -> Result<(Vec<&'static str>, Vec<Value>), Error>
+/// The factors of the `m`×`n` matrix `a`, held row by row, that `d` names, with real numbers rounded to `width`, and their names, or why
+/// there are none. A Hermitian matrix has real eigenvalues, in ascending order, and orthonormal eigenvectors.
+fn factored<T>(d: &Decomposition, a: &[T], [m, n]: [usize; 2], width: FloatWidth) -> Result<(Vec<&'static str>, Vec<Value>), Fault>
 where
     T: Factor + Field,
     T::Real: Field + Into<f64>,
 {
-    let failed = || span.domain_error(format!("{} factorization failed", d.kind));
     // The general eigensolver's complex results have parts of `T::Real`, and `Complex64` is the one complex `Field`.
     let wide = |z: Vec<num_complex::Complex<T::Real>>| z.into_iter().map(|z| Complex64::new(z.re.into(), z.im.into())).collect::<Vec<_>>();
     let hermitian = || m == n && (0..n).all(|i| (0..n).all(|j| a[i * n + j] == a[j * n + i].conj()));
     let p = m.min(n);
     let (names, factors) = match d.kind.as_str() {
-        "svd" if d.vectors => {
-            let f = linalg::svd(a, [m, n]);
-            if f.s.iter().any(|&s| num_traits::Float::is_nan(s)) { return Err(failed()); }
-            (vec!["u", "s", "v"], vec![matrix(f.u, [m, p], width), vector(f.s, width), matrix(f.v, [n, p], width)])
-        }
         "svd" => {
-            let s = linalg::singular_values(a, [m, n]);
-            if s.iter().any(|&s| num_traits::Float::is_nan(s)) { return Err(failed()); }
-            (vec!["s"], vec![vector(s, width)])
+            let f = match d.rank {
+                Some(k) => linalg::truncated_svd(a, [m, n], k),
+                None if d.vectors => linalg::svd(a, [m, n]),
+                None => linalg::Svd::new([m, n], Vec::new(), linalg::singular_values(a, [m, n]), Vec::new()),
+            };
+            if f.s.iter().any(|&s| num_traits::Float::is_nan(s)) { return Err(Fault::Converge); }
+            let k = f.s.len();
+            if !d.vectors { (vec!["s"], vec![vector(f.s, width)]) }
+            else { (vec!["u", "s", "v"], vec![matrix(f.u, [m, k], width), vector(f.s, width), matrix(f.v, [n, k], width)]) }
         }
         "qr" => {
             let ((q, r), rows) = if d.complete { (linalg::qr_complete(a, [m, n]), m) } else { (linalg::qr(a, [m, n]), p) };
             (vec!["q", "r"], vec![matrix(q, [m, rows], width), matrix(r, [rows, n], width)])
         }
-        "cholesky" => (vec!["l"], vec![matrix(linalg::cholesky(a, n).ok_or_else(|| indefinite(span))?, [n, n], width)]),
+        "cholesky" => (vec!["l"], vec![matrix(linalg::cholesky(a, n).ok_or(Fault::Indefinite)?, [n, n], width)]),
         "lu" => {
             let f = linalg::lu(a, n);
             let perm = f.perm.iter().map(|&i| crate::primitive::integer(i as i64)).collect();
             (vec!["l", "u", "p"], vec![matrix(f.lower(), [n, n], width), matrix(f.upper(), [n, n], width), Value::from_parts(vec![n], perm, crate::primitive::integer(0))])
         }
         "eigen" if hermitian() && d.vectors => {
-            let f = linalg::eigh(a, n).ok_or_else(failed)?;
+            let f = linalg::eigh(a, n).ok_or(Fault::Converge)?;
             (vec!["values", "vectors"], vec![vector(f.values, width), matrix(f.vectors, [n, n], width)])
         }
-        "eigen" if hermitian() => (vec!["values"], vec![vector(linalg::hermitian_eigenvalues(a, n).ok_or_else(failed)?, width)]),
+        "eigen" if hermitian() => (vec!["values"], vec![vector(linalg::hermitian_eigenvalues(a, n).ok_or(Fault::Converge)?, width)]),
         "eigen" if d.vectors => {
-            let f = linalg::eig(a, n).ok_or_else(failed)?;
+            let f = linalg::eig(a, n).ok_or(Fault::Converge)?;
             (vec!["values", "vectors"], vec![vector(wide(f.values), width), matrix(wide(f.vectors), [n, n], width)])
         }
-        "eigen" => (vec!["values"], vec![vector(wide(linalg::eigenvalues(a, n).ok_or_else(failed)?), width)]),
+        "eigen" => (vec!["values"], vec![vector(wide(linalg::eigenvalues(a, n).ok_or(Fault::Converge)?), width)]),
         _ => unreachable!("`Decomposition::new` checks the kind"),
     };
-    Ok((names, factors.into_iter().collect::<Result<_, _>>().error_at(span, "factors exceed array limits")?))
+    Ok((names, factors.into_iter().collect::<Result<_, _>>().map_err(Fault::Limit)?))
+}
+
+/// The record of the factors that `factored` gave, under their names.
+fn record((names, factors): (Vec<&'static str>, Vec<Value>)) -> Result<Value, Fault> {
+    crate::keyed::record(names.into_iter().map(Into::into).collect(), factors).map_err(Fault::Record)
 }
 
 /// The [`Domain`] that the items of `arrays` compute in, and the float width of the results. DOMAIN where an item isn't a number.
@@ -296,11 +393,11 @@ trait Linear: Field {
 impl Linear for BigRational {
     fn solve(a: &[Self], b: Option<&[Self]>, size: [usize; 2], k: usize, span: &Context<'_>) -> Result<Vec<Self>, Error> {
         match b {
-            Some(b) => linalg::exact::solve_with(a, b, size, k, || span.check()),
-            None => linalg::exact::pinv_with(a, size, || span.check()),
+            Some(b) => linalg::exact::solve_with(a, b, size, k, || span.check_now()),
+            None => linalg::exact::pinv_with(a, size, || span.check_now()),
         }
     }
-    fn determinant(a: &[Self], n: usize, span: &Context<'_>) -> Result<Self, Error> { linalg::exact::determinant_with(a, n, || span.check()) }
+    fn determinant(a: &[Self], n: usize, span: &Context<'_>) -> Result<Self, Error> { linalg::exact::determinant_with(a, n, || span.check_now()) }
 }
 
 macro_rules! float_linear {

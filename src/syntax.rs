@@ -4,7 +4,7 @@ use crate::{
     primitive::{OperatorKind, Primitive, Superscript},
     Error, ErrorAt, ErrorKind, Number, Source, Span, Value,
 };
-use std::{iter::Peekable, str::CharIndices, sync::Arc};
+use std::{iter::Peekable, str::CharIndices, sync::{Arc, atomic::{AtomicUsize, Ordering::Relaxed}}};
 
 #[derive(Clone, Debug)]
 pub(crate) enum NodeKind {
@@ -43,7 +43,18 @@ pub(crate) enum ListForm {
 pub(crate) enum DefinitionKind { Function, MonadicOperator, DyadicOperator }
 
 #[derive(Debug)]
-pub(crate) struct Definition { pub bodies: Vec<Vec<Statement>>, pub span: Span, pub kind: DefinitionKind }
+pub(crate) struct Definition {
+    pub bodies: Vec<Vec<Statement>>,
+    pub span: Span,
+    pub kind: DefinitionKind,
+    names: AtomicUsize,
+}
+impl Definition {
+    /// The most names any call of this definition has bound. A call's frame starts with room for that many.
+    pub fn names(&self) -> usize { self.names.load(Relaxed) }
+    /// Records that a call bound `names` names.
+    pub fn bound(&self, names: usize) { if names > self.names() { self.names.store(names, Relaxed) } }
+}
 
 fn definition_kind(nodes: &[Node]) -> DefinitionKind {
     nodes
@@ -236,7 +247,7 @@ fn exact_number(text: &str) -> Result<Number, ErrorKind> {
 }
 
 /// The empty numeric vector whose prototype is `fill`.
-pub(crate) fn zilde(fill: Number) -> Value { Value::empty(vec![0], Value::Number(fill)).unwrap() }
+pub(crate) fn zilde(fill: Number) -> Value { Value::empty([0], Value::Number(fill)).unwrap() }
 
 /// Reads the numbers and `⍬`s inside each `[…]` and `(…)` that has a number marker again, from their own source text, at any depth:
 /// as exact after `ₓ`, and as floats or complex numbers of the marked width after `ₕ`, `ₛ` or `ₚ`. Booleans stay as they are.
@@ -615,7 +626,7 @@ impl Parser<'_> {
                         TokenKind::BraceOpen => {
                             let bodies = bodies(inner, &span)?;
                             let kind = bodies.iter().flatten().map(|s| definition_kind(&s.nodes)).max().unwrap_or(DefinitionKind::Function);
-                            NodeKind::Dfn(Arc::new(Definition { bodies, span: span.clone(), kind }))
+                            NodeKind::Dfn(Arc::new(Definition { bodies, span: span.clone(), kind, names: AtomicUsize::new(0) }))
                         }
                         TokenKind::Open if let Some(mark) = mark => marked_literal(parenthesised(inner, &span)?, &span, mark)?,
                         TokenKind::Open => parenthesised(inner, &span)?,
@@ -853,7 +864,7 @@ fn close_strand(strand: &mut Vec<Node>, out: &mut Vec<Node>) -> Result<(), Parse
     }
     let span = cover(strand);
     let items: Vec<_> = strand.drain(..).map(|n| if let NodeKind::Literal(v) = n.kind { v } else { unreachable!() }).collect();
-    let value = Value::new(vec![items.len()], items).map_err(|k| span.error(k, "invalid literal list"))?;
+    let value = Value::new([items.len()], items).map_err(|k| span.error(k, "invalid literal list"))?;
     out.push(Node { kind: NodeKind::Literal(value), span });
     Ok(())
 }

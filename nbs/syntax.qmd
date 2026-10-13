@@ -34,7 +34,7 @@ Literals separated by spaces form a [strand](terms.qmd#term-strand), which is on
 
 ## Runs
 
-Outside brackets, spaces divide a statement into [runs](terms.qmd#term-run). A group in brackets, parentheses or braces counts as one token, even when it contains spaces. Each run must give one value: a subject, a function, or a lone operator such as the `/` in `+ / x`. A run that gives anything else is a `SYNTAX` error.
+Outside brackets, spaces divide a statement into [runs](terms.qmd#term-run). A group in brackets, parentheses or braces counts as one token, even when it contains spaces. Apart from the two operator rules below, each run must give one value: a subject, a function, or a lone operator such as the `/` in `+ / x`. A run that gives anything else is a `SYNTAX` error.
 
 BPL reads a statement in three steps:
 
@@ -42,7 +42,7 @@ BPL reads a statement in three steps:
 2. Each remaining run is wrapped in parentheses.
 3. The result reads as ordinary APL, right to left.
 
-So `a+b × c+d` is `(a+b)(×)(c+d)`, and `1 2+3` is `(1 2)+3`, not `(1)(2+3)`. A run that ends in a dyadic operator still needs a right operand, so it takes the run after it, which acts as one token: `⌊@ 10× x` is `(⌊@)(10×)(x)`, where `10×` is the operand of `@`. [Evaluation](evaluation.qmd) explains operands.
+So `a+b × c+d` is `(a+b)(×)(c+d)`, and `1 2+3` is `(1 2)+3`, not `(1)(2+3)`. A run that ends in a dyadic operator takes the next run as its right operand: `⌊@ 10× x` is `(⌊@)(10×)(x)`, where `10×` is the operand of `@`. A run that starts with an operator takes the previous run as its left operand: `≢⊢ ⌸x` is `(≢⊢)(⌸x)`, where `≢⊢` is the operand of `⌸`. [Evaluation](evaluation.qmd) explains operands.
 
 ```bpl
 a←1 ⋄ b←2 ⋄ c←3 ⋄ d←4 ⋄ a+b × c+d   ⍝ 21
@@ -51,6 +51,7 @@ a←1 ⋄ b←2 ⋄ c←3 ⋄ d←4 ⋄ a+b × c+d   ⍝ 21
 2×1 + 1                              ⍝ 3
 x←3 ⋄ x+1 ÷ 2                        ⍝ 2
 + / 1 2 3                            ⍝ 6
+x←0 1 1 0 1 1 ⋄ ≢⊢ ⌸x                ⍝ [2 4]ₓ
 ```
 
 ## Brackets, parentheses and braces

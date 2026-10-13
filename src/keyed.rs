@@ -71,7 +71,7 @@ pub(crate) fn name(value: &Value) -> Option<Arc<str>> {
     }
 }
 
-pub(crate) fn text(name: &str) -> Value { Value::characters(vec![name.chars().count()], name.chars().collect()).unwrap() }
+pub(crate) fn text(name: &str) -> Value { Value::characters([name.chars().count()], name.chars().collect()).unwrap() }
 /// An array of `shape` holding the text items `items`, with empty text as its prototype.
 pub(crate) fn texts(shape: &[usize], items: Vec<Value>) -> Result<Value, ErrorKind> { Value::shaped(shape, items, text("")) }
 /// The texts in `value`, the reverse of `texts`: the text itself with an empty shape, or each text in an array of them with the array's

@@ -275,6 +275,14 @@ fn numeric_constructors() {
     assert_eq!(AplValue::floats(vec![1], basedpl::FloatWidth::F64, vec![-0.]).unwrap().as_floats().unwrap()[0].to_bits(), (-0f64).to_bits());
     assert_eq!(AplValue::number(num_rational::BigRational::new_raw(1.into(), 0.into())).err(), Some(Domain));
     assert_same(number(num_rational::BigRational::new_raw(2.into(), (-4).into())), &exact(-1, 2));
+    let data: Vec<_> = (0..(1 << 18) + 3).map(|i| i % 257 - 128).collect();
+    let expected = vector(&data.iter().map(|&x| f64::from(x)).collect::<Vec<_>>());
+    let mut s = Session::new();
+    s.set("v", AplValue::from_buffer([data.len()], basedpl::Buffer::I32(data.into())).unwrap()).unwrap();
+    for threads in [1, 4] {
+        assert!(s.eval(&format!(r#"•prefs ["threads":{threads}]"#)).error.is_none());
+        check_in(&mut s, "64•float 32•float v", expected.clone());
+    }
 }
 
 #[test]

@@ -9,7 +9,8 @@
 //! parenthesised group leaves its chain pending for the run around it to extend. A reduction such as `+/` or `⌈⌿` folds each block's
 //! results while they are in the cache, and never builds the chain's result. The chain runs when anything else reads its value, such as
 //! an assignment, a call that isn't fusible, or the end of its statement. A chain of fewer than `MIN_STEPS` calls then runs each call on
-//! whole arrays, as an unfused call does.
+//! whole arrays, as an unfused call does. A chain that runs block by block, or that a reduction folds, splits across threads in pieces of
+//! whole blocks. A fold's pieces come from rustymath's `reduce::fold_pieces`.
 //!
 //! A chain is data. Each step names its primitive and its operands. A chain's arrays have plain layouts and one float width, 32 or 64
 //! bits. Arrays of different shapes broadcast as they do in an unfused call. Each array reads its items through the `Mapping` that
@@ -27,6 +28,7 @@ use crate::{
     Value,
 };
 use rustymath::{reduce::{self, Reduction}, Arg, Native};
+use std::ops::Range;
 
 /// The fewest result items that a chain is started for. Smaller arrays stay in the cache between calls.
 const MIN_ITEMS: usize = 1 << 17;
@@ -168,12 +170,21 @@ impl Chain {
         result.expect("a chain has a step")
     }
 
-    fn typed<F: Float + Kernels>(&self) -> Value {
-        let (len, compares) = (self.len, self.compares());
-        let (mut floats, mut bools) = (Vec::with_capacity(if compares { 0 } else { len }), Vec::with_capacity(if compares { len } else { 0 }));
-        self.blocks::<F>(&mut floats, &mut bools, |_, _, _| {});
+    fn typed<F: Float + Kernels + 'static>(&self) -> Value {
         let shape = self.layout.shape().to_vec();
-        (if compares { bool::build(shape, bools) } else { F::build(shape, floats) }).expect("a chain's result fits its layout")
+        (if self.compares() { bool::build(shape, self.results::<F, bool>(|slots| pervasive::Out::Bools(slots))) } else { F::build(shape, self.results::<F, F>(|slots| pervasive::Out::Floats(slots))) })
+            .expect("a chain's result fits its layout")
+    }
+
+    /// The chain's results, which each block's last step writes straight into the result through `out`. Pieces of whole blocks split
+    /// across threads as rustymath's `parallel::extended` splits them, and run whole where this thread's calls run on one thread.
+    fn results<F: Float + Kernels + 'static, B: Copy + Send + 'static>(&self, out: impl for<'a, 'b> Fn(&'a mut rustymath::parallel::Slots<'b, B>) -> pervasive::Out<'a, 'b, F> + Sync) -> Vec<B> {
+        let mut results = Vec::new();
+        rustymath::parallel::extended(&mut results, self.len, BLOCK, &|range, slots| {
+            self.blocks::<F>(range, Last::Slots(out(slots)));
+            true
+        });
+        results
     }
 
     /// What `p/` or `p⌿` gives on the chain's result, as `fold` in `eval::operators` gives it. It folds each block's results while they
@@ -195,40 +206,39 @@ impl Chain {
         Some(if shape.len() == 1 { result.at(0) } else { result })
     }
 
-    fn folded<F: Float + Kernels + Native>(&self, p: Primitive, axis: &Axis, shape: Vec<usize>) -> Option<Value> {
+    fn folded<F: Float + Kernels + Native + 'static>(&self, p: Primitive, axis: &Axis, shape: Vec<usize>) -> Option<Value> {
         let (lanes, dims) = (axis.outer * axis.inner, axis.dims());
         if self.compares() {
-            return with_truth_reduction!(p, axis.len, R => {
-                let mut totals = vec![<R as Reduction<bool>>::unit(); lanes];
-                self.blocks::<F>(&mut Vec::new(), &mut Vec::with_capacity(BLOCK), |start, _, bools| {
-                    reduce::fold_into::<bool, R>(&mut totals, dims, start, bools);
-                    bools.clear();
-                });
-                Element::build_narrowed(shape, totals)
-            })
-            .flatten();
+            return with_truth_reduction!(p, axis.len, R => Element::build_narrowed(shape, self.fold_totals::<F, bool, R>(lanes, dims, |_, bools| bools))).flatten();
         }
-        with_float_reduction!(p, R => {
-            let mut totals = vec![<R as Reduction<F>>::unit(); lanes];
-            self.blocks::<F>(&mut Vec::with_capacity(BLOCK), &mut Vec::new(), |start, floats, _| {
-                reduce::fold_into::<F, R>(&mut totals, dims, start, floats);
-                floats.clear();
-            });
-            F::build_narrowed(shape, totals)
-        })?
+        with_float_reduction!(p, R => F::build_narrowed(shape, self.fold_totals::<F, F, R>(lanes, dims, |floats, _| floats)))?
     }
 
-    /// Runs the chain's steps on each block in turn. The last step appends its results to `floats`, or to `bools` for
-    /// a comparison. `each` then sees them, with the position of the block's first item. A block splits into runs at the boundaries of
-    /// each input's repeats or cycles of at least `RUN` results. `pervasive::expanded` reads each input once for each run, in place
-    /// where the run lies within one repeat or cycle.
-    fn blocks<F: Float + Kernels>(&self, floats: &mut Vec<F>, bools: &mut Vec<bool>, mut each: impl FnMut(usize, &mut Vec<F>, &mut Vec<bool>)) {
+    /// The fold by `R` of each lane of this chain's results. `pick` names the last step's vector, floats or Booleans, that holds them.
+    fn fold_totals<F: Float + Kernels + Native + 'static, T: Copy, R: Reduction<T>>(
+        &self, lanes: usize, dims: [usize; 3], pick: for<'a> fn(&'a mut Vec<F>, &'a mut Vec<bool>) -> &'a mut Vec<T>,
+    ) -> Vec<R::Total> {
+        let mut totals = vec![R::unit(); lanes];
+        reduce::fold_pieces::<T, R>(&mut totals, dims, &|range, fold| {
+            let (mut floats, mut bools) = (Vec::new(), Vec::new());
+            pick(&mut floats, &mut bools).reserve(BLOCK);
+            self.blocks::<F>(range, Last::Vecs(&mut floats, &mut bools, &mut |start, floats, bools| { let items = pick(floats, bools); fold(start, items); items.clear(); }))
+        });
+        totals
+    }
+
+    /// Runs the chain's steps on each block of the items in `range` in turn. The last step writes to `last`: the result's slots, or for
+    /// a fold, a block's floats, or its Booleans for a comparison. A block splits into runs at the boundaries of each input's repeats or
+    /// cycles of at least `RUN` results. `pervasive::expanded` reads each input once for each run, in place where the run lies within
+    /// one repeat or cycle.
+    fn blocks<F: Float + Kernels + 'static>(&self, range: Range<usize>, mut last: Last<'_, '_, F>) {
+        use {pervasive::Out, rustymath::parallel::Slots};
         let inputs: Vec<(&[F], &Mapping)> = self.inputs.iter().map(|(v, m)| (F::slice(v).expect("an input has the chain's width"), m)).collect();
         let mut copies: Vec<Vec<F>> = inputs.iter().map(|_| Vec::new()).collect();
         let (mut previous, mut next) = (Vec::with_capacity(BLOCK), Vec::with_capacity(BLOCK));
         let mut ok = true;
-        for start in (0..self.len).step_by(BLOCK) {
-            let end = self.len.min(start + BLOCK);
+        for start in range.clone().step_by(BLOCK) {
+            let end = range.end.min(start + BLOCK);
             let mut from = start;
             while from < end {
                 let to = inputs.iter().fold(end, |to, &(_, m)| match *m {
@@ -244,16 +254,31 @@ impl Chain {
                         Operand::Scalar(ref c) => Arg::One(scalar(c)),
                         Operand::Previous => Arg::Many(&previous[..]),
                     };
-                    let out = if k + 1 == self.steps.len() { &mut *floats } else { &mut next };
-                    ok &= pervasive::step(step.p, step.left.as_ref().map(operand), operand(&step.right), n, out, bools, self.numeric);
+                    let run = |out: Out<'_, '_, F>| pervasive::step(step.p, step.left.as_ref().map(operand), operand(&step.right), n, out, self.numeric);
+                    ok &= if k + 1 < self.steps.len() {
+                        Slots::append(&mut next, n, |slots| run(Out::Floats(slots)))
+                    } else {
+                        match &mut last {
+                            Last::Slots(out) => run(out.reborrow()),
+                            Last::Vecs(_, bools, _) if self.compares() => Slots::append(bools, n, |slots| run(Out::Bools(slots))),
+                            Last::Vecs(floats, _, _) => Slots::append(floats, n, |slots| run(Out::Floats(slots))),
+                        }
+                    };
                     std::mem::swap(&mut previous, &mut next);
                 }
                 from = to;
             }
-            each(start, floats, bools);
+            if let Last::Vecs(floats, bools, each) = &mut last { each(start, floats, bools) }
         }
         assert!(ok, "a fusible kernel failed");
     }
+}
+
+/// Where a chain's last step writes: the slots of the call's result, or one block's floats and Booleans, which the function sees after
+/// each block, with the position of the block's first item.
+enum Last<'a, 'b, F> {
+    Slots(pervasive::Out<'a, 'b, F>),
+    Vecs(&'a mut Vec<F>, &'a mut Vec<bool>, &'a mut dyn FnMut(usize, &mut Vec<F>, &mut Vec<bool>)),
 }
 
 /// The float atom `c` at width `F`.

@@ -277,7 +277,7 @@ kcell ← {  ⍝ Relationship between point and k-cell.
   ⍺←(≢⍵)#⍠¯1 [2 1]⍴0 1  ⍝ Default is unit k-cell.
   b←,⍠(2=⍴⍴⍺ # 0)⍺
   p←(2⌊⍴⍴⍺ ↓ 1 1,⍴⍵)⍴⍵  ⍝ Points to evaluate.
-  d←(,⍶⌿)⍤1 ⍉×-b,.-p
+  d←,⍶⌿ ⍤1 ⍉×-b,.-p
   ⍶/⍬?⌈/d;5⊥d
 }
 

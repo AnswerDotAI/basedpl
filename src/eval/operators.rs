@@ -433,6 +433,11 @@ pub(super) fn key(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Co
     let keys = left.unwrap_or(right);
     if keys.is_unit() || right.is_unit() { return Err(cx.span.error(ErrorKind::Rank, "key arguments must have major cells")); }
     if keys.shape()[0] != right.shape()[0] { return Err(cx.span.error(ErrorKind::Length, "key arguments must have equal tallies")); }
+    if counts_rows(f) && keys.shape()[0] > 0 {
+        let key_cells = crate::search::Cells::of(keys, keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
+        let counts = crate::search::class_counts(&key_cells, cx)?;
+        return Ok(Bound::from(Value::positions(vec![counts.len()], keys.shape()[0] + 1, counts.into_iter()).error_at(cx.span, "invalid key result")?));
+    }
     // A monadic Key's values are the positions along `right`, which are each group's rows themselves unless that axis has keys.
     let values = match left {
         Some(_) => Some(right.clone()),
@@ -441,25 +446,36 @@ pub(super) fn key(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Co
     };
     let cells = keys.cells(keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
     let key_cells = crate::search::Cells::of(keys, keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
-    let classes = crate::search::grouped(&key_cells, cx)?;
+    let mut classes = crate::search::grouped(&key_cells, cx)?;
     let count = classes.firsts.len();
     let width = values.as_ref().map_or(Ok(1), |v| generated_len(&v.shape()[1..])).error_at(cx.span, "key cell is too large")?;
     let select = |rows: &[u32]| {
-        let Some(values) = &values else { return Value::positions_u32(vec![rows.len()], right.shape()[0], rows.to_vec()) };
+        let Some(values) = &values else { return Value::positions(vec![rows.len()], right.shape()[0], rows.iter().copied()) };
         let layout = values.layout().select(0, rows.iter().map(|&r| Some(r as usize)))?;
         let mut data = crate::array::Gather::new(&[values], rows.len() * width);
         data.rows(values, rows, width);
         data.finish(layout, || values.prototype())
     };
-    let mut results = Vec::with_capacity(count.max(1));
-    let mut each = classes.each();
-    for g in 0..count.max(1) {
-        let (x, rows) = if count > 0 { (key_cells.get(classes.firsts[g]), each.next().expect("a group for each class")) } else { let x = cells.prototype().error_at(cx.span, "invalid key prototype")?; (if cells.shape().is_empty() { x.at(0) } else { x }, &[][..]) };
-        let y = select(rows).error_at(cx.span, "invalid key group")?;
-        results.push(if count == 0 { f.call_prototype(Some(&x), &y, cx)?.array(cx.span)? } else { f.call_array(Some(&x), &y, cx)? });
+    if count == 0 {
+        let x = cells.prototype().error_at(cx.span, "invalid key prototype")?;
+        let y = select(&[]).error_at(cx.span, "invalid key group")?;
+        let result = f.call_prototype(Some(&if cells.shape().is_empty() { x.at(0) } else { x }), &y, cx)?.array(cx.span)?;
+        return Ok(Bound::from(Value::assemble(&[0], &[], &result).error_at(cx.span, "invalid key result")?));
     }
-    let result = Value::assemble(&[count], if count == 0 { &[] } else { &results }, &results[0]).error_at(cx.span, "invalid key result")?;
-    Ok(Bound::from(result))
+    let firsts = std::mem::take(&mut classes.firsts);
+    let mut results = Vec::with_capacity(count);
+    let mut apply = |g: usize, y: Value, cx: &mut Context<'_>| -> Result<(), Error> { results.push(f.call_array(Some(&key_cells.get(firsts[g])), &y, cx)?); Ok(()) };
+    match &values {
+        None => for (g, y) in crate::search::class_positions(classes, right.shape()[0]).error_at(cx.span, "invalid key group")?.into_iter().enumerate() { apply(g, y, cx)? },
+        Some(_) => for (g, rows) in classes.each().enumerate() { apply(g, select(rows).error_at(cx.span, "invalid key group")?, cx)? },
+    }
+    Ok(Bound::from(Value::assemble(&[count], &results, &results[0]).error_at(cx.span, "invalid key result")?))
+}
+
+/// Whether `f` is `≢⊢`, which `≢∘⊢` also builds. As Key's operand it gives the number of rows in each group.
+fn counts_rows(f: &Function) -> bool {
+    matches!(f.node(), FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(g), Operand::Function(h)])
+        if matches!(g.node(), FunctionNode::Primitive(Primitive::Tally)) && matches!(h.node(), FunctionNode::Primitive(Primitive::Identity(false))))
 }
 
 /// The primitive in `f`, when `f` is a primitive whose form for this valence is a pervasive function. Each and Outer call such a primitive on whole arrays.
@@ -549,7 +565,7 @@ fn expansion(f: &Function, g: &Function, right: &Value, cx: &mut Context<'_>) ->
         if let Some(items) = (0..m * n).map(|i| match right.at(i) { Value::Number(x) => Some(x), _ => None }).collect::<Option<Vec<crate::Number>>>() {
             let p = with_field!(items.iter(), cx.numeric(), T, width => {
                 let a: Vec<T> = items.iter().map(T::of).collect();
-                rustymath::linalg::exact::permanent_with(&a, n, || cx.check())?.number(width)
+                rustymath::linalg::exact::permanent_with(&a, n, || cx.check_now())?.number(width)
             });
             return Ok(Bound::from(Value::Number(p)));
         }
@@ -612,12 +628,43 @@ pub(super) fn rank(operand: &Function, ranks: &Value, left: Option<&Value>, righ
     let direct = (yr == right.shape().len() && left.is_none_or(|x| xr == x.shape().len()))
         || (left.is_none() && matches!(operand.node(), FunctionNode::Primitive(p) if extends(p)));
     if direct { return operand.call(left, right, cx); }
+    if let Some(result) = stacked(operand, left, right, [xr, yr], cx) { return result }
     let framed = |a: &Value, rank| a.cells(rank)?.framed();
     let ys = framed(right, yr).error_at(cx.span, "invalid rank cells")?;
     let xs = left.map(|a| framed(a, xr)).transpose().error_at(cx.span, "invalid rank cells")?;
     let results = each(operand, xs.as_ref(), &ys, cx)?;
     let Binding::Value(results) = results.value else { return Ok(results) };
     Ok(Bound::from(Primitive::Mix.call(None, &results, cx)?))
+}
+
+/// `operand⍤2` on a whole stack of matrices in one call, where `operand` is dyadic `+.×` or `⌹`, monadic `⌹` or `-.×`, or `•decompose` with its
+/// kind bound to it or as one whole left cell. `xr` and `yr` are the cell ranks. `None` where it takes the general path of one call for
+/// each cell.
+fn stacked(operand: &Function, left: Option<&Value>, right: &Value, [xr, yr]: [usize; 2], cx: &mut Context<'_>) -> Option<Result<Bound, Error>> {
+    use crate::{number::Arithmetic, primitive::{stacked as matrices, stacked_decompositions, Stacked}};
+    if yr != 2 { return None }
+    let arithmetic = |f: &Operand, a| matches!(f, Operand::Function(f) if matches!(f.node(), FunctionNode::Primitive(Primitive::Arithmetic(x)) if *x == a));
+    let decompose = |f: &Function| matches!(f.node(), FunctionNode::System(s) if s.name == "•decompose");
+    let kind = match (operand.node(), left) {
+        (FunctionNode::System(_), Some(kind)) if decompose(operand) && xr == kind.shape().len() => Some(kind),
+        (FunctionNode::Composed(OperatorKind::Before, [Operand::Value(kind), Operand::Function(f)]), None) if decompose(f) => Some(kind),
+        _ => None,
+    };
+    if let Some(kind) = kind {
+        return Some(stacked_decompositions(kind, right, cx)?.map(Bound::from));
+    }
+    if left.is_some() && xr != 2 { return None }
+    let op = match (operand.node(), left) {
+        (FunctionNode::Primitive(Primitive::MatrixDivide), None) => Stacked::Inverse,
+        (FunctionNode::Primitive(Primitive::MatrixDivide), Some(_)) => Stacked::Solve,
+        (FunctionNode::Composed(OperatorKind::Product, [f, g]), _) if arithmetic(g, Arithmetic::Times) => match left {
+            Some(_) if arithmetic(f, Arithmetic::Plus) => Stacked::Product,
+            None if arithmetic(f, Arithmetic::Minus) => Stacked::Determinant,
+            _ => return None,
+        },
+        _ => return None,
+    };
+    matrices(op, left, right, cx).map(|r| r.map(Bound::from))
 }
 
 /// `f⍠spec`: a primitive with its own axis form, a reduce or scan along an axis, or `f` on the cells that the axes make.

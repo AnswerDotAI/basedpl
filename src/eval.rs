@@ -691,10 +691,10 @@ impl<'a> Key<'a> {
     }
 }
 /// A function call's names. The call's arguments, operands and recursion names are in `implicit`, at their `Key` slots. Other names
-/// are in `names`, which allocates only when the call binds one. `module` is the module whose names the call sees after its frames.
+/// are in `names`, which starts with room for `names` of them. `module` is the module whose names the call sees after its frames.
 struct Frame { implicit: [Option<Binding>; 6], names: HashMap<String, Binding>, parent: Option<usize>, module: usize }
 impl Frame {
-    fn new(parent: Option<usize>, module: usize) -> Self { Self { implicit: Default::default(), names: HashMap::default(), parent, module } }
+    fn new(parent: Option<usize>, module: usize, names: usize) -> Self { Self { implicit: Default::default(), names: HashMap::with_capacity(names), parent, module } }
     fn get(&self, key: Key) -> Option<&Binding> {
         match key { Key::Implicit(k) => self.implicit[k].as_ref(), Key::Named(name) => self.names.get(name) }
     }
@@ -929,6 +929,8 @@ pub struct Session {
     pub(crate) execution: crate::execution::Execution,
     pub(crate) display: crate::display::Settings,
     pub(crate) numeric: crate::number::Numeric,
+    /// The rustymath thread count that `•prefs` set for this session's evaluations. `None` leaves the evaluating thread's own setting.
+    pub(crate) threads: Option<usize>,
     display_defaults: crate::display::Settings,
     names: HashMap<String, Binding>,
     /// The names of each loaded file. Module `m` is `modules[m-1]`.

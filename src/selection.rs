@@ -22,7 +22,7 @@ impl Labels {
         let (mut labels, array) = if matches!(original, Value::Array(_)) && !original.is_empty() && simple {
             let n = original.len();
             generated_len(original.shape()).error_at(span, "selection is too large")?;
-            let array = Value::integers(original.shape().to_vec(), (1..=n as i64).collect())
+            let array = Value::integers(original.shape(), (1..=n as i64).collect())
                 .and_then(|a| a.with_layout(original.layout().clone()))
                 .error_at(span, "invalid selection labels")?;
             (Self { places: Places::Offsets(n), nested: HashMap::new() }, array)

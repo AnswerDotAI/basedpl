@@ -13,7 +13,7 @@ m←2 2⍴⍳4 ⋄ [-/⍠0 1 m;-/⍠1 0 m]   ⍝ ¯2 ¯4
 r←/
 sum←+/
 n←2 2 3⍴⍳6
-[+r⍠1 2 n;sum⍠1 2 n;(+/)⍠1 2 n]
+[+r⍠1 2 n;sum⍠1 2 n;+/⍠1 2 n]
 ⍝ =>
 [15 15;15 15;15 15]
 
@@ -297,7 +297,7 @@ M←["r1" "r2";"xx" "yy"]:[2 0⋄0 4]ₓ
 
 ⍝ axis-gradient — VJP aligns output labels and preserves input coordinate labels
 f←[1 2 3]ₓ↣⌻
-g←(⊂[1 2 0⋄1 0 2]ₓ)↣⌻
+g←⊂[1 2 0⋄1 0 2]ₓ ↣⌻
 [("bb" "aa":[20 10]ₓ) f∂ ("aa" "bb":[1 2]ₓ);g∂⊂"xx" "yy":[3 4]ₓ]
 ⍝ =>
 [["aa":80 "bb":280]ₓ ⊂["xx":6 "yy":8]ₓ]
@@ -346,6 +346,19 @@ V←"aa" "bb" "cc":1 2 1
 
 ⍝ — Left and right operands bind without spaces
 2{⍶+⍹×⍵}3(4)   ⍝ 14
+
+⍝ — An operator that starts a run takes the whole run before it as its left operand
+x←0 1 1 0 1 1 ⋄ ≢⊢ ⌸x   ⍝ [2 4]ₓ
+
+⍝ — A joined run that still starts with an operator joins again
++ / ¨[1 2;3 4 5]   ⍝ 3 12
+
+⍝ — A dot path after a space reads as the touching form
+T←["a":1 "b":2] ⋄ T .b+1   ⍝ 3
+
+⍝ — An operator that starts a bracket item has no run before it
+[≢ ⌸0 1 1]
+⍝ error: SYNTAX ERROR
 
 ⍝⍝ Mathematical monads
 
@@ -692,12 +705,12 @@ a (b b)   ⍝ [1 2;[3 4;3 4]]
 
 ⍝ — Agenda chooses negate for a negative argument
 cases←[- ⊢]
-abs←(0≤)⍚cases
+abs←0≤ ⍚cases
 abs¯3   ⍝ 3
 
 ⍝ — Agenda chooses identity for a nonnegative argument
 cases←[- ⊢]
-abs←(0≤)⍚cases
+abs←0≤ ⍚cases
 abs3   ⍝ 3
 
 ⍝ — A constant selector chooses the second function
@@ -715,7 +728,7 @@ f←choose [+ ×]
 2 f 3   ⍝ 5
 
 ⍝ — A singleton vector is not a unit selector
-(,1)⍚[+ ×]
+,1 ⍚[+ ×]
 ⍝ error: RANK ERROR
 
 ⍝ — The cases must be a vector, not a function-containing scalar
@@ -1852,13 +1865,13 @@ f←[1 2 3]ₓ↣⌻ ⋄ [10 20]ₓ f∂ [1 2]ₓ   ⍝ [80 280]ₓ
 f←[2ₓ;[1 3]ₓ]↣⌻ ⋄ f∂2ₓ   ⍝ 0ₓ
 
 ⍝ — A multivariate gradient retains the coordinate enclosure
-f←(⊂[1 2 0⋄1 0 2]ₓ)↣⌻ ⋄ f∂⊂[3 4]ₓ   ⍝ ⊂[6 8]ₓ
+f←⊂[1 2 0⋄1 0 2]ₓ ↣⌻ ⋄ f∂⊂[3 4]ₓ   ⍝ ⊂[6 8]ₓ
 
 ⍝ — A unit cotangent scales the multivariate gradient
-f←(⊂[1 2 0⋄1 0 2]ₓ)↣⌻ ⋄ 2ₓ(f∂)⊂[3 4]ₓ   ⍝ ⊂[12 16]ₓ
+f←⊂[1 2 0⋄1 0 2]ₓ ↣⌻ ⋄ 2ₓ(f∂)⊂[3 4]ₓ   ⍝ ⊂[12 16]ₓ
 
 ⍝ — A shared unit coordinate sums the partial derivatives
-f←(⊂[1 2 0⋄1 0 2]ₓ)↣⌻ ⋄ f∂3ₓ   ⍝ 12ₓ
+f←⊂[1 2 0⋄1 0 2]ₓ ↣⌻ ⋄ f∂3ₓ   ⍝ 12ₓ
 
 ⍝ — Multiple polynomial outputs contribute to one unit-input VJP
 f←[1 2⋄3 4]ₓ↣⌻ ⋄ [10 20]ₓ f∂ 3ₓ   ⍝ 100ₓ
@@ -2077,7 +2090,7 @@ f←{⍵+1}⇄{⍵-1} ⋄ (f⁻¹)⁻¹5   ⍝ 6
 ⌽@ 1+ 1 2 3   ⍝ 3 2 1
 
 ⍝ — Power preserves the count array's shape, including negative and repeated counts
-(1+)⍣[3 ¯2⋄0 3] 10   ⍝ [13 8⋄10 13]
+1+ ⍣[3 ¯2⋄0 3] 10   ⍝ [13 8⋄10 13]
 
 ⍝ — A singleton count vector adds a singleton result frame
 +⍣[1] 2   ⍝ ,2
@@ -4269,7 +4282,7 @@ wrap←{⍺ pick ⍵}
 ⍬ wrap¨ ⊂"abc"   ⍝ ""
 
 ⍝ — Prototype mode also passes through a defined operator
-op←{⍶ ⍵} ⋄ ({100⊃"abc"}op)¨⍬   ⍝ ""
+op←{⍶ ⍵} ⋄ {100⊃"abc"}op ¨⍬   ⍝ ""
 
 ⍝ — A composed operand derives character fill in empty each
 ⍬(⊃↢⊢)¨⊂"abc"   ⍝ ""

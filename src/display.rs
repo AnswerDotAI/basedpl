@@ -189,9 +189,11 @@ impl Settings {
 /// `•prefs Y` applies the settings in the record `Y` to the session, and returns all of them. The result is shy when `Y` sets something,
 /// as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `tolerance` is the comparison tolerance of
 /// 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new floats in bits, 16, 32 or 64.
-/// Code parsed after a change reads its literals at the new width.
+/// Code parsed after a change reads its literals at the new width. `threads` is the number of threads that the session's large calls
+/// split across, from then on. 0 gives the default. 1 runs them on the evaluating thread alone. Until the session sets it, `threads`
+/// reports the evaluating thread's own setting.
 pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::Span) -> Result<(Value, bool), crate::Error> {
-    let (mut display, mut numeric) = (session.display, session.numeric);
+    let (mut display, mut numeric, mut threads) = (session.display, session.numeric, session.threads);
     let tolerance = |v: &Value| {
         let t = v.as_number().and_then(|n| n.to_float().ok()).and_then(Tolerance::new);
         t.filter(|&t| t <= Tolerance::DEFAULT).ok_or(crate::ErrorKind::Domain)
@@ -205,14 +207,20 @@ pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::S
                 let bits = value.as_number().and_then(|n| n.integer().ok());
                 numeric.width = bits.and_then(FloatWidth::of_bits).ok_or(crate::ErrorKind::Domain).error_at(span, "float must be 16, 32 or 64")?;
             }
+            "threads" => {
+                let n = value.as_number().and_then(|n| n.integer().ok()).and_then(|n| usize::try_from(n).ok());
+                threads = Some(n.ok_or(crate::ErrorKind::Domain).error_at(span, "threads must be a nonnegative integer")?);
+            }
             key => if !display.set(key, &value).error_at(span, "invalid display setting")? { return Err(span.domain_error("unknown setting")); },
         }
     }
-    (session.display, session.numeric) = (display, numeric);
+    (session.display, session.numeric, session.threads) = (display, numeric, threads);
+    if let Some(n) = threads { rustymath::parallel::set_threads(n); }
     let (mut keys, mut values): (Vec<std::sync::Arc<str>>, Vec<Value>) = display.entries(numeric.width).into_iter().map(|(k, v)| (k.into(), v)).unzip();
-    keys.extend(["tolerance".into(), "float".into()]);
+    keys.extend(["tolerance".into(), "float".into(), "threads".into()]);
     values.push(Value::Number(Number::float(numeric.tolerance.value(), FloatWidth::F64)));
     values.push(Value::Number(Number::from_integer(numeric.width.bits())));
+    values.push(Value::Number(Number::from_integer(rustymath::parallel::thread_setting() as i64)));
     Ok((keyed::record(keys, values).error_at(span, "invalid settings record")?, shy))
 }
 

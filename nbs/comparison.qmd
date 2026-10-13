@@ -383,7 +383,7 @@ The operand ends at the space. `1 2 3 4` is in brackets to keep it out of the op
 ```
 
 ```bpl
-(+/⊢)⌺3 [1 2 3 4]       ⍝ 3 6 9 7
++/⊢ ⌺3 [1 2 3 4]       ⍝ 3 6 9 7
 +/¯3↕1 2 3 4           ⍝ 3 6 9 7
 ```
 

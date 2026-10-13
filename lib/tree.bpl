@@ -486,7 +486,7 @@ tfmt ← {  ⍝ Char matrix from tree.
   ⍺←""  ⍝ default: no indentation.
   1=≡,⍵?⊃,↓⍺,⍵;
   node←⍺,↑⍵
-  subs←(⍺,4↑'·')↣∇¨1↓⍵  ⍝ subtrees.
+  subs←⍺,4↑'·' ↣∇¨1↓⍵  ⍝ subtrees.
   ⊃(⊂node),,/↓¨subs
 }
 
@@ -496,7 +496,7 @@ tnest ← {  ⍝ Array from TreeView style tree.
   [dvec ivec]←⍵  ⍝ depth and items vectors.
   1=≢dvec?↑ivec;
   node←1↑ivec  ⍝ tree: node value.
-  [dsub isub]←(1=dvec)↣⊂¨⍵  ⍝ sub treeviews.
+  [dsub isub]←1=dvec ↣⊂¨⍵  ⍝ sub treeviews.
   node,∇¨↓⍉[≤dsub⋄isub]
 }
 
