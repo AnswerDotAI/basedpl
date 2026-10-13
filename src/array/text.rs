@@ -60,7 +60,7 @@ impl Value {
             let mut shape = self.shape().to_vec();
             *shape.last_mut().unwrap() = width;
             (shape, lines.concat().concat())
-        } else if !keyed && self.len() >= 2 && matches!(self.as_items(), Items::Integers(_) | Items::Extended(..)) {
+        } else if !keyed && self.len() >= 2 && matches!(self.as_items(), Items::Integers(_)) {
             // An exact vector writes as it displays, with one `ₓ` after its brackets.
             let text = self.literal();
             (vec![text.chars().count()], text)
@@ -223,7 +223,7 @@ impl Value {
     pub(crate) fn mark(&self, el: Elide) -> Option<char> {
         if self.is_empty() { return None; }
         match self.as_items() {
-            Items::Integers(_) | Items::Extended(..) => Some('ₓ'),
+            Items::Integers(_) => Some('ₓ'),
             Items::Floats(f) => el.width_marker(f.tag()),
             Items::Complex(z) => el.width_marker(z.tag().into()),
             _ => None,
@@ -285,7 +285,7 @@ impl Value {
                     items.iter().all(|e| matches!(e, Self::Number(_)) || matches!(e, Self::Character(c) if !c.is_control()) || e.string_literal().is_some())
                 }
                 Items::Characters(cs) => cs.iter().all(|c| !c.is_control()),
-                Items::Integers(_) | Items::Extended(..) => false,
+                Items::Integers(_) => false,
                 _ => true,
             }
     }

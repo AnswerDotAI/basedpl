@@ -2,9 +2,8 @@
 //!
 //! Two cells match when `Value::matches` says they do, within the session's tolerance. Compact cells take rustymath's searches, which
 //! choose between scanning once for each of up to 16 needles and building an index:
-//! - Booleans, integers and characters of one kind search their values with `search`. A character's value is its code point. Integers
-//!   match integers, whether or not their storage is flagged for infinities. An infinity then shares its value with `i64::MAX` or
-//!   `i64::MIN`. Characters match only characters.
+//! - Booleans, integers and characters of one kind search their values with `search`. A character's value is its code point. Characters
+//!   match only characters.
 //! - Integers searched for 64-bit floats that all equal whole numbers below `tolerant::whole_limit` search for those whole numbers at
 //!   the integers' own width.
 //! - Other Booleans, integers and floats read as floats of the search's float width, as an operand converts, and take `tolerant`'s
@@ -45,7 +44,7 @@ impl<'a> Cells<'a> {
     }
     pub(crate) fn len(&self) -> usize { match self { Self::Items(a) => a.len(), Self::Arrays(cells) => cells.len() } }
     pub(crate) fn get(&self, i: usize) -> Value { match self { Self::Items(a) => a.at(i), Self::Arrays(cells) => cells[i].clone() } }
-    fn items(&self) -> Option<Items<'a>> { match self { Self::Items(a) => Some(a.as_items()), Self::Arrays(_) => None } }
+    pub(crate) fn items(&self) -> Option<Items<'a>> { match self { Self::Items(a) => Some(a.as_items()), Self::Arrays(_) => None } }
     /// The widest float width among the cells' numbers, when they hold floats: a cell's float storage, or the floats that mixed storage
     /// holds.
     fn float_width(&self) -> Option<FloatWidth> {
@@ -61,7 +60,7 @@ macro_rules! with_keys {
         match $items {
             Some(Items::Booleans($x)) => Some($body),
             Some(Items::Characters($x)) => Some($body),
-            Some(items) => items.raw_integers().map(|ints| with_ints!(ints, |$x| $body)),
+            Some(items) => items.ints().map(|ints| with_ints!(ints, |$x| $body)),
             None => None,
         }
     };
@@ -69,7 +68,7 @@ macro_rules! with_keys {
         match ($a, $b) {
             (Some(Items::Booleans($x)), Some(Items::Booleans($y))) => Some($body),
             (Some(Items::Characters($x)), Some(Items::Characters($y))) => Some($body),
-            (Some(a), Some(b)) => match (a.raw_integers(), b.raw_integers()) {
+            (Some(a), Some(b)) => match (a.ints(), b.ints()) {
                 (Some(x), Some(y)) => Some(with_int_pair!(x, y, |$x, $y| $body)),
                 _ => None,
             },
@@ -87,7 +86,7 @@ fn compared_at(span: &Context<'_>, width: Option<FloatWidth>) -> (FloatWidth, To
 /// Compact integers searched for 64-bit floats that each equal a whole number below `tolerant::whole_limit`, as a search of the
 /// integers at their own width. At that width an integer reads as itself, and no tolerance makes such a whole number equal to another
 /// integer. `pervasive::against_whole` compares integers with one such float the same way.
-fn whole_needles(haystack: &Cells, needles: &Cells, width: FloatWidth, t: Tolerance) -> Option<Vec<usize>> {
+fn whole_needles(haystack: &Cells, needles: &Cells, width: FloatWidth, t: Tolerance) -> Option<Vec<u32>> {
     if width != FloatWidth::F64 { return None; }
     let (Some(Items::Integers(x)), Some(Items::Floats(Floats::F64(y)))) = (haystack.items(), needles.items()) else { return None };
     let limit = tolerant::whole_limit(t);
@@ -96,13 +95,13 @@ fn whole_needles(haystack: &Cells, needles: &Cells, width: FloatWidth, t: Tolera
 }
 
 /// For each item of `y`, its first position in `x`, or the length of `x` where it has none or `x`'s type can't hold it.
-fn narrowed<T: Int + Key>(x: &[T], y: &[i64]) -> Vec<usize> {
+fn narrowed<T: Int + Key>(x: &[T], y: &[i64]) -> Vec<u32> {
     let mut found = search::index_of(x, &y.iter().filter_map(|&n| T::narrowed(n)).collect::<Vec<_>>()).into_iter();
-    y.iter().map(|&n| T::narrowed(n).and_then(|_| found.next()).unwrap_or(x.len())).collect()
+    y.iter().map(|&n| T::narrowed(n).and_then(|_| found.next()).unwrap_or(x.len() as u32)).collect()
 }
 
 /// For each needle, the position of the first haystack cell that matches it, or the number of haystack cells when none does.
-pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_>) -> Result<Vec<usize>, Error> {
+pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_>) -> Result<Vec<u32>, Error> {
     let (width, t) = compared_at(span, haystack.float_width().max(needles.float_width()));
     if let Some(found) = with_keys!([haystack.items(), needles.items()], |x, y| search::index_of(x, y)) { return Ok(found); }
     if let Some(found) = whole_needles(haystack, needles, width, t) { return Ok(found); }
@@ -126,7 +125,7 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_
                     span.check()?;
                     let (needle, mut first) = (needles.get(j), x.len());
                     for i in near.near(v) { if i < first && haystack.get(i).matches(&needle, span)? { first = i; } }
-                    Ok(first)
+                    Ok(first as u32)
                 })
                 .collect();
         }
@@ -134,8 +133,8 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_
     (0..needles.len())
         .map(|j| {
             let y = needles.get(j);
-            for i in 0..haystack.len() { if haystack.get(i).matches(&y, span)? { return Ok(i); } }
-            Ok(haystack.len())
+            for i in 0..haystack.len() { if haystack.get(i).matches(&y, span)? { return Ok(i as u32); } }
+            Ok(haystack.len() as u32)
         })
         .collect()
 }
@@ -144,7 +143,7 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_
 /// that `tolerant::runs` gives, or the reals equal to one whole number when every real equals one below `tolerant::whole_limit`, and
 /// the class's earliest position represents it. Two reals in one class therefore needn't match each other. Other cells are compared
 /// only with earlier representatives. A cell that matches none represents a new class.
-pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<usize>, Error> {
+pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<u32>, Error> {
     let (width, t) = compared_at(span, cells.float_width());
     if let Some(classes) = with_keys!([cells.items()], |x| search::classes(x)) { return Ok(classes); }
     let compact = with_float_width!(width, F => match cells {
@@ -166,9 +165,18 @@ pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<usize>, 
     Ok(classes)
 }
 
+/// The classes of `cells`, numbered in order of first appearance, with the positions of each. Booleans, characters and integers whose
+/// values span a table group straight from those values. Other cells group by the representatives that `classify` gives them.
+pub(crate) fn grouped(cells: &Cells, span: &Context<'_>) -> Result<search::Grouped, Error> {
+    if let Some(Some(grouped)) = with_keys!([cells.items()], |x| search::grouped_keys(x)) { return Ok(grouped); }
+    let search::Numbered { firsts, numbers, counts } = search::numbered(&classify(cells, span)?);
+    let (positions, _) = search::grouped(&numbers, firsts.len());
+    Ok(search::Grouped { firsts, positions, sizes: counts })
+}
+
 /// Gives each cell at `positions`, which ascend, the earliest representative among them that matches it. A cell that matches none
 /// represents a new class.
-fn earliest(cells: &Cells, positions: impl IntoIterator<Item = usize>, classes: &mut [usize], span: &Context<'_>) -> Result<(), Error> {
+fn earliest(cells: &Cells, positions: impl IntoIterator<Item = usize>, classes: &mut [u32], span: &Context<'_>) -> Result<(), Error> {
     let mut representatives = Vec::new();
     for i in positions {
         span.check()?;
@@ -181,7 +189,7 @@ fn earliest(cells: &Cells, positions: impl IntoIterator<Item = usize>, classes: 
             }
         }
         if class == i { representatives.push(i); }
-        classes[i] = class;
+        classes[i] = class as u32;
     }
     Ok(())
 }
@@ -195,7 +203,7 @@ pub(crate) fn firsts(cells: &Cells, span: &Context<'_>) -> Result<Vec<bool>, Err
         Cells::Arrays(_) => None,
     });
     if let Some(mask) = compact { return mask; }
-    Ok(classify(cells, span)?.into_iter().enumerate().map(|(i, f)| f == i).collect())
+    Ok(classify(cells, span)?.into_iter().enumerate().map(|(i, f)| f as usize == i).collect())
 }
 
 /// A hash of each cell by `seed`, when every cell holds only exact numbers, characters and unkeyed arrays of these. A search hashes
@@ -223,21 +231,21 @@ fn hashes(cells: &Cells, seed: &RandomState) -> Option<Vec<u64>> {
         .collect()
 }
 
-fn hashed_first(haystack: &Cells, x: &[u64], needles: &Cells, y: &[u64], span: &Context<'_>) -> Result<Vec<usize>, Error> {
+fn hashed_first(haystack: &Cells, x: &[u64], needles: &Cells, y: &[u64], span: &Context<'_>) -> Result<Vec<u32>, Error> {
     let mut chains = Chains::new(x.len());
     for (i, &hash) in x.iter().enumerate() { chains.push(hash, i); }
     y.iter()
         .enumerate()
         .map(|(j, &hash)| {
             let needle = needles.get(j);
-            for i in chains.chain(hash) { if haystack.get(i).matches(&needle, span)? { return Ok(i); } }
-            Ok(x.len())
+            for i in chains.chain(hash) { if haystack.get(i).matches(&needle, span)? { return Ok(i as u32); } }
+            Ok(x.len() as u32)
         })
         .collect()
 }
 
 /// Exact cells match only their own class, so at most one representative matches each cell.
-fn hashed_classes(cells: &Cells, x: &[u64], span: &Context<'_>) -> Result<Vec<usize>, Error> {
+fn hashed_classes(cells: &Cells, x: &[u64], span: &Context<'_>) -> Result<Vec<u32>, Error> {
     let mut representatives = Chains::new(x.len());
     let mut classes = Vec::with_capacity(x.len());
     for (i, &hash) in x.iter().enumerate() {
@@ -249,7 +257,7 @@ fn hashed_classes(cells: &Cells, x: &[u64], span: &Context<'_>) -> Result<Vec<us
                 break;
             }
         }
-        classes.push(class.unwrap_or_else(|| { representatives.push(hash, i); i }));
+        classes.push(class.unwrap_or_else(|| { representatives.push(hash, i); i }) as u32);
     }
     Ok(classes)
 }

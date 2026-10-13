@@ -1,9 +1,9 @@
 use crate::{
     display::{positions, Elide},
-    element::{cast, read_flagged, Element, Source, Whole},
+    element::{cast, Element, Source, Whole},
     execution::Context,
     keyed::Keys,
-    number::{extended, int::Int, real, Numeric},
+    number::{int::Int, real, Numeric},
     DomainAt, Error, ErrorKind, Number,
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
@@ -12,10 +12,7 @@ use rustymath::{search::Key, tolerant::Tolerant, with_tolerance};
 use std::{
     borrow::Cow,
     fmt,
-    sync::{
-        atomic::Ordering::Relaxed,
-        Arc, OnceLock,
-    },
+    sync::{Arc, OnceLock},
 };
 
 mod storage;
@@ -165,6 +162,13 @@ impl Frame {
             (Self::Array(layout), _) => Value::positions(layout.shape().to_vec(), bound, items)?.with_layout(layout),
         }
     }
+    /// `positions` from a buffer of `u32`s. 32-bit results keep the buffer, with no pass over it.
+    pub fn positions_u32(self, data: Vec<u32>, bound: usize) -> Result<Value, ErrorKind> {
+        match self {
+            Self::Direct => Self::Direct.positions(data.into_iter().map(|p| p as usize), bound),
+            Self::Array(layout) => Value::positions_u32(layout.shape().to_vec(), bound, data)?.with_layout(layout),
+        }
+    }
     pub fn booleans(self, data: Vec<bool>) -> Result<Value, ErrorKind> {
         match (self, data.as_slice()) {
             (Self::Direct, &[b]) => Ok(Value::Number(Number::from_bool(b))),
@@ -229,6 +233,8 @@ impl Axis {
         Ok(Self { outer: element_count(&shape[..axis])?, len, inner: element_count(&shape[axis + 1..])? })
     }
     pub(crate) fn offset(&self, i: usize, j: usize, k: usize) -> usize { (i * self.len + j) * self.inner + k }
+    /// The array's shape as rustymath's axis functions take it: `[outer, len, inner]`.
+    pub(crate) fn dims(&self) -> [usize; 3] { [self.outer, self.len, self.inner] }
 }
 
 pub(crate) fn element_count(shape: &[usize]) -> Result<usize, ErrorKind> {
@@ -298,7 +304,7 @@ impl Value {
         if self.is_empty() { return self.prototype().matches_within(&other.prototype(), t, cx); }
         if !keyed {
             let (x, y) = (self.as_items(), other.as_items());
-            if let (Some(x), Some(y)) = (x.raw_integers(), y.raw_integers()) { return Ok(x == y); }
+            if let (Some(x), Some(y)) = (x.ints(), y.ints()) { return Ok(x == y); }
             match (x, y) {
                 (Items::Floats(x), Items::Floats(y)) => {
                     let t = t.tolerance_at(x.tag().max(y.tag()));
@@ -367,8 +373,15 @@ impl Value {
     pub fn floats(shape: Vec<usize>, width: FloatWidth, data: Vec<f64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Floats(FloatBuf::collect(width, data.into_iter()))) }
     pub(crate) fn characters(shape: Vec<usize>, data: Vec<char>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Character(data)) }
     /// The positions `items`, each below `bound`, written straight to the narrowest width that holds them.
-    pub(crate) fn positions(shape: Vec<usize>, bound: usize, items: impl Iterator<Item = usize>) -> Result<Self, ErrorKind> {
-        with_width!(Width::below(bound), T => T::build(shape, items.map(|i| T::from_i64(i as i64)).collect())).ok_or(ErrorKind::Length)
+    pub(crate) fn positions<P: num_traits::AsPrimitive<i64>>(shape: Vec<usize>, bound: usize, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
+        with_width!(Width::below(bound), T => T::build(shape, items.map(|i| T::from_i64(i.as_())).collect())).ok_or(ErrorKind::Length)
+    }
+    /// `positions` from a buffer of them. As 32-bit integers they keep the buffer, with no pass over it.
+    pub(crate) fn positions_u32(shape: Vec<usize>, bound: usize, data: Vec<u32>) -> Result<Self, ErrorKind> {
+        match Width::below(bound) {
+            Width::I32 => Self::from_storage(shape, Storage::Integers(IntBuf::I32(bytemuck::allocation::cast_vec(data)))),
+            _ => Self::positions(shape, bound, data.into_iter()),
+        }
     }
     /// Integers at the narrowest width that holds them.
     pub fn integers(shape: Vec<usize>, data: Vec<i64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::narrowed(data)) }
@@ -404,17 +417,10 @@ impl Value {
         };
         Self::from_storage(shape, storage)
     }
-    /// An array of shape `shape` holding `items`, as data imported from another language. Numbers become floats when any is a finite
-    /// float and every one converts exactly, and otherwise each item keeps its own kind.
+    /// An array of shape `shape` holding `items`, as data imported from another language. Numbers become floats when every one converts
+    /// exactly and any is a float, and otherwise each item keeps its own kind.
     pub fn imported(shape: Vec<usize>, items: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
         crate::data::imported(shape, items, |_| false, empty_prototype)
-    }
-    /// This new integer array flagged for non-finite values of `width`, so that the reserved values read as `∞`, `¯∞` and NaN of that width.
-    pub(crate) fn flagged(mut self, width: FloatWidth) -> Self {
-        if let Self::Array(a) = &mut self {
-            if let Some(Storage::Integers(IntBuf::I64(_), flag)) = Arc::get_mut(a).and_then(|a| Arc::get_mut(&mut a.data)) { flag.set(width); }
-        }
-        self
     }
     /// The storage of this array for writing. The layout and the storage are copied first when anything else holds them.
     fn storage_mut(&mut self) -> &mut Storage {
@@ -546,23 +552,12 @@ impl Value {
             Self::Function(_) | Self::Operator(_) => Items::Values(std::slice::from_ref(self)),
         }
     }
-    /// The items in their storage type, as a kernel reads them. Integer storage flagged for non-finite values is checked first. When
-    /// it holds none, its flag is cleared and its items read as plain integers. Clearing the flag changes no value. A shared array can
-    /// clear it too.
-    pub(crate) fn checked_items(&self) -> Items<'_> {
-        if let Self::Array(a) = self {
-            if let Storage::Integers(IntBuf::I64(v), flag) = a.data.as_ref() {
-                if flag.get().is_some() && !extended::any_nonfinite(v) { flag.clear(); }
-            }
-        }
-        self.as_items()
-    }
     /// The compact kind of the items, as a kernel reads them. An atom takes the narrowest kind that holds it.
-    pub(crate) fn compact_kind(&self) -> Option<Kind> { if self.is_atom() { item_kind(self).map(Kind::stored) } else { self.checked_items().kind() } }
+    pub(crate) fn compact_kind(&self) -> Option<Kind> { if self.is_atom() { item_kind(self) } else { self.as_items().kind() } }
     /// The width of the floats that hold the items, or of the parts of the complex numbers that do, when compact storage holds them or
     /// the value is such an atom.
     pub(crate) fn float_width(&self) -> Option<FloatWidth> {
-        match self.compact_kind()? { Kind::Float(width) | Kind::Nonfinite(width) => Some(width), Kind::Complex(width) => Some(width.into()), _ => None }
+        match self.compact_kind()? { Kind::Float(width) => Some(width), Kind::Complex(width) => Some(width.into()), _ => None }
     }
     /// The numbers of this value as floats of `width`, each rounded once, with the arrays nested in it converted too. Complex numbers
     /// take parts of `width`, and 32-bit parts for 16 bits. Characters and functions are DOMAIN.
@@ -570,7 +565,7 @@ impl Value {
         if let Self::Number(n) = self { return n.to_float_width(width).map(Self::Number).map_err(|_| ErrorKind::Domain); }
         if !matches!(self, Self::Array(_)) { return Err(ErrorKind::Domain); }
         match self.as_items() {
-            Items::Booleans(_) | Items::Integers(_) | Items::Extended(..) | Items::Floats(_) => {
+            Items::Booleans(_) | Items::Integers(_) | Items::Floats(_) => {
                 let floats = with_float_width!(width, F => F::build(self.shape().to_vec(), crate::element::read_as::<F>(self).ok_or(ErrorKind::Domain)?.into_owned()));
                 floats.ok_or(ErrorKind::Domain)?.with_layout(self.layout().clone())
             }
@@ -585,7 +580,7 @@ impl Value {
     pub(crate) fn storage_name(&self) -> &'static str {
         match (self, self.as_items()) {
             (_, Items::Booleans(_)) => "boolean",
-            (_, Items::Integers(_) | Items::Extended(..)) => "integer",
+            (_, Items::Integers(_)) => "integer",
             (_, Items::Floats(f)) => match f.tag() { FloatWidth::F16 => "float16", FloatWidth::F32 => "float32", FloatWidth::F64 => "float64" },
             (_, Items::Complex(z)) => match z.tag() { ComplexWidth::F32 => "complex64", ComplexWidth::F64 => "complex128" },
             (_, Items::Characters(_)) => "character",
@@ -746,7 +741,7 @@ impl Value {
                 (Storage::Mixed(v, memo), _) if v.is_empty() => Storage::Mixed(vec![], memo.clone()),
                 (Storage::Mixed(v, _), _) => Storage::compact(v.iter().map(Value::fill).collect(), Widening::Items),
                 (data, Items::Booleans(_)) => Storage::Boolean(vec![false; data.len()]),
-                (data, Items::Integers(_) | Items::Extended(..)) => Storage::integers(IntBuf::U8(vec![0; data.len()]), None),
+                (data, Items::Integers(_)) => Storage::Integers(IntBuf::U8(vec![0; data.len()])),
                 (data, Items::Floats(v)) => Storage::Floats(FloatBuf::collect(v.tag(), std::iter::repeat_n(0.0, data.len()))),
                 (data, Items::Complex(z)) => Storage::Floats(FloatBuf::collect(z.tag().into(), std::iter::repeat_n(0.0, data.len()))),
                 (data, Items::Characters(_)) => Storage::Character(vec![' '; data.len()]),

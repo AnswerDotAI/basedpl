@@ -4,7 +4,7 @@ use crate::{
         with_complexes, with_float_width, with_floats, with_ints, ComplexBuf, Complexes, FloatBuf, FloatWidth, Floats, IntBuf, Ints, Items,
         Storage, Width,
     },
-    number::{extended, int::Int},
+    number::int::Int,
     Value,
 };
 use num_complex::{Complex32, Complex64};
@@ -15,6 +15,8 @@ use std::borrow::Cow;
 pub(crate) trait Element: Copy {
     /// The item a missing keyed entry reads as: the fill of its own array, which has this type.
     const FILL: Self;
+    /// Whether an item of this type can be NaN: floats and complex numbers can, and exact items and characters can't.
+    const NAN: bool = false;
     fn slice(value: &Value) -> Option<&[Self]>;
     /// An array of `data`, stored as this element type. Integers keep their width.
     fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value>;
@@ -37,6 +39,7 @@ macro_rules! complex_elements {
     ($($t:ty: $width:ident),+) => {$(
         impl Element for $t {
             const FILL: Self = <$t>::new(0.0, 0.0);
+            const NAN: bool = true;
             fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Complex(Complexes::$width(v)) => Some(v), _ => None } }
             fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::complex(shape, ComplexBuf::$width(data)).ok() }
             fn from_complexes(items: Complexes<'_>) -> Option<Vec<Self>> { Some(with_complexes!(items, |z| read_all(z))) }
@@ -51,7 +54,7 @@ impl Element for char {
 }
 
 /// An integer width of compact storage.
-pub(crate) trait Whole: Element + Int + rustymath::convert::Int + bytemuck::Pod {
+pub(crate) trait Whole: Element + Int + rustymath::convert::Int + rustymath::reduce::Term + bytemuck::Pod {
     const WIDTH: Width;
     /// The integers, when they have this width.
     fn of(ints: Ints<'_>) -> Option<&[Self]>;
@@ -90,6 +93,7 @@ macro_rules! float {
     ($($t:ident: $width:ident, $integers:ident),+) => {$(
         impl Element for $t {
             const FILL: Self = 0.0;
+            const NAN: bool = true;
             fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Floats(Floats::$width(v)) => Some(v), _ => None } }
             fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::Floats(FloatBuf::$width(data))).ok() }
             #[inline]
@@ -104,6 +108,7 @@ macro_rules! float {
 float!(f32: F32, I32, f64: F64, I64);
 impl Element for half::f16 {
     const FILL: Self = half::f16::ZERO;
+    const NAN: bool = true;
     fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Floats(Floats::F16(v)) => Some(v), _ => None } }
     fn build(shape: Vec<usize>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::Floats(FloatBuf::F16(data))).ok() }
     #[inline]
@@ -185,12 +190,6 @@ impl Source<Complex32> for Complex64 { #[inline] fn read(self) -> Complex32 { Co
 /// Every item of `items`, read as type `A`.
 pub(crate) fn read_all<A, S: Source<A>>(items: &[S]) -> Vec<A> { items.iter().map(|&x| x.read()).collect() }
 
-/// A flagged integer read as `A`, through the float it stands for.
-pub(crate) fn read_flagged<A>(n: i64) -> A
-where
-    f64: Source<A>,
-{ extended::float(n).read() }
-
 /// `ints` at width `A`: borrowed when they have it already, otherwise converted. `A` must hold every item.
 pub(crate) fn cast<A: Whole>(ints: Ints<'_>) -> Cow<'_, [A]> {
     if let Some(v) = A::of(ints) { return Cow::Borrowed(v); }
@@ -200,8 +199,8 @@ pub(crate) fn cast<A: Whole>(ints: Ints<'_>) -> Cow<'_, [A]> {
 /// Booleans as unsigned bytes of 0 and 1, read in place with no copy.
 pub(crate) fn truth_bytes(truths: &[bool]) -> &[u8] { bytemuck::cast_slice(truths) }
 
-/// `value`'s compact numbers as `A`s: borrowed when they are `A`s already, otherwise read through `Source`, or through `read_flagged` from
-/// flagged integer storage. Complex numbers read only as complex numbers. `None` when `A` can't hold them.
+/// `value`'s compact numbers as `A`s: borrowed when they are `A`s already, otherwise read through `Source`. Complex numbers read only
+/// as complex numbers. `None` when `A` can't hold them.
 pub(crate) fn read_as<A: Element>(value: &Value) -> Option<Cow<'_, [A]>>
 where
     bool: Source<A>,
@@ -217,7 +216,6 @@ where
     Some(Cow::Owned(match value.as_items() {
         Items::Booleans(y) => read_all(y),
         Items::Integers(ints) => with_ints!(ints, |y| read_all(y)),
-        Items::Extended(y, _) => y.iter().map(|&n| read_flagged(n)).collect(),
         Items::Floats(y) => with_floats!(y, |y| read_all(y)),
         Items::Complex(z) => A::from_complexes(z)?,
         Items::Characters(_) | Items::Values(_) => return None,

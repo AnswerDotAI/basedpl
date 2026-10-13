@@ -3,29 +3,54 @@ use num_bigint::BigInt;
 use num_rational::BigRational;
 use serde_json::{json, Value as JsonValue};
 
-/// An item as JSON. `None` for a function, which JSON can't hold.
-fn element(e: &Value) -> Option<JsonValue> {
-    Some(match e {
-        Value::Number(n) => {
-            if let Some(b) = n.as_bool() { json!(b) } else if let Some(n) = crate::json::integer(n) { n } else if let Some(n) = n.as_exact() { json!({"rational": [n.numer().to_string(), n.denom().to_string()]}) } else if let Some(n) = n.as_complex() { json!({"complex": [n.re, n.im]}) } else {
-                let n = n.as_float().unwrap();
-                if n.is_nan() { json!({"nan": 1}) } else if n.is_infinite() { json!({"infinity": if n.is_sign_positive() { 1 } else { -1 }}) } else { json!(n) }
-            }
+/// A value as the process interface's JSON, serialized as it's written. An item is a JSON scalar, or an object for a number JSON
+/// can't hold. An array is an object of its shape, items and prototype, with its axis names and keys where it has them. The value
+/// holds no function, as `Value::holds_function` checks.
+struct Json<'a>(&'a Value);
+
+impl serde::Serialize for Json<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::{Error as _, SerializeMap};
+        fn tagged<S: serde::Serializer>(s: S, key: &str, value: impl serde::Serialize) -> Result<S::Ok, S::Error> {
+            let mut map = s.serialize_map(Some(1))?;
+            map.serialize_entry(key, &value)?;
+            map.end()
         }
-        Value::Character(c) => json!(c.to_string()),
-        a @ Value::Array(_) => return array(a),
-        Value::Function(_) | Value::Operator(_) => return None,
-    })
+        match self.0 {
+            Value::Number(n) => {
+                if let Some(b) = n.as_bool() { return s.serialize_bool(b); }
+                if let Some(i) = n.as_integer() { return s.serialize_i64(i); }
+                if let Some(i) = crate::json::integer(n) { return i.serialize(s); }
+                if let Some(q) = n.as_exact() { return tagged(s, "rational", [q.numer().to_string(), q.denom().to_string()]); }
+                if let Some(z) = n.as_complex() { return tagged(s, "complex", [z.re, z.im]); }
+                let x = n.as_float().unwrap();
+                if x.is_nan() { tagged(s, "nan", 1) } else if x.is_infinite() { tagged(s, "infinity", if x.is_sign_positive() { 1 } else { -1 }) } else { s.serialize_f64(x) }
+            }
+            Value::Character(c) => s.serialize_char(*c),
+            a @ Value::Array(_) => {
+                let mut map = s.serialize_map(None)?;
+                map.serialize_entry("shape", a.shape())?;
+                map.serialize_entry("data", &Data(a))?;
+                map.serialize_entry("prototype", &Json(&a.prototype()))?;
+                if !a.axis_names().is_empty() { map.serialize_entry("axis_names", &a.axis_names().iter().map(|n| n.as_deref()).collect::<Vec<_>>())?; }
+                if a.has_keys() { map.serialize_entry("axis_keys", &keyed::key_lists(a))?; }
+                map.end()
+            }
+            Value::Function(_) | Value::Operator(_) => Err(S::Error::custom("a function has no JSON value")),
+        }
+    }
 }
 
-/// An array as JSON. `None` when it holds a function.
-fn array(a: &Value) -> Option<JsonValue> {
-    if a.is_atom() { return element(a); }
-    let data = a.elements().map(|e| element(&e)).collect::<Option<Vec<_>>>()?;
-    let mut encoded = json!({"shape": a.shape(), "data": data, "prototype": element(&a.prototype())?});
-    if !a.axis_names().is_empty() { encoded["axis_names"] = json!(a.axis_names().iter().map(|n| n.as_deref()).collect::<Vec<_>>()); }
-    if a.has_keys() { encoded["axis_keys"] = json!(keyed::key_lists(a)); }
-    Some(encoded)
+/// An array's items, as a JSON list.
+struct Data<'a>(&'a Value);
+
+impl serde::Serialize for Data<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut seq = s.serialize_seq(Some(self.0.len()))?;
+        for e in self.0.elements() { seq.serialize_element(&Json(&e))?; }
+        seq.end()
+    }
 }
 
 /// A one-character string is a character.
@@ -137,12 +162,24 @@ impl serde::Serialize for crate::MimeData {
 /// An output as JSON: its kind, and its MIME bundle.
 pub fn output(o: &crate::Output) -> JsonValue { json!({"kind": o.kind.name(), "data": o.data}) }
 
-/// The reply to a request. A function, or an array that holds one, has no JSON value: `value` is `null`, and `output` holds its
-/// display.
-pub fn response(result: Evaluation) -> JsonValue {
-    let value = result.value.as_ref().and_then(|v| array(&crate::json::exportable(v)));
-    json!({"value": value, "output": result.output.iter().map(output).collect::<Vec<_>>(), "error": result.error.as_ref().map(error)})
+/// The reply to a request, serialized as it's written: its `value`, `output` and `error`. A function, or an array that holds one, has
+/// no JSON value: `value` is `null`, and `output` holds its display.
+pub struct Response(pub Evaluation);
+
+impl serde::Serialize for Response {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let value = self.0.value.as_ref().map(crate::json::exportable).filter(|v| !v.holds_function());
+        let mut map = s.serialize_map(Some(3))?;
+        map.serialize_entry("value", &value.as_ref().map(Json))?;
+        map.serialize_entry("output", &self.0.output.iter().map(output).collect::<Vec<_>>())?;
+        map.serialize_entry("error", &self.0.error.as_ref().map(error))?;
+        map.end()
+    }
 }
+
+/// The reply to a request, as a JSON value.
+pub fn response(result: Evaluation) -> JsonValue { serde_json::to_value(Response(result)).expect("a response serializes") }
 
 /// The reply to a request that can't run.
 pub fn request_error(message: &str) -> JsonValue { json!({"value": null, "output": [], "error": {"kind": "REQUEST", "message": message}}) }

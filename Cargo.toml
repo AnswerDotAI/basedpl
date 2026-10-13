@@ -52,7 +52,7 @@ num-complex = { version = ">=0.4.6, <1", features = ["bytemuck"] }
 num-bigint = ">=0.4.6, <0.5"
 num-traits = ">=0.2.19, <1"
 half = { version = ">=2.7.1, <3", features = ["num-traits", "bytemuck"] }
-rustymath = ">=0.1.9, <1"
+rustymath = ">=0.1.13, <1"
 strength_reduce = ">=0.2.4, <1"
 rand = ">=0.10.2, <1"
 # AnswerDotAI's fork measures text with a canvas, which works in a Web Worker: plotters-rs/plotters#746.
@@ -73,6 +73,10 @@ chrono = ">=0.4.45, <0.5"
 [target.'cfg(unix)'.dependencies]
 rustix = { version = ">=1.1.5, <2", features = ["termios", "fs"] }
 nix = { version = ">=0.31.3, <1", default-features = false, features = ["user"] }
+
+[target.'cfg(target_vendor = "apple")'.dependencies]
+# The timing lock's QoS call, which keeps a timing on the performance cores.
+libc = ">=0.2.190, <1"
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 chrono = { version = ">=0.4.45, <0.5", features = ["unstable-locales"] }

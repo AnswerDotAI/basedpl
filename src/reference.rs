@@ -225,21 +225,40 @@ pub fn cases(text: &str) -> Result<Vec<JsonValue>, String> {
     Ok(cases)
 }
 
-/// The cases of `cases` that fail `check`, each with `check`'s `status` and `message` added, and the `kind` of the error that a case
-/// gave. Each case has `TIMEOUT` to run. An interrupt stops the checks at the case it interrupts.
+/// The cases of `cases` that fail `check`, in their order. Each failure adds `check`'s `status` and `message`, and the `kind` of the
+/// error that the case gave. Each case has `TIMEOUT` to run. The cases run on one thread for each core. Each thread takes the next case
+/// that no thread has taken. After an interrupt, no thread takes another case, and failures after the first interrupted case drop out.
 pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, interrupt: &InterruptHandle) -> Vec<JsonValue> {
-    let mut failures = Vec::new();
-    for case in cases {
-        let result = check(case, EvalOptions { timeout: Some(TIMEOUT), interrupt: interrupt.clone(), ..EvalOptions::default() });
-        if result["status"] == "pass" { continue; }
-        let mut failure = case.clone();
-        for key in ["status", "message", "kind"] {
-            if let Some(value) = result.get(key) { failure[key] = value.clone(); }
-        }
-        failures.push(failure);
-        if result["status"] == "interrupt" { break; }
-    }
-    failures
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
+    let cases: Vec<&JsonValue> = cases.into_iter().collect();
+    let (next, stop) = (AtomicUsize::new(0), AtomicBool::new(false));
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(cases.len());
+    let mut failures: Vec<(usize, JsonValue)> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut found = Vec::new();
+                    while !stop.load(Relaxed) {
+                        let i = next.fetch_add(1, Relaxed);
+                        let Some(&case) = cases.get(i) else { break };
+                        let result = check(case, EvalOptions { timeout: Some(TIMEOUT), interrupt: interrupt.clone(), ..EvalOptions::default() });
+                        if result["status"] == "pass" { continue; }
+                        if result["status"] == "interrupt" { stop.store(true, Relaxed); }
+                        let mut failure = case.clone();
+                        for key in ["status", "message", "kind"] {
+                            if let Some(value) = result.get(key) { failure[key] = value.clone(); }
+                        }
+                        found.push((i, failure));
+                    }
+                    found
+                })
+            })
+            .collect();
+        workers.into_iter().flat_map(|w| w.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))).collect()
+    });
+    failures.sort_by_key(|&(i, _)| i);
+    if let Some(first) = failures.iter().position(|(_, f)| f["status"] == "interrupt") { failures.truncate(first + 1); }
+    failures.into_iter().map(|(_, f)| f).collect()
 }
 
 /// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a session of its own. The lines up to each

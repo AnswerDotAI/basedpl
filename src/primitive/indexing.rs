@@ -273,42 +273,55 @@ pub(crate) fn select(right: &Value, parts: &[Option<Value>], span: &Context<'_>)
         Positions::Choose(indices) => return choose(right, &indices, span)?.read(right, span),
         Positions::Axes(steps, layout, direct) => (steps, layout, direct),
     };
-    if direct { return Ok(right.at(offsets(&steps)[0])); }
+    if direct { return Ok(right.at(Steps::combined(&steps)[0])); }
     remap(right, layout, &steps, span)
+}
+
+/// The integer indices of a selection of the unkeyed vector `right` by one array of them, and the vector's length. `None` when the
+/// selection isn't of this kind. An index outside the vector is an error.
+fn vector_index<'a>(right: &Value, parts: &'a [Option<Value>], span: &Context<'_>) -> Result<Option<(&'a Value, crate::array::Ints<'a>, i64)>, Error> {
+    let ([Some(indices)], [size]) = (parts, right.shape()) else { return Ok(None) };
+    let Items::Integers(ix) = indices.as_items() else { return Ok(None) };
+    if indices.is_atom() || right.keys(0).is_some() { return Ok(None); }
+    let n = *size as i64;
+    let inside = with_ints!(ix, |ix| ix.iter().fold(true, |ok, &i| {
+        let i: i64 = i.into();
+        ok & (i >= -n) & (i < n)
+    }));
+    if !inside { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
+    Ok(Some((indices, ix, n)))
+}
+
+/// The layout of a selection of the vector `right` at the array `indices`: the indices' shape, and the vector's axis name where the
+/// indices are a vector.
+fn vector_layout(right: &Value, indices: &Value) -> Layout {
+    let names = if indices.shape().len() == 1 { vec![right.axis_name(0).cloned()] } else { vec![] };
+    Layout::from(indices.shape().to_vec()).inherit_names(names)
 }
 
 /// The items of the unkeyed vector `right` at an array of integer indices, read straight from each index with no table of offsets.
 /// `None` when the selection isn't of this kind.
 fn select_vector(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> Result<Option<Value>, Error> {
-    let ([Some(indices)], [size]) = (parts, right.shape()) else { return Ok(None) };
-    let Items::Integers(ix) = indices.as_items() else { return Ok(None) };
-    if indices.is_atom() || right.keys(0).is_some() { return Ok(None); }
-    let n = *size as i64;
-    let names = if indices.shape().len() == 1 { vec![right.axis_name(0).cloned()] } else { vec![] };
-    let mut data = Gather::new(&[right], ix.len());
-    let inside = with_ints!(ix, |ix| {
-        let inside = ix.iter().fold(true, |ok, &i| {
-            let i = i.to_i64();
-            ok & (i >= -n) & (i < n)
-        });
-        if inside {
-            data.items_at(right, ix);
-        }
-        inside
-    });
-    if !inside { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
-    data.finish(rearranged(Layout::from(indices.shape().to_vec()).inherit_names(names), right), || right.prototype())
-        .error_at(span, "invalid selection")
-        .map(Some)
+    let Some((indices, ix, _)) = vector_index(right, parts, span)? else { return Ok(None) };
+    let mut data = Gather::new(&[right], indices.len());
+    with_ints!(ix, |ix| data.items_at(right, ix));
+    data.finish(rearranged(vector_layout(right, indices), right), || right.prototype()).error_at(span, "invalid selection").map(Some)
 }
 
 pub(crate) fn selection(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> Result<Selection, Error> {
     if parts.is_empty() { return Ok(Selection { frame: Frame::Direct, targets: Targets::Paths(vec![vec![]]) }); }
+    if let Some((indices, ix, n)) = vector_index(right, parts, span)? {
+        let offsets = with_ints!(ix, |ix| ix.iter().map(|&i| {
+            let i: i64 = i.into();
+            (i + (n & (i >> 63))) as usize
+        }).collect());
+        return Ok(Selection { frame: Frame::Array(vector_layout(right, indices)), targets: Targets::Offsets(offsets) });
+    }
     let (steps, layout, direct) = match axis_positions(right, parts, span)? {
         Positions::Choose(indices) => return choose(right, &indices, span),
         Positions::Axes(steps, layout, direct) => (steps, layout, direct),
     };
-    let targets = Targets::Offsets(offsets(&steps));
+    let targets = Targets::Offsets(Steps::combined(&steps));
     Ok(Selection { frame: if direct { Frame::Direct } else { Frame::Array(layout) }, targets })
 }
 

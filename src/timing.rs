@@ -1,9 +1,11 @@
 //! The speed test's measurements, shared by `tests/speed.rs`, the browser build's `costs` and the worker's `timing` and `costs`
 //! requests, which serve `basedpl.bpltests.time_cases` and `speed_costs`. A time is the fastest of five evaluations of a case, after
-//! one to warm up. The case is parsed once, before them. Its unit is one copy: allocating a vector of `n` 8-byte numbers and copying
-//! `n` numbers into it, where `n` is the number of items in the data of the `[setup]` before the case's section.
-//! `costs` and `request` hold the machine's timing lock while they run. `host::timing_lock` describes it.
-use crate::{host::{timing_lock, Instant}, protocol::response, EvalOptions, Evaluation, InterruptHandle, Session, Source};
+//! one to warm up. The case is parsed once, before them. Its unit is one copy, as `copy` times it, of the `n` items in the data of the
+//! `[setup]` before the case's section.
+//! `costs` and `request` hold the machine's timing lock while they run. `timing_lock` describes the lock. The reference test takes it
+//! shared.
+pub use crate::host::timing_lock;
+use crate::{host::Instant, protocol::response, EvalOptions, Evaluation, InterruptHandle, Session, Source};
 use serde_json::{json, Value as JsonValue};
 use std::{collections::HashMap, hint::black_box};
 
@@ -61,10 +63,16 @@ pub fn time(session: &mut Session, code: &str, interrupt: &InterruptHandle) -> R
     failed.map_or(Ok(seconds), Err)
 }
 
-/// The time of one copy of `n` items, in seconds.
+/// The time of one copy of `n` items, in seconds: writing each of `n` floats negated into another buffer, as rustymath's speed test
+/// times its unit. The loop reads and writes each item once. It calls no `memcpy` and allocates nothing, because their speed differs
+/// between platforms far more than a loop's does.
 pub fn copy(n: usize) -> f64 {
-    let data: Vec<f64> = (0..n).map(|i| i as f64).collect();
-    fastest(|| drop(black_box(black_box(&data).clone())))
+    let data: Vec<f64> = (1..=n).map(|i| i as f64).collect();
+    let mut out = vec![0.0; n];
+    fastest(|| {
+        for (o, &v) in out.iter_mut().zip(black_box(&data)) { *o = -v }
+        black_box(&mut out);
+    })
 }
 
 /// One case of a file in `speed.txt`'s format, with its cost: the section it's in, its code, its budgets in the file's order, and
@@ -80,16 +88,23 @@ pub struct Case<'a> {
 /// group of sections. Each section's cases run in a session that has run the section's prefs and then the `[setup]` before it. Each
 /// group makes its sessions when its turn comes and drops them before the next group starts. A cost is in copies of the group's `n`
 /// items, timed just before the case, except in `[widths]`. There it is the case's time as a fraction of its time in `[exact]`.
-pub fn costs<'a>(text: &'a str, interrupt: &InterruptHandle) -> Result<Vec<Case<'a>>, String> {
-    let _lock = timing_lock()?;
+/// `only`, when given, lists the codes of the cases to run. A group then makes sessions only for the sections that hold those cases,
+/// plus `[exact]` for a `[widths]` case.
+pub fn costs<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<Vec<Case<'a>>, String> {
+    let _lock = timing_lock(false)?;
     let failure = |code: &str, failed: Evaluation| format!("{code}: {}", failed.error.map(|e| e.to_string()).unwrap_or_default());
+    let code_of = |line: &'a str| line.split('\t').next().unwrap_or_default();
+    let wanted = |code: &str| only.is_none_or(|only| only.contains(&code));
     let sections = sections(text)?;
     let mut result = Vec::new();
     for group in sections.chunk_by(|_, next| next.0 != "setup") {
         let [("setup", _, setup), cases @ ..] = group else { return Err("the first section must be [setup]".into()) };
+        let mut used: Vec<&str> = cases.iter().filter(|(_, _, lines)| lines.iter().any(|l| wanted(code_of(l)))).map(|s| s.0).collect();
+        if used.contains(&"widths") { used.push("exact"); }
+        if used.is_empty() { continue; }
         let setup = setup.join("\n");
         let (mut sessions, mut sizes) = (HashMap::new(), HashMap::new());
-        for &(name, prefs, _) in cases {
+        for &(name, prefs, _) in cases.iter().filter(|s| used.contains(&s.0)) {
             let mut session = session(prefs, &setup).map_err(|failed| failure(prefs, failed))?;
             sizes.insert(name, items(&mut session).ok_or("each setup must define n, its number of items")?);
             sessions.insert(name, session);
@@ -102,6 +117,7 @@ pub fn costs<'a>(text: &'a str, interrupt: &InterruptHandle) -> Result<Vec<Case<
             for line in lines {
                 let mut fields = line.split('\t');
                 let code = fields.next().unwrap_or_default();
+                if !wanted(code) { continue; }
                 let cost = if section == "widths" { timed(section, code)? / timed("exact", code)? } else {
                     let unit = copy(sizes[section]);
                     timed(section, code)? / unit
@@ -117,7 +133,7 @@ pub fn costs<'a>(text: &'a str, interrupt: &InterruptHandle) -> Result<Vec<Case<
 /// `prefs` its session starts with, and the `cases` to time. The reply gives the setup's `n` and each case's time in seconds and in
 /// copies, or the evaluation that failed. Each case's copy is timed just before the case.
 pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
-    let _lock = timing_lock()?;
+    let _lock = timing_lock(false)?;
     let text = |key| spec[key].as_str().ok_or_else(|| format!("timing needs {key} as a string"));
     let cases = spec["cases"].as_array().ok_or("timing needs cases as an array")?;
     let sections = sections(text("speed")?)?;
@@ -139,10 +155,14 @@ pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValu
     Ok(json!({"n": n, "costs": costs, "output": [], "error": null}))
 }
 
-/// The reply to the worker's `costs` request, which gives `speed`, text in `speed.txt`'s format. The reply gives every case with its
-/// cost, as `costs` times them: its section, code, budgets and cost.
+/// The reply to the worker's `costs` request, which gives `speed`, text in `speed.txt`'s format, and optionally `cases`, a list of the
+/// codes to time. The reply gives each case with its cost, as `costs` times them: its section, code, budgets and cost.
 pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
-    let cases = costs(spec["speed"].as_str().ok_or("costs needs speed as a string")?, interrupt)?;
+    let only: Option<Vec<&str>> = match spec.get("cases") {
+        None | Some(JsonValue::Null) => None,
+        Some(cases) => Some(cases.as_array().and_then(|c| c.iter().map(JsonValue::as_str).collect()).ok_or("costs needs cases as a list of strings")?),
+    };
+    let cases = costs(spec["speed"].as_str().ok_or("costs needs speed as a string")?, only.as_deref(), interrupt)?;
     let cases: Vec<_> = cases.iter().map(|c| json!({"section": c.section, "code": c.code, "budgets": c.budgets, "cost": c.cost})).collect();
     Ok(json!({"costs": cases, "error": null}))
 }

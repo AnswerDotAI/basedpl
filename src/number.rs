@@ -1,10 +1,14 @@
-use crate::{array::{with_float_width, ComplexWidth, Complexes, FloatWidth, Floats}, element::Float, ErrorKind};
+use crate::{
+    array::{with_float_width, ComplexBuf, ComplexWidth, Complexes, FloatWidth, Floats, Kind, Layout},
+    element::{read_as, Float},
+    Error, ErrorKind, Span, Value,
+};
 use num_bigint::BigInt;
 use num_complex::{Complex32, Complex64};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Signed, ToPrimitive, Zero};
 use rustymath::{tolerant::{Tolerance, Tolerant, TolerantComplex}, Binary as _, Float as _, Unary as _};
-use std::{cmp::Ordering, fmt};
+use std::{borrow::Cow, cmp::Ordering, fmt};
 
 /// Numbers. Floats and complex numbers follow IEEE 754, so they include infinities, NaN and `¯0`. A Boolean is the integer 0 or 1, and
 /// displays as `$f` or `$t`. Ordinary literals are floats; exact arithmetic is explicitly selected with x or r.
@@ -140,6 +144,8 @@ impl TryFrom<BigRational> for Number {
 
 /// An exact integer of any size.
 impl From<BigInt> for Number { fn from(n: BigInt) -> Self { Self::exact(BigRational::from_integer(n)) } }
+/// An exact integer from 128 bits, in 64-bit storage where it fits.
+impl From<i128> for Number { fn from(n: i128) -> Self { i64::try_from(n).map_or_else(|_| Self::from(BigInt::from(n)), Self::from_integer) } }
 
 /// A complex number with no imaginary part is a float.
 impl From<Complex64> for Number { fn from(n: Complex64) -> Self { Self::complex(n, FloatWidth::F64) } }
@@ -210,12 +216,15 @@ pub(crate) mod int {
     use super::Arithmetic;
     use rustymath::Overflowing;
 
-    pub(crate) fn arithmetic(op: Arithmetic, x: i64, y: i64) -> Option<i64> {
+    /// `x op y` as an exact integer. Every sum, difference or product of two `i64`s fits in 128 bits. `None` where `÷` gives a fraction
+    /// or divides by zero. The exact or float path gives those results.
+    pub(crate) fn arithmetic(op: Arithmetic, x: i64, y: i64) -> Option<i128> {
+        let (wide_x, wide_y) = (i128::from(x), i128::from(y));
         match op {
-            Arithmetic::Plus => fitted(x.plus(y)),
-            Arithmetic::Minus => fitted(x.minus(y)),
-            Arithmetic::Times => fitted(x.times(y)),
-            Arithmetic::Divide => divide(x, y),
+            Arithmetic::Plus => Some(wide_x + wide_y),
+            Arithmetic::Minus => Some(wide_x - wide_y),
+            Arithmetic::Times => Some(wide_x * wide_y),
+            Arithmetic::Divide => divide(x, y).map(i128::from),
         }
     }
     /// The result of rustymath's [`Overflowing`] arithmetic where it fits, or `None` where it overflowed, for the exact path to give.
@@ -272,13 +281,17 @@ pub(crate) mod complex {
             Arithmetic::Divide => rustymath::divide(x, y),
         }
     }
+    /// `y`, with a zero imaginary part signed for the side of the branch cut that APL takes. A real `y` beyond magnitude 1 lies on the
+    /// branch cuts of codes 0, ¯1 and ¯2. As in APL, a positive one takes the side below the cut and a negative one the side above.
+    pub(crate) fn cut(y: Complex64) -> Complex64 { if y.im == 0.0 { Complex64::new(y.re, if y.re > 0.0 { -0.0 } else { 0.0 }) } else { y } }
+
+    /// Whether `code○`, or its inverse, reads its argument through `cut`.
+    pub(crate) fn cuts(code: i64, inverse: bool) -> bool { matches!((code, inverse), (0, _) | (1 | 2, true)) }
+
     /// `code○y`, or the inverse of `code○` on `y`. `None` for a code outside 0 to 8. On a real `y`, code 8 gives an imaginary result,
     /// and beyond magnitude 1 the inverse of code 7 takes the imaginary part π/2 with the sign of `y`, as APL's results do.
     pub(crate) fn circle(code: i64, inverse: bool, y: Complex64) -> Option<Complex64> {
         let one = Complex64::new(1.0, 0.0);
-        // A real `y` beyond magnitude 1 lies on the branch cuts of codes 0, ¯1 and ¯2. As in APL, a positive one takes the side below the
-        // cut and a negative one the side above, which the sign of a zero imaginary part chooses.
-        let cut = |y: Complex64| if y.im == 0.0 { Complex64::new(y.re, if y.re > 0.0 { -0.0 } else { 0.0 }) } else { y };
         Some(match (code, inverse) {
             (8, _) if y.im == 0.0 => Complex64::new(0.0, if inverse { -rustymath::hypot(y.re, 1.0) } else { rustymath::hypot(y.re, 1.0) }),
             (7, true) if y.im == 0.0 && y.re.abs() > 1.0 => Complex64::new(rustymath::atanh(1.0 / y.re), std::f64::consts::FRAC_PI_2.copysign(y.re)),
@@ -304,51 +317,6 @@ pub(crate) mod complex {
     }
 }
 
-/// Integers extended with `∞`, `¯∞` and NaN, as flagged integer storage holds them. `i64::MAX` stands for `∞`, `i64::MIN` for `¯∞` and
-/// `i64::MAX-1` for NaN. `i64::MIN+1` also reads as NaN, because the test for these values can't tell it from `i64::MAX-1`.
-pub(crate) mod extended {
-    use super::{real, Arithmetic};
-
-    pub(crate) const INFINITY: i64 = i64::MAX;
-    pub(crate) const NEG_INFINITY: i64 = i64::MIN;
-    pub(crate) const NAN: i64 = i64::MAX - 1;
-    /// Whether `n` stands for a non-finite value. `n ^ (n >> 63)` turns each negative `n` into `-n-1`, so exactly the two values at each
-    /// end of `i64` reach `i64::MAX-1`. One comparison with no branch tests all four.
-    #[inline]
-    pub(crate) fn is_nonfinite(n: i64) -> bool { (n ^ (n >> 63)) >= NAN }
-    /// The first non-finite value in `data`. Each fixed-size chunk is tested without a branch, which lets the compiler vectorize it. The
-    /// search stops at the first chunk that holds one.
-    pub(crate) fn first_nonfinite(data: &[i64]) -> Option<i64> {
-        let chunk = data.chunks(64).find(|chunk| chunk.iter().fold(false, |found, &n| found | is_nonfinite(n)))?;
-        chunk.iter().copied().find(|&n| is_nonfinite(n))
-    }
-    pub(crate) fn any_nonfinite(data: &[i64]) -> bool { first_nonfinite(data).is_some() }
-    /// Whether `n` stands for NaN.
-    #[inline]
-    pub(crate) fn is_nan(n: i64) -> bool { is_nonfinite(n) && n != INFINITY && n != NEG_INFINITY }
-    #[inline]
-    pub(crate) fn float(n: i64) -> f64 {
-        match n {
-            INFINITY => f64::INFINITY,
-            NEG_INFINITY => f64::NEG_INFINITY,
-            n if is_nonfinite(n) => f64::NAN,
-            n => rustymath::convert::float(n),
-        }
-    }
-    /// A non-finite float as flagged storage holds it.
-    #[inline]
-    pub(crate) fn from_float(x: f64) -> i64 { if x.is_nan() { NAN } else if x > 0.0 { INFINITY } else { NEG_INFINITY } }
-    /// A whole float as the integer it holds, or a non-finite float as the value that stands for it. `None` for a finite float beyond
-    /// what `rustymath::convert::int` converts.
-    #[inline]
-    pub(crate) fn whole(n: f64) -> Option<i64> { rustymath::convert::int(n).or_else(|| (!n.is_finite()).then(|| from_float(n))) }
-    /// `x op y` when `x` or `y` is non-finite, computed as floats. `None` for a finite result, which is a float.
-    pub(crate) fn arithmetic(op: Arithmetic, x: i64, y: i64) -> Option<i64> {
-        let result = real::arithmetic(op, float(x), float(y));
-        (!result.is_finite()).then(|| from_float(result))
-    }
-}
-
 /// Runs `$body` with each `$y` bound to its real `$n` as the type `$t`, the float width that the numbers compute at: the wider of their
 /// float widths, or f64 when none is a float. An exact real rounds to that width, as an operand converts before an operation.
 macro_rules! reals {
@@ -359,6 +327,137 @@ macro_rules! reals {
         })
     };
 }
+
+/// A domain that rustymath's generic algorithms compute numbers in. Numbers of several domains compute in the last of them, in the
+/// order listed. Floats in compact storage compute at their own width, or in 32 bits for 16-bit floats. Other reals compute in 64 bits.
+/// `with_field!` names each domain's [`Field`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Domain {
+    Exact,
+    Single,
+    Double,
+    Complex,
+}
+
+impl Domain {
+    /// The domain that `numbers` compute in, and the float width of their results.
+    pub(crate) fn of<'a>(numbers: impl Iterator<Item = &'a Number>, numeric: Numeric) -> (Self, FloatWidth) {
+        let (domain, width) = numbers.fold((Self::Exact, None), Self::join);
+        (domain, numeric.width_of([width]))
+    }
+
+    /// The domain and widest float width of some numbers, joined with the number `n`.
+    fn join((domain, width): (Self, Option<FloatWidth>), n: &Number) -> (Self, Option<FloatWidth>) { (domain.max(n.domain()), width.max(n.float_width())) }
+
+    /// The domain that the items of `arrays` compute in, and the float width of their results. Compact storage gives its domain without
+    /// a pass over its items. `None` where an item, or the prototype of an array with no items, isn't a number.
+    pub(crate) fn of_arrays(arrays: &[&Value], numeric: Numeric) -> Option<(Self, FloatWidth)> {
+        let (mut domain, mut width) = (Self::Exact, None);
+        for a in arrays {
+            let (d, w) = match a.compact_kind() {
+                Some(Kind::Boolean | Kind::Integer(_)) => (Self::Exact, None),
+                Some(Kind::Float(FloatWidth::F64)) => (Self::Double, Some(FloatWidth::F64)),
+                Some(Kind::Float(width)) => (Self::Single, Some(width)),
+                Some(Kind::Complex(width)) => (Self::Complex, Some(width.into())),
+                Some(Kind::Character) => return None,
+                None => {
+                    let mut items = (0..a.len()).map(|i| a.at(i)).chain(a.is_empty().then(|| a.prototype()));
+                    items.try_fold((Self::Exact, None), |joined, x| match x { Value::Number(n) => Some(Self::join(joined, &n)), _ => None })?
+                }
+            };
+            (domain, width) = (domain.max(d), width.max(w));
+        }
+        Some((domain, numeric.width_of([width])))
+    }
+
+    /// This domain for an algorithm that has no exact form, where exact numbers compute as floats of `width`.
+    pub(crate) fn inexact(self, width: FloatWidth) -> Self {
+        match (self, width) {
+            (Self::Exact, FloatWidth::F64) => Self::Double,
+            (Self::Exact, _) => Self::Single,
+            (domain, _) => domain,
+        }
+    }
+}
+
+/// The type that numbers compute in for one [`Domain`]: `BigRational`, `f32`, `f64` or `Complex64`.
+pub(crate) trait Field: Clone + num_traits::NumAssignRef {
+    /// `n` in this domain, which [`Domain::of`] chose so that `n` belongs to it.
+    fn of(n: &Number) -> Self;
+    /// This value as a `Number`, with a float at `width`.
+    fn number(self, width: FloatWidth) -> Number;
+    /// The items of `a` in this domain, converted in one pass, where compact storage holds them.
+    fn compact(a: &Value) -> Option<Cow<'_, [Self]>>;
+    /// The array of `shape` holding `x`, with floats at `width`. Floats and complex numbers take compact storage, and complex numbers
+    /// with no imaginary parts take float storage.
+    fn array(x: Vec<Self>, shape: Vec<usize>, width: FloatWidth) -> Result<Value, ErrorKind>;
+}
+
+/// The items of the array `a` in the domain of `T`: compact storage converted in one pass, and other items one at a time. DOMAIN where
+/// an item isn't a number.
+pub(crate) fn read<'a, T: Field>(a: &'a Value, span: &Span) -> Result<Cow<'a, [T]>, Error> {
+    if let Some(x) = T::compact(a) { return Ok(x); }
+    (0..a.len()).map(|i| crate::primitive::numeric(&a.at(i), span).map(T::of)).collect::<Result<_, _>>().map(Cow::Owned)
+}
+
+impl Field for BigRational {
+    fn of(n: &Number) -> Self { n.as_exact().expect("an exact number") }
+    fn number(self, _: FloatWidth) -> Number { Number::try_from(self).expect("a canonical rational") }
+    fn compact(a: &Value) -> Option<Cow<'_, [Self]>> {
+        let integers = a.as_items().exact_integers()?;
+        Some(Cow::Owned(integers.iter().map(|&n| Self::from_integer(n.into())).collect()))
+    }
+    fn array(x: Vec<Self>, shape: Vec<usize>, width: FloatWidth) -> Result<Value, ErrorKind> {
+        Layout::from(shape).collect(x.into_iter().map(|r| Value::Number(r.number(width))), Value::Number(Number::from_integer(0)))
+    }
+}
+
+macro_rules! real_fields {
+    ($($t:ty),+) => {$(
+        impl Field for $t {
+            fn of(n: &Number) -> Self { <$t>::narrow(n.to_float().expect("a real number")) }
+            fn number(self, width: FloatWidth) -> Number { Number::float(self.into(), width) }
+            fn compact(a: &Value) -> Option<Cow<'_, [Self]>> { read_as(a) }
+            fn array(x: Vec<Self>, shape: Vec<usize>, width: FloatWidth) -> Result<Value, ErrorKind> { Value::floats(shape, width, x.into_iter().map(Into::into).collect()) }
+        }
+    )+};
+}
+real_fields!(f32, f64);
+
+impl Field for Complex64 {
+    fn of(n: &Number) -> Self { n.to_complex().expect("a number") }
+    fn number(self, width: FloatWidth) -> Number { Number::complex(self, width) }
+    fn compact(a: &Value) -> Option<Cow<'_, [Self]>> { read_as(a) }
+    fn array(x: Vec<Self>, shape: Vec<usize>, width: FloatWidth) -> Result<Value, ErrorKind> { Value::complex(shape, ComplexBuf::collect(width.into(), x.into_iter())) }
+}
+
+/// Runs `$body` with the type `$t` standing for the [`Field`] of `$domain`, which is one of the domains listed. Only the listed domains'
+/// bodies compile. The second form takes the domain of the numbers `$numbers`, an iterator of `&Number`s, and binds `$width` to
+/// the float width of their results.
+macro_rules! with_field {
+    ($domain:expr, [$($d:ident),+], $t:ident => $body:expr) => {
+        match $domain {
+            $($crate::number::Domain::$d => {
+                type $t = $crate::number::field_type!($d);
+                $body
+            })+
+            #[allow(unreachable_patterns)]
+            domain => unreachable!("{domain:?} isn't among this call's domains"),
+        }
+    };
+    ($numbers:expr, $numeric:expr, $t:ident, $width:ident => $body:expr) => {{
+        let (domain, $width) = $crate::number::Domain::of($numbers, $numeric);
+        $crate::number::with_field!(domain, [Exact, Double, Complex], $t => $body)
+    }};
+}
+/// The [`Field`] of each [`Domain`], for `with_field!`.
+macro_rules! field_type {
+    (Exact) => { num_rational::BigRational };
+    (Single) => { f32 };
+    (Double) => { f64 };
+    (Complex) => { num_complex::Complex64 };
+}
+pub(crate) use {field_type, with_field};
 
 impl Number {
     pub fn from_integer(n: i64) -> Self { Self(Integer(n)) }
@@ -371,6 +470,8 @@ impl Number {
     pub fn as_bool(&self) -> Option<bool> { match self.0 { Boolean(b) => Some(b), _ => None } }
     pub(crate) fn bool_slice(&self) -> Option<&[bool]> { match &self.0 { Boolean(b) => Some(std::slice::from_ref(b)), _ => None } }
     pub fn is_exact(&self) -> bool { matches!(self.0, Boolean(_) | Integer(_) | Exact(_)) }
+    /// The domain this number computes in: exact, complex, or real in 64 bits.
+    fn domain(&self) -> Domain { if self.is_exact() { Domain::Exact } else if self.as_complex().is_some() { Domain::Complex } else { Domain::Double } }
     /// This number with a Boolean read as the integer 0 or 1, as arithmetic reads it.
     fn numeric(&self) -> std::borrow::Cow<'_, Self> {
         match self.0 { Boolean(b) => std::borrow::Cow::Owned(Self(Integer(b.into()))), _ => std::borrow::Cow::Borrowed(self) }
@@ -662,12 +763,12 @@ impl Number {
     fn by_level(
         &self,
         right: &Self,
-        int: impl FnOnce(i64, i64) -> Option<i64>,
+        int: impl FnOnce(i64, i64) -> Option<Self>,
         exact: impl FnOnce(BigRational, BigRational) -> Result<Option<Self>, &'static str>,
         real: impl FnOnce() -> Result<Option<Self>, &'static str>,
         complex: impl FnOnce(Complex64, Complex64) -> Result<Self, &'static str>,
     ) -> Result<Self, &'static str> {
-        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = int(*x, *y) { return Ok(Self(Integer(n))); } }
+        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = int(*x, *y) { return Ok(n); } }
         if let (Some(x), Some(y)) = (self.as_exact(), right.as_exact()) { if let Some(n) = exact(x, y)? { return Ok(n); } }
         if self.as_complex().is_none() && right.as_complex().is_none() { if let Some(n) = real()? { return Ok(n); } }
         complex(self.to_complex()?, right.to_complex()?).map(|n| n.at_width(self.width_with(Some(right))))
@@ -678,8 +779,8 @@ impl Number {
         if self.has_boolean(right) { return self.numeric().residue(&right.numeric(), t); }
         self.by_level(
             right,
-            |x, y| Some(rustymath::integer::residue(x, y)),
-            |x, y| Ok(Some(Self::exact(if x.is_zero() { y } else { &y - &x * (&y / &x).floor() }))),
+            |x, y| Some(Self::from_integer(rustymath::integer::residue(x, y))),
+            |x, y| Ok(Some(Self::exact(rustymath::exact::residue(&x, &y)))),
             || Ok(Some(reals!(self, right => |x, y: F| Self::from_float(rustymath::tolerant::Residue(t.tolerance_at(F::WIDTH)).one(x, y))))),
             |x, y| Ok(rustymath::tolerant::Residue(t.tolerance_at(self.width_with(Some(right)))).one(x, y).into()),
         )
@@ -705,7 +806,7 @@ impl Number {
     fn power(&self, right: &Self) -> Result<Self, &'static str> {
         self.by_level(
             right,
-            rustymath::integer::power,
+            |x, y| rustymath::integer::power(x, y).map(Self::from_integer),
             |x, y| {
                 if !y.is_integer() { return Ok(None); }
                 let n = y.to_i32().ok_or("exact exponent is too large")?;
@@ -732,19 +833,14 @@ impl Number {
             let g = rustymath::tolerant::Gcd(t.tolerance_at(width)).one(self.to_complex()?, right.to_complex()?);
             return if g.re.is_nan() || g.im.is_nan() { Err("gcd did not converge") } else { Ok(Self::complex(g, width)) };
         }
-        let (mut x, mut y) = (self.clone(), right.clone());
-        while !y.is_zero() {
-            let r = y.residue(&x, t)?;
-            x = y;
-            y = r;
-        }
-        x.math_monad(Math::Magnitude)
+        Ok(Self::exact(rustymath::exact::gcd(&self.as_exact().unwrap(), &right.as_exact().unwrap())))
     }
     /// `x∧y`: the least common multiple, within the tolerance of the width they compute at. On two Booleans it is `and`.
     pub(crate) fn lcm(&self, right: &Self, t: Numeric) -> Result<Self, &'static str> {
         if let (Boolean(x), Boolean(y)) = (&self.0, &right.0) { return Ok(Self::from_bool(x & y)); }
         if self.has_boolean(right) { return self.numeric().lcm(&right.numeric(), t); }
         if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = rustymath::integer::lcm(*x, *y) { return Ok(Self(Integer(n))); } }
+        if let (Some(x), Some(y)) = (self.as_exact(), right.as_exact()) { return Ok(Self::exact(rustymath::exact::lcm(&x, &y))); }
         let gcd = self.gcd(right, t)?;
         if gcd.is_zero() { Ok(gcd) } else { self.dyad(Arithmetic::Divide, &gcd)?.dyad(Arithmetic::Times, right) }
     }
@@ -754,7 +850,7 @@ impl Number {
             if y.is_integer() && !y.is_negative() {
                 let n = self.nonnegative_integer().map_err(|_| "factorial argument is too large")?;
                 if n > 100_000 { return Err("exact factorial argument is too large"); }
-                return Ok(Self::exact(BigRational::from_integer((1..=n).map(BigInt::from).product())));
+                return Ok(Self::exact(BigRational::from_integer(rustymath::number_theory::factorial(n).into())));
             }
         }
         if self.as_complex().is_some() { return Ok(Self::complex(rustymath::Factorial.one(self.to_complex()?), self.width_with(None))); }
@@ -809,35 +905,21 @@ impl Number {
     }
 
     fn binomial(&self, right: &Self) -> Result<Self, &'static str> {
-        let one = right.result_zero(Some(self)).one();
         if !(self.is_exact() && right.is_exact()) && self.as_complex().is_none() && right.as_complex().is_none() {
             if let Some(n) = reals!(self, right => |k, n: F| rustymath::Binom.checked(n, k).map(Self::from_float)) { return Ok(n); }
         }
         if let Ok(k) = self.integer() {
-            if k < 0 {
-                let Ok(n) = right.integer() else { return Ok(one.zero()); };
-                if n >= 0 || k > n { return Ok(one.zero()); }
-                let count = n.checked_sub(k).ok_or("binomial argument is too large")?;
-                let upper = k.checked_neg().and_then(|v| v.checked_sub(1)).ok_or("binomial argument is too large")?;
-                let a = Self::exact(BigRational::from_integer(count.into()));
-                let b = Self::exact(BigRational::from_integer(upper.into()));
-                let value = a.binomial(&b)?.dyad(Arithmetic::Times, &one.like(if count % 2 == 0 { 1 } else { -1 }))?;
-                return Ok(value);
+            // A float `right` reads as the rational it holds, so the product is exact, then rounds once.
+            if let Some(n) = right.as_exact().or_else(|| right.as_float().and_then(BigRational::from_float)) {
+                // Counting `binom_with`'s checks, one for every `BETWEEN_CHECKS` steps of its product, stops the product after about 100,000 steps.
+                let (mut checks, most) = (0, 100_000usize.div_ceil(rustymath::BETWEEN_CHECKS));
+                let c = rustymath::exact::binom_with(&n, k, || {
+                    checks += 1;
+                    if checks > most { Err("binomial argument is too large") } else { Ok(()) }
+                })?;
+                if self.is_exact() && right.is_exact() { return Ok(Self::exact(c)); }
+                return Ok(Self::float(c.to_f64().unwrap_or(f64::NAN), self.width_with(Some(right))));
             }
-            let k = match right.integer() {
-                Ok(n) if n >= 0 => {
-                    if k > n { return Ok(one.zero()); }
-                    k.min(n - k)
-                }
-                _ => k,
-            };
-            if k > 100_000 { return Err("binomial argument is too large"); }
-            let mut value = one.clone();
-            for i in 0..k {
-                let i = Self::exact(BigRational::from_integer(i.into())).dyad(Arithmetic::Times, &one)?;
-                value = value.dyad(Arithmetic::Times, &right.dyad(Arithmetic::Minus, &i)?)?.dyad(Arithmetic::Divide, &i.dyad(Arithmetic::Plus, &one)?)?;
-            }
-            return Ok(value);
         }
         let (x, y) = (self.to_complex()?, right.to_complex()?);
         if y.im == 0.0 && y.re < 0.0 && y.re.fract() == 0.0 { return Err("negative integer upper argument needs an integer selection"); }
@@ -886,7 +968,7 @@ impl Number {
             })),
             repr => {
                 let (y, width) = repr.complex().expect("the other numbers are complex");
-                let result = match op { Plus => y.conj(), Minus => -y, Times => rustymath::Sign.one(y), Divide => Complex64::new(1.0, 0.0) / y };
+                let result = match op { Plus => y.conj(), Minus => -y, Times => rustymath::Sign.one(y), Divide => rustymath::divide(Complex64::new(1.0, 0.0), y) };
                 Ok(Self::complex(result, width))
             }
         }
@@ -903,9 +985,14 @@ impl Number {
         }
         self.by_level(
             right,
-            |x, y| int::arithmetic(op, x, y),
+            |x, y| int::arithmetic(op, x, y).map(Self::from),
             |x, y| {
+                // Integers need no reduction. `BigRational`'s arithmetic would reduce by a gcd with each denominator.
+                let integers = x.is_integer() && y.is_integer();
                 Ok(Some(match op {
+                    Plus if integers => Self::from(x.numer() + y.numer()),
+                    Minus if integers => Self::from(x.numer() - y.numer()),
+                    Times if integers => Self::from(x.numer() * y.numer()),
                     Plus => Self::exact(x + y),
                     Minus => Self::exact(x - y),
                     Times => Self::exact(x * y),

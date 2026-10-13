@@ -86,8 +86,22 @@ const ABSENT: &str = "⍺ is absent in a call with one argument: it can only be 
 const INVALID_SELECTION: &str = "invalid selective-assignment expression";
 
 fn implicit_name(name: &str) -> bool { matches!(Key::of(name), Key::Implicit(_)) }
-/// Whether no offset repeats.
-fn distinct(offsets: &[usize]) -> bool { let mut seen = HashSet::with_capacity(offsets.len()); offsets.iter().all(|&o| seen.insert(o)) }
+/// For each of `offsets`, how many offsets before it equal it. A table over the positions up to the largest offset counts them when
+/// the offsets are many enough to fill it, and a hash map counts them otherwise.
+fn occurrences(offsets: &[usize]) -> Vec<u32> {
+    let next = |seen: &mut u32| {
+        *seen += 1;
+        *seen - 1
+    };
+    let size = offsets.iter().max().map_or(0, |&m| m + 1);
+    if size <= 8 * offsets.len() {
+        let mut seen = vec![0u32; size];
+        offsets.iter().map(|&o| next(&mut seen[o])).collect()
+    } else {
+        let mut seen = HashMap::new();
+        offsets.iter().map(|&o| next(seen.entry(o).or_insert(0))).collect()
+    }
+}
 
 #[derive(Debug)]
 enum FunctionNode {

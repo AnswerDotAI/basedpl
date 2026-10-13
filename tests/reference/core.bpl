@@ -2572,6 +2572,9 @@ avg←+/÷≢ ⋄ avg [1 2 4]ₓ   ⍝ 7r3
 ⍝ —
 ≠/⍬   ⍝ $f
 
+⍝ — An empty reduction by ∧ or ∨ on Booleans gives Booleans, as one by = or ≠ does, and so does an empty inner axis in ∨.∧
+•storage¨[∧/[2 0]⍴$t;∨/[2 0]⍴$t;([2 0]⍴$t)∨.∧[0 3]⍴$t]   ⍝ "boolean" "boolean" "boolean"
+
 ⍝ — Empty nested roll retains an exact vector prototype
 ↑¿0⍴⊂[1 2]ₓ   ⍝ [0 0]ₓ
 
@@ -3275,7 +3278,7 @@ m←1ₓ 0.5 2ₓ
 ⍝ — Monadic ⌊ on 32-bit floats gives exact integers, which widen past 32 bits when they need to
 ⌊32•float 1.5 3E9 ¯2.5   ⍝ [1 3000000000 ¯3]ₓ
 
-⍝ — An infinity in integer storage keeps the width of the float it came from
+⍝ — Exact integers joined with a 32-bit infinity give 32-bit floats
 ((⍳3ₓ),32•float∞)₃   ⍝ ∞ₛ
 
 ⍝ — Infinities of two widths join as floats of the wider width
@@ -3284,38 +3287,28 @@ m←1ₓ 0.5 2ₓ
 ⍝ — Matrix division on 32-bit floats computes and gives 32-bit floats
 (32•float 3 4)⌹32•float[1 1⋄0 2]   ⍝ [1 2]ₛ
 
-⍝ — An infinity never makes exact integers approximate, and shares integer storage with them
+⍝ — Beside exact integers, an infinity makes joined arrays floats and gathered items mixed
 •storage¨[⌊1.5 ∞;(⍳3ₓ),∞;∞,⍳3ₓ;(⍳3ₓ),2⍴∞;{⍵=1?∞;⍵}¨⍳3ₓ]
-"integer" "integer" "integer" "integer" "integer"
+"float64" "float64" "float64" "float64" "mixed"
 
 ⍝ —
 x←⍳3ₓ
 x₁←∞
-•storage x   ⍝ "integer"
+•storage x   ⍝ "float64"
 
 ⍝ — Arithmetic with an infinity gives floats
 •storage¨[0.5,∞ ¯∞;(⍳3ₓ)+∞]   ⍝ "float64" "float64"
 
-⍝ — A structural result of integer storage with infinities stays integer storage, whatever it keeps
-•storage¨[2↑[∞ 1 2]ₓ;1↓[∞ 1 2]ₓ;1↑[∞ 1]ₓ]   ⍝ "integer" "integer" "integer"
-
-⍝ — Widening integer storage to floats keeps its infinities
-[[1 ∞ ¯∞]ₓ+0.5;[1 ∞]ₓ,0.5]   ⍝ [1.5 ∞ ¯∞;1 ∞ 0.5]
-
-⍝ — Integer kernels treat infinities in integer storage as infinities
-[[1 ∞]ₓ-5ₓ;[1 ¯∞]ₓ+5ₓ;-[1 ∞]ₓ;+\[1 ∞ 2]ₓ;[3 ∞ ¯∞ 0]ₓ<2ₓ;⍋[3 ∞ ¯∞ 0]ₓ]
-[[¯4 ∞]ₓ;[6 ¯∞]ₓ;[¯1 ¯∞]ₓ;[1 ∞ ∞]ₓ;[$f $f $t $t];[2 3 0 1]ₓ]
-
 ⍝ — Under keyed agreement, a missing entry reads as its own array's fill
 ["a":1ₓ "b":∞]⌊["a":2ₓ "c":∞]   ⍝ ["a":1 "b":0 "c":0]ₓ
 
-⍝ — An infinity in integer storage is not a count
+⍝ — An infinity is not a count
 [2 ∞]ₓ↑2 3⍴⍳6
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Written items keep each number's exactness, and only floats widen, to complex
 •storage¨[1ₓ 2ₓ;1ₓ 0.5;1j2 0.5;1ₓ 1j2;1ₓ 1r2;[1ₓ;0.5];[1 0 1]ₓ;[1 ∞]ₓ;[0.5;1j2]]
-"integer" "mixed" "complex128" "mixed" "mixed" "mixed" "integer" "integer" "complex128"
+"integer" "mixed" "complex128" "mixed" "mixed" "mixed" "integer" "mixed" "complex128"
 
 ⍝ —
 •storage¨[[1ₓ 2ₓ⋄0.5 1.5];["a":1ₓ;"b":0.5]]   ⍝ "mixed" "mixed"
@@ -3995,8 +3988,8 @@ x←[¯7 7 0 ¯9223372036854775808 9223372036854775807]ₓ
 ⍝ — Floor of a large float is its exact integer
 ⌊2*70   ⍝ 1180591620717411303424ₓ
 
-⍝ — Floor keeps an infinity, and the other results stay exact
-⌊1.5 ∞ ¯∞   ⍝ 1ₓ ∞ ¯∞
+⍝ — Floor of floats that hold an infinity gives floats
+⌊1.5 ∞ ¯∞   ⍝ 1 ∞ ¯∞
 
 ⍝ — Signum of a float is an exact integer
 ×¯2.5 0 ∞   ⍝ [¯1 0 1]ₓ
@@ -4123,6 +4116,9 @@ z←1+16E¯15
 
 ⍝ — An empty argument has no groups
 ⍷⍬   ⍝ 0⍴⊂⍬ₓ
+
+⍝ — Positions count along the whole axis, also in a group much smaller than the axis
+1⊃⍷(300⍴0),1 1   ⍝ [300 301]ₓ
 
 ⍝ — A large index-of takes the first position within tolerance, not the nearest value
 (300⍴5 , [1+16E¯15 1])⍳1+8E¯15   ⍝ 300ₓ
@@ -6069,7 +6065,7 @@ src←"id,n", (•ucs 10), """00123"",5"
 
 ⍝ — Empty numeric cells become NaN. Entirely empty columns are text
 nl←•ucs 10 ⋄ •csv "a,b,c",nl,"1,1.5,",nl,",,"
-["a":[1 $n]ₓ "b":[1.5 $n] "c":["" ""]]
+["a":[1 $n] "b":[1.5 $n] "c":["" ""]]
 
 ⍝ — Custom markers and fill, with positional forced numeric selection
 nl←•ucs 10
@@ -6182,8 +6178,8 @@ opts •csv csv   ⍝ "note":,⊂"a\b""c"
 ⍝ — A vector of JSON texts gives a vector of values
 •json ["1" "[2]"]   ⍝ [1ₓ [2]ₓ]
 
-⍝ — Booleans are exact numbers and null defaults to NaN
-•json "[true,false,null]"   ⍝ [$t $f $n]
+⍝ — Beside null, which defaults to NaN, Booleans read as the floats 1 and 0
+•json "[true,false,null]"   ⍝ 1 0 $n
 
 ⍝ — Explicit null fill works recursively in both directions
 fill←"fill":¯1ₓ
@@ -6232,7 +6228,7 @@ fill •json⁻¹ fill •json "{""x"":[null,2]}"
 •json "{a: [1, 0x1F,], b: 'x', c: -Infinity}  // done"   ⍝ ["a":[1 31]ₓ "b":"x" "c":¯∞]
 
 ⍝ — JSON5's NaN reads as NaN, not as a missing value
-•json "[1, NaN]"   ⍝ [1 $n]ₓ
+•json "[1, NaN]"   ⍝ [1 $n]
 
 ⍝ — Infinity requires explicit fill on export
 •json⁻¹ ∞
@@ -6413,11 +6409,10 @@ x←1 ⋄ •src "x"
 t←•time 0 ⋄ [0≤•time t;⍴•time 2 3⍴t;•storage •time t]   ⍝ [$t;[2 3]ₓ;"float64"]
 
 ⍝ — F •time x gives each function's fastest time per call, in the shape and keys of F
-F←["sum":+/ "max":⌈/]
-T←F •time ⍳10
-[0≤T.max;•storage T;⍴ [[+/]⋄[⌈/]] •time ⍳10;⍴ ⍬ •time 1]
+T←["sum":+/] •time ⍳10
+[0≤T.sum;•storage T;⍴ ([1 1]⍴[+/]) •time ⍳10;⍴ ⍬ •time 1]
 ⍝ =>
-[$t;"float64";[2 1]ₓ;[0]ₓ]
+[$t;"float64";[1 1]ₓ;[0]ₓ]
 
 ⍝ — The left argument holds functions
 1 2 •time 3

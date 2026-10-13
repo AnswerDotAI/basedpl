@@ -22,11 +22,11 @@ use crate::{
     array::{Axis, FloatWidth, Items, Layout},
     element::{Element, Float},
     number::{Arithmetic, Math, Numeric},
-    pervasive::{self, with_count, with_float_reduction, Kernels},
+    pervasive::{self, with_float_reduction, with_truth_reduction, Kernels},
     primitive::{FoldKind, Primitive},
     Value,
 };
-use rustymath::{reduce::{self, Count, Reduction}, Arg, Native};
+use rustymath::{reduce::{self, Reduction}, Arg, Native};
 
 /// The fewest result items that a chain is started for. Smaller arrays stay in the cache between calls.
 const MIN_ITEMS: usize = 1 << 17;
@@ -87,7 +87,7 @@ impl Chain {
     pub(crate) fn start(p: Primitive, x: Option<&Value>, y: &Value, numeric: Numeric) -> Option<Self> {
         if !fusible(p, x.is_some()) || numeric.width == FloatWidth::F16 { return None; }
         let array = if y.is_atom() { x? } else { y };
-        let Items::Floats(floats) = array.checked_items() else { return None };
+        let Items::Floats(floats) = array.as_items() else { return None };
         if array.is_atom() || floats.tag() == FloatWidth::F16 { return None; }
         let shape = match x {
             Some(x) if !x.is_atom() && !y.is_atom() => Agreement::new(x.layout(), y.layout()).ok()?.layout.shape().to_vec(),
@@ -129,7 +129,7 @@ impl Chain {
     /// `value` as an operand: a float of at most the chain's width, or an array of floats of its width that keeps the result's shape. A
     /// smaller array broadcasts, reading its items through the map that `Agreement` gives it against the chain's result.
     fn operand(&mut self, value: &Value) -> Option<Operand> {
-        let Items::Floats(floats) = value.checked_items() else { return None };
+        let Items::Floats(floats) = value.as_items() else { return None };
         if value.is_atom() { return (floats.tag() != FloatWidth::F16 && floats.tag() <= self.width).then(|| Operand::Scalar(value.clone())); }
         if floats.tag() != self.width || !value.layout().plain() { return None; }
         let agreement = Agreement::new(value.layout(), &self.layout).ok()?;
@@ -178,7 +178,7 @@ impl Chain {
 
     /// What `p/` or `p⌿` gives on the chain's result, as `fold` in `eval::operators` gives it. It folds each block's results while they
     /// are in the cache, and never builds the chain's result. `None` for a scan, an axis of fewer than 2 items, or a fold without a form
-    /// that takes one block at a time: `float_reduction`'s on floats, and `truth_fold`'s on a comparison's Booleans.
+    /// that takes one block at a time: `with_float_reduction!`'s on floats, and `with_truth_reduction!`'s on a comparison's Booleans.
     pub(crate) fn fold(&self, p: Primitive, kind: FoldKind) -> Option<Value> {
         let shape = self.layout.shape();
         let axis = if kind.first { 0 } else { shape.len() - 1 };
@@ -195,23 +195,23 @@ impl Chain {
         Some(if shape.len() == 1 { result.at(0) } else { result })
     }
 
-    fn folded<F: Float + Kernels + Native + reduce::Fold<Sum = F>>(&self, p: Primitive, axis: &Axis, shape: Vec<usize>) -> Option<Value> {
-        let lanes = axis.outer * axis.inner;
+    fn folded<F: Float + Kernels + Native>(&self, p: Primitive, axis: &Axis, shape: Vec<usize>) -> Option<Value> {
+        let (lanes, dims) = (axis.outer * axis.inner, axis.dims());
         if self.compares() {
-            return with_count!(axis.len, C => pervasive::truth_fold(p, axis.len, shape, || {
-                let mut counts = vec![C::default(); lanes];
+            return with_truth_reduction!(p, axis.len, R => {
+                let mut totals = vec![<R as Reduction<bool>>::unit(); lanes];
                 self.blocks::<F>(&mut Vec::new(), &mut Vec::with_capacity(BLOCK), |start, _, bools| {
-                    fold_block(&mut counts, axis, start, bools, C::default(), |s, b| s + C::one(b), C::ones, |s, t| s + t);
+                    reduce::fold_into::<bool, R>(&mut totals, dims, start, bools);
                     bools.clear();
                 });
-                counts
-            }));
+                Element::build_narrowed(shape, totals)
+            })
+            .flatten();
         }
         with_float_reduction!(p, R => {
-            let (unit, step, slice) = (R::unit(), R::step, R::slice);
-            let mut totals = vec![unit; lanes];
+            let mut totals = vec![<R as Reduction<F>>::unit(); lanes];
             self.blocks::<F>(&mut Vec::with_capacity(BLOCK), &mut Vec::new(), |start, floats, _| {
-                fold_block(&mut totals, axis, start, floats, unit, step, slice, step);
+                reduce::fold_into::<F, R>(&mut totals, dims, start, floats);
                 floats.clear();
             });
             F::build_narrowed(shape, totals)
@@ -220,7 +220,8 @@ impl Chain {
 
     /// Runs the chain's steps on each block in turn. The last step appends its results to `floats`, or to `bools` for
     /// a comparison. `each` then sees them, with the position of the block's first item. A block splits into runs at the boundaries of
-    /// each input's repeats or cycles of at least `RUN` results. `read` reads each input once for each run.
+    /// each input's repeats or cycles of at least `RUN` results. `pervasive::expanded` reads each input once for each run, in place
+    /// where the run lies within one repeat or cycle.
     fn blocks<F: Float + Kernels>(&self, floats: &mut Vec<F>, bools: &mut Vec<bool>, mut each: impl FnMut(usize, &mut Vec<F>, &mut Vec<bool>)) {
         let inputs: Vec<(&[F], &Mapping)> = self.inputs.iter().map(|(v, m)| (F::slice(v).expect("an input has the chain's width"), m)).collect();
         let mut copies: Vec<Vec<F>> = inputs.iter().map(|_| Vec::new()).collect();
@@ -235,7 +236,7 @@ impl Chain {
                     _ => to,
                 });
                 let n = to - from;
-                let args: Vec<Arg<'_, F>> = inputs.iter().zip(&mut copies).map(|(&(data, m), copy)| read(m, data, from, n, copy)).collect();
+                let args: Vec<Arg<'_, F>> = inputs.iter().zip(&mut copies).map(|(&(data, m), copy)| pervasive::expanded(m, data, from, n, copy)).collect();
                 for (k, step) in self.steps.iter().enumerate() {
                     next.clear();
                     let operand = |operand: &Operand| match *operand {
@@ -255,55 +256,8 @@ impl Chain {
     }
 }
 
-/// Items `from..from + n` of an input that `mapping` lays out over a chain's result. No boundary of a repeat or cycle of at least `RUN`
-/// results falls inside them. A long repeat reads its one item, and a long cycle reads a slice in place. Other mappings read as
-/// `pervasive::expanded` reads them, copying into `copy` where the items aren't consecutive.
-fn read<'a, F: Element>(mapping: &Mapping, data: &'a [F], from: usize, n: usize, copy: &'a mut Vec<F>) -> Arg<'a, F> {
-    match *mapping {
-        Mapping::Linear(r) if r >= RUN => Arg::One(data[from / r]),
-        Mapping::Tiled(m) if m >= RUN => Arg::Many(&data[from % m..from % m + n]),
-        _ => pervasive::expanded(mapping, data, from, n, copy),
-    }
-}
-
 /// The float atom `c` at width `F`.
 fn scalar<F: Float>(c: &Value) -> F {
-    let Items::Floats(floats) = c.checked_items() else { unreachable!("a scalar operand is a float") };
+    let Items::Floats(floats) = c.as_items() else { unreachable!("a scalar operand is a float") };
     F::narrow(floats.get(0))
-}
-
-/// Adds a block of results, the items from position `start` on, to `totals`, the running totals of the lanes along `axis`. Along the
-/// last axis, a lane's items are consecutive. Whole lanes fold as `reduce::rows` folds them, from `unit` by `add` or by `lane`.
-/// `lane` also reduces each piece of a lane that the block holds only part of. `join` adds each later piece to the lane's total.
-/// Along any other axis, `add` adds each item to its lane's total, in the order that `pervasive::fold` takes them.
-fn fold_block<A: Copy, S: Copy>(
-    totals: &mut [S], axis: &Axis, start: usize, block: &[A], unit: S, add: impl Fn(S, A) -> S, lane: impl Fn(&[A]) -> S,
-    join: impl Fn(S, S) -> S,
-) {
-    let mut rest = block;
-    if axis.inner == 1 {
-        let (mut i, at) = (start / axis.len, start % axis.len);
-        // The rest of a lane that an earlier block started.
-        if at > 0 {
-            let (piece, after) = rest.split_at((axis.len - at).min(rest.len()));
-            totals[i] = join(totals[i], lane(piece));
-            if at + piece.len() < axis.len { return; }
-            (rest, i) = (after, i + 1);
-        }
-        let count = rest.len() / axis.len;
-        let (whole, started) = rest.split_at(count * axis.len);
-        reduce::rows(whole, axis.len, &mut totals[i..i + count], unit, &add, &lane);
-        // The start of a lane that the next block finishes.
-        if !started.is_empty() { totals[i + count] = lane(started); }
-    } else {
-        let row = start / axis.inner;
-        let (mut i, mut j, mut k) = (row / axis.len, row % axis.len, start % axis.inner);
-        while !rest.is_empty() {
-            let (piece, after) = rest.split_at((axis.inner - k).min(rest.len()));
-            for (s, &x) in totals[i * axis.inner + k..].iter_mut().zip(piece) { *s = add(*s, x); }
-            (rest, k) = (after, k + piece.len());
-            if k == axis.inner { (j, k) = (j + 1, 0); }
-            if j == axis.len { (i, j) = (i + 1, 0); }
-        }
-    }
 }

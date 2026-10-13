@@ -4,7 +4,7 @@
 #![cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use basedpl::{js, protocol, EvalOptions, MimeData, Output, OutputSink};
 use js_sys::{Array, Function, Object, Reflect, Uint8Array};
-use std::{cell::RefCell, sync::Arc};
+use std::{alloc::{GlobalAlloc, Layout, System}, cell::RefCell, sync::Arc};
 use wasm_bindgen::prelude::*;
 
 thread_local! {
@@ -14,6 +14,35 @@ thread_local! {
     /// The function that receives a panic's message, just before the module traps.
     static PANIC: RefCell<Option<Function>> = const { RefCell::new(None) };
 }
+
+/// The global allocator: std's `dlmalloc`, with every block of `WIDE` bytes or more aligned to 16 bytes. `dlmalloc` aligns blocks to
+/// 8 bytes on wasm32, so a large vector could start at 8 mod 16. `+\z` ran three times slower when its result started at 8 mod 16
+/// and its argument at 0 mod 16, and at its usual speed with both at 0 mod 16. Smaller blocks keep `dlmalloc`'s alignment, because
+/// a larger alignment takes its slower `memalign` and makes every `realloc` copy.
+struct Aligned;
+
+/// The smallest block that `Aligned` aligns to 16 bytes.
+const WIDE: usize = 4096;
+
+impl Aligned {
+    fn layout(l: Layout) -> Layout { if l.size() >= WIDE { l.align_to(16).expect("16 is a power of two") } else { l } }
+}
+
+unsafe impl GlobalAlloc for Aligned {
+    unsafe fn alloc(&self, l: Layout) -> *mut u8 { unsafe { System.alloc(Self::layout(l)) } }
+    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 { unsafe { System.alloc_zeroed(Self::layout(l)) } }
+    unsafe fn dealloc(&self, p: *mut u8, l: Layout) { unsafe { System.dealloc(p, Self::layout(l)) } }
+    unsafe fn realloc(&self, p: *mut u8, l: Layout, size: usize) -> *mut u8 {
+        let (old, new) = (Self::layout(l), Self::layout(Layout::from_size_align(size, l.align()).expect("realloc's contract")));
+        if old.align() == new.align() { return unsafe { System.realloc(p, old, size) } }
+        let q = unsafe { System.alloc(new) };
+        if !q.is_null() { unsafe { std::ptr::copy_nonoverlapping(p, q, l.size().min(size)); System.dealloc(p, old) } }
+        q
+    }
+}
+
+#[global_allocator]
+static ALLOCATOR: Aligned = Aligned;
 
 /// Calls `f`, if there is one, with `value`.
 fn send(f: &RefCell<Option<Function>>, value: &JsValue) { if let Some(f) = &*f.borrow() { _ = f.call1(&JsValue::NULL, value); } }
@@ -44,10 +73,11 @@ pub fn configure(base: String, panic: Function) {
 pub fn symbols() -> String { basedpl::symbols::rows().to_string() }
 
 /// Every case in `speed`, text in `speed.txt`'s format, with its cost, as `basedpl::timing::costs` times it: an array of
-/// `{section, code, budgets, cost}`. Throws when the setup or a case fails.
+/// `{section, code, budgets, cost}`. With `cases`, an array of codes, only those cases run. Throws when the setup or a case fails.
 #[wasm_bindgen]
-pub fn costs(speed: &str) -> Result<JsValue, JsValue> {
-    let cases = basedpl::timing::costs(speed, &Default::default()).map_err(|e| JsValue::from(js_sys::Error::new(&e)))?;
+pub fn costs(speed: &str, cases: Option<Vec<String>>) -> Result<JsValue, JsValue> {
+    let only: Option<Vec<&str>> = cases.as_ref().map(|c| c.iter().map(String::as_str).collect());
+    let cases = basedpl::timing::costs(speed, only.as_deref(), &Default::default()).map_err(|e| JsValue::from(js_sys::Error::new(&e)))?;
     let rows = Array::new();
     for c in cases {
         let row = Object::new();

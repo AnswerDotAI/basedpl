@@ -335,7 +335,7 @@ impl Session {
                 let left = self.evaluate_once(left)?;
                 let item = path.iter().fold(binding.value.clone(), |a, &i| a.at(i));
                 let context = self.at(&span);
-                let selection = if !pick && left.is_simple() {
+                let selection = if !pick {
                     crate::primitive::squad_selection(&left, &item, &context)?
                 } else if pick && item.shape().len() == 1 && (left.is_atom() || crate::keyed::name(&left).is_some()) {
                     // One position or key picks one item of a vector.
@@ -396,14 +396,33 @@ impl Session {
     fn modified_values(&mut self, original: &Value, selection: &Selection, f: &Function, right: &Value, span: &Span) -> Result<Value, Error> {
         let right = selection.checked(right, &self.at(span))?;
         if let (ResultFrame::Array(_), Targets::Offsets(offsets), FunctionNode::Primitive(p)) = (&selection.frame, &selection.targets, f.node()) {
-            if p.pervasive(true) && distinct(offsets) {
-                let items = selection.read(original, &self.at(span))?;
+            if p.pervasive(true) {
                 // A singleton goes to every target, as a unit.
-                let right = if right.is_singleton() && right.shape() != items.shape() {
+                let unit = if right.is_singleton() {
                     let item = right.at(0);
-                    if item.is_atom() { item } else { item.enclose().error_at(span, "invalid modified selection")? }
-                } else { right };
-                return f.call_array(Some(&items), &right, &mut self.at(span));
+                    Some(if item.is_atom() { item } else { item.enclose().error_at(span, "invalid modified selection")? })
+                } else { None };
+                let rounds = occurrences(offsets);
+                let count = rounds.iter().max().map_or(0, |&r| r as usize + 1);
+                if count <= 1 {
+                    let items = selection.read(original, &self.at(span))?;
+                    let right = match unit { Some(unit) if right.shape() != items.shape() => unit, _ => right };
+                    return f.call_array(Some(&items), &right, &mut self.at(span));
+                }
+                // Round r holds the r-th target at each position. Its positions are distinct. One call computes the round from the values
+                // that earlier rounds wrote. Each target then takes its position's last value.
+                let mut by_round = vec![Vec::new(); count];
+                for (t, &r) in rounds.iter().enumerate() { by_round[r as usize].push(t) }
+                let at = |offsets: Vec<usize>| Selection { frame: ResultFrame::Array(vec![offsets.len()].into()), targets: Targets::Offsets(offsets) };
+                let mut current = original.clone();
+                for targets in by_round {
+                    let round = at(targets.iter().map(|&t| offsets[t]).collect());
+                    let items = round.read(&current, &self.at(span))?;
+                    let values = match &unit { Some(unit) => unit.clone(), None => at(targets).read(&right, &self.at(span))? };
+                    let results = f.call_array(Some(&items), &values, &mut self.at(span))?;
+                    round.write_into(&mut current, &results, &self.at(span))?;
+                }
+                return selection.read(&current, &self.at(span));
             }
         }
         let mut results: Vec<Value> = Vec::with_capacity(selection.targets.len());

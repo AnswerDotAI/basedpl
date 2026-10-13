@@ -1,13 +1,13 @@
 use crate::{
     agreement::{Agreement, Mapping},
-    array::{agreed, compress, generated_len, or_and_sum, saturated, with_ints, with_width, Axis, FloatWidth, Frame, Gather, Items, Layout, Steps, Storage, Width},
+    array::{agreed, generated_len, or_and_sum, saturated, with_ints, with_width, Axis, FloatWidth, Frame, Gather, Items, Layout, Steps, Storage, Width},
     execution::Context,
     keyed::Selector,
     number::{
         int::Int,
         Arithmetic, Math,
     },
-    search::{classify, first_matches, firsts, Cells},
+    search::{classify, first_matches, firsts, grouped, Cells},
     DomainAt, Error, ErrorAt, ErrorKind, Number, Span, Value,
 };
 use foldhash::{HashMap, HashMapExt};
@@ -222,6 +222,8 @@ pub(crate) enum Identity {
     Number(i32),
     /// A Boolean, whatever the prototype.
     Boolean(bool),
+    /// `$t` or `$f` for a Boolean prototype, as `∧` and `∨` give, and otherwise 1 or 0 in the numeric domain of the prototype.
+    Logical(bool),
     /// Positive or negative real infinity.
     Infinity(bool),
     /// An empty cell along the first or last axis, as `0⌿` or `0/` gives.
@@ -313,7 +315,7 @@ fn generated(n: u64, float: Option<FloatWidth>) -> Value {
 }
 /// Counts or positions in `shape`, as `generated` gives each one. A value beyond `i64` makes the array mixed.
 fn generated_items(shape: Vec<usize>, values: Vec<u64>, float: Option<FloatWidth>) -> Result<Value, ErrorKind> {
-    if let Some(width) = float { return Value::floats(shape, width, values.into_iter().map(|n| n as f64).collect()); }
+    if let Some(width) = float { return Value::floats(shape, width, values.into_iter().map(|n| rustymath::convert::float(n as i64)).collect()); }
     if values.iter().all(|&n| i64::try_from(n).is_ok()) { return Value::integers(shape, values.into_iter().map(|n| n as i64).collect()); }
     Value::new(shape, values.into_iter().map(|n| generated(n, None)).collect())
 }
@@ -441,8 +443,8 @@ impl Primitive {
             Self::Math(Pi) => row("π", "pi", "", pervasive_monad("pi-times"), pervasive_dyad("pi-ratio")),
             Self::Math(Root) => row("√", "root", "", pervasive_monad("sqrt"), pervasive_dyad("root")),
             Self::Math(Factorial) => row("!", "factorial", "", pervasive_monad("factorial"), pervasive_dyad("binomial").identity(Identity::Number(1))),
-            Self::Math(Lcm) => row("∧", "and", "", monad("polar", 0), pervasive_dyad("lcm").identity(Identity::Number(1))),
-            Self::Math(Gcd) => row("∨", "or", "", monad("real-imag", 0), pervasive_dyad("gcd").identity(Identity::Number(0))),
+            Self::Math(Lcm) => row("∧", "and", "", monad("polar", 0), pervasive_dyad("lcm").identity(Identity::Logical(true))),
+            Self::Math(Gcd) => row("∨", "or", "", monad("real-imag", 0), pervasive_dyad("gcd").identity(Identity::Logical(false))),
             Self::Math(Nand) => row("⊼", "nand", "", pervasive_monad("square"), pervasive_dyad("nand")),
             Self::Math(Nor) => row("⊽", "nor", "", pervasive_monad("double"), pervasive_dyad("nor")),
             Self::Math(Not) => row("~", "tilde", "", pervasive_monad("not"), dyad("without", [W, W])),

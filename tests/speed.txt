@@ -1,223 +1,248 @@
 # The cases that `tests/speed.rs` times in the native build and `tests/wasm-speed.mjs` times in the browser build. Each case line holds the code, its native budget and its wasm budget, separated by tabs. Each section starts with its name in brackets and the prefs its session starts with. Every session then runs the lines under the `[setup]` before its section.
 # Budgets in `[copies]`, `[exact]` and `[images]` count copies of the `n` items that the section's setup makes. A budget in `[widths]` is the most that the time in that section's 32-bit session may be, as a fraction of the time in the `[exact]` session. Natively and in wasm, it is the worse of that fraction on a Mac and on CI's runner, plus 0.25.
 # A wasm budget in copies is twice the most the case has cost on a Mac and on CI's runner, in the module that `cargo wasm` builds, and at least 0.5. `tests/speed.rs` gives the same rule for native budgets in copies.
-# The CI figures come from `Speed` run 38190018947. Its CPU was the AMD Ryzen 9 7950X3D 16-Core Processor. `⍋b`, `<jv`, `<b`, `3↕v`, `3 3↕m`, `¯3 ¯3↕m`, `○v`, the inner products, the matrix division, determinant and `•decompose` cases and the cases in `[images]` have no CI figures yet. Their budgets are four times their cost on a Mac.
+# The CI figures come from `Speed` run 38298407890. Its CPU was the AMD Ryzen 9 7950X3D 16-Core Processor.
 [setup]
 side←256 ⋄ n←side×side ⋄ v←¿n⍴0 ⋄ w←¿n⍴0 ⋄ s←v-0.5 ⋄ m←[side side]⍴v
-jv←¿n⍴1000ₓ ⋄ kv←¿n⍴1000000000000ₓ ⋄ b←0=¿n⍴3ₓ ⋄ i←¿n⍴⌊n
+jv←¿n⍴1000ₓ ⋄ kv←¿n⍴1000000000000ₓ ⋄ b←0=¿n⍴3ₓ ⋄ i←¿n⍴⌊n ⋄ cnt←¿n⍴3ₓ
 c←n⍴"the quick brown fox jumps over the lazy dog"
 nd←•distribution "normal" ⋄ coeffs←0.5 ¯1.25 0.75 2 ¯0.125 0.0625 ¯1.5 0.25
 ms←[n÷64 8 8]⍴v ⋄ ss←ms+0 2 1⍉ms ⋄ sps←ss+⍤2(16×=⊗⍨⍳8) ⋄ t←[n÷16 16]⍴v
-zm←128 128↑m+0j1×⊖m ⋄ f←"svd"•decompose m ⋄ h←"eigen"•decompose m+⍉m ⋄ bm←[side side]⍴b ⋄ jm←[side side]⍴jv ⋄ cm←[side side]⍴c
+z←v+0j1×w ⋄ zm←128 128↑m+0j1×⊖m ⋄ f←"svd"•decompose m ⋄ h←"eigen"•decompose m+⍉m ⋄ bm←[side side]⍴b ⋄ jm←[side side]⍴jv ⋄ cm←[side side]⍴c
 [copies]
 # Sharing storage copies nothing.
 ,m	0.5	0.5
 (⍴m)⍴v	0.5	0.5
 # Reading each item once, with almost nothing to write.
-+/v	1.4	4.4
-+/jv	1.2	3.5
-⌈/v	1.4	4.3
-∧/b	0.6	2.9
-+/m	1.6	5.1
-+⌿m	3	3.5
++/v	1.5	3.6
++/jv	1.2	3.6
++/z	2.5	5.2
+-/v	2.4	2.4
+-/jv	1.9	5.3
+⌈/v	1.5	1.6
+∧/b	0.5	0.51
++/m	1.6	5.2
++⌿m	2.9	4.1
 # Reading one argument and writing each item once.
--v	2.8	3.4
--jv	1	1.6
-~b	0.5	0.66
+-v	2.9	3
+-jv	0.96	1.6
+~b	0.5	0.55
 ∧\b	0.5	0.5
 ∨\b	0.5	0.5
-⌽v	3	4.8
-1⌽v	3	3.2
-⊖m	3.8	4.9
-1↓v	3	3.2
-(n÷2)↑v	1.8	1.9
-n⍴0	1.8	3
+⌽v	3	2.9
+1⌽v	3	3.3
+⊖m	2.4	4
+1↓v	3	3.1
+(n÷2)↑v	1.7	1.4
+n⍴0	1.7	3.3
 # Reading two arguments and writing each item once.
-v+w	4.4	6.4
+v+w	4.3	4.3
 jv+jv	1.4	1.7
-kv+kv	5	5.8
-v×2	3	3.1
-jv×2	2.4	3
-jv=jv	0.8	1.6
-b×jv	1	5.2
-b×kv	4.2	11
-v⌊w	4.4	7.4
-b∧b	0.5	0.66
-c=c	1.2	2.7
-(⍳√n)×⊗⍳√n	3	3.8
+kv+kv	4.7	5.7
+v×2	2.9	3.1
+jv×2	2.5	2.8
+jv=jv	0.7	1.5
+b×jv	1.1	4.1
+b×kv	4.1	5.5
+v⌊w	4.4	4.8
+b∧b	0.5	0.59
+c=c	1.2	2.5
+(⍳√n)×⊗⍳√n	2.9	3.9
+# Products of 64-bit integers that leave 64 bits become exact big integers, each held in an allocation of its own.
+kv×kv	750	1500
 # Compressing by a mask can't be vectorised, because each kept item's place depends on the items before it.
-b#v	6.6	12
-⍸b	4.8	9.3
-# A range with an approximate length converts each position from an integer to a float.
-⍳n	1.8	5.6
+b#v	6.5	13
+⍸b	4.4	9.2
+# Replicating by counts of 0 to 2 writes four copies of each item where its run starts. The next item overwrites the copies past its count.
+cnt#v	11	22
+# Counts held as floats are checked for whole numbers 256 at a time before they replicate.
+(•float cnt)#v	16	29
+# A range with an approximate length converts each position from an integer to a float. Wasm has no vector instruction for that, so there each block of 8 positions adds 0 to 7 to the block's first float.
+⍳n	2.1	5.4
 # Comparing within tolerance takes a subtraction, the magnitudes, a scale and a comparison for each item.
-⌊v	12	12
-v<w	11	21
-jv<500	0.6	1.5
+⌊v	11	11
+v<w	11	13
+jv<500	0.57	1.6
 # Writing twice as many items, or writing in a different order from reading.
-v,w	4.6	4.8
-⍉m	24	21
+v,w	4.2	4.6
+⍉m	7.4	10
 # Windows copy each item once for every window that holds it. Padded windows first copy the argument with its padding.
-3↕v	140	330
-3 3↕m	710	1500
-¯3 ¯3↕m	690	1500
-# A small-table index takes one pass for the range of the items, then one pass to write each item's first position into the
-# table. Each of these passes costs 1.4 to 2.5 copies, because a table read or write can't be vectorised.
-≠jv	9.6	19
+3↕v	72	150
+3 3↕m	350	670
+¯3 ¯3↕m	360	690
+# A small-table index finds the items' range in one vectorised pass, then writes each item's first position into the table, one item at a time.
+≠jv	9.3	19
 # A search also looks each item of the other argument up in the table, and unique then compresses by the mask.
-jv⍳jv	20	34
-jv∊jv	19	30
-c⍳c	19	32
-∪jv	12	23
-∪c	11	22
-# Key classifies the keys, counts and places each group's positions, then gathers each group's items.
-{≢⍵}⌸b	66	94
+jv⍳jv	19	31
+jv∊jv	19	31
+c⍳c	19	29
+∪jv	12	22
+∪c	11	24
+# Key classifies the keys, then counts and places each group's positions.
+{≢⍵}⌸b	62	94
+# Classify of Booleans compares each item with the first. Groups of Booleans write each class's positions 8 items at a time, from a table indexed by the byte of those items' classes.
+⍷b	15	26
+=b	16	28
+# Interval index sorts its boundaries, then reads each value's count of boundaries at or below it from a table over their keys.
+# Floats' keys span too much for a table, so sixteen values binary-search the sorted floats together.
+(<jv)⍸jv	26	31
+(<w)⍸v	350	370
 # Each item waits for the result before it. In float scans by `+` and `⌈`, only one item in each group of four waits for the group
 # before it.
-+\v	3.6	4.7
-⌈\v	6.2	44
-+\jv	14	23
-+\b	6.8	13
-≠\b	6.4	6.3
++\v	3.8	4.2
+⌈\v	6.2	4.4
++\jv	13	22
++\b	6.7	11
+≠\b	6.3	5.9
+-\v	4.8	5.2
+-\jv	11	17
+⌈\jv	8.5	11
++\z	4.4	5.9
+# An inverse scan by `+`, `-`, `=` or `≠` combines each item with the item before it, in one pass.
++\⁻¹v	3.4	3.7
+≠\⁻¹b	0.52	0.63
 # Each item waits for a read from a random place.
 [i]⌷v	15	17
+# An indexed assignment copies the array once, then writes each value at its index.
+{x←v ⋄ x.[i]←w ⋄ x}0	16	32
 # An approximate divisor reads the integers as floats. Each item then needs a float division and a floor within tolerance.
-3|jv	27	35
+3|jv	26	28
 # rustymath's `exp` evaluates a polynomial of 10 terms for each item, and `ln` one of 7 terms and a division.
-*s	21	46
-⍟v	35	64
+*s	21	38
+⍟v	33	47
 # rustymath's sine and cosine reduce each item by π in three fused multiply-adds, and evaluate a polynomial of 7 terms. Tangent
 # reduces by π/2, evaluates a polynomial of 9 terms at half the angle, and divides once.
-1○v	20	51
-2○v	22	56
-3○v	27	74
+1○v	20	36
+2○v	22	41
+3○v	27	49
 # The hyperbolic functions build on rustymath's `exp` and `expm1`, with a division. The inverse circle functions evaluate a
 # polynomial of 10 or 12 terms after a reduction with a square root or a division.
-5○v	31	79
-6○v	23	53
-7○v	30	76
-1○⁻¹v	23	54
-2○⁻¹v	25	61
-3○⁻¹v	23	61
+5○v	30	55
+6○v	23	42
+7○v	30	52
+1○⁻¹v	23	44
+2○⁻¹v	25	42
+3○⁻¹v	22	40
 # The inverse hyperbolic functions build on rustymath's `log1p`, after a square root or a division.
-5○⁻¹v	36	82
-4○v	9.8	15
-# Monadic `○`, cis, runs rustymath's complex `exp` kernels on the reals at their own width.
-○v	320	500
+5○⁻¹v	35	56
+4○v	9.8	12
+# Monadic `○`, cis, runs rustymath's `Cis` on the reals at their own width, through the slice forms of `Cos` and `Sin`.
+○v	180	260
 # An exponent of 2 squares each item, in a loop of its own. Another exponent calls rustymath's `pow` for each item, which at f64
 # reads tables that NEON and wasm can't vectorize.
 v*2	3	3.1
-v*w	79	110
+v*w	70	110
 # Bases 2 and 10 and degrees 2 and 3 have loops of their own.
-2⍟v	32	64
-10⍟v	33	66
-3√v	27	80
+2⍟v	33	48
+10⍟v	33	48
+3√v	27	58
 # Exact integers read as floats for a function whose results are always approximate.
-⍟jv	34	71
-*jv	22	51
-jv⍟2ₓ	140	220
-√jv	8.4	18
+⍟jv	34	55
+*jv	22	43
+jv⍟2ₓ	39	57
+√jv	7.9	9.4
 # `!` calls rustymath's `gamma`, which sums its Lanczos series in double words. A distribution's density, cdf and quantile each
-# run over the array as one slice. The quantile refines Giles's approximation of erfcinv with Halley steps. `⌻` evaluates a
-# polynomial of degree 7 by Horner's rule.
-!v	460	990
-nd.density v	30	67
-nd.cdf v	60	110
-nd.quantile v	580	820
-coeffs⌻v	12	34
+# run over the array as one slice. The quantile's `erfcinv` sorts each block of items by region, then evaluates each region's
+# rational approximation over its items, with no iteration. `⌻` evaluates a polynomial of degree 7 by Horner's rule.
+!v	440	850
+nd.density v	29	51
+nd.cdf v	60	71
+nd.quantile v	260	330
+coeffs⌻v	12	35
 # Each item goes into a hash table, and each item of the other argument is looked up in it. A tolerant search looks in two
 # buckets for each item, where an exact search looks in one.
-v⍳w	260	500
+v⍳w	250	440
 # A radix sort moves every item once for each byte that differs between the keys. Keys that span a small range, as `jv`'s and `b`'s
 # do, take a counting sort, which places each item once.
-⍋v	200	220
-⍋jv	110	130
-⍋b	160	110
+⍋v	210	280
+⍋jv	77	110
+⍋b	67	53
 # A sort of keys that span a small range counts them, then writes each key as many times as it occurs. It needs no positions.
-<jv	25	40
-<b	26	39
+<jv	13	20
+<b	13	20
 # Unique sorts the reals, then compares each with the next one.
-∪v	260	340
-# The tiled inner products in `rustymath` run `+.×`, `⌈.+` and `⌊.+` on floats and integers, `+.×` on complex numbers, Boolean `∨.∧`, and the counts `+.=` and `+.≠`. `rustymath`'s own speed test times those products. Each case here checks that basedpl sends one kind of pair to them. A pair that misses them takes the per-row path, several times slower. A case with `⍤2` makes one call for each of 1024 matrices of 8×8.
-+.×⍤2⍨ ms	460	530
-m+.×m	390	870
-m⌈.+m	820	860
-bm∨.∧bm	270	250
-jm+.×jm	440	1200
-jm+.=jm	630	750
-cm+.=⍉cm	460	520
-zm+.×zm	260	450
+∪v	280	330
+# The inner products in `rustymath` run `+.×`, `⌈.+` and `⌊.+` on floats and integers, `+.×` on complex numbers, Boolean `∨.∧` and `∧.∨`, and the counts `+.=` and `+.≠`. `rustymath`'s own speed test times those products. Each case here checks that basedpl sends one kind of pair to them. A pair that misses them takes the per-row path, several times slower. A case with `⍤2` makes one call for each of 1024 matrices of 8×8.
++.×⍤2⍨ ms	270	330
+m+.×m	150	440
+m⌈.+m	380	440
+bm∨.∧bm	120	120
+bm∧.∨bm	12	21
+jm+.×jm	220	560
+jm+.=jm	280	380
+cm+.=⍉cm	230	250
+zm+.×zm	130	240
 # Matrix division, `•decompose`, `•decompose⁻¹` and the determinant `-.×` run on rustymath, whose own speed test times each factorisation. These cases time basedpl's part: the calls in a `⍤2` stack, each path of `⌹`, the route from monadic `-.×` to LU, turning `"qr"`'s factors into arrays, rebuilding a matrix from factors, and reading complex storage.
-⌹⍤2 ms	770	990
-⌹m	880	1300
-(side↑w)⌹m	320	500
-((n÷16)↑w)⌹t	240	260
-⌹t	550	730
-"qr"•decompose⍤2 ms	2400	3100
-"qr"•decompose m	2200	3000
-"cholesky"•decompose⍤2 sps	1100	1400
-"svd"•decompose⍤2 ms	3500	5800
-"svd"•decompose⁻¹ f	860	1500
-"eigen"•decompose⁻¹ h	4500	5800
-"eigen"•decompose⍤2 ss	3200	4000
-"eigen"•decompose⍤2 ms	4400	6800
-⌹zm	660	1300
--.×m	290	440
--.×⍤2 ms	420	480
+⌹⍤2 ms	330	440
+⌹m	390	630
+(side↑w)⌹m	150	250
+((n÷16)↑w)⌹t	120	150
+⌹t	290	370
+"qr"•decompose⍤2 ms	720	970
+"qr"•decompose m	620	1100
+"cholesky"•decompose⍤2 sps	350	380
+"svd"•decompose⍤2 ms	1600	1900
+"svd"•decompose⁻¹ f	210	460
+"eigen"•decompose⁻¹ h	1900	2400
+"eigen"•decompose⍤2 ss	990	1300
+"eigen"•decompose⍤2 ms	2800	2800
+⌹zm	310	620
+-.×m	130	200
+-.×⍤2 ms	180	240
 [exact] •prefs ["tolerance":0]
 # Plain IEEE comparisons and `floor`, with nothing to scale by a tolerance.
-⌊v	4.2	5.3
-v<w	3.2	5.8
-v=w	3	5.9
-3|v	8.4	13
+⌊v	4	5.6
+v<w	3.2	4.8
+v=w	3	4.5
+3|v	8.2	9
 # Each real indexes its `order_key` in a hash map, as exact data does.
-v⍳w	120	230
+v⍳w	120	200
 ∪v	120	190
 [widths] •prefs ["float":32]
 # Half the bytes to read and write, and twice the lanes in each SIMD instruction.
--v	0.83	0.79
-v+w	0.78	0.77
-v×2	0.79	0.79
-v<w	0.8	0.82
-0.5<v	0.89	0.81
-√v	0.78	0.79
-+⌿m	0.89	0.93
-+/v	0.84	0.58
-⌈/v	0.9	0.74
-m+.×m	0.83	1.24
+-v	0.78	0.79
+v+w	0.75	0.77
+v×2	0.77	0.8
+v<w	0.8	0.84
+0.5<v	0.89	0.83
+√v	0.78	0.78
++⌿m	0.91	0.92
++/v	0.8	0.6
+⌈/v	0.8	0.86
+m+.×m	0.83	0.78
 # `⌊` reads half the bytes and writes 32-bit integers in place of 64-bit ones.
-⌊v	0.85	0.98
+⌊v	0.85	1.04
 # An LU decomposition in 32 bits.
-⌹m	0.91	1.21
+⌹m	0.97	0.93
 # rustymath's `exp` and `ln` run shorter polynomials at f32, with twice the lanes in each SIMD instruction.
-*s	0.65	0.57
-⍟v	0.7	0.62
+*s	0.66	0.58
+⍟v	0.68	0.64
 # rustymath's sine and cosine reduce in f32 with fused multiply-adds, and run a polynomial of 4 terms in place of 7.
 1○v	0.69	0.95
 2○v	0.7	0.93
-3○v	0.66	0.83
+3○v	0.67	0.85
 7○v	0.67	0.61
-1○⁻¹v	0.6	0.53
-3○⁻¹v	0.66	0.54
-v*2	0.83	0.83
-v*w	0.8	0.89
+1○⁻¹v	0.6	0.54
+3○⁻¹v	0.67	0.54
+v*2	0.76	0.81
+v*w	0.81	0.9
 # Grade sorts keys and positions of half the bytes.
-⍋v	0.9	0.83
+⍋v	0.87	0.76
 # A hash lookup costs about the same at either width. These budgets catch a 32-bit search that costs much more than a 64-bit one.
-v⍳w	1.22	1.27
-∪v	1.23	1.26
+v⍳w	1.22	1.22
+∪v	1.24	1.19
 [setup]
 img←¿[4000 3000 3]⍴0 ⋄ flat←,img ⋄ n←≢flat
 [images]
 # A 4000×3000 image with three channels holds 36 million floats, far more than the caches hold. Each step of a chain reads and writes every item.
-0⌈1⌊0.5+1.2×img-0.5	29	25
-img×1-0.5×img	16	17
-0⌈1⌊img×0.5+(⍳4000)÷8000	20	16
+0⌈1⌊0.5+1.2×img-0.5	9.2	13
+img×1-0.5×img	6.9	8.2
+0⌈1⌊img×0.5+(⍳4000)÷8000	7.2	8.8
 # A reduction at the end of a chain folds each block's results while they are in the cache. Along the first axis, it adds each block to one total for each column.
-+/flat>0.5	4.1	7.3
-+⌿img×2	7.8	9.8
++/flat>0.5	1.8	3.3
++⌿img×2	4	4.8
 # `+/img` folds each pixel's 3 channels. Each length of lane up to 15 items has a loop of its own. The reshape shares `flat`'s storage.
-+/img	4.2	4.6
-+/[4500000 8]⍴flat	3.7	3.9
++/img	2.1	2.1
++/[4500000 8]⍴flat	1.8	2
 # The comparison's Booleans count into a byte for each pixel.
-+/img>0.5	5.7	16
++/img>0.5	2.9	7.7

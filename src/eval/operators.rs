@@ -433,28 +433,29 @@ pub(super) fn key(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Co
     let keys = left.unwrap_or(right);
     if keys.is_unit() || right.is_unit() { return Err(cx.span.error(ErrorKind::Rank, "key arguments must have major cells")); }
     if keys.shape()[0] != right.shape()[0] { return Err(cx.span.error(ErrorKind::Length, "key arguments must have equal tallies")); }
-    let values = if left.is_none() { crate::keyed::selectors(right, &[0]).error_at(cx.span, "invalid group indices")? } else { right.clone() };
+    // A monadic Key's values are the positions along `right`, which are each group's rows themselves unless that axis has keys.
+    let values = match left {
+        Some(_) => Some(right.clone()),
+        None if right.keys(0).is_some() => Some(crate::keyed::selectors(right, &[0]).error_at(cx.span, "invalid group indices")?),
+        None => None,
+    };
     let cells = keys.cells(keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
     let key_cells = crate::search::Cells::of(keys, keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
-    let mut group = crate::search::classify(&key_cells, cx)?;
-    // Groups are numbered in order of first appearance. A class's first position comes before its others, so one pass turns each class
-    // into its group number in place.
-    let mut representatives = Vec::new();
-    for i in 0..group.len() {
-        let first = group[i];
-        group[i] = if first == i { representatives.push(i); representatives.len() - 1 } else { group[first] };
-    }
-    let (positions, sizes) = rustymath::search::grouped(&group, representatives.len());
-    let count = representatives.len();
-    let width = generated_len(&values.shape()[1..]).error_at(cx.span, "key cell is too large")?;
+    let classes = crate::search::grouped(&key_cells, cx)?;
+    let count = classes.firsts.len();
+    let width = values.as_ref().map_or(Ok(1), |v| generated_len(&v.shape()[1..])).error_at(cx.span, "key cell is too large")?;
+    let select = |rows: &[u32]| {
+        let Some(values) = &values else { return Value::positions_u32(vec![rows.len()], right.shape()[0], rows.to_vec()) };
+        let layout = values.layout().select(0, rows.iter().map(|&r| Some(r as usize)))?;
+        let mut data = crate::array::Gather::new(&[values], rows.len() * width);
+        data.rows(values, rows, width);
+        data.finish(layout, || values.prototype())
+    };
     let mut results = Vec::with_capacity(count.max(1));
-    let mut start = 0;
+    let mut each = classes.each();
     for g in 0..count.max(1) {
-        let (x, rows) = if count > 0 { start += sizes[g]; (key_cells.get(representatives[g]), &positions[start - sizes[g]..start]) } else { let x = cells.prototype().error_at(cx.span, "invalid key prototype")?; (if cells.shape().is_empty() { x.at(0) } else { x }, &positions[..0]) };
-        let layout = values.layout().select(0, rows.iter().copied().map(Some)).error_at(cx.span, "invalid group keys")?;
-        let mut data = crate::array::Gather::new(&[&values], rows.len() * width);
-        data.rows(&values, rows, width);
-        let y = data.finish(layout, || values.prototype()).error_at(cx.span, "invalid key group")?;
+        let (x, rows) = if count > 0 { (key_cells.get(classes.firsts[g]), each.next().expect("a group for each class")) } else { let x = cells.prototype().error_at(cx.span, "invalid key prototype")?; (if cells.shape().is_empty() { x.at(0) } else { x }, &[][..]) };
+        let y = select(rows).error_at(cx.span, "invalid key group")?;
         results.push(if count == 0 { f.call_prototype(Some(&x), &y, cx)?.array(cx.span)? } else { f.call_array(Some(&x), &y, cx)? });
     }
     let result = Value::assemble(&[count], if count == 0 { &[] } else { &results }, &results[0]).error_at(cx.span, "invalid key result")?;
@@ -538,12 +539,21 @@ fn expansion(f: &Function, g: &Function, right: &Value, cx: &mut Context<'_>) ->
         [m, n] => [m, n],
         _ => return Err(cx.span.error(ErrorKind::Rank, "monadic f.g needs a matrix, a vector or a number")),
     };
-    use crate::number::Arithmetic;
+    use crate::number::{with_field, Arithmetic, Field};
     let arithmetic = |h: &Function, a: Arithmetic| matches!(h.node(), FunctionNode::Primitive(Primitive::Arithmetic(x)) if *x == a);
     if arithmetic(f, Arithmetic::Minus) && arithmetic(g, Arithmetic::Times) && m == n && n > 0 {
         if let Some(d) = crate::primitive::determinant(right, n, cx)? { return Ok(Bound::from(d)); }
     }
     if m > 64 { return Err(cx.span.error(ErrorKind::Limit, "monadic f.g expands at most 64 rows")); }
+    if arithmetic(f, Arithmetic::Plus) && arithmetic(g, Arithmetic::Times) && m == n && n < 64 {
+        if let Some(items) = (0..m * n).map(|i| match right.at(i) { Value::Number(x) => Some(x), _ => None }).collect::<Option<Vec<crate::Number>>>() {
+            let p = with_field!(items.iter(), cx.numeric(), T, width => {
+                let a: Vec<T> = items.iter().map(T::of).collect();
+                rustymath::linalg::exact::permanent_with(&a, n, || cx.check())?.number(width)
+            });
+            return Ok(Bound::from(Value::Number(p)));
+        }
+    }
     let items: Vec<Value> = (0..m * n).map(|i| right.at(i)).collect();
     let rows = if m == 0 { 0 } else { u64::MAX >> (64 - m) };
     expand(f, g, &items, [m, n], rows, &right.prototype(), &mut HashMap::new(), cx).map(Bound::from)
@@ -718,9 +728,12 @@ fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Cont
             a.layout().collect(data, fill).error_at(span, "invalid identity")
         }
         (Boolean(b), _) => Ok(Value::Number(crate::Number::from_bool(b))),
+        (Logical(b), Value::Number(value)) if value.as_bool().is_some() => Ok(Value::Number(crate::Number::from_bool(b))),
         (Infinity(positive), _) => number(if positive { f64::INFINITY } else { f64::NEG_INFINITY }),
         (Number(n), Value::Number(value)) => Ok(Value::Number(value.like(n))),
+        (Logical(b), Value::Number(value)) => Ok(Value::Number(value.like(b.into()))),
         (Number(n), _) => number(f64::from(n)),
+        (Logical(b), _) => number(f64::from(u8::from(b))),
     }
 }
 

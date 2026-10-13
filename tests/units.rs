@@ -7,6 +7,10 @@
 //! The test reads the object files of the newest incremental build of basedpl's library, which `cargo develop` and `cargo test` make,
 //! and builds nothing itself. It fails when the largest unit is over `BUDGET`, and lists that unit's biggest functions. To list them
 //! for a passing build too, set `BASEDPL_UNITS`: `BASEDPL_UNITS=1 cargo test --test units -- --nocapture`.
+//!
+//! `BASEDPL_SIZES` measures what a change costs in machine code. Set it to a regex, and the test prints how many bytes the functions
+//! whose demangled names match hold, against the whole build's, with the biggest of those functions. Run it before and after the
+//! change, as in `BASEDPL_SIZES='primitive::numeric' cargo test --test units -- --nocapture`.
 use object::{Object, ObjectSection, ObjectSymbol, SymbolKind};
 use std::{
     fs,
@@ -38,9 +42,9 @@ fn newest_build() -> Vec<PathBuf> {
         .unwrap_or_default()
 }
 
-/// The biggest functions in the object file at `path`, one per line with its size in bytes. A function's size is the distance to the
+/// Each function in the object file at `path`, as its size in bytes and its demangled name. A function's size is the distance to the
 /// next symbol in its section, because Mach-O records no sizes.
-fn biggest(path: &Path) -> String {
+fn functions(path: &Path) -> Vec<(u64, String)> {
     let data = fs::read(path).unwrap();
     let file = object::File::parse(&*data).unwrap();
     let mut symbols: Vec<_> = file
@@ -50,16 +54,20 @@ fn biggest(path: &Path) -> String {
         .collect();
     symbols.sort_by_key(|&(section, address, ..)| (section, address));
     let end = |section| file.section_by_index(object::SectionIndex(section)).map_or(0, |s| s.address() + s.size());
-    let mut sized: Vec<(u64, String)> = symbols
+    symbols
         .iter()
         .enumerate()
         .map(|(i, &(section, address, size, name))| {
             let next = symbols.get(i + 1).filter(|n| n.0 == section).map_or_else(|| end(section), |n| n.1);
-            (if size > 0 { size } else { next - address }, format!("{:#}", rustc_demangle::demangle(name)).chars().take(240).collect())
+            (if size > 0 { size } else { next - address }, format!("{:#}", rustc_demangle::demangle(name)))
         })
-        .collect();
-    sized.sort_by(|a, b| b.0.cmp(&a.0));
-    sized.iter().take(20).map(|(size, name)| format!("{size:>8} {name}\n")).collect()
+        .collect()
+}
+
+/// The 20 biggest of `functions`, one per line with its size in bytes.
+fn biggest(mut functions: Vec<(u64, String)>) -> String {
+    functions.sort_by(|a, b| b.0.cmp(&a.0));
+    functions.iter().take(20).map(|(size, name)| format!("{size:>8} {}\n", name.chars().take(240).collect::<String>())).collect()
 }
 
 #[test]
@@ -68,7 +76,20 @@ fn codegen_units_stay_small() {
     let Some((size, largest)) = objects.iter().map(|p| (fs::metadata(p).unwrap().len(), p)).max() else {
         return eprintln!("no incremental build of basedpl's library under target/");
     };
-    let listing = || format!("the largest codegen unit holds {size} bytes, against a budget of {BUDGET}. Its biggest functions:\n{}", biggest(largest));
+    let listing = || format!("the largest codegen unit holds {size} bytes, against a budget of {BUDGET}. Its biggest functions:\n{}", biggest(functions(largest)));
     if std::env::var_os("BASEDPL_UNITS").is_some() { println!("{}", listing()); }
     assert!(size <= BUDGET, "{}", listing());
+}
+
+/// The machine code of the newest build's functions whose demangled names match the regex in `BASEDPL_SIZES`. Without it, this test
+/// does nothing.
+#[test]
+fn machine_code_by_name() {
+    let Some(pattern) = std::env::var_os("BASEDPL_SIZES") else { return };
+    let pattern = regex::Regex::new(&pattern.to_string_lossy()).expect("`BASEDPL_SIZES` must be a regex");
+    let all: Vec<_> = newest_build().iter().flat_map(|p| functions(p)).collect();
+    let matched: Vec<_> = all.iter().filter(|(_, name)| pattern.is_match(name)).cloned().collect();
+    let (count, bytes) = (matched.len(), matched.iter().map(|(size, _)| size).sum::<u64>());
+    let total: u64 = all.iter().map(|(size, _)| size).sum();
+    println!("{count} functions matching `{pattern}` hold {bytes} of the build's {total} bytes of machine code. The biggest:\n{}", biggest(matched));
 }

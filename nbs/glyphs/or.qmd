@@ -18,7 +18,7 @@ Keys: `Alt-9`. Ranks: `0` monadic, `0 0` dyadic
 ∨/0 0 1            ⍝ 1
 ```
 
-Includes rational and complex GCD. Inputs are finite. Empty reduction identity: zero.
+Includes rational and complex GCD. Inputs are finite. Empty reduction identity: zero, or `$f` on Booleans.
 
 For approximate real inputs, GCD reconstructs the ratio of their magnitudes using continued fractions. It chooses the first convergent equal to that ratio within the [comparison tolerance](../system/prefs.qmd). Integer convergents are computed exactly. The result is the larger magnitude divided by the convergent's numerator. Exact inputs use exact GCD. Complex inputs use Gaussian-integer Euclidean iteration.
 

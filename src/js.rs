@@ -119,15 +119,14 @@ fn array(value: &Value) -> Result<Js, ErrorKind> {
         if !keys.is_empty() { keys.push(Js::Undefined); }
         parts
     };
-    // Reading as a kernel does clears a flag on integer storage that holds no infinity. `Extended` then holds infinities.
-    let data = match value.checked_items() {
+    let data = match value.as_items() {
         Items::Booleans(b) => Js::Typed(Typed::Uint8(b.iter().map(|&b| b.into()).collect())),
         Items::Integers(Ints::U8(v)) => Js::Typed(Typed::Uint8(v.to_vec())),
         Items::Integers(Ints::I16(v)) => Js::Typed(Typed::Int16(v.to_vec())),
         Items::Integers(Ints::I32(v)) => Js::Typed(Typed::Int32(v.to_vec())),
         Items::Integers(Ints::I64(v)) => Js::Typed(Typed::BigInt64(v.to_vec())),
         Items::Floats(Floats::F32(v)) => Js::Typed(Typed::Float32(v.to_vec())),
-        Items::Extended(..) | Items::Floats(_) => Js::Typed(Typed::Float64(read_as::<f64>(value).expect("real storage").into_owned())),
+        Items::Floats(_) => Js::Typed(Typed::Float64(read_as::<f64>(value).expect("real storage").into_owned())),
         Items::Complex(Complexes::F32(v)) => complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float32(v.iter().flat_map(|z| [z.re, z.im]).collect()))),
         Items::Complex(Complexes::F64(v)) => complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float64(v.iter().flat_map(|z| [z.re, z.im]).collect()))),
         Items::Characters(c) => Js::List(c.iter().map(|c| Js::Text(c.to_string())).collect()),

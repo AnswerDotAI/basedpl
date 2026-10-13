@@ -73,9 +73,10 @@ fn reference_format_and_comparison() {
 
 #[test]
 fn enabled_reference_cases() {
+    // Shared, so that no timing runs while the cases load the machine.
+    let _lock = basedpl::timing::timing_lock(true).unwrap();
     let mut ids = std::collections::HashSet::new();
-    let mut count = 0;
-    let mut failures = Vec::new();
+    let mut chosen = Vec::new();
     let selected = std::env::var("BASEDPL_CASE").ok();
     let file = std::env::var("BASEDPL_SOURCE").ok();
     for &(name, source) in SOURCES {
@@ -84,12 +85,14 @@ fn enabled_reference_cases() {
         for id in all.iter().filter_map(|case| case["id"].as_str()).filter(|id| !id.is_empty()) {
             assert!(ids.insert(id.to_owned()), "duplicate source id: {id}");
         }
-        let chosen: Vec<_> = all.iter().filter(|case| selected.as_deref().is_none_or(|s| case["id"].as_str().unwrap().starts_with(s))).collect();
-        count += chosen.len();
-        for f in reference::failures(chosen, &InterruptHandle::default()) {
-            failures.push(format!("{name}.bpl:{} [{}] {}: {} ({})", f["line"], f["section"].as_str().unwrap(), f["id"].as_str().unwrap(), f["message"], f["kind"]));
-        }
+        let wanted = |case: &Value| selected.as_deref().is_none_or(|s| case["id"].as_str().unwrap().starts_with(s));
+        chosen.extend(all.into_iter().filter(wanted).map(|mut case| { case["file"] = json!(name); case }));
     }
+    let count = chosen.len();
+    let failures: Vec<String> = reference::failures(&chosen, &InterruptHandle::default())
+        .iter()
+        .map(|f| format!("{}.bpl:{} [{}] {}: {} ({})", f["file"].as_str().unwrap(), f["line"], f["section"].as_str().unwrap(), f["id"].as_str().unwrap(), f["message"], f["kind"]))
+        .collect();
     assert!(count > 0, "no reference cases selected");
     assert!(failures.is_empty(), "{} of {count} reference cases failed:\n{}", failures.len(), failures.join("\n"));
     eprintln!("{count} reference cases passed");

@@ -168,14 +168,14 @@ $n≡$n                ⍝ $t
 
 Complex arithmetic follows the `num_complex` crate. A complex number can have infinite or NaN parts.
 
-Joining infinities or NaN to exact integers keeps the integers exact. Exact integers, infinities and NaN share integer storage:
+An infinity or NaN is a float. Joining one to exact integers makes them floats, as any float does:
 
 ```bpl
-⍳3ₓ , ∞              ⍝ [0 1 2 ∞]ₓ
-•storage ⍳3ₓ , ∞     ⍝ "integer"
+⍳3ₓ , ∞              ⍝ 0 1 2 ∞
+•storage ⍳3ₓ , ∞     ⍝ "float64"
 ```
 
-CSV and JSON imports give NaN for a missing number. An integer column with gaps then stays exact.
+CSV and JSON imports give NaN for a missing number. An integer column with gaps then becomes floats. A column that also holds an integer too large for a float to hold exactly keeps each item's kind, in mixed storage.
 
 `⌊` and `⌈` return an exact argument unchanged beside an infinity. Beside NaN they give NaN:
 

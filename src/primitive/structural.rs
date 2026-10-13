@@ -168,7 +168,7 @@ pub(super) fn enclose_axes(right: &Value, axes: &[usize], span: &Context<'_>) ->
     generated_len(frame.shape()).error_at(span, "enclosure exceeds array limits")?;
     let len = generated_len(cell.shape()).error_at(span, "enclosed cell exceeds array limits")?;
     let tables: Vec<_> = axes.iter().map(|&a| Steps::along(shape[a], stride[a])).collect();
-    let data = offsets(&others.iter().map(|&a| Steps::along(shape[a], stride[a])).collect::<Vec<_>>())
+    let data = Steps::combined(&others.iter().map(|&a| Steps::along(shape[a], stride[a])).collect::<Vec<_>>())
         .into_iter()
         .map(|base| {
             let mut data = Gather::new(&[right], len);
@@ -214,11 +214,6 @@ pub(super) fn reshape(dimensions: &Value, right: &Value, span: &Context<'_>) -> 
     if right.is_empty() { data.fill(&right.prototype(), len) }
     else { data.cycle(right, len) }
     data.finish(shape.into(), || right.prototype()).and_then(|a| a.with_axis_names(names)).error_at(span, "invalid reshape")
-}
-
-/// Every sum of one offset from each of `tables`, in the order `Gather::walk` visits them. The tables give no fills.
-pub(super) fn offsets(tables: &[Steps]) -> Vec<usize> {
-    tables.iter().fold(vec![0], |sums, table| sums.iter().flat_map(|&s| table.offsets().map(move |o| s + o.unwrap())).collect())
 }
 
 /// `layout` for a result that rearranges or selects the items of `right`. A result with `right`'s rank keeps its renderer.
@@ -292,13 +287,19 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
         (true, false) => counts.len(),
     };
     let count = |j: usize| counts[if single { 0 } else { j }];
-    // The or of the counts is negative when any count is, and at most 1 when they are Boolean.
+    // The or of the counts is negative when any count is, and at most 1 when they are Boolean. Each nonnegative count is at most
+    // their or, which bounds their sum by the or times their number.
     let (any, sum) = or_and_sum(&counts);
     let boolean = !single && any as u64 <= 1;
+    let exact_sum = !single && any >= 0 && (any as u64).checked_mul(counts.len() as u64).is_some_and(|m| m <= i64::MAX as u64);
     shape[axis] = if inverse { len } else if boolean { sum as usize } else {
-        (0..len)
-            .try_fold(0usize, |total, j| total.checked_add(saturated(count(j).unsigned_abs())))
-            .ok_or_else(|| span.error(ErrorKind::Limit, "replication count overflow"))?
+        let each = |j: usize| saturated(count(j).unsigned_abs());
+        match (single, exact_sum) {
+            (true, _) => each(0).checked_mul(len),
+            (false, true) => usize::try_from(sum).ok(),
+            (false, false) => (0..len).try_fold(0usize, |total, j| total.checked_add(each(j))),
+        }
+        .ok_or_else(|| span.error(ErrorKind::Limit, "replication count overflow"))?
     };
     generated_len(&shape).error_at(span, "replication result exceeds array limits")?;
     let mut keys = right.layout().all_keys();

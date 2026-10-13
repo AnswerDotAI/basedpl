@@ -3,7 +3,7 @@ use crate::{
     array::{generated_len, with_float_width, Cells, FloatWidth, Frame, Layout},
     element::{read_as, Float},
     execution::Context,
-    number::{Arithmetic, Math},
+    number::{with_field, Arithmetic, Field, Math},
     DomainAt, Error, ErrorAt, ErrorKind, Number, Value,
 };
 
@@ -56,17 +56,10 @@ impl Polynomial {
             Self::Coefficients(c) => Ok(c.clone()),
             Self::Factored(m, roots) => {
                 generated_len(&[roots.len() + 1]).error_at(span, "too many polynomial coefficients")?;
-                let mut c = vec![m.clone()];
-                for r in roots {
-                    span.check()?;
-                    let mut next = vec![int(0); c.len() + 1];
-                    for (i, value) in c.iter().enumerate() {
-                        next[i] = next[i].dyad(Arithmetic::Minus, &value.dyad(Arithmetic::Times, r).domain_at(span)?).domain_at(span)?;
-                        next[i + 1] = value.clone();
-                    }
-                    c = next;
-                }
-                Ok(c)
+                Ok(with_field!(std::iter::once(m).chain(roots), span.numeric(), T, width => {
+                    let roots: Vec<T> = roots.iter().map(T::of).collect();
+                    rustymath::polynomial::from_roots_with(T::of(m), &roots, || span.check())?.into_iter().map(|c| c.number(width)).collect()
+                }))
             }
             Self::Powers { coefficients, exponents, variables } => {
                 if *variables != 1 { return Err(span.domain_error("coefficient conversion requires a univariate polynomial")); }
@@ -95,23 +88,14 @@ impl Polynomial {
         if x.len() != 1 && x.len() != self.variables() { return Err(span.error(ErrorKind::Length, "coordinates must match polynomial variables")); }
         if x.is_empty() { return Err(span.error(ErrorKind::Length, "polynomial needs coordinates")); }
         match self {
-            Self::Coefficients(c) => {
-                let mut it = c.iter().rev().skip_while(|n| n.is_zero());
-                let mut y = it.next().cloned().unwrap_or_else(|| c.first().unwrap_or(&int(0)).zero());
-                for c in it {
-                    span.check()?;
-                    y = y.dyad(Arithmetic::Times, &x[0]).domain_at(span)?.dyad(Arithmetic::Plus, c).domain_at(span)?;
-                }
-                Ok(y)
-            }
-            Self::Factored(m, roots) => {
-                let mut y = m.clone();
-                for r in roots {
-                    span.check()?;
-                    y = y.dyad(Arithmetic::Times, &x[0].dyad(Arithmetic::Minus, r).domain_at(span)?).domain_at(span)?;
-                }
-                Ok(y)
-            }
+            Self::Coefficients(c) => Ok(with_field!(c.iter().chain(x), span.numeric(), T, width => {
+                let c: Vec<T> = c.iter().map(T::of).collect();
+                rustymath::polynomial::value_with(&c, &T::of(&x[0]), || span.check())?.number(width)
+            })),
+            Self::Factored(m, roots) => Ok(with_field!(std::iter::once(m).chain(roots).chain(x), span.numeric(), T, width => {
+                let roots: Vec<T> = roots.iter().map(T::of).collect();
+                rustymath::polynomial::factored_with(&T::of(m), &roots, &T::of(&x[0]), || span.check())?.number(width)
+            })),
             Self::Powers { coefficients, exponents, .. } => {
                 let mut y = int(0);
                 for (c, powers) in coefficients.iter().zip(exponents) {
@@ -146,6 +130,14 @@ impl Polynomial {
     }
 
     fn partial(&self, axis: usize, order: usize, span: &Context<'_>) -> Result<Self, Error> {
+        if !matches!(self, Self::Powers { .. }) {
+            let c = self.coefficients(span)?;
+            return Ok(Self::Coefficients(with_field!(c.iter(), span.numeric(), T, width => {
+                let mut c: Vec<T> = c.iter().map(T::of).collect();
+                for _ in 0..order { c = rustymath::polynomial::derivative_with(&c, || span.check())? }
+                c.into_iter().map(|c| c.number(width)).collect()
+            })));
+        }
         let (mut coefficients, mut exponents) = self.terms(span)?;
         for (c, e) in coefficients.iter_mut().zip(&mut exponents) {
             for _ in 0..order {

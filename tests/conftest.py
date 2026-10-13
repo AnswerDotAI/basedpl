@@ -1,5 +1,12 @@
 import pytest
 from basedpl import bpl
+from basedpl.bpltests import timing_lock
+
+
+@pytest.fixture(autouse=True, scope='session')
+def shared_timing_lock():
+    "Hold the timing lock shared for the whole run, as builds do. A timing then never shares the machine with the tests."
+    with timing_lock(shared=True): yield
 
 
 @pytest.fixture(autouse=True)

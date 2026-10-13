@@ -19,7 +19,7 @@ use basedpl::timing;
 fn functions_cost_what_their_work_needs() {
     let print_all = std::env::var_os("BASEDPL_COSTS").is_some();
     let mut failures = Vec::new();
-    for timing::Case { section, code, budgets, cost } in timing::costs(include_str!("speed.txt"), &Default::default()).unwrap() {
+    for timing::Case { section, code, budgets, cost } in timing::costs(include_str!("speed.txt"), None, &Default::default()).unwrap() {
         let budget: f64 = budgets[0].parse().unwrap();
         let line = format!("{section} {code}: {cost:.2}, budget {budget}");
         if print_all { eprintln!("{line}"); }

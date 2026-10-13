@@ -12,12 +12,13 @@ pub(crate) fn text(value: &Value, span: &Context<'_>) -> Result<String, Error> {
     keyed::name(value).map(|s| s.to_string()).ok_or_else(|| span.domain_error("expected text"))
 }
 
-/// Imported items, where `filled` marks the fills for missing values. When any other item is a finite float, numbers become floats of
-/// the widest float width among them if every one converts exactly. Otherwise, or when one wouldn't, each item keeps its own kind. A
-/// fill or an infinity never makes exact numbers approximate.
+/// Imported items, where `filled` marks the fills for missing values. Numbers become floats of the widest float width among them when
+/// every one converts exactly and any is an infinity, a NaN, or a finite float other than a fill. Otherwise each item keeps its own kind.
+/// An integer that no float holds exactly therefore stays exact, in mixed storage, beside a missing value. A finite fill never makes
+/// exact numbers approximate.
 pub(crate) fn imported(shape: Vec<usize>, items: Vec<Value>, filled: impl Fn(usize) -> bool, empty_prototype: Value) -> Result<Value, ErrorKind> {
     let number = |v: &Value| if let Value::Number(n) = v { Some(n.clone()) } else { None };
-    if items.iter().enumerate().any(|(i, v)| !filled(i) && number(v).is_some_and(|n| n.as_float().is_some_and(f64::is_finite))) {
+    if items.iter().enumerate().any(|(i, v)| number(v).is_some_and(|n| n.as_float().is_some_and(|f| !f.is_finite() || !filled(i)))) {
         let width = items.iter().filter_map(|v| number(v)?.float_width()).max().unwrap_or(FloatWidth::F64);
         let exactly = |n: Number| n.lossless_float().filter(|&f| f.is_nan() || Number::float(f, width).as_float() == Some(f));
         if let Some(floats) = items.iter().map(|v| number(v).and_then(exactly)).collect::<Option<Vec<_>>>() {

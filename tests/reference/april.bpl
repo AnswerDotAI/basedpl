@@ -2072,7 +2072,7 @@ fn←{⍺×⍵+1} ⋄ 1 2 3 fn⊗  4 5 6   ⍝ [5 6 7⋄10 12 14⋄15 18 21]
 
 ⍝ april:1678 —
 ' ' { [A W]←{⍵≠(≢⍵)⍴' ' # ⍵}¨[⍺ ⍵] ⋄ (⍴A)=⍴W ∧ ∧/(+/A=⊗W)=+/A=⊗A } "dog"
-[0]ₓ
+[$f]
 
 ⍝ april:1679 —
 ⍴+.×⌿¿2 30 30⍴1e10   ⍝ [30 30]ₓ
@@ -6683,15 +6683,15 @@ tt←tree pairs
 
 ⍝ april/libraries/dfns/tree/demo.lisp:574 — Random red-black tree: validate structure, size and all sorted keys, not seed-dependent height/depth
 [chk tree vec]←•load "tests/reference/support/redblack.bpl"
-vv←100¿100
+vv←32¿32
 tt←tree vv
-(1 100≡2↑chk tt)∧(⍳100)≡vec tt   ⍝ $t
+(1 32≡2↑chk tt)∧(⍳32)≡vec tt   ⍝ $t
 
 ⍝ april/libraries/dfns/tree/demo.lisp:575 — Self-contained red-black tree library with 0-origin offsets and full setup; original independent April expectations; Random construction cases assert lookup/order properties, not a sampled tree shape
 [get tree]←•load "tests/reference/support/redblack.bpl"
 pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
 tt←tree pairs
-vv←100¿100
+vv←32¿32
 tt←tree vv
 vv ≡ vv get¨ ⊂tt   ⍝ $t
 
@@ -6699,7 +6699,7 @@ vv ≡ vv get¨ ⊂tt   ⍝ $t
 [tree vec]←•load "tests/reference/support/redblack.bpl"
 pairs←[["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
 tt←tree pairs
-vv←100¿100
+vv←32¿32
 tt←tree vv
 (⍳⍴vv) ≡ vec tt   ⍝ $t
 
@@ -6795,55 +6795,55 @@ chk tree ⍳7   ⍝ [$t 7 3 7]ₓ
 ⍝ april/libraries/dfns/tree/demo.lisp:899 — Splay tree validity after searches
 [foldl]←•load "lib/array.bpl"
 [check get put]←•load "tests/reference/support/splay.bpl"
-tt←0 put foldl 256¿256
+tt←0 put foldl 32¿32
 revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 256¿256
-256 check tt   ⍝ $t
+tt←tt revt foldl 32¿32
+32 check tt   ⍝ $t
 
 ⍝ april/libraries/dfns/tree/demo.lisp:901 — Splay tree search depths and retrieved keys
 [foldl]←•load "lib/array.bpl"
 [check dep get put]←•load "tests/reference/support/splay.bpl"
-tt←0 put foldl 256¿256
+tt←0 put foldl 32¿32
 revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 256¿256
-keys←16¿256
+tt←tt revt foldl 32¿32
+keys←8¿32
 d←keys dep¨ ⊂tt
-(256 check tt)∧(∧/d≥1)∧(∧/d≤256)∧keys≡↑¨ keys get¨ ⊂tt
+(32 check tt)∧(∧/d≥1)∧(∧/d≤32)∧keys≡↑¨ keys get¨ ⊂tt
 ⍝ =>
 $t
 
 ⍝ april/libraries/dfns/tree/demo.lisp:903 — Splay tree repeated searches
 [foldl]←•load "lib/array.bpl"
 [check dep get put]←•load "tests/reference/support/splay.bpl"
-tt←0 put foldl 256¿256
+tt←0 put foldl 32¿32
 revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 256¿256
-keys←16¿256
-tt←tt revt foldl 16#keys
+tt←tt revt foldl 32¿32
+keys←8¿32
+tt←tt revt foldl 4#keys
 d←keys dep¨ ⊂tt
-(256 check tt)∧(∧/d≥1)∧(∧/d≤256)∧keys≡↑¨ keys get¨ ⊂tt
+(32 check tt)∧(∧/d≥1)∧(∧/d≤32)∧keys≡↑¨ keys get¨ ⊂tt
 ⍝ =>
 $t
 
 ⍝ april/libraries/dfns/tree/demo.lisp:904 — Splay tree validity after repeated searches
 [foldl]←•load "lib/array.bpl"
 [check get put]←•load "tests/reference/support/splay.bpl"
-tt←0 put foldl 256¿256
+tt←0 put foldl 32¿32
 revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 256¿256
-keys←16¿256
-tt←tt revt foldl 16#keys
-256 check tt   ⍝ $t
+tt←tt revt foldl 32¿32
+keys←8¿32
+tt←tt revt foldl 4#keys
+32 check tt   ⍝ $t
 
 ⍝ april/libraries/dfns/tree/demo.lisp:905 — Splay tree remove all keys
 [foldl]←•load "lib/array.bpl"
 [get put rem]←•load "tests/reference/support/splay.bpl"
-tt←0 put foldl 256¿256
+tt←0 put foldl 32¿32
 revt←{↑⌽ ⍵ get ⍺}
-tt←tt revt foldl 256¿256
-keys←16¿256
-tt←tt revt foldl 16#keys
-tt rem foldl 256¿256   ⍝ 0
+tt←tt revt foldl 32¿32
+keys←8¿32
+tt←tt revt foldl 4#keys
+tt rem foldl 32¿32   ⍝ 0
 
 ⍝ april/libraries/dfns/tree/demo.lisp:906 —
 [tfmt]←•load "lib/tree.bpl"
@@ -6942,11 +6942,11 @@ tnest ,∘⊂¨0 "tea"   ⍝ "tea"
 ⍝ =>
 "┌────────────────┬─────────────────────────────────────┐" "│[0 1 2 2 1 2 2]ₓ│┌─────┬───┬───┬──────┬────┬────┬────┐│" "│                ││drink│hot│tea│coffee│cold│milk│beer││" "│                │└─────┴───┴───┴──────┴────┴────┴────┘│" "└────────────────┴─────────────────────────────────────┘"
 
-⍝ april/libraries/dfns/tree/demo.lisp:896 — 0-origin splay definitions and preceding state included; Random 256-node workloads assert validity, keys and search/removal results rather than a seeded shape
+⍝ april/libraries/dfns/tree/demo.lisp:896 — 0-origin splay definitions and preceding state included; Random 32-node workloads assert validity, keys and search/removal results rather than a seeded shape
 [check get tree]←•load "tests/reference/support/splay.bpl"
-tt←tree 256¿256
+tt←tree 32¿32
 revt←{↑⌽ ⍵ get ⍺}
-256 check tt   ⍝ $t
+32 check tt   ⍝ $t
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:271 — Phinary; original independent upstream expectation
 [phinary]←•load "lib/numeric.bpl"

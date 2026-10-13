@@ -17,7 +17,7 @@ Keys: `Alt-0`. Ranks: `0` monadic, `0 0` dyadic
 ∧/1 1 0            ⍝ 0
 ```
 
-Includes rational and complex LCM. Inputs are finite. Empty reduction identity: one.
+Includes rational and complex LCM. Inputs are finite. Empty reduction identity: one, or `$t` on Booleans.
 
 ## Inverse
 

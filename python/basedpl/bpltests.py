@@ -1,5 +1,5 @@
-"Read BPL test cases, convert reference inventories, activate reviewed cases, time BPL as the speed test does, and set its budgets."
-import fcntl, json, math, os, re, subprocess, sys, time
+"Read BPL test cases, convert reference inventories, activate reviewed cases, time BPL as the speed test does, and set the budgets of basedpl's and rustymath's speed tests."
+import fcntl, json, math, os, re, subprocess, sys, time, tomllib
 from contextlib import contextmanager
 from collections import defaultdict
 from decimal import Context, Decimal, ROUND_CEILING
@@ -272,39 +272,45 @@ class SpeedCosts(list):
         rows = ((s, c, cost, '-' if b is None else f'{b:g}', 'over' if b is not None and cost > b else '') for s, c, cost, b in self)
         return '\n'.join(f'{cost:>9.2f} {b:>9} {over:4}  {s} {c}' for s, c, cost, b, over in rows)
 
-# The file whose lock keeps timings and builds apart on this machine, as DEV.md describes. Timings take it exclusively. Builds take
-# it shared. The native timings take it in Rust, in `basedpl::timing`.
+# The file whose lock keeps timings apart from builds and `pytest` on this machine, as DEV.md describes. Timings take it
+# exclusively. Builds and `pytest` take it shared. The native timings take it in Rust, in `basedpl::timing`.
 _TIMING_LOCK = '/tmp/aai-ws-timing.lock'
 
 @contextmanager
-def _timing_lock():
-    "Hold the timing lock exclusively, waiting up to 5 minutes for builds and other timings to release it."
+def timing_lock(
+    shared=False # Hold it shared, as builds and `pytest` do, rather than exclusively, as timings do?
+):
+    "Hold the timing lock, waiting up to 5 minutes for it. An exclusive hold then raises `TimeoutError`. A shared hold goes ahead without it."
     with open(_TIMING_LOCK, 'a') as f:
         deadline, waiting = time.monotonic() + 300, False
         while True:
             try:
-                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(f, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
-                if time.monotonic() > deadline: raise TimeoutError(f'a build or another timing has held {_TIMING_LOCK} for 5 minutes')
-                if not waiting: print(f'waiting for a build or another timing to release {_TIMING_LOCK}', file=sys.stderr)
+                if time.monotonic() > deadline:
+                    if shared: break
+                    raise TimeoutError(f'a build or another timing has held {_TIMING_LOCK} for 5 minutes')
+                if not waiting: print(f'waiting for {"a timing" if shared else "a build or another timing"} to release {_TIMING_LOCK}', file=sys.stderr)
                 waiting = True
                 time.sleep(0.25)
         yield
 def speed_costs(
     wasm=None, # A directory that `cargo wasm --out` wrote, to time in that browser build, as `tests/wasm-speed.mjs` does; None: a fresh native worker, as `tests/speed.rs` does
     speed=None, # Text in `speed.txt`'s format; None: `tests/speed.txt`
-    timeout=None # Seconds before the timing stops
+    timeout=None, # Seconds before the timing stops
+    cases=None # A case's code, or a list of codes, to time in every section that has it; None: every case
 ):
     "Time every case in `speed` as the speed test does, with the budget that limits it in that build."
     speed = _SPEED.read_text() if speed is None else speed
+    if isinstance(cases, str): cases = [cases]
     if wasm is None:
-        with Worker() as w: r = w.request(dict(costs=dict(speed=speed)), timeout)
+        with Worker() as w: r = w.request(dict(costs=dict(speed=speed, cases=cases)), timeout)
         if e := r['error']: raise ValueError(e['message'])
         rows = r['costs']
     else:
-        script = f'import {{ costs }} from {json.dumps(_PKG.as_uri())}; import {{ readFileSync }} from "node:fs"; process.stdout.write(JSON.stringify(costs(readFileSync(0, "utf8"))))'
-        with _timing_lock():
+        script = f'import {{ costs }} from {json.dumps(_PKG.as_uri())}; import {{ readFileSync }} from "node:fs"; process.stdout.write(JSON.stringify(costs(readFileSync(0, "utf8"), {json.dumps(cases)})))'
+        with timing_lock():
             p = subprocess.run(['node', '--no-liftoff', '--input-type=module', '-e', script], input=speed, capture_output=True, text=True,
                                timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(wasm)))
         if p.returncode: raise ValueError(p.stderr)
@@ -316,11 +322,24 @@ _LOGGED = re.compile(r'^(?:\S*Z )?(\w+) (.*): ([\d.]+|inf|NaN|Infinity), budget 
 _CPU = re.compile(r'^(?:\S*Z )?model name\s*:\s*(.+?)\s*$', re.M)
 
 def logged_costs(
-    log # What a speed test prints with `BASEDPL_COSTS` set, such as the log of a job in the `Speed` workflow
+    log # What a speed test prints with `<NAME>_COSTS` set, such as the log of a job in the `Speed` workflow
 ):
     "The rows that `speed_costs` gives, read from `log`, with the CPU model that the log reports as their `cpu`."
     cpu = c[1] if (c := _CPU.search(log)) else None
     return SpeedCosts(((m[1], m[2], float(m[3]), float(m[4])) for m in map(_LOGGED.match, log.splitlines()) if m), cpu)
+
+def cargo_costs(
+    path='.', # A Cargo package, such as basedpl or rustymath, whose `tests/speed.rs` prints every cost when `<NAME>_COSTS` is set
+    timeout=None # Seconds before the run stops
+):
+    "The rows that `logged_costs` reads from what the speed test of the package at `path` prints, run as `cargo test` runs it. A case over its budget still gives its row."
+    path = Path(path).expanduser()
+    name = tomllib.loads((path/'Cargo.toml').read_text())['package']['name']
+    p = subprocess.run(['cargo', 'test', '--test', 'speed', '--', '--nocapture'], cwd=path, capture_output=True, text=True, timeout=timeout,
+                       env=os.environ | {f'{name.upper()}_COSTS': '1'})
+    costs = logged_costs(p.stdout + p.stderr)
+    if p.returncode and not costs: raise ValueError(p.stderr)
+    return costs
 
 class Budgets(list):
     "Each budget that `set_budgets` changed, as `(section, code, build, old, new)` rows."
@@ -341,10 +360,10 @@ def _source(run, native, wasm):
     return line + ''.join(f" Its {build} job's CPU was the {' and the '.join(v)}." for build, v in cpus.items() if v)
 
 def set_budgets(
-    native=(), # `SpeedCosts` from each run that counts for the native budgets, such as `speed_costs()` and `logged_costs(log)`
+    native=(), # `SpeedCosts` from each run that counts for the native budgets, such as `speed_costs()`, `cargo_costs(path)` and `logged_costs(log)`
     wasm=(), # `SpeedCosts` from each run that counts for the wasm budgets
     run=None, # The `Speed` run whose logs gave CI's rows, to name in the header with the CPU each log reports; None: leave the header as it is
-    path=_SPEED # The `speed.txt` to rewrite
+    path=_SPEED # The budget file to rewrite: basedpl's `tests/speed.txt`, or rustymath's
 ):
     "Rewrite each budget in `path` under the rule in its header, from the case's worst cost in the runs that count. A case with no cost keeps its budget. With `run`, also replace the whole header line that names the CI run. Returns the budgets that changed."
     worst = {}

@@ -10,7 +10,7 @@
 | `"cholesky"` | `l` | `m` is `l+.×+⍉l`, with `l` lower triangular |
 | `"lu"` | `l`, `u`, `p` | `[p]⌷m` is `l+.×u`, with `l` lower triangular with 1 on its diagonal, `u` upper triangular, and `p` the rows' positions |
 
-The SVD and the QR decomposition are thin, unless option `complete` asks for the complete QR. For an `r`-by-`c` matrix, `u` and `q` have `r⌊c` columns. The factors are floats, apart from `"lu"`'s positions `p`. A real matrix gives real factors, apart from complex eigenvalues and their eigenvectors. A Hermitian matrix, one equal to its conjugate transpose, has real eigenvalues in ascending order and orthonormal eigenvectors. Each eigenvector of a real matrix has unit length, with its largest component real and positive. [`⌹`](../glyphs/domino.qmd) solves linear systems.
+The SVD and the QR decomposition are thin, unless option `complete` asks for the complete QR. For an `r`-by-`c` matrix, `u` and `q` have `r⌊c` columns. The factors are floats, apart from `"lu"`'s positions `p`. A real matrix gives real factors, apart from complex eigenvalues and their eigenvectors. A Hermitian matrix, one equal to its conjugate transpose, has real eigenvalues in ascending order and orthonormal eigenvectors. Each eigenvector of a real matrix has unit length. [`⌹`](../glyphs/domino.qmd) solves linear systems.
 
 ```bpl
 ("svd" •decompose [1 2⋄3 4⋄5 6]).s     ⍝ 9.525518091565104 0.5143005806586441
