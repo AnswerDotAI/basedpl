@@ -1,6 +1,6 @@
 # `⍣` — Power
 
-Keys: `Alt-1 8`
+Dyadic operator. Keys: `Alt-1 8`
 
 `f⍣N Y` applies `f` `N` times. `N=0` returns `Y`. In dyadic calls the left argument stays fixed. Separate a numeric argument from a literal count with `⊢` or [parentheses](parentheses.qmd).
 

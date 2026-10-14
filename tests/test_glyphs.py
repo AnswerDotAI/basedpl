@@ -4,7 +4,7 @@ from basedpl import symbols
 from basedpl.editors import key
 
 GLYPHS = Path(__file__).resolve().parents[1]/'nbs/glyphs.qmd'
-SECTIONS = {'Functions': {'function'}, 'Operators': {'monadic-operator', 'dyadic-operator'},
+SECTIONS = {'Functions': {'function'}, 'Monadic operators': {'monadic-operator'}, 'Dyadic operators': {'dyadic-operator'},
             'Syntax and literals': {'argument', 'literal', 'comment', 'system', 'syntax'}}
 
 

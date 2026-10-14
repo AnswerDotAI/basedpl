@@ -1,6 +1,6 @@
 # `⊽` — Double / NOR
 
-Keys: `Alt-Minus 9`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-Minus 9`. Ranks: `0` monadic, `0 0` dyadic
 
 `⊽Y`: 2Y. Pervasive.
 

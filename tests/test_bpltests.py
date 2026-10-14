@@ -88,3 +88,5 @@ def test_set_budgets(tmp_path):
     assert len(changes) == 3
     set_budgets(native=[ci], run=3, path=path)
     assert path.read_text().startswith('# The CI figures come from `Speed` run 3. Its CPU was the CPU A.\n')
+    set_budgets(native=[SpeedCosts([('copies', '-v', 3, 3.4), ('widths', '-v', 0.7, 0.85)])], path=path, cases='-v', sections='widths')
+    assert '[copies]\n-v\t4.1\t3.4\n' in path.read_text() and '[widths] •prefs ["float":32]\n-v\t0.95\t0.79\n' in path.read_text()

@@ -1,6 +1,6 @@
 # `○` — Cis / Circular
 
-Keys: `Alt-o`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-o`. Ranks: `0` monadic, `0 0` dyadic
 
 `○Y`: e<sup>iY</sup> = cos Y + i sin Y. Real Y is an angle in radians. Pervasive.
 

@@ -1,6 +1,6 @@
 # `⍤` — Rank
 
-Keys: `Alt-1 t`
+Dyadic operator. Keys: `Alt-1 t`
 
 `f⍤R` applies `f` to the [cells](../terms.qmd#term-cell) of rank `R`. With two arguments, `f⍤R` pairs cells using leading agreement of the [frames](../terms.qmd#term-frame). Separate a numeric argument from the rank with `⊢` or [parentheses](parentheses.qmd), as in `-⍤0⊢5` or `-⍤0(5)`. A vector argument goes in touching brackets, as in `-⍤0[2 3]`. In `-⍤0 5`, `0 5` is the rank. Three rules give the result:
 

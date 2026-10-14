@@ -1,6 +1,6 @@
 # `⍸` — Where / Interval index
 
-Keys: `Alt-Minus i`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-Minus i`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `⍸Y` lists exact positions, repeated according to their nonnegative integer counts. Higher-rank arguments give coordinate vectors.
 

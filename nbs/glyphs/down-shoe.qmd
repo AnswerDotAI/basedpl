@@ -1,6 +1,6 @@
 # `∪` — Unique / Union
 
-Keys: `Alt-v`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-v`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `∪Y` keeps the first of each matching major cell. Uses tolerant matching.
 

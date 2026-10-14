@@ -1,6 +1,6 @@
 # `⊃` — Mix / Pick
 
-Keys: `Alt-x`. Ranks: `0` monadic, `1 ∞` dyadic
+Function. Keys: `Alt-x`. Ranks: `0` monadic, `1 ∞` dyadic
 
 `⊃Y` assembles items into rectangular cells, padding to a common shape with fill.
 

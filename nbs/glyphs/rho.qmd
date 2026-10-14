@@ -1,6 +1,6 @@
 # `⍴` — Shape / Reshape
 
-Keys: `Alt-r`. Ranks: `∞` monadic, `1 ∞` dyadic
+Function. Keys: `Alt-r`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 `⍴Y` gives axis lengths.
 

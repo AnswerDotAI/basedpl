@@ -1,6 +1,6 @@
 # `⍵` — Right argument
 
-Keys: `Alt-w`
+Argument. Keys: `Alt-w`
 
 `⍵` is the current dfn's right argument.
 

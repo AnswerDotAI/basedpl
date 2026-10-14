@@ -1,6 +1,6 @@
 # `√` — Sqrt / Root
 
-Keys: `Alt-3`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-3`. Ranks: `0` monadic, `0 0` dyadic
 
 `√Y`: square root. Pervasive. Every result is approximate, for exact arguments too.
 

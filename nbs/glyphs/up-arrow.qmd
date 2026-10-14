@@ -1,6 +1,6 @@
 # `↑` — First / Take
 
-Keys: `Alt-k`. Ranks: `∞` monadic, `1 ∞` dyadic
+Function. Keys: `Alt-k`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 `↑Y` returns the first major item, like `0⊃Y`. On an enclosure it returns the contained value. An empty leading axis gives a cell of fill.
 

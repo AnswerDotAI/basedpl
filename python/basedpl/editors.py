@@ -1,4 +1,4 @@
-"""Write editor highlighters, glyph-entry templates, regional macOS keyboards, and glyph-page keys and ranks.
+"""Write editor highlighters, glyph-entry templates, regional macOS keyboards, and glyph-page kinds, keys and ranks.
 
 BPL glyph lists come from its symbol metadata. Dyalog APL and BQN lists for the comparison page are defined here. `keyboards` generates the macOS bundles. Paths are relative to the repository root.
 
@@ -124,12 +124,25 @@ def ranks(s):
     return 'Ranks: ' + ', '.join(filter(None, forms)) if any(forms) else ''
 
 
+def kind(s):
+    "The kind of glyph row `s` from `basedpl.symbols`, as its page names it, such as `Monadic operator`."
+    return s['kind'].replace('-', ' ').capitalize()
+
+
 def glyph_page(text, s):
-    "The page `text` of glyph row `s` with the line after its title regenerated. The line gives the glyph's keys, if it's typed with Alt, and its ranks."
+    "The page `text` of glyph row `s` with the line after its title regenerated. The line gives the glyph's kind, its keys if it's typed with Alt, and its ranks."
     title, rest = text.split('\n\n', 1)
-    rest = re.sub(r'\A(?:Keys|Ranks): .*\n\n', '', rest)
-    line = '. '.join(filter(None, [f"Keys: `{key(s['shortcut'])}`" if s['shortcut'].strip() else '', ranks(s)]))
-    return f'{title}\n\n' + (f'{line}\n\n' if line else '') + rest
+    kinds = '|'.join({kind(r) for r in symbols})
+    rest = re.sub(rf'\A(?:{kinds})(?:\. .*)?\n\n', '', rest)
+    line = '. '.join(filter(None, [kind(s), f"Keys: `{key(s['shortcut'])}`" if s['shortcut'].strip() else '', ranks(s)]))
+    return f'{title}\n\n{line}\n\n{rest}'
+
+
+def glyph_pages():
+    "Regenerate the line after each glyph page's title."
+    for s in symbols:
+        path = GLYPH_PAGES/f"{s['name']}.qmd"
+        keyboards.write_changed(path, glyph_page(path.read_text(), s))
 
 
 def _image(size):
@@ -155,7 +168,7 @@ def icon():
 
 
 def write():
-    "Write highlighters, glyph-entry templates, regional keyboard bundles, and glyph-page keys and ranks."
+    "Write highlighters, glyph-entry templates, regional keyboard bundles, and glyph-page kinds, keys and ranks."
     for path, glyphs in HIGHLIGHTERS.items(): keyboards.write_changed(path, quarto(path.read_text(), glyphs))
     keyboards.write_changed(TEXTMATE, json.dumps(textmate(Path('nbs/bpl.xml').read_text()), ensure_ascii=False, indent=2) + '\n')
     keyboards.write_changed(JETBRAINS/'BPL.tmbundle/Syntaxes/bpl.tmLanguage.json', TEXTMATE.read_bytes())
@@ -163,6 +176,4 @@ def write():
     keyboards.write_changed(VIM, vim(VIM.read_text()))
     keyboards.write()
     windows_keyboard.write()
-    for s in symbols:
-        path = GLYPH_PAGES/f"{s['name']}.qmd"
-        keyboards.write_changed(path, glyph_page(path.read_text(), s))
+    glyph_pages()

@@ -1,6 +1,6 @@
 # `⌻` — Roots / Polyval
 
-Keys: `Alt-q t`. Ranks: `1` monadic, `1 0` dyadic
+Function. Keys: `Alt-q t`. Ranks: `1` monadic, `1 0` dyadic
 
 J's `p.` family.
 

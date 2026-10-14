@@ -1,6 +1,6 @@
 # `¿` — Roll / Deal
 
-Keys: `Alt-/`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-/`. Ranks: `0` monadic, `0 0` dyadic
 
 `¿N`: uniform draw from `⍳N`. `¿0`: U(0,1). Pervasive.
 

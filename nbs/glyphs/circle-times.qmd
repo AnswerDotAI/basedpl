@@ -1,6 +1,6 @@
 # `⊗` — Outer product
 
-Keys: `Alt-o m`
+Monadic operator. Keys: `Alt-o m`
 
 `X g⊗Y` applies `g` to every pair. Two atoms call `g` directly. Array arguments supply the result shape `⍴X , ⍴Y`.
 

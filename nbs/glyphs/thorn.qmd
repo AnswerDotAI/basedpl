@@ -1,6 +1,6 @@
 # `⍕` — Format / Format spec
 
-Keys: `Alt-o n`. Ranks: `∞` monadic, `1 ∞` dyadic
+Function. Keys: `Alt-o n`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 `⍕Y` returns character text. Matrix rows remain rows.
 

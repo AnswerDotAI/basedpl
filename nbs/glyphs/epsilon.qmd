@@ -1,6 +1,6 @@
 # `∊` — Enlist / Member
 
-Keys: `Alt-e`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-e`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `∊Y` recursively ravels all nested leaves.
 

@@ -1,6 +1,6 @@
 # `↓` — Split / Drop
 
-Keys: `Alt-j`. Ranks: `1` monadic, `1 ∞` dyadic
+Function. Keys: `Alt-j`. Ranks: `1` monadic, `1 ∞` dyadic
 
 `↓Y` nests vectors along the last axis.
 

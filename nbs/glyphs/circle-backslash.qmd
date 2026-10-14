@@ -1,6 +1,6 @@
 # `⍉` — Transpose / Reorder axes
 
-Keys: `Alt-o Backslash`. Ranks: `∞` monadic, `1 ∞` dyadic
+Function. Keys: `Alt-o Backslash`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 `⍉Y` reverses axis order.
 

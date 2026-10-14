@@ -1,6 +1,6 @@
 # `⊆` — Nest / Partition
 
-Keys: `Alt-Minus z`. Ranks: `∞` monadic, `1 ∞` dyadic
+Function. Keys: `Alt-Minus z`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 `⊆Y` encloses atoms and simple arrays. Already-nested arrays stay unchanged.
 

@@ -367,15 +367,18 @@ def set_budgets(
     wasm=(), # `SpeedCosts` from each run that counts for the wasm budgets
     run=None, # The `Speed` run whose logs gave CI's rows, to name in the header with the CPU each log reports; None: leave the header as it is
     path=_SPEED, # The budget file to rewrite: basedpl's `tests/speed.txt`, or rustymath's
-    cases=None # A case's code, or a list of codes, whose budgets to change in every section that has it; None: every case
+    cases=None, # A case's code, or a list of codes, whose budgets to change; None: every case
+    sections=None # A section's name, or a list of names, whose budgets to change; None: every section
 ):
-    "Rewrite each budget in `path` under the rule in its header, from the case's worst cost in the runs that count. A case with no cost, or not in `cases`, keeps its budget. With `run`, also replace the whole header line that names the CI run. Returns the budgets that changed."
+    "Rewrite each budget in `path` under the rule in its header, from the case's worst cost in the runs that count. A case with no cost, or outside `cases` or `sections`, keeps its budget. With `run`, also replace the whole header line that names the CI run. Returns the budgets that changed."
     if isinstance(cases, str): cases = [cases]
+    if isinstance(sections, str): sections = [sections]
     worst = {}
     for i, runs in ((1, native), (2, wasm)):
         for costs in runs:
             for s, c, cost, _ in costs:
                 if cases is not None and c not in cases: continue
+                if sections is not None and s not in sections: continue
                 if not math.isfinite(cost): raise ValueError(f'{s} {c} costs {cost}')
                 worst[s, c, i] = max(cost, worst.get((s, c, i), cost))
     path = Path(path)

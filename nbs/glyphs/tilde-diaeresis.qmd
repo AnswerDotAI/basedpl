@@ -1,6 +1,6 @@
 # `⍨` — Self / Commute
 
-Keys: `Alt-1 Backtick`
+Monadic operator. Keys: `Alt-1 Backtick`
 
 `f⍨Y` is `Y f Y`.
 

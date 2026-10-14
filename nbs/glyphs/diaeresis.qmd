@@ -1,6 +1,6 @@
 # `¨` — Each
 
-Keys: `Alt-1`
+Monadic operator. Keys: `Alt-1`
 
 `f¨Y` applies `f` to each item and collects the returned values in `Y`'s shape. A call that gives no result contributes `⍬`. On atoms it calls `f` directly.
 

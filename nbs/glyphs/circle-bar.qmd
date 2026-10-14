@@ -1,6 +1,6 @@
 # `⊖` — Reverse first / Rotate first
 
-Keys: `Alt-o Minus`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-o Minus`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 First-axis forms of [`⌽`](circle-stile.qmd). `⊖⍠K` overrides the axis.
 

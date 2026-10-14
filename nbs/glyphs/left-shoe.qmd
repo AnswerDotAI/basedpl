@@ -1,6 +1,6 @@
 # `⊂` — Enclose / Partitioned enclose
 
-Keys: `Alt-z`. Ranks: `∞` monadic, `1 ∞` dyadic
+Function. Keys: `Alt-z`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 `⊂Y` is a scalar holding `Y`.
 

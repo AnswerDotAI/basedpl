@@ -1,6 +1,6 @@
 # `↦` — Range / To
 
-Keys: `Alt-l`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-l`. Ranks: `0` monadic, `0 0` dyadic
 
 `X↦Y` counts from `X` to `Y` in steps of 1. It counts down when `Y` is less than `X`. Two characters count through the code points between them.
 

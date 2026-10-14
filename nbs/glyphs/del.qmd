@@ -1,6 +1,6 @@
 # `∇` — Recursion
 
-Keys: `Alt-g`
+Argument. Keys: `Alt-g`
 
 `∇` calls the current dfn or derived function recursively.
 

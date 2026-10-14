@@ -1,6 +1,6 @@
 # `⇄` — Minimize
 
-Keys: `Alt-4`
+Monadic operator. Keys: `Alt-4`
 
 `cost⇄ start` searches for the point where the function `cost` gives its least value, starting from `start`, and returns that point. `start` is a number or an array of real numbers, and the point has its shape and keys. `cost` takes a point and gives one real number.
 

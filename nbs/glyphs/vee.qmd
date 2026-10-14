@@ -1,6 +1,6 @@
 # `∨` — Real-imag / Or
 
-Keys: `Alt-9`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-9`. Ranks: `0` monadic, `0 0` dyadic
 
 `∨Y` gives real/imaginary pairs along a new last axis. Y is a numeric array.
 

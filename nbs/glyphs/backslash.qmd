@@ -1,5 +1,7 @@
 # `\` — Scan
 
+Monadic operator
+
 `f\Y` scans the last axis from left to right. Each result combines the previous result, as `f`'s left argument, with the next item: `-\1 2 3` is `1`, `1-2` and `(1-2)-3`.
 
 ```bpl

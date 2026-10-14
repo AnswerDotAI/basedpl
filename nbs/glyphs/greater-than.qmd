@@ -1,6 +1,6 @@
 # `>` — Sort down / Greater
 
-Ranks: `∞` monadic, `0 0` dyadic
+Function. Ranks: `∞` monadic, `0 0` dyadic
 
 `>Y` sorts the major cells of `Y` descending, as `[⍒Y]⌷Y` does. Ties keep their order.
 

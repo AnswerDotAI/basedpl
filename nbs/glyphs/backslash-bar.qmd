@@ -1,6 +1,6 @@
 # `⍀` — Scan first
 
-Keys: `Alt-Minus Backslash`
+Monadic operator. Keys: `Alt-Minus Backslash`
 
 `f⍀Y` scans down the first axis.
 

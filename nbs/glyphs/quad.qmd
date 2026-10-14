@@ -1,6 +1,6 @@
 # `⎕` — IO
 
-Keys: `Alt-q`
+Syntax. Keys: `Alt-q`
 
 `⎕←Y` explicitly prints `Y` and retains its value.
 

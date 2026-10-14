@@ -1,6 +1,6 @@
 # `∩` — Duplicates / Intersection
 
-Keys: `Alt-c`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-c`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `∩Y` keeps the distinct major cells of `Y` that occur more than once, in order of first appearance. It matches cells as [`∪`](down-shoe.qmd) does.
 

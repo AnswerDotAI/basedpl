@@ -1,6 +1,6 @@
 # `÷` — Reciprocal / Divide
 
-Keys: `Alt-u`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-u`. Ranks: `0` monadic, `0 0` dyadic
 
 `÷Y`: 1/Y. Pervasive.
 

@@ -1,6 +1,6 @@
 # `⌹` — Matrix inverse / Matrix divide
 
-Keys: `Alt-q u`. Ranks: `2` monadic, `∞ 2` dyadic
+Function. Keys: `Alt-q u`. Ranks: `2` monadic, `∞ 2` dyadic
 
 `⌹Y` gives the inverse of a square matrix, and the pseudoinverse of any other matrix. Units reciprocate.
 

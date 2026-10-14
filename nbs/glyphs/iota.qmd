@@ -1,6 +1,6 @@
 # `⍳` — Indices / Index of
 
-Keys: `Alt-i`. Ranks: `1` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-i`. Ranks: `1` monadic, `∞ ∞` dyadic
 
 `⍳N` generates `0…N-1`. A negative `N` counts down, as J's `i.` does. Exact input gives exact coordinates.
 

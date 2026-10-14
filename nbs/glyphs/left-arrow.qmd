@@ -1,6 +1,6 @@
 # `←` — Assign
 
-Keys: `Alt-h`
+Syntax. Keys: `Alt-h`
 
 `N←Y` binds the name `N` to `Y`, an array, function or operator, and returns `Y` without displaying it. The target is the run just before `←`, and the value is everything to its right. Independent assignments need `⋄`, as in `a←1 ⋄ b←2`.
 

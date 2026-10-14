@@ -1,6 +1,6 @@
 # `⋄` — Separator
 
-Keys: `Alt-Backtick`
+Syntax. Keys: `Alt-Backtick`
 
 At statement level, `⋄` separates expressions. Everywhere, a line break means `⋄`, unless it's next to a bracket, `;`, `⋄` or `?`.
 

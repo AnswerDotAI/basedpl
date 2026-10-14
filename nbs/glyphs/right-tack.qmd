@@ -1,6 +1,6 @@
 # `⊢` — Same / Right
 
-Keys: `Alt-'`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-'`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `⊢Y` and `X⊢Y` return `Y`.
 

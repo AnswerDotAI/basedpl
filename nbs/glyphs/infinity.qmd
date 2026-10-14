@@ -1,6 +1,6 @@
 # `∞` — Infinity
 
-Keys: `Alt-8`
+Literal. Keys: `Alt-8`
 
 `∞` and `¯∞` are approximate real infinities.
 

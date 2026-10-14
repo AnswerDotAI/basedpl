@@ -62,7 +62,7 @@ cnt#v	17	18
 ⍳n	2.3	2.4
 # Comparing within tolerance takes a subtraction, the magnitudes, a scale and a comparison for each item. Tolerant floor raises each item by its scaled magnitude, capped below a half, before it floors.
 ⌊v	5.4	5.9
-v<w	5	7.5
+v<w	5	6.3
 jv<500	0.5	1.1
 # Writing twice as many items, or writing in a different order from reading.
 v,w	4.2	3.3
@@ -173,7 +173,7 @@ v⍳w	240	320
 # Unique sorts the reals, then compares each with the next one.
 ∪v	250	250
 # The inner products in `rustymath` run `+.×`, `⌈.+` and `⌊.+` on floats and integers, `+.×` on complex numbers, Boolean `∨.∧` and `∧.∨`, and the counts `+.=` and `+.≠`. `rustymath`'s own speed test times those products. Each case here checks that basedpl sends one kind of pair to them. A pair that misses them takes the per-row path, several times slower. A case with `⍤2` makes one call for each of 1024 matrices of 8×8.
-+.×⍤2⍨ ms	36	55
++.×⍤2⍨ ms	36	48
 m+.×m	140	320
 m⌈.+m	300	840
 bm∨.∧bm	12	22
@@ -184,19 +184,19 @@ cm+.=⍉cm	99	120
 zm+.×zm	66	130
 # Matrix division, `•decompose`, `•decompose⁻¹` and the determinant `-.×` run on rustymath, whose own speed test times each factorisation. These cases time basedpl's part: the calls in a `⍤2` stack, each path of `⌹`, the route from monadic `-.×` to LU, turning `"qr"`'s factors into arrays, rebuilding a matrix from factors, and reading complex storage. `tq` is tall enough for `⌹` and `"qr"` to take the CholeskyQR2 path.
 ⌹⍤2 ms	130	160
-ms⌹⍤2 sps	150	270
+ms⌹⍤2 sps	150	200
 ⌹m	280	430
 (side↑w)⌹m	110	160
 ((n÷16)↑w)⌹t	87	110
-⌹t	170	240
-((n÷4)↑w)⌹tq	580	820
-"qr"•decompose tq	660	910
+⌹t	150	240
+((n÷4)↑w)⌹tq	580	700
+"qr"•decompose tq	580	800
 "qr"•decompose⍤2 ms	510	480
-"qr"•decompose m	410	700
+"qr"•decompose m	410	630
 "cholesky"•decompose⍤2 sps	87	110
 "svd"•decompose⍤2 ms	1400	1200
 "svd"•decompose⁻¹ f	160	330
-["kind":"svd" "rank":8]•decompose m	130	590
+["kind":"svd" "rank":8]•decompose m	130	230
 "eigen"•decompose⁻¹ h	1400	1800
 "eigen"•decompose⍤2 ss	750	720
 "eigen"•decompose⍤2 ms	2300	2100
@@ -211,7 +211,7 @@ v=w	2.7	3.9
 3|v	6	8.1
 # Each real indexes its `order_key` in a hash map, as exact data does.
 v⍳w	120	160
-∪v	93	130
+∪v	93	98
 [widths] •prefs ["float":32]
 # Half the bytes to read and write, and twice the lanes in each SIMD instruction.
 -v	0.78	0.79
@@ -220,7 +220,7 @@ v×2	0.78	0.8
 v<w	0.81	0.84
 0.5<v	0.89	0.84
 √v	0.78	0.75
-+⌿m	0.91	0.88
++⌿m	0.77	0.88
 +/v	0.8	0.82
 ⌈/v	0.82	0.83
 +\v	0.98	0.94

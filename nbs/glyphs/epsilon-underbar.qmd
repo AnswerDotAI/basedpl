@@ -1,6 +1,6 @@
 # `⍷` — Groups / Find
 
-Keys: `Alt-Minus e`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-Minus e`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `⍷Y` gives the positions of each distinct major cell of `Y`, in the order of [`∪`](down-shoe.qmd). It matches cells as `∪` does. On a keyed axis, the positions are keys. In Dyalog, this is `{⊂⍵}⌸Y`.
 

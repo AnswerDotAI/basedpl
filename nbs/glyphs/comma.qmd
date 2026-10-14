@@ -1,6 +1,6 @@
 # `,` — Ravel / Catenate
 
-Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `,Y` makes a vector of the items. With [axes](quad-colon.qmd), `,⍠K Y` ravels consecutive axes and `,⍠⍬ Y` appends an axis of length 1.
 

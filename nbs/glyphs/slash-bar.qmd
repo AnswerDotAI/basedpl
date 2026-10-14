@@ -1,6 +1,6 @@
 # `⌿` — Reduce first
 
-Keys: `Alt-Minus /`
+Monadic operator. Keys: `Alt-Minus /`
 
 `f⌿Y` reduces the first axis.
 

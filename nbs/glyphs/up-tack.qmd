@@ -1,6 +1,6 @@
 # `⊥` — Binary decode / Decode
 
-Keys: `Alt-b`. Ranks: `1` monadic, `1 1` dyadic
+Function. Keys: `Alt-b`. Ranks: `1` monadic, `1 1` dyadic
 
 `⊥Y` decodes binary digits along the last axis.
 

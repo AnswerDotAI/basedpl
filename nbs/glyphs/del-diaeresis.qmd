@@ -1,6 +1,6 @@
 # `⍢` — Operator recursion
 
-Keys: `Alt-1 g`
+Argument. Keys: `Alt-1 g`
 
 Inside a dop, `⍢` denotes the operator itself. Apply operands again to derive the recursive function; `∇` instead retains the current operands.
 

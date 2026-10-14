@@ -1,5 +1,7 @@
 # `?` — Predicate
 
+Syntax
+
 In a dfn, `C?` ends a predicate. When `C` is true, the rest of the body runs. When it's false, the dfn moves on to its next body, after `;`.
 
 ```bpl

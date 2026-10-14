@@ -1,5 +1,7 @@
 # `/` — Reduce
 
+Monadic operator
+
 `f/Y` inserts `f` between the items along the last axis, then evaluates that expression as usual, from the right. `-/1 2 3` is `1-2-3`, which is 2. An empty axis reduces to `f`'s identity.
 
 ```bpl

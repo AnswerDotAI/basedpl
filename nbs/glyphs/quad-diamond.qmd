@@ -1,6 +1,6 @@
 # `⌺` — Stencil
 
-Keys: `Alt-q Backtick`
+Dyadic operator. Keys: `Alt-q Backtick`
 
 `f⌺S Y` applies `f` to neighbourhoods of sizes `S` on leading axes. Windows at the edges are padded with prototype fill.
 

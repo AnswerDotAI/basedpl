@@ -1,6 +1,6 @@
 # `⊘` — Valences
 
-Keys: `Alt-o /`
+Dyadic operator. Keys: `Alt-o /`
 
 `f⊘g` calls `f` when it has one argument, and `g` when it has two. Either side can be a dfn with any number of statements.
 

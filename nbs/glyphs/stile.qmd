@@ -1,6 +1,6 @@
 # `|` — Magnitude / Residue
 
-Ranks: `0` monadic, `0 0` dyadic
+Function. Ranks: `0` monadic, `0 0` dyadic
 
 `|Y` gives magnitude. Pervasive.
 

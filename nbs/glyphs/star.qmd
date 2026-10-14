@@ -1,6 +1,6 @@
 # `*` — Exponential / Exponent
 
-Ranks: `0` monadic, `0 0` dyadic
+Function. Ranks: `0` monadic, `0 0` dyadic
 
 `*Y`: e<sup>Y</sup>. Pervasive.
 

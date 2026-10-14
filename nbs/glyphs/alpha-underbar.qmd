@@ -1,6 +1,6 @@
 # `⍶` — Left operand
 
-Keys: `Alt-Minus a`
+Argument. Keys: `Alt-Minus a`
 
 In a defined operator, `⍶` denotes its left operand: function or subject.
 

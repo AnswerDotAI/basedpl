@@ -1,6 +1,6 @@
 # `⌽` — Reverse / Rotate
 
-Keys: `Alt-2`. Ranks: `1` monadic, `0 1` dyadic
+Function. Keys: `Alt-2`. Ranks: `1` monadic, `0 1` dyadic
 
 `⌽Y` reverses the last axis. `⌽⍠K` selects the axis.
 
