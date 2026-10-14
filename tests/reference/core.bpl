@@ -1876,6 +1876,32 @@ f←⊂[1 2 0⋄1 0 2]ₓ ↣⌻ ⋄ f∂3ₓ   ⍝ 12ₓ
 ⍝ — Multiple polynomial outputs contribute to one unit-input VJP
 f←[1 2⋄3 4]ₓ↣⌻ ⋄ [10 20]ₓ f∂ 3ₓ   ⍝ 100ₓ
 
+⍝ — Assigning f∂ attaches a hand-written derivative, which the monadic derivative calls
+r←{⍵×⍵} ⋄ r∂←{⍺←1 ⋄ ⍺×2×⍵} ⋄ r∂3   ⍝ 6
+
+⍝ — The dyadic derivative passes its cotangent to the attached derivative
+r←{⍵×⍵} ⋄ r∂←{⍺←1 ⋄ ⍺×2×⍵} ⋄ 10 r∂ 3   ⍝ 60
+
+⍝ — A function with an attached derivative applies the function itself
+r←{⍵×⍵} ⋄ r∂←{⍺←1 ⋄ ⍺×2×⍵} ⋄ r 3   ⍝ 9
+
+⍝ — The attached derivative replaces the polynomial's own
+f←[1 2 3]ₓ↣⌻ ⋄ f∂←[0 0 5]ₓ↣⌻ ⋄ f∂3ₓ   ⍝ 45ₓ
+
+⍝ — A higher order differentiates the attached derivative
+f←[1 2 3]ₓ↣⌻ ⋄ f∂←[0 0 5]ₓ↣⌻ ⋄ f∂∂3ₓ   ⍝ 30ₓ
+
+⍝ — The inverse inverts the function, not its derivative
+k←3× ⋄ k∂←{⍺←1 ⋄ 3×⍺} ⋄ k⁻¹ 6   ⍝ 2
+
+⍝ — A derivative must be a function
+f←{⍵×⍵} ⋄ f∂←3
+⍝ error: DOMAIN ERROR
+
+⍝ — A dfn has no derivative of its own
+{⍵×⍵}∂3
+⍝ error: DOMAIN ERROR
+
 ⍝ — Negative exponents cannot be converted to a coefficient vector
 ⌻⁻¹⊂[1 ¯1⋄]
 ⍝ error: DOMAIN ERROR
@@ -1902,6 +1928,66 @@ f←[1 2⋄3 4]ₓ↣⌻ ⋄ [10 20]ₓ f∂ 3ₓ   ⍝ 100ₓ
 ⍝ — Converting coefficients to roots and back gives the coefficients again [atol=1e-10]
 [⌻⁻¹⌻0 16 ¯12 2;⌻⁻¹⌻1 0 1;⌻⁻¹⌻1 ¯2 1]
 [0 16 ¯12 2;1 0 1;1 ¯2 1]
+
+⍝⍝ Minimizing
+
+⍝ — Without a derivative, the search runs Nelder–Mead from the start [atol=1e-6]
+rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
+rosen⇄ ¯1.2 1   ⍝ 1 1
+
+⍝ — A derivative that f∂←g attaches makes the search run L-BFGS, which needs fewer evaluations
+rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
+rosen∂←{⍺←1 ⋄ [x y]←⍵ ⋄ ⍺×[(¯2×1-x) - 400×x×y-⊼x; 200×y-⊼x]}
+(["report":$t] rosen⇄ ¯1.2 1).evaluations<100   ⍝ $t
+
+⍝ — Bounds make the search run Powell's method within them [atol=1e-6]
+rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
+["lower":[¯∞ 0] "upper":[0.8 ∞]] rosen⇄ 0.5 0.5
+⍝ =>
+0.8 0.64
+
+⍝ — A number as the start runs Brent's method [atol=1e-6]
+{⊼⍵-2}⇄ 10   ⍝ 2
+
+⍝ — A record as the start gives a record with its keys [atol=1e-6]
+cost←{(⊼⍵.gap-6) + ⊼⍵.margin-2×⍵.gap}
+cost⇄ ["gap":8 "margin":12]
+⍝ =>
+["gap":6 "margin":12]
+
+⍝ — With batch, a call gets every candidate along a new last axis, so each field holds one value per candidate [atol=1e-6]
+cost←{(⊼⍵.gap-6) + ⊼⍵.margin-2×⍵.gap}
+lo←["gap":0 "margin":0] ⋄ hi←["gap":20 "margin":40]
+["method":"differential-evolution" "lower":lo "upper":hi "batch":$t] cost⇄ ["gap":8 "margin":12]
+⍝ =>
+["gap":6 "margin":12]
+
+⍝ — The report gives the evaluations and whether the search converged before reaching their limit
+r←["evaluations":10 "report":$t] {+/⊼⍵-3}⇄ 1 2
+[r.evaluations r.converged]   ⍝ 10ₓ $f
+
+⍝ — A start of 32-bit floats searches and answers in 32-bit floats
+•storage {⊼⍵-0.5}⇄ 1ₛ   ⍝ "float32"
+
+⍝ — The function must give one real number
+{⊼⍵}⇄ 1 2
+⍝ error: DOMAIN ERROR
+
+⍝ — L-BFGS needs a derivative
+["method":"l-bfgs"] {+/⊼⍵}⇄ 1 2
+⍝ error: DOMAIN ERROR
+
+⍝ — Differential evolution needs finite bounds
+["method":"differential-evolution"] {+/⊼⍵}⇄ 1 2
+⍝ error: DOMAIN ERROR
+
+⍝ — Bounds give one number, or one for each variable in the start's shape
+["lower":[0 0 0]] {+/⊼⍵}⇄ 1 2
+⍝ error: LENGTH ERROR
+
+⍝ — Each lower bound must be at most its upper bound
+["lower":2 "upper":1] {⊼⍵}⇄ 0
+⍝ error: DOMAIN ERROR
 
 ⍝⍝ Prime and factor families
 
@@ -2069,19 +2155,22 @@ $t $f $t
 ¯4↕⍳2
 ⍝ error: DOMAIN ERROR
 
-⍝⍝ Paired inverse under and trajectories
+⍝⍝ Assigned inverses, under and trajectories
 
-⍝ — Negative power uses an explicitly declared inverse
-f←{⍵+1}⇄{⍵-1} ⋄ f⍣¯2⊢5   ⍝ 3
+⍝ — Negative power uses an assigned inverse
+f←{⍵+1} ⋄ f⁻¹←{⍵-1} ⋄ f⍣¯2⊢5   ⍝ 3
 
-⍝ — A dyadic declared inverse recovers the right argument with the left fixed
-f←{⍺+⍵}⇄{⍵-⍺} ⋄ 3 f⁻¹ 8   ⍝ 5
+⍝ — A dyadic assigned inverse recovers the right argument with the left fixed
+f←{⍺+⍵} ⋄ f⁻¹←{⍵-⍺} ⋄ 3 f⁻¹ 8   ⍝ 5
 
-⍝ — Binding the left argument retains the declared inverse
-f←{⍺+⍵}⇄{⍵-⍺} ⋄ (3↣f)⁻¹8   ⍝ 5
+⍝ — Binding the left argument retains the assigned inverse
+f←{⍺+⍵} ⋄ f⁻¹←{⍵-⍺} ⋄ (3↣f)⁻¹8   ⍝ 5
 
-⍝ — Inverting an explicitly paired inverse recovers the forward function
-f←{⍵+1}⇄{⍵-1} ⋄ (f⁻¹)⁻¹5   ⍝ 6
+⍝ — Inverting a function with an assigned inverse recovers the function
+f←{⍵+1} ⋄ f⁻¹←{⍵-1} ⋄ (f⁻¹)⁻¹5   ⍝ 6
+
+⍝ — Assigning an inverse inside a dfn updates the nearest binding, as selective assignment does
+f←{⍵+1} ⋄ g←{⍵-1} ⋄ {f⁻¹←g ⋄ 0}0 ⋄ f⁻¹ 5   ⍝ 4
 
 ⍝ — Dyadic under transforms both arguments, then inverts the result
 3 +@ 2× 4   ⍝ 7
@@ -2120,7 +2209,7 @@ f←{⍵+1}⇄{⍵-1} ⋄ (f⁻¹)⁻¹5   ⍝ 6
 {⌊⍵÷2}⍣[0 1 ∞] 100   ⍝ 100 50 0
 
 ⍝ — A negative infinite count runs the inverse until it converges
-({2×⍵}⇄{⌊⍵÷2})⍣¯∞⊢100   ⍝ 0ₓ
+d←{2×⍵} ⋄ d⁻¹←{⌊⍵÷2} ⋄ d⍣¯∞⊢100   ⍝ 0ₓ
 
 ⍝ — A zero count in a list keeps the initial value without calling the operand
 {1÷0}⍣[0] "ab"   ⍝ ["ab"]
@@ -2141,8 +2230,8 @@ stop←[{⍺≥limit}]
 ⍝ — Parenthesizing power leaves the following backslash as ordinary scan
 (+⍣1)\1 2 3   ⍝ 1 3 6
 
-⍝ — A declared right-argument inverse does not provide a left-argument inverse
-((+⇄-)↢3)⁻¹8
+⍝ — An assigned inverse recovers the right argument only, so it gives no left-argument inverse
+p←+ ⋄ p⁻¹←- ⋄ (p↢3)⁻¹8
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
@@ -2150,12 +2239,12 @@ stop←[{⍺≥limit}]
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Repeated power counts reuse iterates rather than calling the operand again
-f←{⎕←⍵+1}⇄{⎕←⍵-1} ⋄ f⍣3 ¯2 3 0⊢0
+f←{⎕←⍵+1} ⋄ f⁻¹←{⎕←⍵-1} ⋄ f⍣3 ¯2 3 0⊢0
 3 ¯2 3 0
 ⍝ ⎕: 1\n2\n3\n¯1\n¯2
 
 ⍝ — Under transforms right then left, calls the operand, then applies the inverse
-g←{⎕←⍵ ⋄ 2×⍵}⇄{⎕←⍵ ⋄ ⍵÷2} ⋄ 3(+@g)4
+g←{⎕←⍵ ⋄ 2×⍵} ⋄ g⁻¹←{⎕←⍵ ⋄ ⍵÷2} ⋄ 3(+@g)4
 7
 ⍝ ⎕: 4\n3\n14
 
@@ -2493,7 +2582,7 @@ d←•distribution "normal" ⋄ [d.cdf⁻¹ 0.5;d.quantile⁻¹ 0]   ⍝ 0 0.5
 "qr" •decompose⁻¹ ["q":2 2⍴1 0 0 1;"r":3 3⍴1]
 ⍝ error: LENGTH ERROR
 
-⍝ — Under applies through inverse pairs
+⍝ — Under writes back through the positions that ↕ selects
 {⍵×10}@↕ 1 2 3   ⍝ 10 20 30
 
 ⍝⍝ Compact integers and promotion

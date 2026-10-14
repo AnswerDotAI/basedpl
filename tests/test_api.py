@@ -306,7 +306,7 @@ def test_words_binding_and_operators():
 
 def test_math_construction():
     from basedpl import prime, prime_mode, factors, factor_spec, roots, polyval, windows
-    f = plus.left(1).inverse_pair(subtract(1))
+    f = plus.left(1).undo(subtract(1))
     np.testing.assert_array_equal(f.power([2, -1, 0])(10), [12, 9, 10])
     np.testing.assert_array_equal(f.history(-2)(10), [10, 9, 8])
     stop = bpl('limit←13 ⋄ {⍺≥limit}')
@@ -319,6 +319,15 @@ def test_math_construction():
     p = polyval.left([1, 2, 3])
     assert p.derivative(2).py == 14 and p.derivative.derivative(2).py == 6
     np.testing.assert_array_equal(p.derivative([10, 20], [1, 2]), [80, 280])
+    rosen = bpl('{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}')
+    vjp = bpl('{⍺←1 ⋄ [x y]←⍵ ⋄ ⍺×[(¯2×1-x) - 400×x×y-⊼x; 200×y-⊼x]}')
+    r = rosen.derivative(vjp)
+    assert r([-1, 2]).py == 104
+    np.testing.assert_array_equal(r.derivative([-1, 2]), [396, 200])
+    np.testing.assert_allclose(rosen.minimize([-1.2, 1]), [1, 1], atol=1e-6)
+    found = rosen.minimize([0.5, 0.5], lower=[-np.inf, 0], upper=[0.8, np.inf], report=True).py
+    np.testing.assert_allclose(found['x'], [0.8, 0.64], atol=1e-6)
+    assert found['converged']
 
 
 def test_axis_names():

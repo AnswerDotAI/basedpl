@@ -634,7 +634,7 @@ fn encode_whole<'a>(bases: Items<'a>, values: Items<'a>, layout: &Layout) -> Opt
     let (bases, values) = (whole(bases)?, whole(values)?);
     if bases.is_empty() { return None; }
     let data = rustymath::integer::encode(&bases, &values)?;
-    match float { None => layout.integers(data), Some(width) => layout.floats(width, data.into_iter().map(rustymath::convert::float).collect()) }.ok()
+    match float { None => layout.integers(data), Some(width) => layout.floats(width, data.into_iter().map(rustymath::convert::float)) }.ok()
 }
 
 /// `bases⊥digits` when both hold numbers in compact storage, with each cell of `len` digits together and in order. `bases` holds `xlen`
@@ -690,7 +690,7 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Context<'_>, fill: bool, rn
                     .error_at(span, "invalid roll result");
             }
             if bounds.iter().all(|&n| n == 0) {
-                let draws = bounds.iter().map(|_| rng.sample(rand::distr::Open01)).collect();
+                let draws = bounds.iter().map(|_| rng.sample::<f64, _>(rand::distr::Open01));
                 return right.layout().floats(unit, draws).error_at(span, "invalid roll result");
             }
             for n in bounds { data.add(draw(n, float, unit, rng)); }

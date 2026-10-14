@@ -26,9 +26,7 @@ impl Session {
         use Category::*;
         match &node.kind {
             NodeKind::Function(_) => Function,
-            NodeKind::Operator(op) => {
-                if self::OperatorNode::Primitive(*op).is_dyadic() { DyadicOperator } else { Operator }
-            }
+            NodeKind::Operator(op) => Category::of(&Binding::Operator(self::OperatorNode::Primitive(*op))),
             NodeKind::Name(name) => self.lookup(name).map_or(Value, Category::of),
             NodeKind::System(_) => Function,
             NodeKind::Dfn(d) => match d.kind {
@@ -75,6 +73,7 @@ impl Session {
 
     /// The target of `←` is the run before it: an array, followed by the function of a modified assignment such as `x+←1`.
     pub(super) fn assignment_start(&self, nodes: &[Node]) -> Result<usize, Error> {
+        if self.rule_target(nodes).is_some() { return Ok(0); }
         let end = nodes.len();
         let (operand, category) = self.assignment_operand(nodes, end)?;
         // Inside a dfn a name before `←` is a target, unless an array comes directly before it. Then the name's value
@@ -144,10 +143,30 @@ impl Session {
                 _ => (),
             }
         }
+        if let Some((name, derivative)) = self.rule_target(target) { return self.attach_rule(name, derivative, value, span); }
         let Some((array, modifier)) = self.modified_target(target)? else {
             return Err(span.error(ErrorKind::Syntax, "assignment needs a name or selection"));
         };
         self.modify(array, modifier, value)
+    }
+
+    /// The name in a target that attaches a hand-written rule to the function it holds, with whether the rule is its derivative:
+    /// `f∂` for the derivative, or `f⁻¹` for the inverse.
+    fn rule_target<'a>(&self, nodes: &'a [Node]) -> Option<(&'a str, bool)> {
+        let [Node { kind: NodeKind::Name(name), .. }, Node { kind: NodeKind::Operator(op), .. }] = nodes else { return None };
+        let derivative = match op { OperatorKind::Differentiate => true, OperatorKind::Super(Superscript::Power(-1)) => false, _ => return None };
+        matches!(self.lookup(name), Some(Binding::Function(_))).then_some((name.as_str(), derivative))
+    }
+
+    /// `f⁻¹←g` or `f∂←g`: the nearest binding of `f` gets `g` attached as its inverse or derivative.
+    fn attach_rule(&mut self, name: &str, derivative: bool, value: &Binding, span: &Span) -> Result<(), Error> {
+        if !self.assignable(name) { return Err(span.error(ErrorKind::Syntax, "arguments and operands cannot be assigned here")); }
+        let Binding::Function(g) = value else { return Err(span.domain_error("an inverse or derivative must be a function")) };
+        let Some((owner, Binding::Function(f))) = self.binding(name) else { unreachable!("`rule_target` checked the binding") };
+        if g.environment() > owner { return Err(span.domain_error("function would export a local closure")); }
+        let f = if derivative { f.with_derivative(g.clone()) } else { f.with_inverse(g.clone()) };
+        self.insert_name(owner, name, Binding::Function(f));
+        Ok(())
     }
 
     /// Splits a modified assignment's target into its array part and its function, as `a` and `f` in `a(f)←`.

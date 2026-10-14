@@ -560,7 +560,7 @@
    <key code="16" output="⊂"/>
    <key code="17" output="∘"/>
    <key code="18" action="k18-m4"/>
-   <key code="19" output="“"/>
+   <key code="19" output="⌽"/>
    <key code="20" output="√"/>
    <key code="21" output="⇄"/>
    <key code="22" output="]"/>
@@ -1347,7 +1347,7 @@
    <key code="23" output="&#x001B;"/>
    <key code="24" output="'"/>
    <key code="25" output="}"/>
-   <key code="26" output="⌽"/>
+   <key code="26" output="|"/>
    <key code="27" output="¿"/>
    <key code="28" output="{"/>
    <key code="29" output="≠"/>

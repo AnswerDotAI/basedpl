@@ -58,7 +58,7 @@ The until form keeps every state when its predicate is in a one-item vector: `f�
 n←{0.5×⍵+2÷⍵} ⋄ ≢n⍣[≡]1   ⍝ 7ₓ
 ```
 
-See [Inverse pair](inverse-pair.qmd).
+See [assigning an inverse](../assignment.ipynb#inverses-and-derivatives).
 
 ## Inverse
 

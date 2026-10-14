@@ -41,7 +41,7 @@ pub(crate) enum OperatorKind {
     Outer,
     Key,
     Power,
-    PairInverse,
+    Minimize,
     Valences,
     Under,
     Differentiate,
@@ -106,7 +106,7 @@ impl OperatorKind {
             Outer,
             Key,
             Power,
-            PairInverse,
+            Minimize,
             Valences,
             Under,
             Differentiate,
@@ -134,7 +134,7 @@ impl OperatorKind {
             Key => ("⌸", ("key", ""), Function, None),
             Power => ("⍣", ("power", "repeat iterate history"), Function, Some(Any)),
             Super(_) => ("", ("superscript", ""), Any, None),
-            PairInverse => ("⇄", ("inverse-pair", ""), Function, Some(Function)),
+            Minimize => ("⇄", ("minimize", ""), Function, None),
             Valences => ("⊘", ("valences", ""), Function, Some(Function)),
             Under => ("@", ("under", ""), Function, Some(Any)),
             Differentiate => ("∂", ("derivative", ""), Function, None),
@@ -318,7 +318,7 @@ fn generated(n: u64, float: Option<FloatWidth>) -> Value {
 }
 /// Counts or positions in `shape`, as `generated` gives each one. A value beyond `i64` makes the array mixed.
 fn generated_items(shape: Vec<usize>, values: Vec<u64>, float: Option<FloatWidth>) -> Result<Value, ErrorKind> {
-    if let Some(width) = float { return Value::floats(shape, width, values.into_iter().map(|n| rustymath::convert::float(n as i64)).collect()); }
+    if let Some(width) = float { return Value::floats(shape, width, values.into_iter().map(|n| rustymath::convert::float(n as i64))); }
     if values.iter().all(|&n| i64::try_from(n).is_ok()) { return Value::integers(shape, values.into_iter().map(|n| n as i64).collect()); }
     Value::new(shape, values.into_iter().map(|n| generated(n, None)).collect())
 }

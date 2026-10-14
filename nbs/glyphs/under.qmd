@@ -73,7 +73,7 @@ Dyalog's `@` reads a function right operand as a mask. Under's function right op
 
 Call order: `g Y`, `g X`, `f`, then `g` on the positions of `Y`, or the inverse of `g`. With `[p]`, `p Y` comes first.
 
-See [Inverse pair](inverse-pair.qmd).
+See [assigning an inverse](../assignment.ipynb#inverses-and-derivatives).
 
 ## Inverse
 

@@ -98,7 +98,7 @@ pub(crate) fn distribution(left: Option<&Value>, right: &Value, span: &Context<'
     let params = match left {
         Some(params) => params.clone(),
         None if standard.is_empty() => return Err(span.domain_error(format!("the {name} distribution has no standard parameters"))),
-        None => Value::floats(vec![standard.len()], FloatWidth::F64, standard.to_vec()).error_at(span, "invalid standard parameters")?,
+        None => Value::floats(vec![standard.len()], FloatWidth::F64, standard.iter().copied()).error_at(span, "invalid standard parameters")?,
     };
     Ok(bundle(construct(constructor, &params, span)?))
 }

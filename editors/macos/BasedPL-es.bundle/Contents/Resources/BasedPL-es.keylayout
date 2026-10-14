@@ -690,7 +690,7 @@
    <key code="16" action="k16-m5"/>
    <key code="17" output="‡"/>
    <key code="18" action="k18-m5"/>
-   <key code="19" output="²"/>
+   <key code="19" output="⌽"/>
    <key code="20" output="√"/>
    <key code="21" output="⁴"/>
    <key code="22" output="⁶"/>
@@ -1339,7 +1339,7 @@
    <key code="15" output="&#x0012;"/>
    <key code="16" output="&#x0019;"/>
    <key code="17" output="&#x0014;"/>
-   <key code="18" output="⌽"/>
+   <key code="18" output="1"/>
    <key code="19" output="2"/>
    <key code="20" output="3"/>
    <key code="21" output="4"/>

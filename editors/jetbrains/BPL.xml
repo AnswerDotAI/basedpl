@@ -459,11 +459,6 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="inverse-pair" value="⇄" description="⇄" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
   <template name="inverted-question" value="¿" description="¿" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
@@ -565,6 +560,11 @@
     </context>
   </template>
   <template name="min" value="⌊" description="⌊" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="minimize" value="⇄" description="⇄" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>

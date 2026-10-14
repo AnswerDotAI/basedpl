@@ -23,8 +23,7 @@ Option-r	⍴
 Option-y	•
 Option-t	∘
 Option-Shift-1	diaeresis prefix
-Control-Option-1	⌽
-Option-Shift-2	²
+Option-Shift-2	⌽
 Option-Shift-3	√
 Option-4	⇄
 Option-Shift-4	⁴

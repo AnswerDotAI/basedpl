@@ -85,6 +85,9 @@ pub(crate) trait Float: Element + rustymath::Float<Working: Element> {
     const WIDTH: FloatWidth;
     /// The signed integer width with this float's bytes, which monadic `⌊` and `⌈` write their results at first.
     const INTEGERS: Width;
+    /// `value`'s compact numbers as this float type: borrowed when they have it already, otherwise read through `Source`. `None` for
+    /// complex numbers, characters and mixed arrays.
+    fn compact(value: &Value) -> Option<Cow<'_, [Self]>>;
 }
 macro_rules! float {
     ($($t:ident: $width:ident, $integers:ident),+) => {$(
@@ -98,6 +101,7 @@ macro_rules! float {
         impl Float for $t {
             const WIDTH: FloatWidth = FloatWidth::$width;
             const INTEGERS: Width = Width::$integers;
+            fn compact(value: &Value) -> Option<Cow<'_, [Self]>> { read_as(value) }
         }
     )+};
 }
@@ -116,6 +120,7 @@ impl Element for half::f16 {
 impl Float for half::f16 {
     const WIDTH: FloatWidth = FloatWidth::F16;
     const INTEGERS: Width = Width::I16;
+    fn compact(value: &Value) -> Option<Cow<'_, [Self]>> { read_as(value) }
 }
 impl FloatWidth {
     /// The gap between 1 and the next float of this width.

@@ -560,7 +560,7 @@
    <key code="16" output="•"/>
    <key code="17" output="∘"/>
    <key code="18" action="k18-m4"/>
-   <key code="19" output="™"/>
+   <key code="19" output="⌽"/>
    <key code="20" output="√"/>
    <key code="21" output="⇄"/>
    <key code="22" action="k22-m4"/>
@@ -713,7 +713,7 @@
    <key code="39" output="Æ"/>
    <key code="40" output=""/>
    <key code="41" output="Ú"/>
-   <key code="42" output="⌽"/>
+   <key code="42" output="»"/>
    <key code="43" output="≤"/>
    <key code="44" output="¿"/>
    <key code="45" output="˜"/>

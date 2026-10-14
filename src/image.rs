@@ -93,7 +93,7 @@ fn render(delays: Option<&Value>, picture: &Value, span: &Context<'_>) -> Result
 fn decoded(bytes: &[u8], span: &Context<'_>) -> Result<Value, Error> {
     let Raster { count, height, width, channels, data } = codec::decode(bytes).map_err(|e| span.domain_error(format!("invalid image: {e}")))?;
     let shape = match count { 1 if channels == 1 => vec![height, width], 1 => vec![height, width, channels], n => vec![n, height, width, channels] };
-    Value::floats(shape, span.numeric().width, data.into_iter().map(|v| f64::from(v) / 65535.).collect()).error_at(span, "image exceeds array limits")
+    Value::floats(shape, span.numeric().width, data.into_iter().map(|v| f64::from(v) / 65535.)).error_at(span, "image exceeds array limits")
 }
 
 /// `frames` encoded in `format`, as an animation with `delays`. Only PNG holds an animation. JPEG drops alpha.

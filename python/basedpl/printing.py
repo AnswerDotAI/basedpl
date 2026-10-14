@@ -64,7 +64,7 @@ class _Printer:
                 op, p = _infix[middle[0]]
                 return f'{r(a, dyad, p+1)} {op} {r(c, dyad, p+1)}', p
             return f'fork({r(a, dyad)}, {r(b, True)}, {r(c, dyad)})', 100
-        if kind in _MONADIC.values() and isinstance(a, _Function):
+        if kind in _MONADIC.values() and isinstance(a, _Function) and len(args) == 1:
             method = _methods[kind]
             valence = dyad if kind == '¨' else kind != '∂'
             return f'{r(a, valence, 100)}.{method}', 100

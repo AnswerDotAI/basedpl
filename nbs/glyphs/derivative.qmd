@@ -4,7 +4,7 @@ Keys: `Alt-f`
 
 `f∂X`: gradient of `f` at `X`. `f` must return a unit. `U f∂ X`: vector–Jacobian product, where `U` has the shape of `f`'s result. The result has the shape of `X`.
 
-Currently supports real evaluators `C⌻`, including factored and exponent-table forms. `C⌻` is a train that binds `C`, the same as `C↣⌻`.
+Currently differentiates real evaluators `C⌻`, including factored and exponent-table forms, and functions with a derivative that `f∂←g` attaches. `C⌻` is a train that binds `C`, the same as `C↣⌻`.
 
 ```bpl
 f←[1 2 3]ₓ⌻ ⋄ f∂2ₓ                ⍝ 14ₓ
@@ -20,6 +20,15 @@ f←⊂[1 2 0⋄1 0 2]ₓ ⌻ ⋄ f∂3ₓ           ⍝ 12ₓ
 ```
 
 Repeated `∂` requires unit input and output and one variable.
+
+`f∂←g` attaches `g` as the derivative of the function that `f` names, as [assignment](../assignment.ipynb#inverses-and-derivatives) describes. `f` still applies itself. `f∂X` then calls `g X`, and `U f∂ X` calls `U g X`, so `g` gives the gradient with one argument and the vector–Jacobian product with two. A higher order differentiates `g`, and `⁻¹` inverts `f`. [`⇄`](minimize.qmd) follows the derivative of a function that has one.
+
+```bpl
+r←{⍵×⍵} ⋄ r∂←{⍺←1 ⋄ ⍺×2×⍵}
+r 3        ⍝ 9
+r∂3        ⍝ 6
+10 r∂ 3    ⍝ 60
+```
 
 ## Errors
 

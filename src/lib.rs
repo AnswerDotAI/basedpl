@@ -20,6 +20,7 @@ pub mod inspection;
 pub mod js;
 mod json;
 pub mod keyed;
+mod minimize;
 mod number;
 mod number_theory;
 mod pervasive;

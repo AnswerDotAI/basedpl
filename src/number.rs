@@ -410,7 +410,7 @@ macro_rules! real_fields {
             fn of(n: &Number) -> Self { <$t>::narrow(n.to_float().expect("a real number")) }
             fn number(self, width: FloatWidth) -> Number { Number::float(self.into(), width) }
             fn compact(a: &Value) -> Option<Cow<'_, [Self]>> { read_as(a) }
-            fn array(x: Vec<Self>, shape: Vec<usize>, width: FloatWidth) -> Result<Value, ErrorKind> { Value::floats(shape, width, x.into_iter().map(Into::into).collect()) }
+            fn array(x: Vec<Self>, shape: Vec<usize>, width: FloatWidth) -> Result<Value, ErrorKind> { Value::floats(shape, width, x.into_iter().map(Into::into)) }
         }
     )+};
 }

@@ -22,7 +22,7 @@ Option-r	⍴
 Option-y	•
 Option-t	∘
 Control-Option-Shift-&	diaeresis prefix
-Option-Shift-é	²
+Option-Shift-é	⌽
 Option-Shift-"	√
 Option-'	⊢
 Option-Shift-'	⇄
@@ -41,7 +41,6 @@ Option-i	⍳
 Option-p	π
 Control-Option-p	stile prefix
 Option-l	↦
-Control-Option-Shift-l	⌽
 Option-j	↓
 Option-k	take prefix
 Option-m	×

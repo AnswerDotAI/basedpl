@@ -171,7 +171,7 @@ fn cancellation_preserves_session_and_unwinds_calls() {
     assert_eq!(r.error.as_ref().unwrap().kind, Timeout);
     assert_eq!(r.output_text(), ["7"]);
     equiv_in(&mut s, "keep+1", "43");
-    s.set("u", AplValue::floats(vec![1_000_000], basedpl::FloatWidth::F64, (0..1_000_000).map(|i| f64::from(i) + 0.5).collect()).unwrap()).unwrap();
+    s.set("u", AplValue::floats(vec![1_000_000], basedpl::FloatWidth::F64, (0..1_000_000).map(|i| f64::from(i) + 0.5)).unwrap()).unwrap();
     assert_eq!(s.eval_timeout("∪u", Duration::from_millis(2)).error.unwrap().kind, Timeout);
     assert_eq!(s.eval_timeout("⍭1000000000000ₓ", Duration::from_millis(2)).error.unwrap().kind, Timeout);
     let interrupt = basedpl::InterruptHandle::default();

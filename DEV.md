@@ -133,7 +133,7 @@ Rank/Each/Outer assemble cells through shared layout/prototype rules. A 0-cell p
 
 Axis nodes select/move axes and reuse Rank when the function has no direct axis meaning. Vector-axis reduction uses the general composed-ravel rule, preserving axis order and the whole seed. Single-axis reductions retain direct kernels. Layout-only changes share storage. Structural results retain renderers where their rank permits; scans and in-place changes copy complete layouts. Match ignores renderers.
 
-Inverse nodes propagate fixed-argument sides through composition. Candidate-building primitive inverses validate by applying the primitive again. Inverse scans share forward scan's seed/axis validation. Agenda calls its selector once, then passes the original arguments to the selected branch. Computed operands for Rank, Axis, Stencil and Agenda use shared operand evaluation. Python constructs these nodes directly, not by generating source.
+Inverse nodes propagate fixed-argument sides through composition. `f⁻¹←g` and `f∂←g` replace the binding with a `Ruled` node, which holds the function with its hand-written inverse and derivative. Calling it calls the function. `⁻¹` and `∂` use the rules, and Under counts an attached inverse as keeping every item. Candidate-building primitive inverses validate by applying the primitive again. Inverse scans share forward scan's seed/axis validation. Agenda calls its selector once, then passes the original arguments to the selected branch. Computed operands for Rank, Axis, Stencil and Agenda use shared operand evaluation. Python constructs these nodes directly, not by generating source.
 
 ## Numbers and backend ownership
 
@@ -218,6 +218,8 @@ The playground and gallery load released assets from jsDelivr, or local `nbs/pla
 ## System functions and rendering
 
 `system.rs` owns case-insensitive system names, valence, item mapping and result prototypes. Native records use ordinary function nodes and calls. Empty native item mapping returns its declared prototype without calling the function. `data::Options` is the shared keyed-option decoder; formats don't invent separate option parsers.
+
+`minimize.rs` implements `⇄` on `rustymath::optimize`. Its `Goal` evaluates the operand at points in the start's layout. Where `Function::differentiable` holds, `Goal` also calls `f∂` for the gradient. `∂` itself uses the same test.
 
 CSV columns, JSON arrays and Python lists share `data::imported`: a non-fill finite float or any nonfinite float triggers float promotion when every number converts losslessly. Finite fills alone do not trigger it. Otherwise items keep their kinds. JSON objects/dictionaries stay mixed. Binary data uses exact bytes. Writes validate before opening and create exclusively unless overwrite is explicit. CSV/JSON/XML exports use `•csv⁻¹`, `•json⁻¹` and `•xml⁻¹`.
 

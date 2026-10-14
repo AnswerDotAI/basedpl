@@ -26,7 +26,6 @@ pub(super) fn composition(op: OperatorKind, operands: &[Operand; 2], left: Optio
         (Operand::Function(f), ranks) if matches!(op, Rank) => rank(f, &computed(ranks, left, right, cx)?, left, right, cx),
         (Operand::Function(f), spec) if matches!(op, Axis) => along_axes(f, &computed(spec, left, right, cx)?, left, right, cx),
         (Operand::Function(f), Operand::Function(g)) => match op {
-            PairInverse => f.call(left, right, cx),
             Valences => {
                 if left.is_some() { g.call(left, right, cx) } else { f.call(None, right, cx) }
             }
@@ -267,7 +266,8 @@ pub(super) fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value
     };
     let array = match f.node() {
         Primitive(p) => crate::primitive::inverse(*p, bound, right, None, cx),
-        Composed(PairInverse, [_, Operand::Function(g)]) if first => return g.call(left, right, cx),
+        Ruled(_, Rules { inverse: Some(g), .. }) if first => return g.call(left, right, cx),
+        Ruled(g, Rules { inverse: None, .. }) => return inverse(g, bound, right, cx),
         Composed(Under, [Operand::Function(g), h]) => return composition(Under, &[Operand::Function(operand_inverse(g)?), h.clone()], left, right, cx),
         Inverse(g) if first => return g.call(left, right, cx),
         Modified(Each, Operand::Function(g)) => return each(&operand_inverse(g)?, left, right, cx),

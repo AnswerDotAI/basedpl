@@ -23,6 +23,7 @@ Option-y	•
 Option-t	∘
 Option-1	diaeresis prefix
 Option-Shift-1	¹
+Option-2	⌽
 Option-Shift-2	²
 Option-Shift-3	√
 Option-4	⇄
@@ -53,7 +54,6 @@ Option-'	⊢
 Option-k	take prefix
 Option-;	⊣
 Option-\	stile prefix
-Option-Shift-\	⌽
 Option-,	↢
 Option-Shift-,	≤
 Option-/	¿

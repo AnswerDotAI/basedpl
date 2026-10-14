@@ -34,7 +34,7 @@ impl Session {
     pub fn name_class(&self, name: &str) -> i64 {
         match crate::inspection::item(name) {
             Some(NodeKind::Name(name)) => self.lookup(&name).map_or(0, Binding::class),
-            Some(NodeKind::System(name)) => crate::system::lookup(&name).map_or(0, |_| FUNCTION_CLASS),
+            Some(NodeKind::System(name)) => crate::system::lookup(&name).map_or(0, |f| Binding::Function(f).class()),
             _ => -1,
         }
     }
@@ -45,7 +45,7 @@ impl Session {
         let info = match crate::inspection::item(name) {
             Some(NodeKind::Name(name)) => self.lookup(&name).and_then(|binding| binding.inspection(self)),
             Some(NodeKind::System(name)) => {
-                let mut info = crate::system::lookup(&name)?.inspect(self);
+                let mut info = Binding::Function(crate::system::lookup(&name)?).inspection(self)?;
                 if let Some(help) = crate::inspection::documentation(&name) { info.help = help.to_owned(); }
                 Some(info)
             }

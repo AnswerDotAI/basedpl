@@ -190,6 +190,7 @@ const BUILTINS: &[(&str, Call, Valence, Item, fn(&Context<'_>) -> Value)] = &[
     ("•literal", Call::Session(crate::Session::system_literal), Monadic, Text, number),
 ];
 
+/// Every system function's name.
 pub fn names() -> impl Iterator<Item = &'static str> { BUILTINS.iter().map(|(name, ..)| *name) }
 
 /// The table entry for system name `name`, ignoring case.
@@ -198,8 +199,9 @@ fn builtin(name: &str) -> Option<&'static (&'static str, Call, Valence, Item, fn
 }
 
 /// The help page for system name `name`, ignoring case, from `nbs/system`.
-pub(crate) fn help(name: &str) -> Option<&'static str> { let (name, ..) = builtin(name)?; crate::inspection::page(name) }
+pub(crate) fn help(name: &str) -> Option<&'static str> { crate::inspection::page(builtin(name)?.0) }
 
+/// The system function named `name`, ignoring case.
 pub(crate) fn lookup(name: &str) -> Option<Function> {
     let (name, call, valence, item, prototype) = builtin(name)?;
     Some(Function::system(SystemFunction { name, call: call.clone(), valence: *valence, item: *item, prototype: Some(*prototype) }))

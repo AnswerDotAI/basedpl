@@ -24,6 +24,7 @@ Option-z	⊂
 Option-t	∘
 Option-1	diaeresis prefix
 Option-Shift-1	¹
+Option-2	⌽
 Option-Shift-2	²
 Option-3	√
 Option-4	⇄
@@ -32,7 +33,6 @@ Control-Option-6	superscript prefix
 Option-Shift-5	subscript prefix
 Option-Shift-´	⋄
 Option-Shift-9	∨
-Control-Option-7	⌽
 Control-Option-Shift-7	¿
 Option-Shift-8	∞
 Option-0	∧

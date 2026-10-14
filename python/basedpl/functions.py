@@ -71,6 +71,15 @@ class Function(_Combinators):
         if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this BPL function')
         return bpl._call(self._inner, [_array(o) for o in args], _show).value
 
+class _Attaching(Function):
+    "`f.undo` or `f.derivative`. Called with one function `g`, it attaches `g` to `f` as its inverse or derivative, as `f⁻¹←g` and `f∂←g` do in BPL."
+    def __init__(self, glyph, f, attach):
+        super().__init__(_build(glyph, f)._inner)
+        self._f, self._attach = f, attach
+    def __call__(self, *args, **kwargs):
+        if len(args) == 1 and not kwargs and isinstance(args[0], Function): return Function(getattr(self._f._inner, self._attach)(args[0]._inner))
+        return super().__call__(*args, **kwargs)
+
 class Operator:
     "A BPL operator held as a value, as a module record holds it. Call it with its operand, or both operands of a dyadic operator, to get a `Function`."
     def __init__(self, inner): self._inner = inner
@@ -86,11 +95,14 @@ def _python_name(name):
 
 # Operator properties take Rust's operator names in Python spelling. Rust names `/⌿\⍀` after their shapes. `reduce` and `scan`
 # spell `/` and `\`, and `f.reduce[0]` and `f.scan[0]` spell `⌿` and `⍀`. `f[axis]` spells `⍠`. Rust has no row for `⁻¹` or
-# history. A dyadic operator waits for its right operand.
+# history. A dyadic operator waits for its right operand. `f.undo(g)` and `f.derivative(g)` with a function `g` attach it, as
+# `f⁻¹←g` and `f∂←g` do in BPL.
 _operators = [(s['glyph'], _python_name(s['name']), s['kind']) for s in symbols if s['kind'].endswith('-operator') and s['glyph'] not in '/⌿\\⍀⍠']
 _MONADIC = dict(reduce='/', scan='\\', undo='⁻¹') | {n: g for g, n, k in _operators if k == 'monadic-operator'}
 _DYADIC = {n: g for g, n, k in _operators if k == 'dyadic-operator'} | dict(history='history')
-for _name, _glyph in _MONADIC.items(): setattr(_Combinators, _name, property(lambda self, g=_glyph: _build(g, self)))
+_ATTACHING = dict(undo='with_inverse', derivative='with_derivative')
+for _name, _glyph in _MONADIC.items():
+    setattr(_Combinators, _name, property(lambda self, n=_name, g=_glyph: _Attaching(g, self, _ATTACHING[n]) if n in _ATTACHING and isinstance(self, Function) else _build(g, self)))
 for _name, _glyph in _DYADIC.items(): setattr(_Combinators, _name, property(lambda self, g=_glyph: _build(g, self, _HOLE)))
 
 _builtins = {alias: (name, 0) for name in _system_functions for alias in (name, name[1:])}

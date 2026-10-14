@@ -26,9 +26,16 @@ pub struct Function { node: Arc<FunctionData> }
 #[derive(Debug)]
 struct FunctionData { kind: FunctionNode, environment: Option<usize>, late: bool }
 
+/// What `∂` differentiates a function through: a bound polynomial evaluator's coefficients, or the derivative that `f∂←g` attaches.
+enum Derivative<'a> { Polynomial(&'a Value), Attached(&'a Function) }
+
 /// Compares the values held in functions and operators: exactly for `==`, or by `≡`'s rule for `matches`.
 type ValueRule<'a, E> = dyn FnMut(&Value, &Value) -> Result<bool, E> + 'a;
 fn same_values(x: &Value, y: &Value) -> Result<bool, Infallible> { Ok(x.same(y)) }
+/// Whether two operator applications' operands match, with `values` comparing the values in them.
+fn operands_equal<E>(a: &Operand, b: &Option<Operand>, x: &Operand, y: &Option<Operand>, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
+    Ok(a.equal_by(x, values)? && match (b, y) { (Some(b), Some(y)) => b.equal_by(y, values)?, (b, y) => b.is_none() && y.is_none() })
+}
 
 impl Function {
     /// Whether the functions are built from matching parts, with `values` comparing the values in them. A dfn matches only itself, and a
@@ -44,11 +51,8 @@ impl Function {
             (N::Inverse(f), N::Inverse(g)) => f.equal_by(g, values)?,
             (N::Axis(f, a), N::Axis(g, b)) => f.equal_by(g, values)? && values(a, b)?,
             (N::Defined(x), N::Defined(y)) => x == y,
-            (N::Derived(c, a, b), N::Derived(d, x, y)) => {
-                c == d
-                    && a.equal_by(x, values)?
-                    && match (b, y) { (Some(b), Some(y)) => b.equal_by(y, values)?, (b, y) => b.is_none() && y.is_none() }
-            }
+            (N::Derived(c, a, b), N::Derived(d, x, y)) => c == d && operands_equal(a, b, x, y, values)?,
+            (N::Ruled(f, r), N::Ruled(g, s)) => f.equal_by(g, values)? && r.equal_by(s, values)?,
             (N::Modified(o, a), N::Modified(p, b)) => o == p && a.equal_by(b, values)?,
             (N::Composed(o, [a, b]), N::Composed(p, [x, y])) => o == p && a.equal_by(x, values)? && b.equal_by(y, values)?,
             (N::Fork([f, g, h]), N::Fork([x, y, z])) => f.equal_by(x, values)? && g.equal_by(y, values)? && h.equal_by(z, values)?,
@@ -128,10 +132,26 @@ enum FunctionNode {
     Axis(Function, Value),
     Defined(Closure),
     Derived(Closure, Operand, Option<Operand>),
+    /// A function with the hand-written inverse or derivative that `f⁻¹←g` or `f∂←g` attaches. Calling it calls the function.
+    Ruled(Function, Rules),
     Modified(OperatorKind, Operand),
     Composed(OperatorKind, [Operand; 2]),
     Fork([Function; 3]),
 }
+
+/// The hand-written rules that selective assignment attaches to a function: `f⁻¹←g` sets the inverse and `f∂←g` the derivative.
+#[derive(Clone, Debug, Default)]
+struct Rules { inverse: Option<Function>, derivative: Option<Function> }
+impl Rules {
+    fn functions(&self) -> impl Iterator<Item = &Function> { self.inverse.iter().chain(&self.derivative) }
+    fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
+        let mut same = |a: &Option<Function>, b: &Option<Function>| match (a, b) { (Some(a), Some(b)) => a.equal_by(b, values), _ => Ok(a.is_none() && b.is_none()) };
+        Ok(same(&self.inverse, &other.inverse)? && same(&self.derivative, &other.derivative)?)
+    }
+}
+
+/// A system name as `notation` spells it.
+fn system_name(name: &str, notation: Notation) -> String { name.strip_prefix('•').map_or_else(|| name.into(), |name| format!("{}{name}", notation.glyph("•"))) }
 
 impl FunctionNode {
     /// The operands, left to right. Primitives, system functions, dfns and late-bound names have none.
@@ -145,13 +165,15 @@ impl FunctionNode {
             Self::Composed(_, operands) => operands.to_vec(),
             Self::Fork(fs) => fs.iter().map(fun).collect(),
             Self::Derived(_, a, b) => std::iter::once(a).chain(b).cloned().collect(),
+            Self::Ruled(f, rules) => std::iter::once(f).chain(rules.functions()).map(fun).collect(),
         }
     }
     /// The node's label in a function tree: its glyph, or its source for a node without operands.
     fn label(&self, notation: Notation) -> String {
         match self {
             Self::Primitive(p) => notation.glyph(p.glyph()).into(),
-            Self::System(f) => f.name.strip_prefix('•').map_or_else(|| f.name.into(), |name| format!("{}{name}", notation.glyph("•"))),
+            Self::System(f) => system_name(f.name, notation),
+            Self::Ruled(f, _) => f.node().label(notation),
             Self::LateBound(_, span) => span.source.text.clone(),
             Self::Defined(c) | Self::Derived(c, ..) => c.text().into(),
             Self::Fold(_, h) => notation.glyph(h.glyph()).into(),
@@ -217,8 +239,8 @@ impl Function {
     }
     /// Whether the function can drop items of its argument. Under uses an inverse only for a function that can't, as BQN's spec
     /// requires. An inverse drops items only where its function does: BPL's one other inverse that drops items, the inverse
-    /// of a catenate, checks the items it drops. Dfns, system functions, explicit inverse pairs and constants count as keeping
-    /// every item.
+    /// of a catenate, checks the items it drops. Dfns, system functions, functions with an inverse that `f⁻¹←g` attaches, and
+    /// constants count as keeping every item.
     fn discards(&self, dyadic: bool) -> bool {
         use {
             FunctionNode as N,
@@ -231,9 +253,10 @@ impl Function {
             N::Composed(Atop, [F(f), F(g)]) => f.discards(false) || g.discards(dyadic),
             N::Composed(Over, [F(f), F(g)]) => f.discards(dyadic) || g.discards(false),
             N::Composed(Before | After, [V(_), F(f)] | [F(f), V(_)]) | N::Modified(Commute, F(f)) => f.discards(true),
-            N::Axis(f, _) | N::Inverse(f) | N::Modified(Each, F(f)) | N::Composed(Power | Rank, [F(f), V(_)]) => f.discards(dyadic),
+            N::Ruled(_, Rules { inverse: Some(_), .. }) => false,
+            N::Axis(f, _) | N::Inverse(f) | N::Ruled(f, _) | N::Modified(Each, F(f)) | N::Composed(Power | Rank, [F(f), V(_)]) => f.discards(dyadic),
             N::Fork([f, g, h]) => f.discards(dyadic) || g.discards(true) || h.discards(dyadic),
-            N::Composed(PairInverse, _) | N::Modified(Commute, V(_)) | N::System(_) | N::Defined(_) | N::Derived(..) | N::LateBound(..) => false,
+            N::Modified(Commute, V(_)) | N::System(_) | N::Defined(_) | N::Derived(..) | N::LateBound(..) => false,
             node => node.operands().iter().any(|o| matches!(o, F(f) if f.discards(false) || f.discards(true))),
         }
     }
@@ -298,6 +321,7 @@ impl Function {
     }
     fn tree(&self, notation: Notation, budget: &mut usize) -> crate::display::Tree {
         use crate::display::Tree;
+        if let FunctionNode::Ruled(f, _) = self.node() { return f.tree(notation, budget); }
         if *budget == 0 { return Tree::leaf("…"); }
         *budget -= 1;
         let node = self.node();
@@ -327,6 +351,7 @@ impl Function {
                 text
             }
             FunctionNode::Derived(c, a, b) => format!("{}{}{}", a.left_text(notation, budget), c.text(), b.as_ref().map_or(String::new(), |b| b.right_text(notation, budget))),
+            FunctionNode::Ruled(f, _) => f.text(notation, budget),
         }
     }
     /// An operator takes the whole function to its left, so only a train needs parentheses there.
@@ -455,6 +480,7 @@ impl Function {
         let f = if self.late() { resolved = self.resolve(cx.session, &mut HashMap::new(), 0)?; &resolved } else { self };
         match f.node() {
             FunctionNode::Composed(op, operands) => composition(*op, operands, left, right, cx),
+            FunctionNode::Ruled(f, _) => f.call(left, right, cx),
             FunctionNode::Defined(_) | FunctionNode::Derived(..) => cx.session.call_defined(f, left, right).map_err(|mut e| {
                 e.calls.push(cx.span.clone());
                 e
@@ -462,8 +488,34 @@ impl Function {
             _ => f.apply(left, right, cx),
         }
     }
+    /// The function's result on these arguments, as an array.
     #[inline(always)]
-    fn call_array(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> { self.call(left, right, cx)?.array(cx.span) }
+    pub(crate) fn call_array(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> { self.call(left, right, cx)?.array(cx.span) }
+    /// What `∂` differentiates this function through, or `None` where `f∂` gives DOMAIN.
+    fn derivative(&self) -> Option<Derivative<'_>> {
+        match self.node() {
+            FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(p)])
+                if matches!(p.node(), FunctionNode::Primitive(Primitive::Polynomial)) => Some(Derivative::Polynomial(a)),
+            FunctionNode::Ruled(_, Rules { derivative: Some(g), .. }) => Some(Derivative::Attached(g)),
+            FunctionNode::Ruled(f, _) => f.derivative(),
+            _ => None,
+        }
+    }
+    /// Whether `f∂` differentiates this function.
+    pub(crate) fn differentiable(&self) -> bool { self.derivative().is_some() }
+    /// `f∂`, this function's derivative.
+    pub(crate) fn differentiated(&self, span: &Span) -> Result<Function, Error> {
+        Self::new(FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(self.clone())), span)
+    }
+    /// This function with `g` attached as its inverse, as `f⁻¹←g` attaches it. A derivative already attached stays.
+    pub fn with_inverse(&self, g: Function) -> Self { self.attached(|rules| rules.inverse = Some(g)) }
+    /// This function with `g` attached as its derivative, as `f∂←g` attaches it. An inverse already attached stays.
+    pub fn with_derivative(&self, g: Function) -> Self { self.attached(|rules| rules.derivative = Some(g)) }
+    fn attached(&self, set: impl FnOnce(&mut Rules)) -> Self {
+        let (f, mut rules) = match self.node() { FunctionNode::Ruled(f, rules) => (f.clone(), rules.clone()), _ => (self.clone(), Rules::default()) };
+        set(&mut rules);
+        Self::new(FunctionNode::Ruled(f, rules), &Span::whole(Source::new("<function>", ""))).expect("attaching a rule builds no operator node")
+    }
     fn call_prototype(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         cx.prototype_mode(true, |cx| self.call(left, right, cx))
     }
@@ -484,9 +536,7 @@ impl Function {
     fn inverse(&self, span: &Span) -> Result<Self, Error> {
         match self.node() {
             FunctionNode::Inverse(f) => Ok(f.clone()),
-            FunctionNode::Composed(OperatorKind::PairInverse, [f, g]) => {
-                Self::new(FunctionNode::Composed(OperatorKind::PairInverse, [g.clone(), f.clone()]), span)
-            }
+            FunctionNode::Ruled(f, Rules { inverse: Some(g), .. }) => Self::new(FunctionNode::Ruled(g.clone(), Rules { inverse: Some(f.clone()), derivative: None }), span),
             _ => Self::new(FunctionNode::Inverse(self.clone()), span),
         }
     }
@@ -513,6 +563,10 @@ impl Function {
                 FunctionNode::Derived(c, a, b) => {
                     FunctionNode::Derived(c.clone(), operand(a, &mut fun)?, b.as_ref().map(|b| operand(b, &mut fun)).transpose()?)
                 }
+                FunctionNode::Ruled(f, rules) => FunctionNode::Ruled(
+                    fun(f)?,
+                    Rules { inverse: rules.inverse.as_ref().map(&mut fun).transpose()?, derivative: rules.derivative.as_ref().map(&mut fun).transpose()? },
+                ),
                 FunctionNode::Modified(op, a) => FunctionNode::Modified(*op, operand(a, &mut fun)?),
                 FunctionNode::Composed(op, [a, b]) => FunctionNode::Composed(*op, [operand(a, &mut fun)?, operand(b, &mut fun)?]),
                 FunctionNode::Fork([a, b, c]) => FunctionNode::Fork([fun(a)?, fun(b)?, fun(c)?]),
@@ -540,7 +594,7 @@ impl Function {
         }
         let array = match self.node() {
             // `dispatch` calls these itself.
-            FunctionNode::LateBound(..) | FunctionNode::Composed(..) | Defined(_) | Derived(..) => unreachable!(),
+            FunctionNode::LateBound(..) | FunctionNode::Composed(..) | FunctionNode::Ruled(..) | Defined(_) | Derived(..) => unreachable!(),
             // Like a system function that takes text, `⍎` maps over an array that holds several strings.
             FunctionNode::Primitive(Primitive::Execute) if crate::system::Item::Text.maps(right) => {
                 return self.each_item(left, right, |cx| Value::Number(crate::Number::float(0.0, cx.numeric().width)), cx);
@@ -556,17 +610,20 @@ impl Function {
                     f = inner;
                     order += 1;
                 }
-                match f.node() {
-                    FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(p)])
-                        if matches!(p.node(), FunctionNode::Primitive(Primitive::Polynomial)) =>
-                    {
-                        crate::polynomial::derivative(a, order, left, right, cx)
+                match f.derivative() {
+                    Some(Derivative::Polynomial(a)) => crate::polynomial::derivative(a, order, left, right, cx),
+                    // `f∂←g` attaches `g` as the derivative, so a higher order differentiates `g`.
+                    Some(Derivative::Attached(g)) => {
+                        let mut d = g.clone();
+                        for _ in 1..order { d = d.differentiated(cx.span)?; }
+                        return d.call(left, right, cx);
                     }
-                    _ => Err(cx.span.domain_error("differentiation currently requires a bound polynomial evaluator")),
+                    None => Err(cx.span.domain_error("differentiation needs a bound polynomial evaluator, or a function with a derivative that f∂←g attaches")),
                 }
             }
             FunctionNode::Modified(OperatorKind::Commute, Operand::Function(f)) => return f.call(Some(right), left.unwrap_or(right), cx),
             FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)) => Ok(a.clone()),
+            FunctionNode::Modified(OperatorKind::Minimize, Operand::Function(f)) => crate::minimize::minimize(f, left, right, cx),
             FunctionNode::Modified(..) => unreachable!(),
             FunctionNode::Primitive(p) if matches!((p, left), (Primitive::Mix, Some(_)) | (Primitive::Take, None)) => {
                 let item = crate::primitive::pick(left.unwrap_or(&crate::primitive::integer(0)), right, cx.session.prototype, cx)?;
@@ -617,6 +674,7 @@ impl Function {
         let node = self.node();
         let label = match node {
             FunctionNode::Defined(_) | FunctionNode::Derived(..) | FunctionNode::LateBound(..) => return None,
+            FunctionNode::Ruled(f, _) => return f.parts(),
             // Python names these two nodes with words.
             FunctionNode::Inverse(_) => "inverse".into(),
             FunctionNode::Axis(..) => "axis".into(),
@@ -634,7 +692,9 @@ impl Function {
     /// The primitive function with glyph `name`, or the system function `name`, which starts with `•`.
     pub fn builtin(name: &str) -> Option<Self> {
         let first = name.chars().next()?;
-        if crate::symbols::canonical(first) == '•' { return crate::system::lookup(&format!("•{}", &name[first.len_utf8()..])); }
+        if crate::symbols::canonical(first) == '•' {
+            return crate::system::lookup(&format!("•{}", &name[first.len_utf8()..]));
+        }
         name.parse::<char>().ok().and_then(Primitive::from_glyph).map(Self::primitive)
     }
 
@@ -650,7 +710,7 @@ impl Function {
             ("axis", [f, Operand::Value(axis)], ..) => FunctionNode::Axis(fun(f)?, axis.clone()),
             ("⁻¹", [f], ..) => return fun(f)?.inverse(&span),
             (_, [f], Some(op)) if !op.info().dyadic() => FunctionNode::Modified(op, f.clone()),
-            (_, [a, b], Some(op)) if op.info().dyadic() => FunctionNode::Composed(op, [a.clone(), b.clone()]),
+            (_, [a, b], Some(op)) if op.info().right.is_some() => FunctionNode::Composed(op, [a.clone(), b.clone()]),
             _ => return Err(span.error(ErrorKind::Syntax, "invalid function construction")),
         };
         Self::new(node, &span)

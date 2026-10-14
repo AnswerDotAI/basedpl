@@ -690,7 +690,7 @@
    <key code="16" output="Ÿ"/>
    <key code="17" output="™"/>
    <key code="18" action="k18-m5"/>
-   <key code="19" output="²"/>
+   <key code="19" output="⌽"/>
    <key code="20" output="√"/>
    <key code="21" output="⇄"/>
    <key code="22" action="k22-m5"/>
@@ -1488,7 +1488,7 @@
    <key code="34" output="&#x0009;"/>
    <key code="35" output="&#x0010;"/>
    <key code="36" output="&#x000D;"/>
-   <key code="37" output="⌽"/>
+   <key code="37" output="&#x000C;"/>
    <key code="38" output="&#x000A;"/>
    <key code="39" output="ù"/>
    <key code="40" output="&#x000B;"/>
