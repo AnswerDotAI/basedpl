@@ -1,7 +1,7 @@
 # The cases that `tests/speed.rs` times in the native build and `tests/wasm-speed.mjs` times in the browser build. Each case line holds the code, its native budget and its wasm budget, separated by tabs. Each section starts with its name in brackets and the prefs its session starts with. Every session then runs the lines under the `[setup]` before its section.
 # Budgets in `[copies]`, `[exact]` and `[images]` count copies of the `n` items that the section's setup makes. A budget in `[widths]` is the most that the time in that section's 32-bit session may be, as a fraction of the time in the `[exact]` session. Natively and in wasm, it is the worse of that fraction on a Mac and on CI's runner, plus 0.25.
 # A wasm budget in copies is twice the most the case has cost on a Mac and on CI's runner, in the module that `cargo wasm` builds, and at least 0.5. `tests/speed.rs` gives the same rule for native budgets in copies.
-# A case that CI hasn't timed yet has four times its Mac cost, natively and in wasm, until the next `Speed` run sets its budgets under these rules.
+# A case in copies that CI hasn't timed yet has four times its Mac cost, natively and in wasm. A `[widths]` case that CI hasn't timed yet has its Mac fraction plus 0.25. The next `Speed` run sets their budgets under the rules above.
 # The CI figures come from `Speed` run 38397524881. Its CPU was the AMD Ryzen 9 7950X3D 16-Core Processor.
 [setup]
 side←256 ⋄ n←side×side ⋄ v←¿n⍴0 ⋄ w←¿n⍴0 ⋄ s←v-0.5 ⋄ m←[side side]⍴v
@@ -23,7 +23,7 @@ z←v+0j1×w ⋄ zm←128 128↑m+0j1×⊖m ⋄ f←"svd"•decompose m ⋄ h←
 ⌈/v	1.1	2.8
 ∧/b	0.5	0.5
 +/m	1.4	2.3
-+⌿m	2.2	2.5
++⌿m	1.5	2.1
 # Reading one argument and writing each item once.
 -v	2.2	2.3
 -jv	0.71	1.2
@@ -61,8 +61,8 @@ cnt#v	17	18
 # A range with an approximate length converts each position from an integer to a float. Wasm has no vector instruction for that, so there each block of 8 positions adds 0 to 7 to the block's first float.
 ⍳n	2.3	2.4
 # Comparing within tolerance takes a subtraction, the magnitudes, a scale and a comparison for each item. Tolerant floor raises each item by its scaled magnitude, capped below a half, before it floors.
-⌊v	7.9	8.5
-v<w	7.6	13
+⌊v	5.4	5.9
+v<w	5	7.5
 jv<500	0.5	1.1
 # Writing twice as many items, or writing in a different order from reading.
 v,w	4.2	3.3
@@ -183,12 +183,12 @@ jm+.=jm	94	110
 cm+.=⍉cm	99	120
 zm+.×zm	66	130
 # Matrix division, `•decompose`, `•decompose⁻¹` and the determinant `-.×` run on rustymath, whose own speed test times each factorisation. These cases time basedpl's part: the calls in a `⍤2` stack, each path of `⌹`, the route from monadic `-.×` to LU, turning `"qr"`'s factors into arrays, rebuilding a matrix from factors, and reading complex storage. `tq` is tall enough for `⌹` and `"qr"` to take the CholeskyQR2 path.
-⌹⍤2 ms	140	180
-ms⌹⍤2 sps	320	410
+⌹⍤2 ms	130	160
+ms⌹⍤2 sps	150	270
 ⌹m	280	430
 (side↑w)⌹m	110	160
 ((n÷16)↑w)⌹t	87	110
-⌹t	190	240
+⌹t	170	240
 ((n÷4)↑w)⌹tq	580	820
 "qr"•decompose tq	660	910
 "qr"•decompose⍤2 ms	510	480
@@ -196,12 +196,13 @@ ms⌹⍤2 sps	320	410
 "cholesky"•decompose⍤2 sps	87	110
 "svd"•decompose⍤2 ms	1400	1200
 "svd"•decompose⁻¹ f	160	330
+["kind":"svd" "rank":8]•decompose m	130	590
 "eigen"•decompose⁻¹ h	1400	1800
 "eigen"•decompose⍤2 ss	750	720
 "eigen"•decompose⍤2 ms	2300	2100
 ⌹zm	170	220
 -.×m	100	150
--.×⍤2 ms	84	120
+-.×⍤2 ms	60	82
 [exact] •prefs ["tolerance":0]
 # Plain IEEE comparisons and `floor`, with nothing to scale by a tolerance.
 ⌊v	3	4
@@ -210,7 +211,7 @@ v=w	2.7	3.9
 3|v	6	8.1
 # Each real indexes its `order_key` in a hash map, as exact data does.
 v⍳w	120	160
-∪v	93	150
+∪v	93	130
 [widths] •prefs ["float":32]
 # Half the bytes to read and write, and twice the lanes in each SIMD instruction.
 -v	0.78	0.79
@@ -222,6 +223,7 @@ v<w	0.81	0.84
 +⌿m	0.91	0.88
 +/v	0.8	0.82
 ⌈/v	0.82	0.83
++\v	0.98	0.94
 m+.×m	0.82	0.78
 # `⌊` reads half the bytes and writes 32-bit integers in place of 64-bit ones.
 ⌊v	0.85	0.92
