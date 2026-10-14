@@ -22,7 +22,7 @@ M←[1 2 3⋄4 5 6]
 [10]+\1 2 3        ⍝ [[11] [13] [16]]
 ```
 
-An empty scan, or an unseeded scan of one item, doesn't call `f`. [Axis](axis.qmd) `⍠K` chooses the axis to scan. [`⍀`](backslash-bar.qmd) scans the first axis.
+An empty scan, or an unseeded scan of one item, doesn't call `f`. [Axis](quad-colon.qmd) `⍠K` chooses the axis to scan. [`⍀`](backslash-bar.qmd) scans the first axis.
 
 ```bpl
 +\⍠0 [1 2 3⋄4 5 6]  ⍝ [1 2 3⋄5 7 9]

@@ -1,4 +1,4 @@
-# `•` — System name prefix
+# `•` — System
 
 Keys: `Alt-y`
 

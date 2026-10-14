@@ -40,7 +40,7 @@ A bracket list with any `key:value` item is one [keyed vector](../keyed.ipynb). 
 ["a":1 "b":(•ucs 65 66)]     ⍝ "a" "b":[1 "AB"]
 ```
 
-As an assignment target, `[a b]←Y` [destructures](assign.qmd). Brackets don't index. [Index](squad.qmd) `⌷` selects. [Types of brackets](../bracket-types.ipynb) compares brackets with parentheses and braces.
+As an assignment target, `[a b]←Y` [destructures](left-arrow.qmd). Brackets don't index. [Index](squad.qmd) `⌷` selects. [Types of brackets](../bracket-types.ipynb) compares brackets with parentheses and braces.
 
 ## Errors
 

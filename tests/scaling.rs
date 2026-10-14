@@ -1,7 +1,8 @@
 //! How time and memory grow with the size of the arguments. Each case runs at `N` and `8 * N` items. Its time, allocated bytes and peak
 //! bytes may each grow by at most `LIMIT` times. A linear or n log n cost stays below that. A quadratic cost grows about 64 times. A
-//! global allocator counts the bytes that each call allocates, its peak and the bytes it keeps. It counts each thread separately, so
-//! the test harness's own allocations stay out of the measurements.
+//! global allocator counts, on the calling thread alone, the bytes that each call allocates, its peak and the bytes it keeps. The test
+//! harness's other threads stay out of the measurements. Rustymath runs on the calling thread too, with `set_threads(1)`. Otherwise
+//! memory that the calling thread allocates and a Rayon worker frees, such as a block of Rayon's job queue, counts as kept.
 use basedpl::{EvalOptions, Session};
 use std::{
     alloc::{GlobalAlloc, Layout, System},
@@ -164,6 +165,7 @@ fn allocation_failures() -> Vec<String> {
 /// in `BUDGETS` allocates within its budget.
 #[test]
 fn costs_grow_as_expected() {
+    rustymath::parallel::set_threads(1);
     let mut failures =
         growth_failures(&["v+w", "+/v", "v,w", "[i]⌷v", "v⍳w", "{≢⍵}⌸b", "b⊂iv", "⍕v", "{⍵+1}¨iv", "⍋v", "x←0×iv ⋄ {x.[⍵]←1}¨iv", "r←⍬ ⋄ {r,←⍵}¨iv"]);
     failures.extend(allocation_failures());

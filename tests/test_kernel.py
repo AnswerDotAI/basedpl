@@ -37,19 +37,21 @@ async def kernel_story():
         for code, start, matches in [('⍳3 ⋄ `iot', 5, ['⍳']), ('mea', 0, ['mean']), ('"`iot', 5, [])]:
             result = await complete(code)
             assert (result['cursor_start'], result['cursor_end'], result['matches']) == (start, len(code), matches)
-        # Backtick names match by name, alias or prefix, in any case. Of tied names, one that prefixes all the others wins.
-        names = {'io': '⍳', 'RHO': '⍴', 'exponent': '*', 'power': '⍣', 'scan': '\\', 'scanfirst': '⍀', 'alpha': '⍺', 'alphaunderbar': '⍶',
-                 'omegaunderbar': '⍹', 'replicate': '#', 'om': '⍵', 'omu': '⍹', 'sca': '\\', 'lar': '←', 'larr': '←', 'leftar': '←', 'grup': '⍋'}
+        # Backtick names match by name or prefix, in any case, with every name ranked alike. Of tied names, one that prefixes all the others wins.
+        names = {'io': '⎕', 'iot': '⍳', 'RHO': '⍴', 'exponent': '*', 'power': '⍣', 'scan': '\\', 'scanfirst': '⍀', 'alpha': '⍺', 'alphaunderbar': '⍶',
+                 'omegaunderbar': '⍹', 'replicate': '#', 'om': '⍵', 'omu': '⍹', 'sca': '\\', 'larr': '←', 'leftarr': '←', 'grup': '⍋'}
         for name, glyph in names.items(): assert (await complete('`' + name))['matches'] == [glyph], name
         for s in symbols:
-            for word in filter(None, [s['name'], s['monad'], s['dyad'], *s['aliases'].split()]):
+            for word in filter(None, [s['name'], s['monad'], s['dyad']]):
                 assert (await complete('`' + word.replace('-', '')))['matches'] == [s['glyph']], word
         for name in ['nosuchsymbol', 'lg', 'lrr']: assert (await complete('`' + name))['matches'] == [], name
-        assert len((await complete('`de'))['matches']) > 1
+        # An ambiguous prefix lists every glyph it matches, by glyph name or valence name alike.
+        assert (await complete('`lar'))['matches'] == ['←', '⍺']
+        assert len((await complete('`do'))['matches']) > 1 and len((await complete('`de'))['matches']) > 1
         # A backtick in a string or comment starts no name.
         for code in ['"`io', '"can\'t `io', '"a""`io', '⍝ `io', '注 `io']: assert (await complete(code))['matches'] == [], code
         for code in ['한+`io', '"text" `io', "''' `io", "'a' `io", '⍝ comment\n`io', '注 comment\n`io']:
-            assert (await complete(code))['matches'] == ['⍳'], code
+            assert (await complete(code))['matches'] == ['⎕'], code
         definition = '{⍝ Sum without running during inspection\n⎕←999 ⋄ +/⍵}'
         await kc.exec_ok('inspectme←'+definition, silent=True)
         for detail in (0,1):
@@ -69,7 +71,7 @@ async def kernel_story():
         _, messages = await kc.exec_ok(']help ?')
         assert '(dfns.ipynb)' in displayed(messages)[0][1]
         _, messages = await kc.exec_ok(']help ⌽')
-        assert '(glyphs/reverse-first.qmd)' in displayed(messages)[0][1]
+        assert '(glyphs/circle-bar.qmd)' in displayed(messages)[0][1]
         _, messages = await kc.exec_ok('¿1')
         assert displayed(messages) == [('execute_result', '0')]
         _, messages = await kc.exec_ok('¿¿')

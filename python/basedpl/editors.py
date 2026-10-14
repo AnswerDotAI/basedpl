@@ -103,7 +103,7 @@ def vim(text):
 def jetbrains():
     "Glyph-name and alias live templates, available in every file."
     root = ET.Element('templateSet', group='BPL')
-    names = {name: s['glyph'] for s in symbols for name in [s['name'], s['monad'], s['dyad'], *s['aliases'].split()] if name}
+    names = {name: s['glyph'] for s in symbols for name in [s['name'], s['monad'], s['dyad']] if name}
     for name, glyph in sorted(names.items()):
         template = ET.SubElement(root, 'template', name=name, value=glyph, description=glyph, shortcut='TAB')
         ET.SubElement(ET.SubElement(template, 'context'), 'option', name='OTHER', value='true')

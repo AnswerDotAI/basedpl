@@ -1,4 +1,4 @@
-# `⎕` — Output and input
+# `⎕` — IO
 
 Keys: `Alt-q`
 

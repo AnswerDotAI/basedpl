@@ -1,4 +1,4 @@
-# `⍳` — Index generator / Index of
+# `⍳` — Indices / Index of
 
 Keys: `Alt-i`. Ranks: `1` monadic, `∞ ∞` dyadic
 
@@ -10,7 +10,7 @@ Keys: `Alt-i`. Ranks: `1` monadic, `∞ ∞` dyadic
 ⍳¯3                ⍝ 2 1 0
 ```
 
-[Range](range.qmd), `↦`, counts from 1 instead, or between any two ends.
+[Range](right-arrow-from-bar.qmd), `↦`, counts from 1 instead, or between any two ends.
 
 ```bpl
 ↦4                 ⍝ 1 2 3 4
@@ -24,7 +24,7 @@ A shape vector generates an array of coordinate vectors. A negative length rever
 ⍳2 ¯2              ⍝ [[0 1] [0 0]⋄[1 1] [1 0]]
 ```
 
-On a matrix, `⍳` applies to each row, as [Rank](rank.qmd) does. Fill pads the results to a common shape.
+On a matrix, `⍳` applies to each row, as [Rank](jot-diaeresis.qmd) does. Fill pads the results to a common shape.
 
 ```bpl
 ⍴⍳[2 3⋄1 1]       ⍝ [2 2 3]ₓ

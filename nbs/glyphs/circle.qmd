@@ -1,4 +1,4 @@
-# `○` — Unit circle / Circular functions
+# `○` — Cis / Circular
 
 Keys: `Alt-o`. Ranks: `0` monadic, `0 0` dyadic
 

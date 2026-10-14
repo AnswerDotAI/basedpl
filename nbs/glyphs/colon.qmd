@@ -1,4 +1,4 @@
-# `:` — Unkey / Key
+# `:` — Unkey / Keyed
 
 Ranks: `∞` monadic, `1 ∞` dyadic
 

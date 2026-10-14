@@ -94,8 +94,8 @@
         toggle.textContent = overlay ? '▼' : '▲';
         d.body.style.paddingTop = overlay || bar.hidden ? originalPadding : `${bar.offsetHeight}px`;
     }
-    const names = new Map(symbols.map(({glyph, name, monad, dyad, aliases}) =>
-        [glyph, [...new Set([name, monad, dyad, aliases].join(' ').split(' ').filter(Boolean))].join(' ')]));
+    const names = new Map(symbols.map(({glyph, name, monad, dyad}) =>
+        [glyph, [name, monad, dyad].filter(Boolean).join(' ')]));
     function stateGlyphs(state) {
         const {terminator, keys} = layout.states[state];
         return [terminator, ...Object.values(keys).flatMap(value => typeof value === 'string' ? [value] : stateGlyphs(value.state))];

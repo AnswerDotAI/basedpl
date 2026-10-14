@@ -35,14 +35,15 @@
     }
     const reset = () => { pending = null; };
 
-    // At each level (exact, prefix, prefixes of hyphen-separated parts) a name outranks a search word, as in `matches` in `symbols.rs`.
+    // Every name ranks alike at each level: exact, prefix, then prefixes of hyphen-separated parts. Each match carries the name it
+    // matched by, the glyph name where several of a glyph's names match equally, as in `matches` in `symbols.rs`.
     function matches(query) {
         query = query.toLowerCase();
         const letters = word => word.replaceAll('-', '');
         let best = Infinity, found = [];
-        for (const {glyph, name, monad, dyad, aliases} of symbols) {
-            let rank = Infinity;
-            [name, monad, dyad, ...aliases.split(' ')].filter(Boolean).forEach((word, i) => {
+        for (const {glyph, name, monad, dyad} of symbols) {
+            let rank = Infinity, matched;
+            [name, monad, dyad].filter(Boolean).forEach(word => {
                 const level = letters(word) === query ? 0 : letters(word).startsWith(query) ? 1 : 2;
                 if (level === 2) {
                     let rest = query;
@@ -55,10 +56,10 @@
                     }
                     if (rest) return;
                 }
-                rank = Math.min(rank, 2 * level + (i > 0));
+                if (level < rank) { rank = level; matched = word; }
             });
             if (rank < best) { best = rank; found = []; }
-            if (rank < Infinity && rank === best) found.push([glyph, name]);
+            if (rank < Infinity && rank === best) found.push([glyph, matched]);
         }
         // A name that is a prefix of every other match wins: `om gives omega, `omu gives omega-underbar.
         const shortest = found.find(([, a]) => found.every(([, b]) => letters(b).startsWith(letters(a))));

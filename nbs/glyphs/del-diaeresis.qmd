@@ -1,4 +1,4 @@
-# `⍢` — Operator self-reference
+# `⍢` — Operator recursion
 
 Keys: `Alt-1 g`
 

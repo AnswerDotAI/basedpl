@@ -93,7 +93,7 @@ m←[1 2 3⋄4 5 6] ⋄ 1⌷m         ⍝ 4 5 6
 m←[1 2 3⋄4 5 6] ⋄ ∞ 1⌷m       ⍝ 2 5
 ```
 
-[Axis](glyphs/axis.qmd) `⍠` applies a function along axes given as numbers or names, as in `+/⍠0` and `+/⍠"month"`. [Rank](glyphs/rank.qmd) `⍤` applies a function to trailing cells. `⍤0` passes an atom item as itself, and an array item as a scalar holding it.
+[Axis](glyphs/quad-colon.qmd) `⍠` applies a function along axes given as numbers or names, as in `+/⍠0` and `+/⍠"month"`. [Rank](glyphs/jot-diaeresis.qmd) `⍤` applies a function to trailing cells. `⍤0` passes an atom item as itself, and an array item as a scalar holding it.
 
 Some functions have a default axis:
 

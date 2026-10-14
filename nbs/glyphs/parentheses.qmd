@@ -31,4 +31,4 @@ Parentheses separate a numeric argument from a numeric operand, as in `f⍣2(3)`
 (+/÷≢)2 4 9        ⍝ 5
 ```
 
-For a scalar, use [`⊂`](enclose.qmd) on a subject or [`ᵘ`](../scripts.ipynb#a-function-as-a-scalar) on a function. [Types of brackets](../bracket-types.ipynb) compares parentheses with brackets and braces.
+For a scalar, use [`⊂`](left-shoe.qmd) on a subject or [`ᵘ`](../scripts.ipynb#a-function-as-a-scalar) on a function. [Types of brackets](../bracket-types.ipynb) compares parentheses with brackets and braces.

@@ -412,6 +412,9 @@ impl Function {
                 }
                 let a = if matches!(op, Fold(_) | Super(_)) { a } else { constant_operand(info.left, a, span)? };
                 if info.dyadic() || !accepts(info.left, &a) { return Err(span.domain_error("operator needs a function operand")); }
+                if matches!((op, &a), (Minimize, Operand::Value(v)) if crate::minimize::parts(v).is_none()) {
+                    return Err(span.domain_error("⇄ needs a function, or a vector of options and a function"));
+                }
                 match (op, a) {
                     (Fold(kind), Operand::Function(f)) => FunctionNode::Fold(f, kind),
                     (Super(Superscript::Power(-1)), Operand::Function(f)) => return f.inverse(span),
@@ -473,6 +476,9 @@ impl Function {
     fn grown(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         stacker::grow(STACK_SEGMENT, || self.dispatch(left, right, cx))
     }
+    // Inlined into `dispatch`, this would put a second copy of `call` and `dispatch` in the stack frame of every BPL call.
+    #[inline(never)]
+    fn ruled(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> { self.call(left, right, cx) }
     /// Sends compositions and dfns straight to their handlers, and other functions to `apply`.
     #[inline(always)]
     fn dispatch(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
@@ -480,7 +486,7 @@ impl Function {
         let f = if self.late() { resolved = self.resolve(cx.session, &mut HashMap::new(), 0)?; &resolved } else { self };
         match f.node() {
             FunctionNode::Composed(op, operands) => composition(*op, operands, left, right, cx),
-            FunctionNode::Ruled(f, _) => f.call(left, right, cx),
+            FunctionNode::Ruled(f, _) => f.ruled(left, right, cx),
             FunctionNode::Defined(_) | FunctionNode::Derived(..) => cx.session.call_defined(f, left, right).map_err(|mut e| {
                 e.calls.push(cx.span.clone());
                 e
@@ -623,7 +629,7 @@ impl Function {
             }
             FunctionNode::Modified(OperatorKind::Commute, Operand::Function(f)) => return f.call(Some(right), left.unwrap_or(right), cx),
             FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)) => Ok(a.clone()),
-            FunctionNode::Modified(OperatorKind::Minimize, Operand::Function(f)) => crate::minimize::minimize(f, left, right, cx),
+            FunctionNode::Modified(OperatorKind::Minimize, a) => crate::minimize::minimize(a, left, right, cx),
             FunctionNode::Modified(..) => unreachable!(),
             FunctionNode::Primitive(p) if matches!((p, left), (Primitive::Mix, Some(_)) | (Primitive::Take, None)) => {
                 let item = crate::primitive::pick(left.unwrap_or(&crate::primitive::integer(0)), right, cx.session.prototype, cx)?;

@@ -21,7 +21,7 @@ Other powers use principal complex branches where needed.
 ¯1*0.5            ⍝ 0j1
 ```
 
-See also function [power `⍣`](power.qmd).
+See also function [power `⍣`](star-diaeresis.qmd).
 
 ## Inverse
 

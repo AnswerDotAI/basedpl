@@ -1,4 +1,4 @@
-# `⍬` — Empty vector
+# `⍬` — Empty
 
 Keys: `Alt-Shift-0`
 

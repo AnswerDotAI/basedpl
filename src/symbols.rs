@@ -130,8 +130,10 @@ impl Notation {
     }
 }
 
-/// A glyph's kind and names. `name` is its page in `nbs/glyphs`. An empty operation name means that valence has no typed name.
-/// Aliases are extra completion words, separated by spaces.
+/// A glyph's kind and names. `name` names the character, and its page in `nbs/glyphs`. `monad` and `dyad` name what the glyph does:
+/// a function's monadic and dyadic forms, or an operator's derived function with one argument and with two. An operator's `monad`
+/// covers both valences when its `dyad` is empty. A syntax glyph's one name for what it does is its `monad`. An empty name means the
+/// glyph has no such name.
 pub struct Symbol {
     pub glyph: &'static str,
     pub name: &'static str,
@@ -143,26 +145,25 @@ pub struct Symbol {
     /// argument. Each is empty when the glyph has no such form.
     pub monad_rank: String,
     pub dyad_ranks: String,
-    pub aliases: &'static str,
     /// Alternative single-character Hanzi spellings: simplified, then traditional. The first in each is the preferred output.
     pub hanzi: [&'static str; 2],
 }
 
-// Glyphs that are syntax, not functions or operators: glyph, name, kind, aliases.
+// Glyphs that are syntax, not functions or operators: glyph, name, kind, and the name for what it does.
 const SYNTAX: &[(&str, &str, &str, &str)] = &[
-    ("←", "assign", "syntax", "left-arrow"),
-    ("⎕", "quad", "syntax", ""),
+    ("←", "left-arrow", "syntax", "assign"),
+    ("⎕", "quad", "syntax", "io"),
     ("•", "bullet", "system", "system"),
-    ("⍺", "alpha", "argument", ""),
-    ("⍵", "omega", "argument", ""),
+    ("⍺", "alpha", "argument", "left-argument"),
+    ("⍵", "omega", "argument", "right-argument"),
     ("⍶", "alpha-underbar", "argument", "left-operand"),
     ("⍹", "omega-underbar", "argument", "right-operand"),
     ("∇", "del", "argument", "recursion"),
     ("⍢", "del-diaeresis", "argument", "operator-recursion"),
-    ("⍝", "comment", "comment", ""),
-    ("⋄", "diamond", "syntax", ""),
+    ("⍝", "lamp", "comment", "comment"),
+    ("⋄", "diamond", "syntax", "separator"),
     ("?", "question", "syntax", "predicate"),
-    ("¯", "overbar", "literal", ""),
+    ("¯", "overbar", "literal", "negative"),
     ("∞", "infinity", "literal", ""),
     ("⍬", "zilde", "literal", "empty"),
 ];
@@ -171,15 +172,14 @@ const SYNTAX: &[(&str, &str, &str, &str)] = &[
 pub fn symbols() -> &'static [Symbol] {
     static SYMBOLS: OnceLock<Vec<Symbol>> = OnceLock::new();
     SYMBOLS.get_or_init(|| {
-        let syntax = SYNTAX.iter().map(|&(glyph, name, kind, aliases)| Symbol {
+        let syntax = SYNTAX.iter().map(|&(glyph, name, kind, monad)| Symbol {
             glyph,
             name,
             kind,
-            monad: "",
+            monad,
             dyad: "",
             monad_rank: String::new(),
             dyad_ranks: String::new(),
-            aliases,
             hanzi: hanzi(glyph),
         });
         let primitives = Primitive::all().map(|p| {
@@ -188,13 +188,13 @@ pub fn symbols() -> &'static [Symbol] {
             let rank = |r: Rank| if r == WHOLE { "∞".to_string() } else { r.to_string() };
             let (monad_rank, dyad_ranks) =
                 (info.monad.map_or(String::new(), |m| rank(m.rank)), info.dyad.map_or(String::new(), |d| d.ranks.map(rank).join(" ")));
-            Symbol { glyph: info.glyph, name: info.name, kind: "function", monad, dyad, monad_rank, dyad_ranks, aliases: info.aliases, hanzi: hanzi(info.glyph) }
+            Symbol { glyph: info.glyph, name: info.name, kind: "function", monad, dyad, monad_rank, dyad_ranks, hanzi: hanzi(info.glyph) }
         });
         let operators = OperatorKind::all().map(|op| {
             let info = op.info();
-            let (name, aliases) = info.names;
+            let [name, monad, dyad] = info.names;
             let kind = if info.dyadic() { "dyadic-operator" } else { "monadic-operator" };
-            Symbol { glyph: info.glyph, name, kind, monad: "", dyad: "", monad_rank: String::new(), dyad_ranks: String::new(), aliases, hanzi: hanzi(info.glyph) }
+            Symbol { glyph: info.glyph, name, kind, monad, dyad, monad_rank: String::new(), dyad_ranks: String::new(), hanzi: hanzi(info.glyph) }
         });
         syntax.chain(primitives).chain(operators).collect()
     })
@@ -277,23 +277,22 @@ pub fn chord(glyph: &str) -> String {
 pub fn rows() -> serde_json::Value {
     let row = |s: &Symbol| {
         serde_json::json!({"glyph": s.glyph, "name": s.name, "kind": s.kind, "monad": s.monad, "dyad": s.dyad, "monad_rank": s.monad_rank,
-            "dyad_ranks": s.dyad_ranks, "aliases": s.aliases, "hanzi": s.hanzi, "shortcut": chord(s.glyph)})
+            "dyad_ranks": s.dyad_ranks, "hanzi": s.hanzi, "shortcut": chord(s.glyph)})
     };
     symbols().iter().map(row).collect()
 }
 
-// At each level (exact, prefix, prefixes of hyphen-separated parts) a name outranks a search word.
+// Every name ranks alike at each level: exact, prefix, then prefixes of hyphen-separated parts. Each match carries the name it
+// matched by, the glyph name where several of a glyph's names match equally.
 pub fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
     let query = query.to_ascii_lowercase();
     let mut found = Vec::new();
     let mut best = usize::MAX;
-    for &Symbol { glyph, name, monad, dyad, aliases: words, .. } in symbols() {
-        let rank = std::iter::once(name)
-            .chain([monad, dyad])
-            .chain(words.split_whitespace())
+    for &Symbol { glyph, name, monad, dyad, .. } in symbols() {
+        let ranked = [name, monad, dyad]
+            .into_iter()
             .filter(|word| !word.is_empty())
-            .enumerate()
-            .filter_map(|(i, word)| {
+            .filter_map(|word| {
                 let letters = word.replace('-', "");
                 let rank = if letters == query { 0 } else if letters.starts_with(&query) { 1 } else {
                     let mut rest = query.as_str();
@@ -306,15 +305,15 @@ pub fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
                     if !rest.is_empty() { return None; }
                     2
                 };
-                Some(2 * rank + usize::from(i > 0))
+                Some((rank, word))
             })
-            .min();
-        if let Some(rank) = rank {
+            .min_by_key(|&(rank, _)| rank);
+        if let Some((rank, word)) = ranked {
             if rank < best {
                 found.clear();
                 best = rank;
             }
-            if rank == best { found.push((glyph, name)); }
+            if rank == best { found.push((glyph, word)); }
         }
     }
     // A name that is a prefix of every other match wins: `om gives omega, `omu gives omega-underbar.

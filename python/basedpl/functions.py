@@ -9,9 +9,6 @@ _HOLE = object()
 
 def _build(kind, *operands, valence=0):
     if any(o is _HOLE or isinstance(o, _Pending) for o in operands): return _Pending(kind, operands, valence)
-    if kind == 'history':
-        f, p = operands
-        return _build('⍣', f, [p] if isinstance(p, Function) else bpl('{(×⍵)×⍳1+|⍵}')(p))
     values = [o._inner if isinstance(o, Function) else _array(o) for o in operands]
     return Function(_Function.build(kind, values), valence=valence)
 
@@ -73,12 +70,21 @@ class Function(_Combinators):
 
 class _Attaching(Function):
     "`f.undo` or `f.derivative`. Called with one function `g`, it attaches `g` to `f` as its inverse or derivative, as `f⁻¹←g` and `f∂←g` do in BPL."
-    def __init__(self, glyph, f, attach):
-        super().__init__(_build(glyph, f)._inner)
+    def __init__(self, glyph, f, attach, valence):
+        super().__init__(_build(glyph, f)._inner, valence)
         self._f, self._attach = f, attach
     def __call__(self, *args, **kwargs):
         if len(args) == 1 and not kwargs and isinstance(args[0], Function): return Function(getattr(self._f._inner, self._attach)(args[0]._inner))
         return super().__call__(*args, **kwargs)
+
+class _Minimizing(Function):
+    "`f.minimize` or `f.right_left_arrows`. Keyword arguments become the options in `[options f]⇄`, and the positional arguments are `⍵`, or `⍺` and `⍵`."
+    def __init__(self, f, valence):
+        super().__init__(_build('⇄', f)._inner, valence)
+        self._f = f
+    def __call__(self, *args, **kwargs):
+        if not kwargs: return super().__call__(*args)
+        return Function(_build('⇄', [kwargs, self._f])._inner, self._valence)(*args)
 
 class Operator:
     "A BPL operator held as a value, as a module record holds it. Call it with its operand, or both operands of a dyadic operator, to get a `Function`."
@@ -93,23 +99,34 @@ def _python_name(name):
     name = normalize('NFKC', name.replace('-', '_'))
     return name+'_' if iskeyword(name) else name
 
-# Operator properties take Rust's operator names in Python spelling. Rust names `/⌿\⍀` after their shapes. `reduce` and `scan`
-# spell `/` and `\`, and `f.reduce[0]` and `f.scan[0]` spell `⌿` and `⍀`. `f[axis]` spells `⍠`. Rust has no row for `⁻¹` or
-# history. A dyadic operator waits for its right operand. `f.undo(g)` and `f.derivative(g)` with a function `g` attach it, as
-# `f⁻¹←g` and `f∂←g` do in BPL.
-_operators = [(s['glyph'], _python_name(s['name']), s['kind']) for s in symbols if s['kind'].endswith('-operator') and s['glyph'] not in '/⌿\\⍀⍠']
-_MONADIC = dict(reduce='/', scan='\\', undo='⁻¹') | {n: g for g, n, k in _operators if k == 'monadic-operator'}
-_DYADIC = {n: g for g, n, k in _operators if k == 'dyadic-operator'} | dict(history='history')
+# Every documented name of an operator is a property, in Python spelling. Its glyph name gives the derived function with both
+# valences, and each name for what it does gives the valences that name covers. A dyadic operator's property waits for its right
+# operand. `f[axis]` also spells `⍠`, and `f.undo` spells `⁻¹`, which has no row. `f.undo(g)` and `f.derivative(g)` with a function
+# `g` attach it, as `f⁻¹←g` and `f∂←g` do in BPL. `⇄`'s properties take keyword arguments as the options in `[options f]⇄`.
+_operators = {'undo': ('⁻¹', False, 0)}  # Python name: glyph, whether the operator is dyadic, and the derived function's valence
+_operator_names = {}  # An operator's glyph: its glyph name, then its names with one argument and with two, in Python spelling
+for _s in symbols:
+    if not _s['kind'].endswith('-operator'): continue
+    _glyph, _dyadic = _s['glyph'], _s['kind'] == 'dyadic-operator'
+    _operator_names[_glyph] = tuple(map(_python_name, (_s['name'], _s['monad'], _s['dyad'] or _s['monad'])))
+    _operators[_python_name(_s['name'])] = (_glyph, _dyadic, 0)
+    for _valence, _name in enumerate((_s['monad'], _s['dyad']), 1):
+        if _name: _operators[_python_name(_name)] = (_glyph, _dyadic, _valence if _s['dyad'] else 0)
 _ATTACHING = dict(undo='with_inverse', derivative='with_derivative')
-for _name, _glyph in _MONADIC.items():
-    setattr(_Combinators, _name, property(lambda self, n=_name, g=_glyph: _Attaching(g, self, _ATTACHING[n]) if n in _ATTACHING and isinstance(self, Function) else _build(g, self)))
-for _name, _glyph in _DYADIC.items(): setattr(_Combinators, _name, property(lambda self, g=_glyph: _build(g, self, _HOLE)))
+
+def _operator(name, glyph, dyadic, valence):
+    if name in _ATTACHING:
+        return property(lambda self: _Attaching(glyph, self, _ATTACHING[name], valence) if isinstance(self, Function) else _build(glyph, self, valence=valence))
+    if glyph == '⇄':
+        return property(lambda self: _Minimizing(self, valence) if isinstance(self, Function) else _build(glyph, self, valence=valence))
+    if dyadic: return property(lambda self: _build(glyph, self, _HOLE, valence=valence))
+    return property(lambda self: _build(glyph, self, valence=valence))
+for _name, _spec in _operators.items(): setattr(_Combinators, _name, _operator(_name, *_spec))
 
 _builtins = {alias: (name, 0) for name in _system_functions for alias in (name, name[1:])}
 for _s in symbols:
     if _s['kind'] != 'function': continue
-    for _name in (_s['glyph'], _s['name'], *_s['aliases'].split()):
-        _builtins[_name] = _builtins[_python_name(_name)] = (_s['glyph'], 0)
+    for _name in (_s['glyph'], _s['name']): _builtins[_name] = _builtins[_python_name(_name)] = (_s['glyph'], 0)
     for _valence, _name in enumerate((_s['monad'], _s['dyad']), 1):
         if _name: _builtins[_name] = _builtins[_python_name(_name)] = (_s['glyph'], _valence)
 
@@ -125,10 +142,14 @@ def _builtin(name):
 def __getattr__(name): return _builtin(name)
 def __dir__(): return sorted(set(globals()) | _builtins.keys())
 
+def _glyph(glyph):
+    "The primitive function `glyph`, with both valences."
+    return Function(_Function.builtin(glyph))
+
 def _binary(glyph, x, y):
-    f = _builtin(glyph)
+    f = _glyph(glyph)
     return fork(x, f, y) if isinstance(x, _Combinators) or isinstance(y, _Combinators) else f(x, y)
 
 def _unary(glyph, y):
-    f = _builtin(glyph)
+    f = _glyph(glyph)
     return atop(f, y) if isinstance(y, _Combinators) else f(y)

@@ -26,8 +26,11 @@ def check(path):
             if s['glyph'] not in form: problems.append(f'`{form}` [{name}]: the glyph is {s["glyph"]}')
             given = keys[i] if i < len(keys) else ''
             if given != key(s['shortcut']): problems.append(f'`{form}` [{name}]: the key is {key(s["shortcut"]) or "none"}, not {given or "none"}')
-            forms = [c.replace('—', '') for c in cells[2:4]]
-            if s['kind'] == 'function' and 'function' in kinds and forms != [s['monad'], s['dyad']]:
+            if s['kind'] not in kinds: continue
+            if 'syntax' in kinds:
+                named = cells[2].split(', ') if cells[2] else []
+                if (named[i] if i < len(named) else '') != s['monad']: problems.append(f'`{form}` [{name}]: the name is {s["monad"] or "none"}, not {cells[2] or "none"}')
+            elif [c.replace('—', '') for c in cells[2:4]] != [s['monad'], s['dyad']]:
                 problems.append(f'`{form}` [{name}]: the monad and dyad are {s["monad"] or "—"} and {s["dyad"] or "—"}, not {" and ".join(cells[2:4])}')
     for s in symbols:
         if s['name'] not in listed: problems.append(f'{s["glyph"]} [{s["name"]}]: missing from the {s["kind"]} table')

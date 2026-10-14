@@ -1,0 +1,87 @@
+# `⇄` — Minimize
+
+Keys: `Alt-4`
+
+`cost⇄ start` searches for the point where the function `cost` gives its least value, starting from `start`, and returns that point. `start` is a number or an array of real numbers, and the point has its shape and keys. `cost` takes a point and gives one real number.
+
+```bpl
+{⊼⍵-2}⇄ 10   ⍝ 2
+```
+
+The point is approximate. A search stops when its steps change the value by less than option `tolerance`, relative to the value. For 64-bit floats the default is about `1.5E¯8`. Rosenbrock's function has its least value at `1 1`. With a smaller tolerance, the search finds that point to nearly full precision:
+
+```bpl
+rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
+[["tolerance":1E¯14] rosen]⇄ ¯1.2 1   ⍝ 1 1
+```
+
+Options go in a keyed record before the function, in a vector: `[options cost]⇄ start`. Option `method` chooses the method. Without it, `⇄` chooses from the start, from whether there are bounds and from whether `cost` has a derivative:
+
+| `method` | Method | Chosen when |
+|---|---|---|
+| `"brent"` | Brent's method, along one variable | the start is one number |
+| `"l-bfgs"` | L-BFGS, which follows the derivative | `cost` has a derivative and there are no bounds |
+| `"powell"` | Powell's method of conjugate directions | there are bounds |
+| `"nelder-mead"` | Nelder–Mead's simplex | none of the above apply |
+| `"differential-evolution"` | differential evolution, which evolves a population of points across the bounds | only when named |
+
+`cost` has a derivative where [`f∂`](partial.qmd) differentiates it: a bound polynomial evaluator, or a function with a derivative that `f∂←g` attaches. L-BFGS calls `f∂` at each point where it needs the gradient, which holds one number for each variable. Nelder–Mead and Powell's method use only values of `cost`. Differential evolution suits a function with many local minima, and needs finite bounds.
+
+```bpl
+rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
+rosen∂←{⍺←1 ⋄ [x y]←⍵ ⋄ ⍺×[(¯2×1-x) - 400×x×y-⊼x; 200×y-⊼x]}
+[["tolerance":1E¯14] rosen]⇄ ¯1.2 1   ⍝ 1 1
+```
+
+| Option | Meaning | Default |
+|---|---|---|
+| `method` | the method, from the table above | chosen as the table shows |
+| `lower`, `upper` | the least and greatest value of each variable: one number for every variable, or an array with the start's shape and keys | no bound, as `¯∞` and `∞` give |
+| `tolerance` | the relative change at which the method stops | the square root of the working floats' machine epsilon |
+| `evaluations` | the most calls of `cost` | 1000 for each variable, plus 1000, and for differential evolution another 1000 for each member of its population |
+| `population` | the number of points differential evolution evolves | 15 for each variable, and at least 5 |
+| `seed` | the seed of differential evolution's random choices | 0 |
+| `batch` | whether to call `cost` once on several points | `$f` |
+| `report` | whether to give a record of the search's results | `$f` |
+
+Each method evaluates `cost` only within the bounds, starting from the start moved inside them.
+
+```bpl
+rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
+[["lower":[¯∞ 0] "upper":[0.8 ∞]] rosen]⇄ 0.5 0.5   ⍝ 0.8 0.64
+```
+
+A record of named parameters makes a natural start, and the point keeps its keys. Bounds can be records with the same keys.
+
+```bpl
+cost←{(⊼⍵.gap-6) + ⊼⍵.margin-2×⍵.gap}
+[["lower":["gap":0 "margin":0]] cost]⇄ ["gap":8 "margin":12]   ⍝ ["gap":6 "margin":12]
+```
+
+A left argument goes to `cost` as `⍺`, the way most operators pass their left argument to their operand. To fit a model to data, give the data as the left argument. The sum of squared differences from `1 2 3 4` is least at their mean:
+
+```bpl
+1 2 3 4 {+/⊼⍺-⍵}⇄ 0   ⍝ 2.5
+```
+
+With a left argument, `⇄` minimises `data↣cost`, and L-BFGS needs `f∂` to differentiate that function. `f∂` differentiates it only where `cost` is the polynomial evaluator `⌻`. To search with a hand-written derivative and data, bind the data first and attach the derivative to the bound function, as in `fit←data↣loss ⋄ fit∂←g ⋄ fit⇄ start`.
+
+Where `batch` is true, `⇄` calls `cost` once for the points a method evaluates together: Nelder–Mead's first simplex and each shrink of it, and each generation of differential evolution. The points lie along a new last axis of the start's shape, and `cost` gives a vector with one value for each point. Each field of a record start then holds one value per point. Arithmetic on fields works on a batch as it does on one point. A `cost` that reduces over a vector start with `+/` needs `+⌿` on a batch.
+
+```bpl
+cost←{(⊼⍵.gap-6) + ⊼⍵.margin-2×⍵.gap}
+lo←["gap":0 "margin":0] ⋄ hi←["gap":20 "margin":40]
+[["method":"differential-evolution" "lower":lo "upper":hi "batch":$t] cost]⇄ ["gap":8 "margin":12]
+⍝ ["gap":6 "margin":12]
+```
+
+Where `report` is true, the result is a record. Field `x` holds the point, `value` holds `cost` at the point, `evaluations` counts the calls of `cost`, and `converged` says whether the method's stopping test passed before the calls reached `evaluations`. The point is the best one the search evaluated, whether or not it converged.
+
+```bpl
+r←[["evaluations":10 "report":$t] {+/⊼⍵-3}]⇄ 1 2
+[r.evaluations r.converged]   ⍝ 10ₓ $f
+```
+
+The search works in floats of the start's width. 32-bit and 16-bit floats compute in 32 bits, and exact numbers become floats of the default width. A `cost` of NaN counts as greater than every number.
+
+Errors: `LENGTH` for bounds of another shape or other keys, a derivative that doesn't give one number for each variable, or a batched `cost` that doesn't give one value for each point; `DOMAIN` for an operand vector that isn't options and a function, an unknown option or method, a start or bound that isn't real numbers, a lower bound above its upper bound, a `cost` that doesn't give one real number, `"brent"` with more than one variable, `"l-bfgs"` with no derivative or with bounds, `"differential-evolution"` without finite bounds or with a population below 4, a `tolerance` that isn't positive, or an `evaluations`, `population` or `seed` that isn't a whole number.

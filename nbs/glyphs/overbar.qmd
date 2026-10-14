@@ -1,8 +1,8 @@
-# `¯` — Negative literal sign
+# `¯` — Negative
 
 Keys: `Alt-Minus`
 
-`¯` belongs to the number, including exponents and complex components. [`-`](dash.qmd) is a function.
+`¯` belongs to the number, including exponents and complex components. [`-`](minus.qmd) is a function.
 
 ```bpl
 ¯2+5               ⍝ 3

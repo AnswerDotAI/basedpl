@@ -1,6 +1,6 @@
 from IPython.core.interactiveshell import InteractiveShell
 from IPython.core.completer import provisionalcompleter
-from basedpl import bpl, fn, plus
+from basedpl import bpl, fn, add
 from basedpl.ipython import load_ipython_extension
 
 
@@ -17,7 +17,7 @@ def test_ipython_inspection_and_completion():
     source_help = shell.inspector._get_info(f, detail_level=1)
     assert source in source_help['text/plain']
     assert 'class Function' not in source_help['text/plain']
-    assert 'adds' in shell.inspector._get_info(plus)['text/plain']
+    assert 'adds' in shell.inspector._get_info(add)['text/plain']
     for line in ['bpl["tw', 'bpl.fn("tw', 'bpl("tw', 'fn("tw']:
         with provisionalcompleter(): matches = list(shell.Completer.completions(line, len(line)))
         assert 'twice' in [m.text for m in matches]

@@ -7,7 +7,7 @@ BPL has two kinds of number. A bare number such as `0.5` is approximate: a float
 | Written | Value |
 |---|---|
 | `3`, `0.5`, `1E¯3`, `1ₑ¯3` | Approximate numbers. `e`, `E` or `ₑ` writes an exponent |
-| `¯2` | A negative number. [`¯`](glyphs/overbar.qmd) is part of the number, and [`-`](glyphs/dash.qmd) is a function |
+| `¯2` | A negative number. [`¯`](glyphs/overbar.qmd) is part of the number, and [`-`](glyphs/minus.qmd) is a function |
 | `3ₓ` | An exact integer |
 | `1r3`, `1ᵣ3` | An exact rational |
 | `2j3`, `2J3`, `2ⱼ3` | A complex number, 2 + 3i, with approximate parts |
@@ -148,7 +148,7 @@ Each operation on 16-bit floats computes in 32 bits and rounds its result to 16 
 +/(16 •float 4096⍴0.1)   ⍝ 409.5ₕ
 ```
 
-Comparisons of 16-bit and 32-bit floats are always exact. The tolerance that [`•prefs`](system/prefs.qmd) sets applies to 64-bit floats. [`⍣∞`](glyphs/power.qmd) takes two 16-bit or 32-bit results as the same when they lie within 4 units in the last place of each other.
+Comparisons of 16-bit and 32-bit floats are always exact. The tolerance that [`•prefs`](system/prefs.qmd) sets applies to 64-bit floats. [`⍣∞`](glyphs/star-diaeresis.qmd) takes two 16-bit or 32-bit results as the same when they lie within 4 units in the last place of each other.
 
 ## Infinities and NaN
 

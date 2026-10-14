@@ -1938,11 +1938,11 @@ rosen⇄ ¯1.2 1   ⍝ 1 1
 ⍝ — A derivative that f∂←g attaches makes the search run L-BFGS, which needs fewer evaluations
 rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
 rosen∂←{⍺←1 ⋄ [x y]←⍵ ⋄ ⍺×[(¯2×1-x) - 400×x×y-⊼x; 200×y-⊼x]}
-(["report":$t] rosen⇄ ¯1.2 1).evaluations<100   ⍝ $t
+([["report":$t] rosen]⇄ ¯1.2 1).evaluations<100   ⍝ $t
 
 ⍝ — Bounds make the search run Powell's method within them [atol=1e-6]
 rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
-["lower":[¯∞ 0] "upper":[0.8 ∞]] rosen⇄ 0.5 0.5
+[["lower":[¯∞ 0] "upper":[0.8 ∞]] rosen]⇄ 0.5 0.5
 ⍝ =>
 0.8 0.64
 
@@ -1958,12 +1958,12 @@ cost⇄ ["gap":8 "margin":12]
 ⍝ — With batch, a call gets every candidate along a new last axis, so each field holds one value per candidate [atol=1e-6]
 cost←{(⊼⍵.gap-6) + ⊼⍵.margin-2×⍵.gap}
 lo←["gap":0 "margin":0] ⋄ hi←["gap":20 "margin":40]
-["method":"differential-evolution" "lower":lo "upper":hi "batch":$t] cost⇄ ["gap":8 "margin":12]
+[["method":"differential-evolution" "lower":lo "upper":hi "batch":$t] cost]⇄ ["gap":8 "margin":12]
 ⍝ =>
 ["gap":6 "margin":12]
 
 ⍝ — The report gives the evaluations and whether the search converged before reaching their limit
-r←["evaluations":10 "report":$t] {+/⊼⍵-3}⇄ 1 2
+r←[["evaluations":10 "report":$t] {+/⊼⍵-3}]⇄ 1 2
 [r.evaluations r.converged]   ⍝ 10ₓ $f
 
 ⍝ — A start of 32-bit floats searches and answers in 32-bit floats
@@ -1974,19 +1974,26 @@ r←["evaluations":10 "report":$t] {+/⊼⍵-3}⇄ 1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — L-BFGS needs a derivative
-["method":"l-bfgs"] {+/⊼⍵}⇄ 1 2
+[["method":"l-bfgs"] {+/⊼⍵}]⇄ 1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Differential evolution needs finite bounds
-["method":"differential-evolution"] {+/⊼⍵}⇄ 1 2
+[["method":"differential-evolution"] {+/⊼⍵}]⇄ 1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Bounds give one number, or one for each variable in the start's shape
-["lower":[0 0 0]] {+/⊼⍵}⇄ 1 2
+[["lower":[0 0 0]] {+/⊼⍵}]⇄ 1 2
 ⍝ error: LENGTH ERROR
 
 ⍝ — Each lower bound must be at most its upper bound
-["lower":2 "upper":1] {⊼⍵}⇄ 0
+[["lower":2 "upper":1] {⊼⍵}]⇄ 0
+⍝ error: DOMAIN ERROR
+
+⍝ — A left argument goes to the function as ⍺, with or without options [atol=1e-6]
+data←1 2 3 4 ⋄ [data {+/⊼⍺-⍵}⇄ 0; data [["method":"powell"] {+/⊼⍺-⍵}]⇄ 0]   ⍝ 2.5 2.5
+
+⍝ — The operand is a function, or a vector of options and a function
+[["method":"powell"]]⇄ 0
 ⍝ error: DOMAIN ERROR
 
 ⍝⍝ Prime and factor families

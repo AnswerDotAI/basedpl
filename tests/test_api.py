@@ -4,8 +4,8 @@ from pathlib import Path
 import numpy as np, pytest
 import basedpl
 from fastcore.test import test_eq as teq
-from basedpl import (Array, bpl, BplError, plus, times, subtract, divide, exponent, sign, tally, iota,
-    reshape, shape, floor, logarithm, reverse, transpose, fork, atop, first, pick, not_)
+from basedpl import (Array, bpl, BplError, add, multiply, subtract, divide, exponent, sign, tally, indices,
+    reshape, shape, floor, natural_log, reverse, transpose, fork, atop, first, pick, not_)
 
 
 def test_documentation_examples():
@@ -17,40 +17,42 @@ def test_documentation_examples():
 def test_builtin_attributes():
     for api in (basedpl, bpl):
         teq(api.add([1, 2], 10).py, [11, 12])
-        teq((api.plus(2)(3).py, api.times(2)(3).py, api.divide(2)(3).py), (5, 6, Fraction(3, 2)))
+        teq((api.add(2)(3).py, api.multiply(2)(3).py, api.divide(2)(3).py), (5, 6, Fraction(3, 2)))
+        teq((api.plus(2, 3).py, api.times(-2).py, api.downstile(2.5).py), (5, -1, 2))
         teq(getattr(api, '•distribution')([2, 0.5], 'binomial')['quantile'](1.).py, 2)
-        assert {'add', 'plus', 'distribution', 'π'} <= set(dir(api))
-        for name in ('plu', 'userfn', 'nonexistent', 'minus'):
+        assert {'add', 'plus', 'conjugate', 'distribution', 'π'} <= set(dir(api))
+        for name in ('plu', 'userfn', 'nonexistent', 'abs', 'disclose', 'diaeresis'):
             with pytest.raises(AttributeError): getattr(api, name)
-    bpl('plus←99 ⋄ userfn←{⍵+1}')
-    teq(bpl.plus(2, 3).py, 5)
-    teq(bpl['plus'].py, 99)
+    bpl('add←99 ⋄ userfn←{⍵+1}')
+    teq(bpl.add(2, 3).py, 5)
+    teq(bpl['add'].py, 99)
     teq(bpl.userfn(1).py, 2)
     assert 'userfn' in dir(bpl)
-    teq(bpl.execute('plus').py, 99)
+    teq(bpl.execute('add').py, 99)
     teq(bpl.execute_in({'a': 1, 'b': 2}, 'a+b').py, 3)
     teq(bpl.not_(0).py, 1)
     assert bpl.names.__func__ is type(bpl).names
-    from basedpl import add
-    teq(add(2).py, 2)
-    assert 'plus' not in vars(basedpl)
+    from basedpl import add, conjugate
+    teq((add(2)(3).py, conjugate(2).py), (5, 2))
+    assert 'add' not in vars(basedpl)
 
 
 def test_python_printer():
     from basedpl import to_python
     for code, expected in {
-        '×': 'sign', '×↢2': 'times(2.)', '2↣-': 'subtract.left(2.)', '2-': 'subtract.left(2.)',
-        '×↢2ₓ': 'times(2)', '÷↢1r2': 'divide(Fraction(1, 2))',
-        '+/÷≢': 'plus.reduce / tally', '+.×': 'plus @ times', '×⊗': 'times.outer_product',
-        '+/⍠1': 'plus.reduce[1.]', '1↣+⍣[≡]': 'plus.left(1.).history(match)', '+⌿': 'plus.reduce[0]', '-⍨': 'subtract.commute',
-        '+∘×': 'conjugate.atop(sign)', '+⍥×': 'conjugate.over(sign)', '-↣+': 'negate.before(plus)', '+↢-': 'plus.after(negate)', '-⊘+': 'negate.valences(plus)',
-        '{⍵<0}⍚[⊢ -]': 'fn("{⍵<0}").agenda(bpl("[⊢ -]"))', '[1 2⋄3 4]↣+': 'plus.left(bpl("[1 2⋄3 4]"))',
-        '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each', '(×↢2)⁻¹': 'times(2.).undo',
+        '×': 'times', '×↢2': 'multiply(2.)', '2↣-': 'subtract.left(2.)', '2-': 'subtract.left(2.)',
+        '×↢2ₓ': 'multiply(2)', '÷↢1r2': 'divide(Fraction(1, 2))',
+        '+/÷≢': 'add.reduce / equal_underbar_slash', '+.×': 'add @ multiply', '×⊗': 'multiply.outer_product',
+        '+/⍠1': 'add.reduce[1.]', '1↣+⍣[≡]': 'add.left(1.).power([match])', '+⌿': 'add.reduce_first', '-⍨': 'subtract.tilde_diaeresis',
+        '+∘×': 'conjugate.atop(times)', '+⍥×': 'plus.over(sign)', '-↣+': 'negate.before(add)', '+↢-': 'add.after(negate)', '-⊘+': 'negate.valences(add)',
+        '{⍵<0}⍚[⊢ -]': 'fn("{⍵<0}").agenda(bpl("[⊢ -]"))', '[1 2⋄3 4]↣+': 'add.left(bpl("[1 2⋄3 4]"))',
+        '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each', '(×↢2)⁻¹': 'multiply(2.).undo',
     }.items(): teq(to_python(bpl(code)), expected)
-    teq(to_python(bpl('×'), dyad=True), 'times')
-    teq(to_python(bpl('+∘×'), dyad=True), 'conjugate.atop(times)')
-    teq(to_python(times(2.) ** 3), 'times(2.) ** 3')
-    teq(to_python((plus.reduce / tally).each), '(plus.reduce / tally).each')
+    teq(to_python(bpl('×'), dyad=True), 'multiply')
+    teq(to_python(bpl('-⍨'), dyad=True), 'subtract.commute')
+    teq(to_python(bpl('+∘×'), dyad=True), 'conjugate.atop(multiply)')
+    teq(to_python(multiply(2.) ** 3), 'multiply(2.) ** 3')
+    teq(to_python((add.reduce / tally).each), '(add.reduce / equal_underbar_slash).each')
     teq(to_python(bpl.fn('{⎕←1 ⋄ ⍵}')), 'fn("{⎕←1 ⋄ ⍵}")')
     teq(to_python(bpl.fn('unknown')), 'fn("unknown")')
     teq(to_python(bpl.fn('(⎕←1)+')), 'fn("(⎕←1)+")')
@@ -262,55 +264,58 @@ def test_based_values():
 
 
 def test_words_binding_and_operators():
-    np.testing.assert_array_equal(iota(3), [0, 1, 2])
-    np.testing.assert_array_equal(shape(reshape([2, 3], iota(6))), [2, 3])
-    assert times(2.)(3).py == 6. and type(times(2.)(3).py) is float
-    assert times(2)(3).py == 6 and type(times(2)(3).py) is int
+    np.testing.assert_array_equal(indices(3), [0, 1, 2])
+    np.testing.assert_array_equal(shape(reshape([2, 3], indices(6))), [2, 3])
+    assert multiply(2.)(3).py == 6. and type(multiply(2.)(3).py) is float
+    assert multiply(2)(3).py == 6 and type(multiply(2)(3).py) is int
     assert subtract(2.)(5).py == 3 and subtract.left(2.)(5).py == -3
     assert divide.left(1)(3).py == Fraction(1, 3)
     assert sign(-3).py == -1 and exponent(2)(3).py == 9
     assert not_(0).py == 1
-    mean = plus.reduce / tally
+    mean = add.reduce / tally
     assert mean([1, 2, 4]).py == Fraction(7, 3)
-    assert fork(plus.reduce, divide, tally)([1, 2, 4]).py == Fraction(7, 3)
-    assert (plus.reduce + 2)([1, 2]).py == 5
-    assert (2 - plus.reduce)([1, 2]).py == -1
-    np.testing.assert_array_equal(plus.scan([1, 2, 3]), [1, 3, 6])
+    assert fork(add.reduce, divide, tally)([1, 2, 4]).py == Fraction(7, 3)
+    assert (add.reduce + 2)([1, 2]).py == 5
+    assert (2 - add.reduce)([1, 2]).py == -1
+    np.testing.assert_array_equal(add.scan([1, 2, 3]), [1, 3, 6])
     np.testing.assert_array_equal(subtract.scan([1, 2, 3]), [1, -1, -4])
-    np.testing.assert_array_equal(plus.scan(10, [1, 2, 3]), [11, 13, 16])
+    np.testing.assert_array_equal(add.scan(10, [1, 2, 3]), [11, 13, 16])
     assert type(tally('abc').py) is int and shape(Array([1., 2.])).bpl == '[2]ₓ'
     assert (Array('abc') + 1).py == 'bcd'
-    np.testing.assert_array_equal(plus.reduce[0](Array([[1, 2], [3, 4]])), [4, 6])
-    np.testing.assert_array_equal(plus.reduce[1, 2](np.arange(1, 9).reshape(2, 2, 2)), [10, 26])
-    np.testing.assert_array_equal(times.outer_product([1, 2], [3, 4]), [[3, 4], [6, 8]])
-    assert (plus @ times)([1, 2], [3, 4]).py == 11
+    np.testing.assert_array_equal(add.reduce_first(Array([[1, 2], [3, 4]])), [4, 6])
+    np.testing.assert_array_equal(add.reduce[1, 2](np.arange(1, 9).reshape(2, 2, 2)), [10, 26])
+    np.testing.assert_array_equal(multiply.outer_product([1, 2], [3, 4]), [[3, 4], [6, 8]])
+    assert (add @ multiply)([1, 2], [3, 4]).py == 11 == add.inner_product(multiply)([1, 2], [3, 4]).py
+    assert subtract.determinant(multiply)([[1, 2], [3, 4]]).py == -2
+    assert subtract.dot(multiply)([[1, 2], [3, 4]]).py == -2 and add.dot(multiply)([1, 2], [3, 4]).py == 11
     assert (subtract(1) ** 3)(10).py == 7
-    assert (times(2.) ** -1)(10).py == 5
-    assert (floor << times(10.))(1.25).py == 12
-    assert (times(10.) >> floor)(1.25).py == 12
-    assert atop(floor, times(10.))(1.25).py == 12
-    assert plus.under(logarithm)(2., 3.).py == pytest.approx(6.)
+    assert (multiply(2.) ** -1)(10).py == 5
+    assert (floor << multiply(10.))(1.25).py == 12
+    assert (multiply(10.) >> floor)(1.25).py == 12
+    assert atop(floor, multiply(10.))(1.25).py == 12
+    assert add.under(natural_log)(2., 3.).py == pytest.approx(6.)
     np.testing.assert_array_equal(reverse.rank(1)(Array([[1, 2], [3, 4]])), [[2, 1], [4, 3]])
-    np.testing.assert_array_equal(times(2).under([1, 3])([1, 2, 3, 4]), [1, 4, 3, 8])
-    with pytest.raises(TypeError): plus @ Array(2)
-    assert plus.over(3)(10).py == 3
-    with pytest.raises(ValueError, match='DOMAIN'): plus.agenda(times)
-    assert subtract.commute.reduce([1, 2, 3]).py == 0
-    teq(times(2).power.each(3)([1, 2]).py, [8, 16])
+    np.testing.assert_array_equal(multiply(2).under([1, 3])([1, 2, 3, 4]), [1, 4, 3, 8])
+    with pytest.raises(TypeError): add @ Array(2)
+    assert add.over(3)(10).py == 3
+    with pytest.raises(ValueError, match='DOMAIN'): add.agenda(multiply)
+    assert subtract.commute.reduce([1, 2, 3]).py == 0 and subtract.self(3).py == 0 and subtract.commute(1, 3).py == 2
+    assert subtract.tilde_diaeresis(3).py == 0 and subtract.tilde_diaeresis(1, 3).py == 2 and add.slash([1, 2, 3]).py == 6
+    teq(multiply(2).power.each(3)([1, 2]).py, [8, 16])
     teq(subtract.left.each(2)([1, 2, 3]).py, [1, 0, -1])
-    teq(plus.left(1).power.each.power(2)(3)([0, 10]).py, [6, 16])
-    teq(plus.power.reduce[0](1)([[1, 2], [3, 4]]).py, [4, 6])
+    teq(add.left(1).power.each.power(2)(3)([0, 10]).py, [6, 16])
+    teq(add.power.reduce_first(1)([[1, 2], [3, 4]]).py, [4, 6])
     teq((subtract.left.each + 10)(2)([3, 4]).py, [9, 8])
-    teq((sign.valences(plus)(-3).py, sign.valences(plus)(2, 3).py), (-1, 5))
+    teq((sign.valences(add)(-3).py, sign.valences(add)(2, 3).py), (-1, 5))
 
 
 def test_math_construction():
     from basedpl import prime, prime_mode, factors, factor_spec, roots, polyval, windows
-    f = plus.left(1).undo(subtract(1))
+    f = add.left(1).undo(subtract(1))
     np.testing.assert_array_equal(f.power([2, -1, 0])(10), [12, 9, 10])
-    np.testing.assert_array_equal(f.history(-2)(10), [10, 9, 8])
+    np.testing.assert_array_equal(f.power([0, -1, -2])(10), [10, 9, 8])
     stop = bpl('limit←13 ⋄ {⍺≥limit}')
-    np.testing.assert_array_equal(f.history(stop)(10), [10, 11, 12, 13])
+    np.testing.assert_array_equal(f.power([stop])(10), [10, 11, 12, 13])
     np.testing.assert_array_equal(windows(2, [1, 2, 3]), [[1, 2], [2, 3]])
     assert prime(9).py == 29 and prime_mode(1, 29).py == 1
     np.testing.assert_array_equal(factors(700), [2, 2, 5, 5, 7])
@@ -318,7 +323,7 @@ def test_math_construction():
     np.testing.assert_array_equal(roots.undo([2, [1, 3]]), [6, -8, 2])
     p = polyval.left([1, 2, 3])
     assert p.derivative(2).py == 14 and p.derivative.derivative(2).py == 6
-    np.testing.assert_array_equal(p.derivative([10, 20], [1, 2]), [80, 280])
+    np.testing.assert_array_equal(p.vjp([10, 20], [1, 2]), [80, 280])
     rosen = bpl('{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}')
     vjp = bpl('{⍺←1 ⋄ [x y]←⍵ ⋄ ⍺×[(¯2×1-x) - 400×x×y-⊼x; 200×y-⊼x]}')
     r = rosen.derivative(vjp)
@@ -328,6 +333,8 @@ def test_math_construction():
     found = rosen.minimize([0.5, 0.5], lower=[-np.inf, 0], upper=[0.8, np.inf], report=True).py
     np.testing.assert_allclose(found['x'], [0.8, 0.64], atol=1e-6)
     assert found['converged']
+    loss = bpl('{+/⊼⍺-⍵}')
+    np.testing.assert_allclose([loss.minimize([1, 2, 3, 4], 0), loss.minimize([1, 2, 3, 4], 0, method='powell')], [2.5, 2.5])
 
 
 def test_axis_names():
@@ -345,8 +352,8 @@ def test_axis_names():
     product = Array(np.arange(12).reshape(4, 3), axis_names=('product', None))
     teq((a + product).axis_names, ('city', None, 'product'))
     teq((a + product).np, data[:, :, None] + product.np.T[None, :, :])
-    teq(plus.reduce['month'](m).axis_names, ('city',))
-    teq(plus.reduce['month'](m).np, [3, 12])
+    teq(add.reduce['month'](m).axis_names, ('city',))
+    teq(add.reduce['month'](m).np, [3, 12])
     keyed = Array(m, axis_keys=(('Paris', 'London'), ('Jan', 'Feb', 'Mar')))
     other = Array([30, 20, 10], axis_names=('month',), axis_keys=(('Mar', 'Feb', 'Jan'),))
     teq((keyed + other).np, data + [10, 20, 30])
@@ -373,9 +380,9 @@ def test_axis_names():
     teq(bpl('⌽⍤1 M').axis_names, ('city', 'month'))
     with pytest.raises(BplError, match='INDEX'): bpl('+/⍠"missing" M')
     v = Array([1, 2], axis_names=('city',))
-    teq(times.outer_product(v, v).axis_names, (None, None))
+    teq(multiply.outer_product(v, v).axis_names, (None, None))
     teq(reshape([4], v).axis_names, (None,))
-    teq(plus.scan(v).axis_names, ('city',))
+    teq(add.scan(v).axis_names, ('city',))
     bpl(V=v)
     for code, names in [('2#V', ('city',)), ('1↕V', (None, None)), ('{⍵}⌺1 V', (None, None)), ('V,V', ('city',))]:
         teq(bpl(code).axis_names, names)
@@ -395,7 +402,7 @@ def test_mathematical_monads():
 
 
 def test_function_arrays():
-    fs = Array([plus, times])
+    fs = Array([add, multiply])
     assert pick(1, fs)(2, 3).py == 6
     assert fs.py[0](2, 3).py == 5
     fs = bpl('offset←10 ⋄ [{offset+⍵} +]')
@@ -416,7 +423,7 @@ def test_retained_and_late_bound_functions(capsys):
     assert f(3).py == 13
     late = bpl.fn('g')
     bpl('g←+')
-    composed = late + times(2)
+    composed = late + multiply(2)
     assert composed(3).py == 9
     assert late.reduce([]).py == 0
     assert (bpl.fn('+') @ bpl.fn('×'))([], []).py == 0
@@ -434,7 +441,7 @@ def test_retained_and_late_bound_functions(capsys):
     saved = bpl('g')
     bpl('g←+')
     assert saved(3).py == -3 and late(3).py == 3
-    assert bpl('f 5', f=times(2)).py == 10
+    assert bpl('f 5', f=multiply(2)).py == 10
     bpl('outer←{k←100 ⋄ ⍶ ⍵}', f=f)
     assert bpl('f outer 1').py == 11
     g = bpl('{⎕←⍵ ⋄ ⍵}')
@@ -450,7 +457,7 @@ def test_function_inspection():
     mean = bpl.fn('mean')
     teq(mean.source, source)
     assert 'Mean of a vector' in mean.__doc__
-    assert 'adds' in plus.__doc__
+    assert 'adds' in add.__doc__
     teq(bpl.names(prefix='me'), ['mean'])
     assert bpl.inspect('mean')['kind'] == 'function'
     assert bpl.inspect('mean 1 2 3') is None

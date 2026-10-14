@@ -1,4 +1,4 @@
-# `.` — Inner product
+# `.` — Determinant / Inner product
 
 `X f.g Y` pairs items with `g`, then reduces with `f`. It contracts the last axis of `X` with the first of `Y`.
 
@@ -7,7 +7,7 @@
 [1 0⋄0 1]+.×2 2⍴⍳4 ⍝ 2 2⍴⍳4
 ```
 
-Singleton contraction axes extend. Empty contractions use the reduction identity. `g⊗` is [outer product](outer-product.qmd).
+Singleton contraction axes extend. Empty contractions use the reduction identity. `g⊗` is [outer product](circle-times.qmd).
 
 On complex numbers, `+.×` forms three real products of the parts rather than four and takes about a quarter less time. Its real parts are as accurate as with four products. Across the whole result, its error is about 4 units of roundoff, against about 2.5 with four. An imaginary part's error scales with the size of the whole product. An imaginary part a millionth the size of its real part keeps about 10 of a 64-bit float's 16 digits and about 1 of a 32-bit float's 7.
 
@@ -39,7 +39,7 @@ m.[⍳2 ¯1]          ⍝ 3 7
 9,m.[0 1],3        ⍝ 9 1 3
 ```
 
-After a keyed vector `T`, `T.(expr)` evaluates `expr` with each key of `T` as a name for its item. Names that aren't keys resolve in the current scope, and a key hides a name it shares. A key that holds a function binds as a function. Assignments inside the parentheses stay there, and leave `T` and the current scope unchanged. [Execute](execute.qmd) does the same for code in text: `T⍎"price×qty"` is `T.(price×qty)`. A scope doesn't map over an array of records. Write `{⍵.(expr)}¨recs` for that.
+After a keyed vector `T`, `T.(expr)` evaluates `expr` with each key of `T` as a name for its item. Names that aren't keys resolve in the current scope, and a key hides a name it shares. A key that holds a function binds as a function. Assignments inside the parentheses stay there, and leave `T` and the current scope unchanged. [Execute](hydrant.qmd) does the same for code in text: `T⍎"price×qty"` is `T.(price×qty)`. A scope doesn't map over an array of records. Write `{⍵.(expr)}¨recs` for that.
 
 ```bpl
 T←["price":2 3;"qty":10 20]

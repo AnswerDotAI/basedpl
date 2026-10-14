@@ -1,4 +1,4 @@
-# `π` — Pi
+# `π` — Pi times / Pi ratio
 
 Keys: `Alt-p`. Ranks: `0` monadic, `0 0` dyadic
 

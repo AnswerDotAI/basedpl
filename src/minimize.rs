@@ -6,7 +6,7 @@ use crate::{
     execution::Context,
     keyed,
     primitive::{integer, real},
-    Error, ErrorAt, ErrorKind, Function, Number, Span, Value,
+    Error, ErrorAt, ErrorKind, Function, Number, Operand, Span, Value,
 };
 use num_traits::ToPrimitive;
 use rustymath::{
@@ -15,18 +15,31 @@ use rustymath::{
 };
 use std::borrow::Cow;
 
-/// The options in `⇄`'s left argument.
+/// The options that `[options cost]⇄` takes.
 const OPTIONS: &[&str] = &["method", "lower", "upper", "tolerance", "evaluations", "population", "seed", "batch", "report"];
 
-/// `cost⇄start`: the point where `cost` is least, searching from `start`. The point has `start`'s shape and keys. With the
-/// `report` option, the result is a record of the point, its value, the number of evaluations and whether the search converged.
-pub(crate) fn minimize(cost: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
-    let options = Options::new("⇄", left, None, OPTIONS, cx)?;
+/// `cost⇄start` or `[options cost]⇄start`: the point where `cost` is least, searching from `start`. The point has `start`'s shape and
+/// keys. With a left argument, `data loss⇄ params` searches with `data↣loss`, which passes `data` to `loss` as `⍺`. With the `report`
+/// option, the result is a record of the point, its value, the number of evaluations and whether the search converged.
+pub(crate) fn minimize(operand: &Operand, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+    let (options, cost) = match operand {
+        Operand::Function(f) => (None, f.clone()),
+        Operand::Value(v) => parts(v).map(|(o, f)| (Some(o), f)).expect("`Function::new` checks `⇄`'s operand"),
+    };
+    let cost = match left { Some(a) => crate::eval::before(a.clone(), cost, cx.span)?, None => cost };
+    let options = Options::new("⇄", options.as_ref(), None, OPTIONS, cx)?;
     let width = right.float_width().unwrap_or(cx.numeric().width);
     match width {
-        FloatWidth::F64 => search::<f64>(cost, &options, right, width, cx),
-        _ => search::<f32>(cost, &options, right, width, cx),
+        FloatWidth::F64 => search::<f64>(&cost, &options, right, width, cx),
+        _ => search::<f32>(&cost, &options, right, width, cx),
     }
+}
+
+/// The options and the function in `[options cost]`, the vector operand of `⇄`, or `None` if it isn't one.
+pub(crate) fn parts(operand: &Value) -> Option<(Value, Function)> {
+    if operand.shape().len() != 1 || operand.len() != 2 { return None }
+    let Value::Function(f) = operand.at(1) else { return None };
+    Some((operand.at(0), f))
 }
 
 /// The search, in working floats `F`, with points and results as floats of `width`.

@@ -1,4 +1,4 @@
-# `⌷` — Index
+# `⌷` — Materialise / Index
 
 Keys: `Alt-q Backslash`. Ranks: `∞` monadic, `1 ∞` dyadic
 

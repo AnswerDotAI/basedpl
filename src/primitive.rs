@@ -61,13 +61,13 @@ impl FoldKind {
             (true, true) => "⍀",
         }
     }
-    /// The glyph's page name, and the aliases that complete to it.
-    fn names(self) -> (&'static str, &'static str) {
+    /// The glyph's name, then the derived function's name, which covers both valences.
+    fn names(self) -> [&'static str; 3] {
         match (self.scan, self.first) {
-            (false, false) => ("slash", "reduce fold"),
-            (false, true) => ("slash-bar", "reduce-first"),
-            (true, false) => ("backslash", "scan"),
-            (true, true) => ("backslash-bar", "scan-first"),
+            (false, false) => ["slash", "reduce", ""],
+            (false, true) => ["slash-bar", "reduce-first", ""],
+            (true, false) => ["backslash", "scan", ""],
+            (true, true) => ["backslash-bar", "scan-first", ""],
         }
     }
     /// The axis a fold runs along: the single axis in `axis`, or by default the first or last axis.
@@ -81,10 +81,11 @@ impl FoldKind {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum OperandKind { Function, Array, Any }
 
-/// An operator's glyph, its names for completion, and the operands it takes. A monadic operator has no right operand.
+/// An operator's glyph, its names, and the operands it takes. A monadic operator has no right operand. `names` holds the glyph's
+/// name, then the derived function's names with one argument and with two. An empty dyadic name means the monadic name covers both.
 pub(crate) struct OperatorInfo {
     pub glyph: &'static str,
-    pub names: (&'static str, &'static str),
+    pub names: [&'static str; 3],
     pub left: OperandKind,
     pub right: Option<OperandKind>,
 }
@@ -121,25 +122,25 @@ impl OperatorKind {
     pub(crate) fn info(self) -> OperatorInfo {
         use {OperandKind::*, OperatorKind::*};
         let (glyph, names, left, right) = match self {
-            Each => ("¨", ("each", "dieresis"), Function, None),
-            Commute => ("⍨", ("commute", ""), Any, None),
-            Before => ("↣", ("before", "bind"), Any, Some(Function)),
-            Rank => ("⍤", ("rank", ""), Function, Some(Any)),
-            Atop => ("∘", ("atop", ""), Function, Some(Function)),
-            Axis => ("⍠", ("axis", ""), Function, Some(Any)),
-            Over => ("⍥", ("over", ""), Function, Some(Function)),
-            After => ("↢", ("after", "hook bind-right"), Function, Some(Any)),
-            Product => (".", ("dot", ""), Function, Some(Function)),
-            Outer => ("⊗", ("outer-product", ""), Function, None),
-            Key => ("⌸", ("key", ""), Function, None),
-            Power => ("⍣", ("power", "repeat iterate history"), Function, Some(Any)),
-            Super(_) => ("", ("superscript", ""), Any, None),
-            Minimize => ("⇄", ("minimize", ""), Function, None),
-            Valences => ("⊘", ("valences", ""), Function, Some(Function)),
-            Under => ("@", ("under", ""), Function, Some(Any)),
-            Differentiate => ("∂", ("derivative", ""), Function, None),
-            Agenda => ("⍚", ("agenda", "choose"), Any, Some(Array)),
-            Stencil => ("⌺", ("stencil", ""), Function, Some(Any)),
+            Each => ("¨", ["diaeresis", "each", ""], Function, None),
+            Commute => ("⍨", ["tilde-diaeresis", "self", "commute"], Any, None),
+            Before => ("↣", ["right-tail-arrow", "before", ""], Any, Some(Function)),
+            Rank => ("⍤", ["jot-diaeresis", "rank", ""], Function, Some(Any)),
+            Atop => ("∘", ["jot", "atop", ""], Function, Some(Function)),
+            Axis => ("⍠", ["quad-colon", "axis", ""], Function, Some(Any)),
+            Over => ("⍥", ["circle-diaeresis", "over", ""], Function, Some(Function)),
+            After => ("↢", ["left-tail-arrow", "after", ""], Function, Some(Any)),
+            Product => (".", ["dot", "determinant", "inner-product"], Function, Some(Function)),
+            Outer => ("⊗", ["circle-times", "outer-product", ""], Function, None),
+            Key => ("⌸", ["quad-equal", "key", ""], Function, None),
+            Power => ("⍣", ["star-diaeresis", "power", ""], Function, Some(Any)),
+            Super(_) => ("", ["superscript", "", ""], Any, None),
+            Minimize => ("⇄", ["right-left-arrows", "minimize", ""], Any, None),
+            Valences => ("⊘", ["circle-slash", "valences", ""], Function, Some(Function)),
+            Under => ("@", ["at", "under", ""], Function, Some(Any)),
+            Differentiate => ("∂", ["partial", "derivative", "vjp"], Function, None),
+            Agenda => ("⍚", ["diamond-underbar", "agenda", ""], Any, Some(Array)),
+            Stencil => ("⌺", ["quad-diamond", "stencil", ""], Function, Some(Any)),
             Fold(kind) => (kind.glyph(), kind.names(), Function, None),
         };
         OperatorInfo { glyph, names, left, right }
@@ -259,12 +260,11 @@ pub(crate) struct Dyad {
     pub identity: Option<Identity>,
 }
 
-/// One primitive's facts: its glyph, its names for completion, and each form it has.
+/// One primitive's facts: its glyph, the glyph's name, and each form it has, with the form's name.
 /// `pervasive` forms give the same result under Each, and `axes` forms have their own meaning with `⍠`.
 pub(crate) struct Info {
     pub glyph: &'static str,
     pub name: &'static str,
-    pub aliases: &'static str,
     pub monad: Option<Monad>,
     pub dyad: Option<Dyad>,
 }
@@ -429,77 +429,77 @@ impl Primitive {
     pub(crate) fn info(self) -> Info {
         use {Arithmetic::*, Comparison::*, Identity::*, Math::*};
         const W: Rank = WHOLE;
-        fn row(glyph: &'static str, name: &'static str, aliases: &'static str, monad: impl Into<Option<Monad>>, dyad: impl Into<Option<Dyad>>) -> Info {
-            Info { glyph, name, aliases, monad: monad.into(), dyad: dyad.into() }
+        fn row(glyph: &'static str, name: &'static str, monad: impl Into<Option<Monad>>, dyad: impl Into<Option<Dyad>>) -> Info {
+            Info { glyph, name, monad: monad.into(), dyad: dyad.into() }
         }
         match self {
-            Self::Arithmetic(Plus) => row("+", "add", "", pervasive_monad("conjugate"), pervasive_dyad("plus").identity(Identity::Number(0))),
-            Self::Arithmetic(Minus) => row("-", "dash", "", pervasive_monad("negate"), pervasive_dyad("subtract").identity(Identity::Number(0))),
-            Self::Arithmetic(Times) => row("×", "mul", "multiply direction", pervasive_monad("sign"), pervasive_dyad("times").identity(Identity::Number(1))),
-            Self::Arithmetic(Divide) => row("÷", "div", "", pervasive_monad("reciprocal"), pervasive_dyad("divide").identity(Identity::Number(1))),
-            Self::Math(Ceiling) => row("⌈", "ceiling", "", pervasive_monad("ceiling"), pervasive_dyad("max").identity(Infinity(false))),
-            Self::Math(Floor) => row("⌊", "floor", "", pervasive_monad("floor"), pervasive_dyad("min").identity(Infinity(true))),
-            Self::Math(Magnitude) => row("|", "stile", "abs", pervasive_monad("magnitude"), pervasive_dyad("residue").identity(Identity::Number(0))),
-            Self::Math(Power) => row("*", "star", "exp", pervasive_monad("exponential"), pervasive_dyad("exponent").identity(Identity::Number(1))),
-            Self::Math(Log) => row("⍟", "log", "", pervasive_monad("logarithm"), pervasive_dyad("log")),
-            Self::Math(Circle | Arc) => row("○", "circle", "", pervasive_monad("cis"), pervasive_dyad("circle")),
-            Self::Math(Pi) => row("π", "pi", "", pervasive_monad("pi-times"), pervasive_dyad("pi-ratio")),
-            Self::Math(Root) => row("√", "root", "", pervasive_monad("sqrt"), pervasive_dyad("root")),
-            Self::Math(Factorial) => row("!", "factorial", "", pervasive_monad("factorial"), pervasive_dyad("binomial").identity(Identity::Number(1))),
-            Self::Math(Lcm) => row("∧", "and", "", monad("polar", 0), pervasive_dyad("lcm").identity(Identity::Logical(true))),
-            Self::Math(Gcd) => row("∨", "or", "", monad("real-imag", 0), pervasive_dyad("gcd").identity(Identity::Logical(false))),
-            Self::Math(Nand) => row("⊼", "nand", "", pervasive_monad("square"), pervasive_dyad("nand")),
-            Self::Math(Nor) => row("⊽", "nor", "", pervasive_monad("double"), pervasive_dyad("nor")),
-            Self::Math(Not) => row("~", "tilde", "", pervasive_monad("not"), dyad("without", [W, W])),
-            Self::Compare(Equal) => row("=", "equal", "", monad("classify", W), pervasive_dyad("equal").identity(Boolean(true))),
-            Self::Compare(NotEqual) => row("≠", "not-equal", "", monad("unique-mask", W), pervasive_dyad("not-equal").identity(Boolean(false))),
-            Self::Compare(Less) => row("<", "less", "", monad("sort-up", W), pervasive_dyad("less").identity(Boolean(false))),
-            Self::Compare(LessEqual) => row("≤", "less-or-equal", "", pervasive_monad("decrement"), pervasive_dyad("less-equal").identity(Boolean(true))),
-            Self::Compare(Greater) => row(">", "greater", "", monad("sort-down", W), pervasive_dyad("greater").identity(Boolean(false))),
+            Self::Arithmetic(Plus) => row("+", "plus", pervasive_monad("conjugate"), pervasive_dyad("add").identity(Identity::Number(0))),
+            Self::Arithmetic(Minus) => row("-", "minus", pervasive_monad("negate"), pervasive_dyad("subtract").identity(Identity::Number(0))),
+            Self::Arithmetic(Times) => row("×", "times", pervasive_monad("sign"), pervasive_dyad("multiply").identity(Identity::Number(1))),
+            Self::Arithmetic(Divide) => row("÷", "obelus", pervasive_monad("reciprocal"), pervasive_dyad("divide").identity(Identity::Number(1))),
+            Self::Math(Ceiling) => row("⌈", "upstile", pervasive_monad("ceiling"), pervasive_dyad("maximum").identity(Infinity(false))),
+            Self::Math(Floor) => row("⌊", "downstile", pervasive_monad("floor"), pervasive_dyad("minimum").identity(Infinity(true))),
+            Self::Math(Magnitude) => row("|", "stile", pervasive_monad("magnitude"), pervasive_dyad("residue").identity(Identity::Number(0))),
+            Self::Math(Power) => row("*", "star", pervasive_monad("exponential"), pervasive_dyad("exponent").identity(Identity::Number(1))),
+            Self::Math(Log) => row("⍟", "circle-star", pervasive_monad("natural-log"), pervasive_dyad("logarithm")),
+            Self::Math(Circle | Arc) => row("○", "circle", pervasive_monad("cis"), pervasive_dyad("circular")),
+            Self::Math(Pi) => row("π", "pi", pervasive_monad("pi-times"), pervasive_dyad("pi-ratio")),
+            Self::Math(Root) => row("√", "radical", pervasive_monad("sqrt"), pervasive_dyad("root")),
+            Self::Math(Factorial) => row("!", "exclamation", pervasive_monad("factorial"), pervasive_dyad("binomial").identity(Identity::Number(1))),
+            Self::Math(Lcm) => row("∧", "wedge", monad("polar", 0), pervasive_dyad("and").identity(Identity::Logical(true))),
+            Self::Math(Gcd) => row("∨", "vee", monad("real-imag", 0), pervasive_dyad("or").identity(Identity::Logical(false))),
+            Self::Math(Nand) => row("⊼", "wedge-bar", pervasive_monad("square"), pervasive_dyad("nand")),
+            Self::Math(Nor) => row("⊽", "vee-bar", pervasive_monad("double"), pervasive_dyad("nor")),
+            Self::Math(Not) => row("~", "tilde", pervasive_monad("not"), dyad("without", [W, W])),
+            Self::Compare(Equal) => row("=", "equals", monad("classify", W), pervasive_dyad("equal").identity(Boolean(true))),
+            Self::Compare(NotEqual) => row("≠", "not-equals", monad("unique-mask", W), pervasive_dyad("not-equal").identity(Boolean(false))),
+            Self::Compare(Less) => row("<", "less-than", monad("sort-up", W), pervasive_dyad("less").identity(Boolean(false))),
+            Self::Compare(LessEqual) => {
+                row("≤", "less-than-or-equal", pervasive_monad("decrement"), pervasive_dyad("less-equal").identity(Boolean(true)))
+            }
+            Self::Compare(Greater) => row(">", "greater-than", monad("sort-down", W), pervasive_dyad("greater").identity(Boolean(false))),
             Self::Compare(GreaterEqual) => {
-                row("≥", "greater-or-equal", "", pervasive_monad("increment"), pervasive_dyad("greater-equal").identity(Boolean(true)))
+                row("≥", "greater-than-or-equal", pervasive_monad("increment"), pervasive_dyad("greater-equal").identity(Boolean(true)))
             }
-            Self::Iota => row("⍳", "iota", "", monad("iota", 1).cellwise().axes(), dyad("index-of", [W, W])),
-            Self::Range => row("↦", "range", "right-arrow-from-bar", monad("range", 0).cellwise(), dyad("to", [0, 0]).cellwise()),
-            Self::Keys => row(":", "colon", "", monad("unkey", W).axes(), dyad("keyed", [1, W]).cellwise().axes()),
-            Self::Shape => row("⍴", "rho", "", monad("shape", W), dyad("reshape", [1, W]).cellwise()),
-            Self::Tally => row("≢", "tally", "", monad("tally", W), dyad("not-match", [W, W])),
-            Self::Depth => row("≡", "match", "", monad("depth", W), dyad("match", [W, W])),
-            Self::Ravel => row(",", "comma", "", monad("ravel", W).axes(), dyad("catenate", [W, W]).axes().identity(Empty(false))),
-            Self::CatenateFirst => row("⍪", "table", "", monad("table", W), dyad("catenate-first", [W, W]).axes().identity(Empty(true))),
-            Self::Enclose => row("⊂", "enclose", "", monad("enclose", W).axes(), dyad("partitioned-enclose", [1, W]).cellwise().axes()),
-            Self::Mix => row("⊃", "mix", "", monad("mix", 0).axes(), dyad("pick", [1, W]).cellwise()),
-            Self::Nest => row("⊆", "nest", "", monad("nest", W).axes(), dyad("partition", [1, W]).cellwise().axes()),
-            Self::Member => row("∊", "member", "epsilon", monad("enlist", W), dyad("member", [W, W])),
-            Self::Union => row("∪", "union", "", monad("unique", W), dyad("union", [W, W]).identity(Empty(false))),
-            Self::Intersection => row("∩", "intersection", "", monad("duplicates", W), dyad("intersection", [W, W])),
-            Self::Grade(false) => row("⍋", "grade-up", "", monad("grade-up", W), dyad("grade-up-by", [W, W])),
-            Self::Grade(true) => row("⍒", "grade-down", "", monad("grade-down", W), dyad("grade-down-by", [W, W])),
-            Self::Take => row("↑", "take", "disclose", monad("first", W), dyad("take", [1, W]).cellwise().axes()),
-            Self::Drop => row("↓", "drop", "", monad("split", 1).axes(), dyad("drop", [1, W]).cellwise().axes()),
-            Self::Reverse(false) => row("⌽", "reverse", "", monad("reverse", 1).axes(), dyad("rotate", [0, 1]).axes().identity(Identity::Number(0))),
+            Self::Iota => row("⍳", "iota", monad("indices", 1).cellwise().axes(), dyad("index-of", [W, W])),
+            Self::Range => row("↦", "right-arrow-from-bar", monad("range", 0).cellwise(), dyad("to", [0, 0]).cellwise()),
+            Self::Keys => row(":", "colon", monad("unkey", W).axes(), dyad("keyed", [1, W]).cellwise().axes()),
+            Self::Shape => row("⍴", "rho", monad("shape", W), dyad("reshape", [1, W]).cellwise()),
+            Self::Tally => row("≢", "equal-underbar-slash", monad("tally", W), dyad("not-match", [W, W])),
+            Self::Depth => row("≡", "equal-underbar", monad("depth", W), dyad("match", [W, W])),
+            Self::Ravel => row(",", "comma", monad("ravel", W).axes(), dyad("catenate", [W, W]).axes().identity(Empty(false))),
+            Self::CatenateFirst => row("⍪", "comma-bar", monad("table", W), dyad("catenate-first", [W, W]).axes().identity(Empty(true))),
+            Self::Enclose => row("⊂", "left-shoe", monad("enclose", W).axes(), dyad("partitioned-enclose", [1, W]).cellwise().axes()),
+            Self::Mix => row("⊃", "right-shoe", monad("mix", 0).axes(), dyad("pick", [1, W]).cellwise()),
+            Self::Nest => row("⊆", "left-shoe-underbar", monad("nest", W).axes(), dyad("partition", [1, W]).cellwise().axes()),
+            Self::Member => row("∊", "epsilon", monad("enlist", W), dyad("member", [W, W])),
+            Self::Union => row("∪", "down-shoe", monad("unique", W), dyad("union", [W, W]).identity(Empty(false))),
+            Self::Intersection => row("∩", "up-shoe", monad("duplicates", W), dyad("intersection", [W, W])),
+            Self::Grade(false) => row("⍋", "delta-stile", monad("grade-up", W), dyad("grade-up-by", [W, W])),
+            Self::Grade(true) => row("⍒", "del-stile", monad("grade-down", W), dyad("grade-down-by", [W, W])),
+            Self::Take => row("↑", "up-arrow", monad("first", W), dyad("take", [1, W]).cellwise().axes()),
+            Self::Drop => row("↓", "down-arrow", monad("split", 1).axes(), dyad("drop", [1, W]).cellwise().axes()),
+            Self::Reverse(false) => row("⌽", "circle-stile", monad("reverse", 1).axes(), dyad("rotate", [0, 1]).axes().identity(Identity::Number(0))),
             Self::Reverse(true) => {
-                row("⊖", "reverse-first", "", monad("reverse-first", W).axes(), dyad("rotate-first", [W, W]).axes().identity(Identity::Number(0)))
+                row("⊖", "circle-bar", monad("reverse-first", W).axes(), dyad("rotate-first", [W, W]).axes().identity(Identity::Number(0)))
             }
-            Self::Transpose => row("⍉", "transpose", "", monad("transpose", W), dyad("reorder-axes", [1, W]).cellwise()),
-            Self::Encode => row("⊤", "encode", "", monad("binary-encode", W), dyad("encode", [1, 0]).identity(Identity::Number(0))),
-            Self::Decode => row("⊥", "decode", "", monad("binary-decode", 1), dyad("decode", [1, 1])),
-            Self::Execute => row("⍎", "execute", "", monad("execute", 1).cellwise(), dyad("execute-in", [W, W])),
-            Self::Format => row("⍕", "format", "", monad("format", W), dyad("format-spec", [1, W]).cellwise()),
-            Self::Index => row("⌷", "squad", "", monad("materialise", W).axes(), dyad("index", [1, W]).cellwise().axes()),
-            Self::MatrixDivide => row("⌹", "domino", "", monad("inverse", 2).cellwise(), dyad("matrix-divide", [W, 2]).cellwise()),
-            Self::Replicate => {
-                row("#", "hash", "replicate compress", monad("runs", W), dyad("replicate", [1, W]).cellwise().axes().identity(Identity::Number(1)))
-            }
-            Self::Windows => row("↕", "windows", "", monad("pairs", W), dyad("windows", [W, W])),
-            Self::Prime => row("⍭", "prime", "", monad("prime", 0), dyad("prime-mode", [0, 0])),
-            Self::Factor => row("⨸", "factor", "", monad("factors", 0), dyad("factor-spec", [0, 0])),
-            Self::Polynomial => row("⌻", "polynomial", "", monad("roots", 1), dyad("polyval", [1, 0])),
-            Self::Where => row("⍸", "where", "", monad("where", W), dyad("interval-index", [W, W])),
-            Self::Find => row("⍷", "find", "", monad("groups", W), dyad("find", [W, W])),
-            Self::Identity(false) => row("⊢", "right", "", monad("same", W), dyad("right", [W, W])),
-            Self::Identity(true) => row("⊣", "left", "", monad("same-left", W), dyad("left", [W, W])),
-            Self::Random => row("¿", "inverted-question", "", monad("roll", 0), dyad("deal", [0, 0])),
+            Self::Transpose => row("⍉", "circle-backslash", monad("transpose", W), dyad("reorder-axes", [1, W]).cellwise()),
+            Self::Encode => row("⊤", "down-tack", monad("binary-encode", W), dyad("encode", [1, 0]).identity(Identity::Number(0))),
+            Self::Decode => row("⊥", "up-tack", monad("binary-decode", 1), dyad("decode", [1, 1])),
+            Self::Execute => row("⍎", "hydrant", monad("execute", 1).cellwise(), dyad("execute-in", [W, W])),
+            Self::Format => row("⍕", "thorn", monad("format", W), dyad("format-spec", [1, W]).cellwise()),
+            Self::Index => row("⌷", "squad", monad("materialise", W).axes(), dyad("index", [1, W]).cellwise().axes()),
+            Self::MatrixDivide => row("⌹", "domino", monad("matrix-inverse", 2).cellwise(), dyad("matrix-divide", [W, 2]).cellwise()),
+            Self::Replicate => row("#", "hash", monad("runs", W), dyad("replicate", [1, W]).cellwise().axes().identity(Identity::Number(1))),
+            Self::Windows => row("↕", "up-down-arrow", monad("pairs", W), dyad("windows", [W, W])),
+            Self::Prime => row("⍭", "stile-tilde", monad("prime", 0), dyad("prime-mode", [0, 0])),
+            Self::Factor => row("⨸", "circle-divide", monad("factors", 0), dyad("factor-spec", [0, 0])),
+            Self::Polynomial => row("⌻", "quad-jot", monad("roots", 1), dyad("polyval", [1, 0])),
+            Self::Where => row("⍸", "iota-underbar", monad("where", W), dyad("interval-index", [W, W])),
+            Self::Find => row("⍷", "epsilon-underbar", monad("groups", W), dyad("find", [W, W])),
+            Self::Identity(false) => row("⊢", "right-tack", monad("same", W), dyad("right", [W, W])),
+            Self::Identity(true) => row("⊣", "left-tack", monad("same-left", W), dyad("left", [W, W])),
+            Self::Random => row("¿", "inverted-question", monad("roll", 0), dyad("deal", [0, 0])),
         }
     }
     pub(crate) fn glyph(self) -> &'static str { self.info().glyph }

@@ -237,8 +237,8 @@ class Array(_Operators):
         return _result(self._inner.select([part(o) for o in parts])).value
     def __matmul__(self, other):
         if isinstance(other, Function): raise TypeError('inner product requires two arrays or two functions')
-        return _builtin('+').dot(_builtin('×'))(self, other)
-    def __rmatmul__(self, other): return _builtin('+').dot(_builtin('×'))(other, self)
+        return _glyph('+').inner_product(_glyph('×'))(self, other)
+    def __rmatmul__(self, other): return _glyph('+').inner_product(_glyph('×'))(other, self)
     def __array__(self, dtype=None, copy=None):
         if copy is False: raise ValueError('basedpl conversion requires a copy')
         result = self.np
@@ -344,7 +344,7 @@ class _Workspace:
 bpl = _Workspace()
 fn = bpl.fn
 
-from .functions import Function, Operator, fork, atop, __all__ as _function_names, _binary, _unary, _builtin, _builtins
+from .functions import Function, Operator, fork, atop, __all__ as _function_names, _binary, _unary, _builtin, _builtins, _glyph
 from .printing import to_python
 from .syntax import parse
 __all__ += ['to_python', 'parse']
