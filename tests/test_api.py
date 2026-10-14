@@ -329,12 +329,14 @@ def test_math_construction():
     r = rosen.derivative(vjp)
     assert r([-1, 2]).py == 104
     np.testing.assert_array_equal(r.derivative([-1, 2]), [396, 200])
-    np.testing.assert_allclose(rosen.minimize([-1.2, 1]), [1, 1], atol=1e-6)
-    found = rosen.minimize([0.5, 0.5], lower=[-np.inf, 0], upper=[0.8, np.inf], report=True).py
+    np.testing.assert_allclose(rosen.optimize([-1.2, 1]), [1, 1], atol=1e-6)
+    found = rosen.optimize([0.5, 0.5], lower=[-np.inf, 0], upper=[0.8, np.inf], report=True).py
     np.testing.assert_allclose(found['x'], [0.8, 0.64], atol=1e-6)
     assert found['converged']
-    loss = bpl('{+/⊼⍺-⍵}')
-    np.testing.assert_allclose([loss.minimize([1, 2, 3, 4], 0), loss.minimize([1, 2, 3, 4], 0, method='powell')], [2.5, 2.5])
+    loss = bpl('{+/⊼⍺-⍵}').left([1, 2, 3, 4])
+    np.testing.assert_allclose([loss.optimize(0), loss.optimize(0, method='powell')], [2.5, 2.5])
+    np.testing.assert_allclose(bpl('2-⍨⊼').optimize(1, solve=True), 2**0.5)
+    np.testing.assert_allclose(bpl('{(⍵×4)-8}').optimize(0, solve=True, linear=True, precondition=bpl('{⍵÷4}')), 2)
 
 
 def test_axis_names():

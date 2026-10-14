@@ -77,15 +77,6 @@ class _Attaching(Function):
         if len(args) == 1 and not kwargs and isinstance(args[0], Function): return Function(getattr(self._f._inner, self._attach)(args[0]._inner))
         return super().__call__(*args, **kwargs)
 
-class _Minimizing(Function):
-    "`f.minimize` or `f.right_left_arrows`. Keyword arguments become the options in `[options f]⇄`, and the positional arguments are `⍵`, or `⍺` and `⍵`."
-    def __init__(self, f, valence):
-        super().__init__(_build('⇄', f)._inner, valence)
-        self._f = f
-    def __call__(self, *args, **kwargs):
-        if not kwargs: return super().__call__(*args)
-        return Function(_build('⇄', [kwargs, self._f])._inner, self._valence)(*args)
-
 class Operator:
     "A BPL operator held as a value, as a module record holds it. Call it with its operand, or both operands of a dyadic operator, to get a `Function`."
     def __init__(self, inner): self._inner = inner
@@ -102,7 +93,7 @@ def _python_name(name):
 # Every documented name of an operator is a property, in Python spelling. Its glyph name gives the derived function with both
 # valences, and each name for what it does gives the valences that name covers. A dyadic operator's property waits for its right
 # operand. `f[axis]` also spells `⍠`, and `f.undo` spells `⁻¹`, which has no row. `f.undo(g)` and `f.derivative(g)` with a function
-# `g` attach it, as `f⁻¹←g` and `f∂←g` do in BPL. `⇄`'s properties take keyword arguments as the options in `[options f]⇄`.
+# `g` attach it, as `f⁻¹←g` and `f∂←g` do in BPL.
 _operators = {'undo': ('⁻¹', False, 0)}  # Python name: glyph, whether the operator is dyadic, and the derived function's valence
 _operator_names = {}  # An operator's glyph: its glyph name, then its names with one argument and with two, in Python spelling
 for _s in symbols:
@@ -117,8 +108,6 @@ _ATTACHING = dict(undo='with_inverse', derivative='with_derivative')
 def _operator(name, glyph, dyadic, valence):
     if name in _ATTACHING:
         return property(lambda self: _Attaching(glyph, self, _ATTACHING[name], valence) if isinstance(self, Function) else _build(glyph, self, valence=valence))
-    if glyph == '⇄':
-        return property(lambda self: _Minimizing(self, valence) if isinstance(self, Function) else _build(glyph, self, valence=valence))
     if dyadic: return property(lambda self: _build(glyph, self, _HOLE, valence=valence))
     return property(lambda self: _build(glyph, self, valence=valence))
 for _name, _spec in _operators.items(): setattr(_Combinators, _name, _operator(_name, *_spec))

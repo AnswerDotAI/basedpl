@@ -75,7 +75,7 @@ The names in these tables are the ones you type. In the REPL, a backtick and any
 | `⌹` [domino](glyphs/domino.qmd) | Alt-q u | matrix-inverse | matrix-divide | |
 | `⊣` [left-tack](glyphs/left-tack.qmd) | Alt-; | same-left | left | |
 | `⊢` [right-tack](glyphs/right-tack.qmd) | Alt-' | same | right | |
-| `⍎` [hydrant](glyphs/hydrant.qmd) | Alt-o b | execute | execute-in | `X` is a keyed vector, where Dyalog takes a namespace |
+| `⍎` [hydrant](glyphs/hydrant.qmd) | Alt-o b | execute | execute-in | `X` has keys on its first axis, where Dyalog takes a namespace |
 | `⍕` [thorn](glyphs/thorn.qmd) | Alt-o n | format | format-spec | |
 
 ## Monadic operators
@@ -92,7 +92,7 @@ A monadic operator takes one operand, on its left, as in `+/`. Monad and Dyad na
 | `⍨` [tilde-diaeresis](glyphs/tilde-diaeresis.qmd) | Alt-1 Backtick | self | commute | `f⍨`. `a⍨` is a constant function |
 | `⊗` [circle-times](glyphs/circle-times.qmd) | Alt-o m | outer-product | | `g⊗`, as BQN's `⌜` |
 | `⌸` [quad-equal](glyphs/quad-equal.qmd) | Alt-q = | key | | `f⌸` |
-| `⇄` [right-left-arrows](glyphs/right-left-arrows.qmd) | Alt-4 | minimize | | `f⇄` and `[options f]⇄` search for the point where `f` is least. A left argument goes to `f` |
+| `⇄` [right-left-arrows](glyphs/right-left-arrows.qmd) | Alt-4 | optimize | | `f⇄` searches for the point where `f` is least, or with `"solve":$t`, where its residuals are zero. A left argument holds options |
 | `∂` [partial](glyphs/partial.qmd) | Alt-f | derivative | vjp | `f∂`. The dyad takes a cotangent on the left and gives the vector–Jacobian product |
 
 ## Dyadic operators

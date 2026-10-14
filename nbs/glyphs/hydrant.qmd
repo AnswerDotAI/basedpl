@@ -18,7 +18,7 @@ On a character matrix, `⍎` evaluates each row. On an array of strings, it eval
 
 Assignments and explicit output in `⍎Y` take effect in the current scope.
 
-`T⍎Y` evaluates `Y` with each key of the keyed vector `T` as a name for its item, as [Dot](dot.qmd)'s `T.(expr)` does. Names that aren't keys resolve in the current scope. Assignments stay inside the evaluation, and leave `T` unchanged.
+`T⍎Y` evaluates `Y` with each key on the first axis of `T` as a name, as [Dot](dot.qmd)'s `T.(expr)` does. Names that aren't keys resolve in the current scope. Assignments stay inside the evaluation, and leave `T` unchanged.
 
 ```bpl
 T←["a":1 "b":2] ⋄ T⍎"a+b"      ⍝ 3

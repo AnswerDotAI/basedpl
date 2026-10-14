@@ -626,10 +626,14 @@ impl Session {
         result
     }
 
-    /// Runs `f` in a new frame in which each key of the keyed vector `record` names its item. Other names resolve in the caller's
-    /// scope, and assignments stay in the new frame. `T.(expr)` and `T⍎text` evaluate this way.
+    /// Runs `f` in a new frame in which each key on the first axis of `record` names what `T.key` selects: an item of a vector, or a
+    /// major cell of a higher-rank array. Other names resolve in the caller's scope, and assignments stay in the new frame. `T.(expr)`
+    /// and `T⍎text` evaluate this way.
     fn scoped(&mut self, record: &Value, span: &Span, f: impl FnOnce(&mut Self) -> Result<Bound, Error>) -> Result<Bound, Error> {
-        let entries = record.keys(0).ok_or(ErrorKind::Domain).and_then(|_| crate::keyed::entries(record)).error_at(span, "a scope must be a keyed vector")?;
+        let entries = record.keys(0).ok_or(ErrorKind::Domain).and_then(|keys| {
+            let items = if record.shape().len() == 1 { record.elements().collect() } else { record.major_cells()? };
+            Ok(keys.names().iter().cloned().zip(items).collect::<Vec<_>>())
+        }).error_at(span, "a scope needs keys on its first axis")?;
         let (caller, base) = (self.current, self.frames.len());
         let mut frame = Frame::new(caller, self.module(), entries.len());
         for (key, item) in entries { if let Some(key) = key { frame.insert(Key::of(&key), Binding::from_element(item)); } }

@@ -44,7 +44,7 @@ impl Options {
             }
         }
         else if let Some(key) = shorthand { values.insert(key.into(), value.clone()); }
-        else if !text(value, span)?.is_empty() { return Err(span.domain_error(format!("{name} expects '' or keyed options"))); }
+        else if !text(value, span).is_ok_and(|t| t.is_empty()) { return Err(span.domain_error(format!("{name} expects '' or keyed options"))); }
         Ok(Self { values, name })
     }
 

@@ -412,9 +412,6 @@ impl Function {
                 }
                 let a = if matches!(op, Fold(_) | Super(_)) { a } else { constant_operand(info.left, a, span)? };
                 if info.dyadic() || !accepts(info.left, &a) { return Err(span.domain_error("operator needs a function operand")); }
-                if matches!((op, &a), (Minimize, Operand::Value(v)) if crate::minimize::parts(v).is_none()) {
-                    return Err(span.domain_error("⇄ needs a function, or a vector of options and a function"));
-                }
                 match (op, a) {
                     (Fold(kind), Operand::Function(f)) => FunctionNode::Fold(f, kind),
                     (Super(Superscript::Power(-1)), Operand::Function(f)) => return f.inverse(span),
@@ -629,7 +626,7 @@ impl Function {
             }
             FunctionNode::Modified(OperatorKind::Commute, Operand::Function(f)) => return f.call(Some(right), left.unwrap_or(right), cx),
             FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)) => Ok(a.clone()),
-            FunctionNode::Modified(OperatorKind::Minimize, a) => crate::minimize::minimize(a, left, right, cx),
+            FunctionNode::Modified(OperatorKind::Optimize, Operand::Function(f)) => crate::optimize::optimize(f, left, right, cx),
             FunctionNode::Modified(..) => unreachable!(),
             FunctionNode::Primitive(p) if matches!((p, left), (Primitive::Mix, Some(_)) | (Primitive::Take, None)) => {
                 let item = crate::primitive::pick(left.unwrap_or(&crate::primitive::integer(0)), right, cx.session.prototype, cx)?;

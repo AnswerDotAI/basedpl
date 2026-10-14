@@ -1603,7 +1603,10 @@ T←["f":{⍵×2} "a":3] ⋄ T.(f a)   ⍝ 6
 ⍝ — A scope inside a dfn sees the dfn's ⍺
 5 {⍵.(a+⍺)} ["a":1]   ⍝ 6
 
-⍝ — A scope must be a keyed vector
+⍝ — Over a keyed matrix, each key names its major cell, as dot access selects it
+T←"a" "b":[1 2 3⋄4 5 6] ⋄ T.(a+b)   ⍝ 5 7 9
+
+⍝ — A scope needs keys on its first axis
 m←3 4⍴⍳12 ⋄ m.(1 2)
 ⍝ error: DOMAIN ERROR
 
@@ -1929,7 +1932,7 @@ f←{⍵×⍵} ⋄ f∂←3
 [⌻⁻¹⌻0 16 ¯12 2;⌻⁻¹⌻1 0 1;⌻⁻¹⌻1 ¯2 1]
 [0 16 ¯12 2;1 0 1;1 ¯2 1]
 
-⍝⍝ Minimizing
+⍝⍝ Optimizing
 
 ⍝ — Without a derivative, the search runs Nelder–Mead from the start [atol=1e-6]
 rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
@@ -1938,11 +1941,11 @@ rosen⇄ ¯1.2 1   ⍝ 1 1
 ⍝ — A derivative that f∂←g attaches makes the search run L-BFGS, which needs fewer evaluations
 rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
 rosen∂←{⍺←1 ⋄ [x y]←⍵ ⋄ ⍺×[(¯2×1-x) - 400×x×y-⊼x; 200×y-⊼x]}
-([["report":$t] rosen]⇄ ¯1.2 1).evaluations<100   ⍝ $t
+(["report":$t] rosen⇄ ¯1.2 1).evaluations<100   ⍝ $t
 
 ⍝ — Bounds make the search run Powell's method within them [atol=1e-6]
 rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
-[["lower":[¯∞ 0] "upper":[0.8 ∞]] rosen]⇄ 0.5 0.5
+["lower":[¯∞ 0] "upper":[0.8 ∞]] rosen⇄ 0.5 0.5
 ⍝ =>
 0.8 0.64
 
@@ -1958,12 +1961,12 @@ cost⇄ ["gap":8 "margin":12]
 ⍝ — With batch, a call gets every candidate along a new last axis, so each field holds one value per candidate [atol=1e-6]
 cost←{(⊼⍵.gap-6) + ⊼⍵.margin-2×⍵.gap}
 lo←["gap":0 "margin":0] ⋄ hi←["gap":20 "margin":40]
-[["method":"differential-evolution" "lower":lo "upper":hi "batch":$t] cost]⇄ ["gap":8 "margin":12]
+["method":"differential-evolution" "lower":lo "upper":hi "batch":$t] cost⇄ ["gap":8 "margin":12]
 ⍝ =>
 ["gap":6 "margin":12]
 
 ⍝ — The report gives the evaluations and whether the search converged before reaching their limit
-r←[["evaluations":10 "report":$t] {+/⊼⍵-3}]⇄ 1 2
+r←["evaluations":10 "report":$t] {+/⊼⍵-3}⇄ 1 2
 [r.evaluations r.converged]   ⍝ 10ₓ $f
 
 ⍝ — A start of 32-bit floats searches and answers in 32-bit floats
@@ -1974,26 +1977,94 @@ r←[["evaluations":10 "report":$t] {+/⊼⍵-3}]⇄ 1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — L-BFGS needs a derivative
-[["method":"l-bfgs"] {+/⊼⍵}]⇄ 1 2
+["method":"l-bfgs"] {+/⊼⍵}⇄ 1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Differential evolution needs finite bounds
-[["method":"differential-evolution"] {+/⊼⍵}]⇄ 1 2
+["method":"differential-evolution"] {+/⊼⍵}⇄ 1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Bounds give one number, or one for each variable in the start's shape
-[["lower":[0 0 0]] {+/⊼⍵}]⇄ 1 2
+["lower":[0 0 0]] {+/⊼⍵}⇄ 1 2
 ⍝ error: LENGTH ERROR
 
 ⍝ — Each lower bound must be at most its upper bound
-[["lower":2 "upper":1] {⊼⍵}]⇄ 0
+["lower":2 "upper":1] {⊼⍵}⇄ 0
 ⍝ error: DOMAIN ERROR
 
-⍝ — A left argument goes to the function as ⍺, with or without options [atol=1e-6]
-data←1 2 3 4 ⋄ [data {+/⊼⍺-⍵}⇄ 0; data [["method":"powell"] {+/⊼⍺-⍵}]⇄ 0]   ⍝ 2.5 2.5
+⍝ — Data goes to the function through ↣ [atol=1e-6]
+data←1 2 3 4 ⋄ [data↣{+/⊼⍺-⍵}⇄ 0; ["method":"powell"] data↣{+/⊼⍺-⍵}⇄ 0]   ⍝ 2.5 2.5
 
-⍝ — The operand is a function, or a vector of options and a function
-[["method":"powell"]]⇄ 0
+⍝ — The left argument holds options, not data for the function
+1 2 3 4 {+/⊼⍺-⍵}⇄ 0
+⍝ error: DOMAIN ERROR
+
+⍝ — With solve, one residual in one variable runs Brent's method, stepping outward from the start for a sign change [atol=1e-12]
+["solve":$t] (2-⍨⊼)⇄ 1   ⍝ 1.4142135623730951
+
+⍝ — A bracket gives two points where the signs differ [atol=1e-12]
+["solve":$t "bracket":[1 2]] (2-⍨⊼)⇄ 1.5   ⍝ 1.4142135623730951
+
+⍝ — A bracket whose ends have one sign doesn't converge
+(["solve":$t "bracket":[2 3] "report":$t] {⊼⍵-1}⇄ 2.5).converged   ⍝ $f
+
+⍝ — Several residuals run Levenberg–Marquardt, here where a circle and a line cross [atol=1e-10]
+f←{[x y]←⍵ ⋄ [(⊼x)+(⊼y)-4 y-x-1]}
+["solve":$t] f⇄ 1 0   ⍝ 1.8228756555322954 0.8228756555322954
+
+⍝ — An attached derivative gives Levenberg–Marquardt its Jacobian through vector–Jacobian products [atol=1e-10]
+f←{[x y]←⍵ ⋄ [(⊼x)+(⊼y)-4 y-x-1]}
+f∂←{[x y]←⍵ ⋄ [u v]←⍺ ⋄ [(2×u×x)-v (2×u×y)+v]}
+["solve":$t] f⇄ 1 0   ⍝ 1.8228756555322954 0.8228756555322954
+
+⍝ — More residuals than variables give the point where the sum of their squares is least [atol=1e-6]
+x←0 1 2 3 4 ⋄ y←2.1 5.4 15.2 40.3 109.1 ⋄ r←{⍵.((a×*b×x)-y)}
+(["solve":$t] r⇄ ["a":1 "b":1]) - ["tolerance":1E¯12] {+/⊼ r ⍵}⇄ ["a":1 "b":1]
+⍝ =>
+["a":0 "b":0]
+
+⍝ — With linear, a square system runs GMRES on products from the function [atol=1e-12]
+m←[4 1⋄1 3] ⋄ b←1 2
+(["solve":$t "linear":$t] {(m+.×⍵)-b}⇄ 0 0) - b⌹m   ⍝ 0 0
+
+⍝ — A large right-hand side costs no accuracy, because each product is computed at a scaled point [atol=1e-12]
+m←[4 1⋄1 3] ⋄ b←1E8×1 2
+(["solve":$t "linear":$t] {(m+.×⍵)-b}⇄ 0 0) ÷ b⌹m   ⍝ 1 1
+
+⍝ — CG on a symmetric positive definite system [atol=1e-12]
+m←[4 1⋄1 3] ⋄ b←1 2
+(["solve":$t "linear":$t "method":"cg"] {(m+.×⍵)-b}⇄ 0 0) - b⌹m   ⍝ 0 0
+
+⍝ — An attached derivative gives the transpose products for least squares, and the report gives the residual's norm [atol=1e-10]
+t←[1 0⋄0 1⋄1 1] ⋄ c←1 2 4
+g←{(t+.×⍵)-c} ⋄ g∂←{⍺+.×t}
+r←["solve":$t "linear":$t "report":$t] g⇄ 0 0
+[r.x-c⌹t; r.value]   ⍝ [0 0; 0.5773502691896258]
+
+⍝ — Least squares without a derivative has no transpose products
+["solve":$t "linear":$t] {([1 0⋄0 1⋄1 1]+.×⍵)-1 2 4}⇄ 0 0
+⍝ error: DOMAIN ERROR
+
+⍝ — Linear needs solve
+["linear":$t] {⍵-1}⇄ 0
+⍝ error: DOMAIN ERROR
+
+⍝ — Bounds apply only to minimizing
+["solve":$t "lower":0] {⍵-1}⇄ 0
+⍝ error: DOMAIN ERROR
+
+⍝ — The function gives the same number of residuals at every point
+["solve":$t] {(1+⍵>2)⍴⍵-3}⇄ 1
+⍝ error: LENGTH ERROR
+
+⍝ — A diagonal preconditioner cuts the products a badly scaled system needs [atol=1e-10]
+n←20 ⋄ d←10*5×(⍳n)÷n-1 ⋄ m←(d×=⊗⍨⍳n)+0.1×1=|-⊗⍨⍳n ⋄ b←n⍴1
+f←{(m+.×⍵)-b} ⋄ o←["solve":$t "linear":$t "report":$t "tolerance":1E¯12]
+p←o f⇄ n⍴0 ⋄ q←(o,["precondition":{⍵÷d}]) f⇄ n⍴0
+[q.evaluations<p.evaluations; ⌈/|q.x-b⌹m]   ⍝ [$t; 0]
+
+⍝ — A preconditioner needs a linear solve
+["solve":$t "precondition":{⍵}] {⍵-1}⇄ 0
 ⍝ error: DOMAIN ERROR
 
 ⍝⍝ Prime and factor families

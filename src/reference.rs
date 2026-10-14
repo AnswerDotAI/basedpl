@@ -262,8 +262,9 @@ pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, interrupt: &
 }
 
 /// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a session of its own. The lines up to each
-/// line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must match the
-/// comment's value within 1e-13, with the same exactness. Lines with no comment must run without an error. Each failure gives the
+/// line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must show the same
+/// text as the comment's value, in the session's display with every item, or match it within 1e-13 with the same exactness. `•prefs`
+/// option `prec` sets how many digits the display shows. Lines with no comment must run without an error. Each failure gives the
 /// `line` of its comment or of the block's end, the `code` that ran, its `expected` comment and a `message`.
 pub fn page(text: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
     let options = || EvalOptions { timeout: Some(TIMEOUT), echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
@@ -287,8 +288,10 @@ pub fn page(text: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
             (None, _, None) => None,
             (None, actual, Some(expected)) => {
                 let wanted = Session::new().eval_with(expected, options());
+                let shown = bpl.display_settings();
                 match (actual, wanted.value, wanted.error) {
                     (_, _, Some(error)) => Some(format!("expectation: {error}")),
+                    (Some(actual), Some(wanted), None) if shown.explicit(&actual, false) == shown.explicit(&wanted, false) => None,
                     (Some(actual), Some(wanted), None) => difference(&actual, &wanted, 1e-13, 1e-13, true),
                     _ => Some("no result".into()),
                 }

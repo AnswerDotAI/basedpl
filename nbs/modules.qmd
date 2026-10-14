@@ -68,7 +68,14 @@ n←•load "lib/numeric.bpl"
 n.(factors 360)                ⍝ 2 2 2 3 3 5
 ```
 
-A scope applies to one record. For an array of records, `{⍵.(expr)}¨records` evaluates `expr` in each.
+An array with keys on its first axis also works as a namespace. Each key names its major cell, which in a matrix is a row:
+
+```bpl
+prices←"cost" "sale":[2 3 5⋄4 4 9]
+prices.(sale-cost)             ⍝ 2 1 4
+```
+
+A scope applies to one array. For an array of records, `{⍵.(expr)}¨records` evaluates `expr` in each.
 
 ## Writing a module
 

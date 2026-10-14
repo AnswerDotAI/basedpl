@@ -41,13 +41,15 @@ m.[⍳2 ¯1]          ⍝ 3 7
 9,m.[0 1],3        ⍝ 9 1 3
 ```
 
-After a keyed vector `T`, `T.(expr)` evaluates `expr` with each key of `T` as a name for its item. Names that aren't keys resolve in the current scope, and a key hides a name it shares. A key that holds a function binds as a function. Assignments inside the parentheses stay there, and leave `T` and the current scope unchanged. [Execute](hydrant.qmd) does the same for code in text: `T⍎"price×qty"` is `T.(price×qty)`. A scope doesn't map over an array of records. Write `{⍵.(expr)}¨recs` for that.
+After a keyed vector `T`, `T.(expr)` evaluates `expr` with each key of `T` as a name for its item. After a matrix, or any array with keys on its first axis, each key names its major cell. Names that aren't keys resolve in the current scope, and a key hides a name it shares. A key that holds a function binds as a function. Assignments inside the parentheses stay there, and leave `T` and the current scope unchanged. [Execute](hydrant.qmd) does the same for code in text: `T⍎"price×qty"` is `T.(price×qty)`. A scope doesn't map over an array of records. Write `{⍵.(expr)}¨recs` for that.
 
 ```bpl
 T←["price":2 3;"qty":10 20]
 T.(price×qty)              ⍝ 20 60
 rate←0.5 ⋄ T.(price×rate)  ⍝ 1 1.5
 r←T.(price←0) ⋄ T.price    ⍝ 2 3
+M←"price" "qty":[2 3⋄10 20]
+M.(price×qty)              ⍝ 20 60
 ```
 
 A dot followed by a digit is a decimal point: `.2` is a number. To index position 2, write `v.[2]` or the [subscript](../scripts.ipynb#subscripts) `v₂`. Assignment to a dot path goes through `⌷` and adds missing keys.
