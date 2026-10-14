@@ -1,4 +1,4 @@
-use crate::{array::FloatWidth, keyed, ErrorAt, Number, Value};
+use crate::{array::FloatWidth, keyed, symbols::Notation, ErrorAt, Number, Value};
 use rustymath::tolerant::{Tolerance, Tolerant};
 use unicode_width::UnicodeWidthStr;
 
@@ -32,11 +32,12 @@ pub(crate) struct Elide {
     pub columns: usize,
     /// The float width that numbers show without a marker: the session's default width. `None` marks every width, as `•literal⁻¹` does.
     pub plain: Option<FloatWidth>,
+    pub notation: Notation,
 }
 impl Default for Elide { fn default() -> Self { Self { limit: 1000, edges: 3, prec: 10, ..Self::NONE } } }
 impl Elide {
     /// Shows every item and every digit, as source text and `⍕` do, with 64-bit floats plain.
-    pub const NONE: Self = Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64) };
+    pub const NONE: Self = Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64), notation: Notation::Apl };
     /// The positions kept at each end of a long axis of an array of `shape`, or `None` when display shows every item.
     pub fn edges(self, shape: &[usize]) -> Option<usize> {
         let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);
@@ -147,9 +148,9 @@ impl Settings {
     }
     pub fn diagram(&self, a: &Value) -> String { array(a, self.elide).text() }
     /// Text for `⎕←`: the display text, with every item, and floats rounded to `prec` as display rounds them and with its float width plain.
-    pub fn explicit(&self, a: &Value, inside: bool) -> String { Self { elide: Elide { prec: self.elide.prec, plain: self.elide.plain, ..Elide::NONE }, ..*self }.array(a, inside) }
+    pub fn explicit(&self, a: &Value, inside: bool) -> String { Self { elide: Elide { prec: self.elide.prec, plain: self.elide.plain, notation: self.elide.notation, ..Elide::NONE }, ..*self }.array(a, inside) }
     /// Each setting's key and value. An unlimited count is `∞`, a float of `width`.
-    fn entries(&self, width: FloatWidth) -> [(&'static str, Value); 8] {
+    fn entries(&self, width: FloatWidth) -> [(&'static str, Value); 9] {
         let flag = |b| Value::Number(Number::from_bool(b));
         let count = |n: usize| Value::Number(if n == usize::MAX { Number::float(f64::INFINITY, width) } else { Number::from_integer(n as i64) });
         [
@@ -161,6 +162,7 @@ impl Settings {
             ("edges", count(self.elide.edges)),
             ("prec", count(self.elide.prec)),
             ("width", count(self.elide.width)),
+            ("notation", keyed::text(match self.elide.notation { Notation::Apl => "apl", Notation::Simplified => "simplified", Notation::Traditional => "traditional" })),
         ]
     }
     /// Sets the setting `key` to `value`. `Ok(false)` when no display setting has that key.
@@ -180,6 +182,12 @@ impl Settings {
             "edges" => self.elide.edges = count(value)?,
             "prec" => self.elide.prec = positive(value)?,
             "width" => self.elide.width = positive(value)?,
+            "notation" => self.elide.notation = match keyed::name(value).as_deref() {
+                Some("apl") => Notation::Apl,
+                Some("simplified") => Notation::Simplified,
+                Some("traditional") => Notation::Traditional,
+                _ => return Err(crate::ErrorKind::Domain),
+            },
             _ => return Ok(false),
         }
         Ok(true)
@@ -377,8 +385,7 @@ fn array(a: &Value, el: Elide) -> Block {
                         Value::Number(n) => Block::new(el.number(n)),
                         Value::Character(c) => Block::new(if c.is_control() { c.escape_default().to_string() } else { c.to_string() }),
                         Value::Array(_) => array(&item, el),
-                        Value::Function(f) => Block::new(f.to_string()),
-                        Value::Operator(op) => Block::new(op.to_string()),
+                        Value::Function(_) | Value::Operator(_) => Block::new(plain(&item, el)),
                     };
                     let block = match a.keys(0).and_then(|keys| keys.names().get(i)?.clone()) { Some(key) => block.labelled(&key), None => block };
                     Cell::item(block, &item)
@@ -396,8 +403,9 @@ fn array(a: &Value, el: Elide) -> Block {
 pub(crate) fn plain(a: &Value, el: Elide) -> String {
     match a {
         Value::Number(n) => return el.number(n),
-        Value::Function(f) => return f.to_string(),
-        Value::Character(_) | Value::Operator(_) => return a.literal(),
+        Value::Function(f) => return format!("⟨{}⟩", f.text(el.notation, &mut 1000)),
+        Value::Operator(op) => return op.text(el.notation),
+        Value::Character(_) => return a.literal(),
         Value::Array(_) => (),
     }
     if a.has_keys() && a.shape().len() > 1 { return labelled(a, el); }
@@ -424,8 +432,7 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
                             spaced = true;
                             match item {
                                 Value::Number(n) => Cell::number(el.number(&n)),
-                                Value::Function(f) => Cell::text(f.to_string()),
-                                Value::Operator(op) => Cell::text(op.to_string()),
+                                item @ (Value::Function(_) | Value::Operator(_)) => Cell::text(plain(&item, el)),
                                 item => Cell::text(item.item(el)),
                             }
                         }

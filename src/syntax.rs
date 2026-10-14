@@ -2,9 +2,11 @@ use crate::{
     array::FloatWidth,
     number::Math,
     primitive::{OperatorKind, Primitive, Superscript},
+    symbols::canonical,
     Error, ErrorAt, ErrorKind, Number, Source, Span, Value,
 };
 use std::{iter::Peekable, str::CharIndices, sync::{Arc, atomic::{AtomicUsize, Ordering::Relaxed}}};
+use unicode_script::{Script, UnicodeScript};
 
 #[derive(Clone, Debug)]
 pub(crate) enum NodeKind {
@@ -154,19 +156,19 @@ fn digits(chars: &mut Peekable<CharIndices<'_>>) -> usize {
 }
 
 fn real_literal(chars: &mut Peekable<CharIndices<'_>>) -> Result<(), &'static str> {
-    if chars.peek().is_some_and(|(_, c)| *c == '¯') { chars.next(); }
-    if chars.peek().is_some_and(|(_, c)| *c == '∞') {
+    if chars.peek().is_some_and(|(_, c)| canonical(*c) == '¯') { chars.next(); }
+    if chars.peek().is_some_and(|(_, c)| canonical(*c) == '∞') {
         chars.next();
         return Ok(());
     }
     let mut count = digits(chars);
-    if chars.peek().is_some_and(|(_, c)| *c == '.') && chars.clone().nth(1).is_some_and(|(_, c)| c.is_ascii_digit()) {
+    if chars.peek().is_some_and(|(_, c)| canonical(*c) == '.') && chars.clone().nth(1).is_some_and(|(_, c)| c.is_ascii_digit()) {
         chars.next();
         count += digits(chars);
     }
     if count == 0 { return Err("expected digits in numeric literal"); }
     if suffix(chars, EXPONENT) {
-        chars.next_if(|&(_, c)| c == '¯');
+        chars.next_if(|&(_, c)| canonical(c) == '¯');
         if digits(chars) == 0 { return Err("expected exponent digits (use ¯ for a negative exponent)"); }
     }
     Ok(())
@@ -212,9 +214,9 @@ fn width_mark(chars: &mut Peekable<CharIndices<'_>>) -> Option<FloatWidth> {
 
 /// Whether `chars` starts a part of a number: a digit, `¯`, `∞`, or a point before a digit.
 fn number_part(mut chars: impl Iterator<Item = (usize, char)>) -> bool {
-    match chars.next() {
-        Some((_, c)) if c.is_ascii_digit() || matches!(c, '¯' | '∞') => true,
-        Some((_, '.')) => chars.next().is_some_and(|(_, c)| c.is_ascii_digit()),
+    match chars.next().map(|(_, c)| canonical(c)) {
+        Some(c) if c.is_ascii_digit() || matches!(c, '¯' | '∞') => true,
+        Some('.') => chars.next().is_some_and(|(_, c)| c.is_ascii_digit()),
         _ => false,
     }
 }
@@ -237,12 +239,14 @@ fn suffix(chars: &mut Peekable<CharIndices<'_>>, suffix: Suffix) -> bool {
 /// width marker takes `width`. `•vfi` shares `Number::parse` and reads only the plain letters.
 fn literal_number(text: &str, width: FloatWidth) -> Result<Number, ErrorKind> {
     let (text, width) = WIDTHS.iter().find_map(|&(s, w)| text.strip_suffix(s.1).map(|t| (t, w))).unwrap_or((text, width));
-    Number::parse(&text.chars().map(|c| SUFFIXES.iter().find(|s| s.1 == c).and_then(|s| s.0.first()).copied().unwrap_or(c)).collect::<String>(), width)
+    Number::parse(&text.chars().map(canonical).map(|c| SUFFIXES.iter().find(|s| s.1 == c).and_then(|s| s.0.first()).copied().unwrap_or(c)).collect::<String>(), width)
 }
 
 /// A number written inside `[…]ₓ`. An integer's digits read exactly, and a whole float becomes exact.
 fn exact_number(text: &str) -> Result<Number, ErrorKind> {
-    if text.chars().all(|c| c.is_ascii_digit() || c == '¯') { return Number::parse(&format!("{text}ₓ"), FloatWidth::F64); }
+    if text.chars().all(|c| c.is_ascii_digit() || canonical(c) == '¯') {
+        return Number::parse(&format!("{}ₓ", text.chars().map(canonical).collect::<String>()), FloatWidth::F64);
+    }
     literal_number(text, FloatWidth::F64)?.marked_exact().ok_or(ErrorKind::Domain)
 }
 
@@ -272,7 +276,7 @@ fn mark_literals(tokens: &mut [Token]) -> Result<(), Error> {
                             let n = n.and_then(|n| n.to_float_width(w).map_err(|_| ErrorKind::Domain));
                             Value::Number(n.error_at(&token.span, &format!("{} marks numbers", mark.marker()))?)
                         }
-                        (TokenKind::Literal(_), _) if text == "⍬" => zilde(mark.zero()),
+                        (TokenKind::Literal(_), _) if text.chars().map(canonical).eq(['⍬']) => zilde(mark.zero()),
                         _ => continue,
                     };
                     token.kind = TokenKind::Literal(value);
@@ -291,13 +295,15 @@ fn position(chars: &mut Peekable<CharIndices<'_>>, len: usize) -> usize { chars.
 fn run_on(chars: &mut Peekable<CharIndices<'_>>, digit: bool) -> Option<usize> {
     let &(i, c) = chars.peek()?;
     let suffix = SUFFIXES.into_iter().any(|s| suffix_follows(chars, s));
-    ((digit && c.is_ascii_digit()) || c == '.' || suffix).then(|| i + c.len_utf8())
+    ((digit && c.is_ascii_digit()) || canonical(c) == '.' || suffix).then(|| i + c.len_utf8())
 }
 
-/// Whether `c` can start or continue a name: a letter that isn't a glyph, a superscript or a numeric suffix, or `_`, `∆` or
-/// `⍙`. Digits end a name.
+fn han(c: char) -> bool { c >= '\u{2e80}' && c.script() == Script::Han }
+
+/// Whether `c` can start or continue a name: a non-Han letter that isn't a glyph, a superscript or a numeric suffix, or `_`,
+/// `∆` or `⍙`. Digits end a name.
 pub(crate) fn name_char(c: char) -> bool {
-    ((c.is_alphabetic() && !(matches!(c, 'ᵀ' | 'ᵘ') || subscript(c))) || matches!(c, '_' | '∆' | '⍙')) && Primitive::from_glyph(c).is_none()
+    ((c.is_alphabetic() && !(han(c) || matches!(c, 'ᵀ' | 'ᵘ') || subscript(c))) || matches!(c, '_' | '∆' | '⍙')) && Primitive::from_glyph(c).is_none()
 }
 
 const SUPERSCRIPT_DIGITS: &str = "⁰¹²³⁴⁵⁶⁷⁸⁹";
@@ -330,8 +336,8 @@ const DOLLAR: &str = "$ and one letter is a constant ($t, $f, $n, $a or $d) or a
 /// character into the name, and a quoted digit takes the digits after it, so `x_12` is one name. After a dot, digits continue a
 /// key, so `T.q1` names the key `q1`. A lone `_`, before a space, `]`, `)`, `←`, `;`, `⋄` or the end, is the name `_`. Any other
 /// `_` with nothing to quote gives the position after it.
-fn name(chars: &mut Peekable<CharIndices<'_>>, key: bool) -> Result<(), usize> {
-    let lone = |c: Option<&(usize, char)>| c.is_none_or(|&(_, c)| c.is_whitespace() || matches!(c, ']' | ')' | '←' | ';' | '⋄'));
+fn name(chars: &mut Peekable<CharIndices<'_>>, key: bool) -> Result<(), (usize, &'static str)> {
+    let lone = |c: Option<&(usize, char)>| c.is_none_or(|&(_, c)| c.is_whitespace() || matches!(canonical(c), ']' | ')' | '←' | ';' | '⋄'));
     let mut first = true;
     loop {
         match chars.peek() {
@@ -339,10 +345,11 @@ fn name(chars: &mut Peekable<CharIndices<'_>>, key: bool) -> Result<(), usize> {
                 let (i, _) = chars.next().unwrap();
                 if first && lone(chars.peek()) { return Ok(()); }
                 match chars.next() {
+                    Some((at, q)) if han(q) => return Err((at + q.len_utf8(), "Hanzi are reserved for glyph spellings, not names")),
                     Some((_, q)) if !q.is_whitespace() => {
                         if q.is_ascii_digit() { digits(chars); }
                     }
-                    _ => return Err(i + 1),
+                    _ => return Err((i + 1, UNQUOTED)),
                 }
             }
             Some(&(_, c)) if name_char(c) || (key && c.is_ascii_digit()) => {
@@ -390,7 +397,8 @@ fn lex(source: &Arc<Source>, width: FloatWidth) -> Result<Vec<Token>, ParseFailu
 /// Reads the token that starts `chars`, or `None` after white space or a comment.
 fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: FloatWidth) -> Result<Option<TokenKind>, ParseFailure> {
     let len = source.text.len();
-    let Some(&(start, c)) = chars.peek() else { return Ok(None) };
+    let Some(&(start, raw)) = chars.peek() else { return Ok(None) };
+    let c = canonical(raw);
     let span = |end| Span { source: source.clone(), range: start..end };
     Ok(Some(if c.is_ascii_digit() || matches!(c, '¯' | '∞') || (c == '.' && chars.clone().nth(1).is_some_and(|(_, c)| c.is_ascii_digit())) {
         real_literal(chars).map_err(|message| span(position(chars, len)).error(ErrorKind::Syntax, message))?;
@@ -402,7 +410,7 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
         else {
             let rational = suffix(chars, DENOMINATOR);
             if rational {
-                chars.next_if(|&(_, c)| c == '¯');
+                chars.next_if(|&(_, c)| canonical(c) == '¯');
                 if digits(chars) == 0 { return Err(span(position(chars, len)).error(ErrorKind::Syntax, "expected integer denominator").into()); }
             }
             if rational || mark(chars).is_some() {
@@ -414,7 +422,8 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
             .error_at(&span(end), "invalid numeric literal (real values, finite complex components or integer components with ₓ and r required)")?;
         TokenKind::Literal(Value::number(n).unwrap())
     } else if name_char(c) {
-        name(chars, source.text[..start].ends_with('.')).map_err(|end| span(end).error(ErrorKind::Syntax, UNQUOTED))?;
+        let key = source.text[..start].chars().next_back().is_some_and(|c| canonical(c) == '.');
+        name(chars, key).map_err(|(end, message)| span(end).error(ErrorKind::Syntax, message))?;
         TokenKind::Name(source.text[start..position(chars, len)].to_owned())
     } else {
         chars.next();
@@ -484,11 +493,11 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
             '⋄' => TokenKind::Separator,
             '←' => TokenKind::Assign,
             '•' if chars.peek().is_some_and(|&(_, c)| name_char(c)) => {
-                name(chars, false).map_err(|end| span(end).error(ErrorKind::Syntax, UNQUOTED))?;
-                TokenKind::System(source.text[start..position(chars, len)].to_owned())
+                name(chars, false).map_err(|(end, message)| span(end).error(ErrorKind::Syntax, message))?;
+                TokenKind::System(format!("•{}", &source.text[start + raw.len_utf8()..position(chars, len)]))
             }
             '⎕' => TokenKind::Output,
-            ':' if chars.peek().is_some_and(|(_, c)| *c == ':') => {
+            ':' if chars.peek().is_some_and(|(_, c)| canonical(*c) == ':') => {
                 chars.next();
                 TokenKind::ErrorGuard
             }
@@ -514,7 +523,7 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
             c => match (OperatorKind::from_glyph(c), Primitive::from_glyph(c)) {
                 (Some(op), _) => TokenKind::Operator(op),
                 (_, Some(f)) => TokenKind::Function(f),
-                _ => return Err(span(start + c.len_utf8()).error(ErrorKind::Unsupported, format!("{c:?} is not supported yet")).into()),
+                _ => return Err(span(start + raw.len_utf8()).error(ErrorKind::Unsupported, format!("{raw:?} is not supported yet")).into()),
             },
         }
     }))
@@ -531,7 +540,7 @@ pub fn highlight(text: &str) -> Vec<(std::ops::Range<usize>, &'static str)> {
     while let Some(&(start, c)) = chars.peek() {
         let class = match token(&source, &mut chars, FloatWidth::F64) {
             Ok(Some(kind)) => class(&kind, &text[start..position(&mut chars, text.len())]),
-            Ok(None) => (c == '⍝').then_some("comment"),
+            Ok(None) => (canonical(c) == '⍝').then_some("comment"),
             Err(ParseFailure::Incomplete(e) | ParseFailure::Invalid(e)) => {
                 let end = e.span.range.end.max(start + c.len_utf8());
                 while chars.next_if(|&(i, _)| i < end).is_some() {}
@@ -545,7 +554,9 @@ pub fn highlight(text: &str) -> Vec<(std::ops::Range<usize>, &'static str)> {
 
 /// A token's highlight class: its glyph's kind in `symbols`, or the class its kind of token implies.
 fn class(kind: &TokenKind, text: &str) -> Option<&'static str> {
-    if let Some(symbol) = crate::symbols::symbols().iter().find(|s| s.glyph == text) { return Some(symbol.kind); }
+    if let Some(symbol) = text.parse::<char>().ok().and_then(|c| {
+        crate::symbols::symbols().iter().find(|s| s.glyph.chars().eq([canonical(c)]))
+    }) { return Some(symbol.kind); }
     match kind {
         TokenKind::Literal(_) => Some(if text.starts_with(['"', '\'']) { "string" } else { "literal" }),
         TokenKind::Operator(OperatorKind::Super(_)) => Some("monadic-operator"),

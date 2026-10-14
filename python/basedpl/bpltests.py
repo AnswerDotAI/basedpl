@@ -256,12 +256,14 @@ def time_cases(
     setup=None, # BPL that defines the data and its number of items `n`; None: the first `[setup]` section of `tests/speed.txt`
     prefs='', # BPL that runs before `setup`, such as `•prefs ["float":32]`
     threads=1, # Threads that each case's rustymath calls split across, for a scaling check; 0: rustymath's default
+    bpl=None, # The `bpl` executable to time, such as a copy saved before a change; None: the installed one
+    native=False, # Time rustymath's own linear algebra in place of Accelerate, as `Worker`'s `native` does
     timeout=None # Seconds before the worker is closed
 ):
     "Time `cases` in a fresh worker, as `tests/speed.rs` does: the fastest of five runs, per item and in copies of the data."
     speed = _SPEED.read_text() if setup is None else f'[setup]\n{setup}'
     cases = [cases] if isinstance(cases, str) else list(cases)
-    with Worker() as w: r = w.request(dict(timing=dict(speed=speed, prefs=prefs, cases=cases, threads=threads)), timeout)
+    with Worker(bpl, native) as w: r = w.request(dict(timing=dict(speed=speed, prefs=prefs, cases=cases, threads=threads)), timeout)
     if e := r['error']: raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
     return Costs((c['code'], c['seconds']*1e12/r['n'], c['copies']) for c in r['costs'])
 
@@ -294,6 +296,8 @@ def timing_lock():
         yield
 def speed_costs(
     wasm=None, # A directory that `cargo wasm --out` wrote, to time in that browser build, as `tests/wasm-speed.mjs` does; None: a fresh native worker, as `tests/speed.rs` does
+    bpl=None, # The `bpl` executable that a native timing runs, such as a copy saved before a change; None: the installed one
+    native=False, # Time rustymath's own linear algebra in place of Accelerate in a native timing, as `Worker`'s `native` does
     speed=None, # Text in `speed.txt`'s format; None: `tests/speed.txt`
     timeout=None, # Seconds before the timing stops
     cases=None # A case's code, or a list of codes, to time in every section that has it; None: every case
@@ -302,7 +306,7 @@ def speed_costs(
     speed = _SPEED.read_text() if speed is None else speed
     if isinstance(cases, str): cases = [cases]
     if wasm is None:
-        with Worker() as w: r = w.request(dict(costs=dict(speed=speed, cases=cases)), timeout)
+        with Worker(bpl, native) as w: r = w.request(dict(costs=dict(speed=speed, cases=cases)), timeout)
         if e := r['error']: raise ValueError(e['message'])
         rows = r['costs']
     else:

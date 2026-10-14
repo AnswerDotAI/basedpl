@@ -11,8 +11,12 @@ crate-type = ["cdylib", "rlib"]
 doctest = false
 test = false
 
+[features]
+default = ["native"]
+native = ["basedpl/native"]
+
 [dependencies]
-basedpl = { path = ".." }
+basedpl = { path = "..", default-features = false }
 bytemuck = ">=1.25.2, <2"
 half = ">=2.7.1, <3"
 num-bigint = ">=0.4.6, <0.5"

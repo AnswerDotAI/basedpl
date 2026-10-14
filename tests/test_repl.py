@@ -57,11 +57,11 @@ def test_terminal_symbol_entry_and_exit(tmp_path):
         # Dead keys: Backspace cancels, a plain key types both, Alt-q starts its own, - then 1 types ⁻¹, and Space types ^
         enter('"\x1bo\x7fx\x1box\x1bo\x1bqt\x1boc\x1bob\x1bon\x1b6-1\x1b6 "\r', '\r\nx○x○⌻⍝⍎⍕⁻¹^\r\n')
         enter('+/1\x1bl3\r', '\r\n6\r\n')
-        enter('界`assign `io\t4\r', '\r\n')  # space, Tab, Unicode byte offsets
-        enter('+/界\r', '\r\n6\r\n')
+        enter('한`assign `io\t4\r', '\r\n')  # space, Tab, Unicode byte offsets
+        enter('+/한\r', '\r\n6\r\n')
         enter('2`times3+4\r', '\r\n14\r\n')  # delimiter is retained
         enter('sum`assign +`reduce\r', '\r\n')  # Enter accepts and submits
-        enter('sum 界\r', '\r\n6\r\n')
+        enter('sum 한\r', '\r\n6\r\n')
         enter('`iotx\x7fa3\r', '\r\n0 1 2\r\n')  # backspace while entering a name
         data = enter('`de\t \r', 'UNSUPPORTED')  # ambiguous Tab must not choose a glyph
         assert b'`de ' in data

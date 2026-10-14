@@ -145,7 +145,10 @@ impl OperatorKind {
         OperatorInfo { glyph, names, left, right }
     }
     pub(crate) fn glyph(self) -> &'static str { self.info().glyph }
-    pub(crate) fn from_glyph(c: char) -> Option<Self> { Self::ALL.into_iter().find(|op| op.info().glyph.chars().eq([c])) }
+    pub(crate) fn from_glyph(c: char) -> Option<Self> {
+        let c = crate::symbols::canonical(c);
+        Self::ALL.into_iter().find(|op| op.info().glyph.chars().eq([c]))
+    }
     pub(crate) fn all() -> impl Iterator<Item = Self> { Self::ALL.into_iter() }
 }
 
@@ -503,7 +506,7 @@ impl Primitive {
     /// The primitive a glyph names.
     pub(crate) fn from_glyph(c: char) -> Option<Self> {
         static GLYPHS: std::sync::OnceLock<HashMap<char, Primitive>> = std::sync::OnceLock::new();
-        GLYPHS.get_or_init(|| Self::ALL.into_iter().map(|p| (p.info().glyph.chars().next().unwrap(), p)).collect()).get(&c).copied()
+        GLYPHS.get_or_init(|| Self::ALL.into_iter().map(|p| (p.info().glyph.chars().next().unwrap(), p)).collect()).get(&crate::symbols::canonical(c)).copied()
     }
     pub(crate) fn all() -> impl Iterator<Item = Self> { Self::ALL.into_iter() }
     pub(crate) fn call(self, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> { self.call_axis(left, right, None, span) }

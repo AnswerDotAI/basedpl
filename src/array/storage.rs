@@ -1,7 +1,8 @@
-//! Array storage: the compact kinds and integer widths, the borrowed `Items` view, and `Gather` with its `Steps`, which builds new
-//! storage from the items of existing arrays.
+//! Array storage: the compact kinds and integer widths, the borrowed `Items` view, and `Gather`, which builds new storage from the items
+//! of existing arrays. `Gather::walk` reads them through rustymath's `gather::Steps`.
 
 use super::*;
+pub(crate) use rustymath::gather::Steps;
 
 /// Declares the owned buffers `$owned`, their borrowed view `$view` and the tag `$tag` that names a variant, with one variant for each
 /// element type. Code that needs a variant's element type matches on the variant, as `with_ints!` does.
@@ -728,13 +729,13 @@ impl Gather {
         let d = self.mixed();
         for (k, &o) in offsets.iter().enumerate() { d[o] = source.at(pick(k)) }
     }
-    /// Copies the items of `source` that `steps` reach from `base`: one `Steps` for each axis, with the last varying fastest. A `None`
-    /// offset gives the prototype of `source` in place of the item. Compact storage is copied in one typed loop.
+    /// Copies the items of `source` that `steps` reach from `base`, through rustymath's `gather::walk`: one `Steps` for each axis, with
+    /// the last varying fastest. A `None` offset gives the prototype of `source` in place of the item. Compact storage is copied in one
+    /// typed loop.
     pub(crate) fn walk(&mut self, source: &Value, base: usize, steps: &[Steps]) {
-        let (base, steps) = Steps::simplify(base, steps);
         self.follow(source_kind(source));
-        if copy_into!(&mut self.data, source.as_items(), |d, s, f| walk_into(d, s, &f, base, &steps)) { return; }
-        walk_values(self.mixed(), source, &std::cell::OnceCell::new(), base, &steps);
+        if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::walk(d, s, base, steps, fill_of(s), f)) { return; }
+        walk_values(self.mixed(), source, &std::cell::OnceCell::new(), base, steps);
     }
     /// The gathered array, laid out by `layout`. An empty array takes `prototype`.
     pub(crate) fn finish(self, layout: Layout, prototype: impl Prototype) -> Result<Value, ErrorKind> {
@@ -748,153 +749,12 @@ impl Gather {
     }
 }
 
-/// The source offsets that one axis of a gathered result reads, as `Gather::walk` takes them. Regular patterns are held as a formula,
-/// so a long axis needs no table. A `None` offset gives a fill.
-#[derive(Clone, Debug)]
-pub(crate) enum Steps {
-    /// `len` offsets from `start`, each `step` further on. A negative step walks backwards.
-    Stride { start: usize, len: usize, step: isize },
-    /// `len` positions from `start` along an axis of `size` items with `stride`. The start may lie outside the axis, and a position
-    /// outside gives a fill.
-    Clipped { start: i128, len: usize, size: usize, stride: usize },
-    /// All `len` positions of an axis with `stride`, from position `shift`, wrapping round to the start.
-    Rotated { shift: usize, len: usize, stride: usize },
-    /// Any offsets.
-    Table(Vec<Option<usize>>),
-}
+/// The fill of compact storage that holds `s`'s element type, which is that storage's prototype.
+fn fill_of<S: Element>(_: &[S]) -> S { S::FILL }
 
-impl Steps {
-    /// Every position of an axis of `len` items with `stride`, in order.
-    pub(crate) fn along(len: usize, stride: usize) -> Self { Self::Stride { start: 0, len, step: stride as isize } }
-    pub(crate) fn len(&self) -> usize {
-        match self { Self::Stride { len, .. } | Self::Clipped { len, .. } | Self::Rotated { len, .. } => *len, Self::Table(t) => t.len() }
-    }
-    pub(crate) fn get(&self, j: usize) -> Option<usize> {
-        match *self {
-            Self::Stride { start, step, .. } => Some(start.wrapping_add_signed(step * j as isize)),
-            Self::Clipped { start, size, stride, .. } => {
-                let position = start + j as i128;
-                (0..size as i128).contains(&position).then(|| position as usize * stride)
-            }
-            Self::Rotated { shift, len, stride } => Some((shift + j) % len * stride),
-            Self::Table(ref t) => t[j],
-        }
-    }
-    pub(crate) fn offsets(&self) -> impl ExactSizeIterator<Item = Option<usize>> + '_ { (0..self.len()).map(|j| self.get(j)) }
-    /// Every sum of one offset from each of `tables`, in the order that `Gather::walk` visits them. No table may reach a fill.
-    pub(crate) fn combined(tables: &[impl std::borrow::Borrow<Self>]) -> Vec<usize> {
-        tables.iter().fold(vec![0], |sums, t| sums.iter().flat_map(|&s| t.borrow().offsets().map(move |o| s + o.expect("no fills"))).collect())
-    }
-    /// `steps` without axes of one position, whose offset moves into `base`, and with neighbouring runs merged into one longer run.
-    fn simplify(mut base: usize, steps: &[Self]) -> (usize, Vec<Cow<'_, Self>>) {
-        let mut kept: Vec<Cow<Self>> = Vec::with_capacity(steps.len());
-        for s in steps {
-            if let Some(o) = if s.len() == 1 { s.get(0) } else { None } {
-                base += o;
-                continue;
-            }
-            kept.push(Cow::Borrowed(s));
-            while let [.., outer, inner] = kept.as_slice() {
-                let (&Self::Stride { start: a, len: m, step }, &Self::Stride { start: b, len: n, step: 1 }) = (outer.as_ref(), inner.as_ref()) else { break };
-                if step != n as isize { break; }
-                kept.truncate(kept.len() - 2);
-                kept.push(Cow::Owned(Self::Stride { start: a + b, len: m * n, step: 1 }));
-            }
-        }
-        (base, kept)
-    }
-}
-
-/// The longest run of adjacent items that `walk_into` copies item by item. A longer run copies with `extend_from_slice`.
-const RUN: usize = 8;
-/// The most items below one axis that `walk_into` reaches through a table of their offsets.
-const CELL: usize = 64;
-
-/// Appends the items of `s` that `steps` reach from `base`, each converted by `f`. A fill is the zero of the source type, which is the
-/// prototype of compact storage. The last axis copies whole slices where its pattern allows.
-fn walk_into<S: Element + 'static, D: Clone + 'static>(d: &mut Vec<D>, s: &[S], f: &impl Fn(S) -> D, base: usize, steps: &[Cow<Steps>]) {
-    let fill = || f(S::FILL);
-    let Some((axis, rest)) = steps.split_first() else { return d.push(f(s[base])) };
-    if let [inner] = rest {
-        if let (&Steps::Stride { start: a, len: m, step: 1 }, &Steps::Stride { start: b, len: n, step }) = (&**axis, &**inner) {
-            if step > 1 { return transpose_into(d, &s[base + a + b..], f, fill(), m, n, step as usize); }
-        }
-        // One run of `n` adjacent items for each offset along `axis`, as windows give. A run longer than `RUN` copies fastest with
-        // `extend_from_slice`, which needs the source and the buffer to hold one type.
-        if let Steps::Stride { start: b, len: n, step: 1 } = **inner {
-            let same = if n > RUN { (d as &mut dyn std::any::Any).downcast_mut::<Vec<S>>() } else { None };
-            if let Some(d) = same {
-                d.reserve(axis.len() * n);
-                for o in axis.offsets() { match o { Some(o) => d.extend_from_slice(&s[base + b + o..][..n]), None => d.extend(std::iter::repeat_n(S::FILL, n)) } }
-                return;
-            }
-        }
-    }
-    let width: usize = rest.iter().map(|s| s.len()).product();
-    // Each offset along `axis` starts a copy of the same few items, at the offsets that `rest` reaches from it, as windows give. One
-    // table of those offsets serves every start. Along a stride, `rustymath::gather::windows` makes each start's items one array, written
-    // straight into spare capacity, so the loop over starts makes no call. Other axes write the fills first, which a missing start keeps.
-    let run = match rest.last().map(|t| &**t) { Some(&Steps::Stride { len, step: 1, .. }) => len, _ => 1 };
-    if !rest.is_empty() && (1..=CELL).contains(&width) && run <= RUN && rest.iter().all(|t| matches!(**t, Steps::Stride { .. })) {
-        let cell = Steps::combined(rest);
-        if let Steps::Stride { start: a, len: m, step } = **axis {
-            macro_rules! widths { ($($w:literal)+) => { match width { $($w => return rustymath::gather::windows::<$w, _, _>(d, s, base + a, step, m, cell.as_slice().try_into().expect("`cell` holds `width` offsets"), |x| f(x)),)+ _ => {} } } }
-            widths!(2 3 4 5 6 7 8 9);
-        }
-        let start = d.len();
-        d.resize(start + axis.len() * width, fill());
-        for (out, o) in d[start..].chunks_exact_mut(width).zip(axis.offsets()) {
-            let Some(o) = o else { continue };
-            let s = &s[base + o..];
-            for (slot, &c) in out.iter_mut().zip(&cell) { *slot = f(s[c]) }
-        }
-        return;
-    }
-    if !rest.is_empty() {
-        for j in 0..axis.len() { match axis.get(j) { Some(o) => walk_into(d, s, f, base + o, rest), None => d.extend(std::iter::repeat_n(fill(), width)) } }
-        return;
-    }
-    if axis.len() == 0 { return; }
-    // Each loop gets the source from `base` onwards by value, so that the compiler keeps its bounds in registers.
-    let s = &s[base..];
-    let slice = move |start: usize, len: usize| s[start..start + len].iter().map(|&x| f(x));
-    match **axis {
-        Steps::Stride { start, len, step: 1 } => d.extend(slice(start, len)),
-        Steps::Stride { start, len, step: -1 } => d.extend(slice(start + 1 - len, len).rev()),
-        Steps::Stride { start, len, step } if step > 0 => {
-            let (s, step) = (&s[start..], step as usize);
-            d.extend((0..len).map(move |j| f(s[j * step])))
-        }
-        Steps::Rotated { shift, len, stride: 1 } => {
-            d.extend(slice(shift, len - shift));
-            d.extend(slice(0, shift));
-        }
-        Steps::Clipped { start, len, size, stride: 1 } => {
-            let (lo, hi) = (start.clamp(0, size as i128), (start + len as i128).clamp(0, size as i128));
-            let before = (lo - start).clamp(0, len as i128) as usize;
-            let middle = (hi - lo).max(0) as usize;
-            d.extend(std::iter::repeat_n(fill(), before));
-            d.extend(slice(lo as usize, middle));
-            d.extend(std::iter::repeat_n(fill(), len - before - middle));
-        }
-        _ => d.extend(axis.offsets().map(move |o| o.map_or_else(fill, |o| f(s[o])))),
-    }
-}
-
-/// Appends `m` rows of `n` items, where item `j` of row `i` is `f(s[i + j * stride])`, as `walk_into` does for a transposed matrix.
-/// Each block of 8 result rows is filled first, then overwritten by rustymath's tiled `transpose_into`.
-fn transpose_into<S: Element, D: Clone>(d: &mut Vec<D>, s: &[S], f: &impl Fn(S) -> D, fill: D, m: usize, n: usize, stride: usize) {
-    for i0 in (0..m).step_by(8) {
-        let (start, rows) = (d.len(), 8.min(m - i0));
-        d.resize(start + rows * n, fill.clone());
-        // `|x| f(x)` calls `f` directly. Passing `f` calls it through `&F`'s `Fn` shim, which LLVM left out of line, doubling the cost.
-        rustymath::linalg::transpose_into(&s[i0..], stride, &mut d[start..], n, [n, rows], |x| f(x));
-    }
-}
-
-/// `walk_into` for mixed storage, which reads each item as a value. `fill` builds `source`'s prototype at the first missing offset
-/// only. A prototype is the recursive fill of the first item, as large as that item.
-fn walk_values(d: &mut Vec<Value>, source: &Value, fill: &std::cell::OnceCell<Value>, base: usize, steps: &[Cow<Steps>]) {
+/// `rustymath::gather::walk` for mixed storage, which reads each item as a value. `fill` builds `source`'s prototype at the first
+/// missing offset only. A prototype is the recursive fill of the first item, as large as that item.
+fn walk_values(d: &mut Vec<Value>, source: &Value, fill: &std::cell::OnceCell<Value>, base: usize, steps: &[Steps]) {
     let Some((axis, rest)) = steps.split_first() else { return d.push(source.at(base)) };
     let width = rest.iter().map(|s| s.len()).product();
     for j in 0..axis.len() {

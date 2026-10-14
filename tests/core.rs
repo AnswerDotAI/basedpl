@@ -218,6 +218,31 @@ fn boxed_display_and_function_trees() {
     assert_eq!(s.eval("1 2").output_text(), ["1 2"]);
     let wide = s.eval("]Display '界' 'a'").output_text().join("\n");
     assert!(wide.contains("界"));
+    assert!(s.eval(r#"•prefs ["notation":"simplified" "trees":$f]"#).error.is_none());
+    assert_eq!(s.eval("+/÷≢").output_text(), ["加总除数"]);
+    assert_eq!(s.eval("/").output_text(), ["总"]);
+    let product = s.eval("+.×");
+    assert_eq!(product.output_text(), ["加内乘"]);
+    let product = product.function.unwrap();
+    assert_eq!(product.bpl(), "+.×");
+    assert_eq!(product.parts().unwrap().0, ".");
+    assert_eq!(s.eval("f←{加总乙} ⋄ f").output_text(), ["{加总乙}"]);
+    let array = s.eval(r#"[+/ "总"]"#);
+    assert_eq!(array.output_text(), [r#"[加总 "总"]"#]);
+    assert_eq!(array.value.unwrap().literal(), r#"[+/ "总"]"#);
+    let key = AplValue::Function(s.late_bound("1键").unwrap());
+    assert_eq!(AplValue::from_parts([1], vec![key.clone()], key).unwrap().literal(), "[(1键)]");
+    let power = AplValue::Function(s.late_bound("f⍣永").unwrap());
+    assert_eq!(AplValue::from_parts([], vec![power.clone()], power).unwrap().literal(), "(f⍣永)ᵘ");
+    assert!(s.eval(r#"•prefs ["notation":"traditional"]"#).error.is_none());
+    assert_eq!(s.eval("+/÷≢").output_text(), ["加總除數"]);
+    s.eval(r#"•prefs ["trees":$t]"#);
+    let tree = s.eval("avg").output_text().join("\n");
+    for part in ["總", "加", "除", "數"] { assert!(tree.contains(part)); }
+    assert!(s.eval("]dissect 1+2").output_text()[0].contains('加'));
+    assert!(s.eval(r#"•prefs ["notation":"unknown"]"#).error.is_some());
+    s.eval("f←{注 help\n乙}");
+    assert_eq!(s.inspect("f").unwrap().help, "help");
 }
 
 #[test]
@@ -372,15 +397,69 @@ fn structural_completeness_and_source_lifetime() {
 }
 
 #[test]
+fn hanzi_spellings_and_language() {
+    use basedpl::symbols::{canonical, symbols, Notation};
+    let mut seen = std::collections::HashMap::new();
+    let mut s = Session::new();
+    assert_eq!(symbols().len(), 98);
+    for symbol in symbols() {
+        for (aliases, notation) in symbol.hanzi.into_iter().zip([Notation::Simplified, Notation::Traditional]) {
+            assert!(!aliases.is_empty(), "{} needs Hanzi spellings", symbol.glyph);
+            assert_eq!(notation.glyph(symbol.glyph), &aliases[..aliases.chars().next().unwrap().len_utf8()]);
+            for alias in aliases.chars() {
+                assert!(seen.insert(alias, symbol.glyph).is_none_or(|glyph| glyph == symbol.glyph), "duplicate alias {alias}");
+                assert_eq!(canonical(alias).to_string(), symbol.glyph);
+                if matches!(symbol.kind, "function" | "monadic-operator" | "dyadic-operator") {
+                    assert_eq!(s.inspect(&alias.to_string()).unwrap().source, symbol.glyph);
+                }
+            }
+        }
+    }
+    equiv_in!(&mut s;
+        "mean是加总除数句mean 2 4 9" => "5",
+        "加累 2 3 4" => "2 5 9",
+        "乘表己至3" => "[1 2 3⋄2 4 6⋄3 6 9]",
+        "加總 1 2 3" => "6",
+        "負3减负1" => "¯2",
+        "1e负3加1r负4" => "1e¯3+1r¯4",
+        "[负3 负1]ₓ" => "[¯3 ¯1]ₓ",
+        "[空]ₛ" => "[⍬]ₛ",
+        "负永" => "¯∞",
+        "{甲是2句甲加乙}3" => "5",
+        "{永键键7句除'a'}0" => "7",
+        "op是{丙乙}句加op 3" => "3",
+        "r是[\"a1\":7]句r内a1" => "7",
+        "\"加总 注 负永\"" => "\"加总 注 负永\"",
+        "'加'" => "'加'",
+        "加总 1 2 3 注 汉字注释" => "6",
+        "系prefs [\"float\":32]句系storage 1" => "\"float32\"",
+    );
+    fails_in(&mut s, Syntax, &["_加←1", "x_語←1"]);
+    fails_in(&mut s, Unsupported, &["語←1", "𠀀←1", "x赋1", "x賦1"]);
+    assert_eq!(s.name_class("系time"), 3);
+    assert_eq!(s.inspect("系time").unwrap().source, "•time");
+    assert!(s.set("乙", number(1)).is_err() && !s.erase("乙"));
+    equiv("{系nc \"乙\"}0", "2ₓ");
+    // Reserving Han does not reserve other scripts used in names.
+    equiv("かな←2 ⋄ 한글←3 ⋄ かな+한글", "5");
+    let code = "加总 1 2句語";
+    let error = s.eval(code).error.unwrap();
+    assert_eq!(error.span.range, 13..16);
+    assert_eq!(error.span.source.text, code);
+}
+
+#[test]
 fn highlight_classes_and_code_context() {
     let classes = |text: &'static str| basedpl::highlight(text).into_iter().map(|(range, class)| (&text[range], class)).collect::<Vec<_>>();
     let expected = [("⍵", "argument"), ("∘", "dyadic-operator"), ("+", "function"), ("¨", "monadic-operator"), ("\"a+b\"", "string"), ("⍝ c+d", "comment")];
     assert_eq!(classes("⍵∘+¨\"a+b\" ⍝ c+d"), expected);
+    assert_eq!(classes("乙承加遍\"加负\" 注 中文"), [("乙", "argument"), ("承", "dyadic-operator"), ("加", "function"), ("遍", "monadic-operator"), ("\"加负\"", "string"), ("注 中文", "comment")]);
     // An unclosed string, as while typing, runs to the end of the text.
     assert_eq!(classes("x←1+\"a+"), [("←", "syntax"), ("1", "literal"), ("+", "function"), ("\"a+", "string")]);
     // The end of the text is in code unless it is inside a comment or an unclosed literal.
     assert!(basedpl::in_code("\"a\"+") && basedpl::in_code("1 ⍝ c\n"));
     assert!(!basedpl::in_code("1+\"a") && !basedpl::in_code("1 ⍝ c") && !basedpl::in_code("'"));
+    assert!(!basedpl::in_code("1 注 中文") && basedpl::in_code("1 注 中文\n"));
 }
 
 #[test]
@@ -610,8 +689,8 @@ fn lexical_frames_are_reclaimed() {
 #[test]
 fn diagnostic_width_and_call_context() {
     let mut s = Session::new();
-    let error = s.eval("界←1 ⋄\t界÷'a'").error.unwrap();
-    assert_eq!(error.to_string(), "DOMAIN ERROR: expected numeric elements\n --> <input>:1:11\n界←1 ⋄  界÷'a'\n          ^");
+    let error = s.eval("한←1 ⋄\t한÷'a'").error.unwrap();
+    assert_eq!(error.to_string(), "DOMAIN ERROR: expected numeric elements\n --> <input>:1:11\n한←1 ⋄  한÷'a'\n          ^");
     assert!(s.eval_source(Source::new("old.bpl", "bad←{1÷⍵} ⋄ outer←{bad ⍵}"), EvalOptions::default()).error.is_none());
     let e = s.eval("outer 'a'").error.unwrap();
     assert_eq!(&e.span.source.text[e.span.range.clone()], "÷");

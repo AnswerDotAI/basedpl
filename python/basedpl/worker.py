@@ -1,5 +1,5 @@
 "Persistent JSON-lines worker with cooperative interruption and a hard timeout fallback."
-import json, math, queue, subprocess, sysconfig, threading
+import json, math, os, queue, subprocess, sysconfig, threading
 from pathlib import Path
 from collections import deque
 from decimal import Decimal
@@ -7,11 +7,15 @@ from . import BplError, _output_text, _written
 
 class Worker:
     "One request at a time. Interrupt from another thread; never retry a request automatically."
-    def __init__(self, command=None):
-        # The wheel installs the native `bpl` beside the environment's other scripts.
-        if command is None: command = (Path(sysconfig.get_path('scripts'))/'bpl', '--worker')
-        self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            encoding='utf-8', bufsize=1, start_new_session=True)
+    def __init__(
+        self,
+        bpl=None, # The `bpl` executable to run, such as a copy saved before a change; None: the one the wheel installs beside the environment's other scripts
+        native=False # Run rustymath's own linear algebra in place of Accelerate, through `RUSTYMATH_NATIVE=1`, in a macOS build with rustymath's `native` feature
+    ):
+        if bpl is None: bpl = Path(sysconfig.get_path('scripts'))/'bpl'
+        env = {**os.environ, 'RUSTYMATH_NATIVE': '1'} if native else None
+        self.process = subprocess.Popen((bpl, '--worker'), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            encoding='utf-8', bufsize=1, start_new_session=True, env=env)
         self._replies, self._stderr = queue.Queue(), deque(maxlen=30)
         self._write_lock, self._request_lock = threading.Lock(), threading.Lock()
         self._id, self._active = 0, None

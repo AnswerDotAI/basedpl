@@ -4,6 +4,7 @@ use crate::{
     execution::Context,
     primitive::{integer, push_window, FoldKind, OperandKind, OperatorKind, Primitive, Selection, Superscript, Targets, Windows},
     selection::SelectionKind,
+    symbols::Notation,
     syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind},
     DomainAt, Error, ErrorAt, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value,
 };
@@ -147,16 +148,16 @@ impl FunctionNode {
         }
     }
     /// The node's label in a function tree: its glyph, or its source for a node without operands.
-    fn label(&self) -> String {
+    fn label(&self, notation: Notation) -> String {
         match self {
-            Self::Primitive(p) => p.glyph().to_string(),
-            Self::System(f) => f.name.into(),
+            Self::Primitive(p) => notation.glyph(p.glyph()).into(),
+            Self::System(f) => f.name.strip_prefix('•').map_or_else(|| f.name.into(), |name| format!("{}{name}", notation.glyph("•"))),
             Self::LateBound(_, span) => span.source.text.clone(),
             Self::Defined(c) | Self::Derived(c, ..) => c.text().into(),
-            Self::Fold(_, h) => h.glyph().into(),
+            Self::Fold(_, h) => notation.glyph(h.glyph()).into(),
             Self::Inverse(_) => "⁻¹".into(),
-            Self::Axis(..) => "⍠".into(),
-            Self::Modified(op, _) | Self::Composed(op, _) => op.glyph().into(),
+            Self::Axis(..) => notation.glyph("⍠").into(),
+            Self::Modified(op, _) | Self::Composed(op, _) => notation.glyph(op.glyph()).into(),
             Self::Fork(_) => "fork".into(),
         }
     }
@@ -295,53 +296,52 @@ impl Function {
         };
         Self::new(N::Fork(tines), span).map(Some)
     }
-    fn tree(&self, budget: &mut usize) -> crate::display::Tree {
+    fn tree(&self, notation: Notation, budget: &mut usize) -> crate::display::Tree {
         use crate::display::Tree;
         if *budget == 0 { return Tree::leaf("…"); }
         *budget -= 1;
         let node = self.node();
-        Tree { label: node.label(), children: node.operands().iter().map(|a| a.tree(budget)).collect() }
+        Tree { label: node.label(notation), children: node.operands().iter().map(|a| a.tree(notation, budget)).collect() }
     }
-    fn text(&self, budget: &mut usize) -> String {
+    pub(crate) fn text(&self, notation: Notation, budget: &mut usize) -> String {
         if *budget == 0 { return "…".into(); }
         *budget -= 1;
         match self.node() {
-            FunctionNode::Primitive(p) => p.glyph().to_string(),
-            FunctionNode::System(f) => f.name.into(),
+            FunctionNode::Primitive(_) | FunctionNode::System(_) => self.node().label(notation),
             FunctionNode::LateBound(_, span) => span.source.text.clone(),
             FunctionNode::Defined(c) => c.text().into(),
-            FunctionNode::Fold(f, h) => format!("{}{}", f.left_text(budget), h.glyph()),
-            FunctionNode::Inverse(f) => f.superscripted("⁻¹", budget),
-            FunctionNode::Axis(f, a) => format!("{}⍠{}", f.left_text(budget), a.operand()),
-            FunctionNode::Modified(op, a) => format!("{}{}", a.left_text(budget), op.glyph()),
-            FunctionNode::Composed(op, [a, b]) => format!("{}{}{}", a.left_text(budget), op.glyph(), b.right_text(budget)),
+            FunctionNode::Fold(f, h) => format!("{}{}", f.left_text(notation, budget), notation.glyph(h.glyph())),
+            FunctionNode::Inverse(f) => f.superscripted("⁻¹", notation, budget),
+            FunctionNode::Axis(f, a) => format!("{}{}{}", f.left_text(notation, budget), notation.glyph("⍠"), a.operand(notation)),
+            FunctionNode::Modified(op, a) => format!("{}{}", a.left_text(notation, budget), notation.glyph(op.glyph())),
+            FunctionNode::Composed(op, [a, b]) => format!("{}{}{}", a.left_text(notation, budget), notation.glyph(op.glyph()), b.right_text(notation, budget)),
             FunctionNode::Fork(fs) => {
                 // Tines sit side by side, with a space only where two would read as one token.
-                let word = |c: char| crate::syntax::name_char(c) || c.is_ascii_digit() || "¯.•⎕\"'".contains(c);
+                let word = |c: char| { let c = crate::symbols::canonical(c); crate::syntax::name_char(c) || c.is_ascii_digit() || "¯.•⎕\"'".contains(c) };
                 let mut text = String::new();
                 for f in fs {
-                    let tine = f.left_text(budget);
+                    let tine = f.left_text(notation, budget);
                     if text.chars().last().is_some_and(word) && tine.chars().next().is_some_and(word) { text.push(' '); }
                     text.push_str(&tine);
                 }
                 text
             }
-            FunctionNode::Derived(c, a, b) => format!("{}{}{}", a.left_text(budget), c.text(), b.as_ref().map_or(String::new(), |b| b.right_text(budget))),
+            FunctionNode::Derived(c, a, b) => format!("{}{}{}", a.left_text(notation, budget), c.text(), b.as_ref().map_or(String::new(), |b| b.right_text(notation, budget))),
         }
     }
     /// An operator takes the whole function to its left, so only a train needs parentheses there.
-    fn left_text(&self, budget: &mut usize) -> String {
-        if matches!(self.node(), FunctionNode::Fork(_)) { format!("({})", self.text(budget)) } else { self.text(budget) }
+    fn left_text(&self, notation: Notation, budget: &mut usize) -> String {
+        if matches!(self.node(), FunctionNode::Fork(_)) { format!("({})", self.text(notation, budget)) } else { self.text(notation, budget) }
     }
     /// The function with the superscript `mark` after it. Text that ends in a number goes in parentheses, because a
     /// superscript there would apply to the number. So does text with a space, which would split the run.
-    pub(crate) fn superscripted(&self, mark: &str, budget: &mut usize) -> String {
-        let text = self.left_text(budget);
-        if text.contains(' ') || text.ends_with(|c: char| c.is_ascii_digit() || matches!(c, '∞' | 'ₓ')) { format!("({text}){mark}") } else { format!("{text}{mark}") }
+    pub(crate) fn superscripted(&self, mark: &str, notation: Notation, budget: &mut usize) -> String {
+        let text = self.left_text(notation, budget);
+        if text.contains(' ') || text.ends_with(|c: char| c.is_ascii_digit() || matches!(crate::symbols::canonical(c), '∞' | 'ₓ')) { format!("({text}){mark}") } else { format!("{text}{mark}") }
     }
     /// An operator takes one token to its right, so anything larger than one token needs parentheses there.
-    fn right_text(&self, budget: &mut usize) -> String {
-        let text = self.text(budget);
+    fn right_text(&self, notation: Notation, budget: &mut usize) -> String {
+        let text = self.text(notation, budget);
         let token = match self.node() {
             FunctionNode::Primitive(_) | FunctionNode::System(_) | FunctionNode::Defined(_) => true,
             FunctionNode::LateBound(..) => text.chars().all(crate::syntax::name_char),
@@ -609,7 +609,7 @@ impl Function {
 }
 
 impl Function {
-    pub fn bpl(&self) -> String { self.text(&mut 1000) }
+    pub fn bpl(&self) -> String { self.text(Notation::Apl, &mut 1000) }
     /// The native call behind a system function.
     pub(crate) fn system_call(&self) -> Option<&crate::system::Call> { match self.node() { FunctionNode::System(f) => Some(&f.call), _ => None } }
     /// The name of the operator, train or composition that builds this function, and its operands. `None` for a dfn or a name.
@@ -620,7 +620,7 @@ impl Function {
             // Python names these two nodes with words.
             FunctionNode::Inverse(_) => "inverse".into(),
             FunctionNode::Axis(..) => "axis".into(),
-            node => node.label(),
+            node => node.label(Notation::Apl),
         };
         Some((label, node.operands()))
     }
@@ -633,7 +633,8 @@ impl Function {
 
     /// The primitive function with glyph `name`, or the system function `name`, which starts with `•`.
     pub fn builtin(name: &str) -> Option<Self> {
-        if name.starts_with('•') { return crate::system::lookup(name); }
+        let first = name.chars().next()?;
+        if crate::symbols::canonical(first) == '•' { return crate::system::lookup(&format!("•{}", &name[first.len_utf8()..])); }
         name.parse::<char>().ok().and_then(Primitive::from_glyph).map(Self::primitive)
     }
 
@@ -769,11 +770,11 @@ fn constant_operand(kind: OperandKind, a: Operand, span: &Span) -> Result<Operan
 }
 
 impl OperatorNode {
-    fn text(&self) -> String {
+    fn text(&self, notation: Notation) -> String {
         match self {
             Self::Defined(c) => c.text().into(),
-            Self::Primitive(op) => op.glyph().to_string(),
-            Self::Bound(op, right) => format!("{}({})", op.text(), right.text(&mut 1000)),
+            Self::Primitive(op) => notation.glyph(op.glyph()).into(),
+            Self::Bound(op, right) => format!("{}({})", op.text(notation), right.text(notation, &mut 1000)),
         }
     }
     fn is_dyadic(&self) -> bool {
@@ -807,6 +808,7 @@ impl OperatorNode {
 }
 
 impl Operator {
+    pub(crate) fn text(&self, notation: Notation) -> String { self.0.text(notation) }
     pub(crate) fn environment(&self) -> Option<usize> { self.0.environment() }
     /// The function `f op` or `f op g` derives, with `left` as `f` and `right` as `g`.
     pub fn derive(&self, left: Operand, right: Option<Operand>) -> Result<Function, Error> {
@@ -821,14 +823,14 @@ impl Operator {
     }
 }
 
-impl std::fmt::Display for Operator { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(&self.0.text()) } }
+impl std::fmt::Display for Operator { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(&self.text(Notation::Apl)) } }
 
 impl Operand {
-    fn text(&self, budget: &mut usize) -> String { match self { Self::Value(a) => a.literal(), Self::Function(f) => f.text(budget) } }
-    fn left_text(&self, budget: &mut usize) -> String { match self { Self::Value(a) => a.operand(), Self::Function(f) => f.left_text(budget) } }
-    fn right_text(&self, budget: &mut usize) -> String { match self { Self::Value(a) => a.operand(), Self::Function(f) => f.right_text(budget) } }
-    fn tree(&self, budget: &mut usize) -> crate::display::Tree {
-        match self { Self::Function(f) => f.tree(budget), _ => crate::display::Tree::leaf(self.text(budget)) }
+    fn text(&self, notation: Notation, budget: &mut usize) -> String { match self { Self::Value(a) => a.source(crate::display::Elide { notation, ..crate::display::Elide::NONE }), Self::Function(f) => f.text(notation, budget) } }
+    fn left_text(&self, notation: Notation, budget: &mut usize) -> String { match self { Self::Value(a) => a.operand(notation), Self::Function(f) => f.left_text(notation, budget) } }
+    fn right_text(&self, notation: Notation, budget: &mut usize) -> String { match self { Self::Value(a) => a.operand(notation), Self::Function(f) => f.right_text(notation, budget) } }
+    fn tree(&self, notation: Notation, budget: &mut usize) -> crate::display::Tree {
+        match self { Self::Function(f) => f.tree(notation, budget), _ => crate::display::Tree::leaf(self.text(notation, budget)) }
     }
 
     fn from_value(value: Binding) -> Self {
@@ -858,7 +860,7 @@ impl Binding {
     fn inspection(&self, session: &Session) -> Option<crate::Inspection> {
         Some(match self {
             Self::Function(f) => f.inspect(session),
-            Self::Operator(op) => crate::Inspection::new("operator", op.text()),
+            Self::Operator(op) => crate::Inspection::new("operator", op.text(Notation::Apl)),
             Self::Value(a) => crate::Inspection::new("array", a.to_string()),
             Self::NoResult | Self::Absent => return None,
         })

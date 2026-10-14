@@ -1,4 +1,5 @@
 ((symbols, layout) => {
+    const comments = new Set(symbols.filter(s => s.kind === 'comment').flatMap(s => [...s.glyph, ...s.hanzi.join('')]));
     // US physical keys, before macOS Option or another layout transforms event.key.
     const punctuation = {Backquote: '`~', Minus: '-_', Equal: '=+', BracketLeft: '[{', BracketRight: ']}',
         Backslash: '\\|', Semicolon: ';:', Quote: "'\"", Comma: ',<', Period: '.>', Slash: '/?'};
@@ -81,7 +82,7 @@
             } else if (c === "'" || c === '"') {
                 quote = python && text.startsWith(c.repeat(3), i) ? c.repeat(3) : c;
                 i += quote.length - 1;
-            } else if (c === (python ? '#' : '⍝')) comment = true;
+            } else if (python ? c === '#' : comments.has(c)) comment = true;
         }
         return !quote && !comment;
     }

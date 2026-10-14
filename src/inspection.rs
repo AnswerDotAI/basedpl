@@ -16,8 +16,8 @@ impl Inspection {
             .trim_start()
             .lines()
             .map(str::trim)
-            .take_while(|line| line.starts_with('⍝'))
-            .map(|line| line.trim_start_matches('⍝').trim())
+            .take_while(|line| line.chars().next().is_some_and(|c| crate::symbols::canonical(c) == '⍝'))
+            .map(|line| line.trim_start_matches(|c| crate::symbols::canonical(c) == '⍝').trim())
             .collect();
         let help = if comments.is_empty() { documentation(&source).unwrap_or(&source).to_owned() } else { comments.join("\n") };
         Self { kind, source, help }
@@ -30,6 +30,8 @@ impl Inspection {
 
 /// Help for a system name, syntax token or glyph.
 pub(crate) fn documentation(symbol: &str) -> Option<&'static str> {
+    let canonical: String = symbol.chars().map(crate::symbols::canonical).collect();
+    let symbol = canonical.as_str();
     if symbol.starts_with('$') { return page(symbol); }
     if let Some(help) = crate::system::help(symbol) { return Some(help); }
     page(match symbol {
@@ -60,7 +62,7 @@ pub(crate) fn help_command(code: &str) -> Option<(&str, bool)> {
     words.next().is_none().then_some((name, detail))
 }
 
-pub fn word_char(c: char) -> bool { crate::syntax::name_char(c) || matches!(c, '•' | '$') || c.is_ascii_digit() }
+pub fn word_char(c: char) -> bool { crate::syntax::name_char(c) || matches!(crate::symbols::canonical(c), '•' | '$') || c.is_ascii_digit() }
 
 pub fn at_cursor(code: &str, cursor: usize) -> Option<&str> {
     if documentation(code.trim()).is_some() { return Some(code.trim()); }

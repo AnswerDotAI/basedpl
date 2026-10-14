@@ -33,8 +33,8 @@ impl Session {
     }
     pub fn name_class(&self, name: &str) -> i64 {
         match crate::inspection::item(name) {
-            Some(NodeKind::Name(_)) => self.lookup(name).map_or(0, Binding::class),
-            Some(NodeKind::System(_)) => crate::system::lookup(name).map_or(0, |_| FUNCTION_CLASS),
+            Some(NodeKind::Name(name)) => self.lookup(&name).map_or(0, Binding::class),
+            Some(NodeKind::System(name)) => crate::system::lookup(&name).map_or(0, |_| FUNCTION_CLASS),
             _ => -1,
         }
     }
@@ -43,10 +43,10 @@ impl Session {
     }
     pub fn inspect(&self, name: &str) -> Option<crate::Inspection> {
         let info = match crate::inspection::item(name) {
-            Some(NodeKind::Name(_)) => self.lookup(name).and_then(|binding| binding.inspection(self)),
-            Some(NodeKind::System(_)) => {
-                let mut info = crate::system::lookup(name)?.inspect(self);
-                if let Some(help) = crate::inspection::documentation(name) { info.help = help.to_owned(); }
+            Some(NodeKind::Name(name)) => self.lookup(&name).and_then(|binding| binding.inspection(self)),
+            Some(NodeKind::System(name)) => {
+                let mut info = crate::system::lookup(&name)?.inspect(self);
+                if let Some(help) = crate::inspection::documentation(&name) { info.help = help.to_owned(); }
                 Some(info)
             }
             Some(NodeKind::Function(p)) => Some(crate::Inspection::new("function", p.glyph().to_string())),
@@ -76,8 +76,9 @@ impl Session {
         match owner { Some(i) => self.frames[i].remove(Key::of(name)), None => self.table_mut(self.module()).remove(name) }
     }
     pub fn erase(&mut self, name: &str) -> bool {
-        if implicit_name(name) || !matches!(crate::inspection::item(name), Some(NodeKind::Name(_))) { return false; }
-        if let Some((owner, _)) = self.binding(name) { self.remove_name(owner, name); }
+        let Some(NodeKind::Name(name)) = crate::inspection::item(name) else { return false; };
+        if implicit_name(&name) { return false; }
+        if let Some((owner, _)) = self.binding(&name) { self.remove_name(owner, &name); }
         true
     }
     pub fn complete(&self, prefix: &str) -> Vec<String> {
@@ -158,8 +159,9 @@ impl Session {
     pub fn set(&mut self, name: &str, value: Value) -> Result<(), ErrorKind> { self.set_value(name, Binding::from_element(value)) }
     pub fn set_function(&mut self, name: &str, value: Function) -> Result<(), ErrorKind> { self.set_value(name, Binding::Function(value)) }
     fn set_value(&mut self, name: &str, value: Binding) -> Result<(), ErrorKind> {
-        if !matches!(crate::inspection::item(name), Some(NodeKind::Name(_))) || implicit_name(name) { return Err(ErrorKind::Syntax); }
-        self.names.insert(name.to_owned(), value);
+        let Some(NodeKind::Name(name)) = crate::inspection::item(name) else { return Err(ErrorKind::Syntax); };
+        if implicit_name(&name) { return Err(ErrorKind::Syntax); }
+        self.names.insert(name, value);
         Ok(())
     }
     pub fn eval(&mut self, code: &str) -> Evaluation { self.eval_with(code, crate::EvalOptions::default()) }
@@ -292,7 +294,7 @@ impl Session {
             match bound {
                 Ok(bound) => {
                     let dissected = if dissecting && (dissect || !bound.shy && !matches!(bound.value, Binding::NoResult | Binding::Absent)) {
-                        bound.expression.map(|e| *e).or_else(|| Expression::binding(&bound.value)).map(|e| e.display(self.display.trees))
+                        bound.expression.map(|e| *e).or_else(|| Expression::binding(&bound.value)).map(|e| e.display(self.display.trees, self.display.elide.notation))
                     } else { None };
                     if let Some(text) = &dissected { self.execution.output(crate::OutputKind::Display, text.clone()); }
                     result.value = match bound.value {
@@ -317,7 +319,7 @@ impl Session {
                         }
                         Binding::Operator(op) => {
                             let op = Operator(Arc::new(op));
-                            if self.execution.echo { self.execution.output(crate::OutputKind::Display, op.to_string()); }
+                            if self.execution.echo { self.execution.output(crate::OutputKind::Display, op.text(self.display.elide.notation)); }
                             if i + 1 == parsed.statements.len() { result.operator = Some(op); }
                             None
                         }
@@ -429,7 +431,8 @@ impl Session {
 
     /// Displays a function using the trees setting, unless that view has already been shown.
     fn display_function(&self, f: &Function, shown: Option<&str>) {
-        let text = if self.display.trees { f.tree(&mut 1000).render() } else { f.text(&mut 1000) };
+        let notation = self.display.elide.notation;
+        let text = if self.display.trees { f.tree(notation, &mut 1000).render() } else { f.text(notation, &mut 1000) };
         if shown != Some(&text) { self.execution.output(crate::OutputKind::Display, text); }
     }
 

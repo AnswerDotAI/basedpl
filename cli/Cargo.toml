@@ -11,8 +11,12 @@ name = "bpl"
 path = "src/main.rs"
 test = false
 
+[features]
+default = ["native"]
+native = ["basedpl/native"]
+
 [dependencies]
-basedpl = { path = ".." }
+basedpl = { path = "..", default-features = false }
 async-trait = ">=0.1, <1"
 ctrlc = ">=3.5.2, <4"
 foldhash = ">=0.2.0, <1"

@@ -3,6 +3,133 @@ use crate::primitive::{OperatorKind, Primitive, Rank, WHOLE};
 use foldhash::HashMap;
 use std::sync::OnceLock;
 
+// Glyph, simplified aliases, traditional aliases; an empty third field keeps the simplified spellings.
+const HANZI: &[(&str, &str, &str)] = &[
+    ("+", "加", ""),
+    ("-", "减", "減"),
+    ("×", "乘号", "乘號"),
+    ("÷", "除", ""),
+    ("⌊", "下", ""),
+    ("⌈", "上", ""),
+    ("|", "绝余", "絕餘"),
+    ("*", "幂", "冪"),
+    ("⍟", "对", "對"),
+    ("○", "圆", "圓"),
+    ("π", "周", ""),
+    ("√", "根", ""),
+    ("!", "阶拣", "階揀"),
+    ("⍭", "素", ""),
+    ("⨸", "因", ""),
+    ("⌻", "零值", ""),
+    ("¿", "掷抽", "擲抽"),
+    ("∨", "析或", ""),
+    ("∧", "极且", "極且"),
+    ("⊼", "方否", ""),
+    ("⊽", "双莫", "雙莫"),
+    ("~", "非无", "非無"),
+    ("=", "等", ""),
+    ("≠", "别初", "別初"),
+    ("<", "小", ""),
+    ("≤", "限退", ""),
+    (">", "大", ""),
+    ("≥", "达进", "達進"),
+    ("≡", "同深", ""),
+    ("≢", "数异", "數異"),
+    ("⍴", "形", ""),
+    (",", "连", "連"),
+    ("⍪", "接矩", ""),
+    ("⌽", "转", "轉"),
+    ("⊖", "纵", "縱"),
+    ("⍉", "翻", ""),
+    ("↑", "取", ""),
+    ("↓", "去拆", ""),
+    ("↕", "窗", ""),
+    ("⊂", "包", ""),
+    ("⊆", "巢段", ""),
+    ("⊃", "选合", "選合"),
+    ("⌷", "索", ""),
+    ("⍳", "位", ""),
+    ("↦", "至", ""),
+    (":", "键卸", "鍵卸"),
+    ("⍸", "处间", "處間"),
+    ("∊", "属展", "屬展"),
+    ("∪", "并独", "併獨"),
+    ("∩", "交重", ""),
+    ("⍷", "寻群", "尋群"),
+    ("⍋", "升", ""),
+    ("⍒", "降", ""),
+    ("#", "复", "複"),
+    ("⊤", "编", "編"),
+    ("⊥", "译", "譯"),
+    ("⌹", "解逆", ""),
+    ("⊣", "左", ""),
+    ("⊢", "右", ""),
+    ("⍎", "行", ""),
+    ("⍕", "文", ""),
+    ("/", "总", "總"),
+    ("⌿", "汇", "匯"),
+    ("\\", "累", ""),
+    ("⍀", "续", "續"),
+    ("¨", "遍", ""),
+    ("⍨", "己换", "己換"),
+    ("↣", "先", ""),
+    ("↢", "后", "後"),
+    ("⍤", "秩", ""),
+    ("∘", "承", ""),
+    ("⍠", "轴", "軸"),
+    ("⍥", "经", "經"),
+    (".", "内", "內"),
+    ("⊗", "表", ""),
+    ("⌸", "组", "組"),
+    ("⍣", "次止", ""),
+    ("⇄", "返", ""),
+    ("⊘", "兼", ""),
+    ("∂", "导梯", "導梯"),
+    ("⍚", "择", "擇"),
+    ("@", "于", "於"),
+    ("⌺", "邻", "鄰"),
+    ("←", "是", ""),
+    ("⎕", "出入", ""),
+    ("•", "系", ""),
+    ("⍺", "甲", ""),
+    ("⍵", "乙", ""),
+    ("⍶", "丙", ""),
+    ("⍹", "丁", ""),
+    ("∇", "递", "遞"),
+    ("⍢", "循", ""),
+    ("⍝", "注", ""),
+    ("⋄", "句", ""),
+    ("?", "若", ""),
+    ("¯", "负", "負"),
+    ("∞", "永", ""),
+    ("⍬", "空", ""),
+];
+
+fn hanzi(glyph: &str) -> [&'static str; 2] {
+    HANZI.iter().find(|row| row.0 == glyph).map_or(["", ""], |&(_, simple, traditional)| {
+        [simple, if traditional.is_empty() { simple } else { traditional }]
+    })
+}
+
+/// The APL glyph that a Hanzi spelling names. Other characters stay unchanged.
+pub fn canonical(c: char) -> char {
+    if c < '\u{3400}' { return c; }
+    static ALIASES: OnceLock<HashMap<char, char>> = OnceLock::new();
+    *ALIASES.get_or_init(|| HANZI.iter().flat_map(|&(glyph, simple, traditional)| {
+        simple.chars().chain(traditional.chars()).map(move |c| (c, glyph.chars().next().unwrap()))
+    }).collect()).get(&c).unwrap_or(&c)
+}
+
+/// The spelling of generated function and operator notation. Input always accepts every spelling.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Notation { #[default] Apl, Simplified, Traditional }
+impl Notation {
+    pub fn glyph(self, glyph: &str) -> &str {
+        let aliases = match self { Self::Apl => return glyph, Self::Simplified => hanzi(glyph)[0], Self::Traditional => hanzi(glyph)[1] };
+        aliases.chars().next().map_or(glyph, |c| &aliases[..c.len_utf8()])
+    }
+}
+
 /// A glyph's kind and names. `name` is its page in `nbs/glyphs`. An empty operation name means that valence has no typed name.
 /// Aliases are extra completion words, separated by spaces.
 pub struct Symbol {
@@ -17,6 +144,8 @@ pub struct Symbol {
     pub monad_rank: String,
     pub dyad_ranks: String,
     pub aliases: &'static str,
+    /// Alternative single-character Hanzi spellings: simplified, then traditional. The first in each is the preferred output.
+    pub hanzi: [&'static str; 2],
 }
 
 // Glyphs that are syntax, not functions or operators: glyph, name, kind, aliases.
@@ -51,6 +180,7 @@ pub fn symbols() -> &'static [Symbol] {
             monad_rank: String::new(),
             dyad_ranks: String::new(),
             aliases,
+            hanzi: hanzi(glyph),
         });
         let primitives = Primitive::all().map(|p| {
             let info = p.info();
@@ -58,13 +188,13 @@ pub fn symbols() -> &'static [Symbol] {
             let rank = |r: Rank| if r == WHOLE { "∞".to_string() } else { r.to_string() };
             let (monad_rank, dyad_ranks) =
                 (info.monad.map_or(String::new(), |m| rank(m.rank)), info.dyad.map_or(String::new(), |d| d.ranks.map(rank).join(" ")));
-            Symbol { glyph: info.glyph, name: info.name, kind: "function", monad, dyad, monad_rank, dyad_ranks, aliases: info.aliases }
+            Symbol { glyph: info.glyph, name: info.name, kind: "function", monad, dyad, monad_rank, dyad_ranks, aliases: info.aliases, hanzi: hanzi(info.glyph) }
         });
         let operators = OperatorKind::all().map(|op| {
             let info = op.info();
             let (name, aliases) = info.names;
             let kind = if info.dyadic() { "dyadic-operator" } else { "monadic-operator" };
-            Symbol { glyph: info.glyph, name, kind, monad: "", dyad: "", monad_rank: String::new(), dyad_ranks: String::new(), aliases }
+            Symbol { glyph: info.glyph, name, kind, monad: "", dyad: "", monad_rank: String::new(), dyad_ranks: String::new(), aliases, hanzi: hanzi(info.glyph) }
         });
         syntax.chain(primitives).chain(operators).collect()
     })
@@ -147,7 +277,7 @@ pub fn chord(glyph: &str) -> String {
 pub fn rows() -> serde_json::Value {
     let row = |s: &Symbol| {
         serde_json::json!({"glyph": s.glyph, "name": s.name, "kind": s.kind, "monad": s.monad, "dyad": s.dyad, "monad_rank": s.monad_rank,
-            "dyad_ranks": s.dyad_ranks, "aliases": s.aliases, "shortcut": chord(s.glyph)})
+            "dyad_ranks": s.dyad_ranks, "aliases": s.aliases, "hanzi": s.hanzi, "shortcut": chord(s.glyph)})
     };
     symbols().iter().map(row).collect()
 }

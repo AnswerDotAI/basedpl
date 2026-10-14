@@ -32,7 +32,7 @@ fn outside(text: &str, test: impl Fn(char) -> bool) -> bool {
 }
 
 /// Whether source text has a space or a `:` outside brackets, parentheses, braces and quotes.
-fn needs_group(text: &str) -> bool { outside(text, |c| c == ' ' || c == ':') }
+fn needs_group(text: &str) -> bool { outside(text, |c| matches!(crate::symbols::canonical(c), ' ' | ':')) }
 
 impl Value {
     pub(crate) fn formatted(&self) -> Result<Self, ErrorKind> {
@@ -159,13 +159,13 @@ impl Value {
             Self::Character(c) if c.is_control() => format!("•ucs {}", *c as u32),
             Self::Character(c) => format!("'{c}'"),
             Self::Function(f) => {
-                let text = f.bpl();
+                let text = f.text(el.notation, &mut 1000);
                 // A native function with no source spelling, such as a generator's `roll`, can't read back.
-                if f.system_call().is_some() && crate::system::lookup(&text).is_none() { return f.to_string(); }
+                if f.system_call().is_some() && crate::system::lookup(&f.bpl()).is_none() { return format!("⟨{text}⟩"); }
                 if text.contains(' ') { format!("({text})") } else { text }
             }
             Self::Operator(op) => {
-                let text = op.to_string();
+                let text = op.text(el.notation);
                 if text.contains(' ') { format!("({text})") } else { text }
             }
             Self::Array(_) => {
@@ -236,14 +236,14 @@ impl Value {
     pub(crate) fn item(&self, el: Elide) -> String { let text = self.source(el); if needs_group(&text) { format!("({text})") } else { text } }
     /// The value as an operator's operand, which is one item. Text with anything other than literals outside brackets, as in
     /// `⊂3` or `0 3⍴0`, needs parentheses.
-    pub(crate) fn operand(&self) -> String {
-        let text = self.literal();
+    pub(crate) fn operand(&self, notation: crate::symbols::Notation) -> String {
+        let text = self.source(Elide { notation, ..Elide::NONE });
         if outside(&text, |c| !(c.is_ascii_digit() || " ¯.∞⍬".contains(c) || crate::syntax::subscript(c))) { format!("({text})") } else { text }
     }
 
     /// Source text for a scalar holding `content`: `ᵘ` after a function, and `⊂` before anything else.
     fn enclosed_literal(content: &Value, el: Elide) -> String {
-        match content { Self::Function(f) => f.superscripted("ᵘ", &mut 1000), _ => format!("⊂{}", content.item(el)) }
+        match content { Self::Function(f) => f.superscripted("ᵘ", el.notation, &mut 1000), _ => format!("{}{}", el.notation.glyph("⊂"), content.item(el)) }
     }
 
     /// An array with named axes: its keyed shape reshapes the array without names. Reshape keeps position keys.

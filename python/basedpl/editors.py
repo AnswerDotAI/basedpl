@@ -20,7 +20,12 @@ FONT, MENLO_BOLD, PURPLE = '/System/Library/Fonts/Menlo.ttc', 1, (61, 31, 107)
 CLASSES = {'Function': ('dsFunction', 'function', ''), 'MonadicOperator': ('dsOperator', 'monadic-operator', _superscripts),
            'DyadicOperator': ('dsExtension', 'dyadic-operator', ''), 'Argument': ('dsVariable', 'argument', ''), 'Keyword': ('dsKeyword', 'syntax', _subscripts)}
 # The characters each class colours in each language. The Dyalog APL and BQN tables serve the comparison page.
-BPL = {cls: ''.join(s['glyph'] for s in symbols if s['kind'] == kind) + scripts for cls, (_, kind, scripts) in CLASSES.items()}
+SPELLINGS = {s['glyph']: ''.join(dict.fromkeys(s['glyph'] + ''.join(s['hanzi']))) for s in symbols}
+BPL = {cls: ''.join(SPELLINGS[s['glyph']] for s in symbols if s['kind'] == kind) + scripts for cls, (_, kind, scripts) in CLASSES.items()}
+TOKEN_PATTERNS = {'System': r'•[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*', 'Empty': r'⍬ₓ?',
+                  'Number': r'¯?∞|¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?([jJⱼ]¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?|ₓ|[rᵣ]¯?\d+)?'}
+TOKEN_PATTERNS = {cls: ''.join('[' + re.escape(SPELLINGS[c]) + ']' if c in '•¯∞⍬' else c for c in pattern).replace(r'\.', '[' + SPELLINGS['.'] + ']')
+                  for cls, pattern in TOKEN_PATTERNS.items()}
 DYALOG = {'Function': '+-×÷⌈⌊|*⍟○!?~∧∨⍲⍱<≤=≥>≠≡≢⍴,⍪⌽⊖⍉↑↓⊂⊃⊆⊇⌷⍋⍒⊤⊥⍳⍸∊⍷∪∩⊣⊢⍎⍕⌹', 'MonadicOperator': r'¨⍨/⌿\⍀⌸&⌶',
           'DyadicOperator': '∘⍤⍥⍣⍠⌺@.⍛', 'Argument': '⍺⍵∇', 'Keyword': '←→⋄:⎕⍞'}
 BQN = {'Function': '+-×÷⋆√⌊⌈|¬∧∨<>≠=≤≥≡≢⊣⊢⥊∾≍⋈↑↓↕«»⌽⍉/⍋⍒⊏⊑⊐⊒∊⍷⊔!', 'MonadicOperator': '˙˜˘¨⌜⁼´˝`',
@@ -53,6 +58,13 @@ def quarto(text, glyphs):
     for cls, (style, *_) in CLASSES.items():
         text = _replace(text, f'<AnyChar String="[^"]*" attribute="{cls}"/>', f'<AnyChar String="{escape(glyphs[cls], {chr(34): "&quot;"})}" attribute="{cls}"/>')
         text = _replace(text, f'<itemData name="{cls}" defStyleNum="[^"]*"/>', f'<itemData name="{cls}" defStyleNum="{style}"/>')
+    if glyphs is BPL:
+        for cls, marker in [('System', '•'), ('Number', '∞'), ('Empty', '⍬')]:
+            attr = 'Number' if cls == 'Empty' else cls
+            text = _replace(text, f'<RegExpr String="[^"]*{marker}[^"]*" attribute="{attr}"/>',
+                            f'<RegExpr String="{escape(TOKEN_PATTERNS[cls])}" attribute="{attr}"/>')
+        text = _replace(text, r'<(?:DetectChar char|AnyChar String)="[^"]*" attribute="Comment" context="Comment"/>',
+                        f'<AnyChar String="{SPELLINGS["⍝"]}" attribute="Comment" context="Comment"/>')
     return text
 
 
@@ -81,6 +93,10 @@ def textmate(xml):
 def vim(text):
     "The vim syntax `text` with each class's glyph list regenerated."
     for cls in CLASSES: text = _replace(text, f'(?m)^syntax match bpl{cls} .*$', f'syntax match bpl{cls} {vim_class(BPL[cls])}')
+    for cls, marker, pattern in [('System', '•', TOKEN_PATTERNS['System']),
+                                 ('Number', '∞', TOKEN_PATTERNS['Number'] + '|' + TOKEN_PATTERNS['Empty']),
+                                 ('Comment', '⍝', f'[{SPELLINGS["⍝"]}].*$')]:
+        text = _replace(text, f'(?m)^syntax match bpl{cls} .*{marker}.*$', f'syntax match bpl{cls} /\\v{pattern}/')
     return text
 
 

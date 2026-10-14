@@ -2,11 +2,17 @@
 
 BPL divides each statement into runs and [tokens](terms.qmd#term-token) before it evaluates anything. The rules on this page don't depend on what any name holds. [Evaluation](evaluation.qmd) covers how the runs then bind. [Types of brackets](bracket-types.ipynb) and the [Language overview](overview.ipynb) explain the same rules with more examples.
 
+## Hanzi spellings
+
+APL glyphs and their simplified and traditional Hanzi spellings are always accepted and can be mixed. `+/`, `加总`, `加總` and `加/` all name the same function. Each alias retains the whole glyph's meaning, including both valences where it has them. No language-mode switch is needed. The [notation preference](system/prefs.qmd) changes printed functions, not accepted input.
+
+`是` names assignment `←`: `mean是加总除数` defines the mean without spaces. `内` (`內`) names the inner-product operator `.`. Ordinary `.` remains the usual spelling for fields and indexing, as in `record.field` and `a.[i]`. Hanzi inside strings and comments remain ordinary text. [Hanzi as mathematical notation](hanzi-notation.ipynb) and [汉字 BPL](hanzi-notation-zh.ipynb) introduce the notation through examples.
+
 ## Names
 
-A name consists of letters, `∆` and `⍙`. A digit ends a name, as it ends a glyph. `f2` therefore applies `f` to 2, the same way `⍳2` applies `⍳` to 2.
+A name consists of non-Han letters, `∆` and `⍙`. Han characters are reserved for glyph spellings and cannot occur in names, even after `_`. A digit ends a name, as it ends a glyph. `f2` therefore applies `f` to 2, the same way `⍳2` applies `⍳` to 2.
 
-`_` adds the next character to a name, whatever that character is. Digits straight after `_` all stay in the name. A name can't end in `_`, except the lone name `_`. A lone `_` is a name when a space, `]`, `)`, `←`, `;`, `⋄` or the end of the line follows it. Assign to `_` a value that nothing reads.
+`_` adds the next non-whitespace, non-Han character to a name. Digits straight after `_` all stay in the name. A name can't end in `_`, except the lone name `_`. A lone `_` is a name when a space, `]`, `)`, `←`, `;`, `⋄` or the end of the line follows it. Assign to `_` a value that nothing reads.
 
 After a dot, digits stay in the key: `T.q1` is the entry with key `q1`.
 

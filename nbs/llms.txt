@@ -36,6 +36,8 @@ Links are relative to https://answerdotai.github.io/basedpl/.
 
 ## Values and notation
 
+APL glyphs and their simplified/traditional Hanzi aliases are always accepted and can be mixed: `+/`, `加总`, `加總` and `加/` are the same function. Each alias retains the whole glyph's meaning in both valences. No language mode is needed. `•prefs ["notation":"simplified"]` or `"traditional"` changes printed functions only; `"apl"` is the default. `是` names assignment `←`, as in `mean是加总除数`. `内`/`內` names inner product. Use ordinary `.` for fields and indexing. Strings and comments keep their text.
+
 BQN's based arrays: numbers, characters and functions are atoms, distinct from rank-0 arrays. Enclose always adds a layer, including around atoms; `⍬⍴Y` makes a rank-0 array. Rank 0 passes atoms as themselves and array items enclosed. APL-style prototypes/fill remain; function fill is the function itself.
 
 `[a b]` is always a vector, even `[a]`, with one item for each expression, functions included. Spaces separate unspaced expressions; `;` separates expressions containing spaces, and within each such expression spaces group as they do outside brackets. `⋄`/newlines stack rows along a new leading axis. `"k":v` items make a record: `["a":1 "b":2]`. Items evaluate LTR, unlike function arguments and tines, which evaluate RTL. In parentheses, rows instead form a nested vector: `(4⋄4 5)` is `[[4] [4 5]]`. Parentheses without rows only group. Newlines normally mean `⋄`.
@@ -52,7 +54,7 @@ Undo and Under follow BQN's inferred-properties spec. Inverse operations are wri
 
 Spaces group as if each unspaced run were parenthesised, after literal strands join: `a+b × c+d` is `(a+b)(×)(c+d)`, and `1 2+3` is `(1 2)+3`. Names don't join strands. A run ending in a function is an APL-style train: `+/÷≢ x` is mean, but `+/÷≢x` is not. A subject before a function binds the one part after it: `2×` doubles, `2|#⊢` is `(2|)#⊢`, `2+/` binds `+/`, and `2(+×-)` binds the whole train. An operator takes the whole function on its left and one token on its right, and a literal strand counts as one token. Each run acts as a parenthesised group, so an operator that ends a run takes the next run: in `⌊@ 10× x`, the operand is `10×`. An operator that starts a run takes the previous run as its left operand: `≢⊢ ⌸x` is `(≢⊢)⌸x`. Only spaces build strands: in `f⍣3'b'` and `f⍤1[2 3]`, the touching literal is the argument. Separate a numeric argument from a numeric operand with parentheses or `⊢`.
 
-Names use letters, `∆`, `⍙`; `_` escapes the next character (and following digits). `f2` calls `f`; `f_2` is a name. No BQN casing rules; names take their runtime value's role. Lone `_` discards an assignment.
+Names use non-Han letters, `∆` and `⍙`. `_` escapes the next character (and following digits). Han characters are reserved for glyph spellings and cannot occur in names, even escaped. `f2` calls `f`; `f_2` is a name. No BQN casing rules; names take their runtime value's role. Lone `_` discards an assignment.
 
 Positions/axes are fixed 0-origin; negatives count from the end. `I⌷A` takes one selector per leading axis; `[I]⌷v` selects a list of positions on one axis. `∞` selects a whole axis, `¯∞` reverses it. `A.[I J]` is `[I J]⌷A`. Subscripts/dot indexing/selective expressions can be assignment targets.
 

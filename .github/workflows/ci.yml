@@ -30,7 +30,7 @@ jobs:
         run: pip install 'fastws-cli>=0.0.22' && ${{ env.STAGE_BPL }}
       - uses: PyO3/maturin-action@v1
         with:
-          args: --profile dist --out dist -i python3.10 -i python3.11 -i python3.12 -i python3.13
+          args: --profile dist --no-default-features --out dist -i python3.10 -i python3.11 -i python3.12 -i python3.13
           manylinux: auto
           # This runs inside the manylinux container, whose old glibc lets the binary run on older Linux distributions.
           before-script-linux: export PATH="/opt/python/cp310-cp310/bin:$PATH" && python3.10 -m pip install 'fastws-cli>=0.0.22' && ${{ env.STAGE_BPL }}

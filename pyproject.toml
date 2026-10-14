@@ -38,6 +38,9 @@ profile = "release"
 python-source = "python"
 module-name = "basedpl._core"
 
+[tool.maturin.target.aarch64-apple-darwin]
+macos-deployment-target = "15.0"
+
 [tool.uv]
 cache-keys = [{ file = "pyproject.toml" }, { file = "Cargo.toml" }, { file = "cli/Cargo.toml" }, { file = "py/Cargo.toml" }]
 
