@@ -160,11 +160,11 @@ Under (`@`) transforms the argument, applies a function, then reverses the trans
 
     1.2 2.7
 
-Explore [iteration and inverses](https://answerdotai.github.io/basedpl/glyphs/power.html), [Under](https://answerdotai.github.io/basedpl/glyphs/under.html), [windows](https://answerdotai.github.io/basedpl/glyphs/windows.html) and [function selection](https://answerdotai.github.io/basedpl/glyphs/agenda.html).
+Explore [iteration and inverses](https://answerdotai.github.io/basedpl/glyphs/star-diaeresis.html), [Under](https://answerdotai.github.io/basedpl/glyphs/at.html), [windows](https://answerdotai.github.io/basedpl/glyphs/up-down-arrow.html) and [function selection](https://answerdotai.github.io/basedpl/glyphs/diamond-underbar.html).
 
 ### Mathematical tools
 
-[Primes](https://answerdotai.github.io/basedpl/glyphs/prime.html) and [factorisation](https://answerdotai.github.io/basedpl/glyphs/factor.html) are built in:
+[Primes](https://answerdotai.github.io/basedpl/glyphs/stile-tilde.html) and [factorisation](https://answerdotai.github.io/basedpl/glyphs/circle-divide.html) are built in:
 
 ``` bpl
 ⨸360ₓ
@@ -172,7 +172,7 @@ Explore [iteration and inverses](https://answerdotai.github.io/basedpl/glyphs/po
 
     [2 2 2 3 3 5]ₓ
 
-[Polynomials](https://answerdotai.github.io/basedpl/glyphs/polynomial.html) support coefficients, roots and evaluation. Polynomial functions can be [differentiated](https://answerdotai.github.io/basedpl/glyphs/derivative.html): for f(x) = 1 + 2x + 3x², f′(2) = 14.
+[Polynomials](https://answerdotai.github.io/basedpl/glyphs/quad-jot.html) support coefficients, roots and evaluation. Polynomial functions can be [differentiated](https://answerdotai.github.io/basedpl/glyphs/partial.html): for f(x) = 1 + 2x + 3x², f′(2) = 14.
 
 ``` bpl
 f←[1 2 3]ₓ⌻ ⋄ f∂2ₓ

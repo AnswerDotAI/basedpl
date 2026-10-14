@@ -1,9 +1,4 @@
 <templateSet group="BPL">
-  <template name="abs" value="|" description="|" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
   <template name="add" value="+" description="+" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
@@ -35,6 +30,11 @@
     </context>
   </template>
   <template name="assign" value="←" description="←" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="at" value="@" description="@" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -74,16 +74,6 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="bind" value="↣" description="↣" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
-  <template name="bind-right" value="↢" description="↢" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
   <template name="binomial" value="!" description="!" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
@@ -109,12 +99,52 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="choose" value="⍚" description="⍚" shortcut="TAB">
+  <template name="circle" value="○" description="○" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="circle" value="○" description="○" shortcut="TAB">
+  <template name="circle-backslash" value="⍉" description="⍉" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="circle-bar" value="⊖" description="⊖" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="circle-diaeresis" value="⍥" description="⍥" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="circle-divide" value="⨸" description="⨸" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="circle-slash" value="⊘" description="⊘" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="circle-star" value="⍟" description="⍟" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="circle-stile" value="⌽" description="⌽" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="circle-times" value="⊗" description="⊗" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="circular" value="○" description="○" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -139,6 +169,11 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="comma-bar" value="⍪" description="⍪" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="comment" value="⍝" description="⍝" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
@@ -149,17 +184,7 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="compress" value="#" description="#" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
   <template name="conjugate" value="+" description="+" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
-  <template name="dash" value="-" description="-" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -189,6 +214,16 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="del-stile" value="⍒" description="⍒" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="delta-stile" value="⍋" description="⍋" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="depth" value="≡" description="≡" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
@@ -199,27 +234,22 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="determinant" value="." description="." shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="diaeresis" value="¨" description="¨" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="diamond" value="⋄" description="⋄" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="dieresis" value="¨" description="¨" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
-  <template name="direction" value="×" description="×" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
-  <template name="disclose" value="↑" description="↑" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
-  <template name="div" value="÷" description="÷" shortcut="TAB">
+  <template name="diamond-underbar" value="⍚" description="⍚" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -240,6 +270,26 @@
     </context>
   </template>
   <template name="double" value="⊽" description="⊽" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="down-arrow" value="↓" description="↓" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="down-shoe" value="∪" description="∪" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="down-tack" value="⊤" description="⊤" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="downstile" value="⌊" description="⌊" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -284,7 +334,32 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="epsilon-underbar" value="⍷" description="⍷" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="equal" value="=" description="=" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="equal-underbar" value="≡" description="≡" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="equal-underbar-slash" value="≢" description="≢" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="equals" value="=" description="=" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="exclamation" value="!" description="!" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -299,22 +374,12 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="exp" value="*" description="*" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
   <template name="exponent" value="*" description="*" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
   </template>
   <template name="exponential" value="*" description="*" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
-  <template name="factor" value="⨸" description="⨸" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -349,22 +414,12 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="fold" value="/" description="/" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
   <template name="format" value="⍕" description="⍕" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
   </template>
   <template name="format-spec" value="⍕" description="⍕" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
-  <template name="gcd" value="∨" description="∨" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -399,7 +454,12 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="greater-or-equal" value="≥" description="≥" shortcut="TAB">
+  <template name="greater-than" value="&gt;" description="&gt;" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="greater-than-or-equal" value="≥" description="≥" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -414,12 +474,7 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="history" value="⍣" description="⍣" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
-  <template name="hook" value="↢" description="↢" shortcut="TAB">
+  <template name="hydrant" value="⍎" description="⍎" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -439,7 +494,17 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="indices" value="⍳" description="⍳" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="infinity" value="∞" description="∞" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="inner-product" value="." description="." shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -454,12 +519,12 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="inverse" value="⌹" description="⌹" shortcut="TAB">
+  <template name="inverted-question" value="¿" description="¿" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="inverted-question" value="¿" description="¿" shortcut="TAB">
+  <template name="io" value="⎕" description="⎕" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -469,7 +534,17 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="iterate" value="⍣" description="⍣" shortcut="TAB">
+  <template name="iota-underbar" value="⍸" description="⍸" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="jot" value="∘" description="∘" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="jot-diaeresis" value="⍤" description="⍤" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -484,12 +559,17 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="lcm" value="∧" description="∧" shortcut="TAB">
+  <template name="lamp" value="⍝" description="⍝" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
   </template>
   <template name="left" value="⊣" description="⊣" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="left-argument" value="⍺" description="⍺" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -504,6 +584,26 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="left-shoe" value="⊂" description="⊂" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="left-shoe-underbar" value="⊆" description="⊆" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="left-tack" value="⊣" description="⊣" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="left-tail-arrow" value="↢" description="↢" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="less" value="&lt;" description="&lt;" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
@@ -514,12 +614,12 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="less-or-equal" value="≤" description="≤" shortcut="TAB">
+  <template name="less-than" value="&lt;" description="&lt;" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="log" value="⍟" description="⍟" shortcut="TAB">
+  <template name="less-than-or-equal" value="≤" description="≤" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -549,7 +649,12 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="max" value="⌈" description="⌈" shortcut="TAB">
+  <template name="matrix-inverse" value="⌹" description="⌹" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="maximum" value="⌈" description="⌈" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -559,22 +664,17 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="min" value="⌊" description="⌊" shortcut="TAB">
+  <template name="minimum" value="⌊" description="⌊" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="minimize" value="⇄" description="⇄" shortcut="TAB">
+  <template name="minus" value="-" description="-" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
   </template>
   <template name="mix" value="⊃" description="⊃" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
-  <template name="mul" value="×" description="×" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -589,7 +689,17 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="natural-log" value="⍟" description="⍟" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="negate" value="-" description="-" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="negative" value="¯" description="¯" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -614,7 +724,17 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="not-equals" value="≠" description="≠" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="not-match" value="≢" description="≢" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="obelus" value="÷" description="÷" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -630,6 +750,11 @@
     </context>
   </template>
   <template name="operator-recursion" value="⍢" description="⍢" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="optimize" value="⇄" description="⇄" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -655,6 +780,11 @@
     </context>
   </template>
   <template name="pairs" value="↕" description="↕" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="partial" value="∂" description="∂" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -699,11 +829,6 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="polynomial" value="⌻" description="⌻" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
   <template name="polyval" value="⌻" description="⌻" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
@@ -734,7 +859,32 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="quad-colon" value="⍠" description="⍠" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="quad-diamond" value="⌺" description="⌺" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="quad-equal" value="⌸" description="⌸" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="quad-jot" value="⌻" description="⌻" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="question" value="?" description="?" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="radical" value="√" description="√" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -784,11 +934,6 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="repeat" value="⍣" description="⍣" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
   <template name="replicate" value="#" description="#" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
@@ -824,12 +969,37 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="right-argument" value="⍵" description="⍵" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="right-arrow-from-bar" value="↦" description="↦" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="right-left-arrows" value="⇄" description="⇄" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="right-operand" value="⍹" description="⍹" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="right-shoe" value="⊃" description="⊃" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="right-tack" value="⊢" description="⊢" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="right-tail-arrow" value="↣" description="↣" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -880,6 +1050,16 @@
     </context>
   </template>
   <template name="scan-first" value="⍀" description="⍀" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="self" value="⍨" description="⍨" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="separator" value="⋄" description="⋄" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -939,12 +1119,22 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="star-diaeresis" value="⍣" description="⍣" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="stencil" value="⌺" description="⌺" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
   </template>
   <template name="stile" value="|" description="|" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="stile-tilde" value="⍭" description="⍭" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -974,7 +1164,17 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="thorn" value="⍕" description="⍕" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="tilde" value="~" description="~" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="tilde-diaeresis" value="⍨" description="⍨" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -1019,7 +1219,57 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="up-arrow" value="↑" description="↑" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="up-down-arrow" value="↕" description="↕" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="up-shoe" value="∩" description="∩" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="up-tack" value="⊥" description="⊥" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="upstile" value="⌈" description="⌈" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="valences" value="⊘" description="⊘" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="vee" value="∨" description="∨" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="vee-bar" value="⊽" description="⊽" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="vjp" value="∂" description="∂" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="wedge" value="∧" description="∧" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="wedge-bar" value="⊼" description="⊼" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>

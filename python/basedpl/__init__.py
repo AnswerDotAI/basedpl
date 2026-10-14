@@ -3,7 +3,7 @@
 Modules:
 
 - `basedpl.dyalog`: Run Dyalog APL through RIDE for reference checks.
-- `basedpl.editors`: Write editor highlighters, glyph-entry templates, regional macOS keyboards, and glyph-page keys and ranks.
+- `basedpl.editors`: Write editor highlighters, glyph-entry templates, regional macOS keyboards, and glyph-page kinds, keys and ranks.
 - `basedpl.keyboards`: Generate regional BPL keyboards from macOS layouts."""
 
 import math, operator, sys
