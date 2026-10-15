@@ -181,7 +181,7 @@ bm∧.∨bm	12	24
 jm+.×jm	160	370
 jm+.=jm	94	110
 cm+.=⍉cm	99	120
-zm+.×zm	66	130
+zm+.×zm	110	180
 # Matrix division, `•decompose`, `•decompose⁻¹` and the determinant `-.×` run on rustymath, whose own speed test times each factorisation. These cases time basedpl's part: the calls in a `⍤2` stack, each path of `⌹`, the route from monadic `-.×` to LU, turning `"qr"`'s factors into arrays, rebuilding a matrix from factors, and reading complex storage. `tq` is tall enough for `⌹` and `"qr"` to take the CholeskyQR2 path.
 ⌹⍤2 ms	130	160
 ms⌹⍤2 sps	150	200
@@ -200,7 +200,7 @@ ms⌹⍤2 sps	150	200
 "eigen"•decompose⁻¹ h	1400	1800
 "eigen"•decompose⍤2 ss	750	720
 "eigen"•decompose⍤2 ms	2300	2100
-⌹zm	170	220
+⌹zm	210	260
 -.×m	100	150
 -.×⍤2 ms	60	82
 [exact] •prefs ["tolerance":0]

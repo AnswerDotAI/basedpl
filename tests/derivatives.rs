@@ -1,4 +1,4 @@
-//! Checks `∂` against numerical derivatives at pseudo-random points. Each column of `f∂ x` must match complex-step differentiation for an analytic function, or a central difference for one that isn't analytic, such as `|` or `⌈`. Each column must also match a forward pass along its direction. A case with one number checks reverse mode through an extra number that `f` ignores, and a case with more passes the dot-product test, which links forward passes to transposes.
+//! Checks `∂` against numerical derivatives at pseudo-random points. Each column of `f∂ x` must match the derivative that its case's `Oracle` takes. Complex step works only for an analytic function whose computation keeps the imaginary part of 1E¯200 that the oracle adds to `x`. Functions that aren't analytic, such as `|` and `⌈`, use a central difference. Each column must also match a forward pass along its direction. A case with one number also checks reverse mode, through an extra number that `f` ignores. A case with more numbers checks that u·(Jv) from a forward pass equals (uᵀJ)·v from a transpose.
 use basedpl::{Session, Value};
 
 /// How a case's numerical derivative is taken.

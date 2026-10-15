@@ -11,8 +11,6 @@ Dyadic operator
 
 Singleton contraction axes extend. Empty contractions use the reduction identity. `g⊗` is [outer product](circle-times.qmd).
 
-On complex numbers, `+.×` forms three real products of the parts rather than four and takes about a quarter less time. Its real parts are as accurate as with four products. Across the whole result, its error is about 4 units of roundoff, against about 2.5 with four. An imaginary part's error scales with the size of the whole product. An imaginary part a millionth the size of its real part keeps about 10 of a 64-bit float's 16 digits and about 1 of a 32-bit float's 7.
-
 `f.g Y`, with no left argument, expands the matrix `Y` by minors along its first column, as J's `u .v` does. `-.×` gives the determinant, and `+.×` the permanent.
 
 ```bpl
