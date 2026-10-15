@@ -712,8 +712,7 @@ pub(super) fn cell_axes(f: &Function, spec: &Value, left: Option<&Value>, right:
 /// Transpose so that axis `i` of `x` becomes axis `destination[i]`.
 fn move_axes(x: &Value, destination: &[usize], span: &crate::execution::Context<'_>) -> Result<Value, Error> {
     if destination.iter().enumerate().all(|(i, &d)| i == d) { return Ok(x.clone()); }
-    let positions = Value::integers(vec![destination.len()], destination.iter().map(|&d| d as i64).collect()).error_at(span, "invalid axis order")?;
-    Primitive::Transpose.call(Some(&positions), x, span)
+    crate::primitive::transpose_axes(destination.to_vec(), x, span)
 }
 
 /// Calls `operand` on the argument pairs `pair(0)`, `pair(1)` and so on up to `len`, and assembles the results in `layout`.

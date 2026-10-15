@@ -9,6 +9,12 @@ Function. Keys: `Alt-x`. Ranks: `0` monadic, `1 ∞` dyadic
 ⊃[[1 2] [3 4 5]]   ⍝ [1 2 0⋄3 4 5]
 ```
 
+The result keeps the keys and axis names that the cells agree on. A cell without keys or a name agrees with any, as in arithmetic. An axis that needs padding loses its keys.
+
+```bpl
+⊃[10 20;["a":1 "b":2]]   ⍝ ["a":10 "b":20⋄"a":1 "b":2]
+```
+
 `P⊃Y` selects at coordinates `P` along the leading axes. With fewer coordinates than axes, the result is the cell made of the remaining axes. With a coordinate for every axis, the result is the stored value. Successive Picks traverse nesting. Empty coordinates return `Y`.
 
 ```bpl

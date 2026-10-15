@@ -156,8 +156,8 @@ pub(super) fn enlist(right: &Value, span: &Context<'_>) -> Result<Value, Error> 
 
 pub(super) fn reorder(right: &Value, order: &[usize], span: &Context<'_>) -> Result<Value, Error> {
     let mut labels = vec![0; order.len()];
-    for (i, &axis) in order.iter().enumerate() { labels[axis] = i as i64; }
-    transpose(Some(&Value::integers(vec![labels.len()], labels).unwrap()), right, span)
+    for (i, &axis) in order.iter().enumerate() { labels[axis] = i; }
+    transpose_axes(labels, right, span)
 }
 
 /// The cells of `right` made of `axes`, in that order, framed by its other axes.
@@ -454,51 +454,149 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
             data.extend(a, i * len..(i + 1) * len);
         }
     }
-    let names = (0..rank).map(|a| agreed(left.axis_name(a), right.axis_name(a))).collect();
+    let names = (0..rank).map(|a| agreed([left.axis_name(a), right.axis_name(a)])).collect();
     let layout = Layout::from(shape)
         .with_keys(wanted)
         .error_at(span, "invalid catenate result")?
         .inherit_names(names)
-        .with_renderer(agreed(left.renderer(), right.renderer()));
+        .with_renderer(agreed([left.renderer(), right.renderer()]));
     data.finish(layout, || left.prototype()).error_at(span, "invalid catenate result")
 }
 
-pub(super) fn transpose(axes: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+/// One source-axis route in `⍉`, or a group of source axes to merge in `⍉⁻¹`. Keys declare names on the unsplit and split sides.
+struct TransposeGroup {
+    axes: Vec<usize>, sizes: Option<Vec<Option<usize>>>, name: Option<std::sync::Arc<str>>, factor_names: Vec<Option<std::sync::Arc<str>>>,
+}
+
+/// Whether `value` is a name, or holds one at any depth.
+fn holds_name(value: &Value) -> bool { crate::keyed::name(value).is_some() || !value.is_atom() && value.elements().any(|e| holds_name(&e)) }
+
+fn transpose_groups(spec: &Value, right: &Value, inverse: bool, span: &Context<'_>) -> Result<Vec<TransposeGroup>, Error> {
+    if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "transpose axes must be a unit or vector")); }
+    let items = if crate::keyed::name(spec).is_some() { vec![spec.clone()] } else { spec.elements().collect() };
+    items.into_iter().enumerate().map(|(i, item)| {
+        if !inverse && holds_name(&item) { return Err(span.domain_error("⍉ takes numeric destinations. Names select axes in ⍉⁻¹, and a named ⍉⁻¹ has no inverse")); }
+        let paired = item.shape().len() == 1 && item.elements().all(|p| p.shape() == [2] && crate::keyed::name(&p).is_none());
+        let (selectors, sizes, factor_names) = if paired {
+            let sizes = item.elements().map(|pair| {
+                let size = pair.at(1);
+                let n = numeric(&size, span)?;
+                if n.as_float() == Some(f64::INFINITY) { Ok(None) }
+                else { n.nonnegative_integer().map(Some).error_at(span, "split sizes must be nonnegative integers or ∞") }
+            }).collect::<Result<Vec<_>, _>>()?;
+            if sizes.iter().filter(|s| s.is_none()).count() > 1 { return Err(span.domain_error("a split can infer only one factor size")); }
+            let selectors = Value::new(vec![item.len()], item.elements().map(|pair| pair.at(0)).collect()).error_at(span, "invalid transpose group")?;
+            let names = item.keys(0).map_or_else(Vec::new, |keys| keys.names().to_vec());
+            (selectors, Some(sizes), names)
+        } else if item.shape().is_empty() || inverse && item.shape().len() == 1 {
+            (item, None, Vec::new())
+        } else {
+            return Err(span.domain_error(if inverse { "a merge is a list of axes, or of [source size] pairs" } else { "a split is a list of [destination size] pairs, such as [1 2;3 ∞]" }));
+        };
+        let selectors = if inverse { resolve_axes(&selectors, right, span)? } else { selectors };
+        let axes = if inverse { axes(&selectors, right.shape().len(), span)? }
+            else { selectors.as_items().nonnegative_integers().error_at(span, "invalid transpose axis")? };
+        if axes.is_empty() { return Err(span.domain_error("a transpose group must contain an axis")); }
+        let name = spec.keys(0).and_then(|keys| keys.names()[i].clone());
+        Ok(TransposeGroup { axes, sizes, name, factor_names })
+    }).collect()
+}
+
+/// Each result axis keeps the keys and name that its sources agree on, as mix does. Keys also need every source to have the result axis's length. Explicit names override inherited names.
+fn transpose_layout(right: &Value, shape: Vec<usize>, sources: &[Vec<usize>], names: &[Option<std::sync::Arc<str>>], span: &Context<'_>) -> Result<Layout, Error> {
+    let keys = sources.iter().zip(&shape).map(|(s, &len)| if s.iter().all(|&a| right.shape()[a] == len) { agreed(s.iter().map(|&a| right.keys(a))) } else { None }).collect();
+    let names: Vec<_> = sources.iter().enumerate().map(|(i, s)| names.get(i).and_then(Clone::clone).or_else(|| agreed(s.iter().map(|&a| right.axis_name(a))))).collect();
+    if let Some(name) = crate::array::repeated_name(&names) { return Err(span.domain_error(format!("the result would have two axes named {name}"))); }
+    Layout::from(shape).with_keys(keys).and_then(|l| l.with_names(names)).error_at(span, "invalid transpose keys")
+}
+
+/// Change shape without copying, keeping metadata only on axes that were not split or merged.
+fn regroup(right: &Value, shape: Vec<usize>, sources: &[Vec<usize>], names: &[Option<std::sync::Arc<str>>], span: &Context<'_>) -> Result<Value, Error> {
+    if right.is_atom() && shape.is_empty() { return Ok(right.clone()); }
+    let layout = transpose_layout(right, shape.clone(), sources, names, span)?;
+    right.with_shape(shape).and_then(|a| a.with_layout(rearranged(layout, right))).error_at(span, "invalid transpose shape")
+}
+
+pub(super) fn transpose(spec: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let rank = right.shape().len();
-    let axes = match axes {
-        None => (0..rank).rev().collect::<Vec<_>>(),
-        Some(a) => {
-            if a.len() > rank { return Err(span.error(ErrorKind::Length, "transpose has more axes than its argument")); }
-            let named = a.as_items().nonnegative_integers().error_at(span, "invalid transpose axis")?;
-            // As in BQN, the source axes after the named ones fill the unnamed result axes in order.
-            let mut distinct = named.clone();
-            distinct.sort_unstable();
-            distinct.dedup();
-            let result_rank = distinct.len() + rank - named.len();
-            if named.iter().any(|&n| n >= result_rank) { return Err(span.error(ErrorKind::Rank, "transpose axes must be consecutive from 0")); }
-            let unnamed = (0..result_rank).filter(|r| distinct.binary_search(r).is_err());
-            named.iter().copied().chain(unnamed).collect::<Vec<_>>()
+    let Some(spec) = spec else { return transpose_axes((0..rank).rev().collect(), right, span) };
+    let groups = transpose_groups(spec, right, false, span)?;
+    if groups.len() > rank { return Err(span.error(ErrorKind::Length, "transpose has more axes than its argument")); }
+    let mut destinations = Vec::new();
+    let mut shape = Vec::new();
+    let mut sources = Vec::new();
+    let mut names = Vec::new();
+    for (source, group) in groups.iter().enumerate() {
+        destinations.extend_from_slice(&group.axes);
+        match &group.sizes {
+            None => { shape.push(right.shape()[source]); sources.push(vec![source]); names.push(group.name.clone()); }
+            Some(sizes) => {
+                let known: Vec<_> = sizes.iter().flatten().copied().collect();
+                let product = crate::array::element_count(&known).error_at(span, "split dimensions overflow")?;
+                let len = right.shape()[source];
+                let inferred = if sizes.iter().any(Option::is_none) {
+                    if product == 0 { return Err(span.domain_error("cannot infer a factor alongside a zero factor")); }
+                    if !len.is_multiple_of(product) { return Err(span.error(ErrorKind::Length, "split sizes do not factor the source axis")); }
+                    len / product
+                } else {
+                    if product != len { return Err(span.error(ErrorKind::Length, "split sizes do not factor the source axis")); }
+                    0
+                };
+                shape.extend(sizes.iter().map(|s| s.unwrap_or(inferred)));
+                sources.extend(std::iter::repeat_n(Vec::new(), sizes.len()));
+                names.extend((0..sizes.len()).map(|i| group.factor_names.get(i).and_then(Clone::clone)));
+            }
         }
-    };
+    }
+    shape.extend_from_slice(&right.shape()[groups.len()..]);
+    sources.extend((groups.len()..rank).map(|a| vec![a]));
+    let expanded = regroup(right, shape, &sources, &names, span)?;
+    // As in BQN, remaining source axes fill the unused destinations in order. Repeated destinations select diagonals.
+    let mut distinct = destinations.clone();
+    distinct.sort_unstable();
+    distinct.dedup();
+    let result_rank = distinct.len() + expanded.shape().len() - destinations.len();
+    if destinations.iter().any(|&n| n >= result_rank) { return Err(span.error(ErrorKind::Rank, "transpose axes must be consecutive from 0")); }
+    let unused: Vec<_> = (0..result_rank).filter(|r| distinct.binary_search(r).is_err()).collect();
+    destinations.extend(unused);
+    transpose_axes(destinations, &expanded, span)
+}
+
+pub(super) fn inverse_transpose(spec: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let groups = transpose_groups(spec, right, true, span)?;
+    let mut order = Vec::new();
+    let mut shape = Vec::new();
+    let mut sources = Vec::new();
+    let mut names = Vec::new();
+    for group in groups {
+        if group.axes.iter().any(|a| order.contains(a)) { return Err(span.domain_error("axes must be distinct and within the array rank")); }
+        let factors: Vec<_> = group.axes.iter().map(|&a| right.shape()[a]).collect();
+        if let Some(sizes) = &group.sizes {
+            if sizes.iter().zip(&factors).any(|(size, &factor)| size.is_some_and(|size| size != factor)) {
+                return Err(span.error(ErrorKind::Length, "factor sizes do not match the input axes"));
+            }
+        }
+        shape.push(crate::array::element_count(&factors).error_at(span, "merged dimension overflow")?);
+        sources.push(if group.axes.len() == 1 && group.sizes.is_none() { vec![order.len()] } else { Vec::new() });
+        names.push(group.name);
+        order.extend(group.axes);
+    }
+    for axis in 0..right.shape().len() {
+        if !order.contains(&axis) { shape.push(right.shape()[axis]); sources.push(vec![order.len()]); order.push(axis); }
+    }
+    let ordered = reorder(right, &order, span)?;
+    regroup(&ordered, shape, &sources, &names, span)
+}
+
+/// The shared data-remapping kernel: input axis `i` goes to `axes[i]`.
+pub(crate) fn transpose_axes(axes: Vec<usize>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let mut shape = vec![usize::MAX; axes.iter().max().map_or(0, |n| n + 1)];
     for (i, &axis) in axes.iter().enumerate() { shape[axis] = shape[axis].min(right.shape()[i]); }
-    let keys = (0..shape.len())
-        .map(|a| {
-            let sources = axes.iter().enumerate().filter(|(_, dst)| **dst == a).map(|(src, _)| src).collect::<Vec<_>>();
-            if sources.len() == 1 { right.keys(sources[0]).cloned() } else { None }
-        })
-        .collect();
-    let names = (0..shape.len())
-        .map(|a| {
-            let mut sources = axes.iter().enumerate().filter(|(_, dst)| **dst == a).map(|(src, _)| src);
-            let first = sources.next().and_then(|src| right.axis_name(src)).cloned();
-            if sources.next().is_none() { first } else { None }
-        })
-        .collect();
+    let sources: Vec<Vec<_>> = (0..shape.len()).map(|a| (0..axes.len()).filter(|&src| axes[src] == a).collect()).collect();
     let mut stride = vec![0; shape.len()];
     for (&axis, source) in axes.iter().zip(strides(right.shape())) { stride[axis] += source; }
     let tables: Vec<_> = shape.iter().zip(&stride).map(|(&len, &stride)| Steps::along(len, stride)).collect();
-    remap(right, Layout::from(shape).with_keys(keys).error_at(span, "invalid transpose keys")?.inherit_names(names), &tables, span)
+    remap(right, transpose_layout(right, shape, &sources, &[], span)?, &tables, span)
 }
 
 pub(super) fn split(right: &Value, axis: Option<usize>, span: &Context<'_>) -> Result<Value, Error> {

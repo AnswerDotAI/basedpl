@@ -232,15 +232,24 @@ impl Function {
             N::Composed(Over, [F(f), F(g)]) => f.selects(dyadic) && g.selects(false),
             N::Composed(Before, [V(_), F(f)]) => !dyadic && f.selects(true),
             N::Composed(Power, [F(f), V(n)]) => matches!(n.as_number().as_ref().and_then(power_count), Some((false, n)) if n != u64::MAX) && f.selects(dyadic),
+            N::Inverse(f) if f.transposes() => true,
             // Expand, the inverse of replicate, gives each cell of its argument or a fill.
             N::Inverse(f) => match f.node() { N::Composed(Before, [V(_), F(r)]) => !dyadic && replicate(r), _ => dyadic && replicate(f) },
             _ => false,
         }
     }
+    /// Whether the function is `⍉`, with or without a bound left argument. Its inverse gives each item exactly once.
+    fn transposes(&self) -> bool {
+        match self.node() {
+            FunctionNode::Primitive(Primitive::Transpose) => true,
+            FunctionNode::Composed(OperatorKind::Before, [Operand::Value(_), Operand::Function(f)]) => f.transposes(),
+            _ => false,
+        }
+    }
     /// Whether the function can drop items of its argument. Under uses an inverse only for a function that can't, as BQN's spec
-    /// requires. An inverse drops items only where its function does: BPL's one other inverse that drops items, the inverse
-    /// of a catenate, checks the items it drops. Dfns, system functions, functions with an inverse that `f⁻¹←g` attaches, and
-    /// constants count as keeping every item.
+    /// requires. An inverse drops items only where its function does, except inverse transpose, which never drops any. The
+    /// inverse of a catenate, BPL's one other inverse that drops items, checks the items it drops. Dfns, system functions,
+    /// functions with an inverse that `f⁻¹←g` attaches, and constants count as keeping every item.
     fn discards(&self, dyadic: bool) -> bool {
         use {
             FunctionNode as N,
@@ -254,6 +263,7 @@ impl Function {
             N::Composed(Over, [F(f), F(g)]) => f.discards(dyadic) || g.discards(false),
             N::Composed(Before | After, [V(_), F(f)] | [F(f), V(_)]) | N::Modified(Commute, F(f)) => f.discards(true),
             N::Ruled(_, Rules { inverse: Some(_), .. }) => false,
+            N::Inverse(f) if f.transposes() => false,
             N::Axis(f, _) | N::Inverse(f) | N::Ruled(f, _) | N::Modified(Each, F(f)) | N::Composed(Power | Rank, [F(f), V(_)]) => f.discards(dyadic),
             N::Fork([f, g, h]) => f.discards(dyadic) || g.discards(true) || h.discards(dyadic),
             N::Modified(Commute, V(_)) | N::System(_) | N::Defined(_) | N::Derived(..) | N::LateBound(..) => false,

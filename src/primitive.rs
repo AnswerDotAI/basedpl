@@ -846,13 +846,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
             Math(Log) => call(Math(Power), Some(a), &Arithmetic(Divide).call(None, right, span)?),
             Math(Circle) if first => call(Math(Arc), Some(a), right),
             Reverse(_) if first => call(p, Some(&Arithmetic(Minus).call(None, a, span)?), right),
-            Transpose if first => {
-                // The named axes become the leading axes again, and the unnamed axes follow in order, as in BQN.
-                let rank = right.shape().len();
-                let named = axes(a, rank, span)?;
-                let perm: Vec<_> = named.iter().copied().chain((0..rank).filter(|r| !named.contains(r))).collect();
-                reorder(right, &perm, span)
-            }
+            Transpose if first => inverse_transpose(a, right, span),
             Decode if first => inverse_decode(a, right, span),
             Encode if first => Decode.call(Some(a), right, span),
             Identity(left) => {

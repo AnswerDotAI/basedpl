@@ -122,7 +122,7 @@ impl Agreement {
             }
         }
         let len = generated_len(&shape)?;
-        let layout = Layout::from(shape).with_keys(keys)?.inherit_names(names).with_renderer(agreed(left.renderer(), right.renderer()));
+        let layout = Layout::from(shape).with_keys(keys)?.inherit_names(names).with_renderer(agreed([left.renderer(), right.renderer()]));
         let x = Mapping::new(left, xa, &layout, len);
         let y = Mapping::new(right, ya, &layout, len);
         Ok(Self { layout, len, left: x, right: y })

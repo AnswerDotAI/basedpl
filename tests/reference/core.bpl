@@ -3985,6 +3985,18 @@ x←16•float -3⍴0 ⋄ 1÷[+/ -3⍴0; +/x; +/16•float⍬]   ⍝ ¯∞ ¯∞
 ⍝ — Mix pads an atomic cell rather than extending its value
 ⊃[1 [2 3]]   ⍝ [1 0⋄2 3]
 
+⍝ — A row without keys takes the keys of the rows that have them
+["c":1 "d":3⋄8 ∞]   ⍝ ["c":1 "d":3⋄"c":8 "d":∞]
+
+⍝ — Mix keeps the keys that its keyed cells agree on
+⊃[10 20;["a":1 "b":2]]   ⍝ ["a":10 "b":20⋄"a":1 "b":2]
+
+⍝ — Rows give no keys when a row needs padding
+["a":1 "b":2⋄10 20 30]   ⍝ [1 2 0⋄10 20 30]
+
+⍝ — Mix keeps the axis name that its named cells agree on, as catenate does
+⍴⊃[(["i":2]⍴1 2);10 20]   ⍝ [2 "i":2]ₓ
+
 ⍝ — Empty mix uses the retained cell prototype to determine its trailing shape
 ⊃0⍴[[1 2] [3 4 5]]   ⍝ 0 2⍴0
 
@@ -4104,6 +4116,83 @@ s←+/ ⋄ s⍠0 [1 2 3⋄4 5 6]   ⍝ 5 7 9
 
 ⍝ — The inverse of a short transpose list restores the argument
 2⍉⁻¹2⍉2 3 4⍴⍳24   ⍝ 2 3 4⍴⍳24
+
+⍝ transpose:names — Forward transpose routes to positions, not existing axis names
+["w" "b" "h"]⍉["b":2 "h":3 "w":4]⍴⍳24
+⍝ error: DOMAIN ERROR
+
+⍝ transpose:inverse-names — Inverse transpose lists source axes in output order
+x←["b":2 "h":3 "w":4]⍴⍳24
+["w" 0 "h"]⍉⁻¹x
+⍝ =>
+2 0 1⍉⁻¹["b":2 "h":3 "w":4]⍴⍳24
+
+⍝ transpose:split — Split one input axis, then route its factors independently
+[0 [2 2;1 3]]⍉2 6⍴⍳12
+⍝ =>
+0 2 1⍉2 2 3⍴⍳12
+
+⍝ transpose:inverse — A bound split permutation has a genuine inverse
+x←2 3 4⍴⍳24
+f←[0 2 [1 2;3 ∞]]⍉
+(f⁻¹f x)≡x   ⍝ $t
+
+⍝ transpose:attention — Declared names label both sides of a bound split-and-route function
+x←["b":2 "t":3 "d":8]⍴⍳48
+f←["b":0 "t":2 "d":["h":1 2;"f":3 ∞]]⍉
+[⍴f x;(f⁻¹f x)≡x;⍴+/⍠"h" f x]
+⍝ =>
+[["b":2 "h":2 "t":3 "f":4]ₓ;$t;["b":2 "t":3 "f":4]ₓ]
+
+⍝ transpose:patches — Named factors can be reordered and merged by an output pattern
+images←["b":1 "h":4 "w":6 "c":2]⍴⍳48
+f←["b":0 "h":["i":1 ∞;"y":3 2] "w":["j":2 ∞;"x":4 3] "c":5]⍉
+y←f images
+[⍴y;(f⁻¹y)≡images;⍴["b" "patch":["i" "j"] "pixel":["y" "x" "c"]]⍉⁻¹y]
+⍝ =>
+[["b":1 "i":2 "j":2 "y":2 "x":3 "c":2]ₓ;$t;["b":1 "patch":4 "pixel":12]ₓ]
+
+⍝ transpose:merge — The inverse can omit factor sizes supplied by its input
+[0 [2 1]]⍉⁻¹0 2 1⍉2 2 3⍴⍳12
+⍝ =>
+2 6⍴⍳12
+
+⍝ transpose:merge-names — Merging named axes preserves only untouched axis names
+x←["b":2 "h":3 "p":4]⍴⍳24
+["b" ["h" "p"]]⍉⁻¹x
+⍝ =>
+["b":2 12]⍴⍳24
+
+⍝ transpose:partial — A grouped partial map fills unused axes in order
+[[1 2;0 ∞]]⍉6 4⍴⍳24
+⍝ =>
+1 0 2⍉2 3 4⍴⍳24
+
+⍝ transpose:metadata — Untouched axes keep their position keys when another splits
+x←"a" "b":2 6⍴⍳12
+[0 [2 2;1 ∞]]⍉x
+⍝ =>
+"a" "b":0 2 1⍉2 2 3⍴⍳12
+
+⍝ transpose:bad-product — Split dimensions must exactly factor the source axis
+[[0 2;1 2]]⍉⍳6
+⍝ error: LENGTH ERROR
+
+⍝ transpose:bad-size — Inverse transpose checks supplied factor sizes
+[[0 2;1 ∞]]⍉⁻¹3 2⍴⍳6
+⍝ error: LENGTH ERROR
+
+⍝ transpose:ambiguous — Zero times an inferred factor does not determine that factor
+[[0 0;1 ∞]]⍉⍬
+⍝ error: DOMAIN ERROR
+
+⍝ transpose:under — Under writes back through inverse transpose, which moves and merges axes without dropping items
+x←["b":2 "h":3 "w":4]⍴⍳24
+[((10×)@(2 0 1⍉⁻¹) x)≡10×x;((10×)@(["b" ["h" "w"]]⍉⁻¹) x)≡10×x;(⌽@(["w" "b" "h"]⍉⁻¹) x)≡⌽⍠"h"⊢x]   ⍝ $t $t $t
+
+⍝ transpose:repeated-name — A key cannot give a name that another result axis has
+["w":0]⍉["b":2 "h":3 "w":4]⍴⍳24
+⍝ error: DOMAIN ERROR
 
 ⍝ — A negative replicate count replaces its item with fills
 2 ¯1 1#10 20 30   ⍝ 10 10 0 30

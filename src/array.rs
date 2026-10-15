@@ -20,9 +20,20 @@ mod text;
 pub use storage::{Buffer, FloatWidth};
 pub(crate) use {storage::*, text::*};
 
-/// What `x` and `y` agree on: the one that is present, or either when they're equal. Different values give none.
-pub(crate) fn agreed<T: PartialEq + Clone>(x: Option<&T>, y: Option<&T>) -> Option<T> {
-    match (x, y) { (Some(x), Some(y)) if x != y => None, (x, y) => x.or(y).cloned() }
+/// The value that every present item of `values` equals. Absent items don't count. Two different values give none.
+pub(crate) fn agreed<'a, T: PartialEq + Clone + 'a>(values: impl IntoIterator<Item = Option<&'a T>>) -> Option<T> {
+    let mut found = None;
+    for value in values.into_iter().flatten() {
+        if found.is_some_and(|f| f != value) { return None; }
+        found = Some(value);
+    }
+    found.cloned()
+}
+
+/// The first name that appears more than once in `names`.
+pub(crate) fn repeated_name(names: &[Option<Arc<str>>]) -> Option<&Arc<str>> {
+    let mut seen = HashSet::new();
+    names.iter().flatten().find(|n| !seen.insert(*n))
 }
 
 #[derive(Clone, Debug)]
@@ -111,8 +122,7 @@ impl Layout {
     pub fn with_renderer(self, renderer: Option<crate::Function>) -> Self { self.edit(renderer.is_none(), |m| m.renderer = renderer) }
     pub fn with_names(self, names: Vec<Option<Arc<str>>>) -> Result<Self, ErrorKind> {
         if !names.is_empty() && names.len() != self.shape.len() { return Err(ErrorKind::Rank); }
-        let mut seen = HashSet::new();
-        if names.iter().flatten().any(|n| !seen.insert(n)) { return Err(ErrorKind::Domain); }
+        if repeated_name(&names).is_some() { return Err(ErrorKind::Domain); }
         Ok(self.inherit_names(names))
     }
     pub fn inherit_names(self, names: Vec<Option<Arc<str>>>) -> Self {
@@ -796,12 +806,11 @@ impl Value {
         let mut keys = frame.all_keys();
         let mut names = (0..frame.shape.len()).map(|a| frame.name(a).cloned()).collect::<Vec<_>>();
         for axis in 0..rank {
-            let cell_keys = |cell: &Value| axis.checked_sub(rank - cell.shape().len()).and_then(|a| cell.keys(a)).cloned();
-            let first = cell_keys(&cells[0]);
-            keys.push(if cells.iter().all(|c| cell_keys(c) == first) { first } else { None });
-            let cell_name = |cell: &Value| axis.checked_sub(rank - cell.shape().len()).and_then(|a| cell.axis_name(a)).cloned();
-            let first = cell_name(&cells[0]);
-            names.push(if cells.iter().all(|c| cell_name(c) == first) { first } else { None });
+            let cell_axis = |cell: &Value| axis.checked_sub(rank - cell.shape().len());
+            // As in arithmetic, an unkeyed or unnamed cell agrees with the others. Keys also need every cell to fill the axis without padding.
+            let unpadded = cells.iter().all(|c| cell_axis(c).map_or(1, |a| c.shape()[a]) == cell_shape[axis]);
+            keys.push(if unpadded { agreed(cells.iter().map(|c| cell_axis(c).and_then(|a| c.keys(a)))) } else { None });
+            names.push(agreed(cells.iter().map(|c| cell_axis(c).and_then(|a| c.axis_name(a)))));
         }
         data.finish(Layout::from(shape).with_keys(keys)?.inherit_names(names), || cells[0].prototype())
     }
