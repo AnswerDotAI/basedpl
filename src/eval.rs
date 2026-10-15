@@ -1,6 +1,6 @@
 use crate::{
     agreement::{Agreement, Mapping}, array::{generated_len, Axis, Frame as ResultFrame, Gather}, execution::Context,
-    primitive::{integer, push_window, FoldKind, OperandKind, OperatorKind, Primitive, Selection, Superscript, Targets, Windows}, selection::SelectionKind,
+    primitive::{integer, remapped, window_steps, FoldKind, OperandKind, OperatorKind, Primitive, Selection, Superscript, Targets, Windows}, selection::SelectionKind,
     symbols::Notation, syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind},
     DomainAt, Error, ErrorAt, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value
 };
@@ -583,9 +583,14 @@ impl Function {
                 let item = crate::primitive::pick(left.unwrap_or(&crate::primitive::integer(0)), right, cx.session.prototype, cx)?;
                 return Ok(Bound::from(item));
             }
+            FunctionNode::Primitive(p @ (Primitive::MatrixDivide | Primitive::Decode))
+                if crate::derivative::either_active(cx, left, right) =>
+            {
+                crate::derivative::operated(*p, left, right, cx)
+            }
             FunctionNode::Primitive(p) => p.call(left, right, cx),
             FunctionNode::System(f) => {
-                if crate::derivative::active_in(cx, right) || left.is_some_and(|x| crate::derivative::active_in(cx, x)) { return Err(crate::derivative::system(f.name, cx)); }
+                if crate::derivative::either_active(cx, left, right) { return Err(crate::derivative::system(f.name, cx)); }
                 f.check(left, cx.span)?;
                 if f.item.maps(right) { return self.each_item(left, right, f.prototype.expect("a mapped system function has a result prototype"), cx); }
                 if let (true, Some(prototype)) = (cx.session.prototype, f.prototype) { return Ok(Bound::from(prototype(cx))); }

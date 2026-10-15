@@ -23,12 +23,11 @@ impl WindowAxis {
     }
 }
 
-/// Appends the window with cell shape `cell` whose leading axes start at `starts`, filling positions outside `right` with its prototype.
-pub(crate) fn push_window(right: &Value, cell: &[usize], starts: &[isize], data: &mut Gather) {
+/// The steps that read the window with cell shape `cell` whose leading axes start at `starts`, with fill at positions outside `right`.
+pub(crate) fn window_steps(right: &Value, cell: &[usize], starts: &[isize]) -> Vec<Steps> {
     let (shape, stride) = (right.shape(), strides(right.shape()));
-    let tables: Vec<_> = cell.iter().enumerate()
-        .map(|(a, &len)| Steps::Clipped { start: starts.get(a).map_or(0, |&s| s as i128), len, size: shape[a], stride: stride[a] }).collect();
-    data.walk(right, 0, &tables);
+    cell.iter().enumerate()
+        .map(|(a, &len)| Steps::Clipped { start: starts.get(a).map_or(0, |&s| s as i128), len, size: shape[a], stride: stride[a] }).collect()
 }
 
 /// The sizes and movements in a window specification for the leading axes of an argument with `rank` axes. The specification is a unit or vector of sizes, or a two-row matrix of sizes above movements. `↕` and `⌺` share it.
@@ -72,9 +71,7 @@ impl Windows {
             None => Steps::along(shape[a], stride[a]),
         }).collect();
         let padded: Vec<_> = tables.iter().map(Steps::len).collect();
-        let mut data = Gather::new(&[right], generated_len(&padded)?);
-        data.walk(right, 0, &tables);
-        data.finish(Layout::from(padded), || right.prototype()).map(Some)
+        remapped(right, Layout::from(padded), &tables).map(Some)
     }
 }
 pub(super) fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -87,15 +84,11 @@ pub(super) fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result
     let shape = [frame.as_slice(), cell.as_slice()].concat();
     let len = generated_len(&shape).error_at(span, "windows exceed array limits")?;
     generated_len(&cell).error_at(span, "window is too large")?;
-    let mut data = Gather::new(&[right], len);
-    if len > 0 {
-        let padded = windows.padded(right).error_at(span, "invalid windows")?;
-        let source = padded.as_ref().unwrap_or(right);
-        let stride = strides(source.shape());
-        let starts = (0..count).map(|a| Steps::Stride { start: 0, len: frame[a], step: (axes[a].step * stride[a]) as isize });
-        let tables: Vec<_> = starts.chain(cell.iter().zip(&stride).map(|(&len, &stride)| Steps::along(len, stride))).collect();
-        data.walk(source, 0, &tables);
-    }
+    let padded = if len > 0 { windows.padded(right).error_at(span, "invalid windows")? } else { None };
+    let source = padded.as_ref().unwrap_or(right);
+    let stride = strides(source.shape());
+    let starts = (0..count).map(|a| Steps::Stride { start: 0, len: frame[a], step: (axes[a].step * stride[a]) as isize });
+    let tables: Vec<_> = starts.chain(cell.iter().zip(&stride).map(|(&len, &stride)| Steps::along(len, stride))).collect();
     let frame_keys = axes.iter().enumerate().map(|(a, w)| match right.keys(a) {
         Some(k) if w.padded => k.select((0..frame[a]).map(|i| Some(i * w.step))).map(Some), _ => Ok(None)
     });
@@ -105,7 +98,7 @@ pub(super) fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result
     let keys = frame_keys.chain(cell_keys).collect::<Result<Vec<_>, _>>().error_at(span, "invalid window keys")?;
     let names = (0..frame.len()).chain(0..cell.len()).map(|a| right.axis_name(a).cloned()).collect();
     let layout = Layout::from(shape).with_keys(keys).error_at(span, "invalid windows")?.inherit_names(names);
-    data.finish(layout, || right.prototype()).error_at(span, "invalid windows")
+    remapped(source, layout, &tables).error_at(span, "invalid windows")
 }
 
 pub(super) fn enlist(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -203,12 +196,29 @@ pub(super) fn rearranged(layout: Layout, right: &Value) -> Layout {
 }
 
 /// Items of `right` laid out by `layout`, read through one `Steps` per axis as `Gather::walk` reads them.
-pub(super) fn remap(right: &Value, layout: Layout, tables: &[Steps], span: &Context<'_>) -> Result<Value, Error> {
-    let len = generated_len(layout.shape()).error_at(span, "result exceeds array limits")?;
+pub(crate) fn remapped(right: &Value, layout: Layout, tables: &[Steps]) -> Result<Value, ErrorKind> {
+    generated_len(layout.shape())?;
     if right.is_atom() && layout.shape().is_empty() { return Ok(right.clone()); }
-    let mut data = Gather::new(&[right], len);
-    data.walk(right, 0, tables);
-    data.finish(rearranged(layout, right), || right.prototype()).error_at(span, "invalid structural result")
+    if let Some(copy) = crate::fusion::copy(right, &layout, tables) { return Ok(copy); }
+    if let Some((tag, primal, tangent)) = right.dual().filter(|(_, _, t)| t.linear().is_none()) {
+        if let (Some(p), Some(t)) = (crate::fusion::copy(&primal, &layout, tables), crate::fusion::copy(&tangent, &layout, tables)) { return Ok(crate::derivative::dual(tag, p, t)); }
+    }
+    walked(right, layout, 0, tables)
+}
+
+/// Items of `source` laid out by `layout`, copied at once through `steps` from `base` by `Gather::walk`.
+pub(crate) fn walked(source: &Value, layout: Layout, base: usize, steps: &[Steps]) -> Result<Value, ErrorKind> {
+    let mut data = Gather::new(&[source], generated_len(layout.shape())?);
+    data.walk(source, base, steps);
+    data.finish(layout, || source.prototype())
+}
+
+/// `remapped`, keeping `right`'s renderer where the rank doesn't change.
+pub(super) fn remap(right: &Value, layout: Layout, tables: &[Steps], span: &Context<'_>) -> Result<Value, Error> {
+    remapped(right, rearranged(layout, right), tables).map_err(|k| {
+        let message = if k == ErrorKind::Limit { "result exceeds array limits" } else { "invalid structural result" };
+        span.error(k, message)
+    })
 }
 
 pub(super) fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>, span: &Context<'_>) -> Result<Value, Error> {

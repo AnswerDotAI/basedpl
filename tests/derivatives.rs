@@ -82,6 +82,15 @@ const CASES: &[Case] = &[
     case("{,{(+/⍵)×⍵}⍤1⊢⍵}", -2.0, 2.0, &[2, 2], Oracle::Complex),
     case("{{⍵×1○⍵}¨⍵}", -2.0, 2.0, &[3], Oracle::Complex),
     case("{⍵⌻0.5 1.5}", -2.0, 2.0, &[3], Oracle::Complex),
+    case("{⌹⍵+[3 0⋄0 3]}", -1.0, 1.0, &[2, 2], Oracle::Complex),
+    case("{1 2⌹⍵+[3 0⋄0 3]}", -1.0, 1.0, &[2, 2], Oracle::Complex),
+    case("{⍵⌹[2 1⋄1 3]}", -2.0, 2.0, &[2], Oracle::Complex),
+    case("{⍵⌹[1 0⋄0 1⋄1 1]}", -2.0, 2.0, &[3], Oracle::Complex),
+    case("{-.×⍵+[3 0⋄0 3]}", -1.0, 1.0, &[2, 2], Oracle::Complex),
+    case("{10⊥⍵}", -2.0, 2.0, &[3], Oracle::Complex),
+    case("{⍵⊥1 2 3}", 0.5, 2.0, &[], Oracle::Complex),
+    case("{⍵⊥1 2 3}", 0.5, 2.0, &[3], Oracle::Complex),
+    case("{+/,⊃[⍵;2×⍵]}", -2.0, 2.0, &[3], Oracle::Complex),
 ];
 
 /// A small xorshift generator, so that each run draws the same points.

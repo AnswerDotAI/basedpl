@@ -22,13 +22,18 @@ impl From<Failure> for &'static str {
     fn from(failure: Failure) -> Self { match failure { Failure::Domain(message) => message, Failure::Dual => crate::derivative::UNSUPPORTED } }
 }
 
-impl<T> crate::DomainAt<T> for Result<T, Failure> {
-    fn domain_at(self, span: &crate::Span) -> Result<T, crate::Error> {
-        self.map_err(|failure| match failure {
+impl Failure {
+    /// The error this failure gives at `span`: DOMAIN with its message, or UNSUPPORTED for a dual.
+    pub(crate) fn at(self, span: &crate::Span) -> crate::Error {
+        match self {
             Failure::Domain(message) => span.domain_error(message),
             Failure::Dual => span.error(crate::ErrorKind::Unsupported, crate::derivative::UNSUPPORTED),
-        })
+        }
     }
+}
+
+impl<T> crate::DomainAt<T> for Result<T, Failure> {
+    fn domain_at(self, span: &crate::Span) -> Result<T, crate::Error> { self.map_err(|failure| failure.at(span)) }
 }
 #[derive(Clone, Debug)]
 enum Repr {
@@ -386,10 +391,11 @@ pub(crate) trait Field: Clone + num_traits::NumAssignRef {
     fn array(x: Vec<Self>, shape: Vec<usize>, width: FloatWidth) -> Result<Value, ErrorKind>;
 }
 
-/// The items of the array `a` in the domain of `T`: compact storage converted in one pass, and other items one at a time. DOMAIN where an item isn't a number.
+/// The items of the array `a` in the domain of `T`: compact storage converted in one pass, and other items one at a time. DOMAIN where an item isn't a number, and UNSUPPORTED for a dual, whose domain is its primal's.
 pub(crate) fn read<'a, T: Field>(a: &'a Value, span: &Span) -> Result<Cow<'a, [T]>, Error> {
     if let Some(x) = T::compact(a) { return Ok(x); }
-    (0..a.len()).map(|i| crate::primitive::numeric(&a.at(i), span).map(T::of)).collect::<Result<_, _>>().map(Cow::Owned)
+    let item = |i| crate::primitive::numeric(&a.at(i), span).and_then(|n| if n.is_dual() { Err(Failure::Dual.at(span)) } else { Ok(T::of(&n)) });
+    (0..a.len()).map(item).collect::<Result<_, _>>().map(Cow::Owned)
 }
 
 impl Field for BigRational {

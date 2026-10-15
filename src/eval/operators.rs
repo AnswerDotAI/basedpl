@@ -96,15 +96,13 @@ fn stencil(f: &Function, spec: &Value, right: &Value, cx: &mut Context<'_>) -> R
     let windows = Windows::new(&sizes, &movements, |_| true, right, cx.span)?;
     let (axes, sizes): (usize, Vec<usize>) = (sizes.len(), windows.axes.iter().map(|w| w.size).collect());
     let shape = [sizes.as_slice(), &right.shape()[axes..]].concat();
-    let size = generated_len(&shape).error_at(cx.span, "stencil window is too large")?;
+    generated_len(&shape).error_at(cx.span, "stencil window is too large")?;
     let count = generated_len(&windows.frame).error_at(cx.span, "stencil result is too large")?;
     let mut results = Vec::with_capacity(count);
     for position in 0..count {
         let starts = windows.starts(position);
         let padding: Vec<f64> =
             (0..axes).map(|a| if starts[a] < 0 { -starts[a] } else { (right.shape()[a] as isize - starts[a] - sizes[a] as isize).min(0) } as f64).collect();
-        let mut data = crate::array::Gather::new(&[right], size);
-        push_window(right, &shape, &starts, &mut data);
         let keys = (0..shape.len()).map(|a| {
             if a >= axes { return Ok(right.keys(a).cloned()); }
             if padding[a] != 0. { return Ok(None); }
@@ -112,7 +110,7 @@ fn stencil(f: &Function, spec: &Value, right: &Value, cx: &mut Context<'_>) -> R
         }).collect::<Result<_, _>>().error_at(cx.span, "invalid stencil window keys")?;
         let layout =
             crate::array::Layout::from(shape.clone()).with_keys(keys).error_at(cx.span, "invalid stencil window")?.inherit_names(right.axis_names().to_vec());
-        let window = data.finish(layout, || right.prototype()).error_at(cx.span, "invalid stencil window")?;
+        let window = remapped(right, layout, &window_steps(right, &shape, &starts)).error_at(cx.span, "invalid stencil window")?;
         let border = Value::floats(vec![axes], cx.numeric().width, padding).unwrap();
         results.push(f.call_array(Some(&border), &window, cx)?);
     }
@@ -467,17 +465,10 @@ fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &m
         if let Some(tag) = crate::derivative::tag(left).max(crate::derivative::tag(right)) {
             let (a, ta) = crate::derivative::split(left, tag);
             let (b, tb) = crate::derivative::split(right, tag);
-            let product = |x: &Value, y: &Value, cx: &mut Context<'_>| inner(f, g, Some(x), y, cx)?.array(cx.span);
-            let r = product(&a, &b, cx)?;
-            // A tangent that's a record records the product, with the other factor as its coefficient.
-            let term = |x: &Value, y: &Value, cx: &mut Context<'_>| match (x.linear(), y.linear()) {
-                (Some(t), None) => Ok(crate::linear::product(y, t, false, r.layout().clone())),
-                (None, Some(t)) => Ok(crate::linear::product(x, t, true, r.layout().clone())),
-                _ => product(x, y, cx),
-            };
-            let mut t = ta.map(|ta| term(&ta, &b, cx)).transpose()?;
+            let r = inner(f, g, Some(&a), &b, cx)?.array(cx.span)?;
+            let mut t = ta.map(|ta| crate::derivative::product(&ta, &b, cx)).transpose()?;
             if let Some(tb) = tb {
-                let term = term(&a, &tb, cx)?;
+                let term = crate::derivative::product(&a, &tb, cx)?;
                 t = Some(match t { Some(t) => Primitive::Arithmetic(crate::number::Arithmetic::Plus).call(Some(&t), &term, cx)?, None => term });
             }
             return Ok(Bound::from(crate::derivative::dual(tag, r, t.expect("a dual argument has a tangent"))));
@@ -491,15 +482,15 @@ fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &m
     let n = if left.is_singleton() { ny } else { nx };
     let xf = &left.shape()[..left.shape().len().saturating_sub(1)];
     let yf = &right.shape()[usize::from(!right.is_unit())..];
-    let layout = left.layout().axes(0..xf.len()).concat(&right.layout().axes(1..right.shape().len()));
+    let layout = left.layout().contracted(right.layout());
     let size = generated_len(layout.shape()).error_at(cx.span, "inner product is too large")?;
     let rows = generated_len(xf).error_at(cx.span, "invalid product frame")?;
     let cols = generated_len(yf).error_at(cx.span, "invalid product frame")?;
     generated_len(&[n.max(1), cols.max(1)]).error_at(cx.span, "product contraction is too large")?;
-    let active = crate::derivative::active_in(cx, left) || crate::derivative::active_in(cx, right);
+    let active = crate::derivative::either_active(cx, Some(left), right);
     if let (FunctionNode::Primitive(pf), FunctionNode::Primitive(pg), false) = (f.node(), g.node(), active) {
         if nx == ny && n > 0 && size > 0 && !left.is_unit() && !right.is_unit() && matches!(positions, Mapping::Linear(1)) {
-            if let Some(result) = crate::pervasive::inner(*pf, *pg, left, right, [rows, n, cols], layout.shape().to_vec(), cx.numeric()) {
+            if let Some(result) = crate::pervasive::inner(*pf, *pg, left, right, [rows, n, cols], layout.shape().to_vec(), cx.numeric(), [rustymath::linalg::Orientation::Normal; 2]) {
                 if layout.shape().is_empty() { return Ok(Bound::from(result.at(0))); }
                 return Ok(Bound::from(result.with_layout(layout).error_at(cx.span, "invalid inner product result")?));
             }
@@ -546,6 +537,12 @@ fn expansion(f: &Function, g: &Function, right: &Value, cx: &mut Context<'_>) ->
     };
     use crate::number::{with_field, Arithmetic, Field};
     let arithmetic = |h: &Function, a: Arithmetic| matches!(h.node(), FunctionNode::Primitive(Primitive::Arithmetic(x)) if *x == a);
+    if crate::derivative::active_in(cx, right) {
+        if arithmetic(f, Arithmetic::Minus) && arithmetic(g, Arithmetic::Times) {
+            return crate::derivative::determinant(right, |a, cx| expansion(f, g, a, cx)?.array(cx.span), cx).map(Bound::from);
+        }
+        return Err(cx.span.error(ErrorKind::Unsupported, "∂ differentiates monadic f.g only as -.×"));
+    }
     if arithmetic(f, Arithmetic::Minus) && arithmetic(g, Arithmetic::Times) && m == n && n > 0 {
         if let Some(d) = crate::primitive::determinant(right, n, cx)? { return Ok(Bound::from(d)); }
     }
@@ -670,7 +667,7 @@ fn padded(a: &Value, frame: &[usize], other: &[usize]) -> Result<Value, ErrorKin
 fn stacked(operand: &Function, left: Option<&Value>, right: &Value, [xr, yr]: [usize; 2], cx: &mut Context<'_>) -> Option<Result<Bound, Error>> {
     use crate::{number::Arithmetic, primitive::{stacked as matrices, stacked_decompositions, Stacked}};
     // The stacked kernels read compact storage, which a dual doesn't have: its cells go through the operand one by one (`derivative`).
-    if yr != 2 || crate::derivative::active_in(cx, right) || left.is_some_and(|x| crate::derivative::active_in(cx, x)) { return None; }
+    if yr != 2 || crate::derivative::either_active(cx, left, right) { return None; }
     let arithmetic = |f: &Operand, a| matches!(f, Operand::Function(f) if matches!(f.node(), FunctionNode::Primitive(Primitive::Arithmetic(x)) if *x == a));
     let decompose = |f: &Function| matches!(f.node(), FunctionNode::System(s) if s.name == "•decompose");
     let kind = match (operand.node(), left) {

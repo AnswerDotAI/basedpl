@@ -1,5 +1,5 @@
 # The cases that `tests/speed.rs` times in the native build and `tests/wasm-speed.mjs` times in the browser build. Each case line holds the code, its native budget and its wasm budget, separated by tabs. Each section starts with its name in brackets and the prefs its session starts with. Every session then runs the lines under the `[setup]` before its section.
-# Budgets in `[copies]`, `[exact]`, `[images]`, `[objectives]`, `[calls]` and `[derivatives]` count copies of the `n` items that the section's setup makes. A budget in `[widths]` is the most that the time in that section's 32-bit session may be, as a fraction of the time in the `[exact]` session. Natively and in wasm, it is the worse of that fraction on a Mac and on CI's runner, plus 0.25.
+# Budgets in `[copies]`, `[exact]`, `[images]`, `[objectives]`, `[calls]`, `[derivatives]` and `[structure]` count copies of the `n` items that the section's setup makes. A budget in `[widths]` is the most that the time in that section's 32-bit session may be, as a fraction of the time in the `[exact]` session. Natively and in wasm, it is the worse of that fraction on a Mac and on CI's runner, plus 0.25.
 # A wasm budget in copies is twice the most the case has cost on a Mac and on CI's runner, in the module that `cargo wasm` builds, and at least 0.5. `tests/speed.rs` gives the same rule for native budgets in copies.
 # A case in copies that CI hasn't timed yet has four times its Mac cost, natively and in wasm. A `[widths]` case that CI hasn't timed yet has its Mac fraction plus 0.25. The next CI run that logs every cost, a push's `Test` run or a `Speed` run, sets their budgets under the rules above.
 # The CI figures come from `Speed` run 38397524881. Its CPU was the AMD Ryzen 9 7950X3D 16-Core Processor.
@@ -181,7 +181,7 @@ bm∧.∨bm	12	24
 jm+.×jm	160	370
 jm+.=jm	94	110
 cm+.=⍉cm	99	120
-zm+.×zm	110	180
+zm+.×zm	78	180
 # Matrix division, `•decompose`, `•decompose⁻¹` and the determinant `-.×` run on rustymath, whose own speed test times each factorisation. These cases time basedpl's part: the calls in a `⍤2` stack, each path of `⌹`, the route from monadic `-.×` to LU, turning `"qr"`'s factors into arrays, rebuilding a matrix from factors, and reading complex storage. `tq` is tall enough for `⌹` and `"qr"` to take the CholeskyQR2 path.
 ⌹⍤2 ms	130	160
 ms⌹⍤2 sps	150	200
@@ -200,7 +200,7 @@ ms⌹⍤2 sps	150	200
 "eigen"•decompose⁻¹ h	1400	1800
 "eigen"•decompose⍤2 ss	750	720
 "eigen"•decompose⍤2 ms	2300	2100
-⌹zm	210	260
+⌹zm	180	260
 -.×m	100	150
 -.×⍤2 ms	60	82
 [exact] •prefs ["tolerance":0]
@@ -299,3 +299,11 @@ fib←{⍵<2?⍵;(∇⍵-1)+∇⍵-2} ⋄ n←65536
 [calls]
 # `fib 16` makes 3193 calls of a dfn, each with up to four primitive calls on single numbers. Its cost is mostly the evaluator's own work for each call.
 fib 16	960	1600
+[setup]
+sv←¿1048576⍴0 ⋄ n←≢sv
+[structure]
+# A structural glyph on a million floats gives a pending copy, which the call around it reads through, with no pass of its own over memory. A forward run is read in place. A reversed one is copied into a buffer for each block.
+2×⌽sv+1	11	13
+2×1⌽sv+1	8.1	8.9
+2×(10↓sv)+1	8.5	8.8
++/(⌽sv)×sv	11	11

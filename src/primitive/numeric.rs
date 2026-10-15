@@ -125,6 +125,8 @@ pub(crate) fn lambert_w(right: &Value, span: &Context<'_>) -> Result<Value, Erro
 }
 
 pub(super) fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    // Monadic `⌹` gives an inverse from one factorization where it can, and a pseudoinverse otherwise.
+    if left.is_none() { if let Some((inverse, _)) = matrix_inverse(right, span)? { return Ok(inverse); } }
     let dimensions = |a: &Value| match a.shape() {
         [] => Ok((1, 1)), &[m] => Ok((m, 1)), &[m, n] => Ok((m, n)), _ => Err(span.error(ErrorKind::Rank, "matrix divide requires rank at most two"))
     };
@@ -151,8 +153,7 @@ pub(super) fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<
     }
     with_field!(domain, [Exact, Single, Double, Complex], T => {
         let a = read::<T>(right, span)?; let b = ordered(left.map(|x| read::<T>(x, span)).transpose()?, positions.as_ref(), m, k);
-        let mut x = T::solve(&a, b.as_deref(), [m, n], k, span)?; if scalar { return Ok(Value::Number(x.swap_remove(0).number(width))); }
-        T::array(x, layout.shape().to_vec(), width).and_then(|v| v.with_layout(layout)).map_err(|e| span.error(e, "invalid matrix result"))
+        matrix_result(T::solve(&a, b.as_deref(), [m, n], k, span)?, layout, scalar, width, span)
     })
 }
 
@@ -161,6 +162,22 @@ pub(crate) fn determinant(a: &Value, n: usize, span: &Context<'_>) -> Result<Opt
     let Some((domain, width)) = Domain::of_arrays(&[a], span.numeric()) else { return Ok(None) };
     let d = with_field!(domain, [Exact, Single, Double, Complex], T => T::determinant(&read::<T>(a, span)?, n, span)?.number(width));
     Ok(Some(Value::Number(d)))
+}
+
+/// `⌹a` and the determinant of `a`, from one factorization, for a square matrix or a number `a`. `None` where `⌹` gives a pseudoinverse: a singular exact matrix, or a float matrix with a pivot that rustymath's `linalg::inverse` finds negligible.
+pub(crate) fn matrix_inverse(a: &Value, span: &Context<'_>) -> Result<Option<(Value, Number)>, Error> {
+    let n = match *a.shape() { [] | [1] => 1, [m, n] if m == n => n, _ => return Ok(None) };
+    let (domain, width) = domain_of(&[a], span)?;
+    with_field!(domain, [Exact, Single, Double, Complex], T => {
+        let Some((x, d)) = T::inverse(&read::<T>(a, span)?, n, span)? else { return Ok(None) };
+        Ok(Some((matrix_result(x, a.layout().axes((0..a.shape().len()).rev()), a.is_atom(), width, span)?, d.number(width))))
+    })
+}
+
+/// A result of `⌹`, `x`, laid out by `layout`, or its one item where it's `scalar`.
+fn matrix_result<T: Field>(mut x: Vec<T>, layout: Layout, scalar: bool, width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> {
+    if scalar { return Ok(Value::Number(x.swap_remove(0).number(width))); }
+    T::array(x, layout.shape().to_vec(), width).and_then(|v| v.with_layout(layout)).map_err(|e| span.error(e, "invalid matrix result"))
 }
 
 /// A matrix function that `f⍤2` applies to a whole stack of matrices in one call: dyadic `+.×` or `⌹`, or monadic `⌹` or `-.×`.
@@ -336,6 +353,8 @@ trait Linear: Field {
     fn solve(a: &[Self], b: Option<&[Self]>, size: [usize; 2], k: usize, span: &Context<'_>) -> Result<Vec<Self>, Error>;
     /// The determinant of the `n`×`n` matrix `a`.
     fn determinant(a: &[Self], n: usize, span: &Context<'_>) -> Result<Self, Error>;
+    /// The inverse of the `n`×`n` matrix `a` and its determinant, from one factorization, or `None` where `solve` would give its pseudoinverse.
+    fn inverse(a: &[Self], n: usize, span: &Context<'_>) -> Result<Option<(Vec<Self>, Self)>, Error>;
 }
 
 impl Linear for BigRational {
@@ -343,6 +362,7 @@ impl Linear for BigRational {
         match b { Some(b) => linalg::exact::solve_with(a, b, size, k, || span.check_now()), None => linalg::exact::pinv_with(a, size, || span.check_now()) }
     }
     fn determinant(a: &[Self], n: usize, span: &Context<'_>) -> Result<Self, Error> { linalg::exact::determinant_with(a, n, || span.check_now()) }
+    fn inverse(a: &[Self], n: usize, span: &Context<'_>) -> Result<Option<(Vec<Self>, Self)>, Error> { linalg::exact::inverse_with(a, n, || span.check_now()) }
 }
 
 macro_rules! float_linear {
@@ -352,6 +372,7 @@ macro_rules! float_linear {
                 Ok(match b { Some(b) => linalg::solve(a, b, size, k), None => linalg::pinv(a, size) })
             }
             fn determinant(a: &[Self], n: usize, _: &Context<'_>) -> Result<Self, Error> { Ok(linalg::lu(a, n).determinant()) }
+            fn inverse(a: &[Self], n: usize, _: &Context<'_>) -> Result<Option<(Vec<Self>, Self)>, Error> { Ok(linalg::inverse(a, n)) }
         }
     )+};
 }
@@ -474,6 +495,11 @@ pub(super) fn binary_encode(right: &Value, span: &Context<'_>) -> Result<Value, 
     layout.collect(data, prototype).error_at(span, "invalid binary encoding")
 }
 
+/// The length that `⊥` decodes along: the longer of its base's and its digits' last axes, where the other has length 1. LENGTH ERROR where they differ and neither is 1.
+pub(crate) fn decode_length(xlen: usize, ylen: usize, span: &Context<'_>) -> Result<usize, Error> {
+    if xlen != ylen && xlen != 1 && ylen != 1 { return Err(span.error(ErrorKind::Length, "decode axes do not agree")); }
+    Ok(if xlen == 1 { ylen } else { xlen })
+}
 /// Bases are vectors along the last axis of `left`. Its leading axes form a frame that agrees with the values' frame, as with J's ranks: 1 0 to encode and 1 1 to decode.
 pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_>) -> Result<Value, Error> {
     let numbers = |a: &Value| a.elements().map(|e| numeric(&e, span).cloned()).collect::<Result<Vec<_>, _>>();
@@ -523,8 +549,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
     }
     let positions = Mapping::contract(left.layout(), left.shape().len().saturating_sub(1), right.layout(), right.shape().len().saturating_sub(1))
         .error_at(span, "decode contraction keys must agree")?;
-    if xlen != ylen && xlen != 1 && ylen != 1 { return Err(span.error(ErrorKind::Length, "decode axes do not agree")); }
-    let len = if xlen == 1 { ylen } else { xlen };
+    let len = decode_length(xlen, ylen, span)?;
     // The general path gives a cell of one digit that digit unchanged, exact or not.
     if let (Mapping::Single, Mapping::Linear(1)) = (&agreement.left, &agreement.right) {
         if len > 1 && !agreement.layout.shape().is_empty() && (0..ylen).all(|k| positions.index(k) == k) {

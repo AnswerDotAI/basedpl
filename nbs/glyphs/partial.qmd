@@ -42,7 +42,7 @@ f←[1 2 3]ₓ⌻ ⋄ f∂2ₓ   ⍝ 14ₓ
 
 `∂` runs `f` once. With more than one number in `X`, it records the linear steps of the derivative as `f` runs, then reads the Jacobian from that record: once for each result item, or once for each number in `X`, whichever is fewer. A gradient therefore costs a small multiple of one run of `f`, however many numbers `X` holds. The record keeps the values those steps need until `∂` finishes, so memory grows with the work that `f` does. A value that `f` writes to an outer name loses its tangents when `∂` returns.
 
-Arithmetic, the mathematical glyphs, the circle codes, `⌈` and `⌊`, structural and selection glyphs, Under, sorting, `+/`, `+\`, `+.×`, outer products and `⌻` all differentiate, and so does any operator whose operands do. Comparisons, floor, ceiling, grade, `⍳` and `⍸` give no tangent. `∂` doesn't differentiate complex numbers.
+Arithmetic, the mathematical glyphs, the circle codes, `⌈` and `⌊`, structural and selection glyphs, Under, sorting, folds and scans, `+.×`, outer products, `⌻` and `⊥` all differentiate, and so does any operator whose operands do. `⌹` and the determinant `-.×` differentiate at an invertible matrix, and `B⌹A` differentiates with respect to `B` for any matrix `A`. Comparisons, floor, ceiling, grade, `⍳` and `⍸` give no tangent. `∂` doesn't differentiate complex numbers.
 
 `f∂←g` attaches `g` as the derivative of the function that `f` names, as [assignment](../assignment.ipynb#inverses-and-derivatives) describes. `g` is a JVP rule: `T g X` gives the derivative of `f` at `X` along the direction `T`, which has `X`'s structure. `g` must be linear in `T`. `f` still applies itself, and `∂` uses `g` wherever `f` is called with one argument, alone or inside another function. For a gradient, `∂` transposes the steps that `g` takes on `T`. A rule describes a function of one argument, so `∂` through a call of `f` with two arguments gives an error. Bind the left argument first, as in `bound←10↣f ⋄ bound∂←g`. `⁻¹` inverts `f`, and [`⇄`](right-left-arrows.qmd) takes its derivatives through `∂`.
 
@@ -57,5 +57,5 @@ s←{+/⍵×⍵} ⋄ s∂←{+/⍺×2×⍵} ⋄ s∂ 1 2 3   ⍝ 2 4 6
 ## Errors
 
 - `DOMAIN`: an argument or a result that isn't numeric, a nested result for an array argument, or a call with two arguments of a function that has an attached derivative
-- `UNSUPPORTED`: a glyph or system function that `∂` can't differentiate yet, such as `⌹` or `¿`, or a complex argument
+- `UNSUPPORTED`: a glyph or system function that `∂` can't differentiate yet, such as `¿`, a derivative of `⌹` or `-.×` with respect to a singular matrix, or a complex argument
 - `SYNTAX`: a left argument for a function that takes only one argument, such as `C↣⌻`

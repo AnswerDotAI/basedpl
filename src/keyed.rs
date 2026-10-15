@@ -1,4 +1,4 @@
-use crate::{array::{FloatWidth, Gather, Items, Layout, Steps}, ErrorKind, Number, Value};
+use crate::{array::{FloatWidth, Items, Layout, Steps}, ErrorKind, Number, Value};
 use foldhash::{HashMap, HashSet, HashSetExt};
 use std::sync::Arc;
 
@@ -293,12 +293,10 @@ pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: boo
         shape[axis] = all.len();
         keys[axis] = Some(Keys::partial(all)?);
     }
-    let old = target.clone();
-    let maps = shape.iter().zip(old.shape()).map(|(&n, &len)| (0..n).map(|i| (i < len).then_some(i)).collect()).collect::<Vec<_>>();
-    let len = crate::array::generated_len(&shape)?;
-    let mut data = Gather::new(&[&old], len);
-    for i in 0..len { match mapped_index(i, &shape, old.shape(), &maps) { Some(i) => data.push(&old, i), None => data.fill(&fill, 1) } }
-    *target = data.finish(shape.into(), || old.prototype())?.with_keys(keys)?.with_axis_names(old.axis_names().to_vec())?;
+    let stride = crate::primitive::strides(target.shape());
+    let tables: Vec<_> = shape.iter().zip(target.shape()).zip(stride).map(|((&len, &size), stride)| Steps::Clipped { start: 0, len, size, stride }).collect();
+    let names = target.axis_names().to_vec();
+    *target = crate::primitive::remapped(target, shape.into(), &tables)?.with_keys(keys)?.with_axis_names(names)?;
     Ok(())
 }
 
@@ -321,9 +319,7 @@ pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool)
         })
     }).collect::<Result<Vec<_>, ErrorKind>>()?;
     let layout = Layout::from(tables.iter().map(Steps::len).collect::<Vec<_>>()).with_keys(keys)?.inherit_names(value.axis_names().to_vec());
-    let mut data = Gather::new(&[value], crate::array::generated_len(layout.shape())?);
-    data.walk(value, 0, &tables);
-    data.finish(layout, || value.prototype())
+    crate::primitive::remapped(value, layout, &tables)
 }
 
 pub(crate) fn selected_keys(value: &Value, axis: usize, positions: impl IntoIterator<Item = Option<usize>>) -> Result<Option<Arc<Keys>>, ErrorKind> {

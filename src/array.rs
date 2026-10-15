@@ -141,6 +141,8 @@ impl Layout {
     }
     pub fn axes(&self, axes: impl Iterator<Item = usize> + Clone) -> Self { Self::gathered(axes.map(|a| (self, a))) }
     pub fn concat(&self, other: &Self) -> Self { Self::gathered((0..self.shape.len()).map(|a| (self, a)).chain((0..other.shape.len()).map(|a| (other, a)))) }
+    /// The layout of a product such as `+.×`, which contracts the last axis of a left argument of this layout with the first axis of a right argument of `right`.
+    pub(crate) fn contracted(&self, right: &Self) -> Self { self.axes(0..self.shape.len().saturating_sub(1)).concat(&right.axes(1..right.shape.len())) }
     /// The array with this layout holding `items`. An empty array takes `prototype`.
     pub fn collect(&self, items: impl IntoIterator<Item = Value>, prototype: impl Prototype) -> Result<Value, ErrorKind> {
         let items = items.into_iter();
@@ -849,6 +851,8 @@ impl Value {
 
     fn fill_array(&self) -> Self {
         let Self::Array(a) = self else { unreachable!() };
+        if let Some(t) = a.linear() { return t.layout.collect(vec![t.zero.clone(); t.layout.shape().iter().product()], t.zero.clone()).expect("zeros fill a record's layout"); }
+        if let Some((_, primal, _)) = self.dual() { return primal.fill(); }
         Self::Array(Arc::new(ArrayData { data: Data::Own(match (a.storage(), a.storage().items()) {
             (Storage::Mixed(v, memo), _) if v.is_empty() => Storage::Mixed(vec![], memo.clone()),
             (Storage::Mixed(v, _), _) => Storage::compact(v.iter().map(Value::fill).collect(), Widening::Items),

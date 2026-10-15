@@ -340,7 +340,7 @@ def cargo_costs(
     "The rows that `logged_costs` reads from what the speed test of the package at `path` prints, run as `cargo test` runs it. A case over its budget still gives its row."
     path = Path(path).expanduser()
     name = tomllib.loads((path/'Cargo.toml').read_text())['package']['name']
-    p = subprocess.run(['cargo', 'test', '--test', 'speed', '--', '--nocapture'], cwd=path, capture_output=True, text=True, timeout=timeout,
+    p = subprocess.run(['cargo', 'test', '--test', 'speed'], cwd=path, capture_output=True, text=True, timeout=timeout,
                        env=os.environ | {f'{name.upper()}_COSTS': '1'})
     costs = logged_costs(p.stdout + p.stderr)
     if p.returncode and not costs: raise ValueError(p.stderr)

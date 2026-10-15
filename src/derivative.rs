@@ -4,7 +4,7 @@
 //!
 //! Primitive dispatch sends each call with a dual argument to `call`. Pervasive glyphs take their tangents from the partials table, which gives each partial derivative as primitive calls on the primals and the primal result. Rules call primitives, so partials of duals with smaller tags are themselves differentiated. Tangent rules use only `scale`, `add` and `expand`, so that reverse mode can supply symbolic versions of them.
 use crate::{
-    agreement::{Agreement, Mapping}, array::{FloatWidth, Floats, Gather, Ints, Items, Layout, Storage, Width}, error::ErrorAt, execution::Context, number::{Arithmetic, Math}, primitive::{Comparison, Primitive}, Error, ErrorKind,
+    agreement::{Agreement, Mapping}, array::{Gather, Layout}, error::ErrorAt, execution::Context, number::{Arithmetic, Math}, primitive::{Comparison, Primitive}, Error, ErrorKind,
     Function, Number, Span, Value,
 };
 
@@ -74,6 +74,9 @@ pub(crate) fn active(value: &Value) -> bool { deep_tag(value).is_some() }
 /// Whether a `∂` is running and `value` holds a dual.
 pub(crate) fn active_in(cx: &Context<'_>, value: &Value) -> bool { cx.session.differentiating() && active(value) }
 
+/// Whether a running `∂` differentiates either argument of a call.
+pub(crate) fn either_active(cx: &Context<'_>, left: Option<&Value>, right: &Value) -> bool { active_in(cx, right) || left.is_some_and(|x| active_in(cx, x)) }
+
 /// The error for the system function `name` called on a dual, which `∂` can't differentiate.
 #[cold]
 #[inline(never)]
@@ -138,19 +141,14 @@ pub(crate) fn both(target: &mut Value, source: &Value, write: impl Fn(&mut Value
     let (items, tangents) = split(source, tag);
     let symbolic = [&tangent, &tangents].iter().any(|t| t.as_ref().is_some_and(|t| t.linear().is_some()));
     let tangent = if symbolic {
-        let (mut sources, mut next) = (Vec::new(), 1);
+        let mut sources = crate::linear::Sources::default();
         let mut ids = |t: &Option<Value>, like: &Value| match t.as_ref().and_then(Value::linear) {
-            Some(r) => {
-                let ids = crate::linear::ids(r, next);
-                next += r.layout.shape().iter().product::<usize>() as i64;
-                sources.push(r.clone());
-                ids
-            }
+            Some(r) => sources.ids(r),
             None => crate::linear::fill_ids(like),
         };
         let (mut target_ids, source_ids) = (ids(&tangent, &primal), ids(&tangents, &items));
         write(&mut target_ids, &source_ids);
-        crate::linear::gather(sources, target_ids, crate::linear::zero_of(&primal))
+        crate::linear::gather(sources.records, target_ids, crate::linear::zero_of(&primal))
     } else {
         let mut tangent = tangent.unwrap_or_else(|| zeros(&primal));
         write(&mut tangent, &tangents.unwrap_or_else(|| zeros(&items)));
@@ -196,9 +194,7 @@ fn seed(value: &Value, tag: u32, j: usize, span: &Span) -> Result<Value, Error> 
     walk(value, &mut |leaf| {
         let n = numbers(leaf, span)?;
         if complex(leaf) { return Err(span.error(ErrorKind::Unsupported, "∂ can't differentiate with respect to complex numbers")); }
-        let tangent = if (k..k + n).contains(&j) { unit(leaf, j - k) } else { zeros(leaf) };
-        k += n;
-        Ok(dual(tag, leaf.clone(), tangent))
+        Ok(dual(tag, leaf.clone(), direction(leaf, n, &mut k, j)))
     })
 }
 
@@ -210,6 +206,13 @@ fn unit(like: &Value, i: usize) -> Value {
     let mut e = zeros(like);
     e.scatter(&[i], &one);
     e
+}
+
+/// A leaf's tangent in the pass along number `j` of `x`: 1 at that number and 0 elsewhere. The leaf holds `n` numbers, after the `k` numbers before it. `k` moves past the leaf.
+fn direction(leaf: &Value, n: usize, k: &mut usize, j: usize) -> Value {
+    let tangent = if (*k..*k + n).contains(&j) { unit(leaf, j - *k) } else { zeros(leaf) };
+    *k += n;
+    tangent
 }
 
 /// The tangent of `value` at level `tag`, in `value`'s structure: 0 for a number without that tag.
@@ -266,8 +269,10 @@ fn numeric(primal: &Value, span: &Span) -> Result<(), Error> {
 
 /// The Jacobian with the layout of `primal×⊗right`, from the tangents of passes that each seeded one number of `right`.
 fn jacobian(right: &Value, primal: &Value, columns: Vec<Value>, span: &Span) -> Result<Value, Error> {
-    numeric(primal, span)?;
-    if right.is_atom() && columns.len() == 1 { return Ok(columns.into_iter().next().expect("a number has one column")); }
+    if right.is_atom() && columns.len() == 1 {
+        numeric(primal, span)?;
+        return Ok(columns.into_iter().next().expect("a number has one column"));
+    }
     laid_out(right, primal, &mut |i, j| { let c = &columns[j]; if c.is_atom() { c.clone() } else { c.at(i) } }, span)
 }
 
@@ -303,13 +308,8 @@ fn reverse(f: &Function, left: Option<&Value>, right: &Value, n: usize, cx: &mut
     }
     let mut columns = Vec::with_capacity(n);
     for j in 0..n {
-        let mut first = 0;
-        let seeds = lin.parts.iter().map(|part| {
-            let count = if part.is_atom() { 1 } else { part.len() };
-            let seed = if (first..first + count).contains(&j) { unit(part, j - first) } else { zeros(part) };
-            first += count;
-            seed
-        }).collect::<Vec<_>>();
+        let mut k = 0;
+        let seeds = lin.parts.iter().map(|part| Ok(direction(part, numbers(part, cx.span)?, &mut k, j))).collect::<Result<Vec<_>, Error>>()?;
         columns.push(lin.evaluated(&seeds, cx)?);
     }
     jacobian(right, primal, columns, cx.span)
@@ -421,10 +421,12 @@ enum Rule {
     Sort,
     /// `⌻`, whose tangent comes from its derivative polynomials (`polynomial`).
     Polynomial,
+    /// Mix of a dual whose primal is nested: the call applies to the primal and the tangent apart, which keeps both whole.
+    Parts,
 }
 
 /// Whether a primitive's call copies items, where its dual arguments go through `Gather` (`linear`).
-pub(crate) fn copies(p: Primitive, dyadic: bool) -> bool { matches!(rule(p, dyadic), Rule::Through) }
+pub(crate) fn copies(p: Primitive, dyadic: bool) -> bool { matches!(rule(p, dyadic), Rule::Through | Rule::Parts) }
 
 fn rule(p: Primitive, dyadic: bool) -> Rule {
     use {Arithmetic::*, Comparison::*, Math::*, Primitive as P, Rule::*};
@@ -440,8 +442,11 @@ fn rule(p: Primitive, dyadic: bool) -> Rule {
         (P::Compare(_), _) => Constant,
         (P::Shape, true) | (P::Member | P::Find, false) => Through,
         (P::Shape | P::Tally | P::Depth | P::Grade(_) | P::Iota | P::Where | P::Member | P::Find | P::Prime | P::Factor | P::Format, _) => Constant,
-        (P::Random | P::MatrixDivide | P::Encode | P::Decode | P::Range | P::Execute, _) | (P::Polynomial, false) => Unsupported,
+        // `Function::apply` sends calls of `⌹` and `⊥` with an active argument to `operated`. Only Rust code that calls them directly reaches this arm.
+        (P::MatrixDivide | P::Decode, _) => Unsupported,
+        (P::Random | P::Encode | P::Range | P::Execute, _) | (P::Polynomial, false) => Unsupported,
         (P::Polynomial, true) => Polynomial,
+        (P::Mix, false) => Parts,
         _ => Through,
     }
 }
@@ -463,6 +468,15 @@ pub(crate) fn call(p: Primitive, left: Option<&Value>, right: &Value, cx: &Conte
         Rule::Sort => {
             let order = Primitive::Grade(matches!(p, Primitive::Compare(Comparison::Greater))).call(None, &strip(right, tag), cx);
             order.and_then(|order| Primitive::Index.call(Some(&order.enclose().expect("an order encloses")), right, cx))
+        }
+        // A tangent that holds records as items mixes through their ids (`linear`).
+        Rule::Parts => {
+            let (primal, tangent) = split(right, tag);
+            let tangent = tangent.expect("a dual has a tangent");
+            p.call(None, &primal, cx).and_then(|r| {
+                let t = if crate::linear::holds_records(&tangent) { crate::linear::call(p, None, &tangent, None, cx)? } else { p.call(None, &tangent, cx)? };
+                Ok(dual(tag, r, t))
+            })
         }
     })
 }
@@ -513,25 +527,16 @@ pub(crate) fn expand(t: &Value, layout: &crate::array::Layout) -> Value {
     broadcast(t, &agreement.left, agreement.len, agreement.layout)
 }
 
-/// `v` laid out as `layout` through `mapping`, as broadcasting reads it. Plain floats and 64-bit integers copy whole runs, as pervasive calls do. Other storage goes through `Gather`, which moves a dual's primal and tangent together.
+/// `v` laid out as `layout` through `mapping`, as broadcasting reads it. One `Gather::walk` copies every kind, and moves a dual's primal and tangent together. An atom fills the layout.
 fn broadcast(v: &Value, mapping: &Mapping, len: usize, layout: Layout) -> Value {
     if matches!(mapping, Mapping::Linear(1)) && v.len() == len { return v.relaid(layout).expect("an identity mapping keeps the items"); }
-    fn runs<A: crate::element::Element>(mapping: &Mapping, data: &[A], len: usize) -> Vec<A> {
-        let mut buf = Vec::new();
-        match crate::pervasive::expanded(mapping, data, 0, len, &mut buf) { rustymath::Arg::One(x) => vec![x; len], rustymath::Arg::Many(s) => s.to_vec() }
-    }
-    if !v.is_atom() && tag(v).is_none() && v.linear().is_none() {
-        let built = match v.as_items() {
-            Items::Floats(Floats::F64(x)) => layout.floats(FloatWidth::F64, runs(mapping, x, len)).ok(),
-            Items::Floats(Floats::F32(x)) => layout.floats(FloatWidth::F32, runs(mapping, x, len).into_iter().map(f64::from)).ok(),
-            Items::Integers(Ints::I64(x)) => Value::from_storage(layout.shape().to_vec(), Storage::within(runs(mapping, x, len), Width::I64)).and_then(|a| a.with_layout(layout.clone())).ok(),
-            _ => None,
-        };
-        if let Some(b) = built { return b; }
-    }
-    let offsets = match mapping { Mapping::Single => vec![0; len], mapping => (0..len).map(|i| mapping.index(i) as i64).collect() };
     let mut data = Gather::new(&[v], len);
-    data.items_at(v, &offsets);
+    if v.is_atom() {
+        data.fill(v, len);
+    } else {
+        let (base, steps) = crate::agreement::entries(mapping, layout.shape()).expect("an agreement's mapping has steps");
+        data.walk(v, base, &steps);
+    }
     data.finish(layout, || v.prototype()).expect("a broadcast fits its layout")
 }
 
@@ -553,7 +558,7 @@ fn polynomial(c: &Value, x: &Value, tag: u32, cx: &Context<'_>) -> Result<Value,
     let mut t = None;
     if let Some(tc) = tc {
         if !c.all_numbers() { return Err(cx.span.error(ErrorKind::Unsupported, "∂ can't differentiate ⌻ with respect to roots or exponents")); }
-        t = Some(p.call(Some(&tc), &x, cx)?);
+        t = Some(match tc.linear() { Some(record) => coefficients(record, &x, cx)?, None => p.call(Some(&tc), &x, cx)? });
     }
     if let Some(tx) = tx {
         for (k, d) in crate::polynomial::partials(&c, cx)?.iter().enumerate() {
@@ -562,6 +567,102 @@ fn polynomial(c: &Value, x: &Value, tag: u32, cx: &Context<'_>) -> Result<Value,
         }
     }
     Ok(dual(tag, r, t.expect("a dual argument has a tangent")))
+}
+
+/// The tangent of `C⌻x` along `tc`, a record of the tangents of `C`. `C⌻x` is linear in its coefficients `C`, whose last axis holds each polynomial's coefficients. The points broadcast against the frame of `C`, as `⌻` pairs them. Each point's powers scale its coefficients' tangents, and a product with ones sums them.
+fn coefficients(tc: &std::sync::Arc<crate::linear::Linear>, x: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+    if !x.all_numbers() { return Err(cx.span.error(ErrorKind::Unsupported, "∂ can't transpose ⌻")); }
+    let integer = |n: i64| Value::Number(Number::from_integer(n));
+    let shape = tc.layout.shape();
+    let (frame, n) = match shape.split_last() { Some((&n, frame)) => (frame.to_vec(), n), None => (Vec::new(), 1) };
+    let points = Primitive::Arithmetic(Arithmetic::Plus).call(Some(&crate::linear::reshape(&frame, &integer(0), cx)?), x, cx)?;
+    let mut column = points.shape().to_vec();
+    // The coefficients take length-1 axes between their frame and their last axis, so that they agree with points of higher rank.
+    let padded: Vec<usize> = frame.iter().copied().chain(std::iter::repeat_n(1, column.len() - frame.len())).chain([n]).collect();
+    let coefficients = crate::linear::view(tc, Layout::from(crate::Shape::from(padded)));
+    let mut row = vec![1; column.len()];
+    column.push(1);
+    row.push(n);
+    let exponents = Value::integers(vec![n], (0..n as i64).collect()).error_at(cx.span, "invalid powers")?;
+    let powers = Primitive::Math(Math::Power).call(Some(&crate::linear::reshape(&column, &points, cx)?), &crate::linear::reshape(&row, &exponents, cx)?, cx)?;
+    let ones = Value::integers(vec![n], vec![1; n]).error_at(cx.span, "invalid ones")?;
+    let scaled = scale(&powers, &coefficients, cx)?;
+    Ok(crate::linear::product(&ones, scaled.linear().expect("a scaled record is a record"), false, points.layout().clone()))
+}
+
+/// `x+.×y`, where one factor can be a record, which then records a `Product` with the other factor as its coefficient.
+pub(crate) fn product(x: &Value, y: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+    match (x.linear(), y.linear()) {
+        (Some(t), None) => Ok(crate::linear::product(y, t, false, x.layout().contracted(y.layout()))),
+        (None, Some(t)) => Ok(crate::linear::product(x, t, true, x.layout().contracted(y.layout()))),
+        _ => crate::linear::plus_times(x, y, cx),
+    }
+}
+
+/// The rules for `⌹` and `⊥`, whose tangents call operators such as `+.×`. Operators need a `&mut Context`, which `call` doesn't have, so `Function::apply` sends these calls here when an argument is active.
+pub(crate) fn operated(p: Primitive, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+    match p { Primitive::MatrixDivide => solve(left, right, cx), _ => decode(left, right, cx) }
+}
+
+/// `⌹`, with `R←⌹A`. The tangent of `⌹A` is `-R+.×tA+.×R`, and the tangent of `X←B⌹A` is `R+.×tB-tA+.×X`. The primal is `⌹`'s own result, so a function computes the same values with or without `∂`. `B⌹A` is linear in `B` for any `A`, with `⌹A` as its coefficient, so an inactive `A` can be any matrix.
+fn solve(left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+    let tag = left.and_then(deep_tag).max(deep_tag(right)).expect("an active argument has a tag");
+    let (a, ta) = split_deep(right, tag);
+    let (divide, minus) = (crate::linear::primitive("⌹"), Primitive::Arithmetic(Arithmetic::Minus));
+    let Some(b) = left else {
+        let (r, _) = regular_inverse(&a, "⌹", cx)?;
+        let t = product(&r, &product(&ta.expect("an active argument has a tangent"), &r, cx)?, cx)?;
+        let t = minus.call(None, &t, cx)?;
+        return Ok(dual(tag, r, t));
+    };
+    let (b, tb) = split_deep(b, tag);
+    let x = divide.call_array(Some(&b), &a, cx)?;
+    let r = match ta { Some(_) => regular_inverse(&a, "⌹", cx)?.0, None => divide.call_array(None, &a, cx)? };
+    let t = match (tb, ta) {
+        (Some(tb), Some(ta)) => minus.call(Some(&tb), &product(&ta, &x, cx)?, cx)?,
+        (None, Some(ta)) => minus.call(None, &product(&ta, &x, cx)?, cx)?,
+        (tb, None) => tb.expect("an active argument has a tangent"),
+    };
+    Ok(dual(tag, x, product(&r, &t, cx)?))
+}
+
+/// `⌹a` and the determinant of `a`, from one factorization, for an `a` that `∂` differentiates with respect to. A singular `a` gives UNSUPPORTED, naming `glyph`, because `⌹` gives the pseudoinverse of such a matrix, whose derivative differs. An `a` active at an outer `∂` takes its inverse through dispatch, so that the outer `∂` differentiates it, and gives no determinant.
+fn regular_inverse(a: &Value, glyph: &str, cx: &mut Context<'_>) -> Result<(Value, Option<Value>), Error> {
+    if deep_tag(a).is_some() { return Ok((crate::linear::primitive("⌹").call_array(None, a, cx)?, None)); }
+    let (r, d) = crate::primitive::matrix_inverse(a, cx)?.ok_or_else(|| cx.span.error(ErrorKind::Unsupported, format!("∂ differentiates {glyph} only at an invertible matrix")))?;
+    Ok((r, Some(Value::Number(d))))
+}
+
+/// `⊥`, as `d+.×⌽×\1,⌽1↓b` for digits `d` and base `b`, each taken to the length that `⊥` decodes along: the weight of each digit is the product of the bases after it. Running that on the duals differentiates with respect to both. Monadic `⊥` has base 2. A base with more than one axis gives UNSUPPORTED.
+fn decode(left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+    let base = left.cloned().unwrap_or_else(|| Value::Number(Number::from_integer(2)));
+    let (xlen, ylen) = (base.shape().last().copied().unwrap_or(1), right.shape().last().copied().unwrap_or(1));
+    let len = crate::primitive::decode_length(xlen, ylen, cx)?;
+    if base.shape().len() > 1 { return Err(cx.span.error(ErrorKind::Unsupported, "∂ differentiates ⊥ only with a scalar or vector base")); }
+    let integer = |n: i64| Value::Number(Number::from_integer(n));
+    let reverse = |v: &Value, cx: &Context<'_>| Primitive::Reverse(false).call(None, v, cx);
+    let digits = if ylen == len { right.clone() } else {
+        let d = if right.is_atom() { Primitive::Ravel.call(None, right, cx)? } else { right.clone() };
+        Primitive::Replicate.call_axis(Some(&integer(len as i64)), &d, Some(d.shape().len() - 1), cx)?
+    };
+    let shape = Value::integers(vec![1], vec![len as i64]).error_at(cx.span, "invalid shape")?;
+    let bases = Primitive::Shape.call(Some(&shape), &base, cx)?;
+    let after = Primitive::Ravel.call(Some(&integer(1)), &reverse(&Primitive::Drop.call(Some(&integer(1)), &bases, cx)?, cx)?, cx)?;
+    let scan = Function::build("\\", vec![crate::Operand::Function(crate::linear::primitive("×"))]).expect("×\\ builds");
+    let weights = reverse(&scan.call_array(None, &after, cx)?, cx)?;
+    product(&digits, &weights, cx)
+}
+
+/// Monadic `-.×` at an invertible matrix `A`. The tangent of `d←-.×A` is `+/,(d×⍉R)×tA`, where `R←⌹A`. One factorization gives `d` and `R`, except where `A` is active at an outer `∂`, where `det` computes `d`.
+pub(crate) fn determinant(right: &Value, det: impl FnOnce(&Value, &mut Context<'_>) -> Result<Value, Error>, cx: &mut Context<'_>) -> Result<Value, Error> {
+    let tag = deep_tag(right).expect("an active argument has a tag");
+    let (a, ta) = split_deep(right, tag);
+    let (r, d) = regular_inverse(&a, "-.×", cx)?;
+    let d = match d { Some(d) => d, None => det(&a, cx)? };
+    let coefficient = Primitive::Arithmetic(Arithmetic::Times).call(Some(&d), &Primitive::Transpose.call(None, &r, cx)?, cx)?;
+    let ravel = |v: &Value, cx: &Context<'_>| Primitive::Ravel.call(None, v, cx);
+    let t = product(&ravel(&coefficient, cx)?, &ravel(&ta.expect("an active argument has a tangent"), cx)?, cx)?;
+    Ok(dual(tag, d, t))
 }
 
 /// Coordinate `k` of each point's tangent in `t`. A number stands for every coordinate, and a vector gives its `k`th item.

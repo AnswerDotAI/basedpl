@@ -20,7 +20,7 @@ use crate::{
 use float_arithmetic::float_dyad;
 use num_complex::{Complex, Complex32, Complex64};
 use rustymath::{
-    linalg::{AndOr, Inner, MaxPlus, MinPlus, OrAnd, PlusEqual, PlusNotEqual, PlusTimes}, pairs, reduce::{self, Reduction},
+    linalg::{AndOr, Inner, MaxPlus, MinPlus, OrAnd, Orientation, PlusEqual, PlusNotEqual, PlusTimes}, pairs, reduce::{self, Reduction},
     tolerant::{Tolerant, TolerantComplex}, with_tolerance, Arg, Native, CHUNK
 };
 use std::borrow::Cow;
@@ -722,6 +722,12 @@ pub(crate) fn expanded<'a, A: Element>(mapping: &Mapping, data: &'a [A], start: 
     match *mapping {
         Mapping::Single => return Arg::One(data[0]), Mapping::Linear(1) => return Arg::Many(&data[start..start + n]),
         Mapping::Linear(r) if n <= r - start % r => return Arg::One(data[start / r]),
+        Mapping::Steps { base, ref steps } => {
+            if let Some(o) = mapping.run(start, n) { return Arg::Many(&data[o..o + n]); }
+            buf.clear();
+            rustymath::gather::walk_range(buf, data, base, steps, A::FILL, start, n, rustymath::gather::Same);
+            return Arg::Many(&buf[..n]);
+        }
         Mapping::Tiled(m) if n <= m - start % m => return Arg::Many(&data[start % m..start % m + n]), _ => {}
     }
     if buf.len() < n { buf.resize(n, A::FILL) }
@@ -739,16 +745,6 @@ pub(crate) fn expanded<'a, A: Element>(mapping: &Mapping, data: &'a [A], start: 
                 let more = filled.min(n - filled);
                 out.copy_within(..more, filled);
                 filled += more;
-            }
-        }
-        Mapping::Axes(ref axes) if matches!(axes.first(), Some(&(1, _, 1))) => {
-            let (run, mut i) = (axes[0].1, 0);
-            while i < n {
-                let at = start + i;
-                let m = (run - at % run).min(n - i);
-                let from = mapping.index(at);
-                out[i..i + m].copy_from_slice(&data[from..from + m]);
-                i += m;
             }
         }
         _ => { for (i, slot) in out.iter_mut().enumerate() { *slot = item(mapping, data, start + i) } }
@@ -1520,18 +1516,22 @@ impl<A: Element> Dyad<A> for Scan<'_, A> where bool: Source<A> {
     }
 }
 
-/// `x f.g y` for compact arguments laid out as `rows`×`n` and `n`×`cols`, with `n` at least 1. rustymath's tiled inner products run `+.×`, `⌈.+` and `⌊.+` on floats and integers, `+.×` on complex numbers, `∨.∧` on Booleans, and the counts `+.=` and `+.≠` on integers, Booleans, characters and floats that compare exactly. Otherwise each row applies `g` to its block of the right argument and folds `f` down the block's columns. Kernels of approximate numbers compare within the tolerance of their width.
-pub(crate) fn inner(f: Primitive, g: Primitive, x: &Value, y: &Value, size: [usize; 3], shape: Vec<usize>, numeric: Numeric) -> Option<Value> {
-    if let Some(result) = halves(&[Some(x), Some(y)], numeric, |v, numeric| inner(f, g, v[0]?, v[1]?, size, shape.clone(), numeric)) { return result; }
+/// `x f.g y` for compact arguments laid out as `rows`×`n` and `n`×`cols`, with `n` at least 1. rustymath's tiled inner products run `+.×`, `⌈.+` and `⌊.+` on floats and integers, `+.×` on complex numbers, `∨.∧` on Booleans, and the counts `+.=` and `+.≠` on integers, Booleans, characters and floats that compare exactly. Otherwise each row applies `g` to its block of the right argument and folds `f` down the block's columns. Kernels of approximate numbers compare within the tolerance of their width. `orientations` says whether each argument's items hold its matrix transposed. Only float and complex `+.×`, `⌈.+` and `⌊.+` read a transposed argument, and anything else gives `None` for one.
+pub(crate) fn inner(f: Primitive, g: Primitive, x: &Value, y: &Value, size: [usize; 3], shape: Vec<usize>, numeric: Numeric, orientations: [Orientation; 2]) -> Option<Value> {
+    if let Some(result) = halves(&[Some(x), Some(y)], numeric, |v, numeric| inner(f, g, v[0]?, v[1]?, size, shape.clone(), numeric, orientations)) { return result; }
     fn typed<A: Kernels>(f: Primitive, g: Primitive, x: &[A], y: &[A], [rows, n, cols]: [usize; 3], numeric: Numeric) -> Option<Vec<Value>> {
         (0..rows).map(|i| {
             let block = A::dyad(g, Block { x: &x[i * n..(i + 1) * n], y, cols, numeric })??;
             if n == 1 { Some(block) } else { fold(f, &block, &Axis { outer: 1, len: n, inner: cols }, vec![cols], numeric) }
         }).collect()
     }
-    let parts = match pair(g, x, y)? {
+    let normal = orientations == [Orientation::Normal; 2];
+    let pair = pair(g, x, y)?;
+    if !normal && !matches!(pair, Pair::Floats(_) | Pair::Complex(_)) { return None; }
+    let parts = match pair {
         Pair::Floats(width) => with_float_width!(kernel width, F => {
-            let (a, b) = (read_as::<F>(x)?, read_as::<F>(y)?); if let Some(result) = tiled::<F>(f, g, &a, &b, size, &shape, numeric) { return Some(result); }
+            let (a, b) = (read_as::<F>(x)?, read_as::<F>(y)?); if let Some(result) = tiled::<F>(f, g, &a, &b, size, &shape, numeric, orientations) { return Some(result); }
+            if !normal { return None; }
             typed(f, g, &a, &b, size, numeric)
         })?,
         Pair::Booleans(a, b) if matches!((f, g), (Primitive::Math(Math::Gcd), Primitive::Math(Math::Lcm))) => {
@@ -1561,7 +1561,7 @@ pub(crate) fn inner(f: Primitive, g: Primitive, x: &Value, y: &Value, size: [usi
         Pair::Complex(width) => with_complex_width!(width, C => {
             let (a, b) = (read_as::<C>(x)?, read_as::<C>(y)?);
             if matches!((f, g), (Primitive::Arithmetic(Arithmetic::Plus), Primitive::Arithmetic(Arithmetic::Times))) {
-                return C::build(shape, PlusTimes.inner(&a, &b, size)); } typed(f, g, &a, &b, size, numeric)
+                return C::build(shape, PlusTimes.inner_ops(&a, &b, orientations, size)); } typed(f, g, &a, &b, size, numeric)
         })?,
     };
     let floats = |width| with_float_width!(width, F => joined::<F>(&shape, &parts));
@@ -1581,23 +1581,21 @@ fn joined<A: Element>(shape: &[usize], parts: &[Value]) -> Option<Value> {
     A::build(shape.to_vec(), parts.iter().map(A::slice).collect::<Option<Vec<_>>>()?.concat())
 }
 
-/// `x f.g y` for floats of width `F`, laid out as `rows`×`n` and `n`×`cols`, through rustymath's tiled inner products: `+.×`, `⌈.+` and `⌊.+`, and `+.=` and `+.≠` where `F` compares exactly. `None` for any other pair.
-fn tiled<F: Float>(f: Primitive, g: Primitive, x: &[F], y: &[F], size: [usize; 3], shape: &[usize], numeric: Numeric) -> Option<Value> where
+/// `x f.g y` for floats of width `F`, laid out as `rows`×`n` and `n`×`cols` in the orientations given, through rustymath's tiled inner products: `+.×`, `⌈.+` and `⌊.+`, and, with neither operand transposed, `+.=` and `+.≠` where `F` compares exactly. `None` for any other pair.
+fn tiled<F: Float>(f: Primitive, g: Primitive, x: &[F], y: &[F], size: [usize; 3], shape: &[usize], numeric: Numeric, orientations: [Orientation; 2]) -> Option<Value> where
     PlusTimes: Inner<F, Out = F>, MaxPlus: Inner<F, Out = F>, MinPlus: Inner<F, Out = F>, PlusEqual: Inner<F, Out: Into<i64>>,
     PlusNotEqual: Inner<F, Out: Into<i64>> {
     use Primitive::{Arithmetic as A, Compare as C, Math as M};
     let data = match (f, g) {
-        (A(Arithmetic::Plus), A(Arithmetic::Times)) => PlusTimes.inner(x, y, size),
-        (M(Math::Ceiling), A(Arithmetic::Plus)) => MaxPlus.inner(x, y, size),
-        (M(Math::Floor), A(Arithmetic::Plus)) => MinPlus.inner(x, y, size),
-        (A(Arithmetic::Plus), C(op @ (Comparison::Equal | Comparison::NotEqual))) if numeric.tolerance_at(F::WIDTH).is_exact() => {
-            return counts(op, x, y, size, shape);
-        }
+        (A(Arithmetic::Plus), A(Arithmetic::Times)) => PlusTimes.inner_ops(x, y, orientations, size),
+        (M(Math::Ceiling), A(Arithmetic::Plus)) => MaxPlus.inner_ops(x, y, orientations, size),
+        (M(Math::Floor), A(Arithmetic::Plus)) => MinPlus.inner_ops(x, y, orientations, size),
+        (A(Arithmetic::Plus), C(op @ (Comparison::Equal | Comparison::NotEqual)))
+            if numeric.tolerance_at(F::WIDTH).is_exact() && orientations == [Orientation::Normal; 2] => return counts(op, x, y, size, shape),
         _ => return None,
     };
     F::build(shape.to_vec(), data)
 }
-
 /// `x f.g y` for integers, laid out as `rows`×`n` and `n`×`cols`, through rustymath's tiled inner products: `+.×`, `⌈.+`, `⌊.+`, `+.=` and `+.≠`. `None` for any other pair, and where a result could overflow 64 bits. The per-row path then computes it exactly.
 fn tiled_integers(f: Primitive, g: Primitive, x: &[i64], y: &[i64], size: [usize; 3], shape: &[usize]) -> Option<Value> {
     use Primitive::{Arithmetic as A, Compare as C, Math as M};

@@ -2,16 +2,17 @@
 //!
 //! A record is never computed, so reading its items is a bug: `ArrayData::storage` panics on one. Records live only in the tangents of duals, and only the code that handles tangents meets them.
 use crate::{
-    agreement::Agreement,
+    agreement::{Agreement, Mapping},
     array::{FloatWidth, Floats, Items, Layout, Storage, Width},
     error::ErrorAt,
     execution::Context,
-    number::{Arithmetic, Math},
+    number::Arithmetic,
     primitive::{FoldKind, Primitive},
     Error, ErrorKind, Function, Number, Operand, Value,
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::borrow::Cow;
+use rustymath::gather::Steps;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
@@ -114,7 +115,21 @@ fn laid(layout: &Layout, ids: Vec<i64>) -> Value {
 }
 
 /// The ids of `t`'s items, counted from `first`, in its layout.
-pub(crate) fn ids(t: &Linear, first: i64) -> Value { laid(&t.layout, (first..first + size(&t.layout) as i64).collect()) }
+fn ids(t: &Linear, first: i64) -> Value { laid(&t.layout, (first..first + size(&t.layout) as i64).collect()) }
+
+/// The records that a copy reads, in the order it meets them, and the next id to give out. `gather` finds an item's source from its id.
+#[derive(Default)]
+pub(crate) struct Sources { pub(crate) records: Vec<Arc<Linear>>, next: i64 }
+
+impl Sources {
+    /// `t`'s ids, which follow the ids of the records before it.
+    pub(crate) fn ids(&mut self, t: &Arc<Linear>) -> Value {
+        let ids = ids(t, self.next + 1);
+        self.next += size(&t.layout) as i64;
+        self.records.push(t.clone());
+        ids
+    }
+}
 
 /// Ids of 0, for no source, in the layout of `like`.
 pub(crate) fn fill_ids(like: &Value) -> Value { laid(like.layout(), vec![0; if like.is_atom() { 1 } else { like.len() }]) }
@@ -173,24 +188,25 @@ pub(crate) fn assemble(sources: Vec<Arc<Linear>>, ids: Value, zero: Value) -> Va
     ids.layout().collect(items, || zero.clone()).expect("records fill their layout")
 }
 
-/// A call of a primitive that copies items, on record arguments: the same call on their ids gives the record's `Gather`.
+/// A call of a primitive that copies items, on arguments that are records or hold records as items: the same call on their ids gives the record's `Gather`.
 fn through(p: Primitive, left: Option<&Value>, right: &Value, axis: Option<usize>, cx: &Context<'_>) -> Result<Value, Error> {
-    let mut sources = Vec::new();
-    let mut next = 1;
-    let mut replace = |v: &Value| match v.linear() {
-        Some(t) => {
-            let ids = ids(t, next);
-            next += size(&t.layout) as i64;
-            sources.push(t.clone());
-            ids
-        }
-        None => v.clone(),
-    };
-    let (left, right) = (left.map(&mut replace), replace(right));
-    let zero = sources[0].zero.clone();
+    let mut sources = Sources::default();
+    let left = left.map(|x| replaced(x, &mut sources));
+    let right = replaced(right, &mut sources);
+    let zero = sources.records[0].zero.clone();
     let ids = p.call_axis(left.as_ref(), &right, axis, cx)?;
-    Ok(gather(sources, ids, zero))
+    Ok(gather(sources.records, ids, zero))
 }
+
+/// `v` with each record in it, whole or as an item, replaced by its ids, which count on from `next`. The records join `sources`. Beside records, an item is a tangent of zeros, which read as fill ids.
+fn replaced(v: &Value, sources: &mut Sources) -> Value {
+    if let Some(t) = v.linear() { return sources.ids(t); }
+    if !holds_records(v) { return v.clone(); }
+    v.layout().collect(v.elements().map(|e| replaced(&e, sources)).collect::<Vec<_>>(), integer(0)).expect("ids fill their layout")
+}
+
+/// Whether `v` holds records as items, as a tangent assembled from cells with record tangents does.
+pub(crate) fn holds_records(v: &Value) -> bool { v.holds_values() && v.elements().any(|e| e.linear().is_some()) }
 
 /// A primitive's call with a record argument. It records the call where the call is linear in its records, and otherwise gives UNSUPPORTED ERROR.
 pub(crate) fn call(p: Primitive, left: Option<&Value>, right: &Value, axis: Option<usize>, cx: &Context<'_>) -> Result<Value, Error> {
@@ -209,30 +225,12 @@ pub(crate) fn call(p: Primitive, left: Option<&Value>, right: &Value, axis: Opti
         (Primitive::Arithmetic(Plus), Some(_), Some(t), None) => Ok(expand(t, &agreed(right, t)?)),
         (Primitive::Arithmetic(Minus), None, _, Some(t)) => minus(t),
         (Primitive::Arithmetic(Minus), Some(_), Some(a), Some(b)) => add(a, minus(b)?.linear().expect("a scaled record is a record"), cx),
-        (Primitive::Polynomial, Some(_), Some(c), None) if right.all_numbers() => {
-            // `C⌻x` is linear in its coefficients `C`, whose last axis holds each polynomial's coefficients. The points broadcast against the frame of `C`, as `⌻` pairs them. Each point's powers scale its coefficients' tangents, and a product with ones sums them.
-            let shape = c.layout.shape();
-            let (frame, n) = match shape.split_last() { Some((&n, frame)) => (frame.to_vec(), n), None => (Vec::new(), 1) };
-            let points = Primitive::Arithmetic(Plus).call(Some(&reshape(&frame, &integer(0), cx)?), right, cx)?;
-            let mut column = points.shape().to_vec();
-            // The coefficients take length-1 axes between their frame and their last axis, so that they agree with points of higher rank.
-            let padded: Vec<usize> = frame.iter().copied().chain(std::iter::repeat_n(1, column.len() - frame.len())).chain([n]).collect();
-            let coefficients = view(c, Layout::from(crate::Shape::from(padded)));
-            let mut row = vec![1; column.len()];
-            column.push(1);
-            row.push(n);
-            let exponents = Value::integers(vec![n], (0..n as i64).collect()).error_at(cx.span, "invalid powers")?;
-            let powers = Primitive::Math(Math::Power).call(Some(&reshape(&column, &points, cx)?), &reshape(&row, &exponents, cx)?, cx)?;
-            let ones = Value::integers(vec![n], vec![1; n]).error_at(cx.span, "invalid ones")?;
-            let scaled = scale(&powers, coefficients.linear().expect("a view of a record is a record"), cx)?;
-            Ok(product(&ones, scaled.linear().expect("a scaled record is a record"), false, points.layout().clone()))
-        }
         _ if crate::derivative::copies(p, left.is_some()) => through(p, left, right, None, cx),
         _ => Err(cx.span.error(ErrorKind::Unsupported, format!("∂ can't transpose {}", p.info().glyph))),
     }
 }
 
-fn primitive(glyph: &str) -> Function { Function::builtin(glyph).expect("a glyph names a primitive") }
+pub(crate) fn primitive(glyph: &str) -> Function { Function::builtin(glyph).expect("a glyph names a primitive") }
 
 /// `x+.×y`.
 pub(crate) fn plus_times(x: &Value, y: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
@@ -312,7 +310,7 @@ pub(crate) fn order(root: &Arc<Linear>) -> Vec<Arc<Linear>> {
     nodes
 }
 
-fn reshape(shape: &[usize], v: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+pub(crate) fn reshape(shape: &[usize], v: &Value, cx: &Context<'_>) -> Result<Value, Error> {
     let shape = Value::integers(vec![shape.len()], shape.iter().map(|&n| n as i64).collect()).error_at(cx.span, "invalid shape")?;
     Primitive::Shape.call(Some(&shape), v, cx)
 }
@@ -361,30 +359,58 @@ pub(crate) fn evaluate(nodes: &[Arc<Linear>], seeds: &[Value], cx: &mut Context<
 
 fn flat(v: &Value, cx: &Context<'_>) -> Result<Value, Error> { if v.is_atom() { Ok(v.clone()) } else { Primitive::Ravel.call(None, v, cx) } }
 
-/// `u` summed back to `layout`, over the axes that broadcasting `layout` to `u`'s layout repeats.
-fn sum_back(u: &Value, layout: &Layout, zero: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+/// `u` summed back to `layout`, which broadcasting expanded to `u`'s layout. Where the broadcast repeats `layout` along some axes and reads its items in order along the rest, the sum runs along those axes. Otherwise, as where keys align `layout` with fill, each item of `u` adds into the item of `layout` that broadcasting read.
+fn sum_back(u: &Value, layout: &Layout, zero: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
     if u.layout() == layout { return Ok(u.clone()); }
-    // Each item of `u` adds into the item of `layout` that broadcasting read, found by broadcasting `layout`'s ids the same way.
+    let mapping = Agreement::new(layout, u.layout()).error_at(cx.span, "a cotangent agrees with its tangent")?.left;
+    if let Some(axes) = repeated(&mapping, u.shape()).filter(|_| !u.is_atom() && !u.is_empty()) {
+        let mut v = u.clone();
+        for &axis in axes.iter().rev() { v = crate::eval::fold_plus(FoldKind { scan: false, first: false }, Some(&integer(axis as i64)), &v, cx)?; }
+        return relay(&v, layout, cx);
+    }
     let ids = crate::derivative::expand(&laid(layout, (1..=size(layout) as i64).collect()), u.layout());
     scatter_add(&flat(u, cx)?, &flat(&ids, cx)?, layout, zero, cx)
 }
 
-/// The cotangent of `t`, the child of the `Product` `c+.×t` or `t+.×c`, from `u`, the product's cotangent.
+/// The axes of a result of `shape` that `m` repeats its input along, where it reads the input's items once each, in order, along the other axes.
+fn repeated(m: &Mapping, shape: &[usize]) -> Option<Vec<usize>> {
+    let Some((0, steps)) = crate::agreement::entries(m, shape) else { return None };
+    let (mut axes, mut stride) = (Vec::new(), 1);
+    for (axis, s) in steps.iter().enumerate().rev() {
+        match *s {
+            Steps::Stride { start: 0, len, step: 0 } if len > 1 => axes.push(axis),
+            Steps::Stride { start: 0, len, step } if len <= 1 || step == stride as isize => stride *= len,
+            _ => return None,
+        }
+    }
+    axes.reverse();
+    Some(axes)
+}
+
+/// The cotangent of `t`, the child of the `Product` `c+.×t` or `t+.×c`, from `u`, the product's cotangent: `(⍉c)+.×u` or `u+.×⍉c`, with `c` and `u` taken as matrices. Compact floats and complex numbers read `c`'s transpose in place (`pervasive::inner`). Other items transpose `c` first.
 fn product_transpose(c: &Value, u: &Value, t: &Linear, left: bool, cx: &mut Context<'_>) -> Result<Value, Error> {
+    use rustymath::linalg::Orientation::{Normal, Transpose};
     let total = |s: &[usize]| s.iter().product::<usize>();
     let tsize = size(&t.layout);
-    let result = if left {
+    let (x, y, orientations, [m, k, n]) = if left {
         let k = c.shape().last().copied().unwrap_or(1).max(1);
-        let (rows, cols) = (total(c.shape()) / k, tsize / k);
-        let c2 = Primitive::Transpose.call(None, &reshape(&[rows, k], c, cx)?, cx)?;
-        let u2 = reshape(&[rows, cols], u, cx)?;
-        plus_times(&c2, &u2, cx)?
+        (c, u, [Transpose, Normal], [k, total(c.shape()) / k, tsize / k])
     } else {
         let k = c.shape().first().copied().unwrap_or(1).max(1);
-        let (rows, cols) = (tsize / k, total(c.shape()) / k);
-        let c2 = Primitive::Transpose.call(None, &reshape(&[k, cols], c, cx)?, cx)?;
-        let u2 = reshape(&[rows, cols], u, cx)?;
-        plus_times(&u2, &c2, cx)?
+        (u, c, [Normal, Transpose], [tsize / k, total(c.shape()) / k, k])
+    };
+    // A dual has no compact kind, which keeps the kernels from building its per-item fallback.
+    let compact = x.compact_kind().is_some() && y.compact_kind().is_some();
+    let (plus, times) = (Primitive::Arithmetic(Arithmetic::Plus), Primitive::Arithmetic(Arithmetic::Times));
+    let result = match compact.then(|| crate::pervasive::inner(plus, times, x, y, [m, k, n], vec![m, n], cx.numeric(), orientations)).flatten() {
+        Some(result) => result,
+        None => {
+            let oriented = |v: &Value, o, [rows, cols]: [usize; 2], cx: &Context<'_>| match o {
+                Transpose => Primitive::Transpose.call(None, &reshape(&[cols, rows], v, cx)?, cx),
+                Normal => reshape(&[rows, cols], v, cx),
+            };
+            plus_times(&oriented(x, orientations[0], [m, k], cx)?, &oriented(y, orientations[1], [k, n], cx)?, cx)?
+        }
     };
     relay(&result, &t.layout, cx)
 }

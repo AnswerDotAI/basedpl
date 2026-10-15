@@ -203,7 +203,7 @@ pub(super) fn item_kind(item: &Value) -> Option<Kind> {
     }
 }
 
-/// Runs `$body` with `$d` bound to the target buffer, `$s` to the source items and `$f` to the conversion of a source item for the target, when the target's compact kind holds the source's items. Gives whether it ran. Each line lists the sources that one target takes and how it converts them. Numbers widen from Boolean through the integer widths to the float widths to the complex widths. A narrower float or complex buffer receives wider items only when a conversion asks for that width. A narrower integer line takes a 64-bit source only for an atom, whose value `Gather::follow` makes sure the buffer's width holds. A conversion between items of one type is the identity. `walk_into` copies such items without it.
+/// Runs `$body` with `$d` bound to the target buffer, `$s` to the source items and `$f` to the conversion of a source item for the target, when the target's compact kind holds the source's items. Gives whether it ran. Each line lists the sources that one target takes and how it converts them. Numbers widen from Boolean through the integer widths to the float widths to the complex widths. A narrower float or complex buffer receives wider items only when a conversion asks for that width. A narrower integer line takes a 64-bit source only for an atom, whose value `Gather::follow` makes sure the buffer's width holds. A conversion between items of one type is the identity. With `|$d, $s|` and no `$f`, the macro runs `$body` only where the source and target hold one type.
 macro_rules! copy_into {
     (@to Boolean $d:ident) => { Storage::Boolean($d) };
     (@to F16 $d:ident) => { Storage::Floats(FloatBuf::F16($d)) };
@@ -232,6 +232,12 @@ macro_rules! copy_into {
             _ => false,
         }
     };
+    (@same $scrutinee:expr, $d:ident, $s:ident, $body:expr; $($to:ident $from:ident),+) => {
+        match $scrutinee {
+            $((copy_into!(@to $to $d), copy_into!(@from $from $s)) => { $body; true },)+
+            _ => false,
+        }
+    };
     ($target:expr, $source:expr, |$d:ident, $s:ident, $f:ident| $body:expr) => {
         copy_into!(@lines ($target, $source), $d, $s, $f, $body;
             Boolean: Booleans => Source::<bool>::read; U8: Booleans, U8, I64 => |x| u8::from_i64(i64::from(x));
@@ -242,6 +248,10 @@ macro_rules! copy_into {
             C64: Booleans, U8, I16, I32, I64, F16, F32, F64, C32, C64 => Source::<Complex64>::read;
             C32: Booleans, U8, I16, I32, I64, F16, F32, F64, C32, C64 => Source::<Complex32>::read; Character: Characters => Source::<char>::read;
         )
+    };
+    ($target:expr, $source:expr, |$d:ident, $s:ident| $body:expr) => {
+        copy_into!(@same ($target, $source), $d, $s, $body;
+            Boolean Booleans, U8 U8, I16 I16, I32 I32, I64 I64, F16 F16, F32 F32, F64 F64, C32 C32, C64 C64, Character Characters)
     };
 }
 
@@ -474,8 +484,8 @@ fn number(value: &Value) -> Result<&Number, ErrorKind> { match value { Value::Nu
 /// A dual source, an array or number that `∂` is differentiating, starts a level: the buffer then copies each source's primal into one buffer and its tangent into another, and an inactive source's tangents are 0 (`derivative`). `finish` then gives a dual array. Number duals that `add` takes are repacked this way into an array dual.
 pub(crate) struct Gather { pub(super) data: Storage, kind: Option<Kind>, open: bool, widening: Widening, dual: Option<Box<Level>> }
 
-/// One level of duals in a `Gather`: the primals and the tangents of the items copied, for the `∂` call tagged `tag`. Where the tangents are records (`linear`), the tangent buffer holds their ids, counted from 1 in `records` order, and `next` is the next id.
-struct Level { tag: u32, primal: Gather, tangent: Gather, records: Option<Vec<std::sync::Arc<crate::linear::Linear>>>, next: i64 }
+/// One level of duals in a `Gather`: the primals and the tangents of the items copied, for the `∂` call tagged `tag`. Where the tangents are records (`linear`), the tangent buffer holds the ids that `records` gives them.
+struct Level { tag: u32, primal: Gather, tangent: Gather, records: Option<crate::linear::Sources> }
 
 /// The tangent of an item that isn't active at a level.
 fn zero() -> Value { Value::Number(Number::from_integer(0)) }
@@ -498,7 +508,7 @@ impl Gather {
             let symbolic = parts.iter().any(|(_, t)| t.as_ref().is_some_and(|t| t.linear().is_some()));
             let tangent = if symbolic { Self::items(capacity) } else { Self::with_widening(&tangents, capacity, widening) };
             let primal = Self::with_widening(&primals, capacity, widening);
-            return Self { dual: Some(Box::new(Level { tag, primal, tangent, records: symbolic.then(Vec::new), next: 1 })), ..Self::items(0) };
+            return Self { dual: Some(Box::new(Level { tag, primal, tangent, records: symbolic.then(Default::default) })), ..Self::items(0) };
         }
         // An empty compact source holds no items that could change the buffer's kind.
         let sources: Vec<_> = sources.iter().filter(|v| !v.is_empty() || v.compact_kind().is_none()).collect();
@@ -524,7 +534,7 @@ impl Gather {
         let primal = std::mem::replace(self, Self::items(0));
         let mut tangent = Self { widening: primal.widening, ..Self::items(len) };
         tangent.fill(&zero(), len);
-        self.dual = Some(Box::new(Level { tag, primal, tangent, records: None, next: 1 }));
+        self.dual = Some(Box::new(Level { tag, primal, tangent, records: None }));
     }
     /// Runs the copy `op` on the level's primals with `source`'s primal, and on its tangents with `source`'s tangent. An inactive source appends tangents of 0, or, for a copy that `replaces` items, writes 0 where it writes.
     fn each(&mut self, source: &Value, replaces: bool, op: impl Fn(&mut Self, &Value)) {
@@ -535,9 +545,7 @@ impl Gather {
         match tangent {
             Some(tangent) => match tangent.linear() {
                 Some(record) => {
-                    let ids = crate::linear::ids(record, level.next);
-                    level.next += ids.len().max(1) as i64;
-                    level.records.get_or_insert_with(Vec::new).push(record.clone());
+                    let ids = level.records.get_or_insert_with(Default::default).ids(record);
                     op(&mut level.tangent, &ids)
                 }
                 // A buffer of record ids takes an inactive tangent as fill ids. Such a tangent is always zeros.
@@ -555,7 +563,7 @@ impl Gather {
             let level = self.dual.as_mut().expect("a leveled buffer");
             let (primal, tangent) = crate::derivative::split(&item, level.tag);
             if let Some(record) = tangent.as_ref().and_then(Value::linear).filter(|r| !r.layout.shape().is_empty()) {
-                level.records.get_or_insert_with(Vec::new);
+                level.records.get_or_insert_with(Default::default);
                 level.tangent.mixed().push(Value::from_linear(record.clone()));
                 return level.primal.add(primal);
             }
@@ -688,6 +696,7 @@ impl Gather {
     pub(crate) fn walk(&mut self, source: &Value, base: usize, steps: &[Steps]) {
         if self.leveled(source) { return self.each(source, false, |g, s| g.walk(s, base, steps)); }
         self.follow(source.compact_kind());
+        if copy_into!(&mut self.data, source.as_items(), |d, s| rustymath::gather::walk(d, s, base, steps, fill_of(s), rustymath::gather::Same)) { return; }
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::walk(d, s, base, steps, fill_of(s), f)) { return; }
         walk_values(self.mixed(), source, &std::cell::OnceCell::new(), base, steps);
     }
@@ -695,11 +704,11 @@ impl Gather {
     pub(crate) fn finish(self, layout: Layout, prototype: impl Prototype) -> Result<Value, ErrorKind> {
         if let Some(level) = self.dual {
             let Level { tag, primal, tangent, records, .. } = *level;
-            let zero_of = records.as_ref().and_then(|r| r.first()).map_or_else(zero, |r| r.zero.clone());
+            let zero_of = records.as_ref().and_then(|r| r.records.first()).map_or_else(zero, |r| r.zero.clone());
             let primal = primal.finish(layout.clone(), prototype)?;
             let tangent = tangent.finish(layout, zero())?;
             // A level that copied records holds their ids, which give the record's `Gather`.
-            let tangent = match records { Some(sources) => crate::linear::assemble(sources, tangent, zero_of), None => tangent };
+            let tangent = match records { Some(sources) => crate::linear::assemble(sources.records, tangent, zero_of), None => tangent };
             return Ok(Value::from_dual(tag, primal, tangent));
         }
         let shape = crate::Shape::from(layout.shape());

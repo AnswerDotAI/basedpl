@@ -2056,6 +2056,32 @@ cart←{[r t]←⍵ ⋄ [r×2○t; r×1○t]} ⋄ -.×cart∂ 2 0.5   ⍝ 2
 ⍝ — A minimum along the first axis takes each column's smallest item
 {⌊⌿⍵}∂ [1 5⋄4 2]   ⍝ [2 2 2]⍴1 0 0 0 0 0 0 1
 
+⍝ — An inverse's tangent is -R+.×tA+.×R, exact for an exact argument, and nested ∂ differentiates it again
+[{⌹⍵}∂ 2; {⌹⍵}∂ 2ₓ; {⌹⍵}∂∂ 2]   ⍝ [¯0.25; ¯1ᵣ4; 0.25]
+
+⍝ — Monadic -.× and ⌹ differentiate at an invertible matrix
+[{-.×⍵}∂ [1 2⋄3 4]; {+/,⌹⍵}∂ [2 1⋄1 3]]   ⍝ [[4 ¯3⋄¯2 1]; -[4 2⋄2 1]÷25]
+
+⍝ — B⌹A is linear in B for any A, including the least-squares solution of a tall A
+[{⍵⌹[2 1⋄1 3]}∂ 1 2; {⍵⌹[1 0⋄0 1⋄1 1]}∂ 3 3 3]   ⍝ [[3 ¯1⋄¯1 2]÷5; [2 ¯1 1⋄¯1 2 1]÷3]
+
+⍝ — ⌹ under Rank differentiates each matrix of a stack
+{+/,⌹⍤2⊢⍵}∂ [2 2 2]⍴2 1 1 3 4 1 1 2   ⍝ [2 2 2]⍴(-4 2 2 1÷25),-1 3 3 9÷49
+
+⍝ — A matrix whose pivot falls under rustymath's cutoff has no derivative of its inverse
+{⌹⍵}∂ [1 2⋄3 6+1e¯15]
+⍝ error: UNSUPPORTED
+
+⍝ — Monadic f.g differentiates only as -.×
+{+.×⍵}∂ [1 2⋄3 4]
+⍝ error: UNSUPPORTED
+
+⍝ — ⊥ differentiates with respect to its digits and its base, a scalar or a mixed radix, and a single digit extends to the base's length
+[{10⊥⍵}∂ 1 2 3; {24 60 60⊥⍵}∂ 1 2 3; {⍵⊥1 2 3}∂ 10; {⍵⊥1 2 3}∂ 24 60 60; {⊥⍵}∂ 1 0 1; {10 10 10⊥⍵}∂ 2]   ⍝ [100 10 1; 3600 60 1; 22; 0 60 62; 4 2 1; 111]
+
+⍝ — Mix of dual cells copies each part whole
+{+/,⊃[⍵;2×⍵]}∂ 1 2 3   ⍝ 3 3 3
+
 ⍝ — Complex arguments are outside the subset
 {|⍵}∂3j4
 ⍝ error: UNSUPPORTED
@@ -3486,9 +3512,13 @@ $t $t $t $t
 $t $t $t $t $t
 
 ⍝ — With •prefs ["fusion":$t], a call that computes a pending argument reports its glyph and position
-•prefs ["fusion":$t] ⋄ x←1.5+¿1000000⍴0 ⋄ r←⍴⌽x ⋄ •prefs ["fusion":$f] ⋄ r
+•prefs ["fusion":$t] ⋄ x←1.5+¿1000000⍴0 ⋄ r←⍴⍋x ⋄ •prefs ["fusion":$f] ⋄ r
 [1000000]ₓ
-⍝ ⎕: fusion ends at ⌽ (<input>:1:46)
+⍝ ⎕: fusion ends at ⍋ (<input>:1:46)
+
+⍝ — A structural glyph on a large array gives a pending copy, which later calls and folds read through, with a fill that no call computes
+v←1.0×¿1000000⍴1000 ⋄ mm←1000000 2⍴v ⋄ iv←¿1000000⍴100 ⋄ cv←1000000⍴"abc" ⋄ s←{s←⍵+1 ⋄ (2×⌽s)+s} ⋄ [(2×⌽v+1)≡⌽2×v+1; (2×1⌽v+1)≡1⌽2×v+1; (2×(10↓v)+1)≡10↓2×v+1; (2×⌽(v×2)+1)≡⌽2×(v×2)+1; (s v)≡(2×⌽v+1)+v+1; (2×1⌽⌽v+1)≡1⌽⌽2×v+1; ((⌽v)+mm)≡⌽⍠0 v+⌽⍠0 mm; (¯5↑2×1000005↑v+1)≡5⍴0; (+/⌽v+1)=+/v+1; (+/(⌽v)×v)=+/v×⌽v; (+/,3↕v)=+/(¯2↓v)+(1↓¯1↓v)+2↓v; ((⌽iv)₀=iv₋₁)∧(⌽cv)₀=cv₋₁; ({+/⌽v×⍵}∂1)=+/v]
+$t $t $t $t $t $t $t $t $t $t $t $t $t
 
 ⍝⍝ Numeric storage
 
