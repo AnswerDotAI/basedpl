@@ -12,29 +12,20 @@ const DEFAULT_FPS: f64 = 24.;
 #[derive(Clone, Copy, PartialEq)]
 enum Format { Png, Jpeg }
 
-/// The samples of `count` frames, each of `height` rows of `width` pixels with `channels` samples: grey, or red, green and blue, then
-/// alpha where `channels` is even. `data` holds the frames in turn, each row by row.
+/// The samples of `count` frames, each of `height` rows of `width` pixels with `channels` samples: grey, or red, green and blue, then alpha where `channels` is even. `data` holds the frames in turn, each row by row.
 struct Raster<T> { count: usize, height: usize, width: usize, channels: usize, data: Vec<T> }
 
 impl<T> Raster<T> {
     /// The samples of frame `i`.
-    fn frame(&self, i: usize) -> &[T] {
-        let size = self.height * self.width * self.channels;
-        &self.data[i * size..(i + 1) * size]
-    }
+    fn frame(&self, i: usize) -> &[T] { let size = self.height * self.width * self.channels; &self.data[i * size..(i + 1) * size] }
 }
 
-/// `X •image Y` returns a picture: the image file that `Y` names, the bytes of one, or the numbers in `Y`. Files are PNG or JPEG.
-/// Apple platforms also read the other formats that ImageIO reads. A picture is numbers from 0 to 1 with axes for rows, columns and
-/// up to four channels, displayed as an image. An animation has frames along a first axis: a rank-4 array, or any array of pictures
-/// with the option `fps`, the frame rate, or `delay`, the seconds each frame stays on screen.
+/// `X •image Y` returns a picture: the image file that `Y` names, the bytes of one, or the numbers in `Y`. Files are PNG or JPEG. Apple platforms also read the other formats that ImageIO reads. A picture is numbers from 0 to 1 with axes for rows, columns and up to four channels, displayed as an image. An animation has frames along a first axis: a rank-4 array, or any array of pictures with the option `fps`, the frame rate, or `delay`, the seconds each frame stays on screen.
 pub(crate) fn image(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let options = data::Options::new("•image", left, None, &["fps", "delay"], span)?;
     let delays = timing(&options, "•image", span)?;
     let picture = match keyed::name(right) {
-        Some(path) => decoded(&span.read(&path)?, span)?,
-        None if right.shape().len() == 1 => decoded(&data::bytes(right, span)?, span)?,
-        None => right.clone(),
+        Some(path) => decoded(&span.read(&path)?, span)?, None if right.shape().len() == 1 => decoded(&data::bytes(right, span)?, span)?, None => right.clone()
     };
     layout(&picture, delays.clone(), span)?;
     let renderer = display::renderer("image-renderer", render);
@@ -45,28 +36,21 @@ pub(crate) fn image(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
     picture.with_renderer(renderer).error_at(span, "invalid image")
 }
 
-/// `options •image⁻¹ Y` encodes the picture `Y` as bytes. The option `format` is `"png"`, the default, or `"jpeg"`. Plain text on
-/// the left gives the format alone. With the option `fps` or `delay`, or with four axes, `Y` is an animation, which becomes an animated PNG.
+/// `options •image⁻¹ Y` encodes the picture `Y` as bytes. The option `format` is `"png"`, the default, or `"jpeg"`. Plain text on the left gives the format alone. With the option `fps` or `delay`, or with four axes, `Y` is an animation, which becomes an animated PNG.
 pub(crate) fn encode(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let options = data::Options::new("•image⁻¹", left, Some("format"), &["format", "fps", "delay"], span)?;
     let format = match options.text("format", Some("png"), span)?.to_lowercase().as_str() {
-        "png" => Format::Png,
-        "jpeg" => Format::Jpeg,
-        _ => return Err(span.domain_error("•image⁻¹ encodes \"png\" or \"jpeg\"")),
+        "png" => Format::Png, "jpeg" => Format::Jpeg, _ => return Err(span.domain_error("•image⁻¹ encodes \"png\" or \"jpeg\""))
     };
     let (frames, delays) = frames(right, timing(&options, "•image⁻¹", span)?, span)?;
     data::byte_vector(encoded(frames, delays.as_deref(), format, span)?).error_at(span, "image exceeds array limits")
 }
 
-/// The seconds each frame stays on screen, from the option `delay` of `name`, or from `fps`. Either makes the first axis of a picture
-/// time. `delay` is one number for every frame, or one per frame, and sets the timing when both are given.
+/// The seconds each frame stays on screen, from the option `delay` of `name`, or from `fps`. Either makes the first axis of a picture time. `delay` is one number for every frame, or one per frame, and sets the timing when both are given.
 fn timing(options: &data::Options, name: &str, span: &Context<'_>) -> Result<Option<Vec<f64>>, Error> {
     let (key, delays) = match options.values.get("delay") {
         Some(d) => ("delay", (d.shape().len() <= 1).then(|| read_as::<f64>(d)).flatten().map(|d| d.into_owned())),
-        None => match options.number("fps", span)? {
-            Some(fps) => ("fps", Some(vec![1. / fps])),
-            None => return Ok(None),
-        },
+        None => match options.number("fps", span)? { Some(fps) => ("fps", Some(vec![1. / fps])), None => return Ok(None) },
     };
     match delays {
         Some(d) if !d.is_empty() && d.iter().all(|s| *s > 0. && s.is_finite()) => Ok(Some(d)),
@@ -74,9 +58,7 @@ fn timing(options: &data::Options, name: &str, span: &Context<'_>) -> Result<Opt
     }
 }
 
-/// Native builds send a PNG, animated for an animation. The browser build sends an animation the same way, and a still picture as
-/// `image/x-rgba` bytes, with the width as a parameter, for its page to draw on a canvas. `delays` are the seconds per frame that
-/// `•image`'s options set.
+/// Native builds send a PNG, animated for an animation. The browser build sends an animation the same way, and a still picture as `image/x-rgba` bytes, with the width as a parameter, for its page to draw on a canvas. `delays` are the seconds per frame that `•image`'s options set.
 fn render(delays: Option<&Value>, picture: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let delays = delays.map(|d| read_as::<f64>(d).expect("•image keeps its delays as numbers").into_owned());
     let (frames, delays) = frames(picture, delays, span)?;
@@ -88,8 +70,7 @@ fn render(delays: Option<&Value>, picture: &Value, span: &Context<'_>) -> Result
     display::mime(&kind, bytes).error_at(span, "invalid image MIME bundle")
 }
 
-/// The picture in the encoded image `bytes`. An animated PNG with more than one frame gives its frames along a first axis, as a rank-4
-/// array with a channel axis even for grey frames, so `•image⁻¹` encodes it back.
+/// The picture in the encoded image `bytes`. An animated PNG with more than one frame gives its frames along a first axis, as a rank-4 array with a channel axis even for grey frames, so `•image⁻¹` encodes it back.
 fn decoded(bytes: &[u8], span: &Context<'_>) -> Result<Value, Error> {
     let Raster { count, height, width, channels, data } = codec::decode(bytes).map_err(|e| span.domain_error(format!("invalid image: {e}")))?;
     let shape = match count { 1 if channels == 1 => vec![height, width], 1 => vec![height, width, channels], n => vec![n, height, width, channels] };
@@ -114,8 +95,7 @@ fn rechannelled<T: Copy>(data: &[T], from: usize, to: usize, opaque: T) -> Vec<T
     out
 }
 
-/// Appends `data`'s pixels to `out` through `f`, with `to` channels in place of `from`. Grey repeats into red, green and blue, and red
-/// stands for grey. Alpha is dropped, or added as `opaque`.
+/// Appends `data`'s pixels to `out` through `f`, with `to` channels in place of `from`. Grey repeats into red, green and blue, and red stands for grey. Alpha is dropped, or added as `opaque`.
 fn rechannel_into<T: Copy, U>(out: &mut Vec<U>, data: &[T], from: usize, to: usize, opaque: T, f: impl Fn(T) -> U) {
     let colours = |channels: usize| if channels < 3 { 1 } else { 3 };
     out.reserve(data.len() / from * to);
@@ -125,28 +105,22 @@ fn rechannel_into<T: Copy, U>(out: &mut Vec<U>, data: &[T], from: usize, to: usi
     }
 }
 
-/// The frame count, height, width and channels that `picture` describes, and the seconds each frame of an animation stays on screen:
-/// one number for every frame, or one per frame. With `delays`, or with four axes, the first axis is time. It reads the picture's
-/// storage kind instead of its samples. A complex picture is read in full, because its imaginary parts must all be zero.
+/// The frame count, height, width and channels that `picture` describes, and the seconds each frame of an animation stays on screen: one number for every frame, or one per frame. With `delays`, or with four axes, the first axis is time. It reads the picture's storage kind instead of its samples. A complex picture is read in full, because its imaginary parts must all be zero.
 fn layout(picture: &Value, delays: Option<Vec<f64>>, span: &Context<'_>) -> Result<([usize; 4], Option<Vec<f64>>), Error> {
     let delays = delays.or_else(|| (picture.shape().len() == 4).then(|| vec![1. / DEFAULT_FPS]));
     let (count, frame) = match (&delays, picture.shape()) {
-        (Some(_), [count, frame @ ..]) => (*count, frame),
-        (None, frame) => (1, frame),
-        (Some(_), []) => return Err(span.error(ErrorKind::Rank, "an animation has frames along its first axis")),
+        (Some(_), [count, frame @ ..]) => (*count, frame), (None, frame) => (1, frame),
+        (Some(_), []) => return Err(span.error(ErrorKind::Rank, "an animation has frames along its first axis"))
     };
     if delays.as_ref().is_some_and(|d| d.len() != 1 && d.len() != count) {
         return Err(span.error(ErrorKind::Length, "delay needs one number, or one for each frame"));
     }
     let (height, width, channels) = match *frame {
-        [height, width] => (height, width, 1),
-        [height, width, channels @ 1..=4] => (height, width, channels),
-        _ => return Err(span.error(ErrorKind::Rank, "a picture has axes for rows, columns and up to four channels")),
+        [height, width] => (height, width, 1), [height, width, channels @ 1..=4] => (height, width, channels),
+        _ => return Err(span.error(ErrorKind::Rank, "a picture has axes for rows, columns and up to four channels"))
     };
     let real = match picture.compact_kind() {
-        Some(Kind::Complex(_)) => read_as::<f64>(picture).is_some(),
-        Some(Kind::Character) | None => false,
-        Some(_) => true,
+        Some(Kind::Complex(_)) => read_as::<f64>(picture).is_some(), Some(Kind::Character) | None => false, Some(_) => true
     };
     if !real { return Err(span.domain_error("a picture holds real numbers")); }
     Ok(([count, height, width, channels], delays))
@@ -160,8 +134,7 @@ fn frames(picture: &Value, delays: Option<Vec<f64>>, span: &Context<'_>) -> Resu
     Ok((Raster { count, height, width, channels, data }, delays))
 }
 
-/// `seconds` as an APNG frame delay, a ratio of 16-bit integers: exactly `1/n` for a whole rate `n`, otherwise in milliseconds, or in
-/// whole seconds for a delay longer than 65 seconds.
+/// `seconds` as an APNG frame delay, a ratio of 16-bit integers: exactly `1/n` for a whole rate `n`, otherwise in milliseconds, or in whole seconds for a delay longer than 65 seconds.
 fn ratio(seconds: f64) -> (u16, u16) {
     let max = f64::from(u16::MAX);
     let rate = (1. / seconds).round();

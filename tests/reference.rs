@@ -2,15 +2,9 @@ use basedpl::{reference, EvalOptions, InterruptHandle};
 use serde_json::{json, Value};
 
 const SOURCES: &[(&str, &str)] = &[
-    ("core", include_str!("reference/core.bpl")),
-    ("graphics", include_str!("reference/graphics.bpl")),
-    ("ngn", include_str!("reference/ngn.bpl")),
-    ("april", include_str!("reference/april.bpl")),
-    ("aplcart", include_str!("reference/aplcart.bpl")),
-    ("dyalog", include_str!("reference/dyalog.bpl")),
-    ("regex", include_str!("reference/regex.bpl")),
-    ("distributions", include_str!("reference/distributions.bpl")),
-    ("lib", include_str!("reference/lib.bpl")),
+    ("core", include_str!("reference/core.bpl")), ("graphics", include_str!("reference/graphics.bpl")), ("ngn", include_str!("reference/ngn.bpl")),
+    ("april", include_str!("reference/april.bpl")), ("aplcart", include_str!("reference/aplcart.bpl")), ("dyalog", include_str!("reference/dyalog.bpl")),
+    ("regex", include_str!("reference/regex.bpl")), ("distributions", include_str!("reference/distributions.bpl")), ("lib", include_str!("reference/lib.bpl")),
     ("bqn", include_str!("reference/bqn.bpl")),
 ];
 
@@ -45,19 +39,9 @@ fn reference_format_and_comparison() {
     assert_eq!(parsed[1]["line"], 10);
     for case in parsed { assert_eq!(reference::check(&case, EvalOptions::default())["status"], "pass"); }
     for (code, expect, status) in [
-        ("1E¯10", "0", "mismatch"),
-        ("1E¯16", "0", "pass"),
-        ("1+1E¯15", "1", "pass"),
-        ("a←3", "a", "invalid"),
-        ("1", "{}0", "mismatch"),
-        ("{}0", "{}0", "pass"),
-        ("+", "{}0", "mismatch"),
-        ("⍬", r#""""#, "mismatch"),
-        (",1", "1", "mismatch"),
-        ("0⍴⊂1 2", "0⍴⊂1", "mismatch"),
-        (r#""aa":1"#, r#""bb":1"#, "mismatch"),
-        (r#""aa":1"#, ",1", "mismatch"),
-        (r#"["row":1]⍴1"#, r#"["col":1]⍴1"#, "mismatch"),
+        ("1E¯10", "0", "mismatch"), ("1E¯16", "0", "pass"), ("1+1E¯15", "1", "pass"), ("a←3", "a", "invalid"), ("1", "{}0", "mismatch"),
+        ("{}0", "{}0", "pass"), ("+", "{}0", "mismatch"), ("⍬", r#""""#, "mismatch"), (",1", "1", "mismatch"), ("0⍴⊂1 2", "0⍴⊂1", "mismatch"),
+        (r#""aa":1"#, r#""bb":1"#, "mismatch"), (r#""aa":1"#, ",1", "mismatch"), (r#"["row":1]⍴1"#, r#"["col":1]⍴1"#, "mismatch"),
         ("3", "÷'a'", "invalid"),
     ] {
         let case = json!({"code":code, "expected_code":expect});
@@ -89,10 +73,12 @@ fn enabled_reference_cases() {
         chosen.extend(all.into_iter().filter(wanted).map(|mut case| { case["file"] = json!(name); case }));
     }
     let count = chosen.len();
-    let failures: Vec<String> = reference::failures(&chosen, &InterruptHandle::default())
-        .iter()
-        .map(|f| format!("{}.bpl:{} [{}] {}: {} ({})", f["file"].as_str().unwrap(), f["line"], f["section"].as_str().unwrap(), f["id"].as_str().unwrap(), f["message"], f["kind"]))
-        .collect();
+    let failures: Vec<String> = reference::failures(&chosen, &InterruptHandle::default()).iter().map(|f| {
+        format!(
+            "{}.bpl:{} [{}] {}: {} ({})", f["file"].as_str().unwrap(), f["line"], f["section"].as_str().unwrap(), f["id"].as_str().unwrap(), f["message"],
+            f["kind"]
+        )
+    }).collect();
     assert!(count > 0, "no reference cases selected");
     assert!(failures.is_empty(), "{} of {count} reference cases failed:\n{}", failures.len(), failures.join("\n"));
     eprintln!("{count} reference cases passed");

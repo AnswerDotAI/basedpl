@@ -1,7 +1,4 @@
-use crate::{
-    array::{agreed, generated_len, Layout},
-    ErrorKind, Value,
-};
+use crate::{array::{agreed, generated_len, Layout}, ErrorKind, Value};
 
 pub(crate) enum Mapping {
     Single,
@@ -16,12 +13,9 @@ impl Mapping {
     pub fn index(&self, i: usize) -> usize { self.get(i).expect("positional mapping") }
     pub fn get(&self, i: usize) -> Option<usize> {
         Some(match self {
-            Self::Single => 0,
-            Self::Linear(repeat) => i / repeat,
-            Self::Tiled(size) => i % size,
-            Self::Positions(positions) => positions[i],
+            Self::Single => 0, Self::Linear(repeat) => i / repeat, Self::Tiled(size) => i % size, Self::Positions(positions) => positions[i],
             Self::Axes(axes) => axes.iter().map(|&(stride, len, source)| i / stride % len * source).sum(),
-            Self::Keyed(axes) => axes.iter().try_fold(0, |n, (stride, source, map)| Some(n + map[i / stride % map.len()]? * source))?,
+            Self::Keyed(axes) => axes.iter().try_fold(0, |n, (stride, source, map)| Some(n + map[i / stride % map.len()]? * source))?
         })
     }
     pub fn contract(left: &Layout, laxis: usize, right: &Layout, raxis: usize) -> Result<Self, ErrorKind> {
@@ -36,8 +30,7 @@ impl Mapping {
             let mut map = Vec::new();
             for (a, (&len, &b)) in shape.iter().zip(axes).enumerate().rev() {
                 let positions = match (input.keys(a), result.keys(b)) {
-                    (Some(src), Some(dst)) => src.align(dst),
-                    _ => (0..output[b]).map(|i| Some(if len == 1 { 0 } else { i })).collect(),
+                    (Some(src), Some(dst)) => src.align(dst), _ => (0..output[b]).map(|i| Some(if len == 1 { 0 } else { i })).collect()
                 };
                 map.push((strides[b], source, positions));
                 source *= len;
@@ -48,23 +41,19 @@ impl Mapping {
         if size == 1 { return Self::Single; }
         let mut source = 1;
         let mut map = Vec::new();
-        for (&len, &axis) in shape.iter().zip(axes).rev() {
-            if len != 1 { map.push((strides[axis], len, source)); }
-            source *= len;
-        }
+        for (&len, &axis) in shape.iter().zip(axes).rev() { if len != 1 { map.push((strides[axis], len, source)); } source *= len; }
         let repeat = count / size;
         if map.iter().all(|&(stride, _, source)| stride == source * repeat) {
             Self::Linear(repeat)
-        } else if map.iter().all(|&(stride, _, source)| stride == source) { Self::Tiled(size) } else { Self::Axes(map) }
+        } else if map.iter().all(|&(stride, _, source)| stride == source) {
+            Self::Tiled(size)
+        } else {
+            Self::Axes(map)
+        }
     }
 }
 
-pub(crate) struct Agreement {
-    pub layout: Layout,
-    pub len: usize,
-    pub left: Mapping,
-    pub right: Mapping,
-}
+pub(crate) struct Agreement { pub layout: Layout, pub len: usize, pub left: Mapping, pub right: Mapping }
 impl Agreement {
     pub fn new(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> {
         // Plain layouts of one shape, or a plain scalar beside a plain array, need no axis maps. Each side reads item i, or its one item.
@@ -82,20 +71,21 @@ impl Agreement {
         let remaining_right: Vec<_> = (0..ny).filter(|&b| ya[b].is_none()).collect();
         for (a, b) in remaining_left.into_iter().zip(remaining_right) { if left.name(a).is_none() || right.name(b).is_none() { ya[b] = Some(a); } }
         let mut next = nx;
-        let ya = ya
-            .into_iter()
-            .map(|a| {
-                a.unwrap_or_else(|| {
-                    let axis = next;
-                    next += 1;
-                    axis
-                })
+        let ya = ya.into_iter().map(|a| {
+            a.unwrap_or_else(|| {
+                let axis = next;
+                next += 1;
+                axis
             })
-            .collect::<Vec<_>>();
+        }).collect::<Vec<_>>();
         Self::mapped(left, right, &xa, &ya)
     }
     pub fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind> {
-        if left.shape().len() < right.shape().len() { Self::mapped(left, right, axes, &(0..right.shape().len()).collect::<Vec<_>>()) } else { Self::mapped(left, right, &(0..left.shape().len()).collect::<Vec<_>>(), axes) }
+        if left.shape().len() < right.shape().len() {
+            Self::mapped(left, right, axes, &(0..right.shape().len()).collect::<Vec<_>>())
+        } else {
+            Self::mapped(left, right, &(0..left.shape().len()).collect::<Vec<_>>(), axes)
+        }
     }
     /// Gives each argument its own result axes. The left argument's axes come first.
     pub fn outer(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> {
@@ -129,10 +119,7 @@ impl Agreement {
     }
     /// The pair of items at position `i` of the result. A missing entry reads as its own array's prototype.
     pub fn values(&self, left: Option<&Value>, right: &Value, i: usize) -> (Option<Value>, Value) {
-        if self.len == 0 {
-            let item = |a: &Value| if a.is_empty() { a.prototype() } else { a.at(0) };
-            return (left.map(item), item(right));
-        }
+        if self.len == 0 { let item = |a: &Value| if a.is_empty() { a.prototype() } else { a.at(0) }; return (left.map(item), item(right)); }
         let x = left.map(|a| self.left.get(i).map_or_else(|| a.prototype(), |j| a.at(j)));
         let y = self.right.get(i).map_or_else(|| right.prototype(), |j| right.at(j));
         (x, y)

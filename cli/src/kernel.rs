@@ -11,15 +11,11 @@ struct BplSession { worker: ThreadWorker<Session> }
 /// A request's cursor position, as an index into its code's characters.
 fn cursor(pos: u64) -> usize { usize::try_from(pos).unwrap_or(usize::MAX) }
 fn language_error(error: basedpl::Error) -> LanguageError {
-    LanguageError {
-        ename: if error.kind == basedpl::ErrorKind::Interrupt { "KeyboardInterrupt".into() } else { error.kind.to_string() },
-        evalue: error.message.clone(),
-        traceback: vec![error.to_string()],
-    }
+    LanguageError { ename: if error.kind == basedpl::ErrorKind::Interrupt { "KeyboardInterrupt".into() } else { error.kind.to_string() },
+        evalue: error.message.clone(), traceback: vec![error.to_string()] }
 }
 
-/// Standard input in a notebook. Each line is an `input_request` to the frontend, which shows the prompt beside its input box. The input
-/// never ends, so `rest` is an error.
+/// Standard input in a notebook. Each line is an `input_request` to the frontend, which shows the prompt beside its input box. The input never ends, so `rest` is an error.
 struct NotebookInput(ExecutionContext);
 impl Input for NotebookInput {
     fn line(&self, prompt: &str) -> std::io::Result<Option<String>> {
@@ -47,63 +43,46 @@ impl LanguageSession for BplSession {
         let interrupt = InterruptHandle::default();
         let cancel = interrupt.clone();
         context.set_interrupt_handler(Arc::new(move || { cancel.interrupt(); Ok(()) }))?;
-        self.worker
-            .call(move |session| {
-                let cancel = interrupt.clone();
-                let failure = Arc::new(Mutex::new(None));
-                let output_failure = failure.clone();
-                let input = request.allow_stdin.then(|| Arc::new(NotebookInput(context.clone())) as Arc<dyn Input>);
-                let output = Arc::new(move |output: &basedpl::Output| {
-                    let event = match output.kind {
-                        OutputKind::Explicit | OutputKind::Text => LanguageEvent::Stream { name: "stdout".into(), text: output.written() },
-                        OutputKind::Display => LanguageEvent::Message {
-                            msg_type: "execute_result".into(),
-                            content: json!({"execution_count": count, "data": output.data, "metadata": {}}),
-                            metadata: json!({}),
-                            identity: None,
-                            buffers: vec![],
-                        },
-                    };
-                    if let Err(error) = context.emit_blocking(event) {
-                        *output_failure.lock().unwrap() = Some(error);
-                        cancel.interrupt();
-                    }
-                });
-                let result = session.eval_with(
-                    &request.code,
-                    EvalOptions { interrupt: interrupt.clone(), echo: !request.silent, output: Some(output), input, ..EvalOptions::default() },
-                );
-                let mut error = result.error.map(language_error);
-                let mut expressions = serde_json::Map::new();
-                if error.is_none() {
-                    if let Some(items) = request.user_expressions.as_object() {
-                        for (name, code) in items {
-                            let Some(code) = code.as_str() else { continue; };
-                            let result = session.eval_with(
-                                code,
-                                EvalOptions { interrupt: interrupt.clone(), echo: false, output: Some(Arc::new(|_| {})), ..EvalOptions::default() },
-                            );
-                            let value = if let Some(e) = result.error {
-                                let cancelled = e.kind == basedpl::ErrorKind::Interrupt;
-                                let e = language_error(e);
-                                let value = json!({"status": "error", "ename": e.ename, "evalue": e.evalue, "traceback": e.traceback});
-                                if cancelled {
-                                    error = Some(e);
-                                    break;
-                                }
-                                value
-                            } else {
-                                let text = result.value.map(|a| session.show(&a)).or_else(|| result.function.map(|f| f.bpl()));
-                                json!({"status": "ok", "data": text.map_or(json!({}), |text| json!({"text/plain": text})), "metadata": {}})
-                            };
-                            expressions.insert(name.clone(), value);
-                        }
+        self.worker.call(move |session| {
+            let cancel = interrupt.clone();
+            let failure = Arc::new(Mutex::new(None));
+            let output_failure = failure.clone();
+            let input = request.allow_stdin.then(|| Arc::new(NotebookInput(context.clone())) as Arc<dyn Input>);
+            let output = Arc::new(move |output: &basedpl::Output| {
+                let event = match output.kind {
+                    OutputKind::Explicit | OutputKind::Text => LanguageEvent::Stream { name: "stdout".into(), text: output.written() },
+                    OutputKind::Display => LanguageEvent::Message { msg_type: "execute_result".into(),
+                        content: json!({"execution_count": count, "data": output.data, "metadata": {}}), metadata: json!({}), identity: None, buffers: vec![] }
+                };
+                if let Err(error) = context.emit_blocking(event) { *output_failure.lock().unwrap() = Some(error); cancel.interrupt(); }
+            });
+            let result = session.eval_with(
+                &request.code, EvalOptions { interrupt: interrupt.clone(), echo: !request.silent, output: Some(output), input, ..EvalOptions::default() });
+            let mut error = result.error.map(language_error);
+            let mut expressions = serde_json::Map::new();
+            if error.is_none() {
+                if let Some(items) = request.user_expressions.as_object() {
+                    for (name, code) in items {
+                        let Some(code) = code.as_str() else { continue; };
+                        let result = session.eval_with(
+                            code, EvalOptions { interrupt: interrupt.clone(), echo: false, output: Some(Arc::new(|_| {})), ..EvalOptions::default() });
+                        let value = if let Some(e) = result.error {
+                            let cancelled = e.kind == basedpl::ErrorKind::Interrupt;
+                            let e = language_error(e);
+                            let value = json!({"status": "error", "ename": e.ename, "evalue": e.evalue, "traceback": e.traceback});
+                            if cancelled { error = Some(e); break; }
+                            value
+                        } else {
+                            let text = result.value.map(|a| session.show(&a)).or_else(|| result.function.map(|f| f.bpl()));
+                            json!({"status": "ok", "data": text.map_or(json!({}), |text| json!({"text/plain": text})), "metadata": {}})
+                        };
+                        expressions.insert(name.clone(), value);
                     }
                 }
-                if let Some(error) = failure.lock().unwrap().take() { return Err(error); }
-                Ok(ExecuteOutcome { error, user_expressions: Value::Object(expressions), ..Default::default() })
-            })
-            .await?
+            }
+            if let Some(error) = failure.lock().unwrap().take() { return Err(error); }
+            Ok(ExecuteOutcome { error, user_expressions: Value::Object(expressions), ..Default::default() })
+        }).await?
     }
 
     async fn complete(&self, request: CompleteRequest) -> kernmini::Result<Value> {
@@ -122,21 +101,18 @@ impl LanguageSession for BplSession {
     }
 
     async fn inspect(&self, request: InspectRequest) -> kernmini::Result<Value> {
-        self.worker
-            .call(move |session| {
-                let info = basedpl::inspection::at_cursor(&request.code, cursor(request.cursor_pos)).and_then(|name| session.inspect(name));
-                let data = info.as_ref().map(|i| json!({"text/plain":i.text(request.detail_level>0), "text/markdown":i.markdown(request.detail_level>0)}));
-                json!({"status":"ok", "found":info.is_some(), "data":data.unwrap_or(json!({})), "metadata":{}})
-            })
-            .await
+        self.worker.call(move |session| {
+            let info = basedpl::inspection::at_cursor(&request.code, cursor(request.cursor_pos)).and_then(|name| session.inspect(name));
+            let data = info.as_ref().map(|i| json!({"text/plain":i.text(request.detail_level>0), "text/markdown":i.markdown(request.detail_level>0)}));
+            json!({"status":"ok", "found":info.is_some(), "data":data.unwrap_or(json!({})), "metadata":{}})
+        }).await
     }
 
     async fn is_complete(&self, code: String) -> kernmini::Result<Value> {
         if code.trim_start().starts_with(']') { return Ok(json!({"status": "complete"})); }
         Ok(match basedpl::parse(Source::new("<cell>", code)) {
-            ParseStatus::Complete(_) => json!({"status": "complete"}),
-            ParseStatus::Incomplete(_) => json!({"status": "incomplete", "indent": "    "}),
-            ParseStatus::Invalid(_) => json!({"status": "invalid"}),
+            ParseStatus::Complete(_) => json!({"status": "complete"}), ParseStatus::Incomplete(_) => json!({"status": "incomplete", "indent": "    "}),
+            ParseStatus::Invalid(_) => json!({"status": "invalid"})
         })
     }
 

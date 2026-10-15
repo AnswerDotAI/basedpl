@@ -1,5 +1,5 @@
 # The cases that `tests/speed.rs` times in the native build and `tests/wasm-speed.mjs` times in the browser build. Each case line holds the code, its native budget and its wasm budget, separated by tabs. Each section starts with its name in brackets and the prefs its session starts with. Every session then runs the lines under the `[setup]` before its section.
-# Budgets in `[copies]`, `[exact]` and `[images]` count copies of the `n` items that the section's setup makes. A budget in `[widths]` is the most that the time in that section's 32-bit session may be, as a fraction of the time in the `[exact]` session. Natively and in wasm, it is the worse of that fraction on a Mac and on CI's runner, plus 0.25.
+# Budgets in `[copies]`, `[exact]`, `[images]` and `[objectives]` count copies of the `n` items that the section's setup makes. A budget in `[widths]` is the most that the time in that section's 32-bit session may be, as a fraction of the time in the `[exact]` session. Natively and in wasm, it is the worse of that fraction on a Mac and on CI's runner, plus 0.25.
 # A wasm budget in copies is twice the most the case has cost on a Mac and on CI's runner, in the module that `cargo wasm` builds, and at least 0.5. `tests/speed.rs` gives the same rule for native budgets in copies.
 # A case in copies that CI hasn't timed yet has four times its Mac cost, natively and in wasm. A `[widths]` case that CI hasn't timed yet has its Mac fraction plus 0.25. The next `Speed` run sets their budgets under the rules above.
 # The CI figures come from `Speed` run 38397524881. Its CPU was the AMD Ryzen 9 7950X3D 16-Core Processor.
@@ -261,3 +261,20 @@ img×1-0.5×img	5.5	6.8
 +/[4500000 8]⍴flat	1.7	1.7
 # The comparison's Booleans count into a byte for each pixel.
 +/img>0.5	1.8	3.4
+[setup]
+mx←¯0.5+¿[1024 64]⍴0 ⋄ my←1○+/mx ⋄ mp←["w":0.25×¯0.5+¿[64 256]⍴0 "b":256⍴0 "v":0.1×¯0.5+¿256⍴0 "c":0]
+mlp←{[x y]←⍺ ⋄ [w b v c]←⍵ ⋄ h←7○b+⍤1 x+.×w ⋄ (+/÷≢)⊼y-c+h+.×v}
+gx←¿[1000 32]⍴0 ⋄ gi←=⊗⍨⍳32 ⋄ glow←>⊗⍨⍳32 ⋄ gp←["alpha":¿25⍴0 "mu":¿[25 32]⍴0 "q":0.1×¿[25 32]⍴0 "l":0.1×¿[25 32 32]⍴0]
+gmm←{[alpha mu q l]←⍵ ⋄ L←l×⍤2⊢glow ⋄ Q←L+(*q)×⍤1 2⊢gi ⋄ sq←+/⊼(⍺(-⍤1)⍤2 1⊢mu)+.×⍤2⊢0 2 1⍉Q ⋄ t←(alpha++/q)-0.5×sq ⋄ m←⌈⌿t ⋄ am←⌈/alpha ⋄ (+/m+⍟+⌿*t-⍤1⊢m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢⍺)×am+⍟+/*alpha-am}
+kx←¿[16384 32]⍴0 ⋄ kc←¿[64 32]⍴0 ⋄ kmeans←{+/⌊⌿((+/⊼⍵)+⊗+/⊼⍺)-2×⍵+.×⍉⍺}
+sg←¿[128 128]⍴0 ⋄ sk←[1 2 1⋄2 4 2⋄1 2 1]÷16 ⋄ n←65536
+[objectives]
+# Functions that `∂` will differentiate, timed without `∂`. Each gives the cost that its gradient's cost will be measured against.
+# The mean squared error of a network with one hidden layer of 256 tanh units, over 1024 inputs of 64 values. Its parameters are in a record.
+[mx my] mlp mp	380	1300
+# ADBench's Gaussian mixture objective, for 1000 points in 32 dimensions and 25 components, without its constant terms and with its Wishart prior at gamma 1 and m 0. Each component's precision factor has the exponentials of `q` on its diagonal and `l` below it.
+gx gmm gp	2700	6800
+# The k-means cost sums the squared distance from each of 16384 points to the nearest of 64 centres, in 32 dimensions.
+kx kmeans kc	650	2100
+# A 3 by 3 blur of a 128 by 128 grid. `⌺` calls its operand once for each window.
+{+/,sk×⍵}⌺3 3⊢sg	6000	15000

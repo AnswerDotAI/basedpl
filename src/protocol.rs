@@ -3,9 +3,7 @@ use num_bigint::BigInt;
 use num_rational::BigRational;
 use serde_json::{json, Value as JsonValue};
 
-/// A value as the process interface's JSON, serialized as it's written. An item is a JSON scalar, or an object for a number JSON
-/// can't hold. An array is an object of its shape, items and prototype, with its axis names and keys where it has them. The value
-/// holds no function, as `Value::holds_function` checks.
+/// A value as the process interface's JSON, serialized as it's written. An item is a JSON scalar, or an object for a number JSON can't hold. An array is an object of its shape, items and prototype, with its axis names and keys where it has them. The value holds no function, as `Value::holds_function` checks.
 struct Json<'a>(&'a Value);
 
 impl serde::Serialize for Json<'_> {
@@ -24,7 +22,13 @@ impl serde::Serialize for Json<'_> {
                 if let Some(q) = n.as_exact() { return tagged(s, "rational", [q.numer().to_string(), q.denom().to_string()]); }
                 if let Some(z) = n.as_complex() { return tagged(s, "complex", [z.re, z.im]); }
                 let x = n.as_float().unwrap();
-                if x.is_nan() { tagged(s, "nan", 1) } else if x.is_infinite() { tagged(s, "infinity", if x.is_sign_positive() { 1 } else { -1 }) } else { s.serialize_f64(x) }
+                if x.is_nan() {
+                    tagged(s, "nan", 1)
+                } else if x.is_infinite() {
+                    tagged(s, "infinity", if x.is_sign_positive() { 1 } else { -1 })
+                } else {
+                    s.serialize_f64(x)
+                }
             }
             Value::Character(c) => s.serialize_char(*c),
             a @ Value::Array(_) => {
@@ -76,9 +80,7 @@ fn import_element(value: &JsonValue, approximate: bool) -> Result<Value, String>
         JsonValue::Object(o) if o.contains_key("complex") => {
             let parts = o["complex"].as_array().filter(|a| a.len() == 2).ok_or("expected real and imaginary components")?;
             Ok(Number::from(num_complex::Complex64::new(
-                parts[0].as_f64().ok_or("invalid real component")?,
-                parts[1].as_f64().ok_or("invalid imaginary component")?,
-            )))
+                parts[0].as_f64().ok_or("invalid real component")?, parts[1].as_f64().ok_or("invalid imaginary component")?)))
         }
         JsonValue::Object(o) if o.contains_key("shape") => return import_array(value, approximate),
         _ => return Err("invalid BPL element".into()),
@@ -88,12 +90,8 @@ fn import_element(value: &JsonValue, approximate: bool) -> Result<Value, String>
 
 fn import_array(value: &JsonValue, approximate: bool) -> Result<Value, String> {
     if value.get("shape").is_none() { return import_element(value, approximate); }
-    let shape = value["shape"]
-        .as_array()
-        .ok_or("expected array shape")?
-        .iter()
-        .map(|n| n.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("invalid array dimension"))
-        .collect::<Result<Vec<_>, _>>()?;
+    let shape = value["shape"].as_array().ok_or("expected array shape")?.iter()
+        .map(|n| n.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("invalid array dimension")).collect::<Result<Vec<_>, _>>()?;
     let data = value["data"].as_array().ok_or("expected array data")?.iter().map(|v| import_element(v, approximate)).collect::<Result<Vec<_>, _>>()?;
     let prototype = import_element(&value["prototype"], approximate)?;
     let mut result = Value::from_parts(shape, data, prototype).map_err(|k| k.to_string())?;
@@ -102,8 +100,7 @@ fn import_array(value: &JsonValue, approximate: bool) -> Result<Value, String> {
     keyed::with_key_lists(result, serde_json::from_value(keys.clone()).map_err(|e| e.to_string())?)
 }
 
-/// An array from its JSON encoding. Numbers captured from another interpreter carry no exactness, so `approximate` reads them all as
-/// floats.
+/// An array from its JSON encoding. Numbers captured from another interpreter carry no exactness, so `approximate` reads them all as floats.
 pub(crate) fn import(value: &JsonValue, approximate: bool) -> Result<Value, String> { import_array(value, approximate) }
 
 /// The evaluation options a request sets: `timeout_ms`, and `echo`, which defaults to true.
@@ -122,20 +119,16 @@ pub fn request(session: &mut Session, request: &JsonValue, options: EvalOptions)
     if code.is_none() && function.is_none() && request.get("bindings").is_none() { return Err("expected code, call or bindings".into()); }
     let args = if function.is_some() {
         request["args"].as_array().ok_or("call requires an args array")?.iter().map(|v| import(v, false)).collect::<Result<Vec<_>, _>>()?
-    } else { Vec::new() };
+    } else {
+        Vec::new()
+    };
     if let Some(bindings) = request.get("bindings") {
-        let bindings = bindings
-            .as_object()
-            .ok_or("bindings must be an object")?
-            .iter()
-            .map(|(name, value)| Ok((name, import(value, false)?)))
+        let bindings = bindings.as_object().ok_or("bindings must be an object")?.iter().map(|(name, value)| Ok((name, import(value, false)?)))
             .collect::<Result<Vec<_>, String>>()?;
         for (name, value) in bindings { session.set(name, value).map_err(|_| "binding requires an ordinary BPL name")?; }
     }
     Ok(match (code, function) {
-        (Some(code), _) => session.eval_with(code, options),
-        (_, Some(function)) => session.call_with(function, &args, options),
-        _ => Evaluation::default(),
+        (Some(code), _) => session.eval_with(code, options), (_, Some(function)) => session.call_with(function, &args, options), _ => Evaluation::default()
     })
 }
 
@@ -162,8 +155,7 @@ impl serde::Serialize for crate::MimeData {
 /// An output as JSON: its kind, and its MIME bundle.
 pub fn output(o: &crate::Output) -> JsonValue { json!({"kind": o.kind.name(), "data": o.data}) }
 
-/// The reply to a request, serialized as it's written: its `value`, `output` and `error`. A function, or an array that holds one, has
-/// no JSON value: `value` is `null`, and `output` holds its display.
+/// The reply to a request, serialized as it's written: its `value`, `output` and `error`. A function, or an array that holds one, has no JSON value: `value` is `null`, and `output` holds its display.
 pub struct Response(pub Evaluation);
 
 impl serde::Serialize for Response {

@@ -1,13 +1,9 @@
-use basedpl::{Buffer, EvalOptions, FloatWidth, Evaluation, Function, InterruptHandle, Number, Operand, Session, Value};
+use basedpl::{Buffer, EvalOptions, Evaluation, FloatWidth, Function, InterruptHandle, Number, Operand, Session, Value};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use pyo3::{
-    buffer::PyBuffer,
-    exceptions::{PyTypeError, PyValueError},
-    prelude::*,
-    sync::MutexExt,
-    types::{PyBool, PyBoolMethods, PyByteArray, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple},
-    IntoPyObjectExt,
+    buffer::PyBuffer, exceptions::{PyTypeError, PyValueError}, prelude::*, sync::MutexExt,
+    types::{PyBool, PyBoolMethods, PyByteArray, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple}, IntoPyObjectExt
 };
 use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
@@ -15,8 +11,7 @@ use std::sync::{Arc, Mutex};
 fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
     // Python floats take the width that `_array` gives, the workspace's default width.
     let width = match raw.get_item("width")? {
-        Some(bits) => FloatWidth::of_bits(bits.extract()?).ok_or_else(|| PyValueError::new_err("invalid float width"))?,
-        None => FloatWidth::F64,
+        Some(bits) => FloatWidth::of_bits(bits.extract()?).ok_or_else(|| PyValueError::new_err("invalid float width"))?, None => FloatWidth::F64
     };
     let element = |o: Bound<'_, PyAny>| -> PyResult<Value> {
         if let Ok(a) = o.extract::<PyRef<'_, PyArray>>() { return Ok(a.inner.clone()); }
@@ -26,7 +21,20 @@ fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
         if let Ok(s) = o.cast::<PyString>() {
             return basedpl::protocol::character(s.to_str()?).map(Value::Character).ok_or_else(|| PyValueError::new_err("expected one character"));
         }
-        let number = if let Ok(b) = o.cast::<PyBool>() { Ok(Number::from_bool(b.is_true())) } else if o.is_instance_of::<PyFloat>() { Ok(Number::float(o.extract::<f64>()?, width)) } else if let Ok(z) = o.cast::<PyComplex>() { Ok(Number::complex(num_complex::Complex64::new(z.real(), z.imag()), width)) } else if o.is_instance_of::<PyInt>() { Ok(o.extract::<BigInt>()?.into()) } else if o.is_instance_of::<PyTuple>() { let (n, d) = o.extract::<(BigInt, BigInt)>()?; Number::try_from(BigRational::new_raw(n, d)) } else { return Err(PyTypeError::new_err("unsupported BPL element")); };
+        let number = if let Ok(b) = o.cast::<PyBool>() {
+            Ok(Number::from_bool(b.is_true()))
+        } else if o.is_instance_of::<PyFloat>() {
+            Ok(Number::float(o.extract::<f64>()?, width))
+        } else if let Ok(z) = o.cast::<PyComplex>() {
+            Ok(Number::complex(num_complex::Complex64::new(z.real(), z.imag()), width))
+        } else if o.is_instance_of::<PyInt>() {
+            Ok(o.extract::<BigInt>()?.into())
+        } else if o.is_instance_of::<PyTuple>() {
+            let (n, d) = o.extract::<(BigInt, BigInt)>()?;
+            Number::try_from(BigRational::new_raw(n, d))
+        } else {
+            return Err(PyTypeError::new_err("unsupported BPL element"));
+        };
         number.map(Value::Number).map_err(|k| PyValueError::new_err(k.to_string()))
     };
     let field = |key| raw.get_item(key)?.ok_or_else(|| PyValueError::new_err("missing array field"));
@@ -34,8 +42,7 @@ fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
     let shape = field("shape")?.extract::<Vec<usize>>()?;
     let data = field("data")?.try_iter()?.map(|o| element(o?)).collect::<PyResult<Vec<_>>>()?;
     let prototype = element(field("prototype")?)?;
-    // Python data takes the import rules. A dict keeps each value's kind, as a JSON object does. Other data becomes floats only when
-    // every number converts exactly.
+    // Python data takes the import rules. A dict keeps each value's kind, as a JSON object does. Other data becomes floats only when every number converts exactly.
     let record = raw.get_item("axis_keys")?.is_some();
     let mut result = if record { Value::mixed(shape, data, prototype) } else { Value::imported(shape, data, prototype) }
         .map_err(|k| PyValueError::new_err(k.to_string()))?;
@@ -51,16 +58,9 @@ fn numpy(a: &Value) -> Option<(&'static str, Cow<'_, [u8]>)> {
         match v { Cow::Borrowed(v) => Cow::Borrowed(bytemuck::cast_slice(v)), Cow::Owned(v) => Cow::Owned(bytemuck::cast_slice(&v).to_vec()) }
     }
     Some(match a.buffer()? {
-        Buffer::Booleans(v) => ("?", bytes(v)),
-        Buffer::U8(v) => ("u1", bytes(v)),
-        Buffer::I16(v) => ("i2", bytes(v)),
-        Buffer::I32(v) => ("i4", bytes(v)),
-        Buffer::I64(v) => ("i8", bytes(v)),
-        Buffer::F16(v) => ("f2", bytes(v)),
-        Buffer::F32(v) => ("f4", bytes(v)),
-        Buffer::F64(v) => ("f8", bytes(v)),
-        Buffer::C32(v) => ("c8", bytes(v)),
-        Buffer::C64(v) => ("c16", bytes(v)),
+        Buffer::Booleans(v) => ("?", bytes(v)), Buffer::U8(v) => ("u1", bytes(v)), Buffer::I16(v) => ("i2", bytes(v)), Buffer::I32(v) => ("i4", bytes(v)),
+        Buffer::I64(v) => ("i8", bytes(v)), Buffer::F16(v) => ("f2", bytes(v)), Buffer::F32(v) => ("f4", bytes(v)), Buffer::F64(v) => ("f8", bytes(v)),
+        Buffer::C32(v) => ("c8", bytes(v)), Buffer::C64(v) => ("c16", bytes(v))
     })
 }
 
@@ -68,9 +68,21 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
     fn element(py: Python<'_>, e: &Value) -> PyResult<Py<PyAny>> {
         Ok(match e {
             Value::Number(n) => {
-                if let Some(b) = n.as_bool() { PyBool::new(py, b).to_owned().into_any().unbind() } else if let Some(n) = n.as_integer() { n.into_pyobject(py)?.into_any().unbind() } else if let Some(n) = n.as_exact() {
-                    if n.is_integer() { n.numer().into_pyobject(py)?.into_any().unbind() } else { (n.numer(), n.denom()).into_pyobject(py)?.into_any().unbind() }
-                } else if let Some(n) = n.as_complex() { PyComplex::from_doubles(py, n.re, n.im).into_any().unbind() } else { PyFloat::new(py, n.as_float().unwrap()).into_any().unbind() }
+                if let Some(b) = n.as_bool() {
+                    PyBool::new(py, b).to_owned().into_any().unbind()
+                } else if let Some(n) = n.as_integer() {
+                    n.into_pyobject(py)?.into_any().unbind()
+                } else if let Some(n) = n.as_exact() {
+                    if n.is_integer() {
+                        n.numer().into_pyobject(py)?.into_any().unbind()
+                    } else {
+                        (n.numer(), n.denom()).into_pyobject(py)?.into_any().unbind()
+                    }
+                } else if let Some(n) = n.as_complex() {
+                    PyComplex::from_doubles(py, n.re, n.im).into_any().unbind()
+                } else {
+                    PyFloat::new(py, n.as_float().unwrap()).into_any().unbind()
+                }
             }
             Value::Character(c) => PyString::new(py, &c.to_string()).into_any().unbind(),
             a @ Value::Array(_) => array(py, a)?.into_any(),
@@ -79,10 +91,7 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
         })
     }
     let result = PyDict::new(py);
-    if a.is_atom() {
-        result.set_item("atom", element(py, a)?)?;
-        return Ok(result.unbind());
-    }
+    if a.is_atom() { result.set_item("atom", element(py, a)?)?; return Ok(result.unbind()); }
     let data = PyList::empty(py);
     for e in a.elements() { data.append(element(py, &e)?)?; }
     result.set_item("shape", a.shape())?;
@@ -101,24 +110,18 @@ struct PyArray { inner: Value }
 impl PyArray {
     #[new]
     fn new(raw: &Bound<'_, PyDict>) -> PyResult<Self> { Ok(Self { inner: import_array(raw)? }) }
-    /// Compact storage from `data`, a contiguous NumPy array whose dtype `dtype` names as `numpy` does. Booleans arrive as a `uint8` view,
-    /// 16-bit floats as a `uint16` view and complex numbers as a view of their float parts, because the buffer protocol has no type for
-    /// them.
+    /// Compact storage from `data`, a contiguous NumPy array whose dtype `dtype` names as `numpy` does. Booleans arrive as a `uint8` view, 16-bit floats as a `uint16` view and complex numbers as a view of their float parts, because the buffer protocol has no type for them.
     #[staticmethod]
     fn numeric(shape: Vec<usize>, dtype: &str, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         fn items<T: pyo3::buffer::Element>(data: &Bound<'_, PyAny>) -> PyResult<Vec<T>> { Ok(PyBuffer::<T>::get(data)?.to_vec(data.py())?) }
         let buffer = match dtype {
-            "?" => Buffer::Booleans(items::<u8>(data)?.into_iter().map(|x| x != 0).collect()),
-            "u1" => Buffer::U8(items(data)?.into()),
-            "i2" => Buffer::I16(items(data)?.into()),
-            "i4" => Buffer::I32(items(data)?.into()),
-            "i8" => Buffer::I64(items(data)?.into()),
-            "f2" => Buffer::F16(items::<u16>(data)?.into_iter().map(half::f16::from_bits).collect::<Vec<_>>().into()),
-            "f4" => Buffer::F32(items(data)?.into()),
+            "?" => Buffer::Booleans(items::<u8>(data)?.into_iter().map(|x| x != 0).collect()), "u1" => Buffer::U8(items(data)?.into()),
+            "i2" => Buffer::I16(items(data)?.into()), "i4" => Buffer::I32(items(data)?.into()), "i8" => Buffer::I64(items(data)?.into()),
+            "f2" => Buffer::F16(items::<u16>(data)?.into_iter().map(half::f16::from_bits).collect::<Vec<_>>().into()), "f4" => Buffer::F32(items(data)?.into()),
             "f8" => Buffer::F64(items(data)?.into()),
             "c8" => Buffer::C32(items::<f32>(data)?.chunks_exact(2).map(|z| num_complex::Complex32::new(z[0], z[1])).collect::<Vec<_>>().into()),
             "c16" => Buffer::C64(items::<f64>(data)?.chunks_exact(2).map(|z| num_complex::Complex64::new(z[0], z[1])).collect::<Vec<_>>().into()),
-            _ => return Err(PyTypeError::new_err(format!("unsupported NumPy dtype {dtype}"))),
+            _ => return Err(PyTypeError::new_err(format!("unsupported NumPy dtype {dtype}")))
         };
         let inner = Value::from_buffer(shape, buffer);
         inner.map(|inner| Self { inner }).map_err(|k| PyValueError::new_err(k.to_string()))
@@ -157,9 +160,7 @@ impl PyArray {
         let parts = parts.into_iter().map(|a| a.map(|a| a.inner.clone())).collect::<Vec<_>>();
         let mut result = Evaluation::default();
         match self.inner.select(&parts) {
-            Ok(Value::Function(f)) => result.function = Some(f),
-            Ok(a) => result.value = Some(a),
-            Err(e) => result.error = Some(e),
+            Ok(Value::Function(f)) => result.function = Some(f), Ok(a) => result.value = Some(a), Err(e) => result.error = Some(e)
         }
         response(py, result)
     }
@@ -191,13 +192,10 @@ impl PyFunction {
     fn with_derivative(&self, g: PyRef<'_, PyFunction>) -> Self { Self { inner: self.inner.with_derivative(g.inner.clone()) } }
     fn parts(&self, py: Python<'_>) -> PyResult<Option<(String, Vec<Py<PyAny>>)>> {
         let Some((kind, operands)) = self.inner.parts() else { return Ok(None); };
-        let args = operands
-            .into_iter()
-            .map(|a| match a {
-                Operand::Function(inner) => Py::new(py, PyFunction { inner }).map(|f| f.into_any()),
-                Operand::Value(inner) => Py::new(py, PyArray { inner }).map(|a| a.into_any()),
-            })
-            .collect::<PyResult<Vec<_>>>()?;
+        let args = operands.into_iter().map(|a| match a {
+            Operand::Function(inner) => Py::new(py, PyFunction { inner }).map(|f| f.into_any()),
+            Operand::Value(inner) => Py::new(py, PyArray { inner }).map(|a| a.into_any()),
+        }).collect::<PyResult<Vec<_>>>()?;
         Ok(Some((kind, args)))
     }
 }
@@ -222,14 +220,14 @@ struct EvalRequest { run: Option<Run>, bindings: Vec<(String, Operand)>, options
 impl EvalRequest {
     fn run(&mut self, session: &mut Session) -> Result<Evaluation, &'static str> {
         for (name, value) in self.bindings.drain(..) {
-            match value { Operand::Value(a) => session.set(&name, a), Operand::Function(f) => session.set_function(&name, f) }
-            .map_err(|_| "binding requires an ordinary BPL name and an exportable value")?;
+            match value {
+                Operand::Value(a) => session.set(&name, a), Operand::Function(f) => session.set_function(&name, f)
+            }.map_err(|_| "binding requires an ordinary BPL name and an exportable value")?;
         }
         let options = std::mem::take(&mut self.options);
         Ok(match &self.run {
-            Some(Run::Code(code)) => session.eval_with(code, options),
-            Some(Run::Call(function, args)) => session.call_function_with(function, args, options),
-            None => Evaluation::default(),
+            Some(Run::Code(code)) => session.eval_with(code, options), Some(Run::Call(function, args)) => session.call_function_with(function, args, options),
+            None => Evaluation::default()
         })
     }
 }
@@ -241,17 +239,10 @@ struct PySession { session: Mutex<Session>, active: Mutex<Option<InterruptHandle
 impl PySession {
     #[new]
     fn new() -> Self { Self { session: Mutex::new(Session::new()), active: Mutex::new(None) } }
-    /// Runs BPL `code` after binding `bindings`. `show` is called with each output event as BPL produces it, so output and input
-    /// prompts appear in order.
+    /// Runs BPL `code` after binding `bindings`. `show` is called with each output event as BPL produces it, so output and input prompts appear in order.
     #[pyo3(signature = (*, code=None, bindings=Vec::new(), timeout=None, echo=false, show=None))]
     fn eval(
-        &self,
-        py: Python<'_>,
-        code: Option<String>,
-        bindings: Vec<(String, Bound<'_, PyAny>)>,
-        timeout: Option<f64>,
-        echo: bool,
-        show: Option<Py<PyAny>>,
+        &self, py: Python<'_>, code: Option<String>, bindings: Vec<(String, Bound<'_, PyAny>)>, timeout: Option<f64>, echo: bool, show: Option<Py<PyAny>>
     ) -> PyResult<Py<PyDict>> {
         let bindings = bindings.into_iter().map(|(n, a)| Ok((n, operand(&a)?))).collect::<PyResult<_>>()?;
         self.request(py, EvalRequest { run: code.map(Run::Code), bindings, options: options(timeout, echo)? }, show)
@@ -259,12 +250,7 @@ impl PySession {
     /// Calls `function` with `args`, as `eval` runs code.
     #[pyo3(signature = (function, args, *, timeout=None, show=None))]
     fn call(
-        &self,
-        py: Python<'_>,
-        function: PyRef<'_, PyFunction>,
-        args: Vec<PyRef<'_, PyArray>>,
-        timeout: Option<f64>,
-        show: Option<Py<PyAny>>,
+        &self, py: Python<'_>, function: PyRef<'_, PyFunction>, args: Vec<PyRef<'_, PyArray>>, timeout: Option<f64>, show: Option<Py<PyAny>>
     ) -> PyResult<Py<PyDict>> {
         let run = Run::Call(function.inner.clone(), args.iter().map(|a| a.inner.clone()).collect());
         self.request(py, EvalRequest { run: Some(run), bindings: Vec::new(), options: options(timeout, false)? }, show)
@@ -281,8 +267,7 @@ impl PySession {
             d.set_item("source", i.source)?;
             d.set_item("help", i.help)?;
             Ok(d.unbind())
-        })
-        .transpose()
+        }).transpose()
     }
     /// The function that `expression` writes, late-bound, with its numbers read at the session's default width.
     fn late_bound(&self, py: Python<'_>, expression: &str) -> PyResult<Py<PyDict>> {
@@ -328,8 +313,7 @@ impl PySession {
     }
 }
 
-/// A poll that interrupts the evaluation when Python has a pending signal, such as Ctrl-C, or when an output callback raised. It keeps the
-/// error to raise.
+/// A poll that interrupts the evaluation when Python has a pending signal, such as Ctrl-C, or when an output callback raised. It keeps the error to raise.
 fn ctrl_c(caught: Arc<Mutex<Option<PyErr>>>) -> basedpl::Poll {
     Arc::new(move || {
         if caught.lock().unwrap().is_some() { return true; }
@@ -339,8 +323,7 @@ fn ctrl_c(caught: Arc<Mutex<Option<PyErr>>>) -> basedpl::Poll {
     })
 }
 
-/// An output sink that keeps each event in `shown` and calls `show` with it. An error that `show` raises goes to `caught`, which stops
-/// the evaluation through `ctrl_c`.
+/// An output sink that keeps each event in `shown` and calls `show` with it. An error that `show` raises goes to `caught`, which stops the evaluation through `ctrl_c`.
 fn stream(show: Py<PyAny>, shown: Arc<Mutex<Vec<basedpl::Output>>>, caught: Arc<Mutex<Option<PyErr>>>) -> basedpl::OutputSink {
     Arc::new(move |event| {
         shown.lock().unwrap().push(event.clone());
@@ -349,8 +332,7 @@ fn stream(show: Py<PyAny>, shown: Arc<Mutex<Vec<basedpl::Output>>>, caught: Arc<
     })
 }
 
-/// Python's standard input. Each line comes from `input()`, which shows a notebook's input box under IPython. A Ctrl-C while `input()`
-/// waits goes to `caught`, as a signal does in `ctrl_c`.
+/// Python's standard input. Each line comes from `input()`, which shows a notebook's input box under IPython. A Ctrl-C while `input()` waits goes to `caught`, as a signal does in `ctrl_c`.
 struct PythonInput { caught: Arc<Mutex<Option<PyErr>>> }
 impl basedpl::Input for PythonInput {
     fn line(&self, prompt: &str) -> std::io::Result<Option<String>> {
@@ -365,8 +347,7 @@ impl basedpl::Input for PythonInput {
         })
     }
     fn rest(&self) -> std::io::Result<Vec<u8>> {
-        Python::attach(|py| -> PyResult<String> { py.import("sys")?.getattr("stdin")?.call_method0("read")?.extract() })
-            .map(String::into_bytes)
+        Python::attach(|py| -> PyResult<String> { py.import("sys")?.getattr("stdin")?.call_method0("read")?.extract() }).map(String::into_bytes)
             .map_err(|e| std::io::Error::other(e.to_string()))
     }
 }
@@ -382,22 +363,24 @@ fn options(timeout: Option<f64>, echo: bool) -> PyResult<basedpl::EvalOptions> {
 fn python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
     use serde_json::Value as Json;
     match value {
-        Json::Null => Ok(py.None()),
-        Json::Bool(b) => b.into_py_any(py),
-        Json::Number(n) => n.as_i64().map_or_else(|| n.as_f64().into_py_any(py), |i| i.into_py_any(py)),
-        Json::String(s) => s.into_py_any(py),
+        Json::Null => Ok(py.None()), Json::Bool(b) => b.into_py_any(py),
+        Json::Number(n) => n.as_i64().map_or_else(|| n.as_f64().into_py_any(py), |i| i.into_py_any(py)), Json::String(s) => s.into_py_any(py),
         Json::Array(items) => items.iter().map(|v| python(py, v)).collect::<PyResult<Vec<_>>>()?.into_py_any(py),
-        Json::Object(fields) => {
-            let d = PyDict::new(py);
-            for (k, v) in fields { d.set_item(k, python(py, v)?)?; }
-            d.into_py_any(py)
-        }
+        Json::Object(fields) => { let d = PyDict::new(py); for (k, v) in fields { d.set_item(k, python(py, v)?)?; } d.into_py_any(py) }
     }
 }
 
 /// A result as the dict that the JSON protocol sends, holding native arrays and functions.
 fn response(py: Python<'_>, result: Evaluation) -> PyResult<Py<PyDict>> {
-    let value = if let Some(inner) = result.value { Some(Py::new(py, PyArray { inner })?.into_any()) } else if let Some(inner) = result.function { Some(Py::new(py, PyFunction { inner })?.into_any()) } else if let Some(inner) = result.operator { Some(Py::new(py, PyOperator { inner })?.into_any()) } else { None };
+    let value = if let Some(inner) = result.value {
+        Some(Py::new(py, PyArray { inner })?.into_any())
+    } else if let Some(inner) = result.function {
+        Some(Py::new(py, PyFunction { inner })?.into_any())
+    } else if let Some(inner) = result.operator {
+        Some(Py::new(py, PyOperator { inner })?.into_any())
+    } else {
+        None
+    };
     let d = PyDict::new(py);
     d.set_item("value", value)?;
     d.set_item("output", output(py, &result.output)?)?;
@@ -424,7 +407,10 @@ fn char_offsets(text: &str) -> Vec<usize> {
 
 /// `protocol::error` with character spans. The JSON worker protocol keeps byte spans.
 fn error(py: Python<'_>, e: &basedpl::Error) -> PyResult<Py<PyAny>> {
-    let span = |s: &basedpl::Span| { let chars = char_offsets(&s.source.text); serde_json::json!([chars[s.range.start], chars[s.range.end]]) };
+    let span = |s: &basedpl::Span| {
+        let chars = char_offsets(&s.source.text);
+        serde_json::json!([chars[s.range.start], chars[s.range.end]])
+    };
     let mut encoded = basedpl::protocol::error(e);
     encoded["span"] = span(&e.span);
     if let Some(calls) = encoded["calls"].as_array_mut() { for (call, s) in calls.iter_mut().zip(&e.calls) { call["span"] = span(s); } }

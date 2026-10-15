@@ -34,37 +34,18 @@ pub enum ErrorKind {
 
 impl ErrorKind {
     const BUILTIN: [Self; 11] = [
-        Self::Syntax,
-        Self::Domain,
-        Self::Length,
-        Self::Limit,
-        Self::Rank,
-        Self::Index,
-        Self::Value,
-        Self::Io,
-        Self::Unsupported,
-        Self::Interrupt,
+        Self::Syntax, Self::Domain, Self::Length, Self::Limit, Self::Rank, Self::Index, Self::Value, Self::Io, Self::Unsupported, Self::Interrupt,
         Self::Timeout,
     ];
     /// The name that guards and `•signal` use, such as `DOMAIN`.
     pub fn name(&self) -> &str {
         match self {
-            Self::Syntax => "SYNTAX",
-            Self::Domain => "DOMAIN",
-            Self::Length => "LENGTH",
-            Self::Limit => "LIMIT",
-            Self::Rank => "RANK",
-            Self::Index => "INDEX",
-            Self::Value => "VALUE",
-            Self::Io => "IO",
-            Self::Unsupported => "UNSUPPORTED",
-            Self::Interrupt => "INTERRUPT",
-            Self::Timeout => "TIMEOUT",
-            Self::Custom(name) => name,
+            Self::Syntax => "SYNTAX", Self::Domain => "DOMAIN", Self::Length => "LENGTH", Self::Limit => "LIMIT", Self::Rank => "RANK", Self::Index => "INDEX",
+            Self::Value => "VALUE", Self::Io => "IO", Self::Unsupported => "UNSUPPORTED", Self::Interrupt => "INTERRUPT", Self::Timeout => "TIMEOUT",
+            Self::Custom(name) => name
         }
     }
-    /// The kind that `name` names, in any case. A name that isn't BPL's is a custom kind. `None` unless `name` is one word of letters,
-    /// digits and underscores.
+    /// The kind that `name` names, in any case. A name that isn't BPL's is a custom kind. `None` unless `name` is one word of letters, digits and underscores.
     pub(crate) fn named(name: &str) -> Option<Self> {
         if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '_') { return None; }
         let name = name.to_uppercase();
@@ -80,12 +61,7 @@ impl fmt::Display for ErrorKind {
 }
 
 #[derive(Clone, Debug)]
-pub struct Error {
-    pub kind: ErrorKind,
-    pub message: String,
-    pub span: Span,
-    pub calls: Vec<Span>,
-}
+pub struct Error { pub kind: ErrorKind, pub message: String, pub span: Span, pub calls: Vec<Span> }
 
 impl Span {
     /// The whole of `source`.
@@ -94,8 +70,7 @@ impl Span {
         Error { kind, message: message.into(), span: self.clone(), calls: Vec::new() }
     }
     pub(crate) fn domain_error(&self, message: impl Into<String>) -> Error { self.error(ErrorKind::Domain, message) }
-    /// The file `path` names. A path that starts with `./` or `../` is relative to the file holding this code. Other relative paths,
-    /// and every path in code not read from a file, are relative to the working directory.
+    /// The file `path` names. A path that starts with `./` or `../` is relative to the file holding this code. Other relative paths, and every path in code not read from a file, are relative to the working directory.
     pub(crate) fn path(&self, path: &str) -> PathBuf {
         let relative = path.starts_with("./") || path.starts_with("../");
         match std::path::Path::new(&self.source.name).parent() { Some(dir) if relative && self.source.file => dir.join(path), _ => path.into() }
@@ -114,8 +89,7 @@ impl<T> ErrorAt<T> for Result<T, ErrorKind> { fn error_at(self, span: &Span, mes
 pub(crate) trait DomainAt<T> { fn domain_at(self, span: &Span) -> Result<T, Error>; }
 impl<T, M: Into<String>> DomainAt<T> for Result<T, M> { fn domain_at(self, span: &Span) -> Result<T, Error> { self.map_err(|m| span.domain_error(m)) } }
 
-// Render tabs at four-column stops. Escape other controls rather than sending them
-// to the terminal. Source spans themselves remain unchanged UTF-8 byte offsets.
+// Render tabs at four-column stops. Escape other controls rather than sending them to the terminal. Source spans themselves remain unchanged UTF-8 byte offsets.
 fn display_text(text: &str) -> String {
     let mut rendered = String::new();
     for part in text.split_inclusive('\t') {
@@ -141,11 +115,7 @@ impl Span {
         let (line, column) = self.position();
         let end = display_text(&text[line_start..self.range.end.min(line_end)]).width();
         write!(
-            f,
-            " {label} {}:{line}:{column}\n{}\n{}{}",
-            display_text(&self.source.name),
-            display_text(&text[line_start..line_end]),
-            " ".repeat(column - 1),
+            f, " {label} {}:{line}:{column}\n{}\n{}{}", display_text(&self.source.name), display_text(&text[line_start..line_end]), " ".repeat(column - 1),
             "^".repeat((end + 1).saturating_sub(column).max(1))
         )
     }
@@ -160,15 +130,9 @@ impl fmt::Display for Error {
         self.span.render("-->", f)?;
         let hidden = self.calls.len().saturating_sub(2 * CALLS_SHOWN);
         let (first, rest) = self.calls.split_at(self.calls.len().min(CALLS_SHOWN));
-        for call in first {
-            writeln!(f)?;
-            call.render("called from", f)?;
-        }
+        for call in first { writeln!(f)?; call.render("called from", f)?; }
         if hidden > 0 { write!(f, "\n ... {hidden} more calls")?; }
-        for call in &rest[hidden..] {
-            writeln!(f)?;
-            call.render("called from", f)?;
-        }
+        for call in &rest[hidden..] { writeln!(f)?; call.render("called from", f)?; }
         Ok(())
     }
 }

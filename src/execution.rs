@@ -1,14 +1,5 @@
 use crate::{host::Instant, Error, ErrorKind, Span};
-use std::{
-    cell::{Cell, RefCell},
-    io,
-    ops::Deref,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
+use std::{cell::{Cell, RefCell}, io, ops::Deref, sync::{atomic::{AtomicBool, Ordering}, Arc}, time::Duration};
 
 /// Cancellation for one evaluation; may be sent to another thread.
 #[derive(Clone, Default)]
@@ -91,10 +82,7 @@ impl Execution {
     }
     pub(crate) fn output(&self, kind: OutputKind, text: String) { self.emit(Output::plain(kind, text)); }
     /// Sends `output`, after any pending text.
-    pub(crate) fn emit(&self, output: Output) {
-        self.flush();
-        self.send(output);
-    }
+    pub(crate) fn emit(&self, output: Output) { self.flush(); self.send(output); }
     /// Sends `output` to the sink, or keeps it for the evaluation's result when there is none.
     fn send(&self, output: Output) { if let Some(sink) = &self.output { sink(&output); } else { self.captured.borrow_mut().push(output); } }
     /// Writes `text` with no line ending added. Text after the last line ending waits, so that a read of `⎕` can show it as its prompt.
@@ -114,30 +102,26 @@ impl Execution {
     pub(crate) fn line(&self, span: &Span) -> Result<Option<String>, Error> { self.read(span, |input| input.line(&self.pending.take())) }
     /// The rest of the input, read after the pending text is sent.
     pub(crate) fn rest(&self, span: &Span) -> Result<Vec<u8>, Error> { self.flush(); self.read(span, |input| input.rest()) }
-    /// The result of `read` on the frontend's input. A frontend with no input, or a read that fails, is an IO error. A read that
-    /// fails as interrupted, or during an interrupt, is an interrupt.
+    /// The result of `read` on the frontend's input. A frontend with no input, or a read that fails, is an IO error. A read that fails as interrupted, or during an interrupt, is an interrupt.
     fn read<T>(&self, span: &Span, read: impl FnOnce(&dyn Input) -> io::Result<T>) -> Result<T, Error> {
         let input = self.input.as_deref().ok_or_else(|| span.error(ErrorKind::Io, "standard input is unavailable here"))?;
         read(input).map_err(|e| {
             if e.kind() == io::ErrorKind::Interrupted || self.interrupt.0.load(Ordering::Relaxed) {
                 span.error(ErrorKind::Interrupt, "evaluation interrupted")
-            } else { span.io_error("standard input", e) }
+            } else {
+                span.io_error("standard input", e)
+            }
         })
     }
-    /// Stops the evaluation when it's interrupted or past its deadline. Most calls only count down, inlined into the caller. Every
-    /// `CHECKS_PER_CLOCK`th call runs `check_now`.
+    /// Stops the evaluation when it's interrupted or past its deadline. Most calls only count down, inlined into the caller. Every `CHECKS_PER_CLOCK`th call runs `check_now`.
     #[inline]
     pub(crate) fn check(&self, span: &Span) -> Result<(), Error> {
         match self.countdown.get().checked_sub(1) {
-            Some(n) => {
-                self.countdown.set(n);
-                Ok(())
-            }
+            Some(n) => { self.countdown.set(n); Ok(()) }
             None => self.check_now(span),
         }
     }
-    /// Reads the clock, calls the poll when `POLL_INTERVAL` has passed since the poll last ran, and stops the evaluation when it's
-    /// interrupted or past its deadline. Callers whose checks are too far apart for `check`'s countdown call this directly.
+    /// Reads the clock, calls the poll when `POLL_INTERVAL` has passed since the poll last ran, and stops the evaluation when it's interrupted or past its deadline. Callers whose checks are too far apart for `check`'s countdown call this directly.
     #[cold]
     #[inline(never)]
     pub(crate) fn check_now(&self, span: &Span) -> Result<(), Error> {
@@ -148,8 +132,7 @@ impl Execution {
         if self.timeout.is_some_and(|(start, limit)| now - start >= limit) { return Err(span.error(ErrorKind::Timeout, "evaluation deadline exceeded")); }
         Ok(())
     }
-    /// One step of waiting: a full check, then a sleep of `limit` or `POLL_INTERVAL`, whichever is shorter. A loop of these notices
-    /// an interrupt or a passed deadline within one interval.
+    /// One step of waiting: a full check, then a sleep of `limit` or `POLL_INTERVAL`, whichever is shorter. A loop of these notices an interrupt or a passed deadline within one interval.
     #[cfg(not(web))]
     pub(crate) fn pause(&self, span: &Span, limit: Duration) -> Result<(), Error> {
         self.check_now(span)?;

@@ -1,5 +1,4 @@
-//! Search and ordering primitives: index of, membership, without, union, intersection, unique, duplicates, find, classification,
-//! run-length encoding, groups, iota, range, where, grade, sort and interval index. Their search kernels are in `crate::search`.
+//! Search and ordering primitives: index of, membership, without, union, intersection, unique, duplicates, find, classification, run-length encoding, groups, iota, range, where, grade, sort and interval index. Their search kernels are in `crate::search`.
 
 use super::*;
 use crate::array::{with_floats, with_int_pair};
@@ -44,23 +43,16 @@ pub(super) fn find(left: &Value, right: &Value, span: &Context<'_>) -> Result<Va
         let integers = x.ints().zip(y.ints());
         let t = span.numeric();
         let same = |i: usize, o: usize| match (&x, &y, integers) {
-            (_, _, Some((x, y))) => Ok(x.get(i) == y.get(o)),
-            (Items::Booleans(x), Items::Booleans(y), _) => Ok(x[i] == y[o]),
+            (_, _, Some((x, y))) => Ok(x.get(i) == y.get(o)), (Items::Booleans(x), Items::Booleans(y), _) => Ok(x[i] == y[o]),
             (Items::Floats(x), Items::Floats(y), _) => Ok(t.tolerance_at(x.tag().max(y.tag())).matches(x.get(i), y.get(o))),
-            (Items::Characters(x), Items::Characters(y), _) => Ok(x[i] == y[o]),
-            _ => left.at(i).matches(&right.at(o), span),
+            (Items::Characters(x), Items::Characters(y), _) => Ok(x[i] == y[o]), _ => left.at(i).matches(&right.at(o), span)
         };
         let mut coords = vec![0; shape.len()];
         for (flat, result) in data.iter_mut().enumerate() {
             for (axis, c) in digits(flat, shape) { coords[axis] = c; }
             if coords.iter().zip(&pattern_shape).zip(shape).any(|((&i, &len), &size)| len > size - i) { continue; }
             let mut matched = true;
-            for (i, &o) in pattern.iter().enumerate() {
-                if !same(i, flat + o)? {
-                    matched = false;
-                    break;
-                }
-            }
+            for (i, &o) in pattern.iter().enumerate() { if !same(i, flat + o)? { matched = false; break; } }
             *result = matched;
         }
     }
@@ -101,19 +93,13 @@ pub(super) fn duplicates(right: &Value, span: &Context<'_>) -> Result<Value, Err
     replicate(&major.booleans(mask).error_at(span, "invalid duplicates mask")?, right, None, false, span)
 }
 
-/// The runs of adjacent matching major cells: the length of each run, as exact integers, and its first cell. Cells match as `∪`
-/// matches them. `#⁻¹` decodes the result back to `right`. `#/` does too, unless `right` is a unit or has leading keys. A unit gives the
-/// rank-0 length 1 and the unit itself. A keyed leading axis moves into a third item, the keys of every position, because a run's
-/// cells can have different keys.
+/// The runs of adjacent matching major cells: the length of each run, as exact integers, and its first cell. Cells match as `∪` matches them. `#⁻¹` decodes the result back to `right`. `#/` does too, unless `right` is a unit or has leading keys. A unit gives the rank-0 length 1 and the unit itself. A keyed leading axis moves into a third item, the keys of every position, because a run's cells can have different keys.
 pub(super) fn runs(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if right.is_unit() { return Value::new(vec![2], vec![integer(1), right.clone()]).error_at(span, "invalid runs"); }
     let (first, axis) = classes(right, span)?;
     let starts: Vec<bool> = first.iter().enumerate().map(|(i, &f)| i == 0 || f != first[i - 1]).collect();
     let mut lengths: Vec<u64> = Vec::new();
-    for &start in &starts {
-        if start { lengths.push(0); }
-        *lengths.last_mut().expect("the first cell starts a run") += 1;
-    }
+    for &start in &starts { if start { lengths.push(0); } *lengths.last_mut().expect("the first cell starts a run") += 1; }
     let lengths = generated_items(vec![lengths.len()], lengths, None).error_at(span, "invalid run lengths")?;
     let values = replicate(&axis.booleans(starts).error_at(span, "invalid run starts")?, right, None, false, span)?;
     if right.keys(0).is_none() { return Value::new(vec![2], vec![lengths, values]).error_at(span, "invalid runs"); }
@@ -170,14 +156,10 @@ pub(super) fn iota(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     Value::from_parts(shape, data, prototype).error_at(span, "invalid coordinate array")
 }
 
-/// `a↦b` counts from `a` towards `b` in steps of 1, as far as `b` without passing it, and floors the number of steps within
-/// comparison tolerance. Each item is `a+i` or `a-i` for an exact count `i`, so the result's type follows `a`. Two characters
-/// count through the code points between them. `↦n` is the first `⌊|n|` counting numbers, negated when `n` is negative, with the
-/// type of `n`.
+/// `a↦b` counts from `a` towards `b` in steps of 1, as far as `b` without passing it, and floors the number of steps within comparison tolerance. Each item is `a+i` or `a-i` for an exact count `i`, so the result's type follows `a`. Two characters count through the code points between them. `↦n` is the first `⌊|n|` counting numbers, negated when `n` is negative, with the type of `n`.
 pub(super) fn range(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let real = |v: Value| match v {
-        Value::Number(n) if n.to_float().is_ok() => Ok(n),
-        _ => Err(span.domain_error("range needs real numbers or two characters")),
+        Value::Number(n) if n.to_float().is_ok() => Ok(n), _ => Err(span.domain_error("range needs real numbers or two characters"))
     };
     let steps = |distance: &Number| -> Result<usize, Error> {
         let whole = distance.math_monad(Math::Magnitude).and_then(|d| d.floor(span.numeric())).domain_at(span)?;
@@ -214,10 +196,7 @@ fn where_vector(counts: &[i64], span: &Context<'_>) -> Result<Value, Error> {
     } else {
         let mut data = vec![0; total];
         let mut k = 0;
-        for (i, &n) in counts.iter().enumerate() {
-            data[k..k + n as usize].fill(i as i64);
-            k += n as usize;
-        }
+        for (i, &n) in counts.iter().enumerate() { data[k..k + n as usize].fill(i as i64); k += n as usize; }
         data
     };
     Value::integers([total], data).error_at(span, "invalid where result")
@@ -229,8 +208,7 @@ pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, 
             // Each position is below the mask's length, so the positions take their width before any is written.
             let width = Width::below(mask.len());
             let built = with_width!(width, T => {
-                let mut data: Vec<T> = Vec::new();
-                rustymath::gather::positions(&mut data, mask, total, |j| T::from_i64(j as i64));
+                let mut data: Vec<T> = Vec::new(); rustymath::gather::positions(&mut data, mask, total, |j| T::from_i64(j as i64));
                 Value::from_storage([total], Storage::within(data, width))
             });
             return built.error_at(span, "invalid where result");
@@ -238,11 +216,7 @@ pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, 
     }
     if let (Items::Integers(counts), [_]) = (right.as_items(), right.shape()) { if right.keys(0).is_none() { return where_vector(&counts.widened(), span); } }
     let counts = right.as_items().nonnegative_integers().error_at(span, "where needs nonnegative integer counts")?;
-    let total = counts
-        .iter()
-        .try_fold(0usize, |total, &n| total.checked_add(n))
-        .ok_or(ErrorKind::Limit)
-        .and_then(|t| generated_len(&[t]))
+    let total = counts.iter().try_fold(0usize, |total, &n| total.checked_add(n)).ok_or(ErrorKind::Limit).and_then(|t| generated_len(&[t]))
         .error_at(span, "where exceeds array limits")?;
     if right.shape().len() == 1 && right.keys(0).is_none() {
         let mut data = Vec::with_capacity(total);
@@ -251,7 +225,9 @@ pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, 
     }
     let mut data = Vec::with_capacity(total);
     for (i, &n) in counts.iter().enumerate() {
-        let index = if right.shape().len() == 1 { position_value(right, 0, i) } else {
+        let index = if right.shape().len() == 1 {
+            position_value(right, 0, i)
+        } else {
             let mut coords: Vec<_> = digits(i, right.shape()).map(|(axis, c)| position_value(right, axis, c)).collect();
             coords.reverse();
             Value::from_parts(vec![coords.len()], coords, integer(0)).unwrap()
@@ -275,8 +251,7 @@ fn search_cells<'a>(array: &'a Value, rank: usize, span: &Context<'_>) -> Result
     Cells::of(array, rank).error_at(span, "invalid search cells")
 }
 
-/// Where each cell of `needles` first matches a major cell of `haystack`, or the number of major cells when none does, and the frame
-/// that the needles form around those cells.
+/// Where each cell of `needles` first matches a major cell of `haystack`, or the number of major cells when none does, and the frame that the needles form around those cells.
 fn search(haystack: &Value, needles: &Value, span: &Context<'_>) -> Result<(Vec<u32>, Frame), Error> {
     let (rank, frame) = search_frame(haystack, needles, span)?;
     Ok((first_matches(&search_cells(haystack, rank, span)?, &search_cells(needles, rank, span)?, span)?, frame))
@@ -310,13 +285,10 @@ fn position_value(array: &Value, axis: usize, position: usize) -> Value {
 fn element_order(left: &Value, right: &Value) -> Option<Ordering> {
     Some(match (left, right) {
         (Value::Function(_) | Value::Operator(_), _) | (_, Value::Function(_) | Value::Operator(_)) => return None,
-        (Value::Number(x), Value::Number(y)) => x.grade_order(y),
-        (Value::Character(x), Value::Character(y)) => x.cmp(y),
-        (Value::Number(_), Value::Character(_)) => Ordering::Less,
-        (Value::Character(_), Value::Number(_)) => Ordering::Greater,
-        (x @ Value::Array(_), y @ Value::Array(_)) => return array_order(x, y),
-        (Value::Array(_), _) => Ordering::Greater,
-        (_, Value::Array(_)) => Ordering::Less,
+        (Value::Number(x), Value::Number(y)) => x.grade_order(y), (Value::Character(x), Value::Character(y)) => x.cmp(y),
+        (Value::Number(_), Value::Character(_)) => Ordering::Less, (Value::Character(_), Value::Number(_)) => Ordering::Greater,
+        (x @ Value::Array(_), y @ Value::Array(_)) => return array_order(x, y), (Value::Array(_), _) => Ordering::Greater,
+        (_, Value::Array(_)) => Ordering::Less
     })
 }
 
@@ -328,13 +300,10 @@ fn array_order(left: &Value, right: &Value) -> Option<Ordering> {
     Some(left.len().cmp(&right.len()).then_with(|| left.shape().cmp(right.shape())))
 }
 
-/// The grade of `right`'s `count` major cells by rustymath's `sort_rows`, when its items are all Booleans, all floats, all integers or
-/// all characters, in at most 16 columns. `sort_rows` counts keys that span a small range. It radix-sorts other keys.
-/// `Float::order_key` orders floats as `array_order` does, with a key as wide as the float.
+/// The grade of `right`'s `count` major cells by rustymath's `sort_rows`, when its items are all Booleans, all floats, all integers or all characters, in at most 16 columns. `sort_rows` counts keys that span a small range. It radix-sorts other keys. `Float::order_key` orders floats as `array_order` does, with a key as wide as the float.
 fn key_grade(right: &Value, count: usize, down: bool) -> Option<Vec<u32>> {
     use {crate::array::Ints, rustymath::{search::{sort_rows, OrderKey as _, RadixKey}, Arg, Float as _}};
-    /// Each column's keys, from the items `x` of rows of `width` items through `key`, complemented when grading down, which reverses
-    /// their order. Each column fills in one pass, through `pairs` for one column, which vectorizes.
+    /// Each column's keys, from the items `x` of rows of `width` items through `key`, complemented when grading down, which reverses their order. Each column fills in one pass, through `pairs` for one column, which vectorizes.
     fn columns<T: Copy + Sync, K: RadixKey>(x: &[T], width: usize, down: bool, key: impl Fn(T) -> K + Sync) -> Vec<Vec<K>> {
         let key = move |v: T| if down { !key(v) } else { key(v) };
         if width == 1 {
@@ -353,8 +322,7 @@ fn key_grade(right: &Value, count: usize, down: bool) -> Option<Vec<u32>> {
         Items::Integers(Ints::I32(x)) => sort_rows(count, columns(x, width, down, |v| v.order_key())),
         Items::Integers(Ints::I64(x)) => sort_rows(count, columns(x, width, down, |v| v.order_key())),
         Items::Characters(x) => sort_rows(count, columns(x, width, down, u32::from)),
-        Items::Booleans(x) => sort_rows(count, columns(x, width, down, u16::from)),
-        _ => return None,
+        Items::Booleans(x) => sort_rows(count, columns(x, width, down, u16::from)), _ => return None
     })
 }
 pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Context<'_>) -> Result<Value, Error> {
@@ -368,9 +336,7 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
             if !matches!(a.prototype(), Value::Character(_)) || a.elements().any(|e| !matches!(e, Value::Character(_))) {
                 return Err(span.domain_error("dyadic grade needs simple character arrays"));
             }
-            Ok(a.elements()
-                .map(|e| match e { Value::Character(c) => c, _ => unreachable!() })
-                .collect())
+            Ok(a.elements().map(|e| match e { Value::Character(c) => c, _ => unreachable!() }).collect())
         };
         let (alphabet, text) = (characters(collation)?, characters(right)?);
         let missing: Vec<_> = collation.shape().iter().rev().copied().collect();
@@ -384,7 +350,10 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
         indices = (0..count as u32).collect();
         indices.sort_by(|&a, &b| {
             for (axis, _) in missing.iter().enumerate() {
-                for j in 0..size { let order = cells[a as usize * size + j][axis].cmp(&cells[b as usize * size + j][axis]); if !order.is_eq() { return direction(order); } }
+                for j in 0..size {
+                    let order = cells[a as usize * size + j][axis].cmp(&cells[b as usize * size + j][axis]);
+                    if !order.is_eq() { return direction(order); }
+                }
             }
             Ordering::Equal
         });
@@ -395,7 +364,12 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
         // A sort comparison can't fail. It notes a function instead, and the error follows the sort.
         let mut unordered = false;
         indices = (0..count as u32).collect();
-        indices.sort_by(|&a, &b| { direction(array_order(&cells[a as usize], &cells[b as usize]).unwrap_or_else(|| { unordered = true; Ordering::Equal })) });
+        indices.sort_by(|&a, &b| {
+            direction(array_order(&cells[a as usize], &cells[b as usize]).unwrap_or_else(|| {
+                unordered = true;
+                Ordering::Equal
+            }))
+        });
         if unordered { return Err(span.domain_error("functions have no ordering")); }
     }
     positions(right, indices).error_at(span, "invalid grade result")
@@ -409,16 +383,11 @@ pub(super) fn sort(right: &Value, down: bool, span: &Context<'_>) -> Result<Valu
     squad(&order, right, None, span)
 }
 
-/// A vector without keys of 256 items or more, sorted by counting its items, when they are integers, Booleans or characters whose
-/// keys `counts` counts. A sort needs no positions. It writes each item as many times as it occurs, in order. Fewer items go through
-/// `grade`. A table of `counts` holds up to 1024 keys, however few the items.
+/// A vector without keys of 256 items or more, sorted by counting its items, when they are integers, Booleans or characters whose keys `counts` counts. A sort needs no positions. It writes each item as many times as it occurs, in order. Fewer items go through `grade`. A table of `counts` holds up to 1024 keys, however few the items.
 fn counted_sort(right: &Value, down: bool) -> Option<Value> {
     use crate::element::Element;
     use rustymath::search::{counts, Key};
-    /// The items of `x` in order, from the count of each key. Each key writes its item to the next four places, then fills the rest of
-    /// its count. A key with fewer items has its extra places overwritten by the next keys. Writing four with no branch avoids a
-    /// mispredicted branch for each key when most counts are 0 or 1. A key between two characters may not be a character itself. Its
-    /// count is 0, so what it writes is overwritten.
+    /// The items of `x` in order, from the count of each key. Each key writes its item to the next four places, then fills the rest of its count. A key with fewer items has its extra places overwritten by the next keys. Writing four with no branch avoids a mispredicted branch for each key when most counts are 0 or 1. A key between two characters may not be a character itself. Its count is 0, so what it writes is overwritten.
     fn spread<T: Element + Key>(x: &[T], down: bool) -> Option<Value> {
         let (min, counts) = counts(x)?;
         let mut sorted = vec![T::FILL; x.len() + 4];
@@ -429,16 +398,14 @@ fn counted_sort(right: &Value, down: bool) -> Option<Value> {
             if c > 4 { sorted[at + 4..at + c].fill(v) }
             at += c;
         };
-        if down { counts.iter().enumerate().rev().for_each(&mut write) } else { counts.iter().enumerate().for_each(&mut write) }
+        if down { counts.iter().enumerate().rev().for_each(&mut write) }
+        else { counts.iter().enumerate().for_each(&mut write) }
         sorted.truncate(x.len());
         T::build(vec![sorted.len()], sorted)
     }
     if right.shape().len() != 1 || right.keys(0).is_some() || right.len() < 256 { return None; }
     let sorted = match right.as_items() {
-        Items::Integers(x) => with_ints!(x, |x| spread(x, down)),
-        Items::Booleans(x) => spread(x, down),
-        Items::Characters(x) => spread(x, down),
-        _ => None,
+        Items::Integers(x) => with_ints!(x, |x| spread(x, down)), Items::Booleans(x) => spread(x, down), Items::Characters(x) => spread(x, down), _ => None
     }?;
     sorted.with_layout(right.layout().clone()).ok()
 }
@@ -471,21 +438,15 @@ pub(super) fn interval_index(left: &Value, right: &Value, span: &Context<'_>) ->
     frame.collect(data, integer(0)).error_at(span, "invalid interval index")
 }
 
-/// Interval indices of compact cells of one kind, through `rustymath::search::bins`: Booleans, characters, integers of any widths, and
-/// floats of one width, which compare by their order keys, as grade compares them. `None` for other cells.
+/// Interval indices of compact cells of one kind, through `rustymath::search::bins`: Booleans, characters, integers of any widths, and floats of one width, which compare by their order keys, as grade compares them. `None` for other cells.
 fn compact_bins(boundaries: &Cells, values: &Cells) -> Option<Vec<u32>> {
     use {crate::array::Floats, rustymath::{search::bins, Float}};
-    fn keyed<F: Float>(x: &[F], y: &[F]) -> Vec<u32> {
-        let keys = |v: &[F]| v.iter().map(|&f| f.order_key()).collect::<Vec<_>>();
-        bins(&keys(x), &keys(y))
-    }
+    fn keyed<F: Float>(x: &[F], y: &[F]) -> Vec<u32> { let keys = |v: &[F]| v.iter().map(|&f| f.order_key()).collect::<Vec<_>>(); bins(&keys(x), &keys(y)) }
     Some(match (boundaries.items()?, values.items()?) {
-        (Items::Booleans(x), Items::Booleans(y)) => bins(x, y),
-        (Items::Characters(x), Items::Characters(y)) => bins(x, y),
+        (Items::Booleans(x), Items::Booleans(y)) => bins(x, y), (Items::Characters(x), Items::Characters(y)) => bins(x, y),
         (Items::Integers(x), Items::Integers(y)) => with_int_pair!(x, y, |x, y| bins(x, y)),
         (Items::Floats(Floats::F64(x)), Items::Floats(Floats::F64(y))) => keyed(x, y),
         (Items::Floats(Floats::F32(x)), Items::Floats(Floats::F32(y))) => keyed(x, y),
-        (Items::Floats(Floats::F16(x)), Items::Floats(Floats::F16(y))) => keyed(x, y),
-        _ => return None,
+        (Items::Floats(Floats::F16(x)), Items::Floats(Floats::F16(y))) => keyed(x, y), _ => return None
     })
 }

@@ -1,10 +1,7 @@
 use basedpl::{EvalOptions, InterruptHandle, Session};
 use foldhash::{HashMap, HashMapExt};
 use serde_json::Value;
-use std::{
-    io::{self, BufRead, Write},
-    sync::{mpsc, Arc, Mutex},
-};
+use std::{io::{self, BufRead, Write}, sync::{mpsc, Arc, Mutex}};
 
 pub(crate) fn run(output: &mut impl Write) -> io::Result<()> {
     let active = Arc::new(Mutex::new(HashMap::<u64, InterruptHandle>::new()));
@@ -14,8 +11,7 @@ pub(crate) fn run(output: &mut impl Write) -> io::Result<()> {
         for line in io::stdin().lock().lines() {
             let request = match line {
                 Ok(line) => serde_json::from_str::<Value>(&line).map_err(|e| format!("malformed JSON: {e}")),
-                Err(e) if e.kind() == io::ErrorKind::InvalidData => Err(e.to_string()),
-                Err(_) => break,
+                Err(e) if e.kind() == io::ErrorKind::InvalidData => Err(e.to_string()), Err(_) => break
             };
             if let Some(id) = request.as_ref().ok().and_then(|r| r.get("interrupt")).and_then(Value::as_u64) {
                 if let Some(handle) = controls.lock().unwrap().get(&id) { handle.interrupt(); }
@@ -39,10 +35,7 @@ pub(crate) fn run(output: &mut impl Write) -> io::Result<()> {
 }
 
 /// One request's result: an evaluation's response, which serializes as it's written, or the JSON that another kind of request gives.
-enum Reply {
-    Response(basedpl::protocol::Response),
-    Json(Value),
-}
+enum Reply { Response(basedpl::protocol::Response), Json(Value) }
 
 impl serde::Serialize for Reply {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
@@ -51,10 +44,7 @@ impl serde::Serialize for Reply {
 }
 
 /// A reply line: the request's `id` and its `result`.
-struct Line {
-    id: Option<u64>,
-    result: Reply,
-}
+struct Line { id: Option<u64>, result: Reply }
 
 impl serde::Serialize for Line {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {

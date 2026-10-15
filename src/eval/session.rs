@@ -10,7 +10,10 @@ impl Session {
     /// This session at `span`, for a call that takes a `Context`.
     pub(crate) fn at<'a>(&'a mut self, span: &'a Span) -> Context<'a> { Context { span, session: self } }
     /// A session for a person at a terminal, with boxed display elided to the terminal's width.
-    pub fn interactive() -> Self { let display = crate::display::Settings::interactive(); Self { display, display_defaults: display, ..Self::default() } }
+    pub fn interactive() -> Self {
+        let display = crate::display::Settings::interactive();
+        Self { display, display_defaults: display, ..Self::default() }
+    }
     /// `value` as this session's implicit display shows it, as text.
     pub fn show(&self, value: &Value) -> String { self.display_settings().array(value, false) }
     /// The display settings, with floats of the default width shown without a marker.
@@ -22,10 +25,7 @@ impl Session {
     pub fn names(&self) -> impl Iterator<Item = &str> {
         let mut names = HashSet::new();
         let mut scope = self.current;
-        while let Some(i) = scope {
-            names.extend(self.frames[i].names.keys().map(String::as_str));
-            scope = self.frames[i].parent;
-        }
+        while let Some(i) = scope { names.extend(self.frames[i].names.keys().map(String::as_str)); scope = self.frames[i].parent; }
         names.extend(self.table(self.module()).keys().map(String::as_str));
         let mut names: Vec<_> = names.into_iter().collect();
         names.sort_unstable();
@@ -34,8 +34,7 @@ impl Session {
     pub fn name_class(&self, name: &str) -> i64 {
         match crate::inspection::item(name) {
             Some(NodeKind::Name(name)) => self.lookup(&name).map_or(0, Binding::class),
-            Some(NodeKind::System(name)) => crate::system::lookup(&name).map_or(0, |f| Binding::Function(f).class()),
-            _ => -1,
+            Some(NodeKind::System(name)) => crate::system::lookup(&name).map_or(0, |f| Binding::Function(f).class()), _ => -1
         }
     }
     pub fn name_list(&self, classes: &[i64], prefix: &str) -> Vec<String> {
@@ -57,13 +56,10 @@ impl Session {
     }
     pub fn name_source(&self, name: &str) -> Result<String, ErrorKind> {
         match self.name_class(name) {
-            FUNCTION_CLASS | OPERATOR_CLASS => Ok(self.inspect(name).unwrap().source),
-            SUBJECT_CLASS => Err(ErrorKind::Domain),
-            _ => Err(ErrorKind::Value),
+            FUNCTION_CLASS | OPERATOR_CLASS => Ok(self.inspect(name).unwrap().source), SUBJECT_CLASS => Err(ErrorKind::Domain), _ => Err(ErrorKind::Value)
         }
     }
-    /// The module whose names code sees after its frames: the module that defined the running function, or the module whose top
-    /// level is running. Module 0 is the session's own names.
+    /// The module whose names code sees after its frames: the module that defined the running function, or the module whose top level is running. Module 0 is the session's own names.
     fn module(&self) -> usize { self.current.map_or(self.module, |i| self.frames[i].module) }
     fn table(&self, module: usize) -> &HashMap<String, Binding> { if module == 0 { &self.names } else { &self.modules[module - 1] } }
     fn table_mut(&mut self, module: usize) -> &mut HashMap<String, Binding> { if module == 0 { &mut self.names } else { &mut self.modules[module - 1] } }
@@ -101,8 +97,7 @@ impl Session {
     pub(crate) fn system_src(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         self.named(right, span, |s, name| s.name_source(name).map(|text| crate::keyed::text(&text)))
     }
-    /// `•literal text` reads a value from BPL source, as `•literal⁻¹` writes it, without running code. The text may hold literals and the
-    /// functions that `•literal⁻¹` writes: `⍴`, `⊂`, `,`, `:` and `•ucs`.
+    /// `•literal text` reads a value from BPL source, as `•literal⁻¹` writes it, without running code. The text may hold literals and the functions that `•literal⁻¹` writes: `⍴`, `⊂`, `,`, `:` and `•ucs`.
     pub(crate) fn system_literal(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         let parsed = self.parse(Source::new("<•literal>", Self::source_text(right, span)?)).complete()?;
         let [statement] = parsed.statements.as_slice() else { return Err(span.domain_error("•literal reads one value")) };
@@ -115,8 +110,7 @@ impl Session {
         }
         self.bind(&statement.nodes)?.array(span)
     }
-    /// `•time t` gives the seconds since `t`, counting from the Unix epoch. `F •time x` gives each function's fastest time per call
-    /// on `x`, in the layout of `F`.
+    /// `•time t` gives the seconds since `t`, counting from the Unix epoch. `F •time x` gives each function's fastest time per call on `x`, in the layout of `F`.
     pub(super) fn system_time(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         // Times stay 64-bit, as `•date` gives them, because a 32-bit float holds seconds since 1970 only to within about two minutes.
         let second = |s| Value::Number(crate::Number::float(s, FloatWidth::F64));
@@ -124,12 +118,12 @@ impl Session {
             let now = second(crate::date::now());
             return Primitive::Arithmetic(crate::number::Arithmetic::Minus).call(Some(&now), right, &self.at(span));
         };
-        let times = functions
-            .elements()
-            .map(|f| match f { Value::Function(f) => self.fastest(&f, right, span), _ => Err(span.domain_error("•time needs functions on its left")) })
-            .collect::<Result<Vec<_>, _>>()?;
+        let times = functions.elements().map(|f| match f {
+            Value::Function(f) => self.fastest(&f, right, span), _ => Err(span.domain_error("•time needs functions on its left"))
+        }).collect::<Result<Vec<_>, _>>()?;
         if functions.is_atom() { return Ok(second(times[0])); }
-        Value::floats(functions.shape().to_vec(), FloatWidth::F64, times).and_then(|t| t.with_layout(functions.layout().clone())).error_at(span, "invalid •time result")
+        Value::floats(functions.shape().to_vec(), FloatWidth::F64, times).and_then(|t| t.with_layout(functions.layout().clone()))
+            .error_at(span, "invalid •time result")
     }
     /// The fastest time per call of `f` on `x`, in seconds. Calls repeat for about 0.1 s, in batches that double until one takes 1 ms.
     fn fastest(&mut self, f: &Function, x: &Value, span: &Span) -> Result<f64, Error> {
@@ -147,8 +141,7 @@ impl Session {
     }
     pub(crate) fn system_nl(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         let prefix = match left {
-            Some(value) => crate::keyed::name(value).ok_or_else(|| span.domain_error("•nl prefix must be a string"))?,
-            None => "".into(),
+            Some(value) => crate::keyed::name(value).ok_or_else(|| span.domain_error("•nl prefix must be a string"))?, None => "".into()
         };
         if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "•nl needs a class or class vector")); }
         let classes = right.as_items().integers().error_at(span, "invalid name class")?;
@@ -168,8 +161,7 @@ impl Session {
     pub fn eval_with(&mut self, code: &str, options: crate::EvalOptions) -> Evaluation {
         self.evaluation(options, |s| s.evaluate_source(Source::new("<input>", code)))
     }
-    /// One evaluation under `options`: `evaluate`'s result, with the output it produced. Its rustymath calls split across the session's
-    /// `threads` where `•prefs` set them, and across the thread's own setting otherwise. Afterwards it restores the thread's own setting.
+    /// One evaluation under `options`: `evaluate`'s result, with the output it produced. Its rustymath calls split across the session's `threads` where `•prefs` set them, and across the thread's own setting otherwise. Afterwards it restores the thread's own setting.
     fn evaluation(&mut self, options: crate::EvalOptions, evaluate: impl FnOnce(&mut Self) -> Evaluation) -> Evaluation {
         let threads = rustymath::parallel::thread_setting();
         if let Some(n) = self.threads { rustymath::parallel::set_threads(n); }
@@ -183,8 +175,7 @@ impl Session {
     pub fn eval_timeout(&mut self, code: &str, timeout: std::time::Duration) -> Evaluation {
         self.eval_with(code, crate::EvalOptions { timeout: Some(timeout), ..crate::EvalOptions::default() })
     }
-    /// Resolve a function expression in this session and call it with one (right) or two (left, right) arrays.
-    /// No function or lexical-frame handle escapes the call, and no temporary names are bound.
+    /// Resolve a function expression in this session and call it with one (right) or two (left, right) arrays. No function or lexical-frame handle escapes the call, and no temporary names are bound.
     pub fn call(&mut self, function: &str, args: &[Value]) -> Evaluation { self.call_with(function, args, crate::EvalOptions::default()) }
     pub fn call_with(&mut self, function: &str, args: &[Value], options: crate::EvalOptions) -> Evaluation {
         match self.late_bound(function) { Ok(f) => self.call_function_with(&f, args, options), Err(error) => Evaluation::failed(error) }
@@ -204,9 +195,8 @@ impl Session {
         let mut result = Evaluation::default();
         let called = (|| {
             let (left, right) = match args {
-                [right] => (None, right),
-                [left, right] => (Some(left), right),
-                _ => return Err(span.error(ErrorKind::Length, "call requires one or two arguments")),
+                [right] => (None, right), [left, right] => (Some(left), right),
+                _ => return Err(span.error(ErrorKind::Length, "call requires one or two arguments"))
             };
             function.call(left, right, &mut self.at(&span))?.result(&span)
         })();
@@ -225,19 +215,17 @@ impl Session {
         result
     }
     pub fn eval_source(&mut self, source: Arc<Source>, options: crate::EvalOptions) -> Evaluation { self.evaluation(options, |s| s.evaluate_source(source)) }
-    /// A line that starts with `]` is a command, unless it closes brackets that the code before it left open. Each part
-    /// keeps its line numbers, so errors point at the right line.
+    /// A line that starts with `]` is a command, unless it closes brackets that the code before it left open. Each part keeps its line numbers, so errors point at the right line.
     fn evaluate_source(&mut self, source: Arc<Source>) -> Evaluation {
         let (mut parts, mut start, mut offset) = (Vec::new(), 0, 0);
         for line in source.text.split_inclusive('\n') {
             let pending = &source.text[start..offset];
             if line.trim_start().starts_with(']')
-                && (pending.trim().is_empty() || !matches!(crate::parse(Source::new("", pending)), ParseStatus::Incomplete(_)))
-            {
-                if !pending.trim().is_empty() { parts.push(start..offset); }
-                parts.push(offset..offset + line.len());
-                start = offset + line.len();
-            }
+                && (pending.trim().is_empty() || !matches!(crate::parse(Source::new("", pending)), ParseStatus::Incomplete(_))) {
+                    if !pending.trim().is_empty() { parts.push(start..offset); }
+                    parts.push(offset..offset + line.len());
+                    start = offset + line.len();
+                }
             offset += line.len();
         }
         if parts.is_empty() { return self.evaluate_code(source); }
@@ -249,16 +237,11 @@ impl Session {
             let part = Arc::new(Source { name: source.name.clone(), text: code, file: source.file });
             let next = if text.trim_start().starts_with(']') { self.command(part) } else { self.evaluate_code(part) };
             (result.value, result.function, result.operator) = (next.value, next.function, next.operator);
-            if next.error.is_some() {
-                result.error = next.error;
-                break;
-            }
+            if next.error.is_some() { result.error = next.error; break; }
         }
         result
     }
-    /// Code at the top level of an evaluation, such as a script, a notebook cell or a REPL turn. Its leading `•prefs` statements, each on
-    /// a literal record, run before the rest is parsed. The rest then reads its numbers at the width they set. A syntax error anywhere in
-    /// the code stops it before anything runs. `•load` and `⍎` run no header.
+    /// Code at the top level of an evaluation, such as a script, a notebook cell or a REPL turn. Its leading `•prefs` statements, each on a literal record, run before the rest is parsed. The rest then reads its numbers at the width they set. A syntax error anywhere in the code stops it before anything runs. `•load` and `⍎` run no header.
     fn evaluate_code(&mut self, source: Arc<Source>) -> Evaluation {
         let mut parsed = match self.parse(source.clone()).complete() { Ok(parsed) => parsed, Err(e) => return Evaluation::failed(e) };
         let header = parsed.statements.iter().take_while(|s| prefs_header(&s.nodes)).count();
@@ -267,10 +250,7 @@ impl Session {
         let result = self.eval_display(&parsed, false, false);
         if result.error.is_some() { return result; }
         match self.parse(source).complete() {
-            Ok(mut rest) => {
-                rest.statements.drain(..header);
-                self.eval_display(&rest, false, false)
-            }
+            Ok(mut rest) => { rest.statements.drain(..header); self.eval_display(&rest, false, false) }
             Err(e) => Evaluation::failed(e),
         }
     }
@@ -294,8 +274,11 @@ impl Session {
             match bound {
                 Ok(bound) => {
                     let dissected = if dissecting && (dissect || !bound.shy && !matches!(bound.value, Binding::NoResult | Binding::Absent)) {
-                        bound.expression.map(|e| *e).or_else(|| Expression::binding(&bound.value)).map(|e| e.display(self.display.trees, self.display.elide.notation))
-                    } else { None };
+                        bound.expression.map(|e| *e).or_else(|| Expression::binding(&bound.value))
+                            .map(|e| e.display(self.display.trees, self.display.elide.notation))
+                    } else {
+                        None
+                    };
                     if let Some(text) = &dissected { self.execution.output(crate::OutputKind::Display, text.clone()); }
                     result.value = match bound.value {
                         Binding::NoResult | Binding::Absent => None,
@@ -304,10 +287,7 @@ impl Session {
                                 self.execution.output(crate::OutputKind::Display, self.display_settings().diagram(&a));
                             }
                             else if self.execution.echo && !bound.shy {
-                                if let Err(e) = self.display_value(&a, &nodes[0].span) {
-                                    result.error = Some(e);
-                                    return result;
-                                }
+                                if let Err(e) = self.display_value(&a, &nodes[0].span) { result.error = Some(e); return result; }
                             }
                             Some(a)
                         }
@@ -325,11 +305,7 @@ impl Session {
                         }
                     };
                 }
-                Err(e) => {
-                    result.value = None;
-                    result.error = Some(e);
-                    break;
-                }
+                Err(e) => { result.value = None; result.error = Some(e); break; }
             }
         }
         result
@@ -343,7 +319,9 @@ impl Session {
             let usage = "usage: ]help name [-source], or ]help llms for the language reference";
             let Some((name, detail)) = crate::inspection::help_command(code) else { return failed(ErrorKind::Syntax, usage.into()) };
             // `llms` is a topic, not a name. A variable called `llms` can't hide the reference.
-            let (text, markdown) = if name == "llms" { (crate::inspection::LLMS.to_owned(), crate::inspection::LLMS.to_owned()) } else {
+            let (text, markdown) = if name == "llms" {
+                (crate::inspection::LLMS.to_owned(), crate::inspection::LLMS.to_owned())
+            } else {
                 let Some(info) = self.inspect(name) else { return failed(ErrorKind::Value, format!("name not found: {name}")) };
                 (info.text(detail), info.markdown(detail))
             };
@@ -359,15 +337,13 @@ impl Session {
         }
         if command.eq_ignore_ascii_case("]display") {
             return match self.parse(Source::new("<display>", args)).complete() {
-                Ok(parsed) => self.eval_display(&parsed, true, false),
-                Err(e) => Evaluation::failed(e),
+                Ok(parsed) => self.eval_display(&parsed, true, false), Err(e) => Evaluation::failed(e)
             };
         }
         if command.eq_ignore_ascii_case("]dissect") {
             if args.trim().is_empty() { return failed(ErrorKind::Syntax, "usage: ]dissect expression".into()); }
             return match self.parse(Source::new("<dissect>", args)).complete() {
-                Ok(parsed) => self.eval_display(&parsed, false, true),
-                Err(e) => Evaluation::failed(e),
+                Ok(parsed) => self.eval_display(&parsed, false, true), Err(e) => Evaluation::failed(e)
             };
         }
         failed(ErrorKind::Syntax, "unknown user command".into())
@@ -388,8 +364,7 @@ impl Session {
         result
     }
 
-    /// `•mime Y` is the MIME bundle that displays `Y`. `X •mime Y` is `Y` displayed through `X`, which holds a function or names a MIME
-    /// type. A MIME type shows `Y` itself as that type.
+    /// `•mime Y` is the MIME bundle that displays `Y`. `X •mime Y` is `Y` displayed through `X`, which holds a function or names a MIME type. A MIME type shows `Y` itself as that type.
     pub(super) fn mime(&mut self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         let Some(left) = left else { return self.mime_value(right, span) };
         let renderer = match left.is_singleton().then(|| left.at(0)) {
@@ -444,15 +419,10 @@ impl Session {
     fn source_text(right: &Value, span: &Span) -> Result<String, Error> {
         if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "expected a unit or vector of characters")); }
         if !matches!(right.prototype(), Value::Character(_)) { return Err(span.domain_error("expected characters")); }
-        right
-            .elements()
-            .map(|e| match e { Value::Character(c) => Ok(c), _ => Err(span.domain_error("expected characters")) })
-            .collect()
+        right.elements().map(|e| match e { Value::Character(c) => Ok(c), _ => Err(span.domain_error("expected characters")) }).collect()
     }
 
-    /// `•load path` runs a file in a module of its own and returns a record of the module's public names: the names its top level
-    /// assigns that don't start with `_`, in alphabetical order. The file adds no names to the caller, and shows nothing except
-    /// explicit output.
+    /// `•load path` runs a file in a module of its own and returns a record of the module's public names: the names its top level assigns that don't start with `_`, in alphabetical order. The file adds no names to the caller, and shows nothing except explicit output.
     pub(super) fn load(&mut self, right: &Value, span: &Span) -> Result<Bound, Error> {
         let text = Self::source_text(right, span)?;
         let path = span.path(&text);
@@ -485,18 +455,16 @@ impl Session {
         Ok(result)
     }
 
-    // Resolving one structural item may execute a group, but never derives an operator
-    // or consumes a neighbouring item. The binder alone chooses grammatical reductions.
+    // Resolving one structural item may execute a group, but never derives an operator or consumes a neighbouring item. The binder alone chooses grammatical reductions.
     pub(super) fn resolve(&mut self, node: &Node) -> Result<Bound, Error> {
         Ok(Bound::new(match &node.kind {
             NodeKind::Literal(a) => Binding::Value(a.clone()),
             NodeKind::Function(p) => Binding::Function(self.primitives.entry(*p).or_insert_with(|| Function::primitive(*p)).clone()),
             NodeKind::Operator(op) => Binding::Operator(OperatorNode::Primitive(*op)),
             NodeKind::Name(name) => match self.lookup(name) {
-                Some(value) => value.clone(),
-                None if name == "⍺" && self.current.is_some() => Binding::Absent,
+                Some(value) => value.clone(), None if name == "⍺" && self.current.is_some() => Binding::Absent,
                 None if name == "$e" => return Err(node.span.error(ErrorKind::Value, "$e is the error a handler caught, and exists only in a handler")),
-                None => return Err(node.span.error(ErrorKind::Value, format!("undefined name: {name}"))),
+                None => return Err(node.span.error(ErrorKind::Value, format!("undefined name: {name}")))
             },
             NodeKind::System(name) => {
                 Binding::Function(crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?)
@@ -509,10 +477,7 @@ impl Session {
             NodeKind::ArrayLiteral { cells, record: true, .. } => {
                 let mut entries = Vec::new();
                 for nodes in cells {
-                    let Some(colon) = crate::syntax::key_colon(nodes) else {
-                        entries.extend(self.item_result(nodes)?.map(|item| (None, item)));
-                        continue;
-                    };
+                    let Some(colon) = crate::syntax::key_colon(nodes) else { entries.extend(self.item_result(nodes)?.map(|item| (None, item))); continue; };
                     // The value and the key evaluate separately, value first. As one expression, `key:f` would be a train.
                     let Some(value) = self.item_result(&nodes[colon + 1..])? else { continue };
                     let key = self.array_result(&nodes[..colon])?;
@@ -529,7 +494,9 @@ impl Session {
                 let result = if *form == ListForm::Cells {
                     // Each row is a major cell, so unit rows give a vector: `[1⋄2]` is `1 2`.
                     Value::assemble_written(&[arrays.len()], &arrays, &arrays[0])
-                } else { Value::new(vec![arrays.len()], arrays) };
+                } else {
+                    Value::new(vec![arrays.len()], arrays)
+                };
                 Binding::Value(result.error_at(&node.span, "invalid array literal")?)
             }
             NodeKind::Dfn(definition) => {
@@ -553,10 +520,7 @@ impl Session {
         let key = Key::of(name);
         if key == Key::ALPHA { return self.current.and_then(|i| self.frames[i].get(key).map(|value| (Some(i), value))); }
         let mut scope = self.current;
-        while let Some(i) = scope {
-            if let Some(value) = self.frames[i].get(key) { return Some((scope, value)); }
-            scope = self.frames[i].parent;
-        }
+        while let Some(i) = scope { if let Some(value) = self.frames[i].get(key) { return Some((scope, value)); } scope = self.frames[i].parent; }
         self.table(self.module()).get(name).map(|value| (None, value))
     }
 
@@ -571,9 +535,7 @@ impl Session {
         let mut unshy = false;
         let mut result = loop {
             let (closure, operand, right_operand) = match function.node() {
-                FunctionNode::Defined(c) => (c, None, None),
-                FunctionNode::Derived(c, operand, right) => (c, Some(operand), right.as_ref()),
-                _ => unreachable!(),
+                FunctionNode::Defined(c) => (c, None, None), FunctionNode::Derived(c, operand, right) => (c, Some(operand), right.as_ref()), _ => unreachable!()
             };
             let mut frame = Frame::new(closure.environment, closure.module, closure.definition.names());
             frame.insert(Key::OMEGA, Binding::Value(right));
@@ -614,21 +576,17 @@ impl Session {
         Ok(())
     }
 
-    /// Drops the frames from `base` on, makes `caller` current and gives back `result`. A result that refers to a dropped frame is
-    /// an error.
+    /// Drops the frames from `base` on, makes `caller` current and gives back `result`. A result that refers to a dropped frame is an error.
     fn leave(&mut self, base: usize, caller: Option<usize>, result: Result<Bound, Error>, span: &Span) -> Result<Bound, Error> {
         let result = match result {
-            Ok(bound) if bound.value.environment().is_some_and(|i| i >= base) => Err(span.domain_error("result would return a local closure")),
-            result => result,
+            Ok(bound) if bound.value.environment().is_some_and(|i| i >= base) => Err(span.domain_error("result would return a local closure")), result => result
         };
         self.frames.truncate(base);
         self.current = caller;
         result
     }
 
-    /// Runs `f` in a new frame in which each key on the first axis of `record` names what `T.key` selects: an item of a vector, or a
-    /// major cell of a higher-rank array. Other names resolve in the caller's scope, and assignments stay in the new frame. `T.(expr)`
-    /// and `T⍎text` evaluate this way.
+    /// Runs `f` in a new frame in which each key on the first axis of `record` names what `T.key` selects: an item of a vector, or a major cell of a higher-rank array. Other names resolve in the caller's scope, and assignments stay in the new frame. `T.(expr)` and `T⍎text` evaluate this way.
     fn scoped(&mut self, record: &Value, span: &Span, f: impl FnOnce(&mut Self) -> Result<Bound, Error>) -> Result<Bound, Error> {
         let entries = record.keys(0).ok_or(ErrorKind::Domain).and_then(|keys| {
             let items = if record.shape().len() == 1 { record.elements().collect() } else { record.major_cells()? };
@@ -654,20 +612,11 @@ impl Session {
     fn return_expression(&mut self, mut nodes: &[Node], tail: bool) -> Result<Step, Error> {
         if nodes.is_empty() { return Ok(Step::Done(Bound::new(Binding::NoResult))); }
         let mut unshy = false;
-        while let [Node { kind: NodeKind::Group(inner), .. }] = nodes {
-            nodes = inner;
-            unshy = true;
-        }
+        while let [Node { kind: NodeKind::Group(inner), .. }] = nodes { nodes = inner; unshy = true; }
         let step = if nodes.iter().any(|n| matches!(n.kind, NodeKind::Assign)) { Step::Done(self.bind(nodes)?) } else { Binder::evaluate(nodes, self, tail)? };
         match step {
-            Step::Done(mut bound) => {
-                if unshy { bound.shy = false; }
-                bound.result(&nodes[0].span).map(Step::Done)
-            }
-            Step::Tail(mut call) => {
-                call.unshy = unshy;
-                Ok(Step::Tail(call))
-            }
+            Step::Done(mut bound) => { if unshy { bound.shy = false; } bound.result(&nodes[0].span).map(Step::Done) }
+            Step::Tail(mut call) => { call.unshy = unshy; Ok(Step::Tail(call)) }
         }
     }
 
@@ -720,8 +669,7 @@ impl Session {
     }
 }
 
-/// The errors a guard catches: the kinds it names, or with `∞` every kind but an interrupt, a timeout or an unsupported feature.
-/// Unsupported features must not turn into plausible results.
+/// The errors a guard catches: the kinds it names, or with `∞` every kind but an interrupt, a timeout or an unsupported feature. Unsupported features must not turn into plausible results.
 pub(super) enum Catch { All, Kinds(Vec<ErrorKind>) }
 impl Catch {
     fn new(value: &Value, span: &Span) -> Result<Self, Error> {
@@ -732,8 +680,7 @@ impl Catch {
     }
     pub(super) fn catches(&self, kind: &ErrorKind) -> bool {
         match self {
-            Self::All => !matches!(kind, ErrorKind::Interrupt | ErrorKind::Timeout | ErrorKind::Unsupported),
-            Self::Kinds(kinds) => kinds.contains(kind),
+            Self::All => !matches!(kind, ErrorKind::Interrupt | ErrorKind::Timeout | ErrorKind::Unsupported), Self::Kinds(kinds) => kinds.contains(kind)
         }
     }
 }

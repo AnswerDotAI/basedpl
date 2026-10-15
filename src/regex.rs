@@ -1,17 +1,6 @@
-//! `•r pattern` compiles a regular expression into a record of two functions: `matches`, which gives a table of the matches in a
-//! text, and `replace`. The host compiles, matches and replaces, each with its own syntax for patterns and replacement templates:
-//! natively the regex crate's, and in the browser JavaScript's.
+//! `•r pattern` compiles a regular expression into a record of two functions: `matches`, which gives a table of the matches in a text, and `replace`. The host compiles, matches and replaces, each with its own syntax for patterns and replacement templates: natively the regex crate's, and in the browser JavaScript's.
 use crate::{
-    array::generated_len,
-    data::text,
-    execution::Context,
-    host::Regex,
-    keyed,
-    system::{
-        natives, Call,
-        Valence::{Dyadic, Monadic},
-    },
-    Error, ErrorAt, Number, Value,
+    array::generated_len, data::text, execution::Context, host::Regex, keyed, system::{natives, Call, Valence::{Dyadic, Monadic}}, Error, ErrorAt, Number, Value
 };
 use std::sync::Arc;
 

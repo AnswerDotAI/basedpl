@@ -1,78 +1,42 @@
-//! How values cross between BPL and JavaScript. `export` turns a value into a `Js` tree, and `import` turns a tree into a value. The
-//! browser build converts trees to and from JavaScript values. `•canvas` writes one as JSON, with its typed arrays as bytes.
+//! How values cross between BPL and JavaScript. `export` turns a value into a `Js` tree, and `import` turns a tree into a value. The browser build converts trees to and from JavaScript values. `•canvas` writes one as JSON, with its typed arrays as bytes.
 //!
 //! - A number is a JavaScript number, and a Boolean is `true` or `false`. A string is a JavaScript string, and a record is an object.
-//! - Any other array is `{shape, data}`. `data` is a typed array when every item is a number: `Float32Array` for 32-bit floats,
-//!   `Float64Array` for other approximate and fractional numbers, and for integers the width BPL stores them at, `Uint8Array`,
-//!   `Int16Array`, `Int32Array` or `BigInt64Array`,
-//!   as Python's `.np` does. Complex numbers are their real and imaginary parts in turn, with a last axis of length 2. Otherwise `data`
-//!   is an `Array` of items. Axis names and keys, when an array has them, are `axis_names` and `axis_keys`, as in `protocol.rs`.
-//! - A JavaScript number becomes a float of the session's default width, a `BigInt` an exact one, an `Array` a vector and a function a BPL function.
-//!   An object with `shape` and `data` becomes an array, and any other object a record. `undefined` and `null` give no value.
-use crate::{
-    array::{Complexes, FloatWidth, Floats, Ints, Items},
-    element::read_as,
-    keyed, ErrorKind, Number, Value,
-};
+//! - Any other array is `{shape, data}`. `data` is a typed array when every item is a number: `Float32Array` for 32-bit floats, `Float64Array` for other approximate and fractional numbers, and for integers the width BPL stores them at, `Uint8Array`, `Int16Array`, `Int32Array` or `BigInt64Array`, as Python's `.np` does. Complex numbers are their real and imaginary parts in turn, with a last axis of length 2. Otherwise `data` is an `Array` of items. Axis names and keys, when an array has them, are `axis_names` and `axis_keys`, as in `protocol.rs`.
+//! - A JavaScript number becomes a float of the session's default width, a `BigInt` an exact one, an `Array` a vector and a function a BPL function. An object with `shape` and `data` becomes an array, and any other object a record. `undefined` and `null` give no value.
+use crate::{array::{Complexes, FloatWidth, Floats, Ints, Items}, element::read_as, keyed, ErrorKind, Number, Value};
 use serde_json::{json, Value as Json};
 
 /// A JavaScript value.
 #[derive(Debug)]
 pub enum Js {
-    Undefined,
-    Bool(bool),
-    Number(f64),
-    BigInt(i64),
-    Text(String),
-    List(Vec<Js>),
-    Object(Vec<(String, Js)>),
-    Typed(Typed),
-    #[cfg(web)]
-    Function(std::sync::Arc<JsFunction>),
+    Undefined, Bool(bool), Number(f64), BigInt(i64), Text(String), List(Vec<Js>), Object(Vec<(String, Js)>), Typed(Typed),
+    #[cfg(web)] Function(std::sync::Arc<JsFunction>)
 }
 
 /// A typed array.
 #[derive(Debug)]
-pub enum Typed {
-    Float32(Vec<f32>),
-    Float64(Vec<f64>),
-    Uint8(Vec<u8>),
-    Int16(Vec<i16>),
-    Int32(Vec<i32>),
-    BigInt64(Vec<i64>),
-}
+pub enum Typed { Float32(Vec<f32>), Float64(Vec<f64>), Uint8(Vec<u8>), Int16(Vec<i16>), Int32(Vec<i32>), BigInt64(Vec<i64>) }
 
 impl Typed {
     /// The name of the array's JavaScript constructor.
     fn name(&self) -> &'static str {
         match self {
-            Self::Float32(_) => "Float32Array",
-            Self::Float64(_) => "Float64Array",
-            Self::Uint8(_) => "Uint8Array",
-            Self::Int16(_) => "Int16Array",
-            Self::Int32(_) => "Int32Array",
-            Self::BigInt64(_) => "BigInt64Array",
+            Self::Float32(_) => "Float32Array", Self::Float64(_) => "Float64Array", Self::Uint8(_) => "Uint8Array", Self::Int16(_) => "Int16Array",
+            Self::Int32(_) => "Int32Array", Self::BigInt64(_) => "BigInt64Array"
         }
     }
     fn len(&self) -> usize {
         match self {
-            Self::Float32(v) => v.len(),
-            Self::Float64(v) => v.len(),
-            Self::Uint8(v) => v.len(),
-            Self::Int16(v) => v.len(),
-            Self::Int32(v) => v.len(),
-            Self::BigInt64(v) => v.len(),
+            Self::Float32(v) => v.len(), Self::Float64(v) => v.len(), Self::Uint8(v) => v.len(), Self::Int16(v) => v.len(), Self::Int32(v) => v.len(),
+            Self::BigInt64(v) => v.len()
         }
     }
     /// The items' bytes, little-endian, as JavaScript's typed arrays hold them on every current platform.
     fn bytes(&self) -> Vec<u8> {
         match self {
-            Self::Float32(v) => v.iter().flat_map(|x| x.to_le_bytes()).collect(),
-            Self::Float64(v) => v.iter().flat_map(|x| x.to_le_bytes()).collect(),
-            Self::Uint8(v) => v.clone(),
-            Self::Int16(v) => v.iter().flat_map(|x| x.to_le_bytes()).collect(),
-            Self::Int32(v) => v.iter().flat_map(|x| x.to_le_bytes()).collect(),
-            Self::BigInt64(v) => v.iter().flat_map(|x| x.to_le_bytes()).collect(),
+            Self::Float32(v) => v.iter().flat_map(|x| x.to_le_bytes()).collect(), Self::Float64(v) => v.iter().flat_map(|x| x.to_le_bytes()).collect(),
+            Self::Uint8(v) => v.clone(), Self::Int16(v) => v.iter().flat_map(|x| x.to_le_bytes()).collect(),
+            Self::Int32(v) => v.iter().flat_map(|x| x.to_le_bytes()).collect(), Self::BigInt64(v) => v.iter().flat_map(|x| x.to_le_bytes()).collect()
         }
     }
 }
@@ -97,8 +61,7 @@ fn number(n: &Number) -> Result<Js, ErrorKind> {
     if let Some(b) = n.as_bool() { return Ok(Js::Bool(b)); }
     match n.complex_items() {
         Some(Complexes::F32(&[z])) => return Ok(shaped(vec![2], Js::Typed(Typed::Float32(vec![z.re, z.im])), Vec::new(), Vec::new())),
-        Some(Complexes::F64(&[z])) => return Ok(shaped(vec![2], Js::Typed(Typed::Float64(vec![z.re, z.im])), Vec::new(), Vec::new())),
-        _ => (),
+        Some(Complexes::F64(&[z])) => return Ok(shaped(vec![2], Js::Typed(Typed::Float64(vec![z.re, z.im])), Vec::new(), Vec::new())), _ => ()
     }
     n.to_float().map(Js::Number).map_err(|_| ErrorKind::Domain)
 }
@@ -108,11 +71,11 @@ fn array(value: &Value) -> Result<Js, ErrorKind> {
     let mut shape = value.shape().to_vec();
     let mut names: Vec<Js> = value.axis_names().iter().map(|n| n.as_ref().map_or(Js::Undefined, |n| Js::Text(n.to_string()))).collect();
     let mut keys: Vec<Js> = if value.has_keys() {
-        keyed::key_lists(value)
-            .into_iter()
-            .map(|k| k.map_or(Js::Undefined, |k| Js::List(k.into_iter().map(|k| k.map_or(Js::Undefined, |k| Js::Text(k.into()))).collect())))
-            .collect()
-    } else { Vec::new() };
+        keyed::key_lists(value).into_iter()
+            .map(|k| k.map_or(Js::Undefined, |k| Js::List(k.into_iter().map(|k| k.map_or(Js::Undefined, |k| Js::Text(k.into()))).collect()))).collect()
+    } else {
+        Vec::new()
+    };
     let complex = |shape: &mut Vec<usize>, names: &mut Vec<Js>, keys: &mut Vec<Js>, parts: Js| {
         shape.push(2);
         if !names.is_empty() { names.push(Js::Undefined); }
@@ -127,15 +90,21 @@ fn array(value: &Value) -> Result<Js, ErrorKind> {
         Items::Integers(Ints::I64(v)) => Js::Typed(Typed::BigInt64(v.to_vec())),
         Items::Floats(Floats::F32(v)) => Js::Typed(Typed::Float32(v.to_vec())),
         Items::Floats(_) => Js::Typed(Typed::Float64(read_as::<f64>(value).expect("real storage").into_owned())),
-        Items::Complex(Complexes::F32(v)) => complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float32(v.iter().flat_map(|z| [z.re, z.im]).collect()))),
-        Items::Complex(Complexes::F64(v)) => complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float64(v.iter().flat_map(|z| [z.re, z.im]).collect()))),
+        Items::Complex(Complexes::F32(v)) => {
+            complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float32(v.iter().flat_map(|z| [z.re, z.im]).collect())))
+        }
+        Items::Complex(Complexes::F64(v)) => {
+            complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float64(v.iter().flat_map(|z| [z.re, z.im]).collect())))
+        }
         Items::Characters(c) => Js::List(c.iter().map(|c| Js::Text(c.to_string())).collect()),
         Items::Values(items) => match items.iter().map(|v| if let Value::Number(n) = v { Some(n) } else { None }).collect::<Option<Vec<_>>>() {
             Some(numbers) if !numbers.is_empty() || matches!(value.prototype(), Value::Number(_)) => {
                 if numbers.iter().any(|n| n.as_complex().is_some()) {
                     let parts = numbers.iter().map(|n| n.to_complex().map(|z| [z.re, z.im])).collect::<Result<Vec<_>, _>>().map_err(|_| ErrorKind::Domain)?;
                     complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float64(parts.concat())))
-                } else { Js::Typed(Typed::Float64(numbers.iter().map(|n| n.to_float()).collect::<Result<_, _>>().map_err(|_| ErrorKind::Domain)?)) }
+                } else {
+                    Js::Typed(Typed::Float64(numbers.iter().map(|n| n.to_float()).collect::<Result<_, _>>().map_err(|_| ErrorKind::Domain)?))
+                }
             }
             _ => Js::List(items.iter().map(export).collect::<Result<_, _>>()?),
         },
@@ -182,12 +151,10 @@ fn item(js: Js, width: FloatWidth) -> Result<Value, ErrorKind> { imported(js, wi
 
 fn typed(shape: Vec<usize>, t: Typed) -> Result<Value, ErrorKind> {
     match t {
-        Typed::Float32(v) => Value::from_buffer(shape, crate::array::Buffer::F32(v.into())),
-        Typed::Float64(v) => Value::floats(shape, FloatWidth::F64, v),
+        Typed::Float32(v) => Value::from_buffer(shape, crate::array::Buffer::F32(v.into())), Typed::Float64(v) => Value::floats(shape, FloatWidth::F64, v),
         Typed::Uint8(v) => Value::integers(shape, v.into_iter().map(i64::from).collect()),
         Typed::Int16(v) => Value::integers(shape, v.into_iter().map(i64::from).collect()),
-        Typed::Int32(v) => Value::integers(shape, v.into_iter().map(i64::from).collect()),
-        Typed::BigInt64(v) => Value::integers(shape, v),
+        Typed::Int32(v) => Value::integers(shape, v.into_iter().map(i64::from).collect()), Typed::BigInt64(v) => Value::integers(shape, v)
     }
 }
 
@@ -201,29 +168,24 @@ fn is_array(fields: &[(String, Js)]) -> bool {
 fn shaped_array(fields: Vec<(String, Js)>, width: FloatWidth) -> Result<Value, ErrorKind> {
     let [mut shape, mut data, mut names, mut keys] = [None, None, None, None];
     for (k, v) in fields {
-        let slot = match k.as_str() {
-            "shape" => &mut shape,
-            "data" => &mut data,
-            "axis_names" => &mut names,
-            _ => &mut keys,
-        };
+        let slot = match k.as_str() { "shape" => &mut shape, "data" => &mut data, "axis_names" => &mut names, _ => &mut keys };
         *slot = Some(v);
     }
     let Some(Js::List(shape)) = shape else { return Err(ErrorKind::Domain) };
-    let shape = shape
-        .into_iter()
-        .map(|n| match n { Js::Number(n) if n >= 0. && n.fract() == 0. => Ok(n as usize), _ => Err(ErrorKind::Domain) })
-        .collect::<Result<Vec<_>, _>>()?;
+    let shape = shape.into_iter().map(|n| match n {
+        Js::Number(n) if n >= 0. && n.fract() == 0. => Ok(n as usize), _ => Err(ErrorKind::Domain)
+    }).collect::<Result<Vec<_>, _>>()?;
     let value = match data.expect("is_array checked for data") {
         Js::Typed(t) => typed(shape, t)?,
-        Js::List(items) => Value::from_parts(shape, items.into_iter().map(|v| item(v, width)).collect::<Result<_, _>>()?, Value::Number(Number::float(0.0, width)))?,
+        Js::List(items) => {
+            Value::from_parts(shape, items.into_iter().map(|v| item(v, width)).collect::<Result<_, _>>()?, Value::Number(Number::float(0.0, width)))?
+        }
         _ => return Err(ErrorKind::Domain),
     };
     let texts = |list: Js| match list {
-        Js::List(items) => items
-            .into_iter()
-            .map(|n| match n { Js::Undefined => Ok(None), Js::Text(t) => Ok(Some(t)), _ => Err(ErrorKind::Domain) })
-            .collect::<Result<Vec<_>, _>>(),
+        Js::List(items) => items.into_iter().map(|n| match n {
+            Js::Undefined => Ok(None), Js::Text(t) => Ok(Some(t)), _ => Err(ErrorKind::Domain)
+        }).collect::<Result<Vec<_>, _>>(),
         _ => Err(ErrorKind::Domain),
     };
     let value = match names { Some(names) => keyed::with_names(value, texts(names)?).map_err(|_| ErrorKind::Domain)?, None => value };
@@ -237,8 +199,7 @@ fn shaped_array(fields: Vec<(String, Js)>, width: FloatWidth) -> Result<Value, E
     }
 }
 
-/// `js` as JSON, with each typed array replaced by `{"$typed": constructor, "offset": …, "length": …}`, and the bytes those entries
-/// refer to. Each array starts at a multiple of 8 bytes, so a typed array can view it in place.
+/// `js` as JSON, with each typed array replaced by `{"$typed": constructor, "offset": …, "length": …}`, and the bytes those entries refer to. Each array starts at a multiple of 8 bytes, so a typed array can view it in place.
 pub(crate) fn serialize(js: &Js) -> (Json, Vec<u8>) {
     fn write(js: &Js, bytes: &mut Vec<u8>) -> Json {
         match js {
@@ -281,8 +242,7 @@ mod web {
     use wasm_bindgen::{JsCast, JsValue};
 
     thread_local! {
-        /// The JavaScript functions that BPL functions call, by slot. A BPL value must be `Send + Sync` and a JavaScript function isn't,
-        /// so a BPL function holds its slot's number.
+        /// The JavaScript functions that BPL functions call, by slot. A BPL value must be `Send + Sync` and a JavaScript function isn't, so a BPL function holds its slot's number.
         static FUNCTIONS: RefCell<Vec<Option<Function>>> = const { RefCell::new(Vec::new()) };
     }
 
@@ -292,7 +252,10 @@ mod web {
     impl JsFunction {
         fn new(f: Function) -> Self {
             FUNCTIONS.with_borrow_mut(|slots| {
-                let slot = slots.iter().position(Option::is_none).unwrap_or_else(|| { slots.push(None); slots.len() - 1 });
+                let slot = slots.iter().position(Option::is_none).unwrap_or_else(|| {
+                    slots.push(None);
+                    slots.len() - 1
+                });
                 slots[slot] = Some(f);
                 Self(slot)
             })
@@ -315,11 +278,7 @@ mod web {
             Js::BigInt(n) => js_sys::BigInt::from(n).into(),
             Js::Text(s) => s.into(),
             Js::List(items) => items.into_iter().map(to_js).collect::<Array>().into(),
-            Js::Object(fields) => {
-                let object = Object::new();
-                for (k, v) in fields { _ = Reflect::set(&object, &k.into(), &to_js(v)); }
-                object.into()
-            }
+            Js::Object(fields) => { let object = Object::new(); for (k, v) in fields { _ = Reflect::set(&object, &k.into(), &to_js(v)); } object.into() }
             Js::Typed(Typed::Float32(v)) => Float32Array::from(&v[..]).into(),
             Js::Typed(Typed::Float64(v)) => Float64Array::from(&v[..]).into(),
             Js::Typed(Typed::Uint8(v)) => Uint8Array::from(&v[..]).into(),
@@ -351,11 +310,10 @@ mod web {
         if let Some(a) = value.dyn_ref::<Uint32Array>() { return typed(Typed::BigInt64(a.to_vec().into_iter().map(i64::from).collect())); }
         if let Some(a) = value.dyn_ref::<BigInt64Array>() { return typed(Typed::BigInt64(a.to_vec())); }
         if value.is_object() {
-            return Object::entries(value.unchecked_ref())
-                .iter()
-                .map(|entry| { let entry: Array = entry.unchecked_into(); Ok((entry.get(0).as_string().unwrap_or_default(), from_js(&entry.get(1))?)) })
-                .collect::<Result<_, _>>()
-                .map(Js::Object);
+            return Object::entries(value.unchecked_ref()).iter().map(|entry| {
+                let entry: Array = entry.unchecked_into();
+                Ok((entry.get(0).as_string().unwrap_or_default(), from_js(&entry.get(1))?))
+            }).collect::<Result<_, _>>().map(Js::Object);
         }
         Err("this JavaScript value has no BPL form".into())
     }

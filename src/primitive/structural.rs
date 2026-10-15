@@ -1,5 +1,4 @@
-//! Structural primitives, which rearrange or select items without computing new ones: reshape, take, drop, replicate, rotate,
-//! catenate, transpose, split, partition, windows and enlist.
+//! Structural primitives, which rearrange or select items without computing new ones: reshape, take, drop, replicate, rotate, catenate, transpose, split, partition, windows and enlist.
 
 use super::*;
 
@@ -10,7 +9,13 @@ impl WindowAxis {
     pub(crate) fn fits(&self, len: usize) -> bool { !self.padded || self.size / 2 < len }
     /// Number of windows along an axis of length `len` that `fits`.
     pub(crate) fn count(&self, len: usize) -> usize {
-        if self.padded { (len - usize::from(self.size.is_multiple_of(2))).div_ceil(self.step) } else if len < self.size { 0 } else { (len - self.size) / self.step + 1 }
+        if self.padded {
+            (len - usize::from(self.size.is_multiple_of(2))).div_ceil(self.step)
+        } else if len < self.size {
+            0
+        } else {
+            (len - self.size) / self.step + 1
+        }
     }
     /// Axis offset of window `i`'s first element; negative when padding precedes the edge.
     pub(crate) fn start(&self, i: usize) -> isize { (i * self.step) as isize - if self.padded { ((self.size - 1) / 2) as isize } else { 0 } }
@@ -25,22 +30,16 @@ impl WindowAxis {
 /// Appends the window with cell shape `cell` whose leading axes start at `starts`, filling positions outside `right` with its prototype.
 pub(crate) fn push_window(right: &Value, cell: &[usize], starts: &[isize], data: &mut Gather) {
     let (shape, stride) = (right.shape(), strides(right.shape()));
-    let tables: Vec<_> = cell
-        .iter()
-        .enumerate()
-        .map(|(a, &len)| Steps::Clipped { start: starts.get(a).map_or(0, |&s| s as i128), len, size: shape[a], stride: stride[a] })
-        .collect();
+    let tables: Vec<_> = cell.iter().enumerate()
+        .map(|(a, &len)| Steps::Clipped { start: starts.get(a).map_or(0, |&s| s as i128), len, size: shape[a], stride: stride[a] }).collect();
     data.walk(right, 0, &tables);
 }
 
-/// The sizes and movements in a window specification for the leading axes of an argument with `rank` axes. The specification is a unit
-/// or vector of sizes, or a two-row matrix of sizes above movements. `↕` and `⌺` share it.
+/// The sizes and movements in a window specification for the leading axes of an argument with `rank` axes. The specification is a unit or vector of sizes, or a two-row matrix of sizes above movements. `↕` and `⌺` share it.
 pub(crate) fn window_spec(spec: &Value, rank: usize, span: &Span) -> Result<(Vec<i64>, Vec<i64>), Error> {
     let count = match spec.shape() {
-        [] | [_] => spec.len(),
-        [2, n] => *n,
-        [_, _] => return Err(span.error(ErrorKind::Length, "window matrix needs two rows")),
-        _ => return Err(span.error(ErrorKind::Rank, "window specification must be a unit, vector or two-row matrix")),
+        [] | [_] => spec.len(), [2, n] => *n, [_, _] => return Err(span.error(ErrorKind::Length, "window matrix needs two rows")),
+        _ => return Err(span.error(ErrorKind::Rank, "window specification must be a unit, vector or two-row matrix"))
     };
     if count > rank { return Err(span.error(ErrorKind::Rank, "window specification has more axes than its argument")); }
     let mut sizes = spec.as_items().integers().error_at(span, "window sizes and movements must be integers")?.to_vec();
@@ -52,19 +51,13 @@ pub(crate) struct Windows { pub axes: Vec<WindowAxis>, pub frame: Vec<usize> }
 impl Windows {
     /// The windows of `sizes` and `moves` over `right`. `padded` says which sizes pad their axis.
     pub(crate) fn new(sizes: &[i64], moves: &[i64], padded: impl Fn(i64) -> bool, right: &Value, span: &Span) -> Result<Self, Error> {
-        let axes = sizes
-            .iter()
-            .enumerate()
-            .map(|(a, &size)| {
-                let step = match moves.get(a) {
-                    None => 1,
-                    Some(&m) if m > 0 => saturated(m.unsigned_abs()),
-                    Some(_) => return Err(span.domain_error("window movements must be positive")),
-                };
-                let axis = WindowAxis { size: saturated(size.unsigned_abs()), step, padded: padded(size) };
-                if axis.fits(right.shape()[a]) { Ok(axis) } else { Err(span.domain_error("padded window is too large for the argument")) }
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let axes = sizes.iter().enumerate().map(|(a, &size)| {
+            let step = match moves.get(a) {
+                None => 1, Some(&m) if m > 0 => saturated(m.unsigned_abs()), Some(_) => return Err(span.domain_error("window movements must be positive"))
+            };
+            let axis = WindowAxis { size: saturated(size.unsigned_abs()), step, padded: padded(size) };
+            if axis.fits(right.shape()[a]) { Ok(axis) } else { Err(span.domain_error("padded window is too large for the argument")) }
+        }).collect::<Result<Vec<_>, _>>()?;
         let frame = axes.iter().zip(right.shape()).map(|(w, &n)| w.count(n)).collect();
         Ok(Self { axes, frame })
     }
@@ -74,18 +67,14 @@ impl Windows {
         for (a, c) in digits(position, &self.frame) { starts[a] = self.axes[a].start(c); }
         starts
     }
-    /// `right` with its fill added before and after each padded axis, or `None` when no axis is padded. The unpadded windows of the
-    /// result are the padded windows of `right`. Each windowed axis holds only the positions its windows read. Call it only when
-    /// every axis has at least one window.
+    /// `right` with its fill added before and after each padded axis, or `None` when no axis is padded. The unpadded windows of the result are the padded windows of `right`. Each windowed axis holds only the positions its windows read. Call it only when every axis has at least one window.
     pub(crate) fn padded(&self, right: &Value) -> Result<Option<Value>, ErrorKind> {
         if !self.axes.iter().any(|w| w.padded) { return Ok(None); }
         let (shape, stride) = (right.shape(), strides(right.shape()));
-        let tables: Vec<_> = (0..shape.len())
-            .map(|a| match self.axes.get(a) {
-                Some(w) => Steps::Clipped { start: w.start(0) as i128, len: (self.frame[a] - 1) * w.step + w.size, size: shape[a], stride: stride[a] },
-                None => Steps::along(shape[a], stride[a]),
-            })
-            .collect();
+        let tables: Vec<_> = (0..shape.len()).map(|a| match self.axes.get(a) {
+            Some(w) => Steps::Clipped { start: w.start(0) as i128, len: (self.frame[a] - 1) * w.step + w.size, size: shape[a], stride: stride[a] },
+            None => Steps::along(shape[a], stride[a]),
+        }).collect();
         let padded: Vec<_> = tables.iter().map(Steps::len).collect();
         let mut data = Gather::new(&[right], generated_len(&padded)?);
         data.walk(right, 0, &tables);
@@ -112,12 +101,10 @@ pub(super) fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result
         data.walk(source, 0, &tables);
     }
     let frame_keys = axes.iter().enumerate().map(|(a, w)| match right.keys(a) {
-        Some(k) if w.padded => k.select((0..frame[a]).map(|i| Some(i * w.step))).map(Some),
-        _ => Ok(None),
+        Some(k) if w.padded => k.select((0..frame[a]).map(|i| Some(i * w.step))).map(Some), _ => Ok(None)
     });
     let cell_keys = (0..cell.len()).map(|a| match axes.get(a) {
-        None => Ok(right.keys(a).cloned()),
-        Some(w) => right.keys(a).zip(w.shared(right.shape()[a])).map(|(k, r)| k.select(r.map(Some))).transpose(),
+        None => Ok(right.keys(a).cloned()), Some(w) => right.keys(a).zip(w.shared(right.shape()[a])).map(|(k, r)| k.select(r.map(Some))).transpose()
     });
     let keys = frame_keys.chain(cell_keys).collect::<Result<Vec<_>, _>>().error_at(span, "invalid window keys")?;
     let names = (0..frame.len()).chain(0..cell.len()).map(|a| right.axis_name(a).cloned()).collect();
@@ -129,14 +116,12 @@ pub(super) fn enlist(right: &Value, span: &Context<'_>) -> Result<Value, Error> 
     fn append(array: &Value, data: &mut Gather, span: &Context<'_>) -> Result<(), Error> {
         let limit = || span.error(ErrorKind::Limit, "enlist exceeds array limits");
         // A simple mixed array keeps its storage. A nested array's items are gathered one by one.
-        if array.is_simple() {
-            generated_len(&[data.len() + array.len()]).map_err(|_| limit())?;
-            data.extend(array, 0..array.len());
-            return Ok(());
-        }
+        if array.is_simple() { generated_len(&[data.len() + array.len()]).map_err(|_| limit())?; data.extend(array, 0..array.len()); return Ok(()); }
         let Items::Values(items) = array.as_items() else { unreachable!() };
         for item in items {
-            if let a @ Value::Array(_) = item { append(a, data, span)?; } else {
+            if let a @ Value::Array(_) = item {
+                append(a, data, span)?;
+            } else {
                 generated_len(&[data.len() + 1]).map_err(|_| limit())?;
                 data.add(item.clone());
             }
@@ -168,15 +153,11 @@ pub(super) fn enclose_axes(right: &Value, axes: &[usize], span: &Context<'_>) ->
     generated_len(frame.shape()).error_at(span, "enclosure exceeds array limits")?;
     let len = generated_len(cell.shape()).error_at(span, "enclosed cell exceeds array limits")?;
     let tables: Vec<_> = axes.iter().map(|&a| Steps::along(shape[a], stride[a])).collect();
-    let data = Steps::combined(&others.iter().map(|&a| Steps::along(shape[a], stride[a])).collect::<Vec<_>>())
-        .into_iter()
-        .map(|base| {
-            let mut data = Gather::new(&[right], len);
-            data.walk(right, base, &tables);
-            data.finish(cell.clone(), || right.prototype())
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .error_at(span, "invalid enclosed cells")?;
+    let data = Steps::combined(&others.iter().map(|&a| Steps::along(shape[a], stride[a])).collect::<Vec<_>>()).into_iter().map(|base| {
+        let mut data = Gather::new(&[right], len);
+        data.walk(right, base, &tables);
+        data.finish(cell.clone(), || right.prototype())
+    }).collect::<Result<Vec<_>, _>>().error_at(span, "invalid enclosed cells")?;
     let prototype = match data.first() {
         Some(cell) => cell.prototype(),
         None => {
@@ -192,7 +173,12 @@ pub(super) fn mix_axes(right: &Value, spec: &Value, span: &Context<'_>) -> Resul
     let frame = right.shape().len();
     let rank = mixed.shape().len();
     let cell_rank = rank - frame;
-    let positions = if spec.is_singleton() { let start = single_axis(spec, frame + 1, span)?; (start..start + cell_rank).collect::<Vec<_>>() } else { axes(spec, rank, span)? };
+    let positions = if spec.is_singleton() {
+        let start = single_axis(spec, frame + 1, span)?;
+        (start..start + cell_rank).collect::<Vec<_>>()
+    } else {
+        axes(spec, rank, span)?
+    };
     if positions.len() != cell_rank { return Err(span.error(ErrorKind::Length, "mix needs one axis per cell dimension")); }
     let mut order = vec![usize::MAX; rank];
     for (i, &a) in positions.iter().enumerate() { order[a] = frame + i; }
@@ -253,9 +239,7 @@ pub(super) fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<
     remap(right, layout, &tables, span)
 }
 
-/// `counts` replicates the cells of `right` along `axis`, the leading axis by default. A positive count repeats its cell. A negative
-/// count inserts that many fills. The inverse gives one cell for each count. A positive count gives the first of its copies. Other
-/// counts give a fill. A Boolean mask's inverse therefore expands.
+/// `counts` replicates the cells of `right` along `axis`, the leading axis by default. A positive count repeats its cell. A negative count inserts that many fills. The inverse gives one cell for each count. A positive count gives the first of its copies. Other counts give a fill. A Boolean mask's inverse therefore expands.
 pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, span: &Context<'_>) -> Result<Value, Error> {
     if counts.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "replication counts must be a unit or vector")); }
     let mut shape = if right.is_unit() { vec![1] } else { right.shape().to_vec() };
@@ -267,8 +251,7 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
             let total = mask.iter().map(|&b| usize::from(b)).sum();
             let mut data = Gather::new(&[right], total);
             data.compress(right, mask, total);
-            return data
-                .finish(rearranged(Layout::from(vec![total]).inherit_names(right.axis_names().to_vec()), right), || right.prototype())
+            return data.finish(rearranged(Layout::from(vec![total]).inherit_names(right.axis_names().to_vec()), right), || right.prototype())
                 .error_at(span, "invalid replication");
         }
     }
@@ -280,26 +263,26 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
         (false, false) if traversal.len == 1 || counts.len() == traversal.len => counts.len(),
         (false, false) => return Err(span.error(ErrorKind::Length, "replication counts and data do not agree")),
         (true, true) => match saturated(counts[0].unsigned_abs()) {
-            0 if traversal.len == 0 => 1,
-            n if n > 0 && traversal.len % n == 0 => traversal.len / n,
-            _ => return Err(span.domain_error("one count must divide the number of cells to invert")),
+            0 if traversal.len == 0 => 1, n if n > 0 && traversal.len % n == 0 => traversal.len / n,
+            _ => return Err(span.domain_error("one count must divide the number of cells to invert"))
         },
         (true, false) => counts.len(),
     };
     let count = |j: usize| counts[if single { 0 } else { j }];
-    // The or of the counts is negative when any count is, and at most 1 when they are Boolean. Each nonnegative count is at most
-    // their or, which bounds their sum by the or times their number.
+    // The or of the counts is negative when any count is, and at most 1 when they are Boolean. Each nonnegative count is at most their or, which bounds their sum by the or times their number.
     let (any, sum) = or_and_sum(&counts);
     let boolean = !single && any as u64 <= 1;
     let exact_sum = !single && any >= 0 && (any as u64).checked_mul(counts.len() as u64).is_some_and(|m| m <= i64::MAX as u64);
-    shape[axis] = if inverse { len } else if boolean { sum as usize } else {
+    shape[axis] = if inverse {
+        len
+    } else if boolean {
+        sum as usize
+    } else {
         let each = |j: usize| saturated(count(j).unsigned_abs());
         match (single, exact_sum) {
-            (true, _) => each(0).checked_mul(len),
-            (false, true) => usize::try_from(sum).ok(),
-            (false, false) => (0..len).try_fold(0usize, |total, j| total.checked_add(each(j))),
-        }
-        .ok_or_else(|| span.error(ErrorKind::Limit, "replication count overflow"))?
+            (true, _) => each(0).checked_mul(len), (false, true) => usize::try_from(sum).ok(),
+            (false, false) => (0..len).try_fold(0usize, |total, j| total.checked_add(each(j)))
+        }.ok_or_else(|| span.error(ErrorKind::Limit, "replication count overflow"))?
     };
     generated_len(&shape).error_at(span, "replication result exceeds array limits")?;
     let mut keys = right.layout().all_keys();
@@ -319,8 +302,7 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
         let n = count(j);
         let source = if traversal.len == 1 { 0 } else { consumed };
         let pos = (n > 0).then_some(source);
-        // Each count uses up one cell, and a negative count gives that cell's place to fills. The inverse uses up the cells each count
-        // made, and gives back one cell for each count: a fill for a count that kept nothing.
+        // Each count uses up one cell, and a negative count gives that cell's place to fills. The inverse uses up the cells each count made, and gives back one cell for each count: a fill for a count that kept nothing.
         consumed = consumed.saturating_add(if inverse { saturated(n.unsigned_abs()) } else { 1 });
         let repeats = if inverse { 1 } else { saturated(n.unsigned_abs()) };
         let offset = pos.map(|p| p * traversal.inner);
@@ -331,7 +313,9 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
     if inverse && traversal.len != 1 && consumed != traversal.len {
         return Err(span.error(ErrorKind::Length, "replication counts must use every cell to invert"));
     }
-    if keyed { keys[axis] = crate::keyed::selected_keys(right, axis, positions).error_at(span, "replication repeats or invents axis keys")?; }
+    if keyed {
+        keys[axis] = crate::keyed::selected_keys(right, axis, positions).error_at(span, "replication repeats or invents axis keys")?;
+    }
     let layout = Layout::from(shape).with_keys(keys).error_at(span, "invalid replication keys")?.inherit_names(right.axis_names().to_vec());
     remap(right, layout, &[Steps::along(traversal.outer, traversal.len * traversal.inner), Steps::Table(table), Steps::along(traversal.inner, 1)], span)
 }
@@ -339,12 +323,12 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
 pub(super) fn rotate(counts: Option<&Value>, right: &Value, axis: usize, span: &Context<'_>) -> Result<Value, Error> {
     let shape: crate::Shape = if right.is_unit() { [1].into() } else { right.shape().into() };
     let traversal = Axis::new(&shape, axis).map_err(|_| span.domain_error("axis is outside array rank"))?;
-    let counts = counts
-        .map(|a| {
-            if !a.is_singleton() && !a.shape().iter().eq(shape[..axis].iter().chain(&shape[axis + 1..])) { return Err(span.error(ErrorKind::Length, "rotation counts must match the axis frame")); }
-            a.as_items().integers().error_at(span, "invalid rotation count")
-        })
-        .transpose()?;
+    let counts = counts.map(|a| {
+        if !a.is_singleton() && !a.shape().iter().eq(shape[..axis].iter().chain(&shape[axis + 1..])) {
+            return Err(span.error(ErrorKind::Length, "rotation counts must match the axis frame"));
+        }
+        a.as_items().integers().error_at(span, "invalid rotation count")
+    }).transpose()?;
     let (outer, len, inner) = (traversal.outer, traversal.len, traversal.inner);
     let source = |j: usize, n: i64| ((j as i64 + n.rem_euclid(len as i64)) % len as i64) as usize;
     let mut layout = right.layout().clone();
@@ -354,13 +338,12 @@ pub(super) fn rotate(counts: Option<&Value>, right: &Value, axis: usize, span: &
         });
         let mut keys = right.layout().all_keys();
         keys[axis] = if same {
-            crate::keyed::selected_keys(
-                right,
-                axis,
-                (0..traversal.len).map(|j| { Some(match &counts { None => traversal.len - 1 - j, Some(ns) => source(j, ns[0]) }) }),
-            )
-            .error_at(span, "invalid rotation keys")?
-        } else { None };
+            crate::keyed::selected_keys(right, axis, (0..traversal.len).map(|j| {
+                Some(match &counts { None => traversal.len - 1 - j, Some(ns) => source(j, ns[0]) })
+            })).error_at(span, "invalid rotation keys")?
+        } else {
+            None
+        };
         layout = layout.with_keys(keys).error_at(span, "invalid rotation keys")?;
     }
     let Some(ns) = counts.as_ref().filter(|ns| ns.len() != 1) else {
@@ -376,8 +359,7 @@ pub(super) fn rotate(counts: Option<&Value>, right: &Value, axis: usize, span: &
     data.finish(layout, || right.prototype()).error_at(span, "invalid structural result")
 }
 
-/// `a` with `rank` axes for joining along `axis` with `other`. A unit becomes one cell with `other`'s other axes. An array with one
-/// axis fewer gains `axis`, with one position.
+/// `a` with `rank` axes for joining along `axis` with `other`. A unit becomes one cell with `other`'s other axes. An array with one axis fewer gains `axis`, with one position.
 fn promoted(a: &Value, other: &Value, rank: usize, axis: usize, span: &Context<'_>) -> Result<Value, Error> {
     if a.shape().len() == rank { return Ok(a.clone()); }
     if a.is_unit() {
@@ -395,9 +377,7 @@ fn promoted(a: &Value, other: &Value, rank: usize, axis: usize, span: &Context<'
 /// What `append_plan` gives.
 type AppendPlan = (Value, Option<Vec<Option<std::sync::Arc<str>>>>);
 
-/// What `left,right` on a vector or `left⍪right` adds along the leading axis, when `left` can grow in place: the new cells, and the
-/// keys of the new positions when the leading axis has keys or gains them. `None` when the result would have another rank, gain keys
-/// on another axis, change an axis name or be empty. It gives the errors that `catenate` gives, before anything is written.
+/// What `left,right` on a vector or `left⍪right` adds along the leading axis, when `left` can grow in place: the new cells, and the keys of the new positions when the leading axis has keys or gains them. `None` when the result would have another rank, gain keys on another axis, change an axis name or be empty. It gives the errors that `catenate` gives, before anything is written.
 pub(crate) fn append_plan(left: &Value, right: &Value, first: bool, span: &Context<'_>) -> Result<Option<AppendPlan>, Error> {
     let rank = left.shape().len();
     if rank == 0 || (!first && rank != 1) || right.shape().len() > rank || (left.is_empty() && right.is_empty()) { return Ok(None); }
@@ -441,7 +421,9 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
                     Some(crate::keyed::Keys::partial(names).error_at(span, "catenate has duplicate axis keys")?)
                 }
             }
-        } else { left.keys(a).or_else(|| right.keys(a)).cloned() };
+        } else {
+            left.keys(a).or_else(|| right.keys(a)).cloned()
+        };
     }
     let mut shape: crate::Shape = left.shape().into();
     shape[axis] = shape[axis].checked_add(right.shape()[axis]).ok_or_else(|| span.error(ErrorKind::Limit, "catenate axis overflow"))?;
@@ -449,24 +431,16 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
     let traversal = Axis::new(&shape, axis).error_at(span, "invalid catenate axis")?;
     let mut data = Gather::new(&[&left, &right], size);
     for i in 0..if size == 0 { 0 } else { traversal.outer } {
-        for a in [&left, &right] {
-            let len = a.shape()[axis] * traversal.inner;
-            data.extend(a, i * len..(i + 1) * len);
-        }
+        for a in [&left, &right] { let len = a.shape()[axis] * traversal.inner; data.extend(a, i * len..(i + 1) * len); }
     }
     let names = (0..rank).map(|a| agreed([left.axis_name(a), right.axis_name(a)])).collect();
-    let layout = Layout::from(shape)
-        .with_keys(wanted)
-        .error_at(span, "invalid catenate result")?
-        .inherit_names(names)
+    let layout = Layout::from(shape).with_keys(wanted).error_at(span, "invalid catenate result")?.inherit_names(names)
         .with_renderer(agreed([left.renderer(), right.renderer()]));
     data.finish(layout, || left.prototype()).error_at(span, "invalid catenate result")
 }
 
 /// One source-axis route in `⍉`, or a group of source axes to merge in `⍉⁻¹`. Keys declare names on the unsplit and split sides.
-struct TransposeGroup {
-    axes: Vec<usize>, sizes: Option<Vec<Option<usize>>>, name: Option<std::sync::Arc<str>>, factor_names: Vec<Option<std::sync::Arc<str>>>,
-}
+struct TransposeGroup { axes: Vec<usize>, sizes: Option<Vec<Option<usize>>>, name: Option<std::sync::Arc<str>>, factor_names: Vec<Option<std::sync::Arc<str>>> }
 
 /// Whether `value` is a name, or holds one at any depth.
 fn holds_name(value: &Value) -> bool { crate::keyed::name(value).is_some() || !value.is_atom() && value.elements().any(|e| holds_name(&e)) }
@@ -475,14 +449,19 @@ fn transpose_groups(spec: &Value, right: &Value, inverse: bool, span: &Context<'
     if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "transpose axes must be a unit or vector")); }
     let items = if crate::keyed::name(spec).is_some() { vec![spec.clone()] } else { spec.elements().collect() };
     items.into_iter().enumerate().map(|(i, item)| {
-        if !inverse && holds_name(&item) { return Err(span.domain_error("⍉ takes numeric destinations. Names select axes in ⍉⁻¹, and a named ⍉⁻¹ has no inverse")); }
+        if !inverse && holds_name(&item) {
+            return Err(span.domain_error("⍉ takes numeric destinations. Names select axes in ⍉⁻¹, and a named ⍉⁻¹ has no inverse"));
+        }
         let paired = item.shape().len() == 1 && item.elements().all(|p| p.shape() == [2] && crate::keyed::name(&p).is_none());
         let (selectors, sizes, factor_names) = if paired {
             let sizes = item.elements().map(|pair| {
                 let size = pair.at(1);
                 let n = numeric(&size, span)?;
-                if n.as_float() == Some(f64::INFINITY) { Ok(None) }
-                else { n.nonnegative_integer().map(Some).error_at(span, "split sizes must be nonnegative integers or ∞") }
+                if n.as_float() == Some(f64::INFINITY) {
+                    Ok(None)
+                } else {
+                    n.nonnegative_integer().map(Some).error_at(span, "split sizes must be nonnegative integers or ∞")
+                }
             }).collect::<Result<Vec<_>, _>>()?;
             if sizes.iter().filter(|s| s.is_none()).count() > 1 { return Err(span.domain_error("a split can infer only one factor size")); }
             let selectors = Value::new(vec![item.len()], item.elements().map(|pair| pair.at(0)).collect()).error_at(span, "invalid transpose group")?;
@@ -491,11 +470,18 @@ fn transpose_groups(spec: &Value, right: &Value, inverse: bool, span: &Context<'
         } else if item.shape().is_empty() || inverse && item.shape().len() == 1 {
             (item, None, Vec::new())
         } else {
-            return Err(span.domain_error(if inverse { "a merge is a list of axes, or of [source size] pairs" } else { "a split is a list of [destination size] pairs, such as [1 2;3 ∞]" }));
+            return Err(span.domain_error(if inverse {
+                "a merge is a list of axes, or of [source size] pairs"
+            } else {
+                "a split is a list of [destination size] pairs, such as [1 2;3 ∞]"
+            }));
         };
         let selectors = if inverse { resolve_axes(&selectors, right, span)? } else { selectors };
-        let axes = if inverse { axes(&selectors, right.shape().len(), span)? }
-            else { selectors.as_items().nonnegative_integers().error_at(span, "invalid transpose axis")? };
+        let axes = if inverse {
+            axes(&selectors, right.shape().len(), span)?
+        } else {
+            selectors.as_items().nonnegative_integers().error_at(span, "invalid transpose axis")?
+        };
         if axes.is_empty() { return Err(span.domain_error("a transpose group must contain an axis")); }
         let name = spec.keys(0).and_then(|keys| keys.names()[i].clone());
         Ok(TransposeGroup { axes, sizes, name, factor_names })
@@ -503,9 +489,12 @@ fn transpose_groups(spec: &Value, right: &Value, inverse: bool, span: &Context<'
 }
 
 /// Each result axis keeps the keys and name that its sources agree on, as mix does. Keys also need every source to have the result axis's length. Explicit names override inherited names.
-fn transpose_layout(right: &Value, shape: Vec<usize>, sources: &[Vec<usize>], names: &[Option<std::sync::Arc<str>>], span: &Context<'_>) -> Result<Layout, Error> {
-    let keys = sources.iter().zip(&shape).map(|(s, &len)| if s.iter().all(|&a| right.shape()[a] == len) { agreed(s.iter().map(|&a| right.keys(a))) } else { None }).collect();
-    let names: Vec<_> = sources.iter().enumerate().map(|(i, s)| names.get(i).and_then(Clone::clone).or_else(|| agreed(s.iter().map(|&a| right.axis_name(a))))).collect();
+fn transpose_layout(
+    right: &Value, shape: Vec<usize>, sources: &[Vec<usize>], names: &[Option<std::sync::Arc<str>>], span: &Context<'_>) -> Result<Layout, Error> {
+    let keys = sources.iter().zip(&shape)
+        .map(|(s, &len)| if s.iter().all(|&a| right.shape()[a] == len) { agreed(s.iter().map(|&a| right.keys(a))) } else { None }).collect();
+    let names: Vec<_> =
+        sources.iter().enumerate().map(|(i, s)| names.get(i).and_then(Clone::clone).or_else(|| agreed(s.iter().map(|&a| right.axis_name(a))))).collect();
     if let Some(name) = crate::array::repeated_name(&names) { return Err(span.domain_error(format!("the result would have two axes named {name}"))); }
     Layout::from(shape).with_keys(keys).and_then(|l| l.with_names(names)).error_at(span, "invalid transpose keys")
 }
@@ -581,9 +570,7 @@ pub(super) fn inverse_transpose(spec: &Value, right: &Value, span: &Context<'_>)
         names.push(group.name);
         order.extend(group.axes);
     }
-    for axis in 0..right.shape().len() {
-        if !order.contains(&axis) { shape.push(right.shape()[axis]); sources.push(vec![order.len()]); order.push(axis); }
-    }
+    for axis in 0..right.shape().len() { if !order.contains(&axis) { shape.push(right.shape()[axis]); sources.push(vec![order.len()]); order.push(axis); } }
     let ordered = reorder(right, &order, span)?;
     regroup(&ordered, shape, &sources, &names, span)
 }
@@ -628,9 +615,7 @@ pub(super) fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: 
     let (mut total, mut previous) = (0usize, 0);
     for j in 0..len {
         let count = mark(j);
-        total = total
-            .checked_add(dividers(count, previous))
-            .filter(|&n| generated_len(&[n]).is_ok())
+        total = total.checked_add(dividers(count, previous)).filter(|&n| generated_len(&[n]).is_ok())
             .ok_or_else(|| span.error(ErrorKind::Limit, "too many partitions"))?;
         previous = count;
     }
@@ -642,8 +627,7 @@ pub(super) fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: 
         let layout = cell_layout(range.clone()).error_at(span, "invalid partition keys")?;
         let tables = [
             Steps::along(traversal.outer, traversal.len * traversal.inner),
-            Steps::Stride { start: range.start * traversal.inner, len: range.len(), step: traversal.inner as isize },
-            Steps::along(traversal.inner, 1),
+            Steps::Stride { start: range.start * traversal.inner, len: range.len(), step: traversal.inner as isize }, Steps::along(traversal.inner, 1),
         ];
         remap(&right, layout, &tables, span)
     };
@@ -657,9 +641,6 @@ pub(super) fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: 
         previous = count;
     }
     // Without runs, the last partition extends to the end of the axis, past the last mark.
-    if let Some(mut range) = current {
-        if !runs { range.end = traversal.len; }
-        data.push(part(range)?);
-    }
+    if let Some(mut range) = current { if !runs { range.end = traversal.len; } data.push(part(range)?); }
     Value::from_parts(vec![data.len()], data, prototype).error_at(span, "invalid partition result")
 }

@@ -10,21 +10,21 @@ pub struct Inspection { pub kind: &'static str, pub source: String, pub help: St
 
 impl Inspection {
     pub(crate) fn new(kind: &'static str, source: String) -> Self {
-        let comments: Vec<_> = source
-            .strip_prefix('{')
-            .unwrap_or("")
-            .trim_start()
-            .lines()
-            .map(str::trim)
+        let comments: Vec<_> = source.strip_prefix('{').unwrap_or("").trim_start().lines().map(str::trim)
             .take_while(|line| line.chars().next().is_some_and(|c| crate::symbols::canonical(c) == '⍝'))
-            .map(|line| line.trim_start_matches(|c| crate::symbols::canonical(c) == '⍝').trim())
-            .collect();
+            .map(|line| line.trim_start_matches(|c| crate::symbols::canonical(c) == '⍝').trim()).collect();
         let help = if comments.is_empty() { documentation(&source).unwrap_or(&source).to_owned() } else { comments.join("\n") };
         Self { kind, source, help }
     }
     pub fn text(&self, detail: bool) -> String { format!("{}\n\n{}", self.kind, self.markdown(detail)) }
     pub fn markdown(&self, detail: bool) -> String {
-        if detail { format!("```apl\n{}\n```", self.source) } else if self.kind == "function" && documentation(&self.source).is_none() { format!("Calls: `f Y` or `X f Y`\n\n{}", self.help) } else { self.help.clone() }
+        if detail {
+            format!("```apl\n{}\n```", self.source)
+        } else if self.kind == "function" && documentation(&self.source).is_none() {
+            format!("Calls: `f Y` or `X f Y`\n\n{}", self.help)
+        } else {
+            self.help.clone()
+        }
     }
 }
 
@@ -35,12 +35,8 @@ pub(crate) fn documentation(symbol: &str) -> Option<&'static str> {
     if symbol.starts_with('$') { return page(symbol); }
     if let Some(help) = crate::system::help(symbol) { return Some(help); }
     page(match symbol {
-        "::" => "error-guard",
-        "{" | "}" => "braces",
-        "[" | "]" => "brackets",
-        "(" | ")" => "parentheses",
-        "'" | "\"" => "quote",
-        _ => crate::symbols::symbols().iter().find(|s| s.glyph == symbol)?.name,
+        "::" => "error-guard", "{" | "}" => "braces", "[" | "]" => "brackets", "(" | ")" => "parentheses", "'" | "\"" => "quote",
+        _ => crate::symbols::symbols().iter().find(|s| s.glyph == symbol)?.name
     })
 }
 

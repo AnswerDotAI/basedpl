@@ -1,9 +1,4 @@
-use crate::{
-    array::{generated_len, FloatWidth, Items},
-    execution::Context,
-    primitive::{integer, numeric},
-    Error, ErrorAt, ErrorKind, Function, Value,
-};
+use crate::{array::{generated_len, FloatWidth, Items}, execution::Context, primitive::{integer, numeric}, Error, ErrorAt, ErrorKind, Function, Value};
 use std::borrow::Cow;
 
 /// A system function implemented natively, taking an optional left argument and a right argument.
@@ -38,8 +33,7 @@ pub(crate) enum Call {
 pub(crate) enum Valence { Monadic, Dyadic, Ambivalent }
 use Valence::{Ambivalent, Dyadic, Monadic};
 
-/// What a system function takes as one item on the right. A right argument that holds several items maps over them, as Each does,
-/// with the left argument whole for each.
+/// What a system function takes as one item on the right. A right argument that holds several items maps over them, as Each does, with the left argument whole for each.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Item {
     /// The whole argument.
@@ -58,38 +52,28 @@ impl Item {
     pub(crate) fn maps(self, right: &Value) -> bool {
         let depth = crate::primitive::depth(right);
         match self {
-            Whole => false,
-            Number => depth > 0,
-            Vector => depth > 1,
-            Text => depth > 1 || (right.is_empty() && !matches!(right.as_items(), Items::Characters(_))),
+            Whole => false, Number => depth > 0, Vector => depth > 1,
+            Text => depth > 1 || (right.is_empty() && !matches!(right.as_items(), Items::Characters(_)))
         }
     }
 }
 
-/// A system function. `prototype` gives the prototype of its result. In prototype mode, a function that has one returns it instead of
-/// running. An empty mapped argument gives an empty result with that prototype.
+/// A system function. `prototype` gives the prototype of its result. In prototype mode, a function that has one returns it instead of running. An empty mapped argument gives an empty result with that prototype.
 #[derive(Clone, Debug)]
 pub(crate) struct SystemFunction {
-    pub name: &'static str,
-    pub call: Call,
-    pub valence: Valence,
-    pub item: Item,
-    pub prototype: Option<fn(&Context<'_>) -> Value>,
+    pub name: &'static str, pub call: Call, pub valence: Valence, pub item: Item, pub prototype: Option<fn(&Context<'_>) -> Value>
 }
 /// System functions match when they share a name and their data matches. A generator matches only its own stream.
 impl PartialEq for SystemFunction {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-            && match (&self.call, &other.call) {
-                (Call::Regex(x, a), Call::Regex(y, b)) => (x.as_str(), a) == (y.as_str(), b),
-                (Call::Distribution(x, a), Call::Distribution(y, b)) => (x, a) == (y, b),
-                (Call::Generator(x, a), Call::Generator(y, b)) => std::sync::Arc::ptr_eq(x, y) && a == b,
-                (Call::Element(x), Call::Element(y)) => x == y,
-                (Call::Canvas(x), Call::Canvas(y)) => x == y,
-                #[cfg(web)]
-                (Call::Js(x), Call::Js(y)) => std::sync::Arc::ptr_eq(x, y),
-                (x, y) => std::mem::discriminant(x) == std::mem::discriminant(y),
-            }
+        self.name == other.name && match (&self.call, &other.call) {
+            (Call::Regex(x, a), Call::Regex(y, b)) => (x.as_str(), a) == (y.as_str(), b),
+            (Call::Distribution(x, a), Call::Distribution(y, b)) => (x, a) == (y, b),
+            (Call::Generator(x, a), Call::Generator(y, b)) => std::sync::Arc::ptr_eq(x, y) && a == b, (Call::Element(x), Call::Element(y)) => x == y,
+            (Call::Canvas(x), Call::Canvas(y)) => x == y,
+            #[cfg(web)] (Call::Js(x), Call::Js(y)) => std::sync::Arc::ptr_eq(x, y),
+            (x, y) => std::mem::discriminant(x) == std::mem::discriminant(y)
+        }
     }
 }
 
@@ -98,16 +82,14 @@ impl Valence {
     pub(crate) fn check(self, name: &str, left: Option<&Value>, span: &crate::Span) -> Result<(), Error> {
         match (self, left) {
             (Monadic, Some(_)) => Err(span.error(ErrorKind::Syntax, format!("{name} is monadic"))),
-            (Dyadic, None) => Err(span.error(ErrorKind::Syntax, format!("{name} needs a left argument"))),
-            _ => Ok(()),
+            (Dyadic, None) => Err(span.error(ErrorKind::Syntax, format!("{name} needs a left argument"))), _ => Ok(())
         }
     }
 }
 
 impl SystemFunction { pub(crate) fn check(&self, left: Option<&Value>, span: &crate::Span) -> Result<(), Error> { self.valence.check(self.name, left, span) } }
 
-/// A function that calls `call` natively, taking its right argument whole. A generator's draw and a distribution's sample have a
-/// result prototype. In prototype mode they return it without drawing.
+/// A function that calls `call` natively, taking its right argument whole. A generator's draw and a distribution's sample have a result prototype. In prototype mode they return it without drawing.
 pub(crate) fn native(name: &'static str, call: Call, valence: Valence) -> Function {
     let draws = matches!(call, Call::Generator(..) | Call::Distribution(_, crate::distribution::Operation::Sample));
     Function::system(SystemFunction { name, call, valence, item: Whole, prototype: draws.then_some(float) })
@@ -134,58 +116,33 @@ fn record(_: &Context<'_>) -> Value { crate::keyed::empty_record() }
 
 /// Each system function's name, call, valence, right-argument item and result prototype.
 const BUILTINS: &[(&str, Call, Valence, Item, fn(&Context<'_>) -> Value)] = &[
-    ("•c", Call::Value(case_convert), Ambivalent, Whole, text),
-    ("•csv", Call::Value(crate::csv::parse), Ambivalent, Text, record),
-    ("•json", Call::Value(crate::json::parse), Ambivalent, Text, number),
-    ("•mime", Call::Mime, Ambivalent, Whole, record),
-    ("•element", Call::Value(crate::xml::factory), Monadic, Text, element),
-    ("•xml", Call::Value(crate::xml::parse), Monadic, Text, record),
-    ("•svg", Call::Value(crate::xml::svg), Ambivalent, Whole, record),
-    ("•plot", Call::Value(crate::plot::plot), Ambivalent, Whole, record),
-    ("•image", Call::Value(crate::image::image), Ambivalent, Vector, float),
-    ("•canvas", Call::Value(crate::canvas::factory), Monadic, Text, canvas),
-    #[cfg(web)]
-    ("•js", Call::Value(crate::js::function), Monadic, Text, crate::js::prototype),
-    ("•vfi", Call::Value(crate::data::vfi), Ambivalent, Text, valid_numbers),
-    ("•r", Call::Value(crate::regex::compile), Monadic, Text, record),
+    ("•c", Call::Value(case_convert), Ambivalent, Whole, text), ("•csv", Call::Value(crate::csv::parse), Ambivalent, Text, record),
+    ("•json", Call::Value(crate::json::parse), Ambivalent, Text, number), ("•mime", Call::Mime, Ambivalent, Whole, record),
+    ("•element", Call::Value(crate::xml::factory), Monadic, Text, element), ("•xml", Call::Value(crate::xml::parse), Monadic, Text, record),
+    ("•svg", Call::Value(crate::xml::svg), Ambivalent, Whole, record), ("•plot", Call::Value(crate::plot::plot), Ambivalent, Whole, record),
+    ("•image", Call::Value(crate::image::image), Ambivalent, Vector, float), ("•canvas", Call::Value(crate::canvas::factory), Monadic, Text, canvas),
+    #[cfg(web)] ("•js", Call::Value(crate::js::function), Monadic, Text, crate::js::prototype),
+    ("•vfi", Call::Value(crate::data::vfi), Ambivalent, Text, valid_numbers), ("•r", Call::Value(crate::regex::compile), Monadic, Text, record),
     ("•distribution", Call::Value(crate::distribution::distribution), Ambivalent, Text, record),
-    ("•rand", Call::Value(crate::distribution::generator), Monadic, Whole, record),
-    ("•nget", Call::Value(crate::data::read), Ambivalent, Text, text),
-    ("•nput", Call::Effect(crate::data::write), Dyadic, Whole, number),
-    ("•fetch", Call::Value(crate::data::fetch), Ambivalent, Text, record),
-    ("•deflate", Call::Value(crate::data::inflate), Ambivalent, Vector, numbers),
-    ("•hash", Call::Value(crate::data::hash), Ambivalent, Vector, text),
-    ("•uuid", Call::Value(crate::data::uuid), Ambivalent, Number, text),
-    ("•normalize", Call::Value(normalize), Ambivalent, Text, text),
-    ("•decompose", Call::Value(crate::primitive::decompose), Dyadic, Whole, record),
-    ("•ucs", Call::Value(unicode_convert), Ambivalent, Vector, numbers),
-    ("•load", Call::Load, Monadic, Text, record),
-    ("•signal", Call::Value(signal), Ambivalent, Whole, number),
-    ("•storage", Call::Value(storage), Monadic, Whole, text),
-    ("•float", Call::Value(to_float), Ambivalent, Whole, float),
-    ("•time", Call::Time, Ambivalent, Whole, seconds),
-    ("•host", Call::Value(host), Monadic, Text, text),
-    #[cfg(not(web))]
-    ("•delay", Call::Effect(delay), Monadic, Whole, seconds),
+    ("•rand", Call::Value(crate::distribution::generator), Monadic, Whole, record), ("•nget", Call::Value(crate::data::read), Ambivalent, Text, text),
+    ("•nput", Call::Effect(crate::data::write), Dyadic, Whole, number), ("•fetch", Call::Value(crate::data::fetch), Ambivalent, Text, record),
+    ("•deflate", Call::Value(crate::data::inflate), Ambivalent, Vector, numbers), ("•hash", Call::Value(crate::data::hash), Ambivalent, Vector, text),
+    ("•uuid", Call::Value(crate::data::uuid), Ambivalent, Number, text), ("•normalize", Call::Value(normalize), Ambivalent, Text, text),
+    ("•decompose", Call::Value(crate::primitive::decompose), Dyadic, Whole, record), ("•ucs", Call::Value(unicode_convert), Ambivalent, Vector, numbers),
+    ("•load", Call::Load, Monadic, Text, record), ("•signal", Call::Value(signal), Ambivalent, Whole, number),
+    ("•storage", Call::Value(storage), Monadic, Whole, text), ("•float", Call::Value(to_float), Ambivalent, Whole, float),
+    ("•time", Call::Time, Ambivalent, Whole, seconds), ("•host", Call::Value(host), Monadic, Text, text),
+    #[cfg(not(web))] ("•delay", Call::Effect(delay), Monadic, Whole, seconds),
     ("•date", Call::Value(crate::date::read), Ambivalent, Whole, seconds),
-    #[cfg(not(web))]
-    ("•path", Call::Value(crate::files::path), Ambivalent, Whole, record),
-    #[cfg(not(web))]
-    ("•metadata", Call::Value(crate::files::metadata), Monadic, Whole, record),
-    #[cfg(not(web))]
-    ("•readdir", Call::Value(crate::files::readdir), Ambivalent, Text, record),
-    #[cfg(not(web))]
-    ("•copy", Call::Effect(crate::files::copy), Dyadic, Whole, text),
-    #[cfg(not(web))]
-    ("•rename", Call::Effect(crate::files::rename), Dyadic, Whole, text),
-    #[cfg(not(web))]
-    ("•remove", Call::Effect(crate::files::remove), Ambivalent, Text, text),
-    #[cfg(not(web))]
-    ("•mkdir", Call::Effect(crate::files::mkdir), Ambivalent, Text, text),
-    ("•prefs", Call::Prefs, Monadic, Whole, record),
-    ("•nc", Call::Session(crate::Session::system_nc), Monadic, Text, number),
-    ("•nl", Call::Session(crate::Session::system_nl), Ambivalent, Whole, texts),
-    ("•src", Call::Session(crate::Session::system_src), Monadic, Text, text),
+    #[cfg(not(web))] ("•path", Call::Value(crate::files::path), Ambivalent, Whole, record),
+    #[cfg(not(web))] ("•metadata", Call::Value(crate::files::metadata), Monadic, Whole, record),
+    #[cfg(not(web))] ("•readdir", Call::Value(crate::files::readdir), Ambivalent, Text, record),
+    #[cfg(not(web))] ("•copy", Call::Effect(crate::files::copy), Dyadic, Whole, text),
+    #[cfg(not(web))] ("•rename", Call::Effect(crate::files::rename), Dyadic, Whole, text),
+    #[cfg(not(web))] ("•remove", Call::Effect(crate::files::remove), Ambivalent, Text, text),
+    #[cfg(not(web))] ("•mkdir", Call::Effect(crate::files::mkdir), Ambivalent, Text, text),
+    ("•prefs", Call::Prefs, Monadic, Whole, record), ("•nc", Call::Session(crate::Session::system_nc), Monadic, Text, number),
+    ("•nl", Call::Session(crate::Session::system_nl), Ambivalent, Whole, texts), ("•src", Call::Session(crate::Session::system_src), Monadic, Text, text),
     ("•ex", Call::Session(crate::Session::system_ex), Monadic, Text, number),
     ("•literal", Call::Session(crate::Session::system_literal), Monadic, Text, number),
 ];
@@ -207,20 +164,12 @@ pub(crate) fn lookup(name: &str) -> Option<Function> {
     Some(Function::system(SystemFunction { name, call: call.clone(), valence: *valence, item: *item, prototype: Some(*prototype) }))
 }
 
-/// The system functions with an inverse, each with its inverse and the inverse's valence. A format function reads its format, and
-/// its inverse writes it.
+/// The system functions with an inverse, each with its inverse and the inverse's valence. A format function reads its format, and its inverse writes it.
 const INVERSES: &[(&str, Native, Valence)] = &[
-    ("•csv", crate::csv::serialize, Ambivalent),
-    ("•json", crate::json::serialize, Ambivalent),
-    ("•xml", crate::xml::serialize, Monadic),
-    ("•image", crate::image::encode, Ambivalent),
-    ("•deflate", crate::data::deflate, Ambivalent),
-    ("•date", crate::date::write, Ambivalent),
-    #[cfg(not(web))]
-    ("•path", crate::files::join, Monadic),
-    ("•literal", write_literal, Monadic),
-    ("•ucs", unicode_convert, Ambivalent),
-    ("•decompose", crate::primitive::recompose, Dyadic),
+    ("•csv", crate::csv::serialize, Ambivalent), ("•json", crate::json::serialize, Ambivalent), ("•xml", crate::xml::serialize, Monadic),
+    ("•image", crate::image::encode, Ambivalent), ("•deflate", crate::data::deflate, Ambivalent), ("•date", crate::date::write, Ambivalent),
+    #[cfg(not(web))] ("•path", crate::files::join, Monadic),
+    ("•literal", write_literal, Monadic), ("•ucs", unicode_convert, Ambivalent), ("•decompose", crate::primitive::recompose, Dyadic),
 ];
 
 /// `f⁻¹` for a system function `f` that has an inverse.
@@ -235,19 +184,12 @@ pub(crate) fn inverse(f: &SystemFunction, left: Option<&Value>, right: &Value, c
 }
 
 const HOST_FACTS: &[&str] = &[
-    "args",
-    "version",
-    "env",
-    "width",
-    "height",
-    #[cfg(not(web))]
-    "cwd",
-    #[cfg(not(web))]
-    "temp",
+    "args", "version", "env", "width", "height",
+    #[cfg(not(web))] "cwd",
+    #[cfg(not(web))] "temp",
 ];
 
-/// `•host name` gives the host fact called `name`: the command-line `"args"`, BPL's `"version"`, the `"env"` record, the terminal's
-/// `"width"` and `"height"`, the working directory `"cwd"`, and `"temp"`, the directory for temporary files.
+/// `•host name` gives the host fact called `name`: the command-line `"args"`, BPL's `"version"`, the `"env"` record, the terminal's `"width"` and `"height"`, the working directory `"cwd"`, and `"temp"`, the directory for temporary files.
 fn host(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let fact = match crate::keyed::name(right).as_deref() {
         Some("args") => {
@@ -260,8 +202,7 @@ fn host(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, E
             crate::keyed::record(names, values)
         }
         Some(fact @ ("width" | "height")) => match terminal_size() {
-            Some((rows, columns)) => Ok(integer((if fact == "height" { rows } else { columns }) as i64)),
-            None => Value::integers(vec![0], vec![]),
+            Some((rows, columns)) => Ok(integer((if fact == "height" { rows } else { columns }) as i64)), None => Value::integers(vec![0], vec![])
         },
         #[cfg(not(web))]
         Some("cwd") => Ok(crate::keyed::text(&std::env::current_dir().map_err(|e| span.domain_error(format!("working directory: {e}")))?.to_string_lossy())),
@@ -299,18 +240,16 @@ fn delay(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<(Value,
 
 fn storage(_: Option<&Value>, right: &Value, _: &Context<'_>) -> Result<Value, Error> { Ok(crate::keyed::text(right.storage_name())) }
 
-/// `width •float Y`: the numbers of `Y` as floats of `width` bits, 16, 32 or 64. `•float Y` gives floats of the default width, which the
-/// `float` pref sets. Arrays nested in `Y` convert too.
+/// `width •float Y`: the numbers of `Y` as floats of `width` bits, 16, 32 or 64. `•float Y` gives floats of the default width, which the `float` pref sets. Arrays nested in `Y` convert too.
 fn to_float(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let width = match left {
-        None => span.numeric().width,
-        Some(w) => w.as_number().and_then(|n| n.integer().ok()).and_then(FloatWidth::of_bits).ok_or(ErrorKind::Domain).error_at(span, "•float takes a width of 16, 32 or 64")?,
+        None => span.numeric().width, Some(w) => w.as_number().and_then(|n| n.integer().ok()).and_then(FloatWidth::of_bits).ok_or(ErrorKind::Domain)
+            .error_at(span, "•float takes a width of 16, 32 or 64")?
     };
     right.to_float_width(width).error_at(span, "•float takes numbers")
 }
 
-/// `•signal kind` raises an error of the kind that `kind` names, and `message •signal kind` gives it a message. `kind` can also be a
-/// caught error, such as `$e`, which raises its kind and message again.
+/// `•signal kind` raises an error of the kind that `kind` names, and `message •signal kind` gives it a message. `kind` can also be a caught error, such as `$e`, which raises its kind and message again.
 fn signal(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let invalid = || span.domain_error("•signal needs an error kind such as \"DOMAIN\", or a caught error");
     let (name, message) = match crate::keyed::name(right) {
@@ -328,17 +267,15 @@ fn signal(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Val
 
 fn case_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let mode = match left {
-        None => -3,
-        Some(a) if a.is_singleton() => numeric(&a.at(0), span)?.integer().error_at(span, "•c mode must be 1, ¯1 or ¯3")?,
-        _ => return Err(span.domain_error("•c needs one case mode")),
+        None => -3, Some(a) if a.is_singleton() => numeric(&a.at(0), span)?.integer().error_at(span, "•c mode must be 1, ¯1 or ¯3")?,
+        _ => return Err(span.domain_error("•c needs one case mode"))
     };
     if !matches!(mode, -3 | -1 | 1) { return Err(span.domain_error("•c mode must be 1, ¯1 or ¯3")); }
     let text: fn(&str) -> String = match mode { 1 => str::to_uppercase, -1 => str::to_lowercase, _ => |s| s.to_uppercase().to_lowercase() };
     cased(right, text, span)
 }
 
-/// `value` with each character vector mapped as a string by `text`, and each other character mapped on its own. A character whose
-/// mapping has more than one character stays as it is.
+/// `value` with each character vector mapped as a string by `text`, and each other character mapped on its own. A character whose mapping has more than one character stays as it is.
 fn cased(value: &Value, text: fn(&str) -> String, span: &Context<'_>) -> Result<Value, Error> {
     span.check()?;
     let mapped = match value {
@@ -349,8 +286,7 @@ fn cased(value: &Value, text: fn(&str) -> String, span: &Context<'_>) -> Result<
         }
         Value::Array(_) if !value.is_empty() => match crate::keyed::name(value) {
             Some(s) => crate::keyed::text(&text(&s)),
-            None => Value::new(value.shape(), value.elements().map(|e| cased(&e, text, span)).collect::<Result<_, _>>()?)
-                .error_at(span, "invalid result")?,
+            None => Value::new(value.shape(), value.elements().map(|e| cased(&e, text, span)).collect::<Result<_, _>>()?).error_at(span, "invalid result")?,
         },
         _ => return Ok(value.clone()),
     };
@@ -383,12 +319,16 @@ fn unicode_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
                 if mode != 0 { return Err(invalid()); }
             }
             spec.at(0).clone()
-        } else { spec.clone() };
+        } else {
+            spec.clone()
+        };
         let text = crate::keyed::name(&name).filter(|_| !name.is_atom()).ok_or_else(invalid)?;
         if !matches!(&*text, "UTF-8" | "UTF-16" | "UTF-32") { return Err(invalid()); }
         if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "encoded •ucs needs a vector")); }
         Some(text)
-    } else { None };
+    } else {
+        None
+    };
     let shape = |len: usize| {
         let shape = if encoding.is_some() { vec![len] } else { right.shape().to_vec() };
         generated_len(&shape).map(|_| shape).error_at(span, "Unicode result exceeds element limit")

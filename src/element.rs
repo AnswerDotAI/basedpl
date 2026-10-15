@@ -1,25 +1,20 @@
 //! The element types of compact storage, and how an item of one type reads as another.
 use crate::{
     array::{
-        with_complexes, with_float_width, with_floats, with_ints, ComplexBuf, Complexes, FloatBuf, FloatWidth, Floats, IntBuf, Ints, Items,
-        Storage, Width,
-    },
-    number::int::Int,
-    Value,
+        with_complexes, with_float_width, with_floats, with_ints, ComplexBuf, Complexes, FloatBuf, FloatWidth, Floats, IntBuf, Ints, Items, Storage, Width,
+    }, number::int::Int, Value
 };
 use num_complex::{Complex32, Complex64};
 use std::borrow::Cow;
 
-/// Compact element storage: `bool` for Booleans, the widths `u8`, `i16`, `i32` and `i64` for integers, the widths `half::f16`, `f32` and
-/// `f64` for floats, `Complex32` and `Complex64` for complex numbers and `char` for characters.
+/// Compact element storage: `bool` for Booleans, the widths `u8`, `i16`, `i32` and `i64` for integers, the widths `half::f16`, `f32` and `f64` for floats, `Complex32` and `Complex64` for complex numbers and `char` for characters.
 pub(crate) trait Element: Copy + Send + Sync {
     /// The item a missing keyed entry reads as: the fill of its own array, which has this type.
     const FILL: Self;
     fn slice(value: &Value) -> Option<&[Self]>;
     /// An array of `data`, stored as this element type. Integers keep their width.
     fn build(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value>;
-    /// An array of `data`, with integers moved to the narrowest width that holds them, in a pass over them. Other element types are
-    /// stored as `build` stores them.
+    /// An array of `data`, with integers moved to the narrowest width that holds them, in a pass over them. Other element types are stored as `build` stores them.
     fn build_narrowed(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Self::build(shape, data) }
     /// This whole number as an integer of type `T`, when `T` holds it. Only the numbers that kernels give as integers have one.
     fn whole<T: Whole>(self) -> Option<T> { None }
@@ -76,17 +71,12 @@ macro_rules! whole {
 }
 whole!(u8: U8, i16: I16, i32: I32, i64: I64);
 
-
-/// A float width of compact storage. Kernels and the `Number` path compute at the width itself, with rustymath's functions, such
-/// as `exp`, `ln` and `gamma`, and `num_traits::Float`'s others. Kernels exist only for f32 and f64. `pervasive::halves` runs 16-bit
-/// floats at 32 bits. A function with no version at the width, such as tolerant gcd, computes at `f64` and rounds.
-/// `rustymath::Float::Working` is the type that `⌹` and `•decompose` compute in: f32 for f16, and the type itself otherwise.
+/// A float width of compact storage. Kernels and the `Number` path compute at the width itself, with rustymath's functions, such as `exp`, `ln` and `gamma`, and `num_traits::Float`'s others. Kernels exist only for f32 and f64. `pervasive::halves` runs 16-bit floats at 32 bits. A function with no version at the width, such as tolerant gcd, computes at `f64` and rounds. `rustymath::Float::Working` is the type that `⌹` and `•decompose` compute in: f32 for f16, and the type itself otherwise.
 pub(crate) trait Float: Element + rustymath::Float<Working: Element> {
     const WIDTH: FloatWidth;
     /// The signed integer width with this float's bytes, which monadic `⌊` and `⌈` write their results at first.
     const INTEGERS: Width;
-    /// `value`'s compact numbers as this float type: borrowed when they have it already, otherwise read through `Source`. `None` for
-    /// complex numbers, characters and mixed arrays.
+    /// `value`'s compact numbers as this float type: borrowed when they have it already, otherwise read through `Source`. `None` for complex numbers, characters and mixed arrays.
     fn compact(value: &Value) -> Option<Cow<'_, [Self]>>;
 }
 macro_rules! float {
@@ -113,10 +103,7 @@ impl Element for half::f16 {
     #[inline]
     fn whole<T: Whole>(self) -> Option<T> { rustymath::convert::int(self) }
 }
-/// `half` computes each operation on 16-bit floats in f32 and rounds the result. Its conversions take one value at a time, through inline
-/// assembly that LLVM can't vectorize. Loops that convert 16-bit floats, such as the copies that `pervasive::halves` makes, therefore run
-/// one item at a time on the CPU. Eight-lane `fcvtl` and `fcvtn` assembly would vectorize them, as Rust's own `f16` would once it's
-/// stable. 16-bit floats needn't be fast on the CPU.
+/// `half` computes each operation on 16-bit floats in f32 and rounds the result. Its conversions take one value at a time, through inline assembly that LLVM can't vectorize. Loops that convert 16-bit floats, such as the copies that `pervasive::halves` makes, therefore run one item at a time on the CPU. Eight-lane `fcvtl` and `fcvtn` assembly would vectorize them, as Rust's own `f16` would once it's stable. 16-bit floats needn't be fast on the CPU.
 impl Float for half::f16 {
     const WIDTH: FloatWidth = FloatWidth::F16;
     const INTEGERS: Width = Width::I16;
@@ -130,8 +117,7 @@ impl FloatWidth {
     /// The width of floats of `bits` bits.
     pub fn of_bits(bits: i64) -> Option<Self> { match bits { 16 => Some(Self::F16), 32 => Some(Self::F32), 64 => Some(Self::F64), _ => None } }
 }
-/// An item that a kernel reads as type `A`: a Boolean as a number, an integer as a float or a complex number, or a float as a complex
-/// number.
+/// An item that a kernel reads as type `A`: a Boolean as a number, an integer as a float or a complex number, or a float as a complex number.
 pub(crate) trait Source<A>: Element {
     fn read(self) -> A;
     /// `items` as `A` with no copy, where the items already have type `A`.
@@ -184,8 +170,14 @@ macro_rules! complex {
 }
 complex!(bool, u8, i16, i32, i64, half::f16, f32, f64);
 /// A complex number reads as one of the other width through its parts.
-impl Source<Complex64> for Complex32 { #[inline] fn read(self) -> Complex64 { Complex64::new(self.re.into(), self.im.into()) } }
-impl Source<Complex32> for Complex64 { #[inline] fn read(self) -> Complex32 { Complex32::new(self.re as f32, self.im as f32) } }
+impl Source<Complex64> for Complex32 {
+    #[inline]
+    fn read(self) -> Complex64 { Complex64::new(self.re.into(), self.im.into()) }
+}
+impl Source<Complex32> for Complex64 {
+    #[inline]
+    fn read(self) -> Complex32 { Complex32::new(self.re as f32, self.im as f32) }
+}
 
 /// Every item of `items`, read as type `A`, through the same scheduler as native elementwise calls.
 pub(crate) fn read_all<A: Element, S: Source<A>>(items: &[S]) -> Vec<A> {
@@ -203,25 +195,12 @@ pub(crate) fn cast<A: Whole>(ints: Ints<'_>) -> Cow<'_, [A]> {
 /// Booleans as unsigned bytes of 0 and 1, read in place with no copy.
 pub(crate) fn truth_bytes(truths: &[bool]) -> &[u8] { bytemuck::cast_slice(truths) }
 
-/// `value`'s compact numbers as `A`s: borrowed when they are `A`s already, otherwise read through `Source`. Complex numbers read only
-/// as complex numbers. `None` when `A` can't hold them.
-pub(crate) fn read_as<A: Element>(value: &Value) -> Option<Cow<'_, [A]>>
-where
-    bool: Source<A>,
-    u8: Source<A>,
-    i16: Source<A>,
-    i32: Source<A>,
-    i64: Source<A>,
-    f64: Source<A>,
-    f32: Source<A>,
-    half::f16: Source<A>,
-{
+/// `value`'s compact numbers as `A`s: borrowed when they are `A`s already, otherwise read through `Source`. Complex numbers read only as complex numbers. `None` when `A` can't hold them.
+pub(crate) fn read_as<A: Element>(value: &Value) -> Option<Cow<'_, [A]>> where bool: Source<A>, u8: Source<A>, i16: Source<A>, i32: Source<A>, i64: Source<A>,
+    f64: Source<A>, f32: Source<A>, half::f16: Source<A> {
     if let Some(items) = A::slice(value) { return Some(Cow::Borrowed(items)); }
     Some(Cow::Owned(match value.as_items() {
-        Items::Booleans(y) => read_all(y),
-        Items::Integers(ints) => with_ints!(ints, |y| read_all(y)),
-        Items::Floats(y) => with_floats!(y, |y| read_all(y)),
-        Items::Complex(z) => A::from_complexes(z)?,
-        Items::Characters(_) | Items::Values(_) => return None,
+        Items::Booleans(y) => read_all(y), Items::Integers(ints) => with_ints!(ints, |y| read_all(y)), Items::Floats(y) => with_floats!(y, |y| read_all(y)),
+        Items::Complex(z) => A::from_complexes(z)?, Items::Characters(_) | Items::Values(_) => return None
     }))
 }

@@ -1,14 +1,7 @@
 use crate::{
-    array::{generated_len, FloatWidth},
-    element::read_as,
-    execution::Context,
-    keyed,
-    primitive::{integer, numeric, pervade, real},
-    system::{
-        natives, Call,
-        Valence::{Ambivalent, Dyadic, Monadic},
-    },
-    Error, ErrorAt, ErrorKind, Number, Value,
+    array::{generated_len, FloatWidth}, element::read_as, execution::Context, keyed, primitive::{integer, numeric, pervade, real}, system::{
+        natives, Call, Valence::{Ambivalent, Dyadic, Monadic}
+    }, Error, ErrorAt, ErrorKind, Number, Value
 };
 use rand::{rngs::Xoshiro256PlusPlus, SeedableRng};
 pub(crate) use rustymath::distribution::Distribution;
@@ -16,12 +9,7 @@ use rustymath::{distribution::{standard, Cdf, Invalid, Pdf, Quantile}, Arg, Unar
 use std::sync::{Arc, Mutex, PoisonError};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum Operation {
-    Sample,
-    Density,
-    Cdf,
-    Quantile,
-}
+pub(crate) enum Operation { Sample, Density, Cdf, Quantile }
 
 /// How a distribution's parameters construct it.
 enum Constructor {
@@ -36,23 +24,14 @@ enum Constructor {
 
 /// Each distribution's name, its standard parameters (empty when it has none), and how its parameters construct it.
 const DISTRIBUTIONS: &[(&str, &[f64], Constructor)] = &[
-    ("normal", &standard::NORMAL, Constructor::Two(Distribution::normal)),
-    ("uniform", &standard::UNIFORM, Constructor::Two(Distribution::uniform)),
-    ("beta", &[], Constructor::Two(Distribution::beta)),
-    ("cauchy", &standard::CAUCHY, Constructor::Two(Distribution::cauchy)),
-    ("chisquared", &[], Constructor::One(Distribution::chi_squared)),
-    ("exponential", &standard::EXPONENTIAL, Constructor::One(Distribution::exponential)),
-    ("fisher", &[], Constructor::Two(Distribution::fisher)),
-    ("gamma", &[], Constructor::Two(Distribution::gamma)),
-    ("inversegamma", &[], Constructor::Two(Distribution::inverse_gamma)),
-    ("laplace", &standard::LAPLACE, Constructor::Two(Distribution::laplace)),
-    ("lognormal", &standard::LOG_NORMAL, Constructor::Two(Distribution::log_normal)),
-    ("student", &[], Constructor::One(Distribution::student_t)),
-    ("weibull", &[], Constructor::Two(Distribution::weibull)),
-    ("bernoulli", &[], Constructor::Bernoulli),
-    ("binomial", &[], Constructor::Binomial),
-    ("poisson", &[], Constructor::Poisson),
-    ("logistic", &standard::LOGISTIC, Constructor::Two(Distribution::logistic)),
+    ("normal", &standard::NORMAL, Constructor::Two(Distribution::normal)), ("uniform", &standard::UNIFORM, Constructor::Two(Distribution::uniform)),
+    ("beta", &[], Constructor::Two(Distribution::beta)), ("cauchy", &standard::CAUCHY, Constructor::Two(Distribution::cauchy)),
+    ("chisquared", &[], Constructor::One(Distribution::chi_squared)), ("exponential", &standard::EXPONENTIAL, Constructor::One(Distribution::exponential)),
+    ("fisher", &[], Constructor::Two(Distribution::fisher)), ("gamma", &[], Constructor::Two(Distribution::gamma)),
+    ("inversegamma", &[], Constructor::Two(Distribution::inverse_gamma)), ("laplace", &standard::LAPLACE, Constructor::Two(Distribution::laplace)),
+    ("lognormal", &standard::LOG_NORMAL, Constructor::Two(Distribution::log_normal)), ("student", &[], Constructor::One(Distribution::student_t)),
+    ("weibull", &[], Constructor::Two(Distribution::weibull)), ("bernoulli", &[], Constructor::Bernoulli), ("binomial", &[], Constructor::Binomial),
+    ("poisson", &[], Constructor::Poisson), ("logistic", &standard::LOGISTIC, Constructor::Two(Distribution::logistic)),
 ];
 
 /// The largest trial count or Poisson rate. A sampler's whole numbers stay exact up to it.
@@ -90,8 +69,7 @@ fn construct(constructor: &Constructor, right: &Value, span: &Context<'_>) -> Re
     made.map_err(|e| span.domain_error(e.to_string()))
 }
 
-/// `params •distribution name`: the distribution called `name`, with `params`. Without `params`, a distribution takes its standard
-/// parameters, and one without standard parameters is DOMAIN.
+/// `params •distribution name`: the distribution called `name`, with `params`. Without `params`, a distribution takes its standard parameters, and one without standard parameters is DOMAIN.
 pub(crate) fn distribution(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let name = keyed::name(right).ok_or_else(|| span.domain_error("a distribution name must be a string"))?;
     let Some((_, standard, constructor)) = DISTRIBUTIONS.iter().find(|(n, ..)| **n == *name) else { return Err(span.domain_error("unknown distribution")) };
@@ -107,30 +85,23 @@ fn bundle(d: Distribution) -> Value {
     let d = Arc::new(d);
     let method = |name, op, valence| (name, Call::Distribution(d.clone(), op), valence);
     natives([
-        method("sample", Operation::Sample, Ambivalent),
-        method("density", Operation::Density, Monadic),
-        method("cdf", Operation::Cdf, Monadic),
+        method("sample", Operation::Sample, Ambivalent), method("density", Operation::Density, Monadic), method("cdf", Operation::Cdf, Monadic),
         method("quantile", Operation::Quantile, Monadic),
     ])
 }
 
 fn exact(n: u64) -> Value { match i64::try_from(n) { Ok(n) => integer(n), Err(_) => Value::Number(num_bigint::BigInt::from(n).into()) } }
 
-/// `len` draws from `d`, as an array of `shape`: whole numbers in integer storage for a discrete distribution, and floats of the
-/// session's width otherwise. Draws come in blocks, with an interrupt check before each.
+/// `len` draws from `d`, as an array of `shape`: whole numbers in integer storage for a discrete distribution, and floats of the session's width otherwise. Draws come in blocks, with an interrupt check before each.
 fn samples<R: rand::Rng + ?Sized>(d: &Distribution, shape: Vec<usize>, len: usize, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
     let mut out = vec![0.0; len];
-    for block in out.chunks_mut(1 << 14) {
-        span.check()?;
-        d.samples(rng, block);
-    }
-    let made = if d.is_discrete() { Value::integers(shape, out.into_iter().map(|k| k as i64).collect()) } else { Value::floats(shape, span.numeric().width, out) };
+    for block in out.chunks_mut(1 << 14) { span.check()?; d.samples(rng, block); }
+    let made =
+        if d.is_discrete() { Value::integers(shape, out.into_iter().map(|k| k as i64).collect()) } else { Value::floats(shape, span.numeric().width, out) };
     made.error_at(span, "invalid distribution sample")
 }
 
-/// The density, cdf or quantile of `d` at each number in `right`. An array of compact numbers goes to rustymath as one slice, and its
-/// result keeps the array's layout. A discrete quantile is an exact integer, so it goes one number at a time, as atoms and nested
-/// arrays do.
+/// The density, cdf or quantile of `d` at each number in `right`. An array of compact numbers goes to rustymath as one slice, and its result keeps the array's layout. A discrete quantile is an exact integer, so it goes one number at a time, as atoms and nested arrays do.
 fn evaluate(d: &Distribution, op: Operation, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let quantile = op == Operation::Quantile;
     if !right.is_atom() && !(quantile && d.is_discrete()) {
@@ -138,9 +109,8 @@ fn evaluate(d: &Distribution, op: Operation, right: &Value, span: &Context<'_>) 
             if quantile && !x.iter().all(|p| (0.0..=1.0).contains(p)) { return Err(span.domain_error("probability must be in [0,1]")); }
             let mut out = Vec::with_capacity(x.len());
             match op {
-                Operation::Density => Pdf(*d).many(Arg::Many(&x), x.len(), &mut out),
-                Operation::Cdf => Cdf(*d).many(Arg::Many(&x), x.len(), &mut out),
-                _ => Quantile(*d).many(Arg::Many(&x), x.len(), &mut out),
+                Operation::Density => Pdf(*d).many(Arg::Many(&x), x.len(), &mut out), Operation::Cdf => Cdf(*d).many(Arg::Many(&x), x.len(), &mut out),
+                _ => Quantile(*d).many(Arg::Many(&x), x.len(), &mut out)
             };
             let width = right.float_width().unwrap_or(span.numeric().width);
             return right.layout().floats(width, out).error_at(span, "invalid distribution result");
@@ -153,11 +123,7 @@ fn evaluate(d: &Distribution, op: Operation, right: &Value, span: &Context<'_>) 
 fn point(d: &Distribution, op: Operation, x: f64, width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> {
     let quantile = op == Operation::Quantile;
     if quantile && !(0.0..=1.0).contains(&x) { return Err(span.domain_error("probability must be in [0,1]")); }
-    let y = match op {
-        Operation::Density => d.pdf(x),
-        Operation::Cdf => d.cdf(x),
-        _ => d.quantile(x),
-    };
+    let y = match op { Operation::Density => d.pdf(x), Operation::Cdf => d.cdf(x), _ => d.quantile(x) };
     Ok(if quantile && d.is_discrete() && y.is_finite() { exact(y as u64) } else { Value::Number(Number::float(y, width)) })
 }
 
@@ -190,8 +156,7 @@ pub(crate) fn generator(_: Option<&Value>, right: &Value, span: &Context<'_>) ->
 pub(crate) fn generator_call(generator: &Generator, op: Draw, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let mut rng = generator.lock().unwrap_or_else(PoisonError::into_inner);
     match (op, left) {
-        (Draw::Deal, Some(left)) => crate::primitive::deal(left, right, &mut *rng, span),
-        _ => crate::primitive::roll_array(right, &mut *rng, span),
+        (Draw::Deal, Some(left)) => crate::primitive::deal(left, right, &mut *rng, span), _ => crate::primitive::roll_array(right, &mut *rng, span)
     }
 }
 

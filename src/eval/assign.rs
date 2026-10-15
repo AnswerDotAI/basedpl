@@ -30,9 +30,7 @@ impl Session {
             NodeKind::Name(name) => self.lookup(name).map_or(Value, Category::of),
             NodeKind::System(_) => Function,
             NodeKind::Dfn(d) => match d.kind {
-                DefinitionKind::Function => Function,
-                DefinitionKind::MonadicOperator => Operator,
-                DefinitionKind::DyadicOperator => DyadicOperator,
+                DefinitionKind::Function => Function, DefinitionKind::MonadicOperator => Operator, DefinitionKind::DyadicOperator => DyadicOperator
             },
             // A group or run has the category of its expression, so `(M←-)` and `(⌽@ 1⌷)` are functions.
             NodeKind::Group(_) | NodeKind::Run(_) => self.assignment_operand(std::slice::from_ref(node), 1).map_or(NoResult, |(_, c)| c),
@@ -64,7 +62,8 @@ impl Session {
             // A run that ends in a dyadic operator holds its left operand, and takes this operand as its right one, as in `(⌽@ 1⌷)`.
             start -= 1;
             category = Function;
-        } else if start > 0 && matches!(Rule::get(self.node_category(&nodes[start - 1]), category), Rule::BindRight) {
+        }
+        else if start > 0 && matches!(Rule::get(self.node_category(&nodes[start - 1]), category), Rule::BindRight) {
             start = self.assignment_operand(nodes, start - 1)?.0;
             category = Function;
         }
@@ -76,8 +75,7 @@ impl Session {
         if self.rule_target(nodes).is_some() { return Ok(0); }
         let end = nodes.len();
         let (operand, category) = self.assignment_operand(nodes, end)?;
-        // Inside a dfn a name before `←` is a target, unless an array comes directly before it. Then the name's value
-        // decides, as at top level: a function makes a modified assignment, as in `a(f)←3` and `(a)f←3`.
+        // Inside a dfn a name before `←` is a target, unless an array comes directly before it. Then the name's value decides, as at top level: a function makes a modified assignment, as in `a(f)←3` and `(a)f←3`.
         let modified =
             operand > 0 && matches!(category, Category::Function) && (self.holds_array(&nodes[operand - 1]) || !self.assignment_names(&nodes[operand..]));
         let start = if modified { operand - 1 } else { end - 1 };
@@ -114,13 +112,8 @@ impl Session {
         let span = &target[0].span;
         if let [target] = target {
             match &target.kind {
-                NodeKind::Name(name) => {
-                    return self.store(name, value.clone(), span);
-                }
-                NodeKind::System(_) => {
-                    self.resolve(target)?;
-                    return Err(span.error(ErrorKind::Syntax, "system names are read-only"));
-                }
+                NodeKind::Name(name) => { return self.store(name, value.clone(), span); }
+                NodeKind::System(_) => { self.resolve(target)?; return Err(span.error(ErrorKind::Syntax, "system names are read-only")); }
                 NodeKind::Output => {
                     return match value {
                         Binding::Value(a) => {
@@ -144,14 +137,11 @@ impl Session {
             }
         }
         if let Some((name, derivative)) = self.rule_target(target) { return self.attach_rule(name, derivative, value, span); }
-        let Some((array, modifier)) = self.modified_target(target)? else {
-            return Err(span.error(ErrorKind::Syntax, "assignment needs a name or selection"));
-        };
+        let Some((array, modifier)) = self.modified_target(target)? else { return Err(span.error(ErrorKind::Syntax, "assignment needs a name or selection")); };
         self.modify(array, modifier, value)
     }
 
-    /// The name in a target that attaches a hand-written rule to the function it holds, with whether the rule is its derivative:
-    /// `f∂` for the derivative, or `f⁻¹` for the inverse.
+    /// The name in a target that attaches a hand-written rule to the function it holds, with whether the rule is its derivative: `f∂` for the derivative, or `f⁻¹` for the inverse.
     fn rule_target<'a>(&self, nodes: &'a [Node]) -> Option<(&'a str, bool)> {
         let [Node { kind: NodeKind::Name(name), .. }, Node { kind: NodeKind::Operator(op), .. }] = nodes else { return None };
         let derivative = match op { OperatorKind::Differentiate => true, OperatorKind::Super(Superscript::Power(-1)) => false, _ => return None };
@@ -186,8 +176,7 @@ impl Session {
         }
     }
 
-    /// `a(f)←` with no value sets `a` to `f a`, and gives whether `target` has that form. It runs as the dyadic form with `f∘⊣`,
-    /// which ignores its right argument of 0.
+    /// `a(f)←` with no value sets `a` to `f a`, and gives whether `target` has that form. It runs as the dyadic form with `f∘⊣`, which ignores its right argument of 0.
     pub(super) fn modify_monadic(&mut self, target: &[Node]) -> Result<bool, Error> {
         let Some((array, f)) = self.modified_target(target)? else { return Ok(false) };
         let f = atop(f, Function::primitive(Primitive::Identity(true)), &target[0].span)?;
@@ -206,7 +195,10 @@ impl Session {
                     let first = matches!(p, Primitive::CatenateFirst);
                     if let Some((cells, names)) = crate::primitive::append_plan(&binding.value, right, first, &self.at(&node.span))? {
                         if cells.environment() > binding.owner { return Err(node.span.domain_error("array would export a local closure")); }
-                        return self.write_kept(binding, &node.span, |value, _| { value.append(&cells, names.as_deref()); Ok(()) });
+                        return self.write_kept(binding, &node.span, |value, _| {
+                            value.append(&cells, names.as_deref());
+                            Ok(())
+                        });
                     }
                 }
                 let updated = modifier.call_array(Some(&binding.value), right, &mut self.at(&node.span))?;
@@ -220,9 +212,7 @@ impl Session {
         }
     }
 
-    /// Pair each name in `[a b]←` with its part of `right`: an item of a vector, or a major cell of a higher-rank array. When
-    /// `right`'s leading axis has a key for every position, each name takes the part with that key. Parts that no name takes stay
-    /// unused. Otherwise names take parts by position. A singleton goes to every name.
+    /// Pair each name in `[a b]←` with its part of `right`: an item of a vector, or a major cell of a higher-rank array. When `right`'s leading axis has a key for every position, each name takes the part with that key. Parts that no name takes stay unused. Otherwise names take parts by position. A singleton goes to every name.
     fn destructure<'a>(cells: &'a [Vec<Node>], right: &Value, span: &Span) -> Result<Vec<(&'a [Node], Value)>, Error> {
         let keys = right.keys(0).filter(|keys| keys.complete());
         if keys.is_none() && right.is_singleton() { return Ok(cells.iter().map(|cell| (&cell[..], right.at(0))).collect()); }
@@ -245,8 +235,7 @@ impl Session {
     fn modifier(&mut self, nodes: &[Node]) -> Result<Option<Function>, Error> {
         if nodes.is_empty() { return Ok(None); }
         match self.bind(nodes)?.value {
-            Binding::Function(f) => Ok(Some(f)),
-            _ => Err(nodes[0].span.error(ErrorKind::Syntax, "modified assignment needs a function")),
+            Binding::Function(f) => Ok(Some(f)), _ => Err(nodes[0].span.error(ErrorKind::Syntax, "modified assignment needs a function"))
         }
     }
 
@@ -286,8 +275,7 @@ impl Session {
         Ok(())
     }
 
-    /// The `←` of an assignment on the path from a selection target to its root array, as in `(U←T).[k]←v`. The root is the last
-    /// node at each level.
+    /// The `←` of an assignment on the path from a selection target to its root array, as in `(U←T).[k]←v`. The root is the last node at each level.
     fn root_assignment(&self, nodes: &[Node]) -> Option<Span> {
         let nodes = self.members(nodes);
         if let Some(node) = nodes.iter().find(|n| matches!(n.kind, NodeKind::Assign)) { return Some(node.span.clone()); }
@@ -309,8 +297,7 @@ impl Session {
             }
         };
         match modifier {
-            Some(f) => self.write_modified(binding, &selection, &f, &values, &span),
-            None => self.write_selection(binding, &selection, &values, &span),
+            Some(f) => self.write_modified(binding, &selection, &f, &values, &span), None => self.write_selection(binding, &selection, &values, &span)
         }
     }
 
@@ -321,14 +308,9 @@ impl Session {
         self.write_kept(binding, span, |value, context| selection.write_into(value, values, context))
     }
 
-    /// Runs `write` on the array that `binding` kept, then stores it under the name. The name's current binding goes first, so the
-    /// write happens in place unless something else holds the array. `write` makes every check before it changes anything, so an
-    /// error leaves the name as it was.
+    /// Runs `write` on the array that `binding` kept, then stores it under the name. The name's current binding goes first, so the write happens in place unless something else holds the array. `write` makes every check before it changes anything, so an error leaves the name as it was.
     fn write_kept(
-        &mut self,
-        binding: ArrayBinding,
-        span: &Span,
-        write: impl FnOnce(&mut Value, &crate::execution::Context<'_>) -> Result<(), Error>,
+        &mut self, binding: ArrayBinding, span: &Span, write: impl FnOnce(&mut Value, &crate::execution::Context<'_>) -> Result<(), Error>
     ) -> Result<(), Error> {
         let ArrayBinding { name, owner, mut value } = binding;
         // The kept array can be written in place only when the name no longer holds it too.
@@ -343,9 +325,7 @@ impl Session {
         Ok(())
     }
 
-    /// A target whose text gives its positions: `I⌷` or `k⊃` of a name or of such a target, as dot access writes them. It gives
-    /// the binding and the selection without the labels that other targets need. Each index is evaluated once and its node
-    /// becomes its value, so a target that needs labels after all evaluates nothing twice.
+    /// A target whose text gives its positions: `I⌷` or `k⊃` of a name or of such a target, as dot access writes them. It gives the binding and the selection without the labels that other targets need. Each index is evaluated once and its node becomes its value, so a target that needs labels after all evaluates nothing twice.
     fn direct_target(&mut self, nodes: &mut [Node]) -> Result<Option<(ArrayBinding, Selection)>, Error> {
         let span = nodes[0].span.clone();
         match nodes {
@@ -361,7 +341,9 @@ impl Session {
                 } else if pick && item.shape().len() == 1 && (left.is_atom() || crate::keyed::name(&left).is_some()) {
                     // One position or key picks one item of a vector.
                     crate::primitive::selection(&item, &[Some(left)], &context)?
-                } else { return Ok(None); };
+                } else {
+                    return Ok(None);
+                };
                 Ok(Some((binding, selection.within(&path))))
             }
             _ => Ok(None),
@@ -375,8 +357,7 @@ impl Session {
             [Node { kind: NodeKind::Group(inner) | NodeKind::Run(inner), .. }] => self.direct_item(inner),
             _ => Ok(self.direct_target(nodes)?.and_then(|(binding, selection)| match (selection.frame, selection.targets) {
                 (ResultFrame::Direct, Targets::Offsets(offsets)) => Some((binding, offsets)),
-                (ResultFrame::Direct, Targets::Paths(mut paths)) if paths.len() == 1 => Some((binding, paths.remove(0))),
-                _ => None,
+                (ResultFrame::Direct, Targets::Paths(mut paths)) if paths.len() == 1 => Some((binding, paths.remove(0))), _ => None
             })),
         }
     }
@@ -410,9 +391,7 @@ impl Session {
         Ok((binding, labels, result.array(span)?, kind.unwrap()))
     }
 
-    /// Writes the new value of each target of `selection` into `binding`. `f` takes the target's item on its left and its value from
-    /// `right` on its right. A target that repeats a position reads the result of the earlier one, so repeats accumulate. An error
-    /// leaves the array unchanged. When `f` is a pervasive primitive, one call covers all the targets at distinct positions.
+    /// Writes the new value of each target of `selection` into `binding`. `f` takes the target's item on its left and its value from `right` on its right. A target that repeats a position reads the result of the earlier one, so repeats accumulate. An error leaves the array unchanged. When `f` is a pervasive primitive, one call covers all the targets at distinct positions.
     fn write_modified(&mut self, binding: ArrayBinding, selection: &Selection, f: &Function, right: &Value, span: &Span) -> Result<(), Error> {
         let right = selection.checked(right, &self.at(span))?;
         if let (ResultFrame::Array(_), Targets::Offsets(offsets), FunctionNode::Primitive(p)) = (&selection.frame, &selection.targets, f.node()) {
@@ -421,7 +400,9 @@ impl Session {
                 let unit = if right.is_singleton() {
                     let item = right.at(0);
                     Some(if item.is_atom() { item } else { item.enclose().error_at(span, "invalid modified selection")? })
-                } else { None };
+                } else {
+                    None
+                };
                 let Some((counts, rounds)) = occurrences(offsets, binding.value.len()) else {
                     let items = selection.read(&binding.value, &self.at(span))?;
                     let right = match unit { Some(unit) if right.shape() != items.shape() => unit, _ => right };
@@ -431,8 +412,7 @@ impl Session {
                 if let Some((positions, results)) = self.column_fold(&binding.value, offsets, (&counts, rounds), f, unit.as_ref().unwrap_or(&right), span)? {
                     return self.write_selection(binding, &Selection::offsets(positions), &results, span);
                 }
-                // Round r holds the r-th target at each position. Its positions are distinct. One call computes the round from the values
-                // that earlier rounds wrote into a copy of the array. The copy then replaces the array.
+                // Round r holds the r-th target at each position. Its positions are distinct. One call computes the round from the values that earlier rounds wrote into a copy of the array. The copy then replaces the array.
                 let (order, sizes) = rustymath::search::grouped(&counts.iter().map(|&c| c as usize).collect::<Vec<_>>(), rounds);
                 let mut current = binding.value.clone();
                 let mut rest = &order[..];
@@ -441,7 +421,9 @@ impl Session {
                     rest = more;
                     let round = Selection::offsets(targets.iter().map(|&t| offsets[t as usize]).collect());
                     let items = round.read(&current, &self.at(span))?;
-                    let values = match &unit { Some(unit) => unit.clone(), None => Selection::offsets(targets.iter().map(|&t| t as usize).collect()).read(&right, &self.at(span))? };
+                    let values = match &unit {
+                        Some(unit) => unit.clone(), None => Selection::offsets(targets.iter().map(|&t| t as usize).collect()).read(&right, &self.at(span))?
+                    };
                     let results = f.call_array(Some(&items), &values, &mut self.at(span))?;
                     round.write_into(&mut current, &results, &self.at(span))?;
                 }
@@ -465,27 +447,23 @@ impl Session {
         self.write_selection(binding, selection, &values, span)
     }
 
-    /// The positions that the targets at `offsets` reach, and their values once `f` has modified each target in turn by its item of
-    /// `values`. A table has a column for each position. Its first row holds the positions' values, and row r + 1 the r-th target at
-    /// each position. A scan by `f` down the columns applies `f` to the targets in turn, so each column's result is in the row of its
-    /// last target. The cells below that row hold a value that leaves the scan's total as it is: `f`'s identity, or the column's first
-    /// value for `⌈` and `⌊`. `None` for other primitives, and when the table would be much larger than the targets.
+    /// The positions that the targets at `offsets` reach, and their values once `f` has modified each target in turn by its item of `values`. A table has a column for each position. Its first row holds the positions' values, and row r + 1 the r-th target at each position. A scan by `f` down the columns applies `f` to the targets in turn, so each column's result is in the row of its last target. The cells below that row hold a value that leaves the scan's total as it is: `f`'s identity, or the column's first value for `⌈` and `⌊`. `None` for other primitives, and when the table would be much larger than the targets.
     fn column_fold(
-        &mut self, array: &Value, offsets: &[usize], (counts, rounds): (&[u32], usize), f: &Function, values: &Value, span: &Span,
+        &mut self, array: &Value, offsets: &[usize], (counts, rounds): (&[u32], usize), f: &Function, values: &Value, span: &Span
     ) -> Result<Option<(Vec<usize>, Value)>, Error> {
         use crate::number::{Arithmetic, Math};
         let FunctionNode::Primitive(p) = f.node() else { return Ok(None) };
         let pad = match p {
             Primitive::Arithmetic(Arithmetic::Plus | Arithmetic::Minus) => Some(integer(0)),
-            Primitive::Arithmetic(Arithmetic::Times | Arithmetic::Divide) => Some(integer(1)),
-            Primitive::Math(Math::Ceiling | Math::Floor) => None,
-            _ => return Ok(None),
+            Primitive::Arithmetic(Arithmetic::Times | Arithmetic::Divide) => Some(integer(1)), Primitive::Math(Math::Ceiling | Math::Floor) => None,
+            _ => return Ok(None)
         };
         let width = counts.iter().filter(|&&c| c == 0).count();
         let cells = (rounds + 1) * width;
         if cells > 2 * offsets.len() || !dense(offsets, array.len()) { return Ok(None); }
         // A target's count numbers it among the targets at its position. The first one there gives the position its column.
-        let (mut positions, mut column, mut size, mut placed) = (Vec::with_capacity(width), vec![0; array.len()], vec![0; width], Vec::with_capacity(offsets.len()));
+        let (mut positions, mut column, mut size, mut placed) =
+            (Vec::with_capacity(width), vec![0; array.len()], vec![0; width], Vec::with_capacity(offsets.len()));
         for (&o, &c) in offsets.iter().zip(counts) {
             let c = c as usize;
             if c == 0 { column[o] = positions.len(); positions.push(o); }

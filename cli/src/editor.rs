@@ -1,22 +1,11 @@
 //! Glyph completion and terminal input. Source execution never rewrites aliases.
-use basedpl::{
-    in_code,
-    symbols::{chord, entry, find, layout, matches, symbols, Action},
-};
+use basedpl::{in_code, symbols::{chord, entry, find, layout, matches, symbols, Action}};
 use rustyline::{
-    completion::{Completer, Pair},
-    highlight::{CmdKind, Highlighter},
-    hint::{Hint, Hinter},
-    history::DefaultHistory,
+    completion::{Completer, Pair}, highlight::{CmdKind, Highlighter}, hint::{Hint, Hinter}, history::DefaultHistory,
     validate::{ValidationContext, ValidationResult, Validator},
-    Cmd, CompletionType, ConditionalEventHandler, Config, Context, Editor, Event, EventContext, EventHandler, Helper, KeyCode, KeyEvent, Modifiers,
-    RepeatCount,
+    Cmd, CompletionType, ConditionalEventHandler, Config, Context, Editor, Event, EventContext, EventHandler, Helper, KeyCode, KeyEvent, Modifiers, RepeatCount
 };
-use std::{
-    borrow::Cow,
-    ops::Range,
-    sync::{Arc, Mutex},
-};
+use std::{borrow::Cow, ops::Range, sync::{Arc, Mutex}};
 
 fn label((glyph, name): &(&str, &str)) -> String { format!("{glyph} {name}{}", chord(glyph)) }
 
@@ -32,18 +21,10 @@ struct Input {
 impl Input {
     /// Types an action's text, or waits in its dead-key state for the next key.
     fn act(&mut self, action: &Action) -> Cmd {
-        match action {
-            Action::Text(text) => Cmd::Insert(1, text.clone()),
-            Action::State(name) => {
-                self.dead = Some(name.clone());
-                Cmd::Repaint
-            }
-        }
+        match action { Action::Text(text) => Cmd::Insert(1, text.clone()), Action::State(name) => { self.dead = Some(name.clone()); Cmd::Repaint } }
     }
 
-    /// The next key after a dead key. A listed key types its text or moves on. Repeating the chord or Space types the terminator. Backspace and
-    /// Escape cancel and type nothing. Any other key types the terminator, then acts as if nothing were pending. Enter submits
-    /// the line with the terminator added.
+    /// The next key after a dead key. A listed key types its text or moves on. Repeating the chord or Space types the terminator. Backspace and Escape cancel and type nothing. Any other key types the terminator, then acts as if nothing were pending. Enter submits the line with the terminator added.
     fn pending_key(&mut self, name: &str, key: KeyEvent, line: &str, pos: usize) -> Cmd {
         let state = layout().state(name);
         match key {
@@ -57,10 +38,7 @@ impl Input {
             }
             _ => {}
         }
-        if key == KeyEvent::from('\r') || key == KeyEvent::from('\n') {
-            self.pending = Some((pos..pos, state.terminator.clone()));
-            return Cmd::AcceptLine;
-        }
+        if key == KeyEvent::from('\r') || key == KeyEvent::from('\n') { self.pending = Some((pos..pos, state.terminator.clone())); return Cmd::AcceptLine; }
         match self.key(key, line, pos) {
             Some(Cmd::Insert(n, text)) => Cmd::Insert(n, format!("{}{text}", state.terminator)),
             _ => match key {
@@ -88,24 +66,19 @@ impl Input {
                     if let KeyCode::Char(c) = key.0 { if plain { replacement.push(c); } }
                     self.pending = Some((start..pos, replacement));
                     if enter {
-                        // Rustyline commands cannot combine replacement and submission. Apply this
-                        // one accepted edit after readline, before history/evaluation; never rewrite a paste.
+                        // Rustyline commands cannot combine replacement and submission. Apply this one accepted edit after readline, before history/evaluation; never rewrite a paste.
                         return Some(Cmd::AcceptLine);
                     }
                     // Completion's update replaces the byte range and advances the cursor.
                     return Some(Cmd::Complete);
                 }
-                if tab {
-                    self.active = true;
-                    return Some(Cmd::Complete);
-                }
+                if tab { self.active = true; return Some(Cmd::Complete); }
             }
         }
         self.active = match key {
             KeyEvent(KeyCode::Char('`'), Modifiers::NONE) => in_code(&line[..pos]),
-            KeyEvent(KeyCode::Char(c), Modifiers::NONE) if c.is_ascii_alphabetic() => self.active,
-            KeyEvent(KeyCode::Backspace, Modifiers::NONE) => self.active,
-            _ => false,
+            KeyEvent(KeyCode::Char(c), Modifiers::NONE) if c.is_ascii_alphabetic() => self.active, KeyEvent(KeyCode::Backspace, Modifiers::NONE) => self.active,
+            _ => false
         };
         None
     }
@@ -117,10 +90,7 @@ struct Symbols(Arc<Mutex<Input>>);
 impl ConditionalEventHandler for Symbols {
     fn handle(&self, event: &Event, count: RepeatCount, positive: bool, ctx: &EventContext) -> Option<Cmd> {
         let mut input = self.0.lock().unwrap();
-        if count != 1 || !positive {
-            input.active = false;
-            return None;
-        }
+        if count != 1 || !positive { input.active = false; return None; }
         input.key(*event.get(0)?, ctx.line(), ctx.pos())
     }
 }
@@ -154,7 +124,11 @@ impl Hinter for Symbols {
         }
         let (_, prefix) = entry(line, pos)?;
         let found = matches(prefix);
-        let message = if prefix.is_empty() { "Tab: symbol names".into() } else if found.is_empty() { "unknown symbol".into() } else {
+        let message = if prefix.is_empty() {
+            "Tab: symbol names".into()
+        } else if found.is_empty() {
+            "unknown symbol".into()
+        } else {
             let mut names = found.iter().take(6).map(label).collect::<Vec<_>>().join(", ");
             if found.len() > 6 { names.push_str(", … (Tab)"); }
             names
@@ -180,13 +154,7 @@ fn styled(entry: &str) -> String {
 /// The ANSI colour of each highlight class the REPL colours. Numbers, names, system names and syntax keep the terminal's colour.
 fn colour(class: &str) -> Option<&'static str> {
     Some(match class {
-        "function" => "32",
-        "monadic-operator" => "35",
-        "dyadic-operator" => "33",
-        "argument" => "34",
-        "string" => "36",
-        "comment" => "2",
-        _ => return None,
+        "function" => "32", "monadic-operator" => "35", "dyadic-operator" => "33", "argument" => "34", "string" => "36", "comment" => "2", _ => return None
     })
 }
 
@@ -217,9 +185,7 @@ impl LineEditor {
         let symbols = Symbols::default();
         editor.bind_sequence(Event::Any, EventHandler::Conditional(Box::new(symbols.clone())));
         editor.set_helper(Some(symbols));
-        let config = std::env::var_os("XDG_CONFIG_HOME")
-            .map(std::path::PathBuf::from)
-            .filter(|dir| dir.is_absolute())
+        let config = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from).filter(|dir| dir.is_absolute())
             .or_else(|| std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config")));
         let history = config.map(|dir| dir.join("basedpl/history"));
         if let Some(path) = &history {

@@ -19,10 +19,7 @@ impl Decimals {
     fn padding(self, number: Self) -> (usize, usize) { (self.left - number.left, self.right - number.right) }
 }
 
-/// How much of a large array or a long float display shows. An array of more than `limit` items shows the first and last `edges`
-/// positions of each axis longer than twice `edges`, and a marker for the positions between. A float shows `prec` significant digits.
-/// `width` is the widest line display shows. `columns`, at most `edges` when that applies, is how many positions display keeps at
-/// each end of a last axis to fit `width`.
+/// How much of a large array or a long float display shows. An array of more than `limit` items shows the first and last `edges` positions of each axis longer than twice `edges`, and a marker for the positions between. A float shows `prec` significant digits. `width` is the widest line display shows. `columns`, at most `edges` when that applies, is how many positions display keeps at each end of a last axis to fit `width`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Elide {
     pub limit: usize,
@@ -37,7 +34,8 @@ pub(crate) struct Elide {
 impl Default for Elide { fn default() -> Self { Self { limit: 1000, edges: 3, prec: 10, ..Self::NONE } } }
 impl Elide {
     /// Shows every item and every digit, as source text and `⍕` do, with 64-bit floats plain.
-    pub const NONE: Self = Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64), notation: Notation::Apl };
+    pub const NONE: Self =
+        Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64), notation: Notation::Apl };
     /// The positions kept at each end of a long axis of an array of `shape`, or `None` when display shows every item.
     pub fn edges(self, shape: &[usize]) -> Option<usize> {
         let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);
@@ -58,29 +56,21 @@ impl Elide {
     pub fn marker(self, n: &Number) -> Option<char> { n.float_width().and_then(|w| self.width_marker(w)) }
 }
 
-/// The positions display shows along an axis of `len` items: all of them, or the first and last `edges` with `None` for
-/// the gap between.
+/// The positions display shows along an axis of `len` items: all of them, or the first and last `edges` with `None` for the gap between.
 pub(crate) fn positions(len: usize, edges: Option<usize>) -> impl Iterator<Item = Option<usize>> + Clone {
     let gap = edges.filter(|&e| len > 2 * e);
     let (head, tail) = gap.map_or((len, len), |e| (e, len - e));
     (0..head).map(Some).chain(gap.map(|_| None)).chain((tail..len).map(Some))
 }
 
-/// The index of each position display shows on the axes of `shape`, in order, with `None` for a gap. The positions under a
-/// gap collapse into it. Each comes with the axis whose index changed to reach it, or `None` for the first.
+/// The index of each position display shows on the axes of `shape`, in order, with `None` for a gap. The positions under a gap collapse into it. Each comes with the axis whose index changed to reach it, or `None` for the first.
 pub(crate) fn frames(shape: &[usize], edges: Option<usize>) -> Vec<(Option<usize>, Option<Vec<usize>>)> {
     let mut frames = vec![(None, Some(vec![]))];
     for (axis, &len) in shape.iter().enumerate() {
-        frames = frames
-            .into_iter()
-            .flat_map(|(changed, index)| match index {
-                None => vec![(changed, None)],
-                Some(index) => positions(len, edges)
-                    .enumerate()
-                    .map(|(i, p)| (if i == 0 { changed } else { Some(axis) }, p.map(|p| [&index[..], &[p]].concat())))
-                    .collect(),
-            })
-            .collect();
+        frames = frames.into_iter().flat_map(|(changed, index)| match index {
+            None => vec![(changed, None)], Some(index) => positions(len, edges).enumerate()
+                .map(|(i, p)| (if i == 0 { changed } else { Some(axis) }, p.map(|p| [&index[..], &[p]].concat()))).collect()
+        }).collect();
     }
     frames
 }
@@ -91,38 +81,23 @@ pub(crate) enum Spot { At(usize), Gap(char) }
 /// One row display shows of an array: the blank lines before it, the index of its row, or `None` in a gap, and its spots.
 pub(crate) type Row = (usize, Option<Vec<usize>>, Vec<Spot>);
 
-/// The rows display shows of an array of `shape`, keeping `edges` positions at each end of a long axis, and `last` on the last axis.
-/// An array of rank 0 is one row of one item. A blank line comes before a row for each axis before the last two whose index
-/// changes there. A row in a gap shows `⋮` in each column, and `⋱` in the columns' own gap.
+/// The rows display shows of an array of `shape`, keeping `edges` positions at each end of a long axis, and `last` on the last axis. An array of rank 0 is one row of one item. A blank line comes before a row for each axis before the last two whose index changes there. A row in a gap shows `⋮` in each column, and `⋱` in the columns' own gap.
 pub(crate) fn rows(shape: &[usize], edges: Option<usize>, last: Option<usize>) -> Vec<Row> {
     let (columns, leading) = shape.split_last().map_or((1, &[][..]), |(&columns, leading)| (columns, leading));
-    frames(leading, edges)
-        .into_iter()
-        .map(|(changed, index)| {
-            let breaks = changed.map_or(0, |axis| shape.len() - 2 - axis);
-            let start = index.as_ref().map(|index| index.iter().zip(leading).fold(0, |n, (&i, &len)| n * len + i) * columns);
-            let spots = positions(columns, last)
-                .map(|j| match (start, j) {
-                    (Some(start), Some(j)) => Spot::At(start + j),
-                    (Some(_), None) => Spot::Gap('…'),
-                    (None, Some(_)) => Spot::Gap('⋮'),
-                    (None, None) => Spot::Gap('⋱'),
-                })
-                .collect();
-            (breaks, index, spots)
-        })
-        .collect()
+    frames(leading, edges).into_iter().map(|(changed, index)| {
+        let breaks = changed.map_or(0, |axis| shape.len() - 2 - axis);
+        let start = index.as_ref().map(|index| index.iter().zip(leading).fold(0, |n, (&i, &len)| n * len + i) * columns);
+        let spots = positions(columns, last).map(|j| match (start, j) {
+            (Some(start), Some(j)) => Spot::At(start + j), (Some(_), None) => Spot::Gap('…'), (None, Some(_)) => Spot::Gap('⋮'),
+            (None, None) => Spot::Gap('⋱')
+        }).collect();
+        (breaks, index, spots)
+    }).collect()
 }
 
 /// Display settings for a session. `•prefs` reads and changes them.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct Settings {
-    pub boxed: bool,
-    pub trees: bool,
-    pub functions: bool,
-    pub dissect: bool,
-    pub elide: Elide,
-}
+pub(crate) struct Settings { pub boxed: bool, pub trees: bool, pub functions: bool, pub dissect: bool, pub elide: Elide }
 
 impl Settings {
     /// The REPL's settings: boxed, with lines elided to the terminal's width.
@@ -130,8 +105,7 @@ impl Settings {
         let elide = Elide { width: crate::system::terminal_size().map(|(_, columns)| columns).unwrap_or(usize::MAX), ..Elide::default() };
         Self { boxed: true, trees: true, functions: true, elide, ..Self::default() }
     }
-    /// Display text for `a`, boxed unless boxing is off, or `inside` a function while boxing there is off. A line wider than `width`
-    /// elides columns, keeping as many at each end of the last axes as fit.
+    /// Display text for `a`, boxed unless boxing is off, or `inside` a function while boxing there is off. A line wider than `width` elides columns, keeping as many at each end of the last axes as fit.
     pub fn array(&self, a: &Value, inside: bool) -> String {
         let text = |columns| {
             let elide = Elide { columns, ..self.elide };
@@ -140,37 +114,33 @@ impl Settings {
         let fits = |t: &str| t.lines().all(|line| line.width() <= self.elide.width);
         let full = text(usize::MAX);
         if fits(&full) { return full; }
-        // Keeping fewer columns never widens a line, so bisection finds the most that fit. Keeping at least one, as many as
-        // `width` always gives a line too wide.
+        // Keeping fewer columns never widens a line, so bisection finds the most that fit. Keeping at least one, as many as `width` always gives a line too wide.
         let (mut fit, mut over) = (1, self.elide.width);
         while over - fit > 1 { let mid = (fit + over) / 2; if fits(&text(mid)) { fit = mid } else { over = mid } }
         text(fit)
     }
     pub fn diagram(&self, a: &Value) -> String { array(a, self.elide).text() }
     /// Text for `⎕←`: the display text, with every item, and floats rounded to `prec` as display rounds them and with its float width plain.
-    pub fn explicit(&self, a: &Value, inside: bool) -> String { Self { elide: Elide { prec: self.elide.prec, plain: self.elide.plain, notation: self.elide.notation, ..Elide::NONE }, ..*self }.array(a, inside) }
+    pub fn explicit(&self, a: &Value, inside: bool) -> String {
+        Self { elide: Elide { prec: self.elide.prec, plain: self.elide.plain, notation: self.elide.notation, ..Elide::NONE }, ..*self }.array(a, inside)
+    }
     /// Each setting's key and value. An unlimited count is `∞`, a float of `width`.
     fn entries(&self, width: FloatWidth) -> [(&'static str, Value); 9] {
         let flag = |b| Value::Number(Number::from_bool(b));
         let count = |n: usize| Value::Number(if n == usize::MAX { Number::float(f64::INFINITY, width) } else { Number::from_integer(n as i64) });
         [
-            ("box", flag(self.boxed)),
-            ("trees", flag(self.trees)),
-            ("fns", flag(self.functions)),
-            ("dissect", flag(self.dissect)),
-            ("limit", count(self.elide.limit)),
-            ("edges", count(self.elide.edges)),
-            ("prec", count(self.elide.prec)),
-            ("width", count(self.elide.width)),
-            ("notation", keyed::text(match self.elide.notation { Notation::Apl => "apl", Notation::Simplified => "simplified", Notation::Traditional => "traditional" })),
+            ("box", flag(self.boxed)), ("trees", flag(self.trees)), ("fns", flag(self.functions)), ("dissect", flag(self.dissect)),
+            ("limit", count(self.elide.limit)), ("edges", count(self.elide.edges)), ("prec", count(self.elide.prec)), ("width", count(self.elide.width)),
+            ("notation", keyed::text(match self.elide.notation {
+                Notation::Apl => "apl", Notation::Simplified => "simplified", Notation::Traditional => "traditional"
+            })),
         ]
     }
     /// Sets the setting `key` to `value`. `Ok(false)` when no display setting has that key.
     fn set(&mut self, key: &str, value: &Value) -> Result<bool, crate::ErrorKind> {
         let count = |v: &Value| match v.as_number() {
-            Some(n) if n.as_float() == Some(f64::INFINITY) => Ok(usize::MAX),
-            Some(n) => n.nonnegative_integer().map(crate::array::saturated),
-            None => Err(crate::ErrorKind::Domain),
+            Some(n) if n.as_float() == Some(f64::INFINITY) => Ok(usize::MAX), Some(n) => n.nonnegative_integer().map(crate::array::saturated),
+            None => Err(crate::ErrorKind::Domain)
         };
         let positive = |v: &Value| count(v).and_then(|d| if d == 0 { Err(crate::ErrorKind::Domain) } else { Ok(d) });
         match key {
@@ -182,24 +152,19 @@ impl Settings {
             "edges" => self.elide.edges = count(value)?,
             "prec" => self.elide.prec = positive(value)?,
             "width" => self.elide.width = positive(value)?,
-            "notation" => self.elide.notation = match keyed::name(value).as_deref() {
-                Some("apl") => Notation::Apl,
-                Some("simplified") => Notation::Simplified,
-                Some("traditional") => Notation::Traditional,
-                _ => return Err(crate::ErrorKind::Domain),
-            },
+            "notation" => {
+                self.elide.notation = match keyed::name(value).as_deref() {
+                    Some("apl") => Notation::Apl, Some("simplified") => Notation::Simplified, Some("traditional") => Notation::Traditional,
+                    _ => return Err(crate::ErrorKind::Domain)
+                }
+            }
             _ => return Ok(false),
         }
         Ok(true)
     }
 }
 
-/// `•prefs Y` applies the settings in the record `Y` to the session, and returns all of them. The result is shy when `Y` sets something,
-/// as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `tolerance` is the comparison tolerance of
-/// 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new floats in bits, 16, 32 or 64.
-/// Code parsed after a change reads its literals at the new width. `threads` is the number of threads that the session's large calls
-/// split across, from then on. 0 gives the default. 1 runs them on the evaluating thread alone. Until the session sets it, `threads`
-/// reports the evaluating thread's own setting.
+/// `•prefs Y` applies the settings in the record `Y` to the session, and returns all of them. The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `tolerance` is the comparison tolerance of 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new floats in bits, 16, 32 or 64. Code parsed after a change reads its literals at the new width. `threads` is the number of threads that the session's large calls split across, from then on. 0 gives the default. 1 runs them on the evaluating thread alone. Until the session sets it, `threads` reports the evaluating thread's own setting.
 pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::Span) -> Result<(Value, bool), crate::Error> {
     let (mut display, mut numeric, mut threads) = (session.display, session.numeric, session.threads);
     let tolerance = |v: &Value| {
@@ -219,7 +184,9 @@ pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::S
                 let n = value.as_number().and_then(|n| n.integer().ok()).and_then(|n| usize::try_from(n).ok());
                 threads = Some(n.ok_or(crate::ErrorKind::Domain).error_at(span, "threads must be a nonnegative integer")?);
             }
-            key => if !display.set(key, &value).error_at(span, "invalid display setting")? { return Err(span.domain_error("unknown setting")); },
+            key => {
+                if !display.set(key, &value).error_at(span, "invalid display setting")? { return Err(span.domain_error("unknown setting")); }
+            }
         }
     }
     (session.display, session.numeric, session.threads) = (display, numeric, threads);
@@ -290,17 +257,13 @@ impl Cell {
 
 /// How a grid spaces and aligns its cells. In every style, numbers in a column line up on their decimal points.
 pub(crate) enum Style {
-    /// The same spacing and alignment in every column. One space separates the cells of a row when `spaced`. Other cells align left,
-    /// or right when `right`.
+    /// The same spacing and alignment in every column. One space separates the cells of a row when `spaced`. Other cells align left, or right when `right`.
     Uniform { spaced: bool, right: bool },
-    /// Spacing and alignment that depend on what each column holds, as `⍕` lays out an array of mixed or nested items. A space
-    /// follows a column with numbers, and comes before a column of nothing but numbers. A column with an array has a space after
-    /// each cell and before each cell other than a number. Other cells align right in a column with numbers, and left elsewhere.
+    /// Spacing and alignment that depend on what each column holds, as `⍕` lays out an array of mixed or nested items. A space follows a column with numbers, and comes before a column of nothing but numbers. A column with an array has a space after each cell and before each cell other than a number. Other cells align right in a column with numbers, and left elsewhere.
     PerColumn,
 }
 
-/// The width of a grid with `columns` columns laid out in `style`, and the lines of each of its rows, starting with the row's blank
-/// lines.
+/// The width of a grid with `columns` columns laid out in `style`, and the lines of each of its rows, starting with the row's blank lines.
 pub(crate) fn grid(columns: usize, rows: Vec<(usize, Vec<Cell>)>, style: Style) -> (usize, Vec<Vec<String>>) {
     let per_column = matches!(style, Style::PerColumn);
     let mut nested = vec![false; columns];
@@ -314,51 +277,39 @@ pub(crate) fn grid(columns: usize, rows: Vec<(usize, Vec<Cell>)>, style: Style) 
     }
     for (w, d) in widths.iter_mut().zip(&decimals) { *w = (*w).max(d.width()); }
     let numeric: Vec<_> = decimals.iter().map(|d| d.width() > 0).collect();
-    let (separated, right): (Vec<_>, Vec<_>) = (0..columns)
-        .map(|x| match style {
-            Style::Uniform { spaced, right } => (x > 0 && spaced, right),
-            Style::PerColumn => (x > 0 && ((numeric[x - 1] && !nested[x - 1]) || (numeric[x] && widths[x] == decimals[x].width())), numeric[x]),
-        })
-        .unzip();
+    let (separated, right): (Vec<_>, Vec<_>) = (0..columns).map(|x| match style {
+        Style::Uniform { spaced, right } => (x > 0 && spaced, right),
+        Style::PerColumn => (x > 0 && ((numeric[x - 1] && !nested[x - 1]) || (numeric[x] && widths[x] == decimals[x].width())), numeric[x]),
+    }).unzip();
     let width = widths.iter().sum::<usize>() + separated.iter().chain(&nested).filter(|&&b| b).count();
-    let lines = rows
-        .into_iter()
-        .map(|(breaks, cells)| {
-            let mut lines = vec![String::new(); breaks];
-            for y in 0..cells.iter().map(Cell::height).max().unwrap_or(0).max(1) {
-                let mut line = String::new();
-                for (x, cell) in cells.iter().enumerate() {
-                    if separated[x] { line.push(' '); }
-                    let extra = widths[x] - lead(x, cell) - cell.block.width;
-                    let (before, after) = match cell.number {
-                        Some(n) => {
-                            let (before, after) = decimals[x].padding(n);
-                            (before + widths[x] - decimals[x].width(), after)
-                        }
-                        None if right[x] => (extra, 0),
-                        None => (0, extra),
-                    };
-                    line.extend(std::iter::repeat_n(' ', before + lead(x, cell)));
-                    line.push_str(&cell.block.line(y));
-                    line.extend(std::iter::repeat_n(' ', after + usize::from(nested[x])));
-                }
-                lines.push(line);
+    let lines = rows.into_iter().map(|(breaks, cells)| {
+        let mut lines = vec![String::new(); breaks];
+        for y in 0..cells.iter().map(Cell::height).max().unwrap_or(0).max(1) {
+            let mut line = String::new();
+            for (x, cell) in cells.iter().enumerate() {
+                if separated[x] { line.push(' '); }
+                let extra = widths[x] - lead(x, cell) - cell.block.width;
+                let (before, after) = match cell.number {
+                    Some(n) => { let (before, after) = decimals[x].padding(n); (before + widths[x] - decimals[x].width(), after) }
+                    None if right[x] => (extra, 0),
+                    None => (0, extra),
+                };
+                line.extend(std::iter::repeat_n(' ', before + lead(x, cell)));
+                line.push_str(&cell.block.line(y));
+                line.extend(std::iter::repeat_n(' ', after + usize::from(nested[x])));
             }
-            lines
-        })
-        .collect();
+            lines.push(line);
+        }
+        lines
+    }).collect();
     (width, lines)
 }
 
 /// The bottom-edge marker for an array's storage. Floats of a width that `el` doesn't leave plain show that width's marker.
 fn marker(a: &Value, el: Elide) -> char {
     match a.storage_name() {
-        "boolean" => '$',
-        "integer" => 'ₓ',
-        "float16" | "float32" | "float64" => a.float_width().and_then(|w| el.width_marker(w)).unwrap_or('~'),
-        "complex64" | "complex128" => 'j',
-        "character" => '─',
-        _ => '+',
+        "boolean" => '$', "integer" => 'ₓ', "float16" | "float32" | "float64" => a.float_width().and_then(|w| el.width_marker(w)).unwrap_or('~'),
+        "complex64" | "complex128" => 'j', "character" => '─', _ => '+'
     }
 }
 
@@ -373,9 +324,7 @@ fn array(a: &Value, el: Elide) -> Block {
     let mut chars = true;
     let mut grid_rows: Vec<(usize, Vec<Cell>)> = Vec::new();
     for (breaks, _, spots) in rows(&shape, el.edges(&shape), el.last(&shape)) {
-        let cells = spots
-            .iter()
-            .map(|spot| {
+        let cells = spots.iter().map(|spot| {
                 Cell::spot(spot, |i| {
                     let item = if a.is_empty() { a.prototype() } else { a.at(i) };
                     chars &= matches!(item, Value::Character(_));
@@ -402,82 +351,71 @@ fn array(a: &Value, el: Elide) -> Block {
 /// Display text for `a` without frames: a vector or unit as source text, a string as its characters, and higher ranks as rows.
 pub(crate) fn plain(a: &Value, el: Elide) -> String {
     match a {
-        Value::Number(n) => return el.number(n),
-        Value::Function(f) => return format!("⟨{}⟩", f.text(el.notation, &mut 1000)),
-        Value::Operator(op) => return op.text(el.notation),
-        Value::Character(_) => return a.literal(),
-        Value::Array(_) => (),
+        Value::Number(n) => return el.number(n), Value::Function(f) => return format!("⟨{}⟩", f.text(el.notation, &mut 1000)),
+        Value::Operator(op) => return op.text(el.notation), Value::Character(_) => return a.literal(), Value::Array(_) => ()
     }
     if a.has_keys() && a.shape().len() > 1 { return labelled(a, el); }
     let edges = el.edges(a.shape());
     if a.shape().len() <= 1 {
-        let string = a.shape().len() == 1
-            && !a.has_keys()
-            && a.axis_names().iter().all(Option::is_none)
-            && !a.is_empty()
+        let string = a.shape().len() == 1 && !a.has_keys() && a.axis_names().iter().all(Option::is_none) && !a.is_empty()
             && a.elements().all(|e| matches!(e, Value::Character(_)));
-        return if string { a.elided_text(el.last(a.shape())) } else if a.is_strand() && a.mark(el).is_none() { a.shown_items(el.last(a.shape()), |e| e.source(el)).join(" ") } else { a.source(el) };
+        return if string {
+            a.elided_text(el.last(a.shape()))
+        } else if a.is_strand() && a.mark(el).is_none() {
+            a.shown_items(el.last(a.shape()), |e| e.source(el)).join(" ")
+        } else {
+            a.source(el)
+        };
     }
     if a.is_empty() { return a.literal(); }
     let mut spaced = false;
-    let table: Vec<(usize, Vec<Cell>)> = rows(a.shape(), edges, el.last(a.shape()))
-        .into_iter()
-        .map(|(breaks, _, spots)| {
-            let cells = spots
-                .iter()
-                .map(|spot| {
-                    Cell::spot(spot, |i| match a.at(i) {
-                        Value::Character(c) => Cell::text(c.into()),
-                        item => {
-                            spaced = true;
-                            match item {
-                                Value::Number(n) => Cell::number(el.number(&n)),
-                                item @ (Value::Function(_) | Value::Operator(_)) => Cell::text(plain(&item, el)),
-                                item => Cell::text(item.item(el)),
-                            }
-                        }
-                    })
-                })
-                .collect();
-            (breaks, cells)
-        })
-        .collect();
+    let table: Vec<(usize, Vec<Cell>)> = rows(a.shape(), edges, el.last(a.shape())).into_iter().map(|(breaks, _, spots)| {
+        let cells = spots.iter().map(|spot| {
+            Cell::spot(spot, |i| match a.at(i) {
+                Value::Character(c) => Cell::text(c.into()),
+                item => {
+                    spaced = true;
+                    match item {
+                        Value::Number(n) => Cell::number(el.number(&n)), item @ (Value::Function(_) | Value::Operator(_)) => Cell::text(plain(&item, el)),
+                        item => Cell::text(item.item(el))
+                    }
+                }
+            })
+        }).collect();
+        (breaks, cells)
+    }).collect();
     let columns = table[0].1.len();
     grid(columns, table, Style::Uniform { spaced, right: true }).1.concat().join("\n")
 }
 
-/// Display text for an array of rank 2 or more with keys: a table for each matrix, with keys as labels. Each table of a
-/// higher rank follows its index and `⌷`.
+/// Display text for an array of rank 2 or more with keys: a table for each matrix, with keys as labels. Each table of a higher rank follows its index and `⌷`.
 fn labelled(a: &Value, el: Elide) -> String {
     let rank = a.shape().len();
     let edges = el.edges(a.shape());
     let label = |axis: usize, i: usize| a.keys(axis).and_then(|k| k.names()[i].clone());
     let (rows_keyed, columns_keyed) = (a.keys(rank - 2).is_some(), a.keys(rank - 1).is_some());
     let table = a.shape()[rank - 2] * a.shape()[rank - 1];
-    let pages: Vec<_> = frames(&a.shape()[..rank - 2], edges)
-        .into_iter()
-        .map(|(_, index)| {
-            let Some(index) = index else { return "⋮".to_string() };
-            let start = index.iter().zip(a.shape()).fold(0, |n, (&i, &len)| n * len + i) * table;
-            let mut grid_rows: Vec<(usize, Vec<Cell>)> = Vec::new();
-            if columns_keyed {
-                let header = positions(a.shape()[rank - 1], el.last(a.shape()))
-                    .map(|j| Cell::text(j.map_or_else(|| "…".into(), |j| label(rank - 1, j).map_or_else(|| j.to_string(), |k| k.to_string()))));
-                grid_rows.push((0, rows_keyed.then(|| Cell::text(String::new())).into_iter().chain(header).collect()));
-            }
-            for (_, row, spots) in rows(&a.shape()[rank - 2..], edges, el.last(a.shape())) {
-                let name = row.map_or_else(|| "⋮".into(), |row| label(rank - 2, row[0]).map_or_else(|| row[0].to_string(), |k| k.to_string()));
-                let cells = spots.iter().map(|spot| Cell::spot(spot, |i| Cell::text(plain(&a.at(start + i), el))));
-                grid_rows.push((0, rows_keyed.then(|| Cell::text(name)).into_iter().chain(cells).collect()));
-            }
-            let columns = grid_rows[0].1.len();
-            let text = grid(columns, grid_rows, Style::Uniform { spaced: true, right: true }).1.concat().join("\n");
-            if rank == 2 { return text; }
-            let coordinates: Vec<_> =
-                index.iter().enumerate().map(|(axis, &i)| label(axis, i).map_or_else(|| i.to_string(), |k| crate::array::quoted(&k))).collect();
-            format!("{}⌷\n{text}", coordinates.join(" "))
-        })
-        .collect();
+    let pages: Vec<_> = frames(&a.shape()[..rank - 2], edges).into_iter().map(|(_, index)| {
+        let Some(index) = index else { return "⋮".to_string() };
+        let start = index.iter().zip(a.shape()).fold(0, |n, (&i, &len)| n * len + i) * table;
+        let mut grid_rows: Vec<(usize, Vec<Cell>)> = Vec::new();
+        if columns_keyed {
+            let header = positions(a.shape()[rank - 1], el.last(a.shape()))
+                .map(|j| Cell::text(j.map_or_else(|| "…".into(), |j| label(rank - 1, j).map_or_else(|| j.to_string(), |k| k.to_string()))));
+            grid_rows.push((0, rows_keyed.then(|| Cell::text(String::new())).into_iter().chain(header).collect()));
+        }
+        for (_, row, spots) in rows(&a.shape()[rank - 2..], edges, el.last(a.shape())) {
+            let name = row.map_or_else(|| "⋮".into(), |row| label(rank - 2, row[0]).map_or_else(|| row[0].to_string(), |k| k.to_string()));
+            let cells = spots.iter().map(|spot| Cell::spot(spot, |i| Cell::text(plain(&a.at(start + i), el))));
+            grid_rows.push((0, rows_keyed.then(|| Cell::text(name)).into_iter().chain(cells).collect()));
+        }
+        let columns = grid_rows[0].1.len();
+        let text = grid(columns, grid_rows, Style::Uniform { spaced: true, right: true }).1.concat().join("\n");
+        if rank == 2 { return text; }
+        let coordinates: Vec<_> =
+            index.iter().enumerate().map(|(axis, &i)| label(axis, i).map_or_else(|| i.to_string(), |k| crate::array::quoted(&k))).collect();
+        format!("{}⌷\n{text}", coordinates.join(" "))
+    }).collect();
     pages.join("\n\n")
 }
 
@@ -499,17 +437,17 @@ impl Tree {
     }
 }
 
-/// Convert a keyed vector from MIME types to text, or to bytes for binary types such as `image/png`, into the bundle sent to
-/// frontends. A value whose prototype is a number holds bytes.
+/// Convert a keyed vector from MIME types to text, or to bytes for binary types such as `image/png`, into the bundle sent to frontends. A value whose prototype is a number holds bytes.
 pub(crate) fn bundle(value: &Value) -> Result<crate::MimeBundle, crate::ErrorKind> {
-    crate::keyed::pairs(value)?
-        .into_iter()
-        .map(|(name, value)| {
-            if !name.contains('/') || name.contains(char::is_whitespace) { return Err(crate::ErrorKind::Domain); }
-            let data = if value.prototype().as_number().is_some() { crate::data::byte_items(&value).map(crate::MimeData::Bytes) } else { keyed::name(&value).map(|text| crate::MimeData::Text(text.to_string())) };
-            Ok((name.to_string(), data.ok_or(crate::ErrorKind::Domain)?))
-        })
-        .collect()
+    crate::keyed::pairs(value)?.into_iter().map(|(name, value)| {
+        if !name.contains('/') || name.contains(char::is_whitespace) { return Err(crate::ErrorKind::Domain); }
+        let data = if value.prototype().as_number().is_some() {
+            crate::data::byte_items(&value).map(crate::MimeData::Bytes)
+        } else {
+            keyed::name(&value).map(|text| crate::MimeData::Text(text.to_string()))
+        };
+        Ok((name.to_string(), data.ok_or(crate::ErrorKind::Domain)?))
+    }).collect()
 }
 
 /// A native renderer, called with the value to display, and with the left argument that `before` binds to it, if any.

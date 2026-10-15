@@ -1,7 +1,4 @@
-use std::{
-    io::Write,
-    process::{Command, Stdio},
-};
+use std::{io::Write, process::{Command, Stdio}};
 
 #[test]
 fn native_expression_and_diagnostic() {
@@ -39,44 +36,29 @@ fn repl_continuation_recovery_and_eof() {
 #[test]
 fn worker_flushes_before_eof_and_recovers() {
     use serde_json::{json, Value};
-    use std::{
-        io::{BufRead, BufReader},
-        sync::mpsc,
-        thread,
-        time::Duration,
-    };
+    use std::{io::{BufRead, BufReader}, sync::mpsc, thread, time::Duration};
     let mut child =
         Command::new(env!("CARGO_BIN_EXE_bpl")).arg("--worker").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     let mut input = child.stdin.take().unwrap();
     let output = child.stdout.take().unwrap();
     let (send, recv) = mpsc::channel();
-    let reader = thread::spawn(move || { for line in BufReader::new(output).lines() { if send.send(line.unwrap()).is_err() { break; } } });
+    let reader = thread::spawn(move || {
+        for line in BufReader::new(output).lines() { if send.send(line.unwrap()).is_err() { break; } }
+    });
     let code = |source: &str| json!({"code": source}).to_string();
     for (request, expected, error_kind, printed) in [
         (code("v←⍳10"), Some(json!({"shape":[10], "data":(0..10).map(f64::from).collect::<Vec<_>>(), "prototype":0.0})), None, vec![]),
-        (json!({"id":2, "code":"+/v"}).to_string(), Some(json!(45.0)), None, vec!["45"]),
-        ("{".into(), None, Some("REQUEST"), vec![]),
-        (json!(3).to_string(), None, Some("REQUEST"), vec![]),
-        (json!("1+2").to_string(), None, Some("REQUEST"), vec![]),
-        (json!({"id":"x", "code":"1+2"}).to_string(), None, Some("REQUEST"), vec![]),
-        (code("⎕←7 ⋄ 1÷'a'"), None, Some("DOMAIN"), vec!["7"]),
-        (code("(2+"), None, Some("SYNTAX"), vec![]),
-        (code("⍝ \"quoted\"\n+/v"), Some(json!(45.0)), None, vec!["45"]),
-        (code("f←+"), None, None, vec![]),
-        (code("fs←[+ ×]"), None, None, vec![]),
-        (code("+/"), None, None, vec!["+/"]),
-        (code("f←1⊃fs ⋄ 2 f 3"), Some(json!(6.0)), None, vec!["6"]),
-        (code(""), None, None, vec![]),
-        (code("⍳0"), Some(json!({"shape":[0], "data":[], "prototype":0.0})), None, vec!["⍬"]),
+        (json!({"id":2, "code":"+/v"}).to_string(), Some(json!(45.0)), None, vec!["45"]), ("{".into(), None, Some("REQUEST"), vec![]),
+        (json!(3).to_string(), None, Some("REQUEST"), vec![]), (json!("1+2").to_string(), None, Some("REQUEST"), vec![]),
+        (json!({"id":"x", "code":"1+2"}).to_string(), None, Some("REQUEST"), vec![]), (code("⎕←7 ⋄ 1÷'a'"), None, Some("DOMAIN"), vec!["7"]),
+        (code("(2+"), None, Some("SYNTAX"), vec![]), (code("⍝ \"quoted\"\n+/v"), Some(json!(45.0)), None, vec!["45"]), (code("f←+"), None, None, vec![]),
+        (code("fs←[+ ×]"), None, None, vec![]), (code("+/"), None, None, vec!["+/"]), (code("f←1⊃fs ⋄ 2 f 3"), Some(json!(6.0)), None, vec!["6"]),
+        (code(""), None, None, vec![]), (code("⍳0"), Some(json!({"shape":[0], "data":[], "prototype":0.0})), None, vec!["⍬"]),
     ] {
         writeln!(input, "{request}").unwrap();
         input.flush().unwrap();
         let line = match recv.recv_timeout(Duration::from_secs(5)) {
-            Ok(line) => line,
-            Err(e) => {
-                child.kill().unwrap();
-                panic!("reply was not flushed before EOF: {e}");
-            }
+            Ok(line) => line, Err(e) => { child.kill().unwrap(); panic!("reply was not flushed before EOF: {e}"); }
         };
         let reply: Value = serde_json::from_str(&line).unwrap();
         let id = serde_json::from_str::<Value>(&request).ok().and_then(|r| r.get("id").filter(|id| id.is_u64()).cloned());

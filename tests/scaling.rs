@@ -1,15 +1,6 @@
-//! How time and memory grow with the size of the arguments. Each case runs at `N` and `8 * N` items. Its time, allocated bytes and peak
-//! bytes may each grow by at most `LIMIT` times. A linear or n log n cost stays below that. A quadratic cost grows about 64 times. A
-//! global allocator counts, on the calling thread alone, the bytes that each call allocates, its peak and the bytes it keeps. The test
-//! harness's other threads stay out of the measurements. Rustymath runs on the calling thread too, with `set_threads(1)`. Otherwise
-//! memory that the calling thread allocates and a Rayon worker frees, such as a block of Rayon's job queue, counts as kept.
+//! How time and memory grow with the size of the arguments. Each case runs at `N` and `8 * N` items. Its time, allocated bytes and peak bytes may each grow by at most `LIMIT` times. A linear or n log n cost stays below that. A quadratic cost grows about 64 times. A global allocator counts, on the calling thread alone, the bytes that each call allocates, its peak and the bytes it keeps. The test harness's other threads stay out of the measurements. Rustymath runs on the calling thread too, with `set_threads(1)`. Otherwise memory that the calling thread allocates and a Rayon worker frees, such as a block of Rayon's job queue, counts as kept.
 use basedpl::{timing, EvalOptions, Session};
-use std::{
-    alloc::{GlobalAlloc, Layout, System},
-    cell::Cell,
-    io::Write,
-    time::{Duration, Instant},
-};
+use std::{alloc::{GlobalAlloc, Layout, System}, cell::Cell, io::Write, time::{Duration, Instant}};
 
 thread_local! {
     /// A thread can free memory that another thread allocated, so its live count can fall below zero.
@@ -29,10 +20,7 @@ unsafe impl GlobalAlloc for Counting {
         }
         p
     }
-    unsafe fn dealloc(&self, p: *mut u8, layout: Layout) {
-        unsafe { System.dealloc(p, layout) };
-        LIVE.set(LIVE.get() - layout.size() as isize);
-    }
+    unsafe fn dealloc(&self, p: *mut u8, layout: Layout) { unsafe { System.dealloc(p, layout) }; LIVE.set(LIVE.get() - layout.size() as isize); }
 }
 
 #[global_allocator]
@@ -40,16 +28,10 @@ static ALLOCATOR: Counting = Counting;
 
 const N: usize = 1000;
 const LIMIT: f64 = 16.0;
-/// The most bytes that a call's peak may grow by for each added item. `⍕v` needs the most: about 19 characters of 4 bytes for each
-/// number, beside the text they're read from.
+/// The most bytes that a call's peak may grow by for each added item. `⍕v` needs the most: about 19 characters of 4 bytes for each number, beside the text they're read from.
 const PEAK_PER_ITEM: usize = 128;
 
-struct Cost {
-    time: Duration,
-    allocated: usize,
-    peak: usize,
-    kept: usize,
-}
+struct Cost { time: Duration, allocated: usize, peak: usize, kept: usize }
 
 /// A session whose arguments have `n` items.
 fn session(n: usize) -> Session {
@@ -69,20 +51,15 @@ fn cost(session: &mut Session, code: &str) -> Cost {
     PEAK.set(live);
     run();
     let (allocated, peak, kept) = (TOTAL.get() - total, (PEAK.get() - live) as usize, (LIVE.get() - live).max(0) as usize);
-    let time = (0..3)
-        .map(|_| {
-            let start = Instant::now();
-            run();
-            start.elapsed()
-        })
-        .min()
-        .unwrap();
+    let time = (0..3).map(|_| {
+        let start = Instant::now();
+        run();
+        start.elapsed()
+    }).min().unwrap();
     Cost { time, allocated, peak, kept }
 }
 
-/// The ways in which each of `codes` grows faster than `LIMIT` allows, or keeps memory. A time that grows too fast is measured again
-/// after the rest, by `timing::retried`, and fails only if it grows too fast every time. Each retry writes both growths straight to
-/// stderr, where they appear even when the test passes. Byte counts are the same on every run.
+/// The ways in which each of `codes` grows faster than `LIMIT` allows, or keeps memory. A time that grows too fast is measured again after the rest, by `timing::retried`, and fails only if it grows too fast every time. Each retry writes both growths straight to stderr, where they appear even when the test passes. Byte counts are the same on every run.
 fn growth_failures(codes: &[&str]) -> Vec<String> {
     let (mut small, mut large) = (session(N), session(8 * N));
     let ratio = |a: usize, b: usize| a as f64 / b.max(1) as f64;
@@ -111,42 +88,12 @@ fn growth_failures(codes: &[&str]) -> Vec<String> {
     failures
 }
 
-/// Each case may allocate `times` its result's bytes, plus `scratch` bytes for each argument item. Pervasive and structural functions write
-/// their result once. A reshape that keeps the number of items shares its argument's storage. Search builds a table of the items it
-/// searches. Grade's radix sort moves pairs of a key and a position between two buffers, and returns its positions in one of them.
-/// Format builds each number's text once, then converts it to characters. Its data is fixed, because the text's length decides where
-/// its buffer doubles.
+/// Each case may allocate `times` its result's bytes, plus `scratch` bytes for each argument item. Pervasive and structural functions write their result once. A reshape that keeps the number of items shares its argument's storage. Search builds a table of the items it searches. Grade's radix sort moves pairs of a key and a position between two buffers, and returns its positions in one of them. Format builds each number's text once, then converts it to characters. Its data is fixed, because the text's length decides where its buffer doubles.
 const BUDGETS: &[(&str, f64, usize)] = &[
-    ("-v", 1.0, 0),
-    ("v+w", 1.0, 0),
-    ("v<w", 1.0, 0),
-    ("⌊v", 1.0, 0),
-    ("*v", 1.0, 0),
-    ("iv+1ₓ", 1.0, 0),
-    ("iv×0.5", 1.0, 0),
-    ("v×iv", 1.0, 0),
-    ("+/v", 1.0, 0),
-    ("⌈/iv", 1.0, 0),
-    ("+\\v", 1.0, 0),
-    ("v,w", 1.0, 0),
-    ("⌽v", 1.0, 0),
-    ("1⌽v", 1.0, 0),
-    ("⍉m", 1.0, 0),
-    ("⊖m", 1.0, 0),
-    ("((≢v)÷2)↑v", 1.0, 0),
-    ("((≢v)÷2)↓v", 1.0, 0),
-    ("[i]⌷v", 1.0, 0),
-    ("b#v", 1.0, 0),
-    ("⍸b", 1.0, 0),
-    (",m", 0.0, 0),
-    ("(⍴m)⍴v", 0.0, 0),
-    ("v⍳w", 1.0, 48),
-    ("iv⍳i", 1.0, 16),
-    ("i∊iv", 1.0, 16),
-    ("≠i", 1.0, 16),
-    ("∪i", 1.0, 24),
-    ("⍋v", 1.0, 24),
-    ("⍕q", 1.5, 0),
+    ("-v", 1.0, 0), ("v+w", 1.0, 0), ("v<w", 1.0, 0), ("⌊v", 1.0, 0), ("*v", 1.0, 0), ("iv+1ₓ", 1.0, 0), ("iv×0.5", 1.0, 0), ("v×iv", 1.0, 0),
+    ("+/v", 1.0, 0), ("⌈/iv", 1.0, 0), ("+\\v", 1.0, 0), ("v,w", 1.0, 0), ("⌽v", 1.0, 0), ("1⌽v", 1.0, 0), ("⍉m", 1.0, 0), ("⊖m", 1.0, 0),
+    ("((≢v)÷2)↑v", 1.0, 0), ("((≢v)÷2)↓v", 1.0, 0), ("[i]⌷v", 1.0, 0), ("b#v", 1.0, 0), ("⍸b", 1.0, 0), (",m", 0.0, 0), ("(⍴m)⍴v", 0.0, 0),
+    ("v⍳w", 1.0, 48), ("iv⍳i", 1.0, 16), ("i∊iv", 1.0, 16), ("≠i", 1.0, 16), ("∪i", 1.0, 24), ("⍋v", 1.0, 24), ("⍕q", 1.5, 0),
 ];
 
 /// The bytes that the result of `code` holds: its number of items times the size of one item in its storage.
@@ -158,8 +105,7 @@ fn result_bytes(session: &mut Session, code: &str) -> usize {
     result.value.and_then(|v| v.as_number()).and_then(|n| n.as_integer()).unwrap() as usize
 }
 
-/// The cases whose bytes allocated for each added item exceed their budget, with 25% and one byte per item to spare. Fixed costs, such
-/// as parsing the code, cancel in the difference between the runs at `N` and `8 * N` items.
+/// The cases whose bytes allocated for each added item exceed their budget, with 25% and one byte per item to spare. Fixed costs, such as parsing the code, cancel in the difference between the runs at `N` and `8 * N` items.
 fn allocation_failures() -> Vec<String> {
     let (mut small, mut large) = (session(N), session(8 * N));
     let added = (7 * N) as f64;
@@ -173,8 +119,7 @@ fn allocation_failures() -> Vec<String> {
     failures
 }
 
-/// Pervasive functions, reductions, catenation, indexing, search, Key, partitions, display and each are linear. So are loops of single-item updates and of appends, in their count. Grade is n log n. Each case
-/// in `BUDGETS` allocates within its budget.
+/// Pervasive functions, reductions, catenation, indexing, search, Key, partitions, display and each are linear. So are loops of single-item updates and of appends, in their count. Grade is n log n. Each case in `BUDGETS` allocates within its budget.
 #[test]
 fn costs_grow_as_expected() {
     rustymath::parallel::set_threads(1);

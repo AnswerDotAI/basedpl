@@ -46,6 +46,8 @@ pre.bpl ~ .cell-output pre,
   color: var(--quarto-hl-va-color);
 }
 
+.sourceCode.bpl .kw { font-weight: normal; }
+
 /* Language labels on the APL-family blocks, placed left of Quarto's copy button. A block gets a label when its language sets `content`. */
 pre.sourceCode::before {
   position: absolute;

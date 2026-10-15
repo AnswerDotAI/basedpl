@@ -1,20 +1,8 @@
-//! How long each function takes, compared with copying the same data. The unit is one copy, as `basedpl::timing` measures it. Moving
-//! data takes longer than simple arithmetic. A function that reads and writes each item once should therefore cost about one copy.
-//! The cases, their budgets and the data they use are in `speed.txt`. Most cases use a small `n` to keep the test fast. The
-//! `[images]` cases use an image of 36 million floats, far more than the caches hold, to measure chains whose cost is memory traffic.
-//! `tests/wasm-speed.mjs` times the same cases in the browser build, against their wasm budgets.
+//! How long each function takes, compared with copying the same data. The unit is one copy, as `basedpl::timing` measures it. Moving data takes longer than simple arithmetic. A function that reads and writes each item once should therefore cost about one copy. The cases, their budgets and the data they use are in `speed.txt`. Most cases use a small `n` to keep the test fast. The `[images]` cases use an image of 36 million floats, far more than the caches hold, to measure chains whose cost is memory traffic. The `[objectives]` cases time functions that `∂` will differentiate: a small network, a Gaussian mixture, k-means and a stencil. `tests/wasm-speed.mjs` times the same cases in the browser build, against their wasm budgets.
 //!
-//! Each case has a budget in copies: twice the most it has cost on a Mac and on CI's Linux runner, and at least half a copy. Counting
-//! copies corrects for a machine's overall speed. It doesn't correct for differences in caches and memory. A case can cost up to
-//! three times as many copies on one machine as on the other. Cases that compare the float widths instead budget the 32-bit time as a
-//! fraction of the 64-bit time. A case over its budget is timed again after the rest, by `timing::retried`. Each retry writes the
-//! case's earlier and new costs straight to stderr. Unlike `eprintln!` output, which the test harness captures, these lines appear
-//! even when the test passes. The test fails listing every case still over its budget after the last retry, as its section, code,
-//! cost and budget, in the form that `tests/wasm-speed.mjs` prints and `basedpl.bpltests.logged_costs` reads. To print every case's
-//! cost, set `BASEDPL_COSTS`: `BASEDPL_COSTS=1 cargo test --test speed -- --nocapture`.
+//! Each case has a budget in copies: twice the most it has cost on a Mac and on CI's Linux runner, and at least half a copy. Counting copies corrects for a machine's overall speed. It doesn't correct for differences in caches and memory. A case can cost up to three times as many copies on one machine as on the other. Cases that compare the float widths instead budget the 32-bit time as a fraction of the 64-bit time. A case over its budget is timed again after the rest, by `timing::retried`. Each retry writes the case's earlier and new costs straight to stderr. Unlike `eprintln!` output, which the test harness captures, these lines appear even when the test passes. The test fails listing every case still over its budget after the last retry, as its section, code, cost and budget, in the form that `tests/wasm-speed.mjs` prints and `basedpl.bpltests.logged_costs` reads. To print every case's cost, set `BASEDPL_COSTS`: `BASEDPL_COSTS=1 cargo test --test speed -- --nocapture`.
 //!
-//! Timings come from the development build, which `cargo test` and `cargo develop` share. `basedpl::timing` divides each case's time
-//! by a copy timed just before it. A change in the machine's speed during the run then affects both times.
+//! Timings come from the development build, which `cargo test` and `cargo develop` share. `basedpl::timing` divides each case's time by a copy timed just before it. A change in the machine's speed during the run then affects both times.
 use basedpl::timing;
 use std::io::Write;
 

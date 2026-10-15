@@ -1,13 +1,5 @@
-//! `•canvas`: drawing functions written in JavaScript. `•canvas Y` makes a drawing function from the JavaScript source `Y`. `X draw Y`
-//! gives a record of the source, the options `X` and the data `Y`, which displays as a canvas. Displaying it calls the JavaScript
-//! function with the canvas's 2D context, the data and the options, which `js.rs` converts to JavaScript values.
-use crate::{
-    data, display,
-    execution::Context,
-    js, keyed,
-    system::{native, Call, Valence::Ambivalent},
-    Error, ErrorAt, Value,
-};
+//! `•canvas`: drawing functions written in JavaScript. `•canvas Y` makes a drawing function from the JavaScript source `Y`. `X draw Y` gives a record of the source, the options `X` and the data `Y`, which displays as a canvas. Displaying it calls the JavaScript function with the canvas's 2D context, the data and the options, which `js.rs` converts to JavaScript values.
+use crate::{data, display, execution::Context, js, keyed, system::{native, Call, Valence::Ambivalent}, Error, ErrorAt, Value};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use std::sync::Arc;
 
@@ -22,18 +14,14 @@ pub(crate) fn function(source: Arc<str>) -> Value { Value::Function(native("•c
 
 pub(crate) fn factory(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> { Ok(function(data::text(right, span)?.into())) }
 
-/// `X draw Y`: a record of the drawing function's source, the options `X` and the data `Y`, displayed as a canvas. Without options,
-/// the JavaScript gets an empty object.
+/// `X draw Y`: a record of the drawing function's source, the options `X` and the data `Y`, displayed as a canvas. Without options, the JavaScript gets an empty object.
 pub(crate) fn draw(source: &str, options: Option<&Value>, data: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let options = options.cloned().unwrap_or_else(keyed::empty_record);
     keyed::vector(vec!["source".into(), "options".into(), "data".into()], vec![keyed::text(source), options, data.clone()])
-        .and_then(|canvas| canvas.with_renderer(display::renderer("canvas-renderer", render)))
-        .error_at(span, "canvas exceeds array limits")
+        .and_then(|canvas| canvas.with_renderer(display::renderer("canvas-renderer", render))).error_at(span, "canvas exceeds array limits")
 }
 
-/// The browser build sends the canvas as JSON, with its typed arrays as bytes, for the page to draw with `canvas.js`. The native build
-/// sends HTML that holds the same JSON and bytes, and runs `canvas.js` itself. Both send the text `canvas: N frames` when the options
-/// give `fps` and the data is a vector of `N` frames, and `canvas` otherwise.
+/// The browser build sends the canvas as JSON, with its typed arrays as bytes, for the page to draw with `canvas.js`. The native build sends HTML that holds the same JSON and bytes, and runs `canvas.js` itself. Both send the text `canvas: N frames` when the options give `fps` and the data is a vector of `N` frames, and `canvas` otherwise.
 fn render(_: Option<&Value>, canvas: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let (json, bytes) = js::serialize(&js::export(canvas).error_at(span, "canvas data must not hold functions")?);
     let json = json.to_string();

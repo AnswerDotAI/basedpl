@@ -1,13 +1,5 @@
-//! `•date` reads a moment, in seconds since the Unix epoch, from text or from a record of fields. `•date⁻¹` writes a moment as a record,
-//! or as text with a pattern. Patterns, field names and ISO 8601 text follow chrono.
-use crate::{
-    array::FloatWidth,
-    data::{text, Options},
-    execution::Context,
-    keyed,
-    primitive::real,
-    Error, ErrorAt, Number, Value,
-};
+//! `•date` reads a moment, in seconds since the Unix epoch, from text or from a record of fields. `•date⁻¹` writes a moment as a record, or as text with a pattern. Patterns, field names and ISO 8601 text follow chrono.
+use crate::{array::FloatWidth, data::{text, Options}, execution::Context, keyed, primitive::real, Error, ErrorAt, Number, Value};
 use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Timelike, Utc};
 use std::fmt::Write;
 
@@ -25,8 +17,7 @@ fn moment(x: f64) -> Option<DateTime<Utc>> {
     DateTime::from_timestamp(whole as i64, ((x - whole) * 1e9).round().min(999_999_999.0) as u32)
 }
 
-/// The fields of a record that `•date⁻¹` writes, named after chrono's accessors. `•date` reads the first seven. The last three follow
-/// from them, and `•date` ignores them.
+/// The fields of a record that `•date⁻¹` writes, named after chrono's accessors. `•date` reads the first seven. The last three follow from them, and `•date` ignores them.
 const FIELDS: [&str; 10] = ["year", "month", "day", "hour", "minute", "second", "nanosecond", "weekday", "ordinal", "iso_week"];
 
 /// The time zone that text and fields are in: a fixed offset east of UTC, or the system's local zone, which can change with the date.
@@ -38,9 +29,7 @@ impl Zone {
         let Some(zone) = opts.values.get("zone") else { return Ok(Self::Fixed(Utc.fix())) };
         if keyed::name(zone).as_deref() == Some("local") { return Ok(Self::Local); }
         let offset = real(zone, span)?;
-        FixedOffset::east_opt(offset as i32)
-            .filter(|_| offset.fract() == 0.0)
-            .map(Self::Fixed)
+        FixedOffset::east_opt(offset as i32).filter(|_| offset.fract() == 0.0).map(Self::Fixed)
             .ok_or_else(|| span.domain_error("•date zone must be \"local\" or whole seconds east of UTC, less than a day"))
     }
     /// The date and time at moment `t` in this zone.
@@ -71,15 +60,10 @@ fn date_time(fields: &[i64]) -> Option<NaiveDateTime> {
     let [year, month, day, hour, minute, second, nano] = fields else { return None };
     let small = |n: &i64| u32::try_from(*n).ok();
     NaiveDate::from_ymd_opt(i32::try_from(*year).ok()?, small(month)?, small(day)?)?.and_hms_nano_opt(
-        small(hour)?,
-        small(minute)?,
-        small(second)?,
-        small(nano)?,
-    )
+        small(hour)?, small(minute)?, small(second)?, small(nano)?)
 }
 
-/// `•date Y`: the moment that the text `Y` names, or one for each text in `Y`, or one for each position of a record of fields. A pattern,
-/// or the `pattern` and `zone` options, go on the left.
+/// `•date Y`: the moment that the text `Y` names, or one for each text in `Y`, or one for each position of a record of fields. A pattern, or the `pattern` and `zone` options, go on the left.
 pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let opts = Options::new("•date", left, Some("pattern"), &["pattern", "zone"], span)?;
     let zone = Zone::new(&opts, span)?;
@@ -92,8 +76,9 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
         let field = |i: usize, p: usize| -> Result<i64, Error> {
             // A missing month or day is 1, and a missing time field is 0.
             let Some(items) = &columns[i] else { return Ok([0, 1, 1, 0, 0, 0, 0][i]) };
-            match &items[p] { Value::Number(n) => n.integer().ok(), _ => None }
-            .ok_or_else(|| span.domain_error(format!("date field {} must be an integer", FIELDS[i])))
+            match &items[p] {
+                Value::Number(n) => n.integer().ok(), _ => None
+            }.ok_or_else(|| span.domain_error(format!("date field {} must be an integer", FIELDS[i])))
         };
         let moments = (0..shape.iter().product()).map(|p| {
             let values = (0..7).map(|i| field(i, p)).collect::<Result<Vec<_>, _>>()?;
@@ -113,15 +98,13 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
 /// `•date⁻¹`'s options. The browser build has no `locale`, which keeps chrono's locale data out of it.
 const WRITE_OPTIONS: &[&str] = if cfg!(web) { &["pattern", "zone"] } else { &["pattern", "zone", "locale"] };
 
-/// `•date⁻¹ T`: a record of the fields of each moment in `T`. With a pattern, the text of each moment. The `zone` option gives the time
-/// zone, and the `locale` option the language of names in the text.
+/// `•date⁻¹ T`: a record of the fields of each moment in `T`. With a pattern, the text of each moment. The `zone` option gives the time zone, and the `locale` option the language of names in the text.
 pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let opts = Options::new("•date⁻¹", left, Some("pattern"), WRITE_OPTIONS, span)?;
     let zone = Zone::new(&opts, span)?;
     #[cfg(not(web))]
     let locale = match opts.values.get("locale") {
-        Some(l) => Some(chrono::Locale::try_from(text(l, span)?.as_str()).map_err(|_| span.domain_error("unknown •date⁻¹ locale"))?),
-        None => None,
+        Some(l) => Some(chrono::Locale::try_from(text(l, span)?.as_str()).map_err(|_| span.domain_error("unknown •date⁻¹ locale"))?), None => None
     };
     let moments = right.elements().map(|e| real(&e, span).and_then(|x| moment(x).map(|t| zone.at(t)).ok_or_else(|| span.domain_error("invalid date"))));
     let moments = moments.collect::<Result<Vec<_>, _>>()?;

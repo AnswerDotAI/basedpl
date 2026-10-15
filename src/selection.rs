@@ -1,19 +1,13 @@
-use crate::{
-    array::{generated_len, Frame, Gather, Items},
-    primitive::{Selection, Targets},
-    Error, ErrorAt, ErrorKind, Number, Span, Value,
-};
+use crate::{array::{generated_len, Frame, Gather, Items}, primitive::{Selection, Targets}, Error, ErrorAt, ErrorKind, Number, Span, Value};
 use foldhash::{HashMap, HashMapExt};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SelectionKind { Item, Elements }
 
-// Labels exist only in a selective-assignment expression, never in name bindings.
-// Zero is fill, skipped on assignment. Nested items retain whole-item paths.
+// Labels exist only in a selective-assignment expression, never in name bindings. Zero is fill, skipped on assignment. Nested items retain whole-item paths.
 pub(crate) struct Labels { places: Places, nested: HashMap<usize, (Value, Vec<usize>)> }
 
-/// Where each label leads. Label `k` is the `k`th place, counting from 1. An array with no nested items labels its items by their
-/// offsets, so it needs no paths.
+/// Where each label leads. Label `k` is the `k`th place, counting from 1. An array with no nested items labels its items by their offsets, so it needs no paths.
 enum Places { Offsets(usize), Paths(Vec<Vec<usize>>) }
 
 impl Labels {
@@ -22,8 +16,7 @@ impl Labels {
         let (mut labels, array) = if matches!(original, Value::Array(_)) && !original.is_empty() && simple {
             let n = original.len();
             generated_len(original.shape()).error_at(span, "selection is too large")?;
-            let array = Value::integers(original.shape(), (1..=n as i64).collect())
-                .and_then(|a| a.with_layout(original.layout().clone()))
+            let array = Value::integers(original.shape(), (1..=n as i64).collect()).and_then(|a| a.with_layout(original.layout().clone()))
                 .error_at(span, "invalid selection labels")?;
             (Self { places: Places::Offsets(n), nested: HashMap::new() }, array)
         } else {
@@ -55,7 +48,11 @@ impl Labels {
             });
             path.pop();
         }
-        let prototype = if a.is_empty() { Self::prototype(&a.prototype(), &mut HashMap::new()).error_at(span, "invalid selection prototype")? } else { Value::Number(Number::from_integer(0)) };
+        let prototype = if a.is_empty() {
+            Self::prototype(&a.prototype(), &mut HashMap::new()).error_at(span, "invalid selection prototype")?
+        } else {
+            Value::Number(Number::from_integer(0))
+        };
         a.layout().collect(items, prototype).error_at(span, "invalid selection labels")
     }
     fn prototype(e: &Value, seen: &mut HashMap<usize, Value>) -> Result<Value, ErrorKind> {
@@ -71,9 +68,7 @@ impl Labels {
     fn place(&self, id: usize, targets: &mut Targets) -> bool {
         let Some(i) = id.checked_sub(1) else { return false };
         match &self.places {
-            Places::Offsets(n) if i < *n => targets.push(&[i]),
-            Places::Paths(paths) if i < paths.len() => targets.push(&paths[i]),
-            _ => return false,
+            Places::Offsets(n) if i < *n => targets.push(&[i]), Places::Paths(paths) if i < paths.len() => targets.push(&paths[i]), _ => return false
         }
         true
     }
@@ -84,7 +79,11 @@ impl Labels {
             let found = if let Some((_, path)) = self.nested.get(&selected.storage_id()) {
                 targets.push(path);
                 true
-            } else if let Some(n) = selected.as_number() { self.place(n.nonnegative_integer().error_at(span, "invalid selection label")?, &mut targets) } else { false };
+            } else if let Some(n) = selected.as_number() {
+                self.place(n.nonnegative_integer().error_at(span, "invalid selection label")?, &mut targets)
+            } else {
+                false
+            };
             if !found { return Err(span.error(ErrorKind::Index, "cannot assign to a missing item")); }
             values.fill(right, 1);
         }
@@ -98,7 +97,9 @@ impl Labels {
         let right = if right.has_keys() && selected.has_keys() {
             aligned = crate::keyed::reorder(right, &selected.layout().all_keys(), true).error_at(span, "replacement does not supply selected keys")?;
             &aligned
-        } else { right };
+        } else {
+            right
+        };
         if !right.is_singleton() && right.shape() != selected.shape() {
             return Err(span.error(ErrorKind::Length, "replacement shape does not match selection"));
         }
@@ -119,10 +120,7 @@ impl Labels {
             match item {
                 Value::Number(n) => label(i, n.nonnegative_integer().error_at(span, "invalid selection label")?, targets, values)?,
                 a @ Value::Array(_) => match self.nested.get(&a.storage_id()) {
-                    Some((_, path)) => {
-                        targets.push(path);
-                        values.push(right, pick(i));
-                    }
+                    Some((_, path)) => { targets.push(path); values.push(right, pick(i)); }
                     None => self.collect(&a, &right.at(pick(i)), span, targets, values)?,
                 },
                 Value::Character(_) | Value::Function(_) | Value::Operator(_) => return Err(span.domain_error("invalid selection")),

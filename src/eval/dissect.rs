@@ -1,19 +1,12 @@
 use super::*;
 
-pub(super) enum Expression {
-    Atom(Operand),
-    Operator(OperatorNode),
-    Call { function: Function, left: Option<Box<Self>>, right: Box<Self> },
-    Strand(Vec<Self>),
-}
+pub(super) enum Expression { Atom(Operand), Operator(OperatorNode), Call { function: Function, left: Option<Box<Self>>, right: Box<Self> }, Strand(Vec<Self>) }
 
 impl Expression {
     pub(super) fn binding(binding: &Binding) -> Option<Self> {
         match binding {
-            Binding::Value(a) => Some(Self::array(a)),
-            Binding::Function(f) => Some(Self::Atom(Operand::Function(f.clone()))),
-            Binding::Operator(op) => Some(Self::Operator(op.clone())),
-            _ => None,
+            Binding::Value(a) => Some(Self::array(a)), Binding::Function(f) => Some(Self::Atom(Operand::Function(f.clone()))),
+            Binding::Operator(op) => Some(Self::Operator(op.clone())), _ => None
         }
     }
     pub(super) fn array(value: &Value) -> Self { Self::Atom(Operand::Value(value.clone())) }

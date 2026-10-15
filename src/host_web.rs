@@ -1,23 +1,12 @@
-//! What the browser build takes from the page: the clock, file reads, Unicode normalization, `•fetch`'s transport and `•r`'s regular
-//! expressions. `host.rs` gives the native versions.
-use crate::{
-    data::{Request, Response},
-    execution::Context,
-    regex::Match,
-    Error,
-};
+//! What the browser build takes from the page: the clock, file reads, Unicode normalization, `•fetch`'s transport and `•r`'s regular expressions. `host.rs` gives the native versions.
+use crate::{data::{Request, Response}, execution::Context, regex::Match, Error};
 use js_sys::Uint8Array;
-use std::{
-    cell::RefCell,
-    io,
-    path::{Path, PathBuf},
-};
+use std::{cell::RefCell, io, path::{Path, PathBuf}};
 use web_sys::{Url, XmlHttpRequest, XmlHttpRequestResponseType};
 
 pub(crate) use web_time::Instant;
 
-/// The browser build takes no timing lock. `tests/wasm-speed.mjs` and `basedpl.bpltests.speed_costs` take it around the module's
-/// timing, through `tests/timing-lock.mjs`.
+/// The browser build takes no timing lock. `tests/wasm-speed.mjs` and `basedpl.bpltests.speed_costs` take it around the module's timing, through `tests/timing-lock.mjs`.
 pub fn timing_lock(_shared: bool) -> Result<(), String> { Ok(()) }
 
 thread_local! {
@@ -32,15 +21,13 @@ fn url(path: &Path) -> io::Result<String> {
     let path = path.to_string_lossy();
     BASE.with_borrow(|base| Url::new_with_base(&path, base)).map(|url| url.href()).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid URL"))
 }
-/// Sends a synchronous `XMLHttpRequest`, which a worker allows, and gives the response's status, headers and body. The request
-/// blocks the worker, and only ending the worker stops it.
+/// Sends a synchronous `XMLHttpRequest`, which a worker allows, and gives the response's status, headers and body. The request blocks the worker, and only ending the worker stops it.
 fn send(method: &str, url: &str, headers: &[(String, String)], body: Option<&[u8]>) -> Result<(u16, String, Vec<u8>), &'static str> {
     let request = XmlHttpRequest::new().map_err(|_| "this host has no XMLHttpRequest")?;
     request.open_with_async(method, url, false).map_err(|_| "invalid request")?;
     request.set_response_type(XmlHttpRequestResponseType::Arraybuffer);
     for (name, value) in headers { request.set_request_header(name, value).map_err(|_| "invalid header")?; }
-    match body { Some(body) => request.send_with_opt_u8_array(Some(body)), None => request.send() }
-    .map_err(|_| "the request failed")?;
+    match body { Some(body) => request.send_with_opt_u8_array(Some(body)), None => request.send() }.map_err(|_| "the request failed")?;
     let status = request.status().ok().filter(|&s| s != 0).ok_or("no response")?;
     let body = Uint8Array::new(&request.response().map_err(|_| "no response")?).to_vec();
     Ok((status, request.get_all_response_headers().unwrap_or_default(), body))
@@ -48,9 +35,8 @@ fn send(method: &str, url: &str, headers: &[(String, String)], body: Option<&[u8
 /// The bytes at `path`.
 pub(crate) fn read(path: &Path) -> io::Result<Vec<u8>> {
     match send("GET", &url(path)?, &[], None).map_err(io::Error::other)? {
-        (200..=299, _, body) => Ok(body),
-        (404, ..) => Err(io::ErrorKind::NotFound.into()),
-        (status, ..) => Err(io::Error::other(format!("HTTP status {status}"))),
+        (200..=299, _, body) => Ok(body), (404, ..) => Err(io::ErrorKind::NotFound.into()),
+        (status, ..) => Err(io::Error::other(format!("HTTP status {status}")))
     }
 }
 /// The response to `request`. CORS applies, and a relative URL resolves against the page's.
@@ -68,8 +54,7 @@ pub(crate) fn environment() -> Vec<(String, String)> { Vec::new() }
 /// `text` in the Unicode normalization form `form`, through `String.prototype.normalize`.
 pub(crate) fn normalize(form: &str, text: &str) -> String { js_sys::JsString::from(text).normalize(form).into() }
 
-/// A compiled `•r` pattern, in JavaScript's `RegExp` syntax. It holds text, because a BPL value must be `Send + Sync` and a `RegExp`
-/// isn't: each call compiles the pattern again.
+/// A compiled `•r` pattern, in JavaScript's `RegExp` syntax. It holds text, because a BPL value must be `Send + Sync` and a `RegExp` isn't: each call compiles the pattern again.
 #[derive(Debug)]
 pub(crate) struct Regex { pattern: String, groups: usize }
 impl Regex {
@@ -91,10 +76,7 @@ impl Regex {
         for found in js_sys::JsString::from(text).match_all(&regexp).into_iter().flatten() {
             let found: Array = found.unchecked_into();
             let index = Reflect::get(&found, &"index".into()).ok().and_then(|i| i.as_f64()).unwrap_or_default() as usize;
-            while units < index {
-                units += chars.next().map_or(1, char::len_utf16);
-                position += 1;
-            }
+            while units < index { units += chars.next().map_or(1, char::len_utf16); position += 1; }
             let groups = found.iter().skip(1).map(|g| g.as_string().unwrap_or_default()).collect();
             f(Match { text: found.get(0).as_string().unwrap_or_default(), position, groups })?;
         }

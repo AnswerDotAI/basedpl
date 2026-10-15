@@ -1,9 +1,4 @@
-use crate::{
-    agreement::Agreement,
-    array::{generated_len, saturated, Frame},
-    execution::Context,
-    Error, ErrorAt, ErrorKind, Number, Value,
-};
+use crate::{agreement::Agreement, array::{generated_len, saturated, Frame}, execution::Context, Error, ErrorAt, ErrorKind, Number, Value};
 use num_bigint::{BigInt, BigUint};
 use num_traits::{One, ToPrimitive, Zero};
 use rustymath::number_theory as nt;
@@ -48,10 +43,7 @@ fn factor_result(selector: Option<&Number>, n: BigUint, span: &Context<'_>) -> R
 
 fn nth_primes(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     generated_len(right.shape()).error_at(span, "prime result exceeds array limits")?;
-    let mut requests = right
-        .elements()
-        .enumerate()
-        .map(|(i, e)| {
+    let mut requests = right.elements().enumerate().map(|(i, e)| {
             // Prime indices count from 0: `⍭ 0` is 2.
             let n = number(&e, span)?.nonnegative_integer::<usize>().error_at(span, "prime indices must be nonnegative integers")?;
             Ok((n, i))
@@ -61,10 +53,7 @@ fn nth_primes(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let (mut primes, mut index, mut p) = (nt::Primes::new(0), 0, 0);
     let mut result = vec![exact(0); right.len()];
     for (n, i) in requests {
-        if n >= index {
-            p = primes.nth_with((n - index) as u64, || span.check_now())?.ok_or_else(|| beyond(span))?;
-            index = n + 1;
-        }
+        if n >= index { p = primes.nth_with((n - index) as u64, || span.check_now())?.ok_or_else(|| beyond(span))?; index = n + 1; }
         result[i] = exact(p);
     }
     Frame::of(right).collect(result, exact(0)).error_at(span, "invalid prime result")
@@ -72,7 +61,9 @@ fn nth_primes(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
 
 fn prime(selector: &Number, n: BigInt, span: &Context<'_>) -> Result<Value, Error> {
     let op = selector.integer().error_at(span, "prime selector must be integral")?;
-    if op == 1 { return Ok(Value::Number(Number::from_bool(match n.to_biguint() { Some(n) => nt::is_prime_with(&n, || span.check_now())?, None => false }))); }
+    if op == 1 {
+        return Ok(Value::Number(Number::from_bool(match n.to_biguint() { Some(n) => nt::is_prime_with(&n, || span.check_now())?, None => false })));
+    }
     if op == 2 && n < BigInt::from(2) { return Ok(exact(2)); }
     let n = n.to_biguint().ok_or_else(|| span.domain_error("expected a nonnegative integer"))?;
     match op {
@@ -96,9 +87,7 @@ pub(crate) fn call(factor: bool, left: Option<&Value>, right: &Value, span: &Con
 /// `⍭⁻¹`: the number of primes below each item, which is a prime's index.
 pub(crate) fn index(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     each_cell(None, right, span, |_, n| {
-        let Some(target) = n.to_u64() else {
-            return if n < BigInt::zero() { Ok(exact(0)) } else { Err(beyond(span)) };
-        };
+        let Some(target) = n.to_u64() else { return if n < BigInt::zero() { Ok(exact(0)) } else { Err(beyond(span)) }; };
         Ok(exact(nt::prime_count_with(target, || span.check_now())?))
     })
 }

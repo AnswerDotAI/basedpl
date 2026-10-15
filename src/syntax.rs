@@ -1,11 +1,8 @@
 use crate::{
-    array::FloatWidth,
-    number::Math,
-    primitive::{OperatorKind, Primitive, Superscript},
-    symbols::canonical,
-    Error, ErrorAt, ErrorKind, Number, Source, Span, Value,
+    array::FloatWidth, number::Math, primitive::{OperatorKind, Primitive, Superscript}, symbols::canonical,
+    Error, ErrorAt, ErrorKind, Number, Source, Span, Value
 };
-use std::{iter::Peekable, str::CharIndices, sync::{Arc, atomic::{AtomicUsize, Ordering::Relaxed}}};
+use std::{iter::Peekable, str::CharIndices, sync::{atomic::{AtomicUsize, Ordering::Relaxed}, Arc}};
 use unicode_script::{Script, UnicodeScript};
 
 #[derive(Clone, Debug)]
@@ -45,12 +42,7 @@ pub(crate) enum ListForm {
 pub(crate) enum DefinitionKind { Function, MonadicOperator, DyadicOperator }
 
 #[derive(Debug)]
-pub(crate) struct Definition {
-    pub bodies: Vec<Vec<Statement>>,
-    pub span: Span,
-    pub kind: DefinitionKind,
-    names: AtomicUsize,
-}
+pub(crate) struct Definition { pub bodies: Vec<Vec<Statement>>, pub span: Span, pub kind: DefinitionKind, names: AtomicUsize }
 impl Definition {
     /// The most names any call of this definition has bound. A call's frame starts with room for that many.
     pub fn names(&self) -> usize { self.names.load(Relaxed) }
@@ -59,9 +51,7 @@ impl Definition {
 }
 
 fn definition_kind(nodes: &[Node]) -> DefinitionKind {
-    nodes
-        .iter()
-        .map(|n| match &n.kind {
+    nodes.iter().map(|n| match &n.kind {
             NodeKind::Name(name) if name == "⍹" => DefinitionKind::DyadicOperator,
             NodeKind::Name(name) if name == "⍶" => DefinitionKind::MonadicOperator,
             NodeKind::Group(nodes) | NodeKind::Run(nodes) => definition_kind(nodes),
@@ -84,12 +74,7 @@ pub(crate) struct Statement { pub nodes: Vec<Node>, pub kind: StatementKind }
 
 #[derive(Clone, Copy, Debug)]
 /// A predicate ends with `?`. When it fails, the dfn moves on to its next body.
-pub(crate) enum StatementKind {
-    Expression,
-    DefaultArgument,
-    Predicate,
-    ErrorGuard { index: usize },
-}
+pub(crate) enum StatementKind { Expression, DefaultArgument, Predicate, ErrorGuard { index: usize } }
 
 fn statement(nodes: Vec<Node>) -> Result<Statement, ParseFailure> {
     let mut guard = None;
@@ -104,7 +89,9 @@ fn statement(nodes: Vec<Node>) -> Result<Statement, ParseFailure> {
         StatementKind::ErrorGuard { index }
     } else if matches!(&nodes[0].kind, NodeKind::Name(name) if name == "⍺") && matches!(nodes.get(1).map(|n| &n.kind), Some(NodeKind::Assign)) {
         StatementKind::DefaultArgument
-    } else { StatementKind::Expression };
+    } else {
+        StatementKind::Expression
+    };
     Ok(Statement { nodes, kind })
 }
 
@@ -148,19 +135,13 @@ struct Token { kind: TokenKind, span: Span }
 
 fn digits(chars: &mut Peekable<CharIndices<'_>>) -> usize {
     let mut count = 0;
-    while chars.peek().is_some_and(|(_, c)| c.is_ascii_digit()) {
-        chars.next();
-        count += 1;
-    }
+    while chars.peek().is_some_and(|(_, c)| c.is_ascii_digit()) { chars.next(); count += 1; }
     count
 }
 
 fn real_literal(chars: &mut Peekable<CharIndices<'_>>) -> Result<(), &'static str> {
     if chars.peek().is_some_and(|(_, c)| canonical(*c) == '¯') { chars.next(); }
-    if chars.peek().is_some_and(|(_, c)| canonical(*c) == '∞') {
-        chars.next();
-        return Ok(());
-    }
+    if chars.peek().is_some_and(|(_, c)| canonical(*c) == '∞') { chars.next(); return Ok(()); }
     let mut count = digits(chars);
     if chars.peek().is_some_and(|(_, c)| canonical(*c) == '.') && chars.clone().nth(1).is_some_and(|(_, c)| c.is_ascii_digit()) {
         chars.next();
@@ -180,8 +161,7 @@ pub(crate) const EXPONENT: Suffix = (&['e', 'E'], 'ₑ');
 const IMAGINARY: Suffix = (&['J', 'j'], 'ⱼ');
 const DENOMINATOR: Suffix = (&['r'], 'ᵣ');
 const EXACT: Suffix = (&[], 'ₓ');
-/// The markers of float widths: `ₕ` for 16-bit ("half"), `ₛ` for 32-bit ("single") and `ₚ` for 64-bit ("precise"). Unicode has no
-/// subscript `d`.
+/// The markers of float widths: `ₕ` for 16-bit ("half"), `ₛ` for 32-bit ("single") and `ₚ` for 64-bit ("precise"). Unicode has no subscript `d`.
 const WIDTHS: [(Suffix, FloatWidth); 3] = [((&[], 'ₕ'), FloatWidth::F16), ((&[], 'ₛ'), FloatWidth::F32), ((&[], 'ₚ'), FloatWidth::F64)];
 const SUFFIXES: [Suffix; 7] = [EXPONENT, IMAGINARY, DENOMINATOR, EXACT, WIDTHS[0].0, WIDTHS[1].0, WIDTHS[2].0];
 
@@ -189,7 +169,7 @@ const SUFFIXES: [Suffix; 7] = [EXPONENT, IMAGINARY, DENOMINATOR, EXACT, WIDTHS[0
 pub(crate) fn subscript(c: char) -> bool { SUFFIXES.iter().any(|s| s.1 == c) }
 
 /// The marker that writes floats of `width`.
-pub(crate) fn width_marker(width: FloatWidth) -> char { WIDTHS.iter().find(|w| w.1 == width).expect("every width has a marker").0.1 }
+pub(crate) fn width_marker(width: FloatWidth) -> char { WIDTHS.iter().find(|w| w.1 == width).expect("every width has a marker").0 .1 }
 
 /// What a number marker after a literal makes its numbers: exact, or floats of one width.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -202,44 +182,32 @@ impl Mark {
 }
 
 /// Consumes a number marker when one comes next.
-fn mark(chars: &mut Peekable<CharIndices<'_>>) -> Option<Mark> {
-    if suffix(chars, EXACT) { return Some(Mark::Exact); }
-    width_mark(chars).map(Mark::Width)
-}
+fn mark(chars: &mut Peekable<CharIndices<'_>>) -> Option<Mark> { if suffix(chars, EXACT) { return Some(Mark::Exact); } width_mark(chars).map(Mark::Width) }
 
 /// Consumes a float width's marker when one comes next, and gives the width.
-fn width_mark(chars: &mut Peekable<CharIndices<'_>>) -> Option<FloatWidth> {
-    WIDTHS.iter().find(|&&(s, _)| suffix(chars, s)).map(|&(_, w)| w)
-}
+fn width_mark(chars: &mut Peekable<CharIndices<'_>>) -> Option<FloatWidth> { WIDTHS.iter().find(|&&(s, _)| suffix(chars, s)).map(|&(_, w)| w) }
 
 /// Whether `chars` starts a part of a number: a digit, `¯`, `∞`, or a point before a digit.
 fn number_part(mut chars: impl Iterator<Item = (usize, char)>) -> bool {
     match chars.next().map(|(_, c)| canonical(c)) {
-        Some(c) if c.is_ascii_digit() || matches!(c, '¯' | '∞') => true,
-        Some('.') => chars.next().is_some_and(|(_, c)| c.is_ascii_digit()),
-        _ => false,
+        Some(c) if c.is_ascii_digit() || matches!(c, '¯' | '∞') => true, Some('.') => chars.next().is_some_and(|(_, c)| c.is_ascii_digit()), _ => false
     }
 }
 
-/// Whether `suffix` comes next: its subscript, or one of its plain letters with a number part after it, as in `1e5`. A plain
-/// letter before anything else starts a name, so `2edges` is `2` beside `edges`.
+/// Whether `suffix` comes next: its subscript, or one of its plain letters with a number part after it, as in `1e5`. A plain letter before anything else starts a name, so `2edges` is `2` beside `edges`.
 fn suffix_follows(chars: &Peekable<CharIndices<'_>>, (plain, sub): Suffix) -> bool {
     let mut ahead = chars.clone();
     match ahead.next() { Some((_, c)) if c == sub => true, Some((_, c)) if plain.contains(&c) => number_part(ahead), _ => false }
 }
 
 /// Consumes `suffix` when it comes next, and gives whether it did.
-fn suffix(chars: &mut Peekable<CharIndices<'_>>, suffix: Suffix) -> bool {
-    let follows = suffix_follows(chars, suffix);
-    if follows { chars.next(); }
-    follows
-}
+fn suffix(chars: &mut Peekable<CharIndices<'_>>, suffix: Suffix) -> bool { let follows = suffix_follows(chars, suffix); if follows { chars.next(); } follows }
 
-/// The number that literal text writes, read by `Number::parse` after each subscript suffix becomes its plain letter. A float with no
-/// width marker takes `width`. `•vfi` shares `Number::parse` and reads only the plain letters.
+/// The number that literal text writes, read by `Number::parse` after each subscript suffix becomes its plain letter. A float with no width marker takes `width`. `•vfi` shares `Number::parse` and reads only the plain letters.
 fn literal_number(text: &str, width: FloatWidth) -> Result<Number, ErrorKind> {
     let (text, width) = WIDTHS.iter().find_map(|&(s, w)| text.strip_suffix(s.1).map(|t| (t, w))).unwrap_or((text, width));
-    Number::parse(&text.chars().map(canonical).map(|c| SUFFIXES.iter().find(|s| s.1 == c).and_then(|s| s.0.first()).copied().unwrap_or(c)).collect::<String>(), width)
+    Number::parse(
+        &text.chars().map(canonical).map(|c| SUFFIXES.iter().find(|s| s.1 == c).and_then(|s| s.0.first()).copied().unwrap_or(c)).collect::<String>(), width)
 }
 
 /// A number written inside `[…]ₓ`. An integer's digits read exactly, and a whole float becomes exact.
@@ -253,8 +221,7 @@ fn exact_number(text: &str) -> Result<Number, ErrorKind> {
 /// The empty numeric vector whose prototype is `fill`.
 pub(crate) fn zilde(fill: Number) -> Value { Value::empty([0], Value::Number(fill)).unwrap() }
 
-/// Reads the numbers and `⍬`s inside each `[…]` and `(…)` that has a number marker again, from their own source text, at any depth:
-/// as exact after `ₓ`, and as floats or complex numbers of the marked width after `ₕ`, `ₛ` or `ₚ`. Booleans stay as they are.
+/// Reads the numbers and `⍬`s inside each `[…]` and `(…)` that has a number marker again, from their own source text, at any depth: as exact after `ₓ`, and as floats or complex numbers of the marked width after `ₕ`, `ₛ` or `ₚ`. Booleans stay as they are.
 fn mark_literals(tokens: &mut [Token]) -> Result<(), Error> {
     let mut open = Vec::new();
     for i in 0..tokens.len() {
@@ -300,8 +267,7 @@ fn run_on(chars: &mut Peekable<CharIndices<'_>>, digit: bool) -> Option<usize> {
 
 fn han(c: char) -> bool { c >= '\u{2e80}' && c.script() == Script::Han }
 
-/// Whether `c` can start or continue a name: a non-Han letter that isn't a glyph, a superscript or a numeric suffix, or `_`,
-/// `∆` or `⍙`. Digits end a name.
+/// Whether `c` can start or continue a name: a non-Han letter that isn't a glyph, a superscript or a numeric suffix, or `_`, `∆` or `⍙`. Digits end a name.
 pub(crate) fn name_char(c: char) -> bool {
     ((c.is_alphabetic() && !(han(c) || matches!(c, 'ᵀ' | 'ᵘ') || subscript(c))) || matches!(c, '_' | '∆' | '⍙')) && Primitive::from_glyph(c).is_none()
 }
@@ -316,8 +282,7 @@ pub fn subscripts() -> String { [SUBSCRIPT_DIGITS, "₋"].concat() }
 /// The value of `c` among `digits`, such as `²` among the superscript digits.
 fn script_digit(digits: &str, c: char) -> Option<i64> { digits.chars().position(|d| d == c).map(|i| i as i64) }
 
-/// The integer that a superscript or subscript writes, from its first character `c`: a digit, or the minus (`⁻` or `₋`) of a
-/// negative integer. `what` names the kind in errors.
+/// The integer that a superscript or subscript writes, from its first character `c`: a digit, or the minus (`⁻` or `₋`) of a negative integer. `what` names the kind in errors.
 fn script_integer(c: char, chars: &mut Peekable<CharIndices<'_>>, digits: &str, what: &str) -> Result<i64, (ErrorKind, String)> {
     let (mut value, mut count) = script_digit(digits, c).map_or((0, 0), |d| (d, 1));
     while let Some(d) = chars.peek().and_then(|&(_, c)| script_digit(digits, c)) {
@@ -332,10 +297,7 @@ fn script_integer(c: char, chars: &mut Peekable<CharIndices<'_>>, digits: &str, 
 const UNQUOTED: &str = "_ quotes the next character into a name, and there is none";
 const DOLLAR: &str = "$ and one letter is a constant ($t, $f, $n, $a or $d) or a handler's error ($e)";
 
-/// Reads the rest of a name. A letter, `∆` or `⍙` continues it, and a digit ends it, as it ends a glyph. `_` quotes the next
-/// character into the name, and a quoted digit takes the digits after it, so `x_12` is one name. After a dot, digits continue a
-/// key, so `T.q1` names the key `q1`. A lone `_`, before a space, `]`, `)`, `←`, `;`, `⋄` or the end, is the name `_`. Any other
-/// `_` with nothing to quote gives the position after it.
+/// Reads the rest of a name. A letter, `∆` or `⍙` continues it, and a digit ends it, as it ends a glyph. `_` quotes the next character into the name, and a quoted digit takes the digits after it, so `x_12` is one name. After a dot, digits continue a key, so `T.q1` names the key `q1`. A lone `_`, before a space, `]`, `)`, `←`, `;`, `⋄` or the end, is the name `_`. Any other `_` with nothing to quote gives the position after it.
 fn name(chars: &mut Peekable<CharIndices<'_>>, key: bool) -> Result<(), (usize, &'static str)> {
     let lone = |c: Option<&(usize, char)>| c.is_none_or(|&(_, c)| c.is_whitespace() || matches!(canonical(c), ']' | ')' | '←' | ';' | '⋄'));
     let mut first = true;
@@ -346,30 +308,22 @@ fn name(chars: &mut Peekable<CharIndices<'_>>, key: bool) -> Result<(), (usize, 
                 if first && lone(chars.peek()) { return Ok(()); }
                 match chars.next() {
                     Some((at, q)) if han(q) => return Err((at + q.len_utf8(), "Hanzi are reserved for glyph spellings, not names")),
-                    Some((_, q)) if !q.is_whitespace() => {
-                        if q.is_ascii_digit() { digits(chars); }
-                    }
+                    Some((_, q)) if !q.is_whitespace() => { if q.is_ascii_digit() { digits(chars); } }
                     _ => return Err((i + 1, UNQUOTED)),
                 }
             }
-            Some(&(_, c)) if name_char(c) || (key && c.is_ascii_digit()) => {
-                chars.next();
-            }
+            Some(&(_, c)) if name_char(c) || (key && c.is_ascii_digit()) => { chars.next(); }
             _ => return Ok(()),
         }
         first = false;
     }
 }
 
-/// Whether a line break beside a token of `kind` separates nothing. `before` says the token comes before the line break.
-/// Every other line break reads as `⋄`.
+/// Whether a line break beside a token of `kind` separates nothing. `before` says the token comes before the line break. Every other line break reads as `⋄`.
 fn absorbs_line_break(kind: &TokenKind, before: bool) -> bool {
     use TokenKind::*;
     match kind {
-        Separator | Semicolon | Predicate => true,
-        Open | BracketOpen | BraceOpen => before,
-        Close(_) | BracketClose(_) | BraceClose => !before,
-        _ => false,
+        Separator | Semicolon | Predicate => true, Open | BracketOpen | BraceOpen => before, Close(_) | BracketClose(_) | BraceClose => !before, _ => false
     }
 }
 
@@ -431,15 +385,14 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
             '\'' => {
                 let unclosed = |at| Err(span(at).error(ErrorKind::Syntax, "unclosed character literal").into());
                 let c = match chars.next() { Some((_, c)) if c != '\n' => c, next => return unclosed(next.map_or(len, |(i, _)| i)) };
-                if c == '\'' && chars.peek().is_none_or(|&(_, c)| c != '\'') { TokenKind::Literal(crate::keyed::text("")) } else {
+                if c == '\'' && chars.peek().is_none_or(|&(_, c)| c != '\'') {
+                    TokenKind::Literal(crate::keyed::text(""))
+                } else {
                     match chars.peek() {
-                        Some((_, '\'')) => {
-                            chars.next();
-                        }
+                        Some((_, '\'')) => { chars.next(); }
                         None | Some((_, '\n')) => return unclosed(position(chars, len)),
                         Some(&(i, c)) => {
-                            return Err(span(i + c.len_utf8())
-                                .error(ErrorKind::Syntax, "a character literal holds one character (strings use double quotes)")
+                            return Err(span(i + c.len_utf8()).error(ErrorKind::Syntax, "a character literal holds one character (strings use double quotes)")
                                 .into())
                         }
                     }
@@ -453,10 +406,7 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
                         Some((_, '"')) if chars.next_if(|&(_, c)| c == '"').is_some() => text.push('"'),
                         Some((_, '"')) => break,
                         // Each line ending, whatever its form, reads as one newline. Indentation stays as written.
-                        Some((_, '\r')) => {
-                            chars.next_if(|&(_, c)| c == '\n');
-                            text.push('\n');
-                        }
+                        Some((_, '\r')) => { chars.next_if(|&(_, c)| c == '\n'); text.push('\n'); }
                         Some((_, c)) => text.push(c),
                         None => return Err(ParseFailure::Incomplete(span(len).error(ErrorKind::Syntax, "unclosed string"))),
                     }
@@ -497,19 +447,13 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
                 TokenKind::System(format!("•{}", &source.text[start + raw.len_utf8()..position(chars, len)]))
             }
             '⎕' => TokenKind::Output,
-            ':' if chars.peek().is_some_and(|(_, c)| canonical(*c) == ':') => {
-                chars.next();
-                TokenKind::ErrorGuard
-            }
+            ':' if chars.peek().is_some_and(|(_, c)| canonical(*c) == ':') => { chars.next(); TokenKind::ErrorGuard }
             ':' => TokenKind::Function(Primitive::Keys),
             '?' => TokenKind::Predicate,
             '{' => TokenKind::BraceOpen,
             '}' => TokenKind::BraceClose,
             '⍺' | '⍵' | '⍶' | '⍹' | '∇' | '⍢' => TokenKind::Name(c.to_string()),
-            '⍝' => {
-                while chars.peek().is_some_and(|(_, c)| *c != '\n') { chars.next(); }
-                return Ok(None);
-            }
+            '⍝' => { while chars.peek().is_some_and(|(_, c)| *c != '\n') { chars.next(); } return Ok(None); }
             'ᵀ' => TokenKind::Operator(OperatorKind::Super(Superscript::Transpose)),
             'ᵘ' => TokenKind::Operator(OperatorKind::Super(Superscript::Unit)),
             c if c == '⁻' || script_digit(SUPERSCRIPT_DIGITS, c).is_some() => {
@@ -521,18 +465,14 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
             }
             c if c.is_whitespace() => return Ok(None),
             c => match (OperatorKind::from_glyph(c), Primitive::from_glyph(c)) {
-                (Some(op), _) => TokenKind::Operator(op),
-                (_, Some(f)) => TokenKind::Function(f),
-                _ => return Err(span(start + raw.len_utf8()).error(ErrorKind::Unsupported, format!("{raw:?} is not supported yet")).into()),
+                (Some(op), _) => TokenKind::Operator(op), (_, Some(f)) => TokenKind::Function(f),
+                _ => return Err(span(start + raw.len_utf8()).error(ErrorKind::Unsupported, format!("{raw:?} is not supported yet")).into())
             },
         }
     }))
 }
 
-/// Each token and comment of `text` with its highlight class, as byte ranges in order. The class is the kind that `symbols` gives a
-/// glyph, or `"literal"` for a number, `"string"` for a character or string literal, `"system"` for a system name and `"comment"`
-/// for a comment. Names and brackets have no class. Text that fails to lex has none either, except an unclosed literal, which is a
-/// `"string"` up to where lexing stopped.
+/// Each token and comment of `text` with its highlight class, as byte ranges in order. The class is the kind that `symbols` gives a glyph, or `"literal"` for a number, `"string"` for a character or string literal, `"system"` for a system name and `"comment"` for a comment. Names and brackets have no class. Text that fails to lex has none either, except an unclosed literal, which is a `"string"` up to where lexing stopped.
 pub fn highlight(text: &str) -> Vec<(std::ops::Range<usize>, &'static str)> {
     let source = Source::new("<highlight>", text);
     let mut chars = source.text.char_indices().peekable();
@@ -554,15 +494,13 @@ pub fn highlight(text: &str) -> Vec<(std::ops::Range<usize>, &'static str)> {
 
 /// A token's highlight class: its glyph's kind in `symbols`, or the class its kind of token implies.
 fn class(kind: &TokenKind, text: &str) -> Option<&'static str> {
-    if let Some(symbol) = text.parse::<char>().ok().and_then(|c| {
-        crate::symbols::symbols().iter().find(|s| s.glyph.chars().eq([canonical(c)]))
-    }) { return Some(symbol.kind); }
+    if let Some(symbol) = text.parse::<char>().ok().and_then(|c| crate::symbols::symbols().iter().find(|s| s.glyph.chars().eq([canonical(c)]))) {
+        return Some(symbol.kind);
+    }
     match kind {
         TokenKind::Literal(_) => Some(if text.starts_with(['"', '\'']) { "string" } else { "literal" }),
-        TokenKind::Operator(OperatorKind::Super(_)) => Some("monadic-operator"),
-        TokenKind::Subscript(_) | TokenKind::ErrorGuard => Some("syntax"),
-        TokenKind::System(_) => Some("system"),
-        _ => None,
+        TokenKind::Operator(OperatorKind::Super(_)) => Some("monadic-operator"), TokenKind::Subscript(_) | TokenKind::ErrorGuard => Some("syntax"),
+        TokenKind::System(_) => Some("system"), _ => None
     }
 }
 
@@ -570,8 +508,7 @@ fn class(kind: &TokenKind, text: &str) -> Option<&'static str> {
 pub fn in_code(text: &str) -> bool {
     match highlight(text).pop() {
         Some((range, "comment")) => range.end < text.len(),
-        Some((range, "string")) if range.end == text.len() => lex(&Source::new("<literal>", &text[range]), FloatWidth::F64).is_ok(),
-        _ => true,
+        Some((range, "string")) if range.end == text.len() => lex(&Source::new("<literal>", &text[range]), FloatWidth::F64).is_ok(), _ => true
     }
 }
 
@@ -590,12 +527,7 @@ pub(crate) fn cover(nodes: &[Node]) -> Span {
 }
 
 /// Nodes and separators, before the enclosing delimiters give the separators their meaning.
-enum Piece {
-    Node(Node),
-    Diamond,
-    Semicolon(Span),
-    Predicate(Span),
-}
+enum Piece { Node(Node), Diamond, Semicolon(Span), Predicate(Span) }
 
 struct Parser<'a> { tokens: &'a [Token], pos: usize }
 impl Parser<'_> {
@@ -605,24 +537,13 @@ impl Parser<'_> {
             self.pos += 1;
             let mut span = token.span.clone();
             let kind = match &token.kind {
-                TokenKind::Separator => {
-                    pieces.push(Piece::Diamond);
-                    continue;
-                }
-                TokenKind::Semicolon => {
-                    pieces.push(Piece::Semicolon(span));
-                    continue;
-                }
-                TokenKind::Predicate => {
-                    pieces.push(Piece::Predicate(span));
-                    continue;
-                }
+                TokenKind::Separator => { pieces.push(Piece::Diamond); continue; }
+                TokenKind::Semicolon => { pieces.push(Piece::Semicolon(span)); continue; }
+                TokenKind::Predicate => { pieces.push(Piece::Predicate(span)); continue; }
                 TokenKind::Close(_) | TokenKind::BracketClose(_) | TokenKind::BraceClose => {
                     let matched = open.is_some_and(|o| {
                         matches!(
-                            (&o.kind, &token.kind),
-                            (TokenKind::Open, TokenKind::Close(_))
-                                | (TokenKind::BracketOpen, TokenKind::BracketClose(_))
+                            (&o.kind, &token.kind), (TokenKind::Open, TokenKind::Close(_)) | (TokenKind::BracketOpen, TokenKind::BracketClose(_))
                                 | (TokenKind::BraceOpen, TokenKind::BraceClose)
                         )
                     });
@@ -665,16 +586,14 @@ impl Parser<'_> {
     }
 }
 
-/// The nodes between separators. `⋄` always separates, and `;` only when `semicolons` is set. Elsewhere `;` is an error.
-/// `?` belongs only in dfns.
+/// The nodes between separators. `⋄` always separates, and `;` only when `semicolons` is set. Elsewhere `;` is an error. `?` belongs only in dfns.
 fn split(pieces: Vec<Piece>, semicolons: bool) -> Result<Vec<Vec<Node>>, ParseFailure> {
     let mut parts = vec![Vec::new()];
     for piece in pieces {
         match piece {
             Piece::Node(n) => parts.last_mut().unwrap().push(n),
             Piece::Semicolon(s) if !semicolons => return Err(invalid(&s, "; separates items in brackets and bodies in braces, and nowhere else")),
-            Piece::Predicate(s) => return Err(invalid(&s, "? ends a predicate, which belongs in a dfn")),
-            _ => parts.push(Vec::new()),
+            Piece::Predicate(s) => return Err(invalid(&s, "? ends a predicate, which belongs in a dfn")), _ => parts.push(Vec::new())
         }
     }
     Ok(parts)
@@ -685,21 +604,14 @@ fn statements(pieces: Vec<Piece>) -> Result<Vec<Vec<Node>>, ParseFailure> {
     split(pieces, false)?.into_iter().filter(|nodes| !nodes.is_empty()).map(expression).collect()
 }
 
-/// A dfn's bodies, separated by `;`. A line break or `⋄` ends a statement, and `?` ends a predicate. Every body but the
-/// last needs a predicate: a body without one always returns, so the bodies after it could never run. A body that ends
-/// after its predicate returns no result.
+/// A dfn's bodies, separated by `;`. A line break or `⋄` ends a statement, and `?` ends a predicate. Every body but the last needs a predicate: a body without one always returns, so the bodies after it could never run. A body that ends after its predicate returns no result.
 fn bodies(pieces: Vec<Piece>, span: &Span) -> Result<Vec<Vec<Statement>>, ParseFailure> {
     let (mut bodies, mut ends, mut body, mut nodes) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for piece in pieces {
         match piece {
-            Piece::Node(n) => nodes.push(n),
-            Piece::Diamond => end_statement(&mut body, &mut nodes, None)?,
+            Piece::Node(n) => nodes.push(n), Piece::Diamond => end_statement(&mut body, &mut nodes, None)?,
             Piece::Predicate(s) => end_statement(&mut body, &mut nodes, Some(s))?,
-            Piece::Semicolon(s) => {
-                end_statement(&mut body, &mut nodes, None)?;
-                bodies.push(std::mem::take(&mut body));
-                ends.push(s);
-            }
+            Piece::Semicolon(s) => { end_statement(&mut body, &mut nodes, None)?; bodies.push(std::mem::take(&mut body)); ends.push(s); }
         }
     }
     end_statement(&mut body, &mut nodes, None)?;
@@ -761,8 +673,7 @@ fn rows(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
 /// Whether nothing comes between two nodes in the source.
 pub(crate) fn touching(a: &Node, b: &Node) -> bool { a.span.range.end == b.span.range.start }
 
-/// Brackets build arrays. A space separates items, `;` separates items that contain spaces, and `⋄` or a line break
-/// separates major cells. Brackets round one item make a one-item vector.
+/// Brackets build arrays. A space separates items, `;` separates items that contain spaces, and `⋄` or a line break separates major cells. Brackets round one item make a one-item vector.
 fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
     let semicolon = pieces.iter().any(|p| matches!(p, Piece::Semicolon(_)));
     let diamond = pieces.iter().any(|p| matches!(p, Piece::Diamond));
@@ -770,25 +681,23 @@ fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
     let mut parts = split(pieces, true)?;
     if diamond {
         // A row that is a single item is that item's major cell.
-        let cells = diamond_rows(parts, span)?
-            .into_iter()
-            .map(|nodes| {
-                let row = row(nodes)?;
-                Ok(match row.kind { NodeKind::ArrayLiteral { mut cells, .. } if cells.len() == 1 => cells.pop().unwrap(), _ => vec![row] })
-            })
-            .collect::<Result<_, ParseFailure>>()?;
+        let cells = diamond_rows(parts, span)?.into_iter().map(|nodes| {
+            let row = row(nodes)?;
+            Ok(match row.kind { NodeKind::ArrayLiteral { mut cells, .. } if cells.len() == 1 => cells.pop().unwrap(), _ => vec![row] })
+        }).collect::<Result<_, ParseFailure>>()?;
         return Ok(NodeKind::ArrayLiteral { cells, form: ListForm::Cells, record: false });
     }
     let cells = if semicolon {
         if parts.last().is_some_and(Vec::is_empty) { return Err(invalid(span, "a trailing ; leaves an empty item: [x] is already a one-item vector")); }
         if parts.iter().any(Vec::is_empty) { return Err(invalid(span, "empty item between semicolons")); }
         parts.into_iter().map(expression).collect::<Result<Vec<_>, _>>()?
-    } else { items(parts.pop().unwrap())? };
+    } else {
+        items(parts.pop().unwrap())?
+    };
     Ok(NodeKind::ArrayLiteral { record: cells.iter().any(|c| key_colon(c).is_some()), cells, form: ListForm::Items })
 }
 
-/// `[…]` or `(…)` with a number marker, whose numbers the lexer has already read as the marker says. Every item must be a literal,
-/// and an empty `[]` is the empty vector of the marked numbers.
+/// `[…]` or `(…)` with a number marker, whose numbers the lexer has already read as the marker says. Every item must be a literal, and an empty `[]` is the empty vector of the marked numbers.
 fn marked_literal(kind: NodeKind, span: &Span, mark: Mark) -> Result<NodeKind, ParseFailure> {
     if matches!(&kind, NodeKind::ArrayLiteral { cells, .. } if cells.is_empty()) { return Ok(NodeKind::Literal(zilde(mark.zero()))); }
     let node = Node { kind, span: span.clone() };
@@ -798,45 +707,37 @@ fn marked_literal(kind: NodeKind, span: &Span, mark: Mark) -> Result<NodeKind, P
     Ok(node.kind)
 }
 
-/// The first item, at any depth, that isn't a literal, a key's colon or a node that `allowed` accepts. Lists, parentheses and runs
-/// are searched through.
+/// The first item, at any depth, that isn't a literal, a key's colon or a node that `allowed` accepts. Lists, parentheses and runs are searched through.
 pub(crate) fn non_literal<'a>(nodes: &'a [Node], allowed: &impl Fn(&NodeKind) -> bool) -> Option<&'a Node> {
     nodes.iter().find_map(|node| match &node.kind {
         NodeKind::Literal(_) | NodeKind::Function(Primitive::Keys) => None,
         NodeKind::ArrayLiteral { cells, .. } => cells.iter().find_map(|cell| non_literal(cell, allowed)),
-        NodeKind::Group(nodes) | NodeKind::Run(nodes) => non_literal(nodes, allowed),
-        kind if allowed(kind) => None,
-        _ => Some(node),
+        NodeKind::Group(nodes) | NodeKind::Run(nodes) => non_literal(nodes, allowed), kind if allowed(kind) => None, _ => Some(node)
     })
 }
 
 /// Items separated by spaces: each run of nodes with no space between them is one item.
 fn items(nodes: Vec<Node>) -> Result<Vec<Vec<Node>>, ParseFailure> {
     let mut runs: Vec<Vec<Node>> = Vec::new();
-    for node in nodes { match runs.last_mut() { Some(run) if touching(run.last().unwrap(), &node) => run.push(node), _ => runs.push(vec![node]) } }
+    for node in nodes {
+        match runs.last_mut() { Some(run) if touching(run.last().unwrap(), &node) => run.push(node), _ => runs.push(vec![node]) }
+    }
     runs.into_iter().map(expression).collect()
 }
 
 /// An expression outside brackets, or one item between semicolons: strands, then runs.
-fn expression(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
-    let nodes = runs(strands(nodes)?);
-    subscripts_follow_items(&nodes)?;
-    Ok(nodes)
-}
+fn expression(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> { let nodes = runs(strands(nodes)?); subscripts_follow_items(&nodes)?; Ok(nodes) }
 
 /// Fails unless each subscript follows a node in its list. That node is the item the subscript touches, or after a space the run before it.
 fn subscripts_follow_items(nodes: &[Node]) -> Result<(), ParseFailure> {
     if let Some(n @ Node { kind: NodeKind::Subscript(_), .. }) = nodes.first() {
         return Err(invalid(&n.span, "a subscript selects from the item just before it, or after a space from the run before it"));
     }
-    for n in nodes {
-        if let NodeKind::Run(inner) = &n.kind { subscripts_follow_items(inner)? }
-    }
+    for n in nodes { if let NodeKind::Run(inner) = &n.kind { subscripts_follow_items(inner)? } }
     Ok(())
 }
 
-/// Literals separated by spaces form a strand, which becomes one vector literal. A literal that touches the one before it starts a new
-/// strand: in `⍣3'b'`, `3` is the operand and `'b'` the argument.
+/// Literals separated by spaces form a strand, which becomes one vector literal. A literal that touches the one before it starts a new strand: in `⍣3'b'`, `3` is the operand and `'b'` the argument.
 fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
     let (mut out, mut strand) = (Vec::with_capacity(nodes.len()), Vec::new());
     let mut nodes = nodes.into_iter().peekable();
@@ -848,9 +749,8 @@ fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
                 if span.range.start != node.span.range.end { break; }
                 let NodeKind::Literal(Value::Number(n)) = &node.kind else { break };
                 let raised = match power {
-                    Superscript::Power(k) => n.math_dyad(Math::Power, &Number::from_integer(k)),
-                    Superscript::Transpose => Ok(n.clone()),
-                    Superscript::Unit => break,
+                    Superscript::Power(k) => n.math_dyad(Math::Power, &Number::from_integer(k)), Superscript::Transpose => Ok(n.clone()),
+                    Superscript::Unit => break
                 };
                 node.span.range.end = end;
                 let raised = raised.map_err(|m| node.span.error(ErrorKind::Domain, m))?;
@@ -869,10 +769,7 @@ fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
 }
 
 fn close_strand(strand: &mut Vec<Node>, out: &mut Vec<Node>) -> Result<(), ParseFailure> {
-    if strand.len() < 2 {
-        out.append(strand);
-        return Ok(());
-    }
+    if strand.len() < 2 { out.append(strand); return Ok(()); }
     let span = cover(strand);
     let items: Vec<_> = strand.drain(..).map(|n| if let NodeKind::Literal(v) = n.kind { v } else { unreachable!() }).collect();
     let value = Value::new([items.len()], items).map_err(|k| span.error(k, "invalid literal list"))?;
@@ -880,16 +777,11 @@ fn close_strand(strand: &mut Vec<Node>, out: &mut Vec<Node>) -> Result<(), Parse
     Ok(())
 }
 
-/// Spaces separate runs, and so do error guards. The run holding an assignment's target takes in the `←` and its value, which
-/// runs to the next error guard. The target stays flat within that run, because assignment chooses its own target. A run alone
-/// needs no wrapper.
+/// Spaces separate runs, and so do error guards. The run holding an assignment's target takes in the `←` and its value, which runs to the next error guard. The target stays flat within that run, because assignment chooses its own target. A run alone needs no wrapper.
 fn runs(nodes: Vec<Node>) -> Vec<Node> {
     let (mut result, mut part) = (Vec::with_capacity(nodes.len()), Vec::new());
     for node in nodes {
-        if matches!(node.kind, NodeKind::ErrorGuard) {
-            result.extend(assignments(std::mem::take(&mut part)));
-            result.push(node);
-        } else { part.push(node) }
+        if matches!(node.kind, NodeKind::ErrorGuard) { result.extend(assignments(std::mem::take(&mut part))); result.push(node); } else { part.push(node) }
     }
     result.extend(assignments(part));
     result
@@ -926,18 +818,12 @@ fn assignments(nodes: Vec<Node>) -> Vec<Node> {
 /// Nodes with no space between them form runs. Returns the finished runs and the last run, which is still open.
 fn spaced(nodes: Vec<Node>) -> (Vec<Node>, Vec<Node>) {
     let (mut out, mut run): (Vec<Node>, Vec<Node>) = (Vec::with_capacity(nodes.len()), Vec::new());
-    for node in nodes {
-        if run.last().is_some_and(|last| !touching(last, &node)) { flush(&mut run, &mut out); }
-        run.push(node);
-    }
+    for node in nodes { if run.last().is_some_and(|last| !touching(last, &node)) { flush(&mut run, &mut out); } run.push(node); }
     (out, run)
 }
 
 fn flush(run: &mut Vec<Node>, out: &mut Vec<Node>) {
-    if run.len() < 2 { out.append(run) } else {
-        let span = cover(run);
-        out.push(Node { kind: NodeKind::Run(std::mem::take(run)), span });
-    }
+    if run.len() < 2 { out.append(run) } else { let span = cover(run); out.push(Node { kind: NodeKind::Run(std::mem::take(run)), span }); }
 }
 
 /// Close the last run. A run that is the whole expression needs no wrapper.
@@ -956,8 +842,7 @@ pub(crate) fn key_colon(nodes: &[Node]) -> Option<usize> {
 /// Whether a node can stand before `:` as a key: a literal, a name, a group or brackets.
 pub(crate) fn key_node(n: &Node) -> bool { matches!(n.kind, NodeKind::Literal(_) | NodeKind::Name(_) | NodeKind::Group(_) | NodeKind::ArrayLiteral { .. }) }
 
-/// The program in `source`, for a check of its structure without evaluation. A complete input can still have a binding or domain error.
-/// Numbers without a marker read as 64-bit floats. `Session::parse` reads them at the session's default width.
+/// The program in `source`, for a check of its structure without evaluation. A complete input can still have a binding or domain error. Numbers without a marker read as 64-bit floats. `Session::parse` reads them at the session's default width.
 pub fn parse(source: Arc<Source>) -> ParseStatus { parse_at(source, FloatWidth::F64) }
 
 /// The program in `source`. Numbers without a marker read as floats of `width`, the default width when the code is parsed.
@@ -972,12 +857,7 @@ pub(crate) fn parse_at(source: Arc<Source>, width: FloatWidth) -> ParseStatus {
 }
 
 /// A parse tree node for source tools: its kind, its byte range in the source, its children, and the syntax error of an `Error` node.
-pub struct SyntaxNode {
-    pub kind: &'static str,
-    pub range: std::ops::Range<usize>,
-    pub children: Vec<SyntaxNode>,
-    pub error: Option<Error>,
-}
+pub struct SyntaxNode { pub kind: &'static str, pub range: std::ops::Range<usize>, pub children: Vec<SyntaxNode>, pub error: Option<Error> }
 
 impl SyntaxNode {
     fn new(kind: &'static str, range: std::ops::Range<usize>, children: Vec<SyntaxNode>) -> Self { Self { kind, range, children, error: None } }
@@ -1002,8 +882,7 @@ impl SyntaxNode {
 pub fn syntax_tree(text: &str) -> SyntaxNode {
     let source = Source::new("<syntax>", text);
     let children = match parse(source.clone()) {
-        ParseStatus::Complete(parsed) => parsed.statements.iter().map(statement_node).collect(),
-        _ => recovered(&source),
+        ParseStatus::Complete(parsed) => parsed.statements.iter().map(statement_node).collect(), _ => recovered(&source)
     };
     let mut tree = SyntaxNode::new("Program", 0..text.len(), children);
     for (range, class) in highlight(text) { if class == "comment" { tree.insert(SyntaxNode::new("Comment", range, Vec::new())) } }
@@ -1021,8 +900,7 @@ fn recovered(source: &Arc<Source>) -> Vec<SyntaxNode> {
         let (end, status) = loop {
             let end = lines.next().expect("a line ends after `start`");
             match parse(Source::new("<syntax>", &text[start..end])) {
-                ParseStatus::Incomplete(_) if lines.peek().is_some() => continue,
-                status => break (end, status),
+                ParseStatus::Incomplete(_) if lines.peek().is_some() => continue, status => break (end, status)
             }
         };
         match status {
@@ -1048,8 +926,7 @@ fn syntax_node(node: &Node) -> SyntaxNode {
         NodeKind::Group(nodes) | NodeKind::Run(nodes) => nodes.iter().map(syntax_node).collect(),
         NodeKind::Scope(target, body) => vec![syntax_node(target), syntax_node(body)],
         NodeKind::ArrayLiteral { cells, .. } => cells.iter().map(|c| list_node("Cell", c)).collect(),
-        NodeKind::Dfn(definition) => definition.bodies.iter().map(|body| body_node(body, &definition.span)).collect(),
-        _ => Vec::new(),
+        NodeKind::Dfn(definition) => definition.bodies.iter().map(|body| body_node(body, &definition.span)).collect(), _ => Vec::new()
     };
     SyntaxNode::new(node.kind.name(), node.span.range.clone(), children)
 }
@@ -1057,8 +934,7 @@ fn syntax_node(node: &Node) -> SyntaxNode {
 /// A dfn body. Only `{}` has an empty body, which spans the text between its braces.
 fn body_node(body: &[Statement], dfn: &Span) -> SyntaxNode {
     let range = match (body.first(), body.last()) {
-        (Some(first), Some(last)) => cover(&first.nodes).range.start..cover(&last.nodes).range.end,
-        _ => dfn.range.start + 1..dfn.range.end - 1,
+        (Some(first), Some(last)) => cover(&first.nodes).range.start..cover(&last.nodes).range.end, _ => dfn.range.start + 1..dfn.range.end - 1
     };
     SyntaxNode::new("Body", range, body.iter().map(statement_node).collect())
 }
@@ -1066,20 +942,10 @@ fn body_node(body: &[Statement], dfn: &Span) -> SyntaxNode {
 impl NodeKind {
     fn name(&self) -> &'static str {
         match self {
-            Self::Literal(_) => "Literal",
-            Self::Function(_) => "Function",
-            Self::Operator(_) => "Operator",
-            Self::Name(_) => "Name",
-            Self::System(_) => "System",
-            Self::Assign => "Assign",
-            Self::Output => "Output",
-            Self::ErrorGuard => "ErrorGuard",
-            Self::Group(_) => "Group",
-            Self::Run(_) => "Run",
-            Self::Subscript(_) => "Subscript",
-            Self::Scope(..) => "Scope",
-            Self::ArrayLiteral { .. } => "ArrayLiteral",
-            Self::Dfn(_) => "Dfn",
+            Self::Literal(_) => "Literal", Self::Function(_) => "Function", Self::Operator(_) => "Operator", Self::Name(_) => "Name",
+            Self::System(_) => "System", Self::Assign => "Assign", Self::Output => "Output", Self::ErrorGuard => "ErrorGuard", Self::Group(_) => "Group",
+            Self::Run(_) => "Run", Self::Subscript(_) => "Subscript", Self::Scope(..) => "Scope", Self::ArrayLiteral { .. } => "ArrayLiteral",
+            Self::Dfn(_) => "Dfn"
         }
     }
 }

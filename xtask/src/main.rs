@@ -1,29 +1,23 @@
-//! `cargo wasm` builds the browser module and writes the npm package `basedpl` into `wasm/pkg/`. The package holds the module, its
-//! JavaScript glue, the language bar (`lb.js`, `input.js` and `layout.json`), the TextMate grammar, `canvas.js`, which draws `•canvas`
-//! outputs, `package.json` and `README.md`. It also copies everything but `package.json` and `README.md` into `nbs/playground/`, where
-//! the docs playground loads them on `localhost`. It builds with the incremental `release` profile.
+//! `cargo wasm` builds the browser module and writes the npm package `basedpl` into `wasm/pkg/`. The package holds the module, its JavaScript glue, the language bar (`lb.js`, `input.js` and `layout.json`), the TextMate grammar, `canvas.js`, which draws `•canvas` outputs, `package.json` and `README.md`. It also copies everything but `package.json` and `README.md` into `nbs/playground/`, where the docs playground loads them on `localhost`. It builds with the incremental `release` profile.
+//!
 //! `cargo wasm --strip` also drops the module's name section, which holds every function's name. CI publishes that module to npm.
-//! `cargo wasm --out DIR` writes the package into `DIR` instead and leaves `nbs/playground/` alone. Builds that run at the same
-//! time then don't overwrite each other's modules. `BASEDPL_WASM=DIR` points the Node tests at that directory.
+//!
+//! `cargo wasm --out DIR` writes the package into `DIR` instead and leaves `nbs/playground/` alone. Builds that run at the same time then don't overwrite each other's modules. `BASEDPL_WASM=DIR` points the Node tests at that directory.
+//!
 //! `cargo wasm` holds the machine's timing lock shared while it runs, as `shared_lock` describes.
 //!
-//! The glue comes from `wasm-bindgen-cli-support`, wasm-bindgen's generator as a library. It and the `wasm-bindgen` crate each pin an
-//! exact version of `wasm-bindgen-shared`, and the workspace lock holds one version of that crate. The generator therefore always
-//! matches the crate.
+//! The glue comes from `wasm-bindgen-cli-support`, wasm-bindgen's generator as a library. It and the `wasm-bindgen` crate each pin an exact version of `wasm-bindgen-shared`, and the workspace lock holds one version of that crate. The generator therefore always matches the crate.
 //!
-//! `package.json` takes its version from the workspace. Its name, description, licence and repository come from `pyproject.toml`'s
-//! `[project]` table, which PyPI also reads. The package's `README.md` is a copy of `wasm/README.md`.
+//! `package.json` takes its version from the workspace. Its name, description, licence and repository come from `pyproject.toml`'s `[project]` table, which PyPI also reads. The package's `README.md` is a copy of `wasm/README.md`.
 use std::{env, fs, path::{Path, PathBuf}, process::Command, thread, time::{Duration, Instant}};
 
 const TARGET: &str = "wasm32-unknown-unknown";
 /// The file stem that `basedpl-wasm` builds, which wasm-bindgen also gives the glue.
 const MODULE: &str = "basedpl_wasm";
-/// The file whose lock keeps timings and builds apart on this machine, as DEV.md describes. Timings take it exclusively. Builds take
-/// it shared.
+/// The file whose lock keeps timings and builds apart on this machine, as DEV.md describes. Timings take it exclusively. Builds take it shared.
 const TIMING_LOCK: &str = "/tmp/aai-ws-timing.lock";
 
-/// Takes the timing lock shared, and returns the file that holds it until dropped. It waits up to 5 minutes for a timing to finish,
-/// then builds without the lock.
+/// Takes the timing lock shared, and returns the file that holds it until dropped. It waits up to 5 minutes for a timing to finish, then builds without the lock.
 fn shared_lock() -> std::io::Result<fs::File> {
     let file = fs::File::options().create(true).append(true).open(TIMING_LOCK)?;
     let (start, mut waiting) = (Instant::now(), false);
@@ -31,7 +25,7 @@ fn shared_lock() -> std::io::Result<fs::File> {
         match file.try_lock_shared() {
             Ok(()) => return Ok(file),
             Err(fs::TryLockError::WouldBlock) if start.elapsed() < Duration::from_secs(300) => {}
-            Err(fs::TryLockError::WouldBlock) => { eprintln!("building although a timing still holds {TIMING_LOCK}"); return Ok(file) }
+            Err(fs::TryLockError::WouldBlock) => { eprintln!("building although a timing still holds {TIMING_LOCK}"); return Ok(file); }
             Err(fs::TryLockError::Error(e)) => return Err(e),
         }
         if !waiting { eprintln!("waiting for a timing to release {TIMING_LOCK}"); }
@@ -45,11 +39,7 @@ fn main() -> anyhow::Result<()> {
     let (mut strip, mut out) = (false, None);
     let mut args = env::args().skip(1);
     while let Some(flag) = args.next() {
-        match flag.as_str() {
-            "--strip" => strip = true,
-            "--out" => out = Some(PathBuf::from(args.next().ok_or_else(usage)?)),
-            _ => return Err(usage()),
-        }
+        match flag.as_str() { "--strip" => strip = true, "--out" => out = Some(PathBuf::from(args.next().ok_or_else(usage)?)), _ => return Err(usage()) }
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("xtask is a workspace member");
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
@@ -59,7 +49,8 @@ fn main() -> anyhow::Result<()> {
     let targets = env::var_os("CARGO_TARGET_DIR").map_or_else(|| root.join("target"), Into::into);
     let module = targets.join(TARGET).join("release").join(format!("{MODULE}.wasm"));
     let pkg = out.clone().unwrap_or_else(|| root.join("wasm/pkg"));
-    wasm_bindgen_cli_support::Bindgen::new().input_path(module).web(true)?.typescript(false).omit_default_module_path(false).remove_name_section(strip).generate(&pkg)?;
+    wasm_bindgen_cli_support::Bindgen::new().input_path(module).web(true)?.typescript(false).omit_default_module_path(false).remove_name_section(strip)
+        .generate(&pkg)?;
     let pyproject: toml::Table = fs::read_to_string(root.join("pyproject.toml"))?.parse()?;
     let project = &pyproject["project"];
     let repository = project["urls"]["Repository"].as_str().expect("pyproject.toml's Repository is a URL");

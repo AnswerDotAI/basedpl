@@ -2,6 +2,9 @@
 members = ["cli", "py", "wasm", "xtask"]
 default-members = [".", "cli", "py"]
 
+[workspace.metadata.fastfmt]
+join_comments = true
+
 [workspace.package]
 version = "0.1.50"
 edition = "2021"

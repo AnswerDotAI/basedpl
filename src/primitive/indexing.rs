@@ -1,5 +1,4 @@
-//! Indexing primitives: `⌷`, `⊃` and bracket indexing, and the `Selection` of items that selective assignment and `@` write
-//! through.
+//! Indexing primitives: `⌷`, `⊃` and bracket indexing, and the `Selection` of items that selective assignment and `@` write through.
 
 use super::*;
 
@@ -54,7 +53,9 @@ pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, span: &Context<
     if fields.len() > source.len() { return Err(span.error(ErrorKind::Rank, "too many Pick coordinates")); }
     let fields = fields.iter().enumerate().map(|(a, f)| axis_selector(f, right, a, span)).collect::<Result<Vec<_>, _>>()?;
     let mut frame = Layout::default();
-    for field in &fields { frame = Agreement::new(&frame, &Layout::from(field.shape())).error_at(span, "Pick coordinate fields do not agree")?.layout; }
+    for field in &fields {
+        frame = Agreement::new(&frame, &Layout::from(field.shape())).error_at(span, "Pick coordinate fields do not agree")?.layout;
+    }
     let maps = fields.iter().map(|f| Agreement::new(&Layout::from(f.shape()), &frame).unwrap().left).collect::<Vec<_>>();
     let coordinates = fields.iter().map(|f| f.as_items().integers().error_at(span, "Pick coordinates must be integers")).collect::<Result<Vec<_>, _>>()?;
     let trailing = &source[fields.len()..];
@@ -93,8 +94,7 @@ pub(crate) fn position(n: &Number, size: usize, span: &Span) -> Result<usize, Er
 /// An atomic `∞` selects a whole axis in order, and `¯∞` selects it in reverse. Returns whether it is reversed.
 fn whole_axis(part: &Value) -> Option<bool> { match part { Value::Number(n) if n.is_infinite() => n.as_float().map(|f| f < 0.), _ => None } }
 
-/// The items a selection reaches. An offset is a flat position in the array. A path goes down through nested items, one position for
-/// each level, and the empty path is the whole array.
+/// The items a selection reaches. An offset is a flat position in the array. A path goes down through nested items, one position for each level, and the empty path is the whole array.
 pub(crate) enum Targets { Offsets(Vec<usize>), Paths(Vec<Vec<usize>>) }
 
 impl Targets {
@@ -105,11 +105,7 @@ impl Targets {
     pub(crate) fn push(&mut self, path: &[usize]) {
         match (&mut *self, path) {
             (Self::Offsets(o), &[i]) => o.push(i),
-            (Self::Offsets(o), _) => {
-                let mut paths: Vec<_> = o.iter().map(|&i| vec![i]).collect();
-                paths.push(path.to_vec());
-                *self = Self::Paths(paths);
-            }
+            (Self::Offsets(o), _) => { let mut paths: Vec<_> = o.iter().map(|&i| vec![i]).collect(); paths.push(path.to_vec()); *self = Self::Paths(paths); }
             (Self::Paths(p), _) => p.push(path.to_vec()),
         }
     }
@@ -121,14 +117,17 @@ pub(crate) struct Selection { pub frame: Frame, pub targets: Targets }
 
 impl Selection {
     /// The selection of the items at `offsets`, as a vector.
-    pub(crate) fn offsets(offsets: Vec<usize>) -> Selection { Selection { frame: Frame::Array(vec![offsets.len()].into()), targets: Targets::Offsets(offsets) } }
-    /// `values` ready for the targets. A keyed value aligns to the keys of the selection. A singleton goes to every target, and
-    /// otherwise the shape must match the selection's.
+    pub(crate) fn offsets(offsets: Vec<usize>) -> Selection {
+        Selection { frame: Frame::Array(vec![offsets.len()].into()), targets: Targets::Offsets(offsets) }
+    }
+    /// `values` ready for the targets. A keyed value aligns to the keys of the selection. A singleton goes to every target, and otherwise the shape must match the selection's.
     pub(crate) fn checked(&self, values: &Value, span: &Context<'_>) -> Result<Value, Error> {
         let Frame::Array(layout) = &self.frame else { return Ok(values.clone()) };
         let values = if values.has_keys() && layout.has_keys() {
             crate::keyed::reorder(values, &layout.all_keys(), true).error_at(span, "replacement does not supply selected keys")?
-        } else { values.clone() };
+        } else {
+            values.clone()
+        };
         if !values.is_singleton() && values.shape() != layout.shape() {
             return Err(span.error(ErrorKind::Length, "replacement shape does not match selection"));
         }
@@ -142,23 +141,19 @@ impl Selection {
         let invalid = |k| span.error(k, "invalid selection");
         let layout = match (&self.targets, &self.frame) {
             (Targets::Offsets(offsets), Frame::Direct) => return Ok(array.at(offsets[0])),
-            (Targets::Paths(paths), Frame::Direct) => return Frame::Direct.collect(paths.iter().map(|p| reach(array, p)), || array.prototype()).map_err(invalid),
+            (Targets::Paths(paths), Frame::Direct) => {
+                return Frame::Direct.collect(paths.iter().map(|p| reach(array, p)), || array.prototype()).map_err(invalid)
+            }
             (_, Frame::Array(layout)) => layout,
         };
         let data = match &self.targets {
-            Targets::Offsets(offsets) => {
-                let mut data = Gather::new(&[array], offsets.len());
-                data.rows(array, offsets, 1);
-                data
-            }
+            Targets::Offsets(offsets) => { let mut data = Gather::new(&[array], offsets.len()); data.rows(array, offsets, 1); data }
             // Each item comes from the array that holds it. A path that reaches an atom stops there.
             Targets::Paths(paths) => {
                 let mut data = Gather::items(paths.len());
                 for path in paths {
                     match path.split_last().map(|(&last, outer)| (last, reach(array, outer))) {
-                        Some((last, outer)) if !outer.is_atom() => data.push(&outer, last),
-                        Some((_, atom)) => data.add(atom),
-                        None => data.add(array.clone()),
+                        Some((last, outer)) if !outer.is_atom() => data.push(&outer, last), Some((_, atom)) => data.add(atom), None => data.add(array.clone())
                     }
                 }
                 data
@@ -173,9 +168,7 @@ impl Selection {
         self.write_into(&mut array, values, span)?;
         Ok(array)
     }
-    /// Replaces each target of `array` with its value, in place. Every check comes before the first write, so an error leaves
-    /// `array` unchanged. A later target at the same position wins. Compact storage widens for wider numbers, and mixed storage
-    /// stays mixed.
+    /// Replaces each target of `array` with its value, in place. Every check comes before the first write, so an error leaves `array` unchanged. A later target at the same position wins. Compact storage widens for wider numbers, and mixed storage stays mixed.
     pub(crate) fn write_into(&self, array: &mut Value, values: &Value, span: &Context<'_>) -> Result<(), Error> {
         let values = self.checked(values, span)?;
         let offsets = match &self.targets {
@@ -193,10 +186,7 @@ impl Selection {
                 return Ok(());
             }
         };
-        if array.is_atom() {
-            if let Some(i) = offsets.len().checked_sub(1) { *array = self.item(&values, i); }
-            return Ok(());
-        }
+        if array.is_atom() { if let Some(i) = offsets.len().checked_sub(1) { *array = self.item(&values, i); } return Ok(()); }
         // A direct target takes the whole value as one item.
         let source = if matches!(self.frame, Frame::Direct) && !values.is_atom() { values.enclose().error_at(span, "invalid amended array")? } else { values };
         array.scatter(offsets, &source);
@@ -221,7 +211,9 @@ fn write_paths(array: &Value, updates: &[(&[usize], Value)], span: &Context<'_>)
     let (array, updates) = if let Some(last) = updates.iter().rposition(|(p, _)| p.is_empty()) {
         replacement = updates[last].1.clone();
         (&replacement, &updates[last + 1..])
-    } else { (array, updates) };
+    } else {
+        (array, updates)
+    };
     if updates.is_empty() { return Ok(array.clone()); }
     let mut items: Vec<_> = array.elements().collect();
     let mut groups: HashMap<usize, Vec<(&[usize], Value)>> = HashMap::new();
@@ -261,8 +253,7 @@ pub(crate) fn at_indices(right: &Value, indices: &Value, span: &Context<'_>) -> 
 }
 
 impl Value {
-    /// The selection that `parts` make from this array, one part for each leading axis, as indexing does. A missing part selects the
-    /// whole axis. The result is a function when the array holds one at the selected position.
+    /// The selection that `parts` make from this array, one part for each leading axis, as indexing does. A missing part selects the whole axis. The result is a function when the array holds one at the selected position.
     pub fn select(&self, parts: &[Option<Value>]) -> Result<Value, Error> {
         let span = Span { source: crate::Source::new("<index>", "[]"), range: 0..2 };
         select(self, parts, &crate::Session::new().at(&span))
@@ -272,51 +263,41 @@ pub(crate) fn select(right: &Value, parts: &[Option<Value>], span: &Context<'_>)
     if parts.is_empty() { return Ok(right.clone()); }
     if let Some(value) = select_vector(right, parts, span)? { return Ok(value); }
     let (steps, layout, direct) = match axis_positions(right, parts, span)? {
-        Positions::Choose(indices) => return choose(right, &indices, span)?.read(right, span),
-        Positions::Axes(steps, layout, direct) => (steps, layout, direct),
+        Positions::Choose(indices) => return choose(right, &indices, span)?.read(right, span), Positions::Axes(steps, layout, direct) => (steps, layout, direct)
     };
     if direct { return Ok(right.at(Steps::combined(&steps)[0])); }
     remap(right, layout, &steps, span)
 }
 
-/// `body` of the indices of a selection of the unkeyed vector `right` by one array of them, those indices as integers, and the vector's
-/// length. Floats that all stand for integers read as integers. `None` when the selection isn't of this kind. An index outside the
-/// vector is an error.
+/// `body` of the indices of a selection of the unkeyed vector `right` by one array of them, those indices as integers, and the vector's length. Floats that all stand for integers read as integers. `None` when the selection isn't of this kind. An index outside the vector is an error.
 fn vector_index<R>(
-    right: &Value, parts: &[Option<Value>], span: &Context<'_>, body: impl FnOnce(&Value, crate::array::Ints<'_>, i64) -> R,
-) -> Result<Option<R>, Error> {
+    right: &Value, parts: &[Option<Value>], span: &Context<'_>, body: impl FnOnce(&Value, crate::array::Ints<'_>, i64) -> R) -> Result<Option<R>, Error> {
     let ([Some(indices)], [size]) = (parts, right.shape()) else { return Ok(None) };
     if indices.is_atom() || right.keys(0).is_some() { return Ok(None); }
     let whole;
     let ix = match indices.as_items() {
         Items::Integers(ix) => ix,
         items @ Items::Floats(_) => match items.integers() {
-            Ok(w) => {
-                whole = w;
-                crate::array::Ints::I64(&whole)
-            }
+            Ok(w) => { whole = w; crate::array::Ints::I64(&whole) }
             Err(_) => return Ok(None),
         },
         _ => return Ok(None),
     };
     let n = *size as i64;
     let inside = with_ints!(ix, |ix| ix.iter().fold(true, |ok, &i| {
-        let i: i64 = i.into();
-        ok & (i >= -n) & (i < n)
+        let i: i64 = i.into(); ok & (i >= -n) & (i < n)
     }));
     if !inside { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
     Ok(Some(body(indices, ix, n)))
 }
 
-/// The layout of a selection of the vector `right` at the array `indices`: the indices' shape, and the vector's axis name where the
-/// indices are a vector.
+/// The layout of a selection of the vector `right` at the array `indices`: the indices' shape, and the vector's axis name where the indices are a vector.
 fn vector_layout(right: &Value, indices: &Value) -> Layout {
     let names = if indices.shape().len() == 1 { vec![right.axis_name(0).cloned()] } else { vec![] };
     Layout::from(indices.shape()).inherit_names(names)
 }
 
-/// The items of the unkeyed vector `right` at an array of indices, read straight from each index with no table of offsets. `None`
-/// when the selection isn't of this kind.
+/// The items of the unkeyed vector `right` at an array of indices, read straight from each index with no table of offsets. `None` when the selection isn't of this kind.
 fn select_vector(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> Result<Option<Value>, Error> {
     vector_index(right, parts, span, |indices, ix, _| {
         let mut data = Gather::new(&[right], indices.len());
@@ -328,23 +309,23 @@ fn select_vector(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> 
 pub(crate) fn selection(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> Result<Selection, Error> {
     if parts.is_empty() { return Ok(Selection { frame: Frame::Direct, targets: Targets::Paths(vec![vec![]]) }); }
     let vector = vector_index(right, parts, span, |indices, ix, n| {
-        let offsets = with_ints!(ix, |ix| ix.iter().map(|&i| {
-            let i: i64 = i.into();
-            (i + (n & (i >> 63))) as usize
-        }).collect());
+        let offsets = with_ints!(ix, |ix| ix
+            .iter().map(|&i| {
+               let i: i64 = i.into();
+               (i + (n & (i >> 63))) as usize
+            })
+            .collect());
         Selection { frame: Frame::Array(vector_layout(right, indices)), targets: Targets::Offsets(offsets) }
     })?;
     if let Some(selection) = vector { return Ok(selection); }
     let (steps, layout, direct) = match axis_positions(right, parts, span)? {
-        Positions::Choose(indices) => return choose(right, &indices, span),
-        Positions::Axes(steps, layout, direct) => (steps, layout, direct),
+        Positions::Choose(indices) => return choose(right, &indices, span), Positions::Axes(steps, layout, direct) => (steps, layout, direct)
     };
     let targets = Targets::Offsets(Steps::combined(&steps));
     Ok(Selection { frame: if direct { Frame::Direct } else { Frame::Array(layout) }, targets })
 }
 
-/// A selection by parts: the `Steps` it takes along each axis, the result's layout, and whether the result is one item. A first part
-/// whose items are arrays does choose indexing instead.
+/// A selection by parts: the `Steps` it takes along each axis, the result's layout, and whether the result is one item. A first part whose items are arrays does choose indexing instead.
 enum Positions { Axes(Vec<Steps>, Layout, bool), Choose(Value) }
 
 fn axis_positions(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> Result<Positions, Error> {
@@ -363,23 +344,15 @@ fn axis_positions(right: &Value, parts: &[Option<Value>], span: &Context<'_>) ->
         if let Some(a) = part.filter(|a| whole_axis(a).is_none()) {
             direct &= a.is_atom();
             shape.extend_from_slice(a.shape());
-            let positions = a
-                .as_items()
-                .integers()
-                .error_at(span, "index must be an integer")?
-                .iter()
-                .map(|&n| signed(n, size).ok_or_else(|| span.error(ErrorKind::Index, "index is outside the array")))
-                .collect::<Result<Vec<_>, _>>()?;
+            let positions = a.as_items().integers().error_at(span, "index must be an integer")?.iter()
+                .map(|&n| signed(n, size).ok_or_else(|| span.error(ErrorKind::Index, "index is outside the array"))).collect::<Result<Vec<_>, _>>()?;
             let selected =
                 right.keys(axis).map(|k| k.select(positions.iter().copied().map(Some))).transpose().error_at(span, "selection repeats a keyed position")?;
             if a.shape().len() == 1 {
                 keys.push(selected);
                 names.push(right.axis_name(axis).cloned());
             }
-            else {
-                keys.extend(std::iter::repeat_n(None, a.shape().len()));
-                names.extend(std::iter::repeat_n(None, a.shape().len()));
-            }
+            else { keys.extend(std::iter::repeat_n(None, a.shape().len())); names.extend(std::iter::repeat_n(None, a.shape().len())); }
             steps.push(Steps::Table(positions.iter().map(|&i| Some(i * stride[axis])).collect()));
         } else {
             direct = false;
@@ -388,7 +361,11 @@ fn axis_positions(right: &Value, parts: &[Option<Value>], span: &Context<'_>) ->
             let position = |j: usize| if reversed { size - 1 - j } else { j };
             keys.push(right.keys(axis).map(|k| k.select((0..size).map(|j| Some(position(j))))).transpose().error_at(span, "invalid axis keys")?);
             names.push(right.axis_name(axis).cloned());
-            steps.push(if reversed { Steps::Stride { start: size.saturating_sub(1) * stride[axis], len: size, step: -(stride[axis] as isize) } } else { Steps::along(size, stride[axis]) });
+            steps.push(if reversed {
+                Steps::Stride { start: size.saturating_sub(1) * stride[axis], len: size, step: -(stride[axis] as isize) }
+            } else {
+                Steps::along(size, stride[axis])
+            });
         }
     }
     generated_len(&shape).error_at(span, "selection is too large")?;

@@ -1,5 +1,4 @@
-//! Numeric primitives outside the pervasive kernels: matrix division and decompositions, encode and decode, complex parts, number
-//! formatting, the Lambert W function and random numbers.
+//! Numeric primitives outside the pervasive kernels: matrix division and decompositions, encode and decode, complex parts, number formatting, the Lambert W function and random numbers.
 
 use super::*;
 use crate::number::{read, with_field, Domain, Field};
@@ -20,15 +19,11 @@ pub(super) fn complex_parts(right: &Value, polar: bool, span: &Context<'_>) -> R
     let parts = match right.as_items() {
         Items::Complex(z) if polar => with_complexes!(z, |z| Element::build(shape, z.iter().flat_map(|&z| [Abs.one(z), Angle.one(z)]).collect::<Vec<_>>())),
         Items::Complex(z) => with_complexes!(z, |z| Element::build(shape, z.iter().flat_map(|z| [z.re, z.im]).collect::<Vec<_>>())),
-        Items::Floats(x) => crate::array::with_floats!(x, |x| float_parts(x, polar, shape)),
-        _ => None,
+        Items::Floats(x) => crate::array::with_floats!(x, |x| float_parts(x, polar, shape)), _ => None
     };
     if let Some(parts) = parts { return parts.with_layout(layout).error_at(span, "invalid decomposition"); }
     let mut data = Vec::with_capacity(generated_len(layout.shape()).error_at(span, "decomposition is too large")?);
-    for item in right.elements() {
-        span.check()?;
-        data.extend(numeric(&item, span)?.parts(polar).domain_at(span)?.map(Value::Number));
-    }
+    for item in right.elements() { span.check()?; data.extend(numeric(&item, span)?.parts(polar).domain_at(span)?.map(Value::Number)); }
     let prototype = Value::Number(numeric(&right.prototype(), span)?.zero());
     layout.collect(data, prototype).error_at(span, "invalid decomposition")
 }
@@ -41,10 +36,7 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
     let mut text = if precision >= 0 && n.is_exact() {
         let scaled = (n.as_exact().unwrap() * num_bigint::BigInt::from(10).pow(digits as u32)).round().to_integer();
         let mut s = scaled.abs().to_string();
-        if digits != 0 {
-            if s.len() <= digits { s.insert_str(0, &"0".repeat(digits + 1 - s.len())); }
-            s.insert(s.len() - digits, '.');
-        }
+        if digits != 0 { if s.len() <= digits { s.insert_str(0, &"0".repeat(digits + 1 - s.len())); } s.insert(s.len() - digits, '.'); }
         if scaled.is_negative() { s.insert(0, '¯'); }
         s
     } else {
@@ -56,19 +48,18 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
         let y = if scale.is_finite() && scale != 0.0 && scaled.abs() < 1e16 { scaled.round() / scale } else { y };
         if precision >= 0 {
             if y == 0.0 && y.is_sign_negative() { format!(" {:.*}", digits, 0.0) } else { format!("{y:.digits$}") }
-        } else { crate::number::scientific(&format!("{:.*e}", digits - 1, y)) }
+        } else {
+            crate::number::scientific(&format!("{:.*e}", digits - 1, y))
+        }
     };
     if !n.is_exact() {
         let mut significant = 0;
         let mut exponent = false;
-        text = text
-            .chars()
-            .map(|c| {
-                if c == crate::syntax::EXPONENT.1 { exponent = true; }
-                if !exponent && c.is_ascii_digit() && (c != '0' || significant != 0) { significant += 1; }
-                if !exponent && c.is_ascii_digit() && significant > 16 { '_' } else { c }
-            })
-            .collect();
+        text = text.chars().map(|c| {
+            if c == crate::syntax::EXPONENT.1 { exponent = true; }
+            if !exponent && c.is_ascii_digit() && (c != '0' || significant != 0) { significant += 1; }
+            if !exponent && c.is_ascii_digit() && significant > 16 { '_' } else { c }
+        }).collect();
     }
     Ok(text.replace('-', "¯"))
 }
@@ -76,35 +67,26 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
 pub(super) fn format_array(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let Some(spec) = left else { return right.formatted().error_at(span, "formatted array is too large"); };
     if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "format specification must be a unit or vector")); }
-    let spec = spec
-        .elements()
-        .map(|e| {
-            numeric(&e, span)?.integer().and_then(|n| isize::try_from(n).map_err(|_| ErrorKind::Limit)).error_at(span, "format specification must be integral")
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let spec = spec.elements().map(|e| {
+        numeric(&e, span)?.integer().and_then(|n| isize::try_from(n).map_err(|_| ErrorKind::Limit)).error_at(span, "format specification must be integral")
+    }).collect::<Result<Vec<_>, _>>()?;
     let columns = right.shape().last().copied().unwrap_or(1);
     if !matches!(spec.len(), 1 | 2) && spec.len() != 2 * columns {
         return Err(span.error(ErrorKind::Length, "format needs precision, a width/precision pair, or pairs per column"));
     }
     numeric(&right.prototype(), span)?;
-    let specs: Vec<_> = (0..columns)
-        .map(|i| match spec.len() { 1 => (0, spec[0]), 2 => (spec[0], spec[1]), _ => (spec[2 * i], spec[2 * i + 1]) })
-        .collect();
+    let specs: Vec<_> = (0..columns).map(|i| match spec.len() { 1 => (0, spec[0]), 2 => (spec[0], spec[1]), _ => (spec[2 * i], spec[2 * i + 1]) }).collect();
     let mut widths = Vec::new();
     for &(width, precision) in &specs {
         if width < 0 { return Err(span.domain_error("format width must be nonnegative")); }
         generated_len(&[right.len().max(1), precision.unsigned_abs().max(width as usize).max(1)]).error_at(span, "format exceeds array limits")?;
         widths.push(if width == 0 { 1 } else { width as usize });
     }
-    let text = right
-        .elements()
-        .enumerate()
-        .map(|(i, e)| {
-            let s = format_number(numeric(&e, span)?, specs[i % columns].1, span)?;
-            if specs[i % columns].0 == 0 { widths[i % columns] = widths[i % columns].max(s.chars().count() + 1); }
-            Ok(s)
-        })
-        .collect::<Result<Vec<_>, Error>>()?;
+    let text = right.elements().enumerate().map(|(i, e)| {
+        let s = format_number(numeric(&e, span)?, specs[i % columns].1, span)?;
+        if specs[i % columns].0 == 0 { widths[i % columns] = widths[i % columns].max(s.chars().count() + 1); }
+        Ok(s)
+    }).collect::<Result<Vec<_>, Error>>()?;
     let width = widths.iter().sum();
     let mut shape = right.shape().to_vec();
     if let Some(last) = shape.last_mut() { *last = width; }
@@ -114,10 +96,14 @@ pub(super) fn format_array(left: Option<&Value>, right: &Value, span: &Context<'
     for (i, s) in text.iter().enumerate() {
         let width = widths[i % columns];
         let len = s.chars().count();
-        let s = if len > width { "*".repeat(width) } else if specs[i % columns].1 < 0 {
+        let s = if len > width {
+            "*".repeat(width)
+        } else if specs[i % columns].1 < 0 {
             let leading = usize::from(specs[i % columns].0 == 0);
             format!("{}{s}{}", " ".repeat(leading), " ".repeat(width - len - leading))
-        } else { format!("{}{s}", " ".repeat(width - len)) };
+        } else {
+            format!("{}{s}", " ".repeat(width - len))
+        };
         data.extend(s.chars().map(Value::Character));
     }
     Value::from_parts(shape, data, Value::Character(' ')).error_at(span, "invalid formatted result")
@@ -139,10 +125,7 @@ pub(crate) fn lambert_w(right: &Value, span: &Context<'_>) -> Result<Value, Erro
 
 pub(super) fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let dimensions = |a: &Value| match a.shape() {
-        [] => Ok((1, 1)),
-        &[m] => Ok((m, 1)),
-        &[m, n] => Ok((m, n)),
-        _ => Err(span.error(ErrorKind::Rank, "matrix divide requires rank at most two")),
+        [] => Ok((1, 1)), &[m] => Ok((m, 1)), &[m, n] => Ok((m, n)), _ => Err(span.error(ErrorKind::Rank, "matrix divide requires rank at most two"))
     };
     let (m, n) = dimensions(right)?;
     let k = match left {
@@ -166,16 +149,13 @@ pub(super) fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<
         return layout.collect(vec![], prototype).map_err(|e| span.error(e, "invalid matrix shape"));
     }
     with_field!(domain, [Exact, Single, Double, Complex], T => {
-        let a = read::<T>(right, span)?;
-        let b = ordered(left.map(|x| read::<T>(x, span)).transpose()?, positions.as_ref(), m, k);
-        let mut x = T::solve(&a, b.as_deref(), [m, n], k, span)?;
-        if scalar { return Ok(Value::Number(x.swap_remove(0).number(width))); }
+        let a = read::<T>(right, span)?; let b = ordered(left.map(|x| read::<T>(x, span)).transpose()?, positions.as_ref(), m, k);
+        let mut x = T::solve(&a, b.as_deref(), [m, n], k, span)?; if scalar { return Ok(Value::Number(x.swap_remove(0).number(width))); }
         T::array(x, layout.shape().to_vec(), width).and_then(|v| v.with_layout(layout)).map_err(|e| span.error(e, "invalid matrix result"))
     })
 }
 
-/// Monadic `-.×` on the `n`×`n` matrix `a`: its determinant. Exact numbers stay exact, through row reduction. Floats and complex numbers
-/// take rustymath's LU determinant, read as `⌹` reads them. `None` where an item isn't a number.
+/// Monadic `-.×` on the `n`×`n` matrix `a`: its determinant. Exact numbers stay exact, through row reduction. Floats and complex numbers take rustymath's LU determinant, read as `⌹` reads them. `None` where an item isn't a number.
 pub(crate) fn determinant(a: &Value, n: usize, span: &Context<'_>) -> Result<Option<Value>, Error> {
     let Some((domain, width)) = Domain::of_arrays(&[a], span.numeric()) else { return Ok(None) };
     let d = with_field!(domain, [Exact, Single, Double, Complex], T => T::determinant(&read::<T>(a, span)?, n, span)?.number(width));
@@ -186,81 +166,64 @@ pub(crate) fn determinant(a: &Value, n: usize, span: &Context<'_>) -> Result<Opt
 #[derive(Clone, Copy)]
 pub(crate) enum Stacked { Product, Solve, Inverse, Determinant }
 
-/// `f⍤2` on stacks of 32- or 64-bit float matrices with plain layouts, through the rustymath function that `f` uses on one matrix. The
-/// cells split across rustymath's threads through `stack_with`. `x` is the left stack for `+.×` and `⌹`, and absent for the monads. Two
-/// stacks have equal frames, or one is a single matrix that pairs with each matrix of the other. `None` where `f⍤2` takes its general path.
+/// `f⍤2` on stacks of 32- or 64-bit float matrices with plain layouts, through the rustymath function that `f` uses on one matrix. The cells split across rustymath's threads through `stack_with`. `x` is the left stack for `+.×` and `⌹`, and absent for the monads. Two stacks have equal frames, or one is a single matrix that pairs with each matrix of the other. `None` where `f⍤2` takes its general path.
 pub(crate) fn stacked(op: Stacked, x: Option<&Value>, y: &Value, span: &Context<'_>) -> Option<Result<Value, Error>> {
     use crate::element::{read_as, Element};
     let width = |a: &Value| match a.as_items() { Items::Floats(_) if a.layout().plain() && a.shape().len() >= 2 => a.float_width(), _ => None };
     let w = width(y)?;
-    if x.is_some_and(|x| width(x) != Some(w)) { return None }
-    let matrices = |a: &Value| { let (frame, cell) = a.shape().split_at(a.shape().len() - 2); (frame.to_vec(), cell[0], cell[1]) };
+    if x.is_some_and(|x| width(x) != Some(w)) { return None; }
+    let matrices = |a: &Value| {
+        let (frame, cell) = a.shape().split_at(a.shape().len() - 2);
+        (frame.to_vec(), cell[0], cell[1])
+    };
     let (yf, r, c) = matrices(y);
     crate::array::with_float_width!(kernel w, F => {
-        let ys = read_as::<F>(y)?;
-        let count = generated_len(&yf).ok()?;
-        if r == 0 || c == 0 || count == 0 { return None }
-        let cell = |i: usize| &ys[i * r * c..][..r * c];
-        match (op, x) {
+        let ys = read_as::<F>(y)?; let count = generated_len(&yf).ok()?; if r == 0 || c == 0 || count == 0 { return None }
+        let cell = |i: usize| &ys[i * r * c..][..r * c]; match (op, x) {
             (Stacked::Inverse, None) => cells(count, c * r, |i, out, w: &mut linalg::LuWork<F>| w.pinv_into(cell(i), [r, c], out), span).map(|v| F::build([yf, vec![c, r]].concat(), v)).transpose(),
             (Stacked::Determinant, None) if r == c => cells(count, 1, |i, out, w: &mut linalg::LuWork<F>| out[0] = w.factor(cell(i), r).determinant(), span).map(|v| F::build(yf, v)).transpose(),
-            (Stacked::Product | Stacked::Solve, Some(x)) => {
-                let (xf, m, k) = matrices(x);
-                let solve = matches!(op, Stacked::Solve);
+            (Stacked::Product | Stacked::Solve, Some(x)) => { let (xf, m, k) = matrices(x); let solve = matches!(op, Stacked::Solve);
                 if (if solve { m } else { k }) != r || m == 0 || k == 0 || !(xf == yf || xf.is_empty() || yf.is_empty()) { return None }
-                let xs = read_as::<F>(x)?;
-                let frame = if xf.is_empty() { yf } else { xf };
-                let count = generated_len(&frame).ok()?;
-                if count == 0 { return None }
-                let (xstep, ystep) = (if x.shape().len() == 2 { 0 } else { m * k }, if y.shape().len() == 2 { 0 } else { r * c });
-                let (xcell, ycell) = (|i: usize| &xs[i * xstep..][..m * k], |i: usize| &ys[i * ystep..][..r * c]);
-                let (shape, v) = if solve {
+                let xs = read_as::<F>(x)?; let frame = if xf.is_empty() { yf } else { xf }; let count = generated_len(&frame).ok()?;
+                if count == 0 { return None } let (xstep, ystep) = (if x.shape().len() == 2 { 0 } else { m * k }, if y.shape().len() == 2 { 0 } else { r * c });
+                let (xcell, ycell) = (|i: usize| &xs[i * xstep..][..m * k], |i: usize| &ys[i * ystep..][..r * c]); let (shape, v) = if solve {
                     ([c, k], cells(count, c * k, |i, out: &mut [F], w: &mut linalg::LuWork<F>| out.copy_from_slice(&w.solve(ycell(i), xcell(i), [r, c], k)), span))
-                } else {
-                    ([m, c], cells(count, m * c, |i, out: &mut [F], _: &mut ()| PlusTimes.inner_into(xcell(i), ycell(i), [m, k, c], out), span))
-                };
-                v.map(|v| F::build([frame, shape.to_vec()].concat(), v)).transpose()
-            }
-            _ => None,
-        }
+                } else { ([m, c], cells(count, m * c, |i, out: &mut [F], _: &mut ()| PlusTimes.inner_into(xcell(i), ycell(i), [m, k, c], out), span)) };
+                v.map(|v| F::build([frame, shape.to_vec()].concat(), v)).transpose() } _ => None, }
     })
 }
 
-/// `count` cells of `per` items each, where `write(i, cell, scratch)` writes cell `i`. rustymath's `stack_with` runs the calls, and
-/// `span.check_now()` runs between its rounds.
+/// `count` cells of `per` items each, where `write(i, cell, scratch)` writes cell `i`. rustymath's `stack_with` runs the calls, and `span.check_now()` runs between its rounds.
 fn cells<B: Default + Send, S: Default>(count: usize, per: usize, write: impl Fn(usize, &mut [B], &mut S) + Sync, span: &Context<'_>) -> Result<Vec<B>, Error> {
-    Ok(rustymath::parallel::stack_with(count, per, &|i, cell, scratch| { write(i, cell, scratch); true }, || span.check_now())?.0)
+    Ok(rustymath::parallel::stack_with(count, per, &|i, cell, scratch| {
+        write(i, cell, scratch);
+        true
+    }, || span.check_now())?.0)
 }
 
-/// `kind •decompose m` factors the matrix `m`, and gives the factors as a record. `kind` is `"svd"`, `"qr"`, `"eigen"`, `"cholesky"` or
-/// `"lu"`, as text or in a record of options that `Decomposition` describes. A real matrix gives real factors, apart from complex
-/// eigenvalues and their eigenvectors. The matrix factors in the [`Domain`] of its items, or in floats of the default width where they
-/// are all exact.
+/// `kind •decompose m` factors the matrix `m`, and gives the factors as a record. `kind` is `"svd"`, `"qr"`, `"eigen"`, `"cholesky"` or `"lu"`, as text or in a record of options that `Decomposition` describes. A real matrix gives real factors, apart from complex eigenvalues and their eigenvectors. The matrix factors in the [`Domain`] of its items, or in floats of the default width where they are all exact.
 pub(crate) fn decompose(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let d = Decomposition::new(left, span)?;
     let &[m, n] = right.shape() else { return Err(span.error(ErrorKind::Rank, "•decompose needs a matrix")) };
     if m == 0 || n == 0 { return Err(span.domain_error("•decompose needs a nonempty matrix")); }
-    if matches!(d.kind.as_str(), "eigen" | "cholesky" | "lu") && m != n { return Err(span.error(ErrorKind::Length, "eigen, cholesky and lu need a square matrix")); }
+    if matches!(d.kind.as_str(), "eigen" | "cholesky" | "lu") && m != n {
+        return Err(span.error(ErrorKind::Length, "eigen, cholesky and lu need a square matrix"));
+    }
     let (domain, width) = domain_of(&[right], span)?;
-    with_field!(domain.inexact(width), [Single, Double, Complex], T => factored(&d, &read::<T>(right, span)?, [m, n], width)).and_then(record).map_err(|f| fault(&d, f, span))
+    with_field!(domain.inexact(width), [Single, Double, Complex], T => factored(&d, &read::<T>(right, span)?, [m, n], width)).and_then(record)
+        .map_err(|f| fault(&d, f, span))
 }
 
-/// `kind •decompose⍤2` on a stack of matrices with compact storage and a plain layout: the array of factors that `⍤2` mixes from each
-/// cell's record, as `•decompose` gives it for that cell alone. Each cell's factors are made on one of rustymath's threads, in [`rounds`]. A stack
-/// with failed cells gives the first one's error. `None` where `•decompose⍤2` takes its general path, which also raises the errors that
-/// the options and the cells' shape give.
+/// `kind •decompose⍤2` on a stack of matrices with compact storage and a plain layout: the array of factors that `⍤2` mixes from each cell's record, as `•decompose` gives it for that cell alone. Each cell's factors are made on one of rustymath's threads, in [`rounds`]. A stack with failed cells gives the first one's error. `None` where `•decompose⍤2` takes its general path, which also raises the errors that the options and the cells' shape give.
 pub(crate) fn stacked_decompositions(left: &Value, right: &Value, span: &Context<'_>) -> Option<Result<Value, Error>> {
-    if right.compact_kind().is_none() || !right.layout().plain() || right.shape().len() < 3 { return None }
+    if right.compact_kind().is_none() || !right.layout().plain() || right.shape().len() < 3 { return None; }
     let d = Decomposition::new(Some(left), span).ok()?;
     let (frame, cell) = right.shape().split_at(right.shape().len() - 2);
     let (m, n, count) = (cell[0], cell[1], generated_len(frame).ok()?);
-    if m == 0 || n == 0 || count == 0 || (matches!(d.kind.as_str(), "eigen" | "cholesky" | "lu") && m != n) { return None }
+    if m == 0 || n == 0 || count == 0 || (matches!(d.kind.as_str(), "eigen" | "cholesky" | "lu") && m != n) { return None; }
     let (domain, width) = domain_of(&[right], span).ok()?;
     fn stack<T>(d: &Decomposition, a: &[T], [m, n, count]: [usize; 3], frame: &[usize], width: FloatWidth, span: &Context<'_>) -> Result<Value, Error>
-    where
-        T: Factor + Field + Sync,
-        T::Real: Field + Into<f64>,
-    {
+    where T: Factor + Field + Sync, T::Real: Field + Into<f64> {
         let results = cells(count, 1, |i, slot: &mut [Option<_>], _: &mut ()| slot[0] = Some(factored(d, &a[i * m * n..][..m * n], [m, n], width)), span)?;
         let (mut items, mut keys) = (Vec::new(), None);
         for cell in results {
@@ -282,20 +245,12 @@ fn fault(d: &Decomposition, fault: Fault, span: &Context<'_>) -> Error {
     match fault {
         Fault::Converge => span.domain_error(format!("{} factorization failed", d.kind)),
         Fault::Indefinite => span.domain_error("cholesky needs a Hermitian positive definite matrix"),
-        Fault::Limit(kind) => span.error(kind, "factors exceed array limits"),
-        Fault::Record(kind) => span.error(kind, "invalid factors"),
+        Fault::Limit(kind) => span.error(kind, "factors exceed array limits"), Fault::Record(kind) => span.error(kind, "invalid factors")
     }
 }
 
-/// `•decompose`'s left argument: the kind of decomposition, as text or as the `kind` of a record of options. Option `vectors`, true by
-/// default, leaves out the vectors of `"svd"` and `"eigen"` where it's false. Option `complete`, false by default, gives `"qr"`'s
-/// complete factors where it's true. Option `rank` gives `"svd"`'s first `rank` singular values and vectors, by `truncated_svd`.
-struct Decomposition {
-    kind: String,
-    vectors: bool,
-    complete: bool,
-    rank: Option<usize>,
-}
+/// `•decompose`'s left argument: the kind of decomposition, as text or as the `kind` of a record of options. Option `vectors`, true by default, leaves out the vectors of `"svd"` and `"eigen"` where it's false. Option `complete`, false by default, gives `"qr"`'s complete factors where it's true. Option `rank` gives `"svd"`'s first `rank` singular values and vectors, by `truncated_svd`.
+struct Decomposition { kind: String, vectors: bool, complete: bool, rank: Option<usize> }
 
 impl Decomposition {
     fn new(left: Option<&Value>, span: &Context<'_>) -> Result<Self, Error> {
@@ -314,13 +269,9 @@ impl Decomposition {
     }
 }
 
-/// The factors of the `m`×`n` matrix `a`, held row by row, that `d` names, with real numbers rounded to `width`, and their names, or why
-/// there are none. A Hermitian matrix has real eigenvalues, in ascending order, and orthonormal eigenvectors.
-fn factored<T>(d: &Decomposition, a: &[T], [m, n]: [usize; 2], width: FloatWidth) -> Result<(Vec<&'static str>, Vec<Value>), Fault>
-where
-    T: Factor + Field,
-    T::Real: Field + Into<f64>,
-{
+/// The factors of the `m`×`n` matrix `a`, held row by row, that `d` names, with real numbers rounded to `width`, and their names, or why there are none. A Hermitian matrix has real eigenvalues, in ascending order, and orthonormal eigenvectors.
+fn factored<T>(d: &Decomposition, a: &[T], [m, n]: [usize; 2], width: FloatWidth) -> Result<(Vec<&'static str>, Vec<Value>), Fault> where T: Factor + Field,
+    T::Real: Field + Into<f64> {
     // The general eigensolver's complex results have parts of `T::Real`, and `Complex64` is the one complex `Field`.
     let wide = |z: Vec<num_complex::Complex<T::Real>>| z.into_iter().map(|z| Complex64::new(z.re.into(), z.im.into())).collect::<Vec<_>>();
     let hermitian = || m == n && (0..n).all(|i| (0..n).all(|j| a[i * n + j] == a[j * n + i].conj()));
@@ -328,14 +279,16 @@ where
     let (names, factors) = match d.kind.as_str() {
         "svd" => {
             let f = match d.rank {
-                Some(k) => linalg::truncated_svd(a, [m, n], k),
-                None if d.vectors => linalg::svd(a, [m, n]),
-                None => linalg::Svd::new([m, n], Vec::new(), linalg::singular_values(a, [m, n]), Vec::new()),
+                Some(k) => linalg::truncated_svd(a, [m, n], k), None if d.vectors => linalg::svd(a, [m, n]),
+                None => linalg::Svd::new([m, n], Vec::new(), linalg::singular_values(a, [m, n]), Vec::new())
             };
             if f.s.iter().any(|&s| num_traits::Float::is_nan(s)) { return Err(Fault::Converge); }
             let k = f.s.len();
-            if !d.vectors { (vec!["s"], vec![vector(f.s, width)]) }
-            else { (vec!["u", "s", "v"], vec![matrix(f.u, [m, k], width), vector(f.s, width), matrix(f.v, [n, k], width)]) }
+            if !d.vectors {
+                (vec!["s"], vec![vector(f.s, width)])
+            } else {
+                (vec!["u", "s", "v"], vec![matrix(f.u, [m, k], width), vector(f.s, width), matrix(f.v, [n, k], width)])
+            }
         }
         "qr" => {
             let ((q, r), rows) = if d.complete { (linalg::qr_complete(a, [m, n]), m) } else { (linalg::qr(a, [m, n]), p) };
@@ -345,7 +298,8 @@ where
         "lu" => {
             let f = linalg::lu(a, n);
             let perm = f.perm.iter().map(|&i| crate::primitive::integer(i as i64)).collect();
-            (vec!["l", "u", "p"], vec![matrix(f.lower(), [n, n], width), matrix(f.upper(), [n, n], width), Value::from_parts(vec![n], perm, crate::primitive::integer(0))])
+            (vec!["l", "u", "p"],
+                vec![matrix(f.lower(), [n, n], width), matrix(f.upper(), [n, n], width), Value::from_parts(vec![n], perm, crate::primitive::integer(0))])
         }
         "eigen" if hermitian() && d.vectors => {
             let f = linalg::eigh(a, n).ok_or(Fault::Converge)?;
@@ -376,15 +330,11 @@ fn domain_of(arrays: &[&Value], span: &Context<'_>) -> Result<(Domain, FloatWidt
 fn matrix<T: Field>(x: Vec<T>, [rows, columns]: [usize; 2], width: FloatWidth) -> Result<Value, ErrorKind> { T::array(x, vec![rows, columns], width) }
 
 /// The vector `x`, with floats at `width`.
-fn vector<T: Field>(x: Vec<T>, width: FloatWidth) -> Result<Value, ErrorKind> {
-    let n = x.len();
-    T::array(x, vec![n], width)
-}
+fn vector<T: Field>(x: Vec<T>, width: FloatWidth) -> Result<Value, ErrorKind> { let n = x.len(); T::array(x, vec![n], width) }
 
 /// The linear algebra of a [`Field`]: rustymath's exact algorithms for rationals, and its factorizations for floats.
 trait Linear: Field {
-    /// The `x` that solves `a x = b`, or the inverse of `a` without `b`, for the `m`×`n` matrix `a` and the `m`×`k` matrix `b`, each
-    /// held row by row: the least-squares solution with the least norm, or the pseudoinverse.
+    /// The `x` that solves `a x = b`, or the inverse of `a` without `b`, for the `m`×`n` matrix `a` and the `m`×`k` matrix `b`, each held row by row: the least-squares solution with the least norm, or the pseudoinverse.
     fn solve(a: &[Self], b: Option<&[Self]>, size: [usize; 2], k: usize, span: &Context<'_>) -> Result<Vec<Self>, Error>;
     /// The determinant of the `n`×`n` matrix `a`.
     fn determinant(a: &[Self], n: usize, span: &Context<'_>) -> Result<Self, Error>;
@@ -392,10 +342,7 @@ trait Linear: Field {
 
 impl Linear for BigRational {
     fn solve(a: &[Self], b: Option<&[Self]>, size: [usize; 2], k: usize, span: &Context<'_>) -> Result<Vec<Self>, Error> {
-        match b {
-            Some(b) => linalg::exact::solve_with(a, b, size, k, || span.check_now()),
-            None => linalg::exact::pinv_with(a, size, || span.check_now()),
-        }
+        match b { Some(b) => linalg::exact::solve_with(a, b, size, k, || span.check_now()), None => linalg::exact::pinv_with(a, size, || span.check_now()) }
     }
     fn determinant(a: &[Self], n: usize, span: &Context<'_>) -> Result<Self, Error> { linalg::exact::determinant_with(a, n, || span.check_now()) }
 }
@@ -417,35 +364,22 @@ fn ordered<'a, T: Clone>(b: Option<Cow<'a, [T]>>, positions: Option<&Mapping>, m
     b.map(|b| match positions { Some(p) => Cow::Owned((0..m).flat_map(|i| b[p.index(i) * k..][..k].to_vec()).collect()), None => b })
 }
 
-/// `kind •decompose⁻¹ factors` multiplies a record of factors from `•decompose` back into its matrix, taking `kind` as `•decompose`
-/// does. `"lu"`'s factors give back the matrix with its rows in their original order. Eigenvectors that aren't
-/// independent, such as a defective matrix's, can't determine the matrix. They raise a `DOMAIN` error. The factors multiply in the
-/// [`Domain`] of their items, or in floats of the default width where these are all exact. The result takes the widest float width
-/// among the factors.
+/// `kind •decompose⁻¹ factors` multiplies a record of factors from `•decompose` back into its matrix, taking `kind` as `•decompose` does. `"lu"`'s factors give back the matrix with its rows in their original order. Eigenvectors that aren't independent, such as a defective matrix's, can't determine the matrix. They raise a `DOMAIN` error. The factors multiply in the [`Domain`] of their items, or in floats of the default width where these are all exact. The result takes the widest float width among the factors.
 pub(crate) fn recompose(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let Decomposition { kind, vectors, .. } = Decomposition::new(left, span)?;
     if !vectors { return Err(span.domain_error("•decompose⁻¹ needs the vectors")); }
     let names: &[(&str, usize)] = match kind.as_str() {
-        "svd" => &[("u", 2), ("s", 1), ("v", 2)],
-        "qr" => &[("q", 2), ("r", 2)],
-        "cholesky" => &[("l", 2)],
-        "eigen" => &[("values", 1), ("vectors", 2)],
-        "lu" => &[("l", 2), ("u", 2), ("p", 1)],
-        _ => unreachable!("`Decomposition::new` checks the kind"),
+        "svd" => &[("u", 2), ("s", 1), ("v", 2)], "qr" => &[("q", 2), ("r", 2)], "cholesky" => &[("l", 2)], "eigen" => &[("values", 1), ("vectors", 2)],
+        "lu" => &[("l", 2), ("u", 2), ("p", 1)], _ => unreachable!("`Decomposition::new` checks the kind")
     };
     // Each factor, with its rows and columns.
-    let factors = names
-        .iter()
-        .map(|&(name, rank)| {
-            let f = crate::keyed::field(right, name).ok_or_else(|| span.domain_error(format!("{kind} factors need {name}")))?;
-            let size = match (f.shape(), rank) {
-                (&[m, n], 2) => (m, n),
-                (&[m], 1) => (m, 1),
-                _ => return Err(span.error(ErrorKind::Rank, format!("{name} must have rank {rank}"))),
-            };
-            Ok((f, size))
-        })
-        .collect::<Result<Vec<_>, Error>>()?;
+    let factors = names.iter().map(|&(name, rank)| {
+        let f = crate::keyed::field(right, name).ok_or_else(|| span.domain_error(format!("{kind} factors need {name}")))?;
+        let size = match (f.shape(), rank) {
+            (&[m, n], 2) => (m, n), (&[m], 1) => (m, 1), _ => return Err(span.error(ErrorKind::Rank, format!("{name} must have rank {rank}")))
+        };
+        Ok((f, size))
+    }).collect::<Result<Vec<_>, Error>>()?;
     let arrays: Vec<&Value> = factors.iter().map(|(f, _)| f).collect();
     let (domain, width) = domain_of(&arrays, span)?;
     with_field!(domain.inexact(width), [Single, Double, Complex], T => {
@@ -454,13 +388,9 @@ pub(crate) fn recompose(left: Option<&Value>, right: &Value, span: &Context<'_>)
     })
 }
 
-/// The matrix that `kind`'s factors `f` multiply back into, as an array with real numbers rounded to `width`. Each factor is held row
-/// by row with its rows and columns, in the order `recompose` names them.
-fn rebuild<T>(kind: &str, f: &[(Cow<'_, [T]>, (usize, usize))], width: FloatWidth, span: &Context<'_>) -> Result<Value, Error>
-where
-    T: Factor + Field,
-    PlusTimes: Inner<T, Out = T>,
-{
+/// The matrix that `kind`'s factors `f` multiply back into, as an array with real numbers rounded to `width`. Each factor is held row by row with its rows and columns, in the order `recompose` names them.
+fn rebuild<T>(kind: &str, f: &[(Cow<'_, [T]>, (usize, usize))], width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> where T: Factor + Field,
+    PlusTimes: Inner<T, Out = T> {
     let disagree = || span.error(ErrorKind::Length, format!("{kind} factors have sizes that don't agree"));
     // `a`, with `rows` rows of `columns` items, conjugated and transposed.
     let adjoint = |a: &[T], rows: usize, columns: usize| {
@@ -475,14 +405,8 @@ where
             if p != ps || pv != ps { return Err(disagree()); }
             (PlusTimes.inner(&scaled(u, s, *p), &adjoint(v, *n, *p), [*m, *p, *n]), [*m, *n])
         }
-        ("qr", [(q, (m, p)), (r, (pr, n))]) => {
-            if p != pr { return Err(disagree()); }
-            (PlusTimes.inner(q, r, [*m, *p, *n]), [*m, *n])
-        }
-        ("cholesky", [(l, (n, c))]) => {
-            if n != c { return Err(disagree()); }
-            (PlusTimes.inner(l, &adjoint(l, *n, *n), [*n; 3]), [*n, *n])
-        }
+        ("qr", [(q, (m, p)), (r, (pr, n))]) => { if p != pr { return Err(disagree()); } (PlusTimes.inner(q, r, [*m, *p, *n]), [*m, *n]) }
+        ("cholesky", [(l, (n, c))]) => { if n != c { return Err(disagree()); } (PlusTimes.inner(l, &adjoint(l, *n, *n), [*n; 3]), [*n, *n]) }
         ("eigen", [(values, (n, _)), (vectors, (r, c))]) => {
             if r != n || c != n { return Err(disagree()); }
             independent(vectors, *n, span)?;
@@ -502,9 +426,7 @@ where
     matrix(x, size, width).error_at(span, "invalid matrix")
 }
 
-/// Checks that the eigenvectors `vectors`, held row by row, are independent enough to give back their matrix. The normalised
-/// eigenvectors' smallest singular value, against their largest, measures how independent they are. Below √ε, the rebuilt matrix loses
-/// about half its digits. A defective matrix's eigenvectors give about ε.
+/// Checks that the eigenvectors `vectors`, held row by row, are independent enough to give back their matrix. The normalised eigenvectors' smallest singular value, against their largest, measures how independent they are. Below √ε, the rebuilt matrix loses about half its digits. A defective matrix's eigenvectors give about ε.
 fn independent<T: Factor>(vectors: &[T], n: usize, span: &Context<'_>) -> Result<(), Error> {
     let zero = <T::Real as num_traits::Zero>::zero();
     let norms: Vec<T::Real> = (0..n).map(|j| num_traits::Float::sqrt((0..n).map(|i| vectors[i * n + j].modulus()).fold(zero, |s, x| s + x * x))).collect();
@@ -546,10 +468,7 @@ pub(super) fn binary_encode(right: &Value, span: &Context<'_>) -> Result<Value, 
     }
     let layout = right.layout().concat(&Layout::from(vec![width]));
     let mut data = Vec::with_capacity(generated_len(layout.shape()).error_at(span, "binary encoding is too large")?);
-    for (n, domain) in &numbers {
-        span.check()?;
-        data.extend((0..width).rev().map(|bit| Value::Number(domain.like(i32::from(n.bit(bit as u64))))));
-    }
+    for (n, domain) in &numbers { span.check()?; data.extend((0..width).rev().map(|bit| Value::Number(domain.like(i32::from(n.bit(bit as u64)))))); }
     let prototype = Value::Number(numeric(&right.prototype(), span)?.zero());
     layout.collect(data, prototype).error_at(span, "invalid binary encoding")
 }
@@ -588,10 +507,16 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
                     integral = Number::from(b);
                     value = Number::from(v);
                     &integral
-                } else { base };
+                } else {
+                    base
+                };
                 let digit = base.residue(&value, span.numeric()).map_err(error)?;
                 if k != 0 {
-                    value = if base.grade_order(&base.zero()).is_eq() { zero.clone() } else { value.dyad(Arithmetic::Minus, &digit).and_then(|v| v.dyad(Arithmetic::Divide, base)).map_err(error)? };
+                    value = if base.grade_order(&base.zero()).is_eq() {
+                        zero.clone()
+                    } else {
+                        value.dyad(Arithmetic::Minus, &digit).and_then(|v| v.dyad(Arithmetic::Divide, base)).map_err(error)?
+                    };
                 }
                 digits[k] = Value::Number(if !exact && digit.is_exact() { Number::from(digit.to_complex().map_err(error)?).at_width(width) } else { digit });
             }
@@ -618,7 +543,11 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
         let mut value = zero.clone();
         for k in 0..len {
             let y = &y[if ylen == 1 { 0 } else { positions.index(k) }];
-            value = if k == 0 { y.clone() } else { value.dyad(Arithmetic::Times, &x[if xlen == 1 { 0 } else { k }]).and_then(|v| v.dyad(Arithmetic::Plus, y)).map_err(error)? };
+            value = if k == 0 {
+                y.clone()
+            } else {
+                value.dyad(Arithmetic::Times, &x[if xlen == 1 { 0 } else { k }]).and_then(|v| v.dyad(Arithmetic::Plus, y)).map_err(error)?
+            };
         }
         data.push(Value::Number(value));
     }
@@ -626,8 +555,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
     agreement.layout.collect(data, Value::Number(zero)).error_at(span, "invalid decode result")
 }
 
-/// `bases⊤values` when both hold whole numbers in compact storage, with each value's digits together and in order. Each base divides
-/// by multiplication. The digits are floats when either argument is. `None` for other arguments, or when a quotient leaves `i64`.
+/// `bases⊤values` when both hold whole numbers in compact storage, with each value's digits together and in order. Each base divides by multiplication. The digits are floats when either argument is. `None` for other arguments, or when a quotient leaves `i64`.
 fn encode_whole<'a>(bases: Items<'a>, values: Items<'a>, layout: &Layout) -> Option<Value> {
     let float = [bases, values].into_iter().filter_map(|items| if let Items::Floats(f) = items { Some(f.tag()) } else { None }).max();
     let whole = |items: Items<'a>| match items { Items::Booleans(_) | Items::Integers(_) | Items::Floats(_) => items.integers().ok(), _ => None };
@@ -637,9 +565,7 @@ fn encode_whole<'a>(bases: Items<'a>, values: Items<'a>, layout: &Layout) -> Opt
     match float { None => layout.integers(data), Some(width) => layout.floats(width, data.into_iter().map(rustymath::convert::float)) }.ok()
 }
 
-/// `bases⊥digits` when both hold numbers in compact storage, with each cell of `len` digits together and in order. `bases` holds `xlen`
-/// bases and each cell `ylen` digits, where 1 serves every position. The value is floats when either argument holds floats, and exact
-/// when both hold integers. `None` for other arguments, or when an exact step leaves `i64`.
+/// `bases⊥digits` when both hold numbers in compact storage, with each cell of `len` digits together and in order. `bases` holds `xlen` bases and each cell `ylen` digits, where 1 serves every position. The value is floats when either argument holds floats, and exact when both hold integers. `None` for other arguments, or when an exact step leaves `i64`.
 fn decode_compact(bases: &Value, digits: &Value, xlen: usize, ylen: usize, len: usize, layout: &Layout) -> Option<Value> {
     fn spread<T: Copy>(v: &[T], each: usize, len: usize) -> Cow<'_, [T]> {
         if each == len { Cow::Borrowed(v) } else { Cow::Owned(v.iter().flat_map(|&x| std::iter::repeat_n(x, len)).collect()) }
@@ -668,7 +594,9 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Context<'_>, fill: bool, rn
         if let a @ Value::Array(_) = e { return roll(&a, span, fill, rng); }
         let float = counted_width(&e, span);
         if fill { return Ok(generated(0, float)); }
-        Ok(draw(numeric(&e, span)?.nonnegative_integer::<u64>().error_at(span, "roll needs a nonnegative integer")?, float, float.unwrap_or(span.numeric().width), rng))
+        Ok(draw(
+            numeric(&e, span)?.nonnegative_integer::<u64>().error_at(span, "roll needs a nonnegative integer")?, float, float.unwrap_or(span.numeric().width),
+            rng))
     };
     if right.is_atom() { return item(right.clone(), rng); }
     let prototype = if right.is_empty() { item(right.prototype(), rng)? } else { integer(0) };
@@ -676,17 +604,14 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Context<'_>, fill: bool, rn
     let unit = float.unwrap_or(span.numeric().width);
     let mut data = Gather::items(right.len());
     match right.as_items() {
-        Items::Values(items) => {
-            for e in items { data.add(item(e.clone(), rng)?); }
-        }
+        Items::Values(items) => { for e in items { data.add(item(e.clone(), rng)?); } }
         bounds if !fill => {
             let bounds = bounds.nonnegative_integers::<u64>().error_at(span, "roll needs a nonnegative integer")?;
             // A bound of 0 draws a float between 0 and 1. The other draws keep their exactness beside it.
             if !bounds.contains(&0) {
                 let mut draws = Vec::with_capacity(bounds.len());
                 rustymath::random::roll(rustymath::Arg::Many(&bounds), bounds.len(), rng, &mut draws);
-                return generated_items(right.shape().to_vec(), draws, float)
-                    .and_then(|v| v.with_layout(right.layout().clone()))
+                return generated_items(right.shape().to_vec(), draws, float).and_then(|v| v.with_layout(right.layout().clone()))
                     .error_at(span, "invalid roll result");
             }
             if bounds.iter().all(|&n| n == 0) {

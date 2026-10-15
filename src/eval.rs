@@ -1,12 +1,8 @@
 use crate::{
-    agreement::{Agreement, Mapping},
-    array::{generated_len, Axis, Frame as ResultFrame, Gather},
-    execution::Context,
-    primitive::{integer, push_window, FoldKind, OperandKind, OperatorKind, Primitive, Selection, Superscript, Targets, Windows},
-    selection::SelectionKind,
-    symbols::Notation,
-    syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind},
-    DomainAt, Error, ErrorAt, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value,
+    agreement::{Agreement, Mapping}, array::{generated_len, Axis, Frame as ResultFrame, Gather}, execution::Context,
+    primitive::{integer, push_window, FoldKind, OperandKind, OperatorKind, Primitive, Selection, Superscript, Targets, Windows}, selection::SelectionKind,
+    symbols::Notation, syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind},
+    DomainAt, Error, ErrorAt, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::{borrow::Cow, convert::Infallible, sync::Arc};
@@ -38,29 +34,22 @@ fn operands_equal<E>(a: &Operand, b: &Option<Operand>, x: &Operand, y: &Option<O
 }
 
 impl Function {
-    /// Whether the functions are built from matching parts, with `values` comparing the values in them. A dfn matches only itself, and a
-    /// late-bound name matches the same expression.
+    /// Whether the functions are built from matching parts, with `values` comparing the values in them. A dfn matches only itself, and a late-bound name matches the same expression.
     fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
         use FunctionNode as N;
         if Arc::ptr_eq(&self.node, &other.node) { return Ok(true); }
         Ok(match (&self.node.kind, &other.node.kind) {
-            (N::Primitive(x), N::Primitive(y)) => x == y,
-            (N::System(x), N::System(y)) => x == y,
-            (N::LateBound(_, x), N::LateBound(_, y)) => x.source.text == y.source.text,
-            (N::Fold(f, x), N::Fold(g, y)) => x == y && f.equal_by(g, values)?,
-            (N::Inverse(f), N::Inverse(g)) => f.equal_by(g, values)?,
-            (N::Axis(f, a), N::Axis(g, b)) => f.equal_by(g, values)? && values(a, b)?,
-            (N::Defined(x), N::Defined(y)) => x == y,
-            (N::Derived(c, a, b), N::Derived(d, x, y)) => c == d && operands_equal(a, b, x, y, values)?,
+            (N::Primitive(x), N::Primitive(y)) => x == y, (N::System(x), N::System(y)) => x == y,
+            (N::LateBound(_, x), N::LateBound(_, y)) => x.source.text == y.source.text, (N::Fold(f, x), N::Fold(g, y)) => x == y && f.equal_by(g, values)?,
+            (N::Inverse(f), N::Inverse(g)) => f.equal_by(g, values)?, (N::Axis(f, a), N::Axis(g, b)) => f.equal_by(g, values)? && values(a, b)?,
+            (N::Defined(x), N::Defined(y)) => x == y, (N::Derived(c, a, b), N::Derived(d, x, y)) => c == d && operands_equal(a, b, x, y, values)?,
             (N::Ruled(f, r), N::Ruled(g, s)) => f.equal_by(g, values)? && r.equal_by(s, values)?,
             (N::Modified(o, a), N::Modified(p, b)) => o == p && a.equal_by(b, values)?,
             (N::Composed(o, [a, b]), N::Composed(p, [x, y])) => o == p && a.equal_by(x, values)? && b.equal_by(y, values)?,
-            (N::Fork([f, g, h]), N::Fork([x, y, z])) => f.equal_by(x, values)? && g.equal_by(y, values)? && h.equal_by(z, values)?,
-            _ => false,
+            (N::Fork([f, g, h]), N::Fork([x, y, z])) => f.equal_by(x, values)? && g.equal_by(y, values)? && h.equal_by(z, values)?, _ => false
         })
     }
-    /// Whether the functions match within tolerance `t`, as `≡` compares them: built from matching parts, with `≡`'s rule for the values
-    /// in them.
+    /// Whether the functions match within tolerance `t`, as `≡` compares them: built from matching parts, with `≡`'s rule for the values in them.
     pub(crate) fn matches(&self, other: &Self, t: crate::number::Numeric, cx: &Context<'_>) -> Result<bool, Error> {
         self.equal_by(other, &mut |x, y| x.matches_within(y, t, cx))
     }
@@ -68,9 +57,7 @@ impl Function {
 impl PartialEq for Function { fn eq(&self, other: &Self) -> bool { let Ok(equal) = self.equal_by(other, &mut same_values); equal } }
 
 const MAX_RESOLUTION_DEPTH: usize = 128;
-/// Nested function calls allowed. In the browser the engine's stack is the limit: a Chrome worker held 300 levels of plain recursion.
-/// Plain recursion makes two calls a level and gets 188 levels from 380 calls. Recursion through outer product makes three, for 125.
-/// The limit leaves about a tenth of a Chrome worker's stack spare, because each build's inlining changes how much stack a call uses.
+/// Nested function calls allowed. In the browser the engine's stack is the limit: a Chrome worker held 300 levels of plain recursion. Plain recursion makes two calls a level and gets 188 levels from 380 calls. Recursion through outer product makes three, for 125. The limit leaves about a tenth of a Chrome worker's stack spare, because each build's inlining changes how much stack a call uses.
 const MAX_CALL_DEPTH: usize = if cfg!(web) { 380 } else { 20_000 };
 /// Lexical frames allowed. They live on the heap, so the browser allows as many as native builds.
 const MAX_FRAME_DEPTH: usize = 20_000;
@@ -93,23 +80,13 @@ const INVALID_SELECTION: &str = "invalid selective-assignment expression";
 fn implicit_name(name: &str) -> bool { matches!(Key::of(name), Key::Implicit(_)) }
 /// Whether `offsets` are many enough to fill a table over the `size` positions they fall below.
 fn dense(offsets: &[usize], size: usize) -> bool { size <= 8 * offsets.len() }
-/// For each of `offsets`, how many offsets before it equal it, and one more than the largest such count. `None` when no offset
-/// repeats. Every offset is below `size`. When the offsets are many enough to fill a table over the positions below `size`, a table
-/// counts them. Where there are no more offsets than positions, a bit for each position first finds whether any repeats. A hash map
-/// counts them otherwise.
+/// For each of `offsets`, how many offsets before it equal it, and one more than the largest such count. `None` when no offset repeats. Every offset is below `size`. When the offsets are many enough to fill a table over the positions below `size`, a table counts them. Where there are no more offsets than positions, a bit for each position first finds whether any repeats. A hash map counts them otherwise.
 fn occurrences(offsets: &[usize], size: usize) -> Option<(Vec<u32>, usize)> {
-    let next = |seen: &mut u32| {
-        *seen += 1;
-        *seen - 1
-    };
+    let next = |seen: &mut u32| { *seen += 1; *seen - 1 };
     let counts: Vec<u32> = if dense(offsets, size) {
         if offsets.len() <= size {
             let (mut taken, mut repeated) = (vec![0u64; size.div_ceil(64)], 0);
-            for &o in offsets {
-                let (word, bit) = (&mut taken[o / 64], 1 << (o % 64));
-                repeated |= *word & bit;
-                *word |= bit;
-            }
+            for &o in offsets { let (word, bit) = (&mut taken[o / 64], 1 << (o % 64)); repeated |= *word & bit; *word |= bit; }
             if repeated == 0 { return None; }
         }
         let mut seen = vec![0u32; size];
@@ -145,42 +122,38 @@ struct Rules { inverse: Option<Function>, derivative: Option<Function> }
 impl Rules {
     fn functions(&self) -> impl Iterator<Item = &Function> { self.inverse.iter().chain(&self.derivative) }
     fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
-        let mut same = |a: &Option<Function>, b: &Option<Function>| match (a, b) { (Some(a), Some(b)) => a.equal_by(b, values), _ => Ok(a.is_none() && b.is_none()) };
+        let mut same = |a: &Option<Function>, b: &Option<Function>| match (a, b) {
+            (Some(a), Some(b)) => a.equal_by(b, values), _ => Ok(a.is_none() && b.is_none())
+        };
         Ok(same(&self.inverse, &other.inverse)? && same(&self.derivative, &other.derivative)?)
     }
 }
 
 /// A system name as `notation` spells it.
-fn system_name(name: &str, notation: Notation) -> String { name.strip_prefix('•').map_or_else(|| name.into(), |name| format!("{}{name}", notation.glyph("•"))) }
+fn system_name(name: &str, notation: Notation) -> String {
+    name.strip_prefix('•').map_or_else(|| name.into(), |name| format!("{}{name}", notation.glyph("•")))
+}
 
 impl FunctionNode {
     /// The operands, left to right. Primitives, system functions, dfns and late-bound names have none.
     fn operands(&self) -> Vec<Operand> {
         let fun = |f: &Function| Operand::Function(f.clone());
         match self {
-            Self::Primitive(_) | Self::System(_) | Self::LateBound(..) | Self::Defined(_) => Vec::new(),
-            Self::Fold(f, _) | Self::Inverse(f) => vec![fun(f)],
-            Self::Axis(f, a) => vec![fun(f), Operand::Value(a.clone())],
-            Self::Modified(_, a) => vec![a.clone()],
-            Self::Composed(_, operands) => operands.to_vec(),
-            Self::Fork(fs) => fs.iter().map(fun).collect(),
+            Self::Primitive(_) | Self::System(_) | Self::LateBound(..) | Self::Defined(_) => Vec::new(), Self::Fold(f, _) | Self::Inverse(f) => vec![fun(f)],
+            Self::Axis(f, a) => vec![fun(f), Operand::Value(a.clone())], Self::Modified(_, a) => vec![a.clone()],
+            Self::Composed(_, operands) => operands.to_vec(), Self::Fork(fs) => fs.iter().map(fun).collect(),
             Self::Derived(_, a, b) => std::iter::once(a).chain(b).cloned().collect(),
-            Self::Ruled(f, rules) => std::iter::once(f).chain(rules.functions()).map(fun).collect(),
+            Self::Ruled(f, rules) => std::iter::once(f).chain(rules.functions()).map(fun).collect()
         }
     }
     /// The node's label in a function tree: its glyph, or its source for a node without operands.
     fn label(&self, notation: Notation) -> String {
         match self {
-            Self::Primitive(p) => notation.glyph(p.glyph()).into(),
-            Self::System(f) => system_name(f.name, notation),
-            Self::Ruled(f, _) => f.node().label(notation),
-            Self::LateBound(_, span) => span.source.text.clone(),
-            Self::Defined(c) | Self::Derived(c, ..) => c.text().into(),
-            Self::Fold(_, h) => notation.glyph(h.glyph()).into(),
-            Self::Inverse(_) => "⁻¹".into(),
-            Self::Axis(..) => notation.glyph("⍠").into(),
-            Self::Modified(op, _) | Self::Composed(op, _) => notation.glyph(op.glyph()).into(),
-            Self::Fork(_) => "fork".into(),
+            Self::Primitive(p) => notation.glyph(p.glyph()).into(), Self::System(f) => system_name(f.name, notation),
+            Self::Ruled(f, _) => f.node().label(notation), Self::LateBound(_, span) => span.source.text.clone(),
+            Self::Defined(c) | Self::Derived(c, ..) => c.text().into(), Self::Fold(_, h) => notation.glyph(h.glyph()).into(),
+            Self::Inverse(_) => "⁻¹".into(), Self::Axis(..) => notation.glyph("⍠").into(),
+            Self::Modified(op, _) | Self::Composed(op, _) => notation.glyph(op.glyph()).into(), Self::Fork(_) => "fork".into()
         }
     }
 }
@@ -206,9 +179,7 @@ impl Function {
                         fields.len() == right.shape().len().max(1)
                             && fields.iter().all(|e| (e.is_atom() && !e.as_number().is_some_and(|n| n.is_infinite())) || crate::keyed::name(e).is_some())
                     } =>
-                {
-                    SelectionKind::Item
-                }
+                { SelectionKind::Item }
                 _ => SelectionKind::Elements,
             },
             FunctionNode::Axis(f, _) => return f.selection_kind(left, right, kind),
@@ -216,14 +187,9 @@ impl Function {
             _ => SelectionKind::Elements,
         })
     }
-    /// Whether the function only selects or rearranges the items of its right argument, whatever the values of its arguments.
-    /// Each and Rank need this of their operand, which they apply to every cell of the labels.
+    /// Whether the function only selects or rearranges the items of its right argument, whatever the values of its arguments. Each and Rank need this of their operand, which they apply to every cell of the labels.
     fn selects(&self, dyadic: bool) -> bool {
-        use {
-            FunctionNode as N,
-            Operand::{Function as F, Value as V},
-            OperatorKind::*,
-        };
+        use {FunctionNode as N, Operand::{Function as F, Value as V}, OperatorKind::*};
         fn replicate(f: &Function) -> bool { match f.node() { N::Primitive(Primitive::Replicate) => true, N::Axis(f, _) => replicate(f), _ => false } }
         match self.node() {
             N::Primitive(p) => p.selects(dyadic),
@@ -242,45 +208,27 @@ impl Function {
     fn transposes(&self) -> bool {
         match self.node() {
             FunctionNode::Primitive(Primitive::Transpose) => true,
-            FunctionNode::Composed(OperatorKind::Before, [Operand::Value(_), Operand::Function(f)]) => f.transposes(),
-            _ => false,
+            FunctionNode::Composed(OperatorKind::Before, [Operand::Value(_), Operand::Function(f)]) => f.transposes(), _ => false
         }
     }
-    /// Whether the function can drop items of its argument. Under uses an inverse only for a function that can't, as BQN's spec
-    /// requires. An inverse drops items only where its function does, except inverse transpose, which never drops any. The
-    /// inverse of a catenate, BPL's one other inverse that drops items, checks the items it drops. Dfns, system functions,
-    /// functions with an inverse that `f⁻¹←g` attaches, and constants count as keeping every item.
+    /// Whether the function can drop items of its argument. Under uses an inverse only for a function that can't, as BQN's spec requires. An inverse drops items only where its function does, except inverse transpose, which never drops any. The inverse of a catenate, BPL's one other inverse that drops items, checks the items it drops. Dfns, system functions, functions with an inverse that `f⁻¹←g` attaches, and constants count as keeping every item.
     fn discards(&self, dyadic: bool) -> bool {
-        use {
-            FunctionNode as N,
-            Operand::{Function as F, Value as V},
-            OperatorKind::*,
-        };
+        use {FunctionNode as N, Operand::{Function as F, Value as V}, OperatorKind::*};
         match self.node() {
-            N::Primitive(p) => p.discards(dyadic),
-            N::Fold(f, _) => f.discards(true) || matches!(f.node(), N::Primitive(Primitive::Identity(_))),
+            N::Primitive(p) => p.discards(dyadic), N::Fold(f, _) => f.discards(true) || matches!(f.node(), N::Primitive(Primitive::Identity(_))),
             N::Composed(Atop, [F(f), F(g)]) => f.discards(false) || g.discards(dyadic),
             N::Composed(Over, [F(f), F(g)]) => f.discards(dyadic) || g.discards(false),
             N::Composed(Before | After, [V(_), F(f)] | [F(f), V(_)]) | N::Modified(Commute, F(f)) => f.discards(true),
-            N::Ruled(_, Rules { inverse: Some(_), .. }) => false,
-            N::Inverse(f) if f.transposes() => false,
+            N::Ruled(_, Rules { inverse: Some(_), .. }) => false, N::Inverse(f) if f.transposes() => false,
             N::Axis(f, _) | N::Inverse(f) | N::Ruled(f, _) | N::Modified(Each, F(f)) | N::Composed(Power | Rank, [F(f), V(_)]) => f.discards(dyadic),
             N::Fork([f, g, h]) => f.discards(dyadic) || g.discards(true) || h.discards(dyadic),
             N::Modified(Commute, V(_)) | N::System(_) | N::Defined(_) | N::Derived(..) | N::LateBound(..) => false,
-            node => node.operands().iter().any(|o| matches!(o, F(f) if f.discards(false) || f.discards(true))),
+            node => node.operands().iter().any(|o| matches!(o, F(f) if f.discards(false) || f.discards(true)))
         }
     }
-    /// `self` applied to the labelled positions of a selection, with the kind of selection it makes, or `None` when `self`
-    /// isn't structural. Selective assignment and Under both select this way. An atop, an over or a whole-number power of
-    /// structural functions is structural. So is a fork whose middle function selects from the tine on the selected path: the
-    /// other tine computes from `actual`, the real argument, which only Under supplies.
+    /// `self` applied to the labelled positions of a selection, with the kind of selection it makes, or `None` when `self` isn't structural. Selective assignment and Under both select this way. An atop, an over or a whole-number power of structural functions is structural. So is a fork whose middle function selects from the tine on the selected path: the other tine computes from `actual`, the real argument, which only Under supplies.
     fn select(
-        &self,
-        left: Option<&Value>,
-        labels: &Value,
-        actual: Option<&Value>,
-        kind: SelectionKind,
-        cx: &mut Context<'_>,
+        &self, left: Option<&Value>, labels: &Value, actual: Option<&Value>, kind: SelectionKind, cx: &mut Context<'_>
     ) -> Result<Option<(Value, SelectionKind)>, Error> {
         if left.is_none() { if let Some(fork) = self.monadic_fork(cx.span)? { return fork.select(None, labels, actual, kind, cx); } }
         match self.node() {
@@ -314,8 +262,7 @@ impl Function {
         let Some(kind) = self.selection_kind(left, labels, kind) else { return Ok(None) };
         Ok(Some((self.call_array(left, labels, cx)?, kind)))
     }
-    /// The fork this function equals with one argument, which selection follows: `f↣g` is `f g ⊢`, `f↢g` is `⊢ f g`, and
-    /// sorting is `⊂∘⍋⌷⊢`, or `⊂∘⍒⌷⊢` for `>`.
+    /// The fork this function equals with one argument, which selection follows: `f↣g` is `f g ⊢`, `f↢g` is `⊢ f g`, and sorting is `⊂∘⍋⌷⊢`, or `⊂∘⍒⌷⊢` for `>`.
     fn monadic_fork(&self, span: &Span) -> Result<Option<Self>, Error> {
         use {crate::primitive::Comparison, FunctionNode as N, Operand::Function as F, Primitive as P};
         let p = Self::primitive;
@@ -351,7 +298,10 @@ impl Function {
             FunctionNode::Composed(op, [a, b]) => format!("{}{}{}", a.left_text(notation, budget), notation.glyph(op.glyph()), b.right_text(notation, budget)),
             FunctionNode::Fork(fs) => {
                 // Tines sit side by side, with a space only where two would read as one token.
-                let word = |c: char| { let c = crate::symbols::canonical(c); crate::syntax::name_char(c) || c.is_ascii_digit() || "¯.•⎕\"'".contains(c) };
+                let word = |c: char| {
+                    let c = crate::symbols::canonical(c);
+                    crate::syntax::name_char(c) || c.is_ascii_digit() || "¯.•⎕\"'".contains(c)
+                };
                 let mut text = String::new();
                 for f in fs {
                     let tine = f.left_text(notation, budget);
@@ -360,7 +310,9 @@ impl Function {
                 }
                 text
             }
-            FunctionNode::Derived(c, a, b) => format!("{}{}{}", a.left_text(notation, budget), c.text(), b.as_ref().map_or(String::new(), |b| b.right_text(notation, budget))),
+            FunctionNode::Derived(c, a, b) => {
+                format!("{}{}{}", a.left_text(notation, budget), c.text(), b.as_ref().map_or(String::new(), |b| b.right_text(notation, budget)))
+            }
             FunctionNode::Ruled(f, _) => f.text(notation, budget),
         }
     }
@@ -368,41 +320,37 @@ impl Function {
     fn left_text(&self, notation: Notation, budget: &mut usize) -> String {
         if matches!(self.node(), FunctionNode::Fork(_)) { format!("({})", self.text(notation, budget)) } else { self.text(notation, budget) }
     }
-    /// The function with the superscript `mark` after it. Text that ends in a number goes in parentheses, because a
-    /// superscript there would apply to the number. So does text with a space, which would split the run.
+    /// The function with the superscript `mark` after it. Text that ends in a number goes in parentheses, because a superscript there would apply to the number. So does text with a space, which would split the run.
     pub(crate) fn superscripted(&self, mark: &str, notation: Notation, budget: &mut usize) -> String {
         let text = self.left_text(notation, budget);
-        if text.contains(' ') || text.ends_with(|c: char| c.is_ascii_digit() || matches!(crate::symbols::canonical(c), '∞' | 'ₓ')) { format!("({text}){mark}") } else { format!("{text}{mark}") }
+        if text.contains(' ') || text.ends_with(|c: char| c.is_ascii_digit() || matches!(crate::symbols::canonical(c), '∞' | 'ₓ')) {
+            format!("({text}){mark}")
+        } else {
+            format!("{text}{mark}")
+        }
     }
     /// An operator takes one token to its right, so anything larger than one token needs parentheses there.
     fn right_text(&self, notation: Notation, budget: &mut usize) -> String {
         let text = self.text(notation, budget);
         let token = match self.node() {
             FunctionNode::Primitive(_) | FunctionNode::System(_) | FunctionNode::Defined(_) => true,
-            FunctionNode::LateBound(..) => text.chars().all(crate::syntax::name_char),
-            _ => false,
+            FunctionNode::LateBound(..) => text.chars().all(crate::syntax::name_char), _ => false
         };
         if token { text } else { format!("({text})") }
     }
-    /// A train. Each subject first binds the part after it, so `2×` is `2↣×`. The train then builds from its last part leftwards.
-    /// A bound part takes one argument, so it makes an atop with what's built. Any other part makes a fork with the part before
-    /// it, or an atop when it comes first. So `32+1.8×` is `(32↣+)∘(1.8↣×)`, `⊢-2×⊢` is `⊢-(2↣×)∘⊢`, and `2|#⊢` is `(2↣|)#⊢`.
+    /// A train. Each subject first binds the part after it, so `2×` is `2↣×`. The train then builds from its last part leftwards. A bound part takes one argument, so it makes an atop with what's built. Any other part makes a fork with the part before it, or an atop when it comes first. So `32+1.8×` is `(32↣+)∘(1.8↣×)`, `⊢-2×⊢` is `⊢-(2↣×)∘⊢`, and `2|#⊢` is `(2↣|)#⊢`.
     fn train(tines: Vec<Tine>, span: &Span) -> Result<Self, Error> {
         let mut parts = Vec::with_capacity(tines.len());
         for tine in tines.into_iter().rev() {
             let part = match tine {
-                Tine::Function(f) => (f, false),
-                Tine::Array(a) => (before(a, parts.pop().map(|(f, _)| f).expect("a train ends in a function"), span)?, true),
+                Tine::Function(f) => (f, false), Tine::Array(a) => (before(a, parts.pop().map(|(f, _)| f).expect("a train ends in a function"), span)?, true)
             };
             parts.push(part);
         }
         let mut parts = parts.into_iter().peekable();
         let (mut result, _) = parts.next().expect("a train ends in a function");
         while let Some((f, bound)) = parts.next() {
-            result = match parts.next_if(|_| !bound) {
-                Some((g, _)) => Self::new(FunctionNode::Fork([g, f, result]), span)?,
-                None => atop(f, result, span)?,
-            };
+            result = match parts.next_if(|_| !bound) { Some((g, _)) => Self::new(FunctionNode::Fork([g, f, result]), span)?, None => atop(f, result, span)? };
         }
         Ok(result)
     }
@@ -426,8 +374,7 @@ impl Function {
                     (Fold(kind), Operand::Function(f)) => FunctionNode::Fold(f, kind),
                     (Super(Superscript::Power(-1)), Operand::Function(f)) => return f.inverse(span),
                     (Super(Superscript::Power(n)), Operand::Function(f)) => FunctionNode::Composed(Power, [Operand::Function(f), Operand::Value(integer(n))]),
-                    (Super(_), _) => return Err(span.domain_error("ᵀ transposes an array, not a function")),
-                    (op, a) => FunctionNode::Modified(op, a),
+                    (Super(_), _) => return Err(span.domain_error("ᵀ transposes an array, not a function")), (op, a) => FunctionNode::Modified(op, a)
                 }
             }
             FunctionNode::Composed(op, [a, b]) => {
@@ -440,16 +387,14 @@ impl Function {
                     if fs.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "agenda needs a vector of functions")); }
                     if fs.is_empty() { return Err(span.domain_error("agenda needs a nonempty vector of functions")); }
                     // An array among the functions acts as a constant function.
-                    let options = fs
-                        .elements()
-                        .map(|e| match e { Value::Function(f) => Ok(Value::Function(f)), a => Function::constant(a, span).map(Value::Function) })
-                        .collect::<Result<Vec<_>, _>>()?;
+                    let options = fs.elements().map(|e| match e {
+                        Value::Function(f) => Ok(Value::Function(f)), a => Function::constant(a, span).map(Value::Function)
+                    }).collect::<Result<Vec<_>, _>>()?;
                     if let Operand::Value(index) = &a { agenda_index(index, options.len(), span)?; }
                     b = Operand::Value(Value::new(vec![options.len()], options).error_at(span, "invalid agenda options")?);
                 }
                 match (op, a, b) {
-                    (Axis, Operand::Function(f), Operand::Value(v)) => FunctionNode::Axis(f, v),
-                    (op, a, b) => FunctionNode::Composed(op, [a, b]),
+                    (Axis, Operand::Function(f), Operand::Value(v)) => FunctionNode::Axis(f, v), (op, a, b) => FunctionNode::Composed(op, [a, b])
                 }
             }
             node => node,
@@ -457,13 +402,11 @@ impl Function {
         let (environment, late) = operand_dependencies(node.operands().iter());
         let (environment, late) = match &node {
             FunctionNode::LateBound(..) => (environment, true),
-            FunctionNode::Defined(c) | FunctionNode::Derived(c, ..) => (environment.max(c.environment), late),
-            _ => (environment, late),
+            FunctionNode::Defined(c) | FunctionNode::Derived(c, ..) => (environment.max(c.environment), late), _ => (environment, late)
         };
         Ok(Self { node: Arc::new(FunctionData { kind: node, environment, late }) })
     }
-    /// Calls the function, first growing the stack when it's nearly full. `call`, `dispatch` and `call_array` are always inlined, so
-    /// that each BPL call adds fewer frames to the host stack. In the browser that stack limits the depth of recursion.
+    /// Calls the function, first growing the stack when it's nearly full. `call`, `dispatch` and `call_array` are always inlined, so that each BPL call adds fewer frames to the host stack. In the browser that stack limits the depth of recursion.
     #[inline(always)]
     fn call(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         cx.check()?;
@@ -503,12 +446,15 @@ impl Function {
     }
     /// The function's result on these arguments, as an array.
     #[inline(always)]
-    pub(crate) fn call_array(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> { self.call(left, right, cx)?.array(cx.span) }
+    pub(crate) fn call_array(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+        self.call(left, right, cx)?.array(cx.span)
+    }
     /// What `∂` differentiates this function through, or `None` where `f∂` gives DOMAIN.
     fn derivative(&self) -> Option<Derivative<'_>> {
         match self.node() {
             FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(p)])
-                if matches!(p.node(), FunctionNode::Primitive(Primitive::Polynomial)) => Some(Derivative::Polynomial(a)),
+                if matches!(p.node(), FunctionNode::Primitive(Primitive::Polynomial)) =>
+            { Some(Derivative::Polynomial(a)) }
             FunctionNode::Ruled(_, Rules { derivative: Some(g), .. }) => Some(Derivative::Attached(g)),
             FunctionNode::Ruled(f, _) => f.derivative(),
             _ => None,
@@ -532,16 +478,17 @@ impl Function {
     fn call_prototype(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         cx.prototype_mode(true, |cx| self.call(left, right, cx))
     }
-    /// `self` called on each element of `right`, with `left` whole for each, as a system function does with a right argument that holds
-    /// several of its items. An element that still holds several maps again. The result is shy when every call's result is.
-    /// An empty argument gives an empty result with `prototype`, without a call, because a system function can have effects. A call that
-    /// gives no result contributes `⍬`.
+    /// `self` called on each element of `right`, with `left` whole for each, as a system function does with a right argument that holds several of its items. An element that still holds several maps again. The result is shy when every call's result is. An empty argument gives an empty result with `prototype`, without a call, because a system function can have effects. A call that gives no result contributes `⍬`.
     fn each_item(&self, left: Option<&Value>, right: &Value, prototype: fn(&Context<'_>) -> Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         let (mut items, mut shy) = (Vec::with_capacity(right.len()), !right.is_empty());
         for element in right.elements() {
             let bound = self.call(left, &element, cx)?;
             shy &= bound.shy;
-            items.push(if matches!(bound.value, Binding::NoResult) { crate::syntax::zilde(crate::Number::float(0.0, cx.numeric().width)) } else { bound.array(cx.span)? });
+            items.push(if matches!(bound.value, Binding::NoResult) {
+                crate::syntax::zilde(crate::Number::float(0.0, cx.numeric().width))
+            } else {
+                bound.array(cx.span)?
+            });
         }
         let value = right.layout().collect(items, prototype(cx)).error_at(cx.span, "invalid result")?;
         Ok(Bound { shy, ..Bound::from(value) })
@@ -549,7 +496,9 @@ impl Function {
     fn inverse(&self, span: &Span) -> Result<Self, Error> {
         match self.node() {
             FunctionNode::Inverse(f) => Ok(f.clone()),
-            FunctionNode::Ruled(f, Rules { inverse: Some(g), .. }) => Self::new(FunctionNode::Ruled(g.clone(), Rules { inverse: Some(f.clone()), derivative: None }), span),
+            FunctionNode::Ruled(f, Rules { inverse: Some(g), .. }) => {
+                Self::new(FunctionNode::Ruled(g.clone(), Rules { inverse: Some(f.clone()), derivative: None }), span)
+            }
             _ => Self::new(FunctionNode::Inverse(self.clone()), span),
         }
     }
@@ -578,8 +527,7 @@ impl Function {
                 }
                 FunctionNode::Ruled(f, rules) => FunctionNode::Ruled(
                     fun(f)?,
-                    Rules { inverse: rules.inverse.as_ref().map(&mut fun).transpose()?, derivative: rules.derivative.as_ref().map(&mut fun).transpose()? },
-                ),
+                    Rules { inverse: rules.inverse.as_ref().map(&mut fun).transpose()?, derivative: rules.derivative.as_ref().map(&mut fun).transpose()? }),
                 FunctionNode::Modified(op, a) => FunctionNode::Modified(*op, operand(a, &mut fun)?),
                 FunctionNode::Composed(op, [a, b]) => FunctionNode::Composed(*op, [operand(a, &mut fun)?, operand(b, &mut fun)?]),
                 FunctionNode::Fork([a, b, c]) => FunctionNode::Fork([fun(a)?, fun(b)?, fun(c)?]),
@@ -597,8 +545,7 @@ impl Function {
         if let FunctionNode::Primitive(p) = self.node() {
             let info = p.info();
             let cells = match left {
-                None => info.monad.and_then(|m| m.cells(right)).map(|r| vec![r]),
-                Some(x) => info.dyad.and_then(|d| d.cells(x, right)).map(Vec::from),
+                None => info.monad.and_then(|m| m.cells(right)).map(|r| vec![r]), Some(x) => info.dyad.and_then(|d| d.cells(x, right)).map(Vec::from)
             };
             if let Some(cells) = cells {
                 let ranks = Value::integers(vec![cells.len()], cells.into_iter().map(i64::from).collect()).error_at(cx.span, "invalid cell ranks")?;
@@ -619,10 +566,7 @@ impl Function {
             FunctionNode::Modified(OperatorKind::Key, Operand::Function(f)) => return key(f, left, right, cx),
             FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(f)) => {
                 let (mut f, mut order) = (f, 1);
-                while let FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(inner)) = f.node() {
-                    f = inner;
-                    order += 1;
-                }
+                while let FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(inner)) = f.node() { f = inner; order += 1; }
                 match f.derivative() {
                     Some(Derivative::Polynomial(a)) => crate::polynomial::derivative(a, order, left, right, cx),
                     // `f∂←g` attaches `g` as the derivative, so a higher order differentiates `g`.
@@ -658,7 +602,9 @@ impl Function {
                     }
                     crate::system::Call::Mime => cx.session.mime(left, right, cx.span),
                     crate::system::Call::Session(call) => call(cx.session, left, right, cx.span),
-                    crate::system::Call::Prefs => return crate::display::prefs(cx.session, right, cx.span).map(|(value, shy)| Bound { shy, ..Bound::from(value) }),
+                    crate::system::Call::Prefs => {
+                        return crate::display::prefs(cx.session, right, cx.span).map(|(value, shy)| Bound { shy, ..Bound::from(value) })
+                    }
                     crate::system::Call::Time => cx.session.system_time(left, right, cx.span),
                     crate::system::Call::Regex(regex, operation) => crate::regex::call(regex, *operation, left, right, cx),
                     crate::system::Call::Distribution(d, operation) => crate::distribution::call(d, *operation, left, right, cx),
@@ -705,9 +651,7 @@ impl Function {
     /// The primitive function with glyph `name`, or the system function `name`, which starts with `•`.
     pub fn builtin(name: &str) -> Option<Self> {
         let first = name.chars().next()?;
-        if crate::symbols::canonical(first) == '•' {
-            return crate::system::lookup(&format!("•{}", &name[first.len_utf8()..]));
-        }
+        if crate::symbols::canonical(first) == '•' { return crate::system::lookup(&format!("•{}", &name[first.len_utf8()..])); }
         name.parse::<char>().ok().and_then(Primitive::from_glyph).map(Self::primitive)
     }
 
@@ -720,19 +664,16 @@ impl Function {
         let operator = glyph.and_then(OperatorKind::from_glyph);
         let node = match (kind, operands.as_slice(), operator) {
             ("fork", [a, b, c], ..) => FunctionNode::Fork([constant(a)?, fun(b)?, constant(c)?]),
-            ("axis", [f, Operand::Value(axis)], ..) => FunctionNode::Axis(fun(f)?, axis.clone()),
-            ("⁻¹", [f], ..) => return fun(f)?.inverse(&span),
+            ("axis", [f, Operand::Value(axis)], ..) => FunctionNode::Axis(fun(f)?, axis.clone()), ("⁻¹", [f], ..) => return fun(f)?.inverse(&span),
             (_, [f], Some(op)) if !op.info().dyadic() => FunctionNode::Modified(op, f.clone()),
             (_, [a, b], Some(op)) if op.info().right.is_some() => FunctionNode::Composed(op, [a.clone(), b.clone()]),
-            _ => return Err(span.error(ErrorKind::Syntax, "invalid function construction")),
+            _ => return Err(span.error(ErrorKind::Syntax, "invalid function construction"))
         };
         Self::new(node, &span)
     }
 }
 
-// A lexical link is an index into active frames, never an owning reference.
-// BPL results/array elements are arrays and assignments are local. Public function
-// export rejects frame references throughout the function graph.
+// A lexical link is an index into active frames, never an owning reference. BPL results/array elements are arrays and assignments are local. Public function export rejects frame references throughout the function graph.
 #[derive(Clone, Debug)]
 struct Closure { definition: Arc<Definition>, environment: Option<usize>, module: usize }
 
@@ -754,33 +695,22 @@ impl<'a> Key<'a> {
     const OPERATOR_RECURSION: Self = Self::Implicit(5);
     fn of(name: &'a str) -> Self {
         match name {
-            "⍺" => Self::ALPHA,
-            "⍵" => Self::OMEGA,
-            "⍶" => Self::LEFT_OPERAND,
-            "⍹" => Self::RIGHT_OPERAND,
-            "∇" => Self::RECURSION,
-            "⍢" => Self::OPERATOR_RECURSION,
-            _ => Self::Named(name),
+            "⍺" => Self::ALPHA, "⍵" => Self::OMEGA, "⍶" => Self::LEFT_OPERAND, "⍹" => Self::RIGHT_OPERAND, "∇" => Self::RECURSION,
+            "⍢" => Self::OPERATOR_RECURSION, _ => Self::Named(name)
         }
     }
 }
-/// A function call's names. The call's arguments, operands and recursion names are in `implicit`, at their `Key` slots. Other names
-/// are in `names`, which starts with room for `names` of them. `module` is the module whose names the call sees after its frames.
+/// A function call's names. The call's arguments, operands and recursion names are in `implicit`, at their `Key` slots. Other names are in `names`, which starts with room for `names` of them. `module` is the module whose names the call sees after its frames.
 struct Frame { implicit: [Option<Binding>; 6], names: HashMap<String, Binding>, parent: Option<usize>, module: usize }
 impl Frame {
-    fn new(parent: Option<usize>, module: usize, names: usize) -> Self { Self { implicit: Default::default(), names: HashMap::with_capacity(names), parent, module } }
-    fn get(&self, key: Key) -> Option<&Binding> {
-        match key { Key::Implicit(k) => self.implicit[k].as_ref(), Key::Named(name) => self.names.get(name) }
+    fn new(parent: Option<usize>, module: usize, names: usize) -> Self {
+        Self { implicit: Default::default(), names: HashMap::with_capacity(names), parent, module }
     }
+    fn get(&self, key: Key) -> Option<&Binding> { match key { Key::Implicit(k) => self.implicit[k].as_ref(), Key::Named(name) => self.names.get(name) } }
     fn insert(&mut self, key: Key, value: Binding) {
-        match key {
-            Key::Implicit(k) => self.implicit[k] = Some(value),
-            Key::Named(name) => { self.names.insert(name.to_owned(), value); }
-        }
+        match key { Key::Implicit(k) => self.implicit[k] = Some(value), Key::Named(name) => { self.names.insert(name.to_owned(), value); } }
     }
-    fn remove(&mut self, key: Key) -> Option<Binding> {
-        match key { Key::Implicit(k) => self.implicit[k].take(), Key::Named(name) => self.names.remove(name) }
-    }
+    fn remove(&mut self, key: Key) -> Option<Binding> { match key { Key::Implicit(k) => self.implicit[k].take(), Key::Named(name) => self.names.remove(name) } }
 }
 struct ArrayBinding { name: String, owner: Option<usize>, value: Value }
 
@@ -790,9 +720,7 @@ pub enum Operand { Value(Value), Function(Function) }
 impl Operand {
     fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
         match (self, other) {
-            (Self::Value(x), Self::Value(y)) => values(x, y),
-            (Self::Function(f), Self::Function(g)) => f.equal_by(g, values),
-            _ => Ok(false),
+            (Self::Value(x), Self::Value(y)) => values(x, y), (Self::Function(f), Self::Function(g)) => f.equal_by(g, values), _ => Ok(false)
         }
     }
 }
@@ -802,10 +730,8 @@ enum OperatorNode { Defined(Closure), Primitive(OperatorKind), Bound(Box<Operato
 impl OperatorNode {
     fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
         Ok(match (self, other) {
-            (Self::Defined(x), Self::Defined(y)) => x == y,
-            (Self::Primitive(x), Self::Primitive(y)) => x == y,
-            (Self::Bound(n, a), Self::Bound(m, b)) => n.equal_by(m, values)? && a.equal_by(b, values)?,
-            _ => false,
+            (Self::Defined(x), Self::Defined(y)) => x == y, (Self::Primitive(x), Self::Primitive(y)) => x == y,
+            (Self::Bound(n, a), Self::Bound(m, b)) => n.equal_by(m, values)? && a.equal_by(b, values)?, _ => false
         })
     }
 }
@@ -817,8 +743,7 @@ impl Operator {
     fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
         Ok(Arc::ptr_eq(&self.0, &other.0) || self.0.equal_by(&other.0, values)?)
     }
-    /// Whether the operators match within tolerance `t`, as `≡` compares them: built from matching parts, with `≡`'s rule for the values
-    /// in them.
+    /// Whether the operators match within tolerance `t`, as `≡` compares them: built from matching parts, with `≡`'s rule for the values in them.
     pub(crate) fn matches(&self, other: &Self, t: crate::number::Numeric, cx: &Context<'_>) -> Result<bool, Error> {
         self.equal_by(other, &mut |x, y| x.matches_within(y, t, cx))
     }
@@ -827,8 +752,7 @@ impl PartialEq for Operator { fn eq(&self, other: &Self) -> bool { let Ok(equal)
 
 fn operand_dependencies<'a>(operands: impl Iterator<Item = &'a Operand>) -> (Option<usize>, bool) {
     operands.fold((None, false), |(environment, late), op| match op {
-        Operand::Function(f) => (environment.max(f.environment()), late || f.late()),
-        Operand::Value(a) => (environment.max(a.environment()), late),
+        Operand::Function(f) => (environment.max(f.environment()), late || f.late()), Operand::Value(a) => (environment.max(a.environment()), late)
     })
 }
 
@@ -845,16 +769,13 @@ fn constant_operand(kind: OperandKind, a: Operand, span: &Span) -> Result<Operan
 impl OperatorNode {
     fn text(&self, notation: Notation) -> String {
         match self {
-            Self::Defined(c) => c.text().into(),
-            Self::Primitive(op) => notation.glyph(op.glyph()).into(),
-            Self::Bound(op, right) => format!("{}({})", op.text(notation), right.text(notation, &mut 1000)),
+            Self::Defined(c) => c.text().into(), Self::Primitive(op) => notation.glyph(op.glyph()).into(),
+            Self::Bound(op, right) => format!("{}({})", op.text(notation), right.text(notation, &mut 1000))
         }
     }
     fn is_dyadic(&self) -> bool {
         match self {
-            Self::Defined(c) => c.definition.kind == DefinitionKind::DyadicOperator,
-            Self::Primitive(op) => op.info().dyadic(),
-            Self::Bound(..) => false,
+            Self::Defined(c) => c.definition.kind == DefinitionKind::DyadicOperator, Self::Primitive(op) => op.info().dyadic(), Self::Bound(..) => false
         }
     }
 
@@ -863,9 +784,8 @@ impl OperatorNode {
             Self::Defined(c) => FunctionNode::Derived(c, operand, None),
             Self::Primitive(op) => FunctionNode::Modified(op, operand),
             Self::Bound(op, right) => match *op {
-                Self::Defined(c) => FunctionNode::Derived(c, operand, Some(right)),
-                Self::Primitive(op) => FunctionNode::Composed(op, [operand, right]),
-                Self::Bound(..) => unreachable!(),
+                Self::Defined(c) => FunctionNode::Derived(c, operand, Some(right)), Self::Primitive(op) => FunctionNode::Composed(op, [operand, right]),
+                Self::Bound(..) => unreachable!()
             },
         };
         Function::new(node, span).map(Binding::Function)
@@ -873,9 +793,8 @@ impl OperatorNode {
     /// The innermost frame the operator depends on: its dfn's, or that of an operand bound to it.
     fn environment(&self) -> Option<usize> {
         match self {
-            Self::Defined(c) => c.environment,
-            Self::Primitive(_) => None,
-            Self::Bound(op, right) => op.environment().max(operand_dependencies(std::iter::once(right)).0),
+            Self::Defined(c) => c.environment, Self::Primitive(_) => None,
+            Self::Bound(op, right) => op.environment().max(operand_dependencies(std::iter::once(right)).0)
         }
     }
 }
@@ -888,9 +807,8 @@ impl Operator {
         let span = Span::whole(Source::new("<operator>", self.to_string()));
         let span = &span;
         let node = match right {
-            Some(right) if self.0.is_dyadic() => OperatorNode::Bound(Box::new((*self.0).clone()), right),
-            None if !self.0.is_dyadic() => (*self.0).clone(),
-            _ => return Err(span.domain_error(if self.0.is_dyadic() { "this operator takes two operands" } else { "this operator takes one operand" })),
+            Some(right) if self.0.is_dyadic() => OperatorNode::Bound(Box::new((*self.0).clone()), right), None if !self.0.is_dyadic() => (*self.0).clone(),
+            _ => return Err(span.domain_error(if self.0.is_dyadic() { "this operator takes two operands" } else { "this operator takes one operand" }))
         };
         Function::from_value(node.derive(left, span)?, span)
     }
@@ -899,9 +817,17 @@ impl Operator {
 impl std::fmt::Display for Operator { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(&self.text(Notation::Apl)) } }
 
 impl Operand {
-    fn text(&self, notation: Notation, budget: &mut usize) -> String { match self { Self::Value(a) => a.source(crate::display::Elide { notation, ..crate::display::Elide::NONE }), Self::Function(f) => f.text(notation, budget) } }
-    fn left_text(&self, notation: Notation, budget: &mut usize) -> String { match self { Self::Value(a) => a.operand(notation), Self::Function(f) => f.left_text(notation, budget) } }
-    fn right_text(&self, notation: Notation, budget: &mut usize) -> String { match self { Self::Value(a) => a.operand(notation), Self::Function(f) => f.right_text(notation, budget) } }
+    fn text(&self, notation: Notation, budget: &mut usize) -> String {
+        match self {
+            Self::Value(a) => a.source(crate::display::Elide { notation, ..crate::display::Elide::NONE }), Self::Function(f) => f.text(notation, budget)
+        }
+    }
+    fn left_text(&self, notation: Notation, budget: &mut usize) -> String {
+        match self { Self::Value(a) => a.operand(notation), Self::Function(f) => f.left_text(notation, budget) }
+    }
+    fn right_text(&self, notation: Notation, budget: &mut usize) -> String {
+        match self { Self::Value(a) => a.operand(notation), Self::Function(f) => f.right_text(notation, budget) }
+    }
     fn tree(&self, notation: Notation, budget: &mut usize) -> crate::display::Tree {
         match self { Self::Function(f) => f.tree(notation, budget), _ => crate::display::Tree::leaf(self.text(notation, budget)) }
     }
@@ -924,50 +850,32 @@ enum Binding {
 impl Binding {
     fn class(&self) -> i64 {
         match self {
-            Self::NoResult | Self::Absent => 0,
-            Self::Value(_) => SUBJECT_CLASS,
-            Self::Function(_) => FUNCTION_CLASS,
-            Self::Operator(_) => OPERATOR_CLASS,
+            Self::NoResult | Self::Absent => 0, Self::Value(_) => SUBJECT_CLASS, Self::Function(_) => FUNCTION_CLASS, Self::Operator(_) => OPERATOR_CLASS
         }
     }
     fn inspection(&self, session: &Session) -> Option<crate::Inspection> {
         Some(match self {
-            Self::Function(f) => f.inspect(session),
-            Self::Operator(op) => crate::Inspection::new("operator", op.text(Notation::Apl)),
-            Self::Value(a) => crate::Inspection::new("array", a.to_string()),
-            Self::NoResult | Self::Absent => return None,
+            Self::Function(f) => f.inspect(session), Self::Operator(op) => crate::Inspection::new("operator", op.text(Notation::Apl)),
+            Self::Value(a) => crate::Inspection::new("array", a.to_string()), Self::NoResult | Self::Absent => return None
         })
     }
     fn from_element(element: Value) -> Self {
         match element { Value::Function(f) => Self::Function(f), Value::Operator(op) => Self::Operator(Arc::unwrap_or_clone(op.0)), _ => Self::Value(element) }
     }
     fn environment(&self) -> Option<usize> {
-        match self {
-            Self::Value(a) => a.environment(),
-            Self::Function(f) => f.environment(),
-            Self::Operator(op) => op.environment(),
-            _ => None,
-        }
+        match self { Self::Value(a) => a.environment(), Self::Function(f) => f.environment(), Self::Operator(op) => op.environment(), _ => None }
     }
     fn into_value(self, span: &Span) -> Result<Value, Error> {
         match self {
-            Self::Value(a) => Ok(a),
-            v @ Self::Function(_) => Ok(Value::Function(Function::from_value(v, span)?)),
+            Self::Value(a) => Ok(a), v @ Self::Function(_) => Ok(Value::Function(Function::from_value(v, span)?)),
             Self::Operator(op) => Ok(Value::Operator(Operator(Arc::new(op)))),
-            Self::NoResult => Err(span.error(ErrorKind::Value, "expression produced no value")),
-            Self::Absent => Err(span.error(ErrorKind::Value, ABSENT)),
+            Self::NoResult => Err(span.error(ErrorKind::Value, "expression produced no value")), Self::Absent => Err(span.error(ErrorKind::Value, ABSENT))
         }
     }
 }
 struct Bound { value: Binding, shy: bool, expression: Option<Box<Expression>> }
 struct Application {
-    function: Function,
-    left: Option<Value>,
-    right: Value,
-    span: Span,
-    unshy: bool,
-    selection: Option<SelectionKind>,
-    expression: Option<Box<Expression>>,
+    function: Function, left: Option<Value>, right: Value, span: Span, unshy: bool, selection: Option<SelectionKind>, expression: Option<Box<Expression>>
 }
 enum Step { Done(Bound), Tail(Application) }
 
@@ -988,11 +896,7 @@ impl Bound {
 /// Final value and ordered output are independent. Errors retain already-produced output.
 #[derive(Debug, Default)]
 pub struct Evaluation {
-    pub value: Option<Value>,
-    pub function: Option<Function>,
-    pub operator: Option<Operator>,
-    pub output: Vec<Output>,
-    pub error: Option<Error>,
+    pub value: Option<Value>, pub function: Option<Function>, pub operator: Option<Operator>, pub output: Vec<Output>, pub error: Option<Error>
 }
 impl Evaluation {
     pub fn output_text(&self) -> Vec<&str> { self.output.iter().map(Output::text).collect() }
@@ -1015,8 +919,7 @@ pub struct Session {
     /// The files being loaded. Loading one of them again is a cycle.
     loading: Vec<std::path::PathBuf>,
     frames: Vec<Frame>,
-    /// Empty vectors that the binder reuses for its stacks within one evaluation, so that an expression allocates none for them.
-    /// `evaluation` frees them when it ends.
+    /// Empty vectors that the binder reuses for its stacks within one evaluation, so that an expression allocates none for them. `evaluation` frees them when it ends.
     stacks: Vec<Vec<binder::Entity>>,
     /// The `Function` for each primitive that `resolve` has met. Resolving a glyph clones it, where it would otherwise allocate one.
     primitives: HashMap<Primitive, Function>,

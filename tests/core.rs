@@ -44,8 +44,7 @@ fn language_examples() {
             let Some(ext) = path.extension().filter(|ext| *ext == "qmd" || *ext == "bpl") else { continue; };
             if page.as_deref().is_some_and(|p| !path.to_string_lossy().contains(p)) { continue; }
             let text = std::fs::read_to_string(&path).unwrap();
-            // A gallery demo is a whole program, run after the gallery's settings, as the gallery runs it. A demo that defines `frame` also
-            // draws its first frame.
+            // A gallery demo is a whole program, run after the gallery's settings, as the gallery runs it. A demo that defines `frame` also draws its first frame.
             if ext == "bpl" {
                 let mut session = Session::new();
                 let error = [prefs.as_str(), &text, r#"{3=•nc "frame"?frame 0;0}0"#].into_iter().find_map(|code| session.eval(code).error);
@@ -54,10 +53,7 @@ fn language_examples() {
             }
             let mut fenced = false;
             for line in text.lines() {
-                if line.starts_with("```") {
-                    fenced = !fenced;
-                    continue;
-                }
+                if line.starts_with("```") { fenced = !fenced; continue; }
                 if fenced { continue; }
                 for link in line.split("](").skip(1) {
                     let target = link.split(')').next().unwrap().split('#').next().unwrap();
@@ -86,8 +82,7 @@ fn fails_in(session: &mut Session, kind: ErrorKind, codes: &[&str]) {
     for code in codes {
         let result = session.eval(code);
         match result.error {
-            Some(error) => assert_eq!(error.kind, kind, "{code}: {error}"),
-            None => panic!("{code}: expected {kind:?}, got {:?}", result.value),
+            Some(error) => assert_eq!(error.kind, kind, "{code}: {error}"), None => panic!("{code}: expected {kind:?}, got {:?}", result.value)
         }
     }
 }
@@ -128,11 +123,8 @@ fn calls_with_array_arguments() {
     let mut s = Session::new();
     s.eval("x←42 ⋄ mean←+/÷≢ ⋄ bad←{⎕←⍵ ⋄ 1÷⍵}");
     for (function, codes, expected) in [
-        ("mean", vec!["1 2 3"], "2"),
-        ("-", vec!["10ₓ", "[1 2]ₓ"], "[9 8]ₓ"),
-        ("#⍠0", vec!["1 0", "2 2⍴⍳4"], "[0 1⋄]"),
-        ("⊢", vec![r#"[1r3 2ₓ;"ab";0 3⍴0ₓ]"#], r#"[1r3 2ₓ;"ab";0 3⍴0ₓ]"#),
-        ("{k←⍵ ⋄ {k+⍵}⍵}", vec!["3ₓ"], "6ₓ"),
+        ("mean", vec!["1 2 3"], "2"), ("-", vec!["10ₓ", "[1 2]ₓ"], "[9 8]ₓ"), ("#⍠0", vec!["1 0", "2 2⍴⍳4"], "[0 1⋄]"),
+        ("⊢", vec![r#"[1r3 2ₓ;"ab";0 3⍴0ₓ]"#], r#"[1r3 2ₓ;"ab";0 3⍴0ₓ]"#), ("{k←⍵ ⋄ {k+⍵}⍵}", vec!["3ₓ"], "6ₓ"),
         ("{x←⍵}", vec!["7"], "7"),
     ] {
         let args: Vec<_> = codes.iter().map(|c| run(c).unwrap().unwrap()).collect();
@@ -145,12 +137,8 @@ fn calls_with_array_arguments() {
     let r = s.call("{}", &[float(3.0)]);
     assert!(r.value.is_none() && r.error.is_none() && r.output_text().is_empty());
     for (function, args, kind) in [
-        ("+", vec![], Length),
-        ("+", vec![float(1.0); 3], Length),
-        ("", vec![float(1.0)], Syntax),
-        ("1", vec![float(1.0)], Syntax),
-        ("¨", vec![float(1.0)], Syntax),
-        ("+ ⋄ -", vec![float(1.0)], Syntax),
+        ("+", vec![], Length), ("+", vec![float(1.0); 3], Length), ("", vec![float(1.0)], Syntax), ("1", vec![float(1.0)], Syntax),
+        ("¨", vec![float(1.0)], Syntax), ("+ ⋄ -", vec![float(1.0)], Syntax),
     ] { assert_eq!(s.call(function, &args).error.unwrap().kind, kind); }
     let r = s.call("bad", &[AplValue::Character('a')]);
     assert_eq!(r.output_text(), ["'a'"]);
@@ -335,12 +323,8 @@ fn array_literal_completeness() {
 fn shy_results_and_signal_messages() {
     let mut s = Session::new();
     for (code, output) in [
-        ("f←{a←1} ⋄ f 0", vec![]),
-        ("(f 0)", vec!["1"]),
-        ("{2 ⋄ f ⍵}0", vec![]),
-        ("{\"DOMAIN\"::a←7 ⋄ 1÷⍵}'a'", vec![]),
-        ("{f←{a←1} ⋄ (+f+)3}0", vec![]),
-        ("{⎕←7}0", vec!["7"]),
+        ("f←{a←1} ⋄ f 0", vec![]), ("(f 0)", vec!["1"]), ("{2 ⋄ f ⍵}0", vec![]), ("{\"DOMAIN\"::a←7 ⋄ 1÷⍵}'a'", vec![]),
+        ("{f←{a←1} ⋄ (+f+)3}0", vec![]), ("{⎕←7}0", vec!["7"]),
     ] {
         let r = s.eval(code);
         assert!(r.error.is_none(), "{code}: {:?}", r.error);
@@ -416,22 +400,10 @@ fn hanzi_spellings_and_language() {
         }
     }
     equiv_in!(&mut s;
-        "mean是加总除数句mean 2 4 9" => "5",
-        "加累 2 3 4" => "2 5 9",
-        "乘表己至3" => "[1 2 3⋄2 4 6⋄3 6 9]",
-        "加總 1 2 3" => "6",
-        "負3减负1" => "¯2",
-        "1e负3加1r负4" => "1e¯3+1r¯4",
-        "[负3 负1]ₓ" => "[¯3 ¯1]ₓ",
-        "[空]ₛ" => "[⍬]ₛ",
-        "负永" => "¯∞",
-        "{甲是2句甲加乙}3" => "5",
-        "{永键键7句除'a'}0" => "7",
-        "op是{丙乙}句加op 3" => "3",
-        "r是[\"a1\":7]句r内a1" => "7",
-        "\"加总 注 负永\"" => "\"加总 注 负永\"",
-        "'加'" => "'加'",
-        "加总 1 2 3 注 汉字注释" => "6",
+        "mean是加总除数句mean 2 4 9" => "5", "加累 2 3 4" => "2 5 9", "乘表己至3" => "[1 2 3⋄2 4 6⋄3 6 9]", "加總 1 2 3" => "6",
+        "負3减负1" => "¯2", "1e负3加1r负4" => "1e¯3+1r¯4", "[负3 负1]ₓ" => "[¯3 ¯1]ₓ", "[空]ₛ" => "[⍬]ₛ", "负永" => "¯∞",
+        "{甲是2句甲加乙}3" => "5", "{永键键7句除'a'}0" => "7", "op是{丙乙}句加op 3" => "3", "r是[\"a1\":7]句r内a1" => "7",
+        "\"加总 注 负永\"" => "\"加总 注 负永\"", "'加'" => "'加'", "加总 1 2 3 注 汉字注释" => "6",
         "系prefs [\"float\":32]句系storage 1" => "\"float32\"",
     );
     fails_in(&mut s, Syntax, &["_加←1", "x_語←1"]);
@@ -453,7 +425,10 @@ fn highlight_classes_and_code_context() {
     let classes = |text: &'static str| basedpl::highlight(text).into_iter().map(|(range, class)| (&text[range], class)).collect::<Vec<_>>();
     let expected = [("⍵", "argument"), ("∘", "dyadic-operator"), ("+", "function"), ("¨", "monadic-operator"), ("\"a+b\"", "string"), ("⍝ c+d", "comment")];
     assert_eq!(classes("⍵∘+¨\"a+b\" ⍝ c+d"), expected);
-    assert_eq!(classes("乙承加遍\"加负\" 注 中文"), [("乙", "argument"), ("承", "dyadic-operator"), ("加", "function"), ("遍", "monadic-operator"), ("\"加负\"", "string"), ("注 中文", "comment")]);
+    assert_eq!(
+        classes("乙承加遍\"加负\" 注 中文"),
+        [("乙", "argument"), ("承", "dyadic-operator"), ("加", "function"), ("遍", "monadic-operator"), ("\"加负\"", "string"), ("注 中文", "comment")]
+    );
     // An unclosed string, as while typing, runs to the end of the text.
     assert_eq!(classes("x←1+\"a+"), [("←", "syntax"), ("1", "literal"), ("+", "function"), ("\"a+", "string")]);
     // The end of the text is in code unless it is inside a comment or an unclosed literal.
@@ -500,9 +475,7 @@ fn array_invariants() {
 
 #[test]
 fn declared_ranks_match_rank() {
-    // Wherever a primitive form succeeds, it gives what Rank gives at the form's declared ranks. A form may also reject arguments that
-    // Rank would extend over. No argument is empty, because Rank calls a function on a prototype cell when the frame is empty. `¿` is left
-    // out, because it's random. The dfn stops Rank calling the primitive on the whole argument.
+    // Wherever a primitive form succeeds, it gives what Rank gives at the form's declared ranks. A form may also reject arguments that Rank would extend over. No argument is empty, because Rank calls a function on a prototype cell when the frame is empty. `¿` is left out, because it's random. The dfn stops Rank calling the primitive on the whole argument.
     use basedpl::symbols::symbols;
     let mut s = Session::new();
     s.eval(r#"n←2 ⋄ v←1 2 3 ⋄ w←3 1 2 ⋄ u←1 0 1 ⋄ m←2 3⍴⍳6 ⋄ q←3 3⍴2 7 6 9 5 1 4 3 8 ⋄ t←2 2 3⍴⍳12 ⋄ c←"abc" ⋄ k←2 3⍴"abcdef" ⋄ e←[1 2;3 4 5]"#);
@@ -527,8 +500,7 @@ fn declared_ranks_match_rank() {
 
 #[test]
 fn nested_prototypes_and_value_semantics() {
-    // Dyalog 20 prototype examples, documentation-derived:
-    // https://docs.dyalog.com/20.0/programming-reference-guide/introduction/arrays/prototypes-and-fill-items/
+    // Dyalog 20 prototype examples, documentation-derived: https://docs.dyalog.com/20.0/programming-reference-guide/introduction/arrays/prototypes-and-fill-items/
     let nested = AplValue::new(vec![2], vec![vector(&[1.0, 2.0]), vector(&[3.0, 4.0, 5.0])]).unwrap();
     assert_same(nested.prototype(), &vector(&[0.0, 0.0]));
     let empty = AplValue::empty(vec![0], nested.prototype().clone()).unwrap();
@@ -637,8 +609,7 @@ fn long_assignment_chains() { assert_same(Session::new().eval(&format!("{}7", "a
 
 #[test]
 fn tolerant_equality_agrees_between_array_and_item_paths() {
-    // `xs=c` works out once the range of floats tolerantly equal to `c`. A dfn under `¨` compares one pair at a time. The range's ends
-    // lie within a few floats of `c×(1-1e-14)` and `c÷(1-1e-14)`. The two must agree within 64 floats of those ends and of `c`.
+    // `xs=c` works out once the range of floats tolerantly equal to `c`. A dfn under `¨` compares one pair at a time. The range's ends lie within a few floats of `c×(1-1e-14)` and `c÷(1-1e-14)`. The two must agree within 64 floats of those ends and of `c`.
     let mut state = 0x9e37_79b9_7f4a_7c15_u64;
     let mut next = move || {
         state ^= state << 13;
@@ -662,20 +633,15 @@ fn tolerant_equality_agrees_between_array_and_item_paths() {
 
 #[test]
 fn lexical_frames_are_reclaimed() {
-    // At most 20,000 lexical frames can be alive at once. Each result below depends on frames being freed: 25,000 calls in one input,
-    // 25,000 tail calls, a recursion 15,000 deep in two inputs, and recursion after a LIMIT error. The tail calls in `keep` and `pass`
-    // still read `x` from the frame that defined their function.
+    // At most 20,000 lexical frames can be alive at once. Each result below depends on frames being freed: 25,000 calls in one input, 25,000 tail calls, a recursion 15,000 deep in two inputs, and recursion after a LIMIT error. The tail calls in `keep` and `pass` still read `x` from the frame that defined their function.
     let mut s = Session::new();
     for (code, expected) in [
-        ("outer←{x←2 ⋄ add←{x+⍵} ⋄ +/add¨⍵⍴1} ⋄ outer 25000", 75000.),
-        ("+/outer¨25000⍴1", 75000.),
-        ("deep←{⍵=0?0;1+∇⍵-1} ⋄ deep 15000", 15000.),
-        ("deep 15000", 15000.),
+        ("outer←{x←2 ⋄ add←{x+⍵} ⋄ +/add¨⍵⍴1} ⋄ outer 25000", 75000.), ("+/outer¨25000⍴1", 75000.),
+        ("deep←{⍵=0?0;1+∇⍵-1} ⋄ deep 15000", 15000.), ("deep 15000", 15000.),
         ("count←{⍺←0 ⋄ ⍵=0?⍺;(⍺+1)∇⍵-1} ⋄ count 25000", 25000.),
         ("even←{⍵=0?1;odd ⍵-1} ⋄ odd←{⍵=0?0;even ⍵-1} ⋄ even 25000", 1.),
         ("keep←{x←42 ⋄ loop←{⍵=0?x;∇⍵-1} ⋄ loop ⍵} ⋄ keep 25000", 42.),
-        ("pass←{x←42 ⋄ op←{⍵=0?⍶ ⍵;∇⍵-1} ⋄ ({x}op)⍵} ⋄ pass 25000", 42.),
-        ("loop←{⍵=0?a←7;(∇⍵-1)} ⋄ loop 25000", 7.),
+        ("pass←{x←42 ⋄ op←{⍵=0?⍶ ⍵;∇⍵-1} ⋄ ({x}op)⍵} ⋄ pass 25000", 42.), ("loop←{⍵=0?a←7;(∇⍵-1)} ⋄ loop 25000", 7.),
         ("f←{\"DOMAIN\"::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 2000", 7.),
     ] { check_in(&mut s, code, float(expected)); }
     assert_eq!(s.eval("f 20000").error.unwrap().kind, Limit);

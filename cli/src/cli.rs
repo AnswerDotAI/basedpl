@@ -1,15 +1,10 @@
 use basedpl::{EvalOptions, Evaluation, Input, InterruptHandle, Output, ParseStatus, Session, Source};
 use rustyline::error::ReadlineError;
-use std::{
-    io::{self, IsTerminal, Read, Write},
-    sync::{Arc, Mutex},
-};
+use std::{io::{self, IsTerminal, Read, Write}, sync::{Arc, Mutex}};
 
 const USAGE: &str = "Usage: bpl [-e EXPR [ARG...] | FILE [ARG...] | - [ARG...] | --worker | --kernel -f CONNECTION_FILE]\n\nNo arguments: persistent BPL REPL (Ctrl-D to exit, Ctrl-C to cancel input or interrupt an evaluation).\nType `name then Tab or a non-letter to enter a symbol, e.g. `iota5 becomes ⍳5.\nUse - to execute all of stdin as one source.\n`•host \"args\"` gives the ARGs.\nUse --worker for JSON-lines requests with deadlines and interruption.\nUse --kernel -f CONNECTION_FILE to run a Jupyter kernel.\n";
 
-/// Writes each output to stdout as the evaluation produces it. A failed write interrupts the evaluation, and `finish` then gives the
-/// write's error. Evaluations can also read standard input, when the program didn't come from it. Ctrl-C interrupts the evaluation
-/// that is running.
+/// Writes each output to stdout as the evaluation produces it. A failed write interrupts the evaluation, and `finish` then gives the write's error. Evaluations can also read standard input, when the program didn't come from it. Ctrl-C interrupts the evaluation that is running.
 struct Printer { interrupt: Arc<Mutex<InterruptHandle>>, failure: Arc<Mutex<Option<io::Error>>>, input: Option<Arc<dyn Input>> }
 impl Printer {
     /// A printer whose evaluations read standard input when `input` is set. It installs the process's Ctrl-C handler.
@@ -28,15 +23,11 @@ impl Printer {
             let mut failure = failure.lock().unwrap();
             if failure.is_some() { return; }
             let mut out = io::stdout();
-            if let Err(e) = out.write_all(output.written().as_bytes()).and_then(|()| out.flush()) {
-                *failure = Some(e);
-                stop.interrupt();
-            }
+            if let Err(e) = out.write_all(output.written().as_bytes()).and_then(|()| out.flush()) { *failure = Some(e); stop.interrupt(); }
         };
         EvalOptions { interrupt, output: Some(Arc::new(sink)), input: self.input.clone(), ..EvalOptions::default() }
     }
-    /// Writes the evaluation's error to `err`, and gives whether the evaluation succeeded. A failed write of its output is the error
-    /// instead.
+    /// Writes the evaluation's error to `err`, and gives whether the evaluation succeeded. A failed write of its output is the error instead.
     fn finish(&self, result: Evaluation, err: &mut impl Write) -> io::Result<bool> {
         if let Some(e) = self.failure.lock().unwrap().take() { return Err(e); }
         let Some(e) = result.error else { return Ok(true) };
@@ -58,11 +49,7 @@ impl Input for StandardInput {
         if line.ends_with('\r') { line.pop(); }
         Ok(Some(line))
     }
-    fn rest(&self) -> io::Result<Vec<u8>> {
-        let mut data = Vec::new();
-        io::stdin().read_to_end(&mut data)?;
-        Ok(data)
-    }
+    fn rest(&self) -> io::Result<Vec<u8>> { let mut data = Vec::new(); io::stdin().read_to_end(&mut data)?; Ok(data) }
 }
 
 /// Evaluates `source` with `args` as its command-line arguments. When `input` is set, the program can read standard input.
@@ -83,42 +70,22 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
     loop {
         let read = if let Some(editor) = &mut editor {
             match editor.readline(if code.is_empty() { "      " } else { "    · " }) {
-                Ok(line) => {
-                    code.push_str(&line);
-                    code.push('\n');
-                    true
-                }
-                Err(ReadlineError::Interrupted) => {
-                    code.clear();
-                    incomplete = None;
-                    continue;
-                }
+                Ok(line) => { code.push_str(&line); code.push('\n'); true }
+                Err(ReadlineError::Interrupted) => { code.clear(); incomplete = None; continue; }
                 // Rustyline restores terminal mode and writes a newline, including on Ctrl-D.
                 Err(ReadlineError::Eof) => false,
                 Err(e) => return Err(io::Error::other(e)),
             }
-        } else { io::stdin().read_line(&mut code)? != 0 };
-        if !read {
-            if let Some(e) = incomplete {
-                writeln!(err, "{e}")?;
-                return Ok(1);
-            }
-            return Ok(i32::from(failed && !interactive));
-        }
+        } else {
+            io::stdin().read_line(&mut code)? != 0
+        };
+        if !read { if let Some(e) = incomplete { writeln!(err, "{e}")?; return Ok(1); } return Ok(i32::from(failed && !interactive)); }
         if code.trim_start().starts_with(']') { failed |= !printer.finish(session.eval_with(&code, printer.options()), err)?; }
         else {
             match session.parse(Source::new("<repl>", code.as_str())) {
-                ParseStatus::Incomplete(e) => {
-                    incomplete = Some(e);
-                    continue;
-                }
-                ParseStatus::Invalid(e) => {
-                    writeln!(err, "{e}")?;
-                    failed = true;
-                }
-                ParseStatus::Complete(parsed) => {
-                    failed |= !printer.finish(session.eval_parsed(&parsed, printer.options()), err)?;
-                }
+                ParseStatus::Incomplete(e) => { incomplete = Some(e); continue; }
+                ParseStatus::Invalid(e) => { writeln!(err, "{e}")?; failed = true; }
+                ParseStatus::Complete(parsed) => { failed |= !printer.finish(session.eval_parsed(&parsed, printer.options()), err)?; }
             }
         }
         if let Some(editor) = &mut editor { editor.remember(&code).map_err(io::Error::other)?; }
@@ -130,15 +97,7 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
 /// Runs `bpl` with `args`, the command line after the program name, and gives the exit status.
 pub(crate) fn run(args: &[String]) -> i32 {
     if let [mode, flag, file] = args {
-        if mode == "--kernel" && flag == "-f" {
-            return match crate::kernel::run(file) {
-                Ok(()) => 0,
-                Err(e) => {
-                    eprintln!("Kernel error: {e}");
-                    1
-                }
-            };
-        }
+        if mode == "--kernel" && flag == "-f" { return match crate::kernel::run(file) { Ok(()) => 0, Err(e) => { eprintln!("Kernel error: {e}"); 1 } }; }
     }
     let program = match args { [flag, _, ..] if flag == "-e" => 2, [file, ..] if file == "-" || !file.starts_with('-') => 1, _ => args.len() };
     let (args, program_args) = args.split_at(program);
@@ -159,12 +118,5 @@ pub(crate) fn run(args: &[String]) -> i32 {
         [file] if !file.starts_with('-') => std::fs::read_to_string(file).and_then(|code| expression(Source::file(file, code), true, program_args, &mut err)),
         _ => write!(err, "{USAGE}").map(|_| 2),
     };
-    match result {
-        Ok(code) => code,
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => 0,
-        Err(e) => {
-            let _ = writeln!(err, "I/O error: {e}");
-            1
-        }
-    }
+    match result { Ok(code) => code, Err(e) if e.kind() == io::ErrorKind::BrokenPipe => 0, Err(e) => { let _ = writeln!(err, "I/O error: {e}"); 1 } }
 }

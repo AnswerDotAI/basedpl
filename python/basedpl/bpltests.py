@@ -369,10 +369,10 @@ class Budgets(list):
     "Each budget that `set_budgets` changed, as `(section, code, build, old, new)` rows."
     def __repr__(self): return '\n'.join(f'{old:>9} -> {new:<9} {build:6}  {s} {c}' for s, c, build, old, new in self)
 
-def _budget(section, cost):
-    "The budget that `speed.txt`'s rule gives a case in `section` whose worst cost is `cost`, rounded up to two significant figures, or to two decimal places in `[widths]`."
+def _budget(section, cost, untimed):
+    "The budget that `speed.txt`'s rule gives a case in `section` whose worst cost is `cost`, rounded up to two significant figures, or to two decimal places in `[widths]`. With `untimed`, for a case that CI hasn't timed, a budget in copies is four times `cost`."
     if section == 'widths': return Decimal(repr(cost + 0.25)).quantize(Decimal('0.01'), ROUND_CEILING)
-    return Context(prec=2, rounding=ROUND_CEILING).create_decimal(repr(max(0.5, 2*cost)))
+    return Context(prec=2, rounding=ROUND_CEILING).create_decimal(repr(max(0.5, (4 if untimed else 2)*cost)))
 
 _SOURCE = '# The CI figures come from '
 
@@ -389,7 +389,8 @@ def set_budgets(
     run=None, # The `Speed` run whose logs gave CI's rows, to name in the header with the CPU each log reports; None: leave the header as it is
     path=_SPEED, # The budget file to rewrite: basedpl's `tests/speed.txt`, or rustymath's
     cases=None, # A case's code, or a list of codes, whose budgets to change; None: every case
-    sections=None # A section's name, or a list of names, whose budgets to change; None: every section
+    sections=None, # A section's name, or a list of names, whose budgets to change; None: every section
+    untimed=False # Whether the runs are Mac runs of cases that CI hasn't timed yet. A budget in copies is then four times the cost, as `speed.txt`'s header says
 ):
     "Rewrite each budget in `path` under the rule in its header, from the case's worst cost in the runs that count. A case with no cost, or outside `cases` or `sections`, keeps its budget. With `run`, also replace the whole header line that names the CI run. Returns the budgets that changed."
     if isinstance(cases, str): cases = [cases]
@@ -412,7 +413,7 @@ def set_budgets(
         fields = line.split('\t')
         for i, build in ((1, 'native'), (2, 'wasm')):
             if (cost := worst.get((section, fields[0], i))) is None: continue
-            new = f'{_budget(section, cost).normalize():f}'
+            new = f'{_budget(section, cost, untimed).normalize():f}'
             if new != fields[i]: changes.append((section, fields[0], build, fields[i], new))
             fields[i] = new
         lines[k] = '\t'.join(fields)

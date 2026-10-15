@@ -1,7 +1,4 @@
-use crate::{
-    array::{FloatWidth, Gather, Items, Layout, Steps},
-    ErrorKind, Number, Value,
-};
+use crate::{array::{FloatWidth, Gather, Items, Layout, Steps}, ErrorKind, Number, Value};
 use foldhash::{HashMap, HashSet, HashSetExt};
 use std::sync::Arc;
 
@@ -36,11 +33,7 @@ impl Keys {
     /// For each position of `wanted`, the matching position here. Named positions match by name. Unnamed positions match in order.
     pub(crate) fn align(&self, wanted: &Self) -> Vec<Option<usize>> {
         let mut gaps = self.names.iter().enumerate().filter(|(_, n)| n.is_none()).map(|(i, _)| i);
-        wanted
-            .names
-            .iter()
-            .map(|n| match n { Some(n) => self.position(n), None => gaps.next() })
-            .collect()
+        wanted.names.iter().map(|n| match n { Some(n) => self.position(n), None => gaps.next() }).collect()
     }
     pub(crate) fn positions(&self, wanted: &Self, subset: bool) -> Result<Vec<usize>, ErrorKind> {
         if !subset && self.len() != wanted.len() { return Err(ErrorKind::Length); }
@@ -74,8 +67,7 @@ pub(crate) fn name(value: &Value) -> Option<Arc<str>> {
 pub(crate) fn text(name: &str) -> Value { Value::characters([name.chars().count()], name.chars().collect()).unwrap() }
 /// An array of `shape` holding the text items `items`, with empty text as its prototype.
 pub(crate) fn texts(shape: &[usize], items: Vec<Value>) -> Result<Value, ErrorKind> { Value::shaped(shape, items, text("")) }
-/// The texts in `value`, the reverse of `texts`: the text itself with an empty shape, or each text in an array of them with the array's
-/// shape. `None` when an item isn't text.
+/// The texts in `value`, the reverse of `texts`: the text itself with an empty shape, or each text in an array of them with the array's shape. `None` when an item isn't text.
 pub(crate) fn text_items(value: &Value) -> Option<(Vec<usize>, Vec<Arc<str>>)> {
     if let Some(t) = name(value) { return Some((vec![], vec![t])); }
     Some((value.shape().to_vec(), value.elements().map(|e| name(&e)).collect::<Option<_>>()?))
@@ -89,11 +81,8 @@ pub fn key_lists(value: &Value) -> Vec<Option<Vec<Option<&str>>>> {
 /// `value` with a key list, or `None`, for each axis.
 pub fn with_key_lists(value: Value, lists: Vec<Option<Vec<Option<String>>>>) -> Result<Value, String> {
     if lists.len() != value.shape().len() { return Err("axis_keys must have one entry per axis".into()); }
-    let keys = lists
-        .into_iter()
-        .map(|k| k.map(|names| Keys::partial(names.into_iter().map(|n| n.map(Into::into)).collect())).transpose())
-        .collect::<Result<_, _>>()
-        .map_err(|_| "axis keys must be unique")?;
+    let keys = lists.into_iter().map(|k| k.map(|names| Keys::partial(names.into_iter().map(|n| n.map(Into::into)).collect())).transpose())
+        .collect::<Result<_, _>>().map_err(|_| "axis keys must be unique")?;
     value.with_keys(keys).map_err(|_| "key lists must match array axes".into())
 }
 
@@ -122,17 +111,18 @@ pub(crate) fn empty_record() -> Value { vector(Vec::new(), Vec::new()).expect("a
 
 /// A vector whose entries with a name are keyed by it. Each entry keeps its kind, as items written in brackets do.
 pub(crate) fn partial_vector(names: Vec<Option<Arc<str>>>, values: Vec<Value>) -> Result<Value, ErrorKind> {
-    let vector = if values.is_empty() { Value::empty(vec![0], Value::Number(Number::float(0.0, FloatWidth::F64)))? } else { Value::new(vec![values.len()], values)? };
+    let vector =
+        if values.is_empty() { Value::empty(vec![0], Value::Number(Number::float(0.0, FloatWidth::F64)))? } else { Value::new(vec![values.len()], values)? };
     vector.with_keys(vec![Some(Keys::partial(names)?)])
 }
 
 /// A keyed vector whose entries keep their own kinds, as an imported JSON object's do. Its storage stays mixed.
 pub(crate) fn record(names: Vec<Arc<str>>, values: Vec<Value>) -> Result<Value, ErrorKind> {
-    Value::mixed(vec![names.len()], values, Value::Number(Number::float(0.0, FloatWidth::F64)))?.with_keys(vec![Some(Keys::partial(names.into_iter().map(Some).collect())?)])
+    Value::mixed(vec![names.len()], values, Value::Number(Number::float(0.0, FloatWidth::F64)))?
+        .with_keys(vec![Some(Keys::partial(names.into_iter().map(Some).collect())?)])
 }
 
-/// A record of columns: the field `names[j]` holds item `j` of each row, as an array of `shape`, or as that row's item when `shape` is
-/// empty. Without rows, each field is an empty array of `empty[j]`.
+/// A record of columns: the field `names[j]` holds item `j` of each row, as an array of `shape`, or as that row's item when `shape` is empty. Without rows, each field is an empty array of `empty[j]`.
 pub(crate) fn table(names: &[&str], shape: &[usize], rows: Vec<Vec<Value>>, empty: Vec<Value>) -> Result<Value, ErrorKind> {
     let mut columns: Vec<Vec<Value>> = vec![Vec::with_capacity(rows.len()); names.len()];
     for row in rows { for (column, item) in columns.iter_mut().zip(row) { column.push(item); } }
@@ -143,28 +133,28 @@ pub(crate) fn table(names: &[&str], shape: &[usize], rows: Vec<Vec<Value>>, empt
 /// A record field's name, with one item for each position.
 pub(crate) type Field = (Arc<str>, Vec<Value>);
 
-/// The fields of the record `value`, item by item: the shape its array fields share, and each field's name with one item per position.
-/// An atom or a text is a single item, which every position shares.
+/// The fields of the record `value`, item by item: the shape its array fields share, and each field's name with one item per position. An atom or a text is a single item, which every position shares.
 pub(crate) fn fields(value: &Value) -> Result<(Vec<usize>, Vec<Field>), ErrorKind> {
     let pairs = pairs(value)?;
     let single = |v: &Value| v.is_atom() || name(v).is_some();
     let shape = pairs.iter().find(|(_, v)| !single(v)).map_or(vec![], |(_, v)| v.shape().to_vec());
     let len = shape.iter().product();
     let fields = pairs.into_iter().map(|(name, v)| match single(&v) {
-        true => Ok((name, vec![v; len])),
-        false if v.shape() == shape => Ok((name, v.elements().collect())),
-        false => Err(ErrorKind::Length),
+        true => Ok((name, vec![v; len])), false if v.shape() == shape => Ok((name, v.elements().collect())), false => Err(ErrorKind::Length)
     });
     let fields = fields.collect::<Result<_, _>>()?;
     Ok((shape, fields))
 }
 
-/// The items of the fields in `fields` that `names[..used]` name, in that order, with `None` for one that is missing. Fields named in
-/// `names[used..]` follow from the others and are ignored. Any other field is an error that gives its name.
+/// The items of the fields in `fields` that `names[..used]` name, in that order, with `None` for one that is missing. Fields named in `names[used..]` follow from the others and are ignored. Any other field is an error that gives its name.
 pub(crate) fn slots(fields: Vec<Field>, names: &[&str], used: usize) -> Result<Vec<Option<Vec<Value>>>, Arc<str>> {
     let mut slots = vec![None; used];
     for (name, items) in fields {
-        match names.iter().position(|n| *n == &*name) { Some(i) if i < used => slots[i] = Some(items), Some(_) => {} None => return Err(name) }
+        match names.iter().position(|n| *n == &*name) {
+            Some(i) if i < used => slots[i] = Some(items),
+            Some(_) => {}
+            None => return Err(name),
+        }
     }
     Ok(slots)
 }
@@ -206,9 +196,7 @@ fn names(value: &Value) -> Result<Vec<Option<Arc<str>>>, ErrorKind> {
     if let Some(k) = name(value) { return Ok(vec![Some(k)]); }
     if value.is_atom() || value.shape().len() > 1 { return Err(ErrorKind::Domain); }
     let entry = |(i, v): (usize, Value)| match name(&v) {
-        Some(k) => Ok(Some(k)),
-        None if v.as_number().is_some_and(|n| n.nonnegative_integer() == Ok(i)) => Ok(None),
-        None => Err(ErrorKind::Domain),
+        Some(k) => Ok(Some(k)), None if v.as_number().is_some_and(|n| n.nonnegative_integer() == Ok(i)) => Ok(None), None => Err(ErrorKind::Domain)
     };
     value.elements().enumerate().map(entry).collect()
 }
@@ -216,11 +204,12 @@ fn names(value: &Value) -> Result<Vec<Option<Arc<str>>>, ErrorKind> {
 pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) -> Result<Value, ErrorKind> {
     if keys.has_keys() && keys.shape().len() != 1 { return Err(ErrorKind::Rank); }
     let axis_names = keys.keys(0);
-    let lists = if axis_names.is_some() { keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()? } else {
+    let lists = if axis_names.is_some() {
+        keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()?
+    } else {
         match names(keys) {
-            Ok(names) => vec![names],
-            Err(_) if !keys.is_atom() && keys.shape().len() == 1 => keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()?,
-            Err(k) => return Err(k),
+            Ok(names) => vec![names], Err(_) if !keys.is_atom() && keys.shape().len() == 1 => keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()?,
+            Err(k) => return Err(k)
         }
     };
     if let (None, None, [list]) = (axis_names, axes, &lists[..]) {
@@ -252,11 +241,8 @@ pub(crate) fn selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKin
         let &len = value.shape().get(axis).ok_or(ErrorKind::Rank)?;
         values.push(match value.keys(axis) {
             Some(k) => Value::from_parts(
-                vec![len],
-                k.names().iter().enumerate().map(|(i, k)| k.as_ref().map_or_else(|| position(i), |k| text(k))).collect(),
-                text(""),
-            )?,
-            None => Value::integers(vec![len], (0..len).map(|n| n as i64).collect())?,
+                vec![len], k.names().iter().enumerate().map(|(i, k)| k.as_ref().map_or_else(|| position(i), |k| text(k))).collect(), text(""))?,
+            None => Value::integers(vec![len], (0..len).map(|n| n as i64).collect())?
         });
     }
     if values.len() == 1 { Ok(values.pop().unwrap()) } else { Value::from_parts(vec![values.len()], values, Value::integers(vec![0], vec![])?) }
@@ -264,12 +250,7 @@ pub(crate) fn selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKin
 
 pub(crate) fn mapped_index(flat: usize, result: &[usize], source: &[usize], maps: &[Vec<Option<usize>>]) -> Option<usize> {
     let (mut offset, mut stride) = (0, 1);
-    for (axis, pos) in crate::primitive::digits(flat, result) {
-        if axis < source.len() {
-            offset += maps[axis][pos]? * stride;
-            stride *= source[axis];
-        }
-    }
+    for (axis, pos) in crate::primitive::digits(flat, result) { if axis < source.len() { offset += maps[axis][pos]? * stride; stride *= source[axis]; } }
     Some(offset)
 }
 
@@ -283,14 +264,14 @@ pub(crate) fn missing(target: &Value, selectors: &[Option<Value>]) -> Result<Vec
         if axis >= rank { return Err(ErrorKind::Rank); }
         let wanted = match selector { Selector::One(k) => vec![k], Selector::Many(_, names) => names };
         let mut seen = HashSet::new();
-        for name in wanted { if target.keys(axis).is_none_or(|k| k.position(&name).is_none()) && seen.insert(name.clone()) { added[axis].push(name); } }
+        for name in wanted {
+            if target.keys(axis).is_none_or(|k| k.position(&name).is_none()) && seen.insert(name.clone()) { added[axis].push(name); }
+        }
     }
     Ok(added)
 }
 
-/// Adds an entry to `target` for each key in `added`, which `missing` gives for each axis. A new vector entry that a longer path
-/// descends into starts as a record. Otherwise a new entry starts as the prototype, which the assignment replaces. Mixed storage stays
-/// mixed. New keys on the leading axis alone append in place. New keys on another axis rebuild the array.
+/// Adds an entry to `target` for each key in `added`, which `missing` gives for each axis. A new vector entry that a longer path descends into starts as a record. Otherwise a new entry starts as the prototype, which the assignment replaces. Mixed storage stays mixed. New keys on the leading axis alone append in place. New keys on another axis rebuild the array.
 pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: bool) -> Result<(), ErrorKind> {
     let rank = target.shape().len();
     let fill = if descend && rank == 1 { empty_record() } else { target.prototype() };
@@ -327,27 +308,21 @@ pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: boo
 /// `value` with each keyed axis in the order of its keys in `wanted`. Other axes keep their order.
 pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool) -> Result<Value, ErrorKind> {
     let target = |axis| match (value.keys(axis), wanted.get(axis).and_then(Option::as_ref)) {
-        (Some(src), Some(dst)) if src != dst => Some((src, dst)),
-        _ => None,
+        (Some(src), Some(dst)) if src != dst => Some((src, dst)), _ => None
     };
     let shape = value.shape();
     if (0..shape.len()).all(|a| target(a).is_none()) { return Ok(value.clone()); }
     let stride = crate::primitive::strides(shape);
     let mut keys = vec![None; shape.len()];
-    let tables = (0..shape.len())
-        .map(|axis| {
-            Ok(match target(axis) {
-                Some((src, dst)) => {
-                    keys[axis] = Some(dst.clone());
-                    Steps::Table(src.positions(dst, subset)?.into_iter().map(|p| Some(p * stride[axis])).collect())
-                }
-                None => {
-                    keys[axis] = value.keys(axis).cloned();
-                    Steps::along(shape[axis], stride[axis])
-                }
-            })
+    let tables = (0..shape.len()).map(|axis| {
+        Ok(match target(axis) {
+            Some((src, dst)) => {
+                keys[axis] = Some(dst.clone());
+                Steps::Table(src.positions(dst, subset)?.into_iter().map(|p| Some(p * stride[axis])).collect())
+            }
+            None => { keys[axis] = value.keys(axis).cloned(); Steps::along(shape[axis], stride[axis]) }
         })
-        .collect::<Result<Vec<_>, ErrorKind>>()?;
+    }).collect::<Result<Vec<_>, ErrorKind>>()?;
     let layout = Layout::from(tables.iter().map(Steps::len).collect::<Vec<_>>()).with_keys(keys)?.inherit_names(value.axis_names().to_vec());
     let mut data = Gather::new(&[value], crate::array::generated_len(layout.shape())?);
     data.walk(value, 0, &tables);
