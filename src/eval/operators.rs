@@ -26,13 +26,10 @@ pub(super) fn composition(op: OperatorKind, operands: &[Operand; 2], left: Optio
         (Operand::Function(f), ranks) if matches!(op, Rank) => rank(f, &computed(ranks, left, right, cx)?, left, right, cx),
         (Operand::Function(f), spec) if matches!(op, Axis) => along_axes(f, &computed(spec, left, right, cx)?, left, right, cx),
         (Operand::Function(f), Operand::Function(g)) => match op {
-            Valences => { if left.is_some() { g.call(left, right, cx) } else { f.call(None, right, cx) } }
-            Product => inner(f, g, left, right, cx),
+            Valences => { if left.is_some() { g.call(left, right, cx) } else { f.call(None, right, cx) } } Product => inner(f, g, left, right, cx),
             After => { let y = g.call_array(None, right, cx)?; f.call(Some(left.unwrap_or(right)), &y, cx) }
-            Atop => { let y = g.call_array(left, right, cx)?; f.call(None, &y, cx) }
-            Over => over(f, g, left, right, cx),
-            Before => { let x = f.call_array(None, left.unwrap_or(right), cx)?; g.call(Some(&x), right, cx) }
-            _ => unreachable!(),
+            Atop => { let y = g.call_array(left, right, cx)?; f.call(None, &y, cx) } Over => over(f, g, left, right, cx),
+            Before => { let x = f.call_array(None, left.unwrap_or(right), cx)?; g.call(Some(&x), right, cx) } _ => unreachable!()
         },
         _ => Err(cx.span.domain_error("invalid operator operands")),
     }
@@ -151,10 +148,12 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut 
             let (negative, n) = checked_count(count, cx.span)?;
             let inverse;
             let f = if negative { inverse = f.inverse(cx.span)?; &inverse } else { f };
-            if n == u64::MAX {
-                converge(f, &mut value, cx)?;
-            } else {
-                for i in 0..n { let result = f.call(left, &value, cx)?; if i + 1 == n { return Ok(result); } value = result.array(cx.span)?; }
+            if n == u64::MAX { converge(f, &mut value, cx)?; } else {
+                for i in 0..n {
+                    let result = f.call(left, &value, cx)?;
+                    if i + 1 == n { return Ok(result); }
+                    value = result.array(cx.span)?;
+                }
             }
         }
         // An array of counts gives one item for each count, holding the state after that many steps.
@@ -166,7 +165,10 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut 
             let mut states = HashMap::new();
             let (mut negative, mut steps, mut inverse) = (false, 0, None);
             for c in counts {
-                if c.0 && !negative { (value, negative, steps) = (right.clone(), true, 0); inverse = Some(f.inverse(cx.span)?); }
+                if c.0 && !negative {
+                    (value, negative, steps) = (right.clone(), true, 0);
+                    inverse = Some(f.inverse(cx.span)?);
+                }
                 let step = inverse.as_ref().unwrap_or(f);
                 if c.1 == u64::MAX { converge(step, &mut value, cx)?; }
                 else { for _ in steps..c.1 { value = step.call_array(left, &value, cx)?; } }
@@ -182,7 +184,10 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut 
                 let done = test.call_array(Some(&next), &value, cx)?;
                 let done = done.boolean().error_at(cx.span, "power predicate must return a Boolean singleton")?;
                 value = next;
-                if history { generated_len(&[states.len() + 1]).error_at(cx.span, "history is too long")?; states.push(value.clone()); }
+                if history {
+                    generated_len(&[states.len() + 1]).error_at(cx.span, "history is too long")?;
+                    states.push(value.clone());
+                }
                 if done { break; }
             }
             if history {
@@ -349,9 +354,8 @@ fn inverse_outer(f: &Function, bound: &Value, first: bool, right: &Value, cx: &m
         for i in 0..count.max(1) {
             let value = if count == 0 { right.prototype() } else { right.at(if first { j * count + i } else { i * bound.len() + j }) };
             let candidate = inverse.call_array(None, &value, cx)?;
-            if j == 0 {
-                result.push(candidate);
-            } else if !result[i].matches(&candidate, cx)? { return Err(cx.span.domain_error("outer-product cells do not have a consistent inverse")); }
+            if j == 0 { result.push(candidate); }
+            else if !result[i].matches(&candidate, cx)? { return Err(cx.span.domain_error("outer-product cells do not have a consistent inverse")); }
         }
     }
     let prototype = result[0].prototype();
@@ -539,9 +543,7 @@ fn expand(
         if items.is_empty() { Value::empty(vec![0], prototype.clone()) } else { Value::new(vec![items.len()], items) }.error_at(cx.span, "invalid expansion")
     };
     let column = m - rows.count_ones() as usize;
-    let value = if column == n {
-        fold(g, FoldKind { scan: false, first: false }, None, None, &vector(vec![], cx)?, cx)?
-    } else {
+    let value = if column == n { fold(g, FoldKind { scan: false, first: false }, None, None, &vector(vec![], cx)?, cx)? } else {
         let set: Vec<usize> = (0..m).filter(|&i| rows >> i & 1 == 1).collect();
         let first = vector(set.iter().map(|&i| items[i * n + column].clone()).collect(), cx)?;
         let minors = set.iter().map(|&i| expand(f, g, items, [m, n], rows & !(1 << i), prototype, memo, cx)).collect::<Result<Vec<_>, _>>()?;
@@ -636,9 +638,7 @@ pub(super) fn cell_axes(f: &Function, spec: &Value, left: Option<&Value>, right:
     // Result cells of the selected rank return to the selected axes. Other result cells start at the first selected axis.
     let frame = order - selected.len();
     let cell = result.shape().len().saturating_sub(frame);
-    let destination: Vec<_> = if cell == selected.len() {
-        others(order).chain(selected.iter().copied()).collect()
-    } else {
+    let destination: Vec<_> = if cell == selected.len() { others(order).chain(selected.iter().copied()).collect() } else {
         let start = selected.first().map_or(frame, |&s| others(order).take_while(|&i| i < s).count());
         (0..frame + cell).map(|j| {
             if j < start { j } else if j < frame { j + cell } else { start + j - frame }
@@ -738,9 +738,7 @@ pub(super) fn fold(
 
 fn fold_array(operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
     // Scan keeps every position, so it keeps every key.
-    if kind.scan {
-        return scan(operand, kind, axis, left, right, cx)?.with_layout(right.layout().clone()).error_at(cx.span, "invalid scan result");
-    }
+    if kind.scan { return scan(operand, kind, axis, left, right, cx)?.with_layout(right.layout().clone()).error_at(cx.span, "invalid scan result"); }
     if right.is_unit() && axis.is_none() { return match left { Some(seed) => operand.call_array(Some(&right.at(0)), seed, cx), None => Ok(right.at(0)) }; }
     let axis = kind.axis(axis, right, cx.span)?;
     if axis >= right.shape().len() { return Err(cx.span.domain_error("axis is outside array rank")); }
@@ -795,9 +793,18 @@ fn scan_items<T: Clone>(axis: &Axis, seed: Option<T>, item: impl Fn(usize) -> T,
         for k in 0..axis.inner {
             let first = axis.offset(i, 0, k);
             let (mut value, start) = match seed.clone() {
-                Some(value) => (value, 0), None => { let value = item(first); data[first] = value.clone(); (value, 1) }
+                Some(value) => (value, 0),
+                None => {
+                    let value = item(first);
+                    data[first] = value.clone();
+                    (value, 1)
+                }
             };
-            for j in start..axis.len { let index = axis.offset(i, j, k); value = apply(&value, &item(index))?; data[index] = value.clone(); }
+            for j in start..axis.len {
+                let index = axis.offset(i, j, k);
+                value = apply(&value, &item(index))?;
+                data[index] = value.clone();
+            }
         }
     }
     Ok(data)

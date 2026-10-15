@@ -75,7 +75,12 @@ fn enabled_reference_cases() {
     let count = chosen.len();
     let failures: Vec<String> = reference::failures(&chosen, &InterruptHandle::default()).iter().map(|f| {
         format!(
-            "{}.bpl:{} [{}] {}: {} ({})", f["file"].as_str().unwrap(), f["line"], f["section"].as_str().unwrap(), f["id"].as_str().unwrap(), f["message"],
+            "{}.bpl:{} [{}] {}: {} ({})",
+            f["file"].as_str().unwrap(),
+            f["line"],
+            f["section"].as_str().unwrap(),
+            f["id"].as_str().unwrap(),
+            f["message"],
             f["kind"]
         )
     }).collect();

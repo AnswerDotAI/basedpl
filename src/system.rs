@@ -70,8 +70,7 @@ impl PartialEq for SystemFunction {
             (Call::Regex(x, a), Call::Regex(y, b)) => (x.as_str(), a) == (y.as_str(), b),
             (Call::Distribution(x, a), Call::Distribution(y, b)) => (x, a) == (y, b),
             (Call::Generator(x, a), Call::Generator(y, b)) => std::sync::Arc::ptr_eq(x, y) && a == b, (Call::Element(x), Call::Element(y)) => x == y,
-            (Call::Canvas(x), Call::Canvas(y)) => x == y,
-            #[cfg(web)] (Call::Js(x), Call::Js(y)) => std::sync::Arc::ptr_eq(x, y),
+            (Call::Canvas(x), Call::Canvas(y)) => x == y, #[cfg(web)] (Call::Js(x), Call::Js(y)) => std::sync::Arc::ptr_eq(x, y),
             (x, y) => std::mem::discriminant(x) == std::mem::discriminant(y)
         }
     }
@@ -131,19 +130,16 @@ const BUILTINS: &[(&str, Call, Valence, Item, fn(&Context<'_>) -> Value)] = &[
     ("•decompose", Call::Value(crate::primitive::decompose), Dyadic, Whole, record), ("•ucs", Call::Value(unicode_convert), Ambivalent, Vector, numbers),
     ("•load", Call::Load, Monadic, Text, record), ("•signal", Call::Value(signal), Ambivalent, Whole, number),
     ("•storage", Call::Value(storage), Monadic, Whole, text), ("•float", Call::Value(to_float), Ambivalent, Whole, float),
-    ("•time", Call::Time, Ambivalent, Whole, seconds), ("•host", Call::Value(host), Monadic, Text, text),
-    #[cfg(not(web))] ("•delay", Call::Effect(delay), Monadic, Whole, seconds),
-    ("•date", Call::Value(crate::date::read), Ambivalent, Whole, seconds),
-    #[cfg(not(web))] ("•path", Call::Value(crate::files::path), Ambivalent, Whole, record),
-    #[cfg(not(web))] ("•metadata", Call::Value(crate::files::metadata), Monadic, Whole, record),
-    #[cfg(not(web))] ("•readdir", Call::Value(crate::files::readdir), Ambivalent, Text, record),
-    #[cfg(not(web))] ("•copy", Call::Effect(crate::files::copy), Dyadic, Whole, text),
-    #[cfg(not(web))] ("•rename", Call::Effect(crate::files::rename), Dyadic, Whole, text),
-    #[cfg(not(web))] ("•remove", Call::Effect(crate::files::remove), Ambivalent, Text, text),
-    #[cfg(not(web))] ("•mkdir", Call::Effect(crate::files::mkdir), Ambivalent, Text, text),
-    ("•prefs", Call::Prefs, Monadic, Whole, record), ("•nc", Call::Session(crate::Session::system_nc), Monadic, Text, number),
-    ("•nl", Call::Session(crate::Session::system_nl), Ambivalent, Whole, texts), ("•src", Call::Session(crate::Session::system_src), Monadic, Text, text),
-    ("•ex", Call::Session(crate::Session::system_ex), Monadic, Text, number),
+    ("•time", Call::Time, Ambivalent, Whole, seconds), ("•host", Call::Value(host), Monadic, Text, text), #[cfg(not(web))]
+    ("•delay", Call::Effect(delay), Monadic, Whole, seconds), ("•date", Call::Value(crate::date::read), Ambivalent, Whole, seconds), #[cfg(not(web))]
+    ("•path", Call::Value(crate::files::path), Ambivalent, Whole, record), #[cfg(not(web))]
+    ("•metadata", Call::Value(crate::files::metadata), Monadic, Whole, record), #[cfg(not(web))]
+    ("•readdir", Call::Value(crate::files::readdir), Ambivalent, Text, record), #[cfg(not(web))]
+    ("•copy", Call::Effect(crate::files::copy), Dyadic, Whole, text), #[cfg(not(web))] ("•rename", Call::Effect(crate::files::rename), Dyadic, Whole, text),
+    #[cfg(not(web))] ("•remove", Call::Effect(crate::files::remove), Ambivalent, Text, text), #[cfg(not(web))]
+    ("•mkdir", Call::Effect(crate::files::mkdir), Ambivalent, Text, text), ("•prefs", Call::Prefs, Monadic, Whole, record),
+    ("•nc", Call::Session(crate::Session::system_nc), Monadic, Text, number), ("•nl", Call::Session(crate::Session::system_nl), Ambivalent, Whole, texts),
+    ("•src", Call::Session(crate::Session::system_src), Monadic, Text, text), ("•ex", Call::Session(crate::Session::system_ex), Monadic, Text, number),
     ("•literal", Call::Session(crate::Session::system_literal), Monadic, Text, number),
 ];
 
@@ -168,8 +164,8 @@ pub(crate) fn lookup(name: &str) -> Option<Function> {
 const INVERSES: &[(&str, Native, Valence)] = &[
     ("•csv", crate::csv::serialize, Ambivalent), ("•json", crate::json::serialize, Ambivalent), ("•xml", crate::xml::serialize, Monadic),
     ("•image", crate::image::encode, Ambivalent), ("•deflate", crate::data::deflate, Ambivalent), ("•date", crate::date::write, Ambivalent),
-    #[cfg(not(web))] ("•path", crate::files::join, Monadic),
-    ("•literal", write_literal, Monadic), ("•ucs", unicode_convert, Ambivalent), ("•decompose", crate::primitive::recompose, Dyadic),
+    #[cfg(not(web))] ("•path", crate::files::join, Monadic), ("•literal", write_literal, Monadic), ("•ucs", unicode_convert, Ambivalent),
+    ("•decompose", crate::primitive::recompose, Dyadic),
 ];
 
 /// `f⁻¹` for a system function `f` that has an inverse.
@@ -183,11 +179,7 @@ pub(crate) fn inverse(f: &SystemFunction, left: Option<&Value>, right: &Value, c
     call(left, right, cx)
 }
 
-const HOST_FACTS: &[&str] = &[
-    "args", "version", "env", "width", "height",
-    #[cfg(not(web))] "cwd",
-    #[cfg(not(web))] "temp",
-];
+const HOST_FACTS: &[&str] = &["args", "version", "env", "width", "height", #[cfg(not(web))] "cwd", #[cfg(not(web))] "temp",];
 
 /// `•host name` gives the host fact called `name`: the command-line `"args"`, BPL's `"version"`, the `"env"` record, the terminal's `"width"` and `"height"`, the working directory `"cwd"`, and `"temp"`, the directory for temporary files.
 fn host(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -319,16 +311,12 @@ fn unicode_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
                 if mode != 0 { return Err(invalid()); }
             }
             spec.at(0).clone()
-        } else {
-            spec.clone()
-        };
+        } else { spec.clone() };
         let text = crate::keyed::name(&name).filter(|_| !name.is_atom()).ok_or_else(invalid)?;
         if !matches!(&*text, "UTF-8" | "UTF-16" | "UTF-32") { return Err(invalid()); }
         if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "encoded •ucs needs a vector")); }
         Some(text)
-    } else {
-        None
-    };
+    } else { None };
     let shape = |len: usize| {
         let shape = if encoding.is_some() { vec![len] } else { right.shape().to_vec() };
         generated_len(&shape).map(|_| shape).error_at(span, "Unicode result exceeds element limit")

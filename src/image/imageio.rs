@@ -103,11 +103,8 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Raster<u16>, String> {
     for i in 1..count {
         let next = frame(i)?;
         if (next.height, next.width) != (raster.height, raster.width) { return Err("frames differ in size".into()); }
-        if next.channels == channels {
-            raster.data.extend_from_slice(&next.data)
-        } else {
-            rechannel_into(&mut raster.data, &next.data, next.channels, channels, u16::MAX, |x| x)
-        }
+        if next.channels == channels { raster.data.extend_from_slice(&next.data) }
+        else { rechannel_into(&mut raster.data, &next.data, next.channels, channels, u16::MAX, |x| x) }
     }
     Ok(Raster { count, channels, ..raster })
 }

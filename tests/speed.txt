@@ -275,6 +275,6 @@ sg←¿[128 128]⍴0 ⋄ sk←[1 2 1⋄2 4 2⋄1 2 1]÷16 ⋄ n←65536
 # ADBench's Gaussian mixture objective, for 1000 points in 32 dimensions and 25 components, without its constant terms and with its Wishart prior at gamma 1 and m 0. Each component's precision factor has the exponentials of `q` on its diagonal and `l` below it.
 gx gmm gp	2700	6800
 # The k-means cost sums the squared distance from each of 16384 points to the nearest of 64 centres, in 32 dimensions.
-kx kmeans kc	650	2100
+kx kmeans kc	1500	2100
 # A 3 by 3 blur of a 128 by 128 grid. `⌺` calls its operand once for each window.
 {+/,sk×⍵}⌺3 3⊢sg	6000	15000

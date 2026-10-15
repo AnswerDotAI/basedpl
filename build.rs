@@ -20,9 +20,7 @@ fn main() {
                 help = help.replace(&format!("]({name}"), &format!("]({dir}/{name}"));
             }
             let help = help.replace("](../", "](");
-            let keys: Vec<&str> = if dir == "glyphs" {
-                vec![path.file_stem().unwrap().to_str().unwrap()]
-            } else {
+            let keys: Vec<&str> = if dir == "glyphs" { vec![path.file_stem().unwrap().to_str().unwrap()] } else {
                 let mut fenced = false;
                 let headings = help.lines().filter(|line| {
                     fenced ^= line.starts_with("```");

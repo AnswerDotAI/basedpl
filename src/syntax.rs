@@ -89,9 +89,7 @@ fn statement(nodes: Vec<Node>) -> Result<Statement, ParseFailure> {
         StatementKind::ErrorGuard { index }
     } else if matches!(&nodes[0].kind, NodeKind::Name(name) if name == "⍺") && matches!(nodes.get(1).map(|n| &n.kind), Some(NodeKind::Assign)) {
         StatementKind::DefaultArgument
-    } else {
-        StatementKind::Expression
-    };
+    } else { StatementKind::Expression };
     Ok(Statement { nodes, kind })
 }
 
@@ -135,7 +133,10 @@ struct Token { kind: TokenKind, span: Span }
 
 fn digits(chars: &mut Peekable<CharIndices<'_>>) -> usize {
     let mut count = 0;
-    while chars.peek().is_some_and(|(_, c)| c.is_ascii_digit()) { chars.next(); count += 1; }
+    while chars.peek().is_some_and(|(_, c)| c.is_ascii_digit()) {
+        chars.next();
+        count += 1;
+    }
     count
 }
 
@@ -201,7 +202,11 @@ fn suffix_follows(chars: &Peekable<CharIndices<'_>>, (plain, sub): Suffix) -> bo
 }
 
 /// Consumes `suffix` when it comes next, and gives whether it did.
-fn suffix(chars: &mut Peekable<CharIndices<'_>>, suffix: Suffix) -> bool { let follows = suffix_follows(chars, suffix); if follows { chars.next(); } follows }
+fn suffix(chars: &mut Peekable<CharIndices<'_>>, suffix: Suffix) -> bool {
+    let follows = suffix_follows(chars, suffix);
+    if follows { chars.next(); }
+    follows
+}
 
 /// The number that literal text writes, read by `Number::parse` after each subscript suffix becomes its plain letter. A float with no width marker takes `width`. `•vfi` shares `Number::parse` and reads only the plain letters.
 fn literal_number(text: &str, width: FloatWidth) -> Result<Number, ErrorKind> {
@@ -308,8 +313,7 @@ fn name(chars: &mut Peekable<CharIndices<'_>>, key: bool) -> Result<(), (usize, 
                 if first && lone(chars.peek()) { return Ok(()); }
                 match chars.next() {
                     Some((at, q)) if han(q) => return Err((at + q.len_utf8(), "Hanzi are reserved for glyph spellings, not names")),
-                    Some((_, q)) if !q.is_whitespace() => { if q.is_ascii_digit() { digits(chars); } }
-                    _ => return Err((i + 1, UNQUOTED)),
+                    Some((_, q)) if !q.is_whitespace() => { if q.is_ascii_digit() { digits(chars); } } _ => return Err((i + 1, UNQUOTED))
                 }
             }
             Some(&(_, c)) if name_char(c) || (key && c.is_ascii_digit()) => { chars.next(); }
@@ -360,8 +364,7 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
             real_literal(chars).map_err(|message| span(position(chars, len)).error(ErrorKind::Syntax, message))?;
             width_mark(chars);
             if let Some(end) = run_on(chars, false) { return Err(span(end).error(ErrorKind::Syntax, "invalid complex numeric literal").into()); }
-        }
-        else {
+        } else {
             let rational = suffix(chars, DENOMINATOR);
             if rational {
                 chars.next_if(|&(_, c)| canonical(c) == '¯');
@@ -385,9 +388,7 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
             '\'' => {
                 let unclosed = |at| Err(span(at).error(ErrorKind::Syntax, "unclosed character literal").into());
                 let c = match chars.next() { Some((_, c)) if c != '\n' => c, next => return unclosed(next.map_or(len, |(i, _)| i)) };
-                if c == '\'' && chars.peek().is_none_or(|&(_, c)| c != '\'') {
-                    TokenKind::Literal(crate::keyed::text(""))
-                } else {
+                if c == '\'' && chars.peek().is_none_or(|&(_, c)| c != '\'') { TokenKind::Literal(crate::keyed::text("")) } else {
                     match chars.peek() {
                         Some((_, '\'')) => { chars.next(); }
                         None | Some((_, '\n')) => return unclosed(position(chars, len)),
@@ -406,7 +407,10 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
                         Some((_, '"')) if chars.next_if(|&(_, c)| c == '"').is_some() => text.push('"'),
                         Some((_, '"')) => break,
                         // Each line ending, whatever its form, reads as one newline. Indentation stays as written.
-                        Some((_, '\r')) => { chars.next_if(|&(_, c)| c == '\n'); text.push('\n'); }
+                        Some((_, '\r')) => {
+                            chars.next_if(|&(_, c)| c == '\n');
+                            text.push('\n');
+                        }
                         Some((_, c)) => text.push(c),
                         None => return Err(ParseFailure::Incomplete(span(len).error(ErrorKind::Syntax, "unclosed string"))),
                     }
@@ -453,7 +457,10 @@ fn token(source: &Arc<Source>, chars: &mut Peekable<CharIndices<'_>>, width: Flo
             '{' => TokenKind::BraceOpen,
             '}' => TokenKind::BraceClose,
             '⍺' | '⍵' | '⍶' | '⍹' | '∇' | '⍢' => TokenKind::Name(c.to_string()),
-            '⍝' => { while chars.peek().is_some_and(|(_, c)| *c != '\n') { chars.next(); } return Ok(None); }
+            '⍝' => {
+                while chars.peek().is_some_and(|(_, c)| *c != '\n') { chars.next(); }
+                return Ok(None);
+            }
             'ᵀ' => TokenKind::Operator(OperatorKind::Super(Superscript::Transpose)),
             'ᵘ' => TokenKind::Operator(OperatorKind::Super(Superscript::Unit)),
             c if c == '⁻' || script_digit(SUPERSCRIPT_DIGITS, c).is_some() => {
@@ -543,7 +550,9 @@ impl Parser<'_> {
                 TokenKind::Close(_) | TokenKind::BracketClose(_) | TokenKind::BraceClose => {
                     let matched = open.is_some_and(|o| {
                         matches!(
-                            (&o.kind, &token.kind), (TokenKind::Open, TokenKind::Close(_)) | (TokenKind::BracketOpen, TokenKind::BracketClose(_))
+                            (&o.kind, &token.kind),
+                            (TokenKind::Open, TokenKind::Close(_))
+                                | (TokenKind::BracketOpen, TokenKind::BracketClose(_))
                                 | (TokenKind::BraceOpen, TokenKind::BraceClose)
                         )
                     });
@@ -609,9 +618,14 @@ fn bodies(pieces: Vec<Piece>, span: &Span) -> Result<Vec<Vec<Statement>>, ParseF
     let (mut bodies, mut ends, mut body, mut nodes) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for piece in pieces {
         match piece {
-            Piece::Node(n) => nodes.push(n), Piece::Diamond => end_statement(&mut body, &mut nodes, None)?,
+            Piece::Node(n) => nodes.push(n),
+            Piece::Diamond => end_statement(&mut body, &mut nodes, None)?,
             Piece::Predicate(s) => end_statement(&mut body, &mut nodes, Some(s))?,
-            Piece::Semicolon(s) => { end_statement(&mut body, &mut nodes, None)?; bodies.push(std::mem::take(&mut body)); ends.push(s); }
+            Piece::Semicolon(s) => {
+                end_statement(&mut body, &mut nodes, None)?;
+                bodies.push(std::mem::take(&mut body));
+                ends.push(s);
+            }
         }
     }
     end_statement(&mut body, &mut nodes, None)?;
@@ -691,9 +705,7 @@ fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
         if parts.last().is_some_and(Vec::is_empty) { return Err(invalid(span, "a trailing ; leaves an empty item: [x] is already a one-item vector")); }
         if parts.iter().any(Vec::is_empty) { return Err(invalid(span, "empty item between semicolons")); }
         parts.into_iter().map(expression).collect::<Result<Vec<_>, _>>()?
-    } else {
-        items(parts.pop().unwrap())?
-    };
+    } else { items(parts.pop().unwrap())? };
     Ok(NodeKind::ArrayLiteral { record: cells.iter().any(|c| key_colon(c).is_some()), cells, form: ListForm::Items })
 }
 
@@ -719,14 +731,16 @@ pub(crate) fn non_literal<'a>(nodes: &'a [Node], allowed: &impl Fn(&NodeKind) ->
 /// Items separated by spaces: each run of nodes with no space between them is one item.
 fn items(nodes: Vec<Node>) -> Result<Vec<Vec<Node>>, ParseFailure> {
     let mut runs: Vec<Vec<Node>> = Vec::new();
-    for node in nodes {
-        match runs.last_mut() { Some(run) if touching(run.last().unwrap(), &node) => run.push(node), _ => runs.push(vec![node]) }
-    }
+    for node in nodes { match runs.last_mut() { Some(run) if touching(run.last().unwrap(), &node) => run.push(node), _ => runs.push(vec![node]) } }
     runs.into_iter().map(expression).collect()
 }
 
 /// An expression outside brackets, or one item between semicolons: strands, then runs.
-fn expression(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> { let nodes = runs(strands(nodes)?); subscripts_follow_items(&nodes)?; Ok(nodes) }
+fn expression(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
+    let nodes = runs(strands(nodes)?);
+    subscripts_follow_items(&nodes)?;
+    Ok(nodes)
+}
 
 /// Fails unless each subscript follows a node in its list. That node is the item the subscript touches, or after a space the run before it.
 fn subscripts_follow_items(nodes: &[Node]) -> Result<(), ParseFailure> {
@@ -781,7 +795,10 @@ fn close_strand(strand: &mut Vec<Node>, out: &mut Vec<Node>) -> Result<(), Parse
 fn runs(nodes: Vec<Node>) -> Vec<Node> {
     let (mut result, mut part) = (Vec::with_capacity(nodes.len()), Vec::new());
     for node in nodes {
-        if matches!(node.kind, NodeKind::ErrorGuard) { result.extend(assignments(std::mem::take(&mut part))); result.push(node); } else { part.push(node) }
+        if matches!(node.kind, NodeKind::ErrorGuard) {
+            result.extend(assignments(std::mem::take(&mut part)));
+            result.push(node);
+        } else { part.push(node) }
     }
     result.extend(assignments(part));
     result
@@ -818,12 +835,18 @@ fn assignments(nodes: Vec<Node>) -> Vec<Node> {
 /// Nodes with no space between them form runs. Returns the finished runs and the last run, which is still open.
 fn spaced(nodes: Vec<Node>) -> (Vec<Node>, Vec<Node>) {
     let (mut out, mut run): (Vec<Node>, Vec<Node>) = (Vec::with_capacity(nodes.len()), Vec::new());
-    for node in nodes { if run.last().is_some_and(|last| !touching(last, &node)) { flush(&mut run, &mut out); } run.push(node); }
+    for node in nodes {
+        if run.last().is_some_and(|last| !touching(last, &node)) { flush(&mut run, &mut out); }
+        run.push(node);
+    }
     (out, run)
 }
 
 fn flush(run: &mut Vec<Node>, out: &mut Vec<Node>) {
-    if run.len() < 2 { out.append(run) } else { let span = cover(run); out.push(Node { kind: NodeKind::Run(std::mem::take(run)), span }); }
+    if run.len() < 2 { out.append(run) } else {
+        let span = cover(run);
+        out.push(Node { kind: NodeKind::Run(std::mem::take(run)), span });
+    }
 }
 
 /// Close the last run. A run that is the whole expression needs no wrapper.

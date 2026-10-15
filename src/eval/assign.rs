@@ -62,8 +62,7 @@ impl Session {
             // A run that ends in a dyadic operator holds its left operand, and takes this operand as its right one, as in `(⌽@ 1⌷)`.
             start -= 1;
             category = Function;
-        }
-        else if start > 0 && matches!(Rule::get(self.node_category(&nodes[start - 1]), category), Rule::BindRight) {
+        } else if start > 0 && matches!(Rule::get(self.node_category(&nodes[start - 1]), category), Rule::BindRight) {
             start = self.assignment_operand(nodes, start - 1)?.0;
             category = Function;
         }
@@ -262,8 +261,7 @@ impl Session {
                     crate::keyed::extend(value.item_mut(&path, false), added, descend).error_at(&span, "invalid named axis extension")
                 })?;
             }
-        }
-        else {
+        } else {
             let mut target = self.array_result(&container)?;
             let added = crate::keyed::missing(&target, &selectors).error_at(&span, "invalid named axis extension")?;
             if added.iter().any(|k| !k.is_empty()) {
@@ -341,9 +339,7 @@ impl Session {
                 } else if pick && item.shape().len() == 1 && (left.is_atom() || crate::keyed::name(&left).is_some()) {
                     // One position or key picks one item of a vector.
                     crate::primitive::selection(&item, &[Some(left)], &context)?
-                } else {
-                    return Ok(None);
-                };
+                } else { return Ok(None); };
                 Ok(Some((binding, selection.within(&path))))
             }
             _ => Ok(None),
@@ -400,9 +396,7 @@ impl Session {
                 let unit = if right.is_singleton() {
                     let item = right.at(0);
                     Some(if item.is_atom() { item } else { item.enclose().error_at(span, "invalid modified selection")? })
-                } else {
-                    None
-                };
+                } else { None };
                 let Some((counts, rounds)) = occurrences(offsets, binding.value.len()) else {
                     let items = selection.read(&binding.value, &self.at(span))?;
                     let right = match unit { Some(unit) if right.shape() != items.shape() => unit, _ => right };
@@ -466,7 +460,10 @@ impl Session {
             (Vec::with_capacity(width), vec![0; array.len()], vec![0; width], Vec::with_capacity(offsets.len()));
         for (&o, &c) in offsets.iter().zip(counts) {
             let c = c as usize;
-            if c == 0 { column[o] = positions.len(); positions.push(o); }
+            if c == 0 {
+                column[o] = positions.len();
+                positions.push(o);
+            }
             size[column[o]] = c + 1;
             placed.push((c + 1) * width + column[o]);
         }

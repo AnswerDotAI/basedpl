@@ -25,7 +25,10 @@ fn shared_lock() -> std::io::Result<fs::File> {
         match file.try_lock_shared() {
             Ok(()) => return Ok(file),
             Err(fs::TryLockError::WouldBlock) if start.elapsed() < Duration::from_secs(300) => {}
-            Err(fs::TryLockError::WouldBlock) => { eprintln!("building although a timing still holds {TIMING_LOCK}"); return Ok(file); }
+            Err(fs::TryLockError::WouldBlock) => {
+                eprintln!("building although a timing still holds {TIMING_LOCK}");
+                return Ok(file);
+            }
             Err(fs::TryLockError::Error(e)) => return Err(e),
         }
         if !waiting { eprintln!("waiting for a timing to release {TIMING_LOCK}"); }

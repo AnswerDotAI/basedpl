@@ -21,20 +21,13 @@ fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
         if let Ok(s) = o.cast::<PyString>() {
             return basedpl::protocol::character(s.to_str()?).map(Value::Character).ok_or_else(|| PyValueError::new_err("expected one character"));
         }
-        let number = if let Ok(b) = o.cast::<PyBool>() {
-            Ok(Number::from_bool(b.is_true()))
-        } else if o.is_instance_of::<PyFloat>() {
-            Ok(Number::float(o.extract::<f64>()?, width))
-        } else if let Ok(z) = o.cast::<PyComplex>() {
+        let number = if let Ok(b) = o.cast::<PyBool>() { Ok(Number::from_bool(b.is_true())) }
+        else if o.is_instance_of::<PyFloat>() { Ok(Number::float(o.extract::<f64>()?, width)) }
+        else if let Ok(z) = o.cast::<PyComplex>() {
             Ok(Number::complex(num_complex::Complex64::new(z.real(), z.imag()), width))
-        } else if o.is_instance_of::<PyInt>() {
-            Ok(o.extract::<BigInt>()?.into())
-        } else if o.is_instance_of::<PyTuple>() {
-            let (n, d) = o.extract::<(BigInt, BigInt)>()?;
-            Number::try_from(BigRational::new_raw(n, d))
-        } else {
-            return Err(PyTypeError::new_err("unsupported BPL element"));
-        };
+        } else if o.is_instance_of::<PyInt>() { Ok(o.extract::<BigInt>()?.into()) }
+        else if o.is_instance_of::<PyTuple>() { let (n, d) = o.extract::<(BigInt, BigInt)>()?; Number::try_from(BigRational::new_raw(n, d)) }
+        else { return Err(PyTypeError::new_err("unsupported BPL element")); };
         number.map(Value::Number).map_err(|k| PyValueError::new_err(k.to_string()))
     };
     let field = |key| raw.get_item(key)?.ok_or_else(|| PyValueError::new_err("missing array field"));
@@ -68,21 +61,13 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
     fn element(py: Python<'_>, e: &Value) -> PyResult<Py<PyAny>> {
         Ok(match e {
             Value::Number(n) => {
-                if let Some(b) = n.as_bool() {
-                    PyBool::new(py, b).to_owned().into_any().unbind()
-                } else if let Some(n) = n.as_integer() {
-                    n.into_pyobject(py)?.into_any().unbind()
-                } else if let Some(n) = n.as_exact() {
-                    if n.is_integer() {
-                        n.numer().into_pyobject(py)?.into_any().unbind()
-                    } else {
-                        (n.numer(), n.denom()).into_pyobject(py)?.into_any().unbind()
-                    }
-                } else if let Some(n) = n.as_complex() {
-                    PyComplex::from_doubles(py, n.re, n.im).into_any().unbind()
-                } else {
-                    PyFloat::new(py, n.as_float().unwrap()).into_any().unbind()
-                }
+                if let Some(b) = n.as_bool() { PyBool::new(py, b).to_owned().into_any().unbind() }
+                else if let Some(n) = n.as_integer() { n.into_pyobject(py)?.into_any().unbind() }
+                else if let Some(n) = n.as_exact() {
+                    if n.is_integer() { n.numer().into_pyobject(py)?.into_any().unbind() }
+                    else { (n.numer(), n.denom()).into_pyobject(py)?.into_any().unbind() }
+                } else if let Some(n) = n.as_complex() { PyComplex::from_doubles(py, n.re, n.im).into_any().unbind() }
+                else { PyFloat::new(py, n.as_float().unwrap()).into_any().unbind() }
             }
             Value::Character(c) => PyString::new(py, &c.to_string()).into_any().unbind(),
             a @ Value::Array(_) => array(py, a)?.into_any(),
@@ -363,24 +348,25 @@ fn options(timeout: Option<f64>, echo: bool) -> PyResult<basedpl::EvalOptions> {
 fn python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
     use serde_json::Value as Json;
     match value {
-        Json::Null => Ok(py.None()), Json::Bool(b) => b.into_py_any(py),
-        Json::Number(n) => n.as_i64().map_or_else(|| n.as_f64().into_py_any(py), |i| i.into_py_any(py)), Json::String(s) => s.into_py_any(py),
+        Json::Null => Ok(py.None()),
+        Json::Bool(b) => b.into_py_any(py),
+        Json::Number(n) => n.as_i64().map_or_else(|| n.as_f64().into_py_any(py), |i| i.into_py_any(py)),
+        Json::String(s) => s.into_py_any(py),
         Json::Array(items) => items.iter().map(|v| python(py, v)).collect::<PyResult<Vec<_>>>()?.into_py_any(py),
-        Json::Object(fields) => { let d = PyDict::new(py); for (k, v) in fields { d.set_item(k, python(py, v)?)?; } d.into_py_any(py) }
+        Json::Object(fields) => {
+            let d = PyDict::new(py);
+            for (k, v) in fields { d.set_item(k, python(py, v)?)?; }
+            d.into_py_any(py)
+        }
     }
 }
 
 /// A result as the dict that the JSON protocol sends, holding native arrays and functions.
 fn response(py: Python<'_>, result: Evaluation) -> PyResult<Py<PyDict>> {
-    let value = if let Some(inner) = result.value {
-        Some(Py::new(py, PyArray { inner })?.into_any())
-    } else if let Some(inner) = result.function {
-        Some(Py::new(py, PyFunction { inner })?.into_any())
-    } else if let Some(inner) = result.operator {
-        Some(Py::new(py, PyOperator { inner })?.into_any())
-    } else {
-        None
-    };
+    let value = if let Some(inner) = result.value { Some(Py::new(py, PyArray { inner })?.into_any()) }
+    else if let Some(inner) = result.function { Some(Py::new(py, PyFunction { inner })?.into_any()) }
+    else if let Some(inner) = result.operator { Some(Py::new(py, PyOperator { inner })?.into_any()) }
+    else { None };
     let d = PyDict::new(py);
     d.set_item("value", value)?;
     d.set_item("output", output(py, &result.output)?)?;

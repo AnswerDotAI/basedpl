@@ -47,7 +47,10 @@ pub(super) fn encode(frames: &Raster<u8>, delays: Option<&[f64]>, format: Format
     if delays.is_some() { encoder.set_animated(frames.count as u32, 0).map_err(|e| e.to_string())?; }
     let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
     for i in 0..frames.count {
-        if let Some(delays) = delays { let (num, den) = ratio(delays[i % delays.len()]); writer.set_frame_delay(num, den).map_err(|e| e.to_string())?; }
+        if let Some(delays) = delays {
+            let (num, den) = ratio(delays[i % delays.len()]);
+            writer.set_frame_delay(num, den).map_err(|e| e.to_string())?;
+        }
         writer.write_image_data(frames.frame(i)).map_err(|e| e.to_string())?;
     }
     writer.finish().map_err(|e| e.to_string())?;

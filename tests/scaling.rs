@@ -20,7 +20,10 @@ unsafe impl GlobalAlloc for Counting {
         }
         p
     }
-    unsafe fn dealloc(&self, p: *mut u8, layout: Layout) { unsafe { System.dealloc(p, layout) }; LIVE.set(LIVE.get() - layout.size() as isize); }
+    unsafe fn dealloc(&self, p: *mut u8, layout: Layout) {
+        unsafe { System.dealloc(p, layout) };
+        LIVE.set(LIVE.get() - layout.size() as isize);
+    }
 }
 
 #[global_allocator]

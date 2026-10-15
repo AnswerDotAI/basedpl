@@ -23,7 +23,10 @@ pub(super) fn complex_parts(right: &Value, polar: bool, span: &Context<'_>) -> R
     };
     if let Some(parts) = parts { return parts.with_layout(layout).error_at(span, "invalid decomposition"); }
     let mut data = Vec::with_capacity(generated_len(layout.shape()).error_at(span, "decomposition is too large")?);
-    for item in right.elements() { span.check()?; data.extend(numeric(&item, span)?.parts(polar).domain_at(span)?.map(Value::Number)); }
+    for item in right.elements() {
+        span.check()?;
+        data.extend(numeric(&item, span)?.parts(polar).domain_at(span)?.map(Value::Number));
+    }
     let prototype = Value::Number(numeric(&right.prototype(), span)?.zero());
     layout.collect(data, prototype).error_at(span, "invalid decomposition")
 }
@@ -36,7 +39,10 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
     let mut text = if precision >= 0 && n.is_exact() {
         let scaled = (n.as_exact().unwrap() * num_bigint::BigInt::from(10).pow(digits as u32)).round().to_integer();
         let mut s = scaled.abs().to_string();
-        if digits != 0 { if s.len() <= digits { s.insert_str(0, &"0".repeat(digits + 1 - s.len())); } s.insert(s.len() - digits, '.'); }
+        if digits != 0 {
+            if s.len() <= digits { s.insert_str(0, &"0".repeat(digits + 1 - s.len())); }
+            s.insert(s.len() - digits, '.');
+        }
         if scaled.is_negative() { s.insert(0, '¯'); }
         s
     } else {
@@ -48,9 +54,7 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
         let y = if scale.is_finite() && scale != 0.0 && scaled.abs() < 1e16 { scaled.round() / scale } else { y };
         if precision >= 0 {
             if y == 0.0 && y.is_sign_negative() { format!(" {:.*}", digits, 0.0) } else { format!("{y:.digits$}") }
-        } else {
-            crate::number::scientific(&format!("{:.*e}", digits - 1, y))
-        }
+        } else { crate::number::scientific(&format!("{:.*e}", digits - 1, y)) }
     };
     if !n.is_exact() {
         let mut significant = 0;
@@ -96,14 +100,11 @@ pub(super) fn format_array(left: Option<&Value>, right: &Value, span: &Context<'
     for (i, s) in text.iter().enumerate() {
         let width = widths[i % columns];
         let len = s.chars().count();
-        let s = if len > width {
-            "*".repeat(width)
-        } else if specs[i % columns].1 < 0 {
+        let s = if len > width { "*".repeat(width) }
+        else if specs[i % columns].1 < 0 {
             let leading = usize::from(specs[i % columns].0 == 0);
             format!("{}{s}{}", " ".repeat(leading), " ".repeat(width - len - leading))
-        } else {
-            format!("{}{s}", " ".repeat(width - len))
-        };
+        } else { format!("{}{s}", " ".repeat(width - len)) };
         data.extend(s.chars().map(Value::Character));
     }
     Value::from_parts(shape, data, Value::Character(' ')).error_at(span, "invalid formatted result")
@@ -222,8 +223,8 @@ pub(crate) fn stacked_decompositions(left: &Value, right: &Value, span: &Context
     let (m, n, count) = (cell[0], cell[1], generated_len(frame).ok()?);
     if m == 0 || n == 0 || count == 0 || (matches!(d.kind.as_str(), "eigen" | "cholesky" | "lu") && m != n) { return None; }
     let (domain, width) = domain_of(&[right], span).ok()?;
-    fn stack<T>(d: &Decomposition, a: &[T], [m, n, count]: [usize; 3], frame: &[usize], width: FloatWidth, span: &Context<'_>) -> Result<Value, Error>
-    where T: Factor + Field + Sync, T::Real: Field + Into<f64> {
+    fn stack<T>(d: &Decomposition, a: &[T], [m, n, count]: [usize; 3], frame: &[usize], width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> where
+        T: Factor + Field + Sync, T::Real: Field + Into<f64> {
         let results = cells(count, 1, |i, slot: &mut [Option<_>], _: &mut ()| slot[0] = Some(factored(d, &a[i * m * n..][..m * n], [m, n], width)), span)?;
         let (mut items, mut keys) = (Vec::new(), None);
         for cell in results {
@@ -284,11 +285,8 @@ fn factored<T>(d: &Decomposition, a: &[T], [m, n]: [usize; 2], width: FloatWidth
             };
             if f.s.iter().any(|&s| num_traits::Float::is_nan(s)) { return Err(Fault::Converge); }
             let k = f.s.len();
-            if !d.vectors {
-                (vec!["s"], vec![vector(f.s, width)])
-            } else {
-                (vec!["u", "s", "v"], vec![matrix(f.u, [m, k], width), vector(f.s, width), matrix(f.v, [n, k], width)])
-            }
+            if !d.vectors { (vec!["s"], vec![vector(f.s, width)]) }
+            else { (vec!["u", "s", "v"], vec![matrix(f.u, [m, k], width), vector(f.s, width), matrix(f.v, [n, k], width)]) }
         }
         "qr" => {
             let ((q, r), rows) = if d.complete { (linalg::qr_complete(a, [m, n]), m) } else { (linalg::qr(a, [m, n]), p) };
@@ -468,7 +466,10 @@ pub(super) fn binary_encode(right: &Value, span: &Context<'_>) -> Result<Value, 
     }
     let layout = right.layout().concat(&Layout::from(vec![width]));
     let mut data = Vec::with_capacity(generated_len(layout.shape()).error_at(span, "binary encoding is too large")?);
-    for (n, domain) in &numbers { span.check()?; data.extend((0..width).rev().map(|bit| Value::Number(domain.like(i32::from(n.bit(bit as u64)))))); }
+    for (n, domain) in &numbers {
+        span.check()?;
+        data.extend((0..width).rev().map(|bit| Value::Number(domain.like(i32::from(n.bit(bit as u64))))));
+    }
     let prototype = Value::Number(numeric(&right.prototype(), span)?.zero());
     layout.collect(data, prototype).error_at(span, "invalid binary encoding")
 }
@@ -507,16 +508,11 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
                     integral = Number::from(b);
                     value = Number::from(v);
                     &integral
-                } else {
-                    base
-                };
+                } else { base };
                 let digit = base.residue(&value, span.numeric()).map_err(error)?;
                 if k != 0 {
-                    value = if base.grade_order(&base.zero()).is_eq() {
-                        zero.clone()
-                    } else {
-                        value.dyad(Arithmetic::Minus, &digit).and_then(|v| v.dyad(Arithmetic::Divide, base)).map_err(error)?
-                    };
+                    value = if base.grade_order(&base.zero()).is_eq() { zero.clone() }
+                    else { value.dyad(Arithmetic::Minus, &digit).and_then(|v| v.dyad(Arithmetic::Divide, base)).map_err(error)? };
                 }
                 digits[k] = Value::Number(if !exact && digit.is_exact() { Number::from(digit.to_complex().map_err(error)?).at_width(width) } else { digit });
             }
@@ -543,11 +539,9 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
         let mut value = zero.clone();
         for k in 0..len {
             let y = &y[if ylen == 1 { 0 } else { positions.index(k) }];
-            value = if k == 0 {
-                y.clone()
-            } else {
-                value.dyad(Arithmetic::Times, &x[if xlen == 1 { 0 } else { k }]).and_then(|v| v.dyad(Arithmetic::Plus, y)).map_err(error)?
-            };
+            value = if k == 0 { y.clone() }
+            else { value.dyad(Arithmetic::Times, &x[if xlen == 1 { 0 }
+            else { k }]).and_then(|v| v.dyad(Arithmetic::Plus, y)).map_err(error)? };
         }
         data.push(Value::Number(value));
     }

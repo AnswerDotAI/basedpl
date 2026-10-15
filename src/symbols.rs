@@ -39,10 +39,7 @@ pub fn canonical(c: char) -> char {
 
 /// The spelling of generated function and operator notation. Input always accepts every spelling.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Notation {
-    #[default] Apl,
-    Simplified, Traditional
-}
+pub enum Notation { #[default] Apl, Simplified, Traditional }
 impl Notation {
     pub fn glyph(self, glyph: &str) -> &str {
         let aliases = match self { Self::Apl => return glyph, Self::Simplified => hanzi(glyph)[0], Self::Traditional => hanzi(glyph)[1] };
@@ -171,11 +168,8 @@ pub fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
     for &Symbol { glyph, name, monad, dyad, .. } in symbols() {
         let ranked = [name, monad, dyad].into_iter().filter(|word| !word.is_empty()).filter_map(|word| {
             let letters = word.replace('-', "");
-            let rank = if letters == query {
-                0
-            } else if letters.starts_with(&query) {
-                1
-            } else {
+            let rank = if letters == query { 0 }
+            else if letters.starts_with(&query) { 1 } else {
                 let mut rest = query.as_str();
                 for part in word.split('-') {
                     let n = part.bytes().zip(rest.bytes()).take_while(|(a, b)| a == b).count();
@@ -188,7 +182,13 @@ pub fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
             };
             Some((rank, word))
         }).min_by_key(|&(rank, _)| rank);
-        if let Some((rank, word)) = ranked { if rank < best { found.clear(); best = rank; } if rank == best { found.push((glyph, word)); } }
+        if let Some((rank, word)) = ranked {
+            if rank < best {
+                found.clear();
+                best = rank;
+            }
+            if rank == best { found.push((glyph, word)); }
+        }
     }
     // A name that is a prefix of every other match wins: `om gives omega, `omu gives omega-underbar.
     let letters = |name: &str| name.replace('-', "");

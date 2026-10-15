@@ -133,11 +133,8 @@ impl Chain {
 
     fn typed<F: Float + Kernels + 'static>(&self) -> Value {
         let shape = self.layout.shape().to_vec();
-        (if self.compares() {
-            bool::build(shape, self.results::<F, bool>(|slots| pervasive::Out::Bools(slots)))
-        } else {
-            F::build(shape, self.results::<F, F>(|slots| pervasive::Out::Floats(slots)))
-        }).expect("a chain's result fits its layout")
+        (if self.compares() { bool::build(shape, self.results::<F, bool>(|slots| pervasive::Out::Bools(slots))) }
+        else { F::build(shape, self.results::<F, F>(|slots| pervasive::Out::Floats(slots))) }).expect("a chain's result fits its layout")
     }
 
     /// The chain's results, which each block's last step writes straight into the result through `out`. Pieces of whole blocks split across threads as rustymath's `parallel::extended` splits them, and run whole where this thread's calls run on one thread.
@@ -214,9 +211,7 @@ impl Chain {
                         Operand::Input(i) => args[i], Operand::Scalar(ref c) => Arg::One(scalar(c)), Operand::Previous => Arg::Many(&previous[..])
                     };
                     let run = |out: Out<'_, '_, F>| pervasive::step(step.p, step.left.as_ref().map(operand), operand(&step.right), n, out, self.numeric);
-                    ok &= if k + 1 < self.steps.len() {
-                        Slots::append(&mut next, n, |slots| run(Out::Floats(slots)))
-                    } else {
+                    ok &= if k + 1 < self.steps.len() { Slots::append(&mut next, n, |slots| run(Out::Floats(slots))) } else {
                         match &mut last {
                             Last::Slots(out) => run(out.reborrow()),
                             Last::Vecs(_, bools, _) if self.compares() => Slots::append(bools, n, |slots| run(Out::Bools(slots))),

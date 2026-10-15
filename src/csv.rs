@@ -24,11 +24,8 @@ impl Options {
         let mut opts = Self { common, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.', thousands: None, width };
         let byte = |c: Option<char>| -> Result<Option<u8>, Error> {
             c.map(|c| {
-                if c.is_ascii() && !matches!(c, '\r' | '\n' | '\0') {
-                    Ok(c as u8)
-                } else {
-                    Err(span.domain_error("CSV separator, quote and escape must be non-newline ASCII characters"))
-                }
+                if c.is_ascii() && !matches!(c, '\r' | '\n' | '\0') { Ok(c as u8) }
+                else { Err(span.domain_error("CSV separator, quote and escape must be non-newline ASCII characters")) }
             }).transpose()
         };
         opts.separator = byte(opts.character("separator", Some(','), span)?)?.ok_or_else(|| span.domain_error("CSV needs a separator"))?;
@@ -62,9 +59,7 @@ impl Options {
             if v.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "CSV column selectors must be a vector")); }
             let selectors = if keyed::name(v).is_some() { vec![v.clone()] } else { v.elements().collect() };
             for v in selectors {
-                let i = if let Some(name) = keyed::name(&v) {
-                    headers.and_then(|h| h.iter().position(|s| s == &name))
-                } else {
+                let i = if let Some(name) = keyed::name(&v) { headers.and_then(|h| h.iter().position(|s| s == &name)) } else {
                     // Positions count from 0, and negative ones count from the end.
                     v.as_number().and_then(|n| n.integer().ok()).and_then(|n| {
                         let i = crate::array::saturated(n.unsigned_abs());
@@ -90,7 +85,10 @@ impl Options {
                 field = field.replace(sep, "");
             }
         }
-        if self.decimal != '.' { if field.contains('.') { return None; } field = field.replace(self.decimal, "."); }
+        if self.decimal != '.' {
+            if field.contains('.') { return None; }
+            field = field.replace(self.decimal, ".");
+        }
         let digits = field.trim_start_matches(['+', '-']);
         if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
             if let Ok(n) = field.parse::<i64>() { return Some(Number::from_integer(n)); }
@@ -154,9 +152,7 @@ fn import(source: &str, opts: &Options, span: &Context<'_>) -> Result<Value, Err
                 }));
             }
             crate::data::imported(vec![cells.len()], numbers, |i| absent[i], Value::Number(Number::from_integer(0)))
-        } else {
-            keyed::texts(&[cells.len()], cells.iter().zip(&absent).map(|(s, &a)| keyed::text(if a { "" } else { s })).collect())
-        };
+        } else { keyed::texts(&[cells.len()], cells.iter().zip(&absent).map(|(s, &a)| keyed::text(if a { "" } else { s })).collect()) };
         result.push(column.error_at(span, "invalid CSV column")?);
     }
     match headers {
@@ -185,11 +181,8 @@ fn export(table: &Value, opts: &Options, span: &Context<'_>) -> Result<Value, Er
     };
     let mut writer = csv::WriterBuilder::new().delimiter(opts.separator).quote(opts.quote.unwrap_or(b'"')).quote_style(if opts.quote.is_none() {
         csv::QuoteStyle::Never
-    } else if force || opts.escape.is_some() {
-        csv::QuoteStyle::Always
-    } else {
-        csv::QuoteStyle::Necessary
-    }).double_quote(opts.double_quote).escape(opts.escape.unwrap_or(b'\\')).terminator(terminator).from_writer(Vec::new());
+    } else if force || opts.escape.is_some() { csv::QuoteStyle::Always }
+    else { csv::QuoteStyle::Necessary }).double_quote(opts.double_quote).escape(opts.escape.unwrap_or(b'\\')).terminator(terminator).from_writer(Vec::new());
     let write = |writer: &mut csv::Writer<Vec<u8>>, fields: Vec<String>| -> Result<(), Error> {
         for field in &fields {
             if opts.quote.is_none() && (field.contains([opts.separator as char, '\r', '\n']) || fields.len() == 1 && field.is_empty()) {
@@ -220,23 +213,16 @@ fn export(table: &Value, opts: &Options, span: &Context<'_>) -> Result<Value, Er
 }
 
 fn field(v: &Value, opts: &Options, fill: &Number, span: &Context<'_>) -> Result<String, Error> {
-    let mut s = if let Some(s) = keyed::name(v) {
-        if opts.trim { s.trim().to_owned() } else { s.to_string() }
-    } else if let Value::Number(n) = v {
+    let mut s = if let Some(s) = keyed::name(v) { if opts.trim { s.trim().to_owned() } else { s.to_string() } }
+    else if let Value::Number(n) = v {
         if n.is_nan() || (opts.common.values.contains_key("fill") && n.grade_order(fill).is_eq()) { return Ok(String::new()); }
-        if let Some(n) = n.as_integer() {
-            n.to_string()
-        } else if let Some(n) = n.as_float() {
+        if let Some(n) = n.as_integer() { n.to_string() }
+        else if let Some(n) = n.as_float() {
             let s = n.to_string();
             if n.is_finite() && !s.contains(['.', 'e', 'E']) { format!("{s}.0") } else { s }
-        } else if let Some(n) = n.as_exact().filter(|n| n.is_integer()) {
-            n.numer().to_string()
-        } else {
-            return Err(span.domain_error("CSV cells must be real floats, integers or strings"));
-        }
-    } else {
-        return Err(span.domain_error("CSV cells must be real floats, integers or strings"));
-    };
+        } else if let Some(n) = n.as_exact().filter(|n| n.is_integer()) { n.numer().to_string() }
+        else { return Err(span.domain_error("CSV cells must be real floats, integers or strings")); }
+    } else { return Err(span.domain_error("CSV cells must be real floats, integers or strings")); };
     if matches!(v, Value::Number(_)) {
         if opts.decimal != '.' { s = s.replace('.', &opts.decimal.to_string()); }
         if let Some(sep) = opts.thousands {

@@ -82,7 +82,10 @@ impl Execution {
     }
     pub(crate) fn output(&self, kind: OutputKind, text: String) { self.emit(Output::plain(kind, text)); }
     /// Sends `output`, after any pending text.
-    pub(crate) fn emit(&self, output: Output) { self.flush(); self.send(output); }
+    pub(crate) fn emit(&self, output: Output) {
+        self.flush();
+        self.send(output);
+    }
     /// Sends `output` to the sink, or keeps it for the evaluation's result when there is none.
     fn send(&self, output: Output) { if let Some(sink) = &self.output { sink(&output); } else { self.captured.borrow_mut().push(output); } }
     /// Writes `text` with no line ending added. Text after the last line ending waits, so that a read of `⎕` can show it as its prompt.
@@ -108,18 +111,13 @@ impl Execution {
         read(input).map_err(|e| {
             if e.kind() == io::ErrorKind::Interrupted || self.interrupt.0.load(Ordering::Relaxed) {
                 span.error(ErrorKind::Interrupt, "evaluation interrupted")
-            } else {
-                span.io_error("standard input", e)
-            }
+            } else { span.io_error("standard input", e) }
         })
     }
     /// Stops the evaluation when it's interrupted or past its deadline. Most calls only count down, inlined into the caller. Every `CHECKS_PER_CLOCK`th call runs `check_now`.
     #[inline]
     pub(crate) fn check(&self, span: &Span) -> Result<(), Error> {
-        match self.countdown.get().checked_sub(1) {
-            Some(n) => { self.countdown.set(n); Ok(()) }
-            None => self.check_now(span),
-        }
+        match self.countdown.get().checked_sub(1) { Some(n) => { self.countdown.set(n); Ok(()) } None => self.check_now(span) }
     }
     /// Reads the clock, calls the poll when `POLL_INTERVAL` has passed since the poll last ran, and stops the evaluation when it's interrupted or past its deadline. Callers whose checks are too far apart for `check`'s countdown call this directly.
     #[cold]

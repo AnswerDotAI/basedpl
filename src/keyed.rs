@@ -150,11 +150,7 @@ pub(crate) fn fields(value: &Value) -> Result<(Vec<usize>, Vec<Field>), ErrorKin
 pub(crate) fn slots(fields: Vec<Field>, names: &[&str], used: usize) -> Result<Vec<Option<Vec<Value>>>, Arc<str>> {
     let mut slots = vec![None; used];
     for (name, items) in fields {
-        match names.iter().position(|n| *n == &*name) {
-            Some(i) if i < used => slots[i] = Some(items),
-            Some(_) => {}
-            None => return Err(name),
-        }
+        match names.iter().position(|n| *n == &*name) { Some(i) if i < used => slots[i] = Some(items), Some(_) => {} None => return Err(name) }
     }
     Ok(slots)
 }
@@ -204,9 +200,7 @@ fn names(value: &Value) -> Result<Vec<Option<Arc<str>>>, ErrorKind> {
 pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) -> Result<Value, ErrorKind> {
     if keys.has_keys() && keys.shape().len() != 1 { return Err(ErrorKind::Rank); }
     let axis_names = keys.keys(0);
-    let lists = if axis_names.is_some() {
-        keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()?
-    } else {
+    let lists = if axis_names.is_some() { keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()? } else {
         match names(keys) {
             Ok(names) => vec![names], Err(_) if !keys.is_atom() && keys.shape().len() == 1 => keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()?,
             Err(k) => return Err(k)
@@ -250,7 +244,12 @@ pub(crate) fn selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKin
 
 pub(crate) fn mapped_index(flat: usize, result: &[usize], source: &[usize], maps: &[Vec<Option<usize>>]) -> Option<usize> {
     let (mut offset, mut stride) = (0, 1);
-    for (axis, pos) in crate::primitive::digits(flat, result) { if axis < source.len() { offset += maps[axis][pos]? * stride; stride *= source[axis]; } }
+    for (axis, pos) in crate::primitive::digits(flat, result) {
+        if axis < source.len() {
+            offset += maps[axis][pos]? * stride;
+            stride *= source[axis];
+        }
+    }
     Some(offset)
 }
 
@@ -264,9 +263,7 @@ pub(crate) fn missing(target: &Value, selectors: &[Option<Value>]) -> Result<Vec
         if axis >= rank { return Err(ErrorKind::Rank); }
         let wanted = match selector { Selector::One(k) => vec![k], Selector::Many(_, names) => names };
         let mut seen = HashSet::new();
-        for name in wanted {
-            if target.keys(axis).is_none_or(|k| k.position(&name).is_none()) && seen.insert(name.clone()) { added[axis].push(name); }
-        }
+        for name in wanted { if target.keys(axis).is_none_or(|k| k.position(&name).is_none()) && seen.insert(name.clone()) { added[axis].push(name); } }
     }
     Ok(added)
 }

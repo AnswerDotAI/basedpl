@@ -58,7 +58,13 @@ impl<'de> serde::de::Visitor<'de> for ReadVisitor {
         // A repeated key keeps its first place and takes its last value, as serde_json reads it.
         let (mut entries, mut places): (Vec<(String, Read)>, HashMap<String, usize>) = (Vec::new(), HashMap::new());
         while let Some((key, value)) = map.next_entry::<String, Read>()? {
-            match places.get(&key) { Some(&i) => entries[i].1 = value, None => { places.insert(key.clone(), entries.len()); entries.push((key, value)); } }
+            match places.get(&key) {
+                Some(&i) => entries[i].1 = value,
+                None => {
+                    places.insert(key.clone(), entries.len());
+                    entries.push((key, value));
+                }
+            }
         }
         Ok(Read::Record(entries))
     }

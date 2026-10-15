@@ -73,11 +73,8 @@ impl Numeric {
     pub(crate) fn convergence(self) -> Self { Self { tolerance: Tolerance::DEFAULT, units: 4.0, ..self } }
     /// The tolerance of a comparison at `width`, after promotion.
     pub(crate) fn tolerance_at(self, width: FloatWidth) -> Tolerance {
-        if width == FloatWidth::F64 {
-            self.tolerance
-        } else {
-            Tolerance::new(self.units * width.epsilon()).expect("a few units in the last place lie far below 1")
-        }
+        if width == FloatWidth::F64 { self.tolerance }
+        else { Tolerance::new(self.units * width.epsilon()).expect("a few units in the last place lie far below 1") }
     }
     /// These settings for a computation at `width` that runs at 32 bits or more. 16-bit floats run this way, because they have no kernels of their own. Comparisons keep the tolerance of `width`. New floats take at least 32 bits.
     pub(crate) fn widened(self, width: FloatWidth) -> Self {
@@ -167,21 +164,66 @@ pub(crate) mod real {
 macro_rules! with_circle {
     ($code:expr, $inverse:expr, |$f:ident| $object:expr) => {
         match ($code, $inverse) {
-            (0, _) => { let $f = rustymath::Sqrt1mx2; Some($object) }
-            (1, false) => { let $f = rustymath::Sin; Some($object) }
-            (2, false) => { let $f = rustymath::Cos; Some($object) }
-            (3, false) => { let $f = rustymath::Tan; Some($object) }
-            (4, false) => { let $f = rustymath::Sqrt1px2; Some($object) }
-            (5, false) => { let $f = rustymath::Sinh; Some($object) }
-            (6, false) => { let $f = rustymath::Cosh; Some($object) }
-            (7, false) => { let $f = rustymath::Tanh; Some($object) }
-            (1, true) => { let $f = rustymath::Asin; Some($object) }
-            (2, true) => { let $f = rustymath::Acos; Some($object) }
-            (3, true) => { let $f = rustymath::Atan; Some($object) }
-            (4, true) => { let $f = rustymath::Sqrtx2m1; Some($object) }
-            (5, true) => { let $f = rustymath::Asinh; Some($object) }
-            (6, true) => { let $f = rustymath::Acosh; Some($object) }
-            (7, true) => { let $f = rustymath::Atanh; Some($object) }
+            (0, _) => {
+                let $f = rustymath::Sqrt1mx2;
+                Some($object)
+            }
+            (1, false) => {
+                let $f = rustymath::Sin;
+                Some($object)
+            }
+            (2, false) => {
+                let $f = rustymath::Cos;
+                Some($object)
+            }
+            (3, false) => {
+                let $f = rustymath::Tan;
+                Some($object)
+            }
+            (4, false) => {
+                let $f = rustymath::Sqrt1px2;
+                Some($object)
+            }
+            (5, false) => {
+                let $f = rustymath::Sinh;
+                Some($object)
+            }
+            (6, false) => {
+                let $f = rustymath::Cosh;
+                Some($object)
+            }
+            (7, false) => {
+                let $f = rustymath::Tanh;
+                Some($object)
+            }
+            (1, true) => {
+                let $f = rustymath::Asin;
+                Some($object)
+            }
+            (2, true) => {
+                let $f = rustymath::Acos;
+                Some($object)
+            }
+            (3, true) => {
+                let $f = rustymath::Atan;
+                Some($object)
+            }
+            (4, true) => {
+                let $f = rustymath::Sqrtx2m1;
+                Some($object)
+            }
+            (5, true) => {
+                let $f = rustymath::Asinh;
+                Some($object)
+            }
+            (6, true) => {
+                let $f = rustymath::Acosh;
+                Some($object)
+            }
+            (7, true) => {
+                let $f = rustymath::Atanh;
+                Some($object)
+            }
             _ => None,
         }
     };
@@ -513,10 +555,9 @@ impl Number {
     pub(crate) fn nonnegative_integer<T: TryFrom<u64>>(&self) -> Result<T, ErrorKind> {
         if let Some((n, _)) = self.0.float() { return real::nonnegative_integer(n); }
         let n = match &self.0 {
-            Boolean(b) => u64::from(*b),
-            Integer(n) => u64::try_from(*n).map_err(|_| ErrorKind::Domain)?,
+            Boolean(b) => u64::from(*b), Integer(n) => u64::try_from(*n).map_err(|_| ErrorKind::Domain)?,
             Exact(n) => { if n.is_negative() || !n.is_integer() { return Err(ErrorKind::Domain); } n.numer().to_u64().ok_or(ErrorKind::Limit)? }
-            _ => return Err(ErrorKind::Domain),
+            _ => return Err(ErrorKind::Domain)
         };
         count_as(n)
     }
@@ -685,7 +726,8 @@ impl Number {
         self.by_level(
             right, |_, _| None, |_, _| Ok(None),
             || reals!(self, right => |n, y: F| if n.is_infinite() { Err("root degree must be finite") } else { Ok(rustymath::Root.checked(n, y).map(Self::from_float)) }),
-            |_, y| if self.grade_order(&Self::from_integer(2)).is_eq() { Ok(rustymath::Sqrt.one(y).into()) } else { right.power(&self.monad(Arithmetic::Divide)?) }
+            |_, y| if self.grade_order(&Self::from_integer(2)).is_eq() { Ok(rustymath::Sqrt.one(y).into()) }
+            else { right.power(&self.monad(Arithmetic::Divide)?) }
         )
     }
 
@@ -760,13 +802,9 @@ impl Number {
         if self.has_boolean(right) { return self.numeric().grade_order(&right.numeric()); }
         if self.is_nan() || right.is_nan() { return self.is_nan().cmp(&right.is_nan()); }
         if let Some(x) = self.as_float().filter(|n| n.is_infinite()) {
-            return if let Some(y) = right.as_float().filter(|n| n.is_infinite()) {
-                x.partial_cmp(&y).unwrap()
-            } else if x.is_sign_positive() {
-                Ordering::Greater
-            } else {
-                Ordering::Less
-            };
+            return if let Some(y) = right.as_float().filter(|n| n.is_infinite()) { x.partial_cmp(&y).unwrap() }
+            else if x.is_sign_positive() { Ordering::Greater }
+            else { Ordering::Less };
         }
         if right.is_infinite() { return right.grade_order(self).reverse(); }
         if let (Integer(x), Integer(y)) = (&self.0, &right.0) { return x.cmp(y); }
@@ -915,7 +953,10 @@ pub(crate) fn scientific(text: &str) -> String {
 struct HighMinus<'a, W: fmt::Write + ?Sized>(&'a mut W);
 impl<W: fmt::Write + ?Sized> fmt::Write for HighMinus<'_, W> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        for (i, part) in s.split('-').enumerate() { if i > 0 { self.0.write_str("¯")?; } self.0.write_str(part)?; }
+        for (i, part) in s.split('-').enumerate() {
+            if i > 0 { self.0.write_str("¯")?; }
+            self.0.write_str(part)?;
+        }
         Ok(())
     }
 }

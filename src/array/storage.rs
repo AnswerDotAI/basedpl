@@ -166,7 +166,10 @@ impl Kind {
         if self == other { return Some(self); }
         match (self, other) { (Character, _) | (_, Character) => return None, (Integer(a), Integer(b)) => return Some(Integer(a.join(b))), _ => () }
         // Joined compact arrays read Booleans as the narrowest integers. Items gathered one at a time keep a Boolean apart from other numbers.
-        if self == Boolean || other == Boolean { if widening == Widening::Items { return None; } return Some(if self == Boolean { other } else { self }); }
+        if self == Boolean || other == Boolean {
+            if widening == Widening::Items { return None; }
+            return Some(if self == Boolean { other } else { self });
+        }
         let width = |k| match k { Float(w) => Some(w), Complex(w) => Some(w.into()), _ => None };
         if widening == Widening::Items && (self.is_exact() || other.is_exact()) { return None; }
         // Complex numbers outrank floats. Two widths share the wider. A complex number's width is the width of its parts.
@@ -576,9 +579,7 @@ impl Gather {
         let at = |r: R| r.as_() * width..(r.as_() + 1) * width;
         let copied = if width == 1 {
             copy_into!(&mut self.data, source.as_items(), |d, s, f| d.extend(rows.iter().map(|&r| f(s[r.as_()]))))
-        } else if rows.iter().all(|&r| self.data.copy_slice(source.as_items(), at(r))) {
-            true
-        } else {
+        } else if rows.iter().all(|&r| self.data.copy_slice(source.as_items(), at(r))) { true } else {
             copy_into!(&mut self.data, source.as_items(), |d, s, f| for &r in rows {
                 d.extend(s[at(r)].iter().map(|&x| f(x)))
             })

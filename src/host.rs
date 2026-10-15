@@ -19,15 +19,16 @@ impl Drop for TimingLock { fn drop(&mut self) { if let Some(n) = self.threads { 
 /// Takes the timing lock, exclusively for a timing or `shared` for a test run. It waits up to 5 minutes while the lock can't be taken. After that, an exclusive hold fails, and a shared hold goes ahead without the lock. The operating system releases the lock when its process ends, even by a crash. On macOS an exclusive hold also sets the calling thread's QoS class to user-interactive. macOS then keeps the thread, which runs the timing, on the performance cores. An exclusive hold that has waited 30 seconds prints, once, the other processes that have the lock's file open.
 pub fn timing_lock(shared: bool) -> Result<TimingLock, String> {
     #[cfg(target_vendor = "apple")]
-    if !shared { unsafe { libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE, 0) }; }
+    if !shared {
+        unsafe { libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE, 0) };
+    }
     let held = |file| Ok(TimingLock { _file: file, threads: (!shared).then(|| rustymath::parallel::set_threads(1)) });
     let file = std::fs::File::options().create(true).append(true).open(TIMING_LOCK).map_err(|e| format!("{TIMING_LOCK}: {e}"))?;
     let (start, mut waiting, mut reported) = (Instant::now(), false, false);
     loop {
         match if shared { file.try_lock_shared() } else { file.try_lock() } {
-            Ok(()) => return held(file),
-            Err(std::fs::TryLockError::WouldBlock) => {}
-            Err(std::fs::TryLockError::Error(e)) => return Err(format!("{TIMING_LOCK}: {e}")),
+            Ok(()) => return held(file), Err(std::fs::TryLockError::WouldBlock) => {}
+            Err(std::fs::TryLockError::Error(e)) => return Err(format!("{TIMING_LOCK}: {e}"))
         }
         if start.elapsed() > Duration::from_secs(300) {
             if shared { return held(file); }

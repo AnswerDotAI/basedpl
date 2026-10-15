@@ -99,7 +99,10 @@ pub(super) fn runs(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let (first, axis) = classes(right, span)?;
     let starts: Vec<bool> = first.iter().enumerate().map(|(i, &f)| i == 0 || f != first[i - 1]).collect();
     let mut lengths: Vec<u64> = Vec::new();
-    for &start in &starts { if start { lengths.push(0); } *lengths.last_mut().expect("the first cell starts a run") += 1; }
+    for &start in &starts {
+        if start { lengths.push(0); }
+        *lengths.last_mut().expect("the first cell starts a run") += 1;
+    }
     let lengths = generated_items(vec![lengths.len()], lengths, None).error_at(span, "invalid run lengths")?;
     let values = replicate(&axis.booleans(starts).error_at(span, "invalid run starts")?, right, None, false, span)?;
     if right.keys(0).is_none() { return Value::new(vec![2], vec![lengths, values]).error_at(span, "invalid runs"); }
@@ -196,7 +199,10 @@ fn where_vector(counts: &[i64], span: &Context<'_>) -> Result<Value, Error> {
     } else {
         let mut data = vec![0; total];
         let mut k = 0;
-        for (i, &n) in counts.iter().enumerate() { data[k..k + n as usize].fill(i as i64); k += n as usize; }
+        for (i, &n) in counts.iter().enumerate() {
+            data[k..k + n as usize].fill(i as i64);
+            k += n as usize;
+        }
         data
     };
     Value::integers([total], data).error_at(span, "invalid where result")
@@ -225,9 +231,7 @@ pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, 
     }
     let mut data = Vec::with_capacity(total);
     for (i, &n) in counts.iter().enumerate() {
-        let index = if right.shape().len() == 1 {
-            position_value(right, 0, i)
-        } else {
+        let index = if right.shape().len() == 1 { position_value(right, 0, i) } else {
             let mut coords: Vec<_> = digits(i, right.shape()).map(|(axis, c)| position_value(right, axis, c)).collect();
             coords.reverse();
             Value::from_parts(vec![coords.len()], coords, integer(0)).unwrap()
@@ -357,9 +361,7 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
             }
             Ordering::Equal
         });
-    }
-    else if let Some(order) = key_grade(right, count, down) { indices = order; }
-    else {
+    } else if let Some(order) = key_grade(right, count, down) { indices = order; } else {
         let cells = right.cells(right.shape().len() - 1).and_then(|c| c.collect()).error_at(span, "invalid grade cells")?;
         // A sort comparison can't fail. It notes a function instead, and the error follows the sort.
         let mut unordered = false;

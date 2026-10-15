@@ -22,13 +22,10 @@ impl serde::Serialize for Json<'_> {
                 if let Some(q) = n.as_exact() { return tagged(s, "rational", [q.numer().to_string(), q.denom().to_string()]); }
                 if let Some(z) = n.as_complex() { return tagged(s, "complex", [z.re, z.im]); }
                 let x = n.as_float().unwrap();
-                if x.is_nan() {
-                    tagged(s, "nan", 1)
-                } else if x.is_infinite() {
-                    tagged(s, "infinity", if x.is_sign_positive() { 1 } else { -1 })
-                } else {
-                    s.serialize_f64(x)
-                }
+                if x.is_nan() { tagged(s, "nan", 1) }
+                else if x.is_infinite() { tagged(s, "infinity", if x.is_sign_positive() { 1 }
+                else { -1 }) }
+                else { s.serialize_f64(x) }
             }
             Value::Character(c) => s.serialize_char(*c),
             a @ Value::Array(_) => {
@@ -119,9 +116,7 @@ pub fn request(session: &mut Session, request: &JsonValue, options: EvalOptions)
     if code.is_none() && function.is_none() && request.get("bindings").is_none() { return Err("expected code, call or bindings".into()); }
     let args = if function.is_some() {
         request["args"].as_array().ok_or("call requires an args array")?.iter().map(|v| import(v, false)).collect::<Result<Vec<_>, _>>()?
-    } else {
-        Vec::new()
-    };
+    } else { Vec::new() };
     if let Some(bindings) = request.get("bindings") {
         let bindings = bindings.as_object().ok_or("bindings must be an object")?.iter().map(|(name, value)| Ok((name, import(value, false)?)))
             .collect::<Result<Vec<_>, String>>()?;

@@ -15,7 +15,10 @@ pub(crate) use {storage::*, text::*};
 /// The value that every present item of `values` equals. Absent items don't count. Two different values give none.
 pub(crate) fn agreed<'a, T: PartialEq + Clone + 'a>(values: impl IntoIterator<Item = Option<&'a T>>) -> Option<T> {
     let mut found = None;
-    for value in values.into_iter().flatten() { if found.is_some_and(|f| f != value) { return None; } found = Some(value); }
+    for value in values.into_iter().flatten() {
+        if found.is_some_and(|f| f != value) { return None; }
+        found = Some(value);
+    }
     found.cloned()
 }
 
@@ -70,7 +73,10 @@ impl FromIterator<usize> for Shape {
     fn from_iter<I: IntoIterator<Item = usize>>(lengths: I) -> Self {
         let mut lengths = lengths.into_iter();
         let mut small = [0; 2];
-        for n in 0..2 { let Some(len) = lengths.next() else { return Self(Lengths::Small(n, small)) }; small[usize::from(n)] = len; }
+        for n in 0..2 {
+            let Some(len) = lengths.next() else { return Self(Lengths::Small(n, small)) };
+            small[usize::from(n)] = len;
+        }
         match lengths.next() {
             None => Self(Lengths::Small(2, small)), Some(third) => Self(Lengths::Large(small.into_iter().chain([third]).chain(lengths).collect()))
         }
@@ -86,7 +92,11 @@ impl Layout {
     /// The layout without an empty `Meta`.
     fn tidy(mut self) -> Self { if self.meta.as_deref() == Some(&Meta::default()) { self.meta = None; } self }
     /// The layout with `set` applied to its `Meta`. `empty` says that the new entry needs no `Meta`.
-    fn edit(mut self, empty: bool, set: impl FnOnce(&mut Meta)) -> Self { if empty && self.meta.is_none() { return self; } set(self.meta_mut()); self.tidy() }
+    fn edit(mut self, empty: bool, set: impl FnOnce(&mut Meta)) -> Self {
+        if empty && self.meta.is_none() { return self; }
+        set(self.meta_mut());
+        self.tidy()
+    }
     pub fn renderer(&self) -> Option<&crate::Function> { self.meta.as_ref()?.renderer.as_ref() }
     pub fn with_renderer(self, renderer: Option<crate::Function>) -> Self { self.edit(renderer.is_none(), |m| m.renderer = renderer) }
     pub fn with_names(self, names: Vec<Option<Arc<str>>>) -> Result<Self, ErrorKind> {
@@ -335,7 +345,8 @@ impl Value {
                 (Items::Floats(x), Items::Floats(y)) => {
                     let t = t.tolerance_at(x.tag().max(y.tag()));
                     return Ok(with_tolerance!(t, |t| with_floats!(x, |x| with_floats!(y, |y| x
-                        .iter().zip(y)
+                        .iter()
+                        .zip(y)
                         .all(|(&a, &b)| t.matches::<f64>(a.into(), b.into()))))));
                 }
                 (Items::Characters(x), Items::Characters(y)) => return Ok(x == y),
@@ -499,9 +510,11 @@ impl Value {
             let n = data.len();
             let positive_zero = |x: F| x == F::zero() && x.is_sign_positive();
             let mut v: Vec<F> = bytemuck::allocation::cast_vec(data);
-            let Some(k) = (0..n).find(|&i| {
-                !positive_zero(v[2 * i + 1]) || { v[i] = v[2 * i]; false }
-            }) else { v.truncate(n); v.shrink_to_fit(); return Ok(v); };
+            let Some(k) = (0..n).find(|&i| { !positive_zero(v[2 * i + 1]) || { v[i] = v[2 * i]; false } }) else {
+                v.truncate(n);
+                v.shrink_to_fit();
+                return Ok(v);
+            };
             for j in (0..k).rev() { (v[2 * j], v[2 * j + 1]) = (v[j], F::zero()); }
             let data: Vec<Complex<F>> = bytemuck::allocation::cast_vec(v);
             if data[k..].iter().all(|z| z.im == F::zero()) { Ok(data.into_iter().map(|z| z.re).collect()) } else { Err(data) }

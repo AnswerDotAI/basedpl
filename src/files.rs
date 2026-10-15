@@ -150,8 +150,7 @@ pub(crate) fn copy(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
             let done = if entry.file_type().is_dir() { fs::create_dir_all(&copied) } else { fs::copy(entry.path(), &copied).map(drop) };
             done.map_err(|e| span.io_error(&copied.to_string_lossy(), e))?;
         }
-    }
-    else { fs::copy(&source, &dest).map_err(|e| span.io_error(&format!("{from} to {to}"), e))?; }
+    } else { fs::copy(&source, &dest).map_err(|e| span.io_error(&format!("{from} to {to}"), e))?; }
     Ok((keyed::text(&to), true))
 }
 

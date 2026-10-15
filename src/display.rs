@@ -130,10 +130,10 @@ impl Settings {
         let count = |n: usize| Value::Number(if n == usize::MAX { Number::float(f64::INFINITY, width) } else { Number::from_integer(n as i64) });
         [
             ("box", flag(self.boxed)), ("trees", flag(self.trees)), ("fns", flag(self.functions)), ("dissect", flag(self.dissect)),
-            ("limit", count(self.elide.limit)), ("edges", count(self.elide.edges)), ("prec", count(self.elide.prec)), ("width", count(self.elide.width)),
-            ("notation", keyed::text(match self.elide.notation {
-                Notation::Apl => "apl", Notation::Simplified => "simplified", Notation::Traditional => "traditional"
-            })),
+            ("limit", count(self.elide.limit)), ("edges", count(self.elide.edges)), ("prec", count(self.elide.prec)), ("width", count(self.elide.width)), (
+                "notation", keyed::text(match self.elide.notation {
+                    Notation::Apl => "apl", Notation::Simplified => "simplified", Notation::Traditional => "traditional"
+                })),
         ]
     }
     /// Sets the setting `key` to `value`. `Ok(false)` when no display setting has that key.
@@ -291,8 +291,7 @@ pub(crate) fn grid(columns: usize, rows: Vec<(usize, Vec<Cell>)>, style: Style) 
                 let extra = widths[x] - lead(x, cell) - cell.block.width;
                 let (before, after) = match cell.number {
                     Some(n) => { let (before, after) = decimals[x].padding(n); (before + widths[x] - decimals[x].width(), after) }
-                    None if right[x] => (extra, 0),
-                    None => (0, extra),
+                    None if right[x] => (extra, 0), None => (0, extra)
                 };
                 line.extend(std::iter::repeat_n(' ', before + lead(x, cell)));
                 line.push_str(&cell.block.line(y));
@@ -359,13 +358,9 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
     if a.shape().len() <= 1 {
         let string = a.shape().len() == 1 && !a.has_keys() && a.axis_names().iter().all(Option::is_none) && !a.is_empty()
             && a.elements().all(|e| matches!(e, Value::Character(_)));
-        return if string {
-            a.elided_text(el.last(a.shape()))
-        } else if a.is_strand() && a.mark(el).is_none() {
-            a.shown_items(el.last(a.shape()), |e| e.source(el)).join(" ")
-        } else {
-            a.source(el)
-        };
+        return if string { a.elided_text(el.last(a.shape())) }
+        else if a.is_strand() && a.mark(el).is_none() { a.shown_items(el.last(a.shape()), |e| e.source(el)).join(" ") }
+        else { a.source(el) };
     }
     if a.is_empty() { return a.literal(); }
     let mut spaced = false;
@@ -441,11 +436,8 @@ impl Tree {
 pub(crate) fn bundle(value: &Value) -> Result<crate::MimeBundle, crate::ErrorKind> {
     crate::keyed::pairs(value)?.into_iter().map(|(name, value)| {
         if !name.contains('/') || name.contains(char::is_whitespace) { return Err(crate::ErrorKind::Domain); }
-        let data = if value.prototype().as_number().is_some() {
-            crate::data::byte_items(&value).map(crate::MimeData::Bytes)
-        } else {
-            keyed::name(&value).map(|text| crate::MimeData::Text(text.to_string()))
-        };
+        let data = if value.prototype().as_number().is_some() { crate::data::byte_items(&value).map(crate::MimeData::Bytes) }
+        else { keyed::name(&value).map(|text| crate::MimeData::Text(text.to_string())) };
         Ok((name.to_string(), data.ok_or(crate::ErrorKind::Domain)?))
     }).collect()
 }

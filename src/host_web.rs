@@ -76,7 +76,10 @@ impl Regex {
         for found in js_sys::JsString::from(text).match_all(&regexp).into_iter().flatten() {
             let found: Array = found.unchecked_into();
             let index = Reflect::get(&found, &"index".into()).ok().and_then(|i| i.as_f64()).unwrap_or_default() as usize;
-            while units < index { units += chars.next().map_or(1, char::len_utf16); position += 1; }
+            while units < index {
+                units += chars.next().map_or(1, char::len_utf16);
+                position += 1;
+            }
             let groups = found.iter().skip(1).map(|g| g.as_string().unwrap_or_default()).collect();
             f(Match { text: found.get(0).as_string().unwrap_or_default(), position, groups })?;
         }

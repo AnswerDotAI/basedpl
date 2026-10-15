@@ -283,10 +283,7 @@ impl Binder {
                 cursor -= 1;
                 let i = cursor;
                 let node = &nodes[i];
-                if matches!(node.kind, NodeKind::Assign) {
-                    assignment = Some(i);
-                    None
-                } else {
+                if matches!(node.kind, NodeKind::Assign) { assignment = Some(i); None } else {
                     let selected = marked.as_ref().filter(|(index, ..)| *index == i);
                     let (term, expression) = if let Some((_, array, _)) = selected {
                         (Term::Binding(Binding::Value(array.clone())), None)
@@ -302,23 +299,16 @@ impl Binder {
                         match Self::nested(node, session)? {
                             Nested::Chain(chain) => (Term::Chain(chain), None), Nested::Bound(bound) => (Term::Binding(bound.value), bound.expression)
                         }
-                    } else {
-                        let bound = session.resolve(node)?;
-                        (Term::Binding(bound.value), bound.expression)
-                    };
+                    } else { let bound = session.resolve(node)?; (Term::Binding(bound.value), bound.expression) };
                     Some(Entity { term, expression, range: narrow(&node.span.range), shy: false, selection: selected.map(|(_, _, kind)| *kind) })
                 }
-            } else {
-                None
-            };
+            } else { None };
             if let Some(left) = pending.last() {
                 if Self::shifts(left, &binder.stack) { binder.stack.push(pending.pop().unwrap()); continue; }
-            }
-            else if let Some(left) = next {
+            } else if let Some(left) = next {
                 if Self::shifts(&left, &binder.stack) { binder.stack.push(left); continue; }
                 pending.push(left);
-            }
-            else if binder.stack.len() < 2 {
+            } else if binder.stack.len() < 2 {
                 if let Some(i) = assignment.take() {
                     let begin = nodes[..i].iter().rposition(|n| matches!(n.kind, NodeKind::Assign)).map_or(0, |j| j + 1);
                     let missing = || nodes[i].span.error(ErrorKind::Syntax, "assignment needs a target and value");
@@ -391,8 +381,16 @@ impl Binder {
         let term = match rule {
             Rule::Missing => return Err(span().error(ErrorKind::Value, "expression produced no value")),
             Rule::Absent => return Err(span().error(ErrorKind::Value, ABSENT)),
-            Rule::Drop => { right.expression = right_expression; self.stack.push(right); return Ok(None); }
-            Rule::DropRight => { left.expression = left_expression; self.stack.push(left); return Ok(None); }
+            Rule::Drop => {
+                right.expression = right_expression;
+                self.stack.push(right);
+                return Ok(None);
+            }
+            Rule::DropRight => {
+                left.expression = left_expression;
+                self.stack.push(left);
+                return Ok(None);
+            }
             // Arrays side by side form a strand, one item each, as in `[a b c]`.
             Rule::Adjacent => {
                 let mut items = match left.term { Term::Strand(items) => items, _ => vec![left.array(source)?] };
@@ -424,11 +422,8 @@ impl Binder {
                         let function = self::Function::primitive(function);
                         let expression = capture.then(|| {
                             let operand = left_expression.map_or_else(|| Expression::array(array), |e| *e);
-                            Box::new(if left.is_some() {
-                                Expression::call(&function, Some(operand), Expression::array(&right))
-                            } else {
-                                Expression::call(&function, None, operand)
-                            })
+                            Box::new(if left.is_some() { Expression::call(&function, Some(operand), Expression::array(&right)) }
+                            else { Expression::call(&function, None, operand) })
                         });
                         return Ok(Some(Application { function, left, right, span: span(), unshy: false, selection, expression }));
                     }
@@ -449,9 +444,7 @@ impl Binder {
             Rule::Call if matches!(right.term, Term::Binding(Binding::Absent)) => Term::Binding(Binding::Absent),
             Rule::Call => {
                 let (x, f) = if let Term::Left(x, f) = left.term { (Some(x), f) } else { (None, left.function(source)?) };
-                let (x, y) = if capture || selection.is_some() {
-                    (x.map(Attached::value), right.term)
-                } else {
+                let (x, y) = if capture || selection.is_some() { (x.map(Attached::value), right.term) } else {
                     match fused(&f, x, right.term, numeric) {
                         Ok(term) => {
                             self.stack.push(Entity { term, range: range.clone(), shy: false, selection: None, expression: None });
@@ -468,7 +461,11 @@ impl Binder {
                 });
                 return Ok(Some(Application { function: f, left: x, right: y, span: span(), unshy: false, selection, expression }));
             }
-            Rule::Train => { let mut tines = left.tines(source)?; tines.extend(right.tines(source)?); Term::Train(tines) }
+            Rule::Train => {
+                let mut tines = left.tines(source)?;
+                tines.extend(right.tines(source)?);
+                Term::Train(tines)
+            }
             _ => return Err(span().error(ErrorKind::Syntax, "these grammatical categories do not bind")),
         };
         // Function/operator location, rather than an attached left argument, owns a call.

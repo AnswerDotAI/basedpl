@@ -86,15 +86,16 @@ fn occurrences(offsets: &[usize], size: usize) -> Option<(Vec<u32>, usize)> {
     let counts: Vec<u32> = if dense(offsets, size) {
         if offsets.len() <= size {
             let (mut taken, mut repeated) = (vec![0u64; size.div_ceil(64)], 0);
-            for &o in offsets { let (word, bit) = (&mut taken[o / 64], 1 << (o % 64)); repeated |= *word & bit; *word |= bit; }
+            for &o in offsets {
+                let (word, bit) = (&mut taken[o / 64], 1 << (o % 64));
+                repeated |= *word & bit;
+                *word |= bit;
+            }
             if repeated == 0 { return None; }
         }
         let mut seen = vec![0u32; size];
         offsets.iter().map(|&o| next(&mut seen[o])).collect()
-    } else {
-        let mut seen = HashMap::new();
-        offsets.iter().map(|&o| next(seen.entry(o).or_insert(0))).collect()
-    };
+    } else { let mut seen = HashMap::new(); offsets.iter().map(|&o| next(seen.entry(o).or_insert(0))).collect() };
     let rounds = counts.iter().fold(0, |most, &c| most.max(c + 1));
     (rounds > 1).then_some((counts, rounds as usize))
 }
@@ -325,9 +326,7 @@ impl Function {
         let text = self.left_text(notation, budget);
         if text.contains(' ') || text.ends_with(|c: char| c.is_ascii_digit() || matches!(crate::symbols::canonical(c), '∞' | 'ₓ')) {
             format!("({text}){mark}")
-        } else {
-            format!("{text}{mark}")
-        }
+        } else { format!("{text}{mark}") }
     }
     /// An operator takes one token to its right, so anything larger than one token needs parentheses there.
     fn right_text(&self, notation: Notation, budget: &mut usize) -> String {
@@ -453,11 +452,8 @@ impl Function {
     fn derivative(&self) -> Option<Derivative<'_>> {
         match self.node() {
             FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(p)])
-                if matches!(p.node(), FunctionNode::Primitive(Primitive::Polynomial)) =>
-            { Some(Derivative::Polynomial(a)) }
-            FunctionNode::Ruled(_, Rules { derivative: Some(g), .. }) => Some(Derivative::Attached(g)),
-            FunctionNode::Ruled(f, _) => f.derivative(),
-            _ => None,
+                if matches!(p.node(), FunctionNode::Primitive(Primitive::Polynomial)) => { Some(Derivative::Polynomial(a)) }
+            FunctionNode::Ruled(_, Rules { derivative: Some(g), .. }) => Some(Derivative::Attached(g)), FunctionNode::Ruled(f, _) => f.derivative(), _ => None
         }
     }
     /// Whether `f∂` differentiates this function.
@@ -484,11 +480,8 @@ impl Function {
         for element in right.elements() {
             let bound = self.call(left, &element, cx)?;
             shy &= bound.shy;
-            items.push(if matches!(bound.value, Binding::NoResult) {
-                crate::syntax::zilde(crate::Number::float(0.0, cx.numeric().width))
-            } else {
-                bound.array(cx.span)?
-            });
+            items.push(if matches!(bound.value, Binding::NoResult) { crate::syntax::zilde(crate::Number::float(0.0, cx.numeric().width)) }
+            else { bound.array(cx.span)? });
         }
         let value = right.layout().collect(items, prototype(cx)).error_at(cx.span, "invalid result")?;
         Ok(Bound { shy, ..Bound::from(value) })
@@ -566,7 +559,10 @@ impl Function {
             FunctionNode::Modified(OperatorKind::Key, Operand::Function(f)) => return key(f, left, right, cx),
             FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(f)) => {
                 let (mut f, mut order) = (f, 1);
-                while let FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(inner)) = f.node() { f = inner; order += 1; }
+                while let FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(inner)) = f.node() {
+                    f = inner;
+                    order += 1;
+                }
                 match f.derivative() {
                     Some(Derivative::Polynomial(a)) => crate::polynomial::derivative(a, order, left, right, cx),
                     // `f∂←g` attaches `g` as the derivative, so a higher order differentiates `g`.

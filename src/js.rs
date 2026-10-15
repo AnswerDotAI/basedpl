@@ -9,8 +9,8 @@ use serde_json::{json, Value as Json};
 /// A JavaScript value.
 #[derive(Debug)]
 pub enum Js {
-    Undefined, Bool(bool), Number(f64), BigInt(i64), Text(String), List(Vec<Js>), Object(Vec<(String, Js)>), Typed(Typed),
-    #[cfg(web)] Function(std::sync::Arc<JsFunction>)
+    Undefined, Bool(bool), Number(f64), BigInt(i64), Text(String), List(Vec<Js>), Object(Vec<(String, Js)>), Typed(Typed), #[cfg(web)]
+    Function(std::sync::Arc<JsFunction>)
 }
 
 /// A typed array.
@@ -73,9 +73,7 @@ fn array(value: &Value) -> Result<Js, ErrorKind> {
     let mut keys: Vec<Js> = if value.has_keys() {
         keyed::key_lists(value).into_iter()
             .map(|k| k.map_or(Js::Undefined, |k| Js::List(k.into_iter().map(|k| k.map_or(Js::Undefined, |k| Js::Text(k.into()))).collect()))).collect()
-    } else {
-        Vec::new()
-    };
+    } else { Vec::new() };
     let complex = |shape: &mut Vec<usize>, names: &mut Vec<Js>, keys: &mut Vec<Js>, parts: Js| {
         shape.push(2);
         if !names.is_empty() { names.push(Js::Undefined); }
@@ -102,9 +100,7 @@ fn array(value: &Value) -> Result<Js, ErrorKind> {
                 if numbers.iter().any(|n| n.as_complex().is_some()) {
                     let parts = numbers.iter().map(|n| n.to_complex().map(|z| [z.re, z.im])).collect::<Result<Vec<_>, _>>().map_err(|_| ErrorKind::Domain)?;
                     complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float64(parts.concat())))
-                } else {
-                    Js::Typed(Typed::Float64(numbers.iter().map(|n| n.to_float()).collect::<Result<_, _>>().map_err(|_| ErrorKind::Domain)?))
-                }
+                } else { Js::Typed(Typed::Float64(numbers.iter().map(|n| n.to_float()).collect::<Result<_, _>>().map_err(|_| ErrorKind::Domain)?)) }
             }
             _ => Js::List(items.iter().map(export).collect::<Result<_, _>>()?),
         },
@@ -278,7 +274,11 @@ mod web {
             Js::BigInt(n) => js_sys::BigInt::from(n).into(),
             Js::Text(s) => s.into(),
             Js::List(items) => items.into_iter().map(to_js).collect::<Array>().into(),
-            Js::Object(fields) => { let object = Object::new(); for (k, v) in fields { _ = Reflect::set(&object, &k.into(), &to_js(v)); } object.into() }
+            Js::Object(fields) => {
+                let object = Object::new();
+                for (k, v) in fields { _ = Reflect::set(&object, &k.into(), &to_js(v)); }
+                object.into()
+            }
             Js::Typed(Typed::Float32(v)) => Float32Array::from(&v[..]).into(),
             Js::Typed(Typed::Float64(v)) => Float64Array::from(&v[..]).into(),
             Js::Typed(Typed::Uint8(v)) => Uint8Array::from(&v[..]).into(),

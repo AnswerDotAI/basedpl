@@ -115,7 +115,11 @@ impl Span {
         let (line, column) = self.position();
         let end = display_text(&text[line_start..self.range.end.min(line_end)]).width();
         write!(
-            f, " {label} {}:{line}:{column}\n{}\n{}{}", display_text(&self.source.name), display_text(&text[line_start..line_end]), " ".repeat(column - 1),
+            f,
+            " {label} {}:{line}:{column}\n{}\n{}{}",
+            display_text(&self.source.name),
+            display_text(&text[line_start..line_end]),
+            " ".repeat(column - 1),
             "^".repeat((end + 1).saturating_sub(column).max(1))
         )
     }
@@ -130,9 +134,15 @@ impl fmt::Display for Error {
         self.span.render("-->", f)?;
         let hidden = self.calls.len().saturating_sub(2 * CALLS_SHOWN);
         let (first, rest) = self.calls.split_at(self.calls.len().min(CALLS_SHOWN));
-        for call in first { writeln!(f)?; call.render("called from", f)?; }
+        for call in first {
+            writeln!(f)?;
+            call.render("called from", f)?;
+        }
         if hidden > 0 { write!(f, "\n ... {hidden} more calls")?; }
-        for call in &rest[hidden..] { writeln!(f)?; call.render("called from", f)?; }
+        for call in &rest[hidden..] {
+            writeln!(f)?;
+            call.render("called from", f)?;
+        }
         Ok(())
     }
 }

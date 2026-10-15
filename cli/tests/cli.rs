@@ -58,7 +58,11 @@ fn worker_flushes_before_eof_and_recovers() {
         writeln!(input, "{request}").unwrap();
         input.flush().unwrap();
         let line = match recv.recv_timeout(Duration::from_secs(5)) {
-            Ok(line) => line, Err(e) => { child.kill().unwrap(); panic!("reply was not flushed before EOF: {e}"); }
+            Ok(line) => line,
+            Err(e) => {
+                child.kill().unwrap();
+                panic!("reply was not flushed before EOF: {e}");
+            }
         };
         let reply: Value = serde_json::from_str(&line).unwrap();
         let id = serde_json::from_str::<Value>(&request).ok().and_then(|r| r.get("id").filter(|id| id.is_u64()).cloned());

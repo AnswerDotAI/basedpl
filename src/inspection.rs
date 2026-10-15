@@ -18,13 +18,9 @@ impl Inspection {
     }
     pub fn text(&self, detail: bool) -> String { format!("{}\n\n{}", self.kind, self.markdown(detail)) }
     pub fn markdown(&self, detail: bool) -> String {
-        if detail {
-            format!("```apl\n{}\n```", self.source)
-        } else if self.kind == "function" && documentation(&self.source).is_none() {
-            format!("Calls: `f Y` or `X f Y`\n\n{}", self.help)
-        } else {
-            self.help.clone()
-        }
+        if detail { format!("```apl\n{}\n```", self.source) }
+        else if self.kind == "function" && documentation(&self.source).is_none() { format!("Calls: `f Y` or `X f Y`\n\n{}", self.help) }
+        else { self.help.clone() }
     }
 }
 

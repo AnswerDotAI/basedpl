@@ -41,15 +41,15 @@ impl Mapping {
         if size == 1 { return Self::Single; }
         let mut source = 1;
         let mut map = Vec::new();
-        for (&len, &axis) in shape.iter().zip(axes).rev() { if len != 1 { map.push((strides[axis], len, source)); } source *= len; }
+        for (&len, &axis) in shape.iter().zip(axes).rev() {
+            if len != 1 { map.push((strides[axis], len, source)); }
+            source *= len;
+        }
         let repeat = count / size;
         if map.iter().all(|&(stride, _, source)| stride == source * repeat) {
             Self::Linear(repeat)
-        } else if map.iter().all(|&(stride, _, source)| stride == source) {
-            Self::Tiled(size)
-        } else {
-            Self::Axes(map)
-        }
+        } else if map.iter().all(|&(stride, _, source)| stride == source) { Self::Tiled(size) }
+        else { Self::Axes(map) }
     }
 }
 
@@ -81,11 +81,8 @@ impl Agreement {
         Self::mapped(left, right, &xa, &ya)
     }
     pub fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind> {
-        if left.shape().len() < right.shape().len() {
-            Self::mapped(left, right, axes, &(0..right.shape().len()).collect::<Vec<_>>())
-        } else {
-            Self::mapped(left, right, &(0..left.shape().len()).collect::<Vec<_>>(), axes)
-        }
+        if left.shape().len() < right.shape().len() { Self::mapped(left, right, axes, &(0..right.shape().len()).collect::<Vec<_>>()) }
+        else { Self::mapped(left, right, &(0..left.shape().len()).collect::<Vec<_>>(), axes) }
     }
     /// Gives each argument its own result axes. The left argument's axes come first.
     pub fn outer(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> {

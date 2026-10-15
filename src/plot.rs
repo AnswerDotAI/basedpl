@@ -89,9 +89,7 @@ fn parse(data: &Value, span: &Context<'_>) -> Result<Data, Error> {
                     d.series.push((Some(name.to_string()), numbers(&column, span)?));
                 } else if let Some(labels) = column.elements().map(|e| keyed::name(&e).map(|s| s.to_string())).collect::<Option<Vec<_>>>() {
                     (d.x, d.categories) = (positions(labels.len()), labels);
-                } else {
-                    d.x = numbers(&column, span)?;
-                }
+                } else { d.x = numbers(&column, span)?; }
             }
         }
         [n] => (d.x, d.categories, d.series) = (positions(n), names(data, 0), vec![(None, numbers(data, span)?)]),
@@ -259,8 +257,7 @@ impl Chart {
             x.fit(xs.iter(), false, 0., spacing(&xs) / 2.);
             y.fit(series.iter().filter_map(|s| s.y.first()), false, 0., 0.5);
             (x.reverse, y.reverse) = (flip, !flip);
-        }
-        else {
+        } else {
             let bars = series.iter().any(|s| s.mark == Mark::Bar);
             x.fit(xs.iter(), false, 0.05, if bars { spacing(&xs) / 2. } else { 0. });
             let labelled = series.iter().any(|s| s.labels.is_some());

@@ -95,7 +95,10 @@ fn exact(n: u64) -> Value { match i64::try_from(n) { Ok(n) => integer(n), Err(_)
 /// `len` draws from `d`, as an array of `shape`: whole numbers in integer storage for a discrete distribution, and floats of the session's width otherwise. Draws come in blocks, with an interrupt check before each.
 fn samples<R: rand::Rng + ?Sized>(d: &Distribution, shape: Vec<usize>, len: usize, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
     let mut out = vec![0.0; len];
-    for block in out.chunks_mut(1 << 14) { span.check()?; d.samples(rng, block); }
+    for block in out.chunks_mut(1 << 14) {
+        span.check()?;
+        d.samples(rng, block);
+    }
     let made =
         if d.is_discrete() { Value::integers(shape, out.into_iter().map(|k| k as i64).collect()) } else { Value::floats(shape, span.numeric().width, out) };
     made.error_at(span, "invalid distribution sample")

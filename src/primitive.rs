@@ -372,9 +372,7 @@ impl Primitive {
             (Self::Ravel, None) => {
                 let input = right.layout();
                 let rank = input.shape().len();
-                let layout = if spec.is_empty() {
-                    input.concat(&vec![1].into())
-                } else {
+                let layout = if spec.is_empty() { input.concat(&vec![1].into()) } else {
                     let axes = axes(spec, rank, span)?;
                     if axes.windows(2).any(|a| a[1] != a[0] + 1) { return Err(span.domain_error("ravel axes must be consecutive and ascending")); }
                     if axes.len() == 1 { return Ok(right.clone()); }
@@ -466,11 +464,8 @@ impl Primitive {
             (Self::Shape, Some(x)) => reshape(x, right, span),
             (Self::Shape, None) => {
                 let dimensions = right.shape().iter().map(|&n| generated(n as u64, None)).collect();
-                let shape = if right.axis_names().is_empty() {
-                    Value::from_parts(vec![right.shape().len()], dimensions, integer(0))
-                } else {
-                    crate::keyed::partial_vector(right.axis_names().to_vec(), dimensions)
-                };
+                let shape = if right.axis_names().is_empty() { Value::from_parts(vec![right.shape().len()], dimensions, integer(0)) }
+                else { crate::keyed::partial_vector(right.axis_names().to_vec(), dimensions) };
                 shape.error_at(span, "invalid shape")
             }
             (Self::Mix, Some(x)) => pick(x, right, false, span),
@@ -522,7 +517,10 @@ impl Primitive {
             }
         }
         let mut data = Gather::items(agreement.len);
-        for i in 0..agreement.len { let (x, y) = agreement.values(left, right, i); data.add(self.pervasive_item(x.as_ref(), &y, span, fill)?); }
+        for i in 0..agreement.len {
+            let (x, y) = agreement.values(left, right, i);
+            data.add(self.pervasive_item(x.as_ref(), &y, span, fill)?);
+        }
         data.finish(agreement.layout, || right.prototype()).error_at(span, "invalid pervasive result")
     }
 
@@ -603,11 +601,8 @@ pub(crate) fn depth(right: &Value) -> usize {
 pub(crate) fn pervade(value: &Value, f: &dyn Fn(Value) -> Result<Value, Error>, span: &Context<'_>) -> Result<Value, Error> {
     span.check()?;
     if value.is_atom() { return f(value.clone()); }
-    let result = if value.is_empty() {
-        Value::empty(value.shape().to_vec(), pervade(&value.prototype(), &|e| Ok(float_like(0.0, &e, span)), span)?)
-    } else {
-        Value::new(value.shape().to_vec(), value.elements().map(|e| pervade(&e, f, span)).collect::<Result<_, _>>()?)
-    };
+    let result = if value.is_empty() { Value::empty(value.shape().to_vec(), pervade(&value.prototype(), &|e| Ok(float_like(0.0, &e, span)), span)?) }
+    else { Value::new(value.shape().to_vec(), value.elements().map(|e| pervade(&e, f, span)).collect::<Result<_, _>>()?) };
     result.and_then(|v| v.with_layout(value.layout().clone())).error_at(span, "invalid result")
 }
 
@@ -618,11 +613,9 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
         if axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be a unit or vector")); }
         if bound.is_none() {
             return match p {
-                Reverse(_) => p.call_axes(None, right, axis, span),
-                Enclose => mix_axes(right, axis, span),
-                Drop => mix_axes(right, axis, span),
+                Reverse(_) => p.call_axes(None, right, axis, span), Enclose => mix_axes(right, axis, span), Drop => mix_axes(right, axis, span),
                 Mix => { let axes = axes(axis, right.shape().len(), span)?; enclose_axes(right, &axes, span) }
-                _ => Err(span.domain_error("this axis-qualified primitive has no known inverse")),
+                _ => Err(span.domain_error("this axis-qualified primitive has no known inverse"))
             };
         }
         if !matches!(p, Arithmetic(_) | Math(_) | Compare(_) | Reverse(_) | Replicate | Ravel | CatenateFirst) {
@@ -731,11 +724,8 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
             let parts = Transpose.call(None, right, span)?;
             if parts.shape().first() != Some(&2) { return Err(span.error(ErrorKind::Length, "the last axis must hold two parts")); }
             let (x, y) = (Index.call(Some(&integer(0)), &parts, span)?, Index.call(Some(&integer(1)), &parts, span)?);
-            let y = if matches!(p, Math(Lcm)) {
-                Math(Circle).call(None, &y, span)?
-            } else {
-                Arithmetic(Times).call(Some(&Value::number(num_complex::Complex64::new(0., 1.)).unwrap()), &y, span)?
-            };
+            let y = if matches!(p, Math(Lcm)) { Math(Circle).call(None, &y, span)? }
+            else { Arithmetic(Times).call(Some(&Value::number(num_complex::Complex64::new(0., 1.)).unwrap()), &y, span)? };
             let number = if matches!(p, Math(Lcm)) { Arithmetic(Times) } else { Arithmetic(Plus) }.call(Some(&x), &y, span)?;
             Transpose.call(None, &number, span)
         }
@@ -836,7 +826,10 @@ fn inverse_where(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     }
     if coordinates.is_empty() { shape = vec![0]; }
     let mut data = vec![0i64; generated_len(&shape).error_at(span, "inverse where is too large")?];
-    for coordinate in coordinates { let index = coordinate.iter().zip(&shape).fold(0, |i, (&c, &d)| i * d + c); data[index] += 1; }
+    for coordinate in coordinates {
+        let index = coordinate.iter().zip(&shape).fold(0, |i, (&c, &d)| i * d + c);
+        data[index] += 1;
+    }
     Value::integers(shape, data).error_at(span, "invalid inverse where")
 }
 

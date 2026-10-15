@@ -124,11 +124,8 @@ impl Hinter for Symbols {
         }
         let (_, prefix) = entry(line, pos)?;
         let found = matches(prefix);
-        let message = if prefix.is_empty() {
-            "Tab: symbol names".into()
-        } else if found.is_empty() {
-            "unknown symbol".into()
-        } else {
+        let message = if prefix.is_empty() { "Tab: symbol names".into() }
+        else if found.is_empty() { "unknown symbol".into() } else {
             let mut names = found.iter().take(6).map(label).collect::<Vec<_>>().join(", ");
             if found.len() > 6 { names.push_str(", … (Tab)"); }
             names
@@ -190,9 +187,7 @@ impl LineEditor {
         let history = config.map(|dir| dir.join("basedpl/history"));
         if let Some(path) = &history {
             match editor.load_history(path) {
-                Ok(()) => {}
-                Err(rustyline::error::ReadlineError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => eprintln!("History: {e}"),
+                Ok(()) => {} Err(rustyline::error::ReadlineError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {} Err(e) => eprintln!("History: {e}")
             }
         }
         Ok(Self { editor, history })

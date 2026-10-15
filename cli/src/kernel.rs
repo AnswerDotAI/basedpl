@@ -30,11 +30,9 @@ impl Input for NotebookInput {
 #[async_trait::async_trait]
 impl LanguageSession for BplSession {
     fn kernel_info(&self) -> kernmini::Result<KernelInfo> {
-        Ok(KernelInfo {
-            implementation: "basedpl".into(),
-            implementation_version: env!("CARGO_PKG_VERSION").into(),
+        Ok(KernelInfo { implementation: "basedpl".into(), implementation_version: env!("CARGO_PKG_VERSION").into(),
             banner: "BasedPL — an APL-derived array language".into(),
-            language_info: json!({"name": "bpl", "version": env!("CARGO_PKG_VERSION"), "mimetype": "text/apl", "file_extension": ".bpl", "codemirror_mode": "apl"}),
+            language_info: json!({"name": "bpl", "version": env!("CARGO_PKG_VERSION"), "mimetype": "text/apl", "file_extension": ".bpl", "codemirror_mode": "apl"})
         })
     }
 
@@ -54,7 +52,10 @@ impl LanguageSession for BplSession {
                     OutputKind::Display => LanguageEvent::Message { msg_type: "execute_result".into(),
                         content: json!({"execution_count": count, "data": output.data, "metadata": {}}), metadata: json!({}), identity: None, buffers: vec![] }
                 };
-                if let Err(error) = context.emit_blocking(event) { *output_failure.lock().unwrap() = Some(error); cancel.interrupt(); }
+                if let Err(error) = context.emit_blocking(event) {
+                    *output_failure.lock().unwrap() = Some(error);
+                    cancel.interrupt();
+                }
             });
             let result = session.eval_with(
                 &request.code, EvalOptions { interrupt: interrupt.clone(), echo: !request.silent, output: Some(output), input, ..EvalOptions::default() });

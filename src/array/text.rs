@@ -14,7 +14,11 @@ fn outside(text: &str, test: impl Fn(char) -> bool) -> bool {
             ']' | ')' | '}' => depth -= 1,
             // A string ends at a quote that isn't doubled.
             '"' => {
-                while let Some(c) = chars.next() { if c != '"' { continue; } if chars.clone().next() != Some('"') { break; } chars.next(); }
+                while let Some(c) = chars.next() {
+                    if c != '"' { continue; }
+                    if chars.clone().next() != Some('"') { break; }
+                    chars.next();
+                }
             }
             // A character literal is one character between quotes, which may itself be a quote or a space.
             '\'' => { chars.nth(1); }
@@ -65,9 +69,7 @@ impl Value {
         } else {
             let text = self.to_string();
             let lines: Vec<_> = text.split('\n').collect();
-            if lines.len() == 1 {
-                (vec![text.chars().count()], text)
-            } else {
+            if lines.len() == 1 { (vec![text.chars().count()], text) } else {
                 let width = lines.iter().map(|s| s.chars().count()).max().unwrap();
                 let joined = lines.iter().map(|s| format!("{s}{}", " ".repeat(width - s.chars().count()))).collect();
                 (vec![lines.len(), width], joined)
@@ -296,11 +298,8 @@ impl Value {
         if self.shape().len() == 1 && !self.has_keys() && self.string_literal().is_none() {
             if self.len() == 1 { return format!("[{}]", item(&self.at(0), el)); }
             self.shown_items(edges, |e| item(&e, el)).join(" ")
-        } else if self.shape().len() > 1 && !self.has_keys() {
-            self.block_literal(item, el, edges)
-        } else {
-            item(self, el)
-        }
+        } else if self.shape().len() > 1 && !self.has_keys() { self.block_literal(item, el, edges) }
+        else { item(self, el) }
     }
 
     /// A character vector as a double-quoted literal, or `None` when it holds a control character other than a newline.

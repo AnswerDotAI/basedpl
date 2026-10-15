@@ -25,7 +25,10 @@ impl Session {
     pub fn names(&self) -> impl Iterator<Item = &str> {
         let mut names = HashSet::new();
         let mut scope = self.current;
-        while let Some(i) = scope { names.extend(self.frames[i].names.keys().map(String::as_str)); scope = self.frames[i].parent; }
+        while let Some(i) = scope {
+            names.extend(self.frames[i].names.keys().map(String::as_str));
+            scope = self.frames[i].parent;
+        }
         names.extend(self.table(self.module()).keys().map(String::as_str));
         let mut names: Vec<_> = names.into_iter().collect();
         names.sort_unstable();
@@ -250,8 +253,7 @@ impl Session {
         let result = self.eval_display(&parsed, false, false);
         if result.error.is_some() { return result; }
         match self.parse(source).complete() {
-            Ok(mut rest) => { rest.statements.drain(..header); self.eval_display(&rest, false, false) }
-            Err(e) => Evaluation::failed(e),
+            Ok(mut rest) => { rest.statements.drain(..header); self.eval_display(&rest, false, false) } Err(e) => Evaluation::failed(e)
         }
     }
     /// The program in `source`, with numbers that have no marker read as floats of the session's default width.
@@ -276,17 +278,14 @@ impl Session {
                     let dissected = if dissecting && (dissect || !bound.shy && !matches!(bound.value, Binding::NoResult | Binding::Absent)) {
                         bound.expression.map(|e| *e).or_else(|| Expression::binding(&bound.value))
                             .map(|e| e.display(self.display.trees, self.display.elide.notation))
-                    } else {
-                        None
-                    };
+                    } else { None };
                     if let Some(text) = &dissected { self.execution.output(crate::OutputKind::Display, text.clone()); }
                     result.value = match bound.value {
                         Binding::NoResult | Binding::Absent => None,
                         Binding::Value(a) => {
                             if diagram && i + 1 == parsed.statements.len() {
                                 self.execution.output(crate::OutputKind::Display, self.display_settings().diagram(&a));
-                            }
-                            else if self.execution.echo && !bound.shy {
+                            } else if self.execution.echo && !bound.shy {
                                 if let Err(e) = self.display_value(&a, &nodes[0].span) { result.error = Some(e); return result; }
                             }
                             Some(a)
@@ -305,7 +304,11 @@ impl Session {
                         }
                     };
                 }
-                Err(e) => { result.value = None; result.error = Some(e); break; }
+                Err(e) => {
+                    result.value = None;
+                    result.error = Some(e);
+                    break;
+                }
             }
         }
         result
@@ -319,9 +322,7 @@ impl Session {
             let usage = "usage: ]help name [-source], or ]help llms for the language reference";
             let Some((name, detail)) = crate::inspection::help_command(code) else { return failed(ErrorKind::Syntax, usage.into()) };
             // `llms` is a topic, not a name. A variable called `llms` can't hide the reference.
-            let (text, markdown) = if name == "llms" {
-                (crate::inspection::LLMS.to_owned(), crate::inspection::LLMS.to_owned())
-            } else {
+            let (text, markdown) = if name == "llms" { (crate::inspection::LLMS.to_owned(), crate::inspection::LLMS.to_owned()) } else {
                 let Some(info) = self.inspect(name) else { return failed(ErrorKind::Value, format!("name not found: {name}")) };
                 (info.text(detail), info.markdown(detail))
             };
@@ -494,9 +495,7 @@ impl Session {
                 let result = if *form == ListForm::Cells {
                     // Each row is a major cell, so unit rows give a vector: `[1⋄2]` is `1 2`.
                     Value::assemble_written(&[arrays.len()], &arrays, &arrays[0])
-                } else {
-                    Value::new(vec![arrays.len()], arrays)
-                };
+                } else { Value::new(vec![arrays.len()], arrays) };
                 Binding::Value(result.error_at(&node.span, "invalid array literal")?)
             }
             NodeKind::Dfn(definition) => {
@@ -520,7 +519,10 @@ impl Session {
         let key = Key::of(name);
         if key == Key::ALPHA { return self.current.and_then(|i| self.frames[i].get(key).map(|value| (Some(i), value))); }
         let mut scope = self.current;
-        while let Some(i) = scope { if let Some(value) = self.frames[i].get(key) { return Some((scope, value)); } scope = self.frames[i].parent; }
+        while let Some(i) = scope {
+            if let Some(value) = self.frames[i].get(key) { return Some((scope, value)); }
+            scope = self.frames[i].parent;
+        }
         self.table(self.module()).get(name).map(|value| (None, value))
     }
 
@@ -612,7 +614,10 @@ impl Session {
     fn return_expression(&mut self, mut nodes: &[Node], tail: bool) -> Result<Step, Error> {
         if nodes.is_empty() { return Ok(Step::Done(Bound::new(Binding::NoResult))); }
         let mut unshy = false;
-        while let [Node { kind: NodeKind::Group(inner), .. }] = nodes { nodes = inner; unshy = true; }
+        while let [Node { kind: NodeKind::Group(inner), .. }] = nodes {
+            nodes = inner;
+            unshy = true;
+        }
         let step = if nodes.iter().any(|n| matches!(n.kind, NodeKind::Assign)) { Step::Done(self.bind(nodes)?) } else { Binder::evaluate(nodes, self, tail)? };
         match step {
             Step::Done(mut bound) => { if unshy { bound.shy = false; } bound.result(&nodes[0].span).map(Step::Done) }

@@ -110,12 +110,8 @@ pub fn costs<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHand
                 let mut fields = line.split('\t');
                 let code = fields.next().unwrap_or_default();
                 if !wanted(code) { continue; }
-                let cost = if section == "widths" {
-                    timed(section, code)? / timed("exact", code)?
-                } else {
-                    let unit = copy(sizes[section]);
-                    timed(section, code)? / unit
-                };
+                let cost = if section == "widths" { timed(section, code)? / timed("exact", code)? }
+                else { let unit = copy(sizes[section]); timed(section, code)? / unit };
                 result.push(Case { section, code, budgets: fields.collect(), cost });
             }
         }

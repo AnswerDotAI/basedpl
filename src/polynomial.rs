@@ -12,9 +12,7 @@ fn vector(data: Vec<Number>, span: &Context<'_>) -> Result<Value, Error> {
 }
 
 enum Polynomial {
-    Coefficients(Vec<Number>),
-    Factored(Number, Vec<Number>),
-    Powers { coefficients: Vec<Number>, exponents: Vec<Vec<Number>>, variables: usize },
+    Coefficients(Vec<Number>), Factored(Number, Vec<Number>), Powers { coefficients: Vec<Number>, exponents: Vec<Vec<Number>>, variables: usize }
 }
 impl Polynomial {
     fn parse(a: &Value, span: &Context<'_>) -> Result<Self, Error> {
@@ -28,7 +26,10 @@ impl Polynomial {
             let width = boxed.shape()[1];
             let mut coefficients = Vec::new();
             let mut exponents = Vec::new();
-            for row in numbers(&boxed, span)?.chunks_exact(width) { coefficients.push(row[0].clone()); exponents.push(row[1..].to_vec()); }
+            for row in numbers(&boxed, span)?.chunks_exact(width) {
+                coefficients.push(row[0].clone());
+                exponents.push(row[1..].to_vec());
+            }
             return Ok(Self::Powers { coefficients, exponents, variables: width - 1 });
         }
         if a.len() != 2 { return Err(span.error(ErrorKind::Length, "factored polynomial needs multiplier and roots")); }
@@ -214,15 +215,10 @@ pub(crate) fn call(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
         span.check()?;
         let index = agreement.left.get(i);
         let point_index = agreement.right.get(i);
-        let point = if right.is_empty() {
-            right.prototype()
-        } else if let Some(j) = point_index {
-            right.at(j)
-        } else if let Some(j) = index {
-            cells.get(j).error_at(span, "invalid polynomial cell")?.fill()
-        } else {
-            right.prototype()
-        };
+        let point = if right.is_empty() { right.prototype() }
+        else if let Some(j) = point_index { right.at(j) }
+        else if let Some(j) = index { cells.get(j).error_at(span, "invalid polynomial cell")?.fill() }
+        else { right.prototype() };
         let missing;
         let polynomial = if let Some(j) = index { &polynomials[j] } else { missing = Polynomial::parse(&point.fill(), span)?; &missing };
         results.push(Value::number(polynomial.evaluate(&coordinates(&point, span)?, span)?).unwrap());
@@ -252,8 +248,7 @@ pub(crate) fn derivative(source: &Value, order: usize, cotangent: Option<&Value>
     let (cells, agreement) = polynomial_cells(source, right.layout(), span)?;
     if let Some(u) = cotangent {
         if u.shape() != agreement.layout.shape() { return Err(span.error(ErrorKind::Length, "cotangent must have the output shape")); }
-    }
-    else if !agreement.layout.shape().is_empty() {
+    } else if !agreement.layout.shape().is_empty() {
         return Err(span.error(ErrorKind::Rank, "monadic differentiation requires a unit output; supply a cotangent for a VJP"));
     }
     let cotangent =
@@ -283,9 +278,7 @@ pub(crate) fn derivative(source: &Value, order: usize, cotangent: Option<&Value>
         let u = if let Some(u) = &cotangent {
             let Value::Number(n) = u.at(i) else { return Err(span.domain_error("cotangent must have numeric elements")); };
             n
-        } else {
-            int(1)
-        };
+        } else { int(1) };
         real(&u, span)?;
         for (axis, partial) in partials[p].iter().enumerate() {
             let d = partial.evaluate(&coords, span)?;

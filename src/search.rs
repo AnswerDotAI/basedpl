@@ -126,8 +126,7 @@ pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<u32>, Er
     let mut classes = vec![0; cells.len()];
     if let Some(x) = leading_reals(cells, width) {
         tolerant::runs(t, &x, |run| { span.check()?; earliest(cells, run.iter().copied(), &mut classes, span) })?;
-    }
-    else { earliest(cells, 0..cells.len(), &mut classes, span)?; }
+    } else { earliest(cells, 0..cells.len(), &mut classes, span)?; }
     Ok(classes)
 }
 

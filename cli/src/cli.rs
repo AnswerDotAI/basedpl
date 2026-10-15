@@ -23,7 +23,10 @@ impl Printer {
             let mut failure = failure.lock().unwrap();
             if failure.is_some() { return; }
             let mut out = io::stdout();
-            if let Err(e) = out.write_all(output.written().as_bytes()).and_then(|()| out.flush()) { *failure = Some(e); stop.interrupt(); }
+            if let Err(e) = out.write_all(output.written().as_bytes()).and_then(|()| out.flush()) {
+                *failure = Some(e);
+                stop.interrupt();
+            }
         };
         EvalOptions { interrupt, output: Some(Arc::new(sink)), input: self.input.clone(), ..EvalOptions::default() }
     }
@@ -49,7 +52,11 @@ impl Input for StandardInput {
         if line.ends_with('\r') { line.pop(); }
         Ok(Some(line))
     }
-    fn rest(&self) -> io::Result<Vec<u8>> { let mut data = Vec::new(); io::stdin().read_to_end(&mut data)?; Ok(data) }
+    fn rest(&self) -> io::Result<Vec<u8>> {
+        let mut data = Vec::new();
+        io::stdin().read_to_end(&mut data)?;
+        Ok(data)
+    }
 }
 
 /// Evaluates `source` with `args` as its command-line arguments. When `input` is set, the program can read standard input.
@@ -70,21 +77,32 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
     loop {
         let read = if let Some(editor) = &mut editor {
             match editor.readline(if code.is_empty() { "      " } else { "    · " }) {
-                Ok(line) => { code.push_str(&line); code.push('\n'); true }
-                Err(ReadlineError::Interrupted) => { code.clear(); incomplete = None; continue; }
+                Ok(line) => {
+                    code.push_str(&line);
+                    code.push('\n');
+                    true
+                }
+                Err(ReadlineError::Interrupted) => {
+                    code.clear();
+                    incomplete = None;
+                    continue;
+                }
                 // Rustyline restores terminal mode and writes a newline, including on Ctrl-D.
                 Err(ReadlineError::Eof) => false,
                 Err(e) => return Err(io::Error::other(e)),
             }
-        } else {
-            io::stdin().read_line(&mut code)? != 0
-        };
-        if !read { if let Some(e) = incomplete { writeln!(err, "{e}")?; return Ok(1); } return Ok(i32::from(failed && !interactive)); }
-        if code.trim_start().starts_with(']') { failed |= !printer.finish(session.eval_with(&code, printer.options()), err)?; }
-        else {
+        } else { io::stdin().read_line(&mut code)? != 0 };
+        if !read {
+            if let Some(e) = incomplete { writeln!(err, "{e}")?; return Ok(1); }
+            return Ok(i32::from(failed && !interactive));
+        }
+        if code.trim_start().starts_with(']') { failed |= !printer.finish(session.eval_with(&code, printer.options()), err)?; } else {
             match session.parse(Source::new("<repl>", code.as_str())) {
                 ParseStatus::Incomplete(e) => { incomplete = Some(e); continue; }
-                ParseStatus::Invalid(e) => { writeln!(err, "{e}")?; failed = true; }
+                ParseStatus::Invalid(e) => {
+                    writeln!(err, "{e}")?;
+                    failed = true;
+                }
                 ParseStatus::Complete(parsed) => { failed |= !printer.finish(session.eval_parsed(&parsed, printer.options()), err)?; }
             }
         }

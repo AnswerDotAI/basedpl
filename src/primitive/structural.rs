@@ -9,13 +9,9 @@ impl WindowAxis {
     pub(crate) fn fits(&self, len: usize) -> bool { !self.padded || self.size / 2 < len }
     /// Number of windows along an axis of length `len` that `fits`.
     pub(crate) fn count(&self, len: usize) -> usize {
-        if self.padded {
-            (len - usize::from(self.size.is_multiple_of(2))).div_ceil(self.step)
-        } else if len < self.size {
-            0
-        } else {
-            (len - self.size) / self.step + 1
-        }
+        if self.padded { (len - usize::from(self.size.is_multiple_of(2))).div_ceil(self.step) }
+        else if len < self.size { 0 }
+        else { (len - self.size) / self.step + 1 }
     }
     /// Axis offset of window `i`'s first element; negative when padding precedes the edge.
     pub(crate) fn start(&self, i: usize) -> isize { (i * self.step) as isize - if self.padded { ((self.size - 1) / 2) as isize } else { 0 } }
@@ -116,12 +112,14 @@ pub(super) fn enlist(right: &Value, span: &Context<'_>) -> Result<Value, Error> 
     fn append(array: &Value, data: &mut Gather, span: &Context<'_>) -> Result<(), Error> {
         let limit = || span.error(ErrorKind::Limit, "enlist exceeds array limits");
         // A simple mixed array keeps its storage. A nested array's items are gathered one by one.
-        if array.is_simple() { generated_len(&[data.len() + array.len()]).map_err(|_| limit())?; data.extend(array, 0..array.len()); return Ok(()); }
+        if array.is_simple() {
+            generated_len(&[data.len() + array.len()]).map_err(|_| limit())?;
+            data.extend(array, 0..array.len());
+            return Ok(());
+        }
         let Items::Values(items) = array.as_items() else { unreachable!() };
         for item in items {
-            if let a @ Value::Array(_) = item {
-                append(a, data, span)?;
-            } else {
+            if let a @ Value::Array(_) = item { append(a, data, span)?; } else {
                 generated_len(&[data.len() + 1]).map_err(|_| limit())?;
                 data.add(item.clone());
             }
@@ -173,12 +171,8 @@ pub(super) fn mix_axes(right: &Value, spec: &Value, span: &Context<'_>) -> Resul
     let frame = right.shape().len();
     let rank = mixed.shape().len();
     let cell_rank = rank - frame;
-    let positions = if spec.is_singleton() {
-        let start = single_axis(spec, frame + 1, span)?;
-        (start..start + cell_rank).collect::<Vec<_>>()
-    } else {
-        axes(spec, rank, span)?
-    };
+    let positions = if spec.is_singleton() { let start = single_axis(spec, frame + 1, span)?; (start..start + cell_rank).collect::<Vec<_>>() }
+    else { axes(spec, rank, span)? };
     if positions.len() != cell_rank { return Err(span.error(ErrorKind::Length, "mix needs one axis per cell dimension")); }
     let mut order = vec![usize::MAX; rank];
     for (i, &a) in positions.iter().enumerate() { order[a] = frame + i; }
@@ -273,11 +267,8 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
     let (any, sum) = or_and_sum(&counts);
     let boolean = !single && any as u64 <= 1;
     let exact_sum = !single && any >= 0 && (any as u64).checked_mul(counts.len() as u64).is_some_and(|m| m <= i64::MAX as u64);
-    shape[axis] = if inverse {
-        len
-    } else if boolean {
-        sum as usize
-    } else {
+    shape[axis] = if inverse { len }
+    else if boolean { sum as usize } else {
         let each = |j: usize| saturated(count(j).unsigned_abs());
         match (single, exact_sum) {
             (true, _) => each(0).checked_mul(len), (false, true) => usize::try_from(sum).ok(),
@@ -313,9 +304,7 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
     if inverse && traversal.len != 1 && consumed != traversal.len {
         return Err(span.error(ErrorKind::Length, "replication counts must use every cell to invert"));
     }
-    if keyed {
-        keys[axis] = crate::keyed::selected_keys(right, axis, positions).error_at(span, "replication repeats or invents axis keys")?;
-    }
+    if keyed { keys[axis] = crate::keyed::selected_keys(right, axis, positions).error_at(span, "replication repeats or invents axis keys")?; }
     let layout = Layout::from(shape).with_keys(keys).error_at(span, "invalid replication keys")?.inherit_names(right.axis_names().to_vec());
     remap(right, layout, &[Steps::along(traversal.outer, traversal.len * traversal.inner), Steps::Table(table), Steps::along(traversal.inner, 1)], span)
 }
@@ -341,9 +330,7 @@ pub(super) fn rotate(counts: Option<&Value>, right: &Value, axis: usize, span: &
             crate::keyed::selected_keys(right, axis, (0..traversal.len).map(|j| {
                 Some(match &counts { None => traversal.len - 1 - j, Some(ns) => source(j, ns[0]) })
             })).error_at(span, "invalid rotation keys")?
-        } else {
-            None
-        };
+        } else { None };
         layout = layout.with_keys(keys).error_at(span, "invalid rotation keys")?;
     }
     let Some(ns) = counts.as_ref().filter(|ns| ns.len() != 1) else {
@@ -421,9 +408,7 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
                     Some(crate::keyed::Keys::partial(names).error_at(span, "catenate has duplicate axis keys")?)
                 }
             }
-        } else {
-            left.keys(a).or_else(|| right.keys(a)).cloned()
-        };
+        } else { left.keys(a).or_else(|| right.keys(a)).cloned() };
     }
     let mut shape: crate::Shape = left.shape().into();
     shape[axis] = shape[axis].checked_add(right.shape()[axis]).ok_or_else(|| span.error(ErrorKind::Limit, "catenate axis overflow"))?;
@@ -431,7 +416,10 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
     let traversal = Axis::new(&shape, axis).error_at(span, "invalid catenate axis")?;
     let mut data = Gather::new(&[&left, &right], size);
     for i in 0..if size == 0 { 0 } else { traversal.outer } {
-        for a in [&left, &right] { let len = a.shape()[axis] * traversal.inner; data.extend(a, i * len..(i + 1) * len); }
+        for a in [&left, &right] {
+            let len = a.shape()[axis] * traversal.inner;
+            data.extend(a, i * len..(i + 1) * len);
+        }
     }
     let names = (0..rank).map(|a| agreed([left.axis_name(a), right.axis_name(a)])).collect();
     let layout = Layout::from(shape).with_keys(wanted).error_at(span, "invalid catenate result")?.inherit_names(names)
@@ -457,31 +445,20 @@ fn transpose_groups(spec: &Value, right: &Value, inverse: bool, span: &Context<'
             let sizes = item.elements().map(|pair| {
                 let size = pair.at(1);
                 let n = numeric(&size, span)?;
-                if n.as_float() == Some(f64::INFINITY) {
-                    Ok(None)
-                } else {
-                    n.nonnegative_integer().map(Some).error_at(span, "split sizes must be nonnegative integers or ∞")
-                }
+                if n.as_float() == Some(f64::INFINITY) { Ok(None) }
+                else { n.nonnegative_integer().map(Some).error_at(span, "split sizes must be nonnegative integers or ∞") }
             }).collect::<Result<Vec<_>, _>>()?;
             if sizes.iter().filter(|s| s.is_none()).count() > 1 { return Err(span.domain_error("a split can infer only one factor size")); }
             let selectors = Value::new(vec![item.len()], item.elements().map(|pair| pair.at(0)).collect()).error_at(span, "invalid transpose group")?;
             let names = item.keys(0).map_or_else(Vec::new, |keys| keys.names().to_vec());
             (selectors, Some(sizes), names)
-        } else if item.shape().is_empty() || inverse && item.shape().len() == 1 {
-            (item, None, Vec::new())
-        } else {
-            return Err(span.domain_error(if inverse {
-                "a merge is a list of axes, or of [source size] pairs"
-            } else {
-                "a split is a list of [destination size] pairs, such as [1 2;3 ∞]"
-            }));
+        } else if item.shape().is_empty() || inverse && item.shape().len() == 1 { (item, None, Vec::new()) } else {
+            return Err(span.domain_error(if inverse { "a merge is a list of axes, or of [source size] pairs" }
+            else { "a split is a list of [destination size] pairs, such as [1 2;3 ∞]" }));
         };
         let selectors = if inverse { resolve_axes(&selectors, right, span)? } else { selectors };
-        let axes = if inverse {
-            axes(&selectors, right.shape().len(), span)?
-        } else {
-            selectors.as_items().nonnegative_integers().error_at(span, "invalid transpose axis")?
-        };
+        let axes = if inverse { axes(&selectors, right.shape().len(), span)? }
+        else { selectors.as_items().nonnegative_integers().error_at(span, "invalid transpose axis")? };
         if axes.is_empty() { return Err(span.domain_error("a transpose group must contain an axis")); }
         let name = spec.keys(0).and_then(|keys| keys.names()[i].clone());
         Ok(TransposeGroup { axes, sizes, name, factor_names })
@@ -518,7 +495,11 @@ pub(super) fn transpose(spec: Option<&Value>, right: &Value, span: &Context<'_>)
     for (source, group) in groups.iter().enumerate() {
         destinations.extend_from_slice(&group.axes);
         match &group.sizes {
-            None => { shape.push(right.shape()[source]); sources.push(vec![source]); names.push(group.name.clone()); }
+            None => {
+                shape.push(right.shape()[source]);
+                sources.push(vec![source]);
+                names.push(group.name.clone());
+            }
             Some(sizes) => {
                 let known: Vec<_> = sizes.iter().flatten().copied().collect();
                 let product = crate::array::element_count(&known).error_at(span, "split dimensions overflow")?;
@@ -527,10 +508,7 @@ pub(super) fn transpose(spec: Option<&Value>, right: &Value, span: &Context<'_>)
                     if product == 0 { return Err(span.domain_error("cannot infer a factor alongside a zero factor")); }
                     if !len.is_multiple_of(product) { return Err(span.error(ErrorKind::Length, "split sizes do not factor the source axis")); }
                     len / product
-                } else {
-                    if product != len { return Err(span.error(ErrorKind::Length, "split sizes do not factor the source axis")); }
-                    0
-                };
+                } else { if product != len { return Err(span.error(ErrorKind::Length, "split sizes do not factor the source axis")); } 0 };
                 shape.extend(sizes.iter().map(|s| s.unwrap_or(inferred)));
                 sources.extend(std::iter::repeat_n(Vec::new(), sizes.len()));
                 names.extend((0..sizes.len()).map(|i| group.factor_names.get(i).and_then(Clone::clone)));
@@ -570,7 +548,13 @@ pub(super) fn inverse_transpose(spec: &Value, right: &Value, span: &Context<'_>)
         names.push(group.name);
         order.extend(group.axes);
     }
-    for axis in 0..right.shape().len() { if !order.contains(&axis) { shape.push(right.shape()[axis]); sources.push(vec![order.len()]); order.push(axis); } }
+    for axis in 0..right.shape().len() {
+        if !order.contains(&axis) {
+            shape.push(right.shape()[axis]);
+            sources.push(vec![order.len()]);
+            order.push(axis);
+        }
+    }
     let ordered = reorder(right, &order, span)?;
     regroup(&ordered, shape, &sources, &names, span)
 }
@@ -641,6 +625,9 @@ pub(super) fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: 
         previous = count;
     }
     // Without runs, the last partition extends to the end of the axis, past the last mark.
-    if let Some(mut range) = current { if !runs { range.end = traversal.len; } data.push(part(range)?); }
+    if let Some(mut range) = current {
+        if !runs { range.end = traversal.len; }
+        data.push(part(range)?);
+    }
     Value::from_parts(vec![data.len()], data, prototype).error_at(span, "invalid partition result")
 }

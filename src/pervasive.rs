@@ -433,8 +433,10 @@ fn float_whole<F: Float>(p: Primitive, y: &[F], agreement: &Agreement, numeric: 
     if y.iter().all(|&n| n.wide().is_finite()) { return None; }
     let map = Map { x: &[] as &[F], y, agreement, numeric };
     with_tolerance!(numeric.tolerance_at(F::WIDTH), |t| match p {
-        Primitive::Math(Math::Floor) => map.unary(move |v: F| Some(t.floor(v))), Primitive::Math(Math::Ceiling) => map.unary(move |v: F| Some(t.ceil(v))),
-        Primitive::Arithmetic(Arithmetic::Times) => map.unary(|v: F| Some(F::narrow(real::signum(v.wide())))), _ => None,
+        Primitive::Math(Math::Floor) => map.unary(move |v: F| Some(t.floor(v))),
+        Primitive::Math(Math::Ceiling) => map.unary(move |v: F| Some(t.ceil(v))),
+        Primitive::Arithmetic(Arithmetic::Times) => map.unary(|v: F| Some(F::narrow(real::signum(v.wide())))),
+        _ => None,
     })
 }
 
@@ -494,8 +496,8 @@ fn complex_results(p: Primitive, left: Option<&Value>, right: &Value, agreement:
 }
 
 /// `k` on every item of `right`, for a function that no glyph names, such as Lambert W. Exact numbers read as floats of the session's width. A call on reals that gives a complex result for some item runs again on complex numbers of that width, as `complex_results` does for glyphs.
-pub(crate) fn object<K>(k: K, right: &Value, agreement: &Agreement, numeric: Numeric) -> Option<Value>
-where K: rustymath::Unary<f32, Out = f32> + rustymath::Unary<f64, Out = f64> + Copy + Sync,
+pub(crate) fn object<K>(k: K, right: &Value, agreement: &Agreement, numeric: Numeric) -> Option<Value> where
+    K: rustymath::Unary<f32, Out = f32> + rustymath::Unary<f64, Out = f64> + Copy + Sync,
     K: rustymath::Unary<Complex32, Out = Complex32> + rustymath::Unary<Complex64, Out = Complex64> {
     if let Some(result) = halves(&[Some(right)], numeric, |v, numeric| object(k, v[0]?, agreement, numeric)) { return result; }
     let complex = |width: ComplexWidth| with_complex_width!(width, C => Monad::<C>::many(Map::exact(&[] as &[C], &read_as::<C>(right)?, agreement), k));
@@ -523,7 +525,8 @@ fn products(left: &Value, right: &Value, width: Width, agreement: &Agreement) ->
     if width == Width::I64 { return None; }
     let bounds = |v: &Value| match v.as_items() {
         Items::Integers(ints) if !v.is_empty() => Some(with_ints!(ints, |n| {
-            let (lo, hi) = reduce::extremes(n); [i128::from(lo.to_i64()), i128::from(hi.to_i64())]
+            let (lo, hi) = reduce::extremes(n);
+            [i128::from(lo.to_i64()), i128::from(hi.to_i64())]
         })),
         _ => None,
     };
@@ -630,13 +633,10 @@ enum Pair<'a> {
 fn pair<'a>(p: Primitive, x: &'a Value, y: &'a Value) -> Option<Pair<'a>> {
     let whole = |items: &Items| matches!(items, Items::Booleans(_) | Items::Integers(_));
     Some(match (x.as_items(), y.as_items()) {
-        (Items::Booleans(a), Items::Booleans(b)) => Pair::Booleans(a, b),
-        (Items::Floats(a), Items::Floats(b)) => Pair::Floats(a.tag().max(b.tag())),
-        (Items::Characters(a), Items::Characters(b)) => Pair::Characters(a, b),
-        (a, b) if whole(&a) && whole(&b) => Pair::Integers(integers(x)?, integers(y)?),
+        (Items::Booleans(a), Items::Booleans(b)) => Pair::Booleans(a, b), (Items::Floats(a), Items::Floats(b)) => Pair::Floats(a.tag().max(b.tag())),
+        (Items::Characters(a), Items::Characters(b)) => Pair::Characters(a, b), (a, b) if whole(&a) && whole(&b) => Pair::Integers(integers(x)?, integers(y)?),
         (Items::Floats(f), a) | (a, Items::Floats(f)) if whole(&a) => { if keeps_exact(p, f) { return None; } else { Pair::Floats(f.tag()) } }
-        (Items::Complex(_), _) | (_, Items::Complex(_)) => Pair::Complex(x.float_width().max(y.float_width())?.into()),
-        _ => return None,
+        (Items::Complex(_), _) | (_, Items::Complex(_)) => Pair::Complex(x.float_width().max(y.float_width())?.into()), _ => return None
     })
 }
 
@@ -719,7 +719,11 @@ pub(crate) fn expanded<'a, A: Element>(mapping: &Mapping, data: &'a [A], start: 
             let period = m.min(n);
             for (i, slot) in out[..period].iter_mut().enumerate() { *slot = data[(start + i) % m] }
             let mut filled = period;
-            while filled < n { let more = filled.min(n - filled); out.copy_within(..more, filled); filled += more; }
+            while filled < n {
+                let more = filled.min(n - filled);
+                out.copy_within(..more, filled);
+                filled += more;
+            }
         }
         _ => { for (i, slot) in out.iter_mut().enumerate() { *slot = item(mapping, data, start + i) } }
     }
@@ -755,7 +759,11 @@ fn item_result<B: Element>(result: Option<B>) -> (B, bool) { (result.unwrap_or(B
 
 /// One item's result in the scans. A failure clears `ok` and gives `B::FILL`.
 #[inline]
-fn noted<B: Element>(ok: &mut bool, result: Option<B>) -> B { let (value, good) = item_result(result); *ok &= good; value }
+fn noted<B: Element>(ok: &mut bool, result: Option<B>) -> B {
+    let (value, good) = item_result(result);
+    *ok &= good;
+    value
+}
 
 /// A loop over the frame of `agreement`. Kernels of approximate numbers compare within the tolerance of their width in `numeric`.
 struct Map<'a, X, Y> { x: &'a [X], y: &'a [Y], agreement: &'a Agreement, numeric: Numeric }
@@ -1003,10 +1011,22 @@ fn complex_fold<F: Native>(p: Primitive, data: &[Complex<F>], axis: &Axis, shape
 macro_rules! with_float_reduction {
     ($p:expr, $r:ident => $body:expr) => {
         match $p {
-            $crate::primitive::Primitive::Arithmetic($crate::number::Arithmetic::Plus) => { type $r = ::rustymath::reduce::Sum; Some($body) }
-            $crate::primitive::Primitive::Arithmetic($crate::number::Arithmetic::Times) => { type $r = ::rustymath::reduce::Product; Some($body) }
-            $crate::primitive::Primitive::Math($crate::number::Math::Ceiling) => { type $r = ::rustymath::reduce::Max; Some($body) }
-            $crate::primitive::Primitive::Math($crate::number::Math::Floor) => { type $r = ::rustymath::reduce::Min; Some($body) }
+            $crate::primitive::Primitive::Arithmetic($crate::number::Arithmetic::Plus) => {
+                type $r = ::rustymath::reduce::Sum;
+                Some($body)
+            }
+            $crate::primitive::Primitive::Arithmetic($crate::number::Arithmetic::Times) => {
+                type $r = ::rustymath::reduce::Product;
+                Some($body)
+            }
+            $crate::primitive::Primitive::Math($crate::number::Math::Ceiling) => {
+                type $r = ::rustymath::reduce::Max;
+                Some($body)
+            }
+            $crate::primitive::Primitive::Math($crate::number::Math::Floor) => {
+                type $r = ::rustymath::reduce::Min;
+                Some($body)
+            }
             _ => None,
         }
     };
@@ -1014,8 +1034,8 @@ macro_rules! with_float_reduction {
 pub(crate) use with_float_reduction;
 
 /// A reduction of compact integers. `+/` sums at 64 bits, and a sum outside `i64` takes the `Number` path. `⌊/` and `⌈/` run at the items' width. `-/` along a lane of consecutive items sums its pairs' differences at 64 bits. `∧/` and `∨/` on 0s and 1s are their minimum and maximum. Other functions, and the cases above that don't fit, run the exact fold on the items as 64-bit integers.
-fn integer_fold<T: Whole>(p: Primitive, data: &[T], axis: &Axis, shape: Vec<usize>) -> Option<Value>
-where reduce::Sum: Reduction<T, Total = i64> + reduce::Alternating<T, Total = i64>, reduce::Max: Reduction<T, Total = T>, reduce::Min: Reduction<T, Total = T> {
+fn integer_fold<T: Whole>(p: Primitive, data: &[T], axis: &Axis, shape: Vec<usize>) -> Option<Value> where
+    reduce::Sum: Reduction<T, Total = i64> + reduce::Alternating<T, Total = i64>, reduce::Max: Reduction<T, Total = T>, reduce::Min: Reduction<T, Total = T> {
     use {Arithmetic::*, Math::*};
     let dims = axis.dims();
     let boolean = || {
@@ -1058,7 +1078,10 @@ fn negated_tail<A: Copy, B: Copy + std::ops::Neg<Output = B>>(data: &[A], axis: 
     let mut out = Vec::with_capacity(data.len());
     if data.is_empty() { return out; }
     let keep = if seeded { 0 } else { axis.inner };
-    for lane in data.chunks(axis.len * axis.inner) { out.extend(lane[..keep].iter().map(|&x| read(x))); out.extend(lane[keep..].iter().map(|&x| -read(x))); }
+    for lane in data.chunks(axis.len * axis.inner) {
+        out.extend(lane[..keep].iter().map(|&x| read(x)));
+        out.extend(lane[keep..].iter().map(|&x| -read(x)));
+    }
     out
 }
 
@@ -1166,9 +1189,7 @@ fn scanned(p: Primitive, right: &Value, seed: Option<&Value>, axis: &Axis, numer
         let (p, ints) = if minus && !matches!(&ints, Ints::I64(d) if d.contains(&i64::MIN)) {
             tail = with_ints!(ints, |data| negated_tail(data, axis, seed.is_some(), |n| n.into()));
             (Primitive::Arithmetic(Arithmetic::Plus), Ints::I64(&tail))
-        } else {
-            (p, ints)
-        };
+        } else { (p, ints) };
         // A seed that fits 64 bits starts each lane's sums.
         let start = match seed { None => Some(None), Some(s) if s.is_atom() => i64::slice(s).map(|v| Some(v[0])), Some(_) => None };
         if let (Primitive::Arithmetic(Arithmetic::Plus), false, Some(start)) = (p, inverse, start) {
@@ -1281,8 +1302,8 @@ fn running_sums<T: reduce::Term>(data: &[T], [lo, hi]: [i64; 2], axis: &Axis, mi
 }
 
 /// `+\` on integers, from `start` or 0, or with `minus`, `-\` along lanes of consecutive integers narrower than 64 bits, through `running_sums`. Where 64 bits might not hold the sums, `+\` runs through rustymath's running sums at 64 bits, which report overflow. `None` on overflow.
-fn integer_sums<T: Whole>(data: &[T], axis: &Axis, minus: bool, start: Option<i64>, shape: Vec<usize>) -> Option<Value>
-where reduce::Sum: Reduction<T, Total = i64>, reduce::Max: Reduction<T, Total = T>, reduce::Min: Reduction<T, Total = T> {
+fn integer_sums<T: Whole>(data: &[T], axis: &Axis, minus: bool, start: Option<i64>, shape: Vec<usize>) -> Option<Value> where
+    reduce::Sum: Reduction<T, Total = i64>, reduce::Max: Reduction<T, Total = T>, reduce::Min: Reduction<T, Total = T> {
     let (lo, hi) = reduce::extremes(data);
     let bounds = [lo.to_i64(), hi.to_i64()];
     if let Some(result) = running_sums(data, bounds, axis, minus, start, shape.clone()) { return Some(result); }
@@ -1307,10 +1328,12 @@ impl<A: Element> Scan<'_, A> {
             for lane in self.data.chunks(axis.len) {
                 let mut total = first(&mut ok, lane[0]);
                 result.push(total);
-                for &x in &lane[1..] { total = noted(&mut ok, f(total, x)); result.push(total); }
+                for &x in &lane[1..] {
+                    total = noted(&mut ok, f(total, x));
+                    result.push(total);
+                }
             }
-        }
-        else {
+        } else {
             // Each column of a lane keeps its own total. Each row updates them in place, then appends them.
             let mut totals = vec![A::FILL; axis.inner];
             for i in 0..axis.outer {
@@ -1318,7 +1341,10 @@ impl<A: Element> Scan<'_, A> {
                 let Some(row) = rows.next() else { continue };
                 for (t, &x) in totals.iter_mut().zip(row) { *t = first(&mut ok, x) }
                 result.extend_from_slice(&totals);
-                for row in rows { for (t, &x) in totals.iter_mut().zip(row) { *t = noted(&mut ok, f(*t, x)) } result.extend_from_slice(&totals); }
+                for row in rows {
+                    for (t, &x) in totals.iter_mut().zip(row) { *t = noted(&mut ok, f(*t, x)) }
+                    result.extend_from_slice(&totals);
+                }
             }
         }
         if ok { A::build_narrowed(self.shape, result) } else { None }
@@ -1401,8 +1427,7 @@ impl<A: Element> Scan<'_, A> where bool: Source<A> {
                 reduce::chosen(total, &low, &high, len, first, restarts, &mut bits);
                 total = bits[bits.len() - 1];
             }
-        }
-        else if len > 0 {
+        } else if len > 0 {
             let rows = (CHUNK / inner).max(1);
             for (first, span) in (0..).step_by(rows).zip(self.data.chunks(rows * inner)) {
                 let span_rows = first..first + span.len() / inner;
@@ -1411,12 +1436,13 @@ impl<A: Element> Scan<'_, A> where bool: Source<A> {
                 if self.starts.is_none() {
                     let row = |r: usize| &self.data[r * inner..(r + 1) * inner];
                     let mut second = span_rows.clone().filter(|r| r % len == 1);
-                    if span.len() == inner {
-                        if let Some(r) = second.next() { ok &= both(Arg::Many(row(r - 1)), row(r), &mut pair); }
-                    } else {
+                    if span.len() == inner { if let Some(r) = second.next() { ok &= both(Arg::Many(row(r - 1)), row(r), &mut pair); } } else {
                         heads.clear();
                         seconds.clear();
-                        for r in second { heads.extend_from_slice(row(r - 1)); seconds.extend_from_slice(row(r)); }
+                        for r in second {
+                            heads.extend_from_slice(row(r - 1));
+                            seconds.extend_from_slice(row(r));
+                        }
                         ok &= both(Arg::Many(&heads), &seconds, &mut pair);
                     }
                 }
@@ -1530,8 +1556,8 @@ fn joined<A: Element>(shape: &[usize], parts: &[Value]) -> Option<Value> {
 }
 
 /// `x f.g y` for floats of width `F`, laid out as `rows`×`n` and `n`×`cols`, through rustymath's tiled inner products: `+.×`, `⌈.+` and `⌊.+`, and `+.=` and `+.≠` where `F` compares exactly. `None` for any other pair.
-fn tiled<F: Float>(f: Primitive, g: Primitive, x: &[F], y: &[F], size: [usize; 3], shape: &[usize], numeric: Numeric) -> Option<Value>
-where PlusTimes: Inner<F, Out = F>, MaxPlus: Inner<F, Out = F>, MinPlus: Inner<F, Out = F>, PlusEqual: Inner<F, Out: Into<i64>>,
+fn tiled<F: Float>(f: Primitive, g: Primitive, x: &[F], y: &[F], size: [usize; 3], shape: &[usize], numeric: Numeric) -> Option<Value> where
+    PlusTimes: Inner<F, Out = F>, MaxPlus: Inner<F, Out = F>, MinPlus: Inner<F, Out = F>, PlusEqual: Inner<F, Out: Into<i64>>,
     PlusNotEqual: Inner<F, Out: Into<i64>> {
     use Primitive::{Arithmetic as A, Compare as C, Math as M};
     let data = match (f, g) {

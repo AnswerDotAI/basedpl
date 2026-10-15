@@ -65,9 +65,7 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
         }
         let no_result = expected.value.is_none();
         (expected.value, no_result)
-    } else {
-        (expected_array(&case["expected"]), case.get("expected") == Some(&JsonValue::Null))
-    };
+    } else { (expected_array(&case["expected"]), case.get("expected") == Some(&JsonValue::Null)) };
     let exactness = case["expected_code"].is_string();
     let relative = case["relative_tolerance"].as_f64().unwrap_or(1e-13);
     let absolute = case["absolute_tolerance"].as_f64().unwrap_or(1e-13);
@@ -80,9 +78,7 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
         let path = dir.path().join("data");
         session.set("testpath", crate::keyed::text(&path.to_string_lossy())).expect("valid fixture name");
         Some(dir)
-    } else {
-        None
-    };
+    } else { None };
     let input = input.map(|text| Arc::new(Lines(Mutex::new(text.lines().map(String::from).collect()))) as Arc<dyn crate::Input>);
     let result = session.eval_with(code, EvalOptions { echo: false, input, ..options });
     if let Some(error) = &result.error {
@@ -94,11 +90,8 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
             return json!({"status":"error", "kind":kind, "message":error.message, "actual":crate::protocol::response(result)});
         }
     }
-    let mismatch = if result.error.is_some() {
-        None
-    } else if result.function.is_some() || result.operator.is_some() {
-        Some("unexpected function or operator result".into())
-    } else {
+    let mismatch = if result.error.is_some() { None }
+    else if result.function.is_some() || result.operator.is_some() { Some("unexpected function or operator result".into()) } else {
         match (error_kind, &result.value, expected) {
             (Some(kind), _, _) => Some(format!("expected {kind}")), (_, None, _) if no_result => None, (_, None, _) => Some("no result".into()),
             (_, Some(_), _) if no_result => Some("expected no result".into()),
@@ -134,10 +127,8 @@ fn inline(line: &str) -> Option<(&str, &str)> {
     let mut string = false;
     while let Some((i, c)) = chars.next() {
         match c {
-            '"' => string = !string,
-            '\'' if !string => { chars.next(); if !line[i..].starts_with("''") || line[i..].starts_with("'''") { chars.next(); } }
-            '⍝' if !string => return Some((line[..i].trim_end(), line[i + c.len_utf8()..].trim_start())),
-            _ => (),
+            '"' => string = !string, '\'' if !string => { chars.next(); if !line[i..].starts_with("''") || line[i..].starts_with("'''") { chars.next(); } }
+            '⍝' if !string => return Some((line[..i].trim_end(), line[i + c.len_utf8()..].trim_start())), _ => ()
         }
     }
     None
@@ -150,9 +141,7 @@ fn unescaped(text: &str, location: &str) -> Result<String, String> {
     while let Some(c) = chars.next() {
         result.push(if c == '\\' {
             match chars.next() { Some('n') => '\n', Some('\\') => '\\', _ => return Err(format!("{location}: input and output escapes are \\n and \\\\")) }
-        } else {
-            c
-        });
+        } else { c });
     }
     Ok(result)
 }
@@ -190,9 +179,7 @@ pub fn cases(text: &str) -> Result<Vec<JsonValue>, String> {
             }
         }
         let mut body = &lines[start + 1..end];
-        if body.last() == Some(&"") {
-            body = &body[..body.len() - 1];
-        }
+        if body.last() == Some(&"") { body = &body[..body.len() - 1]; }
         else if end != lines.len() { return Err(fail("missing blank record separator".into())); }
         for (marker, key) in [("⍝ ⎕:", "expected_output"), ("⍝ input:", "input")] {
             if let Some(text) = body.last().and_then(|s| s.strip_prefix(marker)) {
@@ -259,7 +246,10 @@ pub fn page(text: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
         let Some(bpl) = session.as_mut() else { continue };
         let closing = line.starts_with("```");
         let (source, expected) = line.split_once(" ⍝ ").map_or((line, None), |(c, e)| (c, Some(e)));
-        if !closing { code.push_str(source); code.push('\n'); }
+        if !closing {
+            code.push_str(source);
+            code.push('\n');
+        }
         if expected.is_none() && !closing { continue; }
         let result = bpl.eval_with(&code, options());
         let message = match (result.error, result.value, expected) {

@@ -48,11 +48,8 @@ impl Labels {
             });
             path.pop();
         }
-        let prototype = if a.is_empty() {
-            Self::prototype(&a.prototype(), &mut HashMap::new()).error_at(span, "invalid selection prototype")?
-        } else {
-            Value::Number(Number::from_integer(0))
-        };
+        let prototype = if a.is_empty() { Self::prototype(&a.prototype(), &mut HashMap::new()).error_at(span, "invalid selection prototype")? }
+        else { Value::Number(Number::from_integer(0)) };
         a.layout().collect(items, prototype).error_at(span, "invalid selection labels")
     }
     fn prototype(e: &Value, seen: &mut HashMap<usize, Value>) -> Result<Value, ErrorKind> {
@@ -79,15 +76,11 @@ impl Labels {
             let found = if let Some((_, path)) = self.nested.get(&selected.storage_id()) {
                 targets.push(path);
                 true
-            } else if let Some(n) = selected.as_number() {
-                self.place(n.nonnegative_integer().error_at(span, "invalid selection label")?, &mut targets)
-            } else {
-                false
-            };
+            } else if let Some(n) = selected.as_number() { self.place(n.nonnegative_integer().error_at(span, "invalid selection label")?, &mut targets) }
+            else { false };
             if !found { return Err(span.error(ErrorKind::Index, "cannot assign to a missing item")); }
             values.fill(right, 1);
-        }
-        else { self.collect(selected, right, span, &mut targets, &mut values)?; }
+        } else { self.collect(selected, right, span, &mut targets, &mut values)?; }
         let shape = vec![targets.len()];
         let values = values.finish(shape.clone().into(), || right.prototype()).error_at(span, "invalid replacement")?;
         Ok((Selection { frame: Frame::Array(shape.into()), targets }, values))
@@ -97,9 +90,7 @@ impl Labels {
         let right = if right.has_keys() && selected.has_keys() {
             aligned = crate::keyed::reorder(right, &selected.layout().all_keys(), true).error_at(span, "replacement does not supply selected keys")?;
             &aligned
-        } else {
-            right
-        };
+        } else { right };
         if !right.is_singleton() && right.shape() != selected.shape() {
             return Err(span.error(ErrorKind::Length, "replacement shape does not match selection"));
         }
@@ -120,7 +111,10 @@ impl Labels {
             match item {
                 Value::Number(n) => label(i, n.nonnegative_integer().error_at(span, "invalid selection label")?, targets, values)?,
                 a @ Value::Array(_) => match self.nested.get(&a.storage_id()) {
-                    Some((_, path)) => { targets.push(path); values.push(right, pick(i)); }
+                    Some((_, path)) => {
+                        targets.push(path);
+                        values.push(right, pick(i));
+                    }
                     None => self.collect(&a, &right.at(pick(i)), span, targets, values)?,
                 },
                 Value::Character(_) | Value::Function(_) | Value::Operator(_) => return Err(span.domain_error("invalid selection")),

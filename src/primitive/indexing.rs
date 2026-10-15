@@ -53,9 +53,7 @@ pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, span: &Context<
     if fields.len() > source.len() { return Err(span.error(ErrorKind::Rank, "too many Pick coordinates")); }
     let fields = fields.iter().enumerate().map(|(a, f)| axis_selector(f, right, a, span)).collect::<Result<Vec<_>, _>>()?;
     let mut frame = Layout::default();
-    for field in &fields {
-        frame = Agreement::new(&frame, &Layout::from(field.shape())).error_at(span, "Pick coordinate fields do not agree")?.layout;
-    }
+    for field in &fields { frame = Agreement::new(&frame, &Layout::from(field.shape())).error_at(span, "Pick coordinate fields do not agree")?.layout; }
     let maps = fields.iter().map(|f| Agreement::new(&Layout::from(f.shape()), &frame).unwrap().left).collect::<Vec<_>>();
     let coordinates = fields.iter().map(|f| f.as_items().integers().error_at(span, "Pick coordinates must be integers")).collect::<Result<Vec<_>, _>>()?;
     let trailing = &source[fields.len()..];
@@ -105,7 +103,11 @@ impl Targets {
     pub(crate) fn push(&mut self, path: &[usize]) {
         match (&mut *self, path) {
             (Self::Offsets(o), &[i]) => o.push(i),
-            (Self::Offsets(o), _) => { let mut paths: Vec<_> = o.iter().map(|&i| vec![i]).collect(); paths.push(path.to_vec()); *self = Self::Paths(paths); }
+            (Self::Offsets(o), _) => {
+                let mut paths: Vec<_> = o.iter().map(|&i| vec![i]).collect();
+                paths.push(path.to_vec());
+                *self = Self::Paths(paths);
+            }
             (Self::Paths(p), _) => p.push(path.to_vec()),
         }
     }
@@ -125,9 +127,7 @@ impl Selection {
         let Frame::Array(layout) = &self.frame else { return Ok(values.clone()) };
         let values = if values.has_keys() && layout.has_keys() {
             crate::keyed::reorder(values, &layout.all_keys(), true).error_at(span, "replacement does not supply selected keys")?
-        } else {
-            values.clone()
-        };
+        } else { values.clone() };
         if !values.is_singleton() && values.shape() != layout.shape() {
             return Err(span.error(ErrorKind::Length, "replacement shape does not match selection"));
         }
@@ -147,7 +147,11 @@ impl Selection {
             (_, Frame::Array(layout)) => layout,
         };
         let data = match &self.targets {
-            Targets::Offsets(offsets) => { let mut data = Gather::new(&[array], offsets.len()); data.rows(array, offsets, 1); data }
+            Targets::Offsets(offsets) => {
+                let mut data = Gather::new(&[array], offsets.len());
+                data.rows(array, offsets, 1);
+                data
+            }
             // Each item comes from the array that holds it. A path that reaches an atom stops there.
             Targets::Paths(paths) => {
                 let mut data = Gather::items(paths.len());
@@ -181,12 +185,14 @@ impl Selection {
                 // Writing a target can remove a path inside it, so a selection with such paths writes into a copy.
                 if sorted.windows(2).any(|w| w[1].starts_with(w[0])) {
                     *array = write_paths(array, &paths.iter().map(Vec::as_slice).zip(items).collect::<Vec<_>>(), span)?;
-                }
-                else { for (path, item) in paths.iter().zip(items) { array.write_path(path, item) } }
+                } else { for (path, item) in paths.iter().zip(items) { array.write_path(path, item) } }
                 return Ok(());
             }
         };
-        if array.is_atom() { if let Some(i) = offsets.len().checked_sub(1) { *array = self.item(&values, i); } return Ok(()); }
+        if array.is_atom() {
+            if let Some(i) = offsets.len().checked_sub(1) { *array = self.item(&values, i); }
+            return Ok(());
+        }
         // A direct target takes the whole value as one item.
         let source = if matches!(self.frame, Frame::Direct) && !values.is_atom() { values.enclose().error_at(span, "invalid amended array")? } else { values };
         array.scatter(offsets, &source);
@@ -211,9 +217,7 @@ fn write_paths(array: &Value, updates: &[(&[usize], Value)], span: &Context<'_>)
     let (array, updates) = if let Some(last) = updates.iter().rposition(|(p, _)| p.is_empty()) {
         replacement = updates[last].1.clone();
         (&replacement, &updates[last + 1..])
-    } else {
-        (array, updates)
-    };
+    } else { (array, updates) };
     if updates.is_empty() { return Ok(array.clone()); }
     let mut items: Vec<_> = array.elements().collect();
     let mut groups: HashMap<usize, Vec<(&[usize], Value)>> = HashMap::new();
@@ -277,15 +281,13 @@ fn vector_index<R>(
     let whole;
     let ix = match indices.as_items() {
         Items::Integers(ix) => ix,
-        items @ Items::Floats(_) => match items.integers() {
-            Ok(w) => { whole = w; crate::array::Ints::I64(&whole) }
-            Err(_) => return Ok(None),
-        },
+        items @ Items::Floats(_) => match items.integers() { Ok(w) => { whole = w; crate::array::Ints::I64(&whole) } Err(_) => return Ok(None) },
         _ => return Ok(None),
     };
     let n = *size as i64;
     let inside = with_ints!(ix, |ix| ix.iter().fold(true, |ok, &i| {
-        let i: i64 = i.into(); ok & (i >= -n) & (i < n)
+        let i: i64 = i.into();
+        ok & (i >= -n) & (i < n)
     }));
     if !inside { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
     Ok(Some(body(indices, ix, n)))
@@ -310,9 +312,10 @@ pub(crate) fn selection(right: &Value, parts: &[Option<Value>], span: &Context<'
     if parts.is_empty() { return Ok(Selection { frame: Frame::Direct, targets: Targets::Paths(vec![vec![]]) }); }
     let vector = vector_index(right, parts, span, |indices, ix, n| {
         let offsets = with_ints!(ix, |ix| ix
-            .iter().map(|&i| {
-               let i: i64 = i.into();
-               (i + (n & (i >> 63))) as usize
+            .iter()
+            .map(|&i| {
+                let i: i64 = i.into();
+                (i + (n & (i >> 63))) as usize
             })
             .collect());
         Selection { frame: Frame::Array(vector_layout(right, indices)), targets: Targets::Offsets(offsets) }
@@ -351,8 +354,10 @@ fn axis_positions(right: &Value, parts: &[Option<Value>], span: &Context<'_>) ->
             if a.shape().len() == 1 {
                 keys.push(selected);
                 names.push(right.axis_name(axis).cloned());
+            } else {
+                keys.extend(std::iter::repeat_n(None, a.shape().len()));
+                names.extend(std::iter::repeat_n(None, a.shape().len()));
             }
-            else { keys.extend(std::iter::repeat_n(None, a.shape().len())); names.extend(std::iter::repeat_n(None, a.shape().len())); }
             steps.push(Steps::Table(positions.iter().map(|&i| Some(i * stride[axis])).collect()));
         } else {
             direct = false;
@@ -361,11 +366,8 @@ fn axis_positions(right: &Value, parts: &[Option<Value>], span: &Context<'_>) ->
             let position = |j: usize| if reversed { size - 1 - j } else { j };
             keys.push(right.keys(axis).map(|k| k.select((0..size).map(|j| Some(position(j))))).transpose().error_at(span, "invalid axis keys")?);
             names.push(right.axis_name(axis).cloned());
-            steps.push(if reversed {
-                Steps::Stride { start: size.saturating_sub(1) * stride[axis], len: size, step: -(stride[axis] as isize) }
-            } else {
-                Steps::along(size, stride[axis])
-            });
+            steps.push(if reversed { Steps::Stride { start: size.saturating_sub(1) * stride[axis], len: size, step: -(stride[axis] as isize) } }
+            else { Steps::along(size, stride[axis]) });
         }
     }
     generated_len(&shape).error_at(span, "selection is too large")?;
