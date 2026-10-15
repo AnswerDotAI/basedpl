@@ -39,6 +39,23 @@ fn fastest(mut f: impl FnMut()) -> f64 {
     .as_secs_f64()
 }
 
+/// The pauses, in seconds, before each retry in `retried`. All of a case's runs together take a fraction of a millisecond, and one
+/// disturbance on a shared machine can last that long. `tests/wasm-speed.mjs` uses the same pauses.
+pub const RETRY_PAUSES: [f64; 2] = [0.1, 1.0];
+
+/// The failures of a timing test that still fail after every retry. After each pause in `RETRY_PAUSES`, `retime` gets the failures
+/// and the pause, times them again, prints the retry and gives those that still fail. The speed and scaling tests call it after
+/// timing every case.
+#[cfg(not(web))]
+pub fn retried<T>(mut failures: Vec<T>, mut retime: impl FnMut(Vec<T>, f64) -> Vec<T>) -> Vec<T> {
+    for pause in RETRY_PAUSES {
+        if failures.is_empty() { break; }
+        std::thread::sleep(std::time::Duration::from_secs_f64(pause));
+        failures = retime(failures, pause);
+    }
+    failures
+}
+
 /// A session that has run `prefs`, then `setup`, or the evaluation that failed.
 pub fn session(prefs: &str, setup: &str) -> Result<Session, Evaluation> {
     let mut session = Session::new();

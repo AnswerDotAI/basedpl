@@ -327,9 +327,13 @@ _CPU = re.compile(r'^(?:\S*Z )?model name\s*:\s*(.+?)\s*$', re.M)
 def logged_costs(
     log # What a speed test prints with `<NAME>_COSTS` set, such as the log of a job in the `Speed` workflow
 ):
-    "The rows that `speed_costs` gives, read from `log`, with the CPU model that the log reports as their `cpu`."
+    "The rows that `speed_costs` gives, read from `log`, with the CPU model that the log reports as their `cpu`. A case that the log times more than once, as after a retry, gives its lowest cost."
     cpu = c[1] if (c := _CPU.search(log)) else None
-    return SpeedCosts(((m[1], m[2], float(m[3]), float(m[4])) for m in map(_LOGGED.match, log.splitlines()) if m), cpu)
+    rows = {}
+    for m in filter(None, map(_LOGGED.match, log.splitlines())):
+        row = (m[1], m[2], float(m[3]), float(m[4]))
+        if row[:2] not in rows or row[2] < rows[row[:2]][2]: rows[row[:2]] = row
+    return SpeedCosts(rows.values(), cpu)
 
 def cargo_costs(
     path='.', # A Cargo package, such as basedpl or rustymath, whose `tests/speed.rs` prints every cost when `<NAME>_COSTS` is set
@@ -343,6 +347,23 @@ def cargo_costs(
     costs = logged_costs(p.stdout + p.stderr)
     if p.returncode and not costs: raise ValueError(p.stderr)
     return costs
+
+class Report(str):
+    "What a test runner printed, displayed as its text."
+    def __repr__(self): return str(self)
+
+def wasm_test(
+    wasm, # A directory that `cargo wasm --out` wrote
+    speed=False, # Run `tests/wasm-speed.mjs`, with V8's `--no-liftoff` as CI runs it, in place of `tests/wasm.mjs`?
+    timeout=None # Seconds before the run stops
+):
+    "Run `tests/wasm.mjs` or `tests/wasm-speed.mjs` under `node --test` against the browser build in `wasm`, as CI runs them, and give the runner's report. Only the `node` process gets `BASEDPL_WASM`. A failing test raises `ValueError` with the report."
+    test = _SPEED.with_name('wasm-speed.mjs' if speed else 'wasm.mjs')
+    p = subprocess.run(['node', *(['--no-liftoff'] if speed else []), '--test', str(test)], cwd=_SPEED.parents[1], capture_output=True,
+                       text=True, timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(Path(wasm).expanduser())))
+    report = Report(p.stdout + p.stderr)
+    if p.returncode: raise ValueError(report)
+    return report
 
 class Budgets(list):
     "Each budget that `set_budgets` changed, as `(section, code, build, old, new)` rows."

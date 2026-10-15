@@ -7,23 +7,35 @@
 //! Each case has a budget in copies: twice the most it has cost on a Mac and on CI's Linux runner, and at least half a copy. Counting
 //! copies corrects for a machine's overall speed. It doesn't correct for differences in caches and memory. A case can cost up to
 //! three times as many copies on one machine as on the other. Cases that compare the float widths instead budget the 32-bit time as a
-//! fraction of the 64-bit time. The test fails listing every case over its budget, as its section, code, cost and budget, in the form
-//! that `tests/wasm-speed.mjs` prints and `basedpl.bpltests.logged_costs` reads. To print every case's cost, set `BASEDPL_COSTS`:
-//! `BASEDPL_COSTS=1 cargo test --test speed -- --nocapture`.
+//! fraction of the 64-bit time. A case over its budget is timed again after the rest, by `timing::retried`. Each retry writes the
+//! case's earlier and new costs straight to stderr. Unlike `eprintln!` output, which the test harness captures, these lines appear
+//! even when the test passes. The test fails listing every case still over its budget after the last retry, as its section, code,
+//! cost and budget, in the form that `tests/wasm-speed.mjs` prints and `basedpl.bpltests.logged_costs` reads. To print every case's
+//! cost, set `BASEDPL_COSTS`: `BASEDPL_COSTS=1 cargo test --test speed -- --nocapture`.
 //!
 //! Timings come from the development build, which `cargo test` and `cargo develop` share. `basedpl::timing` divides each case's time
 //! by a copy timed just before it. A change in the machine's speed during the run then affects both times.
 use basedpl::timing;
+use std::io::Write;
 
 #[test]
 fn functions_cost_what_their_work_needs() {
     let print_all = std::env::var_os("BASEDPL_COSTS").is_some();
-    let mut failures = Vec::new();
-    for timing::Case { section, code, budgets, cost } in timing::costs(include_str!("speed.txt"), None, &Default::default()).unwrap() {
-        let budget: f64 = budgets[0].parse().unwrap();
-        let line = format!("{section} {code}: {cost:.2}, budget {budget}");
-        if print_all { eprintln!("{line}"); }
-        if cost > budget { failures.push(line); }
-    }
+    let speed = include_str!("speed.txt");
+    let line = |c: &timing::Case| format!("{} {}: {:.2}, budget {}", c.section, c.code, c.cost, c.budgets[0]);
+    let over = |c: &timing::Case| c.cost > c.budgets[0].parse::<f64>().unwrap();
+    let mut failures = timing::costs(speed, None, &Default::default()).unwrap();
+    if print_all { for c in &failures { eprintln!("{}", line(c)); } }
+    failures.retain(over);
+    let failures = timing::retried(failures, |failed, pause| {
+        let mut stderr = std::io::stderr();
+        for c in &failed { writeln!(stderr, "{}: over, timed again after {pause} s", line(c)).unwrap(); }
+        let codes: Vec<&str> = failed.iter().map(|c| c.code).collect();
+        let mut retimed = timing::costs(speed, Some(&codes), &Default::default()).unwrap();
+        retimed.retain(|c| failed.iter().any(|f| (f.section, f.code) == (c.section, c.code)));
+        for c in &retimed { writeln!(stderr, "{}", line(c)).unwrap(); }
+        retimed.into_iter().filter(over).collect()
+    });
+    let failures: Vec<_> = failures.iter().map(line).collect();
     assert!(failures.is_empty(), "{failures:#?}");
 }

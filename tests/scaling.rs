@@ -3,10 +3,11 @@
 //! global allocator counts, on the calling thread alone, the bytes that each call allocates, its peak and the bytes it keeps. The test
 //! harness's other threads stay out of the measurements. Rustymath runs on the calling thread too, with `set_threads(1)`. Otherwise
 //! memory that the calling thread allocates and a Rayon worker frees, such as a block of Rayon's job queue, counts as kept.
-use basedpl::{EvalOptions, Session};
+use basedpl::{timing, EvalOptions, Session};
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     cell::Cell,
+    io::Write,
     time::{Duration, Instant},
 };
 
@@ -79,23 +80,34 @@ fn cost(session: &mut Session, code: &str) -> Cost {
     Cost { time, allocated, peak, kept }
 }
 
-/// The ways in which each of `codes` grows faster than `LIMIT` allows, or keeps memory.
+/// The ways in which each of `codes` grows faster than `LIMIT` allows, or keeps memory. A time that grows too fast is measured again
+/// after the rest, by `timing::retried`, and fails only if it grows too fast every time. Each retry writes both growths straight to
+/// stderr, where they appear even when the test passes. Byte counts are the same on every run.
 fn growth_failures(codes: &[&str]) -> Vec<String> {
     let (mut small, mut large) = (session(N), session(8 * N));
     let ratio = |a: usize, b: usize| a as f64 / b.max(1) as f64;
-    let mut failures = Vec::new();
+    let time = |s: &Cost, l: &Cost| l.time.as_secs_f64() / s.time.as_secs_f64();
+    let (mut failures, mut slow) = (Vec::new(), Vec::new());
     for &code in codes {
         let (s, l) = (cost(&mut small, code), cost(&mut large, code));
-        let growth = [
-            ("time", l.time.as_secs_f64() / s.time.as_secs_f64()),
-            ("allocated bytes", ratio(l.allocated, s.allocated)),
-            ("peak bytes", ratio(l.peak, s.peak)),
-        ];
-        for (what, r) in growth { if r > LIMIT { failures.push(format!("{code}: {what} grow {r:.1} times")); } }
+        let t = time(&s, &l);
+        if t > LIMIT { slow.push((code, t)); }
+        for (what, r) in [("allocated bytes", ratio(l.allocated, s.allocated)), ("peak bytes", ratio(l.peak, s.peak))] {
+            if r > LIMIT { failures.push(format!("{code}: {what} grow {r:.1} times")); }
+        }
         let per_item = l.peak.saturating_sub(s.peak) / (7 * N);
         if per_item > PEAK_PER_ITEM { failures.push(format!("{code}: peaks at {per_item} bytes per item")); }
         if s.kept + l.kept > 0 { failures.push(format!("{code}: keeps {} and {} bytes", s.kept, l.kept)); }
     }
+    let mut stderr = std::io::stderr();
+    let slow = timing::retried(slow, |slow, pause| {
+        slow.into_iter().filter_map(|(code, before)| {
+            let r = time(&cost(&mut small, code), &cost(&mut large, code));
+            writeln!(stderr, "{code}: time grew {before:.1} times, then {r:.1} times after {pause} s").unwrap();
+            (r > LIMIT).then_some((code, r))
+        }).collect()
+    });
+    failures.extend(slow.into_iter().map(|(code, r)| format!("{code}: time grow {r:.1} times")));
     failures
 }
 
