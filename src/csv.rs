@@ -216,12 +216,11 @@ fn field(v: &Value, opts: &Options, fill: &Number, span: &Context<'_>) -> Result
     let mut s = if let Some(s) = keyed::name(v) { if opts.trim { s.trim().to_owned() } else { s.to_string() } }
     else if let Value::Number(n) = v {
         if n.is_nan() || (opts.common.values.contains_key("fill") && n.grade_order(fill).is_eq()) { return Ok(String::new()); }
-        if let Some(n) = n.as_integer() { n.to_string() }
+        if let Some(t) = n.integer_text() { t }
         else if let Some(n) = n.as_float() {
             let s = n.to_string();
             if n.is_finite() && !s.contains(['.', 'e', 'E']) { format!("{s}.0") } else { s }
-        } else if let Some(n) = n.as_exact().filter(|n| n.is_integer()) { n.numer().to_string() }
-        else { return Err(span.domain_error("CSV cells must be real floats, integers or strings")); }
+        } else { return Err(span.domain_error("CSV cells must be real floats, integers or strings")); }
     } else { return Err(span.domain_error("CSV cells must be real floats, integers or strings")); };
     if matches!(v, Value::Number(_)) {
         if opts.decimal != '.' { s = s.replace('.', &opts.decimal.to_string()); }

@@ -99,8 +99,8 @@ fn each_cell(left: Option<&Value>, right: &Value, span: &Context<'_>, f: impl Fn
     let mut cells = Vec::with_capacity(agreement.len.max(1));
     for i in 0..agreement.len.max(1) {
         span.check()?;
-        let (x, y) = agreement.values(left, right, i);
-        let x = x.as_ref().map(|a| number(a, span)).transpose()?;
+        let (x, y) = agreement.values_ref(left, right, i);
+        let x = x.as_deref().map(|a| number(a, span)).transpose()?;
         let n = if right.is_empty() { BigInt::one() } else { number(&y, span)?.big_integer().error_at(span, "number theory requires integers")? };
         cells.push(f(x.as_ref(), n)?);
     }

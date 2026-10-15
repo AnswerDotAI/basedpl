@@ -20,7 +20,7 @@ basedpl = { path = "..", default-features = false }
 async-trait = ">=0.1, <1"
 ctrlc = ">=3.5.2, <4"
 foldhash = ">=0.2.0, <1"
-kernmini = ">=0.1.19, <1"
+kernmini = ">=0.1.20, <1"
 # Custom bindings override Emacs Alt-digit prefixes in this fork.
 rustyline = { git = "https://github.com/AnswerDotAI/rustyline.git", branch = "master", default-features = false, features = ["custom-bindings", "with-file-history"] }
 serde = ">=1.0.229, <2"

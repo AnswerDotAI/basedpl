@@ -1,37 +1,61 @@
-# `∂` — Derivative / VJP
+# `∂` — Derivative
 
 Monadic operator. Keys: `Alt-f`
 
-`f∂X`: gradient of `f` at `X`. `f` must return a unit. `U f∂ X`: vector–Jacobian product, where `U` has the shape of `f`'s result. The result has the shape of `X`.
-
-Currently differentiates real evaluators `C⌻`, including factored and exponent-table forms, and functions with a derivative that `f∂←g` attaches. `C⌻` is a train that binds `C`, the same as `C↣⌻`.
+`f∂X` gives the Jacobian of `f` at `X`, with the keys, axis names and nesting of `(f X)×⊗X`. For a number result, that's the gradient, in `X`'s structure. `W f∂ X` differentiates `W f X` with respect to `X`.
 
 ```bpl
-f←[1 2 3]ₓ⌻ ⋄ f∂2ₓ                ⍝ 14ₓ
-f←[1 2 3]ₓ⌻ ⋄ f∂∂2ₓ               ⍝ 6ₓ
-f←[1 2 3]ₓ⌻ ⋄ [10 20]ₓ f∂ [1 2]ₓ  ⍝ [80 280]ₓ
+{⍵×⍵}∂3                                              ⍝ 6
+{+/⍵×⍵}∂ 1 2 3                                       ⍝ 2 4 6
+cart←{[r t]←⍵ ⋄ [r×2○t; r×1○t]} ⋄ -.×cart∂ 2 0.5   ⍝ 2
+3 {⍺×⍵×⍵}∂ 2                                         ⍝ 12
 ```
 
-Multivariate gradients retain the coordinate enclosure. A shared unit coordinate sums partials.
+`∂` differentiates through the primitives that `f` calls, inside dfns, trains and operators alike. An exact argument gives an exact derivative, and a record argument gives a record gradient:
 
 ```bpl
-f←⊂[1 2 0⋄1 0 2]ₓ ⌻ ⋄ f∂⊂[3 4]ₓ      ⍝ ⊂[6 8]ₓ
-f←⊂[1 2 0⋄1 0 2]ₓ ⌻ ⋄ f∂3ₓ           ⍝ 12ₓ
+{⍵×⍵}∂2ᵣ3                            ⍝ 4ᵣ3
+p←["a":1 "b":2] ⋄ {(⍵.a)×⍵.b}∂ p   ⍝ ["a":2 "b":1]
 ```
 
-Repeated `∂` requires unit input and output and one variable.
-
-`f∂←g` attaches `g` as the derivative of the function that `f` names, as [assignment](../assignment.ipynb#inverses-and-derivatives) describes. `f` still applies itself. `f∂X` then calls `g X`, and `U f∂ X` calls `U g X`, so `g` gives the gradient with one argument and the vector–Jacobian product with two. A higher order differentiates `g`, and `⁻¹` inverts `f`. [`⇄`](right-left-arrows.qmd) follows the derivative of a function that has one.
+For the derivative at each item of a function that works item by item, differentiate at rank 0, or along a unit argument in one pass:
 
 ```bpl
-r←{⍵×⍵} ⋄ r∂←{⍺←1 ⋄ ⍺×2×⍵}
-r 3        ⍝ 9
-r∂3        ⍝ 6
-10 r∂ 3    ⍝ 60
+x←0 0.5 1
+1○∂⍤0 x     ⍝ 1 0.8775825619 0.5403023059
+{1○x+⍵}∂0   ⍝ 1 0.8775825619 0.5403023059
+```
+
+`f∂∂` differentiates `f∂`, so nested `∂` gives higher and mixed derivatives:
+
+```bpl
+{⍵×⍵×⍵}∂∂∂2     ⍝ 6
+{⍵₀×⍵₁}∂∂ 2 3   ⍝ [0 1⋄1 0]
+```
+
+`C⌻` differentiates with respect to the point and to the coefficients `C`. `C⌻` is a train that binds `C`, the same as `C↣⌻`.
+
+```bpl
+f←[1 2 3]ₓ⌻ ⋄ f∂2ₓ   ⍝ 14ₓ
+{⍵⌻2ₓ}∂ [1 2 3]ₓ    ⍝ [1 2 4]ₓ
+```
+
+`∂` runs `f` once. With more than one number in `X`, it records the linear steps of the derivative as `f` runs, then reads the Jacobian from that record: once for each result item, or once for each number in `X`, whichever is fewer. A gradient therefore costs a small multiple of one run of `f`, however many numbers `X` holds. The record keeps the values those steps need until `∂` finishes, so memory grows with the work that `f` does. A value that `f` writes to an outer name loses its tangents when `∂` returns.
+
+Arithmetic, the mathematical glyphs, the circle codes, `⌈` and `⌊`, structural and selection glyphs, Under, sorting, `+/`, `+\`, `+.×`, outer products and `⌻` all differentiate, and so does any operator whose operands do. Comparisons, floor, ceiling, grade, `⍳` and `⍸` give no tangent. `∂` doesn't differentiate complex numbers.
+
+`f∂←g` attaches `g` as the derivative of the function that `f` names, as [assignment](../assignment.ipynb#inverses-and-derivatives) describes. `g` is a JVP rule: `T g X` gives the derivative of `f` at `X` along the direction `T`, which has `X`'s structure. `g` must be linear in `T`. `f` still applies itself, and `∂` uses `g` wherever `f` is called with one argument, alone or inside another function. For a gradient, `∂` transposes the steps that `g` takes on `T`. A rule describes a function of one argument, so `∂` through a call of `f` with two arguments gives an error. Bind the left argument first, as in `bound←10↣f ⋄ bound∂←g`. `⁻¹` inverts `f`, and [`⇄`](right-left-arrows.qmd) takes its derivatives through `∂`.
+
+```bpl
+r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵}
+r 3                                    ⍝ 9
+r∂3                                    ⍝ 6
+{1+r ⍵}∂3                              ⍝ 6
+s←{+/⍵×⍵} ⋄ s∂←{+/⍺×2×⍵} ⋄ s∂ 1 2 3   ⍝ 2 4 6
 ```
 
 ## Errors
 
-- `RANK`: monadic array output
-- `LENGTH`: wrong cotangent shape
-- `DOMAIN`: unsupported function or nonfinite/non-real data
+- `DOMAIN`: an argument or a result that isn't numeric, a nested result for an array argument, or a call with two arguments of a function that has an attached derivative
+- `UNSUPPORTED`: a glyph or system function that `∂` can't differentiate yet, such as `⌹` or `¿`, or a complex argument
+- `SYNTAX`: a left argument for a function that takes only one argument, such as `C↣⌻`

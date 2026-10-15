@@ -3,7 +3,8 @@
 // as `node --no-liftoff --test tests/wasm-speed.mjs`. V8 first compiles wasm with Liftoff, which doesn't optimise, and recompiles a
 // function with TurboFan only once it runs often. The test calls each kernel only a few times. Without the flag, it would time
 // Liftoff's code. A case over its budget is timed again after the rest, after each pause in `RETRY_PAUSES`, and fails only if it's
-// over every time, as in `tests/speed.rs`. To print every case's cost, run `BASEDPL_COSTS=1 node --no-liftoff tests/wasm-speed.mjs`.
+// over every time, as in `tests/speed.rs`. With `BASEDPL_COSTS` set, it also prints every case's cost. The `Test` workflow's
+// `wasm` job sets it.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';

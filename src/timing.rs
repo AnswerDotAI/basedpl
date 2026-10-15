@@ -63,6 +63,7 @@ pub fn time(session: &mut Session, code: &str, interrupt: &InterruptHandle) -> R
     let mut failed = None;
     let seconds = fastest(|| {
         let result = session.eval_parsed(&parsed, EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() });
+        if let Some(value) = &result.value { value.force(); }
         if result.error.is_some() { failed.get_or_insert(result); }
     });
     failed.map_or(Ok(seconds), Err)

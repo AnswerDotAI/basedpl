@@ -4,7 +4,7 @@
 //!
 //! A Boolean, an integer or a 32-bit float beside a wider float, and any real beside a complex number, reads at the wider type, as `Number` converts it. `Mixed`'s kernels convert each item as their loops read it. The others read `CHUNK` items at a time through `Chunked`. Kernels compile only for pairs that can occur: a 32-bit kernel never meets 64-bit data. A kernel returns `None` where its case can't give the result, and a function object fails an item where it gives NaN from arguments that aren't NaN. The caller then takes the `Number` path for the whole call, which gives the error or the exact or complex result.
 //!
-//! Integers run at the narrowest of the four widths that holds both arguments' items. Booleans beside integers read in place as unsigned bytes. Integers of different widths convert to the wider one before the loop. A result that doesn't fit runs again at the next width up, and at 64 bits takes the `Number` path. Results keep the width they ran at.
+//! Integers run at the narrowest of the four widths that holds both arguments' items. Booleans beside integers read in place as unsigned bytes. Integers of different widths convert to the wider one before the loop. A result that doesn't fit runs again at the next width up. Past 64 bits, dyadic `+`, `-` and `×` compute each item in 128 bits. Only the items whose results don't fit 64 bits become big integers. Other functions take the `Number` path there, including monadic `-` on the most negative integer. Results keep the width they ran at.
 //!
 //! Floats run at the wider of their two widths, and an exact operand reads at that width. The float kernels compute at the width. `float_arithmetic` is generic over it. The `Kernels` impls of `f32` and `f64` call rustymath's function objects. An object implements its traits only at concrete types. `at_widths!` therefore writes those impls once, for both widths, in `float_kernels`, and the impls of complex numbers with parts of each width in `complex_kernels`. Complex numbers run at the wider of their parts' width and the other argument's float width. Only 32- and 64-bit floats have kernels. `halves` runs a call with 16-bit floats on 32-bit copies of them, because the CPU runs 16-bit floats only for testing. Such a call rounds a function of several steps, such as `|`, once, where `Number` rounds each step.
 //!
@@ -540,15 +540,31 @@ fn products(left: &Value, right: &Value, width: Width, agreement: &Agreement) ->
     }
 }
 
-/// Booleans and integers at width `kind`, the narrowest that holds both arguments. A result that doesn't fit runs again at the next width up. Booleans that the function doesn't take read as unsigned bytes.
+/// Booleans and integers at width `kind`, the narrowest that holds both arguments. A result that doesn't fit runs again at the next width up. Past 64 bits, a dyadic call runs through `overflowed`. Booleans that the function doesn't take read as unsigned bytes.
 fn whole(p: Primitive, left: Option<&Value>, right: &Value, mut kind: Kind, agreement: &Agreement) -> Option<Value> {
     loop {
         let run = match kind {
             Kind::Boolean => truths(p, left, right, agreement), Kind::Integer(width) => with_width!(width, T => at::<T>(p, left, right, agreement)),
             _ => return None
         };
-        match run { Some(Some(result)) => return Some(result), None if kind != Kind::Boolean => return None, _ => kind = kind.wider()? }
+        match run {
+            Some(Some(result)) => return Some(result),
+            None if kind != Kind::Boolean => return None,
+            _ => match kind.wider() { Some(wider) => kind = wider, None => return overflowed(p, left?, right, agreement) },
+        }
     }
+}
+
+/// Dyadic `+`, `-` or `×` on integers where a result doesn't fit 64 bits. Each item is computed in 128 bits, where every sum, difference or product of two `i64`s fits. Only the items that don't fit 64 bits become big integers. It gives `None` for other functions, and for arguments that keys align with fill. The `Number` path then gives the result.
+fn overflowed(p: Primitive, left: &Value, right: &Value, agreement: &Agreement) -> Option<Value> {
+    let Primitive::Arithmetic(op @ (Arithmetic::Plus | Arithmetic::Minus | Arithmetic::Times)) = p else { return None };
+    let (x, y) = (side::<i64>(left)?, side::<i64>(right)?);
+    let mut data = Vec::with_capacity(agreement.len);
+    for i in 0..agreement.len {
+        let (j, k) = (agreement.left.get(i)?, agreement.right.get(i)?);
+        data.push(Value::Number(crate::Number::from(int::arithmetic(op, x[j], y[k])?)));
+    }
+    Value::new(agreement.layout.shape().to_vec(), data).ok()
 }
 
 /// The Boolean kernel on Boolean arguments. `None` when the function takes no Booleans.
@@ -701,7 +717,7 @@ fn blocks<X: Element, Y: Element, B>(
     }
 }
 
-/// Items `start..start + n` of an argument that `mapping` lays out over the frame. A single item, a contiguous run, and items within one repeat or one cycle need no copy. Others copy into `buf`. A repeated item finds its source by a strength-reduced division, which multiplies in place of dividing. A cycled argument writes one period, then copies what it has written until `buf` is full.
+/// Items `start..start + n` of an argument that `mapping` lays out over the frame. A single item, a contiguous run, and items within one repeat or one cycle need no copy. Others copy into `buf`. A repeated item finds its source by a strength-reduced division, which multiplies in place of dividing. A cycled argument writes one period, then copies what it has written until `buf` is full. An argument that the result holds whole along its innermost axis copies whole runs of that axis, finding one source position for each run.
 pub(crate) fn expanded<'a, A: Element>(mapping: &Mapping, data: &'a [A], start: usize, n: usize, buf: &'a mut Vec<A>) -> Arg<'a, A> {
     match *mapping {
         Mapping::Single => return Arg::One(data[0]), Mapping::Linear(1) => return Arg::Many(&data[start..start + n]),
@@ -723,6 +739,16 @@ pub(crate) fn expanded<'a, A: Element>(mapping: &Mapping, data: &'a [A], start: 
                 let more = filled.min(n - filled);
                 out.copy_within(..more, filled);
                 filled += more;
+            }
+        }
+        Mapping::Axes(ref axes) if matches!(axes.first(), Some(&(1, _, 1))) => {
+            let (run, mut i) = (axes[0].1, 0);
+            while i < n {
+                let at = start + i;
+                let m = (run - at % run).min(n - i);
+                let from = mapping.index(at);
+                out[i..i + m].copy_from_slice(&data[from..from + m]);
+                i += m;
             }
         }
         _ => { for (i, slot) in out.iter_mut().enumerate() { *slot = item(mapping, data, start + i) } }
@@ -926,20 +952,20 @@ impl<A: Element> Monad<A> for Chunked<'_, A> {
     fn many<B: Element>(mut self, f: impl rustymath::Unary<A, Out = B> + Copy + Sync) -> Option<Value> { self.item_chunks(|y, n, o| f.many(y, n, o)) }
 }
 
-/// One step of a `fusion::Chain` on `n` items: `p` applied to `x` and `y`, writing its results to `out`. Only a comparison writes Booleans. `x` is `None` for a monadic step. The step takes the width's `Kernels`, as `map` does for the same arguments. It gives false where a kernel fails.
-pub(crate) fn step<F: Float + Kernels>(p: Primitive, x: Option<Arg<'_, F>>, y: Arg<'_, F>, n: usize, out: Out<'_, '_, F>, numeric: Numeric) -> bool {
+/// Runs one node of a `fusion::Graph` on `n` items: `p` applied to `x` and `y`, writing its results to `out`. Only a comparison writes Booleans. `x` is `None` for a monadic node. The node takes the width's `Kernels`, as `map` does for the same arguments. It gives false where a kernel fails.
+pub(crate) fn node<F: Float + Kernels>(p: Primitive, x: Option<Arg<'_, F>>, y: Arg<'_, F>, n: usize, out: Out<'_, '_, F>, numeric: Numeric) -> bool {
     let stage = Stage { x: x.unwrap_or(Arg::Many(&[])), y, n, out, numeric };
     (if x.is_some() { F::dyad(p, stage) } else { F::monad(p, stage) }).unwrap_or(false)
 }
 
-/// Where a step of a `fusion::Chain` writes its results: floats, or a comparison's Booleans.
+/// Where a node of a `fusion::Graph` writes its results: floats, or a comparison's Booleans.
 pub(crate) enum Out<'a, 'b, F> { Floats(&'a mut rustymath::parallel::Slots<'b, F>), Bools(&'a mut rustymath::parallel::Slots<'b, bool>) }
 impl<'b, F> Out<'_, 'b, F> {
-    /// The same slots, borrowed again for one step.
+    /// The same slots, borrowed again for one node.
     pub(crate) fn reborrow(&mut self) -> Out<'_, 'b, F> { match self { Out::Floats(s) => Out::Floats(s), Out::Bools(s) => Out::Bools(s) } }
 }
 
-/// A loop over `n` items of a `fusion::Chain`, writing to `out`. A monadic step's `x` is empty, as in `Map`. A kernel whose results have another type than `out` fails the loop.
+/// A loop over `n` items of a `fusion::Graph`, writing to `out`. A monadic node's `x` is empty, as in `Map`. A kernel whose results have another type than `out` fails the loop.
 struct Stage<'a, 'b, F> { x: Arg<'a, F>, y: Arg<'a, F>, n: usize, out: Out<'a, 'b, F>, numeric: Numeric }
 impl<F: Element> Dyad<F> for Stage<'_, '_, F> {
     type Output = bool;

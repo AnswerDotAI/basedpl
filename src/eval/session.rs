@@ -74,6 +74,33 @@ impl Session {
     pub(super) fn remove_name(&mut self, owner: Option<usize>, name: &str) -> Option<Binding> {
         match owner { Some(i) => self.frames[i].remove(Key::of(name)), None => self.table_mut(self.module()).remove(name) }
     }
+    /// Whether a `∂` call is running.
+    pub(crate) fn differentiating(&self) -> bool { !self.derivatives.is_empty() }
+    /// Starts a `∂` call: a new level with a fresh tag, larger than every running call's. Returns the tag.
+    pub(crate) fn begin_derivative(&mut self) -> u32 {
+        self.tags += 1;
+        self.derivatives.push(crate::derivative::Level { tag: self.tags, frames: self.frames.len(), writes: Vec::new() });
+        self.tags
+    }
+    /// Ends the innermost `∂` call, taking its tag off each binding outside its frames that it wrote.
+    pub(crate) fn end_derivative(&mut self) {
+        let level = self.derivatives.pop().expect("a running ∂ call");
+        for (owner, module, name) in level.writes {
+            let value = match owner { Some(i) => self.frames.get(i).and_then(|f| f.get(Key::of(&name))), None => self.table(module).get(&name) };
+            let Some(Binding::Value(v)) = value else { continue };
+            let v = Binding::Value(crate::derivative::strip(v, level.tag));
+            match owner { Some(_) => self.insert_name(owner, &name, v), None => { self.table_mut(module).insert(name, v); } }
+        }
+    }
+    /// Records, for each running `∂` call, a write to the binding of `name` in `owner`, or in the running module's names when `owner` is `None`, when that binding lies outside the call's frames.
+    pub(super) fn record_write(&mut self, owner: Option<usize>, name: &str) {
+        let module = self.module();
+        for level in &mut self.derivatives {
+            if owner.is_none_or(|o| o < level.frames) && !level.writes.iter().any(|(w, m, n)| *w == owner && *m == module && n == name) {
+                level.writes.push((owner, module, name.to_owned()));
+            }
+        }
+    }
     pub fn erase(&mut self, name: &str) -> bool {
         let Some(NodeKind::Name(name)) = crate::inspection::item(name) else { return false; };
         if implicit_name(&name) { return false; }
@@ -470,7 +497,7 @@ impl Session {
             NodeKind::System(name) => {
                 Binding::Function(crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?)
             }
-            NodeKind::Group(_) | NodeKind::Run(_) => return Binder::nested(node, self).map(Nested::bound),
+            NodeKind::Group(_) | NodeKind::Run(_) => return Binder::nested(node, self),
             NodeKind::Scope(root, body) => {
                 let record = self.resolve(root)?.array(&root.span)?;
                 return self.scoped(&record, &node.span, |session| session.resolve(body));

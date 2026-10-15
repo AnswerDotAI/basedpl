@@ -353,7 +353,8 @@ fn promoted(a: &Value, other: &Value, rank: usize, axis: usize, span: &Context<'
         let mut shape: crate::Shape = if other.is_unit() { [1].into() } else { other.shape().into() };
         shape[axis] = 1;
         let len = generated_len(&shape).error_at(span, "catenate exceeds array limits")?;
-        return Value::from_parts(shape, vec![a.at(0); len], a.prototype()).error_at(span, "invalid unit extension");
+        // `collect` goes through `Gather`, so a number dual becomes an array dual rather than an item of a mixed array (`derivative`).
+        return Layout::from(shape).collect(vec![a.at(0); len], || a.prototype()).error_at(span, "invalid unit extension");
     }
     if a.shape().len() + 1 != rank { return Err(span.error(ErrorKind::Rank, "catenate ranks differ by more than one")); }
     let shape: crate::Shape = a.shape()[..axis].iter().chain(&[1]).chain(&a.shape()[axis..]).copied().collect();

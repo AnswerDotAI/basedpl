@@ -1259,11 +1259,6 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="vjp" value="∂" description="∂" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
   <template name="wedge" value="∧" description="∧" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />

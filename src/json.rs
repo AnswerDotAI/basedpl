@@ -21,7 +21,7 @@ fn exact(n: BigInt) -> Result<Number, ErrorKind> {
 /// An exact integer as a JSON number, whatever its size.
 pub(crate) fn integer(n: &Number) -> Option<Json> {
     if let Some(i) = n.as_integer() { return Some(i.into()); }
-    n.as_exact().filter(|q| q.is_integer()).map(|q| Json::Number(q.numer().to_string().parse().expect("decimal integer")))
+    n.integer_text().map(|t| Json::Number(t.parse().expect("decimal integer")))
 }
 
 /// `•json` reads JSON5, which includes all JSON. `fill` replaces `null`.

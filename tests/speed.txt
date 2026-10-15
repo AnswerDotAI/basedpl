@@ -1,7 +1,7 @@
 # The cases that `tests/speed.rs` times in the native build and `tests/wasm-speed.mjs` times in the browser build. Each case line holds the code, its native budget and its wasm budget, separated by tabs. Each section starts with its name in brackets and the prefs its session starts with. Every session then runs the lines under the `[setup]` before its section.
-# Budgets in `[copies]`, `[exact]`, `[images]` and `[objectives]` count copies of the `n` items that the section's setup makes. A budget in `[widths]` is the most that the time in that section's 32-bit session may be, as a fraction of the time in the `[exact]` session. Natively and in wasm, it is the worse of that fraction on a Mac and on CI's runner, plus 0.25.
+# Budgets in `[copies]`, `[exact]`, `[images]`, `[objectives]`, `[calls]` and `[derivatives]` count copies of the `n` items that the section's setup makes. A budget in `[widths]` is the most that the time in that section's 32-bit session may be, as a fraction of the time in the `[exact]` session. Natively and in wasm, it is the worse of that fraction on a Mac and on CI's runner, plus 0.25.
 # A wasm budget in copies is twice the most the case has cost on a Mac and on CI's runner, in the module that `cargo wasm` builds, and at least 0.5. `tests/speed.rs` gives the same rule for native budgets in copies.
-# A case in copies that CI hasn't timed yet has four times its Mac cost, natively and in wasm. A `[widths]` case that CI hasn't timed yet has its Mac fraction plus 0.25. The next `Speed` run sets their budgets under the rules above.
+# A case in copies that CI hasn't timed yet has four times its Mac cost, natively and in wasm. A `[widths]` case that CI hasn't timed yet has its Mac fraction plus 0.25. The next CI run that logs every cost, a push's `Test` run or a `Speed` run, sets their budgets under the rules above.
 # The CI figures come from `Speed` run 38397524881. Its CPU was the AMD Ryzen 9 7950X3D 16-Core Processor.
 [setup]
 side←256 ⋄ n←side×side ⋄ v←¿n⍴0 ⋄ w←¿n⍴0 ⋄ s←v-0.5 ⋄ m←[side side]⍴v
@@ -220,7 +220,7 @@ v×2	0.78	0.8
 v<w	0.81	0.84
 0.5<v	0.89	0.84
 √v	0.78	0.75
-+⌿m	0.77	0.88
++⌿m	0.97	0.88
 +/v	0.8	0.82
 ⌈/v	0.82	0.83
 +\v	0.98	0.94
@@ -249,11 +249,13 @@ v⍳w	1.26	1.18
 [setup]
 img←¿[4000 3000 3]⍴0 ⋄ flat←,img ⋄ n←≢flat
 [images]
-# A 4000×3000 image with three channels holds 36 million floats, far more than the caches hold. Each step of a chain reads and writes every item.
+# A 4000×3000 image with three channels holds 36 million floats, far more than the caches hold. Each call in a fused graph reads and writes every item.
 0⌈1⌊0.5+1.2×img-0.5	7	11
 img×1-0.5×img	5.5	6.8
 0⌈1⌊img×0.5+(⍳4000)÷8000	5.6	7
-# A reduction at the end of a chain folds each block's results while they are in the cache. Along the first axis, it adds each block to one total for each column.
+# `×` joins the fused graphs on its two sides into one graph that runs block by block.
+(img-0.5)×img+0.5	10	14
+# A reduction at the end of a fused graph folds each block's results while they are in the cache. Along the first axis, it adds each block to one total for each column.
 +/flat>0.5	1.6	2
 +⌿img×2	3.5	4.1
 # `+/img` folds each pixel's 3 channels. Each length of lane up to 15 items has a loop of its own. The reshape shares `flat`'s storage.
@@ -268,13 +270,32 @@ gx←¿[1000 32]⍴0 ⋄ gi←=⊗⍨⍳32 ⋄ glow←>⊗⍨⍳32 ⋄ gp←["al
 gmm←{[alpha mu q l]←⍵ ⋄ L←l×⍤2⊢glow ⋄ Q←L+(*q)×⍤1 2⊢gi ⋄ sq←+/⊼(⍺(-⍤1)⍤2 1⊢mu)+.×⍤2⊢0 2 1⍉Q ⋄ t←(alpha++/q)-0.5×sq ⋄ m←⌈⌿t ⋄ am←⌈/alpha ⋄ (+/m+⍟+⌿*t-⍤1⊢m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢⍺)×am+⍟+/*alpha-am}
 kx←¿[16384 32]⍴0 ⋄ kc←¿[64 32]⍴0 ⋄ kmeans←{+/⌊⌿((+/⊼⍵)+⊗+/⊼⍺)-2×⍵+.×⍉⍺}
 sg←¿[128 128]⍴0 ⋄ sk←[1 2 1⋄2 4 2⋄1 2 1]÷16 ⋄ n←65536
+dx←¿1048576⍴0 ⋄ dp←["w":¿[64 256]⍴0 "b":¿256⍴0 "v":¿256⍴0 "c":1]
 [objectives]
 # Functions that `∂` will differentiate, timed without `∂`. Each gives the cost that its gradient's cost will be measured against.
 # The mean squared error of a network with one hidden layer of 256 tanh units, over 1024 inputs of 64 values. Its parameters are in a record.
-[mx my] mlp mp	380	1300
+[mx my] mlp mp	490	630
 # ADBench's Gaussian mixture objective, for 1000 points in 32 dimensions and 25 components, without its constant terms and with its Wishart prior at gamma 1 and m 0. Each component's precision factor has the exponentials of `q` on its diagonal and `l` below it.
 gx gmm gp	2700	6800
 # The k-means cost sums the squared distance from each of 16384 points to the nearest of 64 centres, in 32 dimensions.
-kx kmeans kc	1500	2100
+kx kmeans kc	870	980
 # A 3 by 3 blur of a 128 by 128 grid. `⌺` calls its operand once for each window.
-{+/,sk×⍵}⌺3 3⊢sg	6000	15000
+{+/,sk×⍵}⌺3 3⊢sg	8000	14000
+[derivatives]
+# `∂` beside the function it differentiates. A unit argument takes one pass, whose tangent is an array of the result's shape. The bar's "Primal cost" row in the design notes asks that the primal keeps its kernels, and the tangent adds whole-array calls beside it.
+1○dx	440	800
+{1○dx+⍵}∂0	990	1900
+# A chain of fusible calls, whose tangent fuses too.
+(dx-0.5)×dx+0.5	170	190
+{(dx-⍵)×dx+⍵}∂0.5	400	430
+# A JVP of the training loss in `[objectives]` along a fixed direction `dp`, which takes one pass through `+.×`, Rank, `7○` and `+/`.
+{[mx my] mlp mp+⍵×dp}∂0	420	2000
+# Gradients of the three objectives in `[objectives]`, each from one run that records its linear calls and one transpose of the record. The bar's "Gradient cost" row asks for a small multiple of the objective's own cost.
+[mx my] mlp∂ mp	860	2600
+gx gmm∂ gp	5100	11000
+kx kmeans∂ kc	6100	7600
+[setup]
+fib←{⍵<2?⍵;(∇⍵-1)+∇⍵-2} ⋄ n←65536
+[calls]
+# `fib 16` makes 3193 calls of a dfn, each with up to four primitive calls on single numbers. Its cost is mostly the evaluator's own work for each call.
+fib 16	960	1600

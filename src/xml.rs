@@ -22,8 +22,7 @@ fn attribute(value: &Value, span: &Context<'_>) -> Result<String, Error> {
     if value.shape().len() > 1 { return Err(span.domain_error("XML attributes must be text or numeric units or vectors")); }
     value.elements().map(|v| {
         let n = v.as_number().ok_or_else(|| span.domain_error("XML attributes must be text or numbers"))?;
-        if let Some(i) = n.as_integer() { return Ok(i.to_string()); }
-        if let Some(q) = n.as_exact().filter(|q| q.is_integer()) { return Ok(q.numer().to_string()); }
+        if let Some(t) = n.integer_text() { return Ok(t); }
         let x = n.to_float().domain_at(span)?;
         if !x.is_finite() { return Err(span.domain_error("XML numeric attributes must be finite")); }
         Ok(x.to_string())

@@ -93,7 +93,7 @@ impl OperatorKind {
             Power => ("⍣", ["star-diaeresis", "power", ""], Function, Some(Any)), Super(_) => ("", ["superscript", "", ""], Any, None),
             Optimize => ("⇄", ["right-left-arrows", "optimize", ""], Function, None),
             Valences => ("⊘", ["circle-slash", "valences", ""], Function, Some(Function)), Under => ("@", ["at", "under", ""], Function, Some(Any)),
-            Differentiate => ("∂", ["partial", "derivative", "vjp"], Function, None), Agenda => ("⍚", ["diamond-underbar", "agenda", ""], Any, Some(Array)),
+            Differentiate => ("∂", ["partial", "derivative", ""], Function, None), Agenda => ("⍚", ["diamond-underbar", "agenda", ""], Any, Some(Array)),
             Stencil => ("⌺", ["quad-diamond", "stencil", ""], Function, Some(Any)), Fold(kind) => (kind.glyph(), kind.names(), Function, None)
         };
         OperatorInfo { glyph, names, left, right }
@@ -393,6 +393,11 @@ impl Primitive {
     pub(crate) fn call_axis(self, left: Option<&Value>, right: &Value, axis: Option<usize>, span: &Context<'_>) -> Result<Value, Error> {
         use Comparison::{Equal, Greater, GreaterEqual, Less, LessEqual, NotEqual};
         span.check()?;
+        // A dual argument means a running `∂` differentiates this call, and a record argument means reverse mode records it (`linear`).
+        if span.session.differentiating() {
+            if right.linear().is_some() || left.is_some_and(|x| x.linear().is_some()) { return crate::linear::call(self, left, right, axis, span); }
+            if axis.is_none() { if let Some(result) = crate::derivative::call(self, left, right, span) { return result; } }
+        }
         if axis.is_some() && !self.takes_axes(left.is_some()) { return Err(span.error(ErrorKind::Syntax, "axis is not supported by this primitive")); }
         let info = self.info();
         if left.is_none() && info.monad.is_none() {
@@ -503,6 +508,9 @@ impl Primitive {
     /// `x f⊗ y` for a pervasive function. Each argument keeps its own axes, and the left argument's axes come first.
     pub(crate) fn outer(self, left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
         let agreement = Agreement::outer(left.layout(), right.layout()).error_at(span, "outer product is too large")?;
+        if span.session.differentiating() && (crate::derivative::tag(left).is_some() || crate::derivative::tag(right).is_some()) {
+            return crate::derivative::outer(self, left, right, &agreement, span);
+        }
         self.pervasive_mapped(Some(left), right, span, false, agreement)
     }
     /// The function applied to the items that `agreement` pairs, laid out as `agreement` lays out the result.
@@ -511,6 +519,10 @@ impl Primitive {
             let prototype = self.pervasive_item(left.map(Value::prototype).as_ref(), &right.prototype(), span, true)?;
             return Value::empty(agreement.layout.shape(), prototype).and_then(|v| v.with_layout(agreement.layout)).error_at(span, "invalid empty result");
         }
+        // A large fusible call on floats becomes a pending array, which `fusion` computes with the calls that read it.
+        let agreement = if !fill && crate::fusion::defers(self, left.is_some(), agreement.len) {
+            match crate::fusion::defer(self, left, right, agreement, span.numeric()) { Ok(pending) => return Ok(pending), Err(agreement) => agreement }
+        } else { agreement };
         if !fill {
             if let Some(result) = crate::pervasive::map(self, left, right, &agreement, span.numeric()) {
                 return result.with_layout(agreement.layout).error_at(span, "invalid keyed result");
@@ -518,14 +530,16 @@ impl Primitive {
         }
         let mut data = Gather::items(agreement.len);
         for i in 0..agreement.len {
-            let (x, y) = agreement.values(left, right, i);
-            data.add(self.pervasive_item(x.as_ref(), &y, span, fill)?);
+            let (x, y) = agreement.values_ref(left, right, i);
+            data.add(self.pervasive_item(x.as_deref(), &y, span, fill)?);
         }
         data.finish(agreement.layout, || right.prototype()).error_at(span, "invalid pervasive result")
     }
 
     fn pervasive_item(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
         span.check()?;
+        if !fill && span.session.differentiating() && (right.linear().is_some() || left.is_some_and(|x| x.linear().is_some())) { return crate::linear::call(self, left, right, None, span); }
+        if !fill && span.session.differentiating() { if let Some(result) = crate::derivative::call(self, left, right, span) { return result; } }
         if matches!((self, left, right), (Self::Arithmetic(Arithmetic::Plus), None, Value::Character(_))) { return Ok(right.clone()); }
         if matches!(right, Value::Array(_)) || matches!(left, Some(Value::Array(_))) { return self.pervasive_apply(left, right, span, fill); }
         if let (Self::Arithmetic(op @ (Arithmetic::Plus | Arithmetic::Minus)), Some(left)) = (self, left) {
@@ -551,8 +565,8 @@ impl Primitive {
                     (Self::Math(Math::Floor), None) => y.floor(t), (Self::Math(Math::Ceiling), None) => y.ceiling(t),
                     (Self::Math(Math::Magnitude), Some(x)) => numeric(x, span)?.residue(y, t), (Self::Math(Math::Gcd), Some(x)) => numeric(x, span)?.gcd(y, t),
                     (Self::Math(Math::Lcm), Some(x)) => numeric(x, span)?.lcm(y, t), (Self::Math(op), Some(x)) => numeric(x, span)?.math_dyad(op, y),
-                    (Self::Math(op), None) => y.math_monad(op), (Self::Arithmetic(op), Some(x)) => numeric(x, span)?.dyad(op, y),
-                    (Self::Arithmetic(op), None) => y.monad(op), _ => unreachable!()
+                    (Self::Math(op), None) => y.math_monad(op), (Self::Arithmetic(op), Some(x)) => numeric(x, span)?.dyad(op, y).map_err(Into::into),
+                    (Self::Arithmetic(op), None) => y.monad(op).map_err(Into::into), _ => unreachable!()
                 };
                 // A float that an operation on exact numbers gives takes the default width. The code of `○` takes no part.
                 let operands_exact = left.is_none_or(|x| matches!(x, Value::Number(x) if x.is_exact()));
@@ -800,7 +814,7 @@ fn inverse_decode(base: &Value, right: &Value, span: &Context<'_>) -> Result<Val
         while !n.is_zero() {
             span.check()?;
             if n.order(&n.one()).domain_at(span)?.is_lt() { return Err(span.domain_error("inverse decode cannot represent this value")); }
-            n = n.dyad(Arithmetic::Divide, &b).and_then(|n| n.floor(span.numeric())).domain_at(span)?;
+            n = n.dyad(Arithmetic::Divide, &b).and_then(|n| n.floor(span.numeric()).map_err(crate::number::Failure::from)).domain_at(span)?;
             count += 1;
             generated_len(&[count]).error_at(span, "inverse decode is too large")?;
         }

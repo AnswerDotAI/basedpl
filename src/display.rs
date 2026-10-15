@@ -97,7 +97,7 @@ pub(crate) fn rows(shape: &[usize], edges: Option<usize>, last: Option<usize>) -
 
 /// Display settings for a session. `•prefs` reads and changes them.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct Settings { pub boxed: bool, pub trees: bool, pub functions: bool, pub dissect: bool, pub elide: Elide }
+pub(crate) struct Settings { pub boxed: bool, pub trees: bool, pub functions: bool, pub dissect: bool, pub fusion: bool, pub elide: Elide }
 
 impl Settings {
     /// The REPL's settings: boxed, with lines elided to the terminal's width.
@@ -125,11 +125,11 @@ impl Settings {
         Self { elide: Elide { prec: self.elide.prec, plain: self.elide.plain, notation: self.elide.notation, ..Elide::NONE }, ..*self }.array(a, inside)
     }
     /// Each setting's key and value. An unlimited count is `∞`, a float of `width`.
-    fn entries(&self, width: FloatWidth) -> [(&'static str, Value); 9] {
+    fn entries(&self, width: FloatWidth) -> [(&'static str, Value); 10] {
         let flag = |b| Value::Number(Number::from_bool(b));
         let count = |n: usize| Value::Number(if n == usize::MAX { Number::float(f64::INFINITY, width) } else { Number::from_integer(n as i64) });
         [
-            ("box", flag(self.boxed)), ("trees", flag(self.trees)), ("fns", flag(self.functions)), ("dissect", flag(self.dissect)),
+            ("box", flag(self.boxed)), ("trees", flag(self.trees)), ("fns", flag(self.functions)), ("dissect", flag(self.dissect)), ("fusion", flag(self.fusion)),
             ("limit", count(self.elide.limit)), ("edges", count(self.elide.edges)), ("prec", count(self.elide.prec)), ("width", count(self.elide.width)), (
                 "notation", keyed::text(match self.elide.notation {
                     Notation::Apl => "apl", Notation::Simplified => "simplified", Notation::Traditional => "traditional"
@@ -148,6 +148,7 @@ impl Settings {
             "trees" => self.trees = value.boolean()?,
             "fns" => self.functions = value.boolean()?,
             "dissect" => self.dissect = value.boolean()?,
+            "fusion" => self.fusion = value.boolean()?,
             "limit" => self.elide.limit = count(value)?,
             "edges" => self.elide.edges = count(value)?,
             "prec" => self.elide.prec = positive(value)?,

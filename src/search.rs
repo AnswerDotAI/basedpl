@@ -180,7 +180,7 @@ pub(crate) fn firsts(cells: &Cells, span: &Context<'_>) -> Result<Vec<bool>, Err
 fn hashes(cells: &Cells, seed: &RandomState) -> Option<Vec<u64>> {
     fn feed(value: &Value, state: &mut impl Hasher) -> Option<()> {
         match value {
-            Value::Number(n) => match n.as_integer() { Some(i) => (0u8, i).hash(state), None => (1u8, n.as_exact()?).hash(state) },
+            Value::Number(n) => match n.as_integer() { Some(i) => (0u8, i).hash(state), None => (1u8, n.exact_ref()?).hash(state) },
             Value::Character(c) => (2u8, c).hash(state),
             Value::Function(_) | Value::Operator(_) => return None,
             Value::Array(_) => {

@@ -93,7 +93,7 @@ A monadic operator takes one operand, on its left, as in `+/`. Monad and Dyad na
 | `⊗` [circle-times](glyphs/circle-times.qmd) | Alt-o m | outer-product | | `g⊗`, as BQN's `⌜` |
 | `⌸` [quad-equal](glyphs/quad-equal.qmd) | Alt-q = | key | | `f⌸` |
 | `⇄` [right-left-arrows](glyphs/right-left-arrows.qmd) | Alt-4 | optimize | | `f⇄` searches for the point where `f` is least, or with `"solve":$t`, where its residuals are zero. A left argument holds options |
-| `∂` [partial](glyphs/partial.qmd) | Alt-f | derivative | vjp | `f∂`. The dyad takes a cotangent on the left and gives the vector–Jacobian product |
+| `∂` [partial](glyphs/partial.qmd) | Alt-f | derivative | | `f∂` gives the Jacobian. The dyad differentiates `⍺ f ⍵` with respect to `⍵` |
 
 ## Dyadic operators
 

@@ -22,7 +22,8 @@ jobs:
         with:
           shared-key: native
       - run: grep -m1 'model name' /proc/cpuinfo
-      - run: cargo test
+      # With `BASEDPL_COSTS`, the speed tests here and in the `wasm` job log every case's cost, which `basedpl.bpltests.logged_costs` reads.
+      - run: BASEDPL_COSTS=1 cargo test
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -46,4 +47,4 @@ jobs:
       - run: cargo wasm --strip
       - run: node --test tests/wasm.mjs
       - run: grep -m1 'model name' /proc/cpuinfo
-      - run: node --no-liftoff --test tests/wasm-speed.mjs
+      - run: BASEDPL_COSTS=1 node --no-liftoff --test tests/wasm-speed.mjs

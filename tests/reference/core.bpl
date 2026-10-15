@@ -295,12 +295,12 @@ M←["r1" "r2";"xx" "yy"]:[2 0⋄0 4]ₓ
 ⍝ axis-complex-parts — Complex decomposition adds an unkeyed axis after the original axes
 ∨"first" "second":3j4 5j12   ⍝ "first" "second":[3 4⋄5 12]
 
-⍝ axis-gradient — VJP aligns output labels and preserves input coordinate labels
+⍝ axis-gradient — the Jacobian keeps the keys of the result and of the argument
 f←[1 2 3]ₓ↣⌻
 g←⊂[1 2 0⋄1 0 2]ₓ ↣⌻
-[("bb" "aa":[20 10]ₓ) f∂ ("aa" "bb":[1 2]ₓ);g∂⊂"xx" "yy":[3 4]ₓ]
+[f∂ ("aa" "bb":[1 2]ₓ);g∂⊂"xx" "yy":[3 4]ₓ]
 ⍝ =>
-[["aa":80 "bb":280]ₓ ⊂["xx":6 "yy":8]ₓ]
+[(["aa" "bb";"aa" "bb"]:[8 0⋄0 14]ₓ) ⊂["xx":6 "yy":8]ₓ]
 
 ⍝ axis-contract-missing — Labelled contractions require the same key set, including singletons
 ("aa":1)+.×("bb":2)
@@ -812,12 +812,30 @@ m←[1 2 3⋄4 5 6]
 ⍝ — A vector frame aligns with the leading matrix axis
 1 2 +⍤0 [2 3]⍴0   ⍝ [1 1 1⋄2 2 2]
 
+⍝ — A pervasive function under nested Rank pairs each level's frames
+x←2 3⍴⍳6 ⋄ m←[10 20 30⋄40 50 60⋄70 80 90]
+x(-⍤1)⍤2 1⊢m
+⍝ =>
+3 2 3⍴¯10 ¯19 ¯28 ¯7 ¯16 ¯25 ¯40 ¯49 ¯58 ¯37 ¯46 ¯55 ¯70 ¯79 ¯88 ¯67 ¯76 ¯85
+
+⍝ — Keyed frames align by key under Rank, and a missing key fills
+x←"a" "b":[1 2⋄3 4] ⋄ y←"a" "c":[10 20⋄30 40] ⋄ x(+⍤1)y   ⍝ "a" "b" "c":[11 22⋄3 4⋄30 40]
+
+⍝ — A keyed vector cell keeps its keys on the result's cell axis
+r←("p" "q":10 20)(+⍤1)2 2⍴⍳4 ⋄ r.[∞ "q"]   ⍝ 21 23
+
+⍝ — An empty frame keeps its shape under a pervasive function
+⍴(0 3⍴0)+⍤1[1 2 3]   ⍝ [0 3]ₓ
+
 ⍝ — An empty frame whose call on the prototype cell fails gives an empty result, as in J
 ⍬ ({⍺√⍵}⍤0) ⍬   ⍝ ⍬
 
 ⍝ — That empty result keeps the frame's shape
 m←(0 3)⍴0
 ⍴ m ({⍺√⍵}⍤0) m   ⍝ [0 3]ₓ
+
+⍝ — A pervasive function gives the same empty result, at an outer or an inner level
+[⍴(0 2⍴0)(+⍤1)0 3⍴0;⍴(2 0 2⍴0)((+⍤1)⍤2 1)2 3⍴0]   ⍝ [[0]ₓ;[2 0]ₓ]
 
 ⍝ — Frames that don't agree still raise an error when one is empty
 ⍬ ({⍺√⍵}⍤0) ⍳3
@@ -1861,8 +1879,8 @@ f←[1 2 3]ₓ↣⌻ ⋄ f∂∂2ₓ   ⍝ 6ₓ
 ⍝ — Differentiating beyond the polynomial's degree gives exact zero
 f←[1 2 3]ₓ↣⌻ ⋄ f∂∂∂2ₓ   ⍝ 0ₓ
 
-⍝ — Dyadic derivative weights each output derivative by its cotangent
-f←[1 2 3]ₓ↣⌻ ⋄ [10 20]ₓ f∂ [1 2]ₓ   ⍝ [80 280]ₓ
+⍝ — A vector of points gives the Jacobian, which is diagonal
+f←[1 2 3]ₓ↣⌻ ⋄ f∂ [1 2]ₓ   ⍝ [8 0⋄0 14]ₓ
 
 ⍝ — Differentiate directly from the factored representation
 f←[2ₓ;[1 3]ₓ]↣⌻ ⋄ f∂2ₓ   ⍝ 0ₓ
@@ -1870,59 +1888,203 @@ f←[2ₓ;[1 3]ₓ]↣⌻ ⋄ f∂2ₓ   ⍝ 0ₓ
 ⍝ — A multivariate gradient retains the coordinate enclosure
 f←⊂[1 2 0⋄1 0 2]ₓ ↣⌻ ⋄ f∂⊂[3 4]ₓ   ⍝ ⊂[6 8]ₓ
 
-⍝ — A unit cotangent scales the multivariate gradient
-f←⊂[1 2 0⋄1 0 2]ₓ ↣⌻ ⋄ 2ₓ(f∂)⊂[3 4]ₓ   ⍝ ⊂[12 16]ₓ
+⍝ — The left argument passes to the function, and ∂ differentiates with respect to the right
+3 {⍺×⍵×⍵}∂ 2   ⍝ 12
 
 ⍝ — A shared unit coordinate sums the partial derivatives
 f←⊂[1 2 0⋄1 0 2]ₓ ↣⌻ ⋄ f∂3ₓ   ⍝ 12ₓ
 
-⍝ — Multiple polynomial outputs contribute to one unit-input VJP
-f←[1 2⋄3 4]ₓ↣⌻ ⋄ [10 20]ₓ f∂ 3ₓ   ⍝ 100ₓ
+⍝ — Two polynomials give one derivative each
+f←[1 2⋄3 4]ₓ↣⌻ ⋄ f∂ 3ₓ   ⍝ [2 4]ₓ
 
-⍝ — Assigning f∂ attaches a hand-written derivative, which the monadic derivative calls
-r←{⍵×⍵} ⋄ r∂←{⍺←1 ⋄ ⍺×2×⍵} ⋄ r∂3   ⍝ 6
+⍝ — Assigning f∂ attaches a hand-written JVP rule, which the derivative calls with `⍺` as the direction
+r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ r∂3   ⍝ 6
 
-⍝ — The dyadic derivative passes its cotangent to the attached derivative
-r←{⍵×⍵} ⋄ r∂←{⍺←1 ⋄ ⍺×2×⍵} ⋄ 10 r∂ 3   ⍝ 60
+⍝ — Inside another function, an attached rule gives the call's derivative
+r←{⍵×⍵} ⋄ r∂←{⍺×7} ⋄ {1+r ⍵}∂3   ⍝ 7
 
 ⍝ — A function with an attached derivative applies the function itself
-r←{⍵×⍵} ⋄ r∂←{⍺←1 ⋄ ⍺×2×⍵} ⋄ r 3   ⍝ 9
+r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ r 3   ⍝ 9
 
 ⍝ — The attached derivative replaces the polynomial's own
-f←[1 2 3]ₓ↣⌻ ⋄ f∂←[0 0 5]ₓ↣⌻ ⋄ f∂3ₓ   ⍝ 45ₓ
+f←[1 2 3]ₓ↣⌻ ⋄ f∂←{⍺×[0 0 5]ₓ⌻⍵} ⋄ f∂3ₓ   ⍝ 45ₓ
 
 ⍝ — A higher order differentiates the attached derivative
-f←[1 2 3]ₓ↣⌻ ⋄ f∂←[0 0 5]ₓ↣⌻ ⋄ f∂∂3ₓ   ⍝ 30ₓ
+f←[1 2 3]ₓ↣⌻ ⋄ f∂←{⍺×[0 0 5]ₓ⌻⍵} ⋄ f∂∂3ₓ   ⍝ 30ₓ
 
 ⍝ — The inverse inverts the function, not its derivative
-k←3× ⋄ k∂←{⍺←1 ⋄ 3×⍺} ⋄ k⁻¹ 6   ⍝ 2
+k←3× ⋄ k∂←{3×⍺} ⋄ k⁻¹ 6   ⍝ 2
+
+⍝ — A rule describes a function of one argument, so ∂ through a call with two gives an error
+r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ 10 r∂ 3
+⍝ error: DOMAIN ERROR
+
+⍝ — The same holds for a call with two arguments inside other code that ∂ differentiates
+r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ {10 r ⍵}∂ 3
+⍝ error: DOMAIN ERROR
+
+⍝ — A call with two arguments runs as usual where ∂ needs no derivative through it
+r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ [10 r 3; {(10 r 3)+⍵}∂ 2]   ⍝ [9; 1]
+
+⍝ — Binding the left argument first gives a function of one argument, which can take a rule
+r←{⍵×⍵} ⋄ bound←10↣r ⋄ bound∂←{⍺×2×⍵} ⋄ bound∂3   ⍝ 6
 
 ⍝ — A derivative must be a function
 f←{⍵×⍵} ⋄ f∂←3
 ⍝ error: DOMAIN ERROR
 
-⍝ — A dfn has no derivative of its own
-{⍵×⍵}∂3
+⍝ — A dfn differentiates through the primitives it calls
+{⍵×⍵}∂3   ⍝ 6
+
+⍝ — Third derivatives nest three levels of ∂
+{⍵×⍵×⍵}∂∂∂2   ⍝ 6
+
+⍝ — Nested ∂ gives a mixed second derivative once
+{⍵₀×⍵₁}∂∂ 2 3   ⍝ [0 1⋄1 0]
+
+⍝ — A Hessian–vector product differentiates a gradient along a direction
+x←1 2 ⋄ v←1 0 ⋄ rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x} ⋄ {rosen∂ x+⍵×v}∂0   ⍝ 402 ¯400
+
+⍝ — With more than one number, ∂ runs the function once and transposes its record: a gradient
+{+/⍵×⍵}∂ 1 2 3   ⍝ 2 4 6
+
+⍝ — Reverse over reverse gives a Hessian
+rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x} ⋄ {rosen∂ ⍵}∂ 1 2   ⍝ [402 ¯400⋄¯400 200]
+
+⍝ — A Jacobian with no more results than numbers takes one transpose for each result
+cart←{[r t]←⍵ ⋄ [r×2○t; r×1○t]} ⋄ (cart∂ 2 0.5) - [2○0.5 ¯2×1○0.5⋄1○0.5 2×2○0.5]   ⍝ [0 0⋄0 0]
+
+⍝ — A Jacobian with more results than numbers evaluates the record once for each number
+{(⍵×⍵),+/⍵}∂ 1 2   ⍝ [2 0⋄0 4⋄1 1]
+
+⍝ — A gradient over a nested argument has its structure
+p←[1 2;3] ⋄ {+/⍵₀×⍵₁}∂ p   ⍝ [[3 3] 3]
+
+⍝ — A gradient keeps its argument's keys
+{+/⍵×⍵}∂ "a" "b":3 4   ⍝ ["a":6 "b":8]
+
+⍝ — Exact arguments give exact gradients
+{+/⍵×⍵}∂ [1 2 3]ₓ   ⍝ [2 4 6]ₓ
+
+⍝ — Copies transpose to sums: fill, rotation, replication and windows
+[{+/3↑⍵}∂ 1 2;{+/2⌽⍵×⍳3}∂ 1 2 3;{+/2 0 3#⍵}∂ 1 2 3;{+/,2↕⍵}∂ 1 2 3]   ⍝ [1 1;0 1 2;2 0 3;1 2 1]
+
+⍝ — Under and selective assignment transpose through what they write
+[{+/(10×)@0 2⊢⍵}∂ 1 2 3;{x←⍵ ⋄ x.[1]←0 ⋄ +/x×x}∂ 1 2 3]   ⍝ [10 1 10;2 0 6]
+
+⍝ — Folds, scans and products have rules that transpose
+[{+/+\⍵}∂ 1 2 3;{×/⍵}∂ 2 3 4;{⌈/⍵}∂ 3 1 4;{+/(2 2⍴⍵)+.×1 2}∂ 1 2 3 4]   ⍝ [3 2 1;12 8 6;0 0 1;1 2 1 2]
+
+⍝ — The function runs once, so a random draw is the same for every result
+j←{⍵×¿0}∂ 1 2 ⋄ (0 0⌷j)=1 1⌷j   ⍝ $t
+
+⍝ — Catenating a number dual keeps its tangent
+{x←1 2×⍵ ⋄ +/x,+/x}∂ 1   ⍝ 6
+
+⍝ — ∂ strips its tangents from a value that its function wrote to an outer name
+s←0 ⋄ f←{s+←⍵×2 ⋄ ⍵×⍵} ⋄ _←f∂3 ⋄ s×10   ⍝ 60
+
+⍝ — An exact argument gives an exact derivative
+{⍵×⍵}∂3ₓ   ⍝ 6ₓ
+
+⍝ — A rational argument gives a rational derivative
+{⍵×⍵}∂2ᵣ3   ⍝ 4ᵣ3
+
+⍝ — A 32-bit argument gives a 32-bit derivative
+{⍵×⍵}∂3ₛ   ⍝ 6ₛ
+
+⍝ — Under with a predicate differentiates through the selection
+{+/(2×)@[0<⊢] ⍵}∂ ¯1 2 3   ⍝ 1 2 2
+
+⍝ — Under with positions differentiates through the selection
+{+/(2×)@[1 2] ⍵}∂ 5 5 5   ⍝ 1 2 2
+
+⍝ — Selective assignment keeps the tangent of the value it writes
+{x←⍵ ⋄ x.[1]←10×x₁ ⋄ +/x}∂ 1 2 3   ⍝ 1 10 1
+
+⍝ — A keyed argument gives a keyed gradient
+{+/⍵×⍵}∂ "a" "b":1 2   ⍝ ["a":2 "b":4]
+
+⍝ — A record argument gives a record gradient
+p←["a":1 "b":2] ⋄ {(⍵.a)×⍵.b}∂ p   ⍝ ["a":2 "b":1]
+
+⍝ — Rank and Each with dfn operands transpose through each call
+[{+/,{(+/⍵)×⍵}⍤1⊢⍵}∂ [1 2⋄3 4]; {+/{⍵×⍵}¨⍵}∂ 1 2 3]   ⍝ [[6 6⋄14 14]; 2 4 6]
+
+⍝ — A transpose's transpose reads the cotangent transposed, and a gradient over a nested argument keeps its nesting
+[{+/,(⍉⍵)×⍵}∂ [1 2⋄3 4]; {+/(⍵₀)×⍵₁}∂ [2;3 4]]   ⍝ [[2 6⋄4 8]; [7; 2 2]]
+
+⍝ — A 32-bit argument gives a 32-bit gradient through a reversal
+{+/⌽⍵×⍵}∂ 32•float 1 2 3   ⍝ [2 4 6]ₛ
+
+⍝ — A gradient with respect to coefficients pairs each polynomial with its point, as ⌻ does
+[{+/⍵⌻2}∂ [1 2⋄3 4]; {+/,⍵⌻1 2}∂ [1 2⋄3 4]; {+/,⍵⌻[1 2⋄3 4]}∂ 1 2]   ⍝ [[1 2⋄1 2]; [1 1⋄1 2]; 4 10]
+
+⍝ — Scans by × have zero-safe rules, and scans by ⌈ and ⌊ follow the item that gives each running extreme, the earlier of any ties
+[{+/×\⍵}∂ 1 2 3; {+/×\⍵}∂ 1 0 3; {+/⌈\⍵}∂ 1 3 2 3; {+/⌊\⍵}∂ 3 1 2 0; {×\1 2 3×⍵}∂ 1]   ⍝ [9 4 2; 1 4 0; 1 3 0 0; 1 2 0 1; 1 4 18]
+
+⍝ — Scans along a matrix's axes follow the same rules in each lane: a tie keeps the earlier item, and a running product is zero-safe
+[{+/,⌈⍀⍵}∂ [1 3⋄2 1⋄2 4]; {+/,×⍀⍵}∂ [1 2⋄3 4]; {+/,×⍀⍵}∂ [0 2⋄3 0]; {+/,⌊\⍵}∂ [3 1 2⋄0 5 0]]   ⍝ [[1 2⋄2 0⋄0 1]; [4 5⋄1 2]; [4 1⋄0 2]; [1 2 0⋄3 0 0]]
+
+⍝ — A large argument takes one pass, with whole-array tangents
+x←0.001×⍳200000 ⋄ ({1○x+⍵}∂0)≡2○x   ⍝ $t
+
+⍝ — A sum's tangent is the sum of the tangents
+{+/⍵×⍵}∂ 1 2 3   ⍝ 2 4 6
+
+⍝ — A running sum's Jacobian is lower triangular
+{+\⍵}∂ 1 2 3   ⍝ [1 0 0⋄1 1 0⋄1 1 1]
+
+⍝ — An inner product's tangent comes from the product rule
+m←[1 2⋄3 4] ⋄ {+/,m+.×⍵}∂ 1 1   ⍝ 4 6
+
+⍝ — An outer product's arguments broadcast before the pervasive rule applies
+{+/,⍵×⊗⍵}∂ 1 2   ⍝ 6 6
+
+⍝ — The polar-to-Cartesian Jacobian has determinant r
+cart←{[r t]←⍵ ⋄ [r×2○t; r×1○t]} ⋄ -.×cart∂ 2 0.5   ⍝ 2
+
+⍝ — A product's tangent at a zero item is the product of the others
+{×/⍵}∂ 2 0 4   ⍝ 0 8 0
+
+⍝ — A product along the first axis differentiates each column
+{×⌿⍵}∂ [2 3⋄4 5]   ⍝ [2 2 2]⍴4 0 2 0 0 5 0 3
+
+⍝ — A maximum's tangent is the tangent of its first largest item
+{⌈/⍵}∂ 1 5 5 2   ⍝ 0 1 0 0
+
+⍝ — A minimum along the first axis takes each column's smallest item
+{⌊⌿⍵}∂ [1 5⋄4 2]   ⍝ [2 2 2]⍴1 0 0 0 0 0 0 1
+
+⍝ — Complex arguments are outside the subset
+{|⍵}∂3j4
+⍝ error: UNSUPPORTED
+
+⍝ — A system function is outside the subset
+{•ucs ⍵}∂3
+⍝ error: UNSUPPORTED
+
+⍝ — ∂ needs a numeric result
+{"ab"}∂2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Negative exponents cannot be converted to a coefficient vector
 ⌻⁻¹⊂[1 ¯1⋄]
 ⍝ error: DOMAIN ERROR
 
-⍝ — The cotangent must match the unit output's structure
-(⊂1 2)(1 2↣⌻∂)3
+⍝ — A nested result needs a number argument
+{⊂⍵}∂ 1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — An infinite coefficient follows IEEE
 ⌻1 ∞   ⍝ [∞ [¯0]]
 
-⍝ — Monadic derivative requires unit output, not a vector of evaluations
-1 2↣⌻∂1 2
-⍝ error: RANK ERROR
+⍝ — A vector result gives the Jacobian
+1 2↣⌻∂1 2   ⍝ [2 0⋄0 2]
 
-⍝ — VJP requires one cotangent for each output
+⍝ — A bound function takes one argument under ∂ too
 1(1 2↣⌻∂)1 2
-⍝ error: LENGTH ERROR
+⍝ error: SYNTAX ERROR
 
 ⍝ — The coordinate count must match the exponent table's variables
 (⊂[1 2 3⋄])⌻⊂1 2 3
@@ -1934,13 +2096,13 @@ f←{⍵×⍵} ⋄ f∂←3
 
 ⍝⍝ Optimizing
 
-⍝ — Without a derivative, the search runs Nelder–Mead from the start [atol=1e-6]
+⍝ — ∂ differentiates the cost, so the search runs L-BFGS from the start [atol=1e-6]
 rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
 rosen⇄ ¯1.2 1   ⍝ 1 1
 
-⍝ — A derivative that f∂←g attaches makes the search run L-BFGS, which needs fewer evaluations
+⍝ — An attached JVP rule gives the gradient that L-BFGS follows
 rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
-rosen∂←{⍺←1 ⋄ [x y]←⍵ ⋄ ⍺×[(¯2×1-x) - 400×x×y-⊼x; 200×y-⊼x]}
+rosen∂←{[x y]←⍵ ⋄ +/⍺×[(¯2×1-x) - 400×x×y-⊼x; 200×y-⊼x]}
 (["report":$t] rosen⇄ ¯1.2 1).evaluations<100   ⍝ $t
 
 ⍝ — Bounds make the search run Powell's method within them [atol=1e-6]
@@ -1966,8 +2128,12 @@ lo←["gap":0 "margin":0] ⋄ hi←["gap":20 "margin":40]
 ["gap":6 "margin":12]
 
 ⍝ — The report gives the evaluations and whether the search converged before reaching their limit
-r←["evaluations":10 "report":$t] {+/⊼⍵-3}⇄ 1 2
+r←["method":"nelder-mead" "evaluations":10 "report":$t] {+/⊼⍵-3}⇄ 1 2
 [r.evaluations r.converged]   ⍝ 10ₓ $f
+
+⍝ — A method that uses no derivative never differentiates the cost, so a call with two arguments of a function with a rule doesn't stop the search [atol=1e-4]
+r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵}
+["method":"nelder-mead"] {+/(10 r ⍵-2)}⇄ 0 0   ⍝ 2 2
 
 ⍝ — A start of 32-bit floats searches and answers in 32-bit floats
 •storage {⊼⍵-0.5}⇄ 1ₛ   ⍝ "float32"
@@ -1976,8 +2142,8 @@ r←["evaluations":10 "report":$t] {+/⊼⍵-3}⇄ 1 2
 {⊼⍵}⇄ 1 2
 ⍝ error: DOMAIN ERROR
 
-⍝ — L-BFGS needs a derivative
-["method":"l-bfgs"] {+/⊼⍵}⇄ 1 2
+⍝ — L-BFGS needs a gradient, which ∂ can't take through a system function
+["method":"l-bfgs"] {+/⊼•float ⍵}⇄ 1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Differential evolution needs finite bounds
@@ -2012,9 +2178,9 @@ data←1 2 3 4 ⋄ [data↣{+/⊼⍺-⍵}⇄ 0; ["method":"powell"] data↣{+/�
 f←{[x y]←⍵ ⋄ [(⊼x)+(⊼y)-4 y-x-1]}
 ["solve":$t] f⇄ 1 0   ⍝ 1.8228756555322954 0.8228756555322954
 
-⍝ — An attached derivative gives Levenberg–Marquardt its Jacobian through vector–Jacobian products [atol=1e-10]
+⍝ — An attached derivative gives Levenberg–Marquardt its Jacobian through JVPs [atol=1e-10]
 f←{[x y]←⍵ ⋄ [(⊼x)+(⊼y)-4 y-x-1]}
-f∂←{[x y]←⍵ ⋄ [u v]←⍺ ⋄ [(2×u×x)-v (2×u×y)+v]}
+f∂←{[x y]←⍵ ⋄ [p q]←⍺ ⋄ [(2×x×p)+2×y×q; q-p]}
 ["solve":$t] f⇄ 1 0   ⍝ 1.8228756555322954 0.8228756555322954
 
 ⍝ — More residuals than variables give the point where the sum of their squares is least [atol=1e-6]
@@ -2035,14 +2201,14 @@ m←[4 1⋄1 3] ⋄ b←1E8×1 2
 m←[4 1⋄1 3] ⋄ b←1 2
 (["solve":$t "linear":$t "method":"cg"] {(m+.×⍵)-b}⇄ 0 0) - b⌹m   ⍝ 0 0
 
-⍝ — An attached derivative gives the transpose products for least squares, and the report gives the residual's norm [atol=1e-10]
+⍝ — An attached JVP rule, transposed, gives the products with the transpose for least squares, and the report gives the residual's norm [atol=1e-10]
 t←[1 0⋄0 1⋄1 1] ⋄ c←1 2 4
-g←{(t+.×⍵)-c} ⋄ g∂←{⍺+.×t}
+g←{(t+.×⍵)-c} ⋄ g∂←{t+.×⍺}
 r←["solve":$t "linear":$t "report":$t] g⇄ 0 0
 [r.x-c⌹t; r.value]   ⍝ [0 0; 0.5773502691896258]
 
-⍝ — Least squares without a derivative has no transpose products
-["solve":$t "linear":$t] {([1 0⋄0 1⋄1 1]+.×⍵)-1 2 4}⇄ 0 0
+⍝ — Least squares needs products with the transpose, which ∂ can't give through a system function
+["solve":$t "linear":$t] {([1 0⋄0 1⋄1 1]+.×•float ⍵)-1 2 4}⇄ 0 0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Linear needs solve
@@ -2728,6 +2894,15 @@ avg←+/÷≢ ⋄ avg [1 2 4]ₓ   ⍝ 7r3
 ⍝ — Multiplication above i64 maximum promotes without losing precision
 9223372036854775807ₓ×2ₓ   ⍝ 18446744073709551614ₓ
 
+⍝ — In an array, a product above i64 maximum promotes without losing precision, beside products that fit
+[9223372036854775807 1 2]ₓ×2ₓ   ⍝ 18446744073709551614ₓ 2ₓ 4ₓ
+
+⍝ — A keyed sum above i64 maximum promotes and keeps its keys
+["a":9223372036854775807ₓ "b":1ₓ]+["a":1ₓ "b":2ₓ]   ⍝ ["a":9223372036854775808ₓ "b":3ₓ]
+
+⍝ — A keyed difference below i64 minimum promotes, aligning keys that come in another order
+["a":¯9223372036854775808ₓ "b":5ₓ]-["b":2ₓ "a":1ₓ]   ⍝ ["a":¯9223372036854775809ₓ "b":3ₓ]
+
 ⍝ — An exact sum remains exact at the i64 boundary
 +/[9223372036854775807 1 ¯1]ₓ   ⍝ 9223372036854775807ₓ
 
@@ -3277,7 +3452,7 @@ v←⍳1000 ⋄ +/v+v   ⍝ 999000
 ⍝ — Structure keeps float storage, and an empty array takes its prototype's storage
 •storage¨[⌽⍳3;2 3⍴⍳6;0 3⍴0;0⍴1ₓ]   ⍝ "float64" "float64" "float64" "integer"
 
-⍝ — A chain of calls on a large array, across runs and parentheses, gives the result that each row gives, and its fold gives the fold of that result
+⍝ — Fused calls on a large array, across runs and parentheses, where one call joins two fused graphs, across assignments, through a shared intermediate, through a long iteration, and through both tines of a fork, give the result that each row gives, and their fold gives the fold of that result
 x←¿1000000⍴0
 x.[[0 1 2 3]]←[∞ ¯∞ $n 0]
 m←[1000 1000]⍴x
@@ -3290,11 +3465,30 @@ h←{0ₛ⌈1ₛ⌊0.5ₛ+1.2ₛ×⍵-0.5ₛ}
 k←{0⌈ 1⌊ 0.5+ 1.2× ⍵-0.5}
 p←{((⍵-0.5)×1.2)⌈0}
 q←{(⍵-0.5)×⍵}
+j←{(⍵-0.5)×⍵+0.5}
+u←{(⍵-0.5)×(⍵+0.5)×⍵×2}
+r←{(⍵>0.5)+⍵×2}
+w←{(⍺-0.5ₛ)×⍵+0.5}
+c←{(⍵×2)<⍵+0.5}
+d←{a←⍵-0.5 ⋄ a×a+1}
+e←{t←⍵×0.5 ⋄ t×1-t}
+v←{b←⍵ ⋄ a←b+1 ⋄ b←0 ⋄ a}
 [(f m)≡ f⍤1 m;(m g n)≡ m g⍤1 n;(0.5<m)≡ {0.5<⍵}⍤1 m;(h s)≡ h⍤1 s;(k m)≡ k⍤1 m;(p m)≡ p⍤1 m;(q m)≡ q⍤1 m]
 [(+/0.5<m)≡{+/⍵}0.5<m;(+⌿0.5<m)≡{+⌿⍵}0.5<m;(∨/m>0.999)≡{∨/⍵}m>0.999;(+/0⌈1⌊0.5+1.2×m-0.5)≡{+/⍵}0⌈1⌊0.5+1.2×m-0.5;(⌈⌿m-0.5)≡{⌈⌿⍵}m-0.5;(+/0.5ₛ<s)≡{+/⍵}0.5ₛ<s;(+/y×2)≡{+/⍵}y×2;(+⌿s×2)≡{+⌿⍵}s×2]
+[(j m)≡ j⍤1 m;(u m)≡ u⍤1 m;(r m)≡ r⍤1 m;(s w m)≡ s w⍤1 m;(+/(m-0.5)×m+0.5)≡{+/⍵}(m-0.5)×m+0.5;(c m)≡ c⍤1 m;(+/(m×2)<m+0.5)≡{+/⍵}(m×2)<m+0.5]
+[(d m)≡ d⍤1 m;(e m)≡ e⍤1 m;(v m)≡ v⍤1 m;({⍵+0.5}⍣100⊢m)≡{⍵+0.5}⍣100⍤1⊢m]
+[((⊢÷+/) 0.5×y)≡{⍵÷+/⍵}0.5×y;((⊢-+/) 0.5×y)≡{⍵-+/⍵}0.5×y;((⌈/-+/) 0.5×y)≡{(⌈/⍵)-+/⍵}0.5×y;((+/-+/) 0.5×y)≡{(+/⍵)-+/⍵}0.5×y;((+/)≡(+/)) 0.5×y]
 ⍝ =>
 $t $t $t $t $t $t $t
 $t $t $t $t $t $t $t $t
+$t $t $t $t $t $t $t
+$t $t $t $t
+$t $t $t $t $t
+
+⍝ — With •prefs ["fusion":$t], a call that computes a pending argument reports its glyph and position
+•prefs ["fusion":$t] ⋄ x←1.5+¿1000000⍴0 ⋄ r←⍴⌽x ⋄ •prefs ["fusion":$f] ⋄ r
+[1000000]ₓ
+⍝ ⎕: fusion ends at ⌽ (<input>:1:46)
 
 ⍝⍝ Numeric storage
 
@@ -4861,6 +5055,9 @@ f←{⍵×+⍵}
 
 ⍝ — A complex result with no imaginary part in any item has float storage
 •storage¨[1j2 2×1j¯2 2;1j2 2×1j2 2]   ⍝ "float64" "complex128"
+
+⍝ — A real part too small to change 1 still changes the smaller part of √(1+z²), √(1-z²) and √(z²-1). Complex-step differentiation reads 4○'s derivative at 0.4, 0.4÷√1.16, from its imaginary part
+1e200×[(∨4○0.4j1e¯200)₁;(∨0○1e¯200j0.4)₁;(∨(4○⁻¹)1e¯200j0.4)₀]   ⍝ 0.3713906763541037 ¯0.3713906763541037 0.3713906763541037
 
 ⍝ — Reals whose results are complex for some items give what each item gives alone
 [⍟¯1 2.5;2√¯4 9.5;1○⁻¹2 0.5]≡[(⍟¯1),⍟2.5;(2√¯4),2√9.5;(1○⁻¹2),1○⁻¹0.5]   ⍝ $t

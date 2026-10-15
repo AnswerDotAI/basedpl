@@ -323,10 +323,10 @@ def test_math_construction():
     np.testing.assert_array_equal(roots.undo([2, [1, 3]]), [6, -8, 2])
     p = polyval.left([1, 2, 3])
     assert p.derivative(2).py == 14 and p.derivative.derivative(2).py == 6
-    np.testing.assert_array_equal(p.vjp([10, 20], [1, 2]), [80, 280])
+    np.testing.assert_array_equal(p.derivative([1, 2]), [[8, 0], [0, 14]])
     rosen = bpl('{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}')
-    vjp = bpl('{⍺←1 ⋄ [x y]←⍵ ⋄ ⍺×[(¯2×1-x) - 400×x×y-⊼x; 200×y-⊼x]}')
-    r = rosen.derivative(vjp)
+    jvp = bpl('{[x y]←⍵ ⋄ +/⍺×[(¯2×1-x) - 400×x×y-⊼x; 200×y-⊼x]}')
+    r = rosen.derivative(jvp)
     assert r([-1, 2]).py == 104
     np.testing.assert_array_equal(r.derivative([-1, 2]), [396, 200])
     np.testing.assert_allclose(rosen.optimize([-1.2, 1]), [1, 1], atol=1e-6)

@@ -19,7 +19,7 @@ impl serde::Serialize for Json<'_> {
                 if let Some(b) = n.as_bool() { return s.serialize_bool(b); }
                 if let Some(i) = n.as_integer() { return s.serialize_i64(i); }
                 if let Some(i) = crate::json::integer(n) { return i.serialize(s); }
-                if let Some(q) = n.as_exact() { return tagged(s, "rational", [q.numer().to_string(), q.denom().to_string()]); }
+                if let Some(q) = n.exact_ref() { return tagged(s, "rational", [q.numer().to_string(), q.denom().to_string()]); }
                 if let Some(z) = n.as_complex() { return tagged(s, "complex", [z.re, z.im]); }
                 let x = n.as_float().unwrap();
                 if x.is_nan() { tagged(s, "nan", 1) }

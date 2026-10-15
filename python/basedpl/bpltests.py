@@ -319,11 +319,11 @@ def speed_costs(
     i = 0 if wasm is None else 1
     return SpeedCosts((c['section'], c['code'], c['cost'], float(c['budgets'][i]) if len(c['budgets']) > i else None) for c in rows)
 
-_LOGGED = re.compile(r'^(?:\S*Z )?(\w+) (.*): ([\d.]+|inf|NaN|Infinity), budget ([\d.]+)$')
+_LOGGED = re.compile(r'^(?:\S*Z )?(?:# )?(\w+) (.*): ([\d.]+|inf|NaN|Infinity), budget ([\d.]+)$')
 _CPU = re.compile(r'^(?:\S*Z )?model name\s*:\s*(.+?)\s*$', re.M)
 
 def logged_costs(
-    log # What a speed test prints with `<NAME>_COSTS` set, such as the log of a job in the `Speed` workflow
+    log # What a speed test prints with `<NAME>_COSTS` set, such as the log of a job in the `Test` or `Speed` workflow
 ):
     "The rows that `speed_costs` gives, read from `log`, with the CPU model that the log reports as their `cpu`. A case that the log times more than once, as after a retry, gives its lowest cost."
     cpu = c[1] if (c := _CPU.search(log)) else None
@@ -352,13 +352,13 @@ class Report(str):
 
 def wasm_test(
     wasm, # A directory that `cargo wasm --out` wrote
-    speed=False, # Run `tests/wasm-speed.mjs`, with V8's `--no-liftoff` as CI runs it, in place of `tests/wasm.mjs`?
+    speed=False, # Run `tests/wasm-speed.mjs`, with V8's `--no-liftoff` and `BASEDPL_COSTS` as CI runs it, in place of `tests/wasm.mjs`? Its report then lists every case's cost, which `logged_costs` reads
     timeout=None # Seconds before the run stops
 ):
-    "Run `tests/wasm.mjs` or `tests/wasm-speed.mjs` under `node --test` against the browser build in `wasm`, as CI runs them, and give the runner's report. Only the `node` process gets `BASEDPL_WASM`. A failing test raises `ValueError` with the report."
+    "Run `tests/wasm.mjs` or `tests/wasm-speed.mjs` under `node --test` against the browser build in `wasm`, as CI runs them, and give the runner's report. Only the `node` process gets `BASEDPL_WASM` and `BASEDPL_COSTS`. A failing test raises `ValueError` with the report."
     test = _SPEED.with_name('wasm-speed.mjs' if speed else 'wasm.mjs')
     p = subprocess.run(['node', *(['--no-liftoff'] if speed else []), '--test', str(test)], cwd=_SPEED.parents[1], capture_output=True,
-                       text=True, timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(Path(wasm).expanduser())))
+                       text=True, timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(Path(wasm).expanduser())) | (dict(BASEDPL_COSTS='1') if speed else {}))
     report = Report(p.stdout + p.stderr)
     if p.returncode: raise ValueError(report)
     return report

@@ -1,5 +1,7 @@
 use crate::{array::{agreed, generated_len, Layout}, ErrorKind, Value};
+use std::borrow::Cow;
 
+#[derive(Clone)]
 pub(crate) enum Mapping {
     Single,
     Linear(usize),
@@ -116,9 +118,13 @@ impl Agreement {
     }
     /// The pair of items at position `i` of the result. A missing entry reads as its own array's prototype.
     pub fn values(&self, left: Option<&Value>, right: &Value, i: usize) -> (Option<Value>, Value) {
-        if self.len == 0 { let item = |a: &Value| if a.is_empty() { a.prototype() } else { a.at(0) }; return (left.map(item), item(right)); }
-        let x = left.map(|a| self.left.get(i).map_or_else(|| a.prototype(), |j| a.at(j)));
-        let y = self.right.get(i).map_or_else(|| right.prototype(), |j| right.at(j));
-        (x, y)
+        let (x, y) = self.values_ref(left, right, i);
+        (x.map(Cow::into_owned), y.into_owned())
+    }
+    /// `values`, borrowing each item that its argument holds as a value.
+    pub fn values_ref<'a>(&self, left: Option<&'a Value>, right: &'a Value, i: usize) -> (Option<Cow<'a, Value>>, Cow<'a, Value>) {
+        if self.len == 0 { let item = |a: &'a Value| if a.is_empty() { Cow::Owned(a.prototype()) } else { a.at_ref(0) }; return (left.map(item), item(right)); }
+        let item = |a: &'a Value, j: Option<usize>| j.map_or_else(|| Cow::Owned(a.prototype()), |j| a.at_ref(j));
+        (left.map(|a| item(a, self.left.get(i))), item(right, self.right.get(i)))
     }
 }

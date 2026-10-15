@@ -160,6 +160,10 @@ pub(crate) enum Kind { Boolean, Integer(Width), Float(FloatWidth), Complex(Compl
 pub(crate) enum Widening { Arrays, Items }
 
 impl Kind {
+    /// Whether this kind holds exact numbers: `None` for characters, which aren't numbers.
+    pub(crate) fn exact(self) -> Option<bool> {
+        match self { Self::Boolean | Self::Integer(_) => Some(true), Self::Float(_) | Self::Complex(_) => Some(false), Self::Character => None }
+    }
     /// The kind that holds the items of both kinds under `widening`. Characters and numbers share none. Integers of two widths share the narrowest width that holds both. Exact integers stay exact beside an approximate item, so they share no compact kind with it.
     pub(crate) fn join(self, other: Self, widening: Widening) -> Option<Self> {
         use Kind::*;
@@ -186,8 +190,6 @@ impl Kind {
     }
 }
 
-/// The compact kind of `source`'s items.
-fn source_kind(source: &Value) -> Option<Kind> { match source { Value::Array(a) => a.storage().items().kind(), atom => item_kind(atom) } }
 /// The compact kind that holds `item`, if any does. An integer takes the narrowest width that holds it.
 pub(super) fn item_kind(item: &Value) -> Option<Kind> {
     match item {
@@ -300,6 +302,8 @@ impl Storage {
             Items::Values(v) => v[i].clone(),
         }
     }
+    /// Item `i`, borrowed where the storage holds values.
+    pub(super) fn item_ref(&self, i: usize) -> Cow<'_, Value> { match self.items() { Items::Values(v) => Cow::Borrowed(&v[i]), _ => Cow::Owned(self.item(i)) } }
     /// Compact storage gives its kind's zero. An empty mixed array keeps a stored prototype. A nonempty one fills its first item on first request and keeps the result.
     pub(super) fn prototype(&self) -> Value {
         if let Self::Mixed(d, memo) = self { return memo.prototype.get_or_init(|| Box::new(d[0].fill())).as_ref().clone(); }
@@ -312,8 +316,8 @@ impl Storage {
     /// Whether every number, including those in nested arrays, is exact. `None` when there are no numbers. An empty mixed array answers for its prototype.
     pub(super) fn exact(&self) -> Option<bool> {
         match self.items() {
-            Items::Booleans(_) | Items::Integers(_) => Some(true), Items::Floats(_) | Items::Complex(_) => Some(false), Items::Characters(_) => None,
-            Items::Values([]) => self.prototype().exact_domain(), Items::Values(d) => d.iter().filter_map(Value::exact_domain).reduce(|a, b| a && b)
+            Items::Values([]) => self.prototype().exact_domain(), Items::Values(d) => d.iter().filter_map(Value::exact_domain).reduce(|a, b| a && b),
+            items => items.kind().and_then(Kind::exact),
         }
     }
     /// The innermost frame that any item depends on. Mixed storage works it out on first request. An empty array answers for its prototype.
@@ -466,7 +470,15 @@ impl<'a> Items<'a> {
 
 fn number(value: &Value) -> Result<&Number, ErrorKind> { match value { Value::Number(n) => Ok(n), _ => Err(ErrorKind::Domain) } }
 /// Items copied from source arrays into a new array. The buffer takes the compact kind that its `widening` gives the nonempty sources, and widens for wider items. A mixed source, or an item that no compact kind holds, makes the buffer mixed, and it stays mixed.
-pub(crate) struct Gather { pub(super) data: Storage, kind: Option<Kind>, open: bool, widening: Widening }
+///
+/// A dual source, an array or number that `∂` is differentiating, starts a level: the buffer then copies each source's primal into one buffer and its tangent into another, and an inactive source's tangents are 0 (`derivative`). `finish` then gives a dual array. Number duals that `add` takes are repacked this way into an array dual.
+pub(crate) struct Gather { pub(super) data: Storage, kind: Option<Kind>, open: bool, widening: Widening, dual: Option<Box<Level>> }
+
+/// One level of duals in a `Gather`: the primals and the tangents of the items copied, for the `∂` call tagged `tag`. Where the tangents are records (`linear`), the tangent buffer holds their ids, counted from 1 in `records` order, and `next` is the next id.
+struct Level { tag: u32, primal: Gather, tangent: Gather, records: Option<Vec<std::sync::Arc<crate::linear::Linear>>>, next: i64 }
+
+/// The tangent of an item that isn't active at a level.
+fn zero() -> Value { Value::Number(Number::from_integer(0)) }
 
 impl Gather {
     /// A buffer for an operation's result, joining compact arrays.
@@ -474,24 +486,84 @@ impl Gather {
     /// A buffer that continues `data`, for writing into an existing array. Empty compact storage takes the kind of its first items, as joining ignores an empty compact array.
     pub(super) fn resume(data: Storage) -> Self {
         let kind = data.items().kind();
-        Self { open: kind.is_some() && data.len() == 0, kind, data, widening: Widening::Arrays }
+        Self { open: kind.is_some() && data.len() == 0, kind, data, widening: Widening::Arrays, dual: None }
     }
     pub(super) fn with_widening(sources: &[&Value], capacity: usize, widening: Widening) -> Self {
+        if let Some(tag) = sources.iter().filter_map(|v| crate::derivative::tag(v)).max() {
+            let parts: Vec<(Value, Option<Value>)> = sources.iter().map(|v| crate::derivative::split(v, tag)).collect();
+            let primals: Vec<&Value> = parts.iter().map(|(p, _)| p).collect();
+            // An inactive source's tangents are zeros, of its own kind.
+            let tangents: Vec<&Value> = parts.iter().map(|(p, t)| t.as_ref().unwrap_or(p)).collect();
+            // A record tangent copies as its ids, into a buffer of integers.
+            let symbolic = parts.iter().any(|(_, t)| t.as_ref().is_some_and(|t| t.linear().is_some()));
+            let tangent = if symbolic { Self::items(capacity) } else { Self::with_widening(&tangents, capacity, widening) };
+            let primal = Self::with_widening(&primals, capacity, widening);
+            return Self { dual: Some(Box::new(Level { tag, primal, tangent, records: symbolic.then(Vec::new), next: 1 })), ..Self::items(0) };
+        }
         // An empty compact source holds no items that could change the buffer's kind.
-        let sources: Vec<_> = sources.iter().filter(|v| !v.is_empty() || source_kind(v).is_none()).collect();
-        let mut kinds = sources.iter().map(|v| source_kind(v));
+        let sources: Vec<_> = sources.iter().filter(|v| !v.is_empty() || v.compact_kind().is_none()).collect();
+        let mut kinds = sources.iter().map(|v| v.compact_kind());
         let Some(first) = kinds.next() else { return Self { widening, ..Self::items(capacity) } };
         let kind = first.and_then(|first| kinds.try_fold(first, |k, i| k.join(i?, widening)));
-        Self { data: Storage::with_capacity(kind, capacity), kind, open: false, widening }
+        Self { data: Storage::with_capacity(kind, capacity), kind, open: false, widening, dual: None }
     }
-    pub(crate) fn len(&self) -> usize { self.data.len() }
+    pub(crate) fn len(&self) -> usize { match &self.dual { Some(level) => level.primal.len(), None => self.data.len() } }
     /// An empty buffer for an operation's items, added one at a time. It takes the kind of its first items. Each number keeps its exactness.
     pub(crate) fn items(capacity: usize) -> Self {
-        Self { data: Storage::Integers(IntBuf::I64(Vec::with_capacity(capacity))), kind: Some(Kind::Integer(Width::I64)), open: true, widening: Widening::Items
+        Self { data: Storage::Integers(IntBuf::I64(Vec::with_capacity(capacity))), kind: Some(Kind::Integer(Width::I64)), open: true, widening: Widening::Items, dual: None }
+    }
+    /// Whether a copy from `source` goes through a level of duals: the buffer has one, or `source` is a dual, which starts one.
+    fn leveled(&mut self, source: &Value) -> bool {
+        if let Some(tag) = crate::derivative::tag(source) { self.level(tag); }
+        self.dual.is_some()
+    }
+    /// Starts a level for `tag`, unless the buffer has one for `tag` or a larger tag. What the buffer holds becomes the primals, with tangents of 0. A buffer with a level for a smaller tag becomes the primals of the new level, which nests the two.
+    fn level(&mut self, tag: u32) {
+        if self.dual.as_ref().is_some_and(|level| level.tag >= tag) { return; }
+        let len = self.len();
+        let primal = std::mem::replace(self, Self::items(0));
+        let mut tangent = Self { widening: primal.widening, ..Self::items(len) };
+        tangent.fill(&zero(), len);
+        self.dual = Some(Box::new(Level { tag, primal, tangent, records: None, next: 1 }));
+    }
+    /// Runs the copy `op` on the level's primals with `source`'s primal, and on its tangents with `source`'s tangent. An inactive source appends tangents of 0, or, for a copy that `replaces` items, writes 0 where it writes.
+    fn each(&mut self, source: &Value, replaces: bool, op: impl Fn(&mut Self, &Value)) {
+        let level = self.dual.as_mut().expect("a leveled buffer");
+        let (primal, tangent) = crate::derivative::split(source, level.tag);
+        let before = level.primal.len();
+        op(&mut level.primal, &primal);
+        match tangent {
+            Some(tangent) => match tangent.linear() {
+                Some(record) => {
+                    let ids = crate::linear::ids(record, level.next);
+                    level.next += ids.len().max(1) as i64;
+                    level.records.get_or_insert_with(Vec::new).push(record.clone());
+                    op(&mut level.tangent, &ids)
+                }
+                // A buffer of record ids takes an inactive tangent as fill ids. Such a tangent is always zeros.
+                None if level.records.is_some() => op(&mut level.tangent, &crate::linear::fill_ids(&tangent)),
+                None => op(&mut level.tangent, &tangent),
+            },
+            None if replaces => op(&mut level.tangent, &zero()),
+            None => { let n = level.primal.len() - before; level.tangent.fill(&zero(), n) }
         }
     }
     /// Appends `item`.
-    pub(crate) fn add(&mut self, item: Value) { if !self.compact_fill(&item, 1) { self.mixed().push(item) } }
+    pub(crate) fn add(&mut self, item: Value) {
+        if self.leveled(&item) {
+            // An array whose tangent is a record joins as one item, the record itself, which keeps its layout (`linear::assemble`).
+            let level = self.dual.as_mut().expect("a leveled buffer");
+            let (primal, tangent) = crate::derivative::split(&item, level.tag);
+            if let Some(record) = tangent.as_ref().and_then(Value::linear).filter(|r| !r.layout.shape().is_empty()) {
+                level.records.get_or_insert_with(Vec::new);
+                level.tangent.mixed().push(Value::from_linear(record.clone()));
+                return level.primal.add(primal);
+            }
+            return self.each(&item, false, |g, s| g.add(s.clone()));
+        }
+        // A record has no items to read, so it goes into mixed storage whole (`linear`).
+        if item.linear().is_some() || !self.compact_fill(&item, 1) { self.mixed().push(item) }
+    }
     /// Makes the buffer ready for items of `kind`. An open buffer takes the kind. A compact buffer widens where its `widening` allows, and otherwise becomes mixed. A mixed buffer stays mixed.
     fn follow(&mut self, kind: Option<Kind>) {
         if self.open {
@@ -533,7 +605,8 @@ impl Gather {
     /// Copies the items of `source` in `range`.
     pub(crate) fn extend(&mut self, source: &Value, range: std::ops::Range<usize>) {
         if range.is_empty() { return; }
-        self.follow(source_kind(source));
+        if self.leveled(source) { return self.each(source, false, |g, s| g.extend(s, range.clone())); }
+        self.follow(source.compact_kind());
         if self.data.copy_slice(source.as_items(), range.clone())
             || copy_into!(&mut self.data, source.as_items(), |d, s, f| d.extend(s[range.clone()].iter().map(|&x| f(x)))) { return; }
         self.mixed().extend(source.items(range))
@@ -541,12 +614,14 @@ impl Gather {
     pub(crate) fn push(&mut self, source: &Value, i: usize) { self.extend(source, i..i + 1) }
     /// Appends the items of `source`, as joining it does. An empty compact source can't change the buffer's kind, and an empty mixed one makes the buffer mixed.
     pub(crate) fn append(&mut self, source: &Value) {
+        if self.leveled(source) { return self.each(source, false, |g, s| g.append(s)); }
         if !source.is_empty() { return self.extend(source, 0..source.len()); }
-        if source_kind(source).is_none() { self.mixed(); }
+        if source.compact_kind().is_none() { self.mixed(); }
     }
     /// Copies the items of `source` at `indices`, each in `-n..n` for `n` items. A negative index counts back from the end.
     pub(crate) fn items_at<I: Int>(&mut self, source: &Value, indices: &[I]) {
-        self.follow(source_kind(source));
+        if self.leveled(source) { return self.each(source, false, |g, s| g.items_at(s, indices)); }
+        self.follow(source.compact_kind());
         let n = source.len() as i64;
         let at = |i: I| { let i = i.to_i64(); (i + (n & (i >> 63))) as usize };
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::take(d, s, indices, f)) { return; }
@@ -555,27 +630,31 @@ impl Gather {
     /// Appends `len` items, cycling through the items of the nonempty `source`.
     pub(crate) fn cycle(&mut self, source: &Value, len: usize) {
         if len == 0 { return; }
-        self.follow(source_kind(source));
+        if self.leveled(source) { return self.each(source, false, |g, s| g.cycle(s, len)); }
+        self.follow(source.compact_kind());
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::cycle(d, s, len, f)) { return; }
         self.mixed().extend(source.elements().cycle().take(len))
     }
     /// Appends each item of the vector `source` as many times as its count. `counts` holds one count for every item or one for each item. The counts are nonnegative and sum to `total`.
     pub(crate) fn replicate(&mut self, source: &Value, counts: &[i64], total: usize) {
-        self.follow(source_kind(source));
+        if self.leveled(source) { return self.each(source, false, |g, s| g.replicate(s, counts, total)); }
+        self.follow(source.compact_kind());
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::repeat(d, s, counts, total, f)) { return; }
         let d = self.mixed();
         for (i, x) in source.elements().enumerate() { d.extend(std::iter::repeat_n(x, counts[if counts.len() == 1 { 0 } else { i }] as usize)) }
     }
     /// Copies the items of the vector `source` whose count in the Boolean `mask` is 1. `total` counts are 1.
     pub(crate) fn compress<M: Key>(&mut self, source: &Value, mask: &[M], total: usize) {
-        self.follow(source_kind(source));
+        if self.leveled(source) { return self.each(source, false, |g, s| g.compress(s, mask, total)); }
+        self.follow(source.compact_kind());
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::compress(d, mask, total, |j| f(s[j]))) { return; }
         self.mixed().extend(source.elements().zip(mask).filter(|&(_, &n)| n.key() == 1).map(|(x, _)| x))
     }
     /// Copies the cells of `source` at `rows`, each `width` items long.
     pub(crate) fn rows<R: num_traits::AsPrimitive<usize>>(&mut self, source: &Value, rows: &[R], width: usize) {
         if rows.is_empty() || width == 0 { return; }
-        self.follow(source_kind(source));
+        if self.leveled(source) { return self.each(source, false, |g, s| g.rows(s, rows, width)); }
+        self.follow(source.compact_kind());
         let at = |r: R| r.as_() * width..(r.as_() + 1) * width;
         let copied = if width == 1 {
             copy_into!(&mut self.data, source.as_items(), |d, s, f| d.extend(rows.iter().map(|&r| f(s[r.as_()]))))
@@ -590,26 +669,39 @@ impl Gather {
     }
     /// Appends `n` copies of `item`.
     pub(crate) fn fill(&mut self, item: &Value, n: usize) {
-        if n > 0 && !self.compact_fill(item, n) { self.mixed().extend(std::iter::repeat_n(item.clone(), n)) }
+        if n == 0 { return; }
+        if self.leveled(item) { return self.each(item, false, |g, s| g.fill(s, n)); }
+        if !self.compact_fill(item, n) { self.mixed().extend(std::iter::repeat_n(item.clone(), n)) }
     }
     /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one. A later offset wins.
     pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) {
         if offsets.is_empty() { return; }
+        if self.leveled(source) { return self.each(source, true, |g, s| g.scatter(offsets, s)); }
         let single = source.len() == 1;
         let pick = |k: usize| if single { 0 } else { k };
-        self.follow(source_kind(source));
+        self.follow(source.compact_kind());
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::scatter(d, offsets, s, f)) { return; }
         let d = self.mixed();
         for (k, &o) in offsets.iter().enumerate() { d[o] = source.at(pick(k)) }
     }
     /// Copies the items of `source` that `steps` reach from `base`, through rustymath's `gather::walk`: one `Steps` for each axis, with the last varying fastest. A `None` offset gives the prototype of `source` in place of the item. Compact storage is copied in one typed loop.
     pub(crate) fn walk(&mut self, source: &Value, base: usize, steps: &[Steps]) {
-        self.follow(source_kind(source));
+        if self.leveled(source) { return self.each(source, false, |g, s| g.walk(s, base, steps)); }
+        self.follow(source.compact_kind());
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::walk(d, s, base, steps, fill_of(s), f)) { return; }
         walk_values(self.mixed(), source, &std::cell::OnceCell::new(), base, steps);
     }
-    /// The gathered array, laid out by `layout`. An empty array takes `prototype`.
+    /// The gathered array, laid out by `layout`. An empty array takes `prototype`. A buffer with a level gives a dual array.
     pub(crate) fn finish(self, layout: Layout, prototype: impl Prototype) -> Result<Value, ErrorKind> {
+        if let Some(level) = self.dual {
+            let Level { tag, primal, tangent, records, .. } = *level;
+            let zero_of = records.as_ref().and_then(|r| r.first()).map_or_else(zero, |r| r.zero.clone());
+            let primal = primal.finish(layout.clone(), prototype)?;
+            let tangent = tangent.finish(layout, zero())?;
+            // A level that copied records holds their ids, which give the record's `Gather`.
+            let tangent = match records { Some(sources) => crate::linear::assemble(sources, tangent, zero_of), None => tangent };
+            return Ok(Value::from_dual(tag, primal, tangent));
+        }
         let shape = crate::Shape::from(layout.shape());
         let value = match self.data {
             Storage::Mixed(ref d, _) if d.is_empty() && !self.open => Value::empty_of(shape, prototype.value(), true)?,

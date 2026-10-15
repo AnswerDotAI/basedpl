@@ -512,7 +512,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
                 let digit = base.residue(&value, span.numeric()).map_err(error)?;
                 if k != 0 {
                     value = if base.grade_order(&base.zero()).is_eq() { zero.clone() }
-                    else { value.dyad(Arithmetic::Minus, &digit).and_then(|v| v.dyad(Arithmetic::Divide, base)).map_err(error)? };
+                    else { value.dyad(Arithmetic::Minus, &digit).and_then(|v| v.dyad(Arithmetic::Divide, base)).map_err(<&str>::from).map_err(error)? };
                 }
                 digits[k] = Value::Number(if !exact && digit.is_exact() { Number::from(digit.to_complex().map_err(error)?).at_width(width) } else { digit });
             }
@@ -541,7 +541,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
             let y = &y[if ylen == 1 { 0 } else { positions.index(k) }];
             value = if k == 0 { y.clone() }
             else { value.dyad(Arithmetic::Times, &x[if xlen == 1 { 0 }
-            else { k }]).and_then(|v| v.dyad(Arithmetic::Plus, y)).map_err(error)? };
+            else { k }]).and_then(|v| v.dyad(Arithmetic::Plus, y)).map_err(<&str>::from).map_err(error)? };
         }
         data.push(Value::Number(value));
     }

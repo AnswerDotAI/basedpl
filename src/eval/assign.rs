@@ -103,6 +103,7 @@ impl Session {
 
     fn update_array(&mut self, binding: &ArrayBinding, value: Value, span: &Span) -> Result<(), Error> {
         if value.environment() > binding.owner { return Err(span.domain_error("array would export a local closure")); }
+        if self.differentiating() { self.record_write(binding.owner, &binding.name); }
         self.insert_name(binding.owner, &binding.name, Binding::from_element(value));
         Ok(())
     }

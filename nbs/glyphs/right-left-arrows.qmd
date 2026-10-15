@@ -17,21 +17,20 @@ rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
 
 ## Methods
 
-Option `method` chooses the method. Without it, `⇄` minimizes with a method it chooses from the start, the bounds and whether `f` has a derivative:
+Option `method` chooses the method. Without it, `⇄` minimizes with a method it chooses from the start, the bounds and whether `∂` differentiates `f`:
 
 | `method` | Method | Chosen when |
 |---|---|---|
 | `"brent"` | Brent's method, along one variable | `X` is one number |
-| `"l-bfgs"` | L-BFGS, which follows the gradient | `f` has a derivative and there are no bounds |
+| `"l-bfgs"` | L-BFGS, which follows the gradient | `∂` differentiates `f` and there are no bounds |
 | `"powell"` | Powell's method of conjugate directions | there are bounds |
 | `"nelder-mead"` | Nelder–Mead's simplex | none of the above |
 | `"differential-evolution"` | differential evolution, which evolves a population of points within the bounds | only when named |
 
-`f` has a derivative where [`∂`](partial.qmd) differentiates it: a bound polynomial evaluator `C⌻`, or a function with a derivative that `f∂←g` attaches. L-BFGS calls `f∂` for the gradient at each point it needs. Nelder–Mead and Powell's method use only values of `f`. Differential evolution suits a function with many local minima, and needs finite bounds.
+`∂` differentiates `f` when `f` uses only what [`∂`](partial.qmd) differentiates, or has a JVP rule that `f∂←g` attaches. L-BFGS takes the gradient at each point it needs from one run of `f`, which also gives the value there. Nelder–Mead and Powell's method use only values of `f`. Differential evolution suits a function with many local minima, and needs finite bounds.
 
 ```bpl
 rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
-rosen∂←{⍺←1 ⋄ [x y]←⍵ ⋄ ⍺×[(¯2×1-x) - 400×x×y-⊼x; 200×y-⊼x]}
 ["tolerance":1E¯14] rosen⇄ ¯1.2 1   ⍝ 1 1
 ```
 
@@ -78,7 +77,7 @@ lo←["gap":0 "margin":0] ⋄ hi←["gap":20 "margin":40]
 With `report`, the result is a record. Field `x` holds the point, and `converged` says whether the method's stopping test passed before the calls reached `evaluations`. Field `value` holds `f` at the point, or when solving, the norm of the residuals. Field `evaluations` counts the calls of `f`, or for a linear system, the products with A and Aᵀ. The point is the best one the search evaluated, whether or not it converged.
 
 ```bpl
-r←["evaluations":10 "report":$t] {+/⊼⍵-3}⇄ 1 2
+r←["method":"nelder-mead" "evaluations":10 "report":$t] {+/⊼⍵-3}⇄ 1 2
 [r.evaluations r.converged]   ⍝ 10ₓ $f
 ```
 
@@ -97,17 +96,16 @@ f←{[x y]←⍵ ⋄ [(⊼x)+(⊼y)-4 y-x-1]}
 ["solve":$t "tolerance":1E¯14] f⇄ 1 0   ⍝ 1.8228756555322954 0.8228756555322954
 ```
 
-A record start names a model's parameters. The residuals are the model's differences from the data. Where the model doesn't pass through every point, the Jacobian from forward differences leaves the parameters accurate to about 9 digits. This example sets [`prec`](../system/prefs.qmd) to show 6. Here `a×*b×x` fits points that grow about as fast as `2×*x`:
+A record start names a model's parameters. The residuals are the model's differences from the data. Where `∂` differentiates the residuals, Levenberg–Marquardt builds its Jacobian from one derivative along each parameter. Otherwise it takes forward differences, which leave the parameters accurate to about 9 digits. Here `a×*b×x` fits points that grow about as fast as `2×*x`, with a tolerance that makes every digit shown correct:
 
 ```bpl
-•prefs ["prec":6]
 x←0 1 2 3 4 ⋄ y←2.1 5.4 15.2 40.3 109.1
-["solve":$t] {⍵.((a×*b×x)-y)}⇄ ["a":1 "b":1]   ⍝ ["a":2.05558 "b":0.992884]
+["solve":$t "tolerance":1E¯12] {⍵.((a×*b×x)-y)}⇄ ["a":1 "b":1]   ⍝ ["a":2.055580005 "b":0.9928844207]
 ```
 
 ## Linear systems
 
-With options `solve` and `linear`, `f` is affine: f(x) is A·x−b for some matrix A. `⇄` never forms A. It multiplies vectors by A through `f`, and by Aᵀ through [`f∂`](partial.qmd). For an affine `f`, `U f∂ X` is Aᵀ·U at every `X`. That suits a matrix that's large and sparse, or never formed at all.
+With options `solve` and `linear`, `f` is affine: f(x) is A·x−b for some matrix A. `⇄` never forms A. It multiplies vectors by A through `f`, and, for least squares, by Aᵀ through `∂`, which transposes the steps that `f` takes. That suits a matrix that's large and sparse, or never formed at all.
 
 ```bpl
 m←[4 1⋄1 3] ⋄ b←1 2
@@ -116,17 +114,17 @@ m←[4 1⋄1 3] ⋄ b←1 2
 
 | `method` | Method | Chosen when |
 |---|---|---|
-| `"gmres"` | restarted GMRES | `f` has no derivative |
-| `"minres"` | MINRES on the normal equations Aᵀ·A·x = Aᵀ·b, which takes the same steps as LSMR | `f` has a derivative |
+| `"gmres"` | restarted GMRES | the system is square |
+| `"minres"` | MINRES on the normal equations Aᵀ·A·x = Aᵀ·b, which takes the same steps as LSMR | the system isn't square, and `∂` differentiates `f` |
 | `"cg"` | conjugate gradients on the normal equations, which take the same steps as LSQR | only when named |
 
-The normal equations square A's condition number. For an ill-conditioned A, MINRES and CG on them reach less accuracy than LSMR and LSQR would. On a square system with no derivative, `"cg"` and `"minres"` work on A itself, which must be symmetric, and positive definite for CG.
+The normal equations square A's condition number. For an ill-conditioned A, MINRES and CG on them reach less accuracy than LSMR and LSQR would. On a square system, `"cg"` and `"minres"` work on A itself, which must be symmetric, and positive definite for CG.
 
-For least squares, attach a derivative that gives Aᵀ·U:
+`∂` gives the products with Aᵀ that least squares needs:
 
 ```bpl
 m←[1 0⋄0 1⋄1 1] ⋄ b←1 2 4
-f←{(m+.×⍵)-b} ⋄ f∂←{⍺+.×m}
+f←{(m+.×⍵)-b}
 ["solve":$t "linear":$t] f⇄ 0 0   ⍝ 1.3333333333333333 2.3333333333333335
 ```
 
@@ -148,7 +146,7 @@ Bind data to `f` with [`↣`](right-tail-arrow.qmd). The sum of squared differen
 1 2 3 4↣{+/⊼⍺-⍵}⇄ 0   ⍝ 2.5
 ```
 
-`∂` differentiates `D↣f` only where `f` is `⌻`. To search with a hand-written derivative and data, bind the data first, then attach the derivative to the bound function: `fit←data↣loss ⋄ fit∂←g ⋄ fit⇄ start`.
+To search with a hand-written JVP rule and data, bind the data first, then attach the derivative to the bound function: `fit←data↣loss ⋄ fit∂←g ⋄ fit⇄ start`.
 
 ## Numbers
 
@@ -156,5 +154,6 @@ The search works in floats of the start's width. 32-bit and 16-bit floats comput
 
 ## Errors
 
-- `LENGTH`: bounds of another shape or other keys, a `bracket` that isn't two numbers, a derivative that doesn't return one number for each variable, a batched `f` that doesn't return one value for each point, or an `f` that returns another number of residuals at another point
-- `DOMAIN`: a left argument that isn't keyed options, an unknown option or method, an option for another task, such as `lower` with `solve` or `linear` without it, a method for another task, a start or bound that isn't real numbers, a lower bound above its upper bound, an `f` that doesn't return one real number when minimizing, `"brent"` with more than one variable or residual, `"l-bfgs"` with no derivative or with bounds, `"differential-evolution"` without finite bounds or with a population below 4, `"levenberg-marquardt"` with a `bracket`, least squares on a linear system with no derivative, a `precondition` that isn't a function, a `tolerance` that isn't positive, or an `evaluations`, `population` or `seed` that isn't a whole number
+- `LENGTH`: bounds of another shape or other keys, a `bracket` that isn't two numbers, a batched `f` that doesn't return one value for each point, or an `f` that returns another number of residuals at another point
+- `DOMAIN`: a left argument that isn't keyed options, an unknown option or method, an option for another task, such as `lower` with `solve` or `linear` without it, a method for another task, a start or bound that isn't real numbers, a lower bound above its upper bound, an `f` that doesn't return one real number when minimizing, `"brent"` with more than one variable or residual, `"l-bfgs"` with bounds or for an `f` that `∂` can't differentiate, `"differential-evolution"` without finite bounds or with a population below 4, `"levenberg-marquardt"` with a `bracket`, least squares on a linear system whose `f` `∂` can't differentiate, a `precondition` that isn't a function, a `tolerance` that isn't positive, or an `evaluations`, `population` or `seed` that isn't a whole number
+- `UNSUPPORTED`: a point where `f` reaches code that `∂` can't differentiate, during L-BFGS or least squares, as when a guard takes another branch. Option `method` chooses a method that uses only values

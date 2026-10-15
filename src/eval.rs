@@ -15,15 +15,17 @@ mod session;
 pub(crate) use binder::before;
 use {binder::*, dissect::*, operators::*};
 
+/// A sum or running sum of `right`, by `kind` along the axis option `axis`: `+/`, `+⌿`, `+\` or `+⍀` (`linear`).
+pub(crate) fn fold_plus(kind: FoldKind, axis: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+    fold(&Function::primitive(Primitive::Arithmetic(crate::number::Arithmetic::Plus)), kind, axis, None, right, cx)
+}
+
 #[derive(Clone, Debug)]
 pub struct Function { node: Arc<FunctionData> }
 
 /// A function's node with the facts derived from it when the function is built.
 #[derive(Debug)]
 struct FunctionData { kind: FunctionNode, environment: Option<usize>, late: bool }
-
-/// What `∂` differentiates a function through: a bound polynomial evaluator's coefficients, or the derivative that `f∂←g` attaches.
-enum Derivative<'a> { Polynomial(&'a Value), Attached(&'a Function) }
 
 /// Compares the values held in functions and operators: exactly for `==`, or by `≡`'s rule for `matches`.
 type ValueRule<'a, E> = dyn FnMut(&Value, &Value) -> Result<bool, E> + 'a;
@@ -414,10 +416,29 @@ impl Function {
         let capture = std::mem::replace(&mut cx.session.capture, false);
         // This is `stacker::maybe_grow`, without its closure's frame. An unknown stack limit grows the stack, as there.
         let room = stacker::remaining_stack().is_some_and(|r| r >= STACK_RED_ZONE);
-        let result = if room { self.dispatch(left, right, cx) } else { self.grown(left, right, cx) };
+        let result = if cx.session.display.fusion { self.reported(left, right, room, cx) } else if room { self.dispatch(left, right, cx) } else { self.grown(left, right, cx) };
         cx.session.capture = capture;
         cx.session.depth -= 1;
         cx.check()?;
+        result
+    }
+    /// `dispatch` under `•prefs ["fusion":$t]`, which also reports each pending argument that this call computed, and each dual argument whose items it read one by one (`derivative`), where no call inside it reported, with the function and its position. Out of line, so that `call` pays one branch.
+    #[cold]
+    #[inline(never)]
+    fn reported(&self, left: Option<&Value>, right: &Value, room: bool, cx: &mut Context<'_>) -> Result<Bound, Error> {
+        let pending = [left, Some(right)].map(|v| v.and_then(Value::pending).is_some());
+        let whole = [left, Some(right)].map(|v| v.and_then(Value::dual_items_built) == Some(false));
+        let reports = cx.session.fusion_reports;
+        let result = if room { self.dispatch(left, right, cx) } else { self.grown(left, right, cx) };
+        let args = [left, Some(right)];
+        let report = if args.iter().zip(pending).any(|(v, was)| was && v.is_some_and(|v| v.pending().is_none())) { Some("fusion ends") }
+            else if args.iter().zip(whole).any(|(v, was)| was && v.and_then(Value::dual_items_built) == Some(true)) { Some("∂ runs item by item") }
+            else { None };
+        if let (Some(report), true) = (report, cx.session.fusion_reports == reports) {
+            cx.session.fusion_reports += 1;
+            let (line, column) = cx.span.position();
+            cx.write(&format!("{report} at {} ({}:{line}:{column})\n", self.bpl(), cx.span.source.name));
+        }
         result
     }
     // Inlined into `call`, this would add `stacker::grow`'s setup to the stack frame of every BPL call.
@@ -435,6 +456,16 @@ impl Function {
         let f = if self.late() { resolved = self.resolve(cx.session, &mut HashMap::new(), 0)?; &resolved } else { self };
         match f.node() {
             FunctionNode::Composed(op, operands) => composition(*op, operands, left, right, cx),
+            FunctionNode::Ruled(f, Rules { derivative: Some(g), .. }) if left.is_none() && cx.session.differentiating() => match crate::derivative::deep_tag(right) {
+                Some(tag) => crate::derivative::attached(f, g, right, tag, cx).map(Bound::from),
+                None => f.ruled(left, right, cx),
+            },
+            // A rule describes a function of one argument, so a call with two can't use it.
+            FunctionNode::Ruled(_, Rules { derivative: Some(_), .. })
+                if left.is_some() && cx.session.differentiating() && (left.is_some_and(crate::derivative::active) || crate::derivative::active(right)) =>
+            {
+                Err(crate::derivative::two_arguments(cx))
+            }
             FunctionNode::Ruled(f, _) => f.ruled(left, right, cx),
             FunctionNode::Defined(_) | FunctionNode::Derived(..) => cx.session.call_defined(f, left, right).map_err(|mut e| {
                 e.calls.push(cx.span.clone());
@@ -447,20 +478,6 @@ impl Function {
     #[inline(always)]
     pub(crate) fn call_array(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
         self.call(left, right, cx)?.array(cx.span)
-    }
-    /// What `∂` differentiates this function through, or `None` where `f∂` gives DOMAIN.
-    fn derivative(&self) -> Option<Derivative<'_>> {
-        match self.node() {
-            FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(p)])
-                if matches!(p.node(), FunctionNode::Primitive(Primitive::Polynomial)) => { Some(Derivative::Polynomial(a)) }
-            FunctionNode::Ruled(_, Rules { derivative: Some(g), .. }) => Some(Derivative::Attached(g)), FunctionNode::Ruled(f, _) => f.derivative(), _ => None
-        }
-    }
-    /// Whether `f∂` differentiates this function.
-    pub(crate) fn differentiable(&self) -> bool { self.derivative().is_some() }
-    /// `f∂`, this function's derivative.
-    pub(crate) fn differentiated(&self, span: &Span) -> Result<Function, Error> {
-        Self::new(FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(self.clone())), span)
     }
     /// This function with `g` attached as its inverse, as `f⁻¹←g` attaches it. A derivative already attached stays.
     pub fn with_inverse(&self, g: Function) -> Self { self.attached(|rules| rules.inverse = Some(g)) }
@@ -557,23 +574,7 @@ impl Function {
             FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => return each(f, left, right, cx),
             FunctionNode::Modified(OperatorKind::Outer, Operand::Function(f)) => return outer(f, left, right, cx),
             FunctionNode::Modified(OperatorKind::Key, Operand::Function(f)) => return key(f, left, right, cx),
-            FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(f)) => {
-                let (mut f, mut order) = (f, 1);
-                while let FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(inner)) = f.node() {
-                    f = inner;
-                    order += 1;
-                }
-                match f.derivative() {
-                    Some(Derivative::Polynomial(a)) => crate::polynomial::derivative(a, order, left, right, cx),
-                    // `f∂←g` attaches `g` as the derivative, so a higher order differentiates `g`.
-                    Some(Derivative::Attached(g)) => {
-                        let mut d = g.clone();
-                        for _ in 1..order { d = d.differentiated(cx.span)?; }
-                        return d.call(left, right, cx);
-                    }
-                    None => Err(cx.span.domain_error("differentiation needs a bound polynomial evaluator, or a function with a derivative that f∂←g attaches")),
-                }
-            }
+            FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(f)) => crate::derivative::differentiate(f, left, right, cx),
             FunctionNode::Modified(OperatorKind::Commute, Operand::Function(f)) => return f.call(Some(right), left.unwrap_or(right), cx),
             FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)) => Ok(a.clone()),
             FunctionNode::Modified(OperatorKind::Optimize, Operand::Function(f)) => crate::optimize::optimize(f, left, right, cx),
@@ -584,6 +585,7 @@ impl Function {
             }
             FunctionNode::Primitive(p) => p.call(left, right, cx),
             FunctionNode::System(f) => {
+                if crate::derivative::active_in(cx, right) || left.is_some_and(|x| crate::derivative::active_in(cx, x)) { return Err(crate::derivative::system(f.name, cx)); }
                 f.check(left, cx.span)?;
                 if f.item.maps(right) { return self.each_item(left, right, f.prototype.expect("a mapped system function has a result prototype"), cx); }
                 if let (true, Some(prototype)) = (cx.session.prototype, f.prototype) { return Ok(Bound::from(prototype(cx))); }
@@ -923,6 +925,12 @@ pub struct Session {
     depth: usize,
     prototype: bool,
     capture: bool,
+    /// Reports that `•prefs ["fusion":$t]` has written. An enclosing call reports a pending argument only when no call inside it reported.
+    fusion_reports: usize,
+    /// The `∂` calls that are running, innermost last.
+    pub(crate) derivatives: Vec<crate::derivative::Level>,
+    /// The last tag that a `∂` call took. Tags only grow, so a call inside another has the larger tag.
+    tags: u32,
     /// The program's command-line arguments.
     pub(crate) args: Vec<String>,
 }
