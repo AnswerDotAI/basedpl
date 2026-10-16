@@ -1,3 +1,4 @@
+use rustymath::error::Kind;
 use crate::{array::Items, data::{imported, text, Options}, execution::Context, keyed, Error, ErrorAt, ErrorKind, Number, Value};
 use foldhash::{HashMap, HashMapExt};
 use num_bigint::BigInt;
@@ -5,12 +6,12 @@ use num_rational::BigRational;
 use serde_json::Value as Json;
 
 /// A JSON number, exact when written without a point or exponent and otherwise a float of `width`. A float too large for `f64` is a DOMAIN error.
-pub(crate) fn number(n: &serde_json::Number, width: crate::array::FloatWidth) -> Result<Number, ErrorKind> {
+pub(crate) fn number(n: &serde_json::Number, width: rustymath::buffer::FloatWidth) -> Result<Number, ErrorKind> {
     if let Some(i) = n.as_i64() { return Ok(Number::from_integer(i)); }
     if n.as_str().contains(['.', 'e', 'E']) {
-        return n.as_str().parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| Number::float(x, width)).ok_or(ErrorKind::Domain);
+        return n.as_str().parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| Number::float(x, width)).ok_or(Kind::Domain.into());
     }
-    exact(n.as_str().parse::<BigInt>().map_err(|_| ErrorKind::Domain)?)
+    exact(n.as_str().parse::<BigInt>().map_err(|_| Kind::Domain)?)
 }
 
 /// An exact integer of any size.

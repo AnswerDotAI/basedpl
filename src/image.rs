@@ -1,4 +1,5 @@
-use crate::{array::Kind, data, display, element::read_as, execution::Context, keyed, Error, ErrorAt, ErrorKind, Value};
+use crate::{data, display, element::read_as, execution::Context, keyed, Error, ErrorAt, Value};
+use rustymath::{buffer::DType, error::Kind};
 
 /// Decoding and encoding of image files: ImageIO on Apple platforms, and the `image` and `png` crates elsewhere.
 #[cfg_attr(target_vendor = "apple", path = "image/imageio.rs")]
@@ -110,17 +111,17 @@ fn layout(picture: &Value, delays: Option<Vec<f64>>, span: &Context<'_>) -> Resu
     let delays = delays.or_else(|| (picture.shape().len() == 4).then(|| vec![1. / DEFAULT_FPS]));
     let (count, frame) = match (&delays, picture.shape()) {
         (Some(_), [count, frame @ ..]) => (*count, frame), (None, frame) => (1, frame),
-        (Some(_), []) => return Err(span.error(ErrorKind::Rank, "an animation has frames along its first axis"))
+        (Some(_), []) => return Err(span.error(Kind::Rank, "an animation has frames along its first axis"))
     };
     if delays.as_ref().is_some_and(|d| d.len() != 1 && d.len() != count) {
-        return Err(span.error(ErrorKind::Length, "delay needs one number, or one for each frame"));
+        return Err(span.error(Kind::Length, "delay needs one number, or one for each frame"));
     }
     let (height, width, channels) = match *frame {
         [height, width] => (height, width, 1), [height, width, channels @ 1..=4] => (height, width, channels),
-        _ => return Err(span.error(ErrorKind::Rank, "a picture has axes for rows, columns and up to four channels"))
+        _ => return Err(span.error(Kind::Rank, "a picture has axes for rows, columns and up to four channels"))
     };
-    let real = match picture.compact_kind() {
-        Some(Kind::Complex(_)) => read_as::<f64>(picture).is_some(), Some(Kind::Character) | None => false, Some(_) => true
+    let real = match picture.dtype() {
+        Some(DType::Complex(_)) => read_as::<f64>(picture).is_some(), Some(DType::Character) | None => false, Some(_) => true
     };
     if !real { return Err(span.domain_error("a picture holds real numbers")); }
     Ok(([count, height, width, channels], delays))

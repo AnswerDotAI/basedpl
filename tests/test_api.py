@@ -211,6 +211,21 @@ def test_array_surface():
     assert repr(Array(2)) != repr(Array(2.))
     assert [repr(Array(s)) for s in ('text', '', ['ab', 'cd'])] == ["'text'", "''", "['ab', 'cd']"]
 
+def test_own():
+    fresh = bpl('100000⍴0.5')
+    items = np.asarray(fresh, copy=False).ctypes.data
+    moved = fresh.own()
+    assert moved.ctypes.data == items and moved.flags.writeable
+    with pytest.raises(ValueError): fresh.shape
+    held = bpl('shared←100000⍴0.5 ⋄ shared')
+    items = np.asarray(held, copy=False).ctypes.data
+    assert held.own().ctypes.data != items
+    teq(bpl('+/shared').py, 50000.)
+    chars = bpl('"abc"').own()
+    assert chars.tolist() == ['a', 'b', 'c'] and chars.flags.writeable
+    flags = bpl('0 1 0=1').own()
+    assert flags.dtype == bool and flags.tolist() == [False, True, False] and flags.flags.writeable
+
 def test_keyed_arrays():
     t = bpl('["b":[1 2] "a":["x":"hi" "n":3]]')
     assert list(t.py) == ['b', 'a'] and t.py['a'] == dict(x='hi', n=3) and t.shape == (2,)

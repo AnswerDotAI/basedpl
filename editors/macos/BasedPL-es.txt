@@ -36,11 +36,12 @@ Option-Shift-9	⁹
 Option-7	∆
 Option-Shift-7	¿
 Option-'	⊢
+Option-Shift-'	≢
 Option-8	∞
 Option-Shift-8	⁸
 Option-0	∧
 Option-Shift-0	⍬
-Control-Option-Shift-0	match prefix
+Control-Option-Shift-0	≡
 Option-Shift-+	≠
 Option-o	circle prefix
 Option-u	÷
@@ -49,7 +50,8 @@ Option-i	⍳
 Option-p	π
 Option-l	↦
 Option-j	↓
-Option-k	take prefix
+Option-k	↑
+Option-Shift-k	↕
 Option-,	↢
 Option-Shift-,	⊣
 Option--	bar prefix

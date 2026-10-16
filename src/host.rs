@@ -143,7 +143,7 @@ impl Regex {
             let whole = found.get(0).expect("a match includes its whole match");
             result.push_str(&text[end..whole.start()]);
             found.expand(template, &mut result);
-            generated_len(&[result.len() / 4]).error_at(cx, "regex result too large")?;
+            generated_len(&[result.len() / 4]).at(cx)?;
             end = whole.end();
         }
         result.push_str(&text[end..]);

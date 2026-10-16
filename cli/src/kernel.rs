@@ -11,7 +11,7 @@ struct BplSession { worker: ThreadWorker<Session> }
 /// A request's cursor position, as an index into its code's characters.
 fn cursor(pos: u64) -> usize { usize::try_from(pos).unwrap_or(usize::MAX) }
 fn language_error(error: basedpl::Error) -> LanguageError {
-    LanguageError { ename: if error.kind == basedpl::ErrorKind::Interrupt { "KeyboardInterrupt".into() } else { error.kind.to_string() },
+    LanguageError { ename: if matches!(error.kind, basedpl::ErrorKind::Interrupt) { "KeyboardInterrupt".into() } else { error.kind.to_string() },
         evalue: error.message.clone(), traceback: vec![error.to_string()] }
 }
 
@@ -68,7 +68,7 @@ impl LanguageSession for BplSession {
                         let result = session.eval_with(
                             code, EvalOptions { interrupt: interrupt.clone(), echo: false, output: Some(Arc::new(|_| {})), ..EvalOptions::default() });
                         let value = if let Some(e) = result.error {
-                            let cancelled = e.kind == basedpl::ErrorKind::Interrupt;
+                            let cancelled = matches!(e.kind, basedpl::ErrorKind::Interrupt);
                             let e = language_error(e);
                             let value = json!({"status": "error", "ename": e.ename, "evalue": e.evalue, "traceback": e.traceback});
                             if cancelled { error = Some(e); break; }

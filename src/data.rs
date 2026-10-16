@@ -1,5 +1,6 @@
+use rustymath::{buffer::{Buffer, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
 use crate::{
-    array::{FloatBuf, FloatWidth, Ints, Items, Storage, Width}, execution::Context, keyed, primitive::{numeric, real},
+    array::{Items, Storage}, execution::Context, keyed, primitive::{numeric, real},
     DomainAt, Error, ErrorAt, ErrorKind, Number, Value
 };
 use foldhash::{HashMap, HashMapExt};
@@ -16,7 +17,7 @@ pub(crate) fn imported(shape: Vec<usize>, items: Vec<Value>, filled: impl Fn(usi
         let width = items.iter().filter_map(|v| number(v)?.float_width()).max().unwrap_or(FloatWidth::F64);
         let exactly = |n: Number| n.lossless_float().filter(|&f| f.is_nan() || Number::float(f, width).as_float() == Some(f));
         if let Some(floats) = items.iter().map(|v| number(v).and_then(exactly)).collect::<Option<Vec<_>>>() {
-            return Value::from_storage(shape, Storage::Floats(FloatBuf::collect(width, floats.into_iter())));
+            return Value::from_storage(shape, Storage::Compact(Buffer::Floats(FloatBuf::collect(width, floats.into_iter()))));
         }
     }
     Value::keeping_kinds(shape, items, empty_prototype)
@@ -30,7 +31,7 @@ impl Options {
         let mut values = HashMap::new();
         let Some(value) = value else { return Ok(Self { values, name }) };
         if let Some(keys) = value.keys(0) {
-            if value.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, format!("{name} options must be a keyed vector"))); }
+            if value.shape().len() != 1 { return Err(span.error(Kind::Rank, format!("{name} options must be a keyed vector"))); }
             for (k, v) in keys.names().iter().zip(value.elements()) {
                 let k = k.as_ref().ok_or_else(|| span.domain_error(format!("{name} options need a key for every entry")))?.to_lowercase();
                 if !allowed.contains(&k.as_str()) { return Err(span.domain_error(format!("unknown {name} option: {k}"))); }
@@ -103,7 +104,7 @@ pub(crate) fn byte_vector(data: Vec<u8>) -> Result<Value, ErrorKind> { Value::fr
 
 /// The bytes in an array of integers from 0 to 255, in ravel order. `None` for any other array.
 pub(crate) fn byte_items(value: &Value) -> Option<Vec<u8>> {
-    if let Items::Integers(Ints::U8(v)) = value.as_items() { return Some(v.to_vec()); }
+    if let Items::Compact(View::Integers(Ints::U8(v))) = value.as_items() { return Some(v.to_vec()); }
     value.as_items().nonnegative_integers().ok()
 }
 

@@ -1,13 +1,15 @@
 //! Numeric primitives outside the pervasive kernels: matrix division and decompositions, encode and decode, complex parts, number formatting, the Lambert W function and random numbers.
 
+use rustymath::{buffer::View, error::Kind, with_complexes};
 use super::*;
 use crate::number::{read, with_field, Domain, Field};
 use num_complex::Complex64;
 use num_rational::BigRational;
 use rustymath::linalg::{self, Factor, Inner, PlusTimes};
+use rustymath::agreement::Frames;
 
 pub(super) fn complex_parts(right: &Value, polar: bool, span: &Context<'_>) -> Result<Value, Error> {
-    use crate::{array::with_complexes, element::{Element, Float}};
+    use crate::element::{Stored, Float};
     use rustymath::{Abs, Angle, Unary};
     /// The parts of floats of width `F`: each item and 0, or with `polar`, its magnitude and its angle, 0 or π, at that width.
     fn float_parts<F: Float>(x: &[F], polar: bool, shape: Vec<usize>) -> Option<Value> where Angle: Unary<F, Out = F> {
@@ -17,12 +19,12 @@ pub(super) fn complex_parts(right: &Value, polar: bool, span: &Context<'_>) -> R
     let shape = layout.shape().to_vec();
     // Float and complex storage give floats in one pass, at the floats' or parts' width. The general loop below keeps exact numbers exact.
     let parts = match right.as_items() {
-        Items::Complex(z) if polar => with_complexes!(z, |z| Element::build(shape, z.iter().flat_map(|&z| [Abs.one(z), Angle.one(z)]).collect::<Vec<_>>())),
-        Items::Complex(z) => with_complexes!(z, |z| Element::build(shape, z.iter().flat_map(|z| [z.re, z.im]).collect::<Vec<_>>())),
-        Items::Floats(x) => crate::array::with_floats!(x, |x| float_parts(x, polar, shape)), _ => None
+        Items::Compact(View::Complexes(z)) if polar => with_complexes!(z, |z| Stored::build(shape, z.iter().flat_map(|&z| [Abs.one(z), Angle.one(z)]).collect::<Vec<_>>())),
+        Items::Compact(View::Complexes(z)) => with_complexes!(z, |z| Stored::build(shape, z.iter().flat_map(|z| [z.re, z.im]).collect::<Vec<_>>())),
+        Items::Compact(View::Floats(x)) => rustymath::with_floats!(x, |x| float_parts(x, polar, shape)), _ => None
     };
     if let Some(parts) = parts { return parts.with_layout(layout).error_at(span, "invalid decomposition"); }
-    let mut data = Vec::with_capacity(generated_len(layout.shape()).error_at(span, "decomposition is too large")?);
+    let mut data = Vec::with_capacity(generated_len(layout.shape()).at(span)?);
     for item in right.elements() {
         span.check()?;
         data.extend(numeric(&item, span)?.parts(polar).domain_at(span)?.map(Value::Number));
@@ -70,20 +72,20 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
 
 pub(super) fn format_array(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let Some(spec) = left else { return right.formatted().error_at(span, "formatted array is too large"); };
-    if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "format specification must be a unit or vector")); }
+    if spec.shape().len() > 1 { return Err(span.error(Kind::Rank, "format specification must be a unit or vector")); }
     let spec = spec.elements().map(|e| {
-        numeric(&e, span)?.integer().and_then(|n| isize::try_from(n).map_err(|_| ErrorKind::Limit)).error_at(span, "format specification must be integral")
+        numeric(&e, span)?.integer().and_then(|n| isize::try_from(n).map_err(|_| Kind::Limit.into())).error_at(span, "format specification must be integral")
     }).collect::<Result<Vec<_>, _>>()?;
     let columns = right.shape().last().copied().unwrap_or(1);
     if !matches!(spec.len(), 1 | 2) && spec.len() != 2 * columns {
-        return Err(span.error(ErrorKind::Length, "format needs precision, a width/precision pair, or pairs per column"));
+        return Err(span.error(Kind::Length, "format needs precision, a width/precision pair, or pairs per column"));
     }
     numeric(&right.prototype(), span)?;
     let specs: Vec<_> = (0..columns).map(|i| match spec.len() { 1 => (0, spec[0]), 2 => (spec[0], spec[1]), _ => (spec[2 * i], spec[2 * i + 1]) }).collect();
     let mut widths = Vec::new();
     for &(width, precision) in &specs {
         if width < 0 { return Err(span.domain_error("format width must be nonnegative")); }
-        generated_len(&[right.len().max(1), precision.unsigned_abs().max(width as usize).max(1)]).error_at(span, "format exceeds array limits")?;
+        generated_len(&[right.len().max(1), precision.unsigned_abs().max(width as usize).max(1)]).at(span)?;
         widths.push(if width == 0 { 1 } else { width as usize });
     }
     let text = right.elements().enumerate().map(|(i, e)| {
@@ -95,7 +97,7 @@ pub(super) fn format_array(left: Option<&Value>, right: &Value, span: &Context<'
     let mut shape = right.shape().to_vec();
     if let Some(last) = shape.last_mut() { *last = width; }
     else { shape.push(width); }
-    generated_len(&shape).error_at(span, "formatted result is too large")?;
+    generated_len(&shape).at(span)?;
     let mut data = Vec::new();
     for (i, s) in text.iter().enumerate() {
         let width = widths[i % columns];
@@ -128,13 +130,13 @@ pub(super) fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<
     // Monadic `⌹` gives an inverse from one factorization where it can, and a pseudoinverse otherwise.
     if left.is_none() { if let Some((inverse, _)) = matrix_inverse(right, span)? { return Ok(inverse); } }
     let dimensions = |a: &Value| match a.shape() {
-        [] => Ok((1, 1)), &[m] => Ok((m, 1)), &[m, n] => Ok((m, n)), _ => Err(span.error(ErrorKind::Rank, "matrix divide requires rank at most two"))
+        [] => Ok((1, 1)), &[m] => Ok((m, 1)), &[m, n] => Ok((m, n)), _ => Err(span.error(Kind::Rank, "matrix divide requires rank at most two"))
     };
     let (m, n) = dimensions(right)?;
     let k = match left {
         Some(x) => {
             let (rows, columns) = dimensions(x)?;
-            if rows != m { return Err(span.error(ErrorKind::Length, "matrix row counts differ")); }
+            if rows != m { return Err(span.error(Kind::Length, "matrix row counts differ")); }
             columns
         }
         None => m,
@@ -184,48 +186,47 @@ fn matrix_result<T: Field>(mut x: Vec<T>, layout: Layout, scalar: bool, width: F
 #[derive(Clone, Copy)]
 pub(crate) enum Stacked { Product, Solve, Inverse, Determinant }
 
-/// `f⍤2` on stacks of 32- or 64-bit float matrices with plain layouts, through the rustymath function that `f` uses on one matrix. The cells split across rustymath's threads through `stack_with`. `x` is the left stack for `+.×` and `⌹`, and absent for the monads. Two stacks have equal frames, or one is a single matrix that pairs with each matrix of the other. `None` where `f⍤2` takes its general path.
+/// `f⍤2` on stacks of 32- or 64-bit float matrices with plain layouts, through the rustymath function that `f` uses on one matrix. `x` is the left stack for `+.×` and `⌹`, and absent for the monads. The stacks' frames pair through `Frames`, as Rank pairs them, and the cells split across rustymath's threads through `stack_with`. `None` where `f⍤2` takes its general path, which also raises the error for frames that don't agree.
 pub(crate) fn stacked(op: Stacked, x: Option<&Value>, y: &Value, span: &Context<'_>) -> Option<Result<Value, Error>> {
-    use crate::element::{read_as, Element};
-    let width = |a: &Value| match a.as_items() { Items::Floats(_) if a.layout().plain() && a.shape().len() >= 2 => a.float_width(), _ => None };
+    use crate::element::{read_as, Stored};
+    let width = |a: &Value| match a.as_items() { Items::Compact(View::Floats(_)) if a.layout().plain() && a.shape().len() >= 2 => a.float_width(), _ => None };
     let w = width(y)?;
     if x.is_some_and(|x| width(x) != Some(w)) { return None; }
-    let matrices = |a: &Value| {
-        let (frame, cell) = a.shape().split_at(a.shape().len() - 2);
-        (frame.to_vec(), cell[0], cell[1])
-    };
-    let (yf, r, c) = matrices(y);
-    crate::array::with_float_width!(kernel w, F => {
-        let ys = read_as::<F>(y)?; let count = generated_len(&yf).ok()?; if r == 0 || c == 0 || count == 0 { return None }
-        let cell = |i: usize| &ys[i * r * c..][..r * c]; match (op, x) {
-            (Stacked::Inverse, None) => cells(count, c * r, |i, out, w: &mut linalg::LuWork<F>| w.pinv_into(cell(i), [r, c], out), span).map(|v| F::build([yf, vec![c, r]].concat(), v)).transpose(),
-            (Stacked::Determinant, None) if r == c => cells(count, 1, |i, out, w: &mut linalg::LuWork<F>| out[0] = w.factor(cell(i), r).determinant(), span).map(|v| F::build(yf, v)).transpose(),
-            (Stacked::Product | Stacked::Solve, Some(x)) => { let (xf, m, k) = matrices(x); let solve = matches!(op, Stacked::Solve);
-                if (if solve { m } else { k }) != r || m == 0 || k == 0 || !(xf == yf || xf.is_empty() || yf.is_empty()) { return None }
-                let xs = read_as::<F>(x)?; let frame = if xf.is_empty() { yf } else { xf }; let count = generated_len(&frame).ok()?;
-                if count == 0 { return None } let (xstep, ystep) = (if x.shape().len() == 2 { 0 } else { m * k }, if y.shape().len() == 2 { 0 } else { r * c });
-                let (xcell, ycell) = (|i: usize| &xs[i * xstep..][..m * k], |i: usize| &ys[i * ystep..][..r * c]); let (shape, v) = if solve {
-                    ([c, k], cells(count, c * k, |i, out: &mut [F], w: &mut linalg::LuWork<F>| out.copy_from_slice(&w.solve(ycell(i), xcell(i), [r, c], k)), span))
-                } else { ([m, c], cells(count, m * c, |i, out: &mut [F], _: &mut ()| PlusTimes.inner_into(xcell(i), ycell(i), [m, k, c], out), span)) };
-                v.map(|v| F::build([frame, shape.to_vec()].concat(), v)).transpose() } _ => None, }
+    let matrix = |a: &Value| { let s = a.shape(); [s[s.len() - 2], s[s.len() - 1]] };
+    let frames = |args: &[&Value]| Frames::new(&args.iter().map(|a| (&**a.layout(), 2)).collect::<Vec<_>>()).ok().filter(|f| f.count > 0);
+    let [r, c] = matrix(y);
+    if r == 0 || c == 0 { return None }
+    rustymath::with_float_width!(kernel w, F => {
+        let ys = read_as::<F>(y)?;
+        let build = |f: &Frames, cell: &[usize], v: Result<Vec<F>, Error>| v.map(|v| F::build([f.layout.shape(), cell].concat(), v)).transpose();
+        match (op, x) {
+            (Stacked::Inverse, None) => { let f = frames(&[y])?; let ycell = |i: usize| &ys[f.cell(0, i) * r * c..][..r * c];
+                build(&f, &[c, r], cells(f.count, c * r, |i, out, w: &mut linalg::LuWork<F>| w.pinv_into(ycell(i), [r, c], out), span)) }
+            (Stacked::Determinant, None) if r == c => { let f = frames(&[y])?; let ycell = |i: usize| &ys[f.cell(0, i) * r * c..][..r * c];
+                build(&f, &[], cells(f.count, 1, |i, out, w: &mut linalg::LuWork<F>| out[0] = w.factor(ycell(i), r).determinant(), span)) }
+            (Stacked::Product | Stacked::Solve, Some(x)) => { let [m, k] = matrix(x); let solve = matches!(op, Stacked::Solve);
+                if (if solve { m } else { k }) != r || m == 0 || k == 0 { return None }
+                let (xs, f) = (read_as::<F>(x)?, frames(&[x, y])?);
+                let (xcell, ycell) = (|i: usize| &xs[f.cell(0, i) * m * k..][..m * k], |i: usize| &ys[f.cell(1, i) * r * c..][..r * c]);
+                if solve { build(&f, &[c, k], cells(f.count, c * k, |i, out: &mut [F], w: &mut linalg::LuWork<F>| out.copy_from_slice(&w.solve(ycell(i), xcell(i), [r, c], k)), span)) }
+                else { build(&f, &[m, c], cells(f.count, m * c, |i, out: &mut [F], _: &mut ()| PlusTimes.inner_into(xcell(i), ycell(i), [m, k, c], out), span)) } }
+            _ => None,
+        }
     })
 }
 
-/// `count` cells of `per` items each, where `write(i, cell, scratch)` writes cell `i`. rustymath's `stack_with` runs the calls, and `span.check_now()` runs between its rounds.
+/// `count` cells of `per` items each, where `write(i, cell, scratch)` writes cell `i`. rustymath's `stack` runs the calls, and `span.check_now()` runs between its rounds.
 fn cells<B: Default + Send, S: Default>(count: usize, per: usize, write: impl Fn(usize, &mut [B], &mut S) + Sync, span: &Context<'_>) -> Result<Vec<B>, Error> {
-    Ok(rustymath::parallel::stack_with(count, per, &|i, cell, scratch| {
-        write(i, cell, scratch);
-        true
-    }, || span.check_now())?.0)
+    rustymath::parallel::stack(count, per, &write, || span.check_now())
 }
 
 /// `kind •decompose m` factors the matrix `m`, and gives the factors as a record. `kind` is `"svd"`, `"qr"`, `"eigen"`, `"cholesky"` or `"lu"`, as text or in a record of options that `Decomposition` describes. A real matrix gives real factors, apart from complex eigenvalues and their eigenvectors. The matrix factors in the [`Domain`] of its items, or in floats of the default width where they are all exact.
 pub(crate) fn decompose(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let d = Decomposition::new(left, span)?;
-    let &[m, n] = right.shape() else { return Err(span.error(ErrorKind::Rank, "•decompose needs a matrix")) };
+    let &[m, n] = right.shape() else { return Err(span.error(Kind::Rank, "•decompose needs a matrix")) };
     if m == 0 || n == 0 { return Err(span.domain_error("•decompose needs a nonempty matrix")); }
     if matches!(d.kind.as_str(), "eigen" | "cholesky" | "lu") && m != n {
-        return Err(span.error(ErrorKind::Length, "eigen, cholesky and lu need a square matrix"));
+        return Err(span.error(Kind::Length, "eigen, cholesky and lu need a square matrix"));
     }
     let (domain, width) = domain_of(&[right], span)?;
     with_field!(domain.inexact(width), [Single, Double, Complex], T => factored(&d, &read::<T>(right, span)?, [m, n], width)).and_then(record)
@@ -234,25 +235,25 @@ pub(crate) fn decompose(left: Option<&Value>, right: &Value, span: &Context<'_>)
 
 /// `kind •decompose⍤2` on a stack of matrices with compact storage and a plain layout: the array of factors that `⍤2` mixes from each cell's record, as `•decompose` gives it for that cell alone. Each cell's factors are made on one of rustymath's threads, in [`rounds`]. A stack with failed cells gives the first one's error. `None` where `•decompose⍤2` takes its general path, which also raises the errors that the options and the cells' shape give.
 pub(crate) fn stacked_decompositions(left: &Value, right: &Value, span: &Context<'_>) -> Option<Result<Value, Error>> {
-    if right.compact_kind().is_none() || !right.layout().plain() || right.shape().len() < 3 { return None; }
+    if right.dtype().is_none() || !right.layout().plain() || right.shape().len() < 3 { return None; }
     let d = Decomposition::new(Some(left), span).ok()?;
-    let (frame, cell) = right.shape().split_at(right.shape().len() - 2);
-    let (m, n, count) = (cell[0], cell[1], generated_len(frame).ok()?);
-    if m == 0 || n == 0 || count == 0 || (matches!(d.kind.as_str(), "eigen" | "cholesky" | "lu") && m != n) { return None; }
+    let frames = Frames::new(&[(&**right.layout(), 2)]).ok().filter(|f| f.count > 0)?;
+    let [m, n] = [right.shape()[right.shape().len() - 2], right.shape()[right.shape().len() - 1]];
+    if m == 0 || n == 0 || (matches!(d.kind.as_str(), "eigen" | "cholesky" | "lu") && m != n) { return None; }
     let (domain, width) = domain_of(&[right], span).ok()?;
-    fn stack<T>(d: &Decomposition, a: &[T], [m, n, count]: [usize; 3], frame: &[usize], width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> where
+    fn stack<T>(d: &Decomposition, a: &[T], [m, n]: [usize; 2], frames: &Frames, width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> where
         T: Factor + Field + Sync, T::Real: Field + Into<f64> {
-        let results = cells(count, 1, |i, slot: &mut [Option<_>], _: &mut ()| slot[0] = Some(factored(d, &a[i * m * n..][..m * n], [m, n], width)), span)?;
+        let results = cells(frames.count, 1, |i, slot: &mut [Option<_>], _: &mut ()| slot[0] = Some(factored(d, &a[frames.cell(0, i) * m * n..][..m * n], [m, n], width)), span)?;
         let (mut items, mut keys) = (Vec::new(), None);
         for cell in results {
             let (names, factors) = cell.expect("`cells` writes every cell").map_err(|f| fault(d, f, span))?;
             if keys.is_none() { keys = Some(record((names, factors.clone())).map_err(|f| fault(d, f, span))?.layout().clone()) }
             items.extend(factors);
         }
-        let layout = Layout::from(frame.to_vec()).concat(&keys.expect("a stack has a cell"));
+        let layout = Layout::from(frames.layout.shape().to_vec()).concat(&keys.expect("a stack has a cell"));
         Value::new(layout.shape().to_vec(), items).and_then(|v| v.with_layout(layout)).error_at(span, "invalid rank cells")
     }
-    Some(with_field!(domain.inexact(width), [Single, Double, Complex], T => stack(&d, &read::<T>(right, span).ok()?, [m, n, count], frame, width, span)))
+    Some(with_field!(domain.inexact(width), [Single, Double, Complex], T => stack(&d, &read::<T>(right, span).ok()?, [m, n], &frames, width, span)))
 }
 
 /// Why `•decompose` gave no record: a factorization that failed, or factors or a record that the array limits reject.
@@ -395,7 +396,7 @@ pub(crate) fn recompose(left: Option<&Value>, right: &Value, span: &Context<'_>)
     let factors = names.iter().map(|&(name, rank)| {
         let f = crate::keyed::field(right, name).ok_or_else(|| span.domain_error(format!("{kind} factors need {name}")))?;
         let size = match (f.shape(), rank) {
-            (&[m, n], 2) => (m, n), (&[m], 1) => (m, 1), _ => return Err(span.error(ErrorKind::Rank, format!("{name} must have rank {rank}")))
+            (&[m, n], 2) => (m, n), (&[m], 1) => (m, 1), _ => return Err(span.error(Kind::Rank, format!("{name} must have rank {rank}")))
         };
         Ok((f, size))
     }).collect::<Result<Vec<_>, Error>>()?;
@@ -410,7 +411,7 @@ pub(crate) fn recompose(left: Option<&Value>, right: &Value, span: &Context<'_>)
 /// The matrix that `kind`'s factors `f` multiply back into, as an array with real numbers rounded to `width`. Each factor is held row by row with its rows and columns, in the order `recompose` names them.
 fn rebuild<T>(kind: &str, f: &[(Cow<'_, [T]>, (usize, usize))], width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> where T: Factor + Field,
     PlusTimes: Inner<T, Out = T> {
-    let disagree = || span.error(ErrorKind::Length, format!("{kind} factors have sizes that don't agree"));
+    let disagree = || span.error(Kind::Length, format!("{kind} factors have sizes that don't agree"));
     // `a`, with `rows` rows of `columns` items, conjugated and transposed.
     let adjoint = |a: &[T], rows: usize, columns: usize| {
         let mut t = vec![T::zero(); rows * columns];
@@ -486,7 +487,7 @@ pub(super) fn binary_encode(right: &Value, span: &Context<'_>) -> Result<Value, 
         numbers.push((value, n.clone()));
     }
     let layout = right.layout().concat(&Layout::from(vec![width]));
-    let mut data = Vec::with_capacity(generated_len(layout.shape()).error_at(span, "binary encoding is too large")?);
+    let mut data = Vec::with_capacity(generated_len(layout.shape()).at(span)?);
     for (n, domain) in &numbers {
         span.check()?;
         data.extend((0..width).rev().map(|bit| Value::Number(domain.like(i32::from(n.bit(bit as u64))))));
@@ -497,7 +498,7 @@ pub(super) fn binary_encode(right: &Value, span: &Context<'_>) -> Result<Value, 
 
 /// The length that `⊥` decodes along: the longer of its base's and its digits' last axes, where the other has length 1. LENGTH ERROR where they differ and neither is 1.
 pub(crate) fn decode_length(xlen: usize, ylen: usize, span: &Context<'_>) -> Result<usize, Error> {
-    if xlen != ylen && xlen != 1 && ylen != 1 { return Err(span.error(ErrorKind::Length, "decode axes do not agree")); }
+    if xlen != ylen && xlen != 1 && ylen != 1 { return Err(span.error(Kind::Length, "decode axes do not agree")); }
     Ok(if xlen == 1 { ylen } else { xlen })
 }
 /// Bases are vectors along the last axis of `left`. Its leading axes form a frame that agrees with the values' frame, as with J's ranks: 1 0 to encode and 1 1 to decode.
@@ -514,7 +515,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
     if encode {
         let digits = if left.is_unit() { Layout::from(vec![]) } else { left.layout().axes(left.shape().len() - 1..left.shape().len()) };
         let layout = agreement.layout.concat(&digits);
-        let len = generated_len(layout.shape()).error_at(span, "encode result is too large")?;
+        let len = generated_len(layout.shape()).at(span)?;
         if let (Mapping::Single, Mapping::Linear(1)) = (&agreement.left, &agreement.right) {
             if let Some(result) = encode_whole(left.as_items(), right.as_items(), &layout) { return Ok(result); }
         }
@@ -576,8 +577,8 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
 
 /// `bases⊤values` when both hold whole numbers in compact storage, with each value's digits together and in order. Each base divides by multiplication. The digits are floats when either argument is. `None` for other arguments, or when a quotient leaves `i64`.
 fn encode_whole<'a>(bases: Items<'a>, values: Items<'a>, layout: &Layout) -> Option<Value> {
-    let float = [bases, values].into_iter().filter_map(|items| if let Items::Floats(f) = items { Some(f.tag()) } else { None }).max();
-    let whole = |items: Items<'a>| match items { Items::Booleans(_) | Items::Integers(_) | Items::Floats(_) => items.integers().ok(), _ => None };
+    let float = [bases, values].into_iter().filter_map(|items| if let Items::Compact(View::Floats(f)) = items { Some(f.tag()) } else { None }).max();
+    let whole = |items: Items<'a>| match items { Items::Compact(View::Booleans(_) | View::Integers(_) | View::Floats(_)) => items.integers().ok(), _ => None };
     let (bases, values) = (whole(bases)?, whole(values)?);
     if bases.is_empty() { return None; }
     let data = rustymath::integer::encode(&bases, &values)?;
@@ -619,7 +620,7 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Context<'_>, fill: bool, rn
     };
     if right.is_atom() { return item(right.clone(), rng); }
     let prototype = if right.is_empty() { item(right.prototype(), rng)? } else { integer(0) };
-    let float = match right.as_items() { Items::Integers(_) => None, Items::Floats(f) => Some(f.tag()), _ => Some(span.numeric().width) };
+    let float = match right.as_items() { Items::Compact(View::Integers(_)) => None, Items::Compact(View::Floats(f)) => Some(f.tag()), _ => Some(span.numeric().width) };
     let unit = float.unwrap_or(span.numeric().width);
     let mut data = Gather::items(right.len());
     match right.as_items() {
@@ -646,15 +647,15 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Context<'_>, fill: bool, rn
 
 pub(crate) fn deal<R: rand::Rng + ?Sized>(left: &Value, right: &Value, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
     let count = |a: &Value| {
-        if a.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "deal needs units or singleton vectors")); }
-        if !a.is_singleton() { return Err(span.error(ErrorKind::Length, "deal needs one count per argument")); }
+        if a.shape().len() > 1 { return Err(span.error(Kind::Rank, "deal needs units or singleton vectors")); }
+        if !a.is_singleton() { return Err(span.error(Kind::Length, "deal needs one count per argument")); }
         let item = a.at(0);
         let n = numeric(&item, span)?;
         Ok((n.nonnegative_integer().error_at(span, "deal needs nonnegative integer counts")?, counted_width(&item, span)))
     };
     let ((n, count_float), (total, total_float)) = (count(left)?, count(right)?);
     if n > total { return Err(span.domain_error("cannot deal more items than the population")); }
-    generated_len(&[n]).error_at(span, "deal exceeds array limits")?;
+    generated_len(&[n]).at(span)?;
     let float = count_float.max(total_float);
     let mut draws = Vec::new();
     rustymath::random::deal(n as u64, total as u64, rng, &mut draws);

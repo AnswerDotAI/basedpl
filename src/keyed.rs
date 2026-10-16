@@ -1,62 +1,15 @@
-use crate::{array::{FloatWidth, Items, Layout, Steps}, ErrorKind, Number, Value};
-use foldhash::{HashMap, HashSet, HashSetExt};
+use rustymath::{buffer::{FloatWidth, View}, error::Kind, layout::strides};
+use crate::{array::{Items, Steps}, ErrorKind, Number, Value};
+use foldhash::{HashSet, HashSetExt};
 use std::sync::Arc;
 
-/// Names for the positions on one axis. A position may have no name. The names that are present are unique.
-#[derive(Clone, Debug, Default)]
-pub struct Keys { names: Vec<Option<Arc<str>>>, index: HashMap<Arc<str>, usize> }
-
-// Arrangement is part of representation equality; Match compares key sets instead.
-impl PartialEq for Keys { fn eq(&self, other: &Self) -> bool { self.names == other.names } }
-impl Eq for Keys {}
-
-impl Keys {
-    /// `None` marks a position with no name. The names must be unique: callers merge or reject duplicates before building.
-    pub(crate) fn partial(names: Vec<Option<Arc<str>>>) -> Result<Arc<Self>, ErrorKind> {
-        let index: HashMap<_, _> = names.iter().enumerate().filter_map(|(i, k)| Some((k.clone()?, i))).collect();
-        if index.len() != names.iter().flatten().count() { return Err(ErrorKind::Domain); }
-        Ok(Arc::new(Self { names, index }))
-    }
-    pub fn names(&self) -> &[Option<Arc<str>>] { &self.names }
-    pub fn len(&self) -> usize { self.names.len() }
-    pub fn is_empty(&self) -> bool { self.names.is_empty() }
-    /// Whether every position has a name.
-    pub fn complete(&self) -> bool { self.index.len() == self.names.len() }
-    /// Whether no position has a name. An axis like that carries no keys.
-    pub(crate) fn blank(&self) -> bool { self.index.is_empty() && !self.is_empty() }
-    pub fn position(&self, name: &str) -> Option<usize> { self.index.get(name).copied() }
-    /// Adds a position at the end. A name must be new.
-    pub(crate) fn push(&mut self, name: Option<Arc<str>>) {
-        if let Some(name) = &name { self.index.insert(name.clone(), self.names.len()); }
-        self.names.push(name);
-    }
-    /// For each position of `wanted`, the matching position here. Named positions match by name. Unnamed positions match in order.
-    pub(crate) fn align(&self, wanted: &Self) -> Vec<Option<usize>> {
-        let mut gaps = self.names.iter().enumerate().filter(|(_, n)| n.is_none()).map(|(i, _)| i);
-        wanted.names.iter().map(|n| match n { Some(n) => self.position(n), None => gaps.next() }).collect()
-    }
-    pub(crate) fn positions(&self, wanted: &Self, subset: bool) -> Result<Vec<usize>, ErrorKind> {
-        if !subset && self.len() != wanted.len() { return Err(ErrorKind::Length); }
-        self.align(wanted).into_iter().map(|p| p.ok_or(if subset { ErrorKind::Index } else { ErrorKind::Length })).collect()
-    }
-    /// Keys at source positions, in the order given. A position with no source has no name.
-    pub(crate) fn select(&self, positions: impl IntoIterator<Item = Option<usize>>) -> Result<Arc<Self>, ErrorKind> {
-        Self::partial(positions.into_iter().map(|i| i.and_then(|i| self.names[i].clone())).collect())
-    }
-    /// These positions, then the named positions of `other` that these lack. Unnamed positions pair in order. Both sides need the same number of them.
-    pub(crate) fn union(self: &Arc<Self>, other: &Arc<Self>) -> Result<Arc<Self>, ErrorKind> {
-        if self == other { return Ok(self.clone()); }
-        if self.len() - self.index.len() != other.len() - other.index.len() { return Err(ErrorKind::Length); }
-        let extra = other.names.iter().filter(|k| k.as_ref().is_some_and(|k| self.position(k).is_none()));
-        Self::partial(self.names.iter().chain(extra).cloned().collect())
-    }
-}
+pub use rustymath::layout::Keys;
 
 /// A character atom or vector names one element, whatever storage holds the vector's characters.
 pub(crate) fn name(value: &Value) -> Option<Arc<str>> {
     match (value, value.as_items()) {
         (Value::Character(c), _) => Some(c.to_string().into()),
-        (Value::Array(_), Items::Characters(cs)) if value.shape().len() == 1 => Some(cs.iter().collect::<String>().into()),
+        (Value::Array(_), Items::Compact(View::Characters(cs))) if value.shape().len() == 1 => Some(cs.iter().collect::<String>().into()),
         (Value::Array(_), Items::Values(vs)) if value.shape().len() == 1 && !vs.is_empty() => {
             vs.iter().map(|v| if let Value::Character(c) = v { Some(*c) } else { None }).collect::<Option<String>>().map(Into::into)
         }
@@ -97,10 +50,10 @@ pub(crate) enum Selector { One(Arc<str>), Many(Vec<usize>, Vec<Arc<str>>) }
 impl Selector {
     /// `None` when the value holds no names at all; mixed contents are a DOMAIN ERROR.
     pub fn of(value: &Value) -> Result<Option<Self>, ErrorKind> {
-        if matches!(value.as_items(), Items::Integers(_) | Items::Floats(_)) { return Ok(None); }
+        if matches!(value.as_items(), Items::Compact(View::Integers(_) | View::Floats(_))) { return Ok(None); }
         if let Some(k) = name(value) { return Ok(Some(Self::One(k))); }
         if value.is_atom() || value.is_empty() || !value.elements().any(|e| name(&e).is_some()) { return Ok(None); }
-        let names = value.elements().map(|e| name(&e).ok_or(ErrorKind::Domain)).collect::<Result<_, _>>()?;
+        let names = value.elements().map(|e| name(&e).ok_or(Kind::Domain)).collect::<Result<_, _>>()?;
         Ok(Some(Self::Many(value.shape().to_vec(), names)))
     }
 }
@@ -140,7 +93,7 @@ pub(crate) fn fields(value: &Value) -> Result<(Vec<usize>, Vec<Field>), ErrorKin
     let shape = pairs.iter().find(|(_, v)| !single(v)).map_or(vec![], |(_, v)| v.shape().to_vec());
     let len = shape.iter().product();
     let fields = pairs.into_iter().map(|(name, v)| match single(&v) {
-        true => Ok((name, vec![v; len])), false if v.shape() == shape => Ok((name, v.elements().collect())), false => Err(ErrorKind::Length)
+        true => Ok((name, vec![v; len])), false if v.shape() == shape => Ok((name, v.elements().collect())), false => Err(ErrorKind::from(Kind::Length))
     });
     let fields = fields.collect::<Result<_, _>>()?;
     Ok((shape, fields))
@@ -157,7 +110,7 @@ pub(crate) fn slots(fields: Vec<Field>, names: &[&str], used: usize) -> Result<V
 
 /// The entries of a keyed vector, in order. An empty vector has none. Every entry needs a name.
 pub(crate) fn pairs(value: &Value) -> Result<Vec<(Arc<str>, Value)>, ErrorKind> {
-    entries(value)?.into_iter().map(|(k, v)| Some((k?, v))).collect::<Option<_>>().ok_or(ErrorKind::Domain)
+    entries(value)?.into_iter().map(|(k, v)| Some((k?, v))).collect::<Option<_>>().ok_or(Kind::Domain.into())
 }
 
 /// A keyed vector entry: its name, if it has one, and its value.
@@ -165,9 +118,9 @@ type Entry = (Option<Arc<str>>, Value);
 
 /// The entries of a keyed vector, in order, with `None` for an entry that has no name.
 pub(crate) fn entries(value: &Value) -> Result<Vec<Entry>, ErrorKind> {
-    if value.shape().len() != 1 { return Err(ErrorKind::Rank); }
+    if value.shape().len() != 1 { return Err(Kind::Rank.into()); }
     if value.is_empty() { return Ok(vec![]); }
-    let keys = value.keys(0).ok_or(ErrorKind::Domain)?;
+    let keys = value.keys(0).ok_or(Kind::Domain)?;
     Ok(keys.names().iter().cloned().zip(value.elements()).collect())
 }
 
@@ -190,15 +143,15 @@ fn position(i: usize) -> Value { Value::Number(crate::Number::from_integer(i as 
 /// Names for positions: one name, or a vector of names in which a position with no name gives its own position.
 fn names(value: &Value) -> Result<Vec<Option<Arc<str>>>, ErrorKind> {
     if let Some(k) = name(value) { return Ok(vec![Some(k)]); }
-    if value.is_atom() || value.shape().len() > 1 { return Err(ErrorKind::Domain); }
+    if value.is_atom() || value.shape().len() > 1 { return Err(Kind::Domain.into()); }
     let entry = |(i, v): (usize, Value)| match name(&v) {
-        Some(k) => Ok(Some(k)), None if v.as_number().is_some_and(|n| n.nonnegative_integer() == Ok(i)) => Ok(None), None => Err(ErrorKind::Domain)
+        Some(k) => Ok(Some(k)), None if v.as_number().is_some_and(|n| n.nonnegative_integer().ok() == Some(i)) => Ok(None), None => Err(Kind::Domain.into())
     };
     value.elements().enumerate().map(entry).collect()
 }
 
 pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) -> Result<Value, ErrorKind> {
-    if keys.has_keys() && keys.shape().len() != 1 { return Err(ErrorKind::Rank); }
+    if keys.has_keys() && keys.shape().len() != 1 { return Err(Kind::Rank.into()); }
     let axis_names = keys.keys(0);
     let lists = if axis_names.is_some() { keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()? } else {
         match names(keys) {
@@ -211,11 +164,11 @@ pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) ->
     }
     let default: Vec<_> = (0..lists.len()).collect();
     let axes = axes.unwrap_or(&default);
-    if axes.len() != lists.len() { return Err(ErrorKind::Length); }
+    if axes.len() != lists.len() { return Err(Kind::Length.into()); }
     let mut result = values.layout().all_keys();
     let mut result_names = (0..values.shape().len()).map(|a| values.axis_name(a).cloned()).collect::<Vec<_>>();
     for (i, (&axis, names)) in axes.iter().zip(lists).enumerate() {
-        let slot = result.get_mut(axis).ok_or(ErrorKind::Rank)?;
+        let slot = result.get_mut(axis).ok_or(Kind::Rank)?;
         *slot = Some(Keys::partial(names)?);
         if let Some(names) = axis_names { result_names[axis] = names.names()[i].clone(); }
     }
@@ -225,14 +178,14 @@ pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) ->
 pub(crate) fn remove(value: &Value, axes: Option<&[usize]>) -> Result<Value, ErrorKind> {
     let Some(axes) = axes else { return Ok(value.unkeyed()); };
     let mut keys = value.layout().all_keys();
-    for &axis in axes { *keys.get_mut(axis).ok_or(ErrorKind::Rank)? = None; }
+    for &axis in axes { *keys.get_mut(axis).ok_or(Kind::Rank)? = None; }
     value.clone().with_keys(keys)
 }
 
 pub(crate) fn selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKind> {
     let mut values = Vec::new();
     for &axis in axes {
-        let &len = value.shape().get(axis).ok_or(ErrorKind::Rank)?;
+        let &len = value.shape().get(axis).ok_or(Kind::Rank)?;
         values.push(match value.keys(axis) {
             Some(k) => Value::from_parts(
                 vec![len], k.names().iter().enumerate().map(|(i, k)| k.as_ref().map_or_else(|| position(i), |k| text(k))).collect(), text(""))?,
@@ -242,17 +195,6 @@ pub(crate) fn selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKin
     if values.len() == 1 { Ok(values.pop().unwrap()) } else { Value::from_parts(vec![values.len()], values, Value::integers(vec![0], vec![])?) }
 }
 
-pub(crate) fn mapped_index(flat: usize, result: &[usize], source: &[usize], maps: &[Vec<Option<usize>>]) -> Option<usize> {
-    let (mut offset, mut stride) = (0, 1);
-    for (axis, pos) in crate::primitive::digits(flat, result) {
-        if axis < source.len() {
-            offset += maps[axis][pos]? * stride;
-            stride *= source[axis];
-        }
-    }
-    Some(offset)
-}
-
 /// For each axis of `target`, the keys in `selectors` that it lacks, each once.
 pub(crate) fn missing(target: &Value, selectors: &[Option<Value>]) -> Result<Vec<Vec<Arc<str>>>, ErrorKind> {
     let rank = target.shape().len();
@@ -260,7 +202,7 @@ pub(crate) fn missing(target: &Value, selectors: &[Option<Value>]) -> Result<Vec
     for (axis, selector) in selectors.iter().enumerate() {
         let Some(selector) = selector else { continue; };
         let Some(selector) = Selector::of(selector)? else { continue; };
-        if axis >= rank { return Err(ErrorKind::Rank); }
+        if axis >= rank { return Err(Kind::Rank.into()); }
         let wanted = match selector { Selector::One(k) => vec![k], Selector::Many(_, names) => names };
         let mut seen = HashSet::new();
         for name in wanted { if target.keys(axis).is_none_or(|k| k.position(&name).is_none()) && seen.insert(name.clone()) { added[axis].push(name); } }
@@ -280,8 +222,7 @@ pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: boo
         let len = crate::array::generated_len(&shape)?;
         if len > 0 {
             let cells = Value::from_parts(shape, vec![fill.clone(); len], fill)?;
-            target.append(&cells, Some(&added[0].iter().cloned().map(Some).collect::<Vec<_>>()));
-            return Ok(());
+            return target.append(&cells, Some(&added[0].iter().cloned().map(Some).collect::<Vec<_>>()));
         }
         shape = target.shape().to_vec();
     }
@@ -293,10 +234,10 @@ pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: boo
         shape[axis] = all.len();
         keys[axis] = Some(Keys::partial(all)?);
     }
-    let stride = crate::primitive::strides(target.shape());
+    let stride = strides(target.shape());
     let tables: Vec<_> = shape.iter().zip(target.shape()).zip(stride).map(|((&len, &size), stride)| Steps::Clipped { start: 0, len, size, stride }).collect();
     let names = target.axis_names().to_vec();
-    *target = crate::primitive::remapped(target, shape.into(), &tables)?.with_keys(keys)?.with_axis_names(names)?;
+    *target = crate::primitive::remapped(target, rustymath::structure::Plan { layout: shape.into(), steps: tables })?.with_keys(keys)?.with_axis_names(names)?;
     Ok(())
 }
 
@@ -307,7 +248,7 @@ pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool)
     };
     let shape = value.shape();
     if (0..shape.len()).all(|a| target(a).is_none()) { return Ok(value.clone()); }
-    let stride = crate::primitive::strides(shape);
+    let stride = strides(shape);
     let mut keys = vec![None; shape.len()];
     let tables = (0..shape.len()).map(|axis| {
         Ok(match target(axis) {
@@ -318,11 +259,6 @@ pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool)
             None => { keys[axis] = value.keys(axis).cloned(); Steps::along(shape[axis], stride[axis]) }
         })
     }).collect::<Result<Vec<_>, ErrorKind>>()?;
-    let layout = Layout::from(tables.iter().map(Steps::len).collect::<Vec<_>>()).with_keys(keys)?.inherit_names(value.axis_names().to_vec());
-    crate::primitive::remapped(value, layout, &tables)
-}
-
-pub(crate) fn selected_keys(value: &Value, axis: usize, positions: impl IntoIterator<Item = Option<usize>>) -> Result<Option<Arc<Keys>>, ErrorKind> {
-    let Some(keys) = value.keys(axis) else { return Ok(None); };
-    keys.select(positions).map(Some)
+    let layout = rustymath::layout::Layout::from(tables.iter().map(Steps::len).collect::<Vec<_>>()).with_keys(keys)?.inherit_names(value.axis_names().to_vec());
+    crate::primitive::remapped(value, rustymath::structure::Plan { layout, steps: tables })
 }

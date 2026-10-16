@@ -1,5 +1,6 @@
 //! Indexing primitives: `⌷`, `⊃` and bracket indexing, and the `Selection` of items that selective assignment and `@` write through.
 
+use rustymath::{buffer::View, error::Kind, structure::Plan};
 use super::*;
 
 pub(super) fn squad(left: &Value, right: &Value, axes: Option<&[usize]>, span: &Context<'_>) -> Result<Value, Error> {
@@ -8,14 +9,14 @@ pub(super) fn squad(left: &Value, right: &Value, axes: Option<&[usize]>, span: &
 
 /// The part for each axis of `right` that the indices `left` of `⌷` give. An axis with no index has none.
 fn squad_parts(left: &Value, right: &Value, axes: Option<&[usize]>, span: &Context<'_>) -> Result<Vec<Option<Value>>, Error> {
-    if left.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "squad indices must be a unit or vector")); }
+    if left.shape().len() > 1 { return Err(span.error(Kind::Rank, "squad indices must be a unit or vector")); }
     let fields = coordinate_fields(left);
     if fields.len() > right.shape().len() || axes.is_some_and(|a| a.len() != fields.len()) {
-        return Err(span.error(ErrorKind::Length, "squad needs one index item per selected axis"));
+        return Err(span.error(Kind::Length, "squad needs one index item per selected axis"));
     }
     let mut parts = vec![None; right.shape().len()];
     for (i, coords) in fields.into_iter().enumerate() {
-        let part = parts.get_mut(axes.map_or(i, |a| a[i])).ok_or_else(|| span.error(ErrorKind::Rank, "squad axis is outside array rank"))?;
+        let part = parts.get_mut(axes.map_or(i, |a| a[i])).ok_or_else(|| span.error(Kind::Rank, "squad axis is outside array rank"))?;
         *part = Some(coords);
     }
     Ok(parts)
@@ -31,45 +32,45 @@ pub(crate) fn coordinate_fields(value: &Value) -> Vec<Value> {
 }
 
 fn coordinate_offset(coords: &Value, right: &Value, prototype: bool, span: &Context<'_>) -> Result<Option<usize>, Error> {
-    if coords.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "a coordinate must be a unit or vector")); }
+    if coords.shape().len() > 1 { return Err(span.error(Kind::Rank, "a coordinate must be a unit or vector")); }
     let fields = coordinate_fields(coords);
-    if fields.len() != right.shape().len() { return Err(span.error(ErrorKind::Rank, "a coordinate needs one index per axis")); }
+    if fields.len() != right.shape().len() { return Err(span.error(Kind::Rank, "a coordinate needs one index per axis")); }
     let mut offset = Some(0);
     for (axis, (n, &size)) in fields.iter().zip(right.shape()).enumerate() {
         let n = axis_selector(n, right, axis, span)?;
         let n = numeric(&n, span)?.integer().error_at(span, "index must be an integer")?;
-        let i = signed(n, size);
-        if i.is_none() && !prototype { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
+        let i = rustymath::layout::position(n, size);
+        if i.is_none() && !prototype { return Err(span.error(Kind::Index, "index is outside the array")); }
         offset = offset.zip(i).map(|(o, i)| o * size + i);
     }
     Ok(offset)
 }
 
 pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, span: &Context<'_>) -> Result<Value, Error> {
-    if left.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "Pick needs one coordinate field per axis")); }
+    if left.shape().len() > 1 { return Err(span.error(Kind::Rank, "Pick needs one coordinate field per axis")); }
     let source = if right.is_unit() { &[1][..] } else { right.shape() };
     let fields = coordinate_fields(left);
     if fields.is_empty() { return Ok(right.clone()); }
-    if fields.len() > source.len() { return Err(span.error(ErrorKind::Rank, "too many Pick coordinates")); }
+    if fields.len() > source.len() { return Err(span.error(Kind::Rank, "too many Pick coordinates")); }
     let fields = fields.iter().enumerate().map(|(a, f)| axis_selector(f, right, a, span)).collect::<Result<Vec<_>, _>>()?;
     let mut frame = Layout::default();
     for field in &fields { frame = Agreement::new(&frame, &Layout::from(field.shape())).error_at(span, "Pick coordinate fields do not agree")?.layout; }
     let maps = fields.iter().map(|f| Agreement::new(&Layout::from(f.shape()), &frame).unwrap().left).collect::<Vec<_>>();
     let coordinates = fields.iter().map(|f| f.as_items().integers().error_at(span, "Pick coordinates must be integers")).collect::<Result<Vec<_>, _>>()?;
     let trailing = &source[fields.len()..];
-    let cell_len = crate::array::element_count(trailing).error_at(span, "invalid Pick cell")?;
+    let cell_len = crate::array::element_count(trailing).at(span)?;
     let layout = frame.concat(&right.layout().axes(fields.len()..right.shape().len()));
-    let len = generated_len(layout.shape()).error_at(span, "Pick result is too large")?;
+    let len = generated_len(layout.shape()).at(span)?;
     let mut values = Vec::with_capacity(len);
     for i in 0..crate::array::element_count(frame.shape()).unwrap() {
         let mut offset = Some(0);
         for (axis, (field, map)) in coordinates.iter().zip(&maps).enumerate() {
             let n = field[map.index(i)];
             let size = source[axis];
-            match signed(n, size) {
+            match rustymath::layout::position(n, size) {
                 Some(i) => offset = offset.map(|o| o * size + i),
                 None => {
-                    if !(prototype || size == 0 && (n == 0 || n == -1)) { return Err(span.error(ErrorKind::Index, "Pick coordinate is outside the array")); }
+                    if !(prototype || size == 0 && (n == 0 || n == -1)) { return Err(span.error(Kind::Index, "Pick coordinate is outside the array")); }
                     offset = None;
                 }
             }
@@ -81,12 +82,9 @@ pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, span: &Context<
     frame.collect(values, || right.prototype()).error_at(span, "invalid Pick result")
 }
 
-/// The offset of a position in an axis of `size` items. Positive positions count from the start, and negative ones from the end.
-pub(super) fn signed(n: i64, size: usize) -> Option<usize> { let i = if n < 0 { size as i64 + n } else { n }; usize::try_from(i).ok().filter(|&i| i < size) }
-
 pub(crate) fn position(n: &Number, size: usize, span: &Span) -> Result<usize, Error> {
     let n = n.integer().error_at(span, "index must be an integer")?;
-    signed(n, size).ok_or_else(|| span.error(ErrorKind::Index, "index is outside the array"))
+    rustymath::layout::position(n, size).ok_or_else(|| span.error(Kind::Index, "index is outside the array"))
 }
 
 /// An atomic `∞` selects a whole axis in order, and `¯∞` selects it in reverse. Returns whether it is reversed.
@@ -129,7 +127,7 @@ impl Selection {
             crate::keyed::reorder(values, &layout.all_keys(), true).error_at(span, "replacement does not supply selected keys")?
         } else { values.clone() };
         if !values.is_singleton() && values.shape() != layout.shape() {
-            return Err(span.error(ErrorKind::Length, "replacement shape does not match selection"));
+            return Err(span.error(Kind::Length, "replacement shape does not match selection"));
         }
         Ok(values)
     }
@@ -223,7 +221,7 @@ fn write_paths(array: &Value, updates: &[(&[usize], Value)], span: &Context<'_>)
     let mut groups: HashMap<usize, Vec<(&[usize], Value)>> = HashMap::new();
     for (path, value) in updates { groups.entry(path[0]).or_default().push((&path[1..], value.clone())); }
     for (i, edits) in groups {
-        if i >= items.len() { return Err(span.error(ErrorKind::Index, "replacement changed a selected path")); }
+        if i >= items.len() { return Err(span.error(Kind::Index, "replacement changed a selected path")); }
         items[i] = write_paths(&items[i].clone(), &edits, span)?;
     }
     if array.is_atom() { return Ok(items.remove(0)); }
@@ -252,7 +250,7 @@ pub(crate) fn choose(right: &Value, indices: &Value, span: &Context<'_>) -> Resu
 }
 
 pub(crate) fn at_indices(right: &Value, indices: &Value, span: &Context<'_>) -> Result<Selection, Error> {
-    if right.is_unit() { return Err(span.error(ErrorKind::Length, "a unit has no major-cell axis")); }
+    if right.is_unit() { return Err(span.error(Kind::Length, "a unit has no major-cell axis")); }
     selection(right, &[Some(indices.clone())], span)
 }
 
@@ -266,22 +264,22 @@ impl Value {
 pub(crate) fn select(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> Result<Value, Error> {
     if parts.is_empty() { return Ok(right.clone()); }
     if let Some(value) = select_vector(right, parts, span)? { return Ok(value); }
-    let (steps, layout, direct) = match axis_positions(right, parts, span)? {
-        Positions::Choose(indices) => return choose(right, &indices, span)?.read(right, span), Positions::Axes(steps, layout, direct) => (steps, layout, direct)
+    let (plan, direct) = match axis_positions(right, parts, span)? {
+        Positions::Choose(indices) => return choose(right, &indices, span)?.read(right, span), Positions::Axes(plan, direct) => (plan, direct)
     };
-    if direct { return Ok(right.at(Steps::combined(&steps)[0])); }
-    remap(right, layout, &steps, span)
+    if direct { return Ok(right.at(Steps::combined(&plan.steps)[0])); }
+    remap(right, plan, span)
 }
 
 /// `body` of the indices of a selection of the unkeyed vector `right` by one array of them, those indices as integers, and the vector's length. Floats that all stand for integers read as integers. `None` when the selection isn't of this kind. An index outside the vector is an error.
 fn vector_index<R>(
-    right: &Value, parts: &[Option<Value>], span: &Context<'_>, body: impl FnOnce(&Value, crate::array::Ints<'_>, i64) -> R) -> Result<Option<R>, Error> {
+    right: &Value, parts: &[Option<Value>], span: &Context<'_>, body: impl FnOnce(&Value, rustymath::buffer::Ints<'_>, i64) -> R) -> Result<Option<R>, Error> {
     let ([Some(indices)], [size]) = (parts, right.shape()) else { return Ok(None) };
     if indices.is_atom() || right.keys(0).is_some() { return Ok(None); }
     let whole;
     let ix = match indices.as_items() {
-        Items::Integers(ix) => ix,
-        items @ Items::Floats(_) => match items.integers() { Ok(w) => { whole = w; crate::array::Ints::I64(&whole) } Err(_) => return Ok(None) },
+        Items::Compact(View::Integers(ix)) => ix,
+        items @ Items::Compact(View::Floats(_)) => match items.integers() { Ok(w) => { whole = w; rustymath::buffer::Ints::I64(&whole) } Err(_) => return Ok(None) },
         _ => return Ok(None),
     };
     let n = *size as i64;
@@ -289,14 +287,14 @@ fn vector_index<R>(
         let i: i64 = i.into();
         ok & (i >= -n) & (i < n)
     }));
-    if !inside { return Err(span.error(ErrorKind::Index, "index is outside the array")); }
+    if !inside { return Err(span.error(Kind::Index, "index is outside the array")); }
     Ok(Some(body(indices, ix, n)))
 }
 
 /// The layout of a selection of the vector `right` at the array `indices`: the indices' shape, and the vector's axis name where the indices are a vector.
-fn vector_layout(right: &Value, indices: &Value) -> Layout {
+fn vector_layout(right: &Value, indices: &Value) -> rustymath::layout::Layout {
     let names = if indices.shape().len() == 1 { vec![right.axis_name(0).cloned()] } else { vec![] };
-    Layout::from(indices.shape()).inherit_names(names)
+    rustymath::layout::Layout::from(indices.shape()).inherit_names(names)
 }
 
 /// The items of the unkeyed vector `right` at an array of indices, read straight from each index with no table of offsets. `None` when the selection isn't of this kind.
@@ -304,7 +302,7 @@ fn select_vector(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> 
     vector_index(right, parts, span, |indices, ix, _| {
         let mut data = Gather::new(&[right], indices.len());
         with_ints!(ix, |ix| data.items_at(right, ix));
-        data.finish(rearranged(vector_layout(right, indices), right), || right.prototype()).error_at(span, "invalid selection")
+        data.finish(Layout::rearranged(vector_layout(right, indices), right), || right.prototype()).error_at(span, "invalid selection")
     })?.transpose()
 }
 
@@ -318,21 +316,21 @@ pub(crate) fn selection(right: &Value, parts: &[Option<Value>], span: &Context<'
                 (i + (n & (i >> 63))) as usize
             })
             .collect());
-        Selection { frame: Frame::Array(vector_layout(right, indices)), targets: Targets::Offsets(offsets) }
+        Selection { frame: Frame::Array(vector_layout(right, indices).into()), targets: Targets::Offsets(offsets) }
     })?;
     if let Some(selection) = vector { return Ok(selection); }
-    let (steps, layout, direct) = match axis_positions(right, parts, span)? {
-        Positions::Choose(indices) => return choose(right, &indices, span), Positions::Axes(steps, layout, direct) => (steps, layout, direct)
+    let (plan, direct) = match axis_positions(right, parts, span)? {
+        Positions::Choose(indices) => return choose(right, &indices, span), Positions::Axes(plan, direct) => (plan, direct)
     };
-    let targets = Targets::Offsets(Steps::combined(&steps));
-    Ok(Selection { frame: if direct { Frame::Direct } else { Frame::Array(layout) }, targets })
+    let targets = Targets::Offsets(Steps::combined(&plan.steps));
+    Ok(Selection { frame: if direct { Frame::Direct } else { Frame::Array(plan.layout.into()) }, targets })
 }
 
 /// A selection by parts: the `Steps` it takes along each axis, the result's layout, and whether the result is one item. A first part whose items are arrays does choose indexing instead.
-enum Positions { Axes(Vec<Steps>, Layout, bool), Choose(Value) }
+enum Positions { Axes(Plan, bool), Choose(Value) }
 
 fn axis_positions(right: &Value, parts: &[Option<Value>], span: &Context<'_>) -> Result<Positions, Error> {
-    if parts.len() > right.shape().len() { return Err(span.error(ErrorKind::Rank, "too many index axes")); }
+    if parts.len() > right.shape().len() { return Err(span.error(Kind::Rank, "too many index axes")); }
     let parts = parts.iter().enumerate().map(|(axis, p)| p.as_ref().map(|p| axis_selector(p, right, axis, span)).transpose()).collect::<Result<Vec<_>, _>>()?;
     if let [Some(indices), rest @ ..] = parts.as_slice() {
         if rest.iter().all(Option::is_none) && matches!(indices.elements().next().unwrap_or_else(|| indices.prototype()), Value::Array(_)) {
@@ -348,7 +346,7 @@ fn axis_positions(right: &Value, parts: &[Option<Value>], span: &Context<'_>) ->
             direct &= a.is_atom();
             shape.extend_from_slice(a.shape());
             let positions = a.as_items().integers().error_at(span, "index must be an integer")?.iter()
-                .map(|&n| signed(n, size).ok_or_else(|| span.error(ErrorKind::Index, "index is outside the array"))).collect::<Result<Vec<_>, _>>()?;
+                .map(|&n| rustymath::layout::position(n, size).ok_or_else(|| span.error(Kind::Index, "index is outside the array"))).collect::<Result<Vec<_>, _>>()?;
             let selected =
                 right.keys(axis).map(|k| k.select(positions.iter().copied().map(Some))).transpose().error_at(span, "selection repeats a keyed position")?;
             if a.shape().len() == 1 {
@@ -370,15 +368,15 @@ fn axis_positions(right: &Value, parts: &[Option<Value>], span: &Context<'_>) ->
             else { Steps::along(size, stride[axis]) });
         }
     }
-    generated_len(&shape).error_at(span, "selection is too large")?;
-    let layout = Layout::from(shape).with_keys(keys).error_at(span, "invalid selection keys")?.inherit_names(names);
-    Ok(Positions::Axes(steps, layout, direct))
+    generated_len(&shape).at(span)?;
+    let layout = rustymath::layout::Layout::from(shape).with_keys(keys).error_at(span, "invalid selection keys")?.inherit_names(names);
+    Ok(Positions::Axes(Plan { layout, steps }, direct))
 }
 
 fn axis_selector(value: &Value, array: &Value, axis: usize, span: &Context<'_>) -> Result<Value, Error> {
     let Some(selector) = Selector::of(value).error_at(span, "invalid axis selector")? else { return Ok(value.clone()); };
-    let keys = array.keys(axis).ok_or_else(|| span.error(ErrorKind::Index, "axis has no keys"))?;
-    let position = |k: &str| keys.position(k).map(|i| integer(i as i64)).ok_or_else(|| span.error(ErrorKind::Index, format!("missing key: {k}")));
+    let keys = array.keys(axis).ok_or_else(|| span.error(Kind::Index, "axis has no keys"))?;
+    let position = |k: &str| keys.position(k).map(|i| integer(i as i64)).ok_or_else(|| span.error(Kind::Index, format!("missing key: {k}")));
     match selector {
         Selector::One(k) => position(&k),
         Selector::Many(shape, names) => {

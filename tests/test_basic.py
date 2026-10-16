@@ -1,4 +1,4 @@
-import subprocess, json, sys, os, signal, threading
+import array, subprocess, json, sys, os, signal, threading
 from fractions import Fraction
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np, pytest
@@ -78,6 +78,8 @@ def test_numpy_inputs_and_copies():
     z = np.array([[1+2j, 3.5-4j]], np.complex64)
     np.testing.assert_array_equal(bpl('x', x=z), z)
     assert bpl('x×2ₓ', x=z).np.dtype == np.complex64 and bpl('x+0.5', x=z).np.dtype == np.complex128 and bpl('•storage x', x=z).py == 'complex64'
+    flat, nested = array.array('i', [1, -2]), [memoryview(array.array('d', [0.5]))]
+    assert bpl('x', x=flat).np.tolist() == [1, -2] and bpl('≡x', x=nested).py == 2 and bpl('↑x', x=nested).np.tolist() == [0.5]
     bpl('•prefs ["float":32]')
     assert bpl('•storage x', x=[1.5, 2.5]).py == 'float32' and bpl('•storage x', x=np.ones(2)).py == 'float64'
     assert bpl('•storage x', x=[1+2j, 3.5]).py == 'complex64' and bpl('•storage x', x=np.ones(2, np.complex128)).py == 'complex128'

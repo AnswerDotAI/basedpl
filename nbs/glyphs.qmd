@@ -45,7 +45,7 @@ The names in these tables are the ones you type. In the REPL, a backtick and any
 | `>` [greater-than](glyphs/greater-than.qmd) | | sort-down | greater | Monad sorts major cells |
 | `≥` [greater-than-or-equal](glyphs/greater-than-or-equal.qmd) | Alt-> | increment | greater-equal | Monad as J's `>:` |
 | `≡` [equal-underbar](glyphs/equal-underbar.qmd) | Alt-= | depth | match | Unsigned depth, as APL2/BQN |
-| `≢` [equal-underbar-slash](glyphs/equal-underbar-slash.qmd) | Alt-= / | tally | not-match | |
+| `≢` [equal-underbar-slash](glyphs/equal-underbar-slash.qmd) | Alt-? | tally | not-match | |
 | `⍴` [rho](glyphs/rho.qmd) | Alt-r | shape | reshape | Rank-0 reshape encloses |
 | `,` [comma](glyphs/comma.qmd) | | ravel | catenate | |
 | `⍪` [comma-bar](glyphs/comma-bar.qmd) | Alt-Minus , | table | catenate-first | |
@@ -54,7 +54,7 @@ The names in these tables are the ones you type. In the REPL, a backtick and any
 | `⍉` [circle-backslash](glyphs/circle-backslash.qmd) | Alt-o Backslash | transpose | reorder-axes | |
 | `↑` [up-arrow](glyphs/up-arrow.qmd) | Alt-k | first | take | Monad takes first major cell |
 | `↓` [down-arrow](glyphs/down-arrow.qmd) | Alt-j | split | drop | |
-| `↕` [up-down-arrow](glyphs/up-down-arrow.qmd) | Alt-k j | pairs | windows | Monad is `2↕`; dyad as BQN's `↕`, plus movement/padding |
+| `↕` [up-down-arrow](glyphs/up-down-arrow.qmd) | Alt-K | pairs | windows | Monad is `2↕`; dyad as BQN's `↕`, plus movement/padding |
 | `⊂` [left-shoe](glyphs/left-shoe.qmd) | Alt-z | enclose | partitioned-enclose | Encloses atoms; partitions first axis |
 | `⊆` [left-shoe-underbar](glyphs/left-shoe-underbar.qmd) | Alt-Minus z | nest | partition | Partitions first axis |
 | `⊃` [right-shoe](glyphs/right-shoe.qmd) | Alt-x | mix | pick | Monad as Dyalog `⎕ML≥2`; pick cells or keys |

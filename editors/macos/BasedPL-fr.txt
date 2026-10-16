@@ -42,15 +42,17 @@ Option-p	π
 Control-Option-p	stile prefix
 Option-l	↦
 Option-j	↓
-Option-k	take prefix
+Option-k	↑
+Option-Shift-k	↕
 Option-m	×
 Control-Option-`	⋄
 Option-;	⊣
 Option-Shift-;	↣
-Option-=	match prefix
+Option-=	≡
 Option-Shift-=	≠
 Option-Shift-n	⊤
 Option-,	↢
+Option-Shift-,	≢
 Control-Option-Shift-:	¿
 Option-<	≤
 Option-Shift-<	≥

@@ -1,12 +1,11 @@
-use basedpl::{Buffer, EvalOptions, Evaluation, FloatWidth, Function, InterruptHandle, Number, Operand, Session, Value};
+use basedpl::{buffer::{Buffer, DType, FloatWidth, IntBuf, View}, EvalOptions, Evaluation, Function, InterruptHandle, Number, Operand, Session, Value};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use pyo3::{
-    buffer::PyBuffer, exceptions::{PyTypeError, PyValueError}, prelude::*, sync::MutexExt,
-    types::{PyBool, PyBoolMethods, PyByteArray, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple}, IntoPyObjectExt
+    exceptions::{PyBufferError, PyTypeError, PyValueError}, ffi, prelude::*, sync::MutexExt,
+    types::{PyBool, PyBoolMethods, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple}, IntoPyObjectExt
 };
-use std::borrow::Cow;
-use std::sync::{Arc, Mutex};
+use std::{ffi::c_int, sync::{atomic::{AtomicPtr, Ordering}, Arc, Mutex}};
 
 fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
     // Python floats take the width that `_array` gives, the workspace's default width.
@@ -14,7 +13,7 @@ fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
         Some(bits) => FloatWidth::of_bits(bits.extract()?).ok_or_else(|| PyValueError::new_err("invalid float width"))?, None => FloatWidth::F64
     };
     let element = |o: Bound<'_, PyAny>| -> PyResult<Value> {
-        if let Ok(a) = o.extract::<PyRef<'_, PyArray>>() { return Ok(a.inner.clone()); }
+        if let Ok(a) = o.extract::<PyRef<'_, PyArray>>() { return a.value().cloned(); }
         if let Ok(f) = o.extract::<PyRef<'_, PyFunction>>() { return Ok(Value::Function(f.inner.clone())); }
         if let Ok(op) = o.extract::<PyRef<'_, PyOperator>>() { return Ok(Value::Operator(op.inner.clone())); }
         if let Ok(d) = o.cast::<PyDict>() { return import_array(d); }
@@ -44,20 +43,8 @@ fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
     basedpl::keyed::with_key_lists(result, keys.extract()?).map_err(PyValueError::new_err)
 }
 
-/// The NumPy dtype and bytes of storage that NumPy holds as it is.
-fn numpy(a: &Value) -> Option<(&'static str, Cow<'_, [u8]>)> {
-    /// The bytes of `v`, borrowed when `v` is.
-    fn bytes<T: bytemuck::NoUninit>(v: Cow<'_, [T]>) -> Cow<'_, [u8]> {
-        match v { Cow::Borrowed(v) => Cow::Borrowed(bytemuck::cast_slice(v)), Cow::Owned(v) => Cow::Owned(bytemuck::cast_slice(&v).to_vec()) }
-    }
-    Some(match a.buffer()? {
-        Buffer::Booleans(v) => ("?", bytes(v)), Buffer::U8(v) => ("u1", bytes(v)), Buffer::I16(v) => ("i2", bytes(v)), Buffer::I32(v) => ("i4", bytes(v)),
-        Buffer::I64(v) => ("i8", bytes(v)), Buffer::F16(v) => ("f2", bytes(v)), Buffer::F32(v) => ("f4", bytes(v)), Buffer::F64(v) => ("f8", bytes(v)),
-        Buffer::C32(v) => ("c8", bytes(v)), Buffer::C64(v) => ("c16", bytes(v))
-    })
-}
-
-fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
+/// `a`'s parts for Python: its `_Array` for compact items, which Python reads through `tolist` or the buffer protocol, or else a dict of its shape, items, prototype, keys and names.
+fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyAny>> {
     fn element(py: Python<'_>, e: &Value) -> PyResult<Py<PyAny>> {
         Ok(match e {
             Value::Number(n) => {
@@ -70,81 +57,162 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyDict>> {
                 else { PyFloat::new(py, n.as_float().unwrap()).into_any().unbind() }
             }
             Value::Character(c) => PyString::new(py, &c.to_string()).into_any().unbind(),
-            a @ Value::Array(_) => array(py, a)?.into_any(),
+            a @ Value::Array(_) => array(py, a)?,
             Value::Function(f) => Py::new(py, PyFunction { inner: f.clone() })?.into_any(),
             Value::Operator(op) => Py::new(py, PyOperator { inner: op.clone() })?.into_any(),
         })
     }
+    if !a.is_atom() && a.view().is_some() { return Ok(Py::new(py, PyArray::from(a.clone()))?.into_any()); }
     let result = PyDict::new(py);
-    if a.is_atom() { result.set_item("atom", element(py, a)?)?; return Ok(result.unbind()); }
+    if a.is_atom() { result.set_item("atom", element(py, a)?)?; return Ok(result.into_any().unbind()); }
     let data = PyList::empty(py);
     for e in a.elements() { data.append(element(py, &e)?)?; }
     result.set_item("shape", a.shape())?;
     result.set_item("data", data)?;
     result.set_item("prototype", element(py, &a.prototype())?)?;
-    if let Some((dtype, _)) = numpy(a) { result.set_item("dtype", dtype)?; }
     if !a.axis_names().is_empty() { result.set_item("axis_names", a.axis_names().iter().map(|n| n.as_deref()).collect::<Vec<_>>())?; }
     if a.has_keys() { result.set_item("axis_keys", basedpl::keyed::key_lists(a))?; }
-    Ok(result.unbind())
+    Ok(result.into_any().unbind())
 }
 
-#[pyclass(frozen, name = "_Array")]
-struct PyArray { inner: Value }
+/// A BPL value, or nothing once `own` has moved its items into NumPy.
+#[pyclass(name = "_Array")]
+struct PyArray { inner: Option<Value> }
+
+impl From<Value> for PyArray {
+    fn from(inner: Value) -> Self { Self { inner: Some(inner) } }
+}
+
+impl PyArray {
+    /// The value, or an error once `own` has moved its items.
+    fn value(&self) -> PyResult<&Value> { self.inner.as_ref().ok_or_else(|| PyValueError::new_err("own() moved this array's items into NumPy")) }
+}
+
+/// A BPL value lent read-only to one buffer export, with the shape and strides of the export. The export holds this object, which keeps all three valid.
+#[pyclass(frozen)]
+struct Lent { value: Value, shape: Box<[isize]>, strides: Box<[isize]> }
+
+/// Items that `own` moved out of BPL, which NumPy views writably through `data`, their address, as `dtype`. NumPy can write any bytes into them, so Booleans are held as `u8` and characters as `i32`, which have no invalid values.
+#[pyclass(frozen)]
+struct Owned { dtype: DType, items: Buffer, data: AtomicPtr<u8>, shape: Box<[isize]>, strides: Box<[isize]> }
+
+impl Owned {
+    fn new(items: Buffer, shape: &[usize]) -> Self {
+        let dtype = items.dtype();
+        // SAFETY: `bool` and `u8`, and `char` and `i32`, have the same size and alignment, and every `bool` is a valid `u8` and every `char` a valid `i32`.
+        let mut items = match items {
+            Buffer::Booleans(v) => Buffer::Integers(IntBuf::U8(unsafe { retyped(v) })),
+            Buffer::Characters(v) => Buffer::Integers(IntBuf::I32(unsafe { retyped(v) })),
+            items => items,
+        };
+        let data = AtomicPtr::new(items.as_mut_ptr());
+        let (shape, strides) = rustymath_buffer::geometry(dtype, shape);
+        Self { dtype, items, data, shape, strides }
+    }
+}
+
+/// `items` as a `Vec<U>` over the same allocation, with no copy.
+///
+/// # Safety
+///
+/// `T` and `U` must have the same size and alignment, and every `T` must be a valid `U`.
+unsafe fn retyped<T, U>(items: Vec<T>) -> Vec<U> {
+    let mut items = std::mem::ManuallyDrop::new(items);
+    // SAFETY: the caller guarantees that the layouts match and that each item is a valid `U`.
+    unsafe { Vec::from_raw_parts(items.as_mut_ptr().cast(), items.len(), items.capacity()) }
+}
+
+#[pymethods]
+impl Owned {
+    unsafe fn __getbuffer__(slf: Bound<'_, Self>, view: *mut ffi::Py_buffer, flags: c_int) -> PyResult<()> {
+        let this = slf.get();
+        // SAFETY: `data` addresses `items`, which the object owns with the shape and strides and never changes, and the export holds the object.
+        unsafe { rustymath_buffer::export(view, flags, slf.as_any(), this.dtype, this.data.load(Ordering::Relaxed), this.items.len(), &this.shape, &this.strides, false) }
+    }
+}
 
 #[pymethods]
 impl PyArray {
     #[new]
-    fn new(raw: &Bound<'_, PyDict>) -> PyResult<Self> { Ok(Self { inner: import_array(raw)? }) }
-    /// Compact storage from `data`, a contiguous NumPy array whose dtype `dtype` names as `numpy` does. Booleans arrive as a `uint8` view, 16-bit floats as a `uint16` view and complex numbers as a view of their float parts, because the buffer protocol has no type for them.
+    fn new(raw: &Bound<'_, PyDict>) -> PyResult<Self> { Ok(import_array(raw)?.into()) }
+    /// The array that `data` holds, read through the buffer protocol and copied once into C order, or `None` when `data` exports no buffer.
     #[staticmethod]
-    fn numeric(shape: Vec<usize>, dtype: &str, data: &Bound<'_, PyAny>) -> PyResult<Self> {
-        fn items<T: pyo3::buffer::Element>(data: &Bound<'_, PyAny>) -> PyResult<Vec<T>> { Ok(PyBuffer::<T>::get(data)?.to_vec(data.py())?) }
-        let buffer = match dtype {
-            "?" => Buffer::Booleans(items::<u8>(data)?.into_iter().map(|x| x != 0).collect()), "u1" => Buffer::U8(items(data)?.into()),
-            "i2" => Buffer::I16(items(data)?.into()), "i4" => Buffer::I32(items(data)?.into()), "i8" => Buffer::I64(items(data)?.into()),
-            "f2" => Buffer::F16(items::<u16>(data)?.into_iter().map(half::f16::from_bits).collect::<Vec<_>>().into()), "f4" => Buffer::F32(items(data)?.into()),
-            "f8" => Buffer::F64(items(data)?.into()),
-            "c8" => Buffer::C32(items::<f32>(data)?.chunks_exact(2).map(|z| num_complex::Complex32::new(z[0], z[1])).collect::<Vec<_>>().into()),
-            "c16" => Buffer::C64(items::<f64>(data)?.chunks_exact(2).map(|z| num_complex::Complex64::new(z[0], z[1])).collect::<Vec<_>>().into()),
-            _ => return Err(PyTypeError::new_err(format!("unsupported NumPy dtype {dtype}")))
-        };
-        let inner = Value::from_buffer(shape, buffer);
-        inner.map(|inner| Self { inner }).map_err(|k| PyValueError::new_err(k.to_string()))
+    fn numeric(data: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
+        let Some(read) = rustymath_buffer::read(data)? else { return Ok(None) };
+        let shape = read.shape().to_vec();
+        Value::from_buffer(shape, read.into_buffer()).map(|v| Some(v.into())).map_err(|k| PyValueError::new_err(k.to_string()))
     }
     #[getter]
-    fn shape(&self) -> Vec<usize> { self.inner.shape().to_vec() }
+    fn shape(&self) -> PyResult<Vec<usize>> { Ok(self.value()?.shape().to_vec()) }
     #[getter]
-    fn axis_names(&self) -> Vec<Option<String>> { (0..self.inner.shape().len()).map(|a| self.inner.axis_name(a).map(|n| n.to_string())).collect() }
+    fn axis_names(&self) -> PyResult<Vec<Option<String>>> {
+        let value = self.value()?;
+        Ok((0..value.shape().len()).map(|a| value.axis_name(a).map(|n| n.to_string())).collect())
+    }
     fn with_axis_names(&self, names: Vec<Option<String>>) -> PyResult<Self> {
-        Ok(Self { inner: basedpl::keyed::with_names(self.inner.clone(), names).map_err(PyValueError::new_err)? })
+        Ok(basedpl::keyed::with_names(self.value()?.clone(), names).map_err(PyValueError::new_err)?.into())
     }
     #[getter]
-    fn axis_keys(&self) -> Vec<Option<Vec<Option<&str>>>> { basedpl::keyed::key_lists(&self.inner) }
+    fn axis_keys(&self) -> PyResult<Vec<Option<Vec<Option<&str>>>>> { Ok(basedpl::keyed::key_lists(self.value()?)) }
     fn with_axis_keys(&self, keys: Vec<Option<Vec<Option<String>>>>) -> PyResult<Self> {
-        Ok(Self { inner: basedpl::keyed::with_key_lists(self.inner.clone(), keys).map_err(PyValueError::new_err)? })
+        Ok(basedpl::keyed::with_key_lists(self.value()?.clone(), keys).map_err(PyValueError::new_err)?.into())
     }
     #[getter]
-    fn is_atom(&self) -> bool { self.inner.is_atom() }
-    fn parts(&self, py: Python<'_>) -> PyResult<Py<PyDict>> { array(py, &self.inner) }
-    fn buffer<'py>(&self, py: Python<'py>) -> PyResult<Option<(&'static str, Bound<'py, PyByteArray>)>> {
-        Ok(numpy(&self.inner).map(|(dtype, bytes)| (dtype, PyByteArray::new(py, &bytes))))
+    fn is_atom(&self) -> PyResult<bool> { Ok(self.value()?.is_atom()) }
+    fn parts(&self, py: Python<'_>) -> PyResult<Py<PyAny>> { array(py, self.value()?) }
+    /// The items as nested lists of Python scalars, or one scalar at rank 0, read without NumPy. Only compact items convert.
+    fn tolist<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let value = self.value()?;
+        let items = value.view().ok_or_else(|| PyTypeError::new_err("only compact items convert to a list"))?;
+        rustymath_buffer::tolist(py, items, value.shape())
     }
-    fn __repr__(&self) -> String { self.inner.to_string() }
-    fn literal(&self) -> String { self.inner.literal() }
-    fn atom(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        if !self.inner.is_singleton() { return Err(PyValueError::new_err("conversion requires a singleton array")); }
-        if matches!(self.inner.at(0), Value::Array(_)) { return Err(PyTypeError::new_err("conversion requires an atom")); }
-        array(py, &self.inner.at(0))
+    /// The string that an unkeyed, unnamed character vector holds, or `None`.
+    #[getter]
+    fn text(&self) -> PyResult<Option<String>> {
+        let value = self.value()?;
+        let plain = value.shape().len() == 1 && !value.has_keys() && value.axis_names().is_empty();
+        Ok(match value.view() { Some(View::Characters(c)) if plain => Some(c.iter().collect()), _ => None })
+    }
+    /// Whether NumPy can read the items through the buffer protocol: compact storage.
+    #[getter]
+    fn exports(&self) -> PyResult<bool> { Ok(self.value()?.view().is_some()) }
+    /// Exports the items read-only and without a copy, so that NumPy can't change a BPL value through them.
+    unsafe fn __getbuffer__(slf: Bound<'_, Self>, view: *mut ffi::Py_buffer, flags: c_int) -> PyResult<()> {
+        let value = slf.borrow().value()?.clone();
+        let dtype = value.view().ok_or_else(|| PyBufferError::new_err("an array of mixed or exact items has no buffer"))?.dtype();
+        let (shape, strides) = rustymath_buffer::geometry(dtype, value.shape());
+        // An atom holds its items inline, so the pointer comes from the copy that `lent` keeps.
+        let lent = Bound::new(slf.py(), Lent { value, shape, strides })?;
+        let this = lent.get();
+        let items = this.value.view().expect("the items are compact");
+        // SAFETY: `lent` never changes its value, shape or strides, and the export holds `lent`.
+        unsafe { rustymath_buffer::export(view, flags, lent.as_any(), dtype, items.as_ptr().cast_mut(), items.len(), &this.shape, &this.strides, true) }
+    }
+    /// The items for NumPy to view writably: moved with no copy where nothing else holds them, and copied otherwise. For items it can't move, such as exact numbers, it still empties the array and returns `None`, so the caller copies them first.
+    fn own(&mut self) -> PyResult<Option<Owned>> {
+        self.value()?;
+        let value = self.inner.take().expect("checked above");
+        let shape = value.shape().to_vec();
+        Ok(value.into_buffer().ok().map(|items| Owned::new(items, &shape)))
+    }
+    fn __repr__(&self) -> PyResult<String> { Ok(self.value()?.to_string()) }
+    fn literal(&self) -> PyResult<String> { Ok(self.value()?.literal()) }
+    fn atom(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let value = self.value()?;
+        if !value.is_singleton() { return Err(PyValueError::new_err("conversion requires a singleton array")); }
+        if matches!(value.at(0), Value::Array(_)) { return Err(PyTypeError::new_err("conversion requires an atom")); }
+        array(py, &value.at(0))
     }
     fn cells(&self) -> PyResult<Vec<Self>> {
-        if self.inner.shape().is_empty() { return Err(PyTypeError::new_err("a unit has no major cells")); }
-        let cells = self.inner.major_cells().map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(cells.into_iter().map(|inner| Self { inner }).collect())
+        let value = self.value()?;
+        if value.shape().is_empty() { return Err(PyTypeError::new_err("a unit has no major cells")); }
+        let cells = value.major_cells().map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(cells.into_iter().map(Self::from).collect())
     }
     fn select(&self, py: Python<'_>, parts: Vec<Option<PyRef<'_, PyArray>>>) -> PyResult<Py<PyDict>> {
-        let parts = parts.into_iter().map(|a| a.map(|a| a.inner.clone())).collect::<Vec<_>>();
+        let parts = parts.into_iter().map(|a| a.map(|a| a.value().cloned()).transpose()).collect::<PyResult<Vec<_>>>()?;
         let mut result = Evaluation::default();
-        match self.inner.select(&parts) {
+        match self.value()?.select(&parts) {
             Ok(Value::Function(f)) => result.function = Some(f), Ok(a) => result.value = Some(a), Err(e) => result.error = Some(e)
         }
         response(py, result)
@@ -156,7 +224,7 @@ struct PyFunction { inner: Function }
 
 fn operand(value: &Bound<'_, PyAny>) -> PyResult<Operand> {
     if let Ok(f) = value.extract::<PyRef<'_, PyFunction>>() { return Ok(Operand::Function(f.inner.clone())); }
-    Ok(Operand::Value(value.extract::<PyRef<'_, PyArray>>()?.inner.clone()))
+    Ok(Operand::Value(value.extract::<PyRef<'_, PyArray>>()?.value()?.clone()))
 }
 
 #[pymethods]
@@ -179,7 +247,7 @@ impl PyFunction {
         let Some((kind, operands)) = self.inner.parts() else { return Ok(None); };
         let args = operands.into_iter().map(|a| match a {
             Operand::Function(inner) => Py::new(py, PyFunction { inner }).map(|f| f.into_any()),
-            Operand::Value(inner) => Py::new(py, PyArray { inner }).map(|a| a.into_any()),
+            Operand::Value(inner) => Py::new(py, PyArray::from(inner)).map(|a| a.into_any()),
         }).collect::<PyResult<Vec<_>>>()?;
         Ok(Some((kind, args)))
     }
@@ -237,7 +305,7 @@ impl PySession {
     fn call(
         &self, py: Python<'_>, function: PyRef<'_, PyFunction>, args: Vec<PyRef<'_, PyArray>>, timeout: Option<f64>, show: Option<Py<PyAny>>
     ) -> PyResult<Py<PyDict>> {
-        let run = Run::Call(function.inner.clone(), args.iter().map(|a| a.inner.clone()).collect());
+        let run = Run::Call(function.inner.clone(), args.iter().map(|a| a.value().cloned()).collect::<PyResult<_>>()?);
         self.request(py, EvalRequest { run: Some(run), bindings: Vec::new(), options: options(timeout, false)? }, show)
     }
     #[pyo3(signature = (*, name=None, function=None))]
@@ -363,7 +431,7 @@ fn python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
 
 /// A result as the dict that the JSON protocol sends, holding native arrays and functions.
 fn response(py: Python<'_>, result: Evaluation) -> PyResult<Py<PyDict>> {
-    let value = if let Some(inner) = result.value { Some(Py::new(py, PyArray { inner })?.into_any()) }
+    let value = if let Some(inner) = result.value { Some(Py::new(py, PyArray::from(inner))?.into_any()) }
     else if let Some(inner) = result.function { Some(Py::new(py, PyFunction { inner })?.into_any()) }
     else if let Some(inner) = result.operator { Some(Py::new(py, PyOperator { inner })?.into_any()) }
     else { None };

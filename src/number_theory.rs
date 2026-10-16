@@ -1,4 +1,5 @@
-use crate::{agreement::Agreement, array::{generated_len, saturated, Frame}, execution::Context, Error, ErrorAt, ErrorKind, Number, Value};
+use rustymath::error::Kind;
+use crate::{agreement::{Agree, Agreement}, array::{generated_len, saturated, Frame}, execution::Context, Error, ErrorAt, Number, Value};
 use num_bigint::{BigInt, BigUint};
 use num_traits::{One, ToPrimitive, Zero};
 use rustymath::number_theory as nt;
@@ -14,7 +15,7 @@ fn array(shape: Vec<usize>, data: Vec<Value>, span: &Context<'_>) -> Result<Valu
 fn positive(n: BigUint, span: &Context<'_>) -> Result<BigUint, Error> {
     if n.is_zero() { Err(span.domain_error("factorisation requires a positive integer")) } else { Ok(n) }
 }
-fn beyond(span: &Context<'_>) -> Error { span.error(ErrorKind::Limit, "prime enumeration exceeds machine range") }
+fn beyond(span: &Context<'_>) -> Error { span.error(Kind::Limit, "prime enumeration exceeds machine range") }
 
 fn factor_result(selector: Option<&Number>, n: BigUint, span: &Context<'_>) -> Result<Value, Error> {
     let factors = nt::factor_with(&positive(n, span)?, || span.check_now())?;
@@ -33,7 +34,7 @@ fn factor_result(selector: Option<&Number>, n: BigUint, span: &Context<'_>) -> R
     let mut primes = nt::Primes::new(0);
     let (mut data, mut i) = (Vec::new(), 0);
     while if inf.is_some() { i < factors.len() } else { data.len() < saturated(count.unsigned_abs()) } {
-        generated_len(&[data.len() + 1]).error_at(span, "exponent vector is too long")?;
+        generated_len(&[data.len() + 1]).at(span)?;
         let p = BigUint::from(primes.next_with(|| span.check_now())?.ok_or_else(|| beyond(span))?);
         let e = if factors.get(i).is_some_and(|(f, _)| *f == p) { i += 1; factors[i - 1].1 } else { 0 };
         data.push(exact(e));
@@ -42,7 +43,7 @@ fn factor_result(selector: Option<&Number>, n: BigUint, span: &Context<'_>) -> R
 }
 
 fn nth_primes(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    generated_len(right.shape()).error_at(span, "prime result exceeds array limits")?;
+    generated_len(right.shape()).at(span)?;
     let mut requests = right.elements().enumerate().map(|(i, e)| {
             // Prime indices count from 0: `⍭ 0` is 2.
             let n = number(&e, span)?.nonnegative_integer::<usize>().error_at(span, "prime indices must be nonnegative integers")?;

@@ -257,12 +257,13 @@ def time_cases(
     prefs='', # BPL that runs before `setup`, such as `•prefs ["float":32]`
     threads=1, # Threads that each case's rustymath calls split across, for a scaling check; 0: rustymath's default
     native=False, # Time rustymath's own linear algebra in place of Accelerate, as `Worker`'s `native` does
+    bpl=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
     timeout=None # Seconds before the worker is closed
 ):
     "Time `cases` in a fresh worker, as `tests/speed.rs` does: the fastest of five runs, per item and in copies of the data."
     speed = _SPEED.read_text() if setup is None else f'[setup]\n{setup}'
     cases = [cases] if isinstance(cases, str) else list(cases)
-    with Worker(native) as w: r = w.request(dict(timing=dict(speed=speed, prefs=prefs, cases=cases, threads=threads)), timeout)
+    with Worker(bpl, native) as w: r = w.request(dict(timing=dict(speed=speed, prefs=prefs, cases=cases, threads=threads)), timeout)
     if e := r['error']: raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
     return Costs((c['code'], c['seconds']*1e12/r['n'], c['copies']) for c in r['costs'])
 
@@ -293,9 +294,11 @@ def timing_lock():
                 waiting = True
                 time.sleep(0.25)
         yield
+
 def speed_costs(
     wasm=None, # A directory that `cargo wasm --out` wrote, to time in that browser build, as `tests/wasm-speed.mjs` does; None: a fresh native worker, as `tests/speed.rs` does
     native=False, # Time rustymath's own linear algebra in place of Accelerate in a native timing, as `Worker`'s `native` does
+    bpl=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
     speed=None, # Text in `speed.txt`'s format; None: `tests/speed.txt`
     timeout=None, # Seconds before the timing stops
     cases=None # A case's code, or a list of codes, to time in every section that has it; None: every case
@@ -304,7 +307,7 @@ def speed_costs(
     speed = _SPEED.read_text() if speed is None else speed
     if isinstance(cases, str): cases = [cases]
     if wasm is None:
-        with Worker(native) as w: r = w.request(dict(costs=dict(speed=speed, cases=cases)), timeout)
+        with Worker(bpl, native) as w: r = w.request(dict(costs=dict(speed=speed, cases=cases)), timeout)
         if e := r['error']: raise ValueError(e['message'])
         rows = r['costs']
     else:
@@ -372,25 +375,15 @@ def _budget(section, cost, untimed):
     if section == 'widths': return Decimal(repr(cost + 0.25)).quantize(Decimal('0.01'), ROUND_CEILING)
     return Context(prec=2, rounding=ROUND_CEILING).create_decimal(repr(max(0.5, (4 if untimed else 2)*cost)))
 
-_SOURCE = '# The CI figures come from '
-
-def _source(run, native, wasm):
-    "`speed.txt`'s header line naming `Speed` run `run` and the CPU that each build's CI log reports."
-    cpus = {build: sorted({r.cpu for r in runs if r.cpu}) for build, runs in (('native', native), ('wasm', wasm))}
-    line = f'{_SOURCE}`Speed` run {run}.'
-    if len(every := {c for v in cpus.values() for c in v}) == 1: return f'{line} Its CPU was the {every.pop()}.'
-    return line + ''.join(f" Its {build} job's CPU was the {' and the '.join(v)}." for build, v in cpus.items() if v)
-
 def set_budgets(
     native=(), # `SpeedCosts` from each run that counts for the native budgets, such as `speed_costs()`, `cargo_costs(path)` and `logged_costs(log)`
     wasm=(), # `SpeedCosts` from each run that counts for the wasm budgets
-    run=None, # The `Speed` run whose logs gave CI's rows, to name in the header with the CPU each log reports; None: leave the header as it is
     path=_SPEED, # The budget file to rewrite: basedpl's `tests/speed.txt`, or rustymath's
     cases=None, # A case's code, or a list of codes, whose budgets to change; None: every case
     sections=None, # A section's name, or a list of names, whose budgets to change; None: every section
     untimed=False # Whether the runs are Mac runs of cases that CI hasn't timed yet. A budget in copies is then four times the cost, as `speed.txt`'s header says
 ):
-    "Rewrite each budget in `path` under the rule in its header, from the case's worst cost in the runs that count. A case with no cost, or outside `cases` or `sections`, keeps its budget. With `run`, also replace the whole header line that names the CI run. Returns the budgets that changed."
+    "Rewrite each budget in `path` under the rule in its header, from the case's worst cost in the runs that count. A case with no cost, or outside `cases` or `sections`, keeps its budget. Returns the budgets that changed."
     if isinstance(cases, str): cases = [cases]
     if isinstance(sections, str): sections = [sections]
     worst = {}
@@ -415,9 +408,5 @@ def set_budgets(
             if new != fields[i]: changes.append((section, fields[0], build, fields[i], new))
             fields[i] = new
         lines[k] = '\t'.join(fields)
-    if run is not None:
-        k = next((k for k, line in enumerate(lines) if line.startswith(_SOURCE)), None)
-        if k is None: raise ValueError(f'{path} has no line starting {_SOURCE!r}')
-        lines[k] = _source(run, native, wasm)
     path.write_text('\n'.join(lines))
     return changes

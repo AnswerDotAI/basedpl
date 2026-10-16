@@ -4,9 +4,10 @@
 //!
 //! Primitive dispatch sends each call with a dual argument to `call`. Pervasive glyphs take their tangents from the partials table, which gives each partial derivative as primitive calls on the primals and the primal result. Rules call primitives, so partials of duals with smaller tags are themselves differentiated. Tangent rules use only `scale`, `add` and `expand`, so that reverse mode can supply symbolic versions of them.
 use crate::{
-    agreement::{Agreement, Mapping}, array::{Gather, Layout}, error::ErrorAt, execution::Context, number::{Arithmetic, Math}, primitive::{Comparison, Primitive}, Error, ErrorKind,
+    agreement::{Agree, Agreement}, array::{Gather, Layout, Promotion}, error::ErrorAt, execution::Context, number::{Arithmetic, Math}, primitive::{Comparison, Primitive}, Error, ErrorKind,
     Function, Number, Span, Value,
 };
+use rustymath::agreement::Mapping;
 
 /// The message of the UNSUPPORTED error that a dual gives where it reaches code that `∂` can't differentiate (`number::Failure::Dual`).
 pub(crate) const UNSUPPORTED: &str = "∂ can't differentiate this here";
@@ -95,7 +96,7 @@ fn complex(value: &Value) -> bool {
         Value::Number(n) => n.plain().as_complex().is_some(),
         Value::Array(_) => match value.dual_raw() {
             Some((_, primal, _)) => complex(&primal),
-            None => matches!(value.compact_kind(), Some(crate::array::Kind::Complex(_))),
+            None => matches!(value.dtype(), Some(rustymath::buffer::DType::Complex(_))),
         },
         _ => false,
     }
@@ -134,8 +135,8 @@ pub(crate) fn zeros(like: &Value) -> Value {
     data.finish(like.layout().clone(), zero).expect("zeros fit their layout")
 }
 
-/// Writes `source` into `target` with `write`, as `Value::scatter` and `Value::append` do, where either is a dual: the primal into the primal and the tangent into the tangent. An inactive side has tangents of 0. Where a tangent is a record, `write` runs on ids instead, and gives the record's `Gather` (`linear`): an item that a write replaces loses its id.
-pub(crate) fn both(target: &mut Value, source: &Value, write: impl Fn(&mut Value, &Value)) {
+/// Writes `source` into `target` with `write`, as `Value::scatter` and `Value::append` do, where either is a dual: the primal into the primal and the tangent into the tangent. An inactive side has tangents of 0. Where a tangent is a record, `write` runs on ids instead, and gives the record's `Gather` (`linear`): an item that a write replaces loses its id. An error from `write` leaves `target` unchanged.
+pub(crate) fn both<E>(target: &mut Value, source: &Value, write: impl Fn(&mut Value, &Value) -> Result<(), E>) -> Result<(), E> {
     let tag = tag(target).max(tag(source)).expect("a dual takes part");
     let (mut primal, tangent) = split(target, tag);
     let (items, tangents) = split(source, tag);
@@ -147,15 +148,16 @@ pub(crate) fn both(target: &mut Value, source: &Value, write: impl Fn(&mut Value
             None => crate::linear::fill_ids(like),
         };
         let (mut target_ids, source_ids) = (ids(&tangent, &primal), ids(&tangents, &items));
-        write(&mut target_ids, &source_ids);
+        write(&mut target_ids, &source_ids)?;
         crate::linear::gather(sources.records, target_ids, crate::linear::zero_of(&primal))
     } else {
         let mut tangent = tangent.unwrap_or_else(|| zeros(&primal));
-        write(&mut tangent, &tangents.unwrap_or_else(|| zeros(&items)));
+        write(&mut tangent, &tangents.unwrap_or_else(|| zeros(&items)))?;
         tangent
     };
-    write(&mut primal, &items);
+    write(&mut primal, &items)?;
     *target = Value::from_dual(tag, primal, tangent);
+    Ok(())
 }
 
 /// `value` with each leaf replaced by `leaf`'s result, in `value`'s layout. A leaf is an atom, a dual array, or an array with compact storage. Other arrays are walked item by item.
@@ -173,7 +175,7 @@ fn walk(value: &Value, leaf: &mut dyn FnMut(&Value) -> Result<Value, Error>) -> 
 fn numbers(leaf: &Value, span: &Span) -> Result<usize, Error> {
     match leaf {
         Value::Number(_) => Ok(1),
-        Value::Array(_) if leaf.dual_tag().is_some() || leaf.compact_kind().is_some_and(|k| k.exact().is_some()) => Ok(leaf.len()),
+        Value::Array(_) if leaf.dual_tag().is_some() || leaf.dtype().is_some_and(|k| k.exact().is_some()) => Ok(leaf.len()),
         _ => Err(span.domain_error("∂ differentiates with respect to numbers")),
     }
 }

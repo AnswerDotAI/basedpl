@@ -1,13 +1,14 @@
 //! Search and ordering primitives: index of, membership, without, union, intersection, unique, duplicates, find, classification, run-length encoding, groups, iota, range, where, grade, sort and interval index. Their search kernels are in `crate::search`.
 
+use rustymath::{buffer::View, error::Kind, with_floats};
+use crate::search::compact_view;
 use super::*;
-use crate::array::{with_floats, with_int_pair};
 use rustymath::tolerant::Tolerant;
 
 /// A mask over the major cells of `x`. With `found`, it marks the cells among the major cells of `y`, and otherwise the cells that aren't.
 fn found_mask(x: &Value, y: &Value, found: bool, span: &Context<'_>) -> Result<Value, Error> {
     let (matches, frame) = search(y, x, span)?;
-    if frame.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "set functions need cells of the same rank")); }
+    if frame.shape().len() > 1 { return Err(span.error(Kind::Rank, "set functions need cells of the same rank")); }
     let miss = y.shape()[0] as u32;
     Layout::from(vec![matches.len()]).booleans(matches.into_iter().map(|p| (p < miss) == found).collect()).error_at(span, "invalid set mask")
 }
@@ -43,9 +44,9 @@ pub(super) fn find(left: &Value, right: &Value, span: &Context<'_>) -> Result<Va
         let integers = x.ints().zip(y.ints());
         let t = span.numeric();
         let same = |i: usize, o: usize| match (&x, &y, integers) {
-            (_, _, Some((x, y))) => Ok(x.get(i) == y.get(o)), (Items::Booleans(x), Items::Booleans(y), _) => Ok(x[i] == y[o]),
-            (Items::Floats(x), Items::Floats(y), _) => Ok(t.tolerance_at(x.tag().max(y.tag())).matches(x.get(i), y.get(o))),
-            (Items::Characters(x), Items::Characters(y), _) => Ok(x[i] == y[o]), _ => left.at(i).matches(&right.at(o), span)
+            (_, _, Some((x, y))) => Ok(x.get(i) == y.get(o)), (Items::Compact(View::Booleans(x)), Items::Compact(View::Booleans(y)), _) => Ok(x[i] == y[o]),
+            (Items::Compact(View::Floats(x)), Items::Compact(View::Floats(y)), _) => Ok(t.tolerance_at(x.tag().max(y.tag())).matches(x.get(i), y.get(o))),
+            (Items::Compact(View::Characters(x)), Items::Compact(View::Characters(y)), _) => Ok(x[i] == y[o]), _ => left.at(i).matches(&right.at(o), span)
         };
         let mut coords = vec![0; shape.len()];
         for (flat, result) in data.iter_mut().enumerate() {
@@ -62,7 +63,7 @@ pub(super) fn find(left: &Value, right: &Value, span: &Context<'_>) -> Result<Va
 
 pub(super) fn self_classify(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     // A Boolean vector's rows are its items equal to the first, then those that differ, if any do, in passes that vectorize.
-    if let (Items::Booleans(b), [_]) = (right.as_items(), right.shape()) {
+    if let (Items::Compact(View::Booleans(b)), [_]) = (right.as_items(), right.shape()) {
         if let Some(&first) = b.first() {
             let rows = 1 + usize::from(b.contains(&!first));
             let mut data = Vec::with_capacity(rows * b.len());
@@ -140,10 +141,10 @@ fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, float: Option<Floa
 
 /// A negative length counts down, as J's `i.` does: `⍳¯3` is `2 1 0`.
 pub(super) fn iota(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "iota needs a unit or vector shape")); }
+    if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "iota needs a unit or vector shape")); }
     let lengths = right.as_items().integers().error_at(span, "invalid iota dimension")?;
     let shape: Vec<usize> = lengths.iter().map(|n| saturated(n.unsigned_abs())).collect();
-    let len = generated_len(&shape).error_at(span, "iota exceeds array limits")?;
+    let len = generated_len(&shape).at(span)?;
     let float = counted_width(right, span);
     if right.is_singleton() {
         let down = lengths[0] < 0;
@@ -169,7 +170,7 @@ pub(super) fn range(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
         whole.nonnegative_integer().error_at(span, "range needs a finite length")
     };
     let counts = |items: std::ops::Range<usize>| {
-        generated_len(&[items.len()]).and_then(|len| Value::positions([len], items.end, items)).error_at(span, "range exceeds array limits")
+        generated_len(&[items.len()]).map_err(ErrorKind::from).and_then(|len| Value::positions([len], items.end, items)).error_at(span, "range exceeds array limits")
     };
     let Some(left) = left else {
         let n = real(right.at(0))?;
@@ -191,7 +192,7 @@ fn where_vector(counts: &[i64], span: &Context<'_>) -> Result<Value, Error> {
     if any < 0 { return Err(span.domain_error("where needs nonnegative integer counts")); }
     let boolean = any <= 1;
     let total = if boolean { Some(sum as usize) } else { counts.iter().try_fold(0usize, |total, &n| total.checked_add(saturated(n.unsigned_abs()))) };
-    let total = total.ok_or(ErrorKind::Limit).and_then(|t| generated_len(&[t])).error_at(span, "where exceeds array limits")?;
+    let total = total.ok_or(Kind::Limit.into()).and_then(|t| generated_len(&[t])).error_at(span, "where exceeds array limits")?;
     let data = if boolean {
         let mut data = Vec::new();
         rustymath::gather::positions(&mut data, counts, total, |j| j as i64);
@@ -208,7 +209,7 @@ fn where_vector(counts: &[i64], span: &Context<'_>) -> Result<Value, Error> {
     Value::integers([total], data).error_at(span, "invalid where result")
 }
 pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if let (Items::Booleans(mask), [_]) = (right.as_items(), right.shape()) {
+    if let (Items::Compact(View::Booleans(mask)), [_]) = (right.as_items(), right.shape()) {
         if right.keys(0).is_none() {
             let total = mask.iter().map(|&b| usize::from(b)).sum();
             // Each position is below the mask's length, so the positions take their width before any is written.
@@ -220,9 +221,9 @@ pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, 
             return built.error_at(span, "invalid where result");
         }
     }
-    if let (Items::Integers(counts), [_]) = (right.as_items(), right.shape()) { if right.keys(0).is_none() { return where_vector(&counts.widened(), span); } }
+    if let (Items::Compact(View::Integers(counts)), [_]) = (right.as_items(), right.shape()) { if right.keys(0).is_none() { return where_vector(&counts.widened(), span); } }
     let counts = right.as_items().nonnegative_integers().error_at(span, "where needs nonnegative integer counts")?;
-    let total = counts.iter().try_fold(0usize, |total, &n| total.checked_add(n)).ok_or(ErrorKind::Limit).and_then(|t| generated_len(&[t]))
+    let total = counts.iter().try_fold(0usize, |total, &n| total.checked_add(n)).ok_or(Kind::Limit.into()).and_then(|t| generated_len(&[t]))
         .error_at(span, "where exceeds array limits")?;
     if right.shape().len() == 1 && right.keys(0).is_none() {
         let mut data = Vec::with_capacity(total);
@@ -244,10 +245,10 @@ pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, 
 
 /// The rank of the major cells of `haystack`, and the frame that the leading axes of `needles` form around cells of that rank.
 fn search_frame(haystack: &Value, needles: &Value, span: &Context<'_>) -> Result<(usize, Frame), Error> {
-    if haystack.is_unit() { return Err(span.error(ErrorKind::Rank, "the searched argument must not be a unit")); }
+    if haystack.is_unit() { return Err(span.error(Kind::Rank, "the searched argument must not be a unit")); }
     let rank = haystack.shape().len() - 1;
-    let split = needles.shape().len().checked_sub(rank).ok_or_else(|| span.error(ErrorKind::Rank, "search cells need the rank of a major cell"))?;
-    if haystack.shape()[1..] != needles.shape()[split..] { return Err(span.error(ErrorKind::Length, "search cell shapes do not agree")); }
+    let split = needles.shape().len().checked_sub(rank).ok_or_else(|| span.error(Kind::Rank, "search cells need the rank of a major cell"))?;
+    if haystack.shape()[1..] != needles.shape()[split..] { return Err(span.error(Kind::Length, "search cell shapes do not agree")); }
     Ok((rank, if split == 0 { Frame::Direct } else { Frame::Array(needles.layout().axes(0..split)) }))
 }
 
@@ -304,9 +305,9 @@ fn array_order(left: &Value, right: &Value) -> Option<Ordering> {
     Some(left.len().cmp(&right.len()).then_with(|| left.shape().cmp(right.shape())))
 }
 
-/// The grade of `right`'s `count` major cells by rustymath's `sort_rows`, when its items are all Booleans, all floats, all integers or all characters, in at most 16 columns. `sort_rows` counts keys that span a small range. It radix-sorts other keys. `Float::order_key` orders floats as `array_order` does, with a key as wide as the float.
+/// The grade of `right`'s `count` major cells by rustymath's `sort_rows`, when its items are all Booleans, all floats, all integers or all characters, in at most 16 columns, keyed by their order keys. `sort_rows` counts keys that span a small range. It radix-sorts other keys. `Float::order_key` orders floats as `array_order` does, with a key as wide as the float.
 fn key_grade(right: &Value, count: usize, down: bool) -> Option<Vec<u32>> {
-    use {crate::array::Ints, rustymath::{search::{sort_rows, OrderKey as _, RadixKey}, Arg, Float as _}};
+    use rustymath::{search::{sort_rows, OrderKey as _, RadixKey}, with_ints, Arg, Float as _};
     /// Each column's keys, from the items `x` of rows of `width` items through `key`, complemented when grading down, which reverses their order. Each column fills in one pass, through `pairs` for one column, which vectorizes.
     fn columns<T: Copy + Sync, K: RadixKey>(x: &[T], width: usize, down: bool, key: impl Fn(T) -> K + Sync) -> Vec<Vec<K>> {
         let key = move |v: T| if down { !key(v) } else { key(v) };
@@ -320,18 +321,15 @@ fn key_grade(right: &Value, count: usize, down: bool) -> Option<Vec<u32>> {
     let width = right.len().checked_div(count).unwrap_or(0);
     if width > 16 { return None; }
     Some(match right.as_items() {
-        Items::Floats(x) => with_floats!(x, |x| sort_rows(count, columns(x, width, down, |v| v.order_key()))),
-        Items::Integers(Ints::U8(x)) => sort_rows(count, columns(x, width, down, u16::from)),
-        Items::Integers(Ints::I16(x)) => sort_rows(count, columns(x, width, down, |v| v.order_key())),
-        Items::Integers(Ints::I32(x)) => sort_rows(count, columns(x, width, down, |v| v.order_key())),
-        Items::Integers(Ints::I64(x)) => sort_rows(count, columns(x, width, down, |v| v.order_key())),
-        Items::Characters(x) => sort_rows(count, columns(x, width, down, u32::from)),
-        Items::Booleans(x) => sort_rows(count, columns(x, width, down, u16::from)), _ => return None
+        Items::Compact(View::Floats(x)) => with_floats!(x, |x| sort_rows(count, columns(x, width, down, |v| v.order_key()))),
+        Items::Compact(View::Integers(x)) => with_ints!(x, |x| sort_rows(count, columns(x, width, down, |v| v.order_key()))),
+        Items::Compact(View::Characters(x)) => sort_rows(count, columns(x, width, down, |v| v.order_key())),
+        Items::Compact(View::Booleans(x)) => sort_rows(count, columns(x, width, down, |v| v.order_key())), _ => return None
     })
 }
 pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Context<'_>) -> Result<Value, Error> {
-    if right.is_unit() || left.is_some_and(Value::is_unit) { return Err(span.error(ErrorKind::Rank, "grade needs arrays of rank at least one")); }
-    let count = generated_len(&right.shape()[..1]).error_at(span, "grade result is too large")?;
+    if right.is_unit() || left.is_some_and(Value::is_unit) { return Err(span.error(Kind::Rank, "grade needs arrays of rank at least one")); }
+    let count = generated_len(&right.shape()[..1]).at(span)?;
     // Only the comparison sorts start from the positions in order. `sort_rows` builds its own.
     let mut indices: Vec<u32>;
     let direction = |order: Ordering| if down { order.reverse() } else { order };
@@ -350,7 +348,7 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
             for (w, (_, c)) in weight.iter_mut().zip(digits(i, collation.shape())) { *w = (*w).min(c); }
         }
         let cells: Vec<_> = text.iter().map(|c| weights.get(c).unwrap_or(&missing)).collect();
-        let size = crate::array::element_count(&right.shape()[1..]).error_at(span, "invalid grade cell shape")?;
+        let size = crate::array::element_count(&right.shape()[1..]).at(span)?;
         indices = (0..count as u32).collect();
         indices.sort_by(|&a, &b| {
             for (axis, _) in missing.iter().enumerate() {
@@ -387,10 +385,10 @@ pub(super) fn sort(right: &Value, down: bool, span: &Context<'_>) -> Result<Valu
 
 /// A vector without keys of 256 items or more, sorted by counting its items, when they are integers, Booleans or characters whose keys `counts` counts. A sort needs no positions. It writes each item as many times as it occurs, in order. Fewer items go through `grade`. A table of `counts` holds up to 1024 keys, however few the items.
 fn counted_sort(right: &Value, down: bool) -> Option<Value> {
-    use crate::element::Element;
+    use crate::element::Stored;
     use rustymath::search::{counts, Key};
     /// The items of `x` in order, from the count of each key. Each key writes its item to the next four places, then fills the rest of its count. A key with fewer items has its extra places overwritten by the next keys. Writing four with no branch avoids a mispredicted branch for each key when most counts are 0 or 1. A key between two characters may not be a character itself. Its count is 0, so what it writes is overwritten.
-    fn spread<T: Element + Key>(x: &[T], down: bool) -> Option<Value> {
+    fn spread<T: Stored + Key>(x: &[T], down: bool) -> Option<Value> {
         let (min, counts) = counts(x)?;
         let mut sorted = vec![T::FILL; x.len() + 4];
         let mut at = 0;
@@ -407,7 +405,7 @@ fn counted_sort(right: &Value, down: bool) -> Option<Value> {
     }
     if right.shape().len() != 1 || right.keys(0).is_some() || right.len() < 256 { return None; }
     let sorted = match right.as_items() {
-        Items::Integers(x) => with_ints!(x, |x| spread(x, down)), Items::Booleans(x) => spread(x, down), Items::Characters(x) => spread(x, down), _ => None
+        Items::Compact(View::Integers(x)) => with_ints!(x, |x| spread(x, down)), Items::Compact(View::Booleans(x)) => spread(x, down), Items::Compact(View::Characters(x)) => spread(x, down), _ => None
     }?;
     sorted.with_layout(right.layout().clone()).ok()
 }
@@ -416,7 +414,7 @@ pub(super) fn interval_index(left: &Value, right: &Value, span: &Context<'_>) ->
     let (rank, frame) = search_frame(left, right, span)?;
     let boundaries = search_cells(left, rank, span)?;
     let values = search_cells(right, rank, span)?;
-    let data = match compact_bins(&boundaries, &values) {
+    let data = match compact_view(&boundaries).zip(compact_view(&values)).and_then(|(x, y)| rustymath::search::view_bins(x, y)) {
         Some(data) => data,
         None => {
             let order = |x: &Value, y: &Value| array_order(x, y).ok_or_else(|| span.domain_error("functions have no ordering"));
@@ -438,17 +436,4 @@ pub(super) fn interval_index(left: &Value, right: &Value, span: &Context<'_>) ->
     let key = |n: u32| n.checked_sub(1).and_then(|i| keys.names().get(i as usize)?.clone());
     let data = data.into_iter().map(|n| key(n).map_or_else(|| integer(i64::from(n)), |k| crate::keyed::text(&k)));
     frame.collect(data, integer(0)).error_at(span, "invalid interval index")
-}
-
-/// Interval indices of compact cells of one kind, through `rustymath::search::bins`: Booleans, characters, integers of any widths, and floats of one width, which compare by their order keys, as grade compares them. `None` for other cells.
-fn compact_bins(boundaries: &Cells, values: &Cells) -> Option<Vec<u32>> {
-    use {crate::array::Floats, rustymath::{search::bins, Float}};
-    fn keyed<F: Float>(x: &[F], y: &[F]) -> Vec<u32> { let keys = |v: &[F]| v.iter().map(|&f| f.order_key()).collect::<Vec<_>>(); bins(&keys(x), &keys(y)) }
-    Some(match (boundaries.items()?, values.items()?) {
-        (Items::Booleans(x), Items::Booleans(y)) => bins(x, y), (Items::Characters(x), Items::Characters(y)) => bins(x, y),
-        (Items::Integers(x), Items::Integers(y)) => with_int_pair!(x, y, |x, y| bins(x, y)),
-        (Items::Floats(Floats::F64(x)), Items::Floats(Floats::F64(y))) => keyed(x, y),
-        (Items::Floats(Floats::F32(x)), Items::Floats(Floats::F32(y))) => keyed(x, y),
-        (Items::Floats(Floats::F16(x)), Items::Floats(Floats::F16(y))) => keyed(x, y), _ => return None
-    })
 }

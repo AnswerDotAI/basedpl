@@ -1,4 +1,5 @@
-use crate::{array::{generated_len, FloatWidth, Items}, execution::Context, primitive::{integer, numeric}, Error, ErrorAt, ErrorKind, Function, Value};
+use rustymath::{buffer::{FloatWidth, View}, error::Kind};
+use crate::{array::{generated_len, Items}, execution::Context, primitive::{integer, numeric}, Error, ErrorAt, ErrorKind, Function, Value};
 use std::borrow::Cow;
 
 /// A system function implemented natively, taking an optional left argument and a right argument.
@@ -53,7 +54,7 @@ impl Item {
         let depth = crate::primitive::depth(right);
         match self {
             Whole => false, Number => depth > 0, Vector => depth > 1,
-            Text => depth > 1 || (right.is_empty() && !matches!(right.as_items(), Items::Characters(_)))
+            Text => depth > 1 || (right.is_empty() && !matches!(right.as_items(), Items::Compact(View::Characters(_))))
         }
     }
 }
@@ -235,7 +236,7 @@ fn storage(_: Option<&Value>, right: &Value, _: &Context<'_>) -> Result<Value, E
 /// `width •float Y`: the numbers of `Y` as floats of `width` bits, 16, 32 or 64. `•float Y` gives floats of the default width, which the `float` pref sets. Arrays nested in `Y` convert too.
 fn to_float(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let width = match left {
-        None => span.numeric().width, Some(w) => w.as_number().and_then(|n| n.integer().ok()).and_then(FloatWidth::of_bits).ok_or(ErrorKind::Domain)
+        None => span.numeric().width, Some(w) => w.as_number().and_then(|n| n.integer().ok()).and_then(FloatWidth::of_bits).ok_or(Kind::Domain)
             .error_at(span, "•float takes a width of 16, 32 or 64")?
     };
     right.to_float_width(width).error_at(span, "•float takes numbers")
@@ -314,16 +315,16 @@ fn unicode_convert(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
         } else { spec.clone() };
         let text = crate::keyed::name(&name).filter(|_| !name.is_atom()).ok_or_else(invalid)?;
         if !matches!(&*text, "UTF-8" | "UTF-16" | "UTF-32") { return Err(invalid()); }
-        if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "encoded •ucs needs a vector")); }
+        if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "encoded •ucs needs a vector")); }
         Some(text)
     } else { None };
     let shape = |len: usize| {
         let shape = if encoding.is_some() { vec![len] } else { right.shape().to_vec() };
-        generated_len(&shape).map(|_| shape).error_at(span, "Unicode result exceeds element limit")
+        generated_len(&shape).map(|_| shape).at(span)
     };
     let result = if matches!(right.prototype(), Value::Character(_)) {
         let chars: Cow<[char]> = match right.as_items() {
-            Items::Characters(cs) => Cow::Borrowed(cs),
+            Items::Compact(View::Characters(cs)) => Cow::Borrowed(cs),
             Items::Values(vs) => Cow::Owned(vs.iter().map(|v| if let Value::Character(c) = v { Ok(*c) } else { Err(invalid()) }).collect::<Result<_, _>>()?),
             _ => return Err(invalid()),
         };

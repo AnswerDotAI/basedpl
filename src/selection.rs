@@ -1,3 +1,4 @@
+use rustymath::{buffer::View, error::Kind};
 use crate::{array::{generated_len, Frame, Gather, Items}, primitive::{Selection, Targets}, Error, ErrorAt, ErrorKind, Number, Span, Value};
 use foldhash::{HashMap, HashMapExt};
 
@@ -15,7 +16,7 @@ impl Labels {
         let simple = match original.as_items() { Items::Values(items) => items.iter().all(Value::is_atom), _ => true };
         let (mut labels, array) = if matches!(original, Value::Array(_)) && !original.is_empty() && simple {
             let n = original.len();
-            generated_len(original.shape()).error_at(span, "selection is too large")?;
+            generated_len(original.shape()).at(span)?;
             let array = Value::integers(original.shape(), (1..=n as i64).collect()).and_then(|a| a.with_layout(original.layout().clone()))
                 .error_at(span, "invalid selection labels")?;
             (Self { places: Places::Offsets(n), nested: HashMap::new() }, array)
@@ -31,7 +32,7 @@ impl Labels {
     fn build(&mut self, a: &Value, path: &mut Vec<usize>, span: &Span) -> Result<Value, Error> {
         let mut items = Vec::new();
         for (i, e) in a.elements().enumerate() {
-            generated_len(&[self.len() + self.nested.len() + 1]).error_at(span, "selection is too large")?;
+            generated_len(&[self.len() + self.nested.len() + 1]).at(span)?;
             path.push(i);
             items.push(match e {
                 a @ Value::Array(_) => {
@@ -78,7 +79,7 @@ impl Labels {
                 true
             } else if let Some(n) = selected.as_number() { self.place(n.nonnegative_integer().error_at(span, "invalid selection label")?, &mut targets) }
             else { false };
-            if !found { return Err(span.error(ErrorKind::Index, "cannot assign to a missing item")); }
+            if !found { return Err(span.error(Kind::Index, "cannot assign to a missing item")); }
             values.fill(right, 1);
         } else { self.collect(selected, right, span, &mut targets, &mut values)?; }
         let shape = vec![targets.len()];
@@ -92,16 +93,16 @@ impl Labels {
             &aligned
         } else { right };
         if !right.is_singleton() && right.shape() != selected.shape() {
-            return Err(span.error(ErrorKind::Length, "replacement shape does not match selection"));
+            return Err(span.error(Kind::Length, "replacement shape does not match selection"));
         }
         let pick = |i: usize| if right.is_singleton() { 0 } else { i };
         let label = |i: usize, id: usize, targets: &mut Targets, values: &mut Gather| -> Result<(), Error> {
             if id == 0 { return Ok(()); }
-            if !self.place(id, targets) { return Err(span.error(ErrorKind::Index, "cannot assign to fill introduced by a selection")); }
+            if !self.place(id, targets) { return Err(span.error(Kind::Index, "cannot assign to fill introduced by a selection")); }
             values.push(right, pick(i));
             Ok(())
         };
-        if let Items::Integers(ids) = selected.as_items() {
+        if let Items::Compact(View::Integers(ids)) = selected.as_items() {
             for (i, &id) in ids.widened().iter().enumerate() {
                 label(i, usize::try_from(id).map_err(|_| span.domain_error("invalid selection label"))?, targets, values)?;
             }

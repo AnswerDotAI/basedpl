@@ -2,7 +2,7 @@
 from fractions import Fraction
 from itertools import repeat
 from json import dumps
-from . import _Array, _Function, symbols
+from . import _Array, _Function, _raw, symbols
 from .functions import Function, _builtins, _python_name, _operator_names
 
 _names = {s['glyph']: (s['name'], s['monad'], s['dyad']) for s in symbols if s['kind'] == 'function'}
@@ -30,7 +30,7 @@ def _atom(o):
     return repr(o)
 
 def _literal(a):
-    raw = a.parts()
+    raw = _raw(a.parts())
     if 'atom' in raw:
         o = raw['atom']
         return _apl(o) if isinstance(o, _Function) else _atom(o)
@@ -86,7 +86,7 @@ class _Printer:
         if kind == '.': return f'{r(a, True, 31)} @ {r(b, True, 31)}', 30
         if kind == '⍣':
             if bf: return f'{r(a, dyad, 100)}.power({r(b, True)})', 100
-            raw = b.parts()
+            raw = _raw(b.parts())
             if raw.get('shape') == [1] and isinstance(raw['data'][0], _Function): return f'{r(a, dyad, 100)}.power([{r(raw["data"][0], True)}])', 100
             return f'{r(a, dyad, 41)} ** {r(b)}', 40
         valences = {'⍤': (dyad, dyad), '∘': (False, dyad), '⍥': (dyad, False), '↣': (False, True), '↢': (True, False),

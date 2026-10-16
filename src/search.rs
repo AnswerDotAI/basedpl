@@ -12,11 +12,14 @@
 //!
 //! Other data takes the pairwise comparison.
 use crate::{
-    array::{with_float_width, with_int_pair, with_ints, FloatWidth, Floats, Items}, element::{read_as, Source}, execution::Context, number::int::Int,
+    array::Items, element::read_as, execution::Context, number::int::Int,
     Error, ErrorKind, Value
 };
 use foldhash::fast::RandomState;
-use rustymath::{search::{self, Chains, Key}, tolerant::{self, Near, Tolerance}};
+use rustymath::{
+    buffer::{FloatWidth, Floats, Source, View}, search::{self, Chains, Key}, tolerant::{self, Near, Tolerance}, with_float_width,
+    with_ints
+};
 use std::{borrow::Cow, hash::{BuildHasher, Hash, Hasher}};
 
 /// The cells a search compares. The cells of rank 0 are an array's items.
@@ -38,28 +41,8 @@ impl<'a> Cells<'a> {
     }
 }
 
-/// `Some($body)`, with each `$x` bound to the items of its `$items`, when they are all Booleans, all integers or all characters: the types that implement `Key`. Otherwise `None`. Integers of different widths widen to `i64`.
-macro_rules! with_keys {
-    ([$items:expr], |$x:ident| $body:expr) => {
-        match $items {
-            Some(Items::Booleans($x)) => Some($body),
-            Some(Items::Characters($x)) => Some($body),
-            Some(items) => items.ints().map(|ints| with_ints!(ints, |$x| $body)),
-            None => None,
-        }
-    };
-    ([$a:expr, $b:expr], |$x:ident, $y:ident| $body:expr) => {
-        match ($a, $b) {
-            (Some(Items::Booleans($x)), Some(Items::Booleans($y))) => Some($body),
-            (Some(Items::Characters($x)), Some(Items::Characters($y))) => Some($body),
-            (Some(a), Some(b)) => match (a.ints(), b.ints()) {
-                (Some(x), Some(y)) => Some(with_int_pair!(x, y, |$x, $y| $body)),
-                _ => None,
-            },
-            _ => None,
-        }
-    };
-}
+/// The items of `cells` when they're one array's compact items, which rustymath's searches of views take.
+pub(crate) fn compact_view<'a>(cells: &Cells<'a>) -> Option<View<'a>> { match cells.items()? { Items::Compact(x) => Some(x), Items::Values(_) => None } }
 
 /// The float width that a search compares at, the widest among its cells or f64 without floats, and that width's tolerance.
 fn compared_at(span: &Context<'_>, width: Option<FloatWidth>) -> (FloatWidth, Tolerance) {
@@ -70,7 +53,7 @@ fn compared_at(span: &Context<'_>, width: Option<FloatWidth>) -> (FloatWidth, To
 /// Compact integers searched for 64-bit floats that each equal a whole number below `tolerant::whole_limit`, as a search of the integers at their own width. At that width an integer reads as itself, and no tolerance makes such a whole number equal to another integer. `pervasive::against_whole` compares integers with one such float the same way.
 fn whole_needles(haystack: &Cells, needles: &Cells, width: FloatWidth, t: Tolerance) -> Option<Vec<u32>> {
     if width != FloatWidth::F64 { return None; }
-    let (Some(Items::Integers(x)), Some(Items::Floats(Floats::F64(y)))) = (haystack.items(), needles.items()) else { return None };
+    let (Some(Items::Compact(View::Integers(x))), Some(Items::Compact(View::Floats(Floats::F64(y))))) = (haystack.items(), needles.items()) else { return None };
     let limit = tolerant::whole_limit(t);
     let y: Vec<i64> = y.iter().map(|&v| (v.fract() == 0.0 && v.abs() < limit).then_some(v as i64)).collect::<Option<_>>()?;
     Some(with_ints!(x, |x| narrowed(x, &y)))
@@ -85,7 +68,7 @@ fn narrowed<T: Int + Key>(x: &[T], y: &[i64]) -> Vec<u32> {
 /// For each needle, the position of the first haystack cell that matches it, or the number of haystack cells when none does.
 pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_>) -> Result<Vec<u32>, Error> {
     let (width, t) = compared_at(span, haystack.float_width().max(needles.float_width()));
-    if let Some(found) = with_keys!([haystack.items(), needles.items()], |x, y| search::index_of(x, y)) { return Ok(found); }
+    if let Some(found) = compact_view(haystack).zip(compact_view(needles)).and_then(|(x, y)| search::view_index_of(x, y, t, || span.check_now())) { return found; }
     if let Some(found) = whole_needles(haystack, needles, width, t) { return Ok(found); }
     let compact = with_float_width!(width, F => match (haystack, needles) {
         (Cells::Items(x), Cells::Items(y)) => read_as::<F>(x).zip(read_as::<F>(y)).map(|(x, y)| tolerant::index_of_with(t, &x, &y, || span.check_now())),
@@ -116,7 +99,7 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_
 /// The representative of each cell's class. Compact cells take rustymath's classes. With a tolerance, a class of real atoms is a run that `tolerant::runs` gives, or the reals equal to one whole number when every real equals one below `tolerant::whole_limit`, and the class's earliest position represents it. Two reals in one class therefore needn't match each other. Other cells are compared only with earlier representatives. A cell that matches none represents a new class.
 pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<u32>, Error> {
     let (width, t) = compared_at(span, cells.float_width());
-    if let Some(classes) = with_keys!([cells.items()], |x| search::classes(x)) { return Ok(classes); }
+    if let Some(classes) = compact_view(cells).and_then(|x| search::view_classes(x, t, || span.check())) { return classes; }
     let compact = with_float_width!(width, F => match cells {
         Cells::Items(x) => read_as::<F>(x).map(|x| tolerant::classes_with(t, &x, || span.check())), Cells::Arrays(_) => None,
     });
@@ -132,20 +115,22 @@ pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<u32>, Er
 
 /// The number of cells in each class, in order of first appearance, as the groups of `grouped` hold them, with no group built.
 pub(crate) fn class_counts(cells: &Cells, span: &Context<'_>) -> Result<Vec<usize>, Error> {
-    if let Some(counts) = with_keys!([cells.items()], |x| search::class_counts(x)) { return Ok(counts); }
+    let (_, t) = compared_at(span, cells.float_width());
+    if let Some(counts) = compact_view(cells).and_then(|x| search::view_class_counts(x, t, || span.check())) { return counts; }
     Ok(search::numbered(&classify(cells, span)?).counts)
 }
 
 /// The classes of `cells`, numbered in order of first appearance, with the positions of each. Booleans, characters and integers whose values span a table group straight from those values. Other cells group by the representatives that `classify` gives them.
 pub(crate) fn grouped(cells: &Cells, span: &Context<'_>) -> Result<search::Grouped, Error> {
-    if let Some(Some(grouped)) = with_keys!([cells.items()], |x| search::grouped_keys(x)) { return Ok(grouped); }
+    let (_, t) = compared_at(span, cells.float_width());
+    if let Some(grouped) = compact_view(cells).and_then(|x| search::view_grouped(x, t, || span.check())) { return grouped; }
     let search::Numbered { firsts, numbers, .. } = search::numbered(&classify(cells, span)?);
     Ok(search::Grouped::new(firsts, &numbers))
 }
 
 /// The positions of each class along an axis of `len` cells, as exact integers at the narrowest width that holds every position below `len`. A 32-bit result keeps each buffer that a class owns. Otherwise each class copies its positions once, from the buffer it shares.
 pub(crate) fn class_positions(classes: search::Grouped, len: usize) -> Result<Vec<Value>, ErrorKind> {
-    if matches!(crate::array::Width::below(len), crate::array::Width::I32) {
+    if matches!(rustymath::buffer::Width::below(len), rustymath::buffer::Width::I32) {
         return classes.into_classes().into_iter().map(|these| Value::positions_u32([these.len()], len, these)).collect();
     }
     classes.each().map(|these| Value::positions([these.len()], len, these.iter().copied())).collect()
@@ -167,8 +152,8 @@ fn earliest(cells: &Cells, positions: impl IntoIterator<Item = usize>, classes: 
 
 /// Whether each cell is the first of its class.
 pub(crate) fn firsts(cells: &Cells, span: &Context<'_>) -> Result<Vec<bool>, Error> {
-    if let Some(mask) = with_keys!([cells.items()], |x| search::firsts(x)) { return Ok(mask); }
     let (width, t) = compared_at(span, cells.float_width());
+    if let Some(mask) = compact_view(cells).and_then(|x| search::view_firsts(x, t, || span.check())) { return mask; }
     let compact = with_float_width!(width, F => match cells {
         Cells::Items(x) => read_as::<F>(x).map(|x| tolerant::firsts_with(t, &x, || span.check())), Cells::Arrays(_) => None,
     });
@@ -226,7 +211,7 @@ fn reals<'a>(cells: &'a Cells, width: FloatWidth) -> Option<Cow<'a, [f64]>> {
     let Cells::Items(array) = cells else { return None };
     match array.as_items() {
         Items::Values(items) => Some(Cow::Owned(items.iter().map(|v| real(v, width)).collect::<Option<_>>()?)),
-        Items::Floats(Floats::F64(x)) => Some(Cow::Borrowed(x)),
+        Items::Compact(View::Floats(Floats::F64(x))) => Some(Cow::Borrowed(x)),
         _ => with_float_width!(width, F => Some(Cow::Owned(read_as::<F>(array)?.iter().map(|&x| x.into()).collect()))),
     }
 }

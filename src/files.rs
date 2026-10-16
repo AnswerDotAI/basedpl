@@ -52,7 +52,7 @@ const COLUMNS: &[&str] =
 /// The row of a table of entries for `path`, shown as `shown`. A missing entry has kind `"none"`, and NaN for its times.
 fn row(path: &Path, shown: &str) -> Vec<Value> {
     // Times stay 64-bit, as `•date` gives them.
-    let time_value = |n: f64| Value::Number(Number::float(n, crate::array::FloatWidth::F64));
+    let time_value = |n: f64| Value::Number(Number::float(n, rustymath::buffer::FloatWidth::F64));
     let flag = |b: bool| Value::Number(Number::from_bool(b));
     let link = fs::symlink_metadata(path).ok();
     let meta = fs::metadata(path).ok().or_else(|| link.clone());

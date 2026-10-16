@@ -1,6 +1,7 @@
 //! `⇄`, the operator that minimizes its operand, or solves for where its operand is zero, through `rustymath::optimize`.
+use rustymath::{buffer::FloatWidth, error::Kind};
 use crate::{
-    array::{FloatWidth, Layout}, data::Options, derivative::Linearized, element::Float, execution::Context, keyed, primitive::{integer, real},
+    array::Layout, data::Options, derivative::Linearized, element::Float, execution::Context, keyed, primitive::{integer, real},
     Error, ErrorAt, ErrorKind, Function, Number, Span, Value
 };
 use num_traits::ToPrimitive;
@@ -40,20 +41,20 @@ fn run<F: Native + Float + Factor>(f: &Function, options: &Options, start: &Valu
         },
     };
     let method =
-        options.values.contains_key("method").then(|| options.text("method", None, cx)?.parse::<Method>().map_err(|e| cx.domain_error(e))).transpose()?;
+        options.values.contains_key("method").then(|| options.text("method", None, cx)?.parse::<Method>().at(cx)).transpose()?;
     let tolerance = options.number("tolerance", cx)?;
     let settings = optimize::Options { method, bounds: bounds.as_ref().map(|(lower, upper)| Bounds { lower, upper }), tolerance: tolerance.map(F::narrow),
         evaluations: count(options, "evaluations", 1, cx)?, population: count(options, "population", 1, cx)?,
         seed: count(options, "seed", 0, cx)?.unwrap_or(0) as u64 };
     let report = options.boolean("report", false, cx)?;
-    let check = |task| settings.check(task, n).map_err(|problem| span.domain_error(problem));
+    let check = |task| settings.check(task, n).at(span);
     let start = point.value(&x, span)?;
     // A method that can use a derivative linearises once at the start, which finds whether `∂` differentiates `f`, and gives its value there.
     let derivatives = matches!(settings.method, None | Some(Method::Lbfgs | Method::LevenbergMarquardt | Method::Cg | Method::Minres));
     let last = if !derivatives { None } else {
         match crate::derivative::linearized(f, None, &start, cx) {
             Ok(lin) => Some((point_key(&x), lin)),
-            Err(e) if e.kind == ErrorKind::Unsupported => None,
+            Err(e) if matches!(e.kind, ErrorKind::Unsupported) => None,
             Err(e) => return Err(e),
         }
     };
@@ -199,7 +200,7 @@ impl<F: Native + Float> Mapping<F> for Residual<'_, '_> {
         let direction = self.point.value(v, span)?;
         match linearized_at(&mut self.last, self.f, &self.point, x, self.affine, self.cx) {
             Ok(lin) => { fill(out, &lin.jvp(&direction, self.cx)?, "⇄ needs its function to give the same number of residuals at every point", span)?; Ok(true) }
-            Err(e) if e.kind == ErrorKind::Unsupported => { self.products = false; Ok(false) }
+            Err(e) if matches!(e.kind, ErrorKind::Unsupported) => { self.products = false; Ok(false) }
             Err(e) => Err(e),
         }
     }
@@ -215,7 +216,7 @@ impl<F: Native + Float> Mapping<F> for Residual<'_, '_> {
 /// `value`'s numbers in `out`, or LENGTH with `message` where `value` has another number of them.
 fn fill<F: Float>(out: &mut [F], value: &Value, message: &str, span: &Span) -> Result<(), Error> {
     let numbers = reals::<F>(value, span)?;
-    if numbers.len() != out.len() { return Err(span.error(ErrorKind::Length, message)); }
+    if numbers.len() != out.len() { return Err(span.error(Kind::Length, message)); }
     out.copy_from_slice(&numbers);
     Ok(())
 }
@@ -231,14 +232,14 @@ fn limits<F: Float>(value: &Value, start: &Value, span: &Span) -> Result<Vec<F>,
     let limits = reals::<F>(value, span)?;
     if value.is_unit() { return Ok(vec![limits[0]; start.len()]); }
     let keys = (0..start.shape().len()).all(|a| value.keys(a).is_none_or(|k| start.keys(a) == Some(k)));
-    if value.shape() != start.shape() || !keys { return Err(span.error(ErrorKind::Length, "⇄ bounds need one number, or the start's shape and keys")); }
+    if value.shape() != start.shape() || !keys { return Err(span.error(Kind::Length, "⇄ bounds need one number, or the start's shape and keys")); }
     Ok(limits.into_owned())
 }
 
 /// The ends of option `bracket`, two numbers in either order, as the lower and upper bounds of one variable.
 fn bracket<F: Native + Float>(value: &Value, span: &Span) -> Result<(Vec<F>, Vec<F>), Error> {
     let ends = reals::<F>(value, span)?;
-    let [a, b] = ends[..] else { return Err(span.error(ErrorKind::Length, "⇄ bracket needs two numbers")) };
+    let [a, b] = ends[..] else { return Err(span.error(Kind::Length, "⇄ bracket needs two numbers")) };
     Ok((vec![a.min(b)], vec![a.max(b)]))
 }
 

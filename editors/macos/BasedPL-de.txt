@@ -34,10 +34,11 @@ Option-Shift-5	subscript prefix
 Option-Shift-´	⋄
 Option-Shift-9	∨
 Control-Option-Shift-7	¿
+Option-Shift-ß	≢
 Option-Shift-8	∞
 Option-0	∧
 Option-Shift-0	⍬
-Control-Option-Shift-0	match prefix
+Control-Option-Shift-0	≡
 Option-Shift-+	≠
 Option-o	circle prefix
 Option-Shift-u	÷
@@ -46,7 +47,8 @@ Option-p	π
 Control-Option-p	stile prefix
 Option-Shift-l	↦
 Option-j	↓
-Option-k	take prefix
+Option-k	↑
+Option-Shift-k	↕
 Option-Shift-#	⊢
 Option-,	↢
 Option-Shift-,	⊣

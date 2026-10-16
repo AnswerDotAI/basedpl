@@ -25,14 +25,14 @@ pub(crate) fn call(regex: &Regex, op: Operation, left: Option<&Value>, right: &V
     let source = text(right, span)?;
     if let Operation::Replace = op {
         let result = regex.replace(&text(left.unwrap(), span)?, &source, span)?;
-        generated_len(&[result.chars().count()]).error_at(span, "regex result too large")?;
+        generated_len(&[result.chars().count()]).at(span)?;
         return Ok(keyed::text(&result));
     }
     let mut rows = Vec::new();
     regex.each(&source, |m| {
         span.check()?;
         rows.push(vec![keyed::text(&m.text), Value::Number(Number::from_integer(m.position as i64)), texts(m.groups, span)?]);
-        generated_len(&[rows.len()]).error_at(span, "regex result too large").map(drop)
+        generated_len(&[rows.len()]).at(span).map(drop)
     })?;
     let empty = vec![keyed::text(""), Value::Number(Number::from_integer(0)), texts(vec![String::new(); regex.groups()], span)?];
     keyed::table(&["text", "position", "groups"], &[rows.len()], rows, empty).error_at(span, "invalid regex result")

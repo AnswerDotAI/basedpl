@@ -8,10 +8,10 @@
 //!
 //! A structural glyph that copies one source through rustymath `Steps` (`remapped`) gives a pending copy (`copy`) where its result has at least `MIN_ITEMS` items, for a source of any compact kind. Forcing composes a read of a copy with the copy's map, and moves a read with no repeat or fill under each pending pervasive call it reaches that only it holds (`Pending::resolved`). `2×⌽v+1` then runs as one graph that reads `v` backwards. A copy of floats that no call reads through, and a copy of any other kind, walks its source as `remapped` does.
 use crate::{
-    agreement::{entries, per_axis, repeats, spreads, through, Agreement, Mapping}, array::{Axis, FloatWidth, Items, Kind, Layout, Storage}, element::{Element, Float}, number::{Arithmetic, Math, Numeric},
+    agreement::{entries, per_axis, repeats, spreads, through, Agreement}, array::{Items, Lanes, Layout, Storage}, element::{Stored, Float}, number::{Arithmetic, Math, Numeric},
     pervasive::{self, with_float_reduction, with_truth_reduction, Kernels}, primitive::{FoldKind, Primitive}, Number, Value
 };
-use rustymath::{gather::Steps, reduce::{self, Reduction}, Arg, Native};
+use rustymath::{agreement::{expanded, Mapping}, buffer::{DType, FloatWidth, View}, gather::Steps, reduce::{self, Reduction}, Arg, Native};
 use std::{collections::HashMap, ops::Range, sync::{Arc, Mutex, OnceLock, PoisonError}};
 
 /// The fewest result items of a call that dispatch defers. Smaller arrays stay in the cache between calls.
@@ -76,8 +76,8 @@ pub(crate) struct Pending {
     layout: Layout,
     /// The width of the floats that the call reads, at which a graph of it runs.
     width: FloatWidth,
-    /// The kind of the items: Booleans for a comparison, and the source's kind for a copy.
-    kind: Kind,
+    /// The dtype of the items: Booleans for a comparison, and the source's dtype for a copy.
+    dtype: DType,
     prototype: Value,
     numeric: Numeric,
     /// The calls that forcing this array would gather: 1 plus the sizes of the pending arrays its call reads, counting a shared one each time, and at most `MAX_NODES`.
@@ -121,7 +121,7 @@ pub(crate) fn defers(p: Primitive, dyadic: bool, len: usize) -> bool { len >= MI
 /// The call of `p` on `x` and `y` as a pending array, or `agreement` back where the call can't be deferred. Its arrays must hold floats of one kernel width and have plain layouts, a scalar must be a float of at most that width, and its result's layout must be plain. Where the call would gather more than `MAX_NODES` calls, the pending arrays it reads run first. Out of line, so that its code stays out of the frame of dispatch, which stays on the stack through each level of recursion.
 #[inline(never)]
 pub(crate) fn defer(p: Primitive, x: Option<&Value>, y: &Value, agreement: Agreement, numeric: Numeric) -> Result<Value, Agreement> {
-    let floats = |v: &Value| match v.compact_kind() { Some(Kind::Float(width)) if width != FloatWidth::F16 => Some(width), _ => None };
+    let floats = |v: &Value| match v.dtype() { Some(DType::Float(width)) if width != FloatWidth::F16 => Some(width), _ => None };
     let Some(width) = [x, Some(y)].into_iter().flatten().find(|v| !v.is_atom()).and_then(floats) else { return Err(agreement) };
     let fits = |v: &Value| floats(v).is_some_and(|w| if v.is_atom() { w <= width } else { w == width && v.layout().plain() });
     if numeric.width == FloatWidth::F16 || !agreement.layout.plain() || !x.is_none_or(fits) || !fits(y) { return Err(agreement); }
@@ -139,15 +139,15 @@ pub(crate) fn defer(p: Primitive, x: Option<&Value>, y: &Value, agreement: Agree
         size = 1;
     }
     let work = Mutex::new(Some(Work::Call(call)));
-    let (kind, prototype) = match p { Primitive::Compare(_) => (Kind::Boolean, Number::from_bool(false)), _ => (Kind::Float(width), Number::float(0.0, width)) };
-    let pending = Pending { work, result: OnceLock::new(), layout: layout.clone(), width, kind, prototype: Value::Number(prototype), numeric, size };
+    let (dtype, prototype) = match p { Primitive::Compare(_) => (DType::Boolean, Number::from_bool(false)), _ => (DType::Float(width), Number::float(0.0, width)) };
+    let pending = Pending { work, result: OnceLock::new(), layout: layout.clone(), width, dtype, prototype: Value::Number(prototype), numeric, size };
     Ok(Value::deferred(layout, Arc::new(pending)))
 }
 
 /// A pending copy of `source` through `tables`, which `remapped` takes for a result of `layout`'s shape, or `None` where the copy runs at once: a result of fewer than `MIN_ITEMS` items, a source that isn't compact, or a map whose innermost axis doesn't read runs, as a transpose's doesn't. A copy of floats at a width that graphs run forces as a graph, so a fused call or a fold reads through it. Any other copy forces through `Gather::walk`, as `remapped` does.
 pub(crate) fn copy(source: &Value, layout: &Layout, tables: &[Steps]) -> Option<Value> {
     if source.is_atom() || layout.shape().iter().product::<usize>() < MIN_ITEMS { return None; }
-    let kind = source.compact_kind()?;
+    let dtype = source.dtype()?;
     let (base, steps) = per_axis(tables, layout.shape())?;
     let runs = |s: &Steps| matches!(*s, Steps::Stride { step: 1 | -1, .. } | Steps::Rotated { stride: 1, .. } | Steps::Clipped { stride: 1, .. });
     if !steps.iter().rev().find(|s| s.len() > 1).is_some_and(runs) { return None; }
@@ -156,11 +156,11 @@ pub(crate) fn copy(source: &Value, layout: &Layout, tables: &[Steps]) -> Option<
         Some(p) => (Read::Pending(p.clone(), mapping, source.layout().clone()), p.width, p.numeric, p.size + 1),
         None => {
             source.force();
-            (Read::Input(source.clone(), mapping), if let Kind::Float(w) = kind { w } else { FloatWidth::F64 }, Numeric::EXACT, 1)
+            (Read::Input(source.clone(), mapping), if let DType::Float(w) = dtype { w } else { FloatWidth::F64 }, Numeric::EXACT, 1)
         }
     };
     let work = Mutex::new(Some(Work::Call(Call { operation: Operation::Copy, left: None, right: read })));
-    let pending = Pending { work, result: OnceLock::new(), layout: Layout::from(layout.shape().to_vec()), width, kind, prototype: source.prototype(), numeric, size };
+    let pending = Pending { work, result: OnceLock::new(), layout: Layout::from(layout.shape().to_vec()), width, dtype, prototype: source.prototype(), numeric, size };
     Some(Value::deferred(layout.clone(), Arc::new(pending)))
 }
 
@@ -212,7 +212,7 @@ pub(crate) fn force_together(primal: &Value, tangent: &Value) {
 
 impl Pending {
     pub(crate) fn is_forced(&self) -> bool { self.result.get().is_some() }
-    pub(crate) fn kind(&self) -> Kind { self.kind }
+    pub(crate) fn dtype(&self) -> DType { self.dtype }
     pub(crate) fn prototype(&self) -> Value { self.prototype.clone() }
     /// The items, computed on the first call.
     pub(crate) fn storage(&self) -> &Storage {
@@ -230,7 +230,7 @@ impl Pending {
     fn put(&self, work: Work) { *self.work.lock().unwrap_or_else(PoisonError::into_inner) = Some(work); }
     fn len(&self) -> usize { self.layout.shape().iter().product() }
     /// Whether the items are floats at a width that graphs run, so that a graph can compute them.
-    fn floats(&self) -> bool { self.kind == Kind::Float(self.width) && self.width != FloatWidth::F16 }
+    fn floats(&self) -> bool { self.dtype == DType::Float(self.width) && self.width != FloatWidth::F16 }
     /// `call`, with each of its reads resolved.
     fn resolve(&self, call: Call) -> Call { Call { operation: call.operation, left: call.left.map(|r| self.resolved(r)), right: self.resolved(call.right) } }
     /// `call`, resolved, as the root of this array's graph. A copy whose read moved under a call becomes that call. `Err` gives back a copy whose read moved under none, which `walked` computes.
@@ -271,7 +271,7 @@ impl Pending {
         let right = next(call.right);
         let moved = Pending {
             work: Mutex::new(Some(Work::Call(Call { operation: call.operation, left, right }))), result: OnceLock::new(), layout: self.layout.clone(),
-            width: p.width, kind: p.kind, prototype: p.prototype.clone(), numeric: p.numeric, size: p.size,
+            width: p.width, dtype: p.dtype, prototype: p.prototype.clone(), numeric: p.numeric, size: p.size,
         };
         Read::Pending(Arc::new(moved), Mapping::Linear(1), self.layout.clone())
     }
@@ -467,7 +467,7 @@ impl Graph {
     pub(crate) fn fold(&self, p: Primitive, kind: FoldKind) -> Option<Value> {
         let shape = self.layout.shape();
         let axis = if kind.first { 0 } else { shape.len() - 1 };
-        let traversal = Axis::new(shape, axis).ok()?;
+        let traversal = Lanes::new(shape, axis).ok()?;
         if kind.scan || traversal.len < 2 { return None; }
         let mut rest = shape.to_vec();
         rest.remove(axis);
@@ -479,10 +479,10 @@ impl Graph {
         Some(if shape.len() == 1 { result.at(0) } else { result })
     }
 
-    fn folded<F: Float + Kernels + Native + 'static>(&self, p: Primitive, axis: &Axis, shape: Vec<usize>) -> Option<Value> {
+    fn folded<F: Float + Kernels + Native + 'static>(&self, p: Primitive, axis: &Lanes, shape: Vec<usize>) -> Option<Value> {
         let (lanes, dims) = (axis.outer * axis.inner, axis.dims());
         if self.compares() {
-            return with_truth_reduction!(p, axis.len, R => Element::build_narrowed(shape, self.fold_totals::<F, bool, R>(lanes, dims, |_, bools| bools)))
+            return with_truth_reduction!(p, axis.len, R => Stored::build_narrowed(shape, self.fold_totals::<F, bool, R>(lanes, dims, |_, bools| bools)))
                 .flatten();
         }
         with_float_reduction!(p, R => F::build_narrowed(shape, self.fold_totals::<F, F, R>(lanes, dims, |floats, _| floats)))?
@@ -520,7 +520,7 @@ impl Graph {
                     Mapping::Linear(r) | Mapping::Tiled(r) if r >= RUN => to.min((from / r + 1) * r), _ => to
                 });
                 let n = to - from;
-                let args: Vec<Arg<'_, F>> = inputs.iter().zip(&mut copies).map(|(&(data, m), copy)| pervasive::expanded(m, data, from, n, copy)).collect();
+                let args: Vec<Arg<'_, F>> = inputs.iter().zip(&mut copies).map(|(&(data, m), copy)| expanded(m, data, from, n, copy)).collect();
                 for (k, node) in self.nodes.iter().enumerate() {
                     let run = |buffers: &[Vec<F>], out: Out<'_, '_, F>| {
                         let operand = |operand: &Operand| match *operand {
@@ -584,7 +584,7 @@ fn copied<F: Copy>(x: Arg<'_, F>, n: usize, out: pervasive::Out<'_, '_, F>) -> b
 
 /// The float atom `c` at width `F`.
 fn scalar<F: Float>(c: &Value) -> F {
-    let Items::Floats(floats) = c.as_items() else { unreachable!("a scalar operand is a float") };
+    let Items::Compact(View::Floats(floats)) = c.as_items() else { unreachable!("a scalar operand is a float") };
     F::narrow(floats.get(0))
 }
 

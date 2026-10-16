@@ -1,4 +1,5 @@
 use std::{fmt, ops::Range, path::PathBuf, sync::Arc};
+use rustymath::error::Kind;
 use unicode_width::UnicodeWidthStr;
 
 /// Shared source identity and text. Syntax and errors retain only the sources they use.
@@ -15,33 +16,33 @@ impl Source {
 #[derive(Clone, Debug)]
 pub struct Span { pub source: Arc<Source>, pub range: Range<usize> }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum ErrorKind {
     Syntax,
-    Domain,
-    Length,
-    Limit,
-    Rank,
-    Index,
     Value,
     Io,
     Unsupported,
     Interrupt,
     Timeout,
+    /// An error of a kind that rustymath's functions on arrays share: Length, Rank, Index, Limit, Domain or Overflow.
+    Array(rustymath::error::Error),
     /// A kind that a program names when it signals an error, in upper case.
     Custom(Arc<str>),
 }
 
 impl ErrorKind {
-    const BUILTIN: [Self; 11] = [
-        Self::Syntax, Self::Domain, Self::Length, Self::Limit, Self::Rank, Self::Index, Self::Value, Self::Io, Self::Unsupported, Self::Interrupt,
-        Self::Timeout,
-    ];
-    /// The name that guards and `•signal` use, such as `DOMAIN`.
+    /// The kinds that BPL names.
+    fn builtin() -> [Self; 11] {
+        [
+            Self::Syntax, Kind::Domain.into(), Kind::Length.into(), Kind::Limit.into(), Kind::Rank.into(), Kind::Index.into(), Self::Value, Self::Io,
+            Self::Unsupported, Self::Interrupt, Self::Timeout,
+        ]
+    }
+    /// The name that guards and `•signal` use, such as `DOMAIN`. Rustymath's Overflow is LIMIT, because BPL's exact integers grow and BPL has no overflow kind.
     pub fn name(&self) -> &str {
         match self {
-            Self::Syntax => "SYNTAX", Self::Domain => "DOMAIN", Self::Length => "LENGTH", Self::Limit => "LIMIT", Self::Rank => "RANK", Self::Index => "INDEX",
-            Self::Value => "VALUE", Self::Io => "IO", Self::Unsupported => "UNSUPPORTED", Self::Interrupt => "INTERRUPT", Self::Timeout => "TIMEOUT",
+            Self::Syntax => "SYNTAX", Self::Value => "VALUE", Self::Io => "IO", Self::Unsupported => "UNSUPPORTED", Self::Interrupt => "INTERRUPT", Self::Timeout => "TIMEOUT",
+            Self::Array(e) => match e.kind { Kind::Domain => "DOMAIN", Kind::Length => "LENGTH", Kind::Limit | Kind::Overflow => "LIMIT", Kind::Rank => "RANK", Kind::Index => "INDEX" },
             Self::Custom(name) => name
         }
     }
@@ -49,8 +50,15 @@ impl ErrorKind {
     pub(crate) fn named(name: &str) -> Option<Self> {
         if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '_') { return None; }
         let name = name.to_uppercase();
-        Some(Self::BUILTIN.into_iter().find(|k| k.name() == name).unwrap_or_else(|| Self::Custom(name.into())))
+        Some(Self::builtin().into_iter().find(|k| k.name() == name).unwrap_or_else(|| Self::Custom(name.into())))
     }
+}
+
+impl From<rustymath::error::Error> for ErrorKind {
+    fn from(e: rustymath::error::Error) -> Self { Self::Array(e) }
+}
+impl From<Kind> for ErrorKind {
+    fn from(kind: Kind) -> Self { Self::Array(kind.into()) }
 }
 
 /// `DOMAIN ERROR` and so on. Interrupts, timeouts and unsupported features show their names alone.
@@ -66,10 +74,13 @@ pub struct Error { pub kind: ErrorKind, pub message: String, pub span: Span, pub
 impl Span {
     /// The whole of `source`.
     pub(crate) fn whole(source: Arc<Source>) -> Self { Self { range: 0..source.text.len(), source } }
-    pub(crate) fn error(&self, kind: ErrorKind, message: impl Into<String>) -> Error {
-        Error { kind, message: message.into(), span: self.clone(), calls: Vec::new() }
+    /// An error at this span. A kind that carries its own message, as rustymath's errors do, gives the error that message in place of `message`.
+    pub(crate) fn error(&self, kind: impl Into<ErrorKind>, message: impl Into<String>) -> Error {
+        let mut kind = kind.into();
+        let message = match &mut kind { ErrorKind::Array(e) if !e.message.is_empty() => std::mem::take(&mut e.message).into_owned(), _ => message.into() };
+        Error { kind, message, span: self.clone(), calls: Vec::new() }
     }
-    pub(crate) fn domain_error(&self, message: impl Into<String>) -> Error { self.error(ErrorKind::Domain, message) }
+    pub(crate) fn domain_error(&self, message: impl Into<String>) -> Error { self.error(Kind::Domain, message) }
     /// The file `path` names. A path that starts with `./` or `../` is relative to the file holding this code. Other relative paths, and every path in code not read from a file, are relative to the working directory.
     pub(crate) fn path(&self, path: &str) -> PathBuf {
         let relative = path.starts_with("./") || path.starts_with("../");
@@ -81,9 +92,17 @@ impl Span {
     pub(crate) fn read(&self, path: &str) -> Result<Vec<u8>, Error> { crate::host::read(&self.path(path)).map_err(|e| self.io_error(path, e)) }
 }
 
-/// Places an error from array building, which carries only its kind, at a source span.
-pub(crate) trait ErrorAt<T> { fn error_at(self, span: &Span, message: &str) -> Result<T, Error>; }
-impl<T> ErrorAt<T> for Result<T, ErrorKind> { fn error_at(self, span: &Span, message: &str) -> Result<T, Error> { self.map_err(|k| span.error(k, message)) } }
+/// Places an error at a source span. A kind that carries its own message, as rustymath's errors do, keeps that message.
+pub(crate) trait ErrorAt<T> {
+    /// With `message` where the kind carries none.
+    fn error_at(self, span: &Span, message: &str) -> Result<T, Error>;
+    /// For an error whose kind always carries a message, such as one from `generated_len`.
+    fn at(self, span: &Span) -> Result<T, Error>;
+}
+impl<T, K: Into<ErrorKind>> ErrorAt<T> for Result<T, K> {
+    fn error_at(self, span: &Span, message: &str) -> Result<T, Error> { self.map_err(|k| span.error(k, message)) }
+    fn at(self, span: &Span) -> Result<T, Error> { self.map_err(|k| span.error(k, "")) }
+}
 
 /// Places an error from numeric code, which carries only its message, at a source span as a DOMAIN error.
 pub(crate) trait DomainAt<T> { fn domain_at(self, span: &Span) -> Result<T, Error>; }

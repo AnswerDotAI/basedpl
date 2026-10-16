@@ -1,6 +1,6 @@
 # `↕` — Pairs / Windows
 
-Function. Keys: `Alt-k j`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-K`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `↕Y` gives the adjacent pairs of major cells, as `2↕Y` does. `-/⍠1` then subtracts within each pair.
 

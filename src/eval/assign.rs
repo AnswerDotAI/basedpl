@@ -1,5 +1,6 @@
 //! Assignment: plain, destructuring, modified and selective.
 
+use rustymath::error::Kind;
 use super::*;
 
 impl Session {
@@ -196,8 +197,7 @@ impl Session {
                     if let Some((cells, names)) = crate::primitive::append_plan(&binding.value, right, first, &self.at(&node.span))? {
                         if cells.environment() > binding.owner { return Err(node.span.domain_error("array would export a local closure")); }
                         return self.write_kept(binding, &node.span, |value, _| {
-                            value.append(&cells, names.as_deref());
-                            Ok(())
+                            value.append(&cells, names.as_deref()).error_at(&node.span, "catenate has duplicate axis keys")
                         });
                     }
                 }
@@ -219,7 +219,7 @@ impl Session {
         let parts: Vec<Value> =
             if right.shape().len() == 1 { right.elements().collect() } else { right.major_cells().error_at(span, "array exceeds limits")? };
         let Some(keys) = keys else {
-            if parts.len() != cells.len() { return Err(span.error(ErrorKind::Length, "destructuring needs one item for each name")); }
+            if parts.len() != cells.len() { return Err(span.error(Kind::Length, "destructuring needs one item for each name")); }
             return Ok(cells.iter().zip(parts).map(|(cell, part)| (&cell[..], part)).collect());
         };
         let keyed = |cell: &'a Vec<Node>| {

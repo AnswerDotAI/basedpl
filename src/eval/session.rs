@@ -1,7 +1,7 @@
 //! The session's evaluation API, names, display, file loading and name lookup, and calls of dfns with their error guards.
 
+use rustymath::{buffer::FloatWidth, error::Kind};
 use super::*;
-use crate::array::FloatWidth;
 
 impl Session {
     pub fn new() -> Self { Self::default() }
@@ -59,7 +59,7 @@ impl Session {
     }
     pub fn name_source(&self, name: &str) -> Result<String, ErrorKind> {
         match self.name_class(name) {
-            FUNCTION_CLASS | OPERATOR_CLASS => Ok(self.inspect(name).unwrap().source), SUBJECT_CLASS => Err(ErrorKind::Domain), _ => Err(ErrorKind::Value)
+            FUNCTION_CLASS | OPERATOR_CLASS => Ok(self.inspect(name).unwrap().source), SUBJECT_CLASS => Err(Kind::Domain.into()), _ => Err(ErrorKind::Value)
         }
     }
     /// The module whose names code sees after its frames: the module that defined the running function, or the module whose top level is running. Module 0 is the session's own names.
@@ -173,7 +173,7 @@ impl Session {
         let prefix = match left {
             Some(value) => crate::keyed::name(value).ok_or_else(|| span.domain_error("•nl prefix must be a string"))?, None => "".into()
         };
-        if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "•nl needs a class or class vector")); }
+        if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "•nl needs a class or class vector")); }
         let classes = right.as_items().integers().error_at(span, "invalid name class")?;
         if classes.iter().any(|n| !(SUBJECT_CLASS..=OPERATOR_CLASS).contains(n)) { return Err(span.domain_error("name classes are 2, 3 and 4")); }
         let values = self.name_list(&classes, &prefix).iter().map(|n| crate::keyed::text(n)).collect::<Vec<_>>();
@@ -226,7 +226,7 @@ impl Session {
         let called = (|| {
             let (left, right) = match args {
                 [right] => (None, right), [left, right] => (Some(left), right),
-                _ => return Err(span.error(ErrorKind::Length, "call requires one or two arguments"))
+                _ => return Err(span.error(Kind::Length, "call requires one or two arguments"))
             };
             function.call(left, right, &mut self.at(&span))?.result(&span)
         })();
@@ -445,7 +445,7 @@ impl Session {
     }
 
     fn source_text(right: &Value, span: &Span) -> Result<String, Error> {
-        if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "expected a unit or vector of characters")); }
+        if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "expected a unit or vector of characters")); }
         if !matches!(right.prototype(), Value::Character(_)) { return Err(span.domain_error("expected characters")); }
         right.elements().map(|e| match e { Value::Character(c) => Ok(c), _ => Err(span.domain_error("expected characters")) }).collect()
     }
@@ -599,7 +599,7 @@ impl Session {
 
     /// Pushes `frame` and makes it current. Fails at the depth limit, before pushing.
     fn enter(&mut self, frame: Frame, span: &Span) -> Result<(), Error> {
-        if self.frames.len() == MAX_FRAME_DEPTH { return Err(span.error(ErrorKind::Limit, format!("lexical frame depth exceeds {MAX_FRAME_DEPTH}"))); }
+        if self.frames.len() == MAX_FRAME_DEPTH { return Err(span.error(Kind::Limit, format!("lexical frame depth exceeds {MAX_FRAME_DEPTH}"))); }
         self.current = Some(self.frames.len());
         self.frames.push(frame);
         Ok(())
@@ -617,7 +617,7 @@ impl Session {
 
     /// Runs `f` in a new frame in which each key on the first axis of `record` names what `T.key` selects: an item of a vector, or a major cell of a higher-rank array. Other names resolve in the caller's scope, and assignments stay in the new frame. `T.(expr)` and `T⍎text` evaluate this way.
     fn scoped(&mut self, record: &Value, span: &Span, f: impl FnOnce(&mut Self) -> Result<Bound, Error>) -> Result<Bound, Error> {
-        let entries = record.keys(0).ok_or(ErrorKind::Domain).and_then(|keys| {
+        let entries = record.keys(0).ok_or(ErrorKind::from(Kind::Domain)).and_then(|keys| {
             let items = if record.shape().len() == 1 { record.elements().collect() } else { record.major_cells()? };
             Ok(keys.names().iter().cloned().zip(items).collect::<Vec<_>>())
         }).error_at(span, "a scope needs keys on its first axis")?;
@@ -692,7 +692,7 @@ impl Session {
         while let Err(error) = &result {
             let Some((handler, catch)) = handlers.pop() else { break };
             if !catch.catches(&error.kind) { continue; }
-            if error.kind == ErrorKind::Interrupt { self.execution.clear_interrupt(); }
+            if matches!(error.kind, ErrorKind::Interrupt) { self.execution.clear_interrupt(); }
             self.frames[frame].insert(Key::Named("$e"), Binding::Value(caught(error)));
             result = self.return_expression(handler, false);
         }
@@ -712,7 +712,7 @@ impl Catch {
     }
     pub(super) fn catches(&self, kind: &ErrorKind) -> bool {
         match self {
-            Self::All => !matches!(kind, ErrorKind::Interrupt | ErrorKind::Timeout | ErrorKind::Unsupported), Self::Kinds(kinds) => kinds.contains(kind)
+            Self::All => !matches!(kind, ErrorKind::Interrupt | ErrorKind::Timeout | ErrorKind::Unsupported), Self::Kinds(kinds) => kinds.iter().any(|k| k.name() == kind.name())
         }
     }
 }

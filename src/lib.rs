@@ -42,7 +42,8 @@ pub mod system;
 pub mod timing;
 mod xml;
 
-pub use array::{Buffer, FloatWidth, Prototype, Shape, Value};
+pub use array::{Prototype, Shape, Value};
+pub use rustymath::buffer;
 pub(crate) use error::{DomainAt, ErrorAt};
 pub use error::{Error, ErrorKind, Source, Span};
 pub use eval::{Evaluation, Function, Operand, Operator, Session};

@@ -1,6 +1,7 @@
 //! Text forms of values: `⍕` formatting, and source text that reads back.
 
 use super::*;
+use rustymath::buffer::View;
 
 /// Text as a double-quoted string literal.
 pub(crate) fn quoted(text: &str) -> String { format!("\"{}\"", text.replace('"', "\"\"")) }
@@ -52,7 +53,7 @@ impl Value {
             let mut shape = self.shape().to_vec();
             *shape.last_mut().unwrap() = width;
             (shape, lines.concat().concat())
-        } else if !keyed && self.len() >= 2 && matches!(self.as_items(), Items::Integers(_)) {
+        } else if !keyed && self.len() >= 2 && matches!(self.as_items(), Items::Compact(View::Integers(_))) {
             // An exact vector writes as it displays, with one `ₓ` after its brackets.
             let text = self.literal();
             (vec![text.chars().count()], text)
@@ -201,7 +202,7 @@ impl Value {
     pub(crate) fn mark(&self, el: Elide) -> Option<char> {
         if self.is_empty() { return None; }
         match self.as_items() {
-            Items::Integers(_) => Some('ₓ'), Items::Floats(f) => el.width_marker(f.tag()), Items::Complex(z) => el.width_marker(z.tag().into()), _ => None
+            Items::Compact(View::Integers(_)) => Some('ₓ'), Items::Compact(View::Floats(f)) => el.width_marker(f.tag()), Items::Compact(View::Complexes(z)) => el.width_marker(z.tag().into()), _ => None
         }
     }
     /// A number of an array that `mark` marks, without its own marker.
@@ -245,8 +246,8 @@ impl Value {
                 Items::Values(items) => {
                     items.iter().all(|e| matches!(e, Self::Number(_)) || matches!(e, Self::Character(c) if !c.is_control()) || e.string_literal().is_some())
                 }
-                Items::Characters(cs) => cs.iter().all(|c| !c.is_control()),
-                Items::Integers(_) => false,
+                Items::Compact(View::Characters(cs)) => cs.iter().all(|c| !c.is_control()),
+                Items::Compact(View::Integers(_)) => false,
                 _ => true,
             }
     }

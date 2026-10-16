@@ -1,6 +1,7 @@
+use rustymath::{agreement::Mapping, buffer::{FloatWidth, Width}, error::Kind, layout::strides, with_ints, with_width};
 use crate::{
-    agreement::{Agreement, Mapping},
-    array::{agreed, generated_len, or_and_sum, saturated, with_ints, with_width, Axis, FloatWidth, Frame, Gather, Items, Layout, Steps, Storage, Width},
+    agreement::{Agree, Agreement},
+    array::{generated_len, or_and_sum, saturated, Frame, Gather, Items, Lanes, Layout, Steps, Storage},
     execution::Context, keyed::Selector, number::{int::Int, Arithmetic, Math}, search::{classify, first_matches, firsts, grouped, Cells},
     DomainAt, Error, ErrorAt, ErrorKind, Number, Span, Value
 };
@@ -213,8 +214,8 @@ fn selected(a: &Value, i: usize) -> Value { a.at(if a.is_singleton() { 0 } else 
 pub(crate) fn axis_value(axis: usize) -> Value { integer(axis as i64) }
 pub(crate) fn resolve_axes(spec: &Value, target: &Value, span: &Span) -> Result<Value, Error> {
     let resolve = |value: Value| match crate::keyed::name(&value) {
-        None => Ok(value), Some(name) => target.axis_names().iter().position(|n| n.as_ref() == Some(&name)).map(axis_value)
-            .ok_or_else(|| span.error(ErrorKind::Index, format!("unknown axis: {name}")))
+        None => Ok(value), Some(name) => target.layout().axis_named(&name).map(axis_value)
+            .ok_or_else(|| span.error(Kind::Index, format!("unknown axis: {name}")))
     };
     if crate::keyed::name(spec).is_some() { return resolve(spec.clone()); }
     if !spec.elements().any(|e| crate::keyed::name(&e).is_some()) { return Ok(spec.clone()); }
@@ -222,16 +223,16 @@ pub(crate) fn resolve_axes(spec: &Value, target: &Value, span: &Span) -> Result<
 }
 
 pub(crate) fn single_axis(axis: &Value, rank: usize, span: &Span) -> Result<usize, Error> {
-    if !axis.is_singleton() || axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "one axis is required")); }
+    if !axis.is_singleton() || axis.shape().len() > 1 { return Err(span.error(Kind::Rank, "one axis is required")); }
     let n = axis.as_items().integers().error_at(span, "axis must be an integer")?[0];
-    signed(n, rank).ok_or_else(|| span.domain_error("axis must be within the array rank"))
+    rustymath::layout::position(n, rank).ok_or_else(|| span.domain_error("axis must be within the array rank"))
 }
 
 pub(crate) fn axes(axis: &Value, rank: usize, span: &Context<'_>) -> Result<Vec<usize>, Error> {
-    if axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be a unit or vector")); }
+    if axis.shape().len() > 1 { return Err(span.error(Kind::Rank, "axes must be a unit or vector")); }
     let mut result = Vec::new();
     for &n in axis.as_items().integers().error_at(span, "axis must be an integer")?.iter() {
-        match signed(n, rank) {
+        match rustymath::layout::position(n, rank) {
             Some(a) if !result.contains(&a) => result.push(a), _ => return Err(span.domain_error("axes must be distinct and within the array rank"))
         }
     }
@@ -360,7 +361,7 @@ impl Primitive {
         let target = match left { Some(x) if self.pervasive(true) && x.shape().len() > right.shape().len() => x, _ => right };
         let resolved = resolve_axes(spec, target, span)?;
         let spec = &resolved;
-        if spec.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be a unit or vector")); }
+        if spec.shape().len() > 1 { return Err(span.error(Kind::Rank, "axes must be a unit or vector")); }
         if let Some(left) = left { if self.pervasive(true) { return pervasive_axes(self, left, right, spec, span); } }
         match (self, left) {
             (Self::Keys, left) => {
@@ -377,7 +378,7 @@ impl Primitive {
                     if axes.windows(2).any(|a| a[1] != a[0] + 1) { return Err(span.domain_error("ravel axes must be consecutive and ascending")); }
                     if axes.len() == 1 { return Ok(right.clone()); }
                     let range = axes[0]..axes[0] + axes.len();
-                    let len = crate::array::element_count(&input.shape()[range.clone()]).error_at(span, "ravel shape overflow")?;
+                    let len = crate::array::element_count(&input.shape()[range.clone()]).at(span)?;
                     input.replace(range, &vec![len].into())
                 };
                 right.with_shape(layout.shape()).and_then(|a| a.with_layout(layout)).error_at(span, "invalid ravel shape")
@@ -460,7 +461,7 @@ impl Primitive {
             }
             (Self::CatenateFirst, None) => {
                 let rows = right.shape().first().copied().unwrap_or(1);
-                let columns = crate::array::element_count(right.shape().get(1..).unwrap_or(&[])).error_at(span, "invalid table shape")?;
+                let columns = crate::array::element_count(right.shape().get(1..).unwrap_or(&[])).at(span)?;
                 let keys = vec![right.keys(0).cloned(), if right.shape().len() == 2 { right.keys(1).cloned() } else { None }];
                 let names = vec![right.axis_name(0).cloned(), if right.shape().len() == 2 { right.axis_name(1).cloned() } else { None }];
                 let layout = Layout::from(vec![rows, columns]).with_keys(keys).error_at(span, "invalid table")?.inherit_names(names);
@@ -624,7 +625,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
     use crate::number::{Arithmetic::*, Math::{Arc, Circle, Gcd, Lcm, Log, Nand, Nor, Not, Pi, Power, Root}};
     use Primitive::*;
     if let Some(axis) = axis {
-        if axis.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "axes must be a unit or vector")); }
+        if axis.shape().len() > 1 { return Err(span.error(Kind::Rank, "axes must be a unit or vector")); }
         if bound.is_none() {
             return match p {
                 Reverse(_) => p.call_axes(None, right, axis, span), Enclose => mix_axes(right, axis, span), Drop => mix_axes(right, axis, span),
@@ -731,12 +732,12 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
                 let decoded = if lengths.same(&integer(1)) { values } else { replicate(&lengths, &values, None, false, span)? };
                 match items.next() { Some(keys) => Primitive::Keys.call(Some(&keys), &decoded, span), None => Ok(decoded) }
             }
-            _ => Err(span.error(ErrorKind::Length, "run-length decoding needs lengths and values, and optionally keys")),
+            _ => Err(span.error(Kind::Length, "run-length decoding needs lengths and values, and optionally keys")),
         },
         Math(Lcm | Gcd) => {
             // The two parts are on the last axis, which reversing the axes brings to the front.
             let parts = Transpose.call(None, right, span)?;
-            if parts.shape().first() != Some(&2) { return Err(span.error(ErrorKind::Length, "the last axis must hold two parts")); }
+            if parts.shape().first() != Some(&2) { return Err(span.error(Kind::Length, "the last axis must hold two parts")); }
             let (x, y) = (Index.call(Some(&integer(0)), &parts, span)?, Index.call(Some(&integer(1)), &parts, span)?);
             let y = if matches!(p, Math(Lcm)) { Math(Circle).call(None, &y, span)? }
             else { Arithmetic(Times).call(Some(&Value::number(num_complex::Complex64::new(0., 1.)).unwrap()), &y, span)? };
@@ -801,7 +802,7 @@ fn inverse_catenate(a: &Value, first: bool, right: &Value, axis: Option<usize>, 
 
 fn inverse_decode(base: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if !base.is_unit() {
-        if base.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "inverse decode needs a unit or vector base")); }
+        if base.shape().len() != 1 { return Err(span.error(Kind::Rank, "inverse decode needs a unit or vector base")); }
         return radix(base, right, true, span);
     }
     let b = numeric(&base.at(0), span)?.clone();
@@ -816,7 +817,7 @@ fn inverse_decode(base: &Value, right: &Value, span: &Context<'_>) -> Result<Val
             if n.order(&n.one()).domain_at(span)?.is_lt() { return Err(span.domain_error("inverse decode cannot represent this value")); }
             n = n.dyad(Arithmetic::Divide, &b).and_then(|n| n.floor(span.numeric()).map_err(crate::number::Failure::from)).domain_at(span)?;
             count += 1;
-            generated_len(&[count]).error_at(span, "inverse decode is too large")?;
+            generated_len(&[count]).at(span)?;
         }
         digits = digits.max(count);
     }
@@ -825,21 +826,21 @@ fn inverse_decode(base: &Value, right: &Value, span: &Context<'_>) -> Result<Val
 }
 
 fn inverse_where(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "inverse where needs a vector")); }
+    if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "inverse where needs a vector")); }
     let mut coordinates = Vec::new();
     let mut shape = Vec::new();
     for e in right.elements() {
         let a = e.clone();
-        if a.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "inverse where coordinates must be vectors")); }
+        if a.shape().len() > 1 { return Err(span.error(Kind::Rank, "inverse where coordinates must be vectors")); }
         let coordinate =
             a.elements().map(|e| numeric(&e, span)?.nonnegative_integer::<usize>().error_at(span, "invalid position")).collect::<Result<Vec<_>, _>>()?;
         if coordinates.is_empty() { shape.resize(coordinate.len(), 0); }
-        if coordinate.len() != shape.len() { return Err(span.error(ErrorKind::Length, "coordinate lengths differ")); }
+        if coordinate.len() != shape.len() { return Err(span.error(Kind::Length, "coordinate lengths differ")); }
         for (size, &c) in shape.iter_mut().zip(&coordinate) { *size = (*size).max(c + 1); }
         coordinates.push(coordinate);
     }
     if coordinates.is_empty() { shape = vec![0]; }
-    let mut data = vec![0i64; generated_len(&shape).error_at(span, "inverse where is too large")?];
+    let mut data = vec![0i64; generated_len(&shape).at(span)?];
     for coordinate in coordinates {
         let index = coordinate.iter().zip(&shape).fold(0, |i, (&c, &d)| i * d + c);
         data[index] += 1;
@@ -851,16 +852,9 @@ fn pervasive_axes(p: Primitive, left: &Value, right: &Value, spec: &Value, span:
     let left_small = left.shape().len() < right.shape().len();
     let (small, large) = if left_small { (left, right) } else { (right, left) };
     let axes = axes(spec, large.shape().len(), span)?;
-    if axes.len() != small.shape().len() { return Err(span.error(ErrorKind::Length, "pervasive-function axes must match the lower rank")); }
+    if axes.len() != small.shape().len() { return Err(span.error(Kind::Length, "pervasive-function axes must match the lower rank")); }
     let agreement = Agreement::with_axes(left.layout(), right.layout(), &axes).error_at(span, "pervasive-function axis lengths differ")?;
     p.pervasive_mapped(Some(left), right, span, false, agreement)
-}
-
-/// The distance between neighbouring items along each axis of an array of `shape`.
-pub(crate) fn strides(shape: &[usize]) -> Vec<usize> {
-    let mut strides = vec![1; shape.len()];
-    for a in (1..shape.len()).rev() { strides[a - 1] = strides[a] * shape[a]; }
-    strides
 }
 
 /// Each axis of an array of `shape` with the coordinate of flat position `flat` along it, from the last axis to the first.

@@ -1,4 +1,5 @@
-use crate::{array::FloatWidth, keyed, Error, ErrorKind, EvalOptions, Evaluation, Number, Session, Value};
+use rustymath::{buffer::FloatWidth, error::Kind};
+use crate::{keyed, Error, EvalOptions, Evaluation, Number, Session, Value};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use serde_json::{json, Value as JsonValue};
@@ -60,7 +61,7 @@ pub fn character(s: &str) -> Option<char> { let mut chars = s.chars(); chars.nex
 /// An element of the JSON protocol. Its floats are 64-bit, because the protocol carries no width.
 fn import_element(value: &JsonValue, approximate: bool) -> Result<Value, String> {
     let number = match value {
-        JsonValue::Number(n) if approximate => n.as_f64().map(|x| Number::float(x, FloatWidth::F64)).ok_or(ErrorKind::Domain),
+        JsonValue::Number(n) if approximate => n.as_f64().map(|x| Number::float(x, FloatWidth::F64)).ok_or(Kind::Domain.into()),
         JsonValue::Number(n) => crate::json::number(n, FloatWidth::F64),
         JsonValue::Bool(b) => Ok(Number::from_bool(*b)),
         JsonValue::String(s) => return character(s).map(Value::Character).ok_or_else(|| "expected one character".into()),

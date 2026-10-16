@@ -3,7 +3,8 @@
 //! - A number is a JavaScript number, and a Boolean is `true` or `false`. A string is a JavaScript string, and a record is an object.
 //! - Any other array is `{shape, data}`. `data` is a typed array when every item is a number: `Float32Array` for 32-bit floats, `Float64Array` for other approximate and fractional numbers, and for integers the width BPL stores them at, `Uint8Array`, `Int16Array`, `Int32Array` or `BigInt64Array`, as Python's `.np` does. Complex numbers are their real and imaginary parts in turn, with a last axis of length 2. Otherwise `data` is an `Array` of items. Axis names and keys, when an array has them, are `axis_names` and `axis_keys`, as in `protocol.rs`.
 //! - A JavaScript number becomes a float of the session's default width, a `BigInt` an exact one, an `Array` a vector and a function a BPL function. An object with `shape` and `data` becomes an array, and any other object a record. `undefined` and `null` give no value.
-use crate::{array::{Complexes, FloatWidth, Floats, Ints, Items}, element::read_as, keyed, ErrorKind, Number, Value};
+use rustymath::{buffer::{Buffer, Complexes, FloatBuf, FloatWidth, Floats, Ints, View}, error::Kind};
+use crate::{array::Items, element::read_as, keyed, ErrorKind, Number, Value};
 use serde_json::{json, Value as Json};
 
 /// A JavaScript value.
@@ -46,7 +47,7 @@ pub fn export(value: &Value) -> Result<Js, ErrorKind> {
     match value {
         Value::Number(n) => number(n),
         Value::Character(c) => Ok(Js::Text(c.to_string())),
-        Value::Function(_) | Value::Operator(_) => Err(ErrorKind::Domain),
+        Value::Function(_) | Value::Operator(_) => Err(Kind::Domain.into()),
         Value::Array(_) => {
             if value.keys(0).is_none() { if let Some(text) = keyed::name(value) { return Ok(Js::Text(text.to_string())); } }
             if value.shape().len() == 1 && value.keys(0).is_some_and(|k| k.complete()) {
@@ -63,7 +64,7 @@ fn number(n: &Number) -> Result<Js, ErrorKind> {
         Some(Complexes::F32(&[z])) => return Ok(shaped(vec![2], Js::Typed(Typed::Float32(vec![z.re, z.im])), Vec::new(), Vec::new())),
         Some(Complexes::F64(&[z])) => return Ok(shaped(vec![2], Js::Typed(Typed::Float64(vec![z.re, z.im])), Vec::new(), Vec::new())), _ => ()
     }
-    n.to_float().map(Js::Number).map_err(|_| ErrorKind::Domain)
+    n.to_float().map(Js::Number).map_err(|_| Kind::Domain.into())
 }
 
 /// An array as `{shape, data}`, with `axis_names` and `axis_keys` when it has them.
@@ -81,26 +82,26 @@ fn array(value: &Value) -> Result<Js, ErrorKind> {
         parts
     };
     let data = match value.as_items() {
-        Items::Booleans(b) => Js::Typed(Typed::Uint8(b.iter().map(|&b| b.into()).collect())),
-        Items::Integers(Ints::U8(v)) => Js::Typed(Typed::Uint8(v.to_vec())),
-        Items::Integers(Ints::I16(v)) => Js::Typed(Typed::Int16(v.to_vec())),
-        Items::Integers(Ints::I32(v)) => Js::Typed(Typed::Int32(v.to_vec())),
-        Items::Integers(Ints::I64(v)) => Js::Typed(Typed::BigInt64(v.to_vec())),
-        Items::Floats(Floats::F32(v)) => Js::Typed(Typed::Float32(v.to_vec())),
-        Items::Floats(_) => Js::Typed(Typed::Float64(read_as::<f64>(value).expect("real storage").into_owned())),
-        Items::Complex(Complexes::F32(v)) => {
+        Items::Compact(View::Booleans(b)) => Js::Typed(Typed::Uint8(b.iter().map(|&b| b.into()).collect())),
+        Items::Compact(View::Integers(Ints::U8(v))) => Js::Typed(Typed::Uint8(v.to_vec())),
+        Items::Compact(View::Integers(Ints::I16(v))) => Js::Typed(Typed::Int16(v.to_vec())),
+        Items::Compact(View::Integers(Ints::I32(v))) => Js::Typed(Typed::Int32(v.to_vec())),
+        Items::Compact(View::Integers(Ints::I64(v))) => Js::Typed(Typed::BigInt64(v.to_vec())),
+        Items::Compact(View::Floats(Floats::F32(v))) => Js::Typed(Typed::Float32(v.to_vec())),
+        Items::Compact(View::Floats(_)) => Js::Typed(Typed::Float64(read_as::<f64>(value).expect("real storage").into_owned())),
+        Items::Compact(View::Complexes(Complexes::F32(v))) => {
             complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float32(v.iter().flat_map(|z| [z.re, z.im]).collect())))
         }
-        Items::Complex(Complexes::F64(v)) => {
+        Items::Compact(View::Complexes(Complexes::F64(v))) => {
             complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float64(v.iter().flat_map(|z| [z.re, z.im]).collect())))
         }
-        Items::Characters(c) => Js::List(c.iter().map(|c| Js::Text(c.to_string())).collect()),
+        Items::Compact(View::Characters(c)) => Js::List(c.iter().map(|c| Js::Text(c.to_string())).collect()),
         Items::Values(items) => match items.iter().map(|v| if let Value::Number(n) = v { Some(n) } else { None }).collect::<Option<Vec<_>>>() {
             Some(numbers) if !numbers.is_empty() || matches!(value.prototype(), Value::Number(_)) => {
                 if numbers.iter().any(|n| n.as_complex().is_some()) {
-                    let parts = numbers.iter().map(|n| n.to_complex().map(|z| [z.re, z.im])).collect::<Result<Vec<_>, _>>().map_err(|_| ErrorKind::Domain)?;
+                    let parts = numbers.iter().map(|n| n.to_complex().map(|z| [z.re, z.im])).collect::<Result<Vec<_>, _>>().map_err(|_| Kind::Domain)?;
                     complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float64(parts.concat())))
-                } else { Js::Typed(Typed::Float64(numbers.iter().map(|n| n.to_float()).collect::<Result<_, _>>().map_err(|_| ErrorKind::Domain)?)) }
+                } else { Js::Typed(Typed::Float64(numbers.iter().map(|n| n.to_float()).collect::<Result<_, _>>().map_err(|_| Kind::Domain)?)) }
             }
             _ => Js::List(items.iter().map(export).collect::<Result<_, _>>()?),
         },
@@ -143,11 +144,11 @@ fn imported(js: Js, width: FloatWidth) -> Result<Option<Value>, ErrorKind> {
 }
 
 /// An item of an array or record, which must have a value.
-fn item(js: Js, width: FloatWidth) -> Result<Value, ErrorKind> { imported(js, width)?.ok_or(ErrorKind::Domain) }
+fn item(js: Js, width: FloatWidth) -> Result<Value, ErrorKind> { imported(js, width)?.ok_or(Kind::Domain.into()) }
 
 fn typed(shape: Vec<usize>, t: Typed) -> Result<Value, ErrorKind> {
     match t {
-        Typed::Float32(v) => Value::from_buffer(shape, crate::array::Buffer::F32(v.into())), Typed::Float64(v) => Value::floats(shape, FloatWidth::F64, v),
+        Typed::Float32(v) => Value::from_buffer(shape, Buffer::Floats(FloatBuf::F32(v))), Typed::Float64(v) => Value::floats(shape, FloatWidth::F64, v),
         Typed::Uint8(v) => Value::integers(shape, v.into_iter().map(i64::from).collect()),
         Typed::Int16(v) => Value::integers(shape, v.into_iter().map(i64::from).collect()),
         Typed::Int32(v) => Value::integers(shape, v.into_iter().map(i64::from).collect()), Typed::BigInt64(v) => Value::integers(shape, v)
@@ -167,30 +168,30 @@ fn shaped_array(fields: Vec<(String, Js)>, width: FloatWidth) -> Result<Value, E
         let slot = match k.as_str() { "shape" => &mut shape, "data" => &mut data, "axis_names" => &mut names, _ => &mut keys };
         *slot = Some(v);
     }
-    let Some(Js::List(shape)) = shape else { return Err(ErrorKind::Domain) };
+    let Some(Js::List(shape)) = shape else { return Err(Kind::Domain.into()) };
     let shape = shape.into_iter().map(|n| match n {
-        Js::Number(n) if n >= 0. && n.fract() == 0. => Ok(n as usize), _ => Err(ErrorKind::Domain)
+        Js::Number(n) if n >= 0. && n.fract() == 0. => Ok(n as usize), _ => Err(Kind::Domain)
     }).collect::<Result<Vec<_>, _>>()?;
     let value = match data.expect("is_array checked for data") {
         Js::Typed(t) => typed(shape, t)?,
         Js::List(items) => {
             Value::from_parts(shape, items.into_iter().map(|v| item(v, width)).collect::<Result<_, _>>()?, Value::Number(Number::float(0.0, width)))?
         }
-        _ => return Err(ErrorKind::Domain),
+        _ => return Err(Kind::Domain.into()),
     };
     let texts = |list: Js| match list {
         Js::List(items) => items.into_iter().map(|n| match n {
-            Js::Undefined => Ok(None), Js::Text(t) => Ok(Some(t)), _ => Err(ErrorKind::Domain)
+            Js::Undefined => Ok(None), Js::Text(t) => Ok(Some(t)), _ => Err(Kind::Domain)
         }).collect::<Result<Vec<_>, _>>(),
-        _ => Err(ErrorKind::Domain),
+        _ => Err(Kind::Domain.into()),
     };
-    let value = match names { Some(names) => keyed::with_names(value, texts(names)?).map_err(|_| ErrorKind::Domain)?, None => value };
+    let value = match names { Some(names) => keyed::with_names(value, texts(names)?).map_err(|_| Kind::Domain)?, None => value };
     match keys {
         Some(Js::List(lists)) => {
             let lists = lists.into_iter().map(|k| if let Js::Undefined = k { Ok(None) } else { texts(k).map(Some) }).collect::<Result<_, _>>()?;
-            keyed::with_key_lists(value, lists).map_err(|_| ErrorKind::Domain)
+            keyed::with_key_lists(value, lists).map_err(|_| Kind::Domain.into())
         }
-        Some(_) => Err(ErrorKind::Domain),
+        Some(_) => Err(Kind::Domain.into()),
         None => Ok(value),
     }
 }

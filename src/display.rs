@@ -1,4 +1,5 @@
-use crate::{array::FloatWidth, keyed, symbols::Notation, ErrorAt, Number, Value};
+use rustymath::{buffer::FloatWidth, error::Kind};
+use crate::{keyed, symbols::Notation, ErrorAt, Number, Value};
 use rustymath::tolerant::{Tolerance, Tolerant};
 use unicode_width::UnicodeWidthStr;
 
@@ -140,9 +141,9 @@ impl Settings {
     fn set(&mut self, key: &str, value: &Value) -> Result<bool, crate::ErrorKind> {
         let count = |v: &Value| match v.as_number() {
             Some(n) if n.as_float() == Some(f64::INFINITY) => Ok(usize::MAX), Some(n) => n.nonnegative_integer().map(crate::array::saturated),
-            None => Err(crate::ErrorKind::Domain)
+            None => Err(Kind::Domain.into())
         };
-        let positive = |v: &Value| count(v).and_then(|d| if d == 0 { Err(crate::ErrorKind::Domain) } else { Ok(d) });
+        let positive = |v: &Value| count(v).and_then(|d| if d == 0 { Err(Kind::Domain.into()) } else { Ok(d) });
         match key {
             "box" => self.boxed = value.boolean()?,
             "trees" => self.trees = value.boolean()?,
@@ -156,7 +157,7 @@ impl Settings {
             "notation" => {
                 self.elide.notation = match keyed::name(value).as_deref() {
                     Some("apl") => Notation::Apl, Some("simplified") => Notation::Simplified, Some("traditional") => Notation::Traditional,
-                    _ => return Err(crate::ErrorKind::Domain)
+                    _ => return Err(Kind::Domain.into())
                 }
             }
             _ => return Ok(false),
@@ -170,7 +171,7 @@ pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::S
     let (mut display, mut numeric, mut threads) = (session.display, session.numeric, session.threads);
     let tolerance = |v: &Value| {
         let t = v.as_number().and_then(|n| n.to_float().ok()).and_then(Tolerance::new);
-        t.filter(|&t| t <= Tolerance::DEFAULT).ok_or(crate::ErrorKind::Domain)
+        t.filter(|&t| t <= Tolerance::DEFAULT).ok_or(Kind::Domain)
     };
     let pairs = keyed::pairs(right).error_at(span, "•prefs takes a record of settings")?;
     let shy = !pairs.is_empty();
@@ -179,11 +180,11 @@ pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::S
             "tolerance" => numeric.tolerance = tolerance(&value).error_at(span, "tolerance must be from 0 to 1E¯14")?,
             "float" => {
                 let bits = value.as_number().and_then(|n| n.integer().ok());
-                numeric.width = bits.and_then(FloatWidth::of_bits).ok_or(crate::ErrorKind::Domain).error_at(span, "float must be 16, 32 or 64")?;
+                numeric.width = bits.and_then(FloatWidth::of_bits).ok_or(Kind::Domain).error_at(span, "float must be 16, 32 or 64")?;
             }
             "threads" => {
                 let n = value.as_number().and_then(|n| n.integer().ok()).and_then(|n| usize::try_from(n).ok());
-                threads = Some(n.ok_or(crate::ErrorKind::Domain).error_at(span, "threads must be a nonnegative integer")?);
+                threads = Some(n.ok_or(Kind::Domain).error_at(span, "threads must be a nonnegative integer")?);
             }
             key => {
                 if !display.set(key, &value).error_at(span, "invalid display setting")? { return Err(span.domain_error("unknown setting")); }
@@ -436,10 +437,10 @@ impl Tree {
 /// Convert a keyed vector from MIME types to text, or to bytes for binary types such as `image/png`, into the bundle sent to frontends. A value whose prototype is a number holds bytes.
 pub(crate) fn bundle(value: &Value) -> Result<crate::MimeBundle, crate::ErrorKind> {
     crate::keyed::pairs(value)?.into_iter().map(|(name, value)| {
-        if !name.contains('/') || name.contains(char::is_whitespace) { return Err(crate::ErrorKind::Domain); }
+        if !name.contains('/') || name.contains(char::is_whitespace) { return Err(Kind::Domain.into()); }
         let data = if value.prototype().as_number().is_some() { crate::data::byte_items(&value).map(crate::MimeData::Bytes) }
         else { keyed::name(&value).map(|text| crate::MimeData::Text(text.to_string())) };
-        Ok((name.to_string(), data.ok_or(crate::ErrorKind::Domain)?))
+        Ok((name.to_string(), data.ok_or(Kind::Domain)?))
     }).collect()
 }
 

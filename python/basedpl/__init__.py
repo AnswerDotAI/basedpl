@@ -34,7 +34,13 @@ def _value(raw, as_array=False):
         if isinstance(o, tuple): return Fraction(*o)
         if isinstance(o, _Function): return Function(o)
         if isinstance(o, _Operator): return Operator(o)
-        return _value(o) if isinstance(o, dict) else o
+        return _value(o) if isinstance(o, (dict, _Array)) else o
+    if isinstance(raw, _Array):
+        if not as_array and (text := raw.text) is not None: return text
+        keys = raw.axis_keys
+        if not as_array and any(k is not None for k in keys): return _dataframe(raw) if len(raw.shape) > 1 else dict(zip(_labels(keys[0]), raw.tolist()))
+        import numpy as np
+        return np.array(raw)
     if 'atom' in raw:
         result = item(raw['atom'])
         if not as_array: return result
@@ -43,12 +49,12 @@ def _value(raw, as_array=False):
     if not as_array and 'axis_keys' in raw and len(raw['shape']) > 1: return _dataframe(raw)
     shape, data = tuple(raw['shape']), [item(o) for o in raw['data']]
     items = raw['data'] or [raw['prototype']]
-    nested = any(isinstance(o, dict) and 'shape' in o for o in items)
+    nested = any(isinstance(o, _Array) or isinstance(o, dict) and 'shape' in o for o in items)
     if not as_array and 'axis_keys' in raw: return dict(zip(_labels(raw['axis_keys'][0]), data))
     if not as_array:
         if len(shape) == 1 and all(isinstance(o, str) for o in items): return ''.join(data)
     import numpy as np
-    dtype = object if nested else raw.get('dtype') or _dtype(data or [item(raw['prototype'])])
+    dtype = object if nested else _dtype(data or [item(raw['prototype'])])
     if dtype is not object: return np.array(data, dtype=dtype).reshape(shape)
     result = np.empty(len(data), dtype=object)
     for i,o in enumerate(data): result[i] = o
@@ -59,8 +65,7 @@ def _dataframe(raw):
     except ImportError: raise ImportError('DataFrame conversion requires pandas: pip install pandas') from None
     data = _value(raw, as_array=True)
     shape = data.shape
-    keys = raw.get('axis_keys', [None] * len(shape))
-    names = raw.get('axis_names', [None] * len(shape))
+    keys, names = (raw.axis_keys, raw.axis_names) if isinstance(raw, _Array) else (raw.get('axis_keys', [None] * len(shape)), raw.get('axis_names', [None] * len(shape)))
     labels = [list(range(n)) if k is None else _labels(k) for n,k in zip(shape, keys)]
     if len(shape) < 2:
         index = pd.Index(labels[0], name=names[0]) if labels else [0]
@@ -77,6 +82,7 @@ def _element(value, seen):
     if type(value) in (int, float, complex): return value
     if isinstance(value, str) and len(value) == 1: return value
     if isinstance(value, (Array, str, list, tuple, dict)) or np is not None and isinstance(value, np.ndarray): return _array(value, seen)
+    if (read := _Array.numeric(value)) is not None: return read
     raise TypeError(f'cannot convert {type(value).__name__} to BPL')
 
 def _rectangular(value, seen):
@@ -99,6 +105,15 @@ def _array(value, seen=None):
     if seen is None: seen = set()
     if id(value) in seen: raise ValueError('cyclic Python container')
     np = sys.modules.get('numpy')
+    numpy = np is not None and isinstance(value, np.ndarray)
+    if numpy:
+        kind, size = value.dtype.kind, value.dtype.itemsize
+        if kind not in 'biufcUO' or kind == 'f' and size > 8 or kind == 'c' and size > 16: raise TypeError('unsupported NumPy dtype')
+        if kind == 'u' and size == 8 and value.size and value.max() >= 1<<63: raise ValueError('uint64 values above the int64 range; convert with .astype(object) for exact integers')
+        # Signed bytes cross as `int16`, and wider unsigned integers as `int64`, which holds them after the check above. Every other number crosses
+        # at its own width, in native byte order. Strings and objects cross item by item.
+        if kind == 'i' and size == 1 or kind == 'u' and size > 1: value = value.astype('i2' if size == 1 else 'i8')
+        elif kind in 'biufc' and not value.dtype.isnative: value = value.astype(value.dtype.newbyteorder('='))
     prototype = 0.
     if isinstance(value, dict):
         keys = [None if type(k) is int and k == i else k for i,k in enumerate(value)]
@@ -107,19 +122,9 @@ def _array(value, seen=None):
         try: return _Array(dict(shape=[len(value)], data=[_element(o, seen) for o in value.values()], prototype=prototype, axis_keys=[keys], width=_float_bits()))
         finally: seen.remove(id(value))
     if isinstance(value, str): return _Array(dict(shape=[len(value)], data=list(value), prototype=' '))
-    if np is not None and isinstance(value, np.ndarray):
-        kind, size = value.dtype.kind, value.dtype.itemsize
-        if kind not in 'biufcUO' or kind == 'f' and size > 8 or kind == 'c' and size > 16: raise TypeError('unsupported NumPy dtype')
-        if kind == 'u' and size == 8 and value.size and value.max() >= 1<<63: raise ValueError('uint64 values above the int64 range; convert with .astype(object) for exact integers')
-        if kind == 'b': return _Array.numeric(list(value.shape), '?', np.ascontiguousarray(value).view(np.uint8))
-        # Unsigned bytes, signed integers of 16 bits or more, floats and complex numbers cross at their own width. Signed bytes cross as
-        # `int16`, and wider unsigned integers as `int64`, which holds them after the check above. A `float16` crosses as its bits, and a
-        # complex number as its two float parts.
-        if kind in 'iufc':
-            code = 'i2' if kind == 'i' and size == 1 else 'i8' if kind == 'u' and size > 1 else f'{kind}{size}'
-            data = np.ascontiguousarray(value, dtype=code)
-            view = {'f2': np.uint16, 'c8': np.float32, 'c16': np.float64}.get(code)
-            return _Array.numeric(list(value.shape), code, data if view is None else data.view(view))
+    # Any object with a buffer, such as a NumPy or rustymath array or a `memoryview`, is read through it.
+    if not (numpy and kind in 'UO') and (read := _Array.numeric(value)) is not None: return read
+    if numpy:
         shape, data = value.shape, value.ravel().tolist()
         if kind == 'U': prototype = ' '
     else:
@@ -162,14 +167,27 @@ class _Operators:
 
 def _text(raw):
     "The string in an unkeyed character vector, else `None`"
+    if isinstance(raw, _Array): return raw.text
     if len(raw.get('shape', ())) != 1 or 'axis_keys' in raw or 'axis_names' in raw: return None
     if isinstance(raw['prototype'], str) and all(isinstance(c, str) for c in raw['data']): return ''.join(raw['data'])
 
+def _raw(raw):
+    "`parts` as a dict: a compact array's `_Array` gives its shape, keys, names and items from `tolist`, with no NumPy"
+    if not isinstance(raw, _Array): return raw
+    shape, data = list(raw.shape), raw.tolist()
+    if not shape: data = [data]
+    for _ in shape[1:]: data = [o for row in data for o in row]
+    result = dict(shape=shape, data=data)
+    if any(k is not None for k in raw.axis_keys): result['axis_keys'] = list(raw.axis_keys)
+    if any(n is not None for n in raw.axis_names): result['axis_names'] = list(raw.axis_names)
+    return result
+
 def _array_repr(raw):
-    if 'atom' in raw: return f'Array({raw["atom"]!r})'
     if (s := _text(raw)) is not None: return repr(s)
+    raw = _raw(raw)
+    if 'atom' in raw: return f'Array({raw["atom"]!r})'
     def item(o):
-        if isinstance(o, dict): return repr(t) if (t := _text(o)) is not None else f'Array({_array_repr(o)})'
+        if isinstance(o, (dict, _Array)): return repr(t) if (t := _text(o)) is not None else f'Array({_array_repr(o)})'
         if isinstance(o, tuple): return repr(Fraction(*o))
         text = repr(o)
         return text[:-1] if isinstance(o, float) and text.endswith('.0') else text
@@ -201,19 +219,25 @@ class Array(_Operators):
     def axis_names(self): return tuple(self._inner.axis_names)
     @property
     def is_atom(self): return self._inner.is_atom
-    def _numpy(self):
-        if (buffer := self._inner.buffer()) is None: return None
+    def _numpy(self, copy=True):
+        if not self._inner.exports: return None
         import numpy as np
-        return np.frombuffer(buffer[1], dtype=buffer[0]).reshape(self.shape)
+        return np.array(self._inner, copy=copy)
     @property
     def py(self):
         keyed = any(k is not None for k in self._inner.axis_keys)
-        if not (self.is_atom or keyed) and (result := self._numpy()) is not None: return result
+        if not (self.is_atom or keyed) and self._inner.text is None and (result := self._numpy()) is not None: return result
         return _value(self._inner.parts())
     @property
     def np(self):
         result = self._numpy()
         return _value(self._inner.parts(), as_array=True) if result is None else result
+    def own(self):
+        "The NumPy array that `.np` gives, with the items moved where nothing else holds them, and copied otherwise. The array holds nothing afterwards, and using it raises `ValueError`."
+        result = None if self._inner.exports else self.np
+        if (owned := self._inner.own()) is None: return result
+        import numpy as np
+        return np.asarray(owned)
     @property
     def df(self): return _dataframe(self._inner.parts())
     @property
@@ -240,8 +264,11 @@ class Array(_Operators):
         return _glyph('+').inner_product(_glyph('×'))(self, other)
     def __rmatmul__(self, other): return _glyph('+').inner_product(_glyph('×'))(other, self)
     def __array__(self, dtype=None, copy=None):
-        if copy is False: raise ValueError('basedpl conversion requires a copy')
-        result = self.np
+        result = self._numpy(copy=copy is not False)
+        if result is None:
+            if copy is False: raise ValueError('basedpl conversion requires a copy')
+            result = self.np
+        if copy is False and dtype is not None and result.dtype != dtype: raise ValueError('basedpl conversion requires a copy')
         return result if dtype is None else result.astype(dtype, copy=False)
     def __repr__(self): return _array_repr(self._inner.parts())
     def _repr_mimebundle_(self, include=None, exclude=None):

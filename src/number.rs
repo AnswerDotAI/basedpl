@@ -1,11 +1,14 @@
 use crate::{
-    array::{with_float_width, ComplexBuf, ComplexWidth, Complexes, FloatWidth, Floats, Kind, Layout}, element::{read_as, Float}, Error, ErrorKind, Span, Value
+    array::Layout, element::{read_as, Float}, Error, ErrorKind, Span, Value
 };
 use num_bigint::BigInt;
 use num_complex::{Complex32, Complex64};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Signed, ToPrimitive, Zero};
-use rustymath::{tolerant::{Tolerance, Tolerant, TolerantComplex}, Binary as _, Float as _, Unary as _};
+use rustymath::{
+    buffer::{ComplexBuf, ComplexWidth, Complexes, DType, FloatWidth, Floats}, error::Kind, tolerant::{Tolerance, Tolerant, TolerantComplex},
+    with_float_width, Binary as _, Float as _, Unary as _
+};
 use std::{borrow::Cow, cmp::Ordering, fmt};
 
 /// Numbers. Floats and complex numbers follow IEEE 754, so they include infinities, NaN and `¯0`. A Boolean is the integer 0 or 1, and displays as `$f` or `$t`. Ordinary literals are floats; exact arithmetic is explicitly selected with x or r.
@@ -144,13 +147,13 @@ pub(crate) enum Math {
 fn near_integer(y: f64) -> Option<f64> { Tolerance::DEFAULT.whole(y) }
 
 /// `n` as a count of type `T`, such as a length, a bound or a seed. A count that `T` can't hold is LIMIT.
-pub(crate) fn count_as<T: TryFrom<u64>>(n: u64) -> Result<T, ErrorKind> { T::try_from(n).map_err(|_| ErrorKind::Limit) }
+pub(crate) fn count_as<T: TryFrom<u64>>(n: u64) -> Result<T, ErrorKind> { T::try_from(n).map_err(|_| Kind::Limit.into()) }
 
 impl TryFrom<BigRational> for Number {
     type Error = ErrorKind;
     fn try_from(n: BigRational) -> Result<Self, ErrorKind> {
         let (n, d) = n.into_raw();
-        if d.is_zero() { return Err(ErrorKind::Domain); }
+        if d.is_zero() { return Err(Kind::Domain.into()); }
         Ok(Self::exact(BigRational::new(n, d)))
     }
 }
@@ -166,16 +169,16 @@ impl From<Complex32> for Number { fn from(n: Complex32) -> Self { if n.im == 0.0
 
 /// Real cases of the pervasive functions that rustymath doesn't hold, shared by `Number` and the compact kernels in `pervasive.rs`: conversions to integers, arithmetic, signs and grade order. They follow IEEE 754.
 pub(crate) mod real {
-    use super::{count_as, near_integer, Arithmetic, ErrorKind};
+    use super::{count_as, near_integer, Arithmetic, ErrorKind, Kind};
     use crate::element::Float;
     use num_traits::ToPrimitive;
     use std::cmp::Ordering;
 
     /// The integer that a float stands for, as `near_integer` decides. A fraction, an infinity or NaN is DOMAIN, and a value outside `i64` is LIMIT.
-    pub(crate) fn integer(n: f64) -> Result<i64, ErrorKind> { near_integer(n).ok_or(ErrorKind::Domain)?.to_i64().ok_or(ErrorKind::Limit) }
+    pub(crate) fn integer(n: f64) -> Result<i64, ErrorKind> { near_integer(n).ok_or(Kind::Domain)?.to_i64().ok_or(Kind::Limit.into()) }
     /// The integer that a float stands for, as a count of type `T`. A negative value is also DOMAIN.
     pub(crate) fn nonnegative_integer<T: TryFrom<u64>>(n: f64) -> Result<T, ErrorKind> {
-        near_integer(n).filter(|&n| n >= 0.0).ok_or(ErrorKind::Domain)?.to_u64().ok_or(ErrorKind::Limit).and_then(count_as)
+        near_integer(n).filter(|&n| n >= 0.0).ok_or(Kind::Domain)?.to_u64().ok_or(Kind::Limit.into()).and_then(count_as)
     }
     pub(crate) fn arithmetic<F: Float>(op: Arithmetic, x: F, y: F) -> F {
         match op { Arithmetic::Plus => x + y, Arithmetic::Minus => x - y, Arithmetic::Times => x * y, Arithmetic::Divide => x / y }
@@ -262,7 +265,6 @@ pub(crate) use with_circle;
 /// Integer cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`. `None` means the exact or error path must give the result: an overflow, a fraction, or an argument outside the domain.
 pub(crate) mod int {
     use super::Arithmetic;
-    use rustymath::Overflowing;
 
     /// `x op y` as an exact integer. Every sum, difference or product of two `i64`s fits in 128 bits. `None` where `÷` gives a fraction or divides by zero. The exact or float path gives those results.
     pub(crate) fn arithmetic(op: Arithmetic, x: i64, y: i64) -> Option<i128> {
@@ -272,11 +274,8 @@ pub(crate) mod int {
             Arithmetic::Divide => divide(x, y).map(i128::from)
         }
     }
-    /// The result of rustymath's [`Overflowing`] arithmetic where it fits, or `None` where it overflowed, for the exact path to give.
-    #[inline(always)]
-    pub(crate) fn fitted<T>((r, fits): (T, bool)) -> Option<T> { fits.then_some(r) }
-    /// An integer width that compact storage holds. rustymath's [`Overflowing`] gives its arithmetic at this width.
-    pub(crate) trait Int: Overflowing + Ord + Into<i64> + TryFrom<i64> + 'static {
+    /// An integer width that compact storage holds.
+    pub(crate) trait Int: Copy + Ord + Into<i64> + TryFrom<i64> + 'static {
         /// `n` at this width. The caller knows that it fits.
         fn from_i64(n: i64) -> Self;
         #[inline]
@@ -357,12 +356,12 @@ impl Domain {
     pub(crate) fn of_arrays(arrays: &[&Value], numeric: Numeric) -> Option<(Self, FloatWidth)> {
         let (mut domain, mut width) = (Self::Exact, None);
         for a in arrays {
-            let (d, w) = match a.compact_kind() {
-                Some(Kind::Boolean | Kind::Integer(_)) => (Self::Exact, None),
-                Some(Kind::Float(FloatWidth::F64)) => (Self::Double, Some(FloatWidth::F64)),
-                Some(Kind::Float(width)) => (Self::Single, Some(width)),
-                Some(Kind::Complex(width)) => (Self::Complex, Some(width.into())),
-                Some(Kind::Character) => return None,
+            let (d, w) = match a.dtype() {
+                Some(DType::Boolean | DType::Integer(_)) => (Self::Exact, None),
+                Some(DType::Float(FloatWidth::F64)) => (Self::Double, Some(FloatWidth::F64)),
+                Some(DType::Float(width)) => (Self::Single, Some(width)),
+                Some(DType::Complex(width)) => (Self::Complex, Some(width.into())),
+                Some(DType::Character) => return None,
                 None => {
                     let mut items = (0..a.len()).map(|i| a.at(i)).chain(a.is_empty().then(|| a.prototype()));
                     items.try_fold((Self::Exact, None), |joined, x| match x { Value::Number(n) => Some(Self::join(joined, &n)), _ => None })?
@@ -605,9 +604,9 @@ impl Number {
     pub(crate) fn nonnegative_integer<T: TryFrom<u64>>(&self) -> Result<T, ErrorKind> {
         if let Some((n, _)) = self.0.float() { return real::nonnegative_integer(n); }
         let n = match &self.0 {
-            Boolean(b) => u64::from(*b), Integer(n) => u64::try_from(*n).map_err(|_| ErrorKind::Domain)?,
-            Exact(n) => { if n.is_negative() || !n.is_integer() { return Err(ErrorKind::Domain); } n.numer().to_u64().ok_or(ErrorKind::Limit)? }
-            _ => return Err(ErrorKind::Domain)
+            Boolean(b) => u64::from(*b), Integer(n) => u64::try_from(*n).map_err(|_| Kind::Domain)?,
+            Exact(n) => { if n.is_negative() || !n.is_integer() { return Err(Kind::Domain.into()); } n.numer().to_u64().ok_or(Kind::Limit)? }
+            _ => return Err(Kind::Domain.into())
         };
         count_as(n)
     }
@@ -615,15 +614,15 @@ impl Number {
     pub(crate) fn integer(&self) -> Result<i64, ErrorKind> {
         match &self.0 {
             Integer(n) => Ok(*n), Boolean(b) => Ok((*b).into()), repr if let Some((n, _)) = repr.float() => real::integer(n),
-            Exact(n) if n.is_integer() => n.numer().to_i64().ok_or(ErrorKind::Limit), _ => Err(ErrorKind::Domain)
+            Exact(n) if n.is_integer() => n.numer().to_i64().ok_or(Kind::Limit.into()), _ => Err(Kind::Domain.into())
         }
     }
 
     pub(crate) fn big_integer(&self) -> Result<BigInt, ErrorKind> {
         match &self.0 {
             Integer(n) => Ok((*n).into()), Boolean(b) => Ok(i64::from(*b).into()),
-            Half(_) | Single(_) | Float(_) => self.as_float().and_then(near_integer).and_then(BigInt::from_f64).ok_or(ErrorKind::Domain),
-            Exact(n) if n.is_integer() => Ok(n.to_integer()), _ => Err(ErrorKind::Domain)
+            Half(_) | Single(_) | Float(_) => self.as_float().and_then(near_integer).and_then(BigInt::from_f64).ok_or(Kind::Domain.into()),
+            Exact(n) if n.is_integer() => Ok(n.to_integer()), _ => Err(Kind::Domain.into())
         }
     }
 

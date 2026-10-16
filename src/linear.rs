@@ -2,17 +2,16 @@
 //!
 //! A record is never computed, so reading its items is a bug: `ArrayData::storage` panics on one. Records live only in the tangents of duals, and only the code that handles tangents meets them.
 use crate::{
-    agreement::{Agreement, Mapping},
-    array::{FloatWidth, Floats, Items, Layout, Storage, Width},
+    agreement::{Agree, Agreement},
+    array::{Items, Layout, Storage},
     error::ErrorAt,
     execution::Context,
     number::Arithmetic,
     primitive::{FoldKind, Primitive},
-    Error, ErrorKind, Function, Number, Operand, Value,
-};
+    Error, ErrorKind, Function, Number, Operand, Value};
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::borrow::Cow;
-use rustymath::gather::Steps;
+use rustymath::{agreement::Mapping, buffer::{FloatWidth, Floats, View, Width}, gather::Steps};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
@@ -400,7 +399,7 @@ fn product_transpose(c: &Value, u: &Value, t: &Linear, left: bool, cx: &mut Cont
         (u, c, [Normal, Transpose], [tsize / k, total(c.shape()) / k, k])
     };
     // A dual has no compact kind, which keeps the kernels from building its per-item fallback.
-    let compact = x.compact_kind().is_some() && y.compact_kind().is_some();
+    let compact = x.dtype().is_some() && y.dtype().is_some();
     let (plus, times) = (Primitive::Arithmetic(Arithmetic::Plus), Primitive::Arithmetic(Arithmetic::Times));
     let result = match compact.then(|| crate::pervasive::inner(plus, times, x, y, [m, k, n], vec![m, n], cx.numeric(), orientations)).flatten() {
         Some(result) => result,
@@ -423,7 +422,7 @@ struct Part { at: Vec<usize>, from: Vec<usize>, items: Value }
 struct Cotangent { dense: Option<Value>, parts: Vec<Part> }
 
 fn f64s(v: &Value) -> Option<&[f64]> { v.as_floats() }
-fn f32s(v: &Value) -> Option<&[f32]> { match v.as_items() { Items::Floats(Floats::F32(x)) => Some(x), _ => None } }
+fn f32s(v: &Value) -> Option<&[f32]> { match v.as_items() { Items::Compact(View::Floats(Floats::F32(x))) => Some(x), _ => None } }
 
 /// Items `from..from + len` of the flat cotangent `u`, in `layout`, where `u` holds plain floats.
 fn slice(u: &Value, from: usize, len: usize, layout: &Layout) -> Option<Value> {

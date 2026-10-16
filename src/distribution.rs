@@ -1,7 +1,8 @@
+use rustymath::{buffer::FloatWidth, error::Kind};
 use crate::{
-    array::{generated_len, FloatWidth}, element::read_as, execution::Context, keyed, primitive::{integer, numeric, pervade, real}, system::{
+    array::generated_len, element::read_as, execution::Context, keyed, primitive::{integer, numeric, pervade, real}, system::{
         natives, Call, Valence::{Ambivalent, Dyadic, Monadic}
-    }, Error, ErrorAt, ErrorKind, Number, Value
+    }, Error, ErrorAt, Number, Value
 };
 use rand::{rngs::Xoshiro256PlusPlus, SeedableRng};
 pub(crate) use rustymath::distribution::Distribution;
@@ -38,8 +39,8 @@ const DISTRIBUTIONS: &[(&str, &[f64], Constructor)] = &[
 const WHOLE: u64 = 1 << 53;
 
 fn parameters<const N: usize>(right: &Value, span: &Context<'_>) -> Result<[f64; N], Error> {
-    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "parameters must be a unit or vector")); }
-    if right.len() != N { return Err(span.error(ErrorKind::Length, format!("expected {N} distribution parameters"))); }
+    if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "parameters must be a unit or vector")); }
+    if right.len() != N { return Err(span.error(Kind::Length, format!("expected {N} distribution parameters"))); }
     let mut result = [0.0; N];
     for (item, n) in right.elements().zip(&mut result) {
         *n = real(&item, span)?;
@@ -57,12 +58,12 @@ fn construct(constructor: &Constructor, right: &Value, span: &Context<'_>) -> Re
         Constructor::Binomial => {
             let [_, p] = parameters(right, span)?;
             let n = numeric(&right.at(0), span)?.nonnegative_integer::<u64>().error_at(span, "binomial trials must be a nonnegative integer")?;
-            if n > WHOLE { return Err(span.error(ErrorKind::Limit, "binomial trials exceed the sampler's integer range")); }
+            if n > WHOLE { return Err(span.error(Kind::Limit, "binomial trials exceed the sampler's integer range")); }
             Distribution::binomial(n, p)
         }
         Constructor::Poisson => {
             let [rate] = parameters(right, span)?;
-            if rate > WHOLE as f64 { return Err(span.error(ErrorKind::Limit, "Poisson rate exceeds the sampler's integer range")); }
+            if rate > WHOLE as f64 { return Err(span.error(Kind::Limit, "Poisson rate exceeds the sampler's integer range")); }
             Distribution::poisson(rate)
         }
     };
@@ -132,9 +133,9 @@ fn point(d: &Distribution, op: Operation, x: f64, width: FloatWidth, span: &Cont
 
 pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if op != Operation::Sample { return evaluate(d, op, right, span); }
-    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "sample shape must be a unit or vector")); }
+    if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "sample shape must be a unit or vector")); }
     let shape = right.as_items().nonnegative_integers().error_at(span, "invalid sample dimension")?;
-    let len = generated_len(&shape).error_at(span, "sample shape exceeds array limits")?;
+    let len = generated_len(&shape).at(span)?;
     let Some(left) = left else { return samples(d, shape, len, &mut rand::rng(), span); };
     let generator = generator_of(left).ok_or_else(|| span.domain_error("sample takes a •rand generator on the left"))?;
     let mut rng = generator.lock().unwrap_or_else(PoisonError::into_inner);
@@ -149,8 +150,8 @@ pub(crate) enum Draw { Roll, Deal }
 
 /// `•rand seed` returns a record of `roll` and `deal`, which draw from one stream seeded by `seed`.
 pub(crate) fn generator(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if right.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "•rand needs a unit or vector seed")); }
-    if !right.is_singleton() { return Err(span.error(ErrorKind::Length, "•rand needs one seed")); }
+    if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "•rand needs a unit or vector seed")); }
+    if !right.is_singleton() { return Err(span.error(Kind::Length, "•rand needs one seed")); }
     let seed = numeric(&right.at(0), span)?.nonnegative_integer::<u64>().error_at(span, "•rand needs a nonnegative integer seed")?;
     let rng: Generator = Arc::new(Mutex::new(Xoshiro256PlusPlus::seed_from_u64(seed)));
     Ok(natives([("roll", Call::Generator(rng.clone(), Draw::Roll), Monadic), ("deal", Call::Generator(rng, Draw::Deal), Dyadic)]))

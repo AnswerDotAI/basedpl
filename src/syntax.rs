@@ -1,5 +1,5 @@
-use crate::{
-    array::FloatWidth, number::Math, primitive::{OperatorKind, Primitive, Superscript}, symbols::canonical,
+use rustymath::{buffer::FloatWidth, error::Kind};
+use crate::{number::Math, primitive::{OperatorKind, Primitive, Superscript}, symbols::canonical,
     Error, ErrorAt, ErrorKind, Number, Source, Span, Value
 };
 use std::{iter::Peekable, str::CharIndices, sync::{atomic::{AtomicUsize, Ordering::Relaxed}, Arc}};
@@ -220,7 +220,7 @@ fn exact_number(text: &str) -> Result<Number, ErrorKind> {
     if text.chars().all(|c| c.is_ascii_digit() || canonical(c) == '¯') {
         return Number::parse(&format!("{}ₓ", text.chars().map(canonical).collect::<String>()), FloatWidth::F64);
     }
-    literal_number(text, FloatWidth::F64)?.marked_exact().ok_or(ErrorKind::Domain)
+    literal_number(text, FloatWidth::F64)?.marked_exact().ok_or(Kind::Domain.into())
 }
 
 /// The empty numeric vector whose prototype is `fill`.
@@ -245,7 +245,7 @@ fn mark_literals(tokens: &mut [Token]) -> Result<(), Error> {
                         }
                         (TokenKind::Literal(Value::Number(n)), Mark::Width(w)) => {
                             let n = if text.starts_with('$') { Ok(n.clone()) } else { literal_number(text, w) };
-                            let n = n.and_then(|n| n.to_float_width(w).map_err(|_| ErrorKind::Domain));
+                            let n = n.and_then(|n| n.to_float_width(w).map_err(|_| Kind::Domain.into()));
                             Value::Number(n.error_at(&token.span, &format!("{} marks numbers", mark.marker()))?)
                         }
                         (TokenKind::Literal(_), _) if text.chars().map(canonical).eq(['⍬']) => zilde(mark.zero()),
@@ -293,7 +293,7 @@ fn script_integer(c: char, chars: &mut Peekable<CharIndices<'_>>, digits: &str, 
     while let Some(d) = chars.peek().and_then(|&(_, c)| script_digit(digits, c)) {
         chars.next();
         count += 1;
-        value = value.checked_mul(10).and_then(|v| v.checked_add(d)).ok_or((ErrorKind::Limit, format!("{what} is too large")))?;
+        value = value.checked_mul(10).and_then(|v| v.checked_add(d)).ok_or((ErrorKind::from(Kind::Limit), format!("{what} is too large")))?;
     }
     if count == 0 { return Err((ErrorKind::Syntax, format!("{c} needs a {what} digit after it"))); }
     Ok(if script_digit(digits, c).is_some() { value } else { -value })
@@ -767,7 +767,7 @@ fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
                     Superscript::Unit => break
                 };
                 node.span.range.end = end;
-                let raised = raised.map_err(|m| node.span.error(ErrorKind::Domain, m))?;
+                let raised = raised.map_err(|m| node.span.error(Kind::Domain, m))?;
                 node.kind = NodeKind::Literal(Value::Number(raised));
                 nodes.next();
             }

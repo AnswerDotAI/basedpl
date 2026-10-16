@@ -1,139 +1,38 @@
-use crate::{array::{agreed, generated_len, Layout}, ErrorKind, Value};
-use rustymath::gather::Steps;
+use crate::{array::Layout, ErrorKind, Value};
+use rustymath::{agreement::Mapping, error::Error, gather::Steps, layout::strides};
 use std::borrow::Cow;
 
-#[derive(Clone)]
-pub(crate) enum Mapping {
-    Single,
-    Linear(usize),
-    /// The input fills the trailing result axes and repeats as one block.
-    Tiled(usize),
-    Positions(Vec<usize>),
-    /// The offsets that one entry for each result axis, outermost first, reach from `base`. An axis the input broadcasts along has step 0, and a `None` offset gives a fill.
-    Steps { base: usize, steps: Vec<Steps> },
-}
+/// Rustymath's agreement, holding basedpl's layout with its renderer.
+pub(crate) type Agreement = rustymath::agreement::Agreement<Layout>;
+type Core = rustymath::agreement::Agreement;
 
-impl Mapping {
-    pub fn index(&self, i: usize) -> usize { self.get(i).expect("positional mapping") }
-    /// The offset of the first of items `start..start + n` where they read consecutive items, within one forward run of a `Steps` mapping's innermost entry, so that a reader can take them in place.
-    pub fn run(&self, start: usize, n: usize) -> Option<usize> {
-        let Self::Steps { base, steps } = self else { return None };
-        Steps::run(*base, steps, start, n)
-    }
-    pub fn get(&self, i: usize) -> Option<usize> {
-        Some(match self {
-            Self::Single => 0, Self::Linear(repeat) => i / repeat, Self::Tiled(size) => i % size, Self::Positions(positions) => positions[i],
-            Self::Steps { base, steps } => Steps::reach(*base, steps, i)?,
-        })
-    }
-    pub fn contract(left: &Layout, laxis: usize, right: &Layout, raxis: usize) -> Result<Self, ErrorKind> {
-        match (left.keys(laxis), right.keys(raxis)) { (Some(x), Some(y)) if x != y => Ok(Self::Positions(y.positions(x, false)?)), _ => Ok(Self::Linear(1)) }
-    }
-    fn new(input: &Layout, axes: &[usize], result: &Layout, count: usize) -> Self {
-        if count == 0 { return Self::Single; }
-        let (shape, output) = (input.shape(), result.shape());
-        let keyed = axes.iter().enumerate().any(|(a, &b)| input.keys(a).is_some() && input.keys(a) != result.keys(b));
-        if !keyed {
-            let size: usize = shape.iter().product();
-            if size == 1 { return Self::Single; }
-            let strides = crate::primitive::strides(output);
-            let (mut source, mut linear, mut tiled, repeat) = (1, true, true, count / size);
-            for (&len, &axis) in shape.iter().zip(axes).rev() {
-                if len != 1 {
-                    linear &= strides[axis] == source * repeat;
-                    tiled &= strides[axis] == source;
-                }
-                source *= len;
-            }
-            if linear { return Self::Linear(repeat); }
-            if tiled { return Self::Tiled(size); }
-        }
-        let mut steps: Vec<Steps> = output.iter().map(|&len| Steps::Stride { start: 0, len, step: 0 }).collect();
-        let mut source = 1;
-        for (a, (&len, &b)) in shape.iter().zip(axes).enumerate().rev() {
-            steps[b] = match (input.keys(a), result.keys(b)) {
-                (Some(src), Some(dst)) if src != dst => Steps::Table(src.align(dst).into_iter().map(|p| p.map(|p| p * source)).collect()),
-                _ => Steps::Stride { start: 0, len: output[b], step: if len == 1 { 0 } else { source as isize } },
-            };
-            source *= len;
-        }
-        Self::Steps { base: 0, steps }
-    }
-}
-
-pub(crate) struct Agreement { pub layout: Layout, pub len: usize, pub left: Mapping, pub right: Mapping }
-impl Agreement {
-    pub fn new(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> {
-        // Plain layouts of one shape, or a plain scalar beside a plain array, need no axis maps. Each side reads item i, or its one item.
-        if left.plain() && right.plain() && (left.shape() == right.shape() || left.shape().is_empty() || right.shape().is_empty()) {
-            let shape = if left.shape().is_empty() { right.shape() } else { left.shape() };
-            let len = generated_len(shape)?;
-            let map = |l: &Layout| if len > 1 && l.shape() == shape { Mapping::Linear(1) } else { Mapping::Single };
-            return Ok(Self { layout: Layout::from(shape.to_vec()), len, left: map(left), right: map(right) });
-        }
-        let (nx, ny) = (left.shape().len(), right.shape().len());
-        let xa: Vec<_> = (0..nx).collect();
-        if left.names().is_empty() && right.names().is_empty() { return Self::mapped(left, right, &xa, &(0..ny).collect::<Vec<_>>()); }
-        let mut ya: Vec<_> = (0..ny).map(|b| right.name(b).and_then(|n| (0..nx).find(|&a| left.name(a) == Some(n)))).collect();
-        let remaining_left: Vec<_> = (0..nx).filter(|a| !ya.contains(&Some(*a))).collect();
-        let remaining_right: Vec<_> = (0..ny).filter(|&b| ya[b].is_none()).collect();
-        for (a, b) in remaining_left.into_iter().zip(remaining_right) { if left.name(a).is_none() || right.name(b).is_none() { ya[b] = Some(a); } }
-        let mut next = nx;
-        let ya = ya.into_iter().map(|a| {
-            a.unwrap_or_else(|| {
-                let axis = next;
-                next += 1;
-                axis
-            })
-        }).collect::<Vec<_>>();
-        Self::mapped(left, right, &xa, &ya)
-    }
-    pub fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind> {
-        if left.shape().len() < right.shape().len() { Self::mapped(left, right, axes, &(0..right.shape().len()).collect::<Vec<_>>()) }
-        else { Self::mapped(left, right, &(0..left.shape().len()).collect::<Vec<_>>(), axes) }
-    }
-    /// Gives each argument its own result axes. The left argument's axes come first.
-    pub fn outer(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> {
-        let nx = left.shape().len();
-        Self::mapped(left, right, &(0..nx).collect::<Vec<_>>(), &(nx..nx + right.shape().len()).collect::<Vec<_>>())
-    }
-    fn mapped(left: &Layout, right: &Layout, xa: &[usize], ya: &[usize]) -> Result<Self, ErrorKind> {
-        let mut shape = vec![1; xa.iter().chain(ya).max().map_or(0, |a| a + 1)];
-        let mut keys = vec![None; shape.len()];
-        let mut names = vec![None; shape.len()];
-        for axis in 0..shape.len() {
-            let (x, y) = (xa.iter().position(|&a| a == axis), ya.iter().position(|&a| a == axis));
-            let (nx, ny) = (x.map_or(1, |a| left.shape()[a]), y.map_or(1, |a| right.shape()[a]));
-            let (kx, ky) = (x.and_then(|a| left.keys(a)), y.and_then(|a| right.keys(a)));
-            names[axis] = x.and_then(|a| left.name(a)).or_else(|| y.and_then(|a| right.name(a))).cloned();
-            if let (Some(x), Some(y)) = (kx, ky) {
-                let key = x.union(y)?;
-                shape[axis] = key.len();
-                keys[axis] = Some(key);
-            } else {
-                let n = if nx == ny || ny == 1 { nx } else if nx == 1 { ny } else { return Err(ErrorKind::Length); };
-                shape[axis] = n;
-                keys[axis] = kx.filter(|_| nx == n).or(ky.filter(|_| ny == n)).cloned();
-            }
-        }
-        let len = generated_len(&shape)?;
-        let layout = Layout::from(shape).with_keys(keys)?.inherit_names(names).with_renderer(agreed([left.renderer(), right.renderer()]));
-        let x = Mapping::new(left, xa, &layout, len);
-        let y = Mapping::new(right, ya, &layout, len);
-        Ok(Self { layout, len, left: x, right: y })
-    }
+/// Basedpl's constructors and readers for `Agreement`. The constructors pair axes as rustymath's do, and keep the renderer that both arguments' layouts agree on.
+pub(crate) trait Agree: Sized {
+    fn new(left: &Layout, right: &Layout) -> Result<Self, ErrorKind>;
+    fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind>;
+    fn outer(left: &Layout, right: &Layout) -> Result<Self, ErrorKind>;
     /// The pair of items at position `i` of the result. A missing entry reads as its own array's prototype.
-    pub fn values(&self, left: Option<&Value>, right: &Value, i: usize) -> (Option<Value>, Value) {
+    fn values(&self, left: Option<&Value>, right: &Value, i: usize) -> (Option<Value>, Value) {
         let (x, y) = self.values_ref(left, right, i);
         (x.map(Cow::into_owned), y.into_owned())
     }
     /// `values`, borrowing each item that its argument holds as a value.
-    pub fn values_ref<'a>(&self, left: Option<&'a Value>, right: &'a Value, i: usize) -> (Option<Cow<'a, Value>>, Cow<'a, Value>) {
+    fn values_ref<'a>(&self, left: Option<&'a Value>, right: &'a Value, i: usize) -> (Option<Cow<'a, Value>>, Cow<'a, Value>);
+}
+
+impl Agree for Agreement {
+    fn new(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> { with_renderer(Core::new(left, right), left, right) }
+    fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind> { with_renderer(Core::with_axes(left, right, axes), left, right) }
+    fn outer(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> { with_renderer(Core::outer(left, right), left, right) }
+    fn values_ref<'a>(&self, left: Option<&'a Value>, right: &'a Value, i: usize) -> (Option<Cow<'a, Value>>, Cow<'a, Value>) {
         if self.len == 0 { let item = |a: &'a Value| if a.is_empty() { Cow::Owned(a.prototype()) } else { a.at_ref(0) }; return (left.map(item), item(right)); }
         let item = |a: &'a Value, j: Option<usize>| j.map_or_else(|| Cow::Owned(a.prototype()), |j| a.at_ref(j));
         (left.map(|a| item(a, self.left.get(i))), item(right, self.right.get(i)))
     }
 }
+
+/// `core`, the pairing of `left` and `right`, with the renderer their layouts agree on.
+fn with_renderer(core: Result<Core, Error>, left: &Layout, right: &Layout) -> Result<Agreement, ErrorKind> { Ok(core?.map_layout(|core| Layout::paired(core, left, right))) }
 
 /// `m`'s offsets for a frame of `frame`, from a base, as one entry for each axis of the frame. An agreement's mapping adds up axis by axis, so each entry is a `Stride` of the offset's change along its axis, 0 where the array broadcasts. `None` for `Positions`, whose offsets don't add up axis by axis.
 pub(crate) fn entries(m: &Mapping, frame: &[usize]) -> Option<(usize, Vec<Steps>)> {
@@ -142,7 +41,7 @@ pub(crate) fn entries(m: &Mapping, frame: &[usize]) -> Option<(usize, Vec<Steps>
         Mapping::Positions(_) => return None,
         Mapping::Single | Mapping::Linear(_) | Mapping::Tiled(_) => m.get(0)?,
     };
-    let strides = crate::primitive::strides(frame);
+    let strides = strides(frame);
     let steps = frame.iter().zip(&strides).map(|(&len, &stride)| {
         let step = if len > 1 { m.get(stride)? as isize - base as isize } else { 0 };
         Some(Steps::Stride { start: 0, len, step })
@@ -180,7 +79,7 @@ pub(crate) fn per_axis(tables: &[Steps], shape: &[usize]) -> Option<(usize, Vec<
 }
 /// `outer`'s reads of an array of `shape`, composed with `inner`, which maps the positions along each axis of `shape` to offsets from `base`: one entry for each of `outer`'s, with the new base. `None` where an entry of `outer` doesn't walk one axis of `shape`, or two entries walk one axis that `inner` doesn't map by a `Stride`.
 pub(crate) fn through(outer: &[Steps], shape: &[usize], mut base: usize, inner: &[Steps]) -> Option<(usize, Vec<Steps>)> {
-    let strides = crate::primitive::strides(shape);
+    let strides = strides(shape);
     let mut walked = vec![false; shape.len()];
     let mut steps = Vec::with_capacity(outer.len());
     for e in outer {
@@ -240,7 +139,7 @@ pub(crate) fn spreads(e: &Steps) -> bool {
 }
 /// Whether two of `outer`'s entries walk one axis of `shape`, as overlapping windows do. A call that moved under such a read would compute each item once for every window that holds it.
 pub(crate) fn repeats(outer: &[Steps], shape: &[usize]) -> bool {
-    let strides = crate::primitive::strides(shape);
+    let strides = strides(shape);
     let mut walked = vec![false; shape.len()];
     outer.iter().any(|e| matches!(axis_of(e, shape, &strides), Some(Some(a)) if std::mem::replace(&mut walked[a], true)))
 }

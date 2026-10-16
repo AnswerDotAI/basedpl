@@ -1,4 +1,5 @@
-use crate::{data::Options, display, execution::Context, keyed, primitive::real, Error, ErrorAt, ErrorKind, Value};
+use rustymath::error::Kind;
+use crate::{data::Options, display, execution::Context, keyed, primitive::real, Error, ErrorAt, Value};
 use plotters::{coord::{ranged1d::{DefaultFormatting, KeyPointHint, Ranged}, Shift}, prelude::*};
 
 type Area<'a> = DrawingArea<SVGBackend<'a>, Shift>;
@@ -93,9 +94,9 @@ fn parse(data: &Value, span: &Context<'_>) -> Result<Data, Error> {
             }
         }
         [n] => (d.x, d.categories, d.series) = (positions(n), names(data, 0), vec![(None, numbers(data, span)?)]),
-        _ => return Err(span.error(ErrorKind::Rank, "•plot needs a vector, matrix or table")),
+        _ => return Err(span.error(Kind::Rank, "•plot needs a vector, matrix or table")),
     }
-    if d.series.iter().any(|(_, y)| y.len() != d.x.len()) { return Err(span.error(ErrorKind::Length, "•plot series need one value per x")); }
+    if d.series.iter().any(|(_, y)| y.len() != d.x.len()) { return Err(span.error(Kind::Length, "•plot series need one value per x")); }
     Ok(d)
 }
 
@@ -185,7 +186,7 @@ fn radii(size: Option<&Value>, n: usize, span: &Context<'_>) -> Result<Vec<f64>,
     let Some(size) = size else { return Ok(vec![4.; n]) };
     if size.is_atom() { return Ok(vec![real(size, span)?; n]); }
     let values = numbers(size, span)?;
-    if values.len() != n { return Err(span.error(ErrorKind::Length, "•plot size needs one value per point")); }
+    if values.len() != n { return Err(span.error(Kind::Length, "•plot size needs one value per point")); }
     let max = values.iter().fold(0f64, |m, &v| m.max(v));
     Ok(values.iter().map(|&v| if max > 0. { 12. * (v.max(0.) / max).sqrt() } else { 0. }).collect())
 }
@@ -194,7 +195,7 @@ fn radii(size: Option<&Value>, n: usize, span: &Context<'_>) -> Result<Vec<f64>,
 fn texts(labels: Option<&Value>, values: &[f64], span: &Context<'_>) -> Result<Vec<String>, Error> {
     let Some(labels) = labels else { return Ok(vec![]) };
     if labels.is_atom() { return Ok(if real(labels, span)? != 0. { values.iter().map(|&v| label(v)).collect() } else { vec![] }); }
-    if labels.len() != values.len() { return Err(span.error(ErrorKind::Length, "•plot labels need one value per point")); }
+    if labels.len() != values.len() { return Err(span.error(Kind::Length, "•plot labels need one value per point")); }
     labels.elements().map(|e| keyed::name(&e).map_or_else(|| real(&e, span).map(label), |s| Ok(s.to_string()))).collect()
 }
 
@@ -227,7 +228,7 @@ impl Chart {
             // Numbers in `color`, or a cell's own values, become colours once the range over every series is known.
             let (colors, shade) = match get("color") {
                 Some(c) if c.is_atom() || keyed::name(c).is_some() => (vec![color(c, span)?; n], None),
-                Some(c) if c.len() != n => return Err(span.error(ErrorKind::Length, "•plot color needs one value per point")),
+                Some(c) if c.len() != n => return Err(span.error(Kind::Length, "•plot color needs one value per point")),
                 Some(c) if c.elements().all(|e| keyed::name(&e).is_some()) => (c.elements().map(|e| color(&e, span)).collect::<Result<_, _>>()?, None),
                 Some(c) => (vec![], Some(numbers(c, span)?)), None if mark == Mark::Cell => (vec![], Some(raw.clone())),
                 None => (vec![COLORS[i % COLORS.len()].1; n], None)
@@ -441,7 +442,7 @@ fn is_figure(data: &Value) -> bool {
 fn draw_figure(opts: &Options, data: &Value, root: &Area<'_>, span: &Context<'_>) -> Result<(), Error> {
     let area = titled(root, &opts.text("title", Some(""), span)?, span)?;
     let [rows, cols] = match *data.shape() {
-        [n] => [1, n], [r, c] => [r, c], _ => return Err(span.error(ErrorKind::Rank, "a •plot figure needs a vector or matrix of plots"))
+        [n] => [1, n], [r, c] => [r, c], _ => return Err(span.error(Kind::Rank, "a •plot figure needs a vector or matrix of plots"))
     };
     // A plot repeated in adjacent cells spans them: [top, left, bottom, right) cell edges.
     let mut cells: Vec<(Value, [usize; 4])> = Vec::new();
@@ -477,7 +478,7 @@ fn draw_figure(opts: &Options, data: &Value, root: &Area<'_>, span: &Context<'_>
 /// Pixel offsets of the cell edges along one side, from the relative sizes in option `key`.
 fn edges(opts: &Options, key: &str, n: usize, size: u32, span: &Context<'_>) -> Result<Vec<u32>, Error> {
     let weights = opts.values.get(key).map_or(Ok(vec![1.; n]), |w| numbers(w, span))?;
-    if weights.len() != n { return Err(span.error(ErrorKind::Length, format!("•plot {key} needs one size per cell"))); }
+    if weights.len() != n { return Err(span.error(Kind::Length, format!("•plot {key} needs one size per cell"))); }
     let total: f64 = weights.iter().sum();
     let mut sum = 0.;
     Ok(std::iter::once(0).chain(weights.iter().map(|w| {

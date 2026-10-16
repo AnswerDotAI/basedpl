@@ -2,7 +2,7 @@
 # Budgets in `[copies]`, `[exact]`, `[images]`, `[objectives]`, `[calls]`, `[derivatives]` and `[structure]` count copies of the `n` items that the section's setup makes. A budget in `[widths]` is the most that the time in that section's 32-bit session may be, as a fraction of the time in the `[exact]` session. Natively and in wasm, it is the worse of that fraction on a Mac and on CI's runner, plus 0.25.
 # A wasm budget in copies is twice the most the case has cost on a Mac and on CI's runner, in the module that `cargo wasm` builds, and at least 0.5. `tests/speed.rs` gives the same rule for native budgets in copies.
 # A case in copies that CI hasn't timed yet has four times its Mac cost, natively and in wasm. A `[widths]` case that CI hasn't timed yet has its Mac fraction plus 0.25. The next CI run that logs every cost, a push's `Test` run or a `Speed` run, sets their budgets under the rules above.
-# The CI figures come from `Speed` run 38397524881. Its CPU was the AMD Ryzen 9 7950X3D 16-Core Processor.
+# The CI figures come from the `Test` and `Speed` runs that last set each budget. Every one ran on the AMD Ryzen 9 7950X3D 16-Core Processor.
 [setup]
 side←256 ⋄ n←side×side ⋄ v←¿n⍴0 ⋄ w←¿n⍴0 ⋄ s←v-0.5 ⋄ m←[side side]⍴v
 jv←¿n⍴1000ₓ ⋄ kv←¿n⍴1000000000000ₓ ⋄ b←0=¿n⍴3ₓ ⋄ i←¿n⍴⌊n ⋄ cnt←¿n⍴3ₓ
@@ -254,7 +254,7 @@ img←¿[4000 3000 3]⍴0 ⋄ flat←,img ⋄ n←≢flat
 img×1-0.5×img	5.5	6.8
 0⌈1⌊img×0.5+(⍳4000)÷8000	5.6	7
 # `×` joins the fused graphs on its two sides into one graph that runs block by block.
-(img-0.5)×img+0.5	10	14
+(img-0.5)×img+0.5	5	7.1
 # A reduction at the end of a fused graph folds each block's results while they are in the cache. Along the first axis, it adds each block to one total for each column.
 +/flat>0.5	1.6	2
 +⌿img×2	3.5	4.1
@@ -276,34 +276,34 @@ dx←¿1048576⍴0 ⋄ dp←["w":¿[64 256]⍴0 "b":¿256⍴0 "v":¿256⍴0 "c":
 # The mean squared error of a network with one hidden layer of 256 tanh units, over 1024 inputs of 64 values. Its parameters are in a record.
 [mx my] mlp mp	490	630
 # ADBench's Gaussian mixture objective, for 1000 points in 32 dimensions and 25 components, without its constant terms and with its Wishart prior at gamma 1 and m 0. Each component's precision factor has the exponentials of `q` on its diagonal and `l` below it.
-gx gmm gp	2700	6800
+gx gmm gp	640	680
 # The k-means cost sums the squared distance from each of 16384 points to the nearest of 64 centres, in 32 dimensions.
 kx kmeans kc	870	980
 # A 3 by 3 blur of a 128 by 128 grid. `⌺` calls its operand once for each window.
 {+/,sk×⍵}⌺3 3⊢sg	8000	14000
 [derivatives]
 # `∂` beside the function it differentiates. A unit argument takes one pass, whose tangent is an array of the result's shape. The bar's "Primal cost" row in the design notes asks that the primal keeps its kernels, and the tangent adds whole-array calls beside it.
-1○dx	440	800
-{1○dx+⍵}∂0	990	1900
+1○dx	230	570
+{1○dx+⍵}∂0	550	1400
 # A chain of fusible calls, whose tangent fuses too.
-(dx-0.5)×dx+0.5	170	190
-{(dx-⍵)×dx+⍵}∂0.5	400	430
+(dx-0.5)×dx+0.5	120	140
+{(dx-⍵)×dx+⍵}∂0.5	220	340
 # A JVP of the training loss in `[objectives]` along a fixed direction `dp`, which takes one pass through `+.×`, Rank, `7○` and `+/`.
-{[mx my] mlp mp+⍵×dp}∂0	420	2000
+{[mx my] mlp mp+⍵×dp}∂0	650	970
 # Gradients of the three objectives in `[objectives]`, each from one run that records its linear calls and one transpose of the record. The bar's "Gradient cost" row asks for a small multiple of the objective's own cost.
-[mx my] mlp∂ mp	860	2600
-gx gmm∂ gp	5100	11000
-kx kmeans∂ kc	6100	7600
+[mx my] mlp∂ mp	780	1200
+gx gmm∂ gp	5500	5200
+kx kmeans∂ kc	7700	5500
 [setup]
 fib←{⍵<2?⍵;(∇⍵-1)+∇⍵-2} ⋄ n←65536
 [calls]
 # `fib 16` makes 3193 calls of a dfn, each with up to four primitive calls on single numbers. Its cost is mostly the evaluator's own work for each call.
-fib 16	960	1600
+fib 16	800	740
 [setup]
 sv←¿1048576⍴0 ⋄ n←≢sv
 [structure]
 # A structural glyph on a million floats gives a pending copy, which the call around it reads through, with no pass of its own over memory. A forward run is read in place. A reversed one is copied into a buffer for each block.
-2×⌽sv+1	11	13
-2×1⌽sv+1	8.1	8.9
-2×(10↓sv)+1	8.5	8.8
-+/(⌽sv)×sv	11	11
+2×⌽sv+1	6.4	11
+2×1⌽sv+1	4.4	4.5
+2×(10↓sv)+1	4.4	4.8
++/(⌽sv)×sv	5.9	8.8

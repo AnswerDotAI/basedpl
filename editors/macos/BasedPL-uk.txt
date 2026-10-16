@@ -32,7 +32,7 @@ Option-6	superscript prefix
 Option-Shift-6	⁶
 Option-5	subscript prefix
 Option-Shift-5	⁵
-Option-=	match prefix
+Option-=	≡
 Option-Shift-=	≠
 Option-9	∨
 Option-Shift-9	⁹
@@ -51,12 +51,14 @@ Option-p	π
 Option-l	↦
 Option-j	↓
 Option-'	⊢
-Option-k	take prefix
+Option-k	↑
+Option-Shift-k	↕
 Option-;	⊣
 Option-\	stile prefix
 Option-,	↢
 Option-Shift-,	≤
 Option-/	¿
+Option-Shift-/	≢
 Option-Shift-n	⊤
 Option-m	×
 Option-.	↣

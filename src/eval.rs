@@ -1,6 +1,7 @@
+use rustymath::{agreement::Mapping, error::Kind, structure::Windows};
 use crate::{
-    agreement::{Agreement, Mapping}, array::{generated_len, Axis, Frame as ResultFrame, Gather}, execution::Context,
-    primitive::{integer, remapped, window_steps, FoldKind, OperandKind, OperatorKind, Primitive, Selection, Superscript, Targets, Windows}, selection::SelectionKind,
+    agreement::{Agree, Agreement}, array::{generated_len, Frame as ResultFrame, Gather, Lanes}, execution::Context,
+    primitive::{integer, remapped, FoldKind, OperandKind, OperatorKind, Primitive, Selection, Superscript, Targets}, selection::SelectionKind,
     symbols::Notation, syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind},
     DomainAt, Error, ErrorAt, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value
 };
@@ -67,7 +68,7 @@ const STACK_RED_ZONE: usize = 1 << 20;
 const STACK_SEGMENT: usize = 16 << 20;
 /// The LIMIT error for evaluation deeper than `MAX_CALL_DEPTH`.
 #[cold]
-fn depth_error(span: &Span) -> Error { span.error(ErrorKind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}")) }
+fn depth_error(span: &Span) -> Error { span.error(Kind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}")) }
 /// The name classes that `•nl` and `name_class` report, as in Dyalog.
 const SUBJECT_CLASS: i64 = 2;
 const FUNCTION_CLASS: i64 = 3;
@@ -385,7 +386,7 @@ impl Function {
                 if !(accepts(info.left, &a) && info.right.is_some_and(|r| accepts(r, &b))) { return Err(span.domain_error("invalid operator operands")); }
                 if matches!(op, Agenda) {
                     let Operand::Value(fs) = &b else { unreachable!() };
-                    if fs.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "agenda needs a vector of functions")); }
+                    if fs.shape().len() != 1 { return Err(span.error(Kind::Rank, "agenda needs a vector of functions")); }
                     if fs.is_empty() { return Err(span.domain_error("agenda needs a nonempty vector of functions")); }
                     // An array among the functions acts as a constant function.
                     let options = fs.elements().map(|e| match e {
@@ -518,7 +519,7 @@ impl Function {
         if let Some((_, f)) = resolved.get(&id) { return Ok(f.clone()); }
         let result = if let FunctionNode::LateBound(parsed, origin) = self.node() {
             session.execution.check(origin)?;
-            if depth >= MAX_RESOLUTION_DEPTH { return Err(origin.error(ErrorKind::Limit, "late-bound function resolution exceeds 128 levels")); }
+            if depth >= MAX_RESOLUTION_DEPTH { return Err(origin.error(Kind::Limit, "late-bound function resolution exceeds 128 levels")); }
             let caller = session.current.take();
             let bound = session.bind(&parsed.statements[0].nodes);
             session.current = caller;

@@ -1,5 +1,6 @@
 //! The operators: composition, power, inverse, key, outer and inner products, rank, each, reduce, scan, stencil, `@` and agenda.
 
+use rustymath::error::Kind;
 use super::*;
 
 // Inlined into `dispatch`, this would add its locals to the stack frame of every BPL call, limiting recursion in the browser.
@@ -36,7 +37,7 @@ pub(super) fn composition(op: OperatorKind, operands: &[Operand; 2], left: Optio
 }
 
 pub(super) fn agenda_index(index: &Value, len: usize, span: &Span) -> Result<usize, Error> {
-    if !index.is_unit() { return Err(span.error(ErrorKind::Rank, "agenda index must be a unit")); }
+    if !index.is_unit() { return Err(span.error(Kind::Rank, "agenda index must be a unit")); }
     let n = index.as_number().ok_or_else(|| span.domain_error("agenda index must be numeric"))?;
     crate::primitive::position(&n, len, span)
 }
@@ -90,35 +91,20 @@ fn over(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &mu
 }
 
 fn stencil(f: &Function, spec: &Value, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
-    let (sizes, movements) = crate::primitive::window_spec(spec, right.shape().len(), cx.span)?;
+    let (sizes, movements) = crate::primitive::window_spec(spec, cx.span)?;
     if sizes.is_empty() { return Err(cx.span.domain_error("stencil needs at least one axis")); }
     if sizes.iter().chain(&movements).any(|&n| n <= 0) { return Err(cx.span.domain_error("stencil sizes and movements must be positive")); }
-    let windows = Windows::new(&sizes, &movements, |_| true, right, cx.span)?;
-    let (axes, sizes): (usize, Vec<usize>) = (sizes.len(), windows.axes.iter().map(|w| w.size).collect());
-    let shape = [sizes.as_slice(), &right.shape()[axes..]].concat();
-    generated_len(&shape).error_at(cx.span, "stencil window is too large")?;
-    let count = generated_len(&windows.frame).error_at(cx.span, "stencil result is too large")?;
+    let windows = Windows::new(&sizes, &movements, |_| true, right.shape()).at(cx.span)?;
+    generated_len(windows.cell()).at(cx.span)?;
+    let count = generated_len(windows.frame()).at(cx.span)?;
     let mut results = Vec::with_capacity(count);
     for position in 0..count {
         let starts = windows.starts(position);
-        let padding: Vec<f64> =
-            (0..axes).map(|a| if starts[a] < 0 { -starts[a] } else { (right.shape()[a] as isize - starts[a] - sizes[a] as isize).min(0) } as f64).collect();
-        let keys = (0..shape.len()).map(|a| {
-            if a >= axes { return Ok(right.keys(a).cloned()); }
-            if padding[a] != 0. { return Ok(None); }
-            right.keys(a).map(|k| k.select((starts[a] as usize..starts[a] as usize + sizes[a]).map(Some))).transpose()
-        }).collect::<Result<_, _>>().error_at(cx.span, "invalid stencil window keys")?;
-        let layout =
-            crate::array::Layout::from(shape.clone()).with_keys(keys).error_at(cx.span, "invalid stencil window")?.inherit_names(right.axis_names().to_vec());
-        let window = remapped(right, layout, &window_steps(right, &shape, &starts)).error_at(cx.span, "invalid stencil window")?;
-        let border = Value::floats(vec![axes], cx.numeric().width, padding).unwrap();
+        let border = Value::floats(vec![starts.len()], cx.numeric().width, windows.border(&starts).into_iter().map(|n| n as f64)).unwrap();
+        let window = remapped(right, windows.window(right.layout(), &starts).at(cx.span)?).error_at(cx.span, "invalid stencil window")?;
         results.push(f.call_array(Some(&border), &window, cx)?);
     }
-    let mut layout = right.layout().axes(0..axes);
-    for (a, &len) in windows.frame.iter().enumerate() {
-        let positions = (0..len).map(|i| Some(i * windows.axes[a].step));
-        layout = layout.select(a, positions).error_at(cx.span, "invalid stencil frame keys")?;
-    }
+    let layout = crate::array::Layout::from(windows.frame_layout(right.layout()).error_at(cx.span, "invalid stencil frame keys")?);
     let result = layout.assemble(&results, &Value::Number(crate::Number::float(0.0, cx.numeric().width))).error_at(cx.span, "invalid stencil result")?;
     Ok(Bound::from(result))
 }
@@ -183,7 +169,7 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut 
                 let done = done.boolean().error_at(cx.span, "power predicate must return a Boolean singleton")?;
                 value = next;
                 if history {
-                    generated_len(&[states.len() + 1]).error_at(cx.span, "history is too long")?;
+                    generated_len(&[states.len() + 1]).at(cx.span)?;
                     states.push(value.clone());
                 }
                 if done { break; }
@@ -337,7 +323,7 @@ fn inverse_outer(f: &Function, bound: &Value, first: bool, right: &Value, cx: &m
     let (prefix, suffix) = right.shape().split_at(split);
     let (frame, shape) = if first { (prefix, suffix) } else { (suffix, prefix) };
     if frame != bound.shape() { return Err(cx.span.domain_error("outer-product inverse needs a matching bound frame")); }
-    let count = crate::array::element_count(shape).error_at(cx.span, "invalid inverse result shape")?;
+    let count = crate::array::element_count(shape).at(cx.span)?;
     let layout = right.layout().axes(if first { split..right.shape().len() } else { 0..split });
     let mut keys = vec![None; right.shape().len()];
     for axis in 0..rank { keys[if first { axis } else { split + axis }] = bound.keys(axis).cloned(); }
@@ -386,8 +372,8 @@ fn inverse_scan(f: &Function, h: FoldKind, axis: Option<&Value>, seed: Option<&V
 
 pub(super) fn key(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let keys = left.unwrap_or(right);
-    if keys.is_unit() || right.is_unit() { return Err(cx.span.error(ErrorKind::Rank, "key arguments must have major cells")); }
-    if keys.shape()[0] != right.shape()[0] { return Err(cx.span.error(ErrorKind::Length, "key arguments must have equal tallies")); }
+    if keys.is_unit() || right.is_unit() { return Err(cx.span.error(Kind::Rank, "key arguments must have major cells")); }
+    if keys.shape()[0] != right.shape()[0] { return Err(cx.span.error(Kind::Length, "key arguments must have equal tallies")); }
     if counts_rows(f) && keys.shape()[0] > 0 {
         let key_cells = crate::search::Cells::of(keys, keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
         let counts = crate::search::class_counts(&key_cells, cx)?;
@@ -402,7 +388,7 @@ pub(super) fn key(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Co
     let key_cells = crate::search::Cells::of(keys, keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
     let mut classes = crate::search::grouped(&key_cells, cx)?;
     let count = classes.firsts.len();
-    let width = values.as_ref().map_or(Ok(1), |v| generated_len(&v.shape()[1..])).error_at(cx.span, "key cell is too large")?;
+    let width = values.as_ref().map_or(Ok(1), |v| generated_len(&v.shape()[1..])).at(cx.span)?;
     let select = |rows: &[u32]| {
         let Some(values) = &values else { return Value::positions(vec![rows.len()], right.shape()[0], rows.iter().copied()) };
         let layout = values.layout().select(0, rows.iter().map(|&r| Some(r as usize)))?;
@@ -449,7 +435,7 @@ pub(super) fn outer(operand: &Function, left: Option<&Value>, right: &Value, cx:
     if left.is_atom() && right.is_atom() { return operand.call(Some(left), right, cx); }
     if let Some(p) = pervasive_primitive(operand, true) { return Ok(Bound::from(p.outer(left, right, cx)?)); }
     let layout = left.layout().concat(right.layout());
-    let len = generated_len(layout.shape()).error_at(cx.span, "outer product is too large")?;
+    let len = generated_len(layout.shape()).at(cx.span)?;
     // With no pairs, an empty argument gives its prototype and a nonempty one its first item.
     let item = |a: &Value, i| if a.is_empty() { a.prototype() } else { a.at(i) };
     let columns = right.len().max(1);
@@ -478,15 +464,15 @@ fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &m
     let ny = right.shape().first().copied().unwrap_or(1);
     let positions =
         Mapping::contract(left.layout(), left.shape().len().saturating_sub(1), right.layout(), 0).error_at(cx.span, "product contraction keys must agree")?;
-    if nx != ny && !left.is_singleton() && !right.is_singleton() { return Err(cx.span.error(ErrorKind::Length, "product contraction lengths must agree")); }
+    if nx != ny && !left.is_singleton() && !right.is_singleton() { return Err(cx.span.error(Kind::Length, "product contraction lengths must agree")); }
     let n = if left.is_singleton() { ny } else { nx };
     let xf = &left.shape()[..left.shape().len().saturating_sub(1)];
     let yf = &right.shape()[usize::from(!right.is_unit())..];
     let layout = left.layout().contracted(right.layout());
-    let size = generated_len(layout.shape()).error_at(cx.span, "inner product is too large")?;
-    let rows = generated_len(xf).error_at(cx.span, "invalid product frame")?;
-    let cols = generated_len(yf).error_at(cx.span, "invalid product frame")?;
-    generated_len(&[n.max(1), cols.max(1)]).error_at(cx.span, "product contraction is too large")?;
+    let size = generated_len(layout.shape()).at(cx.span)?;
+    let rows = generated_len(xf).at(cx.span)?;
+    let cols = generated_len(yf).at(cx.span)?;
+    generated_len(&[n.max(1), cols.max(1)]).at(cx.span)?;
     let active = crate::derivative::either_active(cx, Some(left), right);
     if let (FunctionNode::Primitive(pf), FunctionNode::Primitive(pg), false) = (f.node(), g.node(), active) {
         if nx == ny && n > 0 && size > 0 && !left.is_unit() && !right.is_unit() && matches!(positions, Mapping::Linear(1)) {
@@ -533,7 +519,7 @@ fn plus_times(f: &Function, g: &Function) -> bool {
 /// Monadic `f.g`, as J defines it: the expansion of a matrix by minors along its first column. A vector is one column, and an atom one item. `-.×` is the determinant and `+.×` the permanent. `-.×` on a square matrix of numbers takes `primitive::determinant`.
 fn expansion(f: &Function, g: &Function, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let [m, n] = match *right.shape() {
-        [] => [1, 1], [m] => [m, 1], [m, n] => [m, n], _ => return Err(cx.span.error(ErrorKind::Rank, "monadic f.g needs a matrix, a vector or a number"))
+        [] => [1, 1], [m] => [m, 1], [m, n] => [m, n], _ => return Err(cx.span.error(Kind::Rank, "monadic f.g needs a matrix, a vector or a number"))
     };
     use crate::number::{with_field, Arithmetic, Field};
     let arithmetic = |h: &Function, a: Arithmetic| matches!(h.node(), FunctionNode::Primitive(Primitive::Arithmetic(x)) if *x == a);
@@ -546,7 +532,7 @@ fn expansion(f: &Function, g: &Function, right: &Value, cx: &mut Context<'_>) ->
     if arithmetic(f, Arithmetic::Minus) && arithmetic(g, Arithmetic::Times) && m == n && n > 0 {
         if let Some(d) = crate::primitive::determinant(right, n, cx)? { return Ok(Bound::from(d)); }
     }
-    if m > 64 { return Err(cx.span.error(ErrorKind::Limit, "monadic f.g expands at most 64 rows")); }
+    if m > 64 { return Err(cx.span.error(Kind::Limit, "monadic f.g expands at most 64 rows")); }
     if arithmetic(f, Arithmetic::Plus) && arithmetic(g, Arithmetic::Times) && m == n && n < 64 {
         if let Some(items) = (0..m * n).map(|i| match right.at(i) { Value::Number(x) => Some(x), _ => None }).collect::<Option<Vec<crate::Number>>>() {
             let p = with_field!(items.iter(), cx.numeric(), T, width => {
@@ -583,8 +569,8 @@ fn expand(
 
 /// The cell ranks that rank operand `ranks` gives, as `[monad, left, right]`. ∞ and ¯∞ become `isize::MAX` and `isize::MIN`, which `within` clamps.
 fn cell_ranks(ranks: &Value, cx: &Context<'_>) -> Result<[isize; 3], Error> {
-    if ranks.shape().len() > 1 { return Err(cx.span.error(ErrorKind::Rank, "rank operand must be a unit or vector")); }
-    if !(1..=3).contains(&ranks.len()) { return Err(cx.span.error(ErrorKind::Length, "rank operand needs one to three items")); }
+    if ranks.shape().len() > 1 { return Err(cx.span.error(Kind::Rank, "rank operand must be a unit or vector")); }
+    if !(1..=3).contains(&ranks.len()) { return Err(cx.span.error(Kind::Length, "rank operand needs one to three items")); }
     let ranks = ranks.elements().map(|e| match e {
             Value::Number(n) if n.is_infinite() => Ok(if n.as_float().is_some_and(f64::is_sign_positive) { isize::MAX } else { isize::MIN }),
             Value::Number(n) => {
@@ -867,7 +853,8 @@ fn fold_rule(operand: &Function, p: Primitive, kind: FoldKind, x: &Value, tx: &V
     } else {
         let shape = x.shape();
         let axis = if kind.first { 0 } else { shape.len() - 1 };
-        let (n, inner, outer) = (shape[axis], shape[axis + 1..].iter().product::<usize>(), shape[..axis].iter().product::<usize>());
+        let lanes = Lanes::new(shape, axis).at(cx.span)?;
+        let Lanes { outer, len: n, inner } = lanes;
         let booleans = |v: Value| v.as_booleans().map(<[bool]>::to_vec).unwrap_or_else(|| v.elements().map(|e| matches!(e, Value::Number(n) if !n.is_zero())).collect());
         let offsets = if kind.scan {
             // A running maximum or minimum changes only where an item gives a new extreme, whose tangent it then follows. Where it doesn't change, the earlier item keeps it.
@@ -880,7 +867,7 @@ fn fold_rule(operand: &Function, p: Primitive, kind: FoldKind, x: &Value, tx: &V
             for o in 0..outer {
                 for k in 0..n {
                     for i in 0..inner {
-                        let at = (o * n + k) * inner + i;
+                        let at = lanes.offset(o, k, i);
                         offsets.push(if k == 0 || changed[(o * (n - 1) + k - 1) * inner + i] { at as i64 } else { offsets[at - inner] });
                     }
                 }
@@ -896,7 +883,7 @@ fn fold_rule(operand: &Function, p: Primitive, kind: FoldKind, x: &Value, tx: &V
             // The first item of each lane that gives its extreme, or the lane's first item where none does, as for NaN.
             (0..outer)
                 .flat_map(|o| (0..inner).map(move |i| (o, i)))
-                .map(|(o, i)| (0..n).map(|k| (o * n + k) * inner + i).find(|&at| hit[at]).unwrap_or(o * n * inner + i) as i64)
+                .map(|(o, i)| (0..n).map(|k| lanes.offset(o, k, i)).find(|&at| hit[at]).unwrap_or(lanes.offset(o, 0, i)) as i64)
                 .collect::<Vec<_>>()
         };
         let offsets = Value::integers(vec![offsets.len()], offsets).error_at(cx.span, "invalid positions")?.enclose().expect("positions enclose");
@@ -912,10 +899,10 @@ fn fold_array(operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Op
     if right.is_unit() && axis.is_none() { return match left { Some(seed) => operand.call_array(Some(&right.at(0)), seed, cx), None => Ok(right.at(0)) }; }
     let axis = kind.axis(axis, right, cx.span)?;
     if axis >= right.shape().len() { return Err(cx.span.domain_error("axis is outside array rank")); }
-    let traversal = Axis::new(right.shape(), axis).error_at(cx.span, "invalid fold axis")?;
+    let traversal = Lanes::new(right.shape(), axis).at(cx.span)?;
     let mut shape = right.shape().to_vec();
     shape.remove(axis);
-    let size = generated_len(&shape).error_at(cx.span, "fold result exceeds array limits")?;
+    let size = generated_len(&shape).at(cx.span)?;
     if size == 0 { return Value::empty(shape, right.prototype()).error_at(cx.span, "invalid empty fold"); }
     if traversal.len == 0 {
         let item = match left { Some(seed) => seed.clone(), None => identity(operand, &right.prototype(), cx)? };
@@ -925,7 +912,7 @@ fn fold_array(operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Op
     if let (None, FunctionNode::Primitive(p), false) = (left, operand.node(), active) {
         use crate::number::Arithmetic::{Plus, Times};
         // Float sums and products take the kernel for any number of items, because they fold in any order.
-        if traversal.len >= 2 || (matches!(right.as_items(), crate::array::Items::Floats(_)) && matches!(p, Primitive::Arithmetic(Plus | Times))) {
+        if traversal.len >= 2 || (matches!(right.as_items(), crate::array::Items::Compact(rustymath::buffer::View::Floats(_))) && matches!(p, Primitive::Arithmetic(Plus | Times))) {
             if let Some(result) = crate::pervasive::fold(*p, right, &traversal, shape.clone(), cx.numeric()) { return Ok(result); }
         }
         if let Primitive::Arithmetic(op) = p { if right.all_numbers() { return number_lanes(*op, false, right, None, &traversal, shape, cx); } }
@@ -936,7 +923,7 @@ fn fold_array(operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Op
 
 /// A fold or scan by `op` of plain numbers, with an optional `seed`: the general path for an arithmetic primitive when every item is a number.
 fn number_lanes(
-    op: crate::number::Arithmetic, scan: bool, right: &Value, seed: Option<&Value>, axis: &Axis, shape: Vec<usize>, cx: &Context<'_>) -> Result<Value, Error> {
+    op: crate::number::Arithmetic, scan: bool, right: &Value, seed: Option<&Value>, axis: &Lanes, shape: Vec<usize>, cx: &Context<'_>) -> Result<Value, Error> {
     let number = |e: Value| { let Value::Number(n) = e else { unreachable!() }; n };
     let (item, seed) = (|i| number(right.at(i)), seed.cloned().map(number));
     let step = |x: &crate::Number, y: &crate::Number| { cx.check()?; x.dyad(op, y).domain_at(cx.span) };
@@ -945,7 +932,7 @@ fn number_lanes(
 }
 
 /// Each lane of `axis` reduced from the right, starting from `seed` or else the lane's last item: `apply(item, result)`.
-fn fold_items<T: Clone>(axis: &Axis, seed: Option<&T>, item: impl Fn(usize) -> T, mut apply: impl FnMut(&T, &T) -> Result<T, Error>) -> Result<Vec<T>, Error> {
+fn fold_items<T: Clone>(axis: &Lanes, seed: Option<&T>, item: impl Fn(usize) -> T, mut apply: impl FnMut(&T, &T) -> Result<T, Error>) -> Result<Vec<T>, Error> {
     let mut data = Vec::with_capacity(axis.outer * axis.inner);
     for i in 0..axis.outer {
         for k in 0..axis.inner {
@@ -958,7 +945,7 @@ fn fold_items<T: Clone>(axis: &Axis, seed: Option<&T>, item: impl Fn(usize) -> T
     Ok(data)
 }
 
-fn scan_items<T: Clone>(axis: &Axis, seed: Option<T>, item: impl Fn(usize) -> T, mut apply: impl FnMut(&T, &T) -> Result<T, Error>) -> Result<Vec<T>, Error> {
+fn scan_items<T: Clone>(axis: &Lanes, seed: Option<T>, item: impl Fn(usize) -> T, mut apply: impl FnMut(&T, &T) -> Result<T, Error>) -> Result<Vec<T>, Error> {
     let mut data = vec![item(0); axis.outer * axis.len * axis.inner];
     for i in 0..axis.outer {
         for k in 0..axis.inner {
@@ -981,10 +968,10 @@ fn scan_items<T: Clone>(axis: &Axis, seed: Option<T>, item: impl Fn(usize) -> T,
     Ok(data)
 }
 
-fn scan_axis(kind: FoldKind, axis: Option<&Value>, right: &Value, span: &Span) -> Result<Axis, Error> {
-    if right.is_unit() && axis.is_none() { return Ok(Axis { outer: 1, len: 1, inner: 1 }); }
+fn scan_axis(kind: FoldKind, axis: Option<&Value>, right: &Value, span: &Span) -> Result<Lanes, Error> {
+    if right.is_unit() && axis.is_none() { return Ok(Lanes { outer: 1, len: 1, inner: 1 }); }
     let index = kind.axis(axis, right, span)?;
-    Axis::new(right.shape(), index).error_at(span, "invalid scan axis")
+    Lanes::new(right.shape(), index).at(span)
 }
 
 pub(super) fn scan(

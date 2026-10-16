@@ -1,4 +1,4 @@
-use basedpl::{parse, Error, ErrorKind, ErrorKind::*, EvalOptions, ParseStatus, Session, Source, Value as AplValue, Value::Character};
+use basedpl::{parse, Error, ErrorKind::*, EvalOptions, ParseStatus, Session, Source, Value as AplValue, Value::Character};
 use std::sync::Arc;
 
 fn run(code: &str) -> Result<Option<AplValue>, Error> {
@@ -7,7 +7,7 @@ fn run(code: &str) -> Result<Option<AplValue>, Error> {
 }
 
 fn number(n: impl TryInto<basedpl::Number>) -> AplValue { AplValue::number(n).unwrap() }
-fn float(n: f64) -> AplValue { AplValue::Number(basedpl::Number::float(n, basedpl::FloatWidth::F64)) }
+fn float(n: f64) -> AplValue { AplValue::Number(basedpl::Number::float(n, basedpl::buffer::FloatWidth::F64)) }
 fn vector(values: &[f64]) -> AplValue { AplValue::from_parts(vec![values.len()], values.iter().copied().map(float).collect(), float(0.0)).unwrap() }
 
 #[track_caller]
@@ -78,11 +78,11 @@ macro_rules! equiv_in {
 }
 
 #[track_caller]
-fn fails_in(session: &mut Session, kind: ErrorKind, codes: &[&str]) {
+fn fails_in(session: &mut Session, kind: &str, codes: &[&str]) {
     for code in codes {
         let result = session.eval(code);
         match result.error {
-            Some(error) => assert_eq!(error.kind, kind, "{code}: {error}"), None => panic!("{code}: expected {kind:?}, got {:?}", result.value)
+            Some(error) => assert_eq!(error.kind.name(), kind, "{code}: {error}"), None => panic!("{code}: expected {kind:?}, got {:?}", result.value)
         }
     }
 }
@@ -103,7 +103,7 @@ fn explicit_output_without_echo() {
         assert_eq!(r.output_text(), if code.starts_with("f←") { vec!["8"] } else { vec![] });
     }
     let r = s.eval_with("⎕←9 ⋄ 1÷'a'", quiet());
-    assert_eq!(r.error.as_ref().unwrap().kind, Domain);
+    assert_eq!(r.error.as_ref().unwrap().kind.name(), "DOMAIN");
     assert_eq!(r.output_text(), ["9"]);
     for code in ["]Display 1 2", "]help +", "]help f -source"] { assert!(!s.eval_with(code, quiet()).output_text().is_empty()); }
     let streamed = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -111,7 +111,7 @@ fn explicit_output_without_echo() {
     let output =
         Arc::new(move |output: &basedpl::Output| events.lock().unwrap().push((matches!(output.kind, basedpl::OutputKind::Explicit), output.text().to_owned())));
     let r = s.eval_with("1 ⋄ ⎕←2 ⋄ 1÷'a'", basedpl::EvalOptions { output: Some(output), ..basedpl::EvalOptions::default() });
-    assert_eq!(r.error.as_ref().unwrap().kind, Domain);
+    assert_eq!(r.error.as_ref().unwrap().kind.name(), "DOMAIN");
     assert!(r.output_text().is_empty());
     assert_eq!(*streamed.lock().unwrap(), [(false, "1".into()), (true, "2".into())]);
     assert_eq!(s.eval("3").output_text(), ["3"]);
@@ -137,17 +137,17 @@ fn calls_with_array_arguments() {
     let r = s.call("{}", &[float(3.0)]);
     assert!(r.value.is_none() && r.error.is_none() && r.output_text().is_empty());
     for (function, args, kind) in [
-        ("+", vec![], Length), ("+", vec![float(1.0); 3], Length), ("", vec![float(1.0)], Syntax), ("1", vec![float(1.0)], Syntax),
-        ("¨", vec![float(1.0)], Syntax), ("+ ⋄ -", vec![float(1.0)], Syntax),
-    ] { assert_eq!(s.call(function, &args).error.unwrap().kind, kind); }
+        ("+", vec![], "LENGTH"), ("+", vec![float(1.0); 3], "LENGTH"), ("", vec![float(1.0)], "SYNTAX"), ("1", vec![float(1.0)], "SYNTAX"),
+        ("¨", vec![float(1.0)], "SYNTAX"), ("+ ⋄ -", vec![float(1.0)], "SYNTAX"),
+    ] { assert_eq!(s.call(function, &args).error.unwrap().kind.name(), kind); }
     let r = s.call("bad", &[AplValue::Character('a')]);
     assert_eq!(r.output_text(), ["'a'"]);
     let e = r.error.as_ref().unwrap();
-    assert_eq!(e.kind, Domain);
+    assert_eq!(e.kind.name(), "DOMAIN");
     assert_eq!(e.calls.last().unwrap().source.text, "bad");
     assert!(e.span.source.text.contains("bad←"));
     let r = s.call_with("{∇⍵}", &[float(0.0)], basedpl::EvalOptions { timeout: Some(std::time::Duration::ZERO), ..basedpl::EvalOptions::default() });
-    assert_eq!(r.error.as_ref().unwrap().kind, Timeout);
+    assert!(matches!(r.error.as_ref().unwrap().kind, Timeout));
     equiv_in(&mut s, "x", "42");
 }
 
@@ -156,12 +156,12 @@ fn cancellation_preserves_session_and_unwinds_calls() {
     use std::time::Duration;
     let mut s = Session::new();
     let r = s.eval_timeout("keep←42 ⋄ ⎕←7 ⋄ {∞::99 ⋄ (+⍣{0})⍵}0", Duration::from_millis(10));
-    assert_eq!(r.error.as_ref().unwrap().kind, Timeout);
+    assert!(matches!(r.error.as_ref().unwrap().kind, Timeout));
     assert_eq!(r.output_text(), ["7"]);
     equiv_in(&mut s, "keep+1", "43");
-    s.set("u", AplValue::floats(vec![1_000_000], basedpl::FloatWidth::F64, (0..1_000_000).map(|i| f64::from(i) + 0.5)).unwrap()).unwrap();
-    assert_eq!(s.eval_timeout("∪u", Duration::from_millis(2)).error.unwrap().kind, Timeout);
-    assert_eq!(s.eval_timeout("⍭1000000000000ₓ", Duration::from_millis(2)).error.unwrap().kind, Timeout);
+    s.set("u", AplValue::floats(vec![1_000_000], basedpl::buffer::FloatWidth::F64, (0..1_000_000).map(|i| f64::from(i) + 0.5)).unwrap()).unwrap();
+    assert!(matches!(s.eval_timeout("∪u", Duration::from_millis(2)).error.unwrap().kind, Timeout));
+    assert!(matches!(s.eval_timeout("⍭1000000000000ₓ", Duration::from_millis(2)).error.unwrap().kind, Timeout));
     let interrupt = basedpl::InterruptHandle::default();
     let handle = interrupt.clone();
     let cancel = std::thread::spawn(move || {
@@ -170,7 +170,7 @@ fn cancellation_preserves_session_and_unwinds_calls() {
     });
     let r = s.eval_with("{∇⍵}0", basedpl::EvalOptions { interrupt, timeout: Some(Duration::from_secs(2)), ..basedpl::EvalOptions::default() });
     cancel.join().unwrap();
-    assert_eq!(r.error.as_ref().unwrap().kind, Interrupt);
+    assert!(matches!(r.error.as_ref().unwrap().kind, Interrupt));
     equiv_in(&mut s, "keep", "42");
 }
 
@@ -284,14 +284,14 @@ fn execute_source_and_session() {
 
 #[test]
 fn numeric_constructors() {
-    assert_eq!(AplValue::floats(vec![2], basedpl::FloatWidth::F64, vec![1.]).err(), Some(Length));
-    assert_eq!(AplValue::floats(vec![1], basedpl::FloatWidth::F64, vec![-0.]).unwrap().as_floats().unwrap()[0].to_bits(), (-0f64).to_bits());
-    assert_eq!(AplValue::number(num_rational::BigRational::new_raw(1.into(), 0.into())).err(), Some(Domain));
+    assert_eq!(AplValue::floats(vec![2], basedpl::buffer::FloatWidth::F64, vec![1.]).unwrap_err().name(), "LENGTH");
+    assert_eq!(AplValue::floats(vec![1], basedpl::buffer::FloatWidth::F64, vec![-0.]).unwrap().as_floats().unwrap()[0].to_bits(), (-0f64).to_bits());
+    assert_eq!(AplValue::number(num_rational::BigRational::new_raw(1.into(), 0.into())).unwrap_err().name(), "DOMAIN");
     assert_same(number(num_rational::BigRational::new_raw(2.into(), (-4).into())), &exact(-1, 2));
     let data: Vec<_> = (0..(1 << 18) + 3).map(|i| i % 257 - 128).collect();
     let expected = vector(&data.iter().map(|&x| f64::from(x)).collect::<Vec<_>>());
     let mut s = Session::new();
-    s.set("v", AplValue::from_buffer([data.len()], basedpl::Buffer::I32(data.into())).unwrap()).unwrap();
+    s.set("v", AplValue::from_buffer([data.len()], basedpl::buffer::Buffer::Integers(basedpl::buffer::IntBuf::I32(data))).unwrap()).unwrap();
     for threads in [1, 4] {
         assert!(s.eval(&format!(r#"•prefs ["threads":{threads}]"#)).error.is_none());
         check_in(&mut s, "64•float 32•float v", expected.clone());
@@ -330,9 +330,9 @@ fn shy_results_and_signal_messages() {
         assert!(r.error.is_none(), "{code}: {:?}", r.error);
         assert_eq!(r.output_text(), output, "{code}");
     }
-    for kind in [Syntax, Index, Rank, Length, Value, Limit, Domain] {
-        let error = run(&format!(r#"•signal "{}""#, kind.name())).unwrap_err();
-        assert_eq!((error.kind, error.message.as_str()), (kind, "explicitly signalled"));
+    for name in ["SYNTAX", "INDEX", "RANK", "LENGTH", "VALUE", "LIMIT", "DOMAIN"] {
+        let error = run(&format!(r#"•signal "{name}""#)).unwrap_err();
+        assert_eq!((error.kind.name(), error.message.as_str()), (name, "explicitly signalled"));
     }
 }
 
@@ -406,8 +406,8 @@ fn hanzi_spellings_and_language() {
         "\"加总 注 负永\"" => "\"加总 注 负永\"", "'加'" => "'加'", "加总 1 2 3 注 汉字注释" => "6",
         "系prefs [\"float\":32]句系storage 1" => "\"float32\"",
     );
-    fails_in(&mut s, Syntax, &["_加←1", "x_語←1"]);
-    fails_in(&mut s, Unsupported, &["語←1", "𠀀←1", "x赋1", "x賦1"]);
+    fails_in(&mut s, "SYNTAX", &["_加←1", "x_語←1"]);
+    fails_in(&mut s, "UNSUPPORTED", &["語←1", "𠀀←1", "x赋1", "x賦1"]);
     assert_eq!(s.name_class("系time"), 3);
     assert_eq!(s.inspect("系time").unwrap().source, "•time");
     assert!(s.set("乙", number(1)).is_err() && !s.erase("乙"));
@@ -456,16 +456,16 @@ fn array_invariants() {
     assert!(!seven.same(&singleton));
     assert!(seven.shape().is_empty());
     assert_eq!(singleton.shape(), &[1]);
-    assert_eq!(AplValue::new(vec![2, 2], vec![float(1.0); 3]).err(), Some(Length));
-    assert_eq!(AplValue::new(vec![], vec![]).err(), Some(Length));
-    assert_eq!(AplValue::new(vec![usize::MAX, 2], vec![float(1.0)]).err(), Some(Limit));
+    assert_eq!(AplValue::new(vec![2, 2], vec![float(1.0); 3]).unwrap_err().name(), "LENGTH");
+    assert_eq!(AplValue::new(vec![], vec![]).unwrap_err().name(), "LENGTH");
+    assert_eq!(AplValue::new(vec![usize::MAX, 2], vec![float(1.0)]).unwrap_err().name(), "LIMIT");
     let rows = AplValue::empty(vec![0, 3], float(0.0)).unwrap();
     let cols = AplValue::empty(vec![3, 0], float(0.0)).unwrap();
     assert!(!rows.same(&cols));
     assert!(rows.is_empty());
     assert_eq!(rows.shape(), &[0, 3]);
     assert!(AplValue::empty(vec![usize::MAX, 2, 0], float(0.0)).is_ok());
-    assert_eq!(AplValue::empty(vec![], float(0.0)).err(), Some(Length));
+    assert_eq!(AplValue::empty(vec![], float(0.0)).unwrap_err().name(), "LENGTH");
     let text = AplValue::empty(vec![0, 3], Character('x')).unwrap();
     assert!(!rows.same(&text));
     assert_same(text.prototype(), &Character(' '));
@@ -558,12 +558,12 @@ fn binding_error_recovery() {
     let mut s = Session::new();
     s.eval("x←10");
     let r = s.eval("bad←{local←99 ⋄ 1÷'a'} ⋄ bad 0");
-    assert_eq!(r.error.as_ref().unwrap().kind, Domain);
-    fails_in(&mut s, Value, &["local"]);
+    assert_eq!(r.error.as_ref().unwrap().kind.name(), "DOMAIN");
+    fails_in(&mut s, "VALUE", &["local"]);
     equiv_in(&mut s, "x", "10");
-    fails_in(&mut s, Limit, &["loop←{1+∇⍵} ⋄ loop 0"]);
+    fails_in(&mut s, "LIMIT", &["loop←{1+∇⍵} ⋄ loop 0"]);
     equiv_in(&mut s, "2+2", "4");
-    fails_in(&mut s, Syntax, &["⍵←1"]);
+    fails_in(&mut s, "SYNTAX", &["⍵←1"]);
 }
 
 #[test]
@@ -624,7 +624,7 @@ fn tolerant_equality_agrees_between_array_and_item_paths() {
     for c in numbers {
         let ends = [c * (1.0 - 1e-14), c / (1.0 - 1e-14), c];
         let xs: Vec<f64> = ends.into_iter().flat_map(|end| steps(end, f64::next_up).chain(steps(end, f64::next_down)).chain([end])).collect();
-        s.set("xs", AplValue::floats(vec![xs.len()], basedpl::FloatWidth::F64, xs).unwrap()).unwrap();
+        s.set("xs", AplValue::floats(vec![xs.len()], basedpl::buffer::FloatWidth::F64, xs).unwrap()).unwrap();
         s.set("c", float(c)).unwrap();
         let (array, items) = (s.eval("xs=c").value.unwrap(), s.eval("xs{⍺=⍵}¨c").value.unwrap());
         assert!(array.same(&items), "c = {c:e}");
@@ -644,7 +644,7 @@ fn lexical_frames_are_reclaimed() {
         ("pass←{x←42 ⋄ op←{⍵=0?⍶ ⍵;∇⍵-1} ⋄ ({x}op)⍵} ⋄ pass 25000", 42.), ("loop←{⍵=0?a←7;(∇⍵-1)} ⋄ loop 25000", 7.),
         ("f←{\"DOMAIN\"::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 2000", 7.),
     ] { check_in(&mut s, code, float(expected)); }
-    assert_eq!(s.eval("f 20000").error.unwrap().kind, Limit);
+    assert_eq!(s.eval("f 20000").error.unwrap().kind.name(), "LIMIT");
     check_in(&mut s, "deep 15000", float(15000.));
     let source = Source::new("calls", "outer 25000");
     let weak = Arc::downgrade(&source);

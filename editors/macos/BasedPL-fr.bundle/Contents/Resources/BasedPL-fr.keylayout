@@ -581,11 +581,11 @@
    <key code="37" output="↦"/>
    <key code="38" output="↓"/>
    <key code="39" output="Ù"/>
-   <key code="40" action="k40-m4"/>
+   <key code="40" output="↑"/>
    <key code="41" output="×"/>
    <key code="42" output="@"/>
    <key code="43" output="⊣"/>
-   <key code="44" action="k44-m4"/>
+   <key code="44" output="≡"/>
    <key code="45" action="k45-m4"/>
    <key code="46" output="↢"/>
    <key code="47" output="÷"/>
@@ -711,13 +711,13 @@
    <key code="37" action="k37-m5"/>
    <key code="38" output="Í"/>
    <key code="39" output="‰"/>
-   <key code="40" output="Ë"/>
+   <key code="40" output="↕"/>
    <key code="41" output="Ó"/>
    <key code="42" output="#"/>
    <key code="43" output="↣"/>
    <key code="44" output="≠"/>
    <key code="45" output="⊤"/>
-   <key code="46" output="¿"/>
+   <key code="46" output="≢"/>
    <key code="47" action="k47-m5"/>
    <key code="48" output="&#x0009;"/>
    <key code="49" action="k49-m5"/>
@@ -1678,7 +1678,6 @@
   <action id="k38-m0">
    <when state="none" output="j"/>
    <when state="subscript" output="ⱼ"/>
-   <when state="take" output="↕"/>
   </action>
   <action id="k41-m0">
    <when state="none" output="m"/>
@@ -1724,11 +1723,9 @@
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
    <when state="bar" output="¯"/>
-   <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
-   <when state="take" output="↑"/>
   </action>
   <action id="k51-m0">
    <when state="none" output="&#x0008;"/>
@@ -1738,11 +1735,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -1757,11 +1752,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -1780,7 +1773,6 @@
   <action id="k75-m0">
    <when state="none" output="/"/>
    <when state="bar" output="⌿"/>
-   <when state="match" output="≢"/>
    <when state="circle" output="⊘"/>
   </action>
   <action id="k78-m0">
@@ -2001,7 +1993,6 @@
   <action id="k47-m1">
    <when state="none" output="/"/>
    <when state="bar" output="⌿"/>
-   <when state="match" output="≢"/>
    <when state="circle" output="⊘"/>
   </action>
   <action id="k49-m1">
@@ -2017,11 +2008,9 @@
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
    <when state="bar" output="¯"/>
-   <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
-   <when state="take" output="↑"/>
   </action>
   <action id="k51-m1">
    <when state="none" output="&#x0008;"/>
@@ -2031,11 +2020,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2050,11 +2037,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2078,13 +2063,11 @@
   <action id="k75-m1">
    <when state="none" output="/"/>
    <when state="bar" output="⌿"/>
-   <when state="match" output="≢"/>
    <when state="circle" output="⊘"/>
   </action>
   <action id="k77-m1">
    <when state="none" output="/"/>
    <when state="bar" output="⌿"/>
-   <when state="match" output="≢"/>
    <when state="circle" output="⊘"/>
   </action>
   <action id="k78-m1">
@@ -2262,11 +2245,9 @@
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
    <when state="bar" output="¯"/>
-   <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
-   <when state="take" output="↑"/>
   </action>
   <action id="k51-m2">
    <when state="none" output="&#x0008;"/>
@@ -2276,11 +2257,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2295,11 +2274,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2318,7 +2295,6 @@
   <action id="k75-m2">
    <when state="none" output="/"/>
    <when state="bar" output="⌿"/>
-   <when state="match" output="≢"/>
    <when state="circle" output="⊘"/>
   </action>
   <action id="k78-m2">
@@ -2539,7 +2515,6 @@
   <action id="k47-m3">
    <when state="none" output="/"/>
    <when state="bar" output="⌿"/>
-   <when state="match" output="≢"/>
    <when state="circle" output="⊘"/>
   </action>
   <action id="k49-m3">
@@ -2555,11 +2530,9 @@
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
    <when state="bar" output="¯"/>
-   <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
-   <when state="take" output="↑"/>
   </action>
   <action id="k51-m3">
    <when state="none" output="&#x0008;"/>
@@ -2569,11 +2542,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2588,11 +2559,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2616,13 +2585,11 @@
   <action id="k75-m3">
    <when state="none" output="/"/>
    <when state="bar" output="⌿"/>
-   <when state="match" output="≢"/>
    <when state="circle" output="⊘"/>
   </action>
   <action id="k77-m3">
    <when state="none" output="/"/>
    <when state="bar" output="⌿"/>
-   <when state="match" output="≢"/>
    <when state="circle" output="⊘"/>
   </action>
   <action id="k78-m3">
@@ -2723,14 +2690,6 @@
    <when state="none" next="circle" output=""/>
    <when state="circle" output="○"/>
   </action>
-  <action id="k40-m4">
-   <when state="none" next="take" output=""/>
-   <when state="take" output="↑"/>
-  </action>
-  <action id="k44-m4">
-   <when state="none" next="match" output=""/>
-   <when state="match" output="≡"/>
-  </action>
   <action id="k45-m4">
    <when state="none" next="native-4" output=""/>
    <when state="diaeresis" output="⍨"/>
@@ -2743,11 +2702,9 @@
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
    <when state="bar" output="¯"/>
-   <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
-   <when state="take" output="↑"/>
   </action>
   <action id="k51-m4">
    <when state="none" output="&#x0008;"/>
@@ -2757,11 +2714,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2776,11 +2731,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2799,7 +2752,6 @@
   <action id="k75-m4">
    <when state="none" output="/"/>
    <when state="bar" output="⌿"/>
-   <when state="match" output="≢"/>
    <when state="circle" output="⊘"/>
   </action>
   <action id="k78-m4">
@@ -2913,11 +2865,9 @@
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
    <when state="bar" output="¯"/>
-   <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
-   <when state="take" output="↑"/>
   </action>
   <action id="k51-m5">
    <when state="none" output="&#x0008;"/>
@@ -2927,11 +2877,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2946,11 +2894,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -2974,13 +2920,11 @@
   <action id="k75-m5">
    <when state="none" output="/"/>
    <when state="bar" output="⌿"/>
-   <when state="match" output="≢"/>
    <when state="circle" output="⊘"/>
   </action>
   <action id="k77-m5">
    <when state="none" output="/"/>
    <when state="bar" output="⌿"/>
-   <when state="match" output="≢"/>
    <when state="circle" output="⊘"/>
   </action>
   <action id="k78-m5">
@@ -3133,11 +3077,9 @@
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
    <when state="bar" output="¯"/>
-   <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
-   <when state="take" output="↑"/>
   </action>
   <action id="k51-m6">
    <when state="none" output="&#x0008;"/>
@@ -3147,11 +3089,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3166,11 +3106,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3238,11 +3176,9 @@
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
    <when state="bar" output="¯"/>
-   <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
-   <when state="take" output="↑"/>
   </action>
   <action id="k51-m7">
    <when state="none" output="&#x0008;"/>
@@ -3252,11 +3188,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3271,11 +3205,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3295,11 +3227,9 @@
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
    <when state="bar" output="¯"/>
-   <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
-   <when state="take" output="↑"/>
   </action>
   <action id="k51-m8">
    <when state="none" output="&#x0008;"/>
@@ -3309,11 +3239,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3328,11 +3256,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3352,11 +3278,9 @@
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
    <when state="bar" output="¯"/>
-   <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
-   <when state="take" output="↑"/>
   </action>
   <action id="k51-m9">
    <when state="none" output="&#x0008;"/>
@@ -3366,11 +3290,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3385,11 +3307,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3413,11 +3333,9 @@
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
    <when state="bar" output="¯"/>
-   <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
-   <when state="take" output="↑"/>
   </action>
   <action id="k51-m10">
    <when state="none" output="&#x0008;"/>
@@ -3427,11 +3345,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3446,11 +3362,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3478,11 +3392,9 @@
    <when state="subscript" output="_"/>
    <when state="subscript-minus" output="₋"/>
    <when state="bar" output="¯"/>
-   <when state="match" output="≡"/>
    <when state="quad" output="⎕"/>
    <when state="circle" output="○"/>
    <when state="stile" output="⍭"/>
-   <when state="take" output="↑"/>
   </action>
   <action id="k51-m11">
    <when state="none" output="&#x0008;"/>
@@ -3492,11 +3404,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3511,11 +3421,9 @@
    <when state="subscript" output=""/>
    <when state="subscript-minus" output=""/>
    <when state="bar" output=""/>
-   <when state="match" output=""/>
    <when state="quad" output=""/>
    <when state="circle" output=""/>
    <when state="stile" output=""/>
-   <when state="take" output=""/>
    <when state="native-1" output=""/>
    <when state="native-2" output=""/>
    <when state="native-3" output=""/>
@@ -3530,11 +3438,9 @@
   <when state="subscript" output="_"/>
   <when state="subscript-minus" output="₋"/>
   <when state="bar" output="¯"/>
-  <when state="match" output="≡"/>
   <when state="quad" output="⎕"/>
   <when state="circle" output="○"/>
   <when state="stile" output="⍭"/>
-  <when state="take" output="↑"/>
   <when state="native-1" output="^"/>
   <when state="native-2" output="`"/>
   <when state="native-3" output="¨"/>

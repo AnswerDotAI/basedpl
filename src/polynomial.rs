@@ -1,6 +1,7 @@
+use rustymath::{buffer::FloatWidth, error::Kind, with_float_width};
 use crate::{
-    agreement::Agreement, array::{generated_len, with_float_width, Cells, FloatWidth, Layout}, element::{read_as, Float}, execution::Context,
-    number::{with_field, Arithmetic, Field, Math}, DomainAt, Error, ErrorAt, ErrorKind, Number, Value
+    agreement::{Agree, Agreement}, array::{generated_len, Cells, Layout}, element::{read_as, Float}, execution::Context,
+    number::{with_field, Arithmetic, Field, Math}, DomainAt, Error, ErrorAt, Number, Value
 };
 
 fn int(n: usize) -> Number { Number::from_integer(n as i64) }
@@ -21,7 +22,7 @@ impl Polynomial {
             let boxed = a.at(0).clone();
             if boxed.shape().len() < 2 { return Ok(Self::Factored(int(1), numbers(&boxed, span)?)); }
             if boxed.shape().len() != 2 || boxed.shape()[1] < 2 {
-                return Err(span.error(ErrorKind::Rank, "power table rows need a coefficient and exponents"));
+                return Err(span.error(Kind::Rank, "power table rows need a coefficient and exponents"));
             }
             let width = boxed.shape()[1];
             let mut coefficients = Vec::new();
@@ -32,11 +33,11 @@ impl Polynomial {
             }
             return Ok(Self::Powers { coefficients, exponents, variables: width - 1 });
         }
-        if a.len() != 2 { return Err(span.error(ErrorKind::Length, "factored polynomial needs multiplier and roots")); }
+        if a.len() != 2 { return Err(span.error(Kind::Length, "factored polynomial needs multiplier and roots")); }
         let multiplier = a.at(0).clone();
         let roots = a.at(1).clone();
         if !multiplier.is_unit() || roots.shape().len() > 1 {
-            return Err(span.error(ErrorKind::Rank, "factored polynomial needs a unit multiplier and vector roots"));
+            return Err(span.error(Kind::Rank, "factored polynomial needs a unit multiplier and vector roots"));
         }
         Ok(Self::Factored(numbers(&multiplier, span)?[0].clone(), numbers(&roots, span)?))
     }
@@ -47,7 +48,7 @@ impl Polynomial {
         match self {
             Self::Coefficients(c) => Ok(c.clone()),
             Self::Factored(m, roots) => {
-                generated_len(&[roots.len() + 1]).error_at(span, "too many polynomial coefficients")?;
+                generated_len(&[roots.len() + 1]).at(span)?;
                 Ok(with_field!(std::iter::once(m).chain(roots), span.numeric(), T, width => {
                     let roots: Vec<T> = roots.iter().map(T::of).collect();
                     rustymath::polynomial::from_roots_with(T::of(m), &roots, || span.check_now())?.into_iter().map(|c| c.number(width)).collect()
@@ -59,8 +60,8 @@ impl Polynomial {
                     .map(|e| e[0].nonnegative_integer::<usize>().error_at(span, "coefficient conversion needs nonnegative integral exponents"))
                     .collect::<Result<Vec<_>, _>>()?;
                 let len =
-                    degrees.iter().max().copied().unwrap_or(0).checked_add(1).ok_or_else(|| span.error(ErrorKind::Limit, "polynomial degree is too large"))?;
-                generated_len(&[len]).error_at(span, "polynomial degree is too large")?;
+                    degrees.iter().max().copied().unwrap_or(0).checked_add(1).ok_or_else(|| span.error(Kind::Limit, "polynomial degree is too large"))?;
+                generated_len(&[len]).at(span)?;
                 let mut c = vec![int(0); len];
                 for (a, &i) in coefficients.iter().zip(&degrees) { c[i] = c[i].dyad(Arithmetic::Plus, a).domain_at(span)?; }
                 Ok(c)
@@ -76,8 +77,8 @@ impl Polynomial {
     }
 
     fn evaluate(&self, x: &[Number], span: &Context<'_>) -> Result<Number, Error> {
-        if x.len() != 1 && x.len() != self.variables() { return Err(span.error(ErrorKind::Length, "coordinates must match polynomial variables")); }
-        if x.is_empty() { return Err(span.error(ErrorKind::Length, "polynomial needs coordinates")); }
+        if x.len() != 1 && x.len() != self.variables() { return Err(span.error(Kind::Length, "coordinates must match polynomial variables")); }
+        if x.is_empty() { return Err(span.error(Kind::Length, "polynomial needs coordinates")); }
         match self {
             Self::Coefficients(c) => Ok(with_field!(c.iter().chain(x), span.numeric(), T, width => {
                 let c: Vec<T> = c.iter().map(T::of).collect(); rustymath::polynomial::value_with(&c, &T::of(&x[0]), || span.check_now())?.number(width)
@@ -110,7 +111,7 @@ impl Polynomial {
         while c.last().is_some_and(Number::is_zero) { c.pop(); }
         let m = c.last().cloned().unwrap_or_else(|| int(0));
         let degree = c.len().saturating_sub(1);
-        generated_len(&[degree, degree]).error_at(span, "polynomial companion matrix is too large")?;
+        generated_len(&[degree, degree]).at(span)?;
         let c = c.iter().map(|n| n.to_complex().domain_at(span)).collect::<Result<Vec<_>, _>>()?;
         span.check()?;
         let roots = rustymath::polynomial::roots(&c).ok_or_else(|| span.domain_error("polynomial root solver did not converge"))?;
@@ -146,7 +147,7 @@ impl Polynomial {
     }
 }
 fn coordinates(a: &Value, span: &Context<'_>) -> Result<Vec<Number>, Error> {
-    if a.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "coordinates must be a unit or vector")); }
+    if a.shape().len() > 1 { return Err(span.error(Kind::Rank, "coordinates must be a unit or vector")); }
     numbers(a, span)
 }
 
@@ -173,7 +174,7 @@ fn floats<F: Float>(c: &[Number], span: &Context<'_>) -> Result<Vec<F>, Error> {
 /// The float results `y` at the points `x`, with `x`'s shape and layout.
 fn shaped<F: Float>(x: &Value, y: Vec<F>, width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> {
     if x.is_unit() { return Ok(Value::Number(Number::float(y[0].wide(), width))); }
-    let y = F::build(x.shape(), y).ok_or(ErrorKind::Limit).error_at(span, "polynomial result exceeds array limits")?;
+    let y = F::build(x.shape(), y).ok_or(Kind::Limit).error_at(span, "polynomial result exceeds array limits")?;
     y.with_layout(x.layout().clone()).error_at(span, "invalid polynomial result")
 }
 

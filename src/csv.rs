@@ -1,4 +1,5 @@
-use crate::{array::generated_len, data::text as string, execution::Context, keyed, Error, ErrorAt, ErrorKind, Number, Value};
+use rustymath::error::Kind;
+use crate::{array::generated_len, data::text as string, execution::Context, keyed, Error, ErrorAt, Number, Value};
 use num_bigint::BigInt;
 use std::sync::Arc;
 
@@ -12,7 +13,7 @@ struct Options {
     decimal: char,
     thousands: Option<char>,
     /// The width of the floats that fields read as, the session's default width.
-    width: crate::array::FloatWidth,
+    width: rustymath::buffer::FloatWidth,
 }
 
 impl Options {
@@ -49,14 +50,14 @@ impl Options {
         let s = string(v, span)?;
         let mut chars = s.chars();
         let c = chars.next();
-        if chars.next().is_some() { return Err(span.error(ErrorKind::Length, format!("CSV {key} needs one character or ''"))); }
+        if chars.next().is_some() { return Err(span.error(Kind::Length, format!("CSV {key} needs one character or ''"))); }
         Ok(c)
     }
 
     fn columns(&self, key: &str, width: usize, headers: Option<&[Arc<str>]>, span: &Context<'_>) -> Result<Vec<bool>, Error> {
         let mut selected = vec![false; width];
         if let Some(v) = self.common.values.get(key) {
-            if v.shape().len() > 1 { return Err(span.error(ErrorKind::Rank, "CSV column selectors must be a vector")); }
+            if v.shape().len() > 1 { return Err(span.error(Kind::Rank, "CSV column selectors must be a vector")); }
             let selectors = if keyed::name(v).is_some() { vec![v.clone()] } else { v.elements().collect() };
             for v in selectors {
                 let i = if let Some(name) = keyed::name(&v) { headers.and_then(|h| h.iter().position(|s| s == &name)) } else {
@@ -66,7 +67,7 @@ impl Options {
                         if n < 0 { width.checked_sub(i) } else { Some(i) }
                     })
                 };
-                let i = i.filter(|&i| i < width).ok_or_else(|| span.error(ErrorKind::Index, "unknown CSV column"))?;
+                let i = i.filter(|&i| i < width).ok_or_else(|| span.error(Kind::Index, "unknown CSV column"))?;
                 selected[i] = true;
             }
         }
@@ -125,12 +126,12 @@ fn import(source: &str, opts: &Options, span: &Context<'_>) -> Result<Value, Err
     let mut columns: Vec<Vec<String>> = Vec::new();
     for (row, record) in reader.records().enumerate() {
         span.check()?;
-        let record = record.map_err(|e| span.error(ErrorKind::Length, format!("CSV {e}")))?;
+        let record = record.map_err(|e| span.error(Kind::Length, format!("CSV {e}")))?;
         if row == 0 {
             columns = vec![Vec::new(); record.len()];
             if header { headers = Some(record.iter().map(Arc::<str>::from).collect::<Vec<_>>()); continue; }
         }
-        generated_len(&[columns[0].len() + 1, columns.len()]).error_at(span, "CSV table is too large")?;
+        generated_len(&[columns[0].len() + 1, columns.len()]).at(span)?;
         for (column, s) in columns.iter_mut().zip(record.iter()) { column.push(s.to_owned()); }
     }
     let text_columns = opts.columns("text_columns", columns.len(), headers.as_deref(), span)?;
@@ -161,11 +162,11 @@ fn import(source: &str, opts: &Options, span: &Context<'_>) -> Result<Value, Err
 }
 
 fn export(table: &Value, opts: &Options, span: &Context<'_>) -> Result<Value, Error> {
-    if table.shape().len() != 1 { return Err(span.error(ErrorKind::Rank, "CSV export expects a vector of column vectors")); }
+    if table.shape().len() != 1 { return Err(span.error(Kind::Rank, "CSV export expects a vector of column vectors")); }
     let columns: Vec<_> = table.elements().collect();
-    if columns.iter().any(|c| c.shape().len() != 1) { return Err(span.error(ErrorKind::Rank, "CSV columns must be vectors")); }
+    if columns.iter().any(|c| c.shape().len() != 1) { return Err(span.error(Kind::Rank, "CSV columns must be vectors")); }
     let rows = columns.first().map_or(0, Value::len);
-    if columns.iter().any(|c| c.len() != rows) { return Err(span.error(ErrorKind::Length, "CSV columns must have equal lengths")); }
+    if columns.iter().any(|c| c.len() != rows) { return Err(span.error(Kind::Length, "CSV columns must have equal lengths")); }
     let header = opts.common.boolean("header", table.keys(0).is_some(), span)?;
     let fill = opts.common.fill(span)?;
     let force = match opts.common.values.get("forcequotes") {
