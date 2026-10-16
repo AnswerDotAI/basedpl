@@ -7,7 +7,7 @@ name = "basedpl"
 dynamic = ["version"]
 description = "BasedPL, the Based-array Programming Language, is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation."
 license = "Apache-2.0"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "fastcore"
 ]

@@ -94,35 +94,35 @@ In `[…]ₓ` and `(…)ₓ`, every number is exact, at any depth. Each item mus
 
 ## Storage
 
-An array keeps its items in one of nine storages: `boolean`, `integer`, `float64`, `float32`, `float16`, `complex128`, `complex64`, `character` or `mixed`. `•storage` names it. Mixed storage keeps each item's own kind. A literal list of exact and approximate numbers uses it:
+An array keeps its items in one of nine storages: `boolean`, `integer`, `float64`, `float32`, `float16`, `complex128`, `complex64`, `character` or `mixed`. `(•storage x).kind` names the storage of `x`. Mixed storage keeps each item's own kind. A literal list of exact and approximate numbers uses it:
 
 ```bpl
 x←1ₓ 0.5 2ₓ
-•storage x           ⍝ "mixed"
+(•storage x).kind      ⍝ "mixed"
 ```
 
-An array also uses mixed storage when it holds a rational, because rationals have no compact storage, or when it holds numbers together with characters, nested arrays or functions. An imported JSON object is mixed too.
+Rationals and exact integers beyond 64 bits have no compact storage. An array that holds one uses mixed storage, as does an array that holds numbers together with characters, nested arrays or functions. An imported JSON object is mixed too.
 
 Selecting from, catenating or assigning into mixed storage keeps each item's kind. Arithmetic builds fresh storage from its results, and each result keeps its own kind. Every result of `1×x` is approximate, which makes it a float array. `1ₓ×x` keeps the exact results exact:
 
 ```bpl
 x←1ₓ 0.5 2ₓ
-•storage 1×x         ⍝ "float64"
-•storage 1ₓ×x        ⍝ "mixed"
+(•storage 1×x).kind    ⍝ "float64"
+(•storage 1ₓ×x).kind   ⍝ "mixed"
 ```
 
 Boxed display marks mixed storage with `+`, and exact integers with `ₓ`.
 
-Integer storage keeps each item in 1, 2, 4 or 8 bytes. One byte holds 0 to 255. Literals, imported data, reductions and positions take the fewest bytes that hold every item. Pervasive arithmetic keeps its arguments' size, and moves to the next size up when a result doesn't fit. The size never changes a result, and `•storage` doesn't show it.
+Integer storage keeps each item in 1, 2, 4 or 8 bytes. One byte holds 0 to 255. Literals, imported data, reductions and positions take the fewest bytes that hold every item. Pervasive arithmetic keeps its arguments' size, and moves to the next size up when a result doesn't fit. An exact result beyond 8 bytes becomes a big integer in mixed storage. The size never changes a result, and `•storage` doesn't show it.
 
 ## Float widths
 
-Floats come in three widths: 64, 32 and 16 bits. `•storage` names their storage `"float64"`, `"float32"` and `"float16"`. [`•float`](system/float.qmd) converts an array to any of them. A 64-bit float holds about 16 significant digits, a 32-bit float about 7 and a 16-bit float about 3. They take 8, 4 and 2 bytes. The largest finite 16-bit float is 65504.
+Floats come in three widths: 64, 32 and 16 bits. `•storage` gives their kind as `"float64"`, `"float32"` and `"float16"`. [`•float`](system/float.qmd) converts an array to any of them. A 64-bit float holds about 16 significant digits, a 32-bit float about 7 and a 16-bit float about 3. They take 8, 4 and 2 bytes. The largest finite 16-bit float is 65504.
 
 Bare numbers are floats of the default width: 64 bits, or 16 or 32 after [`•prefs`](system/prefs.qmd) `["float":16]` or `["float":32]`. Code parsed after the change reads its numbers at the new width. In a REPL or a notebook, that is the next input. Leading `•prefs` calls on a literal record run before the rest of their code is parsed. A script or a notebook cell that starts with `•prefs ["float":32]` therefore reads its own numbers at 32 bits. Numbers that `•csv`, `•json` and `•vfi` read also take the default width. So do random numbers, the numbers that `•image` reads, and floats that a function gives from exact arguments, such as `√2ₓ`. Times from `•time` and `•date` are always 64-bit, because a 32-bit float holds seconds since 1970 only to within about two minutes. `ₕ` marks a 16-bit float, `ₛ` a 32-bit float and `ₚ` a 64-bit float, whatever the default. Display marks floats of the other widths, once after an array's notation. `•literal⁻¹` marks every float. Its text therefore reads back the same at any default.
 
 ```bpl
-•storage¨[1.5ₕ;1.5ₛ;[1.5 2.5]ₚ;⍬ₛ]   ⍝ "float16" "float32" "float64" "float32"
+{(•storage ⍵).kind}¨[1.5ₕ;1.5ₛ;[1.5 2.5]ₚ;⍬ₛ]   ⍝ "float16" "float32" "float64" "float32"
 [1.5 2.5]ₛ                          ⍝ [1.5 2.5]ₛ
 •literal⁻¹ 0.5                     ⍝ "0.5ₚ"
 ```
@@ -131,14 +131,14 @@ An operation on floats computes at their width. An exact operand rounds to that 
 
 ```bpl
 v←32 •float 1.5 2.5
-•storage¨[v×2ₓ;v×v;*v;v×2]   ⍝ "float32" "float32" "float32" "float64"
+{(•storage ⍵).kind}¨[v×2ₓ;v×v;*v;v×2]   ⍝ "float32" "float32" "float32" "float64"
 (32 •float 1.5)×16777217ₓ    ⍝ 25165824
 ```
 
-Complex numbers have 64-bit or 32-bit parts. `•storage` names their storage `"complex128"` and `"complex64"`, after their whole size. They follow the rules for floats. A complex number takes the width of the floats it comes from, and a 16-bit float that becomes complex takes 32-bit parts. A complex number beside a float computes at the wider of their widths. A complex result with no imaginary part is a float of its parts' width. `ₛ`, `ₚ` and `ₕ` mark the width of the parts, and display marks parts that aren't of the default width:
+Complex numbers have 64-bit or 32-bit parts. `•storage` gives their kind as `"complex128"` and `"complex64"`, after their whole size. They follow the rules for floats. A complex number takes the width of the floats it comes from, and a 16-bit float that becomes complex takes 32-bit parts. A complex number beside a float computes at the wider of their widths. A complex result with no imaginary part is a float of its parts' width. `ₛ`, `ₚ` and `ₕ` mark the width of the parts, and display marks parts that aren't of the default width:
 
 ```bpl
-•storage¨[[2j3]ₛ;[2j3]ₕ;√[¯4]ₛ;[2j3]ₛ×1.5]   ⍝ "complex64" "complex64" "complex64" "complex128"
+{(•storage ⍵).kind}¨[[2j3]ₛ;[2j3]ₕ;√[¯4]ₛ;[2j3]ₛ×1.5]   ⍝ "complex64" "complex64" "complex64" "complex128"
 √¯4ₛ                                       ⍝ 0j2ₛ
 ```
 
@@ -172,7 +172,7 @@ An infinity or NaN is a float. Joining one to exact integers makes them floats, 
 
 ```bpl
 ⍳3ₓ , ∞              ⍝ 0 1 2 ∞
-•storage ⍳3ₓ , ∞     ⍝ "float64"
+(•storage ⍳3ₓ , ∞).kind   ⍝ "float64"
 ```
 
 CSV and JSON imports give NaN for a missing number. An integer column with gaps then becomes floats. A column that also holds an integer too large for a float to hold exactly keeps each item's kind, in mixed storage.
@@ -214,6 +214,6 @@ $t∧$f                ⍝ $f
 Boolean storage takes one byte for each item. Boxed display marks it with `$`:
 
 ```bpl
-•storage $t $f       ⍝ "boolean"
+(•storage $t $f).kind   ⍝ "boolean"
 ```
 

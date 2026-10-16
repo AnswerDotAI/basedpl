@@ -1,3 +1,11 @@
+⍝⍝ Selection after ordering
+
+⍝ selected-order — Bound take and ranked selection compose with stable sort and grade
+v←8 2 4 2 6 1 7 5 9 3
+[((2↑)∘<)v;((¯2↑)∘>)v;((2↑)∘⍋)v;((¯2↑)∘⍒)v;((2⌷)∘<)v]
+⍝ =>
+[[1 2];[2 1];[5 1]ₓ;[3 5]ₓ;2]
+
 ⍝⍝ Vector-axis reduction
 
 ⍝ reduce-axes — Selected axes form one ravelled cell; remaining axes form the result frame
@@ -137,8 +145,31 @@ A+B
 [("base":5)+10 20 30;("base":5)+⊂10 20 30]
 [15 25 35;["base":[15 25 35]]]
 
-⍝ axis-iota — Iota without an axis uses dimension values, never the array's keys
-⍳("rows" "cols":2 3)   ⍝ ⍳2 3
+⍝ axis-iota — Iota uses the dimension values, and a keyed shape names the result's axes, as it does for reshape
+⍳("rows" "cols":2 3)   ⍝ ("rows" "cols":2 3)⍴⍳2 3
+
+⍝ named-index-fill — A named selector fills outside its axis and never counts back from the end; arithmetic on it clamps or wraps
+x←10×⍳5 ⋄ i←⍳["i":5] ⋄ [x.[i+1];x.[i-1];x.[5|i-1];x.[0⌈i-1]]   ⍝ [["i":5]⍴10 20 30 40 0;["i":5]⍴0 0 10 20 30;["i":5]⍴40 0 10 20 30;["i":5]⍴0 0 10 20 30]
+
+⍝ named-selector-pairs — Named selectors with one name read one position along both; different names combine outer
+m←[0 1 2⋄3 4 5⋄6 7 8] ⋄ i←⍳["i":3] ⋄ j←⍳["j":3] ⋄ [m.[i;i];+/⍠"i" m.[i;i];⍴m.[i;j];⍴m.[0 2;i]]   ⍝ [["i":3]⍴0 4 8;12;["i":3 "j":3]ₓ;[2 "i":3]ₓ]
+
+⍝ named-selector-rank — A matrix of positions pairs its named axis with an earlier selector's
+m←[0 1 2⋄3 4 5⋄6 7 8] ⋄ d←⍳["d":3] ⋄ g←["d":3 "q":2]⍴[0 2⋄1 0⋄2 1] ⋄ m.[d;g]   ⍝ ["d":3 "q":2]⍴[0 2⋄4 3⋄8 7]
+
+⍝ named-selector-keys — A named vector keeps the keys at the positions it selects; a fill has none
+x←"a" "b" "c":10 20 30 ⋄ i←⍳["i":3] ⋄ x.[i+1]   ⍝ ["i":3]⍴["b":20 "c":30 0]
+
+⍝ named-assignment-outside — Assignment through a named selector can't reach outside its axis
+x←10×⍳5 ⋄ i←⍳["i":5] ⋄ x.[i+1]←0
+⍝ error: INDEX ERROR
+
+⍝ named-selector-disagree — Named selectors that share a name must agree in length
+m←3 3⍴⍳9 ⋄ m.[⍳["d":3];⍳["d":2]]
+⍝ error: LENGTH ERROR
+
+⍝ axis-named-index — A named index as the axis operand names its axis; Iota with an axis keeps the axis name
+a←["k":3 "n":2]⍴⍳6 ⋄ k←⍳["k":3] ⋄ [+/⍠k a;⍴⍳⍠"n" a]   ⍝ [["n":2]⍴6 9;["n":2]ₓ]
 
 ⍝ axis-structure — Transpose moves labels; reduction removes only the reduced axis
 M←["alice" "bob";"price" "qty"]:[10 2⋄20 4]
@@ -902,7 +933,7 @@ b←2 1⍴0ₓ
 ⍝ error: LENGTH ERROR
 
 ⍝ — Broadcast exact integers keep integer storage
-x←[10⋄20]ₓ+[1 2 3⋄]ₓ ⋄ [x;•storage x]   ⍝ [[11 12 13⋄21 22 23]ₓ;"integer"]
+x←[10⋄20]ₓ+[1 2 3⋄]ₓ ⋄ [x;(•storage x).kind]   ⍝ [[11 12 13⋄21 22 23]ₓ;"integer"]
 
 ⍝ — An empty Each calls its operand once on prototypes, and the call's output shows
 (1 0⍴0){⎕←9 ⋄ ⍺+⍵}¨(2 1⍴0)
@@ -1163,9 +1194,9 @@ a,←3
 ⍝ — Appending to an empty compact array takes the kind of the new items, as joining does
 r←⍬
 r,←$t
-s←•storage r
+s←(•storage r).kind
 r,←2ₓ
-[s (•storage r) r]
+[s (•storage r).kind r]
 ⍝ =>
 ["boolean" "integer" [1 2]ₓ]
 
@@ -1906,6 +1937,9 @@ r←{⍵×⍵} ⋄ r∂←{⍺×7} ⋄ {1+r ⍵}∂3   ⍝ 7
 ⍝ — A function with an attached derivative applies the function itself
 r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ r 3   ⍝ 9
 
+⍝ — A rule that passes its direction through gives the argument's kind, not the body's derivative of 0
+ste←{⌊⍵} ⋄ ste∂←{⍺} ⋄ {+/ste ⍵}∂ 1.5 2.5 3.5   ⍝ 1 1 1
+
 ⍝ — The attached derivative replaces the polynomial's own
 f←[1 2 3]ₓ↣⌻ ⋄ f∂←{⍺×[0 0 5]ₓ⌻⍵} ⋄ f∂3ₓ   ⍝ 45ₓ
 
@@ -2007,6 +2041,15 @@ s←0 ⋄ f←{s+←⍵×2 ⋄ ⍵×⍵} ⋄ _←f∂3 ⋄ s×10   ⍝ 60
 
 ⍝ — A record argument gives a record gradient
 p←["a":1 "b":2] ⋄ {(⍵.a)×⍵.b}∂ p   ⍝ ["a":2 "b":1]
+
+⍝ — Arithmetic pairs named axes, and each gradient sums back over the axes its argument lacks
+a←["i":2]⍴1 2.0 ⋄ b←["j":3]⍴0.5 1 1.5 ⋄ [{+/,a×⍵}∂b; {+/,⍵×b}∂a; {+/,a+⍵}∂b]   ⍝ [["j":3]⍴3 3 3; ["i":2]⍴3 3; ["j":3]⍴2 2 2]
+
+⍝ — A shared named axis pairs, and the gradient sums over the other argument's own axis
+q←["i":2 "d":3]⍴⍳6ₓ ⋄ k←["j":4 "d":3]⍴⍳12ₓ ⋄ {+/, ⍵×k}∂q   ⍝ ["i":2 "d":3]⍴[18 22 26]ₓ
+
+⍝ — Folds along named axes, one or several, and along a middle axis, have rules
+x←["i":2 "j":3]⍴[1 5 3 4 2 6]ₓ ⋄ [{+/⍠"i" "j" ⍵×⍵}∂x; {+/⌈/⍠"i" ⍵}∂x; {+/, ⌈/⍠1 ⍵}∂ 2 3 2⍴[7 1 3 9 2 2 8 0 5 4 6 6]ₓ]   ⍝ [["i":2 "j":3]⍴[2 10 6 8 4 12]ₓ; ["i":2 "j":3]⍴[0 1 0 1 0 1]ₓ; 2 3 2⍴[1 0 0 1 0 0 1 0 0 0 0 1]ₓ]
 
 ⍝ — Rank and Each with dfn operands transpose through each call
 [{+/,{(+/⍵)×⍵}⍤1⊢⍵}∂ [1 2⋄3 4]; {+/{⍵×⍵}¨⍵}∂ 1 2 3]   ⍝ [[6 6⋄14 14]; 2 4 6]
@@ -2162,7 +2205,7 @@ r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵}
 ["method":"nelder-mead"] {+/(10 r ⍵-2)}⇄ 0 0   ⍝ 2 2
 
 ⍝ — A start of 32-bit floats searches and answers in 32-bit floats
-•storage {⊼⍵-0.5}⇄ 1ₛ   ⍝ "float32"
+(•storage {⊼⍵-0.5}⇄ 1ₛ).kind   ⍝ "float32"
 
 ⍝ — The function must give one real number
 {⊼⍵}⇄ 1 2
@@ -2954,7 +2997,7 @@ avg←+/÷≢ ⋄ avg [1 2 4]ₓ   ⍝ 7r3
 ≠/⍬   ⍝ $f
 
 ⍝ — An empty reduction by ∧ or ∨ on Booleans gives Booleans, as one by = or ≠ does, and so does an empty inner axis in ∨.∧
-•storage¨[∧/[2 0]⍴$t;∨/[2 0]⍴$t;([2 0]⍴$t)∨.∧[0 3]⍴$t]   ⍝ "boolean" "boolean" "boolean"
+{(•storage ⍵).kind}¨[∧/[2 0]⍴$t;∨/[2 0]⍴$t;([2 0]⍴$t)∨.∧[0 3]⍴$t]   ⍝ "boolean" "boolean" "boolean"
 
 ⍝ — Empty nested roll retains an exact vector prototype
 ↑¿0⍴⊂[1 2]ₓ   ⍝ [0 0]ₓ
@@ -2962,17 +3005,17 @@ avg←+/÷≢ ⋄ avg [1 2 4]ₓ   ⍝ 7r3
 ⍝ — Exact arithmetic gives integer storage
 v←[¯2 0 3]ₓ
 x←[1ₓ 2r2 6r3;⍳3r1;1ₓ+[2 3]ₓ;10ₓ-[2 3]ₓ;[2 3]ₓ×4ₓ;[6 8]ₓ÷2ₓ;-[1 ¯2]ₓ;×[¯2 0 2]ₓ;(v>0)×v]
-[x;•storage¨x]
+[x;{(•storage ⍵).kind}¨x]
 ⍝ =>
 [[[1 1 2]ₓ;[0 1 2]ₓ;[3 4]ₓ;[8 7]ₓ;[8 12]ₓ;[3 4]ₓ;[¯1 2]ₓ;[¯1 0 1]ₓ;[0 0 3]ₓ];9⍴⊂"integer"]
 
 ⍝ — Truth values are Booleans, whatever the arguments
-x←["ab"∊"b";~0 1;0 1⊼1 1;0 1⊽0 0] ⋄ [x;•storage¨x]   ⍝ [[[$f $t] [$t $f] [$t $f] [$t $f]];4⍴⊂"boolean"]
+x←["ab"∊"b";~0 1;0 1⊼1 1;0 1⊽0 0] ⋄ [x;{(•storage ⍵).kind}¨x]   ⍝ [[[$f $t] [$t $f] [$t $f] [$t $f]];4⍴⊂"boolean"]
 
 ⍝ — Structural functions keep integer storage
 x←[⌽⍳3ₓ;1⌽⍳3ₓ;5↑⍳3ₓ;1↓⍳3ₓ;[[2 0]]⌷⍳3ₓ;1 0 1#⍳3ₓ;1 0 1#⁻¹[1 2]ₓ;+\⍳3ₓ;-¨⍳3ₓ;[1 2]ₓ∪[2 3]ₓ;[1 2]ₓ∩[2]ₓ;
   2ₓ~[1]ₓ;,⊃[[1 2]ₓ;3ₓ];,⍉2 2⍴⍳4ₓ;,(1ₓ+⍳2ₓ)×⊗1ₓ+⍳2ₓ;0ₓ@1⍳3ₓ;{+/,⍵}⌺3⍳3ₓ;[2 2]ₓ⊤3ₓ;⍴2 3⍴1ₓ;⍳0ₓ;⍴1ₓ;↑0⍴⊂1r2 1r3]
-[x;•storage¨x]
+[x;{(•storage ⍵).kind}¨x]
 ⍝ =>
 [[[2 1 0]ₓ;[1 2 0]ₓ;[0 1 2 0 0]ₓ;[1 2]ₓ;[2 0]ₓ;[0 2]ₓ;[1 0 2]ₓ;[0 1 3]ₓ;[0 ¯1 ¯2]ₓ;[1 2 3]ₓ;[2]ₓ;
   [2]ₓ;[1 2 3 0]ₓ;[0 2 1 3]ₓ;[1 2 2 4]ₓ;[0 0 2]ₓ;[1 3 3]ₓ;[1 1]ₓ;[2 3]ₓ;⍬ₓ;⍬ₓ;[0 0]ₓ];22⍴⊂"integer"]
@@ -2983,12 +3026,12 @@ x←[⌽⍳3ₓ;1⌽⍳3ₓ;5↑⍳3ₓ;1↓⍳3ₓ;[[2 0]]⌷⍳3ₓ;1 0 1#⍳3
 
 ⍝ — A result that fits i64 again returns to integer storage
 x←[(9223372036854775807ₓ+[1 0]ₓ)-1ₓ;9223372036854775808r1-[1 2]ₓ]
-[x;•storage¨x]
+[x;{(•storage ⍵).kind}¨x]
 ⍝ =>
 [2⍴⊂[9223372036854775807 9223372036854775806]ₓ;"integer" "integer"]
 
 ⍝ — Roll gives each result the exactness of its bound. Iota gives exact results only for exact arguments
-•storage¨[¿0ₓ;¿3ₓ 3;↑↑⍳[2 3]ₓ;↑↑⍳2ₓ 3]   ⍝ "float64" "mixed" "integer" "float64"
+{(•storage ⍵).kind}¨[¿0ₓ;¿3ₓ 3;↑↑⍳[2 3]ₓ;↑↑⍳2ₓ 3]   ⍝ "float64" "mixed" "integer" "float64"
 
 ⍝ — An exact number beside an approximate one gives an approximate result
 [0∨3ₓ;3ₓ∨0;1ₓ×3;3ₓ+0]   ⍝ 3 3 3 3
@@ -3211,7 +3254,7 @@ H←("" '*'@[[[0 1] 0] [[1 2] 1]])G
 [7 ¯1]ₓ⊤[¯9223372036854775808 5]ₓ   ⍝ [1 0⋄2 0]ₓ
 
 ⍝ — Approximate bases give approximate digits
-x←10 10⊤[12 34]ₓ ⋄ [x;•storage x]   ⍝ [[1 2⋄3 4];"float64"]
+x←10 10⊤[12 34]ₓ ⋄ [x;(•storage x).kind]   ⍝ [[1 2⋄3 4];"float64"]
 
 ⍝ — Decode the same digits in binary and decimal
 [[2]⋄[10]]⊥1 0 1   ⍝ 5 101
@@ -3367,6 +3410,12 @@ x   ⍝ 10 20 9
 ⍝ — Grade ignores comparison tolerance
 ⍋[1 (1+8E¯15) 1]   ⍝ [0 2 1]ₓ
 
+⍝ — Fast combinations give what their parts give in turn: partial grades and sorts, ranks, and counts and folds under Key
+v←¿1000⍴0 ⋄ k←¿1000⍴7 ⋄ b←0=¿1000⍴3
+[((10↑)∘⍋ v)≡({10↑⍋⍵} v); (¯10↑< v)≡({¯10↑<⍵} v); (↑> v)≡({↑>⍵} v); ((3⌷)∘⍒ v)≡({3⌷⍒⍵} v); (⍋⍋ v)≡({⍋⍵}⍋v); (⍋⍒ v)≡({⍋⍵}⍒v); ((≢⊢)⌸ k)≡({≢⍵}⌸ k); (k (+/⊢)⌸ v)≡(k {+/⍵}⌸ v); (k (⌈⌿⊢)⌸ v)≡(k {⌈⌿⍵}⌸ v); (k (⌊/⊢)⌸ b)≡(k {⌊/⍵}⌸ b); (k (+/⊢)⌸ k)≡(k {+/⍵}⌸ k)]
+⍝ =>
+$t $t $t $t $t $t $t $t $t $t $t
+
 ⍝ — Numbers precede characters; complex numbers sort by real then imaginary part
 ⍋1j2 1 1j¯2 'a' 0   ⍝ [4 2 1 0 3]ₓ
 
@@ -3476,7 +3525,7 @@ v←⍳1000 ⋄ +/v+v   ⍝ 999000
 0 1÷0 2   ⍝ [$n 0.5]
 
 ⍝ — Structure keeps float storage, and an empty array takes its prototype's storage
-•storage¨[⌽⍳3;2 3⍴⍳6;0 3⍴0;0⍴1ₓ]   ⍝ "float64" "float64" "float64" "integer"
+{(•storage ⍵).kind}¨[⌽⍳3;2 3⍴⍳6;0 3⍴0;0⍴1ₓ]   ⍝ "float64" "float64" "float64" "integer"
 
 ⍝ — Fused calls on a large array, across runs and parentheses, where one call joins two fused graphs, across assignments, through a shared intermediate, through a long iteration, and through both tines of a fork, give the result that each row gives, and their fold gives the fold of that result
 x←¿1000000⍴0
@@ -3520,47 +3569,63 @@ $t $t $t $t $t
 v←1.0×¿1000000⍴1000 ⋄ mm←1000000 2⍴v ⋄ iv←¿1000000⍴100 ⋄ cv←1000000⍴"abc" ⋄ s←{s←⍵+1 ⋄ (2×⌽s)+s} ⋄ [(2×⌽v+1)≡⌽2×v+1; (2×1⌽v+1)≡1⌽2×v+1; (2×(10↓v)+1)≡10↓2×v+1; (2×⌽(v×2)+1)≡⌽2×(v×2)+1; (s v)≡(2×⌽v+1)+v+1; (2×1⌽⌽v+1)≡1⌽⌽2×v+1; ((⌽v)+mm)≡⌽⍠0 v+⌽⍠0 mm; (¯5↑2×1000005↑v+1)≡5⍴0; (+/⌽v+1)=+/v+1; (+/(⌽v)×v)=+/v×⌽v; (+/,3↕v)=+/(¯2↓v)+(1↓¯1↓v)+2↓v; ((⌽iv)₀=iv₋₁)∧(⌽cv)₀=cv₋₁; ({+/⌽v×⍵}∂1)=+/v]
 $t $t $t $t $t $t $t $t $t $t $t $t $t
 
+⍝ — Structural reads of a pending matrix copy compose with it on both axes, and read what reading a stored copy reads
+m←0.5+600 1000⍴⍳600000 ⋄ t←2↓m ⋄ [(⊖2↓m)≡⊖t; (400 500↑1 2↓2↓m)≡400 500↑1 2↓t; (3⌽2↓m)≡3⌽t; (¯600↑2↓m)≡¯600↑t; (⌽⊖2↓m)≡⌽⊖t]
+$t $t $t $t $t
+
 ⍝⍝ Numeric storage
 
-⍝ — •storage names the storage that holds an array's items
-•storage¨[⍳3ₓ;⍳3;1j2 3;"abc";1ₓ 0.5;[1 2;3]]
+⍝ — •storage's kind names the storage that holds an array's items
+{(•storage ⍵).kind}¨[⍳3ₓ;⍳3;1j2 3;"abc";1ₓ 0.5;[1 2;3]]
 "integer" "float64" "complex128" "character" "mixed" "mixed"
 
+⍝ — •storage gives a record: the storage's kind, whether the items wait in a pending call, whether the value reads another array's items, and how many ∂ levels' tags it carries
+•storage 1.5 2.5   ⍝ ["kind":"float64" "pending":$f "view":$f "active":0ₓ]
+
+⍝ — Reading a pending array's shape, tally or binding leaves it pending for later calls to fuse with
+y←1.5+¿200000⍴0 ⋄ z←y ⋄ _←[≢y;≢⍴z] ⋄ (•storage y).pending   ⍝ $t
+
+⍝ — A reshape reads its argument's items as a view
+(•storage 2 3⍴⍳6).view   ⍝ $t
+
+⍝ — Under ∂, a value carries one tag for each ∂ that differentiates it, and keeps its primal's kind
+a←0 ⋄ k←"" ⋄ _←{{a+←(•storage ⍵).active ⋄ k⊢←(•storage ⍵).kind ⋄ ⍵×⍵}∂⍵}∂ 2.5 ⋄ [a;k]   ⍝ 2 "float64"
+
 ⍝ — An atom gives its own kind, including a rational, a big exact integer and a function
-•storage¨[1ₓ;0.5;1j2;'a';1r3;9223372036854775808ₓ;+]
+{(•storage ⍵).kind}¨[1ₓ;0.5;1j2;'a';1r3;9223372036854775808ₓ;+]
 "integer" "float64" "complex128" "character" "rational" "rational" "function"
 
 ⍝ — An empty array has the storage its prototype gives
-•storage¨[⍬;⍬ₓ;"";0⍴⊂1 2]   ⍝ "float64" "integer" "character" "mixed"
+{(•storage ⍵).kind}¨[⍬;⍬ₓ;"";0⍴⊂1 2]   ⍝ "float64" "integer" "character" "mixed"
 
 ⍝ — Joining compact arrays, or writing into them, widens exact integers to floats
-•storage¨[0.5,⍳3ₓ;⊃[[1 2]ₓ;0.5 1.5];0.5@1 ⍳3ₓ]   ⍝ "float64" "float64" "float64"
+{(•storage ⍵).kind}¨[0.5,⍳3ₓ;⊃[[1 2]ₓ;0.5 1.5];0.5@1 ⍳3ₓ]   ⍝ "float64" "float64" "float64"
 
 ⍝ — A complex number makes every number complex
-•storage¨[1j2,0.5;1j2,⍳2ₓ]   ⍝ "complex128" "complex128"
+{(•storage ⍵).kind}¨[1j2,0.5;1j2,⍳2ₓ]   ⍝ "complex128" "complex128"
 
 ⍝ — A rational has no compact form, so its array stays mixed
-•storage¨[0.5,1r3;1j2,1r3]   ⍝ "mixed" "mixed"
+{(•storage ⍵).kind}¨[0.5,1r3;1j2,1r3]   ⍝ "mixed" "mixed"
 
 ⍝ — Writing a float into integer storage converts the whole array
 x←⍳3ₓ
 x₁←0.5
-•storage x   ⍝ "float64"
+(•storage x).kind   ⍝ "float64"
 
 ⍝ — Writing an exact integer into float storage makes it a float
 x←0.5 1.5
 x₀←2ₓ
-•storage x   ⍝ "float64"
+(•storage x).kind   ⍝ "float64"
 
 ⍝⍝ Float widths
 
 ⍝ — •float converts to 32-bit floats, which keep their width through arithmetic with exact numbers and with each other
 v←32 •float 0.1 0.2
-•storage¨[v;v+1ₓ;v×v;*v;⌊v;v<0.2]   ⍝ "float32" "float32" "float32" "float32" "integer" "boolean"
+{(•storage ⍵).kind}¨[v;v+1ₓ;v×v;*v;⌊v;v<0.2]   ⍝ "float32" "float32" "float32" "float32" "integer" "boolean"
 
 ⍝ — Floats of two widths compute at the wider
 v←32 •float 0.1 0.2
-•storage¨[v+0.5;v,0.5;64 •float v]   ⍝ "float64" "float64" "float64"
+{(•storage ⍵).kind}¨[v+0.5;v,0.5;64 •float v]   ⍝ "float64" "float64" "float64"
 
 ⍝ — An exact operand rounds to the float width before the operation
 (32 •float 1.5)×16777217ₓ   ⍝ 25165824
@@ -3573,7 +3638,7 @@ x←32 •float 16777216
 (x,x)⍳16777217ₓ   ⍝ 0ₓ
 
 ⍝ — Infinite power stops when two 32-bit results lie within 4 units in the last place, and keeps the width
-•storage (2○⍣∞) 32 •float 1   ⍝ "float32"
+(•storage (2○⍣∞) 32 •float 1).kind   ⍝ "float32"
 
 ⍝ — Sines and cosines beyond the reach of the kernels' fast reduction take the exact reduction, even beside smaller arguments
 (1○1e22 ¯1e22 0.5),2○1e22   ⍝ ¯0.8522008497671888 0.8522008497671888 0.479425538604203 0.523214785395139
@@ -3587,24 +3652,24 @@ x←32 •float 16777216
 ⍝ — Writing an exact number into 32-bit storage keeps the width
 x←32 •float 0.5 1.5
 x₀←2ₓ
-•storage x   ⍝ "float32"
+(•storage x).kind   ⍝ "float32"
 
 ⍝ — Writing a 64-bit float into 32-bit storage widens it
 x←32 •float 0.5 1.5
 x₀←0.25
-•storage x   ⍝ "float64"
+(•storage x).kind   ⍝ "float64"
 
 ⍝ — •float converts nested arrays too
-•storage¨(32 •float [1ₓ 0.5;⊂1 2])   ⍝ "float32" "mixed"
+{(•storage ⍵).kind}¨(32 •float [1ₓ 0.5;⊂1 2])   ⍝ "float32" "mixed"
 
 ⍝ — ₛ and ₚ mark a float's width, and after a list's closing bracket they mark every number in it
-•storage¨[1.5ₛ;1.5ₚ;[1 2]ₛ;[1ₓ 2]ₚ;⍬ₛ;[]ₛ]   ⍝ "float32" "float64" "float32" "float64" "float32" "float32"
+{(•storage ⍵).kind}¨[1.5ₛ;1.5ₚ;[1 2]ₛ;[1ₓ 2]ₚ;⍬ₛ;[]ₛ]   ⍝ "float32" "float64" "float32" "float64" "float32" "float32"
 
 ⍝ — •literal⁻¹ marks every float with its width, so the text reads back at either default width
 •literal⁻¹ [1.5 2.5]ₛ   ⍝ "[1.5 2.5]ₛ"
 
 ⍝ — ₛ, ₚ and ₕ mark the width of a complex number's parts, after the number or after a list. ₕ gives 32-bit parts
-•storage¨[[2j3]ₛ;[2j3]ₚ;[2j3]ₕ;[1j2 3]ₛ]   ⍝ "complex64" "complex128" "complex64" "complex64"
+{(•storage ⍵).kind}¨[[2j3]ₛ;[2j3]ₚ;[2j3]ₕ;[1j2 3]ₛ]   ⍝ "complex64" "complex128" "complex64" "complex64"
 
 ⍝ — ₓ doesn't mark a complex number
 2j3ₓ
@@ -3619,35 +3684,35 @@ x₀←0.25
 •literal⁻¹¨[[1j2 3]ₛ;1j2 3]   ⍝ "[1ⱼ2 3]ₛ" "[1ⱼ2 3]ₚ"
 
 ⍝ — •float rounds complex numbers' parts to the width, and 16 bits gives 32-bit parts
-•storage¨[64•float [1j2]ₛ;32•float [1j2];16•float [1j2]]   ⍝ "complex128" "complex64" "complex64"
+{(•storage ⍵).kind}¨[64•float [1j2]ₛ;32•float [1j2];16•float [1j2]]   ⍝ "complex128" "complex64" "complex64"
 
 ⍝ — Complex numbers beside floats compute at the wider width, and exact numbers take the complex numbers' width
-•storage¨[[2j3]ₛ×1.5;[2j3]ₛ×1.5ₛ;[2j3]ₛ×1.5ₕ;[2j3]ₛ×2ₓ]   ⍝ "complex128" "complex64" "complex64" "complex64"
+{(•storage ⍵).kind}¨[[2j3]ₛ×1.5;[2j3]ₛ×1.5ₛ;[2j3]ₛ×1.5ₕ;[2j3]ₛ×2ₓ]   ⍝ "complex128" "complex64" "complex64" "complex64"
 
 ⍝ — Joining complex numbers to floats gives the wider width
-•storage¨[[1j2]ₛ,0.5ₛ;[1j2]ₛ,0.5;[1j2]ₛ,⍳2ₓ;[1j2]ₛ,[1j2]]   ⍝ "complex64" "complex128" "complex64" "complex128"
+{(•storage ⍵).kind}¨[[1j2]ₛ,0.5ₛ;[1j2]ₛ,0.5;[1j2]ₛ,⍳2ₓ;[1j2]ₛ,[1j2]]   ⍝ "complex64" "complex128" "complex64" "complex128"
 
 ⍝ — A complex result from reals displays its parts' width
 √¯4ₛ   ⍝ 0j2ₛ
 
 ⍝ — A complex result from reals has parts of the reals' width
-•storage¨[√[¯4]ₛ;√[¯4];√[¯4]ₕ]   ⍝ "complex64" "complex128" "complex64"
+{(•storage ⍵).kind}¨[√[¯4]ₛ;√[¯4];√[¯4]ₕ]   ⍝ "complex64" "complex128" "complex64"
 
 ⍝ — Complex functions keep the width of the parts
-•storage¨[1○[1j2]ₛ;*[0j1]ₛ;⍟[0j1]ₛ;[2j1]ₛ*[0.5j1]ₛ;+\[1j2 3j4]ₛ]   ⍝ "complex64" "complex64" "complex64" "complex64" "complex64"
+{(•storage ⍵).kind}¨[1○[1j2]ₛ;*[0j1]ₛ;⍟[0j1]ₛ;[2j1]ₛ*[0.5j1]ₛ;+\[1j2 3j4]ₛ]   ⍝ "complex64" "complex64" "complex64" "complex64" "complex64"
 
 ⍝ — A real result from complex numbers takes their parts' width
-•storage¨[|[3j4]ₛ;[1j2]ₛ×[1j¯2]ₛ]   ⍝ "float32" "float32"
+{(•storage ⍵).kind}¨[|[3j4]ₛ;[1j2]ₛ×[1j¯2]ₛ]   ⍝ "float32" "float32"
 
 ⍝ — A fold keeps the width of complex numbers
 +/[1j2 3j4]ₛ   ⍝ 4j6ₛ
 
 ⍝ — ₕ and 16 •float give 16-bit floats
-•storage¨[1.5ₕ;[1 2]ₕ;⍬ₕ;16 •float 0.5]   ⍝ "float16" "float16" "float16" "float16"
+{(•storage ⍵).kind}¨[1.5ₕ;[1 2]ₕ;⍬ₕ;16 •float 0.5]   ⍝ "float16" "float16" "float16" "float16"
 
 ⍝ — 16-bit floats keep their width beside exact numbers and widen beside 32-bit floats
 v←16 •float 0.1 0.2
-•storage¨[v+1ₓ;v×v;*v;v+(32 •float 1)]   ⍝ "float16" "float16" "float16" "float32"
+{(•storage ⍵).kind}¨[v+1ₓ;v×v;*v;v+(32 •float 1)]   ⍝ "float16" "float16" "float16" "float32"
 
 ⍝ — Each 16-bit operation rounds its result to 16 bits
 (16 •float 0.1)+(16 •float 0.2)   ⍝ 0.2998047ₕ
@@ -3662,22 +3727,22 @@ x←16 •float 4096⍴0.1
 ⍝ — Writing into mixed storage keeps it mixed
 x←'a' 1ₓ 2ₓ
 x₀←0ₓ
-•storage x   ⍝ "mixed"
+(•storage x).kind   ⍝ "mixed"
 
 ⍝ — Rearranging or combining mixed storage keeps it mixed
 m←1ₓ 0.5 2ₓ
-•storage¨[⌽m;2↑m;4↑m;1 0 1#m;1 0 1 1#⁻¹m;(⊂1 0)⌷m;2 1⍴m;⍉2 1⍴m;m,m;m⍪m;1⌽m;∪m;m~,2ₓ;↑⊂m;∊⊂m;↑↓2 2⍴m;↑1 1 0⊆m;0⊃⊂m]
+{(•storage ⍵).kind}¨[⌽m;2↑m;4↑m;1 0 1#m;1 0 1 1#⁻¹m;(⊂1 0)⌷m;2 1⍴m;⍉2 1⍴m;m,m;m⍪m;1⌽m;∪m;m~,2ₓ;↑⊂m;∊⊂m;↑↓2 2⍴m;↑1 1 0⊆m;0⊃⊂m]
 ⍝ =>
 18⍴⊂"mixed"
 
 ⍝ —
-•storage¨[1↓'a' 1ₓ 2ₓ;(1↓'a' 1ₓ 2ₓ),3ₓ]   ⍝ "mixed" "mixed"
+{(•storage ⍵).kind}¨[1↓'a' 1ₓ 2ₓ;(1↓'a' 1ₓ 2ₓ),3ₓ]   ⍝ "mixed" "mixed"
 
 ⍝ — Arithmetic builds fresh storage from its results
-•storage 1ₓ×1↓'a' 1ₓ 2ₓ   ⍝ "integer"
+(•storage 1ₓ×1↓'a' 1ₓ 2ₓ).kind   ⍝ "integer"
 
 ⍝ — Monadic ⌊ and × give exact integers
-•storage¨[⌊0.5 1.5;×¯2.5 0 3.5]   ⍝ "integer" "integer"
+{(•storage ⍵).kind}¨[⌊0.5 1.5;×¯2.5 0 3.5]   ⍝ "integer" "integer"
 
 ⍝ — Monadic ⌊ on 32-bit floats gives exact integers, which widen past 32 bits when they need to
 ⌊32•float 1.5 3E9 ¯2.5   ⍝ [1 3000000000 ¯3]ₓ
@@ -3686,22 +3751,22 @@ m←1ₓ 0.5 2ₓ
 ((⍳3ₓ),32•float∞)₃   ⍝ ∞ₛ
 
 ⍝ — Infinities of two widths join as floats of the wider width
-•storage (32•float∞),∞   ⍝ "float64"
+(•storage (32•float∞),∞).kind   ⍝ "float64"
 
 ⍝ — Matrix division on 32-bit floats computes and gives 32-bit floats
 (32•float 3 4)⌹32•float[1 1⋄0 2]   ⍝ [1 2]ₛ
 
 ⍝ — Beside exact integers, an infinity makes joined arrays floats and gathered items mixed
-•storage¨[⌊1.5 ∞;(⍳3ₓ),∞;∞,⍳3ₓ;(⍳3ₓ),2⍴∞;{⍵=1?∞;⍵}¨⍳3ₓ]
+{(•storage ⍵).kind}¨[⌊1.5 ∞;(⍳3ₓ),∞;∞,⍳3ₓ;(⍳3ₓ),2⍴∞;{⍵=1?∞;⍵}¨⍳3ₓ]
 "float64" "float64" "float64" "float64" "mixed"
 
 ⍝ —
 x←⍳3ₓ
 x₁←∞
-•storage x   ⍝ "float64"
+(•storage x).kind   ⍝ "float64"
 
 ⍝ — Arithmetic with an infinity gives floats
-•storage¨[0.5,∞ ¯∞;(⍳3ₓ)+∞]   ⍝ "float64" "float64"
+{(•storage ⍵).kind}¨[0.5,∞ ¯∞;(⍳3ₓ)+∞]   ⍝ "float64" "float64"
 
 ⍝ — Under keyed agreement, a missing entry reads as its own array's fill
 ["a":1ₓ "b":∞]⌊["a":2ₓ "c":∞]   ⍝ ["a":1 "b":0 "c":0]ₓ
@@ -3711,30 +3776,30 @@ x₁←∞
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Written items keep each number's exactness, and only floats widen, to complex
-•storage¨[1ₓ 2ₓ;1ₓ 0.5;1j2 0.5;1ₓ 1j2;1ₓ 1r2;[1ₓ;0.5];[1 0 1]ₓ;[1 ∞]ₓ;[0.5;1j2]]
+{(•storage ⍵).kind}¨[1ₓ 2ₓ;1ₓ 0.5;1j2 0.5;1ₓ 1j2;1ₓ 1r2;[1ₓ;0.5];[1 0 1]ₓ;[1 ∞]ₓ;[0.5;1j2]]
 "integer" "mixed" "complex128" "mixed" "mixed" "mixed" "integer" "mixed" "complex128"
 
 ⍝ —
-•storage¨[[1ₓ 2ₓ⋄0.5 1.5];["a":1ₓ;"b":0.5]]   ⍝ "mixed" "mixed"
+{(•storage ⍵).kind}¨[[1ₓ 2ₓ⋄0.5 1.5];["a":1ₓ;"b":0.5]]   ⍝ "mixed" "mixed"
 
 ⍝ — Names written in brackets keep their values' exactness
 a←2ₓ
 b←0.5
-•storage [a;b]   ⍝ "mixed"
+(•storage [a;b]).kind   ⍝ "mixed"
 
 ⍝ — Results computed item by item keep each number's exactness, as written items do. Kernels on compact storage give compact results
 x←1ₓ 0.5
-•storage¨[1×x;1ₓ×x;{⍵}¨x;¿6ₓ 7;{⍵=0?0.5;⍵}¨⍳3ₓ;1ₓ×⍳3ₓ]
+{(•storage ⍵).kind}¨[1×x;1ₓ×x;{⍵}¨x;¿6ₓ 7;{⍵=0?0.5;⍵}¨⍳3ₓ;1ₓ×⍳3ₓ]
 ⍝ =>
 "float64" "mixed" "mixed" "mixed" "mixed" "integer"
 
 ⍝ — JSON arrays take the import rule, and JSON objects stay mixed
-•storage¨[•json "[1,1.5]";•json "[1.5,9007199254740993]";•json "{""a"":1,""b"":2}"]
+{(•storage ⍵).kind}¨[•json "[1,1.5]";•json "[1.5,9007199254740993]";•json "{""a"":1,""b"":2}"]
 "float64" "mixed" "mixed"
 
 ⍝ — CSV columns take the same import rule
 nl←•ucs 10
-•storage¨•csv "i,f,m",nl,"1,2.5,9007199254740993",nl,"2,3,1.5"
+{(•storage ⍵).kind}¨•csv "i,f,m",nl,"1,2.5,9007199254740993",nl,"2,3,1.5"
 ⍝ =>
 "i" "f" "m":"integer" "float64" "mixed"
 
@@ -4719,11 +4784,11 @@ z←1+16E¯15
 ↑¨[⌊0⍴1ₓ;⌈0⍴1ₓ;|0⍴1ₓ;!0⍴1ₓ;2ₓ*0⍴1ₓ]   ⍝ [0 0 0 0 0]ₓ
 
 ⍝ — Roll gives whole numbers below its argument, exact only for an exact argument
-{[⍴⍵;∧/(⍵<9)∧⍵=⌊⍵;•storage ⍵]}¨[¿100⍴9;¿100⍴9ₓ]
+{[⍴⍵;∧/(⍵<9)∧⍵=⌊⍵;(•storage ⍵).kind]}¨[¿100⍴9;¿100⍴9ₓ]
 [[[100]ₓ;$t;"float64"];[[100]ₓ;$t;"integer"]]
 
 ⍝ — Deal gives distinct whole numbers below its right argument
-{[⍴⍵;≢∪⍵;∧/(⍵<52)∧⍵=⌊⍵;•storage ⍵]}¨[13¿52;13ₓ¿52ₓ]
+{[⍴⍵;≢∪⍵;∧/(⍵<52)∧⍵=⌊⍵;(•storage ⍵).kind]}¨[13¿52;13ₓ¿52ₓ]
 [[[13]ₓ;13ₓ;$t;"float64"];[[13]ₓ;13ₓ;$t;"integer"]]
 
 ⍝ — Roll of zero gives floats strictly between 0 and 1
@@ -5078,13 +5143,13 @@ f←{⍵×+⍵}
 ⍕¨[1j2×1j¯2;¯0j2;1j2+3j4;+1j2]   ⍝ "5" "¯0ⱼ2" "4ⱼ6" "1ⱼ¯2"
 
 ⍝ — Written items keep their own kinds
-•storage¨1ₓ 0.5 1j2   ⍝ "integer" "float64" "complex128"
+{(•storage ⍵).kind}¨1ₓ 0.5 1j2   ⍝ "integer" "float64" "complex128"
 
 ⍝ — Empty complex results have a float fill
 [↑0#1j2;↑1j2+0#1ₓ;+/0#1j2]   ⍝ 0 0 0
 
 ⍝ — A complex result with no imaginary part in any item has float storage
-•storage¨[1j2 2×1j¯2 2;1j2 2×1j2 2]   ⍝ "float64" "complex128"
+{(•storage ⍵).kind}¨[1j2 2×1j¯2 2;1j2 2×1j2 2]   ⍝ "float64" "complex128"
 
 ⍝ — A real part too small to change 1 still changes the smaller part of √(1+z²), √(1-z²) and √(z²-1). Complex-step differentiation reads 4○'s derivative at 0.4, 0.4÷√1.16, from its imaginary part
 1e200×[(∨4○0.4j1e¯200)₁;(∨0○1e¯200j0.4)₁;(∨(4○⁻¹)1e¯200j0.4)₀]   ⍝ 0.3713906763541037 ¯0.3713906763541037 0.3713906763541037
@@ -5258,7 +5323,7 @@ add←{⍺+⍵}
 ⍕42r1   ⍝ "42ₓ"
 
 ⍝ — An approximate number makes the result approximate
-•storage¨[1r3+1÷6;1÷6+0;1ₓ÷2;1÷2ₓ]   ⍝ "float64" "float64" "float64" "float64"
+{(•storage ⍵).kind}¨[1r3+1÷6;1÷6+0;1ₓ÷2;1÷2ₓ]   ⍝ "float64" "float64" "float64" "float64"
 
 ⍝⍝ Exact arrays prototypes and counts
 
@@ -5303,7 +5368,7 @@ add←{⍺+⍵}
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Written items keep their own kinds, including a big exact integer
-•storage¨9007199254740993ₓ 0.5 1r3   ⍝ "integer" "float64" "rational"
+{(•storage ⍵).kind}¨9007199254740993ₓ 0.5 1r3   ⍝ "integer" "float64" "rational"
 
 ⍝ — An empty result of exact numbers has an exact fill
 [0ₓ#1r3;1ₓ+0#1r3]   ⍝ [⍬ₓ;⍬ₓ]
@@ -5332,10 +5397,10 @@ add←{⍺+⍵}
 0↦0.3÷0.1   ⍝ 0 1 2 3
 
 ⍝ — Each item is the start plus an exact count, so an exact start gives exact items
-•storage 1ₓ↦5   ⍝ "integer"
+(•storage 1ₓ↦5).kind   ⍝ "integer"
 
 ⍝ — An approximate start gives floats whatever the end
-•storage 1↦5ₓ   ⍝ "float64"
+(•storage 1↦5ₓ).kind   ⍝ "float64"
 
 ⍝ — Characters count through code points
 'e'↦'a'   ⍝ "edcba"
@@ -6908,11 +6973,11 @@ x←1 ⋄ •src "x"
 ⍝⍝ Timing
 
 ⍝ — •time t gives the seconds since t, for each item
-t←•time 0 ⋄ [0≤•time t;⍴•time 2 3⍴t;•storage •time t]   ⍝ [$t;[2 3]ₓ;"float64"]
+t←•time 0 ⋄ [0≤•time t;⍴•time 2 3⍴t;(•storage •time t).kind]   ⍝ [$t;[2 3]ₓ;"float64"]
 
 ⍝ — F •time x gives each function's fastest time per call, in the shape and keys of F
 T←["sum":+/] •time ⍳10
-[0≤T.sum;•storage T;⍴ ([1 1]⍴[+/]) •time ⍳10;⍴ ⍬ •time 1]
+[0≤T.sum;(•storage T).kind;⍴ ([1 1]⍴[+/]) •time ⍳10;⍴ ⍬ •time 1]
 ⍝ =>
 [$t;"float64";[1 1]ₓ;[0]ₓ]
 

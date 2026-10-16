@@ -2,7 +2,7 @@
 
 ## Install from source
 
-Requires Python 3.10 or later and Rust 1.98 or later. On x86-64, it also requires a CPU with AVX2 (x86-64-v3). In your Python environment:
+Requires Python 3.11 or later and Rust 1.98 or later. On x86-64, it also requires a CPU with AVX2 (x86-64-v3). In your Python environment:
 
 ```bash
 git clone https://github.com/AnswerDotAI/basedpl.git

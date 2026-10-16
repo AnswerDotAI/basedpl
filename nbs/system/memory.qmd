@@ -1,0 +1,14 @@
+# `•memory` — Memory
+
+`•memory x` gives a record of what this thread holds for differentiation, whatever `x` is. `•memory 0` is the usual spelling.
+
+- `records` counts the record nodes alive: the linear calls that reverse mode records while `∂` runs. Each `∂` frees its record when it returns, so the count is 0 between programs.
+
+The count covers the thread that runs the session. A session on another thread doesn't change it.
+
+```bpl
+{+/⍵×⍵}∂ 1 2 3     ⍝ 2 4 6
+•memory 0          ⍝ ["records":0ₓ]
+```
+
+[`•explain`](explain.qmd) reports what happened while an expression ran.

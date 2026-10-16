@@ -190,20 +190,14 @@ impl ArrayData {
     fn dual(&self) -> Option<&Arc<crate::derivative::Dual>> { match &self.data { Data::Dual(dual) => Some(dual), Data::Of(base) => base.dual(), _ => None } }
     /// The record of linear calls that this array is, if it is one (`linear`). A view of a record is a record itself.
     fn linear(&self) -> Option<&Arc<crate::linear::Linear>> { match &self.data { Data::Linear(t) => Some(t), _ => None } }
-}
-
-#[cfg(test)]
-thread_local! {
-    /// The number of pending arrays this thread has forced, for tests that check that a reader doesn't force early.
-    pub(crate) static FORCES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// Whether this array reads another array's items, as a view.
+    fn is_view(&self) -> bool { matches!(self.data, Data::Of(_)) }
 }
 
 /// A pending array's items, computed on the first read. Cold and out of line, so that `ArrayData::storage`'s other arms stay small.
 #[cold]
 #[inline(never)]
 fn forced(pending: &Pending) -> &Storage {
-    #[cfg(test)]
-    if !pending.is_forced() { FORCES.with(|n| n.set(n.get() + 1)); }
     pending.storage()
 }
 /// A dual array's items as number duals, built on the first read by code with no rule for duals. Cold and out of line, as `forced` is.
@@ -562,15 +556,30 @@ impl Value {
             }
         }
     }
-    /// The name of the storage that holds the items, as `•storage` gives it and boxed display marks it. An atom gives its own kind.
-    pub(crate) fn storage_name(&self) -> &'static str {
-        match (self, self.as_items()) {
-            (_, Items::Compact(View::Booleans(_))) => "boolean", (_, Items::Compact(View::Integers(_))) => "integer",
-            (_, Items::Compact(View::Floats(f))) => match f.tag() { FloatWidth::F16 => "float16", FloatWidth::F32 => "float32", FloatWidth::F64 => "float64" },
-            (_, Items::Compact(View::Complexes(z))) => match z.tag() { ComplexWidth::F32 => "complex64", ComplexWidth::F64 => "complex128" },
-            (_, Items::Compact(View::Characters(_))) => "character", (Self::Number(_), _) => "rational", (Self::Function(_), _) => "function", _ => "mixed"
+    /// The value whose storage holds this one's items: a dual's primal, a record's zero, or the value itself. Finding it reads no items.
+    pub(crate) fn held(&self) -> Value {
+        let mut value = self.clone();
+        loop {
+            let inner = match &value {
+                Self::Array(a) => a.dual().map(|d| d.primal.clone()).or_else(|| a.linear().map(|t| t.zero.clone())),
+                Self::Number(n) => n.as_dual().map(|d| Self::Number(d.primal.clone())),
+                _ => None,
+            };
+            match inner { Some(inner) => value = inner, None => return value }
         }
     }
+    /// The name of the storage that holds the items, as `•storage` gives it and boxed display marks it. It reads no items: a pending array answers from its call's dtype, and a dual from its primal. An atom gives its own kind.
+    pub(crate) fn storage_name(&self) -> &'static str {
+        let held = self.held();
+        match (&held, held.dtype()) {
+            (_, Some(DType::Boolean)) => "boolean", (_, Some(DType::Integer(_))) => "integer",
+            (_, Some(DType::Float(width))) => match width { FloatWidth::F16 => "float16", FloatWidth::F32 => "float32", FloatWidth::F64 => "float64" },
+            (_, Some(DType::Complex(width))) => match width { ComplexWidth::F32 => "complex64", ComplexWidth::F64 => "complex128" },
+            (_, Some(DType::Character)) => "character", (Self::Number(_), None) => "rational", (Self::Function(_), None) => "function", _ => "mixed"
+        }
+    }
+    /// Whether the array reads another array's items, as a view.
+    pub(crate) fn is_view(&self) -> bool { matches!(self, Self::Array(a) if a.is_view()) }
     pub fn as_floats(&self) -> Option<&[f64]> { match self.as_items() { Items::Compact(View::Floats(Floats::F64(v))) => Some(v), _ => None } }
     pub fn as_integers(&self) -> Option<&[i64]> { match self.as_items() { Items::Compact(View::Integers(Ints::I64(v))) => Some(v), _ => None } }
     pub fn as_booleans(&self) -> Option<&[bool]> { match self.as_items() { Items::Compact(View::Booleans(v)) => Some(v), _ => None } }

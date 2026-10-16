@@ -8,10 +8,20 @@ Monadic operator. Keys: `Alt-q =`
 1 1 2{+/⍵}⌸10 20 30 ⍝ 30 30
 ```
 
-`f⌸Y` uses `Y` as keys and their positions as values. `≢⊢ ⌸Y` counts the items with each key, without building the groups.
-
-```bpl
-≢⊢ ⌸"banana"      ⍝ [1 3 2]ₓ
-```
+`f⌸Y` uses `Y` as keys and their positions as values.
 
 Keys match with [tolerance](../evaluation.qmd#equality-and-ordering), as in `≠`. Results assemble with fill. Empty input calls `f` once for its prototype.
+
+## Fast combinations
+
+These trains and compositions give the result of applying their parts in turn, faster. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
+
+| Combination | Applies to | Benefit |
+|---|---|---|
+| `≢⊢ ⌸Y` or `K (≢⊢)⌸Y` | any keys | counts each group's major cells without building the groups |
+| `K (f/⊢)⌸Y` or `K (f⌿⊢)⌸Y`, with `f` of `+ ⌈ ⌊`, or `×` of floats | a vector `Y` of floats, integers or Booleans | folds every group in one pass, without a call of the operand for each group |
+
+```bpl
+≢⊢ ⌸"banana"          ⍝ [1 3 2]ₓ
+1 1 2(+/⊢)⌸10 20 30   ⍝ 30 30
+```

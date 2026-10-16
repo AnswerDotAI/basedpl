@@ -11,6 +11,7 @@ mod element;
 mod error;
 mod eval;
 mod execution;
+mod explain;
 #[cfg(not(web))]
 mod files;
 mod fusion;

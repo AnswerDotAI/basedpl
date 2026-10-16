@@ -182,15 +182,22 @@ pub(crate) fn remove(value: &Value, axes: Option<&[usize]>) -> Result<Value, Err
     value.clone().with_keys(keys)
 }
 
-pub(crate) fn selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKind> {
+/// The positions along each of `axes`, or the keys where the axis has them: one vector, or a vector of them for several axes.
+pub(crate) fn selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKind> { axis_selectors(value, axes, false) }
+
+/// [`selectors`], each along an axis with the name of the axis it selects, as `⍳⍠` gives them. Each then pairs with that axis by name. Indexing by one keeps the keys at the positions it selects.
+pub(crate) fn named_selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKind> { axis_selectors(value, axes, true) }
+
+fn axis_selectors(value: &Value, axes: &[usize], named: bool) -> Result<Value, ErrorKind> {
     let mut values = Vec::new();
     for &axis in axes {
         let &len = value.shape().get(axis).ok_or(Kind::Rank)?;
-        values.push(match value.keys(axis) {
+        let selector = match value.keys(axis) {
             Some(k) => Value::from_parts(
                 vec![len], k.names().iter().enumerate().map(|(i, k)| k.as_ref().map_or_else(|| position(i), |k| text(k))).collect(), text(""))?,
             None => Value::integers(vec![len], (0..len).map(|n| n as i64).collect())?
-        });
+        };
+        values.push(if named { selector.with_axis_names(vec![value.axis_name(axis).cloned()])? } else { selector });
     }
     if values.len() == 1 { Ok(values.pop().unwrap()) } else { Value::from_parts(vec![values.len()], values, Value::integers(vec![0], vec![])?) }
 }

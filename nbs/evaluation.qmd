@@ -66,6 +66,8 @@ A space before an argument keeps the train separate from it. `+/÷≢ x` applies
 
 Two names next to each other need a space between them. A literal can touch a name, as it touches a glyph: `1+⌽f5`. Inside a longer expression, put a name argument in parentheses, as in `1+⌽f(x)`. Without them, `1+⌽f x` applies the train `1+⌽f` to `x`. A run that starts with a function is a call: `×2` is the sign of 2.
 
+Some trains and compositions are [fast combinations](terms.qmd#term-fast-combination): BPL computes them by a faster algorithm than applying their parts in turn, with the same result. `10↑⍋ v` selects the first 10 positions of the grade without ordering the rest. The glyph pages list each combination under "Fast combinations", and [`•explain`](system/explain.qmd) reports the ones a run takes. BPL recognises a combination only where its functions form one function: a train, a composition, or an operator's operand. The expression `10↑⍋v` grades the whole of `v` before it takes 10 positions.
+
 ## Agreement and pervasion
 
 [Pervasive functions](terms.qmd#term-pervasive-function) align the leading axes of their arguments. Missing trailing axes count as length 1. Axes of equal length agree. An axis of length 1 expands to the other length, including to zero. Axes of length 1 in both arguments remain. Any other mismatch is a `LENGTH` error.

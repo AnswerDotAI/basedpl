@@ -182,9 +182,9 @@ fn boxed_display_and_function_trees() {
     let r = s.eval(r#"A←2 3 4⍴"DUCKSWANBIRDWORMCAKESEED" ⋄ ⊂⍠2 A"#);
     assert!(r.error.is_none(), "{:?}", r.error);
     assert_eq!(r.output_text(), ["┌→─────────────────────┐\n↓ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │DUCK│ │SWAN│ │BIRD│ │\n│ └────┘ └────┘ └────┘ │\n│ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │WORM│ │CAKE│ │SEED│ │\n│ └────┘ └────┘ └────┘ │\n└∊─────────────────────┘"]);
-    assert_eq!(s.eval("⍬").output_text(), ["┌⊖┐\n│0│\n└~┘"]);
+    assert_eq!(s.eval(r#"⍬ ⋄ "abc" ⋄ ["i":2]⍴1 2"#).output_text(), ["⍬", "┌→──┐\n│abc│\n└───┘", r#"["i":2]⍴[1 2]"#]);
     assert_eq!(s.eval("0 3⍴0").output_text(), ["┌→────┐\n⌽0 0 0│\n└~────┘"]);
-    assert_eq!(s.eval("1↓'a' 1 2").output_text(), ["┌→──┐\n│1 2│\n└+──┘"]);
+    assert_eq!(s.eval("1 2⍴1↓'a' 1 2").output_text(), ["┌→──┐\n↓1 2│\n└+──┘"]);
     assert_eq!(s.eval("2 2⍴⍳4ₓ").output_text(), ["┌→──┐\n↓0 1│\n│2 3│\n└ₓ──┘"]);
     let f = s.eval("avg←+/÷≢ ⋄ avg");
     assert!(f.error.is_none() && f.value.is_none());
@@ -404,7 +404,7 @@ fn hanzi_spellings_and_language() {
         "負3减负1" => "¯2", "1e负3加1r负4" => "1e¯3+1r¯4", "[负3 负1]ₓ" => "[¯3 ¯1]ₓ", "[空]ₛ" => "[⍬]ₛ", "负永" => "¯∞",
         "{甲是2句甲加乙}3" => "5", "{永键键7句除'a'}0" => "7", "op是{丙乙}句加op 3" => "3", "r是[\"a1\":7]句r内a1" => "7",
         "\"加总 注 负永\"" => "\"加总 注 负永\"", "'加'" => "'加'", "加总 1 2 3 注 汉字注释" => "6",
-        "系prefs [\"float\":32]句系storage 1" => "\"float32\"",
+        "系prefs [\"float\":32]句(系storage 1).kind" => "\"float32\"",
     );
     fails_in(&mut s, "SYNTAX", &["_加←1", "x_語←1"]);
     fails_in(&mut s, "UNSUPPORTED", &["語←1", "𠀀←1", "x赋1", "x賦1"]);

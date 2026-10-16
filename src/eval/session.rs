@@ -11,8 +11,14 @@ impl Session {
     pub(crate) fn at<'a>(&'a mut self, span: &'a Span) -> Context<'a> { Context { span, session: self } }
     /// A session for a person at a terminal, with boxed display elided to the terminal's width.
     pub fn interactive() -> Self {
-        let display = crate::display::Settings::interactive();
-        Self { display, display_defaults: display, ..Self::default() }
+        let mut session = Self::default();
+        session.make_interactive();
+        session
+    }
+    /// Gives this session an interactive session's display settings, both as its current settings and as the defaults that `]clear` restores. Python's BPL magics use it on the workspace they share with the Python API.
+    pub fn make_interactive(&mut self) {
+        self.display = crate::display::Settings::interactive();
+        self.display_defaults = self.display;
     }
     /// `value` as this session's implicit display shows it, as text.
     pub fn show(&self, value: &Value) -> String { self.display_settings().array(value, false) }
@@ -126,6 +132,15 @@ impl Session {
     }
     pub(crate) fn system_src(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         self.named(right, span, |s, name| s.name_source(name).map(|text| crate::keyed::text(&text)))
+    }
+    /// `•explain text` runs `text` in the caller's scope, as `⍎` does, and gives a record of its value and of what happened while it ran (`explain`).
+    pub(crate) fn system_explain(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+        let outer = crate::explain::start();
+        let explaining = std::mem::replace(&mut self.explaining, true);
+        let result = self.execute(None, right, span);
+        self.explaining = explaining;
+        let events = crate::explain::finish(outer);
+        events.report(result?.array(span)?, span)
     }
     /// `•literal text` reads a value from BPL source, as `•literal⁻¹` writes it, without running code. The text may hold literals and the functions that `•literal⁻¹` writes: `⍴`, `⊂`, `,`, `:` and `•ucs`.
     pub(crate) fn system_literal(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {

@@ -75,6 +75,23 @@ pub(crate) fn active(value: &Value) -> bool { deep_tag(value).is_some() }
 /// Whether a `∂` is running and `value` holds a dual.
 pub(crate) fn active_in(cx: &Context<'_>, value: &Value) -> bool { cx.session.differentiating() && active(value) }
 
+/// The number of `∂` levels whose tags `value` carries, through its duals' primals and tangents and inside nested arrays. It counts no tags inside records. A record's coefficients belong to the dual that holds the record as its tangent.
+pub(crate) fn levels(value: &Value) -> usize {
+    fn collect(value: &Value, tags: &mut Vec<u32>) {
+        let parts = match value { Value::Number(n) => n.as_dual().map(|d| (d.tag, Value::Number(d.primal.clone()), d.tangent.clone())), _ => value.dual_raw() };
+        if let Some((tag, primal, tangent)) = parts {
+            if !tags.contains(&tag) { tags.push(tag); }
+            collect(&primal, tags);
+            collect(&tangent, tags);
+        } else if value.holds_values() {
+            value.elements().for_each(|e| collect(&e, tags));
+        }
+    }
+    let mut tags = Vec::new();
+    collect(value, &mut tags);
+    tags.len()
+}
+
 /// Whether a running `∂` differentiates either argument of a call.
 pub(crate) fn either_active(cx: &Context<'_>, left: Option<&Value>, right: &Value) -> bool { active_in(cx, right) || left.is_some_and(|x| active_in(cx, x)) }
 
@@ -525,8 +542,8 @@ fn add(a: &Value, b: &Value, cx: &Context<'_>) -> Result<Value, Error> { Primiti
 /// The tangent `t` laid out as `layout`, its primal's: repeated where it was smaller, as broadcasting repeats it. A linear operation, whose transpose sums back. A dual keeps the smaller tangent that a pervasive rule gives, which later calls broadcast as they go, and only code that copies items expands it (`Dual::full_tangent`).
 pub(crate) fn expand(t: &Value, layout: &crate::array::Layout) -> Value {
     if let Some(r) = t.linear() { return crate::linear::expand(r, layout); }
-    let agreement = Agreement::new(t.layout(), layout).expect("a tangent agrees with its primal");
-    broadcast(t, &agreement.left, agreement.len, agreement.layout)
+    let agreement = Agreement::new(layout, t.layout()).expect("a tangent agrees with its primal");
+    broadcast(t, &agreement.right, agreement.len, agreement.layout)
 }
 
 /// `v` laid out as `layout` through `mapping`, as broadcasting reads it. One `Gather::walk` copies every kind, and moves a dual's primal and tangent together. An atom fills the layout.

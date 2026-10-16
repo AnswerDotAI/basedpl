@@ -106,11 +106,11 @@ impl Settings {
         let elide = Elide { width: crate::system::terminal_size().map(|(_, columns)| columns).unwrap_or(usize::MAX), ..Elide::default() };
         Self { boxed: true, trees: true, functions: true, elide, ..Self::default() }
     }
-    /// Display text for `a`, boxed unless boxing is off, or `inside` a function while boxing there is off. A line wider than `width` elides columns, keeping as many at each end of the last axes as fit.
+    /// Display text for `a`, boxed where `boxes` says, unless boxing is off, or `inside` a function while boxing there is off. A line wider than `width` elides columns, keeping as many at each end of the last axes as fit.
     pub fn array(&self, a: &Value, inside: bool) -> String {
         let text = |columns| {
             let elide = Elide { columns, ..self.elide };
-            if self.boxed && (!inside || self.functions) { array(a, elide).text() } else { plain(a, elide) }
+            if self.boxed && (!inside || self.functions) && boxes(a) { array(a, elide).text() } else { plain(a, elide) }
         };
         let fits = |t: &str| t.lines().all(|line| line.width() <= self.elide.width);
         let full = text(usize::MAX);
@@ -349,6 +349,14 @@ fn array(a: &Value, el: Elide) -> Block {
     Block::measured(lines.concat(), UnicodeWidthStr::width).framed(a.shape(), kind, nested)
 }
 
+/// Whether plain display shows `a` as its raw text, as it shows a string: an unkeyed, unnamed, nonempty vector of characters. The text alone doesn't show that its items are characters.
+fn raw_text(a: &Value) -> bool {
+    a.shape().len() == 1 && !a.has_keys() && a.axis_names().iter().all(Option::is_none) && !a.is_empty() && a.elements().all(|e| matches!(e, Value::Character(_)))
+}
+
+/// Whether box mode draws `a` in a box. Every simple vector but a string keeps its plain form, which shows its kind, keys and axis name. A string's plain form is its raw text, and it keeps its box.
+fn boxes(a: &Value) -> bool { a.shape().len() != 1 || !a.is_simple() || raw_text(a) }
+
 /// Display text for `a` without frames: a vector or unit as source text, a string as its characters, and higher ranks as rows.
 pub(crate) fn plain(a: &Value, el: Elide) -> String {
     match a {
@@ -358,9 +366,7 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
     if a.has_keys() && a.shape().len() > 1 { return labelled(a, el); }
     let edges = el.edges(a.shape());
     if a.shape().len() <= 1 {
-        let string = a.shape().len() == 1 && !a.has_keys() && a.axis_names().iter().all(Option::is_none) && !a.is_empty()
-            && a.elements().all(|e| matches!(e, Value::Character(_)));
-        return if string { a.elided_text(el.last(a.shape())) }
+        return if raw_text(a) { a.elided_text(el.last(a.shape())) }
         else if a.is_strand() && a.mark(el).is_none() { a.shown_items(el.last(a.shape()), |e| e.source(el)).join(" ") }
         else { a.source(el) };
     }

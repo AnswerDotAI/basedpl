@@ -8,7 +8,7 @@
 //!
 //! A structural glyph that copies one source through rustymath `Steps` (`remapped`) gives a pending copy (`copy`) where its result has at least `MIN_ITEMS` items, for a source of any compact kind. Forcing composes a read of a copy with the copy's map, and moves a read with no repeat or fill under each pending pervasive call it reaches that only it holds (`Pending::resolved`). `2×⌽v+1` then runs as one graph that reads `v` backwards. A copy of floats that no call reads through, and a copy of any other kind, walks its source as `remapped` does.
 use crate::{
-    agreement::{entries, per_axis, repeats, spreads, through, Agreement}, array::{Items, Lanes, Layout, Storage}, element::{Stored, Float}, number::{Arithmetic, Math, Numeric},
+    agreement::{entries, Agreement}, array::{Items, Lanes, Layout, Storage}, element::{Stored, Float}, number::{Arithmetic, Math, Numeric},
     pervasive::{self, with_float_reduction, with_truth_reduction, Kernels}, primitive::{FoldKind, Primitive}, Number, Value
 };
 use rustymath::{agreement::{expanded, Mapping}, buffer::{DType, FloatWidth, View}, gather::Steps, reduce::{self, Reduction}, Arg, Native};
@@ -110,7 +110,7 @@ impl Read {
         let (Read::Input(_, m) | Read::Pending(_, m, _)) = self else { return Some(None) };
         if matches!(m, Mapping::Single) { return Some(None); }
         let (base, inner) = entries(m, shape)?;
-        let (base, steps) = through(outer, shape, base, &inner)?;
+        let (base, steps) = Steps::through(outer, shape, base, &inner)?;
         Some(Some(Mapping::Steps { base, steps }))
     }
 }
@@ -148,7 +148,7 @@ pub(crate) fn defer(p: Primitive, x: Option<&Value>, y: &Value, agreement: Agree
 pub(crate) fn copy(source: &Value, layout: &Layout, tables: &[Steps]) -> Option<Value> {
     if source.is_atom() || layout.shape().iter().product::<usize>() < MIN_ITEMS { return None; }
     let dtype = source.dtype()?;
-    let (base, steps) = per_axis(tables, layout.shape())?;
+    let (base, steps) = Steps::per_axis(tables, layout.shape())?;
     let runs = |s: &Steps| matches!(*s, Steps::Stride { step: 1 | -1, .. } | Steps::Rotated { stride: 1, .. } | Steps::Clipped { stride: 1, .. });
     if !steps.iter().rev().find(|s| s.len() > 1).is_some_and(runs) { return None; }
     let mapping = Mapping::Steps { base, steps };
@@ -179,7 +179,10 @@ pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind) -> Option<Value>
     };
     let folded = graph.fold(p, kind);
     match folded {
-        Some(_) => pending.put(Work::Graph(graph)),
+        Some(_) => {
+            graph.explained(Some((p, kind)));
+            pending.put(Work::Graph(graph))
+        }
         None => pending.result.set(graph.run().into_storage()).expect("a pending array computes its items once"),
     }
     folded
@@ -253,10 +256,10 @@ impl Pending {
         let rewritten = match work.as_ref() {
             Some(Work::Call(Call { operation: Operation::Copy, right: Read::Input(_, Mapping::Steps { base, steps }) | Read::Pending(_, Mapping::Steps { base, steps }, _), .. })) => entries(&mapping, self.layout.shape())
                 .filter(|(b, _)| *b == 0)
-                .and_then(|(_, outer)| through(&outer, p.layout.shape(), *base, steps))
+                .and_then(|(_, outer)| Steps::through(&outer, p.layout.shape(), *base, steps))
                 .map(|(base, steps)| vec![Some(Mapping::Steps { base, steps })]),
             Some(Work::Call(call)) if matches!(call.operation, Operation::Primitive(_)) && p.floats() && p.width == self.width => match &mapping {
-                Mapping::Steps { base: 0, steps: outer } if !outer.iter().any(spreads) && !repeats(outer, p.layout.shape()) => call.args().map(|a| a.moved(outer, p.layout.shape())).collect(),
+                Mapping::Steps { base: 0, steps: outer } if !outer.iter().any(Steps::spreads) && !Steps::rereads(outer, p.layout.shape()) => call.args().map(|a| a.moved(outer, p.layout.shape())).collect(),
                 _ => None,
             },
             _ => None,
@@ -389,9 +392,19 @@ impl Graph {
     /// Whether the graph's last node is a comparison, which gives Booleans.
     fn compares(&self) -> bool { matches!(self.nodes.last().expect("a graph has a node").operation, Operation::Primitive(Primitive::Compare(_))) }
 
+    /// Records the graph's run for `•explain`: the glyphs of its calls in the order they run, with the glyph of a fold that reads through it last, and its item count. A copy reads items and adds no glyph.
+    fn explained(&self, fold: Option<(Primitive, FoldKind)>) {
+        crate::explain::fused(|| {
+            let mut glyphs: String = self.nodes.iter().filter_map(|n| match n.operation { Operation::Primitive(p) => Some(p.info().glyph), Operation::Copy => None }).collect();
+            if let Some((p, kind)) = fold { glyphs.push_str(p.info().glyph); glyphs.push(if kind.first { '⌿' } else { '/' }); }
+            glyphs
+        }, self.len);
+    }
+
     /// The result of the graph's calls. A graph of fewer than `MIN_NODES` calls runs each call on whole arrays.
     pub(crate) fn run(&self) -> Value {
         if self.nodes.len() < MIN_NODES { return self.unfused(); }
+        self.explained(None);
         match self.width {
             FloatWidth::F32 => self.typed::<f32>(), FloatWidth::F64 => self.typed::<f64>(),
             FloatWidth::F16 => unreachable!("a graph's floats have a kernel width")
@@ -430,6 +443,7 @@ impl Graph {
             let last = results.pop().expect("a graph has a node");
             return (last, results.swap_remove(extra));
         }
+        self.explained(None);
         match self.width {
             FloatWidth::F32 => self.paired::<f32>(), FloatWidth::F64 => self.paired::<f64>(),
             FloatWidth::F16 => unreachable!("a graph's floats have a kernel width")
@@ -586,17 +600,4 @@ fn copied<F: Copy>(x: Arg<'_, F>, n: usize, out: pervasive::Out<'_, '_, F>) -> b
 fn scalar<F: Float>(c: &Value) -> F {
     let Items::Compact(View::Floats(floats)) = c.as_items() else { unreachable!("a scalar operand is a float") };
     F::narrow(floats.get(0))
-}
-
-#[cfg(test)]
-mod tests {
-    /// Reading a pending array's shape, tally or binding leaves it pending. Forcing it early would lose fusion with the calls that read it later.
-    #[test]
-    fn readers_leave_arrays_pending() {
-        let mut session = crate::Session::new();
-        crate::array::FORCES.with(|n| n.set(0));
-        let shape = session.eval("y←1.5+¿1000000⍴0 ⋄ z←y ⋄ [≢y;≢⍴z]");
-        assert!(shape.error.is_none(), "{:?}", shape.error);
-        assert_eq!(crate::array::FORCES.with(|n| n.get()), 0);
-    }
 }

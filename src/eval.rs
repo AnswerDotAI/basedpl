@@ -11,6 +11,7 @@ use std::{borrow::Cow, convert::Infallible, sync::Arc};
 mod assign;
 mod binder;
 mod dissect;
+mod idioms;
 mod operators;
 mod session;
 pub(crate) use binder::before;
@@ -26,7 +27,7 @@ pub struct Function { node: Arc<FunctionData> }
 
 /// A function's node with the facts derived from it when the function is built.
 #[derive(Debug)]
-struct FunctionData { kind: FunctionNode, environment: Option<usize>, late: bool }
+struct FunctionData { kind: FunctionNode, environment: Option<usize>, late: bool, idiom: Option<idioms::Idiom> }
 
 /// Compares the values held in functions and operators: exactly for `==`, or by `≡`'s rule for `matches`.
 type ValueRule<'a, E> = dyn FnMut(&Value, &Value) -> Result<bool, E> + 'a;
@@ -356,11 +357,11 @@ impl Function {
         }
         Ok(result)
     }
-    fn primitive(p: Primitive) -> Self { Self { node: Arc::new(FunctionData { kind: FunctionNode::Primitive(p), environment: None, late: false }) } }
+    fn primitive(p: Primitive) -> Self { Self { node: Arc::new(FunctionData { kind: FunctionNode::Primitive(p), environment: None, late: false, idiom: None }) } }
     /// A function that returns `a` whatever its arguments, as `a⍨` writes it.
     fn constant(a: Value, span: &Span) -> Result<Self, Error> { Self::new(FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)), span) }
     pub(crate) fn system(f: crate::system::SystemFunction) -> Self {
-        Self { node: Arc::new(FunctionData { kind: FunctionNode::System(f), environment: None, late: false }) }
+        Self { node: Arc::new(FunctionData { kind: FunctionNode::System(f), environment: None, late: false, idiom: None }) }
     }
     fn new(node: FunctionNode, span: &Span) -> Result<Self, Error> {
         use OperatorKind::*;
@@ -406,7 +407,8 @@ impl Function {
             FunctionNode::LateBound(..) => (environment, true),
             FunctionNode::Defined(c) | FunctionNode::Derived(c, ..) => (environment.max(c.environment), late), _ => (environment, late)
         };
-        Ok(Self { node: Arc::new(FunctionData { kind: node, environment, late }) })
+        let idiom = idioms::recognise(&node);
+        Ok(Self { node: Arc::new(FunctionData { kind: node, environment, late, idiom }) })
     }
     /// Calls the function, first growing the stack when it's nearly full. `call`, `dispatch` and `call_array` are always inlined, so that each BPL call adds fewer frames to the host stack. In the browser that stack limits the depth of recursion.
     #[inline(always)]
@@ -417,13 +419,13 @@ impl Function {
         let capture = std::mem::replace(&mut cx.session.capture, false);
         // This is `stacker::maybe_grow`, without its closure's frame. An unknown stack limit grows the stack, as there.
         let room = stacker::remaining_stack().is_some_and(|r| r >= STACK_RED_ZONE);
-        let result = if cx.session.display.fusion { self.reported(left, right, room, cx) } else if room { self.dispatch(left, right, cx) } else { self.grown(left, right, cx) };
+        let result = if cx.session.display.fusion | cx.session.explaining { self.reported(left, right, room, cx) } else if room { self.dispatch(left, right, cx) } else { self.grown(left, right, cx) };
         cx.session.capture = capture;
         cx.session.depth -= 1;
         cx.check()?;
         result
     }
-    /// `dispatch` under `•prefs ["fusion":$t]`, which also reports each pending argument that this call computed, and each dual argument whose items it read one by one (`derivative`), where no call inside it reported, with the function and its position. Out of line, so that `call` pays one branch.
+    /// `dispatch` under `•prefs ["fusion":$t]` or `•explain`. Where no call inside it reported, it reports each pending argument that this call computed, and each dual argument whose items it read one by one (`derivative`), with the function and its position. The pref writes each report, and `•explain` records each computed argument (`explain::forced`). Out of line, so that `call` pays one branch.
     #[cold]
     #[inline(never)]
     fn reported(&self, left: Option<&Value>, right: &Value, room: bool, cx: &mut Context<'_>) -> Result<Bound, Error> {
@@ -432,13 +434,15 @@ impl Function {
         let reports = cx.session.fusion_reports;
         let result = if room { self.dispatch(left, right, cx) } else { self.grown(left, right, cx) };
         let args = [left, Some(right)];
-        let report = if args.iter().zip(pending).any(|(v, was)| was && v.is_some_and(|v| v.pending().is_none())) { Some("fusion ends") }
+        let forced = args.iter().zip(pending).any(|(v, was)| was && v.is_some_and(|v| v.pending().is_none()));
+        let report = if forced { Some("fusion ends") }
             else if args.iter().zip(whole).any(|(v, was)| was && v.and_then(Value::dual_items_built) == Some(true)) { Some("∂ runs item by item") }
             else { None };
         if let (Some(report), true) = (report, cx.session.fusion_reports == reports) {
             cx.session.fusion_reports += 1;
             let (line, column) = cx.span.position();
-            cx.write(&format!("{report} at {} ({}:{line}:{column})\n", self.bpl(), cx.span.source.name));
+            if forced && cx.session.explaining { crate::explain::forced(self.bpl(), line, column); }
+            if cx.session.display.fusion { cx.write(&format!("{report} at {} ({}:{line}:{column})\n", self.bpl(), cx.span.source.name)); }
         }
         result
     }
@@ -450,11 +454,12 @@ impl Function {
     // Inlined into `dispatch`, this would put a second copy of `call` and `dispatch` in the stack frame of every BPL call.
     #[inline(never)]
     fn ruled(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> { self.call(left, right, cx) }
-    /// Sends compositions and dfns straight to their handlers, and other functions to `apply`.
+    /// Tries the function's idiom (`idioms`), then sends compositions and dfns straight to their handlers, and other functions to `apply`.
     #[inline(always)]
     fn dispatch(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         let resolved;
         let f = if self.late() { resolved = self.resolve(cx.session, &mut HashMap::new(), 0)?; &resolved } else { self };
+        if let Some(idiom) = &f.node.idiom { if let Some(result) = idiom.call(f, left, right, cx) { return result; } }
         match f.node() {
             FunctionNode::Composed(op, operands) => composition(*op, operands, left, right, cx),
             FunctionNode::Ruled(f, Rules { derivative: Some(g), .. }) if left.is_none() && cx.session.differentiating() => match crate::derivative::deep_tag(right) {
@@ -574,7 +579,7 @@ impl Function {
             FunctionNode::Inverse(f) => return inverse(f, left.map(|a| (a, true)), right, cx),
             FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => return each(f, left, right, cx),
             FunctionNode::Modified(OperatorKind::Outer, Operand::Function(f)) => return outer(f, left, right, cx),
-            FunctionNode::Modified(OperatorKind::Key, Operand::Function(f)) => return key(f, left, right, cx),
+            FunctionNode::Modified(OperatorKind::Key, Operand::Function(_)) => return key(self, left, right, cx),
             FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(f)) => crate::derivative::differentiate(f, left, right, cx),
             FunctionNode::Modified(OperatorKind::Commute, Operand::Function(f)) => return f.call(Some(right), left.unwrap_or(right), cx),
             FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)) => Ok(a.clone()),
@@ -591,12 +596,12 @@ impl Function {
             }
             FunctionNode::Primitive(p) => p.call(left, right, cx),
             FunctionNode::System(f) => {
-                if crate::derivative::either_active(cx, left, right) { return Err(crate::derivative::system(f.name, cx)); }
+                if !matches!(f.call, crate::system::Call::Inspect(_)) && crate::derivative::either_active(cx, left, right) { return Err(crate::derivative::system(f.name, cx)); }
                 f.check(left, cx.span)?;
                 if f.item.maps(right) { return self.each_item(left, right, f.prototype.expect("a mapped system function has a result prototype"), cx); }
                 if let (true, Some(prototype)) = (cx.session.prototype, f.prototype) { return Ok(Bound::from(prototype(cx))); }
                 match &f.call {
-                    crate::system::Call::Value(call) => call(left, right, cx),
+                    crate::system::Call::Value(call) | crate::system::Call::Inspect(call) => call(left, right, cx),
                     crate::system::Call::Effect(call) => return call(left, right, cx).map(|(value, shy)| Bound { shy, ..Bound::from(value) }),
                     crate::system::Call::Element(tag) => crate::xml::element(tag, left, right, cx),
                     crate::system::Call::Canvas(source) => crate::canvas::draw(source, left, right, cx),
@@ -933,6 +938,8 @@ pub struct Session {
     capture: bool,
     /// Reports that `•prefs ["fusion":$t]` has written. An enclosing call reports a pending argument only when no call inside it reported.
     fusion_reports: usize,
+    /// Whether `•explain` is running, which records events (`explain`).
+    pub(crate) explaining: bool,
     /// The `∂` calls that are running, innermost last.
     pub(crate) derivatives: Vec<crate::derivative::Level>,
     /// The last tag that a `∂` call took. Tags only grow, so a call inside another has the larger tag.

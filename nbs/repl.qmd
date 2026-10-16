@@ -88,9 +88,9 @@ Inside brackets and parentheses, a line break means `⋄`, so each line of a bra
 
 ## Array and function display
 
-Interactive sessions draw arrays in boxes, show functions as trees, and box output made inside functions. [`•prefs`](system/prefs.qmd) reads and changes these settings: `•prefs ["box":$f]` turns boxes off, and `•prefs ⍬` shows every setting. Batch, Python and JSON sessions start without boxes.
+Interactive sessions draw arrays in boxes, show functions as trees, and box output made inside functions. [`•prefs`](system/prefs.qmd) reads and changes these settings: `•prefs ["box":$f]` turns boxes off, and `•prefs ⍬` shows every setting. Batch and JSON sessions start without boxes, and so does Python until IPython loads BPL's magics.
 
-Arrays with axes have boxes, axis arrows and a type marker on the bottom edge. The marker names the storage: `ₓ` for exact integers, `~` for floats, `j` for complex numbers, `─` for characters, `∊` for nested arrays and `+` for mixed storage, whose items keep their own kinds. Numbers inside an `ₓ` box carry no mark of their own. Enter a function name to see its tree.
+Matrices, nested arrays and strings have boxes, axis arrows and a type marker on the bottom edge. Other vectors stay plain. Their plain form shows their kind, keys and axis name, as in `[2 3 5]ₓ`, `[1.5 2.5]ₛ` and `$t $f`. The marker names the storage: `ₓ` for exact integers, `~` for floats, `j` for complex numbers, `─` for characters, `∊` for nested arrays and `+` for mixed storage, whose items keep their own kinds. Numbers inside an `ₓ` box carry no mark of their own. Enter a function name to see its tree.
 
 An array of more than 1000 items shows only the first and last 3 positions of each long axis. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. The `limit` and `edges` settings of `•prefs` change these numbers. `⎕←` prints every item.
 
@@ -122,9 +122,7 @@ Both display modes show scalars as source: `⊂4ₓ`, `⊂⊂4ₓ` or `⊂[1 2]`
 
 ```text
       ⎕←v←⍳3
-┌→────┐
-│0 1 2│
-└~────┘
+0 1 2
 ```
 
 ## Expression grouping

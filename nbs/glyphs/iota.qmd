@@ -24,17 +24,26 @@ A shape vector generates an array of coordinate vectors. A negative length rever
 ⍳2 ¯2              ⍝ [[0 1] [0 0]⋄[1 1] [1 0]]
 ```
 
+A keyed shape names the result's axes, as it does for [reshape](rho.qmd). The result is a named index, which pairs by name with axes of the same name. [Indexing](squad.qmd) by a named index fills outside the axis:
+
+```bpl
+⍴⍳["i":3]          ⍝ ["i":3]ₓ
+x←10×⍳5 ⋄ i←⍳["i":5]
+x.[i+1]            ⍝ ["i":5]⍴[10 20 30 40 0]
+```
+
 On a matrix, `⍳` applies to each row, as [Rank](jot-diaeresis.qmd) does. Fill pads the results to a common shape.
 
 ```bpl
 ⍴⍳[2 3⋄1 1]       ⍝ [2 2 3]ₓ
 ```
 
-`⍳⍠A Y` returns the keys of axis `A`, or `0…length-1` on an unkeyed axis. Several axes return a vector of selector vectors.
+`⍳⍠A Y` returns the keys of axis `A`, or `0…length-1` on an unkeyed axis. The result lies along an axis with the name of the axis it selects. It pairs with that axis by name in arithmetic and indexing. Indexing by it keeps the keys at the positions it selects. Several axes return a vector of selector vectors.
 
 ```bpl
 ⍳⍠0 ["price":1 "qty":2] ⍝ "price" "qty"
 ⍳⍠1 (2 3⍴0)         ⍝ [0 1 2]ₓ
+⍴⍳⍠"j" ["i":2 "j":3]⍴0 ⍝ ["j":3]ₓ
 ```
 
 On an axis where only some positions have keys, `⍳⍠A Y` gives the keys where present and positions elsewhere.

@@ -49,6 +49,22 @@ T←"aa" "bb":1 2
 "bb"⌷T             ⍝ 2
 ```
 
+An array of positions with named axes is a named selector, such as a [named index](iota.qmd) from `⍳["i":n]`. Its axes replace the axis it selects, with their names and any keys it has. A named vector without keys keeps the keys at the positions it selects. Named selectors that share a name pair, as arithmetic pairs named axes, and read one position along both. `[i;i]⌷m` is therefore the diagonal. Selectors with different names, and unnamed selectors, combine as above.
+
+```bpl
+m←3 3⍴⍳9 ⋄ i←⍳["i":3] ⋄ j←⍳["j":3]
+[i;i]⌷m            ⍝ ["i":3]⍴[0 4 8]
+⍴[i;j]⌷m           ⍝ ["i":3 "j":3]ₓ
+```
+
+A named selector reads the prototype outside its axis, and a negative position in it never counts back from the end. Unnamed selectors keep the rules above. To clamp or wrap a named index, compute it, as in `x.[0⌈i-1]` or `x.[5|i-1]`.
+
+```bpl
+x←10×⍳5 ⋄ i←⍳["i":5]
+x.[i-1]            ⍝ ["i":5]⍴[0 0 10 20 30]
+x.[5|i-1]          ⍝ ["i":5]⍴[40 0 10 20 30]
+```
+
 Assignment through `⌷` replaces the selected items. A missing key is added, even on an axis with no keys.
 
 ```bpl
@@ -76,6 +92,6 @@ With an axis, `⌷⍠K` applies the left argument's items to the axes `K`.
 
 ## Errors
 
-- `LENGTH`: more items than axes
-- `INDEX`: position outside its axis, missing key
+- `LENGTH`: more items than axes, named selectors that share a name but differ in length or keys
+- `INDEX`: position outside its axis, missing key, assignment through a named selector that reaches outside its axis
 - `DOMAIN`: non-integral position, `∞` or `¯∞` inside an array of positions

@@ -16,3 +16,18 @@ Function. Ranks: `∞` monadic, `0 0` dyadic
 ```
 
 See [`<`](less-than.qmd) to sort up, and [`⍒`](del-stile.qmd) for the indices that sort.
+
+## Fast combinations
+
+These trains and compositions give the result of applying their parts in turn, faster. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
+
+| Combination | Applies to | Benefit |
+|---|---|---|
+| `k↑> Y` or `(k↑)∘>` | a vector of reals or characters without keys, with the count at most a quarter of its length | selects the `k` largest items, or the `-k` smallest, without ordering the rest |
+| `↑> Y`, `i⌷> Y` or `i⊃> Y` | the same vectors | selects the item of rank `i` from the top without ordering the rest |
+
+```bpl
+v←30 10 20 50 40 60 70 80 90 0
+2↑> v              ⍝ 90 80
+↑> v               ⍝ 90
+```

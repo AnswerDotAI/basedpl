@@ -77,12 +77,12 @@ def test_numpy_inputs_and_copies():
     assert bpl('x', x=np.array([0.5, 65504], np.float16)).np.dtype == np.float16
     z = np.array([[1+2j, 3.5-4j]], np.complex64)
     np.testing.assert_array_equal(bpl('x', x=z), z)
-    assert bpl('x×2ₓ', x=z).np.dtype == np.complex64 and bpl('x+0.5', x=z).np.dtype == np.complex128 and bpl('•storage x', x=z).py == 'complex64'
+    assert bpl('x×2ₓ', x=z).np.dtype == np.complex64 and bpl('x+0.5', x=z).np.dtype == np.complex128 and bpl('(•storage x).kind', x=z).py == 'complex64'
     flat, nested = array.array('i', [1, -2]), [memoryview(array.array('d', [0.5]))]
     assert bpl('x', x=flat).np.tolist() == [1, -2] and bpl('≡x', x=nested).py == 2 and bpl('↑x', x=nested).np.tolist() == [0.5]
     bpl('•prefs ["float":32]')
-    assert bpl('•storage x', x=[1.5, 2.5]).py == 'float32' and bpl('•storage x', x=np.ones(2)).py == 'float64'
-    assert bpl('•storage x', x=[1+2j, 3.5]).py == 'complex64' and bpl('•storage x', x=np.ones(2, np.complex128)).py == 'complex128'
+    assert bpl('(•storage x).kind', x=[1.5, 2.5]).py == 'float32' and bpl('(•storage x).kind', x=np.ones(2)).py == 'float64'
+    assert bpl('(•storage x).kind', x=[1+2j, 3.5]).py == 'complex64' and bpl('(•storage x).kind', x=np.ones(2, np.complex128)).py == 'complex128'
     bpl('•prefs ["float":64]')
     assert bpl('x', x=np.float32(1.5)).py == 1.5
     assert bpl('x', x=np.int64(3)).py == 3

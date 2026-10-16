@@ -10,6 +10,8 @@ pub(crate) type Effect = fn(Option<&Value>, &Value, &Context<'_>) -> Result<(Val
 #[derive(Clone, Debug)]
 pub(crate) enum Call {
     Value(Native),
+    /// A native that reports how its argument is held, reading no items. `∂` passes it the values it differentiates.
+    Inspect(Native),
     /// A native called for its effect.
     Effect(Effect),
     Session(fn(&mut crate::Session, Option<&Value>, &Value, &crate::Span) -> Result<Value, Error>),
@@ -51,10 +53,10 @@ use Item::{Number, Text, Vector, Whole};
 impl Item {
     /// Whether `right` holds several items, not one.
     pub(crate) fn maps(self, right: &Value) -> bool {
-        let depth = crate::primitive::depth(right);
+        let depth = || crate::primitive::depth(right);
         match self {
-            Whole => false, Number => depth > 0, Vector => depth > 1,
-            Text => depth > 1 || (right.is_empty() && !matches!(right.as_items(), Items::Compact(View::Characters(_))))
+            Whole => false, Number => depth() > 0, Vector => depth() > 1,
+            Text => depth() > 1 || (right.is_empty() && !matches!(right.as_items(), Items::Compact(View::Characters(_))))
         }
     }
 }
@@ -130,7 +132,7 @@ const BUILTINS: &[(&str, Call, Valence, Item, fn(&Context<'_>) -> Value)] = &[
     ("•uuid", Call::Value(crate::data::uuid), Ambivalent, Number, text), ("•normalize", Call::Value(normalize), Ambivalent, Text, text),
     ("•decompose", Call::Value(crate::primitive::decompose), Dyadic, Whole, record), ("•ucs", Call::Value(unicode_convert), Ambivalent, Vector, numbers),
     ("•load", Call::Load, Monadic, Text, record), ("•signal", Call::Value(signal), Ambivalent, Whole, number),
-    ("•storage", Call::Value(storage), Monadic, Whole, text), ("•float", Call::Value(to_float), Ambivalent, Whole, float),
+    ("•storage", Call::Inspect(storage), Monadic, Whole, record), ("•float", Call::Value(to_float), Ambivalent, Whole, float),
     ("•time", Call::Time, Ambivalent, Whole, seconds), ("•host", Call::Value(host), Monadic, Text, text), #[cfg(not(web))]
     ("•delay", Call::Effect(delay), Monadic, Whole, seconds), ("•date", Call::Value(crate::date::read), Ambivalent, Whole, seconds), #[cfg(not(web))]
     ("•path", Call::Value(crate::files::path), Ambivalent, Whole, record), #[cfg(not(web))]
@@ -142,6 +144,7 @@ const BUILTINS: &[(&str, Call, Valence, Item, fn(&Context<'_>) -> Value)] = &[
     ("•nc", Call::Session(crate::Session::system_nc), Monadic, Text, number), ("•nl", Call::Session(crate::Session::system_nl), Ambivalent, Whole, texts),
     ("•src", Call::Session(crate::Session::system_src), Monadic, Text, text), ("•ex", Call::Session(crate::Session::system_ex), Monadic, Text, number),
     ("•literal", Call::Session(crate::Session::system_literal), Monadic, Text, number),
+    ("•explain", Call::Session(crate::Session::system_explain), Monadic, Text, record), ("•memory", Call::Value(memory), Monadic, Whole, record),
 ];
 
 /// Every system function's name.
@@ -231,7 +234,17 @@ fn delay(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<(Value,
     Ok((Value::Number(crate::Number::float(start.elapsed().as_secs_f64(), FloatWidth::F64)), true))
 }
 
-fn storage(_: Option<&Value>, right: &Value, _: &Context<'_>) -> Result<Value, Error> { Ok(crate::keyed::text(right.storage_name())) }
+/// `•storage Y`: how `Y`'s items are held, as a record. `kind` names the storage. `pending` is true while the items wait in a pending call, and `view` while `Y` reads another array's items. `active` counts the `∂` levels whose tags `Y` carries. Reading no items, it never forces a pending array.
+fn storage(_: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+    let flag = |b: bool| Value::Number(crate::Number::from_bool(b));
+    let values = vec![crate::keyed::text(right.storage_name()), flag(right.held().pending().is_some()), flag(right.is_view()), integer(crate::derivative::levels(right) as i64)];
+    crate::keyed::record(["kind", "pending", "view", "active"].map(Into::into).to_vec(), values).error_at(cx, "invalid storage record")
+}
+
+/// `•memory x`: what this thread holds for differentiation, as a record, whatever `x` is. `records` counts the record nodes alive, which each `∂` frees when it returns.
+fn memory(_: Option<&Value>, _: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+    crate::keyed::record(vec!["records".into()], vec![integer(crate::linear::live() as i64)]).error_at(cx, "invalid memory record")
+}
 
 /// `width •float Y`: the numbers of `Y` as floats of `width` bits, 16, 32 or 64. `•float Y` gives floats of the default width, which the `float` pref sets. Arrays nested in `Y` convert too.
 fn to_float(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {

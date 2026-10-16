@@ -29,7 +29,8 @@ pub(super) fn composition(op: OperatorKind, operands: &[Operand; 2], left: Optio
         (Operand::Function(f), Operand::Function(g)) => match op {
             Valences => { if left.is_some() { g.call(left, right, cx) } else { f.call(None, right, cx) } } Product => inner(f, g, left, right, cx),
             After => { let y = g.call_array(None, right, cx)?; f.call(Some(left.unwrap_or(right)), &y, cx) }
-            Atop => { let y = g.call_array(left, right, cx)?; f.call(None, &y, cx) } Over => over(f, g, left, right, cx),
+            Atop => { let y = g.call_array(left, right, cx)?; f.call(None, &y, cx) }
+            Over => over(f, g, left, right, cx),
             Before => { let x = f.call_array(None, left.unwrap_or(right), cx)?; g.call(Some(&x), right, cx) } _ => unreachable!()
         },
         _ => Err(cx.span.domain_error("invalid operator operands")),
@@ -370,24 +371,33 @@ fn inverse_scan(f: &Function, h: FoldKind, axis: Option<&Value>, seed: Option<&V
     right.layout().collect(data, || right.prototype()).error_at(cx.span, "invalid inverse scan")
 }
 
-pub(super) fn key(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+/// The Key `derived`, `f⌸`. The idiom it may hold (`idioms`) counts each group, or folds each group of a vector, without calling `f`. A fold that `pervasive::fold_groups` can't compute takes the general path, which reuses the same classes.
+pub(super) fn key(derived: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+    use idioms::Idiom;
+    let FunctionNode::Modified(_, Operand::Function(f)) = derived.node() else { unreachable!("a Key holds its operand") };
     let keys = left.unwrap_or(right);
     if keys.is_unit() || right.is_unit() { return Err(cx.span.error(Kind::Rank, "key arguments must have major cells")); }
     if keys.shape()[0] != right.shape()[0] { return Err(cx.span.error(Kind::Length, "key arguments must have equal tallies")); }
-    if counts_rows(f) && keys.shape()[0] > 0 {
-        let key_cells = crate::search::Cells::of(keys, keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
-        let counts = crate::search::class_counts(&key_cells, cx)?;
-        return Ok(Bound::from(Value::positions(vec![counts.len()], keys.shape()[0] + 1, counts.into_iter()).error_at(cx.span, "invalid key result")?));
+    let key_cells = crate::search::Cells::of(keys, keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
+    let idiom = derived.node.idiom.as_ref();
+    if let Some(counts @ Idiom::Counts) = idiom.filter(|_| keys.shape()[0] > 0) {
+        let sizes = crate::search::class_counts(&key_cells, cx)?;
+        counts.taken(derived, cx);
+        return Ok(Bound::from(Value::positions(vec![sizes.len()], keys.shape()[0] + 1, sizes.into_iter()).error_at(cx.span, "invalid key result")?));
+    }
+    let mut classes = crate::search::grouped(&key_cells, cx)?;
+    let count = classes.firsts.len();
+    if let Some(folds @ Idiom::Folds(p)) = idiom.filter(|_| left.is_some() && count > 0 && right.shape().len() == 1 && !crate::derivative::active_in(cx, right)) {
+        if let Some(result) = crate::pervasive::fold_groups(*p, right, &classes, cx.numeric()) {
+            folds.taken(derived, cx);
+            return Ok(Bound::from(result));
+        }
     }
     // A monadic Key's values are the positions along `right`, which are each group's rows themselves unless that axis has keys.
     let values = match left {
         Some(_) => Some(right.clone()),
         None if right.keys(0).is_some() => Some(crate::keyed::selectors(right, &[0]).error_at(cx.span, "invalid group indices")?), None => None
     };
-    let cells = keys.cells(keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
-    let key_cells = crate::search::Cells::of(keys, keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
-    let mut classes = crate::search::grouped(&key_cells, cx)?;
-    let count = classes.firsts.len();
     let width = values.as_ref().map_or(Ok(1), |v| generated_len(&v.shape()[1..])).at(cx.span)?;
     let select = |rows: &[u32]| {
         let Some(values) = &values else { return Value::positions(vec![rows.len()], right.shape()[0], rows.iter().copied()) };
@@ -397,6 +407,7 @@ pub(super) fn key(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Co
         data.finish(layout, || values.prototype())
     };
     if count == 0 {
+        let cells = keys.cells(keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
         let x = cells.prototype().error_at(cx.span, "invalid key prototype")?;
         let y = select(&[]).error_at(cx.span, "invalid key group")?;
         let result = f.call_prototype(Some(&if cells.shape().is_empty() { x.at(0) } else { x }), &y, cx)?.array(cx.span)?;
@@ -419,12 +430,6 @@ pub(super) fn key(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Co
     Ok(Bound::from(Value::assemble(&[count], &results, &results[0]).error_at(cx.span, "invalid key result")?))
 }
 
-/// Whether `f` is `≢⊢`, which `≢∘⊢` also builds. As Key's operand it gives the number of rows in each group.
-fn counts_rows(f: &Function) -> bool {
-    matches!(f.node(), FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(g), Operand::Function(h)])
-        if matches!(g.node(), FunctionNode::Primitive(Primitive::Tally)) && matches!(h.node(), FunctionNode::Primitive(Primitive::Identity(false))))
-}
-
 /// The primitive in `f`, when `f` is a primitive whose form for this valence is a pervasive function. Each and Outer call such a primitive on whole arrays.
 fn pervasive_primitive(f: &Function, dyadic: bool) -> Option<Primitive> {
     match f.node() { FunctionNode::Primitive(p) if p.pervasive(dyadic) => Some(*p), _ => None }
@@ -443,9 +448,10 @@ pub(super) fn outer(operand: &Function, left: Option<&Value>, right: &Value, cx:
 }
 
 fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+    use crate::number::Arithmetic::{Plus, Times};
     let Some(left) = left else { return expansion(f, g, right, cx) };
     // The tangent of `A+.×B` is `(tA+.×B)+A+.×tB`, through the same product kernels.
-    if cx.session.differentiating() && plus_times(f, g) {
+    if cx.session.differentiating() && matches!(primitive_pair(f, g), Some((Primitive::Arithmetic(Plus), Primitive::Arithmetic(Times)))) {
         // A record reaches here only as a dual's tangent, which the terms below record with the primal's layout (`linear::product`).
         if left.linear().is_some() || right.linear().is_some() { return Err(cx.span.error(crate::ErrorKind::Unsupported, "∂ can't transpose this product")); }
         if let Some(tag) = crate::derivative::tag(left).max(crate::derivative::tag(right)) {
@@ -474,9 +480,9 @@ fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &m
     let cols = generated_len(yf).at(cx.span)?;
     generated_len(&[n.max(1), cols.max(1)]).at(cx.span)?;
     let active = crate::derivative::either_active(cx, Some(left), right);
-    if let (FunctionNode::Primitive(pf), FunctionNode::Primitive(pg), false) = (f.node(), g.node(), active) {
+    if let (Some((pf, pg)), false) = (primitive_pair(f, g), active) {
         if nx == ny && n > 0 && size > 0 && !left.is_unit() && !right.is_unit() && matches!(positions, Mapping::Linear(1)) {
-            if let Some(result) = crate::pervasive::inner(*pf, *pg, left, right, [rows, n, cols], layout.shape().to_vec(), cx.numeric(), [rustymath::linalg::Orientation::Normal; 2]) {
+            if let Some(result) = crate::pervasive::inner(pf, pg, left, right, [rows, n, cols], layout.shape().to_vec(), cx.numeric(), [rustymath::linalg::Orientation::Normal; 2]) {
                 if layout.shape().is_empty() { return Ok(Bound::from(result.at(0))); }
                 return Ok(Bound::from(result.with_layout(layout).error_at(cx.span, "invalid inner product result")?));
             }
@@ -510,41 +516,23 @@ fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &m
     Ok(Bound::from(result.error_at(cx.span, "invalid inner product result")?))
 }
 
-/// Whether an inner product is `+.×`.
-fn plus_times(f: &Function, g: &Function) -> bool {
-    use crate::number::Arithmetic::{Plus, Times};
-    matches!((f.node(), g.node()), (FunctionNode::Primitive(Primitive::Arithmetic(Plus)), FunctionNode::Primitive(Primitive::Arithmetic(Times))))
+/// The two primitives of the product `f.g`, where both operands are primitives.
+pub(super) fn primitive_pair(f: &Function, g: &Function) -> Option<(Primitive, Primitive)> {
+    match (f.node(), g.node()) { (FunctionNode::Primitive(a), FunctionNode::Primitive(b)) => Some((*a, *b)), _ => None }
 }
 
-/// Monadic `f.g`, as J defines it: the expansion of a matrix by minors along its first column. A vector is one column, and an atom one item. `-.×` is the determinant and `+.×` the permanent. `-.×` on a square matrix of numbers takes `primitive::determinant`.
+/// Monadic `f.g`, as J defines it: the expansion of a matrix by minors along its first column. A vector is one column, and an atom one item. `-.×` is the determinant and `+.×` the permanent, which `idioms` computes by faster algorithms.
 fn expansion(f: &Function, g: &Function, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
-    let [m, n] = match *right.shape() {
-        [] => [1, 1], [m] => [m, 1], [m, n] => [m, n], _ => return Err(cx.span.error(Kind::Rank, "monadic f.g needs a matrix, a vector or a number"))
-    };
-    use crate::number::{with_field, Arithmetic, Field};
-    let arithmetic = |h: &Function, a: Arithmetic| matches!(h.node(), FunctionNode::Primitive(Primitive::Arithmetic(x)) if *x == a);
-    if crate::derivative::active_in(cx, right) {
-        if arithmetic(f, Arithmetic::Minus) && arithmetic(g, Arithmetic::Times) {
-            return crate::derivative::determinant(right, |a, cx| expansion(f, g, a, cx)?.array(cx.span), cx).map(Bound::from);
-        }
-        return Err(cx.span.error(ErrorKind::Unsupported, "∂ differentiates monadic f.g only as -.×"));
-    }
-    if arithmetic(f, Arithmetic::Minus) && arithmetic(g, Arithmetic::Times) && m == n && n > 0 {
-        if let Some(d) = crate::primitive::determinant(right, n, cx)? { return Ok(Bound::from(d)); }
-    }
+    let [m, n] = matrix(right).ok_or_else(|| cx.span.error(Kind::Rank, "monadic f.g needs a matrix, a vector or a number"))?;
+    if crate::derivative::active_in(cx, right) { return Err(cx.span.error(ErrorKind::Unsupported, "∂ differentiates monadic f.g only as -.×")); }
     if m > 64 { return Err(cx.span.error(Kind::Limit, "monadic f.g expands at most 64 rows")); }
-    if arithmetic(f, Arithmetic::Plus) && arithmetic(g, Arithmetic::Times) && m == n && n < 64 {
-        if let Some(items) = (0..m * n).map(|i| match right.at(i) { Value::Number(x) => Some(x), _ => None }).collect::<Option<Vec<crate::Number>>>() {
-            let p = with_field!(items.iter(), cx.numeric(), T, width => {
-                let a: Vec<T> = items.iter().map(T::of).collect(); rustymath::linalg::exact::permanent_with(&a, n, || cx.check_now())?.number(width)
-            });
-            return Ok(Bound::from(Value::Number(p)));
-        }
-    }
     let items: Vec<Value> = (0..m * n).map(|i| right.at(i)).collect();
     let rows = if m == 0 { 0 } else { u64::MAX >> (64 - m) };
     expand(f, g, &items, [m, n], rows, &right.prototype(), &mut HashMap::new(), cx).map(Bound::from)
 }
+
+/// The rows and columns that monadic `f.g` reads `right` as: a vector is one column, and a number one item.
+pub(super) fn matrix(right: &Value) -> Option<[usize; 2]> { match *right.shape() { [] => Some([1, 1]), [m] => Some([m, 1]), [m, n] => Some([m, n]), _ => None } }
 
 /// The expansion of the rows in the set `rows` of the `m`×`n` matrix `items`, from column `m` minus the size of `rows` on. While columns are left, it is `f.g` between that column's items in `rows` and the expansions without each of those rows. With no columns left, it is `g/` of no items. `memo` holds the expansion of each set of rows already expanded.
 fn expand(
@@ -654,7 +642,6 @@ fn stacked(operand: &Function, left: Option<&Value>, right: &Value, [xr, yr]: [u
     use crate::{number::Arithmetic, primitive::{stacked as matrices, stacked_decompositions, Stacked}};
     // The stacked kernels read compact storage, which a dual doesn't have: its cells go through the operand one by one (`derivative`).
     if yr != 2 || crate::derivative::either_active(cx, left, right) { return None; }
-    let arithmetic = |f: &Operand, a| matches!(f, Operand::Function(f) if matches!(f.node(), FunctionNode::Primitive(Primitive::Arithmetic(x)) if *x == a));
     let decompose = |f: &Function| matches!(f.node(), FunctionNode::System(s) if s.name == "•decompose");
     let kind = match (operand.node(), left) {
         (FunctionNode::System(_), Some(kind)) if decompose(operand) && xr == kind.shape().len() => Some(kind),
@@ -665,8 +652,10 @@ fn stacked(operand: &Function, left: Option<&Value>, right: &Value, [xr, yr]: [u
     let op = match (operand.node(), left) {
         (FunctionNode::Primitive(Primitive::MatrixDivide), None) => Stacked::Inverse,
         (FunctionNode::Primitive(Primitive::MatrixDivide), Some(_)) => Stacked::Solve,
-        (FunctionNode::Composed(OperatorKind::Product, [f, g]), _) if arithmetic(g, Arithmetic::Times) => match left {
-            Some(_) if arithmetic(f, Arithmetic::Plus) => Stacked::Product, None if arithmetic(f, Arithmetic::Minus) => Stacked::Determinant, _ => return None
+        (FunctionNode::Composed(OperatorKind::Product, [Operand::Function(f), Operand::Function(g)]), _) => match (primitive_pair(f, g), left) {
+            (Some((Primitive::Arithmetic(Arithmetic::Plus), Primitive::Arithmetic(Arithmetic::Times))), Some(_)) => Stacked::Product,
+            (Some((Primitive::Arithmetic(Arithmetic::Minus), Primitive::Arithmetic(Arithmetic::Times))), None) => Stacked::Determinant,
+            _ => return None,
         },
         _ => return None,
     };
@@ -789,6 +778,9 @@ fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Cont
 pub(super) fn fold(
     operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
     if left.is_none() && cx.session.differentiating() {
+        if right.linear().is_some() || right.dual_tag().is_some() {
+            if let Some(folded) = in_turn(operand, kind, axis, right, cx)? { return Ok(folded); }
+        }
         if let Some(t) = right.linear() {
             let plus = matches!(operand.node(), FunctionNode::Primitive(Primitive::Arithmetic(crate::number::Arithmetic::Plus)));
             return if plus { crate::linear::fold(kind, axis, t, cx) } else { Err(cx.span.error(crate::ErrorKind::Unsupported, "∂ can't transpose this fold")) };
@@ -827,32 +819,48 @@ fn fold_dual(operand: &Function, kind: FoldKind, axis: Option<&Value>, right: &V
     Some(match p {
         Primitive::Arithmetic(Plus) => fold(operand, kind, axis, None, &x, cx)
             .and_then(|r| Ok(crate::derivative::dual(tag, r, fold(operand, kind, axis, None, &tx, cx)?))),
-        Primitive::Arithmetic(Times) | Primitive::Math(Ceiling | Floor) if axis.is_none() && !x.shape().is_empty() => fold_rule(operand, *p, kind, &x, &tx, cx).map(|(r, t)| crate::derivative::dual(tag, r, t)),
+        Primitive::Arithmetic(Times) | Primitive::Math(Ceiling | Floor) if !x.shape().is_empty() => fold_rule(operand, *p, kind, axis, &x, &tx, cx).map(|(r, t)| crate::derivative::dual(tag, r, t)),
         _ => return None,
     })
 }
 
+/// A fold by `+`, `×`, `⌈` or `⌊` along several axes, as folds along one axis at a time from the last, for an argument that `∂` differentiates. The four operands are associative and commutative. Folding one axis at a time therefore gives the fold of the ravelled cells. `None` for any other fold.
+#[cold]
+#[inline(never)]
+fn in_turn(operand: &Function, kind: FoldKind, axis: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Option<Value>, Error> {
+    use crate::number::{Arithmetic::*, Math::{Ceiling, Floor}};
+    let Some(axis) = axis.filter(|_| !kind.scan) else { return Ok(None) };
+    if !matches!(operand.node(), FunctionNode::Primitive(Primitive::Arithmetic(Plus | Times) | Primitive::Math(Ceiling | Floor))) { return Ok(None); }
+    let axes = crate::primitive::resolve_axes(axis, right, cx.span)?;
+    if axes.is_singleton() { return Ok(None); }
+    let mut axes = crate::primitive::axes(&axes, right.shape().len(), cx)?;
+    axes.sort_unstable_by(|a, b| b.cmp(a));
+    let mut folded = right.clone();
+    for a in axes { folded = fold(operand, kind, Some(&Value::Number(crate::Number::from_integer(a as i64))), None, &folded, cx)?; }
+    Ok(Some(folded))
+}
+
 /// The primal and tangent of a fold or scan by `p`, which is `×`, `⌈` or `⌊`, of `x` with tangent `tx`, through the linear operations that reverse mode transposes. A product's tangent scales each item's tangent by the product of the others and sums: the product of the nonzero items, times the sum of `tx÷x` where no item is zero, or times the zero item's tangent where one is, and 0 where more are. A maximum's or minimum's tangent gathers the tangent of the item that gives it, the first of any ties, as dyadic `⌈` and `⌊` give a tie to their left argument.
-fn fold_rule(operand: &Function, p: Primitive, kind: FoldKind, x: &Value, tx: &Value, cx: &mut Context<'_>) -> Result<(Value, Value), Error> {
+fn fold_rule(operand: &Function, p: Primitive, kind: FoldKind, axis: Option<&Value>, x: &Value, tx: &Value, cx: &mut Context<'_>) -> Result<(Value, Value), Error> {
     use crate::{number::Arithmetic::*, primitive::Comparison::{Equal, NotEqual}};
     let int = |n: i64| Value::Number(crate::Number::from_integer(n));
     let call = |p: Primitive, a: &Value, b: &Value, cx: &Context<'_>| p.call(Some(a), b, cx);
     let (times, plus) = (Primitive::Arithmetic(Times), Function::primitive(Primitive::Arithmetic(Plus)));
-    let r = fold(operand, kind, None, None, x, cx)?;
+    let r = fold(operand, kind, axis, None, x, cx)?;
     let t = if matches!(p, Primitive::Arithmetic(Times)) {
         let zero = call(Primitive::Compare(Equal), x, &int(0), cx)?;
         let ones = call(Primitive::Arithmetic(Plus), x, &zero, cx)?;
-        let rest = fold(operand, kind, None, None, &ones, cx)?;
-        let zeros = fold(&plus, kind, None, None, &zero, cx)?;
+        let rest = fold(operand, kind, axis, None, &ones, cx)?;
+        let zeros = fold(&plus, kind, axis, None, &zero, cx)?;
         let reciprocal = call(Primitive::Arithmetic(Divide), &call(Primitive::Arithmetic(Minus), &int(1), &zero, cx)?, &ones, cx)?;
-        let none = fold(&plus, kind, None, None, &call(times, &reciprocal, tx, cx)?, cx)?;
-        let one = fold(&plus, kind, None, None, &call(times, &zero, tx, cx)?, cx)?;
+        let none = fold(&plus, kind, axis, None, &call(times, &reciprocal, tx, cx)?, cx)?;
+        let one = fold(&plus, kind, axis, None, &call(times, &zero, tx, cx)?, cx)?;
         let none = call(times, &call(times, &rest, &call(Primitive::Compare(Equal), &zeros, &int(0), cx)?, cx)?, &none, cx)?;
         let one = call(times, &call(times, &rest, &call(Primitive::Compare(Equal), &zeros, &int(1), cx)?, cx)?, &one, cx)?;
         call(Primitive::Arithmetic(Plus), &none, &one, cx)?
     } else {
         let shape = x.shape();
-        let axis = if kind.first { 0 } else { shape.len() - 1 };
+        let axis = kind.axis(axis, x, cx.span)?;
         let lanes = Lanes::new(shape, axis).at(cx.span)?;
         let Lanes { outer, len: n, inner } = lanes;
         let booleans = |v: Value| v.as_booleans().map(<[bool]>::to_vec).unwrap_or_else(|| v.elements().map(|e| matches!(e, Value::Number(n) if !n.is_zero())).collect());
@@ -874,9 +882,10 @@ fn fold_rule(operand: &Function, p: Primitive, kind: FoldKind, x: &Value, tx: &V
             }
             offsets
         } else {
-            // Folding the first axis of a matrix or more leaves the other axes, so `r` takes a leading axis of length 1 to pair with `x`.
-            let back = if kind.first && shape.len() > 1 {
-                let shape = std::iter::once(1).chain(r.shape().iter().copied()).map(|n| n as i64).collect::<Vec<_>>();
+            // `r` takes a length-1 axis in place of the folded axis to pair with `x`, unless the fold removed the last axis.
+            let back = if axis + 1 < shape.len() {
+                let mut shape = r.shape().iter().map(|&n| n as i64).collect::<Vec<_>>();
+                shape.insert(axis, 1);
                 Primitive::Shape.call(Some(&Value::integers(vec![shape.len()], shape).error_at(cx.span, "invalid shape")?), &r, cx)?
             } else { r.clone() };
             let hit = booleans(call(Primitive::Compare(Equal), x, &back, cx)?);

@@ -4,7 +4,7 @@
 
 | Setting | Holds | Default |
 |---|---|---|
-| `box` | `$t` draws arrays in boxes | `$t` in the REPL and the BPL Jupyter kernel, `$f` elsewhere |
+| `box` | `$t` draws matrices, nested arrays and strings in boxes, and leaves other vectors plain | `$t` in the REPL, the BPL Jupyter kernel and IPython once it loads BPL's magics, `$f` elsewhere |
 | `trees` | `$t` shows functions and dissected expressions as trees; `$f` uses linear notation. Independent of `box` | as `box` |
 | `fns` | `$f` leaves output made inside functions unboxed | as `box` |
 | `dissect` | `$t` shows the bound expression before each normal result, using `trees` | `$f` |
@@ -34,8 +34,8 @@ Display shows part of an array of more than `limit` items: the first and last `e
 •prefs ["tolerance":0] ⋄ 0.3=0.1+0.2    ⍝ $f
 •prefs ["tolerance":1E¯14] ⋄ 0.3=0.1+0.2    ⍝ $t
 •prefs ["tolerance":1E¯14] ⋄ 1ₛ=1.0000001ₛ    ⍝ $f
-•prefs ["float":32] ⋄ •storage 1.5    ⍝ "float32"
-•prefs ["float":64] ⋄ •storage 1.5    ⍝ "float64"
+•prefs ["float":32] ⋄ (•storage 1.5).kind    ⍝ "float32"
+•prefs ["float":64] ⋄ (•storage 1.5).kind    ⍝ "float64"
 •prefs ["threads":1] ⋄ "threads"⊃•prefs ⍬    ⍝ 1ₓ
 ```
 

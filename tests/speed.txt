@@ -82,6 +82,8 @@ c⍳c	12	14
 # Key classifies the keys, then counts and places each group's positions. With `(≢⊢)` it only counts the classes.
 {≢⍵}⌸b	5.6	5.2
 (≢⊢)⌸b	0.63	0.73
+# `(+/⊢)` folds each group of the values in one pass. The keys `i` make about 41,000 groups, each of which the general path would call the operand for.
+i (+/⊢)⌸ v	370	430
 # Classify of Booleans compares each item with the first. Groups of Booleans write each class's positions 8 items at a time, from a table indexed by the byte of those items' classes.
 ⍷b	5.3	4.8
 =b	0.54	0.66
@@ -170,6 +172,12 @@ v⍳w	240	320
 # A sort of keys that span a small range counts them, then writes each key as many times as it occurs. It needs no positions.
 <jv	7.9	7.3
 <b	0.88	0.79
+# Taking a few items of a grade or a sort selects them, without sorting the rest.
+(10↑)∘⍋ v	79	180
+(10↑)∘< v	78	180
+↑∘< v	51	55
+# The ranks `⍋⍋` invert the first grade instead of grading it again.
+⍋⍋ v	290	320
 # Unique sorts the reals, then compares each with the next one.
 ∪v	250	250
 # The inner products in `rustymath` run `+.×`, `⌈.+` and `⌊.+` on floats and integers, `+.×` on complex numbers, Boolean `∨.∧` and `∧.∨`, and the counts `+.=` and `+.≠`. `rustymath`'s own speed test times those products. Each case here checks that basedpl sends one kind of pair to them. A pair that misses them takes the per-row path, several times slower. A case with `⍤2` makes one call for each of 1024 matrices of 8×8.

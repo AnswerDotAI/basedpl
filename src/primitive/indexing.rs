@@ -1,6 +1,6 @@
 //! Indexing primitives: `⌷`, `⊃` and bracket indexing, and the `Selection` of items that selective assignment and `@` write through.
 
-use rustymath::{buffer::View, error::Kind, structure::Plan};
+use rustymath::{buffer::View, error::Kind, structure::{Plan, Selector as AxisSelector}};
 use super::*;
 
 pub(super) fn squad(left: &Value, right: &Value, axes: Option<&[usize]>, span: &Context<'_>) -> Result<Value, Error> {
@@ -271,7 +271,7 @@ pub(crate) fn select(right: &Value, parts: &[Option<Value>], span: &Context<'_>)
     remap(right, plan, span)
 }
 
-/// `body` of the indices of a selection of the unkeyed vector `right` by one array of them, those indices as integers, and the vector's length. Floats that all stand for integers read as integers. `None` when the selection isn't of this kind. An index outside the vector is an error.
+/// `body` of the indices of a selection of the unkeyed vector `right` by one array of them, those indices as integers, and the vector's length. Floats that all stand for integers read as integers. `None` when the selection isn't of this kind. An index outside the vector is an error, except from a named selector, which fills there through the general path.
 fn vector_index<R>(
     right: &Value, parts: &[Option<Value>], span: &Context<'_>, body: impl FnOnce(&Value, rustymath::buffer::Ints<'_>, i64) -> R) -> Result<Option<R>, Error> {
     let ([Some(indices)], [size]) = (parts, right.shape()) else { return Ok(None) };
@@ -282,17 +282,23 @@ fn vector_index<R>(
         items @ Items::Compact(View::Floats(_)) => match items.integers() { Ok(w) => { whole = w; rustymath::buffer::Ints::I64(&whole) } Err(_) => return Ok(None) },
         _ => return Ok(None),
     };
+    let named = named(indices);
     let n = *size as i64;
+    let low = if named { 0 } else { -n };
     let inside = with_ints!(ix, |ix| ix.iter().fold(true, |ok, &i| {
         let i: i64 = i.into();
-        ok & (i >= -n) & (i < n)
+        ok & (i >= low) & (i < n)
     }));
-    if !inside { return Err(span.error(Kind::Index, "index is outside the array")); }
+    if !inside { return if named { Ok(None) } else { Err(span.error(Kind::Index, "index is outside the array")) }; }
     Ok(Some(body(indices, ix, n)))
 }
 
-/// The layout of a selection of the vector `right` at the array `indices`: the indices' shape, and the vector's axis name where the indices are a vector.
+/// Whether `selector` has axis names, which make it a named selector.
+fn named(selector: &Value) -> bool { selector.axis_names().iter().any(Option::is_some) }
+
+/// The layout of a selection of the vector `right` at the array `indices`: a named selector's own layout, or the indices' shape with the vector's axis name where the indices are a vector.
 fn vector_layout(right: &Value, indices: &Value) -> rustymath::layout::Layout {
+    if named(indices) { return rustymath::layout::Layout::clone(indices.layout()); }
     let names = if indices.shape().len() == 1 { vec![right.axis_name(0).cloned()] } else { vec![] };
     rustymath::layout::Layout::from(indices.shape()).inherit_names(names)
 }
@@ -322,6 +328,7 @@ pub(crate) fn selection(right: &Value, parts: &[Option<Value>], span: &Context<'
     let (plan, direct) = match axis_positions(right, parts, span)? {
         Positions::Choose(indices) => return choose(right, &indices, span), Positions::Axes(plan, direct) => (plan, direct)
     };
+    if plan.steps.iter().any(|s| matches!(s, Steps::Table(t) if t.contains(&None))) { return Err(span.error(Kind::Index, "assignment can't write outside an axis")); }
     let targets = Targets::Offsets(Steps::combined(&plan.steps));
     Ok(Selection { frame: if direct { Frame::Direct } else { Frame::Array(plan.layout.into()) }, targets })
 }
@@ -337,42 +344,25 @@ fn axis_positions(right: &Value, parts: &[Option<Value>], span: &Context<'_>) ->
             return Ok(Positions::Choose(indices.clone()));
         }
     }
-    let (mut shape, mut steps, mut keys, mut names) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    let stride = strides(right.shape());
     let mut direct = true;
-    for (axis, &size) in right.shape().iter().enumerate() {
+    let selectors = right.shape().iter().enumerate().map(|(axis, &size)| {
         let part = parts.get(axis).and_then(Option::as_ref);
         if let Some(a) = part.filter(|a| whole_axis(a).is_none()) {
             direct &= a.is_atom();
-            shape.extend_from_slice(a.shape());
-            let positions = a.as_items().integers().error_at(span, "index must be an integer")?.iter()
-                .map(|&n| rustymath::layout::position(n, size).ok_or_else(|| span.error(Kind::Index, "index is outside the array"))).collect::<Result<Vec<_>, _>>()?;
-            let selected =
-                right.keys(axis).map(|k| k.select(positions.iter().copied().map(Some))).transpose().error_at(span, "selection repeats a keyed position")?;
-            if a.shape().len() == 1 {
-                keys.push(selected);
-                names.push(right.axis_name(axis).cloned());
-            } else {
-                keys.extend(std::iter::repeat_n(None, a.shape().len()));
-                names.extend(std::iter::repeat_n(None, a.shape().len()));
-            }
-            steps.push(Steps::Table(positions.iter().map(|&i| Some(i * stride[axis])).collect()));
+            let integers = a.as_items().integers().error_at(span, "index must be an integer")?;
+            let positions = rustymath::structure::index_positions(integers.iter().copied(), size, named(a)).at(span)?;
+            Ok(match positions[..] { [Some(i)] if a.is_atom() => AxisSelector::At(i), _ => AxisSelector::Indices { layout: rustymath::layout::Layout::clone(a.layout()), positions } })
         } else {
             direct = false;
-            shape.push(size);
             let reversed = part.and_then(whole_axis) == Some(true);
-            let position = |j: usize| if reversed { size - 1 - j } else { j };
-            keys.push(right.keys(axis).map(|k| k.select((0..size).map(|j| Some(position(j))))).transpose().error_at(span, "invalid axis keys")?);
-            names.push(right.axis_name(axis).cloned());
-            steps.push(if reversed { Steps::Stride { start: size.saturating_sub(1) * stride[axis], len: size, step: -(stride[axis] as isize) } }
-            else { Steps::along(size, stride[axis]) });
+            Ok(AxisSelector::Range { start: if reversed { size.saturating_sub(1) } else { 0 }, len: size, step: if reversed { -1 } else { 1 } })
         }
-    }
-    generated_len(&shape).at(span)?;
-    let layout = rustymath::layout::Layout::from(shape).with_keys(keys).error_at(span, "invalid selection keys")?.inherit_names(names);
-    Ok(Positions::Axes(Plan { layout, steps }, direct))
+    }).collect::<Result<Vec<_>, Error>>()?;
+    let plan = rustymath::structure::select(right.layout(), &selectors).at(span)?;
+    Ok(Positions::Axes(plan, direct))
 }
 
+/// The positions that `value` selects along `axis` of `array`. A selector of keys reads their positions, keeping its own axis names and keys.
 fn axis_selector(value: &Value, array: &Value, axis: usize, span: &Context<'_>) -> Result<Value, Error> {
     let Some(selector) = Selector::of(value).error_at(span, "invalid axis selector")? else { return Ok(value.clone()); };
     let keys = array.keys(axis).ok_or_else(|| span.error(Kind::Index, "axis has no keys"))?;
@@ -380,7 +370,7 @@ fn axis_selector(value: &Value, array: &Value, axis: usize, span: &Context<'_>) 
     match selector {
         Selector::One(k) => position(&k),
         Selector::Many(shape, names) => {
-            Value::from_parts(shape, names.iter().map(|k| position(k)).collect::<Result<_, _>>()?, integer(0)).error_at(span, "invalid named selector")
+            Value::from_parts(shape, names.iter().map(|k| position(k)).collect::<Result<_, _>>()?, integer(0)).and_then(|v| v.with_layout(value.layout().clone())).error_at(span, "invalid named selector")
         }
     }
 }

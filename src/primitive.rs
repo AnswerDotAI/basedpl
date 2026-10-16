@@ -213,12 +213,14 @@ fn selected(a: &Value, i: usize) -> Value { a.at(if a.is_singleton() { 0 } else 
 
 pub(crate) fn axis_value(axis: usize) -> Value { integer(axis as i64) }
 pub(crate) fn resolve_axes(spec: &Value, target: &Value, span: &Span) -> Result<Value, Error> {
-    let resolve = |value: Value| match crate::keyed::name(&value) {
+    // A string names an axis. So does a named index, a vector along one named axis, which names its own axis.
+    let name = |v: &Value| crate::keyed::name(v).or_else(|| match v.shape() { [_] => v.axis_name(0).cloned(), _ => None });
+    let resolve = |value: Value| match name(&value) {
         None => Ok(value), Some(name) => target.layout().axis_named(&name).map(axis_value)
             .ok_or_else(|| span.error(Kind::Index, format!("unknown axis: {name}")))
     };
-    if crate::keyed::name(spec).is_some() { return resolve(spec.clone()); }
-    if !spec.elements().any(|e| crate::keyed::name(&e).is_some()) { return Ok(spec.clone()); }
+    if name(spec).is_some() { return resolve(spec.clone()); }
+    if !spec.elements().any(|e| name(&e).is_some()) { return Ok(spec.clone()); }
     Value::from_parts(spec.shape().to_vec(), spec.elements().map(resolve).collect::<Result<_, _>>()?, integer(0)).error_at(span, "invalid axes")
 }
 
@@ -369,7 +371,7 @@ impl Primitive {
                 left.map_or_else(|| crate::keyed::remove(right, Some(&axes)), |x| crate::keyed::construct(x, right, Some(&axes)))
                     .error_at(span, "invalid axis keys")
             }
-            (Self::Iota, None) => crate::keyed::selectors(right, &axes(spec, right.shape().len(), span)?).error_at(span, "invalid axis selectors"),
+            (Self::Iota, None) => crate::keyed::named_selectors(right, &axes(spec, right.shape().len(), span)?).error_at(span, "invalid axis selectors"),
             (Self::Ravel, None) => {
                 let input = right.layout();
                 let rank = input.shape().len();

@@ -98,12 +98,14 @@ pub(super) fn mix_axes(right: &Value, spec: &Value, span: &Context<'_>) -> Resul
     reorder(&mixed, &order, span)
 }
 
+/// The axis names that the shape `dimensions` gives reshape and `⍳`: each key names its entry's axis, and an unkeyed entry leaves its axis unnamed.
+pub(super) fn shape_names(dimensions: &Value) -> Vec<Option<std::sync::Arc<str>>> { dimensions.keys(0).map_or_else(Vec::new, |k| k.names().to_vec()) }
+
 pub(super) fn reshape(dimensions: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if dimensions.shape().len() > 1 { return Err(span.error(Kind::Rank, "shape must be a unit or vector")); }
     let shape = dimensions.as_items().nonnegative_integers().error_at(span, "invalid dimension")?;
     let len = generated_len(&shape).at(span)?;
-    // A keyed shape names the axes. Its unkeyed entries leave theirs unnamed.
-    let names = dimensions.keys(0).map_or_else(Vec::new, |k| k.names().to_vec());
+    let names = shape_names(dimensions);
     if right.shape() == shape && !right.is_atom() { return right.clone().with_axis_names(names).error_at(span, "invalid axis names"); }
     // The same number of items in a new shape shares the argument's storage.
     if len == right.len() && !right.is_atom() { return right.with_shape(shape).and_then(|a| a.with_axis_names(names)).error_at(span, "invalid reshape"); }

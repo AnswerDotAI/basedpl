@@ -1,0 +1,19 @@
+# `•explain` — Explain
+
+`•explain text` runs `text` in the caller's scope, as `⍎` does, and gives a record of its result and of what happened while it ran:
+
+- `value` is the result of `text`.
+- `fused` has a row for each fused group that ran, as [`•prefs`](prefs.qmd) describes fusion. `glyphs` lists the glyphs of the group's calls in the order they ran. A fold that reads through the group, without building it, adds its glyph last. `items` is the group's item count.
+- `forced` has a row for each call that computed a pending argument, which ends the argument's fusion. `function` is the call's function, and `line` and `column` give its position in `text`.
+- `fast` has a row for each [fast combination](../terms.qmd#term-fast-combination) taken. `combination` names it, and `function` is the function that took it. The names are `"partial grade"`, `"partial sort"`, `"ranks"`, `"group counts"`, `"group folds"`, `"determinant"` and `"permanent"`.
+
+Each of `fused`, `forced` and `fast` is a record of columns, as `•csv` gives a table, so `(•explain t).fast.combination` lists the combinations taken. `•prefs ["fusion":$t]` writes each forcing call as it happens. Nothing is recorded outside `•explain`.
+
+```bpl
+y←¿1000000⍴0
+(•explain "+/(2×y+1.5)-1").fused            ⍝ ["glyphs":["+×-+/"] "items":[1000000]ₓ]
+(•explain "≢⍕(2×y+1.5)-1").forced.function  ⍝ ["⍕"]
+(•explain "(10↑)∘⍋ y").fast.combination     ⍝ ["partial grade"]
+```
+
+[`•memory`](memory.qmd) reports what the process holds once a run has finished.

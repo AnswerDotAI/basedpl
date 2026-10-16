@@ -332,6 +332,8 @@ impl PySession {
     }
     /// The bits of the session's default float width, which Python floats take.
     fn float_bits(&self, py: Python<'_>) -> i64 { self.session.lock_py_attached(py).unwrap().float_width().bits() }
+    /// Gives the session the display defaults of BPL's REPL and Jupyter kernel, for the BPL magics in IPython.
+    fn make_interactive(&self, py: Python<'_>) { self.session.lock_py_attached(py).unwrap().make_interactive() }
     #[pyo3(signature = (prefix="", classes=vec![2, 3, 4], complete=false))]
     fn names(&self, py: Python<'_>, prefix: &str, classes: Vec<i64>, complete: bool) -> Vec<String> {
         let session = self.session.lock_py_attached(py).unwrap();

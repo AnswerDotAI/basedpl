@@ -82,8 +82,9 @@ def complete(self:BPLMagic, context):
 
 # %% ../../nbs/magics.ipynb #953c6348
 def create_magic(shell=None):
-    "Register line and cell magics with `shell`. They evaluate in `basedpl.bpl`."
+    "Register line and cell magics with `shell`. They evaluate in `basedpl.bpl`, which takes the BPL prompt's display settings."
     if shell is None: shell = get_ipython()
+    basedpl.bpl._session.make_interactive()
     magic = BPLMagic()
     shell.register_magic_function(magic.bpl, 'line_cell', 'bpl')
     matchers = shell.Completer.custom_matchers

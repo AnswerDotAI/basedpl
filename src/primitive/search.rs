@@ -139,25 +139,26 @@ fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, float: Option<Floa
     generated_items(vec![data.len()], data, float).unwrap()
 }
 
-/// A negative length counts down, as J's `i.` does: `⍳¯3` is `2 1 0`.
+/// A negative length counts down, as J's `i.` does: `⍳¯3` is `2 1 0`. A keyed shape names the result's axes, as it does for reshape: `⍳["i":3]` is `0 1 2` along an axis named `i`.
 pub(super) fn iota(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "iota needs a unit or vector shape")); }
     let lengths = right.as_items().integers().error_at(span, "invalid iota dimension")?;
     let shape: Vec<usize> = lengths.iter().map(|n| saturated(n.unsigned_abs())).collect();
     let len = generated_len(&shape).at(span)?;
     let float = counted_width(right, span);
-    if right.is_singleton() {
+    let indices = if right.is_singleton() {
         let down = lengths[0] < 0;
         if let Some(width) = float {
             let (start, mut data) = (if down { len as i64 - 1 } else { 0 }, Vec::new());
             rustymath::convert::count(&mut data, start, down, len);
-            return Value::floats(shape, width, data).error_at(span, "invalid iota");
-        }
-        return if down { Value::positions(shape, len, (0..len).rev()) } else { Value::positions(shape, len, 0..len) }.error_at(span, "invalid iota");
-    }
-    let prototype = generated_items(vec![shape.len()], vec![0; shape.len()], float).unwrap();
-    let data = (0..len).map(|i| coordinates(&lengths, &shape, i, float)).collect();
-    Value::from_parts(shape, data, prototype).error_at(span, "invalid coordinate array")
+            Value::floats(shape, width, data)
+        } else if down { Value::positions(shape, len, (0..len).rev()) } else { Value::positions(shape, len, 0..len) }
+    } else {
+        let prototype = generated_items(vec![shape.len()], vec![0; shape.len()], float).unwrap();
+        let data = (0..len).map(|i| coordinates(&lengths, &shape, i, float)).collect();
+        Value::from_parts(shape, data, prototype)
+    };
+    indices.and_then(|a| a.with_axis_names(super::structural::shape_names(right))).error_at(span, "invalid iota")
 }
 
 /// `a↦b` counts from `a` towards `b` in steps of 1, as far as `b` without passing it, and floors the number of steps within comparison tolerance. Each item is `a+i` or `a-i` for an exact count `i`, so the result's type follows `a`. Two characters count through the code points between them. `↦n` is the first `⌊|n|` counting numbers, negated when `n` is negative, with the type of `n`.
@@ -307,19 +308,15 @@ fn array_order(left: &Value, right: &Value) -> Option<Ordering> {
 
 /// The grade of `right`'s `count` major cells by rustymath's `sort_rows`, when its items are all Booleans, all floats, all integers or all characters, in at most 16 columns, keyed by their order keys. `sort_rows` counts keys that span a small range. It radix-sorts other keys. `Float::order_key` orders floats as `array_order` does, with a key as wide as the float.
 fn key_grade(right: &Value, count: usize, down: bool) -> Option<Vec<u32>> {
-    use rustymath::{search::{sort_rows, OrderKey as _, RadixKey}, with_ints, Arg, Float as _};
-    /// Each column's keys, from the items `x` of rows of `width` items through `key`, complemented when grading down, which reverses their order. Each column fills in one pass, through `pairs` for one column, which vectorizes.
+    use rustymath::{search::{sort_rows, OrderKey as _, RadixKey}, with_ints, Float as _};
+    /// Each column's keys, complemented when grading down. Single-column keys use `view_grade`'s parallel vectorized pass.
     fn columns<T: Copy + Sync, K: RadixKey>(x: &[T], width: usize, down: bool, key: impl Fn(T) -> K + Sync) -> Vec<Vec<K>> {
         let key = move |v: T| if down { !key(v) } else { key(v) };
-        if width == 1 {
-            let mut keys = Vec::with_capacity(x.len());
-            rustymath::pairs(Arg::Many(x), Arg::One(()), x.len(), &mut keys, move |v, ()| (key(v), true));
-            return vec![keys];
-        }
         (0..width).map(|c| x.chunks_exact(width).map(|row| key(row[c])).collect()).collect()
     }
     let width = right.len().checked_div(count).unwrap_or(0);
     if width > 16 { return None; }
+    if width == 1 { return rustymath::search::view_grade(compact_view(&Cells::Items(right))?, down); }
     Some(match right.as_items() {
         Items::Compact(View::Floats(x)) => with_floats!(x, |x| sort_rows(count, columns(x, width, down, |v| v.order_key()))),
         Items::Compact(View::Integers(x)) => with_ints!(x, |x| sort_rows(count, columns(x, width, down, |v| v.order_key()))),
@@ -378,36 +375,13 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
 /// `right`'s major cells in the order that `grade` gives, as `[⍋v]⌷v` or `[⍒v]⌷v`. A unit has one item, so it is already sorted.
 pub(super) fn sort(right: &Value, down: bool, span: &Context<'_>) -> Result<Value, Error> {
     if right.is_unit() { return Ok(right.clone()); }
-    if let Some(sorted) = counted_sort(right, down) { return Ok(sorted); }
+    if right.shape().len() == 1 && right.keys(0).is_none() {
+        if let Some(sorted) = compact_view(&Cells::Items(right)).and_then(|v| rustymath::search::view_sort(v, down)) {
+            return Value::from_buffer(right.shape(), sorted).and_then(|v| v.with_layout(right.layout().clone())).error_at(span, "invalid sort");
+        }
+    }
     let order = Value::new(vec![1], vec![grade(None, right, down, span)?]).error_at(span, "invalid sort")?;
     squad(&order, right, None, span)
-}
-
-/// A vector without keys of 256 items or more, sorted by counting its items, when they are integers, Booleans or characters whose keys `counts` counts. A sort needs no positions. It writes each item as many times as it occurs, in order. Fewer items go through `grade`. A table of `counts` holds up to 1024 keys, however few the items.
-fn counted_sort(right: &Value, down: bool) -> Option<Value> {
-    use crate::element::Stored;
-    use rustymath::search::{counts, Key};
-    /// The items of `x` in order, from the count of each key. Each key writes its item to the next four places, then fills the rest of its count. A key with fewer items has its extra places overwritten by the next keys. Writing four with no branch avoids a mispredicted branch for each key when most counts are 0 or 1. A key between two characters may not be a character itself. Its count is 0, so what it writes is overwritten.
-    fn spread<T: Stored + Key>(x: &[T], down: bool) -> Option<Value> {
-        let (min, counts) = counts(x)?;
-        let mut sorted = vec![T::FILL; x.len() + 4];
-        let mut at = 0;
-        let mut write = |(k, &c): (usize, &usize)| {
-            let v = T::from_key(min + k as i64).unwrap_or(T::FILL);
-            sorted[at..at + 4].fill(v);
-            if c > 4 { sorted[at + 4..at + c].fill(v) }
-            at += c;
-        };
-        if down { counts.iter().enumerate().rev().for_each(&mut write) }
-        else { counts.iter().enumerate().for_each(&mut write) }
-        sorted.truncate(x.len());
-        T::build(vec![sorted.len()], sorted)
-    }
-    if right.shape().len() != 1 || right.keys(0).is_some() || right.len() < 256 { return None; }
-    let sorted = match right.as_items() {
-        Items::Compact(View::Integers(x)) => with_ints!(x, |x| spread(x, down)), Items::Compact(View::Booleans(x)) => spread(x, down), Items::Compact(View::Characters(x)) => spread(x, down), _ => None
-    }?;
-    sorted.with_layout(right.layout().clone()).ok()
 }
 
 pub(super) fn interval_index(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {

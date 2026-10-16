@@ -18,7 +18,7 @@ use float_arithmetic::float_dyad;
 use num_complex::{Complex, Complex32, Complex64};
 use rustymath::{
     agreement::{block, blocks, each_block, map1, map2, read_mapped, Mapping}, buffer::{ComplexWidth, Complexes, DType, Element, FloatWidth, Floats, Ints, Source, View, Width},
-    linalg::{AndOr, Inner, MaxPlus, MinPlus, OrAnd, Orientation, PlusEqual, PlusNotEqual, PlusTimes}, pairs, reduce::{self, Reduction},
+    linalg::{AndOr, Inner, MaxPlus, MinPlus, OrAnd, Orientation, PlusEqual, PlusNotEqual, PlusTimes}, pairs, reduce::{self, Reduction}, search::Grouped,
     tolerant::{Tolerant, TolerantComplex}, with_complex_width, with_complexes, with_float_width, with_floats, with_ints, with_tolerance, with_width,
     Arg, CHUNK, Native
 };
@@ -911,6 +911,49 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: &Lanes, shape: Vec<usize>,
         Items::Compact(View::Complexes(data)) => with_complexes!(data, |data| complex_fold(p, data, axis, shape, numeric)),
         _ => None,
     }
+}
+
+/// The fold by `p` of each group of the vector `right` that `groups` gives: `+`, `×`, `⌈` and `⌊` of floats, `+`, `⌈` and `⌊` of integers, and Booleans by the reductions that `fold` gives them. Each group's fold combines its items in their order, where `fold`'s kernels may combine them in another order. `None` for any other function or storage, or where an integer sum leaves `i64`.
+pub(crate) fn fold_groups(p: Primitive, right: &Value, groups: &Grouped, numeric: Numeric) -> Option<Value> {
+    if let Some(result) = halves(&[Some(right)], numeric, |v, numeric| fold_groups(p, v[0]?, groups, numeric)) { return result; }
+    let shape = vec![groups.firsts.len()];
+    match right.as_items() {
+        Items::Compact(View::Floats(data)) => with_floats!(kernel data, |data| float_groups(p, data, groups, shape)),
+        Items::Compact(View::Booleans(data)) => with_truth_reduction!(p, data.len(), R => Stored::build_narrowed(shape, group_folds::<bool, R>(data, groups).0)).flatten(),
+        Items::Compact(View::Integers(ints)) => with_ints!(ints, |data| integer_groups(p, data, groups, shape)),
+        _ => None,
+    }
+}
+
+/// `fold_groups` of floats of width `F`, by the `Reduction` that `with_float_reduction!` names.
+fn float_groups<F: Float + Native + Kernels>(p: Primitive, data: &[F], groups: &Grouped, shape: Vec<usize>) -> Option<Value> where bool: Source<F> {
+    with_float_reduction!(p, R => F::build_narrowed(shape, group_folds::<F, R>(data, groups).0)).flatten()
+}
+
+/// `fold_groups` of integers.
+fn integer_groups<T: Whole>(p: Primitive, data: &[T], groups: &Grouped, shape: Vec<usize>) -> Option<Value> where
+    reduce::Sum: Reduction<T, Total = i64>, reduce::Max: Reduction<T, Total = T>, reduce::Min: Reduction<T, Total = T> {
+    match p {
+        Primitive::Arithmetic(Arithmetic::Plus) => match group_folds::<T, reduce::Sum>(data, groups) { (sums, true) => i64::build_narrowed(shape, sums), _ => None },
+        Primitive::Math(Math::Ceiling) => T::build_narrowed(shape, group_folds::<T, reduce::Max>(data, groups).0),
+        Primitive::Math(Math::Floor) => T::build_narrowed(shape, group_folds::<T, reduce::Min>(data, groups).0),
+        _ => None,
+    }
+}
+
+/// The fold by `R` of each group of `data` that `groups` gives, in order, and whether every fold fits.
+fn group_folds<T: Copy, R: Reduction<T>>(data: &[T], groups: &Grouped) -> (Vec<R::Total>, bool) {
+    let mut fits = true;
+    let totals = groups.each().map(|rows| {
+        let (mut total, mut ok) = R::one(data[rows[0] as usize]);
+        for &r in &rows[1..] {
+            let (t, k) = R::checked(total, data[r as usize]);
+            (total, ok) = (t, ok && k);
+        }
+        fits &= ok;
+        total
+    }).collect();
+    (totals, fits)
 }
 
 /// A reduction of floats of width `F`, by the `Reduction` that `with_float_reduction!` names, by `alternating` for `-/` and `÷/`, or by the general fold.

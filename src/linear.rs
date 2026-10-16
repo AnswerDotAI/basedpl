@@ -11,7 +11,7 @@ use crate::{
     Error, ErrorKind, Function, Number, Operand, Value};
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::borrow::Cow;
-use rustymath::{agreement::Mapping, buffer::{FloatWidth, Floats, View, Width}, gather::Steps};
+use rustymath::{agreement::Mapping, buffer::{DType, FloatWidth, Floats, View, Width}, gather::Steps};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
@@ -19,11 +19,12 @@ use std::sync::{
 
 /// The next sequence number. A node's children always have smaller numbers, so visiting nodes by decreasing number visits each one after every node that reads it.
 static NEXT: AtomicU64 = AtomicU64::new(0);
-#[cfg(test)]
 thread_local! {
-    /// The number of record nodes alive on this thread, for the test that checks that `∂` frees its record when it returns.
+    /// The record nodes alive on this thread. The thread that evaluates a `∂` makes its record and frees it.
     static LIVE: std::cell::Cell<isize> = const { std::cell::Cell::new(0) };
 }
+/// The record nodes alive on this thread, which `•memory` reports.
+pub(crate) fn live() -> usize { LIVE.with(|n| n.get().max(0) as usize) }
 
 /// One node of a record: the linear call it records, its result's layout, a zero of its kind, and its sequence number.
 pub(crate) struct Linear { pub(crate) op: Op, pub(crate) layout: Layout, pub(crate) zero: Value, seq: u64 }
@@ -32,8 +33,8 @@ pub(crate) struct Linear { pub(crate) op: Op, pub(crate) layout: Layout, pub(cra
 pub(crate) enum Op {
     /// The seed of the `k`th part of the argument that `∂` differentiates.
     Seed(usize),
-    /// `c×t`, for a coefficient `c` that the record doesn't depend on.
-    Scale(Value, Arc<Linear>),
+    /// `c×t`, or `t×c` where the flag is false, for a coefficient `c` that the record doesn't depend on.
+    Scale(Value, Arc<Linear>, bool),
     Add(Arc<Linear>, Arc<Linear>),
     /// The child broadcast to this node's layout, as leading-axis agreement broadcasts it.
     Expand(Arc<Linear>),
@@ -53,7 +54,7 @@ impl Op {
     fn children(&self) -> Vec<&Arc<Linear>> {
         match self {
             Op::Seed(_) => vec![],
-            Op::Scale(_, c) | Op::Expand(c) | Op::View(c) | Op::Fold { child: c, .. } | Op::ScatterAdd { child: c, .. } | Op::Product { child: c, .. } => vec![c],
+            Op::Scale(_, c, _) | Op::Expand(c) | Op::View(c) | Op::Fold { child: c, .. } | Op::ScatterAdd { child: c, .. } | Op::Product { child: c, .. } => vec![c],
             Op::Add(a, b) => vec![a, b],
             Op::Gather { sources, .. } => sources.iter().collect(),
         }
@@ -63,7 +64,6 @@ impl Op {
 /// A record holds every node it reads, so dropping a long one by recursion could overflow the stack. This unlinks the children that nothing else holds in a loop instead.
 impl Drop for Linear {
     fn drop(&mut self) {
-        #[cfg(test)]
         LIVE.with(|n| n.set(n.get() - 1));
         let mut stack = take(&mut self.op);
         while let Some(child) = stack.pop() {
@@ -75,7 +75,7 @@ impl Drop for Linear {
 fn take(op: &mut Op) -> Vec<Arc<Linear>> {
     match std::mem::replace(op, Op::Seed(0)) {
         Op::Seed(_) => vec![],
-        Op::Scale(_, c) | Op::Expand(c) | Op::View(c) | Op::Fold { child: c, .. } | Op::ScatterAdd { child: c, .. } | Op::Product { child: c, .. } => vec![c],
+        Op::Scale(_, c, _) | Op::Expand(c) | Op::View(c) | Op::Fold { child: c, .. } | Op::ScatterAdd { child: c, .. } | Op::Product { child: c, .. } => vec![c],
         Op::Add(a, b) => vec![a, b],
         Op::Gather { sources, .. } => sources,
     }
@@ -87,7 +87,6 @@ impl std::fmt::Debug for Linear {
 
 /// A record node as a value.
 fn node(op: Op, layout: Layout, zero: Value) -> Value {
-    #[cfg(test)]
     LIVE.with(|n| n.set(n.get() + 1));
     Value::from_linear(Arc::new(Linear { op, layout, zero, seq: NEXT.fetch_add(1, Ordering::Relaxed) }))
 }
@@ -133,11 +132,12 @@ impl Sources {
 /// Ids of 0, for no source, in the layout of `like`.
 pub(crate) fn fill_ids(like: &Value) -> Value { laid(like.layout(), vec![0; if like.is_atom() { 1 } else { like.len() }]) }
 
-/// `c×t`, where `t` is a record.
-fn scale(c: &Value, t: &Arc<Linear>, cx: &Context<'_>) -> Result<Value, Error> {
-    let layout = Agreement::new(c.layout(), &t.layout).error_at(cx.span, "a coefficient agrees with its tangent")?.layout;
+/// `c×t` where `left` is true, and `t×c` otherwise, where `t` is a record. The order sets the order of named axes in the layout, as in the call that made it.
+fn scale(c: &Value, t: &Arc<Linear>, left: bool, cx: &Context<'_>) -> Result<Value, Error> {
+    let (l, r) = if left { (c.layout(), &t.layout) } else { (&t.layout, c.layout()) };
+    let layout = Agreement::new(l, r).error_at(cx.span, "a coefficient agrees with its tangent")?.layout;
     let zero = Primitive::Arithmetic(Arithmetic::Times).call(Some(&zero_of(c)), &t.zero, cx)?;
-    Ok(node(Op::Scale(c.clone(), t.clone()), layout, zero))
+    Ok(node(Op::Scale(c.clone(), t.clone(), left), layout, zero))
 }
 
 /// `a+b`, where both are records.
@@ -211,17 +211,17 @@ pub(crate) fn holds_records(v: &Value) -> bool { v.holds_values() && v.elements(
 pub(crate) fn call(p: Primitive, left: Option<&Value>, right: &Value, axis: Option<usize>, cx: &Context<'_>) -> Result<Value, Error> {
     use Arithmetic::*;
     if axis.is_some() { return if crate::derivative::copies(p, left.is_some()) { through(p, left, right, axis, cx) } else { Err(cx.span.error(ErrorKind::Unsupported, format!("∂ can't transpose {} along an axis", p.info().glyph))) }; }
-    let minus = |t: &Arc<Linear>| scale(&integer(-1), t, cx);
-    let agreed = |v: &Value, t: &Arc<Linear>| Agreement::new(v.layout(), &t.layout).map(|a| a.layout).error_at(cx.span, "a tangent agrees with its primal");
+    let minus = |t: &Arc<Linear>| scale(&integer(-1), t, true, cx);
+    let agreed = |l: &Layout, r: &Layout| Agreement::new(l, r).map(|a| a.layout).error_at(cx.span, "a tangent agrees with its primal");
     match (p, left, left.and_then(Value::linear), right.linear()) {
-        (Primitive::Arithmetic(Times), Some(l), None, Some(t)) => scale(l, t, cx),
-        (Primitive::Arithmetic(Times), Some(_), Some(t), None) => scale(right, t, cx),
-        (Primitive::Arithmetic(Divide), Some(_), Some(t), None) => scale(&Primitive::Arithmetic(Divide).call(None, right, cx)?, t, cx),
+        (Primitive::Arithmetic(Times), Some(l), None, Some(t)) => scale(l, t, true, cx),
+        (Primitive::Arithmetic(Times), Some(_), Some(t), None) => scale(right, t, false, cx),
+        (Primitive::Arithmetic(Divide), Some(_), Some(t), None) => scale(&Primitive::Arithmetic(Divide).call(None, right, cx)?, t, false, cx),
         (Primitive::Arithmetic(Plus), Some(_), Some(a), Some(b)) => add(a, b, cx),
         (Primitive::Arithmetic(Plus), None, _, Some(_)) => Ok(right.clone()),
         // A numeric tangent beside a record is an inactive tangent, all zeros, so the sum is the record, broadcast to the agreed layout.
-        (Primitive::Arithmetic(Plus), Some(l), None, Some(t)) => Ok(expand(t, &agreed(l, t)?)),
-        (Primitive::Arithmetic(Plus), Some(_), Some(t), None) => Ok(expand(t, &agreed(right, t)?)),
+        (Primitive::Arithmetic(Plus), Some(l), None, Some(t)) => Ok(expand(t, &agreed(l.layout(), &t.layout)?)),
+        (Primitive::Arithmetic(Plus), Some(_), Some(t), None) => Ok(expand(t, &agreed(&t.layout, right.layout())?)),
         (Primitive::Arithmetic(Minus), None, _, Some(t)) => minus(t),
         (Primitive::Arithmetic(Minus), Some(_), Some(a), Some(b)) => add(a, minus(b)?.linear().expect("a scaled record is a record"), cx),
         _ if crate::derivative::copies(p, left.is_some()) => through(p, left, right, None, cx),
@@ -339,7 +339,10 @@ pub(crate) fn evaluate(nodes: &[Arc<Linear>], seeds: &[Value], cx: &mut Context<
         let get = |c: &Arc<Linear>| values[&Arc::as_ptr(c)].clone();
         let v = match &n.op {
             Op::Seed(k) => seeds[*k].clone(),
-            Op::Scale(c, t) => Primitive::Arithmetic(Arithmetic::Times).call(Some(c), &get(t), cx)?,
+            Op::Scale(c, t, left) => {
+                let (t, times) = (get(t), Primitive::Arithmetic(Arithmetic::Times));
+                if *left { times.call(Some(c), &t, cx)? } else { times.call(Some(&t), c, cx)? }
+            }
             Op::Add(a, b) => Primitive::Arithmetic(Arithmetic::Plus).call(Some(&get(a)), &get(b), cx)?,
             Op::Expand(t) => crate::derivative::expand(&get(t), &n.layout),
             Op::Fold { child, kind, axis, along, reversed } => scan(*kind, axis.as_ref(), *along, *reversed, &get(child), cx)?,
@@ -361,7 +364,7 @@ fn flat(v: &Value, cx: &Context<'_>) -> Result<Value, Error> { if v.is_atom() { 
 /// `u` summed back to `layout`, which broadcasting expanded to `u`'s layout. Where the broadcast repeats `layout` along some axes and reads its items in order along the rest, the sum runs along those axes. Otherwise, as where keys align `layout` with fill, each item of `u` adds into the item of `layout` that broadcasting read.
 fn sum_back(u: &Value, layout: &Layout, zero: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
     if u.layout() == layout { return Ok(u.clone()); }
-    let mapping = Agreement::new(layout, u.layout()).error_at(cx.span, "a cotangent agrees with its tangent")?.left;
+    let mapping = Agreement::new(u.layout(), layout).error_at(cx.span, "a cotangent agrees with its tangent")?.right;
     if let Some(axes) = repeated(&mapping, u.shape()).filter(|_| !u.is_atom() && !u.is_empty()) {
         let mut v = u.clone();
         for &axis in axes.iter().rev() { v = crate::eval::fold_plus(FoldKind { scan: false, first: false }, Some(&integer(axis as i64)), &v, cx)?; }
@@ -505,9 +508,15 @@ pub(crate) fn transpose(nodes: &[Arc<Linear>], u: Value, seeds: usize, cx: &mut 
         let Some(c) = cotangents.remove(&Arc::as_ptr(n)) else { continue };
         let u = collected(c, n, cx)?;
         match &n.op {
-            Op::Seed(k) => grads[*k] = Some(match grads[*k].take() { Some(g) => plus.call(Some(&g), &u, cx)?, None => u }),
-            Op::Scale(c, t) => {
-                let v = Primitive::Arithmetic(Arithmetic::Times).call(Some(c), &u, cx)?;
+            Op::Seed(k) => {
+                // A compact gradient narrower than its part widens to the part's kind, as a tangent has its primal's. Parts are never complex.
+                let wider = u.dtype().zip(n.zero.dtype()).and_then(|(a, b)| a.common(b).filter(|&c| c != a));
+                let u = match wider { Some(DType::Float(w)) => u.to_float_width(w).error_at(cx.span, "a gradient converts to floats")?, _ => u };
+                grads[*k] = Some(match grads[*k].take() { Some(g) => plus.call(Some(&g), &u, cx)?, None => u })
+            }
+            Op::Scale(c, t, _) => {
+                // `u` first keeps this node's order of named axes.
+                let v = Primitive::Arithmetic(Arithmetic::Times).call(Some(&u), c, cx)?;
                 push(&mut cotangents, t, sum_back(&v, &t.layout, &t.zero, cx)?, cx)?
             }
             Op::Add(a, b) => {
@@ -564,27 +573,4 @@ pub(crate) fn transpose(nodes: &[Arc<Linear>], u: Value, seeds: usize, cx: &mut 
         }
     }
     Ok(grads)
-}
-
-#[cfg(test)]
-mod tests {
-    /// `∂` frees the record it makes when it returns, so no linear calls outlive it: not in its result, in a name its function wrote, in a nested `∂`, or in `⇄`'s cached linearisation.
-    #[test]
-    fn records_are_freed() {
-        let mut session = crate::Session::new();
-        for code in [
-            "{+/⍵×⍵}∂ 1 2 3",
-            "{+/,⍵+.×⍵}∂ [1 2⋄3 4]",
-            "x←0.5×⍳300000 ⋄ ≢{+/⊼1○⍵}∂ x",
-            "s←0 ⋄ g←{s+←⍵×2 ⋄ +/⍵×⍵}∂ 1 2 ⋄ s",
-            "{+/,{+/⍵×⍵×⍵}∂ ⍵}∂ 1 2",
-            "r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ {+/r ⍵}∂ 1 2",
-            "{+/⊼⍵-2}⇄ 0 0",
-        ] {
-            super::LIVE.with(|n| n.set(0));
-            let result = session.eval(code);
-            assert!(result.error.is_none(), "{code}: {:?}", result.error);
-            assert_eq!(super::LIVE.with(|n| n.get()), 0, "{code} left record nodes alive");
-        }
-    }
 }

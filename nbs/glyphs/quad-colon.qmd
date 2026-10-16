@@ -35,12 +35,13 @@ m←2 3⍴⍳6
 10 20 {⍺+⍵}⍠0 m           ⍝ [10 11 12⋄23 24 25]
 ```
 
-A string names one axis, and a list of strings names several.
+A string names one axis, and a list of strings names several. A [named index](iota.qmd), such as `⍳["row":2]`, names its own axis.
 
 ```bpl
 n←["row":2 "col":3]⍴⍳6
 {+/⍵}⍠"row" n             ⍝ ["col":3]⍴3 5 7
 {+/,⍵}⍠"row" "col" n      ⍝ 15
+r←⍳["row":2] ⋄ {+/⍵}⍠r n  ⍝ ["col":3]⍴3 5 7
 ```
 
 A function right operand computes the axes from the arguments: `f⍠g Y` is `f⍠(g Y) Y`, and `X f⍠g Y` is `X f⍠(X g Y) Y`. [Rank](jot-diaeresis.qmd) and [Stencil](quad-diamond.qmd) take a function right operand in the same way. Here the cells run along the longest axis:

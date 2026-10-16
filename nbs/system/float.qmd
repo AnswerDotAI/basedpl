@@ -4,8 +4,8 @@
 
 ```bpl
 v←32 •float 0.1 0.2 0.3
-•storage v              ⍝ "float32"
-•storage 64 •float v    ⍝ "float64"
+(•storage v).kind              ⍝ "float32"
+(•storage 64 •float v).kind    ⍝ "float64"
 ```
 
 Errors: `DOMAIN` for a width other than 16, 32 or 64, and for characters and functions.
